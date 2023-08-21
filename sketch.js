@@ -1,5 +1,3 @@
-import * as THREE from 'three';
-
 let song;
 let fft;
 let particles = [];
