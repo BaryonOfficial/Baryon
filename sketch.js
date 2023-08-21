@@ -6,6 +6,8 @@ let particles = [];
 const NUM_PARTICLES = 6144 ; // Increased particle count
 const FLOW_RESOLUTION = 5;
 let flowfield = [];
+let scene, camera, renderer, sphere, material;
+
 
 function preload() {
     song = loadSound('media_assets/drake_sxr2.m4a');
@@ -30,6 +32,15 @@ function setup() {
         song.loop();
         startButton.style.display = 'none'; // Hide the button
     });
+
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, windowWidth / windowHeight, 0.1, 1000);
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(windowWidth, windowHeight);
+    document.body.appendChild(renderer.domElement);
+
+    camera.position.z = 5; // Set camera position
+
 }
 
 function windowResized() {
