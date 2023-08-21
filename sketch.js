@@ -1,104 +1,102 @@
 import * as THREE from 'three';
+import Essentia from 'essentia.js'; // Ensure you have the correct import path
 
 let song;
-let fft;
 let particles = [];
-const NUM_PARTICLES = 6144 ; // Increased particle count
+const NUM_PARTICLES = 6144;
 const FLOW_RESOLUTION = 5;
 let flowfield = [];
-let scene, camera, renderer, sphere, material;
-
+let scene, camera, renderer;
+let audioContext, audioSource, essentiaExtractor;
 
 function preload() {
-    song = loadSound('media_assets/drake_sxr2.m4a');
+    // Using a standard method to load audio
+    song = new Audio('media_assets/drake_sxr2.m4a');
 }
 
 function setup() {
-    createCanvas(windowWidth, windowHeight);
-    colorMode(HSB, 360, 100, 100, 1);  // Set color mode to HSB
-    background(0);
-    song.loop();
-    
-    fft = new p5.FFT();
+    // Set up the three.js scene
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
 
     // Initialize particles
     for (let i = 0; i < NUM_PARTICLES; i++) {
-        particles.push(new Particle(random(width), random(height)));
+        particles.push(new Particle());
     }
 
-    // Add an event listener to the start button
-    let startButton = document.getElementById('startButton');
-    startButton.addEventListener('click', function() {
-        song.loop();
-        startButton.style.display = 'none'; // Hide the button
-    });
+    // Audio Context for Essentia
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    audioSource = audioContext.createMediaElementSource(song);
+    audioSource.connect(audioContext.destination);
+    essentiaExtractor = new Essentia(audioContext, audioSource);
 
-    scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(75, windowWidth / windowHeight, 0.1, 1000);
-    renderer = new THREE.WebGLRenderer();
-    renderer.setSize(windowWidth, windowHeight);
-    document.body.appendChild(renderer.domElement);
+    song.play(); // Start the song
 
-    camera.position.z = 5; // Set camera position
-
+    animate();
 }
 
-function windowResized() {
-  resizeCanvas(windowWidth, windowHeight);
+function animate() {
+    requestAnimationFrame(animate);
+    render();
 }
 
-function draw() {
-    background(0, 0, 0, 0.1);  // Add a bit of alpha for trails
-
-    // Analyze the audio's frequency spectrum
-    let spectrum = fft.analyze();
-    
-    // Get dominant frequency
+function render() {
+    // Analyze the audio's frequency spectrum using Essentia
+    let spectrum = essentiaExtractor.computeSpectrum();
     let dominantFrequency = getDominantFrequency(spectrum);
 
-    // Update flow field based on dominant frequency
+    // Update flow field and particles
     updateFlowField(dominantFrequency);
-
-    // Update and display particles
-    for (let p of particles) {
-        let x = constrain(floor(p.pos.x / FLOW_RESOLUTION), 0, flowfield.length - 1);
-        let y = constrain(floor(p.pos.y / FLOW_RESOLUTION), 0, flowfield[0].length - 1);
-        let v = flowfield[x][y];
-        let hue = map(v.heading(), -PI, PI, 0, 360);  // Map vector direction to hue
-        p.applyForce(v);
+    particles.forEach(p => {
         p.update();
-        p.display(hue);
-    }
-}
+        p.display();
+    });
 
+    renderer.render(scene, camera);
+}
 
 function getDominantFrequency(spectrum) {
     return spectrum.indexOf(Math.max(...spectrum));
 }
 
 function updateFlowField(frequency) {
-    let rows = floor(width / FLOW_RESOLUTION);
-    let cols = floor(height / FLOW_RESOLUTION);
-    for (let x = 0; x < rows; x++) {
-        flowfield[x] = [];
-        for (let y = 0; y < cols; y++) {
-            let val = cymaticsFunction(x / rows * 2 - 1, y / cols * 2 - 1, frequency % 10, (frequency + 2) % 10);
-            let v = p5.Vector.fromAngle(val * TWO_PI);
-            flowfield[x][y] = v;
+    let depth = floor(window.innerWidth / FLOW_RESOLUTION);
+    let rows = floor(window.innerWidth / FLOW_RESOLUTION);
+    let cols = floor(window.innerHeight / FLOW_RESOLUTION);
+    flowfield = [];
+
+    for (let z = 0; z < depth; z++) {
+        flowfield[z] = [];
+        for (let x = 0; x < rows; x++) {
+            flowfield[z][x] = [];
+            for (let y = 0; y < cols; y++) {
+                let val = cymaticsFunction(x / rows * 2 - 1, y / cols * 2 - 1, z / depth * 2 - 1, frequency % 10, (frequency + 2) % 10);
+                let v = new THREE.Vector3(Math.cos(val * TWO_PI), Math.sin(val * TWO_PI), Math.sin(val * TWO_PI));
+                flowfield[z][x][y] = v;
+            }
         }
     }
 }
 
-function cymaticsFunction(x, z, n, m) {
-    return Math.cos(n * x * Math.PI) * Math.cos(m * z * Math.PI) - Math.cos(m * x * Math.PI) * Math.cos(n * z * Math.PI);
+// ... [other functions remain largely the same, but with 3D logic]
+function cymaticsFunction(x, y, z, n, m) {
+    return Math.cos(n * x * Math.PI) * Math.cos(m * y * Math.PI) * Math.sin(m * z * Math.PI) - Math.sin(m * x * Math.PI) * Math.sin(n * y * Math.PI) * Math.cos(n * z * Math.PI);
 }
+
 class Particle {
-    constructor(x, y) {
-        this.pos = createVector(x, y);
-        this.prevPos = this.pos.copy(); // Store the previous position
-        this.vel = createVector(0, 0);
-        this.acc = createVector(0, 0);
-        this.maxSpeed = 6;
+    constructor() {
+        this.geometry = new THREE.SphereGeometry(1, 32, 32);
+        this.material = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 });
+        this.mesh = new THREE.Mesh(this.geometry, this.material);
+
+        this.pos = new THREE.Vector3();
+        this.vel = new THREE.Vector3();
+        this.acc = new THREE.Vector3();
+
+        scene.add(this.mesh);
     }
 
     applyForce(force) {
@@ -107,30 +105,17 @@ class Particle {
 
     update() {
         this.vel.add(this.acc);
-        this.vel.limit(this.maxSpeed);
-        this.prevPos = this.pos.copy(); // Before updating the position, save it as the previous position
+        this.vel.clampLength(0, 0.1); // Limiting velocity
         this.pos.add(this.vel);
-        this.acc.mult(0);
+        this.acc.multiplyScalar(0);
 
-        // Boundary conditions
-        if (this.pos.x > width) this.pos.x = 0;
-        if (this.pos.x < 0) this.pos.x = width;
-        if (this.pos.y > height) this.pos.y = 0;
-        if (this.pos.y < 0) this.pos.y = height;
+        // Restrict particles to the sphere's surface
+        this.pos.normalize().multiplyScalar(SPHERE_RADIUS);
+        this.mesh.position.set(this.pos.x, this.pos.y, this.pos.z);
     }
 
-    display(hue) {
-    strokeWeight(2);
-    stroke(hue, 100, 100);
-    
-    // Calculate the distance between the current and previous position
-    let d = dist(this.prevPos.x, this.prevPos.y, this.pos.x, this.pos.y);
-    
-    // If the distance is less than a certain threshold (e.g., 50 pixels), draw the line
-    if (d < 50) {
-        line(this.prevPos.x, this.prevPos.y, this.pos.x, this.pos.y);
+    display() {
+        let hue = this.pos.angleTo(new THREE.Vector3(1, 0, 0)) / Math.PI;
+        this.material.color.setHSL(hue, 1, 0.5);
     }
 }
-
-}
-
