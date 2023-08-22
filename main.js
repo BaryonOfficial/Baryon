@@ -17,17 +17,16 @@ console.log(essentia.algorithmNames)
 // Scene, Camera, Renderer Initialization
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.z = 50;
+camera.position.z = 5;
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
+
 // Other constants
-const NUM_PARTICLES = 6144;
+const NUM_PARTICLES = 1000;
 const SCALE_FACTOR = 50;
 const noise = new Noise(Math.random());
-
-const particlesMaterial = new THREE.PointsMaterial({ size: 0.1, vertexColors: true });
 
 const startButton = document.getElementById('startButton');
 startButton.addEventListener('click', initializeAudio);
@@ -35,9 +34,16 @@ startButton.addEventListener('click', initializeAudio);
 // Particle Geometry Initialization
 const particlesGeometry = new THREE.BufferGeometry();
 const particleVertices = new Float32Array(NUM_PARTICLES * 3);
+const particlesMaterial = new THREE.PointsMaterial({ size: 0.1, vertexColors: true });
+const particleColors = new Float32Array(NUM_PARTICLES * 3);
+
 const particles = new THREE.Points(particlesGeometry, particlesMaterial);
 scene.add(particles);
-const particleColors = new Float32Array(NUM_PARTICLES * 3);
+
+const geometry = new THREE.BoxGeometry();
+const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+const cube = new THREE.Mesh(geometry, material);
+scene.add(cube);
 
 
 for (let i = 0; i < NUM_PARTICLES; i++) {
@@ -49,9 +55,17 @@ for (let i = 0; i < NUM_PARTICLES; i++) {
   particleVertices[i * 3] = x;
   particleVertices[i * 3 + 1] = y;
   particleVertices[i * 3 + 2] = z;
+
+  particleColors[i * 3] = 1.0;
+  particleColors[i * 3 + 1] = 1.0;
+  particleColors[i * 3 + 2] = 1.0;
 }
+
 particlesGeometry.setAttribute('position', new THREE.BufferAttribute(particleVertices, 3));
 particlesGeometry.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+
+let particleSystem = new THREE.Points(particlesGeometry, particlesMaterial);
+scene.add(particleSystem);
 
 let audioContext = new AudioContext();
 
