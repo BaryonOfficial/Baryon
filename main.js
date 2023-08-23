@@ -40,11 +40,6 @@ const particleColors = new Float32Array(NUM_PARTICLES * 3);
 const particles = new THREE.Points(particlesGeometry, particlesMaterial);
 scene.add(particles);
 
-const geometry = new THREE.BoxGeometry();
-const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-const cube = new THREE.Mesh(geometry, material);
-scene.add(cube);
-
 
 for (let i = 0; i < NUM_PARTICLES; i++) {
   // Use Perlin noise to get values
@@ -192,7 +187,12 @@ function animate() {
     let spectrum = new Uint8Array(audioAnalyser.frequencyBinCount);
     audioAnalyser.getByteFrequencyData(spectrum);
     let audioSignal = essentia.arrayToVector(spectrum); // Corrected variable name
+    console.log("Audio signal:", audioSignal);
+
     let pitch = essentia.PitchYinFFT(audioSignal); // Needs preprocessing of audio signal
+    console.log("Pitch object:", pitch);
+
+    
     let note = mapFrequencyToNote(pitch.freq); // Assuming pitch.freq is a frequency
     let color = mapNoteToColor(note);
     const volume = essentia.Energy(audioSignal);
@@ -212,12 +212,26 @@ animate();
 
 // Function to update particles
 function updateParticles(particleVertices, pitch, color) {
+  if (typeof pitch === 'undefined') {
+    console.log('Pitch object is undefined');
+    return;
+  }
+
+  // If pitch.freq is undefined, log a message and return
+  if (typeof pitch.freq === 'undefined') {
+    console.log('Pitch.freq is undefined', pitch);
+    return;
+  }
+
+  console.log("Pitch object:", pitch);
+  
     const colors = particlesGeometry.attributes.color.array; // Accessing the color attribute
     for (let i = 0; i < NUM_PARTICLES; i++) {
       let index = i * 3;
       let x = particleVertices[index];
       let z = particleVertices[index + 2];
-      let cymaticsEffect = cymaticsFunction(x, z, pitch % 10, (pitch + 2) % 10);
+      console.log("Debugging Values:", x, z, pitch.freq, n, m);
+      let cymaticsEffect = cymaticsFunction(x, z, pitch.freq % 10, (pitch.freq + 2) % 10);
       
       // Check if cymaticsEffect is NaN
       if (isNaN(cymaticsEffect)) {
@@ -264,8 +278,11 @@ function computeSphericalHarmonic(l, m, theta, phi) {
   const factor1 = Math.sqrt((2 * l + 1) / (4 * Math.PI) * (math.factorial(l - m) / math.factorial(l + m)));
   const factor2 = legendreP(l, m, Math.cos(theta)); // Changed to custom legendreP
   const factor3 = math.exp(math.complex(0, m * phi));
-  return factor1 * factor2 * factor3;
+
+  // Take the real part of the result to avoid complex numbers
+  return factor1 * factor2 * math.re(factor3);
 }
+
 
   
   function mapToL(pitch) {
