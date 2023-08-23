@@ -6,7 +6,7 @@ const FLOW_RESOLUTION = 5;
 let flowfield = [];
 
 function preload() {
-    song = loadSound('media_assets/drake_sxr2.m4a');
+    song = loadSound('media_assets/tvari_tokyo_cafe.mp3');
 }
 
 function setup() {
