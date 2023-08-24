@@ -8,6 +8,86 @@ import { EssentiaWASM } from 'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dis
 
 const essentia = new Essentia(EssentiaWASM);
 
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+const audioCtx = new AudioContext();
+
+async function URLFromFiles(urls) {
+    // Fetch the content from each URL and store it in the 'contents' array
+    const contents = await Promise.all(
+      urls.map(url => fetch(url).then(response => response.text()))
+    );
+  
+    // Concatenate the contents into a single string
+    const concatenatedCode = contents.join('\n');
+  
+    // Create a blob from the concatenated code
+    const blob = new Blob([concatenatedCode], { type: 'application/javascript' });
+  
+    // Create a URL for the blob
+    return URL.createObjectURL(blob);
+  }
+  
+
+// main.js
+const workletProcessorCode = ["https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js", "https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.es.js", "essentia-worklet-processor.js"];
+
+export async function createEssentiaNode (audioCtx) {
+  try {
+    let concatenatedCode = await URLFromFiles(workletProcessorCode)
+    await audioCtx.audioWorklet.addModule(concatenatedCode); // add our custom code to the worklet scope
+  } catch(e) {
+    console.log(e);
+  }
+  return new AudioWorkletNode(audioCtx, 'essentia-worklet-processor');
+}
+
+createEssentiaNode(audioCtx).then(audioWorkletNode => {
+    startMicRecordStream(audioWorkletNode, enableButton);
+    playAudioFile(audioWorkletNode, 'media_assets/drake_sxr2.m4a');
+});
+
+function startMicRecordStream(audioWorkletNode, btnCallback) {
+    if (audioCtx.state === "suspended") audioCtx.resume(); 
+    if (navigator.mediaDevices.getUserMedia) {
+        console.log("Initializing audio...");
+        navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+            .then((stream) => {
+                gumStream = stream;
+                if (gumStream.active) {
+                    mic = audioCtx.createMediaStreamSource(stream);
+                    
+                    mic.connect(audioWorkletNode);
+                    audioWorkletNode.connect(audioCtx.destination);
+
+                    btnCallback(); // restore button state
+                } else {
+                    throw "Mic stream not active";
+                }
+            }
+        ).catch((message) => {
+            throw "Could not access microphone - " + message;
+        });
+
+    } else {
+    throw "Could not access microphone - getUserMedia not available";
+    }
+}
+
+function playAudioFile(audioWorkletNode, audioFileUrl) {
+    fetch(audioFileUrl)
+        .then(response => response.arrayBuffer())
+        .then(arrayBuffer => audioCtx.decodeAudioData(arrayBuffer))
+        .then(audioBuffer => {
+            let audioSource = audioCtx.createBufferSource();
+            audioSource.buffer = audioBuffer;
+            
+            audioSource.connect(audioWorkletNode);
+            audioWorkletNode.connect(audioCtx.destination);
+            
+            audioSource.start();
+        });
+}
+
 // prints version of essentia wasm backend
 console.log(essentia.version)
 
@@ -178,19 +258,17 @@ const noteFrequencies = {
   console.log(`The note for frequency ${frequency} is ${note}`);
   
 
-// Main render loop
-function animate() {
+    // Main render loop
+    function animate() {
     requestAnimationFrame(animate);
   
     // Audio Analysis
-    // Audio Analysis
     let spectrum = new Uint8Array(audioAnalyser.frequencyBinCount);
     audioAnalyser.getByteFrequencyData(spectrum);
-    let audioSignal = essentia.arrayToVector(spectrum); // Corrected variable name
+    let audioSignal = essentia.arrayToVector(spectrum);
     console.log("Audio signal:", audioSignal);
-    console.log("Audio signal values:", audioSignal.get());
 
-    let windowedSignal = essentia.Windowing(audioSignal, true, "hann");
+    let windowedSignal = essentia.Windowing(audioSignal, true, 0); // Changed "hann" to 0
     let pitch = essentia.PitchYinFFT(windowedSignal);
 
     console.log("Pitch object:", pitch);
@@ -291,8 +369,6 @@ function computeSphericalHarmonic(l, m, theta, phi) {
   // Take the real part of the result to avoid complex numbers
   return factor1 * factor2 * math.re(factor3);
 }
-
-
   
   function mapToL(pitch) {
     return pitch / 100;
