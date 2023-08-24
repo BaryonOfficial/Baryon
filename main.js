@@ -31,15 +31,15 @@ async function URLFromFiles(urls) {
 // main.js
 const workletProcessorCode = ["https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js", "https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.es.js", "essentia-worklet-processor.js"];
 
-export async function createEssentiaNode (audioCtx) {
+export async function createEssentiaNode(audioCtx) {
   try {
-    let concatenatedCode = await URLFromFiles(workletProcessorCode)
-    await audioCtx.audioWorklet.addModule(concatenatedCode); // add our custom code to the worklet scope
-  } catch(e) {
+    await audioCtx.audioWorklet.addModule('essentia-worklet-processor.js'); // directly add worklet file
+  } catch (e) {
     console.log(e);
   }
   return new AudioWorkletNode(audioCtx, 'essentia-worklet-processor');
 }
+
 
 createEssentiaNode(audioCtx).then(audioWorkletNode => {
     startMicRecordStream(audioWorkletNode, enableButton);
@@ -71,6 +71,8 @@ function startMicRecordStream(audioWorkletNode, btnCallback) {
     } else {
     throw "Could not access microphone - getUserMedia not available";
     }
+    btnCallback(); // This will call the enableButton function
+
 }
 
 function playAudioFile(audioWorkletNode, audioFileUrl) {
@@ -108,8 +110,17 @@ const NUM_PARTICLES = 1000;
 const SCALE_FACTOR = 50;
 const noise = new Noise(Math.random());
 
-const startButton = document.getElementById('startButton');
-startButton.addEventListener('click', initializeAudio);
+const startAudioButton = document.getElementById('startAudioButton');
+startAudioButton.addEventListener('click', initializeAudio);
+
+const startMicButton = document.getElementById('startMicButton');
+startMicButton.addEventListener('click', () => startMicRecordStream(audioWorkletNode, enableButton));
+
+function enableButton() {
+  // Code to restore or change the button state if needed
+  // For example, you can change the button text or style
+  startMicButton.disabled = false; // Enable the "Enable Mic" button
+}
 
 // Particle Geometry Initialization
 const particlesGeometry = new THREE.BufferGeometry();
