@@ -188,14 +188,23 @@ function animate() {
     audioAnalyser.getByteFrequencyData(spectrum);
     let audioSignal = essentia.arrayToVector(spectrum); // Corrected variable name
     console.log("Audio signal:", audioSignal);
+    console.log("Audio signal values:", audioSignal.get());
 
-    let pitch = essentia.PitchYinFFT(audioSignal); // Needs preprocessing of audio signal
+    let windowedSignal = essentia.Windowing(audioSignal, true, "hann");
+    let pitch = essentia.PitchYinFFT(windowedSignal);
+
     console.log("Pitch object:", pitch);
 
     
     let note = mapFrequencyToNote(pitch.freq); // Assuming pitch.freq is a frequency
     let color = mapNoteToColor(note);
     const volume = essentia.Energy(audioSignal);
+
+    let audioSignalValues = [];
+    for (let i = 0; i < audioSignal.size(); i++) {
+    audioSignalValues.push(audioSignal.get(i));
+    }
+    console.log("Audio signal values:", audioSignalValues);
   
     const l = mapToL(pitch);
     const m = mapToM(volume);
