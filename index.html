@@ -4,12 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Music Visualizer</title>
-  <button id="startAudioButton">Start Audio</button>
-  <button id="startMicButton">Enable Mic</button>
+  <button onclick="toggleMic()">Toggle Microphone</button>
+  <button onclick="toggleSong()">Toggle Song</button>
+  <input type="range" id="numSlider" min="1" max="20000" value="15000">
 </head>
 <body>
   <!-- Include the Vite build output -->
   <script src='http://git.io/perlin.js'></script>
   <script type="module" src="main.js"></script>
+  <script src="libraries/p5.min.js"></script>
+  <script src="libraries/p5.sound.min.js"></script>
 </body>
 </html>

@@ -26,4 +26,7 @@ class EssentiaWorkletProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('essentia-worklet-processor', EssentiaWorkletProcessor); // must use the same name we gave our processor in `createEssentiaNode`
+// Inside the `process` method of EssentiaWorkletProcessor
+output[0][0] = rmsFrame.rms;
+this.port.postMessage(rmsFrame.rms);
+registerProcessor('essentia-worklet-processor', AudioWorkletNode); // must use the same name we gave our processor in `createEssentiaNode`
