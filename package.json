@@ -1,5 +1,5 @@
 {
-  "name": "three",
+  "name": "threeart",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,5 +10,9 @@
   },
   "devDependencies": {
     "vite": "^4.5.0"
+  },
+  "dependencies": {
+    "lil-gui": "^0.19.1",
+    "three": "^0.158.0"
   }
 }
