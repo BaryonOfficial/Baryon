@@ -1,191 +1,153 @@
-import GUI from 'lil-gui'
-import * as THREE from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import GUI from 'lil-gui';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 // Variables
-let particles, parameters, m, n, a, b;
+let parameters, particlesGeometry, particlesMaterial, particlePoints;
+const pi = Math.PI;
 
 // Debug
-const gui = new GUI()
+const gui = new GUI();
 
 // Canvas
-const canvas = document.querySelector('canvas.webgl')
+const canvas = document.querySelector('canvas.webgl');
 
 // Scene
-const scene = new THREE.Scene()
+const scene = new THREE.Scene();
 
-const settings = {
-  nParticles : 20000
-}
 /**
  * Sizes
  */
 const sizes = {
   width: window.innerWidth,
   height: window.innerHeight
-}
+};
 
-window.addEventListener('resize', () =>
-{
-    // Update sizes
-    sizes.width = window.innerWidth
-    sizes.height = window.innerHeight
+window.addEventListener('resize', () => {
+  // Update sizes
+  sizes.width = window.innerWidth;
+  sizes.height = window.innerHeight;
 
-    // Update camera
-    camera.aspect = sizes.width / sizes.height
-    camera.updateProjectionMatrix()
+  // Update camera
+  camera.aspect = sizes.width / sizes.height;
+  camera.updateProjectionMatrix();
 
-    // Update renderer
-    renderer.setSize(sizes.width, sizes.height)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-})
+  // Update renderer
+  renderer.setSize(sizes.width, sizes.height);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+});
 
 /**
  * Camera
  */
 // Base camera
-const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height, 0.1, 100)
-camera.position.x = 1
-camera.position.y = 1
-camera.position.z = 2
-scene.add(camera)
+const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height, 0.1, 100);
+camera.position.x = 1;
+camera.position.y = 1;
+camera.position.z = 2;
+scene.add(camera);
 
 // Controls
-const controls = new OrbitControls(camera, canvas)
-controls.enableDamping = true
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
 
 /**
  * Renderer
  */
 const renderer = new THREE.WebGLRenderer({
   canvas: canvas
-})
-renderer.setSize(sizes.width, sizes.height)
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+});
+renderer.setSize(sizes.width, sizes.height);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-
-// vibration strength params
-let A = 0.02;
-let minWalk = 0.002;
-
-const pi = Math.PI;
-
-// chladni 2D closed-form solution - returns between -1 and 1
+// Chladni pattern function
 const chladni = (x, y, a, b, m, n) => 
-  a * Math.sin(pi*n*x) * Math.sin(pi*m*y) + b * Math.sin(pi*m*x) * Math.sin(pi*n*y);
+  a * Math.sin(pi * n * x) * Math.sin(pi * m * y) + b * Math.sin(pi * m * x) * Math.sin(pi * n * y);
 
-/* Initialization */
+// Parameters for particles
+parameters = {
+  m: 8, // freq param 1
+  n: 4, // freq param 2
+  a: 1, // freq param 3
+  b: 1, // freq param 4
+  v: 0.2, // velocity
+  num: 20000, // number of particles
+};
 
-// parameters for the GUI
-  parameters = {
-      m : 8, // freq param 1
-      n : 4, // freq param 2
-      a : 1, // freq param 3
-      b : 1, // freq param 4
-      v : 0.2, // velocity
-      num : 20000, // number
-  };
-  
-  // create GUI controllers for each parameter
-  gui.add(parameters, 'm').min(1).max(16).step(1);
-  gui.add(parameters, 'n').min(1).max(16).step(1);
-  gui.add(parameters, 'a').min(-2).max(2).step(1);
-  gui.add(parameters, 'b').min(-2).max(2).step(1);
-  gui.add(parameters, 'v').min(0.01).max(.1).step(0.01);
-  gui.add(parameters, 'num').min(2000).max(20000).step(1000);
-  
+// GUI controllers
+gui.add(parameters, 'm').min(1).max(16).step(1);
+gui.add(parameters, 'n').min(1).max(16).step(1);
+gui.add(parameters, 'a').min(-2).max(2).step(1);
+gui.add(parameters, 'b').min(-2).max(2).step(1);
+gui.add(parameters, 'v').min(0.01).max(1).step(0.01);
+gui.add(parameters, 'num').min(2000).max(20000).step(1000);
 
+
+
+// Update particles
+// Initialize particle positions
 const setupParticles = () => {
-  // particle array
-  particles = [];
-  for (let i = 0; i < settings.nParticles; i++) {
-    particles[i] = new Particle();
-  }
-}
-
-/* Particle dynamics */
-
-class Particle {
-
-  constructor() {
-    this.x = Math.random(0,1);
-    this.y = Math.random(0,1);
-    this.stochasticAmplitude;
-
-    // this.color = [random(100,255), random(100,255), random(100,255)];
-    
-    this.updateOffsets();
-  }
-
-  move() {
-    // what is our chladni value i.e. how much are we vibrating? (between -1 and 1, zeroes are nodes)
-    let eq = chladni(this.x, this.y, a, b, m, n);
-  
-    // set the amplitude of the move -> proportional to the vibration
-    this.stochasticAmplitude = parameters.v * Math.abs(eq);
-
-    if (this.stochasticAmplitude <= minWalk) this.stochasticAmplitude = minWalk;
-
-    // perform one random walk
-    this.x += Math.random(-this.stochasticAmplitude, this.stochasticAmplitude);
-    this.y += Math.random(-this.stochasticAmplitude, this.stochasticAmplitude);
+  // Create a BufferGeometry for particles
+  particlesGeometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(parameters.num * 3); // x, y, z for each particle
+  particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
  
-    this.updateOffsets();
+  // Create a PointsMaterial for particles
+  particlesMaterial = new THREE.PointsMaterial({
+    size: 0.05,
+    color: 0xffffff
+  });
+ 
+  // Create a Points object
+  particlePoints = new THREE.Points(particlesGeometry, particlesMaterial);
+  scene.add(particlePoints);
+
+
+  for (let i = 0; i < parameters.num; i++) {
+    const i3 = i * 3;
+    positions[i3] = (Math.random() - 0.5) * 10; // Initialize x
+    positions[i3 + 1] = (Math.random() - 0.5) * 10; // Initialize y
+    positions[i3 + 2] = (Math.random() - 0.5) * 10; // z position (if needed)
+  }
+};
+
+// Update particle positions
+const updateParticles = () => {
+  const positions = particlesGeometry.attributes.position.array;
+
+  for (let i = 0; i < parameters.num; i++) {
+    const i3 = i * 3;
+    
+    // Convert positions for Chladni function
+    let x = positions[i3] / sizes.width * 2 - 1;
+    let y = positions[i3 + 1] / sizes.height * 2 - 1;
+
+    // Calculate Chladni pattern value
+    let chladniValue = chladni(x, y, parameters.a, parameters.b, parameters.m, parameters.n);
+
+    // Update positions based on Chladni value (can add random component as well)
+    positions[i3] += chladniValue * parameters.v;
+    positions[i3 + 1] += chladniValue * parameters.v;
+
+    // Handle boundaries
+    // ... (adapt logic from updateOffsets method) ...
   }
 
-  updateOffsets() {
-    // handle edges
-    if (this.x <= 0) this.x = 0;
-    if (this.x >= 1) this.x = 1;
-    if (this.y <= 0) this.y = 0;
-    if (this.y >= 1) this.y = 1;
-  
-    // convert to screen space
-    this.xOff = sizes.width * this.x; // (this.x + 1) / 2 * width;
-    this.yOff = sizes.height * this.y; // (this.y + 1) / 2 * height;
-  }
+  particlesGeometry.attributes.position.needsUpdate = true;
+};
 
-  show() {
-    // stroke(...this.color);
-    const geometry = new THREE.BufferGeometry();
-    geometry.vertices.push(new THREE.Vector3(this.xOff, this.yOff, 0)); // Add a vertex at the point's position
 
-    const material = new THREE.PointsMaterial({ color: 0xffffff, size: 1 }); // Set the point's color and size
-
-    const point = new THREE.Points(geometry, material);
-
-    scene.add(point);
-  }
-}
-
-const moveParticles = () => {
-  let movingParticles = particles.slice(0, parameters.num);
-
-  // particle movement
-  for(let particle of movingParticles) {
-    particle.move();
-    particle.show();
-  }
-}
-
+// Initialize and start animation loop
 function init() {
   setupParticles();
+  tick();
 }
 
 const tick = () => {
-  // Update controls
-  controls.update()
+  controls.update();
+  updateParticles();
+  renderer.render(scene, camera);
+  window.requestAnimationFrame(tick);
+};
 
-  // Update parameters, and move particles
-  moveParticles();
-
-  // Render
-  renderer.render(scene, camera)
-
-  // Call tick again on the next frame
-  window.requestAnimationFrame(tick)
-}
-
-// Start the animation loop
 init();
-tick();
