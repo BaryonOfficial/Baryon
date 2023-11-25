@@ -41,7 +41,7 @@ window.addEventListener('resize', () => {
  * Camera
  */
 // Base camera
-const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height, 0.1, 100);
+const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height, 0.1, 1000);
 camera.position.x = 1;
 camera.position.y = 1;
 camera.position.z = 2;
@@ -82,39 +82,51 @@ gui.add(parameters, 'b').min(-2).max(2).step(1);
 gui.add(parameters, 'v').min(0.01).max(1).step(0.01);
 gui.add(parameters, 'num').min(2000).max(20000).step(1000);
 
-
-
-// Update particles
-// Initialize particle positions
 const setupParticles = () => {
   // Create a BufferGeometry for particles
   particlesGeometry = new THREE.BufferGeometry();
+
+  // Create arrays for positions and colors
   const positions = new Float32Array(parameters.num * 3); // x, y, z for each particle
-  particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
- 
-  // Create a PointsMaterial for particles
-  particlesMaterial = new THREE.PointsMaterial({
-    size: 0.05,
-    color: 0xffffff
-  });
- 
-  // Create a Points object
-  particlePoints = new THREE.Points(particlesGeometry, particlesMaterial);
-  scene.add(particlePoints);
+  const colors = new Float32Array(parameters.num * 3); // r, g, b for each particle
 
-
+  // Initialize positions and colors
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3;
-    positions[i3] = (Math.random() - 0.5) * 10; // Initialize x
-    positions[i3 + 1] = (Math.random() - 0.5) * 10; // Initialize y
-    positions[i3 + 2] = (Math.random() - 0.5) * 10; // z position (if needed)
+
+    // Initialize positions
+    positions[i3] = (Math.random() - 0.5) * 10;
+    positions[i3 + 1] = (Math.random() - 0.5) * 10;
+    positions[i3 + 2] = (Math.random() - 0.5) * 10;
+
+    // Assign color - creating a rainbow gradient
+    const color = new THREE.Color();
+    color.setHSL(i / parameters.num, 1.0, 0.5); // Rainbow gradient
+    colors[i3] = color.r;
+    colors[i3 + 1] = color.g;
+    colors[i3 + 2] = color.b;
   }
+
+  // Add attributes to geometry
+  particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  particlesGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  // Create a PointsMaterial for particles, enabling vertex colors
+  particlesMaterial = new THREE.PointsMaterial({
+    size: 0.05,
+    vertexColors: true // Enable vertex colors
+  });
+
+  // Create a Points object using the geometry and material
+  particlePoints = new THREE.Points(particlesGeometry, particlesMaterial);
+  scene.add(particlePoints);
 };
+
 
 // Update particle positions
 const updateParticles = () => {
   const positions = particlesGeometry.attributes.position.array;
-
+  
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3;
     
