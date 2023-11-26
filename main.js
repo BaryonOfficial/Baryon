@@ -42,14 +42,15 @@ window.addEventListener('resize', () => {
  */
 // Base camera
 const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height, 0.1, 1000);
-camera.position.x = 1;
-camera.position.y = 1;
-camera.position.z = 2;
+camera.position.x = 0;
+camera.position.y = 0;
+camera.position.z = 8;
 scene.add(camera);
 
 // Controls
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
+
 
 /**
  * Renderer
@@ -70,17 +71,13 @@ parameters = {
   n: 4, // freq param 2
   a: 1, // freq param 3
   b: 1, // freq param 4
-  v: 0.2, // velocity
+  v: 0.02, // velocity
   num: 20000, // number of particles
 };
 
-// GUI controllers
-gui.add(parameters, 'm').min(1).max(16).step(1);
-gui.add(parameters, 'n').min(1).max(16).step(1);
-gui.add(parameters, 'a').min(-2).max(2).step(1);
-gui.add(parameters, 'b').min(-2).max(2).step(1);
-gui.add(parameters, 'v').min(0.01).max(1).step(0.01);
-gui.add(parameters, 'num').min(2000).max(20000).step(1000);
+
+
+const planeSize = 10; // Example size of the plane
 
 const setupParticles = () => {
   // Create a BufferGeometry for particles
@@ -95,9 +92,9 @@ const setupParticles = () => {
     const i3 = i * 3;
 
     // Initialize positions
-    positions[i3] = (Math.random() - 0.5) * 10;
-    positions[i3 + 1] = (Math.random() - 0.5) * 10;
-    positions[i3 + 2] = (Math.random() - 0.5) * 10;
+    positions[i3] = (Math.random() - 0.5) * planeSize;
+    positions[i3 + 1] = (Math.random() - 0.5) * planeSize;
+    positions[i3 + 2] = 0;
 
     // Assign color - creating a rainbow gradient
     const color = new THREE.Color();
@@ -126,23 +123,32 @@ const setupParticles = () => {
 // Update particle positions
 const updateParticles = () => {
   const positions = particlesGeometry.attributes.position.array;
+  const minWalk = 0.05;
   
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3;
     
     // Convert positions for Chladni function
-    let x = positions[i3] / sizes.width * 2 - 1;
-    let y = positions[i3 + 1] / sizes.height * 2 - 1;
+    let x = (positions[i3] / planeSize + 0.5);
+    let y = (positions[i3 + 1] / planeSize + 0.5);
 
     // Calculate Chladni pattern value
     let chladniValue = chladni(x, y, parameters.a, parameters.b, parameters.m, parameters.n);
+    let stochasticAmplitude = parameters.v * Math.abs(chladniValue)
+
+    // Ensure min movement
+    stochasticAmplitude = Math.max(stochasticAmplitude, minWalk)
 
     // Update positions based on Chladni value (can add random component as well)
-    positions[i3] += chladniValue * parameters.v;
-    positions[i3 + 1] += chladniValue * parameters.v;
+    positions[i3] += (Math.random() - 0.5) * stochasticAmplitude * 2;
+    positions[i3 + 1] += (Math.random() - 0.5) * stochasticAmplitude * 2;
+    
 
-    // Handle boundaries
-    // ... (adapt logic from updateOffsets method) ...
+    // Handle boundaries more naturally
+    if (positions[i3] < -planeSize / 2) positions[i3] = -planeSize / 2;
+    if (positions[i3] > planeSize / 2) positions[i3] = planeSize / 2;
+    if (positions[i3 + 1] < -planeSize / 2) positions[i3 + 1] = -planeSize / 2;
+    if (positions[i3 + 1] > planeSize / 2) positions[i3 + 1] = planeSize / 2;
   }
 
   particlesGeometry.attributes.position.needsUpdate = true;
@@ -163,3 +169,32 @@ const tick = () => {
 };
 
 init();
+
+// GUI controllers
+gui.add(parameters, 'm').min(1).max(16).step(1).onChange(updateParticles);
+gui.add(parameters, 'n').min(1).max(16).step(1).onChange(updateParticles);
+gui.add(parameters, 'a').min(-2).max(2).step(1).onChange(updateParticles);
+gui.add(parameters, 'b').min(-2).max(2).step(1).onChange(updateParticles);
+gui.add(parameters, 'v').min(0.01).max(.1).step(0.01).onChange(updateParticles);
+
+// GUI controller for 'num' with onFinishChange
+gui.add(parameters, 'num').min(2000).max(20000).step(1000).onFinishChange(() => {
+  // Dispose of the old geometry and material to free up GPU memory
+  if (particlePoints) {
+      particlePoints.geometry.dispose();
+      particlePoints.material.dispose();
+      scene.remove(particlePoints);
+
+      // Clear references
+      particlePoints = null;
+      particlesGeometry = null;
+      particlesMaterial = null;
+  }
+
+  // Re-setup the particles with the new count
+  setupParticles();
+
+  // Re-add particlePoints to the scene
+  renderer.render(scene, camera)
+});
+
