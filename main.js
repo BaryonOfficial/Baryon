@@ -51,7 +51,6 @@ scene.add(camera);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 
-
 /**
  * Renderer
  */
@@ -74,8 +73,6 @@ parameters = {
   v: 0.15, // velocity
   num: 20000, // number of particles
 };
-
-
 
 const planeSize = 10; // Example size of the plane
 
@@ -175,7 +172,7 @@ gui.add(parameters, 'm').min(1).max(16).step(1).onChange(updateParticles);
 gui.add(parameters, 'n').min(1).max(16).step(1).onChange(updateParticles);
 gui.add(parameters, 'a').min(-2).max(2).step(1).onChange(updateParticles);
 gui.add(parameters, 'b').min(-2).max(2).step(1).onChange(updateParticles);
-gui.add(parameters, 'v').min(0.01).max(.1).step(0.01).onChange(updateParticles);
+gui.add(parameters, 'v').min(0.01).max(.2).step(0.01).onChange(updateParticles);
 
 // GUI controller for 'num' with onFinishChange
 gui.add(parameters, 'num').min(2000).max(20000).step(1000).onFinishChange(() => {
