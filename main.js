@@ -71,7 +71,7 @@ parameters = {
   n: 4, // freq param 2
   a: 1, // freq param 3
   b: 1, // freq param 4
-  v: 0.02, // velocity
+  v: 0.15, // velocity
   num: 20000, // number of particles
 };
 
@@ -123,7 +123,7 @@ const setupParticles = () => {
 // Update particle positions
 const updateParticles = () => {
   const positions = particlesGeometry.attributes.position.array;
-  const minWalk = 0.05;
+  const minWalk = 0.001;
   
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3;
