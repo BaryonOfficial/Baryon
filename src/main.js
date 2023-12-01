@@ -1,6 +1,8 @@
 import GUI from 'lil-gui';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { createNoise2D } from 'simplex-noise';
+const noise2D = createNoise2D();
 
 // Variables
 let parameters, particlesGeometry, particlesMaterial, particlePoints;
@@ -71,7 +73,7 @@ parameters = {
   a: 1, // freq param 3
   b: 1, // freq param 4
   v: 0.15, // velocity
-  num: 20000, // number of particles
+  num: 25000, // number of particles
 };
 
 const planeSize = 10; // Example size of the plane
@@ -84,19 +86,29 @@ const setupParticles = () => {
   const positions = new Float32Array(parameters.num * 3); // x, y, z for each particle
   const colors = new Float32Array(parameters.num * 3); // r, g, b for each particle
 
+// Create a PointsMaterial for particles with size, sizeAttenuation, and blending properties
+  particlesMaterial = new THREE.PointsMaterial({
+    size: 0.2, // Adjusted particle size with visible light trail effect
+    sizeAttenuation: true,
+    vertexColors: true, // Enable vertex colors
+    blending: THREE.AdditiveBlending, // Additive blending for light effect
+    depthWrite: false, // Prevent particles from affecting each other's depth test
+    transparent: true, // Necessary for blending
+  });
+
   // Initialize positions and colors
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3;
 
     // Initialize positions
-    positions[i3] = (Math.random() - 0.5) * planeSize;
+    positions[i3]     = (Math.random() - 0.5) * planeSize;
     positions[i3 + 1] = (Math.random() - 0.5) * planeSize;
     positions[i3 + 2] = 0;
 
-    // Assign color - creating a rainbow gradient
-    const color = new THREE.Color();
-    color.setHSL(i / parameters.num, 1.0, 0.5); // Rainbow gradient
-    colors[i3] = color.r;
+    // New color assignment, you could also vary this to create a gradient
+    const hue = (1.0 + noise2D(positions[i3], positions[i3 + 1])) / 2.0; // Use noise for color variation
+    const color = new THREE.Color().setHSL(hue, 1.0, 0.5); // Adjust hue, saturation, lightness for laser color
+    colors[i3]     = color.r;
     colors[i3 + 1] = color.g;
     colors[i3 + 2] = color.b;
   }
@@ -175,7 +187,7 @@ gui.add(parameters, 'b').min(-2).max(2).step(1).onChange(updateParticles);
 gui.add(parameters, 'v').min(0.01).max(.2).step(0.01).onChange(updateParticles);
 
 // GUI controller for 'num' with onFinishChange
-gui.add(parameters, 'num').min(2000).max(20000).step(1000).onFinishChange(() => {
+gui.add(parameters, 'num').min(2000).max(30000).step(1000).onFinishChange(() => {
   // Dispose of the old geometry and material to free up GPU memory
   if (particlePoints) {
       particlePoints.geometry.dispose();
