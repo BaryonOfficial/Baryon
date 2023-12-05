@@ -1,5 +1,5 @@
 {
-  "name": "baryonv1",
+  "name": "shader",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,10 +9,13 @@
     "preview": "vite preview"
   },
   "devDependencies": {
-    "vite": "^4.4.5"
+    "vite": "^5.0.4",
+    "vite-plugin-glsl": "^1.2.0"
   },
   "dependencies": {
-    "gsap": "^3.12.2",
-    "three": "^0.155.0"
+    "ccapture.js": "^1.1.0",
+    "lil-gui": "^0.19.1",
+    "simplex-noise": "^4.0.1",
+    "three": "^0.159.0"
   }
 }
