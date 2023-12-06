@@ -98,6 +98,9 @@ const setupParticles = () => {
   // Create a BufferGeometry for particles
   particlesGeometry = new THREE.BufferGeometry();
 
+  const isSettled = new Uint8Array(parameters.num)
+  particlesGeometry.setAttribute('isSettled', new THREE.BufferAttribute(isSettled, 1));
+
   // Create arrays for positions and colors
   const positions = new Float32Array(parameters.num * 3); // x, y, z for each particle
   const colors = new Float32Array(parameters.num * 3); // r, g, b for each particle
@@ -142,38 +145,38 @@ const setupParticles = () => {
   scene.add(particlePoints);
 };
 
-
 // Update particle positions
 const updateParticles = () => {
-
   console.log('Updating particles...');
 
   const positions = particlesGeometry.attributes.position.array;
+  const isSettled = particlesGeometry.attributes.isSettled.array;
   const minWalk = 0.001;
   
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3;
     
-    // Calculate Chladni pattern value with a noise offset
+    // Calculate Chladni pattern value
     let x = (positions[i3] / sphereRadius);
     let y = (positions[i3 + 1] / sphereRadius);
     let z = (positions[i3 + 2] / sphereRadius);
     let chladniValue = chladni(x, y, z, parameters.N, parameters);
     let stochasticAmplitude = parameters.v * Math.abs(chladniValue)
 
-    // Use a time-dependent noise offset
-    let noiseOffset = Math.max(1 - elapsedTime / 1, 0);
-
-    // Add Perlin noise to the stochasticAmplitude
-    stochasticAmplitude += noise3D(x, y, z) * noiseOffset;
-
     // Ensure min movement
     stochasticAmplitude = Math.max(stochasticAmplitude, minWalk)
 
-    // Update positions based on Chladni value (using Math.random)
-    positions[i3] += ((Math.random() - 0.5) * stochasticAmplitude * 2);
-    positions[i3 + 1] += ((Math.random() - 0.5) * stochasticAmplitude * 2);
-    positions[i3 + 2] += ((Math.random() - 0.5) * stochasticAmplitude * 2);
+    // If the particle is not settled, update its position based on Chladni value
+    if (isSettled[i] === 0) {
+      positions[i3] += ((Math.random() - 0.5) * stochasticAmplitude * 2);
+      positions[i3 + 1] += ((Math.random() - 0.5) * stochasticAmplitude * 2);
+      positions[i3 + 2] += ((Math.random() - 0.5) * stochasticAmplitude * 2);
+    } else {
+      // If the particle is settled, apply a minimum movement
+      positions[i3] += ((Math.random() - 0.5) * minWalk * 2);
+      positions[i3 + 1] += ((Math.random() - 0.5) * minWalk * 2);
+      positions[i3 + 2] += ((Math.random() - 0.5) * minWalk * 2);
+    }
    
     // Keep particles within the sphere
     const distance = Math.sqrt(positions[i3]**2 + positions[i3 + 1]**2 + positions[i3 + 2]**2)
@@ -183,12 +186,17 @@ const updateParticles = () => {
       positions[i3 + 1] *= scale
       positions[i3 + 2] *= scale
     }
+    // Check if the particle has reached its position in the Chladni pattern
+    if (Math.abs(stochasticAmplitude) < 0.01) {
+      isSettled[i] = 1; // Mark the particle as settled
+    }
   }
 
   particlesGeometry.attributes.position.needsUpdate = true;
+  particlesGeometry.attributes.isSettled.needsUpdate = true;
 };
 
-let rotationSpeed = .01;
+let rotationSpeed = .02;
 
 // Add GUI control for rotation speed
 gui.add({ rotationSpeed: rotationSpeed }, 'rotationSpeed').min(0).max(0.1).step(0.001).onChange(value => {
