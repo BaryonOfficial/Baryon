@@ -46,9 +46,7 @@ window.addEventListener('resize', () => {
  */
 // Base camera
 const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height, 0.1, 1000);
-camera.position.x = 0;
-camera.position.y = 0;
-camera.position.z = 10;
+camera.position.z = 12;
 scene.add(camera);
 
 // Controls
@@ -219,6 +217,25 @@ const tick = () => {
   renderer.render(scene, camera);
   window.requestAnimationFrame(tick);
 };
-
 init();
 
+// GUI controller for 'num' with onFinishChange
+gui.add(parameters, 'num').min(2000).max(30000).step(1000).onFinishChange(() => {
+  // Dispose of the old geometry and material to free up GPU memory
+  if (particlePoints) {
+      particlePoints.geometry.dispose();
+      particlePoints.material.dispose();
+      scene.remove(particlePoints);
+
+      // Clear references
+      particlePoints = null;
+      particlesGeometry = null;
+      particlesMaterial = null;
+  }
+
+  // Re-setup the particles with the new count
+  setupParticles();
+
+  // Re-add particlePoints to the scene
+  renderer.render(scene, camera)
+});
