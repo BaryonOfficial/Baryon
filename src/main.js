@@ -7,9 +7,8 @@ const noise3D = createNoise3D();
 // Variables
 
 let parameters, particlesGeometry, particlesMaterial, particlePoints;
-let noiseOffset = 0.1; // Adjust this value to change the amount of "wobble"
-let damping = 0.9; // Adjust this value to change the rate of damping
 const pi = Math.PI;
+let elapsedTime = 0;
 
 // Debug
 const gui = new GUI();
@@ -164,6 +163,12 @@ const updateParticles = () => {
     let chladniValue = chladni(x, y, z, parameters.N, parameters);
     let stochasticAmplitude = parameters.v * Math.abs(chladniValue)
 
+    // Use a time-dependent noise offset
+    let noiseOffset = Math.max(1 - elapsedTime / 1, 0);
+
+    // Add Perlin noise to the stochasticAmplitude
+    stochasticAmplitude += noise3D(x, y, z) * noiseOffset;
+
     // Ensure min movement
     stochasticAmplitude = Math.max(stochasticAmplitude, minWalk)
 
@@ -198,7 +203,13 @@ function init() {
   tick();
 }
 
+const clock = new THREE.Clock();
+
 const tick = () => {
+
+  const delta = clock.getDelta();
+  elapsedTime += delta;
+
   controls.update();
 
   // Rotate the entire shape
@@ -211,6 +222,3 @@ const tick = () => {
 
 init();
 
-gui.add({ noiseOffset: noiseOffset }, 'noiseOffset').min(0).max(1).step(0.01).onChange(value => {
-  noiseOffset = value;
-});
