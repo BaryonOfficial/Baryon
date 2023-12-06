@@ -115,6 +115,8 @@ const setupParticles = () => {
     transparent: true, // Necessary for blending
   });
 
+  const color = new THREE.Color()
+  
   // Initialize positions and colors
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3
@@ -130,7 +132,7 @@ const setupParticles = () => {
     // New color assignment, you could also vary this to create a gradient
     const zNormalized = (positions[i3 + 2] + sphereRadius) / (2 * sphereRadius);
     const hue = zNormalized
-    const color = new THREE.Color().setHSL(hue, 1.0, 0.5); // Adjust hue, saturation, lightness for laser color
+    color.setHSL(hue, 1.0, 0.5);
     colors[i3]     = color.r;
     colors[i3 + 1] = color.g;
     colors[i3 + 2] = color.b;
@@ -156,26 +158,34 @@ const updateParticles = () => {
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3;
     
-    // Calculate Chladni pattern value
-    let x = (positions[i3] / sphereRadius);
-    let y = (positions[i3 + 1] / sphereRadius);
-    let z = (positions[i3 + 2] / sphereRadius);
-    let chladniValue = chladni(x, y, z, parameters.N, parameters);
-    let stochasticAmplitude = parameters.v * Math.abs(chladniValue)
-
-    // Ensure min movement
-    stochasticAmplitude = Math.max(stochasticAmplitude, minWalk)
-
-    // If the particle is not settled, update its position based on Chladni value
     if (isSettled[i] === 0) {
-      positions[i3] += ((Math.random() - 0.5) * stochasticAmplitude * 2);
-      positions[i3 + 1] += ((Math.random() - 0.5) * stochasticAmplitude * 2);
-      positions[i3 + 2] += ((Math.random() - 0.5) * stochasticAmplitude * 2);
+      // Calculate Chladni pattern value
+      let x = (positions[i3] / sphereRadius);
+      let y = (positions[i3 + 1] / sphereRadius);
+      let z = (positions[i3 + 2] / sphereRadius);
+      let chladniValue = chladni(x, y, z, parameters.N, parameters);
+      let stochasticAmplitude = parameters.v * Math.abs(chladniValue)
+
+      // Ensure min movement
+      stochasticAmplitude = Math.max(stochasticAmplitude, minWalk)
+
+      const randomMovement1 = (Math.random() - 0.5) * stochasticAmplitude * 2;
+
+      positions[i3] += randomMovement1;
+      positions[i3 + 1] += randomMovement1;
+      positions[i3 + 2] += randomMovement1;
+      
+      // Check if the particle has reached its position in the Chladni pattern
+      if (Math.abs(stochasticAmplitude) < 0.01) {
+        isSettled[i] = 1; // Mark the particle as settled
+      } 
+
     } else {
       // If the particle is settled, apply a minimum movement
-      positions[i3] += ((Math.random() - 0.5) * minWalk * 2);
-      positions[i3 + 1] += ((Math.random() - 0.5) * minWalk * 2);
-      positions[i3 + 2] += ((Math.random() - 0.5) * minWalk * 2);
+      const randomMovement2 = (Math.random() - 0.5) * minWalk * 2;
+      positions[i3] += randomMovement2;
+      positions[i3 + 1] += randomMovement2;
+      positions[i3 + 2] += randomMovement2;
     }
    
     // Keep particles within the sphere
@@ -186,17 +196,13 @@ const updateParticles = () => {
       positions[i3 + 1] *= scale
       positions[i3 + 2] *= scale
     }
-    // Check if the particle has reached its position in the Chladni pattern
-    if (Math.abs(stochasticAmplitude) < 0.01) {
-      isSettled[i] = 1; // Mark the particle as settled
-    }
   }
 
   particlesGeometry.attributes.position.needsUpdate = true;
   particlesGeometry.attributes.isSettled.needsUpdate = true;
 };
 
-let rotationSpeed = .02;
+let rotationSpeed = .01;
 
 // Add GUI control for rotation speed
 gui.add({ rotationSpeed: rotationSpeed }, 'rotationSpeed').min(0).max(0.1).step(0.001).onChange(value => {
@@ -206,12 +212,13 @@ gui.add({ rotationSpeed: rotationSpeed }, 'rotationSpeed').min(0).max(0.1).step(
 // Initialize and start animation loop
 function init() {
   setupParticles();
-  tick();
+  window.requestAnimationFrame(tick);
 }
 
 const clock = new THREE.Clock();
 
 const tick = () => {
+  window.requestAnimationFrame(tick);
 
   const delta = clock.getDelta();
   elapsedTime += delta;
@@ -223,8 +230,8 @@ const tick = () => {
 
   updateParticles();
   renderer.render(scene, camera);
-  window.requestAnimationFrame(tick);
 };
+
 init();
 
 // GUI controller for 'num' with onFinishChange
