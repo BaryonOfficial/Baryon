@@ -70,8 +70,8 @@ const chladni = (x, y, z, N, parameters) => {
 }
 
 parameters = {
-  N: 10,
-  v: 0.15,
+  N: 8,
+  vel: 0.15,
   num: 25000,
   waveComponents:[]
 }
@@ -79,7 +79,7 @@ parameters = {
 // Populate initial wave component values
 for (let i = 0; i < parameters.N; i++) {
   parameters.waveComponents.push({
-    [`A${i}`]: Math.floor(Math.random() * 10) + 1,
+    [`A${i}`]: Math.random() * 10 + 1,
     [`u${i}`]: Math.floor(Math.random() * 10) + 1,
     [`v${i}`]: Math.floor(Math.random() * 10) + 1,
     [`w${i}`]: Math.floor(Math.random() * 10) + 1
@@ -91,9 +91,6 @@ const sphereRadius = 5; // Radius of the sphere
 const setupParticles = () => {
   // Create a BufferGeometry for particles
   particlesGeometry = new THREE.BufferGeometry();
-
-  const isSettled = new Uint8Array(parameters.num)
-  particlesGeometry.setAttribute('isSettled', new THREE.BufferAttribute(isSettled, 1));
 
   // Create arrays for positions and colors
   const positions = new Float32Array(parameters.num * 3); // x, y, z for each particle
@@ -122,9 +119,10 @@ const setupParticles = () => {
     positions[i3]     = r * Math.sin(phi) * Math.cos(theta);
     positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
     positions[i3 + 2] = r * Math.cos(phi);
-
+    
     // New color assignment, you could also vary this to create a gradient
     const zNormalized = (positions[i3 + 2] + sphereRadius) / (2 * sphereRadius);
+
     const hue = zNormalized
     color.setHSL(hue, 1.0, 0.5);
     colors[i3]     = color.r;
@@ -145,41 +143,32 @@ const setupParticles = () => {
 const updateParticles = () => {
 
   const positions = particlesGeometry.attributes.position.array;
-  const isSettled = particlesGeometry.attributes.isSettled.array;
-  const minWalk = 0.001;
+  const minWalk = 0.002;
+
+  function randomInRange(min, max) {
+    return Math.random() * (max - min) + min;
+  }
   
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3;
-    
-    if (isSettled[i] === 0) {
+   
       // Calculate Chladni pattern value
       let x = (positions[i3] / sphereRadius);
       let y = (positions[i3 + 1] / sphereRadius);
       let z = (positions[i3 + 2] / sphereRadius);
       let chladniValue = chladni(x, y, z, parameters.N, parameters);
-      let stochasticAmplitude = parameters.v * Math.abs(chladniValue)
+      let stochasticAmplitude = parameters.vel * Math.abs(chladniValue)
 
       // Ensure min movement
       stochasticAmplitude = Math.max(stochasticAmplitude, minWalk)
 
-      const randomMovement1 = (Math.random() - 0.5) * stochasticAmplitude * 2;
-
-      positions[i3] += randomMovement1;
-      positions[i3 + 1] += randomMovement1;
-      positions[i3 + 2] += randomMovement1;
-      
-      // Check if the particle has reached its position in the Chladni pattern
-      if (Math.abs(stochasticAmplitude) < 0.01) {
-        isSettled[i] = 1; // Mark the particle as settled
-      } 
-
-    } else {
-      // If the particle is settled, apply a minimum movement
-      const randomMovement2 = (Math.random() - 0.5) * minWalk * 2;
-      positions[i3] += randomMovement2;
-      positions[i3 + 1] += randomMovement2;
-      positions[i3 + 2] += randomMovement2;
-    }
+      const randomMovementX = randomInRange(-stochasticAmplitude, stochasticAmplitude);
+      const randomMovementY = randomInRange(-stochasticAmplitude, stochasticAmplitude);
+      const randomMovementZ = randomInRange(-stochasticAmplitude, stochasticAmplitude);
+    
+      positions[i3] += randomMovementX;
+      positions[i3 + 1] += randomMovementY;
+      positions[i3 + 2] += randomMovementZ;
    
     // Keep particles within the sphere
     const distance = Math.sqrt(positions[i3]**2 + positions[i3 + 1]**2 + positions[i3 + 2]**2)
@@ -192,7 +181,6 @@ const updateParticles = () => {
   }
 
   particlesGeometry.attributes.position.needsUpdate = true;
-  particlesGeometry.attributes.isSettled.needsUpdate = true;
 };
 
 let rotationSpeed = .01;
@@ -245,7 +233,9 @@ gui.add(parameters, 'num').min(2000).max(30000).step(1000).onFinishChange(() => 
 
   // Re-setup the particles with the new count
   setupParticles();
+});
 
-  // Re-add particlePoints to the scene
-  renderer.render(scene, camera)
+// Add GUI control for 'vel'
+gui.add(parameters, 'vel').min(0).max(1).step(0.01).onChange(value => {
+  parameters.vel = value;
 });
