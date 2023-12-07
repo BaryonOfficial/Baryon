@@ -111,8 +111,8 @@ const setupParticles = () => {
   // Initialize positions and colors
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3
-    const theta = Math.random() * 2 * pi + noise3D(i, i, i)
-    const phi = Math.acos(2 * Math.random() - 1) + noise3D(i, i, i)
+    const theta = Math.random() * 2 * pi 
+    const phi = Math.acos(1 - 2 * Math.random())
     const r = sphereRadius * Math.pow(Math.random(), 1/3);
 
     // Initialize positions
