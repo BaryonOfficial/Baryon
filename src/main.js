@@ -2,26 +2,20 @@ import GUI from 'lil-gui';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { createNoise3D } from 'simplex-noise';
-const noise3D = createNoise3D();
+
 
 // Variables
+const noise3D = createNoise3D();
+const clock = new THREE.Clock();
+const gui = new GUI();
 
 let parameters, particlesGeometry, particlesMaterial, particlePoints;
 const pi = Math.PI;
 let elapsedTime = 0;
 
-// Debug
-const gui = new GUI();
-
-// Canvas
 const canvas = document.querySelector('canvas.webgl');
-
-// Scene
 const scene = new THREE.Scene();
 
-/**
- * Sizes
- */
 const sizes = {
   width: window.innerWidth,
   height: window.innerHeight
@@ -149,7 +143,6 @@ const setupParticles = () => {
 
 // Update particle positions
 const updateParticles = () => {
-  console.log('Updating particles...');
 
   const positions = particlesGeometry.attributes.position.array;
   const isSettled = particlesGeometry.attributes.isSettled.array;
@@ -212,13 +205,15 @@ gui.add({ rotationSpeed: rotationSpeed }, 'rotationSpeed').min(0).max(0.1).step(
 // Initialize and start animation loop
 function init() {
   setupParticles();
-  window.requestAnimationFrame(tick);
+  animate();
 }
 
-const clock = new THREE.Clock();
+function animate() {
+  tick();
+  requestAnimationFrame(animate);
+}
 
 const tick = () => {
-  window.requestAnimationFrame(tick);
 
   const delta = clock.getDelta();
   elapsedTime += delta;
