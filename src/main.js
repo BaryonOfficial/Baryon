@@ -2,10 +2,11 @@ import GUI from 'lil-gui';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { createNoise3D } from 'simplex-noise';
-
+import { createNoise2D } from 'simplex-noise';
 
 // Variables
 const noise3D = createNoise3D();
+const noise2D = createNoise2D();
 const clock = new THREE.Clock();
 const gui = new GUI();
 
@@ -71,7 +72,7 @@ const chladni = (x, y, z, N, parameters) => {
 
 parameters = {
   N: 8,
-  vel: 0.15,
+  vel: 0.125,
   num: 25000,
   waveComponents:[]
 }
@@ -111,10 +112,11 @@ const setupParticles = () => {
   // Initialize positions and colors
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3
+
     const theta = Math.random() * 2 * pi 
     const phi = Math.acos(1 - 2 * Math.random())
-    const r = sphereRadius * Math.pow(Math.random(), 1/3);
-
+    const r = sphereRadius * Math.cbrt(Math.random())
+    
     // Initialize positions
     positions[i3]     = r * Math.sin(phi) * Math.cos(theta);
     positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
