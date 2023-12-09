@@ -113,25 +113,26 @@ const setupParticles = () => {
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3
 
-    const theta = Math.random() * 2 * pi 
-    const phi = Math.acos(1 - 2 * Math.random())
-    const r = sphereRadius * Math.cbrt(Math.random())
+    const y = 1 - (i / parameters.num) + (1 / (2 * parameters.num)); // y goes from 1 to 0
+    const radius = Math.sqrt(1 - Math.pow(y, 2)); // radius at y
+
+    const phi = 2 * Math.PI * (i / ((1 + Math.sqrt(5)) / 2)); // golden angle approximation
 
     // Add noise to the initial positions
     const noiseScale = 0.1; // Adjust this value to change the intensity of the noise
-    const noiseX = noise3D(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi)) * noiseScale;
-    const noiseY = noise3D(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi)) * noiseScale;
-    const noiseZ = noise3D(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi)) * noiseScale;
+    const noiseX = noise3D(radius * Math.cos(phi), y, radius * Math.sin(phi)) * noiseScale;
+    const noiseY = noise3D(radius * Math.cos(phi), y, radius * Math.sin(phi)) * noiseScale;
+    const noiseZ = noise3D(radius * Math.cos(phi), y, radius * Math.sin(phi)) * noiseScale;
 
-    // Initialize positions w/ noise
-    positions[i3]     = r * Math.sin(phi) * Math.cos(theta) * noiseX
-    positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta) * noiseY
-    positions[i3 + 2] = r * Math.cos(phi) * noiseZ
+    // // Initialize positions w/ noise
+    positions[i3]     = sphereRadius * (radius * Math.cos(phi) + noiseX);
+    positions[i3 + 1] = sphereRadius * (y + noiseY);
+    positions[i3 + 2] = sphereRadius * (radius * Math.sin(phi) + noiseZ);
 
     // Initialize positions w/o noise
-    // positions[i3]     = r * Math.sin(phi) * Math.cos(theta)
-    // positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta) 
-    // positions[i3 + 2] = r * Math.cos(phi) 
+    // positions[i3]     = sphereRadius * (radius * Math.cos(phi));
+    // positions[i3 + 1] = sphereRadius * (y);
+    // positions[i3 + 2] = sphereRadius * (radius * Math.sin(phi));
   }
 
   // Add attributes to geometry
