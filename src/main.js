@@ -61,10 +61,11 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 const chladni = (x, y, z, N, parameters) => {
   let sum = 0;
   for (let i=0; i < N; i++) {
-    const Ai = parameters.waveComponents[i][`A${i}`]
-    const ui = parameters.waveComponents[i][`u${i}`]
-    const vi = parameters.waveComponents[i][`v${i}`]
-    const wi = parameters.waveComponents[i][`w${i}`]
+    const components = parameters.waveComponents[i]
+    const Ai = components[`A${i}`]
+    const ui = components[`u${i}`]
+    const vi = components[`v${i}`]
+    const wi = components[`w${i}`]
     sum += Ai * Math.sin(ui * pi * x) * Math.sin(vi * pi * y) * Math.sin(wi * pi * z)
   }
   return sum
@@ -72,8 +73,8 @@ const chladni = (x, y, z, N, parameters) => {
 
 parameters = {
   N: 8,
-  vel: 0.125,
-  num: 25000,
+  vel: 0.2,
+  num: 30000,
   waveComponents:[]
 }
 
@@ -87,6 +88,8 @@ for (let i = 0; i < parameters.N; i++) {
   });
 }
 
+console.log(parameters.waveComponents)
+
 const sphereRadius = 5; // Radius of the sphere
 
 const setupParticles = () => {
@@ -95,7 +98,6 @@ const setupParticles = () => {
 
   // Create arrays for positions and colors
   const positions = new Float32Array(parameters.num * 3); // x, y, z for each particle
-  const colors = new Float32Array(parameters.num * 3); // r, g, b for each particle
 
 // Create a PointsMaterial for particles with size, sizeAttenuation, and blending properties
   particlesMaterial = new THREE.PointsMaterial({
@@ -107,34 +109,33 @@ const setupParticles = () => {
     transparent: true, // Necessary for blending
   });
 
-  const color = new THREE.Color()
-  
-  // Initialize positions and colors
+  // Initialize positions
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3
 
     const theta = Math.random() * 2 * pi 
     const phi = Math.acos(1 - 2 * Math.random())
     const r = sphereRadius * Math.cbrt(Math.random())
-    
-    // Initialize positions
-    positions[i3]     = r * Math.sin(phi) * Math.cos(theta);
-    positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-    positions[i3 + 2] = r * Math.cos(phi);
-    
-    // New color assignment, you could also vary this to create a gradient
-    const zNormalized = (positions[i3 + 2] + sphereRadius) / (2 * sphereRadius);
 
-    const hue = zNormalized
-    color.setHSL(hue, 1.0, 0.5);
-    colors[i3]     = color.r;
-    colors[i3 + 1] = color.g;
-    colors[i3 + 2] = color.b;
+    // Add noise to the initial positions
+    const noiseScale = 0.1; // Adjust this value to change the intensity of the noise
+    const noiseX = noise3D(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi)) * noiseScale;
+    const noiseY = noise3D(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi)) * noiseScale;
+    const noiseZ = noise3D(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi)) * noiseScale;
+
+    // Initialize positions w/ noise
+    positions[i3]     = r * Math.sin(phi) * Math.cos(theta) * noiseX
+    positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta) * noiseY
+    positions[i3 + 2] = r * Math.cos(phi) * noiseZ
+
+    // Initialize positions w/o noise
+    // positions[i3]     = r * Math.sin(phi) * Math.cos(theta)
+    // positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta) 
+    // positions[i3 + 2] = r * Math.cos(phi) 
   }
 
   // Add attributes to geometry
   particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  particlesGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
   // Create a Points object using the geometry and material
   particlePoints = new THREE.Points(particlesGeometry, particlesMaterial);
@@ -145,6 +146,7 @@ const setupParticles = () => {
 const updateParticles = () => {
 
   const positions = particlesGeometry.attributes.position.array;
+  const colors = new Float32Array(parameters.num * 3); // r, g, b for each particle
   const minWalk = 0.002;
 
   function randomInRange(min, max) {
@@ -162,7 +164,7 @@ const updateParticles = () => {
       let stochasticAmplitude = parameters.vel * Math.abs(chladniValue)
 
       // Ensure min movement
-      stochasticAmplitude = Math.max(stochasticAmplitude, minWalk)
+      // stochasticAmplitude = Math.max(stochasticAmplitude, minWalk)
 
       const randomMovementX = randomInRange(-stochasticAmplitude, stochasticAmplitude);
       const randomMovementY = randomInRange(-stochasticAmplitude, stochasticAmplitude);
@@ -171,6 +173,22 @@ const updateParticles = () => {
       positions[i3] += randomMovementX;
       positions[i3 + 1] += randomMovementY;
       positions[i3 + 2] += randomMovementZ;
+
+      const color = new THREE.Color()
+
+      // Color setup
+      const distanceFromCenter = Math.sqrt(
+        positions[i3] ** 2 +
+        positions[i3 + 1] ** 2 +
+        positions[i3 + 2] ** 2
+      );
+      
+      const normalizedDistance = distanceFromCenter /sphereRadius;
+  
+      color.setHSL(1 - normalizedDistance * 2, 1.0, 0.5);
+      colors[i3] = color.r;
+      colors[i3 + 1] = color.g;
+      colors[i3 + 2] = color.b;
    
     // Keep particles within the sphere
     const distance = Math.sqrt(positions[i3]**2 + positions[i3 + 1]**2 + positions[i3 + 2]**2)
@@ -182,13 +200,16 @@ const updateParticles = () => {
     }
   }
 
+  // Set color attribute
+  particlesGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
   particlesGeometry.attributes.position.needsUpdate = true;
 };
 
 let rotationSpeed = .01;
 
 // Add GUI control for rotation speed
-gui.add({ rotationSpeed: rotationSpeed }, 'rotationSpeed').min(0).max(0.1).step(0.001).onChange(value => {
+gui.add({ rotationSpeed: rotationSpeed }, 'rotationSpeed').min(0).max(1).step(0.001).onChange(value => {
   rotationSpeed = value;
 });
 
