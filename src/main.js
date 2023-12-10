@@ -137,6 +137,7 @@ const updateParticles = () => {
 
   const positions = particlesGeometry.attributes.position.array;
   const colors = new Float32Array(parameters.num * 3); // r, g, b for each particle
+  const color = new THREE.Color()
   const minWalk = 0.002;
 
   function randomInRange(min, max) {
@@ -164,8 +165,6 @@ const updateParticles = () => {
       positions[i3] += randomMovementX
       positions[i3 + 1] += randomMovementY
       positions[i3 + 2] += randomMovementZ 
-
-      const color = new THREE.Color()
 
       const distanceFromCenter = Math.sqrt(x**2 + y**2 + z**2);
   
