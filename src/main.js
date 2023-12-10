@@ -73,7 +73,7 @@ const chladni = (x, y, z, N, parameters) => {
 }
 
 parameters = {
-  N: 8,
+  N: 12,
   vel: 0.2,
   num: 25000,
   waveComponents:[]
@@ -163,7 +163,7 @@ const updateParticles = () => {
       let y = (positions[i3 + 1] / sphereRadius);
       let z = (positions[i3 + 2] / sphereRadius);
       let chladniValue = chladni(x, y, z, parameters.N, parameters);
-      let stochasticAmplitude = parameters.vel * Math.abs(chladniValue)
+      let stochasticAmplitude = parameters.vel * chladniValue**2
 
       // Ensure min movement
       // stochasticAmplitude = Math.max(stochasticAmplitude, minWalk)
@@ -171,32 +171,16 @@ const updateParticles = () => {
       const randomMovementX = randomInRange(-stochasticAmplitude, stochasticAmplitude);
       const randomMovementY = randomInRange(-stochasticAmplitude, stochasticAmplitude);
       const randomMovementZ = randomInRange(-stochasticAmplitude, stochasticAmplitude);
-    
-      positions[i3] += randomMovementX;
-      positions[i3 + 1] += randomMovementY;
-      positions[i3 + 2] += randomMovementZ;
 
-      // Use noise function to calculate new position
-      // let noiseValueX = noise3D(x, y, z);
-      // let noiseValueY = noise3D(x, y, z);
-      // let noiseValueZ = noise3D(x, y, z);
-
-      // positions[i3]     += noiseValueX * stochasticAmplitude;
-      // positions[i3 + 1] += noiseValueY * stochasticAmplitude;
-      // positions[i3 + 2] += noiseValueZ * stochasticAmplitude;
+      positions[i3] += randomMovementX
+      positions[i3 + 1] += randomMovementY
+      positions[i3 + 2] += randomMovementZ 
 
       const color = new THREE.Color()
 
-      // Color setup
-      const distanceFromCenter = Math.sqrt(
-        positions[i3] ** 2 +
-        positions[i3 + 1] ** 2 +
-        positions[i3 + 2] ** 2
-      );
-      
-      const normalizedDistance = distanceFromCenter /sphereRadius;
+      const distanceFromCenter = Math.sqrt(x**2 + y**2 + z**2);
   
-      color.setHSL(1 - normalizedDistance * 2, 1.0, 0.5);
+      color.setHSL(1 - distanceFromCenter * 2, 1.0, 0.5);
       colors[i3] = color.r;
       colors[i3 + 1] = color.g;
       colors[i3 + 2] = color.b;
@@ -252,7 +236,7 @@ const tick = () => {
 init();
 
 // GUI controller for 'num' with onFinishChange
-gui.add(parameters, 'num').min(2000).max(30000).step(1000).onFinishChange(() => {
+gui.add(parameters, 'num').min(2000).max(50000).step(1000).onFinishChange(() => {
   // Dispose of the old geometry and material to free up GPU memory
   if (particlePoints) {
       particlePoints.geometry.dispose();
