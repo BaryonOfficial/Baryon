@@ -74,7 +74,7 @@ const chladni = (x, y, z, N, parameters) => {
 
 parameters = {
   N: 12,
-  vel: 0.2,
+  vel: 0.04,
   num: 25000,
   waveComponents:[]
 }
@@ -163,7 +163,7 @@ const updateParticles = () => {
       let y = (positions[i3 + 1] / sphereRadius);
       let z = (positions[i3 + 2] / sphereRadius);
       let chladniValue = chladni(x, y, z, parameters.N, parameters);
-      let stochasticAmplitude = parameters.vel * chladniValue**2
+      let stochasticAmplitude = parameters.vel * (4 * pi * chladniValue**2)
 
       // Ensure min movement
       // stochasticAmplitude = Math.max(stochasticAmplitude, minWalk)
