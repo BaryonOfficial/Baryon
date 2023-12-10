@@ -114,31 +114,19 @@ const setupParticles = () => {
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3
 
-    const y = 1 - (i / parameters.num) + (1 / (2 * parameters.num)); // y goes from 1 to 0
+    const y = 1 - (i / parameters.num) // y goes from 1 to 0
     const radius = Math.sqrt(1 - Math.pow(y, 2)); // radius at y
 
     const phi = 2 * Math.PI * (i / ((1 + Math.sqrt(5)) / 2)); // golden angle approximation
-
-    // Add noise to the initial positions
-    const noiseScale = 0.05; // Adjust this value to change the intensity of the noise
-    const noiseX = noise3D(radius * Math.cos(phi), y, radius * Math.sin(phi)) * noiseScale;
-    const noiseY = noise3D(radius * Math.cos(phi), y, radius * Math.sin(phi)) * noiseScale;
-    const noiseZ = noise3D(radius * Math.cos(phi), y, radius * Math.sin(phi)) * noiseScale;
-
-    // // Initialize positions w/ noise
-    positions[i3]     = sphereRadius * (radius * Math.cos(phi) + noiseX);
-    positions[i3 + 1] = sphereRadius * (y + noiseY);
-    positions[i3 + 2] = sphereRadius * (radius * Math.sin(phi) + noiseZ);
-
     // Initialize positions w/o noise
-    // positions[i3]     = sphereRadius * (radius * Math.cos(phi));
-    // positions[i3 + 1] = sphereRadius * (y);
-    // positions[i3 + 2] = sphereRadius * (radius * Math.sin(phi));
+    positions[i3]     = sphereRadius * (radius * Math.cos(phi));
+    positions[i3 + 1] = sphereRadius * (y);
+    positions[i3 + 2] = sphereRadius * (radius * Math.sin(phi));
   }
 
   // Add attributes to geometry
   particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
+  
   // Create a Points object using the geometry and material
   particlePoints = new THREE.Points(particlesGeometry, particlesMaterial);
   scene.add(particlePoints);
@@ -163,7 +151,8 @@ const updateParticles = () => {
       let y = (positions[i3 + 1] / sphereRadius);
       let z = (positions[i3 + 2] / sphereRadius);
       let chladniValue = chladni(x, y, z, parameters.N, parameters);
-      let stochasticAmplitude = parameters.vel * (4 * pi * chladniValue**2)
+
+      let stochasticAmplitude = parameters.vel * (4/3 * pi * Math.abs(chladniValue)**3)
 
       // Ensure min movement
       // stochasticAmplitude = Math.max(stochasticAmplitude, minWalk)
@@ -257,3 +246,14 @@ gui.add(parameters, 'num').min(2000).max(50000).step(1000).onFinishChange(() => 
 gui.add(parameters, 'vel').min(0).max(1).step(0.01).onChange(value => {
   parameters.vel = value;
 });
+
+// Create a GUI folder for each wave component
+for (let i = 0; i < parameters.N; i++) {
+  const waveFolder = gui.addFolder(`Wave Component ${i + 1}`);
+  
+  // Add sliders for each property of the wave component
+  waveFolder.add(parameters.waveComponents[i], `A${i}`).min(0).max(20).step(0.1).name(`Amplitude A${i}`);
+  waveFolder.add(parameters.waveComponents[i], `u${i}`).min(0).max(20).step(1).name(`Frequency u${i}`);
+  waveFolder.add(parameters.waveComponents[i], `v${i}`).min(0).max(20).step(1).name(`Frequency v${i}`);
+  waveFolder.add(parameters.waveComponents[i], `w${i}`).min(0).max(20).step(1).name(`Frequency w${i}`);
+}
