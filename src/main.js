@@ -40,9 +40,10 @@ window.addEventListener('resize', () => {
  * Camera
  */
 // Base camera
-const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height, 0.1, 1000);
-camera.position.z = 12;
-scene.add(camera);
+const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height, 0.1, 1000)
+camera.position.y = 2
+camera.position.z = 11
+scene.add(camera)
 
 // Controls
 const controls = new OrbitControls(camera, canvas);
@@ -74,7 +75,7 @@ const chladni = (x, y, z, N, parameters) => {
 parameters = {
   N: 8,
   vel: 0.2,
-  num: 30000,
+  num: 25000,
   waveComponents:[]
 }
 
@@ -119,7 +120,7 @@ const setupParticles = () => {
     const phi = 2 * Math.PI * (i / ((1 + Math.sqrt(5)) / 2)); // golden angle approximation
 
     // Add noise to the initial positions
-    const noiseScale = 0.1; // Adjust this value to change the intensity of the noise
+    const noiseScale = 0.05; // Adjust this value to change the intensity of the noise
     const noiseX = noise3D(radius * Math.cos(phi), y, radius * Math.sin(phi)) * noiseScale;
     const noiseY = noise3D(radius * Math.cos(phi), y, radius * Math.sin(phi)) * noiseScale;
     const noiseZ = noise3D(radius * Math.cos(phi), y, radius * Math.sin(phi)) * noiseScale;
@@ -174,6 +175,15 @@ const updateParticles = () => {
       positions[i3] += randomMovementX;
       positions[i3 + 1] += randomMovementY;
       positions[i3 + 2] += randomMovementZ;
+
+      // Use noise function to calculate new position
+      // let noiseValueX = noise3D(x, y, z);
+      // let noiseValueY = noise3D(x, y, z);
+      // let noiseValueZ = noise3D(x, y, z);
+
+      // positions[i3]     += noiseValueX * stochasticAmplitude;
+      // positions[i3 + 1] += noiseValueY * stochasticAmplitude;
+      // positions[i3 + 2] += noiseValueZ * stochasticAmplitude;
 
       const color = new THREE.Color()
 
