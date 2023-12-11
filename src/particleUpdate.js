@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { setColor } from "./colorLogic.js";
 
 // Update particle positions
 export const updateParticles = (
@@ -49,10 +50,7 @@ export const updateParticles = (
 
     const distanceFromCenter = Math.sqrt(x ** 2 + y ** 2 + z ** 2);
 
-    color.setHSL(1 - distanceFromCenter * 2, 1.0, 0.5);
-    colors[i3] = color.r;
-    colors[i3 + 1] = color.g;
-    colors[i3 + 2] = color.b;
+    setColor(distanceFromCenter, colors, i3);
 
     // Keep particles within the sphere
     const distance = Math.sqrt(

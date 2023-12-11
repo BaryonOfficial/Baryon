@@ -68,8 +68,8 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
 let parameters = {
   N: 12,
-  vel: 0.125,
-  num: 25000,
+  vel: 0.15,
+  num: 20000,
   waveComponents: [],
   rotationSpeed: 0.01,
 };
