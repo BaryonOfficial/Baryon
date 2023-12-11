@@ -10,6 +10,8 @@ const noise2D = createNoise2D();
 const clock = new THREE.Clock();
 const gui = new GUI();
 
+gui.close()
+
 let parameters, particlesGeometry, particlesMaterial, particlePoints;
 const pi = Math.PI;
 let elapsedTime = 0;
