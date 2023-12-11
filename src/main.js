@@ -114,7 +114,7 @@ const setupParticles = () => {
   for (let i = 0; i < parameters.num; i++) {
     const i3 = i * 3
 
-    const y = 1 - (i / parameters.num) // y goes from 1 to 0
+    const y = 1 - 2 * (i / parameters.num) // y goes from -1 to 1
     const radius = Math.sqrt(1 - Math.pow(y, 2)); // radius at y
 
     const phi = 2 * Math.PI * (i / ((1 + Math.sqrt(5)) / 2)); // golden angle approximation
