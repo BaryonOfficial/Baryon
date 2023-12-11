@@ -24,13 +24,14 @@ export const setupParticles = (parameters, sphereRadius, scene) => {
     const i3 = i * 3;
 
     const y = 1 - 2 * (i / parameters.num); // y goes from -1 to 1
-    const radius = Math.sqrt(1 - Math.pow(y, 2)); // radius at y
+    const radius = Math.sqrt(Math.random()) * sphereRadius; // radius at y
 
     const phi = 2 * Math.PI * (i / ((1 + Math.sqrt(5)) / 2)); // golden angle approximation
-    // Initialize positions w/o noise
-    positions[i3] = sphereRadius * (radius * Math.cos(phi));
+
+    // Initialize positions
+    positions[i3] = radius * Math.cos(phi);
     positions[i3 + 1] = sphereRadius * y;
-    positions[i3 + 2] = sphereRadius * (radius * Math.sin(phi));
+    positions[i3 + 2] = radius * Math.sin(phi);
   }
 
   // Add attributes to geometry
