@@ -14,7 +14,6 @@ const noise3D = createNoise3D();
 const noise2D = createNoise2D();
 const clock = new THREE.Clock();
 
-const pi = Math.PI;
 const sphereRadius = 5; // Radius of the sphere
 let elapsedTime = 0;
 
