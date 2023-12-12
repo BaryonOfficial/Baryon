@@ -10,7 +10,6 @@ export const updateParticles = (
 ) => {
   const positions = particlesGeometry.attributes.position.array;
   const colors = new Float32Array(parameters.num * 3); // r, g, b for each particle
-  const color = new THREE.Color();
   const minWalk = 0.002;
 
   function randomInRange(min, max) {
@@ -24,29 +23,26 @@ export const updateParticles = (
     let x = positions[i3] / sphereRadius;
     let y = positions[i3 + 1] / sphereRadius;
     let z = positions[i3 + 2] / sphereRadius;
-    let chladniValue = chladni(x, y, z, parameters.N, parameters);
+    let chladniValue = chladni(x, y, z, parameters);
 
-    let stochasticAmplitude = parameters.vel * Math.abs(chladniValue);
+    let stochasticAmplitude = parameters.vel * chladniValue;
+
+    // Generate a random direction vector
+    let direction = new THREE.Vector3(
+      randomInRange(-1, 1),
+      randomInRange(-1, 1),
+      randomInRange(-1, 1)
+    ).normalize();
 
     // Ensure min movement
-    // stochasticAmplitude = Math.max(stochasticAmplitude, minWalk)
+    // stochasticAmplitude = Math.max(stochasticAmplitude, minWalk);
 
-    const randomMovementX = randomInRange(
-      -stochasticAmplitude,
-      stochasticAmplitude
-    );
-    const randomMovementY = randomInRange(
-      -stochasticAmplitude,
-      stochasticAmplitude
-    );
-    const randomMovementZ = randomInRange(
-      -stochasticAmplitude,
-      stochasticAmplitude
-    );
+    // Scale the direction vector by the stochastic amplitude
+    direction.multiplyScalar(stochasticAmplitude);
 
-    positions[i3] += randomMovementX;
-    positions[i3 + 1] += randomMovementY;
-    positions[i3 + 2] += randomMovementZ;
+    positions[i3] += direction.x;
+    positions[i3 + 1] += direction.y;
+    positions[i3 + 2] += direction.z;
 
     const distanceFromCenter = Math.sqrt(x ** 2 + y ** 2 + z ** 2);
 

@@ -114,4 +114,11 @@ const tick = () => {
 };
 
 init();
-setupGUI(parameters);
+setupGUI(
+  parameters,
+  particlePoints,
+  particlesGeometry,
+  particlesMaterial,
+  scene,
+  init
+);

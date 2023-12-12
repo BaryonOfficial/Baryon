@@ -1,9 +1,9 @@
 // chladni.js
 const pi = Math.PI;
 
-export const chladni = (x, y, z, N, parameters) => {
+export const chladni = (x, y, z, parameters) => {
   let sum = 0;
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < parameters.N; i++) {
     const components = parameters.waveComponents[i];
     const Ai = components[`A${i}`];
     const ui = components[`u${i}`];

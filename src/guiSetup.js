@@ -1,7 +1,14 @@
 import GUI from "lil-gui";
 const gui = new GUI();
 
-export const setupGUI = (parameters) => {
+export const setupGUI = (
+  parameters,
+  particlePoints,
+  particlesGeometry,
+  particlesMaterial,
+  scene,
+  init
+) => {
   gui.close();
   // Add GUI control for rotation speed
   gui
@@ -33,7 +40,7 @@ export const setupGUI = (parameters) => {
       }
 
       // Re-setup the particles with the new count
-      setupParticles();
+      init();
     });
 
   // Add GUI control for 'vel'
