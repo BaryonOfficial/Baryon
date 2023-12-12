@@ -25,24 +25,27 @@ export const updateParticles = (
     let z = positions[i3 + 2] / sphereRadius;
     let chladniValue = chladni(x, y, z, parameters);
 
-    let stochasticAmplitude = parameters.vel * chladniValue;
-
-    // Generate a random direction vector
-    let direction = new THREE.Vector3(
-      randomInRange(-1, 1),
-      randomInRange(-1, 1),
-      randomInRange(-1, 1)
-    ).normalize();
+    let stochasticAmplitude = parameters.vel * Math.abs(chladniValue);
 
     // Ensure min movement
     // stochasticAmplitude = Math.max(stochasticAmplitude, minWalk);
 
-    // Scale the direction vector by the stochastic amplitude
-    direction.multiplyScalar(stochasticAmplitude);
+    const randomMovementX = randomInRange(
+      -stochasticAmplitude,
+      stochasticAmplitude
+    );
+    const randomMovementY = randomInRange(
+      -stochasticAmplitude,
+      stochasticAmplitude
+    );
+    const randomMovementZ = randomInRange(
+      -stochasticAmplitude,
+      stochasticAmplitude
+    );
 
-    positions[i3] += direction.x;
-    positions[i3 + 1] += direction.y;
-    positions[i3 + 2] += direction.z;
+    positions[i3] += randomMovementX;
+    positions[i3 + 1] += randomMovementY;
+    positions[i3 + 2] += randomMovementZ;
 
     const distanceFromCenter = Math.sqrt(x ** 2 + y ** 2 + z ** 2);
 
