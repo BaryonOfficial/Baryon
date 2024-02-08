@@ -1,6 +1,0 @@
-{
-    "chatgpt.model": "gpt-4-32k",
-    "chatgpt.max_tokens": 2048,
-    "chatgpt.lang": "en",
-    "chatgpt.temperature": 0.8
-}
