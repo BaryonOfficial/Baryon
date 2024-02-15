@@ -34,13 +34,15 @@ float sdSphere(vec3 p, float radius) {
 
 float scene(vec3 p) {
     float distance = sdSphere(p, 1.0);
-    return distance;
-}
 
-// float scene(vec3 p) {
-//     float chladniValue = chladni(p);
-//     return abs(chladniValue);
-// }
+    float chladniDist = chladni(p);
+
+    if(abs(chladniDist) < SURFACE_DIST) {
+        return max(distance, chladniDist);
+    } else {
+        return max(distance, SURFACE_DIST + 1.0);
+    }
+}
 
 float raymarch(vec3 ro, vec3 rd) {
     float dO = 0.0;

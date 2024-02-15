@@ -1,11 +1,14 @@
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { extend, Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useRef, Suspense } from "react";
 import { v4 as uuidv4 } from "uuid";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import * as THREE from "three";
 import "./App.css";
 
 import vertexShader from "./shaders/shader.vert";
 import fragmentShader from "./shaders/shader.frag";
+
+extend({ OrbitControls });
 
 const DPR = 2;
 
@@ -40,7 +43,7 @@ console.log(parameters.waveComponents);
 
 const Raymarching = () => {
   const mesh = useRef();
-  const { viewport, camera } = useThree();
+  const { viewport, camera, gl } = useThree();
 
   const uniforms = {
     N: { value: parameters.N },
@@ -62,16 +65,20 @@ const Raymarching = () => {
   });
 
   return (
-    <mesh ref={mesh} scale={[viewport.width, viewport.height, 1]}>
-      <planeGeometry args={[1, 1]} />
-      <shaderMaterial
-        key={uuidv4()}
-        fragmentShader={fragmentShader}
-        vertexShader={vertexShader}
-        uniforms={uniforms}
-        glslVersion={THREE.GLSL3}
-      />
-    </mesh>
+    <>
+      <orbitControls args={[camera, gl.domElement]} />
+
+      <mesh ref={mesh} scale={[viewport.width, viewport.height, 1]}>
+        <planeGeometry args={[1, 1]} />
+        <shaderMaterial
+          key={uuidv4()}
+          fragmentShader={fragmentShader}
+          vertexShader={vertexShader}
+          uniforms={uniforms}
+          glslVersion={THREE.GLSL3}
+        />
+      </mesh>
+    </>
   );
 };
 
