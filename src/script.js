@@ -260,6 +260,7 @@ scene.add(particles.points);
 /**
  * Tweaks
  */
+gui.close();
 gui.addColor(debugObject, 'clearColor').onChange(() => {
   renderer.setClearColor(debugObject.clearColor);
 });
