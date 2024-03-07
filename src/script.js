@@ -7,6 +7,8 @@ import GUI from 'lil-gui';
 import particlesVertexShader from './shaders/particles/vertex.glsl';
 import particlesFragmentShader from './shaders/particles/fragment.glsl';
 import gpgpuParticlesShader from './shaders/gpgpu/particles.glsl';
+import scalarFieldShader from './shaders/gpgpu/scalarField.glsl';
+import zeroPointsShader from './shaders/gpgpu/zeroPoints.glsl';
 
 /**
  * Base
@@ -17,6 +19,7 @@ const debugObject = {};
 
 // Canvas
 const canvas = document.querySelector('canvas.webgl');
+const context = canvas.getContext('webgl2');
 
 // Scene
 const scene = new THREE.Scene();
@@ -75,6 +78,7 @@ controls.enableDamping = true;
  */
 const renderer = new THREE.WebGLRenderer({
   canvas: canvas,
+  context: context,
   antialias: true,
 });
 renderer.setSize(sizes.width, sizes.height);
@@ -90,6 +94,8 @@ let parameters = {
   waveComponents: [],
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
+  threshold: 0.1,
+  zeroPointSpeed: 0.1,
 };
 
 // Populate initial wave component values
@@ -147,10 +153,55 @@ baseGeometry.positions = initializeParticlesWithinSphere(parameters.count, param
 /**
  * GPU Compute
  */
+
 // Setup
 const gpgpu = {};
 gpgpu.size = Math.ceil(Math.sqrt(baseGeometry.count));
 gpgpu.computation = new GPUComputationRenderer(gpgpu.size, gpgpu.size, renderer);
+
+/**
+ * ScalarField Variable
+ */
+
+gpgpu.scalarFieldVariable = gpgpu.computation.addVariable(
+  'uScalarField',
+  scalarFieldShader,
+  gpgpu.computation.createTexture()
+);
+
+//Uniforms
+const waveUniforms = {
+  N: { value: parameters.N },
+  waveComponents: { value: new Float32Array(waveComponentsArray) },
+  uRadius: { value: parameters.radius },
+};
+
+gpgpu.scalarFieldVariable.material.uniforms.N = waveUniforms.N;
+gpgpu.scalarFieldVariable.material.uniforms.waveComponents = waveUniforms.waveComponents;
+gpgpu.scalarFieldVariable.material.uniforms.uRadius = waveUniforms.uRadius;
+
+gpgpu.scalarFieldVariable.material.uniforms.uSliceCount = { value: 2048 };
+
+// Dependency
+gpgpu.computation.setVariableDependencies(gpgpu.scalarFieldVariable, []);
+
+/**
+ * ZeroPoints Variable
+ */
+gpgpu.zeroPointsVariable = gpgpu.computation.addVariable(
+  'uZeroPoints',
+  zeroPointsShader,
+  gpgpu.computation.createTexture()
+);
+
+gpgpu.zeroPointsVariable.material.uniforms.uThreshold = { value: parameters.threshold };
+
+// Dependency
+gpgpu.computation.setVariableDependencies(gpgpu.zeroPointsVariable, [gpgpu.scalarFieldVariable]);
+
+/**
+ * Particles Variable
+ */
 
 // Base Particles
 const baseParticlesTexture = gpgpu.computation.createTexture();
@@ -166,24 +217,16 @@ for (let i = 0; i < baseGeometry.count; i++) {
   baseParticlesTexture.image.data[i4 + 3] = Math.random();
 }
 
-// Particles Variable
 gpgpu.particlesVariable = gpgpu.computation.addVariable(
   'uParticles',
   gpgpuParticlesShader,
   baseParticlesTexture
 );
-gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [gpgpu.particlesVariable]);
 
-// Uniforms
-const waveUniforms = {
-  N: { value: parameters.N },
-  waveComponents: { value: new Float32Array(waveComponentsArray) },
-  uRadius: { value: parameters.radius },
-};
-
-gpgpu.particlesVariable.material.uniforms.N = waveUniforms.N;
-gpgpu.particlesVariable.material.uniforms.waveComponents = waveUniforms.waveComponents;
-gpgpu.particlesVariable.material.uniforms.uRadius = waveUniforms.uRadius;
+gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
+  gpgpu.zeroPointsVariable,
+  gpgpu.particlesVariable,
+]);
 
 gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
@@ -191,9 +234,20 @@ gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(2);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.5);
+gpgpu.particlesVariable.material.uniforms.uThreshold = { value: parameters.threshold };
+gpgpu.particlesVariable.material.uniforms.uZeroPointSpeed = { value: parameters.zeroPointSpeed };
 
-// Init
+//******************************************************* INITIALIZATION *******************************************************//
 gpgpu.computation.init();
+
+// Uniforms
+gpgpu.zeroPointsVariable.material.uniforms.uScalarField = {
+  value: gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture,
+};
+
+gpgpu.particlesVariable.material.uniforms.uZeroPoints = {
+  value: gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture,
+};
 
 // Debug
 gpgpu.debug = new THREE.Mesh(
@@ -202,9 +256,31 @@ gpgpu.debug = new THREE.Mesh(
     map: gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable).texture,
   })
 );
-gpgpu.debug.visible = false;
+gpgpu.debug.visible = true;
 gpgpu.debug.position.x = 3;
 scene.add(gpgpu.debug);
+console.log(gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable).texture);
+
+const scalarFieldDebug = new THREE.Mesh(
+  new THREE.PlaneGeometry(3, 3),
+  new THREE.MeshBasicMaterial({
+    map: gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture,
+  })
+);
+scalarFieldDebug.visible = true;
+scalarFieldDebug.position.x = -3;
+scene.add(scalarFieldDebug);
+console.log(gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture);
+
+const zeroPointsDebug = new THREE.Mesh(
+  new THREE.PlaneGeometry(3, 3), // The size of the plane can be adjusted as needed
+  new THREE.MeshBasicMaterial({
+    map: gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture,
+  })
+);
+zeroPointsDebug.visible = true;
+zeroPointsDebug.position.x = 0; // Position it differently so it doesn't overlap with the scalarFieldDebug
+scene.add(zeroPointsDebug);
 
 /**
  * Particles
@@ -216,11 +292,12 @@ particles.material = new THREE.ShaderMaterial({
   vertexShader: particlesVertexShader,
   fragmentShader: particlesFragmentShader,
   uniforms: {
-    uSize: new THREE.Uniform(0.04),
+    uSize: new THREE.Uniform(0.08),
     uResolution: new THREE.Uniform(
       new THREE.Vector2(sizes.width * sizes.pixelRatio, sizes.height * sizes.pixelRatio)
     ),
     uParticlesTexture: new THREE.Uniform(),
+    glslVersion: THREE.GLSL3,
   },
 });
 
@@ -304,11 +381,32 @@ const tick = () => {
   // GPGPU Update
   gpgpu.particlesVariable.material.uniforms.uTime.value = elapsedTime;
   gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
+
   gpgpu.computation.compute();
 
+  // Update scalarfield texture
+  gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value =
+    gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture;
+  gpgpu.computation.compute();
+
+  // Update zeropoints texture
+  gpgpu.particlesVariable.material.uniforms.uZeroPoints.value =
+    gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture;
+  // Update particles texture
   particles.material.uniforms.uParticlesTexture.value = gpgpu.computation.getCurrentRenderTarget(
     gpgpu.particlesVariable
   ).texture;
+  gpgpu.computation.compute();
+
+  scalarFieldDebug.material.map = gpgpu.computation.getCurrentRenderTarget(
+    gpgpu.scalarFieldVariable
+  ).texture;
+  scalarFieldDebug.material.needsUpdate = true;
+
+  zeroPointsDebug.material.map = gpgpu.computation.getCurrentRenderTarget(
+    gpgpu.zeroPointsVariable
+  ).texture;
+  zeroPointsDebug.material.needsUpdate = true;
 
   // Render normal scene
   renderer.render(scene, camera);

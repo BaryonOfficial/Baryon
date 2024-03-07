@@ -1,10 +1,13 @@
-# Three.js Journey
+# Baryon - GPGPU
+
+Real-time physics based music visualization, revealing the hidden world of sound.
 
 ## Setup
+
 Download [Node.js](https://nodejs.org/en/download/).
 Run this followed commands:
 
-``` bash
+```bash
 # Install dependencies (only the first time)
 npm install
 
