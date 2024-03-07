@@ -66,7 +66,7 @@ window.addEventListener('resize', () => {
  */
 // Base camera
 const camera = new THREE.PerspectiveCamera(35, sizes.width / sizes.height, 0.1, 100);
-camera.position.set(4.5, 4, 11);
+camera.position.set(0, 0, 15);
 scene.add(camera);
 
 // Controls
@@ -95,7 +95,7 @@ let parameters = {
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
   threshold: 0.1,
-  zeroPointSpeed: 0.1,
+  zeroPointSpeed: 25.0,
 };
 
 // Populate initial wave component values
@@ -257,9 +257,9 @@ gpgpu.debug = new THREE.Mesh(
   })
 );
 gpgpu.debug.visible = true;
-gpgpu.debug.position.x = 3;
+gpgpu.debug.position.x = 0;
+gpgpu.debug.position.y = -3;
 scene.add(gpgpu.debug);
-console.log(gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable).texture);
 
 const scalarFieldDebug = new THREE.Mesh(
   new THREE.PlaneGeometry(3, 3),
@@ -268,9 +268,9 @@ const scalarFieldDebug = new THREE.Mesh(
   })
 );
 scalarFieldDebug.visible = true;
-scalarFieldDebug.position.x = -3;
+scalarFieldDebug.position.x = 0;
+scalarFieldDebug.position.y = 3;
 scene.add(scalarFieldDebug);
-console.log(gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture);
 
 const zeroPointsDebug = new THREE.Mesh(
   new THREE.PlaneGeometry(3, 3), // The size of the plane can be adjusted as needed
