@@ -26,20 +26,23 @@ float chladni(vec3 position) {
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
 
-    // Calculate the 3D texture coordinates
+   // Calculate the slice index and interpolation factor
     float sliceIndex = floor(uv.x * uSliceCount);
-    float sliceOffset = fract(uv.x * uSliceCount);
-    float theta = uv.y * PI;
+    float sliceInterpolation = fract(uv.x * uSliceCount);
 
-    // Calculate the 3D position within the volume
-    float radius = sqrt(1.0 - uv.y * uv.y) * uRadius;
-    float x = cos(sliceIndex / uSliceCount * 2.0 * PI) * radius;
-    float y = sin(sliceIndex / uSliceCount * 2.0 * PI) * radius;
-    float z = uv.y * uRadius;
+    // Calculate the depth of the current slice
+    float depth = (sliceIndex + sliceInterpolation) / uSliceCount;
 
-    vec3 position = vec3(x, y, z);
+    // Calculate the spherical coordinates
+    float phi = uv.y * PI;
+    float theta = depth * 2.0 * PI;
+    float r = pow(uv.y, 1.0 / 3.0) * uRadius;
 
-    // Calculate the scalar field value at the 3D position using the chladni function
+    // Calculate the 3D position within the volume using spherical coordinates
+    vec3 position;
+    position.x = r * sin(phi) * cos(theta);
+    position.y = r * sin(phi) * sin(theta);
+    position.z = r * cos(phi);
     float value = chladni(position);
 
     gl_FragColor = vec4(position, value);

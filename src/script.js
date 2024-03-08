@@ -94,7 +94,7 @@ let parameters = {
   waveComponents: [],
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
-  threshold: 0.1,
+  threshold: 1.0,
   zeroPointSpeed: 25.0,
 };
 
@@ -180,7 +180,7 @@ gpgpu.scalarFieldVariable.material.uniforms.N = waveUniforms.N;
 gpgpu.scalarFieldVariable.material.uniforms.waveComponents = waveUniforms.waveComponents;
 gpgpu.scalarFieldVariable.material.uniforms.uRadius = waveUniforms.uRadius;
 
-gpgpu.scalarFieldVariable.material.uniforms.uSliceCount = { value: 2048 };
+gpgpu.scalarFieldVariable.material.uniforms.uSliceCount = { value: Math.pow(2, 10) };
 
 // Dependency
 gpgpu.computation.setVariableDependencies(gpgpu.scalarFieldVariable, []);
@@ -232,7 +232,7 @@ gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
 gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(0.5);
-gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(2);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(1);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uThreshold = { value: parameters.threshold };
 gpgpu.particlesVariable.material.uniforms.uZeroPointSpeed = { value: parameters.zeroPointSpeed };
@@ -292,7 +292,7 @@ particles.material = new THREE.ShaderMaterial({
   vertexShader: particlesVertexShader,
   fragmentShader: particlesFragmentShader,
   uniforms: {
-    uSize: new THREE.Uniform(0.08),
+    uSize: new THREE.Uniform(0.04),
     uResolution: new THREE.Uniform(
       new THREE.Vector2(sizes.width * sizes.pixelRatio, sizes.height * sizes.pixelRatio)
     ),
