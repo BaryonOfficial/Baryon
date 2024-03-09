@@ -90,12 +90,12 @@ renderer.setClearColor(debugObject.clearColor);
 // Parameters Object
 let parameters = {
   N: 12,
-  count: 30000,
+  count: 100000,
   waveComponents: [],
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
-  threshold: 1.0,
-  zeroPointSpeed: 25.0,
+  threshold: 0.75,
+  zeroPointSpeed: 100.0,
 };
 
 // Populate initial wave component values
@@ -250,14 +250,16 @@ gpgpu.particlesVariable.material.uniforms.uZeroPoints = {
 };
 
 // Debug
+let mode = true;
+
 gpgpu.debug = new THREE.Mesh(
   new THREE.PlaneGeometry(3, 3),
   new THREE.MeshBasicMaterial({
     map: gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable).texture,
   })
 );
-gpgpu.debug.visible = true;
-gpgpu.debug.position.x = 0;
+gpgpu.debug.visible = mode;
+gpgpu.debug.position.x = -4;
 gpgpu.debug.position.y = -3;
 scene.add(gpgpu.debug);
 
@@ -267,8 +269,8 @@ const scalarFieldDebug = new THREE.Mesh(
     map: gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture,
   })
 );
-scalarFieldDebug.visible = true;
-scalarFieldDebug.position.x = 0;
+scalarFieldDebug.visible = mode;
+scalarFieldDebug.position.x = -4;
 scalarFieldDebug.position.y = 3;
 scene.add(scalarFieldDebug);
 
@@ -278,8 +280,8 @@ const zeroPointsDebug = new THREE.Mesh(
     map: gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture,
   })
 );
-zeroPointsDebug.visible = true;
-zeroPointsDebug.position.x = 0; // Position it differently so it doesn't overlap with the scalarFieldDebug
+zeroPointsDebug.visible = mode;
+zeroPointsDebug.position.x = -4; // Position it differently so it doesn't overlap with the scalarFieldDebug
 scene.add(zeroPointsDebug);
 
 /**
@@ -387,17 +389,17 @@ const tick = () => {
   // Update scalarfield texture
   gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value =
     gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture;
-  gpgpu.computation.compute();
 
   // Update zeropoints texture
   gpgpu.particlesVariable.material.uniforms.uZeroPoints.value =
     gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture;
+
   // Update particles texture
   particles.material.uniforms.uParticlesTexture.value = gpgpu.computation.getCurrentRenderTarget(
     gpgpu.particlesVariable
   ).texture;
-  gpgpu.computation.compute();
 
+  // Debug materials update
   scalarFieldDebug.material.map = gpgpu.computation.getCurrentRenderTarget(
     gpgpu.scalarFieldVariable
   ).texture;

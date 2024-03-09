@@ -15,7 +15,6 @@ void main() {
     vec4 particle = texture(uParticles, uv);
 
     // Sample the zero point texture to get the nearest zero point
-    // Sample the zero point texture to get the nearest zero point
     vec3 zeroPoint = texture(uZeroPoints, uv).xyz;
 
     // Calculate the distance between the particle position and the zero point
