@@ -90,11 +90,11 @@ renderer.setClearColor(debugObject.clearColor);
 // Parameters Object
 let parameters = {
   N: 12,
-  count: 100000,
+  count: 500000,
   waveComponents: [],
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
-  threshold: 1.0,
+  threshold: 0.75,
   zeroPointSpeed: 100.0,
 };
 
@@ -286,7 +286,7 @@ particles.material = new THREE.ShaderMaterial({
   vertexShader: particlesVertexShader,
   fragmentShader: particlesFragmentShader,
   uniforms: {
-    uSize: new THREE.Uniform(0.04),
+    uSize: new THREE.Uniform(0.03),
     uResolution: new THREE.Uniform(
       new THREE.Vector2(sizes.width * sizes.pixelRatio, sizes.height * sizes.pixelRatio)
     ),
