@@ -1,6 +1,4 @@
 uniform float uThreshold;
-uniform vec2 scalarFieldResolution;
-uniform float uDepth;
 
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;

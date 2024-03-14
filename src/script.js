@@ -90,11 +90,11 @@ renderer.setClearColor(debugObject.clearColor);
 // Parameters Object
 let parameters = {
   N: 12,
-  count: 100000,
+  count: 40000,
   waveComponents: [],
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
-  threshold: 0.75,
+  threshold: 1.0,
   zeroPointSpeed: 100.0,
 };
 
@@ -159,15 +159,25 @@ const gpgpu = {};
 gpgpu.size = Math.ceil(Math.sqrt(baseGeometry.count));
 gpgpu.computation = new GPUComputationRenderer(gpgpu.size, gpgpu.size, renderer);
 
+// Base Particles
+const baseParticlesTexture = gpgpu.computation.createTexture();
+
+for (let i = 0; i < baseGeometry.count; i++) {
+  const i3 = i * 3;
+  const i4 = i * 4;
+
+  // Position based on Geometry
+  baseParticlesTexture.image.data[i4 + 0] = baseGeometry.positions[i3 + 0];
+  baseParticlesTexture.image.data[i4 + 1] = baseGeometry.positions[i3 + 1];
+  baseParticlesTexture.image.data[i4 + 2] = baseGeometry.positions[i3 + 2];
+  baseParticlesTexture.image.data[i4 + 3] = 1.0;
+}
+
 /**
  * ScalarField Variable
  */
-
-gpgpu.scalarFieldVariable = gpgpu.computation.addVariable(
-  'uScalarField',
-  scalarFieldShader,
-  gpgpu.computation.createTexture()
-);
+const test = gpgpu.computation.createTexture();
+gpgpu.scalarFieldVariable = gpgpu.computation.addVariable('uScalarField', scalarFieldShader, test);
 
 //Uniforms
 const waveUniforms = {
@@ -179,8 +189,8 @@ const waveUniforms = {
 gpgpu.scalarFieldVariable.material.uniforms.N = waveUniforms.N;
 gpgpu.scalarFieldVariable.material.uniforms.waveComponents = waveUniforms.waveComponents;
 gpgpu.scalarFieldVariable.material.uniforms.uRadius = waveUniforms.uRadius;
-
-gpgpu.scalarFieldVariable.material.uniforms.uSliceCount = { value: Math.pow(2, 10) };
+gpgpu.scalarFieldVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
+console.log(gpgpu.scalarFieldVariable.material.uniforms.uBase.value.image.data);
 
 // Dependency
 gpgpu.computation.setVariableDependencies(gpgpu.scalarFieldVariable, []);
@@ -202,20 +212,6 @@ gpgpu.computation.setVariableDependencies(gpgpu.zeroPointsVariable, [gpgpu.scala
 /**
  * Particles Variable
  */
-
-// Base Particles
-const baseParticlesTexture = gpgpu.computation.createTexture();
-
-for (let i = 0; i < baseGeometry.count; i++) {
-  const i3 = i * 3;
-  const i4 = i * 4;
-
-  // Position based on Geometry
-  baseParticlesTexture.image.data[i4 + 0] = baseGeometry.positions[i3 + 0];
-  baseParticlesTexture.image.data[i4 + 1] = baseGeometry.positions[i3 + 1];
-  baseParticlesTexture.image.data[i4 + 2] = baseGeometry.positions[i3 + 2];
-  baseParticlesTexture.image.data[i4 + 3] = Math.random();
-}
 
 gpgpu.particlesVariable = gpgpu.computation.addVariable(
   'uParticles',
@@ -241,13 +237,15 @@ gpgpu.particlesVariable.material.uniforms.uZeroPointSpeed = { value: parameters.
 gpgpu.computation.init();
 
 // Uniforms
-gpgpu.zeroPointsVariable.material.uniforms.uScalarField = {
-  value: gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture,
-};
+// gpgpu.zeroPointsVariable.material.uniforms.uScalarField = {
+//   value: gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture,
+// };
 
-gpgpu.particlesVariable.material.uniforms.uZeroPoints = {
-  value: gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture,
-};
+// gpgpu.particlesVariable.material.uniforms.uZeroPoints = {
+//   value: gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture,
+// };
+
+console.log(test.image.data);
 
 // Debug
 let mode = true;
@@ -299,7 +297,6 @@ particles.material = new THREE.ShaderMaterial({
       new THREE.Vector2(sizes.width * sizes.pixelRatio, sizes.height * sizes.pixelRatio)
     ),
     uParticlesTexture: new THREE.Uniform(),
-    glslVersion: THREE.GLSL3,
   },
 });
 

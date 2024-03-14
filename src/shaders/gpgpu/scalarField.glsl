@@ -5,9 +5,7 @@
 uniform float waveComponents[4 * MAX_N];
 uniform int N;
 uniform float uRadius;
-uniform vec2 scalarFieldResolution;
-uniform float uDepth;
-uniform float uSliceCount;
+uniform sampler2D uBase;
 
 // Function to calculate the Chladni pattern displacement
 float chladni(vec3 position) {
@@ -26,23 +24,12 @@ float chladni(vec3 position) {
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
 
-   // Calculate the slice index and interpolation factor
-    float sliceIndex = floor(uv.x * uSliceCount);
-    float sliceInterpolation = fract(uv.x * uSliceCount);
+    vec4 base = texture(uBase, uv);
+    vec3 position = base.xyz;
 
-    // Calculate the depth of the current slice
-    float depth = (sliceIndex + sliceInterpolation) / uSliceCount;
+    // Debug: Output the sampled position
+    // gl_FragColor = vec4(position, 1.0);
 
-    // Calculate the spherical coordinates
-    float phi = uv.y * PI;
-    float theta = depth * 2.0 * PI;
-    float r = pow(uv.y, 1.0 / 3.0) * uRadius;
-
-    // Calculate the 3D position within the volume using spherical coordinates
-    vec3 position;
-    position.x = r * sin(phi) * cos(theta);
-    position.y = r * sin(phi) * sin(theta);
-    position.z = r * cos(phi);
     float value = chladni(position);
 
     gl_FragColor = vec4(position, value);
