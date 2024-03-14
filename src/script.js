@@ -90,7 +90,7 @@ renderer.setClearColor(debugObject.clearColor);
 // Parameters Object
 let parameters = {
   N: 12,
-  count: 1000000,
+  count: 100000,
   waveComponents: [],
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
@@ -123,20 +123,26 @@ const baseGeometry = {
   positions: new Float32Array(parameters.count * 3), // x, y, z for each particle
 };
 
-// Function to generate positions within a sphere
-function initializeParticlesWithinSphere(count, radius) {
+// Function to generate positions on a spherical grid
+function initializeParticlesOnSphericalGrid(count, radius) {
   const positions = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    let i3 = i * 3;
-    // Generate random positions within a sphere
-    const phi = Math.acos(2 * Math.random() - 1);
-    const theta = 2 * Math.PI * Math.random();
-    const r = radius * Math.cbrt(Math.random()); // Uniform distribution within a sphere
 
-    positions[i3 + 0] = r * Math.sin(phi) * Math.cos(theta); // x
-    positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta); // y
-    positions[i3 + 2] = r * Math.cos(phi); // z
+  const deltaTheta = Math.PI / Math.ceil(Math.sqrt(count));
+  const deltaPhi = (2 * Math.PI) / Math.ceil(Math.sqrt(count));
+
+  let index = 0;
+  for (let theta = 0; theta < Math.PI; theta += deltaTheta) {
+    for (let phi = 0; phi < 2 * Math.PI; phi += deltaPhi) {
+      const x = radius * Math.sin(theta) * Math.cos(phi);
+      const y = radius * Math.sin(theta) * Math.sin(phi);
+      const z = radius * Math.cos(theta);
+
+      positions[index++] = x;
+      positions[index++] = y;
+      positions[index++] = z;
+    }
   }
+
   return positions;
 }
 
@@ -148,7 +154,7 @@ for (let i = 0; i < baseGeometry.count; i++) {
   colors[i * 3 + 2] = 1.0; // Blue
 }
 
-baseGeometry.positions = initializeParticlesWithinSphere(parameters.count, parameters.radius);
+baseGeometry.positions = initializeParticlesOnSphericalGrid(parameters.count, parameters.radius);
 
 /**
  * GPU Compute
@@ -225,7 +231,6 @@ gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
 ]);
 
 gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
-gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
 gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(1);
