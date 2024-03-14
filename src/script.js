@@ -409,4 +409,3 @@ const tick = () => {
 };
 
 tick();
-console.log(gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture);
