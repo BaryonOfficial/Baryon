@@ -2,10 +2,10 @@
 #define PI 3.14159265359
 
 // Function params
+uniform sampler2D uBase;
 uniform float waveComponents[4 * MAX_N];
 uniform int N;
 uniform float uRadius;
-uniform sampler2D uBase;
 
 // Function to calculate the Chladni pattern displacement
 float chladni(vec3 position) {
@@ -27,10 +27,10 @@ void main() {
     vec4 base = texture(uBase, uv);
     vec3 position = base.xyz;
 
-    // Debug: Output the sampled position
-    // gl_FragColor = vec4(position, 1.0);
-
     float value = chladni(position);
 
-    gl_FragColor = vec4(position, value);
+    // Debug: Output the calculated Chladni displacement value
+    // gl_FragColor = vec4(value, value, value, 1.0);
+
+    gl_FragColor = vec4(base.xyz, value);
 }

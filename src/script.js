@@ -90,7 +90,7 @@ renderer.setClearColor(debugObject.clearColor);
 // Parameters Object
 let parameters = {
   N: 12,
-  count: 40000,
+  count: 1000000,
   waveComponents: [],
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
@@ -170,7 +170,7 @@ for (let i = 0; i < baseGeometry.count; i++) {
   baseParticlesTexture.image.data[i4 + 0] = baseGeometry.positions[i3 + 0];
   baseParticlesTexture.image.data[i4 + 1] = baseGeometry.positions[i3 + 1];
   baseParticlesTexture.image.data[i4 + 2] = baseGeometry.positions[i3 + 2];
-  baseParticlesTexture.image.data[i4 + 3] = 1.0;
+  baseParticlesTexture.image.data[i4 + 3] = 0.0;
 }
 
 /**
@@ -235,17 +235,6 @@ gpgpu.particlesVariable.material.uniforms.uZeroPointSpeed = { value: parameters.
 
 //******************************************************* INITIALIZATION *******************************************************//
 gpgpu.computation.init();
-
-// Uniforms
-// gpgpu.zeroPointsVariable.material.uniforms.uScalarField = {
-//   value: gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture,
-// };
-
-// gpgpu.particlesVariable.material.uniforms.uZeroPoints = {
-//   value: gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture,
-// };
-
-console.log(test.image.data);
 
 // Debug
 let mode = true;
@@ -415,3 +404,4 @@ const tick = () => {
 };
 
 tick();
+console.log(gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture);
