@@ -124,7 +124,7 @@ const baseGeometry = {
 };
 
 // Function to generate positions on a spherical grid
-function initializeParticlesOnSphericalGrid(count, radius) {
+function initializeParticlesWithinSphere(count, radius) {
   const positions = new Float32Array(count * 3);
 
   const deltaTheta = Math.PI / Math.ceil(Math.sqrt(count));
@@ -137,10 +137,9 @@ function initializeParticlesOnSphericalGrid(count, radius) {
       const y = radius * Math.sin(theta) * Math.sin(phi);
       const z = radius * Math.cos(theta);
 
-      positions[index++] = x;
-      positions[index++] = y;
-      positions[index++] = z;
-    }
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = z;
   }
 
   return positions;
@@ -199,7 +198,7 @@ for (let i = 0; i < baseGeometry.count; i++) {
   baseParticlesTexture.image.data[i4 + 0] = baseGeometry.positions[i3 + 0];
   baseParticlesTexture.image.data[i4 + 1] = baseGeometry.positions[i3 + 1];
   baseParticlesTexture.image.data[i4 + 2] = baseGeometry.positions[i3 + 2];
-  baseParticlesTexture.image.data[i4 + 3] = 0.0;
+  baseParticlesTexture.image.data[i4 + 3] = Math.random();
 }
 
 /**
@@ -260,6 +259,7 @@ gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uThreshold = { value: parameters.threshold };
 gpgpu.particlesVariable.material.uniforms.uZeroPointSpeed = { value: parameters.zeroPointSpeed };
+gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
 
 //******************************************************* INITIALIZATION *******************************************************//
 gpgpu.computation.init();
@@ -309,7 +309,7 @@ particles.material = new THREE.ShaderMaterial({
   vertexShader: particlesVertexShader,
   fragmentShader: particlesFragmentShader,
   uniforms: {
-    uSize: new THREE.Uniform(0.04),
+    uSize: new THREE.Uniform(0.03),
     uResolution: new THREE.Uniform(
       new THREE.Vector2(sizes.width * sizes.pixelRatio, sizes.height * sizes.pixelRatio)
     ),
@@ -432,4 +432,3 @@ const tick = () => {
 };
 
 tick();
-console.log(gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture);
