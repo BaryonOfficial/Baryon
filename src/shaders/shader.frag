@@ -1,13 +1,14 @@
-#define MAX_STEPS 50
+#define MAX_STEPS 100
 #define MAX_DIST 100.0
 #define SURFACE_DIST 0.001
 #define MAX_N 100
 #define PI 3.14159265359
-precision mediump float;
+precision highp float;
 
 uniform float uTime;
 uniform vec2 uResolution;
 uniform vec3 uCameraPos;
+uniform float uThreshold;
 
 uniform float waveComponents[4 * MAX_N];
 uniform int N;
@@ -33,15 +34,20 @@ float sdSphere(vec3 p, float radius) {
 }
 
 float scene(vec3 p) {
-    float distance = sdSphere(p, 1.0);
+    float distance = sdSphere(p, 2.0);
 
-    float chladniDist = chladni(p);
+    float chladniValue = chladni(p);
 
-    if(abs(chladniDist) < SURFACE_DIST) {
-        return max(distance, chladniDist);
-    } else {
-        return max(distance, SURFACE_DIST + 1.0);
-    }
+    float volumeFactor = smoothstep(-uThreshold, uThreshold, chladniValue);
+
+    return mix(distance, volumeFactor, volumeFactor);
+
+    // float blendFactor = smoothstep(0.0, 0.1, distance);
+
+    // // Blend the sphere distance and Chladni displacement
+    // float combinedDist = mix(chladniValue, distance, blendFactor);
+
+    // return combinedDist;
 }
 
 float raymarch(vec3 ro, vec3 rd) {
@@ -61,13 +67,13 @@ float raymarch(vec3 ro, vec3 rd) {
     return dO;
 }
 
-vec3 getNormal(vec3 p) {
-    vec2 e = vec2(.01, 0);
+// vec3 getNormal(vec3 p) {
+//     vec2 e = vec2(.01, 0);
 
-    vec3 n = scene(p) - vec3(scene(p - e.xyy), scene(p - e.yxy), scene(p - e.yyx));
+//     vec3 n = scene(p) - vec3(scene(p - e.xyy), scene(p - e.yxy), scene(p - e.yyx));
 
-    return normalize(n);
-}
+//     return normalize(n);
+// }
 
 void main() {
     vec2 uv = gl_FragCoord.xy / uResolution.xy;
@@ -82,12 +88,13 @@ void main() {
 
     // Raymarching
     float d = raymarch(ro, rd);
-    vec3 p = ro + rd * d;
+
+    // vec3 p = ro + rd * d;
 
     vec3 color = vec3(0.0);
 
     if(d < MAX_DIST) {
-        color = vec3(1.0, 1.0, 1.0);
+        color = vec3(0.98, 0.85, 0.72);
     }
 
     finalColor = vec4(color, 1.0);

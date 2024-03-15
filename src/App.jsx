@@ -1,12 +1,12 @@
-import { extend, Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useRef, Suspense } from "react";
-import { v4 as uuidv4 } from "uuid";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import * as THREE from "three";
-import "./App.css";
+import { extend, Canvas, useFrame, useThree } from '@react-three/fiber';
+import { useRef, Suspense } from 'react';
+import { v4 as uuidv4 } from 'uuid';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import * as THREE from 'three';
+import './App.css';
 
-import vertexShader from "./shaders/shader.vert";
-import fragmentShader from "./shaders/shader.frag";
+import vertexShader from './shaders/shader.vert';
+import fragmentShader from './shaders/shader.frag';
 
 extend({ OrbitControls });
 
@@ -52,6 +52,7 @@ const Raymarching = () => {
     uResolution: new THREE.Uniform(new THREE.Vector2()),
     uRadius: { value: parameters.radius },
     uCameraPos: { value: new THREE.Vector3() }, // Add camera position uniform
+    uThreshold: { value: 0.1 },
   };
 
   useFrame((state) => {
