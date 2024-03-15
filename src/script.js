@@ -90,11 +90,11 @@ renderer.setClearColor(debugObject.clearColor);
 // Parameters Object
 let parameters = {
   N: 12,
-  count: 100000,
+  count: 200000,
   waveComponents: [],
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
-  threshold: 1.0,
+  threshold: 0.75,
   zeroPointSpeed: 100.0,
 };
 
@@ -146,6 +146,29 @@ function initializeParticlesOnSphericalGrid(count, radius) {
   return positions;
 }
 
+function initializeParticlesOnSphereSurface(count, radius) {
+  const positions = new Float32Array(count * 3);
+
+  const goldenRatio = (1 + Math.sqrt(5)) / 2;
+  const angleIncrement = Math.PI * 2 * goldenRatio;
+
+  for (let i = 0; i < count; i++) {
+    const t = i / count;
+    const inclination = Math.acos(1 - 2 * t);
+    const azimuth = angleIncrement * i;
+
+    const x = radius * Math.sin(inclination) * Math.cos(azimuth);
+    const y = radius * Math.sin(inclination) * Math.sin(azimuth);
+    const z = radius * Math.cos(inclination);
+
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = z;
+  }
+
+  return positions;
+}
+
 // Colors attribute
 const colors = new Float32Array(baseGeometry.count * 3); // r, g, b for each particle
 for (let i = 0; i < baseGeometry.count; i++) {
@@ -154,7 +177,7 @@ for (let i = 0; i < baseGeometry.count; i++) {
   colors[i * 3 + 2] = 1.0; // Blue
 }
 
-baseGeometry.positions = initializeParticlesOnSphericalGrid(parameters.count, parameters.radius);
+baseGeometry.positions = initializeParticlesOnSphereSurface(parameters.count, parameters.radius);
 
 /**
  * GPU Compute

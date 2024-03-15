@@ -32,5 +32,5 @@ void main() {
     // Debug: Output the calculated Chladni displacement value
     // gl_FragColor = vec4(value, value, value, 1.0);
 
-    gl_FragColor = vec4(base.xyz, value);
+    gl_FragColor = vec4(position, value);
 }
