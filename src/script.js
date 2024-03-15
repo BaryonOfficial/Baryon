@@ -89,12 +89,12 @@ renderer.setClearColor(debugObject.clearColor);
 
 // Parameters Object
 let parameters = {
-  N: 12,
-  count: 200000,
+  N: 22,
+  count: 600000,
   waveComponents: [],
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
-  threshold: 0.75,
+  threshold: 1.0,
   zeroPointSpeed: 100.0,
 };
 
@@ -199,7 +199,7 @@ for (let i = 0; i < baseGeometry.count; i++) {
   baseParticlesTexture.image.data[i4 + 0] = baseGeometry.positions[i3 + 0];
   baseParticlesTexture.image.data[i4 + 1] = baseGeometry.positions[i3 + 1];
   baseParticlesTexture.image.data[i4 + 2] = baseGeometry.positions[i3 + 2];
-  baseParticlesTexture.image.data[i4 + 3] = Math.random();
+  baseParticlesTexture.image.data[i4 + 3] = 1.0;
 }
 
 /**
