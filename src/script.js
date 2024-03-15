@@ -137,12 +137,13 @@ function initializeParticlesWithinSphere(count, radius) {
       const y = radius * Math.sin(theta) * Math.sin(phi);
       const z = radius * Math.cos(theta);
 
-    positions[i * 3] = x;
-    positions[i * 3 + 1] = y;
-    positions[i * 3 + 2] = z;
-  }
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = z;
+    }
 
-  return positions;
+    return positions;
+  }
 }
 
 function initializeParticlesOnSphereSurface(count, radius) {
