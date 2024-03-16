@@ -38,10 +38,12 @@ float scene(vec3 p) {
 
     float chladniValue = chladni(p);
 
+    // Volumetric w/ threshold
     float volumeFactor = smoothstep(-uThreshold, uThreshold, chladniValue);
 
     return mix(distance, volumeFactor, volumeFactor);
 
+    // Volumetric w/out threshold
     // float blendFactor = smoothstep(0.0, 0.1, distance);
 
     // // Blend the sphere distance and Chladni displacement
@@ -89,12 +91,12 @@ void main() {
     // Raymarching
     float d = raymarch(ro, rd);
 
-    // vec3 p = ro + rd * d;
+    //vec3 p = ro + rd * d;
 
-    vec3 color = vec3(0.0);
+    vec3 color = vec3(0.0, 0.27, 1.0);
 
     if(d < MAX_DIST) {
-        color = vec3(0.98, 0.85, 0.72);
+        color = vec3(0.99, 0.94, 0.89);
     }
 
     finalColor = vec4(color, 1.0);

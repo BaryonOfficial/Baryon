@@ -52,7 +52,7 @@ const Raymarching = () => {
     uResolution: new THREE.Uniform(new THREE.Vector2()),
     uRadius: { value: parameters.radius },
     uCameraPos: { value: new THREE.Vector3() }, // Add camera position uniform
-    uThreshold: { value: 0.1 },
+    uThreshold: { value: 0.0 },
   };
 
   useFrame((state) => {
@@ -70,7 +70,7 @@ const Raymarching = () => {
       <orbitControls args={[camera, gl.domElement]} />
 
       <mesh ref={mesh} scale={[viewport.width, viewport.height, 1]}>
-        <planeGeometry args={[1, 1]} />
+        <planeGeometry args={[10, 10]} />
         <shaderMaterial
           key={uuidv4()}
           fragmentShader={fragmentShader}
