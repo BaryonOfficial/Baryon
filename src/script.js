@@ -90,12 +90,13 @@ renderer.setClearColor(debugObject.clearColor);
 // Parameters Object
 let parameters = {
   N: 22,
-  count: 600000,
+  count: 1000000,
   waveComponents: [],
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
   threshold: 1.0,
-  zeroPointSpeed: 100.0,
+  zeroPointSpeed: 50.0,
+  surfaceRatio: 0.5,
 };
 
 // Populate initial wave component values
@@ -123,27 +124,27 @@ const baseGeometry = {
   positions: new Float32Array(parameters.count * 3), // x, y, z for each particle
 };
 
+const colors = new Float32Array(baseGeometry.count * 3); // r, g, b for each particle
+
 // Function to generate positions on a spherical grid
-function initializeParticlesWithinSphere(count, radius) {
+function initializeParticlesInSphereVolume(count, radius) {
   const positions = new Float32Array(count * 3);
 
-  const deltaTheta = Math.PI / Math.ceil(Math.sqrt(count));
-  const deltaPhi = (2 * Math.PI) / Math.ceil(Math.sqrt(count));
+  for (let i = 0; i < count; i++) {
+    const r = Math.pow(Math.random(), 1 / 3) * radius;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
 
-  let index = 0;
-  for (let theta = 0; theta < Math.PI; theta += deltaTheta) {
-    for (let phi = 0; phi < 2 * Math.PI; phi += deltaPhi) {
-      const x = radius * Math.sin(theta) * Math.cos(phi);
-      const y = radius * Math.sin(theta) * Math.sin(phi);
-      const z = radius * Math.cos(theta);
+    const x = r * Math.sin(phi) * Math.cos(theta);
+    const y = r * Math.sin(phi) * Math.sin(theta);
+    const z = r * Math.cos(phi);
 
-      positions[i * 3] = x;
-      positions[i * 3 + 1] = y;
-      positions[i * 3 + 2] = z;
-    }
-
-    return positions;
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = z;
   }
+
+  return positions;
 }
 
 function initializeParticlesOnSphereSurface(count, radius) {
@@ -169,15 +170,70 @@ function initializeParticlesOnSphereSurface(count, radius) {
   return positions;
 }
 
-// Colors attribute
-const colors = new Float32Array(baseGeometry.count * 3); // r, g, b for each particle
-for (let i = 0; i < baseGeometry.count; i++) {
-  colors[i * 3 + 0] = 1.0; // Red
-  colors[i * 3 + 1] = 1.0; // Green
-  colors[i * 3 + 2] = 1.0; // Blue
+function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio) {
+  const positions = new Float32Array(count * 3);
+  const surfaceCount = Math.floor(count * surfaceRatio);
+  const volumeCount = count - surfaceCount;
+
+  // Generate points on the surface
+  const goldenRatio = (1 + Math.sqrt(5)) / 2;
+  const angleIncrement = Math.PI * 2 * goldenRatio;
+  for (let i = 0; i < surfaceCount; i++) {
+    const t = i / surfaceCount;
+    const inclination = Math.acos(1 - 2 * t);
+    const azimuth = angleIncrement * i;
+    const x = radius * Math.sin(inclination) * Math.cos(azimuth);
+    const y = radius * Math.sin(inclination) * Math.sin(azimuth);
+    const z = radius * Math.cos(inclination);
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = z;
+  }
+
+  // Generate points within the volume
+  for (let i = surfaceCount; i < count; i++) {
+    const r = Math.pow(Math.random(), 1 / 3) * radius;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const x = r * Math.sin(phi) * Math.cos(theta);
+    const y = r * Math.sin(phi) * Math.sin(theta);
+    const z = r * Math.cos(phi);
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = z;
+  }
+
+  for (let i = 0; i < surfaceCount; i++) {
+    // ...
+    colors[i * 3] = 0.0; // Red channel
+    colors[i * 3 + 1] = 0.0; // Green channel
+    colors[i * 3 + 2] = 1.0; // Blue channel
+  }
+
+  // Generate points within the volume
+  for (let i = surfaceCount; i < count; i++) {
+    // ...
+    colors[i * 3] = 1.0; // Red channel (default color)
+    colors[i * 3 + 1] = 1.0; // Green channel (default color)
+    colors[i * 3 + 2] = 1.0; // Blue channel (default color)
+  }
+
+  return positions;
 }
 
-baseGeometry.positions = initializeParticlesOnSphereSurface(parameters.count, parameters.radius);
+// // Colors attribute
+// const colors = new Float32Array(baseGeometry.count * 3); // r, g, b for each particle
+// for (let i = 0; i < baseGeometry.count; i++) {
+//   colors[i * 3 + 0] = 1.0; // Red
+//   colors[i * 3 + 1] = 1.0; // Green
+//   colors[i * 3 + 2] = 1.0; // Blue
+// }
+
+baseGeometry.positions = initializeParticlesInSphereVolumeAndSurface(
+  parameters.count,
+  parameters.radius,
+  parameters.surfaceRatio
+);
 
 /**
  * GPU Compute
@@ -315,8 +371,13 @@ particles.material = new THREE.ShaderMaterial({
       new THREE.Vector2(sizes.width * sizes.pixelRatio, sizes.height * sizes.pixelRatio)
     ),
     uParticlesTexture: new THREE.Uniform(),
+    uTime: new THREE.Uniform(0),
   },
 });
+
+particles.material.uniforms.uParticlesTexture.value = gpgpu.computation.getCurrentRenderTarget(
+  gpgpu.particlesVariable
+).texture;
 
 // Geometry
 const particlesUvArray = new Float32Array(baseGeometry.count * 2);
@@ -397,6 +458,7 @@ const tick = () => {
 
   // GPGPU Update
   gpgpu.particlesVariable.material.uniforms.uTime.value = elapsedTime;
+  particles.material.uniforms.uTime.value = elapsedTime;
   gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
 
   gpgpu.computation.compute();

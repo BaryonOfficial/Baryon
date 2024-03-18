@@ -13,6 +13,7 @@ void main() {
     float time = uTime * 1.0;
     vec2 uv = gl_FragCoord.xy / resolution.xy;
     vec4 particle = texture(uParticles, uv);
+    vec4 base = texture(uBase, uv);
 
     // Sample the zero point texture to get the nearest zero point
     vec3 zeroPoint = texture(uZeroPoints, uv).xyz;
