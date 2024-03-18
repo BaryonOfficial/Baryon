@@ -8,6 +8,7 @@ attribute vec3 aColor;
 attribute float aSize;
 
 varying vec3 vColor;
+varying float vType;
 
 void main() {
     vec4 particle = texture(uParticlesTexture, aParticlesUv);
@@ -41,4 +42,5 @@ void main() {
 
     // Varyings
     vColor = aColor;
+    vType = particle.a;
 }

@@ -95,7 +95,7 @@ let parameters = {
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
   threshold: 1.0,
-  zeroPointSpeed: 100.0,
+  zeroPointSpeed: 50.0,
   surfaceRatio: 0.25,
 };
 
@@ -214,8 +214,8 @@ function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio
   for (let i = surfaceCount; i < count; i++) {
     // ...
     colors[i * 3] = 1.0; // Red channel (default color)
-    colors[i * 3 + 1] = 0.0; // Green channel (default color)
-    colors[i * 3 + 2] = 0.0; // Blue channel (default color)
+    colors[i * 3 + 1] = 1.0; // Green channel (default color)
+    colors[i * 3 + 2] = 1.0; // Blue channel (default color)
   }
 
   return positions;
@@ -290,6 +290,7 @@ gpgpu.zeroPointsVariable = gpgpu.computation.addVariable(
 );
 
 gpgpu.zeroPointsVariable.material.uniforms.uThreshold = { value: parameters.threshold };
+gpgpu.zeroPointsVariable.material.uniforms.uRadius = waveUniforms.uRadius;
 
 // Dependency
 gpgpu.computation.setVariableDependencies(gpgpu.zeroPointsVariable, [gpgpu.scalarFieldVariable]);
