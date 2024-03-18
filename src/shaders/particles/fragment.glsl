@@ -1,4 +1,4 @@
-varying vec3 vColor;
+// varying vec3 vColor;
 varying float vType;
 
 void main() {

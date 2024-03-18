@@ -94,9 +94,9 @@ let parameters = {
   waveComponents: [],
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
-  threshold: 1.0,
-  zeroPointSpeed: 50.0,
-  surfaceRatio: 0.25,
+  threshold: 1.25,
+  zeroPointSpeed: 100.0,
+  surfaceRatio: 0.33,
 };
 
 // Populate initial wave component values
@@ -126,41 +126,17 @@ const baseGeometry = {
 
 const colors = new Float32Array(baseGeometry.count * 3); // r, g, b for each particle
 
-// Function to generate positions on a spherical grid
-function initializeParticlesInSphereVolume(count, radius) {
+function initializeParticlesInSphere(count, radius) {
   const positions = new Float32Array(count * 3);
 
   for (let i = 0; i < count; i++) {
-    const r = Math.pow(Math.random(), 1 / 3) * radius;
+    const r = Math.pow(Math.random(), 1 / 3) * (radius / 3);
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
 
     const x = r * Math.sin(phi) * Math.cos(theta);
     const y = r * Math.sin(phi) * Math.sin(theta);
     const z = r * Math.cos(phi);
-
-    positions[i * 3] = x;
-    positions[i * 3 + 1] = y;
-    positions[i * 3 + 2] = z;
-  }
-
-  return positions;
-}
-
-function initializeParticlesOnSphereSurface(count, radius) {
-  const positions = new Float32Array(count * 3);
-
-  const goldenRatio = (1 + Math.sqrt(5)) / 2;
-  const angleIncrement = Math.PI * 2 * goldenRatio;
-
-  for (let i = 0; i < count; i++) {
-    const t = i / count;
-    const inclination = Math.acos(1 - 2 * t);
-    const azimuth = angleIncrement * i;
-
-    const x = radius * Math.sin(inclination) * Math.cos(azimuth);
-    const y = radius * Math.sin(inclination) * Math.sin(azimuth);
-    const z = radius * Math.cos(inclination);
 
     positions[i * 3] = x;
     positions[i * 3 + 1] = y;
@@ -221,14 +197,6 @@ function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio
   return positions;
 }
 
-// // Colors attribute
-// const colors = new Float32Array(baseGeometry.count * 3); // r, g, b for each particle
-// for (let i = 0; i < baseGeometry.count; i++) {
-//   colors[i * 3 + 0] = 1.0; // Red
-//   colors[i * 3 + 1] = 1.0; // Green
-//   colors[i * 3 + 2] = 1.0; // Blue
-// }
-
 baseGeometry.positions = initializeParticlesInSphereVolumeAndSurface(
   parameters.count,
   parameters.radius,
@@ -256,6 +224,21 @@ for (let i = 0; i < baseGeometry.count; i++) {
   baseParticlesTexture.image.data[i4 + 1] = baseGeometry.positions[i3 + 1];
   baseParticlesTexture.image.data[i4 + 2] = baseGeometry.positions[i3 + 2];
   baseParticlesTexture.image.data[i4 + 3] = 1.0;
+}
+
+// Initalization of Particles For Movement
+const initialParticlesTexture = gpgpu.computation.createTexture();
+
+const initialPositions = initializeParticlesInSphere(parameters.count, parameters.radius);
+
+for (let i = 0; i < baseGeometry.count; i++) {
+  const i3 = i * 3;
+  const i4 = i * 4;
+
+  initialParticlesTexture.image.data[i4 + 0] = initialPositions[i3 + 0];
+  initialParticlesTexture.image.data[i4 + 1] = initialPositions[i3 + 1];
+  initialParticlesTexture.image.data[i4 + 2] = initialPositions[i3 + 2];
+  initialParticlesTexture.image.data[i4 + 3] = 1.0;
 }
 
 /**
@@ -302,7 +285,7 @@ gpgpu.computation.setVariableDependencies(gpgpu.zeroPointsVariable, [gpgpu.scala
 gpgpu.particlesVariable = gpgpu.computation.addVariable(
   'uParticles',
   gpgpuParticlesShader,
-  baseParticlesTexture
+  initialParticlesTexture
 );
 
 gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
@@ -323,7 +306,7 @@ gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(baseParticle
 gpgpu.computation.init();
 
 // Debug
-let mode = true;
+let mode = false;
 
 gpgpu.debug = new THREE.Mesh(
   new THREE.PlaneGeometry(3, 3),
