@@ -7,7 +7,7 @@ void main() {
     float scalarValue = scalarFieldValue.a;
 
     if(abs(scalarValue) < uThreshold) {
-        gl_FragColor = vec4(position, 1.0);
+        gl_FragColor = vec4(position, 0.0);
     } else {
         discard;
     }

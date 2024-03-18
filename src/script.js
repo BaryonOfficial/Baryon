@@ -95,8 +95,8 @@ let parameters = {
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
   threshold: 1.0,
-  zeroPointSpeed: 50.0,
-  surfaceRatio: 0.5,
+  zeroPointSpeed: 100.0,
+  surfaceRatio: 0.25,
 };
 
 // Populate initial wave component values
@@ -205,8 +205,8 @@ function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio
 
   for (let i = 0; i < surfaceCount; i++) {
     // ...
-    colors[i * 3] = 0.0; // Red channel
-    colors[i * 3 + 1] = 0.0; // Green channel
+    colors[i * 3] = 1.0; // Red channel
+    colors[i * 3 + 1] = 1.0; // Green channel
     colors[i * 3 + 2] = 1.0; // Blue channel
   }
 
@@ -214,8 +214,8 @@ function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio
   for (let i = surfaceCount; i < count; i++) {
     // ...
     colors[i * 3] = 1.0; // Red channel (default color)
-    colors[i * 3 + 1] = 1.0; // Green channel (default color)
-    colors[i * 3 + 2] = 1.0; // Blue channel (default color)
+    colors[i * 3 + 1] = 0.0; // Green channel (default color)
+    colors[i * 3 + 2] = 0.0; // Blue channel (default color)
   }
 
   return positions;
