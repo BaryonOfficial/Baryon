@@ -17,7 +17,7 @@ void main() {
     // Vibration
     float randomPhase = fract(sin(dot(aParticlesUv, vec2(12.9898, 78.233))) * 43758.5453);
     float uniqueTime = time + randomPhase * 20.0;
-    float vibration = sin(uniqueTime) * 0.005; // Smaller amplitude for subtle effect
+    float vibration = sin(uniqueTime) * 0.001; // Smaller amplitude for subtle effect
     particle.xyz += vibration;
 
     // Wave Pattern

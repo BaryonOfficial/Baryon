@@ -13,6 +13,8 @@ void main() {
     } else if(vType == 0.0) {
         // Scaled-back particle, assign a different color (e.g., blue)
         color = vec3(1.0);
+    } else if(vType == 0.5) {
+        color = vec3(0.0);
     }
 
     gl_FragColor = vec4(color, 1.0);
