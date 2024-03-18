@@ -93,7 +93,7 @@ void main() {
 
     //vec3 p = ro + rd * d;
 
-    vec3 color = vec3(0.0, 0.27, 1.0);
+    vec3 color = vec3(0.0);
 
     if(d < MAX_DIST) {
         color = vec3(0.99, 0.94, 0.89);
