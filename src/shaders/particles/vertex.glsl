@@ -25,7 +25,7 @@ void main() {
     // float angle = atan(particle.y, particle.x);
     // float radius = length(particle.xy);
     // float wave = sin(angle * 10.0 + time) * 0.005;
-    // particle.z += wave * radius;
+    // particle.y += wave * radius;
 
     // Final position
     vec4 modelPosition = modelMatrix * vec4(particle.xyz, 1.0);

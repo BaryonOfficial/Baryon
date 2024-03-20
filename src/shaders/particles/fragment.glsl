@@ -1,6 +1,7 @@
 varying vec3 vColor;
 varying float vType;
 varying vec3 vPosition;
+uniform float uTime;
 
 float hue2rgb(float p, float q, float t) {
     if(t < 0.0)
@@ -40,8 +41,12 @@ void main() {
 
     vec3 color;
     if(vType == 1.0) {
+
         // Repeated gradient
         float hue = abs(vPosition.y) * 0.8; // Map vertical position to hue range [0, 0.8]
+        float period = 10.0; // Example: cycle every 10 seconds
+        hue += (mod(uTime, period) / period) * 0.8;
+
         hue = mod(hue, 0.8); // Wrap hue around the range [0, 0.8]
         color = hslToRgb(hue, 1.0, 0.5);
 
