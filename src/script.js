@@ -143,6 +143,13 @@ function initializeParticlesInSphere(count, radius) {
     positions[i * 3 + 2] = z;
   }
 
+  for (let i = 0; i < count; i++) {
+    const colorValue = Math.random(); // Assign a random value between 0 and 1 for the gradient
+    colors[i * 3] = colorValue;
+    colors[i * 3 + 1] = colorValue;
+    colors[i * 3 + 2] = colorValue;
+  }
+
   return positions;
 }
 
@@ -177,21 +184,6 @@ function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio
     positions[i * 3] = x;
     positions[i * 3 + 1] = y;
     positions[i * 3 + 2] = z;
-  }
-
-  for (let i = 0; i < surfaceCount; i++) {
-    // ...
-    colors[i * 3] = 1.0; // Red channel
-    colors[i * 3 + 1] = 1.0; // Green channel
-    colors[i * 3 + 2] = 1.0; // Blue channel
-  }
-
-  // Generate points within the volume
-  for (let i = surfaceCount; i < count; i++) {
-    // ...
-    colors[i * 3] = 1.0; // Red channel (default color)
-    colors[i * 3 + 1] = 1.0; // Green channel (default color)
-    colors[i * 3 + 2] = 1.0; // Blue channel (default color)
   }
 
   return positions;

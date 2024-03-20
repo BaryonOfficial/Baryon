@@ -14,9 +14,9 @@ void main() {
         if(abs(scalarValue) < uThreshold) {
             gl_FragColor = vec4(position, 1.0);
         } else {
-            gl_FragColor = vec4(position * 0.66, 0.0);
+            gl_FragColor = vec4(position * 0.75, 0.0);
         }
     } else {
-        gl_FragColor = vec4(position * 0.66, 0.5);
+        gl_FragColor = vec4(position * 0.75, 0.5);
     }
 }
