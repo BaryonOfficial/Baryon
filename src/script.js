@@ -64,23 +64,32 @@ async function setupAudioWorklet(file) {
 
       // Receive messages from the AudioWorklet processor
       audioWorkletNode.port.onmessage = (event) => {
+        console.log('Received message from AudioWorklet:', event.data);
         if (event.data.type === 'frequencies') {
           const frequenciesSize = event.data.size;
           const frequencies = event.data.data;
 
           frequenciesTexture.image.data.set(frequencies);
           frequenciesTexture.needsUpdate = true;
-          audioUniforms.uFrequenciesSize.value = frequenciesSize;
-          console.log('Frequencies Size:', audioUniforms.uFrequenciesSize.value);
+          gpgpu.audioDataVariable.material.uniforms.tFrequencies.value = frequenciesTexture;
+          gpgpu.audioDataVariable.material.uniforms.uFrequenciesSize.value = frequenciesSize;
+          console.log(
+            'Frequencies Size:',
+            gpgpu.audioDataVariable.material.uniforms.uFrequenciesSize.value
+          );
         } else if (event.data.constructor === Uint8Array) {
           frequencyDataTexture.image.data = new Uint8Array(event.data);
           frequencyDataTexture.needsUpdate = true;
+          gpgpu.audioDataVariable.material.uniforms.tFrequencyData.value = frequencyDataTexture;
         } else if (event.data.type === 'averageAmplitude') {
-          audioUniforms.uAverageAmplitude.value = event.data.data;
-          console.log('Average Amplitude:', audioUniforms.uAverageAmplitude.value);
+          gpgpu.audioDataVariable.material.uniforms.uAverageAmplitude.value = event.data.data;
+          console.log(
+            'Average Amplitude:',
+            gpgpu.audioDataVariable.material.uniforms.uAverageAmplitude.value
+          );
         } else if (event.data.type === 'tempo') {
-          audioUniforms.uTempo.value = event.data.data;
-          console.log('Tempo:', audioUniforms.uTempo.value);
+          gpgpu.audioDataVariable.material.uniforms.uTempo.value = event.data.data;
+          console.log('Tempo:', gpgpu.audioDataVariable.material.uniforms.uTempo.value);
         }
       };
     } catch (error) {
@@ -121,13 +130,15 @@ async function playAudio() {
     return;
   }
 
-  // Wait for the AudioWorklet to be connected
   await new Promise((resolve) => {
-    const onMessageCallback = () => {
-      audioWorkletNode.port.removeEventListener('message', onMessageCallback);
-      resolve();
+    const checkAudioWorkletConnected = () => {
+      if (audioWorkletNode && audioWorkletNode.port) {
+        resolve();
+      } else {
+        setTimeout(checkAudioWorkletConnected, 100);
+      }
     };
-    audioWorkletNode.port.addEventListener('message', onMessageCallback);
+    checkAudioWorkletConnected();
   });
 
   // Create a new buffer source if one doesn't exist or if it's not playing
