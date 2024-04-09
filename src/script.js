@@ -9,6 +9,62 @@ import particlesFragmentShader from './shaders/particles/fragment.glsl';
 import gpgpuParticlesShader from './shaders/gpgpu/particles.glsl';
 import scalarFieldShader from './shaders/gpgpu/scalarField.glsl';
 import zeroPointsShader from './shaders/gpgpu/zeroPoints.glsl';
+import audioDataShader from './shaders/gpgpu/audioData.glsl';
+
+/**
+ * Audio Processing
+ */
+async function setupAudioWorklet(audioFile) {
+  const audioContext = new AudioContext();
+  const audioWorkletUrl = new URL('audioProcessor.js', import.meta.url);
+  await audioContext.audioWorklet.addModule(audioWorkletUrl);
+
+  const fileReader = new FileReader();
+  fileReader.onload = async () => {
+    const arrayBuffer = fileReader.result;
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+    const audioWorkletNode = new AudioWorkletNode(audioContext, 'pitch-detection-processor');
+    const analyserNode = audioContext.createAnalyser();
+    analyserNode.fftSize = 2048;
+
+    const bufferSource = audioContext.createBufferSource();
+    bufferSource.buffer = audioBuffer;
+    bufferSource.connect(audioWorkletNode).connect(analyserNode).connect(audioContext.destination);
+    bufferSource.start();
+
+    const frequencyData = new Uint8Array(analyserNode.frequencyBinCount);
+    const amplitudeData = new Uint8Array(analyserNode.fftSize);
+
+    function analyzeAudio() {
+      analyserNode.getByteFrequencyData(frequencyData);
+      analyserNode.getByteTimeDomainData(amplitudeData);
+
+      // Perform any desired analysis or visualization with the frequency and amplitude data
+
+      requestAnimationFrame(analyzeAudio);
+    }
+
+    analyzeAudio();
+
+    // Receive messages from the AudioWorklet processor
+    audioWorkletNode.port.onmessage = (event) => {
+      const { type, data } = event.data;
+      if (type === 'audioData') {
+        // Handle the received audio data
+        console.log('Audio data received:', data);
+      }
+    };
+  };
+  fileReader.readAsArrayBuffer(audioFile);
+}
+
+// Usage
+const audioInput = document.getElementById('audioInput');
+audioInput.addEventListener('change', (event) => {
+  const audioFile = event.target.files[0];
+  setupAudioWorklet(audioFile);
+});
 
 /**
  * Base
@@ -204,7 +260,7 @@ const gpgpu = {};
 gpgpu.size = Math.ceil(Math.sqrt(baseGeometry.count));
 gpgpu.computation = new GPUComputationRenderer(gpgpu.size, gpgpu.size, renderer);
 
-// Base Particles
+// Particles w/ positions only for computation
 const baseParticlesTexture = gpgpu.computation.createTexture();
 
 for (let i = 0; i < baseGeometry.count; i++) {
@@ -218,7 +274,7 @@ for (let i = 0; i < baseGeometry.count; i++) {
   baseParticlesTexture.image.data[i4 + 3] = 1.0;
 }
 
-// Initalization of Particles For Movement
+// Initalization of particles for movement
 const initialParticlesTexture = gpgpu.computation.createTexture();
 
 const initialPositions = initializeParticlesInSphere(parameters.count, parameters.radius);
@@ -233,27 +289,48 @@ for (let i = 0; i < baseGeometry.count; i++) {
   initialParticlesTexture.image.data[i4 + 3] = 1.0;
 }
 
-/**
- * ScalarField Variable
- */
-const test = gpgpu.computation.createTexture();
-gpgpu.scalarFieldVariable = gpgpu.computation.addVariable('uScalarField', scalarFieldShader, test);
-
-//Uniforms
+// Global Uniform Variables
 const waveUniforms = {
   N: { value: parameters.N },
   waveComponents: { value: new Float32Array(waveComponentsArray) },
   uRadius: { value: parameters.radius },
 };
 
+/**
+ * AudioData Variable
+ */
+const audioDataTexture = gpgpu.computation.createTexture();
+gpgpu.audioDataVariable = gpgpu.computation.addVariable(
+  'uAudioData',
+  audioDataShader,
+  audioDataTexture
+);
+
+gpgpu.audioDataVariable.material.uniforms.uRadius = waveUniforms.uRadius;
+
+// Dependencies
+gpgpu.computation.setVariableDependencies(gpgpu.audioDataVariable, []);
+
+/**
+ * ScalarField Variable
+ */
+const scalarTexture = gpgpu.computation.createTexture();
+gpgpu.scalarFieldVariable = gpgpu.computation.addVariable(
+  'uScalarField',
+  scalarFieldShader,
+  scalarTexture
+);
+
 gpgpu.scalarFieldVariable.material.uniforms.N = waveUniforms.N;
 gpgpu.scalarFieldVariable.material.uniforms.waveComponents = waveUniforms.waveComponents;
 gpgpu.scalarFieldVariable.material.uniforms.uRadius = waveUniforms.uRadius;
 gpgpu.scalarFieldVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
-console.log(gpgpu.scalarFieldVariable.material.uniforms.uBase.value.image.data);
+
+// Log
+// console.log(gpgpu.scalarFieldVariable.material.uniforms.uBase.value.image.data);
 
 // Dependency
-gpgpu.computation.setVariableDependencies(gpgpu.scalarFieldVariable, []);
+gpgpu.computation.setVariableDependencies(gpgpu.scalarFieldVariable, [gpgpu.audioDataVariable]);
 
 /**
  * ZeroPoints Variable
@@ -438,6 +515,10 @@ const tick = () => {
   gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
 
   gpgpu.computation.compute();
+
+  // Update audioData texture
+  // gpgpu.scalarFieldVariable.material.unfiroms.uAudioData.value =
+  //   gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable).texture;
 
   // Update scalarfield texture
   gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value =

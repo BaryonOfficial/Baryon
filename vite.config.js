@@ -14,6 +14,14 @@ export default {
     emptyOutDir: true, // Empty the folder first
     sourcemap: true, // Add sourcemap
     // target: 'esnext',
+    rollupOptions: {
+      output: {
+        format: 'es',
+        entryFileNames: '[name].js',
+        chunkFileNames: '[name].js',
+        assetFileNames: '[name].[ext]',
+      },
+    },
   },
   plugins: [
     glsl(),

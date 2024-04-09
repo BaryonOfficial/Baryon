@@ -26,9 +26,9 @@ int solveMode(float length, float rightSide) {
 }
 
 vec3 calculateModeNumbers(float pitch) {
-    const float l1 = uRadius;
-    const float l2 = uRadius;
-    const float l3 = uRadius;
+    float l1 = uRadius;
+    float l2 = uRadius;
+    float l3 = uRadius;
     const float c = 343.0;
     float rightSide = (2.0 * pitch) / c;
 
@@ -61,8 +61,8 @@ vec3 calculateModeNumbers(float pitch) {
 }
 
 void main() {
-    float A = amplitude;
-    float pitch = pitch;
+    float A = 255.0;
+    float pitch = 100.0;
     vec3 modeNumbers = calculateModeNumbers(pitch);
     gl_FragColor = vec4(A, modeNumbers);
 }
