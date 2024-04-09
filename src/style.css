@@ -22,4 +22,19 @@ body
     top: 10px; /* Adjust as needed */
     left: 10px; /* Adjust as needed */
     z-index: 1000; /* Ensure it's above other elements */
-  }
+}
+.audio-controls {
+    position: fixed;
+    top: 50px;
+    left: 10px;
+    z-index: 1000;
+}
+.audio-controls button {
+    margin-right: 10px;
+    padding: 5px 10px;
+    font-size: 14px;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+}

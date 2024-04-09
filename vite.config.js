@@ -15,6 +15,10 @@ export default {
     sourcemap: true, // Add sourcemap
     // target: 'esnext',
     rollupOptions: {
+      input: {
+        main: 'src/script.js',
+        audioProcessor: 'src/audioProcessor.js',
+      },
       output: {
         format: 'es',
         entryFileNames: '[name].js',

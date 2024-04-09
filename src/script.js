@@ -11,60 +11,147 @@ import scalarFieldShader from './shaders/gpgpu/scalarField.glsl';
 import zeroPointsShader from './shaders/gpgpu/zeroPoints.glsl';
 import audioDataShader from './shaders/gpgpu/audioData.glsl';
 
-/**
- * Audio Processing
- */
-async function setupAudioWorklet(audioFile) {
-  const audioContext = new AudioContext();
-  const audioWorkletUrl = new URL('audioProcessor.js', import.meta.url);
-  await audioContext.audioWorklet.addModule(audioWorkletUrl);
+/******************************************************* AUDIO PROCESSING *******************************************************/
+
+let audioContext;
+let bufferSource;
+let audioBuffer;
+let audioWorkletNode;
+let audioFile;
+
+async function setupAudioWorklet(file) {
+  audioFile = file;
+
+  audioContext = new AudioContext();
+  await audioContext.audioWorklet.addModule('audioProcessor.js');
 
   const fileReader = new FileReader();
   fileReader.onload = async () => {
-    const arrayBuffer = fileReader.result;
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    try {
+      const arrayBuffer = fileReader.result;
+      audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-    const audioWorkletNode = new AudioWorkletNode(audioContext, 'pitch-detection-processor');
-    const analyserNode = audioContext.createAnalyser();
-    analyserNode.fftSize = 2048;
+      audioWorkletNode = new AudioWorkletNode(audioContext, 'pitch-detection-processor');
+      audioWorkletNode.connect(audioContext.destination);
 
-    const bufferSource = audioContext.createBufferSource();
-    bufferSource.buffer = audioBuffer;
-    bufferSource.connect(audioWorkletNode).connect(analyserNode).connect(audioContext.destination);
-    bufferSource.start();
+      console.log('AudioWorklet Connected');
 
-    const frequencyData = new Uint8Array(analyserNode.frequencyBinCount);
-    const amplitudeData = new Uint8Array(analyserNode.fftSize);
+      // Receive messages from the AudioWorklet processor
+      audioWorkletNode.port.onmessage = (event) => {
+        const { type, data } = event.data;
+        if (type === 'processedData') {
+          // Handle the received processed data
+          console.log('Frequencies:', data.frequencies);
+          console.log('Frequency Data:', data.frequencyData);
+          console.log('Average Amplitude:', data.averageAmplitude);
+          console.log('Tempo:', data.tempo);
 
-    function analyzeAudio() {
-      analyserNode.getByteFrequencyData(frequencyData);
-      analyserNode.getByteTimeDomainData(amplitudeData);
-
-      // Perform any desired analysis or visualization with the frequency and amplitude data
-
-      requestAnimationFrame(analyzeAudio);
+          // Perform any further actions with the processed data
+        }
+      };
+    } catch (error) {
+      console.error('Error in fileReader.onload:', error);
     }
-
-    analyzeAudio();
-
-    // Receive messages from the AudioWorklet processor
-    audioWorkletNode.port.onmessage = (event) => {
-      const { type, data } = event.data;
-      if (type === 'audioData') {
-        // Handle the received audio data
-        console.log('Audio data received:', data);
-      }
-    };
   };
+  console.log('Before readAsArrayBuffer'); // Add this line
+
   fileReader.readAsArrayBuffer(audioFile);
 }
 
-// Usage
-const audioInput = document.getElementById('audioInput');
-audioInput.addEventListener('change', (event) => {
-  const audioFile = event.target.files[0];
+// Function to handle file input change event
+function handleFileInputChange(event) {
+  audioFile = event.target.files[0];
+  console.log('Selected audio file:', audioFile); // Add this line
   setupAudioWorklet(audioFile);
-});
+}
+
+async function playAudio() {
+  // Check if the audio context and audio buffer are available
+  if (!audioContext || !audioBuffer) {
+    // If not, try to re-initialize them using the stored audioFile
+    if (audioFile) {
+      await setupAudioWorklet(audioFile);
+    } else {
+      console.log('No audio file selected, unable to play audio.');
+      return;
+    }
+  }
+
+  // Check if the audio is already playing
+  if (
+    audioContext.state === 'running' &&
+    bufferSource &&
+    bufferSource.playbackState === bufferSource.PLAYING_STATE
+  ) {
+    console.log('Audio is already playing, ignoring this click.');
+    return;
+  }
+
+  // Wait for the AudioWorklet to be connected
+  await new Promise((resolve) => {
+    const checkAudioWorkletConnected = () => {
+      if (audioWorkletNode) {
+        resolve();
+      } else {
+        setTimeout(checkAudioWorkletConnected, 100);
+      }
+    };
+    checkAudioWorkletConnected();
+  });
+
+  // Create a new buffer source if one doesn't exist or if it's not playing
+  if (!bufferSource || bufferSource.playbackState !== bufferSource.PLAYING_STATE) {
+    bufferSource = audioContext.createBufferSource();
+    bufferSource.buffer = audioBuffer;
+    bufferSource.connect(audioContext.destination);
+  }
+
+  // Start the audio playback
+  bufferSource.start();
+  console.log('Audio playback started');
+}
+
+function pauseAudio() {
+  if (audioContext) {
+    if (audioContext.state === 'running') {
+      audioContext.suspend().then(() => {
+        console.log('Audio playback paused');
+      });
+    } else if (audioContext.state === 'suspended') {
+      audioContext.resume().then(() => {
+        console.log('Audio playback resumed');
+      });
+    }
+  }
+}
+
+function resetAudio() {
+  if (audioContext && bufferSource) {
+    bufferSource.stop();
+    bufferSource.disconnect();
+    audioContext.close().then(() => {
+      audioContext = null;
+      bufferSource = null;
+      audioWorkletNode = null;
+      console.log('Audio playback reset');
+    });
+  }
+}
+
+// Add event listener to the file input element
+const audioInput = document.getElementById('audioInput');
+audioInput.addEventListener('change', handleFileInputChange);
+
+const playButton = document.getElementById('playButton');
+playButton.addEventListener('click', playAudio);
+
+const pauseButton = document.getElementById('pauseButton');
+pauseButton.addEventListener('click', pauseAudio);
+
+const resetButton = document.getElementById('resetButton');
+resetButton.addEventListener('click', resetAudio);
+
+//******************************************************* GENERAL INITIALIZATION *******************************************************//
 
 /**
  * Base
@@ -371,7 +458,8 @@ gpgpu.particlesVariable.material.uniforms.uThreshold = { value: parameters.thres
 gpgpu.particlesVariable.material.uniforms.uZeroPointSpeed = { value: parameters.zeroPointSpeed };
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
 
-//******************************************************* INITIALIZATION *******************************************************//
+//******************************************************* GPGPU INITIALIZATION *******************************************************//
+
 gpgpu.computation.init();
 
 // Debug
@@ -495,9 +583,8 @@ gui
   .step(0.001)
   .name('uFlowFieldFrequency');
 
-/**
- * Animate
- */
+/******************************************************* ANIMATION *******************************************************/
+
 const clock = new THREE.Clock();
 let previousTime = 0;
 
