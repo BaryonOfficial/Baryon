@@ -19,8 +19,8 @@ let audioBuffer;
 let audioWorkletNode;
 let audioFile;
 
-const frequenciesSize = 1024;
-const frequencyDataSize = 1024;
+const frequenciesSize = 4096;
+const frequencyDataSize = 2048;
 
 const frequenciesTexture = new THREE.DataTexture(
   new Float32Array(frequenciesSize),
@@ -42,6 +42,7 @@ const audioUniforms = {
   tFrequencyData: { value: frequencyDataTexture },
   uAverageAmplitude: { value: 0.0 },
   uTempo: { value: 0.0 },
+  uFrequenciesSize: { value: frequenciesSize },
 };
 
 async function setupAudioWorklet(file) {
@@ -63,18 +64,23 @@ async function setupAudioWorklet(file) {
 
       // Receive messages from the AudioWorklet processor
       audioWorkletNode.port.onmessage = (event) => {
-        if (event.data.constructor === Float32Array) {
-          frequenciesTexture.image.data = new Float32Array(event.data);
-          frequenciesTexture.image.width = event.data.length;
+        if (event.data.type === 'frequencies') {
+          const frequenciesSize = event.data.size;
+          const frequencies = event.data.data;
+
+          frequenciesTexture.image.data.set(frequencies);
           frequenciesTexture.needsUpdate = true;
+          audioUniforms.uFrequenciesSize.value = frequenciesSize;
+          console.log('Frequencies Size:', audioUniforms.uFrequenciesSize.value);
         } else if (event.data.constructor === Uint8Array) {
           frequencyDataTexture.image.data = new Uint8Array(event.data);
-          frequencyDataTexture.image.width = event.data.length;
           frequencyDataTexture.needsUpdate = true;
         } else if (event.data.type === 'averageAmplitude') {
           audioUniforms.uAverageAmplitude.value = event.data.data;
+          console.log('Average Amplitude:', audioUniforms.uAverageAmplitude.value);
         } else if (event.data.type === 'tempo') {
           audioUniforms.uTempo.value = event.data.data;
+          console.log('Tempo:', audioUniforms.uTempo.value);
         }
       };
     } catch (error) {
@@ -117,14 +123,11 @@ async function playAudio() {
 
   // Wait for the AudioWorklet to be connected
   await new Promise((resolve) => {
-    const checkAudioWorkletConnected = () => {
-      if (audioWorkletNode) {
-        resolve();
-      } else {
-        setTimeout(checkAudioWorkletConnected, 100);
-      }
+    const onMessageCallback = () => {
+      audioWorkletNode.port.removeEventListener('message', onMessageCallback);
+      resolve();
     };
-    checkAudioWorkletConnected();
+    audioWorkletNode.port.addEventListener('message', onMessageCallback);
   });
 
   // Create a new buffer source if one doesn't exist or if it's not playing

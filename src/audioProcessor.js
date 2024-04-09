@@ -56,7 +56,11 @@ class PitchDetectionProcessor extends AudioWorkletProcessor {
 
             this.analyzeFrequencyData(this.buffer);
 
-            this.port.postMessage(frequencies, [frequencies.buffer]);
+            this.port.postMessage({
+              type: 'frequencies',
+              data: frequencies,
+              size: frequencies.length,
+            });
             this.port.postMessage(this.frequencyData, [this.frequencyData.buffer]);
             this.port.postMessage({ type: 'averageAmplitude', data: this.getAverageAmplitude() });
             this.port.postMessage({ type: 'tempo', data: tempo });
