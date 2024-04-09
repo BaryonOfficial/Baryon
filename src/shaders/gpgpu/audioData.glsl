@@ -1,4 +1,8 @@
 uniform float uRadius;
+uniform sampler2D tFrequencies;
+uniform sampler2D tFrequencyData;
+uniform float uAverageAmplitude;
+uniform float uTempo;
 
 int solveMode(float length, float rightSide) {
 

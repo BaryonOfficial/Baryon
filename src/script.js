@@ -19,6 +19,31 @@ let audioBuffer;
 let audioWorkletNode;
 let audioFile;
 
+const frequenciesSize = 1024;
+const frequencyDataSize = 1024;
+
+const frequenciesTexture = new THREE.DataTexture(
+  new Float32Array(frequenciesSize),
+  frequenciesSize,
+  1,
+  THREE.RedFormat,
+  THREE.FloatType
+);
+const frequencyDataTexture = new THREE.DataTexture(
+  new Uint8Array(frequencyDataSize),
+  frequencyDataSize,
+  1,
+  THREE.LuminanceFormat,
+  THREE.UnsignedByteType
+);
+
+const audioUniforms = {
+  tFrequencies: { value: frequenciesTexture },
+  tFrequencyData: { value: frequencyDataTexture },
+  uAverageAmplitude: { value: 0.0 },
+  uTempo: { value: 0.0 },
+};
+
 async function setupAudioWorklet(file) {
   audioFile = file;
 
@@ -38,22 +63,25 @@ async function setupAudioWorklet(file) {
 
       // Receive messages from the AudioWorklet processor
       audioWorkletNode.port.onmessage = (event) => {
-        const { type, data } = event.data;
-        if (type === 'processedData') {
-          // Handle the received processed data
-          console.log('Frequencies:', data.frequencies);
-          console.log('Frequency Data:', data.frequencyData);
-          console.log('Average Amplitude:', data.averageAmplitude);
-          console.log('Tempo:', data.tempo);
-
-          // Perform any further actions with the processed data
+        if (event.data.constructor === Float32Array) {
+          frequenciesTexture.image.data = new Float32Array(event.data);
+          frequenciesTexture.image.width = event.data.length;
+          frequenciesTexture.needsUpdate = true;
+        } else if (event.data.constructor === Uint8Array) {
+          frequencyDataTexture.image.data = new Uint8Array(event.data);
+          frequencyDataTexture.image.width = event.data.length;
+          frequencyDataTexture.needsUpdate = true;
+        } else if (event.data.type === 'averageAmplitude') {
+          audioUniforms.uAverageAmplitude.value = event.data.data;
+        } else if (event.data.type === 'tempo') {
+          audioUniforms.uTempo.value = event.data.data;
         }
       };
     } catch (error) {
       console.error('Error in fileReader.onload:', error);
     }
   };
-  console.log('Before readAsArrayBuffer'); // Add this line
+  console.log('Before readAsArrayBuffer');
 
   fileReader.readAsArrayBuffer(audioFile);
 }
@@ -394,6 +422,10 @@ gpgpu.audioDataVariable = gpgpu.computation.addVariable(
 );
 
 gpgpu.audioDataVariable.material.uniforms.uRadius = waveUniforms.uRadius;
+gpgpu.audioDataVariable.material.uniforms.tFrequencies = audioUniforms.tFrequencies;
+gpgpu.audioDataVariable.material.uniforms.tFrequencyData = audioUniforms.tFrequencyData;
+gpgpu.audioDataVariable.material.uniforms.uAverageAmplitude = audioUniforms.uAverageAmplitude;
+gpgpu.audioDataVariable.material.uniforms.uTempo = audioUniforms.uTempo;
 
 // Dependencies
 gpgpu.computation.setVariableDependencies(gpgpu.audioDataVariable, []);
