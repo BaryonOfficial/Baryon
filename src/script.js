@@ -70,17 +70,22 @@ async function loadAudioWorkletModule() {
 
 // Decode Audio Data
 async function decodeAudioData(file) {
-  const fileReader = new FileReader();
-  fileReader.onload = async () => {
-    try {
-      const arrayBuffer = fileReader.result;
-      audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    } catch (error) {
-      console.error('Error decoding audio data:', error);
-      throw error;
-    }
-  };
-  fileReader.readAsArrayBuffer(file);
+  try {
+    // Create a new promise that resolves when the file is read
+    const arrayBuffer = await new Promise((resolve, reject) => {
+      const fileReader = new FileReader();
+      fileReader.onload = () => resolve(fileReader.result);
+      fileReader.onerror = () => reject(fileReader.error);
+      fileReader.readAsArrayBuffer(file);
+    });
+
+    // Decode the audio data
+    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    console.log('AudioBuffer decoded successfully:', audioBuffer);
+  } catch (error) {
+    console.error('Error decoding audio data:', error);
+    throw error;
+  }
 }
 
 // Initialize Audio Worklet Node
@@ -115,17 +120,22 @@ async function setupAudioAnalysis(quantization, bufferSize) {
       const audioData = event.data.data;
       try {
         const tempo = await estimateTempo(audioBuffer);
-        const frequencies = Pitchfinder.frequencies(detectPitch, audioData, {
-          tempo: tempo,
-          quantization: quantization,
-        });
-        analyser.getByteFrequencyData(frequencyData);
-        analyser.getByteTimeDomainData(timeDomainData);
-        const averageAmplitude = calculateAverageAmplitude(timeDomainData);
-        const numberOfNotes = frequencies.length;
+        if (tempo !== null) {
+          // Ensure tempo is valid before proceeding
+          const frequencies = Pitchfinder.frequencies(detectPitch, audioData, {
+            tempo: tempo,
+            quantization: quantization,
+          });
+          analyser.getByteFrequencyData(frequencyData);
+          analyser.getByteTimeDomainData(timeDomainData);
+          const averageAmplitude = calculateAverageAmplitude(timeDomainData);
+          const numberOfNotes = frequencies.length;
 
-        updateUniforms(frequencies, frequencyData, numberOfNotes, averageAmplitude, tempo);
-        logAudioAnalysisData(frequencies, frequencyData, numberOfNotes, averageAmplitude, tempo);
+          updateUniforms(frequencies, frequencyData, numberOfNotes, averageAmplitude, tempo);
+          logAudioAnalysisData(frequencies, frequencyData, numberOfNotes, averageAmplitude, tempo);
+        } else {
+          console.log('Tempo could not be estimated. Skipping audio data processing.');
+        }
       } catch (error) {
         console.error('Error processing audio data:', error);
       }
