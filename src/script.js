@@ -746,8 +746,16 @@ const clock = new THREE.Clock();
 let previousTime = 0;
 
 const tick = () => {
-  const audioTime = audioContext.currentTime;
   const elapsedTime = clock.getElapsedTime();
+  let audioTime;
+
+  // Check if audioContext is initialized and use audioContext.currentTime if available
+  if (audioContext && audioContext.state === 'running') {
+    audioTime = audioContext.currentTime;
+  } else {
+    audioTime = elapsedTime; // Use clock's elapsed time if audioContext is not available
+  }
+
   const deltaTime = audioTime - previousTime;
   previousTime = audioTime;
 
@@ -802,6 +810,4 @@ const tick = () => {
   window.requestAnimationFrame(tick);
 };
 
-initializeAudioContext().then(() => {
-  tick(); // Start the animation loop only after audio context is ready
-});
+tick();

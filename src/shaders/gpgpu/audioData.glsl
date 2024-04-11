@@ -70,7 +70,8 @@ vec3 calculateModeNumbers(float pitch) {
 }
 
 void main() {
-    float pitch = 100.0;
+    vec2 uv = gl_FragCoord.xy / resolution.xy;
+    float pitch = texture2D(tPitches, vec2(uv.x, 0.0)).r;
 
     // Calculate the bin index for the given pitch
     float binIndex = round(pitch * bufferSize / sampleRate);
