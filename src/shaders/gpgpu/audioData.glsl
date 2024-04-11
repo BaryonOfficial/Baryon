@@ -1,8 +1,13 @@
 uniform float uRadius;
-uniform sampler2D tFrequencies;
-uniform sampler2D tFrequencyData;
-uniform float uAverageAmplitude;
+
+uniform sampler2D tPitches;
+uniform sampler2D tDataArray;
+
+uniform float uAvgAmplitude;
 uniform float uTempo;
+uniform int nNotes;
+uniform float sampleRate;
+uniform float bufferSize;
 
 int solveMode(float length, float rightSide) {
 
@@ -65,8 +70,20 @@ vec3 calculateModeNumbers(float pitch) {
 }
 
 void main() {
-    float A = 255.0;
     float pitch = 100.0;
+
+    // Calculate the bin index for the given pitch
+    float binIndex = round(pitch * bufferSize / sampleRate);
+
+    // Calculate the texture coordinates for the bin index
+    vec2 binUV = vec2(binIndex / bufferSize, 0.5);
+
+    // Sample the amplitude value from the tDataArray
+    float amplitude = texture2D(tDataArray, binUV).r;
+
+    // Normalize amplitude to [0, 1]
+    amplitude = amplitude / 255.0;
+
     vec3 modeNumbers = calculateModeNumbers(pitch);
-    gl_FragColor = vec4(A, modeNumbers);
+    gl_FragColor = vec4(amplitude, modeNumbers);
 }
