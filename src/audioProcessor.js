@@ -8,17 +8,23 @@ class AudioDataProcessor extends AudioWorkletProcessor {
 
   process(inputs, outputs) {
     const input = inputs[0];
+    const output = outputs[0];
+
     if (input.length > 0) {
       const inputChannel = input[0];
+      const outputChannel = output[0];
+
       for (let i = 0; i < inputChannel.length; i++) {
         this.buffer[this.bufferIndex++] = inputChannel[i];
+        outputChannel[i] = inputChannel[i];
+
         if (this.bufferIndex === this.bufferSize) {
-          this.port.postMessage(this.buffer, [this.buffer.buffer]);
-          this.buffer = new Float32Array(this.bufferSize);
+          this.port.postMessage({ type: 'audioData', data: this.buffer }, [this.buffer.buffer]);
           this.bufferIndex = 0;
         }
       }
     }
+
     return true;
   }
 }
