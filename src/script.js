@@ -15,15 +15,15 @@ import * as Pitchfinder from 'pitchfinder';
 
 /******************************************************* AUDIO PROCESSING *******************************************************/
 
-let audioContext = new AudioContext();
 let bufferSource;
 let audioBuffer;
 let audioWorkletNode;
 let audioFile;
+let audioUniforms;
+let audioContext;
 
 const quantization = 4;
 const bufferSize = 1024;
-
 const bufferLength = bufferSize / 2;
 const nNotes = 128;
 
@@ -42,158 +42,187 @@ const dataArrayTexture = new THREE.DataTexture(
   THREE.UnsignedByteType
 );
 
-const audioUniforms = {
-  tPitches: { value: frequenciesTexture },
-  tDataArray: { value: dataArrayTexture },
-  uAvgAmplitude: { value: 0.0 },
-  uTempo: { value: 0.0 },
-  nNotes: { value: nNotes },
-  sampleRate: { value: audioContext.sampleRate },
-  bufferSize: { value: bufferSize },
-};
-
-console.log('Audio Uniforms:', audioUniforms);
-
+// Setup Audio Worklet
 async function setupAudioWorklet(file, quantization, bufferSize) {
   audioFile = file;
 
-  await audioContext.audioWorklet
-    .addModule('audioProcessor.js')
-    .then(() => {
-      console.log('AudioWorklet module loaded successfully');
-    })
-    .catch((error) => {
-      console.error('Failed to load AudioWorklet module:', error);
-    });
+  try {
+    await loadAudioWorkletModule();
+    await decodeAudioData(audioFile);
+    await initializeAudioWorkletNode();
+    await setupAudioAnalysis(quantization, bufferSize);
+  } catch (error) {
+    console.error('Error setting up AudioWorklet:', error);
+    throw error;
+  }
+}
 
+// Loading
+async function loadAudioWorkletModule() {
+  try {
+    await audioContext.audioWorklet.addModule('audioProcessor.js');
+    console.log('AudioWorklet module loaded successfully');
+  } catch (error) {
+    console.error('Failed to load AudioWorklet module:', error);
+    throw error;
+  }
+}
+
+// Decode Audio Data
+async function decodeAudioData(file) {
   const fileReader = new FileReader();
   fileReader.onload = async () => {
     try {
       const arrayBuffer = fileReader.result;
       audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-      if (!audioWorkletNode) {
-        audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-data-processor', {
-          processorOptions: {
-            bufferSize: bufferSize,
-          },
-        });
-        audioWorkletNode.connect(audioContext.destination);
-      }
-
-      audioWorkletNode.onprocessorerror = (event) => {
-        console.error('AudioWorkletProcessor error event:', event);
-        console.error('AudioWorkletProcessor error:', event.error);
-        // Handle the error case, e.g., set a flag to indicate audio is not playing
-      };
-
-      console.log('AudioWorklet Connected');
-
-      const detectPitch = Pitchfinder.YIN();
-      const analyser = new AnalyserNode(audioContext, { fftSize: bufferSize });
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-      const timeDomainData = new Uint8Array(bufferSize);
-
-      audioWorkletNode.port.onmessage = async (event) => {
-        console.log('Message from Worklet:', event.data);
-        if (event.data.type === 'audioData') {
-          const audioData = event.data.data;
-
-          try {
-            // Perform audio analysis on the chunk
-            const tempo = await estimateTempo(audioBuffer);
-            const frequencies = Pitchfinder.frequencies(detectPitch, audioData, {
-              tempo: tempo,
-              quantization: quantization,
-            });
-
-            analyser.getByteFrequencyData(dataArray);
-            analyser.getByteTimeDomainData(timeDomainData);
-
-            const avgAmplitude = getAverageAmplitude(timeDomainData);
-            const N = frequencies.length;
-
-            // Update uniforms
-            frequenciesTexture.image.data.set(frequencies);
-            frequenciesTexture.needsUpdate = true;
-
-            dataArrayTexture.image.data.set(dataArray);
-            dataArrayTexture.needsUpdate = true;
-
-            audioUniforms.nNotes.value = N;
-            audioUniforms.uAvgAmplitude.value = avgAmplitude;
-            audioUniforms.uTempo.value = tempo;
-
-            console.log('Frequencies:', frequencies);
-            console.log('Data Array:', dataArray);
-            console.log('Number of Notes:', N);
-            console.log('Average Amplitude:', avgAmplitude);
-            console.log('Tempo:', tempo);
-          } catch (error) {
-            console.error('Error processing audio data:', error);
-          }
-        }
-      };
-
-      async function estimateTempo(audioBuffer) {
-        try {
-          const tempo = await analyze(audioBuffer);
-          return tempo;
-        } catch (err) {
-          throw err;
-        }
-      }
-
-      function getAverageAmplitude(timeDomainData) {
-        const sum = timeDomainData.reduce((acc, val) => acc + Math.abs(val - 128), 0);
-        return sum / timeDomainData.length;
-      }
     } catch (error) {
-      console.error('Error in fileReader.onload:', error);
+      console.error('Error decoding audio data:', error);
+      throw error;
     }
   };
-  console.log('Before readAsArrayBuffer');
-
-  fileReader.readAsArrayBuffer(audioFile);
+  fileReader.readAsArrayBuffer(file);
 }
 
-// Function to handle file input change event
-function handleFileInputChange(event) {
-  audioFile = event.target.files[0];
-  console.log('Selected audio file:', audioFile); // Add this line
+// Initialize Audio Worklet Node
+async function initializeAudioWorkletNode() {
+  try {
+    audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-data-processor');
+    audioWorkletNode.connect(audioContext.destination);
+    audioWorkletNode.onprocessorerror = handleAudioWorkletProcessorError;
+    console.log('AudioWorklet Connected');
+  } catch (error) {
+    console.error('Error initializing AudioWorkletNode:', error);
+    throw error;
+  }
 }
 
-async function playAudio() {
-  // Ensure the AudioContext is in a 'running' state
+function handleAudioWorkletProcessorError(event) {
+  console.error('AudioWorkletProcessor error event:', event);
+  console.error('AudioWorkletProcessor error:', event.error);
+  // Handle the error case, e.g., set a flag to indicate audio is not playing
+}
+
+async function setupAudioAnalysis(quantization, bufferSize) {
+  const detectPitch = Pitchfinder.YIN();
+  const analyser = new AnalyserNode(audioContext, { fftSize: bufferSize });
+  const frequencyDataLength = analyser.frequencyBinCount;
+  const frequencyData = new Uint8Array(frequencyDataLength);
+  const timeDomainData = new Uint8Array(bufferSize);
+
+  audioWorkletNode.port.onmessage = async (event) => {
+    console.log('Message from Worklet:', event.data);
+    if (event.data.type === 'audioData') {
+      const audioData = event.data.data;
+      try {
+        const tempo = await estimateTempo(audioBuffer);
+        const frequencies = Pitchfinder.frequencies(detectPitch, audioData, {
+          tempo: tempo,
+          quantization: quantization,
+        });
+        analyser.getByteFrequencyData(frequencyData);
+        analyser.getByteTimeDomainData(timeDomainData);
+        const averageAmplitude = calculateAverageAmplitude(timeDomainData);
+        const numberOfNotes = frequencies.length;
+
+        updateUniforms(frequencies, frequencyData, numberOfNotes, averageAmplitude, tempo);
+        logAudioAnalysisData(frequencies, frequencyData, numberOfNotes, averageAmplitude, tempo);
+      } catch (error) {
+        console.error('Error processing audio data:', error);
+      }
+    }
+  };
+}
+
+async function estimateTempo(audioBuffer) {
+  try {
+    const tempo = await analyze(audioBuffer);
+    return tempo;
+  } catch (error) {
+    console.error('Error estimating tempo:', error);
+    throw error;
+  }
+}
+
+function calculateAverageAmplitude(timeDomainData) {
+  const sum = timeDomainData.reduce((acc, val) => acc + Math.abs(val - 128), 0);
+  return sum / timeDomainData.length;
+}
+
+function updateUniforms(frequencies, frequencyData, numberOfNotes, averageAmplitude, tempo) {
+  frequenciesTexture.image.data.set(frequencies);
+  frequenciesTexture.needsUpdate = true;
+  dataArrayTexture.image.data.set(frequencyData);
+  dataArrayTexture.needsUpdate = true;
+  audioUniforms.nNotes.value = numberOfNotes;
+  audioUniforms.uAvgAmplitude.value = averageAmplitude;
+  audioUniforms.uTempo.value = tempo;
+}
+
+function logAudioAnalysisData(frequencies, frequencyData, numberOfNotes, averageAmplitude, tempo) {
+  console.log('Frequencies:', frequencies);
+  console.log('Frequency Data:', frequencyData);
+  console.log('Number of Notes:', numberOfNotes);
+  console.log('Average Amplitude:', averageAmplitude);
+  console.log('Tempo:', tempo);
+}
+
+/**
+ * Audio Playback Controls
+ */
+
+async function initializeAudioContext() {
+  if (!audioContext) {
+    audioContext = new AudioContext();
+    initializeAudioUniforms(); // Initialize audioUniforms after creating audioContext
+  }
+
   if (audioContext.state !== 'running') {
-    try {
-      await audioContext.resume();
-      console.log('AudioContext resumed successfully');
-    } catch (error) {
-      console.error('Failed to resume AudioContext:', error);
-      return; // Exit if we cannot resume the AudioContext
-    }
+    await audioContext.resume();
+    console.log('AudioContext resumed successfully');
   }
+}
 
-  // Check if the audio context and audio buffer are available
+function initializeAudioUniforms() {
+  audioUniforms = {
+    tPitches: { value: frequenciesTexture },
+    tDataArray: { value: dataArrayTexture },
+    uAvgAmplitude: { value: 0.0 },
+    uTempo: { value: 0.0 },
+    nNotes: { value: nNotes },
+    sampleRate: { value: audioContext.sampleRate },
+    bufferSize: { value: bufferSize },
+  };
+
+  console.log('Audio Uniforms:', audioUniforms);
+}
+
+async function initializeAudioBuffer() {
+  if (!audioBuffer && audioFile) {
+    await setupAudioWorklet(audioFile, quantization, bufferSize);
+  }
+}
+
+async function startAudioPlayback() {
   if (!audioContext || !audioBuffer) {
-    // If not, try to re-initialize them using the stored audioFile
-    if (audioFile) {
-      await setupAudioWorklet(audioFile, quantization, bufferSize);
-    } else {
-      console.log('No audio file selected, unable to play audio.');
-      return;
-    }
+    throw new Error('AudioContext or AudioBuffer not initialized');
   }
 
-  // Check if the audio is already playing
   if (bufferSource && bufferSource.playbackState === bufferSource.PLAYING_STATE) {
-    console.log('Audio is already playing, ignoring this click.');
+    console.log('Audio is already playing');
     return;
   }
 
-  await new Promise((resolve) => {
+  await waitForAudioWorkletConnection();
+
+  bufferSource = audioContext.createBufferSource();
+  bufferSource.buffer = audioBuffer;
+  bufferSource.connect(audioWorkletNode);
+  bufferSource.start();
+  console.log('Audio playback started');
+}
+
+async function waitForAudioWorkletConnection() {
+  return new Promise((resolve) => {
     const checkAudioWorkletConnected = () => {
       if (audioWorkletNode && audioWorkletNode.port) {
         resolve();
@@ -203,72 +232,72 @@ async function playAudio() {
     };
     checkAudioWorkletConnected();
   });
-
-  if (!bufferSource || bufferSource.playbackState !== bufferSource.PLAYING_STATE) {
-    bufferSource = audioContext.createBufferSource();
-    bufferSource.buffer = audioBuffer;
-    bufferSource.connect(audioWorkletNode);
-  }
-
-  // Start the audio playback
-  bufferSource.start();
-  console.log('Audio playback started');
 }
 
-function pauseAudio() {
+async function pauseAudioPlayback() {
   if (!audioContext) {
-    console.error('AudioContext is not initialized.');
+    console.error('AudioContext is not initialized');
     return;
   }
 
   if (audioContext.state === 'running') {
-    audioContext
-      .suspend()
-      .then(() => {
-        console.log('Audio playback paused');
-      })
-      .catch((error) => {
-        console.error('Failed to pause AudioContext:', error);
-      });
+    await audioContext.suspend();
+    console.log('Audio playback paused');
   } else if (audioContext.state === 'suspended') {
-    audioContext
-      .resume()
-      .then(() => {
-        console.log('Audio playback resumed');
-      })
-      .catch((error) => {
-        console.error('Failed to resume AudioContext:', error);
-      });
+    await audioContext.resume();
+    console.log('Audio playback resumed');
   } else {
     console.log('AudioContext is in an unexpected state:', audioContext.state);
   }
 }
 
-function resetAudio() {
+async function resetAudioPlayback() {
   if (audioContext && bufferSource) {
     bufferSource.stop();
     bufferSource.disconnect();
-    audioContext.close().then(() => {
-      audioContext = null;
-      bufferSource = null;
-      audioWorkletNode = null;
-      console.log('Audio playback reset');
-    });
+    audioWorkletNode.disconnect();
+    await audioContext.close();
+    audioContext = null;
+    bufferSource = null;
+    audioWorkletNode = null;
+    audioBuffer = null;
+    console.log('Audio playback reset');
   }
 }
 
-// Add event listener to the file input element
-const audioInput = document.getElementById('audioInput');
-audioInput.addEventListener('change', handleFileInputChange);
+async function playAudio() {
+  try {
+    await initializeAudioContext();
+    console.log('AudioContext initialized:', audioContext);
 
-const playButton = document.getElementById('playButton');
-playButton.addEventListener('click', playAudio);
+    await initializeAudioBuffer();
+    console.log('AudioBuffer initialized:', audioBuffer);
 
-const pauseButton = document.getElementById('pauseButton');
-pauseButton.addEventListener('click', pauseAudio);
+    await startAudioPlayback();
+  } catch (error) {
+    console.error('Failed to play audio:', error);
+  }
+}
 
-const resetButton = document.getElementById('resetButton');
-resetButton.addEventListener('click', resetAudio);
+function handleFileInputChange(event) {
+  audioFile = event.target.files[0];
+  console.log('Selected audio file:', audioFile);
+}
+
+function setupEventListeners() {
+  const audioInput = document.getElementById('audioInput');
+  const playButton = document.getElementById('playButton');
+  const pauseButton = document.getElementById('pauseButton');
+  const resetButton = document.getElementById('resetButton');
+
+  audioInput.addEventListener('change', handleFileInputChange);
+  playButton.addEventListener('click', playAudio);
+  pauseButton.addEventListener('click', pauseAudioPlayback);
+  resetButton.addEventListener('click', resetAudioPlayback);
+}
+
+// Call setupEventListeners when the script is loaded
+setupEventListeners();
 
 //******************************************************* GENERAL INITIALIZATION *******************************************************//
 
@@ -763,4 +792,6 @@ const tick = () => {
   window.requestAnimationFrame(tick);
 };
 
-tick();
+initializeAudioContext().then(() => {
+  tick(); // Start the animation loop only after audio context is ready
+});
