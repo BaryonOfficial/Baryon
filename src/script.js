@@ -298,11 +298,11 @@ const context = canvas.getContext('webgl2');
 const scene = new THREE.Scene();
 
 // Loaders
-const dracoLoader = new DRACOLoader();
-dracoLoader.setDecoderPath('/draco/');
+// const dracoLoader = new DRACOLoader();
+// dracoLoader.setDecoderPath('/draco/');
 
-const gltfLoader = new GLTFLoader();
-gltfLoader.setDRACOLoader(dracoLoader);
+// const gltfLoader = new GLTFLoader();
+// gltfLoader.setDRACOLoader(dracoLoader);
 
 /**
  * Sizes
