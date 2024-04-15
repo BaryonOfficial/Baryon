@@ -8,7 +8,7 @@ uniform int N;
 uniform float uRadius;
 
 // Function to calculate the Chladni pattern displacement
-float chladni(vec3 position, vec4 waveData) {
+float chladni(vec3 position) {
     float sum = 0.0;
     for(int i = 0; i < N; ++i) {
         int index = 4 * i;
@@ -22,11 +22,11 @@ float chladni(vec3 position, vec4 waveData) {
 }
 
 // // Function to calculate the Chladni pattern displacement using wave data from texture
-// float chladni(vec3 position, vec4 waves) {
-//     float Ai = waves.a;
-//     float ui = waves.b;
-//     float vi = waves.c;
-//     float wi = waves.d;
+// float chladni(vec3 position, vec4 waveData) {
+//     float Ai = waveData.a;
+//     float ui = waveData.b;
+//     float vi = waveData.c;
+//     float wi = waveData.d;
 //     float sum = Ai * sin(ui * PI * position.x) * sin(vi * PI * position.y) * sin(wi * PI * position.z);
 //     return sum;
 // }
@@ -38,7 +38,7 @@ void main() {
     vec4 base = texture(uBase, uv);
     vec3 position = base.xyz;
 
-    float value = chladni(position, waveData);
+    float value = chladni(position);
 
     gl_FragColor = vec4(position, value);
 }

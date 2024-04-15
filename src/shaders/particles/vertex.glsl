@@ -43,6 +43,6 @@ void main() {
 
     // Varyings
     vColor = aColor;
-    vType = particle.a;
+    vType = particle.w;
     vPosition = particle.xyz;
 }

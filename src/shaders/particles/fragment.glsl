@@ -52,7 +52,7 @@ void main() {
 
     } else if(vType == 0.0) {
         // Scaled-back particle, assign a different color (e.g., blue)
-        color = vec3(1.0);
+        color = vec3(1.0, 0.95, 0.83);
     } else if(vType == 0.5) {
         color = vec3(0.0);
     }

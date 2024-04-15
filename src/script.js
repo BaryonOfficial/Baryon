@@ -364,32 +364,38 @@ renderer.setClearColor(debugObject.clearColor);
 let parameters = {
   N: 22,
   count: 1000000,
-  waveComponents: [],
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
   threshold: 1.25,
-  zeroPointSpeed: 100.0,
+  interopRate: 0.03,
   surfaceRatio: 0.33,
 };
 
-// Populate initial wave component values
-for (let i = 0; i < parameters.N; i++) {
-  parameters.waveComponents.push({
-    [`A${i}`]: Math.random() * 3 + 1,
-    [`u${i}`]: Math.floor(Math.random() * 10) + 1,
-    [`v${i}`]: Math.floor(Math.random() * 10) + 1,
-    [`w${i}`]: Math.floor(Math.random() * 10) + 1,
-  });
+function generateWaveComponents() {
+  const waveComponents = [];
+  // Populate initial wave component values
+  for (let i = 0; i < parameters.N; i++) {
+    waveComponents.push({
+      [`A${i}`]: Math.random() * 3 + 1,
+      [`u${i}`]: Math.floor(Math.random() * 10) + 1,
+      [`v${i}`]: Math.floor(Math.random() * 10) + 1,
+      [`w${i}`]: Math.floor(Math.random() * 10) + 1,
+    });
+  }
+
+  // Flatten the wave components into an array that can be used in GLSL
+  const waveComponentsArray = new Float32Array(parameters.N * 4);
+  for (let i = 0; i < parameters.N; i++) {
+    waveComponentsArray[i * 4] = waveComponents[i][`A${i}`];
+    waveComponentsArray[i * 4 + 1] = waveComponents[i][`u${i}`];
+    waveComponentsArray[i * 4 + 2] = waveComponents[i][`v${i}`];
+    waveComponentsArray[i * 4 + 3] = waveComponents[i][`w${i}`];
+  }
+
+  return waveComponentsArray;
 }
 
-// Flatten the wave components into an array that can be used in GLSL
-const waveComponentsArray = [];
-for (let i = 0; i < parameters.N; i++) {
-  waveComponentsArray.push(parameters.waveComponents[i][`A${i}`]);
-  waveComponentsArray.push(parameters.waveComponents[i][`u${i}`]);
-  waveComponentsArray.push(parameters.waveComponents[i][`v${i}`]);
-  waveComponentsArray.push(parameters.waveComponents[i][`w${i}`]);
-}
+const initialWaveComponentsArray = generateWaveComponents();
 
 // Base Geometry
 const baseGeometry = {
@@ -398,33 +404,6 @@ const baseGeometry = {
 };
 
 const colors = new Float32Array(baseGeometry.count * 3); // r, g, b for each particle
-
-function initializeParticlesInSphere(count, radius) {
-  const positions = new Float32Array(count * 3);
-
-  for (let i = 0; i < count; i++) {
-    const r = Math.pow(Math.random(), 1 / 3) * (radius / 3);
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-
-    const x = r * Math.sin(phi) * Math.cos(theta);
-    const y = r * Math.sin(phi) * Math.sin(theta);
-    const z = r * Math.cos(phi);
-
-    positions[i * 3] = x;
-    positions[i * 3 + 1] = y;
-    positions[i * 3 + 2] = z;
-  }
-
-  for (let i = 0; i < count; i++) {
-    const colorValue = Math.random(); // Assign a random value between 0 and 1 for the gradient
-    colors[i * 3] = colorValue;
-    colors[i * 3 + 1] = colorValue;
-    colors[i * 3 + 2] = colorValue;
-  }
-
-  return positions;
-}
 
 function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio) {
   const positions = new Float32Array(count * 3);
@@ -462,23 +441,51 @@ function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio
   return positions;
 }
 
-baseGeometry.positions = initializeParticlesInSphereVolumeAndSurface(
-  parameters.count,
-  parameters.radius,
-  parameters.surfaceRatio
-);
+function initializeParticlesInSphere(count, radius) {
+  const positions = new Float32Array(count * 3);
+
+  for (let i = 0; i < count; i++) {
+    const r = Math.pow(Math.random(), 1 / 10) * (radius / 10);
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+
+    const x = r * Math.sin(phi) * Math.cos(theta);
+    const y = r * Math.sin(phi) * Math.sin(theta);
+    const z = r * Math.cos(phi);
+
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = z;
+  }
+
+  for (let i = 0; i < count; i++) {
+    const colorValue = Math.random(); // Assign a random value between 0 and 1 for the gradient
+    colors[i * 3] = colorValue;
+    colors[i * 3 + 1] = colorValue;
+    colors[i * 3 + 2] = colorValue;
+  }
+
+  return positions;
+}
 
 /**
  * GPU Compute
  */
 
 // Setup
+
 const gpgpu = {};
 gpgpu.size = Math.ceil(Math.sqrt(baseGeometry.count));
 gpgpu.computation = new GPUComputationRenderer(gpgpu.size, gpgpu.size, renderer);
 
 // Particles w/ positions only for computation
 const baseParticlesTexture = gpgpu.computation.createTexture();
+
+baseGeometry.positions = initializeParticlesInSphereVolumeAndSurface(
+  parameters.count,
+  parameters.radius,
+  parameters.surfaceRatio
+);
 
 for (let i = 0; i < baseGeometry.count; i++) {
   const i3 = i * 3;
@@ -509,7 +516,7 @@ for (let i = 0; i < baseGeometry.count; i++) {
 // Global Uniform Variables
 const waveUniforms = {
   N: { value: parameters.N },
-  waveComponents: { value: new Float32Array(waveComponentsArray) },
+  waveComponents: { value: initialWaveComponentsArray },
 };
 
 /**
@@ -580,12 +587,12 @@ gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
 
 gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
-gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(0.5);
-gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(1);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(1.0);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(10);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uThreshold = { value: parameters.threshold };
-gpgpu.particlesVariable.material.uniforms.uZeroPointSpeed = { value: parameters.zeroPointSpeed };
-gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
+gpgpu.particlesVariable.material.uniforms.uRate = { value: parameters.interopRate };
+gpgpu.particlesVariable.material.uniforms.uInit = new THREE.Uniform(initialParticlesTexture);
 
 //******************************************************* GPGPU INITIALIZATION *******************************************************//
 
@@ -711,6 +718,18 @@ gui
   .max(1)
   .step(0.001)
   .name('uFlowFieldFrequency');
+
+// Add a button to generate new wave components
+gui
+  .add(
+    {
+      generateNewWaveComponents: () => {
+        waveUniforms.waveComponents.value = generateWaveComponents();
+      },
+    },
+    'generateNewWaveComponents'
+  )
+  .name('Generate New Wave Components');
 
 /******************************************************* ANIMATION *******************************************************/
 
