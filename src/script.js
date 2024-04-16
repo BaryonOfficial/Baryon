@@ -442,10 +442,14 @@ function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio
 }
 
 function initializeParticlesInSphere(count, radius) {
+  // Scale down the radius to 1/10th
+  const scaledRadius = radius / 10;
+
   const positions = new Float32Array(count * 3);
 
   for (let i = 0; i < count; i++) {
-    const r = Math.pow(Math.random(), 1 / 10) * (radius / 10);
+    // Use the scaled radius in the calculation
+    const r = Math.pow(Math.random(), 1 / 3) * scaledRadius; // Adjust the power to 1/3 for uniform distribution within the sphere
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
 
@@ -456,13 +460,6 @@ function initializeParticlesInSphere(count, radius) {
     positions[i * 3] = x;
     positions[i * 3 + 1] = y;
     positions[i * 3 + 2] = z;
-  }
-
-  for (let i = 0; i < count; i++) {
-    const colorValue = Math.random(); // Assign a random value between 0 and 1 for the gradient
-    colors[i * 3] = colorValue;
-    colors[i * 3 + 1] = colorValue;
-    colors[i * 3 + 2] = colorValue;
   }
 
   return positions;
@@ -588,7 +585,7 @@ gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
 gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(1.0);
-gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(2);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(0.2);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uThreshold = { value: parameters.threshold };
 gpgpu.particlesVariable.material.uniforms.uRate = { value: parameters.interopRate };

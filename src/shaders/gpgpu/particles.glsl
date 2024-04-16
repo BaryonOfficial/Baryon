@@ -13,7 +13,7 @@ void main() {
     float time = uTime * 1.0;
     vec2 uv = gl_FragCoord.xy / resolution.xy;
     vec4 particle = texture(uParticles, uv);
-    vec4 initPos = texture(uInit, uv);
+    // vec4 initPos = texture(uInit, uv);
 
     // Sample the zero point texture to get the nearest zero point
     vec4 zeroPoint = texture(uZeroPoints, uv);
@@ -25,7 +25,7 @@ void main() {
     vec3 direction = normalize(zeroPoint.xyz - particle.xyz);
 
     // Strength of the noise based on the base texture and distance to the zero point
-    float strength = simplexNoise4d(vec4(initPos.xyz * 0.2, time + 1.0));
+    float strength = simplexNoise4d(vec4(zeroPoint.xyz * 0.2, time + 1.0));
     float influence = (uFlowFieldInfluence - 0.5) * (-2.0);
     strength = smoothstep(influence, 1.0, strength);
 
