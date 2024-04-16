@@ -38,9 +38,9 @@ void main() {
     vec3 targetPosition = mix(particle.xyz, zeroPoint.xyz, uRate);
 
     // Adjust the flow field strength based on the interpolation factor
-    float effectiveStrength = distance < uThreshold ? 0.0 : uFlowFieldStrength;
+    // float effectiveStrength = distance < uThreshold ? 0.0 : uFlowFieldStrength;
 
-    vec3 movement = adjustedDirection * uDeltaTime * effectiveStrength;
+    vec3 movement = adjustedDirection * uDeltaTime * uFlowFieldStrength;
     targetPosition += movement;
 
     // Update the particle position
