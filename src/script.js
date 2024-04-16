@@ -593,6 +593,7 @@ gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Unifor
 gpgpu.particlesVariable.material.uniforms.uThreshold = { value: parameters.threshold };
 gpgpu.particlesVariable.material.uniforms.uRate = { value: parameters.interopRate };
 gpgpu.particlesVariable.material.uniforms.uInit = new THREE.Uniform(initialParticlesTexture);
+gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(100);
 
 //******************************************************* GPGPU INITIALIZATION *******************************************************//
 
@@ -727,6 +728,12 @@ gui
   .max(10)
   .step(0.001)
   .name('uFlowFieldFrequency');
+gui
+  .add(gpgpu.particlesVariable.material.uniforms.uAverageAmplitude, 'value')
+  .min(0)
+  .max(255)
+  .step(0.01)
+  .name('uAverageAmplitude');
 
 // Add a button to generate new wave components
 gui
