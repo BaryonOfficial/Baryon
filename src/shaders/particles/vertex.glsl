@@ -17,11 +17,11 @@ void main() {
     float time = uTime * 20.0;
 
     // Wave Propagation
-    float waveFrequency = 5.0;
-    float waveAmplitude = 0.01;
-    float wavePhase = time * 0.1;
-    vec3 waveOffset = vec3(sin(particle.x * waveFrequency + wavePhase), sin(particle.y * waveFrequency + wavePhase), sin(particle.z * waveFrequency + wavePhase)) * waveAmplitude;
-    particle.xyz += waveOffset;
+    // float waveFrequency = 5.0;
+    // float waveAmplitude = 0.01;
+    // float wavePhase = time * 0.1;
+    // vec3 waveOffset = vec3(sin(particle.x * waveFrequency + wavePhase), sin(particle.y * waveFrequency + wavePhase), sin(particle.z * waveFrequency + wavePhase)) * waveAmplitude;
+    // particle.xyz += waveOffset;
 
     // Final position
     vec4 modelPosition = modelMatrix * vec4(particle.xyz, 1.0);
