@@ -40,12 +40,12 @@ void main() {
     // Adjust the flow field strength based on the interpolation factor
     float effectiveStrength = distance < uThreshold ? 0.0 : uFlowFieldStrength;
 
-    vec3 movement = adjustedDirection * uDeltaTime * effectiveStrength;
+    vec3 movement = adjustedDirection * uDeltaTime * uFlowFieldStrength;
     targetPosition += movement;
 
     // Update the particle position
     particle.xyz = targetPosition;
+    particle.w = zeroPoint.a; // coloring
 
-    particle.w = zeroPoint.a;
     gl_FragColor = particle;
 }

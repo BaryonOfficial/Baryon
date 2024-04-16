@@ -367,7 +367,7 @@ let parameters = {
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
   threshold: 1.25,
-  interopRate: 0.03,
+  interopRate: 0.1,
   surfaceRatio: 0.33,
 };
 
@@ -588,7 +588,7 @@ gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
 gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(1.0);
-gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(10);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(3);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uThreshold = { value: parameters.threshold };
 gpgpu.particlesVariable.material.uniforms.uRate = { value: parameters.interopRate };
@@ -640,6 +640,12 @@ const particles = {};
 
 // Material
 particles.material = new THREE.ShaderMaterial({
+  // transparent: true,
+  side: THREE.DoubleSide,
+  // depthWrite: false,
+  // depthTest: false,
+  // blending: THREE.AdditiveBlending,
+  // vertexColors: true,
   vertexShader: particlesVertexShader,
   fragmentShader: particlesFragmentShader,
   uniforms: {
@@ -649,6 +655,7 @@ particles.material = new THREE.ShaderMaterial({
     ),
     uParticlesTexture: new THREE.Uniform(),
     uTime: new THREE.Uniform(0),
+    uColor: new THREE.Uniform(new THREE.Color('rgb(77,142,236)')),
   },
 });
 
@@ -715,7 +722,7 @@ gui
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency, 'value')
   .min(0)
-  .max(1)
+  .max(10)
   .step(0.001)
   .name('uFlowFieldFrequency');
 

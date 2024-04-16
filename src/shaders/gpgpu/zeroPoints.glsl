@@ -9,14 +9,16 @@ void main() {
 
     float distance = length(position);
 
+    vec3 scaledPosition = position * 0.75;
+
     if(abs(distance - uRadius) < 0.0001) {
         // Apply color based on whether the scalar value meets the threshold
         if(abs(scalarValue) < uThreshold) {
             gl_FragColor = vec4(position, 1.0);
         } else {
-            gl_FragColor = vec4(position * 0.75, 0.0);
+            gl_FragColor = vec4(scaledPosition, 0.0);
         }
     } else {
-        gl_FragColor = vec4(position * 0.75, 0.5);
+        gl_FragColor = vec4(scaledPosition, 0.5);
     }
 }

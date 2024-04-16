@@ -10,6 +10,7 @@ attribute float aSize;
 varying vec3 vColor;
 varying float vType;
 varying vec3 vPosition;
+varying vec3 vNormal;
 
 void main() {
     vec4 particle = texture(uParticlesTexture, aParticlesUv);
@@ -33,6 +34,8 @@ void main() {
     vec4 projectedPosition = projectionMatrix * viewPosition;
     gl_Position = projectedPosition;
 
+    vec4 modelNormal = modelMatrix * vec4(normal, 0.0);
+
     // Point size
     // float sizeIn = smoothstep(0.0, 0.1, particle.a);
     // float sizeOut = 1.0 - smoothstep(0.7, 1.0, particle.a);
@@ -44,5 +47,7 @@ void main() {
     // Varyings
     vColor = aColor;
     vType = particle.w;
-    vPosition = particle.xyz;
+    vPosition = modelPosition.xyz;
+    vNormal = modelNormal.xyz;
+
 }
