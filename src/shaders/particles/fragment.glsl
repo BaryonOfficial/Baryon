@@ -39,25 +39,25 @@ vec3 hslToRgb(float h, float s, float l) {
 void main() {
     //******* Holographic Effect *******//
 
-    // vec3 normal = normalize(vNormal);
-    // normal = gl_FrontFacing ? normal : -normal;
+    vec3 normal = normalize(vNormal);
+    normal = gl_FrontFacing ? normal : -normal;
 
-    // // Stripes
-    // float stripes = mod((vPosition.y - uTime * 0.02) * 20.0, 1.0);
-    // stripes = pow(stripes, 3.0);
+    // Stripes
+    float stripes = mod((vPosition.y - uTime * 0.02) * 20.0, 1.0);
+    stripes = pow(stripes, 3.0);
 
-    // // Fresnel
-    // vec3 viewDirection = normalize(vPosition - cameraPosition);
-    // float fresnel = dot(viewDirection, normal) + 1.0;
-    // fresnel = pow(fresnel, 2.0);
+    // Fresnel
+    vec3 viewDirection = normalize(vPosition - cameraPosition);
+    float fresnel = dot(viewDirection, normal) + 1.0;
+    fresnel = pow(fresnel, 2.0);
 
-    // // Falloff
-    // float falloff = smoothstep(0.8, 0.0, fresnel);
+    // Falloff
+    float falloff = smoothstep(0.8, 0.0, fresnel);
 
-    // // Holographic
-    // float holographic = fresnel * stripes;
-    // holographic += fresnel * 1.25;
-    // holographic *= falloff;
+    // Holographic
+    float holographic = fresnel * stripes;
+    holographic += fresnel * 1.25;
+    holographic *= falloff;
 
     float distanceToCenter = length(gl_PointCoord - 0.5);
     if(distanceToCenter > 0.5)
@@ -74,16 +74,13 @@ void main() {
         // hue = mod(hue, 0.8); // Wrap hue around the range [0, 0.8]
         // color = hslToRgb(hue, 1.0, 0.5);
         color = uColor;
-        gl_FragColor = vec4(color * gl_FragColor.a, 1.0);
 
     } else if(vGroup == 0.0) {
         // Scaled-back particle, assign a different color (e.g., blue)
         color = vec3(1.0, 0.93, 0.93);
-        gl_FragColor = vec4(color, 1.0);
 
     } else if(vGroup == 0.5) {
         color = vec3(0.0);
-        gl_FragColor = vec4(color, 1.0);
 
     }
 
