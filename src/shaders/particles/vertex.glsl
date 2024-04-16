@@ -8,7 +8,7 @@ attribute vec3 aColor;
 attribute float aSize;
 
 varying vec3 vColor;
-varying float vType;
+varying float vGroup;
 varying vec3 vPosition;
 varying vec3 vNormal;
 
@@ -46,7 +46,7 @@ void main() {
 
     // Varyings
     vColor = aColor;
-    vType = particle.w;
+    vGroup = particle.w;
     vPosition = modelPosition.xyz;
     vNormal = modelNormal.xyz;
 

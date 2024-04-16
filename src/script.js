@@ -588,7 +588,7 @@ gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
 gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(1.0);
-gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(3);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(2);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uThreshold = { value: parameters.threshold };
 gpgpu.particlesVariable.material.uniforms.uRate = { value: parameters.interopRate };
@@ -640,11 +640,11 @@ const particles = {};
 
 // Material
 particles.material = new THREE.ShaderMaterial({
-  // transparent: true,
+  transparent: true,
   side: THREE.DoubleSide,
   // depthWrite: false,
   // depthTest: false,
-  // blending: THREE.AdditiveBlending,
+  blending: THREE.NormalBlending,
   // vertexColors: true,
   vertexShader: particlesVertexShader,
   fragmentShader: particlesFragmentShader,
@@ -655,9 +655,11 @@ particles.material = new THREE.ShaderMaterial({
     ),
     uParticlesTexture: new THREE.Uniform(),
     uTime: new THREE.Uniform(0),
-    uColor: new THREE.Uniform(new THREE.Color('rgb(77,142,236)')),
+    uColor: new THREE.Uniform(new THREE.Color('skyblue')),
   },
 });
+
+// rgb(77,142,236)
 
 particles.material.uniforms.uParticlesTexture.value = gpgpu.computation.getCurrentRenderTarget(
   gpgpu.particlesVariable

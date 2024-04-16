@@ -1,5 +1,5 @@
 varying vec3 vColor;
-varying float vType;
+varying float vGroup;
 varying vec3 vPosition;
 uniform float uTime;
 varying vec3 vNormal;
@@ -64,7 +64,7 @@ void main() {
         discard;
 
     vec3 color;
-    if(vType == 1.0) {
+    if(vGroup == 1.0) {
 
         // // Repeated gradient
         // float hue = abs(vPosition.y) * 0.8; // Map vertical position to hue range [0, 0.8]
@@ -74,12 +74,17 @@ void main() {
         // hue = mod(hue, 0.8); // Wrap hue around the range [0, 0.8]
         // color = hslToRgb(hue, 1.0, 0.5);
         color = uColor;
+        gl_FragColor = vec4(color * gl_FragColor.a, 1.0);
 
-    } else if(vType == 0.0) {
+    } else if(vGroup == 0.0) {
         // Scaled-back particle, assign a different color (e.g., blue)
         color = vec3(1.0, 0.93, 0.93);
-    } else if(vType == 0.5) {
+        gl_FragColor = vec4(color, 1.0);
+
+    } else if(vGroup == 0.5) {
         color = vec3(0.0);
+        gl_FragColor = vec4(color, 1.0);
+
     }
 
     gl_FragColor = vec4(color, 1.0);
