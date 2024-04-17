@@ -2,7 +2,7 @@
 
 uniform float uTime;
 uniform float uDeltaTime;
-uniform sampler2D uInit;
+uniform sampler2D uBase;
 uniform float uFlowFieldInfluence;
 uniform float uFlowFieldStrength;
 uniform float uFlowFieldFrequency;
@@ -13,7 +13,6 @@ void main() {
     float time = uTime * 1.0;
     vec2 uv = gl_FragCoord.xy / resolution.xy;
     vec4 particle = texture(uParticles, uv);
-    // vec4 initPos = texture(uInit, uv);
 
     // Sample the zero point texture to get the nearest zero point
     vec4 zeroPoint = texture(uZeroPoints, uv);

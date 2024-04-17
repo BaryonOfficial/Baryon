@@ -366,9 +366,10 @@ let parameters = {
   count: 1000000,
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
-  threshold: 1.25,
-  interopRate: 0.1,
+  threshold: 0.5,
+  interopRate: 0.9,
   surfaceRatio: 0.33,
+  surfaceThreshold: 0.001,
 };
 
 function generateWaveComponents() {
@@ -563,6 +564,9 @@ gpgpu.zeroPointsVariable = gpgpu.computation.addVariable(
 
 gpgpu.zeroPointsVariable.material.uniforms.uThreshold = { value: parameters.threshold };
 gpgpu.zeroPointsVariable.material.uniforms.uRadius = { value: parameters.radius };
+gpgpu.zeroPointsVariable.material.uniforms.uSurfaceThreshold = {
+  value: parameters.surfaceThreshold,
+};
 
 // Dependency
 gpgpu.computation.setVariableDependencies(gpgpu.zeroPointsVariable, [gpgpu.scalarFieldVariable]);
@@ -589,7 +593,7 @@ gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uThreshold = { value: parameters.threshold };
 gpgpu.particlesVariable.material.uniforms.uRate = { value: parameters.interopRate };
-gpgpu.particlesVariable.material.uniforms.uInit = new THREE.Uniform(initialParticlesTexture);
+gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform();
 gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(100);
 
 //******************************************************* GPGPU INITIALIZATION *******************************************************//

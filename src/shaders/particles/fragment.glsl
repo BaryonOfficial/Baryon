@@ -75,11 +75,11 @@ void main() {
         // color = hslToRgb(hue, 1.0, 0.5);
         color = uColor;
 
-    } else if(vGroup == 0.0) {
+    } else if(vGroup == 2.0) {
         // Scaled-back particle, assign a different color (e.g., blue)
         color = vec3(1.0, 0.93, 0.93);
 
-    } else if(vGroup == 0.5) {
+    } else if(vGroup == 0.0) {
         color = vec3(0.0);
 
     }
