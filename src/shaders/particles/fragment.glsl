@@ -37,6 +37,12 @@ vec3 hslToRgb(float h, float s, float l) {
 }
 
 void main() {
+
+    // Creates circles
+    float distanceToCenter = length(gl_PointCoord - 0.5);
+    if(distanceToCenter > 0.5)
+        discard;
+
     //******* Holographic Effect *******//
 
     vec3 normal = normalize(vNormal);
@@ -59,14 +65,12 @@ void main() {
     holographic += fresnel * 1.25;
     holographic *= falloff;
 
-    float distanceToCenter = length(gl_PointCoord - 0.5);
-    if(distanceToCenter > 0.5)
-        discard;
+    // ***** Coloring ***** //
 
     vec3 color;
     if(vGroup == 1.0) {
 
-        // // Repeated gradient
+        // Repeated gradient
         // float hue = abs(vPosition.y) * 0.8; // Map vertical position to hue range [0, 0.8]
         // float period = 10.0; // Example: cycle every 10 seconds
         // hue += (mod(uTime, period) / period) * 0.8;
@@ -76,12 +80,10 @@ void main() {
         color = uColor;
 
     } else if(vGroup == 2.0) {
-        // Scaled-back particle, assign a different color (e.g., blue)
+        // Scaled back
         color = vec3(1.0, 0.93, 0.93);
-
     } else if(vGroup == 0.0) {
         color = vec3(0.0);
-
     }
 
     gl_FragColor = vec4(color, 1.0);

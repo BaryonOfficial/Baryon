@@ -7,6 +7,7 @@ uniform float uFlowFieldInfluence;
 uniform float uFlowFieldStrength;
 uniform float uFlowFieldFrequency;
 uniform float uParticleSpeed;
+uniform float uThreshold;
 
 void main() {
     float time = uTime * 1.0;
@@ -34,7 +35,10 @@ void main() {
     vec3 adjustedDirection = direction + flowField * strength;
     vec3 movement = adjustedDirection * uDeltaTime * uFlowFieldStrength;
 
-    vec3 lerpMovement = mix(particle.xyz, zeroPoint.xyz, clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0)) - particle.xyz;
+    // vec3 lerpMovement = mix(particle.xyz, zeroPoint.xyz, clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0)) - particle.xyz;
+    //Adjusts speed while accounting for distance to the zero point
+    vec3 lerpMovement = distance > uThreshold ? mix(particle.xyz, zeroPoint.xyz, clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0)) - particle.xyz : vec3(0.0);
+
     particle.xyz += movement + lerpMovement;
 
     particle.w = zeroPoint.a; // coloring
