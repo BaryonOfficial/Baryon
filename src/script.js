@@ -595,7 +595,7 @@ gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Unifor
 gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform();
 gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(100);
-gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(1.0);
+gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(100.0);
 gpgpu.particlesVariable.material.uniforms.uDampening = new THREE.Uniform(0.5);
 
 //******************************************************* GPGPU INITIALIZATION *******************************************************//
@@ -714,21 +714,21 @@ gui.add(particles.material.uniforms.uSize, 'value').min(0).max(1).step(0.001).na
 
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence, 'value')
-  .min(0)
+  .min(0.01)
   .max(1)
   .step(0.001)
   .name('uFlowFieldInfluence');
 
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength, 'value')
-  .min(0)
+  .min(0.1)
   .max(10)
   .step(0.001)
   .name('uFlowFieldStrength');
 
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency, 'value')
-  .min(0)
+  .min(0.01)
   .max(1)
   .step(0.001)
   .name('uFlowFieldFrequency');
@@ -742,7 +742,7 @@ gui
 // Add the GUI control for the threshold parameter
 gui
   .add(parameters, 'threshold')
-  .min(0)
+  .min(0.01)
   .max(5)
   .step(0.001)
   .name('uThreshold')
@@ -775,8 +775,17 @@ gui
 
 const clock = new THREE.Clock();
 let previousTime = 0;
+let frameCounter = 0; // Initialize the frame counter
 
 const tick = () => {
+  frameCounter++;
+
+  // Check if 60 frames have passed
+  if (frameCounter >= 4) {
+    waveUniforms.waveComponents.value = generateWaveComponents();
+    frameCounter = 0; // Reset the counter after generating
+  }
+
   const elapsedTime = clock.getElapsedTime();
   let audioTime;
 
