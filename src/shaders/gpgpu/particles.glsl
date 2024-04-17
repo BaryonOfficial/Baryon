@@ -6,7 +6,6 @@ uniform sampler2D uBase;
 uniform float uFlowFieldInfluence;
 uniform float uFlowFieldStrength;
 uniform float uFlowFieldFrequency;
-uniform float uRate;
 uniform float uParticleSpeed;
 
 void main() {
@@ -23,7 +22,7 @@ void main() {
     // Calculate the direction towards the zero point
     vec3 direction = normalize(zeroPoint.xyz - particle.xyz);
 
-    // Strength of the noise based on the base texture and distance to the zero point
+    // Strength of the noise based on the zeroPoint texture
     float strength = simplexNoise4d(vec4(zeroPoint.xyz * 0.2, time + 1.0));
     float influence = (uFlowFieldInfluence - 0.5) * (-2.0);
     strength = smoothstep(influence, 1.0, strength);
@@ -33,12 +32,10 @@ void main() {
     flowField = normalize(flowField);
 
     vec3 adjustedDirection = direction + flowField * strength;
-
-    // float velocity = distance / (uDeltaTime * uParticleSpeed);
-
-    // Update the particle position based on the adjusted direction and flow field strength
     vec3 movement = adjustedDirection * uDeltaTime * uFlowFieldStrength;
-    particle.xyz += movement;
+
+    vec3 lerpMovement = mix(particle.xyz, zeroPoint.xyz, clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0)) - particle.xyz;
+    particle.xyz += movement + lerpMovement;
 
     particle.w = zeroPoint.a; // coloring
 

@@ -367,7 +367,6 @@ let parameters = {
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
   threshold: 1.0,
-  interopRate: 0.9,
   surfaceRatio: 0.33,
   surfaceThreshold: 0.001,
   particleSpeed: 1.0,
@@ -594,7 +593,6 @@ gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Unifor
 gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(6);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
-gpgpu.particlesVariable.material.uniforms.uRate = { value: parameters.interopRate };
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform();
 gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(100);
 gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(1.0);
@@ -646,11 +644,11 @@ const particles = {};
 
 // Material
 particles.material = new THREE.ShaderMaterial({
-  // transparent: true,
+  transparent: true,
   side: THREE.DoubleSide,
   // depthWrite: false,
   // depthTest: false,
-  // blending: THREE.AdditiveBlending,
+  blending: THREE.AdditiveBlending,
   // vertexColors: true,
   vertexShader: particlesVertexShader,
   fragmentShader: particlesFragmentShader,
@@ -724,20 +722,20 @@ gui
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength, 'value')
   .min(0)
-  .max(100)
+  .max(10)
   .step(0.001)
   .name('uFlowFieldStrength');
 
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency, 'value')
   .min(0)
-  .max(10)
+  .max(1)
   .step(0.001)
   .name('uFlowFieldFrequency');
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uParticleSpeed, 'value')
   .min(1)
-  .max(10)
+  .max(100)
   .step(0.001)
   .name('uParticleSpeed');
 
