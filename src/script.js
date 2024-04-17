@@ -366,7 +366,7 @@ let parameters = {
   count: 1000000,
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
-  threshold: 0.5,
+  threshold: 1.0,
   interopRate: 0.9,
   surfaceRatio: 0.33,
   surfaceThreshold: 0.001,
@@ -564,7 +564,7 @@ gpgpu.zeroPointsVariable = gpgpu.computation.addVariable(
   gpgpu.computation.createTexture()
 );
 
-gpgpu.zeroPointsVariable.material.uniforms.uThreshold = new THREE.Uniform(1.0);
+gpgpu.zeroPointsVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
 gpgpu.zeroPointsVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
 gpgpu.zeroPointsVariable.material.uniforms.uSurfaceThreshold = {
   value: parameters.surfaceThreshold,
@@ -591,13 +591,13 @@ gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
 gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(1.0);
-gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(0.2);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(6);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.5);
-gpgpu.particlesVariable.material.uniforms.uThreshold = { value: parameters.threshold };
+gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
 gpgpu.particlesVariable.material.uniforms.uRate = { value: parameters.interopRate };
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform();
 gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(100);
-gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(10.0);
+gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(1.0);
 gpgpu.particlesVariable.material.uniforms.uDampening = new THREE.Uniform(0.5);
 
 //******************************************************* GPGPU INITIALIZATION *******************************************************//
@@ -712,6 +712,7 @@ gui.addColor(debugObject, 'clearColor').onChange(() => {
   renderer.setClearColor(debugObject.clearColor);
 });
 gui.add(particles.material.uniforms.uSize, 'value').min(0).max(1).step(0.001).name('uSize');
+// gui.add(parameters, 'count').min(1000).max(10000000).step(1000).name('Particle Count');
 
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence, 'value')
@@ -723,7 +724,7 @@ gui
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength, 'value')
   .min(0)
-  .max(10)
+  .max(100)
   .step(0.001)
   .name('uFlowFieldStrength');
 
@@ -733,19 +734,25 @@ gui
   .max(10)
   .step(0.001)
   .name('uFlowFieldFrequency');
-
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uParticleSpeed, 'value')
-  .min(0)
-  .max(100)
+  .min(1)
+  .max(10)
   .step(0.001)
   .name('uParticleSpeed');
+
+// Add the GUI control for the threshold parameter
 gui
-  .add(gpgpu.particlesVariable.material.uniforms.uDampening, 'value')
+  .add(parameters, 'threshold')
   .min(0)
-  .max(1)
+  .max(5)
   .step(0.001)
-  .name('uDampening');
+  .name('uThreshold')
+  .onChange(() => {
+    // Update both uniforms when the threshold value changes
+    gpgpu.zeroPointsVariable.material.uniforms.uThreshold.value = parameters.threshold;
+    gpgpu.particlesVariable.material.uniforms.uThreshold.value = parameters.threshold;
+  });
 
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uAverageAmplitude, 'value')
@@ -753,12 +760,6 @@ gui
   .max(255)
   .step(0.01)
   .name('uAverageAmplitude');
-gui
-  .add(gpgpu.zeroPointsVariable.material.uniforms.uThreshold, 'value')
-  .min(0)
-  .max(5)
-  .step(0.001)
-  .name('uThreshold');
 
 // Add a button to generate new wave components
 gui

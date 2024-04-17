@@ -6,10 +6,8 @@ uniform sampler2D uBase;
 uniform float uFlowFieldInfluence;
 uniform float uFlowFieldStrength;
 uniform float uFlowFieldFrequency;
-uniform float uThreshold;
 uniform float uRate;
 uniform float uParticleSpeed;
-uniform float uDampening;
 
 void main() {
     float time = uTime * 1.0;
@@ -35,6 +33,8 @@ void main() {
     flowField = normalize(flowField);
 
     vec3 adjustedDirection = direction + flowField * strength;
+
+    // float velocity = distance / (uDeltaTime * uParticleSpeed);
 
     // Update the particle position based on the adjusted direction and flow field strength
     vec3 movement = adjustedDirection * uDeltaTime * uFlowFieldStrength;
