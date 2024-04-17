@@ -8,6 +8,8 @@ uniform float uFlowFieldStrength;
 uniform float uFlowFieldFrequency;
 uniform float uThreshold;
 uniform float uRate;
+uniform float uParticleSpeed;
+uniform float uDampening;
 
 void main() {
     float time = uTime * 1.0;
@@ -31,19 +33,13 @@ void main() {
     // Add Simplex noise to the direction for organic movement
     vec3 flowField = vec3(simplexNoise4d(vec4(particle.xyz * uFlowFieldFrequency, time)), simplexNoise4d(vec4(particle.xyz * uFlowFieldFrequency + 1.0, time)), simplexNoise4d(vec4(particle.xyz * uFlowFieldFrequency + 2.0, time)));
     flowField = normalize(flowField);
+
     vec3 adjustedDirection = direction + flowField * strength;
 
-    // Calculate the target position based on the interpolation between the current position and the zero point
-    vec3 targetPosition = mix(particle.xyz, zeroPoint.xyz, uRate);
-
-    // Adjust the flow field strength based on the interpolation factor
-    // float effectiveStrength = distance < uThreshold ? 0.0 : uFlowFieldStrength;
-
+    // Update the particle position based on the adjusted direction and flow field strength
     vec3 movement = adjustedDirection * uDeltaTime * uFlowFieldStrength;
-    targetPosition += movement;
+    particle.xyz += movement;
 
-    // Update the particle position
-    particle.xyz = targetPosition;
     particle.w = zeroPoint.a; // coloring
 
     gl_FragColor = particle;

@@ -370,6 +370,8 @@ let parameters = {
   interopRate: 0.9,
   surfaceRatio: 0.33,
   surfaceThreshold: 0.001,
+  particleSpeed: 1.0,
+  dampening: 0.5,
 };
 
 function generateWaveComponents() {
@@ -562,8 +564,8 @@ gpgpu.zeroPointsVariable = gpgpu.computation.addVariable(
   gpgpu.computation.createTexture()
 );
 
-gpgpu.zeroPointsVariable.material.uniforms.uThreshold = { value: parameters.threshold };
-gpgpu.zeroPointsVariable.material.uniforms.uRadius = { value: parameters.radius };
+gpgpu.zeroPointsVariable.material.uniforms.uThreshold = new THREE.Uniform(1.0);
+gpgpu.zeroPointsVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
 gpgpu.zeroPointsVariable.material.uniforms.uSurfaceThreshold = {
   value: parameters.surfaceThreshold,
 };
@@ -595,6 +597,8 @@ gpgpu.particlesVariable.material.uniforms.uThreshold = { value: parameters.thres
 gpgpu.particlesVariable.material.uniforms.uRate = { value: parameters.interopRate };
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform();
 gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(100);
+gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(10.0);
+gpgpu.particlesVariable.material.uniforms.uDampening = new THREE.Uniform(0.5);
 
 //******************************************************* GPGPU INITIALIZATION *******************************************************//
 
@@ -729,12 +733,32 @@ gui
   .max(10)
   .step(0.001)
   .name('uFlowFieldFrequency');
+
+gui
+  .add(gpgpu.particlesVariable.material.uniforms.uParticleSpeed, 'value')
+  .min(0)
+  .max(100)
+  .step(0.001)
+  .name('uParticleSpeed');
+gui
+  .add(gpgpu.particlesVariable.material.uniforms.uDampening, 'value')
+  .min(0)
+  .max(1)
+  .step(0.001)
+  .name('uDampening');
+
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uAverageAmplitude, 'value')
   .min(0)
   .max(255)
   .step(0.01)
   .name('uAverageAmplitude');
+gui
+  .add(gpgpu.zeroPointsVariable.material.uniforms.uThreshold, 'value')
+  .min(0)
+  .max(5)
+  .step(0.001)
+  .name('uThreshold');
 
 // Add a button to generate new wave components
 gui
