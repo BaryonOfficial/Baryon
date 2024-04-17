@@ -5,6 +5,13 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 import GUI from 'lil-gui';
 
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { GammaCorrectionShader } from 'three/addons/shaders/GammaCorrectionShader.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+
 // Audio Analysis
 import * as Pitchfinder from 'pitchfinder';
 
@@ -332,6 +339,10 @@ window.addEventListener('resize', () => {
   // Update renderer
   renderer.setSize(sizes.width, sizes.height);
   renderer.setPixelRatio(sizes.pixelRatio);
+
+  // Update effect composer
+  effectComposer.setSize(sizes.width, sizes.height);
+  effectComposer.setPixelRatio(sizes.pixelRatio);
 });
 
 /**
@@ -359,6 +370,51 @@ renderer.setPixelRatio(sizes.pixelRatio);
 
 debugObject.backgroundColor = '#000000';
 renderer.setClearColor(debugObject.backgroundColor);
+
+/**
+ * Post Processing
+ */
+
+const renderTarget = new THREE.WebGLRenderTarget(800, 600, {
+  samples: renderer.getPixelRatio() === 1 ? 2 : 0,
+});
+
+const effectComposer = new EffectComposer(renderer, renderTarget);
+effectComposer.setPixelRatio(sizes.pixelRatio);
+effectComposer.setSize(sizes.width, sizes.height);
+
+const renderPass = new RenderPass(scene, camera);
+effectComposer.addPass(renderPass);
+
+// Must be before GammaCorrection
+const unrealBloomPass = new UnrealBloomPass();
+unrealBloomPass.enabled = false;
+effectComposer.addPass(unrealBloomPass);
+
+const gammaCorrectionPass = new ShaderPass(GammaCorrectionShader);
+effectComposer.addPass(gammaCorrectionPass);
+
+if (renderer.getPixelRatio() === 1 && !renderer.capabilities.isWebGL2) {
+  // Antialiasing must be after gammaCorrection
+  const smaaPass = new SMAAPass();
+  effectComposer.addPass(smaaPass);
+
+  console.log('SMAA enabled');
+}
+
+// GUI for effects
+
+const bloomFolder = gui.addFolder('Bloom Effect');
+
+unrealBloomPass.strength = 0.05;
+unrealBloomPass.radius = 1;
+unrealBloomPass.threshold = 0.6;
+
+bloomFolder.add(unrealBloomPass, 'enabled').name('Enable Bloom');
+bloomFolder.add(unrealBloomPass, 'strength').min(0).max(2).step(0.001).name('Bloom Strength');
+bloomFolder.add(unrealBloomPass, 'radius').min(0).max(2).step(0.001).name('Bloom Radius');
+bloomFolder.add(unrealBloomPass, 'threshold').min(0).max(1).step(0.001).name('Bloom Threshold');
+bloomFolder.close();
 
 // Parameters Object
 let parameters = {
@@ -712,13 +768,15 @@ scene.add(particles.points);
  */
 gui.close();
 
-gui.addColor(debugObject, 'backgroundColor').onChange(() => {
+const colorFolder = gui.addFolder('Color Settings');
+
+colorFolder.addColor(debugObject, 'backgroundColor').onChange(() => {
   renderer.setClearColor(debugObject.backgroundColor);
 });
-
-gui.addColor(materialParameters, 'color').onChange(() => {
+colorFolder.addColor(materialParameters, 'color').onChange(() => {
   particles.material.uniforms.uColor.value.set(materialParameters.color);
 });
+colorFolder.close();
 
 gui.add(particles.material.uniforms.uSize, 'value').min(0).max(1).step(0.001).name('uSize');
 // gui.add(parameters, 'count').min(1000).max(10000000).step(1000).name('Particle Count');
@@ -855,7 +913,8 @@ const tick = () => {
   zeroPointsDebug.material.needsUpdate = true;
 
   // Render normal scene
-  renderer.render(scene, camera);
+  // renderer.render(scene, camera);
+  effectComposer.render();
 
   // Call tick again on the next frame
   window.requestAnimationFrame(tick);
