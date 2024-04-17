@@ -590,7 +590,7 @@ gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
 gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(1.0);
-gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(6);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(3.14);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform();
