@@ -357,8 +357,8 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setSize(sizes.width, sizes.height);
 renderer.setPixelRatio(sizes.pixelRatio);
 
-debugObject.clearColor = '#000000';
-renderer.setClearColor(debugObject.clearColor);
+debugObject.backgroundColor = '#000000';
+renderer.setClearColor(debugObject.backgroundColor);
 
 // Parameters Object
 let parameters = {
@@ -641,10 +641,14 @@ scene.add(zeroPointsDebug);
  * Particles
  */
 const particles = {};
+const materialParameters = {};
+
+// materialParameters.color = new THREE.Color('rgb(77,142,236)');
+materialParameters.color = new THREE.Color('rgb(18, 198, 211)');
 
 // Material
 particles.material = new THREE.ShaderMaterial({
-  transparent: true,
+  // transparent: true,
   side: THREE.DoubleSide,
   // depthWrite: false,
   // depthTest: false,
@@ -659,7 +663,8 @@ particles.material = new THREE.ShaderMaterial({
     ),
     uParticlesTexture: new THREE.Uniform(),
     uTime: new THREE.Uniform(0),
-    uColor: new THREE.Uniform(new THREE.Color('skyblue')),
+    uColor: new THREE.Uniform(new THREE.Color(materialParameters.color)),
+    uRadius: new THREE.Uniform(parameters.radius),
   },
 });
 
@@ -706,9 +711,15 @@ scene.add(particles.points);
  * Tweaks
  */
 gui.close();
-gui.addColor(debugObject, 'clearColor').onChange(() => {
-  renderer.setClearColor(debugObject.clearColor);
+
+gui.addColor(debugObject, 'backgroundColor').onChange(() => {
+  renderer.setClearColor(debugObject.backgroundColor);
 });
+
+gui.addColor(materialParameters, 'color').onChange(() => {
+  particles.material.uniforms.uColor.value.set(materialParameters.color);
+});
+
 gui.add(particles.material.uniforms.uSize, 'value').min(0).max(1).step(0.001).name('uSize');
 // gui.add(parameters, 'count').min(1000).max(10000000).step(1000).name('Particle Count');
 
@@ -735,7 +746,7 @@ gui
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uParticleSpeed, 'value')
   .min(1)
-  .max(100)
+  .max(200)
   .step(0.001)
   .name('uParticleSpeed');
 
@@ -780,8 +791,8 @@ let frameCounter = 0; // Initialize the frame counter
 const tick = () => {
   frameCounter++;
 
-  // Check if 60 frames have passed
-  if (frameCounter >= 4) {
+  // // Check if 60 frames have passed
+  if (frameCounter >= 6) {
     waveUniforms.waveComponents.value = generateWaveComponents();
     frameCounter = 0; // Reset the counter after generating
   }

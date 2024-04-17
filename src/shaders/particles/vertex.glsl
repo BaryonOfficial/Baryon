@@ -1,3 +1,5 @@
+#include ../includes/random2D.glsl
+
 uniform vec2 uResolution;
 uniform float uSize;
 uniform sampler2D uParticlesTexture;
@@ -16,6 +18,9 @@ void main() {
     vec4 particle = texture(uParticlesTexture, aParticlesUv);
     float time = uTime * 20.0;
 
+    // Calculate the normal based on the particle position
+    vec3 normal = normalize(particle.xyz);
+
     // Wave Propagation
     // float waveFrequency = 5.0;
     // float waveAmplitude = 0.01;
@@ -25,6 +30,16 @@ void main() {
 
     // Final position
     vec4 modelPosition = modelMatrix * vec4(particle.xyz, 1.0);
+
+    // Glitch Effect (Broken)
+    // float glitchTime = uTime - modelPosition.y;
+    // float glitchStrength = sin(glitchTime + sin(glitchTime * 3.45) + sin(glitchTime * 8.76));
+    // glitchStrength /= 3.0;
+    // glitchStrength = smoothstep(0.3, 1.0, glitchStrength);
+    // glitchStrength *= 0.25;
+    // modelPosition.x += random2D(modelPosition.xz + uTime) - 0.5 * glitchStrength;
+    // modelPosition.z += random2D(modelPosition.zx + uTime) - 0.5 * glitchStrength;
+
     vec4 viewPosition = viewMatrix * modelPosition;
     vec4 projectedPosition = projectionMatrix * viewPosition;
     gl_Position = projectedPosition;

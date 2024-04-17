@@ -13,13 +13,20 @@ void main() {
 
     if(abs(scalarValue) < uThreshold) {
         if(abs(distance - uRadius) < uSurfaceThreshold) {
-            // Particle is on the surface
+            // ZeroPoint is on the surface
             gl_FragColor = vec4(position, 1.0);
         } else {
-            // Particle is in the volume
+            // ZeroPoint is in the volume
             gl_FragColor = vec4(scaledPosition, 2.0);
         }
     } else {
+        // if(abs(distance - uRadius) < uSurfaceThreshold) {
+        //     // Point is in the volume but not a zero point
+        //     gl_FragColor = vec4(scaledPosition, 0.0);  // Example color, adjust as needed
+        // } else {
+        //     // Point is outside the volume and not a zero point
+        //     gl_FragColor = vec4(scaledPosition, 0.0);  // Example color, adjust as needed
+        // }
         discard;
     }
 }
