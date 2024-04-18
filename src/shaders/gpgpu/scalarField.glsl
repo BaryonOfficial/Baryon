@@ -8,18 +8,18 @@ uniform int N;
 uniform float uRadius;
 
 // Function to calculate the Chladni pattern displacement
-float chladni(vec3 position) {
-    float sum = 0.0;
-    for(int i = 0; i < N; ++i) {
-        int index = 4 * i;
-        float Ai = waveComponents[index];
-        float ui = waveComponents[index + 1];
-        float vi = waveComponents[index + 2];
-        float wi = waveComponents[index + 3];
-        sum += Ai * sin(ui * PI * position.x) * sin(vi * PI * position.y) * sin(wi * PI * position.z);
-    }
-    return sum;
-}
+// float chladni(vec3 position) {
+//     float sum = 0.0;
+//     for(int i = 0; i < N; ++i) {
+//         int index = 4 * i;
+//         float Ai = waveComponents[index];
+//         float ui = waveComponents[index + 1];
+//         float vi = waveComponents[index + 2];
+//         float wi = waveComponents[index + 3];
+//         sum += Ai * sin(ui * PI * position.x) * sin(vi * PI * position.y) * sin(wi * PI * position.z);
+//     }
+//     return sum;
+// }
 
 // Function to calculate the Chladni pattern displacement w/ radius
 float chladni(vec3 position, float radius) {
@@ -34,7 +34,6 @@ float chladni(vec3 position, float radius) {
         float wi = waveComponents[index + 3];
 
         sum += Ai * sin(ui * PI * position.x * scaleFactor) * sin(vi * PI * position.y * scaleFactor) * sin(wi * PI * position.z * scaleFactor);
-        ;
     }
 
     return sum;

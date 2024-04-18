@@ -393,7 +393,6 @@ for (let i = 0; i < baseGeometry.count; i++) {
 
 // Initalization of particles for movement
 const initialParticlesTexture = gpgpu.computation.createTexture();
-
 const initialPositions = initializeParticlesInSphere(parameters.count, parameters.radius);
 
 for (let i = 0; i < baseGeometry.count; i++) {
@@ -487,7 +486,7 @@ gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Unifor
 gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform();
 gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(100);
-gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(100.0);
+gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(100);
 gpgpu.particlesVariable.material.uniforms.uDampening = new THREE.Uniform(0.5);
 
 //******************************************************* GPGPU INITIALIZATION *******************************************************//
@@ -709,7 +708,7 @@ const tick = () => {
     console.log('Sound: ', sound);
   }
 
-  pseudoVisualizer();
+  // pseudoVisualizer();
 
   // GPGPU Update
   gpgpu.particlesVariable.material.uniforms.uTime.value = time;
