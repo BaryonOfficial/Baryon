@@ -9,6 +9,7 @@ uniform float uRadius;
 void main() {
     // Creates circles
     float distanceToCenter = length(gl_PointCoord - 0.5);
+    // float alpha = 0.05 / distanceToCenter - 0.1;
     if(distanceToCenter > 0.5)
         discard;
 
