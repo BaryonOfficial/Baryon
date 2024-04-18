@@ -21,11 +21,12 @@ void main() {
         }
     } else {
         // if(abs(distance - uRadius) < uSurfaceThreshold) {
-        //     // Point is in the volume but not a zero point
+        //     // Point is on the surface but not a zero point
         //     gl_FragColor = vec4(scaledPosition, 0.0);  // Example color, adjust as needed
         // } else {
-        //     // Point is outside the volume and not a zero point
-        //     gl_FragColor = vec4(scaledPosition, 0.0);  // Example color, adjust as needed
+        //     // // Point is in the volume but not a zero point
+        //     // gl_FragColor = vec4(scaledPosition, 0.0);
+        //     discard;
         // }
         discard;
     }
