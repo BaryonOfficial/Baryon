@@ -226,7 +226,7 @@ effectComposer.addPass(renderPass);
 
 // Must be before GammaCorrection
 const unrealBloomPass = new UnrealBloomPass();
-unrealBloomPass.enabled = false;
+unrealBloomPass.enabled = true;
 effectComposer.addPass(unrealBloomPass);
 
 const gammaCorrectionPass = new ShaderPass(GammaCorrectionShader);
@@ -244,13 +244,13 @@ if (renderer.getPixelRatio() === 1 && !renderer.capabilities.isWebGL2) {
 
 const bloomFolder = gui.addFolder('Bloom Effect');
 
-unrealBloomPass.strength = 0.05;
-unrealBloomPass.radius = 1;
-unrealBloomPass.threshold = 0.6;
+unrealBloomPass.strength = 0.3;
+unrealBloomPass.radius = -1.5;
+unrealBloomPass.threshold = 0.64;
 
 bloomFolder.add(unrealBloomPass, 'enabled').name('Enable Bloom');
 bloomFolder.add(unrealBloomPass, 'strength').min(0).max(2).step(0.001).name('Bloom Strength');
-bloomFolder.add(unrealBloomPass, 'radius').min(0).max(2).step(0.001).name('Bloom Radius');
+bloomFolder.add(unrealBloomPass, 'radius').min(-2).max(2).step(0.001).name('Bloom Radius');
 bloomFolder.add(unrealBloomPass, 'threshold').min(0).max(1).step(0.001).name('Bloom Threshold');
 bloomFolder.close();
 
@@ -260,7 +260,7 @@ let parameters = {
   count: 1000000,
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
-  threshold: 1.0,
+  threshold: 0.5,
   surfaceRatio: 0.33,
   surfaceThreshold: 0.001,
   particleSpeed: 1.0,
@@ -684,6 +684,14 @@ let time = 0;
 let deltaTime = 0;
 let frameReset = 10;
 
+function pseudoVisualizer() {
+  // // Check if 60 frames have passed
+  if (frameCounter % frameReset === 0) {
+    waveUniforms.waveComponents.value = generateWaveComponents();
+    frameCounter = 0; // Reset the counter after generating
+  }
+}
+
 const tick = () => {
   frameCounter++;
   const elapsedTime = clock.getElapsedTime();
@@ -701,11 +709,7 @@ const tick = () => {
     console.log('Sound: ', sound);
   }
 
-  // // Check if 60 frames have passed
-  if (frameCounter >= frameReset) {
-    waveUniforms.waveComponents.value = generateWaveComponents();
-    frameCounter = 0; // Reset the counter after generating
-  }
+  pseudoVisualizer();
 
   // GPGPU Update
   gpgpu.particlesVariable.material.uniforms.uTime.value = time;

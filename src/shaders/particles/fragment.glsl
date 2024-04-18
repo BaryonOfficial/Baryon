@@ -26,7 +26,7 @@ void main() {
     float fresnel = 1.0 - dot(viewDirection, normal);
     fresnel = pow(fresnel, 2.0);
 
-    vec3 holographicColor = mix(vec3(0.0, 1.0, 1.0), vec3(1.0, 0.0, 1.0), fresnel);
+    vec3 holographicColor = mix(vec3(0.0, 1.0, 1.0), vec3(0.0, 0.0, 1.0), fresnel);
 
     // Falloff
     float falloff = smoothstep(0.8, 0.0, fresnel);
@@ -39,10 +39,10 @@ void main() {
     // ***** Coloring ***** //
     vec3 color;
     if(vGroup == 1.0) {
-        color = uColor;
+        color = vec3(0.87059, 0.93333, 0.98039);
     } else if(vGroup == 2.0) {
         // Scaled back
-        color = vec3(0.87059, 0.93333, 0.98039);
+        color = uColor;
     } else if(vGroup == 0.0) {
         color = vec3(0.35686, 0.57255, 0.96078);
     }
