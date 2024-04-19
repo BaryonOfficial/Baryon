@@ -149,6 +149,7 @@ function audioAnalysis() {
   if (sound.isPlaying) {
     avgAmplitude = analyser.getAverageFrequency();
     freqData = analyser.getFrequencyData();
+    pseudoVisualizer();
   }
 
   return { avgAmplitude, freqData };
