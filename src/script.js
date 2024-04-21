@@ -702,12 +702,7 @@ const tick = () => {
   controls.update();
 
   const { avgAmplitude, freqData } = audioAnalysis();
-
-  if (frameCounter % frameReset === 0) {
-    console.log('Avg Amplitude: ', avgAmplitude);
-    console.log('Frequency Data: ', freqData);
-    console.log('Sound: ', sound);
-  }
+  gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
 
   // pseudoVisualizer();
 
