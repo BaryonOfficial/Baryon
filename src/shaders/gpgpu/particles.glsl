@@ -17,7 +17,7 @@ void main() {
     vec4 base = texture(uBase, uv);
     vec4 zeroPoint = texture(uZeroPoints, uv);
 
-    vec3 target = zeroPoint.xyz;
+    vec3 target;
     if(uAverageAmplitude > 0.0) {
         target = zeroPoint.xyz;
     } else {
