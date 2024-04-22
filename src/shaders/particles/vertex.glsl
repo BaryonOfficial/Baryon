@@ -4,6 +4,8 @@ uniform vec2 uResolution;
 uniform float uSize;
 uniform sampler2D uParticlesTexture;
 uniform float uTime;
+uniform float uAverageAmplitude;
+uniform float uRadius;
 
 attribute vec2 aParticlesUv;
 attribute vec3 aColor;
@@ -17,9 +19,20 @@ varying vec3 vNormal;
 void main() {
     vec4 particle = texture(uParticlesTexture, aParticlesUv);
     float time = uTime * 20.0;
+    vGroup = particle.w;
 
     // Calculate the normal based on the particle position
     vec3 normal = normalize(particle.xyz);
+
+    if(vGroup == 2.0) {
+         // Pulsating Effect
+        float normalizedAmplitude = uAverageAmplitude / 255.0;
+        // Calculate the maximum distance the particle can move
+        float maxDistance = uRadius - length(particle.xyz);
+        // Calculate the pulsating offset
+        vec3 pulsatingOffset = normal * normalizedAmplitude * maxDistance * 2.0;
+        particle.xyz += pulsatingOffset;
+    }
 
     // Wave Propagation
     // float waveFrequency = 5.0;
@@ -52,7 +65,6 @@ void main() {
 
     // Varyings
     vColor = aColor;
-    vGroup = particle.w;
     vPosition = modelPosition.xyz;
     vNormal = modelNormal.xyz;
 }

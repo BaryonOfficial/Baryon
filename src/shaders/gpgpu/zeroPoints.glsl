@@ -9,8 +9,7 @@ void main() {
     float scalarValue = scalarFieldValue.a;
     float distance = length(position);
 
-    vec3 scaledPosition = (position) * 0.75;
-
+    vec3 scaledPosition = position * 0.64;
     if(abs(scalarValue) < uThreshold) {
         if(abs(distance - uRadius) < uSurfaceThreshold) {
             // ZeroPoint is on the surface

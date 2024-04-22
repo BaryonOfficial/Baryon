@@ -471,7 +471,7 @@ gpgpu.computation.setVariableDependencies(gpgpu.zeroPointsVariable, [gpgpu.scala
 gpgpu.particlesVariable = gpgpu.computation.addVariable(
   'uParticles',
   gpgpuParticlesShader,
-  initialParticlesTexture
+  gpgpu.computation.createTexture()
 );
 
 gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
@@ -485,8 +485,8 @@ gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Unifor
 gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(3.14);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
-gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform();
-gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(100);
+gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(initialParticlesTexture);
+gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
 gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(100);
 gpgpu.particlesVariable.material.uniforms.uDampening = new THREE.Uniform(0.5);
 
@@ -557,6 +557,7 @@ particles.material = new THREE.ShaderMaterial({
     uTime: new THREE.Uniform(0),
     uColor: new THREE.Uniform(new THREE.Color(materialParameters.color)),
     uRadius: new THREE.Uniform(parameters.radius),
+    uAverageAmplitude: new THREE.Uniform(0.0),
   },
 });
 
@@ -703,6 +704,7 @@ const tick = () => {
 
   const { avgAmplitude, freqData } = audioAnalysis();
   gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
+  particles.material.uniforms.uAverageAmplitude.value = avgAmplitude;
 
   // pseudoVisualizer();
 
