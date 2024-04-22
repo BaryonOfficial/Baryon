@@ -9,10 +9,10 @@ uniform float uRadius;
 float chladni(vec3 position, float radius, vec4 waveData) {
     float sum = 0.0;
     float scaleFactor = 1.0 / radius;
-    float Ai = waveData.r;
-    float ui = waveData.g;
-    float vi = waveData.b;
-    float wi = waveData.a;
+    float ui = waveData.r;
+    float vi = waveData.g;
+    float wi = waveData.b;
+    float Ai = waveData.a;
     sum += Ai * sin(ui * PI * position.x * scaleFactor) * sin(vi * PI * position.y * scaleFactor) * sin(wi * PI * position.z * scaleFactor);
     return sum;
 }
