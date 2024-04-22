@@ -558,6 +558,7 @@ particles.material = new THREE.ShaderMaterial({
     uColor: new THREE.Uniform(new THREE.Color(materialParameters.color)),
     uRadius: new THREE.Uniform(parameters.radius),
     uAverageAmplitude: new THREE.Uniform(0.0),
+    uRotation: new THREE.Uniform(0.5),
   },
 });
 
@@ -616,7 +617,7 @@ colorFolder.addColor(materialParameters, 'color').onChange(() => {
 colorFolder.close();
 
 gui.add(particles.material.uniforms.uSize, 'value').min(0).max(1).step(0.001).name('uSize');
-// gui.add(parameters, 'count').min(1000).max(10000000).step(1000).name('Particle Count');
+gui.add(particles.material.uniforms.uRotation, 'value').min(0).max(5).step(0.001).name('uRotation');
 
 gui
   .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence, 'value')

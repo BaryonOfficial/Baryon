@@ -6,6 +6,7 @@ uniform sampler2D uParticlesTexture;
 uniform float uTime;
 uniform float uAverageAmplitude;
 uniform float uRadius;
+uniform float uRotation;
 
 attribute vec2 aParticlesUv;
 attribute vec3 aColor;
@@ -23,6 +24,8 @@ void main() {
 
     // Calculate the normal based on the particle position
     vec3 normal = normalize(particle.xyz);
+
+    // Rotation
 
     if(vGroup == 2.0) {
          // Pulsating Effect
@@ -43,6 +46,14 @@ void main() {
 
     // Final position
     vec4 modelPosition = modelMatrix * vec4(particle.xyz, 1.0);
+
+    // Spin
+    // float angle = atan(modelPosition.x, modelPosition.z);
+    // float distanceToCenter = length(modelPosition.xz);
+    // float angleOffset = uTime * uRotation;
+    // angle += angleOffset;
+    // modelPosition.x = cos(angle) * distanceToCenter;
+    // modelPosition.z = sin(angle) * distanceToCenter;
 
     // Glitch Effect (Broken)
     // float glitchTime = uTime - modelPosition.y;
