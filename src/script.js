@@ -656,13 +656,6 @@ gui
     gpgpu.particlesVariable.material.uniforms.uThreshold.value = parameters.threshold;
   });
 
-gui
-  .add(gpgpu.particlesVariable.material.uniforms.uAverageAmplitude, 'value')
-  .min(0)
-  .max(255)
-  .step(0.01)
-  .name('uAverageAmplitude');
-
 // Add a button to generate new wave components
 gui
   .add(
