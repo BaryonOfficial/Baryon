@@ -1,0 +1,358 @@
+let essentia = new Essentia(Module);
+
+class AudioDataProcessor extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this._logCounter = 0; // Initialize a counter for logging
+    this._frameCounter = 0; // Counter for determining pitch series, for frames per beat
+    this.logFrequency = 500; // Log every 1000 frames
+    this._bufferSize = options.processorOptions.bufferSize;
+    this._sampleRate = options.processorOptions.sampleRate;
+    this._capacity = options.processorOptions.capacity;
+    this._essentia = essentia;
+    this._channelCount = 2;
+    this._interleavedData = new Float32Array(this._bufferSize * this._channelCount);
+    this._frameSize = this._bufferSize / 2;
+    this._hopSize = this._frameSize / 4;
+    this._lowestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -57); // lowest note = C0
+    // console.log(this._lowestFreq);
+    this._highestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -57) * Math.pow(2, 8); // 8 octaves above C0, c*
+    // console.log(this._highestFreq);
+    this._meanPitchSeriesForBeat = [];
+
+    // buffersize mismatch helpers
+    this._inputRingBuffer = new ChromeLabsRingBuffer(this._bufferSize, this._channelCount);
+    this._accumData = new Array(this._channelCount)
+      .fill(null)
+      .map(() => new Float32Array(this._bufferSize));
+    this._mixedDownData = new Float32Array(this._bufferSize);
+
+    // SAB config
+    this.port.onmessage = (event) => {
+      this._audio_writer = new AudioWriter(new RingBuffer(event.data.sab, Float32Array));
+    };
+    console.log('Backend - essentia:' + this._essentia.version + '- http://essentia.upf.edu');
+  }
+
+  process(inputs, outputs, parameters) {
+    // The input list and output list are each arrays of
+    // Float32Array objects, each of which contains the
+    // samples for one channel.
+    try {
+      let input = inputs[0];
+      let output = outputs[0];
+
+      if (input && input.length === this._channelCount) {
+        this._logCounter++;
+
+        this._inputRingBuffer.push(input);
+
+        // if (this._logCounter >= this.logFrequency) {
+        //   console.log('Inputs:', inputs);
+        //   console.log('Outputs:', outputs);
+        //   console.log('PUSHinputRingBuffer:', this._inputRingBuffer.push(input));
+        //   this._logCounter = 0;
+        // }
+
+        if (this._inputRingBuffer.framesAvailable >= this._bufferSize) {
+          // console.log('this._accumData before pull:', this._accumData);
+
+          this._inputRingBuffer.pull(this._accumData);
+
+          for (let i = 0; i < this._bufferSize * this._channelCount; i++) {
+            this._interleavedData[i] =
+              this._accumData[i % this._channelCount][Math.floor(i / this._channelCount)];
+          }
+
+          const accumDataVector = this._essentia.arrayToVector(this._interleavedData);
+
+          // console.log('accumDataVector:', accumDataVector);
+
+          // Mix down the data to a single channel if necessary
+          // for (let i = 0; i < this._bufferSize; ++i) {
+          //   let sum = 0;
+          //   for (let channel = 0; channel < this._channelCount; ++channel) {
+          //     sum += this._accumData[channel][i];
+          //   }
+          //   this._mixedDownData[i] = sum / this._channelCount; // Average mix down
+          // }
+
+          // // Convert the mixed down data to an Essentia vector
+          // const mixedDownDataVector = this._essentia.arrayToVector(this._mixedDownData);
+
+          // Assuming dataVector is your VectorFloat instance
+          // const dataVector = accumDataVector;
+          // const vectorSize = dataVector.size();
+          // console.log('Vector Size:', vectorSize);
+
+          // if (vectorSize > 0) {
+          //   let elements = [];
+          //   for (let i = 0; i < vectorSize; i++) {
+          //     elements.push(dataVector.get(i));
+          //   }
+          //   console.log('Vector Elements:', elements);
+          // } else {
+          //   console.log('Vector is empty');
+          // }
+
+          const algoOutput = this._essentia.PredominantPitchMelodia(
+            accumDataVector,
+            10,
+            3,
+            this._frameSize,
+            false,
+            0.8,
+            this._hopSize,
+            1,
+            40,
+            this._highestFreq,
+            100,
+            this._lowestFreq,
+            20,
+            0.9,
+            0.9,
+            27.5625,
+            this._lowestFreq,
+            this._sampleRate,
+            100,
+            true
+          );
+
+          // Pitch Calcs
+          const pitchFrames = essentia.vectorToArray(algoOutput.pitch);
+          // average frame-wise pitches in pitch before writing to SAB
+          const numVoicedFrames = pitchFrames.filter((p) => p > 0).length;
+          const meanPitch = pitchFrames.reduce((acc, curr) => acc + curr, 0) / numVoicedFrames;
+
+          if (!isNaN(meanPitch)) {
+            this._meanPitchSeriesForBeat.push(meanPitch);
+            if (this._meanPitchSeriesForBeat.length > this._capacity) {
+              this._meanPitchSeriesForBeat.shift();
+            }
+          }
+
+          // let vectorVectorFloat = algoOutput2.pitch;
+          // let pitchArrays = [];
+          // for (let i = 0; i < vectorVectorFloat.size(); i++) {
+          //   let innerVector = vectorVectorFloat.get(i);
+          //   let pitchArray = [];
+          //   for (let j = 0; j < innerVector.length; j++) {
+          //     pitchArray.push(innerVector[j]);
+          //   }
+          //   pitchArrays.push(pitchArray);
+          // }
+          // console.log(pitchArrays);
+
+          // Estimate the tempo using the PercivalBpmEstimator algorithm
+          let tempo = this._essentia.PercivalBpmEstimator(
+            accumDataVector,
+            1024,
+            2048,
+            128,
+            128,
+            210,
+            50,
+            this._sampleRate
+          ).bpm;
+
+          // // Tempo Calcs
+          const secondsPerBeat = 60 / tempo;
+          const framesPerBeat = Math.round(secondsPerBeat * this._sampleRate);
+          // console.log('framesPerBeat:', framesPerBeat);
+
+          this._frameCounter += this._bufferSize;
+
+          if (this._frameCounter >= framesPerBeat) {
+            // Check if there is enough space in the buffer for all values
+            if (this._audio_writer.available_write() >= this._capacity) {
+              // Enqueue each pitch value from _meanPitchSeriesForBeat individually
+              this._meanPitchSeriesForBeat.forEach((pitch) => {
+                this._audio_writer.enqueue([pitch]);
+              });
+
+              // Calculate remaining slots to fill with zero before the tempo
+              let remainingSlots = this._capacity - this._meanPitchSeriesForBeat.length; // reserve 1 for the tempo
+
+              // Fill the remaining slots with zero
+              for (let i = 0; i < remainingSlots; i++) {
+                this._audio_writer.enqueue([0]);
+              }
+
+              // Enqueue the tempo last
+              // this._audio_writer.enqueue([tempo]);
+
+              // Clear the frameCounter and _meanPitchSeriesForBeat after enqueuing
+              this._frameCounter = 0;
+              this._meanPitchSeriesForBeat = [];
+            }
+          }
+
+          // Reset _accumData in-place
+          for (let channel = 0; channel < this._channelCount; ++channel) {
+            this._accumData[channel].fill(0);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('AudioWorkletProcessor error:', error);
+      // Handle the error gracefully, e.g., return default values or skip processing
+    }
+    // Return - let the system know we're still active and ready to process audio.
+    return true;
+  }
+}
+
+registerProcessor('audio-data-processor', AudioDataProcessor);
+
+// helper classes from https://github.com/GoogleChromeLabs/web-audio-samples/blob/gh-pages/audio-worklet/design-pattern/lib/wasm-audio-helper.js#L170:
+
+/**
+ * Copyright 2018 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+// Basic byte unit of WASM heap. (16 bit = 2 bytes)
+const BYTES_PER_UNIT = Uint16Array.BYTES_PER_ELEMENT;
+
+// Byte per audio sample. (32 bit float)
+const BYTES_PER_SAMPLE = Float32Array.BYTES_PER_ELEMENT;
+
+// The max audio channel on Chrome is 32.
+const MAX_CHANNEL_COUNT = 32;
+
+// WebAudio's render quantum size.
+const RENDER_QUANTUM_FRAMES = 128;
+
+/**
+ * A JS FIFO implementation for the AudioWorklet. 3 assumptions for the
+ * simpler operation:
+ *  1. the push and the pull operation are done by 128 frames. (Web Audio
+ *    API's render quantum size in the speficiation)
+ *  2. the channel count of input/output cannot be changed dynamically.
+ *    The AudioWorkletNode should be configured with the `.channelCount = k`
+ *    (where k is the channel count you want) and
+ *    `.channelCountMode = explicit`.
+ *  3. This is for the single-thread operation. (obviously)
+ *
+ * @class
+ */
+class ChromeLabsRingBuffer {
+  /**
+   * @constructor
+   * @param  {number} length Buffer length in frames.
+   * @param  {number} channelCount Buffer channel count.
+   */
+  constructor(length, channelCount) {
+    this._readIndex = 0;
+    this._writeIndex = 0;
+    this._framesAvailable = 0;
+
+    this._channelCount = channelCount;
+    this._length = length;
+    this._channelData = [];
+    for (let i = 0; i < this._channelCount; ++i) {
+      this._channelData[i] = new Float32Array(length);
+    }
+  }
+
+  /**
+   * Getter for Available frames in buffer.
+   *
+   * @return {number} Available frames in buffer.
+   */
+  get framesAvailable() {
+    return this._framesAvailable;
+  }
+
+  /**
+   * Push a sequence of Float32Arrays to buffer.
+   *
+   * @param  {array} arraySequence A sequence of Float32Arrays.
+   */
+  push(arraySequence) {
+    // The channel count of arraySequence and the length of each channel must
+    // match with this buffer obejct.
+
+    // Transfer data from the |arraySequence| storage to the internal buffer.
+    let sourceLength = arraySequence[0].length;
+    for (let i = 0; i < sourceLength; ++i) {
+      let writeIndex = (this._writeIndex + i) % this._length;
+      for (let channel = 0; channel < this._channelCount; ++channel) {
+        this._channelData[channel][writeIndex] = arraySequence[channel][i];
+      }
+    }
+
+    this._writeIndex += sourceLength;
+    if (this._writeIndex >= this._length) {
+      this._writeIndex = 0;
+    }
+
+    // For excessive frames, the buffer will be overwritten.
+    this._framesAvailable += sourceLength;
+    if (this._framesAvailable > this._length) {
+      this._framesAvailable = this._length;
+    }
+  }
+
+  /**
+   * Pull data out of buffer and fill a given sequence of Float32Arrays.
+   *
+   * @param  {array} arraySequence An array of Float32Arrays.
+   */
+  pull(arraySequence) {
+    // The channel count of arraySequence and the length of each channel must
+    // match with this buffer obejct.
+
+    // Validate arraySequence structure (this is custom code added to the module)
+    if (!Array.isArray(arraySequence) || arraySequence.length !== this._channelCount) {
+      throw new Error('Invalid arraySequence structure');
+    }
+
+    // Check dimensions
+    let destinationLength = arraySequence[0].length;
+    for (let channel = 0; channel < this._channelCount; ++channel) {
+      if (
+        !(arraySequence[channel] instanceof Float32Array) ||
+        arraySequence[channel].length !== destinationLength
+      ) {
+        throw new Error('Invalid arraySequence dimensions');
+      }
+    }
+
+    // If the FIFO is completely empty, do nothing.
+    if (this._framesAvailable === 0) {
+      return;
+    }
+
+    // let destinationLength = arraySequence[0].length;
+
+    // Transfer data from the internal buffer to the |arraySequence| storage.
+    for (let i = 0; i < destinationLength; ++i) {
+      let readIndex = (this._readIndex + i) % this._length;
+      for (let channel = 0; channel < this._channelCount; ++channel) {
+        arraySequence[channel][i] = this._channelData[channel][readIndex];
+      }
+    }
+
+    this._readIndex += destinationLength;
+    if (this._readIndex >= this._length) {
+      this._readIndex = 0;
+    }
+
+    this._framesAvailable -= destinationLength;
+    if (this._framesAvailable < 0) {
+      this._framesAvailable = 0;
+    }
+  }
+} // class ChromeLabsRingBuffer
