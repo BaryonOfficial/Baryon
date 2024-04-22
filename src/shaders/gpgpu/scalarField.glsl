@@ -3,17 +3,16 @@
 
 // Function params
 uniform sampler2D uBase;
-uniform int N;
 uniform float uRadius;
 
 // // Function to calculate the Chladni pattern displacement using wave data from texture
 float chladni(vec3 position, float radius, vec4 waveData) {
     float sum = 0.0;
     float scaleFactor = 1.0 / radius;
-    float Ai = waveData.a;
-    float ui = waveData.b;
-    float vi = waveData.c;
-    float wi = waveData.d;
+    float Ai = waveData.r;
+    float ui = waveData.g;
+    float vi = waveData.b;
+    float wi = waveData.a;
     sum += Ai * sin(ui * PI * position.x * scaleFactor) * sin(vi * PI * position.y * scaleFactor) * sin(wi * PI * position.z * scaleFactor);
     return sum;
 }

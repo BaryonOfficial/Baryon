@@ -547,6 +547,10 @@ gpgpu.audioDataVariable = gpgpu.computation.addVariable(
 
 gpgpu.audioDataVariable.material.uniforms.tPitches = new THREE.Uniform(essentiaDataTexture);
 gpgpu.audioDataVariable.material.uniforms.tDataArray = new THREE.Uniform(freqDataTexture);
+gpgpu.audioDataVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
+gpgpu.audioDataVariable.material.uniforms.sampleRate = new THREE.Uniform(audioCtx.sampleRate);
+gpgpu.audioDataVariable.material.uniforms.bufferSize = new THREE.Uniform(fftSize);
+gpgpu.audioDataVariable.material.uniforms.capacity = new THREE.Uniform(capacity);
 
 // Dependencies
 gpgpu.computation.setVariableDependencies(gpgpu.audioDataVariable, []);
@@ -561,8 +565,7 @@ gpgpu.scalarFieldVariable = gpgpu.computation.addVariable(
   scalarTexture
 );
 
-gpgpu.scalarFieldVariable.material.uniforms.N = new THREE.Uniform(capacity);
-gpgpu.scalarFieldVariable.material.uniforms.uRadius = { value: parameters.radius };
+gpgpu.scalarFieldVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
 gpgpu.scalarFieldVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
 
 // Log
@@ -582,9 +585,9 @@ gpgpu.zeroPointsVariable = gpgpu.computation.addVariable(
 
 gpgpu.zeroPointsVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
 gpgpu.zeroPointsVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
-gpgpu.zeroPointsVariable.material.uniforms.uSurfaceThreshold = {
-  value: parameters.surfaceThreshold,
-};
+gpgpu.zeroPointsVariable.material.uniforms.uSurfaceThreshold = new THREE.Uniform(
+  parameters.surfaceThreshold
+);
 
 // Dependency
 gpgpu.computation.setVariableDependencies(gpgpu.zeroPointsVariable, [gpgpu.scalarFieldVariable]);
@@ -620,7 +623,18 @@ gpgpu.particlesVariable.material.uniforms.uDampening = new THREE.Uniform(0.5);
 gpgpu.computation.init();
 
 // Debug
-let mode = false;
+let mode = true;
+
+gpgpu.audioDebug = new THREE.Mesh(
+  new THREE.PlaneGeometry(3, 3),
+  new THREE.MeshBasicMaterial({
+    map: gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable).texture,
+  })
+);
+gpgpu.audioDebug.visible = mode;
+gpgpu.audioDebug.position.x = -4;
+gpgpu.audioDebug.position.y = 0;
+scene.add(gpgpu.audioDebug);
 
 gpgpu.debug = new THREE.Mesh(
   new THREE.PlaneGeometry(3, 3),
@@ -631,7 +645,7 @@ gpgpu.debug = new THREE.Mesh(
 gpgpu.debug.visible = mode;
 gpgpu.debug.position.x = -4;
 gpgpu.debug.position.y = -3;
-scene.add(gpgpu.debug);
+// scene.add(gpgpu.debug);
 
 const scalarFieldDebug = new THREE.Mesh(
   new THREE.PlaneGeometry(3, 3),
@@ -642,7 +656,7 @@ const scalarFieldDebug = new THREE.Mesh(
 scalarFieldDebug.visible = mode;
 scalarFieldDebug.position.x = -4;
 scalarFieldDebug.position.y = 3;
-scene.add(scalarFieldDebug);
+// scene.add(scalarFieldDebug);
 
 const zeroPointsDebug = new THREE.Mesh(
   new THREE.PlaneGeometry(3, 3), // The size of the plane can be adjusted as needed
@@ -652,7 +666,7 @@ const zeroPointsDebug = new THREE.Mesh(
 );
 zeroPointsDebug.visible = mode;
 zeroPointsDebug.position.x = -4; // Position it differently so it doesn't overlap with the scalarFieldDebug
-scene.add(zeroPointsDebug);
+// scene.add(zeroPointsDebug);
 
 /**
  * Particles
@@ -803,6 +817,25 @@ gui
   )
   .name('Generate New Wave Components');
 
+function logUniforms(material, variableName) {
+  console.log(`Uniforms for ${variableName}:`);
+  for (const [key, uniform] of Object.entries(material.uniforms)) {
+    console.log(`${key}:`, uniform.value);
+  }
+}
+
+function logGPGPUUniforms() {
+  if (gpgpu.audioDataVariable && gpgpu.audioDataVariable.material) {
+    logUniforms(gpgpu.audioDataVariable.material, 'Audio Data');
+  }
+  if (gpgpu.scalarFieldVariable && gpgpu.scalarFieldVariable.material) {
+    logUniforms(gpgpu.scalarFieldVariable.material, 'Scalar Field');
+  }
+  if (gpgpu.particlesVariable && gpgpu.particlesVariable.material) {
+    logUniforms(gpgpu.particlesVariable.material, 'Particles');
+  }
+}
+
 /******************************************************* ANIMATION *******************************************************/
 const clock = new THREE.Clock();
 let frameCounter = 0;
@@ -840,6 +873,12 @@ const tick = () => {
   gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
   freqDataTexture.image.data.set(freqData);
   freqDataTexture.needsUpdate = true;
+
+  // // // Optionally log uniforms
+  // if (frameCounter % 60 === 0) {
+  //   // For example, log every 60 frames
+  //   logGPGPUUniforms();
+  // }
 
   // ******** GPGPU START ******** //
 
@@ -892,4 +931,4 @@ const tick = () => {
   window.requestAnimationFrame(tick);
 };
 
-tick();
+startAudioProcessing();
