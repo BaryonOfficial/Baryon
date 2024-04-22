@@ -2,7 +2,6 @@ uniform float uRadius;
 
 uniform sampler2D tPitches;
 uniform sampler2D tDataArray;
-uniform int nNotes;
 
 uniform float sampleRate;
 uniform float bufferSize;

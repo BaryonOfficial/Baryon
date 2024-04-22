@@ -30,6 +30,20 @@ import audioDataShader from './shaders/gpgpu/audioData.glsl';
 const gui = new GUI({ width: 340 });
 const debugObject = {};
 
+async function URLFromFiles(files) {
+  const promises = files.map(async (file) => {
+    const response = await fetch(file);
+    return response.text();
+  });
+
+  const texts = await Promise.all(promises);
+  texts.unshift('var exports = {};'); // hack to make injected umd modules work
+  const text = texts.join('');
+  const blob = new Blob([text], { type: 'application/javascript' });
+
+  return URL.createObjectURL(blob);
+}
+
 // Canvas
 const canvas = document.querySelector('canvas.webgl');
 const context = canvas.getContext('webgl2');
@@ -106,7 +120,11 @@ renderer.setClearColor(debugObject.backgroundColor);
 
 //****************************** AUDIO PROCESSING *********************************//
 
-let fftSize = 512;
+let fftSize = 8192;
+let audioReader;
+let gain;
+let essentiaNode;
+let soundGainNode;
 
 // create an AudioListener and add it to the camera
 const listener = new THREE.AudioListener();
@@ -114,6 +132,7 @@ camera.add(listener);
 
 // create an Audio source
 const sound = new THREE.Audio(listener);
+console.log('Sound:', sound);
 
 // Get references to the audio controls
 const audioInput = document.getElementById('audioInput');
@@ -135,6 +154,61 @@ audioInput.addEventListener('change', (event) => {
   });
 });
 
+let audioCtx = sound.context;
+console.log(audioCtx);
+
+const capacity = 10;
+
+function setupAudioGraph() {
+  if (!window.SharedArrayBuffer) {
+    console.error('SharedArrayBuffer is not supported in this browser.');
+    alert('SharedArrayBuffer is not supported in this browser. Please use a compatible browser.');
+    return;
+  }
+  let sab = exports.RingBuffer.getStorageForCapacity(capacity, Float32Array); // capacity: three float32 values [pitch, confidence, rms]
+  console.log('Shared Buffer Size:', sab.byteLength);
+  let rb = new exports.RingBuffer(sab, Float32Array);
+  audioReader = new exports.AudioReader(rb);
+
+  essentiaNode = new AudioWorkletNode(audioCtx, 'audio-data-processor', {
+    processorOptions: {
+      bufferSize: fftSize,
+      sampleRate: audioCtx.sampleRate,
+      capacity: capacity,
+    },
+  });
+
+  // Add the onmessageerror event listener
+  essentiaNode.port.onmessageerror = (event) => {
+    console.error('AudioWorkletNode message error:', event);
+  };
+
+  try {
+    essentiaNode.port.postMessage({
+      sab: sab,
+    });
+  } catch (_) {
+    alert('No SharedArrayBuffer tranfer support, try another browser.');
+    // $("#recordButton").off('click', onRecordClickHandler);
+    // $("#recordButton").prop("disabled", true);
+    return;
+  }
+
+  gain = sound.gain;
+  soundGainNode = sound.getOutput();
+  soundGainNode.connect(essentiaNode);
+  // essentiaNode.connect(gain);
+  gain.connect(audioCtx.destination);
+  logNodeConnections();
+  tick();
+}
+
+function logNodeConnections() {
+  console.log('SoundGainNode -> Essentia Node:', soundGainNode.connect(essentiaNode));
+  console.log('Essentia Node -> Gain Node:', essentiaNode.connect(gain));
+  console.log('Gain Node -> Destination:', gain.connect(audioCtx.destination));
+}
+
 // ***** Analysis ***** //
 
 // create an AudioAnalyser, passing in the sound and desired fftSize
@@ -142,14 +216,39 @@ const analyser = new THREE.AudioAnalyser(sound, fftSize);
 
 function audioAnalysis() {
   let avgAmplitude = 0;
-  let freqData = [];
+  let freqData = new Uint8Array(fftSize / 2); // Initialize with the correct size
+
   if (sound.isPlaying) {
     avgAmplitude = analyser.getAverageFrequency();
     freqData = analyser.getFrequencyData();
-    pseudoVisualizer();
   }
 
   return { avgAmplitude, freqData };
+}
+
+function startAudioProcessing() {
+  const workletProcessorCode = [
+    'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js',
+    'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.umd.js',
+    'audio-data-processor.js',
+    'https://unpkg.com/ringbuf.js@0.1.0/dist/index.js',
+  ];
+
+  // inject Essentia.js code into AudioWorkletGlobalScope context, then setup audio graph and start animation
+  URLFromFiles(workletProcessorCode)
+    .then((concatenatedCode) => {
+      audioCtx.audioWorklet
+        .addModule(concatenatedCode)
+        .then(() => {
+          setupAudioGraph();
+        })
+        .catch(function moduleLoadRejected(msg) {
+          console.log(`There was a problem loading the AudioWorklet module code: \n ${msg}`);
+        });
+    })
+    .catch((msg) => {
+      console.log(`There was a problem retrieving the AudioWorklet module code: \n ${msg}`);
+    });
 }
 
 //***** Audio Playback *****//
@@ -158,22 +257,29 @@ function audioAnalysis() {
 playButton.addEventListener('click', () => {
   if (sound.isPlaying) {
     sound.pause();
+    audioCtx.suspend(); // Resume the audio context when resuming
+
     playButton.textContent = 'Play';
   } else if (!sound.isPlaying && audioLoaded) {
     sound.play();
     sound.started = true;
     playButton.textContent = 'Pause';
+    if (sound.started) {
+      audioCtx.resume(); // Resume the audio context if needed
+    }
   }
 });
 
 // Stop audio when stop button is clicked
 stopButton.addEventListener('click', () => {
   sound.stop();
+  audioCtx.suspend(); // suspend the audio context when stop
   sound.started = false;
   playButton.textContent = 'Play';
 });
 
 sound.onEnded = function () {
+  audioCtx.suspend(); // Close the audio context when audio ends
   console.log('Audio ended');
   sound.started = false;
   playButton.textContent = 'Play'; // Update the play button text
@@ -183,14 +289,14 @@ function timeHandler(elapsedTime) {
   if (sound.isPlaying && sound.started === true) {
     deltaTime = sound.listener.timeDelta;
     time = sound.context.currentTime;
-    if (frameCounter % frameReset === 0) {
+    if (frameCounter % 60 === 0) {
       console.log('Audio Time: ', time);
       console.log('Audio Delta Time: ', deltaTime);
     }
   } else if (!sound.isPlaying && sound.started === true) {
     time = 0;
     deltaTime = 0;
-    if (frameCounter % frameReset === 0) {
+    if (frameCounter % 60 === 0) {
       console.log('Audio Time: ', time);
       console.log('Audio Delta Time: ', deltaTime);
     }
@@ -198,7 +304,7 @@ function timeHandler(elapsedTime) {
     deltaTime = elapsedTime - previousTime;
     previousTime = elapsedTime;
     time = elapsedTime;
-    if (frameCounter % frameReset === 0) {
+    if (frameCounter % 60 === 0) {
       console.log('Elapsed Time: ', time);
       console.log('Delta Time: ', deltaTime);
     }
@@ -206,6 +312,26 @@ function timeHandler(elapsedTime) {
 
   return { time, deltaTime };
 }
+
+// Audio Data
+const format = renderer.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
+
+let essentiaDataTexture = new THREE.DataTexture(
+  new Float32Array(capacity), // Initial empty data
+  capacity,
+  1,
+  THREE.RedFormat,
+  THREE.FloatType
+);
+essentiaDataTexture.needsUpdate = true;
+
+let freqDataTexture = new THREE.DataTexture(
+  new Uint8Array(fftSize / 2), // Initial empty data
+  fftSize / 2,
+  1,
+  format
+);
+freqDataTexture.needsUpdate = true;
 
 /**
  * Post Processing
@@ -419,6 +545,9 @@ gpgpu.audioDataVariable = gpgpu.computation.addVariable(
   audioDataTexture
 );
 
+gpgpu.audioDataVariable.material.uniforms.tPitches = new THREE.Uniform(essentiaDataTexture);
+gpgpu.audioDataVariable.material.uniforms.tDataArray = new THREE.Uniform(freqDataTexture);
+
 // Dependencies
 gpgpu.computation.setVariableDependencies(gpgpu.audioDataVariable, []);
 
@@ -432,8 +561,7 @@ gpgpu.scalarFieldVariable = gpgpu.computation.addVariable(
   scalarTexture
 );
 
-gpgpu.scalarFieldVariable.material.uniforms.N = waveUniforms.N;
-gpgpu.scalarFieldVariable.material.uniforms.waveComponents = waveUniforms.waveComponents;
+gpgpu.scalarFieldVariable.material.uniforms.N = new THREE.Uniform(capacity);
 gpgpu.scalarFieldVariable.material.uniforms.uRadius = { value: parameters.radius };
 gpgpu.scalarFieldVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
 
@@ -683,28 +811,37 @@ let time = 0;
 let deltaTime = 0;
 let frameReset = 10;
 
-function pseudoVisualizer() {
-  // // Check if 60 frames have passed
-  if (frameCounter % frameReset === 0) {
-    waveUniforms.waveComponents.value = generateWaveComponents();
-    frameCounter = 0; // Reset the counter after generating
-  }
-}
+// function pseudoVisualizer() {
+//   // // Check if 60 frames have passed
+//   if (frameCounter % frameReset === 0) {
+//     waveUniforms.waveComponents.value = generateWaveComponents();
+//     frameCounter = 0; // Reset the counter after generating
+//   }
+// }
 
 const tick = () => {
   frameCounter++;
   const elapsedTime = clock.getElapsedTime();
 
   const { time, deltaTime } = timeHandler(elapsedTime);
+  controls.update(deltaTime);
 
-  // Update controls
-  controls.update();
+  let essentiaData = new Float32Array(capacity);
+  if (audioReader.available_read() >= capacity) {
+    let read = audioReader.dequeue(essentiaData);
+    if (read !== 0) {
+      console.log('Essentia data:', essentiaData);
+      essentiaDataTexture.image.data.set(essentiaData);
+      essentiaDataTexture.needsUpdate = true;
+    }
+  }
 
   const { avgAmplitude, freqData } = audioAnalysis();
   gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
-  particles.material.uniforms.uAverageAmplitude.value = avgAmplitude;
+  freqDataTexture.image.data.set(freqData);
+  freqDataTexture.needsUpdate = true;
 
-  // pseudoVisualizer();
+  // ******** GPGPU START ******** //
 
   // GPGPU Update
   gpgpu.particlesVariable.material.uniforms.uTime.value = time;
