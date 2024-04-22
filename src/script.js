@@ -21,9 +21,6 @@ import scalarFieldShader from './shaders/gpgpu/scalarField.glsl';
 import zeroPointsShader from './shaders/gpgpu/zeroPoints.glsl';
 import audioDataShader from './shaders/gpgpu/audioData.glsl';
 
-// Audio Analysis
-import * as Pitchfinder from 'pitchfinder';
-
 //******************************************************* GENERAL INITIALIZATION *******************************************************//
 
 /**
