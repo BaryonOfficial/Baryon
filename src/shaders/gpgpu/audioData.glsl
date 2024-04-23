@@ -27,14 +27,17 @@ uniform float capacity;
 // }
 
 vec3 calculateModeNumbers(float frequency, float radius) {
-    // Return different values based on frequency for testing
-    if(frequency == 440.0)
-        return vec3(1.0, 10.0, 2.0);
+    if(frequency == 261.63)
+        return vec3(10.0, 10.0, 2.0);
     if(frequency == 523.25)
-        return vec3(3.0, 1.0, 2.0);
+        return vec3(3.0, 5.0, 2.0);
     if(frequency == 659.25)
-        return vec3(1.0, 2.0, 3.0);
-    return vec3(1.0); // Default case
+        return vec3(7.0, 2.0, 5.0);
+    if(frequency == 880.0)
+        return vec3(1.0, 2.0, 9.0);
+    if(frequency == 1760.0)
+        return vec3(1.0, 2.0, 9.0);
+    return vec3(0.0); // Default case
 }
 
 void main() {
@@ -47,28 +50,30 @@ void main() {
     // float pitch = texelFetch(tPitches, ivec2(pitchIndex, 0), 0).r;
 
          // Manually set pitch values for testing
+  // Manually set pitch values for testing with more options
     float pitch;
-    if(uv.x < 0.33) {
-        pitch = 440.0; // A4 note
-    } else if(uv.x < 0.66) {
-        pitch = 523.25; // C5 note
+    if(uv.x < 0.2) {
+        pitch = 261.63; // C4 (Middle C)
+    } else if(uv.x < 0.4) {
+        pitch = 440.0; // A4 (A note)
+    } else if(uv.x < 0.6) {
+        pitch = 523.25; // C5 (One octave above middle C)
+    } else if(uv.x < 0.8) {
+        pitch = 659.25; // E5
     } else {
-        pitch = 659.25; // E5 note
+        pitch = 880.0; // A5 (Two octaves above A4)
     }
 
     // Calculate the frequency bin index for the given pitch
-    float binIndex = round(pitch * float(capacity) / sampleRate);
+    float binIndex = round(pitch * float(bufferSize) / sampleRate);
 
     // Calculate the texture coordinates for the bin index
-    vec2 binUV = vec2(binIndex / float(capacity), 0.0);
+    vec2 binUV = vec2(binIndex / float(bufferSize), 0.0);
 
     // Sample the amplitude value from the tDataArray
     float amplitude = texture2D(tDataArray, binUV).r;
 
-    // Normalize amplitude to [0, 1]
-    amplitude = amplitude / 255.0;
-
     vec3 modeNumbers = calculateModeNumbers(pitch, uRadius);
 
-    gl_FragColor = vec4(modeNumbers, 1.0);
+    gl_FragColor = vec4(modeNumbers, 5.0);
 }
