@@ -216,7 +216,7 @@ const analyser = new THREE.AudioAnalyser(sound, fftSize);
 
 function audioAnalysis() {
   let avgAmplitude = 0;
-  let freqData = new Uint8Array(fftSize / 2); // Initialize with the correct size
+  let freqData = 0;
 
   if (sound.isPlaying) {
     avgAmplitude = analyser.getAverageFrequency();
@@ -326,7 +326,7 @@ let essentiaDataTexture = new THREE.DataTexture(
 essentiaDataTexture.needsUpdate = true;
 
 let freqDataTexture = new THREE.DataTexture(
-  new Uint8Array(fftSize / 2), // Initial empty data
+  analyser.data, // Initial empty data
   fftSize / 2,
   1,
   format
@@ -567,6 +567,7 @@ gpgpu.scalarFieldVariable = gpgpu.computation.addVariable(
 
 gpgpu.scalarFieldVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
 gpgpu.scalarFieldVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
+gpgpu.scalarFieldVariable.material.uniforms.capacity = new THREE.Uniform(capacity);
 
 // Log
 // console.log(gpgpu.scalarFieldVariable.material.uniforms.uBase.value.image.data);
@@ -873,6 +874,7 @@ const tick = () => {
   gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
   freqDataTexture.image.data.set(freqData);
   freqDataTexture.needsUpdate = true;
+  // console.log('FreqDataTexture:', freqDataTexture.image.data);
 
   // // // Optionally log uniforms
   // if (frameCounter % 60 === 0) {

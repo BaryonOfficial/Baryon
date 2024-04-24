@@ -7,38 +7,46 @@ uniform float sampleRate;
 uniform float bufferSize;
 uniform float capacity;
 
-// vec3 calculateModeNumbers(float frequency, float radius) {
-//     const float c = 343.0;
-//     float sumOfSquares = pow((2.0 * radius * frequency) / c, 2.0);
+vec3 calculateModeNumbers(float pitch, float radius) {
+    const float c = 343.0;
+    float sumOfSquares = pow((2.0 * radius * pitch) / c, 2.0);
 
-//     for(int n1 = 0; n1 <= int(sqrt(sumOfSquares)); n1++) {
-//         for(int n2 = 0; n2 <= int(sqrt(sumOfSquares - float(n1 * n1))); n2++) {
-//             float remainingSquared = sumOfSquares - float(n1 * n1) - float(n2 * n2);
-//             if(remainingSquared >= 0.0) {
-//                 int n3 = int(sqrt(remainingSquared));
-//                 if(float(n1 * n1) + float(n2 * n2) + float(n3 * n3) == sumOfSquares) {
-//                     return vec3(float(n1), float(n2), float(n3));
-//                 }
-//             }
-//         }
-//     }
-//     // No valid mode numbers found
-//     return vec3(1.0);
-// }
+    vec3 closestModeNumbers = vec3(0.0);
+    float closestDifference = sumOfSquares;
 
-vec3 calculateModeNumbers(float frequency, float radius) {
-    if(frequency == 261.63)
-        return vec3(10.0, 10.0, 2.0);
-    if(frequency == 523.25)
-        return vec3(3.0, 5.0, 2.0);
-    if(frequency == 659.25)
-        return vec3(7.0, 2.0, 5.0);
-    if(frequency == 880.0)
-        return vec3(1.0, 2.0, 9.0);
-    if(frequency == 1760.0)
-        return vec3(1.0, 2.0, 9.0);
-    return vec3(0.0); // Default case
+    for(int n1 = 0; n1 <= int(sqrt(sumOfSquares)); n1++) {
+        for(int n2 = 0; n2 <= int(sqrt(sumOfSquares - float(n1 * n1))); n2++) {
+            float remainingSquared = sumOfSquares - float(n1 * n1) - float(n2 * n2);
+            if(remainingSquared >= 0.0) {
+                int n3 = int(sqrt(remainingSquared));
+                float sum = float(n1 * n1) + float(n2 * n2) + float(n3 * n3);
+                float difference = abs(sum - sumOfSquares);
+
+                if(difference < closestDifference) {
+                    closestModeNumbers = vec3(float(n1), float(n2), float(n3));
+                    closestDifference = difference;
+                }
+            }
+        }
+    }
+
+    return closestModeNumbers;
 }
+
+// vec3 calculateModeNumbers(float pitch) {
+//     const float tolerance = 0.01; // Small tolerance for floating-point comparison
+//     if(abs(pitch - 261.63) < tolerance)
+//         return vec3(10.0, 10.0, 2.0);
+//     if(abs(pitch - 523.25) < tolerance)
+//         return vec3(3.0, 5.0, 2.0);
+//     if(abs(pitch - 659.25) < tolerance)
+//         return vec3(7.0, 2.0, 5.0);
+//     if(abs(pitch - 880.0) < tolerance)
+//         return vec3(1.0, 2.0, 9.0);
+//     if(abs(pitch - 1760.0) < tolerance)
+//         return vec3(1.0, 2.0, 9.0);
+//     return vec3(0.0); // Default case
+// }
 
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -49,20 +57,16 @@ void main() {
     // Sample the pitch value from the tPitches texture
     // float pitch = texelFetch(tPitches, ivec2(pitchIndex, 0), 0).r;
 
-         // Manually set pitch values for testing
-  // Manually set pitch values for testing with more options
-    float pitch;
-    if(uv.x < 0.2) {
-        pitch = 261.63; // C4 (Middle C)
-    } else if(uv.x < 0.4) {
-        pitch = 440.0; // A4 (A note)
-    } else if(uv.x < 0.6) {
-        pitch = 523.25; // C5 (One octave above middle C)
-    } else if(uv.x < 0.8) {
-        pitch = 659.25; // E5
-    } else {
-        pitch = 880.0; // A5 (Two octaves above A4)
-    }
+    float pitches[6] = float[](261.63, 440.0, 523.25, 659.25, 880.0, 1760.0);
+
+    // Calculate the index based on uv.x
+    int index = int(uv.x * 6.0); // Assuming uv.x is [0, 1], scale it by the number of pitches
+
+    // Ensure the index is within the bounds of the array
+    index = clamp(index, 0, 5);
+
+    // Set the pitch using the index
+    float pitch = pitches[index];
 
     // // Calculate the frequency bin index for the given pitch
     // float binIndex = round(pitch * float(bufferSize) / sampleRate);
@@ -73,7 +77,9 @@ void main() {
     // // Sample the amplitude value from the tDataArray
     // float amplitude = texture2D(tDataArray, binUV).r;
 
+    // amplitude = amplitude / 255.0;
+
     vec3 modeNumbers = calculateModeNumbers(pitch, uRadius);
 
-    gl_FragColor = vec4(modeNumbers, 1000.0);
+    gl_FragColor = vec4(modeNumbers, 5.0);
 }
