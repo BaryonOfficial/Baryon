@@ -64,16 +64,16 @@ void main() {
         pitch = 880.0; // A5 (Two octaves above A4)
     }
 
-    // Calculate the frequency bin index for the given pitch
-    float binIndex = round(pitch * float(bufferSize) / sampleRate);
+    // // Calculate the frequency bin index for the given pitch
+    // float binIndex = round(pitch * float(bufferSize) / sampleRate);
 
-    // Calculate the texture coordinates for the bin index
-    vec2 binUV = vec2(binIndex / float(bufferSize), 0.0);
+    // // Calculate the texture coordinates for the bin index
+    // vec2 binUV = vec2(binIndex / float(bufferSize), 0.0);
 
-    // Sample the amplitude value from the tDataArray
-    float amplitude = texture2D(tDataArray, binUV).r;
+    // // Sample the amplitude value from the tDataArray
+    // float amplitude = texture2D(tDataArray, binUV).r;
 
     vec3 modeNumbers = calculateModeNumbers(pitch, uRadius);
 
-    gl_FragColor = vec4(modeNumbers, 5.0);
+    gl_FragColor = vec4(modeNumbers, 1000.0);
 }
