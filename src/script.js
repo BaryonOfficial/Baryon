@@ -157,7 +157,7 @@ audioInput.addEventListener('change', (event) => {
 let audioCtx = sound.context;
 console.log(audioCtx);
 
-const capacity = 10;
+const capacity = 5;
 
 function setupAudioGraph() {
   if (!window.SharedArrayBuffer) {
@@ -391,31 +391,16 @@ let parameters = {
   dampening: 0.5,
 };
 
-function generateWaveComponents() {
-  const waveComponents = [];
-  // Populate initial wave component values
-  for (let i = 0; i < parameters.N; i++) {
-    waveComponents.push({
-      [`A${i}`]: Math.random() * 3 + 1,
-      [`u${i}`]: Math.floor(Math.random() * 10) + 1,
-      [`v${i}`]: Math.floor(Math.random() * 10) + 1,
-      [`w${i}`]: Math.floor(Math.random() * 10) + 1,
-    });
+function generateRandomPitches(capacity) {
+  const pitches = new Float32Array(capacity);
+  for (let i = 0; i < capacity; i++) {
+    // Generate a random pitch, for example between 200 Hz and 2000 Hz
+    pitches[i] = 200 + Math.random() * 1800;
   }
-
-  // Flatten the wave components into an array that can be used in GLSL
-  const waveComponentsArray = new Float32Array(parameters.N * 4);
-  for (let i = 0; i < parameters.N; i++) {
-    waveComponentsArray[i * 4] = waveComponents[i][`A${i}`];
-    waveComponentsArray[i * 4 + 1] = waveComponents[i][`u${i}`];
-    waveComponentsArray[i * 4 + 2] = waveComponents[i][`v${i}`];
-    waveComponentsArray[i * 4 + 3] = waveComponents[i][`w${i}`];
-  }
-
-  return waveComponentsArray;
+  return pitches;
 }
 
-const initialWaveComponentsArray = generateWaveComponents();
+const randomPitches = generateRandomPitches(capacity);
 
 // Base Geometry
 const baseGeometry = {
@@ -531,8 +516,7 @@ for (let i = 0; i < baseGeometry.count; i++) {
 
 // Global Uniform Variables
 const waveUniforms = {
-  N: { value: parameters.N },
-  waveComponents: { value: initialWaveComponentsArray },
+  pitches: { value: randomPitches },
 };
 
 /**
@@ -545,12 +529,13 @@ gpgpu.audioDataVariable = gpgpu.computation.addVariable(
   audioDataTexture
 );
 
-gpgpu.audioDataVariable.material.uniforms.tPitches = new THREE.Uniform(essentiaDataTexture);
+gpgpu.audioDataVariable.material.uniforms.tPitches = { value: essentiaDataTexture };
 gpgpu.audioDataVariable.material.uniforms.tDataArray = new THREE.Uniform(freqDataTexture);
 gpgpu.audioDataVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
 gpgpu.audioDataVariable.material.uniforms.sampleRate = new THREE.Uniform(audioCtx.sampleRate);
 gpgpu.audioDataVariable.material.uniforms.bufferSize = new THREE.Uniform(fftSize);
 gpgpu.audioDataVariable.material.uniforms.capacity = new THREE.Uniform(capacity);
+gpgpu.audioDataVariable.material.uniforms.uRandomPitches = waveUniforms.pitches;
 
 // Dependencies
 gpgpu.computation.setVariableDependencies(gpgpu.audioDataVariable, []);
@@ -799,24 +784,17 @@ gui
     gpgpu.particlesVariable.material.uniforms.uThreshold.value = parameters.threshold;
   });
 
-gui
-  .add(gpgpu.particlesVariable.material.uniforms.uAverageAmplitude, 'value')
-  .min(0)
-  .max(255)
-  .step(0.01)
-  .name('uAverageAmplitude');
-
 // Add a button to generate new wave components
 gui
   .add(
     {
-      generateNewWaveComponents: () => {
-        waveUniforms.waveComponents.value = generateWaveComponents();
+      generateRandomPitches: () => {
+        waveUniforms.pitches.value = generateRandomPitches(capacity);
       },
     },
-    'generateNewWaveComponents'
+    'generateRandomPitches'
   )
-  .name('Generate New Wave Components');
+  .name('Generate New Pitches Components');
 
 function logUniforms(material, variableName) {
   console.log(`Uniforms for ${variableName}:`);
@@ -845,13 +823,13 @@ let time = 0;
 let deltaTime = 0;
 let frameReset = 10;
 
-// function pseudoVisualizer() {
-//   // // Check if 60 frames have passed
-//   if (frameCounter % frameReset === 0) {
-//     waveUniforms.waveComponents.value = generateWaveComponents();
-//     frameCounter = 0; // Reset the counter after generating
-//   }
-// }
+function pseudoVisualizer() {
+  // // Check if 60 frames have passed
+  if (frameCounter % frameReset === 0) {
+    waveUniforms.pitches.value = generateRandomPitches(capacity);
+    frameCounter = 0; // Reset the counter after generating
+  }
+}
 
 const tick = () => {
   frameCounter++;
@@ -860,6 +838,8 @@ const tick = () => {
   const { time, deltaTime } = timeHandler(elapsedTime);
   controls.update(deltaTime);
 
+  pseudoVisualizer();
+
   let essentiaData = new Float32Array(capacity);
   if (audioReader.available_read() >= capacity) {
     let read = audioReader.dequeue(essentiaData);
@@ -867,11 +847,13 @@ const tick = () => {
       console.log('Essentia data:', essentiaData);
       essentiaDataTexture.image.data.set(essentiaData);
       essentiaDataTexture.needsUpdate = true;
+      console.log('Essentia data texture:', essentiaDataTexture.image.data);
     }
   }
 
   const { avgAmplitude, freqData } = audioAnalysis();
   gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
+  particles.material.uniforms.uAverageAmplitude.value = avgAmplitude;
   freqDataTexture.image.data.set(freqData);
   freqDataTexture.needsUpdate = true;
   // console.log('FreqDataTexture:', freqDataTexture.image.data);

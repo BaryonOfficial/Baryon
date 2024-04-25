@@ -1,4 +1,3 @@
-#define MAX_N 100
 #define PI 3.14159265359
 
 // Function params

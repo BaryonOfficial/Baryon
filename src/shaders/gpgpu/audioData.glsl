@@ -1,3 +1,6 @@
+#include ../includes/random2D.glsl
+#define MAX_N 20
+
 uniform float uRadius;
 
 uniform sampler2D tPitches;
@@ -6,6 +9,7 @@ uniform sampler2D tDataArray;
 uniform float sampleRate;
 uniform float bufferSize;
 uniform float capacity;
+uniform float uRandomPitches[MAX_N];
 
 vec3 calculateModeNumbers(float pitch, float radius) {
     const float c = 343.0;
@@ -30,8 +34,56 @@ vec3 calculateModeNumbers(float pitch, float radius) {
         }
     }
 
+    // Round the mode numbers to the nearest integer
+    closestModeNumbers = round(closestModeNumbers);
+
     return closestModeNumbers;
 }
+
+// vec3 calculateModeNumbers(float pitch, float radius) {
+//     const float c = 343.0;
+//     float sumOfSquares = pow((2.0 * radius * pitch) / c, 2.0);
+
+//     vec3 closestModeNumbers[3];
+//     float closestDifferences[3];
+
+//     for(int i = 0; i < 3; i++) {
+//         closestModeNumbers[i] = vec3(0.0);
+//         closestDifferences[i] = sumOfSquares;
+//     }
+
+//     for(int n1 = 0; n1 <= int(sqrt(sumOfSquares)); n1++) {
+//         for(int n2 = 0; n2 <= int(sqrt(sumOfSquares - float(n1 * n1))); n2++) {
+//             float remainingSquared = sumOfSquares - float(n1 * n1) - float(n2 * n2);
+//             if(remainingSquared >= 0.0) {
+//                 int n3 = int(sqrt(remainingSquared));
+//                 float sum = float(n1 * n1) + float(n2 * n2) + float(n3 * n3);
+//                 float difference = abs(sum - sumOfSquares);
+
+//                 for(int i = 0; i < 3; i++) {
+//                     if(difference < closestDifferences[i]) {
+//                         for(int j = 2; j > i; j--) {
+//                             closestModeNumbers[j] = closestModeNumbers[j - 1];
+//                             closestDifferences[j] = closestDifferences[j - 1];
+//                         }
+//                         closestModeNumbers[i] = vec3(float(n1), float(n2), float(n3));
+//                         closestDifferences[i] = difference;
+//                         break;
+//                     }
+//                 }
+//             }
+//         }
+//     }
+
+//     // Randomly select one of the three closest mode numbers
+//     int randomIndex = int(random2D(gl_FragCoord.xy) * 3.0);
+//     vec3 selectedModeNumbers = closestModeNumbers[randomIndex];
+
+//     // Round the selected mode numbers to the nearest integer
+//     selectedModeNumbers = round(selectedModeNumbers);
+
+//     return selectedModeNumbers;
+// }
 
 // vec3 calculateModeNumbers(float pitch) {
 //     const float tolerance = 0.01; // Small tolerance for floating-point comparison
@@ -48,38 +100,26 @@ vec3 calculateModeNumbers(float pitch, float radius) {
 //     return vec3(0.0); // Default case
 // }
 
+float generateRandomAmplitude(float pitch) {
+    return random2D(gl_FragCoord.xy + vec2(pitch));
+}
+
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
 
-    // Calculate the pitch index based on the UV coordinates
-    // int pitchIndex = int(uv.x * float(capacity));
-
+    // Calculate the index based on the UV coordinates
+    float index = uv.x * capacity;
+    // Calculate the texture coordinates for the index
+    vec2 texCoord = vec2((index + 0.5) / capacity, 0.5);
     // Sample the pitch value from the tPitches texture
-    // float pitch = texelFetch(tPitches, ivec2(pitchIndex, 0), 0).r;
+    float pitch = texture2D(tPitches, texCoord).r;
 
-    float pitches[6] = float[](261.63, 440.0, 523.25, 659.25, 880.0, 1760.0);
-
-    // Calculate the index based on uv.x
-    int index = int(uv.x * 6.0); // Assuming uv.x is [0, 1], scale it by the number of pitches
-
-    // Ensure the index is within the bounds of the array
-    index = clamp(index, 0, 5);
-
-    // Set the pitch using the index
-    float pitch = pitches[index];
-
-    // // Calculate the frequency bin index for the given pitch
-    // float binIndex = round(pitch * float(bufferSize) / sampleRate);
-
-    // // Calculate the texture coordinates for the bin index
-    // vec2 binUV = vec2(binIndex / float(bufferSize), 0.0);
-
-    // // Sample the amplitude value from the tDataArray
-    // float amplitude = texture2D(tDataArray, binUV).r;
-
-    // amplitude = amplitude / 255.0;
+    // int pitchIndex = int(uv.x * float(capacity));
+    // float pitch = uRandomPitches[pitchIndex];
 
     vec3 modeNumbers = calculateModeNumbers(pitch, uRadius);
+    // float amplitude = generateRandomAmplitude(pitch);
+    // amplitude = amplitude / 255.0;
 
-    gl_FragColor = vec4(modeNumbers, 5.0);
+    gl_FragColor = vec4(modeNumbers, 1.0);
 }
