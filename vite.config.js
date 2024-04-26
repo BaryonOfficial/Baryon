@@ -9,6 +9,9 @@ export default {
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',
+      // 'Cache-Control': 'no-cache, no-store, must-revalidate',
+      // Pragma: 'no-cache',
+      // Expires: '0',
     },
     host: true, // Open to local network and display URL
     open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env), // Open if it's not a CodeSandbox
