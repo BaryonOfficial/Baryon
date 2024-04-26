@@ -831,6 +831,8 @@ function pseudoVisualizer() {
   }
 }
 
+let textureWriteIndex = 0;
+
 const tick = () => {
   frameCounter++;
   const elapsedTime = clock.getElapsedTime();
@@ -840,14 +842,19 @@ const tick = () => {
 
   pseudoVisualizer();
 
-  let essentiaData = new Float32Array(capacity);
-  if (audioReader.available_read() >= capacity) {
+  // Read a smaller chunk of data from the ring buffer in each frame
+  const chunkSize = 1; // Adjust this value based on your needs
+  let essentiaData = new Float32Array(chunkSize);
+
+  if (audioReader.available_read() >= chunkSize) {
     let read = audioReader.dequeue(essentiaData);
     if (read !== 0) {
-      console.log('Essentia data:', essentiaData);
-      essentiaDataTexture.image.data.set(essentiaData);
+      // Process the retrieved data and update the texture
+      for (let i = 0; i < chunkSize; i++) {
+        essentiaDataTexture.image.data[textureWriteIndex] = essentiaData[i];
+        textureWriteIndex = (textureWriteIndex + 1) % capacity;
+      }
       essentiaDataTexture.needsUpdate = true;
-      console.log('Essentia data texture:', essentiaDataTexture.image.data);
     }
   }
 

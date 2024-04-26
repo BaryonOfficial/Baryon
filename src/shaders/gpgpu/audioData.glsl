@@ -8,7 +8,7 @@ uniform sampler2D tDataArray;
 
 uniform float sampleRate;
 uniform float bufferSize;
-uniform float capacity;
+uniform int capacity;
 uniform float uRandomPitches[MAX_N];
 
 vec3 calculateModeNumbers(float pitch, float radius) {
@@ -108,9 +108,9 @@ void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
 
     // Calculate the index based on the UV coordinates
-    float index = uv.x * capacity;
+    float index = uv.x * float(capacity);
     // Calculate the texture coordinates for the index
-    vec2 texCoord = vec2((index + 0.5) / capacity, 0.5);
+    vec2 texCoord = vec2((index + 0.5) / float(capacity), 0.5);
     // Sample the pitch value from the tPitches texture
     float pitch = texture2D(tPitches, texCoord).r;
 
