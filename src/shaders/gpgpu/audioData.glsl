@@ -92,18 +92,18 @@ float generateRandomAmplitude(float pitch) {
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
 
-    int pitchIndex = int(uv.x * float(capacity));
-    float pitch = uRandomPitches[pitchIndex];
+    // int pitchIndex = int(uv.x * float(capacity));
+    // float pitch = uRandomPitches[pitchIndex];
     // float amplitude = generateRandomAmplitude(pitch);
     // amplitude = amplitude / 255.0;
 
-    // // // Calculate the texture coordinates based on the index
-    // float index = uv.x * float(capacity);
-    // float textureWidth = float(textureSize(tPitches, 0).x);
-    // float textureCoord = index / textureWidth;
+    // Calculate the texture coordinates based on the index
+    float index = uv.x * float(capacity);
+    float textureWidth = float(textureSize(tPitches, 0).x);
+    float textureCoord = index / textureWidth;
 
-    // // // // Sample the pitch value from the tPitches texture
-    // float pitch = texture(tPitches, vec2(textureCoord, 0.5)).r;
+    // Sample the pitch value from the tPitches texture
+    float pitch = texture(tPitches, vec2(textureCoord, 0.5)).r;
 
     vec3 modeNumbers = calculateModeNumbers(pitch, uRadius);
 

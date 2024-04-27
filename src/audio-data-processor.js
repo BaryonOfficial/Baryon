@@ -14,14 +14,16 @@ class AudioDataProcessor extends AudioWorkletProcessor {
     this._interleavedData = new Float32Array(this._bufferSize * this._channelCount);
     this._frameSize = this._bufferSize / 2;
     this._hopSize = this._frameSize / 4;
-    this._lowestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -57); // lowest note = C0
-    // console.log(this._lowestFreq);
-    this._highestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -57) * Math.pow(2, 8); // 8 octaves above C0, c*
-    // console.log(this._highestFreq);
+    // this._lowestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -57); // lowest note = C0
+    // this._highestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -57) * Math.pow(2, 8); // 8 octaves above C0, c*
+    this._lowestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -33); // lowest note = C2
+    this._highestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -33 + 6 * 12 - 1); // 6 octaves above C2
+
     this._meanPitchSeriesForBeat = [];
 
     // buffersize mismatch helpers
     this._inputRingBuffer = new ChromeLabsRingBuffer(this._bufferSize, this._channelCount);
+    this._outputRingBuffer = new ChromeLabsRingBuffer(this._bufferSize, this._channelCount);
     this._accumData = new Array(this._channelCount)
       .fill(null)
       .map(() => new Float32Array(this._bufferSize));
@@ -184,6 +186,7 @@ class AudioDataProcessor extends AudioWorkletProcessor {
       console.error('AudioWorkletProcessor error:', error);
       // Handle the error gracefully, e.g., return default values or skip processing
     }
+
     // Return - let the system know we're still active and ready to process audio.
     return true;
   }
