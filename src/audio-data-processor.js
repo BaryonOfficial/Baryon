@@ -164,22 +164,9 @@ class AudioDataProcessor extends AudioWorkletProcessor {
 
           if (this._frameCounter >= framesPerBeat) {
             // Check if there is enough space in the buffer for all values
-            if (this._audio_writer.available_write() >= this._capacity) {
-              // Enqueue each pitch value from _meanPitchSeriesForBeat individually
-              this._meanPitchSeriesForBeat.forEach((pitch) => {
-                this._audio_writer.enqueue([pitch]);
-              });
-
-              // Calculate remaining slots to fill with zero before the tempo
-              let remainingSlots = this._capacity - this._meanPitchSeriesForBeat.length; // reserve 1 for the tempo
-
-              // Fill the remaining slots with zero
-              for (let i = 0; i < remainingSlots; i++) {
-                this._audio_writer.enqueue([0]);
-              }
-
-              // Enqueue the tempo last
-              // this._audio_writer.enqueue([tempo]);
+            if (this._audio_writer.available_write() >= this._meanPitchSeriesForBeat.length) {
+              // Enqueue all pitch values from _meanPitchSeriesForBeat at once
+              this._audio_writer.enqueue(this._meanPitchSeriesForBeat);
 
               // Clear the frameCounter and _meanPitchSeriesForBeat after enqueuing
               this._frameCounter = 0;

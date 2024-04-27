@@ -316,15 +316,6 @@ function timeHandler(elapsedTime) {
 // Audio Data
 const format = renderer.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
 
-let essentiaDataTexture = new THREE.DataTexture(
-  new Float32Array(capacity), // Initial empty data
-  capacity,
-  1,
-  THREE.RedFormat,
-  THREE.FloatType
-);
-essentiaDataTexture.needsUpdate = true;
-
 let freqDataTexture = new THREE.DataTexture(
   analyser.data, // Initial empty data
   fftSize / 2,
@@ -395,7 +386,7 @@ function generateRandomPitches(capacity) {
   const pitches = new Float32Array(capacity);
   for (let i = 0; i < capacity; i++) {
     // Generate a random pitch, for example between 200 Hz and 2000 Hz
-    pitches[i] = 200 + Math.random() * 1800;
+    pitches[i] = 20 + Math.random() * 220;
   }
   return pitches;
 }
@@ -529,7 +520,7 @@ gpgpu.audioDataVariable = gpgpu.computation.addVariable(
   audioDataTexture
 );
 
-gpgpu.audioDataVariable.material.uniforms.tPitches = { value: essentiaDataTexture };
+// gpgpu.audioDataVariable.material.uniforms.tPitches = { value: essentiaDataTexture };
 gpgpu.audioDataVariable.material.uniforms.tDataArray = new THREE.Uniform(freqDataTexture);
 gpgpu.audioDataVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
 gpgpu.audioDataVariable.material.uniforms.sampleRate = new THREE.Uniform(audioCtx.sampleRate);
@@ -831,7 +822,11 @@ function pseudoVisualizer() {
   }
 }
 
-let textureWriteIndex = 0;
+let essentiaData = new Float32Array(capacity);
+
+gpgpu.audioDataVariable.material.uniforms.tPitches = {
+  value: new THREE.DataTexture(essentiaData, capacity, 1, THREE.RedFormat, THREE.FloatType),
+};
 
 const tick = () => {
   frameCounter++;
@@ -842,19 +837,14 @@ const tick = () => {
 
   pseudoVisualizer();
 
-  // Read a smaller chunk of data from the ring buffer in each frame
-  const chunkSize = 1; // Adjust this value based on your needs
-  let essentiaData = new Float32Array(chunkSize);
-
-  if (audioReader.available_read() >= chunkSize) {
+  if (audioReader.available_read() >= 1) {
     let read = audioReader.dequeue(essentiaData);
     if (read !== 0) {
-      // Process the retrieved data and update the texture
-      for (let i = 0; i < chunkSize; i++) {
-        essentiaDataTexture.image.data[textureWriteIndex] = essentiaData[i];
-        textureWriteIndex = (textureWriteIndex + 1) % capacity;
-      }
-      essentiaDataTexture.needsUpdate = true;
+      gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true;
+      console.log(
+        'tPitches Uniform',
+        gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data
+      );
     }
   }
 
