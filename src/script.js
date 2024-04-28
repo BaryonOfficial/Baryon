@@ -163,7 +163,7 @@ audioInput.addEventListener('change', (event) => {
 let audioCtx = sound.context;
 console.log(audioCtx);
 
-const capacity = 4;
+const capacity = 5;
 
 function setupAudioGraph() {
   if (!window.SharedArrayBuffer) {
@@ -365,7 +365,7 @@ if (renderer.getPixelRatio() === 1 && !renderer.capabilities.isWebGL2) {
 
 const bloomFolder = gui.addFolder('Bloom Effect');
 
-unrealBloomPass.strength = 0.3;
+unrealBloomPass.strength = 0.35;
 unrealBloomPass.radius = -1.5;
 unrealBloomPass.threshold = 0.64;
 
@@ -381,7 +381,7 @@ let parameters = {
   count: 1500000,
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
-  threshold: 0.064,
+  threshold: 0.04,
   surfaceRatio: 0.33,
   surfaceThreshold: 0.001,
   particleSpeed: 1.0,
@@ -606,12 +606,12 @@ gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
 gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(1.0);
-gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(1.64);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(1.2);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.64);
 gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(initialParticlesTexture);
 gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
-gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(100);
+gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(110);
 gpgpu.particlesVariable.material.uniforms.uDampening = new THREE.Uniform(0.5);
 
 //******************************************************* GPGPU INITIALIZATION *******************************************************//
