@@ -330,17 +330,6 @@ function timeHandler(elapsedTime) {
   return { time, deltaTime };
 }
 
-// Audio Data
-const format = renderer.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
-
-let freqDataTexture = new THREE.DataTexture(
-  analyser.data, // Initial empty data
-  fftSize / 2,
-  1,
-  format
-);
-freqDataTexture.needsUpdate = true;
-
 /**
  * Post Processing
  */
@@ -537,8 +526,21 @@ gpgpu.audioDataVariable = gpgpu.computation.addVariable(
   audioDataTexture
 );
 
-// gpgpu.audioDataVariable.material.uniforms.tPitches = { value: essentiaDataTexture };
-gpgpu.audioDataVariable.material.uniforms.tDataArray = new THREE.Uniform(freqDataTexture);
+// Audio Data & Uniforms
+const format = renderer.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
+let essentiaData = new Float32Array(capacity);
+
+gpgpu.audioDataVariable.material.uniforms.tPitches = {
+  value: new THREE.DataTexture(essentiaData, capacity, 1, THREE.RedFormat, THREE.FloatType),
+};
+gpgpu.audioDataVariable.material.uniforms.tDataArray = {
+  value: new THREE.DataTexture(
+    analyser.data, // Initial empty data
+    fftSize / 2,
+    1,
+    format
+  ),
+};
 gpgpu.audioDataVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
 gpgpu.audioDataVariable.material.uniforms.sampleRate = new THREE.Uniform(audioCtx.sampleRate);
 gpgpu.audioDataVariable.material.uniforms.bufferSize = new THREE.Uniform(fftSize);
@@ -840,18 +842,13 @@ function pseudoVisualizer() {
   }
 }
 
-let essentiaData = new Float32Array(capacity);
-
-gpgpu.audioDataVariable.material.uniforms.tPitches = {
-  value: new THREE.DataTexture(essentiaData, capacity, 1, THREE.RedFormat, THREE.FloatType),
-};
-
 const tick = () => {
   frameCounter++;
-  const elapsedTime = clock.getElapsedTime();
 
+  const elapsedTime = clock.getElapsedTime();
   const { time, deltaTime } = timeHandler(elapsedTime);
-  // GPGPU Update
+
+  // GPGPU Updates
   gpgpu.particlesVariable.material.uniforms.uTime.value = time;
   gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
   particles.material.uniforms.uTime.value = time;
@@ -867,19 +864,14 @@ const tick = () => {
     let read = audioReader.dequeue(essentiaData);
     if (read !== 0) {
       gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true;
-      // console.log(
-      //   'tPitches Uniform',
-      //   gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data
-      // );
     }
   }
 
   const { avgAmplitude, freqData } = audioAnalysis();
   gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
   particles.material.uniforms.uAverageAmplitude.value = avgAmplitude;
-  freqDataTexture.image.data.set(freqData);
-  freqDataTexture.needsUpdate = true;
-  // console.log('FreqDataTexture:', freqDataTexture.image.data);
+  gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(freqData);
+  gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true;
 
   // // // Optionally log uniforms
   // if (frameCounter % 60 === 0) {
@@ -914,16 +906,16 @@ const tick = () => {
     gpgpu.particlesVariable
   ).texture;
 
-  // Debug materials update
-  scalarFieldDebug.material.map = gpgpu.computation.getCurrentRenderTarget(
-    gpgpu.scalarFieldVariable
-  ).texture;
-  scalarFieldDebug.material.needsUpdate = true;
+  // // Debug materials update
+  // scalarFieldDebug.material.map = gpgpu.computation.getCurrentRenderTarget(
+  //   gpgpu.scalarFieldVariable
+  // ).texture;
+  // scalarFieldDebug.material.needsUpdate = true;
 
-  zeroPointsDebug.material.map = gpgpu.computation.getCurrentRenderTarget(
-    gpgpu.zeroPointsVariable
-  ).texture;
-  zeroPointsDebug.material.needsUpdate = true;
+  // zeroPointsDebug.material.map = gpgpu.computation.getCurrentRenderTarget(
+  //   gpgpu.zeroPointsVariable
+  // ).texture;
+  // zeroPointsDebug.material.needsUpdate = true;
 
   // Render normal scene
   // renderer.render(scene, camera);
