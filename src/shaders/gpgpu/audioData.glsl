@@ -40,6 +40,10 @@ vec3 calculateModeNumbers(float pitch) {
     return round(vec3(n1, n2, n3));
 }
 
+float frequencyToIndex(float pitch) {
+    return floor(pitch / (sampleRate / (bufferSize / 2.0)));
+}
+
 // float generateRandomAmplitude(float pitch) {
 //     return random2D(gl_FragCoord.xy + vec2(pitch));
 // }
@@ -59,9 +63,15 @@ void main() {
 
     // Sample the pitch value from the tPitches texture
     float pitch = texture(tPitches, vec2(textureCoord, 0.5)).r;
+    float index2 = frequencyToIndex(pitch);
+    // Normalize the index to the range [0, 1]
+    float normalizedIndex = index2 / (bufferSize / 2.0);
+
+    // Sample the amplitude from the frequency data texture
+    float amplitude = texture(tDataArray, vec2(normalizedIndex, 0.5)).r;
 
     vec3 modeNumbers = calculateModeNumbers(pitch);
 
-    gl_FragColor = vec4(modeNumbers, 1.0);
+    gl_FragColor = vec4(modeNumbers, amplitude);
 
 }

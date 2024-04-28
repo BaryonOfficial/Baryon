@@ -9,6 +9,7 @@ uniform float uFlowFieldFrequency;
 uniform float uParticleSpeed;
 uniform float uThreshold;
 uniform float uAverageAmplitude;
+uniform float vGroup;
 
 void main() {
     float time = uTime * 1.0;
@@ -16,6 +17,7 @@ void main() {
     vec4 particle = texture(uParticles, uv);
     vec4 base = texture(uBase, uv);
     vec4 zeroPoint = texture(uZeroPoints, uv);
+    particle.w = zeroPoint.a; // coloring
 
     vec3 target;
     if(uAverageAmplitude > 0.0) {
@@ -47,8 +49,6 @@ void main() {
     vec3 lerpMovement = distance > uThreshold ? mix(particle.xyz, target, clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0)) - particle.xyz : vec3(0.0);
 
     particle.xyz += movement + lerpMovement;
-
-    particle.w = zeroPoint.a; // coloring
 
     gl_FragColor = particle;
 }

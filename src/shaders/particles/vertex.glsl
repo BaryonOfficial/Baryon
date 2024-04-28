@@ -25,19 +25,17 @@ void main() {
     // Calculate the normal based on the particle position
     vec3 normal = normalize(particle.xyz);
 
-    // Rotation
-
-    if(vGroup == 2.0) {
-         // Pulsating Effect
+     // Pulsating Effect
+    if(vGroup == 1.0 || vGroup == 2.0) {
         float normalizedAmplitude = uAverageAmplitude / 255.0;
         // Calculate the maximum distance the particle can move
-        float maxDistance = uRadius - length(particle.xyz);
+        float maxDistance = uRadius * 1.5;
         // Calculate the pulsating offset
-        vec3 pulsatingOffset = normal * normalizedAmplitude * maxDistance * 2.0;
+        vec3 pulsatingOffset = normal * normalizedAmplitude * maxDistance;
         particle.xyz += pulsatingOffset;
     }
 
-    // Wave Propagation
+    // // Wave Propagation
     // float waveFrequency = 5.0;
     // float waveAmplitude = 0.01;
     // float wavePhase = time * 0.1;

@@ -221,6 +221,8 @@ function audioAnalysis() {
   if (sound.isPlaying) {
     avgAmplitude = analyser.getAverageFrequency();
     freqData = analyser.getFrequencyData();
+  } else {
+    avgAmplitude = 0;
   }
 
   return { avgAmplitude, freqData };
@@ -372,7 +374,7 @@ bloomFolder.close();
 // Parameters Object
 let parameters = {
   N: 22,
-  count: 1000000,
+  count: 1500000,
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
   threshold: 0.064,
@@ -835,8 +837,8 @@ const tick = () => {
   const { time, deltaTime } = timeHandler(elapsedTime);
   controls.update(deltaTime);
 
-  console.log('time:', time);
-  console.log('deltaTime:', deltaTime);
+  // console.log('time:', time);
+  // console.log('deltaTime:', deltaTime);
 
   pseudoVisualizer();
 
