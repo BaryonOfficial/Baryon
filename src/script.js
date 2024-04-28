@@ -145,6 +145,12 @@ audioInput.addEventListener('change', (event) => {
   const file = event.target.files[0];
   const fileURL = URL.createObjectURL(file);
 
+  // Stop the current audio if it is playing and reset its buffer
+  if (sound.started) {
+    sound.stop();
+    playButton.textContent = 'Play';
+  }
+
   audioLoader.load(fileURL, function (buffer) {
     sound.setBuffer(buffer);
     sound.setLoop(false);
