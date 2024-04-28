@@ -1,9 +1,11 @@
 #include ../includes/random2D.glsl
+precision highp float;
 
 uniform vec2 uResolution;
 uniform float uSize;
 uniform sampler2D uParticlesTexture;
 uniform float uTime;
+uniform float uDeltaTime;
 uniform float uAverageAmplitude;
 uniform float uRadius;
 uniform float uRotation;
@@ -35,23 +37,17 @@ void main() {
         particle.xyz += pulsatingOffset;
     }
 
-    // // Wave Propagation
-    // float waveFrequency = 5.0;
-    // float waveAmplitude = 0.01;
-    // float wavePhase = time * 0.1;
-    // vec3 waveOffset = vec3(sin(particle.x * waveFrequency + wavePhase), sin(particle.y * waveFrequency + wavePhase), sin(particle.z * waveFrequency + wavePhase)) * waveAmplitude;
-    // particle.xyz += waveOffset;
-
     // Final position
     vec4 modelPosition = modelMatrix * vec4(particle.xyz, 1.0);
 
     // Spin
-    // float angle = atan(modelPosition.x, modelPosition.z);
-    // float distanceToCenter = length(modelPosition.xz);
-    // float angleOffset = uTime * uRotation;
-    // angle += angleOffset;
-    // modelPosition.x = cos(angle) * distanceToCenter;
-    // modelPosition.z = sin(angle) * distanceToCenter;
+    float angle = atan(modelPosition.x, modelPosition.z);
+    float distanceToCenter = length(modelPosition.xz);
+    float smoothTime = uTime * 0.5; // Adjust the factor to control the speed of rotation
+    float angleOffset = smoothTime * (uRotation);
+    angle += angleOffset;
+    modelPosition.x = cos(angle) * distanceToCenter;
+    modelPosition.z = sin(angle) * distanceToCenter;
 
     // Glitch Effect (Broken)
     // float glitchTime = uTime - modelPosition.y;
@@ -73,7 +69,7 @@ void main() {
     gl_PointSize *= (1.0 / -viewPosition.z);
 
     // Varyings
-    vColor = aColor;
     vPosition = modelPosition.xyz;
+    vColor = aColor;
     vNormal = modelNormal.xyz;
 }

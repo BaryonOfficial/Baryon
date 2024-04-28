@@ -34,7 +34,7 @@ void main() {
 
     // Holographic
     float holographic = fresnel * stripes;
-    holographic += fresnel * 5.25;
+    holographic += fresnel * 1.25;
     holographic *= falloff;
 
     // ***** Coloring ***** //

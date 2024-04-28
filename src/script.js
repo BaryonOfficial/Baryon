@@ -97,7 +97,7 @@ window.addEventListener('resize', () => {
  */
 // Base camera
 const camera = new THREE.PerspectiveCamera(35, sizes.width / sizes.height, 0.1, 100);
-camera.position.set(0, 0, 15);
+camera.position.set(0, 3, 20);
 scene.add(camera);
 
 // Controls
@@ -223,6 +223,7 @@ function audioAnalysis() {
     freqData = analyser.getFrequencyData();
   } else {
     avgAmplitude = 0;
+    freqData = 0;
   }
 
   return { avgAmplitude, freqData };
@@ -279,13 +280,6 @@ stopButton.addEventListener('click', () => {
   sound.started = false;
   playButton.textContent = 'Play';
 });
-
-sound.onEnded = function () {
-  audioCtx.suspend(); // Close the audio context when audio ends
-  console.log('Audio ended');
-  sound.started = false;
-  playButton.textContent = 'Play'; // Update the play button text
-};
 
 function timeHandler(elapsedTime) {
   if (sound.isPlaying && sound.started === true) {
@@ -578,7 +572,7 @@ gpgpu.computation.setVariableDependencies(gpgpu.zeroPointsVariable, [gpgpu.scala
 gpgpu.particlesVariable = gpgpu.computation.addVariable(
   'uParticles',
   gpgpuParticlesShader,
-  gpgpu.computation.createTexture()
+  baseParticlesTexture
 );
 
 gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
@@ -589,8 +583,8 @@ gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
 gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(1.0);
-gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(3.14);
-gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.5);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(1.64);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.64);
 gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(initialParticlesTexture);
 gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
@@ -613,7 +607,7 @@ gpgpu.audioDebug = new THREE.Mesh(
 gpgpu.audioDebug.visible = mode;
 gpgpu.audioDebug.position.x = -4;
 gpgpu.audioDebug.position.y = 0;
-scene.add(gpgpu.audioDebug);
+// scene.add(gpgpu.audioDebug);
 
 gpgpu.debug = new THREE.Mesh(
   new THREE.PlaneGeometry(3, 3),
@@ -677,6 +671,7 @@ particles.material = new THREE.ShaderMaterial({
     uRadius: new THREE.Uniform(parameters.radius),
     uAverageAmplitude: new THREE.Uniform(0.0),
     uRotation: new THREE.Uniform(0.5),
+    uDeltaTime: new THREE.Uniform(0),
   },
 });
 
@@ -830,11 +825,23 @@ gpgpu.audioDataVariable.material.uniforms.tPitches = {
   value: new THREE.DataTexture(essentiaData, capacity, 1, THREE.RedFormat, THREE.FloatType),
 };
 
+// if (sound.onEnded) {
+//   audioCtx.suspend(); // Close the audio context when audio ends
+//   console.log('Audio ended check');
+//   sound.started = false;
+//   playButton.textContent = 'Play'; // Update the play button text
+// }
+
 const tick = () => {
   frameCounter++;
   const elapsedTime = clock.getElapsedTime();
 
   const { time, deltaTime } = timeHandler(elapsedTime);
+  // GPGPU Update
+  gpgpu.particlesVariable.material.uniforms.uTime.value = time;
+  gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
+  particles.material.uniforms.uTime.value = time;
+  particles.material.uniforms.uDeltaTime.value = deltaTime;
   controls.update(deltaTime);
 
   // console.log('time:', time);
@@ -846,10 +853,10 @@ const tick = () => {
     let read = audioReader.dequeue(essentiaData);
     if (read !== 0) {
       gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true;
-      console.log(
-        'tPitches Uniform',
-        gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data
-      );
+      // console.log(
+      //   'tPitches Uniform',
+      //   gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data
+      // );
     }
   }
 
@@ -867,11 +874,6 @@ const tick = () => {
   // }
 
   // ******** GPGPU START ******** //
-
-  // GPGPU Update
-  gpgpu.particlesVariable.material.uniforms.uTime.value = time;
-  particles.material.uniforms.uTime.value = time;
-  gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
 
   // const computationStartTime = performance.now();
 

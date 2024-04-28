@@ -17,6 +17,7 @@ void main() {
         } else {
             // ZeroPoint is in the volume
             gl_FragColor = vec4(position, 2.0);
+            // discard;
         }
     } else {
         discard;

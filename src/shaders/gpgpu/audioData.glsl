@@ -41,7 +41,9 @@ vec3 calculateModeNumbers(float pitch) {
 }
 
 float frequencyToIndex(float pitch) {
-    return floor(pitch / (sampleRate / (bufferSize / 2.0)));
+    float nyquist = sampleRate / 2.0;
+
+    return (pitch / nyquist) * (bufferSize / 2.0);
 }
 
 // float generateRandomAmplitude(float pitch) {
@@ -65,7 +67,7 @@ void main() {
     float pitch = texture(tPitches, vec2(textureCoord, 0.5)).r;
     float index2 = frequencyToIndex(pitch);
     // Normalize the index to the range [0, 1]
-    float normalizedIndex = index2 / (bufferSize / 2.0);
+    float normalizedIndex = clamp(index2 / (bufferSize / 2.0), 0.0, 1.0); // Clamping to avoid out-of-bounds
 
     // Sample the amplitude from the frequency data texture
     float amplitude = texture(tDataArray, vec2(normalizedIndex, 0.5)).r;
