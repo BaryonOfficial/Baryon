@@ -157,7 +157,7 @@ audioInput.addEventListener('change', (event) => {
 let audioCtx = sound.context;
 console.log(audioCtx);
 
-const capacity = 5;
+const capacity = 4;
 
 function setupAudioGraph() {
   if (!window.SharedArrayBuffer) {

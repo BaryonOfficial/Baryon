@@ -126,13 +126,6 @@ class AudioDataProcessor extends AudioWorkletProcessor {
           const numVoicedFrames = pitchFrames.filter((p) => p > 0).length;
           const meanPitch = pitchFrames.reduce((acc, curr) => acc + curr, 0) / numVoicedFrames;
 
-          if (!isNaN(meanPitch)) {
-            this._meanPitchSeriesForBeat.push(meanPitch);
-            if (this._meanPitchSeriesForBeat.length > this._capacity) {
-              this._meanPitchSeriesForBeat.shift();
-            }
-          }
-
           // let vectorVectorFloat = algoOutput2.pitch;
           // let pitchArrays = [];
           // for (let i = 0; i < vectorVectorFloat.size(); i++) {
@@ -145,34 +138,27 @@ class AudioDataProcessor extends AudioWorkletProcessor {
           // }
           // console.log(pitchArrays);
 
-          // Estimate the tempo using the PercivalBpmEstimator algorithm
-          let tempo = this._essentia.PercivalBpmEstimator(
-            accumDataVector,
-            1024,
-            2048,
-            128,
-            128,
-            210,
-            50,
-            this._sampleRate
-          ).bpm;
+          // // Estimate the tempo using the PercivalBpmEstimator algorithm
+          // let tempo = this._essentia.PercivalBpmEstimator(
+          //   accumDataVector,
+          //   1024,
+          //   2048,
+          //   128,
+          //   128,
+          //   210,
+          //   50,
+          //   this._sampleRate
+          // ).bpm;
 
-          // // Tempo Calcs
-          const secondsPerBeat = 60 / tempo;
-          const framesPerBeat = Math.round(secondsPerBeat * this._sampleRate);
-          // console.log('framesPerBeat:', framesPerBeat);
+          // // // Tempo Calcs
+          // const secondsPerBeat = 60 / tempo;
+          // const framesPerBeat = Math.round(secondsPerBeat * this._sampleRate);
+          // // console.log('framesPerBeat:', framesPerBeat);
 
-          this._frameCounter += this._bufferSize;
-
-          if (this._frameCounter >= framesPerBeat) {
-            // Check if there is enough space in the buffer for all values
-            if (this._audio_writer.available_write() >= this._meanPitchSeriesForBeat.length) {
-              // Enqueue all pitch values from _meanPitchSeriesForBeat at once
-              this._audio_writer.enqueue(this._meanPitchSeriesForBeat);
-
-              // Clear the frameCounter and _meanPitchSeriesForBeat after enqueuing
-              this._frameCounter = 0;
-              this._meanPitchSeriesForBeat = [];
+          // Enqueue all pitch values from _meanPitchSeriesForBeat at once
+          if (this._audio_writer.available_write() >= 1) {
+            if (!isNaN(meanPitch)) {
+              this._audio_writer.enqueue([meanPitch]);
             }
           }
 

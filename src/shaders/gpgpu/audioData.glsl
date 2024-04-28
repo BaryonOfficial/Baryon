@@ -107,6 +107,6 @@ void main() {
 
     vec3 modeNumbers = calculateModeNumbers(pitch, uRadius);
 
-    gl_FragColor = vec4(modeNumbers, 10.0);
+    gl_FragColor = vec4(modeNumbers, 1.0);
 
 }
