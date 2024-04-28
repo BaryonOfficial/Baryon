@@ -221,9 +221,6 @@ function audioAnalysis() {
   if (sound.isPlaying) {
     avgAmplitude = analyser.getAverageFrequency();
     freqData = analyser.getFrequencyData();
-  } else {
-    avgAmplitude = 0;
-    freqData = 0;
   }
 
   return { avgAmplitude, freqData };
@@ -280,6 +277,24 @@ stopButton.addEventListener('click', () => {
   sound.started = false;
   playButton.textContent = 'Play';
 });
+
+sound.onEnded = function () {
+  sound.stop();
+  if (audioCtx.state === 'running') {
+    audioCtx
+      .suspend()
+      .then(() => {
+        console.log('Audio context suspended successfully');
+      })
+      .catch((error) => {
+        console.error('Failed to suspend audio context:', error);
+      });
+  }
+
+  console.log('Audio ended check'); // Log the end of the audio for debugging
+  sound.started = false; // Update the state to reflect that audio is not playing
+  playButton.textContent = 'Replay'; // Update the play button text
+};
 
 function timeHandler(elapsedTime) {
   if (sound.isPlaying && sound.started === true) {
@@ -648,7 +663,7 @@ const particles = {};
 const materialParameters = {};
 
 // materialParameters.color = new THREE.Color('rgb(77,142,236)');
-materialParameters.color = new THREE.Color('rgb(18, 198, 211)');
+materialParameters.color = new THREE.Color('rgb(1, 65, 167)');
 
 // Material
 particles.material = new THREE.ShaderMaterial({
@@ -824,13 +839,6 @@ let essentiaData = new Float32Array(capacity);
 gpgpu.audioDataVariable.material.uniforms.tPitches = {
   value: new THREE.DataTexture(essentiaData, capacity, 1, THREE.RedFormat, THREE.FloatType),
 };
-
-// if (sound.onEnded) {
-//   audioCtx.suspend(); // Close the audio context when audio ends
-//   console.log('Audio ended check');
-//   sound.started = false;
-//   playButton.textContent = 'Play'; // Update the play button text
-// }
 
 const tick = () => {
   frameCounter++;

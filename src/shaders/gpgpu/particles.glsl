@@ -46,7 +46,14 @@ void main() {
 
     // vec3 lerpMovement = mix(particle.xyz, target, clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0)) - particle.xyz;
     //Adjusts speed while accounting for distance to the zero point
-    vec3 lerpMovement = distance > uThreshold ? mix(particle.xyz, target, clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0)) - particle.xyz : vec3(0.0);
+    vec3 lerpMovement;
+    if(distance > 1.0) {
+        float alpha = clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0);
+        vec3 interpolatedPosition = mix(particle.xyz, target, alpha);
+        lerpMovement = interpolatedPosition - particle.xyz;
+    } else {
+        lerpMovement = vec3(0.0);
+    }
 
     particle.xyz += movement + lerpMovement;
 
