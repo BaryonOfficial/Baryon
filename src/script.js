@@ -375,7 +375,7 @@ let parameters = {
   count: 1000000,
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
-  threshold: 0.5,
+  threshold: 0.064,
   surfaceRatio: 0.33,
   surfaceThreshold: 0.001,
   particleSpeed: 1.0,
@@ -386,7 +386,7 @@ function generateRandomPitches(capacity) {
   const pitches = new Float32Array(capacity);
   for (let i = 0; i < capacity; i++) {
     // Generate a random pitch, for example between 200 Hz and 2000 Hz
-    pitches[i] = 20 + Math.random() * 220;
+    pitches[i] = 10 + Math.random() * 220;
   }
   return pitches;
 }
@@ -834,6 +834,9 @@ const tick = () => {
 
   const { time, deltaTime } = timeHandler(elapsedTime);
   controls.update(deltaTime);
+
+  console.log('time:', time);
+  console.log('deltaTime:', deltaTime);
 
   pseudoVisualizer();
 
