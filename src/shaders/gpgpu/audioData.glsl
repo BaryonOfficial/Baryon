@@ -11,34 +11,71 @@ uniform float bufferSize;
 uniform int capacity;
 uniform float uRandomPitches[MAX_N];
 
-const float c = 343.0;
-const float accuracy = 0.1;
+// Secant Method
+ivec3 findNormalModes(float pitch) {
+    float c = 340.0; // Speed of sound in air (m/s)
+    float l = uRadius;
+    float uTolerance = 0.01;
+    int uMaxIterations = 200;
 
-float objectiveFunction(float n, float pitch) {
-    return (c / (2.0 * uRadius)) * sqrt(n * n) - pitch;
-}
+    // Initial guess for n1, n2, n3
+    ivec3 n0 = ivec3(1);
+    ivec3 n1 = ivec3(2);
 
-float bisection(float lower, float upper, float pitch) {
-    while(upper - lower > accuracy) {
-        float midpoint = (lower + upper) / 2.0;
-        if(objectiveFunction(midpoint, pitch) == 0.0) {
-            return midpoint;
-        } else if(objectiveFunction(lower, pitch) * objectiveFunction(midpoint, pitch) < 0.0) {
-            upper = midpoint;
-        } else {
-            lower = midpoint;
+    for(int i = 0; i < uMaxIterations; i++) {
+        // Compute frequencies for current guesses
+        float v0 = 0.5 * c * sqrt(float(n0.x * n0.x + n0.y * n0.y + n0.z * n0.z) / (l * l));
+        float v1 = 0.5 * c * sqrt(float(n1.x * n1.x + n1.y * n1.y + n1.z * n1.z) / (l * l));
+
+        // Check for convergence
+        if(abs(v1 - pitch) < uTolerance) {
+            break;
         }
+
+        // Prevent division by zero
+        if(abs(v1 - v0) < 0.0001) {
+            break;
+        }
+
+        // Compute next guess using secant method
+        vec3 n2 = vec3(n1) - (v1 - pitch) * (vec3(n1) - vec3(n0)) / (v1 - v0);
+
+        // Round the next guess to the nearest integer
+        n1 = ivec3(round(n2));
+
+        // Update n0 for the next iteration
+        n0 = n1;
     }
-    return (lower + upper) / 2.0;
+
+    return n1;
 }
 
-vec3 calculateModeNumbers(float pitch) {
-    float n1 = bisection(0.0, pitch * uRadius / c, pitch);
-    float n2 = bisection(0.0, sqrt(2.0) * pitch * uRadius / c, pitch);
-    float n3 = bisection(0.0, sqrt(3.0) * pitch * uRadius / c, pitch);
+// Bisection Method
+// float objectiveFunction(float n, float pitch) {
+//     return (c / (2.0 * uRadius)) * sqrt(n * n) - pitch;
+// }
 
-    return round(vec3(n1, n2, n3));
-}
+// float bisection(float lower, float upper, float pitch) {
+//     while(upper - lower > accuracy) {
+//         float midpoint = (lower + upper) / 2.0;
+//         if(objectiveFunction(midpoint, pitch) == 0.0) {
+//             return midpoint;
+//         } else if(objectiveFunction(lower, pitch) * objectiveFunction(midpoint, pitch) < 0.0) {
+//             upper = midpoint;
+//         } else {
+//             lower = midpoint;
+//         }
+//     }
+//     return (lower + upper) / 2.0;
+// }
+
+// vec3 calculateModeNumbers(float pitch) {
+//     float n1 = bisection(0.0, pitch * uRadius / c, pitch);
+//     float n2 = bisection(0.0, sqrt(2.0) * pitch * uRadius / c, pitch);
+//     float n3 = bisection(0.0, sqrt(3.0) * pitch * uRadius / c, pitch);
+
+//     return round(vec3(n1, n2, n3));
+// }
 
 float frequencyToIndex(float pitch) {
     float nyquist = sampleRate / 2.0;
@@ -72,8 +109,8 @@ void main() {
     // Sample the amplitude from the frequency data texture
     float amplitude = texture(tDataArray, vec2(normalizedIndex, 0.5)).r;
 
-    vec3 modeNumbers = calculateModeNumbers(pitch);
+    ivec3 modeNumbers = findNormalModes(pitch);
 
-    gl_FragColor = vec4(modeNumbers, amplitude);
+    gl_FragColor = vec4(vec3(modeNumbers), amplitude);
 
 }

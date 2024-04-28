@@ -671,7 +671,7 @@ const particles = {};
 const materialParameters = {};
 
 // materialParameters.color = new THREE.Color('rgb(77,142,236)');
-materialParameters.color = new THREE.Color('rgb(1, 65, 167)');
+materialParameters.color = new THREE.Color('rgb(46, 255, 164)');
 
 // Material
 particles.material = new THREE.ShaderMaterial({
