@@ -365,9 +365,9 @@ if (renderer.getPixelRatio() === 1 && !renderer.capabilities.isWebGL2) {
 
 const bloomFolder = gui.addFolder('Bloom Effect');
 
-unrealBloomPass.strength = 0.35;
+unrealBloomPass.strength = 0.36;
 unrealBloomPass.radius = -1.5;
-unrealBloomPass.threshold = 0.64;
+unrealBloomPass.threshold = 0.36;
 
 bloomFolder.add(unrealBloomPass, 'enabled').name('Enable Bloom');
 bloomFolder.add(unrealBloomPass, 'strength').min(0).max(2).step(0.001).name('Bloom Strength');
