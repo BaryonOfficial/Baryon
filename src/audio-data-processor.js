@@ -19,7 +19,7 @@ class AudioDataProcessor extends AudioWorkletProcessor {
     this._lowestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -33); // lowest note = C2
     this._highestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -33 + 6 * 12 - 1); // 6 octaves above C2
 
-    this._meanPitchSeriesForBeat = [];
+    // this._meanPitchSeriesForBeat = [];
 
     // buffersize mismatch helpers
     this._inputRingBuffer = new ChromeLabsRingBuffer(this._bufferSize, this._channelCount);

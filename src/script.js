@@ -123,7 +123,7 @@ renderer.setClearColor(debugObject.backgroundColor);
 let fftSize = 8192;
 let audioReader;
 let gain;
-let essentiaNode;
+let essentiaNode = null;
 let soundGainNode;
 
 // create an AudioListener and add it to the camera
@@ -149,6 +149,8 @@ audioInput.addEventListener('change', (event) => {
   if (sound.started) {
     sound.stop();
     playButton.textContent = 'Play';
+  } else if (!sound.started && playButton.textContent !== 'Play') {
+    playButton.textContent = 'Play';
   }
 
   audioLoader.load(fileURL, function (buffer) {
@@ -163,7 +165,7 @@ audioInput.addEventListener('change', (event) => {
 let audioCtx = sound.context;
 console.log(audioCtx);
 
-const capacity = 5;
+const capacity = 7;
 
 function setupAudioGraph() {
   if (!window.SharedArrayBuffer) {
@@ -367,7 +369,7 @@ const bloomFolder = gui.addFolder('Bloom Effect');
 
 unrealBloomPass.strength = 0.36;
 unrealBloomPass.radius = -1.5;
-unrealBloomPass.threshold = 0.36;
+unrealBloomPass.threshold = 0.4;
 
 bloomFolder.add(unrealBloomPass, 'enabled').name('Enable Bloom');
 bloomFolder.add(unrealBloomPass, 'strength').min(0).max(2).step(0.001).name('Bloom Strength');
@@ -606,7 +608,7 @@ gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
 gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(1.0);
-gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(1.2);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(3.6);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.64);
 gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(initialParticlesTexture);
