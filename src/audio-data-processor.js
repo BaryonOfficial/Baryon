@@ -167,6 +167,11 @@ class AudioDataProcessor extends AudioWorkletProcessor {
             this._accumData[channel].fill(0);
           }
         }
+      } else {
+        // Reset _accumData in-place
+        for (let channel = 0; channel < output.length; ++channel) {
+          output[channel].fill(0);
+        }
       }
     } catch (error) {
       console.error('AudioWorkletProcessor error:', error);

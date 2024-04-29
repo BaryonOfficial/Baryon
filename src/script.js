@@ -132,6 +132,7 @@ camera.add(listener);
 
 // create an Audio source
 const sound = new THREE.Audio(listener);
+sound.started = false;
 console.log('Sound:', sound);
 
 // Get references to the audio controls
@@ -146,11 +147,18 @@ audioInput.addEventListener('change', (event) => {
   const fileURL = URL.createObjectURL(file);
 
   // Stop the current audio if it is playing and reset its buffer
-  if (sound.started) {
+  if (sound.started === true) {
     sound.stop();
+    audioCtx.suspend();
+    sound.setBuffer(null);
     playButton.textContent = 'Play';
+    sound.started = false;
+    console.log('Audio stopped on change');
   } else if (!sound.started && playButton.textContent !== 'Play') {
+    audioCtx.suspend();
+    sound.setBuffer(null);
     playButton.textContent = 'Play';
+    console.log('Audio ended & reset w/ new file');
   }
 
   audioLoader.load(fileURL, function (buffer) {
@@ -158,14 +166,13 @@ audioInput.addEventListener('change', (event) => {
     sound.setLoop(false);
     sound.setVolume(0.5);
     audioLoaded = true;
-    sound.started = false;
   });
 });
 
 let audioCtx = sound.context;
 console.log(audioCtx);
 
-const capacity = 7;
+const capacity = 5;
 
 function setupAudioGraph() {
   if (!window.SharedArrayBuffer) {
@@ -266,7 +273,6 @@ playButton.addEventListener('click', () => {
   if (sound.isPlaying) {
     sound.pause();
     audioCtx.suspend(); // Resume the audio context when resuming
-
     playButton.textContent = 'Play';
   } else if (!sound.isPlaying && audioLoaded) {
     sound.play();
@@ -299,8 +305,8 @@ sound.onEnded = function () {
       });
   }
 
-  console.log('Audio ended check'); // Log the end of the audio for debugging
-  sound.started = false; // Update the state to reflect that audio is not playing
+  console.log('Audio ended');
+  sound.started = false;
   playButton.textContent = 'Replay'; // Update the play button text
 };
 
