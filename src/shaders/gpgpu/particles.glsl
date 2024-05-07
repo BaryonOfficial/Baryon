@@ -45,11 +45,24 @@ void main() {
     vec3 adjustedDirection = direction + flowField * strength;
     vec3 movement = adjustedDirection * uDeltaTime * uFlowFieldStrength;
 
-    // vec3 lerpMovement = mix(particle.xyz, target, clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0)) - particle.xyz;
-    //Adjusts speed while accounting for distance to the zero point
     vec3 lerpMovement;
+    // Quickest patterns
+    // if(distance > 1.0) {
+    //     float alpha = clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0);
+    //     vec3 interpolatedPosition = mix(particle.xyz, target, alpha);
+    //     lerpMovement = interpolatedPosition - particle.xyz;
+    // } else {
+    //     lerpMovement = vec3(0.0);
+    // }
+
+    // Improved pulsating effect with faster particle movement
     if(distance > 1.0) {
+        float timeFactor = clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0);
         float alpha = clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0);
+        if(uStarted) {
+            float distanceFactor = smoothstep(0.0, 1.0, 1.0 - distance / (distance + 1.0));
+            alpha = mix(distanceFactor, 1.0, timeFactor);
+        }
         vec3 interpolatedPosition = mix(particle.xyz, target, alpha);
         lerpMovement = interpolatedPosition - particle.xyz;
     } else {

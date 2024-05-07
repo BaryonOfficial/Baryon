@@ -14,6 +14,7 @@ void main() {
         if(abs(distance - uRadius) < uSurfaceThreshold) {
             // ZeroPoint is on the surface
             gl_FragColor = vec4(position, 1.0);
+            // discard;
         } else {
             // ZeroPoint is in the volume
             gl_FragColor = vec4(position, 2.0);

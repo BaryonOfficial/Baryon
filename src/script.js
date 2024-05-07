@@ -686,7 +686,7 @@ const particles = {};
 const materialParameters = {};
 
 // materialParameters.color = new THREE.Color('rgb(77,142,236)');
-materialParameters.color = new THREE.Color('rgb(46, 255, 164)');
+materialParameters.color = new THREE.Color('rgb(5, 134, 255)');
 
 // Material
 particles.material = new THREE.ShaderMaterial({
@@ -708,7 +708,7 @@ particles.material = new THREE.ShaderMaterial({
     uColor: new THREE.Uniform(new THREE.Color(materialParameters.color)),
     uRadius: new THREE.Uniform(parameters.radius),
     uAverageAmplitude: new THREE.Uniform(0.0),
-    uRotation: new THREE.Uniform(0.5),
+    uRotation: new THREE.Uniform(1.5),
     uDeltaTime: new THREE.Uniform(0),
     uSoundPlaying: new THREE.Uniform(sound.isPlaying),
   },
