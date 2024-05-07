@@ -10,6 +10,7 @@ uniform float uParticleSpeed;
 uniform float uThreshold;
 uniform float uAverageAmplitude;
 uniform float vGroup;
+uniform bool uStarted;
 
 void main() {
     float time = uTime * 1.0;
@@ -20,9 +21,9 @@ void main() {
     particle.w = zeroPoint.a; // coloring
 
     vec3 target;
-    if(uAverageAmplitude > 0.0) {
+    if(uAverageAmplitude > 0.0 || uStarted == true) {
         target = zeroPoint.xyz;
-    } else {
+    } else if(uAverageAmplitude <= 0.0 && uStarted == false) {
         target = base.xyz;
     }
 

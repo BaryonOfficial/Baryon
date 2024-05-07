@@ -9,6 +9,7 @@ uniform float uDeltaTime;
 uniform float uAverageAmplitude;
 uniform float uRadius;
 uniform float uRotation;
+uniform bool uSoundPlaying;
 
 attribute vec2 aParticlesUv;
 attribute vec3 aColor;
@@ -27,14 +28,16 @@ void main() {
     // Calculate the normal based on the particle position
     vec3 normal = normalize(particle.xyz);
 
-     // Pulsating Effect
+    // Pulsating Effect
     if(vGroup == 1.0 || vGroup == 2.0) {
+
         float normalizedAmplitude = uAverageAmplitude / 255.0;
-        // Calculate the maximum distance the particle can move
+            // Calculate the maximum distance the particle can move
         float maxDistance = uRadius * 1.5;
-        // Calculate the pulsating offset
+            // Calculate the pulsating offset
         vec3 pulsatingOffset = normal * normalizedAmplitude * maxDistance;
         particle.xyz += pulsatingOffset;
+
     }
 
     // Final position
