@@ -14,8 +14,9 @@ uniform float uRandomPitches[MAX_N];
 // Secant Method
 ivec3 findNormalModes(float pitch) {
     float c = 340.0; // Speed of sound in air (m/s)
+    // float c = 1480.0; // Speed of sound in water (m/s)
     float l = uRadius;
-    float uTolerance = 0.01;
+    float uTolerance = 1.0;
     int uMaxIterations = 200;
 
     // Initial guess for n1, n2, n3

@@ -43,12 +43,13 @@ void main() {
     vec3 color;
     if(vGroup == 1.0) {
         color = vec3(0.87059, 0.93333, 0.98039);
+        // color = uColor;
     } else if(vGroup == 2.0) {
         // float rand = random2D(gl_FragCoord.xy);
         // if(rand < 0.5) {
         //     color = uColor; // Use the uniform color
         // } else {
-        //     color = vec3(0.0, 1.0, 0.98); // Use white
+        //     color = vec3(1.0); // Use white
         // }
         color = uColor;
     } else if(vGroup == 0.0) {

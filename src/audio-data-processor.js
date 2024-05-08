@@ -16,7 +16,8 @@ class AudioDataProcessor extends AudioWorkletProcessor {
     this._hopSize = this._frameSize / 4;
     // this._lowestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -57); // lowest note = C0
     // this._highestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -57) * Math.pow(2, 8); // 8 octaves above C0, c*
-    this._lowestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -33); // lowest note = C2
+    // this._lowestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -33); // lowest note = C2
+    this._lowestFreq = 200;
     this._highestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -33 + 6 * 12 - 1); // 6 octaves above C2
 
     // this._meanPitchSeriesForBeat = [];

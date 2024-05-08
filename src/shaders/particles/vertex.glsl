@@ -32,9 +32,7 @@ void main() {
     if(vGroup == 1.0 || vGroup == 2.0) {
 
         float normalizedAmplitude = uAverageAmplitude / 255.0;
-            // Calculate the maximum distance the particle can move
         float maxDistance = uRadius * 1.5;
-            // Calculate the pulsating offset
         vec3 pulsatingOffset = normal * normalizedAmplitude * maxDistance;
         particle.xyz += pulsatingOffset;
 
