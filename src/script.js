@@ -598,6 +598,7 @@ gpgpu.zeroPointsVariable.material.uniforms.uRadius = new THREE.Uniform(parameter
 gpgpu.zeroPointsVariable.material.uniforms.uSurfaceThreshold = new THREE.Uniform(
   parameters.surfaceThreshold
 );
+gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl = new THREE.Uniform(true);
 
 // Dependency
 gpgpu.computation.setVariableDependencies(gpgpu.zeroPointsVariable, [gpgpu.scalarFieldVariable]);
@@ -625,16 +626,17 @@ gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Unifor
 gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(initialParticlesTexture);
 gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
-gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(40);
-gpgpu.particlesVariable.material.uniforms.uDampening = new THREE.Uniform(0.5);
+gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(24);
+// gpgpu.particlesVariable.material.uniforms.uDampening = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uStarted = new THREE.Uniform(sound.started);
+gpgpu.particlesVariable.material.uniforms.uParticleMovementType = new THREE.Uniform(0);
 
 //******************************************************* GPGPU INITIALIZATION *******************************************************//
 
 gpgpu.computation.init();
 
 // Debug
-let mode = true;
+let mode = false;
 
 gpgpu.audioDebug = new THREE.Mesh(
   new THREE.PlaneGeometry(3, 3),
@@ -760,46 +762,47 @@ gui.close();
 
 const colorFolder = gui.addFolder('Color Settings');
 
-colorFolder.addColor(debugObject, 'backgroundColor').onChange(() => {
-  renderer.setClearColor(debugObject.backgroundColor);
-});
-colorFolder.addColor(materialParameters, 'color').onChange(() => {
-  particles.material.uniforms.uColor.value.set(materialParameters.color);
-});
+colorFolder
+  .addColor(debugObject, 'backgroundColor')
+  .name('Background Color')
+  .onChange(() => {
+    renderer.setClearColor(debugObject.backgroundColor);
+  });
+colorFolder
+  .addColor(materialParameters, 'color')
+  .name('Volume Color')
+  .onChange(() => {
+    particles.material.uniforms.uColor.value.set(materialParameters.color);
+  });
 colorFolder.close();
 
-gui.add(particles.material.uniforms.uSize, 'value').min(0).max(1).step(0.001).name('uSize');
-gui.add(particles.material.uniforms.uRotation, 'value').min(0).max(5).step(0.001).name('uRotation');
+const granularControls = gui.addFolder('Granular Controls');
 
-gui
+granularControls
   .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence, 'value')
   .min(0.01)
   .max(1)
   .step(0.001)
   .name('uFlowFieldInfluence');
-
-gui
+granularControls
   .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength, 'value')
   .min(0.1)
   .max(10)
   .step(0.001)
   .name('uFlowFieldStrength');
-
-gui
+granularControls
   .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency, 'value')
   .min(0.01)
   .max(1)
   .step(0.001)
   .name('uFlowFieldFrequency');
-gui
+granularControls
   .add(gpgpu.particlesVariable.material.uniforms.uParticleSpeed, 'value')
   .min(1)
   .max(200)
   .step(0.001)
   .name('uParticleSpeed');
-
-// Add the GUI control for the threshold parameter
-gui
+granularControls
   .add(parameters, 'threshold')
   .min(0.01)
   .max(5)
@@ -810,18 +813,31 @@ gui
     gpgpu.zeroPointsVariable.material.uniforms.uThreshold.value = parameters.threshold;
     gpgpu.particlesVariable.material.uniforms.uThreshold.value = parameters.threshold;
   });
+granularControls.close();
 
-// Add a button to generate new wave components
+gui.add(particles.material.uniforms.uSize, 'value').min(0).max(1).step(0.001).name('uSize');
+gui.add(particles.material.uniforms.uRotation, 'value').min(0).max(5).step(0.001).name('uRotation');
+
+// Add a boolean control for uSurfaceControl
 gui
-  .add(
-    {
-      generateRandomPitches: () => {
-        waveUniforms.pitches.value = generateRandomPitches(capacity);
-      },
-    },
-    'generateRandomPitches'
-  )
-  .name('Generate New Pitches Components');
+  .add(gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl, 'value')
+  .name('Surface Particles')
+  .onChange(function (value) {
+    gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl.value = value;
+  });
+
+// Define an object to hold the particle movement type options
+const particleMovementTypes = {
+  type: 0,
+};
+
+// Add a dropdown control for uParticleMovementType
+gui
+  .add(particleMovementTypes, 'type', { Quickest: 0, Smoothed: 1 })
+  .name('Particle Movement Type')
+  .onChange(function (value) {
+    gpgpu.particlesVariable.material.uniforms.uParticleMovementType.value = value;
+  });
 
 function logUniforms(material, variableName) {
   console.log(`Uniforms for ${variableName}:`);
@@ -873,6 +889,8 @@ const tick = () => {
   particles.material.uniforms.uTime.value = time;
   particles.material.uniforms.uDeltaTime.value = deltaTime;
   controls.update(deltaTime);
+
+  console.log(gpgpu.particlesVariable.material.uniforms.uParticleMovementType.value);
 
   // console.log('time:', time);
   // console.log('deltaTime:', deltaTime);
