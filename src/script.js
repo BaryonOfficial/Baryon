@@ -883,10 +883,10 @@ const tick = () => {
     let read = audioReader.dequeue(essentiaData);
     if (read !== 0) {
       gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true;
-      console.log(
-        'Essentia Data:',
-        gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data
-      );
+      // console.log(
+      //   'Essentia Data:',
+      //   gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data
+      // );
     }
   }
 

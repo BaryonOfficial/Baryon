@@ -91,18 +91,19 @@ float frequencyToIndex(float pitch) {
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
 
+    // Random Pitches for Testing
     // int pitchIndex = int(uv.x * float(capacity));
     // float pitch = uRandomPitches[pitchIndex];
     // float amplitude = generateRandomAmplitude(pitch);
     // amplitude = amplitude / 255.0;
 
-    // Calculate the texture coordinates based on the index
-    float index = uv.x * float(capacity);
-    float textureWidth = float(textureSize(tPitches, 0).x);
-    float textureCoord = index / textureWidth;
+    // Calculate the texture coordinates based on the index dynamically
+    // float index = uv.x * float(capacity);
+    // float textureWidth = float(textureSize(tPitches, 0).x);
+    // float textureCoord = index / textureWidth;
 
     // Sample the pitch value from the tPitches texture
-    float pitch = texture(tPitches, vec2(textureCoord, 0.5)).r;
+    float pitch = texture(tPitches, vec2(uv.x, 0.5)).r;
     float index2 = frequencyToIndex(pitch);
     // Normalize the index to the range [0, 1]
     float normalizedIndex = clamp(index2 / (bufferSize / 2.0), 0.0, 1.0); // Clamping to avoid out-of-bounds
