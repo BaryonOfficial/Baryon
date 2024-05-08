@@ -890,8 +890,6 @@ const tick = () => {
   particles.material.uniforms.uDeltaTime.value = deltaTime;
   controls.update(deltaTime);
 
-  console.log(gpgpu.particlesVariable.material.uniforms.uParticleMovementType.value);
-
   // console.log('time:', time);
   // console.log('deltaTime:', deltaTime);
 
