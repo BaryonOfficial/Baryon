@@ -629,7 +629,7 @@ gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(
 gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(24);
 // gpgpu.particlesVariable.material.uniforms.uDampening = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uStarted = new THREE.Uniform(sound.started);
-gpgpu.particlesVariable.material.uniforms.uParticleMovementType = new THREE.Uniform(0);
+gpgpu.particlesVariable.material.uniforms.uParticleMovementType = new THREE.Uniform(1);
 
 //******************************************************* GPGPU INITIALIZATION *******************************************************//
 
@@ -826,14 +826,12 @@ gui
     gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl.value = value;
   });
 
-// Define an object to hold the particle movement type options
-const particleMovementTypes = {
-  type: 0,
-};
-
 // Add a dropdown control for uParticleMovementType
 gui
-  .add(particleMovementTypes, 'type', { Quickest: 0, Smoothed: 1 })
+  .add(gpgpu.particlesVariable.material.uniforms.uParticleMovementType, 'value', {
+    Quickest: 0,
+    Smoothed: 1,
+  })
   .name('Particle Movement Type')
   .onChange(function (value) {
     gpgpu.particlesVariable.material.uniforms.uParticleMovementType.value = value;

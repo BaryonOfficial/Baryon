@@ -9,20 +9,19 @@ void main() {
     vec3 position = scalarFieldValue.rgb;
     float scalarValue = scalarFieldValue.a;
     float distance = length(position);
+    // vec3 scaledPosition = position * 0.64;
 
-    vec3 scaledPosition = position * 0.64;
-    if(abs(scalarValue) < uThreshold) {
-        if(abs(distance - uRadius) < uSurfaceThreshold && uSurfaceControl) {
-            // ZeroPoints on the surface
-            gl_FragColor = vec4(position, 1.0);
-        } else if(abs(distance - uRadius) < uSurfaceThreshold && !uSurfaceControl) {
-            // Turning off surface particles
-            discard;
-        } else {
-            // ZeroPoint is in the volume
-            gl_FragColor = vec4(position, 2.0);
-        }
-    } else {
+    if(abs(scalarValue) >= uThreshold) {
         discard;
+    }
+
+    bool isOnSurface = abs(distance - uRadius) < uSurfaceThreshold;
+
+    if(isOnSurface && uSurfaceControl) {
+        gl_FragColor = vec4(position, 1.0); // ZeroPoints on the surface
+    } else if(isOnSurface && !uSurfaceControl) {
+        discard; // Turning off surface particles
+    } else {
+        gl_FragColor = vec4(position, 2.0); // ZeroPoint is in the volume
     }
 }

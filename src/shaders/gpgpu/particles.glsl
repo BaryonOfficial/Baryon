@@ -14,19 +14,15 @@ uniform bool uStarted;
 uniform int uParticleMovementType;
 
 void main() {
-    float time = uTime * 1.0;
     vec2 uv = gl_FragCoord.xy / resolution.xy;
     vec4 particle = texture(uParticles, uv);
     vec4 base = texture(uBase, uv);
     vec4 zeroPoint = texture(uZeroPoints, uv);
-    particle.w = zeroPoint.a; // coloring
 
-    vec3 target;
-    if(uAverageAmplitude > 0.0 || uStarted == true) {
-        target = zeroPoint.xyz;
-    } else if(uAverageAmplitude <= 0.0 && uStarted == false) {
-        target = base.xyz;
-    }
+    // coloring
+    particle.w = zeroPoint.a;
+
+    vec3 target = (uAverageAmplitude > 0.0 || uStarted) ? zeroPoint.xyz : base.xyz; 
 
     // Calculate the distance between the particle position and the zero point
     float distance = length(target - particle.xyz);
@@ -35,13 +31,12 @@ void main() {
     vec3 direction = normalize(target - particle.xyz);
 
     // Strength of the noise based on the zeroPoint texture
-    float strength = simplexNoise4d(vec4(target * 0.2, time + 1.0));
+    float strength = simplexNoise4d(vec4(target * 0.2, uTime + 1.0));
     float influence = (uFlowFieldInfluence - 0.5) * (-2.0);
     strength = smoothstep(influence, 1.0, strength);
 
     // Add Simplex noise to the direction for organic movement
-    vec3 flowField = vec3(simplexNoise4d(vec4(particle.xyz * uFlowFieldFrequency, time)), simplexNoise4d(vec4(particle.xyz * uFlowFieldFrequency + 1.0, time)), simplexNoise4d(vec4(particle.xyz * uFlowFieldFrequency + 2.0, time)));
-    flowField = normalize(flowField);
+    vec3 flowField = normalize(vec3(simplexNoise4d(vec4(particle.xyz * uFlowFieldFrequency, uTime)), simplexNoise4d(vec4(particle.xyz * uFlowFieldFrequency + 1.0, uTime)), simplexNoise4d(vec4(particle.xyz * uFlowFieldFrequency + 2.0, uTime))));
 
     vec3 adjustedDirection = direction + flowField * strength;
     vec3 movement = adjustedDirection * uDeltaTime * uFlowFieldStrength;
