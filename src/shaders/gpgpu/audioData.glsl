@@ -11,40 +11,32 @@ uniform float bufferSize;
 uniform int capacity;
 uniform float uRandomPitches[MAX_N];
 
-// Secant Method
-ivec3 findNormalModes(float pitch) {
-    float c = 340.0; // Speed of sound in air (m/s)
-    // float c = 1480.0; // Speed of sound in water (m/s)
-    float l = uRadius;
-    float uTolerance = 1.0;
-    int uMaxIterations = 200;
+const float SOUND_SPEED_AIR = 340.0;
+// const float SOUND_SPEED_WATER = 1480.0;
+const float TOLERANCE = 1.0;
+const int MAX_ITERATIONS = 200;
 
-    // Initial guess for n1, n2, n3
+ivec3 findNormalModes(float pitch) {
+    float c = SOUND_SPEED_AIR;
+    float l = uRadius;
+    float invL2 = 1.0 / (l * l);
+
     ivec3 n0 = ivec3(1);
     ivec3 n1 = ivec3(2);
 
-    for(int i = 0; i < uMaxIterations; i++) {
-        // Compute frequencies for current guesses
-        float v0 = 0.5 * c * sqrt(float(n0.x * n0.x + n0.y * n0.y + n0.z * n0.z) / (l * l));
-        float v1 = 0.5 * c * sqrt(float(n1.x * n1.x + n1.y * n1.y + n1.z * n1.z) / (l * l));
+    for(int i = 0; i < MAX_ITERATIONS; i++) {
+        vec3 n0Vec = vec3(n0);
+        vec3 n1Vec = vec3(n1);
 
-        // Check for convergence
-        if(abs(v1 - pitch) < uTolerance) {
+        float v0 = 0.5 * c * sqrt(dot(n0Vec, n0Vec) * invL2);
+        float v1 = 0.5 * c * sqrt(dot(n1Vec, n1Vec) * invL2);
+
+        if(abs(v1 - pitch) < TOLERANCE || abs(v1 - v0) < 0.0001) {
             break;
         }
 
-        // Prevent division by zero
-        if(abs(v1 - v0) < 0.0001) {
-            break;
-        }
-
-        // Compute next guess using secant method
-        vec3 n2 = vec3(n1) - (v1 - pitch) * (vec3(n1) - vec3(n0)) / (v1 - v0);
-
-        // Round the next guess to the nearest integer
+        vec3 n2 = n1Vec - (v1 - pitch) * (n1Vec - n0Vec) / (v1 - v0);
         n1 = ivec3(round(n2));
-
-        // Update n0 for the next iteration
         n0 = n1;
     }
 
@@ -105,6 +97,7 @@ void main() {
     // Sample the pitch value from the tPitches texture
     float pitch = texture(tPitches, vec2(uv.x, 0.5)).r;
     float index2 = frequencyToIndex(pitch);
+
     // Normalize the index to the range [0, 1]
     float normalizedIndex = clamp(index2 / (bufferSize / 2.0), 0.0, 1.0); // Clamping to avoid out-of-bounds
 
