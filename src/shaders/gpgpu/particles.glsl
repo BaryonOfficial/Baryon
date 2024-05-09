@@ -12,6 +12,7 @@ uniform float uAverageAmplitude;
 uniform float vGroup;
 uniform bool uStarted;
 uniform int uParticleMovementType;
+uniform float uRadius;
 
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;

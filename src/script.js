@@ -630,6 +630,7 @@ gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(24)
 // gpgpu.particlesVariable.material.uniforms.uDampening = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uStarted = new THREE.Uniform(sound.started);
 gpgpu.particlesVariable.material.uniforms.uParticleMovementType = new THREE.Uniform(1);
+gpgpu.particlesVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
 
 //******************************************************* GPGPU INITIALIZATION *******************************************************//
 
