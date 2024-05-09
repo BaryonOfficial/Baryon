@@ -28,10 +28,10 @@ void main() {
     vec3 normal = normalize(particle.xyz);
 
     // Pulsating Effect
-    // float normalizedAmplitude = uAverageAmplitude / 255.0;
-    // float maxDistance = uRadius * 1.5;
-    // vec3 pulsatingOffset = normal * normalizedAmplitude * maxDistance;
-    // particle.xyz += pulsatingOffset;
+    float normalizedAmplitude = uAverageAmplitude / 255.0;
+    float maxDistance = uRadius * 1.5;
+    vec3 pulsatingOffset = normal * normalizedAmplitude * maxDistance;
+    particle.xyz += pulsatingOffset;
 
     // Calculate model position
     vec4 modelPosition = modelMatrix * vec4(particle.xyz, 1.0);

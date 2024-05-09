@@ -23,13 +23,18 @@ void main() {
     // coloring
     particle.w = zeroPoint.a;
 
-    vec3 target = (uAverageAmplitude > 0.0 || uStarted) ? zeroPoint.xyz : base.xyz; 
+    vec3 target = (uAverageAmplitude > 0.0 || uStarted) ? zeroPoint.xyz : base.xyz;
 
-    // Calculate the distance between the particle position and the zero point
     float distance = length(target - particle.xyz);
-
-    // Calculate the direction towards the zero point
     vec3 direction = normalize(target - particle.xyz);
+
+    //  Pulsating Effect (BROKEN)
+    // float normalizedAmplitude = uAverageAmplitude / 255.0;
+    // float pulsatingFactor = 1.0 + normalizedAmplitude * 1.5;
+    // vec3 pulsatedTarget = target * pulsatingFactor;
+
+    // float distance = length(pulsatedTarget - particle.xyz);
+    // vec3 direction = normalize(pulsatedTarget - particle.xyz);
 
     // Strength of the noise based on the zeroPoint texture
     float strength = simplexNoise4d(vec4(target * 0.2, uTime + 1.0));
