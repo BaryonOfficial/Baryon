@@ -673,8 +673,6 @@ materialParameters.color = new THREE.Color('rgb(5, 134, 255)');
 particles.material = new THREE.ShaderMaterial({
   // transparent: true,
   side: THREE.DoubleSide,
-  // depthWrite: false,
-  // depthTest: false,
   blending: THREE.AdditiveBlending,
   // vertexColors: true,
   vertexShader: particlesVertexShader,
