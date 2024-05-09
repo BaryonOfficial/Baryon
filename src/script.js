@@ -316,29 +316,17 @@ sound.onEnded = function () {
 let lastKnownTime = 0;
 
 function timeHandler(elapsedTime) {
-  if (sound.isPlaying && sound.started === true) {
+  if (sound.isPlaying && sound.started) {
     deltaTime = sound.listener.timeDelta;
     time = sound.context.currentTime;
     lastKnownTime = time;
-    // if (frameCounter % 60 === 0) {
-    //   console.log('Audio Time: ', time);
-    //   console.log('Audio Delta Time: ', deltaTime);
-    // }
-  } else if (!sound.isPlaying && sound.started === true) {
+  } else if (!sound.isPlaying && sound.started) {
     time = lastKnownTime;
     deltaTime = 0;
-    // if (frameCounter % 60 === 0) {
-    //   console.log('Audio Time: ', time);
-    //   console.log('Audio Delta Time: ', deltaTime);
-    // }
   } else {
     deltaTime = elapsedTime - previousTime;
     previousTime = elapsedTime;
     time = elapsedTime;
-    // if (frameCounter % 60 === 0) {
-    //   console.log('Elapsed Time: ', time);
-    //   console.log('Delta Time: ', deltaTime);
-    // }
   }
 
   return { time, deltaTime };
@@ -364,6 +352,10 @@ const unrealBloomPass = new UnrealBloomPass();
 unrealBloomPass.enabled = true;
 effectComposer.addPass(unrealBloomPass);
 
+unrealBloomPass.strength = 0.36;
+unrealBloomPass.radius = -1.5;
+unrealBloomPass.threshold = 0.4;
+
 const gammaCorrectionPass = new ShaderPass(GammaCorrectionShader);
 effectComposer.addPass(gammaCorrectionPass);
 
@@ -375,20 +367,6 @@ if (renderer.getPixelRatio() === 1 && !renderer.capabilities.isWebGL2) {
   console.log('SMAA enabled');
 }
 
-// GUI for effects
-
-const bloomFolder = gui.addFolder('Bloom Effect');
-
-unrealBloomPass.strength = 0.36;
-unrealBloomPass.radius = -1.5;
-unrealBloomPass.threshold = 0.4;
-
-bloomFolder.add(unrealBloomPass, 'enabled').name('Enable Bloom');
-bloomFolder.add(unrealBloomPass, 'strength').min(0).max(2).step(0.001).name('Bloom Strength');
-bloomFolder.add(unrealBloomPass, 'radius').min(-2).max(2).step(0.001).name('Bloom Radius');
-bloomFolder.add(unrealBloomPass, 'threshold').min(0).max(1).step(0.001).name('Bloom Threshold');
-bloomFolder.close();
-
 // Parameters Object
 let parameters = {
   N: 22,
@@ -399,19 +377,7 @@ let parameters = {
   surfaceRatio: 0.33,
   surfaceThreshold: 0.01,
   particleSpeed: 1.0,
-  dampening: 0.5,
 };
-
-function generateRandomPitches(capacity) {
-  const pitches = new Float32Array(capacity);
-  for (let i = 0; i < capacity; i++) {
-    // Generate a random pitch, for example between 200 Hz and 2000 Hz
-    pitches[i] = 10 + Math.random() * 220;
-  }
-  return pitches;
-}
-
-const randomPitches = generateRandomPitches(capacity);
 
 // Base Geometry
 const baseGeometry = {
@@ -424,7 +390,7 @@ const colors = new Float32Array(baseGeometry.count * 3); // r, g, b for each par
 function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio) {
   const positions = new Float32Array(count * 3);
   const surfaceCount = Math.floor(count * surfaceRatio);
-  const volumeCount = count - surfaceCount;
+  // const volumeCount = count - surfaceCount;
 
   // Generate points on the surface
   const goldenRatio = (1 + Math.sqrt(5)) / 2;
@@ -525,6 +491,17 @@ for (let i = 0; i < baseGeometry.count; i++) {
   initialParticlesTexture.image.data[i4 + 3] = 1.0;
 }
 
+function generateRandomPitches(capacity) {
+  const pitches = new Float32Array(capacity);
+  for (let i = 0; i < capacity; i++) {
+    // Generate a random pitch, for example between 200 Hz and 2000 Hz
+    pitches[i] = 10 + Math.random() * 220;
+  }
+  return pitches;
+}
+
+const randomPitches = generateRandomPitches(capacity);
+
 // Global Uniform Variables
 const waveUniforms = {
   pitches: { value: randomPitches },
@@ -578,10 +555,7 @@ gpgpu.scalarFieldVariable.material.uniforms.uRadius = new THREE.Uniform(paramete
 gpgpu.scalarFieldVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
 gpgpu.scalarFieldVariable.material.uniforms.capacity = new THREE.Uniform(capacity);
 
-// Log
-// console.log(gpgpu.scalarFieldVariable.material.uniforms.uBase.value.image.data);
-
-// Dependency
+// Dependencies
 gpgpu.computation.setVariableDependencies(gpgpu.scalarFieldVariable, [gpgpu.audioDataVariable]);
 
 /**
@@ -600,24 +574,19 @@ gpgpu.zeroPointsVariable.material.uniforms.uSurfaceThreshold = new THREE.Uniform
 );
 gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl = new THREE.Uniform(true);
 
-// Dependency
+// Dependencies
 gpgpu.computation.setVariableDependencies(gpgpu.zeroPointsVariable, [gpgpu.scalarFieldVariable]);
 
 /**
  * Particles Variable
  */
-
 gpgpu.particlesVariable = gpgpu.computation.addVariable(
   'uParticles',
   gpgpuParticlesShader,
   baseParticlesTexture
 );
 
-gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
-  gpgpu.zeroPointsVariable,
-  gpgpu.particlesVariable,
-]);
-
+// Uniforms
 gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(1.0);
@@ -627,18 +596,22 @@ gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(paramet
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(initialParticlesTexture);
 gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
 gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(24);
-// gpgpu.particlesVariable.material.uniforms.uDampening = new THREE.Uniform(0.5);
 gpgpu.particlesVariable.material.uniforms.uStarted = new THREE.Uniform(sound.started);
 gpgpu.particlesVariable.material.uniforms.uParticleMovementType = new THREE.Uniform(1);
 gpgpu.particlesVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
+
+// Dependencies
+gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
+  gpgpu.zeroPointsVariable,
+  gpgpu.particlesVariable,
+]);
 
 //******************************************************* GPGPU INITIALIZATION *******************************************************//
 
 gpgpu.computation.init();
 
-// Debug
+// Debug Planes
 let mode = false;
-
 gpgpu.audioDebug = new THREE.Mesh(
   new THREE.PlaneGeometry(3, 3),
   new THREE.MeshBasicMaterial({
@@ -647,19 +620,7 @@ gpgpu.audioDebug = new THREE.Mesh(
 );
 gpgpu.audioDebug.visible = mode;
 gpgpu.audioDebug.position.x = -4;
-gpgpu.audioDebug.position.y = 0;
-// scene.add(gpgpu.audioDebug);
-
-gpgpu.debug = new THREE.Mesh(
-  new THREE.PlaneGeometry(3, 3),
-  new THREE.MeshBasicMaterial({
-    map: gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable).texture,
-  })
-);
-gpgpu.debug.visible = mode;
-gpgpu.debug.position.x = -4;
-gpgpu.debug.position.y = -3;
-// scene.add(gpgpu.debug);
+gpgpu.audioDebug.position.y = 2;
 
 const scalarFieldDebug = new THREE.Mesh(
   new THREE.PlaneGeometry(3, 3),
@@ -669,8 +630,7 @@ const scalarFieldDebug = new THREE.Mesh(
 );
 scalarFieldDebug.visible = mode;
 scalarFieldDebug.position.x = -4;
-scalarFieldDebug.position.y = 3;
-// scene.add(scalarFieldDebug);
+scalarFieldDebug.position.y = 1;
 
 const zeroPointsDebug = new THREE.Mesh(
   new THREE.PlaneGeometry(3, 3), // The size of the plane can be adjusted as needed
@@ -679,8 +639,25 @@ const zeroPointsDebug = new THREE.Mesh(
   })
 );
 zeroPointsDebug.visible = mode;
-zeroPointsDebug.position.x = -4; // Position it differently so it doesn't overlap with the scalarFieldDebug
-// scene.add(zeroPointsDebug);
+zeroPointsDebug.position.x = -4;
+zeroPointsDebug.position.y = -1;
+
+gpgpu.particlesDebug = new THREE.Mesh(
+  new THREE.PlaneGeometry(3, 3),
+  new THREE.MeshBasicMaterial({
+    map: gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable).texture,
+  })
+);
+gpgpu.particlesDebug.visible = mode;
+gpgpu.particlesDebug.position.x = -4;
+gpgpu.particlesDebug.position.y = -2;
+
+if (mode) {
+  scene.add(gpgpu.audioDebug);
+  scene.add(scalarFieldDebug);
+  scene.add(zeroPointsDebug);
+  scene.add(gpgpu.particlesDebug);
+}
 
 /**
  * Particles
@@ -690,6 +667,7 @@ const materialParameters = {};
 
 // materialParameters.color = new THREE.Color('rgb(77,142,236)');
 materialParameters.color = new THREE.Color('rgb(5, 134, 255)');
+// rgb(77,142,236)
 
 // Material
 particles.material = new THREE.ShaderMaterial({
@@ -717,15 +695,15 @@ particles.material = new THREE.ShaderMaterial({
   },
 });
 
-// rgb(77,142,236)
-
+// Texture Initialization
 particles.material.uniforms.uParticlesTexture.value = gpgpu.computation.getCurrentRenderTarget(
   gpgpu.particlesVariable
 ).texture;
 
 // Geometry
 const particlesUvArray = new Float32Array(baseGeometry.count * 2);
-// Sizes Array
+
+// Sizes
 const sizesArray = new Float32Array(baseGeometry.count);
 
 for (let y = 0; y < gpgpu.size; y++) {
@@ -748,8 +726,6 @@ particles.geometry = new THREE.BufferGeometry();
 particles.geometry.setDrawRange(0, baseGeometry.count);
 particles.geometry.setAttribute('aParticlesUv', new THREE.BufferAttribute(particlesUvArray, 2));
 particles.geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
-
-// Sizes
 particles.geometry.setAttribute('aSize', new THREE.BufferAttribute(sizesArray, 1));
 
 // Points
@@ -757,12 +733,18 @@ particles.points = new THREE.Points(particles.geometry, particles.material);
 scene.add(particles.points);
 
 /**
- * Tweaks
+ * Controls
  */
 gui.close();
 
-const colorFolder = gui.addFolder('Color Settings');
+const bloomFolder = gui.addFolder('Bloom Effect');
+bloomFolder.add(unrealBloomPass, 'enabled').name('Enable Bloom');
+bloomFolder.add(unrealBloomPass, 'strength').min(0).max(2).step(0.001).name('Bloom Strength');
+bloomFolder.add(unrealBloomPass, 'radius').min(-2).max(2).step(0.001).name('Bloom Radius');
+bloomFolder.add(unrealBloomPass, 'threshold').min(0).max(1).step(0.001).name('Bloom Threshold');
+bloomFolder.close();
 
+const colorFolder = gui.addFolder('Color Settings');
 colorFolder
   .addColor(debugObject, 'backgroundColor')
   .name('Background Color')
@@ -778,7 +760,6 @@ colorFolder
 colorFolder.close();
 
 const granularControls = gui.addFolder('Granular Controls');
-
 granularControls
   .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence, 'value')
   .min(0.01)
@@ -810,25 +791,26 @@ granularControls
   .step(0.001)
   .name('uThreshold')
   .onChange(() => {
-    // Update both uniforms when the threshold value changes
     gpgpu.zeroPointsVariable.material.uniforms.uThreshold.value = parameters.threshold;
     gpgpu.particlesVariable.material.uniforms.uThreshold.value = parameters.threshold;
   });
 granularControls.close();
 
-gui.add(particles.material.uniforms.uSize, 'value').min(0).max(1).step(0.001).name('uSize');
-gui.add(particles.material.uniforms.uRotation, 'value').min(0).max(5).step(0.001).name('uRotation');
-
-// Add a boolean control for uSurfaceControl
-gui
+const aesthetics = gui.addFolder('Aesthetics');
+aesthetics.add(particles.material.uniforms.uSize, 'value').min(0).max(1).step(0.001).name('uSize');
+aesthetics
+  .add(particles.material.uniforms.uRotation, 'value')
+  .min(0)
+  .max(5)
+  .step(0.001)
+  .name('uRotation');
+aesthetics
   .add(gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl, 'value')
   .name('Surface Particles')
   .onChange(function (value) {
     gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl.value = value;
   });
-
-// Add a dropdown control for uParticleMovementType
-gui
+aesthetics
   .add(gpgpu.particlesVariable.material.uniforms.uParticleMovementType, 'value', {
     Quickest: 0,
     Smoothed: 1,
@@ -837,25 +819,7 @@ gui
   .onChange(function (value) {
     gpgpu.particlesVariable.material.uniforms.uParticleMovementType.value = value;
   });
-
-function logUniforms(material, variableName) {
-  console.log(`Uniforms for ${variableName}:`);
-  for (const [key, uniform] of Object.entries(material.uniforms)) {
-    console.log(`${key}:`, uniform.value);
-  }
-}
-
-function logGPGPUUniforms() {
-  if (gpgpu.audioDataVariable && gpgpu.audioDataVariable.material) {
-    logUniforms(gpgpu.audioDataVariable.material, 'Audio Data');
-  }
-  if (gpgpu.scalarFieldVariable && gpgpu.scalarFieldVariable.material) {
-    logUniforms(gpgpu.scalarFieldVariable.material, 'Scalar Field');
-  }
-  if (gpgpu.particlesVariable && gpgpu.particlesVariable.material) {
-    logUniforms(gpgpu.particlesVariable.material, 'Particles');
-  }
-}
+aesthetics.close();
 
 /******************************************************* ANIMATION *******************************************************/
 const clock = new THREE.Clock();
@@ -873,11 +837,33 @@ let frameReset = 10;
 //   }
 // }
 
+// function logUniforms(material, variableName) {
+//   console.log(`Uniforms for ${variableName}:`);
+//   for (const [key, uniform] of Object.entries(material.uniforms)) {
+//     console.log(`${key}:`, uniform.value);
+//   }
+// }
+
+// function logGPGPUUniforms() {
+//   if (gpgpu.audioDataVariable && gpgpu.audioDataVariable.material) {
+//     logUniforms(gpgpu.audioDataVariable.material, 'Audio Data');
+//   }
+//   if (gpgpu.scalarFieldVariable && gpgpu.scalarFieldVariable.material) {
+//     logUniforms(gpgpu.scalarFieldVariable.material, 'Scalar Field');
+//   }
+//   if (gpgpu.particlesVariable && gpgpu.particlesVariable.material) {
+//     logUniforms(gpgpu.particlesVariable.material, 'Particles');
+//   }
+// }
+
 const tick = () => {
   frameCounter++;
+  // pseudoVisualizer();
 
   const elapsedTime = clock.getElapsedTime();
   const { time, deltaTime } = timeHandler(elapsedTime);
+  // console.log('time:', time);
+  // console.log('deltaTime:', deltaTime);
 
   // GPGPU Updates
   gpgpu.particlesVariable.material.uniforms.uTime.value = time;
@@ -888,11 +874,6 @@ const tick = () => {
   particles.material.uniforms.uTime.value = time;
   particles.material.uniforms.uDeltaTime.value = deltaTime;
   controls.update(deltaTime);
-
-  // console.log('time:', time);
-  // console.log('deltaTime:', deltaTime);
-
-  // pseudoVisualizer();
 
   if (audioReader.available_read() >= 1) {
     let read = audioReader.dequeue(essentiaData);
@@ -905,27 +886,27 @@ const tick = () => {
     }
   }
 
-  const { avgAmplitude, freqData } = audioAnalysis();
-  gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
-  particles.material.uniforms.uAverageAmplitude.value = avgAmplitude;
-  gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(freqData);
-  gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true;
+  if (sound.isPlaying) {
+    const { avgAmplitude, freqData } = audioAnalysis();
+    gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
+    particles.material.uniforms.uAverageAmplitude.value = avgAmplitude;
+    gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(freqData);
+    gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true;
+  } else if (!sound.isPlaying && !sound.started) {
+    gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = 0;
+    particles.material.uniforms.uAverageAmplitude.value = 0;
+    gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(0);
+    gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true;
+  }
 
-  // // // Optionally log uniforms
+  // Log Uniforms
   // if (frameCounter % 60 === 0) {
   //   // For example, log every 60 frames
   //   logGPGPUUniforms();
   // }
 
   // ******** GPGPU START ******** //
-
-  // const computationStartTime = performance.now();
-
   gpgpu.computation.compute();
-
-  // // Check computation time
-  // const computationEndTime = performance.now();
-  // const computationDuration = computationEndTime - computationStartTime;
 
   // Update audioData texture
   gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value =
@@ -944,19 +925,10 @@ const tick = () => {
     gpgpu.particlesVariable
   ).texture;
 
-  // // Debug materials update
-  // scalarFieldDebug.material.map = gpgpu.computation.getCurrentRenderTarget(
-  //   gpgpu.scalarFieldVariable
-  // ).texture;
-  // scalarFieldDebug.material.needsUpdate = true;
-
-  // zeroPointsDebug.material.map = gpgpu.computation.getCurrentRenderTarget(
-  //   gpgpu.zeroPointsVariable
-  // ).texture;
-  // zeroPointsDebug.material.needsUpdate = true;
-
-  // Render normal scene
+  // Normal Renderer
   // renderer.render(scene, camera);
+
+  // Effect Composer Renderer
   effectComposer.render();
 
   // Call tick again on the next frame
