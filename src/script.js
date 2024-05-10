@@ -149,13 +149,21 @@ audioInput.addEventListener('change', (event) => {
   // Stop the current audio if it is playing and reset its buffer
   if (sound.started === true) {
     sound.stop();
-    audioCtx.suspend();
+    if (audioCtx.state === 'running') {
+      audioCtx.suspend().catch((error) => {
+        console.error('Failed to suspend audio context:', error);
+      });
+    }
     sound.setBuffer(null);
     playButton.textContent = 'Play';
     sound.started = false;
     console.log('Audio stopped on change');
   } else if (!sound.started && playButton.textContent !== 'Play') {
-    audioCtx.suspend();
+    if (audioCtx.state === 'running') {
+      audioCtx.suspend().catch((error) => {
+        console.error('Failed to suspend audio context:', error);
+      });
+    }
     sound.setBuffer(null);
     playButton.textContent = 'Play';
     console.log('Audio ended & reset w/ new file');
@@ -290,7 +298,11 @@ playButton.addEventListener('click', () => {
 // Stop audio when stop button is clicked
 stopButton.addEventListener('click', () => {
   sound.stop();
-  audioCtx.suspend(); // suspend the audio context when stop
+  if (audioCtx.state === 'running') {
+    audioCtx.suspend().catch((error) => {
+      console.error('Failed to suspend audio context:', error);
+    });
+  }
   sound.started = false;
   playButton.textContent = 'Play';
 });
