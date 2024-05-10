@@ -283,14 +283,26 @@ function startAudioProcessing() {
 playButton.addEventListener('click', () => {
   if (sound.isPlaying) {
     sound.pause();
-    audioCtx.suspend(); // Resume the audio context when resuming
+    audioCtx.suspend().catch((error) => {
+      console.error('Failed to suspend audio context:', error);
+    });
     playButton.textContent = 'Play';
   } else if (!sound.isPlaying && audioLoaded) {
-    sound.play();
-    sound.started = true;
-    playButton.textContent = 'Pause';
-    if (sound.started) {
-      audioCtx.resume(); // Resume the audio context if needed
+    if (audioCtx.state === 'suspended') {
+      audioCtx
+        .resume()
+        .then(() => {
+          sound.play();
+          sound.started = true;
+          playButton.textContent = 'Pause';
+        })
+        .catch((error) => {
+          console.error('Failed to resume audio context:', error);
+        });
+    } else {
+      sound.play();
+      sound.started = true;
+      playButton.textContent = 'Pause';
     }
   }
 });
