@@ -1,6 +1,6 @@
 # Baryon
 
-Baryon is a 3D physics engine for the music visualization. It is currently in early development and is not ready for production use.
+Baryon is a 3D physics-based music visualizer. It is currently in early development and is not ready for production use.
 
 Currently, two official plugins are available:
 
