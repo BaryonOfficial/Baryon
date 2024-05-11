@@ -861,7 +861,7 @@ aesthetics.add(particles.material.uniforms.uSize, 'value').min(0).max(1).step(0.
 aesthetics
   .add(particles.material.uniforms.uRotation, 'value')
   .min(0)
-  .max(5)
+  .max(10)
   .step(0.001)
   .name('uRotation');
 aesthetics
