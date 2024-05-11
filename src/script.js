@@ -223,7 +223,6 @@ function setupAudioGraph() {
   // essentiaNode.connect(gain);
   gain.connect(audioCtx.destination);
   logNodeConnections();
-  tick();
 }
 
 function logNodeConnections() {
@@ -267,6 +266,7 @@ function startAudioProcessing() {
         .addModule(concatenatedCode)
         .then(() => {
           setupAudioGraph();
+          tick();
         })
         .catch(function moduleLoadRejected(msg) {
           console.log(`There was a problem loading the AudioWorklet module code: \n ${msg}`);
