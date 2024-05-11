@@ -557,7 +557,7 @@ function generateRandomPitches(capacity) {
   const pitches = new Float32Array(capacity);
   for (let i = 0; i < capacity; i++) {
     // Generate a random pitch, for example between 200 Hz and 2000 Hz
-    pitches[i] = 10 + Math.random() * 220;
+    pitches[i] = 200 + Math.random() * 2000;
   }
   return pitches;
 }
