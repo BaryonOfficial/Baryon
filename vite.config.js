@@ -6,7 +6,14 @@ export default {
   publicDir: '../static/',
   base: './',
   server: {
-    host: true, // Open to local network and display URL
+    headers: {
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      // 'Cache-Control': 'no-cache, no-store, must-revalidate',
+      // Pragma: 'no-cache',
+      // Expires: '0',
+    },
+    host: false, // Open to local network and display URL
     open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env), // Open if it's not a CodeSandbox
   },
   build: {
@@ -14,18 +21,6 @@ export default {
     emptyOutDir: true, // Empty the folder first
     sourcemap: true, // Add sourcemap
     // target: 'esnext',
-    rollupOptions: {
-      input: {
-        main: 'src/script.js',
-        audioProcessor: 'src/audioProcessor.js',
-      },
-      output: {
-        format: 'es',
-        entryFileNames: '[name].js',
-        chunkFileNames: '[name].js',
-        assetFileNames: '[name].[ext]',
-      },
-    },
   },
   plugins: [
     glsl(),

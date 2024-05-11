@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" /> -->
     <title>Baryon - GPGPU</title>
     <link rel="icon" type="image/png" href="static/baryon-logo.png" />
     <link rel="stylesheet" href="./style.css" />
@@ -14,6 +17,11 @@
       <button id="playButton">Play</button>
       <button id="stopButton">Stop</button>
     </div>
+    <script>
+      exports = {};
+    </script>
+    <script src="https://unpkg.com/ringbuf.js@0.1.0/dist/index.js" crossorigin="anonymous"></script>
+    <!-- by Paul Adenot, repo: https://github.com/padenot/ringbuf.js -->
     <script type="module" src="./script.js"></script>
   </body>
 </html>
