@@ -52,11 +52,11 @@ const context = canvas.getContext('webgl2');
 const scene = new THREE.Scene();
 
 // Loaders
-// const dracoLoader = new DRACOLoader();
-// dracoLoader.setDecoderPath('/draco/');
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('/draco/');
 
-// const gltfLoader = new GLTFLoader();
-// gltfLoader.setDRACOLoader(dracoLoader);
+const gltfLoader = new GLTFLoader();
+gltfLoader.setDRACOLoader(dracoLoader);
 
 /**
  * Sizes
@@ -403,7 +403,7 @@ let parameters = {
   particleSpeed: 1.0,
 };
 
-// Base Geometry
+// Base Geometries
 const baseGeometry = {
   count: parameters.count,
   positions: new Float32Array(parameters.count * 3), // x, y, z for each particle
@@ -472,11 +472,36 @@ function initializeParticlesInSphere(count, radius) {
 }
 
 /**
+ * Load model
+ */
+const gltf = await gltfLoader.loadAsync('./Baryon.glb');
+const baseGeometry2 = {};
+baseGeometry2.instance = gltf.scene.children[0];
+
+// Apply scaling to the object
+baseGeometry2.instance.scale.set(0.2, 0.2, 0.2); // Adjust scale factors as needed
+
+// Update the geometry to apply the transformation
+baseGeometry2.instance.updateMatrix();
+baseGeometry2.instance.geometry.applyMatrix4(baseGeometry2.instance.matrix);
+
+// Reset the matrix to avoid further unintended transformations
+baseGeometry2.instance.matrix.identity();
+baseGeometry2.instance.matrix.decompose(
+  baseGeometry2.instance.position,
+  baseGeometry2.instance.quaternion,
+  baseGeometry2.instance.scale
+);
+
+// Now extract the transformed vertex positions
+baseGeometry2.geometry = baseGeometry2.instance.geometry;
+baseGeometry2.count = baseGeometry2.geometry.attributes.position.count;
+
+/**
  * GPU Compute
  */
 
 // Setup
-
 const gpgpu = {};
 gpgpu.size = Math.ceil(Math.sqrt(baseGeometry.count));
 gpgpu.computation = new GPUComputationRenderer(gpgpu.size, gpgpu.size, renderer);
@@ -499,6 +524,19 @@ for (let i = 0; i < baseGeometry.count; i++) {
   baseParticlesTexture.image.data[i4 + 1] = baseGeometry.positions[i3 + 1];
   baseParticlesTexture.image.data[i4 + 2] = baseGeometry.positions[i3 + 2];
   baseParticlesTexture.image.data[i4 + 3] = 1.0;
+}
+
+const baryonLogoTexture = gpgpu.computation.createTexture();
+
+for (let i = 0; i < baseGeometry2.count; i++) {
+  const i3 = i * 3;
+  const i4 = i * 4;
+
+  // Position based on geometry
+  baryonLogoTexture.image.data[i4 + 0] = baseGeometry2.geometry.attributes.position.array[i3 + 0];
+  baryonLogoTexture.image.data[i4 + 1] = baseGeometry2.geometry.attributes.position.array[i3 + 1];
+  baryonLogoTexture.image.data[i4 + 2] = baseGeometry2.geometry.attributes.position.array[i3 + 2];
+  baryonLogoTexture.image.data[i4 + 3] = Math.random();
 }
 
 // Initalization of particles for movement
@@ -617,7 +655,7 @@ gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Unifor
 gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(3.6);
 gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.64);
 gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
-gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(initialParticlesTexture);
+gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(baryonLogoTexture);
 gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
 gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(24);
 gpgpu.particlesVariable.material.uniforms.uStarted = new THREE.Uniform(sound.started);
