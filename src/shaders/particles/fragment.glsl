@@ -1,3 +1,5 @@
+#include ../includes/random2D.glsl
+
 varying vec3 vColor;
 varying float vGroup;
 varying vec3 vPosition;
@@ -34,15 +36,21 @@ void main() {
 
     // Holographic
     float holographic = fresnel * stripes;
-    holographic += fresnel * 5.25;
+    holographic += fresnel * 1.25;
     holographic *= falloff;
 
     // ***** Coloring ***** //
     vec3 color;
     if(vGroup == 1.0) {
         color = vec3(0.87059, 0.93333, 0.98039);
+        // color = uColor;
     } else if(vGroup == 2.0) {
-        // Scaled back
+        // float rand = random2D(gl_FragCoord.xy);
+        // if(rand < 0.5) {
+        //     color = uColor; // Use the uniform color
+        // } else {
+        //     color = vec3(1.0); // Use white
+        // }
         color = uColor;
     } else if(vGroup == 0.0) {
         color = vec3(0.35686, 0.57255, 0.96078);
