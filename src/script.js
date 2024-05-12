@@ -394,7 +394,7 @@ if (renderer.getPixelRatio() === 1 && !renderer.capabilities.isWebGL2) {
 // Parameters Object
 let parameters = {
   N: 22,
-  count: 1500000,
+  count: 1000000,
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
   threshold: 0.064,
@@ -740,7 +740,7 @@ particles.material = new THREE.ShaderMaterial({
   vertexShader: particlesVertexShader,
   fragmentShader: particlesFragmentShader,
   uniforms: {
-    uSize: new THREE.Uniform(0.03),
+    uSize: new THREE.Uniform(0.04),
     uResolution: new THREE.Uniform(
       new THREE.Vector2(sizes.width * sizes.pixelRatio, sizes.height * sizes.pixelRatio)
     ),
