@@ -398,7 +398,7 @@ let parameters = {
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
   threshold: 0.064,
-  surfaceRatio: 0.33,
+  surfaceRatio: 0.4,
   surfaceThreshold: 0.01,
   particleSpeed: 1.0,
 };
