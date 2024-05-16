@@ -15,7 +15,7 @@ void main() {
         discard;
     }
 
-    bool isOnSurface = abs(distance - uRadius) < uSurfaceThreshold;
+    bool isOnSurface = abs(distance - uRadius) <= uSurfaceThreshold;
 
     if(isOnSurface && uSurfaceControl) {
         gl_FragColor = vec4(position, 1.0); // ZeroPoints on the surface

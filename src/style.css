@@ -1,34 +1,60 @@
-*
-{
+* {
     margin: 0;
     padding: 0;
 }
 
-html,
-body
-{
+html, body {
     overflow: hidden;
 }
 
-.webgl
-{
+.webgl {
     position: fixed;
     top: 0;
     left: 0;
     outline: none;
 }
-#audioInput {
-    position: fixed; /* Or absolute */
-    top: 10px; /* Adjust as needed */
-    left: 10px; /* Adjust as needed */
-    z-index: 1000; /* Ensure it's above other elements */
-}
+
 .audio-controls {
     position: fixed;
-    top: 50px;
+    top: 10px;
     left: 10px;
     z-index: 1000;
+    display: flex;
+    flex-direction: column; /* Stack children vertically */
+    align-items: flex-start; /* Align children to the start of the flex container */
 }
+
+.file-input-label {
+    display: inline-block;
+    margin-right: 10px;
+    padding: 5px 10px;
+    font-size: 14px;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    max-width: 125px;  /* Limit the width of the label */
+    overflow: hidden;  /* Hide overflow */
+    white-space: nowrap;  /* Prevent text from wrapping to new lines */
+    text-overflow: ellipsis;  /* Add ellipsis when text overflows */
+}
+
+.file-input-label input[type="file"] {
+    display: none;
+}
+
+.file-input-label span {
+    pointer-events: none;  /* Ensures clicks on the span don't interfere with label functionality */
+}
+
+.audio-controls input[type="text"] {
+    flex-grow: 1; /* Allow the text input to fill the space */
+    padding: 5px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
 .audio-controls button {
     margin-right: 10px;
     padding: 5px 10px;
@@ -37,4 +63,14 @@ body
     border: 1px solid #ccc;
     border-radius: 4px;
     cursor: pointer;
+}
+
+.file-and-url, .playback-controls {
+    display: flex;
+    align-items: center;
+    width: 100%; /* Ensure full width for alignment */
+}
+
+.playback-controls {
+    margin-top: 10px; /* Add space between the file/url inputs and playback controls */
 }
