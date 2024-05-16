@@ -137,15 +137,30 @@ console.log('Sound:', sound);
 
 // Get references to the audio controls
 const audioInput = document.getElementById('audioInput');
+const fileName = document.getElementById('fileName');
+const audioUrl = document.getElementById('audioUrl');
 const playButton = document.getElementById('playButton');
 const stopButton = document.getElementById('stopButton');
-
 let audioLoaded = false;
 const audioLoader = new THREE.AudioLoader();
-audioInput.addEventListener('change', (event) => {
-  const file = event.target.files[0];
-  const fileURL = URL.createObjectURL(file);
 
+audioInput.addEventListener('change', (event) => {
+  if (event.target.files.length > 0) {
+    const file = event.target.files[0];
+    fileName.textContent = file.name;
+    const fileURL = URL.createObjectURL(file);
+    loadAudio(fileURL);
+  } else {
+    fileName.textContent = 'Choose File';
+  }
+});
+audioUrl.addEventListener('change', (event) => {
+  const url = event.target.value;
+  loadAudio(url);
+  console.log('Running loadAudio');
+});
+
+function loadAudio(url) {
   // Stop the current audio if it is playing and reset its buffer
   if (sound.started === true) {
     sound.stop();
@@ -166,16 +181,16 @@ audioInput.addEventListener('change', (event) => {
     }
     sound.setBuffer(null);
     playButton.textContent = 'Play';
-    console.log('Audio ended & reset w/ new file');
+    console.log('Audio ended & reset w/ new file or URL');
   }
 
-  audioLoader.load(fileURL, function (buffer) {
+  audioLoader.load(url, function (buffer) {
     sound.setBuffer(buffer);
     sound.setLoop(false);
     sound.setVolume(0.5);
     audioLoaded = true;
   });
-});
+}
 
 let audioCtx = sound.context;
 console.log(audioCtx);
