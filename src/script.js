@@ -258,10 +258,6 @@ function audioAnalysis() {
 }
 
 function startAudioProcessing() {
-  if (!audioCtx || audioCtx.state === 'closed') {
-    audioCtx = new AudioContext();
-    sound.context = audioCtx;
-  }
   const workletProcessorCode = [
     'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js',
     'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.umd.js',
@@ -355,7 +351,7 @@ function timeHandler(elapsedTime) {
 function handlePageUnload(event) {
   console.log('Handling page unload');
 
-  // Stop the audio and disconnect the sound source
+  // Stop the audio, disconnect, and reset
   if (sound.isPlaying) {
     sound.stop();
   }
@@ -365,12 +361,32 @@ function handlePageUnload(event) {
   playButton.textContent = 'Play';
 
   // Send a message to the AudioWorkletProcessor to stop processing
+  essentiaNode?.port.postMessage({ isPlaying: false });
+
+  // Disconnect the audio graph nodes
   if (essentiaNode) {
-    essentiaNode.port.postMessage({ isPlaying: false });
+    essentiaNode.disconnect();
+  }
+  if (soundGainNode && essentiaNode) {
+    soundGainNode.disconnect(essentiaNode);
+  }
+  if (gain) {
+    gain.disconnect();
   }
 
-  // Close the audio context
-  if (audioCtx && audioCtx.state !== 'closed') {
+  // Nullify the audio graph nodes
+  essentiaNode = null;
+  soundGainNode = null;
+  gain = null;
+
+  // Dispose of the AudioReader and RingBuffer instances
+  if (audioReader) {
+    audioReader.dispose();
+    audioReader = null;
+  }
+
+  // Close the audio context if it's not already closed
+  if (audioCtx?.state !== 'closed') {
     audioCtx
       .close()
       .then(() => {
