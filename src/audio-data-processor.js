@@ -178,7 +178,6 @@ class AudioDataProcessor extends AudioWorkletProcessor {
       console.error('AudioWorkletProcessor error:', error);
       // Handle the error gracefully, e.g., return default values or skip processing
     }
-
     // Return - let the system know we're still active and ready to process audio.
     return true;
   }

@@ -143,6 +143,8 @@ const playButton = document.getElementById('playButton');
 const stopButton = document.getElementById('stopButton');
 let audioLoaded = false;
 const audioLoader = new THREE.AudioLoader();
+let audioCtx = sound.context;
+console.log('audioCtx', audioCtx);
 
 audioInput.addEventListener('change', (event) => {
   if (event.target.files.length > 0) {
@@ -164,21 +166,11 @@ function loadAudio(url) {
   // Stop the current audio if it is playing and reset its buffer
   if (sound.started === true) {
     sound.stop();
-    if (audioCtx.state === 'running') {
-      audioCtx.suspend().catch((error) => {
-        console.error('Failed to suspend audio context:', error);
-      });
-    }
     sound.setBuffer(null);
     playButton.textContent = 'Play';
     sound.started = false;
     console.log('Audio stopped on change');
   } else if (!sound.started && playButton.textContent !== 'Play') {
-    if (audioCtx.state === 'running') {
-      audioCtx.suspend().catch((error) => {
-        console.error('Failed to suspend audio context:', error);
-      });
-    }
     sound.setBuffer(null);
     playButton.textContent = 'Play';
     console.log('Audio ended & reset w/ new file or URL');
@@ -191,9 +183,6 @@ function loadAudio(url) {
     audioLoaded = true;
   });
 }
-
-let audioCtx = sound.context;
-console.log(audioCtx);
 
 const capacity = 5;
 
@@ -298,9 +287,7 @@ function startAudioProcessing() {
 playButton.addEventListener('click', () => {
   if (sound.isPlaying) {
     sound.pause();
-    audioCtx.suspend().catch((error) => {
-      console.error('Failed to suspend audio context:', error);
-    });
+    console.log('Pause AudioCtx State:', audioCtx.state);
     playButton.textContent = 'Play';
   } else if (!sound.isPlaying && audioLoaded) {
     if (audioCtx.state === 'suspended') {
@@ -325,28 +312,12 @@ playButton.addEventListener('click', () => {
 // Stop audio when stop button is clicked
 stopButton.addEventListener('click', () => {
   sound.stop();
-  if (audioCtx.state === 'running') {
-    audioCtx.suspend().catch((error) => {
-      console.error('Failed to suspend audio context:', error);
-    });
-  }
   sound.started = false;
   playButton.textContent = 'Play';
 });
 
 sound.onEnded = function () {
   sound.stop();
-  if (audioCtx.state === 'running') {
-    audioCtx
-      .suspend()
-      .then(() => {
-        console.log('Audio context suspended successfully');
-      })
-      .catch((error) => {
-        console.error('Failed to suspend audio context:', error);
-      });
-  }
-
   console.log('Audio ended');
   sound.started = false;
   playButton.textContent = 'Replay'; // Update the play button text
