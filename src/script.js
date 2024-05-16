@@ -146,22 +146,6 @@ const audioLoader = new THREE.AudioLoader();
 let audioCtx = sound.context;
 console.log('audioCtx', audioCtx);
 
-audioInput.addEventListener('change', (event) => {
-  if (event.target.files.length > 0) {
-    const file = event.target.files[0];
-    fileName.textContent = file.name;
-    const fileURL = URL.createObjectURL(file);
-    loadAudio(fileURL);
-  } else {
-    fileName.textContent = 'Choose File';
-  }
-});
-audioUrl.addEventListener('change', (event) => {
-  const url = event.target.value;
-  loadAudio(url);
-  console.log('Running loadAudio');
-});
-
 function loadAudio(url) {
   // Stop the current audio if it is playing and reset its buffer
   if (sound.started === true) {
@@ -183,6 +167,29 @@ function loadAudio(url) {
     audioLoaded = true;
   });
 }
+
+audioInput.addEventListener('change', (event) => {
+  if (event.target.files.length > 0) {
+    const file = event.target.files[0];
+    fileName.textContent = file.name;
+    const fileURL = URL.createObjectURL(file);
+    loadAudio(fileURL);
+  } else {
+    fileName.textContent = 'Choose File';
+  }
+
+  // Notify the AudioWorkletProcessor of the current playing state
+  essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
+});
+
+audioUrl.addEventListener('change', (event) => {
+  const url = event.target.value;
+  loadAudio(url);
+  console.log('Running loadAudio');
+
+  // Notify the AudioWorkletProcessor of the current playing state
+  essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
+});
 
 const capacity = 5;
 
@@ -288,7 +295,7 @@ playButton.addEventListener('click', () => {
   if (sound.isPlaying) {
     sound.pause();
     playButton.textContent = 'Play';
-    essentiaNode.port.postMessage({ isPlaying: false });
+    essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
   } else if (!sound.isPlaying && audioLoaded) {
     if (audioCtx.state === 'suspended') {
       audioCtx
@@ -297,7 +304,7 @@ playButton.addEventListener('click', () => {
           sound.play();
           sound.started = true;
           playButton.textContent = 'Pause';
-          essentiaNode.port.postMessage({ isPlaying: true });
+          essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
         })
         .catch((error) => {
           console.error('Failed to resume audio context:', error);
@@ -306,7 +313,7 @@ playButton.addEventListener('click', () => {
       sound.play();
       sound.started = true;
       playButton.textContent = 'Pause';
-      essentiaNode.port.postMessage({ isPlaying: true });
+      essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
     }
   }
 });
@@ -316,7 +323,7 @@ stopButton.addEventListener('click', () => {
   sound.stop();
   sound.started = false;
   playButton.textContent = 'Play';
-  essentiaNode.port.postMessage({ isPlaying: false });
+  essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
 });
 
 sound.onEnded = function () {
@@ -324,7 +331,7 @@ sound.onEnded = function () {
   console.log('Audio ended');
   sound.started = false;
   playButton.textContent = 'Replay'; // Update the play button text
-  essentiaNode.port.postMessage({ isPlaying: false });
+  essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
 };
 
 let lastKnownTime = 0;
