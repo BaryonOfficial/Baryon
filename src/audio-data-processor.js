@@ -4,7 +4,6 @@ class AudioDataProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.isPlaying = false;
-
     this._logCounter = 0; // Initialize a counter for logging
     this._frameCounter = 0; // Counter for determining pitch series, for frames per beat
     this.logFrequency = 500; // Log every 1000 frames
@@ -12,25 +11,23 @@ class AudioDataProcessor extends AudioWorkletProcessor {
     this._sampleRate = options.processorOptions.sampleRate;
     this._capacity = options.processorOptions.capacity;
     this._essentia = essentia;
-    this._channelCount = 2;
-    this._interleavedData = new Float32Array(this._bufferSize * this._channelCount);
     this._frameSize = this._bufferSize / 2;
     this._hopSize = this._frameSize / 4;
+
     // this._lowestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -57); // lowest note = C0
-    // this._highestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -57) * Math.pow(2, 8); // 8 octaves above C0, c*
     // this._lowestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -33); // lowest note = C2
+    // this._highestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -57) * Math.pow(2, 8); // 8 octaves above C0, c*
     this._lowestFreq = 200;
     this._highestFreq = 440 * Math.pow(Math.pow(2, 1 / 12), -33 + 6 * 12 - 1); // 6 octaves above C2
 
-    // this._meanPitchSeriesForBeat = [];
+    this._inputRingBuffer = null;
+    this._outputRingBuffer = null;
+    this._accumData = null;
+    this._mixedDownData = null;
+    this._channelCount = null;
+    this._interleavedData = null;
 
-    // buffersize mismatch helpers
-    this._inputRingBuffer = new ChromeLabsRingBuffer(this._bufferSize, this._channelCount);
-    this._outputRingBuffer = new ChromeLabsRingBuffer(this._bufferSize, this._channelCount);
-    this._accumData = new Array(this._channelCount)
-      .fill(null)
-      .map(() => new Float32Array(this._bufferSize));
-    this._mixedDownData = new Float32Array(this._bufferSize);
+    // this._meanPitchSeriesForBeat = [];
 
     // SAB config
     this.port.onmessage = (event) => {
@@ -55,7 +52,19 @@ class AudioDataProcessor extends AudioWorkletProcessor {
     let input = inputs[0];
     let output = outputs[0];
 
-    // // Efficient check to see if the input buffer contains only zeros, not dependent on main thread
+    // Check if channel count has changed or buffers are not initialized
+    if (this._channelCount !== input.length || !this._inputRingBuffer) {
+      this._initializeBuffers(input.length);
+      this._channelCount = input.length; // Update the current channel count
+    }
+
+    if (!this.isPlaying) {
+      // Fill with 0s when no sound playing
+      output.forEach((channel) => channel.fill(0));
+      return true;
+    }
+
+    // Efficient check to see if the input buffer contains only zeros, not dependent on main thread
     // let isSilent = true;
     // for (let channel of input) {
     //   for (let value of channel) {
@@ -66,12 +75,6 @@ class AudioDataProcessor extends AudioWorkletProcessor {
     //   }
     //   if (!isSilent) break;
     // }
-
-    if (!this.isPlaying) {
-      // Fill with 0s when no sound playing
-      output.forEach((channel) => channel.fill(0));
-      return true;
-    }
 
     try {
       this._inputRingBuffer.push(input);
@@ -194,6 +197,16 @@ class AudioDataProcessor extends AudioWorkletProcessor {
     }
     // Return - let the system know we're still active and ready to process audio.
     return true;
+  }
+  _initializeBuffers(channelCount) {
+    this._inputRingBuffer = new ChromeLabsRingBuffer(this._bufferSize, channelCount);
+    this._outputRingBuffer = new ChromeLabsRingBuffer(this._bufferSize, channelCount);
+    this._accumData = new Array(channelCount)
+      .fill(null)
+      .map(() => new Float32Array(this._bufferSize));
+    this._mixedDownData = new Float32Array(this._bufferSize);
+    this._interleavedData = new Float32Array(this._bufferSize * channelCount);
+    console.log(`Buffers initialized for ${channelCount} channels.`);
   }
 }
 
