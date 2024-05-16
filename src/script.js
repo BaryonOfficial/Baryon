@@ -143,42 +143,18 @@ const playButton = document.getElementById('playButton');
 const stopButton = document.getElementById('stopButton');
 let audioLoaded = false;
 const audioLoader = new THREE.AudioLoader();
-
-audioInput.addEventListener('change', (event) => {
-  if (event.target.files.length > 0) {
-    const file = event.target.files[0];
-    fileName.textContent = file.name;
-    const fileURL = URL.createObjectURL(file);
-    loadAudio(fileURL);
-  } else {
-    fileName.textContent = 'Choose File';
-  }
-});
-audioUrl.addEventListener('change', (event) => {
-  const url = event.target.value;
-  loadAudio(url);
-  console.log('Running loadAudio');
-});
+let audioCtx = sound.context;
+console.log('audioCtx', audioCtx);
 
 function loadAudio(url) {
   // Stop the current audio if it is playing and reset its buffer
   if (sound.started === true) {
     sound.stop();
-    if (audioCtx.state === 'running') {
-      audioCtx.suspend().catch((error) => {
-        console.error('Failed to suspend audio context:', error);
-      });
-    }
     sound.setBuffer(null);
     playButton.textContent = 'Play';
     sound.started = false;
     console.log('Audio stopped on change');
   } else if (!sound.started && playButton.textContent !== 'Play') {
-    if (audioCtx.state === 'running') {
-      audioCtx.suspend().catch((error) => {
-        console.error('Failed to suspend audio context:', error);
-      });
-    }
     sound.setBuffer(null);
     playButton.textContent = 'Play';
     console.log('Audio ended & reset w/ new file or URL');
@@ -192,8 +168,23 @@ function loadAudio(url) {
   });
 }
 
-let audioCtx = sound.context;
-console.log(audioCtx);
+audioInput.addEventListener('change', (event) => {
+  if (event.target.files.length > 0) {
+    const file = event.target.files[0];
+    fileName.textContent = file.name;
+    const fileURL = URL.createObjectURL(file);
+    loadAudio(fileURL);
+  } else {
+    fileName.textContent = 'Choose File';
+  }
+  essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
+});
+
+audioUrl.addEventListener('change', (event) => {
+  const url = event.target.value;
+  loadAudio(url);
+  essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
+});
 
 const capacity = 5;
 
@@ -204,7 +195,6 @@ function setupAudioGraph() {
     return;
   }
   let sab = exports.RingBuffer.getStorageForCapacity(capacity, Float32Array); // capacity: three float32 values [pitch, confidence, rms]
-  console.log('Shared Buffer Size:', sab.byteLength);
   let rb = new exports.RingBuffer(sab, Float32Array);
   audioReader = new exports.AudioReader(rb);
 
@@ -224,6 +214,7 @@ function setupAudioGraph() {
   try {
     essentiaNode.port.postMessage({
       sab: sab,
+      isPlaying: sound.isPlaying,
     });
   } catch (_) {
     alert('No SharedArrayBuffer tranfer support, try another browser.');
@@ -298,10 +289,8 @@ function startAudioProcessing() {
 playButton.addEventListener('click', () => {
   if (sound.isPlaying) {
     sound.pause();
-    audioCtx.suspend().catch((error) => {
-      console.error('Failed to suspend audio context:', error);
-    });
     playButton.textContent = 'Play';
+    essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
   } else if (!sound.isPlaying && audioLoaded) {
     if (audioCtx.state === 'suspended') {
       audioCtx
@@ -310,6 +299,7 @@ playButton.addEventListener('click', () => {
           sound.play();
           sound.started = true;
           playButton.textContent = 'Pause';
+          essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
         })
         .catch((error) => {
           console.error('Failed to resume audio context:', error);
@@ -318,6 +308,7 @@ playButton.addEventListener('click', () => {
       sound.play();
       sound.started = true;
       playButton.textContent = 'Pause';
+      essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
     }
   }
 });
@@ -325,31 +316,17 @@ playButton.addEventListener('click', () => {
 // Stop audio when stop button is clicked
 stopButton.addEventListener('click', () => {
   sound.stop();
-  if (audioCtx.state === 'running') {
-    audioCtx.suspend().catch((error) => {
-      console.error('Failed to suspend audio context:', error);
-    });
-  }
   sound.started = false;
   playButton.textContent = 'Play';
+  essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
 });
 
 sound.onEnded = function () {
   sound.stop();
-  if (audioCtx.state === 'running') {
-    audioCtx
-      .suspend()
-      .then(() => {
-        console.log('Audio context suspended successfully');
-      })
-      .catch((error) => {
-        console.error('Failed to suspend audio context:', error);
-      });
-  }
-
   console.log('Audio ended');
   sound.started = false;
   playButton.textContent = 'Replay'; // Update the play button text
+  essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
 };
 
 let lastKnownTime = 0;
@@ -370,6 +347,58 @@ function timeHandler(elapsedTime) {
 
   return { time, deltaTime };
 }
+
+function handlePageUnload(event) {
+  console.log('Handling page unload');
+
+  // Stop the audio, disconnect, and reset
+  if (sound.isPlaying) {
+    sound.stop();
+  }
+  sound.disconnect();
+  sound.setBuffer(null);
+  sound.started = false;
+  playButton.textContent = 'Play';
+
+  // Send a message to the AudioWorkletProcessor to stop processing
+  essentiaNode?.port.postMessage({ isPlaying: false });
+
+  // Disconnect the audio graph nodes
+  if (essentiaNode) {
+    essentiaNode.disconnect();
+  }
+  if (soundGainNode && essentiaNode) {
+    soundGainNode.disconnect(essentiaNode);
+  }
+  if (gain) {
+    gain.disconnect();
+  }
+
+  // Nullify the audio graph nodes
+  essentiaNode = null;
+  soundGainNode = null;
+  gain = null;
+
+  // Dispose of the AudioReader and RingBuffer instances
+  if (audioReader) {
+    audioReader.dispose();
+    audioReader = null;
+  }
+
+  // Close the audio context if it's not already closed
+  if (audioCtx?.state !== 'closed') {
+    audioCtx
+      .close()
+      .then(() => {
+        console.log('Audio context closed');
+      })
+      .catch((error) => {
+        console.error('Failed to close audio context:', error);
+      });
+  }
+}
+
+window.addEventListener('beforeunload', handlePageUnload);
 
 /**
  * Post Processing
@@ -755,7 +784,7 @@ particles.material = new THREE.ShaderMaterial({
   vertexShader: particlesVertexShader,
   fragmentShader: particlesFragmentShader,
   uniforms: {
-    uSize: new THREE.Uniform(0.04),
+    uSize: new THREE.Uniform(0.03),
     uResolution: new THREE.Uniform(
       new THREE.Vector2(sizes.width * sizes.pixelRatio, sizes.height * sizes.pixelRatio)
     ),
