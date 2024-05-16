@@ -12,10 +12,18 @@
   </head>
   <body>
     <canvas class="webgl"></canvas>
-    <input type="file" id="audioInput" accept="audio/*" />
     <div class="audio-controls">
-      <button id="playButton">Play</button>
-      <button id="stopButton">Stop</button>
+      <div class="file-and-url">
+        <label class="file-input-label">
+          <span id="fileName">Choose File</span>
+          <input type="file" id="audioInput" accept="audio/*" />
+        </label>
+        <input type="text" id="audioUrl" placeholder="Enter song URL" />
+      </div>
+      <div class="playback-controls">
+        <button id="playButton">Play</button>
+        <button id="stopButton">Stop</button>
+      </div>
     </div>
     <script>
       exports = {};
