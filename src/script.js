@@ -212,6 +212,7 @@ function setupAudioGraph() {
   try {
     essentiaNode.port.postMessage({
       sab: sab,
+      isPlaying: sound.isPlaying,
     });
   } catch (_) {
     alert('No SharedArrayBuffer tranfer support, try another browser.');
@@ -287,6 +288,7 @@ playButton.addEventListener('click', () => {
   if (sound.isPlaying) {
     sound.pause();
     playButton.textContent = 'Play';
+    essentiaNode.port.postMessage({ isPlaying: false });
   } else if (!sound.isPlaying && audioLoaded) {
     if (audioCtx.state === 'suspended') {
       audioCtx
@@ -295,6 +297,7 @@ playButton.addEventListener('click', () => {
           sound.play();
           sound.started = true;
           playButton.textContent = 'Pause';
+          essentiaNode.port.postMessage({ isPlaying: true });
         })
         .catch((error) => {
           console.error('Failed to resume audio context:', error);
@@ -303,6 +306,7 @@ playButton.addEventListener('click', () => {
       sound.play();
       sound.started = true;
       playButton.textContent = 'Pause';
+      essentiaNode.port.postMessage({ isPlaying: true });
     }
   }
 });
@@ -312,6 +316,7 @@ stopButton.addEventListener('click', () => {
   sound.stop();
   sound.started = false;
   playButton.textContent = 'Play';
+  essentiaNode.port.postMessage({ isPlaying: false });
 });
 
 sound.onEnded = function () {
@@ -319,6 +324,7 @@ sound.onEnded = function () {
   console.log('Audio ended');
   sound.started = false;
   playButton.textContent = 'Replay'; // Update the play button text
+  essentiaNode.port.postMessage({ isPlaying: false });
 };
 
 let lastKnownTime = 0;
