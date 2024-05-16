@@ -3,6 +3,8 @@ let essentia = new Essentia(Module);
 class AudioDataProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
+    this.isPlaying = false;
+
     this._logCounter = 0; // Initialize a counter for logging
     this._frameCounter = 0; // Counter for determining pitch series, for frames per beat
     this.logFrequency = 500; // Log every 1000 frames
@@ -32,7 +34,13 @@ class AudioDataProcessor extends AudioWorkletProcessor {
 
     // SAB config
     this.port.onmessage = (event) => {
-      this._audio_writer = new AudioWriter(new RingBuffer(event.data.sab, Float32Array));
+      if (event.data.sab) {
+        this._audio_writer = new AudioWriter(new RingBuffer(event.data.sab, Float32Array));
+      }
+      // Check if the message contains the isPlaying boolean
+      if (event.data.isPlaying !== undefined) {
+        this.isPlaying = event.data.isPlaying;
+      }
     };
     console.log('Backend - essentia:' + this._essentia.version + '- http://essentia.upf.edu');
   }
@@ -43,12 +51,24 @@ class AudioDataProcessor extends AudioWorkletProcessor {
     // The input list and output list are each arrays of
     // Float32Array objects, each of which contains the
     // samples for one channel.
+
     let input = inputs[0];
     let output = outputs[0];
 
-    // Simple check to see if the input buffer contains only zeros
-    if (input.every((channel) => channel.every((value) => value === 0))) {
-      // If the input buffer has only zeros, fill the output with zeros and return
+    // // Efficient check to see if the input buffer contains only zeros, not dependent on main thread
+    // let isSilent = true;
+    // for (let channel of input) {
+    //   for (let value of channel) {
+    //     if (value !== 0) {
+    //       isSilent = false;
+    //       break;
+    //     }
+    //   }
+    //   if (!isSilent) break;
+    // }
+
+    if (!this.isPlaying) {
+      // Fill with 0s when no sound playing
       output.forEach((channel) => channel.fill(0));
       return true;
     }
@@ -170,9 +190,7 @@ class AudioDataProcessor extends AudioWorkletProcessor {
     } catch (error) {
       console.error('AudioWorkletProcessor error:', error);
       // If there is no valid input or not enough frames, do nothing and let the output be silent
-      for (let channel = 0; channel < output.length; ++channel) {
-        output[channel].fill(0);
-      }
+      output.forEach((channel) => channel.fill(0));
     }
     // Return - let the system know we're still active and ready to process audio.
     return true;
