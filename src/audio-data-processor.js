@@ -38,145 +38,141 @@ class AudioDataProcessor extends AudioWorkletProcessor {
   }
 
   process(inputs, outputs, parameters) {
+    this._logCounter++;
+
     // The input list and output list are each arrays of
     // Float32Array objects, each of which contains the
     // samples for one channel.
+    let input = inputs[0];
+    let output = outputs[0];
+
+    // Simple check to see if the input buffer contains only zeros
+    if (input.every((channel) => channel.every((value) => value === 0))) {
+      // If the input buffer has only zeros, fill the output with zeros and return
+      output.forEach((channel) => channel.fill(0));
+      return true;
+    }
+
     try {
-      let input = inputs[0];
-      let output = outputs[0];
+      this._inputRingBuffer.push(input);
 
-      if (input && input.length === this._channelCount) {
-        this._logCounter++;
+      if (this._inputRingBuffer.framesAvailable >= this._bufferSize) {
+        // console.log('this._accumData before pull:', this._accumData);
 
-        this._inputRingBuffer.push(input);
+        this._inputRingBuffer.pull(this._accumData);
 
-        // if (this._logCounter >= this.logFrequency) {
-        //   console.log('Inputs:', inputs);
-        //   console.log('Outputs:', outputs);
-        //   console.log('PUSHinputRingBuffer:', this._inputRingBuffer.push(input));
-        //   this._logCounter = 0;
+        for (let i = 0; i < this._bufferSize * this._channelCount; i++) {
+          this._interleavedData[i] =
+            this._accumData[i % this._channelCount][Math.floor(i / this._channelCount)];
+        }
+
+        const accumDataVector = this._essentia.arrayToVector(this._interleavedData);
+
+        // console.log('accumDataVector:', accumDataVector);
+
+        // Mix down the data to a single channel if necessary
+        // for (let i = 0; i < this._bufferSize; ++i) {
+        //   let sum = 0;
+        //   for (let channel = 0; channel < this._channelCount; ++channel) {
+        //     sum += this._accumData[channel][i];
+        //   }
+        //   this._mixedDownData[i] = sum / this._channelCount; // Average mix down
         // }
 
-        if (this._inputRingBuffer.framesAvailable >= this._bufferSize) {
-          // console.log('this._accumData before pull:', this._accumData);
+        // // Convert the mixed down data to an Essentia vector
+        // const mixedDownDataVector = this._essentia.arrayToVector(this._mixedDownData);
 
-          this._inputRingBuffer.pull(this._accumData);
+        // Assuming dataVector is your VectorFloat instance
+        // const dataVector = accumDataVector;
+        // const vectorSize = dataVector.size();
+        // console.log('Vector Size:', vectorSize);
 
-          for (let i = 0; i < this._bufferSize * this._channelCount; i++) {
-            this._interleavedData[i] =
-              this._accumData[i % this._channelCount][Math.floor(i / this._channelCount)];
-          }
+        // if (vectorSize > 0) {
+        //   let elements = [];
+        //   for (let i = 0; i < vectorSize; i++) {
+        //     elements.push(dataVector.get(i));
+        //   }
+        //   console.log('Vector Elements:', elements);
+        // } else {
+        //   console.log('Vector is empty');
+        // }
 
-          const accumDataVector = this._essentia.arrayToVector(this._interleavedData);
+        const algoOutput = this._essentia.PredominantPitchMelodia(
+          accumDataVector,
+          10,
+          3,
+          this._frameSize,
+          false,
+          0.8,
+          this._hopSize,
+          1,
+          40,
+          this._highestFreq,
+          100,
+          this._lowestFreq,
+          20,
+          0.9,
+          0.9,
+          27.5625,
+          this._lowestFreq,
+          this._sampleRate,
+          100,
+          true
+        );
 
-          // console.log('accumDataVector:', accumDataVector);
+        // Pitch Calcs
+        const pitchFrames = essentia.vectorToArray(algoOutput.pitch);
+        // average frame-wise pitches in pitch before writing to SAB
+        const numVoicedFrames = pitchFrames.filter((p) => p > 0).length;
+        const meanPitch = pitchFrames.reduce((acc, curr) => acc + curr, 0) / numVoicedFrames;
 
-          // Mix down the data to a single channel if necessary
-          // for (let i = 0; i < this._bufferSize; ++i) {
-          //   let sum = 0;
-          //   for (let channel = 0; channel < this._channelCount; ++channel) {
-          //     sum += this._accumData[channel][i];
-          //   }
-          //   this._mixedDownData[i] = sum / this._channelCount; // Average mix down
-          // }
+        // let vectorVectorFloat = algoOutput2.pitch;
+        // let pitchArrays = [];
+        // for (let i = 0; i < vectorVectorFloat.size(); i++) {
+        //   let innerVector = vectorVectorFloat.get(i);
+        //   let pitchArray = [];
+        //   for (let j = 0; j < innerVector.length; j++) {
+        //     pitchArray.push(innerVector[j]);
+        //   }
+        //   pitchArrays.push(pitchArray);
+        // }
+        // console.log(pitchArrays);
 
-          // // Convert the mixed down data to an Essentia vector
-          // const mixedDownDataVector = this._essentia.arrayToVector(this._mixedDownData);
+        // // Estimate the tempo using the PercivalBpmEstimator algorithm
+        // let tempo = this._essentia.PercivalBpmEstimator(
+        //   accumDataVector,
+        //   1024,
+        //   2048,
+        //   128,
+        //   128,
+        //   210,
+        //   50,
+        //   this._sampleRate
+        // ).bpm;
 
-          // Assuming dataVector is your VectorFloat instance
-          // const dataVector = accumDataVector;
-          // const vectorSize = dataVector.size();
-          // console.log('Vector Size:', vectorSize);
+        // // // Tempo Calcs
+        // const secondsPerBeat = 60 / tempo;
+        // const framesPerBeat = Math.round(secondsPerBeat * this._sampleRate);
+        // // console.log('framesPerBeat:', framesPerBeat);
 
-          // if (vectorSize > 0) {
-          //   let elements = [];
-          //   for (let i = 0; i < vectorSize; i++) {
-          //     elements.push(dataVector.get(i));
-          //   }
-          //   console.log('Vector Elements:', elements);
-          // } else {
-          //   console.log('Vector is empty');
-          // }
-
-          const algoOutput = this._essentia.PredominantPitchMelodia(
-            accumDataVector,
-            10,
-            3,
-            this._frameSize,
-            false,
-            0.8,
-            this._hopSize,
-            1,
-            40,
-            this._highestFreq,
-            100,
-            this._lowestFreq,
-            20,
-            0.9,
-            0.9,
-            27.5625,
-            this._lowestFreq,
-            this._sampleRate,
-            100,
-            true
-          );
-
-          // Pitch Calcs
-          const pitchFrames = essentia.vectorToArray(algoOutput.pitch);
-          // average frame-wise pitches in pitch before writing to SAB
-          const numVoicedFrames = pitchFrames.filter((p) => p > 0).length;
-          const meanPitch = pitchFrames.reduce((acc, curr) => acc + curr, 0) / numVoicedFrames;
-
-          // let vectorVectorFloat = algoOutput2.pitch;
-          // let pitchArrays = [];
-          // for (let i = 0; i < vectorVectorFloat.size(); i++) {
-          //   let innerVector = vectorVectorFloat.get(i);
-          //   let pitchArray = [];
-          //   for (let j = 0; j < innerVector.length; j++) {
-          //     pitchArray.push(innerVector[j]);
-          //   }
-          //   pitchArrays.push(pitchArray);
-          // }
-          // console.log(pitchArrays);
-
-          // // Estimate the tempo using the PercivalBpmEstimator algorithm
-          // let tempo = this._essentia.PercivalBpmEstimator(
-          //   accumDataVector,
-          //   1024,
-          //   2048,
-          //   128,
-          //   128,
-          //   210,
-          //   50,
-          //   this._sampleRate
-          // ).bpm;
-
-          // // // Tempo Calcs
-          // const secondsPerBeat = 60 / tempo;
-          // const framesPerBeat = Math.round(secondsPerBeat * this._sampleRate);
-          // // console.log('framesPerBeat:', framesPerBeat);
-
-          // Enqueue all pitch values from _meanPitchSeriesForBeat at once
-          if (this._audio_writer.available_write() >= 1) {
-            if (!isNaN(meanPitch)) {
-              this._audio_writer.enqueue([meanPitch]);
-            }
-          }
-
-          // Reset _accumData in-place
-          for (let channel = 0; channel < this._channelCount; ++channel) {
-            this._accumData[channel].fill(0);
+        // Enqueue all pitch values from _meanPitchSeriesForBeat at once
+        if (this._audio_writer.available_write() >= 1) {
+          if (!isNaN(meanPitch)) {
+            this._audio_writer.enqueue([meanPitch]);
           }
         }
-      } else {
-        // If there is no valid input or not enough frames, do nothing and let the output be silent
-        for (let channel = 0; channel < output.length; ++channel) {
-          output[channel].fill(0);
+
+        // Reset _accumData in-place
+        for (let channel = 0; channel < this._channelCount; ++channel) {
+          this._accumData[channel].fill(0);
         }
       }
     } catch (error) {
       console.error('AudioWorkletProcessor error:', error);
-      // Handle the error gracefully, e.g., return default values or skip processing
+      // If there is no valid input or not enough frames, do nothing and let the output be silent
+      for (let channel = 0; channel < output.length; ++channel) {
+        output[channel].fill(0);
+      }
     }
     // Return - let the system know we're still active and ready to process audio.
     return true;
