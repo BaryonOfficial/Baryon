@@ -177,17 +177,12 @@ audioInput.addEventListener('change', (event) => {
   } else {
     fileName.textContent = 'Choose File';
   }
-
-  // Notify the AudioWorkletProcessor of the current playing state
   essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
 });
 
 audioUrl.addEventListener('change', (event) => {
   const url = event.target.value;
   loadAudio(url);
-  console.log('Running loadAudio');
-
-  // Notify the AudioWorkletProcessor of the current playing state
   essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
 });
 
@@ -263,6 +258,10 @@ function audioAnalysis() {
 }
 
 function startAudioProcessing() {
+  if (!audioCtx || audioCtx.state === 'closed') {
+    audioCtx = new AudioContext();
+    sound.context = audioCtx;
+  }
   const workletProcessorCode = [
     'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js',
     'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.umd.js',
@@ -352,6 +351,38 @@ function timeHandler(elapsedTime) {
 
   return { time, deltaTime };
 }
+
+function handlePageUnload(event) {
+  console.log('Handling page unload');
+
+  // Stop the audio and disconnect the sound source
+  if (sound.isPlaying) {
+    sound.stop();
+  }
+  sound.disconnect();
+  sound.setBuffer(null);
+  sound.started = false;
+  playButton.textContent = 'Play';
+
+  // Send a message to the AudioWorkletProcessor to stop processing
+  if (essentiaNode) {
+    essentiaNode.port.postMessage({ isPlaying: false });
+  }
+
+  // Close the audio context
+  if (audioCtx && audioCtx.state !== 'closed') {
+    audioCtx
+      .close()
+      .then(() => {
+        console.log('Audio context closed');
+      })
+      .catch((error) => {
+        console.error('Failed to close audio context:', error);
+      });
+  }
+}
+
+window.addEventListener('beforeunload', handlePageUnload);
 
 /**
  * Post Processing
