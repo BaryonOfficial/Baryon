@@ -193,7 +193,6 @@ function setupAudioGraph() {
     return;
   }
   let sab = exports.RingBuffer.getStorageForCapacity(capacity, Float32Array); // capacity: three float32 values [pitch, confidence, rms]
-  console.log('Shared Buffer Size:', sab.byteLength);
   let rb = new exports.RingBuffer(sab, Float32Array);
   audioReader = new exports.AudioReader(rb);
 
@@ -287,7 +286,6 @@ function startAudioProcessing() {
 playButton.addEventListener('click', () => {
   if (sound.isPlaying) {
     sound.pause();
-    console.log('Pause AudioCtx State:', audioCtx.state);
     playButton.textContent = 'Play';
   } else if (!sound.isPlaying && audioLoaded) {
     if (audioCtx.state === 'suspended') {
