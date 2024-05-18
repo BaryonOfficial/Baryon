@@ -141,7 +141,7 @@ const fileName = document.getElementById('fileName');
 const audioUrl = document.getElementById('audioUrl');
 const playButton = document.getElementById('playButton');
 const stopButton = document.getElementById('stopButton');
-let audioLoaded = false;
+let isAudioLoaded = false;
 const audioLoader = new THREE.AudioLoader();
 let audioCtx = sound.context;
 console.log('audioCtx', audioCtx);
@@ -160,11 +160,12 @@ function loadAudio(url) {
     console.log('Audio ended & reset w/ new file or URL');
   }
 
+  isAudioLoaded = false;
   audioLoader.load(url, function (buffer) {
     sound.setBuffer(buffer);
     sound.setLoop(false);
     sound.setVolume(0.5);
-    audioLoaded = true;
+    isAudioLoaded = true;
   });
 }
 
@@ -291,7 +292,7 @@ playButton.addEventListener('click', () => {
     sound.pause();
     playButton.textContent = 'Play';
     essentiaNode.port.postMessage({ isPlaying: sound.isPlaying });
-  } else if (!sound.isPlaying && audioLoaded) {
+  } else if (!sound.isPlaying && isAudioLoaded) {
     if (audioCtx.state === 'suspended') {
       audioCtx
         .resume()
@@ -421,7 +422,7 @@ unrealBloomPass.enabled = true;
 effectComposer.addPass(unrealBloomPass);
 
 unrealBloomPass.strength = 0.36;
-unrealBloomPass.radius = -1.5;
+unrealBloomPass.radius = -2.0;
 unrealBloomPass.threshold = 0.4;
 
 const gammaCorrectionPass = new ShaderPass(GammaCorrectionShader);
@@ -437,14 +438,11 @@ if (renderer.getPixelRatio() === 1 && !renderer.capabilities.isWebGL2) {
 
 // Parameters Object
 let parameters = {
-  N: 22,
-  count: 1000000,
-  rotationSpeed: 0.01,
+  count: 1500000,
   radius: 3.0, // Radius of the sphere
   threshold: 0.064,
-  surfaceRatio: 0.4,
+  surfaceRatio: 0.33,
   surfaceThreshold: 0.01,
-  particleSpeed: 1.0,
 };
 
 // Base Geometries
@@ -703,7 +701,7 @@ gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(baryonLogoTe
 gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
 gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(24);
 gpgpu.particlesVariable.material.uniforms.uStarted = new THREE.Uniform(sound.started);
-gpgpu.particlesVariable.material.uniforms.uParticleMovementType = new THREE.Uniform(1);
+gpgpu.particlesVariable.material.uniforms.uParticleMovementType = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
 
 // Dependencies
@@ -844,7 +842,7 @@ gui.close();
 const bloomFolder = gui.addFolder('Bloom Effect');
 bloomFolder.add(unrealBloomPass, 'enabled').name('Enable Bloom');
 bloomFolder.add(unrealBloomPass, 'strength').min(0).max(2).step(0.001).name('Bloom Strength');
-bloomFolder.add(unrealBloomPass, 'radius').min(-2).max(2).step(0.001).name('Bloom Radius');
+bloomFolder.add(unrealBloomPass, 'radius').min(-5).max(5).step(0.001).name('Bloom Radius');
 bloomFolder.add(unrealBloomPass, 'threshold').min(0).max(1).step(0.001).name('Bloom Threshold');
 bloomFolder.close();
 
@@ -925,6 +923,18 @@ aesthetics
   });
 aesthetics.close();
 
+// function logGPGPUUniforms() {
+//   if (gpgpu.audioDataVariable && gpgpu.audioDataVariable.material) {
+//     logUniforms(gpgpu.audioDataVariable.material, 'Audio Data');
+//   }
+//   if (gpgpu.scalarFieldVariable && gpgpu.scalarFieldVariable.material) {
+//     logUniforms(gpgpu.scalarFieldVariable.material, 'Scalar Field');
+//   }
+//   if (gpgpu.particlesVariable && gpgpu.particlesVariable.material) {
+//     logUniforms(gpgpu.particlesVariable.material, 'Particles');
+//   }
+// }
+
 /******************************************************* ANIMATION *******************************************************/
 const clock = new THREE.Clock();
 let frameCounter = 0;
@@ -948,37 +958,7 @@ let frameReset = 10;
 //   }
 // }
 
-// function logGPGPUUniforms() {
-//   if (gpgpu.audioDataVariable && gpgpu.audioDataVariable.material) {
-//     logUniforms(gpgpu.audioDataVariable.material, 'Audio Data');
-//   }
-//   if (gpgpu.scalarFieldVariable && gpgpu.scalarFieldVariable.material) {
-//     logUniforms(gpgpu.scalarFieldVariable.material, 'Scalar Field');
-//   }
-//   if (gpgpu.particlesVariable && gpgpu.particlesVariable.material) {
-//     logUniforms(gpgpu.particlesVariable.material, 'Particles');
-//   }
-// }
-
-const tick = () => {
-  frameCounter++;
-  // pseudoVisualizer();
-
-  const elapsedTime = clock.getElapsedTime();
-  const { time, deltaTime } = timeHandler(elapsedTime);
-  // console.log('time:', time);
-  // console.log('deltaTime:', deltaTime);
-
-  // GPGPU Updates
-  gpgpu.particlesVariable.material.uniforms.uTime.value = time;
-  gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
-  gpgpu.particlesVariable.material.uniforms.uStarted.value = sound.started;
-
-  particles.material.uniforms.uSoundPlaying.value = sound.isPlaying;
-  particles.material.uniforms.uTime.value = time;
-  particles.material.uniforms.uDeltaTime.value = deltaTime;
-  controls.update(deltaTime);
-
+function processAudioData() {
   if (audioReader.available_read() >= 1) {
     let read = audioReader.dequeue(essentiaData);
     if (read !== 0) {
@@ -1002,16 +982,9 @@ const tick = () => {
     gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(0);
     gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true;
   }
+}
 
-  // Log Uniforms
-  // if (frameCounter % 60 === 0) {
-  //   // For example, log every 60 frames
-  //   logGPGPUUniforms();
-  // }
-
-  // ******** GPGPU START ******** //
-  gpgpu.computation.compute();
-
+function updateGPGPUTextures() {
   // Update audioData texture
   gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value =
     gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable).texture;
@@ -1028,6 +1001,45 @@ const tick = () => {
   particles.material.uniforms.uParticlesTexture.value = gpgpu.computation.getCurrentRenderTarget(
     gpgpu.particlesVariable
   ).texture;
+}
+
+// Calculate the rotation matrix
+const rotationMatrix = new THREE.Matrix4();
+
+const tick = () => {
+  frameCounter++;
+  // pseudoVisualizer();
+
+  const elapsedTime = clock.getElapsedTime();
+  const { time, deltaTime } = timeHandler(elapsedTime);
+
+  controls.update(deltaTime);
+
+  // GPGPU Updates
+  gpgpu.particlesVariable.material.uniforms.uTime.value = time;
+  gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
+  gpgpu.particlesVariable.material.uniforms.uStarted.value = sound.started;
+
+  particles.material.uniforms.uSoundPlaying.value = sound.isPlaying;
+  particles.material.uniforms.uTime.value = time;
+  particles.material.uniforms.uDeltaTime.value = deltaTime;
+
+  processAudioData();
+
+  // Log Uniforms
+  // if (frameCounter % 60 === 0) {
+  //   // For example, log every 60 frames
+  //   logGPGPUUniforms();
+  // }
+
+  // ******** GPGPU START ******** //
+  gpgpu.computation.compute();
+  updateGPGPUTextures();
+
+  const angle = time * 0.5 * particles.material.uniforms.uRotation.value;
+  rotationMatrix.makeRotationY(-angle);
+  particles.points.matrix.copy(rotationMatrix);
+  particles.points.matrixAutoUpdate = false;
 
   // Normal Renderer
   // renderer.render(scene, camera);
