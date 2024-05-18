@@ -37,12 +37,12 @@ void main() {
     vec4 modelPosition = modelMatrix * vec4(particle.xyz, 1.0);
 
     // Apply rotation
-    float angle = atan(modelPosition.x, modelPosition.z);
-    float distanceToCenter = length(modelPosition.xz);
-    float angleOffset = uTime * 0.5 * uRotation;
-    angle += angleOffset;
-    modelPosition.x = cos(angle) * distanceToCenter;
-    modelPosition.z = sin(angle) * distanceToCenter;
+    // float angle = atan(modelPosition.x, modelPosition.z);
+    // float distanceToCenter = length(modelPosition.xz);
+    // float angleOffset = uTime * 0.5 * uRotation;
+    // angle += angleOffset;
+    // modelPosition.x = cos(angle) * distanceToCenter;
+    // modelPosition.z = sin(angle) * distanceToCenter;
 
     // Glitch Effect (Broken)
     // float glitchTime = uTime - modelPosition.y;
