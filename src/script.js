@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 import GUI from 'lil-gui';
+// import ffmpeg from '@ffmpeg/ffmpeg';
 
 // Passes
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -943,39 +944,55 @@ aesthetics.close();
 /******************************** WEBRTC *********************************/
 
 // Get references to the recording controls
-const startRecordingButton = document.getElementById('startRecording');
-const stopRecordingButton = document.getElementById('stopRecording');
+const toggleRecordingButton = document.getElementById('toggleRecording');
 const downloadRecordingButton = document.getElementById('downloadRecording');
 const recordedVideo = document.getElementById('recordedVideo');
 
 let mediaRecorder;
 let recordedChunks = [];
+let isRecording = false; // State to track recording status
+
+function toggleRecording() {
+  if (!isRecording) {
+    startRecording();
+  } else {
+    stopRecording();
+  }
+}
 
 function startRecording() {
   const canvasStream = canvas.captureStream(60); // Capture at 60 FPS
   const audioStreamDestination = audioCtx.createMediaStreamDestination();
   gain.connect(audioStreamDestination);
   const audioStream = audioStreamDestination.stream;
-  // Connect the audio graph to the destination stream
   const combinedStream = new MediaStream([...canvasStream.getTracks(), ...audioStream.getTracks()]);
 
   recordedChunks = []; // Reset the recorded chunks array
-  mediaRecorder = new MediaRecorder(combinedStream, {
-    mimeType: 'video/webm; codecs=vp9',
-    videoBitsPerSecond: 50000000, // Increase bitrate for better quality
-  });
+  if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
+    mediaRecorder = new MediaRecorder(combinedStream, {
+      mimeType: 'video/mp4; codecs="avc1.42E01E"',
+      videoBitsPerSecond: 50000000,
+    });
+  } else {
+    mediaRecorder = new MediaRecorder(combinedStream, {
+      mimeType: 'video/webm; codecs=vp9',
+      videoBitsPerSecond: 50000000,
+    });
+  }
   mediaRecorder.addEventListener('dataavailable', handleDataAvailable);
   mediaRecorder.start();
 
-  startRecordingButton.disabled = true;
-  stopRecordingButton.disabled = false;
+  toggleRecordingButton.classList.add('recording');
+  toggleRecordingButton.textContent = 'Stop Recording';
+  isRecording = true;
   downloadRecordingButton.disabled = true;
 }
 
 function stopRecording() {
   mediaRecorder.stop();
-  startRecordingButton.disabled = false;
-  stopRecordingButton.disabled = true;
+  toggleRecordingButton.classList.remove('recording');
+  toggleRecordingButton.textContent = 'Start Recording';
+  isRecording = false;
   downloadRecordingButton.disabled = false;
 }
 
@@ -998,10 +1015,10 @@ function downloadRecording() {
   URL.revokeObjectURL(url);
 }
 
-// Attach event listeners to the recording control buttons
-startRecordingButton.addEventListener('click', startRecording);
-stopRecordingButton.addEventListener('click', stopRecording);
+// Attach event listener to the toggle recording control button
+toggleRecordingButton.addEventListener('click', toggleRecording);
 downloadRecordingButton.addEventListener('click', downloadRecording);
+toggleRecordingButton.disabled = false; // Enable the button as it's now the only control for recording
 
 /******************************************************* ANIMATION *******************************************************/
 

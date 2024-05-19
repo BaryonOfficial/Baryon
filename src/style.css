@@ -92,3 +92,8 @@ html, body {
     border: 1px solid #ccc;
     border-radius: 4px;
 }
+
+.recording-controls button.recording {
+    background-color: red;
+    color: white;
+}
