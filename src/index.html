@@ -28,7 +28,14 @@
           <button id="stopButton">Stop</button>
         </div>
       </div>
+      <div class="recording-controls">
+        <button id="startRecording">Start Recording</button>
+        <button id="stopRecording" disabled>Stop Recording</button>
+        <button id="downloadRecording" disabled>Download Recording</button>
+      </div>
     </div>
+    <video id="recordedVideo" controls style="display: none"></video>
+
     <script>
       exports = {};
     </script>

@@ -397,6 +397,11 @@ function handlePageUnload(event) {
         console.error('Failed to close audio context:', error);
       });
   }
+
+  // Stop recording if in progress
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+  }
 }
 
 window.addEventListener('beforeunload', handlePageUnload);
@@ -935,7 +940,71 @@ aesthetics.close();
 //   }
 // }
 
+/******************************** WEBRTC *********************************/
+
+// Get references to the recording controls
+const startRecordingButton = document.getElementById('startRecording');
+const stopRecordingButton = document.getElementById('stopRecording');
+const downloadRecordingButton = document.getElementById('downloadRecording');
+const recordedVideo = document.getElementById('recordedVideo');
+
+let mediaRecorder;
+let recordedChunks = [];
+
+function startRecording() {
+  const canvasStream = canvas.captureStream(60); // Capture at 60 FPS
+  const audioStreamDestination = audioCtx.createMediaStreamDestination();
+  gain.connect(audioStreamDestination);
+  const audioStream = audioStreamDestination.stream;
+  // Connect the audio graph to the destination stream
+  const combinedStream = new MediaStream([...canvasStream.getTracks(), ...audioStream.getTracks()]);
+
+  recordedChunks = []; // Reset the recorded chunks array
+  mediaRecorder = new MediaRecorder(combinedStream, {
+    mimeType: 'video/webm; codecs=vp9',
+    videoBitsPerSecond: 50000000, // Increase bitrate for better quality
+  });
+  mediaRecorder.addEventListener('dataavailable', handleDataAvailable);
+  mediaRecorder.start();
+
+  startRecordingButton.disabled = true;
+  stopRecordingButton.disabled = false;
+  downloadRecordingButton.disabled = true;
+}
+
+function stopRecording() {
+  mediaRecorder.stop();
+  startRecordingButton.disabled = false;
+  stopRecordingButton.disabled = true;
+  downloadRecordingButton.disabled = false;
+}
+
+function handleDataAvailable(event) {
+  if (event.data.size > 0) {
+    recordedChunks.push(event.data);
+  }
+}
+
+function downloadRecording() {
+  const recordedBlob = new Blob(recordedChunks, { type: 'video/webm' });
+  const url = URL.createObjectURL(recordedBlob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'recording.webm';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Attach event listeners to the recording control buttons
+startRecordingButton.addEventListener('click', startRecording);
+stopRecordingButton.addEventListener('click', stopRecording);
+downloadRecordingButton.addEventListener('click', downloadRecording);
+
 /******************************************************* ANIMATION *******************************************************/
+
 const clock = new THREE.Clock();
 let frameCounter = 0;
 let previousTime = 0;
