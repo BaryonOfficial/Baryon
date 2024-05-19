@@ -6,6 +6,14 @@ import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer
 import GUI from 'lil-gui';
 // import ffmpeg from '@ffmpeg/ffmpeg';
 
+// Modularity
+import {
+  toggleRecording,
+  downloadRecording,
+  toggleRecordingButton,
+  downloadRecordingButton,
+} from './webRTC.js';
+
 // Passes
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -121,12 +129,6 @@ renderer.setClearColor(debugObject.backgroundColor);
 
 //****************************** AUDIO PROCESSING *********************************//
 
-let fftSize = 8192;
-let audioReader;
-let gain;
-let essentiaNode = null;
-let soundGainNode;
-
 // create an AudioListener and add it to the camera
 const listener = new THREE.AudioListener();
 camera.add(listener);
@@ -135,6 +137,12 @@ camera.add(listener);
 const sound = new THREE.Audio(listener);
 sound.started = false;
 console.log('Sound:', sound);
+
+let fftSize = 8192;
+let audioReader;
+let gain = sound.gain;
+let essentiaNode = null;
+let soundGainNode;
 
 // Get references to the audio controls
 const audioInput = document.getElementById('audioInput');
@@ -225,7 +233,6 @@ function setupAudioGraph() {
     return;
   }
 
-  gain = sound.gain;
   soundGainNode = sound.getOutput();
   soundGainNode.connect(essentiaNode);
   // essentiaNode.connect(gain);
@@ -943,81 +950,9 @@ aesthetics.close();
 
 /******************************** WEBRTC *********************************/
 
-// Get references to the recording controls
-const toggleRecordingButton = document.getElementById('toggleRecording');
-const downloadRecordingButton = document.getElementById('downloadRecording');
-const recordedVideo = document.getElementById('recordedVideo');
-
-let mediaRecorder;
-let recordedChunks = [];
-let isRecording = false; // State to track recording status
-
-function toggleRecording() {
-  if (!isRecording) {
-    startRecording();
-  } else {
-    stopRecording();
-  }
-}
-
-function startRecording() {
-  const canvasStream = canvas.captureStream(60); // Capture at 60 FPS
-  const audioStreamDestination = audioCtx.createMediaStreamDestination();
-  gain.connect(audioStreamDestination);
-  const audioStream = audioStreamDestination.stream;
-  const combinedStream = new MediaStream([...canvasStream.getTracks(), ...audioStream.getTracks()]);
-
-  recordedChunks = []; // Reset the recorded chunks array
-  if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
-    mediaRecorder = new MediaRecorder(combinedStream, {
-      mimeType: 'video/mp4; codecs="avc1.42E01E"',
-      videoBitsPerSecond: 50000000,
-    });
-  } else {
-    mediaRecorder = new MediaRecorder(combinedStream, {
-      mimeType: 'video/webm; codecs=vp9',
-      videoBitsPerSecond: 50000000,
-    });
-  }
-  mediaRecorder.addEventListener('dataavailable', handleDataAvailable);
-  mediaRecorder.start();
-
-  toggleRecordingButton.classList.add('recording');
-  toggleRecordingButton.textContent = 'Stop Recording';
-  isRecording = true;
-  downloadRecordingButton.disabled = true;
-}
-
-function stopRecording() {
-  mediaRecorder.stop();
-  toggleRecordingButton.classList.remove('recording');
-  toggleRecordingButton.textContent = 'Start Recording';
-  isRecording = false;
-  downloadRecordingButton.disabled = false;
-}
-
-function handleDataAvailable(event) {
-  if (event.data.size > 0) {
-    recordedChunks.push(event.data);
-  }
-}
-
-function downloadRecording() {
-  const recordedBlob = new Blob(recordedChunks, { type: 'video/webm' });
-  const url = URL.createObjectURL(recordedBlob);
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'recording.webm';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
 // Attach event listener to the toggle recording control button
-toggleRecordingButton.addEventListener('click', toggleRecording);
-downloadRecordingButton.addEventListener('click', downloadRecording);
+toggleRecordingButton.addEventListener('click', () => toggleRecording(canvas, audioCtx, gain));
+downloadRecordingButton.addEventListener('click', () => downloadRecording());
 toggleRecordingButton.disabled = false; // Enable the button as it's now the only control for recording
 
 /******************************************************* ANIMATION *******************************************************/
