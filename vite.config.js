@@ -1,7 +1,11 @@
+import { defineConfig } from 'vite';
 import glsl from 'vite-plugin-glsl';
 import topLevelAwait from 'vite-plugin-top-level-await';
 
-export default {
+export default defineConfig({
+  optimizeDeps: {
+    include: ['@ffmpeg/ffmpeg'],
+  },
   root: 'src/',
   publicDir: '../static/',
   base: './',
@@ -31,4 +35,4 @@ export default {
       promiseImportName: (i) => `__tla_${i}`,
     }),
   ],
-};
+});
