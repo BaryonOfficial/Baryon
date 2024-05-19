@@ -120,12 +120,6 @@ renderer.setClearColor(debugObject.backgroundColor);
 
 //****************************** AUDIO PROCESSING *********************************//
 
-let fftSize = 8192;
-let audioReader;
-let gain;
-let essentiaNode = null;
-let soundGainNode;
-
 // create an AudioListener and add it to the camera
 const listener = new THREE.AudioListener();
 camera.add(listener);
@@ -134,6 +128,12 @@ camera.add(listener);
 const sound = new THREE.Audio(listener);
 sound.started = false;
 console.log('Sound:', sound);
+
+let fftSize = 8192;
+let audioReader;
+let gain = sound.gain;
+let essentiaNode = null;
+let soundGainNode;
 
 // Get references to the audio controls
 const audioInput = document.getElementById('audioInput');
@@ -224,7 +224,6 @@ function setupAudioGraph() {
     return;
   }
 
-  gain = sound.gain;
   soundGainNode = sound.getOutput();
   soundGainNode.connect(essentiaNode);
   // essentiaNode.connect(gain);
