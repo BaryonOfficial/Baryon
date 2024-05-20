@@ -446,7 +446,7 @@ if (renderer.getPixelRatio() === 1 && !renderer.capabilities.isWebGL2) {
 
 // Parameters Object
 let parameters = {
-  count: 1500000,
+  count: 1000000,
   radius: 3.0, // Radius of the sphere
   threshold: 0.064,
   surfaceRatio: 0.33,
