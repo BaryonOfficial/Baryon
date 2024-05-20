@@ -25,8 +25,8 @@ async function startRecording(canvas, audioCtx, gain) {
 
   recorder = new RecordRTC(combinedStream, {
     type: 'video',
-    mimeType: 'video/webm;codecs=h264', // RecordRTC will handle codec compatibility
-    bitsPerSecond: 10000000,
+    mimeType: 'video/webm; codecs=vp9', // RecordRTC will handle codec compatibility
+    bitsPerSecond: 5100000,
     timeSlice: 1000,
   });
 
