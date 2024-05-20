@@ -16,7 +16,7 @@ export function toggleRecording(canvas, audioCtx, gain) {
   }
 }
 
-function startRecording(canvas, audioCtx, gain) {
+async function startRecording(canvas, audioCtx, gain) {
   const canvasStream = canvas.captureStream(60);
   const audioStreamDestination = audioCtx.createMediaStreamDestination();
   gain.connect(audioStreamDestination);
@@ -25,8 +25,8 @@ function startRecording(canvas, audioCtx, gain) {
 
   recorder = new RecordRTC(combinedStream, {
     type: 'video',
-    mimeType: 'video/webm', // RecordRTC will handle codec compatibility
-    bitsPerSecond: 5100000,
+    mimeType: 'video/webm;codecs=vp9', // RecordRTC will handle codec compatibility
+    bitsPerSecond: 10000000,
     timeSlice: 1000,
   });
 
@@ -37,7 +37,7 @@ function startRecording(canvas, audioCtx, gain) {
   isRecording = true;
 }
 
-function stopRecording() {
+async function stopRecording() {
   recorder.stopRecording(() => {
     const recordedBlob = recorder.getBlob();
     invokeSaveAsDialog(recordedBlob); // This function will handle the download prompt
