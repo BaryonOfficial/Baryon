@@ -7,12 +7,7 @@ import GUI from 'lil-gui';
 // import ffmpeg from '@ffmpeg/ffmpeg';
 
 // Modularity
-import {
-  toggleRecording,
-  downloadRecording,
-  toggleRecordingButton,
-  downloadRecordingButton,
-} from './webRTC.js';
+import { toggleRecording, toggleRecordingButton } from './recordRTC.js';
 
 // Passes
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -952,7 +947,6 @@ aesthetics.close();
 
 // Attach event listener to the toggle recording control button
 toggleRecordingButton.addEventListener('click', () => toggleRecording(canvas, audioCtx, gain));
-downloadRecordingButton.addEventListener('click', () => downloadRecording());
 toggleRecordingButton.disabled = false; // Enable the button as it's now the only control for recording
 
 /******************************************************* ANIMATION *******************************************************/
