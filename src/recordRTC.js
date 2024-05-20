@@ -30,6 +30,7 @@ async function startRecording(canvas, audioCtx, gain) {
     timeSlice: 1000,
   });
 
+  recorder.setRecordingDuration(30000).onRecordingStopped(stopRecording);
   recorder.startRecording();
 
   toggleRecordingButton.classList.add('recording');
