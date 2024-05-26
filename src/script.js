@@ -307,7 +307,7 @@ function startAudioProcessing() {
   const workletProcessorCode = [
     'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js',
     'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.umd.js',
-    'audio-data-processor.js',
+    './audio/audio-data-processor.js',
     'https://unpkg.com/ringbuf.js@0.1.0/dist/index.js',
   ];
 
