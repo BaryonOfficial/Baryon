@@ -17,7 +17,7 @@ export default defineConfig({
       // Pragma: 'no-cache',
       // Expires: '0',
     },
-    host: false, // Open to local network and display URL
+    host: true, // Open to local network and display URL
     open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env), // Open if it's not a CodeSandbox
   },
   build: {
