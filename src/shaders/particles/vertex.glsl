@@ -1,5 +1,5 @@
 #include ../includes/random2D.glsl
-precision highp float;
+precision mediump float;
 
 uniform vec2 uResolution;
 uniform float uSize;
