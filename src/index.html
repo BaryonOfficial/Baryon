@@ -1,39 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" /> -->
-    <title>Baryon - GPGPU</title>
-    <link rel="icon" type="image/png" href="static/baryon-logo.png" />
-    <link rel="stylesheet" href="./style.css" />
-  </head>
-  <body>
-    <div id="canvas-container">
-      <canvas class="webgl"></canvas>
-    </div>
-    <div id="controls-container">
-      <div class="audio-controls">
-        <div class="file-and-url">
-          <label class="file-input-label">
-            <span id="fileName">Choose File</span>
-            <input type="file" id="audioInput" accept="audio/*" />
-          </label>
-          <input type="text" id="audioUrl" placeholder="Enter song URL" />
-        </div>
-        <div class="playback-controls">
-          <button id="playButton">Play</button>
-          <button id="stopButton">Stop</button>
-        </div>
+  <title>Baryon - GPGPU</title>
+  <link rel="icon" type="image/png" href="static/baryon-logo.png" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body>
+  <div id="canvas-container">
+    <canvas class="webgl"></canvas>
+  </div>
+  <div id="controls-container">
+    <div class="audio-controls">
+      <div class="file-and-url">
+        <label class="file-input-label">
+          <span id="fileName">Choose File</span>
+          <input type="file" id="audioInput" accept="audio/*" />
+        </label>
+        <input type="text" id="audioUrl" placeholder="Enter song URL" />
+      </div>
+      <div class="playback-controls">
+        <button id="playButton">Play</button>
+        <button id="stopButton">Stop</button>
       </div>
     </div>
-    <script>
-      exports = {};
-    </script>
-    <script src="https://unpkg.com/ringbuf.js@0.1.0/dist/index.js" crossorigin="anonymous"></script>
-    <!-- by Paul Adenot, repo: https://github.com/padenot/ringbuf.js -->
-    <script type="module" src="./script.js"></script>
-  </body>
+  </div>
+  <script>
+    exports = {};
+  </script>
+  <script src="https://unpkg.com/ringbuf.js@0.1.0/dist/index.js" crossorigin="anonymous"></script>
+  <!-- by Paul Adenot, repo: https://github.com/padenot/ringbuf.js -->
+
+  <script type="module" src="./script.js"></script>
+
+</body>
+
 </html>
