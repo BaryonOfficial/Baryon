@@ -78,10 +78,9 @@ renderer.xr.enabled = true;
 debugObject.backgroundColor = '#000000';
 renderer.setClearColor(debugObject.backgroundColor);
 
-const res = postProcessingSetup(renderer, scene, camera, sizes)
+const res = postProcessingSetup(renderer, scene, camera, sizes);
 const effectComposer = res.effectComposer;
 const unrealBloomPass = res.unrealBloomPass;
-
 
 // Load the texture
 const textureLoader = new THREE.TextureLoader();
@@ -98,18 +97,18 @@ const geometry = new THREE.PlaneGeometry(2, 2); // Width and height of the plane
 
 // Create a mesh with the geometry and material
 const plane = new THREE.Mesh(geometry, material);
-plane.position.set(-4, 1.5, -6)
+plane.position.set(-4, 1.5, -6);
 plane.scale.multiplyScalar(6);
 plane.lookAt(camera.position);
 
 // Add the mesh to the scene
 scene.add(plane);
 
-// Object 
+// Object
 
 // Parameters Object
 let parameters = {
-  count: 10000,
+  count: 1000000,
   radius: 3.0, // Radius of the sphere
   threshold: 0.064,
   surfaceRatio: 0.33,
@@ -127,7 +126,7 @@ const colors = new Float32Array(baseGeometry.count * 3); // r, g, b for each par
 /**
  * Load model
  */
-const gltf = await gltfLoader.loadAsync('./Baryon.glb');
+const gltf = await gltfLoader.loadAsync('./Baryon_v2.glb');
 const baseGeometry2 = {};
 baseGeometry2.instance = gltf.scene.children[0];
 
@@ -150,30 +149,39 @@ baseGeometry2.instance.matrix.decompose(
 baseGeometry2.geometry = baseGeometry2.instance.geometry;
 baseGeometry2.count = baseGeometry2.geometry.attributes.position.count;
 
-/* 
-* Audio Processing; 
-*/
+/*
+ * Audio Processing;
+ */
 audioSetup(camera);
 
-/* 
-* GPGPU 
-*/
+/*
+ * GPGPU
+ */
 const resA = gpgpuSetup(baseGeometry, renderer, parameters, baseGeometry2);
 const gpgpu = resA.gpgpu;
 const essentiaData = resA.essentiaData;
 
-/* 
-* Particles 
-*/
+/*
+ * Particles
+ */
 const resB = particlesSetup(parameters, sizes, gpgpu, baseGeometry, colors, scene);
 const particles = resB.particles;
 const materialParameters = resB.materialParameters;
 
-/* 
-* GUI Setup 
-*/
+/*
+ * GUI Setup
+ */
 
-guiSetup(gui, unrealBloomPass, renderer, particles, gpgpu, debugObject, materialParameters, parameters);
+guiSetup(
+  gui,
+  unrealBloomPass,
+  renderer,
+  particles,
+  gpgpu,
+  debugObject,
+  materialParameters,
+  parameters
+);
 
 /******************************************************* ANIMATION *******************************************************/
 const clock = new THREE.Clock();
