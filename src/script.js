@@ -132,7 +132,7 @@ const baseGeometry2 = {};
 baseGeometry2.instance = gltf.scene.children[0];
 
 // Apply scaling to the object
-baseGeometry2.instance.scale.set(0.5, 0.5, 0.5); // Adjust scale factors as needed
+baseGeometry2.instance.scale.set(0.2, 0.2, 0.2); // Adjust scale factors as needed
 
 // Update the geometry to apply the transformation
 baseGeometry2.instance.updateMatrix();
@@ -288,7 +288,7 @@ const tick = () => {
   gpgpu.computation.compute();
   updateGPGPUTextures();
 
-  const angle = time * 0.2 * particles.material.uniforms.uRotation.value;
+  const angle = time * 0.5 * particles.material.uniforms.uRotation.value;
   rotationMatrix.makeRotationY(-angle);
   particles.points.matrix.copy(rotationMatrix);
   particles.points.matrixAutoUpdate = false;
