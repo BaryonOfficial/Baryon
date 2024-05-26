@@ -248,8 +248,6 @@ function audioAnalysis() {
     return { avgAmplitude, freqData };
 }
 
-
-
 export function processAudioData(gpgpu, particles, essentiaData) {
     if (audioObject.audioReader.available_read() >= 1) {
         let read = audioObject.audioReader.dequeue(essentiaData);

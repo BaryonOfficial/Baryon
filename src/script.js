@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import GUI from 'lil-gui';
 
-import { postProcessingSetup } from './postPorcessing/postProcessingSetup.js';
+import { postProcessingSetup } from './postProcessing/postProcessingSetup.js';
 import { guiSetup } from './utils/guiSetup.js';
 import { particlesSetup } from './baryon/particlesSetup.js';
 import { gpgpuSetup } from './baryon/gpgpuSetup.js';
@@ -74,7 +74,7 @@ export const renderer = new THREE.WebGLRenderer({
 });
 renderer.setSize(sizes.width, sizes.height);
 renderer.setPixelRatio(sizes.pixelRatio);
-
+renderer.xr.enabled = true;
 debugObject.backgroundColor = '#000000';
 renderer.setClearColor(debugObject.backgroundColor);
 
@@ -109,7 +109,7 @@ scene.add(plane);
 
 // Parameters Object
 let parameters = {
-  count: 1500000,
+  count: 10000,
   radius: 3.0, // Radius of the sphere
   threshold: 0.064,
   surfaceRatio: 0.33,
@@ -172,6 +172,7 @@ const materialParameters = resB.materialParameters;
 /* 
 * GUI Setup 
 */
+
 guiSetup(gui, unrealBloomPass, renderer, particles, gpgpu, debugObject, materialParameters, parameters);
 
 /******************************************************* ANIMATION *******************************************************/
