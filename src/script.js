@@ -102,7 +102,7 @@ plane.scale.multiplyScalar(6);
 plane.lookAt(camera.position);
 
 // Add the mesh to the scene
-plane.visible = false;
+plane.visible = true;
 scene.add(plane);
 
 // Object
