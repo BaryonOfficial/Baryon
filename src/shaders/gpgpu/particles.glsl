@@ -13,6 +13,7 @@ uniform float vGroup;
 uniform bool uStarted;
 uniform int uParticleMovementType;
 uniform float uRadius;
+uniform float uDistanceThreshold;
 
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -48,7 +49,7 @@ void main() {
     vec3 movement = adjustedDirection * uDeltaTime * uFlowFieldStrength;
 
     vec3 lerpMovement = vec3(0.0);
-    if(distance > 1.0) {
+    if(distance > uDistanceThreshold) {
         float timeFactor = clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0);
         float alpha = timeFactor;
 
@@ -56,6 +57,10 @@ void main() {
             float distanceFactor = smoothstep(0.0, 1.0, 1.0 - distance / (distance + 1.0));
             alpha = mix(distanceFactor, 1.0, timeFactor);
         }
+
+        // Introduce damping factor based on distance
+        float dampingFactor = 1.0 - exp(-distance * 5.0);  // Exponential decay based on distance
+        alpha *= dampingFactor;
 
         vec3 interpolatedPosition = mix(particle.xyz, target, alpha);
         lerpMovement = interpolatedPosition - particle.xyz;
