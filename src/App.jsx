@@ -51,8 +51,7 @@ const Raymarching = () => {
     uTime: new THREE.Uniform(0.0),
     uResolution: new THREE.Uniform(new THREE.Vector2()),
     uRadius: { value: parameters.radius },
-    uCameraPos: { value: new THREE.Vector3() }, // Add camera position uniform
-    uThreshold: { value: 0.0 },
+    uThreshold: { value: 0 },
   };
 
   useFrame((state) => {
@@ -62,7 +61,6 @@ const Raymarching = () => {
       window.innerWidth * DPR,
       window.innerHeight * DPR
     );
-    mesh.current.material.uniforms.uCameraPos.value.copy(camera.position); // Update camera position each frame
   });
 
   return (

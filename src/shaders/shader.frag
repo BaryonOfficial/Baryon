@@ -1,30 +1,31 @@
 #define MAX_STEPS 100
 #define MAX_DIST 100.0
-#define SURFACE_DIST 0.001
+#define SURFACE_DIST 0.0001
 #define MAX_N 100
 #define PI 3.14159265359
 precision highp float;
 
 uniform float uTime;
 uniform vec2 uResolution;
-uniform vec3 uCameraPos;
 uniform float uThreshold;
-
+uniform float uRadius;
 uniform float waveComponents[4 * MAX_N];
 uniform int N;
 
 out vec4 finalColor; // Define an output variable for the fragment shader
 
 // Function to calculate the Chladni pattern displacement
-float chladni(vec3 position) {
+float chladni(vec3 position, float radius) {
     float sum = 0.0;
+    float scaleFactor = 1.0 / radius;
+
     for(int i = 0; i < N; ++i) {
         int index = 4 * i;
         float Ai = waveComponents[index];
         float ui = waveComponents[index + 1];
         float vi = waveComponents[index + 2];
         float wi = waveComponents[index + 3];
-        sum += Ai * sin(ui * PI * position.x) * sin(vi * PI * position.y) * sin(wi * PI * position.z);
+        sum += Ai * sin(ui * PI * position.x * scaleFactor) * sin(vi * PI * position.y * scaleFactor) * sin(wi * PI * position.z * scaleFactor);
     }
     return sum;
 }
@@ -36,7 +37,7 @@ float sdSphere(vec3 p, float radius) {
 float scene(vec3 p) {
     float distance = sdSphere(p, 2.0);
 
-    float chladniValue = chladni(p);
+    float chladniValue = chladni(p, uRadius);
 
     // Volumetric w/ threshold
     float volumeFactor = smoothstep(-uThreshold, uThreshold, chladniValue);
@@ -52,16 +53,12 @@ float scene(vec3 p) {
     // return combinedDist;
 }
 
-float raymarch(vec3 ro, vec3 rd) {
+float raymarch(vec3 ro, vec3 rd, out vec3 p) {
     float dO = 0.0;
-    vec3 color = vec3(0.0);
-
     for(int i = 0; i < MAX_STEPS; i++) {
-        vec3 p = ro + rd * dO;
+        p = ro + rd * dO;
         float dS = scene(p);
-
         dO += dS;
-
         if(dO > MAX_DIST || dS < SURFACE_DIST) {
             break;
         }
@@ -83,19 +80,19 @@ void main() {
     uv.x *= uResolution.x / uResolution.y;
 
     // Ray Origin - camera
-    vec3 ro = uCameraPos;
+    vec3 ro = cameraPosition; 
 
     // Ray Direction
     vec3 rd = normalize(vec3(uv, -1.0));
 
     // Raymarching
-    float d = raymarch(ro, rd);
-
-    //vec3 p = ro + rd * d;
+    vec3 p;
+    float d = raymarch(ro, rd, p);
 
     vec3 color = vec3(0.0);
 
     if(d < MAX_DIST) {
+        // Use the position p to determine the color
         color = vec3(0.99, 0.94, 0.89);
     }
 
