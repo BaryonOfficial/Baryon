@@ -94,7 +94,7 @@ plane.scale.multiplyScalar(6);
 plane.lookAt(camera.position);
 
 // Add the mesh to the scene
-plane.visible = true;
+plane.visible = false;
 scene.add(plane);
 
 // Object
@@ -103,7 +103,7 @@ scene.add(plane);
 let parameters = {
   count: 1500000,
   radius: 3.0, // Radius of the sphere
-  threshold: 0.064,
+  threshold: 0.08,
   surfaceRatio: 0.33,
   surfaceThreshold: 0.01,
 };
