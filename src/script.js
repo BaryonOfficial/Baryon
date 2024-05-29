@@ -8,27 +8,18 @@ import { postProcessingSetup } from './postProcessing/postProcessingSetup.js';
 import { guiSetup } from './utils/guiSetup.js';
 import { particlesSetup } from './baryon/particlesSetup.js';
 import { gpgpuSetup } from './baryon/gpgpuSetup.js';
-import { audioObject, audioSetup, setupAudioGraph, processAudioData } from './audio/audioSetup.js';
+import {
+  audioObject,
+  audioSetup,
+  processAudioData,
+  startAudioProcessing,
+} from './audio/audioSetup.js';
 import { toggleRecording, toggleRecordingButton } from './recordRTC.js';
 
 //******************************************************* GENERAL INITIALIZATION *******************************************************//
 
 const gui = new GUI({ width: 340 });
 const debugObject = {};
-
-async function URLFromFiles(files) {
-  const promises = files.map(async (file) => {
-    const response = await fetch(file);
-    return response.text();
-  });
-
-  const texts = await Promise.all(promises);
-  texts.unshift('var exports = {};'); // hack to make injected umd modules work
-  const text = texts.join('');
-  const blob = new Blob([text], { type: 'application/javascript' });
-
-  return URL.createObjectURL(blob);
-}
 
 // Canvas
 const canvas = document.querySelector('canvas.webgl');
@@ -313,30 +304,4 @@ const tick = () => {
   window.requestAnimationFrame(tick);
 };
 
-function startAudioProcessing() {
-  const workletProcessorCode = [
-    'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js',
-    'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.umd.js',
-    './audio/audio-data-processor.js',
-    'https://unpkg.com/ringbuf.js@0.1.0/dist/index.js',
-  ];
-
-  // inject Essentia.js code into AudioWorkletGlobalScope context, then setup audio graph and start animation
-  URLFromFiles(workletProcessorCode)
-    .then((concatenatedCode) => {
-      audioObject.audioCtx.audioWorklet
-        .addModule(concatenatedCode)
-        .then(() => {
-          setupAudioGraph();
-          tick();
-        })
-        .catch(function moduleLoadRejected(msg) {
-          console.log(`There was a problem loading the AudioWorklet module code: \n ${msg}`);
-        });
-    })
-    .catch((msg) => {
-      console.log(`There was a problem retrieving the AudioWorklet module code: \n ${msg}`);
-    });
-}
-
-startAudioProcessing();
+startAudioProcessing(tick);
