@@ -15,21 +15,31 @@
       <canvas class="webgl"></canvas>
     </div>
     <div id="controls-container">
-      <div class="audio-controls">
+      <!-- Playback Controls -->
+      <div class="playback-controls">
         <div class="file-and-url">
           <label class="file-input-label">
             <span id="fileName">Choose File</span>
             <input type="file" id="audioInput" accept="audio/*" />
           </label>
-          <input type="text" id="audioUrl" placeholder="Enter song URL" />
         </div>
-        <div class="playback-controls">
-          <button id="playButton">Play</button>
+        <div class="buttons">
+          <button id="playPauseButton">Play</button>
           <button id="stopButton">Stop</button>
+          <button id="skipForwardButton">Skip Forward</button>
+          <button id="skipBackwardButton">Skip Backward</button>
         </div>
       </div>
+      <!-- Recording Controls -->
       <div class="recording-controls">
-        <button id="toggleRecording" disabled>Start Recording</button>
+        <button id="toggleRecording">Start Recording</button>
+        <button id="downloadRecording" disabled>Download Recording</button>
+      </div>
+      <!-- Modes -->
+      <div class="modes">
+        <button id="fileMode">Files</button>
+        <button id="streamMode">Stream</button>
+        <button id="micMode">Mic</button>
       </div>
     </div>
     <video id="recordedVideo" controls style="display: none"></video>

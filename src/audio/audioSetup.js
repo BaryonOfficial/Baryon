@@ -18,17 +18,17 @@ export const audioObject = {
 
 let isAudioLoaded = false;
 
-function loadAudio(url, audioLoader, playButton) {
+function loadAudio(url, audioLoader, playPauseButton) {
   // Stop the current audio if it is playing and reset its buffer
   if (audioObject.sound.started === true) {
     audioObject.sound.stop();
     audioObject.sound.setBuffer(null);
-    playButton.textContent = 'Play';
+    playPauseButton.textContent = 'Play';
     audioObject.sound.started = false;
     console.log('Audio stopped on change');
-  } else if (!audioObject.sound.started && playButton.textContent !== 'Play') {
+  } else if (!audioObject.sound.started && playPauseButton.textContent !== 'Play') {
     audioObject.sound.setBuffer(null);
-    playButton.textContent = 'Play';
+    playPauseButton.textContent = 'Play';
     console.log('Audio ended & reset w/ new file or URL');
   }
 
@@ -44,8 +44,7 @@ function loadAudio(url, audioLoader, playButton) {
 function setupUIInteractions(audioLoader) {
   const audioInput = document.getElementById('audioInput');
   const fileName = document.getElementById('fileName');
-  const audioUrl = document.getElementById('audioUrl');
-  const playButton = document.getElementById('playButton');
+  const playPauseButton = document.getElementById('playPauseButton');
   const stopButton = document.getElementById('stopButton');
 
   audioInput.addEventListener('change', (event) => {
@@ -53,23 +52,17 @@ function setupUIInteractions(audioLoader) {
       const file = event.target.files[0];
       fileName.textContent = file.name;
       const fileURL = URL.createObjectURL(file);
-      loadAudio(fileURL, audioLoader, playButton);
+      loadAudio(fileURL, audioLoader, playPauseButton);
     } else {
       fileName.textContent = 'Choose File';
     }
     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
   });
 
-  audioUrl.addEventListener('change', (event) => {
-    const url = event.target.value;
-    loadAudio(url, audioLoader, playButton);
-    audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
-  });
-
-  playButton.addEventListener('click', () => {
+  playPauseButton.addEventListener('click', () => {
     if (audioObject.sound.isPlaying) {
       audioObject.sound.pause();
-      playButton.textContent = 'Play';
+      playPauseButton.textContent = 'Play';
     } else if (!audioObject.sound.isPlaying && isAudioLoaded) {
       if (audioObject.audioCtx.state === 'suspended') {
         audioObject.audioCtx
@@ -77,7 +70,7 @@ function setupUIInteractions(audioLoader) {
           .then(() => {
             audioObject.sound.play();
             audioObject.sound.started = true;
-            playButton.textContent = 'Pause';
+            playPauseButton.textContent = 'Pause';
           })
           .catch((error) => {
             console.error('Failed to resume audio context:', error);
@@ -85,7 +78,7 @@ function setupUIInteractions(audioLoader) {
       } else {
         audioObject.sound.play();
         audioObject.sound.started = true;
-        playButton.textContent = 'Pause';
+        playPauseButton.textContent = 'Pause';
       }
     }
     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
@@ -94,7 +87,7 @@ function setupUIInteractions(audioLoader) {
   stopButton.addEventListener('click', () => {
     audioObject.sound.stop();
     audioObject.sound.started = false;
-    playButton.textContent = 'Play';
+    playPauseButton.textContent = 'Play';
     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
   });
 
@@ -102,7 +95,7 @@ function setupUIInteractions(audioLoader) {
     audioObject.sound.stop();
     console.log('Audio ended');
     audioObject.sound.started = false;
-    playButton.textContent = 'Replay';
+    playPauseButton.textContent = 'Replay';
     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
   };
 }
@@ -140,51 +133,6 @@ function logNodeConnections() {
     'Gain Node -> Destination:',
     audioObject.gain.connect(audioObject.audioCtx.destination)
   );
-}
-
-export function setupAudioGraph() {
-  console.log('1');
-  if (!window.SharedArrayBuffer) {
-    console.error('SharedArrayBuffer is not supported in this browser.');
-    alert('SharedArrayBuffer is not supported in this browser. Please use a compatible browser.');
-    return;
-  }
-  console.log('2');
-  let sab = exports.RingBuffer.getStorageForCapacity(audioObject.capacity, Float32Array); // capacity: three float32 values [pitch, confidence, rms]
-  let rb = new exports.RingBuffer(sab, Float32Array);
-  audioObject.audioReader = new exports.AudioReader(rb);
-
-  audioObject.essentiaNode = new AudioWorkletNode(audioObject.audioCtx, 'audio-data-processor', {
-    processorOptions: {
-      bufferSize: audioObject.fftSize,
-      sampleRate: audioObject.audioCtx.sampleRate,
-      capacity: audioObject.capacity,
-    },
-  });
-  console.log('3');
-  // Add the onmessageerror event listener
-  audioObject.essentiaNode.port.onmessageerror = (event) => {
-    console.error('AudioWorkletNode message error:', event);
-  };
-
-  try {
-    audioObject.essentiaNode.port.postMessage({
-      sab: sab,
-      isPlaying: audioObject.sound.isPlaying,
-    });
-  } catch (_) {
-    alert('No SharedArrayBuffer tranfer support, try another browser.');
-    // $("#recordButton").off('click', onRecordClickHandler);
-    // $("#recordButton").prop("disabled", true);
-    return;
-  }
-
-  audioObject.soundGainNode = audioObject.sound.getOutput();
-  audioObject.soundGainNode.connect(audioObject.essentiaNode);
-  audioObject.essentiaNode.connect(audioObject.gain);
-  audioObject.gain.connect(audioObject.audioCtx.destination);
-
-  logNodeConnections();
 }
 
 function audioAnalysis() {
@@ -258,6 +206,51 @@ async function loadAudioWorklet() {
       console.log(`There was a problem retrieving the AudioWorklet module code: \n ${msg}`);
       throw new Error(msg);
     });
+}
+
+export function setupAudioGraph() {
+  console.log('1');
+  if (!window.SharedArrayBuffer) {
+    console.error('SharedArrayBuffer is not supported in this browser.');
+    alert('SharedArrayBuffer is not supported in this browser. Please use a compatible browser.');
+    return;
+  }
+  console.log('2');
+  let sab = exports.RingBuffer.getStorageForCapacity(audioObject.capacity, Float32Array); // capacity: three float32 values [pitch, confidence, rms]
+  let rb = new exports.RingBuffer(sab, Float32Array);
+  audioObject.audioReader = new exports.AudioReader(rb);
+
+  audioObject.essentiaNode = new AudioWorkletNode(audioObject.audioCtx, 'audio-data-processor', {
+    processorOptions: {
+      bufferSize: audioObject.fftSize,
+      sampleRate: audioObject.audioCtx.sampleRate,
+      capacity: audioObject.capacity,
+    },
+  });
+  console.log('3');
+  // Add the onmessageerror event listener
+  audioObject.essentiaNode.port.onmessageerror = (event) => {
+    console.error('AudioWorkletNode message error:', event);
+  };
+
+  try {
+    audioObject.essentiaNode.port.postMessage({
+      sab: sab,
+      isPlaying: audioObject.sound.isPlaying,
+    });
+  } catch (_) {
+    alert('No SharedArrayBuffer tranfer support, try another browser.');
+    // $("#recordButton").off('click', onRecordClickHandler);
+    // $("#recordButton").prop("disabled", true);
+    return;
+  }
+
+  audioObject.soundGainNode = audioObject.sound.getOutput();
+  audioObject.soundGainNode.connect(audioObject.essentiaNode);
+  audioObject.essentiaNode.connect(audioObject.gain);
+  audioObject.gain.connect(audioObject.audioCtx.destination);
+
+  logNodeConnections();
 }
 
 export function startAudioProcessing(callback) {
