@@ -157,12 +157,6 @@ export function audioSetup(camera) {
       audioObject.gain.disconnect();
     }
 
-    // Dispose of the AudioReader and RingBuffer instances
-    if (audioObject.audioReader) {
-      audioObject.audioReader.dispose();
-      audioObject.audioReader = null;
-    }
-
     // Close the audio context if it's not already closed
     if (audioObject.audioCtx?.state !== 'closed') {
       audioObject.audioCtx
