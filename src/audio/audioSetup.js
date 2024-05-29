@@ -16,58 +16,44 @@ export const audioObject = {
   analyser: null,
 };
 
-export function audioSetup(camera) {
-  // create an AudioListener and add it to the camera
-  const listener = new THREE.AudioListener();
-  camera.add(listener);
+let isAudioLoaded = false;
 
-  // create an Audio source
-  audioObject.sound = new THREE.Audio(listener);
-  audioObject.sound.started = false;
-  console.log('Sound:', audioObject.sound);
+function loadAudio(url, audioLoader, playButton) {
+  // Stop the current audio if it is playing and reset its buffer
+  if (audioObject.sound.started === true) {
+    audioObject.sound.stop();
+    audioObject.sound.setBuffer(null);
+    playButton.textContent = 'Play';
+    audioObject.sound.started = false;
+    console.log('Audio stopped on change');
+  } else if (!audioObject.sound.started && playButton.textContent !== 'Play') {
+    audioObject.sound.setBuffer(null);
+    playButton.textContent = 'Play';
+    console.log('Audio ended & reset w/ new file or URL');
+  }
 
-  audioObject.gain = audioObject.sound.gain;
+  isAudioLoaded = false;
+  audioLoader.load(url, function (buffer) {
+    audioObject.sound.setBuffer(buffer);
+    audioObject.sound.setLoop(false);
+    audioObject.sound.setVolume(0.5);
+    isAudioLoaded = true;
+  });
+}
 
-  // Get references to the audio controls
+function setupUIInteractions(audioLoader) {
   const audioInput = document.getElementById('audioInput');
   const fileName = document.getElementById('fileName');
   const audioUrl = document.getElementById('audioUrl');
   const playButton = document.getElementById('playButton');
   const stopButton = document.getElementById('stopButton');
-  let isAudioLoaded = false;
-  const audioLoader = new THREE.AudioLoader();
-  audioObject.audioCtx = audioObject.sound.context;
-  console.log('audioCtx', audioObject.audioCtx);
-
-  function loadAudio(url) {
-    // Stop the current audio if it is playing and reset its buffer
-    if (audioObject.sound.started === true) {
-      audioObject.sound.stop();
-      audioObject.sound.setBuffer(null);
-      playButton.textContent = 'Play';
-      audioObject.sound.started = false;
-      console.log('Audio stopped on change');
-    } else if (!audioObject.sound.started && playButton.textContent !== 'Play') {
-      audioObject.sound.setBuffer(null);
-      playButton.textContent = 'Play';
-      console.log('Audio ended & reset w/ new file or URL');
-    }
-
-    isAudioLoaded = false;
-    audioLoader.load(url, function (buffer) {
-      audioObject.sound.setBuffer(buffer);
-      audioObject.sound.setLoop(false);
-      audioObject.sound.setVolume(0.5);
-      isAudioLoaded = true;
-    });
-  }
 
   audioInput.addEventListener('change', (event) => {
     if (event.target.files.length > 0) {
       const file = event.target.files[0];
       fileName.textContent = file.name;
       const fileURL = URL.createObjectURL(file);
-      loadAudio(fileURL);
+      loadAudio(fileURL, audioLoader, playButton);
     } else {
       fileName.textContent = 'Choose File';
     }
@@ -76,23 +62,14 @@ export function audioSetup(camera) {
 
   audioUrl.addEventListener('change', (event) => {
     const url = event.target.value;
-    loadAudio(url);
+    loadAudio(url, audioLoader, playButton);
     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
   });
 
-  // ***** Analysis ***** //
-
-  // create an AudioAnalyser, passing in the sound and desired fftSize
-  audioObject.analyser = new THREE.AudioAnalyser(audioObject.sound, audioObject.fftSize);
-
-  //***** Audio Playback *****//
-
-  // Play audio when play button is clicked
   playButton.addEventListener('click', () => {
     if (audioObject.sound.isPlaying) {
       audioObject.sound.pause();
       playButton.textContent = 'Play';
-      audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
     } else if (!audioObject.sound.isPlaying && isAudioLoaded) {
       if (audioObject.audioCtx.state === 'suspended') {
         audioObject.audioCtx
@@ -101,7 +78,6 @@ export function audioSetup(camera) {
             audioObject.sound.play();
             audioObject.sound.started = true;
             playButton.textContent = 'Pause';
-            audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
           })
           .catch((error) => {
             console.error('Failed to resume audio context:', error);
@@ -110,12 +86,11 @@ export function audioSetup(camera) {
         audioObject.sound.play();
         audioObject.sound.started = true;
         playButton.textContent = 'Pause';
-        audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
       }
     }
+    audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
   });
 
-  // Stop audio when stop button is clicked
   stopButton.addEventListener('click', () => {
     audioObject.sound.stop();
     audioObject.sound.started = false;
@@ -127,9 +102,32 @@ export function audioSetup(camera) {
     audioObject.sound.stop();
     console.log('Audio ended');
     audioObject.sound.started = false;
-    playButton.textContent = 'Replay'; // Update the play button text
+    playButton.textContent = 'Replay';
     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
   };
+}
+
+export function audioSetup(camera) {
+  // create an AudioListener and add it to the camera
+  const listener = new THREE.AudioListener();
+  camera.add(listener);
+
+  // create an Audio source
+  audioObject.sound = new THREE.Audio(listener);
+  audioObject.sound.started = false;
+  console.log('Sound:', audioObject.sound);
+
+  audioObject.gain = audioObject.sound.gain;
+  audioObject.audioCtx = audioObject.sound.context;
+  console.log('audioCtx', audioObject.audioCtx);
+
+  const audioLoader = new THREE.AudioLoader();
+
+  // Setup UI interactions
+  setupUIInteractions(audioLoader);
+
+  // create an AudioAnalyser, passing in the sound and desired fftSize
+  audioObject.analyser = new THREE.AudioAnalyser(audioObject.sound, audioObject.fftSize);
 }
 
 function logNodeConnections() {
@@ -228,4 +226,47 @@ export function processAudioData(gpgpu, particles, essentiaData) {
     gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(0);
     gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true;
   }
+}
+
+async function URLFromFiles(files) {
+  const promises = files.map(async (file) => {
+    const response = await fetch(file);
+    return response.text();
+  });
+
+  const texts = await Promise.all(promises);
+  texts.unshift('var exports = {};'); // hack to make injected umd modules work
+  const text = texts.join('');
+  const blob = new Blob([text], { type: 'application/javascript' });
+
+  return URL.createObjectURL(blob);
+}
+
+async function loadAudioWorklet() {
+  const workletProcessorCode = [
+    'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js',
+    'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.umd.js',
+    './audio/audio-data-processor.js',
+    'https://unpkg.com/ringbuf.js@0.1.0/dist/index.js',
+  ];
+
+  return URLFromFiles(workletProcessorCode)
+    .then((concatenatedCode) => {
+      return audioObject.audioCtx.audioWorklet.addModule(concatenatedCode);
+    })
+    .catch((msg) => {
+      console.log(`There was a problem retrieving the AudioWorklet module code: \n ${msg}`);
+      throw new Error(msg);
+    });
+}
+
+export function startAudioProcessing(callback) {
+  loadAudioWorklet()
+    .then(() => {
+      setupAudioGraph();
+      if (callback) callback();
+    })
+    .catch((msg) => {
+      console.log(`There was a problem loading the AudioWorklet module code: \n ${msg}`);
+    });
 }
