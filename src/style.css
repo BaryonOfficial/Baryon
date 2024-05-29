@@ -24,7 +24,7 @@ html, body {
     align-items: flex-start;
 }
 
-.audio-controls, .recording-controls {
+.playback-controls, .recording-controls, .modes {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -54,7 +54,7 @@ html, body {
     pointer-events: none;
 }
 
-.audio-controls input[type="text"] {
+.playback-controls input[type="text"] {
     flex-grow: 1;
     padding: 5px;
     font-size: 14px;
@@ -62,7 +62,7 @@ html, body {
     border-radius: 4px;
 }
 
-.audio-controls button, .recording-controls button {
+.playback-controls button, .recording-controls button, .modes button {
     margin-right: 10px;
     padding: 5px 10px;
     font-size: 14px;
@@ -72,13 +72,13 @@ html, body {
     cursor: pointer;
 }
 
-.file-and-url, .playback-controls {
+.file-and-url, .buttons {
     display: flex;
     align-items: center;
     width: 100%;
 }
 
-.playback-controls {
+.buttons {
     margin-top: 10px;
 }
 
