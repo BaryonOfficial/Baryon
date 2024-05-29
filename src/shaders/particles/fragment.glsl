@@ -1,4 +1,5 @@
 #include ../includes/random2D.glsl
+precision mediump float;
 
 varying vec3 vColor;
 varying float vGroup;
