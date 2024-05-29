@@ -130,47 +130,6 @@ export function audioSetup(camera) {
     playButton.textContent = 'Replay'; // Update the play button text
     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
   };
-
-  function handlePageUnload(event) {
-    console.log('Handling page unload');
-
-    // Stop the audio, disconnect, and reset
-    if (audioObject.sound.isPlaying) {
-      audioObject.sound.stop();
-    }
-    audioObject.sound.disconnect();
-    audioObject.sound.setBuffer(null);
-    audioObject.sound.started = false;
-    playButton.textContent = 'Play';
-
-    // Send a message to the AudioWorkletProcessor to stop processing
-    audioObject.essentiaNode?.port.postMessage({ isPlaying: false });
-
-    // Disconnect the audio graph nodes
-    if (audioObject.essentiaNode) {
-      audioObject.essentiaNode.disconnect();
-    }
-    if (audioObject.soundGainNode && audioObject.essentiaNode) {
-      audioObject.soundGainNode.disconnect(audioObject.essentiaNode);
-    }
-    if (audioObject.gain) {
-      audioObject.gain.disconnect();
-    }
-
-    // Close the audio context if it's not already closed
-    if (audioObject.audioCtx?.state !== 'closed') {
-      audioObject.audioCtx
-        .close()
-        .then(() => {
-          console.log('Audio context closed');
-        })
-        .catch((error) => {
-          console.error('Failed to close audio context:', error);
-        });
-    }
-  }
-
-  window.addEventListener('beforeunload', handlePageUnload);
 }
 
 function logNodeConnections() {
