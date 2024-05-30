@@ -27,7 +27,6 @@ function startMicRecordStream() {
       .getUserMedia({ audio: true })
       .then((stream) => {
         audioObject.gumStream = stream;
-        console.log('gumStream initialized:', audioObject.gumStream);
         audioObject.mic = audioObject.audioCtx.createMediaStreamSource(audioObject.gumStream);
 
         // Create a THREE.Audio object for the microphone
@@ -39,14 +38,15 @@ function startMicRecordStream() {
           audioObject.micSound,
           audioObject.fftSize
         );
-        audioObject.mic.connect(audioObject.essentiaNode);
-        console.log('Microphone connected');
 
         // Create a gain node with zero gain to prevent audio output
-        const zeroGain = listener.context.createGain();
-        zeroGain.gain.setValueAtTime(0, listener.context.currentTime);
-        audioObject.mic.connect(zeroGain);
-        zeroGain.connect(listener.context.destination);
+        const zeroGain = audioObject.audioCtx.createGain();
+        zeroGain.gain.setValueAtTime(0, audioObject.audioCtx.currentTime);
+        audioObject.mic.connect(audioObject.essentiaNode);
+        audioObject.essentiaNode.connect(zeroGain);
+        zeroGain.connect(audioObject.audioCtx.destination);
+
+        console.log('Microphone connected');
 
         // Post message after mic is initialized
         audioObject.essentiaNode.port.postMessage({
@@ -264,6 +264,9 @@ function audioAnalysis() {
     }
   }
 
+  // console.log('Avg Amplitude:', avgAmplitude);
+  // console.log('Frequency Data:', freqData);
+
   return { avgAmplitude, freqData };
 }
 
@@ -279,13 +282,18 @@ export function processAudioData(gpgpu, particles, essentiaData) {
     }
   }
 
-  if (audioObject.sound.isPlaying) {
+  const soundIsActive = audioObject.sound.isPlaying;
+  const micIsActive = audioObject.gumStream && audioObject.gumStream.active;
+
+  if (soundIsActive || micIsActive) {
     const { avgAmplitude, freqData } = audioAnalysis();
+    gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
     gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
     particles.material.uniforms.uAverageAmplitude.value = avgAmplitude;
     gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(freqData);
     gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true;
-  } else if (!audioObject.sound.isPlaying && !audioObject.sound.started) {
+  } else if (!soundIsActive && !micIsActive && !audioObject.sound.started) {
+    gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = 0;
     gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = 0;
     particles.material.uniforms.uAverageAmplitude.value = 0;
     gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(0);
