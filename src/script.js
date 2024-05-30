@@ -272,6 +272,8 @@ const tick = () => {
   gpgpu.particlesVariable.material.uniforms.uTime.value = time;
   gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
   gpgpu.particlesVariable.material.uniforms.uStarted.value = audioObject.sound.started;
+  gpgpu.particlesVariable.material.uniforms.uMicActive.value =
+    audioObject.gumStream && audioObject.gumStream.active;
 
   particles.material.uniforms.uSoundPlaying.value = audioObject.sound.isPlaying;
   particles.material.uniforms.uTime.value = time;

@@ -1,7 +1,7 @@
 #include ../includes/random2D.glsl
 precision mediump float;
 
-varying vec3 vColor;
+// varying vec3 vColor;
 varying float vGroup;
 varying vec3 vPosition;
 uniform float uTime;
