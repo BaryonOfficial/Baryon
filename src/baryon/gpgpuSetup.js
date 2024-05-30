@@ -215,6 +215,7 @@ export function gpgpuSetup(baseGeometry, renderer, parameters, baseGeometry2) {
     parameters.surfaceThreshold
   );
   gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl = new THREE.Uniform(true);
+  gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
 
   // Dependencies
   gpgpu.computation.setVariableDependencies(gpgpu.zeroPointsVariable, [gpgpu.scalarFieldVariable]);
