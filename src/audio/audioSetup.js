@@ -271,8 +271,12 @@ function audioAnalysis() {
     freqData = Array.from(micFreqData); // Clone to prevent mutability issues
   }
 
-  console.log('Avg Amplitude:', avgAmplitude);
-  console.log('Frequency Data:', freqData);
+  // console.log('Input File Data - Amplitude:', inputFileAmplitude);
+  // console.log('Input File Data - Frequency Data:', inputFileFreqData);
+  // console.log('Mic Data - Amplitude:', micAmplitude);
+  // console.log('Mic Data - Frequency Data:', micFreqData);
+  // console.log('Final Avg Amplitude:', avgAmplitude);
+  // console.log('Final Frequency Data:', freqData);
 
   return { avgAmplitude, freqData };
 }
