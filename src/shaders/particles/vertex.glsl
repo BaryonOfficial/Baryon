@@ -15,7 +15,7 @@ attribute vec2 aParticlesUv;
 attribute vec3 aColor;
 attribute float aSize;
 
-varying vec3 vColor;
+// varying vec3 vColor;
 varying float vGroup;
 varying vec3 vPosition;
 varying vec3 vNormal;
@@ -66,6 +66,6 @@ void main() {
 
     // Pass Varyings
     vPosition = modelPosition.xyz;
-    vColor = aColor;
+    // vColor = aColor;
     vNormal = modelNormal.xyz;
 }
