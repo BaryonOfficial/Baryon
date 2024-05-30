@@ -25,7 +25,7 @@ void main() {
     // coloring
     particle.w = zeroPoint.a;
 
-    vec3 target = (uAverageAmplitude > 0.0 || uStarted || uMicActive) ? zeroPoint.xyz : base.xyz;
+    vec3 target = (uAverageAmplitude > 0.0) ? zeroPoint.xyz : base.xyz;
 
     float distance = length(target - particle.xyz);
     vec3 direction = normalize(target - particle.xyz);

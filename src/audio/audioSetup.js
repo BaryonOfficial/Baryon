@@ -239,35 +239,49 @@ function audioAnalysis() {
   let avgAmplitude = 0;
   let freqData = [];
 
+  let inputFileAmplitude = 0;
+  let micAmplitude = 0;
+  let inputFileFreqData = [];
+  let micFreqData = [];
+
   const soundIsActive = audioObject.sound.isPlaying;
   const micIsActive = audioObject.gumStream && audioObject.gumStream.active;
 
   if (soundIsActive) {
-    const soundAvgAmplitude = audioObject.analyser.getAverageFrequency();
-    const soundFreqData = audioObject.analyser.getFrequencyData();
-    avgAmplitude += soundAvgAmplitude;
-    freqData = Array.from(soundFreqData);
+    inputFileAmplitude = audioObject.analyser.getAverageFrequency();
+    inputFileFreqData = audioObject.analyser.getFrequencyData();
   }
 
   if (micIsActive) {
-    const micAvgAmplitude = audioObject.micAnalyser.getAverageFrequency();
-    const micFreqData = audioObject.micAnalyser.getFrequencyData();
-    avgAmplitude += micAvgAmplitude;
-
-    if (soundIsActive) {
-      // Average the frequency data from both sources
-      freqData = freqData.map((value, index) => (value + micFreqData[index]) / 2);
-      // Average the amplitude
-      avgAmplitude /= 2;
-    } else {
-      freqData = Array.from(micFreqData);
-    }
+    micAmplitude = audioObject.micAnalyser.getAverageFrequency();
+    micFreqData = audioObject.micAnalyser.getFrequencyData();
   }
 
-  // console.log('Avg Amplitude:', avgAmplitude);
-  // console.log('Frequency Data:', freqData);
+  if (soundIsActive && micIsActive) {
+    // Combine amplitudes more realistically based on energy
+    avgAmplitude = Math.sqrt(inputFileAmplitude * inputFileAmplitude + micAmplitude * micAmplitude);
+
+    // Combine frequency data considering phase and magnitude
+    freqData = combineFrequencyData(inputFileFreqData, micFreqData);
+  } else if (soundIsActive) {
+    avgAmplitude = inputFileAmplitude;
+    freqData = Array.from(inputFileFreqData); // Clone to prevent mutability issues
+  } else if (micIsActive) {
+    avgAmplitude = micAmplitude;
+    freqData = Array.from(micFreqData); // Clone to prevent mutability issues
+  }
+
+  console.log('Avg Amplitude:', avgAmplitude);
+  console.log('Frequency Data:', freqData);
 
   return { avgAmplitude, freqData };
+}
+
+function combineFrequencyData(freqData1, freqData2) {
+  // Placeholder for a more complex frequency data combining logic
+  return freqData1.map((value, index) =>
+    Math.sqrt(value * value + freqData2[index] * freqData2[index])
+  );
 }
 
 export function processAudioData(gpgpu, particles, essentiaData) {

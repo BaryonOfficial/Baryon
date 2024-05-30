@@ -243,7 +243,11 @@ const rotationMatrix = new THREE.Matrix4();
 let lastKnownTime = 0;
 
 function timeHandler(elapsedTime) {
-  if (audioObject.sound.isPlaying && audioObject.sound.started) {
+  if (audioObject.gumStream && audioObject.gumStream.active) {
+    deltaTime = elapsedTime - previousTime;
+    previousTime = elapsedTime;
+    time = elapsedTime;
+  } else if (audioObject.sound.isPlaying && audioObject.sound.started) {
     deltaTime = audioObject.sound.listener.timeDelta;
     time = audioObject.sound.context.currentTime;
     lastKnownTime = time;
