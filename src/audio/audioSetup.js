@@ -42,8 +42,14 @@ function startMicRecordStream() {
         // Create a gain node with zero gain to prevent audio output
         const zeroGain = audioObject.audioCtx.createGain();
         zeroGain.gain.setValueAtTime(0, audioObject.audioCtx.currentTime);
+
+        // Connect the microphone to the Essentia node for processing
         audioObject.mic.connect(audioObject.essentiaNode);
+
+        // Connect the Essentia node to the zero gain node to mute the output
         audioObject.essentiaNode.connect(zeroGain);
+
+        // Connect the zero gain node to the audio context destination (optional)
         zeroGain.connect(audioObject.audioCtx.destination);
 
         console.log('Microphone connected');
