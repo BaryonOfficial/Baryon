@@ -389,9 +389,15 @@ export function setupAudioGraph() {
   audioObject.soundGainNode.connect(audioObject.essentiaNode);
   console.log('inputFile Sound Gain Node --> Essentia Node');
 
+  // This will be used for overall volume
+  audioObject.gain = audioObject.audioCtx.createGain();
+
   // Connection to destination
-  audioObject.essentiaNode.connect(audioObject.audioCtx.destination);
-  console.log('Essentia Node --> Destination');
+  audioObject.essentiaNode.connect(audioObject.gain);
+  console.log('Essentia Node --> Gain');
+
+  audioObject.gain.connect(audioObject.audioCtx.destination);
+  console.log('Gain --> Destination');
 }
 
 export function startAudioProcessing(callback) {
