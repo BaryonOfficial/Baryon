@@ -45,14 +45,11 @@ function startMicRecordStream() {
           audioObject.fftSize
         );
 
+        // Create a zero gain node to mute the mic from speaker output/ feedback
         const zeroGainNode = audioObject.audioCtx.createGain();
         zeroGainNode.gain.setValueAtTime(0, audioObject.audioCtx.currentTime);
 
-        // Verify the gain value after a small delay
-        setTimeout(() => {
-          console.log('Zero Gain Node Value:', zeroGainNode.gain.value);
-        }, 100);
-
+        // Now we can actually connect it properly in the pipeline
         audioObject.micSound
           .getOutput()
           .connect(audioObject.essentiaNode)
