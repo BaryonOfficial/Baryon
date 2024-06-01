@@ -33,6 +33,11 @@ function startMicRecordStream() {
         audioObject.micNode = audioObject.audioCtx.createMediaStreamSource(audioObject.gumStream);
         audioObject.micSound.setNodeSource(audioObject.micNode);
 
+        // Because of how the THREE.Audio object works with the setNodeSource method,
+        // we need to detach the mic sound from whatever it connects to for manual
+        // connections. We need this source defined first though.
+        audioObject.micSound.getOutput().disconnect();
+
         console.log('Microphone Sound:', audioObject.micSound);
 
         audioObject.micAnalyser = new THREE.AudioAnalyser(
@@ -48,9 +53,11 @@ function startMicRecordStream() {
           console.log('Zero Gain Node Value:', zeroGainNode.gain.value);
         }, 100);
 
-        audioObject.micNode.connect(audioObject.essentiaNode);
-        audioObject.essentiaNode.connect(zeroGainNode);
-        zeroGainNode.connect(audioObject.audioCtx.destination);
+        audioObject.micSound
+          .getOutput()
+          .connect(audioObject.essentiaNode)
+          .connect(zeroGainNode)
+          .connect(audioObject.audioCtx.destination);
 
         console.log('Microphone connected');
 
