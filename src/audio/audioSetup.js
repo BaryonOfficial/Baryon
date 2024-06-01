@@ -18,6 +18,7 @@ export const audioObject = {
   micAnalyser: null,
   micNode: null,
   gumStream: null,
+  listener: null,
 };
 
 function startMicRecordStream() {
@@ -28,8 +29,7 @@ function startMicRecordStream() {
         audioObject.gumStream = stream;
 
         // Create a THREE.Audio object for the microphone
-        const listener = new THREE.AudioListener();
-        audioObject.micSound = new THREE.Audio(listener);
+        audioObject.micSound = new THREE.Audio(audioObject.listener);
         audioObject.micNode = audioObject.audioCtx.createMediaStreamSource(audioObject.gumStream);
         audioObject.micSound.setNodeSource(audioObject.micNode);
 
@@ -208,15 +208,15 @@ function setupUIInteractions(audioLoader) {
 
 export function audioSetup(camera) {
   // create an AudioListener and add it to the camera
-  const listener = new THREE.AudioListener();
-  camera.add(listener);
+  audioObject.listener = new THREE.AudioListener();
+  camera.add(audioObject.listener);
 
   // create an Audio source
-  audioObject.sound = new THREE.Audio(listener);
+  audioObject.sound = new THREE.Audio(audioObject.listener);
   audioObject.sound.started = false;
   console.log('Sound:', audioObject.sound);
 
-  audioObject.audioCtx = audioObject.sound.context;
+  audioObject.audioCtx = audioObject.listener.context;
   console.log('audioCtx', audioObject.audioCtx);
 
   const audioLoader = new THREE.AudioLoader();
