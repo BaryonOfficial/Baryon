@@ -243,7 +243,11 @@ const rotationMatrix = new THREE.Matrix4();
 let lastKnownTime = 0;
 
 function timeHandler(elapsedTime) {
-  if (audioObject.sound.isPlaying && audioObject.sound.started) {
+  if (audioObject.gumStream && audioObject.gumStream.active) {
+    deltaTime = elapsedTime - previousTime;
+    previousTime = elapsedTime;
+    time = elapsedTime;
+  } else if (audioObject.sound.isPlaying && audioObject.sound.started) {
     deltaTime = audioObject.sound.listener.timeDelta;
     time = audioObject.sound.context.currentTime;
     lastKnownTime = time;
@@ -272,6 +276,8 @@ const tick = () => {
   gpgpu.particlesVariable.material.uniforms.uTime.value = time;
   gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
   gpgpu.particlesVariable.material.uniforms.uStarted.value = audioObject.sound.started;
+  gpgpu.particlesVariable.material.uniforms.uMicActive.value =
+    audioObject.gumStream && audioObject.gumStream.active;
 
   particles.material.uniforms.uSoundPlaying.value = audioObject.sound.isPlaying;
   particles.material.uniforms.uTime.value = time;

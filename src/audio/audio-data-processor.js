@@ -4,6 +4,7 @@ class AudioDataProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.isPlaying = false;
+    this.micActive = false;
     this._logCounter = 0; // Initialize a counter for logging
     this._frameCounter = 0; // Counter for determining pitch series, for frames per beat
     this.logFrequency = 500; // Log every 1000 frames
@@ -38,6 +39,11 @@ class AudioDataProcessor extends AudioWorkletProcessor {
       if (event.data.isPlaying !== undefined) {
         this.isPlaying = event.data.isPlaying;
       }
+
+      if (event.data.micActive !== undefined) {
+        this.micActive = event.data.micActive;
+        console.log('micActive:', this.micActive);
+      }
     };
     console.log('Backend - essentia:' + this._essentia.version + '- http://essentia.upf.edu');
   }
@@ -58,7 +64,7 @@ class AudioDataProcessor extends AudioWorkletProcessor {
       this._channelCount = input.length; // Update the current channel count
     }
 
-    if (!this.isPlaying) {
+    if (!this.isPlaying && !this.micActive) {
       // Fill with 0s when no sound playing
       output.forEach((channel) => channel.fill(0));
       return true;

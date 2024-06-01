@@ -12,9 +12,101 @@ export const audioObject = {
   soundGainNode: null,
   audioCtx: null,
   sound: null,
+  micSound: null,
   capacity: 5,
   analyser: null,
+  micAnalyser: null,
+  micNode: null,
+  gumStream: null,
+  listener: null,
 };
+
+function startMicRecordStream() {
+  if (navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        audioObject.gumStream = stream;
+
+        // Create a THREE.Audio object for the microphone
+        audioObject.micSound = new THREE.Audio(audioObject.listener);
+        audioObject.micNode = audioObject.audioCtx.createMediaStreamSource(audioObject.gumStream);
+        audioObject.micSound.setNodeSource(audioObject.micNode);
+
+        // Because of how the THREE.Audio object works with the setNodeSource method,
+        // we need to detach the mic sound from whatever it connects to for manual
+        // connections. We need this source defined first though.
+        audioObject.micSound.getOutput().disconnect();
+
+        console.log('Microphone Sound:', audioObject.micSound);
+
+        audioObject.micAnalyser = new THREE.AudioAnalyser(
+          audioObject.micSound,
+          audioObject.fftSize
+        );
+
+        // Create a zero gain node to mute the mic from speaker output/ feedback
+        const zeroGainNode = audioObject.audioCtx.createGain();
+        zeroGainNode.gain.setValueAtTime(0, audioObject.audioCtx.currentTime);
+
+        // Now we can actually connect it properly in the pipeline
+        audioObject.micSound
+          .getOutput()
+          .connect(audioObject.essentiaNode)
+          .connect(zeroGainNode)
+          .connect(audioObject.audioCtx.destination);
+
+        console.log('Microphone connected');
+
+        // Post message after micNode is initialized
+        audioObject.essentiaNode.port.postMessage({
+          isPlaying: audioObject.sound.isPlaying,
+          micActive: audioObject.gumStream && audioObject.gumStream.active,
+        });
+
+        setInterval(checkMicInputLevels, 1000); // Check every second
+      })
+      .catch((err) => {
+        console.error('Error accessing microphone:', err);
+      });
+  } else {
+    console.error('getUserMedia not supported');
+  }
+}
+
+function stopMicRecordStream() {
+  if (audioObject.gumStream) {
+    audioObject.gumStream.getAudioTracks().forEach((track) => {
+      track.stop();
+    });
+    audioObject.micNode.disconnect();
+    audioObject.micAnalyser = null;
+    audioObject.gumStream = null;
+    audioObject.micSound = null;
+    console.log('Microphone disconnected');
+  }
+
+  // Post message after micNode is disconnected
+  audioObject.essentiaNode.port.postMessage({
+    isPlaying: audioObject.sound.isPlaying,
+    micActive: audioObject.gumStream && audioObject.gumStream.active,
+  });
+}
+
+function checkMicInputLevels() {
+  if (audioObject.micAnalyser) {
+    const data = audioObject.micAnalyser.getFrequencyData();
+    const isMicWorking = data.some((value) => value > 0);
+
+    if (isMicWorking) {
+      console.log('Microphone is working');
+    } else {
+      console.log('Microphone is not picking up any sound');
+    }
+  } else {
+    console.log('Microphone analyser is not initialized');
+  }
+}
 
 let isAudioLoaded = false;
 
@@ -33,12 +125,19 @@ function loadAudio(url, audioLoader, playPauseButton) {
   }
 
   isAudioLoaded = false;
-  audioLoader.load(url, function (buffer) {
-    audioObject.sound.setBuffer(buffer);
-    audioObject.sound.setLoop(false);
-    audioObject.sound.setVolume(0.5);
-    isAudioLoaded = true;
-  });
+  audioLoader.load(
+    url,
+    function (buffer) {
+      audioObject.sound.setBuffer(buffer);
+      audioObject.sound.setLoop(false);
+      audioObject.sound.setVolume(0.5);
+      isAudioLoaded = true;
+    },
+    undefined,
+    (err) => {
+      console.error('Error loading audio file:', err);
+    }
+  );
 }
 
 function setupUIInteractions(audioLoader) {
@@ -46,6 +145,7 @@ function setupUIInteractions(audioLoader) {
   const fileName = document.getElementById('fileName');
   const playPauseButton = document.getElementById('playPauseButton');
   const stopButton = document.getElementById('stopButton');
+  const micButton = document.getElementById('micMode');
 
   audioInput.addEventListener('change', (event) => {
     if (event.target.files.length > 0) {
@@ -57,6 +157,16 @@ function setupUIInteractions(audioLoader) {
       fileName.textContent = 'Choose File';
     }
     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
+  });
+
+  micButton.addEventListener('click', () => {
+    if (!audioObject.gumStream || !audioObject.gumStream.active) {
+      startMicRecordStream();
+      micButton.textContent = 'Stop Mic';
+    } else {
+      stopMicRecordStream();
+      micButton.textContent = 'Mic';
+    }
   });
 
   playPauseButton.addEventListener('click', () => {
@@ -102,16 +212,15 @@ function setupUIInteractions(audioLoader) {
 
 export function audioSetup(camera) {
   // create an AudioListener and add it to the camera
-  const listener = new THREE.AudioListener();
-  camera.add(listener);
+  audioObject.listener = new THREE.AudioListener();
+  camera.add(audioObject.listener);
 
   // create an Audio source
-  audioObject.sound = new THREE.Audio(listener);
+  audioObject.sound = new THREE.Audio(audioObject.listener);
   audioObject.sound.started = false;
   console.log('Sound:', audioObject.sound);
 
-  audioObject.gain = audioObject.sound.gain;
-  audioObject.audioCtx = audioObject.sound.context;
+  audioObject.audioCtx = audioObject.listener.context;
   console.log('audioCtx', audioObject.audioCtx);
 
   const audioLoader = new THREE.AudioLoader();
@@ -123,31 +232,57 @@ export function audioSetup(camera) {
   audioObject.analyser = new THREE.AudioAnalyser(audioObject.sound, audioObject.fftSize);
 }
 
-function logNodeConnections() {
-  console.log(
-    'SoundGainNode -> Essentia Node:',
-    audioObject.soundGainNode.connect(audioObject.essentiaNode)
-  );
-  console.log('Essentia Node -> Gain Node:', audioObject.essentiaNode.connect(audioObject.gain));
-  console.log(
-    'Gain Node -> Destination:',
-    audioObject.gain.connect(audioObject.audioCtx.destination)
-  );
-}
-
 function audioAnalysis() {
   let avgAmplitude = 0;
-  let freqData = 0;
+  let freqData = [];
 
-  if (audioObject.sound.isPlaying) {
-    avgAmplitude = audioObject.analyser.getAverageFrequency();
-    freqData = audioObject.analyser.getFrequencyData();
-  } else if (audioObject.sound.started === false) {
-    avgAmplitude = 0;
-    freqData = 0;
+  let inputFileAmplitude = 0;
+  let micAmplitude = 0;
+  let inputFileFreqData = [];
+  let micFreqData = [];
+
+  const soundIsActive = audioObject.sound.isPlaying;
+  const micIsActive = audioObject.gumStream && audioObject.gumStream.active;
+
+  if (soundIsActive) {
+    inputFileAmplitude = audioObject.analyser.getAverageFrequency();
+    inputFileFreqData = audioObject.analyser.getFrequencyData();
   }
 
+  if (micIsActive) {
+    micAmplitude = audioObject.micAnalyser.getAverageFrequency();
+    micFreqData = audioObject.micAnalyser.getFrequencyData();
+  }
+
+  if (soundIsActive && micIsActive) {
+    // Combine amplitudes more realistically based on energy
+    avgAmplitude = Math.sqrt(inputFileAmplitude * inputFileAmplitude + micAmplitude * micAmplitude);
+
+    // Combine frequency data considering phase and magnitude
+    freqData = combineFrequencyData(inputFileFreqData, micFreqData);
+  } else if (soundIsActive) {
+    avgAmplitude = inputFileAmplitude;
+    freqData = Array.from(inputFileFreqData); // Clone to prevent mutability issues
+  } else if (micIsActive) {
+    avgAmplitude = micAmplitude;
+    freqData = Array.from(micFreqData); // Clone to prevent mutability issues
+  }
+
+  // console.log('Input File Data - Amplitude:', inputFileAmplitude);
+  // console.log('Input File Data - Frequency Data:', inputFileFreqData);
+  // console.log('Mic Data - Amplitude:', micAmplitude);
+  // console.log('Mic Data - Frequency Data:', micFreqData);
+  // console.log('Final Avg Amplitude:', avgAmplitude);
+  // console.log('Final Frequency Data:', freqData);
+
   return { avgAmplitude, freqData };
+}
+
+function combineFrequencyData(freqData1, freqData2) {
+  // Placeholder for a more complex frequency data combining logic
+  return freqData1.map((value, index) =>
+    Math.sqrt(value * value + freqData2[index] * freqData2[index])
+  );
 }
 
 export function processAudioData(gpgpu, particles, essentiaData) {
@@ -155,20 +290,25 @@ export function processAudioData(gpgpu, particles, essentiaData) {
     let read = audioObject.audioReader.dequeue(essentiaData);
     if (read !== 0) {
       gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true;
-      // console.log(
-      //   'Essentia Data:',
-      //   gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data
-      // );
+      console.log(
+        'Essentia Data:',
+        gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data
+      );
     }
   }
 
-  if (audioObject.sound.isPlaying) {
+  const soundIsActive = audioObject.sound.isPlaying;
+  const micIsActive = audioObject.gumStream && audioObject.gumStream.active;
+
+  if (soundIsActive || micIsActive) {
     const { avgAmplitude, freqData } = audioAnalysis();
+    gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
     gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
     particles.material.uniforms.uAverageAmplitude.value = avgAmplitude;
     gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(freqData);
     gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true;
-  } else if (!audioObject.sound.isPlaying && !audioObject.sound.started) {
+  } else if (!soundIsActive && !micIsActive && !audioObject.sound.started) {
+    gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = 0;
     gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = 0;
     particles.material.uniforms.uAverageAmplitude.value = 0;
     gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(0);
@@ -237,6 +377,7 @@ export function setupAudioGraph() {
     audioObject.essentiaNode.port.postMessage({
       sab: sab,
       isPlaying: audioObject.sound.isPlaying,
+      micActive: audioObject.gumStream && audioObject.gumStream.active,
     });
   } catch (_) {
     alert('No SharedArrayBuffer tranfer support, try another browser.');
@@ -245,12 +386,19 @@ export function setupAudioGraph() {
     return;
   }
 
-  audioObject.soundGainNode = audioObject.sound.getOutput();
-  audioObject.soundGainNode.connect(audioObject.essentiaNode);
-  audioObject.essentiaNode.connect(audioObject.gain);
-  audioObject.gain.connect(audioObject.audioCtx.destination);
+  //Input File Sound Path
+  audioObject.sound.getOutput().connect(audioObject.essentiaNode);
+  console.log('inputFile Sound Gain Node --> Essentia Node');
 
-  logNodeConnections();
+  // This will be used for overall volume
+  audioObject.gain = audioObject.audioCtx.createGain();
+
+  // Connection to destination
+  audioObject.essentiaNode.connect(audioObject.gain);
+  console.log('Essentia Node --> Gain');
+
+  audioObject.gain.connect(audioObject.audioCtx.destination);
+  console.log('Gain --> Destination');
 }
 
 export function startAudioProcessing(callback) {
