@@ -1,6 +1,7 @@
 uniform float uThreshold;
 uniform float uRadius;
 uniform float uSurfaceThreshold;
+uniform float uAverageAmplitude;
 uniform bool uSurfaceControl;
 
 void main() {
@@ -10,6 +11,11 @@ void main() {
     float scalarValue = scalarFieldValue.a;
     float distance = length(position);
     // vec3 scaledPosition = position * 0.64;
+
+    // Discard all positions if uAverageAmplitude is 0. This will be a feature to replace the logo with just a dot when there is no amplitude
+    // if(uAverageAmplitude == 0.0) {
+    //     discard;
+    // }
 
     if(abs(scalarValue) >= uThreshold) {
         discard;

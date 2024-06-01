@@ -215,6 +215,7 @@ export function gpgpuSetup(baseGeometry, renderer, parameters, baseGeometry2) {
     parameters.surfaceThreshold
   );
   gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl = new THREE.Uniform(true);
+  gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
 
   // Dependencies
   gpgpu.computation.setVariableDependencies(gpgpu.zeroPointsVariable, [gpgpu.scalarFieldVariable]);
@@ -242,6 +243,9 @@ export function gpgpuSetup(baseGeometry, renderer, parameters, baseGeometry2) {
   gpgpu.particlesVariable.material.uniforms.uParticleMovementType = new THREE.Uniform(1);
   gpgpu.particlesVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
   gpgpu.particlesVariable.material.uniforms.uDistanceThreshold = new THREE.Uniform(0.8);
+  gpgpu.particlesVariable.material.uniforms.uMicActive = new THREE.Uniform(
+    audioObject.gumStream && audioObject.gumStream.active
+  );
 
   // Dependencies
   gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [

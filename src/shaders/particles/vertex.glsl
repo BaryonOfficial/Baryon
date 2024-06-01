@@ -15,7 +15,7 @@ attribute vec2 aParticlesUv;
 attribute vec3 aColor;
 attribute float aSize;
 
-varying vec3 vColor;
+// varying vec3 vColor;
 varying float vGroup;
 varying vec3 vPosition;
 varying vec3 vNormal;
@@ -61,11 +61,18 @@ void main() {
     vec4 modelNormal = modelMatrix * vec4(normal, 0.0);
 
     // Point size
-    gl_PointSize = uSize * uResolution.y;
-    gl_PointSize *= (1.0 / -viewPosition.z);
+    // Calculate the resting state size
+    float restingSize = uSize * uResolution.y;
+    restingSize *= (1.0 / -viewPosition.z);
+
+    // Calculate the size multiplier based on the pulsating distance
+    float sizeMultiplier = 1.0 + (length(pulsatingOffset) / uRadius);
+
+    // Adjust particle size proportionally
+    gl_PointSize = restingSize * sizeMultiplier;
 
     // Pass Varyings
     vPosition = modelPosition.xyz;
-    vColor = aColor;
+    // vColor = aColor;
     vNormal = modelNormal.xyz;
 }
