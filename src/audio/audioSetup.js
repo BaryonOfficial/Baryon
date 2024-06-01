@@ -383,10 +383,7 @@ export function setupAudioGraph() {
   }
 
   //Input File Sound Path
-  audioObject.soundGainNode = audioObject.sound.getOutput();
-  console.log('Get inputFile Sound Gain Node:', audioObject.soundGainNode);
-
-  audioObject.soundGainNode.connect(audioObject.essentiaNode);
+  audioObject.sound.getOutput().connect(audioObject.essentiaNode);
   console.log('inputFile Sound Gain Node --> Essentia Node');
 
   // This will be used for overall volume
