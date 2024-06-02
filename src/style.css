@@ -1,99 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 * {
-    margin: 0;
-    padding: 0;
+  margin: 0;
+  padding: 0;
 }
 
-html, body {
-    overflow: hidden;
+html,
+body {
+  overflow: hidden;
+  border: none;
 }
 
 .webgl {
-    position: fixed;
-    top: 0;
-    left: 0;
-    outline: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  outline: none;
 }
 
 #controls-container {
-    position: fixed;
-    top: 10px;
-    left: 10px;
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
-.playback-controls, .recording-controls, .modes {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    margin-bottom: 10px;
+.playback-controls,
+.recording-controls,
+.modes {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 10px;
 }
 
 .file-input-label {
-    display: inline-block;
-    margin-right: 10px;
-    padding: 5px 10px;
-    font-size: 14px;
-    background-color: #fff;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    cursor: pointer;
-    max-width: 125px;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+  display: inline-block;
+  margin-right: 10px;
+  padding: 5px 10px;
+  font-size: 14px;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  max-width: 125px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.file-input-label input[type="file"] {
-    display: none;
+.file-input-label input[type='file'] {
+  display: none;
 }
 
 .file-input-label span {
-    pointer-events: none;
+  pointer-events: none;
 }
 
-.playback-controls input[type="text"] {
-    flex-grow: 1;
-    padding: 5px;
-    font-size: 14px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+.playback-controls input[type='text'] {
+  flex-grow: 1;
+  padding: 5px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
 }
 
-.playback-controls button, .recording-controls button, .modes button {
-    margin-right: 10px;
-    padding: 5px 10px;
-    font-size: 14px;
-    background-color: #fff;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    cursor: pointer;
+.playback-controls button,
+.recording-controls button,
+.modes button {
+  margin-right: 10px;
+  padding: 5px 10px;
+  font-size: 14px;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
-.file-and-url, .buttons {
-    display: flex;
-    align-items: center;
-    width: 100%;
+.file-and-url,
+.buttons {
+  display: flex;
+  align-items: center;
+  width: 100%;
 }
 
 .buttons {
-    margin-top: 10px;
+  margin-top: 10px;
 }
 
 #recordedVideo {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    width: 320px;
-    height: 240px;
-    background-color: #000;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 320px;
+  height: 240px;
+  background-color: #000;
+  border: 1px solid #ccc;
+  border-radius: 4px;
 }
 
 .recording-controls button.recording {
-    background-color: red;
-    color: white;
+  background-color: red;
+  color: white;
 }

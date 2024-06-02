@@ -103,7 +103,7 @@ scene.add(plane);
 let parameters = {
   count: 1500000,
   radius: 3.0, // Radius of the sphere
-  threshold: 0.08,
+  threshold: 0.05,
   surfaceRatio: 0.33,
   surfaceThreshold: 0.01,
 };

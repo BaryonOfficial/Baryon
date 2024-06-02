@@ -8,6 +8,7 @@
     "build": "vite build"
   },
   "devDependencies": {
+    "tailwindcss": "^3.4.3",
     "vite": "^5.0.12",
     "vite-plugin-glsl": "^1.2.1",
     "vite-plugin-top-level-await": "^1.4.1"
@@ -15,9 +16,12 @@
   "dependencies": {
     "@ffmpeg/core": "^0.12.6",
     "@ffmpeg/ffmpeg": "^0.12.10",
+    "autoprefixer": "^10.4.19",
+    "caniuse-lite": "^1.0.30001626",
     "essentia.js": "^0.1.3",
     "lil-gui": "^0.19.1",
     "music-metadata": "^8.3.0",
+    "postcss": "^8.4.38",
     "recordrtc": "^5.6.2",
     "three": "^0.165.0"
   }
