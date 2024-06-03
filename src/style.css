@@ -70,6 +70,12 @@ body {
   border-radius: 4px;
 }
 
+.modes {
+  display: flex;
+  flex-direction: row; /* Align items horizontally */
+  align-items: center; /* Align items vertically in the center */
+}
+
 .playback-controls button,
 .recording-controls button,
 .modes button {
@@ -107,4 +113,8 @@ body {
 .recording-controls button.recording {
   background-color: red;
   color: white;
+}
+
+.hidden {
+  display: none;
 }
