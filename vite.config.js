@@ -3,11 +3,8 @@ import glsl from 'vite-plugin-glsl';
 import topLevelAwait from 'vite-plugin-top-level-await';
 
 export default defineConfig({
-  optimizeDeps: {
-    include: ['@ffmpeg/ffmpeg'],
-  },
-  root: 'src/',
-  publicDir: '../static/',
+  root: './',
+  publicDir: 'static',
   base: './',
   server: {
     headers: {
@@ -21,10 +18,13 @@ export default defineConfig({
     open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env), // Open if it's not a CodeSandbox
   },
   build: {
-    outDir: '../dist', // Output in the dist/ folder
+    outDir: 'dist', // Output in the dist/ folder
     emptyOutDir: true, // Empty the folder first
     sourcemap: true, // Add sourcemap
     // target: 'esnext',
+  },
+  optimizeDeps: {
+    include: ['@ffmpeg/ffmpeg'],
   },
   plugins: [
     glsl(),
