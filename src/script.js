@@ -119,7 +119,7 @@ const colors = new Float32Array(baseGeometry.count * 3); // r, g, b for each par
 /**
  * Load model
  */
-const gltf = await gltfLoader.loadAsync('./Baryon_v2.glb');
+const gltf = await gltfLoader.loadAsync('./glb/Baryon_v2.glb');
 const baseGeometry2 = {};
 baseGeometry2.instance = gltf.scene.children[0];
 
