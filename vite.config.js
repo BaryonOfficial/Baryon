@@ -1,10 +1,11 @@
 import { defineConfig } from 'vite';
+import postcssConfig from './postcss.config.js';
 import glsl from 'vite-plugin-glsl';
 import topLevelAwait from 'vite-plugin-top-level-await';
 
 export default defineConfig({
   css: {
-    postcss,
+    postcss: postcssConfig,
   },
   root: './',
   publicDir: 'static',
