@@ -2,119 +2,81 @@
 @tailwind components;
 @tailwind utilities;
 
-* {
-  margin: 0;
-  padding: 0;
+#canvas-container {
+  position: relative;
+  z-index: 1;
 }
 
-html,
-body {
-  overflow: hidden;
-  border: none;
-}
-
-.webgl {
+.header-container {
   position: fixed;
   top: 0;
   left: 0;
-  outline: none;
+  width: 100%;
+  z-index: 1000;
 }
 
-#controls-container {
-  position: fixed;
-  top: 10px;
-  left: 10px;
-  z-index: 1000;
+.controls-container {
+  position: relative;
+  z-index: 2;
+  margin-top: 50px; /* Adjust as needed */
+  margin-left: -1rem; /* Adjust to match the left margin of the logo */
+}
+
+button,
+.file-input-label {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: background-color 0.3s ease;
+  background-color: white; /* Ensure buttons have a visible background color */
+  color: black; /* Ensure buttons have a visible text color */
+  border: 1px solid #ccc;
+  cursor: pointer;
+}
+
+button:hover,
+.file-input-label:hover {
+  background-color: #f0f0f0;
+}
+
+.buttons,
+.modes,
+.recording-controls {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  gap: 10px; /* Adjust spacing between buttons */
 }
 
 .playback-controls,
-.recording-controls,
-.modes {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  margin-bottom: 10px;
-}
-
-.file-input-label {
-  display: inline-block;
-  margin-right: 10px;
-  padding: 5px 10px;
-  font-size: 14px;
-  background-color: #fff;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  cursor: pointer;
-  max-width: 125px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.file-input-label input[type='file'] {
-  display: none;
-}
-
-.file-input-label span {
-  pointer-events: none;
-}
-
-.playback-controls input[type='text'] {
-  flex-grow: 1;
-  padding: 5px;
-  font-size: 14px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.modes {
-  display: flex;
-  flex-direction: row; /* Align items horizontally */
-  align-items: center; /* Align items vertically in the center */
-}
-
-.playback-controls button,
-.recording-controls button,
-.modes button {
-  margin-right: 10px;
-  padding: 5px 10px;
-  font-size: 14px;
-  background-color: #fff;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.file-and-url,
-.buttons {
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-
-.buttons {
-  margin-top: 10px;
-}
-
-#recordedVideo {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 320px;
-  height: 240px;
-  background-color: #000;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.recording-controls button.recording {
-  background-color: red;
-  color: white;
+.recording-controls {
+  margin-bottom: 20px; /* Adjust spacing between control sections */
 }
 
 .hidden {
-  display: none;
+  display: none; /* Completely remove hidden elements from the document flow */
+}
+
+.logo-image {
+  width: 100%;
+  height: auto;
+  image-rendering: -webkit-optimize-contrast; /* For webkit (Chrome, Safari) */
+  image-rendering: crisp-edges; /* For other browsers */
+}
+
+.gui-container {
+  position: absolute;
+  top: 77.5px; /* Adjust this value if the header height changes */
+  left: calc(100% - var(--gui-width));
+  width: 100%; /* or any specific width as per your design */
+  z-index: 10; /* Ensure it's above other content but below fixed elements if needed */
+}
+
+.header-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1000;
+  border-bottom: 1.5px solid #18181a;
+  box-sizing: border-box; /* Include padding and border in the element's size */
 }
