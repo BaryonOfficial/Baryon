@@ -2,48 +2,104 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- <meta name="viewport" content="width=device-width, initial-scale=1.0" /> -->
     <meta
       name="viewport"
-      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
-    />
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
     <title>Baryon</title>
     <link rel="icon" href="/images/BaryonLogoWhiteCircle.svg" />
     <link rel="stylesheet" href="./src/styles/tailwind.css" />
   </head>
-  <body>
+  <body class="overflow-hidden border-none">
+    <div class="header-container">
+      <div class="Header w-full h-[76px] flex flex-col justify-center items-center gap-2.5">
+        <div
+          class="Navigation w-full h-[76px] px-6 py-4 bg-black flex justify-between items-center">
+          <div class="Logo flex items-center">
+            <div class="Image w-[31.43px] h-[26.92px] flex justify-center items-center">
+              <img src="/images/BaryonLogoWhite.svg" alt="Company Logo" class="" logo-image />
+            </div>
+            <div
+              class="Baryon text-white text-[22.67px] font-medium font-['Orbitron'] leading-[34.01px] ml-2">
+              Baryon
+            </div>
+          </div>
+          <div class="Tab flex items-center space-x-4">
+            <div class="Frame4 h-[29.08px] px-4 py-2 bg-zinc-900 rounded-full flex items-center">
+              <div
+                class="Visualizer text-white text-xs font-medium font-['Ubuntu'] leading-[18.89px]">
+                VISUALIZER
+              </div>
+            </div>
+            <div class="Frame2 h-[29.08px] px-4 py-2 rounded flex items-center">
+              <div
+                class="Plugin text-neutral-400 text-xs font-medium font-['Ubuntu'] leading-[18.89px]">
+                PLUGIN
+              </div>
+            </div>
+            <div class="Frame3 h-[29.08px] px-4 py-2 rounded flex items-center">
+              <div
+                class="Story text-neutral-400 text-xs font-medium font-['Ubuntu'] leading-[18.89px]">
+                STORY
+              </div>
+            </div>
+          </div>
+          <div class="SignButtons flex items-center space-x-4">
+            <div
+              class="SignInButton w-[67.62px] h-[34px] relative flex items-center justify-center bg-black rounded border border-zinc-700 invisible">
+              <div class="SignIn text-white text-xs font-medium font-['Ubuntu'] leading-[17px]">
+                SIGN IN
+              </div>
+            </div>
+            <div
+              class="SignUpButton w-20 h-[35px] relative flex items-center justify-center bg-neutral-100 rounded invisible">
+              <div class="SignUp text-black text-xs font-medium font-['Ubuntu'] leading-[18.89px]">
+                SIGN UP
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="gui-container" class="gui-container">
+      <!-- lil-gui will be injected here -->
+    </div>
+
     <div id="canvas-container">
-      <canvas class="webgl"></canvas>
+      <canvas class="webgl fixed top-0 left-0 outline-none"></canvas>
     </div>
-    <div id="controls-container">
-      <!-- Playback Controls -->
-      <div class="playback-controls">
-        <div class="file-and-url">
-          <label class="file-input-label">
-            <span id="fileName">Choose File</span>
-            <input type="file" id="audioInput" accept="audio/*" />
+
+    <div class="controls-container">
+      <div class="relative top-10 left-10 z-1000 flex flex-col items-start">
+        <!-- Playback Controls -->
+        <div class="playback-controls flex flex-col items-start mb-10">
+          <label
+            class="file-input-label block mr-4 px-6 py-3 text-xs bg-white border border-gray-300 rounded cursor-pointer max-w-[150px] overflow-hidden whitespace-nowrap overflow-ellipsis">
+            <span id="fileName" class="block overflow-hidden text-ellipsis">Choose File</span>
+            <input type="file" id="audioInput" accept="audio/*" class="hidden" />
           </label>
+
+          <div class="buttons flex items-center w-full mt-4">
+            <button id="playPauseButton">Play</button>
+            <button id="stopButton">Stop</button>
+            <button id="skipForwardButton" class="hidden">Skip Forward</button>
+            <button id="skipBackwardButton" class="hidden">Skip Backward</button>
+          </div>
         </div>
-        <div class="buttons">
-          <button id="playPauseButton">Play</button>
-          <button id="stopButton">Stop</button>
-          <button id="skipForwardButton" class="hidden">Skip Forward</button>
-          <button id="skipBackwardButton" class="hidden">Skip Backward</button>
+        <!-- Recording Controls -->
+        <div class="recording-controls flex-row items-start mb-10 hidden">
+          <button id="toggleRecording">Start Recording</button>
+          <button id="downloadRecording" disabled>Download Recording</button>
         </div>
-      </div>
-      <!-- Recording Controls -->
-      <div class="recording-controls">
-        <button id="toggleRecording">Start Recording</button>
-        <button id="downloadRecording" class="hidden" disabled>Download Recording</button>
-      </div>
-      <!-- Modes -->
-      <div class="modes">
-        <button id="fileMode">Files</button>
-        <button id="streamMode">Stream</button>
-        <button id="micMode">Mic</button>
+        <!-- Modes -->
+        <div class="modes flex flex-row items-center">
+          <button id="fileMode">Files</button>
+          <button id="streamMode">Stream</button>
+          <button id="micMode">Mic</button>
+        </div>
       </div>
     </div>
-    <video id="recordedVideo" controls style="display: none"></video>
+
     <script>
       exports = {};
     </script>
