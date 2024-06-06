@@ -17,7 +17,7 @@ import {
 import { toggleRecording, toggleRecordingButton } from './recordRTC.js';
 
 //******************************************************* GENERAL INITIALIZATION *******************************************************//
-const guiWidth = 250;
+const guiWidth = 300;
 const gui = new GUI({ width: guiWidth, container: document.getElementById('gui-container') });
 document.documentElement.style.setProperty('--gui-width', guiWidth + 'px');
 const debugObject = {};
