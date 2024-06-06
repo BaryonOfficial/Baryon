@@ -2,81 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
-#canvas-container {
-  position: relative;
-  z-index: 1;
+body {
+  @apply leading-[normal] m-0;
+}
+*,
+::before,
+::after {
+  border-width: 0;
 }
 
-.header-container {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  z-index: 1000;
+.btn-standard {
+  @apply bg-white text-black hover:bg-whitesmoke font-light py-1.5 px-3.5 rounded font-ubuntu cursor-pointer text-sm;
 }
 
-.controls-container {
-  position: relative;
-  z-index: 2;
-  margin-top: 50px; /* Adjust as needed */
-  margin-left: -1rem; /* Adjust to match the left margin of the logo */
-}
-
-button,
-.file-input-label {
-  padding: 6px 12px;
-  font-size: 12px;
-  border-radius: 4px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  transition: background-color 0.3s ease;
-  background-color: white; /* Ensure buttons have a visible background color */
-  color: black; /* Ensure buttons have a visible text color */
-  border: 1px solid #ccc;
-  cursor: pointer;
-}
-
-button:hover,
-.file-input-label:hover {
-  background-color: #f0f0f0;
-}
-
-.buttons,
-.modes,
-.recording-controls {
-  display: flex;
-  gap: 10px; /* Adjust spacing between buttons */
-}
-
-.playback-controls,
-.recording-controls {
-  margin-bottom: 20px; /* Adjust spacing between control sections */
-}
-
-.hidden {
-  display: none; /* Completely remove hidden elements from the document flow */
-}
-
-.logo-image {
-  width: 100%;
-  height: auto;
-  image-rendering: -webkit-optimize-contrast; /* For webkit (Chrome, Safari) */
-  image-rendering: crisp-edges; /* For other browsers */
+.file-btn-standard {
+  @apply bg-white text-black hover:bg-whitesmoke font-extralight py-1.5 px-3.5 rounded font-ubuntu cursor-pointer text-sm;
 }
 
 .gui-container {
   position: absolute;
-  top: 77.5px; /* Adjust this value if the header height changes */
+  top: 95px; /* Adjust this value if the header height changes */
   left: calc(100% - var(--gui-width));
   width: 100%; /* or any specific width as per your design */
   z-index: 10; /* Ensure it's above other content but below fixed elements if needed */
-}
-
-.header-container {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  z-index: 1000;
-  border-bottom: 1.5px solid #18181a;
-  box-sizing: border-box; /* Include padding and border in the element's size */
 }
