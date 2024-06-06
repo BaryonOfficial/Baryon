@@ -308,3 +308,15 @@ export function gpgpuSetup(baseGeometry, renderer, parameters, baseGeometry2) {
 
   return { gpgpu: gpgpu, essentiaData: essentiaData };
 }
+
+export function disposeGPGPUResources(gpgpu) {
+  gpgpu.computation.dispose();
+  gpgpu.particlesVariable.material.dispose();
+  gpgpu.audioDataVariable.material.dispose();
+  gpgpu.scalarFieldVariable.material.dispose();
+  gpgpu.zeroPointsVariable.material.dispose();
+  gpgpu.particlesDebug.material.dispose();
+  gpgpu.audioDebug.material.dispose();
+  gpgpu.scalarFieldDebug.material.dispose();
+  gpgpu.zeroPointsDebug.material.dispose();
+}

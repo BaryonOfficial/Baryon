@@ -7,7 +7,7 @@ import GUI from 'lil-gui';
 import { postProcessingSetup } from './postProcessing/postProcessingSetup.js';
 import { guiSetup } from './utils/guiSetup.js';
 import { particlesSetup } from './baryon/particlesSetup.js';
-import { gpgpuSetup } from './baryon/gpgpuSetup.js';
+import { gpgpuSetup, disposeGPGPUResources } from './baryon/gpgpuSetup.js';
 import {
   audioObject,
   audioSetup,
@@ -217,6 +217,10 @@ window.addEventListener('resize', () => {
   // // Update effect composer
   effectComposer.setSize(sizes.width, sizes.height);
   effectComposer.setPixelRatio(sizes.pixelRatio);
+});
+
+window.addEventListener('beforeunload', () => {
+  disposeGPGPUResources(gpgpu);
 });
 
 function updateGPGPUTextures() {
