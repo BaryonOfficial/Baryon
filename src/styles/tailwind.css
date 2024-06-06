@@ -172,12 +172,16 @@
   left: 0px;
 }
 
-.left-5 {
-  left: 1.25rem;
+.left-4 {
+  left: 1rem;
 }
 
 .left-\[0rem\] {
   left: 0rem;
+}
+
+.right-0 {
+  right: 0px;
 }
 
 .right-\[0\.025rem\] {
@@ -681,17 +685,6 @@ body {
 .file-btn-standard:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(245 245 245 / var(--tw-bg-opacity));
-}
-
-.gui-container {
-  position: absolute;
-  top: 95px;
-  /* Adjust this value if the header height changes */
-  left: calc(100% - var(--gui-width));
-  width: 100%;
-  /* or any specific width as per your design */
-  z-index: 10;
-  /* Ensure it's above other content but below fixed elements if needed */
 }
 
 @media screen and (max-width: 450px) {
