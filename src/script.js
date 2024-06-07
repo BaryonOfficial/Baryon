@@ -177,7 +177,7 @@ guiSetup(
   parameters
 );
 
-/******************************** WEBRTC *********************************/
+/********************************************** WEBRTC ***********************************************/
 
 // Attach event listener to the toggle recording control button
 toggleRecordingButton.addEventListener('click', () =>
@@ -185,14 +185,7 @@ toggleRecordingButton.addEventListener('click', () =>
 );
 toggleRecordingButton.disabled = false; // Enable the button as it's now the only control for recording
 
-/******************************************************* ANIMATION *******************************************************/
-
-const clock = new THREE.Clock();
-let frameCounter = 0;
-let previousTime = 0;
-let time = 0;
-let deltaTime = 0;
-let frameReset = 10;
+/****************************************** EVENT LISTENERS ******************************************/
 
 window.addEventListener('resize', () => {
   // Update sizes
@@ -222,6 +215,48 @@ window.addEventListener('resize', () => {
 window.addEventListener('beforeunload', () => {
   disposeGPGPUResources(gpgpu);
 });
+
+document.addEventListener('keydown', function (event) {
+  // Check if 'f' key is pressed
+  if (event.key === 'f') {
+    if (!document.fullscreenElement) {
+      if (canvas.requestFullscreen) {
+        canvas.requestFullscreen();
+      } else if (canvas.mozRequestFullScreen) {
+        // Firefox
+        canvas.mozRequestFullScreen();
+      } else if (canvas.webkitRequestFullscreen) {
+        // Chrome, Safari and Opera
+        canvas.webkitRequestFullscreen();
+      } else if (canvas.msRequestFullscreen) {
+        // IE/Edge
+        canvas.msRequestFullscreen();
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if (document.mozCancelFullScreen) {
+        // Firefox
+        document.mozCancelFullScreen();
+      } else if (document.webkitExitFullscreen) {
+        // Chrome, Safari and Opera
+        document.webkitExitFullscreen();
+      } else if (document.msExitFullscreen) {
+        // IE/Edge
+        document.msExitFullscreen();
+      }
+    }
+  }
+});
+
+/******************************************************* ANIMATION *******************************************************/
+
+const clock = new THREE.Clock();
+let frameCounter = 0;
+let previousTime = 0;
+let time = 0;
+let deltaTime = 0;
+let frameReset = 10;
 
 function updateGPGPUTextures() {
   // Update audioData texture
