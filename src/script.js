@@ -249,6 +249,47 @@ document.addEventListener('keydown', function (event) {
   }
 });
 
+// Function to detect if the device is a mobile device
+function isMobileDevice() {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+function displayMobileMessage() {
+  // Create a container for the message
+  const container = document.createElement('div');
+  container.style.position = 'fixed';
+  container.style.top = '0';
+  container.style.left = '0';
+  container.style.width = '100%';
+  container.style.height = '100%';
+  container.style.display = 'flex';
+  container.style.alignItems = 'center'; // Vertically center
+  container.style.justifyContent = 'center'; // Horizontally center
+  container.style.backgroundColor = '#000'; // Fully opaque black background
+  container.style.color = 'white';
+  container.style.fontSize = '24px'; // Increased font size for better visibility
+  container.style.zIndex = '1000';
+  container.style.textAlign = 'center';
+  container.style.padding = '0px'; // Adds padding to prevent text from touching the edges
+
+  // Create the message element
+  const message = document.createElement('div');
+  message.textContent =
+    'Please view this site on desktop. Mobile & tablet is not supported at the moment.';
+  message.style.maxWidth = '90%'; // Ensures text does not extend beyond the viewport width
+
+  // Append the message to the container
+  container.appendChild(message);
+
+  // Append the container to the body
+  document.body.appendChild(container);
+}
+
+// Check if the device is mobile and display the message
+if (isMobileDevice()) {
+  displayMobileMessage();
+}
+
 /******************************************************* ANIMATION *******************************************************/
 
 const clock = new THREE.Clock();
