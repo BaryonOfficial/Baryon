@@ -77,7 +77,7 @@ const unrealBloomPass = res.unrealBloomPass;
 
 // Load the texture
 const textureLoader = new THREE.TextureLoader();
-const texture = textureLoader.load('images/channelORANGE.png', () => {
+const texture = textureLoader.load('assets/channelORANGE.png', () => {
   // Update renderer size if necessary
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
