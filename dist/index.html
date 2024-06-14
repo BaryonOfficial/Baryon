@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
+    <title>Baryon</title>
+    <link rel="icon" href="./assets/BaryonLogoWhiteCircle.svg" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@500;700&display=swap" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500&display=swap" />
+    <script type="module" crossorigin src="./assets/index-BwvwrtWK.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Do4wFR8X.css">
+  </head>
+  <body class="overflow-hidden border-none">
+    <div id="gui-container" class="fixed top-20 right-0 z-50">
+      <!-- lil-gui will be injected here -->
+    </div>
+
+    <div id="canvas-container">
+      <canvas class="webgl fixed top-0 left-0 outline-none"></canvas>
+    </div>
+
+    <div class="controls-container p-4 fixed top-20 left-4 z-50">
+      <div class="flex flex-col items-start space-y-2">
+        <!-- File Input -->
+        <div class="file-input flex flex-col items-start space-y-2">
+          <label class="file-btn-standard max-w-[125px] truncate">
+            <span id="fileName" class="truncate">Choose File</span>
+            <input type="file" id="audioInput" accept="audio/*" class="hidden" />
+          </label>
+        </div>
+        <!-- Playback Controls -->
+        <div class="playback-controls flex flex-row items-center space-x-2">
+          <button id="playPauseButton" class="btn-standard">Play</button>
+          <button id="stopButton" class="btn-standard">Stop</button>
+        </div>
+        <!-- Recording Controls -->
+        <div class="recording-controls flex-row items-center space-x-0 hidden">
+          <button id="toggleRecording" class="btn-standard">Start Recording</button>
+          <button id="downloadRecording" class="btn-standard" disabled>Download Recording</button>
+        </div>
+        <!-- Modes -->
+        <div class="modes flex flex-row items-center space-x-0">
+          <button id="fileMode" class="btn-standard hidden">Files</button>
+          <button id="streamMode" class="btn-standard hidden">Stream</button>
+          <button id="micMode" class="btn-standard">Mic</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      exports = {};
+    </script>
+    <script src="https://unpkg.com/ringbuf.js@0.1.0/dist/index.js" crossorigin="anonymous"></script>
+    <!-- by Paul Adenot, repo: https://github.com/padenot/ringbuf.js -->
+  </body>
+</html>
