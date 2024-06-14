@@ -290,10 +290,10 @@ export function processAudioData(gpgpu, particles, essentiaData) {
     let read = audioObject.audioReader.dequeue(essentiaData);
     if (read !== 0) {
       gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true;
-      console.log(
-        'Essentia Data:',
-        gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data
-      );
+      // console.log(
+      //   'Essentia Data:',
+      //   gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data
+      // );
     }
   }
 
@@ -334,7 +334,7 @@ async function loadAudioWorklet() {
   const workletProcessorCode = [
     'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js',
     'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.umd.js',
-    './audio/audio-data-processor.js',
+    './src/audio/audio-data-processor.js',
     'https://unpkg.com/ringbuf.js@0.1.0/dist/index.js',
   ];
 
@@ -349,13 +349,11 @@ async function loadAudioWorklet() {
 }
 
 export function setupAudioGraph() {
-  console.log('1');
   if (!window.SharedArrayBuffer) {
     console.error('SharedArrayBuffer is not supported in this browser.');
     alert('SharedArrayBuffer is not supported in this browser. Please use a compatible browser.');
     return;
   }
-  console.log('2');
   let sab = exports.RingBuffer.getStorageForCapacity(audioObject.capacity, Float32Array); // capacity: three float32 values [pitch, confidence, rms]
   let rb = new exports.RingBuffer(sab, Float32Array);
   audioObject.audioReader = new exports.AudioReader(rb);
@@ -367,7 +365,6 @@ export function setupAudioGraph() {
       capacity: audioObject.capacity,
     },
   });
-  console.log('3');
   // Add the onmessageerror event listener
   audioObject.essentiaNode.port.onmessageerror = (event) => {
     console.error('AudioWorkletNode message error:', event);
