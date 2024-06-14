@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import restart from 'vite-plugin-restart';
 import postcssConfig from './postcss.config.js';
 import glsl from 'vite-plugin-glsl';
 import topLevelAwait from 'vite-plugin-top-level-await';
@@ -32,19 +33,13 @@ export default defineConfig({
         drop_console: true,
       },
     },
-    rollupOptions: {
-      output: {
-        entryFileNames: `[name].[hash].js`,
-        chunkFileNames: `[name].[hash].js`,
-        assetFileNames: `[name].[hash].[ext]`,
-      },
-    },
     // target: 'esnext',
   },
   optimizeDeps: {
     include: ['@ffmpeg/ffmpeg'],
   },
   plugins: [
+    restart({ restart: ['../static/**'] }), // Restart server on static file change
     glsl(),
     topLevelAwait({
       // The export name of top-level await promise for each chunk module
