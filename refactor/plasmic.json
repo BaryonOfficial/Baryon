@@ -674,19 +674,6 @@
           "componentType": "component"
         },
         {
-          "id": "s2qN4JKMgcE4",
-          "name": "Test",
-          "type": "managed",
-          "projectId": "4dvBXLce6aZWcodsHuZ7oL",
-          "renderModuleFilePath": "plasmic/baryon/PlasmicTest.jsx",
-          "importSpec": {
-            "modulePath": "Test.jsx"
-          },
-          "cssFilePath": "plasmic/baryon/PlasmicTest.module.css",
-          "scheme": "blackbox",
-          "componentType": "component"
-        },
-        {
           "id": "FKV3u0E4hZrB",
           "name": "BaryonFooter",
           "type": "managed",

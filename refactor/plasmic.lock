@@ -184,16 +184,6 @@
         },
         {
           "type": "renderModule",
-          "assetId": "s2qN4JKMgcE4",
-          "checksum": "37439381061402ecd428540fd44c52b8"
-        },
-        {
-          "type": "cssRules",
-          "assetId": "s2qN4JKMgcE4",
-          "checksum": "37439381061402ecd428540fd44c52b8"
-        },
-        {
-          "type": "renderModule",
           "assetId": "FKV3u0E4hZrB",
           "checksum": "2c5f2f278bd1f1c044e9aa7a52fec1e9"
         },
