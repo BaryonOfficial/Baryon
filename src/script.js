@@ -7,7 +7,7 @@ import GUI from 'lil-gui';
 import { postProcessingSetup } from './postProcessing/postProcessingSetup.js';
 import { guiSetup } from './utils/guiSetup.js';
 import { particlesSetup } from './baryon/particlesSetup.js';
-import { gpgpuSetup } from './baryon/gpgpuSetup.js';
+import { gpgpuSetup, disposeGPGPUResources } from './baryon/gpgpuSetup.js';
 import {
   audioObject,
   audioSetup,
@@ -17,8 +17,9 @@ import {
 import { toggleRecording, toggleRecordingButton } from './recordRTC.js';
 
 //******************************************************* GENERAL INITIALIZATION *******************************************************//
-
-const gui = new GUI({ width: 340 });
+const guiWidth = 300;
+const gui = new GUI({ width: guiWidth, container: document.getElementById('gui-container') });
+document.documentElement.style.setProperty('--gui-width', guiWidth + 'px');
 const debugObject = {};
 
 // Canvas
@@ -76,7 +77,7 @@ const unrealBloomPass = res.unrealBloomPass;
 
 // Load the texture
 const textureLoader = new THREE.TextureLoader();
-const texture = textureLoader.load('images/channelORANGE.png', () => {
+const texture = textureLoader.load('assets/channelORANGE.png', () => {
   // Update renderer size if necessary
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
@@ -103,7 +104,7 @@ scene.add(plane);
 let parameters = {
   count: 1500000,
   radius: 3.0, // Radius of the sphere
-  threshold: 0.08,
+  threshold: 0.05,
   surfaceRatio: 0.33,
   surfaceThreshold: 0.01,
 };
@@ -119,7 +120,7 @@ const colors = new Float32Array(baseGeometry.count * 3); // r, g, b for each par
 /**
  * Load model
  */
-const gltf = await gltfLoader.loadAsync('./Baryon_v2.glb');
+const gltf = await gltfLoader.loadAsync('./glb/Baryon_v2.glb');
 const baseGeometry2 = {};
 baseGeometry2.instance = gltf.scene.children[0];
 
@@ -176,7 +177,7 @@ guiSetup(
   parameters
 );
 
-/******************************** WEBRTC *********************************/
+/********************************************** WEBRTC ***********************************************/
 
 // Attach event listener to the toggle recording control button
 toggleRecordingButton.addEventListener('click', () =>
@@ -184,14 +185,7 @@ toggleRecordingButton.addEventListener('click', () =>
 );
 toggleRecordingButton.disabled = false; // Enable the button as it's now the only control for recording
 
-/******************************************************* ANIMATION *******************************************************/
-
-const clock = new THREE.Clock();
-let frameCounter = 0;
-let previousTime = 0;
-let time = 0;
-let deltaTime = 0;
-let frameReset = 10;
+/****************************************** EVENT LISTENERS ******************************************/
 
 window.addEventListener('resize', () => {
   // Update sizes
@@ -217,6 +211,93 @@ window.addEventListener('resize', () => {
   effectComposer.setSize(sizes.width, sizes.height);
   effectComposer.setPixelRatio(sizes.pixelRatio);
 });
+
+window.addEventListener('beforeunload', () => {
+  disposeGPGPUResources(gpgpu);
+});
+
+document.addEventListener('keydown', function (event) {
+  // Check if 'f' key is pressed
+  if (event.key === 'f') {
+    if (!document.fullscreenElement) {
+      if (canvas.requestFullscreen) {
+        canvas.requestFullscreen();
+      } else if (canvas.mozRequestFullScreen) {
+        // Firefox
+        canvas.mozRequestFullScreen();
+      } else if (canvas.webkitRequestFullscreen) {
+        // Chrome, Safari and Opera
+        canvas.webkitRequestFullscreen();
+      } else if (canvas.msRequestFullscreen) {
+        // IE/Edge
+        canvas.msRequestFullscreen();
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if (document.mozCancelFullScreen) {
+        // Firefox
+        document.mozCancelFullScreen();
+      } else if (document.webkitExitFullscreen) {
+        // Chrome, Safari and Opera
+        document.webkitExitFullscreen();
+      } else if (document.msExitFullscreen) {
+        // IE/Edge
+        document.msExitFullscreen();
+      }
+    }
+  }
+});
+
+// Function to detect if the device is a mobile device
+function isMobileDevice() {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+function displayMobileMessage() {
+  // Create a container for the message
+  const container = document.createElement('div');
+  container.style.position = 'fixed';
+  container.style.top = '0';
+  container.style.left = '0';
+  container.style.width = '100%';
+  container.style.height = '100%';
+  container.style.display = 'flex';
+  container.style.alignItems = 'center'; // Vertically center
+  container.style.justifyContent = 'center'; // Horizontally center
+  container.style.backgroundColor = '#000'; // Fully opaque black background
+  container.style.color = 'white';
+  container.style.fontSize = '24px'; // Increased font size for better visibility
+  container.style.zIndex = '1000';
+  container.style.textAlign = 'center';
+  container.style.padding = '0px'; // Adds padding to prevent text from touching the edges
+
+  // Create the message element
+  const message = document.createElement('div');
+  message.textContent =
+    'Please view this site on desktop. Mobile & tablet is not supported at the moment.';
+  message.style.maxWidth = '90%'; // Ensures text does not extend beyond the viewport width
+
+  // Append the message to the container
+  container.appendChild(message);
+
+  // Append the container to the body
+  document.body.appendChild(container);
+}
+
+// Check if the device is mobile and display the message
+if (isMobileDevice()) {
+  displayMobileMessage();
+}
+
+/******************************************************* ANIMATION *******************************************************/
+
+const clock = new THREE.Clock();
+let frameCounter = 0;
+let previousTime = 0;
+let time = 0;
+let deltaTime = 0;
+let frameReset = 10;
 
 function updateGPGPUTextures() {
   // Update audioData texture

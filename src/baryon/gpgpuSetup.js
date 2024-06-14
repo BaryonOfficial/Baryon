@@ -238,11 +238,11 @@ export function gpgpuSetup(baseGeometry, renderer, parameters, baseGeometry2) {
   gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
   gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(baryonLogoTexture);
   gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
-  gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(36);
+  gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(32);
   gpgpu.particlesVariable.material.uniforms.uStarted = new THREE.Uniform(audioObject.sound.started);
   gpgpu.particlesVariable.material.uniforms.uParticleMovementType = new THREE.Uniform(1);
   gpgpu.particlesVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
-  gpgpu.particlesVariable.material.uniforms.uDistanceThreshold = new THREE.Uniform(0.8);
+  gpgpu.particlesVariable.material.uniforms.uDistanceThreshold = new THREE.Uniform(0.5);
   gpgpu.particlesVariable.material.uniforms.uMicActive = new THREE.Uniform(
     audioObject.gumStream && audioObject.gumStream.active
   );
@@ -307,4 +307,16 @@ export function gpgpuSetup(baseGeometry, renderer, parameters, baseGeometry2) {
   }
 
   return { gpgpu: gpgpu, essentiaData: essentiaData };
+}
+
+export function disposeGPGPUResources(gpgpu) {
+  gpgpu.computation.dispose();
+  gpgpu.particlesVariable.material.dispose();
+  gpgpu.audioDataVariable.material.dispose();
+  gpgpu.scalarFieldVariable.material.dispose();
+  gpgpu.zeroPointsVariable.material.dispose();
+  gpgpu.particlesDebug.material.dispose();
+  gpgpu.audioDebug.material.dispose();
+  gpgpu.scalarFieldDebug.material.dispose();
+  gpgpu.zeroPointsDebug.material.dispose();
 }

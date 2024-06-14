@@ -39,7 +39,7 @@ export function guiSetup(
   const granularControls = gui.addFolder('Granular Controls');
   granularControls
     .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence, 'value')
-    .min(0)
+    .min(0.01)
     .max(1)
     .step(0.001)
     .name('FlowField Influence');
@@ -63,16 +63,16 @@ export function guiSetup(
     .name('Particle Speed');
   granularControls
     .add(gpgpu.particlesVariable.material.uniforms.uDistanceThreshold, 'value')
-    .min(0.0)
+    .min(0)
     .max(5.0)
     .step(0.001)
     .name('Target Lerp Threshold');
   granularControls
     .add(parameters, 'threshold')
-    .min(0.01)
-    .max(5)
+    .min(0.001)
+    .max(0.5)
     .step(0.001)
-    .name('Chladni Mode Precision')
+    .name('Zero-Point Precision')
     .onChange(() => {
       gpgpu.zeroPointsVariable.material.uniforms.uThreshold.value = parameters.threshold;
       gpgpu.particlesVariable.material.uniforms.uThreshold.value = parameters.threshold;
@@ -85,13 +85,13 @@ export function guiSetup(
     .min(0)
     .max(1)
     .step(0.001)
-    .name('uSize');
+    .name('Particle Size');
   aesthetics
     .add(particles.material.uniforms.uRotation, 'value')
     .min(0)
     .max(10)
     .step(0.001)
-    .name('uRotation');
+    .name('Rotation Speed');
   aesthetics
     .add(gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl, 'value')
     .name('Surface Particles')
