@@ -1,0 +1,29 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  width: 100%;
+  height: auto;
+  justify-content: flex-start;
+  align-items: center;
+  min-width: 0;
+}
+.svg {
+  position: relative;
+  object-fit: cover;
+  max-width: 100%;
+  mix-blend-mode: normal;
+  align-self: center;
+  color: #000000;
+  height: 1em;
+  flex-shrink: 0;
+}
+.root:hover .svg {
+  color: #3f3f3f;
+  backdrop-filter: none;
+  filter: none;
+  box-shadow: none;
+  mix-blend-mode: normal;
+  transform: translateX(0px) translateY(0px) translateZ(0px);
+  -webkit-backdrop-filter: none;
+}
