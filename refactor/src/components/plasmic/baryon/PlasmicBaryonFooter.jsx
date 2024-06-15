@@ -15,7 +15,9 @@ import {
   classNames,
   createPlasmicElementProxy,
   deriveRenderOpts,
-  ensureGlobalVariants
+  ensureGlobalVariants,
+  hasVariant,
+  useDollarState
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 import { useScreenVariants as useScreenVariantspcuqpuXkf7V2 } from "./PlasmicGlobalVariant__Screen"; // plasmic-import: PcuqpuXKF7v2/globalVariant
@@ -28,7 +30,7 @@ import InstagramSvgrepoComsvgIcon from "./icons/PlasmicIcon__InstagramSvgrepoCom
 
 createPlasmicElementProxy;
 
-export const PlasmicBaryonFooter__VariantProps = new Array();
+export const PlasmicBaryonFooter__VariantProps = new Array("whitetextFooter");
 
 export const PlasmicBaryonFooter__ArgProps = new Array();
 
@@ -44,6 +46,24 @@ function PlasmicBaryonFooter__RenderFunc(props) {
   const $ctx = useDataEnv?.() || {};
   const refsRef = React.useRef({});
   const $refs = refsRef.current;
+  const stateSpecs = React.useMemo(
+    () => [
+      {
+        path: "whitetextFooter",
+        type: "private",
+        variableType: "variant",
+        initFunc: ({ $props, $state, $queries, $ctx }) => $props.whitetextFooter
+      }
+    ],
+
+    [$props, $ctx, $refs]
+  );
+  const $state = useDollarState(stateSpecs, {
+    $props,
+    $ctx,
+    $queries: {},
+    $refs
+  });
   const globalVariants = ensureGlobalVariants({
     screen: useScreenVariantspcuqpuXkf7V2()
   });
@@ -60,7 +80,14 @@ function PlasmicBaryonFooter__RenderFunc(props) {
         projectcss.plasmic_mixins,
         projectcss.plasmic_tokens,
         plasmic_antd_5_hostless_css.plasmic_tokens,
-        sty.root
+        sty.root,
+        {
+          [sty.rootwhitetextFooter]: hasVariant(
+            $state,
+            "whitetextFooter",
+            "whitetextFooter"
+          )
+        }
       )}
     >
       <Stack__
@@ -78,25 +105,46 @@ function PlasmicBaryonFooter__RenderFunc(props) {
           <Stack__
             as={"div"}
             hasGap={true}
-            className={classNames(projectcss.all, sty.freeBox__wg3Kr)}
+            className={classNames(projectcss.all, sty.freeBox__wg3Kr, {
+              [sty.freeBoxwhitetextFooter__wg3Kr6Ubxt]: hasVariant(
+                $state,
+                "whitetextFooter",
+                "whitetextFooter"
+              )
+            })}
           >
             <PlasmicImg__
               data-plasmic-name={"img"}
               data-plasmic-override={overrides.img}
               alt={""}
-              className={classNames(sty.img)}
+              className={classNames(sty.img, {
+                [sty.imgwhitetextFooter]: hasVariant(
+                  $state,
+                  "whitetextFooter",
+                  "whitetextFooter"
+                )
+              })}
               displayHeight={"40px"}
               displayMaxHeight={"none"}
               displayMaxWidth={"none"}
               displayMinHeight={"0"}
               displayMinWidth={"0"}
               displayWidth={"40px"}
-              src={{
-                src: "data:image/svg+xml;base64,PHN2ZyBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMzkxIDIwNDgiPgogIDxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgY2xpcC1ydWxlPSJldmVub2RkIiBkPSJNMjM5MC4yMSAxMi4zODVjLTQ4OS43OCA3Ni42MTMtODY0LjQ4IDUwMC4zNzItODY0LjQ4IDEwMTEuNjQ1IDAgNTExLjIxIDM3NC42IDkzNC45MiA4NjQuMjcgMTAxMS42Mi01MS45OCA4LjEzLTEwNS4yNiAxMi4zNS0xNTkuNTIgMTIuMzUtNTY1LjU0IDAtMTAyNC00NTguNDYtMTAyNC0xMDI0UzE2NjQuOTQgMCAyMjMwLjQ4IDBjNTQuMzMgMCAxMDcuNjggNC4yMzIgMTU5LjczIDEyLjM4NXpNMCAxMi4zODVDNDg5Ljc3NCA4OC45OTggODY0LjQ3NiA1MTIuNzU3IDg2NC40NzYgMTAyNC4wM2MwIDUxMS4yMS0zNzQuNTk2IDkzNC45Mi04NjQuMjY4IDEwMTEuNjIgNTEuOTgyIDguMTMgMTA1LjI2IDEyLjM1IDE1OS41MjQgMTIuMzUgNTY1LjU0IDAgMTAyMy45OTgtNDU4LjQ2IDEwMjMuOTk4LTEwMjRTNzI1LjI3MiAwIDE1OS43MzIgMEMxMDUuMzk2IDAgNTIuMDQ4IDQuMjMyIDAgMTIuMzg1eiIgZmlsbD0iIzAwMCIvPgo8L3N2Zz4K",
-                fullWidth: 2391,
-                fullHeight: 2048,
-                aspectRatio: 1.16748
-              }}
+              src={
+                hasVariant($state, "whitetextFooter", "whitetextFooter")
+                  ? {
+                      src: "data:image/svg+xml;base64,PHN2ZyBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMzkxIDIwNDgiPgogIDxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgY2xpcC1ydWxlPSJldmVub2RkIiBkPSJNMjM5MC4yMSAxMi4zODVjLTQ4OS43OCA3Ni42MTMtODY0LjQ4IDUwMC4zNzItODY0LjQ4IDEwMTEuNjQ1IDAgNTExLjIxIDM3NC42IDkzNC45MiA4NjQuMjcgMTAxMS42Mi01MS45OCA4LjEzLTEwNS4yNiAxMi4zNS0xNTkuNTIgMTIuMzUtNTY1LjU0IDAtMTAyNC00NTguNDYtMTAyNC0xMDI0UzE2NjQuOTQgMCAyMjMwLjQ4IDBjNTQuMzMgMCAxMDcuNjggNC4yMzIgMTU5LjczIDEyLjM4NXpNMCAxMi4zODVDNDg5Ljc3NCA4OC45OTggODY0LjQ3NiA1MTIuNzU3IDg2NC40NzYgMTAyNC4wM2MwIDUxMS4yMS0zNzQuNTk2IDkzNC45Mi04NjQuMjY4IDEwMTEuNjIgNTEuOTgyIDguMTMgMTA1LjI2IDEyLjM1IDE1OS41MjQgMTIuMzUgNTY1LjU0IDAgMTAyMy45OTgtNDU4LjQ2IDEwMjMuOTk4LTEwMjRTNzI1LjI3MiAwIDE1OS43MzIgMEMxMDUuMzk2IDAgNTIuMDQ4IDQuMjMyIDAgMTIuMzg1eiIgZmlsbD0iI2ZmZiIvPgo8L3N2Zz4K",
+                      fullWidth: 2391,
+                      fullHeight: 2048,
+                      aspectRatio: 1.16748
+                    }
+                  : {
+                      src: "data:image/svg+xml;base64,PHN2ZyBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMzkxIDIwNDgiPgogIDxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgY2xpcC1ydWxlPSJldmVub2RkIiBkPSJNMjM5MC4yMSAxMi4zODVjLTQ4OS43OCA3Ni42MTMtODY0LjQ4IDUwMC4zNzItODY0LjQ4IDEwMTEuNjQ1IDAgNTExLjIxIDM3NC42IDkzNC45MiA4NjQuMjcgMTAxMS42Mi01MS45OCA4LjEzLTEwNS4yNiAxMi4zNS0xNTkuNTIgMTIuMzUtNTY1LjU0IDAtMTAyNC00NTguNDYtMTAyNC0xMDI0UzE2NjQuOTQgMCAyMjMwLjQ4IDBjNTQuMzMgMCAxMDcuNjggNC4yMzIgMTU5LjczIDEyLjM4NXpNMCAxMi4zODVDNDg5Ljc3NCA4OC45OTggODY0LjQ3NiA1MTIuNzU3IDg2NC40NzYgMTAyNC4wM2MwIDUxMS4yMS0zNzQuNTk2IDkzNC45Mi04NjQuMjY4IDEwMTEuNjIgNTEuOTgyIDguMTMgMTA1LjI2IDEyLjM1IDE1OS41MjQgMTIuMzUgNTY1LjU0IDAgMTAyMy45OTgtNDU4LjQ2IDEwMjMuOTk4LTEwMjRTNzI1LjI3MiAwIDE1OS43MzIgMEMxMDUuMzk2IDAgNTIuMDQ4IDQuMjMyIDAgMTIuMzg1eiIgZmlsbD0iIzAwMCIvPgo8L3N2Zz4K",
+                      fullWidth: 2391,
+                      fullHeight: 2048,
+                      aspectRatio: 1.16748
+                    }
+              }
             />
 
             <Stack__
@@ -110,7 +158,14 @@ function PlasmicBaryonFooter__RenderFunc(props) {
                 className={classNames(
                   projectcss.all,
                   projectcss.__wab_text,
-                  sty.text
+                  sty.text,
+                  {
+                    [sty.textwhitetextFooter]: hasVariant(
+                      $state,
+                      "whitetextFooter",
+                      "whitetextFooter"
+                    )
+                  }
                 )}
               >
                 {"Connect with us"}
@@ -121,7 +176,13 @@ function PlasmicBaryonFooter__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox__aLqSt)}
               >
                 <LogosvgIcon
-                  className={classNames(projectcss.all, sty.svg__zmaZs)}
+                  className={classNames(projectcss.all, sty.svg__zmaZs, {
+                    [sty.svgwhitetextFooter__zmaZs6Ubxt]: hasVariant(
+                      $state,
+                      "whitetextFooter",
+                      "whitetextFooter"
+                    )
+                  })}
                   onClick={async event => {
                     const $steps = {};
                     $steps["goToHttpsxcombaryonofficial"] = true
@@ -159,7 +220,13 @@ function PlasmicBaryonFooter__RenderFunc(props) {
                 />
 
                 <InstagramSvgrepoComsvgIcon
-                  className={classNames(projectcss.all, sty.svg__c9B5)}
+                  className={classNames(projectcss.all, sty.svg__c9B5, {
+                    [sty.svgwhitetextFooter__c9B56Ubxt]: hasVariant(
+                      $state,
+                      "whitetextFooter",
+                      "whitetextFooter"
+                    )
+                  })}
                   onClick={async event => {
                     const $steps = {};
                     $steps["goToHttpsinstagramcombaryoneth"] = true

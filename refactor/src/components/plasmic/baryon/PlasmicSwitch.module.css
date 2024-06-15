@@ -1,0 +1,31 @@
+.root {
+  display: inline-flex;
+  flex-direction: column;
+  position: relative;
+  width: auto;
+  height: auto;
+  align-items: center;
+}
+.root:focus-within {
+  outline: none;
+}
+.root___focusVisibleWithin {
+  outline: none;
+}
+.skeumorphicToggle:global(.__wab_instance) {
+  max-width: 100%;
+  position: relative;
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+.skeumorphicToggleisDisabled:global(.__wab_instance) {
+  flex-shrink: 0;
+}
+.skeumorphicToggleisChecked:global(.__wab_instance) {
+  flex-shrink: 0;
+}
+.modeNaming__tyn2A:global(.__wab_instance) {
+  max-width: 100%;
+  position: relative;
+  flex-shrink: 0;
+}

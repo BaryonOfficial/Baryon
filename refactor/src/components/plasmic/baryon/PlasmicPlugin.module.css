@@ -236,7 +236,7 @@
   > img {
   margin-top: 8px;
 }
-.embedHtml:global(.__wab_instance) {
+.senderForm:global(.__wab_instance) {
   max-width: 100%;
   object-fit: cover;
   position: relative;
@@ -876,17 +876,18 @@
   min-width: 0;
   padding: 0px;
 }
-.svg__jZtL {
+.touchDesignerLogo {
   position: relative;
   object-fit: cover;
   max-width: 100%;
   min-height: 60px;
   min-width: 60px;
+  color: #000000;
   height: 1em;
   flex-shrink: 0;
 }
 @media (min-width: 0px) and (max-width: 768px) {
-  .svg__jZtL {
+  .touchDesignerLogo {
     color: #000000;
   }
 }
@@ -929,7 +930,7 @@
   min-width: 0;
   padding: 0px;
 }
-.svg__nh0T1 {
+.resolumeLogo {
   position: relative;
   object-fit: cover;
   max-width: 100%;
@@ -979,17 +980,18 @@
   min-width: 0;
   padding: 0px;
 }
-.svg__sbWtX {
+.unrealEngineLogo {
   position: relative;
   object-fit: cover;
   max-width: 100%;
   min-height: 60px;
   min-width: 60px;
+  color: #000000;
   height: 1em;
   flex-shrink: 0;
 }
 @media (min-width: 0px) and (max-width: 768px) {
-  .svg__sbWtX {
+  .unrealEngineLogo {
     color: #000000;
   }
 }
@@ -1032,17 +1034,18 @@
   min-width: 0;
   padding: 0px;
 }
-.svg__jZuAw {
+.abletonLogo {
   position: relative;
   object-fit: cover;
   max-width: 100%;
   min-height: 60px;
   min-width: 60px;
+  color: #000000;
   height: 1em;
   flex-shrink: 0;
 }
 @media (min-width: 0px) and (max-width: 768px) {
-  .svg__jZuAw {
+  .abletonLogo {
     color: #000000;
   }
 }
@@ -1085,7 +1088,7 @@
   min-width: 0;
   padding: 0px;
 }
-.svg___9SNyg {
+.obsLogo {
   position: relative;
   object-fit: cover;
   max-width: 100%;
@@ -1095,7 +1098,7 @@
   flex-shrink: 0;
 }
 @media (min-width: 0px) and (max-width: 768px) {
-  .svg___9SNyg {
+  .obsLogo {
     color: #000000;
   }
 }
@@ -1513,22 +1516,6 @@
   height: 24px;
   flex-shrink: 0;
 }
-.freeBox___1B6MC {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  justify-content: flex-start;
-  background: #007aff;
-  border-radius: 8px;
-  padding: 0px;
-}
-.svg__v6EJt {
-  object-fit: cover;
-  width: 24px;
-  height: 24px;
-  color: #ffffff;
-  flex-shrink: 0;
-}
 .freeBox__ls25Z {
   display: flex;
   position: relative;
@@ -1550,21 +1537,6 @@
   > picture
   > img {
   margin-top: 4px;
-}
-.text__wg2Rp {
-  font-weight: 600;
-  font-size: 20px;
-  line-height: 28px;
-  font-family: "Inter", sans-serif;
-  font-style: normal;
-  color: #000000d9;
-  text-align: left;
-  text-transform: none;
-  letter-spacing: normal;
-  white-space: pre-wrap;
-  user-select: text;
-  text-decoration-line: none;
-  text-overflow: clip;
 }
 .text__ht4Kz {
   color: #05050599;
@@ -1621,22 +1593,6 @@
   height: 24px;
   flex-shrink: 0;
 }
-.freeBox__ghvZg {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  justify-content: flex-start;
-  background: #007aff;
-  border-radius: 8px;
-  padding: 0px;
-}
-.svg__sbQcq {
-  object-fit: cover;
-  width: 24px;
-  height: 24px;
-  color: #ffffff;
-  flex-shrink: 0;
-}
 .freeBox__dggS6 {
   display: flex;
   position: relative;
@@ -1658,21 +1614,6 @@
   > picture
   > img {
   margin-top: 4px;
-}
-.text__dabgf {
-  font-weight: 600;
-  font-size: 20px;
-  line-height: 28px;
-  font-family: "Inter", sans-serif;
-  font-style: normal;
-  color: #000000d9;
-  text-align: left;
-  text-transform: none;
-  letter-spacing: normal;
-  white-space: pre-wrap;
-  user-select: text;
-  text-decoration-line: none;
-  text-overflow: clip;
 }
 .text__phyfe {
   height: auto;
@@ -1730,22 +1671,6 @@
   height: 24px;
   flex-shrink: 0;
 }
-.freeBox__pGrp9 {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  justify-content: flex-start;
-  background: #007aff;
-  border-radius: 8px;
-  padding: 0px;
-}
-.svg___5DMz {
-  object-fit: cover;
-  width: 24px;
-  height: 24px;
-  color: #ffffff;
-  flex-shrink: 0;
-}
 .freeBox___0DcKs {
   display: flex;
   position: relative;
@@ -1767,21 +1692,6 @@
   > picture
   > img {
   margin-top: 4px;
-}
-.text__xea8D {
-  font-weight: 600;
-  font-size: 20px;
-  line-height: 28px;
-  font-family: "Inter", sans-serif;
-  font-style: normal;
-  color: #000000d9;
-  text-align: left;
-  text-transform: none;
-  letter-spacing: normal;
-  white-space: pre-wrap;
-  user-select: text;
-  text-decoration-line: none;
-  text-overflow: clip;
 }
 .text__jOsTu {
   color: #05050599;

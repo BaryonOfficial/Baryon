@@ -1,0 +1,31 @@
+.micNaming {
+  width: 41px;
+  height: 20px;
+  display: block;
+  position: relative;
+}
+.text {
+  display: block;
+  font-size: 10px;
+  text-align: center;
+  font-family: "Ubuntu", sans-serif;
+  font-weight: 500;
+  letter-spacing: 0.11em;
+  line-height: 1.5;
+  color: rgba(235, 228, 228, 1);
+  position: absolute;
+  top: 10%;
+  left: 48.78%;
+}
+.svg {
+  position: absolute;
+  object-fit: cover;
+  max-width: 100%;
+  color: #ece4e4;
+  width: 20px;
+  height: 20px;
+  display: block;
+  top: 0px;
+  left: 0px;
+  overflow: hidden;
+}

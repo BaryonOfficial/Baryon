@@ -17,7 +17,7 @@
   left: 0%;
   border-radius: 21.917px;
 }
-.skeumorphictogglebutton:active .base3 {
+.base3micToggleOn {
   display: none;
 }
 .outsideStroke3 {
@@ -38,7 +38,7 @@
   border-radius: 21.917px;
   border: 2px solid #a8a8a8;
 }
-.skeumorphictogglebutton:active .outsideStroke3 {
+.outsideStroke3micToggleOn {
   display: none;
 }
 .insideStroke3 {
@@ -51,7 +51,7 @@
   left: 7.81%;
   border-radius: 21.917px;
 }
-.skeumorphictogglebutton:active .insideStroke3 {
+.insideStroke3micToggleOn {
   display: none;
 }
 .textFrame3 {
@@ -65,7 +65,7 @@
   overflow: hidden;
   border-radius: 21.917px;
 }
-.skeumorphictogglebutton:active .textFrame3 {
+.textFrame3micToggleOn {
   display: none;
 }
 .text___4FJz7 {
@@ -98,7 +98,7 @@
 .img__r9EmC > picture > img {
   object-fit: cover;
 }
-.skeumorphictogglebutton:active .img__r9EmC {
+.imgmicToggleOn__r9EmCjMud1 {
   display: none !important;
 }
 .property1On {
@@ -108,6 +108,9 @@
   position: absolute;
   left: 0px;
   top: 0px;
+}
+.property1OnmicToggleOn {
+  display: block;
 }
 .base {
   box-shadow: inset 0px 0.175px 4.12px 0px rgba(0, 0, 0, 0.27),
@@ -184,7 +187,7 @@
 .img__zNJxL > picture > img {
   object-fit: cover;
 }
-.skeumorphictogglebutton:active .img__zNJxL {
+.imgmicToggleOn__zNJxLjMud1 {
   display: block !important;
 }
 .maskGroup {
@@ -209,6 +212,6 @@
   left: 6.25%;
   display: none;
 }
-.skeumorphictogglebutton:active .svg {
+.svgmicToggleOn {
   display: block;
 }
