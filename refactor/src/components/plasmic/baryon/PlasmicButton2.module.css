@@ -122,7 +122,7 @@
   background: #7f7e77;
 }
 .rootcolor_white:hover {
-  background: #ffef5c;
+  background: #feb56280;
 }
 .rootcolor_softBlue:hover {
   background: #e1f0ff;
@@ -192,7 +192,7 @@
   background: #a1a09a;
 }
 .rootcolor_white:active {
-  background: #f0c000;
+  background: #feb562cc;
 }
 .rootcolor_softBlue:active {
   background: #cee7fe;

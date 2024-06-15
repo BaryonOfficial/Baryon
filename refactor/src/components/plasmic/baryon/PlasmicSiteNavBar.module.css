@@ -45,8 +45,8 @@
   align-items: center;
   justify-content: space-between;
   min-width: 0;
-  margin-left: calc(0px - 16px);
-  width: calc(100% + 16px);
+  margin-left: calc(0px - 8px);
+  width: calc(100% + 8px);
 }
 .freeBox__k2VAf > :global(.__wab_flex-container) > *,
 .freeBox__k2VAf > :global(.__wab_flex-container) > :global(.__wab_slot) > *,
@@ -56,7 +56,7 @@
   > :global(.__wab_slot)
   > picture
   > img {
-  margin-left: 16px;
+  margin-left: 8px;
 }
 @media (min-width: 0px) and (max-width: 768px) {
   .freeBox__k2VAf {
@@ -69,8 +69,8 @@
   .freeBox__k2VAf > :global(.__wab_flex-container) {
     flex-direction: row;
     align-items: center;
-    margin-left: calc(0px - 16px);
-    width: calc(100% + 16px);
+    margin-left: calc(0px - 8px);
+    width: calc(100% + 8px);
     margin-top: calc(0px - 0px);
     height: calc(100% + 0px);
   }
@@ -84,7 +84,7 @@
     > :global(.__wab_slot)
     > picture
     > img {
-    margin-left: 16px;
+    margin-left: 8px;
     margin-top: 0px;
   }
 }
@@ -93,11 +93,13 @@
 }
 .baryonBlackLogo {
   object-fit: cover;
-  width: 40px;
-  height: 40px;
+  width: 25px;
+  height: 25px;
   position: relative;
   margin-right: 0px;
-  margin-left: calc(0px + 16px) !important;
+  margin-left: calc(0px + 8px) !important;
+  min-width: 25px;
+  min-height: 25px;
   flex-shrink: 0;
 }
 .baryonBlackLogo > picture > img {
@@ -105,10 +107,9 @@
 }
 @media (min-width: 0px) and (max-width: 768px) {
   .baryonBlackLogo {
-    height: 40px;
-    width: 40px;
-    margin-left: calc(0px + 16px) !important;
-    flex-shrink: 0;
+    min-width: 25px;
+    min-height: 25px;
+    margin-left: calc(0px + 8px) !important;
   }
 }
 .text__wvVC {
@@ -122,12 +123,13 @@
   font-family: "Orbitron", sans-serif;
   font-weight: 600;
   color: #ffffff;
+  font-size: 24px;
   padding: 0px;
   margin: 0px;
 }
 @media (min-width: 0px) and (max-width: 768px) {
   .baryonTitle {
-    font-size: 32px;
+    font-size: 24px;
   }
 }
 .freeBox__xjZU {
@@ -176,6 +178,10 @@
   max-width: 100%;
   position: relative;
   align-self: flex-start;
+  transition-property: all;
+  transition-duration: 0.5s;
+  -webkit-transition-property: all;
+  -webkit-transition-duration: 0.5s;
 }
 @media (min-width: 0px) and (max-width: 768px) {
   .visualizerNav:global(.__wab_instance) {
@@ -213,11 +219,11 @@
   max-width: 100%;
   position: relative;
   align-self: flex-start;
-  transition-property: all, all;
-  transition-duration: 1s, 1s;
+  transition-property: all;
+  transition-duration: 0.5s;
   transform: translateX(0px) translateY(0px) translateZ(0px);
-  -webkit-transition-property: all, all;
-  -webkit-transition-duration: 1s, 1s;
+  -webkit-transition-property: all;
+  -webkit-transition-duration: 0.5s;
 }
 @media (min-width: 0px) and (max-width: 768px) {
   .pluginNav:global(.__wab_instance) {
@@ -255,6 +261,10 @@
   max-width: 100%;
   position: relative;
   align-self: flex-start;
+  transition-property: all;
+  transition-duration: 0.5s;
+  -webkit-transition-property: all;
+  -webkit-transition-duration: 0.5s;
 }
 @media (min-width: 0px) and (max-width: 768px) {
   .storyNav:global(.__wab_instance) {
@@ -292,6 +302,10 @@
   max-width: 100%;
   position: relative;
   align-self: flex-start;
+  transition-property: all;
+  transition-duration: 0.5s;
+  -webkit-transition-property: all;
+  -webkit-transition-duration: 0.5s;
 }
 @media (min-width: 0px) and (max-width: 768px) {
   .artNav:global(.__wab_instance) {
