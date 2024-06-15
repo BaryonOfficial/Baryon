@@ -58,11 +58,13 @@ function PlasmicMicButton__RenderFunc(props) {
         plasmic_antd_5_hostless_css.plasmic_tokens,
         sty.micButton
       )}
+      id={"micMode"}
     >
       <SkeumorphicToggle
-        data-plasmic-name={"skeumorphicToggle"}
-        data-plasmic-override={overrides.skeumorphicToggle}
-        className={classNames("__wab_instance", sty.skeumorphicToggle)}
+        data-plasmic-name={"micToggle"}
+        data-plasmic-override={overrides.micToggle}
+        className={classNames("__wab_instance", sty.micToggle)}
+        micToggle={true}
       />
 
       <div
@@ -93,8 +95,8 @@ function PlasmicMicButton__RenderFunc(props) {
 }
 
 const PlasmicDescendants = {
-  micButton: ["micButton", "skeumorphicToggle", "micNaming", "text", "svg"],
-  skeumorphicToggle: ["skeumorphicToggle"],
+  micButton: ["micButton", "micToggle", "micNaming", "text", "svg"],
+  micToggle: ["micToggle"],
   micNaming: ["micNaming", "text", "svg"],
   text: ["text"],
   svg: ["svg"]
@@ -132,7 +134,7 @@ export const PlasmicMicButton = Object.assign(
   makeNodeComponent("micButton"),
   {
     // Helper components rendering sub-elements
-    skeumorphicToggle: makeNodeComponent("skeumorphicToggle"),
+    micToggle: makeNodeComponent("micToggle"),
     micNaming: makeNodeComponent("micNaming"),
     text: makeNodeComponent("text"),
     svg: makeNodeComponent("svg"),

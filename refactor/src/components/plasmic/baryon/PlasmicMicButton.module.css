@@ -22,9 +22,9 @@
   > img {
   margin-top: 5px;
 }
-.skeumorphicToggle:global(.__wab_instance) {
+.micToggle:global(.__wab_instance) {
+  max-width: 100%;
   position: relative;
-  transform: none;
   flex-shrink: 0;
 }
 .micNaming {
