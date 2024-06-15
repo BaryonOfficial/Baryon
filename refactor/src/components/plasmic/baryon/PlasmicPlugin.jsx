@@ -214,7 +214,7 @@ function PlasmicPlugin__RenderFunc(props) {
                           sty.h2
                         )}
                       >
-                        {"Make your music and sound visible."}
+                        {"Make your music & sound visible."}
                       </h2>
                       <div
                         className={classNames(
@@ -596,7 +596,7 @@ function PlasmicPlugin__RenderFunc(props) {
                   sty.text__pexYm
                 )}
               >
-                {"And More"}
+                {"& More"}
               </div>
             </Stack__>
             <div
