@@ -10,8 +10,8 @@
     "defaultStyleCssFilePath": "plasmic/plasmic__default_style.module.css"
   },
   "images": {
-    "scheme": "public-files",
-    "publicDir": "../../public",
+    "scheme": "inlined",
+    "publicDir": "../public",
     "publicUrlPrefix": "/static/"
   },
   "tokens": {
@@ -575,7 +575,7 @@
           "cssFilePath": "plasmic/baryon/PlasmicHomepage.module.css",
           "scheme": "blackbox",
           "componentType": "page",
-          "path": "/visualizer"
+          "path": "/homepage"
         },
         {
           "id": "EPGJPtXx-yjL",
@@ -989,432 +989,432 @@
         {
           "id": "M1f93dGWmuXe",
           "name": "image",
-          "filePath": "../../public/plasmic/baryon/images/image.svg"
+          "filePath": "plasmic/baryon/images/image.svg"
         },
         {
           "id": "BoSma8fxbw-r",
           "name": "Baryon Logo Black.svg",
-          "filePath": "../../public/plasmic/baryon/images/baryonLogoBlacksvg.svg"
+          "filePath": "plasmic/baryon/images/baryonLogoBlacksvg.svg"
         },
         {
           "id": "cYcAghgFJI6b",
           "name": "image 2",
-          "filePath": "../../public/plasmic/baryon/images/image2.svg"
+          "filePath": "plasmic/baryon/images/image2.svg"
         },
         {
           "id": "RqJgCtm_z7jo",
           "name": "image 3",
-          "filePath": "../../public/plasmic/baryon/images/image3.jpg"
+          "filePath": "plasmic/baryon/images/image3.jpg"
         },
         {
           "id": "A4e4zDMvzflh",
           "name": "image 4",
-          "filePath": "../../public/plasmic/baryon/images/image4.jpg"
+          "filePath": "plasmic/baryon/images/image4.jpg"
         },
         {
           "id": "WaDIMEuWeMdm",
           "name": "image 5",
-          "filePath": "../../public/plasmic/baryon/images/image5.jpg"
+          "filePath": "plasmic/baryon/images/image5.jpg"
         },
         {
           "id": "kpeOynjIXeMl",
           "name": "image 6",
-          "filePath": "../../public/plasmic/baryon/images/image6.jpg"
+          "filePath": "plasmic/baryon/images/image6.jpg"
         },
         {
           "id": "_MnI7XB-buMg",
           "name": "image 7",
-          "filePath": "../../public/plasmic/baryon/images/image7.jpg"
+          "filePath": "plasmic/baryon/images/image7.jpg"
         },
         {
           "id": "Nu86G3wytqO8",
           "name": "image 8",
-          "filePath": "../../public/plasmic/baryon/images/image8.jpg"
+          "filePath": "plasmic/baryon/images/image8.jpg"
         },
         {
           "id": "aWQPmn7b-Boc",
           "name": "image 9",
-          "filePath": "../../public/plasmic/baryon/images/image9.jpg"
+          "filePath": "plasmic/baryon/images/image9.jpg"
         },
         {
           "id": "DbNLu19YpV3j",
           "name": "image 10",
-          "filePath": "../../public/plasmic/baryon/images/image10.jpg"
+          "filePath": "plasmic/baryon/images/image10.jpg"
         },
         {
           "id": "0DB_cWn9WLkh",
           "name": "image 11",
-          "filePath": "../../public/plasmic/baryon/images/image11.jpg"
+          "filePath": "plasmic/baryon/images/image11.jpg"
         },
         {
           "id": "eygioW5mQ5GM",
           "name": "image 12",
-          "filePath": "../../public/plasmic/baryon/images/image12.jpg"
+          "filePath": "plasmic/baryon/images/image12.jpg"
         },
         {
           "id": "lBPQADS6kL0r",
           "name": "image 13",
-          "filePath": "../../public/plasmic/baryon/images/image13.svg"
+          "filePath": "plasmic/baryon/images/image13.svg"
         },
         {
           "id": "PVFQDX-FX8P9",
           "name": "image 14",
-          "filePath": "../../public/plasmic/baryon/images/image14.svg"
+          "filePath": "plasmic/baryon/images/image14.svg"
         },
         {
           "id": "WPM15hp2CwGP",
           "name": "image 15",
-          "filePath": "../../public/plasmic/baryon/images/image15.png"
+          "filePath": "plasmic/baryon/images/image15.png"
         },
         {
           "id": "pAbm7_jpKtJe",
           "name": "image 16",
-          "filePath": "../../public/plasmic/baryon/images/image16.png"
+          "filePath": "plasmic/baryon/images/image16.png"
         },
         {
           "id": "d1dM4iE1vECP",
           "name": "image 17",
-          "filePath": "../../public/plasmic/baryon/images/image17.png"
+          "filePath": "plasmic/baryon/images/image17.png"
         },
         {
           "id": "1UufxcFli9_c",
           "name": "image 18",
-          "filePath": "../../public/plasmic/baryon/images/image18.png"
+          "filePath": "plasmic/baryon/images/image18.png"
         },
         {
           "id": "9ICP8SWMDw3u",
           "name": "image 19",
-          "filePath": "../../public/plasmic/baryon/images/image19.png"
+          "filePath": "plasmic/baryon/images/image19.png"
         },
         {
           "id": "-3PCwoZvFVNP",
           "name": "image 20",
-          "filePath": "../../public/plasmic/baryon/images/image20.svg"
+          "filePath": "plasmic/baryon/images/image20.svg"
         },
         {
           "id": "sO3tgPqd8_NL",
           "name": "image 21",
-          "filePath": "../../public/plasmic/baryon/images/image21.svg"
+          "filePath": "plasmic/baryon/images/image21.svg"
         },
         {
           "id": "cUVzF8UnEO53",
           "name": "image 22",
-          "filePath": "../../public/plasmic/baryon/images/image22.svg"
+          "filePath": "plasmic/baryon/images/image22.svg"
         },
         {
           "id": "qDRyc0_FFV4e",
           "name": "image 23",
-          "filePath": "../../public/plasmic/baryon/images/image23.svg"
+          "filePath": "plasmic/baryon/images/image23.svg"
         },
         {
           "id": "xzqvxGfPMRfa",
           "name": "image 24",
-          "filePath": "../../public/plasmic/baryon/images/image24.svg"
+          "filePath": "plasmic/baryon/images/image24.svg"
         },
         {
           "id": "v3Z8Wf7nwAM5",
           "name": "image 25",
-          "filePath": "../../public/plasmic/baryon/images/image25.svg"
+          "filePath": "plasmic/baryon/images/image25.svg"
         },
         {
           "id": "46rAtugchy5E",
           "name": "image 26",
-          "filePath": "../../public/plasmic/baryon/images/image26.svg"
+          "filePath": "plasmic/baryon/images/image26.svg"
         },
         {
           "id": "HWl10StODPUr",
           "name": "image 27",
-          "filePath": "../../public/plasmic/baryon/images/image27.svg"
+          "filePath": "plasmic/baryon/images/image27.svg"
         },
         {
           "id": "WI0LJ_UbYHdA",
           "name": "image 28",
-          "filePath": "../../public/plasmic/baryon/images/image28.svg"
+          "filePath": "plasmic/baryon/images/image28.svg"
         },
         {
           "id": "dhbLypQMqKG_",
           "name": "image 29",
-          "filePath": "../../public/plasmic/baryon/images/image29.svg"
+          "filePath": "plasmic/baryon/images/image29.svg"
         },
         {
           "id": "Jl04HplC86Ew",
           "name": "image 30",
-          "filePath": "../../public/plasmic/baryon/images/image30.svg"
+          "filePath": "plasmic/baryon/images/image30.svg"
         },
         {
           "id": "4gwzHGHrFJW5",
           "name": "image 31",
-          "filePath": "../../public/plasmic/baryon/images/image31.png"
+          "filePath": "plasmic/baryon/images/image31.png"
         },
         {
           "id": "88gphbvjMqy0",
           "name": "image 32",
-          "filePath": "../../public/plasmic/baryon/images/image32.svg"
+          "filePath": "plasmic/baryon/images/image32.svg"
         },
         {
           "id": "ZY52kN4VF3nv",
           "name": "image 33",
-          "filePath": "../../public/plasmic/baryon/images/image33.svg"
+          "filePath": "plasmic/baryon/images/image33.svg"
         },
         {
           "id": "B_gjT0JNz32m",
           "name": "image 34",
-          "filePath": "../../public/plasmic/baryon/images/image34.png"
+          "filePath": "plasmic/baryon/images/image34.png"
         },
         {
           "id": "xo0BJrcuXXqE",
           "name": "image 35",
-          "filePath": "../../public/plasmic/baryon/images/image35.png"
+          "filePath": "plasmic/baryon/images/image35.png"
         },
         {
           "id": "5oiRHG9JbS-S",
           "name": "image 36",
-          "filePath": "../../public/plasmic/baryon/images/image36.svg"
+          "filePath": "plasmic/baryon/images/image36.svg"
         },
         {
           "id": "Ma9ikFrqTZxl",
           "name": "image 37",
-          "filePath": "../../public/plasmic/baryon/images/image37.svg"
+          "filePath": "plasmic/baryon/images/image37.svg"
         },
         {
           "id": "p-UMcvz9ZvmU",
           "name": "image 38",
-          "filePath": "../../public/plasmic/baryon/images/image38.png"
+          "filePath": "plasmic/baryon/images/image38.png"
         },
         {
           "id": "bC3wIQK5LART",
           "name": "image 39",
-          "filePath": "../../public/plasmic/baryon/images/image39.png"
+          "filePath": "plasmic/baryon/images/image39.png"
         },
         {
           "id": "srqe-y9y4MqC",
           "name": "image 40",
-          "filePath": "../../public/plasmic/baryon/images/image40.svg"
+          "filePath": "plasmic/baryon/images/image40.svg"
         },
         {
           "id": "JfT8x4-BkrMj",
           "name": "image 41",
-          "filePath": "../../public/plasmic/baryon/images/image41.svg"
+          "filePath": "plasmic/baryon/images/image41.svg"
         },
         {
           "id": "G02cCbgZ6fKA",
           "name": "image 42",
-          "filePath": "../../public/plasmic/baryon/images/image42.svg"
+          "filePath": "plasmic/baryon/images/image42.svg"
         },
         {
           "id": "lZsTzIa17Jdq",
           "name": "image 43",
-          "filePath": "../../public/plasmic/baryon/images/image43.svg"
+          "filePath": "plasmic/baryon/images/image43.svg"
         },
         {
           "id": "-9BCjx5AJSvi",
           "name": "image 44",
-          "filePath": "../../public/plasmic/baryon/images/image44.svg"
+          "filePath": "plasmic/baryon/images/image44.svg"
         },
         {
           "id": "z54Hb9KYdnkv",
           "name": "image 45",
-          "filePath": "../../public/plasmic/baryon/images/image45.svg"
+          "filePath": "plasmic/baryon/images/image45.svg"
         },
         {
           "id": "E3P74CfSQNTJ",
           "name": "image 46",
-          "filePath": "../../public/plasmic/baryon/images/image46.svg"
+          "filePath": "plasmic/baryon/images/image46.svg"
         },
         {
           "id": "TlBtyitRZ1Et",
           "name": "image 47",
-          "filePath": "../../public/plasmic/baryon/images/image47.png"
+          "filePath": "plasmic/baryon/images/image47.png"
         },
         {
           "id": "x2iVTIdyVXGH",
           "name": "image 48",
-          "filePath": "../../public/plasmic/baryon/images/image48.png"
+          "filePath": "plasmic/baryon/images/image48.png"
         },
         {
           "id": "TqeYcHOAcREO",
           "name": "meito_enma_A_vibrant_music_festival_scene_with_crowds_gathered__3fb27fac-0fc7-4c8d-8796-662312472529.png",
-          "filePath": "../../public/plasmic/baryon/images/meitoEnmaAVibrantMusicFestivalSceneWithCrowdsGathered3Fb27Fac0Fc74C8D8796662312472529Png.png"
+          "filePath": "plasmic/baryon/images/meitoEnmaAVibrantMusicFestivalSceneWithCrowdsGathered3Fb27Fac0Fc74C8D8796662312472529Png.png"
         },
         {
           "id": "CRfp523oSGAi",
           "name": "music-hologram-picnic.png",
-          "filePath": "../../public/plasmic/baryon/images/musicHologramPicnicpng.png"
+          "filePath": "plasmic/baryon/images/musicHologramPicnicpng.png"
         },
         {
           "id": "yz4NB8cZ1un3",
           "name": "festival-girl-holograms.png",
-          "filePath": "../../public/plasmic/baryon/images/festivalGirlHologramspng.png"
+          "filePath": "plasmic/baryon/images/festivalGirlHologramspng.png"
         },
         {
           "id": "Z1zEOYvd6lS_",
           "name": "picnic-magic.png",
-          "filePath": "../../public/plasmic/baryon/images/picnicMagicpng.png"
+          "filePath": "plasmic/baryon/images/picnicMagicpng.png"
         },
         {
           "id": "WQrf0z8ws5ok",
           "name": "Rectangle 1",
-          "filePath": "../../public/plasmic/baryon/images/rectangle1.jpg"
+          "filePath": "plasmic/baryon/images/rectangle1.jpg"
         },
         {
           "id": "R4q1a-WTCNoN",
           "name": "Ellipse 1",
-          "filePath": "../../public/plasmic/baryon/images/ellipse1.svg"
+          "filePath": "plasmic/baryon/images/ellipse1.svg"
         },
         {
           "id": "75vlzRXNeiX1",
           "name": "Ellipse 3",
-          "filePath": "../../public/plasmic/baryon/images/ellipse3.svg"
+          "filePath": "plasmic/baryon/images/ellipse3.svg"
         },
         {
           "id": "NjXij8TZiT91",
           "name": "Ellipse 4",
-          "filePath": "../../public/plasmic/baryon/images/ellipse4.svg"
+          "filePath": "plasmic/baryon/images/ellipse4.svg"
         },
         {
           "id": "trRtJEQ9KF76",
           "name": "Knob",
-          "filePath": "../../public/plasmic/baryon/images/knob.svg"
+          "filePath": "plasmic/baryon/images/knob.svg"
         },
         {
           "id": "KIvjcluUQih_",
           "name": "Ellipse 5",
-          "filePath": "../../public/plasmic/baryon/images/ellipse5.svg"
+          "filePath": "plasmic/baryon/images/ellipse5.svg"
         },
         {
           "id": "N7YGNitJBSQZ",
           "name": "Ellipse 6",
-          "filePath": "../../public/plasmic/baryon/images/ellipse6.svg"
+          "filePath": "plasmic/baryon/images/ellipse6.svg"
         },
         {
           "id": "WK9a4xRcxLzH",
           "name": "Ellipse 7",
-          "filePath": "../../public/plasmic/baryon/images/ellipse7.svg"
+          "filePath": "plasmic/baryon/images/ellipse7.svg"
         },
         {
           "id": "GQfWYOW0U8ea",
           "name": "Knob 2",
-          "filePath": "../../public/plasmic/baryon/images/knob2.svg"
+          "filePath": "plasmic/baryon/images/knob2.svg"
         },
         {
           "id": "vkt8PHtuZ3zn",
           "name": "Knob 3",
-          "filePath": "../../public/plasmic/baryon/images/knob3.svg"
+          "filePath": "plasmic/baryon/images/knob3.svg"
         },
         {
           "id": "bz5ZY6UsiSJ1",
           "name": "Ellipse 8",
-          "filePath": "../../public/plasmic/baryon/images/ellipse8.svg"
+          "filePath": "plasmic/baryon/images/ellipse8.svg"
         },
         {
           "id": "kIhqlb50UISz",
           "name": "Ellipse 9",
-          "filePath": "../../public/plasmic/baryon/images/ellipse9.svg"
+          "filePath": "plasmic/baryon/images/ellipse9.svg"
         },
         {
           "id": "kiG7MNMZxslE",
           "name": "Knob 4",
-          "filePath": "../../public/plasmic/baryon/images/knob4.svg"
+          "filePath": "plasmic/baryon/images/knob4.svg"
         },
         {
           "id": "1SrEPzYLSWlu",
           "name": "Ellipse 10",
-          "filePath": "../../public/plasmic/baryon/images/ellipse10.svg"
+          "filePath": "plasmic/baryon/images/ellipse10.svg"
         },
         {
           "id": "CvZi2OWIplE8",
           "name": "Ellipse 11",
-          "filePath": "../../public/plasmic/baryon/images/ellipse11.svg"
+          "filePath": "plasmic/baryon/images/ellipse11.svg"
         },
         {
           "id": "uFNmPELZHpjf",
           "name": "Play",
-          "filePath": "../../public/plasmic/baryon/images/play.svg"
+          "filePath": "plasmic/baryon/images/play.svg"
         },
         {
           "id": "WkGj6LoYIr-x",
           "name": "Play 2",
-          "filePath": "../../public/plasmic/baryon/images/play2.svg"
+          "filePath": "plasmic/baryon/images/play2.svg"
         },
         {
           "id": "3JIjXrx_Yd6V",
           "name": "Knob 5",
-          "filePath": "../../public/plasmic/baryon/images/knob5.svg"
+          "filePath": "plasmic/baryon/images/knob5.svg"
         },
         {
           "id": "NQ03cxOWGz7e",
           "name": "Knob 6",
-          "filePath": "../../public/plasmic/baryon/images/knob6.svg"
+          "filePath": "plasmic/baryon/images/knob6.svg"
         },
         {
           "id": "LMyoeEwvuFa1",
           "name": "play-button-svgrepo-com.svg",
-          "filePath": "../../public/plasmic/baryon/images/playButtonSvgrepoComsvg.svg"
+          "filePath": "plasmic/baryon/images/playButtonSvgrepoComsvg.svg"
         },
         {
           "id": "xOHP7LJ9Zl5P",
           "name": "UE-Logotype-2023-SplashScreen-Vertical-Black.svg",
-          "filePath": "../../public/plasmic/baryon/images/ueLogotype2023SplashScreenVerticalBlacksvg.svg"
+          "filePath": "plasmic/baryon/images/ueLogotype2023SplashScreenVerticalBlacksvg.svg"
         },
         {
           "id": "9TOtg0w5P6gT",
           "name": "resolume icon.png",
-          "filePath": "../../public/plasmic/baryon/images/resolumeIconpng.png"
+          "filePath": "plasmic/baryon/images/resolumeIconpng.png"
         },
         {
           "id": "ASTzGlF7JJTY",
           "name": "ramiro-pianarosa-xUpbQ9GX7SQ-unsplash.jpg",
-          "filePath": "../../public/plasmic/baryon/images/ramiroPianarosaXUpbQ9Gx7SqUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/ramiroPianarosaXUpbQ9Gx7SqUnsplashjpg.jpg"
         },
         {
           "id": "9DT3TqHNLVNv",
           "name": "green-ink-streams-on-white.jpg",
-          "filePath": "../../public/plasmic/baryon/images/greenInkStreamsOnWhitejpg.jpg"
+          "filePath": "plasmic/baryon/images/greenInkStreamsOnWhitejpg.jpg"
         },
         {
           "id": "fSGILeQ_cMMz",
           "name": "jazmin-quaynor-CXjp1ycr5Vw-unsplash.jpg",
-          "filePath": "../../public/plasmic/baryon/images/jazminQuaynorCXjp1Ycr5VwUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/jazminQuaynorCXjp1Ycr5VwUnsplashjpg.jpg"
         },
         {
           "id": "i-jydB3ObePf",
           "name": "milad-fakurian-lz8j9lMe-oA-unsplash.jpg",
-          "filePath": "../../public/plasmic/baryon/images/miladFakurianLz8J9LMeOAUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/miladFakurianLz8J9LMeOAUnsplashjpg.jpg"
         },
         {
           "id": "nyHTjCzQ6HHC",
           "name": "jeremy-bishop-hVkDaLkoiec-unsplash.jpg",
-          "filePath": "../../public/plasmic/baryon/images/jeremyBishopHVkDaLkoiecUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/jeremyBishopHVkDaLkoiecUnsplashjpg.jpg"
         },
         {
           "id": "kC_iSDsVaRbX",
           "name": "denis-sebastian-tamas-Prsu103pTio-unsplash.jpg",
-          "filePath": "../../public/plasmic/baryon/images/denisSebastianTamasPrsu103PTioUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/denisSebastianTamasPrsu103PTioUnsplashjpg.jpg"
         },
         {
           "id": "j9N0k2D0ZiSj",
           "name": "jason-leung-UMncYEfO9-U-unsplash.jpg",
-          "filePath": "../../public/plasmic/baryon/images/jasonLeungUMncYEfO9UUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/jasonLeungUMncYEfO9UUnsplashjpg.jpeg"
         },
         {
           "id": "bP_LJxK4-vwH",
           "name": "jessica-irani-6UvQTVjCoDA-unsplash.jpg",
-          "filePath": "../../public/plasmic/baryon/images/jessicaIrani6UvQtVjCoDaUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/jessicaIrani6UvQtVjCoDaUnsplashjpg.jpeg"
         },
         {
           "id": "tQqH8ik7AnZW",
           "name": "jean-philippe-delberghe-75xPHEQBmvA-unsplash.jpg",
-          "filePath": "../../public/plasmic/baryon/images/jeanPhilippeDelberghe75XPheqBmvAUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/jeanPhilippeDelberghe75XPheqBmvAUnsplashjpg.jpg"
         },
         {
           "id": "s7865ZwXNtFA",
           "name": "Baryon Logo White.svg",
-          "filePath": "../../public/plasmic/baryon/images/baryonLogoWhitesvg.svg"
+          "filePath": "plasmic/baryon/images/baryonLogoWhitesvg.svg"
         },
         {
           "id": "UkSuRrDI-VK2",
           "name": "kenrick-mills-L8mqcLh7deg-unsplash.jpg",
-          "filePath": "../../public/plasmic/baryon/images/kenrickMillsL8MqcLh7DegUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/kenrickMillsL8MqcLh7DegUnsplashjpg.jpeg"
         }
       ],
       "indirect": false,

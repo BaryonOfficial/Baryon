@@ -65,8 +65,16 @@ function PlasmicHomepage__RenderFunc(props) {
             className={classNames("__wab_instance", sty.siteNavBar)}
           />
 
-          <section className={classNames(projectcss.all, sty.section__eIkRz)}>
-            <section className={classNames(projectcss.all, sty.section__l8Uru)}>
+          <section
+            data-plasmic-name={"section"}
+            data-plasmic-override={overrides.section}
+            className={classNames(projectcss.all, sty.section)}
+          >
+            <section
+              data-plasmic-name={"micModeToggle"}
+              data-plasmic-override={overrides.micModeToggle}
+              className={classNames(projectcss.all, sty.micModeToggle)}
+            >
               <Stack__
                 as={"div"}
                 data-plasmic-name={"modeSettings"}
@@ -112,6 +120,8 @@ const PlasmicDescendants = {
   visualizerDesktop: [
     "visualizerDesktop",
     "siteNavBar",
+    "section",
+    "micModeToggle",
     "modeSettings",
     "text",
     "modeNames",
@@ -119,6 +129,23 @@ const PlasmicDescendants = {
   ],
 
   siteNavBar: ["siteNavBar"],
+  section: [
+    "section",
+    "micModeToggle",
+    "modeSettings",
+    "text",
+    "modeNames",
+    "micButton"
+  ],
+
+  micModeToggle: [
+    "micModeToggle",
+    "modeSettings",
+    "text",
+    "modeNames",
+    "micButton"
+  ],
+
   modeSettings: ["modeSettings", "text", "modeNames", "micButton"],
   text: ["text"],
   modeNames: ["modeNames", "micButton"],
@@ -158,6 +185,8 @@ export const PlasmicHomepage = Object.assign(
   {
     // Helper components rendering sub-elements
     siteNavBar: makeNodeComponent("siteNavBar"),
+    section: makeNodeComponent("section"),
+    micModeToggle: makeNodeComponent("micModeToggle"),
     modeSettings: makeNodeComponent("modeSettings"),
     text: makeNodeComponent("text"),
     modeNames: makeNodeComponent("modeNames"),
@@ -167,7 +196,7 @@ export const PlasmicHomepage = Object.assign(
     internalArgProps: PlasmicHomepage__ArgProps,
     // Page metadata
     pageMetadata: {
-      title: "Visualizer",
+      title: "Homepage",
       description: "",
       ogImageSrc: "",
       canonical: ""

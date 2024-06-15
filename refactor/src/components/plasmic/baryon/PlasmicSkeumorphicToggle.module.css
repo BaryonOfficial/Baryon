@@ -1,4 +1,4 @@
-.skeumorphicToggleButton3 {
+.skeumorphictogglebutton {
   width: 64px;
   height: 31px;
   display: block;
@@ -17,7 +17,7 @@
   left: 0%;
   border-radius: 21.917px;
 }
-.skeumorphicToggleButton3:active .base3 {
+.skeumorphictogglebutton:active .base3 {
   display: none;
 }
 .outsideStroke3 {
@@ -38,7 +38,7 @@
   border-radius: 21.917px;
   border: 2px solid #a8a8a8;
 }
-.skeumorphicToggleButton3:active .outsideStroke3 {
+.skeumorphictogglebutton:active .outsideStroke3 {
   display: none;
 }
 .insideStroke3 {
@@ -51,7 +51,7 @@
   left: 7.81%;
   border-radius: 21.917px;
 }
-.skeumorphicToggleButton3:active .insideStroke3 {
+.skeumorphictogglebutton:active .insideStroke3 {
   display: none;
 }
 .textFrame3 {
@@ -65,7 +65,7 @@
   overflow: hidden;
   border-radius: 21.917px;
 }
-.skeumorphicToggleButton3:active .textFrame3 {
+.skeumorphictogglebutton:active .textFrame3 {
   display: none;
 }
 .text___4FJz7 {
@@ -98,7 +98,7 @@
 .img__r9EmC > picture > img {
   object-fit: cover;
 }
-.skeumorphicToggleButton3:active .img__r9EmC {
+.skeumorphictogglebutton:active .img__r9EmC {
   display: none !important;
 }
 .property1On {
@@ -184,7 +184,7 @@
 .img__zNJxL > picture > img {
   object-fit: cover;
 }
-.skeumorphicToggleButton3:active .img__zNJxL {
+.skeumorphictogglebutton:active .img__zNJxL {
   display: block !important;
 }
 .maskGroup {
@@ -209,6 +209,6 @@
   left: 6.25%;
   display: none;
 }
-.skeumorphicToggleButton3:active .svg {
+.skeumorphictogglebutton:active .svg {
   display: block;
 }

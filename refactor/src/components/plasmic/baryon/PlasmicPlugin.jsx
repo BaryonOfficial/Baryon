@@ -88,10 +88,10 @@ function PlasmicPlugin__RenderFunc(props) {
           >
             <Stack__
               as={"div"}
-              data-plasmic-name={"foreground"}
-              data-plasmic-override={overrides.foreground}
+              data-plasmic-name={"pluginHero"}
+              data-plasmic-override={overrides.pluginHero}
               hasGap={true}
-              className={classNames(projectcss.all, sty.foreground)}
+              className={classNames(projectcss.all, sty.pluginHero)}
             >
               <Stack__
                 as={"div"}
@@ -168,10 +168,10 @@ function PlasmicPlugin__RenderFunc(props) {
             </Stack__>
             <Stack__
               as={"section"}
-              data-plasmic-name={"section"}
-              data-plasmic-override={overrides.section}
+              data-plasmic-name={"pluginDetails"}
+              data-plasmic-override={overrides.pluginDetails}
               hasGap={true}
-              className={classNames(projectcss.all, sty.section)}
+              className={classNames(projectcss.all, sty.pluginDetails)}
             >
               <Stack__
                 as={"div"}
@@ -484,8 +484,10 @@ function PlasmicPlugin__RenderFunc(props) {
             </Stack__>
             <Stack__
               as={"div"}
+              data-plasmic-name={"compatibility"}
+              data-plasmic-override={overrides.compatibility}
               hasGap={true}
-              className={classNames(projectcss.all, sty.freeBox___7VRnK)}
+              className={classNames(projectcss.all, sty.compatibility)}
             >
               <div
                 className={classNames(
@@ -584,7 +586,11 @@ function PlasmicPlugin__RenderFunc(props) {
                 {"And More"}
               </div>
             </Stack__>
-            <div className={classNames(projectcss.all, sty.freeBox___3Yz1C)}>
+            <div
+              data-plasmic-name={"pricing"}
+              data-plasmic-override={overrides.pricing}
+              className={classNames(projectcss.all, sty.pricing)}
+            >
               <div
                 className={classNames(projectcss.all, sty.freeBox___65UUt)}
               />
@@ -972,28 +978,32 @@ const PlasmicDescendants = {
   root: [
     "root",
     "siteNavBar",
-    "foreground",
+    "pluginHero",
     "h1",
     "embedHtml",
-    "section",
+    "pluginDetails",
     "foreground2",
     "columns",
     "h2",
+    "compatibility",
     "h3",
+    "pricing",
     "foreground3",
     "button2",
     "baryonFooter"
   ],
 
   siteNavBar: ["siteNavBar"],
-  foreground: ["foreground", "h1", "embedHtml"],
+  pluginHero: ["pluginHero", "h1", "embedHtml"],
   h1: ["h1"],
   embedHtml: ["embedHtml"],
-  section: ["section", "foreground2", "columns", "h2"],
+  pluginDetails: ["pluginDetails", "foreground2", "columns", "h2"],
   foreground2: ["foreground2", "columns", "h2"],
   columns: ["columns", "h2"],
   h2: ["h2"],
+  compatibility: ["compatibility", "h3"],
   h3: ["h3"],
+  pricing: ["pricing", "foreground3", "button2"],
   foreground3: ["foreground3", "button2"],
   button2: ["button2"],
   baryonFooter: ["baryonFooter"]
@@ -1032,14 +1042,16 @@ export const PlasmicPlugin = Object.assign(
   {
     // Helper components rendering sub-elements
     siteNavBar: makeNodeComponent("siteNavBar"),
-    foreground: makeNodeComponent("foreground"),
+    pluginHero: makeNodeComponent("pluginHero"),
     h1: makeNodeComponent("h1"),
     embedHtml: makeNodeComponent("embedHtml"),
-    section: makeNodeComponent("section"),
+    pluginDetails: makeNodeComponent("pluginDetails"),
     foreground2: makeNodeComponent("foreground2"),
     columns: makeNodeComponent("columns"),
     h2: makeNodeComponent("h2"),
+    compatibility: makeNodeComponent("compatibility"),
     h3: makeNodeComponent("h3"),
+    pricing: makeNodeComponent("pricing"),
     foreground3: makeNodeComponent("foreground3"),
     button2: makeNodeComponent("button2"),
     baryonFooter: makeNodeComponent("baryonFooter"),
@@ -1048,7 +1060,7 @@ export const PlasmicPlugin = Object.assign(
     internalArgProps: PlasmicPlugin__ArgProps,
     // Page metadata
     pageMetadata: {
-      title: "",
+      title: "Plugin",
       description: "",
       ogImageSrc: "",
       canonical: ""

@@ -14,6 +14,7 @@ import {
   classNames,
   createPlasmicElementProxy,
   deriveRenderOpts,
+  hasVariant,
   useDollarState,
   useTrigger
 } from "@plasmicapp/react-web";
@@ -26,7 +27,7 @@ import LayerBlur4Icon from "./icons/PlasmicIcon__LayerBlur4"; // plasmic-import:
 
 createPlasmicElementProxy;
 
-export const PlasmicSkeumorphicToggle__VariantProps = new Array();
+export const PlasmicSkeumorphicToggle__VariantProps = new Array("micToggle");
 
 export const PlasmicSkeumorphicToggle__ArgProps = new Array();
 
@@ -49,6 +50,12 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
         type: "private",
         variableType: "text",
         initFunc: ({ $props, $state, $queries, $ctx }) => ""
+      },
+      {
+        path: "micToggle",
+        type: "private",
+        variableType: "variant",
+        initFunc: ({ $props, $state, $queries, $ctx }) => $props.micToggle
       }
     ],
 
@@ -61,16 +68,16 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
     $refs
   });
   const [
-    isSkeumorphicToggleButton3Active,
-    triggerSkeumorphicToggleButton3ActiveProps
+    isSkeumorphictogglebuttonActive,
+    triggerSkeumorphictogglebuttonActiveProps
   ] = useTrigger("usePressed", {});
   const triggers = {
-    active_skeumorphicToggleButton3: isSkeumorphicToggleButton3Active
+    active_skeumorphictogglebutton: isSkeumorphictogglebuttonActive
   };
   return (
     <div
-      data-plasmic-name={"skeumorphicToggleButton3"}
-      data-plasmic-override={overrides.skeumorphicToggleButton3}
+      data-plasmic-name={"skeumorphictogglebutton"}
+      data-plasmic-override={overrides.skeumorphictogglebutton}
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
@@ -80,9 +87,17 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
         projectcss.plasmic_mixins,
         projectcss.plasmic_tokens,
         plasmic_antd_5_hostless_css.plasmic_tokens,
-        sty.skeumorphicToggleButton3
+        sty.skeumorphictogglebutton,
+        {
+          [sty.skeumorphictogglebuttonmicToggle]: hasVariant(
+            $state,
+            "micToggle",
+            "micToggle"
+          )
+        }
       )}
-      data-plasmic-trigger-props={[triggerSkeumorphicToggleButton3ActiveProps]}
+      id={hasVariant($state, "micToggle", "micToggle") ? "micMode" : undefined}
+      data-plasmic-trigger-props={[triggerSkeumorphictogglebuttonActiveProps]}
     >
       <div
         data-plasmic-name={"base3"}
@@ -93,7 +108,13 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
       <div
         data-plasmic-name={"outsideStroke3"}
         data-plasmic-override={overrides.outsideStroke3}
-        className={classNames(projectcss.all, sty.outsideStroke3)}
+        className={classNames(projectcss.all, sty.outsideStroke3, {
+          [sty.outsideStroke3micToggle]: hasVariant(
+            $state,
+            "micToggle",
+            "micToggle"
+          )
+        })}
       />
 
       <div
@@ -128,14 +149,14 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
         displayWidth={"19px"}
         loading={"lazy"}
         src={{
-          src: "/assets/plasmic/baryon/images/ellipse11.svg",
+          src: "data:image/svg+xml;base64,PHN2ZyBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOSAxOSI+CiAgPGNpcmNsZSBjeD0iOS4yMDUiIGN5PSI5LjIwNSIgcj0iOC4zMjkiIGZpbGw9InVybCgjRHEySjFlWmNWQ3lMYSkiIHN0cm9rZT0idXJsKCNEcTJKMWVaY1ZDeUxiKSIgc3Ryb2tlLXdpZHRoPSIxLjc1MyIvPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJEcTJKMWVaY1ZDeUxhIiB4MT0iMy4xMTkiIHkxPSIwIiB4Mj0iMTUuMjkxIiB5Mj0iMTguNDExIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IiM5RjlGOUYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjRkFGQUZBIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJEcTJKMWVaY1ZDeUxiIiB4MT0iOS4yMDUiIHkxPSIwIiB4Mj0iOS4yMDUiIHkyPSIxOC40MTEiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIj4KICAgICAgPHN0b3Agc3RvcC1jb2xvcj0iI2ZmZiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNBQUEiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgo8L3N2Zz4K",
           fullWidth: 19,
           fullHeight: 19,
           aspectRatio: 1
         }}
       />
 
-      {(triggers.active_skeumorphicToggleButton3 ? true : false) ? (
+      {(triggers.active_skeumorphictogglebutton ? true : false) ? (
         <div
           data-plasmic-name={"property1On"}
           data-plasmic-override={overrides.property1On}
@@ -185,7 +206,7 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
             displayWidth={"19px"}
             loading={"lazy"}
             src={{
-              src: "/assets/plasmic/baryon/images/knob6.svg",
+              src: "data:image/svg+xml;base64,PHN2ZyBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOSAxOSI+CiAgPGNpcmNsZSBjeD0iOS4yMDUiIGN5PSI5LjIwNSIgcj0iOC4zMjkiIGZpbGw9InVybCgjd1RJTGVrNkMtNEVOYSkiIHN0cm9rZT0idXJsKCN3VElMZWs2Qy00RU5iKSIgc3Ryb2tlLXdpZHRoPSIxLjc1MyIvPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJ3VElMZWs2Qy00RU5hIiB4MT0iMy4xMTkiIHkxPSIwIiB4Mj0iMTUuMjkxIiB5Mj0iMTguNDExIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IiM5RjlGOUYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjRkFGQUZBIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJ3VElMZWs2Qy00RU5iIiB4MT0iOS4yMDUiIHkxPSIwIiB4Mj0iOS4yMDUiIHkyPSIxOC40MTEiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIj4KICAgICAgPHN0b3Agc3RvcC1jb2xvcj0iI2ZmZiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNBQUEiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgo8L3N2Zz4K",
               fullWidth: 19,
               fullHeight: 19,
               aspectRatio: 1
@@ -211,8 +232,8 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
 }
 
 const PlasmicDescendants = {
-  skeumorphicToggleButton3: [
-    "skeumorphicToggleButton3",
+  skeumorphictogglebutton: [
+    "skeumorphictogglebutton",
     "base3",
     "outsideStroke3",
     "insideStroke3",
@@ -267,7 +288,7 @@ function makeNodeComponent(nodeName) {
       forNode: nodeName
     });
   };
-  if (nodeName === "skeumorphicToggleButton3") {
+  if (nodeName === "skeumorphictogglebutton") {
     func.displayName = "PlasmicSkeumorphicToggle";
   } else {
     func.displayName = `PlasmicSkeumorphicToggle.${nodeName}`;
@@ -277,7 +298,7 @@ function makeNodeComponent(nodeName) {
 
 export const PlasmicSkeumorphicToggle = Object.assign(
   // Top-level PlasmicSkeumorphicToggle renders the root element
-  makeNodeComponent("skeumorphicToggleButton3"),
+  makeNodeComponent("skeumorphictogglebutton"),
   {
     // Helper components rendering sub-elements
     base3: makeNodeComponent("base3"),

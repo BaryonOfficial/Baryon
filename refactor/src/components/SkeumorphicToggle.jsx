@@ -19,7 +19,7 @@ function SkeumorphicToggle_(props, ref) {
   // By default, we are just piping all SkeumorphicToggleProps here, but feel free
   // to do whatever works for you.
   return (
-    <PlasmicSkeumorphicToggle skeumorphicToggleButton3={{ ref }} {...props} />
+    <PlasmicSkeumorphicToggle skeumorphictogglebutton={{ ref }} {...props} />
   );
 }
 
