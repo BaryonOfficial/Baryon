@@ -167,6 +167,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
                 $steps["goToHomepage"] = await $steps["goToHomepage"];
               }
             }}
+            shape={"rounded"}
             startIcon={
               <ChecksvgIcon
                 className={classNames(projectcss.all, sty.svg__dfKum)}
@@ -224,6 +225,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
                 $steps["goToPlugin"] = await $steps["goToPlugin"];
               }
             }}
+            shape={"rounded"}
             startIcon={
               <ChecksvgIcon
                 className={classNames(projectcss.all, sty.svg__wbSx3)}
@@ -281,6 +283,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
                 $steps["goToStory"] = await $steps["goToStory"];
               }
             }}
+            shape={"rounded"}
             startIcon={
               <ChecksvgIcon
                 className={classNames(projectcss.all, sty.svg__riKjd)}
@@ -311,6 +314,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
               />
             }
             link={"https://foundation.app/@Baryon"}
+            shape={"rounded"}
             startIcon={
               <ChecksvgIcon
                 className={classNames(projectcss.all, sty.svg__aoUrb)}
@@ -331,7 +335,9 @@ function PlasmicSiteNavBar__RenderFunc(props) {
             </div>
           </Button2>
           <Button2
-            className={classNames("__wab_instance", sty.button2__axAYg)}
+            data-plasmic-name={"logInButton"}
+            data-plasmic-override={overrides.logInButton}
+            className={classNames("__wab_instance", sty.logInButton)}
             color={"clear"}
             endIcon={
               <Icon38Icon
@@ -358,7 +364,9 @@ function PlasmicSiteNavBar__RenderFunc(props) {
             </div>
           </Button2>
           <Button2
-            className={classNames("__wab_instance", sty.button2___0VPHf)}
+            data-plasmic-name={"signUpButton"}
+            data-plasmic-override={overrides.signUpButton}
+            className={classNames("__wab_instance", sty.signUpButton)}
             endIcon={
               <Icon38Icon
                 className={classNames(projectcss.all, sty.svg__n8NFd)}
@@ -384,49 +392,6 @@ function PlasmicSiteNavBar__RenderFunc(props) {
             </div>
           </Button2>
         </Stack__>
-        {false ? (
-          <div className={classNames(projectcss.all, sty.freeBox__pKwuc)}>
-            <button
-              data-plasmic-name={"button"}
-              data-plasmic-override={overrides.button}
-              className={classNames(
-                projectcss.all,
-                projectcss.button,
-                projectcss.__wab_text,
-                sty.button
-              )}
-            >
-              {"Sign up"}
-            </button>
-            <Button2
-              className={classNames("__wab_instance", sty.button2__foqtm)}
-              color={"clear"}
-              endIcon={
-                <Icon38Icon
-                  className={classNames(projectcss.all, sty.svg__vdYjX)}
-                  role={"img"}
-                />
-              }
-              startIcon={
-                <ChecksvgIcon
-                  className={classNames(projectcss.all, sty.svg__e9Otq)}
-                  role={"img"}
-                />
-              }
-              submitsForm={true}
-            >
-              <div
-                className={classNames(
-                  projectcss.all,
-                  projectcss.__wab_text,
-                  sty.text__nVlKc
-                )}
-              >
-                {"Log in"}
-              </div>
-            </Button2>
-          </div>
-        ) : null}
         <HamburgerMenuSvgrepoComsvgIcon
           className={classNames(projectcss.all, sty.svg___9Hx3O)}
           onClick={async event => {
@@ -463,7 +428,8 @@ const PlasmicDescendants = {
     "pluginNav",
     "storyNav",
     "artNav",
-    "button"
+    "logInButton",
+    "signUpButton"
   ],
 
   baryonBlackLogo: ["baryonBlackLogo"],
@@ -472,7 +438,8 @@ const PlasmicDescendants = {
   pluginNav: ["pluginNav"],
   storyNav: ["storyNav"],
   artNav: ["artNav"],
-  button: ["button"]
+  logInButton: ["logInButton"],
+  signUpButton: ["signUpButton"]
 };
 
 function makeNodeComponent(nodeName) {
@@ -513,7 +480,8 @@ export const PlasmicSiteNavBar = Object.assign(
     pluginNav: makeNodeComponent("pluginNav"),
     storyNav: makeNodeComponent("storyNav"),
     artNav: makeNodeComponent("artNav"),
-    button: makeNodeComponent("button"),
+    logInButton: makeNodeComponent("logInButton"),
+    signUpButton: makeNodeComponent("signUpButton"),
     // Metadata about props expected for PlasmicSiteNavBar
     internalVariantProps: PlasmicSiteNavBar__VariantProps,
     internalArgProps: PlasmicSiteNavBar__ArgProps

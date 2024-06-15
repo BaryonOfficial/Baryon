@@ -6,7 +6,7 @@
   position: relative;
   grid-column-start: 1 !important;
   grid-column-end: -1 !important;
-  padding: 16px;
+  padding: 16px 64px;
 }
 .siteNavBar > :global(.__wab_flex-container) {
   flex-direction: row;
@@ -35,7 +35,9 @@
   position: relative;
   flex-direction: row;
   width: 100%;
-  max-width: 1080px;
+  max-width: auto;
+  margin-left: calc(0px + 16px) !important;
+  margin-right: 0px;
   min-width: 0;
 }
 .freeBox__k2VAf > :global(.__wab_flex-container) {
@@ -60,6 +62,7 @@
   .freeBox__k2VAf {
     display: flex;
     flex-direction: row;
+    margin-left: calc(0px + 16px) !important;
   }
 }
 @media (min-width: 0px) and (max-width: 768px) {
@@ -85,11 +88,16 @@
     margin-top: 0px;
   }
 }
+.siteNavBar:active .freeBox__k2VAf {
+  margin-left: calc(0px + 16px) !important;
+}
 .baryonBlackLogo {
   object-fit: cover;
   width: 40px;
   height: 40px;
   position: relative;
+  margin-right: 0px;
+  margin-left: calc(0px + 16px) !important;
   flex-shrink: 0;
 }
 .baryonBlackLogo > picture > img {
@@ -99,6 +107,7 @@
   .baryonBlackLogo {
     height: 40px;
     width: 40px;
+    margin-left: calc(0px + 16px) !important;
     flex-shrink: 0;
   }
 }
@@ -113,6 +122,8 @@
   font-family: "Orbitron", sans-serif;
   font-weight: 600;
   color: #ffffff;
+  padding: 0px;
+  margin: 0px;
 }
 @media (min-width: 0px) and (max-width: 768px) {
   .baryonTitle {
@@ -314,7 +325,7 @@
   width: auto;
   height: 1em;
 }
-.button2__axAYg:global(.__wab_instance) {
+.logInButton:global(.__wab_instance) {
   max-width: 100%;
   position: relative;
   align-self: flex-start;
@@ -329,10 +340,10 @@
 }
 .text__o3Fm {
   font-family: "Ubuntu", sans-serif;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 500;
   font-style: normal;
-  color: #1b1b18;
+  color: #ffffff;
   text-align: left;
   text-transform: none;
   line-height: 1.5;
@@ -348,7 +359,7 @@
   width: auto;
   height: 1em;
 }
-.button2___0VPHf:global(.__wab_instance) {
+.signUpButton:global(.__wab_instance) {
   max-width: 100%;
   position: relative;
   align-self: flex-start;
@@ -362,10 +373,10 @@
 }
 .text___5Bzuj {
   font-family: "Ubuntu", sans-serif;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 500;
   font-style: normal;
-  color: #ededec;
+  color: #ffffff;
   text-align: left;
   text-transform: none;
   line-height: 1.5;
@@ -376,63 +387,6 @@
   text-overflow: clip !important;
 }
 .svg__n8NFd {
-  position: relative;
-  object-fit: cover;
-  width: auto;
-  height: 1em;
-}
-.freeBox__pKwuc {
-  display: flex;
-  position: relative;
-  flex-direction: row;
-  align-items: stretch;
-  justify-content: flex-start;
-}
-.button {
-  font-size: 18px;
-  line-height: 28px;
-  color: #ffffff;
-  font-weight: 500;
-  background: #000000d9;
-  font-family: "Inter", sans-serif;
-  font-style: normal;
-  text-align: left;
-  text-transform: none;
-  letter-spacing: normal;
-  white-space: pre-wrap;
-  user-select: text;
-  text-decoration-line: none;
-  text-overflow: clip;
-  border-radius: 6px;
-  border-width: 0px;
-}
-.button2__foqtm:global(.__wab_instance) {
-  max-width: 100%;
-  position: relative;
-  display: none;
-}
-.svg__e9Otq {
-  position: relative;
-  object-fit: cover;
-  width: auto;
-  height: 1em;
-}
-.text__nVlKc {
-  font-family: "Inter", sans-serif;
-  font-size: 16px;
-  font-weight: 500;
-  font-style: normal;
-  color: #1b1b18;
-  text-align: left;
-  text-transform: none;
-  line-height: 1.5;
-  letter-spacing: normal;
-  white-space: pre;
-  user-select: text;
-  text-decoration-line: none !important;
-  text-overflow: clip !important;
-}
-.svg__vdYjX {
   position: relative;
   object-fit: cover;
   width: auto;

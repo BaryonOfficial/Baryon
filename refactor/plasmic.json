@@ -687,19 +687,6 @@
           "componentType": "component"
         },
         {
-          "id": "bAZ4JfZdLiyz",
-          "name": "MicButton",
-          "type": "managed",
-          "projectId": "4dvBXLce6aZWcodsHuZ7oL",
-          "renderModuleFilePath": "plasmic/baryon/PlasmicMicButton.jsx",
-          "importSpec": {
-            "modulePath": "MicButton.jsx"
-          },
-          "cssFilePath": "plasmic/baryon/PlasmicMicButton.module.css",
-          "scheme": "blackbox",
-          "componentType": "component"
-        },
-        {
           "id": "72oO6fex1I6h",
           "name": "StopButton",
           "type": "managed",
@@ -709,6 +696,46 @@
             "modulePath": "StopButton.jsx"
           },
           "cssFilePath": "plasmic/baryon/PlasmicStopButton.module.css",
+          "scheme": "blackbox",
+          "componentType": "component"
+        },
+        {
+          "id": "_dY2l0GMnX_I",
+          "name": "ModeNaming",
+          "type": "managed",
+          "projectId": "4dvBXLce6aZWcodsHuZ7oL",
+          "renderModuleFilePath": "plasmic/baryon/PlasmicModeNaming.jsx",
+          "importSpec": {
+            "modulePath": "ModeNaming.jsx"
+          },
+          "cssFilePath": "plasmic/baryon/PlasmicModeNaming.module.css",
+          "scheme": "blackbox",
+          "componentType": "component"
+        },
+        {
+          "id": "nvHlc0ztf3Mh",
+          "name": "Switch",
+          "type": "managed",
+          "projectId": "4dvBXLce6aZWcodsHuZ7oL",
+          "renderModuleFilePath": "plasmic/baryon/PlasmicSwitch.jsx",
+          "importSpec": {
+            "modulePath": "Switch.jsx"
+          },
+          "cssFilePath": "plasmic/baryon/PlasmicSwitch.module.css",
+          "scheme": "blackbox",
+          "componentType": "component",
+          "plumeType": "switch"
+        },
+        {
+          "id": "T3nFQfxBWEpV",
+          "name": "NavMenu",
+          "type": "managed",
+          "projectId": "4dvBXLce6aZWcodsHuZ7oL",
+          "renderModuleFilePath": "plasmic/baryon/PlasmicNavMenu.jsx",
+          "importSpec": {
+            "modulePath": "NavMenu.jsx"
+          },
+          "cssFilePath": "plasmic/baryon/PlasmicNavMenu.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         }
@@ -983,6 +1010,36 @@
           "id": "8C7P_NC_xAYn",
           "name": "TouchDesignerBlack01SvgIcon",
           "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__TouchDesignerBlack01Svg.jsx"
+        },
+        {
+          "id": "ZvAp8lmOYdy4",
+          "name": "XCircleFillIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__XCircleFill.jsx"
+        },
+        {
+          "id": "TyBRaZiGlauo",
+          "name": "VisionIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Vision.jsx"
+        },
+        {
+          "id": "Sp76hJMCU4CF",
+          "name": "PlugIconIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__PlugIcon.jsx"
+        },
+        {
+          "id": "v1mcrSsX0Dl9",
+          "name": "OpenBookIconIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__OpenBookIcon.jsx"
+        },
+        {
+          "id": "d5pz69rrBj3o",
+          "name": "ArtIconIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ArtIcon.jsx"
+        },
+        {
+          "id": "KH57KApp2tIC",
+          "name": "XCircleFillsvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__XCircleFillsvg.jsx"
         }
       ],
       "images": [

@@ -151,6 +151,11 @@
   > img {
   margin-left: 16px;
 }
-.micButton:global(.__wab_instance) {
+._switch:global(.__wab_instance) {
+  max-width: 100%;
+  position: relative;
+}
+.modeNaming__eW6Mp:global(.__wab_instance) {
+  max-width: 100%;
   position: relative;
 }

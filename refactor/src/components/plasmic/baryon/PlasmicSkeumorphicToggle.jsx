@@ -15,8 +15,7 @@ import {
   createPlasmicElementProxy,
   deriveRenderOpts,
   hasVariant,
-  useDollarState,
-  useTrigger
+  useDollarState
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 import "@plasmicapp/react-web/lib/plasmic.css";
@@ -27,7 +26,10 @@ import LayerBlur4Icon from "./icons/PlasmicIcon__LayerBlur4"; // plasmic-import:
 
 createPlasmicElementProxy;
 
-export const PlasmicSkeumorphicToggle__VariantProps = new Array("micToggle");
+export const PlasmicSkeumorphicToggle__VariantProps = new Array(
+  "micToggleOff",
+  "micToggleOn"
+);
 
 export const PlasmicSkeumorphicToggle__ArgProps = new Array();
 
@@ -46,16 +48,16 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
   const stateSpecs = React.useMemo(
     () => [
       {
-        path: "variable",
-        type: "private",
-        variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) => ""
-      },
-      {
-        path: "micToggle",
+        path: "micToggleOff",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.micToggle
+        initFunc: ({ $props, $state, $queries, $ctx }) => $props.micToggleOff
+      },
+      {
+        path: "micToggleOn",
+        type: "private",
+        variableType: "variant",
+        initFunc: ({ $props, $state, $queries, $ctx }) => $props.micToggleOn
       }
     ],
 
@@ -67,13 +69,6 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
     $queries: {},
     $refs
   });
-  const [
-    isSkeumorphictogglebuttonActive,
-    triggerSkeumorphictogglebuttonActiveProps
-  ] = useTrigger("usePressed", {});
-  const triggers = {
-    active_skeumorphictogglebutton: isSkeumorphictogglebuttonActive
-  };
   return (
     <div
       data-plasmic-name={"skeumorphictogglebutton"}
@@ -89,30 +84,51 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
         plasmic_antd_5_hostless_css.plasmic_tokens,
         sty.skeumorphictogglebutton,
         {
-          [sty.skeumorphictogglebuttonmicToggle]: hasVariant(
+          [sty.skeumorphictogglebuttonmicToggleOff]: hasVariant(
             $state,
-            "micToggle",
-            "micToggle"
+            "micToggleOff",
+            "micToggleOff"
+          ),
+          [sty.skeumorphictogglebuttonmicToggleOn]: hasVariant(
+            $state,
+            "micToggleOn",
+            "micToggleOn"
           )
         }
       )}
-      id={hasVariant($state, "micToggle", "micToggle") ? "micMode" : undefined}
-      data-plasmic-trigger-props={[triggerSkeumorphictogglebuttonActiveProps]}
+      id={
+        hasVariant($state, "micToggleOn", "micToggleOn")
+          ? "micMode"
+          : hasVariant($state, "micToggleOff", "micToggleOff")
+          ? "micMode"
+          : undefined
+      }
     >
       <div
         data-plasmic-name={"base3"}
         data-plasmic-override={overrides.base3}
-        className={classNames(projectcss.all, sty.base3)}
+        className={classNames(projectcss.all, sty.base3, {
+          [sty.base3micToggleOn]: hasVariant(
+            $state,
+            "micToggleOn",
+            "micToggleOn"
+          )
+        })}
       />
 
       <div
         data-plasmic-name={"outsideStroke3"}
         data-plasmic-override={overrides.outsideStroke3}
         className={classNames(projectcss.all, sty.outsideStroke3, {
-          [sty.outsideStroke3micToggle]: hasVariant(
+          [sty.outsideStroke3micToggleOff]: hasVariant(
             $state,
-            "micToggle",
-            "micToggle"
+            "micToggleOff",
+            "micToggleOff"
+          ),
+          [sty.outsideStroke3micToggleOn]: hasVariant(
+            $state,
+            "micToggleOn",
+            "micToggleOn"
           )
         })}
       />
@@ -120,13 +136,25 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
       <div
         data-plasmic-name={"insideStroke3"}
         data-plasmic-override={overrides.insideStroke3}
-        className={classNames(projectcss.all, sty.insideStroke3)}
+        className={classNames(projectcss.all, sty.insideStroke3, {
+          [sty.insideStroke3micToggleOn]: hasVariant(
+            $state,
+            "micToggleOn",
+            "micToggleOn"
+          )
+        })}
       />
 
       <div
         data-plasmic-name={"textFrame3"}
         data-plasmic-override={overrides.textFrame3}
-        className={classNames(projectcss.all, sty.textFrame3)}
+        className={classNames(projectcss.all, sty.textFrame3, {
+          [sty.textFrame3micToggleOn]: hasVariant(
+            $state,
+            "micToggleOn",
+            "micToggleOn"
+          )
+        })}
       >
         <div
           className={classNames(
@@ -140,7 +168,13 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
       </div>
       <PlasmicImg__
         alt={""}
-        className={classNames(sty.img__r9EmC)}
+        className={classNames(sty.img__r9EmC, {
+          [sty.imgmicToggleOn__r9EmCjMud1]: hasVariant(
+            $state,
+            "micToggleOn",
+            "micToggleOn"
+          )
+        })}
         displayHeight={"19px"}
         displayMaxHeight={"none"}
         displayMaxWidth={"100%"}
@@ -156,11 +190,18 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
         }}
       />
 
-      {(triggers.active_skeumorphictogglebutton ? true : false) ? (
+      {(hasVariant($state, "micToggleOn", "micToggleOn") ? true : false) ? (
         <div
           data-plasmic-name={"property1On"}
           data-plasmic-override={overrides.property1On}
-          className={classNames(projectcss.all, sty.property1On)}
+          className={classNames(projectcss.all, sty.property1On, {
+            [sty.property1OnmicToggleOn]: hasVariant(
+              $state,
+              "micToggleOn",
+              "micToggleOn"
+            )
+          })}
+          id={``}
         >
           <div
             data-plasmic-name={"base"}
@@ -197,7 +238,13 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
           </div>
           <PlasmicImg__
             alt={""}
-            className={classNames(sty.img__zNJxL)}
+            className={classNames(sty.img__zNJxL, {
+              [sty.imgmicToggleOn__zNJxLjMud1]: hasVariant(
+                $state,
+                "micToggleOn",
+                "micToggleOn"
+              )
+            })}
             displayHeight={"19px"}
             displayMaxHeight={"none"}
             displayMaxWidth={"100%"}
@@ -221,7 +268,13 @@ function PlasmicSkeumorphicToggle__RenderFunc(props) {
             <LayerBlur4Icon
               data-plasmic-name={"svg"}
               data-plasmic-override={overrides.svg}
-              className={classNames(projectcss.all, sty.svg)}
+              className={classNames(projectcss.all, sty.svg, {
+                [sty.svgmicToggleOn]: hasVariant(
+                  $state,
+                  "micToggleOn",
+                  "micToggleOn"
+                )
+              })}
               role={"img"}
             />
           </div>

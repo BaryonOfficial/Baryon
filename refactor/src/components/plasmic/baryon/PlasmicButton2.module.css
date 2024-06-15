@@ -1,22 +1,22 @@
 .root {
-  display: flex;
   position: relative;
-  flex-direction: row;
-  cursor: pointer;
-  transition-property: background;
-  transition-duration: 0.1s;
-  pointer-events: auto;
   background: none;
+  pointer-events: auto;
+  transition-duration: 0.1s;
+  transition-property: background;
+  cursor: pointer;
+  flex-direction: row;
+  display: flex;
   -webkit-transition-property: background;
   -webkit-transition-duration: 0.1s;
   border-radius: 6px;
-  padding: 12px 20px;
+  padding: 8px 12px;
   border-width: 0px;
 }
 .root > :global(.__wab_flex-container) {
-  flex-direction: row;
-  align-items: center;
   justify-content: center;
+  align-items: center;
+  flex-direction: row;
   margin-left: calc(0px - 8px);
   width: calc(100% + 8px);
 }
@@ -37,8 +37,8 @@
   opacity: 0.6;
 }
 .rootshape_rounded {
-  padding-left: 20px;
-  padding-right: 20px;
+  padding-left: 12px;
+  padding-right: 12px;
   min-width: 100px;
   border-radius: 999px;
 }
@@ -104,7 +104,7 @@
   padding: 6px;
 }
 .root:hover {
-  background: #282826;
+  background: #000000cc;
 }
 .rootcolor_blue:hover {
   background: #369eff;
@@ -140,7 +140,27 @@
   background: #e9e9e6;
 }
 .rootcolor_clear:hover {
-  background: #e9e9e6;
+  background: #ffffff29;
+}
+.rootcolor_clear:hover > :global(.__wab_flex-container) {
+  margin-left: calc(0px - 4px);
+  width: calc(100% + 4px);
+  margin-top: calc(0px - 0px);
+  height: calc(100% + 0px);
+}
+.rootcolor_clear:hover > :global(.__wab_flex-container) > *,
+.rootcolor_clear:hover
+  > :global(.__wab_flex-container)
+  > :global(.__wab_slot)
+  > *,
+.rootcolor_clear:hover > :global(.__wab_flex-container) > picture > img,
+.rootcolor_clear:hover
+  > :global(.__wab_flex-container)
+  > :global(.__wab_slot)
+  > picture
+  > img {
+  margin-left: 4px;
+  margin-top: 0px;
 }
 .rootcolor_link:hover {
   background: #ffffff00;
@@ -154,7 +174,7 @@
   outline: none;
 }
 .root:active {
-  background: #2e2e2b;
+  background: #000000cc;
 }
 .rootcolor_blue:active {
   background: #52a9ff;
@@ -190,7 +210,7 @@
   background: #e3e3e0;
 }
 .rootcolor_clear:active {
-  background: #e3e3e0;
+  background: #ffffff29;
 }
 .rootcolor_link:active {
   background: #ffffff00;

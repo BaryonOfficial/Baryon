@@ -157,9 +157,9 @@ function PlasmicPlugin__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox___7ZQXp)}
               >
                 <Embed
-                  data-plasmic-name={"embedHtml"}
-                  data-plasmic-override={overrides.embedHtml}
-                  className={classNames("__wab_instance", sty.embedHtml)}
+                  data-plasmic-name={"senderForm"}
+                  data-plasmic-override={overrides.senderForm}
+                  className={classNames("__wab_instance", sty.senderForm)}
                   code={
                     "<script>\n  (function (s, e, n, d, er) {\n    s['Sender'] = er;\n    s[er] = s[er] || function () {\n      (s[er].q = s[er].q || []).push(arguments)\n    }, s[er].l = 1 * new Date();\n    var a = e.createElement(n),\n        m = e.getElementsByTagName(n)[0];\n    a.async = 1;\n    a.src = d;\n    m.parentNode.insertBefore(a, m)\n  })(window, document, 'script', 'https://cdn.sender.net/accounts_resources/universal.js', 'sender');\n  sender('57eb5cbf6b2688')\n</script>\n\n<div style=\"text-align: left\" class=\"sender-form-field\" data-sender-form-id=\"lx6lvr19ez582d2q6xg\"></div>"
                   }
@@ -523,7 +523,12 @@ function PlasmicPlugin__RenderFunc(props) {
               >
                 <div className={classNames(projectcss.all, sty.freeBox__txnHv)}>
                   <TouchDesignerBlack01SvgIcon
-                    className={classNames(projectcss.all, sty.svg__jZtL)}
+                    data-plasmic-name={"touchDesignerLogo"}
+                    data-plasmic-override={overrides.touchDesignerLogo}
+                    className={classNames(
+                      projectcss.all,
+                      sty.touchDesignerLogo
+                    )}
                     role={"img"}
                   />
                 </div>
@@ -535,7 +540,9 @@ function PlasmicPlugin__RenderFunc(props) {
               >
                 <div className={classNames(projectcss.all, sty.freeBox__wTfh)}>
                   <ResolumeLogosvgIcon
-                    className={classNames(projectcss.all, sty.svg__nh0T1)}
+                    data-plasmic-name={"resolumeLogo"}
+                    data-plasmic-override={overrides.resolumeLogo}
+                    className={classNames(projectcss.all, sty.resolumeLogo)}
                     role={"img"}
                   />
                 </div>
@@ -547,7 +554,9 @@ function PlasmicPlugin__RenderFunc(props) {
               >
                 <div className={classNames(projectcss.all, sty.freeBox__kinlF)}>
                   <UeLogotype2023SplashScreenVerticalBlacksvg2Icon
-                    className={classNames(projectcss.all, sty.svg__sbWtX)}
+                    data-plasmic-name={"unrealEngineLogo"}
+                    data-plasmic-override={overrides.unrealEngineLogo}
+                    className={classNames(projectcss.all, sty.unrealEngineLogo)}
                     role={"img"}
                   />
                 </div>
@@ -559,7 +568,9 @@ function PlasmicPlugin__RenderFunc(props) {
               >
                 <div className={classNames(projectcss.all, sty.freeBox__oNns)}>
                   <AbletonLogowinesvgIcon
-                    className={classNames(projectcss.all, sty.svg__jZuAw)}
+                    data-plasmic-name={"abletonLogo"}
+                    data-plasmic-override={overrides.abletonLogo}
+                    className={classNames(projectcss.all, sty.abletonLogo)}
                     role={"img"}
                   />
                 </div>
@@ -571,7 +582,9 @@ function PlasmicPlugin__RenderFunc(props) {
               >
                 <div className={classNames(projectcss.all, sty.freeBox__qLay5)}>
                   <OpenBroadcasterSoftwareLogowinesvgIcon
-                    className={classNames(projectcss.all, sty.svg___9SNyg)}
+                    data-plasmic-name={"obsLogo"}
+                    data-plasmic-override={overrides.obsLogo}
+                    className={classNames(projectcss.all, sty.obsLogo)}
                     role={"img"}
                   />
                 </div>
@@ -735,22 +748,6 @@ function PlasmicPlugin__RenderFunc(props) {
                               role={"img"}
                             />
                           </div>
-                          {false ? (
-                            <div
-                              className={classNames(
-                                projectcss.all,
-                                sty.freeBox___1B6MC
-                              )}
-                            >
-                              <Icon15Icon
-                                className={classNames(
-                                  projectcss.all,
-                                  sty.svg__v6EJt
-                                )}
-                                role={"img"}
-                              />
-                            </div>
-                          ) : null}
                           <Stack__
                             as={"div"}
                             hasGap={true}
@@ -759,17 +756,6 @@ function PlasmicPlugin__RenderFunc(props) {
                               sty.freeBox__ls25Z
                             )}
                           >
-                            {false ? (
-                              <div
-                                className={classNames(
-                                  projectcss.all,
-                                  projectcss.__wab_text,
-                                  sty.text__wg2Rp
-                                )}
-                              >
-                                {"Label"}
-                              </div>
-                            ) : null}
                             <div
                               className={classNames(
                                 projectcss.all,
@@ -805,22 +791,6 @@ function PlasmicPlugin__RenderFunc(props) {
                               role={"img"}
                             />
                           </div>
-                          {false ? (
-                            <div
-                              className={classNames(
-                                projectcss.all,
-                                sty.freeBox__ghvZg
-                              )}
-                            >
-                              <Icon15Icon
-                                className={classNames(
-                                  projectcss.all,
-                                  sty.svg__sbQcq
-                                )}
-                                role={"img"}
-                              />
-                            </div>
-                          ) : null}
                           <Stack__
                             as={"div"}
                             hasGap={true}
@@ -829,17 +799,6 @@ function PlasmicPlugin__RenderFunc(props) {
                               sty.freeBox__dggS6
                             )}
                           >
-                            {false ? (
-                              <div
-                                className={classNames(
-                                  projectcss.all,
-                                  projectcss.__wab_text,
-                                  sty.text__dabgf
-                                )}
-                              >
-                                {"Label"}
-                              </div>
-                            ) : null}
                             <div
                               className={classNames(
                                 projectcss.all,
@@ -875,22 +834,6 @@ function PlasmicPlugin__RenderFunc(props) {
                               role={"img"}
                             />
                           </div>
-                          {false ? (
-                            <div
-                              className={classNames(
-                                projectcss.all,
-                                sty.freeBox__pGrp9
-                              )}
-                            >
-                              <Icon15Icon
-                                className={classNames(
-                                  projectcss.all,
-                                  sty.svg___5DMz
-                                )}
-                                role={"img"}
-                              />
-                            </div>
-                          ) : null}
                           <Stack__
                             as={"div"}
                             hasGap={true}
@@ -899,17 +842,6 @@ function PlasmicPlugin__RenderFunc(props) {
                               sty.freeBox___0DcKs
                             )}
                           >
-                            {false ? (
-                              <div
-                                className={classNames(
-                                  projectcss.all,
-                                  projectcss.__wab_text,
-                                  sty.text__xea8D
-                                )}
-                              >
-                                {"Label"}
-                              </div>
-                            ) : null}
                             <div
                               className={classNames(
                                 projectcss.all,
@@ -966,6 +898,7 @@ function PlasmicPlugin__RenderFunc(props) {
               data-plasmic-name={"baryonFooter"}
               data-plasmic-override={overrides.baryonFooter}
               className={classNames("__wab_instance", sty.baryonFooter)}
+              whitetextFooter={true}
             />
           </Stack__>
         </div>
@@ -980,13 +913,18 @@ const PlasmicDescendants = {
     "siteNavBar",
     "pluginHero",
     "h1",
-    "embedHtml",
+    "senderForm",
     "pluginDetails",
     "foreground2",
     "columns",
     "h2",
     "compatibility",
     "h3",
+    "touchDesignerLogo",
+    "resolumeLogo",
+    "unrealEngineLogo",
+    "abletonLogo",
+    "obsLogo",
     "pricing",
     "foreground3",
     "button2",
@@ -994,15 +932,29 @@ const PlasmicDescendants = {
   ],
 
   siteNavBar: ["siteNavBar"],
-  pluginHero: ["pluginHero", "h1", "embedHtml"],
+  pluginHero: ["pluginHero", "h1", "senderForm"],
   h1: ["h1"],
-  embedHtml: ["embedHtml"],
+  senderForm: ["senderForm"],
   pluginDetails: ["pluginDetails", "foreground2", "columns", "h2"],
   foreground2: ["foreground2", "columns", "h2"],
   columns: ["columns", "h2"],
   h2: ["h2"],
-  compatibility: ["compatibility", "h3"],
+  compatibility: [
+    "compatibility",
+    "h3",
+    "touchDesignerLogo",
+    "resolumeLogo",
+    "unrealEngineLogo",
+    "abletonLogo",
+    "obsLogo"
+  ],
+
   h3: ["h3"],
+  touchDesignerLogo: ["touchDesignerLogo"],
+  resolumeLogo: ["resolumeLogo"],
+  unrealEngineLogo: ["unrealEngineLogo"],
+  abletonLogo: ["abletonLogo"],
+  obsLogo: ["obsLogo"],
   pricing: ["pricing", "foreground3", "button2"],
   foreground3: ["foreground3", "button2"],
   button2: ["button2"],
@@ -1044,13 +996,18 @@ export const PlasmicPlugin = Object.assign(
     siteNavBar: makeNodeComponent("siteNavBar"),
     pluginHero: makeNodeComponent("pluginHero"),
     h1: makeNodeComponent("h1"),
-    embedHtml: makeNodeComponent("embedHtml"),
+    senderForm: makeNodeComponent("senderForm"),
     pluginDetails: makeNodeComponent("pluginDetails"),
     foreground2: makeNodeComponent("foreground2"),
     columns: makeNodeComponent("columns"),
     h2: makeNodeComponent("h2"),
     compatibility: makeNodeComponent("compatibility"),
     h3: makeNodeComponent("h3"),
+    touchDesignerLogo: makeNodeComponent("touchDesignerLogo"),
+    resolumeLogo: makeNodeComponent("resolumeLogo"),
+    unrealEngineLogo: makeNodeComponent("unrealEngineLogo"),
+    abletonLogo: makeNodeComponent("abletonLogo"),
+    obsLogo: makeNodeComponent("obsLogo"),
     pricing: makeNodeComponent("pricing"),
     foreground3: makeNodeComponent("foreground3"),
     button2: makeNodeComponent("button2"),

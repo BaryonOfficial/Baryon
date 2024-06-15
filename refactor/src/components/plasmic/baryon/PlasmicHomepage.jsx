@@ -13,11 +13,15 @@ import {
   Stack as Stack__,
   classNames,
   createPlasmicElementProxy,
-  deriveRenderOpts
+  deriveRenderOpts,
+  generateStateOnChangeProp,
+  generateStateValueProp,
+  set as $stateSet,
+  useDollarState
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 import SiteNavBar from "../../SiteNavBar"; // plasmic-import: xamm2QscKBA7/component
-import MicButton from "../../MicButton"; // plasmic-import: bAZ4JfZdLiyz/component
+import Switch from "../../Switch"; // plasmic-import: nvHlc0ztf3Mh/component
 import "@plasmicapp/react-web/lib/plasmic.css";
 import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css"; // plasmic-import: ohDidvG9XsCeFumugENU3J/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
@@ -41,6 +45,24 @@ function PlasmicHomepage__RenderFunc(props) {
   const $ctx = useDataEnv?.() || {};
   const refsRef = React.useRef({});
   const $refs = refsRef.current;
+  const stateSpecs = React.useMemo(
+    () => [
+      {
+        path: "_switch.isChecked",
+        type: "private",
+        variableType: "boolean",
+        initFunc: ({ $props, $state, $queries, $ctx }) => undefined
+      }
+    ],
+
+    [$props, $ctx, $refs]
+  );
+  const $state = useDollarState(stateSpecs, {
+    $props,
+    $ctx,
+    $queries: {},
+    $refs
+  });
   return (
     <React.Fragment>
       <div className={projectcss.plasmic_page_wrapper}>
@@ -101,10 +123,62 @@ function PlasmicHomepage__RenderFunc(props) {
                   className={classNames(projectcss.all, sty.modeNames)}
                   id={"micMode"}
                 >
-                  <MicButton
-                    data-plasmic-name={"micButton"}
-                    data-plasmic-override={overrides.micButton}
-                    className={classNames("__wab_instance", sty.micButton)}
+                  <Switch
+                    data-plasmic-name={"_switch"}
+                    data-plasmic-override={overrides._switch}
+                    className={classNames("__wab_instance", sty._switch)}
+                    isChecked={
+                      generateStateValueProp($state, [
+                        "_switch",
+                        "isChecked"
+                      ]) ?? false
+                    }
+                    onChange={async (...eventArgs) => {
+                      ((...eventArgs) => {
+                        generateStateOnChangeProp($state, [
+                          "_switch",
+                          "isChecked"
+                        ])(eventArgs[0]);
+                      }).apply(null, eventArgs);
+                      (async isChecked => {
+                        const $steps = {};
+                        $steps["updateSwitchIsChecked"] = false
+                          ? (() => {
+                              const actionArgs = {
+                                variable: {
+                                  objRoot: $state,
+                                  variablePath: ["_switch", "isChecked"]
+                                },
+                                operation: 0,
+                                value: true
+                              };
+                              return (({
+                                variable,
+                                value,
+                                startIndex,
+                                deleteCount
+                              }) => {
+                                if (!variable) {
+                                  return;
+                                }
+                                const { objRoot, variablePath } = variable;
+                                $stateSet(objRoot, variablePath, value);
+                                return value;
+                              })?.apply(null, [actionArgs]);
+                            })()
+                          : undefined;
+                        if (
+                          $steps["updateSwitchIsChecked"] != null &&
+                          typeof $steps["updateSwitchIsChecked"] === "object" &&
+                          typeof $steps["updateSwitchIsChecked"].then ===
+                            "function"
+                        ) {
+                          $steps["updateSwitchIsChecked"] = await $steps[
+                            "updateSwitchIsChecked"
+                          ];
+                        }
+                      }).apply(null, eventArgs);
+                    }}
                   />
                 </Stack__>
               </Stack__>
@@ -125,7 +199,7 @@ const PlasmicDescendants = {
     "modeSettings",
     "text",
     "modeNames",
-    "micButton"
+    "_switch"
   ],
 
   siteNavBar: ["siteNavBar"],
@@ -135,7 +209,7 @@ const PlasmicDescendants = {
     "modeSettings",
     "text",
     "modeNames",
-    "micButton"
+    "_switch"
   ],
 
   micModeToggle: [
@@ -143,13 +217,13 @@ const PlasmicDescendants = {
     "modeSettings",
     "text",
     "modeNames",
-    "micButton"
+    "_switch"
   ],
 
-  modeSettings: ["modeSettings", "text", "modeNames", "micButton"],
+  modeSettings: ["modeSettings", "text", "modeNames", "_switch"],
   text: ["text"],
-  modeNames: ["modeNames", "micButton"],
-  micButton: ["micButton"]
+  modeNames: ["modeNames", "_switch"],
+  _switch: ["_switch"]
 };
 
 function makeNodeComponent(nodeName) {
@@ -190,7 +264,7 @@ export const PlasmicHomepage = Object.assign(
     modeSettings: makeNodeComponent("modeSettings"),
     text: makeNodeComponent("text"),
     modeNames: makeNodeComponent("modeNames"),
-    micButton: makeNodeComponent("micButton"),
+    _switch: makeNodeComponent("_switch"),
     // Metadata about props expected for PlasmicHomepage
     internalVariantProps: PlasmicHomepage__VariantProps,
     internalArgProps: PlasmicHomepage__ArgProps,
