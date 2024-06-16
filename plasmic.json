@@ -575,7 +575,7 @@
           "cssFilePath": "plasmic/baryon/PlasmicHomepage.module.css",
           "scheme": "blackbox",
           "componentType": "page",
-          "path": "/homepage"
+          "path": "/"
         },
         {
           "id": "EPGJPtXx-yjL",
@@ -1054,176 +1054,6 @@
           "filePath": "plasmic/baryon/images/baryonLogoBlacksvg.svg"
         },
         {
-          "id": "cYcAghgFJI6b",
-          "name": "image 2",
-          "filePath": "plasmic/baryon/images/image2.svg"
-        },
-        {
-          "id": "RqJgCtm_z7jo",
-          "name": "image 3",
-          "filePath": "plasmic/baryon/images/image3.jpg"
-        },
-        {
-          "id": "A4e4zDMvzflh",
-          "name": "image 4",
-          "filePath": "plasmic/baryon/images/image4.jpg"
-        },
-        {
-          "id": "WaDIMEuWeMdm",
-          "name": "image 5",
-          "filePath": "plasmic/baryon/images/image5.jpg"
-        },
-        {
-          "id": "kpeOynjIXeMl",
-          "name": "image 6",
-          "filePath": "plasmic/baryon/images/image6.jpg"
-        },
-        {
-          "id": "_MnI7XB-buMg",
-          "name": "image 7",
-          "filePath": "plasmic/baryon/images/image7.jpg"
-        },
-        {
-          "id": "Nu86G3wytqO8",
-          "name": "image 8",
-          "filePath": "plasmic/baryon/images/image8.jpg"
-        },
-        {
-          "id": "aWQPmn7b-Boc",
-          "name": "image 9",
-          "filePath": "plasmic/baryon/images/image9.jpg"
-        },
-        {
-          "id": "DbNLu19YpV3j",
-          "name": "image 10",
-          "filePath": "plasmic/baryon/images/image10.jpg"
-        },
-        {
-          "id": "0DB_cWn9WLkh",
-          "name": "image 11",
-          "filePath": "plasmic/baryon/images/image11.jpg"
-        },
-        {
-          "id": "eygioW5mQ5GM",
-          "name": "image 12",
-          "filePath": "plasmic/baryon/images/image12.jpg"
-        },
-        {
-          "id": "lBPQADS6kL0r",
-          "name": "image 13",
-          "filePath": "plasmic/baryon/images/image13.svg"
-        },
-        {
-          "id": "PVFQDX-FX8P9",
-          "name": "image 14",
-          "filePath": "plasmic/baryon/images/image14.svg"
-        },
-        {
-          "id": "WPM15hp2CwGP",
-          "name": "image 15",
-          "filePath": "plasmic/baryon/images/image15.png"
-        },
-        {
-          "id": "pAbm7_jpKtJe",
-          "name": "image 16",
-          "filePath": "plasmic/baryon/images/image16.png"
-        },
-        {
-          "id": "d1dM4iE1vECP",
-          "name": "image 17",
-          "filePath": "plasmic/baryon/images/image17.png"
-        },
-        {
-          "id": "1UufxcFli9_c",
-          "name": "image 18",
-          "filePath": "plasmic/baryon/images/image18.png"
-        },
-        {
-          "id": "9ICP8SWMDw3u",
-          "name": "image 19",
-          "filePath": "plasmic/baryon/images/image19.png"
-        },
-        {
-          "id": "-3PCwoZvFVNP",
-          "name": "image 20",
-          "filePath": "plasmic/baryon/images/image20.svg"
-        },
-        {
-          "id": "sO3tgPqd8_NL",
-          "name": "image 21",
-          "filePath": "plasmic/baryon/images/image21.svg"
-        },
-        {
-          "id": "cUVzF8UnEO53",
-          "name": "image 22",
-          "filePath": "plasmic/baryon/images/image22.svg"
-        },
-        {
-          "id": "qDRyc0_FFV4e",
-          "name": "image 23",
-          "filePath": "plasmic/baryon/images/image23.svg"
-        },
-        {
-          "id": "xzqvxGfPMRfa",
-          "name": "image 24",
-          "filePath": "plasmic/baryon/images/image24.svg"
-        },
-        {
-          "id": "v3Z8Wf7nwAM5",
-          "name": "image 25",
-          "filePath": "plasmic/baryon/images/image25.svg"
-        },
-        {
-          "id": "46rAtugchy5E",
-          "name": "image 26",
-          "filePath": "plasmic/baryon/images/image26.svg"
-        },
-        {
-          "id": "HWl10StODPUr",
-          "name": "image 27",
-          "filePath": "plasmic/baryon/images/image27.svg"
-        },
-        {
-          "id": "WI0LJ_UbYHdA",
-          "name": "image 28",
-          "filePath": "plasmic/baryon/images/image28.svg"
-        },
-        {
-          "id": "dhbLypQMqKG_",
-          "name": "image 29",
-          "filePath": "plasmic/baryon/images/image29.svg"
-        },
-        {
-          "id": "Jl04HplC86Ew",
-          "name": "image 30",
-          "filePath": "plasmic/baryon/images/image30.svg"
-        },
-        {
-          "id": "4gwzHGHrFJW5",
-          "name": "image 31",
-          "filePath": "plasmic/baryon/images/image31.png"
-        },
-        {
-          "id": "88gphbvjMqy0",
-          "name": "image 32",
-          "filePath": "plasmic/baryon/images/image32.svg"
-        },
-        {
-          "id": "ZY52kN4VF3nv",
-          "name": "image 33",
-          "filePath": "plasmic/baryon/images/image33.svg"
-        },
-        {
-          "id": "B_gjT0JNz32m",
-          "name": "image 34",
-          "filePath": "plasmic/baryon/images/image34.png"
-        },
-        {
-          "id": "xo0BJrcuXXqE",
-          "name": "image 35",
-          "filePath": "plasmic/baryon/images/image35.png"
-        },
-        {
           "id": "5oiRHG9JbS-S",
           "name": "image 36",
           "filePath": "plasmic/baryon/images/image36.svg"
@@ -1234,39 +1064,9 @@
           "filePath": "plasmic/baryon/images/image37.svg"
         },
         {
-          "id": "p-UMcvz9ZvmU",
-          "name": "image 38",
-          "filePath": "plasmic/baryon/images/image38.png"
-        },
-        {
-          "id": "bC3wIQK5LART",
-          "name": "image 39",
-          "filePath": "plasmic/baryon/images/image39.png"
-        },
-        {
-          "id": "srqe-y9y4MqC",
-          "name": "image 40",
-          "filePath": "plasmic/baryon/images/image40.svg"
-        },
-        {
-          "id": "JfT8x4-BkrMj",
-          "name": "image 41",
-          "filePath": "plasmic/baryon/images/image41.svg"
-        },
-        {
-          "id": "G02cCbgZ6fKA",
-          "name": "image 42",
-          "filePath": "plasmic/baryon/images/image42.svg"
-        },
-        {
           "id": "lZsTzIa17Jdq",
           "name": "image 43",
           "filePath": "plasmic/baryon/images/image43.svg"
-        },
-        {
-          "id": "-9BCjx5AJSvi",
-          "name": "image 44",
-          "filePath": "plasmic/baryon/images/image44.svg"
         },
         {
           "id": "z54Hb9KYdnkv",
@@ -1277,26 +1077,6 @@
           "id": "E3P74CfSQNTJ",
           "name": "image 46",
           "filePath": "plasmic/baryon/images/image46.svg"
-        },
-        {
-          "id": "TlBtyitRZ1Et",
-          "name": "image 47",
-          "filePath": "plasmic/baryon/images/image47.png"
-        },
-        {
-          "id": "x2iVTIdyVXGH",
-          "name": "image 48",
-          "filePath": "plasmic/baryon/images/image48.png"
-        },
-        {
-          "id": "TqeYcHOAcREO",
-          "name": "meito_enma_A_vibrant_music_festival_scene_with_crowds_gathered__3fb27fac-0fc7-4c8d-8796-662312472529.png",
-          "filePath": "plasmic/baryon/images/meitoEnmaAVibrantMusicFestivalSceneWithCrowdsGathered3Fb27Fac0Fc74C8D8796662312472529Png.png"
-        },
-        {
-          "id": "CRfp523oSGAi",
-          "name": "music-hologram-picnic.png",
-          "filePath": "plasmic/baryon/images/musicHologramPicnicpng.png"
         },
         {
           "id": "yz4NB8cZ1un3",
@@ -1472,6 +1252,31 @@
           "id": "UkSuRrDI-VK2",
           "name": "kenrick-mills-L8mqcLh7deg-unsplash.jpg",
           "filePath": "plasmic/baryon/images/kenrickMillsL8MqcLh7DegUnsplashjpg.jpeg"
+        },
+        {
+          "id": "7RX2-rlmS1Hb",
+          "name": "vackground-com-hp-tDqblBqE-unsplash.jpg",
+          "filePath": "plasmic/baryon/images/vackgroundComHpTDqblBqEUnsplashjpg.jpg"
+        },
+        {
+          "id": "PjpCZg3cPebF",
+          "name": "rivage-t-da_md1qMc-unsplash.jpg",
+          "filePath": "plasmic/baryon/images/rivageTDaMd1QMcUnsplashjpg.jpg"
+        },
+        {
+          "id": "9laZc_0pgJ4l",
+          "name": "billy-huynh-W8KTS-mhFUE-unsplash.jpg",
+          "filePath": "plasmic/baryon/images/billyHuynhW8KtsMhFueUnsplashjpg.jpg"
+        },
+        {
+          "id": "nSN2MQyWg_LH",
+          "name": "ian-keefe-NBQhCKtg_9Y-unsplash.jpg",
+          "filePath": "plasmic/baryon/images/ianKeefeNbQhCKtg9YUnsplashjpg.jpg"
+        },
+        {
+          "id": "iy4EoC896c_K",
+          "name": "harli-marten-n7a2OJDSZns-unsplash.jpg",
+          "filePath": "plasmic/baryon/images/harliMartenN7A2OjdsZnsUnsplashjpg.jpeg"
         }
       ],
       "indirect": false,

@@ -16,6 +16,7 @@
   max-width: 100%;
   position: relative;
   margin-bottom: 4px;
+  transform: none;
   flex-shrink: 0;
 }
 .skeumorphicToggleisDisabled:global(.__wab_instance) {
