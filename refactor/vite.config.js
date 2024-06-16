@@ -1,7 +1,31 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react-swc'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react-swc';
+import glsl from 'vite-plugin-glsl';
+import topLevelAwait from 'vite-plugin-top-level-await';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
-})
+  server: {
+    headers: {
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+      'Cross-Origin-Opener-Policy': 'same-origin',
+    },
+    host: true, // Open to local network and display URL
+    open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env), // Open if it's not a CodeSandbox
+  },
+  build: {
+    outDir: 'dist', // Output in the dist/ folder
+    emptyOutDir: true, // Empty the folder first
+    sourcemap: true, // Add sourcemap
+  },
+  plugins: [
+    react(),
+    glsl(),
+    topLevelAwait({
+      // The export name of top-level await promise for each chunk module
+      promiseExportName: '__tla',
+      // The function to generate import names of top-level await promise in each chunk module
+      promiseImportName: (i) => `__tla_${i}`,
+    }),
+  ],
+});
