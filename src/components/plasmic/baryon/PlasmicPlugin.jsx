@@ -157,9 +157,9 @@ function PlasmicPlugin__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox___7ZQXp)}
               >
                 <Embed
-                  data-plasmic-name={"senderForm"}
-                  data-plasmic-override={overrides.senderForm}
-                  className={classNames("__wab_instance", sty.senderForm)}
+                  data-plasmic-name={"embedHtml"}
+                  data-plasmic-override={overrides.embedHtml}
+                  className={classNames("__wab_instance", sty.embedHtml)}
                   code={
                     "<script>\n  (function (s, e, n, d, er) {\n    s['Sender'] = er;\n    s[er] = s[er] || function () {\n      (s[er].q = s[er].q || []).push(arguments)\n    }, s[er].l = 1 * new Date();\n    var a = e.createElement(n),\n        m = e.getElementsByTagName(n)[0];\n    a.async = 1;\n    a.src = d;\n    m.parentNode.insertBefore(a, m)\n  })(window, document, 'script', 'https://cdn.sender.net/accounts_resources/universal.js', 'sender');\n  sender('57eb5cbf6b2688')\n</script>\n\n<div style=\"text-align: left\" class=\"sender-form-field\" data-sender-form-id=\"lx6lvr19ez582d2q6xg\"></div>"
                   }
@@ -913,7 +913,7 @@ const PlasmicDescendants = {
     "siteNavBar",
     "pluginHero",
     "h1",
-    "senderForm",
+    "embedHtml",
     "pluginDetails",
     "foreground2",
     "columns",
@@ -932,9 +932,9 @@ const PlasmicDescendants = {
   ],
 
   siteNavBar: ["siteNavBar"],
-  pluginHero: ["pluginHero", "h1", "senderForm"],
+  pluginHero: ["pluginHero", "h1", "embedHtml"],
   h1: ["h1"],
-  senderForm: ["senderForm"],
+  embedHtml: ["embedHtml"],
   pluginDetails: ["pluginDetails", "foreground2", "columns", "h2"],
   foreground2: ["foreground2", "columns", "h2"],
   columns: ["columns", "h2"],
@@ -996,7 +996,7 @@ export const PlasmicPlugin = Object.assign(
     siteNavBar: makeNodeComponent("siteNavBar"),
     pluginHero: makeNodeComponent("pluginHero"),
     h1: makeNodeComponent("h1"),
-    senderForm: makeNodeComponent("senderForm"),
+    embedHtml: makeNodeComponent("embedHtml"),
     pluginDetails: makeNodeComponent("pluginDetails"),
     foreground2: makeNodeComponent("foreground2"),
     columns: makeNodeComponent("columns"),

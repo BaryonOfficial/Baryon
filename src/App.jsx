@@ -1,5 +1,4 @@
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
-import { PlasmicRootProvider } from '@plasmicapp/react-web'; // As of React 18, seems to not be needed
 import Homepage from './components/Homepage';
 import Story from './components/Story';
 import Plugin from './components/Plugin';

@@ -133,7 +133,7 @@ function PlasmicSwitch__RenderFunc(props) {
           )
         })}
         micToggleOff={
-          hasVariant($state, "isDisabled", "isDisabled") ? true : undefined
+          hasVariant($state, "isDisabled", "isDisabled") ? true : true
         }
         micToggleOn={
           hasVariant($state, "isChecked", "isChecked") ? true : undefined
