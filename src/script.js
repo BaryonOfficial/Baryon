@@ -14,7 +14,7 @@ import {
   processAudioData,
   startAudioProcessing,
 } from './audio/audioSetup.js';
-import { toggleRecording, toggleRecordingButton } from './recordRTC.js';
+import { toggleRecording, toggleRecordingButton } from './utils/recordRTC.js';
 
 //******************************************************* GENERAL INITIALIZATION *******************************************************//
 const guiWidth = 300;
