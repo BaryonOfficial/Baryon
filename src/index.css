@@ -6,10 +6,11 @@ body {
   border: none;
 }
 
-/* .btn-standard {
-  @apply bg-white text-black hover:bg-whitesmoke font-light py-1.5 px-3.5 rounded font-ubuntu cursor-pointer text-sm;
+/* Updated button styles using Tailwind's default utility classes */
+.btn-standard {
+  @apply bg-white text-black hover:bg-gray-200 font-light py-1.5 px-3.5 rounded cursor-pointer text-sm;
 }
 
 .file-btn-standard {
-  @apply bg-white text-black hover:bg-whitesmoke font-extralight py-1.5 px-3.5 rounded font-ubuntu cursor-pointer text-sm;
-} */
+  @apply bg-white text-black hover:bg-gray-200 font-light py-1.5 px-3.5 rounded cursor-pointer text-sm;
+}
