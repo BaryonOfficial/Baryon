@@ -18,6 +18,8 @@
     "@plasmicpkgs/plasmic-nav": "^0.0.167",
     "@plasmicpkgs/react-awesome-reveal": "^3.8.198",
     "@plasmicpkgs/react-scroll-parallax": "^0.0.204",
+    "@react-three/drei": "^9.107.0",
+    "@react-three/fiber": "^8.16.8",
     "essentia.js": "^0.1.3",
     "lil-gui": "^0.19.2",
     "react": "^18.2.0",
