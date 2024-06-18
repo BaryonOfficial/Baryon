@@ -18,10 +18,9 @@ import {
 } from '../audio/audioSetup.js';
 import { toggleRecording, toggleRecordingButton } from '../utils/recordRTC.js';
 
-export let scene, camera, renderer;
-
 const ThreeScene = () => {
-  const mountRef = useRef(null);
+  const canvasRef = useRef(null);
+
   const audioInputRef = useRef(null);
   const fileNameButtonRef = useRef(null);
   const micButtonRef = useRef(null);
@@ -29,20 +28,18 @@ const ThreeScene = () => {
   const stopButtonRef = useRef(null);
 
   useEffect(() => {
-    const mount = mountRef.current;
-
     //******************************************************* GENERAL INITIALIZATION *******************************************************//
     const guiWidth = 300;
     const gui = new GUI({ width: guiWidth, container: document.getElementById('gui-container') });
     document.documentElement.style.setProperty('--gui-width', guiWidth + 'px');
     const debugObject = {};
 
-    // Canvas
-    const canvas = mount.querySelector('canvas.webgl');
+    //Canvas
+    const canvas = canvasRef.current;
     const context = canvas.getContext('webgl2');
 
     // Scene
-    scene = new THREE.Scene();
+    const scene = new THREE.Scene();
 
     // Loaders
     const dracoLoader = new DRACOLoader();
@@ -64,7 +61,7 @@ const ThreeScene = () => {
     /**
      * Camera
      */
-    camera = new THREE.PerspectiveCamera(35, sizes.width / sizes.height, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(35, sizes.width / sizes.height, 0.1, 100);
     camera.position.set(0, 3, 20);
     scene.add(camera);
 
@@ -75,7 +72,8 @@ const ThreeScene = () => {
     /**
      * Renderer
      */
-    renderer = new THREE.WebGLRenderer({
+
+    const renderer = new THREE.WebGLRenderer({
       canvas: canvas,
       context: context,
       antialias: true,
@@ -385,16 +383,13 @@ const ThreeScene = () => {
     return () => {
       console.log('Component unmounting');
       //   disposeGPGPUResources(gpgpu);
-      mount.removeChild(renderer.domElement);
       renderer.dispose();
     };
   }, []);
 
   return (
-    <div
-      ref={mountRef}
-      style={{ width: '100vw', height: '100vh', position: 'absolute', zIndex: 1 }}>
-      <canvas className="webgl" />
+    <div style={{ width: '100vw', height: '100vh', position: 'absolute', zIndex: 1 }}>
+      <canvas ref={canvasRef} className="webgl" />
       <input type="file" ref={audioInputRef} style={{ display: 'none' }} />
       <button ref={fileNameButtonRef} className="file-btn-standard">
         Choose File
@@ -411,5 +406,4 @@ const ThreeScene = () => {
     </div>
   );
 };
-
 export default ThreeScene;
