@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { transformWithEsbuild } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import glsl from 'vite-plugin-glsl';
 import topLevelAwait from 'vite-plugin-top-level-await';
@@ -27,5 +28,17 @@ export default defineConfig({
       // The function to generate import names of top-level await promise in each chunk module
       promiseImportName: (i) => `__tla_${i}`,
     }),
+    // .js file support as if it was JSX
+    {
+      name: 'load+transform-js-files-as-jsx',
+      async transform(code, id) {
+        if (!id.match(/src\/.*\.js$/)) return null;
+
+        return transformWithEsbuild(code, id, {
+          loader: 'jsx',
+          jsx: 'automatic',
+        });
+      },
+    },
   ],
 });

@@ -72,7 +72,7 @@ function initializeParticlesInSphere(count, radius) {
   return positions;
 }
 
-export function gpgpuSetup(baseGeometry, renderer, parameters, baseGeometry2) {
+export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeometry2) {
   // Setup
   const gpgpu = {};
   gpgpu.size = Math.ceil(Math.sqrt(baseGeometry.count));
