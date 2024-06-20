@@ -4,8 +4,6 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import GUI from 'lil-gui';
-
 import { postProcessingSetup } from '../postProcessing/postProcessingSetup.js';
 import { guiSetup } from '../utils/guiSetup.js';
 import { particlesSetup } from '../baryon/particlesSetup.js';
@@ -16,7 +14,9 @@ import {
   processAudioData,
   startAudioProcessing,
 } from '../audio/audioSetup.js';
-import { toggleRecording, toggleRecordingButton } from '../utils/recordRTC.js';
+import GUI from 'lil-gui';
+
+let particles, gpgpu, essentiaData;
 
 const ThreeScene = () => {
   const canvasRef = useRef(null);
@@ -137,7 +137,7 @@ const ThreeScene = () => {
 
     async function loadModel() {
       const gltf = await gltfLoader.loadAsync('./glb/Baryon_v2.glb');
-
+      console.log("baryon", gltf.scene);
       baseGeometry2.instance = gltf.scene.children[0];
 
       // Apply scaling to the object
@@ -158,50 +158,50 @@ const ThreeScene = () => {
       // Now extract the transformed vertex positions
       baseGeometry2.geometry = baseGeometry2.instance.geometry;
       baseGeometry2.count = baseGeometry2.geometry.attributes.position.count;
+
+      /*
+     * Audio Processing;
+     */
+      audioSetup(
+        camera,
+        audioInputRef,
+        fileNameButtonRef,
+        micButtonRef,
+        playPauseButtonRef,
+        stopButtonRef
+      );
+
+      /*
+       * GPGPU
+       */
+      const resA = gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeometry2);
+      gpgpu = resA.gpgpu;
+      essentiaData = resA.essentiaData;
+
+      /*
+       * Particles
+       */
+      const resB = particlesSetup(parameters, sizes, gpgpu, baseGeometry, colors, scene);
+      particles = resB.particles;
+      const materialParameters = resB.materialParameters;
+
+      /*
+       * GUI Setup
+       */
+
+      guiSetup(
+        gui,
+        unrealBloomPass,
+        renderer,
+        particles,
+        gpgpu,
+        debugObject,
+        materialParameters,
+        parameters
+      );
     }
 
     loadModel();
-
-    /*
-     * Audio Processing;
-     */
-    audioSetup(
-      camera,
-      audioInputRef,
-      fileNameButtonRef,
-      micButtonRef,
-      playPauseButtonRef,
-      stopButtonRef
-    );
-
-    /*
-     * GPGPU
-     */
-    const resA = gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeometry2);
-    const gpgpu = resA.gpgpu;
-    const essentiaData = resA.essentiaData;
-
-    /*
-     * Particles
-     */
-    const resB = particlesSetup(parameters, sizes, gpgpu, baseGeometry, colors, scene);
-    const particles = resB.particles;
-    const materialParameters = resB.materialParameters;
-
-    /*
-     * GUI Setup
-     */
-
-    guiSetup(
-      gui,
-      unrealBloomPass,
-      renderer,
-      particles,
-      gpgpu,
-      debugObject,
-      materialParameters,
-      parameters
-    );
 
     /********************************************** WEBRTC ***********************************************/
 
