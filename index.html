@@ -1,138 +1,127 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
-    <title>Baryon</title>
-    <link rel="icon" href="/images/BaryonLogoWhiteCircle.svg" />
-    <link rel="stylesheet" href="./src/styles/tailwind.css" />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@500;700&display=swap" />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500&display=swap" />
-  </head>
-  <body class="overflow-hidden border-none">
-    <div
-      class="w-full relative bg-black overflow-hidden flex flex-row items-start justify-start pt-[0rem] px-[0rem] pb-[56.625rem] box-border gap-[5.625rem] leading-[normal] tracking-[normal] text-center text-[0.656rem] text-gray-400 font-ubuntu mq450:gap-[1.375rem] mq750:gap-[2.813rem]">
-      <header
-        class="flex-1 bg-black overflow-hidden flex flex-row items-start justify-between pt-[1.018rem] pb-[0.981rem] pr-[1.375rem] pl-[1.812rem] box-border top-[0] z-[99] sticky max-w-full gap-[1.25rem] text-left text-[1.419rem] text-white font-ubuntu">
-        <div class="flex flex-row items-end justify-start py-[0.312rem] px-[0rem] font-orbitron">
-          <div class="flex flex-col items-start justify-end pt-[0rem] px-[0rem] pb-[0.218rem]">
-            <img
-              class="w-[1.963rem] h-[1.681rem] relative overflow-hidden shrink-0 [debug_commit:bf4bc93]"
-              loading="lazy"
-              alt=""
-              src="/images/BaryonLogoWhite.svg" />
-          </div>
-          <div class="flex flex-col items-start justify-start py-[0rem] px-[0rem]">
-            <div
-              class="ml-[-0.025rem] relative leading-[150%] font-medium inline-block min-w-[5.813rem] shrink-0 [debug_commit:bf4bc93] whitespace-nowrap">
-              Baryon
-            </div>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
+  <title>Baryon</title>
+  <link rel="icon" href="/images/BaryonLogoWhiteCircle.svg" />
+  <link rel="stylesheet" href="./src/styles/tailwind.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@500;700&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500&display=swap" />
+</head>
+
+<body class="overflow-hidden border-none">
+  <div
+    class="w-full relative bg-black overflow-hidden flex flex-row items-start justify-start pt-[0rem] px-[0rem] pb-[56.625rem] box-border gap-[5.625rem] leading-[normal] tracking-[normal] text-center text-[0.656rem] text-gray-400 font-ubuntu mq450:gap-[1.375rem] mq750:gap-[2.813rem]">
+    <header
+      class="flex-1 bg-black overflow-hidden flex flex-row items-start justify-between pt-[1.018rem] pb-[0.981rem] pr-[1.375rem] pl-[1.812rem] box-border top-[0] z-[99] sticky max-w-full gap-[1.25rem] text-left text-[1.419rem] text-white font-ubuntu">
+      <div class="flex flex-row items-end justify-start py-[0.312rem] px-[0rem] font-orbitron">
+        <div class="flex flex-col items-start justify-end pt-[0rem] px-[0rem] pb-[0.218rem]">
+          <img class="w-[1.963rem] h-[1.681rem] relative overflow-hidden shrink-0 [debug_commit:bf4bc93]" loading="lazy"
+            alt="" src="/images/BaryonLogoWhite.svg" />
+        </div>
+        <div class="flex flex-col items-start justify-start py-[0rem] px-[0rem]">
+          <div
+            class="ml-[-0.025rem] relative leading-[150%] font-medium inline-block min-w-[5.813rem] shrink-0 [debug_commit:bf4bc93] whitespace-nowrap">
+            Baryon
           </div>
         </div>
+      </div>
+      <div
+        class="flex flex-row items-start justify-start pt-[0.375rem] px-[0rem] pb-[0.556rem] gap-[0.893rem] text-[0.788rem] text-darkgray mq675:hidden">
         <div
-          class="flex flex-row items-start justify-start pt-[0.375rem] px-[0rem] pb-[0.556rem] gap-[0.893rem] text-[0.788rem] text-darkgray mq675:hidden">
-          <div
-            class="rounded-[15.11px] bg-gray-100 flex flex-row items-start justify-start pt-[0.312rem] px-[0.687rem] pb-[0.318rem] text-white cursor-pointer">
-            <a
-              href="./index.html"
-              class="relative leading-[1.188rem] font-medium inline-block min-w-[4.375rem]"
-              style="color: inherit; text-decoration: none; cursor: pointer"
-              onclick="event.preventDefault();">
-              VISUALIZER
-            </a>
-          </div>
-          <div
-            class="rounded-[5.04px] flex flex-row items-start justify-start pt-[0.312rem] px-[0.687rem] pb-[0.318rem]">
-            <a
-              href="./src/pages/plugin.html"
-              class="relative leading-[1.188rem] font-medium inline-block min-w-[2.813rem]"
-              style="color: inherit; text-decoration: none">
-              PLUGIN
-            </a>
-          </div>
-          <div
-            class="rounded-[5.04px] flex flex-row items-start justify-start pt-[0.312rem] px-[0.687rem] pb-[0.318rem]">
-            <div class="relative leading-[1.188rem] font-medium inline-block min-w-[2.5rem]">
-              STORY
-            </div>
+          class="rounded-[15.11px] bg-gray-100 flex flex-row items-start justify-start pt-[0.312rem] px-[0.687rem] pb-[0.318rem] text-white cursor-pointer">
+          <a href="./index.html" class="relative leading-[1.188rem] font-medium inline-block min-w-[4.375rem]"
+            style="color: inherit; text-decoration: none; cursor: pointer" onclick="event.preventDefault();">
+            VISUALIZER
+          </a>
+        </div>
+        <div class="rounded-[5.04px] flex flex-row items-start justify-start pt-[0.312rem] px-[0.687rem] pb-[0.318rem]">
+          <a href="./src/pages/plugin.html"
+            class="relative leading-[1.188rem] font-medium inline-block min-w-[2.813rem]"
+            style="color: inherit; text-decoration: none">
+            PLUGIN
+          </a>
+        </div>
+        <div class="rounded-[5.04px] flex flex-row items-start justify-start pt-[0.312rem] px-[0.687rem] pb-[0.318rem]">
+          <div class="relative leading-[1.188rem] font-medium inline-block min-w-[2.5rem]">
+            STORY
           </div>
         </div>
-        <div class="flex invisible flex-row items-start justify-start text-[0.706rem]">
-          <div class="flex flex-row items-start justify-start py-[0.312rem] px-[0.375rem]">
+      </div>
+      <div class="flex invisible flex-row items-start justify-start text-[0.706rem]">
+        <div class="flex flex-row items-start justify-start py-[0.312rem] px-[0.375rem]">
+          <div
+            class="flex flex-row items-start justify-start pt-[0.5rem] pb-[0.562rem] pr-[0.812rem] pl-[0.875rem] relative whitespace-nowrap">
             <div
-              class="flex flex-row items-start justify-start pt-[0.5rem] pb-[0.562rem] pr-[0.812rem] pl-[0.875rem] relative whitespace-nowrap">
-              <div
-                class="h-full w-full absolute !m-[0] top-[0rem] right-[0.025rem] bottom-[0rem] left-[0rem] rounded-8xs bg-black box-border border-[0.6px] border-solid border-darkslategray-100"></div>
-              <div
-                class="relative leading-[1.063rem] font-medium inline-block min-w-[2.5rem] z-[1]">
-                SIGN IN
-              </div>
+              class="h-full w-full absolute !m-[0] top-[0rem] right-[0.025rem] bottom-[0rem] left-[0rem] rounded-8xs bg-black box-border border-[0.6px] border-solid border-darkslategray-100">
+            </div>
+            <div class="relative leading-[1.063rem] font-medium inline-block min-w-[2.5rem] z-[1]">
+              SIGN IN
             </div>
           </div>
-          <div class="flex flex-row items-start justify-start py-[0.281rem] px-[0.25rem]">
-            <button
-              class="cursor-pointer [border:none] py-[0.5rem] pr-[0.937rem] pl-[1rem] bg-[transparent] flex flex-row items-start justify-start relative whitespace-nowrap">
-              <div
-                class="h-full w-full absolute !m-[0] top-[0rem] right-[0rem] bottom-[0rem] left-[0rem] rounded-8xs bg-whitesmoke"></div>
-              <div
-                class="relative text-[0.788rem] leading-[1.188rem] font-medium font-ubuntu text-black text-left inline-block min-w-[3.063rem] z-[1]">
-                SIGN UP
-              </div>
-            </button>
-          </div>
         </div>
-      </header>
-    </div>
+        <div class="flex flex-row items-start justify-start py-[0.281rem] px-[0.25rem]">
+          <button
+            class="cursor-pointer [border:none] py-[0.5rem] pr-[0.937rem] pl-[1rem] bg-[transparent] flex flex-row items-start justify-start relative whitespace-nowrap">
+            <div
+              class="h-full w-full absolute !m-[0] top-[0rem] right-[0rem] bottom-[0rem] left-[0rem] rounded-8xs bg-whitesmoke">
+            </div>
+            <div
+              class="relative text-[0.788rem] leading-[1.188rem] font-medium font-ubuntu text-black text-left inline-block min-w-[3.063rem] z-[1]">
+              SIGN UP
+            </div>
+          </button>
+        </div>
+      </div>
+    </header>
+  </div>
 
-    <div id="gui-container" class="fixed top-20 right-0 z-50">
-      <!-- lil-gui will be injected here -->
-    </div>
+  <div id="gui-container" class="fixed top-20 right-0 z-50">
+    <!-- lil-gui will be injected here -->
+  </div>
 
-    <div id="canvas-container">
-      <canvas class="webgl fixed top-0 left-0 outline-none"></canvas>
-    </div>
+  <div id="canvas-container">
+    <canvas class="webgl fixed top-0 left-0 outline-none"></canvas>
+  </div>
 
-    <div class="controls-container p-4 fixed top-20 left-4 z-50">
-      <div class="flex flex-col items-start space-y-2">
-        <!-- File Input -->
-        <div class="file-input flex flex-col items-start space-y-2">
-          <label class="file-btn-standard max-w-[125px] truncate">
-            <span id="fileName" class="truncate">Choose File</span>
-            <input type="file" id="audioInput" accept="audio/*" class="hidden" />
-          </label>
-        </div>
-        <!-- Playback Controls -->
-        <div class="playback-controls flex flex-row items-center space-x-2">
-          <button id="playPauseButton" class="btn-standard">Play</button>
-          <button id="stopButton" class="btn-standard">Stop</button>
-        </div>
-        <!-- Recording Controls -->
-        <div class="recording-controls flex-row items-center space-x-0 hidden">
-          <button id="toggleRecording" class="btn-standard">Start Recording</button>
-          <button id="downloadRecording" class="btn-standard" disabled>Download Recording</button>
-        </div>
-        <!-- Modes -->
-        <!-- Modes -->
-      <div class="flex flex-row items-center gap-2">
+  <div class="controls-container p-4 fixed top-20 left-4 z-50">
+    <div class="flex flex-col items-start space-y-2">
+      <!-- File Input -->
+      <div class="file-input flex flex-col items-start space-y-2">
+        <label class="file-btn-standard max-w-[125px] truncate">
+          <span id="fileName" class="truncate">Choose File</span>
+          <input type="file" id="audioInput" accept="audio/*" class="hidden" />
+        </label>
+      </div>
+      <!-- Playback Controls -->
+      <div class="playback-controls flex flex-row items-center space-x-2">
+        <button id="playPauseButton" class="btn-standard">Play</button>
+        <button id="stopButton" class="btn-standard">Stop</button>
+      </div>
+      <!-- Recording Controls -->
+      <div class="recording-controls flex-row items-center space-x-0 hidden">
+        <button id="toggleRecording" class="btn-standard">Start Recording</button>
+        <button id="downloadRecording" class="btn-standard" disabled>Download Recording</button>
+      </div>
+      <!-- Modes -->
+      <!-- Modes -->
+      <div class="flex flex-row gap-2">
         <button id="fileMode" class="btn-standard hidden">Files</button>
         <button id="streamMode" class="btn-standard hidden">Stream</button>
         <button id="micMode" class="btn-standard">Mic</button>
-        <button id="xrMode" class="btn-standard">XR</button> 
-      </div>
+        <a id="xrMode" href="/indexXR.html" target="_blank" class="btn-standard no-underline">XR</a>
       </div>
     </div>
+  </div>
 
-    <script>
-      exports = {};
-    </script>
-    <script src="https://unpkg.com/ringbuf.js@0.1.0/dist/index.js" crossorigin="anonymous"></script>
-    <!-- by Paul Adenot, repo: https://github.com/padenot/ringbuf.js -->
-    <script type="module" src="./src/script.js"></script>
-  </body>
+  <script>
+    exports = {};
+  </script>
+  <script src="https://unpkg.com/ringbuf.js@0.1.0/dist/index.js" crossorigin="anonymous"></script>
+  <!-- by Paul Adenot, repo: https://github.com/padenot/ringbuf.js -->
+  <script type="module" src="./src/script.js"></script>
+</body>
+
 </html>

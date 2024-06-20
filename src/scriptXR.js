@@ -1,19 +1,21 @@
 import * as THREE from 'three';
 import { XRButton } from 'three/examples/jsm/Addons.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import PlaylistUI from './mr/PlaylistUI';
 import ThreeMeshUI from 'three-mesh-ui'
 import VRControl from './mr/VRControl';
+import MainUI from './mr/MainUI';
+import { baryon } from './baryon/Baryon';
+import { Koch, Koch4D } from './XRE/Koch';
 
 let container, xrSession, clock, listener;
 let camera, scene, renderer;
-let vrControl; 
+let vrControl;
 
-let baryonPlaylistUI, noiseMesh; 
+let mainUI, koch4D;
 
 let controls, group;
 
-const objsToTest = []; 
+const objsToTest = [];
 
 const raycaster = new THREE.Raycaster();
 
@@ -21,51 +23,7 @@ const mouse = new THREE.Vector2();
 mouse.x = mouse.y = null;
 
 let selectState = false;
-let activeController = 0; 
-
-const playlist = {
-    title: "Baryon",
-    public: true,
-    owner: "liljGremlin",
-    songs: [
-        {
-            name: "Mideo a Pensar",
-            by: "NEOKIRA",
-            time: 1.54,
-            image: './images/Miedo_a_Pensar.jpg',
-            audio: './music/Miedo a Pensar.mp3',
-        },
-        {
-            name: "april",
-            by: "808toofly",
-            time: 1.40,
-            image: './images/april.jpg',
-            audio: './music/april.mp3',
-        },
-        {
-            name: "Tacones",
-            by: "No Me Toques",
-            time: 2.24,
-            image: './images/Tacones.jpg',
-            audio: './music/Tacones.mp3',
-        },
-        {
-            name: "La Risa Drilarisa",
-            by: "Columpios AI Suelo",
-            time: 4.41,
-            image: './images/La_Risa_Drilarisa.jpg',
-            audio: './music/La Risa Drilarisa.mp3',
-        },
-        {
-            name: "Fondo",
-            by: "Forma Norte",
-            time: 1.31,
-            image: './images/Fondo.jpg',
-            audio: './music/Fondo.mp3',
-        },
-    ]
-}
-
+let activeController = 0;
 
 init();
 
@@ -77,8 +35,8 @@ function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x808080);
 
-    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 10);
-    camera.position.set(1, 1.6, 0);
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, -.5, 2);
 
     const floorGeometry = new THREE.PlaneGeometry(6, 6);
     const floorMaterial = new THREE.ShadowMaterial({ opacity: 0.25, blending: THREE.CustomBlending, transparent: false });
@@ -116,44 +74,45 @@ function init() {
 
     // Orbit controls for no-vr
 
-	controls = new OrbitControls( camera, renderer.domElement );
-	camera.position.set( 0, 1.6, 0 );
-	controls.target = new THREE.Vector3( 0, 1, -1.8 );
+    controls = new OrbitControls(camera, renderer.domElement);
+    //camera.position.set(0, 1.6, 0);
+    controls.target = new THREE.Vector3(0, 1, -1.8);
 
     ////////////////
-	// Controllers
-	////////////////
+    // Controllers
+    ////////////////
 
-	vrControl = VRControl( renderer, camera, scene );
+    vrControl = VRControl(renderer, camera, scene);
 
-	scene.add( vrControl.controllerGrips[ 0 ], vrControl.controllers[ 0 ] );
-    scene.add( vrControl.controllerGrips[ 1 ], vrControl.controllers[ 1 ] );
+    scene.add(vrControl.controllerGrips[0], vrControl.controllers[0]);
+    scene.add(vrControl.controllerGrips[1], vrControl.controllers[1]);
 
-
-	vrControl.controllers[ 0 ].addEventListener( 'selectstart', () => {
+    vrControl.controllers[0].addEventListener('selectstart', () => {
 
         activeController = 0;
-		selectState = true;
+        selectState = true;
 
-	} );
-	vrControl.controllers[ 0 ].addEventListener( 'selectend', () => {
+    });
 
-		selectState = false;
+    vrControl.controllers[0].addEventListener('selectend', () => {
 
-	} );
+        selectState = false;
 
-    vrControl.controllers[ 1 ].addEventListener( 'selectstart', () => {
+    });
 
-        console.log("selectstart -> right controller"); 
+    vrControl.controllers[1].addEventListener('selectstart', () => {
+
+        console.log("selectstart -> right controller");
         activeController = 1;
-		selectState = true;
+        selectState = true;
 
-	} );
-	vrControl.controllers[ 1 ].addEventListener( 'selectend', () => {
+    });
 
-		selectState = false;
+    vrControl.controllers[1].addEventListener('selectend', () => {
 
-	} );
+        selectState = false;
+
+    });
 
     window.addEventListener('resize', onWindowResize);
 
@@ -172,11 +131,15 @@ function init() {
     camera.add(listener);
 
     // // Playlist
-    baryonPlaylistUI = new PlaylistUI(listener, playlist);
-    baryonPlaylistUI.scale.multiplyScalar(1/10);
-    baryonPlaylistUI.position.set(0, 1, -.4);
-    objsToTest.push(...baryonPlaylistUI.objsToTest); 
-    scene.add(baryonPlaylistUI);
+    mainUI = new MainUI();
+    // mainUI.scale.multiplyScalar(1 / 10);
+    mainUI.position.set(0, 1.5, -.4);
+
+    // objsToTest.push(...baryonPlaylistUI.objsToTest);
+    scene.add(mainUI);
+
+    koch4D = new Koch4D();
+    scene.add(koch4D);
 
     clock = new THREE.Clock();
 }
@@ -189,13 +152,15 @@ function onWindowResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-//
+// Game loop 
 
 function animate() {
     const deltaTime = clock.getDelta();
-    const elapstedTime = clock.elapstedTime; 
-    ThreeMeshUI.update(); 
+    const elapstedTime = clock.getElapsedTime();
 
+    ThreeMeshUI.update();
+    baryon.update(elapstedTime);
+    koch4D.update(elapstedTime);
     controls.update();
     renderer.render(scene, camera);
 
@@ -204,80 +169,80 @@ function animate() {
 
 function updateButtons() {
 
-	// Find closest intersecting object
+    // Find closest intersecting object
 
-	let intersect
+    let intersect
 
-	if ( renderer.xr.isPresenting ) {
+    if (renderer.xr.isPresenting) {
 
-		vrControl.setFromController( activeController, raycaster.ray );
+        vrControl.setFromController(activeController, raycaster.ray);
 
-		intersect = raycast();
+        intersect = raycast();
 
-		// Position the little white dot at the end of the controller pointing ray
-		if ( intersect ) vrControl.setPointerAt( activeController, intersect.point );
+        // Position the little white dot at the end of the controller pointing ray
+        if (intersect) vrControl.setPointerAt(activeController, intersect.point);
 
 
-	} else if ( mouse.x !== null && mouse.y !== null ) {
+    } else if (mouse.x !== null && mouse.y !== null) {
 
-		raycaster.setFromCamera( mouse, camera );
+        raycaster.setFromCamera(mouse, camera);
 
-		intersect = raycast();
+        intersect = raycast();
 
-	}
+    }
 
-	// Update targeted button state (if any)
+    // Update targeted button state (if any)
 
-	if ( intersect && intersect.object.isUI ) {
+    if (intersect && intersect.object.isUI) {
 
-		if ( selectState ) {
+        if (selectState) {
 
-			// Component.setState internally call component.set with the options you defined in component.setupState
-			intersect.object.setState( 'selected' );
+            // Component.setState internally call component.set with the options you defined in component.setupState
+            intersect.object.setState('selected');
 
-		} else {
+        } else {
 
-			// Component.setState internally call component.set with the options you defined in component.setupState
-			intersect.object.setState( 'hovered' );
+            // Component.setState internally call component.set with the options you defined in component.setupState
+            intersect.object.setState('hovered');
 
-		}
+        }
 
-	}
+    }
 
-	// Update non-targeted buttons state
+    // Update non-targeted buttons state
 
-	objsToTest.forEach( ( obj ) => {
+    objsToTest.forEach((obj) => {
 
-		if ( ( !intersect || obj !== intersect.object ) && obj.isUI ) {
+        if ((!intersect || obj !== intersect.object) && obj.isUI) {
 
-			// Component.setState internally call component.set with the options you defined in component.setupState
-			obj.setState( 'idle' );
+            // Component.setState internally call component.set with the options you defined in component.setupState
+            obj.setState('idle');
 
-		}
+        }
 
-	} );
+    });
 
 }
 
 function raycast() {
 
-	return objsToTest.reduce( ( closestIntersection, obj ) => {
+    return objsToTest.reduce((closestIntersection, obj) => {
 
-		const intersection = raycaster.intersectObject( obj, true );
+        const intersection = raycaster.intersectObject(obj, true);
 
-		if ( !intersection[ 0 ] ) return closestIntersection;
+        if (!intersection[0]) return closestIntersection;
 
-		if ( !closestIntersection || intersection[ 0 ].distance < closestIntersection.distance ) {
+        if (!closestIntersection || intersection[0].distance < closestIntersection.distance) {
 
-			intersection[ 0 ].object = obj;
+            intersection[0].object = obj;
 
-			return intersection[ 0 ];
+            return intersection[0];
 
-		}
+        }
 
-		return closestIntersection;
+        return closestIntersection;
 
-	}, null );
+    }, null);
 
 }
 
@@ -288,7 +253,7 @@ function loadTrack(index) {
     }
 
     currentAudio = new THREE.Audio(listener);
-    audioLoader.load(tracks[index], function(buffer) {
+    audioLoader.load(tracks[index], function (buffer) {
         currentAudio.setBuffer(buffer);
         currentAudio.setLoop(false);
         currentAudio.setVolume(0.5);
