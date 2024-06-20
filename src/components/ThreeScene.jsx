@@ -134,6 +134,7 @@ const ThreeScene = () => {
      * Load model
      */
     const baseGeometry2 = {};
+
     async function loadModel() {
       const gltf = await gltfLoader.loadAsync('./glb/Baryon_v2.glb');
 
