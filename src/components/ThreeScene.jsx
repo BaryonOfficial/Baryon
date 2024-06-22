@@ -21,6 +21,7 @@ import {
   getIsAudioLoaded,
 } from '../audio/audioSetup.js';
 import GUI from 'lil-gui';
+import UnsupportedWarning from './UnsupportedWarning';
 
 const ThreeScene = () => {
   const canvasRef = useRef(null);
@@ -30,8 +31,21 @@ const ThreeScene = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMicActive, setIsMicActive] = useState(false);
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
+  const [isUnsupported, setIsUnsupported] = useState(false);
 
   useEffect(() => {
+    function isUnsupportedEnvironment() {
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent
+      );
+      const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+      return isMobile || isFirefox || isSafari;
+    }
+
+    setIsUnsupported(isUnsupportedEnvironment());
+
     let particles, gpgpu, essentiaData;
 
     const setupScene = () => {
@@ -279,13 +293,6 @@ const ThreeScene = () => {
       }
     });
 
-    // Function to detect if the device is a mobile device
-    function isMobileDevice() {
-      return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent
-      );
-    }
-
     /******************************************************* ANIMATION *******************************************************/
 
     const clock = new THREE.Clock();
@@ -460,32 +467,45 @@ const ThreeScene = () => {
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'absolute', zIndex: 1 }}>
       <canvas ref={canvasRef} className="webgl absolute z-10" />
-      <div ref={guiContainerRef} className="fixed top-20 right-0 z-50"></div>
-      <div className="controls-container fixed top-20 left-12 z-50 p-4">
-        <div className="flex flex-col items-start space-y-2">
-          <div className="file-input flex flex-col items-start space-y-2">
-            <label className="file-btn-standard max-w-[125px] truncate cursor-pointer">
-              <span className="truncate">{fileName}</span>
-              <input type="file" accept="audio/*" className="hidden" onChange={handleFileChange} />
-            </label>
-          </div>
+      {!isUnsupported && (
+        <>
+          <div ref={guiContainerRef} className="fixed top-20 right-0 z-50"></div>
+          <div className="controls-container fixed top-20 left-12 z-50 p-4">
+            <div className="flex flex-col items-start space-y-2">
+              <div className="file-input flex flex-col items-start space-y-2">
+                <label className="file-btn-standard max-w-[125px] truncate cursor-pointer">
+                  <span className="truncate">{fileName}</span>
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </label>
+              </div>
 
-          <div className="playback-controls flex flex-row items-center space-x-2">
-            <button onClick={handlePlayPause} className="btn-standard" disabled={!isAudioLoaded}>
-              {isPlaying ? 'Pause' : 'Play'}
-            </button>
-            <button onClick={handleStop} className="btn-standard" disabled={!isAudioLoaded}>
-              Stop
-            </button>
-          </div>
+              <div className="playback-controls flex flex-row items-center space-x-2">
+                <button
+                  onClick={handlePlayPause}
+                  className="btn-standard"
+                  disabled={!isAudioLoaded}>
+                  {isPlaying ? 'Pause' : 'Play'}
+                </button>
+                <button onClick={handleStop} className="btn-standard" disabled={!isAudioLoaded}>
+                  Stop
+                </button>
+              </div>
 
-          <div className="modes flex flex-row items-center space-x-0">
-            <button onClick={handleMicToggle} className="btn-standard">
-              {isMicActive ? 'Stop Mic' : 'Mic'}
-            </button>
+              <div className="modes flex flex-row items-center space-x-0">
+                <button onClick={handleMicToggle} className="btn-standard">
+                  {isMicActive ? 'Stop Mic' : 'Mic'}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
+      {isUnsupported && <UnsupportedWarning />}
     </div>
   );
 };
