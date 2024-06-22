@@ -313,7 +313,13 @@ async function URLFromFiles(files) {
   return URL.createObjectURL(blob);
 }
 
+let isAudioWorkletLoaded = false;
+
 async function loadAudioWorklet() {
+  if (isAudioWorkletLoaded) {
+    console.log('AudioWorkletProcessor is already registered');
+    return;
+  }
   const workletProcessorCode = [
     'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js',
     'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.umd.js',
@@ -324,6 +330,9 @@ async function loadAudioWorklet() {
   return URLFromFiles(workletProcessorCode)
     .then((concatenatedCode) => {
       return audioObject.audioCtx.audioWorklet.addModule(concatenatedCode);
+    })
+    .then(() => {
+      isAudioWorkletLoaded = true;
     })
     .catch((msg) => {
       console.log(`There was a problem retrieving the AudioWorklet module code: \n ${msg}`);
