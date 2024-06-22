@@ -149,55 +149,62 @@ function setupUIInteractions(
   playPauseButtonRef,
   stopButtonRef
 ) {
-  audioInputRef.current.addEventListener('change', (event) => {
+  const audioInput = audioInputRef.current;
+  const fileNameButton = fileNameButtonRef.current;
+  const micButton = micButtonRef.current;
+  const playPauseButton = playPauseButtonRef.current;
+  const stopButton = stopButtonRef.current;
+
+  audioInput.addEventListener('change', (event) => {
     if (event.target.files.length > 0) {
       const file = event.target.files[0];
-      fileNameButtonRef.current.textContent = file.name;
+      fileNameButton.textContent = file.name;
       const fileURL = URL.createObjectURL(file);
-      loadAudio(fileURL, playPauseButtonRef);
+      loadAudio(fileURL, playPauseButton);
     } else {
-      fileNameButtonRef.current.textContent = 'Choose File';
+      fileNameButton.textContent = 'Choose File';
     }
     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
   });
 
-  micButtonRef.current.addEventListener('click', () => {
+  micButton.addEventListener('click', () => {
     if (!audioObject.gumStream || !audioObject.gumStream.active) {
       startMicRecordStream();
+      micButton.textContent = 'Stop Mic';
     } else {
       stopMicRecordStream();
+      micButton.textContent = 'Mic';
     }
   });
 
-  playPauseButtonRef.current.addEventListener('click', () => {
-    if (audioObject.sound.isPlaying) {
-      audioObject.sound.pause();
-      playPauseButtonRef.current.textContent = 'Play';
-    } else if (!audioObject.sound.isPlaying && isAudioLoaded) {
-      if (audioObject.audioCtx.state === 'suspended') {
-        audioObject.audioCtx
-          .resume()
-          .then(() => {
-            audioObject.sound.play();
-            audioObject.sound.started = true;
-            playPauseButtonRef.current.textContent = 'Pause';
-          })
-          .catch((error) => {
-            console.error('Failed to resume audio context:', error);
-          });
-      } else {
-        audioObject.sound.play();
+  playPauseButton.addEventListener('click', async () => {
+    try {
+      if (audioObject.sound.isPlaying) {
+        audioObject.sound.pause();
+        playPauseButton.textContent = 'Play';
+      } else if (!audioObject.sound.isPlaying && isAudioLoaded) {
+        if (audioObject.audioCtx.state === 'suspended') {
+          await audioObject.audioCtx.resume();
+        }
+        await audioObject.sound.play();
         audioObject.sound.started = true;
-        playPauseButtonRef.current.textContent = 'Pause';
+        playPauseButton.textContent = 'Pause';
+      } else {
+        console.log('Audio not loaded yet');
+        return;
       }
+    } catch (error) {
+      console.error('Error in audio playback:', error);
+      playPauseButton.textContent = 'Play';
+    } finally {
+      audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
     }
-    audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
   });
 
-  stopButtonRef.current.addEventListener('click', () => {
+  stopButton.addEventListener('click', () => {
     audioObject.sound.stop();
     audioObject.sound.started = false;
-    playPauseButtonRef.current.textContent = 'Play';
+    playPauseButton.textContent = 'Play';
     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
   });
 
@@ -205,7 +212,7 @@ function setupUIInteractions(
     audioObject.sound.stop();
     console.log('Audio ended');
     audioObject.sound.started = false;
-    playPauseButtonRef.current.textContent = 'Replay';
+    playPauseButton.textContent = 'Replay';
     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
   };
 }
