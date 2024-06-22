@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import React, { useEffect, useRef } from 'react';
 
 /*
  * AUDIO PROCESSING
@@ -23,7 +22,38 @@ export const audioObject = {
   audioLoader: new THREE.AudioLoader(),
 };
 
-function startMicRecordStream() {
+let isAudioLoaded = false;
+
+export function getIsAudioLoaded() {
+  return isAudioLoaded;
+}
+
+export function loadAudio(url) {
+  // Stop the current audio if it is playing and reset its buffer
+  if (audioObject.sound.started === true) {
+    audioObject.sound.stop();
+    audioObject.sound.setBuffer(null);
+    audioObject.sound.started = false;
+    console.log('Audio stopped on change');
+  }
+
+  isAudioLoaded = false;
+  audioObject.audioLoader.load(
+    url,
+    function (buffer) {
+      audioObject.sound.setBuffer(buffer);
+      audioObject.sound.setLoop(false);
+      audioObject.sound.setVolume(0.5);
+      isAudioLoaded = true;
+    },
+    undefined,
+    (err) => {
+      console.error('Error loading audio file:', err);
+    }
+  );
+}
+
+export function startMicRecordStream() {
   if (navigator.mediaDevices.getUserMedia) {
     navigator.mediaDevices
       .getUserMedia({ audio: true })
@@ -76,7 +106,7 @@ function startMicRecordStream() {
   }
 }
 
-function stopMicRecordStream() {
+export function stopMicRecordStream() {
   if (audioObject.gumStream) {
     audioObject.gumStream.getAudioTracks().forEach((track) => {
       track.stop();
@@ -110,121 +140,30 @@ function checkMicInputLevels() {
   }
 }
 
-let isAudioLoaded = false;
-
-function loadAudio(url, playPauseButtonRef) {
-  // Stop the current audio if it is playing and reset its buffer
-  if (audioObject.sound.started === true) {
-    audioObject.sound.stop();
-    audioObject.sound.setBuffer(null);
-    playPauseButtonRef.current.textContent = 'Play';
-    audioObject.sound.started = false;
-    console.log('Audio stopped on change');
-  } else if (!audioObject.sound.started && playPauseButtonRef.current.textContent !== 'Play') {
-    audioObject.sound.setBuffer(null);
-    playPauseButtonRef.current.textContent = 'Play';
-    console.log('Audio ended & reset w/ new file or URL');
+export function playPauseAudio() {
+  if (audioObject.sound.isPlaying) {
+    audioObject.sound.pause();
+  } else if (!audioObject.sound.isPlaying && isAudioLoaded) {
+    if (audioObject.audioCtx.state === 'suspended') {
+      audioObject.audioCtx.resume();
+    }
+    audioObject.sound.play();
+    audioObject.sound.started = true;
+  } else {
+    console.log('Audio not loaded yet');
+    return;
   }
-
-  isAudioLoaded = false;
-  audioObject.audioLoader.load(
-    url,
-    function (buffer) {
-      audioObject.sound.setBuffer(buffer);
-      audioObject.sound.setLoop(false);
-      audioObject.sound.setVolume(0.5);
-      isAudioLoaded = true;
-    },
-    undefined,
-    (err) => {
-      console.error('Error loading audio file:', err);
-    }
-  );
+  audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
+  return audioObject.sound.isPlaying;
 }
 
-function setupUIInteractions(
-  audioInputRef,
-  fileNameButtonRef,
-  micButtonRef,
-  playPauseButtonRef,
-  stopButtonRef
-) {
-  const audioInput = audioInputRef.current;
-  const fileNameButton = fileNameButtonRef.current;
-  const micButton = micButtonRef.current;
-  const playPauseButton = playPauseButtonRef.current;
-  const stopButton = stopButtonRef.current;
-
-  audioInput.addEventListener('change', (event) => {
-    if (event.target.files.length > 0) {
-      const file = event.target.files[0];
-      fileNameButton.textContent = file.name;
-      const fileURL = URL.createObjectURL(file);
-      loadAudio(fileURL, playPauseButton);
-    } else {
-      fileNameButton.textContent = 'Choose File';
-    }
-    audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
-  });
-
-  micButton.addEventListener('click', () => {
-    if (!audioObject.gumStream || !audioObject.gumStream.active) {
-      startMicRecordStream();
-      micButton.textContent = 'Stop Mic';
-    } else {
-      stopMicRecordStream();
-      micButton.textContent = 'Mic';
-    }
-  });
-
-  playPauseButton.addEventListener('click', async () => {
-    try {
-      if (audioObject.sound.isPlaying) {
-        audioObject.sound.pause();
-        playPauseButton.textContent = 'Play';
-      } else if (!audioObject.sound.isPlaying && isAudioLoaded) {
-        if (audioObject.audioCtx.state === 'suspended') {
-          await audioObject.audioCtx.resume();
-        }
-        await audioObject.sound.play();
-        audioObject.sound.started = true;
-        playPauseButton.textContent = 'Pause';
-      } else {
-        console.log('Audio not loaded yet');
-        return;
-      }
-    } catch (error) {
-      console.error('Error in audio playback:', error);
-      playPauseButton.textContent = 'Play';
-    } finally {
-      audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
-    }
-  });
-
-  stopButton.addEventListener('click', () => {
-    audioObject.sound.stop();
-    audioObject.sound.started = false;
-    playPauseButton.textContent = 'Play';
-    audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
-  });
-
-  audioObject.sound.onEnded = function () {
-    audioObject.sound.stop();
-    console.log('Audio ended');
-    audioObject.sound.started = false;
-    playPauseButton.textContent = 'Replay';
-    audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
-  };
+export function stopAudio() {
+  audioObject.sound.stop();
+  audioObject.sound.started = false;
+  audioObject.essentiaNode.port.postMessage({ isPlaying: false });
 }
 
-export function audioSetup(
-  camera,
-  audioInputRef,
-  fileNameButtonRef,
-  micButtonRef,
-  playPauseButtonRef,
-  stopButtonRef
-) {
+export function audioSetup(camera) {
   // create an AudioListener and add it to the camera
   audioObject.listener = new THREE.AudioListener();
   camera.add(audioObject.listener);
@@ -236,18 +175,16 @@ export function audioSetup(
 
   audioObject.audioCtx = audioObject.listener.context;
   console.log('audioCtx', audioObject.audioCtx);
-
-  // Setup UI interactions
-  setupUIInteractions(
-    audioInputRef,
-    fileNameButtonRef,
-    micButtonRef,
-    playPauseButtonRef,
-    stopButtonRef
-  );
-
   // create an AudioAnalyser, passing in the sound and desired fftSize
   audioObject.analyser = new THREE.AudioAnalyser(audioObject.sound, audioObject.fftSize);
+
+  // Set up onEnded callback
+  audioObject.sound.onEnded = function () {
+    audioObject.sound.stop();
+    console.log('Audio ended');
+    audioObject.sound.started = false;
+    audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
+  };
 }
 
 function audioAnalysis() {
