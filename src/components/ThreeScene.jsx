@@ -157,7 +157,6 @@ const ThreeScene = () => {
 
     async function loadModel() {
       const gltf = await gltfLoader.loadAsync('./glb/Baryon_v2.glb');
-      console.log('baryon', gltf.scene);
       baseGeometry2.instance = gltf.scene.children[0];
 
       // Apply scaling to the object
@@ -207,6 +206,7 @@ const ThreeScene = () => {
         materialParameters,
         parameters
       );
+      return { gpgpu, particles, essentiaData };
     }
 
     loadModel();
@@ -401,7 +401,9 @@ const ThreeScene = () => {
       if (gui) {
         gui.destroy();
       }
-      // disposeGPGPUResources(gpgpu);
+      if (gpgpu) {
+        disposeGPGPUResources(gpgpu);
+      }
       renderer.dispose();
     };
   }, []);
