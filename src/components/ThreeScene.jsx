@@ -22,8 +22,6 @@ import {
 } from '../audio/audioSetup.js';
 import GUI from 'lil-gui';
 
-let particles, gpgpu, essentiaData;
-
 const ThreeScene = () => {
   const canvasRef = useRef(null);
   const [fileName, setFileName] = useState('Choose File');
@@ -32,25 +30,36 @@ const ThreeScene = () => {
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
 
   useEffect(() => {
-    //******************************************************* GENERAL INITIALIZATION *******************************************************//
-    const guiWidth = 300;
-    const gui = new GUI({ width: guiWidth, container: document.getElementById('gui-container') });
-    document.documentElement.style.setProperty('--gui-width', guiWidth + 'px');
-    const debugObject = {};
+    let particles, gpgpu, essentiaData;
 
-    //Canvas
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('webgl2');
+    const setupScene = () => {
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('webgl2');
+      const scene = new THREE.Scene();
 
-    // Scene
-    const scene = new THREE.Scene();
+      return { canvas, context, scene };
+    };
 
-    // Loaders
-    const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath('/draco/');
+    const setupGUI = () => {
+      const guiWidth = 300;
+      const gui = new GUI({ width: guiWidth, container: document.getElementById('gui-container') });
+      document.documentElement.style.setProperty('--gui-width', guiWidth + 'px');
+      return { gui, debugObject: {} };
+    };
 
-    const gltfLoader = new GLTFLoader();
-    gltfLoader.setDRACOLoader(dracoLoader);
+    const setupLoaders = () => {
+      const dracoLoader = new DRACOLoader();
+      dracoLoader.setDecoderPath('/draco/');
+
+      const gltfLoader = new GLTFLoader();
+      gltfLoader.setDRACOLoader(dracoLoader);
+
+      return { gltfLoader };
+    };
+
+    const { canvas, context, scene } = setupScene();
+    const { gui, debugObject } = setupGUI();
+    const { gltfLoader } = setupLoaders();
 
     /**
      * Sizes
@@ -444,6 +453,9 @@ const ThreeScene = () => {
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'absolute', zIndex: 1 }}>
       <canvas ref={canvasRef} className="webgl absolute z-10" />
+      <div id="gui-container" className="fixed top-20 right-0 z-50">
+        {/* lil-gui will be injected here */}
+      </div>
       <div className="controls-container fixed top-20 left-4 z-50 p-4">
         <div className="flex flex-col items-start space-y-2">
           <div className="file-input flex flex-col items-start space-y-2">
