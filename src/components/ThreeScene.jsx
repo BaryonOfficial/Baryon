@@ -22,6 +22,7 @@ import {
 } from '../audio/audioSetup.js';
 import GUI from 'lil-gui';
 import UnsupportedWarning from './UnsupportedWarning';
+import { useFullscreenToggle } from '../hooks/useFullScreenToggle';
 
 const ThreeScene = () => {
   const canvasRef = useRef(null);
@@ -32,6 +33,8 @@ const ThreeScene = () => {
   const [isMicActive, setIsMicActive] = useState(false);
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
   const [isUnsupported, setIsUnsupported] = useState(false);
+
+  useFullscreenToggle(canvasRef);
 
   useEffect(() => {
     function isUnsupportedEnvironment() {
@@ -258,39 +261,6 @@ const ThreeScene = () => {
       // // Update effect composer
       effectComposer.setSize(sizes.width, sizes.height);
       effectComposer.setPixelRatio(sizes.pixelRatio);
-    });
-
-    document.addEventListener('keydown', function (event) {
-      // Check if 'f' key is pressed
-      if (event.key === 'f') {
-        if (!document.fullscreenElement) {
-          if (canvas.requestFullscreen) {
-            canvas.requestFullscreen();
-          } else if (canvas.mozRequestFullScreen) {
-            // Firefox
-            canvas.mozRequestFullScreen();
-          } else if (canvas.webkitRequestFullscreen) {
-            // Chrome, Safari and Opera
-            canvas.webkitRequestFullscreen();
-          } else if (canvas.msRequestFullscreen) {
-            // IE/Edge
-            canvas.msRequestFullscreen();
-          }
-        } else {
-          if (document.exitFullscreen) {
-            document.exitFullscreen();
-          } else if (document.mozCancelFullScreen) {
-            // Firefox
-            document.mozCancelFullScreen();
-          } else if (document.webkitExitFullscreen) {
-            // Chrome, Safari and Opera
-            document.webkitExitFullscreen();
-          } else if (document.msExitFullscreen) {
-            // IE/Edge
-            document.msExitFullscreen();
-          }
-        }
-      }
     });
 
     /******************************************************* ANIMATION *******************************************************/
