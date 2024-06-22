@@ -29,81 +29,133 @@ export function getIsAudioLoaded() {
 }
 
 export function loadAudio(url) {
-  // Stop the current audio if it is playing and reset its buffer
-  if (audioObject.sound.started === true) {
-    audioObject.sound.stop();
-    audioObject.sound.setBuffer(null);
-    audioObject.sound.started = false;
-    console.log('Audio stopped on change');
-  }
-
-  isAudioLoaded = false;
-  audioObject.audioLoader.load(
-    url,
-    function (buffer) {
-      audioObject.sound.setBuffer(buffer);
-      audioObject.sound.setLoop(false);
-      audioObject.sound.setVolume(0.5);
-      isAudioLoaded = true;
-    },
-    undefined,
-    (err) => {
-      console.error('Error loading audio file:', err);
+  return new Promise((resolve, reject) => {
+    // Stop the current audio if it is playing and reset its buffer
+    if (audioObject.sound.started === true) {
+      audioObject.sound.stop();
+      audioObject.sound.setBuffer(null);
+      audioObject.sound.started = false;
+      console.log('Audio stopped on change');
     }
-  );
+
+    isAudioLoaded = false;
+    audioObject.audioLoader.load(
+      url,
+      function (buffer) {
+        audioObject.sound.setBuffer(buffer);
+        audioObject.sound.setLoop(false);
+        audioObject.sound.setVolume(0.5);
+        isAudioLoaded = true;
+        resolve();
+      },
+      undefined,
+      (err) => {
+        console.error('Error loading audio file:', err);
+        reject(err);
+      }
+    );
+  });
+}
+
+export function playPauseAudio() {
+  return new Promise(async (resolve, reject) => {
+    try {
+      if (audioObject.sound.isPlaying) {
+        audioObject.sound.pause();
+      } else if (!audioObject.sound.isPlaying && isAudioLoaded) {
+        if (audioObject.audioCtx.state === 'suspended') {
+          await audioObject.audioCtx.resume();
+        }
+        audioObject.sound.play();
+        audioObject.sound.started = true;
+      } else {
+        console.log('Audio not loaded yet');
+        resolve(false);
+        return;
+      }
+      audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
+      resolve(audioObject.sound.isPlaying);
+    } catch (error) {
+      console.error('Error in audio playback:', error);
+      reject(error);
+    }
+  });
+}
+
+export function stopAudio() {
+  audioObject.sound.stop();
+  audioObject.sound.started = false;
+  audioObject.essentiaNode.port.postMessage({ isPlaying: false });
 }
 
 export function startMicRecordStream() {
-  if (navigator.mediaDevices.getUserMedia) {
-    navigator.mediaDevices
-      .getUserMedia({ audio: true })
-      .then((stream) => {
-        audioObject.gumStream = stream;
+  return new Promise((resolve, reject) => {
+    if (navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then(async (stream) => {
+          audioObject.gumStream = stream;
 
-        // Create a THREE.Audio object for the microphone
-        audioObject.micSound = new THREE.Audio(audioObject.listener);
-        audioObject.micNode = audioObject.audioCtx.createMediaStreamSource(audioObject.gumStream);
-        audioObject.micSound.setNodeSource(audioObject.micNode);
+          if (audioObject.audioCtx.state === 'suspended') {
+            try {
+              await audioObject.audioCtx.resume();
+              console.log('Audio Context resumed successfully');
+            } catch (error) {
+              console.error('Error resuming audio context:', error);
+              reject(error);
+              return;
+            }
+          }
 
-        // Because of how the THREE.Audio object works with the setNodeSource method,
-        // we need to detach the mic sound from whatever it connects to for manual
-        // connections. We need this source defined first though.
-        audioObject.micSound.getOutput().disconnect();
+          // Create a THREE.Audio object for the microphone
+          audioObject.micSound = new THREE.Audio(audioObject.listener);
+          audioObject.micNode = audioObject.audioCtx.createMediaStreamSource(audioObject.gumStream);
+          audioObject.micSound.setNodeSource(audioObject.micNode);
 
-        console.log('Microphone Sound:', audioObject.micSound);
+          // Because of how the THREE.Audio object works with the setNodeSource method,
+          // we need to detach the mic sound from whatever it connects to for manual
+          // connections. We need this source defined first though.
+          audioObject.micSound.getOutput().disconnect();
 
-        audioObject.micAnalyser = new THREE.AudioAnalyser(
-          audioObject.micSound,
-          audioObject.fftSize
-        );
+          console.log('Microphone Sound:', audioObject.micSound);
 
-        // Create a zero gain node to mute the mic from speaker output/ feedback
-        const zeroGainNode = audioObject.audioCtx.createGain();
-        zeroGainNode.gain.setValueAtTime(0, audioObject.audioCtx.currentTime);
+          audioObject.micAnalyser = new THREE.AudioAnalyser(
+            audioObject.micSound,
+            audioObject.fftSize
+          );
+          console.log('Mic Analyser created:', audioObject.micAnalyser);
 
-        // Now we can actually connect it properly in the pipeline
-        audioObject.micSound
-          .getOutput()
-          .connect(audioObject.essentiaNode)
-          .connect(zeroGainNode)
-          .connect(audioObject.audioCtx.destination);
+          // Create a zero gain node to mute the mic from speaker output/ feedback
+          const zeroGainNode = audioObject.audioCtx.createGain();
+          zeroGainNode.gain.setValueAtTime(0, audioObject.audioCtx.currentTime);
 
-        console.log('Microphone connected');
+          // Now we can actually connect it properly in the pipeline
+          audioObject.micSound
+            .getOutput()
+            .connect(audioObject.essentiaNode)
+            .connect(zeroGainNode)
+            .connect(audioObject.audioCtx.destination);
 
-        // Post message after micNode is initialized
-        audioObject.essentiaNode.port.postMessage({
-          isPlaying: audioObject.sound.isPlaying,
-          micActive: audioObject.gumStream && audioObject.gumStream.active,
+          console.log('Microphone connected');
+
+          // Post message after micNode is initialized
+          audioObject.essentiaNode.port.postMessage({
+            isPlaying: audioObject.sound.isPlaying,
+            micActive: audioObject.gumStream && audioObject.gumStream.active,
+          });
+
+          setInterval(checkMicInputLevels, 1000); // Check every second
+          resolve();
+        })
+        .catch((err) => {
+          console.error('Error accessing microphone:', err);
+          reject(err);
         });
-
-        setInterval(checkMicInputLevels, 1000); // Check every second
-      })
-      .catch((err) => {
-        console.error('Error accessing microphone:', err);
-      });
-  } else {
-    console.error('getUserMedia not supported');
-  }
+    } else {
+      console.error('getUserMedia not supported');
+      reject(new Error('getUserMedia not supported'));
+    }
+  });
 }
 
 export function stopMicRecordStream() {
@@ -118,7 +170,6 @@ export function stopMicRecordStream() {
     console.log('Microphone disconnected');
   }
 
-  // Post message after micNode is disconnected
   audioObject.essentiaNode.port.postMessage({
     isPlaying: audioObject.sound.isPlaying,
     micActive: audioObject.gumStream && audioObject.gumStream.active,
@@ -138,29 +189,6 @@ function checkMicInputLevels() {
   } else {
     console.log('Microphone analyser is not initialized');
   }
-}
-
-export function playPauseAudio() {
-  if (audioObject.sound.isPlaying) {
-    audioObject.sound.pause();
-  } else if (!audioObject.sound.isPlaying && isAudioLoaded) {
-    if (audioObject.audioCtx.state === 'suspended') {
-      audioObject.audioCtx.resume();
-    }
-    audioObject.sound.play();
-    audioObject.sound.started = true;
-  } else {
-    console.log('Audio not loaded yet');
-    return;
-  }
-  audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
-  return audioObject.sound.isPlaying;
-}
-
-export function stopAudio() {
-  audioObject.sound.stop();
-  audioObject.sound.started = false;
-  audioObject.essentiaNode.port.postMessage({ isPlaying: false });
 }
 
 export function audioSetup(camera) {
@@ -199,12 +227,12 @@ function audioAnalysis() {
   const soundIsActive = audioObject.sound.isPlaying;
   const micIsActive = audioObject.gumStream && audioObject.gumStream.active;
 
-  if (soundIsActive) {
+  if (soundIsActive && audioObject.analyser) {
     inputFileAmplitude = audioObject.analyser.getAverageFrequency();
     inputFileFreqData = audioObject.analyser.getFrequencyData();
   }
 
-  if (micIsActive) {
+  if (micIsActive && audioObject.micAnalyser) {
     micAmplitude = audioObject.micAnalyser.getAverageFrequency();
     micFreqData = audioObject.micAnalyser.getFrequencyData();
   }

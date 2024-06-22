@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -26,10 +26,10 @@ let particles, gpgpu, essentiaData;
 
 const ThreeScene = () => {
   const canvasRef = useRef(null);
-
   const [fileName, setFileName] = useState('Choose File');
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMicActive, setIsMicActive] = useState(false);
+  const [isAudioLoaded, setIsAudioLoaded] = useState(false);
 
   useEffect(() => {
     //******************************************************* GENERAL INITIALIZATION *******************************************************//
@@ -378,6 +378,13 @@ const ThreeScene = () => {
     startAudioProcessing(tick);
 
     // Clean up on component unmount
+
+    // Set up audio ended listener
+    audioObject.sound.onEnded = () => {
+      setIsPlaying(false);
+      console.log('Audio ended');
+    };
+
     return () => {
       console.log('Component unmounting');
       // disposeGPGPUResources(gpgpu);
@@ -385,40 +392,58 @@ const ThreeScene = () => {
     };
   }, []);
 
-  const handleFileChange = (event) => {
+  const handleFileChange = useCallback((event) => {
     const file = event.target.files[0];
     if (file) {
       setFileName(file.name);
       const fileURL = URL.createObjectURL(file);
-      loadAudio(fileURL);
+      loadAudio(fileURL)
+        .then(() => {
+          setIsAudioLoaded(true);
+          setIsPlaying(false);
+        })
+        .catch((error) => {
+          console.error('Error loading audio:', error);
+          setIsAudioLoaded(false);
+        });
     } else {
       setFileName('Choose File');
+      setIsAudioLoaded(false);
     }
-  };
+  }, []);
 
-  const handlePlayPause = () => {
-    const isNowPlaying = playPauseAudio();
-    setIsPlaying(isNowPlaying);
-  };
+  const handlePlayPause = useCallback(async () => {
+    try {
+      const isNowPlaying = await playPauseAudio();
+      setIsPlaying(isNowPlaying);
+    } catch (error) {
+      console.error('Error in play/pause:', error);
+      setIsPlaying(false);
+    }
+  }, []);
 
-  const handleStop = () => {
+  const handleStop = useCallback(() => {
     stopAudio();
     setIsPlaying(false);
-  };
+  }, []);
 
-  const handleMicToggle = () => {
-    if (isMicActive) {
-      stopMicRecordStream();
-    } else {
-      startMicRecordStream();
+  const handleMicToggle = useCallback(async () => {
+    try {
+      if (isMicActive) {
+        stopMicRecordStream();
+      } else {
+        await startMicRecordStream();
+      }
+      setIsMicActive(!isMicActive);
+    } catch (error) {
+      console.error('Error toggling microphone:', error);
+      setIsMicActive(false);
     }
-    setIsMicActive(!isMicActive);
-  };
+  }, [isMicActive]);
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'absolute', zIndex: 1 }}>
       <canvas ref={canvasRef} className="webgl absolute z-10" />
-
       <div className="controls-container fixed top-20 left-4 z-50 p-4">
         <div className="flex flex-col items-start space-y-2">
           <div className="file-input flex flex-col items-start space-y-2">
@@ -429,13 +454,10 @@ const ThreeScene = () => {
           </div>
 
           <div className="playback-controls flex flex-row items-center space-x-2">
-            <button
-              onClick={handlePlayPause}
-              className="btn-standard"
-              disabled={!getIsAudioLoaded()}>
+            <button onClick={handlePlayPause} className="btn-standard" disabled={!isAudioLoaded}>
               {isPlaying ? 'Pause' : 'Play'}
             </button>
-            <button onClick={handleStop} className="btn-standard" disabled={!getIsAudioLoaded()}>
+            <button onClick={handleStop} className="btn-standard" disabled={!isAudioLoaded}>
               Stop
             </button>
           </div>
