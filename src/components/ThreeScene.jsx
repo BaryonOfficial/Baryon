@@ -24,6 +24,8 @@ import GUI from 'lil-gui';
 
 const ThreeScene = () => {
   const canvasRef = useRef(null);
+  const guiContainerRef = useRef(null);
+
   const [fileName, setFileName] = useState('Choose File');
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMicActive, setIsMicActive] = useState(false);
@@ -42,7 +44,7 @@ const ThreeScene = () => {
 
     const setupGUI = () => {
       const guiWidth = 300;
-      const gui = new GUI({ width: guiWidth, container: document.getElementById('gui-container') });
+      const gui = new GUI({ width: guiWidth, container: guiContainerRef.current });
       document.documentElement.style.setProperty('--gui-width', guiWidth + 'px');
       return { gui, debugObject: {} };
     };
@@ -396,6 +398,9 @@ const ThreeScene = () => {
 
     return () => {
       console.log('Component unmounting');
+      if (gui) {
+        gui.destroy();
+      }
       // disposeGPGPUResources(gpgpu);
       renderer.dispose();
     };
@@ -453,10 +458,8 @@ const ThreeScene = () => {
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'absolute', zIndex: 1 }}>
       <canvas ref={canvasRef} className="webgl absolute z-10" />
-      <div id="gui-container" className="fixed top-20 right-0 z-50">
-        {/* lil-gui will be injected here */}
-      </div>
-      <div className="controls-container fixed top-20 left-4 z-50 p-4">
+      <div ref={guiContainerRef} className="fixed top-20 right-0 z-50"></div>
+      <div className="controls-container fixed top-20 left-12 z-50 p-4">
         <div className="flex flex-col items-start space-y-2">
           <div className="file-input flex flex-col items-start space-y-2">
             <label className="file-btn-standard max-w-[125px] truncate cursor-pointer">
