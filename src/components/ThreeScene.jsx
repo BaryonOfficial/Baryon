@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -11,8 +11,14 @@ import { gpgpuSetup, disposeGPGPUResources } from '../baryon/gpgpuSetup.js';
 import {
   audioObject,
   audioSetup,
+  loadAudio,
+  startMicRecordStream,
+  stopMicRecordStream,
+  playPauseAudio,
+  stopAudio,
   processAudioData,
   startAudioProcessing,
+  getIsAudioLoaded,
 } from '../audio/audioSetup.js';
 import GUI from 'lil-gui';
 
@@ -21,11 +27,9 @@ let particles, gpgpu, essentiaData;
 const ThreeScene = () => {
   const canvasRef = useRef(null);
 
-  const audioInputRef = useRef(null);
-  const fileNameButtonRef = useRef(null);
-  const micButtonRef = useRef(null);
-  const playPauseButtonRef = useRef(null);
-  const stopButtonRef = useRef(null);
+  const [fileName, setFileName] = useState('Choose File');
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMicActive, setIsMicActive] = useState(false);
 
   useEffect(() => {
     //******************************************************* GENERAL INITIALIZATION *******************************************************//
@@ -64,6 +68,11 @@ const ThreeScene = () => {
     const camera = new THREE.PerspectiveCamera(35, sizes.width / sizes.height, 0.1, 100);
     camera.position.set(0, 3, 20);
     scene.add(camera);
+
+    /*
+     * Audio Processing;
+     */
+    audioSetup(camera);
 
     // Controls
     const controls = new OrbitControls(camera, canvas);
@@ -137,7 +146,7 @@ const ThreeScene = () => {
 
     async function loadModel() {
       const gltf = await gltfLoader.loadAsync('./glb/Baryon_v2.glb');
-      console.log("baryon", gltf.scene);
+      console.log('baryon', gltf.scene);
       baseGeometry2.instance = gltf.scene.children[0];
 
       // Apply scaling to the object
@@ -158,18 +167,6 @@ const ThreeScene = () => {
       // Now extract the transformed vertex positions
       baseGeometry2.geometry = baseGeometry2.instance.geometry;
       baseGeometry2.count = baseGeometry2.geometry.attributes.position.count;
-
-      /*
-     * Audio Processing;
-     */
-      audioSetup(
-        camera,
-        audioInputRef,
-        fileNameButtonRef,
-        micButtonRef,
-        playPauseButtonRef,
-        stopButtonRef
-      );
 
       /*
        * GPGPU
@@ -383,27 +380,73 @@ const ThreeScene = () => {
     // Clean up on component unmount
     return () => {
       console.log('Component unmounting');
-      //   disposeGPGPUResources(gpgpu);
+      // disposeGPGPUResources(gpgpu);
       renderer.dispose();
     };
   }, []);
 
+  const handleFileChange = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setFileName(file.name);
+      const fileURL = URL.createObjectURL(file);
+      loadAudio(fileURL);
+    } else {
+      setFileName('Choose File');
+    }
+  };
+
+  const handlePlayPause = () => {
+    const isNowPlaying = playPauseAudio();
+    setIsPlaying(isNowPlaying);
+  };
+
+  const handleStop = () => {
+    stopAudio();
+    setIsPlaying(false);
+  };
+
+  const handleMicToggle = () => {
+    if (isMicActive) {
+      stopMicRecordStream();
+    } else {
+      startMicRecordStream();
+    }
+    setIsMicActive(!isMicActive);
+  };
+
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'absolute', zIndex: 1 }}>
-      <canvas ref={canvasRef} className="webgl" />
-      <input type="file" ref={audioInputRef} style={{ display: 'none' }} />
-      <button ref={fileNameButtonRef} className="file-btn-standard">
-        Choose File
-      </button>
-      <button ref={micButtonRef} id="micMode">
-        Mic
-      </button>
-      <button ref={playPauseButtonRef} className="btn-standard">
-        Play
-      </button>
-      <button ref={stopButtonRef} className="btn-standard">
-        Stop
-      </button>
+      <canvas ref={canvasRef} className="webgl absolute z-10" />
+
+      <div className="controls-container fixed top-20 left-4 z-50 p-4">
+        <div className="flex flex-col items-start space-y-2">
+          <div className="file-input flex flex-col items-start space-y-2">
+            <label className="file-btn-standard max-w-[125px] truncate cursor-pointer">
+              <span className="truncate">{fileName}</span>
+              <input type="file" accept="audio/*" className="hidden" onChange={handleFileChange} />
+            </label>
+          </div>
+
+          <div className="playback-controls flex flex-row items-center space-x-2">
+            <button
+              onClick={handlePlayPause}
+              className="btn-standard"
+              disabled={!getIsAudioLoaded()}>
+              {isPlaying ? 'Pause' : 'Play'}
+            </button>
+            <button onClick={handleStop} className="btn-standard" disabled={!getIsAudioLoaded()}>
+              Stop
+            </button>
+          </div>
+
+          <div className="modes flex flex-row items-center space-x-0">
+            <button onClick={handleMicToggle} className="btn-standard">
+              {isMicActive ? 'Stop Mic' : 'Mic'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
