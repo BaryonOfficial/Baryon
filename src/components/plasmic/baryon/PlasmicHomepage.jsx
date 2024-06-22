@@ -92,97 +92,100 @@ function PlasmicHomepage__RenderFunc(props) {
             data-plasmic-override={overrides.section}
             className={classNames(projectcss.all, sty.section)}
           >
-            <section
-              data-plasmic-name={"micModeToggle"}
-              data-plasmic-override={overrides.micModeToggle}
-              className={classNames(projectcss.all, sty.micModeToggle)}
-            >
-              <Stack__
-                as={"div"}
-                data-plasmic-name={"modeSettings"}
-                data-plasmic-override={overrides.modeSettings}
-                hasGap={true}
-                className={classNames(projectcss.all, sty.modeSettings)}
+            {false ? (
+              <section
+                data-plasmic-name={"micModeToggle"}
+                data-plasmic-override={overrides.micModeToggle}
+                className={classNames(projectcss.all, sty.micModeToggle)}
               >
-                <div
-                  data-plasmic-name={"text"}
-                  data-plasmic-override={overrides.text}
-                  className={classNames(
-                    projectcss.all,
-                    projectcss.__wab_text,
-                    sty.text
-                  )}
-                >
-                  {"MODES"}
-                </div>
                 <Stack__
                   as={"div"}
-                  data-plasmic-name={"modeNames"}
-                  data-plasmic-override={overrides.modeNames}
+                  data-plasmic-name={"modeSettings"}
+                  data-plasmic-override={overrides.modeSettings}
                   hasGap={true}
-                  className={classNames(projectcss.all, sty.modeNames)}
-                  id={"micMode"}
+                  className={classNames(projectcss.all, sty.modeSettings)}
                 >
-                  <Switch
-                    data-plasmic-name={"_switch"}
-                    data-plasmic-override={overrides._switch}
-                    className={classNames("__wab_instance", sty._switch)}
-                    isChecked={
-                      generateStateValueProp($state, [
-                        "_switch",
-                        "isChecked"
-                      ]) ?? false
-                    }
-                    onChange={async (...eventArgs) => {
-                      ((...eventArgs) => {
-                        generateStateOnChangeProp($state, [
+                  <div
+                    data-plasmic-name={"text"}
+                    data-plasmic-override={overrides.text}
+                    className={classNames(
+                      projectcss.all,
+                      projectcss.__wab_text,
+                      sty.text
+                    )}
+                  >
+                    {"MODES"}
+                  </div>
+                  <Stack__
+                    as={"div"}
+                    data-plasmic-name={"modeNames"}
+                    data-plasmic-override={overrides.modeNames}
+                    hasGap={true}
+                    className={classNames(projectcss.all, sty.modeNames)}
+                    id={"micMode"}
+                  >
+                    <Switch
+                      data-plasmic-name={"_switch"}
+                      data-plasmic-override={overrides._switch}
+                      className={classNames("__wab_instance", sty._switch)}
+                      isChecked={
+                        generateStateValueProp($state, [
                           "_switch",
                           "isChecked"
-                        ])(eventArgs[0]);
-                      }).apply(null, eventArgs);
-                      (async isChecked => {
-                        const $steps = {};
-                        $steps["updateSwitchIsChecked"] = false
-                          ? (() => {
-                              const actionArgs = {
-                                variable: {
-                                  objRoot: $state,
-                                  variablePath: ["_switch", "isChecked"]
-                                },
-                                operation: 0,
-                                value: true
-                              };
-                              return (({
-                                variable,
-                                value,
-                                startIndex,
-                                deleteCount
-                              }) => {
-                                if (!variable) {
-                                  return;
-                                }
-                                const { objRoot, variablePath } = variable;
-                                $stateSet(objRoot, variablePath, value);
-                                return value;
-                              })?.apply(null, [actionArgs]);
-                            })()
-                          : undefined;
-                        if (
-                          $steps["updateSwitchIsChecked"] != null &&
-                          typeof $steps["updateSwitchIsChecked"] === "object" &&
-                          typeof $steps["updateSwitchIsChecked"].then ===
-                            "function"
-                        ) {
-                          $steps["updateSwitchIsChecked"] = await $steps[
-                            "updateSwitchIsChecked"
-                          ];
-                        }
-                      }).apply(null, eventArgs);
-                    }}
-                  />
+                        ]) ?? false
+                      }
+                      onChange={async (...eventArgs) => {
+                        ((...eventArgs) => {
+                          generateStateOnChangeProp($state, [
+                            "_switch",
+                            "isChecked"
+                          ])(eventArgs[0]);
+                        }).apply(null, eventArgs);
+                        (async isChecked => {
+                          const $steps = {};
+                          $steps["updateSwitchIsChecked"] = false
+                            ? (() => {
+                                const actionArgs = {
+                                  variable: {
+                                    objRoot: $state,
+                                    variablePath: ["_switch", "isChecked"]
+                                  },
+                                  operation: 0,
+                                  value: true
+                                };
+                                return (({
+                                  variable,
+                                  value,
+                                  startIndex,
+                                  deleteCount
+                                }) => {
+                                  if (!variable) {
+                                    return;
+                                  }
+                                  const { objRoot, variablePath } = variable;
+                                  $stateSet(objRoot, variablePath, value);
+                                  return value;
+                                })?.apply(null, [actionArgs]);
+                              })()
+                            : undefined;
+                          if (
+                            $steps["updateSwitchIsChecked"] != null &&
+                            typeof $steps["updateSwitchIsChecked"] ===
+                              "object" &&
+                            typeof $steps["updateSwitchIsChecked"].then ===
+                              "function"
+                          ) {
+                            $steps["updateSwitchIsChecked"] = await $steps[
+                              "updateSwitchIsChecked"
+                            ];
+                          }
+                        }).apply(null, eventArgs);
+                      }}
+                    />
+                  </Stack__>
                 </Stack__>
-              </Stack__>
-            </section>
+              </section>
+            ) : null}
           </section>
         </div>
       </div>
