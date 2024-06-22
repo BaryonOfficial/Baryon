@@ -321,10 +321,10 @@ async function loadAudioWorklet() {
     return;
   }
   const workletProcessorCode = [
-    'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js',
-    'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.umd.js',
-    './src/audio/audio-data-processor.js',
-    'https://unpkg.com/ringbuf.js@0.1.0/dist/index.js',
+    './lib/essentia-wasm.umd.js',
+    './lib/essentia.js-core.umd.js',
+    './lib/audio-data-processor.js',
+    './lib/ringbuf.js',
   ];
 
   return URLFromFiles(workletProcessorCode)
