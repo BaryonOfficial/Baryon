@@ -14,14 +14,12 @@ import {
   Stack as Stack__,
   classNames,
   createPlasmicElementProxy,
-  deriveRenderOpts,
-  ensureGlobalVariants
+  deriveRenderOpts
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 import SiteNavBar from "../../SiteNavBar"; // plasmic-import: xamm2QscKBA7/component
 import Button2 from "../../Button2"; // plasmic-import: EPGJPtXx-yjL/component
 import BaryonFooter from "../../BaryonFooter"; // plasmic-import: FKV3u0E4hZrB/component
-import { useScreenVariants as useScreenVariantspcuqpuXkf7V2 } from "./PlasmicGlobalVariant__Screen"; // plasmic-import: PcuqpuXKF7v2/globalVariant
 import "@plasmicapp/react-web/lib/plasmic.css";
 import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css"; // plasmic-import: ohDidvG9XsCeFumugENU3J/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
@@ -47,9 +45,6 @@ function PlasmicStory__RenderFunc(props) {
   const $ctx = useDataEnv?.() || {};
   const refsRef = React.useRef({});
   const $refs = refsRef.current;
-  const globalVariants = ensureGlobalVariants({
-    screen: useScreenVariantspcuqpuXkf7V2()
-  });
   return (
     <React.Fragment>
       <div className={projectcss.plasmic_page_wrapper}>
@@ -74,131 +69,111 @@ function PlasmicStory__RenderFunc(props) {
             className={classNames("__wab_instance", sty.siteNavBar)}
           />
 
-          <div className={classNames(projectcss.all, sty.freeBox__iIz4L)}>
-            <div className={classNames(projectcss.all, sty.freeBox__lsDbK)}>
+          <div className={classNames(projectcss.all, sty.freeBox__eEPlX)}>
+            <Stack__
+              as={"div"}
+              data-plasmic-name={"foreground2"}
+              data-plasmic-override={overrides.foreground2}
+              hasGap={true}
+              className={classNames(projectcss.all, sty.foreground2)}
+            >
               <Stack__
                 as={"div"}
                 hasGap={true}
-                className={classNames(projectcss.all, sty.freeBox___0U9BW)}
+                className={classNames(projectcss.all, sty.freeBox__f1Ecl)}
               >
-                <Stack__
-                  as={"div"}
-                  hasGap={true}
-                  className={classNames(projectcss.all, sty.freeBox__bIUld)}
+                <div
+                  className={classNames(
+                    projectcss.all,
+                    projectcss.__wab_text,
+                    sty.text__gxMs5
+                  )}
                 >
-                  <Stack__
-                    as={"div"}
-                    hasGap={true}
-                    className={classNames(projectcss.all, sty.freeBox__sSbnn)}
-                  >
-                    <div
-                      className={classNames(
-                        projectcss.all,
-                        projectcss.__wab_text,
-                        sty.text___1W5D
-                      )}
+                  <React.Fragment>
+                    <React.Fragment>{"We make sound "}</React.Fragment>
+                    <span
+                      className={"plasmic_default__all plasmic_default__span"}
+                      style={{ textDecorationLine: "underline" }}
                     >
-                      <React.Fragment>
-                        <span
-                          className={
-                            "plasmic_default__all plasmic_default__span"
-                          }
-                          style={{ fontStyle: "italic" }}
-                        >
-                          {"We make sound"}
-                        </span>
-                        <React.Fragment>{" visible"}</React.Fragment>
-                      </React.Fragment>
-                    </div>
-                    <div
-                      className={classNames(
-                        projectcss.all,
-                        projectcss.__wab_text,
-                        sty.text___3QJbA
-                      )}
-                    >
-                      {
-                        "The world's first 3D cymatics music visualizer  reveals the hidden realm of sound."
-                      }
-                    </div>
-                  </Stack__>
-                  <Stack__
-                    as={"div"}
-                    hasGap={true}
-                    className={classNames(projectcss.all, sty.freeBox__cr903)}
-                  >
-                    <Button2
-                      data-plasmic-name={"visualizerButton"}
-                      data-plasmic-override={overrides.visualizerButton}
-                      className={classNames(
-                        "__wab_instance",
-                        sty.visualizerButton
-                      )}
-                      color={"white"}
-                      endIcon={
-                        <Icon38Icon
-                          className={classNames(projectcss.all, sty.svg__g9Dwo)}
-                          role={"img"}
-                        />
-                      }
-                      link={`/`}
-                      onClick={async event => {
-                        const $steps = {};
-                        $steps["goToHomepage"] = true
-                          ? (() => {
-                              const actionArgs = { destination: `/` };
-                              return (({ destination }) => {
-                                if (
-                                  typeof destination === "string" &&
-                                  destination.startsWith("#")
-                                ) {
-                                  document
-                                    .getElementById(destination.substr(1))
-                                    .scrollIntoView({ behavior: "smooth" });
-                                } else {
-                                  location.assign(destination);
-                                }
-                              })?.apply(null, [actionArgs]);
-                            })()
-                          : undefined;
-                        if (
-                          $steps["goToHomepage"] != null &&
-                          typeof $steps["goToHomepage"] === "object" &&
-                          typeof $steps["goToHomepage"].then === "function"
-                        ) {
-                          $steps["goToHomepage"] = await $steps["goToHomepage"];
-                        }
-                      }}
-                      shape={"rounded"}
-                      startIcon={
-                        <ChecksvgIcon
-                          className={classNames(projectcss.all, sty.svg__rsYoy)}
-                          role={"img"}
-                        />
-                      }
-                      submitsForm={true}
-                    >
-                      <div
+                      {"visible"}
+                    </span>
+                  </React.Fragment>
+                </div>
+                <div
+                  className={classNames(
+                    projectcss.all,
+                    projectcss.__wab_text,
+                    sty.text___0LcI
+                  )}
+                >
+                  <React.Fragment>
+                    <React.Fragment>{""}</React.Fragment>
+                    {
+                      <h4
                         className={classNames(
                           projectcss.all,
+                          projectcss.h4,
                           projectcss.__wab_text,
-                          sty.text__jFkhu
+                          sty.h4__sthwC
                         )}
                       >
-                        {"Visualizer ->"}
-                      </div>
-                    </Button2>
-                  </Stack__>
-                </Stack__>
-                <div
-                  className={classNames(projectcss.all, sty.freeBox___7QqGr)}
-                >
-                  <div
-                    className={classNames(projectcss.all, sty.freeBox___1Yw1P)}
-                  />
+                        <React.Fragment>
+                          <span
+                            className={
+                              "plasmic_default__all plasmic_default__span"
+                            }
+                            style={{ color: "#FFFFFFBF", fontWeight: 700 }}
+                          >
+                            {
+                              "The world's first 3D cymatics music visualizer reveals the hidden realm of sound."
+                            }
+                          </span>
+                        </React.Fragment>
+                      </h4>
+                    }
+
+                    <React.Fragment>{""}</React.Fragment>
+                  </React.Fragment>
                 </div>
               </Stack__>
-            </div>
+              <Stack__
+                as={"div"}
+                hasGap={true}
+                className={classNames(projectcss.all, sty.freeBox__aJnZ)}
+              >
+                <Button2
+                  data-plasmic-name={"button2"}
+                  data-plasmic-override={overrides.button2}
+                  className={classNames("__wab_instance", sty.button2)}
+                  color={"blue"}
+                  endIcon={
+                    <Icon38Icon
+                      className={classNames(projectcss.all, sty.svg__ldxIq)}
+                      role={"img"}
+                    />
+                  }
+                  link={`/`}
+                  shape={"rounded"}
+                  startIcon={
+                    <ChecksvgIcon
+                      className={classNames(projectcss.all, sty.svg__pmpBr)}
+                      role={"img"}
+                    />
+                  }
+                  submitsForm={true}
+                >
+                  <div
+                    className={classNames(
+                      projectcss.all,
+                      projectcss.__wab_text,
+                      sty.text__lopjZ
+                    )}
+                  >
+                    {"Visualizer -->"}
+                  </div>
+                </Button2>
+              </Stack__>
+            </Stack__>
           </div>
           <section
             data-plasmic-name={"section"}
@@ -228,13 +203,11 @@ function PlasmicStory__RenderFunc(props) {
                 <React.Fragment>{""}</React.Fragment>
                 {
                   <h4
-                    data-plasmic-name={"h4"}
-                    data-plasmic-override={overrides.h4}
                     className={classNames(
                       projectcss.all,
                       projectcss.h4,
                       projectcss.__wab_text,
-                      sty.h4
+                      sty.h4__wD3Xf
                     )}
                   >
                     {"A message from the founder"}
@@ -458,10 +431,10 @@ const PlasmicDescendants = {
   story: [
     "story",
     "siteNavBar",
-    "visualizerButton",
+    "foreground2",
+    "button2",
     "section",
     "h1",
-    "h4",
     "columns",
     "img",
     "copy",
@@ -471,10 +444,10 @@ const PlasmicDescendants = {
   ],
 
   siteNavBar: ["siteNavBar"],
-  visualizerButton: ["visualizerButton"],
-  section: ["section", "h1", "h4"],
+  foreground2: ["foreground2", "button2"],
+  button2: ["button2"],
+  section: ["section", "h1"],
   h1: ["h1"],
-  h4: ["h4"],
   columns: ["columns", "img", "copy", "h5", "pluginButton"],
   img: ["img"],
   copy: ["copy", "h5", "pluginButton"],
@@ -516,10 +489,10 @@ export const PlasmicStory = Object.assign(
   {
     // Helper components rendering sub-elements
     siteNavBar: makeNodeComponent("siteNavBar"),
-    visualizerButton: makeNodeComponent("visualizerButton"),
+    foreground2: makeNodeComponent("foreground2"),
+    button2: makeNodeComponent("button2"),
     section: makeNodeComponent("section"),
     h1: makeNodeComponent("h1"),
-    h4: makeNodeComponent("h4"),
     columns: makeNodeComponent("columns"),
     img: makeNodeComponent("img"),
     copy: makeNodeComponent("copy"),
