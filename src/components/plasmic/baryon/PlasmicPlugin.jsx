@@ -14,7 +14,8 @@ import {
   classNames,
   createPlasmicElementProxy,
   deriveRenderOpts,
-  ensureGlobalVariants
+  ensureGlobalVariants,
+  hasVariant
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 import SiteNavBar from "../../SiteNavBar"; // plasmic-import: xamm2QscKBA7/component
@@ -24,6 +25,7 @@ import BaryonFooter from "../../BaryonFooter"; // plasmic-import: FKV3u0E4hZrB/c
 import { useScreenVariants as useScreenVariantspcuqpuXkf7V2 } from "./PlasmicGlobalVariant__Screen"; // plasmic-import: PcuqpuXKF7v2/globalVariant
 import "@plasmicapp/react-web/lib/plasmic.css";
 import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css"; // plasmic-import: ohDidvG9XsCeFumugENU3J/projectcss
+import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicPlugin.module.css"; // plasmic-import: FXocl_OYx5HY/css
 import Icon14Icon from "./icons/PlasmicIcon__Icon14"; // plasmic-import: nK6pvnnbOK1R/icon
@@ -72,6 +74,7 @@ function PlasmicPlugin__RenderFunc(props) {
             projectcss.plasmic_mixins,
             projectcss.plasmic_tokens,
             plasmic_antd_5_hostless_css.plasmic_tokens,
+            plasmic_plasmic_rich_components_css.plasmic_tokens,
             sty.root
           )}
         >
@@ -867,6 +870,11 @@ function PlasmicPlugin__RenderFunc(props) {
                             )}
                             role={"img"}
                           />
+                        }
+                        size={
+                          hasVariant(globalVariants, "screen", "mobileOnly")
+                            ? "compact"
+                            : "compact"
                         }
                         startIcon={
                           <ChecksvgIcon

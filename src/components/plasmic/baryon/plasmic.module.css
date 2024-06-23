@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter%3Aital%2Cwght%400%2C400%3B0%2C500%3B0%2C600%3B0%2C700%3B0%2C800&family=Inconsolata%3Aital%2Cwght%400%2C400%3B0%2C500%3B0%2C600%3B0%2C700%3B0%2C800&family=Orbitron%3Aital%2Cwght%400%2C400%3B0%2C500%3B0%2C600%3B0%2C700%3B0%2C800&family=Montserrat%3Aital%2Cwght%400%2C400%3B0%2C500%3B0%2C600%3B0%2C700%3B0%2C800%3B1%2C400%3B1%2C500%3B1%2C600%3B1%2C700%3B1%2C800&family=Lora%3Aital%2Cwght%400%2C400%3B0%2C500%3B0%2C600%3B0%2C700%3B1%2C400%3B1%2C500%3B1%2C600%3B1%2C700&family=Ubuntu%3Aital%2Cwght%400%2C400%3B0%2C500%3B0%2C700%3B1%2C400%3B1%2C500%3B1%2C700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Ubuntu%3Aital%2Cwght%400%2C400%3B0%2C500%3B0%2C700%3B1%2C400%3B1%2C500%3B1%2C700&family=Inconsolata%3Aital%2Cwght%400%2C400%3B0%2C500%3B0%2C600%3B0%2C700%3B0%2C800&family=Orbitron%3Aital%2Cwght%400%2C400%3B0%2C500%3B0%2C600%3B0%2C700%3B0%2C800&family=Montserrat%3Aital%2Cwght%400%2C400%3B0%2C500%3B0%2C600%3B0%2C700%3B0%2C800%3B1%2C400%3B1%2C500%3B1%2C600%3B1%2C700%3B1%2C800&family=Inter%3Aital%2Cwght%400%2C400%3B0%2C500%3B0%2C600%3B0%2C700%3B0%2C800&family=Lora%3Aital%2Cwght%400%2C400%3B0%2C500%3B0%2C600%3B0%2C700%3B1%2C400%3B1%2C500%3B1%2C600%3B1%2C700&display=swap");
 
 .plasmic_tokens {
   --token-nxRIYRhqQJMT: #959595;
@@ -16,11 +16,11 @@
 }
 
 .plasmic_default_styles {
-  --mixin-ljOopPMDc2mS_font-family: "Inter", sans-serif;
-  --mixin-ljOopPMDc2mS_font-size: 16px;
-  --mixin-ljOopPMDc2mS_font-weight: 400;
+  --mixin-ljOopPMDc2mS_font-family: "Ubuntu", sans-serif;
+  --mixin-ljOopPMDc2mS_font-size: 24px;
+  --mixin-ljOopPMDc2mS_font-weight: 500;
   --mixin-ljOopPMDc2mS_font-style: normal;
-  --mixin-ljOopPMDc2mS_color: #535353;
+  --mixin-ljOopPMDc2mS_color: #ffffffd9;
   --mixin-ljOopPMDc2mS_text-align: left;
   --mixin-ljOopPMDc2mS_text-transform: none;
   --mixin-ljOopPMDc2mS_line-height: 1.5;

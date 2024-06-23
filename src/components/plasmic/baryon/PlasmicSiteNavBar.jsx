@@ -20,14 +20,15 @@ import {
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 import Button2 from "../../Button2"; // plasmic-import: EPGJPtXx-yjL/component
+import MobileMenu from "../../MobileMenu"; // plasmic-import: dfiZXaS0blw8/component
 import { useScreenVariants as useScreenVariantspcuqpuXkf7V2 } from "./PlasmicGlobalVariant__Screen"; // plasmic-import: PcuqpuXKF7v2/globalVariant
 import "@plasmicapp/react-web/lib/plasmic.css";
 import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css"; // plasmic-import: ohDidvG9XsCeFumugENU3J/projectcss
+import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicSiteNavBar.module.css"; // plasmic-import: xamm2QscKBA7/css
 import ChecksvgIcon from "./icons/PlasmicIcon__Checksvg"; // plasmic-import: F3iOqCFKuA-k/icon
 import Icon38Icon from "./icons/PlasmicIcon__Icon38"; // plasmic-import: IYnmkRggg6dZ/icon
-import HamburgerMenuSvgrepoComsvgIcon from "./icons/PlasmicIcon__HamburgerMenuSvgrepoComsvg"; // plasmic-import: yQSNegzl0PI8/icon
 
 createPlasmicElementProxy;
 
@@ -65,6 +66,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
         projectcss.plasmic_mixins,
         projectcss.plasmic_tokens,
         plasmic_antd_5_hostless_css.plasmic_tokens,
+        plasmic_plasmic_rich_components_css.plasmic_tokens,
         sty.siteNavBar
       )}
     >
@@ -168,6 +170,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
               }
             }}
             shape={"rounded"}
+            size={"compact"}
             startIcon={
               <ChecksvgIcon
                 className={classNames(projectcss.all, sty.svg__dfKum)}
@@ -226,6 +229,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
               }
             }}
             shape={"rounded"}
+            size={"compact"}
             startIcon={
               <ChecksvgIcon
                 className={classNames(projectcss.all, sty.svg__wbSx3)}
@@ -284,6 +288,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
               }
             }}
             shape={"rounded"}
+            size={"compact"}
             startIcon={
               <ChecksvgIcon
                 className={classNames(projectcss.all, sty.svg__riKjd)}
@@ -315,6 +320,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
             }
             link={"https://foundation.app/@Baryon"}
             shape={"rounded"}
+            size={"compact"}
             startIcon={
               <ChecksvgIcon
                 className={classNames(projectcss.all, sty.svg__aoUrb)}
@@ -392,29 +398,12 @@ function PlasmicSiteNavBar__RenderFunc(props) {
             </div>
           </Button2>
         </Stack__>
-        <HamburgerMenuSvgrepoComsvgIcon
-          className={classNames(projectcss.all, sty.svg___9Hx3O)}
-          onClick={async event => {
-            const $steps = {};
-            $steps["runElementAction"] = true
-              ? (() => {
-                  const actionArgs = {};
-                  return (({ tplRef, action, args }) => {
-                    return $refs?.[tplRef]?.[action]?.(...(args ?? []));
-                  })?.apply(null, [actionArgs]);
-                })()
-              : undefined;
-            if (
-              $steps["runElementAction"] != null &&
-              typeof $steps["runElementAction"] === "object" &&
-              typeof $steps["runElementAction"].then === "function"
-            ) {
-              $steps["runElementAction"] = await $steps["runElementAction"];
-            }
-          }}
-          role={"img"}
-        />
       </Stack__>
+      <MobileMenu
+        data-plasmic-name={"mobileMenu"}
+        data-plasmic-override={overrides.mobileMenu}
+        className={classNames("__wab_instance", sty.mobileMenu)}
+      />
     </Stack__>
   );
 }
@@ -429,7 +418,8 @@ const PlasmicDescendants = {
     "storyNav",
     "artNav",
     "logInButton",
-    "signUpButton"
+    "signUpButton",
+    "mobileMenu"
   ],
 
   baryonBlackLogo: ["baryonBlackLogo"],
@@ -439,7 +429,8 @@ const PlasmicDescendants = {
   storyNav: ["storyNav"],
   artNav: ["artNav"],
   logInButton: ["logInButton"],
-  signUpButton: ["signUpButton"]
+  signUpButton: ["signUpButton"],
+  mobileMenu: ["mobileMenu"]
 };
 
 function makeNodeComponent(nodeName) {
@@ -482,6 +473,7 @@ export const PlasmicSiteNavBar = Object.assign(
     artNav: makeNodeComponent("artNav"),
     logInButton: makeNodeComponent("logInButton"),
     signUpButton: makeNodeComponent("signUpButton"),
+    mobileMenu: makeNodeComponent("mobileMenu"),
     // Metadata about props expected for PlasmicSiteNavBar
     internalVariantProps: PlasmicSiteNavBar__VariantProps,
     internalArgProps: PlasmicSiteNavBar__ArgProps

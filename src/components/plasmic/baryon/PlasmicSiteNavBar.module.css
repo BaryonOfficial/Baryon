@@ -27,7 +27,7 @@
 }
 @media (min-width: 0px) and (max-width: 768px) {
   .siteNavBar {
-    padding: 16px;
+    padding: 0px 16px;
   }
 }
 .freeBox__k2VAf {
@@ -60,9 +60,15 @@
 }
 @media (min-width: 0px) and (max-width: 768px) {
   .freeBox__k2VAf {
-    display: flex;
     flex-direction: row;
+    height: 69px;
+    min-height: 69px;
+    left: 0px;
+    top: 0px;
+    z-index: 1;
+    position: sticky;
     margin-left: calc(0px + 16px) !important;
+    display: none;
   }
 }
 @media (min-width: 0px) and (max-width: 768px) {
@@ -155,6 +161,11 @@
   margin-left: 8px;
 }
 @media (min-width: 0px) and (max-width: 768px) {
+  .freeBox__xjZU {
+    display: none;
+  }
+}
+@media (min-width: 0px) and (max-width: 768px) {
   .freeBox__xjZU > :global(.__wab_flex-container) {
     flex-wrap: wrap;
     justify-content: center;
@@ -199,7 +210,7 @@
   font-size: 14px;
   font-weight: 500;
   font-style: normal;
-  color: #ffffff;
+  color: #ffffffd9;
   text-align: left;
   text-transform: none;
   line-height: 1.5;
@@ -241,7 +252,7 @@
   font-size: 14px;
   font-weight: 500;
   font-style: normal;
-  color: #ffffff;
+  color: #ffffffd9;
   text-align: left;
   text-transform: none;
   line-height: 1.5;
@@ -282,7 +293,7 @@
   font-size: 14px;
   font-weight: 500;
   font-style: normal;
-  color: #ffffff;
+  color: #ffffffd9;
   text-align: left;
   text-transform: none;
   line-height: 1.5;
@@ -323,7 +334,7 @@
   font-size: 14px;
   font-weight: 500;
   font-style: normal;
-  color: #ffffff;
+  color: #ffffffd9;
   text-align: left;
   text-transform: none;
   line-height: 1.5;
@@ -406,18 +417,15 @@
   width: auto;
   height: 1em;
 }
-.svg___9Hx3O {
-  position: relative;
-  object-fit: cover;
+.mobileMenu:global(.__wab_instance) {
   max-width: 100%;
-  min-height: 40px;
-  min-width: 40px;
-  color: #ffffff;
-  height: 1em;
+  position: relative;
+  min-height: 69px;
+  max-height: 69px;
   display: none;
 }
 @media (min-width: 0px) and (max-width: 768px) {
-  .svg___9Hx3O {
-    display: block;
+  .mobileMenu:global(.__wab_instance) {
+    display: flex;
   }
 }

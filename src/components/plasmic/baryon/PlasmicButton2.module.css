@@ -10,7 +10,7 @@
   -webkit-transition-property: background;
   -webkit-transition-duration: 0.1s;
   border-radius: 6px;
-  padding: 8px 12px;
+  padding: 0px;
   border-width: 0px;
 }
 .root > :global(.__wab_flex-container) {
@@ -25,6 +25,11 @@
 .root > :global(.__wab_flex-container) > picture > img,
 .root > :global(.__wab_flex-container) > :global(.__wab_slot) > picture > img {
   margin-left: 8px;
+}
+@media (min-width: 0px) and (max-width: 768px) {
+  .root {
+    padding-right: 0px;
+  }
 }
 .rootshowStartIcon {
   padding-left: 16px;

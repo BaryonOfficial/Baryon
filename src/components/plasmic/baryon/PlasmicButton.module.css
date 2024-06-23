@@ -1,12 +1,19 @@
 .root {
   position: relative;
   border-radius: 6px;
-  padding: 16px 32px;
-  border-width: 2px;
-  border-color: #185adb;
+  padding: 16px 32px 16px 0px;
+  border-width: 1px;
+  border-style: none;
+}
+@media (min-width: 0px) and (max-width: 768px) {
+  .root {
+    padding-left: 0px;
+    padding-right: 0px;
+  }
 }
 .rootshowStartIcon {
   display: flex;
+  padding-left: 2px;
 }
 .rootshowEndIcon {
   padding-right: 0px;
@@ -152,6 +159,7 @@
 }
 .slotTargetChildrencolor_green {
   color: #ffffff;
+  text-align: center;
 }
 .slotTargetChildrencolor_indigo {
   color: #ffffff;
