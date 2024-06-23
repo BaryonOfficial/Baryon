@@ -24,6 +24,7 @@ import SiteNavBar from "../../SiteNavBar"; // plasmic-import: xamm2QscKBA7/compo
 import Switch from "../../Switch"; // plasmic-import: nvHlc0ztf3Mh/component
 import "@plasmicapp/react-web/lib/plasmic.css";
 import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css"; // plasmic-import: ohDidvG9XsCeFumugENU3J/projectcss
+import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicHomepage.module.css"; // plasmic-import: hWA73xpE070V/css
 
@@ -78,6 +79,7 @@ function PlasmicHomepage__RenderFunc(props) {
             projectcss.plasmic_mixins,
             projectcss.plasmic_tokens,
             plasmic_antd_5_hostless_css.plasmic_tokens,
+            plasmic_plasmic_rich_components_css.plasmic_tokens,
             sty.visualizerDesktop
           )}
         >

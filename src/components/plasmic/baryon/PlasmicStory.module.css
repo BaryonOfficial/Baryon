@@ -35,6 +35,12 @@
   top: 0px;
   z-index: 1;
 }
+@media (min-width: 0px) and (max-width: 768px) {
+  .siteNavBar:global(.__wab_instance) {
+    height: 69px;
+    min-height: 69px;
+  }
+}
 .freeBox__eEPlX {
   display: flex;
   flex-direction: column;
@@ -220,7 +226,6 @@
     padding-left: 32px;
     height: auto;
     margin-bottom: 32px;
-    padding-top: 32px;
   }
 }
 @media (min-width: 0px) and (max-width: 768px) {
@@ -279,6 +284,7 @@
   font-weight: 400;
   font-size: 22px;
   font-style: normal;
+  color: #000000d9;
   grid-column-start: 3 !important;
   grid-column-end: -3 !important;
   padding: 0px;

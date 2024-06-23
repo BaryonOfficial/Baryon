@@ -33,6 +33,12 @@
   top: 0px;
   z-index: 1;
 }
+@media (min-width: 0px) and (max-width: 768px) {
+  .siteNavBar:global(.__wab_instance) {
+    height: 69px;
+    min-height: 69px;
+  }
+}
 .freeBox___4WeKa {
   display: flex;
   flex-direction: column;
@@ -240,11 +246,8 @@
   max-width: 100%;
   object-fit: cover;
   position: relative;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  text-align: left;
+  align-self: center;
 }
 .pluginDetails {
   display: flex;
@@ -277,7 +280,7 @@
   .pluginDetails {
     display: flex;
     flex-direction: column;
-    padding: 64px 32px;
+    padding: 32px;
   }
 }
 @media (min-width: 0px) and (max-width: 768px) {
@@ -821,6 +824,12 @@
   margin-left: 44px;
   margin-top: 32px;
 }
+@media (min-width: 0px) and (max-width: 768px) {
+  .compatibility {
+    padding-top: 32px;
+    padding-bottom: 32px;
+  }
+}
 .text__vZuV {
   position: relative;
   width: 100%;
@@ -830,9 +839,9 @@
 }
 .h3 {
   text-align: center;
-  font-family: "Orbitron", sans-serif;
+  font-family: "Lora", serif;
   font-size: 40px;
-  color: #000000d9;
+  color: #ffffffd9;
   font-weight: 700;
 }
 @media (min-width: 0px) and (max-width: 768px) {
@@ -1114,7 +1123,7 @@
   font-family: "Lora", serif;
   text-align: center;
   font-size: 28px;
-  color: #000000d9;
+  color: #000000bf;
   font-weight: 500;
   font-style: normal;
   padding-top: 0px;
@@ -1219,7 +1228,7 @@
   text-align: center;
   font-family: "Lora", serif;
   font-size: 48px;
-  font-weight: 800;
+  font-weight: 700;
   font-style: normal;
   text-transform: none;
   line-height: 1;
@@ -1724,7 +1733,7 @@
   height: 1em;
 }
 .text__vYxze {
-  font-family: "Inter", sans-serif;
+  font-family: "Ubuntu", sans-serif;
   font-size: 16px;
   font-weight: 500;
   font-style: normal;
@@ -1737,6 +1746,11 @@
   user-select: text;
   text-decoration-line: none !important;
   text-overflow: clip !important;
+}
+@media (min-width: 0px) and (max-width: 768px) {
+  .text__vYxze {
+    font-family: "Ubuntu", sans-serif;
+  }
 }
 .svg__dtf0T {
   position: relative;

@@ -727,15 +727,28 @@
           "plumeType": "switch"
         },
         {
-          "id": "T3nFQfxBWEpV",
-          "name": "NavMenu",
+          "id": "X6F2UQJmqAhS",
+          "name": "MenuButton2",
           "type": "managed",
           "projectId": "4dvBXLce6aZWcodsHuZ7oL",
-          "renderModuleFilePath": "plasmic/baryon/PlasmicNavMenu.jsx",
+          "renderModuleFilePath": "plasmic/baryon/PlasmicMenuButton2.jsx",
           "importSpec": {
-            "modulePath": "NavMenu.jsx"
+            "modulePath": "MenuButton2.jsx"
           },
-          "cssFilePath": "plasmic/baryon/PlasmicNavMenu.module.css",
+          "cssFilePath": "plasmic/baryon/PlasmicMenuButton2.module.css",
+          "scheme": "blackbox",
+          "componentType": "component"
+        },
+        {
+          "id": "dfiZXaS0blw8",
+          "name": "MobileMenu",
+          "type": "managed",
+          "projectId": "4dvBXLce6aZWcodsHuZ7oL",
+          "renderModuleFilePath": "plasmic/baryon/PlasmicMobileMenu.jsx",
+          "importSpec": {
+            "modulePath": "MobileMenu.jsx"
+          },
+          "cssFilePath": "plasmic/baryon/PlasmicMobileMenu.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         }
@@ -1040,6 +1053,16 @@
           "id": "KH57KApp2tIC",
           "name": "XCircleFillsvgIcon",
           "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__XCircleFillsvg.jsx"
+        },
+        {
+          "id": "0QRopc9MPjUd",
+          "name": "ChevronDownsvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ChevronDownsvg.jsx"
+        },
+        {
+          "id": "S0IbNKyNuVm7",
+          "name": "ChevronUpsvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ChevronUpsvg.jsx"
         }
       ],
       "images": [
@@ -1297,6 +1320,61 @@
         }
       ],
       "customFunctions": []
+    },
+    {
+      "projectId": "jkU633o1Cz7HrJdwdxhVHk",
+      "projectApiToken": "RNOKYUdvtFBrgxbf09RPjYgL9LzpnT4pIsOrtpsqlLDYBRxYynkAo8OY9YRWPdoaSnRAwOO2e5PWfuVNypw",
+      "projectName": "plasmic-rich-components",
+      "version": ">0.0.0",
+      "cssFilePath": "plasmic/plasmic_rich_components/plasmic.module.css",
+      "components": [],
+      "icons": [],
+      "images": [],
+      "indirect": true,
+      "globalContextsFilePath": "",
+      "splitsProviderFilePath": "",
+      "codeComponents": [
+        {
+          "id": "FNIk-CnxQYXU",
+          "name": "RichLayout",
+          "displayName": "hostless-rich-layout",
+          "componentImportPath": "@plasmicpkgs/plasmic-rich-components/skinny/rich-layout"
+        },
+        {
+          "id": "k4RvFQUTZKCU",
+          "name": "RichTable",
+          "displayName": "hostless-rich-table",
+          "componentImportPath": "@plasmicpkgs/plasmic-rich-components/skinny/rich-table",
+          "helper": {
+            "name": "tableHelpers",
+            "importPath": "@plasmicpkgs/plasmic-rich-components/skinny/rich-table"
+          }
+        },
+        {
+          "id": "zV8WqibK3ZnC",
+          "name": "RichDetails",
+          "displayName": "hostless-rich-details",
+          "componentImportPath": "@plasmicpkgs/plasmic-rich-components/skinny/rich-details"
+        },
+        {
+          "id": "Hh2OL1EveIF",
+          "name": "RichList",
+          "displayName": "hostless-rich-list",
+          "componentImportPath": "@plasmicpkgs/plasmic-rich-components/skinny/rich-list"
+        },
+        {
+          "id": "UzObi2yVH_DH",
+          "name": "RichCalendar",
+          "displayName": "hostless-rich-calendar",
+          "componentImportPath": "@plasmicpkgs/plasmic-rich-components/skinny/rich-calendar",
+          "helper": {
+            "name": "calendarHelpers",
+            "importPath": "@plasmicpkgs/plasmic-rich-components/skinny/rich-calendar"
+          }
+        }
+      ],
+      "customFunctions": [],
+      "jsBundleThemes": []
     }
   ],
   "globalVariants": {

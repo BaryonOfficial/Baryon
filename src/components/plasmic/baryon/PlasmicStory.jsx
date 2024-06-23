@@ -22,6 +22,7 @@ import Button2 from "../../Button2"; // plasmic-import: EPGJPtXx-yjL/component
 import BaryonFooter from "../../BaryonFooter"; // plasmic-import: FKV3u0E4hZrB/component
 import "@plasmicapp/react-web/lib/plasmic.css";
 import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css"; // plasmic-import: ohDidvG9XsCeFumugENU3J/projectcss
+import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicStory.module.css"; // plasmic-import: d77sIRMlxQMG/css
 import ChecksvgIcon from "./icons/PlasmicIcon__Checksvg"; // plasmic-import: F3iOqCFKuA-k/icon
@@ -60,6 +61,7 @@ function PlasmicStory__RenderFunc(props) {
             projectcss.plasmic_mixins,
             projectcss.plasmic_tokens,
             plasmic_antd_5_hostless_css.plasmic_tokens,
+            plasmic_plasmic_rich_components_css.plasmic_tokens,
             sty.story
           )}
         >
@@ -154,6 +156,7 @@ function PlasmicStory__RenderFunc(props) {
                   }
                   link={`/`}
                   shape={"rounded"}
+                  size={"compact"}
                   startIcon={
                     <ChecksvgIcon
                       className={classNames(projectcss.all, sty.svg__pmpBr)}
@@ -389,6 +392,7 @@ function PlasmicStory__RenderFunc(props) {
                           }
                         }}
                         shape={"rounded"}
+                        size={"compact"}
                         startIcon={
                           <ChecksvgIcon
                             className={classNames(

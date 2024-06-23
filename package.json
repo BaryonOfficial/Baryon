@@ -10,12 +10,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ant-design/icons": "^5.3.7",
+    "@ant-design/pro-components": "^2.6.4",
     "@ffmpeg/ffmpeg": "^0.12.10",
     "@ffmpeg/util": "^0.12.1",
     "@plasmicapp/react-web": "^0.2.340",
     "@plasmicpkgs/antd5": "^0.0.238",
     "@plasmicpkgs/plasmic-basic-components": "^0.0.217",
     "@plasmicpkgs/plasmic-nav": "^0.0.167",
+    "@plasmicpkgs/plasmic-rich-components": "^1.0.187",
     "@plasmicpkgs/react-awesome-reveal": "^3.8.198",
     "@plasmicpkgs/react-scroll-parallax": "^0.0.204",
     "@react-three/drei": "^9.107.0",

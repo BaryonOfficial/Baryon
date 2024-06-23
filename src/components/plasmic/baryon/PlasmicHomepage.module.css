@@ -35,6 +35,11 @@
   grid-column-start: 1 !important;
   grid-column-end: -1 !important;
 }
+@media (min-width: 0px) and (max-width: 768px) {
+  .siteNavBar:global(.__wab_instance) {
+    height: 69px;
+  }
+}
 .section {
   display: grid;
   position: relative;

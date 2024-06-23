@@ -88,11 +88,11 @@ export default function GlobalContextsProvider(props) {
           ? antdConfigProviderProps.themeStyles
           : true
           ? {
-              fontFamily: "Inter",
-              fontSize: "16px",
-              fontWeight: "400",
+              fontFamily: "Ubuntu",
+              fontSize: "24px",
+              fontWeight: "500",
               lineHeight: "1.5",
-              color: "#535353",
+              color: "#FFFFFFD9",
               letterSpacing: "normal"
             }
           : undefined
