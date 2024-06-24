@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 
-export default function VRControl( renderer ) {
+export default function VRControl(renderer) {
 
 	const controllers = [];
 	const controllerGrips = [];
@@ -16,14 +16,14 @@ export default function VRControl( renderer ) {
 	// Lines helpers
 	//////////////////
 
-	const material = new THREE.MeshBasicMaterial( {
+	const material = new THREE.MeshBasicMaterial({
 		color: 0xffffff,
-		alphaMap: new THREE.CanvasTexture( generateRayTexture() ),
+		alphaMap: new THREE.CanvasTexture(generateRayTexture()),
 		transparent: true
-	} );
+	});
 
-	const geometry = new THREE.BufferGeometry().setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - .2 ) ] );
-	const linesHelper = new THREE.Line( geometry );
+	const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, - .2)]);
+	const linesHelper = new THREE.Line(geometry);
 	linesHelper.name = 'line';
 
 
@@ -31,52 +31,52 @@ export default function VRControl( renderer ) {
 	// Point helper
 	/////////////////
 
-	const spriteMaterial = new THREE.SpriteMaterial( {
-		map: new THREE.CanvasTexture( generatePointerTexture() ),
+	const spriteMaterial = new THREE.SpriteMaterial({
+		map: new THREE.CanvasTexture(generatePointerTexture()),
 		sizeAttenuation: false,
 		depthTest: false
-	} );
+	});
 
-	const pointer = new THREE.Sprite( spriteMaterial );
+	const pointer = new THREE.Sprite(spriteMaterial);
 
-	pointer.scale.set( 0.015, 0.015, 1 );
+	pointer.scale.set(0.015, 0.015, 1);
 	pointer.renderOrder = Infinity;
 
 	////////////////
 	// Controllers
 	////////////////
 
-	const controller1 = renderer.xr.getController( 0 );
-	const controller2 = renderer.xr.getController( 1 );
+	const controller1 = renderer.xr.getController(0);
+	const controller2 = renderer.xr.getController(1);
 
 	controller1.name = 'controller-right';
 	controller2.name = 'controller-left';
 
-	const controllerGrip1 = renderer.xr.getControllerGrip( 0 );
-	const controllerGrip2 = renderer.xr.getControllerGrip( 1 );
+	const controllerGrip1 = renderer.xr.getControllerGrip(0);
+	const controllerGrip2 = renderer.xr.getControllerGrip(1);
 
-	if ( controller1 ) controllers.push( controller1 );
-	if ( controller2 ) controllers.push( controller2 );
+	if (controller1) controllers.push(controller1);
+	if (controller2) controllers.push(controller2);
 
-	if ( controllerGrip1 ) controllerGrips.push( controllerGrip1 );
-	if ( controllerGrip2 ) controllerGrips.push( controllerGrip2 );
+	if (controllerGrip1) controllerGrips.push(controllerGrip1);
+	if (controllerGrip2) controllerGrips.push(controllerGrip2);
 
-	controllers.forEach( ( controller ) => {
+	controllers.forEach((controller) => {
 
 		const ray = linesHelper.clone();
 		const point = pointer.clone();
 
-		controller.add( ray, point );
+		controller.add(ray, point);
 		controller.ray = ray;
 		controller.point = point;
 
-	} );
+	});
 
-	controllerGrips.forEach( ( controllerGrip ) => {
+	controllerGrips.forEach((controllerGrip) => {
 
-		controllerGrip.add( controllerModelFactory.createControllerModel( controllerGrip ) );
+		controllerGrip.add(controllerModelFactory.createControllerModel(controllerGrip));
 
-	} );
+	});
 
 	//////////////
 	// Functions
@@ -86,28 +86,28 @@ export default function VRControl( renderer ) {
 
 	// Set the passed ray to match the given controller pointing direction
 
-	function setFromController( controllerID, ray ) {
+	function setFromController(controllerID, ray) {
 
-		const controller = controllers[ controllerID ];
+		const controller = controllers[controllerID];
 
 		// Position the intersection ray
 
-		dummyMatrix.identity().extractRotation( controller.matrixWorld );
+		dummyMatrix.identity().extractRotation(controller.matrixWorld);
 
-		ray.origin.setFromMatrixPosition( controller.matrixWorld );
-		ray.direction.set( 0, 0, -1 ).applyMatrix4( dummyMatrix );
+		ray.origin.setFromMatrixPosition(controller.matrixWorld);
+		ray.direction.set(0, 0, -1).applyMatrix4(dummyMatrix);
 
 	}
 
 	// Position the chosen controller's pointer at the given point in space.
 	// Should be called after raycaster.intersectObject() found an intersection point.
 
-	function setPointerAt( controllerID, vec ) {
+	function setPointerAt(controllerID, vec) {
 
-		const controller = controllers[ controllerID ];
-		const localVec = controller.worldToLocal( vec );
+		const controller = controllers[controllerID];
+		const localVec = controller.worldToLocal(vec);
 
-		controller.point.position.copy( localVec );
+		controller.point.position.copy(localVec);
 		controller.point.visible = true;
 
 	}
@@ -131,18 +131,18 @@ export default function VRControl( renderer ) {
 
 function generateRayTexture() {
 
-	const canvas = document.createElement( 'canvas' );
+	const canvas = document.createElement('canvas');
 	canvas.width = 64;
 	canvas.height = 64;
 
-	const ctx = canvas.getContext( '2d' );
+	const ctx = canvas.getContext('2d');
 
-	const gradient = ctx.createLinearGradient( 0, 0, 64, 0 );
-	gradient.addColorStop( 0, 'black' );
-	gradient.addColorStop( 1, 'white' );
+	const gradient = ctx.createLinearGradient(0, 0, 64, 0);
+	gradient.addColorStop(0, 'black');
+	gradient.addColorStop(1, 'white');
 
 	ctx.fillStyle = gradient;
-	ctx.fillRect( 0, 0, 64, 64 );
+	ctx.fillRect(0, 0, 64, 64);
 
 	return canvas;
 
@@ -152,14 +152,14 @@ function generateRayTexture() {
 
 function generatePointerTexture() {
 
-	const canvas = document.createElement( 'canvas' );
+	const canvas = document.createElement('canvas');
 	canvas.width = 64;
 	canvas.height = 64;
 
-	const ctx = canvas.getContext( '2d' );
+	const ctx = canvas.getContext('2d');
 
 	ctx.beginPath();
-	ctx.arc( 32, 32, 29, 0, 2 * Math.PI );
+	ctx.arc(32, 32, 29, 0, 2 * Math.PI);
 	ctx.lineWidth = 5;
 	ctx.stroke();
 	ctx.fillStyle = 'white';

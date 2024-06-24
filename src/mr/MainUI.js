@@ -1,6 +1,6 @@
-import * as THREE from 'three'
+import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import ThreeMeshUI from 'three-mesh-ui'
+import ThreeMeshUI from 'three-mesh-ui';
 import { playlists, images } from '../utils/utils';
 import { baryon } from '../baryon/Baryon';
 

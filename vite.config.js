@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 import postcssConfig from './postcss.config.js';
 import glsl from 'vite-plugin-glsl';
 import topLevelAwait from 'vite-plugin-top-level-await';
+import fs from 'fs';
+import path from 'path';
 
 export default defineConfig({
   css: {
@@ -21,6 +23,10 @@ export default defineConfig({
     },
     host: true, // Open to local network and display URL
     open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env), // Open if it's not a CodeSandbox
+    https: {
+      key: fs.readFileSync(path.resolve(__dirname, 'localhost.key')),
+      cert: fs.readFileSync(path.resolve(__dirname, 'localhost.crt')),
+    },
   },
   build: {
     outDir: 'dist', // Output in the dist/ folder

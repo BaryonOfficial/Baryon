@@ -1,20 +1,37 @@
-import * as THREE from 'three'
+import * as THREE from 'three';
 
-function create3DKochFractal(scene, fractalQueue, iterations, length, start, end, color, directions) {
+// Vertex Shader
+const vertexShader = `
+  varying vec3 vPosition;
+  void main() {
+    vPosition = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+// Fragment Shader
+const fragmentShader = `
+  varying vec3 vPosition;
+  uniform vec3 uCenterColor;
+  uniform vec3 uOuterColor;
+
+  void main() {
+    float distanceFromCenter = length(vPosition - vec3(0, 0, 0));
+    float gradient = distanceFromCenter / 0.5; // Adjust the divisor to control the gradient effect
+    vec3 color = mix(uCenterColor, uOuterColor, gradient);
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+function create3DKochFractal(points, angle, fractalQueue, iterations, length, start, end, directions) {
     if (iterations === 0) {
-        if (!color) {
-            color = new THREE.Color("black");
-        }
-        const geometry = new THREE.BufferGeometry().setFromPoints([start, end]);
-        const material = new THREE.LineBasicMaterial({ color: color });
-        const line = new THREE.Line(geometry, material);
-        scene.add(line);
+        points.push(start.x, start.y, start.z, end.x, end.y, end.z);
         return;
     }
 
     const direction = end.clone().sub(start).normalize();
     const distance = start.distanceTo(end) / 3;
-    const angleRad = THREE.MathUtils.degToRad(85);
+    const angleRad = THREE.MathUtils.degToRad(angle);
 
     const p1 = start.clone().add(direction.clone().multiplyScalar(distance));
     const p2 = p1.clone().add(new THREE.Vector3(
@@ -25,39 +42,10 @@ function create3DKochFractal(scene, fractalQueue, iterations, length, start, end
     const p3 = start.clone().add(direction.clone().multiplyScalar(2 * distance));
     const p4 = end;
 
-    // Add recursive tasks to the queue
-    fractalQueue.push({
-        iterations: iterations - 1,
-        length: length / 3,
-        start: start,
-        end: p1,
-        color: color,
-        directions: directions
-    });
-    fractalQueue.push({
-        iterations: iterations - 1,
-        length: length / 3,
-        start: p1,
-        end: p2,
-        color: color,
-        directions: directions
-    });
-    fractalQueue.push({
-        iterations: iterations - 1,
-        length: length / 3,
-        start: p2,
-        end: p3,
-        color: color,
-        directions: directions
-    });
-    fractalQueue.push({
-        iterations: iterations - 1,
-        length: length / 3,
-        start: p3,
-        end: p4,
-        color: color,
-        directions: directions
-    });
+    fractalQueue.push({ iterations: iterations - 1, length: length / 3, start: start, end: p1, directions: directions });
+    fractalQueue.push({ iterations: iterations - 1, length: length / 3, start: p1, end: p2, directions: directions });
+    fractalQueue.push({ iterations: iterations - 1, length: length / 3, start: p2, end: p3, directions: directions });
+    fractalQueue.push({ iterations: iterations - 1, length: length / 3, start: p3, end: p4, directions: directions });
 
     directions.forEach(dir => {
         const offset = new THREE.Vector3(...dir).multiplyScalar(distance);
@@ -66,69 +54,73 @@ function create3DKochFractal(scene, fractalQueue, iterations, length, start, end
         const p3_alt = p3.clone().add(offset);
         const p4_alt = p4.clone().add(offset);
 
-        fractalQueue.push({
-            iterations: iterations - 1,
-            length: length / 3,
-            start: p1,
-            end: p1_alt,
-            color: color,
-            directions: directions
-        });
-        fractalQueue.push({
-            iterations: iterations - 1,
-            length: length / 3,
-            start: p2,
-            end: p2_alt,
-            color: color,
-            directions: directions
-        });
-        fractalQueue.push({
-            iterations: iterations - 1,
-            length: length / 3,
-            start: p3,
-            end: p3_alt,
-            color: color,
-            directions: directions
-        });
-        fractalQueue.push({
-            iterations: iterations - 1,
-            length: length / 3,
-            start: p4,
-            end: p4_alt,
-            color: color,
-            directions: directions
-        });
+        fractalQueue.push({ iterations: iterations - 1, length: length / 3, start: p1, end: p1_alt, directions: directions });
+        fractalQueue.push({ iterations: iterations - 1, length: length / 3, start: p2, end: p2_alt, directions: directions });
+        fractalQueue.push({ iterations: iterations - 1, length: length / 3, start: p3, end: p3_alt, directions: directions });
+        fractalQueue.push({ iterations: iterations - 1, length: length / 3, start: p4, end: p4_alt, directions: directions });
     });
 }
 
 export class Koch extends THREE.Object3D {
-    constructor(color = null, iterations = 1, directions = null) {
+    constructor(angle = 90, iterations = 1, centerColor = new THREE.Color("black"), outerColor = new THREE.Color("red"), directions = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) {
         super();
 
+        console.log(centerColor, outerColor)
+
         this.fractalQueue = [];
+        this.points = [];
 
-        this.color = (!color) ? new THREE.Color("black") : color;
-        this.directions = (!directions) ? [[1, 0, 0], [0, 1, 0], [0, 0, 1]] : directions
-        console.log("color", this.color);
+        this.color = new THREE.Color("black");
+        this.directions = directions;
+        this.angle = angle;
+        this.geometry = new THREE.BufferGeometry();
+        this.positions = new Float32Array(100000 * 3 * 2); // Adjust size as needed
+        this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+        // Convert colors to arrays of floats
+        const centerColorArray = centerColor.toArray();
+        const outerColorArray = outerColor.toArray();
 
-        // Add initial fractal task to the queue
+        console.log(centerColorArray, outerColorArray)
+
+        this.material = new THREE.ShaderMaterial({
+            vertexShader,
+            fragmentShader,
+            uniforms: {
+                uCenter: { value: new THREE.Vector3(0, 0, 0) },
+                uCenterColor: { value: centerColorArray },
+                uOuterColor: { value: outerColorArray }
+            }
+        });
+
+        this.line = new THREE.LineSegments(this.geometry, this.material);
+        this.add(this.line);
+
         this.fractalQueue.push({
             iterations: iterations,
             length: 10,
             start: new THREE.Vector3(0, 0, 0),
-            end: new THREE.Vector3(0, 0, 50),
-            color: this.color,
-            directions: this.directions,
+            end: new THREE.Vector3(0, 0, 1),
+            directions: this.directions
         });
-
-        this.scale.multiplyScalar(1 / 50)
     }
 
     processFractalQueue() {
+
         if (this.fractalQueue.length > 0) {
             const task = this.fractalQueue.shift();
-            create3DKochFractal(this, this.fractalQueue, task.iterations, task.length, task.start, task.end, task.color, task.directions);
+            create3DKochFractal(this.points, this.angle, this.fractalQueue, task.iterations, task.length, task.start, task.end, task.directions);
+
+            this.updateGeometry();
         }
+    }
+
+    updateGeometry() {
+        console.log("hi")
+        const positions = this.geometry.attributes.position.array;
+        for (let i = 0; i < this.points.length; i++) {
+            positions[i] = this.points[i];
+        }
+        this.geometry.attributes.position.needsUpdate = true;
     }
 
     update() {
@@ -137,71 +129,25 @@ export class Koch extends THREE.Object3D {
 }
 
 export class Koch4D extends THREE.Object3D {
-    constructor() {
+    constructor(centerColor, outerColor) {
         super();
 
-        this.koch1 = new Koch(new THREE.Color(0xd79cff), 3, [
-            [-3, 0, 0],
-            [0, -4, 0],
-            [-4, 0, 0]
-        ]);
-
-        this.koch2 = new Koch(new THREE.Color(0x6c696e), 3, [
-            [Math.round(4), 0, 0],
-            [0, 0, Math.round(-3 * Math.random())],
-            [0, 0, Math.round(2 * Math.random())]
-        ]);
-
-        this.koch3 = new Koch(new THREE.Color(0xdbbc67), 3, [
-            [-Math.round(-4 * Math.random()), 0, 0],
-            [0, Math.round(4 * Math.random()), 0],
-            [0, 0, Math.round(2 * Math.random() + 1)]
-        ]);
-
-        this.koch3.scale.multiplyScalar(2)
-
-        // this.koch4 = new Koch(new THREE.Color("pink"), 3, [
-        //     [Math.round(2 * Math.random() + 1), 0, 0],
-        //     [0, Math.round(2 * Math.random() + 1), 0],
-        //     [0, 0, Math.round(-2 * Math.random() + 1)]
-        // ])
-
-        this.add(this.koch1, this.koch2, this.koch3);
-
-        this.position.set(0, 2, -2)
-        this.endPosition = new THREE.Vector3(0, 6, -6);
-        this.startPosition = this.position.clone();
-        this.startTime = null;
-        this.duration = 2;
+        this.koch_1 = new Koch(45, 3, centerColor, outerColor);
+        // this.koch_2 = new Koch(45, 2, centerColor, outerColor);
     }
 
-    dispose() {
+    update() {
+        this.koch_1.update();
+        // this.koch_2.update();
+    }
+}
 
+export class RandomKoch4D extends THREE.Object3D {
+    constructor() {
+        super();
     }
 
-    update(time) {
-        if (this.startTime === null) {
-            this.startTime = time;
-        }
-
-        const elapsedTime = (time - this.startTime) / 20; // Convert to seconds
-        const t = Math.min(elapsedTime / this.duration, 1); // Calculate interpolation factor (0 to 1)
-
-        this.position.lerpVectors(this.startPosition, this.endPosition, t);
-
-        console.log(this.position, t, elapsedTime);
-
-        this.koch1.update();
-        this.koch2.update();
-        this.koch3.update();
-
-        this.koch1.rotation.x = -Math.sin(time / 10)
-        this.koch1.rotation.y = -Math.sin(time / 10)
-        this.koch2.rotation.z = Math.sin(time / 10)
-        this.koch2.rotation.y = Math.tan(time / 10)
-        this.koch3.rotation.x = Math.sin(time / 4)
-
-        this.rotation.z += 0.001;
+    update() {
 
     }
 }

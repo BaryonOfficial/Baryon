@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import Stats from 'stats.js';
 import { XRButton } from 'three/examples/jsm/Addons.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import ThreeMeshUI from 'three-mesh-ui'
@@ -7,11 +8,15 @@ import MainUI from './mr/MainUI';
 import { baryon } from './baryon/Baryon';
 import { Koch, Koch4D } from './XRE/Koch';
 
+const stats = new Stats();
+stats.showPanel(0)
+document.body.appendChild(stats.dom);
+
 let container, xrSession, clock, listener;
 let camera, scene, renderer;
 let vrControl;
 
-let mainUI, koch4D;
+let mainUI, koch, koch4D;
 
 let controls, group;
 
@@ -58,8 +63,8 @@ function init() {
     scene.add(
         new THREE.AxesHelper(1)
     )
-    // renderer
 
+    // renderer
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -138,9 +143,9 @@ function init() {
     // objsToTest.push(...baryonPlaylistUI.objsToTest);
     scene.add(mainUI);
 
-    koch4D = new Koch4D();
-    scene.add(koch4D);
-
+    koch = new Koch(45, 3, new THREE.Color("red"), new THREE.Color("pink"));
+    scene.add(koch);
+    koch.position.set(0, 1.5, -5)
     clock = new THREE.Clock();
 }
 
@@ -155,16 +160,17 @@ function onWindowResize() {
 // Game loop 
 
 function animate() {
-    const deltaTime = clock.getDelta();
+    stats.begin();
     const elapstedTime = clock.getElapsedTime();
 
     ThreeMeshUI.update();
     baryon.update(elapstedTime);
-    koch4D.update(elapstedTime);
+    koch.update();
     controls.update();
     renderer.render(scene, camera);
 
-    updateButtons();
+    updateButtons(elapstedTime);
+    stats.end();
 }
 
 function updateButtons() {
@@ -203,10 +209,8 @@ function updateButtons() {
         } else {
 
             // Component.setState internally call component.set with the options you defined in component.setupState
-            intersect.object.setState('hovered');
-
+            intersect.object.setState('hovered')
         }
-
     }
 
     // Update non-targeted buttons state
@@ -217,9 +221,7 @@ function updateButtons() {
 
             // Component.setState internally call component.set with the options you defined in component.setupState
             obj.setState('idle');
-
         }
-
     });
 
 }
@@ -237,26 +239,10 @@ function raycast() {
             intersection[0].object = obj;
 
             return intersection[0];
-
         }
 
         return closestIntersection;
 
     }, null);
 
-}
-
-function loadTrack(index) {
-    if (currentAudio) {
-        currentAudio.stop();
-        currentAudio = null;
-    }
-
-    currentAudio = new THREE.Audio(listener);
-    audioLoader.load(tracks[index], function (buffer) {
-        currentAudio.setBuffer(buffer);
-        currentAudio.setLoop(false);
-        currentAudio.setVolume(0.5);
-        currentAudio.play();
-    });
 }
