@@ -132,6 +132,11 @@ function PlasmicSwitch__RenderFunc(props) {
             $state,
             "isDisabled",
             "isDisabled"
+          ),
+          [sty.skeumorphicTogglenoLabel]: hasVariant(
+            $state,
+            "noLabel",
+            "noLabel"
           )
         })}
         micToggleOff={

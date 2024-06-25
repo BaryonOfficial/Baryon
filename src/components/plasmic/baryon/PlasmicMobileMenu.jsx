@@ -10,12 +10,11 @@
 // Component: dfiZXaS0blw8
 import * as React from "react";
 import {
-  PlasmicLink as PlasmicLink__,
   Stack as Stack__,
   classNames,
   createPlasmicElementProxy,
   deriveRenderOpts,
-  useTrigger
+  useDollarState
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 import Button2 from "../../Button2"; // plasmic-import: EPGJPtXx-yjL/component
@@ -25,7 +24,6 @@ import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plas
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicMobileMenu.module.css"; // plasmic-import: dfiZXaS0blw8/css
 import BaryonLogoWhite1Icon from "./icons/PlasmicIcon__BaryonLogoWhite1"; // plasmic-import: reN7qi7eBogy/icon
-import HamburgerMenuSvgrepoComsvgIcon from "./icons/PlasmicIcon__HamburgerMenuSvgrepoComsvg"; // plasmic-import: yQSNegzl0PI8/icon
 
 createPlasmicElementProxy;
 
@@ -45,21 +43,30 @@ function PlasmicMobileMenu__RenderFunc(props) {
   const $ctx = useDataEnv?.() || {};
   const refsRef = React.useRef({});
   const $refs = refsRef.current;
-  const [isRootFocusWithin, triggerRootFocusWithinProps] = useTrigger(
-    "useFocusedWithin",
-    {}
+  const stateSpecs = React.useMemo(
+    () => [
+      {
+        path: "isChecked",
+        type: "private",
+        variableType: "boolean",
+        initFunc: ({ $props, $state, $queries, $ctx }) => false
+      }
+    ],
+
+    [$props, $ctx, $refs]
   );
-  const triggers = {
-    focusWithin_root: isRootFocusWithin
-  };
+  const $state = useDollarState(stateSpecs, {
+    $props,
+    $ctx,
+    $queries: {},
+    $refs
+  });
   return (
-    <Stack__
-      as={"div"}
+    <div
       data-plasmic-name={"root"}
       data-plasmic-override={overrides.root}
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
-      hasGap={true}
       className={classNames(
         projectcss.all,
         projectcss.root_reset,
@@ -70,210 +77,107 @@ function PlasmicMobileMenu__RenderFunc(props) {
         plasmic_plasmic_rich_components_css.plasmic_tokens,
         sty.root
       )}
-      data-plasmic-trigger-props={[triggerRootFocusWithinProps]}
     >
-      <BaryonLogoWhite1Icon
-        className={classNames(projectcss.all, sty.svg__b1Snf)}
-        role={"img"}
-      />
-
-      <Stack__
-        as={"div"}
-        data-plasmic-name={"freeBox"}
-        data-plasmic-override={overrides.freeBox}
-        hasGap={true}
-        className={classNames(projectcss.all, sty.freeBox)}
-        tabIndex={0}
-      >
-        <div
-          className={classNames(
-            projectcss.all,
-            projectcss.__wab_text,
-            sty.text__smwVs
-          )}
-          onClick={async event => {
-            const $steps = {};
-            $steps["goToHomepage"] = true
-              ? (() => {
-                  const actionArgs = { destination: `/` };
-                  return (({ destination }) => {
-                    if (
-                      typeof destination === "string" &&
-                      destination.startsWith("#")
-                    ) {
-                      document
-                        .getElementById(destination.substr(1))
-                        .scrollIntoView({ behavior: "smooth" });
-                    } else {
-                      location.assign(destination);
-                    }
-                  })?.apply(null, [actionArgs]);
-                })()
-              : undefined;
-            if (
-              $steps["goToHomepage"] != null &&
-              typeof $steps["goToHomepage"] === "object" &&
-              typeof $steps["goToHomepage"].then === "function"
-            ) {
-              $steps["goToHomepage"] = await $steps["goToHomepage"];
-            }
-          }}
-        >
-          {"Visualizer"}
-        </div>
-        <div
-          className={classNames(
-            projectcss.all,
-            projectcss.__wab_text,
-            sty.text___4I3Y
-          )}
-          onClick={async event => {
-            const $steps = {};
-            $steps["goToPlugin"] = true
-              ? (() => {
-                  const actionArgs = { destination: `/plugin` };
-                  return (({ destination }) => {
-                    if (
-                      typeof destination === "string" &&
-                      destination.startsWith("#")
-                    ) {
-                      document
-                        .getElementById(destination.substr(1))
-                        .scrollIntoView({ behavior: "smooth" });
-                    } else {
-                      location.assign(destination);
-                    }
-                  })?.apply(null, [actionArgs]);
-                })()
-              : undefined;
-            if (
-              $steps["goToPlugin"] != null &&
-              typeof $steps["goToPlugin"] === "object" &&
-              typeof $steps["goToPlugin"].then === "function"
-            ) {
-              $steps["goToPlugin"] = await $steps["goToPlugin"];
-            }
-          }}
-        >
-          {"Plugin"}
-        </div>
-        <div
-          className={classNames(
-            projectcss.all,
-            projectcss.__wab_text,
-            sty.text__lSrV
-          )}
-          onClick={async event => {
-            const $steps = {};
-            $steps["goToStory"] = true
-              ? (() => {
-                  const actionArgs = { destination: `/story` };
-                  return (({ destination }) => {
-                    if (
-                      typeof destination === "string" &&
-                      destination.startsWith("#")
-                    ) {
-                      document
-                        .getElementById(destination.substr(1))
-                        .scrollIntoView({ behavior: "smooth" });
-                    } else {
-                      location.assign(destination);
-                    }
-                  })?.apply(null, [actionArgs]);
-                })()
-              : undefined;
-            if (
-              $steps["goToStory"] != null &&
-              typeof $steps["goToStory"] === "object" &&
-              typeof $steps["goToStory"].then === "function"
-            ) {
-              $steps["goToStory"] = await $steps["goToStory"];
-            }
-          }}
-        >
-          {"Story"}
-        </div>
-        <PlasmicLink__
-          data-plasmic-name={"link"}
-          data-plasmic-override={overrides.link}
-          className={classNames(
-            projectcss.all,
-            projectcss.a,
-            projectcss.__wab_text,
-            sty.link
-          )}
-          href={"https://foundation.app/@Baryon"}
-          platform={"react"}
-          target={"_blank"}
-        >
-          {"Art"}
-        </PlasmicLink__>
-        <div
-          className={classNames(
-            projectcss.all,
-            projectcss.__wab_text,
-            sty.text__bqkk9
-          )}
-          onClick={async event => {
-            const $steps = {};
-            $steps["goToPage"] = true
-              ? (() => {
-                  const actionArgs = {};
-                  return (({ destination }) => {
-                    if (
-                      typeof destination === "string" &&
-                      destination.startsWith("#")
-                    ) {
-                      document
-                        .getElementById(destination.substr(1))
-                        .scrollIntoView({ behavior: "smooth" });
-                    } else {
-                      location.assign(destination);
-                    }
-                  })?.apply(null, [actionArgs]);
-                })()
-              : undefined;
-            if (
-              $steps["goToPage"] != null &&
-              typeof $steps["goToPage"] === "object" &&
-              typeof $steps["goToPage"].then === "function"
-            ) {
-              $steps["goToPage"] = await $steps["goToPage"];
-            }
-          }}
-        >
-          {"Art"}
-        </div>
-      </Stack__>
-      <div
-        className={classNames(
-          projectcss.all,
-          projectcss.__wab_text,
-          sty.text__vBpFy
-        )}
-      >
-        {"Baryon"}
-      </div>
-      <Button2
-        data-plasmic-name={"button2"}
-        data-plasmic-override={overrides.button2}
-        className={classNames("__wab_instance", sty.button2)}
-        color={"clear"}
-      >
-        <HamburgerMenuSvgrepoComsvgIcon
-          className={classNames(projectcss.all, sty.svg___7KlJh)}
+      <div className={classNames(projectcss.all, sty.freeBox__mhOq)}>
+        <BaryonLogoWhite1Icon
+          data-plasmic-name={"svg"}
+          data-plasmic-override={overrides.svg}
+          className={classNames(projectcss.all, sty.svg)}
           role={"img"}
         />
-      </Button2>
-    </Stack__>
+
+        <div
+          className={classNames(
+            projectcss.all,
+            projectcss.__wab_text,
+            sty.text__vBpFy
+          )}
+        >
+          {"Baryon"}
+        </div>
+      </div>
+      <Stack__
+        as={"div"}
+        hasGap={true}
+        className={classNames(projectcss.all, sty.freeBox__giyLj)}
+      >
+        <Button2
+          className={classNames("__wab_instance", sty.button2__hd4G)}
+          color={"clear"}
+          link={`/`}
+          shape={"rounded"}
+          size={"compact"}
+        >
+          <div
+            className={classNames(
+              projectcss.all,
+              projectcss.__wab_text,
+              sty.text___50Gvn
+            )}
+          >
+            {"Visualizer"}
+          </div>
+        </Button2>
+        <Button2
+          className={classNames("__wab_instance", sty.button2___1ZaxA)}
+          color={"clear"}
+          link={`/plugin`}
+          shape={"rounded"}
+          size={"compact"}
+        >
+          <div
+            className={classNames(
+              projectcss.all,
+              projectcss.__wab_text,
+              sty.text__tZOyT
+            )}
+          >
+            {"Plugin"}
+          </div>
+        </Button2>
+        <Button2
+          className={classNames("__wab_instance", sty.button2__qCCs)}
+          color={"clear"}
+          link={`/story`}
+          shape={"rounded"}
+          size={"compact"}
+        >
+          <div
+            className={classNames(
+              projectcss.all,
+              projectcss.__wab_text,
+              sty.text___2GkMw
+            )}
+          >
+            {"Story"}
+          </div>
+        </Button2>
+        <Button2
+          className={classNames("__wab_instance", sty.button2__dn2Pb)}
+          color={"clear"}
+          link={"https://foundation.app/@Baryon"}
+          shape={"rounded"}
+          size={"compact"}
+          target={true}
+        >
+          <div
+            className={classNames(
+              projectcss.all,
+              projectcss.__wab_text,
+              sty.text__vTmR5
+            )}
+          >
+            {"Art"}
+          </div>
+        </Button2>
+      </Stack__>
+    </div>
   );
 }
 
 const PlasmicDescendants = {
-  root: ["root", "freeBox", "link", "button2"],
-  freeBox: ["freeBox", "link"],
-  link: ["link"],
-  button2: ["button2"]
+  root: ["root", "svg"],
+  svg: ["svg"]
 };
 
 function makeNodeComponent(nodeName) {
@@ -308,9 +212,7 @@ export const PlasmicMobileMenu = Object.assign(
   makeNodeComponent("root"),
   {
     // Helper components rendering sub-elements
-    freeBox: makeNodeComponent("freeBox"),
-    link: makeNodeComponent("link"),
-    button2: makeNodeComponent("button2"),
+    svg: makeNodeComponent("svg"),
     // Metadata about props expected for PlasmicMobileMenu
     internalVariantProps: PlasmicMobileMenu__VariantProps,
     internalArgProps: PlasmicMobileMenu__ArgProps

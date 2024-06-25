@@ -4,6 +4,7 @@
 
 body {
   border: none;
+  overflow-x: hidden;
 }
 
 /* Updated button styles using Tailwind's default utility classes */

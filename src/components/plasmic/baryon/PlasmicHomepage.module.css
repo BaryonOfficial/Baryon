@@ -28,6 +28,7 @@
 .siteNavBar:global(.__wab_instance) {
   position: sticky;
   width: 100%;
+  height: 72px;
   left: 0px;
   top: 0px;
   z-index: 1;
@@ -38,6 +39,8 @@
 @media (min-width: 0px) and (max-width: 768px) {
   .siteNavBar:global(.__wab_instance) {
     height: 69px;
+    margin-top: 16px;
+    margin-bottom: 16px;
   }
 }
 .section {
@@ -96,6 +99,16 @@
 }
 .micModeToggle > * {
   grid-column: 4;
+}
+@media (min-width: 0px) and (max-width: 768px) {
+  .micModeToggle {
+    display: grid;
+  }
+}
+@media (min-width: 0px) and (max-width: 768px) {
+  .micModeToggle > * {
+    grid-column: 4;
+  }
 }
 .modeSettings {
   width: auto;

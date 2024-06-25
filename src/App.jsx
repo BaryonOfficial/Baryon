@@ -9,8 +9,8 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<Homepage />} />
-        <Route path="/story" element={<Story />} />
         <Route path="/plugin" element={<Plugin />} />
+        <Route path="/story" element={<Story />} />
       </Routes>
     </Router>
   );
