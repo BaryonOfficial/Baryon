@@ -19,6 +19,9 @@
   transform: none;
   flex-shrink: 0;
 }
+.skeumorphicTogglenoLabel:global(.__wab_instance) {
+  flex-shrink: 0;
+}
 .skeumorphicToggleisDisabled:global(.__wab_instance) {
   flex-shrink: 0;
 }

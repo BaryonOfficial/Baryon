@@ -14,12 +14,15 @@ import {
   Stack as Stack__,
   classNames,
   createPlasmicElementProxy,
-  deriveRenderOpts
+  deriveRenderOpts,
+  ensureGlobalVariants,
+  hasVariant
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 import SiteNavBar from "../../SiteNavBar"; // plasmic-import: xamm2QscKBA7/component
 import Button2 from "../../Button2"; // plasmic-import: EPGJPtXx-yjL/component
 import BaryonFooter from "../../BaryonFooter"; // plasmic-import: FKV3u0E4hZrB/component
+import { useScreenVariants as useScreenVariantspcuqpuXkf7V2 } from "./PlasmicGlobalVariant__Screen"; // plasmic-import: PcuqpuXKF7v2/globalVariant
 import "@plasmicapp/react-web/lib/plasmic.css";
 import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css"; // plasmic-import: ohDidvG9XsCeFumugENU3J/projectcss
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
@@ -46,6 +49,9 @@ function PlasmicStory__RenderFunc(props) {
   const $ctx = useDataEnv?.() || {};
   const refsRef = React.useRef({});
   const $refs = refsRef.current;
+  const globalVariants = ensureGlobalVariants({
+    screen: useScreenVariantspcuqpuXkf7V2()
+  });
   return (
     <React.Fragment>
       <div className={projectcss.plasmic_page_wrapper}>
@@ -65,13 +71,14 @@ function PlasmicStory__RenderFunc(props) {
             sty.story
           )}
         >
-          <SiteNavBar
-            data-plasmic-name={"siteNavBar"}
-            data-plasmic-override={overrides.siteNavBar}
-            className={classNames("__wab_instance", sty.siteNavBar)}
-          />
-
-          <div className={classNames(projectcss.all, sty.freeBox__eEPlX)}>
+          <div className={classNames(projectcss.all, sty.freeBox__arfn5)}>
+            <SiteNavBar
+              data-plasmic-name={"siteNavBar"}
+              data-plasmic-override={overrides.siteNavBar}
+              className={classNames("__wab_instance", sty.siteNavBar)}
+            />
+          </div>
+          <div className={classNames(projectcss.all, sty.freeBox__iOxIj)}>
             <Stack__
               as={"div"}
               data-plasmic-name={"foreground2"}
@@ -82,100 +89,74 @@ function PlasmicStory__RenderFunc(props) {
               <Stack__
                 as={"div"}
                 hasGap={true}
-                className={classNames(projectcss.all, sty.freeBox__f1Ecl)}
+                className={classNames(projectcss.all, sty.freeBox___7UySc)}
               >
                 <div
                   className={classNames(
                     projectcss.all,
                     projectcss.__wab_text,
-                    sty.text__gxMs5
+                    sty.text__dq2Xo
                   )}
                 >
-                  <React.Fragment>
-                    <React.Fragment>{"We make sound "}</React.Fragment>
-                    <span
-                      className={"plasmic_default__all plasmic_default__span"}
-                      style={{ textDecorationLine: "underline" }}
-                    >
-                      {"visible"}
-                    </span>
-                  </React.Fragment>
+                  {"We Make Sound Visible"}
                 </div>
                 <div
                   className={classNames(
                     projectcss.all,
                     projectcss.__wab_text,
-                    sty.text___0LcI
+                    sty.text___33Xl
                   )}
                 >
-                  <React.Fragment>
-                    <React.Fragment>{""}</React.Fragment>
-                    {
-                      <h4
-                        className={classNames(
-                          projectcss.all,
-                          projectcss.h4,
-                          projectcss.__wab_text,
-                          sty.h4__sthwC
-                        )}
-                      >
-                        <React.Fragment>
-                          <span
-                            className={
-                              "plasmic_default__all plasmic_default__span"
-                            }
-                            style={{ color: "#FFFFFFBF", fontWeight: 700 }}
-                          >
-                            {
-                              "The world's first 3D cymatics music visualizer reveals the hidden realm of sound."
-                            }
-                          </span>
-                        </React.Fragment>
-                      </h4>
-                    }
-
-                    <React.Fragment>{""}</React.Fragment>
-                  </React.Fragment>
+                  {
+                    "The world's first 3D cymatics visualizer that reveals the hidden realm of sound."
+                  }
                 </div>
               </Stack__>
-              <Stack__
-                as={"div"}
-                hasGap={true}
-                className={classNames(projectcss.all, sty.freeBox__aJnZ)}
+              <Button2
+                data-plasmic-name={"button2"}
+                data-plasmic-override={overrides.button2}
+                className={classNames("__wab_instance", sty.button2)}
+                color={"blue"}
+                onClick={async event => {
+                  const $steps = {};
+                  $steps["goToHomepage"] = true
+                    ? (() => {
+                        const actionArgs = { destination: `/` };
+                        return (({ destination }) => {
+                          if (
+                            typeof destination === "string" &&
+                            destination.startsWith("#")
+                          ) {
+                            document
+                              .getElementById(destination.substr(1))
+                              .scrollIntoView({ behavior: "smooth" });
+                          } else {
+                            location.assign(destination);
+                          }
+                        })?.apply(null, [actionArgs]);
+                      })()
+                    : undefined;
+                  if (
+                    $steps["goToHomepage"] != null &&
+                    typeof $steps["goToHomepage"] === "object" &&
+                    typeof $steps["goToHomepage"].then === "function"
+                  ) {
+                    $steps["goToHomepage"] = await $steps["goToHomepage"];
+                  }
+                }}
+                shape={"rounded"}
+                size={"compact"}
               >
-                <Button2
-                  data-plasmic-name={"button2"}
-                  data-plasmic-override={overrides.button2}
-                  className={classNames("__wab_instance", sty.button2)}
-                  color={"blue"}
-                  endIcon={
-                    <Icon38Icon
-                      className={classNames(projectcss.all, sty.svg__ldxIq)}
-                      role={"img"}
-                    />
-                  }
-                  link={`/`}
-                  shape={"rounded"}
-                  size={"compact"}
-                  startIcon={
-                    <ChecksvgIcon
-                      className={classNames(projectcss.all, sty.svg__pmpBr)}
-                      role={"img"}
-                    />
-                  }
-                  submitsForm={true}
+                <div
+                  className={classNames(
+                    projectcss.all,
+                    projectcss.__wab_text,
+                    sty.text__xz9F
+                  )}
                 >
-                  <div
-                    className={classNames(
-                      projectcss.all,
-                      projectcss.__wab_text,
-                      sty.text__lopjZ
-                    )}
-                  >
-                    {"Visualizer -->"}
-                  </div>
-                </Button2>
-              </Stack__>
+                  {"Visualizer -->"}
+                </div>
+              </Button2>
             </Stack__>
           </div>
           <section
@@ -206,11 +187,13 @@ function PlasmicStory__RenderFunc(props) {
                 <React.Fragment>{""}</React.Fragment>
                 {
                   <h4
+                    data-plasmic-name={"h4"}
+                    data-plasmic-override={overrides.h4}
                     className={classNames(
                       projectcss.all,
                       projectcss.h4,
                       projectcss.__wab_text,
-                      sty.h4__wD3Xf
+                      sty.h4
                     )}
                   >
                     {"A message from the founder"}
@@ -301,25 +284,47 @@ function PlasmicStory__RenderFunc(props) {
                           sty.text__wEuxi
                         )}
                       >
-                        <React.Fragment>
-                          <React.Fragment>{""}</React.Fragment>
-                          {
-                            <h5
-                              data-plasmic-name={"h5"}
-                              data-plasmic-override={overrides.h5}
-                              className={classNames(
-                                projectcss.all,
-                                projectcss.h5,
-                                projectcss.__wab_text,
-                                sty.h5
-                              )}
-                            >
-                              {"What if?"}
-                            </h5>
-                          }
+                        {hasVariant(globalVariants, "screen", "mobileOnly") ? (
+                          <React.Fragment>
+                            <React.Fragment>{""}</React.Fragment>
+                            {
+                              <h6
+                                data-plasmic-name={"h6"}
+                                data-plasmic-override={overrides.h6}
+                                className={classNames(
+                                  projectcss.all,
+                                  projectcss.h6,
+                                  projectcss.__wab_text,
+                                  sty.h6
+                                )}
+                              >
+                                {"What if?"}
+                              </h6>
+                            }
 
-                          <React.Fragment>{""}</React.Fragment>
-                        </React.Fragment>
+                            <React.Fragment>{""}</React.Fragment>
+                          </React.Fragment>
+                        ) : (
+                          <React.Fragment>
+                            <React.Fragment>{""}</React.Fragment>
+                            {
+                              <h5
+                                data-plasmic-name={"h5"}
+                                data-plasmic-override={overrides.h5}
+                                className={classNames(
+                                  projectcss.all,
+                                  projectcss.h5,
+                                  projectcss.__wab_text,
+                                  sty.h5
+                                )}
+                              >
+                                {"What if?"}
+                              </h5>
+                            }
+
+                            <React.Fragment>{""}</React.Fragment>
+                          </React.Fragment>
+                        )}
                       </div>
                       <div
                         className={classNames(
@@ -337,9 +342,60 @@ function PlasmicStory__RenderFunc(props) {
                           sty.text___7FEIq
                         )}
                       >
-                        {
-                          "At Baryon, we're forging a frontier where music and physics converge, transforming the vibrations of sound into breathtaking visuals that dance before your eyes. \n\nThrough cymatics-based sound visualization and next-generation light projection technology, we plan to captivate audiences and enrich the very fabric of our reality. "
-                        }
+                        {hasVariant(globalVariants, "screen", "mobileOnly") ? (
+                          <React.Fragment>
+                            <React.Fragment>
+                              {
+                                "At Baryon, we're forging a frontier where music and physics converge, transforming the vibrations of sound into breathtaking visuals that dance before your eyes. \n\nThrough "
+                              }
+                            </React.Fragment>
+                            <span
+                              className={
+                                "plasmic_default__all plasmic_default__span"
+                              }
+                              style={{ fontWeight: 700 }}
+                            >
+                              {"cymatics-based"}
+                            </span>
+                            <React.Fragment>
+                              {" sound visualization and next-generation"}
+                            </React.Fragment>
+                            <span
+                              className={
+                                "plasmic_default__all plasmic_default__span"
+                              }
+                              style={{ fontWeight: 700 }}
+                            >
+                              {" light projection technology"}
+                            </span>
+                            <React.Fragment>
+                              {
+                                ", we plan to captivate audiences and enrich the very fabric of our reality. "
+                              }
+                            </React.Fragment>
+                          </React.Fragment>
+                        ) : (
+                          <React.Fragment>
+                            <React.Fragment>
+                              {
+                                "At Baryon, we're forging a frontier where music and physics converge, transforming the vibrations of sound into breathtaking visuals that dance before your eyes. \n\nThrough "
+                              }
+                            </React.Fragment>
+                            <span
+                              className={
+                                "plasmic_default__all plasmic_default__span"
+                              }
+                              style={{ fontWeight: 700 }}
+                            >
+                              {"cymatics-based"}
+                            </span>
+                            <React.Fragment>
+                              {
+                                " sound visualization and next-generation light projection technology, we plan to captivate audiences and enrich the very fabric of our reality. "
+                              }
+                            </React.Fragment>
+                          </React.Fragment>
+                        )}
                       </div>
                     </Stack__>
                     <Stack__
@@ -439,10 +495,12 @@ const PlasmicDescendants = {
     "button2",
     "section",
     "h1",
+    "h4",
     "columns",
     "img",
     "copy",
     "h5",
+    "h6",
     "pluginButton",
     "baryonFooter"
   ],
@@ -450,12 +508,14 @@ const PlasmicDescendants = {
   siteNavBar: ["siteNavBar"],
   foreground2: ["foreground2", "button2"],
   button2: ["button2"],
-  section: ["section", "h1"],
+  section: ["section", "h1", "h4"],
   h1: ["h1"],
-  columns: ["columns", "img", "copy", "h5", "pluginButton"],
+  h4: ["h4"],
+  columns: ["columns", "img", "copy", "h5", "h6", "pluginButton"],
   img: ["img"],
-  copy: ["copy", "h5", "pluginButton"],
+  copy: ["copy", "h5", "h6", "pluginButton"],
   h5: ["h5"],
+  h6: ["h6"],
   pluginButton: ["pluginButton"],
   baryonFooter: ["baryonFooter"]
 };
@@ -497,10 +557,12 @@ export const PlasmicStory = Object.assign(
     button2: makeNodeComponent("button2"),
     section: makeNodeComponent("section"),
     h1: makeNodeComponent("h1"),
+    h4: makeNodeComponent("h4"),
     columns: makeNodeComponent("columns"),
     img: makeNodeComponent("img"),
     copy: makeNodeComponent("copy"),
     h5: makeNodeComponent("h5"),
+    h6: makeNodeComponent("h6"),
     pluginButton: makeNodeComponent("pluginButton"),
     baryonFooter: makeNodeComponent("baryonFooter"),
     // Metadata about props expected for PlasmicStory

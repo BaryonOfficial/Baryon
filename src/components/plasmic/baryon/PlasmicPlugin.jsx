@@ -63,8 +63,8 @@ function PlasmicPlugin__RenderFunc(props) {
     <React.Fragment>
       <div className={projectcss.plasmic_page_wrapper}>
         <div
-          data-plasmic-name={"root"}
-          data-plasmic-override={overrides.root}
+          data-plasmic-name={"plugin"}
+          data-plasmic-override={overrides.plugin}
           data-plasmic-root={true}
           data-plasmic-for-node={forNode}
           className={classNames(
@@ -75,15 +75,20 @@ function PlasmicPlugin__RenderFunc(props) {
             projectcss.plasmic_tokens,
             plasmic_antd_5_hostless_css.plasmic_tokens,
             plasmic_plasmic_rich_components_css.plasmic_tokens,
-            sty.root
+            sty.plugin
           )}
         >
-          <SiteNavBar
-            data-plasmic-name={"siteNavBar"}
-            data-plasmic-override={overrides.siteNavBar}
-            className={classNames("__wab_instance", sty.siteNavBar)}
-          />
-
+          <section
+            data-plasmic-name={"section"}
+            data-plasmic-override={overrides.section}
+            className={classNames(projectcss.all, sty.section)}
+          >
+            <SiteNavBar
+              data-plasmic-name={"siteNavBar"}
+              data-plasmic-override={overrides.siteNavBar}
+              className={classNames("__wab_instance", sty.siteNavBar)}
+            />
+          </section>
           <Stack__
             as={"div"}
             hasGap={true}
@@ -150,7 +155,32 @@ function PlasmicPlugin__RenderFunc(props) {
                       sty.text__qpMge
                     )}
                   >
-                    {"Baryon is coming to your workflow soon... "}
+                    <React.Fragment>
+                      <React.Fragment>{""}</React.Fragment>
+                      {
+                        <h3
+                          className={classNames(
+                            projectcss.all,
+                            projectcss.h3,
+                            projectcss.__wab_text,
+                            sty.h3__qlZrz
+                          )}
+                        >
+                          <React.Fragment>
+                            <span
+                              className={
+                                "plasmic_default__all plasmic_default__span"
+                              }
+                              style={{ color: "#FFFFFFBF" }}
+                            >
+                              {"Baryon is coming to your workflow soon... "}
+                            </span>
+                          </React.Fragment>
+                        </h3>
+                      }
+
+                      <React.Fragment>{""}</React.Fragment>
+                    </React.Fragment>
                   </div>
                 </Stack__>
               </Stack__>
@@ -370,6 +400,22 @@ function PlasmicPlugin__RenderFunc(props) {
                     <div
                       className={classNames(projectcss.all, sty.freeBox__rohVc)}
                     >
+                      <div
+                        className={classNames(
+                          projectcss.all,
+                          sty.freeBox__aF7M1
+                        )}
+                      >
+                        <div
+                          className={classNames(
+                            projectcss.all,
+                            projectcss.__wab_text,
+                            sty.text__uG5Bw
+                          )}
+                        >
+                          {"Feature set"}
+                        </div>
+                      </div>
                       <Stack__
                         as={"div"}
                         hasGap={true}
@@ -503,13 +549,11 @@ function PlasmicPlugin__RenderFunc(props) {
                   <React.Fragment>{""}</React.Fragment>
                   {
                     <h3
-                      data-plasmic-name={"h3"}
-                      data-plasmic-override={overrides.h3}
                       className={classNames(
                         projectcss.all,
                         projectcss.h3,
                         projectcss.__wab_text,
-                        sty.h3
+                        sty.h3__pkuZh
                       )}
                     >
                       {"Compatibility via NDI"}
@@ -916,8 +960,9 @@ function PlasmicPlugin__RenderFunc(props) {
 }
 
 const PlasmicDescendants = {
-  root: [
-    "root",
+  plugin: [
+    "plugin",
+    "section",
     "siteNavBar",
     "pluginHero",
     "h1",
@@ -927,7 +972,6 @@ const PlasmicDescendants = {
     "columns",
     "h2",
     "compatibility",
-    "h3",
     "touchDesignerLogo",
     "resolumeLogo",
     "unrealEngineLogo",
@@ -939,6 +983,7 @@ const PlasmicDescendants = {
     "baryonFooter"
   ],
 
+  section: ["section", "siteNavBar"],
   siteNavBar: ["siteNavBar"],
   pluginHero: ["pluginHero", "h1", "embedHtml"],
   h1: ["h1"],
@@ -949,7 +994,6 @@ const PlasmicDescendants = {
   h2: ["h2"],
   compatibility: [
     "compatibility",
-    "h3",
     "touchDesignerLogo",
     "resolumeLogo",
     "unrealEngineLogo",
@@ -957,7 +1001,6 @@ const PlasmicDescendants = {
     "obsLogo"
   ],
 
-  h3: ["h3"],
   touchDesignerLogo: ["touchDesignerLogo"],
   resolumeLogo: ["resolumeLogo"],
   unrealEngineLogo: ["unrealEngineLogo"],
@@ -988,7 +1031,7 @@ function makeNodeComponent(nodeName) {
       forNode: nodeName
     });
   };
-  if (nodeName === "root") {
+  if (nodeName === "plugin") {
     func.displayName = "PlasmicPlugin";
   } else {
     func.displayName = `PlasmicPlugin.${nodeName}`;
@@ -998,9 +1041,10 @@ function makeNodeComponent(nodeName) {
 
 export const PlasmicPlugin = Object.assign(
   // Top-level PlasmicPlugin renders the root element
-  makeNodeComponent("root"),
+  makeNodeComponent("plugin"),
   {
     // Helper components rendering sub-elements
+    section: makeNodeComponent("section"),
     siteNavBar: makeNodeComponent("siteNavBar"),
     pluginHero: makeNodeComponent("pluginHero"),
     h1: makeNodeComponent("h1"),
@@ -1010,7 +1054,6 @@ export const PlasmicPlugin = Object.assign(
     columns: makeNodeComponent("columns"),
     h2: makeNodeComponent("h2"),
     compatibility: makeNodeComponent("compatibility"),
-    h3: makeNodeComponent("h3"),
     touchDesignerLogo: makeNodeComponent("touchDesignerLogo"),
     resolumeLogo: makeNodeComponent("resolumeLogo"),
     unrealEngineLogo: makeNodeComponent("unrealEngineLogo"),
