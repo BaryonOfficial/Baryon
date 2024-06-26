@@ -14,6 +14,7 @@
     "@ant-design/pro-components": "^2.6.4",
     "@ffmpeg/ffmpeg": "^0.12.10",
     "@ffmpeg/util": "^0.12.1",
+    "@formspree/react": "^2.5.1",
     "@hookform/resolvers": "^3.6.0",
     "@plasmicapp/react-web": "^0.2.340",
     "@plasmicpkgs/antd5": "^0.0.238",
