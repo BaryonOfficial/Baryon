@@ -134,7 +134,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
             data-plasmic-name={"visualizerNav"}
             data-plasmic-override={overrides.visualizerNav}
             className={classNames("__wab_instance", sty.visualizerNav)}
-            color={"clear"}
+            color2={"clear"}
             endIcon={
               <Icon38Icon
                 className={classNames(projectcss.all, sty.svg__gxND)}
@@ -193,7 +193,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
             data-plasmic-name={"pluginNav"}
             data-plasmic-override={overrides.pluginNav}
             className={classNames("__wab_instance", sty.pluginNav)}
-            color={"clear"}
+            color2={"clear"}
             endIcon={
               <Icon38Icon
                 className={classNames(projectcss.all, sty.svg___8NfWs)}
@@ -252,7 +252,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
             data-plasmic-name={"storyNav"}
             data-plasmic-override={overrides.storyNav}
             className={classNames("__wab_instance", sty.storyNav)}
-            color={"clear"}
+            color2={"clear"}
             endIcon={
               <Icon38Icon
                 className={classNames(projectcss.all, sty.svg__tlAb)}
@@ -311,7 +311,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
             data-plasmic-name={"artNav"}
             data-plasmic-override={overrides.artNav}
             className={classNames("__wab_instance", sty.artNav)}
-            color={"clear"}
+            color2={"clear"}
             endIcon={
               <Icon38Icon
                 className={classNames(projectcss.all, sty.svg__ijzde)}
@@ -344,7 +344,7 @@ function PlasmicSiteNavBar__RenderFunc(props) {
             data-plasmic-name={"logInButton"}
             data-plasmic-override={overrides.logInButton}
             className={classNames("__wab_instance", sty.logInButton)}
-            color={"clear"}
+            color2={"clear"}
             endIcon={
               <Icon38Icon
                 className={classNames(projectcss.all, sty.svg__kTpWy)}
