@@ -1,12 +1,8 @@
-import React, { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import { Button } from '@/components/ui/button';
+import React from 'react';
+import { useForm, ValidationError } from '@formspree/react';
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -14,82 +10,59 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 
-const formSchema = z.object({
-  name: z.string().min(2, {
-    message: 'Name must be at least 2 characters.',
-  }),
-  email: z.string().email({
-    message: 'Please enter a valid email address.',
-  }),
-  number: z.string().optional(),
-});
-
 function PluginSignUp() {
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const form = useForm({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      name: '',
-      email: '',
-      number: '',
-    },
-  });
+  const [state, handleSubmit] = useForm('xzzpprdb');
 
-  function onSubmit(values) {
-    setIsSubmitting(true);
-    // The form will be submitted to Formspree
-    console.log(values);
+  if (state.succeeded) {
+    return <p>Thanks for signing up!</p>;
   }
 
   return (
-    <Form {...form}>
-      <form
-        onSubmit={form.handleSubmit(onSubmit)}
-        action="https://formspree.io/f/xzzpprdb"
-        method="POST"
-        className="space-y-8">
+    <Form>
+      <form onSubmit={handleSubmit} className="space-y-8">
         <FormField
-          control={form.control}
           name="name"
-          render={({ field }) => (
+          render={() => (
             <FormItem>
               <FormLabel>Name</FormLabel>
               <FormControl>
-                <Input placeholder="Your name" {...field} />
+                <Input name="name" required />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
         <FormField
-          control={form.control}
           name="email"
-          render={({ field }) => (
+          render={() => (
             <FormItem>
               <FormLabel>Email</FormLabel>
               <FormControl>
-                <Input type="email" placeholder="Your email" {...field} />
+                <Input type="email" name="email" required />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
         <FormField
-          control={form.control}
           name="number"
-          render={({ field }) => (
+          render={() => (
             <FormItem>
-              <FormLabel>Phone Number (Optional)</FormLabel>
+              <FormLabel>Phone Number (optional)</FormLabel>
               <FormControl>
-                <Input type="tel" placeholder="Your phone number" {...field} />
+                <Input type="tel" name="number" />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Signing Up...' : 'Sign Up'}
-        </Button>
+        <button
+          type="submit"
+          disabled={state.submitting}
+          className="px-4 py-2 bg-blue-500 text-white rounded">
+          {state.submitting ? 'Signing Up...' : 'Sign Up'}
+        </button>
+        <ValidationError errors={state.errors} />
       </form>
     </Form>
   );
