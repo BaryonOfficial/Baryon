@@ -15,11 +15,13 @@ import {
   createPlasmicElementProxy,
   deriveRenderOpts,
   ensureGlobalVariants,
-  hasVariant
+  generateStateOnChangeProp,
+  generateStateValueProp,
+  hasVariant,
+  useDollarState
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 import SiteNavBar from "../../SiteNavBar"; // plasmic-import: xamm2QscKBA7/component
-import { Embed } from "@plasmicpkgs/plasmic-basic-components";
 import Button2 from "../../Button2"; // plasmic-import: EPGJPtXx-yjL/component
 import BaryonFooter from "../../BaryonFooter"; // plasmic-import: FKV3u0E4hZrB/component
 import { useScreenVariants as useScreenVariantspcuqpuXkf7V2 } from "./PlasmicGlobalVariant__Screen"; // plasmic-import: PcuqpuXKF7v2/globalVariant
@@ -28,6 +30,8 @@ import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css";
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicPlugin.module.css"; // plasmic-import: FXocl_OYx5HY/css
+import ChecksvgIcon from "./icons/PlasmicIcon__Checksvg"; // plasmic-import: F3iOqCFKuA-k/icon
+import Icon38Icon from "./icons/PlasmicIcon__Icon38"; // plasmic-import: IYnmkRggg6dZ/icon
 import Icon14Icon from "./icons/PlasmicIcon__Icon14"; // plasmic-import: nK6pvnnbOK1R/icon
 import TouchDesignerBlack01SvgIcon from "./icons/PlasmicIcon__TouchDesignerBlack01Svg"; // plasmic-import: 8C7P_NC_xAYn/icon
 import ResolumeLogosvgIcon from "./icons/PlasmicIcon__ResolumeLogosvg"; // plasmic-import: AvlJVplI2x17/icon
@@ -35,8 +39,6 @@ import UeLogotype2023SplashScreenVerticalBlacksvg2Icon from "./icons/PlasmicIcon
 import AbletonLogowinesvgIcon from "./icons/PlasmicIcon__AbletonLogowinesvg"; // plasmic-import: NQIxgI55S_TJ/icon
 import OpenBroadcasterSoftwareLogowinesvgIcon from "./icons/PlasmicIcon__OpenBroadcasterSoftwareLogowinesvg"; // plasmic-import: buvdmCRySlxv/icon
 import Icon15Icon from "./icons/PlasmicIcon__Icon15"; // plasmic-import: rIruQm-TzSjY/icon
-import ChecksvgIcon from "./icons/PlasmicIcon__Checksvg"; // plasmic-import: F3iOqCFKuA-k/icon
-import Icon38Icon from "./icons/PlasmicIcon__Icon38"; // plasmic-import: IYnmkRggg6dZ/icon
 
 createPlasmicElementProxy;
 
@@ -56,6 +58,36 @@ function PlasmicPlugin__RenderFunc(props) {
   const $ctx = useDataEnv?.() || {};
   const refsRef = React.useRef({});
   const $refs = refsRef.current;
+  const stateSpecs = React.useMemo(
+    () => [
+      {
+        path: "textbox.value",
+        type: "private",
+        variableType: "text",
+        initFunc: ({ $props, $state, $queries, $ctx }) => ``
+      },
+      {
+        path: "textbox2.value",
+        type: "private",
+        variableType: "text",
+        initFunc: ({ $props, $state, $queries, $ctx }) => ``
+      },
+      {
+        path: "textbox3.value",
+        type: "private",
+        variableType: "text",
+        initFunc: ({ $props, $state, $queries, $ctx }) => ``
+      }
+    ],
+
+    [$props, $ctx, $refs]
+  );
+  const $state = useDollarState(stateSpecs, {
+    $props,
+    $ctx,
+    $queries: {},
+    $refs
+  });
   const globalVariants = ensureGlobalVariants({
     screen: useScreenVariantspcuqpuXkf7V2()
   });
@@ -96,107 +128,233 @@ function PlasmicPlugin__RenderFunc(props) {
           >
             <Stack__
               as={"div"}
-              data-plasmic-name={"pluginHero"}
-              data-plasmic-override={overrides.pluginHero}
               hasGap={true}
-              className={classNames(projectcss.all, sty.pluginHero)}
+              className={classNames(projectcss.all, sty.freeBox___0VtLd)}
             >
               <Stack__
                 as={"div"}
+                data-plasmic-name={"foreground"}
+                data-plasmic-override={overrides.foreground}
                 hasGap={true}
-                className={classNames(projectcss.all, sty.freeBox__s8LAz)}
+                className={classNames(projectcss.all, sty.foreground)}
               >
                 <Stack__
                   as={"div"}
                   hasGap={true}
-                  className={classNames(projectcss.all, sty.freeBox__uVWr)}
+                  className={classNames(projectcss.all, sty.freeBox__iergP)}
+                >
+                  <Stack__
+                    as={"div"}
+                    hasGap={true}
+                    className={classNames(projectcss.all, sty.freeBox__yZ7Yx)}
+                  >
+                    <div
+                      className={classNames(projectcss.all, sty.freeBox__nyFx3)}
+                    >
+                      <div
+                        className={classNames(
+                          projectcss.all,
+                          projectcss.__wab_text,
+                          sty.text__moqxw
+                        )}
+                      >
+                        {"Sound You Can See"}
+                      </div>
+                    </div>
+                    <div
+                      className={classNames(
+                        projectcss.all,
+                        projectcss.__wab_text,
+                        sty.text___356Z3
+                      )}
+                    >
+                      {"Cymatic Visuals for Immersive Experiences"}
+                    </div>
+                    <div
+                      className={classNames(
+                        projectcss.all,
+                        projectcss.__wab_text,
+                        sty.text__cX7Ce
+                      )}
+                    >
+                      {"Transform sound into stunning visuals with our plugin."}
+                    </div>
+                  </Stack__>
+                </Stack__>
+                <Stack__
+                  as={"div"}
+                  hasGap={true}
+                  className={classNames(projectcss.all, sty.freeBox__apHNd)}
                 >
                   <div
-                    className={classNames(
-                      projectcss.all,
-                      projectcss.__wab_text,
-                      sty.text__gHqeg
-                    )}
+                    className={classNames(projectcss.all, sty.freeBox___7CjNi)}
                   >
-                    <React.Fragment>
-                      <React.Fragment>{""}</React.Fragment>
-                      {
-                        <h1
-                          data-plasmic-name={"h1"}
-                          data-plasmic-override={overrides.h1}
+                    <Stack__
+                      as={"div"}
+                      hasGap={true}
+                      className={classNames(projectcss.all, sty.freeBox__dj7Wn)}
+                    >
+                      <div
+                        className={classNames(
+                          projectcss.all,
+                          projectcss.__wab_text,
+                          sty.text___6LNfv
+                        )}
+                      >
+                        {"Get Notified on Launch"}
+                      </div>
+                      <Stack__
+                        as={"div"}
+                        hasGap={true}
+                        className={classNames(
+                          projectcss.all,
+                          sty.freeBox___18VbJ
+                        )}
+                      >
+                        <input
+                          data-plasmic-name={"textbox"}
+                          data-plasmic-override={overrides.textbox}
                           className={classNames(
                             projectcss.all,
-                            projectcss.h1,
-                            projectcss.__wab_text,
-                            sty.h1
+                            projectcss.input,
+                            sty.textbox
                           )}
-                        >
-                          <React.Fragment>
-                            <React.Fragment>{"The Plugin for "}</React.Fragment>
-                            <span
-                              className={
-                                "plasmic_default__all plasmic_default__span"
-                              }
-                              style={{ textDecorationLine: "underline" }}
-                            >
-                              {"Creatives"}
-                            </span>
-                          </React.Fragment>
-                        </h1>
-                      }
+                          onChange={e => {
+                            generateStateOnChangeProp($state, [
+                              "textbox",
+                              "value"
+                            ])(e.target.value);
+                          }}
+                          placeholder={"Your name"}
+                          ref={ref => {
+                            $refs["textbox"] = ref;
+                          }}
+                          size={1}
+                          type={"text"}
+                          value={
+                            generateStateValueProp($state, [
+                              "textbox",
+                              "value"
+                            ]) ?? ""
+                          }
+                        />
 
-                      <React.Fragment>{""}</React.Fragment>
-                    </React.Fragment>
-                  </div>
-                  <div
-                    className={classNames(
-                      projectcss.all,
-                      projectcss.__wab_text,
-                      sty.text__qpMge
-                    )}
-                  >
-                    <React.Fragment>
-                      <React.Fragment>{""}</React.Fragment>
-                      {
-                        <h3
+                        <input
+                          data-plasmic-name={"textbox2"}
+                          data-plasmic-override={overrides.textbox2}
                           className={classNames(
                             projectcss.all,
-                            projectcss.h3,
+                            projectcss.input,
+                            sty.textbox2
+                          )}
+                          disabled={false}
+                          onChange={e => {
+                            generateStateOnChangeProp($state, [
+                              "textbox2",
+                              "value"
+                            ])(e.target.value);
+                          }}
+                          placeholder={"Phone Number"}
+                          ref={ref => {
+                            $refs["textbox2"] = ref;
+                          }}
+                          size={1}
+                          type={"tel"}
+                          value={
+                            generateStateValueProp($state, [
+                              "textbox2",
+                              "value"
+                            ]) ?? ""
+                          }
+                        />
+
+                        <input
+                          data-plasmic-name={"textbox3"}
+                          data-plasmic-override={overrides.textbox3}
+                          className={classNames(
+                            projectcss.all,
+                            projectcss.input,
+                            sty.textbox3
+                          )}
+                          onChange={e => {
+                            generateStateOnChangeProp($state, [
+                              "textbox3",
+                              "value"
+                            ])(e.target.value);
+                          }}
+                          placeholder={"Email"}
+                          ref={ref => {
+                            $refs["textbox3"] = ref;
+                          }}
+                          size={1}
+                          type={"email"}
+                          value={
+                            generateStateValueProp($state, [
+                              "textbox3",
+                              "value"
+                            ]) ?? ""
+                          }
+                        />
+                      </Stack__>
+                      <Button2
+                        className={classNames(
+                          "__wab_instance",
+                          sty.button2__hUfJh
+                        )}
+                        color2={"black"}
+                        endIcon={
+                          <Icon38Icon
+                            className={classNames(
+                              projectcss.all,
+                              sty.svg___070I
+                            )}
+                            role={"img"}
+                          />
+                        }
+                        size={"compact"}
+                        startIcon={
+                          <ChecksvgIcon
+                            className={classNames(
+                              projectcss.all,
+                              sty.svg___4V17W
+                            )}
+                            role={"img"}
+                          />
+                        }
+                        submitsForm={true}
+                      >
+                        <div
+                          className={classNames(
+                            projectcss.all,
                             projectcss.__wab_text,
-                            sty.h3__qlZrz
+                            sty.text__pflt
                           )}
                         >
-                          <React.Fragment>
-                            <span
-                              className={
-                                "plasmic_default__all plasmic_default__span"
-                              }
-                              style={{ color: "#FFFFFFBF" }}
-                            >
-                              {"Baryon is coming to your workflow soon... "}
-                            </span>
-                          </React.Fragment>
-                        </h3>
-                      }
+                          {"Submit"}
+                        </div>
+                      </Button2>
+                    </Stack__>
+                    <div
+                      className={classNames(projectcss.all, sty.freeBox__bvQq)}
+                    />
 
-                      <React.Fragment>{""}</React.Fragment>
-                    </React.Fragment>
+                    <div
+                      className={classNames(projectcss.all, sty.freeBox__jWe6Z)}
+                    >
+                      <div
+                        className={classNames(
+                          projectcss.all,
+                          projectcss.__wab_text,
+                          sty.text__eyUeO
+                        )}
+                      >
+                        {
+                          "By submitting this form you agree to sign up to our plugin waitlist and receive marketing communications."
+                        }
+                      </div>
+                    </div>
                   </div>
                 </Stack__>
-              </Stack__>
-              <Stack__
-                as={"div"}
-                hasGap={true}
-                className={classNames(projectcss.all, sty.freeBox___7ZQXp)}
-              >
-                <Embed
-                  data-plasmic-name={"embedHtml"}
-                  data-plasmic-override={overrides.embedHtml}
-                  className={classNames("__wab_instance", sty.embedHtml)}
-                  code={
-                    "<script>\n  (function (s, e, n, d, er) {\n    s['Sender'] = er;\n    s[er] = s[er] || function () {\n      (s[er].q = s[er].q || []).push(arguments)\n    }, s[er].l = 1 * new Date();\n    var a = e.createElement(n),\n        m = e.getElementsByTagName(n)[0];\n    a.async = 1;\n    a.src = d;\n    m.parentNode.insertBefore(a, m)\n  })(window, document, 'script', 'https://cdn.sender.net/accounts_resources/universal.js', 'sender');\n  sender('57eb5cbf6b2688')\n</script>\n\n<div style=\"text-align: left\" class=\"sender-form-field\" data-sender-form-id=\"lx6lvr19ez582d2q6xg\"></div>"
-                  }
-                />
               </Stack__>
             </Stack__>
             <Stack__
@@ -259,7 +417,7 @@ function PlasmicPlugin__RenderFunc(props) {
                         <React.Fragment>
                           <React.Fragment>
                             {
-                              "Plug Baryon into your software tools & experience cymatics in 3D. \n\nWe created this plugin for: \n"
+                              "Plug Baryon into your software tools & experience cymatics in 3D. We use physics to reveal the true form of sound. \n\nWe created this plugin for: \n"
                             }
                           </React.Fragment>
                           <span
@@ -385,10 +543,21 @@ function PlasmicPlugin__RenderFunc(props) {
                             }
                             style={{ color: "#000000" }}
                           >
-                            {" and others."}
+                            {" & others. "}
+                          </span>
+                          <React.Fragment>{"\n\n"}</React.Fragment>
+                          <span
+                            className={
+                              "plasmic_default__all plasmic_default__span"
+                            }
+                            style={{ color: "#000000", fontWeight: 700 }}
+                          >
+                            {"Live events"}
                           </span>
                           <React.Fragment>
-                            {"\n\nCultivate your imagination."}
+                            {
+                              " can use Baryon to add the sense of sight to music.\n\nCultivate your imagination."
+                            }
                           </React.Fragment>
                         </React.Fragment>
                       </div>
@@ -549,11 +718,13 @@ function PlasmicPlugin__RenderFunc(props) {
                   <React.Fragment>{""}</React.Fragment>
                   {
                     <h3
+                      data-plasmic-name={"h3"}
+                      data-plasmic-override={overrides.h3}
                       className={classNames(
                         projectcss.all,
                         projectcss.h3,
                         projectcss.__wab_text,
-                        sty.h3__pkuZh
+                        sty.h3
                       )}
                     >
                       {"Compatibility via NDI"}
@@ -902,10 +1073,11 @@ function PlasmicPlugin__RenderFunc(props) {
                         </Stack__>
                       </Stack__>
                       <Button2
-                        data-plasmic-name={"button2"}
-                        data-plasmic-override={overrides.button2}
-                        className={classNames("__wab_instance", sty.button2)}
-                        color={"green"}
+                        className={classNames(
+                          "__wab_instance",
+                          sty.button2__epTFl
+                        )}
+                        color2={"green"}
                         endIcon={
                           <Icon38Icon
                             className={classNames(
@@ -964,14 +1136,16 @@ const PlasmicDescendants = {
     "plugin",
     "section",
     "siteNavBar",
-    "pluginHero",
-    "h1",
-    "embedHtml",
+    "foreground",
+    "textbox",
+    "textbox2",
+    "textbox3",
     "pluginDetails",
     "foreground2",
     "columns",
     "h2",
     "compatibility",
+    "h3",
     "touchDesignerLogo",
     "resolumeLogo",
     "unrealEngineLogo",
@@ -979,21 +1153,22 @@ const PlasmicDescendants = {
     "obsLogo",
     "pricing",
     "foreground3",
-    "button2",
     "baryonFooter"
   ],
 
   section: ["section", "siteNavBar"],
   siteNavBar: ["siteNavBar"],
-  pluginHero: ["pluginHero", "h1", "embedHtml"],
-  h1: ["h1"],
-  embedHtml: ["embedHtml"],
+  foreground: ["foreground", "textbox", "textbox2", "textbox3"],
+  textbox: ["textbox"],
+  textbox2: ["textbox2"],
+  textbox3: ["textbox3"],
   pluginDetails: ["pluginDetails", "foreground2", "columns", "h2"],
   foreground2: ["foreground2", "columns", "h2"],
   columns: ["columns", "h2"],
   h2: ["h2"],
   compatibility: [
     "compatibility",
+    "h3",
     "touchDesignerLogo",
     "resolumeLogo",
     "unrealEngineLogo",
@@ -1001,14 +1176,14 @@ const PlasmicDescendants = {
     "obsLogo"
   ],
 
+  h3: ["h3"],
   touchDesignerLogo: ["touchDesignerLogo"],
   resolumeLogo: ["resolumeLogo"],
   unrealEngineLogo: ["unrealEngineLogo"],
   abletonLogo: ["abletonLogo"],
   obsLogo: ["obsLogo"],
-  pricing: ["pricing", "foreground3", "button2"],
-  foreground3: ["foreground3", "button2"],
-  button2: ["button2"],
+  pricing: ["pricing", "foreground3"],
+  foreground3: ["foreground3"],
   baryonFooter: ["baryonFooter"]
 };
 
@@ -1046,14 +1221,16 @@ export const PlasmicPlugin = Object.assign(
     // Helper components rendering sub-elements
     section: makeNodeComponent("section"),
     siteNavBar: makeNodeComponent("siteNavBar"),
-    pluginHero: makeNodeComponent("pluginHero"),
-    h1: makeNodeComponent("h1"),
-    embedHtml: makeNodeComponent("embedHtml"),
+    foreground: makeNodeComponent("foreground"),
+    textbox: makeNodeComponent("textbox"),
+    textbox2: makeNodeComponent("textbox2"),
+    textbox3: makeNodeComponent("textbox3"),
     pluginDetails: makeNodeComponent("pluginDetails"),
     foreground2: makeNodeComponent("foreground2"),
     columns: makeNodeComponent("columns"),
     h2: makeNodeComponent("h2"),
     compatibility: makeNodeComponent("compatibility"),
+    h3: makeNodeComponent("h3"),
     touchDesignerLogo: makeNodeComponent("touchDesignerLogo"),
     resolumeLogo: makeNodeComponent("resolumeLogo"),
     unrealEngineLogo: makeNodeComponent("unrealEngineLogo"),
@@ -1061,7 +1238,6 @@ export const PlasmicPlugin = Object.assign(
     obsLogo: makeNodeComponent("obsLogo"),
     pricing: makeNodeComponent("pricing"),
     foreground3: makeNodeComponent("foreground3"),
-    button2: makeNodeComponent("button2"),
     baryonFooter: makeNodeComponent("baryonFooter"),
     // Metadata about props expected for PlasmicPlugin
     internalVariantProps: PlasmicPlugin__VariantProps,

@@ -95,7 +95,9 @@ function PlasmicHomepage__RenderFunc(props) {
             className={classNames("__wab_instance", sty.siteNavBar)}
           />
 
-          {false ? (
+          {(
+            hasVariant(globalVariants, "screen", "mobileOnly") ? true : false
+          ) ? (
             <section
               data-plasmic-name={"section"}
               data-plasmic-override={overrides.section}

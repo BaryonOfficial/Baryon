@@ -4,12 +4,13 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  width: 100%;
   height: auto;
   max-width: 100%;
   align-self: center;
   background: #000000;
-  min-width: 0;
+  width: 100%;
+  grid-column-start: 1 !important;
+  grid-column-end: -1 !important;
   padding: 0px;
 }
 .freeBox__mhOq {
@@ -18,9 +19,9 @@
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  width: 100%;
   height: 100%;
   max-width: 100%;
+  width: 100%;
   min-width: 0;
   min-height: 0;
   padding: 8px;
@@ -60,12 +61,11 @@
   display: flex;
   position: relative;
   flex-direction: row;
-  width: 100%;
-  height: 100%;
   max-width: auto;
   background: none;
+  align-self: center;
+  width: 100%;
   min-width: 0;
-  min-height: 0;
   padding: 0px 8px 8px;
 }
 .freeBox__giyLj > :global(.__wab_flex-container) {
@@ -75,7 +75,6 @@
   flex-wrap: nowrap;
   align-content: stretch;
   min-width: 0;
-  min-height: 0;
   margin-left: calc(0px - 0px);
   width: calc(100% + 0px);
   margin-top: calc(0px - 0px);
@@ -109,7 +108,7 @@
   height: 1em;
 }
 .text___50Gvn {
-  font-size: 16px;
+  font-size: 14px;
   color: #ffffffd9;
 }
 .svg__nvIg8 {
@@ -130,7 +129,7 @@
 }
 .text__tZOyT {
   color: #ffffffd9;
-  font-size: 16px;
+  font-size: 14px;
 }
 .svg__f1TRi {
   position: relative;
@@ -149,7 +148,7 @@
   height: 1em;
 }
 .text___2GkMw {
-  font-size: 16px;
+  font-size: 14px;
   color: #ffffffd9;
 }
 .svg__gyTym {
@@ -169,7 +168,7 @@
   height: 1em;
 }
 .text__vTmR5 {
-  font-size: 16px;
+  font-size: 14px;
   color: #ffffffd9;
 }
 .svg__xGxSh {

@@ -103,7 +103,7 @@ function PlasmicMobileMenu__RenderFunc(props) {
       >
         <Button2
           className={classNames("__wab_instance", sty.button2__hd4G)}
-          color={"clear"}
+          color2={"clear"}
           link={`/`}
           shape={"rounded"}
           size={"compact"}
@@ -120,7 +120,7 @@ function PlasmicMobileMenu__RenderFunc(props) {
         </Button2>
         <Button2
           className={classNames("__wab_instance", sty.button2___1ZaxA)}
-          color={"clear"}
+          color2={"clear"}
           link={`/plugin`}
           shape={"rounded"}
           size={"compact"}
@@ -137,7 +137,7 @@ function PlasmicMobileMenu__RenderFunc(props) {
         </Button2>
         <Button2
           className={classNames("__wab_instance", sty.button2__qCCs)}
-          color={"clear"}
+          color2={"clear"}
           link={`/story`}
           shape={"rounded"}
           size={"compact"}
@@ -154,7 +154,7 @@ function PlasmicMobileMenu__RenderFunc(props) {
         </Button2>
         <Button2
           className={classNames("__wab_instance", sty.button2__dn2Pb)}
-          color={"clear"}
+          color2={"clear"}
           link={"https://foundation.app/@Baryon"}
           shape={"rounded"}
           size={"compact"}

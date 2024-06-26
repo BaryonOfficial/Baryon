@@ -116,7 +116,7 @@ function PlasmicStory__RenderFunc(props) {
                 data-plasmic-name={"button2"}
                 data-plasmic-override={overrides.button2}
                 className={classNames("__wab_instance", sty.button2)}
-                color={"blue"}
+                color2={"blue"}
                 onClick={async event => {
                   const $steps = {};
                   $steps["goToHomepage"] = true
@@ -285,25 +285,7 @@ function PlasmicStory__RenderFunc(props) {
                         )}
                       >
                         {hasVariant(globalVariants, "screen", "mobileOnly") ? (
-                          <React.Fragment>
-                            <React.Fragment>{""}</React.Fragment>
-                            {
-                              <h6
-                                data-plasmic-name={"h6"}
-                                data-plasmic-override={overrides.h6}
-                                className={classNames(
-                                  projectcss.all,
-                                  projectcss.h6,
-                                  projectcss.__wab_text,
-                                  sty.h6
-                                )}
-                              >
-                                {"What if?"}
-                              </h6>
-                            }
-
-                            <React.Fragment>{""}</React.Fragment>
-                          </React.Fragment>
+                          "What if?"
                         ) : (
                           <React.Fragment>
                             <React.Fragment>{""}</React.Fragment>
@@ -410,7 +392,7 @@ function PlasmicStory__RenderFunc(props) {
                           "__wab_instance",
                           sty.pluginButton
                         )}
-                        color={"green"}
+                        color2={"green"}
                         endIcon={
                           <Icon38Icon
                             className={classNames(
@@ -500,7 +482,6 @@ const PlasmicDescendants = {
     "img",
     "copy",
     "h5",
-    "h6",
     "pluginButton",
     "baryonFooter"
   ],
@@ -511,11 +492,10 @@ const PlasmicDescendants = {
   section: ["section", "h1", "h4"],
   h1: ["h1"],
   h4: ["h4"],
-  columns: ["columns", "img", "copy", "h5", "h6", "pluginButton"],
+  columns: ["columns", "img", "copy", "h5", "pluginButton"],
   img: ["img"],
-  copy: ["copy", "h5", "h6", "pluginButton"],
+  copy: ["copy", "h5", "pluginButton"],
   h5: ["h5"],
-  h6: ["h6"],
   pluginButton: ["pluginButton"],
   baryonFooter: ["baryonFooter"]
 };
@@ -562,7 +542,6 @@ export const PlasmicStory = Object.assign(
     img: makeNodeComponent("img"),
     copy: makeNodeComponent("copy"),
     h5: makeNodeComponent("h5"),
-    h6: makeNodeComponent("h6"),
     pluginButton: makeNodeComponent("pluginButton"),
     baryonFooter: makeNodeComponent("baryonFooter"),
     // Metadata about props expected for PlasmicStory
