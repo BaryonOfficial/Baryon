@@ -4,10 +4,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { postProcessingSetup } from '../postProcessing/postProcessingSetup.js';
-import { guiSetup } from '../utils/guiSetup.js';
-import { particlesSetup } from '../baryon/particlesSetup.js';
-import { gpgpuSetup, disposeGPGPUResources } from '../baryon/gpgpuSetup.js';
+import { postProcessingSetup } from './postProcessing/postProcessingSetup.js';
+import { guiSetup } from './utils/guiSetup.js';
+import { particlesSetup } from './baryon/particlesSetup.js';
+import { gpgpuSetup, disposeGPGPUResources } from './baryon/gpgpuSetup.js';
 import {
   audioObject,
   audioSetup,
@@ -19,10 +19,10 @@ import {
   processAudioData,
   startAudioProcessing,
   getIsAudioLoaded,
-} from '../audio/audioSetup.js';
+} from './audio/audioSetup.js';
 import GUI from 'lil-gui';
-import UnsupportedWarning from './UnsupportedWarning';
-import { useFullscreenToggle } from '../hooks/useFullScreenToggle';
+import UnsupportedWarning from './utils/UnsupportedWarning.jsx';
+import { useFullscreenToggle } from './hooks/useFullScreenToggle.jsx';
 
 const ThreeScene = () => {
   const canvasRef = useRef(null);

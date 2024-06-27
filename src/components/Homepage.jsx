@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useEffect } from 'react';
 import { PlasmicHomepage } from './plasmic/baryon/PlasmicHomepage';
-import ThreeScene from './ThreeScene';
+import ThreeScene from '../ThreeScene';
 
 function Homepage_(props, ref) {
   // Use PlasmicHomepage to render this component as it was
