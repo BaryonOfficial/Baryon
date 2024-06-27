@@ -24,6 +24,26 @@ const formSchema = z.object({
   phone: z.string().optional(),
 });
 
+function SuccessCard() {
+  return (
+    <div className="dark w-full max-w-[350px]">
+      <Card className="w-full">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl font-semibold">Welcome to the Journey!</CardTitle>
+          <CardDescription className="text-sm text-muted-foreground mt-2">
+            We're excited to have you on board.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-center text-sm">
+            We'll keep you updated on our launch and exciting developments.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export function SignUpForm() {
   const [formspreeState, handleFormspreeSubmit] = useForm('xzzpprdb');
   const form = useHookForm({
@@ -40,12 +60,12 @@ export function SignUpForm() {
   }
 
   if (formspreeState.succeeded) {
-    return <p className="text-center p-4">Thanks for joining!</p>;
+    return <SuccessCard />;
   }
 
   return (
-    <div className="dark">
-      <Card className="w-[350px]">
+    <div className="dark w-full max-w-[350px]">
+      <Card className="w-full">
         <CardHeader className="text-center">
           <CardTitle>Get Notified on Launch</CardTitle>
           <CardDescription>Sign up for our plugin waitlist.</CardDescription>
