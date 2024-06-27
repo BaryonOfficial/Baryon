@@ -45,8 +45,6 @@ export function SignUpForm() {
 
   return (
     <div className="dark">
-      {' '}
-      {/* Wrap the entire component in a dark mode container */}
       <Card className="w-[350px]">
         <CardHeader className="text-center">
           <CardTitle>Get Notified on Launch</CardTitle>
