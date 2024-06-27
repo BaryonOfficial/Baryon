@@ -91,82 +91,82 @@ export function SignUpForm() {
   }
 
   return (
-    <div className="dark w-full max-w-[350px]">
-      <Card className="w-full">
-        <CardHeader className="text-center">
-          <CardTitle>Get Notified on Launch</CardTitle>
-          <CardDescription>Sign up for our plugin waitlist.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <Label htmlFor="name">Name</Label>
-                    <FormControl>
-                      <Input id="name" placeholder="John Doe" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="phone"
-                render={({ field }) => (
-                  <FormItem>
-                    <Label htmlFor="phone">Phone Number (Optional)</Label>
-                    <FormControl>
-                      <Input
-                        id="phone"
-                        type="tel"
-                        placeholder="+1 203 456 7890"
-                        {...field}
-                        onChange={(e) => {
-                          const formatter = new AsYouType();
-                          const formattedValue = formatter.input(e.target.value);
-                          field.onChange(formattedValue);
-                        }}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <Label htmlFor="email">Email</Label>
-                    <FormControl>
-                      <Input id="email" type="email" placeholder="johndoe@gmail.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </form>
-          </Form>
-        </CardContent>
-        <CardFooter>
-          <Button
-            className="w-full"
-            onClick={form.handleSubmit(onSubmit)}
-            disabled={formspreeState.submitting}>
-            Submit
-          </Button>
-        </CardFooter>
-        <div className="px-6 pb-6">
-          <p className="text-xs text-center">
-            By submitting this form you agree to sign up to our plugin waitlist and receive
-            marketing communications.
-          </p>
-        </div>
-      </Card>
-    </div>
+    // <div className="dark w-full">
+    <Card className="w-full">
+      <CardHeader className="text-center">
+        <CardTitle>Get Notified on Launch</CardTitle>
+        <CardDescription>Sign up for our plugin waitlist.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <Label htmlFor="name">Name</Label>
+                  <FormControl>
+                    <Input id="name" placeholder="John Doe" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="phone"
+              render={({ field }) => (
+                <FormItem>
+                  <Label htmlFor="phone">Phone Number (Optional)</Label>
+                  <FormControl>
+                    <Input
+                      id="phone"
+                      type="tel"
+                      placeholder="+1 203 456 7890"
+                      {...field}
+                      onChange={(e) => {
+                        const formatter = new AsYouType();
+                        const formattedValue = formatter.input(e.target.value);
+                        field.onChange(formattedValue);
+                      }}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <Label htmlFor="email">Email</Label>
+                  <FormControl>
+                    <Input id="email" type="email" placeholder="johndoe@gmail.com" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </form>
+        </Form>
+      </CardContent>
+      <CardFooter>
+        <Button
+          className="w-full"
+          onClick={form.handleSubmit(onSubmit)}
+          disabled={formspreeState.submitting}>
+          Submit
+        </Button>
+      </CardFooter>
+      <div className="px-6 pb-6">
+        <p className="text-xs text-center">
+          By submitting this form you agree to sign up to our plugin waitlist and receive marketing
+          communications.
+        </p>
+      </div>
+    </Card>
+    // </div>
   );
 }
