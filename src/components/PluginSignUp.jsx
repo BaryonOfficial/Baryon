@@ -4,6 +4,7 @@ import { useForm } from '@formspree/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm as useHookForm } from 'react-hook-form';
 import { z } from 'zod';
+import { parsePhoneNumber, AsYouType } from 'libphonenumber-js';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -21,7 +22,21 @@ import { Form, FormControl, FormField, FormItem, FormMessage } from '@/component
 const formSchema = z.object({
   name: z.string().min(2, { message: 'Name is required.' }),
   email: z.string().email({ message: 'Valid email is required.' }),
-  phone: z.string().optional(),
+  phone: z
+    .string()
+    .optional()
+    .refine(
+      (value) => {
+        if (!value) return true;
+        try {
+          const phoneNumber = parsePhoneNumber(value);
+          return phoneNumber.isValid();
+        } catch {
+          return false;
+        }
+      },
+      { message: 'Please enter a valid phone number with country code (e.g., +1 203 456 7890).' }
+    ),
 });
 
 function SuccessCard() {
@@ -55,9 +70,21 @@ export function SignUpForm() {
     },
   });
 
-  function onSubmit(values) {
-    handleFormspreeSubmit(values);
-  }
+  const onSubmit = async (values) => {
+    if (values.phone) {
+      try {
+        const phoneNumber = parsePhoneNumber(values.phone);
+        values.phone = phoneNumber.format('INTERNATIONAL');
+      } catch (error) {
+        form.setError('phone', {
+          type: 'manual',
+          message: 'Please enter a valid phone number with country code.',
+        });
+        return;
+      }
+    }
+    await handleFormspreeSubmit(values);
+  };
 
   if (formspreeState.succeeded) {
     return <SuccessCard />;
@@ -91,9 +118,19 @@ export function SignUpForm() {
                 name="phone"
                 render={({ field }) => (
                   <FormItem>
-                    <Label htmlFor="phone">Phone Number</Label>
+                    <Label htmlFor="phone">Phone Number (Optional)</Label>
                     <FormControl>
-                      <Input id="phone" type="tel" placeholder="+1 (203) 456-7890" {...field} />
+                      <Input
+                        id="phone"
+                        type="tel"
+                        placeholder="+1 203 456 7890"
+                        {...field}
+                        onChange={(e) => {
+                          const formatter = new AsYouType();
+                          const formattedValue = formatter.input(e.target.value);
+                          field.onChange(formattedValue);
+                        }}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
