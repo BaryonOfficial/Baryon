@@ -15,10 +15,8 @@ import {
   createPlasmicElementProxy,
   deriveRenderOpts,
   ensureGlobalVariants,
-  generateStateOnChangeProp,
-  generateStateValueProp,
   hasVariant,
-  useDollarState
+  renderPlasmicSlot
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 import SiteNavBar from "../../SiteNavBar"; // plasmic-import: xamm2QscKBA7/component
@@ -30,8 +28,6 @@ import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css";
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicPlugin.module.css"; // plasmic-import: FXocl_OYx5HY/css
-import ChecksvgIcon from "./icons/PlasmicIcon__Checksvg"; // plasmic-import: F3iOqCFKuA-k/icon
-import Icon38Icon from "./icons/PlasmicIcon__Icon38"; // plasmic-import: IYnmkRggg6dZ/icon
 import Icon14Icon from "./icons/PlasmicIcon__Icon14"; // plasmic-import: nK6pvnnbOK1R/icon
 import TouchDesignerBlack01SvgIcon from "./icons/PlasmicIcon__TouchDesignerBlack01Svg"; // plasmic-import: 8C7P_NC_xAYn/icon
 import ResolumeLogosvgIcon from "./icons/PlasmicIcon__ResolumeLogosvg"; // plasmic-import: AvlJVplI2x17/icon
@@ -39,12 +35,14 @@ import UeLogotype2023SplashScreenVerticalBlacksvg2Icon from "./icons/PlasmicIcon
 import AbletonLogowinesvgIcon from "./icons/PlasmicIcon__AbletonLogowinesvg"; // plasmic-import: NQIxgI55S_TJ/icon
 import OpenBroadcasterSoftwareLogowinesvgIcon from "./icons/PlasmicIcon__OpenBroadcasterSoftwareLogowinesvg"; // plasmic-import: buvdmCRySlxv/icon
 import Icon15Icon from "./icons/PlasmicIcon__Icon15"; // plasmic-import: rIruQm-TzSjY/icon
+import ChecksvgIcon from "./icons/PlasmicIcon__Checksvg"; // plasmic-import: F3iOqCFKuA-k/icon
+import Icon38Icon from "./icons/PlasmicIcon__Icon38"; // plasmic-import: IYnmkRggg6dZ/icon
 
 createPlasmicElementProxy;
 
 export const PlasmicPlugin__VariantProps = new Array();
 
-export const PlasmicPlugin__ArgProps = new Array();
+export const PlasmicPlugin__ArgProps = new Array("signUpForm");
 
 const $$ = {};
 
@@ -58,36 +56,6 @@ function PlasmicPlugin__RenderFunc(props) {
   const $ctx = useDataEnv?.() || {};
   const refsRef = React.useRef({});
   const $refs = refsRef.current;
-  const stateSpecs = React.useMemo(
-    () => [
-      {
-        path: "textbox.value",
-        type: "private",
-        variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) => ``
-      },
-      {
-        path: "textbox2.value",
-        type: "private",
-        variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) => ``
-      },
-      {
-        path: "textbox3.value",
-        type: "private",
-        variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) => ``
-      }
-    ],
-
-    [$props, $ctx, $refs]
-  );
-  const $state = useDollarState(stateSpecs, {
-    $props,
-    $ctx,
-    $queries: {},
-    $refs
-  });
   const globalVariants = ensureGlobalVariants({
     screen: useScreenVariantspcuqpuXkf7V2()
   });
@@ -186,174 +154,10 @@ function PlasmicPlugin__RenderFunc(props) {
                   hasGap={true}
                   className={classNames(projectcss.all, sty.freeBox__apHNd)}
                 >
-                  <div
-                    className={classNames(projectcss.all, sty.freeBox___7CjNi)}
-                  >
-                    <Stack__
-                      as={"div"}
-                      hasGap={true}
-                      className={classNames(projectcss.all, sty.freeBox__dj7Wn)}
-                    >
-                      <div
-                        className={classNames(
-                          projectcss.all,
-                          projectcss.__wab_text,
-                          sty.text___6LNfv
-                        )}
-                      >
-                        {"Get Notified on Launch"}
-                      </div>
-                      <Stack__
-                        as={"div"}
-                        hasGap={true}
-                        className={classNames(
-                          projectcss.all,
-                          sty.freeBox___18VbJ
-                        )}
-                      >
-                        <input
-                          data-plasmic-name={"textbox"}
-                          data-plasmic-override={overrides.textbox}
-                          className={classNames(
-                            projectcss.all,
-                            projectcss.input,
-                            sty.textbox
-                          )}
-                          onChange={e => {
-                            generateStateOnChangeProp($state, [
-                              "textbox",
-                              "value"
-                            ])(e.target.value);
-                          }}
-                          placeholder={"Your name"}
-                          ref={ref => {
-                            $refs["textbox"] = ref;
-                          }}
-                          size={1}
-                          type={"text"}
-                          value={
-                            generateStateValueProp($state, [
-                              "textbox",
-                              "value"
-                            ]) ?? ""
-                          }
-                        />
-
-                        <input
-                          data-plasmic-name={"textbox2"}
-                          data-plasmic-override={overrides.textbox2}
-                          className={classNames(
-                            projectcss.all,
-                            projectcss.input,
-                            sty.textbox2
-                          )}
-                          disabled={false}
-                          onChange={e => {
-                            generateStateOnChangeProp($state, [
-                              "textbox2",
-                              "value"
-                            ])(e.target.value);
-                          }}
-                          placeholder={"Phone Number"}
-                          ref={ref => {
-                            $refs["textbox2"] = ref;
-                          }}
-                          size={1}
-                          type={"tel"}
-                          value={
-                            generateStateValueProp($state, [
-                              "textbox2",
-                              "value"
-                            ]) ?? ""
-                          }
-                        />
-
-                        <input
-                          data-plasmic-name={"textbox3"}
-                          data-plasmic-override={overrides.textbox3}
-                          className={classNames(
-                            projectcss.all,
-                            projectcss.input,
-                            sty.textbox3
-                          )}
-                          onChange={e => {
-                            generateStateOnChangeProp($state, [
-                              "textbox3",
-                              "value"
-                            ])(e.target.value);
-                          }}
-                          placeholder={"Email"}
-                          ref={ref => {
-                            $refs["textbox3"] = ref;
-                          }}
-                          size={1}
-                          type={"email"}
-                          value={
-                            generateStateValueProp($state, [
-                              "textbox3",
-                              "value"
-                            ]) ?? ""
-                          }
-                        />
-                      </Stack__>
-                      <Button2
-                        className={classNames(
-                          "__wab_instance",
-                          sty.button2__hUfJh
-                        )}
-                        color2={"black"}
-                        endIcon={
-                          <Icon38Icon
-                            className={classNames(
-                              projectcss.all,
-                              sty.svg___070I
-                            )}
-                            role={"img"}
-                          />
-                        }
-                        size={"compact"}
-                        startIcon={
-                          <ChecksvgIcon
-                            className={classNames(
-                              projectcss.all,
-                              sty.svg___4V17W
-                            )}
-                            role={"img"}
-                          />
-                        }
-                        submitsForm={true}
-                      >
-                        <div
-                          className={classNames(
-                            projectcss.all,
-                            projectcss.__wab_text,
-                            sty.text__pflt
-                          )}
-                        >
-                          {"Submit"}
-                        </div>
-                      </Button2>
-                    </Stack__>
-                    <div
-                      className={classNames(projectcss.all, sty.freeBox__bvQq)}
-                    />
-
-                    <div
-                      className={classNames(projectcss.all, sty.freeBox__jWe6Z)}
-                    >
-                      <div
-                        className={classNames(
-                          projectcss.all,
-                          projectcss.__wab_text,
-                          sty.text__eyUeO
-                        )}
-                      >
-                        {
-                          "By submitting this form you agree to sign up to our plugin waitlist and receive marketing communications."
-                        }
-                      </div>
-                    </div>
-                  </div>
+                  {renderPlasmicSlot({
+                    defaultContents: null,
+                    value: args.signUpForm
+                  })}
                 </Stack__>
               </Stack__>
             </Stack__>
@@ -1073,10 +877,9 @@ function PlasmicPlugin__RenderFunc(props) {
                         </Stack__>
                       </Stack__>
                       <Button2
-                        className={classNames(
-                          "__wab_instance",
-                          sty.button2__epTFl
-                        )}
+                        data-plasmic-name={"button2"}
+                        data-plasmic-override={overrides.button2}
+                        className={classNames("__wab_instance", sty.button2)}
                         color2={"green"}
                         endIcon={
                           <Icon38Icon
@@ -1137,9 +940,6 @@ const PlasmicDescendants = {
     "section",
     "siteNavBar",
     "foreground",
-    "textbox",
-    "textbox2",
-    "textbox3",
     "pluginDetails",
     "foreground2",
     "columns",
@@ -1153,15 +953,13 @@ const PlasmicDescendants = {
     "obsLogo",
     "pricing",
     "foreground3",
+    "button2",
     "baryonFooter"
   ],
 
   section: ["section", "siteNavBar"],
   siteNavBar: ["siteNavBar"],
-  foreground: ["foreground", "textbox", "textbox2", "textbox3"],
-  textbox: ["textbox"],
-  textbox2: ["textbox2"],
-  textbox3: ["textbox3"],
+  foreground: ["foreground"],
   pluginDetails: ["pluginDetails", "foreground2", "columns", "h2"],
   foreground2: ["foreground2", "columns", "h2"],
   columns: ["columns", "h2"],
@@ -1182,8 +980,9 @@ const PlasmicDescendants = {
   unrealEngineLogo: ["unrealEngineLogo"],
   abletonLogo: ["abletonLogo"],
   obsLogo: ["obsLogo"],
-  pricing: ["pricing", "foreground3"],
-  foreground3: ["foreground3"],
+  pricing: ["pricing", "foreground3", "button2"],
+  foreground3: ["foreground3", "button2"],
+  button2: ["button2"],
   baryonFooter: ["baryonFooter"]
 };
 
@@ -1222,9 +1021,6 @@ export const PlasmicPlugin = Object.assign(
     section: makeNodeComponent("section"),
     siteNavBar: makeNodeComponent("siteNavBar"),
     foreground: makeNodeComponent("foreground"),
-    textbox: makeNodeComponent("textbox"),
-    textbox2: makeNodeComponent("textbox2"),
-    textbox3: makeNodeComponent("textbox3"),
     pluginDetails: makeNodeComponent("pluginDetails"),
     foreground2: makeNodeComponent("foreground2"),
     columns: makeNodeComponent("columns"),
@@ -1238,6 +1034,7 @@ export const PlasmicPlugin = Object.assign(
     obsLogo: makeNodeComponent("obsLogo"),
     pricing: makeNodeComponent("pricing"),
     foreground3: makeNodeComponent("foreground3"),
+    button2: makeNodeComponent("button2"),
     baryonFooter: makeNodeComponent("baryonFooter"),
     // Metadata about props expected for PlasmicPlugin
     internalVariantProps: PlasmicPlugin__VariantProps,
