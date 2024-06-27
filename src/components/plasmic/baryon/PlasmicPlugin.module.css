@@ -100,6 +100,8 @@
     #ffffff80;
   width: 100%;
   max-width: auto;
+  overflow-x: hidden;
+  overflow-y: visible;
   grid-column-start: 1 !important;
   grid-column-end: -1 !important;
   padding: 64px 0px 0px;
