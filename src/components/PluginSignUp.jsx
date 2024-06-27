@@ -41,21 +41,21 @@ const formSchema = z.object({
 
 function SuccessCard() {
   return (
-    <div className="dark w-full max-w-[350px]">
-      <Card className="w-full">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-semibold">Welcome to the Journey!</CardTitle>
-          <CardDescription className="text-sm text-muted-foreground mt-2">
-            We're excited to have you on board.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-center text-sm">
-            We'll keep you updated on our launch and exciting developments.
-          </p>
-        </CardContent>
-      </Card>
-    </div>
+    // <div className="dark w-full">
+    <Card className="w-full">
+      <CardHeader className="text-center">
+        <CardTitle className="text-2xl font-semibold">Welcome to the Journey!</CardTitle>
+        <CardDescription className="text-sm text-muted-foreground mt-2">
+          We're excited to have you on board.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className="text-center text-sm">
+          We'll keep you updated on our launch and exciting developments.
+        </p>
+      </CardContent>
+    </Card>
+    // </div>
   );
 }
 
