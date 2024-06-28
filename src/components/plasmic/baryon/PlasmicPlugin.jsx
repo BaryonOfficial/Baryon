@@ -1034,8 +1034,10 @@ export const PlasmicPlugin = Object.assign(
     // Page metadata
     pageMetadata: {
       title: "Plugin",
-      description: "",
-      ogImageSrc: "",
+      description:
+        "Cymatics music visualizer plugin for media servers and visual software tools.",
+      ogImageSrc:
+        "https://site-assets.plasmic.app/625a42e8eacfe1f7cdb72d99ccd2eee6.png",
       canonical: ""
     }
   }
