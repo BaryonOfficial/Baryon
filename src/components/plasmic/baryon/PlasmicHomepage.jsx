@@ -290,8 +290,9 @@ export const PlasmicHomepage = Object.assign(
     // Page metadata
     pageMetadata: {
       title: "Homepage",
-      description: "",
-      ogImageSrc: "",
+      description: "A 3D cymatics music visualizer that makes sound visible. ",
+      ogImageSrc:
+        "https://site-assets.plasmic.app/d0b49d03b481447cf5b118e7f0a94c08.png",
       canonical: ""
     }
   }
