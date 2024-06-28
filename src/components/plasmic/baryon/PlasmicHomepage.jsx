@@ -22,7 +22,7 @@ import {
   useDollarState
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
-import SiteNavBar from "../../SiteNavBar"; // plasmic-import: xamm2QscKBA7/component
+import NavBar from "../../NavBar"; // plasmic-import: GPPFyGZ_p6O7/component
 import Switch from "../../Switch"; // plasmic-import: nvHlc0ztf3Mh/component
 import { useScreenVariants as useScreenVariantspcuqpuXkf7V2 } from "./PlasmicGlobalVariant__Screen"; // plasmic-import: PcuqpuXKF7v2/globalVariant
 import "@plasmicapp/react-web/lib/plasmic.css";
@@ -89,10 +89,10 @@ function PlasmicHomepage__RenderFunc(props) {
             sty.visualizerDesktop
           )}
         >
-          <SiteNavBar
-            data-plasmic-name={"siteNavBar"}
-            data-plasmic-override={overrides.siteNavBar}
-            className={classNames("__wab_instance", sty.siteNavBar)}
+          <NavBar
+            data-plasmic-name={"navBar"}
+            data-plasmic-override={overrides.navBar}
+            className={classNames("__wab_instance", sty.navBar)}
           />
 
           {(
@@ -212,7 +212,7 @@ function PlasmicHomepage__RenderFunc(props) {
 const PlasmicDescendants = {
   visualizerDesktop: [
     "visualizerDesktop",
-    "siteNavBar",
+    "navBar",
     "section",
     "micModeToggle",
     "modeSettings",
@@ -221,7 +221,7 @@ const PlasmicDescendants = {
     "_switch"
   ],
 
-  siteNavBar: ["siteNavBar"],
+  navBar: ["navBar"],
   section: [
     "section",
     "micModeToggle",
@@ -277,7 +277,7 @@ export const PlasmicHomepage = Object.assign(
   makeNodeComponent("visualizerDesktop"),
   {
     // Helper components rendering sub-elements
-    siteNavBar: makeNodeComponent("siteNavBar"),
+    navBar: makeNodeComponent("navBar"),
     section: makeNodeComponent("section"),
     micModeToggle: makeNodeComponent("micModeToggle"),
     modeSettings: makeNodeComponent("modeSettings"),
