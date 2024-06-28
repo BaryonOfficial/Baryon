@@ -173,9 +173,7 @@ export function gpgpuSetup(baseGeometry, renderer, parameters, baseGeometry2) {
     ),
   };
   gpgpu.audioDataVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
-  gpgpu.audioDataVariable.material.uniforms.sampleRate = new THREE.Uniform(
-    audioObject.audioCtx.sampleRate
-  );
+  gpgpu.audioDataVariable.material.uniforms.sampleRate = new THREE.Uniform(audioObject.audioCtx.sampleRate);
   gpgpu.audioDataVariable.material.uniforms.bufferSize = new THREE.Uniform(audioObject.fftSize);
   gpgpu.audioDataVariable.material.uniforms.capacity = new THREE.Uniform(audioObject.capacity);
   gpgpu.audioDataVariable.material.uniforms.uRandomPitches = waveUniforms.pitches;

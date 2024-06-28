@@ -17,6 +17,7 @@ import {
 import { toggleRecording, toggleRecordingButton } from './recordRTC.js';
 
 //******************************************************* GENERAL INITIALIZATION *******************************************************//
+
 const guiWidth = 300;
 const gui = new GUI({ width: guiWidth, container: document.getElementById('gui-container') });
 document.documentElement.style.setProperty('--gui-width', guiWidth + 'px');
@@ -146,6 +147,7 @@ baseGeometry2.count = baseGeometry2.geometry.attributes.position.count;
 /*
  * Audio Processing;
  */
+
 audioSetup(camera);
 
 /*
@@ -300,6 +302,8 @@ let deltaTime = 0;
 let frameReset = 10;
 
 function updateGPGPUTextures() {
+
+  gpgpu.computation.compute();
   // Update audioData texture
   gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value =
     gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable).texture;
@@ -357,8 +361,7 @@ const tick = () => {
   gpgpu.particlesVariable.material.uniforms.uTime.value = time;
   gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
   gpgpu.particlesVariable.material.uniforms.uStarted.value = audioObject.sound.started;
-  gpgpu.particlesVariable.material.uniforms.uMicActive.value =
-    audioObject.gumStream && audioObject.gumStream.active;
+  gpgpu.particlesVariable.material.uniforms.uMicActive.value = audioObject.gumStream && audioObject.gumStream.active;
 
   particles.material.uniforms.uSoundPlaying.value = audioObject.sound.isPlaying;
   particles.material.uniforms.uTime.value = time;
@@ -373,7 +376,6 @@ const tick = () => {
   // }
 
   // ******** GPGPU START ******** //
-  gpgpu.computation.compute();
   updateGPGPUTextures();
 
   const angle = time * 0.5 * particles.material.uniforms.uRotation.value;

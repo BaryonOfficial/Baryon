@@ -17,7 +17,7 @@ const fragmentShader = `
 
   void main() {
     float distanceFromCenter = length(vPosition - vec3(0, 0, 0));
-    float gradient = distanceFromCenter / 0.5; // Adjust the divisor to control the gradient effect
+    float gradient = distanceFromCenter; // Adjust the divisor to control the gradient effect
     vec3 color = mix(uCenterColor, uOuterColor, gradient);
     gl_FragColor = vec4(color, 1.0);
   }
@@ -115,7 +115,6 @@ export class Koch extends THREE.Object3D {
     }
 
     updateGeometry() {
-        console.log("hi")
         const positions = this.geometry.attributes.position.array;
         for (let i = 0; i < this.points.length; i++) {
             positions[i] = this.points[i];
@@ -132,22 +131,46 @@ export class Koch4D extends THREE.Object3D {
     constructor(centerColor, outerColor) {
         super();
 
-        this.koch_1 = new Koch(45, 3, centerColor, outerColor);
-        // this.koch_2 = new Koch(45, 2, centerColor, outerColor);
+        const angle = 180 * Math.random()
+
+        this.koch_1 = new Koch(angle, 3, centerColor, outerColor, [[-1, 0, 0], [0, 2, 0], [0, 0, -1]]);
+        this.koch_2 = new Koch(angle, 3, centerColor, outerColor, [[1, 0, 0], [0, -2, 0], [0, 0, 1]]);
+
+        this.add(this.koch_1, this.koch_2)
     }
 
-    update() {
+    update(time) {
         this.koch_1.update();
-        // this.koch_2.update();
+        this.koch_2.update();
+
+        this.rotation.x = Math.sin(-time / 10);
+        this.rotation.y = Math.sin(time / 10);
+        this.rotation.z = Math.sin(time / 20);
     }
 }
 
-export class RandomKoch4D extends THREE.Object3D {
+export class DomainKoch extends THREE.Object3D {
     constructor() {
         super();
+
+        this.init();
+    }
+
+    init() {
+
+        for (let i = 0; i < 3; i++) {
+
+            const koch = new Koch4D()
+            koch.scale.multiplyScalar(1 / 6 + 1 / 2 * Math.random())
+            koch.position.set(1 - (2 * Math.random()), 1 + (Math.random() / 2), 1 - (2 * Math.random()));
+
+            this.add(koch);
+        }
     }
 
     update() {
-
+        this.children.forEach((koch) => {
+            koch.update();
+        })
     }
 }

@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import ThreeMeshUI from 'three-mesh-ui';
 import { playlists, images } from '../utils/utils';
-import { baryon } from '../baryon/Baryon';
 
 const selectedAttributes = {
     offset: 0.002,
@@ -302,7 +301,7 @@ function MakePanelThree(body) {
         backgroundOpacity: 0,
     })
 
-    thirdPanel.add(baryon);
+    // thirdPanel.add(baryon);
 
     body.add(thirdPanel);
 }

@@ -5,8 +5,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import ThreeMeshUI from 'three-mesh-ui'
 import VRControl from './mr/VRControl';
 import MainUI from './mr/MainUI';
-import { baryon } from './baryon/Baryon';
-import { Koch, Koch4D } from './XRE/Koch';
+import { Baryon } from './Baryon';
+import { Koch, Koch4D, DomainKoch } from './XRE/Koch';
 
 const stats = new Stats();
 stats.showPanel(0)
@@ -16,7 +16,7 @@ let container, xrSession, clock, listener;
 let camera, scene, renderer;
 let vrControl;
 
-let mainUI, koch, koch4D;
+let mainUI, koch_1, koch_2, koch4D, domain_1, mandlebort, juila, baryon;
 
 let controls, group;
 
@@ -43,21 +43,13 @@ function init() {
     camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.position.set(0, -.5, 2);
 
-    const floorGeometry = new THREE.PlaneGeometry(6, 6);
-    const floorMaterial = new THREE.ShadowMaterial({ opacity: 0.25, blending: THREE.CustomBlending, transparent: false });
-    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-    floor.rotation.x = - Math.PI / 2;
-
-    floor.receiveShadow = true;
-    scene.add(floor);
-
     scene.add(new THREE.HemisphereLight(0xbcbcbc, 0xa5a5a5, 3));
 
     const ambientLight = new THREE.AmbientLight(new THREE.Color(0xfff2cf), 4)
     scene.add(ambientLight);
 
-    group = new THREE.Group();
-    scene.add(group);
+    // group = new THREE.Group();
+    // scene.add(group);
 
     // Helper 
     scene.add(
@@ -76,12 +68,8 @@ function init() {
     document.body.appendChild(XRButton.createButton(renderer));
 
     // controllers
-
-    // Orbit controls for no-vr
-
     controls = new OrbitControls(camera, renderer.domElement);
-    //camera.position.set(0, 1.6, 0);
-    controls.target = new THREE.Vector3(0, 1, -1.8);
+    controls.target = new THREE.Vector3(0, 0, 0);
 
     ////////////////
     // Controllers
@@ -137,15 +125,34 @@ function init() {
 
     // // Playlist
     mainUI = new MainUI();
-    // mainUI.scale.multiplyScalar(1 / 10);
-    mainUI.position.set(0, 1.5, -.4);
+    mainUI.scale.multiplyScalar(1 / 4);
+    mainUI.position.set(-0.5, .8, -.4);
 
     // objsToTest.push(...baryonPlaylistUI.objsToTest);
-    scene.add(mainUI);
+    // scene.add(mainUI);
 
-    koch = new Koch(45, 3, new THREE.Color("red"), new THREE.Color("pink"));
-    scene.add(koch);
-    koch.position.set(0, 1.5, -5)
+    var color_1 = new THREE.Color(Math.random(), Math.random(), Math.random())
+    var color_2 = new THREE.Color(Math.random(), Math.random(), Math.random())
+
+    // koch4D = new Koch4D(new THREE.Color("red"), new THREE.Color("black"));
+    // koch4D = new Koch4D(color_1, color_2);
+    // koch4D.scale.multiplyScalar(1 / 3);
+    // koch4D.position.set(.2, .9, -.4)
+    // scene.add(koch4D)
+
+    // mandlebort = new MandlebrotCube();
+    // mandlebort.scale.multiplyScalar(1 / 150);
+    // mandlebort.position.set(0, 1.5, -1);
+    // scene.add(mandlebort);
+
+
+    // juila = new Juila3D();
+    // scene.add(juila);
+
+    baryon = new Baryon(renderer, camera);
+    baryon.scale.multiplyScalar(1 / 6);
+    baryon.position.set(0, 1.25, -1);
+    scene.add(baryon);
     clock = new THREE.Clock();
 }
 
@@ -162,10 +169,12 @@ function onWindowResize() {
 function animate() {
     stats.begin();
     const elapstedTime = clock.getElapsedTime();
-
+    const deltaTime = clock.getDelta();
     ThreeMeshUI.update();
-    baryon.update(elapstedTime);
-    koch.update();
+    baryon.update(elapstedTime, deltaTime);
+    //mandlebort.update(elapstedTime);
+    // juila.update();
+    // koch4D.update(elapstedTime);
     controls.update();
     renderer.render(scene, camera);
 
