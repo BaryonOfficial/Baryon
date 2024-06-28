@@ -155,11 +155,11 @@
 }
 .text___33Xl {
   font-size: 24px;
-  color: #ffffffbf;
+  color: #ffffffd9;
   text-align: center;
   line-height: 28px;
   font-family: "Lora", serif;
-  font-weight: 500;
+  font-weight: 600;
   font-style: normal;
   text-transform: none;
   letter-spacing: normal;
@@ -171,7 +171,7 @@
 @media (min-width: 0px) and (max-width: 768px) {
   .text___33Xl {
     font-size: 16px;
-    color: #ffffffbf;
+    color: #ffffffd9;
   }
 }
 .button2:global(.__wab_instance) {
