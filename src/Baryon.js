@@ -12,6 +12,8 @@ import audioDataShader from './shaders/gpgpu/audioData.glsl';
 import particlesVertexShader from './shaders/particles/vertex.glsl';
 import particlesFragmentShader from './shaders/particles/fragment.glsl';
 
+// Idea here is to have a single baryon object that can be placed into different three.js projects 
+
 function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio) {
     const positions = new Float32Array(count * 3);
     const surfaceCount = Math.floor(count * surfaceRatio);
@@ -135,10 +137,6 @@ export class Baryon extends THREE.Object3D {
         this.audioObject.audioCtx = this.audioObject.audioListener.context;
         this.audioObject.analyser = new THREE.AudioAnalyser(this.audioObject.sound, this.audioObject.fftSize);
         this.audioObject.essentiaData = new Float32Array(this.audioObject.capacity);
-
-        // this.waveUniforms = {
-        //     pitches: { value: generateRandomPitches(this.audioObject.capacity) },
-        // };
 
         this.particlePositions = initializeParticlesInSphereVolumeAndSurface( // x, y, z for each particle
             this.particleParameters.count,
