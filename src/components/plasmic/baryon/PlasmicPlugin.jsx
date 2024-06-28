@@ -19,7 +19,7 @@ import {
   renderPlasmicSlot
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
-import SiteNavBar from "../../SiteNavBar"; // plasmic-import: xamm2QscKBA7/component
+import NavBar from "../../NavBar"; // plasmic-import: GPPFyGZ_p6O7/component
 import Button2 from "../../Button2"; // plasmic-import: EPGJPtXx-yjL/component
 import BaryonFooter from "../../BaryonFooter"; // plasmic-import: FKV3u0E4hZrB/component
 import { useScreenVariants as useScreenVariantspcuqpuXkf7V2 } from "./PlasmicGlobalVariant__Screen"; // plasmic-import: PcuqpuXKF7v2/globalVariant
@@ -78,17 +78,12 @@ function PlasmicPlugin__RenderFunc(props) {
             sty.plugin
           )}
         >
-          <section
-            data-plasmic-name={"section"}
-            data-plasmic-override={overrides.section}
-            className={classNames(projectcss.all, sty.section)}
-          >
-            <SiteNavBar
-              data-plasmic-name={"siteNavBar"}
-              data-plasmic-override={overrides.siteNavBar}
-              className={classNames("__wab_instance", sty.siteNavBar)}
-            />
-          </section>
+          <NavBar
+            data-plasmic-name={"navBar"}
+            data-plasmic-override={overrides.navBar}
+            className={classNames("__wab_instance", sty.navBar)}
+          />
+
           <Stack__
             as={"div"}
             hasGap={true}
@@ -126,7 +121,7 @@ function PlasmicPlugin__RenderFunc(props) {
                           sty.text__moqxw
                         )}
                       >
-                        {"Sound You Can See"}
+                        {"SOUND YOU CAN SEE"}
                       </div>
                     </div>
                     <div
@@ -136,7 +131,7 @@ function PlasmicPlugin__RenderFunc(props) {
                         sty.text___356Z3
                       )}
                     >
-                      {"Cymatic Visuals for Immersive Experiences"}
+                      {"Cymatic Music Visualizer "}
                     </div>
                     <div
                       className={classNames(
@@ -937,8 +932,7 @@ function PlasmicPlugin__RenderFunc(props) {
 const PlasmicDescendants = {
   plugin: [
     "plugin",
-    "section",
-    "siteNavBar",
+    "navBar",
     "foreground",
     "pluginDetails",
     "foreground2",
@@ -957,8 +951,7 @@ const PlasmicDescendants = {
     "baryonFooter"
   ],
 
-  section: ["section", "siteNavBar"],
-  siteNavBar: ["siteNavBar"],
+  navBar: ["navBar"],
   foreground: ["foreground"],
   pluginDetails: ["pluginDetails", "foreground2", "columns", "h2"],
   foreground2: ["foreground2", "columns", "h2"],
@@ -1018,8 +1011,7 @@ export const PlasmicPlugin = Object.assign(
   makeNodeComponent("plugin"),
   {
     // Helper components rendering sub-elements
-    section: makeNodeComponent("section"),
-    siteNavBar: makeNodeComponent("siteNavBar"),
+    navBar: makeNodeComponent("navBar"),
     foreground: makeNodeComponent("foreground"),
     pluginDetails: makeNodeComponent("pluginDetails"),
     foreground2: makeNodeComponent("foreground2"),

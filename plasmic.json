@@ -634,19 +634,6 @@
           "path": "/story"
         },
         {
-          "id": "xamm2QscKBA7",
-          "name": "SiteNavBar",
-          "type": "managed",
-          "projectId": "4dvBXLce6aZWcodsHuZ7oL",
-          "renderModuleFilePath": "plasmic/baryon/PlasmicSiteNavBar.jsx",
-          "importSpec": {
-            "modulePath": "SiteNavBar.jsx"
-          },
-          "cssFilePath": "plasmic/baryon/PlasmicSiteNavBar.module.css",
-          "scheme": "blackbox",
-          "componentType": "component"
-        },
-        {
           "id": "FXocl_OYx5HY",
           "name": "Plugin",
           "type": "managed",
@@ -749,6 +736,33 @@
             "modulePath": "MobileMenu.jsx"
           },
           "cssFilePath": "plasmic/baryon/PlasmicMobileMenu.module.css",
+          "scheme": "blackbox",
+          "componentType": "component"
+        },
+        {
+          "id": "Raiilk_IHPvW",
+          "name": "Button3",
+          "type": "managed",
+          "projectId": "4dvBXLce6aZWcodsHuZ7oL",
+          "renderModuleFilePath": "plasmic/baryon/PlasmicButton3.jsx",
+          "importSpec": {
+            "modulePath": "Button3.jsx"
+          },
+          "cssFilePath": "plasmic/baryon/PlasmicButton3.module.css",
+          "scheme": "blackbox",
+          "componentType": "component",
+          "plumeType": "button"
+        },
+        {
+          "id": "GPPFyGZ_p6O7",
+          "name": "NavBar",
+          "type": "managed",
+          "projectId": "4dvBXLce6aZWcodsHuZ7oL",
+          "renderModuleFilePath": "plasmic/baryon/PlasmicNavBar.jsx",
+          "importSpec": {
+            "modulePath": "NavBar.jsx"
+          },
+          "cssFilePath": "plasmic/baryon/PlasmicNavBar.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         }
@@ -1063,6 +1077,11 @@
           "id": "S0IbNKyNuVm7",
           "name": "ChevronUpsvgIcon",
           "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ChevronUpsvg.jsx"
+        },
+        {
+          "id": "LiXFu_pZNIFT",
+          "name": "ClosebuttonsvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Closebuttonsvg.jsx"
         }
       ],
       "images": [
@@ -1300,6 +1319,16 @@
           "id": "iy4EoC896c_K",
           "name": "harli-marten-n7a2OJDSZns-unsplash.jpg",
           "filePath": "plasmic/baryon/images/harliMartenN7A2OjdsZnsUnsplashjpg.jpg"
+        },
+        {
+          "id": "2wMlSYU5EhVn",
+          "name": "GuitarPlaying.jpg",
+          "filePath": "plasmic/baryon/images/guitarPlayingjpg.jpeg"
+        },
+        {
+          "id": "cPRUo6uw3iSp",
+          "name": "hamburger-menu-svgrepo-com.svg 2",
+          "filePath": "plasmic/baryon/images/hamburgerMenuSvgrepoComsvg2.svg"
         }
       ],
       "indirect": false,

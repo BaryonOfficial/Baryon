@@ -11,6 +11,7 @@
 import * as React from "react";
 import {
   PlasmicImg as PlasmicImg__,
+  PlasmicLink as PlasmicLink__,
   Stack as Stack__,
   classNames,
   createPlasmicElementProxy,
@@ -177,93 +178,48 @@ function PlasmicBaryonFooter__RenderFunc(props) {
                 hasGap={true}
                 className={classNames(projectcss.all, sty.freeBox__aLqSt)}
               >
-                <LogosvgIcon
-                  className={classNames(projectcss.all, sty.svg__zmaZs, {
-                    [sty.svgwhitetextFooter__zmaZs6Ubxt]: hasVariant(
-                      $state,
-                      "whitetextFooter",
-                      "whitetextFooter"
-                    )
-                  })}
-                  onClick={async event => {
-                    const $steps = {};
-                    $steps["goToHttpsxcombaryonofficial"] = true
-                      ? (() => {
-                          const actionArgs = {
-                            destination: "https://x.com/baryonofficial"
-                          };
-                          return (({ destination }) => {
-                            if (
-                              typeof destination === "string" &&
-                              destination.startsWith("#")
-                            ) {
-                              document
-                                .getElementById(destination.substr(1))
-                                .scrollIntoView({ behavior: "smooth" });
-                            } else {
-                              location.assign(destination);
-                            }
-                          })?.apply(null, [actionArgs]);
-                        })()
-                      : undefined;
-                    if (
-                      $steps["goToHttpsxcombaryonofficial"] != null &&
-                      typeof $steps["goToHttpsxcombaryonofficial"] ===
-                        "object" &&
-                      typeof $steps["goToHttpsxcombaryonofficial"].then ===
-                        "function"
-                    ) {
-                      $steps["goToHttpsxcombaryonofficial"] = await $steps[
-                        "goToHttpsxcombaryonofficial"
-                      ];
-                    }
-                  }}
-                  role={"img"}
-                />
-
-                <InstagramSvgrepoComsvgIcon
-                  className={classNames(projectcss.all, sty.svg__c9B5, {
-                    [sty.svgwhitetextFooter__c9B56Ubxt]: hasVariant(
-                      $state,
-                      "whitetextFooter",
-                      "whitetextFooter"
-                    )
-                  })}
-                  onClick={async event => {
-                    const $steps = {};
-                    $steps["goToHttpsinstagramcombaryoneth"] = true
-                      ? (() => {
-                          const actionArgs = {
-                            destination: "https://instagram.com/baryon.eth"
-                          };
-                          return (({ destination }) => {
-                            if (
-                              typeof destination === "string" &&
-                              destination.startsWith("#")
-                            ) {
-                              document
-                                .getElementById(destination.substr(1))
-                                .scrollIntoView({ behavior: "smooth" });
-                            } else {
-                              location.assign(destination);
-                            }
-                          })?.apply(null, [actionArgs]);
-                        })()
-                      : undefined;
-                    if (
-                      $steps["goToHttpsinstagramcombaryoneth"] != null &&
-                      typeof $steps["goToHttpsinstagramcombaryoneth"] ===
-                        "object" &&
-                      typeof $steps["goToHttpsinstagramcombaryoneth"].then ===
-                        "function"
-                    ) {
-                      $steps["goToHttpsinstagramcombaryoneth"] = await $steps[
-                        "goToHttpsinstagramcombaryoneth"
-                      ];
-                    }
-                  }}
-                  role={"img"}
-                />
+                <PlasmicLink__
+                  className={classNames(
+                    projectcss.all,
+                    projectcss.a,
+                    sty.link__kd6Y9
+                  )}
+                  href={"https://x.com/baryonofficial"}
+                  platform={"react"}
+                  target={"_blank"}
+                >
+                  <LogosvgIcon
+                    className={classNames(projectcss.all, sty.svg__zmaZs, {
+                      [sty.svgwhitetextFooter__zmaZs6Ubxt]: hasVariant(
+                        $state,
+                        "whitetextFooter",
+                        "whitetextFooter"
+                      )
+                    })}
+                    role={"img"}
+                  />
+                </PlasmicLink__>
+                <PlasmicLink__
+                  className={classNames(
+                    projectcss.all,
+                    projectcss.a,
+                    sty.link__x4Bk
+                  )}
+                  href={"https://instagram.com/baryon.eth"}
+                  platform={"react"}
+                  target={"_blank"}
+                >
+                  <InstagramSvgrepoComsvgIcon
+                    className={classNames(projectcss.all, sty.svg__c9B5, {
+                      [sty.svgwhitetextFooter__c9B56Ubxt]: hasVariant(
+                        $state,
+                        "whitetextFooter",
+                        "whitetextFooter"
+                      )
+                    })}
+                    role={"img"}
+                  />
+                </PlasmicLink__>
               </Stack__>
             </Stack__>
           </Stack__>
