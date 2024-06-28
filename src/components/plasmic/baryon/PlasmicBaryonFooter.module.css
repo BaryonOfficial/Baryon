@@ -163,7 +163,7 @@
   font-size: 16px;
   font-weight: 400;
   font-style: normal;
-  color: #00000099;
+  color: #000000b3;
   text-align: left;
   text-transform: none;
   line-height: 1.5;
@@ -173,8 +173,13 @@
   text-decoration-line: none;
   text-overflow: clip;
 }
+@media (min-width: 0px) and (max-width: 768px) {
+  .text {
+    color: #000000b3;
+  }
+}
 .textwhitetextFooter {
-  color: #ffffff99;
+  color: #ffffffb3;
 }
 .freeBox__aLqSt {
   display: flex;

@@ -406,7 +406,6 @@
   user-select: text;
   text-decoration-line: none;
   text-overflow: clip;
-  padding-top: 0px;
   margin-top: calc(16px + 16px) !important;
 }
 @media (min-width: 0px) and (max-width: 768px) {
@@ -480,10 +479,10 @@
 .text__qj30B {
   position: relative;
   font-family: "Ubuntu", sans-serif;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 400;
   font-style: normal;
-  color: #00000099;
+  color: #000000bf;
   text-align: center;
   text-transform: none;
   line-height: 1.5;
@@ -739,7 +738,7 @@
   }
 }
 .text___7FEIq {
-  font-size: 22px;
+  font-size: 20px;
   color: #ffffffbf;
   line-height: 1.5;
   font-family: "Ubuntu", sans-serif;
