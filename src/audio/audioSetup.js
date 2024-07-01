@@ -44,7 +44,7 @@ export function loadAudio(url) {
       function (buffer) {
         audioObject.sound.setBuffer(buffer);
         audioObject.sound.setLoop(false);
-        audioObject.sound.setVolume(0.5);
+        audioObject.sound.setVolume(1.0);
         isAudioLoaded = true;
         resolve();
       },
