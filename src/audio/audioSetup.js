@@ -211,10 +211,11 @@ export function audioSetup(camera) {
 export function setAudioEndedCallback(callback) {
   audioObject.sound.onEnded = function () {
     audioObject.sound.stop();
-    console.log('Audio ended');
     audioObject.sound.started = false;
     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
+    console.log('Before onEnded callback');
     callback();
+    console.log('OnEnded callback called');
   };
 }
 
