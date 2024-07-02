@@ -42,7 +42,7 @@ class AudioDataProcessor extends AudioWorkletProcessor {
 
       if (event.data.micActive !== undefined) {
         this.micActive = event.data.micActive;
-        console.log('micActive:', this.micActive);
+        // console.log('micActive:', this.micActive);
       }
     };
     console.log('Backend - essentia:' + this._essentia.version + '- http://essentia.upf.edu');

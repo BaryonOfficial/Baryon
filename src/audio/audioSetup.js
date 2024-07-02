@@ -144,7 +144,7 @@ export function startMicRecordStream() {
             micActive: audioObject.gumStream && audioObject.gumStream.active,
           });
 
-          setInterval(checkMicInputLevels, 1000); // Check every second
+          // setInterval(checkMicInputLevels, 1000); // Check if mic is working
           resolve();
         })
         .catch((err) => {
