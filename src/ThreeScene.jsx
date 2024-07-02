@@ -18,7 +18,6 @@ import {
   stopAudio,
   processAudioData,
   startAudioProcessing,
-  getIsAudioLoaded,
   setAudioEndedCallback,
 } from './audio/audioSetup.js';
 import GUI from 'lil-gui';
@@ -102,12 +101,6 @@ const ThreeScene = () => {
      * Audio Processing;
      */
     audioSetup(camera);
-
-    // Set up audio ended callback
-    setAudioEndedCallback(() => {
-      setIsPlaying(false);
-      console.log('Audio ended');
-    });
 
     // Controls
     const controls = new OrbitControls(camera, canvas);
@@ -372,13 +365,12 @@ const ThreeScene = () => {
 
     startAudioProcessing(tick);
 
-    // Clean up on component unmount
-
-    // Set up audio ended listener
-    audioObject.sound.onEnded = () => {
+    // Set up audio ended callback
+    setAudioEndedCallback(() => {
       setIsPlaying(false);
+      setIsAudioLoaded(true);
       console.log('Audio ended');
-    };
+    });
 
     return () => {
       console.log('Component unmounting');
@@ -413,6 +405,10 @@ const ThreeScene = () => {
   }, []);
 
   const handlePlayPause = useCallback(async () => {
+    if (!isAudioLoaded) {
+      console.log('Audio not loaded yet');
+      return;
+    }
     try {
       const isNowPlaying = await playPauseAudio();
       setIsPlaying(isNowPlaying);
@@ -420,7 +416,7 @@ const ThreeScene = () => {
       console.error('Error in play/pause:', error);
       setIsPlaying(false);
     }
-  }, []);
+  }, [isAudioLoaded]);
 
   const handleStop = useCallback(() => {
     stopAudio();
