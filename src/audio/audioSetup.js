@@ -205,13 +205,16 @@ export function audioSetup(camera) {
   console.log('audioCtx', audioObject.audioCtx);
   // create an AudioAnalyser, passing in the sound and desired fftSize
   audioObject.analyser = new THREE.AudioAnalyser(audioObject.sound, audioObject.fftSize);
+}
 
-  // Set up onEnded callback
+// Set up onEnded callback
+export function setAudioEndedCallback(callback) {
   audioObject.sound.onEnded = function () {
     audioObject.sound.stop();
     console.log('Audio ended');
     audioObject.sound.started = false;
     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
+    callback();
   };
 }
 

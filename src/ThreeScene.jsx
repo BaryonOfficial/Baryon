@@ -19,6 +19,7 @@ import {
   processAudioData,
   startAudioProcessing,
   getIsAudioLoaded,
+  setAudioEndedCallback,
 } from './audio/audioSetup.js';
 import GUI from 'lil-gui';
 import UnsupportedWarning from './utils/UnsupportedWarning.jsx';
@@ -28,7 +29,7 @@ const ThreeScene = () => {
   const canvasRef = useRef(null);
   const guiContainerRef = useRef(null);
 
-  const [fileName, setFileName] = useState('Choose File');
+  const [fileName, setFileName] = useState('Upload Audio');
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMicActive, setIsMicActive] = useState(false);
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
@@ -101,6 +102,12 @@ const ThreeScene = () => {
      * Audio Processing;
      */
     audioSetup(camera);
+
+    // Set up audio ended callback
+    setAudioEndedCallback(() => {
+      setIsPlaying(false);
+      console.log('Audio ended');
+    });
 
     // Controls
     const controls = new OrbitControls(camera, canvas);
@@ -400,7 +407,7 @@ const ThreeScene = () => {
           setIsAudioLoaded(false);
         });
     } else {
-      setFileName('Choose File');
+      setFileName('Upload Audio');
       setIsAudioLoaded(false);
     }
   }, []);
@@ -443,7 +450,7 @@ const ThreeScene = () => {
           <div className="controls-container fixed top-20 left-12 z-50 p-4">
             <div className="flex flex-col items-start space-y-2">
               <div className="file-input flex flex-col items-start space-y-2">
-                <label className="file-btn-standard max-w-[125px] truncate cursor-pointer">
+                <label className="file-btn-standard max-w-[131.06px] truncate cursor-pointer">
                   <span className="truncate">{fileName}</span>
                   <input
                     type="file"
@@ -468,7 +475,7 @@ const ThreeScene = () => {
 
               <div className="modes flex flex-row items-center space-x-0">
                 <button onClick={handleMicToggle} className="btn-standard">
-                  {isMicActive ? 'Stop Mic' : 'Mic'}
+                  {isMicActive ? 'Stop Mic' : 'Mic Mode'}
                 </button>
               </div>
             </div>

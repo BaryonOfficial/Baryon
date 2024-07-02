@@ -165,7 +165,7 @@ class AudioDataProcessor extends AudioWorkletProcessor {
         //   }
         //   pitchArrays.push(pitchArray);
         // }
-        // console.log(pitchArrays);
+        // console.log('Algo2 Pitch Arrays:', pitchArrays);
 
         // // Estimate the tempo using the PercivalBpmEstimator algorithm
         // let tempo = this._essentia.PercivalBpmEstimator(
