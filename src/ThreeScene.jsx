@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import Stats from './utils/stats.js';
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -33,6 +34,7 @@ const ThreeScene = () => {
   const [isMicActive, setIsMicActive] = useState(false);
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
   const [isUnsupported, setIsUnsupported] = useState(false);
+  const statsRef = useRef(null);
 
   useFullscreenToggle(canvasRef);
 
@@ -63,6 +65,7 @@ const ThreeScene = () => {
       const guiWidth = 300;
       const gui = new GUI({ width: guiWidth, container: guiContainerRef.current });
       document.documentElement.style.setProperty('--gui-width', guiWidth + 'px');
+
       return { gui, debugObject: {} };
     };
 
@@ -316,51 +319,71 @@ const ThreeScene = () => {
       return { time, deltaTime };
     }
 
-    const tick = () => {
-      frameCounter++;
-      // pseudoVisualizer();
+    // Initialize Stats
+    const stats = new Stats();
+    stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
+    document.body.appendChild(stats.dom);
+    statsRef.current = stats;
 
-      const elapsedTime = clock.getElapsedTime();
-      const { time, deltaTime } = timeHandler(elapsedTime);
+    let lastFrameTime = 0;
+    const targetFPS = 120;
+    const frameInterval = 1000 / targetFPS;
 
-      controls.update(deltaTime);
+    const tick = (currentTime) => {
+      requestAnimationFrame(tick);
 
-      // GPGPU Updates
-      gpgpu.particlesVariable.material.uniforms.uTime.value = time;
-      gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
-      gpgpu.particlesVariable.material.uniforms.uStarted.value = audioObject.sound.started;
-      gpgpu.particlesVariable.material.uniforms.uMicActive.value =
-        audioObject.gumStream && audioObject.gumStream.active;
+      const elapsed = currentTime - lastFrameTime;
 
-      particles.material.uniforms.uSoundPlaying.value = audioObject.sound.isPlaying;
-      particles.material.uniforms.uTime.value = time;
-      particles.material.uniforms.uDeltaTime.value = deltaTime;
+      if (elapsed > frameInterval) {
+        lastFrameTime = currentTime - (elapsed % frameInterval);
 
-      processAudioData(gpgpu, particles, essentiaData);
+        // Start monitoring frame
+        stats.begin();
+        frameCounter++;
+        // pseudoVisualizer();
 
-      // Log Uniforms
-      // if (frameCounter % 60 === 0) {
-      //   // For example, log every 60 frames
-      //   logGPGPUUniforms();
-      // }
+        const elapsedTime = clock.getElapsedTime();
+        const { time, deltaTime } = timeHandler(elapsedTime);
 
-      // ******** GPGPU START ******** //
-      gpgpu.computation.compute();
-      updateGPGPUTextures();
+        controls.update(deltaTime);
 
-      const angle = time * 0.5 * particles.material.uniforms.uRotation.value;
-      rotationMatrix.makeRotationY(-angle);
-      particles.points.matrix.copy(rotationMatrix);
-      particles.points.matrixAutoUpdate = false;
+        // GPGPU Updates
+        gpgpu.particlesVariable.material.uniforms.uTime.value = time;
+        gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
+        gpgpu.particlesVariable.material.uniforms.uStarted.value = audioObject.sound.started;
+        gpgpu.particlesVariable.material.uniforms.uMicActive.value =
+          audioObject.gumStream && audioObject.gumStream.active;
 
-      // Normal Renderer
-      // renderer.render(scene, camera);
+        particles.material.uniforms.uSoundPlaying.value = audioObject.sound.isPlaying;
+        particles.material.uniforms.uTime.value = time;
+        particles.material.uniforms.uDeltaTime.value = deltaTime;
 
-      // Effect Composer Renderer
-      effectComposer.render();
+        processAudioData(gpgpu, particles, essentiaData);
 
-      // Call tick again on the next frame
-      window.requestAnimationFrame(tick);
+        // Log Uniforms
+        // if (frameCounter % 60 === 0) {
+        //   // For example, log every 60 frames
+        //   logGPGPUUniforms();
+        // }
+
+        // ******** GPGPU START ******** //
+        gpgpu.computation.compute();
+        updateGPGPUTextures();
+
+        const angle = time * 0.5 * particles.material.uniforms.uRotation.value;
+        rotationMatrix.makeRotationY(-angle);
+        particles.points.matrix.copy(rotationMatrix);
+        particles.points.matrixAutoUpdate = false;
+
+        // Normal Renderer
+        // renderer.render(scene, camera);
+
+        // Effect Composer Renderer
+        effectComposer.render();
+
+        // End monitoring frame
+        stats.end();
+      }
     };
 
     startAudioProcessing(tick);
@@ -381,6 +404,10 @@ const ThreeScene = () => {
         disposeGPGPUResources(gpgpu);
       }
       renderer.dispose();
+      // Remove Stats from DOM
+      if (statsRef.current) {
+        document.body.removeChild(statsRef.current.dom);
+      }
     };
   }, []);
 
