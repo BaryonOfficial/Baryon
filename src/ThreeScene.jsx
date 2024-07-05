@@ -35,6 +35,7 @@ const ThreeScene = () => {
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
   const [isUnsupported, setIsUnsupported] = useState(false);
   const statsRef = useRef(null);
+  const [showStats, setShowStats] = useState(false);
 
   useFullscreenToggle(canvasRef);
 
@@ -226,7 +227,8 @@ const ThreeScene = () => {
         debugObject,
         materialParameters,
         parameters,
-        stats
+        stats,
+        setShowStats
       );
       return { gpgpu, particles, essentiaData };
     }
@@ -326,6 +328,13 @@ const ThreeScene = () => {
     stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
     statsRef.current = stats;
 
+    // Style the stats panel
+    const statsElement = stats.dom;
+    statsElement.style.cssText = 'position:absolute;bottom:0;left:0;z-index:100;';
+
+    // Always hide stats panel on mount/remount
+    setShowStats(false);
+
     let lastFrameTime = 0;
 
     const tick = (currentTime) => {
@@ -404,12 +413,20 @@ const ThreeScene = () => {
         disposeGPGPUResources(gpgpu);
       }
       renderer.dispose();
-      // Remove Stats from DOM
-      if (statsRef.current) {
-        document.body.removeChild(statsRef.current.dom);
+
+      if (statsRef.current && statsRef.current.dom.parentNode) {
+        statsRef.current.dom.parentNode.removeChild(statsRef.current.dom);
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (showStats && statsRef.current) {
+      document.body.appendChild(statsRef.current.dom);
+    } else if (!showStats && statsRef.current && statsRef.current.dom.parentNode) {
+      statsRef.current.dom.parentNode.removeChild(statsRef.current.dom);
+    }
+  }, [showStats]);
 
   const handleFileChange = useCallback((event) => {
     const file = event.target.files[0];

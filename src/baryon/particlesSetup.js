@@ -13,7 +13,7 @@ export function particlesSetup(parameters, sizes, gpgpu, baseGeometry, colors, s
   const materialParameters = {};
 
   // materialParameters.color = new THREE.Color('rgb(77,142,236)');
-  materialParameters.color = new THREE.Color('rgb(5, 134, 255)');
+  materialParameters.color = '#0586ff'; // This is the hex equivalent of rgb(5, 134, 255)
   // rgb(77,142,236)
 
   // Material
