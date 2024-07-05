@@ -11,7 +11,8 @@ export function guiSetup(
   debugObject,
   materialParameters,
   parameters,
-  stats
+  stats,
+  setShowStats
 ) {
   gui.close();
 
@@ -32,8 +33,9 @@ export function guiSetup(
   colorFolder
     .addColor(materialParameters, 'color')
     .name('Volume Color')
-    .onChange(() => {
-      particles.material.uniforms.uColor.value.set(materialParameters.color);
+    .onChange((value) => {
+      materialParameters.color = value;
+      particles.material.uniforms.uColor.value.set(value);
     });
   colorFolder.close();
 
@@ -44,7 +46,7 @@ export function guiSetup(
     .max(1)
     .step(0.001)
     .name('FlowField Influence');
-  granularControls
+  const flowFieldStrengthController = granularControls
     .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength, 'value')
     .min(0.01)
     .max(10)
@@ -123,27 +125,89 @@ export function guiSetup(
       switch (value) {
         case 'Low':
           parameters.targetFPS = 30;
+          flowFieldStrengthController.setValue(
+            Math.min(gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength.value, 1.8)
+          );
           break;
         case 'Medium':
           parameters.targetFPS = 60;
+          flowFieldStrengthController.setValue(
+            Math.max(gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength.value, 3.6)
+          );
           break;
         case 'High':
           parameters.targetFPS = 120;
+          flowFieldStrengthController.setValue(
+            Math.max(gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength.value, 3.6)
+          );
           break;
       }
     });
 
-  // Add this new control
   performanceFolder
     .add(performanceSettings, 'showStats')
-    .name('Show FPS Counter')
+    .name('Show Stats Panel')
     .onChange((value) => {
-      if (value) {
-        document.body.appendChild(stats.dom);
-      } else {
-        document.body.removeChild(stats.dom);
-      }
+      setShowStats(value);
     });
 
   performanceFolder.close();
+
+  const resetDefaults = {
+    reset: function () {
+      // Reset Bloom Effect
+      bloomFolder.controllers.forEach((controller) => {
+        if (controller.property === 'enabled') controller.setValue(true);
+        if (controller.property === 'strength') controller.setValue(0.36);
+        if (controller.property === 'radius') controller.setValue(-2.0);
+        if (controller.property === 'threshold') controller.setValue(0.4);
+      });
+
+      // Reset Color Settings
+      colorFolder.controllers.forEach((controller) => {
+        if (controller.property === 'backgroundColor') controller.setValue('#000000');
+        if (controller.property === 'color') {
+          const defaultColor = '#0586ff';
+          controller.setValue(defaultColor);
+          materialParameters.color = defaultColor;
+          particles.material.uniforms.uColor.value.set(defaultColor);
+        }
+      });
+
+      // Reset Granular Controls
+      granularControls.controllers.forEach((controller) => {
+        if (controller.property === 'value' && controller._name === 'FlowField Influence')
+          controller.setValue(1.0);
+        if (controller.property === 'value' && controller._name === 'FlowField Strength')
+          controller.setValue(3.6);
+        if (controller.property === 'value' && controller._name === 'FlowField Frequency')
+          controller.setValue(0.64);
+        if (controller.property === 'value' && controller._name === 'Particle Speed')
+          controller.setValue(32);
+        if (controller.property === 'value' && controller._name === 'Target Lerp Threshold')
+          controller.setValue(0.5);
+        if (controller.property === 'threshold') controller.setValue(0.05);
+      });
+
+      // Reset Aesthetics
+      aesthetics.controllers.forEach((controller) => {
+        if (controller.property === 'value' && controller._name === 'Particle Size')
+          controller.setValue(0.03);
+        if (controller.property === 'value' && controller._name === 'Rotation Speed')
+          controller.setValue(2.5);
+        if (controller.property === 'value' && controller._name === 'Surface Particles')
+          controller.setValue(true);
+        if (controller.property === 'value' && controller._name === 'Particle Movement Type')
+          controller.setValue(1);
+      });
+
+      // Reset Performance Settings
+      performanceFolder.controllers.forEach((controller) => {
+        if (controller.property === 'mode') controller.setValue('Medium'); // Need to get feedback on this, should we reset the mode?
+        if (controller.property === 'showStats') controller.setValue(false);
+      });
+    },
+  };
+
+  gui.add(resetDefaults, 'reset').name('Reset to Defaults');
 }
