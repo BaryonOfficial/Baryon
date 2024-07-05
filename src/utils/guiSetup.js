@@ -10,7 +10,8 @@ export function guiSetup(
   gpgpu,
   debugObject,
   materialParameters,
-  parameters
+  parameters,
+  stats
 ) {
   gui.close();
 
@@ -108,4 +109,41 @@ export function guiSetup(
       gpgpu.particlesVariable.material.uniforms.uParticleMovementType.value = value;
     });
   aesthetics.close();
+
+  const performanceFolder = gui.addFolder('Performance');
+  const performanceSettings = {
+    mode: 'Medium', // Default setting
+    showStats: false, // Initialize showStats property
+  };
+
+  performanceFolder
+    .add(performanceSettings, 'mode', ['Low', 'Medium', 'High'])
+    .name('Performance Mode')
+    .onChange((value) => {
+      switch (value) {
+        case 'Low':
+          parameters.targetFPS = 30;
+          break;
+        case 'Medium':
+          parameters.targetFPS = 60;
+          break;
+        case 'High':
+          parameters.targetFPS = 120;
+          break;
+      }
+    });
+
+  // Add this new control
+  performanceFolder
+    .add(performanceSettings, 'showStats')
+    .name('Show FPS Counter')
+    .onChange((value) => {
+      if (value) {
+        document.body.appendChild(stats.dom);
+      } else {
+        document.body.removeChild(stats.dom);
+      }
+    });
+
+  performanceFolder.close();
 }
