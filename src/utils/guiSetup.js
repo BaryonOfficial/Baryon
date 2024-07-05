@@ -119,7 +119,11 @@ export function guiSetup(
   };
 
   performanceFolder
-    .add(performanceSettings, 'mode', ['Low', 'Medium', 'High'])
+    .add(performanceSettings, 'mode', {
+      'Low (30 FPS)': 'Low',
+      'Medium (60 FPS)': 'Medium',
+      'High (120 FPS)': 'High',
+    })
     .name('Performance Mode')
     .onChange((value) => {
       switch (value) {
@@ -151,7 +155,7 @@ export function guiSetup(
       setShowStats(value);
     });
 
-  performanceFolder.close();
+  // performanceFolder.close(); // Keeping this open by default could help users realize performance optimizations
 
   const resetDefaults = {
     reset: function () {
