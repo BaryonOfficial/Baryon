@@ -160,6 +160,7 @@ const ThreeScene = () => {
       threshold: 0.05,
       surfaceRatio: 0.33,
       surfaceThreshold: 0.01,
+      targetFPS: 60,
     };
 
     // Base Geometries
@@ -224,7 +225,8 @@ const ThreeScene = () => {
         gpgpu,
         debugObject,
         materialParameters,
-        parameters
+        parameters,
+        stats
       );
       return { gpgpu, particles, essentiaData };
     }
@@ -322,16 +324,14 @@ const ThreeScene = () => {
     // Initialize Stats
     const stats = new Stats();
     stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
-    document.body.appendChild(stats.dom);
     statsRef.current = stats;
 
     let lastFrameTime = 0;
-    const targetFPS = 120;
-    const frameInterval = 1000 / targetFPS;
 
     const tick = (currentTime) => {
       requestAnimationFrame(tick);
 
+      const frameInterval = 1000 / parameters.targetFPS; // Move this inside tick
       const elapsed = currentTime - lastFrameTime;
 
       if (elapsed > frameInterval) {
