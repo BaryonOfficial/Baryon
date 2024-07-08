@@ -10,6 +10,35 @@
 </head>
 
 <body class="">
+
+  <div class="controls-container p-4 fixed top-20 left-4 z-50 absolute">
+    <div class="flex flex-col items-start space-y-2">
+      <!-- File Input -->
+      <div class="file-input flex flex-col items-start space-y-2">
+        <label class="file-btn-standard max-w-[125px] truncate">
+          <span id="fileName" class="truncate">Choose File</span>
+          <input type="file" id="audioInput" accept="audio/*" class="hidden" />
+        </label>
+      </div>
+      <!-- Playback Controls -->
+      <div class="playback-controls flex flex-row items-center space-x-2">
+        <button id="playPauseButton" class="btn-standard">Play</button>
+        <button id="stopButton" class="btn-standard">Stop</button>
+      </div>
+      <!-- Recording Controls -->
+      <div class="recording-controls flex-row items-center space-x-0 hidden">
+        <button id="toggleRecording" class="btn-standard">Start Recording</button>
+        <button id="downloadRecording" class="btn-standard" disabled>Download Recording</button>
+      </div>
+      <!-- Modes -->
+      <!-- Modes -->
+      <div class="flex flex-row gap-2">
+        <button id="fileMode" class="btn-standard hidden">Files</button>
+        <button id="streamMode" class="btn-standard hidden">Stream</button>
+        <button id="micMode" class="btn-standard">Mic</button>
+      </div>
+    </div>
+  </div>
   <script>
     exports = {};
   </script>

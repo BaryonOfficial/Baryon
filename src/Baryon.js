@@ -14,6 +14,11 @@ import particlesFragmentShader from './shaders/particles/fragment.glsl';
 
 // Idea here is to have a single baryon object that can be placed into different three.js projects 
 
+// How to use make a single baryon obj and call its methods, you can scale and move this obj like a three.js 
+// To play music loadAudio with audio url then call the play method
+
+// Right now the notion is to run at 30-26fps  
+
 function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio) {
     const positions = new Float32Array(count * 3);
     const surfaceCount = Math.floor(count * surfaceRatio);
@@ -52,7 +57,7 @@ function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio
 
 function initializeParticlesInSphere(count, radius) {
     // Scale down the radius to 1/10th
-    const scaledRadius = radius / 10;
+    const scaledRadius = radius / 2;
 
     const positions = new Float32Array(count * 3);
 
@@ -91,24 +96,24 @@ function combineFrequencyData(freqData1, freqData2) {
 }
 
 export class Baryon extends THREE.Object3D {
-    constructor(renderer, camera) { // 
+
+    constructor(renderer, camera, params = {
+        count: 100000,
+        size: .0125,
+        radius: 2,
+        threshold: 0.6,
+        surfaceRatio: 0.33,
+        surfaceThreshold: 0.01,
+        color: new THREE.Color('black'),
+    }) { // idealy we should create a type that defines a baryon obj 
         super();
 
         this.renderer = renderer;
         this.camera = camera;
 
-        this.debugMode = true;
+        this.debugMode = false;
 
-        this.particleParameters = {
-            count: 1000,
-            size: 0.01,
-            radius: 3.0,
-            threshold: 0.05,
-            surfaceRatio: 0.33,
-            surfaceThreshold: 0.01,
-            color: new THREE.Color('rgb(5, 134, 255)'),
-        }
-
+        // Audio Object 
         this.audioObject = {
             fftSize: 4096,
             audioReader: null,
@@ -130,6 +135,39 @@ export class Baryon extends THREE.Object3D {
             essentiaData: null,
         }
 
+        this.#audioObjSetup();
+
+        // Particle Object
+        this.particleObject = {
+            parameters: params,
+            positions: null,
+            colors: null,
+        }
+
+        this.#particleObjSetup();
+
+        // For our simple event system
+        this.eventSystem = {
+            events: [],
+            areResourcesLoaded: false, // we ask a questions so the name pattern should follow
+            isAudioLoaded: false, // this variable is used to handle our play method 
+            isAudioLoading: false,
+        }
+
+        this.timeSystem = {
+            // Time stuff
+            previousTime: 0,
+            lastKnownTime: 0, // used to resume to the right time 
+            interval: 1 / 30,
+        }
+
+        this.#setupUIInteractions();
+
+        // This calles the rest of the build async, onces all resources are loaded areResourcesLoaded = true 
+        this.#loadModel();
+    }
+
+    #audioObjSetup() {
         // Audio setup
         this.audioObject.audioLoader = new THREE.AudioLoader();
         this.audioObject.audioListener = new THREE.AudioListener();
@@ -137,36 +175,56 @@ export class Baryon extends THREE.Object3D {
         this.audioObject.audioCtx = this.audioObject.audioListener.context;
         this.audioObject.analyser = new THREE.AudioAnalyser(this.audioObject.sound, this.audioObject.fftSize);
         this.audioObject.essentiaData = new Float32Array(this.audioObject.capacity);
+    }
 
-        this.particlePositions = initializeParticlesInSphereVolumeAndSurface( // x, y, z for each particle
-            this.particleParameters.count,
-            this.particleParameters.radius,
-            this.particleParameters.surfaceRatio
-        );
+    #particleObjSetup() {
 
-        this.particleColors = new Float32Array(this.particleParameters.count * 3); // r, g, b for each particle
+        this.particleObject.positions = initializeParticlesInSphereVolumeAndSurface( // x, y, z for each particle
+            this.particleObject.parameters.count,
+            this.particleObject.parameters.radius,
+            this.particleObject.parameters.surfaceRatio
+        )
+        this.particleObject.colors = new Float32Array(this.particleObject.parameters.count * 3); // r, g, b for each particle
 
-        var gltfLoader = new GLTFLoader;
+        console.log("params", this.particleObject);
+    }
 
-        this.loaded = false;
-
-        gltfLoader.loadAsync('./glb/Baryon_v2.glb').then((gltf) => {
+    async #loadModel() {
+        const gltfLoader = new GLTFLoader();
+        try {
+            const gltf = await gltfLoader.loadAsync('./glb/Baryon_v2.glb');
             this.baryonLogo = gltf.scene.children[0];
-            console.log(this.baryonLogo);
-            //this.add(this.baryonLogo);
+            // Apply scaling to the object
+            this.baryonLogo.scale.set(0.2, 0.2, 0.2); // Adjust scale factors as needed
 
-            // We want to do this after we load the model. 
+            // Update the geometry to apply the transformation
+            this.baryonLogo.updateMatrix();
+            this.baryonLogo.geometry.applyMatrix4(this.baryonLogo.matrix);
+
+            // Reset the matrix to avoid further unintended transformations
+            this.baryonLogo.matrix.identity();
+            this.baryonLogo.matrix.decompose(
+                this.baryonLogo.position,
+                this.baryonLogo.quaternion,
+                this.baryonLogo.scale
+            );
+
+
             this.#gpgpuSetup();
             this.#particlesSetup();
             this.#startAudioProcessing();
-        });
+        } catch (error) {
+            console.error('An error occurred while loading the model:', error);
+        }
     }
 
+    // baseGeomtry are particles & baseGeomtry2 are the vertices of the gltf logo 
     #gpgpuSetup() {
         // Setup
+        const size = Math.ceil(Math.sqrt(this.baryonLogo.geometry.attributes.position.count));
         this.gpgpu = {
-            size: Math.ceil(Math.sqrt(this.particleParameters.count)),
-            computation: new GPUComputationRenderer(Math.ceil(Math.sqrt(this.particleParameters.count)), Math.ceil(Math.sqrt(this.particleParameters.count)), this.renderer),
+            size: size,
+            computation: new GPUComputationRenderer(size, size, this.renderer),
         };
 
         // Model setup
@@ -183,21 +241,19 @@ export class Baryon extends THREE.Object3D {
             baryonLogoTexture.image.data[i4 + 3] = Math.random();
         }
 
-        // Particles setup w/ positions only for computation
+        // Particles setup w/ positions only for computation + Initalization of particles for movement
         const baseParticlesTexture = this.gpgpu.computation.createTexture();
-
-        // Initalization of particles for movement
         const initialParticlesTexture = this.gpgpu.computation.createTexture();
-        const initialPositions = initializeParticlesInSphere(this.particleParameters.count, this.particleParameters.radius);
+        const initialPositions = initializeParticlesInSphere(this.particleObject.parameters.count, this.particleObject.parameters.radius);
 
-        for (let i = 0; i < this.particleParameters.count; i++) {
+        for (let i = 0; i < this.particleObject.parameters.count; i++) {
             const i3 = i * 3;
             const i4 = i * 4;
 
             // Position based on Geometry
-            baseParticlesTexture.image.data[i4 + 0] = this.particlePositions[i3 + 0];
-            baseParticlesTexture.image.data[i4 + 1] = this.particlePositions[i3 + 1];
-            baseParticlesTexture.image.data[i4 + 2] = this.particlePositions[i3 + 2];
+            baseParticlesTexture.image.data[i4 + 0] = this.particleObject.positions[i3 + 0];
+            baseParticlesTexture.image.data[i4 + 1] = this.particleObject.positions[i3 + 1];
+            baseParticlesTexture.image.data[i4 + 2] = this.particleObject.positions[i3 + 2];
             baseParticlesTexture.image.data[i4 + 3] = 1.0;
 
             initialParticlesTexture.image.data[i4 + 0] = initialPositions[i3 + 0];
@@ -236,11 +292,14 @@ export class Baryon extends THREE.Object3D {
                 format
             ),
         };
-        this.gpgpu.audioDataVariable.material.uniforms.uRadius = new THREE.Uniform(this.particleParameters.radius);
+
+        const randomPitches = generateRandomPitches(this.audioObject.capacity);
+
+        this.gpgpu.audioDataVariable.material.uniforms.uRadius = new THREE.Uniform(this.particleObject.parameters.radius);
         this.gpgpu.audioDataVariable.material.uniforms.sampleRate = new THREE.Uniform(this.audioObject.audioCtx.sampleRate);
         this.gpgpu.audioDataVariable.material.uniforms.bufferSize = new THREE.Uniform(this.audioObject.fftSize);
         this.gpgpu.audioDataVariable.material.uniforms.capacity = new THREE.Uniform(this.audioObject.capacity);
-        this.gpgpu.audioDataVariable.material.uniforms.uRandomPitches = { value: generateRandomPitches(this.audioObject.capacity) }
+        this.gpgpu.audioDataVariable.material.uniforms.uRandomPitches = new THREE.Uniform(randomPitches);
 
         // Dependencies
         this.gpgpu.computation.setVariableDependencies(this.gpgpu.audioDataVariable, []);
@@ -255,7 +314,7 @@ export class Baryon extends THREE.Object3D {
             scalarTexture
         );
 
-        this.gpgpu.scalarFieldVariable.material.uniforms.uRadius = new THREE.Uniform(this.particleParameters.radius);
+        this.gpgpu.scalarFieldVariable.material.uniforms.uRadius = new THREE.Uniform(this.particleObject.parameters.radius);
         this.gpgpu.scalarFieldVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
         this.gpgpu.scalarFieldVariable.material.uniforms.capacity = new THREE.Uniform(this.audioObject.capacity);
 
@@ -271,9 +330,9 @@ export class Baryon extends THREE.Object3D {
             this.gpgpu.computation.createTexture()
         );
 
-        this.gpgpu.zeroPointsVariable.material.uniforms.uThreshold = new THREE.Uniform(this.particleParameters.threshold);
-        this.gpgpu.zeroPointsVariable.material.uniforms.uRadius = new THREE.Uniform(this.particleParameters.radius);
-        this.gpgpu.zeroPointsVariable.material.uniforms.uSurfaceThreshold = new THREE.Uniform(this.particleParameters.surfaceThreshold);
+        this.gpgpu.zeroPointsVariable.material.uniforms.uThreshold = new THREE.Uniform(this.particleObject.parameters.threshold);
+        this.gpgpu.zeroPointsVariable.material.uniforms.uRadius = new THREE.Uniform(this.particleObject.parameters.radius);
+        this.gpgpu.zeroPointsVariable.material.uniforms.uSurfaceThreshold = new THREE.Uniform(this.particleObject.parameters.surfaceThreshold);
         this.gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl = new THREE.Uniform(true);
         this.gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
 
@@ -295,13 +354,13 @@ export class Baryon extends THREE.Object3D {
         this.gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(1.0);
         this.gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(3.6);
         this.gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.64);
-        this.gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(this.particleParameters.threshold);
+        this.gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(this.particleObject.parameters.threshold);
         this.gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(baryonLogoTexture);
         this.gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
         this.gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(32);
         this.gpgpu.particlesVariable.material.uniforms.uStarted = new THREE.Uniform(this.audioObject.sound.started);
         this.gpgpu.particlesVariable.material.uniforms.uParticleMovementType = new THREE.Uniform(1);
-        this.gpgpu.particlesVariable.material.uniforms.uRadius = new THREE.Uniform(this.particleParameters.radius);
+        this.gpgpu.particlesVariable.material.uniforms.uRadius = new THREE.Uniform(this.particleObject.parameters.radius);
         this.gpgpu.particlesVariable.material.uniforms.uDistanceThreshold = new THREE.Uniform(0.5);
         this.gpgpu.particlesVariable.material.uniforms.uMicActive = new THREE.Uniform(
             this.audioObject.gumStream && this.audioObject.gumStream.active
@@ -387,6 +446,8 @@ export class Baryon extends THREE.Object3D {
 
     #particlesSetup() {
 
+        const pixelRatio = Math.min(window.devicePixelRatio, 2);
+
         const material = new THREE.ShaderMaterial({
             // transparent: true,
             side: THREE.DoubleSide,
@@ -395,12 +456,12 @@ export class Baryon extends THREE.Object3D {
             vertexShader: particlesVertexShader,
             fragmentShader: particlesFragmentShader,
             uniforms: {
-                uSize: new THREE.Uniform(this.particleParameters.size),
-                uResolution: { value: new THREE.Vector2(window.innerWidth * Math.min(window.devicePixelRatio, 2), window.innerHeight * (Math.min(window.devicePixelRatio, 2))) },
-                uParticlesTexture: new THREE.Uniform(this.gpgpu.computation.getCurrentRenderTarget(this.gpgpu.particlesVariable).texture),
+                uSize: new THREE.Uniform(this.particleObject.parameters.size),
+                uResolution: { value: new THREE.Vector2(window.innerWidth * pixelRatio, window.innerHeight * pixelRatio) },
+                uParticlesTexture: { value: this.gpgpu.computation.getCurrentRenderTarget(this.gpgpu.particlesVariable).texture },
                 uTime: new THREE.Uniform(0),
-                uColor: new THREE.Uniform(new THREE.Color(this.particleParameters.color)),
-                uRadius: new THREE.Uniform(this.particleParameters.radius),
+                uColor: new THREE.Uniform(this.particleObject.parameters.color),
+                uRadius: new THREE.Uniform(this.particleObject.parameters.radius),
                 uAverageAmplitude: new THREE.Uniform(0.0),
                 uRotation: new THREE.Uniform(2.5),
                 uDeltaTime: new THREE.Uniform(0),
@@ -409,10 +470,10 @@ export class Baryon extends THREE.Object3D {
         });
 
         // Geometry
-        const particlesUvArray = new Float32Array(this.particleParameters.count * 2);
+        const particlesUvArray = new Float32Array(this.particleObject.parameters.count * 2);
 
         // Sizes
-        const sizesArray = new Float32Array(this.particleParameters.count);
+        const sizesArray = new Float32Array(this.particleObject.parameters.count);
 
         for (let y = 0; y < this.gpgpu.size; y++) {
             for (let x = 0; x < this.gpgpu.size; x++) {
@@ -431,13 +492,14 @@ export class Baryon extends THREE.Object3D {
         }
 
         const geometry = new THREE.BufferGeometry();
-        geometry.setDrawRange(0, this.particleParameters.count);
+        geometry.setDrawRange(0, this.particleObject.parameters.count);
         geometry.setAttribute('aParticlesUv', new THREE.BufferAttribute(particlesUvArray, 2));
-        geometry.setAttribute('aColor', new THREE.BufferAttribute(this.particleColors, 3));
+        geometry.setAttribute('aColor', new THREE.BufferAttribute(this.particleObject.colors, 3));
         geometry.setAttribute('aSize', new THREE.BufferAttribute(sizesArray, 1));
 
         // Points
         this.particles = new THREE.Points(geometry, material);
+        this.add(this.particles);
     }
 
     #setupAudioGraph() {
@@ -507,60 +569,155 @@ export class Baryon extends THREE.Object3D {
 
     async #loadAudioWorklet() {
         const workletProcessorCode = [
-            'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js',
-            'https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.umd.js',
-            './src/audio/audio-data-processor.js',
-            'https://unpkg.com/ringbuf.js@0.1.0/dist/index.js',
+            'worklet/essentia-wasm.umd.js',
+            'worklet/essentia.js-core.umd.js',
+            'worklet/audio-data-processor.js',
+            'worklet/ringbuf.js',
         ];
 
-        try {
-            const concatenatedCode = await this.#URLFromFiles(workletProcessorCode);
-            await this.audioObject.audioCtx.audioWorklet.addModule(concatenatedCode);
-        } catch (error) {
-            console.error(`There was a problem retrieving the AudioWorklet module code: \n ${error}`);
-            throw new Error(error);
-        }
+        return this.#URLFromFiles(workletProcessorCode)
+            .then((concatenatedCode) => {
+                return this.audioObject.audioCtx.audioWorklet.addModule(concatenatedCode);
+            })
+            .catch((msg) => {
+                console.log(`There was a problem retrieving the AudioWorklet module code: \n ${msg}`);
+                throw new Error(msg);
+            });
     }
 
     async #startAudioProcessing() {
         try {
             await this.#loadAudioWorklet();
-            this.#setupAudioGraph();
-            this.loaded = true;
-            this.add(this.particles);
+            await this.#setupAudioGraph();
+            this.eventSystem.areResourcesLoaded = true;
         } catch (error) {
             console.error(`There was a problem loading the AudioWorklet module code: \n ${error}`);
         }
     }
 
-    loadAudio(url) {
+    #setupUIInteractions() { // This should be implemented by the user with the baryon api but for debuging ma just put it here. 
+        const audioInput = document.getElementById('audioInput');
+        const fileName = document.getElementById('fileName');
+        const playPauseButton = document.getElementById('playPauseButton');
+        const stopButton = document.getElementById('stopButton');
+        const micButton = document.getElementById('micMode');
+
+        // audioInput.addEventListener('change', (event) => {
+        //     if (event.target.files.length > 0) {
+        //         const file = event.target.files[0];
+        //         fileName.textContent = file.name;
+        //         const fileURL = URL.createObjectURL(file);
+        //         this.loadAudio(fileURL);
+        //     } else {
+        //         fileName.textContent = 'Choose File';
+        //     }
+        //     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
+        // });
+
+        // micButton.addEventListener('click', () => {
+        //     if (!audioObject.gumStream || !audioObject.gumStream.active) {
+        //         startMicRecordStream();
+        //         micButton.textContent = 'Stop Mic';
+        //     } else {
+        //         stopMicRecordStream();
+        //         micButton.textContent = 'Mic';
+        //     }
+        // });
+
+        playPauseButton.addEventListener('click', async () => {
+            this.play();
+        });
+
+
+        stopButton.addEventListener('click', () => {
+            this.pause();
+        });
+
+        // audioObject.sound.onEnded = function () {
+        //     audioObject.sound.stop();
+        //     console.log('Audio ended');
+        //     audioObject.sound.started = false;
+        //     playPauseButton.textContent = 'Replay';
+        //     audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
+        // };
+    }
+
+    #loadAudio(url) {
+
+        this.eventSystem.isAudioLoaded = false;
+        this.eventSystem.isAudioLoading = true;
 
         // Stop the current audio if it is playing and reset its buffer
-        if (this.audioObject.sound.isPlaying()) {
+        if (this.audioObject.sound.isPlaying) {
             this.audioObject.sound.stop();
             this.audioObject.sound.setBuffer(null);
-            this.audioObject.sound.started = false;
             console.log('Audio stopped on change');
-        } else if (!this.audioObject.sound.started && playPauseButton.textContent !== 'Play') {
+        } else if (!this.audioObject.sound.isPlaying) {
             this.audioObject.sound.setBuffer(null);
-            playPauseButton.textContent = 'Play';
             console.log('Audio ended & reset w/ new file or URL');
         }
 
-        isAudioLoaded = false;
-        audioLoader.load(
+        var sound = this.audioObject.sound;
+        var eventSystem = this.eventSystem;
+
+        this.audioObject.audioLoader.load(
             url,
             function (buffer) {
-                this.audioObject.sound.setBuffer(buffer);
-                this.audioObject.sound.setLoop(false);
-                this.audioObject.sound.setVolume(0.5);
-                isAudioLoaded = true;
+                sound.setBuffer(buffer);
+                sound.setLoop(false);
+                sound.setVolume(0.5);
+
+                eventSystem.isAudioLoaded = true;
+                eventSystem.isAudioLoading = false;
+
+                console.log("hi from call back ")
             },
             undefined,
             (err) => {
                 console.error('Error loading audio file:', err);
             }
         );
+    }
+
+    #play() {
+        try {
+
+            if (this.audioObject.audioCtx.state === 'suspended') {
+                this.audioObject.audioCtx.resume();
+            }
+
+            this.audioObject.sound.play();
+            this.audioObject.essentiaNode.port.postMessage({ isPlaying: this.audioObject.sound.isPlaying });
+            console.log("Audio Playing");
+        } catch (error) {
+            console.error('Error in play method:', error);
+        }
+    }
+
+    #pause() {
+        try {
+            if (this.audioObject.sound.isPlaying) {
+                this.audioObject.sound.pause();
+                this.audioObject.essentiaNode.port.postMessage({ isPlaying: this.audioObject.sound.isPlaying });
+                console.log("Audio Paused");
+            } // else do nun
+        } catch (error) {
+            console.log('Error in pause method:', error);
+        }
+    }
+
+    // I need this becuase the user can call the play method before the audio worklet is done and load audio is an async function. 
+    // Its also standared way to help deal with communication between the client. Abstraction is fine just make sure to use mono functions 
+    loadAudio(url) {
+        this.eventSystem.events.push({ type: 'loadAudio', url: url });
+    }
+
+    play() {
+        this.eventSystem.events.push({ type: 'play' });
+    }
+
+    pause() {
+        this.eventSystem.events.push({ type: 'pause' });
     }
 
     startMicRecordStream() {
@@ -662,16 +819,16 @@ export class Baryon extends THREE.Object3D {
         }
     }
 
-    #updateGPGPU(elapsedTime, deltaTime) {
+    #updateGPGPU(time, deltaTime) {
 
         // GPGPU Updates
-        this.gpgpu.particlesVariable.material.uniforms.uTime.value = elapsedTime;
+        this.gpgpu.particlesVariable.material.uniforms.uTime.value = time;
         this.gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
         this.gpgpu.particlesVariable.material.uniforms.uStarted.value = this.audioObject.sound.started;
         this.gpgpu.particlesVariable.material.uniforms.uMicActive.value = this.audioObject.gumStream && this.audioObject.gumStream.active;
 
         this.particles.material.uniforms.uSoundPlaying.value = this.audioObject.sound.isPlaying;
-        this.particles.material.uniforms.uTime.value = elapsedTime;
+        this.particles.material.uniforms.uTime.value = time;
         this.particles.material.uniforms.uDeltaTime.value = deltaTime;
     }
 
@@ -695,17 +852,79 @@ export class Baryon extends THREE.Object3D {
             this.gpgpu.computation.getCurrentRenderTarget(this.gpgpu.particlesVariable).texture;
     }
 
-    update(elapsedTime, deltaTime) {
+    // This handles events called to the baryon object from client
+    #processEvents() {
 
-        if (this.loaded) {
-            this.#updateGPGPU(elapsedTime, deltaTime);
-            this.#processAudioData();
-            this.#computeGPGU();
+        if (this.eventSystem.events.length > 0) {
+            let event = this.eventSystem.events[0]
+            let clearEvent = true;
+            console.log('event', event);
+            switch (event.type) { // switch statments are fine now the V8 engine likes them 
+                case 'loadAudio':
+                    this.#loadAudio(event.url);
+                    break;
+                case 'play':
+                    if (this.eventSystem.isAudioLoaded) {
+                        this.#play();
+                    } else if (this.eventSystem.isAudioLoading) {
+                        //console.log("audio is loading")
+                        clearEvent = false; // we have to wait
+                    }
+                    break;
+                case 'pause':
+                    if (this.eventSystem.isAudioLoading) {
+                        clearEvent = false; // we have to wait
+                    } else {
+                        this.#pause();
+                    }
+            }
 
-            this.particles.rotation.y = Math.sin(elapsedTime) / 20;
-            this.particles.rotation.x = Math.cos(elapsedTime) / 10;
+            if (clearEvent) this.eventSystem.events.shift();
+        }
+    }
+
+    #timeHandler(elapsedTime) {
+
+        let deltaTime;
+        let time;
+
+        if (this.audioObject.gumStream && this.audioObject.gumStream.active) {
+            deltaTime = elapsedTime - this.timeSystem.previousTime;
+            this.timeSystem.previousTime = elapsedTime;
+            time = elapsedTime;
+        } else if (this.audioObject.sound.isPlaying && this.audioObject.sound.started) {
+            deltaTime = this.audioObject.sound.listener.timeDelta;
+            time = this.audioObject.sound.context.currentTime;
+            this.timeSystem.lastKnownTime = time;
+        } else if (!this.audioObject.sound.isPlaying && this.audioObject.sound.started) {
+            time = this.timeSystem.lastKnownTime;
+            deltaTime = 0;
+        } else {
+            deltaTime = elapsedTime - this.timeSystem.previousTime;
+            this.timeSystem.previousTime = elapsedTime;
+            time = elapsedTime;
         }
 
+        return { time, deltaTime };
+    }
 
+    update(elapsedTime) {
+
+        if (elapsedTime - this.timeSystem.previousTime >= this.timeSystem.interval) { // ok so we can just do this to handle internal 30 fps 
+            if (this.eventSystem.areResourcesLoaded) {
+
+                const { time, deltaTime } = this.#timeHandler(elapsedTime);
+
+                //console.log(time, deltaTime, elapsedTime)
+
+                this.#processEvents();
+                this.#updateGPGPU(time, deltaTime);
+                this.#processAudioData();
+                this.#computeGPGU();
+
+                this.particles.rotation.y = Math.sin(elapsedTime) / 20;
+                this.particles.rotation.x = Math.cos(elapsedTime) / 10;
+            }
+        }
     }
 }

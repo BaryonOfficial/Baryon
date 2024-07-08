@@ -12,6 +12,7 @@ export function guiSetup(
   materialParameters,
   parameters
 ) {
+
   gui.close();
 
   const bloomFolder = gui.addFolder('Bloom Effect');

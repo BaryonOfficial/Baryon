@@ -51,7 +51,7 @@ export const playlists = [
                 name: "Korrea",
                 by: "SALSA TERIYAKI",
                 image: "./images/korrea.jpg",
-                audio: "./music/korrea.mp3"
+                audio: "./music/Korrea.mp3"
             },
         ]
     }

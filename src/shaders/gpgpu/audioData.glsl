@@ -16,6 +16,7 @@ const float SOUND_SPEED_AIR = 340.0;
 const float TOLERANCE = 1.0;
 const int MAX_ITERATIONS = 200;
 
+// Secant Method
 ivec3 findNormalModes(float pitch) {
     float c = SOUND_SPEED_AIR;
     float l = uRadius;
@@ -49,7 +50,7 @@ ivec3 findNormalModes(float pitch) {
 // }
 
 // float bisection(float lower, float upper, float pitch) {
-//     while(upper - lower > accuracy) {
+//     while(upper - lower > TOLERANCE) {
 //         float midpoint = (lower + upper) / 2.0;
 //         if(objectiveFunction(midpoint, pitch) == 0.0) {
 //             return midpoint;
@@ -62,7 +63,7 @@ ivec3 findNormalModes(float pitch) {
 //     return (lower + upper) / 2.0;
 // }
 
-// vec3 calculateModeNumbers(float pitch) {
+// vec3 findNormalModes(float pitch) {
 //     float n1 = bisection(0.0, pitch * uRadius / c, pitch);
 //     float n2 = bisection(0.0, sqrt(2.0) * pitch * uRadius / c, pitch);
 //     float n3 = bisection(0.0, sqrt(3.0) * pitch * uRadius / c, pitch);
