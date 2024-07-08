@@ -17,7 +17,7 @@ import particlesFragmentShader from './shaders/particles/fragment.glsl';
 // How to use make a single baryon obj and call its methods, you can scale and move this obj like a three.js 
 // To play music loadAudio with audio url then call the play method
 
-// Right now the notion is to run at 30-26fps  
+// Right now the notion is to run at 30-26fps on mobile and 60 for desktop.   
 
 function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio) {
     const positions = new Float32Array(count * 3);
