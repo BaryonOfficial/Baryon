@@ -182,9 +182,16 @@ function PlasmicBaryonFooter__RenderFunc(props) {
                   className={classNames(
                     projectcss.all,
                     projectcss.a,
-                    sty.link__kd6Y9
+                    sty.link__kd6Y9,
+                    {
+                      [sty.linkwhitetextFooter__kd6Y96Ubxt]: hasVariant(
+                        $state,
+                        "whitetextFooter",
+                        "whitetextFooter"
+                      )
+                    }
                   )}
-                  href={"https://x.com/baryonofficial"}
+                  href={"https://x.com/kyledcollins"}
                   platform={"react"}
                   target={"_blank"}
                 >
