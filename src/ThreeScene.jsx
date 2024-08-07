@@ -23,10 +23,11 @@ import {
 } from './audio/audioSetup.js';
 import GUI from 'lil-gui';
 import UnsupportedWarning from './utils/UnsupportedWarning.jsx';
-import { useFullscreenToggle } from './hooks/useFullScreenToggle.jsx';
+import { useFullscreen } from './hooks/useFullScreenToggle.jsx';
 
 const ThreeScene = () => {
   const canvasRef = useRef(null);
+  const toggleFullscreen = useFullscreen(canvasRef);
   const guiContainerRef = useRef(null);
 
   const [fileName, setFileName] = useState('Upload Audio');
@@ -36,8 +37,6 @@ const ThreeScene = () => {
   const [isUnsupported, setIsUnsupported] = useState(false);
   const statsRef = useRef(null);
   const [showStats, setShowStats] = useState(false);
-
-  useFullscreenToggle(canvasRef);
 
   useEffect(() => {
     function isUnsupportedEnvironment() {
@@ -484,6 +483,7 @@ const ThreeScene = () => {
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'absolute', zIndex: 1 }}>
       <canvas ref={canvasRef} className="webgl absolute z-10" />
+      <button onClick={toggleFullscreen}>Toggle Fullscreen</button>
       {!isUnsupported && (
         <>
           <div ref={guiContainerRef} className="fixed top-20 right-0 z-50"></div>
