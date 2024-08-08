@@ -16,8 +16,8 @@ export default defineConfig({
     },
     host: true, // Open to local network and display URL
     https: {
-      key: fs.readFileSync(path.resolve(__dirname, '192.168.1.69-key.pem')),
-      cert: fs.readFileSync(path.resolve(__dirname, '192.168.1.69.pem')),
+      key: fs.readFileSync(path.resolve(__dirname, 'certs/192.168.1.69-key.pem')),
+      cert: fs.readFileSync(path.resolve(__dirname, 'certs/192.168.1.69.pem')),
     },
     open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env), // Open if it's not a CodeSandbox
   },
