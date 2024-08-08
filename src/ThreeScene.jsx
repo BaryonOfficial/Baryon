@@ -44,9 +44,9 @@ const ThreeScene = () => {
         navigator.userAgent
       );
       const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
-      // const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
-      return isMobile || isFirefox;
+      return isMobile || isFirefox || isSafari;
     }
 
     setIsUnsupported(isUnsupportedEnvironment());
