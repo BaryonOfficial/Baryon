@@ -25,3 +25,4 @@ dist-ssr
 
 # SSL Certificates
 *.pem
+/certs

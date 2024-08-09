@@ -8,57 +8,66 @@ import glsl from 'vite-plugin-glsl';
 import topLevelAwait from 'vite-plugin-top-level-await';
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  server: {
-    headers: {
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin',
+export default defineConfig(({ command, mode }) => {
+  const config = {
+    server: {
+      headers: {
+        'Cross-Origin-Embedder-Policy': 'require-corp',
+        'Cross-Origin-Opener-Policy': 'same-origin',
+      },
+      host: true, // Open to local network and display URL
+      open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env), // Open if it's not a CodeSandbox
     },
-    host: true, // Open to local network and display URL
-    https: {
-      key: fs.readFileSync(path.resolve(__dirname, 'certs/dev-key.pem')),
-      cert: fs.readFileSync(path.resolve(__dirname, 'certs/dev-cert.pem')),
+    esbuild: {
+      drop: ['console', 'debugger'],
     },
-    open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env), // Open if it's not a CodeSandbox
-  },
-  esbuild: {
-    drop: ['console', 'debugger'],
-  },
-  build: {
-    outDir: 'dist', // Output in the dist/ folder
-    emptyOutDir: true, // Empty the folder first
-    sourcemap: true, // Add sourcemap
-    rollupOptions: {
-      output: {
-        manualChunks: undefined,
+    build: {
+      outDir: 'dist', // Output in the dist/ folder
+      emptyOutDir: true, // Empty the folder first
+      sourcemap: true, // Add sourcemap
+      rollupOptions: {
+        output: {
+          manualChunks: undefined,
+        },
       },
     },
-  },
-  plugins: [
-    react(),
-    glsl(),
-    topLevelAwait({
-      // The export name of top-level await promise for each chunk module
-      promiseExportName: '__tla',
-      // The function to generate import names of top-level await promise in each chunk module
-      promiseImportName: (i) => `__tla_${i}`,
-    }),
-    // .js file support as if it was JSX
-    {
-      name: 'load+transform-js-files-as-jsx',
-      async transform(code, id) {
-        if (!id.match(/src\/.*\.js$/)) return null;
+    plugins: [
+      react(),
+      glsl(),
+      topLevelAwait({
+        promiseExportName: '__tla',
+        promiseImportName: (i) => `__tla_${i}`,
+      }),
+      {
+        name: 'load+transform-js-files-as-jsx',
+        async transform(code, id) {
+          if (!id.match(/src\/.*\.js$/)) return null;
 
-        return transformWithEsbuild(code, id, {
-          loader: 'jsx',
-          jsx: 'automatic',
-        });
+          return transformWithEsbuild(code, id, {
+            loader: 'jsx',
+            jsx: 'automatic',
+          });
+        },
+      },
+    ],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
       },
     },
-  ],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
+  };
+
+  // Add HTTPS configuration only for development
+  if (command !== 'build' && mode !== 'production') {
+    try {
+      config.server.https = {
+        key: fs.readFileSync(path.resolve(__dirname, 'certs/dev-key.pem')),
+        cert: fs.readFileSync(path.resolve(__dirname, 'certs/dev-cert.pem')),
+      };
+    } catch (error) {
+      console.warn('Failed to load SSL certificates for HTTPS. Falling back to HTTP.');
+    }
+  }
+
+  return config;
 });
