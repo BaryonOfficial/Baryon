@@ -712,7 +712,7 @@ function PlasmicPlugin__RenderFunc(props) {
                               sty.text__pYqfS
                             )}
                           >
-                            {"150"}
+                            {"250"}
                           </div>
                         </div>
                         <div
