@@ -37,6 +37,13 @@ export function guiSetup(
       materialParameters.color = value;
       particles.material.uniforms.uColor.value.set(value);
     });
+  colorFolder
+    .addColor(materialParameters, 'outsideColor')
+    .name('Outside Color')
+    .onChange((value) => {
+      materialParameters.outsideColor = value;
+      particles.material.uniforms.uOutsideColor.value.set(value);
+    });
   colorFolder.close();
 
   const granularControls = gui.addFolder('Granular Controls');
@@ -175,6 +182,12 @@ export function guiSetup(
           controller.setValue(defaultColor);
           materialParameters.color = defaultColor;
           particles.material.uniforms.uColor.value.set(defaultColor);
+        }
+        if (controller.property === 'outsideColor') {
+          const defaultOutsideColor = '#DEF0FA';
+          controller.setValue(defaultOutsideColor);
+          materialParameters.outsideColor = defaultOutsideColor;
+          particles.material.uniforms.uOutsideColor.value.set(defaultOutsideColor);
         }
       });
 
