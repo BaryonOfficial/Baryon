@@ -29,8 +29,7 @@ void main() {
 
     // Pulsating Effect
     float normalizedAmplitude = uAverageAmplitude / 255.0;
-    float maxDistance = uRadius * 1.5;
-    vec3 pulsatingOffset = normal * normalizedAmplitude * maxDistance;
+    vec3 pulsatingOffset = normal * normalizedAmplitude * uRadius;
     particle.xyz += pulsatingOffset;
 
     // Calculate model position
@@ -61,14 +60,13 @@ void main() {
     vec4 modelNormal = modelMatrix * vec4(normal, 0.0);
 
     // Point size
-    // Calculate the resting state size
     float restingSize = uSize * uResolution.y;
     restingSize *= (1.0 / -viewPosition.z);
 
     // Calculate the size multiplier based on the pulsating distance
     float sizeMultiplier = 1.0 + (length(pulsatingOffset) / uRadius);
 
-    // Adjust particle size proportionally
+    // Apply size multiplier
     gl_PointSize = restingSize * sizeMultiplier;
 
     // Pass Varyings
