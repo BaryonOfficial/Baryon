@@ -7,7 +7,7 @@ varying vec3 vPosition;
 uniform float uTime;
 varying vec3 vNormal;
 uniform vec3 uColor;
-uniform vec3 uOutsideColor;
+uniform vec3 uSurfaceColor;
 uniform float uRadius;
 
 void main() {
@@ -45,7 +45,7 @@ void main() {
     vec3 color;
     if(vGroup == 1.0) {
         // color = vec3(0.87059, 0.93333, 0.98039);
-        color = uOutsideColor;
+        color = uSurfaceColor;
     } else if(vGroup == 2.0) {
         // float rand = random2D(gl_FragCoord.xy);
         // if(rand < 0.5) {

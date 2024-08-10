@@ -14,7 +14,7 @@ export function particlesSetup(parameters, sizes, gpgpu, baseGeometry, colors, s
 
   // materialParameters.color = new THREE.Color('rgb(77,142,236)');
   materialParameters.color = '#0586ff'; // This is the hex equivalent of rgb(5, 134, 255)
-  materialParameters.outsideColor = '#DEF0FA';
+  materialParameters.surfaceColor = '#DEF0FA';
   // rgb(77,142,236)
 
   // Material
@@ -33,7 +33,7 @@ export function particlesSetup(parameters, sizes, gpgpu, baseGeometry, colors, s
       uParticlesTexture: new THREE.Uniform(),
       uTime: new THREE.Uniform(0),
       uColor: new THREE.Uniform(new THREE.Color(materialParameters.color)),
-      uOutsideColor: new THREE.Uniform(new THREE.Color(materialParameters.outsideColor)),
+      uSurfaceColor: new THREE.Uniform(new THREE.Color(materialParameters.surfaceColor)),
       uRadius: new THREE.Uniform(parameters.radius),
       uAverageAmplitude: new THREE.Uniform(0.0),
       uRotation: new THREE.Uniform(2.5),
