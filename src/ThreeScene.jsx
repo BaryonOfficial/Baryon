@@ -120,38 +120,12 @@ const ThreeScene = () => {
     });
     renderer.setSize(sizes.width, sizes.height);
     renderer.setPixelRatio(sizes.pixelRatio);
-    renderer.xr.enabled = true;
     debugObject.backgroundColor = '#000000';
     renderer.setClearColor(debugObject.backgroundColor);
 
     const res = postProcessingSetup(renderer, scene, camera, sizes);
     const effectComposer = res.effectComposer;
     const unrealBloomPass = res.unrealBloomPass;
-
-    // Load the texture
-    const textureLoader = new THREE.TextureLoader();
-    const texture = textureLoader.load('assets/channelORANGE.png', () => {
-      // Update renderer size if necessary
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-    // Create a material using the texture
-    const material = new THREE.MeshBasicMaterial({ map: texture });
-
-    // Create a geometry
-    const geometry = new THREE.PlaneGeometry(2, 2); // Width and height of the plane
-
-    // Create a mesh with the geometry and material
-    const plane = new THREE.Mesh(geometry, material);
-    plane.position.set(-4, 1.5, -6);
-    plane.scale.multiplyScalar(6);
-    plane.lookAt(camera.position);
-
-    // Add the mesh to the scene
-    plane.visible = false;
-    scene.add(plane);
-
-    // Object
 
     // Parameters Object
     let parameters = {
