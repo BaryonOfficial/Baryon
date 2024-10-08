@@ -35,7 +35,6 @@ import UeLogoSvg3Icon from "./icons/PlasmicIcon__UeLogoSvg3"; // plasmic-import:
 import AbletonLogoSvgIcon from "./icons/PlasmicIcon__AbletonLogoSvg"; // plasmic-import: 7lKRcnkFyzNM/icon
 import ObsSvgIcon from "./icons/PlasmicIcon__ObsSvg"; // plasmic-import: mFSPBP5vLOoj/icon
 import Icon15Icon from "./icons/PlasmicIcon__Icon15"; // plasmic-import: rIruQm-TzSjY/icon
-import CheckSvgIcon from "./icons/PlasmicIcon__CheckSvg"; // plasmic-import: F3iOqCFKuA-k/icon
 import Icon38Icon from "./icons/PlasmicIcon__Icon38"; // plasmic-import: IYnmkRggg6dZ/icon
 
 createPlasmicElementProxy;
@@ -918,7 +917,7 @@ function PlasmicPlugin__RenderFunc(props) {
                             : "compact"
                         }
                         startIcon={
-                          <CheckSvgIcon
+                          <svg
                             className={classNames(
                               projectcss.all,
                               sty.svg__zahar

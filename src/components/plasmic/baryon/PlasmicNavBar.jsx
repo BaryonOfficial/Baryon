@@ -170,6 +170,12 @@ function PlasmicNavBar__RenderFunc(props) {
               }}
               shape={"rounded"}
               size={"compact"}
+              startIcon={
+                <svg
+                  className={classNames(projectcss.all, sty.svg__mjw7U)}
+                  role={"img"}
+                />
+              }
             >
               <div
                 className={classNames(
@@ -213,6 +219,12 @@ function PlasmicNavBar__RenderFunc(props) {
               }}
               shape={"rounded"}
               size={"compact"}
+              startIcon={
+                <svg
+                  className={classNames(projectcss.all, sty.svg__tZonz)}
+                  role={"img"}
+                />
+              }
             >
               <div
                 className={classNames(
@@ -256,6 +268,12 @@ function PlasmicNavBar__RenderFunc(props) {
               }}
               shape={"rounded"}
               size={"compact"}
+              startIcon={
+                <svg
+                  className={classNames(projectcss.all, sty.svg__oj3Xj)}
+                  role={"img"}
+                />
+              }
             >
               <div
                 className={classNames(
@@ -273,6 +291,12 @@ function PlasmicNavBar__RenderFunc(props) {
               link={"https://foundation.app/@Baryon"}
               shape={"rounded"}
               size={"compact"}
+              startIcon={
+                <svg
+                  className={classNames(projectcss.all, sty.svg__oQtLe)}
+                  role={"img"}
+                />
+              }
               target={true}
             >
               <div

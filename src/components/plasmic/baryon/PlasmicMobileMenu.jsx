@@ -89,9 +89,7 @@ function PlasmicMobileMenu__RenderFunc(props) {
     >
       <div className={classNames(projectcss.all, sty.freeBox__mhOq)}>
         <BaryonLogoWhite1Icon
-          data-plasmic-name={"svg"}
-          data-plasmic-override={overrides.svg}
-          className={classNames(projectcss.all, sty.svg)}
+          className={classNames(projectcss.all, sty.svg__b1Snf)}
           role={"img"}
         />
 
@@ -115,6 +113,12 @@ function PlasmicMobileMenu__RenderFunc(props) {
           link={`/`}
           shape={"rounded"}
           size={"compact"}
+          startIcon={
+            <svg
+              className={classNames(projectcss.all, sty.svg__xK6Fx)}
+              role={"img"}
+            />
+          }
         >
           <div
             className={classNames(
@@ -131,6 +135,12 @@ function PlasmicMobileMenu__RenderFunc(props) {
           link={`/plugin`}
           shape={"rounded"}
           size={"compact"}
+          startIcon={
+            <svg
+              className={classNames(projectcss.all, sty.svg__bkI52)}
+              role={"img"}
+            />
+          }
         >
           <div
             className={classNames(
@@ -147,6 +157,12 @@ function PlasmicMobileMenu__RenderFunc(props) {
           link={`/story`}
           shape={"rounded"}
           size={"compact"}
+          startIcon={
+            <svg
+              className={classNames(projectcss.all, sty.svg___1Ft29)}
+              role={"img"}
+            />
+          }
         >
           <div
             className={classNames(
@@ -163,6 +179,12 @@ function PlasmicMobileMenu__RenderFunc(props) {
           link={"https://foundation.app/@Baryon"}
           shape={"rounded"}
           size={"compact"}
+          startIcon={
+            <svg
+              className={classNames(projectcss.all, sty.svg__woni0)}
+              role={"img"}
+            />
+          }
           target={true}
         >
           <div
@@ -181,8 +203,7 @@ function PlasmicMobileMenu__RenderFunc(props) {
 }
 
 const PlasmicDescendants = {
-  root: ["root", "svg"],
-  svg: ["svg"]
+  root: ["root"]
 };
 
 function makeNodeComponent(nodeName) {
@@ -217,7 +238,6 @@ export const PlasmicMobileMenu = Object.assign(
   makeNodeComponent("root"),
   {
     // Helper components rendering sub-elements
-    svg: makeNodeComponent("svg"),
     // Metadata about props expected for PlasmicMobileMenu
     internalVariantProps: PlasmicMobileMenu__VariantProps,
     internalArgProps: PlasmicMobileMenu__ArgProps
