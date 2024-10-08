@@ -28,7 +28,7 @@ import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plas
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicBaryonFooter.module.css"; // plasmic-import: FKV3u0E4hZrB/css
 import LogoSvgIcon from "./icons/PlasmicIcon__LogoSvg"; // plasmic-import: pPVNZjSA1lJo/icon
-import InstagramSvgrepoComSvgIcon from "./icons/PlasmicIcon__InstagramSvgrepoComSvg"; // plasmic-import: X2e01B-uxA5q/icon
+import InstagramLogoSvgIcon from "./icons/PlasmicIcon__InstagramLogoSvg"; // plasmic-import: X2e01B-uxA5q/icon
 
 createPlasmicElementProxy;
 
@@ -205,8 +205,10 @@ function PlasmicBaryonFooter__RenderFunc(props) {
                   target={"_blank"}
                 >
                   <LogoSvgIcon
-                    className={classNames(projectcss.all, sty.svg__zmaZs, {
-                      [sty.svgwhitetextFooter__zmaZs6Ubxt]: hasVariant(
+                    data-plasmic-name={"xLogo"}
+                    data-plasmic-override={overrides.xLogo}
+                    className={classNames(projectcss.all, sty.xLogo, {
+                      [sty.xLogowhitetextFooter]: hasVariant(
                         $state,
                         "whitetextFooter",
                         "whitetextFooter"
@@ -225,9 +227,11 @@ function PlasmicBaryonFooter__RenderFunc(props) {
                   platform={"react"}
                   target={"_blank"}
                 >
-                  <InstagramSvgrepoComSvgIcon
-                    className={classNames(projectcss.all, sty.svg__c9B5, {
-                      [sty.svgwhitetextFooter__c9B56Ubxt]: hasVariant(
+                  <InstagramLogoSvgIcon
+                    data-plasmic-name={"instagramLogo"}
+                    data-plasmic-override={overrides.instagramLogo}
+                    className={classNames(projectcss.all, sty.instagramLogo, {
+                      [sty.instagramLogowhitetextFooter]: hasVariant(
                         $state,
                         "whitetextFooter",
                         "whitetextFooter"
@@ -246,11 +250,13 @@ function PlasmicBaryonFooter__RenderFunc(props) {
 }
 
 const PlasmicDescendants = {
-  root: ["root", "columns", "column", "img", "text"],
-  columns: ["columns", "column", "img", "text"],
-  column: ["column", "img", "text"],
+  root: ["root", "columns", "column", "img", "text", "xLogo", "instagramLogo"],
+  columns: ["columns", "column", "img", "text", "xLogo", "instagramLogo"],
+  column: ["column", "img", "text", "xLogo", "instagramLogo"],
   img: ["img"],
-  text: ["text"]
+  text: ["text"],
+  xLogo: ["xLogo"],
+  instagramLogo: ["instagramLogo"]
 };
 
 function makeNodeComponent(nodeName) {
@@ -289,6 +295,8 @@ export const PlasmicBaryonFooter = Object.assign(
     column: makeNodeComponent("column"),
     img: makeNodeComponent("img"),
     text: makeNodeComponent("text"),
+    xLogo: makeNodeComponent("xLogo"),
+    instagramLogo: makeNodeComponent("instagramLogo"),
     // Metadata about props expected for PlasmicBaryonFooter
     internalVariantProps: PlasmicBaryonFooter__VariantProps,
     internalArgProps: PlasmicBaryonFooter__ArgProps
