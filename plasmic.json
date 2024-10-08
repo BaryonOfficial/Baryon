@@ -770,28 +770,28 @@
       "icons": [
         {
           "id": "reN7qi7eBogy",
-          "name": "BaryonLogoWhite1Icon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__BaryonLogoWhite1.jsx"
+          "name": "BaryonLogoWhiteIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__BaryonLogoWhite.jsx"
         },
         {
           "id": "IYnmkRggg6dZ",
-          "name": "Icon38Icon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Icon38.jsx"
+          "name": "Icon18Icon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Icon18.jsx"
         },
         {
           "id": "yQSNegzl0PI8",
-          "name": "HamburgerMenuSvgrepoComSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__HamburgerMenuSvgrepoComSvg.jsx"
+          "name": "HamburgerMenuIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__HamburgerMenu.jsx"
         },
         {
           "id": "aUU8zeXIq7cb",
-          "name": "SearchSvg2Icon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__SearchSvg2.jsx"
+          "name": "SearchIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Search.jsx"
         },
         {
           "id": "mKGR2y6C-BPn",
-          "name": "IconIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Icon.jsx"
+          "name": "AppleIconIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__AppleIcon.jsx"
         },
         {
           "id": "OyhmvOnfQPDg",
@@ -860,8 +860,8 @@
         },
         {
           "id": "qMDIgvomGZUQ",
-          "name": "Download5Icon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Download5.jsx"
+          "name": "DownloadIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Download.jsx"
         },
         {
           "id": "w_e-agpserx0",
@@ -950,33 +950,23 @@
         },
         {
           "id": "pPVNZjSA1lJo",
-          "name": "LogoSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__LogoSvg.jsx"
+          "name": "LogoIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Logo.jsx"
         },
         {
           "id": "X2e01B-uxA5q",
-          "name": "InstagramLogoSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__InstagramLogoSvg.jsx"
+          "name": "InstagramLogoIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__InstagramLogo.jsx"
         },
         {
           "id": "u01fzfpIt-If",
-          "name": "StopButtonSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButtonSvg.jsx"
+          "name": "StopButton2Icon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButton2.jsx"
         },
         {
           "id": "Mc_9muYwZBjF",
-          "name": "StopButtonSvgrepoComSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButtonSvgrepoComSvg.jsx"
-        },
-        {
-          "id": "oA8pUPjqfWPB",
-          "name": "StopButtonSvg2Icon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButtonSvg2.jsx"
-        },
-        {
-          "id": "QdiqFSZtRJyX",
-          "name": "StopButtonSvg3Icon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButtonSvg3.jsx"
+          "name": "StopButtonIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButton.jsx"
         },
         {
           "id": "tNOpxgQccGat",
@@ -995,18 +985,18 @@
         },
         {
           "id": "rIruQm-TzSjY",
-          "name": "Icon15Icon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Icon15.jsx"
-        },
-        {
-          "id": "7F9kOAGDStmH",
           "name": "Icon16Icon",
           "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Icon16.jsx"
         },
         {
+          "id": "7F9kOAGDStmH",
+          "name": "Icon17Icon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Icon17.jsx"
+        },
+        {
           "id": "GGjxGWSc9SjB",
-          "name": "UeLogoSvg3Icon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__UeLogoSvg3.jsx"
+          "name": "UeLogoIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__UeLogo.jsx"
         },
         {
           "id": "ZvAp8lmOYdy4",
@@ -1025,8 +1015,8 @@
         },
         {
           "id": "v1mcrSsX0Dl9",
-          "name": "OpenBookIconIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__OpenBookIcon.jsx"
+          "name": "OpenBookIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__OpenBook.jsx"
         },
         {
           "id": "d5pz69rrBj3o",
@@ -1035,43 +1025,43 @@
         },
         {
           "id": "KH57KApp2tIC",
-          "name": "XCircleFillSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__XCircleFillSvg.jsx"
+          "name": "XCircleFill2Icon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__XCircleFill2.jsx"
         },
         {
           "id": "0QRopc9MPjUd",
-          "name": "ChevronDownSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ChevronDownSvg.jsx"
+          "name": "ChevronDownIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ChevronDown.jsx"
         },
         {
           "id": "S0IbNKyNuVm7",
-          "name": "ChevronUpSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ChevronUpSvg.jsx"
+          "name": "ChevronUpIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ChevronUp.jsx"
         },
         {
           "id": "LiXFu_pZNIFT",
-          "name": "ClosebuttonSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ClosebuttonSvg.jsx"
+          "name": "CloseButtonIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__CloseButton.jsx"
         },
         {
           "id": "RLn9ghJZwOuN",
-          "name": "ResolumeSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ResolumeSvg.jsx"
+          "name": "ResolumeIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Resolume.jsx"
         },
         {
           "id": "7lKRcnkFyzNM",
-          "name": "AbletonLogoSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__AbletonLogoSvg.jsx"
+          "name": "AbletonLogoIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__AbletonLogo.jsx"
         },
         {
           "id": "mFSPBP5vLOoj",
-          "name": "ObsSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ObsSvg.jsx"
+          "name": "ObsIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Obs.jsx"
         },
         {
           "id": "58H3GuGJznsE",
-          "name": "TouchDesignerSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__TouchDesignerSvg.jsx"
+          "name": "TouchDesignerIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__TouchDesigner.jsx"
         }
       ],
       "images": [

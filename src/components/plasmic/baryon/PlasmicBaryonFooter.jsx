@@ -27,8 +27,8 @@ import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css";
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicBaryonFooter.module.css"; // plasmic-import: FKV3u0E4hZrB/css
-import LogoSvgIcon from "./icons/PlasmicIcon__LogoSvg"; // plasmic-import: pPVNZjSA1lJo/icon
-import InstagramLogoSvgIcon from "./icons/PlasmicIcon__InstagramLogoSvg"; // plasmic-import: X2e01B-uxA5q/icon
+import LogoIcon from "./icons/PlasmicIcon__Logo"; // plasmic-import: pPVNZjSA1lJo/icon
+import InstagramLogoIcon from "./icons/PlasmicIcon__InstagramLogo"; // plasmic-import: X2e01B-uxA5q/icon
 
 createPlasmicElementProxy;
 
@@ -204,7 +204,7 @@ function PlasmicBaryonFooter__RenderFunc(props) {
                   platform={"react"}
                   target={"_blank"}
                 >
-                  <LogoSvgIcon
+                  <LogoIcon
                     data-plasmic-name={"xLogo"}
                     data-plasmic-override={overrides.xLogo}
                     className={classNames(projectcss.all, sty.xLogo, {
@@ -227,7 +227,7 @@ function PlasmicBaryonFooter__RenderFunc(props) {
                   platform={"react"}
                   target={"_blank"}
                 >
-                  <InstagramLogoSvgIcon
+                  <InstagramLogoIcon
                     data-plasmic-name={"instagramLogo"}
                     data-plasmic-override={overrides.instagramLogo}
                     className={classNames(projectcss.all, sty.instagramLogo, {

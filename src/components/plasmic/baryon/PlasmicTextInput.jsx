@@ -25,7 +25,7 @@ import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css";
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicTextInput.module.css"; // plasmic-import: 2QQ_ah7Pcmad/css
-import SearchSvg2Icon from "./icons/PlasmicIcon__SearchSvg2"; // plasmic-import: aUU8zeXIq7cb/icon
+import SearchIcon from "./icons/PlasmicIcon__Search"; // plasmic-import: aUU8zeXIq7cb/icon
 
 createPlasmicElementProxy;
 
@@ -174,7 +174,7 @@ function PlasmicTextInput__RenderFunc(props) {
       >
         {renderPlasmicSlot({
           defaultContents: (
-            <SearchSvg2Icon
+            <SearchIcon
               className={classNames(projectcss.all, sty.svg__iDonm)}
               role={"img"}
             />

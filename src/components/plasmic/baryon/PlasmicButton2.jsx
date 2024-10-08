@@ -26,7 +26,7 @@ import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css";
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicButton2.module.css"; // plasmic-import: EPGJPtXx-yjL/css
-import Icon38Icon from "./icons/PlasmicIcon__Icon38"; // plasmic-import: IYnmkRggg6dZ/icon
+import Icon18Icon from "./icons/PlasmicIcon__Icon18"; // plasmic-import: IYnmkRggg6dZ/icon
 
 createPlasmicElementProxy;
 
@@ -465,7 +465,7 @@ function PlasmicButton2__RenderFunc(props) {
         >
           {renderPlasmicSlot({
             defaultContents: (
-              <Icon38Icon
+              <Icon18Icon
                 className={classNames(projectcss.all, sty.svg__qj1Wy)}
                 role={"img"}
               />

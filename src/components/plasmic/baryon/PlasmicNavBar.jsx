@@ -27,8 +27,8 @@ import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css";
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicNavBar.module.css"; // plasmic-import: GPPFyGZ_p6O7/css
-import HamburgerMenuSvgrepoComSvgIcon from "./icons/PlasmicIcon__HamburgerMenuSvgrepoComSvg"; // plasmic-import: yQSNegzl0PI8/icon
-import ClosebuttonSvgIcon from "./icons/PlasmicIcon__ClosebuttonSvg"; // plasmic-import: LiXFu_pZNIFT/icon
+import HamburgerMenuIcon from "./icons/PlasmicIcon__HamburgerMenu"; // plasmic-import: yQSNegzl0PI8/icon
+import CloseButtonIcon from "./icons/PlasmicIcon__CloseButton"; // plasmic-import: LiXFu_pZNIFT/icon
 
 createPlasmicElementProxy;
 
@@ -130,7 +130,7 @@ function PlasmicNavBar__RenderFunc(props) {
         }
         className={classNames("__wab_instance", sty.navigationBar)}
         closeButton={
-          <ClosebuttonSvgIcon
+          <CloseButtonIcon
             className={classNames(projectcss.all, sty.svg__i0YA)}
             role={"img"}
           />
@@ -312,7 +312,7 @@ function PlasmicNavBar__RenderFunc(props) {
           </React.Fragment>
         }
         openButton={
-          <HamburgerMenuSvgrepoComSvgIcon
+          <HamburgerMenuIcon
             className={classNames(projectcss.all, sty.svg__nzB6)}
             role={"img"}
           />

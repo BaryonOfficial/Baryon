@@ -29,13 +29,13 @@ import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plas
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicPlugin.module.css"; // plasmic-import: FXocl_OYx5HY/css
 import Icon14Icon from "./icons/PlasmicIcon__Icon14"; // plasmic-import: nK6pvnnbOK1R/icon
-import TouchDesignerSvgIcon from "./icons/PlasmicIcon__TouchDesignerSvg"; // plasmic-import: 58H3GuGJznsE/icon
-import ResolumeSvgIcon from "./icons/PlasmicIcon__ResolumeSvg"; // plasmic-import: RLn9ghJZwOuN/icon
-import UeLogoSvg3Icon from "./icons/PlasmicIcon__UeLogoSvg3"; // plasmic-import: GGjxGWSc9SjB/icon
-import AbletonLogoSvgIcon from "./icons/PlasmicIcon__AbletonLogoSvg"; // plasmic-import: 7lKRcnkFyzNM/icon
-import ObsSvgIcon from "./icons/PlasmicIcon__ObsSvg"; // plasmic-import: mFSPBP5vLOoj/icon
-import Icon15Icon from "./icons/PlasmicIcon__Icon15"; // plasmic-import: rIruQm-TzSjY/icon
-import Icon38Icon from "./icons/PlasmicIcon__Icon38"; // plasmic-import: IYnmkRggg6dZ/icon
+import TouchDesignerIcon from "./icons/PlasmicIcon__TouchDesigner"; // plasmic-import: 58H3GuGJznsE/icon
+import ResolumeIcon from "./icons/PlasmicIcon__Resolume"; // plasmic-import: RLn9ghJZwOuN/icon
+import UeLogoIcon from "./icons/PlasmicIcon__UeLogo"; // plasmic-import: GGjxGWSc9SjB/icon
+import AbletonLogoIcon from "./icons/PlasmicIcon__AbletonLogo"; // plasmic-import: 7lKRcnkFyzNM/icon
+import ObsIcon from "./icons/PlasmicIcon__Obs"; // plasmic-import: mFSPBP5vLOoj/icon
+import Icon16Icon from "./icons/PlasmicIcon__Icon16"; // plasmic-import: rIruQm-TzSjY/icon
+import Icon18Icon from "./icons/PlasmicIcon__Icon18"; // plasmic-import: IYnmkRggg6dZ/icon
 
 createPlasmicElementProxy;
 
@@ -547,7 +547,7 @@ function PlasmicPlugin__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox__a5S0A)}
               >
                 <div className={classNames(projectcss.all, sty.freeBox__txnHv)}>
-                  <TouchDesignerSvgIcon
+                  <TouchDesignerIcon
                     data-plasmic-name={"touchDesignerLogo"}
                     data-plasmic-override={overrides.touchDesignerLogo}
                     className={classNames(
@@ -564,7 +564,7 @@ function PlasmicPlugin__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox__lLyhx)}
               >
                 <div className={classNames(projectcss.all, sty.freeBox__wTfh)}>
-                  <ResolumeSvgIcon
+                  <ResolumeIcon
                     data-plasmic-name={"resolume"}
                     data-plasmic-override={overrides.resolume}
                     className={classNames(projectcss.all, sty.resolume)}
@@ -578,7 +578,7 @@ function PlasmicPlugin__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox__gv6F)}
               >
                 <div className={classNames(projectcss.all, sty.freeBox__kinlF)}>
-                  <UeLogoSvg3Icon
+                  <UeLogoIcon
                     data-plasmic-name={"unrealEngineLogo"}
                     data-plasmic-override={overrides.unrealEngineLogo}
                     className={classNames(projectcss.all, sty.unrealEngineLogo)}
@@ -592,7 +592,7 @@ function PlasmicPlugin__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox__uDksf)}
               >
                 <div className={classNames(projectcss.all, sty.freeBox__oNns)}>
-                  <AbletonLogoSvgIcon
+                  <AbletonLogoIcon
                     data-plasmic-name={"abletonLogo"}
                     data-plasmic-override={overrides.abletonLogo}
                     className={classNames(projectcss.all, sty.abletonLogo)}
@@ -606,7 +606,7 @@ function PlasmicPlugin__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox__pMyv8)}
               >
                 <div className={classNames(projectcss.all, sty.freeBox__qLay5)}>
-                  <ObsSvgIcon
+                  <ObsIcon
                     data-plasmic-name={"obsLogo"}
                     data-plasmic-override={overrides.obsLogo}
                     className={classNames(projectcss.all, sty.obsLogo)}
@@ -783,7 +783,7 @@ function PlasmicPlugin__RenderFunc(props) {
                               sty.freeBox__nKhG6
                             )}
                           >
-                            <Icon15Icon
+                            <Icon16Icon
                               className={classNames(
                                 projectcss.all,
                                 sty.svg__lMKgz
@@ -826,7 +826,7 @@ function PlasmicPlugin__RenderFunc(props) {
                               sty.freeBox__bxJmp
                             )}
                           >
-                            <Icon15Icon
+                            <Icon16Icon
                               className={classNames(
                                 projectcss.all,
                                 sty.svg__hnMpb
@@ -869,7 +869,7 @@ function PlasmicPlugin__RenderFunc(props) {
                               sty.freeBox__gpKqG
                             )}
                           >
-                            <Icon15Icon
+                            <Icon16Icon
                               className={classNames(
                                 projectcss.all,
                                 sty.svg__pD60C
@@ -903,7 +903,7 @@ function PlasmicPlugin__RenderFunc(props) {
                         className={classNames("__wab_instance", sty.button2)}
                         color2={"green"}
                         endIcon={
-                          <Icon38Icon
+                          <Icon18Icon
                             className={classNames(
                               projectcss.all,
                               sty.svg__dtf0T

@@ -23,7 +23,7 @@ import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css";
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicMobileMenu.module.css"; // plasmic-import: dfiZXaS0blw8/css
-import BaryonLogoWhite1Icon from "./icons/PlasmicIcon__BaryonLogoWhite1"; // plasmic-import: reN7qi7eBogy/icon
+import BaryonLogoWhiteIcon from "./icons/PlasmicIcon__BaryonLogoWhite"; // plasmic-import: reN7qi7eBogy/icon
 
 createPlasmicElementProxy;
 
@@ -88,7 +88,7 @@ function PlasmicMobileMenu__RenderFunc(props) {
       )}
     >
       <div className={classNames(projectcss.all, sty.freeBox__mhOq)}>
-        <BaryonLogoWhite1Icon
+        <BaryonLogoWhiteIcon
           className={classNames(projectcss.all, sty.svg__b1Snf)}
           role={"img"}
         />

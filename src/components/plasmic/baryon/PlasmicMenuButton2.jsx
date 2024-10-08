@@ -21,7 +21,7 @@ import { useScreenVariants as useScreenVariantspcuqpuXkf7V2 } from "./PlasmicGlo
 import "@plasmicapp/react-web/lib/plasmic.css";
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicMenuButton2.module.css"; // plasmic-import: X6F2UQJmqAhS/css
-import HamburgerMenuSvgrepoComSvgIcon from "./icons/PlasmicIcon__HamburgerMenuSvgrepoComSvg"; // plasmic-import: yQSNegzl0PI8/icon
+import HamburgerMenuIcon from "./icons/PlasmicIcon__HamburgerMenu"; // plasmic-import: yQSNegzl0PI8/icon
 
 createPlasmicElementProxy;
 
@@ -61,7 +61,7 @@ function PlasmicMenuButton2__RenderFunc(props) {
       data-plasmic-for-node={forNode}
       className={classNames("__wab_instance", sty.root)}
     >
-      <HamburgerMenuSvgrepoComSvgIcon
+      <HamburgerMenuIcon
         data-plasmic-name={"svg"}
         data-plasmic-override={overrides.svg}
         className={classNames(projectcss.all, sty.svg)}
