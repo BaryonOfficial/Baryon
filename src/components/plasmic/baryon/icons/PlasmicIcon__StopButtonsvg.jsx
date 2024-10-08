@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function StopButtonsvgIcon(props) {
+export function StopButtonSvgIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -130,5 +130,5 @@ export function StopButtonsvgIcon(props) {
   );
 }
 
-export default StopButtonsvgIcon;
+export default StopButtonSvgIcon;
 /* prettier-ignore-end */

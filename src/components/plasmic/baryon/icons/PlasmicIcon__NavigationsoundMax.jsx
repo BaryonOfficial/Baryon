@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function NavigationsoundMaxIcon(props) {
+export function NavigationSoundMaxIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -32,5 +32,5 @@ export function NavigationsoundMaxIcon(props) {
   );
 }
 
-export default NavigationsoundMaxIcon;
+export default NavigationSoundMaxIcon;
 /* prettier-ignore-end */

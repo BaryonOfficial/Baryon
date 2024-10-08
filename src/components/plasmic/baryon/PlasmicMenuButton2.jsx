@@ -21,7 +21,7 @@ import { useScreenVariants as useScreenVariantspcuqpuXkf7V2 } from "./PlasmicGlo
 import "@plasmicapp/react-web/lib/plasmic.css";
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicMenuButton2.module.css"; // plasmic-import: X6F2UQJmqAhS/css
-import HamburgerMenuSvgrepoComsvgIcon from "./icons/PlasmicIcon__HamburgerMenuSvgrepoComsvg"; // plasmic-import: yQSNegzl0PI8/icon
+import HamburgerMenuSvgrepoComSvgIcon from "./icons/PlasmicIcon__HamburgerMenuSvgrepoComSvg"; // plasmic-import: yQSNegzl0PI8/icon
 
 createPlasmicElementProxy;
 
@@ -33,7 +33,16 @@ const $$ = {};
 
 function PlasmicMenuButton2__RenderFunc(props) {
   const { variants, overrides, forNode } = props;
-  const args = React.useMemo(() => Object.assign({}, props.args), [props.args]);
+  const args = React.useMemo(
+    () =>
+      Object.assign(
+        {},
+        Object.fromEntries(
+          Object.entries(props.args).filter(([_, v]) => v !== undefined)
+        )
+      ),
+    [props.args]
+  );
   const $props = {
     ...args,
     ...variants
@@ -52,7 +61,7 @@ function PlasmicMenuButton2__RenderFunc(props) {
       data-plasmic-for-node={forNode}
       className={classNames("__wab_instance", sty.root)}
     >
-      <HamburgerMenuSvgrepoComsvgIcon
+      <HamburgerMenuSvgrepoComSvgIcon
         data-plasmic-name={"svg"}
         data-plasmic-override={overrides.svg}
         className={classNames(projectcss.all, sty.svg)}

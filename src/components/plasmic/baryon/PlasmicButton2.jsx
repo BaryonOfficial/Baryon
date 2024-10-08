@@ -26,7 +26,7 @@ import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css";
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicButton2.module.css"; // plasmic-import: EPGJPtXx-yjL/css
-import ChecksvgIcon from "./icons/PlasmicIcon__Checksvg"; // plasmic-import: F3iOqCFKuA-k/icon
+import CheckSvgIcon from "./icons/PlasmicIcon__CheckSvg"; // plasmic-import: F3iOqCFKuA-k/icon
 import Icon38Icon from "./icons/PlasmicIcon__Icon38"; // plasmic-import: IYnmkRggg6dZ/icon
 
 createPlasmicElementProxy;
@@ -53,7 +53,16 @@ const $$ = {};
 
 function PlasmicButton2__RenderFunc(props) {
   const { variants, overrides, forNode } = props;
-  const args = React.useMemo(() => Object.assign({}, props.args), [props.args]);
+  const args = React.useMemo(
+    () =>
+      Object.assign(
+        {},
+        Object.fromEntries(
+          Object.entries(props.args).filter(([_, v]) => v !== undefined)
+        )
+      ),
+    [props.args]
+  );
   const $props = {
     ...args,
     ...variants
@@ -221,7 +230,7 @@ function PlasmicButton2__RenderFunc(props) {
         >
           {renderPlasmicSlot({
             defaultContents: (
-              <ChecksvgIcon
+              <CheckSvgIcon
                 className={classNames(projectcss.all, sty.svg__z4G40)}
                 role={"img"}
               />

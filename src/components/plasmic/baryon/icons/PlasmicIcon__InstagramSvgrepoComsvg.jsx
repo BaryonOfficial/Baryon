@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function InstagramSvgrepoComsvgIcon(props) {
+export function InstagramSvgrepoComSvgIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -40,5 +40,5 @@ export function InstagramSvgrepoComsvgIcon(props) {
   );
 }
 
-export default InstagramSvgrepoComsvgIcon;
+export default InstagramSvgrepoComSvgIcon;
 /* prettier-ignore-end */

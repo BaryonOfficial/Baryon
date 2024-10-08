@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function StopButtonSvgrepoComsvgIcon(props) {
+export function StopButtonSvgrepoComSvgIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -30,5 +30,5 @@ export function StopButtonSvgrepoComsvgIcon(props) {
   );
 }
 
-export default StopButtonSvgrepoComsvgIcon;
+export default StopButtonSvgrepoComSvgIcon;
 /* prettier-ignore-end */

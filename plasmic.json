@@ -775,8 +775,8 @@
         },
         {
           "id": "F3iOqCFKuA-k",
-          "name": "ChecksvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Checksvg.jsx"
+          "name": "CheckSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__CheckSvg.jsx"
         },
         {
           "id": "IYnmkRggg6dZ",
@@ -785,13 +785,13 @@
         },
         {
           "id": "yQSNegzl0PI8",
-          "name": "HamburgerMenuSvgrepoComsvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__HamburgerMenuSvgrepoComsvg.jsx"
+          "name": "HamburgerMenuSvgrepoComSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__HamburgerMenuSvgrepoComSvg.jsx"
         },
         {
           "id": "aUU8zeXIq7cb",
-          "name": "Searchsvg2Icon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Searchsvg2.jsx"
+          "name": "SearchSvg2Icon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__SearchSvg2.jsx"
         },
         {
           "id": "mKGR2y6C-BPn",
@@ -920,8 +920,8 @@
         },
         {
           "id": "sPkJlMM6oHky",
-          "name": "NavigationsoundMaxIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__NavigationsoundMax.jsx"
+          "name": "NavigationSoundMaxIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__NavigationSoundMax.jsx"
         },
         {
           "id": "KiaI6AQ43_JT",
@@ -955,33 +955,33 @@
         },
         {
           "id": "pPVNZjSA1lJo",
-          "name": "LogosvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Logosvg.jsx"
+          "name": "LogoSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__LogoSvg.jsx"
         },
         {
           "id": "X2e01B-uxA5q",
-          "name": "InstagramSvgrepoComsvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__InstagramSvgrepoComsvg.jsx"
+          "name": "InstagramSvgrepoComSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__InstagramSvgrepoComSvg.jsx"
         },
         {
           "id": "u01fzfpIt-If",
-          "name": "StopButtonsvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButtonsvg.jsx"
+          "name": "StopButtonSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButtonSvg.jsx"
         },
         {
           "id": "Mc_9muYwZBjF",
-          "name": "StopButtonSvgrepoComsvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButtonSvgrepoComsvg.jsx"
+          "name": "StopButtonSvgrepoComSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButtonSvgrepoComSvg.jsx"
         },
         {
           "id": "oA8pUPjqfWPB",
-          "name": "StopButtonsvg2Icon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButtonsvg2.jsx"
+          "name": "StopButtonSvg2Icon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButtonSvg2.jsx"
         },
         {
           "id": "QdiqFSZtRJyX",
-          "name": "StopButtonsvg3Icon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButtonsvg3.jsx"
+          "name": "StopButtonSvg3Icon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__StopButtonSvg3.jsx"
         },
         {
           "id": "tNOpxgQccGat",
@@ -1010,28 +1010,28 @@
         },
         {
           "id": "GGjxGWSc9SjB",
-          "name": "UeLogotype2023SplashScreenVerticalBlacksvg2Icon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__UeLogotype2023SplashScreenVerticalBlacksvg2.jsx"
+          "name": "UeLogotype2023SplashScreenVerticalBlackSvg2Icon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__UeLogotype2023SplashScreenVerticalBlackSvg2.jsx"
         },
         {
           "id": "NQIxgI55S_TJ",
-          "name": "AbletonLogowinesvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__AbletonLogowinesvg.jsx"
+          "name": "AbletonLogoWineSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__AbletonLogoWineSvg.jsx"
         },
         {
           "id": "buvdmCRySlxv",
-          "name": "OpenBroadcasterSoftwareLogowinesvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__OpenBroadcasterSoftwareLogowinesvg.jsx"
+          "name": "OpenBroadcasterSoftwareLogoWineSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__OpenBroadcasterSoftwareLogoWineSvg.jsx"
         },
         {
           "id": "vz8Up1GDeN9C",
-          "name": "ResolumeIconsvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ResolumeIconsvg.jsx"
+          "name": "ResolumeIconSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ResolumeIconSvg.jsx"
         },
         {
           "id": "AvlJVplI2x17",
-          "name": "ResolumeLogosvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ResolumeLogosvg.jsx"
+          "name": "ResolumelogoSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ResolumelogoSvg.jsx"
         },
         {
           "id": "8C7P_NC_xAYn",
@@ -1065,23 +1065,23 @@
         },
         {
           "id": "KH57KApp2tIC",
-          "name": "XCircleFillsvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__XCircleFillsvg.jsx"
+          "name": "XCircleFillSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__XCircleFillSvg.jsx"
         },
         {
           "id": "0QRopc9MPjUd",
-          "name": "ChevronDownsvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ChevronDownsvg.jsx"
+          "name": "ChevronDownSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ChevronDownSvg.jsx"
         },
         {
           "id": "S0IbNKyNuVm7",
-          "name": "ChevronUpsvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ChevronUpsvg.jsx"
+          "name": "ChevronUpSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ChevronUpSvg.jsx"
         },
         {
           "id": "LiXFu_pZNIFT",
-          "name": "ClosebuttonsvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__Closebuttonsvg.jsx"
+          "name": "ClosebuttonSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ClosebuttonSvg.jsx"
         }
       ],
       "images": [
@@ -1093,7 +1093,7 @@
         {
           "id": "BoSma8fxbw-r",
           "name": "Baryon Logo Black.svg",
-          "filePath": "plasmic/baryon/images/baryonLogoBlacksvg.svg"
+          "filePath": "plasmic/baryon/images/baryonLogoBlackSvg.svg"
         },
         {
           "id": "5oiRHG9JbS-S",
@@ -1123,12 +1123,12 @@
         {
           "id": "yz4NB8cZ1un3",
           "name": "festival-girl-holograms.png",
-          "filePath": "plasmic/baryon/images/festivalGirlHologramspng.png"
+          "filePath": "plasmic/baryon/images/festivalGirlHologramsPng.png"
         },
         {
           "id": "Z1zEOYvd6lS_",
           "name": "picnic-magic.png",
-          "filePath": "plasmic/baryon/images/picnicMagicpng.png"
+          "filePath": "plasmic/baryon/images/picnicMagicPng.png"
         },
         {
           "id": "WQrf0z8ws5ok",
@@ -1228,107 +1228,107 @@
         {
           "id": "LMyoeEwvuFa1",
           "name": "play-button-svgrepo-com.svg",
-          "filePath": "plasmic/baryon/images/playButtonSvgrepoComsvg.svg"
+          "filePath": "plasmic/baryon/images/playButtonSvgrepoComSvg.svg"
         },
         {
           "id": "xOHP7LJ9Zl5P",
           "name": "UE-Logotype-2023-SplashScreen-Vertical-Black.svg",
-          "filePath": "plasmic/baryon/images/ueLogotype2023SplashScreenVerticalBlacksvg.svg"
+          "filePath": "plasmic/baryon/images/ueLogotype2023SplashScreenVerticalBlackSvg.svg"
         },
         {
           "id": "9TOtg0w5P6gT",
           "name": "resolume icon.png",
-          "filePath": "plasmic/baryon/images/resolumeIconpng.png"
+          "filePath": "plasmic/baryon/images/resolumeIconPng.png"
         },
         {
           "id": "ASTzGlF7JJTY",
           "name": "ramiro-pianarosa-xUpbQ9GX7SQ-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/ramiroPianarosaXUpbQ9Gx7SqUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/ramiroPianarosaXUpbQ9Gx7SqUnsplashJpg.jpg"
         },
         {
           "id": "9DT3TqHNLVNv",
           "name": "green-ink-streams-on-white.jpg",
-          "filePath": "plasmic/baryon/images/greenInkStreamsOnWhitejpg.jpg"
+          "filePath": "plasmic/baryon/images/greenInkStreamsOnWhiteJpg.jpg"
         },
         {
           "id": "fSGILeQ_cMMz",
           "name": "jazmin-quaynor-CXjp1ycr5Vw-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/jazminQuaynorCXjp1Ycr5VwUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/jazminQuaynorCXjp1Ycr5VwUnsplashJpg.jpg"
         },
         {
           "id": "i-jydB3ObePf",
           "name": "milad-fakurian-lz8j9lMe-oA-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/miladFakurianLz8J9LMeOAUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/miladFakurianLz8J9LMeOAUnsplashJpg.jpg"
         },
         {
           "id": "nyHTjCzQ6HHC",
           "name": "jeremy-bishop-hVkDaLkoiec-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/jeremyBishopHVkDaLkoiecUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/jeremyBishopHVkDaLkoiecUnsplashJpg.jpg"
         },
         {
           "id": "kC_iSDsVaRbX",
           "name": "denis-sebastian-tamas-Prsu103pTio-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/denisSebastianTamasPrsu103PTioUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/denisSebastianTamasPrsu103PTioUnsplashJpg.jpg"
         },
         {
           "id": "j9N0k2D0ZiSj",
           "name": "jason-leung-UMncYEfO9-U-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/jasonLeungUMncYEfO9UUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/jasonLeungUMncYEfO9UUnsplashJpg.jpg"
         },
         {
           "id": "bP_LJxK4-vwH",
           "name": "jessica-irani-6UvQTVjCoDA-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/jessicaIrani6UvQtVjCoDaUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/jessicaIrani6UvQtVjCoDaUnsplashJpg.jpg"
         },
         {
           "id": "tQqH8ik7AnZW",
           "name": "jean-philippe-delberghe-75xPHEQBmvA-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/jeanPhilippeDelberghe75XPheqBmvAUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/jeanPhilippeDelberghe75XPheqBmvAUnsplashJpg.jpg"
         },
         {
           "id": "s7865ZwXNtFA",
           "name": "Baryon Logo White.svg",
-          "filePath": "plasmic/baryon/images/baryonLogoWhitesvg.svg"
+          "filePath": "plasmic/baryon/images/baryonLogoWhiteSvg.svg"
         },
         {
           "id": "UkSuRrDI-VK2",
           "name": "kenrick-mills-L8mqcLh7deg-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/kenrickMillsL8MqcLh7DegUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/kenrickMillsL8MqcLh7DegUnsplashJpg.jpg"
         },
         {
           "id": "7RX2-rlmS1Hb",
           "name": "vackground-com-hp-tDqblBqE-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/vackgroundComHpTDqblBqEUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/vackgroundComHpTDqblBqEUnsplashJpg.jpg"
         },
         {
           "id": "PjpCZg3cPebF",
           "name": "rivage-t-da_md1qMc-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/rivageTDaMd1QMcUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/rivageTDaMd1QMcUnsplashJpg.jpg"
         },
         {
           "id": "9laZc_0pgJ4l",
           "name": "billy-huynh-W8KTS-mhFUE-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/billyHuynhW8KtsMhFueUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/billyHuynhW8KtsMhFueUnsplashJpg.jpg"
         },
         {
           "id": "nSN2MQyWg_LH",
           "name": "ian-keefe-NBQhCKtg_9Y-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/ianKeefeNbQhCKtg9YUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/ianKeefeNbQhCKtg9YUnsplashJpg.jpg"
         },
         {
           "id": "iy4EoC896c_K",
           "name": "harli-marten-n7a2OJDSZns-unsplash.jpg",
-          "filePath": "plasmic/baryon/images/harliMartenN7A2OjdsZnsUnsplashjpg.jpg"
+          "filePath": "plasmic/baryon/images/harliMartenN7A2OjdsZnsUnsplashJpg.jpg"
         },
         {
           "id": "2wMlSYU5EhVn",
           "name": "GuitarPlaying.jpg",
-          "filePath": "plasmic/baryon/images/guitarPlayingjpg.jpeg"
+          "filePath": "plasmic/baryon/images/guitarPlayingJpg.jpeg"
         },
         {
           "id": "cPRUo6uw3iSp",
           "name": "hamburger-menu-svgrepo-com.svg 2",
-          "filePath": "plasmic/baryon/images/hamburgerMenuSvgrepoComsvg2.svg"
+          "filePath": "plasmic/baryon/images/hamburgerMenuSvgrepoComSvg2.svg"
         },
         {
           "id": "JXHGy6LxLNgk",
@@ -1338,7 +1338,7 @@
         {
           "id": "M6v13lejWUYq",
           "name": "abstract_cymatics_inspired_soundscape_website_backgr_dc9b72fa-5773-4eae-a26e-f8ea9c0ed94b.png",
-          "filePath": "plasmic/baryon/images/abstractCymaticsInspiredSoundscapeWebsiteBackgrDc9B72Fa57734EaeA26EF8Ea9C0Ed94Bpng.png"
+          "filePath": "plasmic/baryon/images/abstractCymaticsInspiredSoundscapeWebsiteBackgrDc9B72Fa57734EaeA26EF8Ea9C0Ed94BPng.png"
         },
         {
           "id": "7gkPUC5X5zzv",
@@ -1437,6 +1437,6 @@
     ]
   },
   "wrapPagesWithGlobalContexts": true,
-  "cliVersion": "0.1.330",
-  "$schema": "https://unpkg.com/@plasmicapp/cli@0.1.330/dist/plasmic.schema.json"
+  "cliVersion": "0.1.331",
+  "$schema": "https://unpkg.com/@plasmicapp/cli@0.1.331/dist/plasmic.schema.json"
 }

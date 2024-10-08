@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function HamburgerMenuSvgrepoComsvgIcon(props) {
+export function HamburgerMenuSvgrepoComSvgIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -31,5 +31,5 @@ export function HamburgerMenuSvgrepoComsvgIcon(props) {
   );
 }
 
-export default HamburgerMenuSvgrepoComsvgIcon;
+export default HamburgerMenuSvgrepoComSvgIcon;
 /* prettier-ignore-end */

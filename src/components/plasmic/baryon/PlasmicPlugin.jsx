@@ -30,12 +30,12 @@ import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWco
 import sty from "./PlasmicPlugin.module.css"; // plasmic-import: FXocl_OYx5HY/css
 import Icon14Icon from "./icons/PlasmicIcon__Icon14"; // plasmic-import: nK6pvnnbOK1R/icon
 import TouchDesignerBlack01SvgIcon from "./icons/PlasmicIcon__TouchDesignerBlack01Svg"; // plasmic-import: 8C7P_NC_xAYn/icon
-import ResolumeLogosvgIcon from "./icons/PlasmicIcon__ResolumeLogosvg"; // plasmic-import: AvlJVplI2x17/icon
-import UeLogotype2023SplashScreenVerticalBlacksvg2Icon from "./icons/PlasmicIcon__UeLogotype2023SplashScreenVerticalBlacksvg2"; // plasmic-import: GGjxGWSc9SjB/icon
-import AbletonLogowinesvgIcon from "./icons/PlasmicIcon__AbletonLogowinesvg"; // plasmic-import: NQIxgI55S_TJ/icon
-import OpenBroadcasterSoftwareLogowinesvgIcon from "./icons/PlasmicIcon__OpenBroadcasterSoftwareLogowinesvg"; // plasmic-import: buvdmCRySlxv/icon
+import ResolumelogoSvgIcon from "./icons/PlasmicIcon__ResolumelogoSvg"; // plasmic-import: AvlJVplI2x17/icon
+import UeLogotype2023SplashScreenVerticalBlackSvg2Icon from "./icons/PlasmicIcon__UeLogotype2023SplashScreenVerticalBlackSvg2"; // plasmic-import: GGjxGWSc9SjB/icon
+import AbletonLogoWineSvgIcon from "./icons/PlasmicIcon__AbletonLogoWineSvg"; // plasmic-import: NQIxgI55S_TJ/icon
+import OpenBroadcasterSoftwareLogoWineSvgIcon from "./icons/PlasmicIcon__OpenBroadcasterSoftwareLogoWineSvg"; // plasmic-import: buvdmCRySlxv/icon
 import Icon15Icon from "./icons/PlasmicIcon__Icon15"; // plasmic-import: rIruQm-TzSjY/icon
-import ChecksvgIcon from "./icons/PlasmicIcon__Checksvg"; // plasmic-import: F3iOqCFKuA-k/icon
+import CheckSvgIcon from "./icons/PlasmicIcon__CheckSvg"; // plasmic-import: F3iOqCFKuA-k/icon
 import Icon38Icon from "./icons/PlasmicIcon__Icon38"; // plasmic-import: IYnmkRggg6dZ/icon
 
 createPlasmicElementProxy;
@@ -48,7 +48,16 @@ const $$ = {};
 
 function PlasmicPlugin__RenderFunc(props) {
   const { variants, overrides, forNode } = props;
-  const args = React.useMemo(() => Object.assign({}, props.args), [props.args]);
+  const args = React.useMemo(
+    () =>
+      Object.assign(
+        {},
+        Object.fromEntries(
+          Object.entries(props.args).filter(([_, v]) => v !== undefined)
+        )
+      ),
+    [props.args]
+  );
   const $props = {
     ...args,
     ...variants
@@ -556,7 +565,7 @@ function PlasmicPlugin__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox__lLyhx)}
               >
                 <div className={classNames(projectcss.all, sty.freeBox__wTfh)}>
-                  <ResolumeLogosvgIcon
+                  <ResolumelogoSvgIcon
                     data-plasmic-name={"resolumeLogo"}
                     data-plasmic-override={overrides.resolumeLogo}
                     className={classNames(projectcss.all, sty.resolumeLogo)}
@@ -570,7 +579,7 @@ function PlasmicPlugin__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox__gv6F)}
               >
                 <div className={classNames(projectcss.all, sty.freeBox__kinlF)}>
-                  <UeLogotype2023SplashScreenVerticalBlacksvg2Icon
+                  <UeLogotype2023SplashScreenVerticalBlackSvg2Icon
                     data-plasmic-name={"unrealEngineLogo"}
                     data-plasmic-override={overrides.unrealEngineLogo}
                     className={classNames(projectcss.all, sty.unrealEngineLogo)}
@@ -584,7 +593,7 @@ function PlasmicPlugin__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox__uDksf)}
               >
                 <div className={classNames(projectcss.all, sty.freeBox__oNns)}>
-                  <AbletonLogowinesvgIcon
+                  <AbletonLogoWineSvgIcon
                     data-plasmic-name={"abletonLogo"}
                     data-plasmic-override={overrides.abletonLogo}
                     className={classNames(projectcss.all, sty.abletonLogo)}
@@ -598,7 +607,7 @@ function PlasmicPlugin__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox__pMyv8)}
               >
                 <div className={classNames(projectcss.all, sty.freeBox__qLay5)}>
-                  <OpenBroadcasterSoftwareLogowinesvgIcon
+                  <OpenBroadcasterSoftwareLogoWineSvgIcon
                     data-plasmic-name={"obsLogo"}
                     data-plasmic-override={overrides.obsLogo}
                     className={classNames(projectcss.all, sty.obsLogo)}
@@ -682,6 +691,24 @@ function PlasmicPlugin__RenderFunc(props) {
                       >
                         {"Pro LICENSE"}
                       </div>
+                      <div
+                        className={classNames(
+                          projectcss.all,
+                          projectcss.__wab_text,
+                          sty.text__pWpNh
+                        )}
+                      >
+                        <React.Fragment>
+                          <span
+                            className={
+                              "plasmic_default__all plasmic_default__span"
+                            }
+                            style={{ color: "#000000" }}
+                          >
+                            {"Pay What You Think Is Fair, Starting at"}
+                          </span>
+                        </React.Fragment>
+                      </div>
                       <Stack__
                         as={"div"}
                         hasGap={true}
@@ -712,7 +739,7 @@ function PlasmicPlugin__RenderFunc(props) {
                               sty.text__pYqfS
                             )}
                           >
-                            {"250"}
+                            {"50"}
                           </div>
                         </div>
                         <div
@@ -891,7 +918,7 @@ function PlasmicPlugin__RenderFunc(props) {
                             : "compact"
                         }
                         startIcon={
-                          <ChecksvgIcon
+                          <CheckSvgIcon
                             className={classNames(
                               projectcss.all,
                               sty.svg__zahar

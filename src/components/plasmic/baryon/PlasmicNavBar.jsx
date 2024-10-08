@@ -27,8 +27,8 @@ import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css";
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicNavBar.module.css"; // plasmic-import: GPPFyGZ_p6O7/css
-import HamburgerMenuSvgrepoComsvgIcon from "./icons/PlasmicIcon__HamburgerMenuSvgrepoComsvg"; // plasmic-import: yQSNegzl0PI8/icon
-import ClosebuttonsvgIcon from "./icons/PlasmicIcon__Closebuttonsvg"; // plasmic-import: LiXFu_pZNIFT/icon
+import HamburgerMenuSvgrepoComSvgIcon from "./icons/PlasmicIcon__HamburgerMenuSvgrepoComSvg"; // plasmic-import: yQSNegzl0PI8/icon
+import ClosebuttonSvgIcon from "./icons/PlasmicIcon__ClosebuttonSvg"; // plasmic-import: LiXFu_pZNIFT/icon
 
 createPlasmicElementProxy;
 
@@ -40,7 +40,16 @@ const $$ = {};
 
 function PlasmicNavBar__RenderFunc(props) {
   const { variants, overrides, forNode } = props;
-  const args = React.useMemo(() => Object.assign({}, props.args), [props.args]);
+  const args = React.useMemo(
+    () =>
+      Object.assign(
+        {},
+        Object.fromEntries(
+          Object.entries(props.args).filter(([_, v]) => v !== undefined)
+        )
+      ),
+    [props.args]
+  );
   const $props = {
     ...args,
     ...variants
@@ -121,7 +130,7 @@ function PlasmicNavBar__RenderFunc(props) {
         }
         className={classNames("__wab_instance", sty.navigationBar)}
         closeButton={
-          <ClosebuttonsvgIcon
+          <ClosebuttonSvgIcon
             className={classNames(projectcss.all, sty.svg__i0YA)}
             role={"img"}
           />
@@ -279,7 +288,7 @@ function PlasmicNavBar__RenderFunc(props) {
           </React.Fragment>
         }
         openButton={
-          <HamburgerMenuSvgrepoComsvgIcon
+          <HamburgerMenuSvgrepoComSvgIcon
             className={classNames(projectcss.all, sty.svg__nzB6)}
             role={"img"}
           />

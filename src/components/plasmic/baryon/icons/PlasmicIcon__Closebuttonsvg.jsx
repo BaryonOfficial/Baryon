@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function ClosebuttonsvgIcon(props) {
+export function ClosebuttonSvgIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -42,5 +42,5 @@ export function ClosebuttonsvgIcon(props) {
   );
 }
 
-export default ClosebuttonsvgIcon;
+export default ClosebuttonSvgIcon;
 /* prettier-ignore-end */

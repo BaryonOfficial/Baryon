@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function Searchsvg2Icon(props) {
+export function SearchSvg2Icon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -33,5 +33,5 @@ export function Searchsvg2Icon(props) {
   );
 }
 
-export default Searchsvg2Icon;
+export default SearchSvg2Icon;
 /* prettier-ignore-end */
