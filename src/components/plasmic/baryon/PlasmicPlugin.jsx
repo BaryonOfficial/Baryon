@@ -30,7 +30,7 @@ import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWco
 import sty from "./PlasmicPlugin.module.css"; // plasmic-import: FXocl_OYx5HY/css
 import Icon14Icon from "./icons/PlasmicIcon__Icon14"; // plasmic-import: nK6pvnnbOK1R/icon
 import TouchDesignerBlack01SvgIcon from "./icons/PlasmicIcon__TouchDesignerBlack01Svg"; // plasmic-import: 8C7P_NC_xAYn/icon
-import ResolumelogoSvgIcon from "./icons/PlasmicIcon__ResolumelogoSvg"; // plasmic-import: AvlJVplI2x17/icon
+import ResolumeSvgIcon from "./icons/PlasmicIcon__ResolumeSvg"; // plasmic-import: RLn9ghJZwOuN/icon
 import UeLogoSvg3Icon from "./icons/PlasmicIcon__UeLogoSvg3"; // plasmic-import: GGjxGWSc9SjB/icon
 import AbletonLogoWineSvgIcon from "./icons/PlasmicIcon__AbletonLogoWineSvg"; // plasmic-import: NQIxgI55S_TJ/icon
 import OpenBroadcasterSoftwareLogoWineSvgIcon from "./icons/PlasmicIcon__OpenBroadcasterSoftwareLogoWineSvg"; // plasmic-import: buvdmCRySlxv/icon
@@ -565,10 +565,10 @@ function PlasmicPlugin__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox__lLyhx)}
               >
                 <div className={classNames(projectcss.all, sty.freeBox__wTfh)}>
-                  <ResolumelogoSvgIcon
-                    data-plasmic-name={"resolumeLogo"}
-                    data-plasmic-override={overrides.resolumeLogo}
-                    className={classNames(projectcss.all, sty.resolumeLogo)}
+                  <ResolumeSvgIcon
+                    data-plasmic-name={"resolume"}
+                    data-plasmic-override={overrides.resolume}
+                    className={classNames(projectcss.all, sty.resolume)}
                     role={"img"}
                   />
                 </div>
@@ -968,7 +968,7 @@ const PlasmicDescendants = {
     "compatibility",
     "h3",
     "touchDesignerLogo",
-    "resolumeLogo",
+    "resolume",
     "unrealEngineLogo",
     "abletonLogo",
     "obsLogo",
@@ -988,7 +988,7 @@ const PlasmicDescendants = {
     "compatibility",
     "h3",
     "touchDesignerLogo",
-    "resolumeLogo",
+    "resolume",
     "unrealEngineLogo",
     "abletonLogo",
     "obsLogo"
@@ -996,7 +996,7 @@ const PlasmicDescendants = {
 
   h3: ["h3"],
   touchDesignerLogo: ["touchDesignerLogo"],
-  resolumeLogo: ["resolumeLogo"],
+  resolume: ["resolume"],
   unrealEngineLogo: ["unrealEngineLogo"],
   abletonLogo: ["abletonLogo"],
   obsLogo: ["obsLogo"],
@@ -1047,7 +1047,7 @@ export const PlasmicPlugin = Object.assign(
     compatibility: makeNodeComponent("compatibility"),
     h3: makeNodeComponent("h3"),
     touchDesignerLogo: makeNodeComponent("touchDesignerLogo"),
-    resolumeLogo: makeNodeComponent("resolumeLogo"),
+    resolume: makeNodeComponent("resolume"),
     unrealEngineLogo: makeNodeComponent("unrealEngineLogo"),
     abletonLogo: makeNodeComponent("abletonLogo"),
     obsLogo: makeNodeComponent("obsLogo"),

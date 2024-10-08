@@ -1024,16 +1024,6 @@
           "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__OpenBroadcasterSoftwareLogoWineSvg.jsx"
         },
         {
-          "id": "vz8Up1GDeN9C",
-          "name": "ResolumeIconSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ResolumeIconSvg.jsx"
-        },
-        {
-          "id": "AvlJVplI2x17",
-          "name": "ResolumelogoSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ResolumelogoSvg.jsx"
-        },
-        {
           "id": "8C7P_NC_xAYn",
           "name": "TouchDesignerBlack01SvgIcon",
           "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__TouchDesignerBlack01Svg.jsx"
@@ -1082,6 +1072,11 @@
           "id": "LiXFu_pZNIFT",
           "name": "ClosebuttonSvgIcon",
           "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ClosebuttonSvg.jsx"
+        },
+        {
+          "id": "RLn9ghJZwOuN",
+          "name": "ResolumeSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ResolumeSvg.jsx"
         }
       ],
       "images": [
@@ -1236,11 +1231,6 @@
           "filePath": "plasmic/baryon/images/ueLogoSvg.svg"
         },
         {
-          "id": "9TOtg0w5P6gT",
-          "name": "resolume icon.png",
-          "filePath": "plasmic/baryon/images/resolumeIconPng.png"
-        },
-        {
           "id": "ASTzGlF7JJTY",
           "name": "ramiro-pianarosa-xUpbQ9GX7SQ-unsplash.jpg",
           "filePath": "plasmic/baryon/images/ramiroPianarosaXUpbQ9Gx7SqUnsplashJpg.jpg"
@@ -1334,11 +1324,6 @@
           "id": "JXHGy6LxLNgk",
           "name": "Elegant_cymatic_soundwave_patterns_flowing_verticall_98916b5d-166a-4e17-a755-86bc0d9a9b58.png",
           "filePath": "plasmic/baryon/images/elegantCymaticSoundwavePatternsFlowingVerticall98916B5D166A4E17A75586Bc0D9A9B58Png.png"
-        },
-        {
-          "id": "M6v13lejWUYq",
-          "name": "abstract_cymatics_inspired_soundscape_website_backgr_dc9b72fa-5773-4eae-a26e-f8ea9c0ed94b.png",
-          "filePath": "plasmic/baryon/images/abstractCymaticsInspiredSoundscapeWebsiteBackgrDc9B72Fa57734EaeA26EF8Ea9C0Ed94BPng.png"
         },
         {
           "id": "7gkPUC5X5zzv",
