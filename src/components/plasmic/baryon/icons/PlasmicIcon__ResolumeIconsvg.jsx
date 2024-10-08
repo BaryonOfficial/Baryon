@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function ResolumeIconsvgIcon(props) {
+export function ResolumeIconSvgIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -72,5 +72,5 @@ export function ResolumeIconsvgIcon(props) {
   );
 }
 
-export default ResolumeIconsvgIcon;
+export default ResolumeIconSvgIcon;
 /* prettier-ignore-end */

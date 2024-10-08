@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function ChevronDownsvgIcon(props) {
+export function ChevronDownSvgIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -31,5 +31,5 @@ export function ChevronDownsvgIcon(props) {
   );
 }
 
-export default ChevronDownsvgIcon;
+export default ChevronDownSvgIcon;
 /* prettier-ignore-end */

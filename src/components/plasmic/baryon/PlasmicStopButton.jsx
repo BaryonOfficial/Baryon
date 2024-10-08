@@ -20,7 +20,7 @@ import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css";
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicStopButton.module.css"; // plasmic-import: 72oO6fex1I6h/css
-import StopButtonSvgrepoComsvgIcon from "./icons/PlasmicIcon__StopButtonSvgrepoComsvg"; // plasmic-import: Mc_9muYwZBjF/icon
+import StopButtonSvgrepoComSvgIcon from "./icons/PlasmicIcon__StopButtonSvgrepoComSvg"; // plasmic-import: Mc_9muYwZBjF/icon
 
 createPlasmicElementProxy;
 
@@ -32,7 +32,16 @@ const $$ = {};
 
 function PlasmicStopButton__RenderFunc(props) {
   const { variants, overrides, forNode } = props;
-  const args = React.useMemo(() => Object.assign({}, props.args), [props.args]);
+  const args = React.useMemo(
+    () =>
+      Object.assign(
+        {},
+        Object.fromEntries(
+          Object.entries(props.args).filter(([_, v]) => v !== undefined)
+        )
+      ),
+    [props.args]
+  );
   const $props = {
     ...args,
     ...variants
@@ -57,7 +66,7 @@ function PlasmicStopButton__RenderFunc(props) {
         sty.root
       )}
     >
-      <StopButtonSvgrepoComsvgIcon
+      <StopButtonSvgrepoComSvgIcon
         data-plasmic-name={"svg"}
         data-plasmic-override={overrides.svg}
         className={classNames(projectcss.all, sty.svg)}

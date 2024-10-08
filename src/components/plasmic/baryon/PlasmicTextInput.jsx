@@ -25,8 +25,8 @@ import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css";
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicTextInput.module.css"; // plasmic-import: 2QQ_ah7Pcmad/css
-import Searchsvg2Icon from "./icons/PlasmicIcon__Searchsvg2"; // plasmic-import: aUU8zeXIq7cb/icon
-import ChecksvgIcon from "./icons/PlasmicIcon__Checksvg"; // plasmic-import: F3iOqCFKuA-k/icon
+import SearchSvg2Icon from "./icons/PlasmicIcon__SearchSvg2"; // plasmic-import: aUU8zeXIq7cb/icon
+import CheckSvgIcon from "./icons/PlasmicIcon__CheckSvg"; // plasmic-import: F3iOqCFKuA-k/icon
 
 createPlasmicElementProxy;
 
@@ -59,7 +59,9 @@ function PlasmicTextInput__RenderFunc(props) {
         {
           placeholder: "Enter Email"
         },
-        props.args
+        Object.fromEntries(
+          Object.entries(props.args).filter(([_, v]) => v !== undefined)
+        )
       ),
     [props.args]
   );
@@ -173,7 +175,7 @@ function PlasmicTextInput__RenderFunc(props) {
       >
         {renderPlasmicSlot({
           defaultContents: (
-            <Searchsvg2Icon
+            <SearchSvg2Icon
               className={classNames(projectcss.all, sty.svg__iDonm)}
               role={"img"}
             />
@@ -231,7 +233,7 @@ function PlasmicTextInput__RenderFunc(props) {
       >
         {renderPlasmicSlot({
           defaultContents: (
-            <ChecksvgIcon
+            <CheckSvgIcon
               className={classNames(projectcss.all, sty.svg__kn9Nz)}
               role={"img"}
             />

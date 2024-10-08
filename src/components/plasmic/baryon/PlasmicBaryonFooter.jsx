@@ -27,8 +27,8 @@ import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css";
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicBaryonFooter.module.css"; // plasmic-import: FKV3u0E4hZrB/css
-import LogosvgIcon from "./icons/PlasmicIcon__Logosvg"; // plasmic-import: pPVNZjSA1lJo/icon
-import InstagramSvgrepoComsvgIcon from "./icons/PlasmicIcon__InstagramSvgrepoComsvg"; // plasmic-import: X2e01B-uxA5q/icon
+import LogoSvgIcon from "./icons/PlasmicIcon__LogoSvg"; // plasmic-import: pPVNZjSA1lJo/icon
+import InstagramSvgrepoComSvgIcon from "./icons/PlasmicIcon__InstagramSvgrepoComSvg"; // plasmic-import: X2e01B-uxA5q/icon
 
 createPlasmicElementProxy;
 
@@ -40,7 +40,16 @@ const $$ = {};
 
 function PlasmicBaryonFooter__RenderFunc(props) {
   const { variants, overrides, forNode } = props;
-  const args = React.useMemo(() => Object.assign({}, props.args), [props.args]);
+  const args = React.useMemo(
+    () =>
+      Object.assign(
+        {},
+        Object.fromEntries(
+          Object.entries(props.args).filter(([_, v]) => v !== undefined)
+        )
+      ),
+    [props.args]
+  );
   const $props = {
     ...args,
     ...variants
@@ -195,7 +204,7 @@ function PlasmicBaryonFooter__RenderFunc(props) {
                   platform={"react"}
                   target={"_blank"}
                 >
-                  <LogosvgIcon
+                  <LogoSvgIcon
                     className={classNames(projectcss.all, sty.svg__zmaZs, {
                       [sty.svgwhitetextFooter__zmaZs6Ubxt]: hasVariant(
                         $state,
@@ -216,7 +225,7 @@ function PlasmicBaryonFooter__RenderFunc(props) {
                   platform={"react"}
                   target={"_blank"}
                 >
-                  <InstagramSvgrepoComsvgIcon
+                  <InstagramSvgrepoComSvgIcon
                     className={classNames(projectcss.all, sty.svg__c9B5, {
                       [sty.svgwhitetextFooter__c9B56Ubxt]: hasVariant(
                         $state,

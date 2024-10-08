@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function XCircleFillsvgIcon(props) {
+export function XCircleFillSvgIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -37,5 +37,5 @@ export function XCircleFillsvgIcon(props) {
   );
 }
 
-export default XCircleFillsvgIcon;
+export default XCircleFillSvgIcon;
 /* prettier-ignore-end */

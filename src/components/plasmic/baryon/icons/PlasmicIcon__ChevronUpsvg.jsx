@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function ChevronUpsvgIcon(props) {
+export function ChevronUpSvgIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -31,5 +31,5 @@ export function ChevronUpsvgIcon(props) {
   );
 }
 
-export default ChevronUpsvgIcon;
+export default ChevronUpSvgIcon;
 /* prettier-ignore-end */

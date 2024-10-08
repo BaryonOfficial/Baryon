@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function LogosvgIcon(props) {
+export function LogoSvgIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -29,5 +29,5 @@ export function LogosvgIcon(props) {
   );
 }
 
-export default LogosvgIcon;
+export default LogoSvgIcon;
 /* prettier-ignore-end */
