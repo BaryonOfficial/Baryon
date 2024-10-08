@@ -1010,8 +1010,8 @@
         },
         {
           "id": "GGjxGWSc9SjB",
-          "name": "UeLogotype2023SplashScreenVerticalBlackSvg2Icon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__UeLogotype2023SplashScreenVerticalBlackSvg2.jsx"
+          "name": "UeLogoSvg3Icon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__UeLogoSvg3.jsx"
         },
         {
           "id": "NQIxgI55S_TJ",
@@ -1232,8 +1232,8 @@
         },
         {
           "id": "xOHP7LJ9Zl5P",
-          "name": "UE-Logotype-2023-SplashScreen-Vertical-Black.svg",
-          "filePath": "plasmic/baryon/images/ueLogotype2023SplashScreenVerticalBlackSvg.svg"
+          "name": "UE-Logo.svg",
+          "filePath": "plasmic/baryon/images/ueLogoSvg.svg"
         },
         {
           "id": "9TOtg0w5P6gT",

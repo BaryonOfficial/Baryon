@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function UeLogotype2023SplashScreenVerticalBlackSvg2Icon(props) {
+export function UeLogoSvg3Icon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -40,5 +40,5 @@ export function UeLogotype2023SplashScreenVerticalBlackSvg2Icon(props) {
   );
 }
 
-export default UeLogotype2023SplashScreenVerticalBlackSvg2Icon;
+export default UeLogoSvg3Icon;
 /* prettier-ignore-end */
