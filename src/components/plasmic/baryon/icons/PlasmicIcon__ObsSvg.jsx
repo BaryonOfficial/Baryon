@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function OpenBroadcasterSoftwareLogoWineSvgIcon(props) {
+export function ObsSvgIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -37,5 +37,5 @@ export function OpenBroadcasterSoftwareLogoWineSvgIcon(props) {
   );
 }
 
-export default OpenBroadcasterSoftwareLogoWineSvgIcon;
+export default ObsSvgIcon;
 /* prettier-ignore-end */
