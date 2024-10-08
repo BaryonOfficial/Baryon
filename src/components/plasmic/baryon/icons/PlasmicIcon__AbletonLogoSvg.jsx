@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function AbletonLogoWineSvgIcon(props) {
+export function AbletonLogoSvgIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -30,5 +30,5 @@ export function AbletonLogoWineSvgIcon(props) {
   );
 }
 
-export default AbletonLogoWineSvgIcon;
+export default AbletonLogoSvgIcon;
 /* prettier-ignore-end */

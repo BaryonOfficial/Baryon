@@ -1014,21 +1014,6 @@
           "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__UeLogoSvg3.jsx"
         },
         {
-          "id": "NQIxgI55S_TJ",
-          "name": "AbletonLogoWineSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__AbletonLogoWineSvg.jsx"
-        },
-        {
-          "id": "buvdmCRySlxv",
-          "name": "OpenBroadcasterSoftwareLogoWineSvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__OpenBroadcasterSoftwareLogoWineSvg.jsx"
-        },
-        {
-          "id": "8C7P_NC_xAYn",
-          "name": "TouchDesignerBlack01SvgIcon",
-          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__TouchDesignerBlack01Svg.jsx"
-        },
-        {
           "id": "ZvAp8lmOYdy4",
           "name": "XCircleFillIcon",
           "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__XCircleFill.jsx"
@@ -1077,6 +1062,21 @@
           "id": "RLn9ghJZwOuN",
           "name": "ResolumeSvgIcon",
           "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ResolumeSvg.jsx"
+        },
+        {
+          "id": "7lKRcnkFyzNM",
+          "name": "AbletonLogoSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__AbletonLogoSvg.jsx"
+        },
+        {
+          "id": "mFSPBP5vLOoj",
+          "name": "ObsSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__ObsSvg.jsx"
+        },
+        {
+          "id": "58H3GuGJznsE",
+          "name": "TouchDesignerSvgIcon",
+          "moduleFilePath": "plasmic/baryon/icons/PlasmicIcon__TouchDesignerSvg.jsx"
         }
       ],
       "images": [

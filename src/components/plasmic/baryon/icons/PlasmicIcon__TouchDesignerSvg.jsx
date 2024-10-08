@@ -5,7 +5,7 @@
 import React from "react";
 import { classNames } from "@plasmicapp/react-web";
 
-export function TouchDesignerBlack01SvgIcon(props) {
+export function TouchDesignerSvgIcon(props) {
   const { className, style, title, ...restProps } = props;
   return (
     <svg
@@ -29,5 +29,5 @@ export function TouchDesignerBlack01SvgIcon(props) {
   );
 }
 
-export default TouchDesignerBlack01SvgIcon;
+export default TouchDesignerSvgIcon;
 /* prettier-ignore-end */
