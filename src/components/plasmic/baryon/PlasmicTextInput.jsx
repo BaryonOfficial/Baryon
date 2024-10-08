@@ -26,7 +26,6 @@ import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plas
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicTextInput.module.css"; // plasmic-import: 2QQ_ah7Pcmad/css
 import SearchSvg2Icon from "./icons/PlasmicIcon__SearchSvg2"; // plasmic-import: aUU8zeXIq7cb/icon
-import CheckSvgIcon from "./icons/PlasmicIcon__CheckSvg"; // plasmic-import: F3iOqCFKuA-k/icon
 
 createPlasmicElementProxy;
 
@@ -233,7 +232,7 @@ function PlasmicTextInput__RenderFunc(props) {
       >
         {renderPlasmicSlot({
           defaultContents: (
-            <CheckSvgIcon
+            <svg
               className={classNames(projectcss.all, sty.svg__kn9Nz)}
               role={"img"}
             />
