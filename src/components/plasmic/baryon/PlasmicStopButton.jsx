@@ -20,7 +20,7 @@ import plasmic_antd_5_hostless_css from "../antd_5_hostless/plasmic.module.css";
 import plasmic_plasmic_rich_components_css from "../plasmic_rich_components/plasmic.module.css"; // plasmic-import: jkU633o1Cz7HrJdwdxhVHk/projectcss
 import projectcss from "./plasmic.module.css"; // plasmic-import: 4dvBXLce6aZWcodsHuZ7oL/projectcss
 import sty from "./PlasmicStopButton.module.css"; // plasmic-import: 72oO6fex1I6h/css
-import StopButtonSvgrepoComSvgIcon from "./icons/PlasmicIcon__StopButtonSvgrepoComSvg"; // plasmic-import: Mc_9muYwZBjF/icon
+import StopButtonIcon from "./icons/PlasmicIcon__StopButton"; // plasmic-import: Mc_9muYwZBjF/icon
 
 createPlasmicElementProxy;
 
@@ -66,7 +66,7 @@ function PlasmicStopButton__RenderFunc(props) {
         sty.root
       )}
     >
-      <StopButtonSvgrepoComSvgIcon
+      <StopButtonIcon
         data-plasmic-name={"svg"}
         data-plasmic-override={overrides.svg}
         className={classNames(projectcss.all, sty.svg)}
