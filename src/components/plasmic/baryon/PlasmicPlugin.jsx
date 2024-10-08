@@ -697,16 +697,38 @@ function PlasmicPlugin__RenderFunc(props) {
                           sty.text__pWpNh
                         )}
                       >
-                        <React.Fragment>
-                          <span
-                            className={
-                              "plasmic_default__all plasmic_default__span"
-                            }
-                            style={{ color: "#000000" }}
-                          >
-                            {"Pay What You Think Is Fair, Starting at"}
-                          </span>
-                        </React.Fragment>
+                        {hasVariant(globalVariants, "screen", "mobileOnly") ? (
+                          <React.Fragment>
+                            <span
+                              className={
+                                "plasmic_default__all plasmic_default__span"
+                              }
+                              style={{ color: "#000000" }}
+                            >
+                              {"Pay What You Think Is Fair, "}
+                            </span>
+                            <React.Fragment>{"\n"}</React.Fragment>
+                            <span
+                              className={
+                                "plasmic_default__all plasmic_default__span"
+                              }
+                              style={{ color: "#000000" }}
+                            >
+                              {"Starting at"}
+                            </span>
+                          </React.Fragment>
+                        ) : (
+                          <React.Fragment>
+                            <span
+                              className={
+                                "plasmic_default__all plasmic_default__span"
+                              }
+                              style={{ color: "#000000" }}
+                            >
+                              {"Pay What You Think Is Fair, Starting at"}
+                            </span>
+                          </React.Fragment>
+                        )}
                       </div>
                       <Stack__
                         as={"div"}
