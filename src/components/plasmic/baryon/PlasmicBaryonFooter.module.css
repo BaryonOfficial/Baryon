@@ -214,7 +214,7 @@
   max-width: 100%;
   padding: 8px 8px 8px 0px;
 }
-.svg__zmaZs {
+.xLogo {
   object-fit: cover;
   width: 24px;
   height: 24px;
@@ -222,7 +222,7 @@
   cursor: pointer;
   flex-shrink: 0;
 }
-.svgwhitetextFooter__zmaZs6Ubxt {
+.xLogowhitetextFooter {
   color: #ffffff;
 }
 .link__x4Bk {
@@ -236,7 +236,7 @@
   max-width: 100%;
   padding: 8px;
 }
-.svg__c9B5 {
+.instagramLogo {
   object-fit: cover;
   width: 24px;
   height: 24px;
@@ -244,6 +244,6 @@
   cursor: pointer;
   flex-shrink: 0;
 }
-.svgwhitetextFooter__c9B56Ubxt {
+.instagramLogowhitetextFooter {
   color: #ffffff;
 }
