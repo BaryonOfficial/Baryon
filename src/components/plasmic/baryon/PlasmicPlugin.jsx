@@ -31,7 +31,7 @@ import sty from "./PlasmicPlugin.module.css"; // plasmic-import: FXocl_OYx5HY/cs
 import Icon14Icon from "./icons/PlasmicIcon__Icon14"; // plasmic-import: nK6pvnnbOK1R/icon
 import TouchDesignerBlack01SvgIcon from "./icons/PlasmicIcon__TouchDesignerBlack01Svg"; // plasmic-import: 8C7P_NC_xAYn/icon
 import ResolumelogoSvgIcon from "./icons/PlasmicIcon__ResolumelogoSvg"; // plasmic-import: AvlJVplI2x17/icon
-import UeLogotype2023SplashScreenVerticalBlackSvg2Icon from "./icons/PlasmicIcon__UeLogotype2023SplashScreenVerticalBlackSvg2"; // plasmic-import: GGjxGWSc9SjB/icon
+import UeLogoSvg3Icon from "./icons/PlasmicIcon__UeLogoSvg3"; // plasmic-import: GGjxGWSc9SjB/icon
 import AbletonLogoWineSvgIcon from "./icons/PlasmicIcon__AbletonLogoWineSvg"; // plasmic-import: NQIxgI55S_TJ/icon
 import OpenBroadcasterSoftwareLogoWineSvgIcon from "./icons/PlasmicIcon__OpenBroadcasterSoftwareLogoWineSvg"; // plasmic-import: buvdmCRySlxv/icon
 import Icon15Icon from "./icons/PlasmicIcon__Icon15"; // plasmic-import: rIruQm-TzSjY/icon
@@ -579,7 +579,7 @@ function PlasmicPlugin__RenderFunc(props) {
                 className={classNames(projectcss.all, sty.freeBox__gv6F)}
               >
                 <div className={classNames(projectcss.all, sty.freeBox__kinlF)}>
-                  <UeLogotype2023SplashScreenVerticalBlackSvg2Icon
+                  <UeLogoSvg3Icon
                     data-plasmic-name={"unrealEngineLogo"}
                     data-plasmic-override={overrides.unrealEngineLogo}
                     className={classNames(projectcss.all, sty.unrealEngineLogo)}
