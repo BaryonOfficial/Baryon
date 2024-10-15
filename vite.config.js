@@ -1,14 +1,16 @@
 import { defineConfig } from 'vite';
 import path from 'path';
-import fs from 'fs';
 
 import { transformWithEsbuild } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import glsl from 'vite-plugin-glsl';
 import topLevelAwait from 'vite-plugin-top-level-await';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 
 // https://vitejs.dev/config/
-export default defineConfig(({ command, mode }) => {
+export default defineConfig(() => {
+  const isHttps = process.env.HTTPS === 'true';
+
   const config = {
     server: {
       headers: {
@@ -16,6 +18,7 @@ export default defineConfig(({ command, mode }) => {
         'Cross-Origin-Opener-Policy': 'same-origin',
       },
       host: true, // Open to local network and display URL
+      https: isHttps,
       open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env), // Open if it's not a CodeSandbox
     },
     esbuild: {
@@ -38,6 +41,7 @@ export default defineConfig(({ command, mode }) => {
         promiseExportName: '__tla',
         promiseImportName: (i) => `__tla_${i}`,
       }),
+      isHttps && basicSsl(),
       {
         name: 'load+transform-js-files-as-jsx',
         async transform(code, id) {
@@ -56,18 +60,6 @@ export default defineConfig(({ command, mode }) => {
       },
     },
   };
-
-  // Add HTTPS configuration only for development
-  if (command !== 'build' && mode !== 'production') {
-    try {
-      config.server.https = {
-        key: fs.readFileSync(path.resolve(__dirname, 'certs/dev-key.pem')),
-        cert: fs.readFileSync(path.resolve(__dirname, 'certs/dev-cert.pem')),
-      };
-    } catch (error) {
-      console.warn('Failed to load SSL certificates for HTTPS. Falling back to HTTP.');
-    }
-  }
 
   return config;
 });
