@@ -2,12 +2,16 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "*": ["src/*"]
+      "@/*": ["src/*"]
     },
     "jsx": "react",
     "checkJs": true,
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "moduleResolution": "node",
+    "types": ["vite/client", "vite-plugin-glsl/ext"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "build"]
