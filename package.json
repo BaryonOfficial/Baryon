@@ -21,7 +21,7 @@
     "@plasmicpkgs/antd5": "^0.0.253",
     "@plasmicpkgs/plasmic-basic-components": "^0.0.230",
     "@plasmicpkgs/plasmic-nav": "^0.0.177",
-    "@plasmicpkgs/plasmic-rich-components": "^1.0.197",
+    "@plasmicpkgs/plasmic-rich-components": "^1.0.112",
     "@plasmicpkgs/react-awesome-reveal": "^3.8.209",
     "@plasmicpkgs/react-scroll-parallax": "^0.0.214",
     "@radix-ui/react-label": "^2.1.0",
@@ -48,7 +48,6 @@
     "tailwind-merge": "^2.5.3",
     "tailwindcss-animate": "^1.0.7",
     "three": "^0.169.0",
-    "vercel": "^37.6.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
