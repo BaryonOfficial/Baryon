@@ -12,11 +12,13 @@ module.exports = {
   settings: { react: { version: '18.2' } },
   plugins: ['react-refresh', 'react-hooks'],
   rules: {
-    'react-hooks/rules-of-hooks': 'error', // Checks rules of Hooks
     'react-hooks/exhaustive-deps': 'warn', // Checks effect dependencies
     'react/jsx-no-target-blank': 'off',
     'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     'react/prop-types': 'off',
     'react/no-unknown-property': ['error', { ignore: ['attach', 'args'] }],
+    'no-unused-vars': ['error', { varsIgnorePattern: 'React' }],
+    'react/react-in-jsx-scope': 'off',
+    'react-hooks/rules-of-hooks': 'error', // Checks rules of Hooks
   },
 };

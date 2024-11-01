@@ -17,13 +17,6 @@
     "@ffmpeg/util": "^0.12.1",
     "@formspree/react": "^2.5.1",
     "@hookform/resolvers": "^3.9.0",
-    "@plasmicapp/react-web": "^0.2.353",
-    "@plasmicpkgs/antd5": "^0.0.253",
-    "@plasmicpkgs/plasmic-basic-components": "^0.0.230",
-    "@plasmicpkgs/plasmic-nav": "^0.0.177",
-    "@plasmicpkgs/plasmic-rich-components": "^1.0.197",
-    "@plasmicpkgs/react-awesome-reveal": "^3.8.209",
-    "@plasmicpkgs/react-scroll-parallax": "^0.0.214",
     "@radix-ui/react-label": "^2.1.0",
     "@radix-ui/react-slot": "^1.1.0",
     "@react-three/drei": "^9.114.3",
@@ -48,7 +41,6 @@
     "tailwind-merge": "^2.5.3",
     "tailwindcss-animate": "^1.0.7",
     "three": "^0.169.0",
-    "vercel": "^37.6.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
