@@ -102,76 +102,56 @@
 .rootshape_round_size_compact {
   padding: 6px;
 }
-.root:hover {
-  background: #282826;
-}
-.rootcolor_blue:hover {
-  background: #369eff;
-}
-.rootcolor_green:hover {
-  background: #3cb179;
-}
-.rootcolor_yellow:hover {
-  background: #ffef5c;
-}
-.rootcolor_red:hover {
-  background: #ec5e41;
-}
-.rootcolor_sand:hover {
-  background: #7f7e77;
-}
-.rootcolor_white:hover {
-  background: #ffef5c;
-}
-.rootcolor_softBlue:hover {
-  background: #e1f0ff;
-}
-.rootcolor_softGreen:hover {
-  background: #ddf3e4;
-}
-.rootcolor_softYellow:hover {
-  background: #fff8bb;
-}
-.rootcolor_softRed:hover {
-  background: #ffe6e2;
-}
-.rootcolor_softSand:hover {
-  background: #e9e9e6;
-}
-.rootcolor_clear:hover {
-  background: #e9e9e6;
-}
-.rootcolor_link:hover {
-  background: #ffffff00;
+.root___focusVisibleWithin {
+  box-shadow: 0px 0px 0px 3px #96c7f2;
 }
 .root:focus-within {
   box-shadow: 0px 0px 0px 3px #96c7f2;
-  outline: none;
 }
-.root___focusVisibleWithin {
-  box-shadow: 0px 0px 0px 3px #96c7f2;
-  outline: none;
+.root:hover {
+  background: #282826;
 }
 .root:active {
   background: #2e2e2b;
 }
+.rootcolor_blue:hover {
+  background: #369eff;
+}
 .rootcolor_blue:active {
   background: #52a9ff;
+}
+.rootcolor_green:hover {
+  background: #3cb179;
 }
 .rootcolor_green:active {
   background: #4cc38a;
 }
+.rootcolor_yellow:hover {
+  background: #ffef5c;
+}
 .rootcolor_yellow:active {
   background: #f0c000;
+}
+.rootcolor_red:hover {
+  background: #ec5e41;
 }
 .rootcolor_red:active {
   background: #f16a50;
 }
+.rootcolor_sand:hover {
+  background: #7f7e77;
+}
 .rootcolor_sand:active {
   background: #a1a09a;
 }
+.rootcolor_white:hover {
+  background: #ffef5c;
+}
 .rootcolor_white:active {
   background: #f0c000;
+}
+.rootcolor_softBlue:hover {
+  background: #e1f0ff;
 }
 .rootcolor_softBlue:active {
   background: #cee7fe;
@@ -179,17 +159,35 @@
 .rootcolor_softGreen:active {
   background: #ccebd7;
 }
+.rootcolor_softGreen:hover {
+  background: #ddf3e4;
+}
 .rootcolor_softYellow:active {
   background: #fef2a4;
+}
+.rootcolor_softYellow:hover {
+  background: #fff8bb;
 }
 .rootcolor_softRed:active {
   background: #fdd8d3;
 }
+.rootcolor_softRed:hover {
+  background: #ffe6e2;
+}
+.rootcolor_softSand:hover {
+  background: #e9e9e6;
+}
 .rootcolor_softSand:active {
   background: #e3e3e0;
 }
+.rootcolor_clear:hover {
+  background: #e9e9e6;
+}
 .rootcolor_clear:active {
   background: #e3e3e0;
+}
+.rootcolor_link:hover {
+  background: #ffffff00;
 }
 .rootcolor_link:active {
   background: #ffffff00;
@@ -252,9 +250,6 @@
   flex-direction: row;
   align-items: stretch;
   justify-content: flex-start;
-}
-.root .contentContainer___focusVisibleWithin {
-  outline: none;
 }
 .slotTargetChildren {
   color: #ededec;
@@ -356,70 +351,6 @@
   > :global(.__wab_slot)
   > :global(.__wab_slot-string-wrapper) {
   text-decoration-line: underline;
-}
-.root:focus-within .slotTargetChildren > *,
-.root:focus-within .slotTargetChildren > :global(.__wab_slot) > *,
-.root:focus-within
-  .slotTargetChildren
-  > :global(.__wab_slot)
-  > :global(.__wab_slot)
-  > *,
-.root:focus-within
-  .slotTargetChildren
-  > :global(.__wab_slot)
-  > :global(.__wab_slot)
-  > :global(.__wab_slot)
-  > *,
-.root:focus-within .slotTargetChildren > picture > img,
-.root:focus-within .slotTargetChildren > :global(.__wab_slot) > picture > img,
-.root:focus-within
-  .slotTargetChildren
-  > :global(.__wab_slot)
-  > :global(.__wab_slot)
-  > picture
-  > img,
-.root:focus-within
-  .slotTargetChildren
-  > :global(.__wab_slot)
-  > :global(.__wab_slot)
-  > :global(.__wab_slot)
-  > picture
-  > img {
-  outline: none;
-}
-.root .slotTargetChildren___focusVisibleWithin > *,
-.root .slotTargetChildren___focusVisibleWithin > :global(.__wab_slot) > *,
-.root
-  .slotTargetChildren___focusVisibleWithin
-  > :global(.__wab_slot)
-  > :global(.__wab_slot)
-  > *,
-.root
-  .slotTargetChildren___focusVisibleWithin
-  > :global(.__wab_slot)
-  > :global(.__wab_slot)
-  > :global(.__wab_slot)
-  > *,
-.root .slotTargetChildren___focusVisibleWithin > picture > img,
-.root
-  .slotTargetChildren___focusVisibleWithin
-  > :global(.__wab_slot)
-  > picture
-  > img,
-.root
-  .slotTargetChildren___focusVisibleWithin
-  > :global(.__wab_slot)
-  > :global(.__wab_slot)
-  > picture
-  > img,
-.root
-  .slotTargetChildren___focusVisibleWithin
-  > :global(.__wab_slot)
-  > :global(.__wab_slot)
-  > :global(.__wab_slot)
-  > picture
-  > img {
-  outline: none;
 }
 .rootcolor_link:active .slotTargetChildrencolor_link {
   color: #006adc;
