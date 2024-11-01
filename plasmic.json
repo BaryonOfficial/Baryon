@@ -1101,16 +1101,6 @@
           "filePath": "plasmic/baryon/images/image46.svg"
         },
         {
-          "id": "yz4NB8cZ1un3",
-          "name": "festival-girl-holograms.png",
-          "filePath": "plasmic/baryon/images/festivalGirlHologramsPng.png"
-        },
-        {
-          "id": "Z1zEOYvd6lS_",
-          "name": "picnic-magic.png",
-          "filePath": "plasmic/baryon/images/picnicMagicPng.png"
-        },
-        {
           "id": "WQrf0z8ws5ok",
           "name": "Rectangle 1",
           "filePath": "plasmic/baryon/images/rectangle1.jpg"
@@ -1216,6 +1206,41 @@
           "filePath": "plasmic/baryon/images/ueLogoSvg.svg"
         },
         {
+          "id": "s7865ZwXNtFA",
+          "name": "Baryon Logo White.svg",
+          "filePath": "plasmic/baryon/images/baryonLogoWhiteSvg.svg"
+        },
+        {
+          "id": "cPRUo6uw3iSp",
+          "name": "hamburger-menu-svgrepo-com.svg 2",
+          "filePath": "plasmic/baryon/images/hamburgerMenuSvgrepoComSvg2.svg"
+        },
+        {
+          "id": "JXHGy6LxLNgk",
+          "name": "Elegant_cymatic_soundwave_patterns_flowing_verticall_98916b5d-166a-4e17-a755-86bc0d9a9b58.png",
+          "filePath": "plasmic/baryon/images/elegantCymaticSoundwavePatternsFlowingVerticall98916B5D166A4E17A75586Bc0D9A9B58Png.png"
+        },
+        {
+          "id": "7gkPUC5X5zzv",
+          "name": "abstract_cymatics_inspired_soundscape_website_backgr_faa3cab8-8e97-4682-984d-f03645aac275.png",
+          "filePath": "plasmic/baryon/images/abstractCymaticsInspiredSoundscapeWebsiteBackgrFaa3Cab88E974682984DF03645Aac275Png.png"
+        },
+        {
+          "id": "BUjvAdQ6kLAX",
+          "name": "Screenshot 2024-05-25 at 19.43.41.png",
+          "filePath": "plasmic/baryon/images/screenshot20240525At194341Png.png"
+        },
+        {
+          "id": "yz4NB8cZ1un3",
+          "name": "festival-girl-holograms.png",
+          "filePath": "plasmic/baryon/images/festivalGirlHologramsPng.png"
+        },
+        {
+          "id": "Z1zEOYvd6lS_",
+          "name": "picnic-magic.png",
+          "filePath": "plasmic/baryon/images/picnicMagicPng.png"
+        },
+        {
           "id": "ASTzGlF7JJTY",
           "name": "ramiro-pianarosa-xUpbQ9GX7SQ-unsplash.jpg",
           "filePath": "plasmic/baryon/images/ramiroPianarosaXUpbQ9Gx7SqUnsplashJpg.jpg"
@@ -1261,11 +1286,6 @@
           "filePath": "plasmic/baryon/images/jeanPhilippeDelberghe75XPheqBmvAUnsplashJpg.jpg"
         },
         {
-          "id": "s7865ZwXNtFA",
-          "name": "Baryon Logo White.svg",
-          "filePath": "plasmic/baryon/images/baryonLogoWhiteSvg.svg"
-        },
-        {
           "id": "UkSuRrDI-VK2",
           "name": "kenrick-mills-L8mqcLh7deg-unsplash.jpg",
           "filePath": "plasmic/baryon/images/kenrickMillsL8MqcLh7DegUnsplashJpg.jpg"
@@ -1299,26 +1319,6 @@
           "id": "2wMlSYU5EhVn",
           "name": "GuitarPlaying.jpg",
           "filePath": "plasmic/baryon/images/guitarPlayingJpg.jpeg"
-        },
-        {
-          "id": "cPRUo6uw3iSp",
-          "name": "hamburger-menu-svgrepo-com.svg 2",
-          "filePath": "plasmic/baryon/images/hamburgerMenuSvgrepoComSvg2.svg"
-        },
-        {
-          "id": "JXHGy6LxLNgk",
-          "name": "Elegant_cymatic_soundwave_patterns_flowing_verticall_98916b5d-166a-4e17-a755-86bc0d9a9b58.png",
-          "filePath": "plasmic/baryon/images/elegantCymaticSoundwavePatternsFlowingVerticall98916B5D166A4E17A75586Bc0D9A9B58Png.png"
-        },
-        {
-          "id": "7gkPUC5X5zzv",
-          "name": "abstract_cymatics_inspired_soundscape_website_backgr_faa3cab8-8e97-4682-984d-f03645aac275.png",
-          "filePath": "plasmic/baryon/images/abstractCymaticsInspiredSoundscapeWebsiteBackgrFaa3Cab88E974682984DF03645Aac275Png.png"
-        },
-        {
-          "id": "BUjvAdQ6kLAX",
-          "name": "Screenshot 2024-05-25 at 19.43.41.png",
-          "filePath": "plasmic/baryon/images/screenshot20240525At194341Png.png"
         }
       ],
       "indirect": false,

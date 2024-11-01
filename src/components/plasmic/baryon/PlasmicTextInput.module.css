@@ -21,12 +21,10 @@
 }
 .root:focus-within {
   box-shadow: 0px 0px 0px 3px #96c7f2;
-  outline: none;
   border-radius: 6px;
 }
 .root___focusVisibleWithin {
   box-shadow: 0px 0px 0px 3px #96c7f2;
-  outline: none;
   border-radius: 6px;
 }
 .startIconContainer {
@@ -41,9 +39,6 @@
 }
 .startIconContainershowStartIcon {
   display: flex;
-}
-.root .startIconContainer___focusVisibleWithin {
-  outline: none;
 }
 .slotTargetStartIconshowStartIcon {
   color: #90908c;
@@ -73,26 +68,11 @@
 .inputcolor_dark {
   color: #ffffff;
 }
-.root:focus-within .input {
-  outline: none;
-}
-.root .input___focusVisibleWithin {
-  outline: none;
-}
-.root .input:focus {
-  outline: none;
-}
-.root:focus-within .input:focus {
-  outline: none;
-}
 .root .input::placeholder {
   color: #706f6c;
 }
 .rootcolor_dark .inputcolor_dark::placeholder {
   color: #c8c7c1;
-}
-.root:focus-within .input::placeholder {
-  outline: none;
 }
 .endIconContainer {
   position: relative;
