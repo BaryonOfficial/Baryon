@@ -24,6 +24,7 @@ examples
 *.njsproj
 *.sln
 *.sw?
+.cursorrules
 
 # SSL Certificates
 *.pem

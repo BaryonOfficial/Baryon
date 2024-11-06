@@ -1,6 +1,19 @@
-import create from 'zustand'
+import { create } from 'zustand'
 
-export const useSceneState = create((set) => ({
+interface SceneState {
+  isPlaying: boolean
+  isAudioLoaded: boolean
+  isMicActive: boolean
+  fileName: string
+  showStats: boolean
+  setIsPlaying: (state: boolean) => void
+  setIsAudioLoaded: (state: boolean) => void
+  setIsMicActive: (state: boolean) => void
+  setFileName: (name: string) => void
+  setShowStats: (state: boolean) => void
+}
+
+export const useSceneState = create<SceneState>((set) => ({
   // Audio state
   isPlaying: false,
   isAudioLoaded: false,
