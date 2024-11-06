@@ -25,6 +25,8 @@ examples
 *.sln
 *.sw?
 .cursorrules
+.repomixignore
+repomix*
 
 # SSL Certificates
 *.pem
