@@ -1,7 +1,6 @@
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
 import { Suspense } from 'react';
-import { useFullscreen } from '../../hooks/useFullScreenToggle';
+import Experience from './Experience';
 
 export default function Scene() {
   return (
@@ -19,35 +18,10 @@ export default function Scene() {
         }}>
         <color attach="background" args={['#000000']} />
         <Suspense fallback={null}>
-          <Scene3D />
+          <Experience />
         </Suspense>
       </Canvas>
-      <UI />
-    </div>
-  );
-}
-
-// Separate component for the 3D scene contents
-function Scene3D() {
-  return (
-    <>
-      <OrbitControls enableDamping dampingFactor={0.05} />
-
-      {/* Will add Particles component here next */}
-      <mesh visible={false}>
-        <boxGeometry />
-        <meshBasicMaterial />
-      </mesh>
-    </>
-  );
-}
-
-// Separate component for UI elements
-function UI() {
-  return (
-    <div className="fixed top-20 left-12 z-50 p-4">
-      {/* Will move controls here next */}
-      <div className="controls-container">{/* Placeholder for audio controls */}</div>
+      <Controls />
     </div>
   );
 }
