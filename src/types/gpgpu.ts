@@ -53,4 +53,62 @@ export interface GPGPUAudioObject {
     started: boolean
   }
   gumStream?: MediaStream
+}
+
+export interface GPGPUShaderUniforms {
+  audioDataUniforms: {
+    tPitches: THREE.IUniform<THREE.DataTexture>
+    tDataArray: THREE.IUniform<THREE.DataTexture>
+    uRadius: THREE.IUniform<number>
+    sampleRate: THREE.IUniform<number>
+    bufferSize: THREE.IUniform<number>
+    capacity: THREE.IUniform<number>
+  }
+  scalarFieldUniforms: {
+    uRadius: THREE.IUniform<number>
+    uBase: THREE.IUniform<THREE.Texture>
+    capacity: THREE.IUniform<number>
+  }
+  zeroPointsUniforms: {
+    uThreshold: THREE.IUniform<number>
+    uRadius: THREE.IUniform<number>
+    uSurfaceThreshold: THREE.IUniform<number>
+    uSurfaceControl: THREE.IUniform<boolean>
+    uAverageAmplitude: THREE.IUniform<number>
+  }
+  particlesUniforms: {
+    uTime: THREE.IUniform<number>
+    uDeltaTime: THREE.IUniform<number>
+    uFlowFieldInfluence: THREE.IUniform<number>
+    uFlowFieldStrength: THREE.IUniform<number>
+    uFlowFieldFrequency: THREE.IUniform<number>
+    uThreshold: THREE.IUniform<number>
+    uBase: THREE.IUniform<THREE.Texture>
+    uAverageAmplitude: THREE.IUniform<number>
+    uParticleSpeed: THREE.IUniform<number>
+    uStarted: THREE.IUniform<boolean>
+    uParticleMovementType: THREE.IUniform<number>
+    uRadius: THREE.IUniform<number>
+    uDistanceThreshold: THREE.IUniform<number>
+    uMicActive: THREE.IUniform<boolean>
+  }
+}
+
+// Helper type for accessing GPGPU variables in AudioManager
+export interface GPGPUVariables {
+  audioDataVariable: {
+    material: {
+      uniforms: GPGPUShaderUniforms['audioDataUniforms']
+    }
+  }
+  zeroPointsVariable: {
+    material: {
+      uniforms: GPGPUShaderUniforms['zeroPointsUniforms']
+    }
+  }
+  particlesVariable: {
+    material: {
+      uniforms: GPGPUShaderUniforms['particlesUniforms']
+    }
+  }
 } 

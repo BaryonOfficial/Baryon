@@ -22,6 +22,11 @@ export type ParticlesMaterialProps = {
   uParticlesTexture?: THREE.Texture | null
 }
 
+// Add this interface for the ref
+export interface ParticlesRef {
+  updateUniforms: (uniforms: { uAverageAmplitude: number }) => void
+}
+
 // Component props types
 export interface GPGPU {
   size: number

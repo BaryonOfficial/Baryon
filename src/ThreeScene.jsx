@@ -20,7 +20,7 @@ import {
   processAudioData,
   startAudioProcessing,
   setAudioEndedCallback,
-} from './audio/audioSetup.js';
+} from './audio/audioManager.js';
 import GUI from 'lil-gui';
 import UnsupportedWarning from './utils/UnsupportedWarning.jsx';
 import { useFullscreen } from './hooks/useFullScreenToggle.jsx';
