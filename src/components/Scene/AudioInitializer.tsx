@@ -1,8 +1,8 @@
 import { useThree, useFrame } from '@react-three/fiber'
 import { useEffect } from 'react'
 import { audioManager } from '@/audio/audioManager'
-import type { GPGPUComputation } from '@/types/gpgpu'
-import type { ParticlesRef } from '@/types/particles'
+import type { GPGPUComputation } from '@/types/gpgpu.types'
+import type { ParticlesRef } from '@/types/particle.types'
 
 interface AudioInitializerProps {
   gpgpu: GPGPUComputation | null

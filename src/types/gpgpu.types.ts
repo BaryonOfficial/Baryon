@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { GPUComputationRenderer, Variable } from 'three/examples/jsm/misc/GPUComputationRenderer.js'
+import type { ParticleParameters, ParticleGeometries } from '@/types/particle.types'
 
 export interface GPGPUComputation {
     computation: GPUComputationRenderer
@@ -17,26 +18,6 @@ export interface GPGPUReturn {
   zeroPointsTexture: React.MutableRefObject<THREE.Texture | null>
   particlesTexture: React.MutableRefObject<THREE.Texture | null>
   gpgpu: GPGPUComputation | null
-}
-
-export interface GPGPUParameters {
-  count: number
-  radius: number
-  threshold: number
-  surfaceThreshold: number
-  surfaceRatio: number
-}
-
-export interface GPGPUGeometries {
-  base: {
-    count: number
-    positions: Float32Array
-    instance: THREE.BufferGeometry
-  }
-  secondary: {
-    count: number
-    instance: THREE.BufferGeometry
-  }
 }
 
 export interface GPGPUAudioObject {

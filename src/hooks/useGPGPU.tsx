@@ -8,11 +8,14 @@ import { useAudioStore } from '@/store/audioStore';
 
 // Import types
 import type { 
-  GPGPUReturn, 
-  GPGPUParameters, 
-  GPGPUGeometries, 
-  GPGPUComputation
-} from '@/types/gpgpu'
+  GPGPUReturn,
+  GPGPUComputation,
+  GPGPUShaderUniforms
+} from '@/types/gpgpu.types'
+import type { 
+  ParticleParameters,
+  ParticleGeometries 
+} from '@/types/particle.types'
 
 //Import Shaders
 import audioDataShader from '../shaders/gpgpu/audioData.glsl';
@@ -23,12 +26,11 @@ import gpgpuParticlesShader from '../shaders/gpgpu/particles.glsl';
 //Utils
 import {
   initializeParticlesInSphereVolumeAndSurface,
-  initializeParticlesInSphere,
-} from '@/utils/particles';
+} from '@/utils/particleConfig';
 
 export default function useGPGPU(
-  parameters: GPGPUParameters,
-  geometries: GPGPUGeometries,
+  parameters: ParticleParameters,
+  geometries: ParticleGeometries,
 ): GPGPUReturn {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
@@ -87,119 +89,115 @@ export default function useGPGPU(
     }
 
     // gpgpu variables
+    const format = gl.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
+    let essentiaData = new Float32Array(audio.capacity);
 
     /**
-     * AudioData Variable
+     * Create all textures first
      */
     const audioDataTexture = computation.createTexture();
+    const scalarTexture = computation.createTexture();
+    const zeroPointsTexture = computation.createTexture();
+    const particlesTexture = computation.createTexture();
+
+    /**
+     * Create all variables
+     */
     const audioDataVariable = computation.addVariable(
       'uAudioData',
       audioDataShader,
       audioDataTexture
     );
 
-    // Uniforms
-    const format = gl.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
-    let essentiaData = new Float32Array(audio.capacity);
-
-    audioDataVariable.material.uniforms.tPitches = {
-      value: new THREE.DataTexture(
-        essentiaData,
-        audio.capacity,
-        1,
-        THREE.RedFormat,
-        THREE.FloatType
-      ),
-    };
-    audioDataVariable.material.uniforms.tDataArray = {
-      value: new THREE.DataTexture(
-        audio.data, // Initial empty data
-        audio.fftSize / 2,
-        1,
-        format
-      ),
-    };
-    audioDataVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
-    audioDataVariable.material.uniforms.sampleRate = new THREE.Uniform(audio.sampleRate);
-    audioDataVariable.material.uniforms.bufferSize = new THREE.Uniform(audio.fftSize);
-    audioDataVariable.material.uniforms.capacity = new THREE.Uniform(audio.capacity);
-
-    // Dependencies
-    computation.setVariableDependencies(audioDataVariable, []);
-
-    audioDataTextureRef.current = audioDataTexture;
-
-    /**
-     * ScalarField Variable
-     */
-    const scalarTexture = computation.createTexture();
     const scalarFieldVariable = computation.addVariable(
       'uScalarField',
       scalarFieldShader,
       scalarTexture
     );
 
-    scalarFieldVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
-    scalarFieldVariable.material.uniforms.uBase = new THREE.Uniform(particlesForComputation);
-    scalarFieldVariable.material.uniforms.capacity = new THREE.Uniform(audio.capacity);
-
-    // Dependencies
-    computation.setVariableDependencies(scalarFieldVariable, [audioDataVariable]);
-
-    scalarTextureRef.current = scalarTexture;
-
-    /**
-     * ZeroPoints Variable
-     */
-    const zeroPointsTexture = computation.createTexture();
     const zeroPointsVariable = computation.addVariable(
       'uZeroPoints',
       zeroPointsShader,
       zeroPointsTexture
     );
 
-    zeroPointsVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
-    zeroPointsVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
-    zeroPointsVariable.material.uniforms.uSurfaceThreshold = new THREE.Uniform(
-      parameters.surfaceThreshold
-    );
-    zeroPointsVariable.material.uniforms.uSurfaceControl = new THREE.Uniform(true);
-    zeroPointsVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
-
-    // Dependencies
-    computation.setVariableDependencies(zeroPointsVariable, [scalarFieldVariable]);
-
-    zeroPointsTextureRef.current = zeroPointsTexture;
-
-    /**
-     * Particles Variable
-     */
-    const particlesTexture = computation.createTexture();
     const particlesVariable = computation.addVariable(
       'uParticles',
       gpgpuParticlesShader,
       particlesTexture
     );
 
-    // Uniforms
-    particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
-    particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
-    particlesVariable.material.uniforms.uFlowFieldInfluence = new THREE.Uniform(1.0);
-    particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(3.6);
-    particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.64);
-    particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
-    particlesVariable.material.uniforms.uBase = new THREE.Uniform(baryonLogoTexture);
-    particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
-    particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(32);
-    particlesVariable.material.uniforms.uStarted = new THREE.Uniform(audio.sound?.started ?? false);
-    particlesVariable.material.uniforms.uParticleMovementType = new THREE.Uniform(1);
-    particlesVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
-    particlesVariable.material.uniforms.uDistanceThreshold = new THREE.Uniform(0.5);
-    particlesVariable.material.uniforms.uMicActive = new THREE.Uniform(audio.isMicActive);
+    // Create typed uniforms object
+    const uniforms: GPGPUShaderUniforms = {
+      audioDataUniforms: {
+        tPitches: {
+          value: new THREE.DataTexture(
+            essentiaData,
+            audio.capacity,
+            1,
+            THREE.RedFormat,
+            THREE.FloatType
+          ),
+        },
+        tDataArray: {
+          value: new THREE.DataTexture(
+            audio.data,
+            audio.fftSize / 2,
+            1,
+            format
+          ),
+        },
+        uRadius: new THREE.Uniform(parameters.radius),
+        sampleRate: new THREE.Uniform(audio.sampleRate),
+        bufferSize: new THREE.Uniform(audio.fftSize),
+        capacity: new THREE.Uniform(audio.capacity)
+      },
+      scalarFieldUniforms: {
+        uRadius: new THREE.Uniform(parameters.radius),
+        uBase: new THREE.Uniform(particlesForComputation),
+        capacity: new THREE.Uniform(audio.capacity)
+      },
+      zeroPointsUniforms: {
+        uThreshold: new THREE.Uniform(parameters.threshold),
+        uRadius: new THREE.Uniform(parameters.radius),
+        uSurfaceThreshold: new THREE.Uniform(parameters.surfaceThreshold),
+        uSurfaceControl: new THREE.Uniform(true),
+        uAverageAmplitude: new THREE.Uniform(0.0)
+      },
+      particlesUniforms: {
+        uTime: new THREE.Uniform(0),
+        uDeltaTime: new THREE.Uniform(0),
+        uFlowFieldInfluence: new THREE.Uniform(1.0),
+        uFlowFieldStrength: new THREE.Uniform(3.6),
+        uFlowFieldFrequency: new THREE.Uniform(0.64),
+        uThreshold: new THREE.Uniform(parameters.threshold),
+        uBase: new THREE.Uniform(baryonLogoTexture),
+        uAverageAmplitude: new THREE.Uniform(0.0),
+        uParticleSpeed: new THREE.Uniform(32),
+        uStarted: new THREE.Uniform(audio.sound?.started ?? false),
+        uParticleMovementType: new THREE.Uniform(1),
+        uRadius: new THREE.Uniform(parameters.radius),
+        uDistanceThreshold: new THREE.Uniform(0.5),
+        uMicActive: new THREE.Uniform(audio.isMicActive)
+      }
+    };
 
-    // Dependencies
+    // Assign uniforms to variables
+    audioDataVariable.material.uniforms = uniforms.audioDataUniforms;
+    scalarFieldVariable.material.uniforms = uniforms.scalarFieldUniforms;
+    zeroPointsVariable.material.uniforms = uniforms.zeroPointsUniforms;
+    particlesVariable.material.uniforms = uniforms.particlesUniforms;
+
+    // Set dependencies
+    computation.setVariableDependencies(audioDataVariable, []);
+    computation.setVariableDependencies(scalarFieldVariable, [audioDataVariable]);
+    computation.setVariableDependencies(zeroPointsVariable, [scalarFieldVariable]);
     computation.setVariableDependencies(particlesVariable, [zeroPointsVariable, particlesVariable]);
 
+    // Set texture refs
+    audioDataTextureRef.current = audioDataTexture;
+    scalarTextureRef.current = scalarTexture;
+    zeroPointsTextureRef.current = zeroPointsTexture;
     particlesTextureRef.current = particlesTexture;
 
     return {

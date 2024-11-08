@@ -10,11 +10,11 @@ import vertexShader from '@/shaders/particles/vertex.glsl'
 import fragmentShader from '@/shaders/particles/fragment.glsl'
 
 import type { 
-  ParticlesMaterialImpl, 
-  ParticlesMaterialProps, 
+  ParticleMaterial,
+  ParticleMaterialProps,
   ParticlesProps,
   ParticlesRef 
-} from '@/types/particles'
+} from '@/types/particle.types'
 
 const ParticlesMaterial = shaderMaterial(
   {
@@ -32,21 +32,21 @@ const ParticlesMaterial = shaderMaterial(
   },
   vertexShader,
   fragmentShader
-) as unknown as new () => ParticlesMaterialImpl
+) as unknown as new () => ParticleMaterial
 
 extend({ ParticlesMaterial })
 
 declare module '@react-three/fiber' {
     interface ThreeElements {
-      particlesMaterial: Object3DNode<ParticlesMaterialImpl, ParticlesMaterialProps> & ParticlesMaterialProps
+      particlesMaterial: Object3DNode<ParticleMaterial, ParticleMaterialProps> & ParticleMaterialProps
     }
 }
 
 const Particles = forwardRef<ParticlesRef, ParticlesProps>(
-  function Particles({ gpgpu, geometries }, ref) {
+  function Particles({ gpgpu, geometries, particlesTexture }, ref) {
     const { size, viewport } = useThree()
     const pointsRef = useRef<THREE.Points>(null)
-    const materialRef = useRef<ParticlesMaterialImpl>(null)
+    const materialRef = useRef<ParticleMaterial>(null)
     const { isPlaying, averageAmplitude } = useAudioStore()
     
     const materialParams = useControls('Particle Colors', {
@@ -92,6 +92,8 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(
       materialRef.current.uniforms.uSoundPlaying.value = isPlaying
       materialRef.current.uniforms.uColor.value.set(materialParams.color)
       materialRef.current.uniforms.uSurfaceColor.value.set(materialParams.surfaceColor)
+      materialRef.current.uniforms.uParticlesTexture.value = particlesTexture.current
+
     })
 
     return (
@@ -123,7 +125,6 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(
               size.width * viewport.dpr, 
               size.height * viewport.dpr
             )}
-          uParticlesTexture={gpgpu.particlesVariable?.renderTargets[0].texture}
         />
       </Points>
     )

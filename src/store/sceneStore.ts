@@ -1,11 +1,7 @@
 import { create } from 'zustand'
+import type { SceneStore } from '@/types/scene.types'
 
-interface SceneState {
-  showStats: boolean
-  setShowStats: (show: boolean) => void
-}
-
-export const useSceneStore = create<SceneState>((set) => ({
+export const useSceneStore = create<SceneStore>((set) => ({
   showStats: false,
   setShowStats: (show) => set({ showStats: show })
 })) 

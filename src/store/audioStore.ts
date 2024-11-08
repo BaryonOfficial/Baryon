@@ -1,12 +1,11 @@
 import { create } from 'zustand'
 import { audioManager } from '@/audio/audioManager'
-import type { AudioStore } from '@/types/audio'
+import type { AudioStore } from '@/types/audio.types'
 
 export const useAudioStore = create<AudioStore>((set) => ({
   // Initial state from audioManager
   ...audioManager.getAudio(),
   fileName: 'Upload Audio',
-  showStats: false,
   averageAmplitude: 0, 
   capacity: audioManager.getAudio().capacity,
 
@@ -51,8 +50,6 @@ export const useAudioStore = create<AudioStore>((set) => ({
       set({ isMicActive: false })
     }
   },
-
-  setShowStats: (show) => set({ showStats: show }),
 
   resumeAudioContext: async () => {
     try {

@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { Camera } from '@react-three/fiber'
-import type { ParticlesRef } from '@/types/particles'
-import type { GPGPUComputation } from '@/types/gpgpu'
+import type { ParticlesRef } from '@/types/particle.types'
+import type { GPGPUComputation } from '@/types/gpgpu.types'
 
 
 interface AudioObject {
