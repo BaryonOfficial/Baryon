@@ -4,7 +4,6 @@ import { useLayoutEffect, useMemo, useRef, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useControls } from 'leva';
 import { audioManager } from '@/audio/audioManager';
-import { useAudioStore } from '@/store/audioStore';
 
 // Import types
 import type { GPGPUReturn, GPGPUComputation, GPGPUShaderUniforms } from '@/types/gpgpu.types';
@@ -16,17 +15,12 @@ import scalarFieldShader from '../shaders/gpgpu/scalarField.glsl';
 import zeroPointsShader from '../shaders/gpgpu/zeroPoints.glsl';
 import gpgpuParticlesShader from '../shaders/gpgpu/particles.glsl';
 
-//Utils
-import { createParticleGeometries } from '@/utils/particleConfig';
-import { useLogo } from '@/hooks/useLogo';
-
 export default function useGPGPU(
   parameters: ParticleParameters,
   geometries: ParticleGeometries
 ): GPGPUReturn {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
-  const { isAudioLoaded, isMicActive } = useAudioStore();
   const audio = audioManager.getAudio();
 
   const audioDataTextureRef = useRef<THREE.Texture | null>(null);
@@ -35,9 +29,6 @@ export default function useGPGPU(
   const particlesTextureRef = useRef<THREE.Texture | null>(null);
 
   const gpgpu = useMemo<GPGPUComputation | null>(() => {
-    const audioSystemHealth = audioManager.checkAudioSystem();
-    if (!audioSystemHealth.isReady || !isAudioLoaded) return null;
-
     const size = Math.ceil(Math.sqrt(geometries.base.count));
     const computation = new GPUComputationRenderer(size, size, gl);
 
@@ -190,7 +181,7 @@ export default function useGPGPU(
       essentiaData,
       size,
     };
-  }, [gl, parameters, geometries, isAudioLoaded, isMicActive]);
+  }, [gl, parameters, geometries]);
 
   useLayoutEffect(() => {
     if (!gpgpu?.computation) return;

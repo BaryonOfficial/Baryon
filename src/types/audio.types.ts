@@ -1,3 +1,5 @@
+import { GPGPUComputation } from "./gpgpu.types"
+import { ParticlesRef } from "./particle.types"
 
 export interface AudioState {
   fileName: string
@@ -18,6 +20,11 @@ export interface AudioActions {
   stop: () => void
   toggleMic: () => Promise<void>
   resumeAudioContext: () => Promise<void>
+}
+
+export interface AudioInitializerProps {
+  gpgpu: GPGPUComputation | null
+  particles: ParticlesRef
 }
 
 export type AudioStore = AudioState & AudioActions
