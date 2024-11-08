@@ -1,49 +1,22 @@
 import { create } from 'zustand'
 import { audioManager } from '@/audio/audioManager'
-
-
-interface AudioStore {
-  // State
-  fileName: string
-  isPlaying: boolean
-  isAudioLoaded: boolean
-  isMicActive: boolean
-  showStats: boolean
-  isAudioContextRunning: boolean
-  isWorkletReady: boolean
-  fftSize: number
-  sampleRate: number
-
-  // Actions
-  loadFile: (file: File) => Promise<void>
-  togglePlayPause: () => Promise<void>
-  stop: () => void
-  toggleMic: () => Promise<void>
-  setShowStats: (show: boolean) => void
-  resumeAudioContext: () => Promise<void>
-}
+import type { AudioStore } from '@/types/audio'
 
 export const useAudioStore = create<AudioStore>((set) => ({
-  // Initial state now comes from audioManager
+  // Initial state from audioManager
   ...audioManager.getAudioState(),
   fileName: 'Upload Audio',
   showStats: false,
+  averageAmplitude: 0, 
 
   loadFile: async (file) => {
     try {
       const fileURL = URL.createObjectURL(file)
       await audioManager.loadAudio(fileURL)
-      set({ 
-        fileName: file.name, 
-        isAudioLoaded: true, 
-        isPlaying: false 
-      })
+      set({ fileName: file.name, isAudioLoaded: true, isPlaying: false })
     } catch (error) {
       console.error('Error loading audio:', error)
-      set({ 
-        fileName: 'Upload Audio', 
-        isAudioLoaded: false 
-      })
+      set({ fileName: 'Upload Audio', isAudioLoaded: false })
     }
   },
 
@@ -82,7 +55,6 @@ export const useAudioStore = create<AudioStore>((set) => ({
   resumeAudioContext: async () => {
     try {
       await audioManager.resumeAudioContext()
-      // Update store with latest audio state
       set(audioManager.getAudioState())
     } catch (error) {
       console.error('Error resuming audio context:', error)

@@ -546,6 +546,8 @@ export class AudioManager {
       isWorkletReady: !!this.audioObject.essentiaNode,
       fftSize: this.audioObject.fftSize,
       sampleRate: this.audioObject.audioCtx?.sampleRate ?? 44100,
+      averageAmplitude: this.audioObject.analyser?.getAverageFrequency() ?? 0
+
     }
   }
 

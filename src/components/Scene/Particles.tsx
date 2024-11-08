@@ -3,6 +3,7 @@ import { useFrame, useThree, extend, type Object3DNode } from '@react-three/fibe
 import { Points, shaderMaterial } from '@react-three/drei'
 import * as THREE from 'three'
 import { useControls } from 'leva'
+import { useAudioStore } from '@/store/audioStore'
 
 // Shaders
 import vertexShader from '@/shaders/particles/vertex.glsl'
@@ -35,25 +36,24 @@ const ParticlesMaterial = shaderMaterial(
 
 extend({ ParticlesMaterial })
 
-// Then modify the existing declaration
 declare module '@react-three/fiber' {
     interface ThreeElements {
       particlesMaterial: Object3DNode<ParticlesMaterialImpl, ParticlesMaterialProps> & ParticlesMaterialProps
     }
-  }
+}
 
 const Particles = forwardRef<ParticlesRef, ParticlesProps>(
-  function Particles({ gpgpu, geometries, parameters, audioObject }, ref) {
+  function Particles({ gpgpu, geometries, parameters }, ref) {
     const { size, viewport } = useThree()
     const pointsRef = useRef<THREE.Points>(null)
     const materialRef = useRef<ParticlesMaterialImpl>(null)
+    const { isPlaying, averageAmplitude } = useAudioStore()
     
     const materialParams = useControls('Particle Colors', {
       color: '#0586ff',
       surfaceColor: '#DEF0FA',
     })
 
-    // Expose updateUniforms method via ref
     useImperativeHandle(ref, () => ({
       updateUniforms: ({ uAverageAmplitude }: { uAverageAmplitude: number }) => {
         if (!materialRef.current) return
@@ -61,8 +61,7 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(
       }
     }))
 
-    const [particlesGeometry, uvArray, sizesArray] = useMemo(() => {
-      const geometry = new THREE.BufferGeometry()
+    const [uvArray, sizesArray] = useMemo(() => {
       const uvArray = new Float32Array(geometries.base.count * 2)
       const sizesArray = new Float32Array(geometries.base.count)
 
@@ -81,10 +80,7 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(
         }
       }
 
-      geometry.setAttribute('aParticlesUv', new THREE.BufferAttribute(uvArray, 2))
-      geometry.setAttribute('aSize', new THREE.BufferAttribute(sizesArray, 1))
-
-      return [geometry, uvArray, sizesArray]
+      return [uvArray, sizesArray]
     }, [gpgpu.size, geometries.base.count])
 
     useFrame((state, delta) => {
@@ -92,8 +88,8 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(
       
       materialRef.current.uniforms.uTime.value = state.clock.elapsedTime
       materialRef.current.uniforms.uDeltaTime.value = delta
-      materialRef.current.uniforms.uAverageAmplitude.value = audioObject.averageAmplitude || 0.0
-      materialRef.current.uniforms.uSoundPlaying.value = audioObject.sound?.isPlaying || false
+      materialRef.current.uniforms.uAverageAmplitude.value = averageAmplitude
+      materialRef.current.uniforms.uSoundPlaying.value = isPlaying
       materialRef.current.uniforms.uColor.value.set(materialParams.color)
       materialRef.current.uniforms.uSurfaceColor.value.set(materialParams.surfaceColor)
     })
@@ -134,4 +130,4 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(
   }
 )
 
-export default Particles 
+export default Particles

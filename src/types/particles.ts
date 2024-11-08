@@ -53,11 +53,8 @@ export interface ParticlesProps {
   parameters: {
     radius: number
     count: number
-  }
-  audioObject: {
-    averageAmplitude?: number
-    sound?: {
-      isPlaying: boolean
-    }
+    threshold: number
+    surfaceThreshold: number
+    surfaceRatio: number
   }
 }
