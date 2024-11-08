@@ -1,6 +1,7 @@
 import * as THREE from 'three'
+import { Camera } from '@react-three/fiber'
 import type { ParticlesRef } from '@/types/particles'
-import type { GPGPUVariables } from '@/types/gpgpu'
+import type { GPGPUComputation } from '@/types/gpgpu'
 
 
 interface AudioObject {
@@ -74,7 +75,7 @@ export class AudioManager {
     }
   }
 
-  public setup(camera: THREE.Camera) {
+  public setup(camera: Camera) {
     this.audioObject.listener = new THREE.AudioListener()
     camera.add(this.audioObject.listener)
 
@@ -361,7 +362,7 @@ export class AudioManager {
   }
 
   public processAudioData(
-    gpgpu: GPGPUVariables, 
+    gpgpu: GPGPUComputation, 
     particles: ParticlesRef, 
     essentiaData: Float32Array
   ): void {
@@ -490,16 +491,14 @@ export class AudioManager {
     }
   }
 
-  public startAudioProcessing(callback?: () => void): void {
-    this.loadAudioWorklet()
-      .then(() => {
-        this.setupAudioGraph()
-        callback?.()
-      })
-      .catch((error) => {
-        console.error('Error starting audio processing:', error)
-        throw error
-      })
+  public async startAudioProcessing(): Promise<void> {
+    try {
+      await this.loadAudioWorklet()
+      this.setupAudioGraph()
+    } catch (error) {
+      console.error('Error starting audio processing:', error)
+      throw error
+    }
   }
 
   public cleanupAudioGraph(): void {

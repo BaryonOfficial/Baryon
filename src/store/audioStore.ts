@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { audioManager } from '@/audio/audioManager'
 
+
 interface AudioStore {
   // State
   fileName: string
@@ -22,30 +23,31 @@ interface AudioStore {
   resumeAudioContext: () => Promise<void>
 }
 
-export const useAudioStore = create<AudioStore>((set, get) => ({
+export const useAudioStore = create<AudioStore>((set) => ({
+  // Initial state now comes from audioManager
+  ...audioManager.getAudioState(),
   fileName: 'Upload Audio',
-  isPlaying: false,
-  isAudioLoaded: false,
-  isMicActive: false,
   showStats: false,
-  isAudioContextRunning: false,
-  isWorkletReady: false,
-  fftSize: 4096,
-  sampleRate: 44100,
 
   loadFile: async (file) => {
     try {
       const fileURL = URL.createObjectURL(file)
       await audioManager.loadAudio(fileURL)
-      set({ fileName: file.name, isAudioLoaded: true, isPlaying: false })
+      set({ 
+        fileName: file.name, 
+        isAudioLoaded: true, 
+        isPlaying: false 
+      })
     } catch (error) {
       console.error('Error loading audio:', error)
-      set({ fileName: 'Upload Audio', isAudioLoaded: false })
+      set({ 
+        fileName: 'Upload Audio', 
+        isAudioLoaded: false 
+      })
     }
   },
 
   togglePlayPause: async () => {
-    if (!get().isAudioLoaded) return
     try {
       const isNowPlaying = await audioManager.playPauseAudio()
       set({ isPlaying: isNowPlaying })
@@ -61,11 +63,14 @@ export const useAudioStore = create<AudioStore>((set, get) => ({
   },
 
   toggleMic: async () => {
-    const { isMicActive } = get()
     try {
-      if (isMicActive) audioManager.stopMicRecordStream()
-      else await audioManager.startMicRecordStream()
-      set({ isMicActive: !isMicActive })
+      const currentState = audioManager.getAudioState()
+      if (currentState.isMicActive) {
+        audioManager.stopMicRecordStream()
+      } else {
+        await audioManager.startMicRecordStream()
+      }
+      set({ isMicActive: !currentState.isMicActive })
     } catch (error) {
       console.error('Error toggling microphone:', error)
       set({ isMicActive: false })
@@ -77,15 +82,15 @@ export const useAudioStore = create<AudioStore>((set, get) => ({
   resumeAudioContext: async () => {
     try {
       await audioManager.resumeAudioContext()
-      const state = audioManager.getAudioState()
-      set({ 
-        isAudioContextRunning: state.isAudioContextRunning,
-        isWorkletReady: state.isWorkletReady,
-        fftSize: state.fftSize,
-        sampleRate: state.sampleRate
-      })
+      // Update store with latest audio state
+      set(audioManager.getAudioState())
     } catch (error) {
       console.error('Error resuming audio context:', error)
     }
   }
-})) 
+}))
+
+// Subscribe to audio state changes
+audioManager.subscribeToAudioState((state) => {
+  useAudioStore.setState(state)
+}) 

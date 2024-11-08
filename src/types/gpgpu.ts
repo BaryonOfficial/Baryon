@@ -93,22 +93,3 @@ export interface GPGPUShaderUniforms {
     uMicActive: THREE.IUniform<boolean>
   }
 }
-
-// Helper type for accessing GPGPU variables in AudioManager
-export interface GPGPUVariables {
-  audioDataVariable: {
-    material: {
-      uniforms: GPGPUShaderUniforms['audioDataUniforms']
-    }
-  }
-  zeroPointsVariable: {
-    material: {
-      uniforms: GPGPUShaderUniforms['zeroPointsUniforms']
-    }
-  }
-  particlesVariable: {
-    material: {
-      uniforms: GPGPUShaderUniforms['particlesUniforms']
-    }
-  }
-} 

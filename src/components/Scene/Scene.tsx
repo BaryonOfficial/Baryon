@@ -1,6 +1,7 @@
 import { Canvas } from '@react-three/fiber';
 import { Suspense } from 'react';
 import Experience from './Experience';
+import { AudioControls } from '../Controls/AudioControls';
 
 export default function Scene() {
   return (
@@ -21,7 +22,7 @@ export default function Scene() {
           <Experience />
         </Suspense>
       </Canvas>
-      <Controls />
+      <AudioControls />
     </div>
   );
 }
