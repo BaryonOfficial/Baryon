@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { ParticleParameters, ParticleGeometries } from '@/types/particle.types'
+import type { ParticleParameters, ParticleGeometries, LogoGeometry } from '@/types/particle.types'
 
 export const DEFAULT_PARAMETERS: ParticleParameters = {
   count: 1000,
@@ -9,7 +9,10 @@ export const DEFAULT_PARAMETERS: ParticleParameters = {
   surfaceRatio: 0.33
 }
 
-export function createParticleGeometries(params: ParticleParameters): ParticleGeometries {
+export function createParticleGeometries(
+  params: ParticleParameters, 
+  logoGeometry: LogoGeometry
+): ParticleGeometries {
   return {
     base: {
       count: params.count,
@@ -21,13 +24,13 @@ export function createParticleGeometries(params: ParticleParameters): ParticleGe
       colors: new Float32Array(params.count * 3)
     },
     secondary: {
-      instance: new THREE.BufferGeometry(),
-      count: params.count
+      instance: logoGeometry.geometry ?? new THREE.BufferGeometry(),
+      count: logoGeometry.vertexCount ?? params.count
     }
   }
 }
 
-export function initializeParticlesInSphereVolumeAndSurface(
+ function initializeParticlesInSphereVolumeAndSurface(
   count: number,
   radius: number,
   surfaceRatio: number

@@ -53,3 +53,10 @@ export interface ParticlesProps {
   particlesTexture: React.MutableRefObject<THREE.Texture | null>
   geometries: ParticleGeometries
 } 
+
+export interface LogoGeometry {
+    geometry: THREE.BufferGeometry | null
+    vertexCount: number
+    isLoaded: boolean
+    error?: string
+  }
