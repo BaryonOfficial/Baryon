@@ -537,7 +537,7 @@ export class AudioManager {
   }
 
   // Add state management methods
-  public getAudioState() {
+  public getAudio() {
     return {
       isPlaying: this.audioObject.sound?.isPlaying ?? false,
       isAudioLoaded: this.audioObject.isAudioLoaded,
@@ -546,8 +546,12 @@ export class AudioManager {
       isWorkletReady: !!this.audioObject.essentiaNode,
       fftSize: this.audioObject.fftSize,
       sampleRate: this.audioObject.audioCtx?.sampleRate ?? 44100,
-      averageAmplitude: this.audioObject.analyser?.getAverageFrequency() ?? 0
-
+      averageAmplitude: this.audioObject.analyser?.getAverageFrequency() ?? 0,
+      capacity: this.audioObject.capacity,
+      analyser: this.audioObject.analyser,
+      audioCtx: this.audioObject.audioCtx,
+      sound: this.audioObject.sound,
+      data: this.audioObject.analyser?.data ?? new Uint8Array(this.audioObject.fftSize / 2)
     }
   }
 
@@ -567,9 +571,9 @@ export class AudioManager {
     }
   }
 
-  public subscribeToAudioState(callback: (state: ReturnType<typeof this.getAudioState>) => void): () => void {
+  public subscribeToAudio(callback: (state: ReturnType<typeof this.getAudio>) => void): () => void {
     const interval = setInterval(() => {
-      callback(this.getAudioState())
+      callback(this.getAudio())
     }, 100) // Update every 100ms
 
     return () => clearInterval(interval)

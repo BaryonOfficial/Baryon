@@ -3,13 +3,14 @@ import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRe
 import { useLayoutEffect, useMemo, useRef, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useControls } from 'leva';
+import { audioManager } from '@/audio/audioManager';
+import { useAudioStore } from '@/store/audioStore';
 
 // Import types
 import type { 
   GPGPUReturn, 
   GPGPUParameters, 
   GPGPUGeometries, 
-  GPGPUAudioObject ,
   GPGPUComputation
 } from '@/types/gpgpu'
 
@@ -28,10 +29,11 @@ import {
 export default function useGPGPU(
   parameters: GPGPUParameters,
   geometries: GPGPUGeometries,
-  audioObject: GPGPUAudioObject
 ): GPGPUReturn {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
+  const { isAudioLoaded, isMicActive } = useAudioStore();
+  const audio = audioManager.getAudio();
 
   const audioDataTextureRef = useRef<THREE.Texture | null>(null)
   const scalarTextureRef = useRef<THREE.Texture | null>(null)
@@ -39,7 +41,8 @@ export default function useGPGPU(
   const particlesTextureRef = useRef<THREE.Texture | null>(null)
 
   const gpgpu = useMemo<GPGPUComputation | null>(() => {
-    if (!audioObject?.isReady) return null;
+    const audioSystemHealth = audioManager.checkAudioSystem();
+    if (!audioSystemHealth.isReady || !isAudioLoaded) return null;
 
     const size = Math.ceil(Math.sqrt(geometries.base.count));
     const computation = new GPUComputationRenderer(size, size, gl);
@@ -97,12 +100,12 @@ export default function useGPGPU(
 
     // Uniforms
     const format = gl.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
-    let essentiaData = new Float32Array(audioObject.capacity);
+    let essentiaData = new Float32Array(audio.capacity);
 
     audioDataVariable.material.uniforms.tPitches = {
       value: new THREE.DataTexture(
         essentiaData,
-        audioObject.capacity,
+        audio.capacity,
         1,
         THREE.RedFormat,
         THREE.FloatType
@@ -110,18 +113,16 @@ export default function useGPGPU(
     };
     audioDataVariable.material.uniforms.tDataArray = {
       value: new THREE.DataTexture(
-        audioObject.analyser.data, // Initial empty data
-        audioObject.fftSize / 2,
+        audio.data, // Initial empty data
+        audio.fftSize / 2,
         1,
         format
       ),
     };
     audioDataVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
-    audioDataVariable.material.uniforms.sampleRate = new THREE.Uniform(
-      audioObject.audioCtx.sampleRate
-    );
-    audioDataVariable.material.uniforms.bufferSize = new THREE.Uniform(audioObject.fftSize);
-    audioDataVariable.material.uniforms.capacity = new THREE.Uniform(audioObject.capacity);
+    audioDataVariable.material.uniforms.sampleRate = new THREE.Uniform(audio.sampleRate);
+    audioDataVariable.material.uniforms.bufferSize = new THREE.Uniform(audio.fftSize);
+    audioDataVariable.material.uniforms.capacity = new THREE.Uniform(audio.capacity);
 
     // Dependencies
     computation.setVariableDependencies(audioDataVariable, []);
@@ -140,7 +141,7 @@ export default function useGPGPU(
 
     scalarFieldVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
     scalarFieldVariable.material.uniforms.uBase = new THREE.Uniform(particlesForComputation);
-    scalarFieldVariable.material.uniforms.capacity = new THREE.Uniform(audioObject.capacity);
+    scalarFieldVariable.material.uniforms.capacity = new THREE.Uniform(audio.capacity);
 
     // Dependencies
     computation.setVariableDependencies(scalarFieldVariable, [audioDataVariable]);
@@ -190,13 +191,11 @@ export default function useGPGPU(
     particlesVariable.material.uniforms.uBase = new THREE.Uniform(baryonLogoTexture);
     particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
     particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(32);
-    particlesVariable.material.uniforms.uStarted = new THREE.Uniform(audioObject.sound.started);
+    particlesVariable.material.uniforms.uStarted = new THREE.Uniform(audio.sound?.started ?? false);
     particlesVariable.material.uniforms.uParticleMovementType = new THREE.Uniform(1);
     particlesVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
     particlesVariable.material.uniforms.uDistanceThreshold = new THREE.Uniform(0.5);
-    particlesVariable.material.uniforms.uMicActive = new THREE.Uniform(
-      audioObject.gumStream && audioObject.gumStream.active
-    );
+    particlesVariable.material.uniforms.uMicActive = new THREE.Uniform(audio.isMicActive);
 
     // Dependencies
     computation.setVariableDependencies(particlesVariable, [zeroPointsVariable, particlesVariable]);
@@ -212,7 +211,7 @@ export default function useGPGPU(
       essentiaData,
       size,
     };
-  }, [gl, parameters, geometries, audioObject]);
+  }, [gl, parameters, geometries, isAudioLoaded, isMicActive]);
 
   useLayoutEffect(() => {
     if (!gpgpu?.computation) return

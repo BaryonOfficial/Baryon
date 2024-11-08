@@ -43,7 +43,7 @@ declare module '@react-three/fiber' {
 }
 
 const Particles = forwardRef<ParticlesRef, ParticlesProps>(
-  function Particles({ gpgpu, geometries, parameters }, ref) {
+  function Particles({ gpgpu, geometries }, ref) {
     const { size, viewport } = useThree()
     const pointsRef = useRef<THREE.Points>(null)
     const materialRef = useRef<ParticlesMaterialImpl>(null)

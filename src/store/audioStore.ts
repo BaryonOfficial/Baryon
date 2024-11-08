@@ -4,10 +4,12 @@ import type { AudioStore } from '@/types/audio'
 
 export const useAudioStore = create<AudioStore>((set) => ({
   // Initial state from audioManager
-  ...audioManager.getAudioState(),
+  ...audioManager.getAudio(),
   fileName: 'Upload Audio',
   showStats: false,
   averageAmplitude: 0, 
+  capacity: audioManager.getAudio().capacity,
+
 
   loadFile: async (file) => {
     try {
@@ -37,13 +39,13 @@ export const useAudioStore = create<AudioStore>((set) => ({
 
   toggleMic: async () => {
     try {
-      const currentState = audioManager.getAudioState()
-      if (currentState.isMicActive) {
+      const currentAudio = audioManager.getAudio()
+      if (currentAudio.isMicActive) {
         audioManager.stopMicRecordStream()
       } else {
         await audioManager.startMicRecordStream()
       }
-      set({ isMicActive: !currentState.isMicActive })
+      set({ isMicActive: !currentAudio.isMicActive })
     } catch (error) {
       console.error('Error toggling microphone:', error)
       set({ isMicActive: false })
@@ -55,14 +57,15 @@ export const useAudioStore = create<AudioStore>((set) => ({
   resumeAudioContext: async () => {
     try {
       await audioManager.resumeAudioContext()
-      set(audioManager.getAudioState())
+      set(audioManager.getAudio())
     } catch (error) {
       console.error('Error resuming audio context:', error)
     }
-  }
+  },
+
 }))
 
 // Subscribe to audio state changes
-audioManager.subscribeToAudioState((state) => {
+audioManager.subscribeToAudio((state) => {
   useAudioStore.setState(state)
 }) 

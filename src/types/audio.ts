@@ -1,5 +1,5 @@
 interface AudioState {
-  // State from AudioStore interface
+  // UI-relevant state
   fileName: string
   isPlaying: boolean
   isAudioLoaded: boolean
@@ -7,9 +7,12 @@ interface AudioState {
   showStats: boolean
   isAudioContextRunning: boolean
   isWorkletReady: boolean
-  fftSize: number
-  sampleRate: number
-  averageAmplitude: number
+  
+  // Fixed audio parameters (unless made configurable)
+  fftSize: number        
+  sampleRate: number     // From audio context
+  averageAmplitude: number  // Computed from analysis
+  capacity: number        
 }
 
 interface AudioActions {
