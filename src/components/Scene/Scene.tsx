@@ -2,10 +2,11 @@ import { Canvas } from '@react-three/fiber';
 import { Suspense } from 'react';
 import Experience from './Experience';
 import { AudioControls } from '../Controls/AudioControls';
+import { FullscreenContainer } from '../FullscreenContainer';
 
 export default function Scene() {
   return (
-    <div style={{ width: '100vw', height: '100vh', position: 'absolute', zIndex: 1 }}>
+    <FullscreenContainer>
       <Canvas
         gl={{
           antialias: true,
@@ -23,6 +24,6 @@ export default function Scene() {
         </Suspense>
       </Canvas>
       <AudioControls />
-    </div>
+    </FullscreenContainer>
   );
 }
