@@ -2,38 +2,12 @@ import * as THREE from 'three'
 import { Camera } from '@react-three/fiber'
 import type { ParticlesRef } from '@/types/particle.types'
 import type { GPGPUComputation } from '@/types/gpgpu.types'
-
-
-interface AudioObject {
-  fftSize: number
-  audioReader: any // We'll type this properly later with essentia types
-  gain: GainNode | null
-  essentiaNode: AudioWorkletNode | null
-  soundGainNode: GainNode | null
-  audioCtx: AudioContext | null
-  sound: THREE.Audio | null
-  micSound: THREE.Audio | null
-  capacity: number
-  analyser: THREE.AudioAnalyser | null
-  micAnalyser: THREE.AudioAnalyser | null
-  micNode: MediaStreamAudioSourceNode | null
-  gumStream: MediaStream | null
-  listener: THREE.AudioListener | null
-  audioLoader: THREE.AudioLoader
-  isAudioLoaded: boolean
-  normalizedFreqData: Float32Array
-}
-
-interface AudioAnalysisResult {
-  avgAmplitude: number
-  freqData: Float32Array
-}
-
-interface AudioWorkletOptions {
-  bufferSize: number
-  sampleRate: number
-  capacity: number
-}
+import type { 
+  AudioObject,
+  AudioManagerState,
+  AudioAnalysisResult,
+  AudioWorkletOptions 
+} from '@/types/audio.types'
 
 // Add custom error types
 class AudioManagerError extends Error {

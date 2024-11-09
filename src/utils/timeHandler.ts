@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { useRef } from 'react'
-import type { AudioState } from '@/types/audio.types'
+import type { AudioManagerState } from '@/types/audio.types'
 
 interface TimeState {
   time: number
@@ -8,7 +8,6 @@ interface TimeState {
 }
 
 interface TimeRefs {
-  previousTime: React.MutableRefObject<number>
   lastKnownTime: React.MutableRefObject<number>
 }
 
@@ -18,9 +17,7 @@ export function createTimeHandler() {
   function handleTime(
     elapsedTime: number, 
     delta: number, 
-    audio: AudioState & { 
-      sound?: THREE.Audio | null
-    }
+    audio: AudioManagerState
   ): TimeState {
     // If audio is started but paused, freeze time at last known position
     if ((audio.sound as any)?.started && !audio.isPlaying) return {
@@ -48,6 +45,6 @@ export function createTimeHandler() {
     handleTime,
     refs: {
       lastKnownTime: lastKnownTimeRef
-    } satisfies Omit<TimeRefs, 'previousTime'>
+    }
   }
 } 
