@@ -4,10 +4,10 @@ import { createParticleGeometries } from '@/utils/particleConfig';
 import type { ParticleParameters, ParticleGeometries } from '@/types/particle.types';
 
 export function useParticleGeometries(parameters: ParticleParameters): ParticleGeometries {
-  const logoGeometry = useLogo();
+  const logo = useLogo();
 
   return useMemo(
-    () => createParticleGeometries(parameters, logoGeometry),
-    [parameters.count, parameters.radius, parameters.surfaceRatio, logoGeometry]
+    () => createParticleGeometries(parameters, logo),
+    [parameters.count, parameters.radius, parameters.surfaceRatio, logo]
   );
 }

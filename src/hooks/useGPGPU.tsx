@@ -64,18 +64,21 @@ export default function useGPGPU(
     // Logo made out of particles, initial positions
     const baryonLogoTexture = computation.createTexture();
 
-    for (let i = 0; i < geometries.secondary.count; i++) {
-      const i3 = i * 3;
-      const i4 = i * 4;
+    if (geometries.secondary.instance && geometries.secondary.instance.attributes.position) {
+      for (let i = 0; i < geometries.secondary.count; i++) {
+        const i3 = i * 3;
+        const i4 = i * 4;
 
-      // Position based on geometry
-      baryonLogoTexture.image.data[i4 + 0] =
-        geometries.secondary.instance.attributes.position.array[i3 + 0];
-      baryonLogoTexture.image.data[i4 + 1] =
-        geometries.secondary.instance.attributes.position.array[i3 + 1];
-      baryonLogoTexture.image.data[i4 + 2] =
-        geometries.secondary.instance.attributes.position.array[i3 + 2];
-      baryonLogoTexture.image.data[i4 + 3] = Math.random();
+        // Position based on geometry
+        baryonLogoTexture.image.data[i4 + 0] =
+          geometries.secondary.instance.attributes.position.array[i3 + 0];
+        baryonLogoTexture.image.data[i4 + 1] =
+          geometries.secondary.instance.attributes.position.array[i3 + 1];
+        baryonLogoTexture.image.data[i4 + 2] =
+          geometries.secondary.instance.attributes.position.array[i3 + 2];
+        baryonLogoTexture.image.data[i4 + 3] = Math.random();
+      }
+      console.log('baryonLogoTexture:', baryonLogoTexture);
     }
 
     // gpgpu variables

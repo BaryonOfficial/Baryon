@@ -8,7 +8,10 @@ export function useLogo(): LogoGeometry {
   const { scene } = useGLTF('/glb/Baryon_v2.glb', true);
 
   return useMemo(() => {
+    console.log('Scene loaded:', scene); // Log 1: Check if scene is loaded
+
     if (!scene?.children[0]) {
+      console.warn('No children found in scene'); // Log 2: Debug missing children
       return {
         instance: null,
         count: 0,
@@ -18,6 +21,8 @@ export function useLogo(): LogoGeometry {
     }
 
     const mesh = scene.children[0];
+    console.log('Mesh found:', mesh); // Log 3: Check mesh properties
+
     if (!(mesh instanceof THREE.Mesh)) {
       return {
         instance: null,
@@ -26,8 +31,6 @@ export function useLogo(): LogoGeometry {
         error: 'Logo model is not a mesh',
       };
     }
-
-    console.log('mesh.geometry:', mesh.geometry);
 
     return {
       instance: mesh.geometry,
