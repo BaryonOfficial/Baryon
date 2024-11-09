@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import type { ParticleParameters, ParticleGeometries, LogoGeometry } from '@/types/particle.types'
 
 export const DEFAULT_PARAMETERS: ParticleParameters = {
-  count: 1000000,
+  count: 10000,
   radius: 3.0,
   threshold: 0.05,
   surfaceThreshold: 0.01,

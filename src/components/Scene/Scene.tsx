@@ -13,10 +13,8 @@ export default function Scene() {
           pixelRatio: Math.min(window.devicePixelRatio, 2),
         }}
         camera={{
-          fov: 35,
-          near: 0.1,
-          far: 100,
-          position: [0, 3, 20],
+          position: [0, 0, 5],
+          fov: 75,
         }}>
         <color attach="background" args={['#000000']} />
         <Suspense fallback={null}>
