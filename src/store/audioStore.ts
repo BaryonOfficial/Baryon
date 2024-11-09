@@ -57,6 +57,10 @@ export const useAudioStore = create<AudioStore>((set) => ({
     }
   },
 
+  setIsPlaying: (isPlaying: boolean) => {
+    set({ isPlaying })
+  },
+
 }))
 
 // Subscribe to audio state changes

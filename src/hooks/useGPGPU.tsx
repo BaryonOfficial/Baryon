@@ -4,6 +4,7 @@ import { useLayoutEffect, useMemo, useRef, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useControls } from 'leva';
 import { audioManager } from '@/audio/audioManager';
+import { createTimeHandler } from '@/utils/timeHandler';
 
 // Import types
 import type { GPGPUReturn, GPGPUComputation, GPGPUShaderUniforms } from '@/types/gpgpu.types';
@@ -23,6 +24,7 @@ export default function useGPGPU(
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const audio = audioManager.getAudio();
+  const timeHandler = createTimeHandler();
 
   const audioDataTextureRef = useRef<THREE.Texture | null>(null);
   const scalarTextureRef = useRef<THREE.Texture | null>(null);
@@ -247,8 +249,11 @@ export default function useGPGPU(
     };
   }, [gpgpu, scene, debugMode]);
 
-  useFrame((state, delta) => {
+  useFrame(({ clock }, delta) => {
     if (!gpgpu) return;
+
+    // Get adjusted time values
+    const { time, deltaTime } = timeHandler.handleTime(clock.elapsedTime, delta, audio);
 
     if (debugMode && debugPlanes.length && gpgpu) {
       debugPlanes.forEach((plane) => {
@@ -258,16 +263,16 @@ export default function useGPGPU(
       });
     }
 
-    // 1. Update time-based uniforms
-    gpgpu.particlesVariable.material.uniforms.uTime.value = state.clock.elapsedTime;
-    gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = delta;
+    // Update time-based uniforms with adjusted values
+    gpgpu.particlesVariable.material.uniforms.uTime.value = time;
+    gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
     gpgpu.particlesVariable.material.uniforms.uStarted.value = audio.sound?.started ?? false;
     gpgpu.particlesVariable.material.uniforms.uMicActive.value = audio.isMicActive;
 
     if (particlesRef.current?.material) {
       particlesRef.current.material.uniforms.uSoundPlaying.value = audio.isPlaying;
-      particlesRef.current.material.uniforms.uTime.value = state.clock.elapsedTime;
-      particlesRef.current.material.uniforms.uDeltaTime.value = delta;
+      particlesRef.current.material.uniforms.uTime.value = time;
+      particlesRef.current.material.uniforms.uDeltaTime.value = deltaTime;
     }
 
     // 2. Process audio data

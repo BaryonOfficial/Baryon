@@ -1,8 +1,9 @@
 import { GPGPUComputation } from "./gpgpu.types"
 import { ParticlesRef } from "./particle.types"
+import * as THREE from 'three'
 
 export interface AudioState {
-  fileName: string
+  fileName?: string
   isPlaying: boolean
   isAudioLoaded: boolean
   isMicActive: boolean
@@ -12,6 +13,10 @@ export interface AudioState {
   sampleRate: number     
   averageAmplitude: number
   capacity: number        
+  analyser: THREE.AudioAnalyser | null
+  audioCtx: AudioContext | null
+  sound: THREE.Audio | null
+  data: Uint8Array
 }
 
 export interface AudioActions {
@@ -20,6 +25,7 @@ export interface AudioActions {
   stop: () => void
   toggleMic: () => Promise<void>
   resumeAudioContext: () => Promise<void>
+  setIsPlaying: (isPlaying: boolean) => void
 }
 
 export interface AudioInitializerProps {
