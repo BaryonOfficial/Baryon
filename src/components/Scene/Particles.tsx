@@ -1,6 +1,6 @@
 import { useMemo, useRef, forwardRef, useImperativeHandle, useEffect } from 'react';
-import { useFrame, useThree, extend, type Object3DNode } from '@react-three/fiber';
-import { Points, shaderMaterial } from '@react-three/drei';
+import { useThree, extend, type Object3DNode } from '@react-three/fiber';
+import { shaderMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 import { useControls } from 'leva';
 import { useAudioStore } from '@/store/audioStore';
@@ -103,7 +103,7 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
   }, [averageAmplitude, materialParams.color, materialParams.surfaceColor, particlesTexture]);
 
   return (
-    <Points ref={pointsRef} limit={geometries.base.count} range={geometries.base.count}>
+    <points ref={pointsRef}>
       <bufferGeometry>
         <bufferAttribute
           attach="attributes-aParticlesUv"
@@ -125,7 +125,7 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
         blending={THREE.AdditiveBlending}
         uResolution={new THREE.Vector2(size.width * viewport.dpr, size.height * viewport.dpr)}
       />
-    </Points>
+    </points>
   );
 });
 
