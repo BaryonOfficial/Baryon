@@ -374,13 +374,43 @@ export class AudioManager {
     }
   }
 
+  private async URLFromFiles(files: string[]): Promise<string> {
+    try {
+      const texts = await Promise.all(
+        files.map(file => fetch(file).then(response => response.text()))
+      )
+      
+      // Add the exports hack at the beginning
+      texts.unshift('var exports = {};')
+      
+      const concatenatedCode = texts.join('\n')
+      const blob = new Blob([concatenatedCode], { type: 'application/javascript' })
+      return URL.createObjectURL(blob)
+    } catch (error) {
+      throw new AudioWorkletError(
+        `Failed to concatenate worklet files: ${error instanceof Error ? error.message : 'Unknown error'}`
+      )
+    }
+  }
+
   public async loadAudioWorklet(): Promise<void> {
     try {
       this.validateAudioState()
       
-      await this.audioObject.audioCtx!.audioWorklet.addModule(
-        '/src/audio/processors/audio-processor.js'
-      )
+      if (this.audioObject.essentiaNode) {
+        console.log('AudioWorkletProcessor is already registered')
+        return
+      }
+
+      const workletProcessorCode = [
+        './lib/essentia-wasm.umd.js',
+        './lib/essentia.js-core.umd.js',
+        './lib/audio-data-processor.js',
+        './lib/ringbuf.js',
+      ]
+
+      const concatenatedCode = await this.URLFromFiles(workletProcessorCode)
+      await this.audioObject.audioCtx!.audioWorklet.addModule(concatenatedCode)
     } catch (error) {
       if (error instanceof AudioManagerError) throw error
       
@@ -552,7 +582,6 @@ export class AudioManager {
     return () => clearInterval(interval)
   }
 
-  // We'll continue with more methods in the next step...
 }
 
 export const audioManager = new AudioManager() 
