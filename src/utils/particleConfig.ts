@@ -1,12 +1,17 @@
 import * as THREE from 'three'
 import type { ParticleParameters, ParticleGeometries, LogoGeometry } from '@/types/particle.types'
+import { useMemo } from 'react'
 
-export const DEFAULT_PARAMETERS: ParticleParameters = {
-  count: 10000,
+export const DEFAULT_PARAMETERS = {
+  count: 1000000,
   radius: 3.0,
   threshold: 0.05,
   surfaceThreshold: 0.01,
   surfaceRatio: 0.33
+} as const
+
+export function useParticleParameters() {
+  return useMemo(() => DEFAULT_PARAMETERS, [])
 }
 
 export function createParticleGeometries(

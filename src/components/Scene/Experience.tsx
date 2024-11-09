@@ -5,16 +5,16 @@ import { ParticlesRef } from '@/types/particle.types';
 import useGPGPU from '@/hooks/useGPGPU';
 import { AudioInitializer } from './AudioInitializer';
 import { useAudioStore } from '@/store/audioStore';
-import { DEFAULT_PARAMETERS } from '@/utils/particleConfig';
+import { useParticleParameters } from '@/utils/particleConfig';
 import { useParticleGeometries } from '@/hooks/useParticleGeometries';
 import { Effects as PostProcessingEffects } from './Effects';
 
 export default function Experience() {
   const particlesRef = useRef<ParticlesRef>(null);
-  const { isAudioContextRunning } = useAudioStore();
 
-  const geometries = useParticleGeometries(DEFAULT_PARAMETERS);
-  const { gpgpu, particlesTexture } = useGPGPU(DEFAULT_PARAMETERS, geometries, particlesRef);
+  const parameters = useParticleParameters();
+  const geometries = useParticleGeometries(parameters);
+  const { gpgpu, particlesTexture } = useGPGPU(parameters, geometries, particlesRef);
 
   return (
     <>
