@@ -50,7 +50,7 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
   const { size, viewport } = useThree();
   const pointsRef = useRef<THREE.Points>(null);
   const materialRef = useRef<ParticleMaterial>(null);
-  const { isPlaying, averageAmplitude } = useAudioStore();
+  const { averageAmplitude } = useAudioStore();
 
   const materialParams = useControls('Particle Colors', {
     color: '#0586ff',
