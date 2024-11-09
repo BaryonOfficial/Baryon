@@ -363,11 +363,10 @@ export class AudioManager {
 
   public processAudioData(
     gpgpu: GPGPUComputation, 
-    particles: ParticlesRef, 
-    essentiaData: Float32Array
+    particlesRef: React.RefObject<ParticlesRef>,
   ): void {
     if (this.audioObject.audioReader?.available_read() >= 1) {
-      const read = this.audioObject.audioReader.dequeue(essentiaData)
+      const read = this.audioObject.audioReader.dequeue(gpgpu.essentiaData)
       if (read !== 0) {
         gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true
       }
@@ -382,7 +381,7 @@ export class AudioManager {
       // Update GPGPU uniforms
       gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude
       gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude
-      particles.updateUniforms({ uAverageAmplitude: avgAmplitude })
+      particlesRef.current?.updateUniforms({ uAverageAmplitude: avgAmplitude })
       
       // freqData is already normalized Float32Array
       gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(freqData)
@@ -391,7 +390,7 @@ export class AudioManager {
       // Reset all values when no audio is playing
       gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = 0
       gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = 0
-      particles.updateUniforms({ uAverageAmplitude: 0 })
+      particlesRef.current?.updateUniforms({ uAverageAmplitude: 0 })
       
       this.audioObject.normalizedFreqData.fill(0)
       gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(

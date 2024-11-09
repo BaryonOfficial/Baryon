@@ -7,7 +7,7 @@ import { audioManager } from '@/audio/audioManager';
 
 // Import types
 import type { GPGPUReturn, GPGPUComputation, GPGPUShaderUniforms } from '@/types/gpgpu.types';
-import type { ParticleParameters, ParticleGeometries } from '@/types/particle.types';
+import type { ParticleParameters, ParticleGeometries, ParticlesRef } from '@/types/particle.types';
 
 //Import Shaders
 import audioDataShader from '../shaders/gpgpu/audioData.glsl';
@@ -17,7 +17,8 @@ import gpgpuParticlesShader from '../shaders/gpgpu/particles.glsl';
 
 export default function useGPGPU(
   parameters: ParticleParameters,
-  geometries: ParticleGeometries
+  geometries: ParticleGeometries,
+  particlesRef: React.RefObject<ParticlesRef>
 ): GPGPUReturn {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
@@ -246,7 +247,9 @@ export default function useGPGPU(
     };
   }, [gpgpu, scene, debugMode]);
 
-  useFrame(() => {
+  useFrame((state, delta) => {
+    if (!gpgpu) return;
+
     if (debugMode && debugPlanes.length && gpgpu) {
       debugPlanes.forEach((plane) => {
         if (plane.material instanceof THREE.MeshBasicMaterial) {
@@ -254,6 +257,50 @@ export default function useGPGPU(
         }
       });
     }
+
+    // 1. Update time-based uniforms
+    gpgpu.particlesVariable.material.uniforms.uTime.value = state.clock.elapsedTime;
+    gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = delta;
+    gpgpu.particlesVariable.material.uniforms.uStarted.value = audio.sound?.started ?? false;
+    gpgpu.particlesVariable.material.uniforms.uMicActive.value = audio.isMicActive;
+
+    // 2. Process audio data
+    if (gpgpu.essentiaData) {
+      audioManager.processAudioData(gpgpu, particlesRef);
+    }
+
+    // 3. Compute GPGPU textures
+    gpgpu.computation.compute();
+
+    // 4. Update dependent textures in correct order
+    // Audio -> Scalar -> ZeroPoints -> Particles
+    gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value =
+      gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable).texture;
+
+    gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value =
+      gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture;
+
+    gpgpu.particlesVariable.material.uniforms.uZeroPoints.value =
+      gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture;
+
+    if (particlesRef.current?.material) {
+      particlesRef.current.material.uniforms.uParticlesTexture.value =
+        gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable).texture;
+    }
+
+    // Update texture refs for external use
+    audioDataTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
+      gpgpu.audioDataVariable
+    ).texture;
+    scalarTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
+      gpgpu.scalarFieldVariable
+    ).texture;
+    zeroPointsTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
+      gpgpu.zeroPointsVariable
+    ).texture;
+    particlesTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
+      gpgpu.particlesVariable
+    ).texture;
   });
 
   return {

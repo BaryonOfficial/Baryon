@@ -6,9 +6,6 @@ export const useAudioStore = create<AudioStore>((set) => ({
   // Initial state from audioManager
   ...audioManager.getAudio(),
   fileName: 'Upload Audio',
-  averageAmplitude: 0, 
-  capacity: audioManager.getAudio().capacity,
-
 
   loadFile: async (file) => {
     try {

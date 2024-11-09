@@ -14,7 +14,7 @@ export default function Experience() {
   const { isAudioContextRunning } = useAudioStore();
 
   const geometries = useParticleGeometries(DEFAULT_PARAMETERS);
-  const { gpgpu, particlesTexture } = useGPGPU(DEFAULT_PARAMETERS, geometries);
+  const { gpgpu, particlesTexture } = useGPGPU(DEFAULT_PARAMETERS, geometries, particlesRef);
 
   return (
     <>

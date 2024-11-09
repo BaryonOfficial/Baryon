@@ -43,6 +43,8 @@ export type ParticleMaterialProps = {
 }
 
 export interface ParticlesRef {
+  material: ParticleMaterial | null
+  points: THREE.Points | null
   updateUniforms: (uniforms: { uAverageAmplitude: number }) => void
 }
 
