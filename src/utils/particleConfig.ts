@@ -2,35 +2,35 @@ import * as THREE from 'three'
 import type { ParticleParameters, ParticleGeometries, LogoGeometry } from '@/types/particle.types'
 import { useMemo } from 'react'
 
-export const DEFAULT_PARAMETERS = {
+export const DEFAULT_PARAMETERS: ParticleParameters = {
   count: 1000000,
   radius: 3.0,
   threshold: 0.05,
   surfaceThreshold: 0.01,
   surfaceRatio: 0.33
-} as const
+}
 
 export function useParticleParameters() {
   return useMemo(() => DEFAULT_PARAMETERS, [])
 }
 
 export function createParticleGeometries(
-  params: ParticleParameters, 
-  logoGeometry: LogoGeometry
+  parameters: ParticleParameters, 
+  logo: LogoGeometry
 ): ParticleGeometries {
   return {
     base: {
-      count: params.count,
+      count: parameters.count,
       positions: initializeParticlesInSphereVolumeAndSurface(
-        params.count,
-        params.radius,
-        params.surfaceRatio
+        parameters.count,
+        parameters.radius,
+        parameters.surfaceRatio
       ),
-      colors: new Float32Array(params.count * 3)
+      colors: new Float32Array(parameters.count * 3)
     },
     secondary: {
-      instance: logoGeometry.geometry ?? new THREE.BufferGeometry(),
-      count: logoGeometry.vertexCount ?? params.count
+      instance: logo.instance ?? new THREE.BufferGeometry(),
+      count: logo.count ?? parameters.count
     }
   }
 }

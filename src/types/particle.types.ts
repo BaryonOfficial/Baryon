@@ -9,14 +9,12 @@ export interface ParticleParameters {
   surfaceRatio: number
 }
 
-export interface ParticleGeometry {
-  count: number
-  positions: Float32Array
-  colors: Float32Array
-}
-
 export interface ParticleGeometries {
-  base: ParticleGeometry
+  base: {
+    count: number
+    positions: Float32Array
+    colors: Float32Array
+  }
   secondary: {
     instance: THREE.BufferGeometry
     count: number
@@ -56,8 +54,8 @@ export interface ParticlesProps {
 } 
 
 export interface LogoGeometry {
-    geometry: THREE.BufferGeometry | null
-    vertexCount: number
+    instance: THREE.BufferGeometry | null
+    count: number
     isLoaded: boolean
     error?: string
   }
