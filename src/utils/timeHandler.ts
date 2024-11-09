@@ -19,22 +19,19 @@ export function createTimeHandler() {
     delta: number, 
     audio: AudioManagerState
   ): TimeState {
-    // If audio is started but paused, freeze time at last known position
-    if ((audio.sound as any)?.started && !audio.isPlaying) return {
+    if (audio.sound?.started && !audio.isPlaying) return {
       time: lastKnownTimeRef.current,
       deltaTime: 0
     }
 
-    // If audio is playing and started, use audio context time
-    if (audio.isPlaying && (audio.sound as any)?.started) {
-      lastKnownTimeRef.current = audio.sound?.context?.currentTime ?? elapsedTime
+    if (audio.isPlaying && audio.sound?.started) {
+      lastKnownTimeRef.current = audio.sound.context.currentTime ?? elapsedTime
       return {
         time: lastKnownTimeRef.current,
-        deltaTime: (audio.sound?.listener as any)?.timeDelta ?? delta
+        deltaTime: audio.sound.listener.timeDelta ?? delta
       }
     }
 
-    // For mic or default case, use frame time values directly
     return { 
       time: elapsedTime, 
       deltaTime: delta 
