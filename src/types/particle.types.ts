@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { GPGPUComputation } from './gpgpu.types'
 
 export interface ParticleParameters {
   count: number
@@ -49,10 +50,8 @@ export interface ParticlesRef {
 }
 
 export interface ParticlesProps {
-  gpgpu: {
-    size: number
-  }
-  particlesTexture: React.MutableRefObject<THREE.Texture | null>
+  gpgpu: GPGPUComputation
+  particlesTexture?: React.MutableRefObject<THREE.Texture | null>
   geometries: ParticleGeometries
 } 
 

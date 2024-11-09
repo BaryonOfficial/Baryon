@@ -44,7 +44,7 @@ declare module '@react-three/fiber' {
 }
 
 const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
-  { gpgpu, geometries, particlesTexture },
+  { gpgpu, geometries },
   ref
 ) {
   const { size, viewport } = useThree();
@@ -99,8 +99,10 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
     materialRef.current.uniforms.uAverageAmplitude.value = averageAmplitude;
     materialRef.current.uniforms.uColor.value.set(materialParams.color);
     materialRef.current.uniforms.uSurfaceColor.value.set(materialParams.surfaceColor);
-    materialRef.current.uniforms.uParticlesTexture.value = particlesTexture.current;
-  }, [averageAmplitude, materialParams.color, materialParams.surfaceColor, particlesTexture]);
+    materialRef.current.uniforms.uParticlesTexture.value = gpgpu.computation.getCurrentRenderTarget(
+      gpgpu.particlesVariable
+    ).texture;
+  }, [averageAmplitude, materialParams.color, materialParams.surfaceColor, gpgpu]);
 
   return (
     <points ref={pointsRef}>

@@ -22,12 +22,7 @@ export default function Experience() {
       {gpgpu && (
         <>
           <AudioInitializer gpgpu={gpgpu} particles={particlesRef.current!} />
-          <Particles
-            ref={particlesRef}
-            gpgpu={gpgpu}
-            particlesTexture={particlesTexture}
-            geometries={geometries}
-          />
+          <Particles ref={particlesRef} gpgpu={gpgpu} geometries={geometries} />
         </>
       )}
       <PostProcessingEffects />
