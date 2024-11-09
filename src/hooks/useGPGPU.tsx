@@ -36,11 +36,11 @@ export default function useGPGPU(
   const particlesTextureRef = useRef<THREE.Texture | null>(null);
 
   const gpgpu = useMemo<GPGPUComputation | null>(() => {
-    initCount++;
-    const startMemory = performance?.memory?.usedJSHeapSize ?? 0;
+    // initCount++;
+    // const startMemory = performance?.memory?.usedJSHeapSize ?? 0;
 
-    console.log(`\n=== GPGPU Initialization #${initCount} ===`);
-    console.log('Starting memory:', (startMemory / 1024 / 1024).toFixed(2) + 'MB');
+    // console.log(`\n=== GPGPU Initialization #${initCount} ===`);
+    // console.log('Starting memory:', (startMemory / 1024 / 1024).toFixed(2) + 'MB');
 
     const size = Math.ceil(Math.sqrt(geometries.base.count));
     const computation = new GPUComputationRenderer(size, size, gl);
@@ -86,38 +86,10 @@ export default function useGPGPU(
      * Create all textures first
      */
 
-    // Track memory after each texture creation
-    console.log('Creating audioDataTexture...');
     const audioDataTexture = computation.createTexture();
-    const audioMemory = performance?.memory?.usedJSHeapSize ?? 0;
-    console.log(
-      'Memory after audioData:',
-      ((audioMemory - startMemory) / 1024 / 1024).toFixed(2) + 'MB'
-    );
-
-    console.log('Creating scalarTexture...');
     const scalarTexture = computation.createTexture();
-    const scalarMemory = performance?.memory?.usedJSHeapSize ?? 0;
-    console.log(
-      'Memory after scalar:',
-      ((scalarMemory - startMemory) / 1024 / 1024).toFixed(2) + 'MB'
-    );
-
-    console.log('Creating zeroPointsTexture...');
     const zeroPointsTexture = computation.createTexture();
-    const zeroPointsMemory = performance?.memory?.usedJSHeapSize ?? 0;
-    console.log(
-      'Memory after zeroPoints:',
-      ((zeroPointsMemory - startMemory) / 1024 / 1024).toFixed(2) + 'MB'
-    );
-
-    console.log('Creating particlesTexture...');
     const particlesTexture = computation.createTexture();
-    const particlesMemory = performance?.memory?.usedJSHeapSize ?? 0;
-    console.log(
-      'Memory after particles:',
-      ((particlesMemory - startMemory) / 1024 / 1024).toFixed(2) + 'MB'
-    );
 
     /**
      * Create all variables
@@ -213,14 +185,6 @@ export default function useGPGPU(
     scalarTextureRef.current = scalarTexture;
     zeroPointsTextureRef.current = zeroPointsTexture;
     particlesTextureRef.current = particlesTexture;
-
-    const memoryUsed = particlesMemory - startMemory;
-    totalMemoryUsed += memoryUsed;
-
-    console.log(`Memory used this init: ${(memoryUsed / 1024 / 1024).toFixed(2)}MB`);
-    console.log(`Total memory used: ${(totalMemoryUsed / 1024 / 1024).toFixed(2)}MB`);
-    console.log(`Total initializations: ${initCount}`);
-    console.log('===========================\n');
 
     return {
       computation,
