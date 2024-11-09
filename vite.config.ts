@@ -21,7 +21,7 @@ export default defineConfig((): UserConfig => {
       open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env), // Open if it's not a CodeSandbox
     },
     esbuild: {
-      drop: ['console' as const, 'debugger' as const],
+      drop: ['console', 'debugger'] satisfies Array<'console' | 'debugger'>,
       dropLabels: ['DEBUG'],
     },
     build: {

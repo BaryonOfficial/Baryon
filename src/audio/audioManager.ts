@@ -30,7 +30,7 @@ export class AudioManager {
   constructor() {
     this.audioObject = {
       fftSize: 4096,
-      normalizedFreqData: new Float32Array(4096),
+      normalizedFreqData: new Float32Array(4096 / 2),
       audioReader: null,
       gain: null,
       essentiaNode: null,
