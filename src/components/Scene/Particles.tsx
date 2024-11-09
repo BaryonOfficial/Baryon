@@ -1,4 +1,4 @@
-import { useMemo, useRef, forwardRef, useImperativeHandle } from 'react';
+import { useMemo, useRef, forwardRef, useImperativeHandle, useEffect } from 'react';
 import { useFrame, useThree, extend, type Object3DNode } from '@react-three/fiber';
 import { Points, shaderMaterial } from '@react-three/drei';
 import * as THREE from 'three';
@@ -92,17 +92,15 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
     return [uvArray, sizesArray];
   }, [gpgpu.size, geometries.base.count]);
 
-  useFrame((state, delta) => {
+  // Handle non-frame-dependent uniforms
+  useEffect(() => {
     if (!materialRef.current) return;
 
-    materialRef.current.uniforms.uTime.value = state.clock.elapsedTime;
-    materialRef.current.uniforms.uDeltaTime.value = delta;
     materialRef.current.uniforms.uAverageAmplitude.value = averageAmplitude;
-    materialRef.current.uniforms.uSoundPlaying.value = isPlaying;
     materialRef.current.uniforms.uColor.value.set(materialParams.color);
     materialRef.current.uniforms.uSurfaceColor.value.set(materialParams.surfaceColor);
     materialRef.current.uniforms.uParticlesTexture.value = particlesTexture.current;
-  });
+  }, [averageAmplitude, materialParams.color, materialParams.surfaceColor, particlesTexture]);
 
   return (
     <Points ref={pointsRef} limit={geometries.base.count} range={geometries.base.count}>

@@ -264,6 +264,12 @@ export default function useGPGPU(
     gpgpu.particlesVariable.material.uniforms.uStarted.value = audio.sound?.started ?? false;
     gpgpu.particlesVariable.material.uniforms.uMicActive.value = audio.isMicActive;
 
+    if (particlesRef.current?.material) {
+      particlesRef.current.material.uniforms.uSoundPlaying.value = audio.isPlaying;
+      particlesRef.current.material.uniforms.uTime.value = state.clock.elapsedTime;
+      particlesRef.current.material.uniforms.uDeltaTime.value = delta;
+    }
+
     // 2. Process audio data
     if (gpgpu.essentiaData) {
       audioManager.processAudioData(gpgpu, particlesRef);
