@@ -92,10 +92,18 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
     return [uvArray, sizesArray];
   }, [gpgpu.size, geometries.base.count]);
 
-  // Handle non-frame-dependent uniforms
+  // Resolution updates (less frequent)
   useEffect(() => {
     if (!materialRef.current) return;
+    materialRef.current.uniforms.uResolution.value.set(
+      size.width * viewport.dpr,
+      size.height * viewport.dpr
+    );
+  }, [size, viewport]);
 
+  // Material updates (more frequent)
+  useEffect(() => {
+    if (!materialRef.current) return;
     materialRef.current.uniforms.uAverageAmplitude.value = averageAmplitude;
     materialRef.current.uniforms.uColor.value.set(materialParams.color);
     materialRef.current.uniforms.uSurfaceColor.value.set(materialParams.surfaceColor);
@@ -125,7 +133,6 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
         transparent
         depthWrite={false}
         blending={THREE.AdditiveBlending}
-        uResolution={new THREE.Vector2(size.width * viewport.dpr, size.height * viewport.dpr)}
       />
     </points>
   );
