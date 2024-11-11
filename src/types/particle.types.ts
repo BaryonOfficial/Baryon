@@ -51,6 +51,7 @@ export interface ParticlesProps {
   gpgpu: GPGPUComputation
   particlesTexture?: React.MutableRefObject<THREE.Texture | null>
   geometries: ParticleGeometries
+  parameters: ParticleParameters
 } 
 
 export interface LogoGeometry {
