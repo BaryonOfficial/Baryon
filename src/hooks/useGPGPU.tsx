@@ -5,6 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useControls } from 'leva';
 import { audioManager } from '@/audio/audioManager';
 import { createTimeHandler } from '@/utils/timeHandler';
+import { useAudioStore } from '@/store/audioStore';
 
 // Import types
 import type { GPGPUReturn, GPGPUComputation, GPGPUShaderUniforms } from '@/types/gpgpu.types';
@@ -27,7 +28,7 @@ export default function useGPGPU(
 ): GPGPUReturn {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
-  const audio = audioManager.getAudio();
+  const { isPlaying, isMicActive, sound, fftSize, sampleRate, capacity, data } = useAudioStore();
   const timeHandler = createTimeHandler();
 
   const audioDataTextureRef = useRef<THREE.Texture | null>(null);
@@ -83,7 +84,7 @@ export default function useGPGPU(
 
     // gpgpu variables
     const format = gl.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
-    let essentiaData = new Float32Array(audio.capacity);
+    let essentiaData = new Float32Array(capacity);
 
     /**
      * Create all textures first
@@ -125,26 +126,20 @@ export default function useGPGPU(
     const uniforms: GPGPUShaderUniforms = {
       audioDataUniforms: {
         tPitches: {
-          value: new THREE.DataTexture(
-            essentiaData,
-            audio.capacity,
-            1,
-            THREE.RedFormat,
-            THREE.FloatType
-          ),
+          value: new THREE.DataTexture(essentiaData, capacity, 1, THREE.RedFormat, THREE.FloatType),
         },
         tDataArray: {
-          value: new THREE.DataTexture(audio.data, audio.fftSize / 2, 1, format),
+          value: new THREE.DataTexture(data, fftSize / 2, 1, format),
         },
         uRadius: new THREE.Uniform(parameters.radius),
-        sampleRate: new THREE.Uniform(audio.sampleRate),
-        bufferSize: new THREE.Uniform(audio.fftSize),
-        capacity: new THREE.Uniform(audio.capacity),
+        sampleRate: new THREE.Uniform(sampleRate),
+        bufferSize: new THREE.Uniform(fftSize),
+        capacity: new THREE.Uniform(capacity),
       },
       scalarFieldUniforms: {
         uRadius: new THREE.Uniform(parameters.radius),
         uBase: new THREE.Uniform(particlesForComputation),
-        capacity: new THREE.Uniform(audio.capacity),
+        capacity: new THREE.Uniform(capacity),
       },
       zeroPointsUniforms: {
         uThreshold: new THREE.Uniform(parameters.threshold),
@@ -163,11 +158,11 @@ export default function useGPGPU(
         uBase: new THREE.Uniform(baryonLogoTexture),
         uAverageAmplitude: new THREE.Uniform(0.0),
         uParticleSpeed: new THREE.Uniform(32),
-        uStarted: new THREE.Uniform(audio.sound?.started ?? false),
+        uStarted: new THREE.Uniform(sound?.started ?? false),
         uParticleMovementType: new THREE.Uniform(1),
         uRadius: new THREE.Uniform(parameters.radius),
         uDistanceThreshold: new THREE.Uniform(0.5),
-        uMicActive: new THREE.Uniform(audio.isMicActive),
+        uMicActive: new THREE.Uniform(isMicActive),
       },
     };
 
@@ -267,7 +262,7 @@ export default function useGPGPU(
     if (!gpgpu) return;
 
     // Get adjusted time values
-    const { time, deltaTime } = timeHandler.handleTime(clock.elapsedTime, delta, audio);
+    const { time, deltaTime } = timeHandler.handleTime(clock.elapsedTime, delta);
 
     if (debugMode && debugPlanes.length && gpgpu) {
       debugPlanes.forEach((plane) => {
@@ -280,11 +275,12 @@ export default function useGPGPU(
     // Update time-based uniforms with adjusted values
     gpgpu.particlesVariable.material.uniforms.uTime.value = time;
     gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
-    gpgpu.particlesVariable.material.uniforms.uStarted.value = audio.sound?.started ?? false;
-    gpgpu.particlesVariable.material.uniforms.uMicActive.value = audio.isMicActive;
+    gpgpu.particlesVariable.material.uniforms.uStarted.value = sound?.started ?? false;
+    gpgpu.particlesVariable.material.uniforms.uMicActive.value = isMicActive;
 
     if (particlesRef.current?.material) {
-      particlesRef.current.material.uniforms.uSoundPlaying.value = audio.isPlaying;
+      console.log('isPlaying', isPlaying);
+      particlesRef.current.material.uniforms.uSoundPlaying.value = isPlaying;
       particlesRef.current.material.uniforms.uTime.value = time;
       particlesRef.current.material.uniforms.uDeltaTime.value = deltaTime;
     }

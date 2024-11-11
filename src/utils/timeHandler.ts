@@ -1,6 +1,5 @@
-import * as THREE from 'three'
 import { useRef } from 'react'
-import type { AudioManagerState } from '@/types/audio.types'
+import { useAudioStore } from '@/store/audioStore'
 
 interface TimeState {
   time: number
@@ -13,22 +12,22 @@ interface TimeRefs {
 
 export function createTimeHandler() {
   const lastKnownTimeRef = useRef(0)
+  const { isPlaying, isMicActive, sound } = useAudioStore()
 
   function handleTime(
     elapsedTime: number, 
-    delta: number, 
-    audio: AudioManagerState
+    delta: number
   ): TimeState {
-    if (audio.sound?.started && !audio.isPlaying) return {
+    if (sound?.started && !isPlaying && !isMicActive) return {
       time: lastKnownTimeRef.current,
       deltaTime: 0
     }
 
-    if (audio.isPlaying && audio.sound?.started) {
-      lastKnownTimeRef.current = audio.sound.context.currentTime ?? elapsedTime
+    if ((isPlaying || isMicActive) && sound?.started) {
+      lastKnownTimeRef.current = sound.context.currentTime ?? elapsedTime
       return {
         time: lastKnownTimeRef.current,
-        deltaTime: audio.sound.listener.timeDelta ?? delta
+        deltaTime: sound.listener.timeDelta ?? delta
       }
     }
 
