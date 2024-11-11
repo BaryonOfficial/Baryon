@@ -3,7 +3,6 @@ import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRe
 import { useLayoutEffect, useMemo, useRef, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useControls } from 'leva';
-import { audioManager } from '@/audio/audioManager';
 import { createTimeHandler } from '@/utils/timeHandler';
 import { useAudioStore } from '@/store/audioStore';
 
@@ -280,7 +279,6 @@ export default function useGPGPU(
     gpgpu.particlesVariable.material.uniforms.uMicActive.value = isMicActive;
 
     if (particlesRef.current?.material) {
-      console.log('isPlaying', isPlaying);
       particlesRef.current.material.uniforms.uSoundPlaying.value = isPlaying;
       particlesRef.current.material.uniforms.uTime.value = time;
       particlesRef.current.material.uniforms.uDeltaTime.value = deltaTime;

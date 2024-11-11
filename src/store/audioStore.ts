@@ -13,6 +13,7 @@ export const useAudioStore = create<AudioStore>((set) => ({
     try {
       const fileURL = URL.createObjectURL(file)
       await audioManager.loadAudio(fileURL)
+      // Just use the original filename, let CSS handle truncation
       set({ fileName: file.name, isAudioLoaded: true, isPlaying: false })
     } catch (error) {
       console.error('Error loading audio:', error)
