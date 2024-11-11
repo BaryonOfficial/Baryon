@@ -59,11 +59,15 @@ export interface AudioActions {
   toggleMic: () => Promise<void>
   resumeAudioContext: () => Promise<void>
   setIsPlaying: (isPlaying: boolean) => void
+  processAudioData: (
+    gpgpu: GPGPUComputation,
+    particlesRef: React.RefObject<ParticlesRef>
+  ) => void
 }
 
 export interface AudioInitializerProps {
   gpgpu: GPGPUComputation | null
-  particles: ParticlesRef
+  particles: React.RefObject<ParticlesRef>
 }
 
 export type AudioStore = AudioManagerState & AudioActions & {

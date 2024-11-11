@@ -28,7 +28,8 @@ export default function useGPGPU(
 ): GPGPUReturn {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
-  const { isPlaying, isMicActive, sound, fftSize, sampleRate, capacity, data } = useAudioStore();
+  const { isPlaying, isMicActive, sound, fftSize, sampleRate, capacity, data, processAudioData } =
+    useAudioStore();
   const timeHandler = createTimeHandler();
 
   const audioDataTextureRef = useRef<THREE.Texture | null>(null);
@@ -287,7 +288,7 @@ export default function useGPGPU(
 
     // 2. Process audio data
     if (gpgpu.essentiaData) {
-      audioManager.processAudioData(gpgpu, particlesRef);
+      processAudioData(gpgpu, particlesRef);
     }
 
     // 3. Compute GPGPU textures

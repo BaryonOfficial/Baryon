@@ -21,7 +21,7 @@ export default function Experience() {
       <OrbitControls enableDamping dampingFactor={0.05} />
       {gpgpu && (
         <>
-          <AudioInitializer gpgpu={gpgpu} particles={particlesRef.current!} />
+          <AudioInitializer />
           <Particles ref={particlesRef} gpgpu={gpgpu} geometries={geometries} />
         </>
       )}

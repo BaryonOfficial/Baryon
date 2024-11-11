@@ -2,9 +2,8 @@ import { useThree } from '@react-three/fiber';
 import { useEffect } from 'react';
 import { audioManager } from '@/audio/audioManager';
 import { useAudioStore } from '@/store/audioStore';
-import type { AudioInitializerProps } from '@/types/audio.types';
 
-export function AudioInitializer({ gpgpu, particles }: AudioInitializerProps) {
+export function AudioInitializer() {
   const { camera } = useThree();
   const { setIsPlaying } = useAudioStore();
 
