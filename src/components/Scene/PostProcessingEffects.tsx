@@ -9,7 +9,7 @@ interface EffectsProps {
   bloomThreshold?: number;
 }
 
-export function Effects({
+export function PostProcessingEffects({
   bloomStrength = 0.36,
   bloomRadius = -2.0,
   bloomThreshold = 0.4,

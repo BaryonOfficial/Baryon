@@ -1,30 +1,26 @@
 import { OrbitControls } from '@react-three/drei';
-import Particles from './Particles';
 import { useRef } from 'react';
 import { ParticlesRef } from '@/types/particle.types';
 import useGPGPU from '@/hooks/useGPGPU';
 import { AudioInitializer } from './AudioInitializer';
-import { useAudioStore } from '@/store/audioStore';
-import { useParticleParameters } from '@/utils/particleConfig';
-import { useParticleGeometries } from '@/hooks/useParticleGeometries';
-import { Effects as PostProcessingEffects } from './Effects';
+import { useParticleParameters } from '@/hooks/particles/useParticleParameters';
+import { useParticleGeometries } from '@/hooks/particles/useParticleGeometries';
+import { PostProcessingEffects } from './PostProcessingEffects';
+import Particles from './Particles';
 
-export default function Experience() {
+export function SceneContent() {
   const particlesRef = useRef<ParticlesRef>(null);
-
   const parameters = useParticleParameters();
   const geometries = useParticleGeometries(parameters);
   const { gpgpu } = useGPGPU(parameters, geometries, particlesRef);
 
+  if (!gpgpu) return null;
+
   return (
     <>
       <OrbitControls enableDamping dampingFactor={0.05} />
-      {gpgpu && (
-        <>
-          <AudioInitializer />
-          <Particles ref={particlesRef} gpgpu={gpgpu} geometries={geometries} />
-        </>
-      )}
+      <AudioInitializer />
+      <Particles ref={particlesRef} gpgpu={gpgpu} geometries={geometries} />
       <PostProcessingEffects />
     </>
   );

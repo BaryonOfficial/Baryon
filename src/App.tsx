@@ -1,16 +1,16 @@
 import React from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
-import Scene from './components/Scene/Scene';
+import { Scene } from './components/Scene';
 import './App.css';
 
 function App() {
   return (
-    <div className="app">
+    <main className="relative w-full h-screen overflow-hidden bg-black">
       <Scene />
       <Analytics />
       <SpeedInsights />
-    </div>
+    </main>
   );
 }
 
