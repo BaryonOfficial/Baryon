@@ -14,7 +14,7 @@ export default function Experience() {
 
   const parameters = useParticleParameters();
   const geometries = useParticleGeometries(parameters);
-  const { gpgpu, particlesTexture } = useGPGPU(parameters, geometries, particlesRef);
+  const { gpgpu } = useGPGPU(parameters, geometries, particlesRef);
 
   return (
     <>
