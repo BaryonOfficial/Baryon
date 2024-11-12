@@ -64,8 +64,12 @@ export const useAudioStore = create<AudioStore>((set) => ({
     set({ isPlaying })
   },
 
-  processAudioData: (gpgpu: GPGPUComputation, particlesRef: React.RefObject<ParticlesRef>) => {
-    audioManager.processAudioData(gpgpu, particlesRef)
+  processAudioData: (
+    gpgpu: GPGPUComputation,
+    particlesRef: React.RefObject<ParticlesRef>,
+    showDebug?: boolean
+  ) => {
+    audioManager.processAudioData(gpgpu, particlesRef, showDebug)
   }
 
 }))

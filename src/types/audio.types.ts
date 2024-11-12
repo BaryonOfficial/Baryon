@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { GPGPUComputation } from "./gpgpu.types"
 import { ParticlesRef } from "./particle.types"
+import { AudioManager } from '@/audio/audioManager'
+
 
 // Core audio state interface
 export interface AudioManagerState {
@@ -9,10 +11,10 @@ export interface AudioManagerState {
   isMicActive: boolean
   isAudioContextRunning: boolean
   isWorkletReady: boolean
-  fftSize: number        
-  sampleRate: number     
+  fftSize: number
+  sampleRate: number
   averageAmplitude: number
-  capacity: number        
+  capacity: number
   analyser: THREE.AudioAnalyser | null
   audioCtx: AudioContext | null
   sound: THREE.Audio | null
@@ -58,10 +60,7 @@ export interface AudioActions {
   toggleMic: () => Promise<void>
   resumeAudioContext: () => Promise<void>
   setIsPlaying: (isPlaying: boolean) => void
-  processAudioData: (
-    gpgpu: GPGPUComputation,
-    particlesRef: React.RefObject<ParticlesRef>
-  ) => void
+  processAudioData: typeof AudioManager.prototype.processAudioData
 }
 
 export interface AudioInitializerProps {

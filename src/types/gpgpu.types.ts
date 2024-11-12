@@ -1,16 +1,15 @@
 import * as THREE from 'three'
 import { GPUComputationRenderer, Variable } from 'three/examples/jsm/misc/GPUComputationRenderer.js'
-import type { ParticleParameters, ParticleGeometries } from '@/types/particle.types'
 
 export interface GPGPUComputation {
-    computation: GPUComputationRenderer
-    audioDataVariable: Variable
-    scalarFieldVariable: Variable
-    zeroPointsVariable: Variable
-    particlesVariable: Variable
-    essentiaData: Float32Array
-    size: number
-  }
+  computation: GPUComputationRenderer
+  audioDataVariable: Variable
+  scalarFieldVariable: Variable
+  zeroPointsVariable: Variable
+  particlesVariable: Variable
+  essentiaData: Float32Array
+  size: number
+}
 
 export interface GPGPUReturn {
   audioDataTexture: React.MutableRefObject<THREE.Texture | null>

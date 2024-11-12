@@ -290,19 +290,8 @@ export default function useGPGPU(
     }
 
     // 2. Process audio data with debug logging
-    if (gpgpu.essentiaData) {
-      processAudioData(gpgpu, particlesRef);
-
-      if (showAudioDebug) {
-        console.log('Audio Data:', {
-          averageAmplitude: gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value,
-          // Frequency data (FFT)
-          tDataArray: Array.from(
-            gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data
-          ),
-          tPitches: Array.from(gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data),
-        });
-      }
+    if (gpgpu) {
+      processAudioData(gpgpu, particlesRef, showAudioDebug);
     }
 
     // 3. Compute GPGPU textures

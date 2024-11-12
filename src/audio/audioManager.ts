@@ -287,62 +287,72 @@ export class AudioManager {
     return data.some(value => value > 0)
   }
 
-  private combineFrequencyData(
-    freqData1: Uint8Array,
-    freqData2: Uint8Array
-  ): Uint8Array {
-    // Placeholder for a more complex frequency data combining logic
-    return freqData1.map((value, index) =>
-      Math.sqrt(value * value + freqData2[index] * freqData2[index])
-    );
+  private combineFrequencyData(freqData1: Uint8Array, freqData2: Uint8Array): Uint8Array {
+    // Pre-allocate the result array for better performance
+    const result = new Uint8Array(freqData1.length)
+    for (let i = 0; i < freqData1.length; i++) {
+      result[i] = Math.sqrt(freqData1[i] ** 2 + freqData2[i] ** 2)
+    }
+    return result
   }
 
   private audioAnalysis(): AudioAnalysisResult {
-    let avgAmplitude = 0;
-    let inputFileAmplitude = 0;
-    let micAmplitude = 0;
+    const soundIsActive = this.audioObject.sound?.isPlaying ?? false
+    const micIsActive = this.audioObject.gumStream?.active ?? false
 
-    const soundIsActive = this.audioObject.sound?.isPlaying ?? false;
-    const micIsActive = this.audioObject.gumStream?.active ?? false;
+    // Get sound data if active
+    const inputFileData = soundIsActive && this.audioObject.analyser ? {
+      amplitude: this.audioObject.analyser.getAverageFrequency(),
+      freq: this.audioObject.analyser.getFrequencyData()
+    } : null
 
-    if (soundIsActive && this.audioObject.analyser) {
-      inputFileAmplitude = this.audioObject.analyser.getAverageFrequency();
-      this.inputFileFreqData = this.audioObject.analyser.getFrequencyData();
+    // Get mic data if active
+    const micData = micIsActive && this.audioObject.micAnalyser ? {
+      amplitude: this.audioObject.micAnalyser.getAverageFrequency(),
+      freq: this.audioObject.micAnalyser.getFrequencyData()
+    } : null
+
+    // Calculate final values
+    if (inputFileData && micData) {
+      const avgAmplitude = Math.sqrt(inputFileData.amplitude ** 2 + micData.amplitude ** 2)
+      this.finalFreqData = this.combineFrequencyData(inputFileData.freq, micData.freq)
+      return { avgAmplitude, freqData: this.finalFreqData }
     }
 
-    if (micIsActive && this.audioObject.micAnalyser) {
-      micAmplitude = this.audioObject.micAnalyser.getAverageFrequency();
-      this.micFreqData = this.audioObject.micAnalyser.getFrequencyData();
+    // Single source handling
+    const activeData = inputFileData || micData!
+    this.finalFreqData.set(activeData.freq)
+    return {
+      avgAmplitude: activeData.amplitude,
+      freqData: this.finalFreqData
     }
-
-    if (soundIsActive && micIsActive) {
-      // Combine amplitudes more realistically based on energy
-      avgAmplitude = Math.sqrt(inputFileAmplitude * inputFileAmplitude + micAmplitude * micAmplitude);
-
-      // Combine frequency data considering phase and magnitude
-      this.finalFreqData = this.combineFrequencyData(this.inputFileFreqData, this.micFreqData);
-    } else if (soundIsActive) {
-      avgAmplitude = inputFileAmplitude
-      this.finalFreqData.set(this.inputFileFreqData)
-    } else if (micIsActive) {
-      avgAmplitude = micAmplitude
-      this.finalFreqData.set(this.micFreqData)
-    }
-
-    // console.log('Input File Data - Amplitude:', inputFileAmplitude);
-    // console.log('Input File Data - Frequency Data:', inputFileFreqData);
-    // console.log('Mic Data - Amplitude:', micAmplitude);
-    // console.log('Mic Data - Frequency Data:', micFreqData);
-    // console.log('Final Avg Amplitude:', avgAmplitude);
-    // console.log('Final Frequency Data:', freqData);
-
-    return { avgAmplitude, freqData: this.finalFreqData }
   }
 
   public processAudioData(
     gpgpu: GPGPUComputation,
     particlesRef: React.RefObject<ParticlesRef>,
+    showDebug = false
   ): void {
+    const soundIsActive = this.audioObject.sound?.isPlaying ?? false
+    const micIsActive = this.audioObject.gumStream?.active ?? false
+    const soundIsStopped = !this.audioObject.sound?.started ?? true
+
+    // Reset when both sources are inactive AND sound is stopped
+    if (!soundIsActive && !micIsActive && soundIsStopped) {
+      gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data.fill(0)
+      gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.fill(0)
+      gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true
+      gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true
+      gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = 0
+      gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = 0
+      particlesRef.current?.updateUniforms({ uAverageAmplitude: 0 })
+      return
+    }
+
+    // Only process audio if there's an active source
+    if (!soundIsActive && !micIsActive) return
+
+    // Process audio data only when active
     if (this.audioObject.audioReader?.available_read() >= 1) {
       const read = this.audioObject.audioReader.dequeue(gpgpu.essentiaData)
       if (read !== 0) {
@@ -350,28 +360,27 @@ export class AudioManager {
       }
     }
 
-    const soundIsActive = this.audioObject.sound?.isPlaying ?? false
-    const micIsActive = this.audioObject.gumStream?.active ?? false
+    const { avgAmplitude, freqData } = this.audioAnalysis()
 
-    if (soundIsActive || micIsActive) {
-      const { avgAmplitude, freqData } = this.audioAnalysis()
+    // Update GPGPU uniforms
+    gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude
+    gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude
+    particlesRef.current?.updateUniforms({ uAverageAmplitude: avgAmplitude })
 
-      // Update GPGPU uniforms
-      gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude
-      gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude
-      particlesRef.current?.updateUniforms({ uAverageAmplitude: avgAmplitude })
+    gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(freqData)
+    gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true
 
-      // freqData is already normalized Float32Array
-      gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(freqData)
-      gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true
-    } else if (!soundIsActive && !micIsActive && !this.audioObject.sound?.started) {
-      // Reset all values when no audio is playing
-      gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = 0
-      gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = 0
-      particlesRef.current?.updateUniforms({ uAverageAmplitude: 0 })
-
-      gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(0);
-      gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true;
+    // Debug logging
+    if (showDebug) {
+      console.log('Audio Data:', {
+        averageAmplitude: gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value,
+        tDataArray: Array.from(
+          gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data
+        ),
+        tPitches: Array.from(
+          gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data
+        ),
+      })
     }
   }
 
