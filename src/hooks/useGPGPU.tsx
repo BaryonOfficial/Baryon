@@ -8,7 +8,7 @@ import { useAudioStore } from '@/store/audioStore';
 
 // Import types
 import type { GPGPUReturn, GPGPUComputation, GPGPUShaderUniforms } from '@/types/gpgpu.types';
-import type { ParticleParameters, ParticleGeometries, ParticlesRef } from '@/types/particle.types';
+import type { ParticleGeometries, ParticlesRef } from '@/types/particle.types';
 
 //Import Shaders
 import audioDataShader from '../shaders/gpgpu/audioData.glsl';
@@ -17,10 +17,6 @@ import zeroPointsShader from '../shaders/gpgpu/zeroPoints.glsl';
 import gpgpuParticlesShader from '../shaders/gpgpu/particles.glsl';
 
 import { useParticleSettings } from './particles/useParticleSettings';
-
-// Add at the top of your file, outside the hook
-let initCount = 0;
-let totalMemoryUsed = 0;
 
 export default function useGPGPU(
   { parameters, settings }: ReturnType<typeof useParticleSettings>,
@@ -39,12 +35,6 @@ export default function useGPGPU(
   const particlesTextureRef = useRef<THREE.Texture | null>(null);
 
   const gpgpu = useMemo<GPGPUComputation | null>(() => {
-    // initCount++;
-    // const startMemory = performance?.memory?.usedJSHeapSize ?? 0;
-
-    // console.log(`\n=== GPGPU Initialization #${initCount} ===`);
-    // console.log('Starting memory:', (startMemory / 1024 / 1024).toFixed(2) + 'MB');
-
     const size = Math.ceil(Math.sqrt(geometries.base.count));
     const computation = new GPUComputationRenderer(size, size, gl);
 
