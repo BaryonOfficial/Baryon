@@ -3,23 +3,23 @@ import { GPGPUComputation } from "./gpgpu.types"
 import { ParticlesRef } from "./particle.types"
 import { AudioManager } from '@/audio/audioManager'
 
-
-// Core audio state interface
-export interface AudioManagerState {
-  isPlaying: boolean
-  isAudioLoaded: boolean
-  isMicActive: boolean
-  isAudioContextRunning: boolean
-  isWorkletReady: boolean
-  fftSize: number
-  sampleRate: number
-  averageAmplitude: number
-  capacity: number
-  analyser: THREE.AudioAnalyser | null
-  audioCtx: AudioContext | null
-  sound: THREE.Audio | null
-  data: Uint8Array
+// Add custom error types
+export class AudioManagerError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AudioManagerError'
+  }
 }
+
+export class AudioWorkletError extends AudioManagerError {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AudioWorkletError'
+  }
+}
+
+// Define the return type based on the actual implementation
+export type AudioManagerState = ReturnType<typeof AudioManager.prototype.getAudio>
 
 // Internal audio manager types
 export interface AudioObject {

@@ -2,27 +2,15 @@ import * as THREE from 'three'
 import { Camera } from '@react-three/fiber'
 import type { ParticlesRef } from '@/types/particle.types'
 import type { GPGPUComputation } from '@/types/gpgpu.types'
+import {
+  AudioManagerError,
+  AudioWorkletError
+} from '@/types/audio.types'
 import type {
   AudioObject,
-  AudioManagerState,
   AudioAnalysisResult,
-  AudioWorkletOptions
+  AudioWorkletOptions,
 } from '@/types/audio.types'
-
-// Add custom error types
-class AudioManagerError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'AudioManagerError'
-  }
-}
-
-class AudioWorkletError extends AudioManagerError {
-  constructor(message: string) {
-    super(message)
-    this.name = 'AudioWorkletError'
-  }
-}
 
 export class AudioManager {
   private audioObject: AudioObject
