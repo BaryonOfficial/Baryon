@@ -266,7 +266,7 @@ export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeomet
     })
   );
   gpgpu.audioDebug.visible = mode;
-  gpgpu.audioDebug.position.x = -4;
+  gpgpu.audioDebug.position.x = -7;
   gpgpu.audioDebug.position.y = 2;
 
   gpgpu.scalarFieldDebug = new THREE.Mesh(
@@ -276,8 +276,8 @@ export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeomet
     })
   );
   gpgpu.scalarFieldDebug.visible = mode;
-  gpgpu.scalarFieldDebug.position.x = -4;
-  gpgpu.scalarFieldDebug.position.y = 1;
+  gpgpu.scalarFieldDebug.position.x = -7;
+  gpgpu.scalarFieldDebug.position.y = -1;
 
   gpgpu.zeroPointsDebug = new THREE.Mesh(
     new THREE.PlaneGeometry(3, 3), // The size of the plane can be adjusted as needed
@@ -287,7 +287,7 @@ export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeomet
   );
   gpgpu.zeroPointsDebug.visible = mode;
   gpgpu.zeroPointsDebug.position.x = -4;
-  gpgpu.zeroPointsDebug.position.y = -1;
+  gpgpu.zeroPointsDebug.position.y = 2;
 
   gpgpu.particlesDebug = new THREE.Mesh(
     new THREE.PlaneGeometry(3, 3),
@@ -297,7 +297,7 @@ export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeomet
   );
   gpgpu.particlesDebug.visible = mode;
   gpgpu.particlesDebug.position.x = -4;
-  gpgpu.particlesDebug.position.y = -2;
+  gpgpu.particlesDebug.position.y = -1;
 
   if (mode) {
     scene.add(gpgpu.audioDebug);
