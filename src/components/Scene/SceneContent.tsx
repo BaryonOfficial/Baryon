@@ -7,19 +7,13 @@ import { useParticleParameters } from '@/hooks/particles/useParticleParameters';
 import { useParticleGeometries } from '@/hooks/particles/useParticleGeometries';
 import { PostProcessingEffects } from './PostProcessingEffects';
 import Particles from './Particles';
+import { useParticleControls } from '../Controls/LevaControls';
 
-interface SceneContentProps {
-  particleSettings: {
-    color: string;
-    surfaceColor: string;
-    particleSize: number;
-  };
-}
-
-export function SceneContent({ particleSettings }: SceneContentProps) {
+export function SceneContent() {
   const particlesRef = useRef<ParticlesRef>(null);
   const parameters = useParticleParameters();
   const geometries = useParticleGeometries(parameters);
+  const particleSettings = useParticleControls();
   const { gpgpu } = useGPGPU(parameters, geometries, particlesRef);
 
   if (!gpgpu) return null;
