@@ -9,7 +9,6 @@ function App() {
   return (
     <>
       <Leva
-        oneLineLabels
         titleBar={{
           title: 'Controls',
         }}
