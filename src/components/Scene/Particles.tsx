@@ -2,7 +2,6 @@ import { useMemo, useRef, forwardRef, useImperativeHandle, useEffect } from 'rea
 import { useThree, extend, type Object3DNode } from '@react-three/fiber';
 import { shaderMaterial } from '@react-three/drei';
 import * as THREE from 'three';
-import { useControls } from 'leva';
 import { useAudioStore } from '@/store/audioStore';
 
 // Shaders
@@ -44,18 +43,13 @@ declare module '@react-three/fiber' {
 }
 
 const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
-  { gpgpu, geometries, parameters },
+  { gpgpu, geometries, parameters, settings },
   ref
 ) {
   const { size, viewport } = useThree();
   const pointsRef = useRef<THREE.Points>(null);
   const materialRef = useRef<ParticleMaterial>(null);
   const { averageAmplitude } = useAudioStore();
-
-  const materialParams = useControls('Particle Colors', {
-    color: '#0586ff',
-    surfaceColor: '#DEF0FA',
-  });
 
   useImperativeHandle(
     ref,
@@ -105,17 +99,24 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
   useEffect(() => {
     if (!materialRef.current) return;
     materialRef.current.uniforms.uAverageAmplitude.value = averageAmplitude;
-    materialRef.current.uniforms.uColor.value.set(materialParams.color);
-    materialRef.current.uniforms.uSurfaceColor.value.set(materialParams.surfaceColor);
+    materialRef.current.uniforms.uColor.value.set(settings.color);
+    materialRef.current.uniforms.uSurfaceColor.value.set(settings.surfaceColor);
     materialRef.current.uniforms.uParticlesTexture.value = gpgpu.computation.getCurrentRenderTarget(
       gpgpu.particlesVariable
     ).texture;
     materialRef.current.uniforms.uRadius.value = parameters.radius;
-  }, [averageAmplitude, materialParams.color, materialParams.surfaceColor, gpgpu, parameters]);
+    materialRef.current.uniforms.uSize.value = settings.particleSize;
+  }, [averageAmplitude, settings, gpgpu, parameters]);
 
   return (
     <points ref={pointsRef}>
       <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          count={geometries.base.count}
+          array={new Float32Array(geometries.base.count * 3)}
+          itemSize={3}
+        />
         <bufferAttribute
           attach="attributes-aParticlesUv"
           count={uvArray.length / 2}

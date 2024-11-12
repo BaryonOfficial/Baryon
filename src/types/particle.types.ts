@@ -47,12 +47,18 @@ export interface ParticlesRef {
   updateUniforms: (uniforms: { uAverageAmplitude: number }) => void
 }
 
+export interface ParticleSettings {
+  color: string
+  surfaceColor: string
+  particleSize: number
+}
+
 export interface ParticlesProps {
   gpgpu: GPGPUComputation
-  particlesTexture?: React.MutableRefObject<THREE.Texture | null>
   geometries: ParticleGeometries
   parameters: ParticleParameters
-} 
+  settings: ParticleSettings
+}
 
 export interface LogoGeometry {
     instance: THREE.BufferGeometry | null

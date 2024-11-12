@@ -8,33 +8,19 @@ import { useParticleGeometries } from '@/hooks/particles/useParticleGeometries';
 import { PostProcessingEffects } from './PostProcessingEffects';
 import Particles from './Particles';
 
-export function SceneContent() {
+interface SceneContentProps {
+  particleSettings: {
+    color: string;
+    surfaceColor: string;
+    particleSize: number;
+  };
+}
+
+export function SceneContent({ particleSettings }: SceneContentProps) {
   const particlesRef = useRef<ParticlesRef>(null);
   const parameters = useParticleParameters();
   const geometries = useParticleGeometries(parameters);
   const { gpgpu } = useGPGPU(parameters, geometries, particlesRef);
-
-  // Debug logging
-  useEffect(() => {
-    if (particlesRef.current) {
-      console.log('Particles Debug:', {
-        points: particlesRef.current.points,
-        material: particlesRef.current.material,
-        geometries,
-        gpgpu,
-      });
-
-      // Log specific geometry attributes
-      if (particlesRef.current.points) {
-        const geometry = particlesRef.current.points.geometry;
-        console.log('Geometry Attributes:', {
-          uvs: geometry.getAttribute('aParticlesUv'),
-          sizes: geometry.getAttribute('aSize'),
-          vertexCount: geometry.getAttribute('aParticlesUv').count,
-        });
-      }
-    }
-  }, [particlesRef.current, geometries, gpgpu]);
 
   if (!gpgpu) return null;
 
@@ -42,7 +28,13 @@ export function SceneContent() {
     <>
       <OrbitControls enableDamping dampingFactor={0.05} />
       <AudioInitializer />
-      <Particles ref={particlesRef} gpgpu={gpgpu} geometries={geometries} parameters={parameters} />
+      <Particles
+        ref={particlesRef}
+        gpgpu={gpgpu}
+        geometries={geometries}
+        parameters={parameters}
+        settings={particleSettings}
+      />
       <PostProcessingEffects />
     </>
   );
