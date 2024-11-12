@@ -12,7 +12,7 @@ export function SceneContent() {
   const particlesRef = useRef<ParticlesRef>(null);
   const { parameters, settings } = useParticleSettings();
 
-  const geometries = useParticleGeometries(parameters);
+  const geometries = useParticleGeometries(parameters, settings);
 
   const { gpgpu } = useGPGPU({ parameters, settings }, geometries, particlesRef);
 

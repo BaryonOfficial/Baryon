@@ -20,7 +20,8 @@ export function useParticleSettings(): { parameters: ParticleParameters, setting
             color: { value: '#0586ff', label: 'Inner Color' },
             surfaceColor: { value: '#DEF0FA', label: 'Surface Color' },
             particleSize: { value: 0.03, min: 0.001, max: 0.1, step: 0.001, label: 'Particle Size' },
-            rotation: { value: 1.0, min: -3.0, max: 3.0, step: 0.1, label: 'Rotation Speed' }
+            rotation: { value: 1.0, min: -3.0, max: 3.0, step: 0.1, label: 'Rotation Speed' },
+            scale: { value: 0.5, min: 0.1, max: 2, step: 0.1, label: 'Logo Scale' }
         },
         { collapsed: true }
     )

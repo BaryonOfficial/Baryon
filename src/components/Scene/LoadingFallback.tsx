@@ -5,7 +5,7 @@ export function LoadingFallback() {
     <>
       <ambientLight intensity={0.5} />
       <Sphere args={[0.5, 32, 32]}>
-        <meshStandardMaterial color="#ff0000" wireframe />
+        <meshStandardMaterial color="#ffffff" wireframe />
       </Sphere>
     </>
   );

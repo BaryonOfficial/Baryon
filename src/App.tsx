@@ -5,6 +5,12 @@ import { Scene } from './components/Scene';
 import { Leva } from 'leva';
 import './App.css';
 
+const levaTheme = {
+  colors: {
+    highlight1: '#ffffff', // This will change the panel title color
+  },
+};
+
 function App() {
   return (
     <>
@@ -14,6 +20,7 @@ function App() {
         titleBar={{
           title: 'Controls',
         }}
+        theme={levaTheme}
       />
       <main className="relative w-full h-screen overflow-hidden bg-black">
         <Scene />

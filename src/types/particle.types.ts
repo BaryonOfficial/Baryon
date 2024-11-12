@@ -51,6 +51,7 @@ export interface ParticleSettings {
   surfaceColor: string
   particleSize: number
   rotation: number
+  scale: number
 }
 
 export interface ParticlesProps {
