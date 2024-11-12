@@ -98,8 +98,8 @@ export function guiSetup(
     .name('Particle Size');
   aesthetics
     .add(particles.material.uniforms.uRotation, 'value')
-    .min(0)
-    .max(10)
+    .min(-12)
+    .max(12)
     .step(0.001)
     .name('Rotation Speed');
   aesthetics

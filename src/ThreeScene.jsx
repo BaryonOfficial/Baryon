@@ -27,6 +27,7 @@ import { useFullscreen } from './hooks/useFullScreenToggle.jsx';
 
 const ThreeScene = () => {
   const canvasRef = useRef(null);
+  const rotationTime = useRef(0);
   const toggleFullscreen = useFullscreen(canvasRef);
   const guiContainerRef = useRef(null);
 
@@ -297,7 +298,7 @@ const ThreeScene = () => {
     }
 
     // Initialize Stats
-    const stats = new Stats();
+    const stats = Stats();
     stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
     statsRef.current = stats;
 
@@ -352,7 +353,8 @@ const ThreeScene = () => {
         gpgpu.computation.compute();
         updateGPGPUTextures();
 
-        const angle = time * 0.5 * particles.material.uniforms.uRotation.value;
+        rotationTime.current += deltaTime;
+        const angle = rotationTime.current * 0.5 * particles.material.uniforms.uRotation.value;
         rotationMatrix.makeRotationY(-angle);
         particles.points.matrix.copy(rotationMatrix);
         particles.points.matrixAutoUpdate = false;
