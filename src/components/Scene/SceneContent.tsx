@@ -1,9 +1,8 @@
 import { OrbitControls } from '@react-three/drei';
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { ParticlesRef } from '@/types/particle.types';
 import useGPGPU from '@/hooks/useGPGPU';
 import { AudioInitializer } from './AudioInitializer';
-import { useParticleParameters } from '@/hooks/particles/useParticleParameters';
 import { useParticleGeometries } from '@/hooks/particles/useParticleGeometries';
 import { PostProcessingEffects } from './PostProcessingEffects';
 import Particles from './Particles';

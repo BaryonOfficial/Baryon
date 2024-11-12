@@ -80,7 +80,6 @@ export default function useGPGPU(
           geometries.secondary.instance.attributes.position.array[i3 + 2];
         baryonLogoTexture.image.data[i4 + 3] = Math.random();
       }
-      console.log('baryonLogoTexture:', baryonLogoTexture);
     }
 
     // gpgpu variables
