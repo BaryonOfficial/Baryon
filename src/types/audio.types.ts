@@ -37,12 +37,11 @@ export interface AudioObject {
   listener: THREE.AudioListener | null
   audioLoader: THREE.AudioLoader
   isAudioLoaded: boolean
-  normalizedFreqData: Float32Array
 }
 
 export interface AudioAnalysisResult {
   avgAmplitude: number
-  freqData: Float32Array
+  freqData: Uint8Array
 }
 
 export interface AudioWorkletOptions {

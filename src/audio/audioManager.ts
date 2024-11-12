@@ -2,11 +2,11 @@ import * as THREE from 'three'
 import { Camera } from '@react-three/fiber'
 import type { ParticlesRef } from '@/types/particle.types'
 import type { GPGPUComputation } from '@/types/gpgpu.types'
-import type { 
+import type {
   AudioObject,
   AudioManagerState,
   AudioAnalysisResult,
-  AudioWorkletOptions 
+  AudioWorkletOptions
 } from '@/types/audio.types'
 
 // Add custom error types
@@ -26,11 +26,14 @@ class AudioWorkletError extends AudioManagerError {
 
 export class AudioManager {
   private audioObject: AudioObject
+  // Normalized frequency data (0-1 range)
+  private finalFreqData: Uint8Array
+  private inputFileFreqData: Uint8Array
+  private micFreqData: Uint8Array
 
   constructor() {
     this.audioObject = {
       fftSize: 4096,
-      normalizedFreqData: new Float32Array(4096 / 2),
       audioReader: null,
       gain: null,
       essentiaNode: null,
@@ -47,6 +50,12 @@ export class AudioManager {
       audioLoader: new THREE.AudioLoader(),
       isAudioLoaded: false
     }
+
+    // Initialize for normalized values (0-1 range)
+    this.finalFreqData = new Uint8Array(this.audioObject.fftSize / 2)
+    this.inputFileFreqData = new Uint8Array(this.audioObject.fftSize / 2)
+    this.micFreqData = new Uint8Array(this.audioObject.fftSize / 2)
+
   }
 
   public setup(camera: Camera) {
@@ -58,7 +67,7 @@ export class AudioManager {
 
     this.audioObject.audioCtx = this.audioObject.listener.context
     this.audioObject.analyser = new THREE.AudioAnalyser(
-      this.audioObject.sound, 
+      this.audioObject.sound,
       this.audioObject.fftSize
     )
   }
@@ -72,8 +81,8 @@ export class AudioManager {
     this.audioObject.sound.onEnded = () => {
       this.audioObject.sound?.stop()
       if (this.audioObject.sound) this.audioObject.sound.started = false
-      this.audioObject.essentiaNode?.port.postMessage({ 
-        isPlaying: this.audioObject.sound?.isPlaying 
+      this.audioObject.essentiaNode?.port.postMessage({
+        isPlaying: this.audioObject.sound?.isPlaying
       })
       callback()
     }
@@ -99,7 +108,7 @@ export class AudioManager {
             reject(new Error('Audio not initialized'))
             return
           }
-          
+
           this.audioObject.sound.setBuffer(buffer)
           this.audioObject.sound.setLoop(false)
           this.audioObject.sound.setVolume(1.0)
@@ -117,13 +126,13 @@ export class AudioManager {
 
   // Add validation helper
   private validateAudioState(): void {
-    if (!this.audioObject.audioCtx) 
+    if (!this.audioObject.audioCtx)
       throw new AudioManagerError('AudioContext not initialized')
-    
-    if (this.audioObject.audioCtx.state === 'closed') 
+
+    if (this.audioObject.audioCtx.state === 'closed')
       throw new AudioManagerError('AudioContext is closed')
-    
-    if (!this.audioObject.listener) 
+
+    if (!this.audioObject.listener)
       throw new AudioManagerError('AudioListener not initialized')
   }
 
@@ -131,7 +140,7 @@ export class AudioManager {
     try {
       this.validateAudioState()
 
-      if (!this.audioObject.sound) 
+      if (!this.audioObject.sound)
         throw new AudioManagerError('Sound not initialized')
 
       if (this.audioObject.sound.isPlaying) {
@@ -146,15 +155,15 @@ export class AudioManager {
         return false
       }
 
-      this.audioObject.essentiaNode?.port.postMessage({ 
-        isPlaying: this.audioObject.sound.isPlaying 
+      this.audioObject.essentiaNode?.port.postMessage({
+        isPlaying: this.audioObject.sound.isPlaying
       })
-      
+
       return this.audioObject.sound.isPlaying
 
     } catch (error) {
       if (error instanceof AudioManagerError) throw error
-      
+
       throw new AudioManagerError(
         `Playback error: ${error instanceof Error ? error.message : 'Unknown error'}`
       )
@@ -175,8 +184,8 @@ export class AudioManager {
   // Helper method to check audio state
   private isAudioInitialized(): boolean {
     return !!(
-      this.audioObject.sound && 
-      this.audioObject.audioCtx && 
+      this.audioObject.sound &&
+      this.audioObject.audioCtx &&
       this.audioObject.listener
     )
   }
@@ -253,7 +262,7 @@ export class AudioManager {
 
   public stopMicRecordStream(): void {
     this.cleanupMicStream()
-    
+
     this.audioObject.essentiaNode?.port.postMessage({
       isPlaying: this.audioObject.sound?.isPlaying ?? false,
       micActive: false,
@@ -278,65 +287,60 @@ export class AudioManager {
     return data.some(value => value > 0)
   }
 
-  private combineFrequencyData(freqData1: Uint8Array, freqData2: Uint8Array): Float32Array {
-    for (let i = 0; i < freqData1.length; i++) {
-      this.audioObject.normalizedFreqData[i] = Math.sqrt(
-        (freqData1[i] / 255) * (freqData1[i] / 255) + 
-        (freqData2[i] / 255) * (freqData2[i] / 255)
-      )
-    }
-    return this.audioObject.normalizedFreqData
+  private combineFrequencyData(
+    freqData1: Uint8Array,
+    freqData2: Uint8Array
+  ): Uint8Array {
+    // Placeholder for a more complex frequency data combining logic
+    return freqData1.map((value, index) =>
+      Math.sqrt(value * value + freqData2[index] * freqData2[index])
+    );
   }
 
   private audioAnalysis(): AudioAnalysisResult {
-    const soundIsActive = this.audioObject.sound?.isPlaying ?? false
-    const micIsActive = this.audioObject.gumStream?.active ?? false
+    let avgAmplitude = 0;
+    let inputFileAmplitude = 0;
+    let micAmplitude = 0;
 
-    let avgAmplitude = 0
-    let rawFreqData = new Uint8Array(this.audioObject.fftSize)
+    const soundIsActive = this.audioObject.sound?.isPlaying ?? false;
+    const micIsActive = this.audioObject.gumStream?.active ?? false;
 
     if (soundIsActive && this.audioObject.analyser) {
-      avgAmplitude = this.audioObject.analyser.getAverageFrequency()
-      rawFreqData = this.audioObject.analyser.getFrequencyData()
+      inputFileAmplitude = this.audioObject.analyser.getAverageFrequency();
+      this.inputFileFreqData = this.audioObject.analyser.getFrequencyData();
     }
 
     if (micIsActive && this.audioObject.micAnalyser) {
-      const micAmplitude = this.audioObject.micAnalyser.getAverageFrequency()
-      const micFreqData = this.audioObject.micAnalyser.getFrequencyData()
-
-      if (soundIsActive) {
-        avgAmplitude = Math.sqrt(avgAmplitude * avgAmplitude + micAmplitude * micAmplitude)
-        return {
-          avgAmplitude,
-          freqData: this.combineFrequencyData(rawFreqData, micFreqData)
-        }
-      } else {
-        avgAmplitude = micAmplitude
-        rawFreqData = micFreqData
-      }
+      micAmplitude = this.audioObject.micAnalyser.getAverageFrequency();
+      this.micFreqData = this.audioObject.micAnalyser.getFrequencyData();
     }
 
-    // Normalize the raw frequency data
-    const len = rawFreqData.length
-    for (let i = 0; i < len; i += 4) {
-      this.audioObject.normalizedFreqData[i] = rawFreqData[i] / 255
-      this.audioObject.normalizedFreqData[i + 1] = rawFreqData[i + 1] / 255
-      this.audioObject.normalizedFreqData[i + 2] = rawFreqData[i + 2] / 255
-      this.audioObject.normalizedFreqData[i + 3] = rawFreqData[i + 3] / 255
-    }
-    // Handle remaining elements
-    for (let i = len - (len % 4); i < len; i++) {
-      this.audioObject.normalizedFreqData[i] = rawFreqData[i] / 255
+    if (soundIsActive && micIsActive) {
+      // Combine amplitudes more realistically based on energy
+      avgAmplitude = Math.sqrt(inputFileAmplitude * inputFileAmplitude + micAmplitude * micAmplitude);
+
+      // Combine frequency data considering phase and magnitude
+      this.finalFreqData = this.combineFrequencyData(this.inputFileFreqData, this.micFreqData);
+    } else if (soundIsActive) {
+      avgAmplitude = inputFileAmplitude
+      this.finalFreqData.set(this.inputFileFreqData)
+    } else if (micIsActive) {
+      avgAmplitude = micAmplitude
+      this.finalFreqData.set(this.micFreqData)
     }
 
-    return { 
-      avgAmplitude, 
-      freqData: this.audioObject.normalizedFreqData 
-    }
+    // console.log('Input File Data - Amplitude:', inputFileAmplitude);
+    // console.log('Input File Data - Frequency Data:', inputFileFreqData);
+    // console.log('Mic Data - Amplitude:', micAmplitude);
+    // console.log('Mic Data - Frequency Data:', micFreqData);
+    // console.log('Final Avg Amplitude:', avgAmplitude);
+    // console.log('Final Frequency Data:', freqData);
+
+    return { avgAmplitude, freqData: this.finalFreqData }
   }
 
   public processAudioData(
-    gpgpu: GPGPUComputation, 
+    gpgpu: GPGPUComputation,
     particlesRef: React.RefObject<ParticlesRef>,
   ): void {
     if (this.audioObject.audioReader?.available_read() >= 1) {
@@ -351,12 +355,12 @@ export class AudioManager {
 
     if (soundIsActive || micIsActive) {
       const { avgAmplitude, freqData } = this.audioAnalysis()
-      
+
       // Update GPGPU uniforms
       gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude
       gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude
       particlesRef.current?.updateUniforms({ uAverageAmplitude: avgAmplitude })
-      
+
       // freqData is already normalized Float32Array
       gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(freqData)
       gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true
@@ -365,12 +369,9 @@ export class AudioManager {
       gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = 0
       gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = 0
       particlesRef.current?.updateUniforms({ uAverageAmplitude: 0 })
-      
-      this.audioObject.normalizedFreqData.fill(0)
-      gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(
-        this.audioObject.normalizedFreqData
-      )
-      gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true
+
+      gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(0);
+      gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true;
     }
   }
 
@@ -379,10 +380,10 @@ export class AudioManager {
       const texts = await Promise.all(
         files.map(file => fetch(file).then(response => response.text()))
       )
-      
+
       // Add the exports hack at the beginning
       texts.unshift('var exports = {};')
-      
+
       const concatenatedCode = texts.join('\n')
       const blob = new Blob([concatenatedCode], { type: 'application/javascript' })
       return URL.createObjectURL(blob)
@@ -396,7 +397,7 @@ export class AudioManager {
   public async loadAudioWorklet(): Promise<void> {
     try {
       this.validateAudioState()
-      
+
       if (this.audioObject.essentiaNode) {
         console.log('AudioWorkletProcessor is already registered')
         return
@@ -413,7 +414,7 @@ export class AudioManager {
       await this.audioObject.audioCtx!.audioWorklet.addModule(concatenatedCode)
     } catch (error) {
       if (error instanceof AudioManagerError) throw error
-      
+
       throw new AudioWorkletError(
         `Failed to load audio worklet: ${error instanceof Error ? error.message : 'Unknown error'}`
       )
@@ -423,7 +424,7 @@ export class AudioManager {
   public setupAudioGraph(): void {
     try {
       this.validateAudioState()
-      
+
       const { audioCtx } = this.audioObject
       if (!audioCtx) throw new AudioManagerError('AudioContext not initialized')
 
@@ -433,10 +434,10 @@ export class AudioManager {
 
       // Create SharedArrayBuffer using RingBuffer's helper method
       const sab = window.exports.RingBuffer.getStorageForCapacity(
-        this.audioObject.capacity, 
+        this.audioObject.capacity,
         Float32Array
       )
-      
+
       const rb = new window.exports.RingBuffer(sab, Float32Array)
       this.audioObject.audioReader = new window.exports.AudioReader(rb)
 
@@ -477,9 +478,9 @@ export class AudioManager {
 
       // Create and connect gain node
       this.audioObject.gain = audioCtx.createGain()
-      if (!this.audioObject.essentiaNode) 
+      if (!this.audioObject.essentiaNode)
         throw new AudioManagerError('Essentia Node not initialized')
-      
+
       this.audioObject.essentiaNode.connect(this.audioObject.gain)
       console.log('Essentia Node connected to Gain')
 
@@ -487,7 +488,7 @@ export class AudioManager {
       console.log('Gain connected to Destination')
     } catch (error) {
       if (error instanceof AudioManagerError) throw error
-      
+
       throw new AudioManagerError(
         `Failed to setup audio graph: ${error instanceof Error ? error.message : 'Unknown error'}`
       )
@@ -508,7 +509,7 @@ export class AudioManager {
     // Disconnect and cleanup audio nodes
     this.audioObject.essentiaNode?.disconnect()
     this.audioObject.gain?.disconnect()
-    
+
     // Cleanup references
     this.audioObject.essentiaNode = null
     this.audioObject.gain = null
@@ -522,15 +523,15 @@ export class AudioManager {
   } {
     const issues: string[] = []
 
-    if (!this.audioObject.audioCtx) 
+    if (!this.audioObject.audioCtx)
       issues.push('AudioContext not initialized')
-    else if (this.audioObject.audioCtx.state === 'suspended') 
+    else if (this.audioObject.audioCtx.state === 'suspended')
       issues.push('AudioContext is suspended')
-    
-    if (!this.audioObject.listener) 
+
+    if (!this.audioObject.listener)
       issues.push('AudioListener not initialized')
-    
-    if (!this.audioObject.essentiaNode) 
+
+    if (!this.audioObject.essentiaNode)
       issues.push('AudioWorklet not initialized')
 
     return {
