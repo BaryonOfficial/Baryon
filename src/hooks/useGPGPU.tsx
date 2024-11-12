@@ -284,12 +284,20 @@ export default function useGPGPU(
     gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value = scalarTarget.texture;
     gpgpu.particlesVariable.material.uniforms.uZeroPoints.value = zeroTarget.texture;
 
+    // Log texture details
+    console.log('--- Texture Updates ---');
+    console.log('Audio Data:', audioTarget.texture);
+    console.log('ScalarField Data:', scalarTarget.texture);
+    console.log('Zero Points Data:', zeroTarget.texture);
+
     // Update particle material
     if (particlesRef.current?.material) {
       particlesRef.current.material.uniforms.uParticlesTexture.value = particlesTarget.texture;
       particlesRef.current.material.uniforms.uSoundPlaying.value = isPlaying;
       particlesRef.current.material.uniforms.uTime.value = time;
       particlesRef.current.material.uniforms.uDeltaTime.value = deltaTime;
+
+      console.log('Particles Data:', particlesTarget.texture);
     }
 
     // Update rotation
