@@ -106,6 +106,7 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
     ).texture;
     materialRef.current.uniforms.uRadius.value = parameters.radius;
     materialRef.current.uniforms.uSize.value = settings.particleSize;
+    materialRef.current.uniforms.uRotation.value = parameters.rotation;
   }, [averageAmplitude, settings, gpgpu, parameters]);
 
   return (

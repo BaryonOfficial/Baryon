@@ -6,7 +6,8 @@ const DEFAULT_PARAMETERS: ParticleParameters = {
   radius: 3.0,
   threshold: 0.05,
   surfaceThreshold: 0.01,
-  surfaceRatio: 0.33
+  surfaceRatio: 0.33,
+  rotation: 2.5
 }
 
 export function useParticleParameters() {

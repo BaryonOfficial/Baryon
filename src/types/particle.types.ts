@@ -7,6 +7,7 @@ export interface ParticleParameters {
   threshold: number
   surfaceThreshold: number
   surfaceRatio: number
+  rotation: number
 }
 
 export interface ParticleGeometries {
@@ -61,8 +62,8 @@ export interface ParticlesProps {
 }
 
 export interface LogoGeometry {
-    instance: THREE.BufferGeometry | null
-    count: number
-    isLoaded: boolean
-    error?: string
-  }
+  instance: THREE.BufferGeometry | null
+  count: number
+  isLoaded: boolean
+  error?: string
+}

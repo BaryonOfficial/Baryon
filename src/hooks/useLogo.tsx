@@ -2,16 +2,24 @@ import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import type { LogoGeometry } from '@/types/particle.types';
 import { useMemo } from 'react';
+import { useControls } from 'leva';
 
 export function useLogo(): LogoGeometry {
+  const { showDebug } = useControls({
+    showDebug: {
+      value: false,
+      label: 'Logo Debug',
+    },
+  });
+
   useGLTF.setDecoderPath('/draco/');
   const { scene } = useGLTF('/glb/Baryon_v2.glb', true);
 
   return useMemo(() => {
-    console.log('Scene loaded:', scene); // Log 1: Check if scene is loaded
+    if (showDebug) console.log('Scene loaded:', scene);
 
     if (!scene?.children[0]) {
-      console.warn('No children found in scene'); // Log 2: Debug missing children
+      if (showDebug) console.warn('No children found in scene');
       return {
         instance: null,
         count: 0,
@@ -21,7 +29,7 @@ export function useLogo(): LogoGeometry {
     }
 
     const mesh = scene.children[0];
-    console.log('Mesh found:', mesh); // Log 3: Check mesh properties
+    if (showDebug) console.log('Mesh found:', mesh);
 
     if (!(mesh instanceof THREE.Mesh)) {
       return {
@@ -37,7 +45,7 @@ export function useLogo(): LogoGeometry {
       count: mesh.geometry.attributes.position.count,
       isLoaded: true,
     };
-  }, [scene]);
+  }, [scene, showDebug]);
 }
 
 useGLTF.preload('/glb/Baryon_v2.glb');

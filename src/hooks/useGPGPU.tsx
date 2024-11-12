@@ -205,7 +205,13 @@ export default function useGPGPU(
 
   // Debug Planes
   const [debugPlanes, setDebugPlanes] = useState<THREE.Mesh[]>([]);
-  const { debugMode } = useControls({ debugMode: false });
+  const { debugMode } = useControls({ debugMode: { value: false, label: 'Texture Debug' } });
+  const { showAudioDebug } = useControls({
+    showAudioDebug: {
+      value: false,
+      label: 'Audio Debug',
+    },
+  });
 
   useEffect(() => {
     if (!gpgpu) return;
@@ -257,11 +263,6 @@ export default function useGPGPU(
       planes.forEach((plane) => scene.remove(plane));
     };
   }, [gpgpu, scene, debugMode]);
-
-  // Add debug controls
-  const { showAudioDebug } = useControls({
-    showAudioDebug: false,
-  });
 
   useFrame(({ clock }, delta) => {
     if (!gpgpu) return;
