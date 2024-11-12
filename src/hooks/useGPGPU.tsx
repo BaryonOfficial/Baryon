@@ -15,6 +15,7 @@ import audioDataShader from '../shaders/gpgpu/audioData.glsl';
 import scalarFieldShader from '../shaders/gpgpu/scalarField.glsl';
 import zeroPointsShader from '../shaders/gpgpu/zeroPoints.glsl';
 import gpgpuParticlesShader from '../shaders/gpgpu/particles.glsl';
+
 import { useParticleSettings } from './particles/useParticleSettings';
 
 // Add at the top of your file, outside the hook
@@ -196,7 +197,7 @@ export default function useGPGPU(
   }, [gl, parameters, geometries]);
 
   useLayoutEffect(() => {
-    if (!gpgpu?.computation) return;
+    if (!gpgpu) return;
     const error = gpgpu.computation.init();
     if (error !== null) {
       console.error(error);
@@ -232,7 +233,7 @@ export default function useGPGPU(
       })
     );
     scalarFieldDebug.visible = debugMode;
-    scalarFieldDebug.position.set(-4, 1, 0);
+    scalarFieldDebug.position.set(-4, -1, 0);
 
     const zeroPointsDebug = new THREE.Mesh(
       new THREE.PlaneGeometry(3, 3),
@@ -241,7 +242,7 @@ export default function useGPGPU(
       })
     );
     zeroPointsDebug.visible = debugMode;
-    zeroPointsDebug.position.set(-4, -1, 0);
+    zeroPointsDebug.position.set(-1, 2, 0);
 
     const particlesDebug = new THREE.Mesh(
       new THREE.PlaneGeometry(3, 3),
@@ -250,7 +251,7 @@ export default function useGPGPU(
       })
     );
     particlesDebug.visible = debugMode;
-    particlesDebug.position.set(-4, -2, 0);
+    particlesDebug.position.set(-1, -1, 0);
 
     const planes = [audioDebug, scalarFieldDebug, zeroPointsDebug, particlesDebug];
     setDebugPlanes(planes);
@@ -270,7 +271,44 @@ export default function useGPGPU(
     // Get adjusted time values
     const { time, deltaTime } = timeHandler.handleTime(clock.elapsedTime, delta);
 
-    if (debugMode && debugPlanes.length && gpgpu) {
+    // 1. Update time-based uniforms
+    gpgpu.particlesVariable.material.uniforms.uTime.value = time;
+    gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
+    gpgpu.particlesVariable.material.uniforms.uStarted.value = sound?.started ?? false;
+    gpgpu.particlesVariable.material.uniforms.uMicActive.value = isMicActive;
+
+    // 2. Process audio data
+    processAudioData(gpgpu, particlesRef, showAudioDebug);
+
+    // 3. Compute GPGPU textures
+    gpgpu.computation.compute();
+
+    // 4. Update textures in sequence, using ping-pong buffers
+    const audioTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable);
+    const scalarTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable);
+    const zeroTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable);
+    const particlesTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable);
+
+    // Update uniforms with current render targets
+    gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value = audioTarget.texture;
+    gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value = scalarTarget.texture;
+    gpgpu.particlesVariable.material.uniforms.uZeroPoints.value = zeroTarget.texture;
+
+    // Update particle material
+    if (particlesRef.current?.material) {
+      particlesRef.current.material.uniforms.uParticlesTexture.value = particlesTarget.texture;
+      particlesRef.current.material.uniforms.uSoundPlaying.value = isPlaying;
+      particlesRef.current.material.uniforms.uTime.value = time;
+      particlesRef.current.material.uniforms.uDeltaTime.value = deltaTime;
+    }
+
+    // Update rotation
+    if (particlesRef.current?.points) {
+      particlesRef.current.points.rotation.y += settings.rotation * deltaTime;
+    }
+
+    // 5. Update debug planes if needed
+    if (debugMode && debugPlanes.length) {
       debugPlanes.forEach((plane) => {
         if (plane.material instanceof THREE.MeshBasicMaterial) {
           plane.material.map!.needsUpdate = true;
@@ -278,56 +316,11 @@ export default function useGPGPU(
       });
     }
 
-    // Update time-based uniforms with adjusted values
-    gpgpu.particlesVariable.material.uniforms.uTime.value = time;
-    gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
-    gpgpu.particlesVariable.material.uniforms.uStarted.value = sound?.started ?? false;
-    gpgpu.particlesVariable.material.uniforms.uMicActive.value = isMicActive;
-
-    if (particlesRef.current?.material && particlesRef.current?.points) {
-      particlesRef.current.material.uniforms.uSoundPlaying.value = isPlaying;
-      particlesRef.current.material.uniforms.uTime.value = time;
-      particlesRef.current.material.uniforms.uDeltaTime.value = deltaTime;
-      particlesRef.current.points.rotation.y += settings.rotation * deltaTime;
-    }
-
-    // 2. Process audio data with debug logging
-    if (gpgpu) {
-      processAudioData(gpgpu, particlesRef, showAudioDebug);
-    }
-
-    // 3. Compute GPGPU textures
-    gpgpu.computation.compute();
-
-    // 4. Update dependent textures in correct order
-    // Audio -> Scalar -> ZeroPoints -> Particles
-    gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value =
-      gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable).texture;
-
-    gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value =
-      gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture;
-
-    gpgpu.particlesVariable.material.uniforms.uZeroPoints.value =
-      gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture;
-
-    if (particlesRef.current?.material) {
-      particlesRef.current.material.uniforms.uParticlesTexture.value =
-        gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable).texture;
-    }
-
-    // Update texture refs for external use
-    audioDataTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
-      gpgpu.audioDataVariable
-    ).texture;
-    scalarTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
-      gpgpu.scalarFieldVariable
-    ).texture;
-    zeroPointsTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
-      gpgpu.zeroPointsVariable
-    ).texture;
-    particlesTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
-      gpgpu.particlesVariable
-    ).texture;
+    // 6. Store references for external use
+    audioDataTextureRef.current = audioTarget.texture;
+    scalarTextureRef.current = scalarTarget.texture;
+    zeroPointsTextureRef.current = zeroTarget.texture;
+    particlesTextureRef.current = particlesTarget.texture;
   });
 
   return {
