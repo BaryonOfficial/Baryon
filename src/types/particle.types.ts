@@ -7,7 +7,6 @@ export interface ParticleParameters {
   threshold: number
   surfaceThreshold: number
   surfaceRatio: number
-  rotation: number
 }
 
 export interface ParticleGeometries {
@@ -33,7 +32,6 @@ export type ParticleMaterial = THREE.ShaderMaterial & {
     uSurfaceColor: { value: THREE.Color }
     uRadius: { value: number }
     uAverageAmplitude: { value: number }
-    uRotation: { value: number }
     uSoundPlaying: { value: boolean }
   }
 }
@@ -52,6 +50,7 @@ export interface ParticleSettings {
   color: string
   surfaceColor: string
   particleSize: number
+  rotation: number
 }
 
 export interface ParticlesProps {

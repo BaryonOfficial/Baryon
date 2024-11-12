@@ -26,7 +26,6 @@ const ParticlesMaterial = shaderMaterial(
     uSurfaceColor: new THREE.Color('#DEF0FA'),
     uRadius: 3.0,
     uAverageAmplitude: 0.0,
-    uRotation: 2.5,
     uSoundPlaying: false,
   },
   vertexShader,
@@ -106,7 +105,6 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
     ).texture;
     materialRef.current.uniforms.uRadius.value = parameters.radius;
     materialRef.current.uniforms.uSize.value = settings.particleSize;
-    materialRef.current.uniforms.uRotation.value = parameters.rotation;
   }, [averageAmplitude, settings, gpgpu, parameters]);
 
   return (

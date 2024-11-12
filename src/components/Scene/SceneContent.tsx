@@ -7,14 +7,15 @@ import { useParticleParameters } from '@/hooks/particles/useParticleParameters';
 import { useParticleGeometries } from '@/hooks/particles/useParticleGeometries';
 import { PostProcessingEffects } from './PostProcessingEffects';
 import Particles from './Particles';
-import { useParticleControls } from '../Controls/LevaControls';
+import { useParticleSettings } from '@/hooks/particles/useParticleSettings';
 
 export function SceneContent() {
   const particlesRef = useRef<ParticlesRef>(null);
-  const parameters = useParticleParameters();
+  const { parameters, settings } = useParticleSettings();
+
   const geometries = useParticleGeometries(parameters);
-  const particleSettings = useParticleControls();
-  const { gpgpu } = useGPGPU(parameters, geometries, particlesRef);
+
+  const { gpgpu } = useGPGPU({ parameters, settings }, geometries, particlesRef);
 
   if (!gpgpu) return null;
 
@@ -27,7 +28,7 @@ export function SceneContent() {
         gpgpu={gpgpu}
         geometries={geometries}
         parameters={parameters}
-        settings={particleSettings}
+        settings={settings}
       />
       <PostProcessingEffects />
     </>

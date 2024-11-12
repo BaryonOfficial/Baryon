@@ -15,13 +15,14 @@ import audioDataShader from '../shaders/gpgpu/audioData.glsl';
 import scalarFieldShader from '../shaders/gpgpu/scalarField.glsl';
 import zeroPointsShader from '../shaders/gpgpu/zeroPoints.glsl';
 import gpgpuParticlesShader from '../shaders/gpgpu/particles.glsl';
+import { useParticleSettings } from './particles/useParticleSettings';
 
 // Add at the top of your file, outside the hook
 let initCount = 0;
 let totalMemoryUsed = 0;
 
 export default function useGPGPU(
-  parameters: ParticleParameters,
+  { parameters, settings }: ReturnType<typeof useParticleSettings>,
   geometries: ParticleGeometries,
   particlesRef: React.RefObject<ParticlesRef>
 ): GPGPUReturn {
@@ -284,10 +285,11 @@ export default function useGPGPU(
     gpgpu.particlesVariable.material.uniforms.uStarted.value = sound?.started ?? false;
     gpgpu.particlesVariable.material.uniforms.uMicActive.value = isMicActive;
 
-    if (particlesRef.current?.material) {
+    if (particlesRef.current?.material && particlesRef.current?.points) {
       particlesRef.current.material.uniforms.uSoundPlaying.value = isPlaying;
       particlesRef.current.material.uniforms.uTime.value = time;
       particlesRef.current.material.uniforms.uDeltaTime.value = deltaTime;
+      particlesRef.current.points.rotation.y += settings.rotation * deltaTime;
     }
 
     // 2. Process audio data with debug logging
