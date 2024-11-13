@@ -18,6 +18,8 @@ export function SceneContent() {
 
   if (!gpgpu) return null;
 
+  // console.log('gpgpu', gpgpu);
+
   return (
     <>
       <OrbitControls enableDamping dampingFactor={0.05} />

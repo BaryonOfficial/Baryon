@@ -18,6 +18,14 @@ import gpgpuParticlesShader from '../shaders/gpgpu/particles.glsl';
 
 import { useParticleSettings } from './particles/useParticleSettings';
 
+function generateRandomPitches(capacity: number) {
+  const pitches = new Float32Array(capacity);
+  for (let i = 0; i < capacity; i++) {
+    pitches[i] = 200 + Math.random() * 2000;
+  }
+  return pitches;
+}
+
 export default function useGPGPU(
   { parameters, settings }: ReturnType<typeof useParticleSettings>,
   geometries: ParticleGeometries,
@@ -104,6 +112,7 @@ export default function useGPGPU(
 
     const format = gl.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
     const essentiaData = new Float32Array(capacity);
+    const randomPitches = generateRandomPitches(capacity);
 
     // Create typed uniforms object
     const uniforms: GPGPUShaderUniforms = {
@@ -118,6 +127,7 @@ export default function useGPGPU(
         sampleRate: new THREE.Uniform(sampleRate),
         bufferSize: new THREE.Uniform(fftSize),
         capacity: new THREE.Uniform(capacity),
+        uRandomPitches: new THREE.Uniform(randomPitches),
       },
       scalarFieldUniforms: {
         uRadius: new THREE.Uniform(parameters.radius),
@@ -267,6 +277,9 @@ export default function useGPGPU(
     material.uniforms.uSoundPlaying.value = isPlaying;
     material.uniforms.uTime.value = time;
     material.uniforms.uDeltaTime.value = deltaTime;
+
+    const randomPitches = generateRandomPitches(capacity);
+    gpgpu.audioDataVariable.material.uniforms.uRandomPitches.value = randomPitches;
 
     // 3. Process audio data
     processAudioData(gpgpu, particlesRef, showAudioDebug);

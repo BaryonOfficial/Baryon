@@ -24,6 +24,7 @@ export interface GPGPUShaderUniforms {
     bufferSize: UniformValue<number>
     uRadius: UniformValue<number>
     capacity: UniformValue<number>
+    uRandomPitches: UniformValue<Float32Array>
   }
   scalarFieldUniforms: {
     uRadius: UniformValue<number>
