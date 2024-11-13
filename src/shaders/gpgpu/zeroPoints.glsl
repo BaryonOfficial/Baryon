@@ -10,24 +10,22 @@ void main() {
     vec3 position = scalarFieldValue.rgb;
     float scalarValue = scalarFieldValue.a;
     float distance = length(position);
-    // vec3 scaledPosition = position * 0.64;
 
-    // Discard all positions if uAverageAmplitude is 0. This will be a feature to replace the logo with just a dot when there is no amplitude
-    // if(uAverageAmplitude == 0.0) {
-    //     discard;
-    // }
-
+    // Early return for points outside threshold
     if(abs(scalarValue) >= uThreshold) {
         discard;
+        return;
     }
 
+    // Determine if point is on surface
     bool isOnSurface = abs(distance - uRadius) <= uSurfaceThreshold;
 
+    // Output position with type flag (1.0 for surface, 2.0 for volume)
     if(isOnSurface && uSurfaceControl) {
-        gl_FragColor = vec4(position, 1.0); // ZeroPoints on the surface
+        gl_FragColor = vec4(position, 1.0);
     } else if(isOnSurface && !uSurfaceControl) {
-        discard; // Turning off surface particles
+        discard;
     } else {
-        gl_FragColor = vec4(position, 2.0); // ZeroPoint is in the volume
+        gl_FragColor = vec4(position, 2.0);
     }
 }
