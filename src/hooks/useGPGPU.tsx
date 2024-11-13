@@ -47,8 +47,6 @@ export default function useGPGPU(
       baseParticlesTexture.image.data[i4 + 3] = 1.0;
     }
 
-    const particlesForComputation = baseParticlesTexture.clone();
-
     // Logo made out of particles, initial positions
     const baryonLogoTexture = computation.createTexture();
 
@@ -124,7 +122,7 @@ export default function useGPGPU(
       },
       scalarFieldUniforms: {
         uRadius: new THREE.Uniform(parameters.radius),
-        uBase: new THREE.Uniform(particlesForComputation),
+        uBase: new THREE.Uniform(baseParticlesTexture),
         capacity: new THREE.Uniform(capacity),
       },
       zeroPointsUniforms: {

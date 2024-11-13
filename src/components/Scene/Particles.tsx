@@ -112,7 +112,7 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
         <bufferAttribute
           attach="attributes-position"
           count={geometries.base.count}
-          array={new Float32Array(geometries.base.count * 3)}
+          array={geometries.base.positions}
           itemSize={3}
         />
         <bufferAttribute
