@@ -268,10 +268,13 @@ export default function useGPGPU(
     material.uniforms.uTime.value = time;
     material.uniforms.uDeltaTime.value = deltaTime;
 
-    // 3. Process audio data first
+    // 3. Process audio data
     processAudioData(gpgpu, particlesRef, showAudioDebug);
 
-    // 4. Update dependencies before compute
+    // 4. Compute GPGPU
+    gpgpu.computation.compute();
+
+    // 5. Update dependencies after compute
     const audioTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable);
     gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value = audioTarget.texture;
 
@@ -281,15 +284,13 @@ export default function useGPGPU(
     const zeroTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable);
     gpgpu.particlesVariable.material.uniforms.uZeroPoints.value = zeroTarget.texture;
 
-    gpgpu.computation.compute();
-
     const particlesTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable);
     material.uniforms.uParticlesTexture.value = particlesTarget.texture;
 
-    // 5. Update rotation
+    // 6. Update rotation
     points.rotation.y += settings.rotation * deltaTime;
 
-    // 6. Update debug planes if needed
+    // 7. Update debug planes if needed
     if (debugMode && debugPlanes.length) {
       debugPlanes.forEach((plane) => {
         if (plane.material instanceof THREE.MeshBasicMaterial && plane.material.map)
