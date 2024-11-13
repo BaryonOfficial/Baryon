@@ -177,9 +177,14 @@ export default function useGPGPU(
 
   useLayoutEffect(() => {
     if (!gpgpu) return;
-    const error = gpgpu.computation.init();
-    if (error !== null) {
-      console.error(error);
+
+    try {
+      const error = gpgpu.computation.init();
+      if (error !== null) {
+        console.error('GPGPU initialization failed:', error);
+      }
+    } catch (e) {
+      console.error('GPGPU initialization error:', e);
     }
   }, [gpgpu]);
 
