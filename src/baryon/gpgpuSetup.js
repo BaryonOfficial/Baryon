@@ -153,16 +153,10 @@ export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeomet
 
   // Audio Data & Uniforms
   const format = renderer.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
-  let essentiaData = new Float32Array(audioObject.capacity);
+  const essentiaData = new Float32Array(audioObject.capacity);
 
   gpgpu.audioDataVariable.material.uniforms.tPitches = {
-    value: new THREE.DataTexture(
-      essentiaData,
-      audioObject.capacity,
-      1,
-      THREE.RedFormat,
-      THREE.FloatType
-    ),
+    value: new THREE.DataTexture(essentiaData, audioObject.capacity, 1, format, THREE.FloatType),
   };
   gpgpu.audioDataVariable.material.uniforms.tDataArray = {
     value: new THREE.DataTexture(
