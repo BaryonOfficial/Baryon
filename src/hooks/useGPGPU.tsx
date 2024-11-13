@@ -66,10 +66,6 @@ export default function useGPGPU(
       }
     }
 
-    // gpgpu variables
-    const format = gl.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
-    let essentiaData = new Float32Array(capacity);
-
     /**
      * Create all textures first
      */
@@ -106,11 +102,14 @@ export default function useGPGPU(
       particlesTexture
     );
 
+    const format = gl.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
+    let essentiaData = new Float32Array(capacity);
+
     // Create typed uniforms object
     const uniforms: GPGPUShaderUniforms = {
       audioDataUniforms: {
         tPitches: {
-          value: new THREE.DataTexture(essentiaData, capacity, 1, THREE.RedFormat, THREE.FloatType),
+          value: new THREE.DataTexture(essentiaData, capacity, 1, format, THREE.FloatType),
         },
         tDataArray: {
           value: new THREE.DataTexture(data, fftSize / 2, 1, format),
