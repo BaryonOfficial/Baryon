@@ -344,6 +344,7 @@ export class AudioManager {
     if (this.audioObject.audioReader?.available_read() >= 1) {
       const read = this.audioObject.audioReader.dequeue(gpgpu.essentiaData)
       if (read !== 0) {
+        gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data.set(gpgpu.essentiaData)
         gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true
       }
     }

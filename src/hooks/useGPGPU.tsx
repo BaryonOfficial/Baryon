@@ -245,7 +245,13 @@ export default function useGPGPU(
   }, [gpgpu, scene, debugMode]);
 
   useFrame(({ clock }, delta) => {
-    if (!gpgpu || !particlesRef.current) return;
+    // Early returns for all required dependencies
+    if (!gpgpu) return;
+    if (!particlesRef.current?.material?.uniforms) return;
+    if (!particlesRef.current?.points) return;
+
+    // Destructure after validation to ensure type safety
+    const { material, points } = particlesRef.current;
 
     // 1. Time updates
     const { time, deltaTime } = timeHandler.handleTime(clock.elapsedTime, delta);
@@ -256,9 +262,9 @@ export default function useGPGPU(
     gpgpu.particlesVariable.material.uniforms.uStarted.value = sound?.started ?? false;
     gpgpu.particlesVariable.material.uniforms.uMicActive.value = isMicActive;
 
-    particlesRef.current.material.uniforms.uSoundPlaying.value = isPlaying;
-    particlesRef.current.material.uniforms.uTime.value = time;
-    particlesRef.current.material.uniforms.uDeltaTime.value = deltaTime;
+    material.uniforms.uSoundPlaying.value = isPlaying;
+    material.uniforms.uTime.value = time;
+    material.uniforms.uDeltaTime.value = deltaTime;
 
     // 3. Process audio and compute
     processAudioData(gpgpu, particlesRef, showAudioDebug);
@@ -273,16 +279,16 @@ export default function useGPGPU(
     gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value = audioTarget.texture;
     gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value = scalarTarget.texture;
     gpgpu.particlesVariable.material.uniforms.uZeroPoints.value = zeroTarget.texture;
-    particlesRef.current.material.uniforms.uParticlesTexture.value = particlesTarget.texture;
+    material.uniforms.uParticlesTexture.value = particlesTarget.texture;
 
     // 5. Update rotation
-    particlesRef.current.points.rotation.y += settings.rotation * deltaTime;
+    points.rotation.y += settings.rotation * deltaTime;
 
     // 6. Update debug planes if needed
     if (debugMode && debugPlanes.length) {
       debugPlanes.forEach((plane) => {
-        if (plane.material instanceof THREE.MeshBasicMaterial)
-          plane.material.map!.needsUpdate = true;
+        if (plane.material instanceof THREE.MeshBasicMaterial && plane.material.map)
+          plane.material.map.needsUpdate = true;
       });
     }
   });
