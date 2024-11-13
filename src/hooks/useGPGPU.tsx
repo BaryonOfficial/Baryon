@@ -266,19 +266,22 @@ export default function useGPGPU(
     material.uniforms.uTime.value = time;
     material.uniforms.uDeltaTime.value = deltaTime;
 
-    // 3. Process audio and compute
+    // 3. Process audio data first
     processAudioData(gpgpu, particlesRef, showAudioDebug);
+
+    // 4. Update dependencies before compute
+    const audioTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable);
+    gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value = audioTarget.texture;
+
+    const scalarTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable);
+    gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value = scalarTarget.texture;
+
+    const zeroTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable);
+    gpgpu.particlesVariable.material.uniforms.uZeroPoints.value = zeroTarget.texture;
+
     gpgpu.computation.compute();
 
-    // 4. Update uniforms directly from render targets
-    const audioTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable);
-    const scalarTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable);
-    const zeroTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable);
     const particlesTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable);
-
-    gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value = audioTarget.texture;
-    gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value = scalarTarget.texture;
-    gpgpu.particlesVariable.material.uniforms.uZeroPoints.value = zeroTarget.texture;
     material.uniforms.uParticlesTexture.value = particlesTarget.texture;
 
     // 5. Update rotation
