@@ -97,7 +97,6 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
   // Material updates (more frequent)
   useEffect(() => {
     if (!materialRef.current) return;
-    materialRef.current.uniforms.uAverageAmplitude.value = averageAmplitude;
     materialRef.current.uniforms.uColor.value.set(settings.color);
     materialRef.current.uniforms.uSurfaceColor.value.set(settings.surfaceColor);
     materialRef.current.uniforms.uParticlesTexture.value = gpgpu.computation.getCurrentRenderTarget(
