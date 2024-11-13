@@ -103,7 +103,7 @@ export default function useGPGPU(
     );
 
     const format = gl.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
-    let essentiaData = new Float32Array(capacity);
+    const essentiaData = new Float32Array(capacity);
 
     // Create typed uniforms object
     const uniforms: GPGPUShaderUniforms = {
