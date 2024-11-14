@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js';
-import { useLayoutEffect, useMemo, useState, useEffect } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useControls } from 'leva';
 import { createTimeHandler } from '@/utils/timeHandler.ts';
@@ -191,7 +191,7 @@ export default function useGPGPU(
   }, [gpgpu]);
 
   // Debug Planes
-  const [debugPlanes, setDebugPlanes] = useState<THREE.Mesh[]>([]);
+  const debugPlanesRef = useRef<THREE.Mesh[]>([]);
   const { debugMode } = useControls({ debugMode: { value: false, label: 'Texture Debug' } });
   const { showAudioDebug } = useControls({
     showAudioDebug: {
@@ -200,16 +200,16 @@ export default function useGPGPU(
     },
   });
 
-  useEffect(() => {
-    if (!gpgpu) return;
+  useLayoutEffect(() => {
+    if (!gpgpu || !debugMode) return;
 
+    // Create debug planes
     const audioDebug = new THREE.Mesh(
       new THREE.PlaneGeometry(3, 3),
       new THREE.MeshBasicMaterial({
         map: gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable).texture,
       })
     );
-    audioDebug.visible = debugMode;
     audioDebug.position.set(-4, 2, 0);
 
     const scalarFieldDebug = new THREE.Mesh(
@@ -218,7 +218,6 @@ export default function useGPGPU(
         map: gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture,
       })
     );
-    scalarFieldDebug.visible = debugMode;
     scalarFieldDebug.position.set(-4, -1, 0);
 
     const zeroPointsDebug = new THREE.Mesh(
@@ -227,7 +226,6 @@ export default function useGPGPU(
         map: gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture,
       })
     );
-    zeroPointsDebug.visible = debugMode;
     zeroPointsDebug.position.set(-1, 2, 0);
 
     const particlesDebug = new THREE.Mesh(
@@ -236,18 +234,24 @@ export default function useGPGPU(
         map: gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable).texture,
       })
     );
-    particlesDebug.visible = debugMode;
     particlesDebug.position.set(-1, -1, 0);
 
     const planes = [audioDebug, scalarFieldDebug, zeroPointsDebug, particlesDebug];
-    setDebugPlanes(planes);
+    debugPlanesRef.current = planes;
 
-    if (debugMode) {
-      planes.forEach((plane) => scene.add(plane));
-    }
+    // Add to scene if debug mode is active
+    planes.forEach((plane) => scene.add(plane));
 
+    // Cleanup
     return () => {
-      planes.forEach((plane) => scene.remove(plane));
+      planes.forEach((plane) => {
+        scene.remove(plane);
+        plane.geometry.dispose();
+        if (plane.material instanceof THREE.MeshBasicMaterial) {
+          plane.material.dispose();
+        }
+      });
+      debugPlanesRef.current = [];
     };
   }, [gpgpu, scene, debugMode]);
 
@@ -296,8 +300,8 @@ export default function useGPGPU(
     points.rotation.y += settings.rotation * deltaTime;
 
     // 7. Update debug planes if needed
-    if (debugMode && debugPlanes.length) {
-      debugPlanes.forEach((plane) => {
+    if (debugMode && debugPlanesRef.current.length) {
+      debugPlanesRef.current.forEach((plane) => {
         if (plane.material instanceof THREE.MeshBasicMaterial && plane.material.map)
           plane.material.map.needsUpdate = true;
       });
