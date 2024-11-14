@@ -14,20 +14,18 @@ export default [
       sourceType: 'module',
       parser: tsparser,
       parserOptions: {
-        ecmaVersion: 'latest',
-        sourceType: 'module',
         ecmaFeatures: {
           jsx: true,
         },
       },
+      globals: {
+        browser: true,
+        node: true,
+        es2024: true,
+      },
     },
     linterOptions: {
       reportUnusedDisableDirectives: true,
-    },
-    env: {
-      browser: true,
-      node: true,
-      es2024: true,
     },
     plugins: {
       '@typescript-eslint': tseslint,
