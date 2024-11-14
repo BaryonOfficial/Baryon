@@ -33,8 +33,7 @@ export default function useGPGPU(
 ): GPGPUReturn {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
-  const { isPlaying, isMicActive, sound, fftSize, sampleRate, capacity, data, processAudioData } =
-    useAudioStore();
+  const { isPlaying, fftSize, sampleRate, capacity, data, processAudioData } = useAudioStore();
   const timeHandler = createTimeHandler();
 
   const gpgpu = useMemo<GPGPUComputation | null>(() => {
