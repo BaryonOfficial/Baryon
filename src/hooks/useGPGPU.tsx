@@ -11,10 +11,10 @@ import type { GPGPUReturn, GPGPUComputation, GPGPUShaderUniforms } from '@/types
 import type { ParticleGeometries, ParticlesRef } from '@/types/particle.types.ts';
 
 //Import Shaders
-import audioDataShader from '../shaders/gpgpu/audioData.glsl';
-import scalarFieldShader from '../shaders/gpgpu/scalarField.glsl';
-import zeroPointsShader from '../shaders/gpgpu/zeroPoints.glsl';
-import gpgpuParticlesShader from '../shaders/gpgpu/particles.glsl';
+import audioDataShader from '@/shaders/gpgpu/audioData.glsl';
+import scalarFieldShader from '@/shaders/gpgpu/scalarField.glsl';
+import zeroPointsShader from '@/shaders/gpgpu/zeroPoints.glsl';
+import gpgpuParticlesShader from '@/shaders/gpgpu/particles.glsl';
 
 import { useParticleSettings } from './particles/useParticleSettings.ts';
 
