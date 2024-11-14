@@ -33,6 +33,7 @@
     "tailwind-merge": "^2.5.4",
     "tailwindcss-animate": "^1.0.7",
     "three": "^0.170.0",
+    "typescript-eslint": "^8.14.0",
     "zustand": "^5.0.1"
   },
   "devDependencies": {
