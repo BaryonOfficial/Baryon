@@ -27,6 +27,7 @@ examples
 .cursorrules
 .repomixignore
 repomix*
+.eslintcache
 
 # SSL Certificates
 *.pem

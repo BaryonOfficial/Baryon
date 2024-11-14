@@ -21,7 +21,6 @@ export default [
       globals: {
         browser: true,
         node: true,
-        es2024: true,
       },
     },
     linterOptions: {
