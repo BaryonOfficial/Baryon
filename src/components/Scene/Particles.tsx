@@ -2,7 +2,6 @@ import { useMemo, useRef, forwardRef, useImperativeHandle, useEffect } from 'rea
 import { useThree, extend, type Object3DNode } from '@react-three/fiber';
 import { shaderMaterial } from '@react-three/drei';
 import * as THREE from 'three';
-import { useAudioStore } from '@/store/audioStore';
 
 // Shaders
 import vertexShader from '@/shaders/particles/vertex.glsl';
@@ -48,7 +47,6 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
   const { size, viewport } = useThree();
   const pointsRef = useRef<THREE.Points>(null);
   const materialRef = useRef<ParticleMaterial>(null);
-  const { averageAmplitude } = useAudioStore();
 
   useImperativeHandle(
     ref,
