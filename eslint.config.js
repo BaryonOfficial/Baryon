@@ -8,7 +8,7 @@ import reactRefreshPlugin from 'eslint-plugin-react-refresh';
 export default [
   eslint.configs.recommended,
   {
-    files: ['**/*.{ts,tsx}'],
+    files: ['**/*.{ts,tsx,js,jsx}'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
@@ -18,10 +18,10 @@ export default [
           jsx: true,
         },
       },
-      globals: {
-        browser: true,
-        node: true,
-      },
+    },
+    env: {
+      browser: true,
+      node: true,
     },
     linterOptions: {
       reportUnusedDisableDirectives: true,
