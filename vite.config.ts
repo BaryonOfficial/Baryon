@@ -6,6 +6,7 @@ import react from '@vitejs/plugin-react-swc';
 import glsl from 'vite-plugin-glsl';
 import topLevelAwait from 'vite-plugin-top-level-await';
 import basicSsl from '@vitejs/plugin-basic-ssl';
+import { Plugin, TransformResult } from 'vite'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }): UserConfig => {
@@ -58,14 +59,14 @@ export default defineConfig(({ mode }): UserConfig => {
       isHttps && basicSsl(),
       {
         name: 'load+transform-js-files-as-jsx',
-        async transform(code, id) {
+        async transform(code: string, id: string): Promise<TransformResult | null> {
           if (!id.match(/src\/.*\.(js|jsx|ts|tsx)$/)) return null;
           return transformWithEsbuild(code, id, {
             loader: id.match(/\.[jt]sx?$/) ? 'tsx' : 'ts',
             jsx: 'automatic',
           });
         },
-      }
+      } as Plugin
     ].filter(Boolean),
     resolve: {
       alias: {
