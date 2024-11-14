@@ -45,14 +45,10 @@ export interface GPGPUShaderUniforms {
     uFlowFieldInfluence: UniformValue<number>
     uFlowFieldStrength: UniformValue<number>
     uFlowFieldFrequency: UniformValue<number>
-    uThreshold: UniformValue<number>
     uBase: UniformValue<THREE.Texture>
     uAverageAmplitude: UniformValue<number>
     uParticleSpeed: UniformValue<number>
-    uStarted: UniformValue<boolean>
-    uParticleMovementType: UniformValue<number>
     uDistanceThreshold: UniformValue<number>
-    uMicActive: UniformValue<boolean>
   }
 }
 

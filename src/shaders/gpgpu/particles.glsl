@@ -7,12 +7,8 @@ uniform float uFlowFieldInfluence;
 uniform float uFlowFieldStrength;
 uniform float uFlowFieldFrequency;
 uniform float uParticleSpeed;
-uniform float uThreshold;
 uniform float uAverageAmplitude;
 uniform float vGroup;
-uniform bool uStarted;
-uniform bool uMicActive;
-uniform int uParticleMovementType;
 uniform float uRadius;
 uniform float uDistanceThreshold;
 
@@ -30,14 +26,6 @@ void main() {
     float distance = length(target - particle.xyz);
     vec3 direction = normalize(target - particle.xyz);
 
-    //  Pulsating Effect (BROKEN)
-    // float normalizedAmplitude = uAverageAmplitude / 255.0;
-    // float pulsatingFactor = 1.0 + normalizedAmplitude * 1.5;
-    // vec3 pulsatedTarget = target * pulsatingFactor;
-
-    // float distance = length(pulsatedTarget - particle.xyz);
-    // vec3 direction = normalize(pulsatedTarget - particle.xyz);
-
     // Strength of the noise based on the zeroPoint texture
     float strength = simplexNoise4d(vec4(target * 0.2, uTime + 1.0));
     float influence = (uFlowFieldInfluence - 0.5) * (-2.0);
@@ -52,15 +40,13 @@ void main() {
     vec3 lerpMovement = vec3(0.0);
     if(distance > uDistanceThreshold) {
         float timeFactor = clamp(uParticleSpeed * uDeltaTime, 0.0, 1.0);
-        float alpha = timeFactor;
 
-        if(uParticleMovementType == 1 && uStarted) {
-            float distanceFactor = smoothstep(0.0, 1.0, 1.0 - distance / (distance + 1.0));
-            alpha = mix(distanceFactor, 1.0, timeFactor);
-        }
+        // Calculate distance-based movement (formerly Movement Type 1)
+        float distanceFactor = smoothstep(0.0, 1.0, 1.0 - distance / (distance + 1.0));
+        float alpha = mix(distanceFactor, 1.0, timeFactor);
 
-        // Introduce damping factor based on distance
-        float dampingFactor = 1.0 - exp(-distance * 5.0);  // Exponential decay based on distance
+        // Apply damping
+        float dampingFactor = 1.0 - exp(-distance * 5.0);
         alpha *= dampingFactor;
 
         vec3 interpolatedPosition = mix(particle.xyz, target, alpha);

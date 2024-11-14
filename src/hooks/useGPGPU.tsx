@@ -147,15 +147,11 @@ export default function useGPGPU(
         uFlowFieldInfluence: new THREE.Uniform(1.0),
         uFlowFieldStrength: new THREE.Uniform(3.6),
         uFlowFieldFrequency: new THREE.Uniform(0.64),
-        uThreshold: new THREE.Uniform(parameters.threshold),
         uBase: new THREE.Uniform(baryonLogoTexture),
         uAverageAmplitude: new THREE.Uniform(0.0),
-        uParticleSpeed: new THREE.Uniform(32),
-        uStarted: new THREE.Uniform(sound?.started ?? false),
-        uParticleMovementType: new THREE.Uniform(1),
+        uParticleSpeed: new THREE.Uniform(32.0),
         uRadius: new THREE.Uniform(parameters.radius),
         uDistanceThreshold: new THREE.Uniform(0.5),
-        uMicActive: new THREE.Uniform(isMicActive),
       },
     };
 
@@ -271,8 +267,6 @@ export default function useGPGPU(
     // 2. Update time-based uniforms
     gpgpu.particlesVariable.material.uniforms.uTime.value = time;
     gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
-    gpgpu.particlesVariable.material.uniforms.uStarted.value = sound?.started ?? false;
-    gpgpu.particlesVariable.material.uniforms.uMicActive.value = isMicActive;
 
     material.uniforms.uSoundPlaying.value = isPlaying;
     material.uniforms.uTime.value = time;
