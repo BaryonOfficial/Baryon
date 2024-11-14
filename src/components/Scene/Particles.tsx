@@ -22,8 +22,8 @@ const ParticlesMaterial = shaderMaterial(
     uDeltaTime: 0,
     uResolution: new THREE.Vector2(),
     uParticlesTexture: null,
-    uColor: new THREE.Color('#0586ff'),
-    uSurfaceColor: new THREE.Color('#DEF0FA'),
+    uColor: new THREE.Color(),
+    uSurfaceColor: new THREE.Color(),
     uRadius: 3.0,
     uAverageAmplitude: 0.0,
     uSoundPlaying: false,
@@ -96,15 +96,17 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
 
   // Material updates (more frequent)
   useEffect(() => {
-    if (!materialRef.current) return;
-    materialRef.current.uniforms.uColor.value.set(settings.color);
-    materialRef.current.uniforms.uSurfaceColor.value.set(settings.surfaceColor);
-    materialRef.current.uniforms.uParticlesTexture.value = gpgpu.computation.getCurrentRenderTarget(
+    if (!materialRef.current?.uniforms) return;
+
+    const { uniforms } = materialRef.current;
+    uniforms.uColor.value.set(settings.color);
+    uniforms.uSurfaceColor.value.set(settings.surfaceColor);
+    uniforms.uParticlesTexture.value = gpgpu.computation.getCurrentRenderTarget(
       gpgpu.particlesVariable
     ).texture;
-    materialRef.current.uniforms.uRadius.value = parameters.radius;
-    materialRef.current.uniforms.uSize.value = settings.particleSize;
-  }, [averageAmplitude, settings, gpgpu, parameters]);
+    uniforms.uRadius.value = parameters.radius;
+    uniforms.uSize.value = settings.particleSize;
+  }, [settings.color, settings.surfaceColor, settings.particleSize, parameters.radius, gpgpu]);
 
   return (
     <points ref={pointsRef}>
