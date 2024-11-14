@@ -83,20 +83,12 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
     return [uvArray, sizesArray];
   }, [gpgpu.size, geometries.base.count]);
 
-  // Resolution updates (less frequent)
-  useEffect(() => {
-    if (!materialRef.current) return;
-    materialRef.current.uniforms.uResolution.value.set(
-      size.width * viewport.dpr,
-      size.height * viewport.dpr
-    );
-  }, [size, viewport]);
-
-  // Material updates (more frequent)
+  // Material updates
   useEffect(() => {
     if (!materialRef.current?.uniforms) return;
 
     const { uniforms } = materialRef.current;
+    uniforms.uResolution.value.set(size.width * viewport.dpr, size.height * viewport.dpr);
     uniforms.uColor.value.set(settings.color);
     uniforms.uSurfaceColor.value.set(settings.surfaceColor);
     uniforms.uParticlesTexture.value = gpgpu.computation.getCurrentRenderTarget(
@@ -104,7 +96,15 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
     ).texture;
     uniforms.uRadius.value = parameters.radius;
     uniforms.uSize.value = settings.particleSize;
-  }, [settings.color, settings.surfaceColor, settings.particleSize, parameters.radius, gpgpu]);
+  }, [
+    size,
+    viewport,
+    settings.color,
+    settings.surfaceColor,
+    settings.particleSize,
+    parameters.radius,
+    gpgpu,
+  ]);
 
   return (
     <points ref={pointsRef}>
