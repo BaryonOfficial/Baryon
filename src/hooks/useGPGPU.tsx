@@ -1,14 +1,14 @@
 import * as THREE from 'three';
 import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js';
-import { useLayoutEffect, useMemo, useRef, useState, useEffect } from 'react';
+import { useLayoutEffect, useMemo, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useControls } from 'leva';
-import { createTimeHandler } from '@/utils/timeHandler';
-import { useAudioStore } from '@/store/audioStore';
+import { createTimeHandler } from '@/utils/timeHandler.ts';
+import { useAudioStore } from '@/store/audioStore.ts';
 
 // Import types
-import type { GPGPUReturn, GPGPUComputation, GPGPUShaderUniforms } from '@/types/gpgpu.types';
-import type { ParticleGeometries, ParticlesRef } from '@/types/particle.types';
+import type { GPGPUReturn, GPGPUComputation, GPGPUShaderUniforms } from '@/types/gpgpu.types.ts';
+import type { ParticleGeometries, ParticlesRef } from '@/types/particle.types.ts';
 
 //Import Shaders
 import audioDataShader from '../shaders/gpgpu/audioData.glsl';
@@ -16,7 +16,7 @@ import scalarFieldShader from '../shaders/gpgpu/scalarField.glsl';
 import zeroPointsShader from '../shaders/gpgpu/zeroPoints.glsl';
 import gpgpuParticlesShader from '../shaders/gpgpu/particles.glsl';
 
-import { useParticleSettings } from './particles/useParticleSettings';
+import { useParticleSettings } from './particles/useParticleSettings.ts';
 
 function generateRandomPitches(capacity: number) {
   const pitches = new Float32Array(capacity);
@@ -278,8 +278,7 @@ export default function useGPGPU(
     material.uniforms.uTime.value = time;
     material.uniforms.uDeltaTime.value = deltaTime;
 
-    const randomPitches = generateRandomPitches(capacity);
-    gpgpu.audioDataVariable.material.uniforms.uRandomPitches.value = randomPitches;
+    // gpgpu.audioDataVariable.material.uniforms.uRandomPitches.value = generateRandomPitches(capacity);
 
     // 3. Process audio data
     processAudioData(gpgpu, particlesRef, showAudioDebug);

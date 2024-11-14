@@ -4,7 +4,6 @@
     "useDefineForClassFields": true,
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "allowJs": true,
-    "checkJs": true, // Add this to enable type checking in JS files
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -20,13 +19,20 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "types": ["vite/client", "vite-plugin-glsl/ext", "@types/three", "@types/node"]
+    "types": [
+      "vite/client",
+      "vite-plugin-glsl/ext",
+      "@types/three",
+      "@types/node",
+      "@types/react",
+      "@types/react-dom"
+    ],
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "allowImportingTsExtensions": true
   },
-  "include": [
-    "src",
-    "vite.config.ts", // Add config files
-    "postcss.config.js",
-    "tailwind.config.js"
-  ],
+  "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

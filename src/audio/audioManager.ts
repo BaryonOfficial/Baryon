@@ -14,10 +14,9 @@ import type {
 
 export class AudioManager {
   private audioObject: AudioObject
-  // Normalized frequency data (0-1 range)
   private finalFreqData: Uint8Array
-  private inputFileFreqData: Uint8Array
-  private micFreqData: Uint8Array
+  private inputFileFreqData: Uint8Array  // Add this line
+  private micFreqData: Uint8Array        // Add this line
 
   constructor() {
     this.audioObject = {

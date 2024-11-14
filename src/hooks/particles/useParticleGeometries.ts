@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
-import { useLogo } from '../useLogo'
-import { createParticleGeometries } from '@/utils/particles/geometryUtils'
-import type { ParticleParameters, ParticleGeometries, ParticleSettings } from '@/types/particle.types'
+import { useLogo } from '../useLogo.tsx'
+import { createParticleGeometries } from '@/utils/particles/geometryUtils.ts'
+import type { ParticleParameters, ParticleGeometries, ParticleSettings } from '@/types/particle.types.ts'
 
 export function useParticleGeometries(
   parameters: ParticleParameters,

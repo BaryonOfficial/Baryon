@@ -1,8 +1,9 @@
 import { create } from 'zustand'
-import { audioManager } from '@/audio/audioManager'
-import type { AudioStore } from '@/types/audio.types'
-import { GPGPUComputation } from '@/types/gpgpu.types'
-import { ParticlesRef } from '@/types/particle.types'
+import { audioManager } from '@/audio/audioManager.ts'
+import { type RefObject } from 'react'
+import type { AudioStore } from '@/types/audio.types.ts'
+import { GPGPUComputation } from '@/types/gpgpu.types.ts'
+import { ParticlesRef } from '@/types/particle.types.ts'
 
 export const useAudioStore = create<AudioStore>((set) => ({
   // Initial state from audioManager
@@ -66,7 +67,7 @@ export const useAudioStore = create<AudioStore>((set) => ({
 
   processAudioData: (
     gpgpu: GPGPUComputation,
-    particlesRef: React.RefObject<ParticlesRef>,
+    particlesRef: RefObject<ParticlesRef>,
     showDebug?: boolean
   ) => {
     audioManager.processAudioData(gpgpu, particlesRef, showDebug)

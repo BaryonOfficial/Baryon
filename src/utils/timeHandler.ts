@@ -1,13 +1,9 @@
 import { useRef } from 'react'
-import { useAudioStore } from '@/store/audioStore'
+import { useAudioStore } from '@/store/audioStore.ts'
 
 interface TimeState {
   time: number
   deltaTime: number
-}
-
-interface TimeRefs {
-  lastKnownTime: React.MutableRefObject<number>
 }
 
 export function createTimeHandler() {
@@ -15,7 +11,7 @@ export function createTimeHandler() {
   const { isPlaying, isMicActive, sound } = useAudioStore()
 
   function handleTime(
-    elapsedTime: number, 
+    elapsedTime: number,
     delta: number
   ): TimeState {
     if (sound?.started && !isPlaying && !isMicActive) return {
@@ -31,9 +27,9 @@ export function createTimeHandler() {
       }
     }
 
-    return { 
-      time: elapsedTime, 
-      deltaTime: delta 
+    return {
+      time: elapsedTime,
+      deltaTime: delta
     }
   }
 

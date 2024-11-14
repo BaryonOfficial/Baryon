@@ -1,5 +1,5 @@
 import { useControls } from 'leva'
-import type { ParticleParameters, ParticleSettings } from '@/types/particle.types'
+import type { ParticleParameters, ParticleSettings } from '@/types/particle.types.ts'
 
 export function useParticleSettings(): { parameters: ParticleParameters, settings: ParticleSettings } {
     const parameters = useControls(
