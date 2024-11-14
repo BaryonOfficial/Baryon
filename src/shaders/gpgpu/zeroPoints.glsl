@@ -7,8 +7,8 @@ uniform bool uSurfaceControl;
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
     vec4 scalarFieldValue = texture(uScalarField, uv);
-    vec3 position = scalarFieldValue.rgb;
-    float scalarValue = scalarFieldValue.a;
+    vec3 position = scalarFieldValue.xyz;
+    float scalarValue = scalarFieldValue.w;
     float distance = length(position);
 
     // Early return for points outside threshold
