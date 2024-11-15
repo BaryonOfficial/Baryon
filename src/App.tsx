@@ -28,7 +28,8 @@ function ErrorFallback({
       <div className="max-w-md text-center space-y-4">
         <h2 className="text-xl font-bold text-red-500">Something went wrong</h2>
         <p className="text-white/80">
-          The application encountered an error, possibly due to browser compatibility issues.
+          {error.message ||
+            'The application encountered an error, possibly due to browser compatibility issues.'}
         </p>
         <button
           onClick={() => {
