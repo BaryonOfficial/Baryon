@@ -1,4 +1,10 @@
+// Add local storage key as a constant
+const OVERRIDE_KEY = 'browser-check-override'
+
 export function isUnsupportedBrowser() {
+    // Check if user has chosen to override
+    const hasOverride = localStorage.getItem(OVERRIDE_KEY) === 'true'
+
     // Check for mobile/tablet
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
         navigator.userAgent
@@ -13,7 +19,7 @@ export function isUnsupportedBrowser() {
     const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined'
 
     return {
-        isUnsupported: isMobile || isFirefox || isSafari || !hasWebGL2 || !hasSharedArrayBuffer,
+        isUnsupported: !hasOverride && (isMobile || isFirefox || isSafari || !hasWebGL2 || !hasSharedArrayBuffer),
         reasons: {
             isMobile,
             isFirefox,
@@ -22,4 +28,11 @@ export function isUnsupportedBrowser() {
             noSharedArrayBuffer: !hasSharedArrayBuffer
         }
     }
+}
+
+export function setOverrideBrowserCheck(override: boolean) {
+    if (override)
+        localStorage.setItem(OVERRIDE_KEY, 'true')
+    else
+        localStorage.removeItem(OVERRIDE_KEY)
 } 
