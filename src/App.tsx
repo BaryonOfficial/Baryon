@@ -14,7 +14,7 @@ function App() {
   return (
     <>
       <Leva
-        oneLineLabels={((label: string) => !label.includes('Debug')) as any}
+        oneLineLabels
         collapsed
         titleBar={{
           title: 'Controls',

@@ -137,20 +137,20 @@ export default function useGPGPU(
         uThreshold: new THREE.Uniform(parameters.threshold),
         uRadius: new THREE.Uniform(parameters.radius),
         uSurfaceThreshold: new THREE.Uniform(parameters.surfaceThreshold),
-        uSurfaceControl: new THREE.Uniform(true),
+        uSurfaceControl: new THREE.Uniform(parameters.surfaceControl),
         uAverageAmplitude: new THREE.Uniform(0.0),
       },
       particlesUniforms: {
         uTime: new THREE.Uniform(0),
         uDeltaTime: new THREE.Uniform(0),
-        uFlowFieldInfluence: new THREE.Uniform(1.0),
-        uFlowFieldStrength: new THREE.Uniform(3.6),
-        uFlowFieldFrequency: new THREE.Uniform(0.64),
+        uFlowFieldInfluence: new THREE.Uniform(parameters.flowFieldInfluence),
+        uFlowFieldStrength: new THREE.Uniform(parameters.flowFieldStrength),
+        uFlowFieldFrequency: new THREE.Uniform(parameters.flowFieldFrequency),
         uBase: new THREE.Uniform(baryonLogoTexture),
         uAverageAmplitude: new THREE.Uniform(0.0),
-        uParticleSpeed: new THREE.Uniform(32.0),
+        uParticleSpeed: new THREE.Uniform(parameters.particleSpeed),
         uRadius: new THREE.Uniform(parameters.radius),
-        uDistanceThreshold: new THREE.Uniform(0.5),
+        uDistanceThreshold: new THREE.Uniform(parameters.distanceThreshold),
       },
     };
 
@@ -175,18 +175,13 @@ export default function useGPGPU(
       essentiaData,
       size,
     };
-  }, [gl, parameters, geometries]);
+  }, [gl, geometries]);
 
   useLayoutEffect(() => {
     if (!gpgpu) return;
-
-    try {
-      const error = gpgpu.computation.init();
-      if (error !== null) {
-        console.error('GPGPU initialization failed:', error);
-      }
-    } catch (e) {
-      console.error('GPGPU initialization error:', e);
+    const error = gpgpu.computation.init();
+    if (error !== null) {
+      console.error(error);
     }
   }, [gpgpu]);
 

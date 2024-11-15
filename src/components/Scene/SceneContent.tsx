@@ -11,7 +11,6 @@ import { useParticleSettings } from '@/hooks/particles/useParticleSettings';
 export function SceneContent() {
   const particlesRef = useRef<ParticlesRef>(null);
   const { parameters, settings } = useParticleSettings();
-
   const geometries = useParticleGeometries(parameters, settings);
 
   const { gpgpu } = useGPGPU({ parameters, settings }, geometries, particlesRef);

@@ -7,6 +7,12 @@ export interface ParticleParameters {
   threshold: number
   surfaceThreshold: number
   surfaceRatio: number
+  surfaceControl: boolean
+  flowFieldInfluence: number
+  flowFieldStrength: number
+  flowFieldFrequency: number
+  particleSpeed: number
+  distanceThreshold: number
 }
 
 export interface ParticleGeometries {
