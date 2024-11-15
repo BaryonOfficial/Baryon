@@ -1,8 +1,11 @@
 import { useControls } from 'leva'
-import type { ParticleParameters, ParticleSettings } from '@/types/particle.types.ts'
+import {
+    ParticleParametersSchema,
+    ParticleSettingsSchema,
+} from '@/types/particle.types'
 
-export function useParticleSettings(): { parameters: ParticleParameters, settings: ParticleSettings } {
-    const parameters = useControls(
+export function useParticleSettings() {
+    const defaultParameters = useControls(
         'Particle Parameters',
         {
             count: { value: 1000000, label: 'Particle Count' },
@@ -24,7 +27,7 @@ export function useParticleSettings(): { parameters: ParticleParameters, setting
         { collapsed: true }
     )
 
-    const visualSettings = useControls(
+    const defaultVisualSettings = useControls(
         'Visual Settings',
         {
             color: { value: '#0586ff', label: 'Inner Color' },
@@ -36,5 +39,18 @@ export function useParticleSettings(): { parameters: ParticleParameters, setting
         { collapsed: true }
     )
 
-    return { parameters, settings: visualSettings };
+    try {
+        // Runtime validation
+        const parameters = ParticleParametersSchema.parse(defaultParameters)
+        const settings = ParticleSettingsSchema.parse(defaultVisualSettings)
+        return { parameters, settings, isValid: true }
+    } catch (error) {
+        console.error('Particle settings validation error:', error)
+        // Fallback to safe defaults, similar to your audio store error handling
+        return {
+            parameters: defaultParameters,
+            settings: defaultVisualSettings,
+            isValid: false
+        }
+    }
 } 

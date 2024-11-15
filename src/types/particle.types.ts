@@ -1,19 +1,33 @@
 import * as THREE from 'three'
+import { z } from 'zod'
 import type { GPGPUComputation } from './gpgpu.types'
 
-export interface ParticleParameters {
-  count: number
-  radius: number
-  threshold: number
-  surfaceThreshold: number
-  surfaceRatio: number
-  surfaceControl: boolean
-  flowFieldInfluence: number
-  flowFieldStrength: number
-  flowFieldFrequency: number
-  particleSpeed: number
-  distanceThreshold: number
-}
+// Zod Schemas
+export const ParticleParametersSchema = z.object({
+  count: z.number().int().positive().max(2000000),
+  radius: z.number().positive().max(5.0),
+  threshold: z.number().min(0.01).max(0.1),
+  surfaceThreshold: z.number().min(0.001).max(0.1),
+  surfaceRatio: z.number().min(0.1).max(1.0),
+  surfaceControl: z.boolean(),
+  flowFieldInfluence: z.number().min(0).max(3.0),
+  flowFieldStrength: z.number().min(0).max(10.0),
+  flowFieldFrequency: z.number().min(0).max(2.0),
+  particleSpeed: z.number().min(0).max(100.0),
+  distanceThreshold: z.number().min(0).max(2.0)
+})
+
+export const ParticleSettingsSchema = z.object({
+  color: z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/),
+  surfaceColor: z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/),
+  particleSize: z.number().positive().max(0.1),
+  rotation: z.number().min(-3.0).max(3.0),
+  scale: z.number().min(0.1).max(2.0)
+})
+
+// Keep existing type definitions but derive from schemas
+export type ParticleParameters = z.infer<typeof ParticleParametersSchema>
+export type ParticleSettings = z.infer<typeof ParticleSettingsSchema>
 
 export interface ParticleGeometries {
   base: {
@@ -61,12 +75,4 @@ export interface LogoGeometry {
   count: number
   isLoaded: boolean
   error?: string
-}
-
-export interface ParticleSettings {
-  color: string
-  surfaceColor: string
-  particleSize: number
-  scale: number
-  rotation: number
 }
