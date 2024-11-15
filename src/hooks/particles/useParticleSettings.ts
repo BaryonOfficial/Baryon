@@ -1,11 +1,57 @@
-import { useControls } from 'leva'
+import { useControls, button, levaStore } from 'leva'
 import {
     ParticleParametersSchema,
     ParticleSettingsSchema,
 } from '@/types/particle.types'
 
 export function useParticleSettings() {
-    const defaultParameters = useControls(
+    // Define default values
+    const defaultValues = {
+        parameters: {
+            count: 1000000,
+            radius: 3.0,
+            threshold: 0.05,
+            surfaceThreshold: 0.01,
+            surfaceRatio: 0.33,
+            surfaceControl: true,
+            flowFieldInfluence: 1.0,
+            flowFieldStrength: 3.6,
+            flowFieldFrequency: 0.64,
+            particleSpeed: 32.0,
+            distanceThreshold: 0.5
+        },
+        visual: {
+            color: '#0586ff',
+            surfaceColor: '#DEF0FA',
+            particleSize: 0.03,
+            rotation: 1.0,
+            scale: 0.3
+        }
+    }
+
+    // Add reset functionality to Leva panel
+    useControls({
+        'Reset All': button(() => {
+            Object.entries(defaultValues.parameters).forEach(([key, value]) => {
+                levaStore.set({ [`Particle Parameters.${key}`]: value }, false)
+            })
+            Object.entries(defaultValues.visual).forEach(([key, value]) => {
+                levaStore.set({ [`Visual Settings.${key}`]: value }, false)
+            })
+        }),
+        'Reset Parameters': button(() => {
+            Object.entries(defaultValues.parameters).forEach(([key, value]) => {
+                levaStore.set({ [`Particle Parameters.${key}`]: value }, false)
+            })
+        }),
+        'Reset Visual': button(() => {
+            Object.entries(defaultValues.visual).forEach(([key, value]) => {
+                levaStore.set({ [`Visual Settings.${key}`]: value }, false)
+            })
+        })
+    }, { collapsed: false })
+
+    const rawParameters = useControls(
         'Particle Parameters',
         {
             count: { value: 1000000, label: 'Particle Count' },
@@ -27,7 +73,7 @@ export function useParticleSettings() {
         { collapsed: true }
     )
 
-    const defaultVisualSettings = useControls(
+    const rawVisualSettings = useControls(
         'Visual Settings',
         {
             color: { value: '#0586ff', label: 'Inner Color' },
@@ -41,15 +87,15 @@ export function useParticleSettings() {
 
     try {
         // Runtime validation
-        const parameters = ParticleParametersSchema.parse(defaultParameters)
-        const settings = ParticleSettingsSchema.parse(defaultVisualSettings)
+        const parameters = ParticleParametersSchema.parse(rawParameters)
+        const settings = ParticleSettingsSchema.parse(rawVisualSettings)
         return { parameters, settings, isValid: true }
     } catch (error) {
         console.error('Particle settings validation error:', error)
         // Fallback to safe defaults, similar to your audio store error handling
         return {
-            parameters: defaultParameters,
-            settings: defaultVisualSettings,
+            parameters: defaultValues.parameters,
+            settings: defaultValues.visual,
             isValid: false
         }
     }
