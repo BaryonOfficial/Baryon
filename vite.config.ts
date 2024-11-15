@@ -9,7 +9,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 import { Plugin, TransformResult } from 'vite'
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }): UserConfig => {
+export default defineConfig((): UserConfig => {
   const isHttps = process.env.HTTPS === 'true'
 
   const serverConfig: ServerOptions = {
