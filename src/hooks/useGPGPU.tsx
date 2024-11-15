@@ -37,13 +37,13 @@ export default function useGPGPU(
   const timeHandler = createTimeHandler();
 
   const gpgpu = useMemo<GPGPUComputation | null>(() => {
-    const size = Math.ceil(Math.sqrt(geometries.base.count));
+    const size = Math.ceil(Math.sqrt(parameters.count));
     const computation = new GPUComputationRenderer(size, size, gl);
 
     // Particles w/ positions only for computation
     const baseParticlesTexture = computation.createTexture();
 
-    for (let i = 0; i < geometries.base.count; i++) {
+    for (let i = 0; i < parameters.count; i++) {
       const i3 = i * 3;
       const i4 = i * 4;
 
@@ -175,7 +175,7 @@ export default function useGPGPU(
       essentiaData,
       size,
     };
-  }, [gl, geometries]);
+  }, [gl, geometries, parameters.count]);
 
   // Cleanup effect right after creation
   useEffect(() => {
@@ -285,6 +285,7 @@ export default function useGPGPU(
 
     // Destructure after validation to ensure type safety
     const { material, points } = particlesRef.current;
+    const { rotation } = settings;
 
     // 1. Time updates
     const { time, deltaTime } = timeHandler.handleTime(clock.elapsedTime, delta);
@@ -319,7 +320,7 @@ export default function useGPGPU(
     material.uniforms.uParticlesTexture.value = particlesTarget.texture;
 
     // 6. Update rotation
-    points.rotation.y += settings.rotation * deltaTime;
+    points.rotation.y += rotation * deltaTime;
 
     // 7. Update debug planes if needed
     if (debugMode && debugPlanesRef.current.length) {

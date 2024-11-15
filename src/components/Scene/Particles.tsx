@@ -62,8 +62,8 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
   );
 
   const [uvArray, sizesArray] = useMemo(() => {
-    const uvArray = new Float32Array(geometries.base.count * 2);
-    const sizesArray = new Float32Array(geometries.base.count);
+    const uvArray = new Float32Array(parameters.count * 2);
+    const sizesArray = new Float32Array(parameters.count);
 
     for (let y = 0; y < gpgpu.size; y++) {
       for (let x = 0; x < gpgpu.size; x++) {
@@ -81,7 +81,7 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
     }
 
     return [uvArray, sizesArray];
-  }, [gpgpu.size, geometries.base.count]);
+  }, [gpgpu.size, parameters.count]);
 
   // Material updates
   useEffect(() => {
@@ -96,22 +96,14 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
     ).texture;
     uniforms.uRadius.value = parameters.radius;
     uniforms.uSize.value = settings.particleSize;
-  }, [
-    size,
-    viewport,
-    settings.color,
-    settings.surfaceColor,
-    settings.particleSize,
-    parameters.radius,
-    gpgpu,
-  ]);
+  }, [size, viewport, gpgpu]);
 
   return (
     <points ref={pointsRef}>
       <bufferGeometry>
         <bufferAttribute
           attach="attributes-position"
-          count={geometries.base.count}
+          count={geometries.base.positions.length / 3}
           array={geometries.base.positions}
           itemSize={3}
         />

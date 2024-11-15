@@ -17,7 +17,6 @@ export interface ParticleParameters {
 
 export interface ParticleGeometries {
   base: {
-    count: number
     positions: Float32Array
     colors: Float32Array
   }
