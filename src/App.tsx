@@ -8,13 +8,16 @@ const levaTheme = {
   colors: {
     highlight1: '#ffffff', // This will change the panel title color
   },
+  sizes: {
+    rootWidth: '340px',
+  },
 };
 
 function App() {
   return (
     <>
       <Leva
-        oneLineLabels
+        oneLineLabels={false}
         collapsed
         titleBar={{
           title: 'Controls',
