@@ -51,19 +51,9 @@ export interface ParticlesRef {
   updateUniforms: (uniforms: { uAverageAmplitude: number }) => void
 }
 
-export interface ParticleSettings {
-  color: string
-  surfaceColor: string
-  particleSize: number
-  rotation: number
-  scale: number
-}
-
 export interface ParticlesProps {
   gpgpu: GPGPUComputation
   geometries: ParticleGeometries
-  parameters: ParticleParameters
-  settings: ParticleSettings
 }
 
 export interface LogoGeometry {
@@ -71,4 +61,12 @@ export interface LogoGeometry {
   count: number
   isLoaded: boolean
   error?: string
+}
+
+export interface ParticleSettings {
+  color: string
+  surfaceColor: string
+  particleSize: number
+  scale: number
+  rotation: number
 }

@@ -1,9 +1,11 @@
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
-import type { LogoGeometry, ParticleSettings } from '@/types/particle.types';
+import type { LogoGeometry } from '@/types/particle.types';
 import { useMemo } from 'react';
+import { useParticleSettingsContext } from '@/contexts/ParticleSettingsContext';
 
-export function useLogo({ scale }: Pick<ParticleSettings, 'scale'>): LogoGeometry {
+export function useLogo(): LogoGeometry {
+  const { settings } = useParticleSettingsContext();
   useGLTF.setDecoderPath('/draco/');
   const { scene } = useGLTF('/glb/Baryon_v2.glb', true);
 
@@ -27,7 +29,7 @@ export function useLogo({ scale }: Pick<ParticleSettings, 'scale'>): LogoGeometr
 
     // Create a transform matrix
     const matrix = new THREE.Matrix4();
-    matrix.makeScale(scale, scale, scale);
+    matrix.makeScale(settings.scale, settings.scale, settings.scale);
 
     // Clone and transform the geometry
     const scaledGeometry = mesh.geometry.clone();
@@ -38,7 +40,7 @@ export function useLogo({ scale }: Pick<ParticleSettings, 'scale'>): LogoGeometr
       count: scaledGeometry.attributes.position.count,
       isLoaded: true,
     };
-  }, [scene, scale]);
+  }, [scene, settings.scale]);
 }
 
 useGLTF.preload('/glb/Baryon_v2.glb');

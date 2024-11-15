@@ -16,7 +16,7 @@ import scalarFieldShader from '@/shaders/gpgpu/scalarField.glsl';
 import zeroPointsShader from '@/shaders/gpgpu/zeroPoints.glsl';
 import gpgpuParticlesShader from '@/shaders/gpgpu/particles.glsl';
 
-import { useParticleSettings } from './particles/useParticleSettings.ts';
+import { useParticleSettingsContext } from '@/contexts/ParticleSettingsContext';
 
 function generateRandomPitches(capacity: number) {
   const pitches = new Float32Array(capacity);
@@ -27,10 +27,10 @@ function generateRandomPitches(capacity: number) {
 }
 
 export default function useGPGPU(
-  { parameters, settings }: ReturnType<typeof useParticleSettings>,
   geometries: ParticleGeometries,
   particlesRef: React.RefObject<ParticlesRef>
 ): GPGPUReturn {
+  const { parameters, settings } = useParticleSettingsContext();
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const { isPlaying, fftSize, sampleRate, capacity, data, processAudioData } = useAudioStore();
@@ -285,7 +285,6 @@ export default function useGPGPU(
 
     // Destructure after validation to ensure type safety
     const { material, points } = particlesRef.current;
-    const { rotation } = settings;
 
     // 1. Time updates
     const { time, deltaTime } = timeHandler.handleTime(clock.elapsedTime, delta);
@@ -320,7 +319,7 @@ export default function useGPGPU(
     material.uniforms.uParticlesTexture.value = particlesTarget.texture;
 
     // 6. Update rotation
-    points.rotation.y += rotation * deltaTime;
+    points.rotation.y += settings.rotation * deltaTime;
 
     // 7. Update debug planes if needed
     if (debugMode && debugPlanesRef.current.length) {

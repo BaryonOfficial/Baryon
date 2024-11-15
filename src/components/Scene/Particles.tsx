@@ -13,6 +13,7 @@ import type {
   ParticlesProps,
   ParticlesRef,
 } from '@/types/particle.types';
+import { useParticleSettingsContext } from '@/contexts/ParticleSettingsContext';
 
 const ParticlesMaterial = shaderMaterial(
   {
@@ -41,12 +42,13 @@ declare module '@react-three/fiber' {
 }
 
 const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
-  { gpgpu, geometries, parameters, settings },
+  { gpgpu, geometries },
   ref
 ) {
   const { size, viewport } = useThree();
   const pointsRef = useRef<THREE.Points>(null);
   const materialRef = useRef<ParticleMaterial>(null);
+  const { parameters, settings } = useParticleSettingsContext();
 
   useImperativeHandle(
     ref,
@@ -96,7 +98,15 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
     ).texture;
     uniforms.uRadius.value = parameters.radius;
     uniforms.uSize.value = settings.particleSize;
-  }, [size, viewport, gpgpu]);
+  }, [
+    size,
+    viewport,
+    gpgpu,
+    settings.color,
+    settings.surfaceColor,
+    settings.particleSize,
+    parameters.radius,
+  ]);
 
   return (
     <points ref={pointsRef}>

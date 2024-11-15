@@ -1,13 +1,13 @@
 import { useMemo } from 'react'
 import { useLogo } from '../useLogo.tsx'
 import { createParticleGeometries } from '@/utils/particles/geometryUtils.ts'
-import type { ParticleParameters, ParticleGeometries, ParticleSettings } from '@/types/particle.types.ts'
+import type { ParticleGeometries } from '@/types/particle.types.ts'
+import { useParticleSettingsContext } from '@/contexts/ParticleSettingsContext'
 
-export function useParticleGeometries(
-  parameters: ParticleParameters,
-  settings: ParticleSettings
-): ParticleGeometries {
-  const logo = useLogo(settings)
+export function useParticleGeometries(): ParticleGeometries {
+  const { parameters } = useParticleSettingsContext()
+  const logo = useLogo()
+
   return useMemo(
     () => createParticleGeometries(parameters, logo),
     [parameters.count, parameters.radius, parameters.surfaceRatio, logo]
