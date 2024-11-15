@@ -2,6 +2,8 @@ import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import { Scene } from './components/Scene';
 import { Leva } from 'leva';
+import { UnsupportedWarning } from '@/components/UnsupportedWarning';
+import { isUnsupportedBrowser } from './utils/browserCheck';
 import './App.css';
 
 const levaTheme = {
@@ -14,6 +16,12 @@ const levaTheme = {
 };
 
 function App() {
+  const { isUnsupported, reasons } = isUnsupportedBrowser();
+
+  if (isUnsupported) {
+    return <UnsupportedWarning reasons={reasons} />;
+  }
+
   return (
     <>
       <Leva
