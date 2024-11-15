@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js';
-import { useLayoutEffect, useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useControls } from 'leva';
 import { createTimeHandler } from '@/utils/timeHandler.ts';
@@ -176,6 +176,33 @@ export default function useGPGPU(
       size,
     };
   }, [gl, geometries]);
+
+  // Cleanup effect right after creation
+  useEffect(() => {
+    return () => {
+      if (!gpgpu) return;
+
+      const variables = [
+        gpgpu.audioDataVariable,
+        gpgpu.scalarFieldVariable,
+        gpgpu.zeroPointsVariable,
+        gpgpu.particlesVariable,
+      ];
+
+      variables.forEach((variable) => {
+        if (!variable) return;
+        variable.renderTargets?.forEach((target) => target?.dispose());
+        variable.material?.dispose();
+        Object.values(variable.material?.uniforms || {}).forEach((uniform) => {
+          if (uniform.value instanceof THREE.Texture) {
+            uniform.value.dispose();
+          }
+        });
+      });
+
+      gpgpu.computation?.dispose();
+    };
+  }, [gpgpu]);
 
   useLayoutEffect(() => {
     if (!gpgpu) return;
