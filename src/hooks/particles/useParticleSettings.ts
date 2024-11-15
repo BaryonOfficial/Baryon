@@ -24,7 +24,7 @@ export function useParticleSettings(): { parameters: ParticleParameters, setting
         { collapsed: true }
     )
 
-    const settings = useControls(
+    const visualSettings = useControls(
         'Visual Settings',
         {
             color: { value: '#0586ff', label: 'Inner Color' },
@@ -36,5 +36,5 @@ export function useParticleSettings(): { parameters: ParticleParameters, setting
         { collapsed: true }
     )
 
-    return { parameters, settings }
+    return { parameters, settings: visualSettings };
 } 
