@@ -89,14 +89,13 @@ export function useParticleSettings() {
         // Runtime validation
         const parameters = ParticleParametersSchema.parse(rawParameters)
         const settings = ParticleSettingsSchema.parse(rawVisualSettings)
-        return { parameters, settings, isValid: true }
+        return { parameters, settings }
     } catch (error) {
         console.error('Particle settings validation error:', error)
-        // Fallback to safe defaults, similar to your audio store error handling
+        // Fallback to safe defaults
         return {
             parameters: defaultValues.parameters,
-            settings: defaultValues.visual,
-            isValid: false
+            settings: defaultValues.visual
         }
     }
 } 
