@@ -348,15 +348,6 @@ export default function useGPGPU(
 
     // 6. Update rotation
     points.rotation.y += settings.rotation * deltaTime;
-
-    // 7. Update debug planes if needed
-    if (debugMode && debugPlanesRef.current.length) {
-      debugPlanesRef.current.forEach((plane) => {
-        if (plane.material instanceof THREE.MeshBasicMaterial && plane.material.map) {
-          plane.material.map.needsUpdate = true;
-        }
-      });
-    }
   });
 
   return {
