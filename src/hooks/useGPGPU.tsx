@@ -240,7 +240,7 @@ export default function useGPGPU(
     const audioDebug = new THREE.Mesh(
       new THREE.PlaneGeometry(3, 3),
       new THREE.MeshBasicMaterial({
-        map: gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable).texture,
+        map: audioDataTextureRef.current,
       })
     );
     audioDebug.position.set(-4, 2, 0);
@@ -248,7 +248,7 @@ export default function useGPGPU(
     const scalarFieldDebug = new THREE.Mesh(
       new THREE.PlaneGeometry(3, 3),
       new THREE.MeshBasicMaterial({
-        map: gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture,
+        map: scalarFieldTextureRef.current,
       })
     );
     scalarFieldDebug.position.set(-4, -1, 0);
@@ -256,7 +256,7 @@ export default function useGPGPU(
     const zeroPointsDebug = new THREE.Mesh(
       new THREE.PlaneGeometry(3, 3),
       new THREE.MeshBasicMaterial({
-        map: gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture,
+        map: zeroPointsTextureRef.current,
       })
     );
     zeroPointsDebug.position.set(-1, 2, 0);
@@ -264,7 +264,7 @@ export default function useGPGPU(
     const particlesDebug = new THREE.Mesh(
       new THREE.PlaneGeometry(3, 3),
       new THREE.MeshBasicMaterial({
-        map: gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable).texture,
+        map: particlesTextureRef.current,
       })
     );
     particlesDebug.position.set(-1, -1, 0);
@@ -272,7 +272,6 @@ export default function useGPGPU(
     const planes = [audioDebug, scalarFieldDebug, zeroPointsDebug, particlesDebug];
     debugPlanesRef.current = planes;
 
-    // Add to scene if debug mode is active
     planes.forEach((plane) => scene.add(plane));
 
     // Cleanup
@@ -286,7 +285,15 @@ export default function useGPGPU(
       });
       debugPlanesRef.current = [];
     };
-  }, [gpgpu, scene, debugMode]);
+  }, [
+    gpgpu,
+    scene,
+    debugMode,
+    audioDataTextureRef.current,
+    scalarFieldTextureRef.current,
+    zeroPointsTextureRef.current,
+    particlesTextureRef.current,
+  ]);
 
   useFrame(({ clock }, delta) => {
     // Early returns for all required dependencies
@@ -345,8 +352,9 @@ export default function useGPGPU(
     // 7. Update debug planes if needed
     if (debugMode && debugPlanesRef.current.length) {
       debugPlanesRef.current.forEach((plane) => {
-        if (plane.material instanceof THREE.MeshBasicMaterial && plane.material.map)
+        if (plane.material instanceof THREE.MeshBasicMaterial && plane.material.map) {
           plane.material.map.needsUpdate = true;
+        }
       });
     }
   });
