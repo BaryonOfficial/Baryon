@@ -307,9 +307,17 @@ export default function useGPGPU(
 
     // 5. Update dependencies after compute
     const audioTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable);
+    if (!audioTarget?.texture) {
+      console.warn('Audio target or texture missing');
+      return;
+    }
     gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value = audioTarget.texture;
 
     const scalarTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable);
+    if (!scalarTarget?.texture) {
+      console.warn('Scalar target or texture missing');
+      return;
+    }
     gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value = scalarTarget.texture;
 
     const zeroTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable);

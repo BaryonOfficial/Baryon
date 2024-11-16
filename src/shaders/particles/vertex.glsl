@@ -8,11 +8,9 @@ uniform float uTime;
 uniform float uDeltaTime;
 uniform float uAverageAmplitude;
 uniform float uRadius;
-uniform float uRotation;
 uniform bool uSoundPlaying;
 
 attribute vec2 aParticlesUv;
-attribute vec3 aColor;
 attribute float aSize;
 
 // varying vec3 vColor;
@@ -63,6 +61,5 @@ void main() {
 
     // Pass Varyings
     vPosition = modelPosition.xyz;
-    // vColor = aColor;
     vNormal = modelNormal.xyz;
 }

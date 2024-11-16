@@ -17,16 +17,16 @@ import { useParticleSettingsContext } from '@/contexts/ParticleSettingsContext';
 
 const ParticlesMaterial = shaderMaterial(
   {
+    uResolution: new THREE.Vector2(),
     uSize: 0.03,
+    uParticlesTexture: null,
     uTime: 0,
     uDeltaTime: 0,
-    uResolution: new THREE.Vector2(),
-    uParticlesTexture: null,
+    uAverageAmplitude: 0.0,
+    uRadius: 3.0,
+    uSoundPlaying: false,
     uColor: new THREE.Color(),
     uSurfaceColor: new THREE.Color(),
-    uRadius: 3.0,
-    uAverageAmplitude: 0.0,
-    uSoundPlaying: false,
   },
   vertexShader,
   fragmentShader
