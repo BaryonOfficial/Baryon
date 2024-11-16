@@ -101,7 +101,6 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
     size,
     viewport,
     materialRef,
-    particlesTexture,
     settings.color,
     settings.surfaceColor,
     settings.particleSize,
