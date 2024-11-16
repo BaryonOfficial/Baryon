@@ -10,15 +10,20 @@ import Particles from './Particles';
 export function SceneContent() {
   const particlesRef = useRef<ParticlesRef>(null);
   const geometries = useParticleGeometries();
-  const { gpgpu } = useGPGPU(geometries, particlesRef);
+  const { gpgpu, particlesTexture } = useGPGPU(geometries, particlesRef);
 
-  if (!gpgpu) return null;
+  if (!gpgpu || !particlesTexture) return null;
 
   return (
     <>
       <OrbitControls enableDamping dampingFactor={0.05} />
       <AudioInitializer />
-      <Particles ref={particlesRef} gpgpu={gpgpu} geometries={geometries} />
+      <Particles
+        ref={particlesRef}
+        gpgpu={gpgpu}
+        geometries={geometries}
+        particlesTexture={particlesTexture}
+      />
       <PostProcessingEffects />
     </>
   );

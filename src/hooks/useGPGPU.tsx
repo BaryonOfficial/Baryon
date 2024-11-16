@@ -36,13 +36,18 @@ export default function useGPGPU(
   const { isPlaying, fftSize, sampleRate, capacity, data, processAudioData } = useAudioStore();
   const timeHandler = createTimeHandler();
 
+  // Add refs for textures
+  const audioDataTextureRef = useRef<THREE.Texture | null>(null);
+  const scalarFieldTextureRef = useRef<THREE.Texture | null>(null);
+  const zeroPointsTextureRef = useRef<THREE.Texture | null>(null);
+  const particlesTextureRef = useRef<THREE.Texture | null>(null);
+
   const gpgpu = useMemo<GPGPUComputation | null>(() => {
     const size = Math.ceil(Math.sqrt(parameters.count));
     const computation = new GPUComputationRenderer(size, size, gl);
 
     // Particles w/ positions only for computation
     const baseParticlesTexture = computation.createTexture();
-
     for (let i = 0; i < parameters.count; i++) {
       const i3 = i * 3;
       const i4 = i * 4;
@@ -108,6 +113,12 @@ export default function useGPGPU(
       gpgpuParticlesShader,
       particlesTexture
     );
+
+    // Add refs for textures
+    audioDataTextureRef.current = audioDataTexture;
+    scalarFieldTextureRef.current = scalarTexture;
+    zeroPointsTextureRef.current = zeroPointsTexture;
+    particlesTextureRef.current = particlesTexture;
 
     const format = gl.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
     const essentiaData = new Float32Array(capacity);
@@ -280,8 +291,9 @@ export default function useGPGPU(
   useFrame(({ clock }, delta) => {
     // Early returns for all required dependencies
     if (!gpgpu) return;
-    if (!particlesRef.current?.material?.uniforms) return;
-    if (!particlesRef.current?.points) return;
+    if (!particlesRef || !particlesRef.current) return;
+    if (!particlesRef.current.material || !particlesRef.current.material.uniforms) return;
+    if (!particlesRef.current.points) return;
 
     // Destructure after validation to ensure type safety
     const { material, points } = particlesRef.current;
@@ -305,26 +317,28 @@ export default function useGPGPU(
     // 4. Compute GPGPU
     gpgpu.computation.compute();
 
+    // Update texture refs with current render targets
+    audioDataTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
+      gpgpu.audioDataVariable
+    ).texture;
+
+    scalarFieldTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
+      gpgpu.scalarFieldVariable
+    ).texture;
+
+    zeroPointsTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
+      gpgpu.zeroPointsVariable
+    ).texture;
+
+    particlesTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
+      gpgpu.particlesVariable
+    ).texture;
+
     // 5. Update dependencies after compute
-    const audioTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable);
-    if (!audioTarget?.texture) {
-      console.warn('Audio target or texture missing');
-      return;
-    }
-    gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value = audioTarget.texture;
-
-    const scalarTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable);
-    if (!scalarTarget?.texture) {
-      console.warn('Scalar target or texture missing');
-      return;
-    }
-    gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value = scalarTarget.texture;
-
-    const zeroTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable);
-    gpgpu.particlesVariable.material.uniforms.uZeroPoints.value = zeroTarget.texture;
-
-    const particlesTarget = gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable);
-    material.uniforms.uParticlesTexture.value = particlesTarget.texture;
+    gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value = audioDataTextureRef.current;
+    gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value = scalarFieldTextureRef.current;
+    gpgpu.particlesVariable.material.uniforms.uZeroPoints.value = zeroPointsTextureRef.current;
+    material.uniforms.uParticlesTexture.value = particlesTextureRef.current;
 
     // 6. Update rotation
     points.rotation.y += settings.rotation * deltaTime;
@@ -340,5 +354,9 @@ export default function useGPGPU(
 
   return {
     gpgpu,
+    audioDataTexture: audioDataTextureRef,
+    scalarFieldTexture: scalarFieldTextureRef,
+    zeroPointsTexture: zeroPointsTextureRef,
+    particlesTexture: particlesTextureRef,
   };
 }
