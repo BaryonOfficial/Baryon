@@ -87,8 +87,8 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
 
   // Material updates
   useEffect(() => {
-    if (!materialRef || !materialRef.current || !materialRef.current.uniforms) return;
-    if (!particlesTexture || !particlesTexture.current) return;
+    if (!materialRef?.current?.uniforms) return;
+    if (!particlesTexture?.current) return;
 
     const { uniforms } = materialRef.current;
     uniforms.uResolution.value.set(size.width * viewport.dpr, size.height * viewport.dpr);

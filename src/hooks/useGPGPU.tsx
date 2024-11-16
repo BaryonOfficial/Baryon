@@ -291,12 +291,11 @@ export default function useGPGPU(
   useFrame(({ clock }, delta) => {
     // Early returns for all required dependencies
     if (!gpgpu) return;
-    if (!particlesRef || !particlesRef.current) return;
-    if (!particlesRef.current.material || !particlesRef.current.material.uniforms) return;
-    if (!particlesRef.current.points) return;
+    if (!particlesRef?.current) return;
 
     // Destructure after validation to ensure type safety
     const { material, points } = particlesRef.current;
+    if (!material?.uniforms || !points) return;
 
     // 1. Time updates
     const { time, deltaTime } = timeHandler.handleTime(clock.elapsedTime, delta);
