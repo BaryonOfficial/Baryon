@@ -12,7 +12,7 @@ export function SceneContent() {
   const geometries = useParticleGeometries();
   const { gpgpu, particlesTexture } = useGPGPU(geometries, particlesRef);
 
-  if (!gpgpu || !particlesTexture) return null;
+  if (!gpgpu || !particlesTexture?.current) return null;
 
   return (
     <>
