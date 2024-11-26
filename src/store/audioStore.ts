@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import { audioManager } from '@/audio/audioManager.ts'
-import { type RefObject } from 'react'
-import type { AudioStore } from '@/types/audio.types.ts'
+import { AudioStore } from '@/types/audio.types.ts'
 import { GPGPUComputation } from '@/types/gpgpu.types.ts'
 import { ParticlesRef } from '@/types/particle.types.ts'
+import type { RefObject } from 'react'
 
 export const useAudioStore = create<AudioStore>((set) => ({
   // Initial state from audioManager
@@ -14,7 +14,6 @@ export const useAudioStore = create<AudioStore>((set) => ({
     try {
       const fileURL = URL.createObjectURL(file)
       await audioManager.loadAudio(fileURL)
-      // Just use the original filename, let CSS handle truncation
       set({ fileName: file.name, isAudioLoaded: true, isPlaying: false })
     } catch (error) {
       console.error('Error loading audio:', error)
