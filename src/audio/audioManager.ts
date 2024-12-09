@@ -286,16 +286,22 @@ export class AudioManager {
     const micIsActive = this.audioObject.gumStream?.active ?? false
 
     // Get sound data if active
-    const inputFileData = soundIsActive && this.audioObject.analyser ? {
-      amplitude: this.audioObject.analyser.getAverageFrequency(),
-      freq: this.audioObject.analyser.getFrequencyData()
-    } : null
+    let inputFileData = null;
+    if (soundIsActive && this.audioObject.analyser) {
+      inputFileData = {
+        amplitude: this.audioObject.analyser.getAverageFrequency(),
+        freq: this.audioObject.analyser.getFrequencyData()
+      };
+    }
 
     // Get mic data if active
-    const micData = micIsActive && this.audioObject.micAnalyser ? {
-      amplitude: this.audioObject.micAnalyser.getAverageFrequency(),
-      freq: this.audioObject.micAnalyser.getFrequencyData()
-    } : null
+    let micData = null;
+    if (micIsActive && this.audioObject.micAnalyser) {
+      micData = {
+        amplitude: this.audioObject.micAnalyser.getAverageFrequency(),
+        freq: this.audioObject.micAnalyser.getFrequencyData()
+      };
+    }
 
     // Calculate final values
     if (inputFileData && micData) {
@@ -305,12 +311,21 @@ export class AudioManager {
     }
 
     // Single source handling
-    const activeData = inputFileData || micData!
-    this.finalFreqData.set(activeData.freq)
+    const activeData = inputFileData || micData;
+
+    // Return zero values if no active data
+    if (!activeData) {
+      return {
+        avgAmplitude: 0,
+        freqData: new Uint8Array(this.audioObject.fftSize / 2)
+      };
+    }
+
+    this.finalFreqData.set(activeData.freq);
     return {
       avgAmplitude: activeData.amplitude,
       freqData: this.finalFreqData
-    }
+    };
   }
 
   public processAudioData(
