@@ -1,9 +1,10 @@
-import { motion } from 'framer-motion';
+import { animate, stagger } from 'motion';
 import { AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { setOverrideBrowserCheck } from '@/utils/browserCheck';
+import { useEffect, useRef } from 'react';
 
 interface UnsupportedWarningProps {
   reasons: {
@@ -16,6 +17,9 @@ interface UnsupportedWarningProps {
 }
 
 export function UnsupportedWarning({ reasons }: UnsupportedWarningProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+
   function getWarningMessage() {
     const messages = [];
     if (reasons.isMobile) messages.push('mobile devices');
@@ -32,39 +36,38 @@ export function UnsupportedWarning({ reasons }: UnsupportedWarningProps) {
     window.location.reload();
   }
 
-  const containerVariants = {
-    hidden: { opacity: 0, scale: 0.95 },
-    visible: {
-      opacity: 1,
-      scale: 1,
-      transition: {
-        duration: 0.3,
-        ease: 'easeOut',
-      },
-    },
-  };
+  useEffect(() => {
+    if (containerRef.current) {
+      animate(
+        containerRef.current,
+        { opacity: [0, 1], scale: [0.95, 1] },
+        { duration: 0.3, ease: 'easeOut' }
+      );
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        duration: 0.5,
-        ease: 'easeOut',
-      },
-    },
-  };
+      animate(
+        itemRefs.current.filter(Boolean),
+        { opacity: [0, 1], y: [20, 0] },
+        {
+          duration: 0.5,
+          ease: 'easeOut',
+          delay: stagger(0.1),
+        }
+      );
+    }
+  }, []);
 
   return (
-    <motion.div
+    <div
+      ref={containerRef}
       className="fixed inset-0 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 md:p-8"
-      initial="hidden"
-      animate="visible"
-      variants={containerVariants}>
+      style={{ opacity: 0, scale: 0.95 }}>
       <Card className="w-full max-w-2xl bg-background/95 backdrop-blur border-muted">
         <CardHeader>
-          <motion.div variants={itemVariants}>
+          <div
+            ref={(el) => {
+              itemRefs.current[0] = el;
+            }}
+            style={{ opacity: 0, transform: 'translateY(20px)' }}>
             <Alert variant="destructive" className="mb-4">
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Browser Not Supported</AlertTitle>
@@ -72,44 +75,63 @@ export function UnsupportedWarning({ reasons }: UnsupportedWarningProps) {
                 We've detected compatibility issues with your current setup.
               </AlertDescription>
             </Alert>
-          </motion.div>
+          </div>
         </CardHeader>
 
         <CardContent className="space-y-4">
-          <motion.p className="text-lg text-muted-foreground" variants={itemVariants}>
+          <p
+            ref={(el) => {
+              itemRefs.current[1] = el;
+            }}
+            className="text-lg text-muted-foreground"
+            style={{ opacity: 0, transform: 'translateY(20px)' }}>
             This music visualizer is not supported on {getWarningMessage()}.
-          </motion.p>
+          </p>
 
-          <motion.div className="bg-muted/50 rounded-lg p-4" variants={itemVariants}>
+          <div
+            ref={(el) => {
+              itemRefs.current[2] = el;
+            }}
+            className="bg-muted/50 rounded-lg p-4"
+            style={{ opacity: 0, transform: 'translateY(20px)' }}>
             <h3 className="font-semibold mb-2">Recommended Browsers:</h3>
             <ul className="list-disc list-inside space-y-1 text-muted-foreground">
               <li>Google Chrome</li>
               <li>Microsoft Edge</li>
               <li>Brave Browser</li>
             </ul>
-          </motion.div>
+          </div>
 
-          <motion.div className="bg-muted/50 rounded-lg p-4" variants={itemVariants}>
+          <div
+            ref={(el) => {
+              itemRefs.current[3] = el;
+            }}
+            className="bg-muted/50 rounded-lg p-4"
+            style={{ opacity: 0, transform: 'translateY(20px)' }}>
             <h3 className="font-semibold mb-2">Required Features:</h3>
             <ul className="list-disc list-inside space-y-1 text-muted-foreground">
               <li>WebGL2</li>
               <li>SharedArrayBuffer</li>
               <li>Modern Audio Processing</li>
             </ul>
-          </motion.div>
+          </div>
         </CardContent>
 
         <CardFooter className="flex justify-end space-x-4">
-          <motion.div variants={itemVariants}>
+          <div
+            ref={(el) => {
+              itemRefs.current[4] = el;
+            }}
+            style={{ opacity: 0, transform: 'translateY(20px)' }}>
             <Button variant="secondary" onClick={handleTryAnyway}>
               Try Anyway
             </Button>
             <Button variant="default" className="ml-2" onClick={() => window.location.reload()}>
               Refresh Page
             </Button>
-          </motion.div>
+          </div>
         </CardFooter>
       </Card>
-    </motion.div>
+    </div>
   );
 }

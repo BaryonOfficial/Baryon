@@ -1,33 +1,36 @@
 import { useAudioStore } from '@/store/audioStore';
 import { cn } from '@/lib/utils';
 import { Play, Pause, Square, Mic, MicOff } from 'lucide-react';
-import { motion, HTMLMotionProps } from 'framer-motion';
+import { animate } from 'motion';
 import { Label } from '@/components/ui/label';
 import { forwardRef } from 'react';
+import { type HTMLAttributes } from 'react';
 
-interface ControlButtonProps extends Omit<HTMLMotionProps<'button'>, 'children'> {
+interface ControlButtonProps extends Omit<HTMLAttributes<HTMLButtonElement>, 'children'> {
   variant?: 'default' | 'destructive';
   disabled?: boolean;
   children: React.ReactNode;
 }
 
-// Create a proper forwardRef component for the button
 const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
   ({ onClick, disabled, variant = 'default', children, className, style, ...props }, ref) => {
-    const buttonStyle = {
-      ...style,
+    const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
+      const target = e.currentTarget;
+      await animate(target, { scale: 0.95 }, { duration: 0.1 });
+      await animate(target, { scale: 1 }, { duration: 0.1 });
+      onClick?.(e);
     };
 
     return (
-      <motion.button
+      <button
         ref={ref}
-        onClick={onClick}
+        onClick={handleClick}
         disabled={disabled}
-        style={buttonStyle}
+        style={{ ...style, transform: 'scale(1)' }}
         className={cn(
           'w-12 h-12 rounded-xl flex items-center justify-center',
           'bg-gradient-to-br transition-all duration-200',
-          'shadow-lg hover:shadow-xl active:scale-95',
+          'shadow-lg hover:shadow-xl',
           'backdrop-blur-md',
           'disabled:opacity-50 disabled:cursor-not-allowed',
           variant === 'default'
@@ -38,14 +41,11 @@ const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
         )}
         {...props}>
         {children}
-      </motion.button>
+      </button>
     );
   }
 );
 ControlButton.displayName = 'ControlButton';
-
-// No need for additional motion wrapper since we're using motion.button
-const MotionButton = ControlButton;
 
 export function AudioControls() {
   const {
@@ -64,18 +64,11 @@ export function AudioControls() {
     if (file) loadFile(file);
   };
 
-  const buttonVariants = {
-    tap: { scale: 0.95 },
-    hover: {
-      scale: 1.05,
-      transition: { duration: 0.2 },
-    },
-  };
-
   return (
     <div className="fixed top-20 left-12 z-50 p-4 flex flex-col gap-4">
-      {/* File Upload Button - Width matches exactly 3 buttons + 2 gaps (168px) */}
-      <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+      <div
+        onMouseEnter={(e) => animate(e.currentTarget, { scale: 1.02 }, { duration: 0.2 })}
+        onMouseLeave={(e) => animate(e.currentTarget, { scale: 1 }, { duration: 0.2 })}>
         <Label
           htmlFor="audio-file"
           className={cn(
@@ -95,12 +88,13 @@ export function AudioControls() {
             onChange={handleFileChange}
           />
         </Label>
-      </motion.div>
+      </div>
 
-      {/* Control Buttons */}
       <div className="flex gap-3 justify-center">
-        <motion.div whileHover="hover" whileTap="tap" variants={buttonVariants}>
-          <MotionButton
+        <div
+          onMouseEnter={(e) => animate(e.currentTarget, { scale: 1.05 }, { duration: 0.2 })}
+          onMouseLeave={(e) => animate(e.currentTarget, { scale: 1 }, { duration: 0.2 })}>
+          <ControlButton
             onClick={togglePlayPause}
             disabled={!isAudioLoaded}
             className="backdrop-blur-sm">
@@ -109,17 +103,21 @@ export function AudioControls() {
             ) : (
               <Play className="h-5 w-5 text-slate-800" />
             )}
-          </MotionButton>
-        </motion.div>
+          </ControlButton>
+        </div>
 
-        <motion.div whileHover="hover" whileTap="tap" variants={buttonVariants}>
-          <MotionButton onClick={stop} disabled={!isAudioLoaded} className="backdrop-blur-sm">
+        <div
+          onMouseEnter={(e) => animate(e.currentTarget, { scale: 1.05 }, { duration: 0.2 })}
+          onMouseLeave={(e) => animate(e.currentTarget, { scale: 1 }, { duration: 0.2 })}>
+          <ControlButton onClick={stop} disabled={!isAudioLoaded} className="backdrop-blur-sm">
             <Square className="h-5 w-5 text-slate-800" />
-          </MotionButton>
-        </motion.div>
+          </ControlButton>
+        </div>
 
-        <motion.div whileHover="hover" whileTap="tap" variants={buttonVariants}>
-          <MotionButton
+        <div
+          onMouseEnter={(e) => animate(e.currentTarget, { scale: 1.05 }, { duration: 0.2 })}
+          onMouseLeave={(e) => animate(e.currentTarget, { scale: 1 }, { duration: 0.2 })}>
+          <ControlButton
             onClick={toggleMic}
             variant={isMicActive ? 'destructive' : 'default'}
             className="backdrop-blur-sm">
@@ -128,8 +126,8 @@ export function AudioControls() {
             ) : (
               <Mic className="h-5 w-5 text-slate-800" />
             )}
-          </MotionButton>
-        </motion.div>
+          </ControlButton>
+        </div>
       </div>
     </div>
   );
