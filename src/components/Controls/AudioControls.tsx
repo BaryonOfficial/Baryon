@@ -48,16 +48,8 @@ const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
 ControlButton.displayName = 'ControlButton';
 
 export function AudioControls() {
-  const {
-    fileName,
-    isPlaying,
-    isMicActive,
-    isAudioLoaded,
-    loadFile,
-    togglePlayPause,
-    stop,
-    toggleMic,
-  } = useAudioStore();
+  const { fileName, isPlaying, isMicActive, isAudioLoaded, loadFile, togglePlayPause, stop } =
+    useAudioStore();
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -65,9 +57,8 @@ export function AudioControls() {
   };
 
   const handleMicToggle = useCallback(async () => {
-    const { isMicActive, toggleMic } = useAudioStore.getState();
+    const { toggleMic } = useAudioStore.getState();
 
-    // If mic is already active, just toggle it off
     if (isMicActive) {
       await toggleMic();
       return;
@@ -94,7 +85,7 @@ export function AudioControls() {
         console.error('Microphone error:', error);
       }
     }
-  }, []);
+  }, [isMicActive]);
 
   return (
     <div className="fixed top-20 left-12 z-50 p-4 flex flex-col gap-4">
