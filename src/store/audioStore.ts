@@ -5,7 +5,7 @@ import { GPGPUComputation } from '@/types/gpgpu.types.ts'
 import { ParticlesRef } from '@/types/particle.types.ts'
 import type { RefObject } from 'react'
 
-export const useAudioStore = create<AudioStore>((set) => ({
+export const useAudioStore = create<AudioStore>((set, get) => ({
   // Initial state from audioManager
   ...audioManager.getAudio(),
   fileName: 'Upload Audio',
@@ -37,17 +37,20 @@ export const useAudioStore = create<AudioStore>((set) => ({
   },
 
   toggleMic: async () => {
+    const { isMicActive } = get();
+
     try {
-      const currentAudio = audioManager.getAudio()
-      if (currentAudio.isMicActive) {
-        audioManager.stopMicRecordStream()
+      if (isMicActive) {
+        audioManager.stopMicRecordStream();
       } else {
-        await audioManager.startMicRecordStream()
+        await audioManager.startMicRecordStream();
       }
-      set({ isMicActive: !currentAudio.isMicActive })
+      set({ isMicActive: !isMicActive });
     } catch (error) {
-      console.error('Error toggling microphone:', error)
-      set({ isMicActive: false })
+      console.error('Error toggling microphone:', error);
+      // Reset state if there's an error
+      set({ isMicActive: false });
+      throw error;
     }
   },
 
@@ -70,7 +73,7 @@ export const useAudioStore = create<AudioStore>((set) => ({
     showDebug?: boolean
   ) => {
     audioManager.processAudioData(gpgpu, particlesRef, showDebug)
-  }
+  },
 
 }))
 

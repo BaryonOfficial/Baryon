@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import { Play, Pause, Square, Mic, MicOff } from 'lucide-react';
 import { animate } from 'motion';
 import { Label } from '@/components/ui/label';
-import { forwardRef } from 'react';
+import { forwardRef, useCallback } from 'react';
 import { type HTMLAttributes } from 'react';
 
 interface ControlButtonProps extends Omit<HTMLAttributes<HTMLButtonElement>, 'children'> {
@@ -64,6 +64,38 @@ export function AudioControls() {
     if (file) loadFile(file);
   };
 
+  const handleMicToggle = useCallback(async () => {
+    const { isMicActive, toggleMic } = useAudioStore.getState();
+
+    // If mic is already active, just toggle it off
+    if (isMicActive) {
+      await toggleMic();
+      return;
+    }
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        alert('Microphone access is not supported on this browser/device.');
+        return;
+      }
+
+      await toggleMic();
+    } catch (error: any) {
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        alert(
+          isMobile
+            ? 'Please enable microphone access in your device settings.'
+            : 'Please allow microphone access and try again.'
+        );
+      } else {
+        alert('Unable to access microphone. Please check your device settings.');
+        console.error('Microphone error:', error);
+      }
+    }
+  }, []);
+
   return (
     <div className="fixed top-20 left-12 z-50 p-4 flex flex-col gap-4">
       <div
@@ -118,7 +150,7 @@ export function AudioControls() {
           onMouseEnter={(e) => animate(e.currentTarget, { scale: 1.05 }, { duration: 0.2 })}
           onMouseLeave={(e) => animate(e.currentTarget, { scale: 1 }, { duration: 0.2 })}>
           <ControlButton
-            onClick={toggleMic}
+            onClick={handleMicToggle}
             variant={isMicActive ? 'destructive' : 'default'}
             className="backdrop-blur-sm">
             {isMicActive ? (
