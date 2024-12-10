@@ -296,9 +296,7 @@ export default function useGPGPU(
   ]);
 
   useFrame(({ clock }, delta) => {
-    // Early returns for all required dependencies
-    if (!gpgpu) return;
-    if (!particlesRef?.current) return;
+    if (!gpgpu || !particlesRef?.current) return;
 
     // Destructure after validation to ensure type safety
     const { material, points } = particlesRef.current;
@@ -323,28 +321,34 @@ export default function useGPGPU(
     // 4. Compute GPGPU
     gpgpu.computation.compute();
 
-    // Update texture refs with current render targets
-    audioDataTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
+    // 5. Update textures and dependencies
+    const targets = gpgpu.computation;
+    gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value = targets.getCurrentRenderTarget(
       gpgpu.audioDataVariable
     ).texture;
-
-    scalarFieldTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
+    gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value = targets.getCurrentRenderTarget(
       gpgpu.scalarFieldVariable
     ).texture;
-
-    zeroPointsTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
+    gpgpu.particlesVariable.material.uniforms.uZeroPoints.value = targets.getCurrentRenderTarget(
       gpgpu.zeroPointsVariable
     ).texture;
-
-    particlesTextureRef.current = gpgpu.computation.getCurrentRenderTarget(
+    material.uniforms.uParticlesTexture.value = targets.getCurrentRenderTarget(
       gpgpu.particlesVariable
     ).texture;
 
-    // 5. Update dependencies after compute
-    gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value = audioDataTextureRef.current;
-    gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value = scalarFieldTextureRef.current;
-    gpgpu.particlesVariable.material.uniforms.uZeroPoints.value = zeroPointsTextureRef.current;
-    material.uniforms.uParticlesTexture.value = particlesTextureRef.current;
+    // Update refs for debug planes
+    [audioDataTextureRef, scalarFieldTextureRef, zeroPointsTextureRef, particlesTextureRef].forEach(
+      (ref, i) => {
+        ref.current = targets.getCurrentRenderTarget(
+          [
+            gpgpu.audioDataVariable,
+            gpgpu.scalarFieldVariable,
+            gpgpu.zeroPointsVariable,
+            gpgpu.particlesVariable,
+          ][i]
+        ).texture;
+      }
+    );
 
     // 6. Update rotation
     points.rotation.y += settings.rotation * deltaTime;
