@@ -167,13 +167,14 @@ export class AudioManager {
   }
 
   // Helper method to check audio state
-  private isAudioInitialized(): boolean {
-    return !!(
-      this.audioObject.sound &&
-      this.audioObject.audioCtx &&
-      this.audioObject.listener
-    )
-  }
+  /** @unused */
+  // private isAudioInitialized(): boolean {
+  //   return !!(
+  //     this.audioObject.sound &&
+  //     this.audioObject.audioCtx &&
+  //     this.audioObject.listener
+  //   )
+  // }
 
   public startMicRecordStream(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
@@ -265,12 +266,13 @@ export class AudioManager {
   }
 
   // Optional: Debug method for checking mic levels
-  private checkMicInputLevels(): boolean {
-    if (!this.audioObject.micAnalyser) return false
+  /** @unused */
+  // private checkMicInputLevels(): boolean {
+  //   if (!this.audioObject.micAnalyser) return false
 
-    const data = this.audioObject.micAnalyser.getFrequencyData()
-    return data.some(value => value > 0)
-  }
+  //   const data = this.audioObject.micAnalyser.getFrequencyData()
+  //   return data.some(value => value > 0)
+  // }
 
   private combineFrequencyData(freqData1: Uint8Array, freqData2: Uint8Array): Uint8Array {
     // Pre-allocate the result array for better performance
@@ -335,7 +337,7 @@ export class AudioManager {
   ): void {
     const soundIsActive = this.audioObject.sound?.isPlaying ?? false
     const micIsActive = this.audioObject.gumStream?.active ?? false
-    const soundIsStopped = !this.audioObject.sound?.started ?? true
+    const soundIsStopped = !this.audioObject.sound?.started || true
 
     // Reset when both sources are inactive AND sound is stopped
     if (!soundIsActive && !micIsActive && soundIsStopped) {
