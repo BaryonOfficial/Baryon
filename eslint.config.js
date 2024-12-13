@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint';
 import react from 'eslint-plugin-react';
 
 export default [
-  { ignores: ['dist', '**/*.glsl'] },
+  { ignores: ['dist', '**/*.glsl', 'public/lib/**/*', 'public/draco/**/*', 'examples/**/*'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
