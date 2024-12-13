@@ -71,18 +71,20 @@ export function AudioControls() {
       }
 
       await toggleMic();
-    } catch (error: any) {
+    } catch (error: unknown) {
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-        alert(
-          isMobile
-            ? 'Please enable microphone access in your device settings.'
-            : 'Please allow microphone access and try again.'
-        );
-      } else {
-        alert('Unable to access microphone. Please check your device settings.');
-        console.error('Microphone error:', error);
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+          alert(
+            isMobile
+              ? 'Please enable microphone access in your device settings.'
+              : 'Please allow microphone access and try again.'
+          );
+        } else {
+          alert('Unable to access microphone. Please check your device settings.');
+          console.error('Microphone error:', error);
+        }
       }
     }
   }, [isMicActive]);

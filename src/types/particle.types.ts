@@ -68,7 +68,6 @@ export interface ParticlesRef {
 export interface ParticlesProps {
   gpgpu: GPGPUComputation
   geometries: ParticleGeometries
-  particlesTexture: React.RefObject<THREE.Texture>
 }
 
 export interface LogoGeometry {

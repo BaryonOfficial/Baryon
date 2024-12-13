@@ -18,12 +18,7 @@ export function SceneContent() {
     <>
       <OrbitControls enableDamping dampingFactor={0.05} />
       <AudioInitializer />
-      <Particles
-        ref={particlesRef}
-        gpgpu={gpgpu}
-        geometries={geometries}
-        particlesTexture={particlesTexture}
-      />
+      <Particles ref={particlesRef} gpgpu={gpgpu} geometries={geometries} />
       <PostProcessingEffects />
     </>
   );

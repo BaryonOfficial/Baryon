@@ -479,7 +479,9 @@ export class AudioManager {
           micActive: this.audioObject.gumStream?.active ?? false,
         })
       } catch (error) {
-        throw new Error('SharedArrayBuffer transfer not supported in this browser')
+        throw new AudioWorkletError(
+          `SharedArrayBuffer transfer failed: ${error instanceof Error ? error.message : String(error)}`
+        )
       }
 
       // Connect audio nodes
