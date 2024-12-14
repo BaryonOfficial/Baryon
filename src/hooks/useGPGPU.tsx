@@ -186,7 +186,24 @@ export default function useGPGPU(
       essentiaData,
       size,
     };
-  }, [gl, geometries, parameters.count]);
+  }, [
+    gl,
+    geometries,
+    parameters.count,
+    capacity,
+    data,
+    fftSize,
+    parameters.distanceThreshold,
+    parameters.flowFieldFrequency,
+    parameters.flowFieldInfluence,
+    parameters.flowFieldStrength,
+    parameters.particleSpeed,
+    parameters.radius,
+    parameters.surfaceControl,
+    parameters.surfaceThreshold,
+    parameters.threshold,
+    sampleRate,
+  ]);
 
   // Cleanup effect right after creation
   useEffect(() => {
@@ -285,15 +302,7 @@ export default function useGPGPU(
       });
       debugPlanesRef.current = [];
     };
-  }, [
-    gpgpu,
-    scene,
-    debugMode,
-    audioDataTextureRef.current,
-    scalarFieldTextureRef.current,
-    zeroPointsTextureRef.current,
-    particlesTextureRef.current,
-  ]);
+  }, [gpgpu, scene, debugMode]);
 
   useFrame(({ clock }, delta) => {
     if (!gpgpu || !particlesRef?.current) return;
