@@ -10,6 +10,6 @@ export function useParticleGeometries(): ParticleGeometries {
 
   return useMemo(
     () => createParticleGeometries(parameters, logo),
-    [parameters.count, parameters.radius, parameters.surfaceRatio, logo]
+    [parameters, logo]
   )
 } 

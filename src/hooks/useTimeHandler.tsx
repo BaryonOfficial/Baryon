@@ -6,7 +6,7 @@ interface TimeState {
   deltaTime: number
 }
 
-export function createTimeHandler() {
+export function useTimeHandler() {
   const lastKnownTimeRef = useRef(0)
   const { isPlaying, isMicActive, sound } = useAudioStore()
 

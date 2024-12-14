@@ -3,7 +3,7 @@ import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRe
 import { useLayoutEffect, useMemo, useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useControls } from 'leva';
-import { createTimeHandler } from '@/utils/timeHandler.ts';
+import { useTimeHandler } from '@/hooks/useTimeHandler.tsx';
 import { useAudioStore } from '@/store/audioStore.ts';
 
 // Import types
@@ -34,7 +34,7 @@ export default function useGPGPU(
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const { isPlaying, fftSize, sampleRate, capacity, data, processAudioData } = useAudioStore();
-  const timeHandler = createTimeHandler();
+  const timeHandler = useTimeHandler();
 
   // Add refs for textures
   const audioDataTextureRef = useRef<THREE.Texture | null>(null);

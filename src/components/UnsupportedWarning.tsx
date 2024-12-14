@@ -72,7 +72,7 @@ export function UnsupportedWarning({ reasons }: UnsupportedWarningProps) {
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Browser Not Supported</AlertTitle>
               <AlertDescription>
-                We've detected compatibility issues with your current setup.
+                We&apos;ve detected compatibility issues with your current setup.
               </AlertDescription>
             </Alert>
           </div>
