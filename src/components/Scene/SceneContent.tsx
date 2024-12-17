@@ -5,6 +5,7 @@ import useGPGPU from '@/hooks/useGPGPU';
 import { AudioInitializer } from './AudioInitializer';
 import { useParticleGeometries } from '@/hooks/particles/useParticleGeometries';
 import { PostProcessingEffects } from './PostProcessingEffects';
+import { ParticleSettingsProvider } from '@/contexts/ParticleSettingsContext';
 import Particles from './Particles';
 
 export function SceneContent() {
@@ -18,8 +19,10 @@ export function SceneContent() {
     <>
       <OrbitControls enableDamping dampingFactor={0.05} />
       <AudioInitializer />
-      <Particles ref={particlesRef} gpgpu={gpgpu} geometries={geometries} />
-      <PostProcessingEffects />
+      <ParticleSettingsProvider>
+        <Particles ref={particlesRef} gpgpu={gpgpu} geometries={geometries} />
+        <PostProcessingEffects />
+      </ParticleSettingsProvider>
     </>
   );
 }
