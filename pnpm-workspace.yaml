@@ -1,0 +1,25 @@
+packages:
+  # Core packages - for main functionality
+  - 'packages/*'          # Example: packages/core, packages/utils, packages/types
+
+  # UI Components and features
+  - 'components/*'        # Example: components/button, components/form, components/navbar
+
+  # Apps that use the packages
+  - 'apps/*'             # Example: apps/web, apps/mobile, apps/desktop
+
+  # Shared configurations
+  - 'configs/*'          # Example: configs/eslint, configs/typescript, configs/jest
+
+  # Example paths that would match:
+  # ✓ packages/core
+  # ✓ packages/utils
+  # ✓ components/ui
+  # ✓ apps/web
+  # ✓ configs/eslint
+
+  # Exclude patterns - files/folders to ignore
+  - '!**/test/**'        # Excludes: packages/core/test, components/ui/test
+  - '!**/dist/**'        # Excludes: any dist folders
+  - '!**/node_modules/**'# Excludes: all node_modules folders
+  - '!**/.next/**'       # Excludes: Next.js build output
