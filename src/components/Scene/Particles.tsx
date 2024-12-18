@@ -13,7 +13,7 @@ import type {
   ParticlesProps,
   ParticlesRef,
 } from '@/types/particle.types';
-import { useParticleSettingsContext } from '@/contexts/ParticleSettingsContext';
+import { useParticleSettingsContext } from '@/contexts/useParticleSettingsContext';
 
 const ParticlesMaterial = shaderMaterial(
   {

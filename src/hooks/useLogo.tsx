@@ -2,7 +2,7 @@ import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import type { LogoGeometry } from '@/types/particle.types';
 import { useMemo } from 'react';
-import { useParticleSettingsContext } from '@/contexts/ParticleSettingsContext';
+import { useParticleSettingsContext } from '@/contexts/useParticleSettingsContext';
 
 export function useLogo(): LogoGeometry {
   const { settings } = useParticleSettingsContext();

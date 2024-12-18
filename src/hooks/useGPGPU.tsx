@@ -16,7 +16,7 @@ import scalarFieldShader from '@/shaders/gpgpu/scalarField.glsl';
 import zeroPointsShader from '@/shaders/gpgpu/zeroPoints.glsl';
 import gpgpuParticlesShader from '@/shaders/gpgpu/particles.glsl';
 
-import { useParticleSettingsContext } from '@/contexts/ParticleSettingsContext';
+import { useParticleSettingsContext } from '@/contexts/useParticleSettingsContext';
 
 function generateRandomPitches(capacity: number) {
   const pitches = new Float32Array(capacity);
