@@ -39,6 +39,23 @@ export default [
       ...react.configs.recommended.rules,
       ...react.configs['jsx-runtime'].rules,
       ...jsxA11y.configs.recommended.rules,
+      'react/no-unknown-property': [
+        'error',
+        {
+          ignore: [
+            'attach',
+            'args',
+            'intensity',
+            'wireframe',
+            'array',
+            'itemSize',
+            'count',
+            'transparent',
+            'depthWrite',
+            'blending',
+          ],
+        },
+      ],
     },
   },
 ];
