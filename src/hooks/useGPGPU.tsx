@@ -242,16 +242,25 @@ export default function useGPGPU(
 
   // Debug Planes
   const debugPlanesRef = useRef<THREE.Mesh[]>([]);
-  const { debugMode } = useControls({ debugMode: { value: false, label: 'Texture Debug' } });
-  const { showAudioDebug } = useControls({
-    showAudioDebug: {
-      value: false,
-      label: 'Audio Debug',
+  const { gpgpuTextures: showTextureDebug, audioProcessing: showAudioDebug } = useControls(
+    'Debug Views',
+    {
+      gpgpuTextures: {
+        value: false,
+        label: 'Show GPGPU Textures',
+      },
+      audioProcessing: {
+        value: false,
+        label: 'Show Audio Logs',
+      },
     },
-  });
+    {
+      collapsed: true,
+    }
+  );
 
   useLayoutEffect(() => {
-    if (!gpgpu || !debugMode) return;
+    if (!gpgpu || !showTextureDebug) return;
 
     // Create debug planes
     const audioDebug = new THREE.Mesh(
@@ -302,7 +311,7 @@ export default function useGPGPU(
       });
       debugPlanesRef.current = [];
     };
-  }, [gpgpu, scene, debugMode]);
+  }, [gpgpu, scene, showTextureDebug]);
 
   useFrame(({ clock }, delta) => {
     if (!gpgpu || !particlesRef?.current) return;
