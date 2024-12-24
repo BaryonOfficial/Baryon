@@ -16,6 +16,10 @@ export default [
       ecmaVersion: 2020,
       globals: {
         ...globals.browser,
+        AudioContext: 'readonly',
+        AnalyserNode: 'readonly',
+        Float32Array: 'readonly',
+        Uint8Array: 'readonly',
       },
       parserOptions: {
         project: ['./tsconfig.node.json', './tsconfig.app.json'],
@@ -39,10 +43,21 @@ export default [
       ...react.configs.recommended.rules,
       ...react.configs['jsx-runtime'].rules,
       ...jsxA11y.configs.recommended.rules,
+
+      // Critical for audio visualization performance
+      'react-hooks/exhaustive-deps': [
+        'warn',
+        {
+          additionalHooks: '(useFrame|useAnimationFrame)$',
+        },
+      ],
+
+      // R3F properties
       'react/no-unknown-property': [
         'error',
         {
           ignore: [
+            // R3F properties
             'attach',
             'args',
             'intensity',
@@ -56,6 +71,16 @@ export default [
           ],
         },
       ],
+
+      // Prevent common audio/WebGL context leaks
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'NewExpression[callee.name=/Audio(Context|Buffer|Node)|WebGLRenderer/]',
+          message:
+            'Audio and WebGL contexts should be created in useEffect or useLayoutEffect and properly disposed',
+        },
+      ],
     },
   },
   {
@@ -63,6 +88,14 @@ export default [
     rules: {
       'jsx-a11y/heading-has-content': 'off',
       'react-refresh/only-export-components': 'off',
+    },
+  },
+  // Relax rules for audio processing files
+  {
+    files: ['**/audio/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off', // For FFT data handling
+      'no-bitwise': 'off', // For audio bit operations
     },
   },
 ];
