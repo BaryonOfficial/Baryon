@@ -11,6 +11,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install
       - name: Check formatting
-        run: pnpm prettier --check .
+        run: pnpm prettier --check "**/*.{js,jsx,ts,tsx,json,md,yml,html,css}" --ignore-path .gitignore --ignore-path .prettierignore
       - name: Lint
         run: pnpm lint

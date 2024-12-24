@@ -1,0 +1,19 @@
+# Formatting-specific ignores
+# Generated UI components
+src/components/ui/
+
+# Shader files (formatting could break them)
+*.glsl
+*.vert
+*.frag
+
+# Generated types
+*.d.ts
+
+# Third-party code in public/lib (but not our custom processor)
+public/lib/essentia-wasm.umd.js
+public/lib/essentia.js-core.umd.js
+public/lib/ringbuf.js
+
+# Draco 3D compression files (from Three.js)
+public/draco/**/* 

@@ -10,7 +10,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "preinstall": "npx only-allow pnpm",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md,yml,html,css}\" --ignore-path .gitignore --ignore-path .prettierignore",
+    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md,yml,html,css}\" --ignore-path .gitignore --ignore-path .prettierignore"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -79,7 +81,7 @@
       "eslint --fix",
       "prettier --write"
     ],
-    "*.{json,md,yml}": [
+    "*.{json,md,yml,html,css}": [
       "prettier --write"
     ]
   }
