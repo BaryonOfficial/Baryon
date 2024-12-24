@@ -13,6 +13,8 @@ dist-ssr
 *.local
 prompts
 examples
+package-lock.json
+yarn.lock
 
 # Editor directories and files
 .vscode/*
