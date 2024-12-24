@@ -58,4 +58,11 @@ export default [
       ],
     },
   },
+  {
+    files: ['src/components/ui/**/*'],
+    rules: {
+      'jsx-a11y/heading-has-content': 'off',
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ];

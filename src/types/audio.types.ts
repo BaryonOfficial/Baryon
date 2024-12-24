@@ -3,7 +3,30 @@ import { GPGPUComputation } from './gpgpu.types';
 import { ParticlesRef } from './particle.types';
 import { AudioManager } from '@/audio/audioManager';
 
-// Add custom error types
+// RingBuffer types
+export type RingBuffer = object; // or Record<string, unknown>
+
+export interface AudioReader {
+  available_read: () => number;
+  dequeue: (array: Float32Array) => number;
+}
+
+// Extend Window interface
+declare global {
+  interface Window {
+    exports: {
+      RingBuffer: {
+        getStorageForCapacity(capacity: number, type: typeof Float32Array): SharedArrayBuffer;
+        new (sab: SharedArrayBuffer, type: typeof Float32Array): RingBuffer;
+      };
+      AudioReader: {
+        new (rb: RingBuffer): AudioReader;
+      };
+    };
+  }
+}
+
+// Error types
 export class AudioManagerError extends Error {
   constructor(message: string) {
     super(message);
@@ -20,12 +43,6 @@ export class AudioWorkletError extends AudioManagerError {
 
 // Define the return type based on the actual implementation
 export type AudioManagerState = ReturnType<typeof AudioManager.prototype.getAudio>;
-
-// Add RingBuffer types
-interface AudioReader {
-  available_read: () => number;
-  dequeue: (array: Float32Array) => number;
-}
 
 // Internal audio manager types
 export interface AudioObject {
