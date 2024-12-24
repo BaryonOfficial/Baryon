@@ -26,7 +26,7 @@ function generateRandomPitches(capacity: number) {
   return pitches;
 }
 
-export default function useGPGPU(
+export function useGPGPU(
   geometries: ParticleGeometries,
   particlesRef: React.RefObject<ParticlesRef>
 ): GPGPUReturn {

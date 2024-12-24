@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { ParticlesRef } from '@/types/particle.types';
-import useGPGPU from '@/hooks/useGPGPU';
+import { useGPGPU } from '@/hooks/useGPGPU';
 import { useParticleGeometries } from '@/hooks/particles/useParticleGeometries';
 import { PostProcessingEffects } from './PostProcessingEffects';
 import Particles from './Particles';
