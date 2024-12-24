@@ -60,14 +60,16 @@ export function UnsupportedWarning({ reasons }: UnsupportedWarningProps) {
     <div
       ref={containerRef}
       className="fixed inset-0 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 md:p-8"
-      style={{ opacity: 0, scale: 0.95 }}>
+      style={{ opacity: 0, scale: 0.95 }}
+    >
       <Card className="w-full max-w-2xl bg-background/95 backdrop-blur border-muted">
         <CardHeader>
           <div
             ref={(el) => {
               itemRefs.current[0] = el;
             }}
-            style={{ opacity: 0, transform: 'translateY(20px)' }}>
+            style={{ opacity: 0, transform: 'translateY(20px)' }}
+          >
             <Alert variant="destructive" className="mb-4">
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Browser Not Supported</AlertTitle>
@@ -84,7 +86,8 @@ export function UnsupportedWarning({ reasons }: UnsupportedWarningProps) {
               itemRefs.current[1] = el;
             }}
             className="text-lg text-muted-foreground"
-            style={{ opacity: 0, transform: 'translateY(20px)' }}>
+            style={{ opacity: 0, transform: 'translateY(20px)' }}
+          >
             This music visualizer is not supported on {getWarningMessage()}.
           </p>
 
@@ -93,7 +96,8 @@ export function UnsupportedWarning({ reasons }: UnsupportedWarningProps) {
               itemRefs.current[2] = el;
             }}
             className="bg-muted/50 rounded-lg p-4"
-            style={{ opacity: 0, transform: 'translateY(20px)' }}>
+            style={{ opacity: 0, transform: 'translateY(20px)' }}
+          >
             <h3 className="font-semibold mb-2">Recommended Browsers:</h3>
             <ul className="list-disc list-inside space-y-1 text-muted-foreground">
               <li>Google Chrome</li>
@@ -107,7 +111,8 @@ export function UnsupportedWarning({ reasons }: UnsupportedWarningProps) {
               itemRefs.current[3] = el;
             }}
             className="bg-muted/50 rounded-lg p-4"
-            style={{ opacity: 0, transform: 'translateY(20px)' }}>
+            style={{ opacity: 0, transform: 'translateY(20px)' }}
+          >
             <h3 className="font-semibold mb-2">Required Features:</h3>
             <ul className="list-disc list-inside space-y-1 text-muted-foreground">
               <li>WebGL2</li>
@@ -122,7 +127,8 @@ export function UnsupportedWarning({ reasons }: UnsupportedWarningProps) {
             ref={(el) => {
               itemRefs.current[4] = el;
             }}
-            style={{ opacity: 0, transform: 'translateY(20px)' }}>
+            style={{ opacity: 0, transform: 'translateY(20px)' }}
+          >
             <Button variant="secondary" onClick={handleTryAnyway}>
               Try Anyway
             </Button>

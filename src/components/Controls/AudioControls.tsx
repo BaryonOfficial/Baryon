@@ -39,7 +39,8 @@ const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
           'border shadow-white/10',
           className
         )}
-        {...props}>
+        {...props}
+      >
         {children}
       </button>
     );
@@ -93,7 +94,8 @@ export function AudioControls() {
     <div className="fixed top-20 left-12 z-50 p-4 flex flex-col gap-4">
       <div
         onMouseEnter={(e) => animate(e.currentTarget, { scale: 1.02 }, { duration: 0.2 })}
-        onMouseLeave={(e) => animate(e.currentTarget, { scale: 1 }, { duration: 0.2 })}>
+        onMouseLeave={(e) => animate(e.currentTarget, { scale: 1 }, { duration: 0.2 })}
+      >
         <Label
           htmlFor="audio-file"
           className={cn(
@@ -103,7 +105,8 @@ export function AudioControls() {
             'border border-white/50 shadow-lg shadow-white/10',
             'cursor-pointer text-sm flex items-center justify-center',
             'transition-all duration-200'
-          )}>
+          )}
+        >
           <span className="truncate font-medium text-slate-800 w-full text-center">{fileName}</span>
           <input
             id="audio-file"
@@ -118,11 +121,13 @@ export function AudioControls() {
       <div className="flex gap-3 justify-center">
         <div
           onMouseEnter={(e) => animate(e.currentTarget, { scale: 1.05 }, { duration: 0.2 })}
-          onMouseLeave={(e) => animate(e.currentTarget, { scale: 1 }, { duration: 0.2 })}>
+          onMouseLeave={(e) => animate(e.currentTarget, { scale: 1 }, { duration: 0.2 })}
+        >
           <ControlButton
             onClick={togglePlayPause}
             disabled={!isAudioLoaded}
-            className="backdrop-blur-sm">
+            className="backdrop-blur-sm"
+          >
             {isPlaying ? (
               <Pause className="h-5 w-5 text-slate-800" />
             ) : (
@@ -133,7 +138,8 @@ export function AudioControls() {
 
         <div
           onMouseEnter={(e) => animate(e.currentTarget, { scale: 1.05 }, { duration: 0.2 })}
-          onMouseLeave={(e) => animate(e.currentTarget, { scale: 1 }, { duration: 0.2 })}>
+          onMouseLeave={(e) => animate(e.currentTarget, { scale: 1 }, { duration: 0.2 })}
+        >
           <ControlButton onClick={stop} disabled={!isAudioLoaded} className="backdrop-blur-sm">
             <Square className="h-5 w-5 text-slate-800" />
           </ControlButton>
@@ -141,11 +147,13 @@ export function AudioControls() {
 
         <div
           onMouseEnter={(e) => animate(e.currentTarget, { scale: 1.05 }, { duration: 0.2 })}
-          onMouseLeave={(e) => animate(e.currentTarget, { scale: 1 }, { duration: 0.2 })}>
+          onMouseLeave={(e) => animate(e.currentTarget, { scale: 1 }, { duration: 0.2 })}
+        >
           <ControlButton
             onClick={handleMicToggle}
             variant={isMicActive ? 'destructive' : 'default'}
-            className="backdrop-blur-sm">
+            className="backdrop-blur-sm"
+          >
             {isMicActive ? (
               <MicOff className="h-5 w-5 text-red-700" />
             ) : (

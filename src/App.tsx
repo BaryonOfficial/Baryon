@@ -37,7 +37,8 @@ function ErrorFallback({
             resetErrorBoundary();
             window.location.reload();
           }}
-          className="px-4 py-2 bg-white text-black rounded-md hover:bg-gray-200">
+          className="px-4 py-2 bg-white text-black rounded-md hover:bg-gray-200"
+        >
           Try again with compatibility check
         </button>
       </div>

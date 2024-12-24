@@ -1,9 +1,9 @@
 export interface SceneState {
-  showStats: boolean
+  showStats: boolean;
 }
 
 export interface SceneActions {
-  setShowStats: (show: boolean) => void
+  setShowStats: (show: boolean) => void;
 }
 
-export type SceneStore = SceneState & SceneActions 
+export type SceneStore = SceneState & SceneActions;
