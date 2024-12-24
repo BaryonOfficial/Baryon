@@ -9,31 +9,45 @@ export const useAudioStore = create<AudioStore>((set, get) => ({
   // Initial state from audioManager
   ...audioManager.getAudio(),
   fileName: 'Upload Audio',
+  error: null,
 
   loadFile: async (file) => {
     try {
       const fileURL = URL.createObjectURL(file);
       await audioManager.loadAudio(fileURL);
-      set({ fileName: file.name, isAudioLoaded: true, isPlaying: false });
+      set({ fileName: file.name, isAudioLoaded: true, isPlaying: false, error: null });
+      URL.revokeObjectURL(fileURL); // Clean up the URL
     } catch (error) {
       console.error('Error loading audio:', error);
-      set({ fileName: 'Upload Audio', isAudioLoaded: false });
+      set({
+        fileName: 'Upload Audio',
+        isAudioLoaded: false,
+        error: error instanceof Error ? error.message : 'Failed to load audio',
+      });
     }
   },
 
   togglePlayPause: async () => {
     try {
       const isNowPlaying = await audioManager.playPauseAudio();
-      set({ isPlaying: isNowPlaying });
+      set({ isPlaying: isNowPlaying, error: null });
     } catch (error) {
       console.error('Error in play/pause:', error);
-      set({ isPlaying: false });
+      set({
+        isPlaying: false,
+        error: error instanceof Error ? error.message : 'Failed to toggle playback',
+      });
     }
   },
 
   stop: () => {
-    audioManager.stopAudio();
-    set({ isPlaying: false });
+    try {
+      audioManager.stopAudio();
+      set({ isPlaying: false, error: null });
+    } catch (error) {
+      console.error('Error stopping audio:', error);
+      set({ error: error instanceof Error ? error.message : 'Failed to stop audio' });
+    }
   },
 
   toggleMic: async () => {
@@ -42,29 +56,37 @@ export const useAudioStore = create<AudioStore>((set, get) => ({
     try {
       if (isMicActive) {
         audioManager.stopMicRecordStream();
+        set({ isMicActive: false, error: null });
       } else {
         await audioManager.startMicRecordStream();
+        set({ isMicActive: true, error: null });
       }
-      set({ isMicActive: !isMicActive });
     } catch (error) {
       console.error('Error toggling microphone:', error);
-      // Reset state if there's an error
-      set({ isMicActive: false });
-      throw error;
+      set({
+        isMicActive: false,
+        error: error instanceof Error ? error.message : 'Failed to toggle microphone',
+      });
+      throw error; // Re-throw for UI handling if needed
     }
   },
 
   resumeAudioContext: async () => {
     try {
       await audioManager.resumeAudioContext();
-      set(audioManager.getAudio());
+      set({ ...audioManager.getAudio(), error: null });
     } catch (error) {
       console.error('Error resuming audio context:', error);
+      set({ error: error instanceof Error ? error.message : 'Failed to resume audio context' });
     }
   },
 
   setIsPlaying: (isPlaying: boolean) => {
-    set({ isPlaying });
+    set({ isPlaying, error: null });
+  },
+
+  clearError: () => {
+    set({ error: null });
   },
 
   processAudioData: (
@@ -72,11 +94,19 @@ export const useAudioStore = create<AudioStore>((set, get) => ({
     particlesRef: RefObject<ParticlesRef>,
     showDebug?: boolean
   ) => {
-    audioManager.processAudioData(gpgpu, particlesRef, showDebug);
+    try {
+      audioManager.processAudioData(gpgpu, particlesRef, showDebug);
+    } catch (error) {
+      console.error('Error processing audio data:', error);
+      set({ error: error instanceof Error ? error.message : 'Failed to process audio data' });
+    }
   },
 }));
 
 // Subscribe to audio state changes
 audioManager.subscribeToAudio((state) => {
-  useAudioStore.setState(state);
+  useAudioStore.setState((current) => ({
+    ...current,
+    ...state,
+  }));
 });

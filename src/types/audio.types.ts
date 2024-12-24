@@ -83,6 +83,7 @@ export interface AudioActions {
   toggleMic: () => Promise<void>;
   resumeAudioContext: () => Promise<void>;
   setIsPlaying: (isPlaying: boolean) => void;
+  clearError: () => void;
   processAudioData: typeof AudioManager.prototype.processAudioData;
 }
 
@@ -94,4 +95,5 @@ export interface AudioInitializerProps {
 export type AudioStore = AudioManagerState &
   AudioActions & {
     fileName: string; // Additional store-specific state
+    error: string | null; // Error state
   };

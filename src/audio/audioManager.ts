@@ -5,9 +5,31 @@ import type { GPGPUComputation } from '@/types/gpgpu.types';
 import { AudioManagerError, AudioWorkletError } from '@/types/audio.types';
 import type { AudioObject, AudioAnalysisResult, AudioWorkletOptions } from '@/types/audio.types';
 
+/**
+ * Manages audio processing and analysis using Web Audio API and AudioWorklet.
+ * Handles both file playback and microphone input with real-time audio analysis.
+ *
+ * Features:
+ * - Audio file playback with FFT analysis
+ * - Microphone input processing
+ * - Real-time audio visualization data
+ * - Multi-source mixing (file + mic)
+ * - AudioWorklet-based processing
+ */
 export class AudioManager {
   private audioObject: AudioObject;
   private finalFreqData: Uint8Array;
+  private objectUrls = new Set<string>();
+  private static registeredWorklets = new WeakMap<BaseAudioContext, boolean>();
+  private static readonly WORKLET_NAME = 'audio-data-processor';
+  private static readonly WORKLET_FILES = [
+    './lib/essentia-wasm.umd.js',
+    './lib/essentia.js-core.umd.js',
+    './lib/audio-data-processor.js',
+    './lib/ringbuf.js',
+  ] as const;
+
+  private registrationPromise: Promise<void> | null = null;
 
   constructor() {
     this.audioObject = {
@@ -33,7 +55,11 @@ export class AudioManager {
     this.finalFreqData = new Uint8Array(this.audioObject.fftSize / 2);
   }
 
-  public setup(camera: Camera) {
+  /**
+   * Initializes the audio system with a camera for spatial audio.
+   * @param camera - The camera to attach the audio listener to
+   */
+  public setup(camera: Camera): void {
     this.audioObject.listener = new THREE.AudioListener();
     camera.add(this.audioObject.listener);
 
@@ -47,7 +73,11 @@ export class AudioManager {
     );
   }
 
-  public setAudioEndedCallback(callback: () => void) {
+  /**
+   * Sets up a callback to be called when audio playback ends.
+   * @param callback - Function to be called when audio ends
+   */
+  public setAudioEndedCallback(callback: () => void): void {
     if (!this.audioObject.sound) {
       console.warn('Audio object not initialized when setting ended callback');
       return;
@@ -63,6 +93,11 @@ export class AudioManager {
     };
   }
 
+  /**
+   * Loads an audio file from the given URL.
+   * @param url - URL of the audio file to load
+   * @throws {Error} If audio is not initialized or file loading fails
+   */
   public loadAudio(url: string): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.audioObject.sound) {
@@ -76,6 +111,7 @@ export class AudioManager {
       }
 
       this.audioObject.isAudioLoaded = false;
+
       this.audioObject.audioLoader.load(
         url,
         (buffer) => {
@@ -100,14 +136,14 @@ export class AudioManager {
   }
 
   // Add validation helper
-  private validateAudioState(): void {
-    if (!this.audioObject.audioCtx) throw new AudioManagerError('AudioContext not initialized');
-
-    if (this.audioObject.audioCtx.state === 'closed')
-      throw new AudioManagerError('AudioContext is closed');
-
-    if (!this.audioObject.listener) throw new AudioManagerError('AudioListener not initialized');
-  }
+  /** @unused */
+  // private isAudioInitialized(): boolean {
+  //   return !!(
+  //     this.audioObject.sound &&
+  //     this.audioObject.audioCtx &&
+  //     this.audioObject.listener
+  //   )
+  // }
 
   public async playPauseAudio(): Promise<boolean> {
     try {
@@ -154,105 +190,6 @@ export class AudioManager {
 
   // Helper method to check audio state
   /** @unused */
-  // private isAudioInitialized(): boolean {
-  //   return !!(
-  //     this.audioObject.sound &&
-  //     this.audioObject.audioCtx &&
-  //     this.audioObject.listener
-  //   )
-  // }
-
-  public startMicRecordStream(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        reject(new Error('getUserMedia not supported'));
-        return;
-      }
-
-      navigator.mediaDevices
-        .getUserMedia({ audio: true })
-        .then(async (stream) => {
-          try {
-            this.audioObject.gumStream = stream;
-
-            if (this.audioObject.audioCtx?.state === 'suspended') {
-              await this.audioObject.audioCtx.resume();
-              console.log('Audio Context resumed successfully');
-            }
-
-            if (!this.audioObject.listener || !this.audioObject.audioCtx) {
-              throw new Error('Audio context or listener not initialized');
-            }
-
-            // Create a THREE.Audio object for the microphone
-            this.audioObject.micSound = new THREE.Audio(this.audioObject.listener);
-            this.audioObject.micSound.setMediaStreamSource(stream);
-            this.audioObject.micNode = this.audioObject.audioCtx.createMediaStreamSource(stream);
-
-            // Detach for manual connections
-            this.audioObject.micSound.getOutput().disconnect();
-
-            // Create mic analyser
-            this.audioObject.micAnalyser = new THREE.AudioAnalyser(
-              this.audioObject.micSound,
-              this.audioObject.fftSize
-            );
-
-            // Create zero gain node to prevent feedback
-            const zeroGainNode = this.audioObject.audioCtx.createGain();
-            zeroGainNode.gain.setValueAtTime(0, this.audioObject.audioCtx.currentTime);
-
-            // Connect audio pipeline
-            if (!this.audioObject.essentiaNode) {
-              throw new Error('Essentia node not initialized');
-            }
-
-            this.audioObject.micSound
-              .getOutput()
-              .connect(this.audioObject.essentiaNode)
-              .connect(zeroGainNode)
-              .connect(this.audioObject.audioCtx.destination);
-
-            // Update essentia node
-            this.audioObject.essentiaNode.port.postMessage({
-              isPlaying: this.audioObject.sound?.isPlaying ?? false,
-              micActive: this.audioObject.gumStream?.active ?? false,
-            });
-
-            resolve();
-          } catch (error) {
-            this.cleanupMicStream();
-            reject(error);
-          }
-        })
-        .catch((err) => {
-          console.error('Error accessing microphone:', err);
-          reject(err);
-        });
-    });
-  }
-
-  public stopMicRecordStream(): void {
-    this.cleanupMicStream();
-
-    this.audioObject.essentiaNode?.port.postMessage({
-      isPlaying: this.audioObject.sound?.isPlaying ?? false,
-      micActive: false,
-    });
-  }
-
-  private cleanupMicStream(): void {
-    if (this.audioObject.gumStream) {
-      this.audioObject.gumStream.getAudioTracks().forEach((track) => track.stop());
-      this.audioObject.micNode?.disconnect();
-      this.audioObject.micAnalyser = null;
-      this.audioObject.gumStream = null;
-      this.audioObject.micSound = null;
-    }
-  }
-
-  // Optional: Debug method for checking mic levels
-  /** @unused */
   // private checkMicInputLevels(): boolean {
   //   if (!this.audioObject.micAnalyser) return false
 
@@ -270,24 +207,25 @@ export class AudioManager {
   }
 
   private audioAnalysis(): AudioAnalysisResult {
-    const soundIsActive = this.audioObject.sound?.isPlaying ?? false;
-    const micIsActive = this.audioObject.gumStream?.active ?? false;
+    const { sound, analyser, gumStream, micAnalyser } = this.audioObject;
+    const soundIsActive = sound?.isPlaying ?? false;
+    const micIsActive = gumStream?.active ?? false;
 
     // Get sound data if active
     let inputFileData = null;
-    if (soundIsActive && this.audioObject.analyser) {
+    if (soundIsActive && analyser) {
       inputFileData = {
-        amplitude: this.audioObject.analyser.getAverageFrequency(),
-        freq: this.audioObject.analyser.getFrequencyData(),
+        amplitude: analyser.getAverageFrequency(),
+        freq: analyser.getFrequencyData(),
       };
     }
 
     // Get mic data if active
     let micData = null;
-    if (micIsActive && this.audioObject.micAnalyser) {
+    if (micIsActive && micAnalyser) {
       micData = {
-        amplitude: this.audioObject.micAnalyser.getAverageFrequency(),
-        freq: this.audioObject.micAnalyser.getFrequencyData(),
+        amplitude: micAnalyser.getAverageFrequency(),
+        freq: micAnalyser.getFrequencyData(),
       };
     }
 
@@ -316,59 +254,96 @@ export class AudioManager {
     };
   }
 
+  /**
+   * Processes audio data and updates GPGPU uniforms for visualization.
+   * @param gpgpu - GPGPU computation instance
+   * @param particlesRef - Reference to particle system
+   * @param showDebug - Whether to show debug information
+   */
   public processAudioData(
     gpgpu: GPGPUComputation,
     particlesRef: React.RefObject<ParticlesRef>,
     showDebug = false
   ): void {
-    const soundIsActive = this.audioObject.sound?.isPlaying ?? false;
-    const micIsActive = this.audioObject.gumStream?.active ?? false;
-    const soundIsStopped = !this.audioObject.sound?.started || true;
+    if (!gpgpu || !gpgpu.essentiaData) {
+      console.warn('GPGPU not properly initialized');
+      return;
+    }
+
+    const { sound, gumStream, audioReader } = this.audioObject;
+    const soundIsActive = sound?.isPlaying ?? false;
+    const micIsActive = gumStream?.active ?? false;
+    const soundIsStopped = !sound?.started || true;
 
     // Reset when both sources are inactive AND sound is stopped
     if (!soundIsActive && !micIsActive && soundIsStopped) {
-      gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data.fill(0);
-      gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.fill(0);
-      gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true;
-      gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true;
-      gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = 0;
-      gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = 0;
-      particlesRef.current?.updateUniforms({ uAverageAmplitude: 0 });
+      this.resetGPGPUState(gpgpu, particlesRef);
       return;
     }
 
     // Only process audio if there's an active source
     if (!soundIsActive && !micIsActive) return;
 
-    // Process audio data only when active
-    if (this.audioObject.audioReader?.available_read() >= 1) {
-      const read = this.audioObject.audioReader.dequeue(gpgpu.essentiaData);
-      if (read !== 0) {
-        gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data.set(gpgpu.essentiaData);
-        gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true;
+    try {
+      // Process audio data only when active
+      if (audioReader && audioReader.available_read() >= 1) {
+        const read = audioReader.dequeue(gpgpu.essentiaData);
+        if (read && read !== 0) {
+          this.updateGPGPUPitches(gpgpu);
+        }
       }
+
+      const { avgAmplitude, freqData } = this.audioAnalysis();
+      this.updateGPGPUAmplitudes(gpgpu, particlesRef, avgAmplitude, freqData);
+
+      if (showDebug) {
+        this.logDebugInfo(gpgpu);
+      }
+    } catch (error) {
+      console.error('Error processing audio data:', error);
+      // Attempt recovery by resetting state
+      this.resetGPGPUState(gpgpu, particlesRef);
     }
+  }
 
-    const { avgAmplitude, freqData } = this.audioAnalysis();
+  private resetGPGPUState(
+    gpgpu: GPGPUComputation,
+    particlesRef: React.RefObject<ParticlesRef>
+  ): void {
+    gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data.fill(0);
+    gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.fill(0);
+    gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true;
+    gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true;
+    gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = 0;
+    gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = 0;
+    particlesRef.current?.updateUniforms({ uAverageAmplitude: 0 });
+  }
 
-    // Update GPGPU uniforms
+  private updateGPGPUPitches(gpgpu: GPGPUComputation): void {
+    gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data.set(gpgpu.essentiaData);
+    gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true;
+  }
+
+  private updateGPGPUAmplitudes(
+    gpgpu: GPGPUComputation,
+    particlesRef: React.RefObject<ParticlesRef>,
+    avgAmplitude: number,
+    freqData: Uint8Array
+  ): void {
     gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
     gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = avgAmplitude;
     particlesRef.current?.updateUniforms({ uAverageAmplitude: avgAmplitude });
 
     gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.set(freqData);
     gpgpu.audioDataVariable.material.uniforms.tDataArray.value.needsUpdate = true;
+  }
 
-    // Debug logging
-    if (showDebug) {
-      console.log('Audio Data:', {
-        averageAmplitude: gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value,
-        tDataArray: Array.from(
-          gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data
-        ),
-        tPitches: Array.from(gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data),
-      });
-    }
+  private logDebugInfo(gpgpu: GPGPUComputation): void {
+    console.log('Audio Data:', {
+      averageAmplitude: gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value,
+      tDataArray: Array.from(gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data),
+      tPitches: Array.from(gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data),
+    });
   }
 
   private async URLFromFiles(files: string[]): Promise<string> {
@@ -382,7 +357,9 @@ export class AudioManager {
 
       const concatenatedCode = texts.join('\n');
       const blob = new Blob([concatenatedCode], { type: 'application/javascript' });
-      return URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
+      this.objectUrls.add(url);
+      return url;
     } catch (error) {
       throw new AudioWorkletError(
         `Failed to concatenate worklet files: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -390,43 +367,214 @@ export class AudioManager {
     }
   }
 
+  private cleanupObjectUrls(): void {
+    this.objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    this.objectUrls.clear();
+  }
+
+  private async retryWithBackoff<T>(
+    operation: () => Promise<T>,
+    maxAttempts: number = 3,
+    initialDelay: number = 1000,
+    onRetry?: (attempt: number, error: Error, nextDelay: number) => void
+  ): Promise<T> {
+    let lastError: Error | undefined;
+    let delay = initialDelay;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        if (attempt === maxAttempts) break;
+
+        // Calculate next delay before callback
+        const nextDelay = delay * 2;
+
+        // Allow external retry monitoring
+        onRetry?.(attempt, lastError, nextDelay);
+
+        // Log retry attempt (could move this to default onRetry)
+        console.warn(
+          `Worklet registration attempt ${attempt} failed:`,
+          lastError.message,
+          `- Retrying in ${delay}ms`
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay = nextDelay;
+      }
+    }
+
+    throw new AudioWorkletError(
+      `Failed to register worklet after ${maxAttempts} attempts: ${lastError?.message}`
+    );
+  }
+
+  private async ensureWorkletRegistered(context: BaseAudioContext): Promise<void> {
+    // If there's an ongoing registration, wait for it
+    if (this.registrationPromise) {
+      try {
+        await this.registrationPromise;
+        return;
+      } catch (error) {
+        console.warn('Previous registration failed, retrying:', error);
+        this.registrationPromise = null;
+        AudioManager.registeredWorklets.delete(context);
+      }
+    }
+
+    const registration = AudioManager.registeredWorklets.get(context);
+    if (registration === true) return;
+
+    // Create a new registration promise with retry logic
+    this.registrationPromise = (async () => {
+      try {
+        await this.retryWithBackoff(
+          async () => {
+            const concatenatedCode = await this.URLFromFiles([...AudioManager.WORKLET_FILES]);
+            await context.audioWorklet.addModule(concatenatedCode);
+            AudioManager.registeredWorklets.set(context, true);
+            this.cleanupObjectUrls();
+          },
+          3,
+          1000,
+          (attempt, error, nextDelay) => {
+            // Could emit analytics/metrics here
+            console.debug(`Retry ${attempt}: ${error.message}, next delay: ${nextDelay}ms`);
+          }
+        );
+      } catch (error) {
+        AudioManager.registeredWorklets.delete(context);
+        this.cleanupObjectUrls();
+        throw error;
+      } finally {
+        this.registrationPromise = null;
+      }
+    })();
+
+    await this.registrationPromise;
+  }
+
+  private async cleanupNodes(): Promise<void> {
+    if (this.audioObject.essentiaNode) {
+      this.audioObject.essentiaNode.port.onmessageerror = null;
+      this.audioObject.essentiaNode.disconnect();
+    }
+    this.audioObject.gain?.disconnect();
+  }
+
+  private cleanupReferences(): void {
+    this.audioObject.essentiaNode = null;
+    this.audioObject.gain = null;
+    this.audioObject.audioReader = null;
+  }
+
+  public async cleanupAudioGraph(): Promise<void> {
+    const errors: Error[] = [];
+
+    try {
+      await this.cleanupNodes();
+    } catch (error) {
+      errors.push(
+        new AudioManagerError(
+          `Failed to cleanup nodes: ${error instanceof Error ? error.message : 'Unknown error'}`
+        )
+      );
+    }
+
+    try {
+      this.cleanupReferences();
+    } catch (error) {
+      errors.push(
+        new AudioManagerError(
+          `Failed to cleanup references: ${error instanceof Error ? error.message : 'Unknown error'}`
+        )
+      );
+    }
+
+    try {
+      this.cleanupObjectUrls();
+    } catch (error) {
+      errors.push(
+        new AudioManagerError(
+          `Failed to cleanup object URLs: ${error instanceof Error ? error.message : 'Unknown error'}`
+        )
+      );
+    }
+
+    if (errors.length > 0) {
+      throw new AudioManagerError(
+        `Cleanup failed with ${errors.length} errors: ${errors.map((e) => e.message).join(', ')}`
+      );
+    }
+  }
+
+  /**
+   * Validates the current state of the audio system.
+   * @throws {AudioManagerError} If the audio system is in an invalid state
+   */
+  private validateAudioState(): void {
+    const issues: string[] = [];
+
+    if (!this.audioObject.audioCtx) {
+      issues.push('AudioContext not initialized');
+    } else if (this.audioObject.audioCtx.state === 'closed') {
+      issues.push('AudioContext is closed');
+    }
+
+    if (!this.audioObject.listener) {
+      issues.push('AudioListener not initialized');
+    }
+
+    if (issues.length > 0) {
+      throw new AudioManagerError(`Invalid audio state: ${issues.join(', ')}`);
+    }
+  }
+
   public async loadAudioWorklet(): Promise<void> {
     try {
       this.validateAudioState();
+      const { audioCtx } = this.audioObject;
 
+      if (!audioCtx) {
+        throw new AudioManagerError('AudioContext not initialized');
+      }
+
+      // If we already have a node, no need to proceed
       if (this.audioObject.essentiaNode) {
-        console.log('AudioWorkletProcessor is already registered');
         return;
       }
 
-      const workletProcessorCode = [
-        './lib/essentia-wasm.umd.js',
-        './lib/essentia.js-core.umd.js',
-        './lib/audio-data-processor.js',
-        './lib/ringbuf.js',
-      ];
+      // Ensure worklet is registered for this context
+      await this.ensureWorkletRegistered(audioCtx);
 
-      const concatenatedCode = await this.URLFromFiles(workletProcessorCode);
-      await this.audioObject.audioCtx!.audioWorklet.addModule(concatenatedCode);
+      // Create new audio graph
+      await this.setupAudioGraph();
     } catch (error) {
-      if (error instanceof AudioManagerError) throw error;
-
+      await this.cleanupAudioGraph();
       throw new AudioWorkletError(
         `Failed to load audio worklet: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
   }
 
-  public setupAudioGraph(): void {
+  private async setupAudioGraph(): Promise<void> {
     try {
       this.validateAudioState();
-
       const { audioCtx } = this.audioObject;
-      if (!audioCtx) throw new AudioManagerError('AudioContext not initialized');
 
-      if (!window.exports) {
-        throw new Error('RingBuffer exports not found');
+      if (!audioCtx) {
+        throw new AudioManagerError('AudioContext not initialized');
       }
+
+      if (!window.exports?.RingBuffer) {
+        throw new AudioManagerError('RingBuffer exports not found');
+      }
+
+      // Clean up existing nodes before creating new ones
+      await this.cleanupAudioGraph();
 
       // Create SharedArrayBuffer using RingBuffer's helper method
       const sab = window.exports.RingBuffer.getStorageForCapacity(
@@ -438,7 +586,7 @@ export class AudioManager {
       this.audioObject.audioReader = new window.exports.AudioReader(rb);
 
       // Create and configure AudioWorkletNode
-      this.audioObject.essentiaNode = new AudioWorkletNode(audioCtx, 'audio-data-processor', {
+      this.audioObject.essentiaNode = new AudioWorkletNode(audioCtx, AudioManager.WORKLET_NAME, {
         processorOptions: {
           bufferSize: this.audioObject.fftSize,
           sampleRate: audioCtx.sampleRate,
@@ -447,114 +595,102 @@ export class AudioManager {
       });
 
       // Setup error handling for AudioWorkletNode
-      this.audioObject.essentiaNode.port.onmessageerror = (event: MessageEvent) => {
-        console.error('AudioWorkletNode message error:', event);
-      };
+      this.audioObject.essentiaNode.port.onmessageerror = this.handleWorkletError;
 
       // Initialize audio processing state
-      try {
-        this.audioObject.essentiaNode.port.postMessage({
-          sab,
-          isPlaying: this.audioObject.sound?.isPlaying ?? false,
-          micActive: this.audioObject.gumStream?.active ?? false,
-        });
-      } catch (error) {
-        throw new AudioWorkletError(
-          `SharedArrayBuffer transfer failed: ${error instanceof Error ? error.message : String(error)}`
-        );
-      }
+      await this.initializeAudioProcessing(sab);
 
-      // Connect audio nodes
-      if (this.audioObject.sound) {
-        this.audioObject.sound.getOutput().connect(this.audioObject.essentiaNode);
-        console.log('Sound output connected to Essentia Node');
-      }
-
-      // Create and connect gain node
-      this.audioObject.gain = audioCtx.createGain();
-      if (!this.audioObject.essentiaNode)
-        throw new AudioManagerError('Essentia Node not initialized');
-
-      this.audioObject.essentiaNode.connect(this.audioObject.gain);
-      console.log('Essentia Node connected to Gain');
-
-      this.audioObject.gain.connect(audioCtx.destination);
-      console.log('Gain connected to Destination');
+      // Create and connect audio graph
+      await this.connectAudioGraph();
     } catch (error) {
-      if (error instanceof AudioManagerError) throw error;
-
-      throw new AudioManagerError(
-        `Failed to setup audio graph: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    }
-  }
-
-  public async startAudioProcessing(): Promise<void> {
-    try {
-      await this.loadAudioWorklet();
-      this.setupAudioGraph();
-    } catch (error) {
-      console.error('Error starting audio processing:', error);
+      await this.cleanupAudioGraph();
       throw error;
     }
   }
 
-  public cleanupAudioGraph(): void {
-    // Disconnect and cleanup audio nodes
-    this.audioObject.essentiaNode?.disconnect();
-    this.audioObject.gain?.disconnect();
+  private handleWorkletError = (event: MessageEvent): void => {
+    console.error('AudioWorkletNode message error:', event);
+    // Optionally trigger a reconnection or cleanup here
+  };
 
-    // Cleanup references
-    this.audioObject.essentiaNode = null;
-    this.audioObject.gain = null;
-    this.audioObject.audioReader = null;
+  private async initializeAudioProcessing(sab: SharedArrayBuffer): Promise<void> {
+    const { essentiaNode, sound, gumStream } = this.audioObject;
+
+    if (!essentiaNode) {
+      throw new AudioManagerError('Essentia Node not initialized');
+    }
+
+    try {
+      essentiaNode.port.postMessage({
+        sab,
+        isPlaying: sound?.isPlaying ?? false,
+        micActive: gumStream?.active ?? false,
+      });
+    } catch (error) {
+      throw new AudioWorkletError(
+        `SharedArrayBuffer transfer failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
-  // Add method to check audio system health
-  public checkAudioSystem(): {
-    isReady: boolean;
-    issues: string[];
-  } {
-    const issues: string[] = [];
+  private async connectAudioGraph(): Promise<void> {
+    const { audioCtx, sound, essentiaNode } = this.audioObject;
 
-    if (!this.audioObject.audioCtx) issues.push('AudioContext not initialized');
-    else if (this.audioObject.audioCtx.state === 'suspended')
-      issues.push('AudioContext is suspended');
+    if (!audioCtx || !essentiaNode) {
+      throw new AudioManagerError('Audio system not properly initialized');
+    }
 
-    if (!this.audioObject.listener) issues.push('AudioListener not initialized');
+    try {
+      // Connect sound output if available
+      if (sound) {
+        sound.getOutput().connect(essentiaNode);
+      }
 
-    if (!this.audioObject.essentiaNode) issues.push('AudioWorklet not initialized');
-
-    return {
-      isReady: issues.length === 0,
-      issues,
-    };
+      // Create and connect gain node
+      this.audioObject.gain = audioCtx.createGain();
+      essentiaNode.connect(this.audioObject.gain);
+      this.audioObject.gain.connect(audioCtx.destination);
+    } catch (error) {
+      throw new AudioManagerError(
+        `Failed to connect audio graph: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
   }
 
-  // Add state management methods
-  public getAudio() {
-    return {
-      isPlaying: this.audioObject.sound?.isPlaying ?? false,
-      isAudioLoaded: this.audioObject.isAudioLoaded,
-      isMicActive: this.audioObject.gumStream?.active ?? false,
-      isAudioContextRunning: this.audioObject.audioCtx?.state === 'running',
-      isWorkletReady: !!this.audioObject.essentiaNode,
-      fftSize: this.audioObject.fftSize,
-      sampleRate: this.audioObject.audioCtx?.sampleRate ?? 44100,
-      averageAmplitude: this.audioObject.analyser?.getAverageFrequency() ?? 0,
-      capacity: this.audioObject.capacity,
-      analyser: this.audioObject.analyser,
-      audioCtx: this.audioObject.audioCtx,
-      sound: this.audioObject.sound,
-      data: this.audioObject.analyser?.data ?? new Uint8Array(this.audioObject.fftSize / 2),
-    };
+  /**
+   * Starts the audio processing pipeline.
+   * @throws {AudioManagerError} If initialization fails
+   */
+  public async startAudioProcessing(): Promise<void> {
+    try {
+      await this.loadAudioWorklet();
+    } catch (error) {
+      console.error('Error starting audio processing:', error);
+      await this.cleanupAudioGraph();
+
+      // If it's already a known error type, rethrow it
+      if (error instanceof AudioManagerError) {
+        throw error;
+      }
+
+      throw new AudioManagerError(
+        `Failed to start audio processing: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
   }
 
+  /**
+   * Resumes the audio context if it's suspended.
+   * @throws {AudioManagerError} If resume fails
+   */
   public async resumeAudioContext(): Promise<void> {
     try {
       this.validateAudioState();
       const { audioCtx } = this.audioObject;
-      if (!audioCtx) throw new AudioManagerError('AudioContext not initialized');
+
+      if (!audioCtx) {
+        throw new AudioManagerError('AudioContext not initialized');
+      }
 
       if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
@@ -566,12 +702,253 @@ export class AudioManager {
     }
   }
 
+  /**
+   * Checks the health of the audio system.
+   * @returns Object containing system health status
+   */
+  public checkAudioSystem(): {
+    isReady: boolean;
+    issues: string[];
+  } {
+    const { audioCtx, listener, essentiaNode } = this.audioObject;
+    const issues: string[] = [];
+
+    if (!audioCtx) {
+      issues.push('AudioContext not initialized');
+    } else if (audioCtx.state === 'suspended') {
+      issues.push('AudioContext is suspended');
+    } else if (audioCtx.state === 'closed') {
+      issues.push('AudioContext is closed');
+    }
+
+    if (!listener) {
+      issues.push('AudioListener not initialized');
+    }
+
+    if (!essentiaNode) {
+      issues.push('AudioWorklet not initialized');
+    }
+
+    return {
+      isReady: issues.length === 0,
+      issues,
+    };
+  }
+
+  /**
+   * Gets the current state of the audio system.
+   * @returns Current audio system state
+   */
+  public getAudio() {
+    const { sound, isAudioLoaded, gumStream, audioCtx, essentiaNode, fftSize, analyser, capacity } =
+      this.audioObject;
+
+    return {
+      isPlaying: sound?.isPlaying ?? false,
+      isAudioLoaded,
+      isMicActive: gumStream?.active ?? false,
+      isAudioContextRunning: audioCtx?.state === 'running',
+      isWorkletReady: !!essentiaNode,
+      fftSize,
+      sampleRate: audioCtx?.sampleRate ?? 44100,
+      averageAmplitude: analyser?.getAverageFrequency() ?? 0,
+      capacity,
+      analyser,
+      audioCtx,
+      sound,
+      data: analyser?.data ?? new Uint8Array(fftSize / 2),
+    };
+  }
+
   public subscribeToAudio(callback: (state: ReturnType<typeof this.getAudio>) => void): () => void {
     const interval = setInterval(() => {
       callback(this.getAudio());
     }, 100); // Update every 100ms
 
     return () => clearInterval(interval);
+  }
+
+  /**
+   * Starts recording from the microphone.
+   * @throws {AudioManagerError} If microphone access fails
+   */
+  public startMicRecordStream(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        reject(new AudioManagerError('getUserMedia not supported'));
+        return;
+      }
+
+      navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => {
+          this.setupMicrophoneStream(stream)
+            .then(() => resolve())
+            .catch((error) => {
+              this.cleanupMicStream();
+              reject(
+                new AudioManagerError(
+                  `Microphone access failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+                )
+              );
+            });
+        })
+        .catch((error) => {
+          this.cleanupMicStream();
+          reject(
+            new AudioManagerError(
+              `Microphone access failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+            )
+          );
+        });
+    });
+  }
+
+  /**
+   * Sets up the microphone stream with proper audio routing.
+   */
+  private async setupMicrophoneStream(stream: MediaStream): Promise<void> {
+    try {
+      this.validateAudioState();
+      const { audioCtx, listener } = this.audioObject;
+
+      if (!audioCtx || !listener) {
+        throw new AudioManagerError('Audio context or listener not initialized');
+      }
+
+      this.audioObject.gumStream = stream;
+
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+
+      // Create a THREE.Audio object for the microphone
+      this.audioObject.micSound = new THREE.Audio(listener);
+      this.audioObject.micSound.setMediaStreamSource(stream);
+      this.audioObject.micNode = audioCtx.createMediaStreamSource(stream);
+
+      // Detach for manual connections
+      this.audioObject.micSound.getOutput().disconnect();
+
+      // Create mic analyser
+      this.audioObject.micAnalyser = new THREE.AudioAnalyser(
+        this.audioObject.micSound,
+        this.audioObject.fftSize
+      );
+
+      await this.setupMicrophoneRouting();
+    } catch (error) {
+      this.cleanupMicStream();
+      throw error;
+    }
+  }
+
+  /**
+   * Sets up the audio routing for the microphone input.
+   */
+  private async setupMicrophoneRouting(): Promise<void> {
+    const { audioCtx, micSound, essentiaNode } = this.audioObject;
+
+    if (!audioCtx || !micSound || !essentiaNode) {
+      throw new AudioManagerError('Audio system not properly initialized for microphone');
+    }
+
+    // Create zero gain node to prevent feedback
+    const zeroGainNode = audioCtx.createGain();
+    zeroGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+
+    // Connect audio pipeline
+    micSound.getOutput().connect(essentiaNode).connect(zeroGainNode).connect(audioCtx.destination);
+
+    // Update essentia node
+    essentiaNode.port.postMessage({
+      isPlaying: this.audioObject.sound?.isPlaying ?? false,
+      micActive: this.audioObject.gumStream?.active ?? false,
+    });
+  }
+
+  /**
+   * Stops microphone recording and cleans up resources.
+   */
+  public stopMicRecordStream(): void {
+    this.cleanupMicStream();
+
+    this.audioObject.essentiaNode?.port.postMessage({
+      isPlaying: this.audioObject.sound?.isPlaying ?? false,
+      micActive: false,
+    });
+  }
+
+  /**
+   * Cleans up microphone-related resources.
+   */
+  private cleanupMicStream(): void {
+    if (this.audioObject.gumStream) {
+      this.audioObject.gumStream.getAudioTracks().forEach((track) => track.stop());
+      this.audioObject.micNode?.disconnect();
+      this.audioObject.micAnalyser = null;
+      this.audioObject.gumStream = null;
+      this.audioObject.micSound = null;
+    }
+  }
+
+  /**
+   * Completely disposes of the audio manager and all its resources.
+   * Call this when the manager is no longer needed.
+   */
+  public async dispose(): Promise<void> {
+    try {
+      // Stop all active audio
+      this.stopAudio();
+      this.stopMicRecordStream();
+
+      // Clean up audio graph and resources
+      await this.cleanupAudioGraph();
+
+      // Clean up THREE.js audio resources
+      if (this.audioObject.sound) {
+        this.audioObject.sound.disconnect();
+        this.audioObject.sound.buffer = null;
+      }
+
+      if (this.audioObject.analyser) {
+        this.audioObject.analyser.analyser.disconnect();
+      }
+
+      if (this.audioObject.listener) {
+        // Remove listener from camera if still attached
+        this.audioObject.listener.parent?.remove(this.audioObject.listener);
+        this.audioObject.listener.context.close();
+      }
+
+      // Clear all references
+      const audioObject = this.audioObject;
+      audioObject.audioReader = null;
+      audioObject.gain = null;
+      audioObject.essentiaNode = null;
+      audioObject.soundGainNode = null;
+      audioObject.audioCtx = null;
+      audioObject.sound = null;
+      audioObject.micSound = null;
+      audioObject.analyser = null;
+      audioObject.micAnalyser = null;
+      audioObject.micNode = null;
+      audioObject.gumStream = null;
+      audioObject.listener = null;
+      audioObject.isAudioLoaded = false;
+
+      // Clear frequency data
+      this.finalFreqData = new Uint8Array(0);
+
+      // Clear registration state
+      this.registrationPromise = null;
+      AudioManager.registeredWorklets = new WeakMap();
+    } catch (error) {
+      console.error('Error during disposal:', error);
+      throw new AudioManagerError(
+        `Failed to dispose audio manager: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
   }
 }
 
