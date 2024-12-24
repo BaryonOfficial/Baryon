@@ -760,14 +760,6 @@ export class AudioManager {
     };
   }
 
-  public subscribeToAudio(callback: (state: ReturnType<typeof this.getAudio>) => void): () => void {
-    const interval = setInterval(() => {
-      callback(this.getAudio());
-    }, 100); // Update every 100ms
-
-    return () => clearInterval(interval);
-  }
-
   /**
    * Starts recording from the microphone.
    * @throws {AudioManagerError} If microphone access fails

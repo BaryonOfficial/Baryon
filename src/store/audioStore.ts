@@ -102,11 +102,3 @@ export const useAudioStore = create<AudioStore>((set, get) => ({
     }
   },
 }));
-
-// Subscribe to audio state changes
-audioManager.subscribeToAudio((state) => {
-  useAudioStore.setState((current) => ({
-    ...current,
-    ...state,
-  }));
-});
