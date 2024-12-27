@@ -1,7 +1,11 @@
 import { useControls, button, levaStore } from 'leva';
-import { ParticleParametersSchema, ParticleSettingsSchema } from '@/types/particle.types';
+import {
+  ParticleParametersSchema,
+  ParticleSettingsSchema,
+  ParticleConfig,
+} from '@/types/particle.types';
 
-export function useParticleSettings() {
+export function useParticleSettings(): ParticleConfig {
   // Define default values
   const defaultValues = {
     parameters: {
@@ -17,7 +21,7 @@ export function useParticleSettings() {
       particleSpeed: 32.0,
       distanceThreshold: 0.5,
     },
-    visual: {
+    settings: {
       color: '#0586ff',
       surfaceColor: '#DEF0FA',
       particleSize: 0.03,
@@ -33,7 +37,7 @@ export function useParticleSettings() {
         Object.entries(defaultValues.parameters).forEach(([key, value]) => {
           levaStore.set({ [`Particle Parameters.${key}`]: value }, false);
         });
-        Object.entries(defaultValues.visual).forEach(([key, value]) => {
+        Object.entries(defaultValues.settings).forEach(([key, value]) => {
           levaStore.set({ [`Visual Settings.${key}`]: value }, false);
         });
       }),
@@ -43,7 +47,7 @@ export function useParticleSettings() {
         });
       }),
       'Reset Visual': button(() => {
-        Object.entries(defaultValues.visual).forEach(([key, value]) => {
+        Object.entries(defaultValues.settings).forEach(([key, value]) => {
           levaStore.set({ [`Visual Settings.${key}`]: value }, false);
         });
       }),
@@ -111,15 +115,15 @@ export function useParticleSettings() {
 
   try {
     // Runtime validation
-    const parameters = ParticleParametersSchema.parse(rawParameters);
-    const settings = ParticleSettingsSchema.parse(rawVisualSettings);
-    return { parameters, settings };
+    const ParticleParameters = ParticleParametersSchema.parse(rawParameters);
+    const ParticleSettings = ParticleSettingsSchema.parse(rawVisualSettings);
+    return { parameters: ParticleParameters, settings: ParticleSettings };
   } catch (error) {
     console.error('Particle settings validation error:', error);
     // Fallback to safe defaults
     return {
       parameters: defaultValues.parameters,
-      settings: defaultValues.visual,
+      settings: defaultValues.settings,
     };
   }
 }

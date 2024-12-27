@@ -76,3 +76,9 @@ export interface LogoGeometry {
   isLoaded: boolean;
   error?: string;
 }
+
+// The complete config type should be added for us in particleSettingsContextValue.ts:
+export interface ParticleConfig {
+  parameters: ParticleParameters;
+  settings: ParticleSettings;
+}
