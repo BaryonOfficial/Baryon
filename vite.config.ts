@@ -1,12 +1,16 @@
-import { defineConfig } from 'vite';
-import type { UserConfig, ServerOptions } from 'vite';
 import path from 'path';
-import { transformWithEsbuild } from 'vite';
+import {
+  defineConfig,
+  Plugin,
+  ServerOptions,
+  TransformResult,
+  UserConfig,
+  transformWithEsbuild,
+} from 'vite';
 import react from '@vitejs/plugin-react-swc';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 import glsl from 'vite-plugin-glsl';
 import topLevelAwait from 'vite-plugin-top-level-await';
-import basicSsl from '@vitejs/plugin-basic-ssl';
-import { Plugin, TransformResult } from 'vite';
 
 // https://vitejs.dev/config/
 export default defineConfig((): UserConfig => {
@@ -74,5 +78,20 @@ export default defineConfig((): UserConfig => {
       },
       extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.glsl'],
     },
+    // test: {
+    //   globals: true,
+    //   environment: 'jsdom',
+    //   setupFiles: ['./src/test/setup.ts'],
+    //   include: ['**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    //   exclude: ['node_modules', 'dist', '.idea', '.git', '.cache'],
+    //   coverage: {
+    //     provider: 'v8',
+    //     reporter: ['text', 'json', 'html'],
+    //     exclude: [
+    //       'node_modules/',
+    //       'src/test/',
+    //     ]
+    //   }
+    // },
   };
 });
