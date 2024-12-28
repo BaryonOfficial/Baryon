@@ -297,6 +297,7 @@ export function useGPGPU(
     };
   }, [gpgpu, scene, showTextureDebug]);
 
+  // Update gpgpu variables uniforms
   useEffect(() => {
     if (!gpgpu) return;
 
