@@ -42,7 +42,7 @@ export function useGPGPU(
   const zeroPointsTextureRef = useRef<THREE.Texture | null>(null);
   const particlesTextureRef = useRef<THREE.Texture | null>(null);
 
-  const gpgpu = useMemo<GPGPUComputation | null>(() => {
+  const gpgpu = useMemo<GPGPUComputation>(() => {
     const size = Math.ceil(Math.sqrt(parameters.count));
     const computation = new GPUComputationRenderer(size, size, gl);
 
@@ -253,7 +253,7 @@ export function useGPGPU(
         map: audioDataTextureRef.current,
       })
     );
-    audioDebug.position.set(-4, 2, 0);
+    audioDebug.position.set(-4, 2, 5);
 
     const scalarFieldDebug = new THREE.Mesh(
       new THREE.PlaneGeometry(3, 3),
@@ -261,7 +261,7 @@ export function useGPGPU(
         map: scalarFieldTextureRef.current,
       })
     );
-    scalarFieldDebug.position.set(-4, -1, 0);
+    scalarFieldDebug.position.set(-4, -1, 5);
 
     const zeroPointsDebug = new THREE.Mesh(
       new THREE.PlaneGeometry(3, 3),
@@ -269,7 +269,7 @@ export function useGPGPU(
         map: zeroPointsTextureRef.current,
       })
     );
-    zeroPointsDebug.position.set(-1, 2, 0);
+    zeroPointsDebug.position.set(-1, 2, 5);
 
     const particlesDebug = new THREE.Mesh(
       new THREE.PlaneGeometry(3, 3),
@@ -277,14 +277,13 @@ export function useGPGPU(
         map: particlesTextureRef.current,
       })
     );
-    particlesDebug.position.set(-1, -1, 0);
+    particlesDebug.position.set(-1, -1, 5);
 
     const planes = [audioDebug, scalarFieldDebug, zeroPointsDebug, particlesDebug];
     debugPlanesRef.current = planes;
 
     planes.forEach((plane) => scene.add(plane));
 
-    // Cleanup
     return () => {
       planes.forEach((plane) => {
         scene.remove(plane);

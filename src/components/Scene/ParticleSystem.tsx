@@ -3,14 +3,15 @@ import { ParticlesRef } from '@/types/particle.types';
 import { useGPGPU } from '@/hooks/useGPGPU';
 import { useParticleGeometries } from '@/hooks/particles/useParticleGeometries';
 import { PostProcessingEffects } from './PostProcessingEffects';
+import { useAsyncResource } from '@/hooks/useAsyncResource';
 import Particles from './Particles';
 
 export const ParticleSystem = () => {
   const particlesRef = useRef<ParticlesRef>(null);
   const geometries = useParticleGeometries();
-  const { gpgpu, particlesTexture } = useGPGPU(geometries, particlesRef);
+  const { gpgpu } = useGPGPU(geometries, particlesRef);
 
-  if (!gpgpu || !particlesTexture?.current) return null;
+  useAsyncResource({ gpgpu, geometries }, { suspense: true });
 
   return (
     <>
