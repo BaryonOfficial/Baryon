@@ -186,24 +186,8 @@ export function useGPGPU(
       essentiaData,
       size,
     };
-  }, [
-    gl,
-    geometries,
-    parameters.count,
-    capacity,
-    data,
-    fftSize,
-    parameters.distanceThreshold,
-    parameters.flowFieldFrequency,
-    parameters.flowFieldInfluence,
-    parameters.flowFieldStrength,
-    parameters.particleSpeed,
-    parameters.radius,
-    parameters.surfaceControl,
-    parameters.surfaceThreshold,
-    parameters.threshold,
-    sampleRate,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gl, geometries, parameters.count, capacity, fftSize, sampleRate]);
 
   // Cleanup effect right after creation
   useEffect(() => {
@@ -312,6 +296,46 @@ export function useGPGPU(
       debugPlanesRef.current = [];
     };
   }, [gpgpu, scene, showTextureDebug]);
+
+  useEffect(() => {
+    if (!gpgpu) return;
+
+    // Audio data uniforms
+    gpgpu.audioDataVariable.material.uniforms.uRadius.value = parameters.radius;
+
+    // Scalar field uniforms
+    gpgpu.scalarFieldVariable.material.uniforms.uRadius.value = parameters.radius;
+
+    // Zero points uniforms
+    gpgpu.zeroPointsVariable.material.uniforms.uThreshold.value = parameters.threshold;
+    gpgpu.zeroPointsVariable.material.uniforms.uRadius.value = parameters.radius;
+    gpgpu.zeroPointsVariable.material.uniforms.uSurfaceThreshold.value =
+      parameters.surfaceThreshold;
+    gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl.value = parameters.surfaceControl;
+
+    // Particles uniforms
+    gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence.value =
+      parameters.flowFieldInfluence;
+    gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength.value =
+      parameters.flowFieldStrength;
+    gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency.value =
+      parameters.flowFieldFrequency;
+    gpgpu.particlesVariable.material.uniforms.uParticleSpeed.value = parameters.particleSpeed;
+    gpgpu.particlesVariable.material.uniforms.uRadius.value = parameters.radius;
+    gpgpu.particlesVariable.material.uniforms.uDistanceThreshold.value =
+      parameters.distanceThreshold;
+  }, [
+    gpgpu,
+    parameters.radius,
+    parameters.threshold,
+    parameters.surfaceThreshold,
+    parameters.surfaceControl,
+    parameters.flowFieldInfluence,
+    parameters.flowFieldStrength,
+    parameters.flowFieldFrequency,
+    parameters.particleSpeed,
+    parameters.distanceThreshold,
+  ]);
 
   useFrame(({ clock }, delta) => {
     if (!gpgpu || !particlesRef?.current) return;
