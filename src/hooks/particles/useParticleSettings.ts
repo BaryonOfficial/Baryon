@@ -32,31 +32,22 @@ export function useParticleSettings(): ParticleConfig {
 
   // Add reset functionality to Leva panel
   useControls(
+    'Particle Config',
     {
-      'Reset All': button(() => {
+      'Reset Config': button(() => {
         Object.entries(defaultValues.parameters).forEach(([key, value]) => {
-          levaStore.set({ [`Particle Parameters.${key}`]: value }, false);
+          levaStore.set({ [`Particle Config.Parameters.${key}`]: value }, false);
         });
         Object.entries(defaultValues.settings).forEach(([key, value]) => {
-          levaStore.set({ [`Visual Settings.${key}`]: value }, false);
-        });
-      }),
-      'Reset Parameters': button(() => {
-        Object.entries(defaultValues.parameters).forEach(([key, value]) => {
-          levaStore.set({ [`Particle Parameters.${key}`]: value }, false);
-        });
-      }),
-      'Reset Visual': button(() => {
-        Object.entries(defaultValues.settings).forEach(([key, value]) => {
-          levaStore.set({ [`Visual Settings.${key}`]: value }, false);
+          levaStore.set({ [`Particle Config.Visuals.${key}`]: value }, false);
         });
       }),
     },
-    { collapsed: false }
+    { collapsed: true }
   );
 
   const rawParameters = useControls(
-    'Particle Parameters',
+    'Particle Config.Parameters',
     {
       count: { value: 1000000, label: 'Particle Count' },
       radius: { value: 3.0, min: 1.0, max: 5.0, step: 0.1, label: 'Radius' },
@@ -102,7 +93,7 @@ export function useParticleSettings(): ParticleConfig {
   );
 
   const rawVisualSettings = useControls(
-    'Visual Settings',
+    'Particle Config.Visuals',
     {
       color: { value: '#0586ff', label: 'Inner Color' },
       surfaceColor: { value: '#DEF0FA', label: 'Surface Color' },
