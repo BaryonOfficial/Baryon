@@ -8,9 +8,12 @@ export function AudioInitializer() {
   const { setIsPlaying } = useAudioStore();
 
   useEffect(() => {
-    // Setup audio system
-    audioManager.setup(camera);
-    audioManager.startAudioProcessing();
+    try {
+      audioManager.setup(camera);
+      audioManager.startAudioProcessing();
+    } catch (error) {
+      console.error('Audio initialization failed:', error);
+    }
 
     // Set up audio ended callback
     audioManager.setAudioEndedCallback(() => {
