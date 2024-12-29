@@ -5,8 +5,28 @@ import { AudioControls } from '../Controls/AudioControls';
 import { FullscreenContainer } from '../FullscreenContainer';
 import { LoadingFallback } from './LoadingFallback';
 import { Perf } from 'r3f-perf';
+import { useControls, folder } from 'leva';
 
 export function Scene() {
+  const { perfMonitor, minimalPerfMonitor } = useControls(
+    'Debug Views',
+    {
+      'Performance Monitor': folder({
+        perfMonitor: {
+          value: true,
+          label: 'Show Monitor',
+        },
+        minimalPerfMonitor: {
+          value: false,
+          label: 'Minimal View',
+        },
+      }),
+    },
+    {
+      collapsed: true,
+    }
+  );
+
   return (
     <>
       <FullscreenContainer>
@@ -26,7 +46,7 @@ export function Scene() {
           <Suspense fallback={<LoadingFallback />}>
             <SceneContent />
           </Suspense>
-          <Perf position="bottom-left" />
+          {perfMonitor && <Perf position="bottom-left" minimal={minimalPerfMonitor} />}
         </Canvas>
       </FullscreenContainer>
       <AudioControls />
