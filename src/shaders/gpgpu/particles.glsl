@@ -56,11 +56,5 @@ void main() {
     // Update particle position
     particle.xyz += movement + lerpMovement;
 
-    // Constrain particles within radius
-    float distanceFromCenter = length(particle.xyz);
-    if(distanceFromCenter > uRadius) {
-        particle.xyz = normalize(particle.xyz) * uRadius;
-    }
-
     gl_FragColor = particle;
 }
