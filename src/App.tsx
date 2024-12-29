@@ -2,6 +2,7 @@ import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import { Scene } from './components/Scene';
 import { Leva } from 'leva';
+import { Provider as TooltipProvider } from '@radix-ui/react-tooltip';
 import { UnsupportedWarning } from '@/components/UnsupportedWarning';
 import { isUnsupportedBrowser, setOverrideBrowserCheck } from './utils/browserCheck';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -9,7 +10,7 @@ import './App.css';
 
 const levaTheme = {
   colors: {
-    highlight1: '#ffffff', // This will change the panel title color
+    highlight1: '#ffffff',
   },
   sizes: {
     rootWidth: '340px',
@@ -33,7 +34,7 @@ function ErrorFallback({
         </p>
         <button
           onClick={() => {
-            setOverrideBrowserCheck(false); // Reset override
+            setOverrideBrowserCheck(false);
             resetErrorBoundary();
             window.location.reload();
           }}
@@ -55,14 +56,16 @@ function App() {
 
   return (
     <ErrorBoundary FallbackComponent={ErrorFallback}>
-      <Leva
-        oneLineLabels={false}
-        collapsed
-        titleBar={{
-          title: 'Controls',
-        }}
-        theme={levaTheme}
-      />
+      <TooltipProvider>
+        <Leva
+          oneLineLabels={false}
+          collapsed
+          titleBar={{
+            title: 'Controls',
+          }}
+          theme={levaTheme}
+        />
+      </TooltipProvider>
       <main className="relative w-full h-screen overflow-hidden bg-black">
         <Scene />
         <Analytics />
