@@ -177,9 +177,12 @@ export function useGPGPU(
     computation.setVariableDependencies(zeroPointsVariable, [scalarFieldVariable]);
     computation.setVariableDependencies(particlesVariable, [zeroPointsVariable, particlesVariable]);
 
-    // Initialize immediately while we know the state
+    // Initialize GPGPU computation while we know the state
     const error = computation.init();
-    if (error) console.error(error);
+    if (error) {
+      // 1. Throw an error to be caught by error boundary
+      throw new Error(`GPGPU initialization failed: ${error}`);
+    }
 
     return {
       computation,
