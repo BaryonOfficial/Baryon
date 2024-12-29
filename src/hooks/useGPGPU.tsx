@@ -177,6 +177,10 @@ export function useGPGPU(
     computation.setVariableDependencies(zeroPointsVariable, [scalarFieldVariable]);
     computation.setVariableDependencies(particlesVariable, [zeroPointsVariable, particlesVariable]);
 
+    // Initialize immediately while we know the state
+    const error = computation.init();
+    if (error) console.error(error);
+
     return {
       computation,
       audioDataVariable,
@@ -214,14 +218,6 @@ export function useGPGPU(
 
       gpgpu.computation?.dispose();
     };
-  }, [gpgpu]);
-
-  useLayoutEffect(() => {
-    if (!gpgpu) return;
-    const error = gpgpu.computation.init();
-    if (error !== null) {
-      console.error(error);
-    }
   }, [gpgpu]);
 
   // Debug Planes
