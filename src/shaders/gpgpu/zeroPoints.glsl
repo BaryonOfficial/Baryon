@@ -14,7 +14,6 @@ void main() {
     // Early return for points outside threshold
     if(abs(scalarValue) >= uThreshold) {
         discard;
-        return;
     }
 
     // Determine if point is on surface
