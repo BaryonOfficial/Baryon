@@ -5,6 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 import react from 'eslint-plugin-react';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
+import prettier from 'eslint-config-prettier'; // Add this import
 
 export default [
   { ignores: ['dist', '**/*.glsl', 'public/lib/**/*', 'public/draco/**/*', 'examples/**/*'] },
@@ -98,4 +99,5 @@ export default [
       'no-bitwise': 'off', // For audio bit operations
     },
   },
+  prettier,
 ];
