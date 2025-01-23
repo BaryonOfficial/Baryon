@@ -69,6 +69,8 @@ export default [
             'transparent',
             'depthWrite',
             'blending',
+            'position',
+            'object',
           ],
         },
       ],
