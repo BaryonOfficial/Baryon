@@ -71,6 +71,7 @@ export default [
             'blending',
             'position',
             'object',
+            'toneMapped',
           ],
         },
       ],

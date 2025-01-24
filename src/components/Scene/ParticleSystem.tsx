@@ -2,7 +2,6 @@ import { useRef } from 'react';
 import { ParticlesRef } from '@/types/particle.types';
 import { useGPGPU } from '@/hooks/useGPGPU';
 import { useParticleGeometries } from '@/hooks/particles/useParticleGeometries';
-import { PostProcessingEffects } from './PostProcessingEffects';
 import { useAsyncResource } from '@/hooks/useAsyncResource';
 import Particles from './Particles';
 import { useControls } from 'leva';
@@ -37,7 +36,6 @@ export const ParticleSystem = () => {
     <>
       <Particles ref={particlesRef} gpgpu={gpgpu} geometries={geometries} />
       {debugPlanes}
-      <PostProcessingEffects />
     </>
   );
 };

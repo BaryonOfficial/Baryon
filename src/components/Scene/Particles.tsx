@@ -132,6 +132,7 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
         transparent
         depthWrite={false}
         blending={THREE.AdditiveBlending}
+        toneMapped={false}
       />
     </points>
   );

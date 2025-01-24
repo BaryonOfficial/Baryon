@@ -3,7 +3,7 @@ import { ToneMappingMode } from 'postprocessing';
 import { useThree } from '@react-three/fiber';
 import { useControls } from 'leva';
 import { defaultBloomSettings } from '../../types/bloom.types';
-
+import * as THREE from 'three';
 export function PostProcessingEffects() {
   const { gl } = useThree();
   const isLowPerformance = gl.getPixelRatio() === 1 && !gl.capabilities.isWebGL2;
@@ -36,7 +36,10 @@ export function PostProcessingEffects() {
   );
 
   return (
-    <EffectComposer>
+    <EffectComposer
+      multisampling={0}
+      frameBufferType={gl.capabilities.isWebGL2 ? THREE.HalfFloatType : undefined}
+    >
       <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
       <Bloom
         intensity={bloomSettings.bloomStrength}

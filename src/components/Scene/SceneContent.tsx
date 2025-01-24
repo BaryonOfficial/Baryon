@@ -2,6 +2,7 @@ import { OrbitControls } from '@react-three/drei';
 import { AudioInitializer } from './AudioInitializer';
 import { ParticleSettingsProvider } from '@/contexts/ParticleSettingsContext';
 import { ParticleSystem } from './ParticleSystem';
+import { PostProcessingEffects } from './PostProcessingEffects';
 
 export function SceneContent() {
   return (
@@ -9,6 +10,7 @@ export function SceneContent() {
       <OrbitControls enableDamping dampingFactor={0.05} />
       <AudioInitializer />
       <ParticleSystem />
+      <PostProcessingEffects />
     </ParticleSettingsProvider>
   );
 }

@@ -283,26 +283,31 @@ export function useGPGPU(
     const { material, points } = particlesRef.current;
     if (!material?.uniforms || !points) return;
 
-    // 1. Time updates
+    // 1. Update all time-based uniforms in one batch
     const { time, deltaTime } = timeHandler.handleTime(clock.elapsedTime, delta);
-
-    // 2. Update time-based uniforms
-    gpgpu.particlesVariable.material.uniforms.uTime.value = time;
-    gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
-
-    material.uniforms.uSoundPlaying.value = isPlaying;
-    material.uniforms.uTime.value = time;
-    material.uniforms.uDeltaTime.value = deltaTime;
+    const timeUniforms = {
+      uTime: time,
+      uDeltaTime: deltaTime,
+      uSoundPlaying: isPlaying,
+    };
+    Object.entries(timeUniforms).forEach(([key, value]) => {
+      if (material?.uniforms?.[key]) {
+        material.uniforms[key].value = value;
+      }
+      if (gpgpu?.particlesVariable?.material?.uniforms?.[key]) {
+        gpgpu.particlesVariable.material.uniforms[key].value = value;
+      }
+    });
 
     // gpgpu.audioDataVariable.material.uniforms.uRandomPitches.value = generateRandomPitches(capacity);
 
-    // 3. Process audio data
+    // 2. Process audio before GPGPU compute to avoid stalling
     processAudioData(gpgpu, particlesRef, showAudioDebug);
 
-    // 4. Compute GPGPU
+    // 3. Compute GPGPU
     gpgpu.computation.compute();
 
-    // 5. Update textures and dependencies
+    // 4. Update textures and dependencies
     const targets = gpgpu.computation;
     gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value = targets.getCurrentRenderTarget(
       gpgpu.audioDataVariable
@@ -331,7 +336,7 @@ export function useGPGPU(
       }
     );
 
-    // 6. Update rotation
+    // 5. Update rotation
     points.rotation.y += settings.rotation * deltaTime;
   });
 

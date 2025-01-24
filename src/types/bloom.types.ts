@@ -6,6 +6,6 @@ export interface BloomSettings {
 
 export const defaultBloomSettings: BloomSettings = {
   bloomStrength: 0.16,
-  bloomRadius: -2.0,
-  bloomThreshold: 0.4,
+  bloomRadius: 0.4,
+  bloomThreshold: 0.48,
 };
