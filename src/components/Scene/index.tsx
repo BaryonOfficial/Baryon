@@ -12,6 +12,7 @@ export function Scene() {
           gl={{
             antialias: true,
             pixelRatio: Math.min(window.devicePixelRatio, 2),
+            preserveDrawingBuffer: true,
           }}
           camera={{
             position: [0, 0, 10],

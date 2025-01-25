@@ -9,11 +9,11 @@ import { LoadingFallback } from './LoadingFallback';
 export function SceneContent() {
   return (
     <ParticleSettingsProvider>
-      <PostProcessingEffects />
       <OrbitControls enableDamping dampingFactor={0.05} />
       <AudioInitializer />
       <Suspense fallback={<LoadingFallback />}>
         <ParticleSystem />
+        <PostProcessingEffects />
       </Suspense>
     </ParticleSettingsProvider>
   );
