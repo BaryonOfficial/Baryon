@@ -36,17 +36,21 @@ export function PostProcessingEffects() {
   );
 
   return (
-    <EffectComposer
-      multisampling={0}
-      frameBufferType={gl.capabilities.isWebGL2 ? THREE.HalfFloatType : undefined}
-    >
-      <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
-      <Bloom
-        intensity={bloomSettings.bloomStrength}
-        radius={bloomSettings.bloomRadius}
-        luminanceThreshold={bloomSettings.bloomThreshold}
-      />
-      {isLowPerformance ? <SMAA /> : <></>}
-    </EffectComposer>
+    <>
+      <EffectComposer
+        multisampling={0}
+        frameBufferType={gl.capabilities.isWebGL2 ? THREE.HalfFloatType : undefined}
+        enableNormalPass={false}
+      >
+        <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+        <Bloom
+          intensity={bloomSettings.bloomStrength}
+          radius={bloomSettings.bloomRadius}
+          luminanceThreshold={bloomSettings.bloomThreshold}
+          mipmapBlur={true}
+        />
+        {isLowPerformance ? <SMAA /> : <></>}
+      </EffectComposer>
+    </>
   );
 }
