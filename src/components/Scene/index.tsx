@@ -1,9 +1,7 @@
 import { Canvas } from '@react-three/fiber';
-import { Suspense } from 'react';
 import { SceneContent } from './SceneContent';
 import { AudioControls } from '../Controls/AudioControls';
 import { FullscreenContainer } from '../FullscreenContainer';
-import { LoadingFallback } from './LoadingFallback';
 import { Perf } from 'r3f-perf';
 
 export function Scene() {
@@ -23,9 +21,7 @@ export function Scene() {
           }}
         >
           <color attach="background" args={['#000000']} />
-          <Suspense fallback={<LoadingFallback />}>
-            <SceneContent />
-          </Suspense>
+          <SceneContent />
           <Perf position="bottom-left" minimal={false} />
         </Canvas>
       </FullscreenContainer>
