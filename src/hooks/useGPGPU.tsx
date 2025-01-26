@@ -7,7 +7,12 @@ import { useTimeHandler } from '@/hooks/useTimeHandler.tsx';
 import { useAudioStore } from '@/store/audioStore.ts';
 
 // Import types
-import type { GPGPUReturn, GPGPUComputation, GPGPUShaderUniforms } from '@/types/gpgpu.types.ts';
+import type {
+  GPGPUReturn,
+  GPGPUComputation,
+  GPGPUShaderUniforms,
+  TextureData,
+} from '@/types/gpgpu.types.ts';
 import type { ParticleGeometries, ParticlesRef } from '@/types/particle.types.ts';
 
 //Import Shaders
@@ -52,10 +57,10 @@ export function useGPGPU(
       const i4 = i * 4;
 
       // Position based on Geometry
-      baseParticlesTexture.image.data[i4 + 0] = geometries.base.positions[i3 + 0];
-      baseParticlesTexture.image.data[i4 + 1] = geometries.base.positions[i3 + 1];
-      baseParticlesTexture.image.data[i4 + 2] = geometries.base.positions[i3 + 2];
-      baseParticlesTexture.image.data[i4 + 3] = 1.0;
+      (baseParticlesTexture.image.data as TextureData)[i4 + 0] = geometries.base.positions[i3 + 0];
+      (baseParticlesTexture.image.data as TextureData)[i4 + 1] = geometries.base.positions[i3 + 1];
+      (baseParticlesTexture.image.data as TextureData)[i4 + 2] = geometries.base.positions[i3 + 2];
+      (baseParticlesTexture.image.data as TextureData)[i4 + 3] = 1.0;
     }
 
     // Logo made out of particles, initial positions
@@ -67,13 +72,13 @@ export function useGPGPU(
         const i4 = i * 4;
 
         // Position based on geometry
-        baryonLogoTexture.image.data[i4 + 0] =
+        (baryonLogoTexture.image.data as TextureData)[i4 + 0] =
           geometries.secondary.instance.attributes.position.array[i3 + 0];
-        baryonLogoTexture.image.data[i4 + 1] =
+        (baryonLogoTexture.image.data as TextureData)[i4 + 1] =
           geometries.secondary.instance.attributes.position.array[i3 + 1];
-        baryonLogoTexture.image.data[i4 + 2] =
+        (baryonLogoTexture.image.data as TextureData)[i4 + 2] =
           geometries.secondary.instance.attributes.position.array[i3 + 2];
-        baryonLogoTexture.image.data[i4 + 3] = Math.random();
+        (baryonLogoTexture.image.data as TextureData)[i4 + 3] = Math.random();
       }
     }
 

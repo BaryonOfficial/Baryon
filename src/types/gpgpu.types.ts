@@ -4,6 +4,9 @@ import {
   Variable,
 } from 'three/examples/jsm/misc/GPUComputationRenderer.js';
 
+// Texture data type
+export type TextureData = Float32Array;
+
 // Base GPGPU types
 export interface GPGPUComputation {
   computation: GPUComputationRenderer;
