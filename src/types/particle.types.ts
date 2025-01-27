@@ -86,11 +86,7 @@ declare module '@react-three/fiber' {
 export interface ParticlesRef {
   material: ParticlesMaterial | null;
   points: THREE.Points | null;
-  updateUniforms: (uniforms: {
-    [K in keyof ParticlesMaterialUniforms as K extends string
-      ? K
-      : never]: ParticlesMaterialUniforms[K]['value'];
-  }) => void;
+  updateUniforms: (uniforms: { uAverageAmplitude: number }) => void;
 }
 
 export interface ParticlesProps {
