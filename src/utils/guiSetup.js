@@ -53,7 +53,7 @@ export function guiSetup(
     .max(1)
     .step(0.001)
     .name('FlowField Influence');
-  const flowFieldStrengthController = granularControls
+  granularControls
     .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength, 'value')
     .min(0.01)
     .max(10)
@@ -121,39 +121,8 @@ export function guiSetup(
 
   const performanceFolder = gui.addFolder('Performance');
   const performanceSettings = {
-    mode: 'Medium', // Default setting
     showStats: false, // Initialize showStats property
   };
-
-  performanceFolder
-    .add(performanceSettings, 'mode', {
-      'Low (30 FPS)': 'Low',
-      'Medium (60 FPS)': 'Medium',
-      'High (120 FPS)': 'High',
-    })
-    .name('Performance Mode')
-    .onChange((value) => {
-      switch (value) {
-        case 'Low':
-          parameters.targetFPS = 30;
-          flowFieldStrengthController.setValue(
-            Math.min(gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength.value, 1.8)
-          );
-          break;
-        case 'Medium':
-          parameters.targetFPS = 60;
-          flowFieldStrengthController.setValue(
-            Math.max(gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength.value, 3.6)
-          );
-          break;
-        case 'High':
-          parameters.targetFPS = 120;
-          flowFieldStrengthController.setValue(
-            Math.max(gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength.value, 3.6)
-          );
-          break;
-      }
-    });
 
   performanceFolder
     .add(performanceSettings, 'showStats')
@@ -220,7 +189,6 @@ export function guiSetup(
 
       // Reset Performance Settings
       performanceFolder.controllers.forEach((controller) => {
-        if (controller.property === 'mode') controller.setValue('Medium'); // Need to get feedback on this, should we reset the mode?
         if (controller.property === 'showStats') controller.setValue(false);
       });
     },

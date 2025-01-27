@@ -6,6 +6,12 @@
   height: auto;
   align-items: center;
 }
+.root___focusVisibleWithin {
+  outline: none;
+}
+.root:focus-within {
+  outline: none;
+}
 .skeumorphicToggle:global(.__wab_instance) {
   max-width: 100%;
   position: relative;

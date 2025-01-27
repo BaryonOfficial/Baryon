@@ -247,11 +247,9 @@ const ThreeScene = () => {
     /******************************************************* ANIMATION *******************************************************/
 
     const clock = new THREE.Clock();
-    let frameCounter = 0;
     let previousTime = 0;
     let time = 0;
     let deltaTime = 0;
-    let frameReset = 10;
 
     function updateGPGPUTextures() {
       // Update audioData texture
@@ -309,65 +307,45 @@ const ThreeScene = () => {
     // Always hide stats panel on mount/remount
     setShowStats(false);
 
-    let lastFrameTime = 0;
-
-    const tick = (currentTime) => {
+    const tick = () => {
       requestAnimationFrame(tick);
 
-      const frameInterval = 1000 / parameters.targetFPS; // Move this inside tick
-      const elapsed = currentTime - lastFrameTime;
+      // Start monitoring frame
+      stats.begin();
 
-      if (elapsed > frameInterval) {
-        lastFrameTime = currentTime - (elapsed % frameInterval);
+      const elapsedTime = clock.getElapsedTime();
+      const { time, deltaTime } = timeHandler(elapsedTime);
 
-        // Start monitoring frame
-        stats.begin();
-        frameCounter++;
-        // pseudoVisualizer();
+      controls.update(deltaTime);
 
-        const elapsedTime = clock.getElapsedTime();
-        const { time, deltaTime } = timeHandler(elapsedTime);
+      // GPGPU Updates
+      gpgpu.particlesVariable.material.uniforms.uTime.value = time;
+      gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
+      gpgpu.particlesVariable.material.uniforms.uStarted.value = audioObject.sound.started;
+      gpgpu.particlesVariable.material.uniforms.uMicActive.value =
+        audioObject.gumStream && audioObject.gumStream.active;
 
-        controls.update(deltaTime);
+      particles.material.uniforms.uSoundPlaying.value = audioObject.sound.isPlaying;
+      particles.material.uniforms.uTime.value = time;
+      particles.material.uniforms.uDeltaTime.value = deltaTime;
 
-        // GPGPU Updates
-        gpgpu.particlesVariable.material.uniforms.uTime.value = time;
-        gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
-        gpgpu.particlesVariable.material.uniforms.uStarted.value = audioObject.sound.started;
-        gpgpu.particlesVariable.material.uniforms.uMicActive.value =
-          audioObject.gumStream && audioObject.gumStream.active;
+      processAudioData(gpgpu, particles, essentiaData);
 
-        particles.material.uniforms.uSoundPlaying.value = audioObject.sound.isPlaying;
-        particles.material.uniforms.uTime.value = time;
-        particles.material.uniforms.uDeltaTime.value = deltaTime;
+      // ******** GPGPU START ******** //
+      gpgpu.computation.compute();
+      updateGPGPUTextures();
 
-        processAudioData(gpgpu, particles, essentiaData);
+      rotationTime.current += deltaTime;
+      const angle = rotationTime.current * 0.5 * particles.material.uniforms.uRotation.value;
+      rotationMatrix.makeRotationY(-angle);
+      particles.points.matrix.copy(rotationMatrix);
+      particles.points.matrixAutoUpdate = false;
 
-        // Log Uniforms
-        // if (frameCounter % 60 === 0) {
-        //   // For example, log every 60 frames
-        //   logGPGPUUniforms();
-        // }
+      // Effect Composer Renderer
+      effectComposer.render();
 
-        // ******** GPGPU START ******** //
-        gpgpu.computation.compute();
-        updateGPGPUTextures();
-
-        rotationTime.current += deltaTime;
-        const angle = rotationTime.current * 0.5 * particles.material.uniforms.uRotation.value;
-        rotationMatrix.makeRotationY(-angle);
-        particles.points.matrix.copy(rotationMatrix);
-        particles.points.matrixAutoUpdate = false;
-
-        // Normal Renderer
-        // renderer.render(scene, camera);
-
-        // Effect Composer Renderer
-        effectComposer.render();
-
-        // End monitoring frame
-        stats.end();
-      }
+      // End monitoring frame
+      stats.end();
     };
 
     startAudioProcessing(tick);
