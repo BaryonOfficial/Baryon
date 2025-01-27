@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js';
-import { useMemo, useRef, useEffect } from 'react';
+import { useMemo, useRef, useLayoutEffect, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useControls } from 'leva';
-import { useTimeHandler } from '@/hooks/useTimeHandler.tsx';
-import { useAudioStore } from '@/store/audioStore.ts';
+import { useTimeHandler } from '@/hooks/useTimeHandler';
+import { useAudioStore } from '@/store/audioStore';
 
 // Import types
 import type {
@@ -12,10 +12,10 @@ import type {
   GPGPUComputation,
   GPGPUShaderUniforms,
   TextureData,
-} from '@/types/gpgpu.types.ts';
-import type { ParticleGeometries, ParticlesRef } from '@/types/particle.types.ts';
+} from '@/types/gpgpu.types';
+import type { ParticleGeometries, ParticlesRef } from '@/types/particle.types';
 
-//Import Shaders
+// Import Shaders
 import audioDataShader from '@/shaders/gpgpu/audioData.glsl';
 import scalarFieldShader from '@/shaders/gpgpu/scalarField.glsl';
 import zeroPointsShader from '@/shaders/gpgpu/zeroPoints.glsl';
@@ -39,6 +39,7 @@ export function useGPGPU(
   const gl = useThree((state) => state.gl);
   const { isPlaying, fftSize, sampleRate, capacity, data, processAudioData } = useAudioStore();
   const timeHandler = useTimeHandler();
+  const gpuComputeRef = useRef<GPUComputationRenderer | null>(null);
 
   // Add refs for textures
   const audioDataTextureRef = useRef<THREE.Texture | null>(null);
@@ -48,30 +49,27 @@ export function useGPGPU(
 
   const gpgpu = useMemo<GPGPUComputation>(() => {
     const size = Math.ceil(Math.sqrt(parameters.count));
-    const computation = new GPUComputationRenderer(size, size, gl);
+    gpuComputeRef.current = new GPUComputationRenderer(size, size, gl);
 
     // Particles w/ positions only for computation
-    const baseParticlesTexture = computation.createTexture();
+    const baseParticlesTexture = gpuComputeRef.current.createTexture();
+    const baryonLogoTexture = gpuComputeRef.current.createTexture();
+
+    // Initialize base particles
     for (let i = 0; i < parameters.count; i++) {
       const i3 = i * 3;
       const i4 = i * 4;
-
-      // Position based on Geometry
       (baseParticlesTexture.image.data as TextureData)[i4 + 0] = geometries.base.positions[i3 + 0];
       (baseParticlesTexture.image.data as TextureData)[i4 + 1] = geometries.base.positions[i3 + 1];
       (baseParticlesTexture.image.data as TextureData)[i4 + 2] = geometries.base.positions[i3 + 2];
       (baseParticlesTexture.image.data as TextureData)[i4 + 3] = 1.0;
     }
 
-    // Logo made out of particles, initial positions
-    const baryonLogoTexture = computation.createTexture();
-
+    // Initialize logo particles
     if (geometries.secondary.instance && geometries.secondary.instance.attributes.position) {
       for (let i = 0; i < geometries.secondary.count; i++) {
         const i3 = i * 3;
         const i4 = i * 4;
-
-        // Position based on geometry
         (baryonLogoTexture.image.data as TextureData)[i4 + 0] =
           geometries.secondary.instance.attributes.position.array[i3 + 0];
         (baryonLogoTexture.image.data as TextureData)[i4 + 1] =
@@ -82,61 +80,51 @@ export function useGPGPU(
       }
     }
 
-    /**
-     * Create all textures first
-     */
+    // Create computation textures
+    const audioDataTexture = gpuComputeRef.current.createTexture();
+    const scalarTexture = gpuComputeRef.current.createTexture();
+    const zeroPointsTexture = gpuComputeRef.current.createTexture();
+    const particlesTexture = gpuComputeRef.current.createTexture();
 
-    const audioDataTexture = computation.createTexture();
-    const scalarTexture = computation.createTexture();
-    const zeroPointsTexture = computation.createTexture();
-    const particlesTexture = computation.createTexture();
-
-    /**
-     * Create all variables
-     */
-    const audioDataVariable = computation.addVariable(
+    // Create variables
+    const audioDataVariable = gpuComputeRef.current.addVariable(
       'uAudioData',
       audioDataShader,
       audioDataTexture
     );
-
-    const scalarFieldVariable = computation.addVariable(
+    const scalarFieldVariable = gpuComputeRef.current.addVariable(
       'uScalarField',
       scalarFieldShader,
       scalarTexture
     );
-
-    const zeroPointsVariable = computation.addVariable(
+    const zeroPointsVariable = gpuComputeRef.current.addVariable(
       'uZeroPoints',
       zeroPointsShader,
       zeroPointsTexture
     );
-
-    const particlesVariable = computation.addVariable(
+    const particlesVariable = gpuComputeRef.current.addVariable(
       'uParticles',
       gpgpuParticlesShader,
       particlesTexture
     );
 
-    // Add refs for textures
+    // Set texture refs
     audioDataTextureRef.current = audioDataTexture;
     scalarFieldTextureRef.current = scalarTexture;
     zeroPointsTextureRef.current = zeroPointsTexture;
     particlesTextureRef.current = particlesTexture;
 
+    // Initialize uniforms
     const format = gl.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
     const essentiaData = new Float32Array(capacity);
     const randomPitches = generateRandomPitches(capacity);
 
-    // Create typed uniforms object
     const uniforms: GPGPUShaderUniforms = {
       audioDataUniforms: {
         tPitches: {
           value: new THREE.DataTexture(essentiaData, capacity, 1, format, THREE.FloatType),
         },
-        tDataArray: {
-          value: new THREE.DataTexture(data, fftSize / 2, 1, format),
-        },
+        tDataArray: { value: new THREE.DataTexture(data, fftSize / 2, 1, format) },
         uRadius: new THREE.Uniform(parameters.radius),
         sampleRate: new THREE.Uniform(sampleRate),
         bufferSize: new THREE.Uniform(fftSize),
@@ -169,27 +157,22 @@ export function useGPGPU(
       },
     };
 
-    // Assign uniforms to variables
+    // Assign uniforms and dependencies
     audioDataVariable.material.uniforms = uniforms.audioDataUniforms;
     scalarFieldVariable.material.uniforms = uniforms.scalarFieldUniforms;
     zeroPointsVariable.material.uniforms = uniforms.zeroPointsUniforms;
     particlesVariable.material.uniforms = uniforms.particlesUniforms;
 
-    // Set dependencies
-    computation.setVariableDependencies(audioDataVariable, []);
-    computation.setVariableDependencies(scalarFieldVariable, [audioDataVariable]);
-    computation.setVariableDependencies(zeroPointsVariable, [scalarFieldVariable]);
-    computation.setVariableDependencies(particlesVariable, [zeroPointsVariable, particlesVariable]);
-
-    // Initialize GPGPU computation while we know the state
-    const error = computation.init();
-    if (error) {
-      // 1. Throw an error to be caught by error boundary
-      throw new Error(`GPGPU initialization failed: ${error}`);
-    }
+    gpuComputeRef.current.setVariableDependencies(audioDataVariable, []);
+    gpuComputeRef.current.setVariableDependencies(scalarFieldVariable, [audioDataVariable]);
+    gpuComputeRef.current.setVariableDependencies(zeroPointsVariable, [scalarFieldVariable]);
+    gpuComputeRef.current.setVariableDependencies(particlesVariable, [
+      zeroPointsVariable,
+      particlesVariable,
+    ]);
 
     return {
-      computation,
+      computation: gpuComputeRef.current,
       audioDataVariable,
       scalarFieldVariable,
       zeroPointsVariable,
@@ -197,11 +180,18 @@ export function useGPGPU(
       essentiaData,
       size,
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gl, geometries, parameters.count, capacity, fftSize, sampleRate]);
 
-  // Cleanup effect right after creation
-  useEffect(() => {
+  // Initialize GPGPU computation
+  useLayoutEffect(() => {
+    if (!gpuComputeRef.current) return;
+
+    const error = gpuComputeRef.current.init();
+    if (error) {
+      console.error('GPGPU initialization failed:', error);
+      throw new Error(`GPGPU initialization failed: ${error}`);
+    }
+
     return () => {
       if (!gpgpu) return;
 
@@ -235,29 +225,21 @@ export function useGPGPU(
         label: 'Show Audio Logs',
       },
     },
-    {
-      collapsed: true,
-    }
+    { collapsed: true }
   );
 
-  // Update gpgpu variables uniforms
+  // Update uniforms when parameters change
   useEffect(() => {
     if (!gpgpu) return;
 
-    // Audio data uniforms
+    // Update all uniforms
     gpgpu.audioDataVariable.material.uniforms.uRadius.value = parameters.radius;
-
-    // Scalar field uniforms
     gpgpu.scalarFieldVariable.material.uniforms.uRadius.value = parameters.radius;
-
-    // Zero points uniforms
     gpgpu.zeroPointsVariable.material.uniforms.uThreshold.value = parameters.threshold;
     gpgpu.zeroPointsVariable.material.uniforms.uRadius.value = parameters.radius;
     gpgpu.zeroPointsVariable.material.uniforms.uSurfaceThreshold.value =
       parameters.surfaceThreshold;
     gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl.value = parameters.surfaceControl;
-
-    // Particles uniforms
     gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence.value =
       parameters.flowFieldInfluence;
     gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength.value =
@@ -281,20 +263,21 @@ export function useGPGPU(
     parameters.distanceThreshold,
   ]);
 
+  // Animation frame updates
   useFrame(({ clock }, delta) => {
     if (!gpgpu || !particlesRef?.current) return;
 
-    // Destructure after validation to ensure type safety
     const { material, points } = particlesRef.current;
     if (!material?.uniforms || !points) return;
 
-    // 1. Update all time-based uniforms in one batch
+    // Update time uniforms
     const { time, deltaTime } = timeHandler.handleTime(clock.elapsedTime, delta);
     const timeUniforms = {
       uTime: time,
       uDeltaTime: deltaTime,
       uSoundPlaying: isPlaying,
     };
+
     Object.entries(timeUniforms).forEach(([key, value]) => {
       if (material?.uniforms?.[key]) {
         material.uniforms[key].value = value;
@@ -304,15 +287,13 @@ export function useGPGPU(
       }
     });
 
-    // gpgpu.audioDataVariable.material.uniforms.uRandomPitches.value = generateRandomPitches(capacity);
-
-    // 2. Process audio before GPGPU compute to avoid stalling
+    // Process audio data
     processAudioData(gpgpu, particlesRef, showAudioDebug);
 
-    // 3. Compute GPGPU
+    // Compute GPGPU
     gpgpu.computation.compute();
 
-    // 4. Update textures and dependencies
+    // Update textures
     const targets = gpgpu.computation;
     gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value = targets.getCurrentRenderTarget(
       gpgpu.audioDataVariable
@@ -327,7 +308,7 @@ export function useGPGPU(
       gpgpu.particlesVariable
     ).texture;
 
-    // Update refs for debug planes
+    // Update debug texture refs
     [audioDataTextureRef, scalarFieldTextureRef, zeroPointsTextureRef, particlesTextureRef].forEach(
       (ref, i) => {
         ref.current = targets.getCurrentRenderTarget(
@@ -341,7 +322,7 @@ export function useGPGPU(
       }
     );
 
-    // 5. Update rotation
+    // Update rotation
     points.rotation.y += settings.rotation * deltaTime;
   });
 
