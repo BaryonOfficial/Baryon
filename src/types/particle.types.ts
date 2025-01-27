@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { z } from 'zod';
 import type { GPGPUComputation } from './gpgpu.types';
+import type { Object3DNode } from '@react-three/fiber';
 
 // Zod Schemas
 export const ParticleParametersSchema = z.object({
@@ -40,29 +41,56 @@ export interface ParticleGeometries {
   };
 }
 
-export type ParticleMaterial = THREE.ShaderMaterial & {
-  uniforms: {
-    uSize: { value: number };
-    uTime: { value: number };
-    uDeltaTime: { value: number };
-    uResolution: { value: THREE.Vector2 };
-    uParticlesTexture: { value: THREE.Texture | null };
-    uColor: { value: THREE.Color };
-    uSurfaceColor: { value: THREE.Color };
-    uRadius: { value: number };
-    uAverageAmplitude: { value: number };
-    uSoundPlaying: { value: boolean };
-  };
+// Simplify UniformValue type (Three.js already provides this)
+type UniformValue<T> = THREE.IUniform<T>;
+
+// Particle material uniforms
+export interface ParticlesMaterialUniforms {
+  uResolution: UniformValue<THREE.Vector2>;
+  uSize: UniformValue<number>;
+  uParticlesTexture: UniformValue<THREE.Texture | null>;
+  uTime: UniformValue<number>;
+  uDeltaTime: UniformValue<number>;
+  uAverageAmplitude: UniformValue<number>;
+  uRadius: UniformValue<number>;
+  uSoundPlaying: UniformValue<boolean>;
+  uColor: UniformValue<THREE.Color>;
+  uSurfaceColor: UniformValue<THREE.Color>;
+}
+
+// Base material type from Three.js
+export type ParticlesMaterial = THREE.ShaderMaterial & {
+  uniforms: ParticlesMaterialUniforms;
 };
 
-export type ParticleMaterialProps = {
-  uResolution?: THREE.Vector2 | [number, number];
-};
+// Props that can be passed to the material in JSX
+export interface ParticlesMaterialProps {
+  transparent?: boolean;
+  depthWrite?: boolean;
+  blending?: THREE.Blending;
+  toneMapped?: boolean;
+  // Allow setting initial uniform values directly
+  uniforms?: Partial<{
+    [K in keyof ParticlesMaterialUniforms]: ParticlesMaterialUniforms[K]['value'];
+  }>;
+}
 
+// Three.js Fiber module augmentation
+declare module '@react-three/fiber' {
+  interface ThreeElements {
+    particlesMaterial: Object3DNode<ParticlesMaterial, ParticlesMaterialProps>;
+  }
+}
+
+// Strengthen ParticlesRef type
 export interface ParticlesRef {
-  material: ParticleMaterial | null;
+  material: ParticlesMaterial | null;
   points: THREE.Points | null;
-  updateUniforms: (uniforms: { uAverageAmplitude: number }) => void;
+  updateUniforms: (uniforms: {
+    [K in keyof ParticlesMaterialUniforms as K extends string
+      ? K
+      : never]: ParticlesMaterialUniforms[K]['value'];
+  }) => void;
 }
 
 export interface ParticlesProps {

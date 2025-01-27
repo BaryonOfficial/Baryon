@@ -1,5 +1,5 @@
 import { useMemo, useRef, forwardRef, useImperativeHandle, useEffect } from 'react';
-import { useThree, extend, type Object3DNode } from '@react-three/fiber';
+import { useThree, extend } from '@react-three/fiber';
 import { shaderMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -7,19 +7,15 @@ import * as THREE from 'three';
 import vertexShader from '@/shaders/particles/vertex.glsl';
 import fragmentShader from '@/shaders/particles/fragment.glsl';
 
-import type {
-  ParticleMaterial,
-  ParticleMaterialProps,
-  ParticlesProps,
-  ParticlesRef,
-} from '@/types/particle.types';
+import type { ParticlesMaterial, ParticlesProps, ParticlesRef } from '@/types/particle.types';
 import { useParticleSettingsContext } from '@/contexts/useParticleSettingsContext';
 
+// Improved shader material creation with proper typing
 const ParticlesMaterial = shaderMaterial(
   {
     uResolution: new THREE.Vector2(),
     uSize: 0.03,
-    uParticlesTexture: null,
+    uParticlesTexture: null as THREE.Texture | null,
     uTime: 0,
     uDeltaTime: 0,
     uAverageAmplitude: 0.0,
@@ -30,62 +26,38 @@ const ParticlesMaterial = shaderMaterial(
   },
   vertexShader,
   fragmentShader
-) as unknown as new () => ParticleMaterial;
+) as unknown as { new (): ParticlesMaterial };
 
 extend({ ParticlesMaterial });
 
-declare module '@react-three/fiber' {
-  interface ThreeElements {
-    particlesMaterial: Object3DNode<ParticleMaterial, ParticleMaterialProps> &
-      ParticleMaterialProps;
-  }
-}
-
-const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
-  { gpgpu, geometries },
-  ref
-) {
-  const { size, viewport } = useThree();
-  const pointsRef = useRef<THREE.Points>(null);
-  const materialRef = useRef<ParticleMaterial>(null);
-  const { parameters, settings } = useParticleSettingsContext();
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      material: materialRef.current,
-      points: pointsRef.current,
-      updateUniforms: ({ uAverageAmplitude }: { uAverageAmplitude: number }) => {
-        if (!materialRef.current) return;
-        materialRef.current.uniforms.uAverageAmplitude.value = uAverageAmplitude;
-      },
-    }),
-    [materialRef, pointsRef]
-  );
-
-  const [uvArray, sizesArray] = useMemo(() => {
-    const uvArray = new Float32Array(parameters.count * 2);
-    const sizesArray = new Float32Array(parameters.count);
+// Hook for particle attributes
+const useParticleAttributes = (gpgpu: ParticlesProps['gpgpu']) => {
+  return useMemo(() => {
+    const uvArray = new Float32Array(gpgpu.size * gpgpu.size * 2);
+    const sizesArray = new Float32Array(gpgpu.size * gpgpu.size);
 
     for (let y = 0; y < gpgpu.size; y++) {
       for (let x = 0; x < gpgpu.size; x++) {
         const i = y * gpgpu.size + x;
         const i2 = i * 2;
-
-        const uvX = (x + 0.5) / gpgpu.size;
-        const uvY = (y + 0.5) / gpgpu.size;
-
-        uvArray[i2 + 0] = uvX;
-        uvArray[i2 + 1] = uvY;
-
+        uvArray[i2] = (x + 0.5) / gpgpu.size;
+        uvArray[i2 + 1] = (y + 0.5) / gpgpu.size;
         sizesArray[i] = Math.random();
       }
     }
 
-    return [uvArray, sizesArray];
-  }, [gpgpu.size, parameters.count]);
+    return { uvArray, sizesArray };
+  }, [gpgpu.size]);
+};
 
-  // Material updates
+// Hook for material updates
+const useParticleMaterialUpdates = (
+  materialRef: React.RefObject<ParticlesMaterial>,
+  parameters: { radius: number },
+  settings: { color: string; surfaceColor: string; particleSize: number }
+) => {
+  const { size, viewport } = useThree();
+
   useEffect(() => {
     if (!materialRef?.current?.uniforms) return;
 
@@ -98,12 +70,37 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
   }, [
     size,
     viewport,
-    materialRef,
     settings.color,
     settings.surfaceColor,
     settings.particleSize,
     parameters.radius,
+    materialRef,
   ]);
+};
+
+const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
+  { gpgpu, geometries },
+  ref
+) {
+  const pointsRef = useRef<THREE.Points>(null);
+  const materialRef = useRef<ParticlesMaterial>(null);
+  const { parameters, settings } = useParticleSettingsContext();
+  const { uvArray, sizesArray } = useParticleAttributes(gpgpu);
+
+  useParticleMaterialUpdates(materialRef, parameters, settings);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      material: materialRef.current,
+      points: pointsRef.current,
+      updateUniforms: ({ uAverageAmplitude }) => {
+        if (!materialRef.current?.uniforms) return;
+        materialRef.current.uniforms.uAverageAmplitude.value = uAverageAmplitude;
+      },
+    }),
+    [materialRef, pointsRef]
+  );
 
   return (
     <points ref={pointsRef}>
