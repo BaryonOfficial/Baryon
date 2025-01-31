@@ -5,13 +5,21 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Lora:wght@400;500;600;700&family=Ubuntu:wght@300;400;500;700&display=swap');
 
+:root {
+  --ifm-logo-filter: none;
+}
+
+[data-theme='dark'] {
+  --ifm-logo-filter: invert(1);
+}
+
 .main {
   width: 100%;
   min-height: 100vh;
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  background: white;
+  background: var(--ifm-background-color);
   padding-top: 6rem;
 }
 
@@ -34,13 +42,13 @@
   font-family: 'Orbitron', sans-serif;
   font-size: 2.5rem;
   font-weight: 700;
-  color: black;
+  color: var(--ifm-heading-color);
   margin: 0.5rem 0;
 }
 
 .subtitle {
   font-size: 1.1rem;
-  color: black;
+  color: var(--ifm-font-color-base);
   max-width: 600px;
   line-height: 1.5;
   margin: 0;

@@ -53,7 +53,7 @@ const config: Config = {
     // Replace with your project's social card
     image: 'img/baryon-social-card.jpg',
     colorMode: {
-      defaultMode: 'light',
+      defaultMode: 'dark',
       respectPrefersColorScheme: true,
     },
     navbar: {
