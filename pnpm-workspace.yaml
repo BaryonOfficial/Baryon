@@ -11,6 +11,9 @@ packages:
   # Shared configurations
   - 'configs/*'          # Example: configs/eslint, configs/typescript, configs/jest
 
+  # Documentation
+  - 'documentation'    # Example: documentation/docs, documentation/blog
+
   # Example paths that would match:
   # ✓ packages/core
   # ✓ packages/utils

@@ -23,7 +23,7 @@ export default [
         Uint8Array: 'readonly',
       },
       parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        project: ['./tsconfig.node.json', './tsconfig.app.json', './documentation/tsconfig.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -100,6 +100,15 @@ export default [
     rules: {
       '@typescript-eslint/no-explicit-any': 'off', // For FFT data handling
       'no-bitwise': 'off', // For audio bit operations
+    },
+  },
+  // Configuration for documentation files
+  {
+    files: ['documentation/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off', // Not needed for documentation
+      '@typescript-eslint/no-explicit-any': 'off', // More relaxed for docs
+      'react/prop-types': 'off', // Not needed for TypeScript docs
     },
   },
   prettier,
