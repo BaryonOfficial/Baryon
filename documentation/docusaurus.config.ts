@@ -106,6 +106,10 @@ const config: Config = {
           title: 'Community',
           items: [
             {
+              label: 'Contributing Guide',
+              href: 'https://github.com/BaryonOfficial/Baryon/blob/main/.github/CONTRIBUTING.md',
+            },
+            {
               label: 'GitHub Discussions',
               href: 'https://github.com/BaryonOfficial/Baryon/discussions',
             },

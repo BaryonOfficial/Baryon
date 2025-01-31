@@ -18,42 +18,37 @@ Our technical documentation is organized into three main sections:
 
 ### [System Architecture](/docs/technical/architecture)
 
-The architecture documentation provides a high-level overview of the system, including:
-
 - System components and their relationships
-- Data flow between components
-- System requirements and dependencies
+- Data flow and dependencies
 - Framework integration points
 
 ### [Audio Analysis Pipeline](/docs/technical/audio-analysis)
 
-Detailed documentation of the audio processing system:
-
 - Audio input handling and processing
 - Real-time frequency analysis
 - Implementation details
-- Framework migration guide
 
 ### [GPU Compute Pipeline](/docs/technical/gpu-compute)
-
-Technical details of the GPU computation system:
 
 - GPGPU implementation
 - Shader computations
 - Performance optimization
-- Hardware considerations
 
 ## Getting Started
 
-1. Start with the [System Architecture](/docs/technical/architecture) to understand the overall system design
-2. Dive into specific components through the [Audio Analysis](/docs/technical/audio-analysis) or [GPU Compute](/docs/technical/gpu-compute) documentation
+1. Start with the [System Architecture](/docs/technical/architecture)
+2. Explore the [Audio Analysis](/docs/technical/audio-analysis) or [GPU Compute](/docs/technical/gpu-compute) documentation
 3. Follow the implementation guides for specific tasks
 
 ## Contributing
 
-We welcome contributions to both the codebase and documentation. Please see our [GitHub repository](https://github.com/BaryonOfficial/Baryon) for:
+Want to help improve Baryon? Check out our **[Contributing Guide →](https://github.com/BaryonOfficial/Baryon/blob/main/.github/CONTRIBUTING.md)**
 
-- Source code
-- Issue tracking
-- Development guidelines
-- Community discussions
+The guide covers:
+
+- Development workflow
+- Code style guidelines
+- Commit conventions
+- Pull request process
+
+You can also visit our [GitHub repository](https://github.com/BaryonOfficial/Baryon) for source code, issue tracking, and discussions.
