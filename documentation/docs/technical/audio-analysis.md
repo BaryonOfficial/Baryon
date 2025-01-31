@@ -67,22 +67,6 @@ processAudioData(gpgpu: GPGPUComputation) {
 }
 ```
 
-### Shader Integration
-
-```glsl
-// In scalarField.glsl
-float chladni(vec3 position, float radius) {
-    float sum = 0.0;
-
-    for(int i = 0; i < capacity; ++i) {
-        vec4 waveData = texture(uAudioData, uv);
-        // waveData contains both pitch and corresponding amplitude
-        // Used to calculate acoustic normal modes
-    }
-    return sum;
-}
-```
-
 ## Framework Migration Guide
 
 ### JUCE/VST3 Migration Requirements
@@ -120,16 +104,18 @@ float getAverageAmplitude(const juce::AudioBuffer<float>& buffer) {
 }
 ```
 
-3. **Pitch Detection**
+3. **Polyphonic Pitch Detection**
 
 ```cpp
 class PitchProcessor {
     void processPitch(const juce::AudioBuffer<float>& buffer) {
-        // Implement PredominantPitchMelodia algorithm
-        // Must output compatible with current essentiaData format:
-        // - Float32Array
-        // - Capacity matches current system
-        // - Real-time processing
+        // Any polyphonic pitch detection algorithm that can:
+        // - Detect multiple concurrent pitches (polyphonic detection)
+        // - Output up to `capacity` simultaneous pitches per frame (currently fixed at 5)
+        // - Work in real-time
+        // Output format: Float32Array of frequencies in Hz
+
+        // Future consideration: Flexible capacity implementation
     }
 };
 ```
@@ -146,8 +132,8 @@ class PitchProcessor {
 
    - FFT size: 4096 samples
    - Amplitude range: 0-255 (Uint8Array)
-   - Pitch data: Float32Array
-   - Buffer sizes must match current system
+   - Pitch data: Float32Array[capacity] of frequencies in Hz
+   - Fixed capacity in initial implementation (default: 5)
 
 3. **Performance Requirements**
    - Low-latency processing

@@ -23,19 +23,47 @@ The system uses WebGL for general-purpose computation, implementing:
 
 ### Data Input
 
-The GPU pipeline receives two main types of audio data:
+The GPU pipeline processes audio data through the audioData.glsl shader, which receives:
 
 ```glsl
-uniform sampler2D tPitches;    // Pitch information
-uniform sampler2D tDataArray;  // Frequency data
+uniform sampler2D tPitches;    // Pitch frequencies from Essentia (Float32Array)
+uniform sampler2D tDataArray;  // Frequency bin amplitudes (Uint8Array)
 ```
+
+### Audio Data Flow
+
+1. **Pitch Processing**
+
+   - Receives pitch frequencies detected by Essentia
+   - Each pitch is used to calculate acoustic normal modes
+   - Pitch data stored in texture with length of `capacity`
+
+2. **Amplitude Mapping**
+
+   ```glsl
+   float frequencyToIndex(float pitch) {
+       float nyquist = sampleRate / 2.0;
+       return (pitch / nyquist) * (bufferSize / 2.0);
+   }
+   ```
+
+   - Maps each pitch to its corresponding frequency bin
+   - Samples amplitude from frequency data texture
+   - Normalizes amplitude values for visualization
+
+3. **Output Format**
+   ```glsl
+   gl_FragColor = vec4(vec3(modeNumbers), amplitude);
+   ```
+   - x, y, z: Normal mode numbers for each dimension
+   - w: Corresponding amplitude for the pitch
 
 ### Configuration Parameters
 
 ```glsl
-uniform float sampleRate;      // Audio sample rate
-uniform float bufferSize;      // Processing buffer size
-uniform int capacity;          // Data capacity
+uniform float sampleRate;      // Audio sample rate (default 44.1kHz)
+uniform float bufferSize;      // FFT size (4096 samples)
+uniform int capacity;          // Number of pitches to process (default 5)
 uniform float uRadius;         // Acoustic space radius
 ```
 
