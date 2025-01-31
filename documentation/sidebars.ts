@@ -17,7 +17,7 @@ const sidebars: SidebarsConfig = {
     'intro',
     {
       type: 'category',
-      label: 'Technical Documentation',
+      label: 'Technical Insights',
       items: ['technical/architecture', 'technical/audio-analysis', 'technical/gpu-compute'],
     },
   ],
