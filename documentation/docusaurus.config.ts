@@ -88,18 +88,6 @@ const config: Config = {
               label: 'Getting Started',
               to: '/docs',
             },
-            {
-              label: 'Technical Overview',
-              to: '/docs/technical/architecture',
-            },
-            {
-              label: 'Audio Analysis',
-              to: '/docs/technical/audio-analysis',
-            },
-            {
-              label: 'GPU Compute',
-              to: '/docs/technical/gpu-compute',
-            },
           ],
         },
         {

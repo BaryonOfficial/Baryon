@@ -62,7 +62,7 @@ body {
   height: 4rem;
   box-shadow: none;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  background-color: var(--ifm-navbar-background-color);
+  background-color: #000000;
 }
 
 .navbar__title {
@@ -93,5 +93,19 @@ body {
 }
 
 .navbar-sidebar {
-  background-color: var(--ifm-navbar-background-color);
+  background-color: #000000;
+}
+
+.footer--dark {
+  background-color: #000000;
+}
+
+/* Footer link customization */
+.footer.footer--dark .footer__link-item {
+  color: #ffffff;
+}
+
+.footer.footer--dark .footer__link-item:hover {
+  color: #ffffff;
+  text-decoration-color: #ffffff;
 }
