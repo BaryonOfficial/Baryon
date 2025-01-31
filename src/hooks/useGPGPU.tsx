@@ -180,6 +180,7 @@ export function useGPGPU(
       essentiaData,
       size,
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gl, geometries, parameters.count, capacity, fftSize, sampleRate]);
 
   // Initialize GPGPU computation
