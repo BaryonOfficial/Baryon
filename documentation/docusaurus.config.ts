@@ -116,7 +116,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Baryon Project. Built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Baryon`,
     },
     prism: {
       theme: prismThemes.github,
