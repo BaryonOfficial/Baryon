@@ -34,3 +34,4 @@ repomix*
 # SSL Certificates
 *.pem
 /certs
+.vercel
