@@ -14,5 +14,6 @@
       ]
     }
   ],
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "ignoreCommand": "git check-ignore documentation/"
 }

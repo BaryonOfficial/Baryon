@@ -11,8 +11,10 @@ node_modules
 dist
 dist-ssr
 *.local
-examples
 prompts
+examples
+package-lock.json
+yarn.lock
 
 # Editor directories and files
 .vscode/*
@@ -24,9 +26,10 @@ prompts
 *.njsproj
 *.sln
 *.sw?
+.cursorrules
 .repomixignore
 repomix*
-.cursorrules
+.eslintcache
 
 # SSL Certificates
 *.pem

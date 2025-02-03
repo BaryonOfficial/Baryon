@@ -35,7 +35,7 @@
     },
     {
       "projectId": "ohDidvG9XsCeFumugENU3J",
-      "version": "6.28.0",
+      "version": "6.29.0",
       "dependencies": {},
       "lang": "js",
       "fileLocks": [
@@ -86,7 +86,7 @@
       "dependencies": {
         "7nJ7UcFmq9UzB6eXfC5z4a": "0.31.0",
         "58GpZjZCWTaJ8AUhpCwt2K": "3.28.0",
-        "ohDidvG9XsCeFumugENU3J": "6.28.0",
+        "ohDidvG9XsCeFumugENU3J": "6.29.0",
         "caTPwKxj5ZrD9LQ7DMdK4Z": "3.40.0",
         "84wxoth5npGrp6RRXPL88z": "4.30.0",
         "jkU633o1Cz7HrJdwdxhVHk": "16.13.0"

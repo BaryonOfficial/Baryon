@@ -1,0 +1,111 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-first websites.
+ */
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-color-primary: #000000;
+  --ifm-color-primary-dark: #000000;
+  --ifm-color-primary-darker: #000000;
+  --ifm-color-primary-darkest: #000000;
+  --ifm-color-primary-light: #333333;
+  --ifm-color-primary-lighter: #444444;
+  --ifm-color-primary-lightest: #555555;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ifm-navbar-background-color: #000000;
+}
+
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+[data-theme='dark'] {
+  --ifm-color-primary: #ffffff;
+  --ifm-color-primary-dark: #cccccc;
+  --ifm-color-primary-darker: #bbbbbb;
+  --ifm-color-primary-darkest: #999999;
+  --ifm-color-primary-light: #ffffff;
+  --ifm-color-primary-lighter: #ffffff;
+  --ifm-color-primary-lightest: #ffffff;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-navbar-background-color: #000000;
+}
+
+/* Remove default hero banner styles */
+.hero {
+  display: none;
+}
+
+/* Custom font hierarchy */
+h1 {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+}
+
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: 'Lora', serif;
+  font-weight: 600;
+}
+
+/* Base text style */
+body {
+  font-family: 'Ubuntu', sans-serif;
+  font-weight: 400;
+}
+
+/* Navbar customization */
+.navbar {
+  height: 4rem;
+  box-shadow: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: #000000;
+}
+
+.navbar__title {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 600;
+  font-size: 1.2rem;
+  margin-left: 0.5rem;
+  color: #ffffff;
+}
+
+.navbar__link {
+  color: #ffffff;
+}
+
+.navbar__link:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.navbar__logo {
+  height: 32px;
+  width: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.navbar__brand {
+  margin-right: 2rem;
+}
+
+.navbar-sidebar {
+  background-color: #000000;
+}
+
+.footer--dark {
+  background-color: #000000;
+}
+
+/* Footer link customization */
+.footer.footer--dark .footer__link-item {
+  color: #ffffff;
+}
+
+.footer.footer--dark .footer__link-item:hover {
+  color: #ffffff;
+  text-decoration-color: #ffffff;
+}
