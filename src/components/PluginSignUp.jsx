@@ -75,7 +75,7 @@ export function SignUpForm() {
       try {
         const phoneNumber = parsePhoneNumber(values.phone);
         values.phone = phoneNumber.format('INTERNATIONAL');
-      } catch (error) {
+      } catch {
         form.setError('phone', {
           type: 'manual',
           message: 'Please enter a valid phone number with country code.',
@@ -156,7 +156,8 @@ export function SignUpForm() {
         <Button
           className="w-full"
           onClick={form.handleSubmit(onSubmit)}
-          disabled={formspreeState.submitting}>
+          disabled={formspreeState.submitting}
+        >
           Submit
         </Button>
       </CardFooter>

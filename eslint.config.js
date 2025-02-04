@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 import js from '@eslint/js';
 import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
@@ -7,24 +9,62 @@ import react from 'eslint-plugin-react';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 import prettier from 'eslint-config-prettier'; // Add this import
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Extract common globals
+const commonGlobals = {
+  ...globals.browser,
+  ...globals.node,
+  console: 'readonly',
+  document: 'readonly',
+  window: 'readonly',
+  navigator: 'readonly',
+  fetch: 'readonly',
+  Blob: 'readonly',
+  URL: 'readonly',
+  alert: 'readonly',
+  performance: 'readonly',
+  self: 'readonly',
+  AudioWorkletNode: 'readonly',
+};
+
+// Base language options for both JS and TS files
+const baseLanguageOptions = {
+  ecmaVersion: 2020,
+  globals: commonGlobals,
+};
+
 export default [
-  { ignores: ['dist', '**/*.glsl', 'public/lib/**/*', 'public/draco/**/*', 'examples/**/*'] },
+  // Applies to all JS/TS files—this helps eliminate repetition
+  {
+    files: ['**/*.{js,jsx,ts,tsx}'],
+    languageOptions: baseLanguageOptions,
+    rules: {
+      'no-async-promise-executor': 'off',
+      // You can add other common rules here as needed
+    },
+  },
+  {
+    ignores: [
+      'dist/**',
+      '**/*.glsl',
+      'public/lib/**/*',
+      'public/draco/**/*',
+      'examples/**/*',
+      '.vercel/**/*',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // Additional TS/TSX settings (parserOptions, plugins, etc)
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
-      ecmaVersion: 2020,
-      globals: {
-        ...globals.browser,
-        AudioContext: 'readonly',
-        AnalyserNode: 'readonly',
-        Float32Array: 'readonly',
-        Uint8Array: 'readonly',
-      },
+      ...baseLanguageOptions,
       parserOptions: {
         project: ['./tsconfig.node.json', './tsconfig.app.json', './documentation/tsconfig.json'],
-        tsconfigRootDir: import.meta.dirname,
+        tsconfigRootDir: __dirname,
       },
     },
     settings: {
@@ -44,7 +84,6 @@ export default [
       ...react.configs.recommended.rules,
       ...react.configs['jsx-runtime'].rules,
       ...jsxA11y.configs.recommended.rules,
-
       // Critical for audio visualization performance
       'react-hooks/exhaustive-deps': [
         'warn',
@@ -52,13 +91,11 @@ export default [
           additionalHooks: '(useFrame|useAnimationFrame)$',
         },
       ],
-
       // R3F properties
       'react/no-unknown-property': [
         'error',
         {
           ignore: [
-            // R3F properties
             'attach',
             'args',
             'intensity',
@@ -75,7 +112,6 @@ export default [
           ],
         },
       ],
-
       // Prevent common audio/WebGL context leaks
       'no-restricted-syntax': [
         'error',

@@ -58,23 +58,36 @@ export function loadAudio(url) {
 }
 
 export function playPauseAudio() {
-  return new Promise(async (resolve, reject) => {
+  return new Promise((resolve, reject) => {
     try {
       if (audioObject.sound.isPlaying) {
         audioObject.sound.pause();
+        audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
+        resolve(audioObject.sound.isPlaying);
       } else if (!audioObject.sound.isPlaying && isAudioLoaded) {
         if (audioObject.audioCtx.state === 'suspended') {
-          await audioObject.audioCtx.resume();
+          audioObject.audioCtx
+            .resume()
+            .then(() => {
+              audioObject.sound.play();
+              audioObject.sound.started = true;
+              audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
+              resolve(audioObject.sound.isPlaying);
+            })
+            .catch((error) => {
+              console.error('Error resuming audio context:', error);
+              reject(error);
+            });
+        } else {
+          audioObject.sound.play();
+          audioObject.sound.started = true;
+          audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
+          resolve(audioObject.sound.isPlaying);
         }
-        audioObject.sound.play();
-        audioObject.sound.started = true;
       } else {
         console.log('Audio not loaded yet');
         resolve(false);
-        return;
       }
-      audioObject.essentiaNode.port.postMessage({ isPlaying: audioObject.sound.isPlaying });
-      resolve(audioObject.sound.isPlaying);
     } catch (error) {
       console.error('Error in audio playback:', error);
       reject(error);
@@ -174,21 +187,6 @@ export function stopMicRecordStream() {
     isPlaying: audioObject.sound.isPlaying,
     micActive: audioObject.gumStream && audioObject.gumStream.active,
   });
-}
-
-function checkMicInputLevels() {
-  if (audioObject.micAnalyser) {
-    const data = audioObject.micAnalyser.getFrequencyData();
-    const isMicWorking = data.some((value) => value > 0);
-
-    if (isMicWorking) {
-      console.log('Microphone is working');
-    } else {
-      console.log('Microphone is not picking up any sound');
-    }
-  } else {
-    console.log('Microphone analyser is not initialized');
-  }
 }
 
 export function audioSetup(camera) {
@@ -372,14 +370,13 @@ export function setupAudioGraph() {
       isPlaying: audioObject.sound.isPlaying,
       micActive: audioObject.gumStream && audioObject.gumStream.active,
     });
-  } catch (_) {
+  } catch (error) {
+    console.error('AudioWorkletNode postMessage error:', error);
     alert('No SharedArrayBuffer tranfer support, try another browser.');
-    // $("#recordButton").off('click', onRecordClickHandler);
-    // $("#recordButton").prop("disabled", true);
     return;
   }
 
-  //Input File Sound Path
+  // Input File Sound Path
   audioObject.sound.getOutput().connect(audioObject.essentiaNode);
   console.log('inputFile Sound Gain Node --> Essentia Node');
 
