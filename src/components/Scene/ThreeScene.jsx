@@ -4,10 +4,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { postProcessingSetup } from '../../setup/postProcessingSetup';
-import { guiSetup } from '../../setup/guiSetup';
-import { particlesSetup } from '../../setup/particlesSetup';
-import { gpgpuSetup, disposeGPGPUResources } from '../../setup/gpgpuSetup';
+import { postProcessingSetup } from '../../setup/postProcessingSetup.js';
+import { guiSetup } from '../../setup/guiSetup.ts';
+import { particlesSetup } from '../../setup/particlesSetup.js';
+import { gpgpuSetup, disposeGPGPUResources } from '../../setup/gpgpuSetup.js';
 import {
   audioObject,
   audioSetup,
@@ -19,9 +19,9 @@ import {
   processAudioData,
   startAudioProcessing,
   setAudioEndedCallback,
-} from '../../setup/audioSetup';
+} from '../../setup/audioSetup.js';
 import GUI from 'lil-gui';
-import UnsupportedWarning from '../../utils/UnsupportedWarning.js';
+import UnsupportedWarning from '../../utils/UnsupportedWarning.tsx';
 import { useFullscreen } from '../../hooks/useFullScreenToggle.jsx';
 
 const ThreeScene = () => {
