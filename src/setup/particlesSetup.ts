@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import particlesVertexShader from '../shaders/particles/vertex.glsl';
 import particlesFragmentShader from '../shaders/particles/fragment.glsl';
 
-import { audioObject } from '../audio/audioSetup';
+import { audioObject } from './audioSetup';
 /**
  * Particles
  */

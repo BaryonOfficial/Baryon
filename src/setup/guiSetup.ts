@@ -1,19 +1,80 @@
+import * as THREE from 'three';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import GUI from 'lil-gui';
+import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js';
+
+interface MaterialParameters {
+  size: number;
+  sizeAttenuation: boolean;
+  depthWrite: boolean;
+  blending: THREE.Blending;
+  vertexColors: boolean;
+  color: string;
+  surfaceColor: string;
+}
+
+interface Parameters {
+  count: number;
+  radius: number;
+  threshold: number;
+  surfaceRatio: number;
+  surfaceThreshold: number;
+  targetFPS: number;
+}
+
+interface DebugObject {
+  backgroundColor: string;
+  [key: string]: string | number | boolean;
+}
+
+type UniformValue = {
+  value:
+    | number
+    | boolean
+    | THREE.Color
+    | THREE.Vector2
+    | THREE.Vector3
+    | THREE.Vector4
+    | THREE.Matrix3
+    | THREE.Matrix4
+    | THREE.Texture;
+};
+
+interface ShaderMaterialWithUniforms {
+  material: {
+    uniforms: {
+      [key: string]: UniformValue;
+    };
+  };
+}
+
+interface Particles {
+  material: THREE.ShaderMaterial;
+  points: THREE.Points;
+}
+
+interface GPGPU {
+  computation: GPUComputationRenderer;
+  particlesVariable: ShaderMaterialWithUniforms;
+  audioDataVariable: ShaderMaterialWithUniforms;
+  scalarFieldVariable: ShaderMaterialWithUniforms;
+  zeroPointsVariable: ShaderMaterialWithUniforms;
+}
+
 /**
  * Controls
  */
 
 export function guiSetup(
-  gui,
-  unrealBloomPass,
-  renderer,
-  particles,
-  gpgpu,
-  debugObject,
-  materialParameters,
-  parameters,
-  stats,
-  setShowStats
-) {
+  gui: GUI,
+  unrealBloomPass: UnrealBloomPass,
+  renderer: THREE.WebGLRenderer,
+  particles: Particles,
+  gpgpu: GPGPU,
+  debugObject: DebugObject,
+  materialParameters: MaterialParameters,
+  parameters: Parameters
+): void {
   gui.close();
 
   const bloomFolder = gui.addFolder('Bloom Effect');
@@ -33,14 +94,14 @@ export function guiSetup(
   colorFolder
     .addColor(materialParameters, 'color')
     .name('Volume Color')
-    .onChange((value) => {
+    .onChange((value: string) => {
       materialParameters.color = value;
       particles.material.uniforms.uColor.value.set(value);
     });
   colorFolder
     .addColor(materialParameters, 'surfaceColor')
     .name('Surface Color')
-    .onChange((value) => {
+    .onChange((value: string) => {
       materialParameters.surfaceColor = value;
       particles.material.uniforms.uSurfaceColor.value.set(value);
     });
@@ -105,7 +166,7 @@ export function guiSetup(
   aesthetics
     .add(gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl, 'value')
     .name('Surface Particles')
-    .onChange(function (value) {
+    .onChange(function (value: boolean) {
       gpgpu.zeroPointsVariable.material.uniforms.uSurfaceControl.value = value;
     });
   aesthetics
@@ -114,24 +175,13 @@ export function guiSetup(
       Smoothed: 1,
     })
     .name('Particle Movement Type')
-    .onChange(function (value) {
+    .onChange(function (value: number) {
       gpgpu.particlesVariable.material.uniforms.uParticleMovementType.value = value;
     });
   aesthetics.close();
 
   const performanceFolder = gui.addFolder('Performance');
-  const performanceSettings = {
-    showStats: false, // Initialize showStats property
-  };
-
-  performanceFolder
-    .add(performanceSettings, 'showStats')
-    .name('Show Stats Panel')
-    .onChange((value) => {
-      setShowStats(value);
-    });
-
-  // performanceFolder.close(); // Keeping this open by default could help users realize performance optimizations
+  performanceFolder.close();
 
   const resetDefaults = {
     reset: function () {
@@ -185,11 +235,6 @@ export function guiSetup(
           controller.setValue(true);
         if (controller.property === 'value' && controller._name === 'Particle Movement Type')
           controller.setValue(1);
-      });
-
-      // Reset Performance Settings
-      performanceFolder.controllers.forEach((controller) => {
-        if (controller.property === 'showStats') controller.setValue(false);
       });
     },
   };

@@ -272,7 +272,7 @@ function combineFrequencyData(freqData1, freqData2) {
 
 export function processAudioData(gpgpu, particles, essentiaData) {
   if (audioObject.audioReader.available_read() >= 1) {
-    let read = audioObject.audioReader.dequeue(essentiaData);
+    const read = audioObject.audioReader.dequeue(essentiaData);
     if (read !== 0) {
       gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true;
       // console.log(
@@ -348,8 +348,8 @@ export function setupAudioGraph() {
     alert('SharedArrayBuffer is not supported in this browser. Please use a compatible browser.');
     return;
   }
-  let sab = window.exports.RingBuffer.getStorageForCapacity(audioObject.capacity, Float32Array); // capacity: three float32 values [pitch, confidence, rms]
-  let rb = new window.exports.RingBuffer(sab, Float32Array);
+  const sab = window.exports.RingBuffer.getStorageForCapacity(audioObject.capacity, Float32Array); // capacity: three float32 values [pitch, confidence, rms]
+  const rb = new window.exports.RingBuffer(sab, Float32Array);
   audioObject.audioReader = new window.exports.AudioReader(rb);
 
   audioObject.essentiaNode = new AudioWorkletNode(audioObject.audioCtx, 'audio-data-processor', {

@@ -6,7 +6,7 @@ import scalarFieldShader from '../shaders/gpgpu/scalarField.glsl';
 import zeroPointsShader from '../shaders/gpgpu/zeroPoints.glsl';
 import audioDataShader from '../shaders/gpgpu/audioData.glsl';
 
-import { audioObject } from '../audio/audioSetup';
+import { audioObject } from './audioSetup';
 
 /**
  * GPU Compute
@@ -252,7 +252,7 @@ export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeomet
   gpgpu.computation.init();
 
   // Debug Planes
-  let mode = false;
+  const mode = false;
   gpgpu.audioDebug = new THREE.Mesh(
     new THREE.PlaneGeometry(3, 3),
     new THREE.MeshBasicMaterial({

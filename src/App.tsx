@@ -1,6 +1,6 @@
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
-import ThreeScene from './ThreeScene';
+import ThreeScene from './components/Scene/ThreeScene';
 
 import './App.css';
 
