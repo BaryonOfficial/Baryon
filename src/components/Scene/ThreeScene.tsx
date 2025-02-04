@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import Stats from './utils/stats.js';
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { postProcessingSetup } from './postProcessing/postProcessingSetup.js';
-import { guiSetup } from './utils/guiSetup.js';
-import { particlesSetup } from './baryon/particlesSetup.js';
-import { gpgpuSetup, disposeGPGPUResources } from './baryon/gpgpuSetup.js';
+import { postProcessingSetup } from '../../setup/postProcessingSetup';
+import { guiSetup } from '../../setup/guiSetup';
+import { particlesSetup } from '../../setup/particlesSetup';
+import { gpgpuSetup, disposeGPGPUResources } from '../../setup/gpgpuSetup';
 import {
   audioObject,
   audioSetup,
@@ -20,10 +19,10 @@ import {
   processAudioData,
   startAudioProcessing,
   setAudioEndedCallback,
-} from './audio/audioSetup.js';
+} from '../../setup/audioSetup';
 import GUI from 'lil-gui';
-import UnsupportedWarning from './utils/UnsupportedWarning';
-import { useFullscreen } from './hooks/useFullScreenToggle.jsx';
+import UnsupportedWarning from '../../utils/UnsupportedWarning.js';
+import { useFullscreen } from '../../hooks/useFullScreenToggle.jsx';
 
 const ThreeScene = () => {
   const canvasRef = useRef(null);
@@ -36,8 +35,6 @@ const ThreeScene = () => {
   const [isMicActive, setIsMicActive] = useState(false);
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
   const [isUnsupported, setIsUnsupported] = useState(false);
-  const statsRef = useRef(null);
-  const [showStats, setShowStats] = useState(false);
 
   useEffect(() => {
     function isUnsupportedEnvironment() {
@@ -200,9 +197,7 @@ const ThreeScene = () => {
         gpgpu,
         debugObject,
         materialParameters,
-        parameters,
-        stats,
-        setShowStats
+        parameters
       );
       return { gpgpu, particles, essentiaData };
     }
@@ -295,23 +290,8 @@ const ThreeScene = () => {
       return { time, deltaTime };
     }
 
-    // Initialize Stats
-    const stats = Stats();
-    stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
-    statsRef.current = stats;
-
-    // Style the stats panel
-    const statsElement = stats.dom;
-    statsElement.style.cssText = 'position:absolute;bottom:0;left:0;z-index:100;';
-
-    // Always hide stats panel on mount/remount
-    setShowStats(false);
-
     const tick = () => {
       requestAnimationFrame(tick);
-
-      // Start monitoring frame
-      stats.begin();
 
       const elapsedTime = clock.getElapsedTime();
       const { time, deltaTime } = timeHandler(elapsedTime);
@@ -343,9 +323,6 @@ const ThreeScene = () => {
 
       // Effect Composer Renderer
       effectComposer.render();
-
-      // End monitoring frame
-      stats.end();
     };
 
     startAudioProcessing(tick);
@@ -366,20 +343,8 @@ const ThreeScene = () => {
         disposeGPGPUResources(gpgpu);
       }
       renderer.dispose();
-
-      if (statsRef.current && statsRef.current.dom.parentNode) {
-        statsRef.current.dom.parentNode.removeChild(statsRef.current.dom);
-      }
     };
   }, []);
-
-  useEffect(() => {
-    if (showStats && statsRef.current) {
-      document.body.appendChild(statsRef.current.dom);
-    } else if (!showStats && statsRef.current && statsRef.current.dom.parentNode) {
-      statsRef.current.dom.parentNode.removeChild(statsRef.current.dom);
-    }
-  }, [showStats]);
 
   const handleFileChange = useCallback((event) => {
     const file = event.target.files[0];
