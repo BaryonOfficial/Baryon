@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:https": "cross-env HTTPS=true vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
+    "check-types": "tsc --noEmit",
     "lint": "eslint .",
     "preview": "vite preview",
     "preinstall": "npx only-allow pnpm",
