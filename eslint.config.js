@@ -8,7 +8,16 @@ import jsxA11y from 'eslint-plugin-jsx-a11y';
 import prettier from 'eslint-config-prettier'; // Add this import
 
 export default [
-  { ignores: ['dist', '**/*.glsl', 'public/lib/**/*', 'public/draco/**/*', 'examples/**/*'] },
+  {
+    ignores: [
+      'dist',
+      '**/*.glsl',
+      'public/lib/**/*',
+      'public/draco/**/*',
+      'examples/**/*',
+      '.vercel/**/*',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

@@ -30,6 +30,7 @@ yarn.lock
 .repomixignore
 repomix*
 .eslintcache
+.vercel
 
 # SSL Certificates
 *.pem
