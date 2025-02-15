@@ -134,7 +134,7 @@ export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeomet
     return pitches;
   }
 
-  const randomPitches = generateRandomPitches(audioObject.capacity);
+  const randomPitches = generateRandomPitches(5); // Use fixed capacity of 5
 
   // Global Uniform Variables
   const waveUniforms = {
@@ -153,25 +153,46 @@ export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeomet
 
   // Audio Data & Uniforms
   const format = renderer.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
-  const essentiaData = new Float32Array(audioObject.capacity);
+  const essentiaData = new Float32Array(5); // Use fixed capacity of 5
 
   gpgpu.audioDataVariable.material.uniforms.tPitches = {
-    value: new THREE.DataTexture(essentiaData, audioObject.capacity, 1, format, THREE.FloatType),
+    value: new THREE.DataTexture(
+      essentiaData,
+      5,
+      1,
+      format,
+      THREE.FloatType,
+      THREE.UVMapping,
+      THREE.ClampToEdgeWrapping,
+      THREE.ClampToEdgeWrapping,
+      THREE.NearestFilter,
+      THREE.NearestFilter,
+      1
+    )
   };
+
+  // Create initial FFT data texture
+  const initialFFTData = new Float32Array(audioObject.fftSize / 2).fill(0);
   gpgpu.audioDataVariable.material.uniforms.tDataArray = {
     value: new THREE.DataTexture(
-      audioObject.analyser.data, // Initial empty data
+      initialFFTData,
       audioObject.fftSize / 2,
       1,
-      format
-    ),
+      format,
+      THREE.FloatType,
+      THREE.UVMapping,
+      THREE.ClampToEdgeWrapping,
+      THREE.ClampToEdgeWrapping,
+      THREE.NearestFilter,
+      THREE.NearestFilter,
+      1
+    )
   };
+
   gpgpu.audioDataVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
-  gpgpu.audioDataVariable.material.uniforms.sampleRate = new THREE.Uniform(
-    audioObject.audioCtx.sampleRate
-  );
+  gpgpu.audioDataVariable.material.uniforms.sampleRate = new THREE.Uniform(audioObject.sampleRate);
   gpgpu.audioDataVariable.material.uniforms.bufferSize = new THREE.Uniform(audioObject.fftSize);
-  gpgpu.audioDataVariable.material.uniforms.capacity = new THREE.Uniform(audioObject.capacity);
+  gpgpu.audioDataVariable.material.uniforms.capacity = new THREE.Uniform(5); // Use fixed capacity
   gpgpu.audioDataVariable.material.uniforms.uRandomPitches = waveUniforms.pitches;
 
   // Dependencies
@@ -189,7 +210,7 @@ export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeomet
 
   gpgpu.scalarFieldVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
   gpgpu.scalarFieldVariable.material.uniforms.uBase = new THREE.Uniform(baseParticlesTexture);
-  gpgpu.scalarFieldVariable.material.uniforms.capacity = new THREE.Uniform(audioObject.capacity);
+  gpgpu.scalarFieldVariable.material.uniforms.capacity = new THREE.Uniform(5); // Use fixed capacity
 
   // Dependencies
   gpgpu.computation.setVariableDependencies(gpgpu.scalarFieldVariable, [gpgpu.audioDataVariable]);
@@ -233,13 +254,11 @@ export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeomet
   gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(baryonLogoTexture);
   gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
   gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(32);
-  gpgpu.particlesVariable.material.uniforms.uStarted = new THREE.Uniform(audioObject.sound.started);
+  gpgpu.particlesVariable.material.uniforms.uStarted = new THREE.Uniform(audioObject.isPlaying);
   gpgpu.particlesVariable.material.uniforms.uParticleMovementType = new THREE.Uniform(1);
   gpgpu.particlesVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
   gpgpu.particlesVariable.material.uniforms.uDistanceThreshold = new THREE.Uniform(0.5);
-  gpgpu.particlesVariable.material.uniforms.uMicActive = new THREE.Uniform(
-    audioObject.gumStream && audioObject.gumStream.active
-  );
+  gpgpu.particlesVariable.material.uniforms.uMicActive = new THREE.Uniform(false);
 
   // Dependencies
   gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
