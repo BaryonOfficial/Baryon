@@ -6,7 +6,7 @@ import * as THREE from 'three';
 
 export const audioObject = {
   fftSize: 4096,
-  fftData: new Float32Array(4096/2), // FFT data is half the size
+  fftData: new Float32Array(4096 / 2), // FFT data is half the size
   averageAmplitude: 0,
   sampleRate: 44100,
   isPlaying: false,
@@ -16,13 +16,13 @@ export const audioObject = {
     isPlaying: false,
     started: false,
     context: { currentTime: 0 },
-    listener: { timeDelta: 0 }
+    listener: { timeDelta: 0 },
   },
-  gumStream: null
+  gumStream: null,
 };
 
 // Set up callback to receive data from JUCE
-window.audioDataCallback = function(data) {
+window.audioDataCallback = function (data) {
   if (data) {
     if (data.fftData) {
       audioObject.fftData = new Float32Array(data.fftData);
@@ -57,25 +57,25 @@ export function getAudioData() {
     averageAmplitude: audioObject.averageAmplitude,
     sampleRate: audioObject.sampleRate,
     isPlaying: audioObject.isPlaying,
-    isInputConnected: audioObject.isInputConnected
+    isInputConnected: audioObject.isInputConnected,
   };
 }
 
 // Add back the functions ThreeScene expects, but adapted for JUCE
-export function getIsAudioLoaded() { 
-  return audioObject.isInputConnected; 
+export function getIsAudioLoaded() {
+  return audioObject.isInputConnected;
 }
 
-export function loadAudio() { 
+export function loadAudio() {
   // In JUCE version, audio is loaded by the DAW
   console.log('Audio loading handled by DAW');
-  return Promise.resolve(); 
+  return Promise.resolve();
 }
 
-export function playPauseAudio() { 
+export function playPauseAudio() {
   // In JUCE version, playback is controlled by DAW
   console.log('Playback controlled by DAW');
-  return Promise.resolve(audioObject.isPlaying); 
+  return Promise.resolve(audioObject.isPlaying);
 }
 
 export function stopAudio() {
@@ -83,10 +83,10 @@ export function stopAudio() {
   console.log('Playback controlled by DAW');
 }
 
-export function startMicRecordStream() { 
+export function startMicRecordStream() {
   // In JUCE version, input is controlled by DAW
   console.log('Audio input controlled by DAW');
-  return Promise.resolve(); 
+  return Promise.resolve();
 }
 
 export function stopMicRecordStream() {
@@ -98,7 +98,7 @@ export function setAudioEndedCallback(callback) {
   // In JUCE version, we might want to call this when the DAW stops
   if (callback) {
     const oldCallback = window.audioDataCallback;
-    window.audioDataCallback = function(data) {
+    window.audioDataCallback = function (data) {
       oldCallback(data);
       if (data && data.isPlaying === false && audioObject.isPlaying === true) {
         callback();
@@ -117,26 +117,28 @@ export function processAudioData(gpgpu, particles) {
   try {
     // Update GPU uniforms with current audio data
     if (gpgpu.zeroPointsVariable?.material?.uniforms) {
-      gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value = audioObject.averageAmplitude;
+      gpgpu.zeroPointsVariable.material.uniforms.uAverageAmplitude.value =
+        audioObject.averageAmplitude;
     }
-    
+
     if (gpgpu.particlesVariable?.material?.uniforms) {
-      gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value = audioObject.averageAmplitude;
+      gpgpu.particlesVariable.material.uniforms.uAverageAmplitude.value =
+        audioObject.averageAmplitude;
       gpgpu.particlesVariable.material.uniforms.uStarted.value = audioObject.isPlaying;
     }
-    
+
     if (particles.material?.uniforms) {
       particles.material.uniforms.uAverageAmplitude.value = audioObject.averageAmplitude;
       particles.material.uniforms.uSoundPlaying.value = audioObject.isPlaying;
     }
-    
+
     // Update FFT data texture if it exists
     if (gpgpu.audioDataVariable?.material?.uniforms?.tDataArray?.value) {
       const texture = gpgpu.audioDataVariable.material.uniforms.tDataArray.value;
-      
+
       // Create a new Float32Array with the current FFT data
       const newData = new Float32Array(audioObject.fftData);
-      
+
       // Update the texture data
       texture.image.data = newData;
       texture.needsUpdate = true;
