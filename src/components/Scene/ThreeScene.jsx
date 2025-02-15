@@ -329,11 +329,13 @@ const ThreeScene = () => {
     };
 
     // Start the animation loop after GPGPU setup is complete
-    loadModel().then(() => {
-      startAudioProcessing(tick);
-    }).catch(error => {
-      console.error('Error initializing visualization:', error);
-    });
+    loadModel()
+      .then(() => {
+        startAudioProcessing(tick);
+      })
+      .catch((error) => {
+        console.error('Error initializing visualization:', error);
+      });
 
     // Set up audio ended callback
     setAudioEndedCallback(() => {

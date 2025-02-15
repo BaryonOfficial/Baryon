@@ -168,7 +168,7 @@ export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeomet
       THREE.NearestFilter,
       THREE.NearestFilter,
       1
-    )
+    ),
   };
 
   // Create initial FFT data texture
@@ -186,7 +186,7 @@ export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeomet
       THREE.NearestFilter,
       THREE.NearestFilter,
       1
-    )
+    ),
   };
 
   gpgpu.audioDataVariable.material.uniforms.uRadius = new THREE.Uniform(parameters.radius);
