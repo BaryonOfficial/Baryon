@@ -9,7 +9,6 @@
     }
   ],
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
-  "ignoreCommand": "git check-ignore documentation/",
-  "buildCommand": "cd . && pnpm run build",
+  "buildCommand": "pnpm build",
   "outputDirectory": "dist"
 }
