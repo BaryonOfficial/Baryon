@@ -296,36 +296,46 @@ const ThreeScene = () => {
       const elapsedTime = clock.getElapsedTime();
       const { time, deltaTime } = timeHandler(elapsedTime);
 
-      controls.update(deltaTime);
+      // Only proceed with updates if GPGPU is initialized
+      if (gpgpu && particles) {
+        controls.update(deltaTime);
 
-      // GPGPU Updates
-      gpgpu.particlesVariable.material.uniforms.uTime.value = time;
-      gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
-      gpgpu.particlesVariable.material.uniforms.uStarted.value = audioObject.sound.started;
-      gpgpu.particlesVariable.material.uniforms.uMicActive.value =
-        audioObject.gumStream && audioObject.gumStream.active;
+        // GPGPU Updates
+        gpgpu.particlesVariable.material.uniforms.uTime.value = time;
+        gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
+        gpgpu.particlesVariable.material.uniforms.uStarted.value = audioObject.sound.started;
+        gpgpu.particlesVariable.material.uniforms.uMicActive.value =
+          audioObject.gumStream && audioObject.gumStream.active;
 
-      particles.material.uniforms.uSoundPlaying.value = audioObject.sound.isPlaying;
-      particles.material.uniforms.uTime.value = time;
-      particles.material.uniforms.uDeltaTime.value = deltaTime;
+        particles.material.uniforms.uSoundPlaying.value = audioObject.sound.isPlaying;
+        particles.material.uniforms.uTime.value = time;
+        particles.material.uniforms.uDeltaTime.value = deltaTime;
 
-      processAudioData(gpgpu, particles, essentiaData);
+        processAudioData(gpgpu, particles, essentiaData);
 
-      // ******** GPGPU START ******** //
-      gpgpu.computation.compute();
-      updateGPGPUTextures();
+        // ******** GPGPU START ******** //
+        gpgpu.computation.compute();
+        updateGPGPUTextures();
 
-      rotationTime.current += deltaTime;
-      const angle = rotationTime.current * 0.5 * particles.material.uniforms.uRotation.value;
-      rotationMatrix.makeRotationY(-angle);
-      particles.points.matrix.copy(rotationMatrix);
-      particles.points.matrixAutoUpdate = false;
+        rotationTime.current += deltaTime;
+        const angle = rotationTime.current * 0.5 * particles.material.uniforms.uRotation.value;
+        rotationMatrix.makeRotationY(-angle);
+        particles.points.matrix.copy(rotationMatrix);
+        particles.points.matrixAutoUpdate = false;
+      }
 
       // Effect Composer Renderer
       effectComposer.render();
     };
 
-    startAudioProcessing(tick);
+    // Start the animation loop after GPGPU setup is complete
+    loadModel()
+      .then(() => {
+        startAudioProcessing(tick);
+      })
+      .catch((error) => {
+        console.error('Error initializing visualization:', error);
+      });
 
     // Set up audio ended callback
     setAudioEndedCallback(() => {
