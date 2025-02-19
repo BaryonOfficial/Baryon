@@ -62,28 +62,8 @@ export default [
         },
       ],
 
-      // R3F properties
-      'react/no-unknown-property': [
-        'error',
-        {
-          ignore: [
-            // R3F properties
-            'attach',
-            'args',
-            'intensity',
-            'wireframe',
-            'array',
-            'itemSize',
-            'count',
-            'transparent',
-            'depthWrite',
-            'blending',
-            'position',
-            'object',
-            'toneMapped',
-          ],
-        },
-      ],
+      // R3F properties - disable the rule since TypeScript handles prop checking
+      'react/no-unknown-property': 'off',
 
       // Prevent common audio/WebGL context leaks
       'no-restricted-syntax': [
