@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { z } from 'zod';
 import type { GPGPUComputation } from './gpgpu.types';
-import type { Object3DNode } from '@react-three/fiber';
 
 // Zod Schemas
 export const ParticleParametersSchema = z.object({
@@ -41,57 +40,39 @@ export interface ParticleGeometries {
   };
 }
 
-// Simplify UniformValue type (Three.js already provides this)
-type UniformValue<T> = THREE.IUniform<T>;
-
-// Particle material uniforms
-export interface ParticlesMaterialUniforms {
-  uResolution: UniformValue<THREE.Vector2>;
-  uSize: UniformValue<number>;
-  uParticlesTexture: UniformValue<THREE.Texture | null>;
-  uTime: UniformValue<number>;
-  uDeltaTime: UniformValue<number>;
-  uAverageAmplitude: UniformValue<number>;
-  uRadius: UniformValue<number>;
-  uSoundPlaying: UniformValue<boolean>;
-  uColor: UniformValue<THREE.Color>;
-  uSurfaceColor: UniformValue<THREE.Color>;
+// Core uniforms for the shader material
+export interface ParticleUniforms {
+  uResolution: THREE.Vector2;
+  uSize: number;
+  uParticlesTexture: THREE.Texture | null;
+  uTime: number;
+  uDeltaTime: number;
+  uAverageAmplitude: number;
+  uRadius: number;
+  uSoundPlaying: boolean;
+  uColor: THREE.Color;
+  uSurfaceColor: THREE.Color;
 }
 
-// Base material type from Three.js
-export type ParticlesMaterial = THREE.ShaderMaterial & {
-  uniforms: ParticlesMaterialUniforms;
+export type CustomShaderMaterial = THREE.ShaderMaterial & {
+  uniforms: { [K in keyof ParticleUniforms]: THREE.IUniform<ParticleUniforms[K]> };
 };
 
-// Props that can be passed to the material in JSX
-export interface ParticlesMaterialProps {
-  transparent?: boolean;
-  depthWrite?: boolean;
-  blending?: THREE.Blending;
-  toneMapped?: boolean;
-  // Allow setting initial uniform values directly
-  uniforms?: Partial<{
-    [K in keyof ParticlesMaterialUniforms]: ParticlesMaterialUniforms[K]['value'];
-  }>;
+// Component props
+export interface ParticlesProps {
+  gpgpu: Pick<GPGPUComputation, 'size'>;
+  geometries: {
+    base: {
+      positions: Float32Array;
+    };
+  };
 }
 
-// Three.js Fiber module augmentation
-declare module '@react-three/fiber' {
-  interface ThreeElements {
-    particlesMaterial: Object3DNode<ParticlesMaterial, ParticlesMaterialProps>;
-  }
-}
-
-// Strengthen ParticlesRef type
+// Ref type for external control
 export interface ParticlesRef {
-  material: ParticlesMaterial | null;
+  material: CustomShaderMaterial | null;
   points: THREE.Points | null;
   updateUniforms: (uniforms: { uAverageAmplitude: number }) => void;
-}
-
-export interface ParticlesProps {
-  gpgpu: GPGPUComputation;
-  geometries: ParticleGeometries;
 }
 
 export interface LogoGeometry {

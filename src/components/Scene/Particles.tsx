@@ -1,5 +1,6 @@
 import { useMemo, useRef, forwardRef, useImperativeHandle, useEffect } from 'react';
 import { useThree, extend } from '@react-three/fiber';
+import { type ThreeElement } from '@react-three/fiber';
 import { shaderMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -7,7 +8,7 @@ import * as THREE from 'three';
 import vertexShader from '@/shaders/particles/vertex.glsl';
 import fragmentShader from '@/shaders/particles/fragment.glsl';
 
-import type { ParticlesMaterial, ParticlesProps, ParticlesRef } from '@/types/particle.types';
+import type { ParticlesProps, ParticlesRef, CustomShaderMaterial } from '@/types/particle.types';
 import { useParticleSettingsContext } from '@/contexts/useParticleSettingsContext';
 
 // Improved shader material creation with proper typing
@@ -26,7 +27,14 @@ const ParticlesMaterial = shaderMaterial(
   },
   vertexShader,
   fragmentShader
-) as unknown as { new (): ParticlesMaterial };
+);
+
+// Use ReturnType to get the type that shaderMaterial creates
+declare module '@react-three/fiber' {
+  interface ThreeElements {
+    particlesMaterial: ThreeElement<ReturnType<typeof shaderMaterial>>;
+  }
+}
 
 extend({ ParticlesMaterial });
 
@@ -50,12 +58,14 @@ const useParticleAttributes = (gpgpu: ParticlesProps['gpgpu']) => {
   }, [gpgpu.size]);
 };
 
-// Hook for material updates
-const useParticleMaterialUpdates = (
-  materialRef: React.RefObject<ParticlesMaterial>,
-  parameters: { radius: number },
-  settings: { color: string; surfaceColor: string; particleSize: number }
-) => {
+const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
+  { gpgpu, geometries },
+  ref
+) {
+  const pointsRef = useRef<THREE.Points>(null);
+  const materialRef = useRef<CustomShaderMaterial>(null);
+  const { parameters, settings } = useParticleSettingsContext();
+  const { uvArray, sizesArray } = useParticleAttributes(gpgpu);
   const { size, viewport } = useThree();
 
   useEffect(() => {
@@ -76,18 +86,6 @@ const useParticleMaterialUpdates = (
     parameters.radius,
     materialRef,
   ]);
-};
-
-const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
-  { gpgpu, geometries },
-  ref
-) {
-  const pointsRef = useRef<THREE.Points>(null);
-  const materialRef = useRef<ParticlesMaterial>(null);
-  const { parameters, settings } = useParticleSettingsContext();
-  const { uvArray, sizesArray } = useParticleAttributes(gpgpu);
-
-  useParticleMaterialUpdates(materialRef, parameters, settings);
 
   useImperativeHandle(
     ref,
@@ -105,24 +103,9 @@ const Particles = forwardRef<ParticlesRef, ParticlesProps>(function Particles(
   return (
     <points ref={pointsRef}>
       <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={geometries.base.positions.length / 3}
-          array={geometries.base.positions}
-          itemSize={3}
-        />
-        <bufferAttribute
-          attach="attributes-aParticlesUv"
-          count={uvArray.length / 2}
-          array={uvArray}
-          itemSize={2}
-        />
-        <bufferAttribute
-          attach="attributes-aSize"
-          count={sizesArray.length}
-          array={sizesArray}
-          itemSize={1}
-        />
+        <bufferAttribute attach="attributes-position" args={[geometries.base.positions, 3]} />
+        <bufferAttribute attach="attributes-aParticlesUv" args={[uvArray, 2]} />
+        <bufferAttribute attach="attributes-aSize" args={[sizesArray, 1]} />
       </bufferGeometry>
       <particlesMaterial
         ref={materialRef}

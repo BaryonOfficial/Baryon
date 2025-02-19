@@ -262,7 +262,7 @@ export class AudioManager {
    */
   public processAudioData(
     gpgpu: GPGPUComputation,
-    particlesRef: React.RefObject<ParticlesRef>,
+    particlesRef: React.RefObject<ParticlesRef | null>,
     showDebug = false
   ): void {
     if (!gpgpu || !gpgpu.essentiaData) {
@@ -308,7 +308,7 @@ export class AudioManager {
 
   private resetGPGPUState(
     gpgpu: GPGPUComputation,
-    particlesRef: React.RefObject<ParticlesRef>
+    particlesRef: React.RefObject<ParticlesRef | null>
   ): void {
     gpgpu.audioDataVariable.material.uniforms.tPitches.value.image.data.fill(0);
     gpgpu.audioDataVariable.material.uniforms.tDataArray.value.image.data.fill(0);
@@ -326,7 +326,7 @@ export class AudioManager {
 
   private updateGPGPUAmplitudes(
     gpgpu: GPGPUComputation,
-    particlesRef: React.RefObject<ParticlesRef>,
+    particlesRef: React.RefObject<ParticlesRef | null>,
     avgAmplitude: number,
     freqData: Uint8Array
   ): void {

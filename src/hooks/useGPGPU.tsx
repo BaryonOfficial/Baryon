@@ -33,7 +33,7 @@ function generateRandomPitches(capacity: number) {
 
 export function useGPGPU(
   geometries: ParticleGeometries,
-  particlesRef: React.RefObject<ParticlesRef>
+  particlesRef: React.RefObject<ParticlesRef | null>
 ): GPGPUReturn {
   const { parameters, settings } = useParticleSettingsContext();
   const gl = useThree((state) => state.gl);

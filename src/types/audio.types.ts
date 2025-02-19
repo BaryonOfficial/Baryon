@@ -89,7 +89,7 @@ export interface AudioActions {
 
 export interface AudioInitializerProps {
   gpgpu: GPGPUComputation | null;
-  particles: React.RefObject<ParticlesRef>;
+  particles: React.RefObject<ParticlesRef | null>;
 }
 
 export type AudioStore = AudioManagerState &

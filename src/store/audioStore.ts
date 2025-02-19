@@ -91,7 +91,7 @@ export const useAudioStore = create<AudioStore>((set, get) => ({
 
   processAudioData: (
     gpgpu: GPGPUComputation,
-    particlesRef: RefObject<ParticlesRef>,
+    particlesRef: RefObject<ParticlesRef | null>,
     showDebug?: boolean
   ) => {
     try {

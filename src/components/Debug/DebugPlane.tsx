@@ -1,16 +1,5 @@
 import * as THREE from 'three';
 import { Text } from '@react-three/drei';
-import { extend, Object3DNode } from '@react-three/fiber';
-
-// Extend Three.js elements
-extend({ Group: THREE.Group, Mesh: THREE.Mesh });
-
-declare module '@react-three/fiber' {
-  interface ThreeElements {
-    group: Object3DNode<THREE.Group, typeof THREE.Group>;
-    mesh: Object3DNode<THREE.Mesh, typeof THREE.Mesh>;
-  }
-}
 
 export function DebugPlane({
   texture,

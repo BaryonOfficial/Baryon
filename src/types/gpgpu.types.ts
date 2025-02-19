@@ -61,8 +61,8 @@ export interface GPGPUShaderUniforms {
 // Hook return type
 export interface GPGPUReturn {
   gpgpu: GPGPUComputation;
-  audioDataTexture: React.RefObject<THREE.Texture>;
-  scalarFieldTexture: React.RefObject<THREE.Texture>;
-  zeroPointsTexture: React.RefObject<THREE.Texture>;
-  particlesTexture: React.RefObject<THREE.Texture>;
+  audioDataTexture: React.RefObject<THREE.Texture | null>;
+  scalarFieldTexture: React.RefObject<THREE.Texture | null>;
+  zeroPointsTexture: React.RefObject<THREE.Texture | null>;
+  particlesTexture: React.RefObject<THREE.Texture | null>;
 }
