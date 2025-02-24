@@ -87,10 +87,15 @@ void main() {
 
     // Apply accumulated rotation from pointer movement
     vec2 mouseUV = uPointer * PI * 0.5;
+
+    // First apply Y rotation
     ro.yz *= rot2D(mouseUV.y);
-    ro.xz *= rot2D(mouseUV.x);
     rd.yz *= rot2D(mouseUV.y);
-    rd.xz *= rot2D(mouseUV.x);
+
+    // Invert X rotation direction based on Y rotation angle
+    float xRotationSign = sign(cos(mouseUV.y)); // Will be negative when we're "upside down"
+    ro.xz *= rot2D(mouseUV.x * xRotationSign);
+    rd.xz *= rot2D(mouseUV.x * xRotationSign);
 
     // Raymarching
     vec3 p;
