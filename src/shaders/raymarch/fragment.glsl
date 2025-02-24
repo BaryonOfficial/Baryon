@@ -13,6 +13,7 @@ uniform float waveComponents[4 * MAX_N];
 uniform int N;
 uniform vec2 uPointer;
 uniform float uIsClicked;
+uniform float uZoom;
 
 out vec4 finalColor;
 
@@ -174,8 +175,8 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
 void main() {
     vec2 uv = (gl_FragCoord.xy * 2.0 - uResolution.xy) / min(uResolution.x, uResolution.y);
 
-    // Camera setup with orbital control
-    vec3 ro = vec3(0.0, 0.0, 6.0);
+    // Camera setup with orbital control and zoom
+    vec3 ro = vec3(0.0, 0.0, 6.0 / uZoom);
     vec3 rd = normalize(vec3(uv, -1.5));
 
     // Apply accumulated rotation from pointer movement

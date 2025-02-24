@@ -1,11 +1,12 @@
 import { Canvas, useFrame, useThree, extend } from '@react-three/fiber';
-import { useRef, Suspense, useState, useCallback } from 'react';
+import { useRef, Suspense } from 'react';
 import { shaderMaterial, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import './App.css';
 
 import vertexShader from './shaders/raymarch/vertex.glsl';
 import fragmentShader from './shaders/raymarch/fragment.glsl';
+import { useRaymarchControls } from './hooks/useRaymarchControls';
 
 let parameters = {
   N: 12,
@@ -45,6 +46,7 @@ const ChladniMaterial = shaderMaterial(
     uThreshold: 1,
     uIsClicked: 0, // 0 for not clicked, 1 for clicked
     uRadius: parameters.radius,
+    uZoom: 1.0, // Add zoom uniform
     N: parameters.N,
     waveComponents: new Float32Array(waveComponentsArray),
   },
@@ -58,46 +60,18 @@ extend({ ChladniMaterial });
 const Raymarching = () => {
   const materialRef = useRef();
   const { viewport, size } = useThree();
-  const [isClicked, setIsClicked] = useState(false);
-  const [rotation, setRotation] = useState({ x: 0, y: 0 });
-  const velocity = useRef({ x: 0, y: 0 });
-  const lastPointer = useRef({ x: 0, y: 0 });
-  const lastTime = useRef(0);
 
-  const handlePointerMove = useCallback(
-    (event) => {
-      if (isClicked) {
-        const newPointer = {
-          x: (event.point.x / size.width) * 2,
-          y: (event.point.y / size.height) * 2,
-        };
-
-        // Calculate rotation delta
-        const deltaX = newPointer.x - lastPointer.current.x;
-        const deltaY = newPointer.y - lastPointer.current.y;
-
-        // Update velocity based on movement
-        velocity.current = {
-          x: deltaX,
-          y: deltaY,
-        };
-
-        // Update accumulated rotation
-        setRotation((prev) => ({
-          x: prev.x + deltaX,
-          y: prev.y + deltaY,
-        }));
-
-        // Update last pointer position
-        lastPointer.current = newPointer;
-      }
-    },
-    [isClicked, size]
-  );
+  // Use our custom hook for controls
+  const controls = useRaymarchControls({
+    minZoom: 0.1,
+    maxZoom: 5.0,
+    initialZoom: 1.0,
+    zoomSpeed: 0.001,
+    rotationDamping: 0.95,
+  });
 
   useFrame((state) => {
     const currentTime = state.clock.getElapsedTime();
-    lastTime.current = currentTime;
 
     if (materialRef.current?.uniforms) {
       materialRef.current.uniforms.uTime.value = currentTime;
@@ -105,53 +79,24 @@ const Raymarching = () => {
         size.width * viewport.dpr,
         size.height * viewport.dpr
       );
-
-      // Apply damping when not clicked
-      if (!isClicked) {
-        const damping = 0.95; // Adjust this value to control damping strength (0.9-0.99)
-        velocity.current.x *= damping;
-        velocity.current.y *= damping;
-
-        // Only update rotation if velocity is significant
-        if (Math.abs(velocity.current.x) > 0.0001 || Math.abs(velocity.current.y) > 0.0001) {
-          setRotation((prev) => ({
-            x: prev.x + velocity.current.x,
-            y: prev.y + velocity.current.y,
-          }));
-        } else {
-          // Reset velocity when it gets very small
-          velocity.current.x = 0;
-          velocity.current.y = 0;
-        }
-      }
-
-      materialRef.current.uniforms.uPointer.value.set(rotation.x, rotation.y);
-      materialRef.current.uniforms.uIsClicked.value = isClicked ? 1 : 0;
+      materialRef.current.uniforms.uZoom.value = controls.zoom;
+      materialRef.current.uniforms.uPointer.value.set(controls.rotation.x, controls.rotation.y);
+      materialRef.current.uniforms.uIsClicked.value = controls.isPointerDown ? 1 : 0;
     }
-  });
 
-  const handlePointerDown = useCallback(
-    (event) => {
-      setIsClicked(true);
-      // Reset velocity when starting new interaction
-      velocity.current = { x: 0, y: 0 };
-      lastPointer.current = {
-        x: (event.point.x / size.width) * 2,
-        y: (event.point.y / size.height) * 2,
-      };
-    },
-    [size]
-  );
+    // Update controls (apply damping, etc.)
+    controls.updateControls();
+  });
 
   return (
     <>
       <OrthographicCamera makeDefault position={[0, 0, 1]} zoom={1} near={0.1} far={1000} />
       <mesh
         scale={[viewport.width, viewport.height, 1]}
-        onPointerDown={handlePointerDown}
-        onPointerUp={() => setIsClicked(false)}
-        onPointerLeave={() => setIsClicked(false)}
-        onPointerMove={handlePointerMove}>
+        onPointerDown={controls.handlePointerDown}
+        onPointerUp={controls.handlePointerUp}
+        onPointerLeave={controls.handlePointerUp}
+        onPointerMove={controls.handlePointerMove}>
         <planeGeometry />
         <chladniMaterial ref={materialRef} glslVersion={THREE.GLSL3} />
       </mesh>
@@ -161,7 +106,8 @@ const Raymarching = () => {
 
 const Scene = () => {
   return (
-    <Canvas>
+    <Canvas gl={{ alpha: true }}>
+      <color args={['#ffffff']} attach="background" />
       <Suspense fallback={null}>
         <Raymarching />
       </Suspense>
