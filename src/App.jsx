@@ -1,14 +1,10 @@
-import { extend, Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useRef, Suspense } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import * as THREE from 'three';
 import './App.css';
 
-import vertexShader from './shaders/shader.vert';
-import fragmentShader from './shaders/shader.frag';
-
-extend({ OrbitControls });
+import vertexShader from './shaders/raymarch/vertex.glsl';
+import fragmentShader from './shaders/raymarch/fragment.glsl';
 
 const DPR = 2;
 
@@ -43,7 +39,7 @@ console.log(parameters.waveComponents);
 
 const Raymarching = () => {
   const mesh = useRef();
-  const { viewport, camera, gl } = useThree();
+  const { viewport } = useThree();
 
   const uniforms = {
     N: { value: parameters.N },
@@ -65,12 +61,9 @@ const Raymarching = () => {
 
   return (
     <>
-      <orbitControls args={[camera, gl.domElement]} />
-
       <mesh ref={mesh} scale={[viewport.width, viewport.height, 1]}>
         <planeGeometry args={[10, 10]} />
         <shaderMaterial
-          key={uuidv4()}
           fragmentShader={fragmentShader}
           vertexShader={vertexShader}
           uniforms={uniforms}
