@@ -9,6 +9,19 @@ import vertexShader from './shaders/raymarch/vertex.glsl';
 import fragmentShader from './shaders/raymarch/fragment.glsl';
 import { useRaymarchControls } from './hooks/useRaymarchControls';
 
+// Define default values as constants to ensure consistency
+const DEFAULT_VALUES = {
+  stepSize: 0.04,
+  threshold: 0.7,
+  lightSamples: 12,
+  densityScale: 0.22,
+  emptySpaceThreshold: 0.005,
+  adaptiveStepStrength: 15.0,
+  emptySpaceFactor: 3.0,
+  baseColor: '#0060fb',
+  highlightColor: '#ffffff',
+};
+
 let parameters = {
   N: 12,
   waveComponents: [],
@@ -42,20 +55,20 @@ const ChladniMaterial = shaderMaterial(
     uTime: 0,
     uResolution: new THREE.Vector2(),
     uPointer: new THREE.Vector2(),
-    uThreshold: 1.0,
+    uThreshold: DEFAULT_VALUES.threshold,
     uIsClicked: 0, // 0 for not clicked, 1 for clicked
     uRadius: parameters.radius,
     uZoom: 1.0, // Add zoom uniform
     N: parameters.N,
     waveComponents: new Float32Array(waveComponentsArray),
-    uStepSize: 0.04, // Default step size
-    uLightSamples: 8, // Default light samples
-    uDensityScale: 0.15, // Density scale for transfer function
-    uEmptySpaceThreshold: 0.01, // Threshold for empty space skipping
-    uBaseColor: new THREE.Color(0x3366cc), // Default base color
-    uHighlightColor: new THREE.Color(0xe6f0ff), // Default highlight color
-    uAdaptiveStepStrength: 10.0, // Controls how much the gradient affects step size
-    uEmptySpaceFactor: 2.0, // Factor for empty space step size
+    uStepSize: DEFAULT_VALUES.stepSize,
+    uLightSamples: DEFAULT_VALUES.lightSamples,
+    uDensityScale: DEFAULT_VALUES.densityScale,
+    uEmptySpaceThreshold: DEFAULT_VALUES.emptySpaceThreshold,
+    uBaseColor: new THREE.Color(DEFAULT_VALUES.baseColor),
+    uHighlightColor: new THREE.Color(DEFAULT_VALUES.highlightColor),
+    uAdaptiveStepStrength: DEFAULT_VALUES.adaptiveStepStrength,
+    uEmptySpaceFactor: DEFAULT_VALUES.emptySpaceFactor,
   },
   vertexShader,
   fragmentShader
@@ -81,49 +94,49 @@ const Raymarching = () => {
     'Volumetric Rendering': folder(
       {
         stepSize: {
-          value: 0.04,
+          value: DEFAULT_VALUES.stepSize,
           min: 0.01,
           max: 0.1,
           step: 0.005,
           label: 'Step Size',
         },
         threshold: {
-          value: 1.0,
+          value: DEFAULT_VALUES.threshold,
           min: 0.1,
           max: 2.0,
           step: 0.05,
           label: 'Pattern Threshold',
         },
         lightSamples: {
-          value: 8,
+          value: DEFAULT_VALUES.lightSamples,
           min: 4,
           max: 16,
           step: 1,
           label: 'Light Samples',
         },
         densityScale: {
-          value: 0.15,
+          value: DEFAULT_VALUES.densityScale,
           min: 0.05,
           max: 0.5,
           step: 0.01,
           label: 'Density Scale',
         },
         emptySpaceThreshold: {
-          value: 0.01,
+          value: DEFAULT_VALUES.emptySpaceThreshold,
           min: 0.001,
           max: 0.1,
           step: 0.001,
           label: 'Empty Space Threshold',
         },
         adaptiveStepStrength: {
-          value: 10.0,
+          value: DEFAULT_VALUES.adaptiveStepStrength,
           min: 0.0,
           max: 30.0,
           step: 0.5,
           label: 'Adaptive Step Strength',
         },
         emptySpaceFactor: {
-          value: 2.0,
+          value: DEFAULT_VALUES.emptySpaceFactor,
           min: 1.0,
           max: 5.0,
           step: 0.1,
@@ -138,11 +151,11 @@ const Raymarching = () => {
   const { baseColor, highlightColor } = useControls({
     'Color Settings': folder({
       baseColor: {
-        value: '#3366cc',
+        value: DEFAULT_VALUES.baseColor,
         label: 'Base Color',
       },
       highlightColor: {
-        value: '#e6f0ff',
+        value: DEFAULT_VALUES.highlightColor,
         label: 'Highlight Color',
       },
     }),
