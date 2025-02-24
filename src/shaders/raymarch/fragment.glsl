@@ -12,6 +12,7 @@ uniform float uRadius;
 uniform float waveComponents[4 * MAX_N];
 uniform int N;
 uniform vec2 uPointer;
+uniform float uIsClicked;
 
 out vec4 finalColor;
 
@@ -43,19 +44,29 @@ float sdSphere(vec3 p, float radius) {
 }
 
 float scene(vec3 p) {
-    float distance = sdSphere(p, 2.0);
+    float sphereDist = sdSphere(p, 2.0);
     float chladniValue = chladni(p, uRadius);
-    float volumeFactor = smoothstep(-uThreshold, uThreshold, chladniValue);
-    return mix(distance, volumeFactor, volumeFactor);
+
+    // Only show pattern inside sphere
+    if(sphereDist > 0.0)
+        return sphereDist;
+
+    // Create surfaces where chladni pattern crosses zero
+    float pattern = abs(chladniValue) - uThreshold;
+
+    // Blend the sphere and pattern
+    return max(pattern, sphereDist);
 }
 
 float raymarch(vec3 ro, vec3 rd, out vec3 p) {
     float dO = 0.0;
+
     for(int i = 0; i < MAX_STEPS; i++) {
         p = ro + rd * dO;
         float dS = scene(p);
         dO += dS;
-        if(dO > MAX_DIST || dS < SURFACE_DIST)
+
+        if(dO > MAX_DIST || abs(dS) < SURFACE_DIST)
             break;
     }
     return dO;
@@ -74,8 +85,8 @@ void main() {
     vec3 ro = vec3(0.0, 0.0, 6.0);
     vec3 rd = normalize(vec3(uv, -1.5));
 
-    // Apply mouse/pointer influence on camera
-    vec2 mouseUV = uPointer * PI * 0.5;
+    // Apply mouse/pointer influence on camera only when clicked
+    vec2 mouseUV = uPointer * PI * 0.5 * uIsClicked;
 
     // Rotate both camera position and ray direction
     ro.yz *= rot2D(mouseUV.y);

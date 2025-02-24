@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree, extend } from '@react-three/fiber';
-import { useRef, Suspense } from 'react';
-import { shaderMaterial } from '@react-three/drei';
+import { useRef, Suspense, useState, useCallback } from 'react';
+import { shaderMaterial, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import './App.css';
 
@@ -42,7 +42,8 @@ const ChladniMaterial = shaderMaterial(
     uTime: 0,
     uResolution: new THREE.Vector2(),
     uPointer: new THREE.Vector2(),
-    uThreshold: 0,
+    uThreshold: 0.5,
+    uIsClicked: 0, // 0 for not clicked, 1 for clicked
     uRadius: parameters.radius,
     N: parameters.N,
     waveComponents: new Float32Array(waveComponentsArray),
@@ -56,7 +57,21 @@ extend({ ChladniMaterial });
 
 const Raymarching = () => {
   const materialRef = useRef();
-  const { viewport, pointer, size } = useThree();
+  const { viewport, size } = useThree();
+  const [pointer, setPointer] = useState({ x: 0, y: 0 });
+  const [isClicked, setIsClicked] = useState(false);
+
+  const handlePointerMove = useCallback(
+    (event) => {
+      if (isClicked) {
+        setPointer({
+          x: (event.point.x / size.width) * 2,
+          y: (event.point.y / size.height) * 2,
+        });
+      }
+    },
+    [isClicked, size]
+  );
 
   useFrame((state) => {
     if (materialRef.current?.uniforms) {
@@ -66,20 +81,29 @@ const Raymarching = () => {
         size.height * viewport.dpr
       );
       materialRef.current.uniforms.uPointer.value.set(pointer.x, pointer.y);
+      materialRef.current.uniforms.uIsClicked.value = isClicked ? 1 : 0;
     }
   });
 
   return (
-    <mesh scale={[viewport.width, viewport.height, 1]}>
-      <planeGeometry args={[1, 1]} />
-      <chladniMaterial ref={materialRef} glslVersion={THREE.GLSL3} />
-    </mesh>
+    <>
+      <OrthographicCamera makeDefault position={[0, 0, 1]} zoom={1} near={0.1} far={1000} />
+      <mesh
+        scale={[viewport.width, viewport.height, 1]}
+        onPointerDown={() => setIsClicked(true)}
+        onPointerUp={() => setIsClicked(false)}
+        onPointerLeave={() => setIsClicked(false)}
+        onPointerMove={handlePointerMove}>
+        <planeGeometry />
+        <chladniMaterial ref={materialRef} glslVersion={THREE.GLSL3} />
+      </mesh>
+    </>
   );
 };
 
 const Scene = () => {
   return (
-    <Canvas camera={{ position: [0, 0, 6] }}>
+    <Canvas>
       <Suspense fallback={null}>
         <Raymarching />
       </Suspense>
