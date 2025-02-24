@@ -122,7 +122,7 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
     vec4 result = vec4(0.0);
 
     // Sample step size (smaller = more detailed but slower)
-    float stepSize = 0.05;
+    float stepSize = 0.04;
 
     // Number of light samples for scattering effects (optional)
     const int LIGHT_SAMPLES = 8;
