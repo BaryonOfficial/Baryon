@@ -11,13 +11,13 @@ import { useRaymarchControls } from './hooks/useRaymarchControls';
 
 // Define default values as constants to ensure consistency
 const DEFAULT_VALUES = {
-  stepSize: 0.03,
-  threshold: 0.32,
+  stepSize: 0.09,
+  threshold: 0.8,
   lightSamples: 12,
-  densityScale: 0.22,
-  emptySpaceThreshold: 0.005,
-  adaptiveStepStrength: 15.0,
-  emptySpaceFactor: 3.0,
+  densityScale: 0.5,
+  emptySpaceThreshold: 0.05,
+  adaptiveStepStrength: 20.0,
+  emptySpaceFactor: 5.0,
   baseColor: '#0060fb',
   highlightColor: '#ffffff',
 };
