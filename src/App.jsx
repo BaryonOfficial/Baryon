@@ -1,12 +1,11 @@
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, useFrame, useThree, extend } from '@react-three/fiber';
 import { useRef, Suspense } from 'react';
+import { shaderMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 import './App.css';
 
 import vertexShader from './shaders/raymarch/vertex.glsl';
 import fragmentShader from './shaders/raymarch/fragment.glsl';
-
-const DPR = 2;
 
 let parameters = {
   N: 12,
@@ -37,46 +36,50 @@ for (let i = 0; i < parameters.N; i++) {
 
 console.log(parameters.waveComponents);
 
-const Raymarching = () => {
-  const mesh = useRef();
-  const { viewport } = useThree();
+// Create custom shader material
+const ChladniMaterial = shaderMaterial(
+  {
+    uTime: 0,
+    uResolution: new THREE.Vector2(),
+    uPointer: new THREE.Vector2(),
+    uThreshold: 0,
+    uRadius: parameters.radius,
+    N: parameters.N,
+    waveComponents: new Float32Array(waveComponentsArray),
+  },
+  vertexShader,
+  fragmentShader
+);
 
-  const uniforms = {
-    N: { value: parameters.N },
-    waveComponents: { value: new Float32Array(waveComponentsArray) },
-    uTime: new THREE.Uniform(0.0),
-    uResolution: new THREE.Uniform(new THREE.Vector2()),
-    uRadius: { value: parameters.radius },
-    uThreshold: { value: 0 },
-  };
+// Extend Three.js with our custom material
+extend({ ChladniMaterial });
+
+const Raymarching = () => {
+  const materialRef = useRef();
+  const { viewport, pointer, size } = useThree();
 
   useFrame((state) => {
-    const { clock } = state;
-    mesh.current.material.uniforms.uTime.value = clock.getElapsedTime();
-    mesh.current.material.uniforms.uResolution.value = new THREE.Vector2(
-      window.innerWidth * DPR,
-      window.innerHeight * DPR
-    );
+    if (materialRef.current?.uniforms) {
+      materialRef.current.uniforms.uTime.value = state.clock.getElapsedTime();
+      materialRef.current.uniforms.uResolution.value.set(
+        size.width * viewport.dpr,
+        size.height * viewport.dpr
+      );
+      materialRef.current.uniforms.uPointer.value.set(pointer.x, pointer.y);
+    }
   });
 
   return (
-    <>
-      <mesh ref={mesh} scale={[viewport.width, viewport.height, 1]}>
-        <planeGeometry args={[10, 10]} />
-        <shaderMaterial
-          fragmentShader={fragmentShader}
-          vertexShader={vertexShader}
-          uniforms={uniforms}
-          glslVersion={THREE.GLSL3}
-        />
-      </mesh>
-    </>
+    <mesh scale={[viewport.width, viewport.height, 1]}>
+      <planeGeometry args={[1, 1]} />
+      <chladniMaterial ref={materialRef} glslVersion={THREE.GLSL3} />
+    </mesh>
   );
 };
 
 const Scene = () => {
   return (
-    <Canvas camera={{ position: [0, 0, 6] }} dpr={DPR}>
+    <Canvas camera={{ position: [0, 0, 6] }}>
       <Suspense fallback={null}>
         <Raymarching />
       </Suspense>
