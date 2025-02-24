@@ -85,10 +85,8 @@ void main() {
     vec3 ro = vec3(0.0, 0.0, 6.0);
     vec3 rd = normalize(vec3(uv, -1.5));
 
-    // Apply mouse/pointer influence on camera only when clicked
-    vec2 mouseUV = uPointer * PI * 0.5 * uIsClicked;
-
-    // Rotate both camera position and ray direction
+    // Apply accumulated rotation from pointer movement
+    vec2 mouseUV = uPointer * PI * 0.5;
     ro.yz *= rot2D(mouseUV.y);
     ro.xz *= rot2D(mouseUV.x);
     rd.yz *= rot2D(mouseUV.y);

@@ -58,16 +58,30 @@ extend({ ChladniMaterial });
 const Raymarching = () => {
   const materialRef = useRef();
   const { viewport, size } = useThree();
-  const [pointer, setPointer] = useState({ x: 0, y: 0 });
   const [isClicked, setIsClicked] = useState(false);
+  const [rotation, setRotation] = useState({ x: 0, y: 0 });
+  const lastPointer = useRef({ x: 0, y: 0 });
 
   const handlePointerMove = useCallback(
     (event) => {
       if (isClicked) {
-        setPointer({
+        const newPointer = {
           x: (event.point.x / size.width) * 2,
           y: (event.point.y / size.height) * 2,
-        });
+        };
+
+        // Calculate rotation delta
+        const deltaX = newPointer.x - lastPointer.current.x;
+        const deltaY = newPointer.y - lastPointer.current.y;
+
+        // Update accumulated rotation
+        setRotation((prev) => ({
+          x: prev.x + deltaX,
+          y: prev.y + deltaY,
+        }));
+
+        // Update last pointer position
+        lastPointer.current = newPointer;
       }
     },
     [isClicked, size]
@@ -80,17 +94,28 @@ const Raymarching = () => {
         size.width * viewport.dpr,
         size.height * viewport.dpr
       );
-      materialRef.current.uniforms.uPointer.value.set(pointer.x, pointer.y);
+      materialRef.current.uniforms.uPointer.value.set(rotation.x, rotation.y);
       materialRef.current.uniforms.uIsClicked.value = isClicked ? 1 : 0;
     }
   });
+
+  const handlePointerDown = useCallback(
+    (event) => {
+      setIsClicked(true);
+      lastPointer.current = {
+        x: (event.point.x / size.width) * 2,
+        y: (event.point.y / size.height) * 2,
+      };
+    },
+    [size]
+  );
 
   return (
     <>
       <OrthographicCamera makeDefault position={[0, 0, 1]} zoom={1} near={0.1} far={1000} />
       <mesh
         scale={[viewport.width, viewport.height, 1]}
-        onPointerDown={() => setIsClicked(true)}
+        onPointerDown={handlePointerDown}
         onPointerUp={() => setIsClicked(false)}
         onPointerLeave={() => setIsClicked(false)}
         onPointerMove={handlePointerMove}>
