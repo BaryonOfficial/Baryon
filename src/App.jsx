@@ -43,7 +43,7 @@ const ChladniMaterial = shaderMaterial(
     uTime: 0,
     uResolution: new THREE.Vector2(),
     uPointer: new THREE.Vector2(),
-    uThreshold: 1,
+    uThreshold: 1.0,
     uIsClicked: 0, // 0 for not clicked, 1 for clicked
     uRadius: parameters.radius,
     uZoom: 1.0, // Add zoom uniform
@@ -98,7 +98,13 @@ const Raymarching = () => {
         onPointerLeave={controls.handlePointerUp}
         onPointerMove={controls.handlePointerMove}>
         <planeGeometry />
-        <chladniMaterial ref={materialRef} glslVersion={THREE.GLSL3} />
+        <chladniMaterial
+          ref={materialRef}
+          transparent={true}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          glslVersion={THREE.GLSL3}
+        />
       </mesh>
     </>
   );
@@ -107,7 +113,7 @@ const Raymarching = () => {
 const Scene = () => {
   return (
     <Canvas gl={{ alpha: true }}>
-      <color args={['#ffffff']} attach="background" />
+      <color args={['#000000']} attach="background" />
       <Suspense fallback={null}>
         <Raymarching />
       </Suspense>
