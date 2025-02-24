@@ -11,8 +11,8 @@ import { useRaymarchControls } from './hooks/useRaymarchControls';
 
 // Define default values as constants to ensure consistency
 const DEFAULT_VALUES = {
-  stepSize: 0.04,
-  threshold: 0.7,
+  stepSize: 0.03,
+  threshold: 0.32,
   lightSamples: 12,
   densityScale: 0.22,
   emptySpaceThreshold: 0.005,
