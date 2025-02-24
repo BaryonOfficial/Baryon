@@ -42,7 +42,7 @@ const ChladniMaterial = shaderMaterial(
     uTime: 0,
     uResolution: new THREE.Vector2(),
     uPointer: new THREE.Vector2(),
-    uThreshold: 0.5,
+    uThreshold: 1,
     uIsClicked: 0, // 0 for not clicked, 1 for clicked
     uRadius: parameters.radius,
     N: parameters.N,

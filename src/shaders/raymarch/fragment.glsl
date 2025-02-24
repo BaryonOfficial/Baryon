@@ -78,6 +78,99 @@ vec3 getNormal(vec3 p) {
     return normalize(n);
 }
 
+// New function to check for ray-sphere intersection
+bool intersectSphere(vec3 ro, vec3 rd, vec3 center, float radius, out float t1, out float t2) {
+    vec3 oc = ro - center;
+    float b = dot(oc, rd);
+    float c = dot(oc, oc) - radius * radius;
+    float discriminant = b * b - c;
+
+    if(discriminant < 0.0)
+        return false;
+
+    float sqrtDisc = sqrt(discriminant);
+    t1 = -b - sqrtDisc;
+    t2 = -b + sqrtDisc;
+
+    return true;
+}
+
+// New function to map density to color and opacity
+vec4 transferFunction(float density) {
+    // You can customize this function to create different visualizations
+    // This creates a blue -> cyan -> white gradient
+    vec3 color = mix(vec3(0.2, 0.4, 0.8), vec3(0.9, 0.9, 1.0), density);
+
+    // Control the density of the volume
+    float alpha = density * 0.15;
+
+    return vec4(color, alpha);
+}
+
+// Replace the existing raymarch function with this volumetric version
+vec4 raymarchVolume(vec3 ro, vec3 rd) {
+    // Find intersection with bounding sphere
+    float t_min, t_max;
+    if(!intersectSphere(ro, rd, vec3(0.0), 2.0, t_min, t_max))
+        return vec4(0.0);
+
+    // Start from camera if we're inside the sphere
+    t_min = max(0.0, t_min);
+
+    // Initialize accumulated color and opacity
+    vec4 result = vec4(0.0);
+
+    // Sample step size (smaller = more detailed but slower)
+    float stepSize = 0.05;
+
+    // Number of light samples for scattering effects (optional)
+    const int LIGHT_SAMPLES = 8;
+    vec3 lightPos = vec3(2.0, 4.0, -3.0);
+
+    // March through the volume
+    for(float t = t_min; t < t_max && result.a < 0.95; t += stepSize) {
+        vec3 p = ro + rd * t;
+
+        // Get Chladni value at this point
+        float chladniValue = chladni(p, uRadius);
+
+        // Convert to density - this is key to how you visualize the pattern
+        // Higher density where Chladni value is closer to zero
+        float density = smoothstep(uThreshold, 0.0, abs(chladniValue));
+
+        // Optional: Skip low-density regions for performance
+        if(density > 0.01) {
+            // Get color and alpha from transfer function
+            vec4 sampleColor = transferFunction(density);
+
+            // Optional: Add simple volumetric lighting
+            vec3 lightDir = normalize(lightPos - p);
+            float lightDist = length(lightPos - p);
+            float lightAtten = 1.0 / (1.0 + 0.1 * lightDist + 0.01 * lightDist * lightDist);
+
+            // Simple light scattering approximation
+            float scattering = 0.0;
+            for(int i = 0; i < LIGHT_SAMPLES; i++) {
+                float s = float(i) / float(LIGHT_SAMPLES - 1);
+                vec3 samplePos = mix(p, lightPos, s);
+                float sampleChladni = chladni(samplePos, uRadius);
+                float sampleDensity = smoothstep(uThreshold, 0.0, abs(sampleChladni));
+                scattering += sampleDensity;
+            }
+            scattering = exp(-scattering * 0.2); // Adjust extinction coefficient
+
+            // Apply lighting to sample color
+            sampleColor.rgb *= (0.3 + 0.7 * lightAtten * scattering);
+
+            // Front-to-back compositing
+            sampleColor.rgb *= sampleColor.a;
+            result = result + sampleColor * (1.0 - result.a);
+        }
+    }
+
+    return result;
+}
+
 void main() {
     vec2 uv = (gl_FragCoord.xy * 2.0 - uResolution.xy) / min(uResolution.x, uResolution.y);
 
@@ -97,31 +190,11 @@ void main() {
     ro.xz *= rot2D(mouseUV.x * xRotationSign);
     rd.xz *= rot2D(mouseUV.x * xRotationSign);
 
-    // Raymarching
-    vec3 p;
-    float d = raymarch(ro, rd, p);
-    vec3 color = vec3(0.0); // Black background
+    // Perform volumetric ray marching instead of surface ray marching
+    vec4 volumeColor = raymarchVolume(ro, rd);
 
-    if(d < MAX_DIST) {
-        vec3 normal = getNormal(p);
-        vec3 lightPos = vec3(2.0, 4.0, -3.0);
-        vec3 lightDir = normalize(lightPos - p);
-
-        // Lighting calculations
-        float diff = max(dot(normal, lightDir), 0.0);
-        float spec = pow(max(dot(reflect(-lightDir, normal), -rd), 0.0), 32.0);
-        float rim = 1.0 - max(dot(normal, -rd), 0.0);
-        rim = pow(rim, 3.0);
-
-        // Base color with lighting
-        vec3 baseColor = vec3(0.99, 0.94, 0.89);
-        color = baseColor * (diff * 0.7 + 0.3); // Diffuse + ambient
-        color += spec * 0.5; // Specular
-        color += rim * 0.3 * baseColor; // Rim light
-
-        // Add subtle animation to the color based on time
-        color *= 1.0 + 0.1 * sin(uTime * 0.5);
-    }
+    // Mix with background color (black)
+    vec3 color = volumeColor.rgb;
 
     finalColor = vec4(color, 1.0);
 }
