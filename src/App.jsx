@@ -10,8 +10,6 @@ import { useRaymarchControls } from './hooks/useRaymarchControls';
 
 let parameters = {
   N: 12,
-  vel: 0.05,
-  num: 30000,
   waveComponents: [],
   rotationSpeed: 0.01,
   radius: 3.0, // Radius of the sphere
