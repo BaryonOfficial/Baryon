@@ -3,6 +3,7 @@ import { useRef, Suspense } from 'react';
 import { shaderMaterial, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import './App.css';
+import { useControls, folder, Leva } from 'leva'; // Import just what we need
 
 import vertexShader from './shaders/raymarch/vertex.glsl';
 import fragmentShader from './shaders/raymarch/fragment.glsl';
@@ -47,6 +48,14 @@ const ChladniMaterial = shaderMaterial(
     uZoom: 1.0, // Add zoom uniform
     N: parameters.N,
     waveComponents: new Float32Array(waveComponentsArray),
+    uStepSize: 0.04, // Default step size
+    uLightSamples: 8, // Default light samples
+    uDensityScale: 0.15, // Density scale for transfer function
+    uEmptySpaceThreshold: 0.01, // Threshold for empty space skipping
+    uBaseColor: new THREE.Color(0x3366cc), // Default base color
+    uHighlightColor: new THREE.Color(0xe6f0ff), // Default highlight color
+    uAdaptiveStepStrength: 10.0, // Controls how much the gradient affects step size
+    uEmptySpaceFactor: 2.0, // Factor for empty space step size
   },
   vertexShader,
   fragmentShader
@@ -58,6 +67,90 @@ extend({ ChladniMaterial });
 const Raymarching = () => {
   const materialRef = useRef();
   const { viewport, size } = useThree();
+
+  // Use Leva for controls
+  const {
+    stepSize,
+    threshold,
+    lightSamples,
+    densityScale,
+    emptySpaceThreshold,
+    adaptiveStepStrength,
+    emptySpaceFactor,
+  } = useControls({
+    'Volumetric Rendering': folder(
+      {
+        stepSize: {
+          value: 0.04,
+          min: 0.01,
+          max: 0.1,
+          step: 0.005,
+          label: 'Step Size',
+        },
+        threshold: {
+          value: 1.0,
+          min: 0.1,
+          max: 2.0,
+          step: 0.05,
+          label: 'Pattern Threshold',
+        },
+        lightSamples: {
+          value: 8,
+          min: 4,
+          max: 16,
+          step: 1,
+          label: 'Light Samples',
+        },
+        densityScale: {
+          value: 0.15,
+          min: 0.05,
+          max: 0.5,
+          step: 0.01,
+          label: 'Density Scale',
+        },
+        emptySpaceThreshold: {
+          value: 0.01,
+          min: 0.001,
+          max: 0.1,
+          step: 0.001,
+          label: 'Empty Space Threshold',
+        },
+        adaptiveStepStrength: {
+          value: 10.0,
+          min: 0.0,
+          max: 30.0,
+          step: 0.5,
+          label: 'Adaptive Step Strength',
+        },
+        emptySpaceFactor: {
+          value: 2.0,
+          min: 1.0,
+          max: 5.0,
+          step: 0.1,
+          label: 'Empty Space Factor',
+        },
+      },
+      { collapsed: false }
+    ),
+  });
+
+  // Add color controls in a separate folder
+  const { baseColor, highlightColor } = useControls({
+    'Color Settings': folder({
+      baseColor: {
+        value: '#3366cc',
+        label: 'Base Color',
+      },
+      highlightColor: {
+        value: '#e6f0ff',
+        label: 'Highlight Color',
+      },
+    }),
+  });
+
+  // Convert hex colors to RGB for shader
+  const baseColorRGB = new THREE.Color(baseColor);
+  const highlightColorRGB = new THREE.Color(highlightColor);
 
   // Use our custom hook for controls
   const controls = useRaymarchControls({
@@ -80,6 +173,27 @@ const Raymarching = () => {
       materialRef.current.uniforms.uZoom.value = controls.zoom;
       materialRef.current.uniforms.uPointer.value.set(controls.rotation.x, controls.rotation.y);
       materialRef.current.uniforms.uIsClicked.value = controls.isPointerDown ? 1 : 0;
+
+      // Update values from Leva controls
+      materialRef.current.uniforms.uStepSize.value = stepSize;
+      materialRef.current.uniforms.uThreshold.value = threshold;
+      materialRef.current.uniforms.uLightSamples.value = lightSamples;
+      materialRef.current.uniforms.uDensityScale.value = densityScale;
+      materialRef.current.uniforms.uEmptySpaceThreshold.value = emptySpaceThreshold;
+      materialRef.current.uniforms.uAdaptiveStepStrength.value = adaptiveStepStrength;
+      materialRef.current.uniforms.uEmptySpaceFactor.value = emptySpaceFactor;
+
+      // Update color values
+      materialRef.current.uniforms.uBaseColor.value.set(
+        baseColorRGB.r,
+        baseColorRGB.g,
+        baseColorRGB.b
+      );
+      materialRef.current.uniforms.uHighlightColor.value.set(
+        highlightColorRGB.r,
+        highlightColorRGB.g,
+        highlightColorRGB.b
+      );
     }
 
     // Update controls (apply damping, etc.)
@@ -110,12 +224,17 @@ const Raymarching = () => {
 
 const Scene = () => {
   return (
-    <Canvas gl={{ alpha: true }}>
-      <color args={['#000000']} attach="background" />
-      <Suspense fallback={null}>
-        <Raymarching />
-      </Suspense>
-    </Canvas>
+    <>
+      {/* Add the Leva component */}
+      <Leva />
+
+      <Canvas gl={{ alpha: true }}>
+        <color args={['#000000']} attach="background" />
+        <Suspense fallback={null}>
+          <Raymarching />
+        </Suspense>
+      </Canvas>
+    </>
   );
 };
 

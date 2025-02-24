@@ -17,6 +17,14 @@ uniform int N;
 uniform vec2 uPointer;
 uniform float uIsClicked;
 uniform float uZoom;
+uniform float uStepSize; // Control the ray marching step size
+uniform int uLightSamples; // Control the number of light samples
+uniform float uDensityScale; // Density scale for transfer function
+uniform float uEmptySpaceThreshold; // Threshold for empty space skipping
+uniform vec3 uBaseColor; // Base color for the volume
+uniform vec3 uHighlightColor; // Highlight color for the volume
+uniform float uAdaptiveStepStrength; // Controls how much gradient affects step size
+uniform float uEmptySpaceFactor; // Factor for empty space step size
 
 out vec4 finalColor;
 
@@ -102,12 +110,11 @@ bool intersectSphere(vec3 ro, vec3 rd, vec3 center, float radius, out float t1, 
 
 // New function to map density to color and opacity
 vec4 transferFunction(float density) {
-    // You can customize this function to create different visualizations
-    // This creates a blue -> cyan -> white gradient
-    vec3 color = mix(vec3(0.2, 0.4, 0.8), vec3(0.9, 0.9, 1.0), density);
+    // Use the custom colors from uniforms instead of hardcoded values
+    vec3 color = mix(uBaseColor, uHighlightColor, density);
 
-    // Control the density of the volume
-    float alpha = density * 0.15;
+    // Control the density of the volume using the uniform parameter
+    float alpha = density * uDensityScale;
 
     return vec4(color, alpha);
 }
@@ -125,38 +132,51 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
     // Initialize accumulated color and opacity
     vec4 result = vec4(0.0);
 
-    // Sample step size (smaller = more detailed but slower)
-    float stepSize = 0.04;
+    // Base step size from uniform
+    float baseStepSize = uStepSize;
 
-    // Number of light samples for scattering effects (optional)
-    const int LIGHT_SAMPLES = 8;
+    // Current position along the ray
+    float t = t_min;
+
+    // Number of light samples for scattering effects
     vec3 lightPos = vec3(2.0, 4.0, -3.0);
 
-    // March through the volume
-    for(float t = t_min; t < t_max && result.a < 0.95; t += stepSize) {
+    // March through the volume with adaptive step size
+    while(t < t_max && result.a < 0.95) {
         vec3 p = ro + rd * t;
 
         // Get Chladni value at this point
         float chladniValue = chladni(p, uRadius);
 
-        // Convert to density - this is key to how you visualize the pattern
-        // Higher density where Chladni value is closer to zero
+        // Convert to density - higher density where Chladni value is closer to zero
         float density = smoothstep(uThreshold, 0.0, abs(chladniValue));
 
-        // Optional: Skip low-density regions for performance
-        if(density > 0.01) {
+        // Skip empty space regions for performance
+        if(density > uEmptySpaceThreshold) {
+            // Estimate detail level by computing local gradient for adaptive sampling
+            vec3 eps = vec3(0.01, 0.0, 0.0);
+            float dx = abs(chladni(p + eps.xyy, uRadius) - chladni(p - eps.xyy, uRadius));
+            float dy = abs(chladni(p + eps.yxy, uRadius) - chladni(p - eps.yxy, uRadius));
+            float dz = abs(chladni(p + eps.yyx, uRadius) - chladni(p - eps.yyx, uRadius));
+            float gradient = (dx + dy + dz) / 3.0;
+
+            // Adjust step size based on gradient (higher gradient = smaller steps)
+            float adaptiveStepSize = baseStepSize / (1.0 + uAdaptiveStepStrength * gradient);
+
             // Get color and alpha from transfer function
             vec4 sampleColor = transferFunction(density);
 
-            // Optional: Add simple volumetric lighting
+            // Add volumetric lighting
             vec3 lightDir = normalize(lightPos - p);
             float lightDist = length(lightPos - p);
             float lightAtten = 1.0 / (1.0 + 0.1 * lightDist + 0.01 * lightDist * lightDist);
 
-            // Simple light scattering approximation
+            // Light scattering approximation with dynamic sample count
             float scattering = 0.0;
-            for(int i = 0; i < LIGHT_SAMPLES; i++) {
-                float s = float(i) / float(LIGHT_SAMPLES - 1);
+            for(int i = 0; i < 16; i++) {
+                if(i >= uLightSamples)
+                    break;
+                float s = float(i) / float(uLightSamples - 1);
                 vec3 samplePos = mix(p, lightPos, s);
                 float sampleChladni = chladni(samplePos, uRadius);
                 float sampleDensity = smoothstep(uThreshold, 0.0, abs(sampleChladni));
@@ -170,6 +190,12 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
             // Front-to-back compositing
             sampleColor.rgb *= sampleColor.a;
             result = result + sampleColor * (1.0 - result.a);
+
+            // Advance with adaptive step size
+            t += adaptiveStepSize;
+        } else {
+            // Use larger steps in empty space for efficiency
+            t += baseStepSize * uEmptySpaceFactor;
         }
     }
 
