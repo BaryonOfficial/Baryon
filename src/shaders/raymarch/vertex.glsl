@@ -1,4 +1,4 @@
-precision highp float;
+precision mediump float;
 
 out vec2 vUv;
 

@@ -1,9 +1,12 @@
+#include ../includes/rot2D.glsl
+#include ../includes/sdSphere.glsl
+precision mediump float;
+
 #define MAX_STEPS 100
 #define MAX_DIST 100.0
 #define SURFACE_DIST 0.0001
 #define MAX_N 100
 #define PI 3.14159265359
-precision highp float;
 
 uniform float uTime;
 uniform vec2 uResolution;
@@ -17,17 +20,16 @@ uniform float uZoom;
 
 out vec4 finalColor;
 
-// Rotation matrix for 2D
-mat2 rot2D(float angle) {
-    float s = sin(angle);
-    float c = cos(angle);
-    return mat2(c, -s, s, c);
-}
-
 // Function to calculate the Chladni pattern displacement
 float chladni(vec3 position, float radius) {
     float sum = 0.0;
     float scaleFactor = 1.0 / radius;
+    float piScaled = PI * scaleFactor;
+
+    // Precalculate scaled position components
+    float px = position.x * piScaled;
+    float py = position.y * piScaled;
+    float pz = position.z * piScaled;
 
     for(int i = 0; i < N; ++i) {
         int index = 4 * i;
@@ -35,13 +37,15 @@ float chladni(vec3 position, float radius) {
         float ui = waveComponents[index + 1];
         float vi = waveComponents[index + 2];
         float wi = waveComponents[index + 3];
-        sum += Ai * sin(ui * PI * position.x * scaleFactor) * sin(vi * PI * position.y * scaleFactor) * sin(wi * PI * position.z * scaleFactor);
+
+        // Calculate each sin term once
+        float sinX = sin(ui * px);
+        float sinY = sin(vi * py);
+        float sinZ = sin(wi * pz);
+
+        sum += Ai * sinX * sinY * sinZ;
     }
     return sum;
-}
-
-float sdSphere(vec3 p, float radius) {
-    return length(p) - radius;
 }
 
 float scene(vec3 p) {
