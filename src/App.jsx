@@ -60,7 +60,9 @@ const Raymarching = () => {
   const { viewport, size } = useThree();
   const [isClicked, setIsClicked] = useState(false);
   const [rotation, setRotation] = useState({ x: 0, y: 0 });
+  const velocity = useRef({ x: 0, y: 0 });
   const lastPointer = useRef({ x: 0, y: 0 });
+  const lastTime = useRef(0);
 
   const handlePointerMove = useCallback(
     (event) => {
@@ -73,6 +75,12 @@ const Raymarching = () => {
         // Calculate rotation delta
         const deltaX = newPointer.x - lastPointer.current.x;
         const deltaY = newPointer.y - lastPointer.current.y;
+
+        // Update velocity based on movement
+        velocity.current = {
+          x: deltaX,
+          y: deltaY,
+        };
 
         // Update accumulated rotation
         setRotation((prev) => ({
@@ -88,12 +96,35 @@ const Raymarching = () => {
   );
 
   useFrame((state) => {
+    const currentTime = state.clock.getElapsedTime();
+    lastTime.current = currentTime;
+
     if (materialRef.current?.uniforms) {
-      materialRef.current.uniforms.uTime.value = state.clock.getElapsedTime();
+      materialRef.current.uniforms.uTime.value = currentTime;
       materialRef.current.uniforms.uResolution.value.set(
         size.width * viewport.dpr,
         size.height * viewport.dpr
       );
+
+      // Apply damping when not clicked
+      if (!isClicked) {
+        const damping = 0.95; // Adjust this value to control damping strength (0.9-0.99)
+        velocity.current.x *= damping;
+        velocity.current.y *= damping;
+
+        // Only update rotation if velocity is significant
+        if (Math.abs(velocity.current.x) > 0.0001 || Math.abs(velocity.current.y) > 0.0001) {
+          setRotation((prev) => ({
+            x: prev.x + velocity.current.x,
+            y: prev.y + velocity.current.y,
+          }));
+        } else {
+          // Reset velocity when it gets very small
+          velocity.current.x = 0;
+          velocity.current.y = 0;
+        }
+      }
+
       materialRef.current.uniforms.uPointer.value.set(rotation.x, rotation.y);
       materialRef.current.uniforms.uIsClicked.value = isClicked ? 1 : 0;
     }
@@ -102,6 +133,8 @@ const Raymarching = () => {
   const handlePointerDown = useCallback(
     (event) => {
       setIsClicked(true);
+      // Reset velocity when starting new interaction
+      velocity.current = { x: 0, y: 0 };
       lastPointer.current = {
         x: (event.point.x / size.width) * 2,
         y: (event.point.y / size.height) * 2,
