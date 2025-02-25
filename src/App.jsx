@@ -288,6 +288,7 @@ const Raymarching = () => {
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           glslVersion={THREE.GLSL3}
+          toneMapped={false}
         />
       </mesh>
     </>
