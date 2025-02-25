@@ -12,8 +12,8 @@ import PostProcessing from './components/PostProcessing';
 
 // Define default values as constants to ensure consistency
 const DEFAULT_VALUES = {
-  stepSize: 0.05,
-  threshold: 0.24,
+  stepSize: 0.02,
+  threshold: 0.05,
   lightSamples: 8,
   densityScale: 0.4,
   emptySpaceThreshold: 0.03,
@@ -21,7 +21,7 @@ const DEFAULT_VALUES = {
   emptySpaceFactor: 4.0,
   baseColor: '#ffffff',
   highlightColor: '#fff27b',
-  radius: 3.2,
+  radius: 3.6,
 };
 
 // Create custom shader material
@@ -98,9 +98,9 @@ const Raymarching = () => {
         },
         threshold: {
           value: DEFAULT_VALUES.threshold,
-          min: 0.1,
+          min: 0.01,
           max: 2.0,
-          step: 0.05,
+          step: 0.01,
           label: 'Pattern Threshold',
         },
         lightSamples: {
