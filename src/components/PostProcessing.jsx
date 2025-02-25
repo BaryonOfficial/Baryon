@@ -122,6 +122,7 @@ export const PostProcessing = ({
         luminanceThreshold={effectValues.bloomThreshold}
         luminanceSmoothing={effectValues.bloomSmoothing}
         radius={effectValues.bloomRadius}
+        mipmapBlur={false}
       />
     </EffectComposer>
   );
