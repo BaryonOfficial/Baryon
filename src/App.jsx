@@ -1,13 +1,12 @@
 import { Canvas, useFrame, useThree, extend } from '@react-three/fiber';
 import { useRef, Suspense, useState } from 'react';
-import { shaderMaterial, OrthographicCamera } from '@react-three/drei';
+import { shaderMaterial, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import './App.css';
 import { useControls, folder, Leva, button } from 'leva';
 
 import vertexShader from './shaders/raymarch/vertex.glsl';
 import fragmentShader from './shaders/raymarch/fragment.glsl';
-import { useRaymarchControls } from './hooks/useRaymarchControls';
 import { useWaveComponents } from './hooks/useWaveComponents';
 import PostProcessing from './components/PostProcessing';
 
@@ -30,11 +29,10 @@ const ChladniMaterial = shaderMaterial(
   {
     uTime: 0,
     uResolution: new THREE.Vector2(),
-    uPointer: new THREE.Vector2(),
+    uCameraPosition: new THREE.Vector3(), // Camera position for ray origin
+    uCameraQuaternion: new THREE.Quaternion(), // Camera rotation as quaternion
     uThreshold: DEFAULT_VALUES.threshold,
-    uIsClicked: 0, // 0 for not clicked, 1 for clicked
     uRadius: DEFAULT_VALUES.radius,
-    uZoom: 1.0, // Add zoom uniform
     N: 12,
     waveComponents: new Float32Array(48), // 12 components * 4 values each
     waveComponentsTarget: new Float32Array(48), // Target wave components
@@ -57,7 +55,9 @@ extend({ ChladniMaterial });
 
 const Raymarching = () => {
   const materialRef = useRef();
-  const { viewport, size } = useThree();
+  const { viewport, size, camera } = useThree();
+  const planeRef = useRef();
+  const controlsRef = useRef();
 
   // Use our custom hook for wave components
   const waveComponents = useWaveComponents({
@@ -161,15 +161,6 @@ const Raymarching = () => {
   const baseColorRGB = new THREE.Color(baseColor);
   const highlightColorRGB = new THREE.Color(highlightColor);
 
-  // Use our custom hook for controls
-  const controls = useRaymarchControls({
-    minZoom: 0.1,
-    maxZoom: 5.0,
-    initialZoom: 1.0,
-    zoomSpeed: 0.001,
-    rotationDamping: 0.95,
-  });
-
   // Auto-generate new patterns over time
   const [autoGenerate, setAutoGenerate] = useState(false);
   const lastGenerateTime = useRef(0);
@@ -211,6 +202,17 @@ const Raymarching = () => {
     }),
   });
 
+  // Add camera controls
+  useControls({
+    'Camera Controls': folder({
+      resetCamera: button(() => {
+        if (controlsRef.current) {
+          controlsRef.current.reset();
+        }
+      }),
+    }),
+  });
+
   useFrame((state) => {
     const currentTime = state.clock.getElapsedTime();
 
@@ -233,9 +235,10 @@ const Raymarching = () => {
         size.width * viewport.dpr,
         size.height * viewport.dpr
       );
-      materialRef.current.uniforms.uZoom.value = controls.zoom;
-      materialRef.current.uniforms.uPointer.value.set(controls.rotation.x, controls.rotation.y);
-      materialRef.current.uniforms.uIsClicked.value = controls.isPointerDown ? 1 : 0;
+
+      // Update camera position and rotation for raymarching
+      materialRef.current.uniforms.uCameraPosition.value.copy(camera.position);
+      materialRef.current.uniforms.uCameraQuaternion.value.copy(camera.quaternion);
 
       // Update values from Leva controls
       materialRef.current.uniforms.uStepSize.value = stepSize;
@@ -268,19 +271,35 @@ const Raymarching = () => {
       );
     }
 
-    // Update controls (apply damping, etc.)
-    controls.updateControls();
+    // Update the plane position to follow camera
+    if (planeRef.current && camera) {
+      // Calculate position in front of camera
+      const direction = new THREE.Vector3(0, 0, -1);
+      direction.applyQuaternion(camera.quaternion);
+      const position = camera.position.clone().addScaledVector(direction, camera.near + 0.01);
+
+      // Position and rotate the plane to face the camera
+      planeRef.current.position.copy(position);
+      planeRef.current.quaternion.copy(camera.quaternion);
+
+      // Scale the plane to cover the entire frustum
+      const distance = camera.near + 0.01;
+      const height = 2 * Math.tan((camera.fov * (Math.PI / 180)) / 2) * distance;
+      const width = height * camera.aspect;
+      planeRef.current.scale.set(width, height, 1);
+    }
   });
 
   return (
     <>
-      <OrthographicCamera makeDefault position={[0, 0, 1]} zoom={1} near={0.1} far={1000} />
-      <mesh
-        scale={[viewport.width, viewport.height, 1]}
-        onPointerDown={controls.handlePointerDown}
-        onPointerUp={controls.handlePointerUp}
-        onPointerLeave={controls.handlePointerUp}
-        onPointerMove={controls.handlePointerMove}>
+      <OrbitControls
+        ref={controlsRef}
+        minDistance={1}
+        maxDistance={10}
+        enableDamping
+        dampingFactor={0.1}
+      />
+      <mesh ref={planeRef}>
         <planeGeometry />
         <chladniMaterial
           ref={materialRef}

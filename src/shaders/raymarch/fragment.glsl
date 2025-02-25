@@ -16,9 +16,8 @@ uniform float waveComponents[4 * MAX_N];      // Current wave components
 uniform float waveComponentsTarget[4 * MAX_N]; // Target wave components
 uniform float uBlendFactor;                   // Blend factor between current and target (0.0 to 1.0)
 uniform int N;
-uniform vec2 uPointer;
-uniform float uIsClicked;
-uniform float uZoom;
+uniform vec3 uCameraPosition;                 // Camera position
+uniform vec4 uCameraQuaternion;               // Camera rotation as quaternion
 uniform float uStepSize; // Control the ray marching step size
 uniform int uLightSamples; // Control the number of light samples
 uniform float uDensityScale; // Density scale for transfer function
@@ -238,24 +237,37 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
     return result;
 }
 
+// Apply quaternion rotation to a vector
+vec3 rotateWithQuaternion(vec3 v, vec4 q) {
+    // Extract components
+    float qx = q.x;
+    float qy = q.y;
+    float qz = q.z;
+    float qw = q.w;
+
+    // Compute rotation
+    vec3 result;
+
+    // Formula: v' = v + 2 * cross(cross(v, q.xyz) + q.w * v, q.xyz)
+    vec3 qv = vec3(qx, qy, qz);
+    vec3 uv = cross(qv, v);
+    vec3 uuv = cross(qv, uv);
+
+    // Apply the formula
+    result = v + ((uv * qw) + uuv) * 2.0;
+
+    return result;
+}
+
 void main() {
     vec2 uv = (gl_FragCoord.xy * 2.0 - uResolution.xy) / min(uResolution.x, uResolution.y);
 
-    // Camera setup with orbital control and zoom
-    vec3 ro = vec3(0.0, 0.0, 6.0 / uZoom);
+    // Camera setup using camera position and rotation from OrbitControls
+    vec3 ro = uCameraPosition;
     vec3 rd = normalize(vec3(uv, -1.5));
 
-    // Apply accumulated rotation from pointer movement
-    vec2 mouseUV = uPointer * PI * 0.5;
-
-    // First apply Y rotation
-    ro.yz *= rot2D(mouseUV.y);
-    rd.yz *= rot2D(mouseUV.y);
-
-    // Invert X rotation direction based on Y rotation angle
-    float xRotationSign = sign(cos(mouseUV.y)); // Will be negative when we're "upside down"
-    ro.xz *= rot2D(mouseUV.x * xRotationSign);
-    rd.xz *= rot2D(mouseUV.x * xRotationSign);
+    // Apply camera rotation using quaternion
+    rd = rotateWithQuaternion(rd, uCameraQuaternion);
 
     // Perform volumetric ray marching instead of surface ray marching
     vec4 volumeColor = raymarchVolume(ro, rd);
