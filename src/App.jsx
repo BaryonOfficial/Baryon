@@ -12,16 +12,16 @@ import { useWaveComponents } from './hooks/useWaveComponents';
 
 // Define default values as constants to ensure consistency
 const DEFAULT_VALUES = {
-  stepSize: 0.09,
-  threshold: 0.8,
-  lightSamples: 12,
-  densityScale: 0.5,
-  emptySpaceThreshold: 0.05,
-  adaptiveStepStrength: 20.0,
-  emptySpaceFactor: 5.0,
-  baseColor: '#0060fb',
-  highlightColor: '#ffffff',
-  radius: 3.0,
+  stepSize: 0.05,
+  threshold: 0.32,
+  lightSamples: 8,
+  densityScale: 0.4,
+  emptySpaceThreshold: 0.03,
+  adaptiveStepStrength: 25.0,
+  emptySpaceFactor: 4.0,
+  baseColor: '#ffffff',
+  highlightColor: '#fff27b',
+  radius: 3.2,
 };
 
 // Create custom shader material
@@ -176,7 +176,7 @@ const Raymarching = () => {
 
   // Add auto-generate control
   useControls({
-    'Auto Generate Patterns': folder({
+    'Auto Generate Sound Waves': folder({
       enabled: {
         value: autoGenerate,
         label: 'Auto Generate',
@@ -302,7 +302,6 @@ const Scene = () => {
           sizes: {
             rootWidth: '360px', // Increase default width even more
             labelWidth: '50%', // Allocate more space for labels
-            controlWidth: '50%', // Allocate space for control inputs
           },
         }}
       />

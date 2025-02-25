@@ -18,7 +18,7 @@ export const useWaveComponents = (options = {}) => {
     minAmplitude = 1.0,
     maxAmplitude = 4.0,
     minFrequency = 1,
-    maxFrequency = 10,
+    maxFrequency = 30,
     transitionDuration = 1.0,
   } = options;
 
@@ -37,13 +37,24 @@ export const useWaveComponents = (options = {}) => {
   const generateRandomComponents = useCallback(() => {
     const components = [];
     for (let i = 0; i < numComponents; i++) {
+      // Generate in spherical coordinates
+      const r = Math.floor(Math.random() * (maxFrequency - minFrequency + 1)) + minFrequency;
+      const theta = Math.random() * 2 * Math.PI; // Azimuthal angle
+      const phi = Math.random() * Math.PI; // Polar angle
+
+      // Convert to cartesian
+      const u = Math.round(r * Math.sin(phi) * Math.cos(theta));
+      const v = Math.round(r * Math.sin(phi) * Math.sin(theta));
+      const w = Math.round(r * Math.cos(phi));
+
       components.push({
         amplitude: Math.random() * (maxAmplitude - minAmplitude) + minAmplitude,
-        u: Math.floor(Math.random() * (maxFrequency - minFrequency + 1)) + minFrequency,
-        v: Math.floor(Math.random() * (maxFrequency - minFrequency + 1)) + minFrequency,
-        w: Math.floor(Math.random() * (maxFrequency - minFrequency + 1)) + minFrequency,
+        u: u,
+        v: v,
+        w: w,
       });
     }
+    console.log(components);
     return components;
   }, [numComponents, minAmplitude, maxAmplitude, minFrequency, maxFrequency]);
 
