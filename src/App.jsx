@@ -9,11 +9,12 @@ import vertexShader from './shaders/raymarch/vertex.glsl';
 import fragmentShader from './shaders/raymarch/fragment.glsl';
 import { useRaymarchControls } from './hooks/useRaymarchControls';
 import { useWaveComponents } from './hooks/useWaveComponents';
+import PostProcessing from './components/PostProcessing';
 
 // Define default values as constants to ensure consistency
 const DEFAULT_VALUES = {
   stepSize: 0.05,
-  threshold: 0.32,
+  threshold: 0.24,
   lightSamples: 8,
   densityScale: 0.4,
   emptySpaceThreshold: 0.03,
@@ -310,6 +311,7 @@ const Scene = () => {
         <color args={['#000000']} attach="background" />
         <Suspense fallback={null}>
           <Raymarching />
+          <PostProcessing preset="extreme" />
         </Suspense>
       </Canvas>
     </>
