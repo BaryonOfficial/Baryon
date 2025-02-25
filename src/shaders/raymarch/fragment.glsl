@@ -12,7 +12,9 @@ uniform float uTime;
 uniform vec2 uResolution;
 uniform float uThreshold;
 uniform float uRadius;
-uniform float waveComponents[4 * MAX_N];
+uniform float waveComponents[4 * MAX_N];      // Current wave components
+uniform float waveComponentsTarget[4 * MAX_N]; // Target wave components
+uniform float uBlendFactor;                   // Blend factor between current and target (0.0 to 1.0)
 uniform int N;
 uniform vec2 uPointer;
 uniform float uIsClicked;
@@ -28,7 +30,7 @@ uniform float uEmptySpaceFactor; // Factor for empty space step size
 
 out vec4 finalColor;
 
-// Function to calculate the Chladni pattern displacement
+// Function to calculate the Chladni pattern displacement with interpolation
 float chladni(vec3 position, float radius) {
     float sum = 0.0;
     float scaleFactor = 1.0 / radius;
@@ -41,10 +43,12 @@ float chladni(vec3 position, float radius) {
 
     for(int i = 0; i < N; ++i) {
         int index = 4 * i;
-        float Ai = waveComponents[index];
-        float ui = waveComponents[index + 1];
-        float vi = waveComponents[index + 2];
-        float wi = waveComponents[index + 3];
+
+        // Interpolate between current and target wave components
+        float Ai = mix(waveComponents[index], waveComponentsTarget[index], uBlendFactor);
+        float ui = mix(waveComponents[index + 1], waveComponentsTarget[index + 1], uBlendFactor);
+        float vi = mix(waveComponents[index + 2], waveComponentsTarget[index + 2], uBlendFactor);
+        float wi = mix(waveComponents[index + 3], waveComponentsTarget[index + 3], uBlendFactor);
 
         // Calculate each sin term once
         float sinX = sin(ui * px);

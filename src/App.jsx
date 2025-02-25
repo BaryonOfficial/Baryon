@@ -1,13 +1,14 @@
 import { Canvas, useFrame, useThree, extend } from '@react-three/fiber';
-import { useRef, Suspense } from 'react';
+import { useRef, Suspense, useState } from 'react';
 import { shaderMaterial, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import './App.css';
-import { useControls, folder, Leva } from 'leva'; // Import just what we need
+import { useControls, folder, Leva, button } from 'leva';
 
 import vertexShader from './shaders/raymarch/vertex.glsl';
 import fragmentShader from './shaders/raymarch/fragment.glsl';
 import { useRaymarchControls } from './hooks/useRaymarchControls';
+import { useWaveComponents } from './hooks/useWaveComponents';
 
 // Define default values as constants to ensure consistency
 const DEFAULT_VALUES = {
@@ -20,34 +21,8 @@ const DEFAULT_VALUES = {
   emptySpaceFactor: 5.0,
   baseColor: '#0060fb',
   highlightColor: '#ffffff',
+  radius: 3.0,
 };
-
-let parameters = {
-  N: 12,
-  waveComponents: [],
-  rotationSpeed: 0.01,
-  radius: 3.0, // Radius of the sphere
-};
-
-// Populate initial wave component values
-for (let i = 0; i < parameters.N; i++) {
-  parameters.waveComponents.push({
-    [`A${i}`]: Math.random() * 3 + 1,
-    [`u${i}`]: Math.floor(Math.random() * 10) + 1,
-    [`v${i}`]: Math.floor(Math.random() * 10) + 1,
-    [`w${i}`]: Math.floor(Math.random() * 10) + 1,
-  });
-}
-
-const waveComponentsArray = [];
-for (let i = 0; i < parameters.N; i++) {
-  waveComponentsArray.push(parameters.waveComponents[i][`A${i}`]);
-  waveComponentsArray.push(parameters.waveComponents[i][`u${i}`]);
-  waveComponentsArray.push(parameters.waveComponents[i][`v${i}`]);
-  waveComponentsArray.push(parameters.waveComponents[i][`w${i}`]);
-}
-
-console.log(parameters.waveComponents);
 
 // Create custom shader material
 const ChladniMaterial = shaderMaterial(
@@ -57,10 +32,12 @@ const ChladniMaterial = shaderMaterial(
     uPointer: new THREE.Vector2(),
     uThreshold: DEFAULT_VALUES.threshold,
     uIsClicked: 0, // 0 for not clicked, 1 for clicked
-    uRadius: parameters.radius,
+    uRadius: DEFAULT_VALUES.radius,
     uZoom: 1.0, // Add zoom uniform
-    N: parameters.N,
-    waveComponents: new Float32Array(waveComponentsArray),
+    N: 12,
+    waveComponents: new Float32Array(48), // 12 components * 4 values each
+    waveComponentsTarget: new Float32Array(48), // Target wave components
+    uBlendFactor: 0.0, // Blend factor for interpolation (0.0 to 1.0)
     uStepSize: DEFAULT_VALUES.stepSize,
     uLightSamples: DEFAULT_VALUES.lightSamples,
     uDensityScale: DEFAULT_VALUES.densityScale,
@@ -81,6 +58,16 @@ const Raymarching = () => {
   const materialRef = useRef();
   const { viewport, size } = useThree();
 
+  // Use our custom hook for wave components
+  const waveComponents = useWaveComponents({
+    numComponents: 12,
+    minAmplitude: 1.0,
+    maxAmplitude: 4.0,
+    minFrequency: 1,
+    maxFrequency: 10,
+    transitionDuration: 1.0, // 1 second transition duration
+  });
+
   // Use Leva for controls
   const {
     stepSize,
@@ -90,9 +77,17 @@ const Raymarching = () => {
     emptySpaceThreshold,
     adaptiveStepStrength,
     emptySpaceFactor,
+    radius,
   } = useControls({
     'Volumetric Rendering': folder(
       {
+        radius: {
+          value: DEFAULT_VALUES.radius,
+          min: 1.0,
+          max: 5.0,
+          step: 0.1,
+          label: 'Sphere Radius',
+        },
         stepSize: {
           value: DEFAULT_VALUES.stepSize,
           min: 0.01,
@@ -133,7 +128,7 @@ const Raymarching = () => {
           min: 0.0,
           max: 30.0,
           step: 0.5,
-          label: 'Adaptive Step Strength',
+          label: 'Adaptive Step',
         },
         emptySpaceFactor: {
           value: DEFAULT_VALUES.emptySpaceFactor,
@@ -174,8 +169,62 @@ const Raymarching = () => {
     rotationDamping: 0.95,
   });
 
+  // Auto-generate new patterns over time
+  const [autoGenerate, setAutoGenerate] = useState(false);
+  const lastGenerateTime = useRef(0);
+  const [generateInterval, setGenerateInterval] = useState(1); // seconds (faster default)
+
+  // Add auto-generate control
+  useControls({
+    'Auto Generate Patterns': folder({
+      enabled: {
+        value: autoGenerate,
+        label: 'Auto Generate',
+        onChange: (value) => setAutoGenerate(value),
+      },
+      interval: {
+        value: generateInterval,
+        min: 0.2, // Much faster minimum
+        max: 5, // Reduced maximum
+        step: 0.1, // Finer control
+        label: 'Interval (s)',
+        onChange: (value) => setGenerateInterval(value),
+      },
+      transition: {
+        value: 1.0,
+        min: 0.1,
+        max: 2.0,
+        step: 0.1,
+        label: 'Transition (s)',
+        onChange: (value) => {
+          waveComponents.setTransitionDuration(value);
+        },
+      },
+    }),
+  });
+
+  // Add wave component controls
+  useControls({
+    'Wave Components': folder({
+      generateNew: button(() => waveComponents.generateNewComponents()),
+    }),
+  });
+
   useFrame((state) => {
     const currentTime = state.clock.getElapsedTime();
+
+    // Update transition blend factor
+    const currentBlendFactor = waveComponents.updateTransition(currentTime);
+
+    // Auto-generate new patterns if enabled, interval has passed, and not currently transitioning
+    if (
+      autoGenerate &&
+      currentTime - lastGenerateTime.current > generateInterval &&
+      !waveComponents.isTransitioning
+    ) {
+      waveComponents.generateNewComponents();
+      lastGenerateTime.current = currentTime;
+    }
 
     if (materialRef.current?.uniforms) {
       materialRef.current.uniforms.uTime.value = currentTime;
@@ -195,6 +244,15 @@ const Raymarching = () => {
       materialRef.current.uniforms.uEmptySpaceThreshold.value = emptySpaceThreshold;
       materialRef.current.uniforms.uAdaptiveStepStrength.value = adaptiveStepStrength;
       materialRef.current.uniforms.uEmptySpaceFactor.value = emptySpaceFactor;
+
+      // Update wave components with shader-based interpolation
+      materialRef.current.uniforms.N.value = waveComponents.numComponents;
+      materialRef.current.uniforms.uRadius.value = radius;
+      materialRef.current.uniforms.waveComponents.value =
+        waveComponents.getCurrentComponentsArray();
+      materialRef.current.uniforms.waveComponentsTarget.value =
+        waveComponents.getTargetComponentsArray();
+      materialRef.current.uniforms.uBlendFactor.value = currentBlendFactor;
 
       // Update color values
       materialRef.current.uniforms.uBaseColor.value.set(
@@ -238,8 +296,16 @@ const Raymarching = () => {
 const Scene = () => {
   return (
     <>
-      {/* Add the Leva component */}
-      <Leva />
+      {/* Add the Leva component with custom configuration */}
+      <Leva
+        theme={{
+          sizes: {
+            rootWidth: '360px', // Increase default width even more
+            labelWidth: '50%', // Allocate more space for labels
+            controlWidth: '50%', // Allocate space for control inputs
+          },
+        }}
+      />
 
       <Canvas gl={{ alpha: true }}>
         <color args={['#000000']} attach="background" />
