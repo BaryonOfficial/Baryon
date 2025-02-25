@@ -30,9 +30,8 @@ uniform float uEmptySpaceFactor; // Factor for empty space step size
 
 out vec4 finalColor;
 
-// Function to calculate the Chladni pattern displacement with interpolation
+// Function to calculate the Chladni pattern displacement with visually pleasing transitions for music visualization
 float chladni(vec3 position, float radius) {
-    float sum = 0.0;
     float scaleFactor = 1.0 / radius;
     float piScaled = PI * scaleFactor;
 
@@ -41,23 +40,56 @@ float chladni(vec3 position, float radius) {
     float py = position.y * piScaled;
     float pz = position.z * piScaled;
 
+    // Calculate current pattern
+    float currentSum = 0.0;
     for(int i = 0; i < N; ++i) {
         int index = 4 * i;
+        float Ai = waveComponents[index];
+        float ui = waveComponents[index + 1];
+        float vi = waveComponents[index + 2];
+        float wi = waveComponents[index + 3];
 
-        // Interpolate between current and target wave components
-        float Ai = mix(waveComponents[index], waveComponentsTarget[index], uBlendFactor);
-        float ui = mix(waveComponents[index + 1], waveComponentsTarget[index + 1], uBlendFactor);
-        float vi = mix(waveComponents[index + 2], waveComponentsTarget[index + 2], uBlendFactor);
-        float wi = mix(waveComponents[index + 3], waveComponentsTarget[index + 3], uBlendFactor);
-
-        // Calculate each sin term once
         float sinX = sin(ui * px);
         float sinY = sin(vi * py);
         float sinZ = sin(wi * pz);
 
-        sum += Ai * sinX * sinY * sinZ;
+        currentSum += Ai * sinX * sinY * sinZ;
     }
-    return sum;
+
+    // Calculate target pattern
+    float targetSum = 0.0;
+    for(int i = 0; i < N; ++i) {
+        int index = 4 * i;
+        float Ai = waveComponentsTarget[index];
+        float ui = waveComponentsTarget[index + 1];
+        float vi = waveComponentsTarget[index + 2];
+        float wi = waveComponentsTarget[index + 3];
+
+        float sinX = sin(ui * px);
+        float sinY = sin(vi * py);
+        float sinZ = sin(wi * pz);
+
+        targetSum += Ai * sinX * sinY * sinZ;
+    }
+
+    // Apply easing function to blend factor for more natural transition pacing
+    // Using smoothstep for a subtle ease-in/ease-out effect
+    float easedBlend = smoothstep(0.0, 1.0, uBlendFactor);
+
+    // Add subtle turbulence during transition for visual interest
+    // This creates a slight "energy" effect during transitions without being chaotic
+    float turbulence = 0.0;
+    if(uBlendFactor > 0.0 && uBlendFactor < 1.0) {
+        // Simple turbulence effect that's strongest in the middle of the transition
+        float turbAmt = sin(uBlendFactor * PI) * 0.33; // Max 33% turbulence
+
+        // Use position and time to create subtle movement in the turbulence
+        float turbNoise = sin(px * 2.0 + uTime) * sin(py * 2.0 + uTime) * sin(pz * 2.0 + uTime);
+        turbulence = turbNoise * turbAmt;
+    }
+
+    // Blend between patterns with added turbulence
+    return mix(currentSum, targetSum, easedBlend) + turbulence;
 }
 
 float scene(vec3 p) {

@@ -7,25 +7,25 @@ import { useState } from 'react';
 const PRESETS = {
   subtle: {
     bloomIntensity: 0.8,
-    bloomThreshold: 0.7,
+    bloomThreshold: 0.1,
     bloomSmoothing: 0.7,
     bloomRadius: 0.5,
   },
   moderate: {
     bloomIntensity: 1.2,
-    bloomThreshold: 0.6,
+    bloomThreshold: 0.1,
     bloomSmoothing: 0.8,
     bloomRadius: 0.6,
   },
   intense: {
     bloomIntensity: 1.5,
-    bloomThreshold: 0.5,
+    bloomThreshold: 0.1,
     bloomSmoothing: 0.9,
     bloomRadius: 0.7,
   },
   extreme: {
     bloomIntensity: 3.0,
-    bloomThreshold: 0.16,
+    bloomThreshold: 0.1,
     bloomSmoothing: 1.0,
     bloomRadius: 0.8,
   },

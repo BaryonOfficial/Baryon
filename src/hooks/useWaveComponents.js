@@ -54,13 +54,18 @@ export const useWaveComponents = (options = {}) => {
         w: w,
       });
     }
-    console.log(components);
     return components;
   }, [numComponents, minAmplitude, maxAmplitude, minFrequency, maxFrequency]);
 
-  // Current components state
-  const [currentComponents, setCurrentComponents] = useState(generateRandomComponents);
-  const [targetComponents, setTargetComponents] = useState(generateRandomComponents);
+  // Generate initial components only once
+  const initialComponentsRef = useRef(null);
+  if (initialComponentsRef.current === null) {
+    initialComponentsRef.current = generateRandomComponents();
+  }
+
+  // Use the same initial components for both states
+  const [currentComponents, setCurrentComponents] = useState(() => initialComponentsRef.current);
+  const [targetComponents, setTargetComponents] = useState(() => initialComponentsRef.current);
 
   // Start a new transition
   const generateNewComponents = useCallback(() => {

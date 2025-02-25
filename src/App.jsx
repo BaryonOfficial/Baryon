@@ -185,17 +185,17 @@ const Raymarching = () => {
       },
       interval: {
         value: generateInterval,
-        min: 0.2, // Much faster minimum
+        min: 0.001, // Much faster minimum
         max: 5, // Reduced maximum
-        step: 0.1, // Finer control
+        step: 0.001, // Finer control
         label: 'Interval (s)',
         onChange: (value) => setGenerateInterval(value),
       },
       transition: {
         value: 1.0,
-        min: 0.1,
-        max: 2.0,
-        step: 0.1,
+        min: 0.001,
+        max: 5.0,
+        step: 0.001,
         label: 'Transition (s)',
         onChange: (value) => {
           waveComponents.setTransitionDuration(value);
