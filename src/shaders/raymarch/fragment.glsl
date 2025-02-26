@@ -26,6 +26,7 @@ uniform vec3 uBaseColor; // Base color for the volume
 uniform vec3 uHighlightColor; // Highlight color for the volume
 uniform float uAdaptiveStepStrength; // Controls how much gradient affects step size
 uniform float uEmptySpaceFactor; // Factor for empty space step size
+uniform float uPerformanceMode; // Performance mode (0=highest quality, 1=highest performance)
 
 out vec4 finalColor;
 
@@ -167,8 +168,20 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
     // Initialize accumulated color and opacity
     vec4 result = vec4(0.0);
 
-    // Base step size from uniform
-    float baseStepSize = uStepSize;
+    // Base step size from uniform - affected by performance mode
+    float baseStepSize = uStepSize * mix(1.0, 2.0, uPerformanceMode);
+
+    // Calculate distance from camera to sphere center (but don't use for LOD)
+    float distanceToCenter = length(ro);
+
+    // Calculate step size based on ray length instead of camera distance
+    // This keeps step size relative to volume size, not camera position
+    float rayLength = t_max - t_min;
+    float stepSizeFactor = mix(1.0, 1.5, smoothstep(2.0, 8.0, rayLength));
+    baseStepSize *= stepSizeFactor;
+
+    // Use consistent light samples regardless of distance
+    int maxLightSamples = max(4, int(float(uLightSamples) * (1.0 - uPerformanceMode * 0.5)));
 
     // Current position along the ray
     float t = t_min;
@@ -176,8 +189,23 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
     // Number of light samples for scattering effects
     vec3 lightPos = vec3(2.0, 4.0, -3.0);
 
+    // Adaptive epsilon for gradient calculation based on performance mode only
+    float epsScale = mix(1.0, 2.0, uPerformanceMode);
+    vec3 eps = vec3(0.01 * epsScale, 0.0, 0.0);
+
+    // Early ray termination threshold - more aggressive in performance mode
+    float earlyExitThreshold = 0.95 - 0.1 * uPerformanceMode;
+
     // March through the volume with adaptive step size
-    while(t < t_max && result.a < 0.95) {
+    int maxSteps = int(float(MAX_STEPS) * mix(1.0, 0.6, uPerformanceMode));
+    for(int i = 0; i < MAX_STEPS; i++) {
+        if(i >= maxSteps)
+            break;
+
+        // Exit the loop if we've reached the end of the volume or maximum opacity
+        if(t >= t_max || result.a >= earlyExitThreshold)
+            break;
+
         vec3 p = ro + rd * t;
 
         // Get Chladni value at this point
@@ -186,17 +214,24 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
         // Convert to density - higher density where Chladni value is closer to zero
         float density = smoothstep(uThreshold, 0.0, abs(chladniValue));
 
+        // In high performance mode, use a higher empty space threshold to skip more samples
+        float effectiveEmptyThreshold = uEmptySpaceThreshold * mix(1.0, 2.0, uPerformanceMode);
+
         // Skip empty space regions for performance
-        if(density > uEmptySpaceThreshold) {
+        if(density > effectiveEmptyThreshold) {
             // Estimate detail level by computing local gradient for adaptive sampling
-            vec3 eps = vec3(0.01, 0.0, 0.0);
-            float dx = abs(chladni(p + eps.xyy, uRadius) - chladni(p - eps.xyy, uRadius));
-            float dy = abs(chladni(p + eps.yxy, uRadius) - chladni(p - eps.yxy, uRadius));
-            float dz = abs(chladni(p + eps.yyx, uRadius) - chladni(p - eps.yyx, uRadius));
-            float gradient = (dx + dy + dz) / 3.0;
+            float gradient = 0.0;
+            if(uPerformanceMode < 0.5 || i % 4 == 0) {
+                float dx = abs(chladni(p + eps.xyy, uRadius) - chladni(p - eps.xyy, uRadius));
+                float dy = abs(chladni(p + eps.yxy, uRadius) - chladni(p - eps.yxy, uRadius));
+                float dz = abs(chladni(p + eps.yyx, uRadius) - chladni(p - eps.yyx, uRadius));
+                gradient = (dx + dy + dz) / 3.0;
+            }
 
             // Adjust step size based on gradient (higher gradient = smaller steps)
-            float adaptiveStepSize = baseStepSize / (1.0 + uAdaptiveStepStrength * gradient);
+            // FIXED - Remove distance scaling to maintain consistent sampling
+            float gradientFactor = max(1.0, uAdaptiveStepStrength * mix(1.0, 0.5, uPerformanceMode));
+            float adaptiveStepSize = baseStepSize / (1.0 + gradientFactor * gradient);
 
             // Get color and alpha from transfer function
             vec4 sampleColor = transferFunction(density);
@@ -206,12 +241,25 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
             float lightDist = length(lightPos - p);
             float lightAtten = 1.0 / (1.0 + 0.1 * lightDist + 0.01 * lightDist * lightDist);
 
-            // Light scattering approximation with dynamic sample count
+            // Light scattering approximation with consistent sample count
             float scattering = 0.0;
+            float rayProgress = (t - t_min) / (t_max - t_min);
+
+            // Use the maxLightSamples as starting point
+            int actualLightSamples = maxLightSamples;
+
+            // FIXED - Only reduce samples based on ray progress, not distance
+            float progressThreshold = mix(0.5, 0.3, uPerformanceMode);
+            if(rayProgress > progressThreshold) {
+                // Reduce samples in the back half of the volume
+                actualLightSamples = max(2, actualLightSamples / 2);
+            }
+
+            // Always use proper light sampling
             for(int i = 0; i < 16; i++) {
-                if(i >= uLightSamples)
+                if(i >= actualLightSamples)
                     break;
-                float s = float(i) / float(uLightSamples - 1);
+                float s = float(i) / float(actualLightSamples - 1);
                 vec3 samplePos = mix(p, lightPos, s);
                 float sampleChladni = chladni(samplePos, uRadius);
                 float sampleDensity = smoothstep(uThreshold, 0.0, abs(sampleChladni));
@@ -230,7 +278,9 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
             t += adaptiveStepSize;
         } else {
             // Use larger steps in empty space for efficiency
-            t += baseStepSize * uEmptySpaceFactor;
+            // FIXED - Don't use distance for empty space step size
+            float emptySpaceFactor = uEmptySpaceFactor * mix(1.0, 1.5, uPerformanceMode);
+            t += baseStepSize * emptySpaceFactor;
         }
     }
 

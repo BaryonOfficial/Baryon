@@ -4,6 +4,7 @@ import { shaderMaterial, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import './App.css';
 import { useControls, folder, Leva, button } from 'leva';
+import { Perf } from 'r3f-perf';
 
 import vertexShader from './shaders/raymarch/vertex.glsl';
 import fragmentShader from './shaders/raymarch/fragment.glsl';
@@ -12,16 +13,17 @@ import PostProcessing from './components/PostProcessing';
 
 // Define default values as constants to ensure consistency
 const DEFAULT_VALUES = {
-  stepSize: 0.02,
-  threshold: 0.05,
-  lightSamples: 8,
-  densityScale: 0.4,
-  emptySpaceThreshold: 0.03,
-  adaptiveStepStrength: 25.0,
-  emptySpaceFactor: 4.0,
+  stepSize: 0.04,
+  threshold: 0.08,
+  lightSamples: 12,
+  densityScale: 0.72,
+  emptySpaceThreshold: 0.25,
+  adaptiveStepStrength: 24.0,
+  emptySpaceFactor: 3.0,
   baseColor: '#ffffff',
   highlightColor: '#fff27b',
   radius: 3.6,
+  performanceMode: 0.64, // Default is balanced (0=highest quality, 1=highest performance)
 };
 
 // Create custom shader material
@@ -45,6 +47,7 @@ const ChladniMaterial = shaderMaterial(
     uHighlightColor: new THREE.Color(DEFAULT_VALUES.highlightColor),
     uAdaptiveStepStrength: DEFAULT_VALUES.adaptiveStepStrength,
     uEmptySpaceFactor: DEFAULT_VALUES.emptySpaceFactor,
+    uPerformanceMode: DEFAULT_VALUES.performanceMode, // Add performance mode uniform
   },
   vertexShader,
   fragmentShader
@@ -79,6 +82,7 @@ const Raymarching = () => {
     adaptiveStepStrength,
     emptySpaceFactor,
     radius,
+    performanceMode, // Add performance mode control
   } = useControls({
     'Volumetric Rendering': folder(
       {
@@ -89,18 +93,26 @@ const Raymarching = () => {
           step: 0.1,
           label: 'Sphere Radius',
         },
+        performanceMode: {
+          // Add performance slider
+          value: DEFAULT_VALUES.performanceMode,
+          min: 0.0,
+          max: 1.0,
+          step: 0.01,
+          label: 'Performance Mode',
+        },
         stepSize: {
           value: DEFAULT_VALUES.stepSize,
           min: 0.01,
           max: 0.1,
-          step: 0.005,
+          step: 0.001,
           label: 'Step Size',
         },
         threshold: {
           value: DEFAULT_VALUES.threshold,
           min: 0.01,
           max: 2.0,
-          step: 0.01,
+          step: 0.001,
           label: 'Pattern Threshold',
         },
         lightSamples: {
@@ -112,15 +124,15 @@ const Raymarching = () => {
         },
         densityScale: {
           value: DEFAULT_VALUES.densityScale,
-          min: 0.05,
-          max: 0.5,
+          min: 0.01,
+          max: 1.0,
           step: 0.01,
           label: 'Density Scale',
         },
         emptySpaceThreshold: {
           value: DEFAULT_VALUES.emptySpaceThreshold,
           min: 0.001,
-          max: 0.1,
+          max: 0.5,
           step: 0.001,
           label: 'Empty Space Threshold',
         },
@@ -248,6 +260,7 @@ const Raymarching = () => {
       materialRef.current.uniforms.uEmptySpaceThreshold.value = emptySpaceThreshold;
       materialRef.current.uniforms.uAdaptiveStepStrength.value = adaptiveStepStrength;
       materialRef.current.uniforms.uEmptySpaceFactor.value = emptySpaceFactor;
+      materialRef.current.uniforms.uPerformanceMode.value = performanceMode; // Add performance mode
 
       // Update wave components with shader-based interpolation
       materialRef.current.uniforms.N.value = waveComponents.numComponents;
@@ -328,10 +341,11 @@ const Scene = () => {
       />
 
       <Canvas gl={{ alpha: true }}>
+        <Perf position="bottom-left" />
         <color args={['#000000']} attach="background" />
         <Suspense fallback={null}>
           <Raymarching />
-          <PostProcessing preset="extreme" />
+          <PostProcessing preset="intense" />
         </Suspense>
       </Canvas>
     </>

@@ -6,25 +6,25 @@ import { useState } from 'react';
 // Define presets for different bloom intensities
 const PRESETS = {
   subtle: {
-    bloomIntensity: 0.8,
+    bloomIntensity: 1.6,
     bloomThreshold: 0.1,
-    bloomSmoothing: 0.7,
-    bloomRadius: 0.5,
+    bloomSmoothing: 1.0,
+    bloomRadius: 0.8,
   },
   moderate: {
-    bloomIntensity: 1.2,
+    bloomIntensity: 2.6,
     bloomThreshold: 0.1,
-    bloomSmoothing: 0.8,
-    bloomRadius: 0.6,
+    bloomSmoothing: 1.0,
+    bloomRadius: 0.8,
   },
   intense: {
-    bloomIntensity: 1.5,
+    bloomIntensity: 3.6,
     bloomThreshold: 0.1,
-    bloomSmoothing: 0.9,
-    bloomRadius: 0.7,
+    bloomSmoothing: 1.0,
+    bloomRadius: 0.8,
   },
   extreme: {
-    bloomIntensity: 3.0,
+    bloomIntensity: 4.6,
     bloomThreshold: 0.1,
     bloomSmoothing: 1.0,
     bloomRadius: 0.8,
@@ -82,7 +82,7 @@ export const PostProcessing = ({
     bloomIntensity: {
       value: defaultValues.bloomIntensity,
       min: 0.0,
-      max: 3.0,
+      max: 10.0,
       step: 0.1,
       label: 'Bloom Intensity',
     },
