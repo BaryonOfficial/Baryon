@@ -23,7 +23,7 @@ const DEFAULT_VALUES = {
   baseColor: '#ffffff',
   highlightColor: '#fff27b',
   radius: 3.6,
-  performanceMode: 0.64, // Default is balanced (0=highest quality, 1=highest performance)
+  performanceMode: 0.2, // Default is balanced (0=highest quality, 1=highest performance)
 };
 
 // Create custom shader material
