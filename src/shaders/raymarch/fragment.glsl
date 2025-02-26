@@ -360,9 +360,9 @@ void main() {
     // Calculate holographic effect - simplified for performance
     float holographic = 0.0;
 
-    // Skip holographic effect when viewed from a distance or in high performance mode
+    // Skip holographic effect when in high performance mode
     // Professional optimization: Only compute expensive effects where visible
-    bool skipHolographic = length(ro) > 5.0 || uPerformanceMode > 0.7;
+    bool skipHolographic = uPerformanceMode > 0.7;
 
     if(!skipHolographic) {
         float t_min, t_max;
