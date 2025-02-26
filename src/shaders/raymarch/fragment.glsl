@@ -238,189 +238,37 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
     // Pro technique: Adaptive step count based on quality settings
     int maxSteps = int(float(MAX_STEPS) * mix(1.0, 0.5, uPerformanceMode));
 
-    // Hierarchical ray marching - first do a coarse pass to identify regions of interest
-    // This is a proven professional technique used in medical visualization and film VFX
-    bool useCoarseSampling = uPerformanceMode > 0.2;
+    // High-quality algorithm with optimizations
+    t = t_min;
+    for(int i = 0; i < MAX_STEPS; i++) {
+        if(i >= maxSteps)
+            break;
+        if(t >= t_max || result.a >= earlyExitThreshold)
+            break;
 
-    if(useCoarseSampling) {
-        // Precomputed parameters
-        float coarseStep = baseStepSize * 4.0;
-        float coarseThreshold = uEmptySpaceThreshold * 0.75;
-        t = t_min;
+        vec3 p = ro + rd * t;
+        float chladniValue = chladni(p, uRadius, false);
+        float density = smoothstep(uThreshold, 0.0, abs(chladniValue));
 
-        // Find intervals containing visible data with very large steps
-        // Professional implementation: create segment list for further refinement
-        const int MAX_SEGMENTS = 8;
-        float segmentStarts[MAX_SEGMENTS];
-        float segmentEnds[MAX_SEGMENTS];
-        int segmentCount = 0;
-
-        bool inDenseRegion = false;
-        float regionStart = t_min;
-
-        for(int i = 0; i < MAX_STEPS / 4; i++) {
-            if(t >= t_max)
-                break;
-
-            vec3 p = ro + rd * t;
-            float chladniValue = chladni(p, uRadius, true); // Use optimized version for coarse pass
-            float density = smoothstep(uThreshold, 0.0, abs(chladniValue));
-
-            if(density > coarseThreshold && !inDenseRegion) {
-                // Found start of dense region
-                inDenseRegion = true;
-                regionStart = max(t_min, t - coarseStep); // Step back to ensure we don't miss the start
-            } else if(density <= coarseThreshold && inDenseRegion) {
-                // Found end of dense region
-                inDenseRegion = false;
-
-                // Store this segment if we have space
-                if(segmentCount < MAX_SEGMENTS) {
-                    segmentStarts[segmentCount] = regionStart;
-                    segmentEnds[segmentCount] = t;
-                    segmentCount++;
-                }
+        if(density > uEmptySpaceThreshold) {
+            // Estimate gradient for adaptive sampling
+            float gradient = 0.0;
+            if(i % 2 == 0) {
+                float dx = abs(chladni(p + eps.xyy, uRadius, false) - chladni(p - eps.xyy, uRadius, false));
+                float dy = abs(chladni(p + eps.yxy, uRadius, false) - chladni(p - eps.yxy, uRadius, false));
+                float dz = abs(chladni(p + eps.yyx, uRadius, false) - chladni(p - eps.yyx, uRadius, false));
+                gradient = (dx + dy + dz) / 3.0;
             }
 
-            t += coarseStep;
-        }
+            // Adjust step size based on gradient
+            float gradientFactor = max(1.0, uAdaptiveStepStrength);
+            float adaptiveStepSize = baseStepSize / (1.0 + gradientFactor * gradient);
 
-        // If we ended in a dense region, close the final segment
-        if(inDenseRegion && segmentCount < MAX_SEGMENTS) {
-            segmentStarts[segmentCount] = regionStart;
-            segmentEnds[segmentCount] = t_max;
-            segmentCount++;
-        }
+            // Get color and opacity
+            vec4 sampleColor = transferFunction(density);
 
-        // Reset result and prepare for detailed pass through detected segments
-        result = vec4(0.0);
-
-        // Render each segment with detailed sampling
-        for(int seg = 0; seg < MAX_SEGMENTS; seg++) {
-            if(seg >= segmentCount)
-                break;
-
-            // Skip fully occluded segments
-            if(result.a > earlyExitThreshold)
-                break;
-
-            // Refine this segment
-            t = segmentStarts[seg];
-            float segmentEnd = segmentEnds[seg];
-
-            // Apply the normal ray marching algorithm to this segment only
-            for(int i = 0; i < MAX_STEPS; i++) {
-                if(i >= maxSteps)
-                    break;
-                if(t >= segmentEnd || result.a > earlyExitThreshold)
-                    break;
-
-                vec3 p = ro + rd * t;
-
-                // Use full-quality computation for final rendering
-                float chladniValue = chladni(p, uRadius, false);
-                float density = smoothstep(uThreshold, 0.0, abs(chladniValue));
-
-                // Skip truly empty regions
-                if(density > uEmptySpaceThreshold) {
-                    // Estimate gradient only when needed for adaptive sampling
-                    float gradient = 0.0;
-                    if(i % 2 == 0) { // Reduce frequency of gradient calculation
-                        float dx = abs(chladni(p + eps.xyy, uRadius, true) - chladni(p - eps.xyy, uRadius, true));
-                        float dy = abs(chladni(p + eps.yxy, uRadius, true) - chladni(p - eps.yxy, uRadius, true));
-                        float dz = abs(chladni(p + eps.yyx, uRadius, true) - chladni(p - eps.yyx, uRadius, true));
-                        gradient = (dx + dy + dz) / 3.0;
-                    }
-
-                    // Adaptive step size - higher gradient means more detail needed
-                    float gradientFactor = max(1.0, uAdaptiveStepStrength * mix(1.0, 0.5, uPerformanceMode));
-                    float adaptiveStepSize = baseStepSize / (1.0 + gradientFactor * gradient);
-
-                    // Get color and alpha from transfer function
-                    vec4 sampleColor = transferFunction(density);
-
-                    // Skip light calculation for very low-density samples (optimization)
-                    if(sampleColor.a > 0.05) {
-                        // Lighting calculation                    
-                        vec3 lightDir = normalize(lightPos - p);
-                        float lightDist = length(lightPos - p);
-                        float lightAtten = 1.0 / (1.0 + 0.1 * lightDist + 0.01 * lightDist * lightDist);
-
-                        // Progressive light sampling - more samples at high densities
-                        // This is a professional optimization technique
-                        float rayProgress = (t - t_min) / (t_max - t_min);
-                        int actualLightSamples = int(float(maxLightSamples) * mix(0.5, 1.0, density));
-
-                        // Depth-based lighting optimization - classic professional technique
-                        if(rayProgress > mix(0.5, 0.3, uPerformanceMode)) {
-                            actualLightSamples = max(2, actualLightSamples / 2);
-                        }
-
-                        // Optimize light sampling with importance-based jittering
-                        float scattering = 0.0;
-                        float lightStepSize = 1.0 / float(actualLightSamples);
-
-                        // Use importance sampling technique to focus samples where they matter most
-                        for(int j = 0; j < 16; j++) {
-                            if(j >= actualLightSamples)
-                                break;
-
-                            // Exponential distribution puts more samples near the current point
-                            // This is a professional technique that improves quality with fewer samples
-                            float s = pow(float(j) / float(actualLightSamples - 1), 1.5);
-
-                            vec3 samplePos = mix(p, lightPos, s);
-                            float sampleChladni = chladni(samplePos, uRadius, true); // Use optimized version
-                            float sampleDensity = smoothstep(uThreshold, 0.0, abs(sampleChladni));
-                            scattering += sampleDensity;
-                        }
-
-                        scattering = exp(-scattering * 0.2);
-                        sampleColor.rgb *= (0.3 + 0.7 * lightAtten * scattering);
-                    }
-
-                    // Front-to-back compositing
-                    sampleColor.rgb *= sampleColor.a;
-                    result = result + sampleColor * (1.0 - result.a);
-
-                    // Advance to next position
-                    t += adaptiveStepSize;
-                } else {
-                    // Empty space optimization - take larger steps
-                    float emptySpaceFactor = uEmptySpaceFactor * mix(1.0, 2.0, uPerformanceMode);
-                    t += baseStepSize * emptySpaceFactor;
-                }
-            }
-        }
-    } else {
-        // Original high-quality algorithm for highest visual fidelity
-        for(int i = 0; i < MAX_STEPS; i++) {
-            if(i >= maxSteps)
-                break;
-            if(t >= t_max || result.a >= earlyExitThreshold)
-                break;
-
-            vec3 p = ro + rd * t;
-            float chladniValue = chladni(p, uRadius, false);
-            float density = smoothstep(uThreshold, 0.0, abs(chladniValue));
-
-            if(density > uEmptySpaceThreshold) {
-                // Estimate gradient for adaptive sampling
-                float gradient = 0.0;
-                if(i % 2 == 0) {
-                    float dx = abs(chladni(p + eps.xyy, uRadius, false) - chladni(p - eps.xyy, uRadius, false));
-                    float dy = abs(chladni(p + eps.yxy, uRadius, false) - chladni(p - eps.yxy, uRadius, false));
-                    float dz = abs(chladni(p + eps.yyx, uRadius, false) - chladni(p - eps.yyx, uRadius, false));
-                    gradient = (dx + dy + dz) / 3.0;
-                }
-
-                // Adjust step size based on gradient
-                float gradientFactor = max(1.0, uAdaptiveStepStrength);
-                float adaptiveStepSize = baseStepSize / (1.0 + gradientFactor * gradient);
-
-                // Get color and opacity
-                vec4 sampleColor = transferFunction(density);
-
+            // Skip light calculation for very low-density samples (optimization)
+            if(sampleColor.a > 0.05) {
                 // Add lighting
                 vec3 lightDir = normalize(lightPos - p);
                 float lightDist = length(lightPos - p);
@@ -431,16 +279,21 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
                 float rayProgress = (t - t_min) / (t_max - t_min);
                 int actualLightSamples = maxLightSamples;
 
-                if(rayProgress > 0.5) {
+                // Depth-based lighting optimization - classic professional technique
+                if(rayProgress > mix(0.5, 0.3, uPerformanceMode)) {
                     actualLightSamples = max(2, actualLightSamples / 2);
                 }
 
+                // Use importance sampling technique to focus samples where they matter most
                 for(int j = 0; j < 16; j++) {
                     if(j >= actualLightSamples)
                         break;
-                    float s = float(j) / float(actualLightSamples - 1);
+
+                    // Exponential distribution puts more samples near the current point
+                    float s = pow(float(j) / float(actualLightSamples - 1), 1.5);
+
                     vec3 samplePos = mix(p, lightPos, s);
-                    float sampleChladni = chladni(samplePos, uRadius, false);
+                    float sampleChladni = chladni(samplePos, uRadius, true); // Use optimized version for lighting
                     float sampleDensity = smoothstep(uThreshold, 0.0, abs(sampleChladni));
                     scattering += sampleDensity;
                 }
@@ -448,18 +301,18 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
 
                 // Apply lighting to color
                 sampleColor.rgb *= (0.3 + 0.7 * lightAtten * scattering);
-
-                // Composite
-                sampleColor.rgb *= sampleColor.a;
-                result = result + sampleColor * (1.0 - result.a);
-
-                // Advance with adaptive step size
-                t += adaptiveStepSize;
-            } else {
-                // Empty space stepping
-                float emptySpaceFactor = uEmptySpaceFactor;
-                t += baseStepSize * emptySpaceFactor;
             }
+
+            // Composite
+            sampleColor.rgb *= sampleColor.a;
+            result = result + sampleColor * (1.0 - result.a);
+
+            // Advance with adaptive step size
+            t += adaptiveStepSize;
+        } else {
+            // Empty space stepping - still optimize but less aggressively
+            float emptySpaceFactor = uEmptySpaceFactor * mix(1.0, 1.5, uPerformanceMode);
+            t += baseStepSize * emptySpaceFactor;
         }
     }
 
