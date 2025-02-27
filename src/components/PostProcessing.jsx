@@ -55,59 +55,65 @@ export const PostProcessing = ({
   };
 
   // Use Leva controls if enabled
-  const [controls, set] = useControls('Post Processing', () => ({
-    // Preset selector
-    preset: {
-      value: activePreset,
-      options: Object.keys(PRESETS),
-      label: 'Preset',
-      onChange: (presetName) => {
-        if (PRESETS[presetName]) {
-          // Apply the preset values but keep the enableBloom setting
-          setActivePreset(presetName);
-          set({
-            bloomIntensity: PRESETS[presetName].bloomIntensity,
-            bloomThreshold: PRESETS[presetName].bloomThreshold,
-            bloomSmoothing: PRESETS[presetName].bloomSmoothing,
-            bloomRadius: PRESETS[presetName].bloomRadius,
-          });
-        }
+  const [controls, set] = useControls(
+    'Post Processing',
+    () => ({
+      // Preset selector
+      preset: {
+        value: activePreset,
+        options: Object.keys(PRESETS),
+        label: 'Preset',
+        onChange: (presetName) => {
+          if (PRESETS[presetName]) {
+            // Apply the preset values but keep the enableBloom setting
+            setActivePreset(presetName);
+            set({
+              bloomIntensity: PRESETS[presetName].bloomIntensity,
+              bloomThreshold: PRESETS[presetName].bloomThreshold,
+              bloomSmoothing: PRESETS[presetName].bloomSmoothing,
+              bloomRadius: PRESETS[presetName].bloomRadius,
+            });
+          }
+        },
       },
-    },
-    // Bloom controls
-    enableBloom: {
-      value: defaultValues.enableBloom,
-      label: 'Enable Bloom',
-    },
-    bloomIntensity: {
-      value: defaultValues.bloomIntensity,
-      min: 0.0,
-      max: 10.0,
-      step: 0.1,
-      label: 'Bloom Intensity',
-    },
-    bloomThreshold: {
-      value: defaultValues.bloomThreshold,
-      min: 0.0,
-      max: 1.0,
-      step: 0.01,
-      label: 'Bloom Threshold',
-    },
-    bloomSmoothing: {
-      value: defaultValues.bloomSmoothing,
-      min: 0.0,
-      max: 1.0,
-      step: 0.05,
-      label: 'Bloom Smoothing',
-    },
-    bloomRadius: {
-      value: defaultValues.bloomRadius,
-      min: 0.0,
-      max: 1.0,
-      step: 0.05,
-      label: 'Bloom Radius',
-    },
-  }));
+      // Bloom controls
+      enableBloom: {
+        value: defaultValues.enableBloom,
+        label: 'Enable Bloom',
+      },
+      bloomIntensity: {
+        value: defaultValues.bloomIntensity,
+        min: 0.0,
+        max: 10.0,
+        step: 0.1,
+        label: 'Bloom Intensity',
+      },
+      bloomThreshold: {
+        value: defaultValues.bloomThreshold,
+        min: 0.0,
+        max: 1.0,
+        step: 0.01,
+        label: 'Bloom Threshold',
+      },
+      bloomSmoothing: {
+        value: defaultValues.bloomSmoothing,
+        min: 0.0,
+        max: 1.0,
+        step: 0.05,
+        label: 'Bloom Smoothing',
+      },
+      bloomRadius: {
+        value: defaultValues.bloomRadius,
+        min: 0.0,
+        max: 1.0,
+        step: 0.05,
+        label: 'Bloom Radius',
+      },
+    }),
+    {
+      collapsed: true, // Makes the folder collapsible and initially collapsed
+    }
+  );
 
   // Use either the controls values or the fixed values based on useLevaControls flag
   const effectValues = useLevaControls ? controls : defaultValues;

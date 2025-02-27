@@ -1,5 +1,5 @@
 import { Canvas, useFrame, useThree, extend } from '@react-three/fiber';
-import { useRef, Suspense, useState } from 'react';
+import { useRef, Suspense } from 'react';
 import { shaderMaterial, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import './App.css';
@@ -24,6 +24,10 @@ const DEFAULT_VALUES = {
   highlightColor: '#fff27b',
   radius: 3.6,
   performanceMode: 0.2, // Default is balanced (0=highest quality, 1=highest performance)
+  numComponents: 12,
+  frameInterval: 60,
+  generationEnabled: true,
+  transitionDuration: 15, // Default transition duration in frames
 };
 
 // Create custom shader material
@@ -35,10 +39,10 @@ const ChladniMaterial = shaderMaterial(
     uCameraQuaternion: new THREE.Quaternion(), // Camera rotation as quaternion
     uThreshold: DEFAULT_VALUES.threshold,
     uRadius: DEFAULT_VALUES.radius,
-    N: 12,
-    waveComponents: new Float32Array(48), // 12 components * 4 values each
-    waveComponentsTarget: new Float32Array(48), // Target wave components
-    uBlendFactor: 0.0, // Blend factor for interpolation (0.0 to 1.0)
+    N: DEFAULT_VALUES.numComponents,
+    waveComponents: new Float32Array(DEFAULT_VALUES.numComponents * 4), // Current wave components
+    prevWaveComponents: new Float32Array(DEFAULT_VALUES.numComponents * 4), // Previous wave components
+    uTransitionProgress: 1.0, // Transition progress (0.0 - 1.0)
     uStepSize: DEFAULT_VALUES.stepSize,
     uLightSamples: DEFAULT_VALUES.lightSamples,
     uDensityScale: DEFAULT_VALUES.densityScale,
@@ -47,7 +51,7 @@ const ChladniMaterial = shaderMaterial(
     uHighlightColor: new THREE.Color(DEFAULT_VALUES.highlightColor),
     uAdaptiveStepStrength: DEFAULT_VALUES.adaptiveStepStrength,
     uEmptySpaceFactor: DEFAULT_VALUES.emptySpaceFactor,
-    uPerformanceMode: DEFAULT_VALUES.performanceMode, // Add performance mode uniform
+    uPerformanceMode: DEFAULT_VALUES.performanceMode, // Performance mode uniform
   },
   vertexShader,
   fragmentShader
@@ -62,17 +66,63 @@ const Raymarching = () => {
   const planeRef = useRef();
   const controlsRef = useRef();
 
-  // Use our custom hook for wave components
+  // Use Leva for wave component controls
+  const { numComponents, frameInterval, generationEnabled, transitionDuration } = useControls({
+    'Wave Components': folder(
+      {
+        numComponents: {
+          value: DEFAULT_VALUES.numComponents,
+          min: 4,
+          max: 24,
+          step: 1,
+          label: 'Number of Components',
+        },
+        frameInterval: {
+          value: DEFAULT_VALUES.frameInterval,
+          min: 1,
+          max: 120,
+          step: 1,
+          label: 'Frames Between Updates',
+        },
+        generationEnabled: {
+          value: DEFAULT_VALUES.generationEnabled,
+          label: 'Auto-Generate Patterns',
+        },
+        transitionDuration: {
+          value: DEFAULT_VALUES.transitionDuration,
+          min: 5,
+          max: 60,
+          step: 1,
+          label: 'Transition Duration (frames)',
+        },
+        generateNew: button(() => {
+          // This will be connected to the hook's generateNew function
+          if (waveComponentsRef.current) {
+            waveComponentsRef.current.generateNew();
+          }
+        }),
+      },
+      { collapsed: true }
+    ),
+  });
+
+  // Use our custom hook for wave components with current settings
+  const waveComponentsRef = useRef(null);
   const waveComponents = useWaveComponents({
-    numComponents: 12,
+    numComponents,
+    frameInterval,
     minAmplitude: 1.0,
     maxAmplitude: 4.0,
     minFrequency: 1,
     maxFrequency: 10,
-    transitionDuration: 1.0, // 1 second transition duration
+    enabled: generationEnabled,
+    transitionDuration,
   });
 
-  // Use Leva for controls
+  // Store the hook result in a ref for the button to access
+  waveComponentsRef.current = waveComponents;
+
+  // Use Leva for rendering controls
   const {
     stepSize,
     threshold,
@@ -82,7 +132,7 @@ const Raymarching = () => {
     adaptiveStepStrength,
     emptySpaceFactor,
     radius,
-    performanceMode, // Add performance mode control
+    performanceMode,
   } = useControls({
     'Volumetric Rendering': folder(
       {
@@ -94,7 +144,6 @@ const Raymarching = () => {
           label: 'Sphere Radius',
         },
         performanceMode: {
-          // Add performance slider
           value: DEFAULT_VALUES.performanceMode,
           min: 0.0,
           max: 1.0,
@@ -151,95 +200,50 @@ const Raymarching = () => {
           label: 'Empty Space Factor',
         },
       },
-      { collapsed: false }
+      { collapsed: true }
     ),
   });
 
   // Add color controls in a separate folder
   const { baseColor, highlightColor } = useControls({
-    'Color Settings': folder({
-      baseColor: {
-        value: DEFAULT_VALUES.baseColor,
-        label: 'Base Color',
+    'Color Settings': folder(
+      {
+        baseColor: {
+          value: DEFAULT_VALUES.baseColor,
+          label: 'Base Color',
+        },
+        highlightColor: {
+          value: DEFAULT_VALUES.highlightColor,
+          label: 'Highlight Color',
+        },
       },
-      highlightColor: {
-        value: DEFAULT_VALUES.highlightColor,
-        label: 'Highlight Color',
+      { collapsed: true }
+    ),
+  });
+
+  // Add camera controls
+  useControls({
+    'Camera Controls': folder(
+      {
+        resetCamera: button(() => {
+          if (controlsRef.current) {
+            controlsRef.current.reset();
+          }
+        }),
       },
-    }),
+      { collapsed: true }
+    ),
   });
 
   // Convert hex colors to RGB for shader
   const baseColorRGB = new THREE.Color(baseColor);
   const highlightColorRGB = new THREE.Color(highlightColor);
 
-  // Auto-generate new patterns over time
-  const [autoGenerate, setAutoGenerate] = useState(false);
-  const lastGenerateTime = useRef(0);
-  const [generateInterval, setGenerateInterval] = useState(1); // seconds (faster default)
-
-  // Add auto-generate control
-  useControls({
-    'Auto Generate Sound Waves': folder({
-      enabled: {
-        value: autoGenerate,
-        label: 'Auto Generate',
-        onChange: (value) => setAutoGenerate(value),
-      },
-      interval: {
-        value: generateInterval,
-        min: 0.001, // Much faster minimum
-        max: 5, // Reduced maximum
-        step: 0.001, // Finer control
-        label: 'Interval (s)',
-        onChange: (value) => setGenerateInterval(value),
-      },
-      transition: {
-        value: 1.0,
-        min: 0.001,
-        max: 5.0,
-        step: 0.001,
-        label: 'Transition (s)',
-        onChange: (value) => {
-          waveComponents.setTransitionDuration(value);
-        },
-      },
-    }),
-  });
-
-  // Add wave component controls
-  useControls({
-    'Wave Components': folder({
-      generateNew: button(() => waveComponents.generateNewComponents()),
-    }),
-  });
-
-  // Add camera controls
-  useControls({
-    'Camera Controls': folder({
-      resetCamera: button(() => {
-        if (controlsRef.current) {
-          controlsRef.current.reset();
-        }
-      }),
-    }),
-  });
-
   useFrame((state) => {
     const currentTime = state.clock.getElapsedTime();
 
-    // Update transition blend factor
-    const currentBlendFactor = waveComponents.updateTransition(currentTime);
-
-    // Auto-generate new patterns if enabled, interval has passed, and not currently transitioning
-    if (
-      autoGenerate &&
-      currentTime - lastGenerateTime.current > generateInterval &&
-      !waveComponents.isTransitioning
-    ) {
-      waveComponents.generateNewComponents();
-      lastGenerateTime.current = currentTime;
-    }
+    // Get updated wave components with transition data
+    const { current, previous, progress } = waveComponents.update();
 
     if (materialRef.current?.uniforms) {
       materialRef.current.uniforms.uTime.value = currentTime;
@@ -260,16 +264,14 @@ const Raymarching = () => {
       materialRef.current.uniforms.uEmptySpaceThreshold.value = emptySpaceThreshold;
       materialRef.current.uniforms.uAdaptiveStepStrength.value = adaptiveStepStrength;
       materialRef.current.uniforms.uEmptySpaceFactor.value = emptySpaceFactor;
-      materialRef.current.uniforms.uPerformanceMode.value = performanceMode; // Add performance mode
+      materialRef.current.uniforms.uPerformanceMode.value = performanceMode;
 
-      // Update wave components with shader-based interpolation
-      materialRef.current.uniforms.N.value = waveComponents.numComponents;
+      // Update wave components with the latest values
+      materialRef.current.uniforms.N.value = numComponents;
       materialRef.current.uniforms.uRadius.value = radius;
-      materialRef.current.uniforms.waveComponents.value =
-        waveComponents.getCurrentComponentsArray();
-      materialRef.current.uniforms.waveComponentsTarget.value =
-        waveComponents.getTargetComponentsArray();
-      materialRef.current.uniforms.uBlendFactor.value = currentBlendFactor;
+      materialRef.current.uniforms.waveComponents.value = current;
+      materialRef.current.uniforms.prevWaveComponents.value = previous;
+      materialRef.current.uniforms.uTransitionProgress.value = progress;
 
       // Update color values
       materialRef.current.uniforms.uBaseColor.value.set(
@@ -332,6 +334,7 @@ const Scene = () => {
     <>
       {/* Add the Leva component with custom configuration */}
       <Leva
+        collapsed={true}
         theme={{
           sizes: {
             rootWidth: '360px', // Increase default width even more

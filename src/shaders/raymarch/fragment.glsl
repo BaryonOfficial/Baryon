@@ -13,8 +13,8 @@ uniform vec2 uResolution;
 uniform float uThreshold;
 uniform float uRadius;
 uniform float waveComponents[4 * MAX_N];      // Current wave components
-uniform float waveComponentsTarget[4 * MAX_N]; // Target wave components
-uniform float uBlendFactor;                   // Blend factor between current and target (0.0 to 1.0)
+uniform float prevWaveComponents[4 * MAX_N];  // Previous wave components 
+uniform float uTransitionProgress;            // Transition progress (0.0 - 1.0)
 uniform int N;
 uniform vec3 uCameraPosition;                 // Camera position
 uniform vec4 uCameraQuaternion;               // Camera rotation as quaternion
@@ -60,70 +60,84 @@ float chladni(vec3 position, float radius, bool useOptimization) {
     float py = position.y * piScaled;
     float pz = position.z * piScaled;
 
-    // Calculate current pattern
-    float currentSum = 0.0;
+    // Calculate pattern
+    float sum = 0.0;
 
     // Fast path: limit N for distant points
     int effectiveN = N;
 
-    // When performance mode is active, reduce wave components for marginal detail areas
-    // This is how professional volumetric renderers optimize wave functions
-    if(useOptimization && position.y > 1.5) {
-        effectiveN = max(2, N / 2);
+    // When performance mode is active, use a gradual reduction based on distance from center
+    // instead of the abrupt cutoff at y=1.5 that was causing the visual artifact
+    if(useOptimization) {
+        float distFromCenter = length(position) / radius;
+        // Only reduce components for areas far from the surface and with high performance mode
+        if(distFromCenter > 0.85 && uPerformanceMode > 0.5) {
+            // Smoothly reduce component count based on distance and performance mode
+            float reductionFactor = mix(1.0, 0.5, uPerformanceMode * (distFromCenter - 0.85) / 0.15);
+            effectiveN = max(3, int(float(N) * reductionFactor));
+        }
     }
 
-    for(int i = 0; i < MAX_N; ++i) {
-        if(i >= effectiveN)
-            break;
-
-        int index = 4 * i;
-        float Ai = waveComponents[index];
-        float ui = waveComponents[index + 1];
-        float vi = waveComponents[index + 2];
-        float wi = waveComponents[index + 3];
-
-        float sinX = cachedSin(ui * px, useOptimization);
-        float sinY = cachedSin(vi * py, useOptimization);
-        float sinZ = cachedSin(wi * pz, useOptimization);
-
-        currentSum += Ai * sinX * sinY * sinZ;
-    }
-
-    // Only calculate target pattern when blending is active
-    float targetSum = 0.0;
-    if(uBlendFactor > 0.001) {
+    // Apply transition if not at the endpoints
+    if(uTransitionProgress < 1.0) {
+        // Calculate pattern with interpolation between previous and current components
         for(int i = 0; i < MAX_N; ++i) {
             if(i >= effectiveN)
                 break;
 
             int index = 4 * i;
-            float Ai = waveComponentsTarget[index];
-            float ui = waveComponentsTarget[index + 1];
-            float vi = waveComponentsTarget[index + 2];
-            float wi = waveComponentsTarget[index + 3];
+
+            // Get previous and current components
+            float prevAi = prevWaveComponents[index];
+            float prevUi = prevWaveComponents[index + 1];
+            float prevVi = prevWaveComponents[index + 2];
+            float prevWi = prevWaveComponents[index + 3];
+
+            float currAi = waveComponents[index];
+            float currUi = waveComponents[index + 1];
+            float currVi = waveComponents[index + 2];
+            float currWi = waveComponents[index + 3];
+
+            // Apply ease-in-out function to transition progress
+            // This gives a more pleasing acceleration and deceleration
+            float t = uTransitionProgress;
+            float tSmooth = t < 0.5 ? 2.0 * t * t : 1.0 - pow(-2.0 * t + 2.0, 2.0) / 2.0;
+
+            // Interpolate between previous and current components
+            float Ai = mix(prevAi, currAi, tSmooth);
+            float ui = mix(prevUi, currUi, tSmooth);
+            float vi = mix(prevVi, currVi, tSmooth);
+            float wi = mix(prevWi, currWi, tSmooth);
+
+            // Calculate sine values
+            float sinX = cachedSin(ui * px, useOptimization);
+            float sinY = cachedSin(vi * py, useOptimization);
+            float sinZ = cachedSin(wi * pz, useOptimization);
+
+            // Accumulate with amplitude
+            sum += Ai * sinX * sinY * sinZ;
+        }
+    } else {
+        // Use only current components when fully transitioned
+        for(int i = 0; i < MAX_N; ++i) {
+            if(i >= effectiveN)
+                break;
+
+            int index = 4 * i;
+            float Ai = waveComponents[index];
+            float ui = waveComponents[index + 1];
+            float vi = waveComponents[index + 2];
+            float wi = waveComponents[index + 3];
 
             float sinX = cachedSin(ui * px, useOptimization);
             float sinY = cachedSin(vi * py, useOptimization);
             float sinZ = cachedSin(wi * pz, useOptimization);
 
-            targetSum += Ai * sinX * sinY * sinZ;
+            sum += Ai * sinX * sinY * sinZ;
         }
     }
 
-    // Optimize transition calculations
-    float easedBlend = smoothstep(0.0, 1.0, uBlendFactor);
-    float result = mix(currentSum, targetSum, easedBlend);
-
-    // Only calculate turbulence when necessary (during transitions)
-    if(uBlendFactor > 0.01 && uBlendFactor < 0.99) {
-        float turbAmt = sin(uBlendFactor * PI) * 0.33;
-        float turbNoise = cachedSin(px * 2.0 + uTime, useOptimization) *
-            cachedSin(py * 2.0 + uTime, useOptimization) *
-            cachedSin(pz * 2.0 + uTime, useOptimization);
-        result += turbNoise * turbAmt;
-    }
-
-    return result;
+    return sum;
 }
 
 float scene(vec3 p) {
