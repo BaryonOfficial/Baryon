@@ -80,7 +80,7 @@ export function guiSetup(
   granularControls
     .add(parameters, 'threshold')
     .min(0.001)
-    .max(0.5)
+    .max(0.1)
     .step(0.001)
     .name('Zero-Point Precision')
     .onChange(() => {
