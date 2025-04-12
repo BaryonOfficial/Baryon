@@ -36,6 +36,9 @@ const ThreeScene = () => {
   const [isMicActive, setIsMicActive] = useState(false);
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
   const [isUnsupported, setIsUnsupported] = useState(false);
+  const [audioDevices, setAudioDevices] = useState([]);
+  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [showDeviceMenu, setShowDeviceMenu] = useState(false);
   const statsRef = useRef(null);
   const [showStats, setShowStats] = useState(false);
 
@@ -434,6 +437,73 @@ const ThreeScene = () => {
     }
   }, [isMicActive]);
 
+  const handleDeviceChange = useCallback(
+    async (deviceId) => {
+      try {
+        setSelectedDevice(deviceId);
+        if (isMicActive) {
+          // If mic is active, restart the stream with new device
+          await stopMicRecordStream();
+          await startMicRecordStream(deviceId);
+        }
+      } catch (error) {
+        console.error('Error changing audio device:', error);
+      }
+    },
+    [isMicActive]
+  );
+
+  useEffect(() => {
+    const loadDevices = async () => {
+      try {
+        // First request microphone permissions
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Stop the stream immediately after getting permission
+        stream.getTracks().forEach((track) => track.stop());
+
+        // Now enumerate devices with full labels
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter((device) => device.kind === 'audioinput');
+
+        // Log available devices for debugging
+        console.log(
+          'Available audio devices:',
+          audioInputs.map((d) => ({
+            id: d.deviceId,
+            label: d.label,
+            groupId: d.groupId,
+          }))
+        );
+
+        setAudioDevices(audioInputs);
+        if (audioInputs.length > 0) {
+          setSelectedDevice(audioInputs[0].deviceId);
+        }
+      } catch (error) {
+        console.error('Error loading audio devices:', error);
+        // If permission denied, still try to get devices (they'll just have generic labels)
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const audioInputs = devices.filter((device) => device.kind === 'audioinput');
+          setAudioDevices(audioInputs);
+          if (audioInputs.length > 0) {
+            setSelectedDevice(audioInputs[0].deviceId);
+          }
+        } catch (e) {
+          console.error('Error enumerating devices:', e);
+        }
+      }
+    };
+
+    loadDevices();
+
+    // Listen for device changes
+    navigator.mediaDevices.addEventListener('devicechange', loadDevices);
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', loadDevices);
+    };
+  }, []);
+
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'absolute', zIndex: 1 }}>
       <canvas ref={canvasRef} className="webgl absolute z-10" />
@@ -468,10 +538,65 @@ const ThreeScene = () => {
               </div>
 
               <div className="modes flex flex-row items-center space-x-0">
-                <button onClick={handleMicToggle} className="btn-standard">
-                  {isMicActive ? 'Stop Mic' : 'Mic Mode'}
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={async () => {
+                      if (!isMicActive) {
+                        setShowDeviceMenu(!showDeviceMenu);
+                      } else {
+                        await handleMicToggle();
+                      }
+                    }}
+                    className="btn-standard flex items-center gap-1">
+                    {isMicActive ? 'Stop Input' : 'Select Input'}
+                    {!isMicActive && (
+                      <svg
+                        className={`w-4 h-4 transition-transform ${
+                          showDeviceMenu ? 'rotate-180' : ''
+                        }`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                  {showDeviceMenu && audioDevices.length > 0 && (
+                    <div className="absolute left-0 mt-1 w-48 bg-white rounded-md shadow-lg z-50">
+                      <div className="py-1">
+                        {audioDevices.map((device) => (
+                          <button
+                            key={device.deviceId}
+                            onClick={async () => {
+                              setSelectedDevice(device.deviceId);
+                              setShowDeviceMenu(false);
+                              await handleMicToggle();
+                            }}
+                            className={`block w-full text-left px-4 py-2 text-sm ${
+                              selectedDevice === device.deviceId
+                                ? 'bg-gray-100 text-gray-900'
+                                : 'text-gray-700 hover:bg-gray-50'
+                            }`}>
+                            {device.label || `Device ${device.deviceId.slice(0, 8)}`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {audioDevices.length === 0 && (
+                <div className="text-sm text-gray-500 mt-1">
+                  No audio input devices found. Make sure your device is connected and try clicking
+                  &quot;Mic Mode&quot; first.
+                </div>
+              )}
             </div>
           </div>
         </>

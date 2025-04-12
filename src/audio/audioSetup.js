@@ -88,64 +88,32 @@ export function stopAudio() {
   audioObject.essentiaNode.port.postMessage({ isPlaying: false });
 }
 
-export function startMicRecordStream() {
+export function startMicRecordStream(deviceId) {
   return new Promise((resolve, reject) => {
     if (navigator.mediaDevices.getUserMedia) {
+      const constraints = {
+        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+      };
+
       navigator.mediaDevices
-        .getUserMedia({ audio: true })
-        .then(async (stream) => {
+        .getUserMedia(constraints)
+        .then((stream) => {
           audioObject.gumStream = stream;
 
           if (audioObject.audioCtx.state === 'suspended') {
-            try {
-              await audioObject.audioCtx.resume();
-              console.log('Audio Context resumed successfully');
-            } catch (error) {
-              console.error('Error resuming audio context:', error);
-              reject(error);
-              return;
-            }
+            audioObject.audioCtx
+              .resume()
+              .then(() => {
+                console.log('Audio Context resumed successfully');
+                setupMicStream(stream, resolve, reject);
+              })
+              .catch((error) => {
+                console.error('Error resuming audio context:', error);
+                reject(error);
+              });
+          } else {
+            setupMicStream(stream, resolve, reject);
           }
-
-          // Create a THREE.Audio object for the microphone
-          audioObject.micSound = new THREE.Audio(audioObject.listener);
-          audioObject.micNode = audioObject.audioCtx.createMediaStreamSource(audioObject.gumStream);
-          audioObject.micSound.setNodeSource(audioObject.micNode);
-
-          // Because of how the THREE.Audio object works with the setNodeSource method,
-          // we need to detach the mic sound from whatever it connects to for manual
-          // connections. We need this source defined first though.
-          audioObject.micSound.getOutput().disconnect();
-
-          console.log('Microphone Sound:', audioObject.micSound);
-
-          audioObject.micAnalyser = new THREE.AudioAnalyser(
-            audioObject.micSound,
-            audioObject.fftSize
-          );
-          console.log('Mic Analyser created:', audioObject.micAnalyser);
-
-          // Create a zero gain node to mute the mic from speaker output/ feedback
-          const zeroGainNode = audioObject.audioCtx.createGain();
-          zeroGainNode.gain.setValueAtTime(0, audioObject.audioCtx.currentTime);
-
-          // Now we can actually connect it properly in the pipeline
-          audioObject.micSound
-            .getOutput()
-            .connect(audioObject.essentiaNode)
-            .connect(zeroGainNode)
-            .connect(audioObject.audioCtx.destination);
-
-          console.log('Microphone connected');
-
-          // Post message after micNode is initialized
-          audioObject.essentiaNode.port.postMessage({
-            isPlaying: audioObject.sound.isPlaying,
-            micActive: audioObject.gumStream && audioObject.gumStream.active,
-          });
-
-          // setInterval(checkMicInputLevels, 1000); // Check if mic is working
-          resolve();
         })
         .catch((err) => {
           console.error('Error accessing microphone:', err);
@@ -156,6 +124,44 @@ export function startMicRecordStream() {
       reject(new Error('getUserMedia not supported'));
     }
   });
+}
+
+function setupMicStream(stream, resolve, reject) {
+  // Create a THREE.Audio object for the microphone
+  audioObject.micSound = new THREE.Audio(audioObject.listener);
+  audioObject.micNode = audioObject.audioCtx.createMediaStreamSource(audioObject.gumStream);
+  audioObject.micSound.setNodeSource(audioObject.micNode);
+
+  // Because of how the THREE.Audio object works with the setNodeSource method,
+  // we need to detach the mic sound from whatever it connects to for manual
+  // connections. We need this source defined first though.
+  audioObject.micSound.getOutput().disconnect();
+
+  console.log('Microphone Sound:', audioObject.micSound);
+
+  audioObject.micAnalyser = new THREE.AudioAnalyser(audioObject.micSound, audioObject.fftSize);
+  console.log('Mic Analyser created:', audioObject.micAnalyser);
+
+  // Create a zero gain node to mute the mic from speaker output/ feedback
+  const zeroGainNode = audioObject.audioCtx.createGain();
+  zeroGainNode.gain.setValueAtTime(0, audioObject.audioCtx.currentTime);
+
+  // Now we can actually connect it properly in the pipeline
+  audioObject.micSound
+    .getOutput()
+    .connect(audioObject.essentiaNode)
+    .connect(zeroGainNode)
+    .connect(audioObject.audioCtx.destination);
+
+  console.log('Microphone connected');
+
+  // Post message after micNode is initialized
+  audioObject.essentiaNode.port.postMessage({
+    isPlaying: audioObject.sound.isPlaying,
+    micActive: audioObject.gumStream && audioObject.gumStream.active,
+  });
+
+  resolve();
 }
 
 export function stopMicRecordStream() {
