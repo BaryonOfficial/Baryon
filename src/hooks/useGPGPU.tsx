@@ -115,7 +115,7 @@ export function useGPGPU(
     particlesTextureRef.current = particlesTexture;
 
     // Initialize uniforms
-    const format = gl.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
+    const format = THREE.RedFormat;
     const essentiaData = new Float32Array(capacity);
     const randomPitches = generateRandomPitches(capacity);
 
