@@ -230,7 +230,7 @@ export function gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeomet
   gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength = new THREE.Uniform(3.6);
   gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency = new THREE.Uniform(0.64);
   gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(parameters.threshold);
-  gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(baryonLogoTexture);
+  gpgpu.particlesVariable.material.uniforms.uBaryon = new THREE.Uniform(baryonLogoTexture);
   gpgpu.particlesVariable.material.uniforms.uAverageAmplitude = new THREE.Uniform(0.0);
   gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(32);
   gpgpu.particlesVariable.material.uniforms.uStarted = new THREE.Uniform(audioObject.sound.started);

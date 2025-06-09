@@ -3,10 +3,16 @@ uniform float uRadius;
 uniform float uSurfaceThreshold;
 uniform float uAverageAmplitude;
 uniform bool uSurfaceControl;
+uniform sampler2D uBaryon;
 
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
-    vec4 scalarFieldValue = texture(uScalarField, uv);
+    vec4 scalarFieldValue;
+    if(uAverageAmplitude < 0.02) {
+        scalarFieldValue = texture(uBaryon, uv);
+    } else {
+        scalarFieldValue = texture(uScalarField, uv);
+    }
     vec3 position = scalarFieldValue.rgb;
     float scalarValue = scalarFieldValue.a;
     float distance = length(position);

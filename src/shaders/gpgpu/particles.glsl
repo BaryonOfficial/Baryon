@@ -2,7 +2,7 @@
 
 uniform float uTime;
 uniform float uDeltaTime;
-uniform sampler2D uBase;
+uniform sampler2D uBaryon;
 uniform float uFlowFieldInfluence;
 uniform float uFlowFieldStrength;
 uniform float uFlowFieldFrequency;
@@ -19,13 +19,13 @@ uniform float uDistanceThreshold;
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
     vec4 particle = texture(uParticles, uv);
-    vec4 base = texture(uBase, uv);
+    vec4 baryon = texture(uBaryon, uv);
     vec4 zeroPoint = texture(uZeroPoints, uv);
 
     // coloring
     particle.w = zeroPoint.a;
 
-    vec3 target = (uAverageAmplitude > 0.0) ? zeroPoint.xyz : base.xyz;
+    vec3 target = (uAverageAmplitude > 0.0) ? zeroPoint.xyz : baryon.xyz;
 
     float distance = length(target - particle.xyz);
     vec3 direction = normalize(target - particle.xyz);
