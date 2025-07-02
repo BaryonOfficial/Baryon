@@ -1,5 +1,6 @@
 #include ../includes/rot2D.glsl
 #include ../includes/sdSphere.glsl
+#include ../includes/sdTorus.glsl
 precision mediump float;
 
 #define MAX_STEPS 100
@@ -140,20 +141,31 @@ float chladni(vec3 position, float radius, bool useOptimization) {
     return sum;
 }
 
+// SDF abstraction: change this to swap primitives
+float map(vec3 p) {
+    // By default, use sphere. To use torus, swap the return line below.
+    return sdSphere(p, uRadius);
+    // return sdTorus(p, vec2(0.5, 0.2));
+}
+
 float scene(vec3 p) {
-    float sphereDist = sdSphere(p, 2.0);
+    float objDist = map(p);
     float chladniValue = chladni(p, uRadius, false);
 
-    // Only show pattern inside sphere
-    if(sphereDist > 0.0)
-        return sphereDist;
+    // Only show pattern inside the SDF object
+    if(objDist > 0.0)
+        return objDist;
 
     // Create surfaces where chladni pattern crosses zero
     float pattern = abs(chladniValue) - uThreshold;
 
-    // Blend the sphere and pattern
-    return max(pattern, sphereDist);
+    // Blend the SDF and pattern
+    return max(pattern, objDist);
 }
+
+// float scene(vec3 p) {
+//     return map(p);
+// }
 
 float raymarch(vec3 ro, vec3 rd, out vec3 p) {
     float dO = 0.0;
@@ -208,7 +220,7 @@ vec4 transferFunction(float density) {
 vec4 raymarchVolume(vec3 ro, vec3 rd) {
     // Find intersection with bounding sphere
     float t_min, t_max;
-    if(!intersectSphere(ro, rd, vec3(0.0), 2.0, t_min, t_max))
+    if(!intersectSphere(ro, rd, vec3(0.0), uRadius, t_min, t_max))
         return vec4(0.0);
 
     // Start from camera if we're inside the sphere
@@ -380,7 +392,7 @@ void main() {
 
     if(!skipHolographic) {
         float t_min, t_max;
-        if(intersectSphere(ro, rd, vec3(0.0), 2.0, t_min, t_max)) {
+        if(intersectSphere(ro, rd, vec3(0.0), uRadius, t_min, t_max)) {
             t_min = max(0.0, t_min);
 
             // Reduced sample count for performance

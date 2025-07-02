@@ -310,7 +310,7 @@ const Raymarching = () => {
       <OrbitControls
         ref={controlsRef}
         minDistance={1}
-        maxDistance={10}
+        maxDistance={20}
         enableDamping
         dampingFactor={0.1}
       />
@@ -343,7 +343,7 @@ const Scene = () => {
         }}
       />
 
-      <Canvas gl={{ alpha: true }}>
+      <Canvas gl={{ alpha: true }} camera={{ position: [0, 0, 10], fov: 50 }}>
         <Perf position="bottom-left" />
         <color args={['#000000']} attach="background" />
         <Suspense fallback={null}>
