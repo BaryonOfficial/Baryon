@@ -26,7 +26,7 @@ export function useParticleSettings(): ParticleConfig {
       surfaceColor: '#DEF0FA',
       particleSize: 0.03,
       rotation: 1.0,
-      scale: 0.6,
+      scale: 0.4,
     },
   };
 
@@ -99,7 +99,7 @@ export function useParticleSettings(): ParticleConfig {
       surfaceColor: { value: '#DEF0FA', label: 'Surface Color' },
       particleSize: { value: 0.03, min: 0.001, max: 0.1, step: 0.001, label: 'Particle Size' },
       rotation: { value: 1.0, min: -3.0, max: 3.0, step: 0.1, label: 'Rotation Speed' },
-      scale: { value: 0.6, min: 0.1, max: 2, step: 0.1, label: 'Logo Scale' },
+      scale: { value: 0.4, min: 0.1, max: 2, step: 0.1, label: 'Logo Scale' },
     },
     { collapsed: true }
   );

@@ -80,7 +80,9 @@ export interface AudioActions {
   loadFile: (file: File) => Promise<void>;
   togglePlayPause: () => Promise<void>;
   stop: () => void;
-  toggleMic: () => Promise<void>;
+  toggleInputDevice: () => Promise<void>;
+  setSelectedInputDeviceId: (deviceId: string) => void;
+  fetchAvailableInputDevices: () => Promise<void>;
   resumeAudioContext: () => Promise<void>;
   setIsPlaying: (isPlaying: boolean) => void;
   clearError: () => void;
@@ -96,4 +98,6 @@ export type AudioStore = AudioManagerState &
   AudioActions & {
     fileName: string; // Additional store-specific state
     error: string | null; // Error state
+    availableInputDevices: MediaDeviceInfo[];
+    selectedInputDeviceId: string | null;
   };

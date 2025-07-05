@@ -761,18 +761,21 @@ export class AudioManager {
   }
 
   /**
-   * Starts recording from the microphone.
-   * @throws {AudioManagerError} If microphone access fails
+   * Starts recording from the selected audio input device.
+   * @param deviceId - The deviceId of the audio input device (optional)
+   * @throws {AudioManagerError} If audio input access fails
    */
-  public startMicRecordStream(): Promise<void> {
+  public startInputDeviceStream(deviceId?: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       if (!navigator.mediaDevices?.getUserMedia) {
         reject(new AudioManagerError('getUserMedia not supported'));
         return;
       }
-
+      const constraints: MediaStreamConstraints = {
+        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+      };
       navigator.mediaDevices
-        .getUserMedia({ audio: true })
+        .getUserMedia(constraints)
         .then((stream) => {
           this.setupMicrophoneStream(stream)
             .then(() => resolve())
@@ -780,7 +783,7 @@ export class AudioManager {
               this.cleanupMicStream();
               reject(
                 new AudioManagerError(
-                  `Microphone access failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+                  `Audio input access failed: ${error instanceof Error ? error.message : 'Unknown error'}`
                 )
               );
             });
@@ -789,10 +792,21 @@ export class AudioManager {
           this.cleanupMicStream();
           reject(
             new AudioManagerError(
-              `Microphone access failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+              `Audio input access failed: ${error instanceof Error ? error.message : 'Unknown error'}`
             )
           );
         });
+    });
+  }
+
+  /**
+   * Stops audio input device stream and cleans up resources.
+   */
+  public stopInputDeviceStream(): void {
+    this.cleanupMicStream();
+    this.audioObject.essentiaNode?.port.postMessage({
+      isPlaying: this.audioObject.sound?.isPlaying ?? false,
+      micActive: false,
     });
   }
 
@@ -860,18 +874,6 @@ export class AudioManager {
   }
 
   /**
-   * Stops microphone recording and cleans up resources.
-   */
-  public stopMicRecordStream(): void {
-    this.cleanupMicStream();
-
-    this.audioObject.essentiaNode?.port.postMessage({
-      isPlaying: this.audioObject.sound?.isPlaying ?? false,
-      micActive: false,
-    });
-  }
-
-  /**
    * Cleans up microphone-related resources.
    */
   private cleanupMicStream(): void {
@@ -892,7 +894,7 @@ export class AudioManager {
     try {
       // Stop all active audio
       this.stopAudio();
-      this.stopMicRecordStream();
+      this.stopInputDeviceStream();
 
       // Clean up audio graph and resources
       await this.cleanupAudioGraph();

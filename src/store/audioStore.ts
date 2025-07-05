@@ -10,6 +10,8 @@ export const useAudioStore = create<AudioStore>((set, get) => ({
   ...audioManager.getAudio(),
   fileName: 'Upload Audio',
   error: null,
+  availableInputDevices: [],
+  selectedInputDeviceId: null,
 
   loadFile: async (file) => {
     try {
@@ -50,24 +52,37 @@ export const useAudioStore = create<AudioStore>((set, get) => ({
     }
   },
 
-  toggleMic: async () => {
-    const { isMicActive } = get();
+  fetchAvailableInputDevices: async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      set({ availableInputDevices: [] });
+      return;
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = devices.filter((d) => d.kind === 'audioinput');
+    set({ availableInputDevices: audioInputs });
+  },
 
+  setSelectedInputDeviceId: (deviceId) => {
+    set({ selectedInputDeviceId: deviceId });
+  },
+
+  toggleInputDevice: async () => {
+    const { isMicActive, selectedInputDeviceId } = get();
     try {
       if (isMicActive) {
-        audioManager.stopMicRecordStream();
+        audioManager.stopInputDeviceStream();
         set({ isMicActive: false, error: null });
       } else {
-        await audioManager.startMicRecordStream();
+        await audioManager.startInputDeviceStream(selectedInputDeviceId || undefined);
         set({ isMicActive: true, error: null });
       }
     } catch (error) {
-      console.error('Error toggling microphone:', error);
+      console.error('Error toggling input device:', error);
       set({
         isMicActive: false,
-        error: error instanceof Error ? error.message : 'Failed to toggle microphone',
+        error: error instanceof Error ? error.message : 'Failed to toggle input device',
       });
-      throw error; // Re-throw for UI handling if needed
+      throw error;
     }
   },
 
