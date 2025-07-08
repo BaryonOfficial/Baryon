@@ -14,6 +14,7 @@ dist-ssr
 examples
 prompts
 plasmic.json
+.cache_ggshield
 
 # Editor directories and files
 .vscode/*
