@@ -1,14 +1,14 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import Stats from './utils/stats.js';
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import Stats from "./utils/stats.js";
 
-import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { postProcessingSetup } from './postProcessing/postProcessingSetup.js';
-import { guiSetup } from './utils/guiSetup.js';
-import { particlesSetup } from './baryon/particlesSetup.js';
-import { gpgpuSetup, disposeGPGPUResources } from './baryon/gpgpuSetup.js';
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
+import { postProcessingSetup } from "./postProcessing/postProcessingSetup.js";
+import { guiSetup } from "./utils/guiSetup.js";
+import { particlesSetup } from "./baryon/particlesSetup.js";
+import { gpgpuSetup, disposeGPGPUResources } from "./baryon/gpgpuSetup.js";
 import {
   audioObject,
   audioSetup,
@@ -20,10 +20,10 @@ import {
   processAudioData,
   startAudioProcessing,
   setAudioEndedCallback,
-} from './audio/audioSetup.js';
-import GUI from 'lil-gui';
-import UnsupportedWarning from './utils/UnsupportedWarning.jsx';
-import { useFullscreen } from './hooks/useFullScreenToggle.jsx';
+} from "./audio/audioSetup.js";
+import GUI from "lil-gui";
+import UnsupportedWarning from "./utils/UnsupportedWarning.jsx";
+import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
 
 const ThreeScene = () => {
   const canvasRef = useRef(null);
@@ -31,7 +31,7 @@ const ThreeScene = () => {
   const toggleFullscreen = useFullscreen(canvasRef);
   const guiContainerRef = useRef(null);
 
-  const [fileName, setFileName] = useState('Upload Audio');
+  const [fileName, setFileName] = useState("Upload Audio");
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMicActive, setIsMicActive] = useState(false);
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
@@ -44,11 +44,15 @@ const ThreeScene = () => {
 
   useEffect(() => {
     function isUnsupportedEnvironment() {
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      const isMobile =
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent
+        );
+      const isFirefox =
+        navigator.userAgent.toLowerCase().indexOf("firefox") > -1;
+      const isSafari = /^((?!chrome|android).)*safari/i.test(
         navigator.userAgent
       );
-      const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
-      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
       return isMobile || isFirefox || isSafari;
     }
@@ -59,7 +63,7 @@ const ThreeScene = () => {
 
     const setupScene = () => {
       const canvas = canvasRef.current;
-      const context = canvas.getContext('webgl2');
+      const context = canvas.getContext("webgl2");
       const scene = new THREE.Scene();
 
       return { canvas, context, scene };
@@ -67,15 +71,21 @@ const ThreeScene = () => {
 
     const setupGUI = () => {
       const guiWidth = 300;
-      const gui = new GUI({ width: guiWidth, container: guiContainerRef.current });
-      document.documentElement.style.setProperty('--gui-width', guiWidth + 'px');
+      const gui = new GUI({
+        width: guiWidth,
+        container: guiContainerRef.current,
+      });
+      document.documentElement.style.setProperty(
+        "--gui-width",
+        guiWidth + "px"
+      );
 
       return { gui, debugObject: {} };
     };
 
     const setupLoaders = () => {
       const dracoLoader = new DRACOLoader();
-      dracoLoader.setDecoderPath('/draco/');
+      dracoLoader.setDecoderPath("/draco/");
 
       const gltfLoader = new GLTFLoader();
       gltfLoader.setDRACOLoader(dracoLoader);
@@ -100,7 +110,12 @@ const ThreeScene = () => {
     /**
      * Camera
      */
-    const camera = new THREE.PerspectiveCamera(35, sizes.width / sizes.height, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(
+      35,
+      sizes.width / sizes.height,
+      0.1,
+      100
+    );
     camera.position.set(0, 3, 20);
     scene.add(camera);
 
@@ -124,7 +139,7 @@ const ThreeScene = () => {
     });
     renderer.setSize(sizes.width, sizes.height);
     renderer.setPixelRatio(sizes.pixelRatio);
-    debugObject.backgroundColor = '#000000';
+    debugObject.backgroundColor = "#000000";
     renderer.setClearColor(debugObject.backgroundColor);
 
     const res = postProcessingSetup(renderer, scene, camera, sizes);
@@ -155,7 +170,7 @@ const ThreeScene = () => {
     const baseGeometry2 = {};
 
     async function loadModel() {
-      const gltf = await gltfLoader.loadAsync('./glb/Baryon_v2.glb');
+      const gltf = await gltfLoader.loadAsync("./glb/Baryon_v2.glb");
       baseGeometry2.instance = gltf.scene.children[0];
 
       // Apply scaling to the object
@@ -163,7 +178,9 @@ const ThreeScene = () => {
 
       // Update the geometry to apply the transformation
       baseGeometry2.instance.updateMatrix();
-      baseGeometry2.instance.geometry.applyMatrix4(baseGeometry2.instance.matrix);
+      baseGeometry2.instance.geometry.applyMatrix4(
+        baseGeometry2.instance.matrix
+      );
 
       // Reset the matrix to avoid further unintended transformations
       baseGeometry2.instance.matrix.identity();
@@ -180,14 +197,27 @@ const ThreeScene = () => {
       /*
        * GPGPU
        */
-      const resA = gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeometry2);
+      const resA = gpgpuSetup(
+        scene,
+        baseGeometry,
+        renderer,
+        parameters,
+        baseGeometry2
+      );
       gpgpu = resA.gpgpu;
       essentiaData = resA.essentiaData;
 
       /*
        * Particles
        */
-      const resB = particlesSetup(parameters, sizes, gpgpu, baseGeometry, colors, scene);
+      const resB = particlesSetup(
+        parameters,
+        sizes,
+        gpgpu,
+        baseGeometry,
+        colors,
+        scene
+      );
       particles = resB.particles;
       const materialParameters = resB.materialParameters;
 
@@ -212,17 +242,7 @@ const ThreeScene = () => {
 
     loadModel();
 
-    /********************************************** WEBRTC ***********************************************/
-
-    // // Attach event listener to the toggle recording control button
-    // toggleRecordingButton.addEventListener('click', () =>
-    //   toggleRecording(canvas, audioObject.audioCtx, audioObject.gain)
-    // );
-    // toggleRecordingButton.disabled = false; // Enable the button as it's now the only control for recording
-
-    /****************************************** EVENT LISTENERS ******************************************/
-
-    window.addEventListener('resize', () => {
+    window.addEventListener("resize", () => {
       // Update sizes
       sizes.width = window.innerWidth;
       sizes.height = window.innerHeight;
@@ -257,19 +277,27 @@ const ThreeScene = () => {
     function updateGPGPUTextures() {
       // Update audioData texture
       gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value =
-        gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable).texture;
+        gpgpu.computation.getCurrentRenderTarget(
+          gpgpu.audioDataVariable
+        ).texture;
 
       // Update scalarfield texture
       gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value =
-        gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture;
+        gpgpu.computation.getCurrentRenderTarget(
+          gpgpu.scalarFieldVariable
+        ).texture;
 
       // Update zeropoints texture
       gpgpu.particlesVariable.material.uniforms.uZeroPoints.value =
-        gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture;
+        gpgpu.computation.getCurrentRenderTarget(
+          gpgpu.zeroPointsVariable
+        ).texture;
 
       // Update particles texture
       particles.material.uniforms.uParticlesTexture.value =
-        gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable).texture;
+        gpgpu.computation.getCurrentRenderTarget(
+          gpgpu.particlesVariable
+        ).texture;
     }
 
     // Calculate the rotation matrix
@@ -305,7 +333,8 @@ const ThreeScene = () => {
 
     // Style the stats panel
     const statsElement = stats.dom;
-    statsElement.style.cssText = 'position:absolute;bottom:0;left:0;z-index:100;';
+    statsElement.style.cssText =
+      "position:absolute;bottom:0;left:0;z-index:100;";
 
     // Always hide stats panel on mount/remount
     setShowStats(false);
@@ -324,11 +353,13 @@ const ThreeScene = () => {
       // GPGPU Updates
       gpgpu.particlesVariable.material.uniforms.uTime.value = time;
       gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
-      gpgpu.particlesVariable.material.uniforms.uStarted.value = audioObject.sound.started;
+      gpgpu.particlesVariable.material.uniforms.uStarted.value =
+        audioObject.sound.started;
       gpgpu.particlesVariable.material.uniforms.uMicActive.value =
         audioObject.gumStream && audioObject.gumStream.active;
 
-      particles.material.uniforms.uSoundPlaying.value = audioObject.sound.isPlaying;
+      particles.material.uniforms.uSoundPlaying.value =
+        audioObject.sound.isPlaying;
       particles.material.uniforms.uTime.value = time;
       particles.material.uniforms.uDeltaTime.value = deltaTime;
 
@@ -339,7 +370,10 @@ const ThreeScene = () => {
       updateGPGPUTextures();
 
       rotationTime.current += deltaTime;
-      const angle = rotationTime.current * 0.5 * particles.material.uniforms.uRotation.value;
+      const angle =
+        rotationTime.current *
+        0.5 *
+        particles.material.uniforms.uRotation.value;
       rotationMatrix.makeRotationY(-angle);
       particles.points.matrix.copy(rotationMatrix);
       particles.points.matrixAutoUpdate = false;
@@ -357,11 +391,11 @@ const ThreeScene = () => {
     setAudioEndedCallback(() => {
       setIsPlaying(false);
       setIsAudioLoaded(true);
-      console.log('Audio ended');
+      console.log("Audio ended");
     });
 
     return () => {
-      console.log('Component unmounting');
+      console.log("Component unmounting");
       if (gui) {
         gui.destroy();
       }
@@ -379,7 +413,11 @@ const ThreeScene = () => {
   useEffect(() => {
     if (showStats && statsRef.current) {
       document.body.appendChild(statsRef.current.dom);
-    } else if (!showStats && statsRef.current && statsRef.current.dom.parentNode) {
+    } else if (
+      !showStats &&
+      statsRef.current &&
+      statsRef.current.dom.parentNode
+    ) {
       statsRef.current.dom.parentNode.removeChild(statsRef.current.dom);
     }
   }, [showStats]);
@@ -395,25 +433,25 @@ const ThreeScene = () => {
           setIsPlaying(false);
         })
         .catch((error) => {
-          console.error('Error loading audio:', error);
+          console.error("Error loading audio:", error);
           setIsAudioLoaded(false);
         });
     } else {
-      setFileName('Upload Audio');
+      setFileName("Upload Audio");
       setIsAudioLoaded(false);
     }
   }, []);
 
   const handlePlayPause = useCallback(async () => {
     if (!isAudioLoaded) {
-      console.log('Audio not loaded yet');
+      console.log("Audio not loaded yet");
       return;
     }
     try {
       const isNowPlaying = await playPauseAudio();
       setIsPlaying(isNowPlaying);
     } catch (error) {
-      console.error('Error in play/pause:', error);
+      console.error("Error in play/pause:", error);
       setIsPlaying(false);
     }
   }, [isAudioLoaded]);
@@ -432,7 +470,7 @@ const ThreeScene = () => {
       }
       setIsMicActive(!isMicActive);
     } catch (error) {
-      console.error('Error toggling microphone:', error);
+      console.error("Error toggling microphone:", error);
       setIsMicActive(false);
     }
   }, [isMicActive]);
@@ -447,7 +485,7 @@ const ThreeScene = () => {
           await startMicRecordStream(deviceId);
         }
       } catch (error) {
-        console.error('Error changing audio device:', error);
+        console.error("Error changing audio device:", error);
       }
     },
     [isMicActive]
@@ -457,17 +495,21 @@ const ThreeScene = () => {
     const loadDevices = async () => {
       try {
         // First request microphone permissions
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
         // Stop the stream immediately after getting permission
         stream.getTracks().forEach((track) => track.stop());
 
         // Now enumerate devices with full labels
         const devices = await navigator.mediaDevices.enumerateDevices();
-        const audioInputs = devices.filter((device) => device.kind === 'audioinput');
+        const audioInputs = devices.filter(
+          (device) => device.kind === "audioinput"
+        );
 
         // Log available devices for debugging
         console.log(
-          'Available audio devices:',
+          "Available audio devices:",
           audioInputs.map((d) => ({
             id: d.deviceId,
             label: d.label,
@@ -480,17 +522,19 @@ const ThreeScene = () => {
           setSelectedDevice(audioInputs[0].deviceId);
         }
       } catch (error) {
-        console.error('Error loading audio devices:', error);
+        console.error("Error loading audio devices:", error);
         // If permission denied, still try to get devices (they'll just have generic labels)
         try {
           const devices = await navigator.mediaDevices.enumerateDevices();
-          const audioInputs = devices.filter((device) => device.kind === 'audioinput');
+          const audioInputs = devices.filter(
+            (device) => device.kind === "audioinput"
+          );
           setAudioDevices(audioInputs);
           if (audioInputs.length > 0) {
             setSelectedDevice(audioInputs[0].deviceId);
           }
         } catch (e) {
-          console.error('Error enumerating devices:', e);
+          console.error("Error enumerating devices:", e);
         }
       }
     };
@@ -498,19 +542,29 @@ const ThreeScene = () => {
     loadDevices();
 
     // Listen for device changes
-    navigator.mediaDevices.addEventListener('devicechange', loadDevices);
+    navigator.mediaDevices.addEventListener("devicechange", loadDevices);
     return () => {
-      navigator.mediaDevices.removeEventListener('devicechange', loadDevices);
+      navigator.mediaDevices.removeEventListener("devicechange", loadDevices);
     };
   }, []);
 
   return (
-    <div style={{ width: '100vw', height: '100vh', position: 'absolute', zIndex: 1 }}>
+    <div
+      style={{
+        width: "100vw",
+        height: "100vh",
+        position: "absolute",
+        zIndex: 1,
+      }}
+    >
       <canvas ref={canvasRef} className="webgl absolute z-10" />
       <button onClick={toggleFullscreen}>Toggle Fullscreen</button>
       {!isUnsupported && (
         <>
-          <div ref={guiContainerRef} className="fixed top-20 right-0 z-50"></div>
+          <div
+            ref={guiContainerRef}
+            className="fixed top-20 right-0 z-50"
+          ></div>
           <div className="controls-container fixed top-20 left-12 z-50 p-4">
             <div className="flex flex-col items-start space-y-2">
               <div className="file-input flex flex-col items-start space-y-2">
@@ -529,10 +583,15 @@ const ThreeScene = () => {
                 <button
                   onClick={handlePlayPause}
                   className="btn-standard"
-                  disabled={!isAudioLoaded}>
-                  {isPlaying ? 'Pause' : 'Play'}
+                  disabled={!isAudioLoaded}
+                >
+                  {isPlaying ? "Pause" : "Play"}
                 </button>
-                <button onClick={handleStop} className="btn-standard" disabled={!isAudioLoaded}>
+                <button
+                  onClick={handleStop}
+                  className="btn-standard"
+                  disabled={!isAudioLoaded}
+                >
                   Stop
                 </button>
               </div>
@@ -547,16 +606,18 @@ const ThreeScene = () => {
                         await handleMicToggle();
                       }
                     }}
-                    className="btn-standard flex items-center gap-1">
-                    {isMicActive ? 'Stop Input' : 'Select Input'}
+                    className="btn-standard flex items-center gap-1"
+                  >
+                    {isMicActive ? "Stop Input" : "Select Input"}
                     {!isMicActive && (
                       <svg
                         className={`w-4 h-4 transition-transform ${
-                          showDeviceMenu ? 'rotate-180' : ''
+                          showDeviceMenu ? "rotate-180" : ""
                         }`}
                         fill="none"
                         stroke="currentColor"
-                        viewBox="0 0 24 24">
+                        viewBox="0 0 24 24"
+                      >
                         <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
@@ -579,10 +640,12 @@ const ThreeScene = () => {
                             }}
                             className={`block w-full text-left px-4 py-2 text-sm ${
                               selectedDevice === device.deviceId
-                                ? 'bg-gray-100 text-gray-900'
-                                : 'text-gray-700 hover:bg-gray-50'
-                            }`}>
-                            {device.label || `Device ${device.deviceId.slice(0, 8)}`}
+                                ? "bg-gray-100 text-gray-900"
+                                : "text-gray-700 hover:bg-gray-50"
+                            }`}
+                          >
+                            {device.label ||
+                              `Device ${device.deviceId.slice(0, 8)}`}
                           </button>
                         ))}
                       </div>
@@ -593,8 +656,8 @@ const ThreeScene = () => {
 
               {audioDevices.length === 0 && (
                 <div className="text-sm text-gray-500 mt-1">
-                  No audio input devices found. Make sure your device is connected and try clicking
-                  &quot;Mic Mode&quot; first.
+                  No audio input devices found. Make sure your device is
+                  connected and try clicking &quot;Mic Mode&quot; first.
                 </div>
               )}
             </div>
