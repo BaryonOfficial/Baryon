@@ -13,6 +13,8 @@ dist-ssr
 *.local
 examples
 prompts
+.cache_ggshield
+plasmic.json
 
 # Editor directories and files
 .vscode/*
