@@ -1,82 +1,84 @@
 # Contributing to Baryon
 
-Thank you for being part of the Baryon development team! This guide will help you understand our development process and contribution guidelines.
+Thank you for your interest in contributing to Baryon! As an open source project licensed under the **GNU AGPL v3**, we welcome contributions from anyone who wants to help improve the project. Whether you’re fixing bugs, adding features, improving documentation, or just sharing ideas, you’re part of our community.
 
-## Project Access
+## Who Can Contribute?
 
-As Baryon is a private repository, there are two ways to contribute:
+**Everyone!**  
+You don’t need to be a member of any organization or team to contribute. All development happens in the open, and anyone can participate by forking the repository, opening issues, or submitting pull requests.
 
-1. **Direct Collaborators** need to ensure they have:
-
-   - Been granted appropriate write access to the repository
-   - Signed any required NDAs or agreements (if applicable)
-   - Received necessary development environment setup instructions
-
-2. **Read-only Collaborators** need to:
-   - Have been granted read access to the repository
-   - Fork the repository (your fork will remain private)
-   - Signed any required NDAs or agreements (if applicable)
-   - Received necessary development environment setup instructions
+- **Core Contributors**: Maintainers with direct write access to the repository (typically organization members or trusted long-term contributors).
+- **Community Contributors**: Anyone from the public who forks the repo and submits pull requests.
 
 ## Development Process
 
-We use the OODA Loop framework to guide our development process:
+We use the OODA Loop framework to guide our development:
 
-- **Observe**: Understand the current state of the project, user needs, and technical requirements
-- **Orient**: Analyze how your proposed changes fit into the larger project goals
-- **Decide**: Choose the best approach for implementation
-- **Act**: Execute your solution effectively
+- **Observe**: Understand the current state of the project, user needs, and technical requirements.
+- **Orient**: Analyze how your proposed changes fit into the larger project goals.
+- **Decide**: Choose the best approach for implementation.
+- **Act**: Execute your solution effectively.
 
 ## How to Contribute
 
-1. **Core Development**
+1. **Find or Propose an Issue**
 
-   - Implement new features
-   - Improve existing functionality
-   - Optimize performance
-   - Fix bugs and issues
+   - Check [open issues](https://github.com/BaryonOfficial/Baryon/issues) or open a new one to suggest an idea or report a bug.
 
-2. **Documentation**
+2. **Fork the Repository**
 
-   - Update technical documentation
-   - Create internal guides
-   - Document APIs and components
+   - Click the “Fork” button on the [Baryon GitHub page](https://github.com/BaryonOfficial/Baryon).
 
-## Development Workflow
+3. **Clone Your Fork**
 
-1. **Repository Setup**
+   - Copy your fork to your computer:
+     ```
+     git clone https://github.com/<your-username>/Baryon.git
+     cd Baryon
+     ```
 
-   - **Direct Collaborators**: Create your feature branch from `develop`
-   - **Read-only Collaborators**:
-     - Fork the repository to your GitHub account (fork remains private)
-     - Clone your fork locally
-     - Add the original repository as upstream: `git remote add upstream [repository-url]`
-     - Keep your fork in sync: `git fetch upstream && git merge upstream/develop`
+4. **Create a Branch**
 
-2. Create your feature branch
+   - Make a new branch for your work:
+     ```
+     git checkout -b feature/my-feature
+     ```
+     (Replace `feature/my-feature` with a short description.)
 
-   - Branch naming convention: `feature/description` or `fix/description`
-   - Example: `feature/add-3d-viz` or `fix/memory-leak`
+5. **Make Your Changes**
 
-3. Development Guidelines:
+   - Edit code or documentation as needed.
 
-   - Write tests for new functionality (no tests have been written yet, but we should start writing them)
-   - Ensure all tests pass locally
-   - Follow the project's code style
-   - Update documentation as needed
+6. **Test Your Changes**
 
-4. Code Review Process:
-   - **Direct Collaborators**: Create a pull request to `develop`
-   - **Read-only Collaborators**:
-     - Push changes to your fork
-     - Create a pull request from your fork's branch to the original repository's `develop` branch
-   - Request review from appropriate team members
-   - Address review feedback
-   - Maintain security best practices
+   - Run:
+     ```
+     npm run lint
+     npm run build
+     ```
+     (If tests exist: `npm test`)
 
-## Git Commit Guidelines
+7. **Commit and Push**
 
-We follow the [Conventional Commits](https://www.conventionalcommits.org/) specification. Each commit message should be structured as follows:
+   - Save your changes:
+     ```
+     git add .
+     git commit -m "feat: describe your change"
+     git push origin feature/my-feature
+     ```
+
+8. **Open a Pull Request**
+   - Go to your fork on GitHub and click “Compare & pull request.”
+   - Fill out the form and submit.
+
+---
+
+**Tip:**  
+If you’re new to git or GitHub, check out [GitHub’s Hello World guide](https://guides.github.com/activities/hello-world/)!
+
+## Commit Message Guidelines
+
+We follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
 
 ```
 <type>(<scope>): <description>
@@ -91,42 +93,18 @@ We follow the [Conventional Commits](https://www.conventionalcommits.org/) speci
 - Limit the first line to 72 characters or less
 - Reference issue numbers in the footer
 
-**Types:**
+**Types:**  
+`feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
 
-- `feat`: A new feature
-- `fix`: A bug fix
-- `docs`: Documentation only changes
-- `style`: Changes that don't affect the meaning of the code (white-space, formatting, etc)
-- `refactor`: A code change that neither fixes a bug nor adds a feature
-- `perf`: A code change that improves performance
-- `test`: Adding missing tests or correcting existing tests
-- `build`: Changes that affect the build system or external dependencies
-- `ci`: Changes to our CI configuration files and scripts
-- `chore`: Other changes that don't modify src or test files
-- `revert`: Reverts a previous commit
+**Scope:**  
+Optional, e.g. `(shader)`, `(ui)`, `(core)`, `(deps)`, `(test)`, `(css)`, `(api)`
 
-**Scope:**
-The scope provides additional contextual information and is optional:
-
-- `(shader)`: Changes to shader code
-- `(ui)`: User interface changes
-- `(core)`: Core functionality
-- `(deps)`: Dependency updates
-- `(test)`: Test infrastructure changes
-- `(css)`: Styling changes
-- `(api)`: API-related changes
-
-Example commit messages:
+**Example:**
 
 ```
 feat(shader): add new particle simulation algorithm
 fix(ui): resolve memory leak in visualization component
-refactor(core): restructure flow field calculations
-perf(shader): optimize vertex processing
 docs(api): update WebGL interface documentation
-test(core): add unit tests for particle system
-chore(deps): update three.js to v0.150.0
-revert: feat(shader): remove problematic particle algorithm
 ```
 
 ## Branch Structure
@@ -137,33 +115,30 @@ revert: feat(shader): remove problematic particle algorithm
 - `fix/*`: Bug fixes
 - `hotfix/*`: Urgent production fixes
 
-## Issue and Pull Request Labels
+## Labels
 
-- `priority-high`: Urgent issues needing immediate attention
-- `bug`: Issues that are bugs
-- `enhancement`: New feature requests
-- `documentation`: Documentation updates
-- `breaking-change`: Changes that affect backward compatibility
+- `good first issue`: Great for newcomers
+- `help wanted`: Maintainers are seeking help
+- `bug`: Confirmed bugs
+- `enhancement`: Feature requests
+- `documentation`: Docs updates
+- `breaking-change`: Backward-incompatible changes
 
-## Testing Requirements
+## Code of Conduct
 
-- Run the test suite: `npm test` (doesn't exist yet)
-- Ensure linting passes: `npm run lint`
-- Check build succeeds: `npm run build`
-
-## Getting Help
-
-- Contact the project lead
-- Create GitHub issues for technical discussions
-- Use internal communication channels
+We are committed to fostering a welcoming and respectful community. Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Security
 
-- Do not share access to the repository
-- Keep all project discussions internal
-- Follow security best practices
-- Report security concerns immediately to project leads
+- Do not disclose security vulnerabilities publicly. Please report them privately to the maintainers.
+- Follow security best practices in your contributions.
+
+## Getting Help
+
+- Open a [GitHub issue](https://github.com/BaryonOfficial/Baryon/issues) for questions, suggestions, or discussions.
+- Join our community chat (link, if available).
+- See the [README](../readme.md) for more information.
 
 ---
 
-Remember that all project code and discussions should be kept confidential within the development team.
+**Let’s build something amazing together!**
