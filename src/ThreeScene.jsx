@@ -475,22 +475,6 @@ const ThreeScene = () => {
     }
   }, [isMicActive]);
 
-  const handleDeviceChange = useCallback(
-    async (deviceId) => {
-      try {
-        setSelectedDevice(deviceId);
-        if (isMicActive) {
-          // If mic is active, restart the stream with new device
-          await stopMicRecordStream();
-          await startMicRecordStream(deviceId);
-        }
-      } catch (error) {
-        console.error("Error changing audio device:", error);
-      }
-    },
-    [isMicActive]
-  );
-
   useEffect(() => {
     const loadDevices = async () => {
       try {
