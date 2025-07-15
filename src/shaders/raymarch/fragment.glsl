@@ -144,8 +144,8 @@ float chladni(vec3 position, float radius, bool useOptimization) {
 // SDF abstraction: change this to swap primitives
 float map(vec3 p) {
     // By default, use sphere. To use torus, swap the return line below.
-    // return sdSphere(p, uRadius);
-    return sdTorus(p, vec2(0.5, 0.2));
+    return sdSphere(p, uRadius);
+    // return sdTorus(p, vec2(0.5, 0.2));
 }
 
 float scene(vec3 p) {
