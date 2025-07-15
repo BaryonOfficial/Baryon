@@ -24,6 +24,10 @@ import {
 import GUI from 'lil-gui';
 import UnsupportedWarning from './utils/UnsupportedWarning.jsx';
 import { useFullscreen } from './hooks/useFullScreenToggle.jsx';
+import { setupScene } from './three-utils/setupScene.js';
+import { handleResize } from './three-utils/handleResize.js';
+import { setupLoaders } from './three-utils/setupLoaders.js';
+
 
 const ThreeScene = () => {
   const canvasRef = useRef(null);
@@ -57,14 +61,9 @@ const ThreeScene = () => {
 
     let particles, gpgpu, essentiaData;
 
-    const setupScene = () => {
-      const canvas = canvasRef.current;
-      const context = canvas.getContext('webgl2');
-      const scene = new THREE.Scene();
-
-      return { canvas, context, scene };
-    };
-
+    const { scene, sizes, camera, controls, renderer } = setupScene(canvasRef);
+    const onResize = () => handleResize({ sizes, camera, renderer, effectComposer, particles });
+    
     const setupGUI = () => {
       const guiWidth = 300;
       const gui = new GUI({ width: guiWidth, container: guiContainerRef.current });
@@ -73,59 +72,16 @@ const ThreeScene = () => {
       return { gui, debugObject: {} };
     };
 
-    const setupLoaders = () => {
-      const dracoLoader = new DRACOLoader();
-      dracoLoader.setDecoderPath('/draco/');
 
-      const gltfLoader = new GLTFLoader();
-      gltfLoader.setDRACOLoader(dracoLoader);
-
-      return { gltfLoader };
-    };
-
-    const { canvas, context, scene } = setupScene();
     const { gui, debugObject } = setupGUI();
     const { gltfLoader } = setupLoaders();
-
-    /**
-     * Sizes
-     */
-
-    const sizes = {
-      width: window.innerWidth,
-      height: window.innerHeight,
-      pixelRatio: Math.min(window.devicePixelRatio, 2),
-    };
-
-    /**
-     * Camera
-     */
-    const camera = new THREE.PerspectiveCamera(35, sizes.width / sizes.height, 0.1, 100);
-    camera.position.set(0, 3, 20);
-    scene.add(camera);
 
     /*
      * Audio Processing;
      */
     audioSetup(camera);
 
-    // Controls
-    const controls = new OrbitControls(camera, canvas);
-    controls.enableDamping = true;
-
-    /**
-     * Renderer
-     */
-
-    const renderer = new THREE.WebGLRenderer({
-      canvas: canvas,
-      context: context,
-      antialias: true,
-    });
-    renderer.setSize(sizes.width, sizes.height);
-    renderer.setPixelRatio(sizes.pixelRatio);
     debugObject.backgroundColor = '#000000';
-    renderer.setClearColor(debugObject.backgroundColor);
 
     const res = postProcessingSetup(renderer, scene, camera, sizes);
     const effectComposer = res.effectComposer;
@@ -222,30 +178,7 @@ const ThreeScene = () => {
 
     /****************************************** EVENT LISTENERS ******************************************/
 
-    window.addEventListener('resize', () => {
-      // Update sizes
-      sizes.width = window.innerWidth;
-      sizes.height = window.innerHeight;
-      sizes.pixelRatio = Math.min(window.devicePixelRatio, 2);
-
-      // Materials
-      particles.material.uniforms.uResolution.value.set(
-        sizes.width * sizes.pixelRatio,
-        sizes.height * sizes.pixelRatio
-      );
-
-      // Update camera
-      camera.aspect = sizes.width / sizes.height;
-      camera.updateProjectionMatrix();
-
-      // Update renderer
-      renderer.setSize(sizes.width, sizes.height);
-      renderer.setPixelRatio(sizes.pixelRatio);
-
-      // // Update effect composer
-      effectComposer.setSize(sizes.width, sizes.height);
-      effectComposer.setPixelRatio(sizes.pixelRatio);
-    });
+    window.addEventListener('resize', onResize);
 
     /******************************************************* ANIMATION *******************************************************/
 
