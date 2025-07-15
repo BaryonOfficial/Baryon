@@ -2,6 +2,7 @@
 #include ../includes/sdSphere.glsl
 #include ../includes/sdTorus.glsl
 #include ../includes/sdBox.glsl
+#include ../includes/sdPlane.glsl
 precision mediump float;
 
 #define MAX_STEPS 100
@@ -203,8 +204,8 @@ float map(vec3 p) {
     } else if(uPrimitiveType == 2) {
         return sdBox(p, vec3(uRadius));
     } else if(uPrimitiveType == 3) {
-        // 2D Chladni pattern on the XY plane, treat Z as height
-        return sdBox(p, vec3(uRadius, uRadius, 0.01)); // Thin box in Z
+        // Use a plane for 2D Chladni pattern
+        return sdPlane(p, vec3(0.0, 0.0, 1.0), 0.0);
     } else {
         return sdSphere(p, uRadius); // fallback
     }
