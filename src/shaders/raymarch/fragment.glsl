@@ -143,6 +143,57 @@ float chladni(vec3 position, float radius, bool useOptimization) {
     return sum;
 }
 
+// 2D Chladni pattern function for primitive type 3
+float chladni2D(vec2 position, float radius, bool useOptimization) {
+    float scaleFactor = 1.0 / radius;
+    float piScaled = PI * scaleFactor;
+    float px = position.x * piScaled;
+    float py = position.y * piScaled;
+    float sum = 0.0;
+    int effectiveN = N;
+    if(useOptimization) {
+        float distFromCenter = length(position) / radius;
+        if(distFromCenter > 0.85 && uPerformanceMode > 0.5) {
+            float reductionFactor = mix(1.0, 0.5, uPerformanceMode * (distFromCenter - 0.85) / 0.15);
+            effectiveN = max(3, int(float(N) * reductionFactor));
+        }
+    }
+    if(uTransitionProgress < 1.0) {
+        for(int i = 0; i < MAX_N; ++i) {
+            if(i >= effectiveN)
+                break;
+            int index = 4 * i;
+            float prevAi = prevWaveComponents[index];
+            float prevUi = prevWaveComponents[index + 1];
+            float prevVi = prevWaveComponents[index + 2];
+            float currAi = waveComponents[index];
+            float currUi = waveComponents[index + 1];
+            float currVi = waveComponents[index + 2];
+            float t = uTransitionProgress;
+            float tSmooth = t < 0.5 ? 2.0 * t * t : 1.0 - pow(-2.0 * t + 2.0, 2.0) / 2.0;
+            float Ai = mix(prevAi, currAi, tSmooth);
+            float ui = mix(prevUi, currUi, tSmooth);
+            float vi = mix(prevVi, currVi, tSmooth);
+            float sinX = cachedSin(ui * px, useOptimization);
+            float sinY = cachedSin(vi * py, useOptimization);
+            sum += Ai * sinX * sinY;
+        }
+    } else {
+        for(int i = 0; i < MAX_N; ++i) {
+            if(i >= effectiveN)
+                break;
+            int index = 4 * i;
+            float Ai = waveComponents[index];
+            float ui = waveComponents[index + 1];
+            float vi = waveComponents[index + 2];
+            float sinX = cachedSin(ui * px, useOptimization);
+            float sinY = cachedSin(vi * py, useOptimization);
+            sum += Ai * sinX * sinY;
+        }
+    }
+    return sum;
+}
+
 // SDF abstraction: change this to swap primitives
 float map(vec3 p) {
     if(uPrimitiveType == 0) {
@@ -151,6 +202,9 @@ float map(vec3 p) {
         return sdTorus(p, vec2(3.0, 2.4));
     } else if(uPrimitiveType == 2) {
         return sdBox(p, vec3(uRadius));
+    } else if(uPrimitiveType == 3) {
+        // 2D Chladni pattern on the XY plane, treat Z as height
+        return sdBox(p, vec3(uRadius, uRadius, 0.01)); // Thin box in Z
     } else {
         return sdSphere(p, uRadius); // fallback
     }
@@ -158,8 +212,12 @@ float map(vec3 p) {
 
 float scene(vec3 p) {
     float objDist = map(p);
-    float chladniValue = chladni(p, uRadius, false);
-
+    float chladniValue;
+    if(uPrimitiveType == 3) {
+        chladniValue = chladni2D(p.xy, uRadius, false);
+    } else {
+        chladniValue = chladni(p, uRadius, false);
+    }
     // Only show pattern inside the SDF object
     if(objDist > 0.0)
         return objDist;
@@ -306,7 +364,12 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
             break;
 
         vec3 p = ro + rd * t;
-        float chladniValue = chladni(p, uRadius, false);
+        float chladniValue;
+        if(uPrimitiveType == 3) {
+            chladniValue = chladni2D(p.xy, uRadius, false);
+        } else {
+            chladniValue = chladni(p, uRadius, false);
+        }
         float density = smoothstep(uThreshold, 0.0, abs(chladniValue));
 
         if(density > uEmptySpaceThreshold) {
@@ -352,7 +415,12 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
                     float s = pow(float(j) / float(actualLightSamples - 1), 1.5);
 
                     vec3 samplePos = mix(p, lightPos, s);
-                    float sampleChladni = chladni(samplePos, uRadius, true); // Use optimized version for lighting
+                    float sampleChladni;
+                    if(uPrimitiveType == 3) {
+                        sampleChladni = chladni2D(samplePos.xy, uRadius, true);
+                    } else {
+                        sampleChladni = chladni(samplePos, uRadius, true);
+                    }
                     float sampleDensity = smoothstep(uThreshold, 0.0, abs(sampleChladni));
                     scattering += sampleDensity;
                 }
@@ -403,6 +471,15 @@ vec3 rotateWithQuaternion(vec3 v, vec4 q) {
 void main() {
     vec2 uv = (gl_FragCoord.xy * 2.0 - uResolution.xy) / min(uResolution.x, uResolution.y);
 
+    if(uPrimitiveType == 3) {
+        // Direct 2D Chladni pattern fill
+        float chladniValue = chladni2D(uv * uRadius, uRadius, false);
+        float density = smoothstep(uThreshold, 0.0, abs(chladniValue));
+        vec4 color = transferFunction(density);
+        finalColor = color;
+        return;
+    }
+
     // Camera setup using camera position and rotation from OrbitControls
     vec3 ro = uCameraPosition;
     vec3 rd = normalize(vec3(uv, -1.5));
@@ -436,7 +513,12 @@ void main() {
                 vec3 p = ro + rd * t;
 
                 // Calculate Chladni value with optimization
-                float chladniValue = chladni(p, uRadius, true);
+                float chladniValue;
+                if(uPrimitiveType == 3) {
+                    chladniValue = chladni2D(p.xy, uRadius, true);
+                } else {
+                    chladniValue = chladni(p, uRadius, true);
+                }
 
                 if(abs(chladniValue) < uThreshold * 2.0) {
                     // Simplified calculations
@@ -445,7 +527,12 @@ void main() {
 
                     // Use pre-computed gradient for normal when possible
                     vec2 e = vec2(0.01, 0.0);
-                    vec3 grad = vec3(chladni(p + e.xyy, uRadius, true) - chladni(p - e.xyy, uRadius, true), chladni(p + e.yxy, uRadius, true) - chladni(p - e.yxy, uRadius, true), chladni(p + e.yyx, uRadius, true) - chladni(p - e.yyx, uRadius, true));
+                    vec3 grad;
+                    if(uPrimitiveType == 3) {
+                        grad = vec3(chladni2D(p.xy + e.xy, uRadius, true) - chladni2D(p.xy - e.xy, uRadius, true), chladni2D(p.xy + e.yx, uRadius, true) - chladni2D(p.xy - e.yx, uRadius, true), 0.0);
+                    } else {
+                        grad = vec3(chladni(p + e.xyy, uRadius, true) - chladni(p - e.xyy, uRadius, true), chladni(p + e.yxy, uRadius, true) - chladni(p - e.yxy, uRadius, true), chladni(p + e.yyx, uRadius, true) - chladni(p - e.yyx, uRadius, true));
+                    }
                     vec3 normal = normalize(grad);
 
                     float fresnel = abs(dot(rd, normal));
