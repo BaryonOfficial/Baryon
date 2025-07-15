@@ -1,6 +1,7 @@
 #include ../includes/rot2D.glsl
 #include ../includes/sdSphere.glsl
 #include ../includes/sdTorus.glsl
+#include ../includes/sdBox.glsl
 precision mediump float;
 
 #define MAX_STEPS 100
@@ -28,6 +29,7 @@ uniform vec3 uHighlightColor; // Highlight color for the volume
 uniform float uAdaptiveStepStrength; // Controls how much gradient affects step size
 uniform float uEmptySpaceFactor; // Factor for empty space step size
 uniform float uPerformanceMode; // Performance mode (0=highest quality, 1=highest performance)
+uniform int uPrimitiveType; // 0: sphere, 1: torus, 2: box
 
 out vec4 finalColor;
 
@@ -143,9 +145,15 @@ float chladni(vec3 position, float radius, bool useOptimization) {
 
 // SDF abstraction: change this to swap primitives
 float map(vec3 p) {
-    // By default, use sphere. To use torus, swap the return line below.
-    return sdSphere(p, uRadius);
-    // return sdTorus(p, vec2(0.5, 0.2));
+    if(uPrimitiveType == 0) {
+        return sdSphere(p, uRadius);
+    } else if(uPrimitiveType == 1) {
+        return sdTorus(p, vec2(3.0, 2.4));
+    } else if(uPrimitiveType == 2) {
+        return sdBox(p, vec3(uRadius));
+    } else {
+        return sdSphere(p, uRadius); // fallback
+    }
 }
 
 float scene(vec3 p) {
@@ -218,13 +226,43 @@ vec4 transferFunction(float density) {
 // Hierarchical raymarching technique based on professional volume rendering pipelines
 // This is how major engines like Unreal and professional visualization tools optimize
 vec4 raymarchVolume(vec3 ro, vec3 rd) {
-    // Find intersection with bounding sphere
-    float t_min, t_max;
-    if(!intersectSphere(ro, rd, vec3(0.0), uRadius, t_min, t_max))
+    // --- SDF-based bounding: find entry and exit points using map() ---
+    float t = 0.0;
+    float t_min = -1.0;
+    float t_max = -1.0;
+    vec3 p;
+    bool hit = false;
+    // Find entry point (surface hit)
+    for(int i = 0; i < MAX_STEPS; i++) {
+        p = ro + rd * t;
+        float d = map(p);
+        if(d < SURFACE_DIST) {
+            t_min = t;
+            hit = true;
+            break;
+        }
+        t += max(d, 0.01); // step at least a little
+        if(t > MAX_DIST)
+            break;
+    }
+    if(!hit)
         return vec4(0.0);
-
-    // Start from camera if we're inside the sphere
-    t_min = max(0.0, t_min);
+    // Find exit point (where SDF becomes positive again)
+    t = t_min + 0.01; // step just inside
+    for(int i = 0; i < MAX_STEPS; i++) {
+        p = ro + rd * t;
+        float d = map(p);
+        if(d > 0.0) {
+            t_max = t;
+            break;
+        }
+        t += max(abs(d), 0.01);
+        if(t > MAX_DIST)
+            break;
+    }
+    if(t_max < 0.0)
+        t_max = t_min + 2.0; // fallback: short segment if no exit found
+    // --- End SDF bounding ---
 
     // Initialize accumulated color and opacity
     vec4 result = vec4(0.0);
@@ -237,21 +275,16 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
     float baseStepSize = uStepSize;
 
     // Make step size dependent on multiple quality factors
-    // This is an improved version of the professional technique called "adaptive step size control"
-    // - Performance mode scale
-    // - Ray length compensation (longer rays = larger steps)
-    // - View importance (frontal views get better sampling)
     baseStepSize *= mix(1.0, 2.5, uPerformanceMode);
     baseStepSize *= mix(1.0, 1.5, smoothstep(2.0, 8.0, rayLength));
     baseStepSize *= mix(1.0, 1.3, 1.0 - viewImportance);
 
     // Establish light samples count
-    // Professional engines adjust light sample count based on quality settings and view importance
     int maxLightSamples = max(3, int(float(uLightSamples) * mix(1.0, 0.4, uPerformanceMode)));
     maxLightSamples = int(float(maxLightSamples) * mix(0.7, 1.0, viewImportance));
 
     // Current position along the ray
-    float t = t_min;
+    t = t_min;
     vec3 lightPos = vec3(2.0, 4.0, -3.0);
 
     // Pro technique: adaptive epsilon for gradient

@@ -28,6 +28,7 @@ const DEFAULT_VALUES = {
   frameInterval: 60,
   generationEnabled: true,
   transitionDuration: 15, // Default transition duration in frames
+  primitiveType: 0,
 };
 
 // Create custom shader material
@@ -52,6 +53,7 @@ const ChladniMaterial = shaderMaterial(
     uAdaptiveStepStrength: DEFAULT_VALUES.adaptiveStepStrength,
     uEmptySpaceFactor: DEFAULT_VALUES.emptySpaceFactor,
     uPerformanceMode: DEFAULT_VALUES.performanceMode, // Performance mode uniform
+    uPrimitiveType: DEFAULT_VALUES.primitiveType,
   },
   vertexShader,
   fragmentShader
@@ -138,6 +140,7 @@ const Raymarching = () => {
     emptySpaceFactor,
     radius,
     performanceMode,
+    primitiveType,
   } = useControls({
     "Volumetric Rendering": folder(
       {
@@ -154,6 +157,13 @@ const Raymarching = () => {
           max: 1.0,
           step: 0.01,
           label: "Performance Mode",
+        },
+        primitiveType: {
+          value: DEFAULT_VALUES.primitiveType,
+          min: 0,
+          max: 10,
+          step: 1,
+          label: "Shapes",
         },
         stepSize: {
           value: DEFAULT_VALUES.stepSize,
@@ -274,6 +284,7 @@ const Raymarching = () => {
         adaptiveStepStrength;
       materialRef.current.uniforms.uEmptySpaceFactor.value = emptySpaceFactor;
       materialRef.current.uniforms.uPerformanceMode.value = performanceMode;
+      materialRef.current.uniforms.uPrimitiveType.value = primitiveType;
 
       // Update wave components with the latest values
       materialRef.current.uniforms.N.value = numComponents;
