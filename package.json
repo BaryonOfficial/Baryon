@@ -13,6 +13,7 @@
     "@react-three/drei": "^10.0.3",
     "@react-three/fiber": "^9.0.4",
     "@react-three/postprocessing": "^3.0.4",
+    "fft.js": "^4.0.4",
     "leva": "^0.10.0",
     "postprocessing": "^6.36.7",
     "r3f-perf": "^7.2.3",

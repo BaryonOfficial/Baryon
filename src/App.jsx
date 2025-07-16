@@ -10,6 +10,7 @@ import vertexShader from "./shaders/raymarch/vertex.glsl";
 import fragmentShader from "./shaders/raymarch/fragment.glsl";
 import { useWaveComponents } from "./hooks/useWaveComponents";
 import PostProcessing from "./components/PostProcessing";
+import PitchDetectionPanel from "./components/PitchDetectionPanel";
 
 // Define default values as constants to ensure consistency
 const DEFAULT_VALUES = {
@@ -317,30 +318,33 @@ const Raymarching = () => {
   );
 };
 
-const Scene = () => {
+export default function App() {
   return (
-    <>
-      {/* Add the Leva component with custom configuration */}
-      <Leva
-        collapsed={true}
-        theme={{
-          sizes: {
-            rootWidth: "360px", // Increase default width even more
-            labelWidth: "50%", // Allocate more space for labels
-          },
-        }}
-      />
+    <div style={{ display: "flex", flexDirection: "row", height: "100vh" }}>
+      <div style={{ flex: "0 0 auto" }}>
+        <PitchDetectionPanel />
+      </div>
+      <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+        {/* Add the Leva component with custom configuration */}
+        <Leva
+          collapsed={true}
+          theme={{
+            sizes: {
+              rootWidth: "360px", // Increase default width even more
+              labelWidth: "50%", // Allocate more space for labels
+            },
+          }}
+        />
 
-      <Canvas gl={{ alpha: true }} camera={{ position: [0, 0, 10], fov: 50 }}>
-        <Perf position="bottom-left" />
-        <color args={["#000000"]} attach="background" />
-        <Suspense fallback={null}>
-          <Raymarching />
-          <PostProcessing preset="intense" />
-        </Suspense>
-      </Canvas>
-    </>
+        <Canvas gl={{ alpha: true }} camera={{ position: [0, 0, 10], fov: 50 }}>
+          <Perf position="bottom-left" />
+          <color args={["#000000"]} attach="background" />
+          <Suspense fallback={null}>
+            <Raymarching />
+            <PostProcessing preset="intense" />
+          </Suspense>
+        </Canvas>
+      </div>
+    </div>
   );
-};
-
-export default Scene;
+}
