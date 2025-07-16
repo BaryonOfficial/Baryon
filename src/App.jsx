@@ -69,12 +69,7 @@ const Raymarching = () => {
   const controlsRef = useRef();
 
   // Use Leva for wave component controls
-  const {
-    numComponents,
-    frameInterval,
-    generationEnabled,
-    transitionDuration,
-  } = useControls({
+  const { numComponents, frameInterval, generationEnabled, transitionDuration } = useControls({
     "Wave Components": folder(
       {
         numComponents: {
@@ -133,7 +128,6 @@ const Raymarching = () => {
   const {
     stepSize,
     threshold,
-    lightSamples,
     densityScale,
     emptySpaceThreshold,
     adaptiveStepStrength,
@@ -178,13 +172,6 @@ const Raymarching = () => {
           max: 2.0,
           step: 0.001,
           label: "Pattern Threshold",
-        },
-        lightSamples: {
-          value: DEFAULT_VALUES.lightSamples,
-          min: 4,
-          max: 16,
-          step: 1,
-          label: "Light Samples",
         },
         densityScale: {
           value: DEFAULT_VALUES.densityScale,
@@ -262,26 +249,18 @@ const Raymarching = () => {
 
     if (materialRef.current?.uniforms) {
       materialRef.current.uniforms.uTime.value = currentTime;
-      materialRef.current.uniforms.uResolution.value.set(
-        size.width * viewport.dpr,
-        size.height * viewport.dpr
-      );
+      materialRef.current.uniforms.uResolution.value.set(size.width * viewport.dpr, size.height * viewport.dpr);
 
       // Update camera position and rotation for raymarching
       materialRef.current.uniforms.uCameraPosition.value.copy(camera.position);
-      materialRef.current.uniforms.uCameraQuaternion.value.copy(
-        camera.quaternion
-      );
+      materialRef.current.uniforms.uCameraQuaternion.value.copy(camera.quaternion);
 
       // Update values from Leva controls
       materialRef.current.uniforms.uStepSize.value = stepSize;
       materialRef.current.uniforms.uThreshold.value = threshold;
-      materialRef.current.uniforms.uLightSamples.value = lightSamples;
       materialRef.current.uniforms.uDensityScale.value = densityScale;
-      materialRef.current.uniforms.uEmptySpaceThreshold.value =
-        emptySpaceThreshold;
-      materialRef.current.uniforms.uAdaptiveStepStrength.value =
-        adaptiveStepStrength;
+      materialRef.current.uniforms.uEmptySpaceThreshold.value = emptySpaceThreshold;
+      materialRef.current.uniforms.uAdaptiveStepStrength.value = adaptiveStepStrength;
       materialRef.current.uniforms.uEmptySpaceFactor.value = emptySpaceFactor;
       materialRef.current.uniforms.uPerformanceMode.value = performanceMode;
       materialRef.current.uniforms.uPrimitiveType.value = primitiveType;
@@ -294,11 +273,7 @@ const Raymarching = () => {
       materialRef.current.uniforms.uTransitionProgress.value = progress;
 
       // Update color values
-      materialRef.current.uniforms.uBaseColor.value.set(
-        baseColorRGB.r,
-        baseColorRGB.g,
-        baseColorRGB.b
-      );
+      materialRef.current.uniforms.uBaseColor.value.set(baseColorRGB.r, baseColorRGB.g, baseColorRGB.b);
       materialRef.current.uniforms.uHighlightColor.value.set(
         highlightColorRGB.r,
         highlightColorRGB.g,
@@ -311,9 +286,7 @@ const Raymarching = () => {
       // Calculate position in front of camera
       const direction = new THREE.Vector3(0, 0, -1);
       direction.applyQuaternion(camera.quaternion);
-      const position = camera.position
-        .clone()
-        .addScaledVector(direction, camera.near + 0.01);
+      const position = camera.position.clone().addScaledVector(direction, camera.near + 0.01);
 
       // Position and rotate the plane to face the camera
       planeRef.current.position.copy(position);
@@ -321,8 +294,7 @@ const Raymarching = () => {
 
       // Scale the plane to cover the entire frustum
       const distance = camera.near + 0.01;
-      const height =
-        2 * Math.tan((camera.fov * (Math.PI / 180)) / 2) * distance;
+      const height = 2 * Math.tan((camera.fov * (Math.PI / 180)) / 2) * distance;
       const width = height * camera.aspect;
       planeRef.current.scale.set(width, height, 1);
     }
@@ -330,13 +302,7 @@ const Raymarching = () => {
 
   return (
     <>
-      <OrbitControls
-        ref={controlsRef}
-        minDistance={1}
-        maxDistance={20}
-        enableDamping
-        dampingFactor={0.1}
-      />
+      <OrbitControls ref={controlsRef} minDistance={1} maxDistance={20} enableDamping dampingFactor={0.1} />
       <mesh ref={planeRef}>
         <planeGeometry />
         <chladniMaterial

@@ -22,7 +22,6 @@ uniform int N;
 uniform vec3 uCameraPosition;                 // Camera position
 uniform vec4 uCameraQuaternion;               // Camera rotation as quaternion
 uniform float uStepSize; // Control the ray marching step size
-uniform int uLightSamples; // Control the number of light samples
 uniform float uDensityScale; // Density scale for transfer function
 uniform float uEmptySpaceThreshold; // Threshold for empty space skipping
 uniform vec3 uBaseColor; // Base color for the volume
@@ -338,14 +337,6 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
     baseStepSize *= mix(1.0, 1.5, smoothstep(2.0, 8.0, rayLength));
     baseStepSize *= mix(1.0, 1.3, 1.0 - viewImportance);
 
-    // Establish light samples count
-    int maxLightSamples = max(3, int(float(uLightSamples) * mix(1.0, 0.4, uPerformanceMode)));
-    maxLightSamples = int(float(maxLightSamples) * mix(0.7, 1.0, viewImportance));
-
-    // Current position along the ray
-    t = t_min;
-    vec3 lightPos = vec3(2.0, 4.0, -3.0);
-
     // Pro technique: adaptive epsilon for gradient
     float epsScale = mix(1.0, 3.0, uPerformanceMode);
     vec3 eps = vec3(0.01 * epsScale, 0.0, 0.0);
@@ -387,49 +378,8 @@ vec4 raymarchVolume(vec3 ro, vec3 rd) {
             float gradientFactor = max(1.0, uAdaptiveStepStrength);
             float adaptiveStepSize = baseStepSize / (1.0 + gradientFactor * gradient);
 
-            // Get color and opacity
+            // Get color and opacity (no lighting)
             vec4 sampleColor = transferFunction(density);
-
-            // Skip light calculation for very low-density samples (optimization)
-            if(sampleColor.a > 0.05) {
-                // Add lighting
-                vec3 lightDir = normalize(lightPos - p);
-                float lightDist = length(lightPos - p);
-                float lightAtten = 1.0 / (1.0 + 0.1 * lightDist + 0.01 * lightDist * lightDist);
-
-                // Light scattering approximation
-                float scattering = 0.0;
-                float rayProgress = (t - t_min) / (t_max - t_min);
-                int actualLightSamples = maxLightSamples;
-
-                // Depth-based lighting optimization - classic professional technique
-                if(rayProgress > mix(0.5, 0.3, uPerformanceMode)) {
-                    actualLightSamples = max(2, actualLightSamples / 2);
-                }
-
-                // Use importance sampling technique to focus samples where they matter most
-                for(int j = 0; j < 16; j++) {
-                    if(j >= actualLightSamples)
-                        break;
-
-                    // Exponential distribution puts more samples near the current point
-                    float s = pow(float(j) / float(actualLightSamples - 1), 1.5);
-
-                    vec3 samplePos = mix(p, lightPos, s);
-                    float sampleChladni;
-                    if(uPrimitiveType == 3) {
-                        sampleChladni = chladni2D(samplePos.xy, uRadius, true);
-                    } else {
-                        sampleChladni = chladni(samplePos, uRadius, true);
-                    }
-                    float sampleDensity = smoothstep(uThreshold, 0.0, abs(sampleChladni));
-                    scattering += sampleDensity;
-                }
-                scattering = exp(-scattering * 0.2);
-
-                // Apply lighting to color
-                sampleColor.rgb *= (0.3 + 0.7 * lightAtten * scattering);
-            }
 
             // Composite
             sampleColor.rgb *= sampleColor.a;
