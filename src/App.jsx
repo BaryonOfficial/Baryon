@@ -45,7 +45,6 @@ const ChladniMaterial = shaderMaterial(
     prevWaveComponents: new Float32Array(DEFAULT_VALUES.numComponents * 4), // Previous wave components
     uTransitionProgress: 1.0, // Transition progress (0.0 - 1.0)
     uStepSize: DEFAULT_VALUES.stepSize,
-    uLightSamples: DEFAULT_VALUES.lightSamples,
     uDensityScale: DEFAULT_VALUES.densityScale,
     uEmptySpaceThreshold: DEFAULT_VALUES.emptySpaceThreshold,
     uBaseColor: new THREE.Color(DEFAULT_VALUES.baseColor),
