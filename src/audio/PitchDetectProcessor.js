@@ -1,7 +1,5 @@
 import FFT from "fft.js";
 
-const FFT_SIZE = 1024;
-const SAMPLE_RATE = 44100; // Will be updated from context if needed
 const THRESHOLD = 0.05; // Amplitude threshold for peak picking
 const MAX_PEAKS = 16; // Limit number of peaks per frame
 
@@ -12,7 +10,6 @@ function hannWindow(N) {
   }
   return win;
 }
-const windowFunc = hannWindow(FFT_SIZE);
 
 function findPeaks(mags, threshold) {
   const peaks = [];
@@ -37,14 +34,18 @@ function binToFreq(bin, sampleRate, fftSize) {
 }
 
 class PitchDetectProcessor extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super();
-    this.buffer = new Float32Array(FFT_SIZE);
+    const opts = (options && options.processorOptions) || {};
+    this.fftSize = opts.fftSize || 1024;
+    this.sampleRate = opts.sampleRate || 44100;
+    this.buffer = new Float32Array(this.fftSize);
     this.writeIndex = 0;
-    this.fft = new FFT(FFT_SIZE);
-    this.fftInput = new Array(FFT_SIZE).fill(0);
-    this.fftOutput = new Array(FFT_SIZE).fill(0);
-    this.mags = new Float32Array(FFT_SIZE / 2);
+    this.fft = new FFT(this.fftSize);
+    this.fftInput = new Array(this.fftSize).fill(0);
+    this.fftOutput = new Array(this.fftSize).fill(0);
+    this.mags = new Float32Array(this.fftSize / 2);
+    this.windowFunc = hannWindow(this.fftSize);
   }
 
   process(inputs) {
@@ -52,20 +53,20 @@ class PitchDetectProcessor extends AudioWorkletProcessor {
     if (!input) return true;
     for (let i = 0; i < input.length; i++) {
       this.buffer[this.writeIndex++] = input[i];
-      if (this.writeIndex === FFT_SIZE) {
+      if (this.writeIndex === this.fftSize) {
         // Apply window
-        for (let j = 0; j < FFT_SIZE; j++) {
-          this.fftInput[j] = this.buffer[j] * windowFunc[j];
+        for (let j = 0; j < this.fftSize; j++) {
+          this.fftInput[j] = this.buffer[j] * this.windowFunc[j];
         }
         // FFT
         this.fftOutput = this.fft.createComplexArray();
         this.fft.realTransform(this.fftOutput, this.fftInput);
         this.fft.completeSpectrum(this.fftOutput);
         // Magnitude spectrum
-        for (let k = 0; k < FFT_SIZE / 2; k++) {
+        for (let k = 0; k < this.fftSize / 2; k++) {
           const re = this.fftOutput[2 * k];
           const im = this.fftOutput[2 * k + 1];
-          this.mags[k] = Math.sqrt(re * re + im * im) / FFT_SIZE;
+          this.mags[k] = Math.sqrt(re * re + im * im) / this.fftSize;
         }
         // Peak picking
         const peaks = findPeaks(this.mags, THRESHOLD);
@@ -76,7 +77,7 @@ class PitchDetectProcessor extends AudioWorkletProcessor {
           const i = peaks[idx];
           if (i <= 0 || i >= this.mags.length - 1) continue;
           const interpBin = parabolicInterp(this.mags, i);
-          const freq = binToFreq(interpBin, SAMPLE_RATE, FFT_SIZE);
+          const freq = binToFreq(interpBin, this.sampleRate, this.fftSize);
           const amp = this.mags[i];
           pitches.push(freq);
           amplitudes.push(amp);

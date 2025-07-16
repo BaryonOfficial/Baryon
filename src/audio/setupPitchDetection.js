@@ -12,46 +12,56 @@ export async function setupPitchDetection({
   workletUrl = "/src/audio/PitchDetectProcessor.js",
   fftSize = 1024,
 } = {}) {
-  // 1. Create AudioContext
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  try {
+    // 1. Create AudioContext
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-  // 2. Add the AudioWorklet
-  await audioCtx.audioWorklet.addModule(workletUrl);
+    // 2. Add the AudioWorklet
+    await audioCtx.audioWorklet.addModule(workletUrl);
 
-  // 3. Get user media with selected device
-  const constraints = {
-    audio: deviceId ? { deviceId: { exact: deviceId } } : true,
-  };
-  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    // 3. Get user media with selected device
+    const constraints = {
+      audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+    };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
-  // 4. Create MediaStreamSource
-  const source = audioCtx.createMediaStreamSource(stream);
+    // 4. Create MediaStreamSource
+    const source = audioCtx.createMediaStreamSource(stream);
 
-  // 5. Create the AudioWorkletNode
-  const workletNode = new AudioWorkletNode(audioCtx, "pitch-detect-processor");
+    // 5. Create the AudioWorkletNode with options
+    const workletNode = new AudioWorkletNode(audioCtx, "pitch-detect-processor", {
+      processorOptions: {
+        sampleRate: audioCtx.sampleRate,
+        fftSize,
+      },
+    });
 
-  // 6. Connect nodes
-  source.connect(workletNode);
-  // Optionally connect to destination for monitoring
-  // workletNode.connect(audioCtx.destination);
+    // 6. Connect nodes
+    source.connect(workletNode);
+    // Optionally connect to destination for monitoring
+    // workletNode.connect(audioCtx.destination);
 
-  // 7. Listen for pitch data
-  workletNode.port.onmessage = (event) => {
-    if (onPitchData) {
-      onPitchData(event.data); // { pitches, amplitudes }
-    }
-  };
+    // 7. Listen for pitch data
+    workletNode.port.onmessage = (event) => {
+      if (onPitchData) {
+        onPitchData(event.data); // { pitches, amplitudes }
+      }
+    };
 
-  return {
-    audioCtx,
-    workletNode,
-    source,
-    stream,
-    setDevice: async (newDeviceId) => {
-      // Stop old stream
-      stream.getTracks().forEach((track) => track.stop());
-      // Re-setup with new device
-      return setupPitchDetection({ onPitchData, deviceId: newDeviceId, workletUrl, fftSize });
-    },
-  };
+    return {
+      audioCtx,
+      workletNode,
+      source,
+      stream,
+      setDevice: async (newDeviceId) => {
+        // Stop old stream
+        stream.getTracks().forEach((track) => track.stop());
+        // Re-setup with new device
+        return setupPitchDetection({ onPitchData, deviceId: newDeviceId, workletUrl, fftSize });
+      },
+    };
+  } catch (error) {
+    console.error("Error setting up pitch detection:", error);
+    throw error;
+  }
 }
