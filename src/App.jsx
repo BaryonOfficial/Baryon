@@ -10,7 +10,6 @@ import vertexShader from "./shaders/raymarch/vertex.glsl";
 import fragmentShader from "./shaders/raymarch/fragment.glsl";
 import { useWaveComponents } from "./hooks/useWaveComponents";
 import PostProcessing from "./components/PostProcessing";
-import PitchDetectionPanel from "./components/PitchDetectionPanel";
 
 // Define default values as constants to ensure consistency
 const DEFAULT_VALUES = {
@@ -321,9 +320,6 @@ const Raymarching = () => {
 export default function App() {
   return (
     <div style={{ display: "flex", flexDirection: "row", height: "100vh" }}>
-      <div style={{ flex: "0 0 auto" }}>
-        <PitchDetectionPanel />
-      </div>
       <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
         {/* Add the Leva component with custom configuration */}
         <Leva
