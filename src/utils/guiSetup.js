@@ -124,13 +124,17 @@ export function guiSetup(
     showStats: false, // Initialize showStats property
   };
 
-  performanceFolder
-    .add(performanceSettings, 'showStats')
-    .name('Show Stats Panel')
-    .onChange((value) => {
-      setShowStats(value);
-    });
+performanceFolder
+  .add(performanceSettings, 'showStats')
+  .name('Show Stats Panel')
+  .onChange((value) => {
 
+    if (value && stats?.dom && !document.body.contains(stats.dom)) {
+      document.body.appendChild(stats.dom);
+    } else if (!value && stats?.dom?.parentNode) {
+      stats.dom.parentNode.removeChild(stats.dom);
+    }
+  });
   // performanceFolder.close(); // Keeping this open by default could help users realize performance optimizations
 
   const resetDefaults = {
