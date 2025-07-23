@@ -2,6 +2,24 @@
 
 Baryon is a music visualizer that makes sound visible using its proprietary 3D cymatics simulation engine. It is currently in early development.
 
+To run the frontend, do:
+
+```
+npm i
+```
+
+then
+
+```
+npm run dev
+```
+
+To run the Tauri app, do:
+
+```
+npm run tauri dev
+```
+
 ## Contributing
 
 Please read our [Contributing Guidelines](.github/CONTRIBUTING.md) before submitting any changes.
