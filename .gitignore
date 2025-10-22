@@ -33,3 +33,6 @@ repomix*
 # SSL Certificates
 *.pem
 /certs
+
+# Tauri (temporarily ignored)
+src-tauri/
