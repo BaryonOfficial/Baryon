@@ -10,8 +10,8 @@ const ThreeScene = () => {
   const canvasRef = useRef(null);
   const guiContainerRef = useRef(null);
 
-  // Custom hook to toggle fullscreen mode
-  const toggleFullscreen = useFullscreen(canvasRef);
+  // Custom hook to toggle fullscreen mode (handles 'f' key press)
+  useFullscreen(canvasRef);
 
   // UI state variables
   const [fileName, setFileName] = useState("Upload Audio");
@@ -63,9 +63,6 @@ const ThreeScene = () => {
     >
       {/* WebGL canvas rendered by Three.js */}
       <canvas ref={canvasRef} className="webgl absolute z-10" />
-
-      {/* Fullscreen toggle button */}
-      <button onClick={toggleFullscreen}>Toggle Fullscreen</button>
 
       {/* If browser is supported, show GUI + controls */}
       {!isUnsupported && (
