@@ -5,11 +5,10 @@
   "type": "module",
   "main": "./src/index.js",
   "exports": {
-    ".": "./src/index.js",
-    "./tailwind": "./tailwind.config.base.js"
+    ".": "./src/index.js"
   },
   "dependencies": {
     "clsx": "^2.1.1",
-    "tailwind-merge": "^2.6.0"
+    "tailwind-merge": "^3.0.0"
   }
 }

@@ -1,3 +1,5 @@
+@reference "./index.css";
+
 .btn-standard {
   @apply bg-white text-black hover:bg-whitesmoke font-light py-1.5 px-3.5 rounded font-ubuntu cursor-pointer text-sm;
 }

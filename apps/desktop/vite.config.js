@@ -1,13 +1,14 @@
 import { defineConfig } from 'vite';
 import path from 'path';
 import { createBaseViteConfig } from '@baryon/config';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(() => {
   const base = createBaseViteConfig();
 
   return {
     ...base,
-    plugins: [...base.plugins],
+    plugins: [tailwindcss(), ...base.plugins],
     // COOP/COEP are set via tauri.conf.json app.security.headers
     clearScreen: false,
     server: {

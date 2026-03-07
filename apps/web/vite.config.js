@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import path from 'path';
 import { createBaseViteConfig } from '@baryon/config';
 import basicSsl from '@vitejs/plugin-basic-ssl';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(() => {
   const isHttps = process.env.HTTPS === 'true';
@@ -10,6 +11,7 @@ export default defineConfig(() => {
   return {
     ...base,
     plugins: [
+      tailwindcss(),
       ...base.plugins,
       isHttps && basicSsl(),
     ].filter(Boolean),
