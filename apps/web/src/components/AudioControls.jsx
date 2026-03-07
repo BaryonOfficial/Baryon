@@ -105,6 +105,6 @@ function AudioControls ({
             </div>
           </div>
   );
-};
+}
 
 export default AudioControls;

@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+apps/*/dist
 *.local
 examples
 prompts
@@ -34,5 +35,8 @@ repomix*
 *.pem
 /certs
 
-# Tauri (temporarily ignored)
-src-tauri/
+# Rust build artifacts
+**/src-tauri/target/
+
+# pnpm
+.pnpm-store/

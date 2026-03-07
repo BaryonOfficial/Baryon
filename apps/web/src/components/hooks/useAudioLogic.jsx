@@ -4,7 +4,7 @@ import {
   stopMicRecordStream,
   playPauseAudio,
   stopAudio,
-} from "../../core/audio/audioSetup";
+} from "@baryon/visualizer/audio";
 import { useEffect, useCallback } from "react";
 
 export function useAudioLogic({
@@ -41,7 +41,7 @@ export function useAudioLogic({
     return () => {
       navigator.mediaDevices.removeEventListener("devicechange", loadDevices);
     };
-  }, []);
+  }, [setAudioDevices, setSelectedDevice]);
 
   const handleFileChange = useCallback(
     (event) => {

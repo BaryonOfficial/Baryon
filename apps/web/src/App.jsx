@@ -1,7 +1,7 @@
 import React from "react";
 
 import "./App.css";
-import ThreeScene from "./three/components/ThreeScene.jsx";
+import ThreeScene from "./components/ThreeScene.jsx";
 
 function App() {
   return (

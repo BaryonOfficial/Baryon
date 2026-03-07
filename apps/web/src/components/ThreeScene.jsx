@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
-import useThreeScene from "../scene/useThreeScene";
-import AudioControls from "../../components/AudioControls";
-import UnsupportedWarning from "../../components/UnsupportedWarning.jsx";
-import { useFullscreen } from "../../components/hooks/useFullScreenToggle.jsx";
-import { useAudioLogic } from "../../components/hooks/useAudioLogic";
+import useThreeScene from "@baryon/visualizer/hooks/useThreeScene";
+import AudioControls from "./AudioControls";
+import UnsupportedWarning from "./UnsupportedWarning.jsx";
+import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
+import { useAudioLogic } from "./hooks/useAudioLogic";
 
 const ThreeScene = () => {
   // Refs for canvas and GUI container
