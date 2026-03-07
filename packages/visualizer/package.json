@@ -11,7 +11,7 @@
   },
   "peerDependencies": {
     "react": "^18.3.1",
-    "three": "^0.178.0"
+    "three": "^0.183.0"
   },
   "dependencies": {
     "essentia.js": "^0.1.3"
