@@ -279,7 +279,7 @@ function combineFrequencyData(freqData1, freqData2) {
 }
 
 export function processAudioData(gpgpu, particles, essentiaData) {
-  if (audioObject.audioReader.available_read() >= 1) {
+  if (audioObject.audioReader?.available_read() >= 1) {
     let read = audioObject.audioReader.dequeue(essentiaData);
     if (read !== 0) {
       gpgpu.audioDataVariable.material.uniforms.tPitches.value.needsUpdate = true;

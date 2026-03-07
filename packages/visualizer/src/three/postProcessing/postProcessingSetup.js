@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { DEFAULTS } from '../../defaults.js';
 
 // Passes
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -13,7 +14,7 @@ import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
  */
 
 export function postProcessingSetup(renderer, scene, camera, sizes) {
-    const renderTarget = new THREE.WebGLRenderTarget(800, 600, {
+    const renderTarget = new THREE.WebGLRenderTarget(sizes.width, sizes.height, {
         samples: renderer.getPixelRatio() === 1 ? 2 : 0,
     });
 
@@ -29,9 +30,9 @@ export function postProcessingSetup(renderer, scene, camera, sizes) {
     unrealBloomPass.enabled = true;
     effectComposer.addPass(unrealBloomPass);
 
-    unrealBloomPass.strength = 0.36;
-    unrealBloomPass.radius = -2.0;
-    unrealBloomPass.threshold = 0.4;
+    unrealBloomPass.strength = DEFAULTS.bloomStrength;
+    unrealBloomPass.radius = DEFAULTS.bloomRadius;
+    unrealBloomPass.threshold = DEFAULTS.bloomThreshold;
 
     const gammaCorrectionPass = new ShaderPass(GammaCorrectionShader);
     effectComposer.addPass(gammaCorrectionPass);

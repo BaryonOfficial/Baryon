@@ -3,7 +3,6 @@ import * as THREE from "three";
 import particlesVertexShader from "../three/shaders/particles/vertex.glsl";
 import particlesFragmentShader from "../three/shaders/particles/fragment.glsl";
 
-import { audioObject } from "./audio/audioSetup";
 /**
  * Particles
  */
@@ -14,7 +13,8 @@ export function particlesSetup(
   gpgpu,
   baseGeometry,
   colors,
-  scene
+  scene,
+  initialSoundPlaying = false
 ) {
   const particles = {};
   const materialParameters = {};
@@ -50,7 +50,7 @@ export function particlesSetup(
       uAverageAmplitude: new THREE.Uniform(0.0),
       uRotation: new THREE.Uniform(2.5),
       uDeltaTime: new THREE.Uniform(0),
-      uSoundPlaying: new THREE.Uniform(audioObject.sound.isPlaying),
+      uSoundPlaying: new THREE.Uniform(initialSoundPlaying),
     },
   });
 

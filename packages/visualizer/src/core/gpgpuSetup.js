@@ -6,8 +6,6 @@ import scalarFieldShader from "../three/shaders/gpgpu/scalarField.glsl";
 import zeroPointsShader from "../three/shaders/gpgpu/zeroPoints.glsl";
 import audioDataShader from "../three/shaders/gpgpu/audioData.glsl";
 
-import { audioObject } from "./audio/audioSetup";
-
 /**
  * GPU Compute
  */
@@ -81,7 +79,8 @@ export function gpgpuSetup(
   baseGeometry,
   renderer,
   parameters,
-  baseGeometry2
+  baseGeometry2,
+  audioConfig
 ) {
   // Setup
   const gpgpu = {};
@@ -154,7 +153,7 @@ export function gpgpuSetup(
     return pitches;
   }
 
-  const randomPitches = generateRandomPitches(audioObject.capacity);
+  const randomPitches = generateRandomPitches(audioConfig.capacity);
 
   // Global Uniform Variables
   const waveUniforms = {
@@ -175,12 +174,12 @@ export function gpgpuSetup(
   const format = renderer.capabilities.isWebGL2
     ? THREE.RedFormat
     : THREE.LuminanceFormat;
-  const essentiaData = new Float32Array(audioObject.capacity);
+  const essentiaData = new Float32Array(audioConfig.capacity);
 
   gpgpu.audioDataVariable.material.uniforms.tPitches = {
     value: new THREE.DataTexture(
       essentiaData,
-      audioObject.capacity,
+      audioConfig.capacity,
       1,
       format,
       THREE.FloatType
@@ -188,8 +187,8 @@ export function gpgpuSetup(
   };
   gpgpu.audioDataVariable.material.uniforms.tDataArray = {
     value: new THREE.DataTexture(
-      audioObject.analyser.data, // Initial empty data
-      audioObject.fftSize / 2,
+      audioConfig.fftData, // Initial empty data
+      audioConfig.fftSize / 2,
       1,
       format
     ),
@@ -198,13 +197,13 @@ export function gpgpuSetup(
     parameters.radius
   );
   gpgpu.audioDataVariable.material.uniforms.sampleRate = new THREE.Uniform(
-    audioObject.audioCtx.sampleRate
+    audioConfig.sampleRate
   );
   gpgpu.audioDataVariable.material.uniforms.bufferSize = new THREE.Uniform(
-    audioObject.fftSize
+    audioConfig.fftSize
   );
   gpgpu.audioDataVariable.material.uniforms.capacity = new THREE.Uniform(
-    audioObject.capacity
+    audioConfig.capacity
   );
   gpgpu.audioDataVariable.material.uniforms.uRandomPitches =
     waveUniforms.pitches;
@@ -229,7 +228,7 @@ export function gpgpuSetup(
     baseParticlesTexture
   );
   gpgpu.scalarFieldVariable.material.uniforms.capacity = new THREE.Uniform(
-    audioObject.capacity
+    audioConfig.capacity
   );
 
   // Dependencies
@@ -294,7 +293,7 @@ export function gpgpuSetup(
     32
   );
   gpgpu.particlesVariable.material.uniforms.uStarted = new THREE.Uniform(
-    audioObject.sound.started
+    audioConfig.soundStarted
   );
   gpgpu.particlesVariable.material.uniforms.uParticleMovementType =
     new THREE.Uniform(1);
@@ -304,7 +303,7 @@ export function gpgpuSetup(
   gpgpu.particlesVariable.material.uniforms.uDistanceThreshold =
     new THREE.Uniform(0.5);
   gpgpu.particlesVariable.material.uniforms.uMicActive = new THREE.Uniform(
-    audioObject.gumStream && audioObject.gumStream.active
+    audioConfig.gumStreamActive
   );
 
   // Dependencies

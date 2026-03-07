@@ -10,6 +10,7 @@ import { loadModelAndSetup } from "../../utils/loadModelAndSetup";
 import { setupLoaders } from "../loaders/setupLoaders";
 import { initGUI } from "../gui/initGui";
 import { handleResize } from "./handleResize";
+import { DEFAULTS } from "../../defaults.js";
 import {
   audioObject,
   audioSetup,
@@ -27,6 +28,8 @@ export default function useThreeScene(
   useEffect(() => {
     let particles, gpgpu, essentiaData;
     let effectComposer, renderer;
+    let animFrameId;
+    let isMounted = true;
 
     // Setup the scene, camera, renderer, and controls
     const {
@@ -44,13 +47,13 @@ export default function useThreeScene(
 
     // Create GUI and loaders
     const gui = initGUI(guiContainerRef);
-    const debugObject = { backgroundColor: "#000000" };
+    const debugObject = { backgroundColor: DEFAULTS.backgroundColor };
     const { gltfLoader } = setupLoaders();
 
     // Handle time logic
     const timeHandler = createTimeHandler(audioObject);
 
-    // Setup audio context and listener
+    // Setup audio context and listener (must run before building audioConfig)
     audioSetup(camera);
 
     // Setup post-processing effects (bloom, composer)
@@ -64,12 +67,12 @@ export default function useThreeScene(
 
     // Particle system parameters
     const parameters = {
-      count: 1500000,
-      radius: 3.0,
-      threshold: 0.05,
-      surfaceRatio: 0.33,
-      surfaceThreshold: 0.01,
-      targetFPS: 60,
+      count: DEFAULTS.particleCount,
+      radius: DEFAULTS.radius,
+      threshold: DEFAULTS.threshold,
+      surfaceRatio: DEFAULTS.surfaceRatio,
+      surfaceThreshold: DEFAULTS.surfaceThreshold,
+      targetFPS: DEFAULTS.targetFPS,
     };
 
     // Allocate memory for particles positions and colors
@@ -78,6 +81,17 @@ export default function useThreeScene(
       positions: new Float32Array(parameters.count * 3),
     };
     const colors = new Float32Array(baseGeometry.count * 3);
+
+    // Snapshot of audio state at setup time — passed to engine modules
+    // so they don't need to import audioObject directly
+    const audioConfig = {
+      capacity: audioObject.capacity,
+      fftSize: audioObject.fftSize,
+      sampleRate: audioObject.audioCtx.sampleRate,
+      fftData: audioObject.analyser.data,
+      soundStarted: audioObject.sound.started,
+      gumStreamActive: audioObject.gumStream?.active ?? false,
+    };
 
     // Load model and initialize particles and GPGPU
     (async () => {
@@ -91,7 +105,15 @@ export default function useThreeScene(
         sizes,
         gpgpuSetup,
         particlesSetup,
+        audioConfig,
       });
+
+      if (!isMounted) {
+        disposeGPGPUResources(result.gpgpu);
+        result.particles.geometry.dispose();
+        result.particles.material.dispose();
+        return;
+      }
 
       gpgpu = result.gpgpu;
       essentiaData = result.essentiaData;
@@ -138,7 +160,10 @@ export default function useThreeScene(
 
     // Main animation loop
     const tick = () => {
-      requestAnimationFrame(tick);
+      animFrameId = requestAnimationFrame(tick);
+
+      // Skip frames until the async model/GPGPU setup resolves
+      if (!gpgpu || !particles) return;
 
       // Compute time deltas
       const elapsedTime = clock.getElapsedTime();
@@ -194,8 +219,16 @@ export default function useThreeScene(
 
     // Cleanup on unmount
     return () => {
+      isMounted = false;
+      cancelAnimationFrame(animFrameId);
       gui?.destroy();
-      disposeGPGPUResources(gpgpu);
+      if (gpgpu) disposeGPGPUResources(gpgpu);
+      if (particles) {
+        particles.geometry.dispose();
+        particles.material.dispose();
+      }
+      effectComposer?.dispose();
+      if (audioObject.listener) camera.remove(audioObject.listener);
       renderer.dispose();
       window.removeEventListener("resize", onResize);
     };
