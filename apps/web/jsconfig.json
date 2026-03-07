@@ -8,7 +8,7 @@
     "checkJs": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "typeRoots": ["./src/types"]
   },
   "include": ["src/**/*.js", "src/**/*.jsx"],

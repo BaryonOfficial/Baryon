@@ -5,6 +5,7 @@ import gpgpuParticlesShader from "../three/shaders/gpgpu/particles.glsl";
 import scalarFieldShader from "../three/shaders/gpgpu/scalarField.glsl";
 import zeroPointsShader from "../three/shaders/gpgpu/zeroPoints.glsl";
 import audioDataShader from "../three/shaders/gpgpu/audioData.glsl";
+import { DEFAULTS } from "../defaults.js";
 
 /**
  * GPU Compute
@@ -17,7 +18,6 @@ function initializeParticlesInSphereVolumeAndSurface(
 ) {
   const positions = new Float32Array(count * 3);
   const surfaceCount = Math.floor(count * surfaceRatio);
-  // const volumeCount = count - surfaceCount;
 
   // Generate points on the surface
   const goldenRatio = (1 + Math.sqrt(5)) / 2;
@@ -50,32 +50,7 @@ function initializeParticlesInSphereVolumeAndSurface(
   return positions;
 }
 
-function initializeParticlesInSphere(count, radius) {
-  // Scale down the radius to 1/10th
-  const scaledRadius = radius / 10;
-
-  const positions = new Float32Array(count * 3);
-
-  for (let i = 0; i < count; i++) {
-    // Use the scaled radius in the calculation
-    const r = Math.pow(Math.random(), 1 / 3) * scaledRadius; // Adjust the power to 1/3 for uniform distribution within the sphere
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-
-    const x = r * Math.sin(phi) * Math.cos(theta);
-    const y = r * Math.sin(phi) * Math.sin(theta);
-    const z = r * Math.cos(phi);
-
-    positions[i * 3] = x;
-    positions[i * 3 + 1] = y;
-    positions[i * 3 + 2] = z;
-  }
-
-  return positions;
-}
-
 export function gpgpuSetup(
-  scene,
   baseGeometry,
   renderer,
   parameters,
@@ -125,23 +100,6 @@ export function gpgpuSetup(
     baryonLogoTexture.image.data[i4 + 2] =
       baseGeometry2.geometry.attributes.position.array[i3 + 2];
     baryonLogoTexture.image.data[i4 + 3] = Math.random();
-  }
-
-  // Initalization of particles for movement
-  const initialParticlesTexture = gpgpu.computation.createTexture();
-  const initialPositions = initializeParticlesInSphere(
-    parameters.count,
-    parameters.radius
-  );
-
-  for (let i = 0; i < baseGeometry.count; i++) {
-    const i3 = i * 3;
-    const i4 = i * 4;
-
-    initialParticlesTexture.image.data[i4 + 0] = initialPositions[i3 + 0];
-    initialParticlesTexture.image.data[i4 + 1] = initialPositions[i3 + 1];
-    initialParticlesTexture.image.data[i4 + 2] = initialPositions[i3 + 2];
-    initialParticlesTexture.image.data[i4 + 3] = 1.0;
   }
 
   function generateRandomPitches(capacity) {
@@ -276,11 +234,11 @@ export function gpgpuSetup(
   gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
   gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
   gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence =
-    new THREE.Uniform(1.0);
+    new THREE.Uniform(DEFAULTS.flowFieldInfluence);
   gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength =
-    new THREE.Uniform(3.6);
+    new THREE.Uniform(DEFAULTS.flowFieldStrength);
   gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency =
-    new THREE.Uniform(0.64);
+    new THREE.Uniform(DEFAULTS.flowFieldFrequency);
   gpgpu.particlesVariable.material.uniforms.uThreshold = new THREE.Uniform(
     parameters.threshold
   );
@@ -290,7 +248,7 @@ export function gpgpuSetup(
   gpgpu.particlesVariable.material.uniforms.uAverageAmplitude =
     new THREE.Uniform(0.0);
   gpgpu.particlesVariable.material.uniforms.uParticleSpeed = new THREE.Uniform(
-    32
+    DEFAULTS.particleSpeed
   );
   gpgpu.particlesVariable.material.uniforms.uStarted = new THREE.Uniform(
     audioConfig.soundStarted
@@ -301,7 +259,7 @@ export function gpgpuSetup(
     parameters.radius
   );
   gpgpu.particlesVariable.material.uniforms.uDistanceThreshold =
-    new THREE.Uniform(0.5);
+    new THREE.Uniform(DEFAULTS.distanceThreshold);
   gpgpu.particlesVariable.material.uniforms.uMicActive = new THREE.Uniform(
     audioConfig.gumStreamActive
   );
@@ -312,64 +270,42 @@ export function gpgpuSetup(
     gpgpu.particlesVariable,
   ]);
 
-  //******************************************************* GPGPU INITIALIZATION *******************************************************//
-
   gpgpu.computation.init();
 
-  // Debug Planes
-  let mode = false;
-  gpgpu.audioDebug = new THREE.Mesh(
-    new THREE.PlaneGeometry(3, 3),
-    new THREE.MeshBasicMaterial({
-      map: gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable)
-        .texture,
-    })
-  );
-  gpgpu.audioDebug.visible = mode;
-  gpgpu.audioDebug.position.x = -7;
-  gpgpu.audioDebug.position.y = 2;
-
-  gpgpu.scalarFieldDebug = new THREE.Mesh(
-    new THREE.PlaneGeometry(3, 3),
-    new THREE.MeshBasicMaterial({
-      map: gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable)
-        .texture,
-    })
-  );
-  gpgpu.scalarFieldDebug.visible = mode;
-  gpgpu.scalarFieldDebug.position.x = -7;
-  gpgpu.scalarFieldDebug.position.y = -1;
-
-  gpgpu.zeroPointsDebug = new THREE.Mesh(
-    new THREE.PlaneGeometry(3, 3), // The size of the plane can be adjusted as needed
-    new THREE.MeshBasicMaterial({
-      map: gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable)
-        .texture,
-    })
-  );
-  gpgpu.zeroPointsDebug.visible = mode;
-  gpgpu.zeroPointsDebug.position.x = -4;
-  gpgpu.zeroPointsDebug.position.y = 2;
-
-  gpgpu.particlesDebug = new THREE.Mesh(
-    new THREE.PlaneGeometry(3, 3),
-    new THREE.MeshBasicMaterial({
-      map: gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable)
-        .texture,
-    })
-  );
-  gpgpu.particlesDebug.visible = mode;
-  gpgpu.particlesDebug.position.x = -4;
-  gpgpu.particlesDebug.position.y = -1;
-
-  if (mode) {
-    scene.add(gpgpu.audioDebug);
-    scene.add(gpgpu.scalarFieldDebug);
-    scene.add(gpgpu.zeroPointsDebug);
-    scene.add(gpgpu.particlesDebug);
-  }
-
   return { gpgpu: gpgpu, essentiaData: essentiaData };
+}
+
+/**
+ * Run the GPGPU compute pipeline for one frame.
+ * Called each frame from the animation loop (or useFrame in R3F).
+ *
+ * @param {object} gpgpu - The GPGPU state object returned by gpgpuSetup
+ * @param {object} particles - The particles state object returned by particlesSetup
+ * @param {number} time - Current simulation time
+ * @param {number} deltaTime - Time since last frame
+ * @param {object} audioState - Live audio state (from audioObject.getState or the singleton)
+ */
+export function tickGPGPU(gpgpu, particles, time, deltaTime, audioState) {
+  // Per-frame uniform updates
+  gpgpu.particlesVariable.material.uniforms.uTime.value = time;
+  gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
+  gpgpu.particlesVariable.material.uniforms.uStarted.value =
+    audioState.sound?.started ?? false;
+  gpgpu.particlesVariable.material.uniforms.uMicActive.value =
+    audioState.gumStream?.active ?? false;
+
+  // Run compute pipeline
+  gpgpu.computation.compute();
+
+  // Chain texture outputs between the 4 stages
+  gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value =
+    gpgpu.computation.getCurrentRenderTarget(gpgpu.audioDataVariable).texture;
+  gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value =
+    gpgpu.computation.getCurrentRenderTarget(gpgpu.scalarFieldVariable).texture;
+  gpgpu.particlesVariable.material.uniforms.uZeroPoints.value =
+    gpgpu.computation.getCurrentRenderTarget(gpgpu.zeroPointsVariable).texture;
+  particles.material.uniforms.uParticlesTexture.value =
+    gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable).texture;
 }
 
 export function disposeGPGPUResources(gpgpu) {
@@ -378,8 +314,4 @@ export function disposeGPGPUResources(gpgpu) {
   gpgpu.audioDataVariable.material.dispose();
   gpgpu.scalarFieldVariable.material.dispose();
   gpgpu.zeroPointsVariable.material.dispose();
-  gpgpu.particlesDebug.material.dispose();
-  gpgpu.audioDebug.material.dispose();
-  gpgpu.scalarFieldDebug.material.dispose();
-  gpgpu.zeroPointsDebug.material.dispose();
 }

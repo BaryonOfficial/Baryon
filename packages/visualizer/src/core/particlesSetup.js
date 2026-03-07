@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 import particlesVertexShader from "../three/shaders/particles/vertex.glsl";
 import particlesFragmentShader from "../three/shaders/particles/fragment.glsl";
+import { DEFAULTS } from "../defaults.js";
 
 /**
  * Particles
@@ -19,21 +20,17 @@ export function particlesSetup(
   const particles = {};
   const materialParameters = {};
 
-  // materialParameters.color = new THREE.Color('rgb(77,142,236)');
-  materialParameters.color = "#0586ff"; // This is the hex equivalent of rgb(5, 134, 255)
-  materialParameters.surfaceColor = "#DEF0FA";
-  // rgb(77,142,236)
+  materialParameters.color = DEFAULTS.color;
+  materialParameters.surfaceColor = DEFAULTS.surfaceColor;
 
   // Material
   particles.material = new THREE.ShaderMaterial({
-    // transparent: true,
     side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending,
-    // vertexColors: true,
     vertexShader: particlesVertexShader,
     fragmentShader: particlesFragmentShader,
     uniforms: {
-      uSize: new THREE.Uniform(0.03),
+      uSize: new THREE.Uniform(DEFAULTS.particleSize),
       uResolution: new THREE.Uniform(
         new THREE.Vector2(
           sizes.width * sizes.pixelRatio,
@@ -48,7 +45,7 @@ export function particlesSetup(
       ),
       uRadius: new THREE.Uniform(parameters.radius),
       uAverageAmplitude: new THREE.Uniform(0.0),
-      uRotation: new THREE.Uniform(2.5),
+      uRotation: new THREE.Uniform(DEFAULTS.rotationSpeed),
       uDeltaTime: new THREE.Uniform(0),
       uSoundPlaying: new THREE.Uniform(initialSoundPlaying),
     },

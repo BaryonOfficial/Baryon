@@ -1,32 +1,47 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import useThreeScene from "@baryon/visualizer/hooks/useThreeScene";
 import AudioControls from "./AudioControls";
 import UnsupportedWarning from "./UnsupportedWarning.jsx";
 import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
-import { useAudioLogic } from "./hooks/useAudioLogic";
+import { useAudio } from "../context/AudioContext";
+import { initGUI } from "../debug/initGui";
+import { guiSetup } from "../debug/guiSetup";
 
 const ThreeScene = () => {
   // Refs for canvas and GUI container
   const canvasRef = useRef(null);
   const guiContainerRef = useRef(null);
+  const guiRef = useRef(null);
 
   // Custom hook to toggle fullscreen mode (handles 'f' key press)
   useFullscreen(canvasRef);
 
-  // UI state variables
-  const [fileName, setFileName] = useState("Upload Audio");
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isMicActive, setIsMicActive] = useState(false);
-  const [isAudioLoaded, setIsAudioLoaded] = useState(false);
   const [isUnsupported, setIsUnsupported] = useState(false);
 
-  // Audio input device management
-  const [audioDevices, setAudioDevices] = useState([]);
-  const [selectedDevice, setSelectedDevice] = useState(null);
-  const [showDeviceMenu, setShowDeviceMenu] = useState(false);
+  // Audio state callbacks come from AudioProvider context
+  const { setIsPlaying, setIsAudioLoaded } = useAudio();
+
+  // Called by useThreeScene once the async model/GPGPU setup resolves
+  const handleSetupComplete = useCallback((params) => {
+    if (!guiContainerRef.current) return;
+    guiRef.current = initGUI(guiContainerRef);
+    guiSetup(
+      guiRef.current,
+      params.unrealBloomPass,
+      params.renderer,
+      params.particles,
+      params.gpgpu,
+      params.debugObject,
+      params.materialParameters,
+      params.parameters
+    );
+  }, []);
 
   // Hook to initialize and run the Three.js + GPGPU scene
-  useThreeScene(canvasRef, guiContainerRef, setIsPlaying, setIsAudioLoaded);
+  useThreeScene(canvasRef, setIsPlaying, setIsAudioLoaded, handleSetupComplete);
+
+  // Destroy GUI on unmount
+  useEffect(() => () => guiRef.current?.destroy(), []);
 
   // Detect unsupported environments (e.g., mobile, Firefox, Safari)
   useEffect(() => {
@@ -37,20 +52,6 @@ const ThreeScene = () => {
 
     setIsUnsupported(isUnsupportedEnv());
   }, []);
-
-  // Audio logic handlers (file input, play/pause, mic toggle, etc.)
-  const { handleFileChange, handlePlayPause, handleStop, handleMicToggle } =
-    useAudioLogic({
-      setFileName,
-      setIsAudioLoaded,
-      setIsPlaying,
-      setIsMicActive,
-      setAudioDevices,
-      setSelectedDevice,
-      isAudioLoaded,
-      isMicActive,
-      selectedDevice,
-    });
 
   return (
     <div
@@ -67,28 +68,14 @@ const ThreeScene = () => {
       {/* If browser is supported, show GUI + controls */}
       {!isUnsupported && (
         <>
-          {/* GUI container for lil-gui or dat.GUI */}
+          {/* GUI container for lil-gui */}
           <div
             ref={guiContainerRef}
             className="fixed top-20 right-0 z-50"
           ></div>
 
-          {/* Audio controls component */}
-          <AudioControls
-            fileName={fileName}
-            isPlaying={isPlaying}
-            isMicActive={isMicActive}
-            isAudioLoaded={isAudioLoaded}
-            showDeviceMenu={showDeviceMenu}
-            audioDevices={audioDevices}
-            selectedDevice={selectedDevice}
-            handleFileChange={handleFileChange}
-            handlePlayPause={handlePlayPause}
-            handleStop={handleStop}
-            handleMicToggle={handleMicToggle}
-            setShowDeviceMenu={setShowDeviceMenu}
-            setSelectedDevice={setSelectedDevice}
-          />
+          {/* Audio controls — reads all state from AudioContext */}
+          <AudioControls />
         </>
       )}
 

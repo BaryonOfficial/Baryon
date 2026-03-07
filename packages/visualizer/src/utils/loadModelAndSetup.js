@@ -31,7 +31,7 @@ export async function loadModelAndSetup({
   baseGeometry2.count = baseGeometry2.geometry.attributes.position.count;
 
   // Setup GPGPU
-  const { gpgpu, essentiaData } = gpgpuSetup(scene, baseGeometry, renderer, parameters, baseGeometry2, audioConfig);
+  const { gpgpu, essentiaData } = gpgpuSetup(baseGeometry, renderer, parameters, baseGeometry2, audioConfig);
 
   // Setup Particles
   const { particles, materialParameters } = particlesSetup(parameters, sizes, gpgpu, baseGeometry, colors, scene, audioConfig?.soundStarted ?? false);

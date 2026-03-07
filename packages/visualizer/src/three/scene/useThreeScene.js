@@ -2,28 +2,20 @@ import { useEffect } from "react";
 import * as THREE from "three";
 import { setupScene } from "./setupScene";
 import { postProcessingSetup } from "../postProcessing/postProcessingSetup";
-import { guiSetup } from "../gui/guiSetup";
-import { gpgpuSetup, disposeGPGPUResources } from "../../core/gpgpuSetup";
+import { gpgpuSetup, disposeGPGPUResources, tickGPGPU } from "../../core/gpgpuSetup";
 import { particlesSetup } from "../../core/particlesSetup";
 import { createTimeHandler } from "../../utils/timeHandler";
 import { loadModelAndSetup } from "../../utils/loadModelAndSetup";
 import { setupLoaders } from "../loaders/setupLoaders";
-import { initGUI } from "../gui/initGui";
 import { handleResize } from "./handleResize";
 import { DEFAULTS } from "../../defaults.js";
-import {
-  audioObject,
-  audioSetup,
-  processAudioData,
-  startAudioProcessing,
-  setAudioEndedCallback,
-} from "../../core/audio/audioSetup";
+import { getDefaultAudioContext } from "../../core/audio/audioSetup";
 
 export default function useThreeScene(
   canvasRef,
-  guiContainerRef,
   setIsPlaying,
-  setIsAudioLoaded
+  setIsAudioLoaded,
+  onSetupComplete
 ) {
   useEffect(() => {
     let particles, gpgpu, essentiaData;
@@ -45,16 +37,17 @@ export default function useThreeScene(
     const onResize = () =>
       handleResize({ sizes, camera, renderer, effectComposer, particles });
 
-    // Create GUI and loaders
-    const gui = initGUI(guiContainerRef);
     const debugObject = { backgroundColor: DEFAULTS.backgroundColor };
     const { gltfLoader } = setupLoaders();
 
-    // Handle time logic
-    const timeHandler = createTimeHandler(audioObject);
+    // Use the shared default audio context (same instance used by useAudioLogic's module exports)
+    const audio = getDefaultAudioContext();
 
     // Setup audio context and listener (must run before building audioConfig)
-    audioSetup(camera);
+    audio.setup(camera);
+
+    // Handle time logic — reads live audio state each frame
+    const timeHandler = createTimeHandler(audio.getState);
 
     // Setup post-processing effects (bloom, composer)
     const { effectComposer: composer, unrealBloomPass } = postProcessingSetup(
@@ -84,79 +77,63 @@ export default function useThreeScene(
 
     // Snapshot of audio state at setup time — passed to engine modules
     // so they don't need to import audioObject directly
+    const audioState = audio.getState();
     const audioConfig = {
-      capacity: audioObject.capacity,
-      fftSize: audioObject.fftSize,
-      sampleRate: audioObject.audioCtx.sampleRate,
-      fftData: audioObject.analyser.data,
-      soundStarted: audioObject.sound.started,
-      gumStreamActive: audioObject.gumStream?.active ?? false,
+      capacity: audioState.capacity,
+      fftSize: audioState.fftSize,
+      sampleRate: audioState.audioCtx.sampleRate,
+      fftData: audioState.analyser.data,
+      soundStarted: audioState.sound.started,
+      gumStreamActive: audioState.gumStream?.active ?? false,
     };
 
     // Load model and initialize particles and GPGPU
     (async () => {
-      const result = await loadModelAndSetup({
-        gltfLoader,
-        scene,
-        renderer,
-        parameters,
-        baseGeometry,
-        colors,
-        sizes,
-        gpgpuSetup,
-        particlesSetup,
-        audioConfig,
-      });
+      try {
+        const result = await loadModelAndSetup({
+          gltfLoader,
+          scene,
+          renderer,
+          parameters,
+          baseGeometry,
+          colors,
+          sizes,
+          gpgpuSetup,
+          particlesSetup,
+          audioConfig,
+        });
 
-      if (!isMounted) {
-        disposeGPGPUResources(result.gpgpu);
-        result.particles.geometry.dispose();
-        result.particles.material.dispose();
-        return;
+        if (!isMounted) {
+          disposeGPGPUResources(result.gpgpu);
+          result.particles.geometry.dispose();
+          result.particles.material.dispose();
+          return;
+        }
+
+        gpgpu = result.gpgpu;
+        essentiaData = result.essentiaData;
+        particles = result.particles;
+        const materialParameters = result.materialParameters;
+
+        // Notify app layer that setup is complete (e.g. to initialize GUI)
+        onSetupComplete?.({
+          unrealBloomPass,
+          renderer,
+          particles,
+          gpgpu,
+          debugObject,
+          materialParameters,
+          parameters,
+        });
+      } catch (err) {
+        console.error('[useThreeScene] Model/GPGPU setup failed:', err);
       }
-
-      gpgpu = result.gpgpu;
-      essentiaData = result.essentiaData;
-      particles = result.particles;
-      const materialParameters = result.materialParameters;
-
-      // Setup GUI controls
-      guiSetup(
-        gui,
-        unrealBloomPass,
-        renderer,
-        particles,
-        gpgpu,
-        debugObject,
-        materialParameters,
-        parameters
-      );
     })();
 
     // Setup animation timing
     const clock = new THREE.Clock();
     const rotationTime = { current: 0 };
     const rotationMatrix = new THREE.Matrix4();
-
-    // Update textures from GPGPU simulation to shaders
-    const updateGPGPUTextures = () => {
-      gpgpu.scalarFieldVariable.material.uniforms.uAudioData.value =
-        gpgpu.computation.getCurrentRenderTarget(
-          gpgpu.audioDataVariable
-        ).texture;
-      gpgpu.zeroPointsVariable.material.uniforms.uScalarField.value =
-        gpgpu.computation.getCurrentRenderTarget(
-          gpgpu.scalarFieldVariable
-        ).texture;
-      gpgpu.particlesVariable.material.uniforms.uZeroPoints.value =
-        gpgpu.computation.getCurrentRenderTarget(
-          gpgpu.zeroPointsVariable
-        ).texture;
-      particles.material.uniforms.uParticlesTexture.value =
-        gpgpu.computation.getCurrentRenderTarget(
-          gpgpu.particlesVariable
-        ).texture;
-    };
 
     // Main animation loop
     const tick = () => {
@@ -172,24 +149,15 @@ export default function useThreeScene(
       // Update camera controls
       controls.update(deltaTime);
 
-      // Pass time and audio data to GPGPU shaders
-      gpgpu.particlesVariable.material.uniforms.uTime.value = time;
-      gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
-      gpgpu.particlesVariable.material.uniforms.uStarted.value =
-        audioObject.sound.started;
-      gpgpu.particlesVariable.material.uniforms.uMicActive.value =
-        audioObject.gumStream?.active;
-
       // Pass time and sound state to rendering shader
-      particles.material.uniforms.uSoundPlaying.value =
-        audioObject.sound.isPlaying;
+      const liveState = audio.getState();
+      particles.material.uniforms.uSoundPlaying.value = liveState.sound.isPlaying;
       particles.material.uniforms.uTime.value = time;
       particles.material.uniforms.uDeltaTime.value = deltaTime;
 
       // Process audio + compute GPGPU updates
-      processAudioData(gpgpu, particles, essentiaData);
-      gpgpu.computation.compute();
-      updateGPGPUTextures();
+      audio.processAudioData(gpgpu, particles, essentiaData);
+      tickGPGPU(gpgpu, particles, time, deltaTime, liveState);
 
       // Apply rotation transformation to the particle system
       rotationTime.current += deltaTime;
@@ -206,10 +174,10 @@ export default function useThreeScene(
     };
 
     // Start audio + rendering loop
-    startAudioProcessing(tick);
+    audio.startAudioProcessing(tick);
 
     // Callback for when audio finishes
-    setAudioEndedCallback(() => {
+    audio.setAudioEndedCallback(() => {
       setIsPlaying(false);
       setIsAudioLoaded(true);
     });
@@ -221,16 +189,16 @@ export default function useThreeScene(
     return () => {
       isMounted = false;
       cancelAnimationFrame(animFrameId);
-      gui?.destroy();
       if (gpgpu) disposeGPGPUResources(gpgpu);
       if (particles) {
         particles.geometry.dispose();
         particles.material.dispose();
       }
       effectComposer?.dispose();
-      if (audioObject.listener) camera.remove(audioObject.listener);
+      const s = audio.getState();
+      if (s.listener) camera.remove(s.listener);
       renderer.dispose();
       window.removeEventListener("resize", onResize);
     };
-  }, [canvasRef, guiContainerRef, setIsPlaying, setIsAudioLoaded]);
+  }, [canvasRef, setIsPlaying, setIsAudioLoaded, onSetupComplete]);
 }

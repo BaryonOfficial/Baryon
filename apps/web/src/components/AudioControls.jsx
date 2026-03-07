@@ -1,20 +1,23 @@
 import React from "react";
+import { useAudio } from "../context/AudioContext";
 
-function AudioControls ({
-  fileName,
-  isPlaying,
-  isMicActive,
-  isAudioLoaded,
-  showDeviceMenu,
-  audioDevices,
-  selectedDevice,
-  handleFileChange,
-  handlePlayPause,
-  handleStop,
-  handleMicToggle,
-  setShowDeviceMenu,
-  setSelectedDevice,
-}){
+function AudioControls() {
+  const {
+    fileName,
+    isPlaying,
+    isMicActive,
+    isAudioLoaded,
+    showDeviceMenu,
+    audioDevices,
+    selectedDevice,
+    handleFileChange,
+    handlePlayPause,
+    handleStop,
+    handleMicToggle,
+    setShowDeviceMenu,
+    setSelectedDevice,
+  } = useAudio();
+
   return (
           <div className="controls-container fixed top-20 left-12 z-50 p-4">
             <div className="flex flex-col items-start space-y-2">
