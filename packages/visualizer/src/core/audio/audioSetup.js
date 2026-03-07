@@ -335,8 +335,11 @@ export function createAudioContext() {
       alert('SharedArrayBuffer is not supported in this browser. Please use a compatible browser.');
       return;
     }
+    // @ts-ignore — window.exports is populated at runtime by the concatenated UMD worklet scripts
     let sab = window.exports.RingBuffer.getStorageForCapacity(state.capacity, Float32Array); // capacity: three float32 values [pitch, confidence, rms]
+    // @ts-ignore
     let rb = new window.exports.RingBuffer(sab, Float32Array);
+    // @ts-ignore
     state.audioReader = new window.exports.AudioReader(rb);
 
     state.essentiaNode = new AudioWorkletNode(state.audioCtx, 'audio-data-processor', {

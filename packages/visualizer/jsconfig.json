@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "checkJs": false,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["src/**/*.js", "../../node_modules/vite-plugin-glsl/ext.d.ts"],
+  "exclude": ["node_modules"]
+}
