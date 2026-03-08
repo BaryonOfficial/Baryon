@@ -23,7 +23,7 @@ apps/
   desktop/    @baryon/desktop   — Tauri v2 desktop app (wraps visualizer)
   marketing/  @baryon/marketing — Marketing site scaffold
 packages/
-  visualizer/ @baryon/visualizer — Core engine (Three.js, GPGPU, audio, shaders)
+  visualizer/ @baryon/visualizer — Core engine (Three.js TSL, WebGPU, audio)
   ui/         @baryon/ui         — cn() utility + shared Tailwind base
   config/     @baryon/config     — Shared Vite base config (createBaseViteConfig)
 ```
@@ -32,52 +32,58 @@ packages/
 
 ## Architecture Overview
 
-Baryon is a 3D audio visualizer built with React + Three.js. Audio analysis drives a GPU particle simulation (GPGPU) that renders a cymatics-style visualization.
+Baryon is a 3D audio visualizer built with React Three Fiber + Three.js WebGPU. Audio analysis drives a GPU compute pipeline using Three.js TSL (Three Shading Language) that renders a cymatics-style particle visualization. **Requires WebGPU** — Chrome/Edge only, no WebGL fallback.
 
 ### Data Flow
 
 ```
 Audio Input (file / mic)
-  → Web Audio API + AudioWorklet (Essentia.js pitch/RMS analysis)
-  → Ring buffer (SharedArrayBuffer)
-  → GPGPU compute pipeline (Four render targets)
-  → Particle shader → Three.js renderer → Post-processing (bloom)
+  → Web Audio API + AudioAnalyser (FFT)
+  → findFFTPeaks() — spectral peak picking → pitch buffer (GPU storage)
+  → TSL compute pipeline (4 sequential compute stages)
+  → PointsNodeMaterial (TSL colorNode + sizeNode) → RenderPipeline
+  → TSL bloom node → WebGPURenderer
 ```
 
-### GPGPU Compute Pipeline (`packages/visualizer/src/core/gpgpuSetup.js`)
+### TSL Compute Pipeline (`packages/visualizer/src/core/tslSetup.js`)
 
-Uses `GPUComputationRenderer` (Three.js addon) with four chained compute variables:
+Uses Three.js TSL compute nodes with GPU storage buffers (`instancedArray()`). Four chained stages:
 
-1. **`uAudioData`** — Reads FFT frequency data and Essentia pitch data; outputs audio texture
-2. **`uScalarField`** — Computes a 3D scalar field from audio data and base geometry positions
-3. **`uZeroPoints`** — Finds zero-crossing points in the scalar field (cymatics node positions)
-4. **`uParticles`** — Moves particles toward zero-point positions using flow fields; uses simplex noise
+1. **audioData** — Converts FFT peak frequencies to Chladni mode numbers via secant method; outputs pitch buffer
+2. **scalarField** — Computes 3D Chladni standing-wave scalar field from mode numbers + base geometry positions
+3. **zeroPoints** — Finds zero-crossing points in the scalar field (cymatics node positions)
+4. **particles** — Moves particles toward zero-point targets using MaterialX 3D Perlin noise flow field
 
-Shaders live in `packages/visualizer/src/three/shaders/gpgpu/`. Each compute variable depends on the previous one.
+Key functions exported from `@baryon/visualizer`:
+- `setupTSL(baseGeometry, renderer, parameters, baseGeometry2, audioConfig)` — initializes pipeline
+- `tickTSL(tsl, time, deltaTime, audioState)` — per-frame compute update
+- `disposeTSL(tsl)` — cleanup
 
 ### Audio Pipeline (`packages/visualizer/src/core/audio/audioSetup.js`)
 
-- `audioObject` is a module-level singleton holding all Web Audio nodes
-- Essentia.js (WASM) runs in an AudioWorklet (`public/lib/`) for real-time pitch/RMS extraction
-- Audio data is passed to the GPU each frame via `processAudioData()`
-- Supports both file playback and live microphone input
-- **Requires HTTPS or localhost** for `SharedArrayBuffer` and microphone access
+- `createAudioContext()` factory — returns an audio instance (not a singleton)
+- `getDefaultAudioContext()` — returns shared singleton for backward compat
+- Supports file playback (`THREE.Audio` + `AudioAnalyser`) and mic input (`getUserMedia` + second `AudioAnalyser`)
+- `audio.getState()` — returns live state object used by `createTimeHandler(getState)`
+- `findFFTPeaks(frequencyData, sampleRate, N)` — spectral peak detection (`packages/visualizer/src/utils/fftPeaks.js`); replaces Essentia.js for pitch extraction
 
 ### React Layer
 
-- `apps/web/src/components/ThreeScene.jsx` — Root component; owns UI state and wires together the Three.js hook and audio logic
-- `packages/visualizer/src/three/scene/useThreeScene.js` — `useEffect` hook that initializes and runs the entire Three.js scene (scene, camera, renderer, GPGPU, animation loop)
-- `apps/web/src/components/hooks/useAudioLogic.jsx` — Handles file upload, play/pause, stop, mic toggle, and device selection
-- `apps/web/src/components/AudioControls.jsx` — UI overlay for audio controls
+- `apps/web/src/components/ThreeScene.jsx` — Root component; creates R3F `<Canvas>` with `WebGPURenderer`, checks WebGPU support (rejects mobile/Firefox/Safari), renders `<BaryonScene>` + UI overlays
+- `apps/web/src/components/BaryonScene.jsx` — R3F scene component; owns the TSL pipeline lifecycle, Tweakpane GUI, model loading, and audio wiring; uses `useFrame` with priority 1 (takes over rendering from R3F auto-render)
+- `apps/web/src/context/AudioProvider.jsx` — owns all audio state, wraps ThreeScene
+- `apps/web/src/components/hooks/useAudioLogic.jsx` — file upload, play/pause, stop, mic toggle
+- `apps/web/src/components/AudioControls.jsx` — UI overlay, reads from `useAudio()`
 
 ### Key Configuration
 
-- `apps/web/vite.config.js`: Requires `Cross-Origin-Embedder-Policy: require-corp` and `Cross-Origin-Opener-Policy: same-origin` headers in dev (needed for `SharedArrayBuffer`)
+- **WebGPU**: `ThreeScene.jsx` creates `WebGPURenderer` via R3F's `gl` prop: `await renderer.init()` required before use
+- **Tailwind v4**: Uses `@tailwindcss/vite` plugin, `@import "tailwindcss"` in `index.css`, `@theme` blocks; no `postcss.config.js`; `tailwind-merge` v3
+- `apps/web/vite.config.js`: Requires `Cross-Origin-Embedder-Policy: require-corp` and `Cross-Origin-Opener-Policy: same-origin` headers (needed for `SharedArrayBuffer`)
 - Shared Vite plugins (react-swc, GLSL, top-level-await, js-as-JSX) are in `packages/config/vite.base.js` via `createBaseViteConfig()`
-- Production `console` and `debugger` statements are dropped by esbuild
-- GLSL files are imported directly via `vite-plugin-glsl` (must be present in any consuming app's Vite config)
+- All `.js` files in `src/` are treated as JSX
 - Path alias `@` maps to `./src` in each app
-- All `.js` files in `src/` are treated as JSX via the custom Vite plugin in `@baryon/config`
+- All magic numbers in `packages/visualizer/src/defaults.js`
 
 ### Commit Convention
 

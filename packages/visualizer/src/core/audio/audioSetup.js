@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { DEFAULTS } from '../../defaults.js';
 
 /*
  * AUDIO PROCESSING
@@ -19,7 +20,7 @@ export function createAudioContext() {
     audioCtx: null,
     sound: null,
     micSound: null,
-    capacity: 5,
+    capacity: DEFAULTS.capacity,
     analyser: null,
     micAnalyser: null,
     micNode: null,
@@ -80,7 +81,7 @@ export function createAudioContext() {
           resolve(false);
           return;
         }
-        state.essentiaNode.port.postMessage({ isPlaying: state.sound.isPlaying });
+        state.essentiaNode?.port.postMessage({ isPlaying: state.sound.isPlaying });
         resolve(state.sound.isPlaying);
       } catch (error) {
         console.error('Error in audio playback:', error);
@@ -92,7 +93,7 @@ export function createAudioContext() {
   function stopAudio() {
     state.sound.stop();
     state.sound.started = false;
-    state.essentiaNode.port.postMessage({ isPlaying: false });
+    state.essentiaNode?.port.postMessage({ isPlaying: false });
   }
 
   function startMicRecordStream(deviceId) {
@@ -154,16 +155,23 @@ export function createAudioContext() {
     zeroGainNode.gain.setValueAtTime(0, state.audioCtx.currentTime);
 
     // Now we can actually connect it properly in the pipeline
-    state.micSound
-      .getOutput()
-      .connect(state.essentiaNode)
-      .connect(zeroGainNode)
-      .connect(state.audioCtx.destination);
+    if (state.essentiaNode) {
+      state.micSound
+        .getOutput()
+        .connect(state.essentiaNode)
+        .connect(zeroGainNode)
+        .connect(state.audioCtx.destination);
+    } else {
+      state.micSound
+        .getOutput()
+        .connect(zeroGainNode)
+        .connect(state.audioCtx.destination);
+    }
 
     console.log('Microphone connected');
 
     // Post message after micNode is initialized
-    state.essentiaNode.port.postMessage({
+    state.essentiaNode?.port.postMessage({
       isPlaying: state.sound.isPlaying,
       micActive: state.gumStream && state.gumStream.active,
     });
@@ -183,7 +191,7 @@ export function createAudioContext() {
       console.log('Microphone disconnected');
     }
 
-    state.essentiaNode.port.postMessage({
+    state.essentiaNode?.port.postMessage({
       isPlaying: state.sound.isPlaying,
       micActive: state.gumStream && state.gumStream.active,
     });
@@ -210,7 +218,7 @@ export function createAudioContext() {
     state.sound.onEnded = function () {
       state.sound.stop();
       state.sound.started = false;
-      state.essentiaNode.port.postMessage({ isPlaying: state.sound.isPlaying });
+      state.essentiaNode?.port.postMessage({ isPlaying: state.sound.isPlaying });
       console.log('Before onEnded callback');
       callback();
       console.log('OnEnded callback called');

@@ -6,11 +6,10 @@
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./audio": "./src/core/audio/audioSetup.js",
-    "./hooks/useThreeScene": "./src/three/scene/useThreeScene.js"
+    "./audio": "./src/core/audio/audioSetup.js"
   },
   "peerDependencies": {
-    "react": "^18.3.1",
+    "react": "^19.0.0",
     "three": "^0.183.0"
   },
   "dependencies": {

@@ -1,4 +1,7 @@
 export const DEFAULTS = {
+  // Audio
+  capacity: 8,
+
   // Particle system
   particleCount: 1500000,
   radius: 3.0,
@@ -19,12 +22,12 @@ export const DEFAULTS = {
   rotationSpeed: 2.5,
 
   // Colors
-  backgroundColor: '#000000',
-  color: '#0586ff',
-  surfaceColor: '#DEF0FA',
+  backgroundColor: "#000000",
+  color: "#0586ff",
+  surfaceColor: "#DEF0FA",
 
   // Bloom
-  bloomStrength: 0.36,
-  bloomRadius: -2.0,
+  bloomStrength: 0.04,
+  bloomRadius: 1.0,
   bloomThreshold: 0.4,
 };

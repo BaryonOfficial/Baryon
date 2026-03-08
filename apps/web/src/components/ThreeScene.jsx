@@ -1,85 +1,66 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import useThreeScene from "@baryon/visualizer/hooks/useThreeScene";
+import React, { useEffect, useRef, useState, Suspense } from "react";
+import { Canvas } from "@react-three/fiber";
+import { WebGPURenderer } from "three/webgpu";
+import { BaryonScene } from "./BaryonScene";
 import AudioControls from "./AudioControls";
 import UnsupportedWarning from "./UnsupportedWarning.jsx";
 import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
 import { useAudio } from "../context/AudioContext";
-import { initGUI } from "../debug/initGui";
-import { guiSetup } from "../debug/guiSetup";
 
 const ThreeScene = () => {
-  // Refs for canvas and GUI container
-  const canvasRef = useRef(null);
-  const guiContainerRef = useRef(null);
-  const guiRef = useRef(null);
-
-  // Custom hook to toggle fullscreen mode (handles 'f' key press)
-  useFullscreen(canvasRef);
-
+  const containerRef = useRef(null);
   const [isUnsupported, setIsUnsupported] = useState(false);
 
-  // Audio state callbacks come from AudioProvider context
+  // fullscreen targets the outer container div
+  useFullscreen(containerRef);
+
   const { setIsPlaying, setIsAudioLoaded } = useAudio();
 
-  // Called by useThreeScene once the async model/GPGPU setup resolves
-  const handleSetupComplete = useCallback((params) => {
-    if (!guiContainerRef.current) return;
-    guiRef.current = initGUI(guiContainerRef);
-    guiSetup(
-      guiRef.current,
-      params.unrealBloomPass,
-      params.renderer,
-      params.particles,
-      params.gpgpu,
-      params.debugObject,
-      params.materialParameters,
-      params.parameters
-    );
-  }, []);
-
-  // Hook to initialize and run the Three.js + GPGPU scene
-  useThreeScene(canvasRef, setIsPlaying, setIsAudioLoaded, handleSetupComplete);
-
-  // Destroy GUI on unmount
-  useEffect(() => () => guiRef.current?.destroy(), []);
-
-  // Detect unsupported environments (e.g., mobile, Firefox, Safari)
   useEffect(() => {
     const isUnsupportedEnv = () =>
+      !navigator.gpu ||
       /Android|iPhone|iPad/i.test(navigator.userAgent) ||
       navigator.userAgent.includes("Firefox") ||
       /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-
     setIsUnsupported(isUnsupportedEnv());
   }, []);
 
   return (
     <div
+      ref={containerRef}
       style={{
         width: "100vw",
         height: "100vh",
         position: "absolute",
         zIndex: 1,
+        background: "#000000",
       }}
     >
-      {/* WebGL canvas rendered by Three.js */}
-      <canvas ref={canvasRef} className="webgl absolute z-10" />
+      <Canvas
+        style={{ position: "absolute", top: 0, left: 0, zIndex: 10 }}
+        dpr={[1, 2]}
+        camera={{ position: [0, 0, 8], fov: 35, near: 0.1, far: 100 }}
+        // @ts-ignore — WebGPURenderer is runtime-compatible; R3F types predate WebGPU
+        gl={async (glDefaults) => {
+          // @ts-ignore — glDefaults is { canvas, powerPreference, antialias, alpha }
+          const renderer = new WebGPURenderer({
+            canvas: glDefaults.canvas,
+            antialias: true,
+          });
+          await renderer.init();
+          return renderer;
+        }}
+      >
+        <Suspense fallback={null}>
+          <BaryonScene
+            setIsPlaying={setIsPlaying}
+            setIsAudioLoaded={setIsAudioLoaded}
+          />
+        </Suspense>
+      </Canvas>
 
-      {/* If browser is supported, show GUI + controls */}
-      {!isUnsupported && (
-        <>
-          {/* GUI container for lil-gui */}
-          <div
-            ref={guiContainerRef}
-            className="fixed top-20 right-0 z-50"
-          ></div>
+      {!isUnsupported && <AudioControls />}
 
-          {/* Audio controls — reads all state from AudioContext */}
-          <AudioControls />
-        </>
-      )}
-
-      {/* Show a warning if the environment is unsupported */}
       {isUnsupported && <UnsupportedWarning />}
     </div>
   );
