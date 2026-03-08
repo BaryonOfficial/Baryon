@@ -1,4 +1,4 @@
-import { DEFAULTS } from '../../defaults.js';
+import { AUDIT_DEFAULTS, AUDIO_DEFAULTS } from '../../defaults.js';
 
 export const MAX_STACK_SLOTS = 4;
 export const DECAY_PER_FRAME = 0.9;
@@ -17,7 +17,7 @@ function createModalStackState(capacity) {
   };
 }
 
-export function createAudioFeatureState(capacity = DEFAULTS.capacity) {
+export function createAudioFeatureState(capacity = AUDIO_DEFAULTS.capacity) {
   return {
     capacity,
     modeSlots: new Float32Array(capacity * 4),
@@ -28,15 +28,7 @@ export function createAudioFeatureState(capacity = DEFAULTS.capacity) {
       frame: 0,
       frozenModeSlots: new Float32Array(capacity * 4),
       lastSnapshot: null,
-      settings: {
-        enabled: false,
-        freezeModeSlots: false,
-        injectTestTone: false,
-        pitchSourceMode: 'auto',
-        testToneHz: 440,
-        testToneAmplitude: 0.5,
-        logEveryFrames: 30,
-      },
+      settings: { ...AUDIT_DEFAULTS },
     },
     frameId: 0,
   };

@@ -10,7 +10,8 @@ import {
   disposeTSL,
   createAudioFeatureState,
   buildAudioFeatureFrame,
-  DEFAULTS,
+  RENDER_DEFAULTS,
+  SIMULATION_DEFAULTS,
 } from "@baryon/visualizer";
 
 function syncAuditSettings(featureState, controls) {
@@ -68,7 +69,7 @@ export function useBaryonVisualizer({
     audio.setup(camera);
     audio.startAudioProcessing();
     timeHandlerRef.current = createTimeHandler(audio.getState);
-    gl.setClearColor(new THREE.Color(DEFAULTS.backgroundColor));
+    gl.setClearColor(new THREE.Color(RENDER_DEFAULTS.backgroundColor));
 
     audio.setAudioEndedCallback(() => {
       setIsPlaying(false);
@@ -87,11 +88,11 @@ export function useBaryonVisualizer({
 
         const audioState = audio.getState();
         const parameters = {
-          count: DEFAULTS.particleCount,
-          radius: DEFAULTS.radius,
-          surfaceRatio: DEFAULTS.surfaceRatio,
-          surfaceThreshold: DEFAULTS.surfaceThreshold,
-          threshold: DEFAULTS.threshold,
+          count: SIMULATION_DEFAULTS.particleCount,
+          radius: SIMULATION_DEFAULTS.radius,
+          surfaceRatio: SIMULATION_DEFAULTS.surfaceRatio,
+          surfaceThreshold: SIMULATION_DEFAULTS.surfaceThreshold,
+          threshold: SIMULATION_DEFAULTS.threshold,
         };
         const audioConfig = {
           capacity: audioState.capacity,

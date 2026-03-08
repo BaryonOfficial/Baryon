@@ -2,15 +2,15 @@ import { useRef, useCallback } from "react";
 import { RenderPipeline } from "three/webgpu";
 import { pass, uniform } from "three/tsl";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
-import { DEFAULTS } from "@baryon/visualizer";
+import { RENDER_DEFAULTS } from "@baryon/visualizer";
 
 export function useBaryonPipeline(gl, scene, camera) {
   const pipelineRef = useRef(null);
   const postNodesRef = useRef(null);
   const bloomUniforms = useRef({
-    strength: uniform(DEFAULTS.bloomStrength),
-    radius: uniform(DEFAULTS.bloomRadius),
-    threshold: uniform(DEFAULTS.bloomThreshold),
+    strength: uniform(RENDER_DEFAULTS.bloomStrength),
+    radius: uniform(RENDER_DEFAULTS.bloomRadius),
+    threshold: uniform(RENDER_DEFAULTS.bloomThreshold),
   });
 
   const ensurePipeline = useCallback(() => {

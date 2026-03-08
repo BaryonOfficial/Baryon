@@ -1,4 +1,4 @@
-import { DEFAULTS } from '../../defaults.js';
+import { AUDIT_DEFAULTS, AUDIO_DEFAULTS } from '../../defaults.js';
 import { sampleFFTAmplitudeForFrequency } from '../normalModes.js';
 import { getActiveAnalyserState } from './analyserState.js';
 import { detectPitchYIN } from './pitchFallback.js';
@@ -25,18 +25,12 @@ const MIC_SILENCE_RMS = 0.018;
 export { createAudioFeatureState, FIELD_STATES };
 
 export function buildAudioFeatureFrame(audioState, featureState, radius) {
-  const capacity = featureState?.capacity ?? DEFAULTS.capacity;
+  const capacity = featureState?.capacity ?? AUDIO_DEFAULTS.capacity;
   const modeSlots = featureState?.modeSlots ?? new Float32Array(capacity * 4);
   const referenceModeSlots = featureState?.referenceModeSlots ?? new Float32Array(capacity * 4);
   const auditState = featureState?.audit;
   const auditSettings = auditState?.settings ?? {
-    enabled: false,
-    freezeModeSlots: false,
-    injectTestTone: false,
-    pitchSourceMode: 'auto',
-    testToneHz: 440,
-    testToneAmplitude: 0.5,
-    logEveryFrames: 30,
+    ...AUDIT_DEFAULTS,
   };
   const sampleRate = audioState.audioCtx?.sampleRate ?? 44100;
   const fftSize = audioState.fftSize ?? 4096;

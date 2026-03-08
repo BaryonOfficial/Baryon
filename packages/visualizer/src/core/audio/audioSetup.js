@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DEFAULTS } from '../../defaults.js';
+import { AUDIO_DEFAULTS } from '../../defaults.js';
 import { createPitchService } from './pitchService.js';
 
 function createMicAnalyser(audioCtx, sourceNode, fftSize) {
@@ -24,6 +24,54 @@ function createMicAnalyser(audioCtx, sourceNode, fftSize) {
   };
 }
 
+function normalizeAudioInputMode(mode) {
+  return mode === 'file' || mode === 'mic' ? mode : 'idle';
+}
+
+function normalizePitchSourceMode(mode) {
+  if (mode === 'worker' || mode === 'fallback') {
+    return mode;
+  }
+  return 'auto';
+}
+
+function stopActiveFilePlayback(state) {
+  if (state.sound?.started === true) {
+    state.sound.stop();
+    state.sound.setBuffer(null);
+    state.sound.started = false;
+  }
+}
+
+function disconnectMicNode(micNode) {
+  if (!micNode) return;
+  try {
+    micNode.disconnect();
+  } catch (error) {
+    console.warn('Mic disconnect skipped:', error);
+  }
+}
+
+function createDefaultAudioContextBindings(instance) {
+  return {
+    audioObject: instance.getState(),
+    audioSetup: (camera) => instance.setup(camera),
+    loadAudio: (url) => instance.loadAudio(url),
+    playPauseAudio: () => instance.playPauseAudio(),
+    stopAudio: () => instance.stopAudio(),
+    startMicRecordStream: (deviceId) => instance.startMicRecordStream(deviceId),
+    stopMicRecordStream: () => instance.stopMicRecordStream(),
+    startAudioProcessing: (cb) => instance.startAudioProcessing(cb),
+    setPitchSourceMode: (mode) => instance.setPitchSourceMode(mode),
+    setAudioInputMode: (mode) => instance.setAudioInputMode(mode),
+    setAudioEndedCallback: (cb) => instance.setAudioEndedCallback(cb),
+    processAudioData: () => instance.processAudioData(),
+    getIsAudioLoaded: () => instance.getIsAudioLoaded(),
+    getAnalysisState: () => instance.getAnalysisState(),
+    disposeAnalysis: () => instance.disposeAnalysis(),
+  };
+}
+
 /**
  * Creates an isolated audio context instance.
  * All audio state is local to this instance — no module-level singletons.
@@ -31,7 +79,7 @@ function createMicAnalyser(audioCtx, sourceNode, fftSize) {
 export function createAudioContext() {
   const state = {
     fftSize: 4096,
-    capacity: DEFAULTS.capacity,
+    capacity: AUDIO_DEFAULTS.capacity,
     pitchSourceMode: 'auto',
     audioInputMode: 'idle',
     audioCtx: null,
@@ -57,7 +105,7 @@ export function createAudioContext() {
   }
 
   function setAudioInputMode(mode) {
-    const nextMode = mode === 'file' || mode === 'mic' ? mode : 'idle';
+    const nextMode = normalizeAudioInputMode(mode);
     state.audioInputMode = nextMode;
     ensurePitchService();
     state.pitchService?.setMode(nextMode);
@@ -102,11 +150,7 @@ export function createAudioContext() {
         stopMicRecordStream();
       }
 
-      if (state.sound.started === true) {
-        state.sound.stop();
-        state.sound.setBuffer(null);
-        state.sound.started = false;
-      }
+      stopActiveFilePlayback(state);
 
       setAudioInputMode('file');
       isAudioLoaded = false;
@@ -213,13 +257,7 @@ export function createAudioContext() {
       state.gumStream.getAudioTracks().forEach((track) => track.stop());
     }
 
-    if (state.micNode) {
-      try {
-        state.micNode.disconnect();
-      } catch (error) {
-        console.warn('Mic disconnect skipped:', error);
-      }
-    }
+    disconnectMicNode(state.micNode);
 
     state.micAnalyser = null;
     state.micNode = null;
@@ -236,11 +274,7 @@ export function createAudioContext() {
   }
 
   function setPitchSourceMode(mode) {
-    state.pitchSourceMode = mode === 'fallback'
-      ? 'fallback'
-      : mode === 'worker'
-      ? 'worker'
-      : 'auto';
+    state.pitchSourceMode = normalizePitchSourceMode(mode);
   }
 
   function processAudioData() {}
@@ -265,23 +299,24 @@ export function createAudioContext() {
 }
 
 const _defaultInstance = createAudioContext();
+const defaultBindings = createDefaultAudioContextBindings(_defaultInstance);
 
 export function getDefaultAudioContext() {
   return _defaultInstance;
 }
 
-export const audioObject = _defaultInstance.getState();
-export const audioSetup = (camera) => _defaultInstance.setup(camera);
-export const loadAudio = (url) => _defaultInstance.loadAudio(url);
-export const playPauseAudio = () => _defaultInstance.playPauseAudio();
-export const stopAudio = () => _defaultInstance.stopAudio();
-export const startMicRecordStream = (deviceId) => _defaultInstance.startMicRecordStream(deviceId);
-export const stopMicRecordStream = () => _defaultInstance.stopMicRecordStream();
-export const startAudioProcessing = (cb) => _defaultInstance.startAudioProcessing(cb);
-export const setPitchSourceMode = (mode) => _defaultInstance.setPitchSourceMode(mode);
-export const setAudioInputMode = (mode) => _defaultInstance.setAudioInputMode(mode);
-export const setAudioEndedCallback = (cb) => _defaultInstance.setAudioEndedCallback(cb);
-export const processAudioData = () => _defaultInstance.processAudioData();
-export const getIsAudioLoaded = () => _defaultInstance.getIsAudioLoaded();
-export const getAnalysisState = () => _defaultInstance.getAnalysisState();
-export const disposeAnalysis = () => _defaultInstance.disposeAnalysis();
+export const { audioObject } = defaultBindings;
+export const { audioSetup } = defaultBindings;
+export const { loadAudio } = defaultBindings;
+export const { playPauseAudio } = defaultBindings;
+export const { stopAudio } = defaultBindings;
+export const { startMicRecordStream } = defaultBindings;
+export const { stopMicRecordStream } = defaultBindings;
+export const { startAudioProcessing } = defaultBindings;
+export const { setPitchSourceMode } = defaultBindings;
+export const { setAudioInputMode } = defaultBindings;
+export const { setAudioEndedCallback } = defaultBindings;
+export const { processAudioData } = defaultBindings;
+export const { getIsAudioLoaded } = defaultBindings;
+export const { getAnalysisState } = defaultBindings;
+export const { disposeAnalysis } = defaultBindings;
