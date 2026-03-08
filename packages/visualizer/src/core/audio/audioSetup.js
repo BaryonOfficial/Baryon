@@ -66,27 +66,31 @@ export function createAudioContext() {
   }
 
   function playPauseAudio() {
-    return new Promise(async (resolve, reject) => {
-      try {
-        if (state.sound.isPlaying) {
-          state.sound.pause();
-        } else if (!state.sound.isPlaying && isAudioLoaded) {
-          if (state.audioCtx.state === 'suspended') {
-            await state.audioCtx.resume();
+    return new Promise((resolve, reject) => {
+      const run = async () => {
+        try {
+          if (state.sound.isPlaying) {
+            state.sound.pause();
+          } else if (!state.sound.isPlaying && isAudioLoaded) {
+            if (state.audioCtx.state === 'suspended') {
+              await state.audioCtx.resume();
+            }
+            state.sound.play();
+            state.sound.started = true;
+          } else {
+            console.log('Audio not loaded yet');
+            resolve(false);
+            return;
           }
-          state.sound.play();
-          state.sound.started = true;
-        } else {
-          console.log('Audio not loaded yet');
-          resolve(false);
-          return;
+          state.essentiaNode?.port.postMessage({ isPlaying: state.sound.isPlaying });
+          resolve(state.sound.isPlaying);
+        } catch (error) {
+          console.error('Error in audio playback:', error);
+          reject(error);
         }
-        state.essentiaNode?.port.postMessage({ isPlaying: state.sound.isPlaying });
-        resolve(state.sound.isPlaying);
-      } catch (error) {
-        console.error('Error in audio playback:', error);
-        reject(error);
-      }
+      };
+
+      run();
     });
   }
 
@@ -368,7 +372,7 @@ export function createAudioContext() {
         isPlaying: state.sound.isPlaying,
         micActive: state.gumStream && state.gumStream.active,
       });
-    } catch (_) {
+    } catch {
       alert('No SharedArrayBuffer tranfer support, try another browser.');
       return;
     }

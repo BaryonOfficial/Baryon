@@ -44,7 +44,7 @@ const ThreeScene = () => {
         gl={async (glDefaults) => {
           // @ts-ignore — glDefaults is { canvas, powerPreference, antialias, alpha }
           const renderer = new WebGPURenderer({
-            canvas: glDefaults.canvas,
+            canvas: /** @type {HTMLCanvasElement} */ (glDefaults.canvas),
             antialias: true,
           });
           await renderer.init();

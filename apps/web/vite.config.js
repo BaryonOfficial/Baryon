@@ -4,24 +4,27 @@ import { createBaseViteConfig } from '@baryon/config';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import tailwindcss from '@tailwindcss/vite';
 
+/** @returns {import('vite').UserConfig} */
 export default defineConfig(() => {
   const isHttps = process.env.HTTPS === 'true';
   const base = createBaseViteConfig();
+  /** @type {import('vite').PluginOption[]} */
+  const plugins = [
+    tailwindcss(),
+    ...base.plugins,
+    isHttps ? basicSsl() : null,
+  ].filter(Boolean);
 
   return {
     ...base,
-    plugins: [
-      tailwindcss(),
-      ...base.plugins,
-      isHttps && basicSsl(),
-    ].filter(Boolean),
+    plugins,
     server: {
       headers: {
         'Cross-Origin-Embedder-Policy': 'require-corp',
         'Cross-Origin-Opener-Policy': 'same-origin',
       },
       host: true,
-      https: isHttps,
+      https: isHttps ? {} : undefined,
       open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env),
     },
     build: {

@@ -3,6 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "lint": "eslint vite.base.js --report-unused-disable-directives --max-warnings 0",
+    "typecheck": "tsc -p tsconfig.json"
+  },
   "main": "./vite.base.js",
   "exports": {
     ".": "./vite.base.js"

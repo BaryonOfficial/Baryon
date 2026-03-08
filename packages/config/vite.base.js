@@ -3,7 +3,9 @@ import react from '@vitejs/plugin-react-swc';
 import glsl from 'vite-plugin-glsl';
 import topLevelAwait from 'vite-plugin-top-level-await';
 
+/** @returns {import('vite').UserConfig} */
 export function createBaseViteConfig() {
+  /** @type {import('vite').PluginOption[]} */
   const plugins = [
     react(),
     glsl(),
@@ -24,8 +26,9 @@ export function createBaseViteConfig() {
   ];
 
   return {
+    /** @type {import('vite').ESBuildOptions} */
     esbuild: {
-      drop: ['console', 'debugger'],
+      drop: /** @type {import('esbuild').Drop[]} */ (['console', 'debugger']),
     },
     build: {
       emptyOutDir: true,

@@ -322,7 +322,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
 /**
  * Per-frame update: upload audio data to GPU buffers and run the compute chain.
  *
- * @param {WebGPURenderer} renderer
+ * @param {import('three/webgpu').WebGPURenderer} renderer
  * @param {object} tslState - result of setupTSL
  * @param {object} audioState - result of audioContext.getState()
  * @param {number} time
