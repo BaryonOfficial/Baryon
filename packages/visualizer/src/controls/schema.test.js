@@ -9,6 +9,7 @@ import {
 } from "./schema.js";
 import { auditControlSchema } from "./audit.js";
 import { DEFAULT_VISUALIZATION_METHOD, VISUALIZATION_METHODS } from "../visualization/types.js";
+import { CONTROL_RUNTIME_COVERAGE } from "./runtime.js";
 
 const EXPECTED_CONTROL_KEYS = [
   "bloomEnabled",
@@ -72,5 +73,30 @@ describe("control schema", () => {
   it("defaults all current controls to the particle method surface", () => {
     const particleControls = getControlsForMethod(DEFAULT_VISUALIZATION_METHOD);
     expect(particleControls).toHaveLength(CONTROL_DEFINITIONS.length);
+  });
+
+  it("maps every live control to runtime coverage", () => {
+    const liveKeys = CONTROL_DEFINITIONS.filter(
+      (definition) => definition.status === CONTROL_STATUSES.live
+    ).map((definition) => definition.key);
+    const coveredKeys = Object.values(CONTROL_RUNTIME_COVERAGE).flat();
+
+    for (const key of liveKeys) {
+      expect(coveredKeys).toContain(key);
+    }
+  });
+
+  it("fails audit when a live control lacks runtime coverage", () => {
+    const report = auditControlSchema(CONTROL_DEFINITIONS, {
+      ...CONTROL_RUNTIME_COVERAGE,
+      [CONTROL_HANDLERS.particle]: CONTROL_RUNTIME_COVERAGE[
+        CONTROL_HANDLERS.particle
+      ].filter((key) => key !== "particleSize"),
+    });
+
+    expect(report.isValid).toBe(false);
+    expect(report.issues).toContain(
+      "Control particleSize is missing runtime coverage"
+    );
   });
 });

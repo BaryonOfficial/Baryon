@@ -8,8 +8,12 @@ import {
   applySceneControls,
   applySimulationControls,
   buildControlInspectionSnapshot,
+  CONTROL_RUNTIME_COVERAGE,
 } from "./runtime.js";
-import { createControlState } from "./schema.js";
+import {
+  CONTROL_HANDLERS,
+  createControlState,
+} from "./schema.js";
 import {
   createVisualizationRuntime,
 } from "../visualization/runtimeFactory.js";
@@ -47,11 +51,16 @@ describe("control runtime sync", () => {
     const controls = createControlState();
     controls.particleSize = 0.123;
     controls.particleSpeed = 55;
+    controls.idleLogoIntensity = 0.42;
+    controls.idleLogoAlpha = 0.35;
     controls.zeroPointPrecision = 0.033;
     controls.targetLerpThreshold = 1.25;
     controls.surfaceParticles = false;
     controls.particleMovementType = "Quickest";
     controls.idleLogoSize = 1.4;
+    controls.flowFieldStrength = 4.1;
+    controls.flowFieldFrequency = 0.73;
+    controls.flowFieldInfluence = 1.1;
 
     const { gl, tslState } = createSimulationHarness();
     const snapshot = applySimulationControls(gl, tslState, controls);
@@ -63,8 +72,16 @@ describe("control runtime sync", () => {
     expect(tslState.uniforms.uDistanceThreshold.value).toBe(1.25);
     expect(tslState.uniforms.uSurfaceControl.value).toBe(0);
     expect(tslState.uniforms.uParticleMovementType.value).toBe(0);
+    expect(tslState.uniforms.uIdleLogoIntensity.value).toBe(0.42);
+    expect(tslState.uniforms.uIdleLogoAlpha.value).toBe(0.35);
     expect(tslState.uniforms.uIdleLogoSize.value).toBe(1.4);
+    expect(tslState.uniforms.uFlowFieldStrength.value).toBe(4.1);
+    expect(tslState.uniforms.uFlowFieldFrequency.value).toBe(0.73);
+    expect(tslState.uniforms.uFlowFieldInfluence.value).toBe(1.1);
     expect(snapshot.uniforms.particleSize).toBe(0.123);
+    expect(snapshot.uniforms.idleLogoIntensity).toBe(0.42);
+    expect(snapshot.uniforms.idleLogoAlpha).toBe(0.35);
+    expect(snapshot.uniforms.flowFieldStrength).toBe(4.1);
   });
 
   it("applies shared and particle controls through method-aware helpers", () => {
@@ -110,12 +127,40 @@ describe("control runtime sync", () => {
     expect(snapshot.enabled).toBe(false);
   });
 
+  it("enables bloom output when the control is on", () => {
+    const controls = createControlState();
+    controls.bloomEnabled = true;
+
+    const pipeline = { outputNode: null };
+    const sceneColor = { add: vi.fn(() => "bloomed-output") };
+    const bloomPass = {
+      strength: { value: 0 },
+      radius: { value: 0 },
+      threshold: { value: 0 },
+    };
+
+    const snapshot = applyBloomControls(
+      {
+        ensurePipeline: () => pipeline,
+        postNodesRef: { current: { sceneColor, bloomPass } },
+      },
+      controls
+    );
+
+    expect(sceneColor.add).toHaveBeenCalledWith(bloomPass);
+    expect(pipeline.outputNode).toBe("bloomed-output");
+    expect(snapshot.enabled).toBe(true);
+  });
+
   it("applies audit controls to feature state", () => {
     const controls = createControlState();
     controls.auditEnabled = true;
     controls.freezeModeSlots = true;
     controls.injectTestTone = true;
     controls.pitchSourceMode = "worker";
+    controls.testToneHz = 660;
+    controls.testToneAmplitude = 0.75;
+    controls.logEveryFrames = 12;
 
     const featureState = {
       audit: {
@@ -136,7 +181,13 @@ describe("control runtime sync", () => {
     expect(featureState.audit.settings.freezeModeSlots).toBe(true);
     expect(featureState.audit.settings.injectTestTone).toBe(true);
     expect(featureState.audit.settings.pitchSourceMode).toBe("worker");
+    expect(featureState.audit.settings.testToneHz).toBe(660);
+    expect(featureState.audit.settings.testToneAmplitude).toBe(0.75);
+    expect(featureState.audit.settings.logEveryFrames).toBe(12);
     expect(snapshot.enabled).toBe(true);
+    expect(snapshot.testToneHz).toBe(660);
+    expect(snapshot.testToneAmplitude).toBe(0.75);
+    expect(snapshot.logEveryFrames).toBe(12);
   });
 
   it("applies scene controls to points rotation", () => {
@@ -188,5 +239,11 @@ describe("control runtime sync", () => {
     expect(typeof runtime.setup).toBe("function");
     expect(typeof runtime.tick).toBe("function");
     expect(typeof runtime.dispose).toBe("function");
+  });
+
+  it("covers every control handler bucket used by the schema", () => {
+    expect(Object.keys(CONTROL_RUNTIME_COVERAGE)).toEqual(
+      expect.arrayContaining(Object.values(CONTROL_HANDLERS))
+    );
   });
 });

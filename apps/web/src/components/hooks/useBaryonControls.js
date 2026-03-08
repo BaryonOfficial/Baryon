@@ -35,7 +35,28 @@ export function useBaryonControls() {
       }
     }
 
-    return () => pane.dispose();
+    if (typeof window !== "undefined" && import.meta.env.DEV) {
+      window.__baryonControls = {
+        getState() {
+          return { ...p };
+        },
+        setControl(key, value) {
+          if (!(key in p)) {
+            throw new Error(`[Baryon controls] Unknown control key: ${key}`);
+          }
+          p[key] = value;
+          pane.refresh();
+          return { ...p };
+        },
+      };
+    }
+
+    return () => {
+      if (typeof window !== "undefined" && import.meta.env.DEV) {
+        delete window.__baryonControls;
+      }
+      pane.dispose();
+    };
   }, []);
 
   return controlsRef;

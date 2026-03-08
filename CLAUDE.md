@@ -18,6 +18,7 @@ For fast verification, use:
 ```bash
 pnpm --filter @baryon/visualizer test
 pnpm --filter @baryon/visualizer typecheck
+pnpm --filter @baryon/web test:smoke
 pnpm exec eslint packages/visualizer/src apps/web/src/components/hooks
 ```
 
@@ -144,12 +145,18 @@ The GUI control surface now has a canonical schema in `packages/visualizer/src/c
   - compatibility alias: `applySceneControls()`
 - `audit.js` — control schema audit helper
 
+Control verification rules:
+- Every `live` control must have explicit runtime coverage through the handler layer.
+- `runtimePath` is audit metadata only; it is not the real source of truth.
+- `packages/visualizer/src/controls/runtime.js` exports `CONTROL_RUNTIME_COVERAGE`, which is what the schema audit and unit tests validate against.
+
 Rules:
 - New controls should be added through the control schema, not inline in the hook.
 - Pane creation in `useBaryonControls.js` should stay schema-driven.
 - Control sync logic should remain testable and outside React hooks where possible.
 - New controls should declare which visualization methods they apply to.
 - Dev-only control inspection is exposed on `window.__baryonControlState` for future browser smoke tests.
+- Dev-only control mutation is exposed on `window.__baryonControls` for browser smoke tests.
 - The inspection snapshot is method-aware and includes the current internal visualization method.
 
 ### Key Configuration
@@ -169,10 +176,12 @@ Rules:
 - Keep audit/debug snapshot assembly out of primary logic when adding new features.
 - If scene complexity grows, add more hooks under `apps/web/src/components/hooks/` instead of re-centralizing logic in `BaryonScene.jsx`.
 - `@baryon/visualizer` now has a minimal unit-test harness via `vitest` in `packages/visualizer`.
+- `@baryon/web` now has a minimal Playwright smoke harness in `apps/web/tests/controls.smoke.spec.js`.
 - Tests are expected to group around:
   - shared control/runtime helpers
   - particle runtime behavior
   - future method-aware scaffolding
+- browser smoke for critical control wiring
 - Browser-level checks are secondary.
 
 ### Commit Convention

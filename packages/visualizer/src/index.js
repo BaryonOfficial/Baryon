@@ -43,6 +43,7 @@ export {
 } from './controls/schema.js';
 export { auditControlSchema } from './controls/audit.js';
 export {
+  CONTROL_RUNTIME_COVERAGE,
   applySimulationControls,
   applySharedControls,
   applyParticleControls,

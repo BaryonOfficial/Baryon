@@ -8,6 +8,7 @@
     "build": "turbo build",
     "build:web": "turbo build --filter=@baryon/web",
     "test:visualizer": "pnpm --filter @baryon/visualizer test",
+    "test:web-smoke": "pnpm --filter @baryon/web test:smoke",
     "lint": "turbo lint",
     "lint:all": "pnpm -r --filter './apps/*' --filter './packages/*' --if-present lint",
     "typecheck": "pnpm -r --filter './apps/*' --filter './packages/*' --if-present typecheck",

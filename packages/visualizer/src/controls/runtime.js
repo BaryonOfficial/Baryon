@@ -1,5 +1,42 @@
 import * as THREE from "three";
+import { CONTROL_HANDLERS } from "./schema.js";
 import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
+
+export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
+  [CONTROL_HANDLERS.shared]: Object.freeze(["backgroundColor"]),
+  [CONTROL_HANDLERS.particle]: Object.freeze([
+    "volumeColor",
+    "surfaceColor",
+    "particleSpeed",
+    "particleSize",
+    "flowFieldStrength",
+    "flowFieldFrequency",
+    "flowFieldInfluence",
+    "targetLerpThreshold",
+    "zeroPointPrecision",
+    "surfaceParticles",
+    "particleMovementType",
+    "idleLogoIntensity",
+    "idleLogoAlpha",
+    "idleLogoSize",
+  ]),
+  [CONTROL_HANDLERS.bloom]: Object.freeze([
+    "bloomEnabled",
+    "bloomStrength",
+    "bloomRadius",
+    "bloomThreshold",
+  ]),
+  [CONTROL_HANDLERS.scene]: Object.freeze(["rotationSpeed"]),
+  [CONTROL_HANDLERS.audit]: Object.freeze([
+    "auditEnabled",
+    "freezeModeSlots",
+    "injectTestTone",
+    "pitchSourceMode",
+    "testToneHz",
+    "testToneAmplitude",
+    "logEveryFrames",
+  ]),
+});
 
 export function applySharedControls(gl, controls) {
   gl.setClearColor(new THREE.Color(controls.backgroundColor));

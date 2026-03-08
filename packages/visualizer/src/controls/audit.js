@@ -4,11 +4,22 @@ import {
   CONTROL_STATUSES,
   CONTROL_TARGET_TYPES,
 } from "./schema.js";
+import { CONTROL_RUNTIME_COVERAGE } from "./runtime.js";
 import { isVisualizationMethod } from "../visualization/types.js";
 
-export function auditControlSchema(definitions = CONTROL_DEFINITIONS) {
+export function auditControlSchema(
+  definitions = CONTROL_DEFINITIONS,
+  runtimeCoverage = CONTROL_RUNTIME_COVERAGE
+) {
   const issues = [];
   const keys = new Set();
+  const schemaHandlers = new Set(definitions.map((definition) => definition.handler));
+
+  for (const handler of schemaHandlers) {
+    if (!runtimeCoverage[handler]) {
+      issues.push(`Handler ${handler} is missing runtime coverage`);
+    }
+  }
 
   for (const definition of definitions) {
     if (!definition.key) {
@@ -39,6 +50,10 @@ export function auditControlSchema(definitions = CONTROL_DEFINITIONS) {
     }
     if (!definition.methods.every((method) => isVisualizationMethod(method))) {
       issues.push(`Control ${definition.key} has invalid visualization methods`);
+    }
+    const coveredKeys = runtimeCoverage[definition.handler];
+    if (!coveredKeys?.includes(definition.key)) {
+      issues.push(`Control ${definition.key} is missing runtime coverage`);
     }
   }
 
