@@ -1,15 +1,16 @@
 import * as THREE from 'three';
 import {
   Fn, instancedArray, attributeArray, instanceIndex,
-  uniform, float, int, vec3, vec4, If, Loop,
-  abs, length, normalize, mix, smoothstep, clamp, sqrt, dot, pow, sin, mod,
+  uniform, float, vec3, vec4, If, Loop,
+  abs, length, normalize, mix, smoothstep, clamp, pow, sin, mod,
   select, varying,
   cameraPosition, positionWorld,
   mx_noise_float,
 } from 'three/tsl';
 import { PointsNodeMaterial } from 'three/webgpu';
 import { DEFAULTS } from '../defaults.js';
-import { findFFTPeaks } from '../utils/fftPeaks.js';
+import { extractHarmonicPeaks, getCombinedAnalyserState } from '../utils/audioFeatures.js';
+import { createModeCatalog, resolveFrequenciesToModes } from '../utils/modeCatalog.js';
 
 /**
  * Mirrors the sphere-volume-and-surface initialization from gpgpuSetup.
@@ -51,11 +52,12 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
   const count       = parameters.count;
   const capacity    = audioConfig.capacity;
   const fftHalfSize = audioConfig.fftSize / 2;
-  const sampleRate  = audioConfig.sampleRate || 44100;
 
   // ─── Input storage buffers ─────────────────────────────────────────────────
-  // Pitch values per slot (updated each frame from Essentia ring buffer)
-  const pitchBuffer = instancedArray(capacity, 'float');
+  // Resolved mode triplets + amplitude per slot, uploaded each frame from CPU analysis.
+  const modeBuffer = instancedArray(capacity, 'vec4');
+  modeBuffer.value.array.fill(0);
+  modeBuffer.value.needsUpdate = true;
 
   // FFT bin magnitudes, normalized to [0,1] (updated each frame from analyser)
   const fftBuffer = instancedArray(fftHalfSize, 'float');
@@ -124,45 +126,13 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
   const uFlowFieldFrequency = uniform(DEFAULTS.flowFieldFrequency);
   const uParticleSpeed      = uniform(DEFAULTS.particleSpeed);
   const uDistanceThreshold  = uniform(DEFAULTS.distanceThreshold);
-  const uSampleRate         = uniform(audioConfig.sampleRate || 44100);
-
-  const SOUND_SPEED = float(340.0);
   const PI = float(Math.PI);
 
   // ─── Stage 1: audioData ────────────────────────────────────────────────────
-  // Runs `capacity` threads. Each thread computes mode numbers from a pitch
-  // via the secant method, then reads amplitude from the FFT buffer.
+  // Runs `capacity` threads. CPU analysis resolves each slot to a modal triplet
+  // and amplitude, and this pass uploads them into the compute chain.
   const audioDataCompute = Fn(() => {
-    const pitch = pitchBuffer.element(instanceIndex);
-
-    // Per-slot minimum pitch: 100, 200, 300, 400, 500 Hz.
-    // Prevents mode numbers collapsing to (0,0,0) when Essentia hasn't
-    // provided pitch data yet (pitch = 0), which makes sin(0) = 0 everywhere
-    // and kills all Chladni structure.
-    const slotMinHz = instanceIndex.toFloat().add(float(1.0)).mul(float(100.0));
-    const safePitch = pitch.max(slotMinHz);
-
-    // Map safePitch → FFT bin index
-    const nyquist = uSampleRate.mul(0.5);
-    const binF    = safePitch.div(nyquist).mul(float(fftHalfSize));
-    const binIdx  = clamp(binF.toInt(), int(0), int(fftHalfSize - 1));
-    const amplitude = fftBuffer.element(binIdx);
-
-    // Secant method (capped at 20 iterations) for 3D normal mode numbers
-    const n0 = vec3(1.0, 1.0, 1.0).toVar();
-    const n1 = vec3(2.0, 2.0, 2.0).toVar();
-
-    Loop(20, () => {
-      const v0 = float(0.5).mul(SOUND_SPEED).mul(sqrt(dot(n0, n0))).div(uRadius);
-      const v1 = float(0.5).mul(SOUND_SPEED).mul(sqrt(dot(n1, n1))).div(uRadius);
-      const guard   = abs(v1.sub(v0)).add(0.0001);
-      const step    = n1.sub(n0).mul(v1.sub(safePitch)).div(guard);
-      const n2      = n1.sub(step);
-      n0.assign(n1);
-      n1.assign(n2.clamp(vec3(0.0), vec3(100.0)));
-    });
-
-    audioDataBuffer.element(instanceIndex).assign(vec4(n1, amplitude));
+    audioDataBuffer.element(instanceIndex).assign(modeBuffer.element(instanceIndex));
   })().compute(capacity);
 
   // ─── Stage 2: scalarField ──────────────────────────────────────────────────
@@ -193,11 +163,13 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
 
   // ─── Stage 3: zeroPoints ──────────────────────────────────────────────────
   // Runs `count` threads. Keeps particles whose Chladni value crosses zero.
-  // When silent (amplitude ≈ 0), writes Baryon logo positions unconditionally.
-  // Slots that don't pass the threshold keep their previous-frame value.
+  // When a particle is no longer near a node, its target decays back toward the
+  // base distribution instead of freezing forever at a stale zero-point.
   const zeroPointsCompute = Fn(() => {
     const scalarVal = scalarFieldBuffer.element(instanceIndex);
     const baryonVal = baryonBuffer.element(instanceIndex);
+    const baseVal   = basePositionBuffer.element(instanceIndex);
+    const prevZero  = zeroPointsBuffer.element(instanceIndex);
 
     const useBaryon = uAverageAmplitude.lessThan(0.02);
 
@@ -213,8 +185,12 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
         const isOnSurface = abs(dist.sub(uRadius)).lessThanEqual(uSurfaceThreshold);
         const groupTag    = select(isOnSurface, float(1.0), float(2.0));
         zeroPointsBuffer.element(instanceIndex).assign(vec4(pos, groupTag));
-        // Non-node particles: previous-frame value is preserved (storage buffer persistence)
-        // This gives temporal smoothing as the pattern evolves with the audio
+      }).Else(() => {
+        const relaxedPos = mix(prevZero.xyz, baseVal.xyz, float(0.08));
+        const relaxedDist = length(relaxedPos);
+        const relaxedSurface = abs(relaxedDist.sub(uRadius)).lessThanEqual(uSurfaceThreshold);
+        const relaxedTag = select(relaxedSurface, float(1.0), float(2.0));
+        zeroPointsBuffer.element(instanceIndex).assign(vec4(relaxedPos, relaxedTag));
       });
     });
   })().compute(count);
@@ -325,12 +301,13 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
 
   return {
     points,
-    pitchBuffer,
+    modeBuffer,
     fftBuffer,
     particlesBuffer,
     capacity,
-    sampleRate,
     fftSize: audioConfig.fftSize,
+    modeCatalog: createModeCatalog(parameters.radius, 12),
+    previousModeIndices: new Array(capacity).fill(-1),
     uniforms: {
       uTime, uDeltaTime, uAverageAmplitude, uStarted,
       uRadius, uThreshold, uSurfaceThreshold,
@@ -352,40 +329,50 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
  * @param {number} deltaTime
  */
 export function tickTSL(renderer, tslState, audioState, time, deltaTime) {
-  const { pitchBuffer, fftBuffer, uniforms, compute, capacity, sampleRate, fftSize } = tslState;
+  const {
+    modeBuffer,
+    fftBuffer,
+    uniforms,
+    compute,
+    capacity,
+    fftSize,
+    modeCatalog,
+  } = tslState;
 
   // Time uniforms
   uniforms.uTime.value      = time;
   uniforms.uDeltaTime.value = deltaTime;
   uniforms.uStarted.value   = audioState.sound?.started ? 1 : 0;
 
-  // ── FFT data from Web Audio Analyser ──
-  const soundActive = audioState.sound?.isPlaying;
-  const micActive   = audioState.gumStream?.active;
-  const analyser    = soundActive ? audioState.analyser : micActive ? audioState.micAnalyser : null;
-
-  if (analyser) {
-    const freqData = analyser.getFrequencyData(); // Uint8Array [0,255]
-
-    // Pick top N spectral peaks → pitchBuffer (replaces Essentia ring buffer)
-    const peaks = findFFTPeaks(freqData, capacity, sampleRate, fftSize);
-    pitchBuffer.value.array.set(peaks);
-    pitchBuffer.value.needsUpdate = true;
-
+  const combinedState = getCombinedAnalyserState(audioState);
+  if (combinedState) {
+    const { avgAmplitude, freqData } = combinedState;
     const arr = fftBuffer.value.array;
-    for (let i = 0, n = freqData.length; i < n; i++) {
-      arr[i] = freqData[i] / 255.0;
+    arr.fill(0);
+    for (let i = 0, n = Math.min(freqData.length, arr.length); i < n; i++) {
+      arr[i] = freqData[i];
     }
     fftBuffer.value.needsUpdate = true;
 
-    const avgAmp = analyser.getAverageFrequency();
-    uniforms.uAverageAmplitude.value = avgAmp;
+    const peaks = extractHarmonicPeaks(freqData, capacity, audioState.audioCtx?.sampleRate ?? 44100, fftSize);
+    const { slots, nextIndices } = resolveFrequenciesToModes(
+      peaks,
+      modeCatalog,
+      capacity,
+      tslState.previousModeIndices
+    );
+
+    modeBuffer.value.array.set(slots);
+    modeBuffer.value.needsUpdate = true;
+    tslState.previousModeIndices = nextIndices;
+    uniforms.uAverageAmplitude.value = avgAmplitude;
   } else {
-    pitchBuffer.value.array.fill(0);
-    pitchBuffer.value.needsUpdate      = true;
+    modeBuffer.value.array.fill(0);
+    modeBuffer.value.needsUpdate = true;
     fftBuffer.value.array.fill(0);
-    fftBuffer.value.needsUpdate        = true;
-    uniforms.uAverageAmplitude.value   = 0;
+    fftBuffer.value.needsUpdate = true;
+    tslState.previousModeIndices.fill(-1);
+    uniforms.uAverageAmplitude.value = 0;
   }
 
   // ── Run sequential compute chain ──
