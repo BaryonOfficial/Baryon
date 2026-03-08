@@ -1,5 +1,9 @@
 import { DEFAULTS } from '../defaults.js';
-import { resolvePitchHistoryToModes } from './normalModes.js';
+import {
+  resolvePitchHistoryToModes,
+  resolvePitchHistoryToModesWithFFT,
+  sampleFFTAmplitudeForFrequency,
+} from './normalModes.js';
 
 function normaliseSpectrum(freqData) {
   const result = new Float32Array(freqData.length);
@@ -160,27 +164,75 @@ export function createAudioFeatureState(capacity = DEFAULTS.capacity) {
       amplitude: 0,
     })),
     modeSlots: new Float32Array(capacity * 4),
+    referenceModeSlots: new Float32Array(capacity * 4),
     fftMagnitudes: new Float32Array(0),
+    workletPitchScratch: new Float32Array(capacity),
+    audit: {
+      frame: 0,
+      frozenModeSlots: new Float32Array(capacity * 4),
+      lastSnapshot: null,
+      settings: {
+        enabled: false,
+        freezeModeSlots: false,
+        injectTestTone: false,
+        testToneHz: 440,
+        testToneAmplitude: 0.5,
+        logEveryFrames: 30,
+      },
+    },
   };
+}
+
+function readWorkletPitch(audioState, featureState) {
+  const reader = audioState.audioReader;
+  const scratch = featureState?.workletPitchScratch;
+  if (!reader || !scratch || reader.available_read() < 1) {
+    return null;
+  }
+
+  scratch.fill(0);
+  const read = reader.dequeue(scratch);
+  if (!read) {
+    return null;
+  }
+
+  const latestPitch = scratch[Math.max(0, read - 1)];
+  return Number.isFinite(latestPitch) && latestPitch > 0 ? latestPitch : null;
 }
 
 export function buildAudioFeatureFrame(audioState, featureState, radius) {
   const capacity = featureState?.capacity ?? DEFAULTS.capacity;
   const history = featureState?.pitchHistory ?? [];
   const modeSlots = featureState?.modeSlots ?? new Float32Array(capacity * 4);
+  const referenceModeSlots = featureState?.referenceModeSlots ?? new Float32Array(capacity * 4);
+  const auditState = featureState?.audit;
+  const auditSettings = auditState?.settings ?? {
+    enabled: false,
+    freezeModeSlots: false,
+    injectTestTone: false,
+    testToneHz: 440,
+    testToneAmplitude: 0.5,
+    logEveryFrames: 30,
+  };
+  const sampleRate = audioState.audioCtx?.sampleRate ?? 44100;
+  const fftSize = audioState.fftSize ?? 4096;
 
   const combinedState = getCombinedAnalyserState(audioState);
   const soundActive = Boolean(audioState.sound?.isPlaying);
   const micActive = Boolean(audioState.gumStream?.active);
-  const engaged = Boolean(audioState.sound?.started || micActive);
+  const engaged = auditSettings.injectTestTone
+    ? true
+    : Boolean(audioState.sound?.started || micActive);
 
   let sourceMode = 'silent';
   if (soundActive && micActive) sourceMode = 'mixed';
   else if (soundActive) sourceMode = 'file';
   else if (micActive) sourceMode = 'mic';
+  if (auditSettings.injectTestTone) sourceMode = 'test';
 
-  if (!combinedState) {
+  if (!combinedState && !auditSettings.injectTestTone) {
     modeSlots.fill(0);
+    referenceModeSlots.fill(0);
     for (let i = 0; i < history.length; i++) {
       history[i] = { frequency: 0, amplitude: 0 };
     }
@@ -200,22 +252,76 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
       averageAmplitude: 0,
       fftMagnitudes: silentFft,
       modeSlots,
+      referenceModeSlots,
       sourceMode,
+      debug: {
+        pitchSource: 'none',
+        dominantFrequency: 0,
+        workletPitch: null,
+        avgAmplitude: 0,
+        nonZeroFFTBinCount: 0,
+        modeSlotCount: 0,
+        currentModeSlots: Array.from(modeSlots),
+        referenceModeSlots: Array.from(referenceModeSlots),
+        slotAmplitudeDeltas: Array.from(referenceModeSlots),
+      },
     };
   }
 
-  const { avgAmplitude, freqData, timeData } = combinedState;
-  const dominantPeak = detectPitchYIN(timeData, audioState.audioCtx?.sampleRate ?? 44100);
+  let avgAmplitude = combinedState?.avgAmplitude ?? 0;
+  let freqData = combinedState?.freqData ?? null;
+  const timeData = combinedState?.timeData ?? null;
+
+  if (auditSettings.injectTestTone) {
+    if (!freqData) {
+      freqData = new Float32Array(fftSize / 2);
+    }
+    freqData.fill(0);
+    const testBinAmplitude = Math.max(0, Math.min(1, auditSettings.testToneAmplitude));
+    avgAmplitude = testBinAmplitude * 255;
+    const bin = Math.round((auditSettings.testToneHz / (sampleRate * 0.5)) * (freqData.length - 1));
+    const index = Math.max(0, Math.min(freqData.length - 1, bin));
+    freqData[index] = testBinAmplitude;
+  }
+
+  const workletPitch = readWorkletPitch(audioState, featureState);
+  const yinPeak = detectPitchYIN(timeData, sampleRate);
+  const dominantPeak = auditSettings.injectTestTone
+    ? {
+        frequency: auditSettings.testToneHz,
+        amplitude: Math.max(0, Math.min(1, auditSettings.testToneAmplitude)),
+        clarity: 1,
+      }
+    : workletPitch
+    ? {
+        frequency: workletPitch,
+        amplitude: Math.min(1, avgAmplitude / 96),
+        clarity: 1,
+      }
+    : yinPeak;
 
   if (dominantPeak && dominantPeak.amplitude > 0.03 && dominantPeak.clarity > 0.75) {
-    for (let i = history.length - 1; i > 0; i--) {
-      history[i] = history[i - 1];
-    }
+    if (auditSettings.injectTestTone) {
+      history[0] = {
+        frequency: dominantPeak.frequency,
+        amplitude: dominantPeak.amplitude * Math.min(1, dominantPeak.clarity),
+      };
+      for (let i = 1; i < history.length; i++) {
+        history[i] = {
+          frequency: 0,
+          amplitude: 0,
+        };
+      }
+    } else {
+      for (let i = history.length - 1; i > 0; i--) {
+        history[i] = history[i - 1];
+      }
 
-    history[0] = {
-      frequency: dominantPeak.frequency,
-      amplitude: dominantPeak.amplitude * Math.min(1, dominantPeak.clarity),
-    };
+      history[0] = {
+        frequency: dominantPeak.frequency,
+        amplitude: dominantPeak.amplitude * Math.min(1, dominantPeak.clarity),
+      };
+    }
   } else {
     for (let i = 0; i < history.length; i++) {
       const item = history[i];
@@ -228,6 +334,20 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
 
   modeSlots.fill(0);
   modeSlots.set(resolvePitchHistoryToModes(history, radius));
+  referenceModeSlots.fill(0);
+  referenceModeSlots.set(
+    resolvePitchHistoryToModesWithFFT(history, radius, freqData, sampleRate, fftSize)
+  );
+
+  let returnedModeSlots = modeSlots;
+  if (auditSettings.freezeModeSlots && auditState) {
+    if (auditState.frozenModeSlots.every((value) => value === 0)) {
+      auditState.frozenModeSlots.set(modeSlots);
+    }
+    returnedModeSlots = auditState.frozenModeSlots;
+  } else if (auditState) {
+    auditState.frozenModeSlots.fill(0);
+  }
 
   let fftMagnitudes = featureState?.fftMagnitudes;
   if (!fftMagnitudes || fftMagnitudes.length !== freqData.length) {
@@ -238,13 +358,53 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
   }
   fftMagnitudes.set(freqData);
 
+  const slotAmplitudeDeltas = new Float32Array(history.length);
+  let modeSlotCount = 0;
+  for (let i = 0; i < history.length; i++) {
+    if (returnedModeSlots[i * 4 + 3] > 0) {
+      modeSlotCount++;
+    }
+    slotAmplitudeDeltas[i] =
+      returnedModeSlots[i * 4 + 3] - referenceModeSlots[i * 4 + 3];
+  }
+
+  const debug = {
+    pitchSource: auditSettings.injectTestTone
+      ? 'test'
+      : workletPitch
+      ? 'worklet'
+      : yinPeak
+      ? 'yin'
+      : 'none',
+    dominantFrequency: dominantPeak?.frequency ?? 0,
+    dominantAmplitude: dominantPeak?.amplitude ?? 0,
+    workletPitch,
+    avgAmplitude,
+    nonZeroFFTBinCount: fftMagnitudes.reduce((count, value) => count + (value > 0.001 ? 1 : 0), 0),
+    modeSlotCount,
+    currentModeSlots: Array.from(returnedModeSlots),
+    referenceModeSlots: Array.from(referenceModeSlots),
+    slotAmplitudeDeltas: Array.from(slotAmplitudeDeltas),
+    referencePitchBinAmplitude: dominantPeak
+      ? sampleFFTAmplitudeForFrequency(dominantPeak.frequency, fftMagnitudes, sampleRate, fftSize)
+      : 0,
+  };
+
+  if (auditState) {
+    auditState.frame += 1;
+    auditState.lastSnapshot = debug;
+  }
+
   return {
     engaged,
     soundActive,
     micActive,
     averageAmplitude: avgAmplitude,
     fftMagnitudes,
-    modeSlots,
+    modeSlots: returnedModeSlots,
+    referenceModeSlots,
     sourceMode,
+    debug,
+    audit: auditSettings,
   };
 }

@@ -20,6 +20,9 @@ export const DEFAULTS = {
   // Rendering
   particleSize: 0.03,
   rotationSpeed: 2.5,
+  idleLogoIntensity: 0.04,
+  idleLogoAlpha: 0.08,
+  idleLogoSize: 1.0,
 
   // Colors
   backgroundColor: "#000000",
@@ -27,7 +30,7 @@ export const DEFAULTS = {
   surfaceColor: "#DEF0FA",
 
   // Bloom
-  bloomStrength: 0.04,
-  bloomRadius: 1.0,
+  bloomStrength: 0.36,
+  bloomRadius: 0.4,
   bloomThreshold: 0.4,
 };

@@ -54,6 +54,228 @@ function initializeParticlesInSphere(count, radius) {
   return positions;
 }
 
+function createAuditState(basePositions, initialParticlePositions, baryonPositions) {
+  const sampleCount = Math.min(256, Math.max(32, Math.floor(basePositions.length / 3000)));
+  const sampleIndices = new Uint32Array(sampleCount);
+  const shadowParticles = new Float32Array(sampleCount * 3);
+  const retainedTargets = new Float32Array(sampleCount * 4);
+  const sampleBaryon = new Float32Array(sampleCount * 3);
+  const stride = Math.max(1, Math.floor(basePositions.length / 3 / sampleCount));
+
+  for (let i = 0; i < sampleCount; i++) {
+    const index = Math.min(Math.floor(basePositions.length / 3) - 1, i * stride);
+    sampleIndices[i] = index;
+    shadowParticles[i * 3] = initialParticlePositions[index * 3];
+    shadowParticles[i * 3 + 1] = initialParticlePositions[index * 3 + 1];
+    shadowParticles[i * 3 + 2] = initialParticlePositions[index * 3 + 2];
+    retainedTargets[i * 4] = basePositions[index * 3];
+    retainedTargets[i * 4 + 1] = basePositions[index * 3 + 1];
+    retainedTargets[i * 4 + 2] = basePositions[index * 3 + 2];
+    retainedTargets[i * 4 + 3] = 2;
+    sampleBaryon[i * 3] = baryonPositions[index * 4];
+    sampleBaryon[i * 3 + 1] = baryonPositions[index * 4 + 1];
+    sampleBaryon[i * 3 + 2] = baryonPositions[index * 4 + 2];
+  }
+
+  return {
+    frame: 0,
+    sampleIndices,
+    shadowParticles,
+    retainedTargets,
+    sampleBaryon,
+    lastSnapshot: null,
+  };
+}
+
+function computeScalarFieldValue(x, y, z, modeSlots, radius) {
+  let sum = 0;
+  const scale = 1 / radius;
+
+  for (let i = 0; i < modeSlots.length; i += 4) {
+    const amplitude = modeSlots[i + 3];
+    if (!amplitude) continue;
+    const ui = modeSlots[i];
+    const vi = modeSlots[i + 1];
+    const wi = modeSlots[i + 2];
+    sum += amplitude
+      * Math.sin(ui * Math.PI * x * scale)
+      * Math.sin(vi * Math.PI * y * scale)
+      * Math.sin(wi * Math.PI * z * scale);
+  }
+
+  return sum;
+}
+
+function pseudoNoise3(x, y, z) {
+  const value = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
+  return (value - Math.floor(value)) * 2 - 1;
+}
+
+function updateAuditSnapshot(tslState, featureFrame, deltaTime) {
+  const auditState = tslState.audit;
+  if (!auditState || !featureFrame) {
+    return null;
+  }
+
+  const {
+    sampleIndices,
+    shadowParticles,
+    retainedTargets,
+    sampleBaryon,
+  } = auditState;
+  const radius = tslState.uniforms.uRadius.value;
+  const threshold = tslState.uniforms.uThreshold.value;
+  const surfaceThreshold = tslState.uniforms.uSurfaceThreshold.value;
+  const flowInfluence = tslState.uniforms.uFlowFieldInfluence.value;
+  const flowStrength = tslState.uniforms.uFlowFieldStrength.value;
+  const flowFrequency = tslState.uniforms.uFlowFieldFrequency.value;
+  const particleSpeed = tslState.uniforms.uParticleSpeed.value;
+  const distanceThreshold = tslState.uniforms.uDistanceThreshold.value;
+  const movementType = tslState.uniforms.uParticleMovementType.value;
+  const surfaceControl = tslState.uniforms.uSurfaceControl.value;
+  const idleScale = tslState.uniforms.uIdleLogoSize.value;
+  const minNodeRadius = radius * 0.12;
+  const started = featureFrame.engaged;
+
+  let validCount = 0;
+  let surfaceCount = 0;
+  let retainedCount = 0;
+  let avgFieldAbs = 0;
+  let avgTargetDistance = 0;
+  let avgLerpMovement = 0;
+  let avgFlowMovement = 0;
+
+  for (let i = 0; i < sampleIndices.length; i++) {
+    const index = sampleIndices[i];
+    const baseX = tslState.basePositions[index * 3];
+    const baseY = tslState.basePositions[index * 3 + 1];
+    const baseZ = tslState.basePositions[index * 3 + 2];
+    const field = computeScalarFieldValue(baseX, baseY, baseZ, featureFrame.modeSlots, radius);
+    avgFieldAbs += Math.abs(field);
+    const dist = Math.hypot(baseX, baseY, baseZ);
+    const isOnSurface = Math.abs(dist - radius) <= surfaceThreshold;
+    const isValid =
+      dist > minNodeRadius &&
+      Math.abs(field) < threshold &&
+      (!isOnSurface || surfaceControl !== 0);
+    const targetOffset = i * 4;
+
+    if (started) {
+      if (isValid) {
+        retainedTargets[targetOffset] = baseX;
+        retainedTargets[targetOffset + 1] = baseY;
+        retainedTargets[targetOffset + 2] = baseZ;
+        retainedTargets[targetOffset + 3] = isOnSurface ? 1 : 2;
+        validCount++;
+        if (isOnSurface) surfaceCount++;
+      } else {
+        retainedCount++;
+      }
+    } else {
+      retainedTargets[targetOffset] = sampleBaryon[i * 3] * idleScale;
+      retainedTargets[targetOffset + 1] = sampleBaryon[i * 3 + 1] * idleScale;
+      retainedTargets[targetOffset + 2] = sampleBaryon[i * 3 + 2] * idleScale;
+      retainedTargets[targetOffset + 3] = 1;
+    }
+
+    const shadowOffset = i * 3;
+    const oldX = shadowParticles[shadowOffset];
+    const oldY = shadowParticles[shadowOffset + 1];
+    const oldZ = shadowParticles[shadowOffset + 2];
+    const targetX = retainedTargets[targetOffset];
+    const targetY = retainedTargets[targetOffset + 1];
+    const targetZ = retainedTargets[targetOffset + 2];
+    const toTargetX = targetX - oldX;
+    const toTargetY = targetY - oldY;
+    const toTargetZ = targetZ - oldZ;
+    const targetDist = Math.hypot(toTargetX, toTargetY, toTargetZ);
+    avgTargetDistance += targetDist;
+
+    const invLen = 1 / (targetDist + 0.0001);
+    const dirX = toTargetX * invLen;
+    const dirY = toTargetY * invLen;
+    const dirZ = toTargetZ * invLen;
+    const nx = pseudoNoise3(oldX * flowFrequency, oldY * flowFrequency, oldZ * flowFrequency + tslState.uniforms.uTime.value);
+    const ny = pseudoNoise3(oldX * flowFrequency + 1, oldY * flowFrequency, oldZ * flowFrequency + tslState.uniforms.uTime.value);
+    const nz = pseudoNoise3(oldX * flowFrequency + 2, oldY * flowFrequency, oldZ * flowFrequency + tslState.uniforms.uTime.value);
+    const flowLen = Math.hypot(nx, ny, nz) || 1;
+    const flowX = nx / flowLen;
+    const flowY = ny / flowLen;
+    const flowZ = nz / flowLen;
+    const rawStrength = (pseudoNoise3(targetX * 0.2, targetY * 0.2, targetZ * 0.2 + tslState.uniforms.uTime.value + 1) + 1) * 0.5;
+    const influence = (flowInfluence - 0.5) * -2.0;
+    const strength = Math.max(0, Math.min(1, (rawStrength - influence) / Math.max(1e-5, 1 - influence)));
+    const flowBlend = started
+      ? Math.max(0, Math.min(1, targetDist / Math.max(1e-4, distanceThreshold + 0.0001)))
+      : 0;
+    const adjustedDirX = dirX + flowX * strength * flowBlend;
+    const adjustedDirY = dirY + flowY * strength * flowBlend;
+    const adjustedDirZ = dirZ + flowZ * strength * flowBlend;
+    const flowMoveX = adjustedDirX * deltaTime * flowStrength;
+    const flowMoveY = adjustedDirY * deltaTime * flowStrength;
+    const flowMoveZ = adjustedDirZ * deltaTime * flowStrength;
+    avgFlowMovement += Math.hypot(flowMoveX, flowMoveY, flowMoveZ);
+
+    const timeFactor = Math.max(0, Math.min(1, particleSpeed * deltaTime));
+    const distanceFactor = Math.max(0, Math.min(1, targetDist / (distanceThreshold + 1)));
+    let alpha = timeFactor;
+    if (started && movementType === 1) {
+      alpha = (timeFactor * 0.35) * (1 - distanceFactor) + distanceFactor;
+    } else if (!started) {
+      alpha = Math.min(0.06, timeFactor * 0.12);
+    }
+    alpha *= 1 - Math.exp(-targetDist * 5);
+    const lerpMoveX = (targetX - oldX) * alpha;
+    const lerpMoveY = (targetY - oldY) * alpha;
+    const lerpMoveZ = (targetZ - oldZ) * alpha;
+    avgLerpMovement += Math.hypot(lerpMoveX, lerpMoveY, lerpMoveZ);
+
+    let newX = oldX + flowMoveX + lerpMoveX;
+    let newY = oldY + flowMoveY + lerpMoveY;
+    let newZ = oldZ + flowMoveZ + lerpMoveZ;
+    const newLen = Math.hypot(newX, newY, newZ);
+    if (newLen > radius) {
+      const inv = radius / newLen;
+      newX *= inv;
+      newY *= inv;
+      newZ *= inv;
+    }
+    shadowParticles[shadowOffset] = newX;
+    shadowParticles[shadowOffset + 1] = newY;
+    shadowParticles[shadowOffset + 2] = newZ;
+  }
+
+  const divisor = sampleIndices.length || 1;
+  const snapshot = {
+    zeroPointOccupancy: validCount / divisor,
+    zeroPointValidCount: validCount,
+    zeroPointSurfaceCount: surfaceCount,
+    retainedZeroPointCount: retainedCount,
+    avgFieldAbs: avgFieldAbs / divisor,
+    avgTargetDistance: avgTargetDistance / divisor,
+    avgLerpMovement: avgLerpMovement / divisor,
+    avgFlowMovement: avgFlowMovement / divisor,
+  };
+
+  auditState.frame += 1;
+  auditState.lastSnapshot = snapshot;
+  return snapshot;
+}
+
+function didModeSlotsChange(nextSlots, prevSlots, epsilon = 1e-4) {
+  if (!nextSlots?.length || !prevSlots?.length || nextSlots.length !== prevSlots.length) {
+    return true;
+  }
+
+  for (let i = 0; i < nextSlots.length; i++) {
+    if (Math.abs(nextSlots[i] - prevSlots[i]) > epsilon) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Sets up all TSL storage buffers, compute nodes, and the particle Points mesh.
  *
@@ -140,6 +362,11 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
   const uFlowFieldFrequency = uniform(DEFAULTS.flowFieldFrequency);
   const uParticleSpeed      = uniform(DEFAULTS.particleSpeed);
   const uDistanceThreshold  = uniform(DEFAULTS.distanceThreshold);
+  const uSurfaceControl     = uniform(1);
+  const uParticleMovementType = uniform(1);
+  const uIdleLogoIntensity  = uniform(DEFAULTS.idleLogoIntensity);
+  const uIdleLogoAlpha      = uniform(DEFAULTS.idleLogoAlpha);
+  const uIdleLogoSize       = uniform(DEFAULTS.idleLogoSize);
   const PI = float(Math.PI);
 
   // ─── Stage 1: scalarField ──────────────────────────────────────────────────
@@ -175,29 +402,29 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
   const zeroPointsCompute = Fn(() => {
     const scalarVal = scalarFieldBuffer.element(instanceIndex);
     const baryonVal = baryonBuffer.element(instanceIndex);
-    const particleVal = particlesBuffer.element(instanceIndex);
+    const prevZero = zeroPointsBuffer.element(instanceIndex);
+    const scaledBaryonPos = baryonVal.xyz.mul(uIdleLogoSize);
 
     const useBaryon = uStarted.equal(0);
 
     If(useBaryon, () => {
       // Silent: write logo position directly — no Chladni check needed
-      zeroPointsBuffer.element(instanceIndex).assign(vec4(baryonVal.xyz, float(1.0)));
+      zeroPointsBuffer.element(instanceIndex).assign(vec4(scaledBaryonPos, float(1.0)));
     }).Else(() => {
       // Audio active: find zero-crossings of the Chladni standing wave
       const pos     = scalarVal.xyz;
       const chladni = scalarVal.w;
       const dist    = length(pos);
-      If(abs(chladni).lessThan(uThreshold), () => {
+      If(dist.greaterThan(uRadius.mul(0.12)).and(abs(chladni).lessThan(uThreshold)), () => {
         const isOnSurface = abs(dist.sub(uRadius)).lessThanEqual(uSurfaceThreshold);
         const groupTag    = select(isOnSurface, float(1.0), float(2.0));
-        zeroPointsBuffer.element(instanceIndex).assign(vec4(pos, groupTag));
+        If(isOnSurface.and(uSurfaceControl.equal(0)), () => {
+          zeroPointsBuffer.element(instanceIndex).assign(prevZero);
+        }).Else(() => {
+          zeroPointsBuffer.element(instanceIndex).assign(vec4(pos, groupTag));
+        });
       }).Else(() => {
-        const fallbackTag = select(
-          particleVal.w.equal(float(1.0)).or(particleVal.w.equal(float(2.0))),
-          particleVal.w,
-          float(2.0)
-        );
-        zeroPointsBuffer.element(instanceIndex).assign(vec4(particleVal.xyz, fallbackTag));
+        zeroPointsBuffer.element(instanceIndex).assign(prevZero);
       });
     });
   })().compute(count);
@@ -209,7 +436,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     const oldParticle = particlesBuffer.element(instanceIndex);
     const oldPos      = oldParticle.xyz;
     const zeroPoint   = zeroPointsBuffer.element(instanceIndex);
-    const baryonPos   = baryonBuffer.element(instanceIndex).xyz;
+    const baryonPos   = baryonBuffer.element(instanceIndex).xyz.mul(uIdleLogoSize);
 
     // Target: zero-point once audio is engaged, Baryon logo only before that
     const target   = select(uStarted.equal(1), zeroPoint.xyz, baryonPos);
@@ -229,26 +456,30 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     const rawStrength  = mx_noise_float(vec3(target.mul(0.2).add(vec3(0.0, 0.0, uTime.add(1.0)))));
     const influence    = uFlowFieldInfluence.sub(0.5).mul(-2.0);
     const strength     = smoothstep(influence, float(1.0), rawStrength);
+    const flowBlend    = select(
+      uStarted.equal(1),
+      clamp(dist.div(uDistanceThreshold.add(0.0001)), float(0.0), float(1.0)),
+      float(0.0)
+    );
 
-    const adjustedDir  = dir.add(flowField.mul(strength));
+    const adjustedDir  = dir.add(flowField.mul(strength).mul(flowBlend));
     const movement     = adjustedDir.mul(uDeltaTime).mul(uFlowFieldStrength);
 
     const lerpMovement = vec3(0.0).toVar();
+    const timeFactor     = clamp(uParticleSpeed.mul(uDeltaTime), float(0.0), float(1.0));
+    const distanceFactor = smoothstep(float(0.0), uDistanceThreshold.add(float(1.0)), dist);
 
-    If(dist.greaterThan(uDistanceThreshold), () => {
-      const timeFactor     = clamp(uParticleSpeed.mul(uDeltaTime), float(0.0), float(1.0));
-      const distanceFactor = smoothstep(float(0.0), float(1.0), float(1.0).sub(dist.div(dist.add(1.0))));
-
-      const alpha = timeFactor.toVar();
-      If(uStarted.equal(1), () => {
-        alpha.assign(mix(distanceFactor, float(1.0), timeFactor));
-      });
-      const damping = float(1.0).sub(dist.mul(-5.0).exp());
-      alpha.mulAssign(damping);
-
-      const interpolated = mix(oldPos, target, alpha);
-      lerpMovement.assign(interpolated.sub(oldPos));
+    const alpha = timeFactor.toVar();
+    If(uStarted.equal(1).and(uParticleMovementType.equal(1)), () => {
+      alpha.assign(mix(timeFactor.mul(0.35), float(1.0), distanceFactor));
+    }).Else(() => {
+      alpha.assign(timeFactor.mul(0.12));
     });
+    const damping = float(1.0).sub(dist.mul(-5.0).exp());
+    alpha.mulAssign(damping);
+
+    const interpolated = mix(oldPos, target, alpha);
+    lerpMovement.assign(interpolated.sub(oldPos));
 
     const newPos   = oldPos.add(movement).add(lerpMovement);
     const maxR     = uRadius;
@@ -283,8 +514,11 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
       groupTag.equal(float(1.0)), uSurfaceColor,
       select(groupTag.equal(float(2.0)), uColor, defaultBlue)
     );
+    const logoIntensity = select(uStarted.equal(0), uIdleLogoIntensity, float(1.0));
+    const finalColor = mix(particleColor, holoColor, holo).mul(logoIntensity);
+    const alpha = select(uStarted.equal(0), uIdleLogoAlpha, float(1.0));
 
-    return vec4(mix(particleColor, holoColor, holo), 1.0);
+    return vec4(finalColor, alpha);
   })();
 
   const uParticleSize = uniform(DEFAULTS.particleSize);
@@ -305,6 +539,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
   geom.setAttribute('position', new THREE.BufferAttribute(dummyPos, 3));
 
   const points = new THREE.Points(geom, particleMaterial);
+  const audit = createAuditState(basePositions, initialParticlePositions, baryonBuffer.value.array);
 
   return {
     points,
@@ -316,12 +551,15 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     fftSize: audioConfig.fftSize,
     baseThreshold: parameters.threshold,
     basePositions,
+    prevModeSlots: new Float32Array(capacity * 4),
     wasAudioEngaged: false,
+    audit,
     uniforms: {
       uTime, uDeltaTime, uAverageAmplitude, uStarted,
       uRadius, uThreshold, uSurfaceThreshold,
       uFlowFieldInfluence, uFlowFieldStrength, uFlowFieldFrequency,
-      uParticleSpeed, uDistanceThreshold,
+      uParticleSpeed, uDistanceThreshold, uSurfaceControl, uParticleMovementType,
+      uIdleLogoIntensity, uIdleLogoAlpha, uIdleLogoSize,
       uColor, uSurfaceColor, uParticleSize,
     },
     compute: { scalarFieldCompute, zeroPointsCompute, particlesCompute },
@@ -344,8 +582,6 @@ export function tickTSL(renderer, tslState, featureFrame, time, deltaTime) {
     particlesBuffer,
     uniforms,
     compute,
-    capacity,
-    baseThreshold,
     zeroPointsBuffer,
     basePositions,
   } = tslState;
@@ -368,29 +604,28 @@ export function tickTSL(renderer, tslState, featureFrame, time, deltaTime) {
     modeBuffer.value.array.set(featureFrame.modeSlots);
     modeBuffer.value.needsUpdate = true;
 
-    let activeModeCount = 0;
-    for (let i = 0; i < capacity; i++) {
-      if (featureFrame.modeSlots[i * 4 + 3] > 0.02) {
-        activeModeCount++;
-      }
-    }
-    const peakRatio = activeModeCount / capacity;
-    const energyRatio = Math.min(1, featureFrame.averageAmplitude / 128);
-    const adaptiveThreshold =
-      baseThreshold * (0.18 + peakRatio * 0.22 + energyRatio * 0.18);
-
     uniforms.uAverageAmplitude.value = featureFrame.averageAmplitude;
-    uniforms.uThreshold.value = adaptiveThreshold;
   } else {
     modeBuffer.value.array.fill(0);
     modeBuffer.value.needsUpdate = true;
     fftBuffer.value.array.fill(0);
     fftBuffer.value.needsUpdate = true;
     uniforms.uAverageAmplitude.value = 0;
-    uniforms.uThreshold.value = baseThreshold;
   }
 
-  if (audioEngaged && !tslState.wasAudioEngaged) {
+  const auditSnapshot = updateAuditSnapshot(tslState, featureFrame, deltaTime);
+  tslState.debugSnapshot = featureFrame?.debug
+    ? {
+        ...featureFrame.debug,
+        ...auditSnapshot,
+      }
+    : auditSnapshot;
+
+  const modeSlotsChanged = audioEngaged && featureFrame
+    ? didModeSlotsChange(featureFrame.modeSlots, tslState.prevModeSlots)
+    : false;
+
+  if ((audioEngaged && !tslState.wasAudioEngaged) || modeSlotsChanged) {
     const arr = zeroPointsBuffer.value.array;
     const particleArr = particlesBuffer.value.array;
     const particleCount = basePositions ? basePositions.length / 3 : particleArr.length / 4;
@@ -401,6 +636,26 @@ export function tickTSL(renderer, tslState, featureFrame, time, deltaTime) {
       arr[i * 4 + 3] = 2.0;
     }
     zeroPointsBuffer.value.needsUpdate = true;
+
+    if (tslState.audit) {
+      const { sampleIndices, retainedTargets, shadowParticles } = tslState.audit;
+      for (let i = 0; i < sampleIndices.length; i++) {
+        const sampleIndex = sampleIndices[i];
+        retainedTargets[i * 4] = particleArr[sampleIndex * 4];
+        retainedTargets[i * 4 + 1] = particleArr[sampleIndex * 4 + 1];
+        retainedTargets[i * 4 + 2] = particleArr[sampleIndex * 4 + 2];
+        retainedTargets[i * 4 + 3] = 2.0;
+        shadowParticles[i * 3] = retainedTargets[i * 4];
+        shadowParticles[i * 3 + 1] = retainedTargets[i * 4 + 1];
+        shadowParticles[i * 3 + 2] = retainedTargets[i * 4 + 2];
+      }
+    }
+  }
+
+  if (featureFrame?.modeSlots && tslState.prevModeSlots.length === featureFrame.modeSlots.length) {
+    tslState.prevModeSlots.set(featureFrame.modeSlots);
+  } else {
+    tslState.prevModeSlots.fill(0);
   }
   tslState.wasAudioEngaged = audioEngaged;
 

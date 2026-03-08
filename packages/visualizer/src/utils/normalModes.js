@@ -91,6 +91,17 @@ export function solveNormalModesForPitch(pitch, radius) {
   return mode;
 }
 
+export function sampleFFTAmplitudeForFrequency(frequency, fftMagnitudes, sampleRate, fftSize) {
+  if (!fftMagnitudes?.length || !sampleRate || !fftSize || frequency <= 0) {
+    return 0;
+  }
+
+  const nyquist = sampleRate * 0.5;
+  const bin = Math.round((frequency / nyquist) * (fftSize * 0.5 - 1));
+  const index = Math.max(0, Math.min(fftMagnitudes.length - 1, bin));
+  return fftMagnitudes[index] ?? 0;
+}
+
 export function resolvePitchHistoryToModes(pitchHistory, radius) {
   const slots = new Float32Array(pitchHistory.length * 4);
 
@@ -105,6 +116,36 @@ export function resolvePitchHistoryToModes(pitchHistory, radius) {
     slots[i * 4 + 1] = mode.v;
     slots[i * 4 + 2] = mode.w;
     slots[i * 4 + 3] = item.amplitude;
+  }
+
+  return slots;
+}
+
+export function resolvePitchHistoryToModesWithFFT(
+  pitchHistory,
+  radius,
+  fftMagnitudes,
+  sampleRate,
+  fftSize
+) {
+  const slots = new Float32Array(pitchHistory.length * 4);
+
+  for (let i = 0; i < pitchHistory.length; i++) {
+    const item = pitchHistory[i];
+    if (!item || item.frequency <= 0) continue;
+
+    const mode = solveNormalModesForPitch(item.frequency, radius);
+    if (!mode) continue;
+
+    slots[i * 4] = mode.u;
+    slots[i * 4 + 1] = mode.v;
+    slots[i * 4 + 2] = mode.w;
+    slots[i * 4 + 3] = sampleFFTAmplitudeForFrequency(
+      item.frequency,
+      fftMagnitudes,
+      sampleRate,
+      fftSize
+    );
   }
 
   return slots;
