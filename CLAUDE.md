@@ -38,41 +38,71 @@ Baryon is a 3D audio visualizer built with React Three Fiber + Three.js WebGPU. 
 
 ```
 Audio Input (file / mic)
-  → Web Audio API + AudioAnalyser (FFT)
-  → findFFTPeaks() — spectral peak picking → pitch buffer (GPU storage)
-  → TSL compute pipeline (4 sequential compute stages)
+  → Web Audio API + active-source analyser (FFT + time domain)
+  → Worker pitch service + spectral modal estimation on CPU
+  → AudioFeatureFrame (fieldState, modeSlots, fftMagnitudes, averageAmplitude)
+  → TSL compute pipeline (3 sequential compute stages)
   → PointsNodeMaterial (TSL colorNode + sizeNode) → RenderPipeline
   → TSL bloom node → WebGPURenderer
 ```
 
+`AudioFeatureFrame` is the main seam between CPU audio interpretation and GPU simulation. TSL should not know about worker/fallback/spectral arbitration details.
+
 ### TSL Compute Pipeline (`packages/visualizer/src/core/tslSetup.js`)
 
-Uses Three.js TSL compute nodes with GPU storage buffers (`instancedArray()`). Four chained stages:
+`tslSetup.js` is now a thin composition layer over modules in `packages/visualizer/src/core/tsl/`:
 
-1. **audioData** — Converts FFT peak frequencies to Chladni mode numbers via secant method; outputs pitch buffer
-2. **scalarField** — Computes 3D Chladni standing-wave scalar field from mode numbers + base geometry positions
-3. **zeroPoints** — Finds zero-crossing points in the scalar field (cymatics node positions)
-4. **particles** — Moves particles toward zero-point targets using MaterialX 3D Perlin noise flow field
+- `buffers.js` — initializes base positions, logo positions, storage/attribute buffers
+- `uniforms.js` — creates all uniforms and exports field-state enum values
+- `computeNodes.js` — defines the TSL compute stages
+- `material.js` — creates the `PointsNodeMaterial` holographic particle material
+- `auditMirror.js` — CPU-side audit simulation/snapshot generation
+- `runtime.js` — per-frame uploads, reset logic, and compute dispatch
+
+The compute stages are:
+
+1. **scalarField** — Computes the 3D standing-wave scalar field from the current `modeSlots`
+2. **zeroPoints** — Extracts/retains target nodal positions or logo targets depending on `fieldState`
+3. **particles** — Moves particles toward targets with controlled flow/noise
 
 Key functions exported from `@baryon/visualizer`:
-- `setupTSL(baseGeometry, renderer, parameters, baseGeometry2, audioConfig)` — initializes pipeline
-- `tickTSL(tsl, time, deltaTime, audioState)` — per-frame compute update
+- `setupTSL(baryonGeometry, parameters, audioConfig)` — initializes TSL state
+- `tickTSL(renderer, tslState, featureFrame, time, deltaTime)` — per-frame compute update
 - `disposeTSL(tsl)` — cleanup
 
 ### Audio Pipeline (`packages/visualizer/src/core/audio/audioSetup.js`)
 
 - `createAudioContext()` factory — returns an audio instance (not a singleton)
 - `getDefaultAudioContext()` — returns shared singleton for backward compat
-- Supports file playback (`THREE.Audio` + `AudioAnalyser`) and mic input (`getUserMedia` + second `AudioAnalyser`)
+- File and mic are single-source modes; the visualizer should have one active audio source at a time
+- File playback uses `THREE.Audio` + `AudioAnalyser`
+- Mic input uses `getUserMedia` + native analyser
+- Pitch extraction is worker-based; fallback detection is secondary and intentionally incomplete
 - `audio.getState()` — returns live state object used by `createTimeHandler(getState)`
-- `findFFTPeaks(frequencyData, sampleRate, N)` — spectral peak detection (`packages/visualizer/src/utils/fftPeaks.js`); replaces Essentia.js for pitch extraction
+- `packages/visualizer/src/utils/audio/` contains the feature-building pipeline:
+  - `analyserState.js`
+  - `pitchFallback.js`
+  - `modalStack.js`
+  - `modalResolvers.js`
+  - `fieldState.js`
+  - `buildFeatureFrame.js`
+
+`buildAudioFeatureFrame(audioState, featureState, radius)` is the canonical CPU-side modal estimator. It produces:
+- `fieldState`
+- `modeSlots`
+- `fftMagnitudes`
+- `averageAmplitude`
+- debug/audit metadata
 
 ### React Layer
 
-- `apps/web/src/components/ThreeScene.jsx` — Root component; creates R3F `<Canvas>` with `WebGPURenderer`, checks WebGPU support (rejects mobile/Firefox/Safari), renders `<BaryonScene>` + UI overlays
-- `apps/web/src/components/BaryonScene.jsx` — R3F scene component; owns the TSL pipeline lifecycle, Tweakpane GUI, model loading, and audio wiring; uses `useFrame` with priority 1 (takes over rendering from R3F auto-render)
+- `apps/web/src/components/ThreeScene.jsx` — Root component; creates R3F `<Canvas>` with `WebGPURenderer`, checks WebGPU support, renders `<BaryonScene>` + UI overlays
+- `apps/web/src/components/BaryonScene.jsx` — now a small composition component
+- `apps/web/src/components/hooks/useBaryonControls.js` — Tweakpane controls
+- `apps/web/src/components/hooks/useBaryonPipeline.js` — render pipeline / bloom setup
+- `apps/web/src/components/hooks/useBaryonVisualizer.js` — audio init, logo load, TSL lifecycle, per-frame feature-frame generation + `tickTSL()`
 - `apps/web/src/context/AudioProvider.jsx` — owns all audio state, wraps ThreeScene
-- `apps/web/src/components/hooks/useAudioLogic.jsx` — file upload, play/pause, stop, mic toggle
+- `packages/visualizer/src/react/useSharedAudioLogic.js` — shared audio UI hook used by both web and desktop
 - `apps/web/src/components/AudioControls.jsx` — UI overlay, reads from `useAudio()`
 
 ### Key Configuration
@@ -83,7 +113,14 @@ Key functions exported from `@baryon/visualizer`:
 - Shared Vite plugins (react-swc, GLSL, top-level-await, js-as-JSX) are in `packages/config/vite.base.js` via `createBaseViteConfig()`
 - All `.js` files in `src/` are treated as JSX
 - Path alias `@` maps to `./src` in each app
-- All magic numbers in `packages/visualizer/src/defaults.js`
+- Simulation and UI defaults live in `packages/visualizer/src/defaults.js`
+
+### Maintainability Notes
+
+- Prefer extending the split modules in `packages/visualizer/src/utils/audio/` and `packages/visualizer/src/core/tsl/` instead of growing `audioFeatures.js` or `tslSetup.js` again.
+- Keep `AudioFeatureFrame` as the single CPU → TSL seam.
+- Keep audit/debug snapshot assembly out of primary logic when adding new features.
+- If scene complexity grows, add more hooks under `apps/web/src/components/hooks/` instead of re-centralizing logic in `BaryonScene.jsx`.
 
 ### Commit Convention
 
