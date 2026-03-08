@@ -5,8 +5,10 @@ import {
   CONTROL_STATUSES,
   CONTROL_TARGET_TYPES,
   createControlState,
+  getControlsForMethod,
 } from "./schema.js";
 import { auditControlSchema } from "./audit.js";
+import { DEFAULT_VISUALIZATION_METHOD, VISUALIZATION_METHODS } from "../visualization/types.js";
 
 const EXPECTED_CONTROL_KEYS = [
   "bloomEnabled",
@@ -61,7 +63,14 @@ describe("control schema", () => {
       expect(Object.values(CONTROL_TARGET_TYPES)).toContain(definition.targetType);
       expect(Object.values(CONTROL_HANDLERS)).toContain(definition.handler);
       expect(Object.values(CONTROL_STATUSES)).toContain(definition.status);
+      expect(definition.methods.length).toBeGreaterThan(0);
+      expect(definition.methods.every((method) => Object.values(VISUALIZATION_METHODS).includes(method))).toBe(true);
       expect(definition.runtimePath).toBeTruthy();
     }
+  });
+
+  it("defaults all current controls to the particle method surface", () => {
+    const particleControls = getControlsForMethod(DEFAULT_VISUALIZATION_METHOD);
+    expect(particleControls).toHaveLength(CONTROL_DEFINITIONS.length);
   });
 });

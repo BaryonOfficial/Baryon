@@ -3,6 +3,7 @@ import {
   RENDER_DEFAULTS,
   SIMULATION_DEFAULTS,
 } from "../defaults.js";
+import { VISUALIZATION_METHODS } from "../visualization/types.js";
 
 export const CONTROL_TARGET_TYPES = Object.freeze({
   uniform: "uniform",
@@ -17,7 +18,8 @@ export const CONTROL_STATUSES = Object.freeze({
 });
 
 export const CONTROL_HANDLERS = Object.freeze({
-  simulation: "simulation",
+  shared: "shared",
+  particle: "particle",
   bloom: "bloom",
   scene: "scene",
   audit: "audit",
@@ -29,6 +31,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Bloom",
     label: "Enabled",
     defaultValue: true,
+    methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     targetType: CONTROL_TARGET_TYPES.pipeline,
     handler: CONTROL_HANDLERS.bloom,
     runtimePath: "pipeline.outputNode",
@@ -39,6 +42,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Bloom",
     label: "Strength",
     defaultValue: RENDER_DEFAULTS.bloomStrength,
+    methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { min: 0, max: 3, step: 0.01 },
     targetType: CONTROL_TARGET_TYPES.pipeline,
     handler: CONTROL_HANDLERS.bloom,
@@ -50,6 +54,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Bloom",
     label: "Radius",
     defaultValue: RENDER_DEFAULTS.bloomRadius,
+    methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { min: 0, max: 1, step: 0.01 },
     targetType: CONTROL_TARGET_TYPES.pipeline,
     handler: CONTROL_HANDLERS.bloom,
@@ -61,6 +66,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Bloom",
     label: "Extract Threshold",
     defaultValue: RENDER_DEFAULTS.bloomThreshold,
+    methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { min: 0, max: 1, step: 0.01 },
     targetType: CONTROL_TARGET_TYPES.pipeline,
     handler: CONTROL_HANDLERS.bloom,
@@ -72,9 +78,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Color",
     label: "Background",
     defaultValue: RENDER_DEFAULTS.backgroundColor,
+    methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { view: "color" },
     targetType: CONTROL_TARGET_TYPES.object,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.shared,
     runtimePath: "renderer.clearColor",
     status: CONTROL_STATUSES.live,
   },
@@ -83,9 +90,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Color",
     label: "Volume",
     defaultValue: RENDER_DEFAULTS.color,
+    methods: [VISUALIZATION_METHODS.particle],
     binding: { view: "color" },
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uColor.value",
     status: CONTROL_STATUSES.live,
   },
@@ -94,9 +102,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Color",
     label: "Surface",
     defaultValue: RENDER_DEFAULTS.surfaceColor,
+    methods: [VISUALIZATION_METHODS.particle],
     binding: { view: "color" },
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uSurfaceColor.value",
     status: CONTROL_STATUSES.live,
   },
@@ -105,9 +114,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Particles",
     label: "Speed",
     defaultValue: SIMULATION_DEFAULTS.particleSpeed,
+    methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 1, max: 100, step: 1 },
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uParticleSpeed.value",
     status: CONTROL_STATUSES.live,
   },
@@ -116,9 +126,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Particles",
     label: "Size",
     defaultValue: RENDER_DEFAULTS.particleSize,
+    methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0.001, max: 0.5, step: 0.001 },
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uParticleSize.value",
     status: CONTROL_STATUSES.live,
   },
@@ -127,6 +138,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Particles",
     label: "Rotation",
     defaultValue: RENDER_DEFAULTS.rotationSpeed,
+    methods: [VISUALIZATION_METHODS.particle],
     binding: { min: -12, max: 12, step: 0.01 },
     targetType: CONTROL_TARGET_TYPES.object,
     handler: CONTROL_HANDLERS.scene,
@@ -138,9 +150,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Granular",
     label: "Strength",
     defaultValue: SIMULATION_DEFAULTS.flowFieldStrength,
+    methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 10, step: 0.1 },
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uFlowFieldStrength.value",
     status: CONTROL_STATUSES.live,
   },
@@ -149,9 +162,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Granular",
     label: "Frequency",
     defaultValue: SIMULATION_DEFAULTS.flowFieldFrequency,
+    methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0.01, max: 5, step: 0.01 },
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uFlowFieldFrequency.value",
     status: CONTROL_STATUSES.live,
   },
@@ -160,9 +174,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Granular",
     label: "Influence",
     defaultValue: SIMULATION_DEFAULTS.flowFieldInfluence,
+    methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 2, step: 0.01 },
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uFlowFieldInfluence.value",
     status: CONTROL_STATUSES.live,
   },
@@ -171,9 +186,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Granular",
     label: "Lerp Threshold",
     defaultValue: SIMULATION_DEFAULTS.distanceThreshold,
+    methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 5, step: 0.01 },
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uDistanceThreshold.value",
     status: CONTROL_STATUSES.live,
   },
@@ -182,9 +198,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Granular",
     label: "Node Threshold",
     defaultValue: SIMULATION_DEFAULTS.threshold,
+    methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0.001, max: 0.1, step: 0.001 },
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uThreshold.value",
     status: CONTROL_STATUSES.live,
   },
@@ -193,8 +210,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Aesthetics",
     label: "Surface",
     defaultValue: true,
+    methods: [VISUALIZATION_METHODS.particle],
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uSurfaceControl.value",
     status: CONTROL_STATUSES.live,
   },
@@ -203,6 +221,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Aesthetics",
     label: "Movement",
     defaultValue: "Smoothed",
+    methods: [VISUALIZATION_METHODS.particle],
     binding: {
       options: {
         Quickest: "Quickest",
@@ -210,7 +229,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       },
     },
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uParticleMovementType.value",
     status: CONTROL_STATUSES.live,
   },
@@ -219,9 +238,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Idle Logo",
     label: "Intensity",
     defaultValue: RENDER_DEFAULTS.idleLogoIntensity,
+    methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 1, step: 0.01 },
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uIdleLogoIntensity.value",
     status: CONTROL_STATUSES.live,
   },
@@ -230,9 +250,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Idle Logo",
     label: "Alpha",
     defaultValue: RENDER_DEFAULTS.idleLogoAlpha,
+    methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 1, step: 0.01 },
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uIdleLogoAlpha.value",
     status: CONTROL_STATUSES.live,
   },
@@ -241,9 +262,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Idle Logo",
     label: "Scale",
     defaultValue: RENDER_DEFAULTS.idleLogoSize,
+    methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0.1, max: 2, step: 0.01 },
     targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.simulation,
+    handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uIdleLogoSize.value",
     status: CONTROL_STATUSES.live,
   },
@@ -252,6 +274,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Audit",
     label: "Enabled",
     defaultValue: AUDIT_DEFAULTS.auditEnabled,
+    methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     targetType: CONTROL_TARGET_TYPES.audit,
     handler: CONTROL_HANDLERS.audit,
     runtimePath: "featureState.audit.settings.enabled",
@@ -262,6 +285,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Audit",
     label: "Freeze Slots",
     defaultValue: AUDIT_DEFAULTS.freezeModeSlots,
+    methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     targetType: CONTROL_TARGET_TYPES.audit,
     handler: CONTROL_HANDLERS.audit,
     runtimePath: "featureState.audit.settings.freezeModeSlots",
@@ -272,6 +296,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Audit",
     label: "Inject Tone",
     defaultValue: AUDIT_DEFAULTS.injectTestTone,
+    methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     targetType: CONTROL_TARGET_TYPES.audit,
     handler: CONTROL_HANDLERS.audit,
     runtimePath: "featureState.audit.settings.injectTestTone",
@@ -282,6 +307,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Audit",
     label: "Pitch Source",
     defaultValue: AUDIT_DEFAULTS.pitchSourceMode,
+    methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: {
       options: {
         Auto: "auto",
@@ -299,6 +325,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Audit",
     label: "Tone Hz",
     defaultValue: AUDIT_DEFAULTS.testToneHz,
+    methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { min: 40, max: 2000, step: 1 },
     targetType: CONTROL_TARGET_TYPES.audit,
     handler: CONTROL_HANDLERS.audit,
@@ -310,6 +337,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Audit",
     label: "Tone Amp",
     defaultValue: AUDIT_DEFAULTS.testToneAmplitude,
+    methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { min: 0, max: 1, step: 0.01 },
     targetType: CONTROL_TARGET_TYPES.audit,
     handler: CONTROL_HANDLERS.audit,
@@ -321,6 +349,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     folder: "Audit",
     label: "Log Frames",
     defaultValue: AUDIT_DEFAULTS.logEveryFrames,
+    methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { min: 1, max: 240, step: 1 },
     targetType: CONTROL_TARGET_TYPES.audit,
     handler: CONTROL_HANDLERS.audit,
@@ -336,10 +365,19 @@ export function createControlState() {
   }, {});
 }
 
-export function getControlFolders() {
-  return [...new Set(CONTROL_DEFINITIONS.map((definition) => definition.folder))];
+export function getControlsForMethod(method = VISUALIZATION_METHODS.particle) {
+  return CONTROL_DEFINITIONS.filter((definition) => definition.methods.includes(method));
 }
 
-export function getControlsForFolder(folder) {
-  return CONTROL_DEFINITIONS.filter((definition) => definition.folder === folder);
+export function getControlFolders(method = VISUALIZATION_METHODS.particle) {
+  return [...new Set(getControlsForMethod(method).map((definition) => definition.folder))];
+}
+
+export function getControlsForFolder(
+  folder,
+  method = VISUALIZATION_METHODS.particle
+) {
+  return getControlsForMethod(method).filter(
+    (definition) => definition.folder === folder
+  );
 }

@@ -1,8 +1,15 @@
 import * as THREE from "three";
+import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
 
-export function applySimulationControls(gl, tslState, controls) {
-  const uniforms = tslState.uniforms;
+export function applySharedControls(gl, controls) {
   gl.setClearColor(new THREE.Color(controls.backgroundColor));
+  return {
+    backgroundColor: controls.backgroundColor,
+  };
+}
+
+export function applyParticleControls(tslState, controls) {
+  const uniforms = tslState.uniforms;
   uniforms.uColor.value.set(controls.volumeColor);
   uniforms.uSurfaceColor.value.set(controls.surfaceColor);
   uniforms.uParticleSpeed.value = controls.particleSpeed;
@@ -19,8 +26,9 @@ export function applySimulationControls(gl, tslState, controls) {
   uniforms.uFlowFieldInfluence.value = controls.flowFieldInfluence;
 
   return {
-    backgroundColor: controls.backgroundColor,
     uniforms: {
+      volumeColor: controls.volumeColor,
+      surfaceColor: controls.surfaceColor,
       particleSpeed: uniforms.uParticleSpeed.value,
       particleSize: uniforms.uParticleSize.value,
       threshold: uniforms.uThreshold.value,
@@ -36,6 +44,11 @@ export function applySimulationControls(gl, tslState, controls) {
     },
   };
 }
+
+export const applySimulationControls = (gl, tslState, controls) => ({
+  ...applySharedControls(gl, controls),
+  ...applyParticleControls(tslState, controls),
+});
 
 export function applyBloomControls(pipelineState, controls) {
   const pipeline = pipelineState.ensurePipeline();
@@ -71,7 +84,7 @@ export function applyAuditControls(featureState, controls) {
   return { ...featureState.audit.settings };
 }
 
-export function applySceneControls(points, controls, deltaTime) {
+export function applyParticleSceneControls(points, controls, deltaTime) {
   if (!points) return null;
   points.rotation.y -= deltaTime * 0.5 * controls.rotationSpeed;
   return {
@@ -80,14 +93,21 @@ export function applySceneControls(points, controls, deltaTime) {
   };
 }
 
+export const applySceneControls = applyParticleSceneControls;
+
 export function buildControlInspectionSnapshot({
-  simulation,
+  method = DEFAULT_VISUALIZATION_METHOD,
+  shared,
+  particle,
   bloom,
   audit,
   scene,
 }) {
   return {
-    simulation,
+    method,
+    shared,
+    particle,
+    simulation: particle,
     bloom,
     audit,
     scene,

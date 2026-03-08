@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Pane } from "tweakpane";
 import {
+  DEFAULT_VISUALIZATION_METHOD,
   createControlState,
   getControlFolders,
   getControlsForFolder,
@@ -17,13 +18,16 @@ export function useBaryonControls() {
     pane.element.style.right = "1rem";
     pane.element.style.zIndex = "10000";
 
-    for (const folderTitle of getControlFolders()) {
+    for (const folderTitle of getControlFolders(DEFAULT_VISUALIZATION_METHOD)) {
       const folder = pane.addFolder({
         title: folderTitle,
         expanded: folderTitle === "Particles",
       });
 
-      for (const definition of getControlsForFolder(folderTitle)) {
+      for (const definition of getControlsForFolder(
+        folderTitle,
+        DEFAULT_VISUALIZATION_METHOD
+      )) {
         folder.addBinding(p, definition.key, {
           label: definition.label,
           ...(definition.binding ?? {}),

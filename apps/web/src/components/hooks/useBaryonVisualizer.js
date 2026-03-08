@@ -4,15 +4,15 @@ import * as THREE from "three";
 import {
   applyAuditControls,
   applyBloomControls,
-  applySceneControls,
-  applySimulationControls,
+  applyParticleControls,
+  applyParticleSceneControls,
+  applySharedControls,
   buildControlInspectionSnapshot,
+  createVisualizationRuntime,
+  DEFAULT_VISUALIZATION_METHOD,
   getDefaultAudioContext,
   createTimeHandler,
   setupLoaders,
-  setupTSL,
-  tickTSL,
-  disposeTSL,
   createAudioFeatureState,
   buildAudioFeatureFrame,
   RENDER_DEFAULTS,
@@ -31,12 +31,14 @@ export function useBaryonVisualizer({
   const audioRef = useRef(null);
   const audioFeatureRef = useRef(null);
   const timeHandlerRef = useRef(null);
-  const tslStateRef = useRef(null);
+  const runtimeRef = useRef(createVisualizationRuntime(DEFAULT_VISUALIZATION_METHOD));
+  const runtimeStateRef = useRef(null);
   const lastPitchSourceModeRef = useRef(null);
   const [points, setPoints] = useState(null);
 
   useEffect(() => {
     const audio = getDefaultAudioContext();
+    const runtime = runtimeRef.current;
     audioRef.current = audio;
 
     audio.setup(camera);
@@ -74,9 +76,13 @@ export function useBaryonVisualizer({
         };
 
         audioFeatureRef.current = createAudioFeatureState(audioConfig.capacity);
-        const tslState = setupTSL(instance.geometry, parameters, audioConfig);
-        tslStateRef.current = tslState;
-        setPoints(tslState.points);
+        const runtimeState = runtime.setup({
+          baryonGeometry: instance.geometry,
+          parameters,
+          audioConfig,
+        });
+        runtimeStateRef.current = runtimeState;
+        setPoints(runtimeState.points);
       } catch (error) {
         console.error("[BaryonScene] Setup failed:", error);
       }
@@ -86,17 +92,19 @@ export function useBaryonVisualizer({
       const state = audio.getState();
       if (state.listener) camera.remove(state.listener);
       audio.disposeAnalysis?.();
-      if (tslStateRef.current) disposeTSL(tslStateRef.current);
+      if (runtimeStateRef.current) {
+        runtime.dispose(runtimeStateRef.current);
+      }
     };
   }, [camera, gl, setIsAudioLoaded, setIsPlaying]);
 
   useFrame((state) => {
     const pipeline = ensurePipeline();
-    const tslState = tslStateRef.current;
+    const runtimeState = runtimeStateRef.current;
     const featureState = audioFeatureRef.current;
     const timeHandler = timeHandlerRef.current;
 
-    if (!pipeline || !tslState || !featureState || !timeHandler) {
+    if (!pipeline || !runtimeState || !featureState || !timeHandler) {
       return;
     }
 
@@ -109,35 +117,54 @@ export function useBaryonVisualizer({
     }
 
     const bloomSnapshot = applyBloomControls({ ensurePipeline, postNodesRef }, controls);
-    const simulationSnapshot = applySimulationControls(gl, tslState, controls);
+    const sharedSnapshot = applySharedControls(gl, controls);
+    const particleSnapshot = applyParticleControls(runtimeState, controls);
     const auditSnapshot = applyAuditControls(featureState, controls);
 
     const { time, deltaTime } = timeHandler(state.clock.getElapsedTime());
     const featureFrame = buildAudioFeatureFrame(
       audio.getState(),
       featureState,
-      tslState.uniforms.uRadius.value
+      runtimeState.uniforms.uRadius.value
     );
 
-    tickTSL(gl, tslState, featureFrame, time, deltaTime);
+    runtimeRef.current.tick({
+      renderer: gl,
+      runtimeState,
+      featureFrame,
+      time,
+      deltaTime,
+    });
 
     if (typeof window !== "undefined") {
-      window.__baryonAuditSnapshot = tslState.debugSnapshot;
+      window.__baryonAuditSnapshot = {
+        visualizationMethod: runtimeRef.current.method,
+        ...runtimeState.debugSnapshot,
+      };
     }
 
-    if (controls.auditEnabled && tslState.debugSnapshot) {
+    if (controls.auditEnabled && runtimeState.debugSnapshot) {
       const frame = featureState.audit?.frame ?? 0;
       const interval = Math.max(1, Math.floor(controls.logEveryFrames));
       if (frame % interval === 0) {
-        console.log("[Baryon audit]", tslState.debugSnapshot);
+        console.log("[Baryon audit]", {
+          visualizationMethod: runtimeRef.current.method,
+          ...runtimeState.debugSnapshot,
+        });
       }
     }
 
-    const sceneSnapshot = applySceneControls(tslState.points, controls, deltaTime);
+    const sceneSnapshot = applyParticleSceneControls(
+      runtimeState.points,
+      controls,
+      deltaTime
+    );
 
     if (typeof window !== "undefined" && import.meta.env.DEV) {
       window.__baryonControlState = buildControlInspectionSnapshot({
-        simulation: simulationSnapshot,
+        method: runtimeRef.current.method,
+        shared: sharedSnapshot,
+        particle: particleSnapshot,
         bloom: bloomSnapshot,
         audit: auditSnapshot,
         scene: sceneSnapshot,

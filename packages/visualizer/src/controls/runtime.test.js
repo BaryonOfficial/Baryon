@@ -2,11 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyAuditControls,
   applyBloomControls,
+  applyParticleControls,
+  applyParticleSceneControls,
+  applySharedControls,
   applySceneControls,
   applySimulationControls,
   buildControlInspectionSnapshot,
 } from "./runtime.js";
 import { createControlState } from "./schema.js";
+import {
+  createVisualizationRuntime,
+} from "../visualization/runtimeFactory.js";
+import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
 
 function createSimulationHarness() {
   const setColor = vi.fn();
@@ -58,6 +65,20 @@ describe("control runtime sync", () => {
     expect(tslState.uniforms.uParticleMovementType.value).toBe(0);
     expect(tslState.uniforms.uIdleLogoSize.value).toBe(1.4);
     expect(snapshot.uniforms.particleSize).toBe(0.123);
+  });
+
+  it("applies shared and particle controls through method-aware helpers", () => {
+    const controls = createControlState();
+    controls.backgroundColor = "#123456";
+    controls.particleSize = 0.25;
+
+    const { gl, tslState } = createSimulationHarness();
+    const sharedSnapshot = applySharedControls(gl, controls);
+    const particleSnapshot = applyParticleControls(tslState, controls);
+
+    expect(gl.setClearColor).toHaveBeenCalledTimes(1);
+    expect(sharedSnapshot.backgroundColor).toBe("#123456");
+    expect(particleSnapshot.uniforms.particleSize).toBe(0.25);
   });
 
   it("applies bloom controls to the pipeline", () => {
@@ -128,19 +149,44 @@ describe("control runtime sync", () => {
     expect(snapshot.rotationSpeed).toBe(2);
   });
 
+  it("keeps the particle scene helper aliased through the old name", () => {
+    const controls = createControlState();
+    controls.rotationSpeed = 1;
+    const points = { rotation: { y: 0 } };
+
+    const particleSnapshot = applyParticleSceneControls(points, controls, 1);
+    const compatSnapshot = applySceneControls(points, controls, 0);
+
+    expect(particleSnapshot.rotationSpeed).toBe(1);
+    expect(compatSnapshot.rotationSpeed).toBe(1);
+  });
+
   it("builds a control inspection snapshot", () => {
     const snapshot = buildControlInspectionSnapshot({
-      simulation: { test: 1 },
+      method: DEFAULT_VISUALIZATION_METHOD,
+      shared: { test: 0 },
+      particle: { test: 1 },
       bloom: { test: 2 },
       audit: { test: 3 },
       scene: { test: 4 },
     });
 
     expect(snapshot).toEqual({
+      method: DEFAULT_VISUALIZATION_METHOD,
+      shared: { test: 0 },
+      particle: { test: 1 },
       simulation: { test: 1 },
       bloom: { test: 2 },
       audit: { test: 3 },
       scene: { test: 4 },
     });
+  });
+
+  it("defaults the internal visualization runtime to particle", () => {
+    const runtime = createVisualizationRuntime();
+    expect(runtime.method).toBe(DEFAULT_VISUALIZATION_METHOD);
+    expect(typeof runtime.setup).toBe("function");
+    expect(typeof runtime.tick).toBe("function");
+    expect(typeof runtime.dispose).toBe("function");
   });
 });

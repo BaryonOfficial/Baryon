@@ -13,7 +13,13 @@ pnpm build:web                         # Build apps/web only
 cd apps/web && pnpm lint               # ESLint (zero warnings allowed)
 ```
 
-There are no tests. When verifying changes, use `pnpm lint` and `pnpm build` from `apps/web`.
+For fast verification, use:
+
+```bash
+pnpm --filter @baryon/visualizer test
+pnpm --filter @baryon/visualizer typecheck
+pnpm exec eslint packages/visualizer/src apps/web/src/components/hooks
+```
 
 ## Monorepo Structure
 
@@ -32,7 +38,7 @@ packages/
 
 ## Architecture Overview
 
-Baryon is a 3D audio visualizer built with React Three Fiber + Three.js WebGPU. Audio analysis drives a GPU compute pipeline using Three.js TSL (Three Shading Language) that renders a cymatics-style particle visualization. **Requires WebGPU** — Chrome/Edge only, no WebGL fallback.
+Baryon is a 3D audio visualizer built with React Three Fiber + Three.js WebGPU. Audio analysis drives a GPU compute pipeline using Three.js TSL (Three Shading Language) that renders a cymatics-style particle visualization. **Requires WebGPU** — Chrome/Edge only, no WebGL fallback for the current particle runtime.
 
 ### Data Flow
 
@@ -41,12 +47,29 @@ Audio Input (file / mic)
   → Web Audio API + active-source analyser (FFT + time domain)
   → Worker pitch service + spectral modal estimation on CPU
   → AudioFeatureFrame (fieldState, modeSlots, fftMagnitudes, averageAmplitude)
+  → Visualization runtime (currently particle/TSL)
   → TSL compute pipeline (3 sequential compute stages)
   → PointsNodeMaterial (TSL colorNode + sizeNode) → RenderPipeline
   → TSL bloom node → WebGPURenderer
 ```
 
-`AudioFeatureFrame` is the main seam between CPU audio interpretation and GPU simulation. TSL should not know about worker/fallback/spectral arbitration details.
+`AudioFeatureFrame` is the main seam between CPU audio interpretation and visualization. TSL should not know about worker/fallback/spectral arbitration details.
+
+### Visualization Runtime Boundary
+
+The codebase now has an internal visualization-method scaffold:
+
+- `packages/visualizer/src/visualization/types.js`
+- `packages/visualizer/src/visualization/runtimeFactory.js`
+- `packages/visualizer/src/visualization/particleRuntime.js`
+
+Architectural rule:
+- audio/modal estimation stays renderer-agnostic and shared
+- visualization methods consume `AudioFeatureFrame` downstream
+- current implementation is `particle`
+- future `raymarch` can remain WebGL2 + GLSL based and does **not** need to be ported to TSL
+
+There is no user-facing visualization-method switch yet. Internally, the default method is `particle`.
 
 ### TSL Compute Pipeline (`packages/visualizer/src/core/tslSetup.js`)
 
@@ -100,7 +123,7 @@ Key functions exported from `@baryon/visualizer`:
 - `apps/web/src/components/BaryonScene.jsx` — now a small composition component
 - `apps/web/src/components/hooks/useBaryonControls.js` — Tweakpane controls
 - `apps/web/src/components/hooks/useBaryonPipeline.js` — render pipeline / bloom setup
-- `apps/web/src/components/hooks/useBaryonVisualizer.js` — audio init, logo load, TSL lifecycle, per-frame feature-frame generation + `tickTSL()`
+- `apps/web/src/components/hooks/useBaryonVisualizer.js` — audio init, logo load, visualization runtime lifecycle, per-frame feature-frame generation + runtime tick
 - `apps/web/src/context/AudioProvider.jsx` — owns all audio state, wraps ThreeScene
 - `packages/visualizer/src/react/useSharedAudioLogic.js` — shared audio UI hook used by both web and desktop
 - `apps/web/src/components/AudioControls.jsx` — UI overlay, reads from `useAudio()`
@@ -110,18 +133,24 @@ Key functions exported from `@baryon/visualizer`:
 The GUI control surface now has a canonical schema in `packages/visualizer/src/controls/`:
 
 - `schema.js` — source of truth for all pane controls, defaults, folders, labels, runtime targets, and status
+- controls now also declare visualization-method applicability (`methods`)
 - `runtime.js` — pure control-application helpers:
-  - `applySimulationControls()`
+  - `applySharedControls()`
+  - `applyParticleControls()`
+  - compatibility alias: `applySimulationControls()`
   - `applyBloomControls()`
   - `applyAuditControls()`
-  - `applySceneControls()`
+  - `applyParticleSceneControls()`
+  - compatibility alias: `applySceneControls()`
 - `audit.js` — control schema audit helper
 
 Rules:
 - New controls should be added through the control schema, not inline in the hook.
 - Pane creation in `useBaryonControls.js` should stay schema-driven.
 - Control sync logic should remain testable and outside React hooks where possible.
+- New controls should declare which visualization methods they apply to.
 - Dev-only control inspection is exposed on `window.__baryonControlState` for future browser smoke tests.
+- The inspection snapshot is method-aware and includes the current internal visualization method.
 
 ### Key Configuration
 
@@ -140,7 +169,11 @@ Rules:
 - Keep audit/debug snapshot assembly out of primary logic when adding new features.
 - If scene complexity grows, add more hooks under `apps/web/src/components/hooks/` instead of re-centralizing logic in `BaryonScene.jsx`.
 - `@baryon/visualizer` now has a minimal unit-test harness via `vitest` in `packages/visualizer`.
-- Tests should target pure control/runtime/audio helpers first; browser-level checks are secondary.
+- Tests are expected to group around:
+  - shared control/runtime helpers
+  - particle runtime behavior
+  - future method-aware scaffolding
+- Browser-level checks are secondary.
 
 ### Commit Convention
 

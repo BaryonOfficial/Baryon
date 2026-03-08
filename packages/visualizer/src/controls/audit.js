@@ -4,6 +4,7 @@ import {
   CONTROL_STATUSES,
   CONTROL_TARGET_TYPES,
 } from "./schema.js";
+import { isVisualizationMethod } from "../visualization/types.js";
 
 export function auditControlSchema(definitions = CONTROL_DEFINITIONS) {
   const issues = [];
@@ -31,6 +32,13 @@ export function auditControlSchema(definitions = CONTROL_DEFINITIONS) {
     }
     if (!Object.values(CONTROL_STATUSES).includes(definition.status)) {
       issues.push(`Control ${definition.key} has invalid status`);
+    }
+    if (!Array.isArray(definition.methods) || definition.methods.length === 0) {
+      issues.push(`Control ${definition.key} is missing visualization methods`);
+      continue;
+    }
+    if (!definition.methods.every((method) => isVisualizationMethod(method))) {
+      issues.push(`Control ${definition.key} has invalid visualization methods`);
     }
   }
 
