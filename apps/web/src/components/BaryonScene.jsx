@@ -7,7 +7,7 @@ import { useBaryonVisualizer } from "./hooks/useBaryonVisualizer";
 export function BaryonScene({ setIsPlaying, setIsAudioLoaded }) {
   const { camera, gl, scene } = useThree();
   const controlsRef = useBaryonControls();
-  const { ensurePipeline, syncBloom } = useBaryonPipeline(gl, scene, camera);
+  const { ensurePipeline, postNodesRef } = useBaryonPipeline(gl, scene, camera);
   const points = useBaryonVisualizer({
     camera,
     gl,
@@ -15,7 +15,7 @@ export function BaryonScene({ setIsPlaying, setIsAudioLoaded }) {
     setIsAudioLoaded,
     controlsRef,
     ensurePipeline,
-    syncBloom,
+    postNodesRef,
   });
 
   return (

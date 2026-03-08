@@ -29,19 +29,9 @@ export function useBaryonPipeline(gl, scene, camera) {
     return pipeline;
   }, [camera, gl, scene]);
 
-  const syncBloom = useCallback((controls) => {
-    const pipeline = ensurePipeline();
-    const { sceneColor, bloomPass } = postNodesRef.current;
-    bloomPass.strength.value = controls.bloomStrength;
-    bloomPass.radius.value = controls.bloomRadius;
-    bloomPass.threshold.value = controls.bloomThreshold;
-    pipeline.outputNode = controls.bloomEnabled ? sceneColor.add(bloomPass) : sceneColor;
-    return pipeline;
-  }, [ensurePipeline]);
-
   return {
     pipelineRef,
+    postNodesRef,
     ensurePipeline,
-    syncBloom,
   };
 }

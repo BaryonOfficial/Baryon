@@ -7,6 +7,7 @@
     "dev:desktop": "turbo dev --filter=@baryon/desktop",
     "build": "turbo build",
     "build:web": "turbo build --filter=@baryon/web",
+    "test:visualizer": "pnpm --filter @baryon/visualizer test",
     "lint": "turbo lint",
     "lint:all": "pnpm -r --filter './apps/*' --filter './packages/*' --if-present lint",
     "typecheck": "pnpm -r --filter './apps/*' --filter './packages/*' --if-present typecheck",

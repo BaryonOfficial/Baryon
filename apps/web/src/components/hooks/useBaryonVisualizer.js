@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import {
+  applyAuditControls,
+  applyBloomControls,
+  applySceneControls,
+  applySimulationControls,
+  buildControlInspectionSnapshot,
   getDefaultAudioContext,
   createTimeHandler,
   setupLoaders,
@@ -14,38 +19,6 @@ import {
   SIMULATION_DEFAULTS,
 } from "@baryon/visualizer";
 
-function syncAuditSettings(featureState, controls) {
-  if (!featureState?.audit?.settings) return;
-  Object.assign(featureState.audit.settings, {
-    enabled: controls.auditEnabled,
-    freezeModeSlots: controls.freezeModeSlots,
-    injectTestTone: controls.injectTestTone,
-    pitchSourceMode: controls.pitchSourceMode,
-    testToneHz: controls.testToneHz,
-    testToneAmplitude: controls.testToneAmplitude,
-    logEveryFrames: controls.logEveryFrames,
-  });
-}
-
-function syncSimulationUniforms(gl, tslState, controls) {
-  const uniforms = tslState.uniforms;
-  gl.setClearColor(new THREE.Color(controls.backgroundColor));
-  uniforms.uColor.value.set(controls.volumeColor);
-  uniforms.uSurfaceColor.value.set(controls.surfaceColor);
-  uniforms.uParticleSpeed.value = controls.particleSpeed;
-  uniforms.uParticleSize.value = controls.particleSize;
-  uniforms.uThreshold.value = controls.zeroPointPrecision;
-  uniforms.uDistanceThreshold.value = controls.targetLerpThreshold;
-  uniforms.uSurfaceControl.value = controls.surfaceParticles ? 1 : 0;
-  uniforms.uParticleMovementType.value = controls.particleMovementType === "Smoothed" ? 1 : 0;
-  uniforms.uIdleLogoIntensity.value = controls.idleLogoIntensity;
-  uniforms.uIdleLogoAlpha.value = controls.idleLogoAlpha;
-  uniforms.uIdleLogoSize.value = controls.idleLogoSize;
-  uniforms.uFlowFieldStrength.value = controls.flowFieldStrength;
-  uniforms.uFlowFieldFrequency.value = controls.flowFieldFrequency;
-  uniforms.uFlowFieldInfluence.value = controls.flowFieldInfluence;
-}
-
 export function useBaryonVisualizer({
   camera,
   gl,
@@ -53,7 +26,7 @@ export function useBaryonVisualizer({
   setIsAudioLoaded,
   controlsRef,
   ensurePipeline,
-  syncBloom,
+  postNodesRef,
 }) {
   const audioRef = useRef(null);
   const audioFeatureRef = useRef(null);
@@ -135,9 +108,9 @@ export function useBaryonVisualizer({
       lastPitchSourceModeRef.current = controls.pitchSourceMode;
     }
 
-    syncBloom(controls);
-    syncSimulationUniforms(gl, tslState, controls);
-    syncAuditSettings(featureState, controls);
+    const bloomSnapshot = applyBloomControls({ ensurePipeline, postNodesRef }, controls);
+    const simulationSnapshot = applySimulationControls(gl, tslState, controls);
+    const auditSnapshot = applyAuditControls(featureState, controls);
 
     const { time, deltaTime } = timeHandler(state.clock.getElapsedTime());
     const featureFrame = buildAudioFeatureFrame(
@@ -160,8 +133,15 @@ export function useBaryonVisualizer({
       }
     }
 
-    if (tslState.points) {
-      tslState.points.rotation.y -= deltaTime * 0.5 * controls.rotationSpeed;
+    const sceneSnapshot = applySceneControls(tslState.points, controls, deltaTime);
+
+    if (typeof window !== "undefined" && import.meta.env.DEV) {
+      window.__baryonControlState = buildControlInspectionSnapshot({
+        simulation: simulationSnapshot,
+        bloom: bloomSnapshot,
+        audit: auditSnapshot,
+        scene: sceneSnapshot,
+      });
     }
 
     pipeline.render();

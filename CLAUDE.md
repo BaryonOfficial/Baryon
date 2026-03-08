@@ -105,6 +105,24 @@ Key functions exported from `@baryon/visualizer`:
 - `packages/visualizer/src/react/useSharedAudioLogic.js` — shared audio UI hook used by both web and desktop
 - `apps/web/src/components/AudioControls.jsx` — UI overlay, reads from `useAudio()`
 
+### Control Surface
+
+The GUI control surface now has a canonical schema in `packages/visualizer/src/controls/`:
+
+- `schema.js` — source of truth for all pane controls, defaults, folders, labels, runtime targets, and status
+- `runtime.js` — pure control-application helpers:
+  - `applySimulationControls()`
+  - `applyBloomControls()`
+  - `applyAuditControls()`
+  - `applySceneControls()`
+- `audit.js` — control schema audit helper
+
+Rules:
+- New controls should be added through the control schema, not inline in the hook.
+- Pane creation in `useBaryonControls.js` should stay schema-driven.
+- Control sync logic should remain testable and outside React hooks where possible.
+- Dev-only control inspection is exposed on `window.__baryonControlState` for future browser smoke tests.
+
 ### Key Configuration
 
 - **WebGPU**: `ThreeScene.jsx` creates `WebGPURenderer` via R3F's `gl` prop: `await renderer.init()` required before use
@@ -121,6 +139,8 @@ Key functions exported from `@baryon/visualizer`:
 - Keep `AudioFeatureFrame` as the single CPU → TSL seam.
 - Keep audit/debug snapshot assembly out of primary logic when adding new features.
 - If scene complexity grows, add more hooks under `apps/web/src/components/hooks/` instead of re-centralizing logic in `BaryonScene.jsx`.
+- `@baryon/visualizer` now has a minimal unit-test harness via `vitest` in `packages/visualizer`.
+- Tests should target pure control/runtime/audio helpers first; browser-level checks are secondary.
 
 ### Commit Convention
 
