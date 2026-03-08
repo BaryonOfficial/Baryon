@@ -4,6 +4,7 @@ import {
   stopMicRecordStream,
   playPauseAudio,
   stopAudio,
+  setAudioInputMode,
 } from "@baryon/visualizer/audio";
 import { useEffect, useCallback } from "react";
 
@@ -47,6 +48,11 @@ export function useAudioLogic({
     (event) => {
       const file = event.target.files[0];
       if (file) {
+        if (isMicActive) {
+          stopMicRecordStream();
+          setIsMicActive(false);
+        }
+        setAudioInputMode("file");
         setFileName(file.name);
         const fileURL = URL.createObjectURL(file);
         loadAudio(fileURL)
@@ -60,7 +66,7 @@ export function useAudioLogic({
           });
       }
     },
-    [setFileName, setIsAudioLoaded, setIsPlaying]
+    [isMicActive, setFileName, setIsAudioLoaded, setIsMicActive, setIsPlaying]
   );
 
   const handlePlayPause = useCallback(async () => {
@@ -75,6 +81,7 @@ export function useAudioLogic({
 
   const handleStop = useCallback(() => {
     stopAudio();
+    setAudioInputMode("idle");
     setIsPlaying(false);
   }, [setIsPlaying]);
 
@@ -82,14 +89,18 @@ export function useAudioLogic({
     try {
       if (isMicActive) {
         stopMicRecordStream();
+        setAudioInputMode("idle");
       } else {
+        stopAudio();
+        setIsPlaying(false);
         await startMicRecordStream(selectedDevice);
+        setAudioInputMode("mic");
       }
       setIsMicActive((prev) => !prev);
     } catch (error) {
       console.error("Error toggling microphone:", error);
     }
-  }, [isMicActive, selectedDevice, setIsMicActive]);
+  }, [isMicActive, selectedDevice, setIsMicActive, setIsPlaying]);
 
   return {
     handleFileChange,

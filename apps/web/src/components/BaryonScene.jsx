@@ -38,6 +38,7 @@ export function BaryonScene({ setIsPlaying, setIsAudioLoaded }) {
   const tslStateRef    = useRef(null);
   const pipelineRef    = useRef(null);
   const postNodesRef   = useRef(null);
+  const lastPitchSourceModeRef = useRef(null);
   const bloomUniforms  = useRef({
     strength:  uniform(DEFAULTS.bloomStrength),
     radius:    uniform(DEFAULTS.bloomRadius),
@@ -68,6 +69,7 @@ export function BaryonScene({ setIsPlaying, setIsAudioLoaded }) {
     auditEnabled:       false,
     freezeModeSlots:    false,
     injectTestTone:     false,
+    pitchSourceMode:    "auto",
     testToneHz:         440,
     testToneAmplitude:  0.5,
     logEveryFrames:     30,
@@ -125,6 +127,14 @@ export function BaryonScene({ setIsPlaying, setIsAudioLoaded }) {
     auditF.addBinding(p, "auditEnabled",      { label: "Enabled" });
     auditF.addBinding(p, "freezeModeSlots",   { label: "Freeze Slots" });
     auditF.addBinding(p, "injectTestTone",    { label: "Inject Tone" });
+    auditF.addBinding(p, "pitchSourceMode", {
+      label: "Pitch Source",
+      options: {
+        Auto: "auto",
+        Worker: "worker",
+        Fallback: "fallback",
+      },
+    });
     auditF.addBinding(p, "testToneHz",        { label: "Tone Hz", min: 40, max: 2000, step: 1 });
     auditF.addBinding(p, "testToneAmplitude", { label: "Tone Amp", min: 0, max: 1, step: 0.01 });
     auditF.addBinding(p, "logEveryFrames",    { label: "Log Frames", min: 1, max: 240, step: 1 });
@@ -184,6 +194,7 @@ export function BaryonScene({ setIsPlaying, setIsAudioLoaded }) {
     return () => {
       const s = audio.getState();
       if (s.listener) camera.remove(s.listener);
+      audio.disposeAnalysis?.();
       if (tslStateRef.current) disposeTSL(tslStateRef.current);
       pipelineRef.current = null;
     };
@@ -211,6 +222,10 @@ export function BaryonScene({ setIsPlaying, setIsAudioLoaded }) {
     if (!timeHandlerRef.current || !tslStateRef.current) return;
 
     const p = controlsRef.current;
+    if (lastPitchSourceModeRef.current !== p.pitchSourceMode) {
+      audioRef.current?.setPitchSourceMode?.(p.pitchSourceMode);
+      lastPitchSourceModeRef.current = p.pitchSourceMode;
+    }
 
     // Sync bloom TSL uniforms from controls
     if (pipelineRef.current && postNodesRef.current) {
@@ -248,6 +263,7 @@ export function BaryonScene({ setIsPlaying, setIsAudioLoaded }) {
         enabled: p.auditEnabled,
         freezeModeSlots: p.freezeModeSlots,
         injectTestTone: p.injectTestTone,
+        pitchSourceMode: p.pitchSourceMode,
         testToneHz: p.testToneHz,
         testToneAmplitude: p.testToneAmplitude,
         logEveryFrames: p.logEveryFrames,

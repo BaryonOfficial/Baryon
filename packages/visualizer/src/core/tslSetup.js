@@ -10,6 +10,17 @@ import {
 import { PointsNodeMaterial } from 'three/webgpu';
 import { DEFAULTS } from '../defaults.js';
 
+const FIELD_STATE_VALUES = Object.freeze({
+  idle: 0,
+  decay: 1,
+  active: 2,
+  test: 3,
+});
+
+function isFieldDrivenState(fieldState) {
+  return fieldState === 'decay' || fieldState === 'active' || fieldState === 'test';
+}
+
 /**
  * Mirrors the sphere-volume-and-surface initialization from gpgpuSetup.
  */
@@ -134,8 +145,9 @@ function updateAuditSnapshot(tslState, featureFrame, deltaTime) {
   const movementType = tslState.uniforms.uParticleMovementType.value;
   const surfaceControl = tslState.uniforms.uSurfaceControl.value;
   const idleScale = tslState.uniforms.uIdleLogoSize.value;
+  const activeModeCount = tslState.uniforms.uActiveModeCount.value;
   const minNodeRadius = radius * 0.12;
-  const started = featureFrame.engaged;
+  const fieldDriven = isFieldDrivenState(featureFrame.fieldState);
 
   let validCount = 0;
   let surfaceCount = 0;
@@ -155,12 +167,13 @@ function updateAuditSnapshot(tslState, featureFrame, deltaTime) {
     const dist = Math.hypot(baseX, baseY, baseZ);
     const isOnSurface = Math.abs(dist - radius) <= surfaceThreshold;
     const isValid =
+      activeModeCount > 0 &&
       dist > minNodeRadius &&
       Math.abs(field) < threshold &&
       (!isOnSurface || surfaceControl !== 0);
     const targetOffset = i * 4;
 
-    if (started) {
+    if (fieldDriven) {
       if (isValid) {
         retainedTargets[targetOffset] = baseX;
         retainedTargets[targetOffset + 1] = baseY;
@@ -205,7 +218,7 @@ function updateAuditSnapshot(tslState, featureFrame, deltaTime) {
     const rawStrength = (pseudoNoise3(targetX * 0.2, targetY * 0.2, targetZ * 0.2 + tslState.uniforms.uTime.value + 1) + 1) * 0.5;
     const influence = (flowInfluence - 0.5) * -2.0;
     const strength = Math.max(0, Math.min(1, (rawStrength - influence) / Math.max(1e-5, 1 - influence)));
-    const flowBlend = started
+    const flowBlend = fieldDriven
       ? Math.max(0, Math.min(1, targetDist / Math.max(1e-4, distanceThreshold + 0.0001)))
       : 0;
     const adjustedDirX = dirX + flowX * strength * flowBlend;
@@ -219,9 +232,9 @@ function updateAuditSnapshot(tslState, featureFrame, deltaTime) {
     const timeFactor = Math.max(0, Math.min(1, particleSpeed * deltaTime));
     const distanceFactor = Math.max(0, Math.min(1, targetDist / (distanceThreshold + 1)));
     let alpha = timeFactor;
-    if (started && movementType === 1) {
+    if (fieldDriven && movementType === 1) {
       alpha = (timeFactor * 0.35) * (1 - distanceFactor) + distanceFactor;
-    } else if (!started) {
+    } else if (!fieldDriven) {
       alpha = Math.min(0.06, timeFactor * 0.12);
     }
     alpha *= 1 - Math.exp(-targetDist * 5);
@@ -353,7 +366,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
   const uTime               = uniform(0.0);
   const uDeltaTime          = uniform(0.0);
   const uAverageAmplitude   = uniform(0.0);
-  const uStarted            = uniform(0);   // int: 0=false, 1=true (bool uniforms unreliable in WGSL)
+  const uFieldState         = uniform(FIELD_STATE_VALUES.idle);
   const uRadius             = uniform(parameters.radius);
   const uThreshold          = uniform(parameters.threshold);
   const uSurfaceThreshold   = uniform(parameters.surfaceThreshold);
@@ -362,6 +375,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
   const uFlowFieldFrequency = uniform(DEFAULTS.flowFieldFrequency);
   const uParticleSpeed      = uniform(DEFAULTS.particleSpeed);
   const uDistanceThreshold  = uniform(DEFAULTS.distanceThreshold);
+  const uActiveModeCount    = uniform(0);
   const uSurfaceControl     = uniform(1);
   const uParticleMovementType = uniform(1);
   const uIdleLogoIntensity  = uniform(DEFAULTS.idleLogoIntensity);
@@ -405,26 +419,30 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     const prevZero = zeroPointsBuffer.element(instanceIndex);
     const scaledBaryonPos = baryonVal.xyz.mul(uIdleLogoSize);
 
-    const useBaryon = uStarted.equal(0);
+    const useBaryon = uFieldState.equal(FIELD_STATE_VALUES.idle);
 
     If(useBaryon, () => {
       // Silent: write logo position directly — no Chladni check needed
       zeroPointsBuffer.element(instanceIndex).assign(vec4(scaledBaryonPos, float(1.0)));
     }).Else(() => {
-      // Audio active: find zero-crossings of the Chladni standing wave
-      const pos     = scalarVal.xyz;
-      const chladni = scalarVal.w;
-      const dist    = length(pos);
-      If(dist.greaterThan(uRadius.mul(0.12)).and(abs(chladni).lessThan(uThreshold)), () => {
-        const isOnSurface = abs(dist.sub(uRadius)).lessThanEqual(uSurfaceThreshold);
-        const groupTag    = select(isOnSurface, float(1.0), float(2.0));
-        If(isOnSurface.and(uSurfaceControl.equal(0)), () => {
-          zeroPointsBuffer.element(instanceIndex).assign(prevZero);
-        }).Else(() => {
-          zeroPointsBuffer.element(instanceIndex).assign(vec4(pos, groupTag));
-        });
-      }).Else(() => {
+      If(uActiveModeCount.lessThanEqual(0), () => {
         zeroPointsBuffer.element(instanceIndex).assign(prevZero);
+      }).Else(() => {
+        // Audio active: find zero-crossings of the Chladni standing wave
+        const pos     = scalarVal.xyz;
+        const chladni = scalarVal.w;
+        const dist    = length(pos);
+        If(dist.greaterThan(uRadius.mul(0.12)).and(abs(chladni).lessThan(uThreshold)), () => {
+          const isOnSurface = abs(dist.sub(uRadius)).lessThanEqual(uSurfaceThreshold);
+          const groupTag    = select(isOnSurface, float(1.0), float(2.0));
+          If(isOnSurface.and(uSurfaceControl.equal(0)), () => {
+            zeroPointsBuffer.element(instanceIndex).assign(prevZero);
+          }).Else(() => {
+            zeroPointsBuffer.element(instanceIndex).assign(vec4(pos, groupTag));
+          });
+        }).Else(() => {
+          zeroPointsBuffer.element(instanceIndex).assign(prevZero);
+        });
       });
     });
   })().compute(count);
@@ -438,8 +456,9 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     const zeroPoint   = zeroPointsBuffer.element(instanceIndex);
     const baryonPos   = baryonBuffer.element(instanceIndex).xyz.mul(uIdleLogoSize);
 
-    // Target: zero-point once audio is engaged, Baryon logo only before that
-    const target   = select(uStarted.equal(1), zeroPoint.xyz, baryonPos);
+    // Target: zero-point whenever the modal field is driving the system,
+    // otherwise Baryon logo in idle mode.
+    const target   = select(uFieldState.greaterThan(FIELD_STATE_VALUES.idle), zeroPoint.xyz, baryonPos);
     const toTarget = target.sub(oldPos);
     const dist     = length(toTarget);
     // Safe normalize: avoids NaN when particle reaches its target exactly
@@ -457,7 +476,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     const influence    = uFlowFieldInfluence.sub(0.5).mul(-2.0);
     const strength     = smoothstep(influence, float(1.0), rawStrength);
     const flowBlend    = select(
-      uStarted.equal(1),
+      uFieldState.greaterThan(FIELD_STATE_VALUES.idle),
       clamp(dist.div(uDistanceThreshold.add(0.0001)), float(0.0), float(1.0)),
       float(0.0)
     );
@@ -470,7 +489,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     const distanceFactor = smoothstep(float(0.0), uDistanceThreshold.add(float(1.0)), dist);
 
     const alpha = timeFactor.toVar();
-    If(uStarted.equal(1).and(uParticleMovementType.equal(1)), () => {
+    If(uFieldState.greaterThan(FIELD_STATE_VALUES.idle).and(uParticleMovementType.equal(1)), () => {
       alpha.assign(mix(timeFactor.mul(0.35), float(1.0), distanceFactor));
     }).Else(() => {
       alpha.assign(timeFactor.mul(0.12));
@@ -514,9 +533,9 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
       groupTag.equal(float(1.0)), uSurfaceColor,
       select(groupTag.equal(float(2.0)), uColor, defaultBlue)
     );
-    const logoIntensity = select(uStarted.equal(0), uIdleLogoIntensity, float(1.0));
+    const logoIntensity = select(uFieldState.equal(FIELD_STATE_VALUES.idle), uIdleLogoIntensity, float(1.0));
     const finalColor = mix(particleColor, holoColor, holo).mul(logoIntensity);
-    const alpha = select(uStarted.equal(0), uIdleLogoAlpha, float(1.0));
+    const alpha = select(uFieldState.equal(FIELD_STATE_VALUES.idle), uIdleLogoAlpha, float(1.0));
 
     return vec4(finalColor, alpha);
   })();
@@ -552,13 +571,13 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     baseThreshold: parameters.threshold,
     basePositions,
     prevModeSlots: new Float32Array(capacity * 4),
-    wasAudioEngaged: false,
+    prevFieldState: 'idle',
     audit,
     uniforms: {
-      uTime, uDeltaTime, uAverageAmplitude, uStarted,
+      uTime, uDeltaTime, uAverageAmplitude, uFieldState,
       uRadius, uThreshold, uSurfaceThreshold,
       uFlowFieldInfluence, uFlowFieldStrength, uFlowFieldFrequency,
-      uParticleSpeed, uDistanceThreshold, uSurfaceControl, uParticleMovementType,
+      uParticleSpeed, uDistanceThreshold, uActiveModeCount, uSurfaceControl, uParticleMovementType,
       uIdleLogoIntensity, uIdleLogoAlpha, uIdleLogoSize,
       uColor, uSurfaceColor, uParticleSize,
     },
@@ -589,8 +608,9 @@ export function tickTSL(renderer, tslState, featureFrame, time, deltaTime) {
   // Time uniforms
   uniforms.uTime.value      = time;
   uniforms.uDeltaTime.value = deltaTime;
-  const audioEngaged = Boolean(featureFrame?.engaged);
-  uniforms.uStarted.value   = audioEngaged ? 1 : 0;
+  const fieldState = featureFrame?.fieldState ?? 'idle';
+  const fieldDriven = isFieldDrivenState(fieldState);
+  uniforms.uFieldState.value = FIELD_STATE_VALUES[fieldState] ?? FIELD_STATE_VALUES.idle;
 
   if (featureFrame) {
     const arr = fftBuffer.value.array;
@@ -600,16 +620,25 @@ export function tickTSL(renderer, tslState, featureFrame, time, deltaTime) {
     }
     fftBuffer.value.needsUpdate = true;
 
-    modeBuffer.value.array.fill(0);
-    modeBuffer.value.array.set(featureFrame.modeSlots);
+    const modeArray = modeBuffer.value.array;
+    modeArray.fill(0);
+    if (featureFrame.modeSlots?.length) {
+      modeArray.set(featureFrame.modeSlots.subarray(0, modeArray.length));
+    }
     modeBuffer.value.needsUpdate = true;
 
+    let activeModeCount = 0;
+    for (let i = 0, n = Math.min(featureFrame.modeSlots.length, modeArray.length); i < n; i += 4) {
+      if (featureFrame.modeSlots[i + 3] > 0) activeModeCount++;
+    }
+    uniforms.uActiveModeCount.value = activeModeCount;
     uniforms.uAverageAmplitude.value = featureFrame.averageAmplitude;
   } else {
     modeBuffer.value.array.fill(0);
     modeBuffer.value.needsUpdate = true;
     fftBuffer.value.array.fill(0);
     fftBuffer.value.needsUpdate = true;
+    uniforms.uActiveModeCount.value = 0;
     uniforms.uAverageAmplitude.value = 0;
   }
 
@@ -621,11 +650,11 @@ export function tickTSL(renderer, tslState, featureFrame, time, deltaTime) {
       }
     : auditSnapshot;
 
-  const modeSlotsChanged = audioEngaged && featureFrame
+  const modeSlotsChanged = fieldDriven && featureFrame
     ? didModeSlotsChange(featureFrame.modeSlots, tslState.prevModeSlots)
     : false;
 
-  if ((audioEngaged && !tslState.wasAudioEngaged) || modeSlotsChanged) {
+  if ((fieldDriven && tslState.prevFieldState === 'idle') || modeSlotsChanged) {
     const arr = zeroPointsBuffer.value.array;
     const particleArr = particlesBuffer.value.array;
     const particleCount = basePositions ? basePositions.length / 3 : particleArr.length / 4;
@@ -652,12 +681,15 @@ export function tickTSL(renderer, tslState, featureFrame, time, deltaTime) {
     }
   }
 
-  if (featureFrame?.modeSlots && tslState.prevModeSlots.length === featureFrame.modeSlots.length) {
-    tslState.prevModeSlots.set(featureFrame.modeSlots);
+  if (featureFrame?.modeSlots) {
+    tslState.prevModeSlots.fill(0);
+    tslState.prevModeSlots.set(
+      featureFrame.modeSlots.subarray(0, tslState.prevModeSlots.length)
+    );
   } else {
     tslState.prevModeSlots.fill(0);
   }
-  tslState.wasAudioEngaged = audioEngaged;
+  tslState.prevFieldState = fieldState;
 
   // ── Run sequential compute chain ──
   // renderer.compute() dispatches each pass synchronously to the WebGPU command queue.

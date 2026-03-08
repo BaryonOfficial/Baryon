@@ -27,6 +27,12 @@ class AudioDataProcessor extends AudioWorkletProcessor {
     this._mixedDownData = null;
     this._channelCount = null;
     this._interleavedData = null;
+    this._kind = options.processorOptions.kind || 'unknown';
+    this._successfulEnqueueCount = 0;
+    this._lastStats = null;
+    this._analysisEnabled = false;
+    this._analysisDecimation = 3;
+    this._analysisCounter = 0;
 
     // this._meanPitchSeriesForBeat = [];
 
@@ -44,6 +50,18 @@ class AudioDataProcessor extends AudioWorkletProcessor {
         this.micActive = event.data.micActive;
         // console.log('micActive:', this.micActive);
       }
+
+      if (event.data.kind) {
+        this._kind = event.data.kind;
+      }
+
+      if (event.data.analysisEnabled !== undefined) {
+        this._analysisEnabled = Boolean(event.data.analysisEnabled);
+      }
+
+      if (event.data.analysisDecimation !== undefined) {
+        this._analysisDecimation = Math.max(1, event.data.analysisDecimation | 0);
+      }
     };
     // console.log('Backend - essentia:' + this._essentia.version + '- http://essentia.upf.edu');
   }
@@ -55,16 +73,25 @@ class AudioDataProcessor extends AudioWorkletProcessor {
     // Float32Array objects, each of which contains the
     // samples for one channel.
 
-    let input = inputs[0];
-    let output = outputs[0];
+    let input = inputs[0] || [];
+    let output = outputs[0] || [];
+    output.forEach((channel) => channel.fill(0));
 
-    // Check if channel count has changed or buffers are not initialized
-    if (this._channelCount !== input.length || !this._inputRingBuffer) {
-      this._initializeBuffers(input.length);
-      this._channelCount = input.length; // Update the current channel count
+    const validInput = Array.isArray(input)
+      ? input.filter((channel) => channel && typeof channel.length === 'number')
+      : [];
+
+    if (!validInput.length) {
+      return true;
     }
 
-    if (!this.isPlaying && !this.micActive) {
+    // Check if channel count has changed or buffers are not initialized
+    if (this._channelCount !== validInput.length || !this._inputRingBuffer) {
+      this._initializeBuffers(validInput.length);
+      this._channelCount = validInput.length; // Update the current channel count
+    }
+
+    if (!this.analysisEnabled || (!this.isPlaying && !this.micActive)) {
       // Fill with 0s when no sound playing
       output.forEach((channel) => channel.fill(0));
       return true;
@@ -83,33 +110,56 @@ class AudioDataProcessor extends AudioWorkletProcessor {
     // }
 
     try {
-      this._inputRingBuffer.push(input);
+      this._inputRingBuffer.push(validInput);
 
       if (this._inputRingBuffer.framesAvailable >= this._bufferSize) {
         // console.log('this._accumData before pull:', this._accumData);
 
         this._inputRingBuffer.pull(this._accumData);
 
-        for (let i = 0; i < this._bufferSize * this._channelCount; i++) {
-          this._interleavedData[i] =
-            this._accumData[i % this._channelCount][Math.floor(i / this._channelCount)];
+        for (let i = 0; i < this._bufferSize; ++i) {
+          let sum = 0;
+          for (let channel = 0; channel < this._channelCount; ++channel) {
+            sum += this._accumData[channel][i];
+          }
+          this._mixedDownData[i] = sum / this._channelCount;
         }
 
-        const accumDataVector = this._essentia.arrayToVector(this._interleavedData);
+        let rms = 0;
+        for (let i = 0; i < this._bufferSize; ++i) {
+          const value = this._mixedDownData[i];
+          rms += value * value;
+        }
+        rms = Math.sqrt(rms / this._bufferSize);
 
-        // console.log('accumDataVector:', accumDataVector);
+        this._analysisCounter++;
+        const shouldAnalyze =
+          rms >= 0.01 && (this._analysisCounter % this._analysisDecimation === 0);
 
-        // Mix down the data to a single channel if necessary
-        // for (let i = 0; i < this._bufferSize; ++i) {
-        //   let sum = 0;
-        //   for (let channel = 0; channel < this._channelCount; ++channel) {
-        //     sum += this._accumData[channel][i];
-        //   }
-        //   this._mixedDownData[i] = sum / this._channelCount; // Average mix down
-        // }
+        if (!shouldAnalyze) {
+          this._lastStats = {
+            kind: this._kind,
+            rms,
+            numVoicedFrames: 0,
+            meanPitch: 0,
+            enqueueSucceeded: false,
+            successfulEnqueueCount: this._successfulEnqueueCount,
+            channelCount: this._channelCount,
+            framesAvailable: this._inputRingBuffer.framesAvailable,
+          };
+          if (this._logCounter % 10 === 0) {
+            this.port.postMessage({
+              type: 'stats',
+              ...this._lastStats,
+            });
+          }
+          for (let channel = 0; channel < this._channelCount; ++channel) {
+            this._accumData[channel].fill(0);
+          }
+          return true;
+        }
 
-        // // Convert the mixed down data to an Essentia vector
-        // const mixedDownDataVector = this._essentia.arrayToVector(this._mixedDownData);
+        const mixedDownDataVector = this._essentia.arrayToVector(this._mixedDownData);
 
         // Assuming dataVector is your VectorFloat instance
         // const dataVector = accumDataVector;
@@ -127,7 +177,7 @@ class AudioDataProcessor extends AudioWorkletProcessor {
         // }
 
         const algoOutput = this._essentia.PredominantPitchMelodia(
-          accumDataVector,
+          mixedDownDataVector,
           10,
           3,
           this._frameSize,
@@ -154,6 +204,7 @@ class AudioDataProcessor extends AudioWorkletProcessor {
         // average frame-wise pitches in pitch before writing to SAB
         const numVoicedFrames = pitchFrames.filter((p) => p > 0).length;
         const meanPitch = pitchFrames.reduce((acc, curr) => acc + curr, 0) / numVoicedFrames;
+        let enqueueSucceeded = false;
 
         // let vectorVectorFloat = algoOutput2.pitch;
         // let pitchArrays = [];
@@ -188,7 +239,26 @@ class AudioDataProcessor extends AudioWorkletProcessor {
         if (this._audio_writer.available_write() >= 1) {
           if (!isNaN(meanPitch)) {
             this._audio_writer.enqueue([meanPitch]);
+            enqueueSucceeded = true;
+            this._successfulEnqueueCount++;
           }
+        }
+
+        this._lastStats = {
+          kind: this._kind,
+          rms,
+          numVoicedFrames,
+          meanPitch: Number.isFinite(meanPitch) ? meanPitch : 0,
+          enqueueSucceeded,
+          successfulEnqueueCount: this._successfulEnqueueCount,
+          channelCount: this._channelCount,
+          framesAvailable: this._inputRingBuffer.framesAvailable,
+        };
+        if (this._logCounter % 10 === 0) {
+          this.port.postMessage({
+            type: 'stats',
+            ...this._lastStats,
+          });
         }
 
         // Reset _accumData in-place
@@ -197,6 +267,11 @@ class AudioDataProcessor extends AudioWorkletProcessor {
         }
       }
     } catch (error) {
+      this.port.postMessage({
+        type: 'processor-error',
+        kind: this._kind,
+        message: String(error?.message ?? error),
+      });
       console.error('AudioWorkletProcessor error:', error);
       // If there is no valid input or not enough frames, do nothing and let the output be silent
       output.forEach((channel) => channel.fill(0));
@@ -298,8 +373,24 @@ class ChromeLabsRingBuffer {
     // The channel count of arraySequence and the length of each channel must
     // match with this buffer obejct.
 
+    if (!Array.isArray(arraySequence) || arraySequence.length !== this._channelCount) {
+      return;
+    }
+
+    const firstChannel = arraySequence[0];
+    if (!(firstChannel instanceof Float32Array) || firstChannel.length === 0) {
+      return;
+    }
+
+    const sourceLength = firstChannel.length;
+    for (let channel = 0; channel < this._channelCount; ++channel) {
+      const channelData = arraySequence[channel];
+      if (!(channelData instanceof Float32Array) || channelData.length !== sourceLength) {
+        return;
+      }
+    }
+
     // Transfer data from the |arraySequence| storage to the internal buffer.
-    let sourceLength = arraySequence[0].length;
     for (let i = 0; i < sourceLength; ++i) {
       let writeIndex = (this._writeIndex + i) % this._length;
       for (let channel = 0; channel < this._channelCount; ++channel) {
