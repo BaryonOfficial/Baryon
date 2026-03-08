@@ -54,10 +54,6 @@ export function resolveFrequenciesToModes(peaks, catalog, capacity, previousIndi
       candidateIndices.add(index);
     }
 
-    let weightedU = 0;
-    let weightedV = 0;
-    let weightedW = 0;
-    let weightSum = 0;
     let bestIndex = -1;
     let bestDistance = Number.POSITIVE_INFINITY;
 
@@ -66,12 +62,6 @@ export function resolveFrequenciesToModes(peaks, catalog, capacity, previousIndi
       const distance = Math.abs(mode.frequency - peak.frequency);
       const hysteresis = index === previousIndex ? 0.6 : 1.0;
       const adjustedDistance = distance * hysteresis;
-      const weight = 1 / Math.max(adjustedDistance, 1);
-
-      weightedU += mode.u * weight;
-      weightedV += mode.v * weight;
-      weightedW += mode.w * weight;
-      weightSum += weight;
 
       if (adjustedDistance < bestDistance) {
         bestDistance = adjustedDistance;
@@ -79,11 +69,13 @@ export function resolveFrequenciesToModes(peaks, catalog, capacity, previousIndi
       }
     }
 
-    if (weightSum === 0 || bestIndex < 0) continue;
+    if (bestIndex < 0) continue;
 
-    slots[slot * 4] = weightedU / weightSum;
-    slots[slot * 4 + 1] = weightedV / weightSum;
-    slots[slot * 4 + 2] = weightedW / weightSum;
+    const mode = catalog[bestIndex];
+
+    slots[slot * 4] = mode.u;
+    slots[slot * 4 + 1] = mode.v;
+    slots[slot * 4 + 2] = mode.w;
     slots[slot * 4 + 3] = peak.amplitude;
     nextIndices[slot] = bestIndex;
   }

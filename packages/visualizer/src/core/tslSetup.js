@@ -9,8 +9,6 @@ import {
 } from 'three/tsl';
 import { PointsNodeMaterial } from 'three/webgpu';
 import { DEFAULTS } from '../defaults.js';
-import { extractHarmonicPeaks, getCombinedAnalyserState } from '../utils/audioFeatures.js';
-import { createModeCatalog, resolveFrequenciesToModes } from '../utils/modeCatalog.js';
 
 /**
  * Mirrors the sphere-volume-and-surface initialization from gpgpuSetup.
@@ -37,6 +35,22 @@ function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio
     positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
     positions[i * 3 + 2] = r * Math.cos(phi);
   }
+  return positions;
+}
+
+function initializeParticlesInSphere(count, radius) {
+  const scaledRadius = radius / 10;
+  const positions = new Float32Array(count * 3);
+
+  for (let i = 0; i < count; i++) {
+    const r = Math.pow(Math.random(), 1 / 3) * scaledRadius;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[i * 3 + 2] = r * Math.cos(phi);
+  }
+
   return positions;
 }
 
@@ -89,7 +103,6 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
   baryonBuffer.value.needsUpdate = true;
 
   // ─── Compute intermediate buffers ─────────────────────────────────────────
-  const audioDataBuffer  = instancedArray(capacity, 'vec4'); // [modeU,modeV,modeW,amplitude]
   const scalarFieldBuffer = instancedArray(count, 'vec4');   // [x,y,z,chladniValue]
   const zeroPointsBuffer  = instancedArray(count, 'vec4');   // [x,y,z,groupTag]
 
@@ -104,11 +117,12 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
 
   // ─── Particle buffer (compute output + vertex attribute for rendering) ──────
   // attributeArray → StorageBufferAttribute → vertex step mode (per-vertex read in render)
+  const initialParticlePositions = initializeParticlesInSphere(count, parameters.radius);
   const particlesBuffer = attributeArray(count, 'vec4'); // [x,y,z,groupTag]
   for (let i = 0; i < count; i++) {
-    particlesBuffer.value.array[i * 4]     = basePositions[i * 3];
-    particlesBuffer.value.array[i * 4 + 1] = basePositions[i * 3 + 1];
-    particlesBuffer.value.array[i * 4 + 2] = basePositions[i * 3 + 2];
+    particlesBuffer.value.array[i * 4]     = initialParticlePositions[i * 3];
+    particlesBuffer.value.array[i * 4 + 1] = initialParticlePositions[i * 3 + 1];
+    particlesBuffer.value.array[i * 4 + 2] = initialParticlePositions[i * 3 + 2];
     particlesBuffer.value.array[i * 4 + 3] = 0.0;
   }
   particlesBuffer.value.needsUpdate = true;
@@ -128,14 +142,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
   const uDistanceThreshold  = uniform(DEFAULTS.distanceThreshold);
   const PI = float(Math.PI);
 
-  // ─── Stage 1: audioData ────────────────────────────────────────────────────
-  // Runs `capacity` threads. CPU analysis resolves each slot to a modal triplet
-  // and amplitude, and this pass uploads them into the compute chain.
-  const audioDataCompute = Fn(() => {
-    audioDataBuffer.element(instanceIndex).assign(modeBuffer.element(instanceIndex));
-  })().compute(capacity);
-
-  // ─── Stage 2: scalarField ──────────────────────────────────────────────────
+  // ─── Stage 1: scalarField ──────────────────────────────────────────────────
   // Runs `count` threads. Each computes the 3D Chladni standing-wave sum.
   const scalarFieldCompute = Fn(() => {
     const base = basePositionBuffer.element(instanceIndex);
@@ -145,7 +152,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     const sum = float(0.0).toVar();
 
     Loop(capacity, ({ i }) => {
-      const w  = audioDataBuffer.element(i);
+      const w  = modeBuffer.element(i);
       const Ai = w.w;
       const ui = w.x;
       const vi = w.y;
@@ -161,17 +168,16 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     scalarFieldBuffer.element(instanceIndex).assign(vec4(pos, sum));
   })().compute(count);
 
-  // ─── Stage 3: zeroPoints ──────────────────────────────────────────────────
+  // ─── Stage 2: zeroPoints ──────────────────────────────────────────────────
   // Runs `count` threads. Keeps particles whose Chladni value crosses zero.
-  // When a particle is no longer near a node, its target decays back toward the
-  // base distribution instead of freezing forever at a stale zero-point.
+  // Non-node particles retain their last valid nodal target so the field can
+  // morph over time instead of collapsing back onto the base sphere surface.
   const zeroPointsCompute = Fn(() => {
     const scalarVal = scalarFieldBuffer.element(instanceIndex);
     const baryonVal = baryonBuffer.element(instanceIndex);
-    const baseVal   = basePositionBuffer.element(instanceIndex);
-    const prevZero  = zeroPointsBuffer.element(instanceIndex);
+    const particleVal = particlesBuffer.element(instanceIndex);
 
-    const useBaryon = uAverageAmplitude.lessThan(0.02);
+    const useBaryon = uStarted.equal(0);
 
     If(useBaryon, () => {
       // Silent: write logo position directly — no Chladni check needed
@@ -186,16 +192,17 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
         const groupTag    = select(isOnSurface, float(1.0), float(2.0));
         zeroPointsBuffer.element(instanceIndex).assign(vec4(pos, groupTag));
       }).Else(() => {
-        const relaxedPos = mix(prevZero.xyz, baseVal.xyz, float(0.08));
-        const relaxedDist = length(relaxedPos);
-        const relaxedSurface = abs(relaxedDist.sub(uRadius)).lessThanEqual(uSurfaceThreshold);
-        const relaxedTag = select(relaxedSurface, float(1.0), float(2.0));
-        zeroPointsBuffer.element(instanceIndex).assign(vec4(relaxedPos, relaxedTag));
+        const fallbackTag = select(
+          particleVal.w.equal(float(1.0)).or(particleVal.w.equal(float(2.0))),
+          particleVal.w,
+          float(2.0)
+        );
+        zeroPointsBuffer.element(instanceIndex).assign(vec4(particleVal.xyz, fallbackTag));
       });
     });
   })().compute(count);
 
-  // ─── Stage 4: particles ────────────────────────────────────────────────────
+  // ─── Stage 3: particles ────────────────────────────────────────────────────
   // Runs `count` threads. Moves each particle toward its zero-point target
   // using a flow-field (MaterialX noise) + lerp.
   const particlesCompute = Fn(() => {
@@ -204,8 +211,8 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     const zeroPoint   = zeroPointsBuffer.element(instanceIndex);
     const baryonPos   = baryonBuffer.element(instanceIndex).xyz;
 
-    // Target: zero-point when playing, Baryon logo when silent
-    const target   = select(uAverageAmplitude.greaterThan(0.0), zeroPoint.xyz, baryonPos);
+    // Target: zero-point once audio is engaged, Baryon logo only before that
+    const target   = select(uStarted.equal(1), zeroPoint.xyz, baryonPos);
     const toTarget = target.sub(oldPos);
     const dist     = length(toTarget);
     // Safe normalize: avoids NaN when particle reaches its target exactly
@@ -244,7 +251,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     });
 
     const newPos   = oldPos.add(movement).add(lerpMovement);
-    const maxR     = uRadius.mul(1.5);
+    const maxR     = uRadius;
     const pLen     = length(newPos);
     const finalPos = select(pLen.greaterThan(maxR), normalize(newPos).mul(maxR), newPos);
 
@@ -304,10 +311,12 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     modeBuffer,
     fftBuffer,
     particlesBuffer,
+    zeroPointsBuffer,
     capacity,
     fftSize: audioConfig.fftSize,
-    modeCatalog: createModeCatalog(parameters.radius, 12),
-    previousModeIndices: new Array(capacity).fill(-1),
+    baseThreshold: parameters.threshold,
+    basePositions,
+    wasAudioEngaged: false,
     uniforms: {
       uTime, uDeltaTime, uAverageAmplitude, uStarted,
       uRadius, uThreshold, uSurfaceThreshold,
@@ -315,7 +324,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
       uParticleSpeed, uDistanceThreshold,
       uColor, uSurfaceColor, uParticleSize,
     },
-    compute: { audioDataCompute, scalarFieldCompute, zeroPointsCompute, particlesCompute },
+    compute: { scalarFieldCompute, zeroPointsCompute, particlesCompute },
   };
 }
 
@@ -324,62 +333,81 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
  *
  * @param {import('three/webgpu').WebGPURenderer} renderer
  * @param {object} tslState - result of setupTSL
- * @param {object} audioState - result of audioContext.getState()
+ * @param {object} featureFrame - CPU-resolved audio feature frame
  * @param {number} time
  * @param {number} deltaTime
  */
-export function tickTSL(renderer, tslState, audioState, time, deltaTime) {
+export function tickTSL(renderer, tslState, featureFrame, time, deltaTime) {
   const {
     modeBuffer,
     fftBuffer,
+    particlesBuffer,
     uniforms,
     compute,
     capacity,
-    fftSize,
-    modeCatalog,
+    baseThreshold,
+    zeroPointsBuffer,
+    basePositions,
   } = tslState;
 
   // Time uniforms
   uniforms.uTime.value      = time;
   uniforms.uDeltaTime.value = deltaTime;
-  uniforms.uStarted.value   = audioState.sound?.started ? 1 : 0;
+  const audioEngaged = Boolean(featureFrame?.engaged);
+  uniforms.uStarted.value   = audioEngaged ? 1 : 0;
 
-  const combinedState = getCombinedAnalyserState(audioState);
-  if (combinedState) {
-    const { avgAmplitude, freqData } = combinedState;
+  if (featureFrame) {
     const arr = fftBuffer.value.array;
     arr.fill(0);
-    for (let i = 0, n = Math.min(freqData.length, arr.length); i < n; i++) {
-      arr[i] = freqData[i];
+    for (let i = 0, n = Math.min(featureFrame.fftMagnitudes.length, arr.length); i < n; i++) {
+      arr[i] = featureFrame.fftMagnitudes[i];
     }
     fftBuffer.value.needsUpdate = true;
 
-    const peaks = extractHarmonicPeaks(freqData, capacity, audioState.audioCtx?.sampleRate ?? 44100, fftSize);
-    const { slots, nextIndices } = resolveFrequenciesToModes(
-      peaks,
-      modeCatalog,
-      capacity,
-      tslState.previousModeIndices
-    );
-
-    modeBuffer.value.array.set(slots);
+    modeBuffer.value.array.fill(0);
+    modeBuffer.value.array.set(featureFrame.modeSlots);
     modeBuffer.value.needsUpdate = true;
-    tslState.previousModeIndices = nextIndices;
-    uniforms.uAverageAmplitude.value = avgAmplitude;
+
+    let activeModeCount = 0;
+    for (let i = 0; i < capacity; i++) {
+      if (featureFrame.modeSlots[i * 4 + 3] > 0.02) {
+        activeModeCount++;
+      }
+    }
+    const peakRatio = activeModeCount / capacity;
+    const energyRatio = Math.min(1, featureFrame.averageAmplitude / 128);
+    const adaptiveThreshold =
+      baseThreshold * (0.18 + peakRatio * 0.22 + energyRatio * 0.18);
+
+    uniforms.uAverageAmplitude.value = featureFrame.averageAmplitude;
+    uniforms.uThreshold.value = adaptiveThreshold;
   } else {
     modeBuffer.value.array.fill(0);
     modeBuffer.value.needsUpdate = true;
     fftBuffer.value.array.fill(0);
     fftBuffer.value.needsUpdate = true;
-    tslState.previousModeIndices.fill(-1);
     uniforms.uAverageAmplitude.value = 0;
+    uniforms.uThreshold.value = baseThreshold;
   }
+
+  if (audioEngaged && !tslState.wasAudioEngaged) {
+    const arr = zeroPointsBuffer.value.array;
+    const particleArr = particlesBuffer.value.array;
+    const particleCount = basePositions ? basePositions.length / 3 : particleArr.length / 4;
+    for (let i = 0; i < particleCount; i++) {
+      arr[i * 4] = particleArr[i * 4];
+      arr[i * 4 + 1] = particleArr[i * 4 + 1];
+      arr[i * 4 + 2] = particleArr[i * 4 + 2];
+      arr[i * 4 + 3] = 2.0;
+    }
+    zeroPointsBuffer.value.needsUpdate = true;
+  }
+  tslState.wasAudioEngaged = audioEngaged;
 
   // ── Run sequential compute chain ──
   // renderer.compute() dispatches each pass synchronously to the WebGPU command queue.
   // WebGPU guarantees ordered execution within a queue, so each pass reads the correct
   // output from the previous pass without explicit await.
-  renderer.compute(compute.audioDataCompute);
   renderer.compute(compute.scalarFieldCompute);
   renderer.compute(compute.zeroPointsCompute);
   renderer.compute(compute.particlesCompute);

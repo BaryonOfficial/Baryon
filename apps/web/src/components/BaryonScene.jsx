@@ -7,7 +7,16 @@ import { pass, uniform } from "three/tsl";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
 import { Pane } from "tweakpane";
 import { getDefaultAudioContext } from "@baryon/visualizer/audio";
-import { createTimeHandler, setupLoaders, setupTSL, tickTSL, disposeTSL, DEFAULTS } from "@baryon/visualizer";
+import {
+  createTimeHandler,
+  setupLoaders,
+  setupTSL,
+  tickTSL,
+  disposeTSL,
+  createAudioFeatureState,
+  buildAudioFeatureFrame,
+  DEFAULTS,
+} from "@baryon/visualizer";
 
 /**
  * R3F scene component. Sets up audio, loads the Baryon GLB, wires the full
@@ -23,6 +32,7 @@ import { createTimeHandler, setupLoaders, setupTSL, tickTSL, disposeTSL, DEFAULT
 export function BaryonScene({ setIsPlaying, setIsAudioLoaded }) {
   const { camera, gl, scene } = useThree();
   const audioRef       = useRef(null);
+  const audioFeatureRef = useRef(null);
   const timeHandlerRef = useRef(null);
   const tslStateRef    = useRef(null);
   const pipelineRef    = useRef(null);
@@ -104,6 +114,7 @@ export function BaryonScene({ setIsPlaying, setIsAudioLoaded }) {
           sampleRate: audioState.audioCtx?.sampleRate ?? 44100,
         };
 
+        audioFeatureRef.current = createAudioFeatureState(audioConfig.capacity);
         const state = setupTSL(instance.geometry, parameters, audioConfig);
         tslStateRef.current = state;
         setPoints(state.points);
@@ -157,7 +168,13 @@ export function BaryonScene({ setIsPlaying, setIsAudioLoaded }) {
     u.uFlowFieldInfluence.value = p.flowFieldInfluence;
 
     const { time, deltaTime } = timeHandlerRef.current(state.clock.getElapsedTime());
-    tickTSL(gl, tslStateRef.current, audioRef.current.getState(), time, deltaTime);
+    const audioState = audioRef.current.getState();
+    const featureFrame = buildAudioFeatureFrame(
+      audioState,
+      audioFeatureRef.current,
+      tslStateRef.current.uniforms.uRadius.value
+    );
+    tickTSL(gl, tslStateRef.current, featureFrame, time, deltaTime);
     pipelineRef.current.render();
   }, 1);
 
