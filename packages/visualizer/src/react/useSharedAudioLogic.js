@@ -1,12 +1,5 @@
 import { useCallback, useEffect } from "react";
-import {
-  loadAudio,
-  startMicRecordStream,
-  stopMicRecordStream,
-  playPauseAudio,
-  stopAudio,
-  setAudioInputMode,
-} from "../core/audio/audioSetup.js";
+import { getDefaultAudioSession } from "../core/audio/audioSetup.js";
 
 export function useSharedAudioLogic({
   setFileName,
@@ -19,6 +12,16 @@ export function useSharedAudioLogic({
   isMicActive,
   selectedDevice,
 }) {
+  const audioSession = getDefaultAudioSession();
+
+  const syncStatus = useCallback(() => {
+    const status = audioSession.getStatus();
+    setIsAudioLoaded(status.isAudioLoaded);
+    setIsPlaying(status.isPlaying);
+    setIsMicActive(status.isMicActive);
+    return status;
+  }, [audioSession, setIsAudioLoaded, setIsMicActive, setIsPlaying]);
+
   useEffect(() => {
     const loadDevices = async () => {
       try {
@@ -49,58 +52,51 @@ export function useSharedAudioLogic({
       if (!file) return;
 
       if (isMicActive) {
-        stopMicRecordStream();
-        setIsMicActive(false);
+        audioSession.stopMicRecordStream();
       }
 
-      setAudioInputMode("file");
       setFileName(file.name);
       const fileURL = URL.createObjectURL(file);
-      loadAudio(fileURL)
+      audioSession.loadAudio(fileURL)
         .then(() => {
-          setIsAudioLoaded(true);
-          setIsPlaying(false);
+          syncStatus();
         })
         .catch((error) => {
           console.error("Error loading audio:", error);
           setIsAudioLoaded(false);
         });
     },
-    [isMicActive, setFileName, setIsAudioLoaded, setIsMicActive, setIsPlaying]
+    [audioSession, isMicActive, setFileName, setIsAudioLoaded, syncStatus]
   );
 
   const handlePlayPause = useCallback(async () => {
     if (!isAudioLoaded) return;
     try {
-      const isNowPlaying = await playPauseAudio();
-      setIsPlaying(isNowPlaying);
+      await audioSession.playPauseAudio();
+      syncStatus();
     } catch (error) {
       console.error("Error in play/pause:", error);
     }
-  }, [isAudioLoaded, setIsPlaying]);
+  }, [audioSession, isAudioLoaded, syncStatus]);
 
   const handleStop = useCallback(() => {
-    stopAudio();
-    setAudioInputMode("idle");
-    setIsPlaying(false);
-  }, [setIsPlaying]);
+    audioSession.stopAudio();
+    syncStatus();
+  }, [audioSession, syncStatus]);
 
   const handleMicToggle = useCallback(async () => {
     try {
       if (isMicActive) {
-        stopMicRecordStream();
-        setAudioInputMode("idle");
+        audioSession.stopMicRecordStream();
       } else {
-        stopAudio();
-        setIsPlaying(false);
-        await startMicRecordStream(selectedDevice);
-        setAudioInputMode("mic");
+        audioSession.stopAudio();
+        await audioSession.startMicRecordStream(selectedDevice);
       }
-      setIsMicActive((prev) => !prev);
+      syncStatus();
     } catch (error) {
       console.error("Error toggling microphone:", error);
     }
-  }, [isMicActive, selectedDevice, setIsMicActive, setIsPlaying]);
+  }, [audioSession, isMicActive, selectedDevice, syncStatus]);
 
   return {
     handleFileChange,

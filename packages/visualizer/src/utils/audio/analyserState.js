@@ -1,40 +1,18 @@
-function normaliseSpectrum(freqData) {
-  const result = new Float32Array(freqData.length);
-  for (let i = 0; i < freqData.length; i++) {
-    result[i] = freqData[i] > 1 ? freqData[i] / 255.0 : freqData[i];
-  }
-  return result;
-}
+import { computeRms, sampleAnalyser } from '../../core/audio/analyserSampler.js';
 
-function getTimeDomainData(analyser) {
-  const node = analyser?.analyser;
-  if (!node) return null;
+function toLegacyShape(snapshot) {
+  if (!snapshot) return null;
 
-  const data = new Float32Array(node.fftSize);
-  node.getFloatTimeDomainData(data);
-  return data;
-}
-
-function computeRms(timeData) {
-  if (!timeData?.length) return 0;
-
-  let sum = 0;
-  for (let i = 0; i < timeData.length; i++) {
-    const value = timeData[i];
-    sum += value * value;
-  }
-  return Math.sqrt(sum / timeData.length);
+  return {
+    avgAmplitude: snapshot.avgAmplitude,
+    freqData: snapshot.fftMagnitudes,
+    timeData: snapshot.timeData,
+    rms: snapshot.rms,
+  };
 }
 
 function getAnalyserState(analyser) {
-  if (!analyser) return null;
-  const timeData = getTimeDomainData(analyser);
-  return {
-    avgAmplitude: analyser.getAverageFrequency(),
-    freqData: normaliseSpectrum(analyser.getFrequencyData()),
-    timeData,
-    rms: computeRms(timeData),
-  };
+  return toLegacyShape(sampleAnalyser(analyser));
 }
 
 function getActiveAnalyserState(audioState) {
@@ -48,6 +26,9 @@ function getActiveAnalyserState(audioState) {
 }
 
 export function getCombinedAnalyserState(audioState) {
+  if (audioState?.readAnalysisSnapshot) {
+    return toLegacyShape(audioState.readAnalysisSnapshot());
+  }
   return getActiveAnalyserState(audioState);
 }
 

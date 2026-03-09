@@ -20,10 +20,13 @@ function createModalStackState(capacity) {
 export function createAudioFeatureState(capacity = AUDIO_DEFAULTS.capacity) {
   return {
     capacity,
-    modeSlots: new Float32Array(capacity * 4),
-    referenceModeSlots: new Float32Array(capacity * 4),
-    fftMagnitudes: new Float32Array(0),
-    modalStackState: createModalStackState(capacity),
+    analysis: {
+      frameId: 0,
+      modeSlots: new Float32Array(capacity * 4),
+      referenceModeSlots: new Float32Array(capacity * 4),
+      fftMagnitudes: new Float32Array(0),
+      modalStackState: createModalStackState(capacity),
+    },
     audit: {
       frame: 0,
       frozenModeSlots: new Float32Array(capacity * 4),

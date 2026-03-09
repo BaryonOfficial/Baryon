@@ -1,6 +1,5 @@
 import { AUDIT_DEFAULTS, AUDIO_DEFAULTS } from '../../defaults.js';
 import { sampleFFTAmplitudeForFrequency } from '../normalModes.js';
-import { getActiveAnalyserState } from './analyserState.js';
 import {
   MAX_STACK_SLOTS,
   createAudioFeatureState,
@@ -23,103 +22,139 @@ const REQUESTED_PITCH_SOURCE = 'spectral';
 
 export { createAudioFeatureState, FIELD_STATES };
 
-export function buildAudioFeatureFrame(audioState, featureState, radius) {
-  const capacity = featureState?.capacity ?? AUDIO_DEFAULTS.capacity;
-  const modeSlots = featureState?.modeSlots ?? new Float32Array(capacity * 4);
-  const referenceModeSlots = featureState?.referenceModeSlots ?? new Float32Array(capacity * 4);
-  const auditState = featureState?.audit;
-  const auditSettings = auditState?.settings ?? {
-    ...AUDIT_DEFAULTS,
-  };
-  const sampleRate = audioState.audioCtx?.sampleRate ?? 44100;
-  const fftSize = audioState.fftSize ?? 4096;
-  const inputMode = audioState.audioInputMode ?? 'idle';
-  const analyserState = getActiveAnalyserState(audioState);
-  const soundActive = inputMode === 'file' && Boolean(audioState.sound?.isPlaying);
-  const micActive = inputMode === 'mic' && Boolean(audioState.gumStream?.active);
-  const currentFrame = (featureState?.frameId ?? 0) + 1;
-  const modalStackState = featureState?.modalStackState ?? createAudioFeatureState(capacity).modalStackState;
-
-  if (featureState) {
-    featureState.frameId = currentFrame;
-    featureState.modalStackState = modalStackState;
+function getAnalysisMemory(featureState, capacity) {
+  if (featureState?.analysis) {
+    return featureState.analysis;
   }
 
-  let sourceMode = inputMode === 'file' ? 'file' : inputMode === 'mic' ? 'mic' : 'silent';
-  if (auditSettings.injectTestTone) sourceMode = 'test';
+  return createAudioFeatureState(capacity).analysis;
+}
 
-  if (!analyserState && !auditSettings.injectTestTone) {
-    modeSlots.fill(0);
-    referenceModeSlots.fill(0);
-    clearModalStack(modalStackState);
+function getFrameTimestamp() {
+  return performance.now();
+}
 
-    const silentFft = featureState?.fftMagnitudes?.length
-      ? featureState.fftMagnitudes
-      : new Float32Array((audioState.fftSize ?? 0) / 2);
-    silentFft.fill(0);
-    if (featureState) {
-      featureState.fftMagnitudes = silentFft;
-    }
+export function buildSilentFeatureFrame({
+  featureState,
+  inputMode,
+  soundActive,
+  micActive,
+  modeSlots,
+  referenceModeSlots,
+  modalStackState,
+  fftSize,
+}) {
+  modeSlots.fill(0);
+  referenceModeSlots.fill(0);
+  clearModalStack(modalStackState);
 
-    return {
+  let silentFft = featureState?.analysis?.fftMagnitudes;
+  if (!silentFft?.length) {
+    silentFft = new Float32Array((fftSize ?? 0) / 2);
+  }
+  silentFft.fill(0);
+
+  if (featureState?.analysis) {
+    featureState.analysis.fftMagnitudes = silentFft;
+  }
+
+  return {
+    fieldState: FIELD_STATES.idle,
+    hasModalField: false,
+    soundActive,
+    micActive,
+    averageAmplitude: 0,
+    fftMagnitudes: silentFft,
+    modeSlots,
+    referenceModeSlots,
+    sourceMode: 'silent',
+    debug: {
+      audioInputMode: inputMode,
+      pitchSource: 'none',
+      requestedPitchSource: REQUESTED_PITCH_SOURCE,
+      analysisEngine: 'none',
       fieldState: FIELD_STATES.idle,
-      hasModalField: false,
-      soundActive,
+      workerState: 'none',
+      pitchFrameAge: null,
+      workerStatus: null,
+      fileActive: soundActive,
       micActive,
-      averageAmplitude: 0,
-      fftMagnitudes: silentFft,
-      modeSlots,
-      referenceModeSlots,
-      sourceMode: 'silent',
-      debug: {
-        audioInputMode: inputMode,
-        pitchSource: 'none',
-        requestedPitchSource: REQUESTED_PITCH_SOURCE,
-        analysisEngine: 'none',
-        fieldState: FIELD_STATES.idle,
-        workerState: 'none',
-        pitchFrameAge: null,
-        workerStatus: null,
-        fileActive: soundActive,
-        micActive,
-        analysisSourceUsed: inputMode === 'idle' ? 'none' : inputMode,
-        fundamentalFrequency: 0,
-        fundamentalConfidence: 0,
-        dominantFrequency: 0,
-        dominantAmplitude: 0,
-        avgAmplitude: 0,
-        harmonicSupport: Array.from(modalStackState.harmonicSupport),
-        uniqueModeCount: 0,
-        nonZeroFFTBinCount: 0,
-        modeSlotCount: 0,
-        currentModeSlots: Array.from(modeSlots),
-        referenceModeSlots: Array.from(referenceModeSlots),
-        slotAmplitudeDeltas: Array.from(referenceModeSlots),
-      },
-    };
-  }
+      analysisSourceUsed: inputMode === 'idle' ? 'none' : inputMode,
+      fundamentalFrequency: 0,
+      fundamentalConfidence: 0,
+      dominantFrequency: 0,
+      dominantAmplitude: 0,
+      avgAmplitude: 0,
+      harmonicSupport: Array.from(modalStackState.harmonicSupport),
+      uniqueModeCount: 0,
+      nonZeroFFTBinCount: 0,
+      modeSlotCount: 0,
+      currentModeSlots: Array.from(modeSlots),
+      referenceModeSlots: Array.from(referenceModeSlots),
+      slotAmplitudeDeltas: Array.from(referenceModeSlots),
+    },
+  };
+}
 
-  let avgAmplitude = analyserState?.avgAmplitude ?? 0;
-  let freqData = analyserState?.freqData ?? null;
-  const analyserRms = analyserState?.rms ?? 0;
+export function applyTestToneToSnapshot({
+  analysisSnapshot,
+  auditSettings,
+  fftSize,
+  sampleRate,
+}) {
+  const snapshot = analysisSnapshot ?? {
+    sourceMode: 'test',
+    avgAmplitude: 0,
+    fftMagnitudes: new Float32Array(fftSize / 2),
+    timeData: null,
+    rms: 0,
+  };
+  const fftMagnitudes = snapshot.fftMagnitudes?.length
+    ? snapshot.fftMagnitudes
+    : new Float32Array(fftSize / 2);
 
-  if (auditSettings.injectTestTone) {
-    if (!freqData) {
-      freqData = new Float32Array(fftSize / 2);
-    }
-    freqData.fill(0);
-    const testBinAmplitude = Math.max(0, Math.min(1, auditSettings.testToneAmplitude));
-    avgAmplitude = testBinAmplitude * 255;
-    const bin = Math.round((auditSettings.testToneHz / (sampleRate * 0.5)) * (freqData.length - 1));
-    const index = Math.max(0, Math.min(freqData.length - 1, bin));
-    freqData[index] = testBinAmplitude;
-  }
+  fftMagnitudes.fill(0);
+  const testBinAmplitude = Math.max(0, Math.min(1, auditSettings.testToneAmplitude));
+  const bin = Math.round((auditSettings.testToneHz / (sampleRate * 0.5)) * (fftMagnitudes.length - 1));
+  const index = Math.max(0, Math.min(fftMagnitudes.length - 1, bin));
+  fftMagnitudes[index] = testBinAmplitude;
 
-  const micNoiseGateActive = !auditSettings.injectTestTone
+  return {
+    ...snapshot,
+    sourceMode: 'test',
+    avgAmplitude: testBinAmplitude * 255,
+    fftMagnitudes,
+    rms: snapshot.rms ?? 0,
+  };
+}
+
+export function detectMicNoiseGate({ injectTestTone, inputMode, avgAmplitude, rms }) {
+  return !injectTestTone
     && inputMode === 'mic'
     && avgAmplitude < MIC_SILENCE_AVG_AMPLITUDE
-    && analyserRms < MIC_SILENCE_RMS;
+    && rms < MIC_SILENCE_RMS;
+}
 
+function commitModalStack(modalStackState, stackBuild, fundamental, confidence, analysisEngine) {
+  copyFloatArray(modalStackState.slots, stackBuild.slots);
+  copyFloatArray(modalStackState.referenceSlots, stackBuild.referenceSlots);
+  modalStackState.harmonicSupport.set(stackBuild.harmonicSupport);
+  modalStackState.fundamental = fundamental;
+  modalStackState.fundamentalConfidence = confidence;
+  modalStackState.analysisEngine = analysisEngine;
+  modalStackState.uniqueModeCount = stackBuild.uniqueModeCount;
+  modalStackState.lastStableAt = getFrameTimestamp();
+}
+
+export function resolveSpectralModalStack({
+  analysisSnapshot,
+  status,
+  modalStackState,
+  radius,
+  capacity,
+  micNoiseGateActive,
+  auditSettings,
+}) {
   let selectedFrequency = 0;
   let selectedConfidence = 0;
   let analysisEngine = 'none';
@@ -132,24 +167,24 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
     selectedConfidence = 1;
     analysisEngine = 'test';
     pitchSource = 'test';
-  } else if (!micNoiseGateActive) {
+  } else if (!micNoiseGateActive && analysisSnapshot?.fftMagnitudes) {
     const spectralStack = buildModalSlotsFromSpectralPeaks({
-      fftMagnitudes: freqData,
-      sampleRate,
-      fftSize,
+      fftMagnitudes: analysisSnapshot.fftMagnitudes,
+      sampleRate: status.sampleRate,
+      fftSize: status.fftSize,
       radius,
       capacity,
     });
     spectralCandidates = spectralStack.peaks;
+
     if (spectralStack.uniqueModeCount > 0) {
-      copyFloatArray(modalStackState.slots, spectralStack.slots);
-      copyFloatArray(modalStackState.referenceSlots, spectralStack.referenceSlots);
-      modalStackState.harmonicSupport.set(spectralStack.harmonicSupport);
-      modalStackState.fundamental = spectralCandidates[0]?.frequency ?? 0;
-      modalStackState.fundamentalConfidence = spectralCandidates[0]?.amplitude ?? 0;
-      modalStackState.analysisEngine = 'spectral';
-      modalStackState.uniqueModeCount = spectralStack.uniqueModeCount;
-      modalStackState.lastStableAt = performance.now();
+      commitModalStack(
+        modalStackState,
+        spectralStack,
+        spectralCandidates[0]?.frequency ?? 0,
+        spectralCandidates[0]?.amplitude ?? 0,
+        'spectral'
+      );
       analysisEngine = 'spectral';
       pitchSource = 'spectral';
     }
@@ -159,77 +194,62 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
     const stackBuild = buildModalSlotsFromFundamental({
       frequency: selectedFrequency,
       confidence: selectedConfidence,
-      fftMagnitudes: freqData,
-      sampleRate,
-      fftSize,
+      fftMagnitudes: analysisSnapshot?.fftMagnitudes ?? new Float32Array(status.fftSize / 2),
+      sampleRate: status.sampleRate,
+      fftSize: status.fftSize,
       radius,
       capacity,
     });
-    copyFloatArray(modalStackState.slots, stackBuild.slots);
-    copyFloatArray(modalStackState.referenceSlots, stackBuild.referenceSlots);
-    modalStackState.harmonicSupport.set(stackBuild.harmonicSupport);
-    modalStackState.fundamental = selectedFrequency;
-    modalStackState.fundamentalConfidence = selectedConfidence;
-    modalStackState.analysisEngine = analysisEngine;
-    modalStackState.uniqueModeCount = stackBuild.uniqueModeCount;
-    modalStackState.lastStableAt = performance.now();
-  } else if (analysisEngine === 'spectral') {
-    // Spectral stack already committed above.
+    commitModalStack(
+      modalStackState,
+      stackBuild,
+      selectedFrequency,
+      selectedConfidence,
+      analysisEngine
+    );
   } else if (
-    inputMode !== 'idle' &&
-    !micNoiseGateActive &&
-    modalStackState.analysisEngine !== 'none'
+    analysisEngine !== 'spectral'
+    && status.audioInputMode !== 'idle'
+    && !micNoiseGateActive
+    && modalStackState.analysisEngine !== 'none'
   ) {
     decayModalStack(modalStackState);
     usedDecay = true;
-  } else {
+  } else if (analysisEngine !== 'spectral') {
     clearModalStack(modalStackState);
   }
 
-  copyFloatArray(modeSlots, modalStackState.slots);
-  copyFloatArray(referenceModeSlots, modalStackState.referenceSlots);
-
-  let returnedModeSlots = modeSlots;
-  if (auditSettings.freezeModeSlots && auditState) {
-    if (auditState.frozenModeSlots.every((value) => value === 0)) {
-      auditState.frozenModeSlots.set(modeSlots);
-    }
-    returnedModeSlots = auditState.frozenModeSlots;
-  } else if (auditState) {
-    auditState.frozenModeSlots.fill(0);
-  }
-
-  let fftMagnitudes = featureState?.fftMagnitudes;
-  if (!fftMagnitudes || fftMagnitudes.length !== freqData.length) {
-    fftMagnitudes = new Float32Array(freqData.length);
-    if (featureState) {
-      featureState.fftMagnitudes = fftMagnitudes;
-    }
-  }
-  fftMagnitudes.set(freqData);
-
-  const slotAmplitudeDeltas = new Float32Array(Math.min(capacity, MAX_STACK_SLOTS));
-  const slotLimit = Math.min(slotAmplitudeDeltas.length, returnedModeSlots.length / 4);
-  for (let i = 0; i < slotLimit; i++) {
-    slotAmplitudeDeltas[i] = returnedModeSlots[i * 4 + 3] - referenceModeSlots[i * 4 + 3];
-  }
-
-  const dominantFrequency = modalStackState.fundamental || selectedFrequency;
-  const dominantAmplitude = dominantFrequency
-    ? sampleFFTAmplitudeForFrequency(dominantFrequency, fftMagnitudes, sampleRate, fftSize)
-    : 0;
-
-  const activeModeCount = countActiveSlots(returnedModeSlots, capacity);
-  const { fieldState, hasModalField } = deriveFieldState({
-    injectTestTone: auditSettings.injectTestTone,
-    activeModeCount,
+  return {
+    analysisEngine,
+    pitchSource,
+    spectralCandidates,
     usedDecay,
-  });
-  if (fieldState === FIELD_STATES.idle && !auditSettings.injectTestTone) {
-    sourceMode = 'silent';
-  }
+  };
+}
 
-  const debug = {
+export function finalizeFeatureDebugSnapshot({
+  inputMode,
+  pitchSource,
+  analysisEngine,
+  fieldState,
+  soundActive,
+  micActive,
+  micNoiseGateActive,
+  modalStackState,
+  dominantFrequency,
+  dominantAmplitude,
+  avgAmplitude,
+  analyserRms,
+  spectralCandidates,
+  fftMagnitudes,
+  activeModeCount,
+  returnedModeSlots,
+  referenceModeSlots,
+  slotAmplitudeDeltas,
+  sampleRate,
+  fftSize,
+}) {
+  return {
     audioInputMode: inputMode,
     pitchSource,
     requestedPitchSource: REQUESTED_PITCH_SOURCE,
@@ -263,6 +283,156 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
       ? sampleFFTAmplitudeForFrequency(dominantFrequency, fftMagnitudes, sampleRate, fftSize)
       : 0,
   };
+}
+
+export function buildAudioFeatureFrame({
+  analysisSnapshot,
+  featureState,
+  radius,
+  status,
+  auditSettings = undefined,
+}) {
+  const capacity = featureState?.capacity ?? AUDIO_DEFAULTS.capacity;
+  const analysisMemory = getAnalysisMemory(featureState, capacity);
+  const modeSlots = analysisMemory.modeSlots ?? new Float32Array(capacity * 4);
+  const referenceModeSlots = analysisMemory.referenceModeSlots ?? new Float32Array(capacity * 4);
+  const auditState = featureState?.audit;
+  const resolvedAuditSettings = auditSettings ?? auditState?.settings ?? {
+    ...AUDIT_DEFAULTS,
+  };
+  const sampleRate = status?.sampleRate ?? 44100;
+  const fftSize = status?.fftSize ?? 4096;
+  const inputMode = status?.audioInputMode ?? 'idle';
+  const soundActive = Boolean(status?.isPlaying);
+  const micActive = Boolean(status?.isMicActive);
+  const currentFrame = (analysisMemory.frameId ?? 0) + 1;
+  const modalStackState = analysisMemory.modalStackState ?? createAudioFeatureState(capacity).analysis.modalStackState;
+
+  if (featureState?.analysis) {
+    featureState.analysis.frameId = currentFrame;
+    featureState.analysis.modalStackState = modalStackState;
+  }
+
+  let sourceMode = inputMode === 'file' ? 'file' : inputMode === 'mic' ? 'mic' : 'silent';
+  if (resolvedAuditSettings.injectTestTone) sourceMode = 'test';
+
+  if (!analysisSnapshot && !resolvedAuditSettings.injectTestTone) {
+    return buildSilentFeatureFrame({
+      featureState,
+      inputMode,
+      soundActive,
+      micActive,
+      modeSlots,
+      referenceModeSlots,
+      modalStackState,
+      fftSize,
+    });
+  }
+
+  const snapshot = resolvedAuditSettings.injectTestTone
+    ? applyTestToneToSnapshot({
+      analysisSnapshot,
+      auditSettings: resolvedAuditSettings,
+      fftSize,
+      sampleRate,
+    })
+    : analysisSnapshot;
+
+  const avgAmplitude = snapshot?.avgAmplitude ?? 0;
+  const analyserRms = snapshot?.rms ?? 0;
+  const fftMagnitudesSource = snapshot?.fftMagnitudes ?? new Float32Array(fftSize / 2);
+
+  const micNoiseGateActive = detectMicNoiseGate({
+    injectTestTone: resolvedAuditSettings.injectTestTone,
+    inputMode,
+    avgAmplitude,
+    rms: analyserRms,
+  });
+
+  const {
+    analysisEngine,
+    pitchSource,
+    spectralCandidates,
+    usedDecay,
+  } = resolveSpectralModalStack({
+    analysisSnapshot: snapshot,
+    status: {
+      ...status,
+      sampleRate,
+      fftSize,
+    },
+    modalStackState,
+    radius,
+    capacity,
+    micNoiseGateActive,
+    auditSettings: resolvedAuditSettings,
+  });
+
+  copyFloatArray(modeSlots, modalStackState.slots);
+  copyFloatArray(referenceModeSlots, modalStackState.referenceSlots);
+
+  let returnedModeSlots = modeSlots;
+  if (resolvedAuditSettings.freezeModeSlots && auditState) {
+    if (auditState.frozenModeSlots.every((value) => value === 0)) {
+      auditState.frozenModeSlots.set(modeSlots);
+    }
+    returnedModeSlots = auditState.frozenModeSlots;
+  } else if (auditState) {
+    auditState.frozenModeSlots.fill(0);
+  }
+
+  let fftMagnitudes = analysisMemory.fftMagnitudes;
+  if (!fftMagnitudes || fftMagnitudes.length !== fftMagnitudesSource.length) {
+    fftMagnitudes = new Float32Array(fftMagnitudesSource.length);
+    if (featureState?.analysis) {
+      featureState.analysis.fftMagnitudes = fftMagnitudes;
+    }
+  }
+  fftMagnitudes.set(fftMagnitudesSource);
+
+  const slotAmplitudeDeltas = new Float32Array(Math.min(capacity, MAX_STACK_SLOTS));
+  const slotLimit = Math.min(slotAmplitudeDeltas.length, returnedModeSlots.length / 4);
+  for (let i = 0; i < slotLimit; i++) {
+    slotAmplitudeDeltas[i] = returnedModeSlots[i * 4 + 3] - referenceModeSlots[i * 4 + 3];
+  }
+
+  const dominantFrequency = modalStackState.fundamental;
+  const dominantAmplitude = dominantFrequency
+    ? sampleFFTAmplitudeForFrequency(dominantFrequency, fftMagnitudes, sampleRate, fftSize)
+    : 0;
+
+  const activeModeCount = countActiveSlots(returnedModeSlots, capacity);
+  const { fieldState, hasModalField } = deriveFieldState({
+    injectTestTone: resolvedAuditSettings.injectTestTone,
+    activeModeCount,
+    usedDecay,
+  });
+  if (fieldState === FIELD_STATES.idle && !resolvedAuditSettings.injectTestTone) {
+    sourceMode = 'silent';
+  }
+
+  const debug = finalizeFeatureDebugSnapshot({
+    inputMode,
+    pitchSource,
+    analysisEngine,
+    fieldState,
+    soundActive,
+    micActive,
+    micNoiseGateActive,
+    modalStackState,
+    dominantFrequency,
+    dominantAmplitude,
+    avgAmplitude,
+    analyserRms,
+    spectralCandidates,
+    fftMagnitudes,
+    activeModeCount,
+    returnedModeSlots,
+    referenceModeSlots,
+    slotAmplitudeDeltas,
+    sampleRate,
+    fftSize,
+  });
 
   if (auditState) {
     auditState.frame += 1;
@@ -280,6 +450,6 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
     referenceModeSlots,
     sourceMode,
     debug,
-    audit: auditSettings,
+    audit: resolvedAuditSettings,
   };
 }

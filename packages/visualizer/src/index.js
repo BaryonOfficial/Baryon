@@ -1,18 +1,23 @@
 // Core
 export {
+  createAudioSession,
   createAudioContext,
+  getDefaultAudioSession,
   getDefaultAudioContext,
+  attachAudio,
   loadAudio,
   playPauseAudio,
   stopAudio,
   startMicRecordStream,
   stopMicRecordStream,
-  startAudioProcessing,
-  setAudioInputMode,
   setAudioEndedCallback,
-  processAudioData,
   getIsAudioLoaded,
   getAnalysisState,
+  getStatus,
+  getTimingState,
+  readClockSnapshot,
+  readAnalysisSnapshot,
+  disposeAudio,
   disposeAnalysis,
 } from './core/audio/audioSetup.js';
 export { setupTSL, tickTSL, disposeTSL } from './core/tslSetup.js';
@@ -26,7 +31,6 @@ export { createVisualizationRuntime } from './visualization/runtimeFactory.js';
 export * from './three/loaders/setupLoaders.js';
 
 // Utils
-export * from './utils/timeHandler.js';
 export { findFFTPeaks } from './utils/fftPeaks.js';
 export { createAudioFeatureState, buildAudioFeatureFrame } from './utils/audioFeatures.js';
 export { useSharedAudioLogic } from './react/useSharedAudioLogic.js';

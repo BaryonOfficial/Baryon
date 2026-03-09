@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { AUDIO_DEFAULTS } from '../../defaults.js';
+import { sampleAnalyser } from './analyserSampler.js';
 
 function createMicAnalyser(audioCtx, sourceNode, fftSize) {
   const analyserNode = audioCtx.createAnalyser();
@@ -44,22 +45,31 @@ function disconnectMicNode(micNode) {
   }
 }
 
-function createDefaultAudioContextBindings(instance) {
+function getAnalysisSource(status) {
+  if (status.isPlaying) return 'file';
+  if (status.isMicActive) return 'mic';
+  return 'idle';
+}
+
+function createDefaultAudioSessionBindings(instance) {
   return {
-    audioObject: instance.getState(),
-    audioSetup: (camera) => instance.setup(camera),
+    audioSetup: (camera) => instance.attach(camera),
+    attachAudio: (camera) => instance.attach(camera),
     loadAudio: (url) => instance.loadAudio(url),
     playPauseAudio: () => instance.playPauseAudio(),
     stopAudio: () => instance.stopAudio(),
     startMicRecordStream: (deviceId) => instance.startMicRecordStream(deviceId),
     stopMicRecordStream: () => instance.stopMicRecordStream(),
-    startAudioProcessing: (cb) => instance.startAudioProcessing(cb),
-    setAudioInputMode: (mode) => instance.setAudioInputMode(mode),
     setAudioEndedCallback: (cb) => instance.setAudioEndedCallback(cb),
-    processAudioData: () => instance.processAudioData(),
     getIsAudioLoaded: () => instance.getIsAudioLoaded(),
     getAnalysisState: () => instance.getAnalysisState(),
-    disposeAnalysis: () => instance.disposeAnalysis(),
+    getStatus: () => instance.getStatus(),
+    getTimingState: () => instance.getTimingState(),
+    readClockSnapshot: (elapsedTime) => instance.readClockSnapshot(elapsedTime),
+    readAnalysisSnapshot: () => instance.readAnalysisSnapshot(),
+    disposeAudio: () => instance.dispose(),
+    disposeAnalysis: () => instance.dispose(),
+    getState: () => instance.getState(),
   };
 }
 
@@ -67,7 +77,7 @@ function createDefaultAudioContextBindings(instance) {
  * Creates an isolated audio context instance.
  * All audio state is local to this instance — no module-level singletons.
  */
-export function createAudioContext() {
+export function createAudioSession() {
   const state = {
     fftSize: 4096,
     capacity: AUDIO_DEFAULTS.capacity,
@@ -80,42 +90,146 @@ export function createAudioContext() {
     micAnalyser: null,
     micNode: null,
     gumStream: null,
+    camera: null,
     audioLoader: new THREE.AudioLoader(),
   };
 
   let isAudioLoaded = false;
+  let endedCallback = null;
+  const clockState = {
+    mode: 'realtime',
+    previousElapsedTime: 0,
+    lastKnownAudioTime: 0,
+  };
 
   function setAudioInputMode(mode) {
     const nextMode = normalizeAudioInputMode(mode);
     state.audioInputMode = nextMode;
   }
 
-  function disposeAnalysis() {}
+  function getStatus() {
+    const isPlaying = Boolean(state.sound?.isPlaying);
+    const isMicActive = Boolean(state.gumStream?.active && state.micAnalyser);
+    const analysisSource = getAnalysisSource({ isPlaying, isMicActive });
 
-  function getAnalysisState() {
     return {
       audioInputMode: state.audioInputMode,
+      analysisSource,
       pitchSourceMode: state.pitchSourceMode,
+      fftSize: state.fftSize,
+      capacity: state.capacity,
+      sampleRate: state.audioCtx?.sampleRate ?? 44100,
+      isAudioLoaded,
+      isPlaying,
+      isMicActive,
+      hasAnalysisSource: analysisSource !== 'idle',
       workerStatus: null,
     };
   }
 
-  function setup(camera) {
-    state.listener = new THREE.AudioListener();
-    camera.add(state.listener);
+  function getAnalysisState() {
+    const status = getStatus();
+    return {
+      audioInputMode: status.audioInputMode,
+      pitchSourceMode: status.pitchSourceMode,
+      workerStatus: status.workerStatus,
+    };
+  }
 
-    state.sound = new THREE.Audio(state.listener);
-    state.sound.started = false;
-    state.audioCtx = state.listener.context;
-    state.analyser = new THREE.AudioAnalyser(state.sound, state.fftSize);
+  function getTimingState() {
+    const status = getStatus();
+    return {
+      analysisSource: status.analysisSource,
+      isPlaying: status.isPlaying,
+      isMicActive: status.isMicActive,
+      playbackStarted: Boolean(state.sound?.started),
+      playbackTime: state.sound?.context?.currentTime ?? 0,
+      playbackDeltaTime: state.sound?.listener?.timeDelta ?? 0,
+    };
+  }
+
+  function updateRealtimeClock(elapsedTime, mode) {
+    const modeChanged = clockState.mode !== mode;
+    const firstSample = clockState.previousElapsedTime === 0;
+    const deltaTime = modeChanged || firstSample
+      ? 0
+      : elapsedTime - clockState.previousElapsedTime;
+
+    clockState.previousElapsedTime = elapsedTime;
+    clockState.mode = mode;
+
+    return {
+      clockMode: mode,
+      time: elapsedTime,
+      deltaTime,
+    };
+  }
+
+  function readClockSnapshot(elapsedTime) {
+    const timingState = getTimingState();
+
+    if (timingState.isMicActive) {
+      return updateRealtimeClock(elapsedTime, 'realtime');
+    }
+
+    if (timingState.isPlaying && timingState.playbackStarted) {
+      clockState.mode = 'playback';
+      clockState.previousElapsedTime = elapsedTime;
+      clockState.lastKnownAudioTime = timingState.playbackTime;
+
+      return {
+        clockMode: 'playback',
+        time: timingState.playbackTime,
+        deltaTime: timingState.playbackDeltaTime,
+      };
+    }
+
+    if (!timingState.isPlaying && timingState.playbackStarted) {
+      clockState.mode = 'paused-playback';
+      clockState.previousElapsedTime = elapsedTime;
+
+      return {
+        clockMode: 'paused-playback',
+        time: clockState.lastKnownAudioTime,
+        deltaTime: 0,
+      };
+    }
+
+    return updateRealtimeClock(elapsedTime, 'realtime');
+  }
+
+  function attach(camera) {
+    if (state.listener && state.camera === camera) {
+      return;
+    }
+
+    if (!state.listener) {
+      state.listener = new THREE.AudioListener();
+      state.sound = new THREE.Audio(state.listener);
+      state.sound.started = false;
+      state.audioCtx = state.listener.context;
+      state.analyser = new THREE.AudioAnalyser(state.sound, state.fftSize);
+    }
+
+    if (state.camera && state.listener) {
+      state.camera.remove(state.listener);
+    }
+
+    state.camera = camera;
+    camera.add(state.listener);
   }
 
   function setAudioEndedCallback(callback) {
+    endedCallback = callback;
+    if (!state.sound) return;
+
     state.sound.onEnded = function () {
-      state.sound.stop();
+      if (state.sound?.isPlaying || state.sound?.started) {
+        state.sound.stop();
+      }
       state.sound.started = false;
       setAudioInputMode('idle');
-      callback();
+      if (endedCallback) endedCallback();
     };
   }
 
@@ -243,48 +357,96 @@ export function createAudioContext() {
     }
   }
 
-  function startAudioProcessing(callback) {
-    if (callback) callback();
+  function readAnalysisSnapshot() {
+    const status = getStatus();
+    if (status.analysisSource === 'file') {
+      return {
+        sourceMode: 'file',
+        ...sampleAnalyser(state.analyser),
+      };
+    }
+    if (status.analysisSource === 'mic') {
+      return {
+        sourceMode: 'mic',
+        ...sampleAnalyser(state.micAnalyser),
+      };
+    }
+    return null;
   }
 
-  function processAudioData() {}
+  function dispose() {
+    stopAudio();
+    stopMicRecordStream();
+
+    if (state.sound) {
+      state.sound.onEnded = null;
+      state.sound.setBuffer?.(null);
+    }
+
+    if (state.camera && state.listener) {
+      state.camera.remove(state.listener);
+    }
+
+    state.camera = null;
+    state.listener = null;
+    state.sound = null;
+    state.analyser = null;
+    state.audioCtx = null;
+    isAudioLoaded = false;
+    clockState.mode = 'realtime';
+    clockState.previousElapsedTime = 0;
+    clockState.lastKnownAudioTime = 0;
+    setAudioInputMode('idle');
+  }
 
   return {
-    setup,
+    attach,
     loadAudio,
     playPauseAudio,
     stopAudio,
     startMicRecordStream,
     stopMicRecordStream,
-    startAudioProcessing,
-    setAudioInputMode,
     setAudioEndedCallback,
-    processAudioData,
     getIsAudioLoaded: () => isAudioLoaded,
     getAnalysisState,
-    disposeAnalysis,
+    getStatus,
+    getTimingState,
+    readClockSnapshot,
+    readAnalysisSnapshot,
+    dispose,
     getState: () => state,
   };
 }
 
-const _defaultInstance = createAudioContext();
-const defaultBindings = createDefaultAudioContextBindings(_defaultInstance);
+export function createAudioContext() {
+  return createAudioSession();
+}
+
+const _defaultInstance = createAudioSession();
+const defaultBindings = createDefaultAudioSessionBindings(_defaultInstance);
+
+export function getDefaultAudioSession() {
+  return _defaultInstance;
+}
 
 export function getDefaultAudioContext() {
   return _defaultInstance;
 }
 
-export const { audioObject } = defaultBindings;
 export const { audioSetup } = defaultBindings;
+export const { attachAudio } = defaultBindings;
 export const { loadAudio } = defaultBindings;
 export const { playPauseAudio } = defaultBindings;
 export const { stopAudio } = defaultBindings;
 export const { startMicRecordStream } = defaultBindings;
 export const { stopMicRecordStream } = defaultBindings;
-export const { startAudioProcessing } = defaultBindings;
-export const { setAudioInputMode } = defaultBindings;
 export const { setAudioEndedCallback } = defaultBindings;
-export const { processAudioData } = defaultBindings;
 export const { getIsAudioLoaded } = defaultBindings;
 export const { getAnalysisState } = defaultBindings;
+export const { getStatus } = defaultBindings;
+export const { getTimingState } = defaultBindings;
+export const { readClockSnapshot } = defaultBindings;
+export const { readAnalysisSnapshot } = defaultBindings;
+export const { disposeAudio } = defaultBindings;
 export const { disposeAnalysis } = defaultBindings;
+export const { getState } = defaultBindings;

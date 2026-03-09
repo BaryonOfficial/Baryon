@@ -10,8 +10,7 @@ import {
   buildControlInspectionSnapshot,
   createVisualizationRuntime,
   DEFAULT_VISUALIZATION_METHOD,
-  getDefaultAudioContext,
-  createTimeHandler,
+  getDefaultAudioSession,
   setupLoaders,
   createAudioFeatureState,
   buildAudioFeatureFrame,
@@ -30,19 +29,16 @@ export function useBaryonVisualizer({
 }) {
   const audioRef = useRef(null);
   const audioFeatureRef = useRef(null);
-  const timeHandlerRef = useRef(null);
   const runtimeRef = useRef(createVisualizationRuntime(DEFAULT_VISUALIZATION_METHOD));
   const runtimeStateRef = useRef(null);
   const [points, setPoints] = useState(null);
 
   useEffect(() => {
-    const audio = getDefaultAudioContext();
+    const audio = getDefaultAudioSession();
     const runtime = runtimeRef.current;
     audioRef.current = audio;
 
-    audio.setup(camera);
-    audio.startAudioProcessing();
-    timeHandlerRef.current = createTimeHandler(audio.getState);
+    audio.attach(camera);
     gl.setClearColor(new THREE.Color(RENDER_DEFAULTS.backgroundColor));
 
     audio.setAudioEndedCallback(() => {
@@ -60,7 +56,7 @@ export function useBaryonVisualizer({
         instance.updateMatrix();
         instance.geometry.applyMatrix4(instance.matrix);
 
-        const audioState = audio.getState();
+        const audioStatus = audio.getStatus();
         const parameters = {
           count: SIMULATION_DEFAULTS.particleCount,
           radius: SIMULATION_DEFAULTS.radius,
@@ -69,9 +65,9 @@ export function useBaryonVisualizer({
           threshold: SIMULATION_DEFAULTS.threshold,
         };
         const audioConfig = {
-          capacity: audioState.capacity,
-          fftSize: audioState.fftSize,
-          sampleRate: audioState.audioCtx?.sampleRate ?? 44100,
+          capacity: audioStatus.capacity,
+          fftSize: audioStatus.fftSize,
+          sampleRate: audioStatus.sampleRate,
         };
 
         audioFeatureRef.current = createAudioFeatureState(audioConfig.capacity);
@@ -88,9 +84,7 @@ export function useBaryonVisualizer({
     })();
 
     return () => {
-      const state = audio.getState();
-      if (state.listener) camera.remove(state.listener);
-      audio.disposeAnalysis?.();
+      audio.dispose();
       if (runtimeStateRef.current) {
         runtime.dispose(runtimeStateRef.current);
       }
@@ -101,26 +95,28 @@ export function useBaryonVisualizer({
     const pipeline = ensurePipeline();
     const runtimeState = runtimeStateRef.current;
     const featureState = audioFeatureRef.current;
-    const timeHandler = timeHandlerRef.current;
 
-    if (!pipeline || !runtimeState || !featureState || !timeHandler) {
+    if (!pipeline || !runtimeState || !featureState) {
       return;
     }
 
     const controls = controlsRef.current;
     const audio = audioRef.current;
+    const status = audio.getStatus();
+    const analysisSnapshot = audio.readAnalysisSnapshot();
 
     const bloomSnapshot = applyBloomControls({ ensurePipeline, postNodesRef }, controls);
     const sharedSnapshot = applySharedControls(gl, controls);
     const particleSnapshot = applyParticleControls(runtimeState, controls);
     const auditSnapshot = applyAuditControls(featureState, controls);
 
-    const { time, deltaTime } = timeHandler(state.clock.getElapsedTime());
-    const featureFrame = buildAudioFeatureFrame(
-      audio.getState(),
+    const { time, deltaTime } = audio.readClockSnapshot(state.clock.getElapsedTime());
+    const featureFrame = buildAudioFeatureFrame({
+      analysisSnapshot,
       featureState,
-      runtimeState.uniforms.uRadius.value
-    );
+      radius: runtimeState.uniforms.uRadius.value,
+      status,
+    });
 
     runtimeRef.current.tick({
       renderer: gl,
