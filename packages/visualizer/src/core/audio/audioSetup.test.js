@@ -26,6 +26,7 @@ class MockAnalyserNode {
 }
 
 const mockTrackStop = vi.fn();
+let lastAudioInstance = null;
 
 vi.mock("three", () => {
   class AudioLoader {
@@ -65,6 +66,7 @@ vi.mock("three", () => {
       this.isPlaying = false;
       this.onEnded = null;
       this.buffer = null;
+      lastAudioInstance = this;
     }
 
     setBuffer(buffer) {
@@ -119,6 +121,7 @@ describe("audio session", () => {
 
   beforeEach(async () => {
     mockTrackStop.mockReset();
+    lastAudioInstance = null;
     Object.defineProperty(globalThis, "navigator", {
       configurable: true,
       value: {
@@ -239,6 +242,25 @@ describe("audio session", () => {
       clockMode: "realtime",
       time: 3,
       deltaTime: 0,
+    });
+  });
+
+  it("applies the ended callback even when registered before attach", async () => {
+    const session = createAudioSession();
+    const callback = vi.fn();
+    const camera = { add: vi.fn(), remove: vi.fn() };
+
+    session.setAudioEndedCallback(callback);
+    session.attach(camera);
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+
+    lastAudioInstance.onEnded();
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "idle",
+      isPlaying: false,
     });
   });
 });

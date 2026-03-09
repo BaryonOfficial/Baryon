@@ -33,6 +33,19 @@ function getAnalysisSource(status) {
   return 'idle';
 }
 
+function bindAudioEndedHandler(state, callback, setAudioInputMode) {
+  if (!state.sound || !callback) return;
+
+  state.sound.onEnded = function () {
+    if (state.sound?.isPlaying || state.sound?.started) {
+      state.sound.stop();
+    }
+    state.sound.started = false;
+    setAudioInputMode('idle');
+    callback();
+  };
+}
+
 function createDefaultAudioSessionBindings(instance) {
   return {
     attachAudio: (camera) => instance.attach(camera),
@@ -186,6 +199,7 @@ export function createAudioSession() {
         data.set(threeAnalyser.getFrequencyData());
         return data;
       });
+      bindAudioEndedHandler(state, endedCallback, setAudioInputMode);
     }
 
     if (state.camera && state.listener) {
@@ -198,16 +212,7 @@ export function createAudioSession() {
 
   function setAudioEndedCallback(callback) {
     endedCallback = callback;
-    if (!state.sound) return;
-
-    state.sound.onEnded = function () {
-      if (state.sound?.isPlaying || state.sound?.started) {
-        state.sound.stop();
-      }
-      state.sound.started = false;
-      setAudioInputMode('idle');
-      if (endedCallback) endedCallback();
-    };
+    bindAudioEndedHandler(state, endedCallback, setAudioInputMode);
   }
 
   function loadAudio(url) {

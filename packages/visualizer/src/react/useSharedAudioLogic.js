@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { getDefaultAudioSession } from "../core/audio/audioSetup.js";
 
 export function useSharedAudioLogic({
@@ -13,6 +13,7 @@ export function useSharedAudioLogic({
   selectedDevice,
 }) {
   const audioSession = getDefaultAudioSession();
+  const activeFileUrlRef = useRef(null);
 
   const syncStatus = useCallback(() => {
     const status = audioSession.getStatus();
@@ -46,6 +47,15 @@ export function useSharedAudioLogic({
     };
   }, [setAudioDevices, setSelectedDevice]);
 
+  useEffect(() => {
+    return () => {
+      if (activeFileUrlRef.current) {
+        URL.revokeObjectURL(activeFileUrlRef.current);
+        activeFileUrlRef.current = null;
+      }
+    };
+  }, []);
+
   const handleFileChange = useCallback(
     (event) => {
       const file = event.target.files[0];
@@ -57,11 +67,17 @@ export function useSharedAudioLogic({
 
       setFileName(file.name);
       const fileURL = URL.createObjectURL(file);
+      const previousFileUrl = activeFileUrlRef.current;
       audioSession.loadAudio(fileURL)
         .then(() => {
+          if (previousFileUrl && previousFileUrl !== fileURL) {
+            URL.revokeObjectURL(previousFileUrl);
+          }
+          activeFileUrlRef.current = fileURL;
           syncStatus();
         })
         .catch((error) => {
+          URL.revokeObjectURL(fileURL);
           console.error("Error loading audio:", error);
           setIsAudioLoaded(false);
         });
