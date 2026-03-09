@@ -1,29 +1,38 @@
 import { FIELD_STATE_VALUES, isFieldDrivenState } from '../fieldState.js';
 import { updateAuditSnapshot } from './auditMirror.js';
 
-function didModeSlotsChange(nextSlots, prevSlots, epsilon = 1e-4) {
+const SIGNIFICANT_MODE_AMPLITUDE = 0.05;
+
+function getModeStructureSignature(modeSlots) {
+  if (!modeSlots?.length) return '';
+
+  const signatures = [];
+  for (let i = 0; i < modeSlots.length; i += 4) {
+    if ((modeSlots[i + 3] ?? 0) <= SIGNIFICANT_MODE_AMPLITUDE) {
+      continue;
+    }
+    signatures.push(
+      `${Math.round(modeSlots[i])}:${Math.round(modeSlots[i + 1])}:${Math.round(modeSlots[i + 2])}`
+    );
+  }
+
+  signatures.sort();
+  return signatures.join('|');
+}
+
+export function didModeStructureChange(nextSlots, prevSlots) {
   if (!nextSlots?.length || !prevSlots?.length || nextSlots.length !== prevSlots.length) {
     return true;
   }
-
-  for (let i = 0; i < nextSlots.length; i++) {
-    if (Math.abs(nextSlots[i] - prevSlots[i]) > epsilon) {
-      return true;
-    }
-  }
-
-  return false;
+  return getModeStructureSignature(nextSlots) !== getModeStructureSignature(prevSlots);
 }
 
 export function tickTSLRuntime(renderer, tslState, featureFrame, time, deltaTime) {
   const {
     modeBuffer,
     fftBuffer,
-    particlesBuffer,
     uniforms,
     compute,
-    zeroPointsBuffer,
-    basePositions,
   } = tslState;
 
   uniforms.uTime.value = time;
@@ -63,42 +72,10 @@ export function tickTSLRuntime(renderer, tslState, featureFrame, time, deltaTime
   }
 
   const modeSlotsChanged = fieldDriven && featureFrame
-    ? didModeSlotsChange(featureFrame.modeSlots, tslState.prevModeSlots)
+    ? didModeStructureChange(featureFrame.modeSlots, tslState.prevModeSlots)
     : false;
-  const resetTriggered =
-    (fieldDriven && tslState.prevFieldState === 'idle') || modeSlotsChanged;
-  const resetReason = !resetTriggered
-    ? 'none'
-    : tslState.prevFieldState === 'idle'
-      ? 'idle-to-active'
-      : 'mode-change';
-
-  if (resetTriggered) {
-    const arr = zeroPointsBuffer.value.array;
-    const particleArr = particlesBuffer.value.array;
-    const particleCount = basePositions ? basePositions.length / 3 : particleArr.length / 4;
-    for (let i = 0; i < particleCount; i++) {
-      arr[i * 4] = particleArr[i * 4];
-      arr[i * 4 + 1] = particleArr[i * 4 + 1];
-      arr[i * 4 + 2] = particleArr[i * 4 + 2];
-      arr[i * 4 + 3] = 2.0;
-    }
-    zeroPointsBuffer.value.needsUpdate = true;
-
-    if (tslState.audit) {
-      const { sampleIndices, retainedTargets, shadowParticles } = tslState.audit;
-      for (let i = 0; i < sampleIndices.length; i++) {
-        const sampleIndex = sampleIndices[i];
-        retainedTargets[i * 4] = particleArr[sampleIndex * 4];
-        retainedTargets[i * 4 + 1] = particleArr[sampleIndex * 4 + 1];
-        retainedTargets[i * 4 + 2] = particleArr[sampleIndex * 4 + 2];
-        retainedTargets[i * 4 + 3] = 2.0;
-        shadowParticles[i * 3] = retainedTargets[i * 4];
-        shadowParticles[i * 3 + 1] = retainedTargets[i * 4 + 1];
-        shadowParticles[i * 3 + 2] = retainedTargets[i * 4 + 2];
-      }
-    }
-  }
+  const resetTriggered = false;
+  const resetReason = 'none';
 
   const auditSnapshot = updateAuditSnapshot(tslState, featureFrame, deltaTime, {
     modeSlotsChanged,

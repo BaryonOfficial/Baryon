@@ -29,18 +29,23 @@ function createSimulationHarness() {
       uniforms: {
         uColor: { value: { set: setColor } },
         uSurfaceColor: { value: { set: vi.fn() } },
+        uRadius: { value: 3 },
         uParticleSpeed: { value: 0 },
         uParticleSize: { value: 0 },
         uThreshold: { value: 0 },
-        uDistanceThreshold: { value: 0 },
         uSurfaceControl: { value: 0 },
-        uParticleMovementType: { value: 0 },
         uIdleLogoIntensity: { value: 0 },
         uIdleLogoAlpha: { value: 0 },
         uIdleLogoSize: { value: 0 },
         uFlowFieldStrength: { value: 0 },
         uFlowFieldFrequency: { value: 0 },
-        uFlowFieldInfluence: { value: 0 },
+        uFlowMix: { value: 0 },
+        uAttractionStrength: { value: 0 },
+        uVelocityDamping: { value: 0 },
+        uCenterSuppressionInner: { value: 0 },
+        uCenterSuppressionOuter: { value: 0 },
+        uStructureMin: { value: 0 },
+        uStructureMax: { value: 0 },
       },
     },
   };
@@ -54,13 +59,17 @@ describe("control runtime sync", () => {
     controls.idleLogoIntensity = 0.42;
     controls.idleLogoAlpha = 0.35;
     controls.zeroPointPrecision = 0.033;
-    controls.targetLerpThreshold = 1.25;
     controls.surfaceParticles = false;
-    controls.particleMovementType = "Quickest";
     controls.idleLogoSize = 1.4;
     controls.flowFieldStrength = 4.1;
     controls.flowFieldFrequency = 0.73;
-    controls.flowFieldInfluence = 1.1;
+    controls.flowMix = 0.21;
+    controls.attractionStrength = 17.5;
+    controls.velocityDamping = 0.91;
+    controls.centerSuppressionInner = 0.2;
+    controls.centerSuppressionOuter = 0.55;
+    controls.structureMin = 0.12;
+    controls.structureMax = 0.48;
 
     const { gl, tslState } = createSimulationHarness();
     const snapshot = applySimulationControls(gl, tslState, controls);
@@ -69,19 +78,25 @@ describe("control runtime sync", () => {
     expect(tslState.uniforms.uParticleSize.value).toBe(0.123);
     expect(tslState.uniforms.uParticleSpeed.value).toBe(55);
     expect(tslState.uniforms.uThreshold.value).toBe(0.033);
-    expect(tslState.uniforms.uDistanceThreshold.value).toBe(1.25);
     expect(tslState.uniforms.uSurfaceControl.value).toBe(0);
-    expect(tslState.uniforms.uParticleMovementType.value).toBe(0);
     expect(tslState.uniforms.uIdleLogoIntensity.value).toBe(0.42);
     expect(tslState.uniforms.uIdleLogoAlpha.value).toBe(0.35);
     expect(tslState.uniforms.uIdleLogoSize.value).toBe(1.4);
     expect(tslState.uniforms.uFlowFieldStrength.value).toBe(4.1);
     expect(tslState.uniforms.uFlowFieldFrequency.value).toBe(0.73);
-    expect(tslState.uniforms.uFlowFieldInfluence.value).toBe(1.1);
+    expect(tslState.uniforms.uFlowMix.value).toBe(0.21);
+    expect(tslState.uniforms.uAttractionStrength.value).toBe(17.5);
+    expect(tslState.uniforms.uVelocityDamping.value).toBe(0.91);
+    expect(tslState.uniforms.uCenterSuppressionInner.value).toBeCloseTo(0.6);
+    expect(tslState.uniforms.uCenterSuppressionOuter.value).toBeCloseTo(1.65);
+    expect(tslState.uniforms.uStructureMin.value).toBe(0.12);
+    expect(tslState.uniforms.uStructureMax.value).toBe(0.48);
     expect(snapshot.uniforms.particleSize).toBe(0.123);
     expect(snapshot.uniforms.idleLogoIntensity).toBe(0.42);
     expect(snapshot.uniforms.idleLogoAlpha).toBe(0.35);
     expect(snapshot.uniforms.flowFieldStrength).toBe(4.1);
+    expect(snapshot.uniforms.attractionStrength).toBe(17.5);
+    expect(snapshot.uniforms.centerSuppressionInner).toBe(0.2);
   });
 
   it("applies shared and particle controls through method-aware helpers", () => {

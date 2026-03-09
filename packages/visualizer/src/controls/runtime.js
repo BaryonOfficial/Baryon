@@ -11,11 +11,15 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "particleSize",
     "flowFieldStrength",
     "flowFieldFrequency",
-    "flowFieldInfluence",
-    "targetLerpThreshold",
     "zeroPointPrecision",
+    "flowMix",
+    "attractionStrength",
+    "velocityDamping",
+    "centerSuppressionInner",
+    "centerSuppressionOuter",
+    "structureMin",
+    "structureMax",
     "surfaceParticles",
-    "particleMovementType",
     "idleLogoIntensity",
     "idleLogoAlpha",
     "idleLogoSize",
@@ -47,20 +51,25 @@ export function applySharedControls(gl, controls) {
 
 export function applyParticleControls(tslState, controls) {
   const uniforms = tslState.uniforms;
+  const radius = uniforms.uRadius.value;
   uniforms.uColor.value.set(controls.volumeColor);
   uniforms.uSurfaceColor.value.set(controls.surfaceColor);
   uniforms.uParticleSpeed.value = controls.particleSpeed;
   uniforms.uParticleSize.value = controls.particleSize;
   uniforms.uThreshold.value = controls.zeroPointPrecision;
-  uniforms.uDistanceThreshold.value = controls.targetLerpThreshold;
   uniforms.uSurfaceControl.value = controls.surfaceParticles ? 1 : 0;
-  uniforms.uParticleMovementType.value = controls.particleMovementType === "Smoothed" ? 1 : 0;
   uniforms.uIdleLogoIntensity.value = controls.idleLogoIntensity;
   uniforms.uIdleLogoAlpha.value = controls.idleLogoAlpha;
   uniforms.uIdleLogoSize.value = controls.idleLogoSize;
   uniforms.uFlowFieldStrength.value = controls.flowFieldStrength;
   uniforms.uFlowFieldFrequency.value = controls.flowFieldFrequency;
-  uniforms.uFlowFieldInfluence.value = controls.flowFieldInfluence;
+  uniforms.uFlowMix.value = controls.flowMix;
+  uniforms.uAttractionStrength.value = controls.attractionStrength;
+  uniforms.uVelocityDamping.value = controls.velocityDamping;
+  uniforms.uCenterSuppressionInner.value = radius * controls.centerSuppressionInner;
+  uniforms.uCenterSuppressionOuter.value = radius * controls.centerSuppressionOuter;
+  uniforms.uStructureMin.value = controls.structureMin;
+  uniforms.uStructureMax.value = controls.structureMax;
 
   return {
     uniforms: {
@@ -69,15 +78,21 @@ export function applyParticleControls(tslState, controls) {
       particleSpeed: uniforms.uParticleSpeed.value,
       particleSize: uniforms.uParticleSize.value,
       threshold: uniforms.uThreshold.value,
-      distanceThreshold: uniforms.uDistanceThreshold.value,
       surfaceControl: uniforms.uSurfaceControl.value,
-      particleMovementType: uniforms.uParticleMovementType.value,
       idleLogoIntensity: uniforms.uIdleLogoIntensity.value,
       idleLogoAlpha: uniforms.uIdleLogoAlpha.value,
       idleLogoSize: uniforms.uIdleLogoSize.value,
       flowFieldStrength: uniforms.uFlowFieldStrength.value,
       flowFieldFrequency: uniforms.uFlowFieldFrequency.value,
-      flowFieldInfluence: uniforms.uFlowFieldInfluence.value,
+      flowMix: uniforms.uFlowMix.value,
+      attractionStrength: uniforms.uAttractionStrength.value,
+      velocityDamping: uniforms.uVelocityDamping.value,
+      centerSuppressionInner: controls.centerSuppressionInner,
+      centerSuppressionOuter: controls.centerSuppressionOuter,
+      centerSuppressionInnerRadius: uniforms.uCenterSuppressionInner.value,
+      centerSuppressionOuterRadius: uniforms.uCenterSuppressionOuter.value,
+      structureMin: uniforms.uStructureMin.value,
+      structureMax: uniforms.uStructureMax.value,
     },
   };
 }

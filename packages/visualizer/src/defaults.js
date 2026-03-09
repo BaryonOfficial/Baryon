@@ -14,6 +14,13 @@ export const SIMULATION_DEFAULTS = Object.freeze({
   flowFieldFrequency: 0.64,
   particleSpeed: 32,
   distanceThreshold: 0.5,
+  attractionStrength: 18,
+  velocityDamping: 0.9,
+  flowMix: 0.04,
+  centerSuppressionInner: 0.12,
+  centerSuppressionOuter: 0.45,
+  structureMin: 0.08,
+  structureMax: 0.4,
 });
 
 export const RENDER_DEFAULTS = Object.freeze({

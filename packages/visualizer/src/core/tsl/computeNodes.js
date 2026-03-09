@@ -1,7 +1,21 @@
 import {
-  Fn, instanceIndex, float, vec3, vec4, If, Loop,
-  abs, length, normalize, mix, smoothstep, clamp, sin,
-  select, mx_noise_float,
+  Fn,
+  If,
+  Loop,
+  abs,
+  clamp,
+  cos,
+  float,
+  instanceIndex,
+  length,
+  mix,
+  mx_noise_float,
+  normalize,
+  select,
+  sin,
+  smoothstep,
+  vec3,
+  vec4,
 } from 'three/tsl';
 import { FIELD_STATE_VALUES } from './uniforms.js';
 
@@ -13,6 +27,7 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     scalarFieldBuffer,
     zeroPointsBuffer,
     particlesBuffer,
+    velocityBuffer,
   } = buffers;
   const {
     uTime,
@@ -20,18 +35,23 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     uRadius,
     uThreshold,
     uSurfaceThreshold,
-    uFlowFieldInfluence,
     uFlowFieldStrength,
     uFlowFieldFrequency,
+    uFlowMix,
     uParticleSpeed,
-    uDistanceThreshold,
+    uAttractionStrength,
+    uVelocityDamping,
+    uCenterSuppressionInner,
+    uCenterSuppressionOuter,
+    uStructureMin,
+    uStructureMax,
     uActiveModeCount,
     uSurfaceControl,
-    uParticleMovementType,
     uFieldState,
     uIdleLogoSize,
   } = uniforms;
   const PI = float(Math.PI);
+  const EPSILON = float(0.0001);
 
   const scalarFieldCompute = Fn(() => {
     const base = basePositionBuffer.element(instanceIndex);
@@ -58,44 +78,69 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
 
   const zeroPointsCompute = Fn(() => {
     const scalarVal = scalarFieldBuffer.element(instanceIndex);
-    const baryonVal = baryonBuffer.element(instanceIndex);
-    const prevZero = zeroPointsBuffer.element(instanceIndex);
-    const scaledBaryonPos = baryonVal.xyz.mul(uIdleLogoSize);
-    const useBaryon = uFieldState.equal(FIELD_STATE_VALUES.idle);
+    const pos = scalarVal.xyz;
+    const field = scalarVal.w;
+    const fieldAbs = abs(field);
+    const invR = float(1.0).div(uRadius);
+    const gradX = float(0.0).toVar();
+    const gradY = float(0.0).toVar();
+    const gradZ = float(0.0).toVar();
 
-    If(useBaryon, () => {
-      zeroPointsBuffer.element(instanceIndex).assign(vec4(scaledBaryonPos, float(1.0)));
+    Loop(capacity, ({ i }) => {
+      const w = modeBuffer.element(i);
+      const Ai = w.w;
+      const ui = w.x;
+      const vi = w.y;
+      const wi = w.z;
+      const sx = sin(ui.mul(PI).mul(pos.x).mul(invR));
+      const sy = sin(vi.mul(PI).mul(pos.y).mul(invR));
+      const sz = sin(wi.mul(PI).mul(pos.z).mul(invR));
+      const gx = cos(ui.mul(PI).mul(pos.x).mul(invR)).mul(ui.mul(PI).mul(invR));
+      const gy = cos(vi.mul(PI).mul(pos.y).mul(invR)).mul(vi.mul(PI).mul(invR));
+      const gz = cos(wi.mul(PI).mul(pos.z).mul(invR)).mul(wi.mul(PI).mul(invR));
+      gradX.addAssign(Ai.mul(gx).mul(sy).mul(sz));
+      gradY.addAssign(Ai.mul(sx).mul(gy).mul(sz));
+      gradZ.addAssign(Ai.mul(sx).mul(sy).mul(gz));
+    });
+
+    const gradient = vec3(gradX, gradY, gradZ);
+    const gradientMagnitude = length(gradient);
+    const radialDist = length(pos);
+    const nodeBand = float(1.0).sub(smoothstep(float(0.0), uThreshold, fieldAbs));
+    const structure = smoothstep(uStructureMin, uStructureMax, gradientMagnitude);
+    const centerSuppression = smoothstep(
+      uCenterSuppressionInner,
+      uCenterSuppressionOuter,
+      radialDist
+    );
+    const isOnSurface = abs(radialDist.sub(uRadius)).lessThanEqual(uSurfaceThreshold);
+    const groupTag = select(
+      isOnSurface.and(uSurfaceControl.equal(1)),
+      float(1.0),
+      float(2.0)
+    );
+    const potential = nodeBand.mul(structure).mul(centerSuppression);
+
+    If(uFieldState.equal(FIELD_STATE_VALUES.idle).or(uActiveModeCount.lessThanEqual(0)), () => {
+      zeroPointsBuffer.element(instanceIndex).assign(vec4(float(0.0), float(1.0), float(0.0), float(0.0)));
     }).Else(() => {
-      If(uActiveModeCount.lessThanEqual(0), () => {
-        zeroPointsBuffer.element(instanceIndex).assign(prevZero);
-      }).Else(() => {
-        const pos = scalarVal.xyz;
-        const chladni = scalarVal.w;
-        const dist = length(pos);
-        If(dist.greaterThan(uRadius.mul(0.12)).and(abs(chladni).lessThan(uThreshold)), () => {
-          const isOnSurface = abs(dist.sub(uRadius)).lessThanEqual(uSurfaceThreshold);
-          const groupTag = select(isOnSurface, float(1.0), float(2.0));
-          If(isOnSurface.and(uSurfaceControl.equal(0)), () => {
-            zeroPointsBuffer.element(instanceIndex).assign(prevZero);
-          }).Else(() => {
-            zeroPointsBuffer.element(instanceIndex).assign(vec4(pos, groupTag));
-          });
-        }).Else(() => {
-          zeroPointsBuffer.element(instanceIndex).assign(prevZero);
-        });
-      });
+      zeroPointsBuffer.element(instanceIndex).assign(
+        vec4(potential, groupTag, fieldAbs, gradientMagnitude)
+      );
     });
   })().compute(count);
 
   const particlesCompute = Fn(() => {
     const oldParticle = particlesBuffer.element(instanceIndex);
     const oldPos = oldParticle.xyz;
-    const zeroPoint = zeroPointsBuffer.element(instanceIndex);
+    const oldVelocity = velocityBuffer.element(instanceIndex).xyz;
+    const baseSample = basePositionBuffer.element(instanceIndex).xyz;
+    const baseSampleMeta = zeroPointsBuffer.element(instanceIndex);
     const baryonPos = baryonBuffer.element(instanceIndex).xyz.mul(uIdleLogoSize);
-    const target = select(uFieldState.greaterThan(FIELD_STATE_VALUES.idle), zeroPoint.xyz, baryonPos);
-    const toTarget = target.sub(oldPos);
-    const dist = length(toTarget);
-    const dir = toTarget.div(dist.add(0.0001));
+    const radialDist = length(oldPos);
+    const fieldDriven = uFieldState
+      .greaterThan(FIELD_STATE_VALUES.idle)
+      .and(uActiveModeCount.greaterThan(float(0.0)));
 
     const freq = uFlowFieldFrequency;
     const nPos = oldPos.mul(freq);
@@ -104,38 +149,110 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     const nz = mx_noise_float(vec3(nPos.x.add(2.0), nPos.y, nPos.z.add(uTime)));
     const flowField = normalize(vec3(nx, ny, nz));
 
-    const rawStrength = mx_noise_float(vec3(target.mul(0.2).add(vec3(0.0, 0.0, uTime.add(1.0)))));
-    const influence = uFlowFieldInfluence.sub(0.5).mul(-2.0);
-    const strength = smoothstep(influence, float(1.0), rawStrength);
-    const flowBlend = select(
-      uFieldState.greaterThan(FIELD_STATE_VALUES.idle),
-      clamp(dist.div(uDistanceThreshold.add(0.0001)), float(0.0), float(1.0)),
-      float(0.0)
+    const invR = float(1.0).div(uRadius);
+    const field = float(0.0).toVar();
+    const gradX = float(0.0).toVar();
+    const gradY = float(0.0).toVar();
+    const gradZ = float(0.0).toVar();
+
+    Loop(capacity, ({ i }) => {
+      const w = modeBuffer.element(i);
+      const Ai = w.w;
+      const ui = w.x;
+      const vi = w.y;
+      const wi = w.z;
+      const sx = sin(ui.mul(PI).mul(oldPos.x).mul(invR));
+      const sy = sin(vi.mul(PI).mul(oldPos.y).mul(invR));
+      const sz = sin(wi.mul(PI).mul(oldPos.z).mul(invR));
+      const gx = cos(ui.mul(PI).mul(oldPos.x).mul(invR)).mul(ui.mul(PI).mul(invR));
+      const gy = cos(vi.mul(PI).mul(oldPos.y).mul(invR)).mul(vi.mul(PI).mul(invR));
+      const gz = cos(wi.mul(PI).mul(oldPos.z).mul(invR)).mul(wi.mul(PI).mul(invR));
+      field.addAssign(Ai.mul(sx).mul(sy).mul(sz));
+      gradX.addAssign(Ai.mul(gx).mul(sy).mul(sz));
+      gradY.addAssign(Ai.mul(sx).mul(gy).mul(sz));
+      gradZ.addAssign(Ai.mul(sx).mul(sy).mul(gz));
+    });
+
+    const gradient = vec3(gradX, gradY, gradZ);
+    const gradientMagnitude = length(gradient);
+    const fieldAbs = abs(field);
+    const nodeBand = float(1.0).sub(smoothstep(float(0.0), uThreshold, fieldAbs));
+    const structure = smoothstep(uStructureMin, uStructureMax, gradientMagnitude);
+    const centerSuppression = smoothstep(
+      uCenterSuppressionInner,
+      uCenterSuppressionOuter,
+      radialDist
+    );
+    const potential = nodeBand.mul(structure).mul(centerSuppression);
+    const signScale = select(field.greaterThanEqual(float(0.0)), float(-1.0), float(1.0));
+    const gradientDir = normalize(gradient.add(vec3(EPSILON, EPSILON, EPSILON)));
+    const radialDir = normalize(oldPos.add(vec3(EPSILON, EPSILON, EPSILON)));
+    const toAnchor = baseSample.sub(oldPos);
+    const anchorDistance = length(toAnchor);
+    const anchorDir = normalize(toAnchor.add(vec3(EPSILON, EPSILON, EPSILON)));
+    const anchorPotential = baseSampleMeta.x;
+    const attractionStrength = clamp(
+      fieldAbs.div(uThreshold.mul(4.0).add(EPSILON)),
+      float(0.0),
+      float(1.0)
+    )
+      .mul(structure)
+      .mul(centerSuppression)
+      .mul(uAttractionStrength);
+    const attraction = gradientDir.mul(signScale).mul(attractionStrength);
+    const anchorStrength = smoothstep(float(0.0), uRadius.mul(0.35), anchorDistance)
+      .mul(anchorPotential)
+      .mul(uAttractionStrength.mul(float(0.8)));
+    const anchorAttraction = anchorDir.mul(anchorStrength);
+    const centerEscapeStrength = float(1.0)
+      .sub(centerSuppression)
+      .mul(float(1.0).sub(nodeBand.mul(structure)))
+      .mul(uAttractionStrength.mul(float(0.35)));
+    const centerEscape = radialDir.mul(centerEscapeStrength);
+    const flowStrength = uFlowFieldStrength
+      .mul(uFlowMix)
+      .mul(float(1.0).sub(potential))
+      .mul(float(1.0).sub(anchorPotential.mul(float(0.85))));
+    const flow = flowField.mul(flowStrength);
+
+    const activeVelocity = oldVelocity
+      .mul(uVelocityDamping)
+      .add(attraction.mul(uDeltaTime))
+      .add(anchorAttraction.mul(uDeltaTime))
+      .add(centerEscape.mul(uDeltaTime))
+      .add(flow.mul(uDeltaTime));
+    const activeVelocityLength = length(activeVelocity);
+    const clampedActiveVelocity = select(
+      activeVelocityLength.greaterThan(float(2.0)),
+      normalize(activeVelocity).mul(float(2.0)),
+      activeVelocity
+    );
+    const activePos = oldPos.add(clampedActiveVelocity.mul(uParticleSpeed).mul(uDeltaTime));
+
+    const idleToLogo = baryonPos.sub(oldPos);
+    const idleAlpha = clamp(uParticleSpeed.mul(uDeltaTime).mul(0.08), float(0.0), float(0.08));
+    const idlePos = mix(oldPos, baryonPos, idleAlpha);
+    const idleVelocity = oldVelocity.mul(float(0.6)).add(idleToLogo.mul(idleAlpha.mul(0.25)));
+
+    const nextPos = select(fieldDriven, activePos, idlePos);
+    const nextVelocity = select(fieldDriven, clampedActiveVelocity, idleVelocity);
+    const pLen = length(nextPos);
+    const finalPos = select(pLen.greaterThan(uRadius), normalize(nextPos).mul(uRadius), nextPos);
+    const finalVelocity = select(
+      pLen.greaterThan(uRadius),
+      nextVelocity.mul(float(0.5)),
+      nextVelocity
+    );
+    const finalRadius = length(finalPos);
+    const isOnSurface = abs(finalRadius.sub(uRadius)).lessThanEqual(uSurfaceThreshold);
+    const groupTag = select(
+      fieldDriven.and(isOnSurface).and(uSurfaceControl.equal(1)),
+      float(1.0),
+      select(fieldDriven, float(2.0), float(1.0))
     );
 
-    const adjustedDir = dir.add(flowField.mul(strength).mul(flowBlend));
-    const movement = adjustedDir.mul(uDeltaTime).mul(uFlowFieldStrength);
-
-    const lerpMovement = vec3(0.0).toVar();
-    const timeFactor = clamp(uParticleSpeed.mul(uDeltaTime), float(0.0), float(1.0));
-    const distanceFactor = smoothstep(float(0.0), uDistanceThreshold.add(float(1.0)), dist);
-    const alpha = timeFactor.toVar();
-    If(uFieldState.greaterThan(FIELD_STATE_VALUES.idle).and(uParticleMovementType.equal(1)), () => {
-      alpha.assign(mix(timeFactor.mul(0.35), float(1.0), distanceFactor));
-    }).Else(() => {
-      alpha.assign(timeFactor.mul(0.12));
-    });
-    const damping = float(1.0).sub(dist.mul(-5.0).exp());
-    alpha.mulAssign(damping);
-
-    const interpolated = mix(oldPos, target, alpha);
-    lerpMovement.assign(interpolated.sub(oldPos));
-
-    const newPos = oldPos.add(movement).add(lerpMovement);
-    const pLen = length(newPos);
-    const finalPos = select(pLen.greaterThan(uRadius), normalize(newPos).mul(uRadius), newPos);
-
-    particlesBuffer.element(instanceIndex).assign(vec4(finalPos, zeroPoint.w));
+    particlesBuffer.element(instanceIndex).assign(vec4(finalPos, groupTag));
+    velocityBuffer.element(instanceIndex).assign(vec4(finalVelocity, potential));
   })().compute(count);
 
   return {

@@ -14,14 +14,22 @@ export function createTSLUniforms(parameters) {
     uRadius: uniform(parameters.radius),
     uThreshold: uniform(parameters.threshold),
     uSurfaceThreshold: uniform(parameters.surfaceThreshold),
-    uFlowFieldInfluence: uniform(SIMULATION_DEFAULTS.flowFieldInfluence),
     uFlowFieldStrength: uniform(SIMULATION_DEFAULTS.flowFieldStrength),
     uFlowFieldFrequency: uniform(SIMULATION_DEFAULTS.flowFieldFrequency),
     uParticleSpeed: uniform(SIMULATION_DEFAULTS.particleSpeed),
-    uDistanceThreshold: uniform(SIMULATION_DEFAULTS.distanceThreshold),
+    uAttractionStrength: uniform(SIMULATION_DEFAULTS.attractionStrength),
+    uVelocityDamping: uniform(SIMULATION_DEFAULTS.velocityDamping),
+    uFlowMix: uniform(SIMULATION_DEFAULTS.flowMix),
+    uCenterSuppressionInner: uniform(
+      parameters.radius * SIMULATION_DEFAULTS.centerSuppressionInner
+    ),
+    uCenterSuppressionOuter: uniform(
+      parameters.radius * SIMULATION_DEFAULTS.centerSuppressionOuter
+    ),
+    uStructureMin: uniform(SIMULATION_DEFAULTS.structureMin),
+    uStructureMax: uniform(SIMULATION_DEFAULTS.structureMax),
     uActiveModeCount: uniform(0),
     uSurfaceControl: uniform(1),
-    uParticleMovementType: uniform(1),
     uIdleLogoIntensity: uniform(RENDER_DEFAULTS.idleLogoIntensity),
     uIdleLogoAlpha: uniform(RENDER_DEFAULTS.idleLogoAlpha),
     uIdleLogoSize: uniform(RENDER_DEFAULTS.idleLogoSize),

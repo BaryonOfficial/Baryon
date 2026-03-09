@@ -69,14 +69,16 @@ export default function ParticleDebugOverlay() {
       <div>Modes: {particleDebug.activeModeCount ?? snapshot.modeSlotCount ?? 0}</div>
       <div>Pitch: {snapshot.pitchSource ?? "none"}</div>
       <div>Analysis: {snapshot.analysisSourceUsed ?? "none"}</div>
-      <div>Occupancy: {formatNumber(particleDebug.zeroPointOccupancy)}</div>
-      <div>Retained: {particleDebug.retainedZeroPointCount ?? 0}</div>
+      <div>Field Occupancy: {formatNumber(particleDebug.fieldPopulationRatio)}</div>
+      <div>High Potential: {formatNumber(particleDebug.highPotentialOccupancy)}</div>
       <div>Center Particles: {formatNumber(particleDebug.centerParticleOccupancy)}</div>
-      <div>Center Targets: {formatNumber(particleDebug.centerTargetOccupancy)}</div>
-      <div>Center Valid Nodes: {formatNumber(particleDebug.centerValidZeroPointOccupancy)}</div>
-      <div>Flow Move: {formatNumber(particleDebug.avgFlowMovement)}</div>
-      <div>Target Move: {formatNumber(particleDebug.avgLerpMovement)}</div>
-      <div>Flow/Lerp: {formatNumber(particleDebug.flowToLerpRatio, 2)}</div>
+      <div>Center Potential: {formatNumber(particleDebug.centerPotentialOccupancy)}</div>
+      <div>Attraction: {formatNumber(particleDebug.avgAttractionContribution)}</div>
+      <div>Anchor: {formatNumber(particleDebug.avgAnchorContribution)}</div>
+      <div>Core Lift: {formatNumber(particleDebug.avgCenterEscapeContribution)}</div>
+      <div>Flow: {formatNumber(particleDebug.avgFlowContribution)}</div>
+      <div>A/F Ratio: {formatNumber(particleDebug.attractionToFlowRatio, 2)}</div>
+      <div>Continuity: {particleDebug.continuityMode}</div>
       <div>Reset: {particleDebug.resetReason}</div>
     </aside>
   );

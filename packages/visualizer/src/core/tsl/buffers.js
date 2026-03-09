@@ -90,13 +90,19 @@ export function createTSLBuffers(baryonGeometry, parameters, audioConfig) {
 
   const initialParticlePositions = initializeParticlesInSphere(count, parameters.radius);
   const particlesBuffer = attributeArray(count, 'vec4');
+  const velocityBuffer = attributeArray(count, 'vec4');
   for (let i = 0; i < count; i++) {
     particlesBuffer.value.array[i * 4] = initialParticlePositions[i * 3];
     particlesBuffer.value.array[i * 4 + 1] = initialParticlePositions[i * 3 + 1];
     particlesBuffer.value.array[i * 4 + 2] = initialParticlePositions[i * 3 + 2];
     particlesBuffer.value.array[i * 4 + 3] = 0.0;
+    velocityBuffer.value.array[i * 4] = 0.0;
+    velocityBuffer.value.array[i * 4 + 1] = 0.0;
+    velocityBuffer.value.array[i * 4 + 2] = 0.0;
+    velocityBuffer.value.array[i * 4 + 3] = 0.0;
   }
   particlesBuffer.value.needsUpdate = true;
+  velocityBuffer.value.needsUpdate = true;
 
   return {
     count,
@@ -111,5 +117,6 @@ export function createTSLBuffers(baryonGeometry, parameters, audioConfig) {
     zeroPointsBuffer,
     initialParticlePositions,
     particlesBuffer,
+    velocityBuffer,
   };
 }

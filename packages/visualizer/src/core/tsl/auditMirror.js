@@ -4,7 +4,7 @@ export function createAuditState(basePositions, initialParticlePositions, baryon
   const sampleCount = Math.min(256, Math.max(32, Math.floor(basePositions.length / 3000)));
   const sampleIndices = new Uint32Array(sampleCount);
   const shadowParticles = new Float32Array(sampleCount * 3);
-  const retainedTargets = new Float32Array(sampleCount * 4);
+  const shadowVelocities = new Float32Array(sampleCount * 3);
   const sampleBaryon = new Float32Array(sampleCount * 3);
   const stride = Math.max(1, Math.floor(basePositions.length / 3 / sampleCount));
 
@@ -14,10 +14,6 @@ export function createAuditState(basePositions, initialParticlePositions, baryon
     shadowParticles[i * 3] = initialParticlePositions[index * 3];
     shadowParticles[i * 3 + 1] = initialParticlePositions[index * 3 + 1];
     shadowParticles[i * 3 + 2] = initialParticlePositions[index * 3 + 2];
-    retainedTargets[i * 4] = basePositions[index * 3];
-    retainedTargets[i * 4 + 1] = basePositions[index * 3 + 1];
-    retainedTargets[i * 4 + 2] = basePositions[index * 3 + 2];
-    retainedTargets[i * 4 + 3] = 2;
     sampleBaryon[i * 3] = baryonPositions[index * 4];
     sampleBaryon[i * 3 + 1] = baryonPositions[index * 4 + 1];
     sampleBaryon[i * 3 + 2] = baryonPositions[index * 4 + 2];
@@ -27,7 +23,7 @@ export function createAuditState(basePositions, initialParticlePositions, baryon
     frame: 0,
     sampleIndices,
     shadowParticles,
-    retainedTargets,
+    shadowVelocities,
     sampleBaryon,
     lastSnapshot: null,
   };
@@ -42,25 +38,29 @@ export function updateAuditSnapshot(tslState, featureFrame, deltaTime, lifecycle
   const {
     sampleIndices,
     shadowParticles,
-    retainedTargets,
+    shadowVelocities,
     sampleBaryon,
   } = auditState;
   const snapshot = computeParticleDebugMetrics({
     sampleIndices,
     basePositions: tslState.basePositions,
     shadowParticles,
-    retainedTargets,
+    shadowVelocities,
     sampleBaryon,
     modeSlots: featureFrame.modeSlots,
     radius: tslState.uniforms.uRadius.value,
     threshold: tslState.uniforms.uThreshold.value,
     surfaceThreshold: tslState.uniforms.uSurfaceThreshold.value,
-    flowInfluence: tslState.uniforms.uFlowFieldInfluence.value,
     flowStrength: tslState.uniforms.uFlowFieldStrength.value,
     flowFrequency: tslState.uniforms.uFlowFieldFrequency.value,
+    flowMix: tslState.uniforms.uFlowMix.value,
     particleSpeed: tslState.uniforms.uParticleSpeed.value,
-    distanceThreshold: tslState.uniforms.uDistanceThreshold.value,
-    movementType: tslState.uniforms.uParticleMovementType.value,
+    attractionStrength: tslState.uniforms.uAttractionStrength.value,
+    velocityDamping: tslState.uniforms.uVelocityDamping.value,
+    centerSuppressionInner: tslState.uniforms.uCenterSuppressionInner.value,
+    centerSuppressionOuter: tslState.uniforms.uCenterSuppressionOuter.value,
+    structureMin: tslState.uniforms.uStructureMin.value,
+    structureMax: tslState.uniforms.uStructureMax.value,
     surfaceControl: tslState.uniforms.uSurfaceControl.value,
     idleScale: tslState.uniforms.uIdleLogoSize.value,
     activeModeCount: tslState.uniforms.uActiveModeCount.value,

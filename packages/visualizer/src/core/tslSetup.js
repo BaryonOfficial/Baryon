@@ -32,6 +32,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     modeBuffer: buffers.modeBuffer,
     fftBuffer: buffers.fftBuffer,
     particlesBuffer: buffers.particlesBuffer,
+    velocityBuffer: buffers.velocityBuffer,
     zeroPointsBuffer: buffers.zeroPointsBuffer,
     basePositions: buffers.basePositions,
     baseThreshold: parameters.threshold,

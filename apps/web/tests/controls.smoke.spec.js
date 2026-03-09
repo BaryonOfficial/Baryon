@@ -39,16 +39,16 @@ test.describe("Baryon control smoke", () => {
           fieldState: window.__baryonAuditSnapshot?.particleDebug?.fieldState ?? null,
           centerParticleOccupancy:
             window.__baryonAuditSnapshot?.particleDebug?.centerParticleOccupancy ?? null,
-          centerTargetOccupancy:
-            window.__baryonAuditSnapshot?.particleDebug?.centerTargetOccupancy ?? null,
-          resetReason: window.__baryonAuditSnapshot?.particleDebug?.resetReason ?? null,
+          centerPotentialOccupancy:
+            window.__baryonAuditSnapshot?.particleDebug?.centerPotentialOccupancy ?? null,
+          continuityMode: window.__baryonAuditSnapshot?.particleDebug?.continuityMode ?? null,
         }))
       )
       .toEqual({
         fieldState: expect.any(String),
         centerParticleOccupancy: expect.any(Number),
-        centerTargetOccupancy: expect.any(Number),
-        resetReason: expect.any(String),
+        centerPotentialOccupancy: expect.any(Number),
+        continuityMode: expect.any(String),
       });
 
     await setControl(page, "injectTestTone", true);
@@ -99,6 +99,15 @@ test.describe("Baryon control smoke", () => {
         )
       )
       .toBe(0.042);
+
+    await setControl(page, "attractionStrength", 19.2);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControlState?.particle?.uniforms?.attractionStrength ?? null
+        )
+      )
+      .toBe(19.2);
 
     await setControl(page, "injectTestTone", false);
   });
