@@ -1,9 +1,7 @@
 // Core
 export {
   createAudioSession,
-  createAudioContext,
   getDefaultAudioSession,
-  getDefaultAudioContext,
   attachAudio,
   loadAudio,
   playPauseAudio,
@@ -14,11 +12,9 @@ export {
   getIsAudioLoaded,
   getAnalysisState,
   getStatus,
-  getTimingState,
   readClockSnapshot,
   readAnalysisSnapshot,
   disposeAudio,
-  disposeAnalysis,
 } from './core/audio/audioSetup.js';
 export { setupTSL, tickTSL, disposeTSL } from './core/tslSetup.js';
 export {

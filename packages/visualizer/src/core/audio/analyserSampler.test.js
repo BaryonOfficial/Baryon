@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { computeRms, sampleAnalyser } from "./analyserSampler.js";
+import {
+  computeRms,
+  createAnalyserReader,
+  sampleAnalyser,
+} from "./analyserSampler.js";
 
 function createAnalyserHarness() {
   return {
@@ -32,6 +36,26 @@ describe("analyser sampler", () => {
 
   it("returns null when no analyser is available", () => {
     expect(sampleAnalyser(null)).toBeNull();
+  });
+
+  it("builds a reusable analyser reader around a shared node", () => {
+    const analyserNode = {
+      fftSize: 4,
+      frequencyBinCount: 4,
+      getFloatTimeDomainData(data) {
+        data.set([0.25, 0.25, 0.25, 0.25]);
+      },
+    };
+
+    const analyser = createAnalyserReader(analyserNode, (data) => {
+      data.set([0, 64, 128, 255]);
+      return data;
+    });
+    const snapshot = sampleAnalyser(analyser);
+
+    expect(snapshot.avgAmplitude).toBeCloseTo((0 + 64 + 128 + 255) / 4);
+    expect(snapshot.fftMagnitudes[1]).toBeCloseTo(64 / 255);
+    expect(snapshot.rms).toBeCloseTo(0.25);
   });
 
   it("computes rms defensively for empty input", () => {

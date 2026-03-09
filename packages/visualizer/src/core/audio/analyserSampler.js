@@ -26,6 +26,34 @@ export function computeRms(timeData) {
   return Math.sqrt(sum / timeData.length);
 }
 
+export function createAnalyserReader(analyserNode, readFrequencyData) {
+  const data = new Uint8Array(analyserNode.frequencyBinCount);
+
+  return {
+    analyser: analyserNode,
+    getFrequencyData() {
+      return readFrequencyData(data);
+    },
+    getAverageFrequency() {
+      const spectrum = readFrequencyData(data);
+      let total = 0;
+      for (let i = 0; i < spectrum.length; i++) total += spectrum[i];
+      return spectrum.length ? total / spectrum.length : 0;
+    },
+  };
+}
+
+export function createNodeAnalyser(audioCtx, sourceNode, fftSize) {
+  const analyserNode = audioCtx.createAnalyser();
+  analyserNode.fftSize = fftSize;
+  sourceNode.connect(analyserNode);
+
+  return createAnalyserReader(analyserNode, (data) => {
+    analyserNode.getByteFrequencyData(data);
+    return data;
+  });
+}
+
 export function sampleAnalyser(analyser) {
   const analyserNode = analyser?.analyser;
   if (!analyserNode) return null;
