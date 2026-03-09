@@ -69,7 +69,7 @@ Current renderer requirements:
 
 Audio/browser constraints:
 
-- The visualizer uses Web Audio API analyzers plus a worker-based pitch/modal estimator
+- The visualizer uses Web Audio API analyzers plus a CPU-side spectral modal estimator
 - Microphone support and some browser audio features require secure context behavior
 - `pnpm dev` works on localhost
 - use `cd apps/web && pnpm dev:https` when testing across devices or when browser security policies require HTTPS
@@ -81,7 +81,7 @@ Audio/browser constraints:
 ```text
 Audio Input (file or mic)
   -> Web Audio API + active-source analyser
-  -> worker pitch service + spectral modal estimation on CPU
+  -> spectral peak-to-mode estimation on CPU
   -> AudioFeatureFrame
   -> visualization runtime (currently particle)
   -> TSL compute pipeline
@@ -119,6 +119,13 @@ The particle runtime is composed from modules in `packages/visualizer/src/core/t
 
 `packages/visualizer/src/core/tslSetup.js` is now a thin compatibility/composition layer over those modules.
 
+Current runtime behavior:
+
+- `scalarFieldCompute` samples a modal standing-wave field over the fixed sphere domain
+- `zeroPointsCompute` writes nodal metadata per sample: potential, render group tag, field magnitude, and gradient magnitude
+- `particlesCompute` is velocity-based and field-driven; it uses local field attraction, anchor pull toward each particle's base sample, subordinate flow, damping, and idle-logo fallback
+- the old worker/fallback pitch path is gone; the main seam is now spectral analysis -> `AudioFeatureFrame` -> field-driven particle motion
+
 ### Audio pipeline
 
 Core audio lifecycle lives in:
@@ -132,9 +139,9 @@ Feature building lives in:
 Important behavior:
 
 - file and mic are single-source modes
-- worker-based pitch is primary
-- fallback detection exists but is secondary / incomplete
-- modal estimation can use spectral paths for dense/polyphonic material
+- live analysis is spectral-only
+- test tone injection exists for diagnostics
+- modal estimation currently maps a small set of spectral peaks into mode slots each frame
 
 ## React / App Structure
 

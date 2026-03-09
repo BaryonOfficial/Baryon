@@ -46,7 +46,7 @@ Baryon is a 3D audio visualizer built with React Three Fiber + Three.js WebGPU. 
 ```
 Audio Input (file / mic)
   → Web Audio API + active-source analyser (FFT + time domain)
-  → Worker pitch service + spectral modal estimation on CPU
+  → Spectral modal estimation on CPU
   → AudioFeatureFrame (fieldState, modeSlots, fftMagnitudes, averageAmplitude)
   → Visualization runtime (currently particle/TSL)
   → TSL compute pipeline (3 sequential compute stages)
@@ -86,12 +86,12 @@ There is no user-facing visualization-method switch yet. Internally, the default
 The compute stages are:
 
 1. **scalarField** — Computes the 3D standing-wave scalar field from the current `modeSlots`
-2. **zeroPoints** — Extracts/retains target nodal positions or logo targets depending on `fieldState`
-3. **particles** — Moves particles toward targets with controlled flow/noise
+2. **zeroPoints** — Computes nodal metadata per sample (`potential`, render `groupTag`, `fieldAbs`, `gradientMagnitude`)
+3. **particles** — Updates particle velocity/position from field attraction, anchor pull, damping, subordinate flow, and idle-logo fallback
 
 Particle debugging/diagnostics are now centered around:
 - `packages/visualizer/src/core/tsl/debugMetrics.js` — pure CPU-side helpers for scalar-field sampling and particle-debug metrics
-- richer audit snapshots with explicit center-clump diagnostics
+- richer audit snapshots around field occupancy, attraction/flow balance, and center behavior
 - lifecycle flags for mode-slot changes and reset reasons
 
 Key functions exported from `@baryon/visualizer`:
@@ -106,11 +106,10 @@ Key functions exported from `@baryon/visualizer`:
 - File and mic are single-source modes; the visualizer should have one active audio source at a time
 - File playback uses `THREE.Audio` + `AudioAnalyser`
 - Mic input uses `getUserMedia` + native analyser
-- Pitch extraction is worker-based; fallback detection is secondary and intentionally incomplete
+- Live analysis is spectral-only; worker and fallback pitch detection have been removed
 - `audio.getState()` — returns live state object used by `createTimeHandler(getState)`
 - `packages/visualizer/src/utils/audio/` contains the feature-building pipeline:
   - `analyserState.js`
-  - `pitchFallback.js`
   - `modalStack.js`
   - `modalResolvers.js`
   - `fieldState.js`
@@ -122,6 +121,11 @@ Key functions exported from `@baryon/visualizer`:
 - `fftMagnitudes`
 - `averageAmplitude`
 - debug/audit metadata
+
+Current modal behavior:
+- live audio resolves a small set of spectral peaks each frame
+- those peaks are mapped to `(u, v, w, amplitude)` mode slots on the CPU
+- test-tone injection uses the same `AudioFeatureFrame` seam for diagnostics
 
 ### React Layer
 
@@ -182,12 +186,10 @@ Important particle-debug keys now include:
 - `fieldState`
 - `activeModeCount`
 - `zeroPointOccupancy`
-- `retainedZeroPointCount`
 - `avgFlowMovement`
 - `avgLerpMovement`
 - `centerParticleOccupancy`
-- `centerTargetOccupancy`
-- `centerValidZeroPointOccupancy`
+- `centerPotentialOccupancy`
 - `resetTriggered`
 - `resetReason`
 
