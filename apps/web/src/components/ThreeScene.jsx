@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { WebGPURenderer } from "three/webgpu";
 import { BaryonScene } from "./BaryonScene";
 import AudioControls from "./AudioControls";
+import ParticleDebugOverlay from "./ParticleDebugOverlay.jsx";
 import UnsupportedWarning from "./UnsupportedWarning.jsx";
 import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
 import { useAudio } from "../context/AudioContext";
@@ -60,6 +61,7 @@ const ThreeScene = () => {
       </Canvas>
 
       {!isUnsupported && <AudioControls />}
+      <ParticleDebugOverlay />
 
       {isUnsupported && <UnsupportedWarning />}
     </div>

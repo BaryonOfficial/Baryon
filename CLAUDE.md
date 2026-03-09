@@ -89,6 +89,11 @@ The compute stages are:
 2. **zeroPoints** — Extracts/retains target nodal positions or logo targets depending on `fieldState`
 3. **particles** — Moves particles toward targets with controlled flow/noise
 
+Particle debugging/diagnostics are now centered around:
+- `packages/visualizer/src/core/tsl/debugMetrics.js` — pure CPU-side helpers for scalar-field sampling and particle-debug metrics
+- richer audit snapshots with explicit center-clump diagnostics
+- lifecycle flags for mode-slot changes and reset reasons
+
 Key functions exported from `@baryon/visualizer`:
 - `setupTSL(baryonGeometry, parameters, audioConfig)` — initializes TSL state
 - `tickTSL(renderer, tslState, featureFrame, time, deltaTime)` — per-frame compute update
@@ -158,6 +163,33 @@ Rules:
 - Dev-only control inspection is exposed on `window.__baryonControlState` for future browser smoke tests.
 - Dev-only control mutation is exposed on `window.__baryonControls` for browser smoke tests.
 - The inspection snapshot is method-aware and includes the current internal visualization method.
+- `window.__baryonAuditSnapshot` is the developer-facing particle/audio debug contract. Keep it stable when possible.
+
+### Developer Diagnostics
+
+- `apps/web/src/components/ParticleDebugOverlay.jsx` is a dev-only HUD for particle debugging.
+- The overlay is intended to explain failures like:
+  - empty field / no pattern
+  - white sphere / all-valid targets
+  - center clump / bright origin ball
+- The particle debug snapshot should answer:
+  - whether a modal field is populated
+  - whether particles are mostly following valid targets or retained targets
+  - whether flow is dominating target-directed motion
+  - whether too many particles/targets are concentrating near the origin
+
+Important particle-debug keys now include:
+- `fieldState`
+- `activeModeCount`
+- `zeroPointOccupancy`
+- `retainedZeroPointCount`
+- `avgFlowMovement`
+- `avgLerpMovement`
+- `centerParticleOccupancy`
+- `centerTargetOccupancy`
+- `centerValidZeroPointOccupancy`
+- `resetTriggered`
+- `resetReason`
 
 ### Key Configuration
 
@@ -181,7 +213,8 @@ Rules:
   - shared control/runtime helpers
   - particle runtime behavior
   - future method-aware scaffolding
-- browser smoke for critical control wiring
+- CPU-side particle debug metrics and audit mirror behavior
+- browser smoke for critical control wiring and debug-snapshot contracts
 - Browser-level checks are secondary.
 
 ### Commit Convention

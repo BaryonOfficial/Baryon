@@ -31,6 +31,41 @@ test.describe("Baryon control smoke", () => {
       )
       .toBe("particle");
 
+    await setControl(page, "auditEnabled", true);
+    await expect(page.getByTestId("particle-debug-overlay")).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          fieldState: window.__baryonAuditSnapshot?.particleDebug?.fieldState ?? null,
+          centerParticleOccupancy:
+            window.__baryonAuditSnapshot?.particleDebug?.centerParticleOccupancy ?? null,
+          centerTargetOccupancy:
+            window.__baryonAuditSnapshot?.particleDebug?.centerTargetOccupancy ?? null,
+          resetReason: window.__baryonAuditSnapshot?.particleDebug?.resetReason ?? null,
+        }))
+      )
+      .toEqual({
+        fieldState: expect.any(String),
+        centerParticleOccupancy: expect.any(Number),
+        centerTargetOccupancy: expect.any(Number),
+        resetReason: expect.any(String),
+      });
+
+    await setControl(page, "injectTestTone", true);
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          fieldState: window.__baryonAuditSnapshot?.particleDebug?.fieldState ?? null,
+          pitchSource: window.__baryonAuditSnapshot?.pitchSource ?? null,
+          modeSlotCount: window.__baryonAuditSnapshot?.modeSlotCount ?? 0,
+        }))
+      )
+      .toEqual({
+        fieldState: "test",
+        pitchSource: "test",
+        modeSlotCount: expect.any(Number),
+      });
+
     await setControl(page, "particleSize", 0.123);
     await expect
       .poll(() =>
@@ -64,5 +99,7 @@ test.describe("Baryon control smoke", () => {
         )
       )
       .toBe(0.042);
+
+    await setControl(page, "injectTestTone", false);
   });
 });

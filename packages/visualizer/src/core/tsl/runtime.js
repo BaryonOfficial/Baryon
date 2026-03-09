@@ -62,16 +62,18 @@ export function tickTSLRuntime(renderer, tslState, featureFrame, time, deltaTime
     uniforms.uAverageAmplitude.value = 0;
   }
 
-  const auditSnapshot = updateAuditSnapshot(tslState, featureFrame, deltaTime);
-  tslState.debugSnapshot = featureFrame?.debug
-    ? { ...featureFrame.debug, ...auditSnapshot }
-    : auditSnapshot;
-
   const modeSlotsChanged = fieldDriven && featureFrame
     ? didModeSlotsChange(featureFrame.modeSlots, tslState.prevModeSlots)
     : false;
+  const resetTriggered =
+    (fieldDriven && tslState.prevFieldState === 'idle') || modeSlotsChanged;
+  const resetReason = !resetTriggered
+    ? 'none'
+    : tslState.prevFieldState === 'idle'
+      ? 'idle-to-active'
+      : 'mode-change';
 
-  if ((fieldDriven && tslState.prevFieldState === 'idle') || modeSlotsChanged) {
+  if (resetTriggered) {
     const arr = zeroPointsBuffer.value.array;
     const particleArr = particlesBuffer.value.array;
     const particleCount = basePositions ? basePositions.length / 3 : particleArr.length / 4;
@@ -97,6 +99,15 @@ export function tickTSLRuntime(renderer, tslState, featureFrame, time, deltaTime
       }
     }
   }
+
+  const auditSnapshot = updateAuditSnapshot(tslState, featureFrame, deltaTime, {
+    modeSlotsChanged,
+    resetTriggered,
+    resetReason,
+  });
+  tslState.debugSnapshot = featureFrame?.debug
+    ? { ...featureFrame.debug, particleDebug: auditSnapshot, ...auditSnapshot }
+    : auditSnapshot;
 
   if (featureFrame?.modeSlots) {
     tslState.prevModeSlots.fill(0);
