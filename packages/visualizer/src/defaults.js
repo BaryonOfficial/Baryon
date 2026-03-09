@@ -41,7 +41,6 @@ export const AUDIT_DEFAULTS = Object.freeze({
   auditEnabled: false,
   freezeModeSlots: false,
   injectTestTone: false,
-  pitchSourceMode: "auto",
   testToneHz: 440,
   testToneAmplitude: 0.5,
   logEveryFrames: 30,

@@ -8,7 +8,6 @@ export {
   startMicRecordStream,
   stopMicRecordStream,
   startAudioProcessing,
-  setPitchSourceMode,
   setAudioInputMode,
   setAudioEndedCallback,
   processAudioData,

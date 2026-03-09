@@ -346,24 +346,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     status: CONTROL_STATUSES.debugOnly,
   },
   {
-    key: "pitchSourceMode",
-    folder: "Audit",
-    label: "Pitch Source",
-    defaultValue: AUDIT_DEFAULTS.pitchSourceMode,
-    methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
-    binding: {
-      options: {
-        Auto: "auto",
-        Worker: "worker",
-        Fallback: "fallback",
-      },
-    },
-    targetType: CONTROL_TARGET_TYPES.audit,
-    handler: CONTROL_HANDLERS.audit,
-    runtimePath: "featureState.audit.settings.pitchSourceMode",
-    status: CONTROL_STATUSES.debugOnly,
-  },
-  {
     key: "testToneHz",
     folder: "Audit",
     label: "Tone Hz",

@@ -172,7 +172,6 @@ describe("control runtime sync", () => {
     controls.auditEnabled = true;
     controls.freezeModeSlots = true;
     controls.injectTestTone = true;
-    controls.pitchSourceMode = "worker";
     controls.testToneHz = 660;
     controls.testToneAmplitude = 0.75;
     controls.logEveryFrames = 12;
@@ -183,7 +182,6 @@ describe("control runtime sync", () => {
           enabled: false,
           freezeModeSlots: false,
           injectTestTone: false,
-          pitchSourceMode: "auto",
           testToneHz: 440,
           testToneAmplitude: 0.5,
           logEveryFrames: 30,
@@ -195,7 +193,6 @@ describe("control runtime sync", () => {
     expect(featureState.audit.settings.enabled).toBe(true);
     expect(featureState.audit.settings.freezeModeSlots).toBe(true);
     expect(featureState.audit.settings.injectTestTone).toBe(true);
-    expect(featureState.audit.settings.pitchSourceMode).toBe("worker");
     expect(featureState.audit.settings.testToneHz).toBe(660);
     expect(featureState.audit.settings.testToneAmplitude).toBe(0.75);
     expect(featureState.audit.settings.logEveryFrames).toBe(12);

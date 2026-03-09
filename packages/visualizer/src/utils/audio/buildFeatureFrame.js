@@ -1,7 +1,6 @@
 import { AUDIT_DEFAULTS, AUDIO_DEFAULTS } from '../../defaults.js';
 import { sampleFFTAmplitudeForFrequency } from '../normalModes.js';
 import { getActiveAnalyserState } from './analyserState.js';
-import { detectPitchYIN } from './pitchFallback.js';
 import {
   MAX_STACK_SLOTS,
   createAudioFeatureState,
@@ -18,9 +17,9 @@ import { deriveFieldState } from './fieldState.js';
 import { FIELD_STATES } from './types.js';
 
 const MIN_PEAK_CLARITY = 0.72;
-const MIN_PEAK_AMPLITUDE = 0.03;
 const MIC_SILENCE_AVG_AMPLITUDE = 8;
 const MIC_SILENCE_RMS = 0.018;
+const REQUESTED_PITCH_SOURCE = 'spectral';
 
 export { createAudioFeatureState, FIELD_STATES };
 
@@ -75,12 +74,12 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
       debug: {
         audioInputMode: inputMode,
         pitchSource: 'none',
-        requestedPitchSource: auditSettings.pitchSourceMode,
+        requestedPitchSource: REQUESTED_PITCH_SOURCE,
         analysisEngine: 'none',
         fieldState: FIELD_STATES.idle,
-        workerState: audioState.pitchService?.getPitchState?.(inputMode)?.state ?? 'none',
+        workerState: 'none',
         pitchFrameAge: null,
-        workerStatus: audioState.pitchService?.getStatus?.() ?? null,
+        workerStatus: null,
         fileActive: soundActive,
         micActive,
         analysisSourceUsed: inputMode === 'idle' ? 'none' : inputMode,
@@ -102,7 +101,6 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
 
   let avgAmplitude = analyserState?.avgAmplitude ?? 0;
   let freqData = analyserState?.freqData ?? null;
-  const timeData = analyserState?.timeData ?? null;
   const analyserRms = analyserState?.rms ?? 0;
 
   if (auditSettings.injectTestTone) {
@@ -122,35 +120,6 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
     && avgAmplitude < MIC_SILENCE_AVG_AMPLITUDE
     && analyserRms < MIC_SILENCE_RMS;
 
-  if (
-    inputMode !== 'idle' &&
-    !auditSettings.injectTestTone &&
-    timeData &&
-    audioState.pitchService?.pushFrame &&
-    !micNoiseGateActive
-  ) {
-    audioState.pitchService.pushFrame({
-      source: inputMode,
-      samples: timeData,
-      sampleRate,
-      timestamp: performance.now(),
-    });
-  }
-
-  const workerPitchState = inputMode !== 'idle'
-    ? audioState.pitchService?.getPitchState?.(inputMode) ?? { state: 'none' }
-    : { state: 'none' };
-  const workerPitch = inputMode !== 'idle'
-    ? audioState.pitchService?.getLatestPitch?.(inputMode) ?? null
-    : null;
-  const workerStatus = audioState.pitchService?.getStatus?.() ?? null;
-  const fallbackFrame = detectPitchYIN(timeData, sampleRate);
-  const requestedPitchSource = auditSettings.pitchSourceMode ?? 'auto';
-
-  const fallbackPeak = fallbackFrame && fallbackFrame.amplitude > MIN_PEAK_AMPLITUDE && fallbackFrame.clarity > MIN_PEAK_CLARITY
-    ? fallbackFrame
-    : null;
-
   let selectedFrequency = 0;
   let selectedConfidence = 0;
   let analysisEngine = 'none';
@@ -163,26 +132,7 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
     selectedConfidence = 1;
     analysisEngine = 'test';
     pitchSource = 'test';
-  } else if (requestedPitchSource === 'worker') {
-    if (workerPitch) {
-      selectedFrequency = workerPitch.frequency;
-      selectedConfidence = workerPitch.confidence ?? 1;
-      analysisEngine = 'worker';
-      pitchSource = 'worker';
-    }
-  } else if (requestedPitchSource === 'fallback') {
-    if (fallbackPeak) {
-      selectedFrequency = fallbackPeak.frequency;
-      selectedConfidence = fallbackPeak.clarity;
-      analysisEngine = 'fallback';
-      pitchSource = 'fallback';
-    }
-  } else if (workerPitch) {
-    selectedFrequency = workerPitch.frequency;
-    selectedConfidence = workerPitch.confidence ?? 1;
-    analysisEngine = 'worker';
-    pitchSource = 'worker';
-  } else if (requestedPitchSource === 'auto' && !micNoiseGateActive) {
+  } else if (!micNoiseGateActive) {
     const spectralStack = buildModalSlotsFromSpectralPeaks({
       fftMagnitudes: freqData,
       sampleRate,
@@ -203,11 +153,6 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
       analysisEngine = 'spectral';
       pitchSource = 'spectral';
     }
-  } else if (fallbackPeak) {
-    selectedFrequency = fallbackPeak.frequency;
-    selectedConfidence = fallbackPeak.clarity;
-    analysisEngine = 'fallback';
-    pitchSource = 'fallback';
   }
 
   if (selectedFrequency > 0 && selectedConfidence >= MIN_PEAK_CLARITY) {
@@ -231,18 +176,9 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
   } else if (analysisEngine === 'spectral') {
     // Spectral stack already committed above.
   } else if (
-    requestedPitchSource !== 'fallback' &&
-    workerPitchState.state === 'grace' &&
+    inputMode !== 'idle' &&
     !micNoiseGateActive &&
     modalStackState.analysisEngine !== 'none'
-  ) {
-    decayModalStack(modalStackState);
-    usedDecay = true;
-  } else if (
-    requestedPitchSource === 'worker' &&
-    workerPitchState.state === 'grace' &&
-    !micNoiseGateActive &&
-    modalStackState.analysisEngine === 'worker'
   ) {
     decayModalStack(modalStackState);
     usedDecay = true;
@@ -296,12 +232,12 @@ export function buildAudioFeatureFrame(audioState, featureState, radius) {
   const debug = {
     audioInputMode: inputMode,
     pitchSource,
-    requestedPitchSource,
+    requestedPitchSource: REQUESTED_PITCH_SOURCE,
     analysisEngine,
     fieldState,
-    workerState: workerPitchState.state,
-    pitchFrameAge: workerPitch?.ageMs ?? null,
-    workerStatus,
+    workerState: 'none',
+    pitchFrameAge: null,
+    workerStatus: null,
     fileActive: soundActive,
     micActive,
     micNoiseGateActive,

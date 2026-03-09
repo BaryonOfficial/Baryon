@@ -39,7 +39,6 @@ const EXPECTED_CONTROL_KEYS = [
   "auditEnabled",
   "freezeModeSlots",
   "injectTestTone",
-  "pitchSourceMode",
   "testToneHz",
   "testToneAmplitude",
   "logEveryFrames",

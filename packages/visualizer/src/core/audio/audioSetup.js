@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { AUDIO_DEFAULTS } from '../../defaults.js';
-import { createPitchService } from './pitchService.js';
 
 function createMicAnalyser(audioCtx, sourceNode, fftSize) {
   const analyserNode = audioCtx.createAnalyser();
@@ -26,13 +25,6 @@ function createMicAnalyser(audioCtx, sourceNode, fftSize) {
 
 function normalizeAudioInputMode(mode) {
   return mode === 'file' || mode === 'mic' ? mode : 'idle';
-}
-
-function normalizePitchSourceMode(mode) {
-  if (mode === 'worker' || mode === 'fallback') {
-    return mode;
-  }
-  return 'auto';
 }
 
 function stopActiveFilePlayback(state) {
@@ -62,7 +54,6 @@ function createDefaultAudioContextBindings(instance) {
     startMicRecordStream: (deviceId) => instance.startMicRecordStream(deviceId),
     stopMicRecordStream: () => instance.stopMicRecordStream(),
     startAudioProcessing: (cb) => instance.startAudioProcessing(cb),
-    setPitchSourceMode: (mode) => instance.setPitchSourceMode(mode),
     setAudioInputMode: (mode) => instance.setAudioInputMode(mode),
     setAudioEndedCallback: (cb) => instance.setAudioEndedCallback(cb),
     processAudioData: () => instance.processAudioData(),
@@ -80,7 +71,7 @@ export function createAudioContext() {
   const state = {
     fftSize: 4096,
     capacity: AUDIO_DEFAULTS.capacity,
-    pitchSourceMode: 'auto',
+    pitchSourceMode: 'spectral',
     audioInputMode: 'idle',
     audioCtx: null,
     listener: null,
@@ -89,38 +80,23 @@ export function createAudioContext() {
     micAnalyser: null,
     micNode: null,
     gumStream: null,
-    pitchService: null,
     audioLoader: new THREE.AudioLoader(),
   };
 
   let isAudioLoaded = false;
 
-  function ensurePitchService() {
-    if (!state.pitchService && state.audioCtx) {
-      state.pitchService = createPitchService({
-        sampleRate: state.audioCtx.sampleRate,
-      });
-      state.pitchService.setMode('idle');
-    }
-  }
-
   function setAudioInputMode(mode) {
     const nextMode = normalizeAudioInputMode(mode);
     state.audioInputMode = nextMode;
-    ensurePitchService();
-    state.pitchService?.setMode(nextMode);
   }
 
-  function disposeAnalysis() {
-    state.pitchService?.dispose();
-    state.pitchService = null;
-  }
+  function disposeAnalysis() {}
 
   function getAnalysisState() {
     return {
       audioInputMode: state.audioInputMode,
       pitchSourceMode: state.pitchSourceMode,
-      workerStatus: state.pitchService?.getStatus() ?? null,
+      workerStatus: null,
     };
   }
 
@@ -132,7 +108,6 @@ export function createAudioContext() {
     state.sound.started = false;
     state.audioCtx = state.listener.context;
     state.analyser = new THREE.AudioAnalyser(state.sound, state.fftSize);
-    ensurePitchService();
   }
 
   function setAudioEndedCallback(callback) {
@@ -269,12 +244,7 @@ export function createAudioContext() {
   }
 
   function startAudioProcessing(callback) {
-    ensurePitchService();
     if (callback) callback();
-  }
-
-  function setPitchSourceMode(mode) {
-    state.pitchSourceMode = normalizePitchSourceMode(mode);
   }
 
   function processAudioData() {}
@@ -287,7 +257,6 @@ export function createAudioContext() {
     startMicRecordStream,
     stopMicRecordStream,
     startAudioProcessing,
-    setPitchSourceMode,
     setAudioInputMode,
     setAudioEndedCallback,
     processAudioData,
@@ -313,7 +282,6 @@ export const { stopAudio } = defaultBindings;
 export const { startMicRecordStream } = defaultBindings;
 export const { stopMicRecordStream } = defaultBindings;
 export const { startAudioProcessing } = defaultBindings;
-export const { setPitchSourceMode } = defaultBindings;
 export const { setAudioInputMode } = defaultBindings;
 export const { setAudioEndedCallback } = defaultBindings;
 export const { processAudioData } = defaultBindings;

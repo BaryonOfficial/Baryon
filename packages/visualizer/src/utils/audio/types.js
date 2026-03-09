@@ -5,9 +5,9 @@ export { FIELD_STATES } from '../../core/fieldState.js';
  */
 
 /**
- * @typedef {'none' | 'worker' | 'spectral' | 'fallback' | 'test'} PitchSourceKind
+ * @typedef {'none' | 'spectral' | 'test'} PitchSourceKind
  */
 
 /**
- * @typedef {'none' | 'worker' | 'spectral' | 'fallback' | 'test'} AnalysisEngine
+ * @typedef {'none' | 'spectral' | 'test'} AnalysisEngine
  */

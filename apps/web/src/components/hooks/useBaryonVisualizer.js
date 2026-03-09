@@ -33,7 +33,6 @@ export function useBaryonVisualizer({
   const timeHandlerRef = useRef(null);
   const runtimeRef = useRef(createVisualizationRuntime(DEFAULT_VISUALIZATION_METHOD));
   const runtimeStateRef = useRef(null);
-  const lastPitchSourceModeRef = useRef(null);
   const [points, setPoints] = useState(null);
 
   useEffect(() => {
@@ -110,11 +109,6 @@ export function useBaryonVisualizer({
 
     const controls = controlsRef.current;
     const audio = audioRef.current;
-
-    if (lastPitchSourceModeRef.current !== controls.pitchSourceMode) {
-      audio?.setPitchSourceMode?.(controls.pitchSourceMode);
-      lastPitchSourceModeRef.current = controls.pitchSourceMode;
-    }
 
     const bloomSnapshot = applyBloomControls({ ensurePipeline, postNodesRef }, controls);
     const sharedSnapshot = applySharedControls(gl, controls);
