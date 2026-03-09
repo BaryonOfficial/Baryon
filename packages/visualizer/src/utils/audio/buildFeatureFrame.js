@@ -13,12 +13,15 @@ import {
   buildModalSlotsFromSpectralPeaks,
 } from './modalResolvers.js';
 import { deriveFieldState } from './fieldState.js';
+import { AUDIO_ANALYSIS_POLICY } from './policy.js';
 import { FIELD_STATES } from './types.js';
 
-const MIN_PEAK_CLARITY = 0.72;
-const MIC_SILENCE_AVG_AMPLITUDE = 8;
-const MIC_SILENCE_RMS = 0.018;
-const REQUESTED_PITCH_SOURCE = 'spectral';
+const {
+  minPeakClarity: MIN_PEAK_CLARITY,
+  micSilenceAvgAmplitude: MIC_SILENCE_AVG_AMPLITUDE,
+  micSilenceRms: MIC_SILENCE_RMS,
+  requestedPitchSource: REQUESTED_PITCH_SOURCE,
+} = AUDIO_ANALYSIS_POLICY;
 
 export { createAudioFeatureState, FIELD_STATES };
 

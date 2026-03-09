@@ -3,14 +3,15 @@ import {
   sampleFFTAmplitudeForFrequency,
 } from '../normalModes.js';
 import { MAX_STACK_SLOTS, writeSlot } from './modalStack.js';
+import { SPECTRAL_MODAL_POLICY } from './policy.js';
 
-export const HARMONIC_ORDERS = [1, 2, 3, 4];
-const HARMONIC_ATTENUATION = [1.0, 0.72, 0.52, 0.38];
-const HARMONIC_SUPPORT_FLOOR = 0.1;
-const HARMONIC_SUPPORT_RATIO = 0.2;
-const MIN_SPECTRAL_BIN_AMPLITUDE = 0.12;
-const MIN_SPECTRAL_BIN_GAP_HZ = 45;
-const MAX_SPECTRAL_FREQUENCY = 1800;
+export const HARMONIC_ORDERS = SPECTRAL_MODAL_POLICY.harmonicOrders;
+const HARMONIC_ATTENUATION = SPECTRAL_MODAL_POLICY.harmonicAttenuation;
+const HARMONIC_SUPPORT_FLOOR = SPECTRAL_MODAL_POLICY.harmonicSupportFloor;
+const HARMONIC_SUPPORT_RATIO = SPECTRAL_MODAL_POLICY.harmonicSupportRatio;
+const MIN_SPECTRAL_BIN_AMPLITUDE = SPECTRAL_MODAL_POLICY.minSpectralBinAmplitude;
+const MIN_SPECTRAL_BIN_GAP_HZ = SPECTRAL_MODAL_POLICY.minSpectralBinGapHz;
+const MAX_SPECTRAL_FREQUENCY = SPECTRAL_MODAL_POLICY.maxSpectralFrequency;
 
 export function buildModalSlotsFromFundamental({
   frequency,
