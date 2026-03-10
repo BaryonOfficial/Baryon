@@ -109,8 +109,41 @@ select {
   color: rgba(245, 247, 251, 0.72);
 }
 
+.desktop-shell__copy {
+  color: rgba(245, 247, 251, 0.72);
+}
+
 .desktop-shell__list li + li {
   margin-top: 0.75rem;
+}
+
+.desktop-shell__panel--links {
+  grid-column: 1 / -1;
+}
+
+.desktop-shell__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.desktop-shell__links a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #f5f7fb;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.desktop-shell__links a:hover {
+  border-color: rgba(143, 180, 255, 0.5);
+  background: rgba(143, 180, 255, 0.1);
 }
 
 @media (max-width: 900px) {

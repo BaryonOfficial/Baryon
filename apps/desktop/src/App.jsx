@@ -29,6 +29,25 @@ function App() {
           <li>Layer the actual desktop product UI on top of this shell instead of reviving old web code.</li>
         </ul>
       </section>
+
+      <section className="desktop-shell__panel desktop-shell__panel--links">
+        <h2>Source And License</h2>
+        <p className="desktop-shell__copy">
+          Distributed builds should make the repo and licensing terms easy to verify.
+        </p>
+        <div className="desktop-shell__links">
+          <a href="https://github.com/BaryonOfficial/Baryon" target="_blank" rel="noreferrer">
+            Source
+          </a>
+          <a
+            href="https://github.com/BaryonOfficial/Baryon/blob/main/LICENSING.md"
+            target="_blank"
+            rel="noreferrer"
+          >
+            License
+          </a>
+        </div>
+      </section>
     </main>
   );
 }

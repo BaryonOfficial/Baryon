@@ -2,6 +2,7 @@
   "name": "@baryon/visualizer",
   "version": "0.0.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
     "lint": "eslint src --report-unused-disable-directives --max-warnings 0",

@@ -2,6 +2,11 @@
   "name": "baryon-monorepo",
   "private": true,
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BaryonOfficial/Baryon.git"
+  },
   "scripts": {
     "dev": "turbo dev --filter=@baryon/web",
     "dev:desktop": "turbo dev --filter=@baryon/desktop",

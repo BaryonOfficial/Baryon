@@ -19,6 +19,28 @@ packages/
 
 `apps/web` and `apps/desktop` both consume `@baryon/visualizer`. Static runtime assets such as `public/glb/` remain app-local because they are loaded by URL at runtime.
 
+## Licensing
+
+Baryon source code in this repository is licensed as `AGPL-3.0-only`. The canonical license text
+is in `LICENSE`.
+
+If you can comply with the AGPL, you can use Baryon under that license. If you need proprietary
+embedding, closed-source distribution, OEM or white-label rights, or client redistribution and
+delivery rights, use the Baryon Commercial License instead.
+
+Public licensing references:
+
+- `LICENSE`
+- `LICENSE-COMMERCIAL`
+- `LICENSING.md`
+
+Public commercial offer:
+
+- Open Source: `AGPL-3.0-only`, free for compliant use
+- Commercial Single Product: `$2,500/year`
+- OEM / Agency: starting at `$12,000/year`
+- Enterprise Custom: quote only
+
 ## Prerequisites
 
 - Node.js 18+

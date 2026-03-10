@@ -43,3 +43,7 @@ repomix*
 
 # Turbo cache
 .turbo/
+
+# Playwright artifacts
+test-results/
+playwright-report/
