@@ -51,12 +51,27 @@ Useful package/app-local commands:
 
 ```bash
 cd apps/web && pnpm dev:https    # HTTPS dev server for mic / SharedArrayBuffer work
+cd apps/web && pnpm build        # Build the production web bundle into dist/
+cd apps/web && pnpm preview      # Serve the built dist/ output locally
 cd apps/web && pnpm lint
 cd apps/web && pnpm typecheck
 cd apps/web && pnpm test:smoke
 
 cd packages/visualizer && pnpm test
 cd packages/visualizer && pnpm typecheck
+```
+
+To preview the production web build from the repo root:
+
+```bash
+pnpm build:web
+pnpm --filter @baryon/web preview
+```
+
+Optional fixed host/port:
+
+```bash
+pnpm --filter @baryon/web preview -- --host 127.0.0.1 --port 4174
 ```
 
 ## Runtime Requirements

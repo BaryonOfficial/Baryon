@@ -17,6 +17,7 @@ import {
   RENDER_DEFAULTS,
   SIMULATION_DEFAULTS,
 } from "@baryon/visualizer";
+import { DEVTOOLS_ENABLED } from "../../devtools/config.js";
 
 export function useBaryonVisualizer({
   camera,
@@ -88,6 +89,10 @@ export function useBaryonVisualizer({
       if (runtimeStateRef.current) {
         runtime.dispose(runtimeStateRef.current);
       }
+      if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
+        delete window.__baryonAuditSnapshot;
+        delete window.__baryonControlState;
+      }
     };
   }, [camera, gl, setIsAudioLoaded, setIsPlaying]);
 
@@ -126,14 +131,14 @@ export function useBaryonVisualizer({
       deltaTime,
     });
 
-    if (typeof window !== "undefined") {
+    if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
       window.__baryonAuditSnapshot = {
         visualizationMethod: runtimeRef.current.method,
         ...runtimeState.debugSnapshot,
       };
     }
 
-    if (controls.auditEnabled && runtimeState.debugSnapshot) {
+    if (DEVTOOLS_ENABLED && controls.auditEnabled && runtimeState.debugSnapshot) {
       const frame = featureState.audit?.frame ?? 0;
       const interval = Math.max(1, Math.floor(controls.logEveryFrames));
       if (frame % interval === 0) {
@@ -150,7 +155,7 @@ export function useBaryonVisualizer({
       deltaTime
     );
 
-    if (typeof window !== "undefined" && import.meta.env.DEV) {
+    if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
       window.__baryonControlState = buildControlInspectionSnapshot({
         method: runtimeRef.current.method,
         shared: sharedSnapshot,

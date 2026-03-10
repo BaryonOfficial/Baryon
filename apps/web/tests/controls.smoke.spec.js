@@ -1,3 +1,4 @@
+import process from "node:process";
 import { expect, test } from "@playwright/test";
 
 async function waitForControlSurface(page) {
@@ -16,6 +17,11 @@ async function setControl(page, key, value) {
 }
 
 test.describe("Baryon control smoke", () => {
+  test.skip(
+    process.env.BARYON_BUILD_MODE === "production",
+    "Control smoke runs only against dev-mode builds."
+  );
+
   test("updates critical runtime values through the live control surface", async ({
     page,
     browserName,

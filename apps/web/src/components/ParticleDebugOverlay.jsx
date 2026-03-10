@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DEVTOOLS_ENABLED } from "../devtools/config.js";
 
 function formatNumber(value, digits = 3) {
   if (typeof value !== "number" || Number.isNaN(value)) return "n/a";
@@ -17,7 +18,7 @@ export default function ParticleDebugOverlay() {
   });
 
   useEffect(() => {
-    if (!import.meta.env.DEV || typeof window === "undefined") {
+    if (!DEVTOOLS_ENABLED || typeof window === "undefined") {
       return undefined;
     }
 
@@ -32,7 +33,7 @@ export default function ParticleDebugOverlay() {
     return () => window.clearInterval(id);
   }, []);
 
-  if (!import.meta.env.DEV || !overlayState.enabled || !overlayState.snapshot) {
+  if (!DEVTOOLS_ENABLED || !overlayState.enabled || !overlayState.snapshot) {
     return null;
   }
 
