@@ -10,31 +10,19 @@
     "beforeBuildCommand": "pnpm build:vite"
   },
   "app": {
-    "security": {
-      "headers": {
-        "Cross-Origin-Opener-Policy": "same-origin",
-        "Cross-Origin-Embedder-Policy": "require-corp"
-      }
-    },
     "windows": [
       {
         "title": "Baryon",
-        "width": 1200,
-        "height": 800,
+        "label": "main",
+        "width": 1280,
+        "height": 860,
         "resizable": true,
         "fullscreen": false
       }
     ]
   },
   "bundle": {
-    "active": true,
-    "targets": "all",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ]
+    "active": false,
+    "targets": "all"
   }
 }

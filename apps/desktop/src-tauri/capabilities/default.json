@@ -3,8 +3,5 @@
   "identifier": "default",
   "description": "Default Baryon desktop capabilities",
   "windows": ["main"],
-  "permissions": [
-    "core:default",
-    "opener:default"
-  ]
+  "permissions": ["core:default"]
 }

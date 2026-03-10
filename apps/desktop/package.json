@@ -11,29 +11,14 @@
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
-    "@baryon/visualizer": "workspace:*",
-    "@baryon/ui": "workspace:*",
-    "essentia.js": "^0.1.3",
-    "lil-gui": "^0.20.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "tailwind-merge": "^3.0.0",
-    "tailwindcss-animate": "^1.0.7",
-    "three": "^0.183.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@baryon/config": "workspace:*",
-    "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/cli": "^2.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@types/three": "^0.183.0",
     "@vitejs/plugin-react-swc": "^3.7.2",
-    "@tailwindcss/vite": "^4.0.0",
-    "cross-env": "^7.0.3",
-    "tailwindcss": "^4.0.0",
-    "vite": "^6.0.11",
-    "vite-plugin-glsl": "^1.3.1",
-    "vite-plugin-top-level-await": "^1.4.4"
+    "vite": "^6.0.11"
   }
 }
