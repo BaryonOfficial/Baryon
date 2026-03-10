@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Baryon",
+  "version": "0.0.0",
+  "identifier": "com.baryon.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeDevCommand": "pnpm dev:vite",
+    "beforeBuildCommand": "pnpm build:vite"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Baryon",
+        "label": "main",
+        "width": 1280,
+        "height": 860,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all"
+  }
+}

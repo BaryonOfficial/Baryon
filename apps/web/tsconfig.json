@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "*": ["src/*"]
+    },
+    "typeRoots": ["./src/types", "../../node_modules/@types"]
+  },
+  "include": ["src/**/*.js", "src/**/*.jsx", "src/**/*.d.ts", "vite.config.js"],
+  "exclude": ["node_modules", "dist", "build", "**/*.glsl"]
+}
