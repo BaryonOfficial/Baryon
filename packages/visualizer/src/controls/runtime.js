@@ -1,6 +1,16 @@
 import * as THREE from "three";
 import { CONTROL_HANDLERS } from "./schema.js";
+import { RENDER_DEFAULTS } from "../defaults.js";
 import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
+
+const IDLE_LOGO_ALPHA_RATIO =
+  RENDER_DEFAULTS.idleLogoIntensity > 0
+    ? RENDER_DEFAULTS.idleLogoAlpha / RENDER_DEFAULTS.idleLogoIntensity
+    : 1;
+
+function deriveIdleLogoAlpha(intensity) {
+  return Math.min(1, intensity * IDLE_LOGO_ALPHA_RATIO);
+}
 
 export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
   [CONTROL_HANDLERS.shared]: Object.freeze(["backgroundColor"]),
@@ -21,7 +31,6 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "structureMax",
     "surfaceParticles",
     "idleLogoIntensity",
-    "idleLogoAlpha",
     "idleLogoSize",
   ]),
   [CONTROL_HANDLERS.bloom]: Object.freeze([
@@ -51,6 +60,7 @@ export function applySharedControls(gl, controls) {
 export function applyParticleControls(tslState, controls) {
   const uniforms = tslState.uniforms;
   const radius = uniforms.uRadius.value;
+  const idleLogoAlpha = deriveIdleLogoAlpha(controls.idleLogoIntensity);
   uniforms.uColor.value.set(controls.volumeColor);
   uniforms.uSurfaceColor.value.set(controls.surfaceColor);
   uniforms.uParticleSpeed.value = controls.particleSpeed;
@@ -58,7 +68,7 @@ export function applyParticleControls(tslState, controls) {
   uniforms.uThreshold.value = controls.zeroPointPrecision;
   uniforms.uSurfaceControl.value = controls.surfaceParticles ? 1 : 0;
   uniforms.uIdleLogoIntensity.value = controls.idleLogoIntensity;
-  uniforms.uIdleLogoAlpha.value = controls.idleLogoAlpha;
+  uniforms.uIdleLogoAlpha.value = idleLogoAlpha;
   uniforms.uIdleLogoSize.value = controls.idleLogoSize;
   uniforms.uFlowFieldStrength.value = controls.flowFieldStrength;
   uniforms.uFlowFieldFrequency.value = controls.flowFieldFrequency;
@@ -79,7 +89,7 @@ export function applyParticleControls(tslState, controls) {
       threshold: uniforms.uThreshold.value,
       surfaceControl: uniforms.uSurfaceControl.value,
       idleLogoIntensity: uniforms.uIdleLogoIntensity.value,
-      idleLogoAlpha: uniforms.uIdleLogoAlpha.value,
+      idleLogoAlpha,
       idleLogoSize: uniforms.uIdleLogoSize.value,
       flowFieldStrength: uniforms.uFlowFieldStrength.value,
       flowFieldFrequency: uniforms.uFlowFieldFrequency.value,

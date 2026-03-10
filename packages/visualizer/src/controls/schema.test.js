@@ -34,7 +34,6 @@ const EXPECTED_CONTROL_KEYS = [
   "structureMax",
   "surfaceParticles",
   "idleLogoIntensity",
-  "idleLogoAlpha",
   "idleLogoSize",
   "auditEnabled",
   "freezeModeSlots",

@@ -57,7 +57,6 @@ describe("control runtime sync", () => {
     controls.particleSize = 0.123;
     controls.particleSpeed = 55;
     controls.idleLogoIntensity = 0.42;
-    controls.idleLogoAlpha = 0.35;
     controls.zeroPointPrecision = 0.033;
     controls.surfaceParticles = false;
     controls.idleLogoSize = 1.4;
@@ -80,7 +79,7 @@ describe("control runtime sync", () => {
     expect(tslState.uniforms.uThreshold.value).toBe(0.033);
     expect(tslState.uniforms.uSurfaceControl.value).toBe(0);
     expect(tslState.uniforms.uIdleLogoIntensity.value).toBe(0.42);
-    expect(tslState.uniforms.uIdleLogoAlpha.value).toBe(0.35);
+    expect(tslState.uniforms.uIdleLogoAlpha.value).toBe(0.84);
     expect(tslState.uniforms.uIdleLogoSize.value).toBe(1.4);
     expect(tslState.uniforms.uFlowFieldStrength.value).toBe(4.1);
     expect(tslState.uniforms.uFlowFieldFrequency.value).toBe(0.73);
@@ -93,7 +92,7 @@ describe("control runtime sync", () => {
     expect(tslState.uniforms.uStructureMax.value).toBe(0.48);
     expect(snapshot.uniforms.particleSize).toBe(0.123);
     expect(snapshot.uniforms.idleLogoIntensity).toBe(0.42);
-    expect(snapshot.uniforms.idleLogoAlpha).toBe(0.35);
+    expect(snapshot.uniforms.idleLogoAlpha).toBe(0.84);
     expect(snapshot.uniforms.flowFieldStrength).toBe(4.1);
     expect(snapshot.uniforms.attractionStrength).toBe(17.5);
     expect(snapshot.uniforms.centerSuppressionInner).toBe(0.2);
