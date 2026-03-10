@@ -62,4 +62,35 @@ describe("analyser sampler", () => {
     expect(computeRms(null)).toBe(0);
     expect(computeRms(new Float32Array(0))).toBe(0);
   });
+
+  it("passes through already-normalised float values without dividing by 255", () => {
+    // normaliseSpectrum uses value > 1 as the gate for byte-range data.
+    // Float values in [0, 1] must not be scaled.
+    const floatAnalyser = {
+      analyser: {
+        fftSize: 4,
+        getFloatTimeDomainData(data) {
+          data.set([0, 0, 0, 0]);
+        },
+      },
+      getAverageFrequency() {
+        return 0;
+      },
+      getFrequencyData() {
+        // Return floats all ≤ 1 — should be passed through unchanged
+        return new Float32Array([0, 0.5, 1.0, 0.25]);
+      },
+    };
+
+    const snapshot = sampleAnalyser(floatAnalyser);
+    expect(snapshot.fftMagnitudes[1]).toBeCloseTo(0.5);
+    expect(snapshot.fftMagnitudes[2]).toBeCloseTo(1.0);
+    expect(snapshot.fftMagnitudes[3]).toBeCloseTo(0.25);
+  });
+
+  it("computes rms correctly for a known uniform signal", () => {
+    // RMS of a constant signal k is k
+    const uniform = new Float32Array(8).fill(0.6);
+    expect(computeRms(uniform)).toBeCloseTo(0.6);
+  });
 });

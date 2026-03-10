@@ -248,6 +248,33 @@ describe("control runtime sync", () => {
     expect(typeof runtime.dispose).toBe("function");
   });
 
+  it("scales center suppression controls by 3x before writing to uniforms", () => {
+    // The suppression uniforms operate in a tighter internal range.
+    // The 3x factor is intentional — document it so a future refactor does not silently break it.
+    const controls = createControlState();
+    controls.centerSuppressionInner = 0.1;
+    controls.centerSuppressionOuter = 0.3;
+
+    const { gl, tslState } = createSimulationHarness();
+    applySimulationControls(gl, tslState, controls);
+
+    expect(tslState.uniforms.uCenterSuppressionInner.value).toBeCloseTo(0.3);
+    expect(tslState.uniforms.uCenterSuppressionOuter.value).toBeCloseTo(0.9);
+  });
+
+  it("does not throw when applyBloomControls is called before the pipeline is ready", () => {
+    const controls = createControlState();
+    expect(() =>
+      applyBloomControls(
+        {
+          ensurePipeline: () => null,
+          postNodesRef: { current: null },
+        },
+        controls
+      )
+    ).not.toThrow();
+  });
+
   it("covers every control handler bucket used by the schema", () => {
     expect(Object.keys(CONTROL_RUNTIME_COVERAGE)).toEqual(
       expect.arrayContaining(Object.values(CONTROL_HANDLERS))

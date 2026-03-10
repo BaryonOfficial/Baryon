@@ -110,7 +110,12 @@ export const applySimulationControls = (gl, tslState, controls) => ({
 
 export function applyBloomControls(pipelineState, controls) {
   const pipeline = pipelineState.ensurePipeline();
-  const { sceneColor, bloomPass } = pipelineState.postNodesRef.current;
+  const postNodes = pipelineState.postNodesRef.current;
+  if (!pipeline || !postNodes) {
+    return { enabled: controls.bloomEnabled, strength: controls.bloomStrength, radius: controls.bloomRadius, threshold: controls.bloomThreshold };
+  }
+
+  const { sceneColor, bloomPass } = postNodes;
   bloomPass.strength.value = controls.bloomStrength;
   bloomPass.radius.value = controls.bloomRadius;
   bloomPass.threshold.value = controls.bloomThreshold;

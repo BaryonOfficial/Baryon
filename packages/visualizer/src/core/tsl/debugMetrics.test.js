@@ -183,6 +183,16 @@ describe("particle debug metrics", () => {
     expect(snapshot.avgParticleRadius).toBeGreaterThan(initialRadius);
   });
 
+  it("reports an empty field and no attraction when all mode slots are zero", () => {
+    const snapshot = computeParticleDebugMetrics(
+      createHarness({ modeSlots: new Float32Array(4), activeModeCount: 0 })
+    );
+
+    expect(snapshot.fieldPopulated).toBe(false);
+    expect(snapshot.avgAttractionContribution).toBe(0);
+    expect(snapshot.idleFallbackActive).toBe(true);
+  });
+
   it("reflects continuity lifecycle flags without broad resets", () => {
     const snapshot = computeParticleDebugMetrics({
       ...createHarness(),

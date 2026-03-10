@@ -245,6 +245,38 @@ describe("audio session", () => {
     });
   });
 
+  it("resets to unloaded state after a failed audio load", async () => {
+    const session = createAudioSession();
+    const camera = { add: vi.fn(), remove: vi.fn() };
+    session.attach(camera);
+
+    await expect(session.loadAudio("bad")).rejects.toThrow();
+
+    expect(session.getStatus()).toMatchObject({
+      isAudioLoaded: false,
+      isPlaying: false,
+      audioInputMode: "idle",
+    });
+  });
+
+  it("returns to idle when stopAudio is called while playing", async () => {
+    const session = createAudioSession();
+    const camera = { add: vi.fn(), remove: vi.fn() };
+    session.attach(camera);
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+
+    expect(session.getStatus().isPlaying).toBe(true);
+
+    session.stopAudio();
+
+    expect(session.getStatus()).toMatchObject({
+      isPlaying: false,
+      audioInputMode: "idle",
+      analysisSource: "idle",
+    });
+  });
+
   it("applies the ended callback even when registered before attach", async () => {
     const session = createAudioSession();
     const callback = vi.fn();
