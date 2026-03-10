@@ -16,10 +16,7 @@ import {
   Fn,
 } from 'three/tsl';
 import { PointsNodeMaterial } from 'three/webgpu';
-import { RENDER_DEFAULTS } from '../../defaults.js';
 import { FIELD_STATE_VALUES } from './uniforms.js';
-
-const PARTICLE_SIZE_SCALE = 300;
 
 export function createParticlePoints({ count, particlesBuffer, uniforms }) {
   const {
@@ -61,8 +58,6 @@ export function createParticlePoints({ count, particlesBuffer, uniforms }) {
     depthWrite: false,
     sizeAttenuation: true,
   });
-  // Drive visible point radius through the material's native size property.
-  particleMaterial.size = RENDER_DEFAULTS.particleSize * PARTICLE_SIZE_SCALE;
   particleMaterial.positionNode = particlesBuffer.toAttribute().xyz;
   particleMaterial.colorNode = colorNode;
 
