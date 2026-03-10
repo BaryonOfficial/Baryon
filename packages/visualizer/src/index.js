@@ -29,6 +29,7 @@ export * from './three/loaders/setupLoaders.js';
 // Utils
 export { findFFTPeaks } from './utils/fftPeaks.js';
 export { createAudioFeatureState, buildAudioFeatureFrame } from './utils/audioFeatures.js';
+export { AudioControlsView } from './react/AudioControlsView.jsx';
 export { useSharedAudioLogic } from './react/useSharedAudioLogic.js';
 export {
   CONTROL_DEFINITIONS,

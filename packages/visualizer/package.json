@@ -11,7 +11,8 @@
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./audio": "./src/core/audio/audioSetup.js"
+    "./audio": "./src/core/audio/audioSetup.js",
+    "./styles.css": "./src/styles.css"
   },
   "peerDependencies": {
     "react": "^19.0.0",
