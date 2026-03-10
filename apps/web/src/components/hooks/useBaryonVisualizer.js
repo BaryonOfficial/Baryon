@@ -52,7 +52,10 @@ export function useBaryonVisualizer({
     (async () => {
       try {
         const gltf = await gltfLoader.loadAsync("./glb/Baryon_v2.glb");
-        const instance = gltf.scene.children[0];
+        /** @type {THREE.Mesh} */
+        const instance = /** @type {THREE.Mesh} */ (
+          /** @type {unknown} */ (gltf.scene.children[0])
+        );
         instance.scale.set(0.2, 0.2, 0.2);
         instance.updateMatrix();
         instance.geometry.applyMatrix4(instance.matrix);

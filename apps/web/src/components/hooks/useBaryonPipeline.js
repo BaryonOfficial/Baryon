@@ -21,7 +21,12 @@ export function useBaryonPipeline(gl, scene, camera) {
     const scenePass = pass(scene, camera);
     const sceneColor = scenePass.getTextureNode("output");
     const { strength, radius, threshold } = bloomUniforms.current;
-    const bloomPass = bloom(sceneColor, strength, radius, threshold);
+    const bloomPass = bloom(
+      sceneColor,
+      /** @type {any} */ (strength),
+      /** @type {any} */ (radius),
+      /** @type {any} */ (threshold)
+    );
     const pipeline = new RenderPipeline(gl);
     pipeline.outputNode = sceneColor.add(bloomPass);
     pipelineRef.current = pipeline;

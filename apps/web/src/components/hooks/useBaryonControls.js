@@ -24,6 +24,12 @@ export function useBaryonControls() {
   useEffect(() => {
     const p = controlsRef.current;
     let disposed = false;
+    /** @type {null | (import("tweakpane").Pane & {
+     *   addFolder(params: { title: string; expanded?: boolean }): {
+     *     addBinding(target: object, key: string, options?: Record<string, unknown>): void;
+     *   };
+     *   refresh(): void;
+     * })} */
     let pane = null;
 
     const initPane = async () => {
@@ -32,7 +38,7 @@ export function useBaryonControls() {
         return;
       }
 
-      pane = new Pane({ title: "Baryon", expanded: true });
+      pane = /** @type {typeof pane} */ (new Pane({ title: "Baryon", expanded: true }));
       pane.element.style.position = "fixed";
       pane.element.style.top = "1rem";
       pane.element.style.right = "1rem";
