@@ -40,3 +40,6 @@ repomix*
 
 # pnpm
 .pnpm-store/
+
+# Turbo cache
+.turbo/
