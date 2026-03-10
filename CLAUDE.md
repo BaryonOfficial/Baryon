@@ -50,7 +50,7 @@ Audio Input (file / mic)
   → AudioFeatureFrame (fieldState, modeSlots, fftMagnitudes, averageAmplitude)
   → Visualization runtime (currently particle/TSL)
   → TSL compute pipeline (3 sequential compute stages)
-  → PointsNodeMaterial (TSL colorNode + sizeNode) → RenderPipeline
+  → PointsNodeMaterial (TSL colorNode) → RenderPipeline
   → TSL bloom node → WebGPURenderer
 ```
 
@@ -101,8 +101,8 @@ Key functions exported from `@baryon/visualizer`:
 
 ### Audio Pipeline (`packages/visualizer/src/core/audio/audioSetup.js`)
 
-- `createAudioContext()` factory — returns an audio instance (not a singleton)
-- `getDefaultAudioContext()` — returns shared singleton for backward compat
+- `createAudioSession()` factory — returns an audio instance (not a singleton)
+- `getDefaultAudioSession()` — returns the shared default session for app wiring
 - File and mic are single-source modes; the visualizer should have one active audio source at a time
 - File playback uses `THREE.Audio` + `AudioAnalyser`
 - Mic input uses `getUserMedia` + native analyser

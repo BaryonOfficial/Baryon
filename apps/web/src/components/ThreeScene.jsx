@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
 import { WebGPURenderer } from "three/webgpu";
 import { BaryonScene } from "./BaryonScene";

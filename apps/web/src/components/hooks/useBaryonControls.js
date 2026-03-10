@@ -8,6 +8,16 @@ import {
 } from "@baryon/visualizer";
 import { DEVTOOLS_ENABLED } from "../../devtools/config.js";
 
+function isVisibleControl(definition) {
+  return DEVTOOLS_ENABLED || definition.status !== CONTROL_STATUSES.debugOnly;
+}
+
+function getVisibleControls(folderTitle) {
+  return getControlsForFolder(folderTitle, DEFAULT_VISUALIZATION_METHOD).filter(
+    isVisibleControl
+  );
+}
+
 export function useBaryonControls() {
   const controlsRef = useRef(createControlState());
 
@@ -29,12 +39,7 @@ export function useBaryonControls() {
       pane.element.style.zIndex = "10000";
 
       const visibleFolders = getControlFolders(DEFAULT_VISUALIZATION_METHOD).filter(
-        (folderTitle) =>
-          getControlsForFolder(folderTitle, DEFAULT_VISUALIZATION_METHOD).some(
-            (definition) =>
-              DEVTOOLS_ENABLED ||
-              definition.status !== CONTROL_STATUSES.debugOnly
-          )
+        (folderTitle) => getVisibleControls(folderTitle).length > 0
       );
 
       for (const folderTitle of visibleFolders) {
@@ -43,14 +48,7 @@ export function useBaryonControls() {
           expanded: folderTitle === "Particles",
         });
 
-        for (const definition of getControlsForFolder(
-          folderTitle,
-          DEFAULT_VISUALIZATION_METHOD
-        ).filter(
-          (candidate) =>
-            DEVTOOLS_ENABLED ||
-            candidate.status !== CONTROL_STATUSES.debugOnly
-        )) {
+        for (const definition of getVisibleControls(folderTitle)) {
           folder.addBinding(p, definition.key, {
             label: definition.label,
             ...(definition.binding ?? {}),

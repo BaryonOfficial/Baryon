@@ -94,8 +94,7 @@ export function createAudioSession() {
   };
 
   function setAudioInputMode(mode) {
-    const nextMode = normalizeAudioInputMode(mode);
-    state.audioInputMode = nextMode;
+    state.audioInputMode = normalizeAudioInputMode(mode);
   }
 
   function getStatus() {
@@ -244,41 +243,29 @@ export function createAudioSession() {
     });
   }
 
-  function playPauseAudio() {
-    return new Promise((resolve, reject) => {
-      const run = async () => {
-        try {
-          if (state.sound.isPlaying) {
-            state.sound.pause();
-            setAudioInputMode('idle');
-            resolve(false);
-            return;
-          }
+  async function playPauseAudio() {
+    if (state.sound.isPlaying) {
+      state.sound.pause();
+      setAudioInputMode('idle');
+      return false;
+    }
 
-          if (!isAudioLoaded) {
-            resolve(false);
-            return;
-          }
+    if (!isAudioLoaded) {
+      return false;
+    }
 
-          if (state.gumStream?.active) {
-            stopMicRecordStream();
-          }
+    if (state.gumStream?.active) {
+      stopMicRecordStream();
+    }
 
-          if (state.audioCtx.state === 'suspended') {
-            await state.audioCtx.resume();
-          }
+    if (state.audioCtx.state === 'suspended') {
+      await state.audioCtx.resume();
+    }
 
-          setAudioInputMode('file');
-          state.sound.play();
-          state.sound.started = true;
-          resolve(true);
-        } catch (error) {
-          reject(error);
-        }
-      };
-
-      run();
-    });
+    setAudioInputMode('file');
+    state.sound.play();
+    state.sound.started = true;
+    return true;
   }
 
   function stopAudio() {
@@ -291,36 +278,28 @@ export function createAudioSession() {
     }
   }
 
-  function startMicRecordStream(deviceId) {
-    return new Promise((resolve, reject) => {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        reject(new Error('getUserMedia not supported'));
-        return;
-      }
+  async function startMicRecordStream(deviceId) {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error('getUserMedia not supported');
+    }
 
-      if (state.sound?.isPlaying || state.sound?.started) {
-        stopAudio();
-      }
+    if (state.sound?.isPlaying || state.sound?.started) {
+      stopAudio();
+    }
 
-      const constraints = {
-        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
-      };
+    const constraints = {
+      audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+    };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    state.gumStream = stream;
 
-      navigator.mediaDevices.getUserMedia(constraints)
-        .then(async (stream) => {
-          state.gumStream = stream;
+    if (state.audioCtx.state === 'suspended') {
+      await state.audioCtx.resume();
+    }
 
-          if (state.audioCtx.state === 'suspended') {
-            await state.audioCtx.resume();
-          }
-
-          state.micNode = state.audioCtx.createMediaStreamSource(state.gumStream);
-          state.micAnalyser = createNodeAnalyser(state.audioCtx, state.micNode, state.fftSize);
-          setAudioInputMode('mic');
-          resolve();
-        })
-        .catch(reject);
-    });
+    state.micNode = state.audioCtx.createMediaStreamSource(state.gumStream);
+    state.micAnalyser = createNodeAnalyser(state.audioCtx, state.micNode, state.fftSize);
+    setAudioInputMode('mic');
   }
 
   function stopMicRecordStream() {
