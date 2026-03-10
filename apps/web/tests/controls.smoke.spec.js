@@ -72,15 +72,6 @@ test.describe("Baryon control smoke", () => {
         modeSlotCount: expect.any(Number),
       });
 
-    await setControl(page, "particleSize", 0.123);
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () => window.__baryonControlState?.particle?.uniforms?.particleSize ?? null
-        )
-      )
-      .toBe(0.123);
-
     await setControl(page, "bloomStrength", 0.91);
     await expect
       .poll(() =>

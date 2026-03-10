@@ -18,7 +18,6 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "volumeColor",
     "surfaceColor",
     "particleSpeed",
-    "particleSize",
     "flowFieldStrength",
     "flowFieldFrequency",
     "zeroPointPrecision",
@@ -64,7 +63,6 @@ export function applyParticleControls(tslState, controls) {
   uniforms.uColor.value.set(controls.volumeColor);
   uniforms.uSurfaceColor.value.set(controls.surfaceColor);
   uniforms.uParticleSpeed.value = controls.particleSpeed;
-  uniforms.uParticleSize.value = controls.particleSize;
   uniforms.uThreshold.value = controls.zeroPointPrecision;
   uniforms.uSurfaceControl.value = controls.surfaceParticles ? 1 : 0;
   uniforms.uIdleLogoIntensity.value = controls.idleLogoIntensity;
@@ -85,7 +83,6 @@ export function applyParticleControls(tslState, controls) {
       volumeColor: controls.volumeColor,
       surfaceColor: controls.surfaceColor,
       particleSpeed: uniforms.uParticleSpeed.value,
-      particleSize: uniforms.uParticleSize.value,
       threshold: uniforms.uThreshold.value,
       surfaceControl: uniforms.uSurfaceControl.value,
       idleLogoIntensity: uniforms.uIdleLogoIntensity.value,

@@ -54,7 +54,6 @@ function createSimulationHarness() {
 describe("control runtime sync", () => {
   it("applies simulation controls to TSL uniforms", () => {
     const controls = createControlState();
-    controls.particleSize = 0.123;
     controls.particleSpeed = 55;
     controls.idleLogoIntensity = 0.42;
     controls.zeroPointPrecision = 0.033;
@@ -74,7 +73,6 @@ describe("control runtime sync", () => {
     const snapshot = applySimulationControls(gl, tslState, controls);
 
     expect(gl.setClearColor).toHaveBeenCalledTimes(1);
-    expect(tslState.uniforms.uParticleSize.value).toBe(0.123);
     expect(tslState.uniforms.uParticleSpeed.value).toBe(55);
     expect(tslState.uniforms.uThreshold.value).toBe(0.033);
     expect(tslState.uniforms.uSurfaceControl.value).toBe(0);
@@ -90,7 +88,6 @@ describe("control runtime sync", () => {
     expect(tslState.uniforms.uCenterSuppressionOuter.value).toBeCloseTo(1.65);
     expect(tslState.uniforms.uStructureMin.value).toBe(0.12);
     expect(tslState.uniforms.uStructureMax.value).toBe(0.48);
-    expect(snapshot.uniforms.particleSize).toBe(0.123);
     expect(snapshot.uniforms.idleLogoIntensity).toBe(0.42);
     expect(snapshot.uniforms.idleLogoAlpha).toBe(0.84);
     expect(snapshot.uniforms.flowFieldStrength).toBe(4.1);
@@ -101,7 +98,6 @@ describe("control runtime sync", () => {
   it("applies shared and particle controls through method-aware helpers", () => {
     const controls = createControlState();
     controls.backgroundColor = "#123456";
-    controls.particleSize = 0.25;
 
     const { gl, tslState } = createSimulationHarness();
     const sharedSnapshot = applySharedControls(gl, controls);
@@ -109,7 +105,7 @@ describe("control runtime sync", () => {
 
     expect(gl.setClearColor).toHaveBeenCalledTimes(1);
     expect(sharedSnapshot.backgroundColor).toBe("#123456");
-    expect(particleSnapshot.uniforms.particleSize).toBe(0.25);
+    expect(particleSnapshot.uniforms.particleSpeed).toBe(controls.particleSpeed);
   });
 
   it("applies bloom controls to the pipeline", () => {

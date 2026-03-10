@@ -20,7 +20,6 @@ const EXPECTED_CONTROL_KEYS = [
   "volumeColor",
   "surfaceColor",
   "particleSpeed",
-  "particleSize",
   "rotationSpeed",
   "flowFieldStrength",
   "flowFieldFrequency",
@@ -93,12 +92,12 @@ describe("control schema", () => {
       ...CONTROL_RUNTIME_COVERAGE,
       [CONTROL_HANDLERS.particle]: CONTROL_RUNTIME_COVERAGE[
         CONTROL_HANDLERS.particle
-      ].filter((key) => key !== "particleSize"),
+      ].filter((key) => key !== "particleSpeed"),
     });
 
     expect(report.isValid).toBe(false);
     expect(report.issues).toContain(
-      "Control particleSize is missing runtime coverage"
+      "Control particleSpeed is missing runtime coverage"
     );
   });
 });

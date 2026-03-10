@@ -122,18 +122,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     status: CONTROL_STATUSES.live,
   },
   {
-    key: "particleSize",
-    folder: "Particles",
-    label: "Size",
-    defaultValue: RENDER_DEFAULTS.particleSize,
-    methods: [VISUALIZATION_METHODS.particle],
-    binding: { min: 0.001, max: 0.5, step: 0.001 },
-    targetType: CONTROL_TARGET_TYPES.uniform,
-    handler: CONTROL_HANDLERS.particle,
-    runtimePath: "tsl.uniforms.uParticleSize.value",
-    status: CONTROL_STATUSES.live,
-  },
-  {
     key: "rotationSpeed",
     folder: "Particles",
     label: "Rotation",
