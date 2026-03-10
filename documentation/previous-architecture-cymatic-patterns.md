@@ -86,7 +86,7 @@ The worklet path produced:
 
 - a dominant pitch estimate using Essentia `PredominantPitchMelodia`
 
-The worklet implementation lived in [`public/lib/audio-data-processor.js`](https://github.com/BaryonOfficial/Baryon/blob/main/public/lib/audio-data-processor.js).
+The historical worklet implementation lived in `public/lib/audio-data-processor.js` in the pre-monorepo tree.
 
 ### What the worklet actually extracted
 

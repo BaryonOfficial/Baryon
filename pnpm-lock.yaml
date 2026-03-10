@@ -35,43 +35,13 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@baryon/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
-      '@baryon/visualizer':
-        specifier: workspace:*
-        version: link:../../packages/visualizer
-      essentia.js:
-        specifier: ^0.1.3
-        version: 0.1.3
-      lil-gui:
-        specifier: ^0.20.0
-        version: 0.20.0
       react:
         specifier: ^19.0.0
         version: 19.2.4
       react-dom:
         specifier: ^19.0.0
         version: 19.2.4(react@19.2.4)
-      tailwind-merge:
-        specifier: ^3.0.0
-        version: 3.5.0
-      tailwindcss-animate:
-        specifier: ^1.0.7
-        version: 1.0.7(tailwindcss@4.2.1)
-      three:
-        specifier: ^0.183.0
-        version: 0.183.2
     devDependencies:
-      '@baryon/config':
-        specifier: workspace:*
-        version: link:../../packages/config
-      '@tailwindcss/vite':
-        specifier: ^4.0.0
-        version: 4.2.1(vite@6.4.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1))
-      '@tauri-apps/api':
-        specifier: ^2.0.0
-        version: 2.10.1
       '@tauri-apps/cli':
         specifier: ^2.0.0
         version: 2.10.1
@@ -81,27 +51,12 @@ importers:
       '@types/react-dom':
         specifier: ^19.0.0
         version: 19.2.3(@types/react@19.2.14)
-      '@types/three':
-        specifier: ^0.183.0
-        version: 0.183.1
       '@vitejs/plugin-react-swc':
         specifier: ^3.7.2
         version: 3.11.0(@swc/helpers@0.5.19)(vite@6.4.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1))
-      cross-env:
-        specifier: ^7.0.3
-        version: 7.0.3
-      tailwindcss:
-        specifier: ^4.0.0
-        version: 4.2.1
       vite:
         specifier: ^6.0.11
         version: 6.4.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1)
-      vite-plugin-glsl:
-        specifier: ^1.3.1
-        version: 1.5.5(esbuild@0.25.12)(vite@6.4.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1))
-      vite-plugin-top-level-await:
-        specifier: ^1.4.4
-        version: 1.6.0(@swc/helpers@0.5.19)(rollup@4.59.0)(vite@6.4.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1))
 
   apps/marketing:
     dependencies:
@@ -172,9 +127,6 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
-      essentia.js:
-        specifier: ^0.1.3
-        version: 0.1.3
       libphonenumber-js:
         specifier: ^1.11.18
         version: 1.12.38
@@ -284,9 +236,6 @@ importers:
 
   packages/visualizer:
     dependencies:
-      essentia.js:
-        specifier: ^0.1.3
-        version: 0.1.3
       react:
         specifier: ^19.0.0
         version: 19.2.4
@@ -1161,9 +1110,6 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7
 
-  '@tauri-apps/api@2.10.1':
-    resolution: {integrity: sha512-hKL/jWf293UDSUN09rR69hrToyIXBb8CjGaWC7gfinvnQrBVvnLr08FeFi38gxtugAVyVcTa5/FD/Xnkb1siBw==}
-
   '@tauri-apps/cli-darwin-arm64@2.10.1':
     resolution: {integrity: sha512-Z2OjCXiZ+fbYZy7PmP3WRnOpM9+Fy+oonKDEmUE6MwN4IGaYqgceTjwHucc/kEEYZos5GICve35f7ZiizgqEnQ==}
     engines: {node: '>= 10'}
@@ -1724,9 +1670,6 @@ packages:
     resolution: {integrity: sha512-KmfKL3b6G+RXvP8N1vr3Tq1kL/oCFgn2NYXEtqP8/L3pKapUA4G8cFVaoF3SU323CD4XypR/ffioHmkti6/Tag==}
     engines: {node: '>=4.0'}
 
-  essentia.js@0.1.3:
-    resolution: {integrity: sha512-vVEPgeVMEBLRXbM5o5H5Rgu53EPHu25vyFKYg+flWLzI/nEoegJQez9FKRv8GR/KxIBwm+fXDEFL+MkQeoHaLw==}
-
   estraverse@5.3.0:
     resolution: {integrity: sha512-MMdARuVEQziNTeJD8DgMqmhwR11BRQ/cBP+pLtYdSTnf3MIO8fFeiINEbX36ZdNlfU/7A9f3gUw49B3oQsvwBA==}
     engines: {node: '>=4.0'}
@@ -2149,9 +2092,6 @@ packages:
     resolution: {integrity: sha512-l51N2r93WmGUye3WuFoN5k10zyvrVs0qfKBhyC5ogUQ6Ew6JUSswh78mbSO+IU3nTWsyOArqPCcShdQSadghBQ==}
     engines: {node: '>= 12.0.0'}
 
-  lil-gui@0.20.0:
-    resolution: {integrity: sha512-k7Ipr0ztqslMA2XvM5z5ZaWhxQtnEOwJBfI/hmSuRh6q4iMG9L0boqqrnZSzBR1jzyJ28OMl47l65ILzRe1TdA==}
-
   locate-path@6.0.0:
     resolution: {integrity: sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw==}
     engines: {node: '>=10'}
@@ -2240,10 +2180,6 @@ packages:
   node-exports-info@1.6.0:
     resolution: {integrity: sha512-pyFS63ptit/P5WqUkt+UUfe+4oevH+bFeIiPPdfb0pFeYEu/1ELnJu5l+5EcTKYL5M7zaAa7S8ddywgXypqKCw==}
     engines: {node: '>= 0.4'}
-
-  node-wav@0.0.2:
-    resolution: {integrity: sha512-M6Rm/bbG6De/gKGxOpeOobx/dnGuP0dz40adqx38boqHhlWssBJZgLCPBNtb9NkrmnKYiV04xELq+R6PFOnoLA==}
-    engines: {node: '>=4.4.0'}
 
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
@@ -4010,8 +3946,6 @@ snapshots:
       tailwindcss: 4.2.1
       vite: 6.4.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1)
 
-  '@tauri-apps/api@2.10.1': {}
-
   '@tauri-apps/cli-darwin-arm64@2.10.1':
     optional: true
 
@@ -4735,10 +4669,6 @@ snapshots:
     dependencies:
       estraverse: 5.3.0
 
-  essentia.js@0.1.3:
-    dependencies:
-      node-wav: 0.0.2
-
   estraverse@5.3.0: {}
 
   estree-walker@3.0.3:
@@ -5151,8 +5081,6 @@ snapshots:
       lightningcss-win32-arm64-msvc: 1.31.1
       lightningcss-win32-x64-msvc: 1.31.1
 
-  lil-gui@0.20.0: {}
-
   locate-path@6.0.0:
     dependencies:
       p-locate: 5.0.0
@@ -5243,8 +5171,6 @@ snapshots:
       es-errors: 1.3.0
       object.entries: 1.1.9
       semver: 6.3.1
-
-  node-wav@0.0.2: {}
 
   object-assign@4.1.1: {}
 

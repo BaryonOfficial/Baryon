@@ -35,7 +35,7 @@ packages/
   config/     @baryon/config     — Shared Vite base config (createBaseViteConfig)
 ```
 
-`apps/web` and `apps/desktop` import the visualization engine via `@baryon/visualizer`. Static assets (`public/lib/`, `public/glb/`) are duplicated in each app's `public/` since they are fetched at runtime via URL.
+`apps/web` and `apps/desktop` import the visualization engine via `@baryon/visualizer`. Static assets like `public/glb/` remain app-local because they are fetched at runtime via URL.
 
 ## Architecture Overview
 

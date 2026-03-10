@@ -17,7 +17,7 @@ packages/
   config/     @baryon/config     Shared Vite config
 ```
 
-`apps/web` and `apps/desktop` both consume `@baryon/visualizer`. Static runtime assets such as `public/glb/` and `public/lib/` are duplicated per app because they are loaded by URL at runtime.
+`apps/web` and `apps/desktop` both consume `@baryon/visualizer`. Static runtime assets such as `public/glb/` remain app-local because they are loaded by URL at runtime.
 
 ## Prerequisites
 
