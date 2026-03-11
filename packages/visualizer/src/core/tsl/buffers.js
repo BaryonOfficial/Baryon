@@ -1,11 +1,83 @@
 import { instancedArray, attributeArray } from "three/tsl";
 
-function initializeParticlesInSphereVolumeAndSurface(
-  count,
-  radius,
-  surfaceRatio,
+const VEC3_STRIDE = 3;
+const VEC4_STRIDE = 4;
+
+function createVec4InstancedBuffer(count) {
+  return instancedArray(count, "vec4");
+}
+
+function createVec4AttributeBuffer(count) {
+  return attributeArray(count, "vec4");
+}
+
+function markBufferForUpload(buffer) {
+  buffer.value.needsUpdate = true;
+  return buffer;
+}
+
+function fillVec4BufferFromVec3Positions(buffer, positions, w) {
+  const target = buffer.value.array;
+
+  for (let i = 0; i < positions.length / VEC3_STRIDE; i++) {
+    const sourceOffset = i * VEC3_STRIDE;
+    const targetOffset = i * VEC4_STRIDE;
+    target[targetOffset] = positions[sourceOffset];
+    target[targetOffset + 1] = positions[sourceOffset + 1];
+    target[targetOffset + 2] = positions[sourceOffset + 2];
+    target[targetOffset + 3] = w;
+  }
+
+  return markBufferForUpload(buffer);
+}
+
+function fillRepeatedLogoBuffer(buffer, logoPositions) {
+  const target = buffer.value.array;
+  const logoCount = logoPositions.count;
+  const source = logoPositions.array;
+
+  for (let i = 0; i < target.length / VEC4_STRIDE; i++) {
+    const sourceIndex = i % logoCount;
+    const sourceOffset = sourceIndex * VEC3_STRIDE;
+    const targetOffset = i * VEC4_STRIDE;
+    target[targetOffset] = source[sourceOffset];
+    target[targetOffset + 1] = source[sourceOffset + 1];
+    target[targetOffset + 2] = source[sourceOffset + 2];
+    target[targetOffset + 3] = Math.random();
+  }
+
+  return markBufferForUpload(buffer);
+}
+
+function fillParticlesAndVelocities(
+  particlesBuffer,
+  velocityBuffer,
+  initialParticlePositions,
 ) {
-  const positions = new Float32Array(count * 3);
+  const particleTarget = particlesBuffer.value.array;
+  const velocityTarget = velocityBuffer.value.array;
+
+  for (let i = 0; i < initialParticlePositions.length / VEC3_STRIDE; i++) {
+    const sourceOffset = i * VEC3_STRIDE;
+    const targetOffset = i * VEC4_STRIDE;
+    particleTarget[targetOffset] = initialParticlePositions[sourceOffset];
+    particleTarget[targetOffset + 1] =
+      initialParticlePositions[sourceOffset + 1];
+    particleTarget[targetOffset + 2] =
+      initialParticlePositions[sourceOffset + 2];
+    particleTarget[targetOffset + 3] = 0.0;
+    velocityTarget[targetOffset] = 0.0;
+    velocityTarget[targetOffset + 1] = 0.0;
+    velocityTarget[targetOffset + 2] = 0.0;
+    velocityTarget[targetOffset + 3] = 0.0;
+  }
+
+  markBufferForUpload(particlesBuffer);
+  return markBufferForUpload(velocityBuffer);
+}
+
+function sampleSurfaceAndVolumePositions(count, radius, surfaceRatio) {
+  const positions = new Float32Array(count * VEC3_STRIDE);
   const surfaceCount = Math.floor(count * surfaceRatio);
 
   const goldenRatio = (1 + Math.sqrt(5)) / 2;
@@ -14,32 +86,35 @@ function initializeParticlesInSphereVolumeAndSurface(
     const t = i / surfaceCount;
     const inclination = Math.acos(1 - 2 * t);
     const azimuth = angleIncrement * i;
-    positions[i * 3] = radius * Math.sin(inclination) * Math.cos(azimuth);
-    positions[i * 3 + 1] = radius * Math.sin(inclination) * Math.sin(azimuth);
-    positions[i * 3 + 2] = radius * Math.cos(inclination);
+    const offset = i * VEC3_STRIDE;
+    positions[offset] = radius * Math.sin(inclination) * Math.cos(azimuth);
+    positions[offset + 1] = radius * Math.sin(inclination) * Math.sin(azimuth);
+    positions[offset + 2] = radius * Math.cos(inclination);
   }
   for (let i = surfaceCount; i < count; i++) {
     const r = Math.pow(Math.random(), 1 / 3) * radius;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
-    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-    positions[i * 3 + 2] = r * Math.cos(phi);
+    const offset = i * VEC3_STRIDE;
+    positions[offset] = r * Math.sin(phi) * Math.cos(theta);
+    positions[offset + 1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[offset + 2] = r * Math.cos(phi);
   }
   return positions;
 }
 
-function initializeParticlesInSphere(count, radius) {
+function sampleInitialParticlePositions(count, radius) {
   const scaledRadius = radius / 10;
-  const positions = new Float32Array(count * 3);
+  const positions = new Float32Array(count * VEC3_STRIDE);
 
   for (let i = 0; i < count; i++) {
     const r = Math.pow(Math.random(), 1 / 3) * scaledRadius;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
-    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-    positions[i * 3 + 2] = r * Math.cos(phi);
+    const offset = i * VEC3_STRIDE;
+    positions[offset] = r * Math.sin(phi) * Math.cos(theta);
+    positions[offset + 1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[offset + 2] = r * Math.cos(phi);
   }
 
   return positions;
@@ -50,68 +125,46 @@ export function createTSLBuffers(baryonGeometry, parameters, audioConfig) {
   const capacity = audioConfig.capacity;
   const fftHalfSize = audioConfig.fftSize / 2;
 
-  const modeBuffer = instancedArray(capacity, "vec4");
+  const modeBuffer = createVec4InstancedBuffer(capacity);
   modeBuffer.value.array.fill(0);
-  modeBuffer.value.needsUpdate = true;
+  markBufferForUpload(modeBuffer);
 
   const fftBuffer = instancedArray(fftHalfSize, "float");
 
-  const basePositions = initializeParticlesInSphereVolumeAndSurface(
+  const basePositions = sampleSurfaceAndVolumePositions(
     count,
     parameters.radius,
     parameters.surfaceRatio,
   );
-  const basePositionBuffer = instancedArray(count, "vec4");
-  for (let i = 0; i < count; i++) {
-    basePositionBuffer.value.array[i * 4] = basePositions[i * 3];
-    basePositionBuffer.value.array[i * 4 + 1] = basePositions[i * 3 + 1];
-    basePositionBuffer.value.array[i * 4 + 2] = basePositions[i * 3 + 2];
-    basePositionBuffer.value.array[i * 4 + 3] = 1.0;
-  }
-  basePositionBuffer.value.needsUpdate = true;
+  const basePositionBuffer = fillVec4BufferFromVec3Positions(
+    createVec4InstancedBuffer(count),
+    basePositions,
+    1.0,
+  );
 
-  const logoAttr = baryonGeometry.attributes.position;
-  const logoCount = logoAttr.count;
-  const baryonBuffer = instancedArray(count, "vec4");
-  for (let i = 0; i < count; i++) {
-    const j = i % logoCount;
-    baryonBuffer.value.array[i * 4] = logoAttr.array[j * 3];
-    baryonBuffer.value.array[i * 4 + 1] = logoAttr.array[j * 3 + 1];
-    baryonBuffer.value.array[i * 4 + 2] = logoAttr.array[j * 3 + 2];
-    baryonBuffer.value.array[i * 4 + 3] = Math.random();
-  }
-  baryonBuffer.value.needsUpdate = true;
+  const baryonBuffer = fillRepeatedLogoBuffer(
+    createVec4InstancedBuffer(count),
+    baryonGeometry.attributes.position,
+  );
 
-  const scalarFieldBuffer = instancedArray(count, "vec4");
-  const zeroPointsBuffer = instancedArray(count, "vec4");
-  for (let i = 0; i < count; i++) {
-    zeroPointsBuffer.value.array[i * 4] = basePositions[i * 3];
-    zeroPointsBuffer.value.array[i * 4 + 1] = basePositions[i * 3 + 1];
-    zeroPointsBuffer.value.array[i * 4 + 2] = basePositions[i * 3 + 2];
-    zeroPointsBuffer.value.array[i * 4 + 3] = 2.0;
-  }
-  zeroPointsBuffer.value.needsUpdate = true;
+  const scalarFieldBuffer = createVec4InstancedBuffer(count);
+  const zeroPointsBuffer = fillVec4BufferFromVec3Positions(
+    createVec4InstancedBuffer(count),
+    basePositions,
+    2.0,
+  );
 
-  const initialParticlePositions = initializeParticlesInSphere(
+  const initialParticlePositions = sampleInitialParticlePositions(
     count,
     parameters.radius,
   );
-  const particlesBuffer = attributeArray(count, "vec4");
-  const velocityBuffer = attributeArray(count, "vec4");
-  for (let i = 0; i < count; i++) {
-    particlesBuffer.value.array[i * 4] = initialParticlePositions[i * 3];
-    particlesBuffer.value.array[i * 4 + 1] =
-      initialParticlePositions[i * 3 + 1];
-    particlesBuffer.value.array[i * 4 + 2] =
-      initialParticlePositions[i * 3 + 2];
-    particlesBuffer.value.array[i * 4 + 3] = 0.0;
-    velocityBuffer.value.array[i * 4] = 0.0;
-    velocityBuffer.value.array[i * 4 + 1] = 0.0;
-    velocityBuffer.value.array[i * 4 + 2] = 0.0;
-    velocityBuffer.value.array[i * 4 + 3] = 0.0;
-  }
-  particlesBuffer.value.needsUpdate = true;
-  velocityBuffer.value.needsUpdate = true;
+  const particlesBuffer = createVec4AttributeBuffer(count);
+  const velocityBuffer = createVec4AttributeBuffer(count);
+  fillParticlesAndVelocities(
+    particlesBuffer,
+    velocityBuffer,
+    initialParticlePositions,
+  );
 
   return {
     count,
