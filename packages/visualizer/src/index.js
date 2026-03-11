@@ -41,6 +41,7 @@ export {
   getControlsForMethod,
 } from './controls/schema.js';
 export { auditControlSchema } from './controls/audit.js';
+export { serializeControls, deserializeControls, createPreset } from './controls/persistence.js';
 export {
   CONTROL_RUNTIME_COVERAGE,
   applySimulationControls,

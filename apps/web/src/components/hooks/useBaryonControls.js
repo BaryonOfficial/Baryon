@@ -1,12 +1,36 @@
 import { useEffect, useRef } from "react";
 import {
+  CONTROL_DEFINITIONS,
   CONTROL_STATUSES,
   DEFAULT_VISUALIZATION_METHOD,
   createControlState,
   getControlFolders,
   getControlsForFolder,
+  serializeControls,
+  deserializeControls,
+  createPreset,
 } from "@baryon/visualizer";
 import { DEVTOOLS_ENABLED } from "../../devtools/config.js";
+
+const SETTINGS_KEY = "baryon:settings";
+const PRESETS_KEY = "baryon:presets";
+
+function loadFromStorage(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveToStorage(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Quota exceeded or private-browsing restriction — silently ignore
+  }
+}
 
 function isVisibleControl(definition) {
   return DEVTOOLS_ENABLED || definition.status !== CONTROL_STATUSES.debugOnly;
@@ -27,8 +51,11 @@ export function useBaryonControls() {
     /** @type {null | (import("tweakpane").Pane & {
      *   addFolder(params: { title: string; expanded?: boolean }): {
      *     addBinding(target: object, key: string, options?: Record<string, unknown>): void;
+     *     addButton(params: { title: string }): { on(event: string, cb: () => void): void };
+     *     addBlade(params: Record<string, unknown>): unknown;
      *   };
      *   refresh(): void;
+     *   on(event: string, cb: (ev: unknown) => void): void;
      * })} */
     let pane = null;
 
@@ -36,6 +63,12 @@ export function useBaryonControls() {
       const { Pane } = await import("tweakpane");
       if (disposed) {
         return;
+      }
+
+      // --- Restore auto-saved settings before pane binds to `p` ---
+      const savedSettings = loadFromStorage(SETTINGS_KEY);
+      if (savedSettings) {
+        Object.assign(p, deserializeControls(savedSettings, CONTROL_DEFINITIONS));
       }
 
       pane = /** @type {typeof pane} */ (new Pane({ title: "Baryon", expanded: false }));
@@ -61,6 +94,99 @@ export function useBaryonControls() {
           });
         }
       }
+
+      // --- Auto-save on any control change (debounced 500 ms) ---
+      // Also clears the active preset indicator when the user manually edits a control after loading.
+      let saveTimer = null;
+      pane.on("change", () => {
+        if (allowPresetReset && activePresetName) {
+          activePresetName = null;
+          rebuildLoadBlade(presetsFolder);
+        }
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          saveToStorage(SETTINGS_KEY, serializeControls(p, CONTROL_DEFINITIONS));
+        }, 500);
+      });
+
+      // --- Presets folder ---
+      /** @type {Array<{ name: string, createdAt: number, controls: Record<string, unknown> }>} */
+      let presets = loadFromStorage(PRESETS_KEY) ?? [];
+      const presetNameState = { name: "" };
+      /** @type {null | { dispose(): void, on(event: string, cb: (ev: { value: string }) => void): void, controller: { value: { rawValue: string } } }} */
+      let loadBlade = null;
+      let activePresetName = null; // name shown in the Load dropdown; null = no preset / controls modified
+      let allowPresetReset = false; // becomes true (via setTimeout) after a preset loads; next control change clears it
+
+      function persistPresets() {
+        saveToStorage(PRESETS_KEY, presets);
+      }
+
+      /** @param {{ title: string, expanded: boolean, addBinding: Function, addButton: Function, addBlade: Function }} folder */
+      function rebuildLoadBlade(folder) {
+        loadBlade?.dispose();
+        allowPresetReset = false;
+        const options = [
+          { text: "— Select a preset —", value: "" },
+          ...presets.map((pr) => ({ text: pr.name, value: pr.name })),
+        ];
+        loadBlade = /** @type {typeof loadBlade} */ (
+          folder.addBlade({
+            view: "list",
+            label: "Load",
+            options,
+            value: activePresetName ?? "",
+          })
+        );
+        loadBlade.on("change", (ev) => {
+          if (!ev.value) return; // placeholder — do nothing
+          const preset = presets.find((pr) => pr.name === ev.value);
+          if (preset) {
+            Object.assign(p, deserializeControls(preset.controls, CONTROL_DEFINITIONS));
+            pane.refresh();
+            activePresetName = ev.value;
+            // Defer monitoring so the list's own change event doesn't immediately clear the selection
+            setTimeout(() => { allowPresetReset = true; }, 0);
+          }
+        });
+      }
+
+      const presetsFolder = pane.addFolder({ title: "Presets", expanded: false });
+      let nameBinding = presetsFolder.addBinding(presetNameState, "name", { label: "Name" });
+
+      presetsFolder.addButton({ title: "Save" }).on("click", () => {
+        const name = presetNameState.name.trim();
+        if (!name) return;
+        // Overwrite if a preset with the same name already exists
+        presets = presets.filter((pr) => pr.name !== name);
+        presets.unshift(createPreset(name, p, CONTROL_DEFINITIONS));
+        persistPresets();
+        activePresetName = null;
+        rebuildLoadBlade(presetsFolder);
+        // Clear the name field
+        presetNameState.name = "";
+        nameBinding.refresh();
+      });
+
+      presetsFolder.addButton({ title: "Reset to defaults" }).on("click", () => {
+        Object.assign(p, createControlState());
+        pane.refresh();
+        activePresetName = null;
+        rebuildLoadBlade(presetsFolder);
+      });
+
+      presetsFolder.addButton({ title: "Delete Selected" }).on("click", () => {
+        const selected = loadBlade?.controller?.value?.rawValue;
+        if (!selected) return; // placeholder — nothing to delete
+        presets = presets.filter((pr) => pr.name !== selected);
+        persistPresets();
+        activePresetName = null;
+        rebuildLoadBlade(presetsFolder);
+        // Controls are intentionally left unchanged
+      });
+
+      // Populate list from saved presets on init
+      rebuildLoadBlade(presetsFolder);
 
       if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
         window.__baryonControls = {
