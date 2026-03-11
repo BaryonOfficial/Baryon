@@ -32,8 +32,8 @@ export const RENDER_DEFAULTS = Object.freeze({
   backgroundColor: "#000000",
   color: "#0586ff",
   surfaceColor: "#DEF0FA",
-  bloomStrength: 0.36,
-  bloomRadius: 0.4,
+  bloomStrength: 0.12,
+  bloomRadius: 0.08,
   bloomThreshold: 0.4,
 });
 
