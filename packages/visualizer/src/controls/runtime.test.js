@@ -10,13 +10,8 @@ import {
   buildControlInspectionSnapshot,
   CONTROL_RUNTIME_COVERAGE,
 } from "./runtime.js";
-import {
-  CONTROL_HANDLERS,
-  createControlState,
-} from "./schema.js";
-import {
-  createVisualizationRuntime,
-} from "../visualization/runtimeFactory.js";
+import { CONTROL_HANDLERS, createControlState } from "./schema.js";
+import { createVisualizationRuntime } from "../visualization/runtimeFactory.js";
 import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
 
 function createSimulationHarness() {
@@ -105,7 +100,9 @@ describe("control runtime sync", () => {
 
     expect(gl.setClearColor).toHaveBeenCalledTimes(1);
     expect(sharedSnapshot.backgroundColor).toBe("#123456");
-    expect(particleSnapshot.uniforms.particleSpeed).toBe(controls.particleSpeed);
+    expect(particleSnapshot.uniforms.particleSpeed).toBe(
+      controls.particleSpeed,
+    );
   });
 
   it("applies bloom controls to the pipeline", () => {
@@ -116,7 +113,10 @@ describe("control runtime sync", () => {
     controls.bloomThreshold = 0.44;
 
     const pipeline = { outputNode: null };
-    const sceneColor = { tag: "sceneColor", add: vi.fn(() => "bloomed-output") };
+    const sceneColor = {
+      tag: "sceneColor",
+      add: vi.fn(() => "bloomed-output"),
+    };
     const bloomPass = {
       strength: { value: 0 },
       radius: { value: 0 },
@@ -127,7 +127,7 @@ describe("control runtime sync", () => {
         ensurePipeline: () => pipeline,
         postNodesRef: { current: { sceneColor, bloomPass } },
       },
-      controls
+      controls,
     );
 
     expect(bloomPass.strength.value).toBe(0.77);
@@ -154,7 +154,7 @@ describe("control runtime sync", () => {
         ensurePipeline: () => pipeline,
         postNodesRef: { current: { sceneColor, bloomPass } },
       },
-      controls
+      controls,
     );
 
     expect(sceneColor.add).toHaveBeenCalledWith(bloomPass);
@@ -270,14 +270,14 @@ describe("control runtime sync", () => {
           ensurePipeline: () => null,
           postNodesRef: { current: null },
         },
-        controls
-      )
+        controls,
+      ),
     ).not.toThrow();
   });
 
   it("covers every control handler bucket used by the schema", () => {
     expect(Object.keys(CONTROL_RUNTIME_COVERAGE)).toEqual(
-      expect.arrayContaining(Object.values(CONTROL_HANDLERS))
+      expect.arrayContaining(Object.values(CONTROL_HANDLERS)),
     );
   });
 });

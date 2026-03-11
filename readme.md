@@ -54,6 +54,8 @@ Install everything from the repo root:
 pnpm install
 ```
 
+`pnpm install` also runs the repo's `prepare` script, which installs the committed local Git hooks via Husky.
+
 ## Common Commands
 
 From the repo root:
@@ -63,10 +65,15 @@ pnpm dev                  # Start apps/web
 pnpm dev:desktop          # Start apps/desktop
 pnpm build                # Build all apps/packages
 pnpm build:web            # Build apps/web only
+pnpm format               # Format the repo with Prettier
+pnpm format:check         # Check formatting without rewriting files
 pnpm lint                 # Workspace lint via turbo
+pnpm lint:all             # Repo-wide lint across apps/packages
 pnpm typecheck            # Workspace typecheck where configured
 pnpm test:visualizer      # Visualizer unit tests
 pnpm test:web-smoke       # Web control wiring smoke test
+pnpm verify               # Local pre-push gate: lint, typecheck, visualizer unit test
+pnpm verify:full          # Full local verification, including workspace builds
 ```
 
 Useful package/app-local commands:
@@ -95,6 +102,36 @@ Optional fixed host/port:
 ```bash
 pnpm --filter @baryon/web preview -- --host 127.0.0.1 --port 4174
 ```
+
+## Local Git Hooks
+
+This repo uses Husky for committed local Git hooks.
+
+- `pre-commit` runs `lint-staged`
+- staged `*.js` and `*.jsx` files are formatted with Prettier and then auto-fixed with ESLint
+- staged `*.ts`, `*.tsx`, `*.json`, `*.md`, and other text config/style files are formatted with Prettier
+- `pre-push` runs `pnpm verify`
+- product-specific builds stay manual or CI-driven for now
+
+Manual equivalents:
+
+```bash
+pnpm format
+pnpm lint:all
+pnpm typecheck
+pnpm test:visualizer
+pnpm verify
+pnpm verify:full
+```
+
+Browser smoke and app-specific builds remain manual or CI-driven for now:
+
+```bash
+pnpm test:web-smoke
+pnpm build:web
+```
+
+That keeps the pre-push gate strict without forcing Playwright/browser setup or product-specific build toolchains on every push.
 
 ## Runtime Requirements
 

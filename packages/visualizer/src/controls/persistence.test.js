@@ -1,14 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { CONTROL_DEFINITIONS, CONTROL_STATUSES, createControlState } from "./schema.js";
-import { serializeControls, deserializeControls, createPreset } from "./persistence.js";
+import {
+  CONTROL_DEFINITIONS,
+  CONTROL_STATUSES,
+  createControlState,
+} from "./schema.js";
+import {
+  serializeControls,
+  deserializeControls,
+  createPreset,
+} from "./persistence.js";
 
-const liveKeys = CONTROL_DEFINITIONS
-  .filter(d => d.status === CONTROL_STATUSES.live)
-  .map(d => d.key);
+const liveKeys = CONTROL_DEFINITIONS.filter(
+  (d) => d.status === CONTROL_STATUSES.live,
+).map((d) => d.key);
 
-const debugOnlyKeys = CONTROL_DEFINITIONS
-  .filter(d => d.status === CONTROL_STATUSES.debugOnly)
-  .map(d => d.key);
+const debugOnlyKeys = CONTROL_DEFINITIONS.filter(
+  (d) => d.status === CONTROL_STATUSES.debugOnly,
+).map((d) => d.key);
 
 describe("serializeControls", () => {
   it("includes all live control keys", () => {
@@ -60,7 +68,7 @@ describe("deserializeControls", () => {
   });
 
   it("falls back to default when the stored type does not match", () => {
-    const bloomDef = CONTROL_DEFINITIONS.find(d => d.key === "bloomStrength");
+    const bloomDef = CONTROL_DEFINITIONS.find((d) => d.key === "bloomStrength");
     // bloomStrength default is a number — pass a string instead
     const raw = { bloomStrength: "not-a-number" };
     const result = deserializeControls(raw, CONTROL_DEFINITIONS);
@@ -81,7 +89,9 @@ describe("deserializeControls", () => {
     const raw = { bloomStrength: 0.5 };
     const result = deserializeControls(raw, CONTROL_DEFINITIONS);
     // A key that was not in raw should still be present with its default
-    const particleSpeedDef = CONTROL_DEFINITIONS.find(d => d.key === "particleSpeed");
+    const particleSpeedDef = CONTROL_DEFINITIONS.find(
+      (d) => d.key === "particleSpeed",
+    );
     expect(result.particleSpeed).toBe(particleSpeedDef.defaultValue);
   });
 });

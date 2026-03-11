@@ -1,7 +1,7 @@
-import * as THREE from 'three';
-import { uniform } from 'three/tsl';
-import { RENDER_DEFAULTS, SIMULATION_DEFAULTS } from '../../defaults.js';
-import { FIELD_STATE_VALUES } from '../fieldState.js';
+import * as THREE from "three";
+import { uniform } from "three/tsl";
+import { RENDER_DEFAULTS, SIMULATION_DEFAULTS } from "../../defaults.js";
+import { FIELD_STATE_VALUES } from "../fieldState.js";
 
 export { FIELD_STATE_VALUES };
 
@@ -21,10 +21,10 @@ export function createTSLUniforms(parameters) {
     uVelocityDamping: uniform(SIMULATION_DEFAULTS.velocityDamping),
     uFlowMix: uniform(SIMULATION_DEFAULTS.flowMix),
     uCenterSuppressionInner: uniform(
-      parameters.radius * SIMULATION_DEFAULTS.centerSuppressionInner
+      parameters.radius * SIMULATION_DEFAULTS.centerSuppressionInner,
     ),
     uCenterSuppressionOuter: uniform(
-      parameters.radius * SIMULATION_DEFAULTS.centerSuppressionOuter
+      parameters.radius * SIMULATION_DEFAULTS.centerSuppressionOuter,
     ),
     uStructureMin: uniform(SIMULATION_DEFAULTS.structureMin),
     uStructureMax: uniform(SIMULATION_DEFAULTS.structureMax),

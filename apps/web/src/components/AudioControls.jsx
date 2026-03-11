@@ -5,9 +5,16 @@ import { useAudio } from "../context/AudioContext";
 
 function MusicNoteIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-      stroke="rgba(255,255,255,0.45)" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="rgba(255,255,255,0.45)"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M9 18V5l12-2v13" />
       <circle cx="6" cy="18" r="3" />
       <circle cx="18" cy="16" r="3" />
@@ -42,9 +49,16 @@ function StopIcon() {
 
 function MicIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
       <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
       <line x1="12" y1="19" x2="12" y2="23" />
@@ -90,11 +104,12 @@ function ScrollingText({ text }) {
 // ─── Status dot ──────────────────────────────────────────────────────────────
 
 function getStatusConfig(isEngineReady, isAudioLoaded, isPlaying, isMicActive) {
-  if (isMicActive)  return { color: "#ff453a", pulse: true,  label: "Mic active" };
-  if (isPlaying)    return { color: "#32d74b", pulse: true,  label: "Playing" };
+  if (isMicActive)
+    return { color: "#ff453a", pulse: true, label: "Mic active" };
+  if (isPlaying) return { color: "#32d74b", pulse: true, label: "Playing" };
   if (isAudioLoaded) return { color: "#0a84ff", pulse: false, label: "Loaded" };
   if (isEngineReady) return { color: "#32d74b", pulse: false, label: "Ready" };
-  return              { color: "#ff9f0a", pulse: true,  label: "Initializing" };
+  return { color: "#ff9f0a", pulse: true, label: "Initializing" };
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
@@ -305,7 +320,10 @@ function AudioControls() {
 
   const fileInputRef = useRef(null);
   const { color, pulse, label } = getStatusConfig(
-    isEngineReady, isAudioLoaded, isPlaying, isMicActive
+    isEngineReady,
+    isAudioLoaded,
+    isPlaying,
+    isMicActive,
   );
 
   return (
@@ -313,7 +331,6 @@ function AudioControls() {
       <style>{CSS}</style>
 
       <div className="am-player">
-
         {/* ── Left: track info ── */}
         <div
           className="am-track"
@@ -388,7 +405,9 @@ function AudioControls() {
                   <button
                     key={device.deviceId}
                     className={`am-device-item${
-                      selectedDevice === device.deviceId ? " am-device-item--active" : ""
+                      selectedDevice === device.deviceId
+                        ? " am-device-item--active"
+                        : ""
                     }`}
                     onClick={async () => {
                       setSelectedDevice(device.deviceId);
@@ -403,7 +422,6 @@ function AudioControls() {
             </div>
           )}
         </div>
-
       </div>
     </>
   );

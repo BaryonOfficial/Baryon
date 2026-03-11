@@ -14,9 +14,9 @@ function makeState(amplitudes) {
   const slots = new Float32Array(amplitudes.length * 4);
   const referenceSlots = new Float32Array(amplitudes.length * 4);
   for (let i = 0; i < amplitudes.length; i++) {
-    slots[i * 4] = i + 1;       // u (non-zero, distinct per slot)
-    slots[i * 4 + 1] = i + 1;   // v
-    slots[i * 4 + 2] = i + 1;   // w
+    slots[i * 4] = i + 1; // u (non-zero, distinct per slot)
+    slots[i * 4 + 1] = i + 1; // v
+    slots[i * 4 + 2] = i + 1; // w
     slots[i * 4 + 3] = amplitudes[i];
     referenceSlots[i * 4 + 3] = amplitudes[i];
   }
@@ -97,9 +97,9 @@ describe("writeSlot", () => {
   it("writes u, v, w, amplitude at the correct stride-4 offset", () => {
     const target = new Float32Array(8);
     writeSlot(target, 1, { u: 3, v: 5, w: 7 }, 0.42);
-    expect(target[4]).toBe(3);    // u
-    expect(target[5]).toBe(5);    // v
-    expect(target[6]).toBe(7);    // w
+    expect(target[4]).toBe(3); // u
+    expect(target[5]).toBe(5); // v
+    expect(target[6]).toBe(7); // w
     expect(target[7]).toBeCloseTo(0.42); // amplitude
   });
 });

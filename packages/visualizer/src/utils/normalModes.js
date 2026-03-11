@@ -31,7 +31,7 @@ function secantSolveMagnitude(pitch, radius) {
 
 function bisectionSolveMagnitude(pitch, radius) {
   let lower = 1.0;
-  let upper = Math.max(2.0, (2.0 * pitch * radius) / SOUND_SPEED * 1.5);
+  let upper = Math.max(2.0, ((2.0 * pitch * radius) / SOUND_SPEED) * 1.5);
 
   while (objective(upper, pitch, radius) < 0) {
     upper *= 1.5;
@@ -60,11 +60,13 @@ function nearestTriplet(targetMagnitude, maxMode = 24) {
       for (let w = 1; w <= maxMode; w++) {
         const magnitude = Math.hypot(u, v, w);
         const magnitudeError = Math.abs(magnitude - targetMagnitude);
-        const balancePenalty = Math.abs(u - v) + Math.abs(v - w) + Math.abs(u - w);
+        const balancePenalty =
+          Math.abs(u - v) + Math.abs(v - w) + Math.abs(u - w);
 
         if (
           magnitudeError < bestMagnitudeError - 1e-6 ||
-          (Math.abs(magnitudeError - bestMagnitudeError) <= 1e-6 && balancePenalty < bestBalancePenalty)
+          (Math.abs(magnitudeError - bestMagnitudeError) <= 1e-6 &&
+            balancePenalty < bestBalancePenalty)
         ) {
           bestMagnitudeError = magnitudeError;
           bestBalancePenalty = balancePenalty;
@@ -91,7 +93,12 @@ export function solveNormalModesForPitch(pitch, radius) {
   return mode;
 }
 
-export function sampleFFTAmplitudeForFrequency(frequency, fftMagnitudes, sampleRate, fftSize) {
+export function sampleFFTAmplitudeForFrequency(
+  frequency,
+  fftMagnitudes,
+  sampleRate,
+  fftSize,
+) {
   if (!fftMagnitudes?.length || !sampleRate || !fftSize || frequency <= 0) {
     return 0;
   }
@@ -101,4 +108,3 @@ export function sampleFFTAmplitudeForFrequency(frequency, fftMagnitudes, sampleR
   const index = Math.max(0, Math.min(fftMagnitudes.length - 1, bin));
   return fftMagnitudes[index] ?? 0;
 }
-

@@ -1,9 +1,9 @@
-import { createTSLBuffers } from './tsl/buffers.js';
-import { createTSLUniforms } from './tsl/uniforms.js';
-import { createComputeNodes } from './tsl/computeNodes.js';
-import { createParticlePoints } from './tsl/material.js';
-import { createAuditState } from './tsl/auditMirror.js';
-import { tickTSLRuntime } from './tsl/runtime.js';
+import { createTSLBuffers } from "./tsl/buffers.js";
+import { createTSLUniforms } from "./tsl/uniforms.js";
+import { createComputeNodes } from "./tsl/computeNodes.js";
+import { createParticlePoints } from "./tsl/material.js";
+import { createAuditState } from "./tsl/auditMirror.js";
+import { tickTSLRuntime } from "./tsl/runtime.js";
 
 export function setupTSL(baryonGeometry, parameters, audioConfig) {
   const buffers = createTSLBuffers(baryonGeometry, parameters, audioConfig);
@@ -27,7 +27,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     audit: createAuditState(
       buffers.basePositions,
       buffers.initialParticlePositions,
-      buffers.baryonBuffer.value.array
+      buffers.baryonBuffer.value.array,
     ),
     modeBuffer: buffers.modeBuffer,
     fftBuffer: buffers.fftBuffer,
@@ -39,7 +39,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     fftSize: audioConfig.fftSize,
     capacity: buffers.capacity,
     prevModeSlots: new Float32Array(buffers.capacity * 4),
-    prevFieldState: 'idle',
+    prevFieldState: "idle",
   };
 }
 

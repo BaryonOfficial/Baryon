@@ -73,8 +73,10 @@ export function applyParticleControls(tslState, controls) {
   uniforms.uFlowMix.value = controls.flowMix;
   uniforms.uAttractionStrength.value = controls.attractionStrength;
   uniforms.uVelocityDamping.value = controls.velocityDamping;
-  uniforms.uCenterSuppressionInner.value = radius * controls.centerSuppressionInner;
-  uniforms.uCenterSuppressionOuter.value = radius * controls.centerSuppressionOuter;
+  uniforms.uCenterSuppressionInner.value =
+    radius * controls.centerSuppressionInner;
+  uniforms.uCenterSuppressionOuter.value =
+    radius * controls.centerSuppressionOuter;
   uniforms.uStructureMin.value = controls.structureMin;
   uniforms.uStructureMax.value = controls.structureMax;
 
@@ -112,14 +114,21 @@ export function applyBloomControls(pipelineState, controls) {
   const pipeline = pipelineState.ensurePipeline();
   const postNodes = pipelineState.postNodesRef.current;
   if (!pipeline || !postNodes) {
-    return { enabled: controls.bloomEnabled, strength: controls.bloomStrength, radius: controls.bloomRadius, threshold: controls.bloomThreshold };
+    return {
+      enabled: controls.bloomEnabled,
+      strength: controls.bloomStrength,
+      radius: controls.bloomRadius,
+      threshold: controls.bloomThreshold,
+    };
   }
 
   const { sceneColor, bloomPass } = postNodes;
   bloomPass.strength.value = controls.bloomStrength;
   bloomPass.radius.value = controls.bloomRadius;
   bloomPass.threshold.value = controls.bloomThreshold;
-  pipeline.outputNode = controls.bloomEnabled ? sceneColor.add(bloomPass) : sceneColor;
+  pipeline.outputNode = controls.bloomEnabled
+    ? sceneColor.add(bloomPass)
+    : sceneColor;
 
   return {
     enabled: controls.bloomEnabled,

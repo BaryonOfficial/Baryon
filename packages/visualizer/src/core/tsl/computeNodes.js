@@ -16,8 +16,8 @@ import {
   smoothstep,
   vec3,
   vec4,
-} from 'three/tsl';
-import { FIELD_STATE_VALUES } from './uniforms.js';
+} from "three/tsl";
+import { FIELD_STATE_VALUES } from "./uniforms.js";
 
 export function createComputeNodes({ count, capacity, buffers, uniforms }) {
   const {
@@ -66,10 +66,9 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
       const vi = w.y;
       const wi = w.z;
       sum.addAssign(
-        Ai
-          .mul(sin(ui.mul(PI).mul(pos.x).mul(invR)))
+        Ai.mul(sin(ui.mul(PI).mul(pos.x).mul(invR)))
           .mul(sin(vi.mul(PI).mul(pos.y).mul(invR)))
-          .mul(sin(wi.mul(PI).mul(pos.z).mul(invR)))
+          .mul(sin(wi.mul(PI).mul(pos.z).mul(invR))),
       );
     });
 
@@ -106,27 +105,42 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     const gradient = vec3(gradX, gradY, gradZ);
     const gradientMagnitude = length(gradient);
     const radialDist = length(pos);
-    const nodeBand = float(1.0).sub(smoothstep(float(0.0), uThreshold, fieldAbs));
-    const structure = smoothstep(uStructureMin, uStructureMax, gradientMagnitude);
+    const nodeBand = float(1.0).sub(
+      smoothstep(float(0.0), uThreshold, fieldAbs),
+    );
+    const structure = smoothstep(
+      uStructureMin,
+      uStructureMax,
+      gradientMagnitude,
+    );
     const centerSuppression = smoothstep(
       uCenterSuppressionInner,
       uCenterSuppressionOuter,
-      radialDist
+      radialDist,
     );
-    const isOnSurface = abs(radialDist.sub(uRadius)).lessThanEqual(uSurfaceThreshold);
+    const isOnSurface = abs(radialDist.sub(uRadius)).lessThanEqual(
+      uSurfaceThreshold,
+    );
     const groupTag = select(
       isOnSurface.and(uSurfaceControl.equal(1)),
       float(1.0),
-      float(2.0)
+      float(2.0),
     );
     const potential = nodeBand.mul(structure).mul(centerSuppression);
 
-    If(uFieldState.equal(FIELD_STATE_VALUES.idle).or(uActiveModeCount.lessThanEqual(0)), () => {
-      zeroPointsBuffer.element(instanceIndex).assign(vec4(float(0.0), float(1.0), float(0.0), float(0.0)));
-    }).Else(() => {
-      zeroPointsBuffer.element(instanceIndex).assign(
-        vec4(potential, groupTag, fieldAbs, gradientMagnitude)
-      );
+    If(
+      uFieldState
+        .equal(FIELD_STATE_VALUES.idle)
+        .or(uActiveModeCount.lessThanEqual(0)),
+      () => {
+        zeroPointsBuffer
+          .element(instanceIndex)
+          .assign(vec4(float(0.0), float(1.0), float(0.0), float(0.0)));
+      },
+    ).Else(() => {
+      zeroPointsBuffer
+        .element(instanceIndex)
+        .assign(vec4(potential, groupTag, fieldAbs, gradientMagnitude));
     });
   })().compute(count);
 
@@ -136,7 +150,9 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     const oldVelocity = velocityBuffer.element(instanceIndex).xyz;
     const baseSample = basePositionBuffer.element(instanceIndex).xyz;
     const baseSampleMeta = zeroPointsBuffer.element(instanceIndex);
-    const baryonPos = baryonBuffer.element(instanceIndex).xyz.mul(uIdleLogoSize);
+    const baryonPos = baryonBuffer
+      .element(instanceIndex)
+      .xyz.mul(uIdleLogoSize);
     const radialDist = length(oldPos);
     const fieldDriven = uFieldState
       .greaterThan(FIELD_STATE_VALUES.idle)
@@ -164,9 +180,15 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
       const sx = sin(ui.mul(PI).mul(oldPos.x).mul(invR));
       const sy = sin(vi.mul(PI).mul(oldPos.y).mul(invR));
       const sz = sin(wi.mul(PI).mul(oldPos.z).mul(invR));
-      const gx = cos(ui.mul(PI).mul(oldPos.x).mul(invR)).mul(ui.mul(PI).mul(invR));
-      const gy = cos(vi.mul(PI).mul(oldPos.y).mul(invR)).mul(vi.mul(PI).mul(invR));
-      const gz = cos(wi.mul(PI).mul(oldPos.z).mul(invR)).mul(wi.mul(PI).mul(invR));
+      const gx = cos(ui.mul(PI).mul(oldPos.x).mul(invR)).mul(
+        ui.mul(PI).mul(invR),
+      );
+      const gy = cos(vi.mul(PI).mul(oldPos.y).mul(invR)).mul(
+        vi.mul(PI).mul(invR),
+      );
+      const gz = cos(wi.mul(PI).mul(oldPos.z).mul(invR)).mul(
+        wi.mul(PI).mul(invR),
+      );
       field.addAssign(Ai.mul(sx).mul(sy).mul(sz));
       gradX.addAssign(Ai.mul(gx).mul(sy).mul(sz));
       gradY.addAssign(Ai.mul(sx).mul(gy).mul(sz));
@@ -176,16 +198,28 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     const gradient = vec3(gradX, gradY, gradZ);
     const gradientMagnitude = length(gradient);
     const fieldAbs = abs(field);
-    const nodeBand = float(1.0).sub(smoothstep(float(0.0), uThreshold, fieldAbs));
-    const structure = smoothstep(uStructureMin, uStructureMax, gradientMagnitude);
+    const nodeBand = float(1.0).sub(
+      smoothstep(float(0.0), uThreshold, fieldAbs),
+    );
+    const structure = smoothstep(
+      uStructureMin,
+      uStructureMax,
+      gradientMagnitude,
+    );
     const centerSuppression = smoothstep(
       uCenterSuppressionInner,
       uCenterSuppressionOuter,
-      radialDist
+      radialDist,
     );
     const potential = nodeBand.mul(structure).mul(centerSuppression);
-    const signScale = select(field.greaterThanEqual(float(0.0)), float(-1.0), float(1.0));
-    const gradientDir = normalize(gradient.add(vec3(EPSILON, EPSILON, EPSILON)));
+    const signScale = select(
+      field.greaterThanEqual(float(0.0)),
+      float(-1.0),
+      float(1.0),
+    );
+    const gradientDir = normalize(
+      gradient.add(vec3(EPSILON, EPSILON, EPSILON)),
+    );
     const radialDir = normalize(oldPos.add(vec3(EPSILON, EPSILON, EPSILON)));
     const toAnchor = baseSample.sub(oldPos);
     const anchorDistance = length(toAnchor);
@@ -194,13 +228,17 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     const attractionStrength = clamp(
       fieldAbs.div(uThreshold.mul(4.0).add(EPSILON)),
       float(0.0),
-      float(1.0)
+      float(1.0),
     )
       .mul(structure)
       .mul(centerSuppression)
       .mul(uAttractionStrength);
     const attraction = gradientDir.mul(signScale).mul(attractionStrength);
-    const anchorStrength = smoothstep(float(0.0), uRadius.mul(0.35), anchorDistance)
+    const anchorStrength = smoothstep(
+      float(0.0),
+      uRadius.mul(0.35),
+      anchorDistance,
+    )
       .mul(anchorPotential)
       .mul(uAttractionStrength.mul(float(0.8)));
     const anchorAttraction = anchorDir.mul(anchorStrength);
@@ -225,34 +263,54 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     const clampedActiveVelocity = select(
       activeVelocityLength.greaterThan(float(2.0)),
       normalize(activeVelocity).mul(float(2.0)),
-      activeVelocity
+      activeVelocity,
     );
-    const activePos = oldPos.add(clampedActiveVelocity.mul(uParticleSpeed).mul(uDeltaTime));
+    const activePos = oldPos.add(
+      clampedActiveVelocity.mul(uParticleSpeed).mul(uDeltaTime),
+    );
 
     const idleToLogo = baryonPos.sub(oldPos);
-    const idleAlpha = clamp(uParticleSpeed.mul(uDeltaTime).mul(0.08), float(0.0), float(0.08));
+    const idleAlpha = clamp(
+      uParticleSpeed.mul(uDeltaTime).mul(0.08),
+      float(0.0),
+      float(0.08),
+    );
     const idlePos = mix(oldPos, baryonPos, idleAlpha);
-    const idleVelocity = oldVelocity.mul(float(0.6)).add(idleToLogo.mul(idleAlpha.mul(0.25)));
+    const idleVelocity = oldVelocity
+      .mul(float(0.6))
+      .add(idleToLogo.mul(idleAlpha.mul(0.25)));
 
     const nextPos = select(fieldDriven, activePos, idlePos);
-    const nextVelocity = select(fieldDriven, clampedActiveVelocity, idleVelocity);
+    const nextVelocity = select(
+      fieldDriven,
+      clampedActiveVelocity,
+      idleVelocity,
+    );
     const pLen = length(nextPos);
-    const finalPos = select(pLen.greaterThan(uRadius), normalize(nextPos).mul(uRadius), nextPos);
+    const finalPos = select(
+      pLen.greaterThan(uRadius),
+      normalize(nextPos).mul(uRadius),
+      nextPos,
+    );
     const finalVelocity = select(
       pLen.greaterThan(uRadius),
       nextVelocity.mul(float(0.5)),
-      nextVelocity
+      nextVelocity,
     );
     const finalRadius = length(finalPos);
-    const isOnSurface = abs(finalRadius.sub(uRadius)).lessThanEqual(uSurfaceThreshold);
+    const isOnSurface = abs(finalRadius.sub(uRadius)).lessThanEqual(
+      uSurfaceThreshold,
+    );
     const groupTag = select(
       fieldDriven.and(isOnSurface).and(uSurfaceControl.equal(1)),
       float(1.0),
-      select(fieldDriven, float(2.0), float(1.0))
+      select(fieldDriven, float(2.0), float(1.0)),
     );
 
     particlesBuffer.element(instanceIndex).assign(vec4(finalPos, groupTag));
-    velocityBuffer.element(instanceIndex).assign(vec4(finalVelocity, potential));
+    velocityBuffer
+      .element(instanceIndex)
+      .assign(vec4(finalVelocity, potential));
   })().compute(count);
 
   return {

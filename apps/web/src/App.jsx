@@ -9,8 +9,16 @@ function App() {
     <AudioProvider>
       <div className="app-shell">
         <ThreeScene />
-        <div className="app-legal-links" role="contentinfo" aria-label="Licensing and source">
-          <a href="https://github.com/BaryonOfficial/Baryon" target="_blank" rel="noreferrer">
+        <div
+          className="app-legal-links"
+          role="contentinfo"
+          aria-label="Licensing and source"
+        >
+          <a
+            href="https://github.com/BaryonOfficial/Baryon"
+            target="_blank"
+            rel="noreferrer"
+          >
             Source
           </a>
           <a

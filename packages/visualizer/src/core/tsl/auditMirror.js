@@ -1,15 +1,28 @@
-import { computeParticleDebugMetrics } from './debugMetrics.js';
+import { computeParticleDebugMetrics } from "./debugMetrics.js";
 
-export function createAuditState(basePositions, initialParticlePositions, baryonPositions) {
-  const sampleCount = Math.min(256, Math.max(32, Math.floor(basePositions.length / 3000)));
+export function createAuditState(
+  basePositions,
+  initialParticlePositions,
+  baryonPositions,
+) {
+  const sampleCount = Math.min(
+    256,
+    Math.max(32, Math.floor(basePositions.length / 3000)),
+  );
   const sampleIndices = new Uint32Array(sampleCount);
   const shadowParticles = new Float32Array(sampleCount * 3);
   const shadowVelocities = new Float32Array(sampleCount * 3);
   const sampleBaryon = new Float32Array(sampleCount * 3);
-  const stride = Math.max(1, Math.floor(basePositions.length / 3 / sampleCount));
+  const stride = Math.max(
+    1,
+    Math.floor(basePositions.length / 3 / sampleCount),
+  );
 
   for (let i = 0; i < sampleCount; i++) {
-    const index = Math.min(Math.floor(basePositions.length / 3) - 1, i * stride);
+    const index = Math.min(
+      Math.floor(basePositions.length / 3) - 1,
+      i * stride,
+    );
     sampleIndices[i] = index;
     shadowParticles[i * 3] = initialParticlePositions[index * 3];
     shadowParticles[i * 3 + 1] = initialParticlePositions[index * 3 + 1];
@@ -29,18 +42,19 @@ export function createAuditState(basePositions, initialParticlePositions, baryon
   };
 }
 
-export function updateAuditSnapshot(tslState, featureFrame, deltaTime, lifecycle = {}) {
+export function updateAuditSnapshot(
+  tslState,
+  featureFrame,
+  deltaTime,
+  lifecycle = {},
+) {
   const auditState = tslState.audit;
   if (!auditState || !featureFrame) {
     return null;
   }
 
-  const {
-    sampleIndices,
-    shadowParticles,
-    shadowVelocities,
-    sampleBaryon,
-  } = auditState;
+  const { sampleIndices, shadowParticles, shadowVelocities, sampleBaryon } =
+    auditState;
   const snapshot = computeParticleDebugMetrics({
     sampleIndices,
     basePositions: tslState.basePositions,

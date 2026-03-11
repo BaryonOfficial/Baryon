@@ -20,23 +20,14 @@ function createHarness({
 } = {}) {
   const sampleIndices = new Uint32Array([0, 1, 2, 3]);
   const basePositions = new Float32Array([
-    0.1, 0.1, 0.1,
-    0.12, 0.08, 0.1,
-    0.28, 0.16, 0.18,
-    0.46, 0.22, 0.18,
+    0.1, 0.1, 0.1, 0.12, 0.08, 0.1, 0.28, 0.16, 0.18, 0.46, 0.22, 0.18,
   ]);
   const shadowParticles = new Float32Array([
-    0.08, 0.06, 0.08,
-    0.18, 0.12, 0.2,
-    0.32, 0.16, 0.18,
-    0.46, 0.22, 0.16,
+    0.08, 0.06, 0.08, 0.18, 0.12, 0.2, 0.32, 0.16, 0.18, 0.46, 0.22, 0.16,
   ]);
   const shadowVelocities = new Float32Array(sampleIndices.length * 3);
   const sampleBaryon = new Float32Array([
-    0.4, 0.02, 0.0,
-    0.5, 0.08, 0.0,
-    0.6, 0.1, 0.0,
-    0.7, 0.12, 0.0,
+    0.4, 0.02, 0.0, 0.5, 0.08, 0.0, 0.6, 0.1, 0.0, 0.7, 0.12, 0.0,
   ]);
 
   return {
@@ -70,19 +61,33 @@ function createHarness({
 
 describe("particle debug metrics", () => {
   it("computes scalar field values deterministically", () => {
-    const value = computeScalarFieldValue(0.2, 0.0, 0.2, new Float32Array([1, 1, 1, 1]), 1);
+    const value = computeScalarFieldValue(
+      0.2,
+      0.0,
+      0.2,
+      new Float32Array([1, 1, 1, 1]),
+      1,
+    );
     expect(value).toBeCloseTo(0);
   });
 
   it("computes analytic gradients deterministically", () => {
-    const gradient = computeScalarFieldGradient(0.5, 0.5, 0.5, new Float32Array([1, 1, 1, 1]), 1);
+    const gradient = computeScalarFieldGradient(
+      0.5,
+      0.5,
+      0.5,
+      new Float32Array([1, 1, 1, 1]),
+      1,
+    );
     expect(gradient.x).toBeCloseTo(0, 5);
     expect(gradient.y).toBeCloseTo(0, 5);
     expect(gradient.z).toBeCloseTo(0, 5);
   });
 
   it("reports no field occupancy when no active modes exist", () => {
-    const snapshot = computeParticleDebugMetrics(createHarness({ activeModeCount: 0 }));
+    const snapshot = computeParticleDebugMetrics(
+      createHarness({ activeModeCount: 0 }),
+    );
     expect(snapshot.fieldPopulated).toBe(false);
     expect(snapshot.fieldPopulationRatio).toBe(0);
     expect(snapshot.highPotentialOccupancy).toBe(0);
@@ -132,7 +137,9 @@ describe("particle debug metrics", () => {
   });
 
   it("keeps idle fallback numerically distinct from field-driven states", () => {
-    const idleSnapshot = computeParticleDebugMetrics(createHarness({ fieldState: "idle", activeModeCount: 0 }));
+    const idleSnapshot = computeParticleDebugMetrics(
+      createHarness({ fieldState: "idle", activeModeCount: 0 }),
+    );
     const activeSnapshot = computeParticleDebugMetrics(createHarness());
 
     expect(idleSnapshot.idleFallbackActive).toBe(true);
@@ -147,7 +154,7 @@ describe("particle debug metrics", () => {
         flowStrength: 1,
         flowMix: 0.04,
         attractionStrength: 20,
-      })
+      }),
     );
 
     expect(snapshot.avgFlowContribution).toBeGreaterThan(0);
@@ -158,21 +165,22 @@ describe("particle debug metrics", () => {
   it("pushes center-heavy particles outward during active motion", () => {
     const harness = createHarness();
     harness.shadowParticles.set([
-      0.02, 0.02, 0.02,
-      0.03, 0.02, 0.03,
-      0.04, 0.03, 0.03,
-      0.05, 0.03, 0.04,
+      0.02, 0.02, 0.02, 0.03, 0.02, 0.03, 0.04, 0.03, 0.03, 0.05, 0.03, 0.04,
     ]);
 
-    const initialRadius = harness.shadowParticles.reduce((sum, value, index) => {
-      if (index % 3 !== 2) return sum;
-      const offset = index - 2;
-      return sum + Math.hypot(
-        harness.shadowParticles[offset],
-        harness.shadowParticles[offset + 1],
-        harness.shadowParticles[offset + 2]
-      );
-    }, 0) / 4;
+    const initialRadius =
+      harness.shadowParticles.reduce((sum, value, index) => {
+        if (index % 3 !== 2) return sum;
+        const offset = index - 2;
+        return (
+          sum +
+          Math.hypot(
+            harness.shadowParticles[offset],
+            harness.shadowParticles[offset + 1],
+            harness.shadowParticles[offset + 2],
+          )
+        );
+      }, 0) / 4;
 
     let snapshot = null;
     for (let i = 0; i < 12; i++) {
@@ -185,7 +193,7 @@ describe("particle debug metrics", () => {
 
   it("reports an empty field and no attraction when all mode slots are zero", () => {
     const snapshot = computeParticleDebugMetrics(
-      createHarness({ modeSlots: new Float32Array(4), activeModeCount: 0 })
+      createHarness({ modeSlots: new Float32Array(4), activeModeCount: 0 }),
     );
 
     expect(snapshot.fieldPopulated).toBe(false);
@@ -213,27 +221,18 @@ describe("particle debug metrics", () => {
       frame: 0,
       sampleIndices: new Uint32Array([0, 1, 2, 3]),
       shadowParticles: new Float32Array([
-        0.08, 0.06, 0.08,
-        0.11, 0.07, 0.09,
-        0.14, 0.09, 0.1,
-        0.18, 0.1, 0.12,
+        0.08, 0.06, 0.08, 0.11, 0.07, 0.09, 0.14, 0.09, 0.1, 0.18, 0.1, 0.12,
       ]),
       shadowVelocities: new Float32Array(12),
       sampleBaryon: new Float32Array([
-        0.2, 0.02, 0.0,
-        0.24, 0.03, 0.0,
-        0.28, 0.04, 0.0,
-        0.32, 0.05, 0.0,
+        0.2, 0.02, 0.0, 0.24, 0.03, 0.0, 0.28, 0.04, 0.0, 0.32, 0.05, 0.0,
       ]),
       lastSnapshot: null,
     };
     const tslState = {
       audit,
       basePositions: new Float32Array([
-        0.1, 0.1, 0.1,
-        0.12, 0.08, 0.1,
-        0.16, 0.1, 0.12,
-        0.2, 0.12, 0.14,
+        0.1, 0.1, 0.1, 0.12, 0.08, 0.1, 0.16, 0.1, 0.12, 0.2, 0.12, 0.14,
       ]),
       uniforms: {
         uRadius: { value: 1 },

@@ -23,8 +23,10 @@ export default function ParticleDebugOverlay() {
     }
 
     const update = () => {
-      const enabled = Boolean(window.__baryonControls?.getState?.().auditEnabled);
-      const snapshot = enabled ? window.__baryonAuditSnapshot ?? null : null;
+      const enabled = Boolean(
+        window.__baryonControls?.getState?.().auditEnabled,
+      );
+      const snapshot = enabled ? (window.__baryonAuditSnapshot ?? null) : null;
       setOverlayState({ enabled, snapshot });
     };
 
@@ -64,21 +66,39 @@ export default function ParticleDebugOverlay() {
         backdropFilter: "blur(8px)",
       }}
     >
-      <div style={{ fontWeight: 700, marginBottom: "0.45rem" }}>Particle Debug</div>
+      <div style={{ fontWeight: 700, marginBottom: "0.45rem" }}>
+        Particle Debug
+      </div>
       <div>Method: {snapshot.visualizationMethod ?? "particle"}</div>
       <div>Field: {particleDebug.fieldState}</div>
-      <div>Modes: {particleDebug.activeModeCount ?? snapshot.modeSlotCount ?? 0}</div>
+      <div>
+        Modes: {particleDebug.activeModeCount ?? snapshot.modeSlotCount ?? 0}
+      </div>
       <div>Pitch: {snapshot.pitchSource ?? "none"}</div>
       <div>Analysis: {snapshot.analysisSourceUsed ?? "none"}</div>
-      <div>Field Occupancy: {formatNumber(particleDebug.fieldPopulationRatio)}</div>
-      <div>High Potential: {formatNumber(particleDebug.highPotentialOccupancy)}</div>
-      <div>Center Particles: {formatNumber(particleDebug.centerParticleOccupancy)}</div>
-      <div>Center Potential: {formatNumber(particleDebug.centerPotentialOccupancy)}</div>
-      <div>Attraction: {formatNumber(particleDebug.avgAttractionContribution)}</div>
+      <div>
+        Field Occupancy: {formatNumber(particleDebug.fieldPopulationRatio)}
+      </div>
+      <div>
+        High Potential: {formatNumber(particleDebug.highPotentialOccupancy)}
+      </div>
+      <div>
+        Center Particles: {formatNumber(particleDebug.centerParticleOccupancy)}
+      </div>
+      <div>
+        Center Potential: {formatNumber(particleDebug.centerPotentialOccupancy)}
+      </div>
+      <div>
+        Attraction: {formatNumber(particleDebug.avgAttractionContribution)}
+      </div>
       <div>Anchor: {formatNumber(particleDebug.avgAnchorContribution)}</div>
-      <div>Core Lift: {formatNumber(particleDebug.avgCenterEscapeContribution)}</div>
+      <div>
+        Core Lift: {formatNumber(particleDebug.avgCenterEscapeContribution)}
+      </div>
       <div>Flow: {formatNumber(particleDebug.avgFlowContribution)}</div>
-      <div>A/F Ratio: {formatNumber(particleDebug.attractionToFlowRatio, 2)}</div>
+      <div>
+        A/F Ratio: {formatNumber(particleDebug.attractionToFlowRatio, 2)}
+      </div>
       <div>Continuity: {particleDebug.continuityMode}</div>
       <div>Reset: {particleDebug.resetReason}</div>
     </aside>

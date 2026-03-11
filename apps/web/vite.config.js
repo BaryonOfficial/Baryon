@@ -1,12 +1,12 @@
-import { defineConfig } from 'vite';
-import path from 'path';
-import { createBaseViteConfig } from '@baryon/config';
-import basicSsl from '@vitejs/plugin-basic-ssl';
-import tailwindcss from '@tailwindcss/vite';
+import { defineConfig } from "vite";
+import path from "path";
+import { createBaseViteConfig } from "@baryon/config";
+import basicSsl from "@vitejs/plugin-basic-ssl";
+import tailwindcss from "@tailwindcss/vite";
 
 /** @returns {import('vite').UserConfig} */
 export default defineConfig(() => {
-  const isHttps = process.env.HTTPS === 'true';
+  const isHttps = process.env.HTTPS === "true";
   const base = createBaseViteConfig();
   /** @type {import('vite').PluginOption[]} */
   const plugins = [
@@ -20,20 +20,22 @@ export default defineConfig(() => {
     plugins,
     server: {
       headers: {
-        'Cross-Origin-Embedder-Policy': 'require-corp',
-        'Cross-Origin-Opener-Policy': 'same-origin',
+        "Cross-Origin-Embedder-Policy": "require-corp",
+        "Cross-Origin-Opener-Policy": "same-origin",
       },
       host: true,
       https: isHttps ? {} : undefined,
-      open: !('SANDBOX_URL' in process.env || 'CODESANDBOX_HOST' in process.env),
+      open: !(
+        "SANDBOX_URL" in process.env || "CODESANDBOX_HOST" in process.env
+      ),
     },
     build: {
       ...base.build,
-      outDir: 'dist',
+      outDir: "dist",
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        "@": path.resolve(__dirname, "./src"),
       },
     },
   };

@@ -22,10 +22,11 @@ export function computeScalarFieldValue(x, y, z, modeSlots, radius) {
     const ui = modeSlots[i];
     const vi = modeSlots[i + 1];
     const wi = modeSlots[i + 2];
-    sum += amplitude
-      * Math.sin(ui * Math.PI * x * scale)
-      * Math.sin(vi * Math.PI * y * scale)
-      * Math.sin(wi * Math.PI * z * scale);
+    sum +=
+      amplitude *
+      Math.sin(ui * Math.PI * x * scale) *
+      Math.sin(vi * Math.PI * y * scale) *
+      Math.sin(wi * Math.PI * z * scale);
   }
 
   return sum;
@@ -44,12 +45,12 @@ export function computeScalarFieldGradient(x, y, z, modeSlots, radius) {
     const ui = modeSlots[i];
     const vi = modeSlots[i + 1];
     const wi = modeSlots[i + 2];
-    const sx = Math.sin(ui * Math.PI * x / radius);
-    const sy = Math.sin(vi * Math.PI * y / radius);
-    const sz = Math.sin(wi * Math.PI * z / radius);
-    const gx = Math.cos(ui * Math.PI * x / radius) * ui * scale;
-    const gy = Math.cos(vi * Math.PI * y / radius) * vi * scale;
-    const gz = Math.cos(wi * Math.PI * z / radius) * wi * scale;
+    const sx = Math.sin((ui * Math.PI * x) / radius);
+    const sy = Math.sin((vi * Math.PI * y) / radius);
+    const sz = Math.sin((wi * Math.PI * z) / radius);
+    const gx = Math.cos((ui * Math.PI * x) / radius) * ui * scale;
+    const gy = Math.cos((vi * Math.PI * y) / radius) * vi * scale;
+    const gz = Math.cos((wi * Math.PI * z) / radius) * wi * scale;
 
     gradX += amplitude * gx * sy * sz;
     gradY += amplitude * sx * gy * sz;
@@ -111,9 +112,21 @@ function pseudoNoise3(x, y, z) {
 }
 
 function computeFlowVector(x, y, z, flowFrequency, time) {
-  const nx = pseudoNoise3(x * flowFrequency, y * flowFrequency, z * flowFrequency + time);
-  const ny = pseudoNoise3(x * flowFrequency + 1, y * flowFrequency, z * flowFrequency + time);
-  const nz = pseudoNoise3(x * flowFrequency + 2, y * flowFrequency, z * flowFrequency + time);
+  const nx = pseudoNoise3(
+    x * flowFrequency,
+    y * flowFrequency,
+    z * flowFrequency + time,
+  );
+  const ny = pseudoNoise3(
+    x * flowFrequency + 1,
+    y * flowFrequency,
+    z * flowFrequency + time,
+  );
+  const nz = pseudoNoise3(
+    x * flowFrequency + 2,
+    y * flowFrequency,
+    z * flowFrequency + time,
+  );
   return normalizeVector(nx, ny, nz);
 }
 
@@ -136,11 +149,15 @@ export function computeNodalFieldMetrics({
   const gradient = computeScalarFieldGradient(x, y, z, modeSlots, radius);
   const radialDist = Math.hypot(x, y, z);
   const nodeBandWeight = 1 - smoothstep(0, threshold, fieldAbs);
-  const structureWeight = smoothstep(structureMin, structureMax, gradient.magnitude);
+  const structureWeight = smoothstep(
+    structureMin,
+    structureMax,
+    gradient.magnitude,
+  );
   const centerSuppression = smoothstep(
     centerSuppressionInner,
     centerSuppressionOuter,
-    radialDist
+    radialDist,
   );
   const potential = nodeBandWeight * structureWeight * centerSuppression;
   const isOnSurface = Math.abs(radialDist - radius) <= surfaceThreshold;
@@ -240,49 +257,73 @@ function computeParticleStep({
   const gradientDir = normalizeVector(
     nodal.gradient.x + EPSILON,
     nodal.gradient.y + EPSILON,
-    nodal.gradient.z + EPSILON
+    nodal.gradient.z + EPSILON,
   );
-  const radialDir = normalizeVector(oldX + EPSILON, oldY + EPSILON, oldZ + EPSILON);
-  const anchorDir = normalizeVector(anchorX - oldX, anchorY - oldY, anchorZ - oldZ);
-  const anchorDistance = Math.hypot(anchorX - oldX, anchorY - oldY, anchorZ - oldZ);
+  const radialDir = normalizeVector(
+    oldX + EPSILON,
+    oldY + EPSILON,
+    oldZ + EPSILON,
+  );
+  const anchorDir = normalizeVector(
+    anchorX - oldX,
+    anchorY - oldY,
+    anchorZ - oldZ,
+  );
+  const anchorDistance = Math.hypot(
+    anchorX - oldX,
+    anchorY - oldY,
+    anchorZ - oldZ,
+  );
   const signScale = nodal.field >= 0 ? -1 : 1;
-  const attractionScalar = clamp(
-    nodal.fieldAbs / (threshold * 4 + EPSILON),
-    0,
-    1
-  ) * nodal.structureWeight * nodal.centerSuppression * attractionStrength;
+  const attractionScalar =
+    clamp(nodal.fieldAbs / (threshold * 4 + EPSILON), 0, 1) *
+    nodal.structureWeight *
+    nodal.centerSuppression *
+    attractionStrength;
   const attractionX = gradientDir.x * signScale * attractionScalar;
   const attractionY = gradientDir.y * signScale * attractionScalar;
   const attractionZ = gradientDir.z * signScale * attractionScalar;
-  const anchorScalar = smoothstep(0, radius * 0.35, anchorDistance)
-    * anchorPotential
-    * attractionStrength
-    * 0.8;
+  const anchorScalar =
+    smoothstep(0, radius * 0.35, anchorDistance) *
+    anchorPotential *
+    attractionStrength *
+    0.8;
   const anchorXForce = anchorDir.x * anchorScalar;
   const anchorYForce = anchorDir.y * anchorScalar;
   const anchorZForce = anchorDir.z * anchorScalar;
-  const centerEscapeScalar = (1 - nodal.centerSuppression)
-    * (1 - nodal.nodeBandWeight * nodal.structureWeight)
-    * attractionStrength
-    * 0.35;
+  const centerEscapeScalar =
+    (1 - nodal.centerSuppression) *
+    (1 - nodal.nodeBandWeight * nodal.structureWeight) *
+    attractionStrength *
+    0.35;
   const centerEscapeX = radialDir.x * centerEscapeScalar;
   const centerEscapeY = radialDir.y * centerEscapeScalar;
   const centerEscapeZ = radialDir.z * centerEscapeScalar;
 
   const flowDir = computeFlowVector(oldX, oldY, oldZ, flowFrequency, time);
-  const flowScalar = flowStrength * flowMix * (1 - nodal.potential) * (1 - anchorPotential * 0.85);
+  const flowScalar =
+    flowStrength *
+    flowMix *
+    (1 - nodal.potential) *
+    (1 - anchorPotential * 0.85);
   const flowX = flowDir.x * flowScalar;
   const flowY = flowDir.y * flowScalar;
   const flowZ = flowDir.z * flowScalar;
 
-  const unclampedVelocityX = oldVx * velocityDamping + (attractionX + anchorXForce + centerEscapeX + flowX) * deltaTime;
-  const unclampedVelocityY = oldVy * velocityDamping + (attractionY + anchorYForce + centerEscapeY + flowY) * deltaTime;
-  const unclampedVelocityZ = oldVz * velocityDamping + (attractionZ + anchorZForce + centerEscapeZ + flowZ) * deltaTime;
+  const unclampedVelocityX =
+    oldVx * velocityDamping +
+    (attractionX + anchorXForce + centerEscapeX + flowX) * deltaTime;
+  const unclampedVelocityY =
+    oldVy * velocityDamping +
+    (attractionY + anchorYForce + centerEscapeY + flowY) * deltaTime;
+  const unclampedVelocityZ =
+    oldVz * velocityDamping +
+    (attractionZ + anchorZForce + centerEscapeZ + flowZ) * deltaTime;
   const clampedVelocity = clampVectorMagnitude(
     unclampedVelocityX,
     unclampedVelocityY,
     unclampedVelocityZ,
-    MAX_ACTIVE_SPEED
+    MAX_ACTIVE_SPEED,
   );
 
   let nextX = oldX + clampedVelocity.x * particleSpeed * deltaTime;
@@ -322,9 +363,12 @@ function computeParticleStep({
     vx: nextVx,
     vy: nextVy,
     vz: nextVz,
-    attractionContribution: Math.hypot(attractionX, attractionY, attractionZ) * deltaTime,
-    anchorContribution: Math.hypot(anchorXForce, anchorYForce, anchorZForce) * deltaTime,
-    centerEscapeContribution: Math.hypot(centerEscapeX, centerEscapeY, centerEscapeZ) * deltaTime,
+    attractionContribution:
+      Math.hypot(attractionX, attractionY, attractionZ) * deltaTime,
+    anchorContribution:
+      Math.hypot(anchorXForce, anchorYForce, anchorZForce) * deltaTime,
+    centerEscapeContribution:
+      Math.hypot(centerEscapeX, centerEscapeY, centerEscapeZ) * deltaTime,
     flowContribution: Math.hypot(flowX, flowY, flowZ) * deltaTime,
     velocityMagnitude: Math.hypot(nextVx, nextVy, nextVz),
     repaired,
@@ -417,19 +461,19 @@ export function computeParticleDebugMetrics({
 
     const baseNodal = fieldDriven
       ? computeNodalFieldMetrics({
-        x: baseX,
-        y: baseY,
-        z: baseZ,
-        modeSlots,
-        radius,
-        threshold,
-        surfaceThreshold,
-        surfaceControl,
-        centerSuppressionInner,
-        centerSuppressionOuter,
-        structureMin,
-        structureMax,
-      })
+          x: baseX,
+          y: baseY,
+          z: baseZ,
+          modeSlots,
+          radius,
+          threshold,
+          surfaceThreshold,
+          surfaceControl,
+          centerSuppressionInner,
+          centerSuppressionOuter,
+          structureMin,
+          structureMax,
+        })
       : null;
 
     if (baseNodal && baseNodal.potential > FIELD_OCCUPANCY_THRESHOLD) {
@@ -483,28 +527,36 @@ export function computeParticleDebugMetrics({
     shadowVelocities[velocityOffset + 1] = particleStep.vy;
     shadowVelocities[velocityOffset + 2] = particleStep.vz;
 
-    const particleRadius = Math.hypot(particleStep.x, particleStep.y, particleStep.z);
+    const particleRadius = Math.hypot(
+      particleStep.x,
+      particleStep.y,
+      particleStep.z,
+    );
     const particleNodal = fieldDriven
       ? computeNodalFieldMetrics({
-        x: particleStep.x,
-        y: particleStep.y,
-        z: particleStep.z,
-        modeSlots,
-        radius,
-        threshold,
-        surfaceThreshold,
-        surfaceControl,
-        centerSuppressionInner,
-        centerSuppressionOuter,
-        structureMin,
-        structureMax,
-      })
+          x: particleStep.x,
+          y: particleStep.y,
+          z: particleStep.z,
+          modeSlots,
+          radius,
+          threshold,
+          surfaceThreshold,
+          surfaceControl,
+          centerSuppressionInner,
+          centerSuppressionOuter,
+          structureMin,
+          structureMax,
+        })
       : null;
 
     if (particleRadius <= coreRadius) {
       centerParticleCount++;
     }
-    if (particleNodal && particleNodal.potential > FIELD_OCCUPANCY_THRESHOLD && particleRadius <= coreRadius) {
+    if (
+      particleNodal &&
+      particleNodal.potential > FIELD_OCCUPANCY_THRESHOLD &&
+      particleRadius <= coreRadius
+    ) {
       centerPotentialCount++;
     }
     if (particleNodal && particleNodal.potential > HIGH_POTENTIAL_THRESHOLD) {

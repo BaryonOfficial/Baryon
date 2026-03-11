@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from "react";
 
 export function useFullscreen(elementRef) {
   const toggleFullscreen = useCallback(() => {
@@ -16,14 +16,15 @@ export function useFullscreen(elementRef) {
       const isEditing =
         activeElement instanceof HTMLInputElement ||
         activeElement instanceof HTMLTextAreaElement ||
-        (activeElement instanceof HTMLElement && activeElement.isContentEditable);
-      if (event.key === 'f' && elementRef.current && !isEditing) {
+        (activeElement instanceof HTMLElement &&
+          activeElement.isContentEditable);
+      if (event.key === "f" && elementRef.current && !isEditing) {
         toggleFullscreen();
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [elementRef, toggleFullscreen]);
 
   return toggleFullscreen;

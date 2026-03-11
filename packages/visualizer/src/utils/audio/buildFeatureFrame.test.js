@@ -159,7 +159,14 @@ describe("buildAudioFeatureFrame", () => {
       featureState,
       radius: 3,
       status: activeStatus,
-      auditSettings: { enabled: true, freezeModeSlots: false, injectTestTone: false, testToneHz: 440, testToneAmplitude: 0.5, logEveryFrames: 30 },
+      auditSettings: {
+        enabled: true,
+        freezeModeSlots: false,
+        injectTestTone: false,
+        testToneHz: 440,
+        testToneAmplitude: 0.5,
+        logEveryFrames: 30,
+      },
     });
     expect(first.fieldState).toBe("active");
     const capturedSlots = Array.from(first.modeSlots);
@@ -170,7 +177,14 @@ describe("buildAudioFeatureFrame", () => {
       featureState,
       radius: 3,
       status: activeStatus,
-      auditSettings: { enabled: true, freezeModeSlots: true, injectTestTone: false, testToneHz: 440, testToneAmplitude: 0.5, logEveryFrames: 30 },
+      auditSettings: {
+        enabled: true,
+        freezeModeSlots: true,
+        injectTestTone: false,
+        testToneHz: 440,
+        testToneAmplitude: 0.5,
+        logEveryFrames: 30,
+      },
     });
     expect(Array.from(second.modeSlots)).toEqual(capturedSlots);
 
@@ -180,7 +194,14 @@ describe("buildAudioFeatureFrame", () => {
       featureState,
       radius: 3,
       status: activeStatus,
-      auditSettings: { enabled: true, freezeModeSlots: true, injectTestTone: false, testToneHz: 440, testToneAmplitude: 0.5, logEveryFrames: 30 },
+      auditSettings: {
+        enabled: true,
+        freezeModeSlots: true,
+        injectTestTone: false,
+        testToneHz: 440,
+        testToneAmplitude: 0.5,
+        logEveryFrames: 30,
+      },
     });
     expect(Array.from(third.modeSlots)).toEqual(capturedSlots);
   });
@@ -211,20 +232,55 @@ describe("buildAudioFeatureFrame", () => {
 
 describe("detectMicNoiseGate", () => {
   it("activates when inputMode is mic and both amplitude and rms are near zero", () => {
-    expect(detectMicNoiseGate({ injectTestTone: false, inputMode: "mic", avgAmplitude: 0, rms: 0 })).toBe(true);
+    expect(
+      detectMicNoiseGate({
+        injectTestTone: false,
+        inputMode: "mic",
+        avgAmplitude: 0,
+        rms: 0,
+      }),
+    ).toBe(true);
   });
 
   it("does not activate when test tone is injected, even with silence", () => {
-    expect(detectMicNoiseGate({ injectTestTone: true, inputMode: "mic", avgAmplitude: 0, rms: 0 })).toBe(false);
+    expect(
+      detectMicNoiseGate({
+        injectTestTone: true,
+        inputMode: "mic",
+        avgAmplitude: 0,
+        rms: 0,
+      }),
+    ).toBe(false);
   });
 
   it("does not activate for file or idle input mode", () => {
-    expect(detectMicNoiseGate({ injectTestTone: false, inputMode: "file", avgAmplitude: 0, rms: 0 })).toBe(false);
-    expect(detectMicNoiseGate({ injectTestTone: false, inputMode: "idle", avgAmplitude: 0, rms: 0 })).toBe(false);
+    expect(
+      detectMicNoiseGate({
+        injectTestTone: false,
+        inputMode: "file",
+        avgAmplitude: 0,
+        rms: 0,
+      }),
+    ).toBe(false);
+    expect(
+      detectMicNoiseGate({
+        injectTestTone: false,
+        inputMode: "idle",
+        avgAmplitude: 0,
+        rms: 0,
+      }),
+    ).toBe(false);
   });
 
   it("does not activate when amplitude is clearly above the silence threshold", () => {
-    expect(detectMicNoiseGate({ injectTestTone: false, inputMode: "mic", avgAmplitude: 200, rms: 1.0 })).toBe(false);
+    expect(
+      detectMicNoiseGate({
+        injectTestTone: false,
+        inputMode: "mic",
+        avgAmplitude: 200,
+        rms: 1.0,
+      }),
+    ).toBe(false);
   });
 });
 

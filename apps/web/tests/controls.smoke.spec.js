@@ -12,14 +12,14 @@ async function setControl(page, key, value) {
     ([controlKey, controlValue]) => {
       window.__baryonControls.setControl(controlKey, controlValue);
     },
-    [key, value]
+    [key, value],
   );
 }
 
 test.describe("Baryon control smoke", () => {
   test.skip(
     process.env.BARYON_BUILD_MODE === "production",
-    "Control smoke runs only against dev-mode builds."
+    "Control smoke runs only against dev-mode builds.",
   );
 
   test("updates critical runtime values through the live control surface", async ({
@@ -33,7 +33,7 @@ test.describe("Baryon control smoke", () => {
 
     await expect
       .poll(() =>
-        page.evaluate(() => window.__baryonControlState?.method ?? null)
+        page.evaluate(() => window.__baryonControlState?.method ?? null),
       )
       .toBe("particle");
 
@@ -42,13 +42,17 @@ test.describe("Baryon control smoke", () => {
     await expect
       .poll(() =>
         page.evaluate(() => ({
-          fieldState: window.__baryonAuditSnapshot?.particleDebug?.fieldState ?? null,
+          fieldState:
+            window.__baryonAuditSnapshot?.particleDebug?.fieldState ?? null,
           centerParticleOccupancy:
-            window.__baryonAuditSnapshot?.particleDebug?.centerParticleOccupancy ?? null,
+            window.__baryonAuditSnapshot?.particleDebug
+              ?.centerParticleOccupancy ?? null,
           centerPotentialOccupancy:
-            window.__baryonAuditSnapshot?.particleDebug?.centerPotentialOccupancy ?? null,
-          continuityMode: window.__baryonAuditSnapshot?.particleDebug?.continuityMode ?? null,
-        }))
+            window.__baryonAuditSnapshot?.particleDebug
+              ?.centerPotentialOccupancy ?? null,
+          continuityMode:
+            window.__baryonAuditSnapshot?.particleDebug?.continuityMode ?? null,
+        })),
       )
       .toEqual({
         fieldState: expect.any(String),
@@ -61,10 +65,11 @@ test.describe("Baryon control smoke", () => {
     await expect
       .poll(() =>
         page.evaluate(() => ({
-          fieldState: window.__baryonAuditSnapshot?.particleDebug?.fieldState ?? null,
+          fieldState:
+            window.__baryonAuditSnapshot?.particleDebug?.fieldState ?? null,
           pitchSource: window.__baryonAuditSnapshot?.pitchSource ?? null,
           modeSlotCount: window.__baryonAuditSnapshot?.modeSlotCount ?? 0,
-        }))
+        })),
       )
       .toEqual({
         fieldState: "test",
@@ -75,7 +80,9 @@ test.describe("Baryon control smoke", () => {
     await setControl(page, "bloomStrength", 0.91);
     await expect
       .poll(() =>
-        page.evaluate(() => window.__baryonControlState?.bloom?.strength ?? null)
+        page.evaluate(
+          () => window.__baryonControlState?.bloom?.strength ?? null,
+        ),
       )
       .toBe(0.91);
 
@@ -83,8 +90,10 @@ test.describe("Baryon control smoke", () => {
     await expect
       .poll(() =>
         page.evaluate(
-          () => window.__baryonControlState?.particle?.uniforms?.idleLogoSize ?? null
-        )
+          () =>
+            window.__baryonControlState?.particle?.uniforms?.idleLogoSize ??
+            null,
+        ),
       )
       .toBe(1.37);
 
@@ -92,8 +101,9 @@ test.describe("Baryon control smoke", () => {
     await expect
       .poll(() =>
         page.evaluate(
-          () => window.__baryonControlState?.particle?.uniforms?.threshold ?? null
-        )
+          () =>
+            window.__baryonControlState?.particle?.uniforms?.threshold ?? null,
+        ),
       )
       .toBe(0.042);
 
@@ -101,8 +111,10 @@ test.describe("Baryon control smoke", () => {
     await expect
       .poll(() =>
         page.evaluate(
-          () => window.__baryonControlState?.particle?.uniforms?.attractionStrength ?? null
-        )
+          () =>
+            window.__baryonControlState?.particle?.uniforms
+              ?.attractionStrength ?? null,
+        ),
       )
       .toBe(19.2);
 

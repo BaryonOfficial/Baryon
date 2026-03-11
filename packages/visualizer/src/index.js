@@ -15,21 +15,24 @@ export {
   readClockSnapshot,
   readAnalysisSnapshot,
   disposeAudio,
-} from './core/audio/audioSetup.js';
-export { setupTSL, tickTSL, disposeTSL } from './core/tslSetup.js';
+} from "./core/audio/audioSetup.js";
+export { setupTSL, tickTSL, disposeTSL } from "./core/tslSetup.js";
 export {
   DEFAULT_VISUALIZATION_METHOD,
   VISUALIZATION_METHODS,
-} from './visualization/types.js';
-export { createVisualizationRuntime } from './visualization/runtimeFactory.js';
+} from "./visualization/types.js";
+export { createVisualizationRuntime } from "./visualization/runtimeFactory.js";
 
 // Three
-export * from './three/loaders/setupLoaders.js';
+export * from "./three/loaders/setupLoaders.js";
 
 // Utils
-export { createAudioFeatureState, buildAudioFeatureFrame } from './utils/audioFeatures.js';
-export { AudioControlsView } from './react/AudioControlsView.jsx';
-export { useSharedAudioLogic } from './react/useSharedAudioLogic.js';
+export {
+  createAudioFeatureState,
+  buildAudioFeatureFrame,
+} from "./utils/audioFeatures.js";
+export { AudioControlsView } from "./react/AudioControlsView.jsx";
+export { useSharedAudioLogic } from "./react/useSharedAudioLogic.js";
 export {
   CONTROL_DEFINITIONS,
   CONTROL_HANDLERS,
@@ -39,9 +42,13 @@ export {
   getControlFolders,
   getControlsForFolder,
   getControlsForMethod,
-} from './controls/schema.js';
-export { auditControlSchema } from './controls/audit.js';
-export { serializeControls, deserializeControls, createPreset } from './controls/persistence.js';
+} from "./controls/schema.js";
+export { auditControlSchema } from "./controls/audit.js";
+export {
+  serializeControls,
+  deserializeControls,
+  createPreset,
+} from "./controls/persistence.js";
 export {
   CONTROL_RUNTIME_COVERAGE,
   applySimulationControls,
@@ -52,7 +59,7 @@ export {
   applySceneControls,
   applyParticleSceneControls,
   buildControlInspectionSnapshot,
-} from './controls/runtime.js';
+} from "./controls/runtime.js";
 
 // Constants
-export * from './defaults.js';
+export * from "./defaults.js";

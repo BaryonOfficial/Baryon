@@ -65,6 +65,7 @@ The codebase now has an internal visualization-method scaffold:
 - `packages/visualizer/src/visualization/particleRuntime.js`
 
 Architectural rule:
+
 - audio/modal estimation stays renderer-agnostic and shared
 - visualization methods consume `AudioFeatureFrame` downstream
 - current implementation is `particle`
@@ -90,11 +91,13 @@ The compute stages are:
 3. **particles** — Updates particle velocity/position from field attraction, anchor pull, damping, subordinate flow, and idle-logo fallback
 
 Particle debugging/diagnostics are now centered around:
+
 - `packages/visualizer/src/core/tsl/debugMetrics.js` — pure CPU-side helpers for scalar-field sampling and particle-debug metrics
 - richer audit snapshots around field occupancy, attraction/flow balance, and center behavior
 - lifecycle flags for mode-slot changes and reset reasons
 
 Key functions exported from `@baryon/visualizer`:
+
 - `setupTSL(baryonGeometry, parameters, audioConfig)` — initializes TSL state
 - `tickTSL(renderer, tslState, featureFrame, time, deltaTime)` — per-frame compute update
 - `disposeTSL(tsl)` — cleanup
@@ -116,6 +119,7 @@ Key functions exported from `@baryon/visualizer`:
   - `buildFeatureFrame.js`
 
 `buildAudioFeatureFrame(audioState, featureState, radius)` is the canonical CPU-side modal estimator. It produces:
+
 - `fieldState`
 - `modeSlots`
 - `fftMagnitudes`
@@ -123,6 +127,7 @@ Key functions exported from `@baryon/visualizer`:
 - debug/audit metadata
 
 Current modal behavior:
+
 - live audio resolves a small set of spectral peaks each frame
 - those peaks are mapped to `(u, v, w, amplitude)` mode slots on the CPU
 - test-tone injection uses the same `AudioFeatureFrame` seam for diagnostics
@@ -155,11 +160,13 @@ The GUI control surface now has a canonical schema in `packages/visualizer/src/c
 - `audit.js` — control schema audit helper
 
 Control verification rules:
+
 - Every `live` control must have explicit runtime coverage through the handler layer.
 - `runtimePath` is audit metadata only; it is not the real source of truth.
 - `packages/visualizer/src/controls/runtime.js` exports `CONTROL_RUNTIME_COVERAGE`, which is what the schema audit and unit tests validate against.
 
 Rules:
+
 - New controls should be added through the control schema, not inline in the hook.
 - Pane creation in `useBaryonControls.js` should stay schema-driven.
 - Control sync logic should remain testable and outside React hooks where possible.
@@ -183,6 +190,7 @@ Rules:
   - whether too many particles/targets are concentrating near the origin
 
 Important particle-debug keys now include:
+
 - `fieldState`
 - `activeModeCount`
 - `zeroPointOccupancy`

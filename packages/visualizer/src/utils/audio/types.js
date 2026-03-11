@@ -1,4 +1,4 @@
-export { FIELD_STATES } from '../../core/fieldState.js';
+export { FIELD_STATES } from "../../core/fieldState.js";
 
 /**
  * @typedef {import('../../core/fieldState.js').FieldState} FieldState

@@ -1,15 +1,16 @@
 import {
   solveNormalModesForPitch,
   sampleFFTAmplitudeForFrequency,
-} from '../normalModes.js';
-import { MAX_STACK_SLOTS, writeSlot } from './modalStack.js';
-import { SPECTRAL_MODAL_POLICY } from './policy.js';
+} from "../normalModes.js";
+import { MAX_STACK_SLOTS, writeSlot } from "./modalStack.js";
+import { SPECTRAL_MODAL_POLICY } from "./policy.js";
 
 export const HARMONIC_ORDERS = SPECTRAL_MODAL_POLICY.harmonicOrders;
 const HARMONIC_ATTENUATION = SPECTRAL_MODAL_POLICY.harmonicAttenuation;
 const HARMONIC_SUPPORT_FLOOR = SPECTRAL_MODAL_POLICY.harmonicSupportFloor;
 const HARMONIC_SUPPORT_RATIO = SPECTRAL_MODAL_POLICY.harmonicSupportRatio;
-const MIN_SPECTRAL_BIN_AMPLITUDE = SPECTRAL_MODAL_POLICY.minSpectralBinAmplitude;
+const MIN_SPECTRAL_BIN_AMPLITUDE =
+  SPECTRAL_MODAL_POLICY.minSpectralBinAmplitude;
 const MIN_SPECTRAL_BIN_GAP_HZ = SPECTRAL_MODAL_POLICY.minSpectralBinGapHz;
 const MAX_SPECTRAL_FREQUENCY = SPECTRAL_MODAL_POLICY.maxSpectralFrequency;
 
@@ -30,18 +31,26 @@ export function buildModalSlotsFromFundamental({
     frequency,
     fftMagnitudes,
     sampleRate,
-    fftSize
+    fftSize,
   );
-  const supportThreshold = Math.max(HARMONIC_SUPPORT_FLOOR, primarySupport * HARMONIC_SUPPORT_RATIO);
+  const supportThreshold = Math.max(
+    HARMONIC_SUPPORT_FLOOR,
+    primarySupport * HARMONIC_SUPPORT_RATIO,
+  );
 
   let slotIndex = 0;
-  for (let i = 0; i < HARMONIC_ORDERS.length && slotIndex < Math.min(capacity, MAX_STACK_SLOTS); i++) {
+  for (
+    let i = 0;
+    i < HARMONIC_ORDERS.length &&
+    slotIndex < Math.min(capacity, MAX_STACK_SLOTS);
+    i++
+  ) {
     const harmonicFrequency = frequency * HARMONIC_ORDERS[i];
     const support = sampleFFTAmplitudeForFrequency(
       harmonicFrequency,
       fftMagnitudes,
       sampleRate,
-      fftSize
+      fftSize,
     );
     harmonicSupport[i] = support;
 
@@ -56,8 +65,13 @@ export function buildModalSlotsFromFundamental({
     if (seenModes.has(key)) continue;
     seenModes.add(key);
 
-    const attenuation = HARMONIC_ATTENUATION[i] ?? HARMONIC_ATTENUATION[HARMONIC_ATTENUATION.length - 1];
-    const amplitude = support * attenuation * (i === 0 ? confidence : Math.max(0.5, confidence));
+    const attenuation =
+      HARMONIC_ATTENUATION[i] ??
+      HARMONIC_ATTENUATION[HARMONIC_ATTENUATION.length - 1];
+    const amplitude =
+      support *
+      attenuation *
+      (i === 0 ? confidence : Math.max(0.5, confidence));
     writeSlot(slots, slotIndex, mode, amplitude);
     writeSlot(referenceSlots, slotIndex, mode, support);
     slotIndex++;
@@ -86,7 +100,7 @@ export function buildModalSlotsFromSpectralPeaks({
     fftMagnitudes,
     sampleRate,
     fftSize,
-    Math.min(capacity, MAX_STACK_SLOTS) * 2
+    Math.min(capacity, MAX_STACK_SLOTS) * 2,
   );
 
   let slotIndex = 0;
@@ -99,7 +113,10 @@ export function buildModalSlotsFromSpectralPeaks({
     if (seenModes.has(key)) continue;
     seenModes.add(key);
 
-    const attenuation = HARMONIC_ATTENUATION[Math.min(slotIndex, HARMONIC_ATTENUATION.length - 1)];
+    const attenuation =
+      HARMONIC_ATTENUATION[
+        Math.min(slotIndex, HARMONIC_ATTENUATION.length - 1)
+      ];
     writeSlot(slots, slotIndex, mode, peak.amplitude * attenuation);
     writeSlot(referenceSlots, slotIndex, mode, peak.amplitude);
     harmonicSupport[slotIndex] = peak.amplitude;
@@ -115,7 +132,12 @@ export function buildModalSlotsFromSpectralPeaks({
   };
 }
 
-function findSpectralPeakFrequencies(fftMagnitudes, sampleRate, fftSize, count) {
+function findSpectralPeakFrequencies(
+  fftMagnitudes,
+  sampleRate,
+  fftSize,
+  count,
+) {
   if (!fftMagnitudes?.length || !sampleRate || !fftSize || count <= 0) {
     return [];
   }
@@ -123,7 +145,7 @@ function findSpectralPeakFrequencies(fftMagnitudes, sampleRate, fftSize, count) 
   const nyquist = sampleRate * 0.5;
   const minBinGap = Math.max(
     1,
-    Math.round((MIN_SPECTRAL_BIN_GAP_HZ / nyquist) * (fftSize * 0.5 - 1))
+    Math.round((MIN_SPECTRAL_BIN_GAP_HZ / nyquist) * (fftSize * 0.5 - 1)),
   );
   const candidates = [];
 
@@ -146,7 +168,9 @@ function findSpectralPeakFrequencies(fftMagnitudes, sampleRate, fftSize, count) 
   const selected = [];
   for (const candidate of candidates) {
     if (selected.length >= count) break;
-    const tooClose = selected.some((existing) => Math.abs(existing.bin - candidate.bin) < minBinGap);
+    const tooClose = selected.some(
+      (existing) => Math.abs(existing.bin - candidate.bin) < minBinGap,
+    );
     if (!tooClose) selected.push(candidate);
   }
 

@@ -22,15 +22,12 @@ We use the OODA Loop framework to guide our development:
 ## How to Contribute
 
 1. **Find or Propose an Issue**
-
    - Check [open issues](https://github.com/BaryonOfficial/Baryon/issues) or open a new one to suggest an idea or report a bug.
 
 2. **Fork the Repository**
-
    - Click the “Fork” button on the [Baryon GitHub page](https://github.com/BaryonOfficial/Baryon).
 
 3. **Clone Your Fork**
-
    - Copy your fork to your computer:
      ```
      git clone https://github.com/<your-username>/Baryon.git
@@ -38,7 +35,6 @@ We use the OODA Loop framework to guide our development:
      ```
 
 4. **Create a Branch**
-
    - Make a new branch for your work:
      ```
      git checkout -b feature/my-feature
@@ -46,11 +42,9 @@ We use the OODA Loop framework to guide our development:
      (Replace `feature/my-feature` with a short description.)
 
 5. **Make Your Changes**
-
    - Edit code or documentation as needed.
 
 6. **Test Your Changes**
-
    - Run:
      ```
      npm run lint
@@ -59,7 +53,6 @@ We use the OODA Loop framework to guide our development:
      (If tests exist: `npm test`)
 
 7. **Commit and Push**
-
    - Save your changes:
      ```
      git add .

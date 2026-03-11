@@ -9,11 +9,13 @@ import { isVisualizationMethod } from "../visualization/types.js";
 
 export function auditControlSchema(
   definitions = CONTROL_DEFINITIONS,
-  runtimeCoverage = CONTROL_RUNTIME_COVERAGE
+  runtimeCoverage = CONTROL_RUNTIME_COVERAGE,
 ) {
   const issues = [];
   const keys = new Set();
-  const schemaHandlers = new Set(definitions.map((definition) => definition.handler));
+  const schemaHandlers = new Set(
+    definitions.map((definition) => definition.handler),
+  );
 
   for (const handler of schemaHandlers) {
     if (!runtimeCoverage[handler]) {
@@ -32,9 +34,12 @@ export function auditControlSchema(
     }
     keys.add(definition.key);
 
-    if (!definition.folder) issues.push(`Control ${definition.key} is missing folder`);
-    if (!definition.label) issues.push(`Control ${definition.key} is missing label`);
-    if (!definition.runtimePath) issues.push(`Control ${definition.key} is missing runtimePath`);
+    if (!definition.folder)
+      issues.push(`Control ${definition.key} is missing folder`);
+    if (!definition.label)
+      issues.push(`Control ${definition.key} is missing label`);
+    if (!definition.runtimePath)
+      issues.push(`Control ${definition.key} is missing runtimePath`);
     if (!Object.values(CONTROL_TARGET_TYPES).includes(definition.targetType)) {
       issues.push(`Control ${definition.key} has invalid targetType`);
     }
@@ -49,7 +54,9 @@ export function auditControlSchema(
       continue;
     }
     if (!definition.methods.every((method) => isVisualizationMethod(method))) {
-      issues.push(`Control ${definition.key} has invalid visualization methods`);
+      issues.push(
+        `Control ${definition.key} has invalid visualization methods`,
+      );
     }
     const coveredKeys = runtimeCoverage[definition.handler];
     if (!coveredKeys?.includes(definition.key)) {
@@ -60,8 +67,12 @@ export function auditControlSchema(
   return {
     definitions,
     issues,
-    liveControls: definitions.filter((definition) => definition.status === CONTROL_STATUSES.live),
-    debugControls: definitions.filter((definition) => definition.status === CONTROL_STATUSES.debugOnly),
+    liveControls: definitions.filter(
+      (definition) => definition.status === CONTROL_STATUSES.live,
+    ),
+    debugControls: definitions.filter(
+      (definition) => definition.status === CONTROL_STATUSES.debugOnly,
+    ),
     isValid: issues.length === 0,
   };
 }

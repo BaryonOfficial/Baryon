@@ -25,7 +25,7 @@ export function useBaryonPipeline(gl, scene, camera) {
       sceneColor,
       /** @type {any} */ (strength),
       /** @type {any} */ (radius),
-      /** @type {any} */ (threshold)
+      /** @type {any} */ (threshold),
     );
     const pipeline = new RenderPipeline(gl);
     pipeline.outputNode = sceneColor.add(bloomPass);

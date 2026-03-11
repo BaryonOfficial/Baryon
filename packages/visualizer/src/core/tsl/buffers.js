@@ -1,6 +1,10 @@
-import { instancedArray, attributeArray } from 'three/tsl';
+import { instancedArray, attributeArray } from "three/tsl";
 
-function initializeParticlesInSphereVolumeAndSurface(count, radius, surfaceRatio) {
+function initializeParticlesInSphereVolumeAndSurface(
+  count,
+  radius,
+  surfaceRatio,
+) {
   const positions = new Float32Array(count * 3);
   const surfaceCount = Math.floor(count * surfaceRatio);
 
@@ -46,18 +50,18 @@ export function createTSLBuffers(baryonGeometry, parameters, audioConfig) {
   const capacity = audioConfig.capacity;
   const fftHalfSize = audioConfig.fftSize / 2;
 
-  const modeBuffer = instancedArray(capacity, 'vec4');
+  const modeBuffer = instancedArray(capacity, "vec4");
   modeBuffer.value.array.fill(0);
   modeBuffer.value.needsUpdate = true;
 
-  const fftBuffer = instancedArray(fftHalfSize, 'float');
+  const fftBuffer = instancedArray(fftHalfSize, "float");
 
   const basePositions = initializeParticlesInSphereVolumeAndSurface(
     count,
     parameters.radius,
-    parameters.surfaceRatio
+    parameters.surfaceRatio,
   );
-  const basePositionBuffer = instancedArray(count, 'vec4');
+  const basePositionBuffer = instancedArray(count, "vec4");
   for (let i = 0; i < count; i++) {
     basePositionBuffer.value.array[i * 4] = basePositions[i * 3];
     basePositionBuffer.value.array[i * 4 + 1] = basePositions[i * 3 + 1];
@@ -68,7 +72,7 @@ export function createTSLBuffers(baryonGeometry, parameters, audioConfig) {
 
   const logoAttr = baryonGeometry.attributes.position;
   const logoCount = logoAttr.count;
-  const baryonBuffer = instancedArray(count, 'vec4');
+  const baryonBuffer = instancedArray(count, "vec4");
   for (let i = 0; i < count; i++) {
     const j = i % logoCount;
     baryonBuffer.value.array[i * 4] = logoAttr.array[j * 3];
@@ -78,8 +82,8 @@ export function createTSLBuffers(baryonGeometry, parameters, audioConfig) {
   }
   baryonBuffer.value.needsUpdate = true;
 
-  const scalarFieldBuffer = instancedArray(count, 'vec4');
-  const zeroPointsBuffer = instancedArray(count, 'vec4');
+  const scalarFieldBuffer = instancedArray(count, "vec4");
+  const zeroPointsBuffer = instancedArray(count, "vec4");
   for (let i = 0; i < count; i++) {
     zeroPointsBuffer.value.array[i * 4] = basePositions[i * 3];
     zeroPointsBuffer.value.array[i * 4 + 1] = basePositions[i * 3 + 1];
@@ -88,13 +92,18 @@ export function createTSLBuffers(baryonGeometry, parameters, audioConfig) {
   }
   zeroPointsBuffer.value.needsUpdate = true;
 
-  const initialParticlePositions = initializeParticlesInSphere(count, parameters.radius);
-  const particlesBuffer = attributeArray(count, 'vec4');
-  const velocityBuffer = attributeArray(count, 'vec4');
+  const initialParticlePositions = initializeParticlesInSphere(
+    count,
+    parameters.radius,
+  );
+  const particlesBuffer = attributeArray(count, "vec4");
+  const velocityBuffer = attributeArray(count, "vec4");
   for (let i = 0; i < count; i++) {
     particlesBuffer.value.array[i * 4] = initialParticlePositions[i * 3];
-    particlesBuffer.value.array[i * 4 + 1] = initialParticlePositions[i * 3 + 1];
-    particlesBuffer.value.array[i * 4 + 2] = initialParticlePositions[i * 3 + 2];
+    particlesBuffer.value.array[i * 4 + 1] =
+      initialParticlePositions[i * 3 + 1];
+    particlesBuffer.value.array[i * 4 + 2] =
+      initialParticlePositions[i * 3 + 2];
     particlesBuffer.value.array[i * 4 + 3] = 0.0;
     velocityBuffer.value.array[i * 4] = 0.0;
     velocityBuffer.value.array[i * 4 + 1] = 0.0;

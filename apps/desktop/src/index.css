@@ -2,7 +2,11 @@
   color: #f5f7fb;
   background:
     radial-gradient(circle at top, rgba(62, 108, 255, 0.2), transparent 36%),
-    radial-gradient(circle at bottom right, rgba(20, 184, 166, 0.15), transparent 30%),
+    radial-gradient(
+      circle at bottom right,
+      rgba(20, 184, 166, 0.15),
+      transparent 30%
+    ),
     #0a0d14;
   font-family:
     "SF Pro Display",

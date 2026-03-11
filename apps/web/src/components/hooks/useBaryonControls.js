@@ -44,7 +44,7 @@ function isVisibleControl(definition) {
 
 function getVisibleControls(folderTitle) {
   return getControlsForFolder(folderTitle, DEFAULT_VISUALIZATION_METHOD).filter(
-    isVisibleControl
+    isVisibleControl,
   );
 }
 
@@ -70,18 +70,23 @@ export function useBaryonControls() {
       // --- Restore auto-saved settings before pane binds to `p` ---
       const savedSettings = loadFromStorage(SETTINGS_KEY);
       if (savedSettings) {
-        Object.assign(p, deserializeControls(savedSettings, CONTROL_DEFINITIONS));
+        Object.assign(
+          p,
+          deserializeControls(savedSettings, CONTROL_DEFINITIONS),
+        );
       }
 
-      pane = /** @type {typeof pane} */ (new Pane({ title: "Baryon", expanded: false }));
+      pane = /** @type {typeof pane} */ (
+        new Pane({ title: "Baryon", expanded: false })
+      );
       pane.element.style.position = "fixed";
       pane.element.style.top = "1rem";
       pane.element.style.right = "1rem";
       pane.element.style.zIndex = "10000";
 
-      const visibleFolders = getControlFolders(DEFAULT_VISUALIZATION_METHOD).filter(
-        (folderTitle) => getVisibleControls(folderTitle).length > 0
-      );
+      const visibleFolders = getControlFolders(
+        DEFAULT_VISUALIZATION_METHOD,
+      ).filter((folderTitle) => getVisibleControls(folderTitle).length > 0);
 
       for (const folderTitle of visibleFolders) {
         const folder = pane.addFolder({
@@ -107,7 +112,10 @@ export function useBaryonControls() {
         }
         clearTimeout(saveTimer);
         saveTimer = setTimeout(() => {
-          saveToStorage(SETTINGS_KEY, serializeControls(p, CONTROL_DEFINITIONS));
+          saveToStorage(
+            SETTINGS_KEY,
+            serializeControls(p, CONTROL_DEFINITIONS),
+          );
         }, 500);
       });
 
@@ -144,17 +152,27 @@ export function useBaryonControls() {
           if (!ev.value) return; // placeholder — do nothing
           const preset = presets.find((pr) => pr.name === ev.value);
           if (preset) {
-            Object.assign(p, deserializeControls(preset.controls, CONTROL_DEFINITIONS));
+            Object.assign(
+              p,
+              deserializeControls(preset.controls, CONTROL_DEFINITIONS),
+            );
             pane.refresh();
             activePresetName = ev.value;
             // Defer monitoring so the list's own change event doesn't immediately clear the selection
-            setTimeout(() => { allowPresetReset = true; }, 0);
+            setTimeout(() => {
+              allowPresetReset = true;
+            }, 0);
           }
         });
       }
 
-      const presetsFolder = pane.addFolder({ title: "Presets", expanded: false });
-      const nameBinding = presetsFolder.addBinding(presetNameState, "name", { label: "Name" });
+      const presetsFolder = pane.addFolder({
+        title: "Presets",
+        expanded: false,
+      });
+      const nameBinding = presetsFolder.addBinding(presetNameState, "name", {
+        label: "Name",
+      });
 
       presetsFolder.addButton({ title: "Save" }).on("click", () => {
         const name = presetNameState.name.trim();
@@ -170,12 +188,14 @@ export function useBaryonControls() {
         nameBinding.refresh();
       });
 
-      presetsFolder.addButton({ title: "Reset to defaults" }).on("click", () => {
-        Object.assign(p, createControlState());
-        pane.refresh();
-        activePresetName = null;
-        rebuildLoadBlade(presetsFolder);
-      });
+      presetsFolder
+        .addButton({ title: "Reset to defaults" })
+        .on("click", () => {
+          Object.assign(p, createControlState());
+          pane.refresh();
+          activePresetName = null;
+          rebuildLoadBlade(presetsFolder);
+        });
 
       presetsFolder.addButton({ title: "Delete Selected" }).on("click", () => {
         const selected = loadBlade?.controller?.value?.rawValue;

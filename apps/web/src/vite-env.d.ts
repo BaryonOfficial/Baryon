@@ -16,7 +16,7 @@ declare module "three/examples/jsm/tsl/display/BloomNode.js" {
     inputNode: any,
     strength?: any,
     radius?: any,
-    threshold?: any
+    threshold?: any,
   ): any;
 }
 

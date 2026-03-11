@@ -31,7 +31,9 @@ export function useBaryonVisualizer({
 }) {
   const audioRef = useRef(null);
   const audioFeatureRef = useRef(null);
-  const runtimeRef = useRef(createVisualizationRuntime(DEFAULT_VISUALIZATION_METHOD));
+  const runtimeRef = useRef(
+    createVisualizationRuntime(DEFAULT_VISUALIZATION_METHOD),
+  );
   const runtimeStateRef = useRef(null);
   const lastActiveFrameRef = useRef(null);
   const [points, setPoints] = useState(null);
@@ -116,12 +118,17 @@ export function useBaryonVisualizer({
     const status = audio.getStatus();
     const analysisSnapshot = audio.readAnalysisSnapshot();
 
-    const bloomSnapshot = applyBloomControls({ ensurePipeline, postNodesRef }, controls);
+    const bloomSnapshot = applyBloomControls(
+      { ensurePipeline, postNodesRef },
+      controls,
+    );
     const sharedSnapshot = applySharedControls(gl, controls);
     const particleSnapshot = applyParticleControls(runtimeState, controls);
     const auditSnapshot = applyAuditControls(featureState, controls);
 
-    const { time, deltaTime } = audio.readClockSnapshot(state.clock.getElapsedTime());
+    const { time, deltaTime } = audio.readClockSnapshot(
+      state.clock.getElapsedTime(),
+    );
     const featureFrame = buildAudioFeatureFrame({
       analysisSnapshot,
       featureState,
@@ -135,15 +142,17 @@ export function useBaryonVisualizer({
     if (status.isPlaying || status.isMicActive) {
       lastActiveFrameRef.current = {
         ...featureFrame,
-        modeSlots: featureFrame.modeSlots instanceof Float32Array
-          ? new Float32Array(featureFrame.modeSlots)
-          : featureFrame.modeSlots,
-        fftMagnitudes: featureFrame.fftMagnitudes instanceof Float32Array
-          ? new Float32Array(featureFrame.fftMagnitudes)
-          : featureFrame.fftMagnitudes,
+        modeSlots:
+          featureFrame.modeSlots instanceof Float32Array
+            ? new Float32Array(featureFrame.modeSlots)
+            : featureFrame.modeSlots,
+        fftMagnitudes:
+          featureFrame.fftMagnitudes instanceof Float32Array
+            ? new Float32Array(featureFrame.fftMagnitudes)
+            : featureFrame.fftMagnitudes,
       };
     }
-    if (status.audioInputMode === 'stopped') {
+    if (status.audioInputMode === "stopped") {
       lastActiveFrameRef.current = null;
     }
     const effectiveFrame = lastActiveFrameRef.current ?? featureFrame;
@@ -163,7 +172,11 @@ export function useBaryonVisualizer({
       };
     }
 
-    if (DEVTOOLS_ENABLED && controls.auditEnabled && runtimeState.debugSnapshot) {
+    if (
+      DEVTOOLS_ENABLED &&
+      controls.auditEnabled &&
+      runtimeState.debugSnapshot
+    ) {
       const frame = featureState.audit?.frame ?? 0;
       const interval = Math.max(1, Math.floor(controls.logEveryFrames));
       if (frame % interval === 0) {
@@ -177,7 +190,7 @@ export function useBaryonVisualizer({
     const sceneSnapshot = applyParticleSceneControls(
       runtimeState.points,
       controls,
-      deltaTime
+      deltaTime,
     );
 
     if (DEVTOOLS_ENABLED && typeof window !== "undefined") {

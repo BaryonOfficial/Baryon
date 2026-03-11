@@ -1,5 +1,5 @@
-import { defineConfig } from 'vite';
-import { createBaseViteConfig } from '@baryon/config';
+import { defineConfig } from "vite";
+import { createBaseViteConfig } from "@baryon/config";
 
 export default defineConfig(() => {
   const base = createBaseViteConfig();
@@ -7,7 +7,7 @@ export default defineConfig(() => {
     ...base,
     build: {
       ...base.build,
-      outDir: 'dist',
+      outDir: "dist",
     },
   };
 });

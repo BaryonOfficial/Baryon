@@ -45,5 +45,7 @@ export function AudioProvider({ children }) {
     handleMicToggle,
   };
 
-  return <AudioContext.Provider value={value}>{children}</AudioContext.Provider>;
+  return (
+    <AudioContext.Provider value={value}>{children}</AudioContext.Provider>
+  );
 }

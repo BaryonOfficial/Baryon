@@ -1,4 +1,4 @@
-import { CONTROL_STATUSES } from './schema.js';
+import { CONTROL_STATUSES } from "./schema.js";
 
 /**
  * Serialize a control state object to a plain JSON-safe object.
@@ -12,8 +12,8 @@ import { CONTROL_STATUSES } from './schema.js';
 export function serializeControls(controls, definitions) {
   return Object.fromEntries(
     definitions
-      .filter(d => d.status === CONTROL_STATUSES.live)
-      .map(d => [d.key, controls[d.key]])
+      .filter((d) => d.status === CONTROL_STATUSES.live)
+      .map((d) => [d.key, controls[d.key]]),
   );
 }
 
@@ -29,8 +29,10 @@ export function serializeControls(controls, definitions) {
  * @returns {Record<string, unknown>}
  */
 export function deserializeControls(raw, definitions) {
-  const result = Object.fromEntries(definitions.map(d => [d.key, d.defaultValue]));
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
+  const result = Object.fromEntries(
+    definitions.map((d) => [d.key, d.defaultValue]),
+  );
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return result;
   for (const def of definitions) {
     if (Object.prototype.hasOwnProperty.call(raw, def.key)) {
       const val = /** @type {Record<string, unknown>} */ (raw)[def.key];

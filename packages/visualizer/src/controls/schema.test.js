@@ -8,7 +8,10 @@ import {
   getControlsForMethod,
 } from "./schema.js";
 import { auditControlSchema } from "./audit.js";
-import { DEFAULT_VISUALIZATION_METHOD, VISUALIZATION_METHODS } from "../visualization/types.js";
+import {
+  DEFAULT_VISUALIZATION_METHOD,
+  VISUALIZATION_METHODS,
+} from "../visualization/types.js";
 import { CONTROL_RUNTIME_COVERAGE } from "./runtime.js";
 
 const EXPECTED_CONTROL_KEYS = [
@@ -45,7 +48,7 @@ const EXPECTED_CONTROL_KEYS = [
 describe("control schema", () => {
   it("enumerates the current pane surface", () => {
     expect(CONTROL_DEFINITIONS.map((definition) => definition.key)).toEqual(
-      EXPECTED_CONTROL_KEYS
+      EXPECTED_CONTROL_KEYS,
     );
   });
 
@@ -62,11 +65,17 @@ describe("control schema", () => {
 
   it("classifies every control consistently", () => {
     for (const definition of CONTROL_DEFINITIONS) {
-      expect(Object.values(CONTROL_TARGET_TYPES)).toContain(definition.targetType);
+      expect(Object.values(CONTROL_TARGET_TYPES)).toContain(
+        definition.targetType,
+      );
       expect(Object.values(CONTROL_HANDLERS)).toContain(definition.handler);
       expect(Object.values(CONTROL_STATUSES)).toContain(definition.status);
       expect(definition.methods.length).toBeGreaterThan(0);
-      expect(definition.methods.every((method) => Object.values(VISUALIZATION_METHODS).includes(method))).toBe(true);
+      expect(
+        definition.methods.every((method) =>
+          Object.values(VISUALIZATION_METHODS).includes(method),
+        ),
+      ).toBe(true);
       expect(definition.runtimePath).toBeTruthy();
     }
   });
@@ -78,7 +87,7 @@ describe("control schema", () => {
 
   it("maps every live control to runtime coverage", () => {
     const liveKeys = CONTROL_DEFINITIONS.filter(
-      (definition) => definition.status === CONTROL_STATUSES.live
+      (definition) => definition.status === CONTROL_STATUSES.live,
     ).map((definition) => definition.key);
     const coveredKeys = Object.values(CONTROL_RUNTIME_COVERAGE).flat();
 
@@ -97,7 +106,7 @@ describe("control schema", () => {
 
     expect(report.isValid).toBe(false);
     expect(report.issues).toContain(
-      "Control particleSpeed is missing runtime coverage"
+      "Control particleSpeed is missing runtime coverage",
     );
   });
 });

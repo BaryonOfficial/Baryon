@@ -1,6 +1,10 @@
-import { FIELD_STATES } from './types.js';
+import { FIELD_STATES } from "./types.js";
 
-export function deriveFieldState({ injectTestTone, activeModeCount, usedDecay }) {
+export function deriveFieldState({
+  injectTestTone,
+  activeModeCount,
+  usedDecay,
+}) {
   const hasModalField = activeModeCount > 0;
 
   /** @type {import('./types.js').FieldState} */

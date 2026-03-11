@@ -1,5 +1,5 @@
 export const AUDIO_ANALYSIS_POLICY = Object.freeze({
-  requestedPitchSource: 'spectral',
+  requestedPitchSource: "spectral",
   minPeakClarity: 0.72,
   micSilenceAvgAmplitude: 8,
   micSilenceRms: 0.018,

@@ -71,7 +71,7 @@ describe("solveNormalModesForPitch", () => {
 
   it("returns different modes for clearly different frequencies", () => {
     const low = solveNormalModesForPitch(170 * Math.sqrt(3), RADIUS); // (1,1,1)
-    const high = solveNormalModesForPitch(510, RADIUS);                // (1,2,2)
+    const high = solveNormalModesForPitch(510, RADIUS); // (1,2,2)
     expect(low).not.toEqual(high);
   });
 });
@@ -85,24 +85,45 @@ describe("sampleFFTAmplitudeForFrequency", () => {
   it("returns the amplitude at the nearest FFT bin", () => {
     const fftMagnitudes = new Float32Array(16);
     fftMagnitudes[2] = 0.75; // bin 2 ≈ 2/15 * 22050 = 2940 Hz
-    const result = sampleFFTAmplitudeForFrequency(2940, fftMagnitudes, sampleRate, fftSize);
+    const result = sampleFFTAmplitudeForFrequency(
+      2940,
+      fftMagnitudes,
+      sampleRate,
+      fftSize,
+    );
     expect(result).toBeCloseTo(0.75);
   });
 
   it("returns 0 for frequency 0", () => {
     const fftMagnitudes = new Float32Array(16).fill(0.5);
-    expect(sampleFFTAmplitudeForFrequency(0, fftMagnitudes, sampleRate, fftSize)).toBe(0);
+    expect(
+      sampleFFTAmplitudeForFrequency(0, fftMagnitudes, sampleRate, fftSize),
+    ).toBe(0);
   });
 
   it("clamps above-Nyquist frequencies to the last bin", () => {
     const fftMagnitudes = new Float32Array(16);
     fftMagnitudes[15] = 0.9;
-    const result = sampleFFTAmplitudeForFrequency(99999, fftMagnitudes, sampleRate, fftSize);
+    const result = sampleFFTAmplitudeForFrequency(
+      99999,
+      fftMagnitudes,
+      sampleRate,
+      fftSize,
+    );
     expect(result).toBeCloseTo(0.9);
   });
 
   it("returns 0 for null or empty fftMagnitudes", () => {
-    expect(sampleFFTAmplitudeForFrequency(440, null, sampleRate, fftSize)).toBe(0);
-    expect(sampleFFTAmplitudeForFrequency(440, new Float32Array(0), sampleRate, fftSize)).toBe(0);
+    expect(sampleFFTAmplitudeForFrequency(440, null, sampleRate, fftSize)).toBe(
+      0,
+    );
+    expect(
+      sampleFFTAmplitudeForFrequency(
+        440,
+        new Float32Array(0),
+        sampleRate,
+        fftSize,
+      ),
+    ).toBe(0);
   });
 });

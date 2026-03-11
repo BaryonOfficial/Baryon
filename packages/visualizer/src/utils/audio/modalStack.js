@@ -1,4 +1,4 @@
-import { AUDIT_DEFAULTS, AUDIO_DEFAULTS } from '../../defaults.js';
+import { AUDIT_DEFAULTS, AUDIO_DEFAULTS } from "../../defaults.js";
 
 export const MAX_STACK_SLOTS = 4;
 export const DECAY_PER_FRAME = 0.9;
@@ -11,7 +11,7 @@ function createModalStackState(capacity) {
     harmonicSupport: new Float32Array(HARMONIC_SUPPORT_COUNT),
     fundamental: 0,
     fundamentalConfidence: 0,
-    analysisEngine: 'none',
+    analysisEngine: "none",
     uniqueModeCount: 0,
     lastStableAt: 0,
   };
@@ -43,7 +43,7 @@ export function clearModalStack(state) {
   state.harmonicSupport.fill(0);
   state.fundamental = 0;
   state.fundamentalConfidence = 0;
-  state.analysisEngine = 'none';
+  state.analysisEngine = "none";
   state.uniqueModeCount = 0;
 }
 

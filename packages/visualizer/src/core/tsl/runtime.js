@@ -1,10 +1,10 @@
-import { FIELD_STATE_VALUES, isFieldDrivenState } from '../fieldState.js';
-import { updateAuditSnapshot } from './auditMirror.js';
+import { FIELD_STATE_VALUES, isFieldDrivenState } from "../fieldState.js";
+import { updateAuditSnapshot } from "./auditMirror.js";
 
 const SIGNIFICANT_MODE_AMPLITUDE = 0.05;
 
 function getModeStructureSignature(modeSlots) {
-  if (!modeSlots?.length) return '';
+  if (!modeSlots?.length) return "";
 
   const signatures = [];
   for (let i = 0; i < modeSlots.length; i += 4) {
@@ -12,39 +12,52 @@ function getModeStructureSignature(modeSlots) {
       continue;
     }
     signatures.push(
-      `${Math.round(modeSlots[i])}:${Math.round(modeSlots[i + 1])}:${Math.round(modeSlots[i + 2])}`
+      `${Math.round(modeSlots[i])}:${Math.round(modeSlots[i + 1])}:${Math.round(modeSlots[i + 2])}`,
     );
   }
 
   signatures.sort();
-  return signatures.join('|');
+  return signatures.join("|");
 }
 
 export function didModeStructureChange(nextSlots, prevSlots) {
-  if (!nextSlots?.length || !prevSlots?.length || nextSlots.length !== prevSlots.length) {
+  if (
+    !nextSlots?.length ||
+    !prevSlots?.length ||
+    nextSlots.length !== prevSlots.length
+  ) {
     return true;
   }
-  return getModeStructureSignature(nextSlots) !== getModeStructureSignature(prevSlots);
+  return (
+    getModeStructureSignature(nextSlots) !==
+    getModeStructureSignature(prevSlots)
+  );
 }
 
-export function tickTSLRuntime(renderer, tslState, featureFrame, time, deltaTime) {
-  const {
-    modeBuffer,
-    fftBuffer,
-    uniforms,
-    compute,
-  } = tslState;
+export function tickTSLRuntime(
+  renderer,
+  tslState,
+  featureFrame,
+  time,
+  deltaTime,
+) {
+  const { modeBuffer, fftBuffer, uniforms, compute } = tslState;
 
   uniforms.uTime.value = time;
   uniforms.uDeltaTime.value = deltaTime;
-  const fieldState = featureFrame?.fieldState ?? 'idle';
+  const fieldState = featureFrame?.fieldState ?? "idle";
   const fieldDriven = isFieldDrivenState(fieldState);
-  uniforms.uFieldState.value = FIELD_STATE_VALUES[fieldState] ?? FIELD_STATE_VALUES.idle;
+  uniforms.uFieldState.value =
+    FIELD_STATE_VALUES[fieldState] ?? FIELD_STATE_VALUES.idle;
 
   if (featureFrame) {
     const arr = fftBuffer.value.array;
     arr.fill(0);
-    for (let i = 0, n = Math.min(featureFrame.fftMagnitudes.length, arr.length); i < n; i++) {
+    for (
+      let i = 0, n = Math.min(featureFrame.fftMagnitudes.length, arr.length);
+      i < n;
+      i++
+    ) {
       arr[i] = featureFrame.fftMagnitudes[i];
     }
     fftBuffer.value.needsUpdate = true;
@@ -57,7 +70,11 @@ export function tickTSLRuntime(renderer, tslState, featureFrame, time, deltaTime
     modeBuffer.value.needsUpdate = true;
 
     let activeModeCount = 0;
-    for (let i = 0, n = Math.min(featureFrame.modeSlots.length, modeArray.length); i < n; i += 4) {
+    for (
+      let i = 0, n = Math.min(featureFrame.modeSlots.length, modeArray.length);
+      i < n;
+      i += 4
+    ) {
       if (featureFrame.modeSlots[i + 3] > 0) activeModeCount++;
     }
     uniforms.uActiveModeCount.value = activeModeCount;
@@ -71,11 +88,12 @@ export function tickTSLRuntime(renderer, tslState, featureFrame, time, deltaTime
     uniforms.uAverageAmplitude.value = 0;
   }
 
-  const modeSlotsChanged = fieldDriven && featureFrame
-    ? didModeStructureChange(featureFrame.modeSlots, tslState.prevModeSlots)
-    : false;
+  const modeSlotsChanged =
+    fieldDriven && featureFrame
+      ? didModeStructureChange(featureFrame.modeSlots, tslState.prevModeSlots)
+      : false;
   const resetTriggered = false;
-  const resetReason = 'none';
+  const resetReason = "none";
 
   const auditSnapshot = updateAuditSnapshot(tslState, featureFrame, deltaTime, {
     modeSlotsChanged,
@@ -89,7 +107,7 @@ export function tickTSLRuntime(renderer, tslState, featureFrame, time, deltaTime
   if (featureFrame?.modeSlots) {
     tslState.prevModeSlots.fill(0);
     tslState.prevModeSlots.set(
-      featureFrame.modeSlots.subarray(0, tslState.prevModeSlots.length)
+      featureFrame.modeSlots.subarray(0, tslState.prevModeSlots.length),
     );
   } else {
     tslState.prevModeSlots.fill(0);

@@ -1,1 +1,4 @@
-export { createAudioFeatureState, buildAudioFeatureFrame } from './audio/buildFeatureFrame.js';
+export {
+  createAudioFeatureState,
+  buildAudioFeatureFrame,
+} from "./audio/buildFeatureFrame.js";

@@ -12,12 +12,23 @@
     "dev:desktop": "turbo dev --filter=@baryon/desktop",
     "build": "turbo build",
     "build:web": "turbo build --filter=@baryon/web",
+    "prepare": "husky",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test:visualizer": "pnpm --filter @baryon/visualizer test",
     "test:web-smoke": "pnpm --filter @baryon/web test:smoke",
     "lint": "turbo lint",
     "lint:all": "pnpm -r --filter './apps/*' --filter './packages/*' --if-present lint",
     "typecheck": "pnpm --reporter append-only -r --filter './apps/*' --filter './packages/*' --if-present typecheck",
-    "verify": "pnpm lint:all && pnpm typecheck && turbo build"
+    "verify": "pnpm lint:all && pnpm typecheck && pnpm test:visualizer",
+    "verify:full": "pnpm verify && turbo build"
+  },
+  "lint-staged": {
+    "*.{js,jsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{ts,tsx,cjs,mjs,json,md,css,scss,html,yml,yaml}": "prettier --write"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",
@@ -26,8 +37,11 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.26",
     "globals": "^15.15.0",
-    "typescript": "^5.8.3",
-    "turbo": "^2.3.0"
+    "husky": "^9.1.7",
+    "lint-staged": "^16.3.3",
+    "prettier": "^3.8.1",
+    "turbo": "^2.3.0",
+    "typescript": "^5.8.3"
   },
   "packageManager": "pnpm@10.12.4"
 }

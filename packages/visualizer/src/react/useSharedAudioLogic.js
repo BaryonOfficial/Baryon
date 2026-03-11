@@ -26,11 +26,15 @@ export function useSharedAudioLogic({
   useEffect(() => {
     const loadDevices = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
         stream.getTracks().forEach((track) => track.stop());
 
         const devices = await navigator.mediaDevices.enumerateDevices();
-        const audioInputs = devices.filter((device) => device.kind === "audioinput");
+        const audioInputs = devices.filter(
+          (device) => device.kind === "audioinput",
+        );
         setAudioDevices(audioInputs);
         if (audioInputs.length > 0) {
           setSelectedDevice(audioInputs[0].deviceId);
@@ -68,7 +72,8 @@ export function useSharedAudioLogic({
       setFileName(file.name);
       const fileURL = URL.createObjectURL(file);
       const previousFileUrl = activeFileUrlRef.current;
-      audioSession.loadAudio(fileURL)
+      audioSession
+        .loadAudio(fileURL)
         .then(() => {
           if (previousFileUrl && previousFileUrl !== fileURL) {
             URL.revokeObjectURL(previousFileUrl);
@@ -82,7 +87,7 @@ export function useSharedAudioLogic({
           setIsAudioLoaded(false);
         });
     },
-    [audioSession, isMicActive, setFileName, setIsAudioLoaded, syncStatus]
+    [audioSession, isMicActive, setFileName, setIsAudioLoaded, syncStatus],
   );
 
   const handlePlayPause = useCallback(async () => {

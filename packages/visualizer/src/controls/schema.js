@@ -367,18 +367,24 @@ export function createControlState() {
 }
 
 export function getControlsForMethod(method = VISUALIZATION_METHODS.particle) {
-  return CONTROL_DEFINITIONS.filter((definition) => definition.methods.includes(method));
+  return CONTROL_DEFINITIONS.filter((definition) =>
+    definition.methods.includes(method),
+  );
 }
 
 export function getControlFolders(method = VISUALIZATION_METHODS.particle) {
-  return [...new Set(getControlsForMethod(method).map((definition) => definition.folder))];
+  return [
+    ...new Set(
+      getControlsForMethod(method).map((definition) => definition.folder),
+    ),
+  ];
 }
 
 export function getControlsForFolder(
   folder,
-  method = VISUALIZATION_METHODS.particle
+  method = VISUALIZATION_METHODS.particle,
 ) {
   return getControlsForMethod(method).filter(
-    (definition) => definition.folder === folder
+    (definition) => definition.folder === folder,
   );
 }

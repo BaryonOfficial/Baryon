@@ -1,13 +1,15 @@
-import * as THREE from 'three';
-import { AUDIO_DEFAULTS } from '../../defaults.js';
+import * as THREE from "three";
+import { AUDIO_DEFAULTS } from "../../defaults.js";
 import {
   createAnalyserReader,
   createNodeAnalyser,
   sampleAnalyser,
-} from './analyserSampler.js';
+} from "./analyserSampler.js";
 
 function normalizeAudioInputMode(mode) {
-  return mode === 'file' || mode === 'mic' || mode === 'stopped' ? mode : 'idle';
+  return mode === "file" || mode === "mic" || mode === "stopped"
+    ? mode
+    : "idle";
 }
 
 function stopActiveFilePlayback(state) {
@@ -23,14 +25,14 @@ function disconnectMicNode(micNode) {
   try {
     micNode.disconnect();
   } catch (error) {
-    console.warn('Mic disconnect skipped:', error);
+    console.warn("Mic disconnect skipped:", error);
   }
 }
 
 function getAnalysisSource(status) {
-  if (status.isPlaying) return 'file';
-  if (status.isMicActive) return 'mic';
-  return 'idle';
+  if (status.isPlaying) return "file";
+  if (status.isMicActive) return "mic";
+  return "idle";
 }
 
 function bindAudioEndedHandler(state, callback, setAudioInputMode) {
@@ -41,7 +43,7 @@ function bindAudioEndedHandler(state, callback, setAudioInputMode) {
       state.sound.stop();
     }
     state.sound.started = false;
-    setAudioInputMode('stopped');
+    setAudioInputMode("stopped");
     callback();
   };
 }
@@ -72,8 +74,8 @@ export function createAudioSession() {
   const state = {
     fftSize: 4096,
     capacity: AUDIO_DEFAULTS.capacity,
-    pitchSourceMode: 'spectral',
-    audioInputMode: 'idle',
+    pitchSourceMode: "spectral",
+    audioInputMode: "idle",
     audioCtx: null,
     listener: null,
     sound: null,
@@ -88,7 +90,7 @@ export function createAudioSession() {
   let isAudioLoaded = false;
   let endedCallback = null;
   const clockState = {
-    mode: 'realtime',
+    mode: "realtime",
     previousElapsedTime: 0,
     lastKnownAudioTime: 0,
   };
@@ -112,7 +114,7 @@ export function createAudioSession() {
       isAudioLoaded,
       isPlaying,
       isMicActive,
-      hasAnalysisSource: analysisSource !== 'idle',
+      hasAnalysisSource: analysisSource !== "idle",
       workerStatus: null,
     };
   }
@@ -129,9 +131,10 @@ export function createAudioSession() {
   function updateRealtimeClock(elapsedTime, mode) {
     const modeChanged = clockState.mode !== mode;
     const firstSample = clockState.previousElapsedTime === 0;
-    const deltaTime = modeChanged || firstSample
-      ? 0
-      : elapsedTime - clockState.previousElapsedTime;
+    const deltaTime =
+      modeChanged || firstSample
+        ? 0
+        : elapsedTime - clockState.previousElapsedTime;
 
     clockState.previousElapsedTime = elapsedTime;
     clockState.mode = mode;
@@ -154,33 +157,33 @@ export function createAudioSession() {
     };
 
     if (timingState.isMicActive) {
-      return updateRealtimeClock(elapsedTime, 'realtime');
+      return updateRealtimeClock(elapsedTime, "realtime");
     }
 
     if (timingState.isPlaying && timingState.playbackStarted) {
-      clockState.mode = 'playback';
+      clockState.mode = "playback";
       clockState.previousElapsedTime = elapsedTime;
       clockState.lastKnownAudioTime = timingState.playbackTime;
 
       return {
-        clockMode: 'playback',
+        clockMode: "playback",
         time: timingState.playbackTime,
         deltaTime: timingState.playbackDeltaTime,
       };
     }
 
     if (!timingState.isPlaying && timingState.playbackStarted) {
-      clockState.mode = 'paused-playback';
+      clockState.mode = "paused-playback";
       clockState.previousElapsedTime = elapsedTime;
 
       return {
-        clockMode: 'paused-playback',
+        clockMode: "paused-playback",
         time: clockState.lastKnownAudioTime,
         deltaTime: 0,
       };
     }
 
-    return updateRealtimeClock(elapsedTime, 'realtime');
+    return updateRealtimeClock(elapsedTime, "realtime");
   }
 
   function attach(camera) {
@@ -222,7 +225,7 @@ export function createAudioSession() {
 
       stopActiveFilePlayback(state);
 
-      setAudioInputMode('file');
+      setAudioInputMode("file");
       isAudioLoaded = false;
 
       state.audioLoader.load(
@@ -236,9 +239,9 @@ export function createAudioSession() {
         },
         undefined,
         (err) => {
-          setAudioInputMode('idle');
+          setAudioInputMode("idle");
           reject(err);
-        }
+        },
       );
     });
   }
@@ -246,7 +249,7 @@ export function createAudioSession() {
   async function playPauseAudio() {
     if (state.sound.isPlaying) {
       state.sound.pause();
-      setAudioInputMode('idle');
+      setAudioInputMode("idle");
       return false;
     }
 
@@ -258,11 +261,11 @@ export function createAudioSession() {
       stopMicRecordStream();
     }
 
-    if (state.audioCtx.state === 'suspended') {
+    if (state.audioCtx.state === "suspended") {
       await state.audioCtx.resume();
     }
 
-    setAudioInputMode('file');
+    setAudioInputMode("file");
     state.sound.play();
     state.sound.started = true;
     return true;
@@ -273,14 +276,14 @@ export function createAudioSession() {
       state.sound.stop();
       state.sound.started = false;
     }
-    if (state.audioInputMode === 'file') {
-      setAudioInputMode('stopped');
+    if (state.audioInputMode === "file") {
+      setAudioInputMode("stopped");
     }
   }
 
   async function startMicRecordStream(deviceId) {
     if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error('getUserMedia not supported');
+      throw new Error("getUserMedia not supported");
     }
 
     if (state.sound?.isPlaying || state.sound?.started) {
@@ -293,13 +296,17 @@ export function createAudioSession() {
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     state.gumStream = stream;
 
-    if (state.audioCtx.state === 'suspended') {
+    if (state.audioCtx.state === "suspended") {
       await state.audioCtx.resume();
     }
 
     state.micNode = state.audioCtx.createMediaStreamSource(state.gumStream);
-    state.micAnalyser = createNodeAnalyser(state.audioCtx, state.micNode, state.fftSize);
-    setAudioInputMode('mic');
+    state.micAnalyser = createNodeAnalyser(
+      state.audioCtx,
+      state.micNode,
+      state.fftSize,
+    );
+    setAudioInputMode("mic");
   }
 
   function stopMicRecordStream() {
@@ -313,22 +320,22 @@ export function createAudioSession() {
     state.micNode = null;
     state.gumStream = null;
 
-    if (state.audioInputMode === 'mic') {
-      setAudioInputMode('idle');
+    if (state.audioInputMode === "mic") {
+      setAudioInputMode("idle");
     }
   }
 
   function readAnalysisSnapshot() {
     const status = getStatus();
-    if (status.analysisSource === 'file') {
+    if (status.analysisSource === "file") {
       return {
-        sourceMode: 'file',
+        sourceMode: "file",
         ...sampleAnalyser(state.analyser),
       };
     }
-    if (status.analysisSource === 'mic') {
+    if (status.analysisSource === "mic") {
       return {
-        sourceMode: 'mic',
+        sourceMode: "mic",
         ...sampleAnalyser(state.micAnalyser),
       };
     }
@@ -354,10 +361,10 @@ export function createAudioSession() {
     state.analyser = null;
     state.audioCtx = null;
     isAudioLoaded = false;
-    clockState.mode = 'realtime';
+    clockState.mode = "realtime";
     clockState.previousElapsedTime = 0;
     clockState.lastKnownAudioTime = 0;
-    setAudioInputMode('idle');
+    setAudioInputMode("idle");
   }
 
   return {

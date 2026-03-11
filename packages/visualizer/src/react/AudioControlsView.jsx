@@ -63,7 +63,9 @@ export function AudioControlsView({
               {!isMicActive && (
                 <svg
                   className={`baryon-audio-controls__chevron${
-                    showDeviceMenu ? " baryon-audio-controls__chevron--open" : ""
+                    showDeviceMenu
+                      ? " baryon-audio-controls__chevron--open"
+                      : ""
                   }`}
                   fill="none"
                   stroke="currentColor"
@@ -106,8 +108,8 @@ export function AudioControlsView({
 
         {audioDevices.length === 0 && (
           <div className="baryon-audio-controls__helper-text">
-            No audio input devices found. Make sure your device is connected and try clicking
-            &quot;Mic Mode&quot; first.
+            No audio input devices found. Make sure your device is connected and
+            try clicking &quot;Mic Mode&quot; first.
           </div>
         )}
       </div>
