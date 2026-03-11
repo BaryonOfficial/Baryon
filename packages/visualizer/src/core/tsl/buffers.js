@@ -23,6 +23,12 @@ const VEC4_STRIDE = 4;
  * @property {*} velocityBuffer TSL vec4 velocity state buffer consumed by compute.
  */
 
+function createSamplingContext(options = {}) {
+  return {
+    rng: options.rng ?? Math.random,
+  };
+}
+
 function createVec4InstancedBuffer(count) {
   return instancedArray(count, "vec4");
 }
@@ -51,10 +57,11 @@ function fillVec4BufferFromVec3Positions(buffer, positions, w) {
   return markBufferForUpload(buffer);
 }
 
-function fillRepeatedLogoBuffer(buffer, logoPositions) {
+function fillRepeatedLogoBuffer(buffer, logoPositions, samplingContext) {
   const target = buffer.value.array;
   const logoCount = logoPositions.count;
   const source = logoPositions.array;
+  const { rng } = samplingContext;
 
   for (let i = 0; i < target.length / VEC4_STRIDE; i++) {
     const sourceIndex = i % logoCount;
@@ -63,7 +70,7 @@ function fillRepeatedLogoBuffer(buffer, logoPositions) {
     target[targetOffset] = source[sourceOffset];
     target[targetOffset + 1] = source[sourceOffset + 1];
     target[targetOffset + 2] = source[sourceOffset + 2];
-    target[targetOffset + 3] = Math.random();
+    target[targetOffset + 3] = rng();
   }
 
   return markBufferForUpload(buffer);
@@ -96,9 +103,15 @@ function fillParticlesAndVelocities(
   return markBufferForUpload(velocityBuffer);
 }
 
-function sampleSurfaceAndVolumePositions(count, radius, surfaceRatio) {
+function sampleSurfaceAndVolumePositions(
+  count,
+  radius,
+  surfaceRatio,
+  samplingContext,
+) {
   const positions = new Float32Array(count * VEC3_STRIDE);
   const surfaceCount = Math.floor(count * surfaceRatio);
+  const { rng } = samplingContext;
 
   const goldenRatio = (1 + Math.sqrt(5)) / 2;
   const angleIncrement = Math.PI * 2 * goldenRatio;
@@ -112,9 +125,9 @@ function sampleSurfaceAndVolumePositions(count, radius, surfaceRatio) {
     positions[offset + 2] = radius * Math.cos(inclination);
   }
   for (let i = surfaceCount; i < count; i++) {
-    const r = Math.pow(Math.random(), 1 / 3) * radius;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
+    const r = Math.pow(rng(), 1 / 3) * radius;
+    const theta = rng() * Math.PI * 2;
+    const phi = Math.acos(2 * rng() - 1);
     const offset = i * VEC3_STRIDE;
     positions[offset] = r * Math.sin(phi) * Math.cos(theta);
     positions[offset + 1] = r * Math.sin(phi) * Math.sin(theta);
@@ -123,14 +136,15 @@ function sampleSurfaceAndVolumePositions(count, radius, surfaceRatio) {
   return positions;
 }
 
-function sampleInitialParticlePositions(count, radius) {
+function sampleInitialParticlePositions(count, radius, samplingContext) {
   const scaledRadius = radius / 10;
   const sampledPositions = new Float32Array(count * VEC3_STRIDE);
+  const { rng } = samplingContext;
 
   for (let i = 0; i < count; i++) {
-    const r = Math.pow(Math.random(), 1 / 3) * scaledRadius;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
+    const r = Math.pow(rng(), 1 / 3) * scaledRadius;
+    const theta = rng() * Math.PI * 2;
+    const phi = Math.acos(2 * rng() - 1);
     const offset = i * VEC3_STRIDE;
     sampledPositions[offset] = r * Math.sin(phi) * Math.cos(theta);
     sampledPositions[offset + 1] = r * Math.sin(phi) * Math.sin(theta);
@@ -166,10 +180,17 @@ function validateTSLBufferInputs(baryonGeometry, parameters, audioConfig) {
  * @param {import("three").BufferGeometry} baryonGeometry
  * @param {{ count: number, radius: number, surfaceRatio: number }} parameters
  * @param {{ capacity: number, fftSize: number }} audioConfig
+ * @param {{ rng?: () => number }} [options]
  * @returns {TSLBufferBundle}
  */
-export function createTSLBuffers(baryonGeometry, parameters, audioConfig) {
+export function createTSLBuffers(
+  baryonGeometry,
+  parameters,
+  audioConfig,
+  options = undefined,
+) {
   validateTSLBufferInputs(baryonGeometry, parameters, audioConfig);
+  const samplingContext = createSamplingContext(options);
 
   const count = parameters.count;
   const capacity = audioConfig.capacity;
@@ -185,6 +206,7 @@ export function createTSLBuffers(baryonGeometry, parameters, audioConfig) {
     count,
     parameters.radius,
     parameters.surfaceRatio,
+    samplingContext,
   );
   const basePositionBuffer = fillVec4BufferFromVec3Positions(
     createVec4InstancedBuffer(count),
@@ -195,6 +217,7 @@ export function createTSLBuffers(baryonGeometry, parameters, audioConfig) {
   const baryonBuffer = fillRepeatedLogoBuffer(
     createVec4InstancedBuffer(count),
     baryonGeometry.attributes.position,
+    samplingContext,
   );
 
   const scalarFieldBuffer = createVec4InstancedBuffer(count);
@@ -207,6 +230,7 @@ export function createTSLBuffers(baryonGeometry, parameters, audioConfig) {
   const initialParticlePositions = sampleInitialParticlePositions(
     count,
     parameters.radius,
+    samplingContext,
   );
   const particlesBuffer = createVec4AttributeBuffer(count);
   const velocityBuffer = createVec4AttributeBuffer(count);

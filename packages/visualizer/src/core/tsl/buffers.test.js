@@ -28,6 +28,15 @@ function createAudioConfig(overrides = {}) {
   };
 }
 
+function createSequenceRng(sequence) {
+  let index = 0;
+  return () => {
+    const value = sequence[index % sequence.length];
+    index += 1;
+    return value;
+  };
+}
+
 describe("createTSLBuffers", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -79,6 +88,72 @@ describe("createTSLBuffers", () => {
     ]);
   });
 
+  it("produces deterministic packed data when given the same rng sequence", () => {
+    const geometry = createGeometry([1, 2, 3, 4, 5, 6]);
+    const sequence = [0.2, 0.4, 0.6, 0.8, 0.1];
+
+    const first = createTSLBuffers(
+      geometry,
+      createParameters({ count: 3 }),
+      createAudioConfig(),
+      { rng: createSequenceRng(sequence) },
+    );
+    const second = createTSLBuffers(
+      geometry,
+      createParameters({ count: 3 }),
+      createAudioConfig(),
+      { rng: createSequenceRng(sequence) },
+    );
+
+    expect(Array.from(first.basePositions)).toEqual(
+      Array.from(second.basePositions),
+    );
+    expect(Array.from(first.initialParticlePositions)).toEqual(
+      Array.from(second.initialParticlePositions),
+    );
+    expect(Array.from(first.baryonBuffer.value.array)).toEqual(
+      Array.from(second.baryonBuffer.value.array),
+    );
+  });
+
+  it("uses injected rng values for logo weights and particle sampling", () => {
+    const geometry = createGeometry([1, 2, 3, 4, 5, 6]);
+    const sequence = [0.2, 0.4, 0.6, 0.8, 0.1];
+    const buffers = createTSLBuffers(
+      geometry,
+      createParameters({ count: 3 }),
+      createAudioConfig(),
+      { rng: createSequenceRng(sequence) },
+    );
+    const repeatedBuffers = createTSLBuffers(
+      geometry,
+      createParameters({ count: 3 }),
+      createAudioConfig(),
+      { rng: createSequenceRng(sequence) },
+    );
+
+    expect(Array.from(buffers.baryonBuffer.value.array.slice(0, 12))).toEqual([
+      1,
+      2,
+      3,
+      expect.closeTo(0.4, 6),
+      4,
+      5,
+      6,
+      expect.closeTo(0.6, 6),
+      1,
+      2,
+      3,
+      expect.closeTo(0.8, 6),
+    ]);
+    expect(Array.from(buffers.initialParticlePositions)).toEqual(
+      Array.from(repeatedBuffers.initialParticlePositions),
+    );
+    expect(
+      buffers.initialParticlePositions.some((value) => Math.abs(value) > 0),
+    ).toBe(true);
+  });
+
   it("fails fast for invalid geometry and config inputs", () => {
     const invalidGeometry = new THREE.BufferGeometry();
     const validGeometry = createGeometry([1, 2, 3]);
@@ -105,5 +180,20 @@ describe("createTSLBuffers", () => {
         fftSize: 0,
       }),
     ).toThrow(/audioConfig\.fftSize must be a positive integer/);
+  });
+
+  it("still supports the default constructor path without sampling options", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0.3);
+
+    const geometry = createGeometry([1, 2, 3]);
+    const buffers = createTSLBuffers(
+      geometry,
+      createParameters({ count: 2 }),
+      createAudioConfig(),
+    );
+
+    expect(buffers.count).toBe(2);
+    expect(buffers.capacity).toBe(8);
+    expect(buffers.fftHalfSize).toBe(8);
   });
 });
