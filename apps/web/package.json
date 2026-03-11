@@ -11,8 +11,9 @@
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json",
     "preview": "vite preview",
-    "test:smoke": "playwright test",
-    "test:smoke:prod": "playwright test -c playwright.prod.config.js"
+    "test:smoke": "pnpm test:smoke:prod",
+    "test:smoke:dev": "playwright test tests/controls.smoke.spec.js",
+    "test:smoke:prod": "playwright test -c playwright.prod.config.js tests/production.smoke.spec.js"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.0",

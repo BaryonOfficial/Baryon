@@ -71,7 +71,8 @@ pnpm lint                 # Workspace lint via turbo
 pnpm lint:all             # Repo-wide lint across apps/packages
 pnpm typecheck            # Workspace typecheck where configured
 pnpm test:visualizer      # Visualizer unit tests
-pnpm test:web-smoke       # Web control wiring smoke test
+pnpm test:web-smoke       # Stable production browser smoke
+pnpm test:web-smoke:dev   # Dev-only control/devtools integration smoke
 pnpm verify               # Local pre-push gate: lint, typecheck, visualizer unit test
 pnpm verify:full          # Full local verification, including workspace builds
 ```
@@ -85,6 +86,7 @@ cd apps/web && pnpm preview      # Serve the built dist/ output locally
 cd apps/web && pnpm lint
 cd apps/web && pnpm typecheck
 cd apps/web && pnpm test:smoke
+cd apps/web && pnpm test:smoke:dev
 
 cd packages/visualizer && pnpm test
 cd packages/visualizer && pnpm typecheck
@@ -285,16 +287,21 @@ pnpm --filter @baryon/visualizer test
 
 ### Browser smoke tests
 
-The web app has a small Playwright smoke test for critical control wiring:
+The web app has two browser smoke lanes:
 
-- `apps/web/tests/controls.smoke.spec.js`
+- production smoke in `apps/web/tests/production.smoke.spec.js`
+- dev-only control/devtools smoke in `apps/web/tests/controls.smoke.spec.js`
 
-It verifies live runtime updates through the real scene using `window.__baryonControlState`.
-
-Run:
+The production smoke is the canonical browser smoke:
 
 ```bash
-pnpm --filter @baryon/web test:smoke
+pnpm test:web-smoke
+```
+
+The dev-only control smoke remains a narrower manual/CI integration check:
+
+```bash
+pnpm test:web-smoke:dev
 ```
 
 ### Recommended verification before merging visualizer changes
@@ -303,7 +310,8 @@ pnpm --filter @baryon/web test:smoke
 pnpm exec eslint packages/visualizer/src apps/web/src/components/hooks apps/web/tests
 pnpm --filter @baryon/visualizer typecheck
 pnpm --filter @baryon/visualizer test
-pnpm --filter @baryon/web test:smoke
+pnpm test:web-smoke
+pnpm test:web-smoke:dev
 ```
 
 ## Developer Guidance

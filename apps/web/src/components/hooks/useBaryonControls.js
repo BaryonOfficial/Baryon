@@ -11,6 +11,10 @@ import {
   createPreset,
 } from "@baryon/visualizer";
 import { DEVTOOLS_ENABLED } from "../../devtools/config.js";
+import {
+  markBaryonTestControlsReady,
+  resetBaryonTestReady,
+} from "../../devtools/testReady.js";
 
 const SETTINGS_KEY = "baryon:settings";
 const PRESETS_KEY = "baryon:presets";
@@ -224,6 +228,7 @@ export function useBaryonControls() {
             return { ...p };
           },
         };
+        markBaryonTestControlsReady();
       }
     };
 
@@ -234,6 +239,7 @@ export function useBaryonControls() {
       if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
         delete window.__baryonControls;
       }
+      resetBaryonTestReady();
       pane?.dispose();
     };
   }, [controlsRef]);

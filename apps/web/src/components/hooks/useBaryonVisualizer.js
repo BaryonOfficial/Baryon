@@ -18,6 +18,10 @@ import {
   SIMULATION_DEFAULTS,
 } from "@baryon/visualizer";
 import { DEVTOOLS_ENABLED } from "../../devtools/config.js";
+import {
+  markBaryonTestRuntimeReady,
+  resetBaryonTestReady,
+} from "../../devtools/testReady.js";
 
 export function useBaryonVisualizer({
   camera,
@@ -101,6 +105,7 @@ export function useBaryonVisualizer({
         delete window.__baryonAuditSnapshot;
         delete window.__baryonControlState;
       }
+      resetBaryonTestReady();
     };
   }, [camera, gl, setIsAudioLoaded, setIsEngineReady, setIsPlaying]);
 
@@ -202,6 +207,7 @@ export function useBaryonVisualizer({
         audit: auditSnapshot,
         scene: sceneSnapshot,
       });
+      markBaryonTestRuntimeReady();
     }
 
     pipeline.render();

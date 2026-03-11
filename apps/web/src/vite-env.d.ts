@@ -8,6 +8,7 @@ declare global {
     };
     __baryonControlState?: Record<string, unknown>;
     __baryonAuditSnapshot?: Record<string, unknown>;
+    __baryonTestReady?: boolean;
   }
 }
 
