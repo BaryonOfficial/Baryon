@@ -23,6 +23,20 @@ import {
   resetBaryonTestReady,
 } from "../../devtools/testReady.js";
 
+function snapshotFeatureFrame(featureFrame) {
+  return {
+    ...featureFrame,
+    modeSlots:
+      featureFrame.modeSlots instanceof Float32Array
+        ? new Float32Array(featureFrame.modeSlots)
+        : featureFrame.modeSlots,
+    fftMagnitudes:
+      featureFrame.fftMagnitudes instanceof Float32Array
+        ? new Float32Array(featureFrame.fftMagnitudes)
+        : featureFrame.fftMagnitudes,
+  };
+}
+
 export function useBaryonVisualizer({
   camera,
   gl,
@@ -131,7 +145,7 @@ export function useBaryonVisualizer({
     const particleSnapshot = applyParticleControls(runtimeState, controls);
     const auditSnapshot = applyAuditControls(featureState, controls);
 
-    const { time, deltaTime } = audio.readClockSnapshot(
+    const { clockMode, time, deltaTime } = audio.readClockSnapshot(
       state.clock.getElapsedTime(),
     );
     const featureFrame = buildAudioFeatureFrame({
@@ -141,26 +155,19 @@ export function useBaryonVisualizer({
       status,
     });
 
-    // Freeze the last active frame on pause; clear it on explicit stop / natural end.
+    // Freeze the last active frame only for paused file playback.
+    // Mic shutdown and other inactive states should fall back to the silent logo frame.
     // modeSlots and fftMagnitudes are shared Float32Array buffers that get mutated
     // in-place by buildSilentFeatureFrame each frame, so we must snapshot them.
     if (status.isPlaying || status.isMicActive) {
-      lastActiveFrameRef.current = {
-        ...featureFrame,
-        modeSlots:
-          featureFrame.modeSlots instanceof Float32Array
-            ? new Float32Array(featureFrame.modeSlots)
-            : featureFrame.modeSlots,
-        fftMagnitudes:
-          featureFrame.fftMagnitudes instanceof Float32Array
-            ? new Float32Array(featureFrame.fftMagnitudes)
-            : featureFrame.fftMagnitudes,
-      };
-    }
-    if (status.audioInputMode === "stopped") {
+      lastActiveFrameRef.current = snapshotFeatureFrame(featureFrame);
+    } else if (clockMode !== "paused-playback") {
       lastActiveFrameRef.current = null;
     }
-    const effectiveFrame = lastActiveFrameRef.current ?? featureFrame;
+    const effectiveFrame =
+      clockMode === "paused-playback" && lastActiveFrameRef.current
+        ? lastActiveFrameRef.current
+        : featureFrame;
 
     runtimeRef.current.tick({
       renderer: gl,

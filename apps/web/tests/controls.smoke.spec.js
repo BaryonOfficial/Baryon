@@ -6,6 +6,65 @@ async function waitForControlSurface(page) {
   });
 }
 
+async function installFakeMicrophone(page) {
+  await page.addInitScript(() => {
+    function createFakeMicStream() {
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      const audioContext = new AudioContextCtor();
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      const destination = audioContext.createMediaStreamDestination();
+
+      oscillator.type = "sine";
+      oscillator.frequency.value = 440;
+      gain.gain.value = 0.25;
+      oscillator.connect(gain);
+      gain.connect(destination);
+      oscillator.start();
+
+      const originalTracks = destination.stream.getAudioTracks();
+      const wrappedStream = new MediaStream(originalTracks);
+      for (const track of wrappedStream.getAudioTracks()) {
+        const originalStop = track.stop.bind(track);
+        track.stop = () => {
+          originalStop();
+          try {
+            oscillator.stop();
+          } catch (error) {
+            if (error?.name !== "InvalidStateError") {
+              throw error;
+            }
+          }
+          audioContext.close().catch(() => {});
+        };
+      }
+
+      audioContext.resume().catch(() => {});
+      return wrappedStream;
+    }
+
+    if (!navigator.mediaDevices) {
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: {},
+      });
+    }
+    const { mediaDevices } = navigator;
+
+    mediaDevices.getUserMedia = async () => createFakeMicStream();
+    mediaDevices.enumerateDevices = async () => [
+      {
+        kind: "audioinput",
+        deviceId: "fake-mic-device",
+        label: "Fake Microphone",
+        groupId: "fake-group",
+      },
+    ];
+    mediaDevices.addEventListener ??= () => {};
+    mediaDevices.removeEventListener ??= () => {};
+  });
+}
+
 async function setControl(page, key, value) {
   await page.evaluate(
     ([controlKey, controlValue]) => {
@@ -113,5 +172,47 @@ test.describe("Baryon control smoke", () => {
       .toBe(19.2);
 
     await setControl(page, "injectTestTone", false);
+  });
+
+  test("returns to the idle logo state after mic input is turned off", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await installFakeMicrophone(page);
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.getByTitle("Select audio input").click();
+    await page.getByRole("button", { name: "Fake Microphone" }).click();
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          micActive: window.__baryonAuditSnapshot?.micActive ?? false,
+          fieldState:
+            window.__baryonAuditSnapshot?.particleDebug?.fieldState ?? null,
+        })),
+      )
+      .toEqual({
+        micActive: true,
+        fieldState: expect.not.stringMatching(/^idle$/),
+      });
+
+    await page.getByTitle("Stop mic input").click();
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          micActive: window.__baryonAuditSnapshot?.micActive ?? true,
+          fieldState:
+            window.__baryonAuditSnapshot?.particleDebug?.fieldState ?? null,
+        })),
+      )
+      .toEqual({
+        micActive: false,
+        fieldState: "idle",
+      });
   });
 });
