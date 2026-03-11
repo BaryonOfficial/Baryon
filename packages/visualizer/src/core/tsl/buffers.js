@@ -3,6 +3,26 @@ import { instancedArray, attributeArray } from "three/tsl";
 const VEC3_STRIDE = 3;
 const VEC4_STRIDE = 4;
 
+/**
+ * CPU-side staging arrays are kept alongside TSL buffers because audit/debug
+ * initialization still samples from the raw xyz positions during setup.
+ *
+ * @typedef {Object} TSLBufferBundle
+ * @property {number} count Runtime particle count used by compute/material setup.
+ * @property {number} capacity Modal stack capacity used for mode storage.
+ * @property {number} fftHalfSize FFT bin count mirrored into the runtime buffer.
+ * @property {*} modeBuffer TSL modal-slot buffer consumed by runtime updates.
+ * @property {*} fftBuffer TSL FFT buffer consumed by runtime updates.
+ * @property {Float32Array} basePositions CPU-side xyz staging array used by audit setup.
+ * @property {*} basePositionBuffer TSL vec4 base-position buffer consumed by compute.
+ * @property {*} baryonBuffer TSL vec4 logo-position buffer consumed by compute and audit setup.
+ * @property {*} scalarFieldBuffer TSL vec4 scalar-field scratch buffer consumed by compute.
+ * @property {*} zeroPointsBuffer TSL vec4 zero-point buffer consumed by compute.
+ * @property {Float32Array} initialParticlePositions CPU-side xyz staging array used by audit setup.
+ * @property {*} particlesBuffer TSL vec4 particle state buffer consumed by compute/material setup.
+ * @property {*} velocityBuffer TSL vec4 velocity state buffer consumed by compute.
+ */
+
 function createVec4InstancedBuffer(count) {
   return instancedArray(count, "vec4");
 }
@@ -105,22 +125,52 @@ function sampleSurfaceAndVolumePositions(count, radius, surfaceRatio) {
 
 function sampleInitialParticlePositions(count, radius) {
   const scaledRadius = radius / 10;
-  const positions = new Float32Array(count * VEC3_STRIDE);
+  const sampledPositions = new Float32Array(count * VEC3_STRIDE);
 
   for (let i = 0; i < count; i++) {
     const r = Math.pow(Math.random(), 1 / 3) * scaledRadius;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
     const offset = i * VEC3_STRIDE;
-    positions[offset] = r * Math.sin(phi) * Math.cos(theta);
-    positions[offset + 1] = r * Math.sin(phi) * Math.sin(theta);
-    positions[offset + 2] = r * Math.cos(phi);
+    sampledPositions[offset] = r * Math.sin(phi) * Math.cos(theta);
+    sampledPositions[offset + 1] = r * Math.sin(phi) * Math.sin(theta);
+    sampledPositions[offset + 2] = r * Math.cos(phi);
   }
 
-  return positions;
+  return sampledPositions;
 }
 
+function assertPositiveInteger(name, value) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`[buffers] ${name} must be a positive integer`);
+  }
+}
+
+function validateTSLBufferInputs(baryonGeometry, parameters, audioConfig) {
+  assertPositiveInteger("parameters.count", parameters?.count);
+  assertPositiveInteger("audioConfig.capacity", audioConfig?.capacity);
+  assertPositiveInteger("audioConfig.fftSize", audioConfig?.fftSize);
+
+  const logoPositions = baryonGeometry?.attributes?.position;
+  if (!logoPositions?.count || !logoPositions?.array?.length) {
+    throw new Error(
+      "[buffers] baryonGeometry must include a non-empty position attribute",
+    );
+  }
+}
+
+/**
+ * Builds the TSL runtime buffers and CPU-side staging arrays needed by both
+ * compute/material setup and audit shadow-state initialization.
+ *
+ * @param {import("three").BufferGeometry} baryonGeometry
+ * @param {{ count: number, radius: number, surfaceRatio: number }} parameters
+ * @param {{ capacity: number, fftSize: number }} audioConfig
+ * @returns {TSLBufferBundle}
+ */
 export function createTSLBuffers(baryonGeometry, parameters, audioConfig) {
+  validateTSLBufferInputs(baryonGeometry, parameters, audioConfig);
+
   const count = parameters.count;
   const capacity = audioConfig.capacity;
   const fftHalfSize = audioConfig.fftSize / 2;
