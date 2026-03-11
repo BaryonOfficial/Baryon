@@ -7,7 +7,7 @@ import {
 } from './analyserSampler.js';
 
 function normalizeAudioInputMode(mode) {
-  return mode === 'file' || mode === 'mic' ? mode : 'idle';
+  return mode === 'file' || mode === 'mic' || mode === 'stopped' ? mode : 'idle';
 }
 
 function stopActiveFilePlayback(state) {
@@ -41,7 +41,7 @@ function bindAudioEndedHandler(state, callback, setAudioInputMode) {
       state.sound.stop();
     }
     state.sound.started = false;
-    setAudioInputMode('idle');
+    setAudioInputMode('stopped');
     callback();
   };
 }
@@ -274,7 +274,7 @@ export function createAudioSession() {
       state.sound.started = false;
     }
     if (state.audioInputMode === 'file') {
-      setAudioInputMode('idle');
+      setAudioInputMode('stopped');
     }
   }
 

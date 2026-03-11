@@ -259,7 +259,7 @@ describe("audio session", () => {
     });
   });
 
-  it("returns to idle when stopAudio is called while playing", async () => {
+  it("returns to stopped when stopAudio is called while playing", async () => {
     const session = createAudioSession();
     const camera = { add: vi.fn(), remove: vi.fn() };
     session.attach(camera);
@@ -272,7 +272,7 @@ describe("audio session", () => {
 
     expect(session.getStatus()).toMatchObject({
       isPlaying: false,
-      audioInputMode: "idle",
+      audioInputMode: "stopped",
       analysisSource: "idle",
     });
   });
@@ -291,7 +291,7 @@ describe("audio session", () => {
 
     expect(callback).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "idle",
+      audioInputMode: "stopped",
       isPlaying: false,
     });
   });

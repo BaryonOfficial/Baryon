@@ -33,6 +33,7 @@ export function useBaryonVisualizer({
   const audioFeatureRef = useRef(null);
   const runtimeRef = useRef(createVisualizationRuntime(DEFAULT_VISUALIZATION_METHOD));
   const runtimeStateRef = useRef(null);
+  const lastActiveFrameRef = useRef(null);
   const [points, setPoints] = useState(null);
 
   useEffect(() => {
@@ -128,10 +129,29 @@ export function useBaryonVisualizer({
       status,
     });
 
+    // Freeze the last active frame on pause; clear it on explicit stop / natural end.
+    // modeSlots and fftMagnitudes are shared Float32Array buffers that get mutated
+    // in-place by buildSilentFeatureFrame each frame, so we must snapshot them.
+    if (status.isPlaying || status.isMicActive) {
+      lastActiveFrameRef.current = {
+        ...featureFrame,
+        modeSlots: featureFrame.modeSlots instanceof Float32Array
+          ? new Float32Array(featureFrame.modeSlots)
+          : featureFrame.modeSlots,
+        fftMagnitudes: featureFrame.fftMagnitudes instanceof Float32Array
+          ? new Float32Array(featureFrame.fftMagnitudes)
+          : featureFrame.fftMagnitudes,
+      };
+    }
+    if (status.audioInputMode === 'stopped') {
+      lastActiveFrameRef.current = null;
+    }
+    const effectiveFrame = lastActiveFrameRef.current ?? featureFrame;
+
     runtimeRef.current.tick({
       renderer: gl,
       runtimeState,
-      featureFrame,
+      featureFrame: effectiveFrame,
       time,
       deltaTime,
     });
