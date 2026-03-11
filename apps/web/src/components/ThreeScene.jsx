@@ -53,12 +53,33 @@ const ThreeScene = () => {
         camera={{ position: [0, 0, 14], fov: 35, near: 0.1, far: 100 }}
         // @ts-ignore — WebGPURenderer is runtime-compatible; R3F types predate WebGPU
         gl={async (glDefaults) => {
-          // @ts-ignore — glDefaults is { canvas, powerPreference, antialias, alpha }
+          const canvas = /** @type {HTMLCanvasElement} */ (glDefaults.canvas);
           const renderer = new WebGPURenderer({
-            canvas: /** @type {HTMLCanvasElement} */ (glDefaults.canvas),
+            canvas,
             antialias: true,
           });
+
+          const syncInitialRendererSize = () => {
+            const parent = canvas.parentElement;
+            if (!parent) {
+              return;
+            }
+
+            const { width, height } = parent.getBoundingClientRect();
+            if (width <= 0 || height <= 0) {
+              return;
+            }
+
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            renderer.setPixelRatio(dpr);
+            renderer.setSize(width, height, false);
+          };
+
+          // Keep the renderer's internal size bookkeeping aligned with the
+          // canvas before WebGPU allocates its MSAA/resolve attachments.
+          syncInitialRendererSize();
           await renderer.init();
+          syncInitialRendererSize();
           return renderer;
         }}
       >
