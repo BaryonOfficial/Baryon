@@ -68,7 +68,7 @@ export function useBaryonVisualizer({
           radius: SIMULATION_DEFAULTS.radius,
           surfaceRatio: SIMULATION_DEFAULTS.surfaceRatio,
           surfaceThreshold: SIMULATION_DEFAULTS.surfaceThreshold,
-          threshold: SIMULATION_DEFAULTS.threshold,
+          threshold: SIMULATION_DEFAULTS.zeroPointPrecision,
         };
         const audioConfig = {
           capacity: audioStatus.capacity,

@@ -33,7 +33,7 @@ export function createTSLUniforms(parameters) {
     uIdleLogoIntensity: uniform(RENDER_DEFAULTS.idleLogoIntensity),
     uIdleLogoAlpha: uniform(RENDER_DEFAULTS.idleLogoAlpha),
     uIdleLogoSize: uniform(RENDER_DEFAULTS.idleLogoSize),
-    uColor: uniform(new THREE.Color(RENDER_DEFAULTS.color)),
+    uColor: uniform(new THREE.Color(RENDER_DEFAULTS.volumeColor)),
     uSurfaceColor: uniform(new THREE.Color(RENDER_DEFAULTS.surfaceColor)),
     uParticleSize: uniform(RENDER_DEFAULTS.particleSize),
   };
