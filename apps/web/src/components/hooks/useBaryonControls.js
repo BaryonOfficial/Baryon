@@ -51,7 +51,7 @@ export function useBaryonControls() {
       for (const folderTitle of visibleFolders) {
         const folder = pane.addFolder({
           title: folderTitle,
-          expanded: folderTitle === "Particles",
+          expanded: false,
         });
 
         for (const definition of getVisibleControls(folderTitle)) {
