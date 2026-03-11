@@ -10,6 +10,7 @@ export function AudioProvider({ children }) {
   const [audioDevices, setAudioDevices] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [showDeviceMenu, setShowDeviceMenu] = useState(false);
+  const [isEngineReady, setIsEngineReady] = useState(false);
 
   const { handleFileChange, handlePlayPause, handleStop, handleMicToggle } =
     useAudioLogic({
@@ -29,11 +30,13 @@ export function AudioProvider({ children }) {
     isPlaying,
     isMicActive,
     isAudioLoaded,
+    isEngineReady,
     audioDevices,
     selectedDevice,
     showDeviceMenu,
     setIsPlaying,
     setIsAudioLoaded,
+    setIsEngineReady,
     setShowDeviceMenu,
     setSelectedDevice,
     handleFileChange,

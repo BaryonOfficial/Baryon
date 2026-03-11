@@ -24,7 +24,7 @@ const ThreeScene = () => {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  const { setIsPlaying, setIsAudioLoaded } = useAudio();
+  const { setIsPlaying, setIsAudioLoaded, setIsEngineReady } = useAudio();
 
   useEffect(() => {
     const isUnsupportedEnv = () =>
@@ -65,6 +65,7 @@ const ThreeScene = () => {
           <BaryonScene
             setIsPlaying={setIsPlaying}
             setIsAudioLoaded={setIsAudioLoaded}
+            setIsEngineReady={setIsEngineReady}
           />
         </Suspense>
       </Canvas>

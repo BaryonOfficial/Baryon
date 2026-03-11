@@ -24,6 +24,7 @@ export function useBaryonVisualizer({
   gl,
   setIsPlaying,
   setIsAudioLoaded,
+  setIsEngineReady,
   controlsRef,
   ensurePipeline,
   postNodesRef,
@@ -82,6 +83,7 @@ export function useBaryonVisualizer({
         });
         runtimeStateRef.current = runtimeState;
         setPoints(runtimeState.points);
+        setIsEngineReady?.(true);
       } catch (error) {
         console.error("[BaryonScene] Setup failed:", error);
       }
@@ -97,7 +99,7 @@ export function useBaryonVisualizer({
         delete window.__baryonControlState;
       }
     };
-  }, [camera, gl, setIsAudioLoaded, setIsPlaying]);
+  }, [camera, gl, setIsAudioLoaded, setIsEngineReady, setIsPlaying]);
 
   useFrame((state) => {
     const pipeline = ensurePipeline();
