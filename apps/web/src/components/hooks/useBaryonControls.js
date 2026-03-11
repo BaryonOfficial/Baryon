@@ -38,7 +38,7 @@ export function useBaryonControls() {
         return;
       }
 
-      pane = /** @type {typeof pane} */ (new Pane({ title: "Baryon", expanded: true }));
+      pane = /** @type {typeof pane} */ (new Pane({ title: "Baryon", expanded: false }));
       pane.element.style.position = "fixed";
       pane.element.style.top = "1rem";
       pane.element.style.right = "1rem";
