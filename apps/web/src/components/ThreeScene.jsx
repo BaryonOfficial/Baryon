@@ -20,8 +20,9 @@ const ThreeScene = () => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
   const { setIsPlaying, setIsAudioLoaded, setIsEngineReady } = useAudio();
@@ -49,7 +50,7 @@ const ThreeScene = () => {
       <Canvas
         style={{ position: "absolute", top: 0, left: 0, zIndex: 10 }}
         dpr={[1, 2]}
-        camera={{ position: [0, 0, 12], fov: 35, near: 0.1, far: 100 }}
+        camera={{ position: [0, 0, 14], fov: 35, near: 0.1, far: 100 }}
         // @ts-ignore — WebGPURenderer is runtime-compatible; R3F types predate WebGPU
         gl={async (glDefaults) => {
           // @ts-ignore — glDefaults is { canvas, powerPreference, antialias, alpha }
