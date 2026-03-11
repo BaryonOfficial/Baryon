@@ -15,6 +15,12 @@ import { DEVTOOLS_ENABLED } from "../../devtools/config.js";
 const SETTINGS_KEY = "baryon:settings";
 const PRESETS_KEY = "baryon:presets";
 
+/** @typedef {{ name: string, createdAt: number, controls: Record<string, unknown> }} ControlPreset */
+/** @typedef {{ refresh(): void }} PaneBinding */
+/** @typedef {{ on(event: string, cb: () => void): void }} PaneButton */
+/** @typedef {{ dispose(): void, on(event: "change", cb: (ev: { value: string }) => void): void, controller?: { value?: { rawValue?: string } } }} PaneListBlade */
+/** @typedef {{ addBinding(target: object, key: string, options?: Record<string, unknown>): PaneBinding, addButton(params: { title: string }): PaneButton, addBlade(params: Record<string, unknown>): unknown }} PaneFolder */
+
 function loadFromStorage(key) {
   try {
     const raw = localStorage.getItem(key);
@@ -49,11 +55,7 @@ export function useBaryonControls() {
     const p = controlsRef.current;
     let disposed = false;
     /** @type {null | (import("tweakpane").Pane & {
-     *   addFolder(params: { title: string; expanded?: boolean }): {
-     *     addBinding(target: object, key: string, options?: Record<string, unknown>): void;
-     *     addButton(params: { title: string }): { on(event: string, cb: () => void): void };
-     *     addBlade(params: Record<string, unknown>): unknown;
-     *   };
+     *   addFolder(params: { title: string; expanded?: boolean }): PaneFolder;
      *   refresh(): void;
      *   on(event: string, cb: (ev: unknown) => void): void;
      * })} */
@@ -110,10 +112,10 @@ export function useBaryonControls() {
       });
 
       // --- Presets folder ---
-      /** @type {Array<{ name: string, createdAt: number, controls: Record<string, unknown> }>} */
+      /** @type {ControlPreset[]} */
       let presets = loadFromStorage(PRESETS_KEY) ?? [];
       const presetNameState = { name: "" };
-      /** @type {null | { dispose(): void, on(event: string, cb: (ev: { value: string }) => void): void, controller: { value: { rawValue: string } } }} */
+      /** @type {null | PaneListBlade} */
       let loadBlade = null;
       let activePresetName = null; // name shown in the Load dropdown; null = no preset / controls modified
       let allowPresetReset = false; // becomes true (via setTimeout) after a preset loads; next control change clears it
@@ -122,7 +124,7 @@ export function useBaryonControls() {
         saveToStorage(PRESETS_KEY, presets);
       }
 
-      /** @param {{ title: string, expanded: boolean, addBinding: Function, addButton: Function, addBlade: Function }} folder */
+      /** @param {PaneFolder} folder */
       function rebuildLoadBlade(folder) {
         loadBlade?.dispose();
         allowPresetReset = false;
@@ -152,7 +154,7 @@ export function useBaryonControls() {
       }
 
       const presetsFolder = pane.addFolder({ title: "Presets", expanded: false });
-      let nameBinding = presetsFolder.addBinding(presetNameState, "name", { label: "Name" });
+      const nameBinding = presetsFolder.addBinding(presetNameState, "name", { label: "Name" });
 
       presetsFolder.addButton({ title: "Save" }).on("click", () => {
         const name = presetNameState.name.trim();

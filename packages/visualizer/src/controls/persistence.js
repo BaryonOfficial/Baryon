@@ -6,7 +6,7 @@ import { CONTROL_STATUSES } from './schema.js';
  * are never stored in presets or auto-saved settings.
  *
  * @param {Record<string, unknown>} controls - Current control state
- * @param {object[]} definitions - Schema definitions
+ * @param {ReadonlyArray<{ key: string, status: string }>} definitions - Schema definitions
  * @returns {Record<string, unknown>}
  */
 export function serializeControls(controls, definitions) {
@@ -25,7 +25,7 @@ export function serializeControls(controls, definitions) {
  * - Type-mismatched values (corrupted storage) are ignored in favour of defaults
  *
  * @param {unknown} raw - Raw parsed value from storage
- * @param {object[]} definitions - Schema definitions
+ * @param {ReadonlyArray<{ key: string, defaultValue: unknown }>} definitions - Schema definitions
  * @returns {Record<string, unknown>}
  */
 export function deserializeControls(raw, definitions) {
@@ -48,7 +48,7 @@ export function deserializeControls(raw, definitions) {
  *
  * @param {string} name - Human-readable preset name
  * @param {Record<string, unknown>} controls - Current control state
- * @param {object[]} definitions - Schema definitions
+ * @param {ReadonlyArray<{ key: string, status: string }>} definitions - Schema definitions
  * @returns {{ name: string, createdAt: number, controls: Record<string, unknown> }}
  */
 export function createPreset(name, controls, definitions) {

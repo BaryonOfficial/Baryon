@@ -16,7 +16,7 @@
     "test:web-smoke": "pnpm --filter @baryon/web test:smoke",
     "lint": "turbo lint",
     "lint:all": "pnpm -r --filter './apps/*' --filter './packages/*' --if-present lint",
-    "typecheck": "pnpm -r --filter './apps/*' --filter './packages/*' --if-present typecheck",
+    "typecheck": "pnpm --reporter append-only -r --filter './apps/*' --filter './packages/*' --if-present typecheck",
     "verify": "pnpm lint:all && pnpm typecheck && turbo build"
   },
   "devDependencies": {

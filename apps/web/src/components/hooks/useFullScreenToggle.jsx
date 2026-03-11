@@ -12,11 +12,11 @@ export function useFullscreen(elementRef) {
   useEffect(() => {
     const handleKeyDown = (event) => {
       // Don't fire when the user is typing in an input, textarea, or contenteditable
-      const tag = document.activeElement?.tagName;
+      const activeElement = document.activeElement;
       const isEditing =
-        tag === 'INPUT' ||
-        tag === 'TEXTAREA' ||
-        document.activeElement?.isContentEditable;
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        (activeElement instanceof HTMLElement && activeElement.isContentEditable);
       if (event.key === 'f' && elementRef.current && !isEditing) {
         toggleFullscreen();
       }

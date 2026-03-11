@@ -68,19 +68,18 @@ function ScrollingText({ text }) {
     setScrollDistance(overflow > 0 ? overflow : 0);
   }, [text]);
 
+  /** @type {import("react").CSSProperties & { "--scroll-distance": string }} */
+  const scrollingStyle = {
+    "--scroll-distance": `-${scrollDistance}px`,
+    animation: "am-scroll 9s ease-in-out infinite",
+  };
+
   return (
     <span ref={containerRef} className="am-filename-wrap">
       <span
         ref={textRef}
         className="am-filename"
-        style={
-          scrollDistance > 0
-            ? {
-                "--scroll-distance": `-${scrollDistance}px`,
-                animation: "am-scroll 9s ease-in-out infinite",
-              }
-            : undefined
-        }
+        style={scrollDistance > 0 ? scrollingStyle : undefined}
       >
         {text}
       </span>
