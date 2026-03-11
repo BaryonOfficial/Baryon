@@ -11,9 +11,18 @@ import { useAudio } from "../context/AudioContext";
 const ThreeScene = () => {
   const containerRef = useRef(null);
   const [isUnsupported, setIsUnsupported] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // fullscreen targets the outer container div
   useFullscreen(containerRef);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   const { setIsPlaying, setIsAudioLoaded } = useAudio();
 
@@ -60,7 +69,7 @@ const ThreeScene = () => {
         </Suspense>
       </Canvas>
 
-      {!isUnsupported && <AudioControls />}
+      {!isUnsupported && !isFullscreen && <AudioControls />}
       <ParticleDebugOverlay />
 
       {isUnsupported && <UnsupportedWarning />}
