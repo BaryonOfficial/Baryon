@@ -1,137 +1,124 @@
 # Contributing to Baryon
 
-Thank you for your interest in contributing to Baryon! As an open source project licensed under the **GNU AGPL v3**, we welcome contributions from anyone who wants to help improve the project. Whether you’re fixing bugs, adding features, improving documentation, or just sharing ideas, you’re part of our community.
+Thanks for your interest in contributing. Baryon is an open source project
+under AGPL-3.0. Contributions are welcome from everyone.
 
-## Who Can Contribute?
+## CLA — required before your first PR is merged
 
-**Everyone!**  
-You don’t need to be a member of any organization or team to contribute. All development happens in the open, and anyone can participate by forking the repository, opening issues, or submitting pull requests.
+Baryon uses a Contributor License Agreement so that your contributions can
+be used in both the open source engine and Baryon's commercial products.
 
-- **Core Contributors**: Maintainers with direct write access to the repository (typically organization members or trusted long-term contributors).
-- **Community Contributors**: Anyone from the public who forks the repo and submits pull requests.
+When you open your first pull request, a bot will post a comment asking you
+to sign. Reply with:
 
-## Development Process
+> I have read the CLA Document and I hereby sign the CLA
 
-We use the OODA Loop framework to guide our development:
-
-- **Observe**: Understand the current state of the project, user needs, and technical requirements.
-- **Orient**: Analyze how your proposed changes fit into the larger project goals.
-- **Decide**: Choose the best approach for implementation.
-- **Act**: Execute your solution effectively.
-
-## How to Contribute
-
-1. **Find or Propose an Issue**
-   - Check [open issues](https://github.com/BaryonOfficial/Baryon/issues) or open a new one to suggest an idea or report a bug.
-
-2. **Fork the Repository**
-   - Click the “Fork” button on the [Baryon GitHub page](https://github.com/BaryonOfficial/Baryon).
-
-3. **Clone Your Fork**
-   - Copy your fork to your computer:
-     ```
-     git clone https://github.com/<your-username>/Baryon.git
-     cd Baryon
-     ```
-
-4. **Create a Branch**
-   - Make a new branch for your work:
-     ```
-     git checkout -b feature/my-feature
-     ```
-     (Replace `feature/my-feature` with a short description.)
-
-5. **Make Your Changes**
-   - Edit code or documentation as needed.
-
-6. **Test Your Changes**
-   - Run:
-     ```
-     npm run lint
-     npm run build
-     ```
-     (If tests exist: `npm test`)
-
-7. **Commit and Push**
-   - Save your changes:
-     ```
-     git add .
-     git commit -m "feat: describe your change"
-     git push origin feature/my-feature
-     ```
-
-8. **Open a Pull Request**
-   - Go to your fork on GitHub and click “Compare & pull request.”
-   - Fill out the form and submit.
+The CLA text is in [`CLA.md`](../CLA.md) at the root of the repo. This is a
+one-time step — all future PRs from your GitHub account will be auto-approved.
 
 ---
 
-**Tip:**  
-If you’re new to git or GitHub, check out [GitHub’s Hello World guide](https://guides.github.com/activities/hello-world/)!
+## Setup
 
-## Commit Message Guidelines
+Prerequisites: Node.js 18+, `pnpm`, Chrome or Edge (WebGPU required to run the visualizer).
 
-We follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
+```bash
+# Clone the repo (or your fork)
+git clone https://github.com/BaryonOfficial/Baryon.git
+cd Baryon
+
+# Install all workspace dependencies
+pnpm install
+```
+
+Start the dev server:
+
+```bash
+pnpm dev
+```
+
+If you're working on microphone input or anything that needs `SharedArrayBuffer`,
+use the HTTPS dev server instead:
+
+```bash
+cd apps/web && pnpm dev:https
+```
+
+---
+
+## Making changes
+
+Branch from `develop`:
+
+```bash
+git checkout develop
+git pull
+git checkout -b feature/my-thing   # or fix/, docs/
+```
+
+Common branch prefixes:
+
+- `feature/` — new functionality
+- `fix/` — bug fixes
+- `docs/` — documentation only
+- `hotfix/` — urgent production patches (branch from `main`)
+
+---
+
+## Before opening a PR
+
+Run the verification gate locally — the same checks CI will run:
+
+```bash
+pnpm verify
+```
+
+This runs ESLint, typecheck, and the visualizer unit tests. Fix any failures
+before pushing.
+
+---
+
+## Commit messages
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
 <type>(<scope>): <description>
-
-[optional body]
-
-[optional footer(s)]
 ```
 
-- Use the present tense ("Add feature" not "Added feature")
-- Use the imperative mood ("Move cursor to..." not "Moves cursor to...")
-- Limit the first line to 72 characters or less
-- Reference issue numbers in the footer
+Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 
-**Types:**  
-`feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+Common scopes: `(shader)`, `(ui)`, `(core)`, `(deps)`, `(api)`
 
-**Scope:**  
-Optional, e.g. `(shader)`, `(ui)`, `(core)`, `(deps)`, `(test)`, `(css)`, `(api)`
-
-**Example:**
+Examples:
 
 ```
-feat(shader): add new particle simulation algorithm
-fix(ui): resolve memory leak in visualization component
-docs(api): update WebGL interface documentation
+feat(core): add per-mode amplitude envelope control
+fix(ui): correct tooltip not showing on first hover
+docs(api): update controls reference for new granular params
 ```
 
-## Branch Structure
-
-- `main`: Production-ready code
-- `develop`: Primary development branch
-- `feature/*`: New features
-- `fix/*`: Bug fixes
-- `hotfix/*`: Urgent production fixes
-
-## Labels
-
-- `good first issue`: Great for newcomers
-- `help wanted`: Maintainers are seeking help
-- `bug`: Confirmed bugs
-- `enhancement`: Feature requests
-- `documentation`: Docs updates
-- `breaking-change`: Backward-incompatible changes
-
-## Code of Conduct
-
-We are committed to fostering a welcoming and respectful community. Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
-
-## Security
-
-- Do not disclose security vulnerabilities publicly. Please report them privately to the maintainers.
-- Follow security best practices in your contributions.
-
-## Getting Help
-
-- Open a [GitHub issue](https://github.com/BaryonOfficial/Baryon/issues) for questions, suggestions, or discussions.
-- Join our community chat (link, if available).
-- See the [README](../readme.md) for more information.
+Keep the first line under 72 characters. Use the body for context if needed.
 
 ---
 
-**Let’s build something amazing together!**
+## Adding controls
+
+New GUI controls must be added through the schema — not inline in the hook:
+
+- `packages/visualizer/src/controls/schema.js` — source of truth
+- `packages/visualizer/src/controls/runtime.js` — where each control is applied
+- Every `live` control needs explicit runtime coverage (verified by unit tests)
+- Include a `title` field with a plain-English tooltip description
+- Declare `methods` for which visualization modes the control applies to
+
+See [documentation/controls.md](../documentation/controls.md) for the full
+control reference.
+
+---
+
+## Getting help
+
+- **Questions:** [GitHub Discussions](https://github.com/BaryonOfficial/Baryon/discussions)
+- **Bugs:** [GitHub Issues](https://github.com/BaryonOfficial/Baryon/issues) — use the bug report template
+- **Security vulnerabilities:** email kyledcollins@proton.me privately (see [SECURITY.md](SECURITY.md))

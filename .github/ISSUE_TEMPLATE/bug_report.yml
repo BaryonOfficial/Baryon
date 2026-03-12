@@ -1,0 +1,53 @@
+name: Bug Report
+description: Something isn't working
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: confirm you are using **Chrome or Edge** — Baryon requires WebGPU, which is not available in Firefox or Safari.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what actually happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the app
+        2. Load an audio file / enable mic
+        3. ...
+        4. See error
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: "Chrome 123"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15, Windows 11"
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console errors
+      description: Open DevTools (F12) → Console tab and paste any red errors here
+      render: text
+  - type: textarea
+    id: gpu
+    attributes:
+      label: GPU / WebGPU info (optional)
+      description: |
+        Run this in the DevTools console and paste the result:
+        `navigator.gpu.requestAdapter().then(a => console.log(a?.name ?? 'no adapter'))`

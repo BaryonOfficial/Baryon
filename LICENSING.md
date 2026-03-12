@@ -58,3 +58,14 @@ The commercial licensor is currently Kyle Collins personally, with the agreement
 can later be assigned to a company without changing the public licensing model.
 
 Commercial licensing contact: kyledcollins@proton.me
+
+## Contributing
+
+Baryon accepts community contributions under a Contributor License Agreement (CLA). The CLA
+grants Baryon the right to use your contribution under any license, including proprietary
+commercial licenses, while you retain copyright ownership of your work.
+
+The CLA text is in [`CLA.md`](CLA.md) at the root of the repository. Signatures are collected
+automatically via a GitHub Actions bot when you open your first pull request.
+
+See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for the full contribution guide.
