@@ -104,7 +104,10 @@ export function useBaryonControls() {
             ...(definition.binding ?? {}),
           });
           if (definition.title) {
-            binding.element.setAttribute("title", definition.title);
+            /** @type {any} */ (binding).element.setAttribute(
+              "title",
+              definition.title,
+            );
           }
         }
       }
