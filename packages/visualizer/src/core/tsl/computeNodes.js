@@ -19,6 +19,43 @@ import {
 } from "three/tsl";
 import { FIELD_STATE_VALUES } from "./uniforms.js";
 
+function createNodalMetrics({
+  fieldAbs,
+  gradientMagnitude,
+  radialDist,
+  radius,
+  threshold,
+  surfaceThreshold,
+  surfaceControl,
+  centerSuppressionInner,
+  centerSuppressionOuter,
+  structureMin,
+  structureMax,
+}) {
+  const nodeBand = float(1.0).sub(smoothstep(float(0.0), threshold, fieldAbs));
+  const structure = smoothstep(structureMin, structureMax, gradientMagnitude);
+  const centerSuppression = smoothstep(
+    centerSuppressionInner,
+    centerSuppressionOuter,
+    radialDist,
+  );
+  const isOnSurface = abs(radialDist.sub(radius)).lessThanEqual(
+    surfaceThreshold,
+  );
+
+  return {
+    nodeBand,
+    structure,
+    centerSuppression,
+    potential: nodeBand.mul(structure).mul(centerSuppression),
+    groupTag: select(
+      isOnSurface.and(surfaceControl.equal(1)),
+      float(1.0),
+      float(2.0),
+    ),
+  };
+}
+
 export function createComputeNodes({ count, capacity, buffers, uniforms }) {
   const {
     modeBuffer,
@@ -104,29 +141,19 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
 
     const gradient = vec3(gradX, gradY, gradZ);
     const gradientMagnitude = length(gradient);
-    const radialDist = length(pos);
-    const nodeBand = float(1.0).sub(
-      smoothstep(float(0.0), uThreshold, fieldAbs),
-    );
-    const structure = smoothstep(
-      uStructureMin,
-      uStructureMax,
+    const nodalMetrics = createNodalMetrics({
+      fieldAbs,
       gradientMagnitude,
-    );
-    const centerSuppression = smoothstep(
-      uCenterSuppressionInner,
-      uCenterSuppressionOuter,
-      radialDist,
-    );
-    const isOnSurface = abs(radialDist.sub(uRadius)).lessThanEqual(
-      uSurfaceThreshold,
-    );
-    const groupTag = select(
-      isOnSurface.and(uSurfaceControl.equal(1)),
-      float(1.0),
-      float(2.0),
-    );
-    const potential = nodeBand.mul(structure).mul(centerSuppression);
+      radialDist: length(pos),
+      radius: uRadius,
+      threshold: uThreshold,
+      surfaceThreshold: uSurfaceThreshold,
+      surfaceControl: uSurfaceControl,
+      centerSuppressionInner: uCenterSuppressionInner,
+      centerSuppressionOuter: uCenterSuppressionOuter,
+      structureMin: uStructureMin,
+      structureMax: uStructureMax,
+    });
 
     If(
       uFieldState
@@ -140,7 +167,14 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     ).Else(() => {
       zeroPointsBuffer
         .element(instanceIndex)
-        .assign(vec4(potential, groupTag, fieldAbs, gradientMagnitude));
+        .assign(
+          vec4(
+            nodalMetrics.potential,
+            nodalMetrics.groupTag,
+            fieldAbs,
+            gradientMagnitude,
+          ),
+        );
     });
   })().compute(count);
 
@@ -198,20 +232,19 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     const gradient = vec3(gradX, gradY, gradZ);
     const gradientMagnitude = length(gradient);
     const fieldAbs = abs(field);
-    const nodeBand = float(1.0).sub(
-      smoothstep(float(0.0), uThreshold, fieldAbs),
-    );
-    const structure = smoothstep(
-      uStructureMin,
-      uStructureMax,
+    const nodalMetrics = createNodalMetrics({
+      fieldAbs,
       gradientMagnitude,
-    );
-    const centerSuppression = smoothstep(
-      uCenterSuppressionInner,
-      uCenterSuppressionOuter,
       radialDist,
-    );
-    const potential = nodeBand.mul(structure).mul(centerSuppression);
+      radius: uRadius,
+      threshold: uThreshold,
+      surfaceThreshold: uSurfaceThreshold,
+      surfaceControl: uSurfaceControl,
+      centerSuppressionInner: uCenterSuppressionInner,
+      centerSuppressionOuter: uCenterSuppressionOuter,
+      structureMin: uStructureMin,
+      structureMax: uStructureMax,
+    });
     const signScale = select(
       field.greaterThanEqual(float(0.0)),
       float(-1.0),
@@ -230,8 +263,8 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
       float(0.0),
       float(1.0),
     )
-      .mul(structure)
-      .mul(centerSuppression)
+      .mul(nodalMetrics.structure)
+      .mul(nodalMetrics.centerSuppression)
       .mul(uAttractionStrength);
     const attraction = gradientDir.mul(signScale).mul(attractionStrength);
     const anchorStrength = smoothstep(
@@ -243,13 +276,13 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
       .mul(uAttractionStrength.mul(float(0.8)));
     const anchorAttraction = anchorDir.mul(anchorStrength);
     const centerEscapeStrength = float(1.0)
-      .sub(centerSuppression)
-      .mul(float(1.0).sub(nodeBand.mul(structure)))
+      .sub(nodalMetrics.centerSuppression)
+      .mul(float(1.0).sub(nodalMetrics.nodeBand.mul(nodalMetrics.structure)))
       .mul(uAttractionStrength.mul(float(0.35)));
     const centerEscape = radialDir.mul(centerEscapeStrength);
     const flowStrength = uFlowFieldStrength
       .mul(uFlowMix)
-      .mul(float(1.0).sub(potential))
+      .mul(float(1.0).sub(nodalMetrics.potential))
       .mul(float(1.0).sub(anchorPotential.mul(float(0.85))));
     const flow = flowField.mul(flowStrength);
 
@@ -310,7 +343,7 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     particlesBuffer.element(instanceIndex).assign(vec4(finalPos, groupTag));
     velocityBuffer
       .element(instanceIndex)
-      .assign(vec4(finalVelocity, potential));
+      .assign(vec4(finalVelocity, nodalMetrics.potential));
   })().compute(count);
 
   return {

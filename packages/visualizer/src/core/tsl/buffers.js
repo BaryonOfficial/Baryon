@@ -103,6 +103,16 @@ function fillParticlesAndVelocities(
   return markBufferForUpload(velocityBuffer);
 }
 
+function writeRandomVolumePosition(target, offset, radius, rng) {
+  const radialDistance = Math.pow(rng(), 1 / 3) * radius;
+  const theta = rng() * Math.PI * 2;
+  const phi = Math.acos(2 * rng() - 1);
+
+  target[offset] = radialDistance * Math.sin(phi) * Math.cos(theta);
+  target[offset + 1] = radialDistance * Math.sin(phi) * Math.sin(theta);
+  target[offset + 2] = radialDistance * Math.cos(phi);
+}
+
 function sampleSurfaceAndVolumePositions(
   count,
   radius,
@@ -125,13 +135,8 @@ function sampleSurfaceAndVolumePositions(
     positions[offset + 2] = radius * Math.cos(inclination);
   }
   for (let i = surfaceCount; i < count; i++) {
-    const r = Math.pow(rng(), 1 / 3) * radius;
-    const theta = rng() * Math.PI * 2;
-    const phi = Math.acos(2 * rng() - 1);
     const offset = i * VEC3_STRIDE;
-    positions[offset] = r * Math.sin(phi) * Math.cos(theta);
-    positions[offset + 1] = r * Math.sin(phi) * Math.sin(theta);
-    positions[offset + 2] = r * Math.cos(phi);
+    writeRandomVolumePosition(positions, offset, radius, rng);
   }
   return positions;
 }
@@ -142,13 +147,8 @@ function sampleInitialParticlePositions(count, radius, samplingContext) {
   const { rng } = samplingContext;
 
   for (let i = 0; i < count; i++) {
-    const r = Math.pow(rng(), 1 / 3) * scaledRadius;
-    const theta = rng() * Math.PI * 2;
-    const phi = Math.acos(2 * rng() - 1);
     const offset = i * VEC3_STRIDE;
-    sampledPositions[offset] = r * Math.sin(phi) * Math.cos(theta);
-    sampledPositions[offset + 1] = r * Math.sin(phi) * Math.sin(theta);
-    sampledPositions[offset + 2] = r * Math.cos(phi);
+    writeRandomVolumePosition(sampledPositions, offset, scaledRadius, rng);
   }
 
   return sampledPositions;

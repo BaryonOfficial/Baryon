@@ -177,6 +177,81 @@ export function computeNodalFieldMetrics({
   };
 }
 
+function createNodalFieldConfig({
+  modeSlots,
+  radius,
+  threshold,
+  surfaceThreshold,
+  surfaceControl,
+  centerSuppressionInner,
+  centerSuppressionOuter,
+  structureMin,
+  structureMax,
+}) {
+  return {
+    modeSlots,
+    radius,
+    threshold,
+    surfaceThreshold,
+    surfaceControl,
+    centerSuppressionInner,
+    centerSuppressionOuter,
+    structureMin,
+    structureMax,
+  };
+}
+
+function computePositionNodalMetrics(x, y, z, nodalFieldConfig) {
+  return computeNodalFieldMetrics({
+    x,
+    y,
+    z,
+    ...nodalFieldConfig,
+  });
+}
+
+function computeIdleParticleStep({
+  oldX,
+  oldY,
+  oldZ,
+  oldVx,
+  oldVy,
+  oldVz,
+  baryonX,
+  baryonY,
+  baryonZ,
+  idleScale,
+  particleSpeed,
+  deltaTime,
+}) {
+  const targetX = baryonX * idleScale;
+  const targetY = baryonY * idleScale;
+  const targetZ = baryonZ * idleScale;
+  const idleAlpha = clamp(particleSpeed * deltaTime * 0.08, 0, 0.08);
+  const nextX = oldX + (targetX - oldX) * idleAlpha;
+  const nextY = oldY + (targetY - oldY) * idleAlpha;
+  const nextZ = oldZ + (targetZ - oldZ) * idleAlpha;
+  const nextVx = oldVx * 0.6 + (targetX - oldX) * idleAlpha * 0.25;
+  const nextVy = oldVy * 0.6 + (targetY - oldY) * idleAlpha * 0.25;
+  const nextVz = oldVz * 0.6 + (targetZ - oldZ) * idleAlpha * 0.25;
+
+  return {
+    x: nextX,
+    y: nextY,
+    z: nextZ,
+    vx: nextVx,
+    vy: nextVy,
+    vz: nextVz,
+    attractionContribution: 0,
+    anchorContribution: 0,
+    centerEscapeContribution: 0,
+    flowContribution: 0,
+    velocityMagnitude: Math.hypot(nextVx, nextVy, nextVz),
+    repaired: false,
+    nodal: null,
+  };
+}
+
 function computeParticleStep({
   oldX,
   oldY,
@@ -191,69 +266,37 @@ function computeParticleStep({
   baryonX,
   baryonY,
   baryonZ,
-  modeSlots,
-  radius,
-  threshold,
-  surfaceThreshold,
-  surfaceControl,
+  nodalFieldConfig,
   flowStrength,
   flowFrequency,
   flowMix,
   particleSpeed,
   attractionStrength,
   velocityDamping,
-  centerSuppressionInner,
-  centerSuppressionOuter,
-  structureMin,
-  structureMax,
   idleScale,
   time,
   deltaTime,
   fieldDriven,
 }) {
   if (!fieldDriven) {
-    const targetX = baryonX * idleScale;
-    const targetY = baryonY * idleScale;
-    const targetZ = baryonZ * idleScale;
-    const idleAlpha = clamp(particleSpeed * deltaTime * 0.08, 0, 0.08);
-    const nextX = oldX + (targetX - oldX) * idleAlpha;
-    const nextY = oldY + (targetY - oldY) * idleAlpha;
-    const nextZ = oldZ + (targetZ - oldZ) * idleAlpha;
-    const nextVx = oldVx * 0.6 + (targetX - oldX) * idleAlpha * 0.25;
-    const nextVy = oldVy * 0.6 + (targetY - oldY) * idleAlpha * 0.25;
-    const nextVz = oldVz * 0.6 + (targetZ - oldZ) * idleAlpha * 0.25;
-
-    return {
-      x: nextX,
-      y: nextY,
-      z: nextZ,
-      vx: nextVx,
-      vy: nextVy,
-      vz: nextVz,
-      attractionContribution: 0,
-      anchorContribution: 0,
-      centerEscapeContribution: 0,
-      flowContribution: 0,
-      velocityMagnitude: Math.hypot(nextVx, nextVy, nextVz),
-      repaired: false,
-      nodal: null,
-    };
+    return computeIdleParticleStep({
+      oldX,
+      oldY,
+      oldZ,
+      oldVx,
+      oldVy,
+      oldVz,
+      baryonX,
+      baryonY,
+      baryonZ,
+      idleScale,
+      particleSpeed,
+      deltaTime,
+    });
   }
 
-  const nodal = computeNodalFieldMetrics({
-    x: oldX,
-    y: oldY,
-    z: oldZ,
-    modeSlots,
-    radius,
-    threshold,
-    surfaceThreshold,
-    surfaceControl,
-    centerSuppressionInner,
-    centerSuppressionOuter,
-    structureMin,
-    structureMax,
-  });
+  const { radius, threshold } = nodalFieldConfig;
+  const nodal = computePositionNodalMetrics(oldX, oldY, oldZ, nodalFieldConfig);
   const gradientDir = normalizeVector(
     nodal.gradient.x + EPSILON,
     nodal.gradient.y + EPSILON,
@@ -434,6 +477,17 @@ export function computeParticleDebugMetrics({
   lifecycle = {},
 }) {
   const { coreRadius } = deriveParticleDiagnosticConfig(radius);
+  const nodalFieldConfig = createNodalFieldConfig({
+    modeSlots,
+    radius,
+    threshold,
+    surfaceThreshold,
+    surfaceControl,
+    centerSuppressionInner,
+    centerSuppressionOuter,
+    structureMin,
+    structureMax,
+  });
   const fieldDriven = isFieldDrivenState(fieldState) && activeModeCount > 0;
   const divisor = sampleIndices.length || 1;
 
@@ -460,20 +514,7 @@ export function computeParticleDebugMetrics({
     const baseZ = basePositions[index * 3 + 2];
 
     const baseNodal = fieldDriven
-      ? computeNodalFieldMetrics({
-          x: baseX,
-          y: baseY,
-          z: baseZ,
-          modeSlots,
-          radius,
-          threshold,
-          surfaceThreshold,
-          surfaceControl,
-          centerSuppressionInner,
-          centerSuppressionOuter,
-          structureMin,
-          structureMax,
-        })
+      ? computePositionNodalMetrics(baseX, baseY, baseZ, nodalFieldConfig)
       : null;
 
     if (baseNodal && baseNodal.potential > FIELD_OCCUPANCY_THRESHOLD) {
@@ -499,21 +540,13 @@ export function computeParticleDebugMetrics({
       baryonX: sampleBaryon[shadowOffset],
       baryonY: sampleBaryon[shadowOffset + 1],
       baryonZ: sampleBaryon[shadowOffset + 2],
-      modeSlots,
-      radius,
-      threshold,
-      surfaceThreshold,
-      surfaceControl,
+      nodalFieldConfig,
       flowStrength,
       flowFrequency,
       flowMix,
       particleSpeed,
       attractionStrength,
       velocityDamping,
-      centerSuppressionInner,
-      centerSuppressionOuter,
-      structureMin,
-      structureMax,
       idleScale,
       time,
       deltaTime,
@@ -533,20 +566,12 @@ export function computeParticleDebugMetrics({
       particleStep.z,
     );
     const particleNodal = fieldDriven
-      ? computeNodalFieldMetrics({
-          x: particleStep.x,
-          y: particleStep.y,
-          z: particleStep.z,
-          modeSlots,
-          radius,
-          threshold,
-          surfaceThreshold,
-          surfaceControl,
-          centerSuppressionInner,
-          centerSuppressionOuter,
-          structureMin,
-          structureMax,
-        })
+      ? computePositionNodalMetrics(
+          particleStep.x,
+          particleStep.y,
+          particleStep.z,
+          nodalFieldConfig,
+        )
       : null;
 
     if (particleRadius <= coreRadius) {
