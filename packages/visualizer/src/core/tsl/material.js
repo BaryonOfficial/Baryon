@@ -18,6 +18,17 @@ import {
 import { PointsNodeMaterial } from "three/webgpu";
 import { FIELD_STATE_VALUES } from "./uniforms.js";
 
+const BODY_VISIBILITY_MIN = 0.04;
+const BODY_VISIBILITY_MAX = 0.18;
+const CONTOUR_VISIBILITY_MIN = 0.2;
+const CONTOUR_VISIBILITY_MAX = 0.48;
+const ACTIVE_VISIBILITY_BODY_WEIGHT = 0.42;
+const ACTIVE_VISIBILITY_CONTOUR_WEIGHT = 0.58;
+const ALPHA_ACTIVE_MIN = 0.08;
+const ALPHA_ACTIVE_MAX = 0.98;
+const SIZE_ACTIVE_MIN = 0.18;
+const SIZE_ACTIVE_MAX = 2.9;
+
 export function createParticlePoints({
   count,
   particlesBuffer,
@@ -39,11 +50,19 @@ export function createParticlePoints({
     velocityBuffer.toAttribute().w,
     "vBandStrength",
   );
-  const bodyVisibility = smoothstep(float(0.04), float(0.18), vBandStrength);
-  const contourVisibility = smoothstep(float(0.2), float(0.48), vBandStrength);
+  const bodyVisibility = smoothstep(
+    float(BODY_VISIBILITY_MIN),
+    float(BODY_VISIBILITY_MAX),
+    vBandStrength,
+  );
+  const contourVisibility = smoothstep(
+    float(CONTOUR_VISIBILITY_MIN),
+    float(CONTOUR_VISIBILITY_MAX),
+    vBandStrength,
+  );
   const activeVisibility = bodyVisibility
-    .mul(float(0.42))
-    .add(contourVisibility.mul(float(0.58)));
+    .mul(float(ACTIVE_VISIBILITY_BODY_WEIGHT))
+    .add(contourVisibility.mul(float(ACTIVE_VISIBILITY_CONTOUR_WEIGHT)));
 
   const colorNode = Fn(() => {
     const groupTag = vGroupTag;
@@ -90,7 +109,7 @@ export function createParticlePoints({
     const alpha = select(
       uFieldState.equal(FIELD_STATE_VALUES.idle),
       uIdleLogoAlpha,
-      mix(float(0.08), float(0.98), activeVisibility),
+      mix(float(ALPHA_ACTIVE_MIN), float(ALPHA_ACTIVE_MAX), activeVisibility),
     );
 
     return vec4(finalColor, alpha);
@@ -107,7 +126,9 @@ export function createParticlePoints({
   particleMaterial.sizeNode = select(
     uFieldState.equal(FIELD_STATE_VALUES.idle),
     uParticleSize,
-    uParticleSize.mul(mix(float(0.18), float(2.9), activeVisibility)),
+    uParticleSize.mul(
+      mix(float(SIZE_ACTIVE_MIN), float(SIZE_ACTIVE_MAX), activeVisibility),
+    ),
   );
 
   const geom = new THREE.BufferGeometry();

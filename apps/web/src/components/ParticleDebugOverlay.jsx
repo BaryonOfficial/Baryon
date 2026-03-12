@@ -91,7 +91,6 @@ export default function ParticleDebugOverlay() {
       <div>
         Attraction: {formatNumber(particleDebug.avgAttractionContribution)}
       </div>
-      <div>Anchor: {formatNumber(particleDebug.avgAnchorContribution)}</div>
       <div>
         Core Lift: {formatNumber(particleDebug.avgCenterEscapeContribution)}
       </div>

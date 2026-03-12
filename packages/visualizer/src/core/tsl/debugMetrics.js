@@ -13,7 +13,6 @@ const CONTOUR_FORCE_STRENGTH = 42;
 const CONTOUR_CAPTURE_FORCE = 34;
 const DETAIL_CAPTURE_BLEND = 9;
 const DETAIL_FLOW_SUPPRESSION = 0.88;
-const ANCHOR_FORCE_STRENGTH = 0;
 const FLOW_FORCE_SCALE = 0.008;
 
 /**
@@ -280,7 +279,6 @@ function computeIdleParticleStep({
     vz: nextVz,
     attractionContribution: 0,
     tangentialContribution: 0,
-    anchorContribution: 0,
     bandStrength: 0,
     centerEscapeContribution: 0,
     flowContribution: 0,
@@ -404,23 +402,6 @@ function computeParticleStep({
   const contourCaptureX = tangentialGradientDir.x * contourCaptureScalar;
   const contourCaptureY = tangentialGradientDir.y * contourCaptureScalar;
   const contourCaptureZ = tangentialGradientDir.z * contourCaptureScalar;
-  const anchorOffset = {
-    x: anchorX - oldX,
-    y: anchorY - oldY,
-    z: anchorZ - oldZ,
-  };
-  const tangentialAnchor = projectOntoTangent(
-    anchorOffset.x,
-    anchorOffset.y,
-    anchorOffset.z,
-    radialDir,
-  );
-  const anchorXForce =
-    tangentialAnchor.x * ANCHOR_FORCE_STRENGTH * shellResponseScale;
-  const anchorYForce =
-    tangentialAnchor.y * ANCHOR_FORCE_STRENGTH * shellResponseScale;
-  const anchorZForce =
-    tangentialAnchor.z * ANCHOR_FORCE_STRENGTH * shellResponseScale;
   const flowDir = computeFlowVector(oldX, oldY, oldZ, flowFrequency, time);
   const tangentialFlow = projectOntoTangent(
     flowDir.x,
@@ -440,16 +421,13 @@ function computeParticleStep({
 
   const unclampedVelocityX =
     oldVx * velocityDamping +
-    (shellSpringX + tangentialX + contourCaptureX + anchorXForce + flowX) *
-      deltaTime;
+    (shellSpringX + tangentialX + contourCaptureX + flowX) * deltaTime;
   const unclampedVelocityY =
     oldVy * velocityDamping +
-    (shellSpringY + tangentialY + contourCaptureY + anchorYForce + flowY) *
-      deltaTime;
+    (shellSpringY + tangentialY + contourCaptureY + flowY) * deltaTime;
   const unclampedVelocityZ =
     oldVz * velocityDamping +
-    (shellSpringZ + tangentialZ + contourCaptureZ + anchorZForce + flowZ) *
-      deltaTime;
+    (shellSpringZ + tangentialZ + contourCaptureZ + flowZ) * deltaTime;
   const clampedVelocity = clampVectorMagnitude(
     unclampedVelocityX,
     unclampedVelocityY,
@@ -518,8 +496,6 @@ function computeParticleStep({
         tangentialY + contourCaptureY,
         tangentialZ + contourCaptureZ,
       ) * deltaTime,
-    anchorContribution:
-      Math.hypot(anchorXForce, anchorYForce, anchorZForce) * deltaTime,
     bandStrength: clamp(
       contour.bandStrength + contour.captureWeight * 0.35,
       0,
@@ -621,7 +597,6 @@ export function computeParticleDebugMetrics({
   let avgGradientMagnitude = 0;
   let avgParticleRadius = 0;
   let avgAttractionContribution = 0;
-  let avgAnchorContribution = 0;
   let avgCenterEscapeContribution = 0;
   let avgFlowContribution = 0;
   let avgTangentialContribution = 0;
@@ -727,7 +702,6 @@ export function computeParticleDebugMetrics({
     avgParticleRadius += particleRadius;
     avgAttractionContribution += particleStep.attractionContribution;
     avgTangentialContribution += particleStep.tangentialContribution;
-    avgAnchorContribution += particleStep.anchorContribution;
     avgBandStrength += particleStep.bandStrength;
     avgCenterEscapeContribution += particleStep.centerEscapeContribution;
     avgFlowContribution += particleStep.flowContribution;
@@ -763,7 +737,6 @@ export function computeParticleDebugMetrics({
     avgGradientMagnitude: avgGradientMagnitude / divisor,
     avgParticleRadius: avgParticleRadius / divisor,
     avgAttractionContribution: avgAttraction,
-    avgAnchorContribution: avgAnchorContribution / divisor,
     avgCenterEscapeContribution: avgCenterEscapeContribution / divisor,
     avgFlowContribution: avgFlow,
     avgTangentialContribution: avgTangentialContribution / divisor,

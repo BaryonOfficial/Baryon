@@ -28,14 +28,12 @@ const CONTOUR_FORCE_STRENGTH = 42.0;
 const CONTOUR_CAPTURE_FORCE = 34.0;
 const DETAIL_CAPTURE_BLEND = 9.0;
 const DETAIL_FLOW_SUPPRESSION = 0.88;
-const ANCHOR_FORCE_STRENGTH = 0.0;
 const FLOW_FORCE_SCALE = 0.008;
 
 function createNodalMetrics({
   fieldAbs,
   gradientMagnitude,
   radialDist,
-  radius,
   threshold,
   centerSuppressionInner,
   centerSuppressionOuter,
@@ -49,7 +47,6 @@ function createNodalMetrics({
     centerSuppressionOuter,
     radialDist,
   );
-  void radius;
 
   return {
     nodeBand,
@@ -86,6 +83,10 @@ function createContourMetrics({ field, fieldAbs, structure, threshold }) {
   return {
     bandStrength,
     captureWeight,
+    // Positive field → force is -1 (push toward zero-crossing from above);
+    // negative field → force is +1 (push toward zero-crossing from below).
+    // Combined with the tangential gradient direction this confines particles
+    // to nodal surfaces from either side.
     contourSign: select(
       field.greaterThanEqual(float(0.0)),
       float(-1.0),
@@ -198,7 +199,6 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
       fieldAbs,
       gradientMagnitude,
       radialDist: length(pos),
-      radius: uRadius,
       threshold: uThreshold,
       centerSuppressionInner: uCenterSuppressionInner,
       centerSuppressionOuter: uCenterSuppressionOuter,
@@ -294,7 +294,6 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
       fieldAbs,
       gradientMagnitude,
       radialDist,
-      radius: uRadius,
       threshold: uThreshold,
       centerSuppressionInner: uCenterSuppressionInner,
       centerSuppressionOuter: uCenterSuppressionOuter,
@@ -357,10 +356,6 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
         .mul(float(CONTOUR_CAPTURE_FORCE))
         .mul(shellResponseScale),
     );
-    const anchorOffset = baseSample.sub(oldPos);
-    const anchorForce = projectOntoTangent(anchorOffset, radialDir).mul(
-      float(ANCHOR_FORCE_STRENGTH).mul(shellResponseScale),
-    );
     const tangentialFlow = projectOntoTangent(flowField, radialDir);
     const flowStrength = uFlowFieldStrength
       .mul(uFlowMix)
@@ -374,7 +369,6 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
       .add(shellSpring.mul(uDeltaTime))
       .add(contourForce.mul(uDeltaTime))
       .add(contourCaptureForce.mul(uDeltaTime))
-      .add(anchorForce.mul(uDeltaTime))
       .add(flow.mul(uDeltaTime));
     const activeVelocityLength = length(activeVelocity);
     const clampedActiveVelocity = select(
