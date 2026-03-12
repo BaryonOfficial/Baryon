@@ -39,11 +39,11 @@ export function createParticlePoints({
     velocityBuffer.toAttribute().w,
     "vBandStrength",
   );
-  const bodyVisibility = smoothstep(float(0.06), float(0.28), vBandStrength);
-  const contourVisibility = smoothstep(float(0.18), float(0.62), vBandStrength);
+  const bodyVisibility = smoothstep(float(0.04), float(0.18), vBandStrength);
+  const contourVisibility = smoothstep(float(0.2), float(0.48), vBandStrength);
   const activeVisibility = bodyVisibility
-    .mul(float(0.65))
-    .add(contourVisibility.mul(float(0.35)));
+    .mul(float(0.42))
+    .add(contourVisibility.mul(float(0.58)));
 
   const colorNode = Fn(() => {
     const groupTag = vGroupTag;
@@ -68,9 +68,9 @@ export function createParticlePoints({
       select(groupTag.equal(float(2.0)), uColor, defaultBlue),
     );
     const contourColor = mix(
-      particleColor.mul(float(0.72)),
+      particleColor.mul(float(0.48)),
       vec3(1.0),
-      contourVisibility.mul(float(0.22)),
+      contourVisibility.mul(float(0.34)),
     );
     const logoIntensity = select(
       uFieldState.equal(FIELD_STATE_VALUES.idle),
@@ -78,8 +78,8 @@ export function createParticlePoints({
       float(1.0),
     );
     const activeColor = mix(
-      particleColor.mul(float(0.62)),
-      contourColor.add(holoColor.mul(holo.mul(float(0.12)))),
+      particleColor.mul(float(0.34)),
+      contourColor.add(holoColor.mul(holo.mul(float(0.08)))),
       contourVisibility,
     );
     const finalColor = select(
@@ -90,7 +90,7 @@ export function createParticlePoints({
     const alpha = select(
       uFieldState.equal(FIELD_STATE_VALUES.idle),
       uIdleLogoAlpha,
-      mix(float(0.24), float(0.98), activeVisibility),
+      mix(float(0.08), float(0.98), activeVisibility),
     );
 
     return vec4(finalColor, alpha);
@@ -107,7 +107,7 @@ export function createParticlePoints({
   particleMaterial.sizeNode = select(
     uFieldState.equal(FIELD_STATE_VALUES.idle),
     uParticleSize,
-    uParticleSize.mul(mix(float(0.35), float(2.6), activeVisibility)),
+    uParticleSize.mul(mix(float(0.18), float(2.9), activeVisibility)),
   );
 
   const geom = new THREE.BufferGeometry();

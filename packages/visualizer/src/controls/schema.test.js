@@ -57,6 +57,18 @@ describe("control schema", () => {
     expect(Object.keys(state)).toEqual(EXPECTED_CONTROL_KEYS);
   });
 
+  it("keeps the node-threshold slider wide enough for cymatic tuning", () => {
+    const nodeThreshold = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "zeroPointPrecision",
+    );
+
+    expect(nodeThreshold?.binding).toMatchObject({
+      min: 0.001,
+      max: 0.3,
+      step: 0.001,
+    });
+  });
+
   it("has a valid audit report", () => {
     const report = auditControlSchema();
     expect(report.isValid).toBe(true);

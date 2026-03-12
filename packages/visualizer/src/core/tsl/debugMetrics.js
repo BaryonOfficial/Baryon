@@ -5,12 +5,16 @@ const EPSILON = 1e-4;
 const MAX_ACTIVE_SPEED = 2;
 const FIELD_OCCUPANCY_THRESHOLD = 0.01;
 const HIGH_POTENTIAL_THRESHOLD = 0.25;
-const CONTOUR_FIELD_WIDTH_SCALE = 2.4;
-const CONTOUR_BAND_SHARPNESS = 2.5;
-const SHELL_SPRING_STRENGTH = 12;
-const CONTOUR_FORCE_STRENGTH = 30;
+const CONTOUR_FIELD_WIDTH_SCALE = 1.4;
+const CONTOUR_BAND_SHARPNESS = 4;
+const CONTOUR_CAPTURE_WIDTH_SCALE = 3.2;
+const SHELL_SPRING_STRENGTH = 14;
+const CONTOUR_FORCE_STRENGTH = 42;
+const CONTOUR_CAPTURE_FORCE = 34;
+const DETAIL_CAPTURE_BLEND = 9;
+const DETAIL_FLOW_SUPPRESSION = 0.88;
 const ANCHOR_FORCE_STRENGTH = 0;
-const FLOW_FORCE_SCALE = 0.015;
+const FLOW_FORCE_SCALE = 0.008;
 
 /**
  * @typedef {Object} ParticleLifecycle
@@ -120,9 +124,13 @@ function computeContourMetrics(field, fieldAbs, structureWeight, threshold) {
     1 - smoothstep(0, threshold * CONTOUR_FIELD_WIDTH_SCALE, fieldAbs);
   const bandStrength =
     Math.pow(contourBand, CONTOUR_BAND_SHARPNESS) * structureWeight;
+  const captureWeight =
+    (1 - smoothstep(0, threshold * CONTOUR_CAPTURE_WIDTH_SCALE, fieldAbs)) *
+    structureWeight;
 
   return {
     bandStrength,
+    captureWeight,
     contourSign: field >= 0 ? -1 : 1,
   };
 }
@@ -297,6 +305,7 @@ function computeParticleStep({
   baryonX,
   baryonY,
   baryonZ,
+  detailBias = 0,
   nodalFieldConfig,
   flowStrength,
   flowFrequency,
@@ -365,6 +374,14 @@ function computeParticleStep({
     tangentialGradient.y + EPSILON,
     tangentialGradient.z + EPSILON,
   );
+  const tangentialGradientLength = Math.max(
+    Math.hypot(
+      tangentialGradient.x,
+      tangentialGradient.y,
+      tangentialGradient.z,
+    ),
+    EPSILON,
+  );
   const tangentialScalar =
     contour.bandStrength *
     CONTOUR_FORCE_STRENGTH *
@@ -373,6 +390,20 @@ function computeParticleStep({
   const tangentialX = tangentialGradientDir.x * tangentialScalar;
   const tangentialY = tangentialGradientDir.y * tangentialScalar;
   const tangentialZ = tangentialGradientDir.z * tangentialScalar;
+  const contourCaptureStep = clamp(
+    nodal.field / tangentialGradientLength,
+    -radius * 0.05,
+    radius * 0.05,
+  );
+  const contourCaptureScalar =
+    -contourCaptureStep *
+    contour.captureWeight *
+    (0.45 + 1.05 * detailBias) *
+    CONTOUR_CAPTURE_FORCE *
+    shellResponseScale;
+  const contourCaptureX = tangentialGradientDir.x * contourCaptureScalar;
+  const contourCaptureY = tangentialGradientDir.y * contourCaptureScalar;
+  const contourCaptureZ = tangentialGradientDir.z * contourCaptureScalar;
   const anchorOffset = {
     x: anchorX - oldX,
     y: anchorY - oldY,
@@ -398,20 +429,27 @@ function computeParticleStep({
     radialDir,
   );
   const flowScalar =
-    flowStrength * flowMix * FLOW_FORCE_SCALE * (1 - contour.bandStrength);
+    flowStrength *
+    flowMix *
+    FLOW_FORCE_SCALE *
+    (1 - detailBias * DETAIL_FLOW_SUPPRESSION) *
+    (1 - contour.bandStrength);
   const flowX = tangentialFlow.x * flowScalar;
   const flowY = tangentialFlow.y * flowScalar;
   const flowZ = tangentialFlow.z * flowScalar;
 
   const unclampedVelocityX =
     oldVx * velocityDamping +
-    (shellSpringX + tangentialX + anchorXForce + flowX) * deltaTime;
+    (shellSpringX + tangentialX + contourCaptureX + anchorXForce + flowX) *
+      deltaTime;
   const unclampedVelocityY =
     oldVy * velocityDamping +
-    (shellSpringY + tangentialY + anchorYForce + flowY) * deltaTime;
+    (shellSpringY + tangentialY + contourCaptureY + anchorYForce + flowY) *
+      deltaTime;
   const unclampedVelocityZ =
     oldVz * velocityDamping +
-    (shellSpringZ + tangentialZ + anchorZForce + flowZ) * deltaTime;
+    (shellSpringZ + tangentialZ + contourCaptureZ + anchorZForce + flowZ) *
+      deltaTime;
   const clampedVelocity = clampVectorMagnitude(
     unclampedVelocityX,
     unclampedVelocityY,
@@ -419,9 +457,20 @@ function computeParticleStep({
     MAX_ACTIVE_SPEED,
   );
 
-  let nextX = oldX + clampedVelocity.x * particleSpeed * deltaTime;
-  let nextY = oldY + clampedVelocity.y * particleSpeed * deltaTime;
-  let nextZ = oldZ + clampedVelocity.z * particleSpeed * deltaTime;
+  const activeX = oldX + clampedVelocity.x * particleSpeed * deltaTime;
+  const activeY = oldY + clampedVelocity.y * particleSpeed * deltaTime;
+  const activeZ = oldZ + clampedVelocity.z * particleSpeed * deltaTime;
+  const contourCaptureBlend = clamp(
+    contour.captureWeight *
+      (0.12 + 0.78 * detailBias) *
+      deltaTime *
+      DETAIL_CAPTURE_BLEND,
+    0,
+    0.9,
+  );
+  let nextX = activeX + contourCaptureX * deltaTime * contourCaptureBlend;
+  let nextY = activeY + contourCaptureY * deltaTime * contourCaptureBlend;
+  let nextZ = activeZ + contourCaptureZ * deltaTime * contourCaptureBlend;
   let nextVx = clampedVelocity.x;
   let nextVy = clampedVelocity.y;
   let nextVz = clampedVelocity.z;
@@ -459,15 +508,23 @@ function computeParticleStep({
     vz: nextVz,
     attractionContribution:
       Math.hypot(
-        shellSpringX + tangentialX,
-        shellSpringY + tangentialY,
-        shellSpringZ + tangentialZ,
+        shellSpringX + tangentialX + contourCaptureX,
+        shellSpringY + tangentialY + contourCaptureY,
+        shellSpringZ + tangentialZ + contourCaptureZ,
       ) * deltaTime,
     tangentialContribution:
-      Math.hypot(tangentialX, tangentialY, tangentialZ) * deltaTime,
+      Math.hypot(
+        tangentialX + contourCaptureX,
+        tangentialY + contourCaptureY,
+        tangentialZ + contourCaptureZ,
+      ) * deltaTime,
     anchorContribution:
       Math.hypot(anchorXForce, anchorYForce, anchorZForce) * deltaTime,
-    bandStrength: contour.bandStrength,
+    bandStrength: clamp(
+      contour.bandStrength + contour.captureWeight * 0.35,
+      0,
+      1,
+    ),
     centerEscapeContribution: 0,
     flowContribution: Math.hypot(flowX, flowY, flowZ) * deltaTime,
     shellRadiusError: Math.abs(finalRadius - dynamicShellRadius),
@@ -485,6 +542,7 @@ function computeParticleStep({
  * @param {Float32Array} args.shadowParticles
  * @param {Float32Array} args.shadowVelocities
  * @param {Float32Array} args.sampleBaryon
+ * @param {Float32Array} [args.sampleDetailBiases]
  * @param {Float32Array} args.modeSlots
  * @param {number} args.radius
  * @param {number} args.threshold
@@ -514,6 +572,7 @@ export function computeParticleDebugMetrics({
   shadowParticles,
   shadowVelocities,
   sampleBaryon,
+  sampleDetailBiases,
   modeSlots,
   radius,
   threshold,
@@ -610,6 +669,7 @@ export function computeParticleDebugMetrics({
       baryonX: sampleBaryon[shadowOffset],
       baryonY: sampleBaryon[shadowOffset + 1],
       baryonZ: sampleBaryon[shadowOffset + 2],
+      detailBias: sampleDetailBiases?.[i] ?? 0,
       nodalFieldConfig,
       flowStrength,
       flowFrequency,

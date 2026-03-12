@@ -1,6 +1,6 @@
-export const SHELL_COUNT = 32;
+export const SHELL_COUNT = 48;
 export const SHELL_MIN_RADIUS_RATIO = 0.12;
-export const SHELL_JITTER_RATIO = 0.1;
+export const SHELL_JITTER_RATIO = 0.06;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));

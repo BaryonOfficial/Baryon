@@ -163,7 +163,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     label: "Node Threshold",
     defaultValue: SIMULATION_DEFAULTS.zeroPointPrecision,
     methods: [VISUALIZATION_METHODS.particle],
-    binding: { min: 0.001, max: 0.1, step: 0.001 },
+    binding: { min: 0.001, max: 0.3, step: 0.001 },
     targetType: CONTROL_TARGET_TYPES.uniform,
     handler: CONTROL_HANDLERS.particle,
     runtimePath: "tsl.uniforms.uThreshold.value",

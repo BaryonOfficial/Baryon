@@ -13,6 +13,7 @@ export function createAuditState(
   const shadowParticles = new Float32Array(sampleCount * 3);
   const shadowVelocities = new Float32Array(sampleCount * 3);
   const sampleBaryon = new Float32Array(sampleCount * 3);
+  const sampleDetailBiases = new Float32Array(sampleCount);
   const stride = Math.max(
     1,
     Math.floor(basePositions.length / 3 / sampleCount),
@@ -30,6 +31,11 @@ export function createAuditState(
     sampleBaryon[i * 3] = baryonPositions[index * 4];
     sampleBaryon[i * 3 + 1] = baryonPositions[index * 4 + 1];
     sampleBaryon[i * 3 + 2] = baryonPositions[index * 4 + 2];
+    const baryonWeight = baryonPositions[index * 4 + 3] ?? 0;
+    sampleDetailBiases[i] = Math.min(
+      1,
+      Math.max(0, (baryonWeight - 0.18) / (0.92 - 0.18)),
+    );
   }
 
   return {
@@ -38,6 +44,7 @@ export function createAuditState(
     shadowParticles,
     shadowVelocities,
     sampleBaryon,
+    sampleDetailBiases,
     lastSnapshot: null,
   };
 }
@@ -53,8 +60,13 @@ export function updateAuditSnapshot(
     return null;
   }
 
-  const { sampleIndices, shadowParticles, shadowVelocities, sampleBaryon } =
-    auditState;
+  const {
+    sampleIndices,
+    shadowParticles,
+    shadowVelocities,
+    sampleBaryon,
+    sampleDetailBiases,
+  } = auditState;
   const snapshot = computeParticleDebugMetrics({
     sampleIndices,
     basePositions: tslState.basePositions,
@@ -62,6 +74,7 @@ export function updateAuditSnapshot(
     shadowParticles,
     shadowVelocities,
     sampleBaryon,
+    sampleDetailBiases,
     modeSlots: featureFrame.modeSlots,
     radius: tslState.uniforms.uRadius.value,
     threshold: tslState.uniforms.uThreshold.value,

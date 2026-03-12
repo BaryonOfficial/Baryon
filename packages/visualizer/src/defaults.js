@@ -5,7 +5,7 @@ export const AUDIO_DEFAULTS = Object.freeze({
 export const SIMULATION_DEFAULTS = Object.freeze({
   particleCount: 1500000,
   radius: 3.0,
-  zeroPointPrecision: 0.05,
+  zeroPointPrecision: 0.15,
   surfaceRatio: 0.33,
   surfaceThreshold: 0.01,
   surfaceParticles: true,

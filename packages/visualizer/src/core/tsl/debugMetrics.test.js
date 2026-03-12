@@ -18,6 +18,7 @@ function createHarness({
   centerSuppressionOuter = 0.45,
   surfaceControl = 1,
   modeSlots = new Float32Array([1, 1, 1, 1]),
+  sampleDetailBiases = new Float32Array([0, 0.35, 0.75, 1.0]),
 } = {}) {
   const sampleIndices = new Uint32Array([0, 1, 2, 3]);
   const basePositions = new Float32Array([
@@ -31,7 +32,6 @@ function createHarness({
   const sampleBaryon = new Float32Array([
     0.4, 0.02, 0.0, 0.5, 0.08, 0.0, 0.6, 0.1, 0.0, 0.7, 0.12, 0.0,
   ]);
-
   return {
     sampleIndices,
     basePositions,
@@ -39,6 +39,7 @@ function createHarness({
     shadowParticles,
     shadowVelocities,
     sampleBaryon,
+    sampleDetailBiases,
     modeSlots,
     radius: 1,
     threshold: 0.05,
@@ -170,6 +171,26 @@ describe("particle debug metrics", () => {
     expect(snapshot.attractionToFlowRatio).toBeGreaterThan(1);
   });
 
+  it("lets detail-tracer cohorts spend more motion budget on contour capture", () => {
+    const bodySnapshot = computeParticleDebugMetrics(
+      createHarness({
+        sampleDetailBiases: new Float32Array([0, 0, 0, 0]),
+      }),
+    );
+    const detailSnapshot = computeParticleDebugMetrics(
+      createHarness({
+        sampleDetailBiases: new Float32Array([1, 1, 1, 1]),
+      }),
+    );
+
+    expect(detailSnapshot.avgTangentialContribution).toBeGreaterThan(
+      bodySnapshot.avgTangentialContribution,
+    );
+    expect(detailSnapshot.avgFlowContribution).toBeLessThan(
+      bodySnapshot.avgFlowContribution,
+    );
+  });
+
   it("pulls particles back toward their assigned shell bands during active motion", () => {
     const harness = createHarness();
     harness.shadowParticles.set([
@@ -243,6 +264,7 @@ describe("particle debug metrics", () => {
       sampleBaryon: new Float32Array([
         0.2, 0.02, 0.0, 0.24, 0.03, 0.0, 0.28, 0.04, 0.0, 0.32, 0.05, 0.0,
       ]),
+      sampleDetailBiases: new Float32Array([0, 0.5, 0.75, 1.0]),
       lastSnapshot: null,
     };
     const tslState = {

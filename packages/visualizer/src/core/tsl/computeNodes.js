@@ -20,12 +20,16 @@ import {
 import { SHELL_COUNT, SHELL_MIN_RADIUS_RATIO } from "./shells.js";
 import { FIELD_STATE_VALUES } from "./uniforms.js";
 
-const CONTOUR_FIELD_WIDTH_SCALE = 2.4;
-const CONTOUR_BAND_SHARPNESS = 2.5;
-const SHELL_SPRING_STRENGTH = 12.0;
-const CONTOUR_FORCE_STRENGTH = 30.0;
+const CONTOUR_FIELD_WIDTH_SCALE = 1.4;
+const CONTOUR_BAND_SHARPNESS = 4.0;
+const CONTOUR_CAPTURE_WIDTH_SCALE = 3.2;
+const SHELL_SPRING_STRENGTH = 14.0;
+const CONTOUR_FORCE_STRENGTH = 42.0;
+const CONTOUR_CAPTURE_FORCE = 34.0;
+const DETAIL_CAPTURE_BLEND = 9.0;
+const DETAIL_FLOW_SUPPRESSION = 0.88;
 const ANCHOR_FORCE_STRENGTH = 0.0;
-const FLOW_FORCE_SCALE = 0.015;
+const FLOW_FORCE_SCALE = 0.008;
 
 function createNodalMetrics({
   fieldAbs,
@@ -70,8 +74,18 @@ function createContourMetrics({ field, fieldAbs, structure, threshold }) {
   const bandStrength = contourBand
     .pow(float(CONTOUR_BAND_SHARPNESS))
     .mul(structure);
+  const captureWeight = float(1.0)
+    .sub(
+      smoothstep(
+        float(0.0),
+        threshold.mul(float(CONTOUR_CAPTURE_WIDTH_SCALE)),
+        fieldAbs,
+      ),
+    )
+    .mul(structure);
   return {
     bandStrength,
+    captureWeight,
     contourSign: select(
       field.greaterThanEqual(float(0.0)),
       float(-1.0),
@@ -228,9 +242,9 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     const basePoint = basePositionBuffer.element(instanceIndex);
     const baseSample = basePoint.xyz;
     const baseShellRadius = basePoint.w;
-    const baryonPos = baryonBuffer
-      .element(instanceIndex)
-      .xyz.mul(uIdleLogoSize);
+    const baryonPoint = baryonBuffer.element(instanceIndex);
+    const baryonPos = baryonPoint.xyz.mul(uIdleLogoSize);
+    const detailBias = smoothstep(float(0.18), float(0.92), baryonPoint.w);
     const radialDist = length(oldPos);
     const fieldDriven = uFieldState
       .greaterThan(FIELD_STATE_VALUES.idle)
@@ -314,12 +328,33 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
         .mul(shellResponseScale),
     );
     const tangentialGradient = projectOntoTangent(gradient, radialDir);
+    const tangentialGradientLength = clamp(
+      length(tangentialGradient),
+      EPSILON,
+      uRadius.mul(float(8.0)),
+    );
+    const tangentialGradientDir = normalize(
+      tangentialGradient.add(vec3(EPSILON, EPSILON, EPSILON)),
+    );
     const contourForce = normalize(
       tangentialGradient.add(vec3(EPSILON, EPSILON, EPSILON)),
     ).mul(
       contourMetrics.bandStrength
         .mul(float(CONTOUR_FORCE_STRENGTH))
         .mul(contourMetrics.contourSign)
+        .mul(shellResponseScale),
+    );
+    const contourCaptureStep = clamp(
+      field.div(tangentialGradientLength),
+      uRadius.mul(float(-0.05)),
+      uRadius.mul(float(0.05)),
+    );
+    const contourCaptureForce = tangentialGradientDir.mul(
+      contourCaptureStep
+        .negate()
+        .mul(contourMetrics.captureWeight)
+        .mul(mix(float(0.45), float(1.5), detailBias))
+        .mul(float(CONTOUR_CAPTURE_FORCE))
         .mul(shellResponseScale),
     );
     const anchorOffset = baseSample.sub(oldPos);
@@ -330,6 +365,7 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     const flowStrength = uFlowFieldStrength
       .mul(uFlowMix)
       .mul(float(FLOW_FORCE_SCALE))
+      .mul(float(1.0).sub(detailBias.mul(float(DETAIL_FLOW_SUPPRESSION))))
       .mul(float(1.0).sub(contourMetrics.bandStrength));
     const flow = tangentialFlow.mul(flowStrength);
 
@@ -337,6 +373,7 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
       .mul(uVelocityDamping)
       .add(shellSpring.mul(uDeltaTime))
       .add(contourForce.mul(uDeltaTime))
+      .add(contourCaptureForce.mul(uDeltaTime))
       .add(anchorForce.mul(uDeltaTime))
       .add(flow.mul(uDeltaTime));
     const activeVelocityLength = length(activeVelocity);
@@ -347,6 +384,18 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     );
     const activePos = oldPos.add(
       clampedActiveVelocity.mul(uParticleSpeed).mul(uDeltaTime),
+    );
+    const contourCaptureBlend = clamp(
+      contourMetrics.captureWeight
+        .mul(mix(float(0.12), float(0.9), detailBias))
+        .mul(uDeltaTime.mul(float(DETAIL_CAPTURE_BLEND))),
+      float(0.0),
+      float(0.9),
+    );
+    const contourAlignedPos = mix(
+      activePos,
+      activePos.add(contourCaptureForce.mul(uDeltaTime)),
+      contourCaptureBlend,
     );
 
     const idleToLogo = baryonPos.sub(oldPos);
@@ -360,7 +409,7 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
       .mul(float(0.6))
       .add(idleToLogo.mul(idleAlpha.mul(0.25)));
 
-    const nextPos = select(fieldDriven, activePos, idlePos);
+    const nextPos = select(fieldDriven, contourAlignedPos, idlePos);
     const nextVelocity = select(
       fieldDriven,
       clampedActiveVelocity,
@@ -386,7 +435,18 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     particlesBuffer.element(instanceIndex).assign(vec4(finalPos, groupTag));
     velocityBuffer
       .element(instanceIndex)
-      .assign(vec4(finalVelocity, contourMetrics.bandStrength));
+      .assign(
+        vec4(
+          finalVelocity,
+          clamp(
+            contourMetrics.bandStrength.add(
+              contourMetrics.captureWeight.mul(float(0.35)),
+            ),
+            float(0.0),
+            float(1.0),
+          ),
+        ),
+      );
   })().compute(count);
 
   return {
