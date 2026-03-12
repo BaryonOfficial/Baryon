@@ -1,6 +1,6 @@
 # Baryon
 
-Baryon is a monorepo for a 3D audio visualizer and its host applications. The current production renderer is a WebGPU particle-based cymatics visualization driven by a shared CPU audio/modal pipeline.
+Baryon is a monorepo for a 3D audio visualizer and its host applications. The current production renderer is a WebGPU particle-based cymatics visualizer driven by a shared CPU audio/modal pipeline.
 
 This README is the developer entrypoint: setup, architecture, workflows, and the repo rules that matter when changing the visualizer.
 
