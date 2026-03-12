@@ -99,10 +99,13 @@ export function useBaryonControls() {
         });
 
         for (const definition of getVisibleControls(folderTitle)) {
-          folder.addBinding(p, definition.key, {
+          const binding = folder.addBinding(p, definition.key, {
             label: definition.label,
             ...(definition.binding ?? {}),
           });
+          if (definition.title) {
+            binding.element.setAttribute("title", definition.title);
+          }
         }
       }
 

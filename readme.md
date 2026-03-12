@@ -240,7 +240,7 @@ Avoid re-centralizing that logic into a single god component.
 
 ## GUI Controls And Verification
 
-The control surface is schema-driven.
+The control surface is schema-driven. For a full reference of every control, what it does, and how the controls interact, see [`documentation/controls.md`](documentation/controls.md).
 
 Source of truth:
 

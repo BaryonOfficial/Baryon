@@ -30,6 +30,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "bloomEnabled",
     folder: "Effects",
     label: "Enabled",
+    title: "Toggle the bloom (glow) post-processing effect on or off",
     defaultValue: RENDER_DEFAULTS.bloomEnabled,
     methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     targetType: CONTROL_TARGET_TYPES.pipeline,
@@ -41,6 +42,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "bloomStrength",
     folder: "Effects",
     label: "Strength",
+    title:
+      "How bright and intense the bloom glow is — higher values create a more pronounced halo around bright particles",
     defaultValue: RENDER_DEFAULTS.bloomStrength,
     methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { min: 0, max: 3, step: 0.01 },
@@ -53,6 +56,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "bloomRadius",
     folder: "Effects",
     label: "Radius",
+    title:
+      "How far the bloom glow spreads outward from bright areas — higher values create a softer, wider glow",
     defaultValue: RENDER_DEFAULTS.bloomRadius,
     methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { min: 0, max: 1, step: 0.01 },
@@ -65,6 +70,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "bloomThreshold",
     folder: "Effects",
     label: "Threshold",
+    title:
+      "Minimum brightness required for a pixel to contribute to the bloom effect — raise this to limit glow to only the brightest particles",
     defaultValue: RENDER_DEFAULTS.bloomThreshold,
     methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { min: 0, max: 1, step: 0.01 },
@@ -77,6 +84,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "backgroundColor",
     folder: "Color",
     label: "Background",
+    title:
+      "Scene background color — use deep black for the most contrast with glowing particles",
     defaultValue: RENDER_DEFAULTS.backgroundColor,
     methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { view: "color" },
@@ -89,6 +98,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "volumeColor",
     folder: "Color",
     label: "Volume",
+    title:
+      "Color of particles inside the resonant volume — these particles fill the interior of the cymatics pattern",
     defaultValue: RENDER_DEFAULTS.volumeColor,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { view: "color" },
@@ -101,6 +112,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "surfaceColor",
     folder: "Color",
     label: "Surface",
+    title:
+      "Color of particles that sit on the nodal surface boundaries of the cymatics structure",
     defaultValue: RENDER_DEFAULTS.surfaceColor,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { view: "color" },
@@ -113,6 +126,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "particleSpeed",
     folder: "Particles",
     label: "Speed",
+    title:
+      "Overall speed multiplier for particle movement — higher values make particles respond faster to the field but can feel chaotic",
     defaultValue: SIMULATION_DEFAULTS.particleSpeed,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 1, max: 100, step: 1 },
@@ -125,6 +140,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "rotationSpeed",
     folder: "Particles",
     label: "Rotation",
+    title:
+      "Speed and direction of the particle cloud's Y-axis rotation — negative values reverse direction, zero disables rotation",
     defaultValue: RENDER_DEFAULTS.rotationSpeed,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: -12, max: 12, step: 0.01 },
@@ -137,6 +154,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "flowFieldStrength",
     folder: "Granular",
     label: "Flow Strength",
+    title:
+      "Strength of the turbulent 3D noise field that adds organic, swirling motion to particles — combine with Flow Mix to blend with structured cymatics",
     defaultValue: SIMULATION_DEFAULTS.flowFieldStrength,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 10, step: 0.1 },
@@ -149,6 +168,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "flowFieldFrequency",
     folder: "Granular",
     label: "Flow Frequency",
+    title:
+      "Spatial frequency of the noise flow field — lower values create broad, slow swirls; higher values produce fine, tight eddies",
     defaultValue: SIMULATION_DEFAULTS.flowFieldFrequency,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0.01, max: 5, step: 0.01 },
@@ -161,6 +182,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "zeroPointPrecision",
     folder: "Granular",
     label: "Node Threshold",
+    title:
+      "How tightly the field must approach zero for a point to be considered a nodal target — lower values create sharper, more defined structures",
     defaultValue: SIMULATION_DEFAULTS.zeroPointPrecision,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0.001, max: 0.3, step: 0.001 },
@@ -173,6 +196,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "flowMix",
     folder: "Granular",
     label: "Flow Mix",
+    title:
+      "Blend between structured cymatics (0) and freeform noise-field motion (1) — mid values produce organic formations that still follow the audio pattern",
     defaultValue: SIMULATION_DEFAULTS.flowMix,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 1, step: 0.01 },
@@ -185,6 +210,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "attractionStrength",
     folder: "Granular",
     label: "Attraction",
+    title:
+      "How strongly particles are pulled toward their target nodal positions — higher values snap particles into sharp formations faster",
     defaultValue: SIMULATION_DEFAULTS.attractionStrength,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 30, step: 0.1 },
@@ -197,6 +224,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "velocityDamping",
     folder: "Granular",
     label: "Damping",
+    title:
+      "How quickly particle velocity decays each frame — higher values slow particles more aggressively, reducing overshooting and jitter",
     defaultValue: SIMULATION_DEFAULTS.velocityDamping,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 1, step: 0.01 },
@@ -209,6 +238,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "centerSuppressionInner",
     folder: "Granular",
     label: "Center Inner",
+    title:
+      "Inner radius of the dead zone at the origin — particles inside this radius are pushed outward to prevent a bright central clump",
     defaultValue: SIMULATION_DEFAULTS.centerSuppressionInner,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 1, step: 0.01 },
@@ -221,6 +252,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "centerSuppressionOuter",
     folder: "Granular",
     label: "Center Outer",
+    title:
+      "Outer boundary of the center-suppression gradient — particles between inner and outer radius experience a graduated push away from center",
     defaultValue: SIMULATION_DEFAULTS.centerSuppressionOuter,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 1, step: 0.01 },
@@ -233,6 +266,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "structureMin",
     folder: "Granular",
     label: "Structure Min",
+    title:
+      "Lower field-potential cutoff — particles targeting nodes below this threshold are excluded, trimming the weakest/noisiest parts of the pattern",
     defaultValue: SIMULATION_DEFAULTS.structureMin,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 1, step: 0.01 },
@@ -245,6 +280,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "structureMax",
     folder: "Granular",
     label: "Structure Max",
+    title:
+      "Upper field-potential cutoff — particles targeting nodes above this threshold are excluded, removing the densest interior regions",
     defaultValue: SIMULATION_DEFAULTS.structureMax,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 1, step: 0.01 },
@@ -257,6 +294,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "surfaceParticles",
     folder: "Aesthetics",
     label: "Surface",
+    title:
+      "Toggle particles that sit on the outer nodal surface boundary — disabling this shows only the interior volume particles",
     defaultValue: SIMULATION_DEFAULTS.surfaceParticles,
     methods: [VISUALIZATION_METHODS.particle],
     targetType: CONTROL_TARGET_TYPES.uniform,
@@ -268,6 +307,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "idleLogoIntensity",
     folder: "Effects",
     label: "Logo Intensity",
+    title:
+      "Strength of the logo particle attraction when no audio is playing — higher values make the idle logo formation more defined",
     defaultValue: RENDER_DEFAULTS.idleLogoIntensity,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0, max: 0.25, step: 0.005 },
@@ -280,6 +321,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "idleLogoSize",
     folder: "Effects",
     label: "Logo Size",
+    title:
+      "Scale of the logo formation that particles drift toward when idle — adjust to match the visual weight of your logo",
     defaultValue: RENDER_DEFAULTS.idleLogoSize,
     methods: [VISUALIZATION_METHODS.particle],
     binding: { min: 0.1, max: 2, step: 0.01 },
@@ -292,6 +335,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "auditEnabled",
     folder: "Audit",
     label: "Enabled",
+    title:
+      "Enable frame-by-frame debug logging for the audio and particle pipeline",
     defaultValue: AUDIT_DEFAULTS.auditEnabled,
     methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     targetType: CONTROL_TARGET_TYPES.audit,
@@ -303,6 +348,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "freezeModeSlots",
     folder: "Audit",
     label: "Freeze Slots",
+    title:
+      "Lock the current modal frequency slots so they stop updating from live audio — useful for inspecting a specific cymatics pattern",
     defaultValue: AUDIT_DEFAULTS.freezeModeSlots,
     methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     targetType: CONTROL_TARGET_TYPES.audit,
@@ -314,6 +361,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "injectTestTone",
     folder: "Audit",
     label: "Inject Tone",
+    title:
+      "Replace live audio input with a synthetic test tone — use with Tone Hz and Tone Amp to diagnose specific frequency responses",
     defaultValue: AUDIT_DEFAULTS.injectTestTone,
     methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     targetType: CONTROL_TARGET_TYPES.audit,
@@ -325,6 +374,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "testToneHz",
     folder: "Audit",
     label: "Tone Hz",
+    title:
+      "Frequency in Hz of the injected test tone — try values like 110, 220, 440 to see how different pitches shape the cymatics pattern",
     defaultValue: AUDIT_DEFAULTS.testToneHz,
     methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { min: 40, max: 2000, step: 1 },
@@ -337,6 +388,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "testToneAmplitude",
     folder: "Audit",
     label: "Tone Amp",
+    title:
+      "Amplitude (volume) of the injected test tone — lower values produce subtler pattern excitation",
     defaultValue: AUDIT_DEFAULTS.testToneAmplitude,
     methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { min: 0, max: 1, step: 0.01 },
@@ -349,6 +402,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     key: "logEveryFrames",
     folder: "Audit",
     label: "Log Frames",
+    title:
+      "Log a debug snapshot every N frames to the browser console — set to 1 to log every frame, higher to reduce noise",
     defaultValue: AUDIT_DEFAULTS.logEveryFrames,
     methods: [VISUALIZATION_METHODS.particle, VISUALIZATION_METHODS.raymarch],
     binding: { min: 1, max: 240, step: 1 },
