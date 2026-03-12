@@ -17,6 +17,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
   const points = createParticlePoints({
     count: buffers.count,
     particlesBuffer: buffers.particlesBuffer,
+    velocityBuffer: buffers.velocityBuffer,
     uniforms,
   });
 
@@ -35,6 +36,7 @@ export function setupTSL(baryonGeometry, parameters, audioConfig) {
     velocityBuffer: buffers.velocityBuffer,
     zeroPointsBuffer: buffers.zeroPointsBuffer,
     basePositions: buffers.basePositions,
+    baseShellRadii: buffers.baseShellRadii,
     baseThreshold: parameters.threshold,
     fftSize: audioConfig.fftSize,
     capacity: buffers.capacity,

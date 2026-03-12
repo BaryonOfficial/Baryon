@@ -58,6 +58,7 @@ export function updateAuditSnapshot(
   const snapshot = computeParticleDebugMetrics({
     sampleIndices,
     basePositions: tslState.basePositions,
+    baseShellRadii: tslState.baseShellRadii,
     shadowParticles,
     shadowVelocities,
     sampleBaryon,

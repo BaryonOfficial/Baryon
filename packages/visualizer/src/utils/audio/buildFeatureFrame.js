@@ -11,9 +11,10 @@ import {
 import {
   buildModalSlotsFromFundamental,
   buildModalSlotsFromSpectralPeaks,
+  HARMONIC_ORDERS,
 } from "./modalResolvers.js";
 import { deriveFieldState } from "./fieldState.js";
-import { AUDIO_ANALYSIS_POLICY } from "./policy.js";
+import { AUDIO_ANALYSIS_POLICY, SPECTRAL_MODAL_POLICY } from "./policy.js";
 import { FIELD_STATES } from "./types.js";
 
 const {
@@ -22,6 +23,8 @@ const {
   micSilenceRms: MIC_SILENCE_RMS,
   requestedPitchSource: REQUESTED_PITCH_SOURCE,
 } = AUDIO_ANALYSIS_POLICY;
+const TEST_TONE_HARMONIC_ATTENUATION =
+  SPECTRAL_MODAL_POLICY.harmonicAttenuation;
 
 export { createAudioFeatureState, FIELD_STATES };
 
@@ -121,12 +124,33 @@ export function applyTestToneToSnapshot({
     0,
     Math.min(1, auditSettings.testToneAmplitude),
   );
-  const bin = Math.round(
-    (auditSettings.testToneHz / (sampleRate * 0.5)) *
-      (fftMagnitudes.length - 1),
+  const nyquist = sampleRate * 0.5;
+  const writeHarmonicBin = (frequency, amplitude) => {
+    const bin = Math.round((frequency / nyquist) * (fftMagnitudes.length - 1));
+    const index = Math.max(0, Math.min(fftMagnitudes.length - 1, bin));
+    fftMagnitudes[index] = Math.max(fftMagnitudes[index] ?? 0, amplitude);
+  };
+  const baseFrequency = Math.max(
+    0,
+    Math.min(nyquist, auditSettings.testToneHz),
   );
-  const index = Math.max(0, Math.min(fftMagnitudes.length - 1, bin));
-  fftMagnitudes[index] = testBinAmplitude;
+
+  writeHarmonicBin(baseFrequency, testBinAmplitude);
+
+  for (let i = 0; i < HARMONIC_ORDERS.length; i++) {
+    const harmonicFrequency = baseFrequency * HARMONIC_ORDERS[i];
+    if (i === 0 || harmonicFrequency <= 0 || harmonicFrequency > nyquist) {
+      continue;
+    }
+
+    const attenuation =
+      TEST_TONE_HARMONIC_ATTENUATION[i] ??
+      TEST_TONE_HARMONIC_ATTENUATION[
+        TEST_TONE_HARMONIC_ATTENUATION.length - 1
+      ] ??
+      1;
+    writeHarmonicBin(harmonicFrequency, testBinAmplitude * attenuation);
+  }
 
   return {
     ...snapshot,

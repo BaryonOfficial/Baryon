@@ -1,5 +1,5 @@
 import {
-  solveNormalModesForPitch,
+  solveModeFamilyForPitch,
   sampleFFTAmplitudeForFrequency,
 } from "../normalModes.js";
 import { MAX_STACK_SLOTS, writeSlot } from "./modalStack.js";
@@ -7,12 +7,27 @@ import { SPECTRAL_MODAL_POLICY } from "./policy.js";
 
 export const HARMONIC_ORDERS = SPECTRAL_MODAL_POLICY.harmonicOrders;
 const HARMONIC_ATTENUATION = SPECTRAL_MODAL_POLICY.harmonicAttenuation;
+const HARMONIC_FAMILY_COUNTS = [3, 2, 2, 1];
+const FAMILY_ATTENUATION = [1.0, 0.84, 0.7, 0.58];
 const HARMONIC_SUPPORT_FLOOR = SPECTRAL_MODAL_POLICY.harmonicSupportFloor;
 const HARMONIC_SUPPORT_RATIO = SPECTRAL_MODAL_POLICY.harmonicSupportRatio;
 const MIN_SPECTRAL_BIN_AMPLITUDE =
   SPECTRAL_MODAL_POLICY.minSpectralBinAmplitude;
 const MIN_SPECTRAL_BIN_GAP_HZ = SPECTRAL_MODAL_POLICY.minSpectralBinGapHz;
 const MAX_SPECTRAL_FREQUENCY = SPECTRAL_MODAL_POLICY.maxSpectralFrequency;
+const SPECTRAL_PEAK_FAMILY_COUNT = 2;
+
+function modeKey(mode) {
+  return `${mode.u}:${mode.v}:${mode.w}`;
+}
+
+function getFamilyAttenuation(index) {
+  return (
+    FAMILY_ATTENUATION[index] ??
+    FAMILY_ATTENUATION[FAMILY_ATTENUATION.length - 1] ??
+    1
+  );
+}
 
 export function buildModalSlotsFromFundamental({
   frequency,
@@ -23,6 +38,7 @@ export function buildModalSlotsFromFundamental({
   radius,
   capacity,
 }) {
+  const slotLimit = Math.min(capacity, MAX_STACK_SLOTS);
   const slots = new Float32Array(capacity * 4);
   const referenceSlots = new Float32Array(capacity * 4);
   const harmonicSupport = new Float32Array(HARMONIC_ORDERS.length);
@@ -39,12 +55,7 @@ export function buildModalSlotsFromFundamental({
   );
 
   let slotIndex = 0;
-  for (
-    let i = 0;
-    i < HARMONIC_ORDERS.length &&
-    slotIndex < Math.min(capacity, MAX_STACK_SLOTS);
-    i++
-  ) {
+  for (let i = 0; i < HARMONIC_ORDERS.length && slotIndex < slotLimit; i++) {
     const harmonicFrequency = frequency * HARMONIC_ORDERS[i];
     const support = sampleFFTAmplitudeForFrequency(
       harmonicFrequency,
@@ -58,23 +69,37 @@ export function buildModalSlotsFromFundamental({
       continue;
     }
 
-    const mode = solveNormalModesForPitch(harmonicFrequency, radius);
-    if (!mode) continue;
-
-    const key = `${mode.u}:${mode.v}:${mode.w}`;
-    if (seenModes.has(key)) continue;
-    seenModes.add(key);
-
     const attenuation =
       HARMONIC_ATTENUATION[i] ??
       HARMONIC_ATTENUATION[HARMONIC_ATTENUATION.length - 1];
-    const amplitude =
-      support *
-      attenuation *
-      (i === 0 ? confidence : Math.max(0.5, confidence));
-    writeSlot(slots, slotIndex, mode, amplitude);
-    writeSlot(referenceSlots, slotIndex, mode, support);
-    slotIndex++;
+    const familyLimit = Math.min(
+      slotLimit - slotIndex,
+      HARMONIC_FAMILY_COUNTS[i] ?? 1,
+    );
+    const family = solveModeFamilyForPitch(
+      harmonicFrequency,
+      radius,
+      familyLimit * 3,
+    );
+
+    let familyIndex = 0;
+    for (const mode of family) {
+      if (slotIndex >= slotLimit || familyIndex >= familyLimit) break;
+      const key = modeKey(mode);
+      if (seenModes.has(key)) continue;
+      seenModes.add(key);
+
+      const familyAttenuation = getFamilyAttenuation(familyIndex);
+      const amplitude =
+        support *
+        attenuation *
+        familyAttenuation *
+        (i === 0 ? confidence : Math.max(0.5, confidence));
+      writeSlot(slots, slotIndex, mode, amplitude);
+      writeSlot(referenceSlots, slotIndex, mode, support * familyAttenuation);
+      slotIndex++;
+      familyIndex++;
+    }
   }
 
   return {
@@ -92,6 +117,7 @@ export function buildModalSlotsFromSpectralPeaks({
   radius,
   capacity,
 }) {
+  const slotLimit = Math.min(capacity, MAX_STACK_SLOTS);
   const slots = new Float32Array(capacity * 4);
   const referenceSlots = new Float32Array(capacity * 4);
   const harmonicSupport = new Float32Array(HARMONIC_ORDERS.length);
@@ -100,27 +126,47 @@ export function buildModalSlotsFromSpectralPeaks({
     fftMagnitudes,
     sampleRate,
     fftSize,
-    Math.min(capacity, MAX_STACK_SLOTS) * 2,
+    slotLimit * 2,
   );
 
   let slotIndex = 0;
   for (const peak of peaks) {
-    if (slotIndex >= Math.min(capacity, MAX_STACK_SLOTS)) break;
-    const mode = solveNormalModesForPitch(peak.frequency, radius);
-    if (!mode) continue;
+    if (slotIndex >= slotLimit) break;
+    const familyLimit = Math.min(
+      slotLimit - slotIndex,
+      SPECTRAL_PEAK_FAMILY_COUNT,
+    );
+    const family = solveModeFamilyForPitch(
+      peak.frequency,
+      radius,
+      familyLimit * 3,
+    );
 
-    const key = `${mode.u}:${mode.v}:${mode.w}`;
-    if (seenModes.has(key)) continue;
-    seenModes.add(key);
+    let familyIndex = 0;
+    for (const mode of family) {
+      if (slotIndex >= slotLimit || familyIndex >= familyLimit) break;
+      const key = modeKey(mode);
+      if (seenModes.has(key)) continue;
+      seenModes.add(key);
 
-    const attenuation =
-      HARMONIC_ATTENUATION[
-        Math.min(slotIndex, HARMONIC_ATTENUATION.length - 1)
-      ];
-    writeSlot(slots, slotIndex, mode, peak.amplitude * attenuation);
-    writeSlot(referenceSlots, slotIndex, mode, peak.amplitude);
-    harmonicSupport[slotIndex] = peak.amplitude;
-    slotIndex++;
+      const attenuation =
+        getFamilyAttenuation(familyIndex) *
+        (HARMONIC_ATTENUATION[
+          Math.min(slotIndex, HARMONIC_ATTENUATION.length - 1)
+        ] ?? 1);
+      writeSlot(slots, slotIndex, mode, peak.amplitude * attenuation);
+      writeSlot(
+        referenceSlots,
+        slotIndex,
+        mode,
+        peak.amplitude * getFamilyAttenuation(familyIndex),
+      );
+      if (slotIndex < harmonicSupport.length) {
+        harmonicSupport[slotIndex] = peak.amplitude;
+      }
+      slotIndex++;
+      familyIndex++;
+    }
   }
 
   return {

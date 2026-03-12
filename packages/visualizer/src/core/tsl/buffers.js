@@ -1,4 +1,5 @@
 import { instancedArray, attributeArray } from "three/tsl";
+import { SHELL_JITTER_RATIO, quantizeRadiusToShell } from "./shells.js";
 
 const VEC3_STRIDE = 3;
 const VEC4_STRIDE = 4;
@@ -14,6 +15,7 @@ const VEC4_STRIDE = 4;
  * @property {*} modeBuffer TSL modal-slot buffer consumed by runtime updates.
  * @property {*} fftBuffer TSL FFT buffer consumed by runtime updates.
  * @property {Float32Array} basePositions CPU-side xyz staging array used by audit setup.
+ * @property {Float32Array} baseShellRadii CPU-side shell-radius staging array used by audit setup.
  * @property {*} basePositionBuffer TSL vec4 base-position buffer consumed by compute.
  * @property {*} baryonBuffer TSL vec4 logo-position buffer consumed by compute and audit setup.
  * @property {*} scalarFieldBuffer TSL vec4 scalar-field scratch buffer consumed by compute.
@@ -52,6 +54,21 @@ function fillVec4BufferFromVec3Positions(buffer, positions, w) {
     target[targetOffset + 1] = positions[sourceOffset + 1];
     target[targetOffset + 2] = positions[sourceOffset + 2];
     target[targetOffset + 3] = w;
+  }
+
+  return markBufferForUpload(buffer);
+}
+
+function fillBasePositionBuffer(buffer, positions, shellRadii) {
+  const target = buffer.value.array;
+
+  for (let i = 0; i < positions.length / VEC3_STRIDE; i++) {
+    const sourceOffset = i * VEC3_STRIDE;
+    const targetOffset = i * VEC4_STRIDE;
+    target[targetOffset] = positions[sourceOffset];
+    target[targetOffset + 1] = positions[sourceOffset + 1];
+    target[targetOffset + 2] = positions[sourceOffset + 2];
+    target[targetOffset + 3] = shellRadii[i];
   }
 
   return markBufferForUpload(buffer);
@@ -103,55 +120,47 @@ function fillParticlesAndVelocities(
   return markBufferForUpload(velocityBuffer);
 }
 
-function writeRandomVolumePosition(target, offset, radius, rng) {
-  const radialDistance = Math.pow(rng(), 1 / 3) * radius;
+function sampleUnitSphereDirection(rng) {
+  const z = rng() * 2 - 1;
   const theta = rng() * Math.PI * 2;
-  const phi = Math.acos(2 * rng() - 1);
+  const radial = Math.sqrt(Math.max(0, 1 - z * z));
 
-  target[offset] = radialDistance * Math.sin(phi) * Math.cos(theta);
-  target[offset + 1] = radialDistance * Math.sin(phi) * Math.sin(theta);
-  target[offset + 2] = radialDistance * Math.cos(phi);
+  return {
+    x: radial * Math.cos(theta),
+    y: radial * Math.sin(theta),
+    z,
+  };
 }
 
-function sampleSurfaceAndVolumePositions(
-  count,
-  radius,
-  surfaceRatio,
-  samplingContext,
-) {
+function sampleShellAnchors(count, radius, surfaceRatio, samplingContext) {
   const positions = new Float32Array(count * VEC3_STRIDE);
-  const surfaceCount = Math.floor(count * surfaceRatio);
+  const shellRadii = new Float32Array(count);
   const { rng } = samplingContext;
-
-  const goldenRatio = (1 + Math.sqrt(5)) / 2;
-  const angleIncrement = Math.PI * 2 * goldenRatio;
-  for (let i = 0; i < surfaceCount; i++) {
-    const t = i / surfaceCount;
-    const inclination = Math.acos(1 - 2 * t);
-    const azimuth = angleIncrement * i;
-    const offset = i * VEC3_STRIDE;
-    positions[offset] = radius * Math.sin(inclination) * Math.cos(azimuth);
-    positions[offset + 1] = radius * Math.sin(inclination) * Math.sin(azimuth);
-    positions[offset + 2] = radius * Math.cos(inclination);
-  }
-  for (let i = surfaceCount; i < count; i++) {
-    const offset = i * VEC3_STRIDE;
-    writeRandomVolumePosition(positions, offset, radius, rng);
-  }
-  return positions;
-}
-
-function sampleInitialParticlePositions(count, radius, samplingContext) {
-  const scaledRadius = radius / 10;
-  const sampledPositions = new Float32Array(count * VEC3_STRIDE);
-  const { rng } = samplingContext;
+  void surfaceRatio;
 
   for (let i = 0; i < count; i++) {
+    const direction = sampleUnitSphereDirection(rng);
+    const rawRadius = Math.pow(rng(), 1 / 3) * radius;
+    const { minRadius, shellRadius, shellSpacing } = quantizeRadiusToShell(
+      rawRadius,
+      radius,
+    );
+    const jitter = (rng() * 2 - 1) * shellSpacing * SHELL_JITTER_RATIO;
+    const anchorRadius = Math.min(
+      radius,
+      Math.max(minRadius, shellRadius + jitter),
+    );
     const offset = i * VEC3_STRIDE;
-    writeRandomVolumePosition(sampledPositions, offset, scaledRadius, rng);
+    positions[offset] = direction.x * anchorRadius;
+    positions[offset + 1] = direction.y * anchorRadius;
+    positions[offset + 2] = direction.z * anchorRadius;
+    shellRadii[i] = shellRadius;
   }
 
-  return sampledPositions;
+  return {
+    positions,
+    shellRadii,
+  };
 }
 
 function assertPositiveInteger(name, value) {
@@ -202,16 +211,17 @@ export function createTSLBuffers(
 
   const fftBuffer = instancedArray(fftHalfSize, "float");
 
-  const basePositions = sampleSurfaceAndVolumePositions(
-    count,
-    parameters.radius,
-    parameters.surfaceRatio,
-    samplingContext,
-  );
-  const basePositionBuffer = fillVec4BufferFromVec3Positions(
+  const { positions: basePositions, shellRadii: baseShellRadii } =
+    sampleShellAnchors(
+      count,
+      parameters.radius,
+      parameters.surfaceRatio,
+      samplingContext,
+    );
+  const basePositionBuffer = fillBasePositionBuffer(
     createVec4InstancedBuffer(count),
     basePositions,
-    1.0,
+    baseShellRadii,
   );
 
   const baryonBuffer = fillRepeatedLogoBuffer(
@@ -227,11 +237,7 @@ export function createTSLBuffers(
     2.0,
   );
 
-  const initialParticlePositions = sampleInitialParticlePositions(
-    count,
-    parameters.radius,
-    samplingContext,
-  );
+  const initialParticlePositions = new Float32Array(basePositions);
   const particlesBuffer = createVec4AttributeBuffer(count);
   const velocityBuffer = createVec4AttributeBuffer(count);
   fillParticlesAndVelocities(
@@ -247,6 +253,7 @@ export function createTSLBuffers(
     modeBuffer,
     fftBuffer,
     basePositions,
+    baseShellRadii,
     basePositionBuffer,
     baryonBuffer,
     scalarFieldBuffer,

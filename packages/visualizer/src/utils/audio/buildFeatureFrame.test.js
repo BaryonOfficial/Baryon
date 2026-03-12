@@ -225,7 +225,10 @@ describe("buildAudioFeatureFrame", () => {
 
     expect(frame.fieldState).toBe("test");
     expect(frame.debug.pitchSource).toBe("test");
-    expect(frame.debug.modeSlotCount).toBeGreaterThan(0);
+    expect(frame.debug.modeSlotCount).toBeGreaterThan(3);
+    expect(
+      frame.debug.harmonicSupport.filter((value) => value > 0).length,
+    ).toBeGreaterThan(1);
     expect(frame.averageAmplitude).toBeCloseTo(191.25);
   });
 });
@@ -296,7 +299,7 @@ describe("applyTestToneToSnapshot", () => {
     expect(snapshot.sourceMode).toBe("test");
     expect(snapshot.avgAmplitude).toBeCloseTo(0.8 * 255);
     const nonZero = Array.from(snapshot.fftMagnitudes).filter((v) => v > 0);
-    expect(nonZero).toHaveLength(1);
+    expect(nonZero.length).toBeGreaterThan(1);
     expect(nonZero[0]).toBeCloseTo(0.8);
   });
 

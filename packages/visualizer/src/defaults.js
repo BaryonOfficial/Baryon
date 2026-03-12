@@ -22,7 +22,7 @@ export const SIMULATION_DEFAULTS = Object.freeze({
 });
 
 export const RENDER_DEFAULTS = Object.freeze({
-  particleSize: 0.03,
+  particleSize: 0.045,
   rotationSpeed: 2.5,
   idleLogoIntensity: 0.04,
   idleLogoAlpha: 0.08,

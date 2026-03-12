@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { createTSLBuffers } from "./buffers.js";
+import {
+  SHELL_COUNT,
+  SHELL_JITTER_RATIO,
+  getShellMinRadius,
+  getShellSpacing,
+} from "./shells.js";
 
 function createGeometry(positions) {
   const geometry = new THREE.BufferGeometry();
@@ -52,10 +58,53 @@ describe("createTSLBuffers", () => {
       createAudioConfig(),
     );
 
-    expect(buffers.basePositionBuffer.value.array[3]).toBe(1);
-    expect(buffers.basePositionBuffer.value.array[7]).toBe(1);
+    expect(buffers.basePositionBuffer.value.array[3]).toBe(
+      buffers.baseShellRadii[0],
+    );
+    expect(buffers.basePositionBuffer.value.array[7]).toBe(
+      buffers.baseShellRadii[1],
+    );
     expect(buffers.zeroPointsBuffer.value.array[3]).toBe(2);
     expect(buffers.zeroPointsBuffer.value.array[7]).toBe(2);
+  });
+
+  it("quantizes shell anchors within the supported shell band range", () => {
+    const sequence = Array.from(
+      { length: 128 },
+      (_, index) => (index + 1) / 129,
+    );
+    const buffers = createTSLBuffers(
+      createGeometry([1, 2, 3]),
+      createParameters({ count: 64 }),
+      createAudioConfig(),
+      { rng: createSequenceRng(sequence) },
+    );
+
+    const shellSpacing = getShellSpacing(1);
+    const minRadius = getShellMinRadius(1);
+    const shellIndices = Array.from(buffers.baseShellRadii, (shellRadius) =>
+      Math.round((shellRadius - minRadius) / shellSpacing),
+    );
+
+    expect(Math.min(...buffers.baseShellRadii)).toBeGreaterThanOrEqual(
+      minRadius,
+    );
+    expect(Math.max(...buffers.baseShellRadii)).toBeLessThanOrEqual(1);
+    expect(new Set(shellIndices).size).toBeLessThanOrEqual(SHELL_COUNT);
+    expect(new Set(shellIndices).size).toBeGreaterThan(1);
+
+    for (let i = 0; i < buffers.baseShellRadii.length; i++) {
+      const sourceOffset = i * 3;
+      const sampledRadius = Math.hypot(
+        buffers.basePositions[sourceOffset],
+        buffers.basePositions[sourceOffset + 1],
+        buffers.basePositions[sourceOffset + 2],
+      );
+
+      expect(
+        Math.abs(sampledRadius - buffers.baseShellRadii[i]),
+      ).toBeLessThanOrEqual(shellSpacing * SHELL_JITTER_RATIO + 1e-6);
+    }
   });
 
   it("repeats logo positions across particle count and seeds random logo weights", () => {
@@ -108,6 +157,9 @@ describe("createTSLBuffers", () => {
     expect(Array.from(first.basePositions)).toEqual(
       Array.from(second.basePositions),
     );
+    expect(Array.from(first.baseShellRadii)).toEqual(
+      Array.from(second.baseShellRadii),
+    );
     expect(Array.from(first.initialParticlePositions)).toEqual(
       Array.from(second.initialParticlePositions),
     );
@@ -132,20 +184,17 @@ describe("createTSLBuffers", () => {
       { rng: createSequenceRng(sequence) },
     );
 
-    expect(Array.from(buffers.baryonBuffer.value.array.slice(0, 12))).toEqual([
-      1,
-      2,
-      3,
-      expect.closeTo(0.4, 6),
-      4,
-      5,
-      6,
-      expect.closeTo(0.6, 6),
-      1,
-      2,
-      3,
-      expect.closeTo(0.8, 6),
-    ]);
+    const baryonWeights = Array.from(buffers.baryonBuffer.value.array).filter(
+      (_, index) => index % 4 === 3,
+    );
+    const repeatedWeights = Array.from(
+      repeatedBuffers.baryonBuffer.value.array,
+    ).filter((_, index) => index % 4 === 3);
+
+    expect(baryonWeights).toEqual(repeatedWeights);
+    expect(Array.from(buffers.initialParticlePositions)).toEqual(
+      Array.from(buffers.basePositions),
+    );
     expect(Array.from(buffers.initialParticlePositions)).toEqual(
       Array.from(repeatedBuffers.initialParticlePositions),
     );

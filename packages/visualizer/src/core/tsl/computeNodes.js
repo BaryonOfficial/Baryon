@@ -17,7 +17,15 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
+import { SHELL_COUNT, SHELL_MIN_RADIUS_RATIO } from "./shells.js";
 import { FIELD_STATE_VALUES } from "./uniforms.js";
+
+const CONTOUR_FIELD_WIDTH_SCALE = 2.4;
+const CONTOUR_BAND_SHARPNESS = 2.5;
+const SHELL_SPRING_STRENGTH = 12.0;
+const CONTOUR_FORCE_STRENGTH = 30.0;
+const ANCHOR_FORCE_STRENGTH = 0.0;
+const FLOW_FORCE_SCALE = 0.015;
 
 function createNodalMetrics({
   fieldAbs,
@@ -25,8 +33,6 @@ function createNodalMetrics({
   radialDist,
   radius,
   threshold,
-  surfaceThreshold,
-  surfaceControl,
   centerSuppressionInner,
   centerSuppressionOuter,
   structureMin,
@@ -39,21 +45,54 @@ function createNodalMetrics({
     centerSuppressionOuter,
     radialDist,
   );
-  const isOnSurface = abs(radialDist.sub(radius)).lessThanEqual(
-    surfaceThreshold,
-  );
+  void radius;
 
   return {
     nodeBand,
     structure,
     centerSuppression,
     potential: nodeBand.mul(structure).mul(centerSuppression),
-    groupTag: select(
-      isOnSurface.and(surfaceControl.equal(1)),
+  };
+}
+
+function projectOntoTangent(vector, radialDir) {
+  return vector.sub(radialDir.mul(vector.dot(radialDir)));
+}
+
+function createContourMetrics({ field, fieldAbs, structure, threshold }) {
+  const contourBand = float(1.0).sub(
+    smoothstep(
+      float(0.0),
+      threshold.mul(float(CONTOUR_FIELD_WIDTH_SCALE)),
+      fieldAbs,
+    ),
+  );
+  const bandStrength = contourBand
+    .pow(float(CONTOUR_BAND_SHARPNESS))
+    .mul(structure);
+  return {
+    bandStrength,
+    contourSign: select(
+      field.greaterThanEqual(float(0.0)),
+      float(-1.0),
       float(1.0),
-      float(2.0),
     ),
   };
+}
+
+function createShellGroupTag(baseShellRadius, radius, surfaceControl) {
+  const shellSpacing = radius.mul(
+    float((1 - SHELL_MIN_RADIUS_RATIO) / (SHELL_COUNT - 1)),
+  );
+  const isOuterShell = baseShellRadius.greaterThanEqual(
+    radius.sub(shellSpacing),
+  );
+
+  return select(
+    surfaceControl.equal(1).and(isOuterShell),
+    float(1.0),
+    float(2.0),
+  );
 }
 
 export function createComputeNodes({ count, capacity, buffers, uniforms }) {
@@ -71,7 +110,6 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     uDeltaTime,
     uRadius,
     uThreshold,
-    uSurfaceThreshold,
     uFlowFieldStrength,
     uFlowFieldFrequency,
     uFlowMix,
@@ -115,6 +153,7 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
   const zeroPointsCompute = Fn(() => {
     const scalarVal = scalarFieldBuffer.element(instanceIndex);
     const pos = scalarVal.xyz;
+    const baseShellRadius = basePositionBuffer.element(instanceIndex).w;
     const field = scalarVal.w;
     const fieldAbs = abs(field);
     const invR = float(1.0).div(uRadius);
@@ -147,12 +186,16 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
       radialDist: length(pos),
       radius: uRadius,
       threshold: uThreshold,
-      surfaceThreshold: uSurfaceThreshold,
-      surfaceControl: uSurfaceControl,
       centerSuppressionInner: uCenterSuppressionInner,
       centerSuppressionOuter: uCenterSuppressionOuter,
       structureMin: uStructureMin,
       structureMax: uStructureMax,
+    });
+    const contourMetrics = createContourMetrics({
+      field,
+      fieldAbs,
+      structure: nodalMetrics.structure,
+      threshold: uThreshold,
     });
 
     If(
@@ -169,8 +212,8 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
         .element(instanceIndex)
         .assign(
           vec4(
-            nodalMetrics.potential,
-            nodalMetrics.groupTag,
+            contourMetrics.bandStrength,
+            createShellGroupTag(baseShellRadius, uRadius, uSurfaceControl),
             fieldAbs,
             gradientMagnitude,
           ),
@@ -182,8 +225,9 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
     const oldParticle = particlesBuffer.element(instanceIndex);
     const oldPos = oldParticle.xyz;
     const oldVelocity = velocityBuffer.element(instanceIndex).xyz;
-    const baseSample = basePositionBuffer.element(instanceIndex).xyz;
-    const baseSampleMeta = zeroPointsBuffer.element(instanceIndex);
+    const basePoint = basePositionBuffer.element(instanceIndex);
+    const baseSample = basePoint.xyz;
+    const baseShellRadius = basePoint.w;
     const baryonPos = baryonBuffer
       .element(instanceIndex)
       .xyz.mul(uIdleLogoSize);
@@ -238,59 +282,62 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
       radialDist,
       radius: uRadius,
       threshold: uThreshold,
-      surfaceThreshold: uSurfaceThreshold,
-      surfaceControl: uSurfaceControl,
       centerSuppressionInner: uCenterSuppressionInner,
       centerSuppressionOuter: uCenterSuppressionOuter,
       structureMin: uStructureMin,
       structureMax: uStructureMax,
     });
-    const signScale = select(
-      field.greaterThanEqual(float(0.0)),
-      float(-1.0),
-      float(1.0),
+    const contourMetrics = createContourMetrics({
+      field,
+      fieldAbs,
+      structure: nodalMetrics.structure,
+      threshold: uThreshold,
+    });
+    const shellResponseScale = uAttractionStrength.div(float(18.0));
+    const radialBasis = select(
+      radialDist.greaterThan(EPSILON),
+      oldPos,
+      baseSample,
     );
-    const gradientDir = normalize(
-      gradient.add(vec3(EPSILON, EPSILON, EPSILON)),
+    const radialDir = normalize(
+      radialBasis.add(vec3(EPSILON, EPSILON, EPSILON)),
     );
-    const radialDir = normalize(oldPos.add(vec3(EPSILON, EPSILON, EPSILON)));
-    const toAnchor = baseSample.sub(oldPos);
-    const anchorDistance = length(toAnchor);
-    const anchorDir = normalize(toAnchor.add(vec3(EPSILON, EPSILON, EPSILON)));
-    const anchorPotential = baseSampleMeta.x;
-    const attractionStrength = clamp(
-      fieldAbs.div(uThreshold.mul(4.0).add(EPSILON)),
-      float(0.0),
-      float(1.0),
-    )
-      .mul(nodalMetrics.structure)
-      .mul(nodalMetrics.centerSuppression)
-      .mul(uAttractionStrength);
-    const attraction = gradientDir.mul(signScale).mul(attractionStrength);
-    const anchorStrength = smoothstep(
-      float(0.0),
-      uRadius.mul(0.35),
-      anchorDistance,
-    )
-      .mul(anchorPotential)
-      .mul(uAttractionStrength.mul(float(0.8)));
-    const anchorAttraction = anchorDir.mul(anchorStrength);
-    const centerEscapeStrength = float(1.0)
-      .sub(nodalMetrics.centerSuppression)
-      .mul(float(1.0).sub(nodalMetrics.nodeBand.mul(nodalMetrics.structure)))
-      .mul(uAttractionStrength.mul(float(0.35)));
-    const centerEscape = radialDir.mul(centerEscapeStrength);
+    const dynamicShellRadius = baseShellRadius.add(
+      clamp(field, float(-1.0), float(1.0))
+        .mul(uRadius.mul(float(0.045)))
+        .mul(nodalMetrics.structure),
+    );
+    const shellSpring = radialDir.mul(
+      dynamicShellRadius
+        .sub(radialDist)
+        .mul(float(SHELL_SPRING_STRENGTH))
+        .mul(shellResponseScale),
+    );
+    const tangentialGradient = projectOntoTangent(gradient, radialDir);
+    const contourForce = normalize(
+      tangentialGradient.add(vec3(EPSILON, EPSILON, EPSILON)),
+    ).mul(
+      contourMetrics.bandStrength
+        .mul(float(CONTOUR_FORCE_STRENGTH))
+        .mul(contourMetrics.contourSign)
+        .mul(shellResponseScale),
+    );
+    const anchorOffset = baseSample.sub(oldPos);
+    const anchorForce = projectOntoTangent(anchorOffset, radialDir).mul(
+      float(ANCHOR_FORCE_STRENGTH).mul(shellResponseScale),
+    );
+    const tangentialFlow = projectOntoTangent(flowField, radialDir);
     const flowStrength = uFlowFieldStrength
       .mul(uFlowMix)
-      .mul(float(1.0).sub(nodalMetrics.potential))
-      .mul(float(1.0).sub(anchorPotential.mul(float(0.85))));
-    const flow = flowField.mul(flowStrength);
+      .mul(float(FLOW_FORCE_SCALE))
+      .mul(float(1.0).sub(contourMetrics.bandStrength));
+    const flow = tangentialFlow.mul(flowStrength);
 
     const activeVelocity = oldVelocity
       .mul(uVelocityDamping)
-      .add(attraction.mul(uDeltaTime))
-      .add(anchorAttraction.mul(uDeltaTime))
-      .add(centerEscape.mul(uDeltaTime))
+      .add(shellSpring.mul(uDeltaTime))
+      .add(contourForce.mul(uDeltaTime))
+      .add(anchorForce.mul(uDeltaTime))
       .add(flow.mul(uDeltaTime));
     const activeVelocityLength = length(activeVelocity);
     const clampedActiveVelocity = select(
@@ -330,20 +377,16 @@ export function createComputeNodes({ count, capacity, buffers, uniforms }) {
       nextVelocity.mul(float(0.5)),
       nextVelocity,
     );
-    const finalRadius = length(finalPos);
-    const isOnSurface = abs(finalRadius.sub(uRadius)).lessThanEqual(
-      uSurfaceThreshold,
-    );
     const groupTag = select(
-      fieldDriven.and(isOnSurface).and(uSurfaceControl.equal(1)),
+      fieldDriven,
+      createShellGroupTag(baseShellRadius, uRadius, uSurfaceControl),
       float(1.0),
-      select(fieldDriven, float(2.0), float(1.0)),
     );
 
     particlesBuffer.element(instanceIndex).assign(vec4(finalPos, groupTag));
     velocityBuffer
       .element(instanceIndex)
-      .assign(vec4(finalVelocity, nodalMetrics.potential));
+      .assign(vec4(finalVelocity, contourMetrics.bandStrength));
   })().compute(count);
 
   return {

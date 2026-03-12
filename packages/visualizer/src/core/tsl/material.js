@@ -18,7 +18,12 @@ import {
 import { PointsNodeMaterial } from "three/webgpu";
 import { FIELD_STATE_VALUES } from "./uniforms.js";
 
-export function createParticlePoints({ count, particlesBuffer, uniforms }) {
+export function createParticlePoints({
+  count,
+  particlesBuffer,
+  velocityBuffer,
+  uniforms,
+}) {
   const {
     uTime,
     uFieldState,
@@ -26,9 +31,19 @@ export function createParticlePoints({ count, particlesBuffer, uniforms }) {
     uIdleLogoAlpha,
     uColor,
     uSurfaceColor,
+    uParticleSize,
   } = uniforms;
 
   const vGroupTag = varying(particlesBuffer.toAttribute().w, "vGroupTag");
+  const vBandStrength = varying(
+    velocityBuffer.toAttribute().w,
+    "vBandStrength",
+  );
+  const bodyVisibility = smoothstep(float(0.06), float(0.28), vBandStrength);
+  const contourVisibility = smoothstep(float(0.18), float(0.62), vBandStrength);
+  const activeVisibility = bodyVisibility
+    .mul(float(0.65))
+    .add(contourVisibility.mul(float(0.35)));
 
   const colorNode = Fn(() => {
     const groupTag = vGroupTag;
@@ -52,16 +67,30 @@ export function createParticlePoints({ count, particlesBuffer, uniforms }) {
       uSurfaceColor,
       select(groupTag.equal(float(2.0)), uColor, defaultBlue),
     );
+    const contourColor = mix(
+      particleColor.mul(float(0.72)),
+      vec3(1.0),
+      contourVisibility.mul(float(0.22)),
+    );
     const logoIntensity = select(
       uFieldState.equal(FIELD_STATE_VALUES.idle),
       uIdleLogoIntensity,
       float(1.0),
     );
-    const finalColor = mix(particleColor, holoColor, holo).mul(logoIntensity);
+    const activeColor = mix(
+      particleColor.mul(float(0.62)),
+      contourColor.add(holoColor.mul(holo.mul(float(0.12)))),
+      contourVisibility,
+    );
+    const finalColor = select(
+      uFieldState.equal(FIELD_STATE_VALUES.idle),
+      mix(particleColor, holoColor, holo).mul(logoIntensity),
+      activeColor.mul(logoIntensity),
+    );
     const alpha = select(
       uFieldState.equal(FIELD_STATE_VALUES.idle),
       uIdleLogoAlpha,
-      float(1.0),
+      mix(float(0.24), float(0.98), activeVisibility),
     );
 
     return vec4(finalColor, alpha);
@@ -75,6 +104,11 @@ export function createParticlePoints({ count, particlesBuffer, uniforms }) {
   });
   particleMaterial.positionNode = particlesBuffer.toAttribute().xyz;
   particleMaterial.colorNode = colorNode;
+  particleMaterial.sizeNode = select(
+    uFieldState.equal(FIELD_STATE_VALUES.idle),
+    uParticleSize,
+    uParticleSize.mul(mix(float(0.35), float(2.6), activeVisibility)),
+  );
 
   const geom = new THREE.BufferGeometry();
   const dummyPos = new Float32Array(count * 3);

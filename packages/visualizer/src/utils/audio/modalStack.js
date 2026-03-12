@@ -1,6 +1,6 @@
 import { AUDIT_DEFAULTS, AUDIO_DEFAULTS } from "../../defaults.js";
 
-export const MAX_STACK_SLOTS = 4;
+export const MAX_STACK_SLOTS = AUDIO_DEFAULTS.capacity;
 export const DECAY_PER_FRAME = 0.9;
 const HARMONIC_SUPPORT_COUNT = 4;
 

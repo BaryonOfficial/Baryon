@@ -16,14 +16,16 @@ function createHarness({
   attractionStrength = 14,
   centerSuppressionInner = 0.12,
   centerSuppressionOuter = 0.45,
+  surfaceControl = 1,
   modeSlots = new Float32Array([1, 1, 1, 1]),
 } = {}) {
   const sampleIndices = new Uint32Array([0, 1, 2, 3]);
   const basePositions = new Float32Array([
-    0.1, 0.1, 0.1, 0.12, 0.08, 0.1, 0.28, 0.16, 0.18, 0.46, 0.22, 0.18,
+    0.12, 0.1, 0.08, 0.18, 0.22, 0.14, 0.34, 0.42, 0.46, 0.5, 0.42, 0.7,
   ]);
+  const baseShellRadii = new Float32Array([0.18, 0.32, 0.72, 0.99]);
   const shadowParticles = new Float32Array([
-    0.08, 0.06, 0.08, 0.18, 0.12, 0.2, 0.32, 0.16, 0.18, 0.46, 0.22, 0.16,
+    0.08, 0.08, 0.07, 0.22, 0.18, 0.18, 0.28, 0.37, 0.42, 0.42, 0.38, 0.61,
   ]);
   const shadowVelocities = new Float32Array(sampleIndices.length * 3);
   const sampleBaryon = new Float32Array([
@@ -33,6 +35,7 @@ function createHarness({
   return {
     sampleIndices,
     basePositions,
+    baseShellRadii,
     shadowParticles,
     shadowVelocities,
     sampleBaryon,
@@ -50,7 +53,7 @@ function createHarness({
     centerSuppressionOuter,
     structureMin: 0.08,
     structureMax: 0.4,
-    surfaceControl: 1,
+    surfaceControl,
     idleScale: 1,
     activeModeCount,
     fieldState,
@@ -100,6 +103,9 @@ describe("particle debug metrics", () => {
     expect(snapshot.highPotentialOccupancy).toBeGreaterThanOrEqual(0);
     expect(snapshot.fieldDriven).toBe(true);
     expect(snapshot.avgAttractionContribution).toBeGreaterThan(0);
+    expect(snapshot.avgBandStrength).toBeGreaterThan(0);
+    expect(snapshot.avgTangentialContribution).toBeGreaterThan(0);
+    expect(snapshot.outerShellOccupancy).toBeGreaterThan(0);
   });
 
   it("reduces origin potential when center suppression is enabled", () => {
@@ -145,6 +151,8 @@ describe("particle debug metrics", () => {
     expect(idleSnapshot.idleFallbackActive).toBe(true);
     expect(activeSnapshot.idleFallbackActive).toBe(false);
     expect(idleSnapshot.avgAttractionContribution).toBe(0);
+    expect(idleSnapshot.avgBandStrength).toBe(0);
+    expect(idleSnapshot.avgTangentialContribution).toBe(0);
     expect(activeSnapshot.avgAttractionContribution).toBeGreaterThan(0);
   });
 
@@ -162,33 +170,23 @@ describe("particle debug metrics", () => {
     expect(snapshot.attractionToFlowRatio).toBeGreaterThan(1);
   });
 
-  it("pushes center-heavy particles outward during active motion", () => {
+  it("pulls particles back toward their assigned shell bands during active motion", () => {
     const harness = createHarness();
     harness.shadowParticles.set([
-      0.02, 0.02, 0.02, 0.03, 0.02, 0.03, 0.04, 0.03, 0.03, 0.05, 0.03, 0.04,
+      0.03, 0.03, 0.03, 0.06, 0.05, 0.05, 0.1, 0.09, 0.11, 0.2, 0.18, 0.22,
     ]);
 
-    const initialRadius =
-      harness.shadowParticles.reduce((sum, value, index) => {
-        if (index % 3 !== 2) return sum;
-        const offset = index - 2;
-        return (
-          sum +
-          Math.hypot(
-            harness.shadowParticles[offset],
-            harness.shadowParticles[offset + 1],
-            harness.shadowParticles[offset + 2],
-          )
-        );
-      }, 0) / 4;
-
-    let snapshot = null;
+    const initialSnapshot = computeParticleDebugMetrics(harness);
+    let snapshot = initialSnapshot;
     for (let i = 0; i < 12; i++) {
       snapshot = computeParticleDebugMetrics(harness);
     }
 
-    expect(snapshot.avgCenterEscapeContribution).toBeGreaterThan(0);
-    expect(snapshot.avgParticleRadius).toBeGreaterThan(initialRadius);
+    expect(snapshot.avgCenterEscapeContribution).toBe(0);
+    expect(snapshot.avgShellRadiusError).toBeLessThan(
+      initialSnapshot.avgShellRadiusError,
+    );
+    expect(snapshot.maxShellRadiusError).toBeLessThan(0.8);
   });
 
   it("reports an empty field and no attraction when all mode slots are zero", () => {
@@ -198,7 +196,24 @@ describe("particle debug metrics", () => {
 
     expect(snapshot.fieldPopulated).toBe(false);
     expect(snapshot.avgAttractionContribution).toBe(0);
+    expect(snapshot.avgBandStrength).toBe(0);
+    expect(snapshot.avgTangentialContribution).toBe(0);
     expect(snapshot.idleFallbackActive).toBe(true);
+  });
+
+  it("keeps shell stability independent from the surface accent toggle", () => {
+    const accented = computeParticleDebugMetrics(
+      createHarness({ surfaceControl: 1 }),
+    );
+    const flat = computeParticleDebugMetrics(
+      createHarness({ surfaceControl: 0 }),
+    );
+
+    expect(flat.outerShellOccupancy).toBe(accented.outerShellOccupancy);
+    expect(flat.avgShellRadiusError).toBeCloseTo(
+      accented.avgShellRadiusError,
+      6,
+    );
   });
 
   it("reflects continuity lifecycle flags without broad resets", () => {
@@ -220,6 +235,7 @@ describe("particle debug metrics", () => {
     const audit = {
       frame: 0,
       sampleIndices: new Uint32Array([0, 1, 2, 3]),
+      baseShellRadii: new Float32Array([0.18, 0.32, 0.72, 0.99]),
       shadowParticles: new Float32Array([
         0.08, 0.06, 0.08, 0.11, 0.07, 0.09, 0.14, 0.09, 0.1, 0.18, 0.1, 0.12,
       ]),
@@ -232,8 +248,9 @@ describe("particle debug metrics", () => {
     const tslState = {
       audit,
       basePositions: new Float32Array([
-        0.1, 0.1, 0.1, 0.12, 0.08, 0.1, 0.16, 0.1, 0.12, 0.2, 0.12, 0.14,
+        0.12, 0.1, 0.08, 0.18, 0.22, 0.14, 0.34, 0.42, 0.46, 0.5, 0.42, 0.7,
       ]),
+      baseShellRadii: new Float32Array([0.18, 0.32, 0.72, 0.99]),
       uniforms: {
         uRadius: { value: 1 },
         uThreshold: { value: 0.05 },
@@ -268,8 +285,9 @@ describe("particle debug metrics", () => {
     expect(snapshot.resetTriggered).toBe(false);
     expect(snapshot.continuityMode).toBe("inertia");
     expect(snapshot.fieldPopulationRatio).toBeGreaterThan(0);
-    expect(snapshot.centerParticleOccupancy).toBeGreaterThan(0);
+    expect(snapshot.outerShellOccupancy).toBeGreaterThan(0);
     expect(snapshot.avgAttractionContribution).toBeGreaterThan(0);
+    expect(snapshot.avgShellRadiusError).toBeGreaterThanOrEqual(0);
     expect(audit.lastSnapshot).toEqual(snapshot);
   });
 });

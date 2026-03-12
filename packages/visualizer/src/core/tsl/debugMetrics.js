@@ -1,9 +1,16 @@
 import { isFieldDrivenState } from "../fieldState.js";
+import { isOuterShellRadius } from "./shells.js";
 
 const EPSILON = 1e-4;
 const MAX_ACTIVE_SPEED = 2;
 const FIELD_OCCUPANCY_THRESHOLD = 0.01;
 const HIGH_POTENTIAL_THRESHOLD = 0.25;
+const CONTOUR_FIELD_WIDTH_SCALE = 2.4;
+const CONTOUR_BAND_SHARPNESS = 2.5;
+const SHELL_SPRING_STRENGTH = 12;
+const CONTOUR_FORCE_STRENGTH = 30;
+const ANCHOR_FORCE_STRENGTH = 0;
+const FLOW_FORCE_SCALE = 0.015;
 
 /**
  * @typedef {Object} ParticleLifecycle
@@ -96,6 +103,27 @@ function clampVectorMagnitude(x, y, z, limit) {
     y: y * inv,
     z: z * inv,
     length: limit,
+  };
+}
+
+function projectOntoTangent(x, y, z, radialDir) {
+  const radialProjection = x * radialDir.x + y * radialDir.y + z * radialDir.z;
+  return {
+    x: x - radialDir.x * radialProjection,
+    y: y - radialDir.y * radialProjection,
+    z: z - radialDir.z * radialProjection,
+  };
+}
+
+function computeContourMetrics(field, fieldAbs, structureWeight, threshold) {
+  const contourBand =
+    1 - smoothstep(0, threshold * CONTOUR_FIELD_WIDTH_SCALE, fieldAbs);
+  const bandStrength =
+    Math.pow(contourBand, CONTOUR_BAND_SHARPNESS) * structureWeight;
+
+  return {
+    bandStrength,
+    contourSign: field >= 0 ? -1 : 1,
   };
 }
 
@@ -243,9 +271,12 @@ function computeIdleParticleStep({
     vy: nextVy,
     vz: nextVz,
     attractionContribution: 0,
+    tangentialContribution: 0,
     anchorContribution: 0,
+    bandStrength: 0,
     centerEscapeContribution: 0,
     flowContribution: 0,
+    shellRadiusError: 0,
     velocityMagnitude: Math.hypot(nextVx, nextVy, nextVz),
     repaired: false,
     nodal: null,
@@ -262,7 +293,7 @@ function computeParticleStep({
   anchorX,
   anchorY,
   anchorZ,
-  anchorPotential,
+  baseShellRadius,
   baryonX,
   baryonY,
   baryonZ,
@@ -295,73 +326,92 @@ function computeParticleStep({
     });
   }
 
-  const { radius, threshold } = nodalFieldConfig;
+  const { radius } = nodalFieldConfig;
+  const shellResponseScale = attractionStrength / 18;
   const nodal = computePositionNodalMetrics(oldX, oldY, oldZ, nodalFieldConfig);
-  const gradientDir = normalizeVector(
-    nodal.gradient.x + EPSILON,
-    nodal.gradient.y + EPSILON,
-    nodal.gradient.z + EPSILON,
+  const contour = computeContourMetrics(
+    nodal.field,
+    nodal.fieldAbs,
+    nodal.structureWeight,
+    nodalFieldConfig.threshold,
   );
+  const radialBasis =
+    nodal.radialDist > EPSILON
+      ? { x: oldX, y: oldY, z: oldZ }
+      : { x: anchorX, y: anchorY, z: anchorZ };
   const radialDir = normalizeVector(
-    oldX + EPSILON,
-    oldY + EPSILON,
-    oldZ + EPSILON,
+    radialBasis.x + EPSILON,
+    radialBasis.y + EPSILON,
+    radialBasis.z + EPSILON,
   );
-  const anchorDir = normalizeVector(
-    anchorX - oldX,
-    anchorY - oldY,
-    anchorZ - oldZ,
+  const dynamicShellRadius =
+    baseShellRadius +
+    clamp(nodal.field, -1, 1) * radius * 0.045 * nodal.structureWeight;
+  const shellSpringScalar =
+    (dynamicShellRadius - nodal.radialDist) *
+    SHELL_SPRING_STRENGTH *
+    shellResponseScale;
+  const shellSpringX = radialDir.x * shellSpringScalar;
+  const shellSpringY = radialDir.y * shellSpringScalar;
+  const shellSpringZ = radialDir.z * shellSpringScalar;
+  const tangentialGradient = projectOntoTangent(
+    nodal.gradient.x,
+    nodal.gradient.y,
+    nodal.gradient.z,
+    radialDir,
   );
-  const anchorDistance = Math.hypot(
-    anchorX - oldX,
-    anchorY - oldY,
-    anchorZ - oldZ,
+  const tangentialGradientDir = normalizeVector(
+    tangentialGradient.x + EPSILON,
+    tangentialGradient.y + EPSILON,
+    tangentialGradient.z + EPSILON,
   );
-  const signScale = nodal.field >= 0 ? -1 : 1;
-  const attractionScalar =
-    clamp(nodal.fieldAbs / (threshold * 4 + EPSILON), 0, 1) *
-    nodal.structureWeight *
-    nodal.centerSuppression *
-    attractionStrength;
-  const attractionX = gradientDir.x * signScale * attractionScalar;
-  const attractionY = gradientDir.y * signScale * attractionScalar;
-  const attractionZ = gradientDir.z * signScale * attractionScalar;
-  const anchorScalar =
-    smoothstep(0, radius * 0.35, anchorDistance) *
-    anchorPotential *
-    attractionStrength *
-    0.8;
-  const anchorXForce = anchorDir.x * anchorScalar;
-  const anchorYForce = anchorDir.y * anchorScalar;
-  const anchorZForce = anchorDir.z * anchorScalar;
-  const centerEscapeScalar =
-    (1 - nodal.centerSuppression) *
-    (1 - nodal.nodeBandWeight * nodal.structureWeight) *
-    attractionStrength *
-    0.35;
-  const centerEscapeX = radialDir.x * centerEscapeScalar;
-  const centerEscapeY = radialDir.y * centerEscapeScalar;
-  const centerEscapeZ = radialDir.z * centerEscapeScalar;
-
+  const tangentialScalar =
+    contour.bandStrength *
+    CONTOUR_FORCE_STRENGTH *
+    contour.contourSign *
+    shellResponseScale;
+  const tangentialX = tangentialGradientDir.x * tangentialScalar;
+  const tangentialY = tangentialGradientDir.y * tangentialScalar;
+  const tangentialZ = tangentialGradientDir.z * tangentialScalar;
+  const anchorOffset = {
+    x: anchorX - oldX,
+    y: anchorY - oldY,
+    z: anchorZ - oldZ,
+  };
+  const tangentialAnchor = projectOntoTangent(
+    anchorOffset.x,
+    anchorOffset.y,
+    anchorOffset.z,
+    radialDir,
+  );
+  const anchorXForce =
+    tangentialAnchor.x * ANCHOR_FORCE_STRENGTH * shellResponseScale;
+  const anchorYForce =
+    tangentialAnchor.y * ANCHOR_FORCE_STRENGTH * shellResponseScale;
+  const anchorZForce =
+    tangentialAnchor.z * ANCHOR_FORCE_STRENGTH * shellResponseScale;
   const flowDir = computeFlowVector(oldX, oldY, oldZ, flowFrequency, time);
+  const tangentialFlow = projectOntoTangent(
+    flowDir.x,
+    flowDir.y,
+    flowDir.z,
+    radialDir,
+  );
   const flowScalar =
-    flowStrength *
-    flowMix *
-    (1 - nodal.potential) *
-    (1 - anchorPotential * 0.85);
-  const flowX = flowDir.x * flowScalar;
-  const flowY = flowDir.y * flowScalar;
-  const flowZ = flowDir.z * flowScalar;
+    flowStrength * flowMix * FLOW_FORCE_SCALE * (1 - contour.bandStrength);
+  const flowX = tangentialFlow.x * flowScalar;
+  const flowY = tangentialFlow.y * flowScalar;
+  const flowZ = tangentialFlow.z * flowScalar;
 
   const unclampedVelocityX =
     oldVx * velocityDamping +
-    (attractionX + anchorXForce + centerEscapeX + flowX) * deltaTime;
+    (shellSpringX + tangentialX + anchorXForce + flowX) * deltaTime;
   const unclampedVelocityY =
     oldVy * velocityDamping +
-    (attractionY + anchorYForce + centerEscapeY + flowY) * deltaTime;
+    (shellSpringY + tangentialY + anchorYForce + flowY) * deltaTime;
   const unclampedVelocityZ =
     oldVz * velocityDamping +
-    (attractionZ + anchorZForce + centerEscapeZ + flowZ) * deltaTime;
+    (shellSpringZ + tangentialZ + anchorZForce + flowZ) * deltaTime;
   const clampedVelocity = clampVectorMagnitude(
     unclampedVelocityX,
     unclampedVelocityY,
@@ -398,6 +448,7 @@ function computeParticleStep({
     nextVz *= 0.5;
     repaired = true;
   }
+  const finalRadius = Math.hypot(nextX, nextY, nextZ);
 
   return {
     x: nextX,
@@ -407,12 +458,19 @@ function computeParticleStep({
     vy: nextVy,
     vz: nextVz,
     attractionContribution:
-      Math.hypot(attractionX, attractionY, attractionZ) * deltaTime,
+      Math.hypot(
+        shellSpringX + tangentialX,
+        shellSpringY + tangentialY,
+        shellSpringZ + tangentialZ,
+      ) * deltaTime,
+    tangentialContribution:
+      Math.hypot(tangentialX, tangentialY, tangentialZ) * deltaTime,
     anchorContribution:
       Math.hypot(anchorXForce, anchorYForce, anchorZForce) * deltaTime,
-    centerEscapeContribution:
-      Math.hypot(centerEscapeX, centerEscapeY, centerEscapeZ) * deltaTime,
+    bandStrength: contour.bandStrength,
+    centerEscapeContribution: 0,
     flowContribution: Math.hypot(flowX, flowY, flowZ) * deltaTime,
+    shellRadiusError: Math.abs(finalRadius - dynamicShellRadius),
     velocityMagnitude: Math.hypot(nextVx, nextVy, nextVz),
     repaired,
     nodal,
@@ -423,6 +481,7 @@ function computeParticleStep({
  * @param {Object} args
  * @param {Uint32Array} args.sampleIndices
  * @param {Float32Array} args.basePositions
+ * @param {Float32Array} [args.baseShellRadii]
  * @param {Float32Array} args.shadowParticles
  * @param {Float32Array} args.shadowVelocities
  * @param {Float32Array} args.sampleBaryon
@@ -451,6 +510,7 @@ function computeParticleStep({
 export function computeParticleDebugMetrics({
   sampleIndices,
   basePositions,
+  baseShellRadii,
   shadowParticles,
   shadowVelocities,
   sampleBaryon,
@@ -505,13 +565,20 @@ export function computeParticleDebugMetrics({
   let avgAnchorContribution = 0;
   let avgCenterEscapeContribution = 0;
   let avgFlowContribution = 0;
+  let avgTangentialContribution = 0;
   let avgVelocityMagnitude = 0;
+  let avgShellRadiusError = 0;
+  let avgBandStrength = 0;
+  let maxShellRadiusError = 0;
+  let outerShellCount = 0;
 
   for (let i = 0; i < sampleIndices.length; i++) {
     const index = sampleIndices[i];
     const baseX = basePositions[index * 3];
     const baseY = basePositions[index * 3 + 1];
     const baseZ = basePositions[index * 3 + 2];
+    const baseShellRadius =
+      baseShellRadii?.[index] ?? Math.hypot(baseX, baseY, baseZ);
 
     const baseNodal = fieldDriven
       ? computePositionNodalMetrics(baseX, baseY, baseZ, nodalFieldConfig)
@@ -519,9 +586,12 @@ export function computeParticleDebugMetrics({
 
     if (baseNodal && baseNodal.potential > FIELD_OCCUPANCY_THRESHOLD) {
       fieldPopulationCount++;
-      if (baseNodal.isOnSurface) {
+      if (isOuterShellRadius(baseShellRadius, radius)) {
         fieldSurfaceCount++;
       }
+    }
+    if (isOuterShellRadius(baseShellRadius, radius)) {
+      outerShellCount++;
     }
 
     const shadowOffset = i * 3;
@@ -536,7 +606,7 @@ export function computeParticleDebugMetrics({
       anchorX: baseX,
       anchorY: baseY,
       anchorZ: baseZ,
-      anchorPotential: baseNodal?.potential ?? 0,
+      baseShellRadius,
       baryonX: sampleBaryon[shadowOffset],
       baryonY: sampleBaryon[shadowOffset + 1],
       baryonZ: sampleBaryon[shadowOffset + 2],
@@ -596,10 +666,17 @@ export function computeParticleDebugMetrics({
     avgGradientMagnitude += particleNodal?.gradient.magnitude ?? 0;
     avgParticleRadius += particleRadius;
     avgAttractionContribution += particleStep.attractionContribution;
+    avgTangentialContribution += particleStep.tangentialContribution;
     avgAnchorContribution += particleStep.anchorContribution;
+    avgBandStrength += particleStep.bandStrength;
     avgCenterEscapeContribution += particleStep.centerEscapeContribution;
     avgFlowContribution += particleStep.flowContribution;
     avgVelocityMagnitude += particleStep.velocityMagnitude;
+    avgShellRadiusError += particleStep.shellRadiusError;
+    maxShellRadiusError = Math.max(
+      maxShellRadiusError,
+      particleStep.shellRadiusError,
+    );
   }
 
   const avgAttraction = avgAttractionContribution / divisor;
@@ -629,7 +706,12 @@ export function computeParticleDebugMetrics({
     avgAnchorContribution: avgAnchorContribution / divisor,
     avgCenterEscapeContribution: avgCenterEscapeContribution / divisor,
     avgFlowContribution: avgFlow,
+    avgTangentialContribution: avgTangentialContribution / divisor,
     avgVelocityMagnitude: avgVelocityMagnitude / divisor,
+    avgShellRadiusError: avgShellRadiusError / divisor,
+    avgBandStrength: avgBandStrength / divisor,
+    maxShellRadiusError,
+    outerShellOccupancy: outerShellCount / divisor,
     attractionDominant: avgAttraction >= avgFlow,
     attractionToFlowRatio: avgAttraction / Math.max(avgFlow, 1e-6),
     repairedParticleCount: repairedCount,
