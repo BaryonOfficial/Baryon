@@ -19,6 +19,11 @@ const DEFAULT_TRANSPORT_STATE = {
   durationSeconds: 0,
   canSeek: false,
 };
+const RECENT_UPLOAD_LIMIT = 4;
+
+function getRecentUploadId(file) {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
 
 function clampTransportTime(value, durationSeconds) {
   const nextValue = Number(value);
@@ -183,6 +188,7 @@ async function attachStreamToAudioElement(audioElement, stream) {
 
 export function AudioProvider({ children }) {
   const [fileName, setFileName] = useState(DEFAULT_FILE_NAME);
+  const [recentUploads, setRecentUploads] = useState([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMicActive, setIsMicActive] = useState(false);
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
@@ -225,6 +231,7 @@ export function AudioProvider({ children }) {
 
   const {
     handleFileChange: handleLocalFileChange,
+    handleRecentFileSelect: handleLocalRecentFileSelect,
     handlePlayPause: handleLocalPlayPause,
     handleStop: handleLocalStop,
     handleMicToggle: handleLocalMicToggle,
@@ -232,6 +239,22 @@ export function AudioProvider({ children }) {
     handleMuteToggle: handleLocalMuteToggle,
   } = useAudioLogic({
     setFileName,
+    resetFileName: () => setFileName(DEFAULT_FILE_NAME),
+    registerRecentFile: (file) => {
+      setRecentUploads((currentUploads) => {
+        const nextUpload = {
+          id: getRecentUploadId(file),
+          file,
+          name: file.name,
+          size: file.size,
+          lastModified: file.lastModified,
+        };
+        return [
+          nextUpload,
+          ...currentUploads.filter((upload) => upload.id !== nextUpload.id),
+        ].slice(0, RECENT_UPLOAD_LIMIT);
+      });
+    },
     setIsAudioLoaded,
     setIsPlaying,
     setIsMicActive,
@@ -579,10 +602,35 @@ export function AudioProvider({ children }) {
       clearScrubState();
       resetSoundCloudTransport();
       setActiveSource("upload");
+      setShowDeviceMenu(false);
       setShowSoundCloudPanel(false);
       handleLocalFileChange(event);
     },
     [clearScrubState, handleLocalFileChange, resetSoundCloudTransport],
+  );
+
+  const handleRecentUploadSelect = useCallback(
+    async (uploadId) => {
+      const recentUpload = recentUploads.find(
+        (upload) => upload.id === uploadId,
+      );
+      if (!recentUpload?.file) {
+        return;
+      }
+
+      clearScrubState();
+      resetSoundCloudTransport();
+      setActiveSource("upload");
+      setShowDeviceMenu(false);
+      setShowSoundCloudPanel(false);
+      await handleLocalRecentFileSelect(recentUpload.file);
+    },
+    [
+      clearScrubState,
+      handleLocalRecentFileSelect,
+      recentUploads,
+      resetSoundCloudTransport,
+    ],
   );
 
   const handlePlayPause = useCallback(async () => {
@@ -844,6 +892,7 @@ export function AudioProvider({ children }) {
     activeSource,
     fileName,
     displayName,
+    recentUploads,
     isPlaying,
     isMicActive,
     isAudioLoaded,
@@ -876,6 +925,7 @@ export function AudioProvider({ children }) {
     setSoundCloudInput,
     resetAudioSession,
     handleFileChange,
+    handleRecentUploadSelect,
     handlePlayPause,
     handleStop,
     handleMicToggle,

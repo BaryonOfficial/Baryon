@@ -331,6 +331,112 @@ test.describe("Baryon control smoke", () => {
       });
   });
 
+  test("clears the stale upload label after switching from file playback to mic mode", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await installFakeMicrophone(page);
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "resume-tone.wav",
+      mimeType: "audio/wav",
+      buffer: createMonoWavBuffer({ durationSeconds: 4 }),
+    });
+    await expect(page.getByTestId("playback-timeline")).toBeVisible();
+
+    await page.locator(".am-btn--play").click();
+    await expect(page.locator('.am-btn--play[title="Pause"]')).toBeVisible();
+
+    await page.getByTitle("Select audio input").click();
+    await page.getByRole("button", { name: "Fake Microphone" }).click();
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          fileLabel:
+            document.querySelector(".am-track")?.textContent?.trim() ?? "",
+          playDisabled:
+            document.querySelector(".am-btn--play")?.disabled ?? false,
+          audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
+        })),
+      )
+      .toEqual({
+        fileLabel: "Upload Audio",
+        playDisabled: true,
+        audioInputMode: "mic",
+      });
+
+    await page.getByTitle("Stop mic input").click();
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          fileLabel:
+            document.querySelector(".am-track")?.textContent?.trim() ?? "",
+          playDisabled:
+            document.querySelector(".am-btn--play")?.disabled ?? false,
+          audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
+        })),
+      )
+      .toEqual({
+        fileLabel: "Upload Audio",
+        playDisabled: true,
+        audioInputMode: "idle",
+      });
+  });
+
+  test("can reload the last uploaded file from recent uploads after mic mode", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await installFakeMicrophone(page);
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "recent-tone.wav",
+      mimeType: "audio/wav",
+      buffer: createMonoWavBuffer({ durationSeconds: 4 }),
+    });
+    await expect(page.getByTestId("playback-timeline")).toBeVisible();
+
+    await page.locator(".am-btn--play").click();
+    await expect(page.locator('.am-btn--play[title="Pause"]')).toBeVisible();
+
+    await page.getByTitle("Select audio input").click();
+    await page.getByRole("button", { name: "Fake Microphone" }).click();
+    await page.getByTitle("Stop mic input").click();
+
+    await page.getByTitle("Recent uploads").click();
+    await expect(page.getByTestId("recent-uploads-panel")).toBeVisible();
+    await expect(page.getByText("recent-tone.wav")).toBeVisible();
+
+    await page.getByRole("button", { name: /recent-tone\.wav/i }).click();
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          playDisabled:
+            document.querySelector(".am-btn--play")?.disabled ?? true,
+          timelineVisible: Boolean(
+            document.querySelector('[data-testid="playback-timeline"]'),
+          ),
+          audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
+        })),
+      )
+      .toEqual({
+        playDisabled: false,
+        timelineVisible: true,
+        audioInputMode: "file",
+      });
+  });
+
   test("keeps raymarch analysis active when file output volume is zero", async ({
     page,
     browserName,

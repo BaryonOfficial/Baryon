@@ -113,6 +113,25 @@ function SoundCloudIcon() {
   );
 }
 
+function HistoryIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <path d="M3 4v5h5" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
 // ─── Scrolling filename ───────────────────────────────────────────────────────
 
 function ScrollingText({ text }) {
@@ -163,6 +182,17 @@ function formatClockTime(totalSeconds) {
   const minutes = Math.floor(safeSeconds / 60);
   const seconds = String(safeSeconds % 60).padStart(2, "0");
   return `${minutes}:${seconds}`;
+}
+
+function formatFileSize(totalBytes) {
+  const safeBytes = Math.max(0, Number(totalBytes) || 0);
+  if (safeBytes >= 1024 * 1024) {
+    return `${(safeBytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (safeBytes >= 1024) {
+    return `${Math.round(safeBytes / 1024)} KB`;
+  }
+  return `${safeBytes} B`;
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
@@ -347,6 +377,22 @@ const CSS = `
 .am-btn--soundcloud-active {
   background: rgba(255, 85, 0, 0.32);
   color: #ff9c52;
+}
+
+.am-btn--recent {
+  width: 30px;
+  height: 30px;
+  background: rgba(10, 132, 255, 0.13);
+  color: rgba(122, 189, 255, 0.92);
+}
+
+.am-btn--recent:hover {
+  background: rgba(10, 132, 255, 0.22);
+}
+
+.am-btn--recent-active {
+  background: rgba(10, 132, 255, 0.28);
+  color: #a9d5ff;
 }
 
 .am-status-dot {
@@ -553,6 +599,133 @@ const CSS = `
   visibility: hidden;
   pointer-events: none;
   transform: translateX(-50%) translateY(0.4rem);
+}
+
+.am-recent-panel {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.8rem);
+  transform: translateX(-50%);
+  width: min(24rem, calc(100vw - 1.5rem));
+  padding: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  background: rgba(18, 22, 28, 0.95);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.44);
+  z-index: 70;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  white-space: normal;
+  transition:
+    opacity 160ms ease,
+    visibility 160ms ease,
+    transform 160ms ease;
+}
+
+.am-recent-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(0.4rem);
+}
+
+.am-recent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.am-recent-header span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.am-recent-header span:last-child {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.am-recent-helper {
+  margin: 0 0 0.65rem;
+  color: rgba(255, 255, 255, 0.54);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.am-recent-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.am-recent-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.65rem 0.75rem;
+  border: none;
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.92);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, transform 80ms ease;
+}
+
+.am-recent-item:hover {
+  background: rgba(10, 132, 255, 0.16);
+}
+
+.am-recent-item:active {
+  transform: scale(0.99);
+}
+
+.am-recent-item-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.am-recent-item-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.77rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.am-recent-item-meta {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.am-recent-item-action {
+  flex-shrink: 0;
+  color: #7abdff;
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .am-soundcloud-header {
@@ -963,6 +1136,12 @@ const CSS = `
     border-radius: 999px;
   }
 
+  .am-btn--recent {
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+  }
+
   .am-slider {
     min-width: 2.8rem;
   }
@@ -992,6 +1171,7 @@ function AudioControls() {
     soundCloudEnabled,
     activeSource,
     displayName,
+    recentUploads,
     isPlaying,
     isMicActive,
     isAudioLoaded,
@@ -1002,6 +1182,7 @@ function AudioControls() {
     audioDevices,
     selectedDevice,
     handleFileChange,
+    handleRecentUploadSelect,
     handlePlayPause,
     handleStop,
     handleMicToggle,
@@ -1031,7 +1212,10 @@ function AudioControls() {
   } = useAudio();
 
   const fileInputRef = useRef(null);
+  const recentUploadsButtonRef = useRef(null);
+  const recentUploadsPanelRef = useRef(null);
   const timelinePointerActiveRef = useRef(false);
+  const [showRecentUploadsPanel, setShowRecentUploadsPanel] = useState(false);
   const { color, pulse, label } = getStatusConfig(
     isEngineReady,
     isAudioLoaded,
@@ -1057,6 +1241,36 @@ function AudioControls() {
   const timelineStyle = {
     "--am-progress-percent": `${timelineProgressPercent}%`,
   };
+  const hasRecentUploads = recentUploads.length > 0;
+
+  useEffect(() => {
+    if (!showRecentUploadsPanel) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event) => {
+      if (
+        recentUploadsPanelRef.current?.contains(event.target) ||
+        recentUploadsButtonRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setShowRecentUploadsPanel(false);
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setShowRecentUploadsPanel(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showRecentUploadsPanel]);
 
   return (
     <>
@@ -1136,7 +1350,12 @@ function AudioControls() {
             {/* ── Center: track info ── */}
             <div
               className="am-track"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                setShowRecentUploadsPanel(false);
+                setShowDeviceMenu(false);
+                setShowSoundCloudPanel(false);
+                fileInputRef.current?.click();
+              }}
               title="Upload audio"
             >
               <span className="am-track-label">
@@ -1148,27 +1367,51 @@ function AudioControls() {
                 type="file"
                 accept="audio/*"
                 hidden
-                onChange={handleFileChange}
+                onChange={(event) => {
+                  setShowRecentUploadsPanel(false);
+                  handleFileChange(event);
+                }}
               />
             </div>
 
-            {soundCloudEnabled ? (
+            {soundCloudEnabled || hasRecentUploads ? (
               <div className="am-source-tools">
-                <button
-                  className={`am-btn am-btn--soundcloud${
-                    showSoundCloudPanel || activeSource === "soundcloud"
-                      ? " am-btn--soundcloud-active"
-                      : ""
-                  }`}
-                  onClick={() => {
-                    setShowDeviceMenu(false);
-                    setShowSoundCloudPanel(!showSoundCloudPanel);
-                  }}
-                  title="Load SoundCloud track or playlist"
-                  aria-label="SoundCloud"
-                >
-                  <SoundCloudIcon />
-                </button>
+                {hasRecentUploads ? (
+                  <button
+                    ref={recentUploadsButtonRef}
+                    className={`am-btn am-btn--recent${
+                      showRecentUploadsPanel ? " am-btn--recent-active" : ""
+                    }`}
+                    onClick={() => {
+                      setShowDeviceMenu(false);
+                      setShowSoundCloudPanel(false);
+                      setShowRecentUploadsPanel(!showRecentUploadsPanel);
+                    }}
+                    title="Recent uploads"
+                    aria-label="Recent uploads"
+                  >
+                    <HistoryIcon />
+                  </button>
+                ) : null}
+
+                {soundCloudEnabled ? (
+                  <button
+                    className={`am-btn am-btn--soundcloud${
+                      showSoundCloudPanel || activeSource === "soundcloud"
+                        ? " am-btn--soundcloud-active"
+                        : ""
+                    }`}
+                    onClick={() => {
+                      setShowRecentUploadsPanel(false);
+                      setShowDeviceMenu(false);
+                      setShowSoundCloudPanel(!showSoundCloudPanel);
+                    }}
+                    title="Load SoundCloud track or playlist"
+                    aria-label="SoundCloud"
+                  >
+                    <SoundCloudIcon />
+                  </button>
+                ) : null}
               </div>
             ) : null}
 
@@ -1204,6 +1447,7 @@ function AudioControls() {
                 <button
                   className={`am-btn am-btn--mic${isMicActive ? " am-btn--mic-active" : ""}`}
                   onClick={async () => {
+                    setShowRecentUploadsPanel(false);
                     if (isMicActive) {
                       await handleMicToggle();
                     } else {
@@ -1276,6 +1520,49 @@ function AudioControls() {
             <div className="am-divider" />
           </div>
         </div>
+
+        {hasRecentUploads ? (
+          <div
+            ref={recentUploadsPanelRef}
+            className={`am-recent-panel${
+              showRecentUploadsPanel ? "" : " am-recent-hidden"
+            }`}
+            data-testid="recent-uploads-panel"
+          >
+            <div className="am-recent-header">
+              <span>
+                <HistoryIcon /> Recent uploads
+              </span>
+              <span>This tab only</span>
+            </div>
+            <p className="am-recent-helper">
+              Reload a recent local file without reopening the picker.
+            </p>
+            <ul className="am-recent-list">
+              {recentUploads.map((upload) => (
+                <li key={upload.id}>
+                  <button
+                    className="am-recent-item"
+                    onClick={async () => {
+                      setShowRecentUploadsPanel(false);
+                      await handleRecentUploadSelect(upload.id);
+                    }}
+                  >
+                    <span className="am-recent-item-main">
+                      <span className="am-recent-item-title">
+                        {upload.name}
+                      </span>
+                      <span className="am-recent-item-meta">
+                        {formatFileSize(upload.size)}
+                      </span>
+                    </span>
+                    <span className="am-recent-item-action">Reload</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         {soundCloudEnabled ? (
           <div

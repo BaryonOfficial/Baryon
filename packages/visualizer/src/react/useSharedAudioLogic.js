@@ -3,6 +3,8 @@ import { getDefaultAudioSession } from "../core/audio/audioSetup.js";
 
 export function useSharedAudioLogic({
   setFileName,
+  resetFileName,
+  registerRecentFile,
   setIsAudioLoaded,
   setIsPlaying,
   setIsMicActive,
@@ -16,6 +18,19 @@ export function useSharedAudioLogic({
 }) {
   const audioSession = getDefaultAudioSession();
   const activeFileUrlRef = useRef(null);
+
+  const clearLoadedFileState = useCallback(
+    ({ resetLabel = true } = {}) => {
+      if (activeFileUrlRef.current) {
+        URL.revokeObjectURL(activeFileUrlRef.current);
+        activeFileUrlRef.current = null;
+      }
+      if (resetLabel) {
+        resetFileName?.();
+      }
+    },
+    [resetFileName],
+  );
 
   const syncStatus = useCallback(() => {
     const status = audioSession.getStatus();
@@ -64,17 +79,15 @@ export function useSharedAudioLogic({
 
   useEffect(() => {
     return () => {
-      if (activeFileUrlRef.current) {
-        URL.revokeObjectURL(activeFileUrlRef.current);
-        activeFileUrlRef.current = null;
-      }
+      clearLoadedFileState({ resetLabel: false });
     };
-  }, []);
+  }, [clearLoadedFileState]);
 
-  const handleFileChange = useCallback(
-    (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
+  const loadLocalFile = useCallback(
+    async (file) => {
+      if (!file) {
+        return false;
+      }
 
       if (isMicActive) {
         audioSession.stopMicRecordStream();
@@ -83,22 +96,40 @@ export function useSharedAudioLogic({
       setFileName(file.name);
       const fileURL = URL.createObjectURL(file);
       const previousFileUrl = activeFileUrlRef.current;
-      audioSession
-        .loadAudio(fileURL)
-        .then(() => {
-          if (previousFileUrl && previousFileUrl !== fileURL) {
-            URL.revokeObjectURL(previousFileUrl);
-          }
-          activeFileUrlRef.current = fileURL;
-          syncStatus();
-        })
-        .catch((error) => {
-          URL.revokeObjectURL(fileURL);
-          console.error("Error loading audio:", error);
-          setIsAudioLoaded(false);
-        });
+
+      try {
+        await audioSession.loadAudio(fileURL);
+        if (previousFileUrl && previousFileUrl !== fileURL) {
+          URL.revokeObjectURL(previousFileUrl);
+        }
+        activeFileUrlRef.current = fileURL;
+        registerRecentFile?.(file);
+        syncStatus();
+        return true;
+      } catch (error) {
+        URL.revokeObjectURL(fileURL);
+        console.error("Error loading audio:", error);
+        setIsAudioLoaded(false);
+        return false;
+      }
     },
-    [audioSession, isMicActive, setFileName, setIsAudioLoaded, syncStatus],
+    [
+      audioSession,
+      isMicActive,
+      registerRecentFile,
+      setFileName,
+      setIsAudioLoaded,
+      syncStatus,
+    ],
+  );
+
+  const handleFileChange = useCallback(
+    (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      void loadLocalFile(file);
+    },
+    [loadLocalFile],
   );
 
   const handlePlayPause = useCallback(async () => {
@@ -121,14 +152,22 @@ export function useSharedAudioLogic({
       if (isMicActive) {
         audioSession.stopMicRecordStream();
       } else {
+        clearLoadedFileState();
         audioSession.stopAudio();
         await audioSession.startMicRecordStream(selectedDevice);
       }
       syncStatus();
     } catch (error) {
       console.error("Error toggling microphone:", error);
+      syncStatus();
     }
-  }, [audioSession, isMicActive, selectedDevice, syncStatus]);
+  }, [
+    audioSession,
+    clearLoadedFileState,
+    isMicActive,
+    selectedDevice,
+    syncStatus,
+  ]);
 
   const handleVolumeChange = useCallback(
     (value) => {
@@ -144,8 +183,16 @@ export function useSharedAudioLogic({
     syncStatus();
   }, [audioSession, syncStatus]);
 
+  const handleRecentFileSelect = useCallback(
+    async (file) => {
+      await loadLocalFile(file);
+    },
+    [loadLocalFile],
+  );
+
   return {
     handleFileChange,
+    handleRecentFileSelect,
     handlePlayPause,
     handleStop,
     handleMicToggle,
