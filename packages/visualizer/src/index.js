@@ -4,6 +4,7 @@ export {
   getDefaultAudioSession,
   attachAudio,
   loadAudio,
+  loadStream,
   playPauseAudio,
   stopAudio,
   setAudioVolume,

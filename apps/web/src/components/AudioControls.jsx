@@ -105,20 +105,10 @@ function VolumeIcon({ muted }) {
   );
 }
 
-function LinkIcon() {
+function SoundCloudIcon() {
   return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M10 13a5 5 0 0 0 7.07 0l3.18-3.18a5 5 0 0 0-7.07-7.07L11 5" />
-      <path d="M14 11a5 5 0 0 0-7.07 0L3.76 14.18a5 5 0 1 0 7.07 7.07L13 19" />
+    <svg width="16" height="10" viewBox="0 0 64 40" fill="currentColor">
+      <path d="M25.2 15.1A11.3 11.3 0 0 0 14 26.4V28H9.6A9.6 9.6 0 0 0 0 37.6 2.4 2.4 0 0 0 2.4 40h50a11.6 11.6 0 0 0 0-23.1 15 15 0 0 0-27.2-1.8Z" />
     </svg>
   );
 }
@@ -198,6 +188,14 @@ const CSS = `
   user-select: none;
   white-space: nowrap;
   max-width: calc(100vw - 1.5rem);
+  box-sizing: border-box;
+}
+
+.am-source-row,
+.am-actions-row,
+.am-volume-row,
+.am-utility-row {
+  display: contents;
 }
 
 /* ── Track section ── */
@@ -210,8 +208,47 @@ const CSS = `
   cursor: pointer;
   transition: background 150ms;
   max-width: 190px;
+  min-width: 0;
 }
 .am-track:hover { background: rgba(255, 255, 255, 0.08); }
+
+.am-source-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.am-status-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+}
+
+.am-track-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.am-btn--soundcloud {
+  width: 30px;
+  height: 30px;
+  background: rgba(255, 85, 0, 0.16);
+  color: #ff7a1a;
+}
+
+.am-btn--soundcloud:hover {
+  background: rgba(255, 85, 0, 0.28);
+}
+
+.am-btn--soundcloud-active {
+  background: rgba(255, 85, 0, 0.32);
+  color: #ff9c52;
+}
 
 .am-status-dot {
   flex-shrink: 0;
@@ -224,6 +261,7 @@ const CSS = `
   overflow: hidden;
   max-width: 145px;
   display: block;
+  min-width: 0;
 }
 
 .am-filename {
@@ -321,6 +359,10 @@ const CSS = `
   gap: 0.45rem;
 }
 
+.am-volume-meta {
+  display: none;
+}
+
 .am-btn--volume {
   width: 30px;
   height: 30px;
@@ -383,6 +425,195 @@ const CSS = `
   overflow: hidden;
 }
 
+.am-soundcloud-panel {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.8rem);
+  transform: translateX(-50%);
+  width: min(30rem, calc(100vw - 1.5rem));
+  padding: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  background: rgba(20, 20, 24, 0.94);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.44);
+  z-index: 70;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  white-space: normal;
+  transition:
+    opacity 160ms ease,
+    visibility 160ms ease,
+    transform 160ms ease;
+}
+
+.am-soundcloud-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(0.4rem);
+}
+
+.am-soundcloud-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.am-soundcloud-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.am-soundcloud-input {
+  flex: 1;
+  min-width: 0;
+  height: 2.4rem;
+  padding: 0 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.82rem;
+  outline: none;
+}
+
+.am-soundcloud-input::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.am-soundcloud-input:focus {
+  border-color: rgba(255, 122, 26, 0.68);
+}
+
+.am-soundcloud-submit {
+  height: 2.4rem;
+  padding: 0 0.95rem;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff7a1a, #ff5500);
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.am-soundcloud-submit:hover {
+  filter: brightness(1.05);
+}
+
+.am-soundcloud-helper,
+.am-soundcloud-error {
+  margin: 0.55rem 0 0;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.am-soundcloud-helper {
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.am-soundcloud-error {
+  color: #ff8f85;
+}
+
+.am-soundcloud-meta {
+  margin-top: 0.7rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.am-soundcloud-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.am-soundcloud-index {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.am-soundcloud-subtitle {
+  margin: 0.35rem 0 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.am-soundcloud-list {
+  margin: 0.65rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.am-soundcloud-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.am-soundcloud-item-current {
+  background: rgba(255, 122, 26, 0.16);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.am-soundcloud-item-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.73rem;
+  color: rgba(255, 255, 255, 0.84);
+}
+
+.am-soundcloud-item-current .am-soundcloud-item-title {
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.am-soundcloud-item-artist {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.am-soundcloud-empty {
+  margin: 0.7rem 0 0;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
 .am-device-empty {
   padding: 0.5rem 1rem;
   font-size: 0.8125rem;
@@ -406,67 +637,6 @@ const CSS = `
 .am-device-item:hover { background: rgba(255, 255, 255, 0.08); }
 .am-device-item--active { color: #0a84ff; }
 
-.am-legal-wrap {
-  display: none;
-  position: relative;
-}
-
-.am-legal-details {
-  position: relative;
-}
-
-.am-legal-summary {
-  list-style: none;
-  width: 30px;
-  height: 30px;
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.am-legal-summary::-webkit-details-marker {
-  display: none;
-}
-
-.am-legal-details[open] .am-legal-summary {
-  background: rgba(255, 255, 255, 0.16);
-}
-
-.am-legal-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 0.6rem);
-  display: grid;
-  gap: 0.45rem;
-  min-width: 8.5rem;
-  padding: 0.6rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 0.9rem;
-  background: rgba(30, 30, 32, 0.92);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-}
-
-.am-legal-link {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.48rem 0.7rem;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
-  background: rgba(8, 10, 14, 0.72);
-  color: rgba(255, 255, 255, 0.92);
-  font-family: var(--font-ubuntu), sans-serif;
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-  text-decoration: none;
-  text-transform: uppercase;
-}
-
-.am-legal-link:hover {
-  border-color: rgba(255, 255, 255, 0.38);
-  background: rgba(20, 24, 32, 0.84);
-}
-
 @media (max-width: 960px) {
   .am-player {
     gap: 0.25rem;
@@ -489,39 +659,201 @@ const CSS = `
 @media (max-width: 720px) {
   .am-player {
     bottom: 1rem;
-    gap: 0.2rem;
-    padding: 0.42rem 0.65rem;
+    width: calc(100vw - 1rem);
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.55rem;
+    padding: 0.7rem 0.75rem;
+    border-radius: 1.6rem;
+  }
+
+  .am-source-row,
+  .am-actions-row,
+  .am-volume-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .am-source-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .am-actions-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .am-utility-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    grid-column: 3;
+    justify-self: end;
+  }
+
+  .am-volume-row {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 0 0.35rem;
+    gap: 0.35rem;
+  }
+
+  .am-status-group {
+    grid-column: 1;
+    justify-self: start;
   }
 
   .am-track {
-    max-width: 120px;
+    grid-column: 2;
+    justify-self: center;
+    flex: 0 1 auto;
+    width: min(15rem, calc(100vw - 8rem));
+    max-width: none;
+    padding: 0.35rem 1rem;
+  }
+
+  .am-source-row .am-track {
+    justify-content: center;
+  }
+
+  .am-source-tools {
+    grid-column: 3;
+    justify-self: end;
   }
 
   .am-filename-wrap {
-    max-width: 84px;
+    flex: 0 1 auto;
+    max-width: none;
+  }
+
+  .am-filename {
+    font-size: 0.78rem;
   }
 
   .am-divider {
     display: none;
   }
 
+  .am-transport {
+    grid-column: 2;
+    justify-self: center;
+    gap: 0.35rem;
+  }
+
+  .am-volume {
+    width: min(100%, 20rem);
+    min-width: 0;
+    gap: 0.35rem;
+    padding: 0.42rem 0.55rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  }
+
+  .am-volume-meta {
+    width: min(100%, 20rem);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0.2rem;
+    color: rgba(255, 255, 255, 0.48);
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
   .am-slider {
-    width: 52px;
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 3.5rem;
+  }
+
+  .am-device-menu {
+    right: 0;
   }
 }
 
-@media (max-width: 1040px) {
-  .am-legal-wrap {
-    display: block;
+@media (max-width: 480px) {
+  .am-player {
+    width: calc(100vw - 0.75rem);
+    padding: 0.65rem;
+  }
+
+  .am-track {
+    gap: 0.35rem;
+    width: min(14rem, calc(100vw - 7.2rem));
+    padding: 0.32rem 0.9rem;
+  }
+
+  .am-source-row,
+  .am-actions-row,
+  .am-volume-row {
+    gap: 0.3rem;
+  }
+
+  .am-utility-row {
+    gap: 0.3rem;
+  }
+
+  .am-volume-row {
+    padding: 0 0.2rem;
+  }
+
+  .am-btn--play {
+    width: 42px;
+    height: 42px;
+  }
+
+  .am-btn--stop,
+  .am-btn--volume {
+    width: 36px;
+    height: 36px;
+  }
+
+  .am-btn--mic {
+    width: 42px;
+    height: 42px;
+  }
+
+  .am-btn--soundcloud {
+    width: 56px;
+    height: 40px;
+    border-radius: 999px;
+  }
+
+  .am-slider {
+    min-width: 2.8rem;
+  }
+
+  .am-volume {
+    width: 100%;
+    padding: 0.38rem 0.5rem;
+  }
+
+  .am-volume-meta {
+    width: 100%;
+    font-size: 0.62rem;
   }
 }
+
 `;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
 function AudioControls() {
   const {
-    fileName,
+    soundCloudEnabled,
+    activeSource,
+    displayName,
     isPlaying,
     isMicActive,
     isAudioLoaded,
@@ -539,6 +871,18 @@ function AudioControls() {
     handleMuteToggle,
     setShowDeviceMenu,
     setSelectedDevice,
+    showSoundCloudPanel,
+    setShowSoundCloudPanel,
+    soundCloudInput,
+    setSoundCloudInput,
+    soundCloudError,
+    soundCloudInfo,
+    soundCloudQueue,
+    soundCloudCollectionTitle,
+    soundCloudCurrentTrack,
+    soundCloudCurrentIndex,
+    isSoundCloudLoading,
+    loadSoundCloudTrack,
   } = useAudio();
 
   const fileInputRef = useRef(null);
@@ -548,158 +892,250 @@ function AudioControls() {
     isPlaying,
     isMicActive,
   );
+  const volumePercent = Math.round(volume * 100);
+  const soundCloudListStart = Math.max(0, soundCloudCurrentIndex - 1);
+  const soundCloudVisibleTracks = soundCloudQueue.slice(
+    soundCloudListStart,
+    soundCloudListStart + 4,
+  );
 
   return (
     <>
       <style>{CSS}</style>
 
       <div className="am-player">
-        {/* ── Left: track info ── */}
-        <div
-          className="am-track"
-          onClick={() => fileInputRef.current?.click()}
-          title="Upload audio"
-        >
-          <span
-            className="am-status-dot"
-            title={label}
-            style={{
-              background: color,
-              animation: pulse ? "am-pulse 1.5s ease-in-out infinite" : "none",
-            }}
-          />
-          <MusicNoteIcon />
-          <ScrollingText text={fileName} />
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="audio/*"
-            hidden
-            onChange={handleFileChange}
-          />
+        <div className="am-source-row">
+          <div className="am-status-group">
+            <span
+              className="am-status-dot"
+              title={label}
+              style={{
+                background: color,
+                animation: pulse
+                  ? "am-pulse 1.5s ease-in-out infinite"
+                  : "none",
+              }}
+            />
+          </div>
+
+          {/* ── Center: track info ── */}
+          <div
+            className="am-track"
+            onClick={() => fileInputRef.current?.click()}
+            title="Upload audio"
+          >
+            <span className="am-track-label">
+              <MusicNoteIcon />
+              <ScrollingText text={displayName} />
+            </span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*"
+              hidden
+              onChange={handleFileChange}
+            />
+          </div>
+
+          {soundCloudEnabled ? (
+            <div className="am-source-tools">
+              <button
+                className={`am-btn am-btn--soundcloud${
+                  showSoundCloudPanel || activeSource === "soundcloud"
+                    ? " am-btn--soundcloud-active"
+                    : ""
+                }`}
+                onClick={() => {
+                  setShowDeviceMenu(false);
+                  setShowSoundCloudPanel(!showSoundCloudPanel);
+                }}
+                title="Load SoundCloud track or playlist"
+                aria-label="SoundCloud"
+              >
+                <SoundCloudIcon />
+              </button>
+            </div>
+          ) : null}
+
+          <div className="am-divider" />
         </div>
 
-        <div className="am-divider" />
+        <div className="am-actions-row">
+          {/* ── Center: transport ── */}
+          <div className="am-transport">
+            <button
+              className="am-btn am-btn--play"
+              onClick={handlePlayPause}
+              disabled={!isAudioLoaded}
+              title={isPlaying ? "Pause" : "Play"}
+            >
+              {isPlaying ? <PauseIcon /> : <PlayIcon />}
+            </button>
+            <button
+              className="am-btn am-btn--stop"
+              onClick={handleStop}
+              disabled={!isAudioLoaded}
+              title="Stop"
+            >
+              <StopIcon />
+            </button>
+          </div>
 
-        {/* ── Center: transport ── */}
-        <div className="am-transport">
-          <button
-            className="am-btn am-btn--play"
-            onClick={handlePlayPause}
-            disabled={!isAudioLoaded}
-            title={isPlaying ? "Pause" : "Play"}
-          >
-            {isPlaying ? <PauseIcon /> : <PlayIcon />}
-          </button>
-          <button
-            className="am-btn am-btn--stop"
-            onClick={handleStop}
-            disabled={!isAudioLoaded}
-            title="Stop"
-          >
-            <StopIcon />
-          </button>
-        </div>
+          <div className="am-divider" />
 
-        <div className="am-divider" />
+          <div className="am-utility-row">
+            {/* ── Right: mic + device menu ── */}
+            <div className="am-mic-wrap">
+              <button
+                className={`am-btn am-btn--mic${isMicActive ? " am-btn--mic-active" : ""}`}
+                onClick={async () => {
+                  if (isMicActive) {
+                    await handleMicToggle();
+                  } else {
+                    setShowDeviceMenu(!showDeviceMenu);
+                  }
+                }}
+                title={isMicActive ? "Stop mic input" : "Select audio input"}
+              >
+                <MicIcon />
+              </button>
 
-        <div className="am-volume">
-          <button
-            className="am-btn am-btn--volume"
-            onClick={handleMuteToggle}
-            title={isMuted ? "Unmute output" : "Mute output"}
-          >
-            <VolumeIcon muted={isMuted || volume <= 0.001} />
-          </button>
-          <input
-            className="am-slider"
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={volume}
-            onChange={(event) => {
-              handleVolumeChange(Number(event.target.value));
-            }}
-            aria-label="Volume"
-            title={`Volume ${Math.round(volume * 100)}%`}
-          />
-        </div>
-
-        <div className="am-divider" />
-
-        {/* ── Right: mic + device menu ── */}
-        <div className="am-mic-wrap">
-          <button
-            className={`am-btn am-btn--mic${isMicActive ? " am-btn--mic-active" : ""}`}
-            onClick={async () => {
-              if (isMicActive) {
-                await handleMicToggle();
-              } else {
-                setShowDeviceMenu(!showDeviceMenu);
-              }
-            }}
-            title={isMicActive ? "Stop mic input" : "Select audio input"}
-          >
-            <MicIcon />
-          </button>
-
-          {showDeviceMenu && (
-            <div className="am-device-menu">
-              {audioDevices.length === 0 ? (
-                <p className="am-device-empty">No input devices found</p>
-              ) : (
-                audioDevices.map((device) => (
-                  <button
-                    key={device.deviceId}
-                    className={`am-device-item${
-                      selectedDevice === device.deviceId
-                        ? " am-device-item--active"
-                        : ""
-                    }`}
-                    onClick={async () => {
-                      setSelectedDevice(device.deviceId);
-                      setShowDeviceMenu(false);
-                      await handleMicToggle();
-                    }}
-                  >
-                    {device.label || `Device ${device.deviceId.slice(0, 8)}`}
-                  </button>
-                ))
+              {showDeviceMenu && (
+                <div className="am-device-menu">
+                  {audioDevices.length === 0 ? (
+                    <p className="am-device-empty">No input devices found</p>
+                  ) : (
+                    audioDevices.map((device) => (
+                      <button
+                        key={device.deviceId}
+                        className={`am-device-item${
+                          selectedDevice === device.deviceId
+                            ? " am-device-item--active"
+                            : ""
+                        }`}
+                        onClick={async () => {
+                          setSelectedDevice(device.deviceId);
+                          setShowDeviceMenu(false);
+                          await handleMicToggle();
+                        }}
+                      >
+                        {device.label ||
+                          `Device ${device.deviceId.slice(0, 8)}`}
+                      </button>
+                    ))
+                  )}
+                </div>
               )}
             </div>
-          )}
+          </div>
         </div>
 
-        <div className="am-legal-wrap">
-          <details className="am-legal-details">
-            <summary
-              className="am-btn am-legal-summary"
-              aria-label="Licensing and source"
-              title="Licensing and source"
+        <div className="am-volume-row">
+          <div className="am-volume-meta" aria-hidden="true">
+            <span>App Volume</span>
+            <span>{volumePercent}%</span>
+          </div>
+          <div className="am-volume">
+            <button
+              className="am-btn am-btn--volume"
+              onClick={handleMuteToggle}
+              title={isMuted ? "Unmute app playback" : "Mute app playback"}
             >
-              <LinkIcon />
-            </summary>
-            <div className="am-legal-menu">
-              <a
-                className="am-legal-link"
-                href="https://github.com/BaryonOfficial/Baryon"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Source
-              </a>
-              <a
-                className="am-legal-link"
-                href="https://github.com/BaryonOfficial/Baryon/blob/main/LICENSING.md"
-                target="_blank"
-                rel="noreferrer"
-              >
-                License
-              </a>
-            </div>
-          </details>
+              <VolumeIcon muted={isMuted || volume <= 0.001} />
+            </button>
+            <input
+              className="am-slider"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={volume}
+              onChange={(event) => {
+                handleVolumeChange(Number(event.target.value));
+              }}
+              aria-label="App playback volume"
+              title={`App playback volume ${volumePercent}%`}
+            />
+          </div>
+
+          <div className="am-divider" />
         </div>
+
+        {soundCloudEnabled ? (
+          <div
+            className={`am-soundcloud-panel${showSoundCloudPanel ? "" : " am-soundcloud-hidden"}`}
+          >
+            <div className="am-soundcloud-header">
+              <SoundCloudIcon />
+              <span>SoundCloud</span>
+            </div>
+            <div className="am-soundcloud-form">
+              <input
+                className="am-soundcloud-input"
+                type="url"
+                value={soundCloudInput}
+                onChange={(event) => setSoundCloudInput(event.target.value)}
+                placeholder="Paste a SoundCloud track or playlist URL"
+                aria-label="SoundCloud URL"
+              />
+              <button
+                className="am-soundcloud-submit"
+                onClick={loadSoundCloudTrack}
+                disabled={isSoundCloudLoading}
+              >
+                {isSoundCloudLoading ? "Loading" : "Load"}
+              </button>
+            </div>
+            {soundCloudError ? (
+              <p className="am-soundcloud-error">{soundCloudError}</p>
+            ) : (
+              <p className="am-soundcloud-helper">{soundCloudInfo}</p>
+            )}
+            {soundCloudQueue.length > 0 ? (
+              <div className="am-soundcloud-meta">
+                <p className="am-soundcloud-title">
+                  <span>
+                    {soundCloudCurrentTrack?.title || soundCloudCollectionTitle}
+                  </span>
+                  <span className="am-soundcloud-index">
+                    {soundCloudQueue.length > 1
+                      ? `${Math.max(soundCloudCurrentIndex + 1, 1)} / ${soundCloudQueue.length}`
+                      : "Track"}
+                  </span>
+                </p>
+                <p className="am-soundcloud-subtitle">
+                  {soundCloudCurrentTrack?.artistName ||
+                    soundCloudCollectionTitle}
+                </p>
+                <ul className="am-soundcloud-list">
+                  {soundCloudVisibleTracks.map((track, index) => {
+                    const trackIndex = soundCloudListStart + index;
+                    const isCurrent = trackIndex === soundCloudCurrentIndex;
+                    return (
+                      <li
+                        key={track.id || `${track.title}-${trackIndex}`}
+                        className={`am-soundcloud-item${isCurrent ? " am-soundcloud-item-current" : ""}`}
+                      >
+                        <span className="am-soundcloud-item-title">
+                          {track.title}
+                        </span>
+                        <span className="am-soundcloud-item-artist">
+                          {track.artistName || "SoundCloud"}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : (
+              <div className="am-soundcloud-empty">
+                Public SoundCloud links now stream through Baryon&apos;s own
+                audio graph, so the same cymatic analysis path works without a
+                local file.
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
     </>
   );

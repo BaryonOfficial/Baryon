@@ -1,6 +1,6 @@
 import React from "react";
 
-const UnsupportedWarning = () => (
+const UnsupportedWarning = ({ reason = "browser" }) => (
   <div
     style={{
       position: "fixed",
@@ -14,9 +14,9 @@ const UnsupportedWarning = () => (
       zIndex: 1000,
     }}
   >
-    The music visualizer is not supported on mobile, tablet and/or your browser.
-    Please use a Chromium-based browser (like Chrome, Brave or Edge) on a
-    desktop for the best experience.
+    {reason === "mobile"
+      ? "Baryon runs best on desktop. Mobile support is currently degraded, so please open the web app on a desktop browser."
+      : "The music visualizer requires a browser with WebGPU support. Please switch to a WebGPU-capable desktop browser and try again."}
   </div>
 );
 
