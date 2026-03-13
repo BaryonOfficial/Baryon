@@ -119,6 +119,12 @@ async function setControl(page, key, value) {
   );
 }
 
+async function readTimelineValue(page) {
+  return page.getByTestId("playback-timeline").evaluate((input) => {
+    return Number(input.value);
+  });
+}
+
 test.describe("Baryon control smoke", () => {
   test("updates critical runtime values through the live control surface", async ({
     page,
@@ -337,10 +343,10 @@ test.describe("Baryon control smoke", () => {
     await page.locator('input[type="file"]').setInputFiles({
       name: "smoke-tone.wav",
       mimeType: "audio/wav",
-      buffer: createMonoWavBuffer(),
+      buffer: createMonoWavBuffer({ durationSeconds: 4 }),
     });
 
-    await page.getByRole("button", { name: "Play" }).click();
+    await page.locator(".am-btn--play").click();
 
     await expect
       .poll(() =>
@@ -361,7 +367,7 @@ test.describe("Baryon control smoke", () => {
         modeSlotCount: expect.any(Number),
       });
 
-    await page.getByLabel("Volume").evaluate((input) => {
+    await page.locator(".am-slider").evaluate((input) => {
       input.value = "0";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
@@ -402,10 +408,10 @@ test.describe("Baryon control smoke", () => {
     await page.locator('input[type="file"]').setInputFiles({
       name: "smoke-tone.wav",
       mimeType: "audio/wav",
-      buffer: createMonoWavBuffer(),
+      buffer: createMonoWavBuffer({ durationSeconds: 4 }),
     });
 
-    await page.getByRole("button", { name: "Play" }).click();
+    await page.locator(".am-btn--play").click();
 
     await expect
       .poll(() =>
@@ -426,7 +432,7 @@ test.describe("Baryon control smoke", () => {
         modeSlotCount: expect.any(Number),
       });
 
-    await page.getByTitle("Mute output").click();
+    await page.locator(".am-btn--volume").click();
 
     await expect
       .poll(() =>
@@ -449,5 +455,113 @@ test.describe("Baryon control smoke", () => {
         modeSlotCount: expect.any(Number),
         avgDensity: expect.any(Number),
       });
+  });
+
+  test("shows a seekable playback timeline for finite file playback", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "timeline-tone.wav",
+      mimeType: "audio/wav",
+      buffer: createMonoWavBuffer({ durationSeconds: 4 }),
+    });
+
+    const timeline = page.getByTestId("playback-timeline");
+    await expect(timeline).toBeVisible();
+    await expect.poll(() => readTimelineValue(page)).toBe(0);
+
+    await page.locator(".am-btn--play").click();
+
+    await expect.poll(() => readTimelineValue(page)).toBeGreaterThan(0.2);
+  });
+
+  test("clicking the playback timeline seeks to a later point", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "seek-tone.wav",
+      mimeType: "audio/wav",
+      buffer: createMonoWavBuffer({ durationSeconds: 4 }),
+    });
+
+    await page.locator(".am-btn--play").click();
+    const timeline = page.getByTestId("playback-timeline");
+    const box = await timeline.boundingBox();
+
+    if (!box) {
+      throw new Error("Playback timeline did not render a bounding box.");
+    }
+
+    await page.mouse.click(box.x + box.width * 0.8, box.y + box.height / 2);
+
+    await expect.poll(() => readTimelineValue(page)).toBeGreaterThan(2.5);
+  });
+
+  test("drag scrubbing previews while paused and resumes on release", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "drag-tone.wav",
+      mimeType: "audio/wav",
+      buffer: createMonoWavBuffer({ durationSeconds: 4 }),
+    });
+
+    await page.locator(".am-btn--play").click();
+    const timeline = page.getByTestId("playback-timeline");
+    const box = await timeline.boundingBox();
+
+    if (!box) {
+      throw new Error("Playback timeline did not render a bounding box.");
+    }
+
+    await page.mouse.move(box.x + box.width * 0.25, box.y + box.height / 2);
+    await page.mouse.down();
+
+    await expect(page.locator('.am-btn--play[title="Play"]')).toBeVisible();
+
+    await page.mouse.move(box.x + box.width * 0.65, box.y + box.height / 2, {
+      steps: 8,
+    });
+
+    await expect.poll(() => readTimelineValue(page)).toBeGreaterThan(2);
+
+    await page.mouse.up();
+
+    await expect(page.locator('.am-btn--play[title="Pause"]')).toBeVisible();
+    await expect.poll(() => readTimelineValue(page)).toBeGreaterThan(2);
+  });
+
+  test("hides the playback timeline while mic input is active", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await installFakeMicrophone(page);
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.getByTitle("Select audio input").click();
+    await page.getByRole("button", { name: "Fake Microphone" }).click();
+
+    await expect(page.getByTestId("playback-timeline")).toHaveCount(0);
   });
 });

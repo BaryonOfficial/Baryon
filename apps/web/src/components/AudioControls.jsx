@@ -158,6 +158,13 @@ function getStatusConfig(isEngineReady, isAudioLoaded, isPlaying, isMicActive) {
   return { color: "#ff9f0a", pulse: true, label: "Initializing" };
 }
 
+function formatClockTime(totalSeconds) {
+  const safeSeconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = String(safeSeconds % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const CSS = `
@@ -166,12 +173,22 @@ const CSS = `
   50%       { opacity: 0.3; }
 }
 
-.am-player {
+.am-player-shell {
   position: fixed;
   bottom: 1.75rem;
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.55rem;
+  width: fit-content;
+  max-width: calc(100vw - 1.5rem);
+}
+
+.am-player {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.375rem;
@@ -187,8 +204,15 @@ const CSS = `
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
   user-select: none;
   white-space: nowrap;
-  max-width: calc(100vw - 1.5rem);
   box-sizing: border-box;
+}
+
+.am-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  width: 100%;
 }
 
 .am-source-row,
@@ -196,6 +220,81 @@ const CSS = `
 .am-volume-row,
 .am-utility-row {
   display: contents;
+}
+
+.am-timeline-shell {
+  display: flex;
+  align-items: center;
+  padding: 0.55rem 0.875rem 0.65rem;
+  background: rgba(28, 28, 30, 0.72);
+  backdrop-filter: blur(22px) saturate(170%);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.38),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+.am-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.am-timeline-time {
+  min-width: 2.2rem;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.67rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.am-progress {
+  --am-progress-percent: 0%;
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 4px;
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.92) 0%,
+    rgba(255, 255, 255, 0.92) var(--am-progress-percent),
+    rgba(255, 255, 255, 0.14) var(--am-progress-percent),
+    rgba(255, 255, 255, 0.14) 100%
+  );
+}
+
+.am-progress::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.am-progress::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.am-progress::-moz-range-track {
+  height: 4px;
+  border: none;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 /* ── Track section ── */
@@ -638,8 +737,11 @@ const CSS = `
 .am-device-item--active { color: #0a84ff; }
 
 @media (max-width: 960px) {
+  .am-player-shell {
+    gap: 0.42rem;
+  }
+
   .am-player {
-    gap: 0.25rem;
     padding: 0.45rem 0.75rem;
   }
 
@@ -654,16 +756,25 @@ const CSS = `
   .am-slider {
     width: 64px;
   }
+
+  .am-timeline-shell {
+    padding: 0.48rem 0.75rem 0.58rem;
+  }
+
+  .am-timeline-row {
+    min-width: 11rem;
+  }
 }
 
 @media (max-width: 720px) {
-  .am-player {
+  .am-player-shell {
     bottom: 1rem;
     width: calc(100vw - 1rem);
     max-width: none;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
     gap: 0.55rem;
+  }
+
+  .am-player {
     padding: 0.7rem 0.75rem;
     border-radius: 1.6rem;
   }
@@ -704,6 +815,17 @@ const CSS = `
     align-items: center;
     padding: 0 0.35rem;
     gap: 0.35rem;
+  }
+
+  .am-timeline-shell {
+    padding: 0.58rem 0.75rem 0.66rem;
+    border-radius: 1.35rem;
+  }
+
+  .am-timeline-row {
+    width: 100%;
+    min-width: 0;
+    gap: 0.45rem;
   }
 
   .am-status-group {
@@ -777,14 +899,21 @@ const CSS = `
     min-width: 3.5rem;
   }
 
+  .am-progress {
+    min-width: 0;
+  }
+
   .am-device-menu {
     right: 0;
   }
 }
 
 @media (max-width: 480px) {
-  .am-player {
+  .am-player-shell {
     width: calc(100vw - 0.75rem);
+  }
+
+  .am-player {
     padding: 0.65rem;
   }
 
@@ -806,6 +935,10 @@ const CSS = `
 
   .am-volume-row {
     padding: 0 0.2rem;
+  }
+
+  .am-timeline-shell {
+    padding: 0.54rem 0.65rem 0.62rem;
   }
 
   .am-btn--play {
@@ -842,6 +975,11 @@ const CSS = `
   .am-volume-meta {
     width: 100%;
     font-size: 0.62rem;
+  }
+
+  .am-timeline-time {
+    min-width: 2rem;
+    font-size: 0.64rem;
   }
 }
 
@@ -883,9 +1021,17 @@ function AudioControls() {
     soundCloudCurrentIndex,
     isSoundCloudLoading,
     loadSoundCloudTrack,
+    transportState,
+    scrubPreviewSeconds,
+    isScrubbing,
+    beginScrub,
+    previewScrub,
+    commitScrub,
+    cancelScrub,
   } = useAudio();
 
   const fileInputRef = useRef(null);
+  const timelinePointerActiveRef = useRef(false);
   const { color, pulse, label } = getStatusConfig(
     isEngineReady,
     isAudioLoaded,
@@ -898,167 +1044,237 @@ function AudioControls() {
     soundCloudListStart,
     soundCloudListStart + 4,
   );
+  const timelineValue =
+    isScrubbing && scrubPreviewSeconds != null
+      ? scrubPreviewSeconds
+      : transportState.currentTimeSeconds;
+  const timelineDuration = transportState.durationSeconds;
+  const timelineProgressPercent =
+    timelineDuration > 0
+      ? Math.max(0, Math.min(100, (timelineValue / timelineDuration) * 100))
+      : 0;
+  /** @type {import("react").CSSProperties & { "--am-progress-percent": string }} */
+  const timelineStyle = {
+    "--am-progress-percent": `${timelineProgressPercent}%`,
+  };
 
   return (
     <>
       <style>{CSS}</style>
 
-      <div className="am-player">
-        <div className="am-source-row">
-          <div className="am-status-group">
-            <span
-              className="am-status-dot"
-              title={label}
-              style={{
-                background: color,
-                animation: pulse
-                  ? "am-pulse 1.5s ease-in-out infinite"
-                  : "none",
-              }}
-            />
-          </div>
-
-          {/* ── Center: track info ── */}
-          <div
-            className="am-track"
-            onClick={() => fileInputRef.current?.click()}
-            title="Upload audio"
-          >
-            <span className="am-track-label">
-              <MusicNoteIcon />
-              <ScrollingText text={displayName} />
-            </span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="audio/*"
-              hidden
-              onChange={handleFileChange}
-            />
-          </div>
-
-          {soundCloudEnabled ? (
-            <div className="am-source-tools">
-              <button
-                className={`am-btn am-btn--soundcloud${
-                  showSoundCloudPanel || activeSource === "soundcloud"
-                    ? " am-btn--soundcloud-active"
-                    : ""
-                }`}
-                onClick={() => {
-                  setShowDeviceMenu(false);
-                  setShowSoundCloudPanel(!showSoundCloudPanel);
+      <div className="am-player-shell">
+        {isAudioLoaded && transportState.canSeek ? (
+          <div className="am-timeline-shell">
+            <div className="am-timeline-row">
+              <span className="am-timeline-time" aria-hidden="true">
+                {formatClockTime(timelineValue)}
+              </span>
+              <input
+                className="am-progress"
+                data-testid="playback-timeline"
+                type="range"
+                min="0"
+                max={timelineDuration || 0}
+                step="0.01"
+                value={timelineValue}
+                onPointerDown={(event) => {
+                  timelinePointerActiveRef.current = true;
+                  void beginScrub(Number(event.currentTarget.value));
                 }}
-                title="Load SoundCloud track or playlist"
-                aria-label="SoundCloud"
-              >
-                <SoundCloudIcon />
-              </button>
-            </div>
-          ) : null}
-
-          <div className="am-divider" />
-        </div>
-
-        <div className="am-actions-row">
-          {/* ── Center: transport ── */}
-          <div className="am-transport">
-            <button
-              className="am-btn am-btn--play"
-              onClick={handlePlayPause}
-              disabled={!isAudioLoaded}
-              title={isPlaying ? "Pause" : "Play"}
-            >
-              {isPlaying ? <PauseIcon /> : <PlayIcon />}
-            </button>
-            <button
-              className="am-btn am-btn--stop"
-              onClick={handleStop}
-              disabled={!isAudioLoaded}
-              title="Stop"
-            >
-              <StopIcon />
-            </button>
-          </div>
-
-          <div className="am-divider" />
-
-          <div className="am-utility-row">
-            {/* ── Right: mic + device menu ── */}
-            <div className="am-mic-wrap">
-              <button
-                className={`am-btn am-btn--mic${isMicActive ? " am-btn--mic-active" : ""}`}
-                onClick={async () => {
-                  if (isMicActive) {
-                    await handleMicToggle();
-                  } else {
-                    setShowDeviceMenu(!showDeviceMenu);
+                onPointerUp={(event) => {
+                  if (!timelinePointerActiveRef.current) {
+                    return;
                   }
+                  timelinePointerActiveRef.current = false;
+                  void commitScrub(Number(event.currentTarget.value));
                 }}
-                title={isMicActive ? "Stop mic input" : "Select audio input"}
-              >
-                <MicIcon />
-              </button>
-
-              {showDeviceMenu && (
-                <div className="am-device-menu">
-                  {audioDevices.length === 0 ? (
-                    <p className="am-device-empty">No input devices found</p>
-                  ) : (
-                    audioDevices.map((device) => (
-                      <button
-                        key={device.deviceId}
-                        className={`am-device-item${
-                          selectedDevice === device.deviceId
-                            ? " am-device-item--active"
-                            : ""
-                        }`}
-                        onClick={async () => {
-                          setSelectedDevice(device.deviceId);
-                          setShowDeviceMenu(false);
-                          await handleMicToggle();
-                        }}
-                      >
-                        {device.label ||
-                          `Device ${device.deviceId.slice(0, 8)}`}
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
+                onPointerCancel={() => {
+                  timelinePointerActiveRef.current = false;
+                  void cancelScrub();
+                }}
+                onBlur={(event) => {
+                  if (!timelinePointerActiveRef.current) {
+                    return;
+                  }
+                  timelinePointerActiveRef.current = false;
+                  void commitScrub(Number(event.currentTarget.value));
+                }}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value);
+                  if (timelinePointerActiveRef.current) {
+                    previewScrub(nextValue);
+                    return;
+                  }
+                  void commitScrub(nextValue);
+                }}
+                aria-label="Playback position"
+                title={`Playback position ${formatClockTime(timelineValue)} of ${formatClockTime(timelineDuration)}`}
+                style={timelineStyle}
+              />
+              <span className="am-timeline-time" aria-hidden="true">
+                {formatClockTime(timelineDuration)}
+              </span>
             </div>
           </div>
-        </div>
+        ) : null}
 
-        <div className="am-volume-row">
-          <div className="am-volume-meta" aria-hidden="true">
-            <span>App Volume</span>
-            <span>{volumePercent}%</span>
-          </div>
-          <div className="am-volume">
-            <button
-              className="am-btn am-btn--volume"
-              onClick={handleMuteToggle}
-              title={isMuted ? "Unmute app playback" : "Mute app playback"}
+        <div className="am-player">
+          <div className="am-source-row">
+            <div className="am-status-group">
+              <span
+                className="am-status-dot"
+                title={label}
+                style={{
+                  background: color,
+                  animation: pulse
+                    ? "am-pulse 1.5s ease-in-out infinite"
+                    : "none",
+                }}
+              />
+            </div>
+
+            {/* ── Center: track info ── */}
+            <div
+              className="am-track"
+              onClick={() => fileInputRef.current?.click()}
+              title="Upload audio"
             >
-              <VolumeIcon muted={isMuted || volume <= 0.001} />
-            </button>
-            <input
-              className="am-slider"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={volume}
-              onChange={(event) => {
-                handleVolumeChange(Number(event.target.value));
-              }}
-              aria-label="App playback volume"
-              title={`App playback volume ${volumePercent}%`}
-            />
+              <span className="am-track-label">
+                <MusicNoteIcon />
+                <ScrollingText text={displayName} />
+              </span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="audio/*"
+                hidden
+                onChange={handleFileChange}
+              />
+            </div>
+
+            {soundCloudEnabled ? (
+              <div className="am-source-tools">
+                <button
+                  className={`am-btn am-btn--soundcloud${
+                    showSoundCloudPanel || activeSource === "soundcloud"
+                      ? " am-btn--soundcloud-active"
+                      : ""
+                  }`}
+                  onClick={() => {
+                    setShowDeviceMenu(false);
+                    setShowSoundCloudPanel(!showSoundCloudPanel);
+                  }}
+                  title="Load SoundCloud track or playlist"
+                  aria-label="SoundCloud"
+                >
+                  <SoundCloudIcon />
+                </button>
+              </div>
+            ) : null}
+
+            <div className="am-divider" />
           </div>
 
-          <div className="am-divider" />
+          <div className="am-actions-row">
+            {/* ── Center: transport ── */}
+            <div className="am-transport">
+              <button
+                className="am-btn am-btn--play"
+                onClick={handlePlayPause}
+                disabled={!isAudioLoaded}
+                title={isPlaying ? "Pause" : "Play"}
+              >
+                {isPlaying ? <PauseIcon /> : <PlayIcon />}
+              </button>
+              <button
+                className="am-btn am-btn--stop"
+                onClick={handleStop}
+                disabled={!isAudioLoaded}
+                title="Stop"
+              >
+                <StopIcon />
+              </button>
+            </div>
+
+            <div className="am-divider" />
+
+            <div className="am-utility-row">
+              {/* ── Right: mic + device menu ── */}
+              <div className="am-mic-wrap">
+                <button
+                  className={`am-btn am-btn--mic${isMicActive ? " am-btn--mic-active" : ""}`}
+                  onClick={async () => {
+                    if (isMicActive) {
+                      await handleMicToggle();
+                    } else {
+                      setShowDeviceMenu(!showDeviceMenu);
+                    }
+                  }}
+                  title={isMicActive ? "Stop mic input" : "Select audio input"}
+                >
+                  <MicIcon />
+                </button>
+
+                {showDeviceMenu && (
+                  <div className="am-device-menu">
+                    {audioDevices.length === 0 ? (
+                      <p className="am-device-empty">No input devices found</p>
+                    ) : (
+                      audioDevices.map((device) => (
+                        <button
+                          key={device.deviceId}
+                          className={`am-device-item${
+                            selectedDevice === device.deviceId
+                              ? " am-device-item--active"
+                              : ""
+                          }`}
+                          onClick={async () => {
+                            setSelectedDevice(device.deviceId);
+                            setShowDeviceMenu(false);
+                            await handleMicToggle();
+                          }}
+                        >
+                          {device.label ||
+                            `Device ${device.deviceId.slice(0, 8)}`}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="am-volume-row">
+            <div className="am-volume-meta" aria-hidden="true">
+              <span>App Volume</span>
+              <span>{volumePercent}%</span>
+            </div>
+            <div className="am-volume">
+              <button
+                className="am-btn am-btn--volume"
+                onClick={handleMuteToggle}
+                title={isMuted ? "Unmute app playback" : "Mute app playback"}
+              >
+                <VolumeIcon muted={isMuted || volume <= 0.001} />
+              </button>
+              <input
+                className="am-slider"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={volume}
+                onChange={(event) => {
+                  handleVolumeChange(Number(event.target.value));
+                }}
+                aria-label="App playback volume"
+                title={`App playback volume ${volumePercent}%`}
+              />
+            </div>
+
+            <div className="am-divider" />
+          </div>
         </div>
 
         {soundCloudEnabled ? (

@@ -340,6 +340,60 @@ describe("audio session", () => {
     });
   });
 
+  it("reports seekable transport state for finite files and updates paused offsets", async () => {
+    const session = createAttachedSession();
+    await session.loadAudio("good");
+
+    expect(session.getTransportState()).toEqual({
+      currentTimeSeconds: 0,
+      durationSeconds: 5,
+      canSeek: true,
+    });
+
+    await session.seekTo(2.5);
+
+    expect(session.getTransportState()).toEqual({
+      currentTimeSeconds: 2.5,
+      durationSeconds: 5,
+      canSeek: true,
+    });
+    expect(session.readClockSnapshot(2)).toMatchObject({
+      clockMode: "paused-playback",
+      time: 2.5,
+      deltaTime: 0,
+    });
+  });
+
+  it("reports seekable transport state for finite streams and updates current time", async () => {
+    const session = createAttachedSession();
+    const mediaElement = new MockMediaElement({
+      duration: 9,
+      currentTime: 0,
+    });
+
+    await session.loadStream({
+      element: mediaElement,
+      label: "Seekable Stream",
+      duration: 9,
+      sourceKind: "soundcloud",
+    });
+
+    expect(session.getTransportState()).toEqual({
+      currentTimeSeconds: 0,
+      durationSeconds: 9,
+      canSeek: true,
+    });
+
+    await session.seekTo(4.5);
+
+    expect(mediaElement.currentTime).toBe(4.5);
+    expect(session.getTransportState()).toEqual({
+      currentTimeSeconds: 4.5,
+      durationSeconds: 9,
+      canSeek: true,
+    });
+  });
+
   it("tracks mic lifecycle and clears state on stop", async () => {
     const session = createAttachedSession();
     await session.startMicRecordStream("device-1");
@@ -518,6 +572,61 @@ describe("audio session", () => {
     });
   });
 
+  it("restarts active file playback from the requested seek offset", async () => {
+    const session = createAttachedSession();
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+
+    await session.seekTo(3.25);
+
+    expect(session.getStatus()).toMatchObject({
+      isPlaying: true,
+      audioInputMode: "file",
+    });
+    expect(lastAudioContext.createdBufferSources).toHaveLength(2);
+    expect(
+      lastAudioContext.createdBufferSources.at(-1)?.startArgs,
+    ).toMatchObject({
+      when: 0,
+      offset: 3.25,
+    });
+    expect(session.getTransportState()).toMatchObject({
+      currentTimeSeconds: 3.25,
+      durationSeconds: 5,
+      canSeek: true,
+    });
+  });
+
+  it("updates active native stream playback without interrupting play state", async () => {
+    const session = createAttachedSession();
+    const mediaElement = new MockMediaElement({
+      duration: 8,
+      currentTime: 1,
+      paused: true,
+    });
+
+    await session.loadStream({
+      element: mediaElement,
+      label: "Playing Stream",
+      duration: 8,
+      sourceKind: "soundcloud",
+    });
+    await session.playPauseAudio();
+
+    await session.seekTo(5.5);
+
+    expect(mediaElement.currentTime).toBe(5.5);
+    expect(session.getStatus()).toMatchObject({
+      isPlaying: true,
+      sourceKind: "soundcloud",
+    });
+    expect(session.getTransportState()).toMatchObject({
+      currentTimeSeconds: 5.5,
+      durationSeconds: 8,
+      canSeek: true,
+    });
+  });
+
   it("resets playback state cleanly when a new file is loaded during playback", async () => {
     const session = createAttachedSession();
     await session.loadAudio("good");
@@ -604,6 +713,26 @@ describe("audio session", () => {
       analysisSource: "mic",
       isAudioLoaded: false,
     });
+  });
+
+  it("marks unloaded and mic sources as non-seekable", async () => {
+    const session = createAttachedSession();
+
+    expect(session.getTransportState()).toEqual({
+      currentTimeSeconds: 0,
+      durationSeconds: 0,
+      canSeek: false,
+    });
+    await expect(session.seekTo(1)).resolves.toBe(false);
+
+    await session.startMicRecordStream("device-1");
+
+    expect(session.getTransportState()).toEqual({
+      currentTimeSeconds: 0,
+      durationSeconds: 0,
+      canSeek: false,
+    });
+    await expect(session.seekTo(1)).resolves.toBe(false);
   });
 
   it("applies the ended callback even when registered before attach", async () => {

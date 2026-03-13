@@ -7,6 +7,8 @@ export {
   loadStream,
   playPauseAudio,
   stopAudio,
+  getTransportState,
+  seekTo,
   setAudioVolume,
   setAudioMuted,
   setMicSettings,

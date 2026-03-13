@@ -14,6 +14,22 @@ const DEFAULT_FILE_NAME = "Upload Audio";
 const DEFAULT_SOUNDCLOUD_LABEL = "SoundCloud";
 const SOUNDCLOUD_READY_MESSAGE =
   "Paste a public SoundCloud track or playlist to drive the live cymatic view.";
+const DEFAULT_TRANSPORT_STATE = {
+  currentTimeSeconds: 0,
+  durationSeconds: 0,
+  canSeek: false,
+};
+
+function clampTransportTime(value, durationSeconds) {
+  const nextValue = Number(value);
+  if (!Number.isFinite(nextValue) || nextValue < 0) {
+    return 0;
+  }
+  if (durationSeconds > 0) {
+    return Math.min(nextValue, durationSeconds);
+  }
+  return nextValue;
+}
 
 let hlsModulePromise = null;
 
@@ -192,6 +208,9 @@ export function AudioProvider({ children }) {
   const [soundCloudQueue, setSoundCloudQueue] = useState([]);
   const [soundCloudCurrentIndex, setSoundCloudCurrentIndex] = useState(-1);
   const [isSoundCloudLoading, setIsSoundCloudLoading] = useState(false);
+  const [transportState, setTransportState] = useState(DEFAULT_TRANSPORT_STATE);
+  const [scrubPreviewSeconds, setScrubPreviewSeconds] = useState(null);
+  const [isScrubbing, setIsScrubbing] = useState(false);
 
   const soundCloudAudioRef = useRef(null);
   const soundCloudHlsRef = useRef(null);
@@ -200,6 +219,9 @@ export function AudioProvider({ children }) {
   const soundCloudCurrentIndexRef = useRef(-1);
   const activeSourceRef = useRef("upload");
   const lastNonZeroVolumeRef = useRef(1);
+  const transportFrameRef = useRef(0);
+  const resumeAfterScrubRef = useRef(false);
+  const isScrubbingRef = useRef(false);
 
   const {
     handleFileChange: handleLocalFileChange,
@@ -234,18 +256,47 @@ export function AudioProvider({ children }) {
     activeSourceRef.current = activeSource;
   }, [activeSource]);
 
+  const clearScrubState = useCallback(() => {
+    isScrubbingRef.current = false;
+    resumeAfterScrubRef.current = false;
+    setIsScrubbing(false);
+    setScrubPreviewSeconds(null);
+  }, []);
+
+  const syncTransportState = useCallback(() => {
+    const nextTransportState = getDefaultAudioSession().getTransportState();
+    setTransportState(nextTransportState);
+    return nextTransportState;
+  }, []);
+
   const syncSessionStatus = useCallback(() => {
-    const status = getDefaultAudioSession().getStatus();
+    const audioSession = getDefaultAudioSession();
+    const status = audioSession.getStatus();
+    const nextTransportState = audioSession.getTransportState();
     setIsAudioLoaded(status.isAudioLoaded);
     setIsPlaying(status.isPlaying);
     setIsMicActive(status.isMicActive);
     setVolume(status.volume ?? 1);
     setIsMuted(status.muted ?? false);
+    setTransportState(nextTransportState);
     if ((status.volume ?? 0) > 0.001) {
       lastNonZeroVolumeRef.current = status.volume;
     }
+    if (!nextTransportState.canSeek) {
+      clearScrubState();
+    }
     return status;
-  }, []);
+  }, [clearScrubState]);
+
+  useEffect(() => {
+    if (isAudioLoaded && !isMicActive) {
+      syncTransportState();
+      return;
+    }
+
+    clearScrubState();
+    setTransportState(DEFAULT_TRANSPORT_STATE);
+  }, [clearScrubState, isAudioLoaded, isMicActive, syncTransportState]);
 
   const ensureSoundCloudAudioElement = useCallback(() => {
     const audioElement = soundCloudAudioRef.current;
@@ -278,6 +329,8 @@ export function AudioProvider({ children }) {
       setSoundCloudInfo(SOUNDCLOUD_READY_MESSAGE);
       setSoundCloudTrackTitle(DEFAULT_SOUNDCLOUD_LABEL);
       setSoundCloudCurrentIndex(-1);
+      clearScrubState();
+      setTransportState(DEFAULT_TRANSPORT_STATE);
 
       if (clearQueue) {
         soundCloudQueueRef.current = [];
@@ -286,7 +339,7 @@ export function AudioProvider({ children }) {
         setSoundCloudCollectionTitle(DEFAULT_SOUNDCLOUD_LABEL);
       }
     },
-    [destroySoundCloudHls],
+    [clearScrubState, destroySoundCloudHls],
   );
 
   const loadSoundCloudQueueIndex = useCallback(
@@ -379,6 +432,29 @@ export function AudioProvider({ children }) {
     },
     [destroySoundCloudHls, ensureSoundCloudAudioElement, syncSessionStatus],
   );
+
+  useEffect(() => {
+    if (!isAudioLoaded || isScrubbing || !transportState.canSeek) {
+      if (transportFrameRef.current) {
+        window.cancelAnimationFrame(transportFrameRef.current);
+        transportFrameRef.current = 0;
+      }
+      return undefined;
+    }
+
+    const tick = () => {
+      syncTransportState();
+      transportFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    transportFrameRef.current = window.requestAnimationFrame(tick);
+    return () => {
+      if (transportFrameRef.current) {
+        window.cancelAnimationFrame(transportFrameRef.current);
+        transportFrameRef.current = 0;
+      }
+    };
+  }, [isAudioLoaded, isScrubbing, syncTransportState, transportState.canSeek]);
 
   useEffect(() => {
     if (typeof Audio === "undefined") {
@@ -500,12 +576,13 @@ export function AudioProvider({ children }) {
 
   const handleFileChange = useCallback(
     (event) => {
+      clearScrubState();
       resetSoundCloudTransport();
       setActiveSource("upload");
       setShowSoundCloudPanel(false);
       handleLocalFileChange(event);
     },
-    [handleLocalFileChange, resetSoundCloudTransport],
+    [clearScrubState, handleLocalFileChange, resetSoundCloudTransport],
   );
 
   const handlePlayPause = useCallback(async () => {
@@ -533,9 +610,16 @@ export function AudioProvider({ children }) {
     }
 
     await handleLocalPlayPause();
-  }, [activeSource, handleLocalPlayPause, syncSessionStatus]);
+    syncTransportState();
+  }, [
+    activeSource,
+    handleLocalPlayPause,
+    syncSessionStatus,
+    syncTransportState,
+  ]);
 
   const handleStop = useCallback(() => {
+    clearScrubState();
     if (activeSource === "soundcloud") {
       getDefaultAudioSession().stopAudio();
       syncSessionStatus();
@@ -556,9 +640,17 @@ export function AudioProvider({ children }) {
     }
 
     handleLocalStop();
-  }, [activeSource, handleLocalStop, syncSessionStatus]);
+    syncTransportState();
+  }, [
+    activeSource,
+    clearScrubState,
+    handleLocalStop,
+    syncSessionStatus,
+    syncTransportState,
+  ]);
 
   const handleMicToggle = useCallback(async () => {
+    clearScrubState();
     if (!isMicActive) {
       resetSoundCloudTransport();
       setActiveSource("mic");
@@ -567,7 +659,12 @@ export function AudioProvider({ children }) {
     if (isMicActive) {
       setActiveSource("upload");
     }
-  }, [handleLocalMicToggle, isMicActive, resetSoundCloudTransport]);
+  }, [
+    clearScrubState,
+    handleLocalMicToggle,
+    isMicActive,
+    resetSoundCloudTransport,
+  ]);
 
   const handleVolumeChange = useCallback(
     (value) => {
@@ -604,9 +701,117 @@ export function AudioProvider({ children }) {
   const soundCloudCurrentTrack =
     soundCloudQueue[soundCloudCurrentIndex] ?? soundCloudQueue[0] ?? null;
 
+  const beginScrub = useCallback(
+    async (nextPreviewSeconds = null) => {
+      if (isScrubbingRef.current) {
+        if (nextPreviewSeconds != null) {
+          setScrubPreviewSeconds(
+            clampTransportTime(
+              nextPreviewSeconds,
+              transportState.durationSeconds,
+            ),
+          );
+        }
+        return;
+      }
+
+      const audioSession = getDefaultAudioSession();
+      const nextTransportState = audioSession.getTransportState();
+      if (!nextTransportState.canSeek) {
+        return;
+      }
+
+      isScrubbingRef.current = true;
+      setIsScrubbing(true);
+      setTransportState(nextTransportState);
+      setScrubPreviewSeconds(
+        clampTransportTime(
+          nextPreviewSeconds ?? nextTransportState.currentTimeSeconds,
+          nextTransportState.durationSeconds,
+        ),
+      );
+
+      const status = audioSession.getStatus();
+      resumeAfterScrubRef.current = status.isPlaying;
+
+      if (status.isPlaying) {
+        await audioSession.playPauseAudio();
+        syncSessionStatus();
+        syncTransportState();
+      }
+    },
+    [syncSessionStatus, syncTransportState, transportState.durationSeconds],
+  );
+
+  const previewScrub = useCallback(
+    (nextPreviewSeconds) => {
+      const durationSeconds = transportState.durationSeconds;
+      setScrubPreviewSeconds(
+        clampTransportTime(nextPreviewSeconds, durationSeconds),
+      );
+    },
+    [transportState.durationSeconds],
+  );
+
+  const commitScrub = useCallback(
+    async (nextTimeSeconds = null) => {
+      const audioSession = getDefaultAudioSession();
+      const currentTransportState = audioSession.getTransportState();
+      if (!currentTransportState.canSeek) {
+        clearScrubState();
+        setTransportState(currentTransportState);
+        return;
+      }
+
+      const targetTimeSeconds = clampTransportTime(
+        nextTimeSeconds ??
+          scrubPreviewSeconds ??
+          currentTransportState.currentTimeSeconds,
+        currentTransportState.durationSeconds,
+      );
+      const shouldResume = resumeAfterScrubRef.current;
+
+      clearScrubState();
+      await audioSession.seekTo(targetTimeSeconds);
+      syncSessionStatus();
+      syncTransportState();
+
+      if (shouldResume) {
+        await audioSession.playPauseAudio();
+        syncSessionStatus();
+        syncTransportState();
+      }
+    },
+    [
+      clearScrubState,
+      scrubPreviewSeconds,
+      syncSessionStatus,
+      syncTransportState,
+    ],
+  );
+
+  const cancelScrub = useCallback(async () => {
+    if (!isScrubbingRef.current) {
+      return;
+    }
+
+    const audioSession = getDefaultAudioSession();
+    const shouldResume = resumeAfterScrubRef.current;
+
+    clearScrubState();
+    syncTransportState();
+
+    if (shouldResume) {
+      await audioSession.playPauseAudio();
+      syncSessionStatus();
+      syncTransportState();
+    }
+  }, [clearScrubState, syncSessionStatus, syncTransportState]);
+
   const resetAudioSession = useCallback(() => {
     const audioSession = getDefaultAudioSession();
 
+    clearScrubState();
     resetSoundCloudTransport({
       clearQueue: true,
     });
@@ -623,9 +828,10 @@ export function AudioProvider({ children }) {
     setSoundCloudTrackTitle(DEFAULT_SOUNDCLOUD_LABEL);
     setSoundCloudError("");
     setSoundCloudInfo(SOUNDCLOUD_READY_MESSAGE);
+    setTransportState(DEFAULT_TRANSPORT_STATE);
 
     return audioSession.dispose();
-  }, [resetSoundCloudTransport]);
+  }, [clearScrubState, resetSoundCloudTransport]);
 
   useEffect(() => {
     return () => {
@@ -656,6 +862,9 @@ export function AudioProvider({ children }) {
     soundCloudCurrentTrack,
     soundCloudCurrentIndex,
     isSoundCloudLoading,
+    transportState,
+    scrubPreviewSeconds,
+    isScrubbing,
     setIsPlaying,
     setIsAudioLoaded,
     setIsEngineReady,
@@ -673,6 +882,10 @@ export function AudioProvider({ children }) {
     handleVolumeChange,
     handleMuteToggle,
     loadSoundCloudTrack,
+    beginScrub,
+    previewScrub,
+    commitScrub,
+    cancelScrub,
   };
 
   return (

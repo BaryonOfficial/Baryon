@@ -74,6 +74,8 @@ function createDefaultAudioSessionBindings(instance) {
     loadStream: (options) => instance.loadStream(options),
     playPauseAudio: () => instance.playPauseAudio(),
     stopAudio: () => instance.stopAudio(),
+    getTransportState: () => instance.getTransportState(),
+    seekTo: (timeSeconds) => instance.seekTo(timeSeconds),
     setAudioVolume: (value) => instance.setVolume(value),
     setAudioMuted: (value) => instance.setMuted(value),
     setMicSettings: (settings) => instance.setMicSettings(settings),
@@ -242,6 +244,14 @@ export function createAudioSession() {
           ensureAudioContext().currentTime - state.playbackStartedAtSeconds,
         ),
     );
+  }
+
+  function clampPlaybackTime(timeSeconds) {
+    const normalizedTime = normalizeDurationSeconds(timeSeconds);
+    if (state.playbackDurationSeconds <= 0) {
+      return normalizedTime;
+    }
+    return Math.min(normalizedTime, state.playbackDurationSeconds);
   }
 
   function clearActiveBufferSource() {
@@ -476,6 +486,24 @@ export function createAudioSession() {
     };
   }
 
+  function getTransportState() {
+    const durationSeconds = normalizeDurationSeconds(
+      state.playbackDurationSeconds,
+    );
+    const currentTimeSeconds = clampPlaybackTime(getCurrentPlaybackTime());
+    const canSeek =
+      isAudioLoaded &&
+      !(state.gumStream?.active && state.micAnalyser) &&
+      durationSeconds > 0 &&
+      state.loadedPlaybackSourceKind !== "none";
+
+    return {
+      currentTimeSeconds,
+      durationSeconds,
+      canSeek,
+    };
+  }
+
   function getAnalysisState() {
     const status = getStatus();
     return {
@@ -623,6 +651,44 @@ export function createAudioSession() {
     setAudioInputMode("file");
   }
 
+  async function startBufferPlayback(
+    offsetSeconds = state.playbackOffsetSeconds,
+  ) {
+    if (!isAudioLoaded || !state.decodedBuffer) {
+      return false;
+    }
+
+    if (state.gumStream?.active) {
+      stopMicRecordStream();
+    }
+
+    const audioCtx = ensureAudioContext();
+    ensurePlaybackAudioGraph();
+
+    if (audioCtx.state === "suspended") {
+      await audioCtx.resume();
+    }
+
+    const source = audioCtx.createBufferSource();
+    source.buffer = state.decodedBuffer;
+    source.connect(state.playbackAnalyserNode);
+    source.connect(state.playbackOutputGain);
+    source.onended = () => {
+      handleBufferEnded(source);
+    };
+
+    const nextOffset = Math.min(
+      clampPlaybackTime(offsetSeconds),
+      Math.max(0, state.playbackDurationSeconds - 1e-4),
+    );
+    resetPlaybackPosition(nextOffset);
+    state.playbackStartedAtSeconds = audioCtx.currentTime;
+    state.activeBufferSource = source;
+    setAudioInputMode("file");
+    source.start(0, nextOffset);
+    return true;
+  }
+
   async function playPauseAudio() {
     if (state.activeBufferSource) {
       stopBufferPlayback();
@@ -659,34 +725,7 @@ export function createAudioSession() {
       return false;
     }
 
-    if (state.gumStream?.active) {
-      stopMicRecordStream();
-    }
-
-    const audioCtx = ensureAudioContext();
-    ensurePlaybackAudioGraph();
-
-    if (audioCtx.state === "suspended") {
-      await audioCtx.resume();
-    }
-
-    const source = audioCtx.createBufferSource();
-    source.buffer = state.decodedBuffer;
-    source.connect(state.playbackAnalyserNode);
-    source.connect(state.playbackOutputGain);
-    source.onended = () => {
-      handleBufferEnded(source);
-    };
-
-    const offset = Math.min(
-      state.playbackOffsetSeconds,
-      Math.max(0, state.playbackDurationSeconds - 1e-4),
-    );
-    state.playbackStartedAtSeconds = audioCtx.currentTime;
-    state.activeBufferSource = source;
-    setAudioInputMode("file");
-    source.start(0, offset);
-    return true;
+    return startBufferPlayback(state.playbackOffsetSeconds);
   }
 
   function stopAudio() {
@@ -712,6 +751,54 @@ export function createAudioSession() {
     state.muted = Boolean(value);
     applyOutputVolume();
     return state.muted;
+  }
+
+  async function seekTo(timeSeconds) {
+    const { canSeek } = getTransportState();
+    if (!canSeek) {
+      return false;
+    }
+
+    const nextTimeSeconds = clampPlaybackTime(timeSeconds);
+
+    if (state.loadedPlaybackSourceKind === "stream" && state.mediaElement) {
+      setMediaElementTime(state.mediaElement, nextTimeSeconds);
+      resetPlaybackPosition(nextTimeSeconds);
+      return true;
+    }
+
+    if (!state.decodedBuffer) {
+      return false;
+    }
+
+    const wasPlaying = Boolean(state.activeBufferSource);
+    if (wasPlaying) {
+      const source = state.activeBufferSource;
+      state.activeBufferSource = null;
+      if (source) {
+        source.onended = null;
+        try {
+          source.stop();
+        } catch (error) {
+          if (error?.name !== "InvalidStateError") {
+            throw error;
+          }
+        }
+        disconnectAudioNode(source);
+      }
+    }
+
+    resetPlaybackPosition(nextTimeSeconds);
+
+    if (wasPlaying) {
+      return startBufferPlayback(nextTimeSeconds);
+    }
+
+    if (state.audioInputMode === "file") {
+      setAudioInputMode("idle");
+    }
+
+    return true;
   }
 
   async function applyMicSettingsToActiveStream(targetSettings) {
@@ -893,9 +980,11 @@ export function createAudioSession() {
     getIsAudioLoaded: () => isAudioLoaded,
     getAnalysisState,
     getStatus,
+    getTransportState,
     getMicSettings,
     readClockSnapshot,
     readAnalysisSnapshot,
+    seekTo,
     dispose,
   };
 }
@@ -911,6 +1000,8 @@ export const { loadAudio } = defaultBindings;
 export const { loadStream } = defaultBindings;
 export const { playPauseAudio } = defaultBindings;
 export const { stopAudio } = defaultBindings;
+export const { getTransportState } = defaultBindings;
+export const { seekTo } = defaultBindings;
 export const { setAudioVolume } = defaultBindings;
 export const { setAudioMuted } = defaultBindings;
 export const { setMicSettings } = defaultBindings;
