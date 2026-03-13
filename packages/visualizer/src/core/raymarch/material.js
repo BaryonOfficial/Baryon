@@ -303,11 +303,10 @@ export function createRaymarchVolumeMesh({
 }) {
   const geometry = new THREE.BoxGeometry(radius * 2, radius * 2, radius * 2);
   const material = /** @type {BaryonVolumeMaterial} */ (
-    new BaryonVolumeNodeMaterial({
-      transparent: true,
-      blending: THREE.NormalBlending,
-    })
+    new BaryonVolumeNodeMaterial()
   );
+  material.transparent = true;
+  material.blending = THREE.NormalBlending;
 
   material.steps = Math.round(uniforms.uRaymarchSteps.value);
   material.radiusNode = uniforms.uRadius;
