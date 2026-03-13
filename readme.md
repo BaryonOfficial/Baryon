@@ -79,7 +79,7 @@ pnpm verify:full          # Full local verification, including workspace builds
 Useful package/app-local commands:
 
 ```bash
-cd apps/web && pnpm dev:https    # HTTPS dev server for mic / SharedArrayBuffer work
+cd apps/web && pnpm dev:https    # HTTPS dev server for mic testing outside localhost
 cd apps/web && pnpm build        # Build the production web bundle into dist/
 cd apps/web && pnpm preview      # Serve the built dist/ output locally
 cd apps/web && pnpm lint
@@ -145,7 +145,7 @@ Current renderer requirements:
 Audio/browser constraints:
 
 - The visualizer uses Web Audio API analyzers plus a CPU-side spectral modal estimator
-- Microphone support and some browser audio features require secure context behavior
+- Microphone support requires a secure context (`https` or localhost)
 - `pnpm dev` works on localhost
 - use `cd apps/web && pnpm dev:https` when testing across devices or when browser security policies require HTTPS
 

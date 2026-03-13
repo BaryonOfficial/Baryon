@@ -19,10 +19,6 @@ export default defineConfig(() => {
     ...base,
     plugins,
     server: {
-      headers: {
-        "Cross-Origin-Embedder-Policy": "require-corp",
-        "Cross-Origin-Opener-Policy": "same-origin",
-      },
       host: true,
       https: isHttps ? {} : undefined,
       open: !(
