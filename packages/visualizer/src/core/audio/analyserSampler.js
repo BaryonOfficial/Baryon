@@ -1,17 +1,91 @@
-function normaliseSpectrum(freqData) {
-  const result = new Float32Array(freqData.length);
-  for (let i = 0; i < freqData.length; i++) {
-    result[i] = freqData[i] > 1 ? freqData[i] / 255.0 : freqData[i];
+function ensureTypedBuffer(existing, length, Type) {
+  if (existing?.length === length) {
+    return existing;
   }
+
+  return new Type(length);
+}
+
+function normaliseSpectrumInto(freqData, result) {
+  for (let i = 0; i < freqData.length; i++) {
+    const value = freqData[i];
+    result[i] = value > 1 ? value / 255.0 : value;
+  }
+
   return result;
 }
 
-function readTimeDomainData(analyserNode) {
-  if (!analyserNode) return null;
+function computeAverageFrequency(freqData) {
+  let total = 0;
+  for (let i = 0; i < freqData.length; i++) {
+    total += freqData[i];
+  }
 
-  const data = new Float32Array(analyserNode.fftSize);
-  analyserNode.getFloatTimeDomainData(data);
-  return data;
+  return freqData.length ? total / freqData.length : 0;
+}
+
+function fillTimeDomainData(analyserNode, buffer) {
+  if (!analyserNode || !buffer) return null;
+
+  analyserNode.getFloatTimeDomainData(buffer);
+  return buffer;
+}
+
+function refreshSpectrumCache(reader) {
+  const analyserNode = reader?.analyser;
+  if (!analyserNode) {
+    return null;
+  }
+
+  const frequencyBinCount = analyserNode.frequencyBinCount;
+  reader._rawFrequencyData = ensureTypedBuffer(
+    reader._rawFrequencyData,
+    frequencyBinCount,
+    Uint8Array,
+  );
+
+  const sourceData =
+    reader._readFrequencyData(reader._rawFrequencyData) ??
+    reader._rawFrequencyData;
+  reader._spectrumData = sourceData;
+
+  reader._normalizedFrequencyData = ensureTypedBuffer(
+    reader._normalizedFrequencyData,
+    sourceData.length,
+    Float32Array,
+  );
+  normaliseSpectrumInto(sourceData, reader._normalizedFrequencyData);
+  reader._averageFrequency = computeAverageFrequency(sourceData);
+
+  return {
+    avgAmplitude: reader._averageFrequency,
+    fftMagnitudes: reader._normalizedFrequencyData,
+  };
+}
+
+function getReaderSpectrumSnapshot(analyser) {
+  if (typeof analyser?._refreshSpectrumData === "function") {
+    return analyser._refreshSpectrumData();
+  }
+
+  return null;
+}
+
+function getTimeDomainData(analyser, analyserNode) {
+  const buffer = analyser?._timeDomainData
+    ? ensureTypedBuffer(
+        analyser._timeDomainData,
+        analyserNode.fftSize,
+        Float32Array,
+      )
+    : new Float32Array(analyserNode.fftSize);
+  const timeData = fillTimeDomainData(analyserNode, buffer);
+
+  if (analyser?._timeDomainData) {
+    analyser._timeDomainData = timeData;
+  }
+
+  return timeData;
 }
 
 export function computeRms(timeData) {
@@ -27,18 +101,24 @@ export function computeRms(timeData) {
 }
 
 export function createAnalyserReader(analyserNode, readFrequencyData) {
-  const data = new Uint8Array(analyserNode.frequencyBinCount);
-
   return {
     analyser: analyserNode,
+    _readFrequencyData: readFrequencyData,
+    _rawFrequencyData: new Uint8Array(analyserNode.frequencyBinCount),
+    _spectrumData: null,
+    _normalizedFrequencyData: new Float32Array(analyserNode.frequencyBinCount),
+    _timeDomainData: new Float32Array(analyserNode.fftSize),
+    _averageFrequency: 0,
+    _refreshSpectrumData() {
+      return refreshSpectrumCache(this);
+    },
     getFrequencyData() {
-      return readFrequencyData(data);
+      refreshSpectrumCache(this);
+      return this._spectrumData;
     },
     getAverageFrequency() {
-      const spectrum = readFrequencyData(data);
-      let total = 0;
-      for (let i = 0; i < spectrum.length; i++) total += spectrum[i];
-      return spectrum.length ? total / spectrum.length : 0;
+      refreshSpectrumCache(this);
+      return this._averageFrequency;
     },
   };
 }
@@ -58,10 +138,26 @@ export function sampleAnalyser(analyser) {
   const analyserNode = analyser?.analyser;
   if (!analyserNode) return null;
 
-  const timeData = readTimeDomainData(analyserNode);
+  const cachedSpectrum = getReaderSpectrumSnapshot(analyser);
+  const timeData = getTimeDomainData(analyser, analyserNode);
+
+  if (cachedSpectrum) {
+    return {
+      avgAmplitude: cachedSpectrum.avgAmplitude,
+      fftMagnitudes: cachedSpectrum.fftMagnitudes,
+      timeData,
+      rms: computeRms(timeData),
+    };
+  }
+
+  const frequencyData = analyser.getFrequencyData();
+
   return {
     avgAmplitude: analyser.getAverageFrequency(),
-    fftMagnitudes: normaliseSpectrum(analyser.getFrequencyData()),
+    fftMagnitudes: normaliseSpectrumInto(
+      frequencyData,
+      new Float32Array(frequencyData.length),
+    ),
     timeData,
     rms: computeRms(timeData),
   };

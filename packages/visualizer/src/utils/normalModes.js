@@ -1,6 +1,8 @@
 const SOUND_SPEED = 340.0;
 const TOLERANCE_HZ = 1.0;
 const MAX_ITERATIONS = 24;
+const MAX_MODE = 24;
+const FAMILY_DIVERSITY_DISTANCE = 3;
 
 function modalFrequencyFromMagnitude(magnitude, radius) {
   return (SOUND_SPEED * 0.5 * magnitude) / radius;
@@ -50,47 +52,119 @@ function bisectionSolveMagnitude(pitch, radius) {
   return (lower + upper) * 0.5;
 }
 
-function nearestTriplet(targetMagnitude, maxMode = 24) {
-  let best = null;
-  let bestMagnitudeError = Number.POSITIVE_INFINITY;
-  let bestBalancePenalty = Number.POSITIVE_INFINITY;
+function rankTriplets(targetMagnitude, maxMode = MAX_MODE) {
+  const candidates = [];
 
   for (let u = 1; u <= maxMode; u++) {
-    for (let v = 1; v <= maxMode; v++) {
-      for (let w = 1; w <= maxMode; w++) {
+    for (let v = u; v <= maxMode; v++) {
+      for (let w = v; w <= maxMode; w++) {
         const magnitude = Math.hypot(u, v, w);
         const magnitudeError = Math.abs(magnitude - targetMagnitude);
         const balancePenalty =
           Math.abs(u - v) + Math.abs(v - w) + Math.abs(u - w);
 
-        if (
-          magnitudeError < bestMagnitudeError - 1e-6 ||
-          (Math.abs(magnitudeError - bestMagnitudeError) <= 1e-6 &&
-            balancePenalty < bestBalancePenalty)
-        ) {
-          bestMagnitudeError = magnitudeError;
-          bestBalancePenalty = balancePenalty;
-          best = { u, v, w };
-        }
+        candidates.push({
+          u,
+          v,
+          w,
+          magnitudeError,
+          balancePenalty,
+        });
       }
     }
   }
 
-  return best;
+  candidates.sort((left, right) => {
+    if (Math.abs(left.magnitudeError - right.magnitudeError) > 1e-6) {
+      return left.magnitudeError - right.magnitudeError;
+    }
+    if (left.balancePenalty !== right.balancePenalty) {
+      return left.balancePenalty - right.balancePenalty;
+    }
+    if (left.u !== right.u) return left.u - right.u;
+    if (left.v !== right.v) return left.v - right.v;
+    return left.w - right.w;
+  });
+
+  return candidates;
+}
+
+function resolveMagnitudeForPitch(pitch, radius) {
+  const secantMagnitude = secantSolveMagnitude(pitch, radius);
+  return Number.isFinite(secantMagnitude)
+    ? secantMagnitude
+    : bisectionSolveMagnitude(pitch, radius);
+}
+
+function modeDistance(left, right) {
+  return (
+    Math.abs(left.u - right.u) +
+    Math.abs(left.v - right.v) +
+    Math.abs(left.w - right.w)
+  );
+}
+
+function pickModeFamily(candidates, count) {
+  const family = [];
+
+  for (const candidate of candidates) {
+    if (
+      family.length > 0 &&
+      family.some(
+        (selected) =>
+          modeDistance(selected, candidate) < FAMILY_DIVERSITY_DISTANCE,
+      )
+    ) {
+      continue;
+    }
+
+    family.push(candidate);
+    if (family.length >= count) return family;
+  }
+
+  for (const candidate of candidates) {
+    if (family.length >= count) break;
+    if (
+      family.some(
+        (selected) =>
+          selected.u === candidate.u &&
+          selected.v === candidate.v &&
+          selected.w === candidate.w,
+      )
+    ) {
+      continue;
+    }
+    family.push(candidate);
+  }
+
+  return family;
 }
 
 export function solveNormalModesForPitch(pitch, radius) {
   if (!Number.isFinite(pitch) || pitch <= 0) return null;
 
-  const secantMagnitude = secantSolveMagnitude(pitch, radius);
-  const magnitude = Number.isFinite(secantMagnitude)
-    ? secantMagnitude
-    : bisectionSolveMagnitude(pitch, radius);
-
-  const mode = nearestTriplet(magnitude);
+  const magnitude = resolveMagnitudeForPitch(pitch, radius);
+  const mode = rankTriplets(magnitude, MAX_MODE)[0];
   if (!mode) return null;
 
-  return mode;
+  return {
+    u: mode.u,
+    v: mode.v,
+    w: mode.w,
+  };
+}
+
+export function solveModeFamilyForPitch(pitch, radius, count = 1) {
+  if (!Number.isFinite(pitch) || pitch <= 0 || count <= 0) {
+    return [];
+  }
+
+  const magnitude = resolveMagnitudeForPitch(pitch, radius);
+  const family = pickModeFamily(rankTriplets(magnitude, MAX_MODE), count).map(
+    ({ u, v, w }) => ({ u, v, w }),
+  );
+
+  return family;
 }
 
 export function sampleFFTAmplitudeForFrequency(

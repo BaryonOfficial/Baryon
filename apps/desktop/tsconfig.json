@@ -1,8 +1,0 @@
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "baseUrl": "."
-  },
-  "include": ["src/**/*.js", "src/**/*.jsx", "vite.config.js"],
-  "exclude": ["node_modules", "dist", "src-tauri"]
-}

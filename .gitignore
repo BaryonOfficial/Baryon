@@ -47,3 +47,6 @@ repomix*
 # Playwright artifacts
 test-results/
 playwright-report/
+
+# Local Codex/Claude worktrees and metadata
+.claude/

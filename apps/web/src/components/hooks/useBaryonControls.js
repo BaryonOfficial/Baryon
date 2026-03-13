@@ -52,6 +52,17 @@ function getVisibleControls(folderTitle) {
   );
 }
 
+function emitControlsChanged(state) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.dispatchEvent(
+    new CustomEvent("__baryon-controls-change", {
+      detail: { ...state },
+    }),
+  );
+}
+
 export function useBaryonControls() {
   const controlsRef = useRef(createControlState());
 
@@ -99,10 +110,16 @@ export function useBaryonControls() {
         });
 
         for (const definition of getVisibleControls(folderTitle)) {
-          folder.addBinding(p, definition.key, {
+          const binding = folder.addBinding(p, definition.key, {
             label: definition.label,
             ...(definition.binding ?? {}),
           });
+          if (definition.title) {
+            /** @type {any} */ (binding).element.setAttribute(
+              "title",
+              definition.title,
+            );
+          }
         }
       }
 
@@ -110,6 +127,7 @@ export function useBaryonControls() {
       // Also clears the active preset indicator when the user manually edits a control after loading.
       let saveTimer = null;
       pane.on("change", () => {
+        emitControlsChanged(p);
         if (allowPresetReset && activePresetName) {
           activePresetName = null;
           rebuildLoadBlade(presetsFolder);
@@ -225,11 +243,14 @@ export function useBaryonControls() {
             }
             p[key] = value;
             pane.refresh();
+            emitControlsChanged(p);
             return { ...p };
           },
         };
         markBaryonTestControlsReady();
       }
+
+      emitControlsChanged(p);
     };
 
     void initPane();

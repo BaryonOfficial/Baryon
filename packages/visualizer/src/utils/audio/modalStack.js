@@ -1,10 +1,13 @@
 import { AUDIT_DEFAULTS, AUDIO_DEFAULTS } from "../../defaults.js";
 
-export const MAX_STACK_SLOTS = 4;
+export const MAX_STACK_SLOTS = AUDIO_DEFAULTS.capacity;
+export const BACKBONE_STACK_SLOTS = 6;
+export const DETAIL_STACK_SLOTS = 8;
+export const BAND_BUCKET_COUNT = 4;
 export const DECAY_PER_FRAME = 0.9;
 const HARMONIC_SUPPORT_COUNT = 4;
 
-function createModalStackState(capacity) {
+function createModalLayerState(capacity) {
   return {
     slots: new Float32Array(capacity * 4),
     referenceSlots: new Float32Array(capacity * 4),
@@ -17,18 +20,38 @@ function createModalStackState(capacity) {
   };
 }
 
+function createBandState() {
+  return {
+    bandEnergies: new Float32Array(BAND_BUCKET_COUNT),
+    transientEnergy: 0,
+    spectralCentroid: 0,
+    spectralFlux: 0,
+    previousRms: 0,
+  };
+}
+
 export function createAudioFeatureState(capacity = AUDIO_DEFAULTS.capacity) {
   return {
     capacity,
     analysis: {
       frameId: 0,
+      backboneSlots: new Float32Array(capacity * 4),
+      detailSlots: new Float32Array(capacity * 4),
       modeSlots: new Float32Array(capacity * 4),
+      referenceBackboneSlots: new Float32Array(capacity * 4),
+      referenceDetailSlots: new Float32Array(capacity * 4),
       referenceModeSlots: new Float32Array(capacity * 4),
+      bandEnergies: new Float32Array(BAND_BUCKET_COUNT),
       fftMagnitudes: new Float32Array(0),
-      modalStackState: createModalStackState(capacity),
+      backboneState: createModalLayerState(capacity),
+      detailState: createModalLayerState(capacity),
+      bandState: createBandState(),
+      previousSpectrum: new Float32Array(0),
     },
     audit: {
       frame: 0,
+      frozenBackboneSlots: new Float32Array(capacity * 4),
+      frozenDetailSlots: new Float32Array(capacity * 4),
       frozenModeSlots: new Float32Array(capacity * 4),
       lastSnapshot: null,
       settings: { ...AUDIT_DEFAULTS },
@@ -38,20 +61,44 @@ export function createAudioFeatureState(capacity = AUDIO_DEFAULTS.capacity) {
 }
 
 export function clearModalStack(state) {
-  state.slots.fill(0);
-  state.referenceSlots.fill(0);
-  state.harmonicSupport.fill(0);
+  if (!state) return;
+
+  state.slots?.fill(0);
+  state.referenceSlots?.fill(0);
+  state.harmonicSupport?.fill(0);
   state.fundamental = 0;
   state.fundamentalConfidence = 0;
   state.analysisEngine = "none";
   state.uniqueModeCount = 0;
+  state.lastStableAt = 0;
+  if ("latchedFundamentalHz" in state) state.latchedFundamentalHz = 0;
+  if ("latchedFundamentalConfidence" in state) {
+    state.latchedFundamentalConfidence = 0;
+  }
+  if ("latchHoldFrames" in state) state.latchHoldFrames = 0;
+  if ("latchLowSupportFrames" in state) state.latchLowSupportFrames = 0;
+  if ("driverFrequency" in state) state.driverFrequency = 0;
+  if ("candidateFrequency" in state) state.candidateFrequency = 0;
+  if ("candidateConfidence" in state) state.candidateConfidence = 0;
+  if ("candidateFrames" in state) state.candidateFrames = 0;
 }
 
 export function decayModalStack(state) {
+  if (!state?.slots) return;
+
   for (let i = 0; i < state.slots.length; i += 4) {
     state.slots[i + 3] *= DECAY_PER_FRAME;
-    state.referenceSlots[i + 3] *= DECAY_PER_FRAME;
   }
+  state.referenceSlots?.fill(0);
+  state.harmonicSupport?.fill(0);
+  state.fundamental = 0;
+  state.fundamentalConfidence = 0;
+  state.analysisEngine = "none";
+  state.uniqueModeCount = 0;
+  if ("driverFrequency" in state) state.driverFrequency = 0;
+  if ("candidateFrequency" in state) state.candidateFrequency = 0;
+  if ("candidateConfidence" in state) state.candidateConfidence = 0;
+  if ("candidateFrames" in state) state.candidateFrames = 0;
 }
 
 export function writeSlot(target, index, mode, amplitude) {
@@ -64,7 +111,159 @@ export function writeSlot(target, index, mode, amplitude) {
 
 export function copyFloatArray(target, source) {
   target.fill(0);
+  if (!source?.length) return;
   target.set(source.subarray(0, target.length));
+}
+
+export const BLEND_ATTACK = 0.18;
+export const BLEND_TRACKING = 0.28;
+export const BLEND_RELEASE = 0.94;
+export const BLEND_DROP_THRESHOLD = 1e-4;
+export const BLEND_MAX_FRESH_PER_FRAME = 2;
+
+function modeKey(u, v, w) {
+  return `${u}:${v}:${w}`;
+}
+
+export function blendModalStack(state, targetSlots, capacity, options = {}) {
+  const attack = options.attack ?? BLEND_ATTACK;
+  const tracking = options.tracking ?? BLEND_TRACKING;
+  const release = options.release ?? BLEND_RELEASE;
+  const freshCap = options.freshCap ?? BLEND_MAX_FRESH_PER_FRAME;
+  const slotLimit = Math.min(state.slots.length / 4, capacity);
+
+  const currentMap = new Map();
+  for (let i = 0; i < slotLimit; i++) {
+    const offset = i * 4;
+    const amp = state.slots[offset + 3];
+    if (amp > 0) {
+      const u = state.slots[offset];
+      const v = state.slots[offset + 1];
+      const w = state.slots[offset + 2];
+      currentMap.set(modeKey(u, v, w), { u, v, w, amplitude: amp });
+    }
+  }
+
+  const targetLimit = Math.min(targetSlots.length / 4, capacity);
+  const targetMap = new Map();
+  for (let i = 0; i < targetLimit; i++) {
+    const offset = i * 4;
+    const amp = targetSlots[offset + 3];
+    if (amp > 0) {
+      const u = targetSlots[offset];
+      const v = targetSlots[offset + 1];
+      const w = targetSlots[offset + 2];
+      targetMap.set(modeKey(u, v, w), { u, v, w, amplitude: amp });
+    }
+  }
+
+  let freshAdmitted = 0;
+  const admittedTargetKeys = new Set();
+  for (const key of targetMap.keys()) {
+    if (currentMap.has(key)) {
+      admittedTargetKeys.add(key);
+    }
+  }
+  for (const key of targetMap.keys()) {
+    if (!currentMap.has(key)) {
+      if (freshCap <= 0 || freshAdmitted < freshCap) {
+        admittedTargetKeys.add(key);
+        freshAdmitted++;
+      }
+    }
+  }
+
+  const blended = new Map();
+  for (const key of admittedTargetKeys) {
+    const target = targetMap.get(key);
+    const current = currentMap.get(key);
+    const newAmp = current
+      ? current.amplitude + (target.amplitude - current.amplitude) * tracking
+      : target.amplitude * attack;
+    if (newAmp >= BLEND_DROP_THRESHOLD) {
+      blended.set(key, {
+        u: target.u,
+        v: target.v,
+        w: target.w,
+        amplitude: newAmp,
+      });
+    }
+  }
+
+  for (const [key, entry] of currentMap.entries()) {
+    if (!admittedTargetKeys.has(key)) {
+      const newAmp = entry.amplitude * release;
+      if (newAmp >= BLEND_DROP_THRESHOLD) {
+        blended.set(key, {
+          u: entry.u,
+          v: entry.v,
+          w: entry.w,
+          amplitude: newAmp,
+        });
+      }
+    }
+  }
+
+  const survivors = Array.from(blended.values()).sort(
+    (a, b) => b.amplitude - a.amplitude,
+  );
+  const kept = survivors.slice(0, capacity);
+
+  state.slots.fill(0);
+  for (let i = 0; i < kept.length; i++) {
+    const offset = i * 4;
+    const entry = kept[i];
+    state.slots[offset] = entry.u;
+    state.slots[offset + 1] = entry.v;
+    state.slots[offset + 2] = entry.w;
+    state.slots[offset + 3] = entry.amplitude;
+  }
+
+  state.referenceSlots.fill(0);
+  state.referenceSlots.set(
+    targetSlots.subarray(
+      0,
+      Math.min(state.referenceSlots.length, capacity * 4),
+    ),
+  );
+}
+
+export function combineModalLayers(target, layers, capacity) {
+  const combined = new Map();
+  for (const layer of layers) {
+    if (!layer?.slots?.length) continue;
+    const weight = layer.weight ?? 1;
+    for (let i = 0; i < layer.slots.length; i += 4) {
+      const amplitude = (layer.slots[i + 3] ?? 0) * weight;
+      if (amplitude <= 0) continue;
+      const u = layer.slots[i];
+      const v = layer.slots[i + 1];
+      const w = layer.slots[i + 2];
+      const key = modeKey(u, v, w);
+      const existing = combined.get(key);
+      if (existing) {
+        existing.amplitude += amplitude;
+      } else {
+        combined.set(key, { u, v, w, amplitude });
+      }
+    }
+  }
+
+  const survivors = Array.from(combined.values())
+    .sort((a, b) => b.amplitude - a.amplitude)
+    .slice(0, capacity);
+
+  target.fill(0);
+  for (let i = 0; i < survivors.length; i++) {
+    const entry = survivors[i];
+    const offset = i * 4;
+    target[offset] = entry.u;
+    target[offset + 1] = entry.v;
+    target[offset + 2] = entry.w;
+    target[offset + 3] = entry.amplitude;
+  }
+
+  return survivors.length;
 }
 
 export function countActiveSlots(modeSlots, capacity) {

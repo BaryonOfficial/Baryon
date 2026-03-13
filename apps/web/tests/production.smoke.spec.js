@@ -11,7 +11,7 @@ test.describe("Baryon production smoke", () => {
     await expect(page.locator("canvas")).toBeVisible();
     await expect(page.getByText("Upload Audio")).toBeVisible();
     await expect(page.getByRole("button", { name: "Baryon" })).toBeVisible();
-    await expect(page.getByText("Particles")).toBeAttached(); // folder exists in pane; may be collapsed
+    await expect(page.getByText("Volume").first()).toBeAttached(); // folder exists in pane; may be collapsed
     await expect(page.getByText("Audit")).toHaveCount(0);
 
     const debugSurface = await page.evaluate(() => ({
@@ -26,6 +26,6 @@ test.describe("Baryon production smoke", () => {
       hasAuditSnapshot: false,
     });
 
-    await expect(page.getByTestId("particle-debug-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("raymarch-debug-overlay")).toHaveCount(0);
   });
 });

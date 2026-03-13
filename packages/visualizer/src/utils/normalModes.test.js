@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  solveModeFamilyForPitch,
   solveNormalModesForPitch,
   sampleFFTAmplitudeForFrequency,
 } from "./normalModes.js";
@@ -125,5 +126,40 @@ describe("sampleFFTAmplitudeForFrequency", () => {
         fftSize,
       ),
     ).toBe(0);
+  });
+});
+
+describe("solveModeFamilyForPitch", () => {
+  it("returns multiple unique mode triplets for the same pitch", () => {
+    const family = solveModeFamilyForPitch(440, RADIUS, 4);
+
+    expect(family).toHaveLength(4);
+    expect(
+      new Set(family.map((mode) => `${mode.u}:${mode.v}:${mode.w}`)).size,
+    ).toBe(4);
+  });
+
+  it("keeps the best single-mode solution as the first family entry", () => {
+    const primary = solveNormalModesForPitch(440, RADIUS);
+    const family = solveModeFamilyForPitch(440, RADIUS, 4);
+
+    expect(family[0]).toEqual(primary);
+  });
+
+  it("spreads the returned family across distinct triplets", () => {
+    const family = solveModeFamilyForPitch(440, RADIUS, 4);
+    const distances = [];
+
+    for (let i = 1; i < family.length; i++) {
+      const previous = family[i - 1];
+      const current = family[i];
+      distances.push(
+        Math.abs(previous.u - current.u) +
+          Math.abs(previous.v - current.v) +
+          Math.abs(previous.w - current.w),
+      );
+    }
+
+    expect(Math.max(...distances)).toBeGreaterThanOrEqual(3);
   });
 });

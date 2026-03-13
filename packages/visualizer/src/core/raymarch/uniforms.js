@@ -1,0 +1,38 @@
+import * as THREE from "three";
+import { uniform } from "three/tsl";
+import {
+  RAYMARCH_DEFAULTS,
+  RENDER_DEFAULTS,
+  SIMULATION_DEFAULTS,
+} from "../../defaults.js";
+import { FIELD_STATE_VALUES } from "../fieldState.js";
+
+export { FIELD_STATE_VALUES };
+
+export function createRaymarchUniforms(parameters) {
+  return {
+    uTime: uniform(0.0),
+    uAverageAmplitude: uniform(0.0),
+    uFieldState: uniform(FIELD_STATE_VALUES.idle),
+    uRadius: uniform(parameters.radius),
+    uThreshold: uniform(parameters.threshold),
+    uStructureMin: uniform(SIMULATION_DEFAULTS.structureMin),
+    uStructureMax: uniform(SIMULATION_DEFAULTS.structureMax),
+    uActiveModeCount: uniform(0),
+    uBackboneModeCount: uniform(0),
+    uDetailModeCount: uniform(0),
+    uIdleLogoIntensity: uniform(RENDER_DEFAULTS.idleLogoIntensity),
+    uIdleLogoAlpha: uniform(RENDER_DEFAULTS.idleLogoAlpha),
+    uIdleLogoSize: uniform(RENDER_DEFAULTS.idleLogoSize),
+    uColor: uniform(new THREE.Color(RENDER_DEFAULTS.volumeColor)),
+    uSurfaceColor: uniform(new THREE.Color(RENDER_DEFAULTS.surfaceColor)),
+    uDensityGain: uniform(RAYMARCH_DEFAULTS.densityGain),
+    uAbsorption: uniform(RAYMARCH_DEFAULTS.absorption),
+    uContourSharpness: uniform(RAYMARCH_DEFAULTS.contourSharpness),
+    uRaymarchSteps: uniform(RAYMARCH_DEFAULTS.raymarchSteps),
+    uBandEnergies: uniform(new THREE.Vector4(0, 0, 0, 0)),
+    uTransientEnergy: uniform(0.0),
+    uSpectralCentroid: uniform(0.0),
+    uSpectralFlux: uniform(0.0),
+  };
+}

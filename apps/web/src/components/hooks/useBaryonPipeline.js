@@ -14,6 +14,12 @@ export function useBaryonPipeline(gl, scene, camera) {
   });
 
   const ensurePipeline = useCallback(() => {
+    if (gl?.backend?.isWebGLBackend === true) {
+      pipelineRef.current = null;
+      postNodesRef.current = null;
+      return null;
+    }
+
     if (pipelineRef.current) {
       return pipelineRef.current;
     }

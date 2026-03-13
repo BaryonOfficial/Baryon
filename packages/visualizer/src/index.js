@@ -6,17 +6,20 @@ export {
   loadAudio,
   playPauseAudio,
   stopAudio,
+  setAudioVolume,
+  setAudioMuted,
+  setMicSettings,
   startMicRecordStream,
   stopMicRecordStream,
   setAudioEndedCallback,
   getIsAudioLoaded,
   getAnalysisState,
   getStatus,
+  getMicSettings,
   readClockSnapshot,
   readAnalysisSnapshot,
   disposeAudio,
 } from "./core/audio/audioSetup.js";
-export { setupTSL, tickTSL, disposeTSL } from "./core/tslSetup.js";
 export {
   DEFAULT_VISUALIZATION_METHOD,
   VISUALIZATION_METHODS,
@@ -51,13 +54,14 @@ export {
 } from "./controls/persistence.js";
 export {
   CONTROL_RUNTIME_COVERAGE,
+  applyAudioControls,
   applySimulationControls,
   applySharedControls,
-  applyParticleControls,
+  applyRaymarchControls,
+  applyVisualizationControls,
   applyBloomControls,
   applyAuditControls,
   applySceneControls,
-  applyParticleSceneControls,
   buildControlInspectionSnapshot,
 } from "./controls/runtime.js";
 

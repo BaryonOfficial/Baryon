@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { CONTROL_HANDLERS } from "./schema.js";
-import { RENDER_DEFAULTS } from "../defaults.js";
 import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
+import { RENDER_DEFAULTS } from "../defaults.js";
 
 const IDLE_LOGO_ALPHA_RATIO =
   RENDER_DEFAULTS.idleLogoIntensity > 0
@@ -13,22 +13,22 @@ function deriveIdleLogoAlpha(intensity) {
 }
 
 export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
+  [CONTROL_HANDLERS.audio]: Object.freeze([
+    "echoCancellation",
+    "noiseSuppression",
+    "autoGainControl",
+  ]),
   [CONTROL_HANDLERS.shared]: Object.freeze(["backgroundColor"]),
-  [CONTROL_HANDLERS.particle]: Object.freeze([
+  [CONTROL_HANDLERS.raymarch]: Object.freeze([
     "volumeColor",
     "surfaceColor",
-    "particleSpeed",
-    "flowFieldStrength",
-    "flowFieldFrequency",
     "zeroPointPrecision",
-    "flowMix",
-    "attractionStrength",
-    "velocityDamping",
-    "centerSuppressionInner",
-    "centerSuppressionOuter",
     "structureMin",
     "structureMax",
-    "surfaceParticles",
+    "raymarchSteps",
+    "densityGain",
+    "absorption",
+    "contourSharpness",
     "idleLogoIntensity",
     "idleLogoSize",
   ]),
@@ -42,12 +42,31 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
   [CONTROL_HANDLERS.audit]: Object.freeze([
     "auditEnabled",
     "freezeModeSlots",
+    "forceWebGLFallbackTest",
     "injectTestTone",
     "testToneHz",
     "testToneAmplitude",
     "logEveryFrames",
   ]),
 });
+
+function getAudioControlSnapshot(controls) {
+  return {
+    echoCancellation: Boolean(controls.echoCancellation),
+    noiseSuppression: Boolean(controls.noiseSuppression),
+    autoGainControl: Boolean(controls.autoGainControl),
+  };
+}
+
+export async function applyAudioControls(audioSession, controls) {
+  const snapshot = getAudioControlSnapshot(controls);
+  if (!audioSession?.setMicSettings) {
+    return snapshot;
+  }
+
+  await audioSession.setMicSettings(snapshot);
+  return snapshot;
+}
 
 export function applySharedControls(gl, controls) {
   gl.setClearColor(new THREE.Color(controls.backgroundColor));
@@ -56,58 +75,70 @@ export function applySharedControls(gl, controls) {
   };
 }
 
-export function applyParticleControls(tslState, controls) {
-  const uniforms = tslState.uniforms;
-  const radius = uniforms.uRadius.value;
+export function applyRaymarchControls(runtimeState, controls) {
+  const uniforms = runtimeState.uniforms;
   const idleLogoAlpha = deriveIdleLogoAlpha(controls.idleLogoIntensity);
+
   uniforms.uColor.value.set(controls.volumeColor);
   uniforms.uSurfaceColor.value.set(controls.surfaceColor);
-  uniforms.uParticleSpeed.value = controls.particleSpeed;
   uniforms.uThreshold.value = controls.zeroPointPrecision;
-  uniforms.uSurfaceControl.value = controls.surfaceParticles ? 1 : 0;
+  uniforms.uStructureMin.value = controls.structureMin;
+  uniforms.uStructureMax.value = controls.structureMax;
   uniforms.uIdleLogoIntensity.value = controls.idleLogoIntensity;
   uniforms.uIdleLogoAlpha.value = idleLogoAlpha;
   uniforms.uIdleLogoSize.value = controls.idleLogoSize;
-  uniforms.uFlowFieldStrength.value = controls.flowFieldStrength;
-  uniforms.uFlowFieldFrequency.value = controls.flowFieldFrequency;
-  uniforms.uFlowMix.value = controls.flowMix;
-  uniforms.uAttractionStrength.value = controls.attractionStrength;
-  uniforms.uVelocityDamping.value = controls.velocityDamping;
-  uniforms.uCenterSuppressionInner.value =
-    radius * controls.centerSuppressionInner;
-  uniforms.uCenterSuppressionOuter.value =
-    radius * controls.centerSuppressionOuter;
-  uniforms.uStructureMin.value = controls.structureMin;
-  uniforms.uStructureMax.value = controls.structureMax;
+  uniforms.uDensityGain.value = controls.densityGain;
+  uniforms.uAbsorption.value = controls.absorption;
+  uniforms.uContourSharpness.value = controls.contourSharpness;
+  uniforms.uRaymarchSteps.value = controls.raymarchSteps;
+
+  if (runtimeState.volumeMesh?.material) {
+    runtimeState.volumeMesh.material.steps = Math.round(controls.raymarchSteps);
+  }
+  if (runtimeState.idleOverlay) {
+    runtimeState.idleOverlay.scale.setScalar(controls.idleLogoSize);
+    if (runtimeState.idleOverlay.material?.color) {
+      runtimeState.idleOverlay.material.color.set(controls.surfaceColor);
+    }
+    if ("opacity" in (runtimeState.idleOverlay.material ?? {})) {
+      runtimeState.idleOverlay.material.opacity = idleLogoAlpha;
+    }
+  }
 
   return {
     uniforms: {
       volumeColor: controls.volumeColor,
       surfaceColor: controls.surfaceColor,
-      particleSpeed: uniforms.uParticleSpeed.value,
       threshold: uniforms.uThreshold.value,
-      surfaceControl: uniforms.uSurfaceControl.value,
+      structureMin: uniforms.uStructureMin.value,
+      structureMax: uniforms.uStructureMax.value,
       idleLogoIntensity: uniforms.uIdleLogoIntensity.value,
       idleLogoAlpha,
       idleLogoSize: uniforms.uIdleLogoSize.value,
-      flowFieldStrength: uniforms.uFlowFieldStrength.value,
-      flowFieldFrequency: uniforms.uFlowFieldFrequency.value,
-      flowMix: uniforms.uFlowMix.value,
-      attractionStrength: uniforms.uAttractionStrength.value,
-      velocityDamping: uniforms.uVelocityDamping.value,
-      centerSuppressionInner: controls.centerSuppressionInner,
-      centerSuppressionOuter: controls.centerSuppressionOuter,
-      centerSuppressionInnerRadius: uniforms.uCenterSuppressionInner.value,
-      centerSuppressionOuterRadius: uniforms.uCenterSuppressionOuter.value,
-      structureMin: uniforms.uStructureMin.value,
-      structureMax: uniforms.uStructureMax.value,
+      densityGain: uniforms.uDensityGain.value,
+      absorption: uniforms.uAbsorption.value,
+      contourSharpness: uniforms.uContourSharpness.value,
+      raymarchSteps: Math.round(runtimeState.volumeMesh.material.steps),
+    },
+    overlay: {
+      visible: runtimeState.idleOverlay?.visible ?? false,
+      scale: runtimeState.idleOverlay?.scale?.x ?? controls.idleLogoSize,
     },
   };
 }
 
-export const applySimulationControls = (gl, tslState, controls) => ({
+export function applyVisualizationControls(method, runtimeState, controls) {
+  void method;
+  return applyRaymarchControls(runtimeState, controls);
+}
+
+export const applySimulationControls = (gl, runtimeState, controls) => ({
   ...applySharedControls(gl, controls),
-  ...applyParticleControls(tslState, controls),
+  ...applyVisualizationControls(
+    runtimeState?.method ?? DEFAULT_VISUALIZATION_METHOD,
+    runtimeState,
+    controls,
+  ),
 });
 
 export function applyBloomControls(pipelineState, controls) {
@@ -146,6 +177,7 @@ export function applyAuditControls(featureState, controls) {
   Object.assign(featureState.audit.settings, {
     enabled: controls.auditEnabled,
     freezeModeSlots: controls.freezeModeSlots,
+    forceWebGLFallbackTest: controls.forceWebGLFallbackTest,
     injectTestTone: controls.injectTestTone,
     testToneHz: controls.testToneHz,
     testToneAmplitude: controls.testToneAmplitude,
@@ -155,7 +187,7 @@ export function applyAuditControls(featureState, controls) {
   return { ...featureState.audit.settings };
 }
 
-export function applyParticleSceneControls(points, controls, deltaTime) {
+export function applySceneControls(points, controls, deltaTime) {
   if (!points) return null;
   points.rotation.y -= deltaTime * 0.5 * controls.rotationSpeed;
   return {
@@ -164,21 +196,21 @@ export function applyParticleSceneControls(points, controls, deltaTime) {
   };
 }
 
-export const applySceneControls = applyParticleSceneControls;
-
 export function buildControlInspectionSnapshot({
   method = DEFAULT_VISUALIZATION_METHOD,
+  audio,
   shared,
-  particle,
+  raymarch,
   bloom,
   audit,
   scene,
 }) {
   return {
     method,
+    ...(audio === undefined ? {} : { audio }),
     shared,
-    particle,
-    simulation: particle,
+    raymarch,
+    simulation: raymarch,
     bloom,
     audit,
     scene,

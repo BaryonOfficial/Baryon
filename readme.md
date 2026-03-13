@@ -1,6 +1,6 @@
 # Baryon
 
-Baryon is a monorepo for a 3D audio visualizer and its host applications. The current production renderer is a WebGPU particle-based cymatics visualization driven by a shared CPU audio/modal pipeline.
+Baryon is a monorepo for a 3D audio visualizer and its host applications. The current production renderer is a WebGPU volumetric raymarched cymatics visualizer driven by a shared CPU audio/modal pipeline.
 
 This README is the developer entrypoint: setup, architecture, workflows, and the repo rules that matter when changing the visualizer.
 
@@ -9,7 +9,7 @@ This README is the developer entrypoint: setup, architecture, workflows, and the
 ```text
 apps/
   web/        @baryon/web       Vite + React + R3F visualizer app
-  desktop/    @baryon/desktop   Tauri desktop wrapper around the visualizer
+  desktop/    @baryon/desktop   Neutral desktop app shell reserved for the flagship desktop product
   marketing/  @baryon/marketing Marketing site scaffold
 packages/
   visualizer/ @baryon/visualizer Core audio + visualization engine
@@ -17,7 +17,7 @@ packages/
   config/     @baryon/config     Shared Vite config
 ```
 
-`apps/web` and `apps/desktop` both consume `@baryon/visualizer`. Static runtime assets such as `public/glb/` remain app-local because they are loaded by URL at runtime.
+`apps/web` consumes `@baryon/visualizer` today, and `apps/desktop` is reserved for the future desktop host surface. Static runtime assets such as `public/glb/` remain app-local because they are loaded by URL at runtime.
 
 ## Licensing
 
@@ -45,7 +45,6 @@ Public commercial offer:
 
 - Node.js 18+
 - `pnpm`
-- For `apps/desktop`: Rust and Tauri prerequisites
 - For browser smoke tests: Playwright Chromium will be installed on demand
 
 Install everything from the repo root:
@@ -62,7 +61,7 @@ From the repo root:
 
 ```bash
 pnpm dev                  # Start apps/web
-pnpm dev:desktop          # Start apps/desktop
+pnpm dev:desktop          # Start apps/desktop shell
 pnpm build                # Build all apps/packages
 pnpm build:web            # Build apps/web only
 pnpm format               # Format the repo with Prettier
@@ -139,9 +138,9 @@ That keeps the pre-push gate strict without forcing Playwright/browser setup or 
 
 Current renderer requirements:
 
-- WebGPU is required for the particle runtime
-- Chrome/Edge class browsers only for the current visualizer path
-- No WebGL fallback exists for the current particle renderer
+- WebGPU is the premium path for the current volumetric renderer
+- Chrome/Edge class browsers are the primary supported web target
+- A debug-only WebGL2 fallback toggle exists for compatibility testing, but it is not a flagship rendering target
 
 Audio/browser constraints:
 
@@ -157,10 +156,10 @@ Audio/browser constraints:
 ```text
 Audio Input (file or mic)
   -> Web Audio API + active-source analyser
-  -> spectral peak-to-mode estimation on CPU
+  -> layered spectral/modal estimation on CPU
   -> AudioFeatureFrame
-  -> visualization runtime (currently particle)
-  -> TSL compute pipeline
+  -> visualization runtime (currently raymarch)
+  -> TSL raymarch material
   -> R3F / Three.js render pipeline
 ```
 
@@ -168,9 +167,9 @@ Audio Input (file or mic)
 
 - Audio and modal estimation are renderer-agnostic and stay on the CPU side.
 - `AudioFeatureFrame` is the main seam between audio interpretation and visualization.
-- The current runtime is `particle`.
-- A future `raymarch` renderer is scaffolded conceptually, but not implemented.
-- Future raymarching does not need to be ported to TSL. The shared audio/modal layer should feed both renderers.
+- The current runtime is `raymarch`.
+- The field engine is layered: backbone structure, detail structure, and transient/band modulation.
+- The shared audio/modal layer should remain reusable across future product shells.
 
 ### Visualization runtime boundary
 
@@ -178,29 +177,28 @@ Internal visualization runtime scaffolding lives under:
 
 - `packages/visualizer/src/visualization/types.js`
 - `packages/visualizer/src/visualization/runtimeFactory.js`
-- `packages/visualizer/src/visualization/particleRuntime.js`
+- `packages/visualizer/src/visualization/raymarchRuntime.js`
 
-Today this resolves to the particle runtime only. There is no user-facing visualization-method switch yet.
+Today this resolves to the raymarch runtime only. There is no user-facing visualization-method switch.
 
-### TSL / particle pipeline
+### Raymarch pipeline
 
-The particle runtime is composed from modules in `packages/visualizer/src/core/tsl/`:
+The active renderer is composed from modules in `packages/visualizer/src/core/raymarch/`:
 
-- `buffers.js`
 - `uniforms.js`
-- `computeNodes.js`
 - `material.js`
-- `auditMirror.js`
 - `runtime.js`
+- `intersection.js`
+- `SafeVolumetricLightingModel.js`
 
-`packages/visualizer/src/core/tslSetup.js` is now a thin compatibility/composition layer over those modules.
+`packages/visualizer/src/core/raymarchSetup.js` is the composition layer for the volumetric renderer.
 
 Current runtime behavior:
 
-- `scalarFieldCompute` samples a modal standing-wave field over the fixed sphere domain
-- `zeroPointsCompute` writes nodal metadata per sample: potential, render group tag, field magnitude, and gradient magnitude
-- `particlesCompute` is velocity-based and field-driven; it uses local field attraction, anchor pull toward each particle's base sample, subordinate flow, damping, and idle-logo fallback
-- the old worker/fallback pitch path is gone; the main seam is now spectral analysis -> `AudioFeatureFrame` -> field-driven particle motion
+- layered modal slots are uploaded to dedicated backbone/detail mode buffers
+- the raymarch shader evaluates a volumetric cymatic field inside a spherical bound
+- idle falls back to the logo overlay while active states render the volumetric field
+- the main seam remains spectral analysis -> `AudioFeatureFrame` -> field-driven volumetric render
 
 ### Audio pipeline
 
@@ -215,9 +213,9 @@ Feature building lives in:
 Important behavior:
 
 - file and mic are single-source modes
-- live analysis is spectral-only
+- file and mic use explicit raw Web Audio analysis paths
 - test tone injection exists for diagnostics
-- modal estimation currently maps a small set of spectral peaks into mode slots each frame
+- modal estimation builds layered backbone/detail structures plus transient/band modulation each frame
 
 ## React / App Structure
 
@@ -240,7 +238,7 @@ Avoid re-centralizing that logic into a single god component.
 
 ## GUI Controls And Verification
 
-The control surface is schema-driven.
+The control surface is schema-driven. For a full reference of every control, what it does, and how the controls interact, see [`documentation/controls.md`](documentation/controls.md).
 
 Source of truth:
 
@@ -318,16 +316,16 @@ pnpm test:web-smoke:dev
 
 When making changes:
 
-- Prefer extending the split modules in `packages/visualizer/src/utils/audio/` and `packages/visualizer/src/core/tsl/` instead of growing old facade files again.
+- Prefer extending the split modules in `packages/visualizer/src/utils/audio/` and `packages/visualizer/src/core/raymarch/` instead of growing facade files again.
 - Keep `AudioFeatureFrame` as the only audio-to-visualization seam.
 - Keep audit/debug assembly out of core runtime logic where possible.
 - Keep control sync logic outside React hooks when feasible.
 - Treat the control schema as canonical.
-- Keep the visualization runtime boundary intact even while only `particle` exists.
+- Keep the visualization runtime boundary intact even while only `raymarch` exists.
 
 ## Desktop Notes
 
-`apps/desktop` wraps the same visualizer package. Shared audio UI behavior is exposed through:
+`apps/desktop` is now a neutral desktop shell reserved for the future flagship desktop host. Shared audio UI behavior remains available through:
 
 - `packages/visualizer/src/react/useSharedAudioLogic.js`
 

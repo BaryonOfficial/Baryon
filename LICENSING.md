@@ -1,60 +1,37 @@
 # Baryon Licensing
 
-Baryon uses a dual-license model:
+## Engine and Web App — Elastic License 2.0 (ELv2)
 
-- Open source license: `AGPL-3.0-only`
-- Commercial license: `Baryon Commercial License`
+The Baryon engine (`packages/visualizer`, `packages/ui`, `packages/config`) and the web app (`apps/web`) are licensed under the **Elastic License 2.0 (ELv2)**.
 
-`LICENSE` is the canonical open source license text for this repository.
+See [`LICENSE`](LICENSE) for the full license text.
 
-## When AGPL Is Enough
+**What ELv2 allows:**
 
-The AGPL is sufficient when you are willing to comply with `AGPL-3.0-only`, including its
-source-availability and network copyleft requirements.
+- Use, copy, modify, and distribute the software
+- Build products and services with it commercially
+- Fork and contribute back to the project
 
-Typical AGPL use cases:
+**What ELv2 prohibits:**
 
-- Internal evaluation or internal deployment under AGPL terms
-- Open source forks and modifications released under AGPL-compatible terms
-- Redistribution of Baryon where the complete corresponding source is made available as the AGPL
-  requires
-- Hosted deployments where users can interact with the software over a network and you satisfy
-  the AGPL source offer obligations
+- Providing Baryon as a hosted or managed service (i.e. you cannot resell Baryon as a product)
+- Circumventing or removing license key functionality
+- Removing or obscuring copyright or license notices
 
-## When A Commercial License Is Required
+## Desktop App — Commercial License
 
-You need the Baryon Commercial License if your planned use requires rights beyond the AGPL.
+The Baryon desktop app is a separate commercial product. A license is required to use it and is purchased at [baryon.live](https://baryon.live). License terms are presented at the time of purchase.
 
-Typical commercial-license cases:
+## Contributing
 
-- Embedding Baryon in a closed-source product or service
-- White-label delivery or OEM redistribution
-- Agency work where Baryon is delivered to a client as part of a proprietary engagement
-- Client redistribution, reseller distribution, or bundled redistribution under non-AGPL terms
-- Any proprietary distribution strategy that does not satisfy AGPL obligations
+Baryon accepts community contributions under a Contributor License Agreement (CLA). The CLA grants Baryon the right to use your contribution under any license, while you retain copyright ownership of your work.
 
-## What The Commercial License Adds
+The CLA text is in [`CLA.md`](CLA.md) at the root of the repository. Signatures are collected automatically via a GitHub Actions bot when you open your first pull request.
 
-The public commercial offer is structured as an annual subscription with these baseline terms:
-
-- Perpetual rights to versions obtained during an active paid term
-- Updates and support only during the active paid term
-- No trademark rights
-- No sublicensing except where an OEM / Agency addendum expressly allows it
-
-## Public Commercial Offer
-
-- Open Source: `AGPL-3.0-only`, free for compliant use
-- Commercial Single Product: `$2,500/year` for one product or app, one company, closed-source
-  use allowed, no client redistribution, standard email support
-- OEM / Agency: starting at `$12,000/year`, quote-led terms for redistribution and client
-  deliverables
-- Enterprise Custom: quote only, multi-product rights, procurement and security review, SLA,
-  and negotiated terms
+See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for the full contribution guide.
 
 ## Licensor
 
-The commercial licensor is currently Kyle Collins personally, with the agreement structured so it
-can later be assigned to a company without changing the public licensing model.
+The licensor is currently Kyle Collins personally, with the agreement structured so it can later be assigned to a company without changing the public licensing model.
 
-Commercial licensing contact: kyledcollins@proton.me
+Licensing contact: kyledcollins@proton.me

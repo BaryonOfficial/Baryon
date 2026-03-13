@@ -67,6 +67,62 @@ function MicIcon() {
   );
 }
 
+function VolumeIcon({ muted }) {
+  if (muted) {
+    return (
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+        <line x1="23" y1="9" x2="17" y2="15" />
+        <line x1="17" y1="9" x2="23" y2="15" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+    </svg>
+  );
+}
+
+function LinkIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M10 13a5 5 0 0 0 7.07 0l3.18-3.18a5 5 0 0 0-7.07-7.07L11 5" />
+      <path d="M14 11a5 5 0 0 0-7.07 0L3.76 14.18a5 5 0 1 0 7.07 7.07L13 19" />
+    </svg>
+  );
+}
+
 // ─── Scrolling filename ───────────────────────────────────────────────────────
 
 function ScrollingText({ text }) {
@@ -141,6 +197,7 @@ const CSS = `
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
   user-select: none;
   white-space: nowrap;
+  max-width: calc(100vw - 1.5rem);
 }
 
 /* ── Track section ── */
@@ -257,6 +314,58 @@ const CSS = `
 }
 .am-btn--mic-active:hover { background: rgba(255, 69, 58, 0.42) !important; }
 
+/* ── Volume ── */
+.am-volume {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.am-btn--volume {
+  width: 30px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.07);
+}
+.am-btn--volume:hover { background: rgba(255, 255, 255, 0.14); }
+.am-btn--volume:active { transform: scale(0.94); }
+
+.am-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 88px;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.14);
+  outline: none;
+  cursor: pointer;
+}
+
+.am-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.am-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.am-slider::-moz-range-track {
+  height: 4px;
+  border: none;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
 /* ── Device menu ── */
 .am-device-menu {
   position: absolute;
@@ -296,6 +405,116 @@ const CSS = `
 }
 .am-device-item:hover { background: rgba(255, 255, 255, 0.08); }
 .am-device-item--active { color: #0a84ff; }
+
+.am-legal-wrap {
+  display: none;
+  position: relative;
+}
+
+.am-legal-details {
+  position: relative;
+}
+
+.am-legal-summary {
+  list-style: none;
+  width: 30px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.am-legal-summary::-webkit-details-marker {
+  display: none;
+}
+
+.am-legal-details[open] .am-legal-summary {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.am-legal-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.6rem);
+  display: grid;
+  gap: 0.45rem;
+  min-width: 8.5rem;
+  padding: 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.9rem;
+  background: rgba(30, 30, 32, 0.92);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.am-legal-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.48rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(8, 10, 14, 0.72);
+  color: rgba(255, 255, 255, 0.92);
+  font-family: var(--font-ubuntu), sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.am-legal-link:hover {
+  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(20, 24, 32, 0.84);
+}
+
+@media (max-width: 960px) {
+  .am-player {
+    gap: 0.25rem;
+    padding: 0.45rem 0.75rem;
+  }
+
+  .am-track {
+    max-width: 150px;
+  }
+
+  .am-filename-wrap {
+    max-width: 112px;
+  }
+
+  .am-slider {
+    width: 64px;
+  }
+}
+
+@media (max-width: 720px) {
+  .am-player {
+    bottom: 1rem;
+    gap: 0.2rem;
+    padding: 0.42rem 0.65rem;
+  }
+
+  .am-track {
+    max-width: 120px;
+  }
+
+  .am-filename-wrap {
+    max-width: 84px;
+  }
+
+  .am-divider {
+    display: none;
+  }
+
+  .am-slider {
+    width: 52px;
+  }
+}
+
+@media (max-width: 1040px) {
+  .am-legal-wrap {
+    display: block;
+  }
+}
 `;
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -306,6 +525,8 @@ function AudioControls() {
     isPlaying,
     isMicActive,
     isAudioLoaded,
+    volume,
+    isMuted,
     isEngineReady,
     showDeviceMenu,
     audioDevices,
@@ -314,6 +535,8 @@ function AudioControls() {
     handlePlayPause,
     handleStop,
     handleMicToggle,
+    handleVolumeChange,
+    handleMuteToggle,
     setShowDeviceMenu,
     setSelectedDevice,
   } = useAudio();
@@ -380,6 +603,31 @@ function AudioControls() {
 
         <div className="am-divider" />
 
+        <div className="am-volume">
+          <button
+            className="am-btn am-btn--volume"
+            onClick={handleMuteToggle}
+            title={isMuted ? "Unmute output" : "Mute output"}
+          >
+            <VolumeIcon muted={isMuted || volume <= 0.001} />
+          </button>
+          <input
+            className="am-slider"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={volume}
+            onChange={(event) => {
+              handleVolumeChange(Number(event.target.value));
+            }}
+            aria-label="Volume"
+            title={`Volume ${Math.round(volume * 100)}%`}
+          />
+        </div>
+
+        <div className="am-divider" />
+
         {/* ── Right: mic + device menu ── */}
         <div className="am-mic-wrap">
           <button
@@ -421,6 +669,36 @@ function AudioControls() {
               )}
             </div>
           )}
+        </div>
+
+        <div className="am-legal-wrap">
+          <details className="am-legal-details">
+            <summary
+              className="am-btn am-legal-summary"
+              aria-label="Licensing and source"
+              title="Licensing and source"
+            >
+              <LinkIcon />
+            </summary>
+            <div className="am-legal-menu">
+              <a
+                className="am-legal-link"
+                href="https://github.com/BaryonOfficial/Baryon"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Source
+              </a>
+              <a
+                className="am-legal-link"
+                href="https://github.com/BaryonOfficial/Baryon/blob/main/LICENSING.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                License
+              </a>
+            </div>
+          </details>
         </div>
       </div>
     </>

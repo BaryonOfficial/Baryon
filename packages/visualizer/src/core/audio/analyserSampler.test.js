@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   computeRms,
   createAnalyserReader,
@@ -56,6 +56,46 @@ describe("analyser sampler", () => {
     expect(snapshot.avgAmplitude).toBeCloseTo((0 + 64 + 128 + 255) / 4);
     expect(snapshot.fftMagnitudes[1]).toBeCloseTo(64 / 255);
     expect(snapshot.rms).toBeCloseTo(0.25);
+  });
+
+  it("reads frequency data once per sample when using a reusable analyser reader", () => {
+    const analyserNode = {
+      fftSize: 4,
+      frequencyBinCount: 4,
+      getFloatTimeDomainData(data) {
+        data.set([0.25, 0.25, 0.25, 0.25]);
+      },
+    };
+    const readFrequencyData = vi.fn((data) => {
+      data.set([0, 64, 128, 255]);
+      return data;
+    });
+    const analyser = createAnalyserReader(analyserNode, readFrequencyData);
+
+    const snapshot = sampleAnalyser(analyser);
+
+    expect(readFrequencyData).toHaveBeenCalledTimes(1);
+    expect(snapshot.avgAmplitude).toBeCloseTo((0 + 64 + 128 + 255) / 4);
+  });
+
+  it("reuses fft and time-domain buffers across analyser samples", () => {
+    const analyserNode = {
+      fftSize: 4,
+      frequencyBinCount: 4,
+      getFloatTimeDomainData(data) {
+        data.set([0.25, 0.25, 0.25, 0.25]);
+      },
+    };
+    const analyser = createAnalyserReader(analyserNode, (data) => {
+      data.set([0, 64, 128, 255]);
+      return data;
+    });
+
+    const first = sampleAnalyser(analyser);
+    const second = sampleAnalyser(analyser);
+
+    expect(second.fftMagnitudes).toBe(first.fftMagnitudes);
+    expect(second.timeData).toBe(first.timeData);
   });
 
   it("computes rms defensively for empty input", () => {

@@ -15,6 +15,9 @@ import {
 import { CONTROL_RUNTIME_COVERAGE } from "./runtime.js";
 
 const EXPECTED_CONTROL_KEYS = [
+  "echoCancellation",
+  "noiseSuppression",
+  "autoGainControl",
   "bloomEnabled",
   "bloomStrength",
   "bloomRadius",
@@ -22,23 +25,19 @@ const EXPECTED_CONTROL_KEYS = [
   "backgroundColor",
   "volumeColor",
   "surfaceColor",
-  "particleSpeed",
   "rotationSpeed",
-  "flowFieldStrength",
-  "flowFieldFrequency",
   "zeroPointPrecision",
-  "flowMix",
-  "attractionStrength",
-  "velocityDamping",
-  "centerSuppressionInner",
-  "centerSuppressionOuter",
   "structureMin",
   "structureMax",
-  "surfaceParticles",
+  "raymarchSteps",
+  "densityGain",
+  "absorption",
+  "contourSharpness",
   "idleLogoIntensity",
   "idleLogoSize",
   "auditEnabled",
   "freezeModeSlots",
+  "forceWebGLFallbackTest",
   "injectTestTone",
   "testToneHz",
   "testToneAmplitude",
@@ -55,6 +54,18 @@ describe("control schema", () => {
   it("creates state for every control key", () => {
     const state = createControlState();
     expect(Object.keys(state)).toEqual(EXPECTED_CONTROL_KEYS);
+  });
+
+  it("keeps the node-threshold slider wide enough for cymatic tuning", () => {
+    const nodeThreshold = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "zeroPointPrecision",
+    );
+
+    expect(nodeThreshold?.binding).toMatchObject({
+      min: 0.001,
+      max: 0.3,
+      step: 0.001,
+    });
   });
 
   it("has a valid audit report", () => {
@@ -80,9 +91,39 @@ describe("control schema", () => {
     }
   });
 
-  it("defaults all current controls to the particle method surface", () => {
-    const particleControls = getControlsForMethod(DEFAULT_VISUALIZATION_METHOD);
-    expect(particleControls).toHaveLength(CONTROL_DEFINITIONS.length);
+  it("defaults current controls to the raymarch method surface", () => {
+    const methodControls = getControlsForMethod(DEFAULT_VISUALIZATION_METHOD);
+
+    expect(DEFAULT_VISUALIZATION_METHOD).toBe(VISUALIZATION_METHODS.raymarch);
+    expect(methodControls.map((definition) => definition.key)).toEqual([
+      "echoCancellation",
+      "noiseSuppression",
+      "autoGainControl",
+      "bloomEnabled",
+      "bloomStrength",
+      "bloomRadius",
+      "bloomThreshold",
+      "backgroundColor",
+      "volumeColor",
+      "surfaceColor",
+      "rotationSpeed",
+      "zeroPointPrecision",
+      "structureMin",
+      "structureMax",
+      "raymarchSteps",
+      "densityGain",
+      "absorption",
+      "contourSharpness",
+      "idleLogoIntensity",
+      "idleLogoSize",
+      "auditEnabled",
+      "freezeModeSlots",
+      "forceWebGLFallbackTest",
+      "injectTestTone",
+      "testToneHz",
+      "testToneAmplitude",
+      "logEveryFrames",
+    ]);
   });
 
   it("maps every live control to runtime coverage", () => {
@@ -99,14 +140,14 @@ describe("control schema", () => {
   it("fails audit when a live control lacks runtime coverage", () => {
     const report = auditControlSchema(CONTROL_DEFINITIONS, {
       ...CONTROL_RUNTIME_COVERAGE,
-      [CONTROL_HANDLERS.particle]: CONTROL_RUNTIME_COVERAGE[
-        CONTROL_HANDLERS.particle
-      ].filter((key) => key !== "particleSpeed"),
+      [CONTROL_HANDLERS.raymarch]: CONTROL_RUNTIME_COVERAGE[
+        CONTROL_HANDLERS.raymarch
+      ].filter((key) => key !== "densityGain"),
     });
 
     expect(report.isValid).toBe(false);
     expect(report.issues).toContain(
-      "Control particleSpeed is missing runtime coverage",
+      "Control densityGain is missing runtime coverage",
     );
   });
 });

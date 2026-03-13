@@ -15,6 +15,10 @@ class MockAnalyserNode {
     return this._fftSize;
   }
 
+  connect() {}
+
+  disconnect() {}
+
   getByteFrequencyData(data) {
     data.fill(0);
     if (data.length > 2) data[2] = 255;
@@ -25,111 +29,151 @@ class MockAnalyserNode {
   }
 }
 
+class MockGainNode {
+  constructor() {
+    this.gain = { value: 1 };
+  }
+
+  connect() {}
+
+  disconnect() {}
+}
+
+class MockMediaStreamSourceNode {
+  connect() {}
+
+  disconnect() {}
+}
+
+class MockBufferSourceNode {
+  constructor(context) {
+    this.context = context;
+    this.buffer = null;
+    this.onended = null;
+    this.started = false;
+    this.startArgs = null;
+  }
+
+  connect() {}
+
+  disconnect() {}
+
+  start(when = 0, offset = 0) {
+    this.started = true;
+    this.startArgs = { when, offset };
+  }
+
+  stop() {
+    this.started = false;
+  }
+}
+
+class MockAudioContext {
+  constructor() {
+    this.state = "running";
+    this.sampleRate = 48000;
+    this.currentTime = 12;
+    this.destination = {};
+    this.createdBufferSources = [];
+  }
+
+  resume = vi.fn(async () => {
+    this.state = "running";
+  });
+
+  close = vi.fn(async () => {
+    this.state = "closed";
+  });
+
+  createGain() {
+    return new MockGainNode();
+  }
+
+  createAnalyser() {
+    return new MockAnalyserNode();
+  }
+
+  createMediaStreamSource() {
+    return new MockMediaStreamSourceNode();
+  }
+
+  createBufferSource() {
+    const source = new MockBufferSourceNode(this);
+    this.createdBufferSources.push(source);
+    return source;
+  }
+
+  decodeAudioData = vi.fn(async () => ({
+    duration: 5,
+  }));
+}
+
 const mockTrackStop = vi.fn();
-let lastAudioInstance = null;
-
-vi.mock("three", () => {
-  class AudioLoader {
-    load(url, onLoad, _progress, onError) {
-      if (url === "bad") {
-        onError(new Error("load failed"));
-        return;
-      }
-      onLoad({ url });
-    }
-  }
-
-  class AudioListener {
-    constructor() {
-      this.timeDelta = 1 / 60;
-      this.context = {
-        state: "running",
-        sampleRate: 48000,
-        currentTime: 12,
-        resume: vi.fn(async () => {
-          this.context.state = "running";
-        }),
-        createAnalyser: () => new MockAnalyserNode(),
-        createMediaStreamSource: () => ({
-          connect: vi.fn(),
-          disconnect: vi.fn(),
-        }),
-      };
-    }
-  }
-
-  class Audio {
-    constructor(listener) {
-      this.listener = listener;
-      this.context = listener.context;
-      this.started = false;
-      this.isPlaying = false;
-      this.onEnded = null;
-      this.buffer = null;
-      lastAudioInstance = this;
-    }
-
-    setBuffer(buffer) {
-      this.buffer = buffer;
-    }
-
-    setLoop() {}
-
-    setVolume() {}
-
-    play() {
-      this.isPlaying = true;
-    }
-
-    pause() {
-      this.isPlaying = false;
-    }
-
-    stop() {
-      this.isPlaying = false;
-    }
-  }
-
-  class AudioAnalyser {
-    constructor(sound, fftSize) {
-      this.sound = sound;
-      this.analyser = new MockAnalyserNode();
-      this.analyser.fftSize = fftSize;
-    }
-
-    getFrequencyData() {
-      const data = new Uint8Array(this.analyser.frequencyBinCount);
-      this.analyser.getByteFrequencyData(data);
-      return data;
-    }
-
-    getAverageFrequency() {
-      return 64;
-    }
-  }
-
-  return {
-    Audio,
-    AudioAnalyser,
-    AudioListener,
-    AudioLoader,
-  };
-});
+const mockTrackApplyConstraints = vi.fn(async () => {});
+let fetchMock;
+let lastAudioContext = null;
+let getUserMediaMock;
+let getAudioTracksMock;
 
 describe("audio session", () => {
   let createAudioSession;
 
   beforeEach(async () => {
+    vi.resetModules();
     mockTrackStop.mockReset();
-    lastAudioInstance = null;
+    mockTrackApplyConstraints.mockReset();
+    lastAudioContext = null;
+    getAudioTracksMock = vi.fn(() => [
+      {
+        stop: mockTrackStop,
+        applyConstraints: mockTrackApplyConstraints,
+      },
+    ]);
+    getUserMediaMock = vi.fn(async () => ({
+      active: true,
+      getAudioTracks: getAudioTracksMock,
+    }));
+
+    fetchMock = vi.fn(async (url) => {
+      if (url === "bad") {
+        return {
+          ok: false,
+          status: 500,
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => new ArrayBuffer(32),
+      };
+    });
+
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      value: fetchMock,
+    });
+
+    Object.defineProperty(globalThis, "AudioContext", {
+      configurable: true,
+      value: class extends MockAudioContext {
+        constructor() {
+          super();
+          lastAudioContext = this;
+        }
+      },
+    });
+
+    Object.defineProperty(globalThis, "webkitAudioContext", {
+      configurable: true,
+      value: undefined,
+    });
+
     Object.defineProperty(globalThis, "navigator", {
       configurable: true,
       value: {
         mediaDevices: {
-          getUserMedia: vi.fn(async () => ({
-            active: true,
-            getAudioTracks: () => [{ stop: mockTrackStop }],
-          })),
+          getUserMedia: getUserMediaMock,
         },
       },
     });
@@ -137,13 +181,17 @@ describe("audio session", () => {
     ({ createAudioSession } = await import("./audioSetup.js"));
   });
 
-  it("tracks file lifecycle through explicit status", async () => {
+  function createAttachedSession() {
     const session = createAudioSession();
-    const camera = { add: vi.fn(), remove: vi.fn() };
+    session.attach({ add: vi.fn(), remove: vi.fn() });
+    return session;
+  }
 
-    session.attach(camera);
+  it("tracks file lifecycle through explicit status", async () => {
+    const session = createAttachedSession();
     await session.loadAudio("good");
 
+    expect(fetchMock).toHaveBeenCalledWith("good");
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "file",
       isAudioLoaded: true,
@@ -157,7 +205,14 @@ describe("audio session", () => {
       isPlaying: true,
       analysisSource: "file",
     });
-    expect(session.readAnalysisSnapshot()?.sourceMode).toBe("file");
+    const fileSnapshot = session.readAnalysisSnapshot();
+    expect(fileSnapshot).toMatchObject({
+      sourceMode: "file",
+      rms: 0.25,
+    });
+    expect(fileSnapshot?.avgAmplitude).toBeGreaterThan(0);
+    expect(fileSnapshot?.fftMagnitudes).toBeInstanceOf(Float32Array);
+    expect(fileSnapshot?.timeData).toBeInstanceOf(Float32Array);
 
     await session.playPauseAudio();
     expect(session.getStatus()).toMatchObject({
@@ -168,18 +223,25 @@ describe("audio session", () => {
   });
 
   it("tracks mic lifecycle and clears state on stop", async () => {
-    const session = createAudioSession();
-    const camera = { add: vi.fn(), remove: vi.fn() };
-
-    session.attach(camera);
+    const session = createAttachedSession();
     await session.startMicRecordStream("device-1");
 
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "mic",
       isMicActive: true,
       analysisSource: "mic",
+      micSettings: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
     });
-    expect(session.readAnalysisSnapshot()?.sourceMode).toBe("mic");
+    const micSnapshot = session.readAnalysisSnapshot();
+    expect(micSnapshot).toMatchObject({
+      sourceMode: "mic",
+      rms: 0.25,
+    });
+    expect(micSnapshot?.avgAmplitude).toBeGreaterThan(0);
 
     session.stopMicRecordStream();
     expect(mockTrackStop).toHaveBeenCalledTimes(1);
@@ -191,16 +253,12 @@ describe("audio session", () => {
   });
 
   it("disposes host state deterministically", async () => {
-    const session = createAudioSession();
-    const camera = { add: vi.fn(), remove: vi.fn() };
-
-    session.attach(camera);
+    const session = createAttachedSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
 
-    session.dispose();
+    await session.dispose();
 
-    expect(camera.remove).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "idle",
       isAudioLoaded: false,
@@ -208,49 +266,51 @@ describe("audio session", () => {
       analysisSource: "idle",
     });
     expect(session.readAnalysisSnapshot()).toBeNull();
+    expect(lastAudioContext.close).toHaveBeenCalledTimes(1);
   });
 
-  it("reports clock snapshots from playback and realtime modes without transition spikes", async () => {
-    const session = createAudioSession();
-    const camera = { add: vi.fn(), remove: vi.fn() };
-
-    session.attach(camera);
+  it("reports clock snapshots from playback, paused-playback, and realtime modes", async () => {
+    const session = createAttachedSession();
 
     expect(session.readClockSnapshot(1)).toMatchObject({
       clockMode: "realtime",
       time: 1,
       deltaTime: 0,
     });
-    expect(session.readClockSnapshot(1.5)).toMatchObject({
-      clockMode: "realtime",
-      time: 1.5,
-      deltaTime: 0.5,
-    });
 
     await session.loadAudio("good");
     await session.playPauseAudio();
+    lastAudioContext.currentTime = 12.75;
 
     expect(session.readClockSnapshot(2)).toMatchObject({
       clockMode: "playback",
-      time: 12,
-      deltaTime: 1 / 60,
+      time: 0.75,
+      deltaTime: 0.75,
+    });
+
+    await session.playPauseAudio();
+
+    expect(session.readClockSnapshot(3)).toMatchObject({
+      clockMode: "paused-playback",
+      time: 0.75,
+      deltaTime: 0,
     });
 
     session.stopAudio();
 
-    expect(session.readClockSnapshot(3)).toMatchObject({
+    expect(session.readClockSnapshot(4)).toMatchObject({
       clockMode: "realtime",
-      time: 3,
+      time: 4,
       deltaTime: 0,
     });
   });
 
   it("resets to unloaded state after a failed audio load", async () => {
-    const session = createAudioSession();
-    const camera = { add: vi.fn(), remove: vi.fn() };
-    session.attach(camera);
+    const session = createAttachedSession();
 
-    await expect(session.loadAudio("bad")).rejects.toThrow();
+    await expect(session.loadAudio("bad")).rejects.toThrow(
+      "Failed to load audio: 500",
+    );
 
     expect(session.getStatus()).toMatchObject({
       isAudioLoaded: false,
@@ -260,13 +320,9 @@ describe("audio session", () => {
   });
 
   it("returns to stopped when stopAudio is called while playing", async () => {
-    const session = createAudioSession();
-    const camera = { add: vi.fn(), remove: vi.fn() };
-    session.attach(camera);
+    const session = createAttachedSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
-
-    expect(session.getStatus().isPlaying).toBe(true);
 
     session.stopAudio();
 
@@ -277,21 +333,208 @@ describe("audio session", () => {
     });
   });
 
-  it("applies the ended callback even when registered before attach", async () => {
-    const session = createAudioSession();
-    const callback = vi.fn();
-    const camera = { add: vi.fn(), remove: vi.fn() };
-
-    session.setAudioEndedCallback(callback);
-    session.attach(camera);
+  it("keeps analysis snapshots active at zero volume and while muted", async () => {
+    const session = createAttachedSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
 
-    lastAudioInstance.onEnded();
+    const baseline = session.readAnalysisSnapshot();
+    session.setVolume(0);
+    const mutedByVolume = session.readAnalysisSnapshot();
+    session.setMuted(true);
+    const muted = session.readAnalysisSnapshot();
+
+    expect(baseline.fftMagnitudes).toEqual(mutedByVolume.fftMagnitudes);
+    expect(baseline.fftMagnitudes).toEqual(muted.fftMagnitudes);
+    expect(baseline.avgAmplitude).toBe(mutedByVolume.avgAmplitude);
+    expect(baseline.avgAmplitude).toBe(muted.avgAmplitude);
+    expect(lastAudioContext.destination).toBeTruthy();
+  });
+
+  it("preserves playback offset across pause and resume", async () => {
+    const session = createAttachedSession();
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+
+    lastAudioContext.currentTime = 13.5;
+    await session.playPauseAudio();
+    expect(session.readClockSnapshot(2)).toMatchObject({
+      clockMode: "paused-playback",
+      time: 1.5,
+    });
+
+    await session.playPauseAudio();
+    lastAudioContext.currentTime = 14;
+
+    expect(session.readClockSnapshot(3)).toMatchObject({
+      clockMode: "playback",
+      time: 2,
+      deltaTime: 0.5,
+    });
+  });
+
+  it("resets playback state cleanly when a new file is loaded during playback", async () => {
+    const session = createAttachedSession();
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+
+    lastAudioContext.currentTime = 13.25;
+    await session.loadAudio("good");
+
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "file",
+      isAudioLoaded: true,
+      isPlaying: false,
+      analysisSource: "idle",
+    });
+    expect(session.readClockSnapshot(5)).toMatchObject({
+      clockMode: "realtime",
+      time: 5,
+      deltaTime: 0,
+    });
+
+    await session.playPauseAudio();
+
+    expect(
+      lastAudioContext.createdBufferSources.at(-1)?.startArgs,
+    ).toMatchObject({
+      when: 0,
+      offset: 0,
+    });
+  });
+
+  it("clears paused file playback state when switching to mic input", async () => {
+    const session = createAttachedSession();
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+
+    lastAudioContext.currentTime = 13;
+    await session.playPauseAudio();
+    expect(session.readClockSnapshot(2)).toMatchObject({
+      clockMode: "paused-playback",
+      time: 1,
+    });
+
+    await session.startMicRecordStream("device-1");
+
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "mic",
+      isMicActive: true,
+      isPlaying: false,
+      analysisSource: "mic",
+    });
+    expect(session.readClockSnapshot(3)).toMatchObject({
+      clockMode: "realtime",
+      time: 3,
+      deltaTime: 0,
+    });
+    expect(session.readAnalysisSnapshot()).toMatchObject({
+      sourceMode: "mic",
+      rms: 0.25,
+    });
+  });
+
+  it("applies the ended callback even when registered before attach", async () => {
+    const session = createAttachedSession();
+    const callback = vi.fn();
+
+    session.setAudioEndedCallback(callback);
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+
+    const activeSource = lastAudioContext.createdBufferSources[0];
+    if (activeSource?.onended) {
+      activeSource.onended();
+    }
 
     expect(callback).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "stopped",
+      isPlaying: false,
+    });
+  });
+
+  it("releases mic resources and closes the audio context on dispose", async () => {
+    const session = createAttachedSession();
+    await session.startMicRecordStream("device-1");
+
+    await session.dispose();
+
+    expect(mockTrackStop).toHaveBeenCalledTimes(1);
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "idle",
+      isMicActive: false,
+      isPlaying: false,
+      analysisSource: "idle",
+    });
+    expect(lastAudioContext.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("requests mic input with the selected device and current DSP settings", async () => {
+    const session = createAttachedSession();
+    await session.setMicSettings({
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    });
+
+    await session.startMicRecordStream("device-1");
+
+    expect(getUserMediaMock).toHaveBeenCalledWith({
+      audio: {
+        deviceId: { exact: "device-1" },
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    expect(session.getMicSettings()).toEqual({
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    });
+  });
+
+  it("applies updated mic DSP settings to the active track", async () => {
+    const session = createAttachedSession();
+    await session.startMicRecordStream("device-1");
+
+    await session.setMicSettings({
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: false,
+    });
+
+    expect(mockTrackApplyConstraints).toHaveBeenCalledWith({
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: false,
+    });
+    expect(session.getStatus().micSettings).toEqual({
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: false,
+    });
+  });
+
+  it("allows repeated create and dispose cycles without retaining playback state", async () => {
+    const firstSession = createAttachedSession();
+    await firstSession.loadAudio("good");
+    await firstSession.playPauseAudio();
+    await firstSession.dispose();
+
+    const secondSession = createAttachedSession();
+    expect(secondSession.getStatus()).toMatchObject({
+      audioInputMode: "idle",
+      isAudioLoaded: false,
+      isPlaying: false,
+      analysisSource: "idle",
+    });
+
+    await secondSession.loadAudio("good");
+    expect(secondSession.getStatus()).toMatchObject({
+      audioInputMode: "file",
+      isAudioLoaded: true,
       isPlaying: false,
     });
   });

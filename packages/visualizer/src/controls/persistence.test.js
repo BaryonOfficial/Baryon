@@ -89,10 +89,10 @@ describe("deserializeControls", () => {
     const raw = { bloomStrength: 0.5 };
     const result = deserializeControls(raw, CONTROL_DEFINITIONS);
     // A key that was not in raw should still be present with its default
-    const particleSpeedDef = CONTROL_DEFINITIONS.find(
-      (d) => d.key === "particleSpeed",
+    const densityGainDef = CONTROL_DEFINITIONS.find(
+      (d) => d.key === "densityGain",
     );
-    expect(result.particleSpeed).toBe(particleSpeedDef.defaultValue);
+    expect(result.densityGain).toBe(densityGainDef.defaultValue);
   });
 });
 

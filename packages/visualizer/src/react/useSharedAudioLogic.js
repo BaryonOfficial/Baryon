@@ -6,6 +6,8 @@ export function useSharedAudioLogic({
   setIsAudioLoaded,
   setIsPlaying,
   setIsMicActive,
+  setVolume,
+  setIsMuted,
   setAudioDevices,
   setSelectedDevice,
   isAudioLoaded,
@@ -20,8 +22,17 @@ export function useSharedAudioLogic({
     setIsAudioLoaded(status.isAudioLoaded);
     setIsPlaying(status.isPlaying);
     setIsMicActive(status.isMicActive);
+    setVolume?.(status.volume ?? 1);
+    setIsMuted?.(status.muted ?? false);
     return status;
-  }, [audioSession, setIsAudioLoaded, setIsMicActive, setIsPlaying]);
+  }, [
+    audioSession,
+    setIsAudioLoaded,
+    setIsMicActive,
+    setIsPlaying,
+    setVolume,
+    setIsMuted,
+  ]);
 
   useEffect(() => {
     const loadDevices = async () => {
@@ -119,10 +130,26 @@ export function useSharedAudioLogic({
     }
   }, [audioSession, isMicActive, selectedDevice, syncStatus]);
 
+  const handleVolumeChange = useCallback(
+    (value) => {
+      audioSession.setVolume(value);
+      syncStatus();
+    },
+    [audioSession, syncStatus],
+  );
+
+  const handleMuteToggle = useCallback(() => {
+    const { muted } = audioSession.getStatus();
+    audioSession.setMuted(!muted);
+    syncStatus();
+  }, [audioSession, syncStatus]);
+
   return {
     handleFileChange,
     handlePlayPause,
     handleStop,
     handleMicToggle,
+    handleVolumeChange,
+    handleMuteToggle,
   };
 }

@@ -2,16 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import {
+  applyAudioControls,
   applyAuditControls,
   applyBloomControls,
-  applyParticleControls,
-  applyParticleSceneControls,
+  applyVisualizationControls,
   applySharedControls,
+  applySceneControls,
   buildControlInspectionSnapshot,
   createVisualizationRuntime,
   DEFAULT_VISUALIZATION_METHOD,
   getDefaultAudioSession,
-  setupLoaders,
   createAudioFeatureState,
   buildAudioFeatureFrame,
   RENDER_DEFAULTS,
@@ -26,6 +26,18 @@ import {
 function snapshotFeatureFrame(featureFrame) {
   return {
     ...featureFrame,
+    backboneSlots:
+      featureFrame.backboneSlots instanceof Float32Array
+        ? new Float32Array(featureFrame.backboneSlots)
+        : featureFrame.backboneSlots,
+    detailSlots:
+      featureFrame.detailSlots instanceof Float32Array
+        ? new Float32Array(featureFrame.detailSlots)
+        : featureFrame.detailSlots,
+    bandEnergies:
+      featureFrame.bandEnergies instanceof Float32Array
+        ? new Float32Array(featureFrame.bandEnergies)
+        : featureFrame.bandEnergies,
     modeSlots:
       featureFrame.modeSlots instanceof Float32Array
         ? new Float32Array(featureFrame.modeSlots)
@@ -38,6 +50,7 @@ function snapshotFeatureFrame(featureFrame) {
 }
 
 export function useBaryonVisualizer({
+  baryonGeometry,
   camera,
   gl,
   setIsPlaying,
@@ -53,6 +66,7 @@ export function useBaryonVisualizer({
     createVisualizationRuntime(DEFAULT_VISUALIZATION_METHOD),
   );
   const runtimeStateRef = useRef(null);
+  const lastLiveFrameRef = useRef(null);
   const lastActiveFrameRef = useRef(null);
   const [points, setPoints] = useState(null);
 
@@ -63,58 +77,25 @@ export function useBaryonVisualizer({
 
     audio.attach(camera);
     gl.setClearColor(new THREE.Color(RENDER_DEFAULTS.backgroundColor));
+    if (gl.shadowMap) {
+      gl.shadowMap.enabled = true;
+    }
 
     audio.setAudioEndedCallback(() => {
       setIsPlaying(false);
       setIsAudioLoaded(true);
     });
 
-    const { gltfLoader } = setupLoaders();
-
-    (async () => {
-      try {
-        const gltf = await gltfLoader.loadAsync("./glb/Baryon_v2.glb");
-        /** @type {THREE.Mesh} */
-        const instance = /** @type {THREE.Mesh} */ (
-          /** @type {unknown} */ (gltf.scene.children[0])
-        );
-        instance.scale.set(0.2, 0.2, 0.2);
-        instance.updateMatrix();
-        instance.geometry.applyMatrix4(instance.matrix);
-
-        const audioStatus = audio.getStatus();
-        const parameters = {
-          count: SIMULATION_DEFAULTS.particleCount,
-          radius: SIMULATION_DEFAULTS.radius,
-          surfaceRatio: SIMULATION_DEFAULTS.surfaceRatio,
-          surfaceThreshold: SIMULATION_DEFAULTS.surfaceThreshold,
-          threshold: SIMULATION_DEFAULTS.zeroPointPrecision,
-        };
-        const audioConfig = {
-          capacity: audioStatus.capacity,
-          fftSize: audioStatus.fftSize,
-          sampleRate: audioStatus.sampleRate,
-        };
-
-        audioFeatureRef.current = createAudioFeatureState(audioConfig.capacity);
-        const runtimeState = runtime.setup({
-          baryonGeometry: instance.geometry,
-          parameters,
-          audioConfig,
-        });
-        runtimeStateRef.current = runtimeState;
-        setPoints(runtimeState.points);
-        setIsEngineReady?.(true);
-      } catch (error) {
-        console.error("[BaryonScene] Setup failed:", error);
-      }
-    })();
-
     return () => {
-      audio.dispose();
+      setIsEngineReady?.(false);
+      setPoints(null);
+      audio.setAudioEndedCallback(null);
       if (runtimeStateRef.current) {
         runtime.dispose(runtimeStateRef.current);
+        runtimeStateRef.current = null;
       }
+      lastLiveFrameRef.current = null;
+      lastActiveFrameRef.current = null;
       if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
         delete window.__baryonAuditSnapshot;
         delete window.__baryonControlState;
@@ -123,12 +104,83 @@ export function useBaryonVisualizer({
     };
   }, [camera, gl, setIsAudioLoaded, setIsEngineReady, setIsPlaying]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const audio = audioRef.current ?? getDefaultAudioSession();
+    const syncAudioControls = (event) => {
+      const nextControls = event?.detail ?? controlsRef.current;
+      void applyAudioControls(audio, nextControls).catch((error) => {
+        console.error("[Baryon audio] Failed to apply mic settings:", error);
+      });
+    };
+
+    syncAudioControls();
+    window.addEventListener("__baryon-controls-change", syncAudioControls);
+    return () => {
+      window.removeEventListener("__baryon-controls-change", syncAudioControls);
+    };
+  }, [controlsRef]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    const runtime = runtimeRef.current;
+
+    if (!audio || !baryonGeometry) {
+      setIsEngineReady?.(false);
+      setPoints(null);
+      return undefined;
+    }
+
+    setIsEngineReady?.(false);
+    setPoints(null);
+
+    try {
+      const audioStatus = audio.getStatus();
+      const parameters = {
+        radius: SIMULATION_DEFAULTS.radius,
+      };
+      const audioConfig = {
+        capacity: audioStatus.capacity,
+        fftSize: audioStatus.fftSize,
+        sampleRate: audioStatus.sampleRate,
+      };
+
+      audioFeatureRef.current = createAudioFeatureState(audioConfig.capacity);
+      const runtimeState = runtime.setup({
+        baryonGeometry,
+        parameters,
+        audioConfig,
+      });
+      runtimeState.method = runtime.method;
+      runtimeStateRef.current = runtimeState;
+      setPoints(runtimeState.points);
+      setIsEngineReady?.(true);
+    } catch (error) {
+      console.error("[BaryonScene] Setup failed:", error);
+    }
+
+    return () => {
+      setIsEngineReady?.(false);
+      setPoints(null);
+      if (runtimeStateRef.current) {
+        runtime.dispose(runtimeStateRef.current);
+        runtimeStateRef.current = null;
+      }
+      lastLiveFrameRef.current = null;
+      lastActiveFrameRef.current = null;
+      audioFeatureRef.current = null;
+    };
+  }, [baryonGeometry, setIsEngineReady]);
+
   useFrame((state) => {
     const pipeline = ensurePipeline();
     const runtimeState = runtimeStateRef.current;
     const featureState = audioFeatureRef.current;
 
-    if (!pipeline || !runtimeState || !featureState) {
+    if (!runtimeState || !featureState) {
       return;
     }
 
@@ -141,13 +193,24 @@ export function useBaryonVisualizer({
       { ensurePipeline, postNodesRef },
       controls,
     );
+    const audioSnapshot = audio.getMicSettings();
     const sharedSnapshot = applySharedControls(gl, controls);
-    const particleSnapshot = applyParticleControls(runtimeState, controls);
+    const visualizationSnapshot = applyVisualizationControls(
+      runtimeRef.current.method,
+      runtimeState,
+      controls,
+    );
     const auditSnapshot = applyAuditControls(featureState, controls);
 
     const { clockMode, time, deltaTime } = audio.readClockSnapshot(
       state.clock.getElapsedTime(),
     );
+    if (clockMode === "paused-playback" && !lastActiveFrameRef.current) {
+      const liveFrame = lastLiveFrameRef.current;
+      if (liveFrame) {
+        lastActiveFrameRef.current = snapshotFeatureFrame(liveFrame);
+      }
+    }
     const featureFrame = buildAudioFeatureFrame({
       analysisSnapshot,
       featureState,
@@ -155,13 +218,11 @@ export function useBaryonVisualizer({
       status,
     });
 
-    // Freeze the last active frame only for paused file playback.
-    // Mic shutdown and other inactive states should fall back to the silent logo frame.
-    // modeSlots and fftMagnitudes are shared Float32Array buffers that get mutated
-    // in-place by buildSilentFeatureFrame each frame, so we must snapshot them.
     if (status.isPlaying || status.isMicActive) {
-      lastActiveFrameRef.current = snapshotFeatureFrame(featureFrame);
+      lastLiveFrameRef.current = featureFrame;
+      lastActiveFrameRef.current = null;
     } else if (clockMode !== "paused-playback") {
+      lastLiveFrameRef.current = null;
       lastActiveFrameRef.current = null;
     }
     const effectiveFrame =
@@ -180,6 +241,7 @@ export function useBaryonVisualizer({
     if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
       window.__baryonAuditSnapshot = {
         visualizationMethod: runtimeRef.current.method,
+        renderer: window.__baryonRendererInfo ?? null,
         ...runtimeState.debugSnapshot,
       };
     }
@@ -194,12 +256,13 @@ export function useBaryonVisualizer({
       if (frame % interval === 0) {
         console.log("[Baryon audit]", {
           visualizationMethod: runtimeRef.current.method,
+          renderer: window.__baryonRendererInfo ?? null,
           ...runtimeState.debugSnapshot,
         });
       }
     }
 
-    const sceneSnapshot = applyParticleSceneControls(
+    const sceneSnapshot = applySceneControls(
       runtimeState.points,
       controls,
       deltaTime,
@@ -208,8 +271,9 @@ export function useBaryonVisualizer({
     if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
       window.__baryonControlState = buildControlInspectionSnapshot({
         method: runtimeRef.current.method,
+        audio: audioSnapshot,
         shared: sharedSnapshot,
-        particle: particleSnapshot,
+        raymarch: visualizationSnapshot,
         bloom: bloomSnapshot,
         audit: auditSnapshot,
         scene: sceneSnapshot,
@@ -217,7 +281,11 @@ export function useBaryonVisualizer({
       markBaryonTestRuntimeReady();
     }
 
-    pipeline.render();
+    if (pipeline) {
+      pipeline.render();
+    } else {
+      gl.render(state.scene, state.camera);
+    }
   }, 1);
 
   return points;

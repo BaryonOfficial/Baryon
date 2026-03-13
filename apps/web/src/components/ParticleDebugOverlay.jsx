@@ -6,9 +6,9 @@ function formatNumber(value, digits = 3) {
   return value.toFixed(digits);
 }
 
-function selectParticleDebug(snapshot) {
+function selectDebugSnapshot(snapshot) {
   if (!snapshot) return null;
-  return snapshot.particleDebug ?? snapshot;
+  return snapshot.raymarchDebug ?? snapshot;
 }
 
 export default function ParticleDebugOverlay() {
@@ -40,14 +40,16 @@ export default function ParticleDebugOverlay() {
   }
 
   const snapshot = overlayState.snapshot;
-  const particleDebug = selectParticleDebug(snapshot);
-  if (!particleDebug) {
+  const debugSnapshot = selectDebugSnapshot(snapshot);
+  if (!debugSnapshot) {
     return null;
   }
 
+  const method = snapshot.visualizationMethod ?? "raymarch";
+
   return (
     <aside
-      data-testid="particle-debug-overlay"
+      data-testid="raymarch-debug-overlay"
       style={{
         position: "fixed",
         left: "1rem",
@@ -67,40 +69,25 @@ export default function ParticleDebugOverlay() {
       }}
     >
       <div style={{ fontWeight: 700, marginBottom: "0.45rem" }}>
-        Particle Debug
+        Raymarch Debug
       </div>
-      <div>Method: {snapshot.visualizationMethod ?? "particle"}</div>
-      <div>Field: {particleDebug.fieldState}</div>
+      <div>Method: {method}</div>
+      <div>Field: {debugSnapshot.fieldState}</div>
       <div>
-        Modes: {particleDebug.activeModeCount ?? snapshot.modeSlotCount ?? 0}
+        Modes:{" "}
+        {debugSnapshot.modeSlotCount ??
+          debugSnapshot.activeModeCount ??
+          snapshot.modeSlotCount ??
+          0}
       </div>
       <div>Pitch: {snapshot.pitchSource ?? "none"}</div>
       <div>Analysis: {snapshot.analysisSourceUsed ?? "none"}</div>
-      <div>
-        Field Occupancy: {formatNumber(particleDebug.fieldPopulationRatio)}
-      </div>
-      <div>
-        High Potential: {formatNumber(particleDebug.highPotentialOccupancy)}
-      </div>
-      <div>
-        Center Particles: {formatNumber(particleDebug.centerParticleOccupancy)}
-      </div>
-      <div>
-        Center Potential: {formatNumber(particleDebug.centerPotentialOccupancy)}
-      </div>
-      <div>
-        Attraction: {formatNumber(particleDebug.avgAttractionContribution)}
-      </div>
-      <div>Anchor: {formatNumber(particleDebug.avgAnchorContribution)}</div>
-      <div>
-        Core Lift: {formatNumber(particleDebug.avgCenterEscapeContribution)}
-      </div>
-      <div>Flow: {formatNumber(particleDebug.avgFlowContribution)}</div>
-      <div>
-        A/F Ratio: {formatNumber(particleDebug.attractionToFlowRatio, 2)}
-      </div>
-      <div>Continuity: {particleDebug.continuityMode}</div>
-      <div>Reset: {particleDebug.resetReason}</div>
+      <div>Avg Opacity: {formatNumber(debugSnapshot.avgOpacity)}</div>
+      <div>Avg Density: {formatNumber(debugSnapshot.avgDensity)}</div>
+      <div>Early Exit: {formatNumber(debugSnapshot.earlyExitRatio)}</div>
+      <div>Steps: {debugSnapshot.stepBudget ?? "n/a"}</div>
+      <div>Volume: {String(debugSnapshot.volumeVisible)}</div>
+      <div>Idle Overlay: {String(debugSnapshot.idleOverlayVisible)}</div>
     </aside>
   );
 }

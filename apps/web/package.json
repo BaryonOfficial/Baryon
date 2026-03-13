@@ -9,6 +9,7 @@
     "dev:https": "cross-env HTTPS=true vite",
     "build": "vite build",
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
+    "test:unit": "node --test tests/unit/**/*.test.js",
     "typecheck": "tsc -p tsconfig.json",
     "preview": "vite preview",
     "test:smoke": "pnpm test:smoke:prod",

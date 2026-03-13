@@ -8,6 +8,12 @@ declare global {
     };
     __baryonControlState?: Record<string, unknown>;
     __baryonAuditSnapshot?: Record<string, unknown>;
+    __baryonRendererInfo?: {
+      forceWebGLFallbackTest: boolean;
+      backend: string | null;
+      isFallback: boolean;
+      error: string | null;
+    };
     __baryonTestReady?: boolean;
   }
 }
