@@ -21,25 +21,17 @@ packages/
 
 ## Licensing
 
-Baryon source code in this repository is licensed as `AGPL-3.0-only`. The canonical license text
-is in `LICENSE`.
+Baryon's engine (`packages/visualizer`, `packages/ui`, `packages/config`) and web app
+(`apps/web`) are licensed under `Elastic License 2.0 (ELv2)`. The canonical license text is in
+`LICENSE`.
 
-If you can comply with the AGPL, you can use Baryon under that license. If you need proprietary
-embedding, closed-source distribution, OEM or white-label rights, or client redistribution and
-delivery rights, use the Baryon Commercial License instead.
+The desktop app (`apps/desktop`) is a separate commercial product. A desktop license is required
+to use distributed builds and is purchased at `baryon.live`.
 
 Public licensing references:
 
 - `LICENSE`
-- `LICENSE-COMMERCIAL`
 - `LICENSING.md`
-
-Public commercial offer:
-
-- Open Source: `AGPL-3.0-only`, free for compliant use
-- Commercial Single Product: `$2,500/year`
-- OEM / Agency: starting at `$12,000/year`
-- Enterprise Custom: quote only
 
 ## Prerequisites
 
@@ -79,7 +71,7 @@ pnpm verify:full          # Full local verification, including workspace builds
 Useful package/app-local commands:
 
 ```bash
-cd apps/web && pnpm dev:https    # HTTPS dev server for mic / SharedArrayBuffer work
+cd apps/web && pnpm dev:https    # HTTPS dev server for mic testing outside localhost
 cd apps/web && pnpm build        # Build the production web bundle into dist/
 cd apps/web && pnpm preview      # Serve the built dist/ output locally
 cd apps/web && pnpm lint
@@ -145,7 +137,7 @@ Current renderer requirements:
 Audio/browser constraints:
 
 - The visualizer uses Web Audio API analyzers plus a CPU-side spectral modal estimator
-- Microphone support and some browser audio features require secure context behavior
+- Microphone support requires a secure context (`https` or localhost)
 - `pnpm dev` works on localhost
 - use `cd apps/web && pnpm dev:https` when testing across devices or when browser security policies require HTTPS
 

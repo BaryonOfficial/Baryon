@@ -21,6 +21,9 @@
 
 .baryon-audio-controls__menu-anchor {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .baryon-audio-controls__button,
@@ -81,6 +84,18 @@
   transform: rotate(180deg);
 }
 
+.baryon-audio-controls__mic-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #111827;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
 .baryon-audio-controls__menu {
   position: absolute;
   left: 0;
@@ -95,6 +110,22 @@
     0 4px 6px -4px rgba(0, 0, 0, 0.1);
 }
 
+.baryon-audio-controls__menu-label {
+  padding: 0.5rem 1rem 0.25rem;
+  color: #6b7280;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.baryon-audio-controls__menu-note {
+  padding: 0 1rem 0.5rem;
+  color: #6b7280;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
 .baryon-audio-controls__menu-item {
   display: block;
   width: 100%;
@@ -106,6 +137,18 @@
   font-size: 0.875rem;
   line-height: 1.25rem;
   cursor: pointer;
+}
+
+.baryon-audio-controls__menu-item-title {
+  display: block;
+}
+
+.baryon-audio-controls__menu-item-description {
+  display: block;
+  margin-top: 0.125rem;
+  color: #6b7280;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 .baryon-audio-controls__menu-item:hover {

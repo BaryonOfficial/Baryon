@@ -14,6 +14,11 @@ import {
 import { CONTROL_HANDLERS, createControlState } from "./schema.js";
 import { createVisualizationRuntime } from "../visualization/runtimeFactory.js";
 import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
+import {
+  deriveLowStepBloomGuard,
+  deriveStepCompensation,
+  STEP_REFERENCE,
+} from "../core/raymarch/stepStability.js";
 
 function createRaymarchHarness() {
   return {
@@ -21,6 +26,7 @@ function createRaymarchHarness() {
     uniforms: {
       uColor: { value: { set: vi.fn() } },
       uSurfaceColor: { value: { set: vi.fn() } },
+      uChromesthesiaMix: { value: 0 },
       uThreshold: { value: 0 },
       uStructureMin: { value: 0 },
       uStructureMax: { value: 0 },
@@ -30,16 +36,50 @@ function createRaymarchHarness() {
       uDensityGain: { value: 0 },
       uAbsorption: { value: 0 },
       uContourSharpness: { value: 0 },
+      uRimBloomBias: { value: 0 },
+      uRimCompression: { value: 0 },
       uRaymarchSteps: { value: 0 },
       uRadius: { value: 3 },
+    },
+    reactivityTuning: {
+      reactivity: 1,
+      motionAmount: 1,
+      structurePersistence: 1,
+    },
+    bloomTuning: {
+      bloomResponseBias: 0.4,
+      stepReference: STEP_REFERENCE,
+      stepCompensation: deriveStepCompensation(STEP_REFERENCE),
+      lowStepBloomGuard: deriveLowStepBloomGuard(STEP_REFERENCE),
+      effectiveStrength: 0.11,
+      effectiveRadius: 0.09,
+      effectiveThreshold: 0.44,
+    },
+    baseDensityGain: 0,
+    chromesthesia: {
+      colorMode: "static",
+      chromesthesiaMix: 0,
     },
     volumeMesh: {
       material: {
         steps: 0,
       },
     },
+    points: {
+      rotation: { y: 0 },
+    },
+    sceneMotion: {
+      yaw: 0,
+      angularVelocity: 0,
+      targetAngularVelocity: 0,
+      lastMotionSignal: 0,
+      lastBeatPulseId: 0,
+      idleLogoYaw: 0,
+    },
+    responseEnvelope: 0,
     idleOverlay: {
       visible: false,
+      rotation: { y: 0 },
       scale: {
         x: 1,
         setScalar(value) {
@@ -88,7 +128,14 @@ describe("control runtime sync", () => {
     controls.densityGain = 1.75;
     controls.absorption = 1.35;
     controls.contourSharpness = 5.2;
+    controls.rimBloomBias = 0.65;
+    controls.rimCompression = 0.72;
+    controls.reactivity = 1.2;
+    controls.motionAmount = 1.1;
+    controls.structurePersistence = 1.4;
     controls.raymarchSteps = 64;
+    controls.colorMode = "chromesthesia";
+    controls.chromesthesiaMix = 0.6;
 
     const gl = {
       setClearColor: vi.fn(),
@@ -104,9 +151,27 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uStructureMin.value).toBe(0.12);
     expect(runtimeState.uniforms.uStructureMax.value).toBe(0.48);
     expect(runtimeState.uniforms.uDensityGain.value).toBe(1.75);
+    expect(runtimeState.baseDensityGain).toBe(1.75);
     expect(runtimeState.uniforms.uAbsorption.value).toBe(1.35);
     expect(runtimeState.uniforms.uContourSharpness.value).toBe(5.2);
+    expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.65);
+    expect(runtimeState.uniforms.uRimCompression.value).toBe(0.72);
     expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
+    expect(runtimeState.uniforms.uChromesthesiaMix.value).toBe(0.6);
+    expect(runtimeState.chromesthesia).toEqual({
+      colorMode: "chromesthesia",
+      chromesthesiaMix: 0.6,
+    });
+    expect(runtimeState.reactivityTuning).toEqual({
+      reactivity: 1.2,
+      motionAmount: 1.1,
+      structurePersistence: 1.4,
+    });
+    expect(runtimeState.bloomTuning.stepReference).toBe(STEP_REFERENCE);
+    expect(runtimeState.bloomTuning.stepCompensation).toBeCloseTo(
+      deriveStepCompensation(64),
+    );
+    expect(runtimeState.bloomTuning.lowStepBloomGuard).toBe(0);
     expect(runtimeState.volumeMesh.material.steps).toBe(64);
     expect(runtimeState.idleOverlay.scale.x).toBe(1.4);
     expect(runtimeState.idleOverlay.material.opacity).toBe(0.84);
@@ -114,7 +179,14 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.idleLogoAlpha).toBe(0.84);
     expect(snapshot.uniforms.densityGain).toBe(1.75);
     expect(snapshot.uniforms.absorption).toBe(1.35);
+    expect(snapshot.uniforms.rimBloomBias).toBe(0.65);
+    expect(snapshot.uniforms.rimCompression).toBe(0.72);
+    expect(snapshot.uniforms.reactivity).toBe(1.2);
+    expect(snapshot.uniforms.motionAmount).toBe(1.1);
+    expect(snapshot.uniforms.structurePersistence).toBe(1.4);
     expect(snapshot.uniforms.raymarchSteps).toBe(64);
+    expect(snapshot.uniforms.colorMode).toBe("chromesthesia");
+    expect(snapshot.uniforms.chromesthesiaMix).toBe(0.6);
     expect(snapshot.overlay.scale).toBe(1.4);
   });
 
@@ -148,6 +220,13 @@ describe("control runtime sync", () => {
     controls.densityGain = 2.1;
     controls.absorption = 1.6;
     controls.contourSharpness = 6.4;
+    controls.rimBloomBias = 0.35;
+    controls.rimCompression = 0.5;
+    controls.reactivity = 0.9;
+    controls.motionAmount = 1.3;
+    controls.structurePersistence = 0.75;
+    controls.colorMode = "static";
+    controls.chromesthesiaMix = 0.88;
 
     const runtimeState = createRaymarchHarness();
     const snapshot = applyRaymarchControls(runtimeState, controls);
@@ -155,20 +234,35 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(72);
     expect(runtimeState.volumeMesh.material.steps).toBe(72);
     expect(runtimeState.uniforms.uDensityGain.value).toBe(2.1);
+    expect(runtimeState.baseDensityGain).toBe(2.1);
     expect(runtimeState.uniforms.uAbsorption.value).toBe(1.6);
     expect(runtimeState.uniforms.uContourSharpness.value).toBe(6.4);
+    expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.35);
+    expect(runtimeState.uniforms.uRimCompression.value).toBe(0.5);
+    expect(runtimeState.reactivityTuning.reactivity).toBe(0.9);
+    expect(runtimeState.reactivityTuning.motionAmount).toBe(1.3);
+    expect(runtimeState.reactivityTuning.structurePersistence).toBe(0.75);
+    expect(runtimeState.bloomTuning.stepCompensation).toBeCloseTo(
+      deriveStepCompensation(72),
+    );
+    expect(runtimeState.bloomTuning.lowStepBloomGuard).toBe(0);
+    expect(runtimeState.uniforms.uChromesthesiaMix.value).toBe(0);
     expect(runtimeState.idleOverlay.material.color.set).toHaveBeenCalledWith(
       "#88ccff",
     );
     expect(snapshot.uniforms.surfaceColor).toBe("#88ccff");
+    expect(snapshot.uniforms.colorMode).toBe("static");
+    expect(snapshot.uniforms.chromesthesiaMix).toBe(0);
   });
 
   it("applies bloom controls to the pipeline", () => {
     const controls = createControlState();
+    controls.raymarchSteps = STEP_REFERENCE;
     controls.bloomEnabled = false;
     controls.bloomStrength = 0.77;
     controls.bloomRadius = 0.31;
     controls.bloomThreshold = 0.44;
+    controls.bloomResponseBias = 0.5;
 
     const pipeline = { outputNode: null };
     const sceneColor = {
@@ -184,20 +278,26 @@ describe("control runtime sync", () => {
       {
         ensurePipeline: () => pipeline,
         postNodesRef: { current: { sceneColor, bloomPass } },
+        runtimeState: createRaymarchHarness(),
       },
       controls,
     );
 
-    expect(bloomPass.strength.value).toBe(0.77);
-    expect(bloomPass.radius.value).toBe(0.31);
-    expect(bloomPass.threshold.value).toBe(0.44);
+    expect(bloomPass.strength.value).toBeCloseTo(0.6853);
+    expect(bloomPass.radius.value).toBeCloseTo(0.2976);
+    expect(bloomPass.threshold.value).toBeCloseTo(0.48);
     expect(pipeline.outputNode).toBe(sceneColor);
     expect(snapshot.enabled).toBe(false);
+    expect(snapshot.bloomResponseBias).toBe(0.5);
+    expect(snapshot.stepReference).toBe(STEP_REFERENCE);
+    expect(snapshot.stepCompensation).toBe(1);
+    expect(snapshot.lowStepBloomGuard).toBe(0);
   });
 
   it("enables bloom output when the control is on", () => {
     const controls = createControlState();
     controls.bloomEnabled = true;
+    controls.bloomResponseBias = 0.4;
 
     const pipeline = { outputNode: null };
     const sceneColor = { add: vi.fn(() => "bloomed-output") };
@@ -211,6 +311,7 @@ describe("control runtime sync", () => {
       {
         ensurePipeline: () => pipeline,
         postNodesRef: { current: { sceneColor, bloomPass } },
+        runtimeState: createRaymarchHarness(),
       },
       controls,
     );
@@ -218,6 +319,46 @@ describe("control runtime sync", () => {
     expect(sceneColor.add).toHaveBeenCalledWith(bloomPass);
     expect(pipeline.outputNode).toBe("bloomed-output");
     expect(snapshot.enabled).toBe(true);
+    expect(snapshot.strength).toBeCloseTo(controls.bloomStrength * 0.912);
+    expect(snapshot.lowStepBloomGuard).toBe(0);
+  });
+
+  it("guards bloom response below 64 steps", () => {
+    const controls = createControlState();
+    controls.bloomEnabled = true;
+    controls.bloomResponseBias = 0.4;
+    controls.raymarchSteps = 32;
+
+    const runtimeState = createRaymarchHarness();
+    const pipeline = { outputNode: null };
+    const sceneColor = { add: vi.fn(() => "bloomed-output") };
+    const bloomPass = {
+      strength: { value: 0 },
+      radius: { value: 0 },
+      threshold: { value: 0 },
+    };
+
+    const snapshot = applyBloomControls(
+      {
+        ensurePipeline: () => pipeline,
+        postNodesRef: { current: { sceneColor, bloomPass } },
+        runtimeState,
+      },
+      controls,
+    );
+
+    expect(snapshot.lowStepBloomGuard).toBeCloseTo(deriveLowStepBloomGuard(32));
+    expect(snapshot.stepCompensation).toBeCloseTo(deriveStepCompensation(32));
+    expect(snapshot.strength).toBeCloseTo(
+      controls.bloomStrength * 0.912 * 0.92,
+    );
+    expect(snapshot.radius).toBeCloseTo(controls.bloomRadius * 0.968);
+    expect(snapshot.threshold).toBeCloseTo(
+      controls.bloomThreshold + 0.032 + 0.0333333333,
+    );
+    expect(runtimeState.bloomTuning.lowStepBloomGuard).toBeCloseTo(
+      deriveLowStepBloomGuard(32),
+    );
   });
 
   it("applies audit controls to feature state", () => {
@@ -259,14 +400,257 @@ describe("control runtime sync", () => {
     expect(snapshot.logEveryFrames).toBe(12);
   });
 
-  it("applies scene controls to points rotation", () => {
+  it("preserves constant rotation in manual mode", () => {
     const controls = createControlState();
+    controls.rotationMode = "manual";
     controls.rotationSpeed = 2;
-    const points = { rotation: { y: 1 } };
+    const runtimeState = createRaymarchHarness();
+    runtimeState.points.rotation.y = 1;
+    runtimeState.sceneMotion.yaw = 1;
 
-    const snapshot = applySceneControls(points, controls, 0.5);
-    expect(points.rotation.y).toBeCloseTo(0.5);
+    const snapshot = applySceneControls(runtimeState, controls, 0.5);
+    expect(runtimeState.points.rotation.y).toBeCloseTo(0.5);
+    expect(snapshot.rotationMode).toBe("manual");
     expect(snapshot.rotationSpeed).toBe(2);
+  });
+
+  it("settles rotation back to neutral in off mode", () => {
+    const controls = createControlState();
+    controls.rotationMode = "off";
+    const runtimeState = createRaymarchHarness();
+    runtimeState.points.rotation.y = 1.2;
+    runtimeState.sceneMotion.yaw = 1.2;
+    runtimeState.sceneMotion.angularVelocity = -1.4;
+
+    const snapshot = applySceneControls(runtimeState, controls, 0.5);
+    expect(Math.abs(runtimeState.points.rotation.y)).toBeLessThan(1.2);
+    expect(Math.abs(snapshot.angularVelocity)).toBeLessThan(1.4);
+    expect(snapshot.rotationMode).toBe("off");
+  });
+
+  it("adds a beat impulse on top of field-driven rotation in audio mode", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.motionAmount = 1.4;
+    const beatlessRuntimeState = createRaymarchHarness();
+    beatlessRuntimeState.responseEnvelope = 0.5;
+    const beatRuntimeState = createRaymarchHarness();
+    beatRuntimeState.responseEnvelope = 0.5;
+
+    const baseFrame = {
+      fieldState: "active",
+      structureSignal: 0.55,
+      energySignal: 0.72,
+      changeSignal: 0.64,
+      pulseSignal: 0.3,
+    };
+    const status = {
+      isPlaying: true,
+      isMicActive: false,
+    };
+
+    const beatlessSnapshot = applySceneControls(
+      beatlessRuntimeState,
+      controls,
+      1 / 60,
+      baseFrame,
+      status,
+    );
+    const beatSnapshot = applySceneControls(
+      beatRuntimeState,
+      controls,
+      1 / 60,
+      {
+        ...baseFrame,
+        beatDetected: true,
+        beatPulseId: 9,
+        beatStrength: 0.78,
+        beatConfidence: 0.72,
+      },
+      status,
+    );
+
+    expect(beatSnapshot.rotationMode).toBe("audio");
+    expect(beatSnapshot.motionAmount).toBe(1.4);
+    expect(beatSnapshot.motionSignal).toBeGreaterThan(0.4);
+    expect(beatSnapshot.targetAngularVelocity).toBeLessThan(0);
+    expect(beatSnapshot.angularVelocity).toBeLessThan(
+      beatlessSnapshot.angularVelocity,
+    );
+    expect(beatRuntimeState.sceneMotion.lastBeatPulseId).toBe(9);
+    expect(beatRuntimeState.points.rotation.y).toBeLessThan(0);
+  });
+
+  it("consumes each beat pulse id only once for audio rotation", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.motionAmount = 1.2;
+    const freshBeatRuntimeState = createRaymarchHarness();
+    freshBeatRuntimeState.responseEnvelope = 0.42;
+    const consumedBeatRuntimeState = createRaymarchHarness();
+    consumedBeatRuntimeState.responseEnvelope = 0.42;
+    consumedBeatRuntimeState.sceneMotion.lastBeatPulseId = 17;
+
+    const featureFrame = {
+      fieldState: "active",
+      structureSignal: 0.48,
+      energySignal: 0.58,
+      changeSignal: 0.46,
+      pulseSignal: 0.22,
+      beatDetected: true,
+      beatPulseId: 17,
+      beatStrength: 0.74,
+      beatConfidence: 0.69,
+    };
+    const status = {
+      isPlaying: true,
+      isMicActive: false,
+    };
+
+    const freshBeatSnapshot = applySceneControls(
+      freshBeatRuntimeState,
+      controls,
+      1 / 60,
+      featureFrame,
+      status,
+    );
+    const consumedBeatSnapshot = applySceneControls(
+      consumedBeatRuntimeState,
+      controls,
+      1 / 60,
+      featureFrame,
+      status,
+    );
+
+    expect(freshBeatRuntimeState.sceneMotion.lastBeatPulseId).toBe(17);
+    expect(consumedBeatRuntimeState.sceneMotion.lastBeatPulseId).toBe(17);
+    expect(freshBeatSnapshot.angularVelocity).toBeLessThan(
+      consumedBeatSnapshot.angularVelocity,
+    );
+  });
+
+  it("stays strongly reactive on sustained playback without a fresh beat trigger", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.motionAmount = 1;
+    const runtimeState = createRaymarchHarness();
+    runtimeState.responseEnvelope = 0.62;
+
+    const snapshot = applySceneControls(
+      runtimeState,
+      controls,
+      1 / 60,
+      {
+        fieldState: "active",
+        structureSignal: 0.78,
+        energySignal: 0.84,
+        changeSignal: 0.22,
+        pulseSignal: 0.05,
+      },
+      {
+        isPlaying: true,
+        isMicActive: false,
+      },
+    );
+
+    expect(snapshot.rotationMode).toBe("audio");
+    expect(snapshot.targetAngularVelocity).toBeLessThan(-1);
+    expect(snapshot.angularVelocity).toBeLessThan(-0.15);
+    expect(runtimeState.points.rotation.y).toBeLessThan(0);
+  });
+
+  it("lets audio rotation settle near stillness when structural change is weak", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.motionAmount = 1;
+    const runtimeState = createRaymarchHarness();
+    runtimeState.responseEnvelope = 0.18;
+
+    const snapshot = applySceneControls(
+      runtimeState,
+      controls,
+      1 / 60,
+      {
+        fieldState: "active",
+        structureSignal: 0.18,
+        energySignal: 0.16,
+        changeSignal: 0.03,
+        pulseSignal: 0,
+      },
+      {
+        isPlaying: true,
+        isMicActive: false,
+      },
+    );
+
+    expect(snapshot.rotationMode).toBe("audio");
+    expect(Math.abs(snapshot.targetAngularVelocity)).toBeLessThan(0.4);
+    expect(Math.abs(snapshot.angularVelocity)).toBeLessThan(0.2);
+  });
+
+  it("keeps the idle logo synced to manual rotation speed in audio mode", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.rotationSpeed = 2;
+    const runtimeState = createRaymarchHarness();
+
+    const snapshot = applySceneControls(
+      runtimeState,
+      controls,
+      0.5,
+      {
+        fieldState: "idle",
+        structureSignal: 0,
+        energySignal: 0,
+        changeSignal: 0,
+        pulseSignal: 0,
+      },
+      {
+        isPlaying: false,
+        isMicActive: false,
+      },
+    );
+
+    expect(snapshot.rotationMode).toBe("audio");
+    expect(runtimeState.points.rotation.y).toBe(0);
+    expect(runtimeState.sceneMotion.idleLogoYaw).toBeCloseTo(-0.5);
+    expect(runtimeState.idleOverlay.rotation.y).toBeCloseTo(-0.5);
+  });
+
+  it("disables sustained and beat-driven audio rotation when motion amount is zero", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.motionAmount = 0;
+    const runtimeState = createRaymarchHarness();
+    runtimeState.responseEnvelope = 0.5;
+
+    const snapshot = applySceneControls(
+      runtimeState,
+      controls,
+      1 / 60,
+      {
+        fieldState: "active",
+        structureSignal: 0.55,
+        energySignal: 0.72,
+        changeSignal: 0.64,
+        pulseSignal: 0.3,
+        beatDetected: true,
+        beatPulseId: 9,
+        beatStrength: 0.78,
+        beatConfidence: 0.72,
+      },
+      {
+        isPlaying: true,
+        isMicActive: false,
+      },
+    );
+
+    expect(snapshot.rotationMode).toBe("audio");
+    expect(snapshot.motionAmount).toBe(0);
+    expect(Math.abs(snapshot.targetAngularVelocity)).toBe(0);
+    expect(Math.abs(snapshot.angularVelocity)).toBe(0);
+    expect(Math.abs(runtimeState.points.rotation.y)).toBe(0);
+    expect(runtimeState.sceneMotion.lastBeatPulseId).toBe(9);
   });
 
   it("builds a control inspection snapshot", () => {
@@ -316,8 +700,11 @@ describe("control runtime sync", () => {
     expect(runtimeState.method).toBe(DEFAULT_VISUALIZATION_METHOD);
     expect(runtimeState.volumeMesh).toBeTruthy();
     expect(runtimeState.idleOverlay).toBeTruthy();
-    expect(runtimeState.points.children).toContain(runtimeState.volumeMesh);
-    expect(runtimeState.points.children).toContain(runtimeState.idleOverlay);
+    expect(runtimeState.visualRoot.children).toContain(runtimeState.volumeMesh);
+    expect(runtimeState.visualRoot.children).toContain(
+      runtimeState.idleOverlay,
+    );
+    expect(runtimeState.points.children).toContain(runtimeState.visualRoot);
     expect(runtimeState.stabilityStats.avgRaySegmentLength).toBeGreaterThan(0);
     expect(runtimeState.stabilityStats.missRatio).toBeGreaterThan(0);
 

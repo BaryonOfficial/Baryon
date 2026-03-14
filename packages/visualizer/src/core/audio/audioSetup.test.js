@@ -45,6 +45,16 @@ class MockMediaStreamSourceNode {
   disconnect() {}
 }
 
+class MockMediaElementSourceNode {
+  constructor(element) {
+    this.element = element;
+  }
+
+  connect() {}
+
+  disconnect() {}
+}
+
 class MockBufferSourceNode {
   constructor(context) {
     this.context = context;
@@ -75,6 +85,7 @@ class MockAudioContext {
     this.currentTime = 12;
     this.destination = {};
     this.createdBufferSources = [];
+    this.createdMediaElementSources = [];
   }
 
   resume = vi.fn(async () => {
@@ -97,6 +108,12 @@ class MockAudioContext {
     return new MockMediaStreamSourceNode();
   }
 
+  createMediaElementSource(element) {
+    const source = new MockMediaElementSourceNode(element);
+    this.createdMediaElementSources.push(source);
+    return source;
+  }
+
   createBufferSource() {
     const source = new MockBufferSourceNode(this);
     this.createdBufferSources.push(source);
@@ -106,6 +123,49 @@ class MockAudioContext {
   decodeAudioData = vi.fn(async () => ({
     duration: 5,
   }));
+}
+
+class MockMediaElement {
+  constructor({
+    currentTime = 0,
+    duration = 5,
+    paused = true,
+    ended = false,
+    src = "https://streams.soundcloud.com/track.m3u8",
+  } = {}) {
+    this.currentTime = currentTime;
+    this.duration = duration;
+    this.paused = paused;
+    this.ended = ended;
+    this.src = src;
+    this.currentSrc = src;
+    this.listeners = new Map();
+  }
+
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type, listener) {
+    const listeners = this.listeners.get(type);
+    listeners?.delete(listener);
+  }
+
+  dispatchEvent(type) {
+    const listeners = this.listeners.get(type);
+    listeners?.forEach((listener) => listener());
+  }
+
+  play = vi.fn(async () => {
+    this.paused = false;
+    this.ended = false;
+  });
+
+  pause = vi.fn(() => {
+    this.paused = true;
+  });
 }
 
 const mockTrackStop = vi.fn();
@@ -222,6 +282,118 @@ describe("audio session", () => {
     });
   });
 
+  it("tracks native stream lifecycle through the shared playback graph", async () => {
+    const session = createAttachedSession();
+    const mediaElement = new MockMediaElement({
+      duration: 9,
+      currentTime: 0,
+    });
+
+    await session.loadStream({
+      element: mediaElement,
+      label: "SoundCloud Track",
+      duration: 9,
+      sourceKind: "soundcloud",
+    });
+
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "file",
+      sourceKind: "soundcloud",
+      sourceLabel: "SoundCloud Track",
+      isAudioLoaded: true,
+      isPlaying: false,
+      analysisSource: "idle",
+    });
+
+    await session.playPauseAudio();
+
+    expect(mediaElement.play).toHaveBeenCalledTimes(1);
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "file",
+      isPlaying: true,
+      sourceKind: "soundcloud",
+      analysisSource: "file",
+    });
+    expect(session.readAnalysisSnapshot()).toMatchObject({
+      sourceMode: "stream",
+      rms: 0.25,
+    });
+
+    mediaElement.currentTime = 2.25;
+    expect(session.readClockSnapshot(2)).toMatchObject({
+      clockMode: "playback",
+      time: 2.25,
+      deltaTime: 2.25,
+    });
+
+    await session.playPauseAudio();
+    expect(mediaElement.pause).toHaveBeenCalledTimes(1);
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "idle",
+      isPlaying: false,
+      sourceKind: "soundcloud",
+    });
+    expect(session.readClockSnapshot(3)).toMatchObject({
+      clockMode: "paused-playback",
+      time: 2.25,
+      deltaTime: 0,
+    });
+  });
+
+  it("reports seekable transport state for finite files and updates paused offsets", async () => {
+    const session = createAttachedSession();
+    await session.loadAudio("good");
+
+    expect(session.getTransportState()).toEqual({
+      currentTimeSeconds: 0,
+      durationSeconds: 5,
+      canSeek: true,
+    });
+
+    await session.seekTo(2.5);
+
+    expect(session.getTransportState()).toEqual({
+      currentTimeSeconds: 2.5,
+      durationSeconds: 5,
+      canSeek: true,
+    });
+    expect(session.readClockSnapshot(2)).toMatchObject({
+      clockMode: "paused-playback",
+      time: 2.5,
+      deltaTime: 0,
+    });
+  });
+
+  it("reports seekable transport state for finite streams and updates current time", async () => {
+    const session = createAttachedSession();
+    const mediaElement = new MockMediaElement({
+      duration: 9,
+      currentTime: 0,
+    });
+
+    await session.loadStream({
+      element: mediaElement,
+      label: "Seekable Stream",
+      duration: 9,
+      sourceKind: "soundcloud",
+    });
+
+    expect(session.getTransportState()).toEqual({
+      currentTimeSeconds: 0,
+      durationSeconds: 9,
+      canSeek: true,
+    });
+
+    await session.seekTo(4.5);
+
+    expect(mediaElement.currentTime).toBe(4.5);
+    expect(session.getTransportState()).toEqual({
+      currentTimeSeconds: 4.5,
+      durationSeconds: 9,
+      canSeek: true,
+    });
+  });
+
   it("tracks mic lifecycle and clears state on stop", async () => {
     const session = createAttachedSession();
     await session.startMicRecordStream("device-1");
@@ -333,6 +505,33 @@ describe("audio session", () => {
     });
   });
 
+  it("resets native stream playback when stopAudio is called", async () => {
+    const session = createAttachedSession();
+    const mediaElement = new MockMediaElement({
+      duration: 7,
+      currentTime: 1.75,
+      paused: false,
+    });
+
+    await session.loadStream({
+      element: mediaElement,
+      label: "Playlist Track",
+      duration: 7,
+      sourceKind: "soundcloud",
+    });
+
+    session.stopAudio();
+
+    expect(mediaElement.pause).toHaveBeenCalledTimes(1);
+    expect(mediaElement.currentTime).toBe(0);
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "stopped",
+      isPlaying: false,
+      sourceKind: "soundcloud",
+      analysisSource: "idle",
+    });
+  });
+
   it("keeps analysis snapshots active at zero volume and while muted", async () => {
     const session = createAttachedSession();
     await session.loadAudio("good");
@@ -370,6 +569,61 @@ describe("audio session", () => {
       clockMode: "playback",
       time: 2,
       deltaTime: 0.5,
+    });
+  });
+
+  it("restarts active file playback from the requested seek offset", async () => {
+    const session = createAttachedSession();
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+
+    await session.seekTo(3.25);
+
+    expect(session.getStatus()).toMatchObject({
+      isPlaying: true,
+      audioInputMode: "file",
+    });
+    expect(lastAudioContext.createdBufferSources).toHaveLength(2);
+    expect(
+      lastAudioContext.createdBufferSources.at(-1)?.startArgs,
+    ).toMatchObject({
+      when: 0,
+      offset: 3.25,
+    });
+    expect(session.getTransportState()).toMatchObject({
+      currentTimeSeconds: 3.25,
+      durationSeconds: 5,
+      canSeek: true,
+    });
+  });
+
+  it("updates active native stream playback without interrupting play state", async () => {
+    const session = createAttachedSession();
+    const mediaElement = new MockMediaElement({
+      duration: 8,
+      currentTime: 1,
+      paused: true,
+    });
+
+    await session.loadStream({
+      element: mediaElement,
+      label: "Playing Stream",
+      duration: 8,
+      sourceKind: "soundcloud",
+    });
+    await session.playPauseAudio();
+
+    await session.seekTo(5.5);
+
+    expect(mediaElement.currentTime).toBe(5.5);
+    expect(session.getStatus()).toMatchObject({
+      isPlaying: true,
+      sourceKind: "soundcloud",
+    });
+    expect(session.getTransportState()).toMatchObject({
+      currentTimeSeconds: 5.5,
+      durationSeconds: 8,
+      canSeek: true,
     });
   });
 
@@ -434,6 +688,53 @@ describe("audio session", () => {
     });
   });
 
+  it("clears loaded stream playback state when switching to mic input", async () => {
+    const session = createAttachedSession();
+    const mediaElement = new MockMediaElement({
+      duration: 8,
+      currentTime: 0,
+    });
+
+    await session.loadStream({
+      element: mediaElement,
+      label: "Stream Track",
+      duration: 8,
+      sourceKind: "soundcloud",
+    });
+
+    await session.startMicRecordStream("device-1");
+
+    expect(mediaElement.pause).toHaveBeenCalledTimes(2);
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "mic",
+      isMicActive: true,
+      isPlaying: false,
+      sourceKind: "mic",
+      analysisSource: "mic",
+      isAudioLoaded: false,
+    });
+  });
+
+  it("marks unloaded and mic sources as non-seekable", async () => {
+    const session = createAttachedSession();
+
+    expect(session.getTransportState()).toEqual({
+      currentTimeSeconds: 0,
+      durationSeconds: 0,
+      canSeek: false,
+    });
+    await expect(session.seekTo(1)).resolves.toBe(false);
+
+    await session.startMicRecordStream("device-1");
+
+    expect(session.getTransportState()).toEqual({
+      currentTimeSeconds: 0,
+      durationSeconds: 0,
+      canSeek: false,
+    });
+    await expect(session.seekTo(1)).resolves.toBe(false);
+  });
+
   it("applies the ended callback even when registered before attach", async () => {
     const session = createAttachedSession();
     const callback = vi.fn();
@@ -451,6 +752,36 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "stopped",
       isPlaying: false,
+    });
+  });
+
+  it("applies the ended callback for native stream playback", async () => {
+    const session = createAttachedSession();
+    const callback = vi.fn();
+    const mediaElement = new MockMediaElement({
+      duration: 6,
+      currentTime: 0,
+    });
+
+    session.setAudioEndedCallback(callback);
+    await session.loadStream({
+      element: mediaElement,
+      label: "Ended Stream",
+      duration: 6,
+      sourceKind: "soundcloud",
+    });
+    await session.playPauseAudio();
+
+    mediaElement.currentTime = 6;
+    mediaElement.ended = true;
+    mediaElement.dispatchEvent("ended");
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(mediaElement.currentTime).toBe(0);
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "stopped",
+      isPlaying: false,
+      sourceKind: "soundcloud",
     });
   });
 

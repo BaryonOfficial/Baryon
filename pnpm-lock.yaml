@@ -133,6 +133,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      hls.js:
+        specifier: ^1.6.15
+        version: 1.6.15
       libphonenumber-js:
         specifier: ^1.11.18
         version: 1.12.38

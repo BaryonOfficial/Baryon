@@ -1,0 +1,6 @@
+# Policy and automation files require maintainer review.
+/.github/workflows/* @RektTillNoon
+/.github/CODEOWNERS @RektTillNoon
+/CLA.md @RektTillNoon
+/cla-signatures/* @RektTillNoon
+/scripts/sync-public.sh @RektTillNoon

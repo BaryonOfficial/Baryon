@@ -94,6 +94,51 @@ describe("deserializeControls", () => {
     );
     expect(result.densityGain).toBe(densityGainDef.defaultValue);
   });
+
+  it("maps legacy beat and pulse settings into the new reactivity controls", () => {
+    const result = deserializeControls(
+      {
+        rotationAudioAmount: 1.35,
+        beatSensitivity: 0.9,
+        pulseAmount: 0.11,
+        pulseDecayMs: 270,
+      },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.motionAmount).toBe(1.35);
+    expect(result.reactivity).toBeCloseTo(0.11 / 0.055, 6);
+    expect(result.structurePersistence).toBeCloseTo(270 / 180, 6);
+  });
+
+  it("preserves legacy rotation when pulse was disabled", () => {
+    const result = deserializeControls(
+      {
+        pulseEnabled: false,
+        rotationAudioAmount: 1.5,
+        pulseAmount: 0.08,
+        beatSensitivity: 1.1,
+      },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.reactivity).toBe(0);
+    expect(result.motionAmount).toBe(1.5);
+  });
+
+  it("keeps inferred motion disabled when legacy pulse was off without rotation", () => {
+    const result = deserializeControls(
+      {
+        pulseEnabled: false,
+        pulseAmount: 0.08,
+        beatSensitivity: 1.1,
+      },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.reactivity).toBe(0);
+    expect(result.motionAmount).toBe(0);
+  });
 });
 
 describe("createPreset", () => {

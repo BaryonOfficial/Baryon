@@ -26,9 +26,16 @@ export function createRaymarchUniforms(parameters) {
     uIdleLogoSize: uniform(RENDER_DEFAULTS.idleLogoSize),
     uColor: uniform(new THREE.Color(RENDER_DEFAULTS.volumeColor)),
     uSurfaceColor: uniform(new THREE.Color(RENDER_DEFAULTS.surfaceColor)),
+    uChromesthesiaMix: uniform(
+      RENDER_DEFAULTS.colorMode === "chromesthesia"
+        ? RENDER_DEFAULTS.chromesthesiaMix
+        : 0,
+    ),
     uDensityGain: uniform(RAYMARCH_DEFAULTS.densityGain),
     uAbsorption: uniform(RAYMARCH_DEFAULTS.absorption),
     uContourSharpness: uniform(RAYMARCH_DEFAULTS.contourSharpness),
+    uRimBloomBias: uniform(RAYMARCH_DEFAULTS.rimBloomBias),
+    uRimCompression: uniform(RAYMARCH_DEFAULTS.rimCompression),
     uRaymarchSteps: uniform(RAYMARCH_DEFAULTS.raymarchSteps),
     uBandEnergies: uniform(new THREE.Vector4(0, 0, 0, 0)),
     uTransientEnergy: uniform(0.0),

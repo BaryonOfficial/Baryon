@@ -6,6 +6,7 @@ import {
   BLEND_RELEASE,
   BLEND_TRACKING,
   DECAY_PER_FRAME,
+  blendColorStack,
   blendModalStack,
   clearModalStack,
   countActiveSlots,
@@ -29,11 +30,14 @@ function makeState(amplitudes) {
   return {
     slots,
     referenceSlots,
+    colorSlots: new Float32Array(amplitudes.length * 4),
+    referenceColorSlots: new Float32Array(amplitudes.length * 4),
     harmonicSupport: new Float32Array(4),
     fundamental: 0,
     fundamentalConfidence: 0,
     analysisEngine: "none",
     uniqueModeCount: 0,
+    chromesthesiaComponents: [],
   };
 }
 
@@ -79,9 +83,12 @@ describe("decayModalStack", () => {
 
   it("clears raw target slots while decaying the live stack", () => {
     const state = makeState([1.0]);
+    state.colorSlots[0] = 0.4;
+    state.referenceColorSlots[0] = 0.6;
     state.referenceSlots[3] = 0.6;
     decayModalStack(state);
     expect(state.referenceSlots.every((value) => value === 0)).toBe(true);
+    expect(state.referenceColorSlots.every((value) => value === 0)).toBe(true);
   });
 
   it("clears target metadata while decaying the live stack", () => {
@@ -97,6 +104,7 @@ describe("decayModalStack", () => {
     expect(state.fundamentalConfidence).toBe(0);
     expect(state.analysisEngine).toBe("none");
     expect(state.uniqueModeCount).toBe(0);
+    expect(state.chromesthesiaComponents).toEqual([]);
   });
 });
 
@@ -149,12 +157,15 @@ describe("blendModalStack", () => {
     return {
       slots,
       referenceSlots,
+      colorSlots: new Float32Array(capacity * 4),
+      referenceColorSlots: new Float32Array(capacity * 4),
       harmonicSupport: new Float32Array(4),
       fundamental: 0,
       fundamentalConfidence: 0,
       analysisEngine: "none",
       uniqueModeCount: entries.length,
       lastStableAt: 0,
+      chromesthesiaComponents: [],
       latchedFundamentalHz: 0,
       latchedFundamentalConfidence: 0,
       latchHoldFrames: 0,
@@ -326,6 +337,73 @@ describe("blendModalStack", () => {
     expect(
       out.find((e) => e.u === 2 && e.v === 2 && e.w === 2).amplitude,
     ).toBeCloseTo(0.6 * BLEND_RELEASE);
+  });
+});
+
+describe("blendColorStack", () => {
+  it("tracks colors by modal key instead of slot index", () => {
+    const state = {
+      ...makeState([0.8, 0.5]),
+      slots: new Float32Array([1, 1, 1, 0.8, 2, 2, 2, 0.5]),
+      colorSlots: new Float32Array([1, 0, 0, 0.9, 0, 1, 0, 0.6]),
+      referenceColorSlots: new Float32Array(8),
+    };
+    const targetSlots = new Float32Array([2, 2, 2, 0.7, 1, 1, 1, 0.6]);
+    const targetColors = new Float32Array([0, 0, 1, 0.8, 1, 1, 0, 0.7]);
+
+    blendColorStack(state, targetSlots, targetColors, 2, {
+      attack: 1,
+      tracking: 1,
+      release: 1,
+      maxActiveSlots: 2,
+    });
+
+    expect(Array.from(state.colorSlots)).toEqual([
+      1,
+      1,
+      0,
+      expect.closeTo(0.7, 6),
+      0,
+      0,
+      1,
+      expect.closeTo(0.8, 6),
+    ]);
+    expect(Array.from(state.referenceColorSlots)).toEqual([
+      1,
+      1,
+      0,
+      expect.closeTo(0.7, 6),
+      0,
+      0,
+      1,
+      expect.closeTo(0.8, 6),
+    ]);
+  });
+
+  it("suppresses weaker color contributors beyond the active cap", () => {
+    const state = {
+      ...makeState([0.9, 0.8, 0.7]),
+      slots: new Float32Array([1, 1, 1, 0.9, 2, 2, 2, 0.8, 3, 3, 3, 0.7]),
+      colorSlots: new Float32Array(12),
+      referenceColorSlots: new Float32Array(12),
+    };
+    const targetSlots = new Float32Array([
+      1, 1, 1, 0.9, 2, 2, 2, 0.8, 3, 3, 3, 0.7,
+    ]);
+    const targetColors = new Float32Array([
+      1, 0, 0, 0.9, 0, 1, 0, 0.7, 0, 0, 1, 0.4,
+    ]);
+
+    blendColorStack(state, targetSlots, targetColors, 3, {
+      attack: 1,
+      tracking: 1,
+      release: 1,
+      maxActiveSlots: 2,
+    });
+
+    expect(state.colorSlots[3]).toBeCloseTo(0.9);
+    expect(state.colorSlots[7]).toBeCloseTo(0.7);
+    expect(state.colorSlots[11]).toBe(0);
   });
 });
 

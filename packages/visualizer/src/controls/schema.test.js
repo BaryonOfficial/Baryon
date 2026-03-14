@@ -5,6 +5,8 @@ import {
   CONTROL_STATUSES,
   CONTROL_TARGET_TYPES,
   createControlState,
+  getControlFolders,
+  getControlsForFolder,
   getControlsForMethod,
 } from "./schema.js";
 import { auditControlSchema } from "./audit.js";
@@ -22,10 +24,15 @@ const EXPECTED_CONTROL_KEYS = [
   "bloomStrength",
   "bloomRadius",
   "bloomThreshold",
+  "bloomResponseBias",
   "backgroundColor",
   "volumeColor",
   "surfaceColor",
+  "colorMode",
+  "chromesthesiaMix",
+  "rotationMode",
   "rotationSpeed",
+  "reactivity",
   "zeroPointPrecision",
   "structureMin",
   "structureMax",
@@ -33,6 +40,10 @@ const EXPECTED_CONTROL_KEYS = [
   "densityGain",
   "absorption",
   "contourSharpness",
+  "rimBloomBias",
+  "rimCompression",
+  "motionAmount",
+  "structurePersistence",
   "idleLogoIntensity",
   "idleLogoSize",
   "auditEnabled",
@@ -103,10 +114,15 @@ describe("control schema", () => {
       "bloomStrength",
       "bloomRadius",
       "bloomThreshold",
+      "bloomResponseBias",
       "backgroundColor",
       "volumeColor",
       "surfaceColor",
+      "colorMode",
+      "chromesthesiaMix",
+      "rotationMode",
       "rotationSpeed",
+      "reactivity",
       "zeroPointPrecision",
       "structureMin",
       "structureMax",
@@ -114,6 +130,10 @@ describe("control schema", () => {
       "densityGain",
       "absorption",
       "contourSharpness",
+      "rimBloomBias",
+      "rimCompression",
+      "motionAmount",
+      "structurePersistence",
       "idleLogoIntensity",
       "idleLogoSize",
       "auditEnabled",
@@ -123,6 +143,61 @@ describe("control schema", () => {
       "testToneHz",
       "testToneAmplitude",
       "logEveryFrames",
+    ]);
+  });
+
+  it("orders pane folders by user-facing groups", () => {
+    expect(getControlFolders(DEFAULT_VISUALIZATION_METHOD)).toEqual([
+      "Mic Processing",
+      "Field",
+      "Look",
+      "Motion",
+      "Advanced Field",
+      "Advanced Look",
+      "Diagnostics",
+    ]);
+  });
+
+  it("assigns controls to the intended pane groups", () => {
+    expect(
+      getControlsForFolder("Field", DEFAULT_VISUALIZATION_METHOD).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual([
+      "zeroPointPrecision",
+      "structureMin",
+      "structureMax",
+      "densityGain",
+      "absorption",
+      "contourSharpness",
+    ]);
+    expect(
+      getControlsForFolder("Look", DEFAULT_VISUALIZATION_METHOD).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual([
+      "bloomEnabled",
+      "bloomStrength",
+      "bloomRadius",
+      "bloomThreshold",
+      "backgroundColor",
+      "volumeColor",
+      "surfaceColor",
+      "colorMode",
+      "chromesthesiaMix",
+      "idleLogoIntensity",
+      "idleLogoSize",
+    ]);
+    expect(
+      getControlsForFolder("Motion", DEFAULT_VISUALIZATION_METHOD).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual([
+      "rotationMode",
+      "rotationSpeed",
+      "reactivity",
+      "motionAmount",
+      "structurePersistence",
     ]);
   });
 

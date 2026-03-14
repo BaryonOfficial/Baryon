@@ -12,8 +12,7 @@ export function createRaymarchVisualizationRuntime() {
       return setupRaymarch(baryonGeometry, parameters, audioConfig);
     },
     tick({ renderer, runtimeState, featureFrame, time, deltaTime }) {
-      void deltaTime;
-      tickRaymarch(renderer, runtimeState, featureFrame, time);
+      tickRaymarch(renderer, runtimeState, featureFrame, time, deltaTime);
     },
     dispose(runtimeState) {
       disposeRaymarch(runtimeState);

@@ -22,13 +22,18 @@ import {
   max,
   min,
 } from "three/tsl";
+import {
+  MAX_STEP_COMPENSATION,
+  STEP_COMPENSATION_EXPONENT,
+  STEP_REFERENCE,
+} from "./stepStability.js";
 
 const scatteringDensity = property("vec3");
 const linearDepthRay = property("vec3");
 const outgoingRayLight = property("vec3");
 const EXTINCTION_SCALE = 0.08;
 const OUTPUT_GAIN = 1.35;
-const REFERENCE_STEPS = 96.0;
+const REFERENCE_STEPS = STEP_REFERENCE;
 
 /**
  * @typedef {import("three").Material & {
@@ -87,9 +92,20 @@ export default class SafeVolumetricLightingModel extends LightingModel {
     const exitDistance = float(0.0).toVar();
     const segmentLength = float(0.0).toVar();
     const stepSize = float(0.0).toVar();
-    const stepNormalization = float(REFERENCE_STEPS).div(float(steps)).toVar();
+    const stepCount = max(float(steps), 1.0).toVar();
+    const stepRatio = float(REFERENCE_STEPS).div(stepCount).toVar();
+    const stepCompensation = float(1.0).toVar();
     const distTravelled = float(0.0).toVar();
     const transmittance = vec3(1).toVar();
+
+    If(stepRatio.greaterThan(1.0), () => {
+      stepCompensation.assign(
+        min(
+          float(MAX_STEP_COMPENSATION),
+          stepRatio.pow(float(STEP_COMPENSATION_EXPONENT)),
+        ),
+      );
+    });
 
     If(discriminant.greaterThan(0.0), () => {
       const intersectionRoot = sqrt(discriminant).toVar();
@@ -107,7 +123,7 @@ export default class SafeVolumetricLightingModel extends LightingModel {
 
       If(exitDistance.greaterThan(entryDistance), () => {
         segmentLength.assign(exitDistance.sub(entryDistance));
-        stepSize.assign(segmentLength.div(steps));
+        stepSize.assign(segmentLength.div(stepCount));
         distTravelled.assign(entryDistance);
 
         if (material.offsetNode) {
@@ -159,7 +175,6 @@ export default class SafeVolumetricLightingModel extends LightingModel {
 
           const falloff = scatteringDensity
             .mul(EXTINCTION_SCALE)
-            .mul(stepNormalization)
             .negate()
             .mul(stepSize)
             .exp();
@@ -172,7 +187,7 @@ export default class SafeVolumetricLightingModel extends LightingModel {
             .saturate()
             .oneMinus()
             .mul(OUTPUT_GAIN)
-            .mul(stepNormalization.sqrt()),
+            .mul(stepCompensation),
         );
       });
     });

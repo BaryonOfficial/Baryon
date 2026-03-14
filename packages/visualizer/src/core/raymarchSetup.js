@@ -1,4 +1,9 @@
 import { instancedArray } from "three/tsl";
+import {
+  REACTIVITY_DEFAULTS,
+  RAYMARCH_DEFAULTS,
+  RENDER_DEFAULTS,
+} from "../defaults.js";
 import { FIELD_STATE_VALUES } from "./fieldState.js";
 import {
   createRaymarchVolumeMesh,
@@ -11,6 +16,11 @@ import {
   tickRaymarchRuntime,
 } from "./raymarch/runtime.js";
 import { createRaymarchUniforms } from "./raymarch/uniforms.js";
+import {
+  deriveLowStepBloomGuard,
+  deriveStepCompensation,
+  STEP_REFERENCE,
+} from "./raymarch/stepStability.js";
 import { VISUALIZATION_METHODS } from "../visualization/types.js";
 
 function createModeBuffer(capacity) {
@@ -24,10 +34,14 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const uniforms = createRaymarchUniforms(parameters);
   const backboneModeBuffer = createModeBuffer(audioConfig.capacity);
   const detailModeBuffer = createModeBuffer(audioConfig.capacity);
+  const backboneColorBuffer = createModeBuffer(audioConfig.capacity);
+  const detailColorBuffer = createModeBuffer(audioConfig.capacity);
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
     backboneModeBuffer,
     detailModeBuffer,
+    backboneColorBuffer,
+    detailColorBuffer,
     capacity: audioConfig.capacity,
     uniforms,
   });
@@ -35,7 +49,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     baryonGeometry,
     uniforms,
   });
-  const points = createRaymarchSceneRoot({
+  const { root: points, visualRoot } = createRaymarchSceneRoot({
     volumeMesh,
     idleOverlay,
     radius: parameters.radius,
@@ -45,24 +59,70 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     method: VISUALIZATION_METHODS.raymarch,
     points,
     object: points,
+    visualRoot,
     volumeMesh,
     idleOverlay,
     uniforms,
     backboneModeBuffer,
     detailModeBuffer,
+    backboneColorBuffer,
+    detailColorBuffer,
     capacity: audioConfig.capacity,
     fftSize: audioConfig.fftSize,
     fieldStateValues: FIELD_STATE_VALUES,
     stabilityStats: estimateProjectedSphereStats({
       radius: parameters.radius,
     }),
+    reactivityTuning: {
+      reactivity: REACTIVITY_DEFAULTS.reactivity,
+      motionAmount: REACTIVITY_DEFAULTS.motionAmount,
+      structurePersistence: REACTIVITY_DEFAULTS.structurePersistence,
+    },
+    bloomTuning: {
+      bloomResponseBias: RENDER_DEFAULTS.bloomResponseBias,
+      stepReference: STEP_REFERENCE,
+      stepCompensation: deriveStepCompensation(RAYMARCH_DEFAULTS.raymarchSteps),
+      lowStepBloomGuard: deriveLowStepBloomGuard(
+        RAYMARCH_DEFAULTS.raymarchSteps,
+      ),
+      effectiveStrength: RENDER_DEFAULTS.bloomStrength,
+      effectiveRadius: RENDER_DEFAULTS.bloomRadius,
+      effectiveThreshold: RENDER_DEFAULTS.bloomThreshold,
+    },
+    baseDensityGain: uniforms.uDensityGain.value,
+    chromesthesia: {
+      colorMode: RENDER_DEFAULTS.colorMode,
+      chromesthesiaMix:
+        RENDER_DEFAULTS.colorMode === "chromesthesia"
+          ? RENDER_DEFAULTS.chromesthesiaMix
+          : 0,
+    },
+    sceneMotion: {
+      yaw: 0,
+      angularVelocity: 0,
+      targetAngularVelocity: 0,
+      lastMotionSignal: 0,
+      lastBeatPulseId: 0,
+      idleLogoYaw: 0,
+    },
+    responseEnvelope: 0,
+    accentEnvelope: 0,
+    motionSignal: 0,
+    scaleSignal: 0,
+    bloomResponseSignal: 0,
     debugSnapshot: null,
   };
 }
 
-export function tickRaymarch(renderer, raymarchState, featureFrame, time) {
+export function tickRaymarch(
+  renderer,
+  raymarchState,
+  featureFrame,
+  time,
+  deltaTime,
+) {
   void renderer;
-  tickRaymarchRuntime(raymarchState, featureFrame, time);
+  tickRaymarchRuntime(raymarchState, featureFrame, time, deltaTime);
 }
 
 export function disposeRaymarch(raymarchState) {
