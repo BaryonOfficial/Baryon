@@ -209,7 +209,7 @@ const ThreeScene = () => {
             key={`${activeRendererFallback ? "force-webgl-fallback" : "webgpu-default"}-${canvasEpoch}`}
             style={{ position: "absolute", top: 0, left: 0, zIndex: 10 }}
             dpr={[1, 2]}
-            camera={{ position: [0, 0, 16], fov: 35, near: 0.1, far: 100 }}
+            camera={{ position: [0, 0, 9], fov: 65, near: 0.1, far: 100 }}
             // @ts-ignore — WebGPURenderer is runtime-compatible; R3F types predate WebGPU
             gl={async (glDefaults) => {
               const canvas = /** @type {HTMLCanvasElement} */ (

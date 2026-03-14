@@ -34,10 +34,14 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const uniforms = createRaymarchUniforms(parameters);
   const backboneModeBuffer = createModeBuffer(audioConfig.capacity);
   const detailModeBuffer = createModeBuffer(audioConfig.capacity);
+  const backboneColorBuffer = createModeBuffer(audioConfig.capacity);
+  const detailColorBuffer = createModeBuffer(audioConfig.capacity);
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
     backboneModeBuffer,
     detailModeBuffer,
+    backboneColorBuffer,
+    detailColorBuffer,
     capacity: audioConfig.capacity,
     uniforms,
   });
@@ -61,6 +65,8 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     uniforms,
     backboneModeBuffer,
     detailModeBuffer,
+    backboneColorBuffer,
+    detailColorBuffer,
     capacity: audioConfig.capacity,
     fftSize: audioConfig.fftSize,
     fieldStateValues: FIELD_STATE_VALUES,
@@ -84,6 +90,13 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
       effectiveThreshold: RENDER_DEFAULTS.bloomThreshold,
     },
     baseDensityGain: uniforms.uDensityGain.value,
+    chromesthesia: {
+      colorMode: RENDER_DEFAULTS.colorMode,
+      chromesthesiaMix:
+        RENDER_DEFAULTS.colorMode === "chromesthesia"
+          ? RENDER_DEFAULTS.chromesthesiaMix
+          : 0,
+    },
     sceneMotion: {
       yaw: 0,
       angularVelocity: 0,

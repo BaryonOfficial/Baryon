@@ -1349,6 +1349,78 @@ describe("buildAudioFeatureFrame layered contract", () => {
   });
 });
 
+describe("chromesthesia feature frame outputs", () => {
+  it("populates backbone and detail color slots for active analysis", () => {
+    const featureState = createAudioFeatureState();
+    const frame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        fftMagnitudes: makeFft([
+          [220, 0.95],
+          [440, 0.72],
+          [660, 0.44],
+          [880, 0.28],
+        ]),
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+    });
+
+    expect(frame.backboneColorSlots.some((value) => value > 0)).toBe(true);
+    expect(frame.detailColorSlots.some((value) => value > 0)).toBe(true);
+    expect(frame.debug.chromesthesiaComponents.length).toBeGreaterThan(0);
+    expect(frame.debug.chromesthesiaComponents[0]).toMatchObject({
+      frequency: expect.any(Number),
+      noteName: expect.any(String),
+      rgb: {
+        r: expect.any(Number),
+        g: expect.any(Number),
+        b: expect.any(Number),
+      },
+    });
+  });
+
+  it("freezes chromesthesia color slots alongside frozen modal slots", () => {
+    const featureState = createAudioFeatureState();
+    const first = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        fftMagnitudes: makeFft([
+          [220, 0.95],
+          [440, 0.72],
+          [660, 0.44],
+        ]),
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      auditSettings: createAuditSettings({ freezeModeSlots: true }),
+    });
+    const second = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        fftMagnitudes: makeFft([
+          [330, 0.92],
+          [550, 0.68],
+          [770, 0.42],
+        ]),
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      auditSettings: createAuditSettings({ freezeModeSlots: true }),
+    });
+
+    expect(Array.from(second.backboneSlots)).toEqual(
+      Array.from(first.backboneSlots),
+    );
+    expect(Array.from(second.backboneColorSlots)).toEqual(
+      Array.from(first.backboneColorSlots),
+    );
+    expect(Array.from(second.detailColorSlots)).toEqual(
+      Array.from(first.detailColorSlots),
+    );
+  });
+});
+
 describe("mic noise gate", () => {
   it("opens when mic energy exceeds the voice hard floor", () => {
     expect(

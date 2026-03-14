@@ -143,6 +143,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     effectiveBloomStrength,
     effectiveBloomThreshold,
     bloomRisk,
+    chromesthesiaMix: runtimeState.uniforms.uChromesthesiaMix?.value ?? 0,
     avgRaySegmentLength,
     missRatio,
     avgSilhouetteSuppression,
@@ -235,6 +236,8 @@ export function tickRaymarchRuntime(
   const {
     backboneModeBuffer,
     detailModeBuffer,
+    backboneColorBuffer,
+    detailColorBuffer,
     uniforms,
     volumeMesh,
     idleOverlay,
@@ -256,6 +259,14 @@ export function tickRaymarchRuntime(
     );
   }
   backboneModeBuffer.value.needsUpdate = true;
+  const backboneColorArray = backboneColorBuffer.value.array;
+  backboneColorArray.fill(0);
+  if (featureFrame?.backboneColorSlots?.length) {
+    backboneColorArray.set(
+      featureFrame.backboneColorSlots.subarray(0, backboneColorArray.length),
+    );
+  }
+  backboneColorBuffer.value.needsUpdate = true;
 
   const detailArray = detailModeBuffer.value.array;
   detailArray.fill(0);
@@ -263,6 +274,14 @@ export function tickRaymarchRuntime(
     detailArray.set(featureFrame.detailSlots.subarray(0, detailArray.length));
   }
   detailModeBuffer.value.needsUpdate = true;
+  const detailColorArray = detailColorBuffer.value.array;
+  detailColorArray.fill(0);
+  if (featureFrame?.detailColorSlots?.length) {
+    detailColorArray.set(
+      featureFrame.detailColorSlots.subarray(0, detailColorArray.length),
+    );
+  }
+  detailColorBuffer.value.needsUpdate = true;
 
   const backboneModeCount = countActiveModes(featureFrame?.backboneSlots);
   const detailModeCount = countActiveModes(featureFrame?.detailSlots);

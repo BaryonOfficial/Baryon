@@ -10,17 +10,25 @@ export const DETAIL_STACK_SLOTS = 8;
 export const BAND_BUCKET_COUNT = 4;
 export const DECAY_PER_FRAME = 0.9;
 const HARMONIC_SUPPORT_COUNT = 4;
+const COLOR_SLOT_STRIDE = 4;
+
+function createColorSlotArray(capacity) {
+  return new Float32Array(capacity * COLOR_SLOT_STRIDE);
+}
 
 function createModalLayerState(capacity) {
   return {
     slots: new Float32Array(capacity * 4),
     referenceSlots: new Float32Array(capacity * 4),
+    colorSlots: createColorSlotArray(capacity),
+    referenceColorSlots: createColorSlotArray(capacity),
     harmonicSupport: new Float32Array(HARMONIC_SUPPORT_COUNT),
     fundamental: 0,
     fundamentalConfidence: 0,
     analysisEngine: "none",
     uniqueModeCount: 0,
     lastStableAt: 0,
+    chromesthesiaComponents: [],
   };
 }
 
@@ -65,6 +73,8 @@ export function createAudioFeatureState(capacity = AUDIO_DEFAULTS.capacity) {
       backboneSlots: new Float32Array(capacity * 4),
       detailSlots: new Float32Array(capacity * 4),
       modeSlots: new Float32Array(capacity * 4),
+      backboneColorSlots: createColorSlotArray(capacity),
+      detailColorSlots: createColorSlotArray(capacity),
       referenceBackboneSlots: new Float32Array(capacity * 4),
       referenceDetailSlots: new Float32Array(capacity * 4),
       referenceModeSlots: new Float32Array(capacity * 4),
@@ -80,6 +90,8 @@ export function createAudioFeatureState(capacity = AUDIO_DEFAULTS.capacity) {
       frozenBackboneSlots: new Float32Array(capacity * 4),
       frozenDetailSlots: new Float32Array(capacity * 4),
       frozenModeSlots: new Float32Array(capacity * 4),
+      frozenBackboneColorSlots: createColorSlotArray(capacity),
+      frozenDetailColorSlots: createColorSlotArray(capacity),
       lastSnapshot: null,
       settings: { ...AUDIT_DEFAULTS },
     },
@@ -92,12 +104,15 @@ export function clearModalStack(state) {
 
   state.slots?.fill(0);
   state.referenceSlots?.fill(0);
+  state.colorSlots?.fill(0);
+  state.referenceColorSlots?.fill(0);
   state.harmonicSupport?.fill(0);
   state.fundamental = 0;
   state.fundamentalConfidence = 0;
   state.analysisEngine = "none";
   state.uniqueModeCount = 0;
   state.lastStableAt = 0;
+  state.chromesthesiaComponents = [];
   if ("latchedFundamentalHz" in state) state.latchedFundamentalHz = 0;
   if ("latchedFundamentalConfidence" in state) {
     state.latchedFundamentalConfidence = 0;
@@ -117,11 +132,13 @@ export function decayModalStack(state) {
     state.slots[i + 3] *= DECAY_PER_FRAME;
   }
   state.referenceSlots?.fill(0);
+  state.referenceColorSlots?.fill(0);
   state.harmonicSupport?.fill(0);
   state.fundamental = 0;
   state.fundamentalConfidence = 0;
   state.analysisEngine = "none";
   state.uniqueModeCount = 0;
+  state.chromesthesiaComponents = [];
   if ("driverFrequency" in state) state.driverFrequency = 0;
   if ("candidateFrequency" in state) state.candidateFrequency = 0;
   if ("candidateConfidence" in state) state.candidateConfidence = 0;
@@ -140,6 +157,14 @@ export function copyFloatArray(target, source) {
   target.fill(0);
   if (!source?.length) return;
   target.set(source.subarray(0, target.length));
+}
+
+export function writeColorSlot(target, index, color, weight) {
+  const offset = index * COLOR_SLOT_STRIDE;
+  target[offset] = color.r;
+  target[offset + 1] = color.g;
+  target[offset + 2] = color.b;
+  target[offset + 3] = weight;
 }
 
 export const BLEND_ATTACK = 0.18;
@@ -253,6 +278,136 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
       Math.min(state.referenceSlots.length, capacity * 4),
     ),
   );
+}
+
+export function blendColorStack(
+  state,
+  targetSlots,
+  targetColorSlots,
+  capacity,
+  options = {},
+) {
+  if (!state?.slots || !state?.colorSlots || !targetColorSlots) return;
+
+  const attack = options.attack ?? BLEND_ATTACK;
+  const tracking = options.tracking ?? BLEND_TRACKING;
+  const release = options.release ?? BLEND_RELEASE;
+  const maxActiveSlots = options.maxActiveSlots ?? capacity;
+  const slotLimit = Math.min(state.slots.length / 4, capacity);
+  const currentColorMap = new Map();
+
+  for (let i = 0; i < slotLimit; i++) {
+    const offset = i * 4;
+    const amplitude = state.slots[offset + 3] ?? 0;
+    const colorWeight = state.colorSlots[offset + 3] ?? 0;
+    if (amplitude <= 0 && colorWeight <= 0) continue;
+    currentColorMap.set(
+      modeKey(
+        state.slots[offset],
+        state.slots[offset + 1],
+        state.slots[offset + 2],
+      ),
+      {
+        r: state.colorSlots[offset],
+        g: state.colorSlots[offset + 1],
+        b: state.colorSlots[offset + 2],
+        weight: colorWeight,
+      },
+    );
+  }
+
+  const targetColorMap = new Map();
+  const targetLimit = Math.min(
+    targetSlots.length / 4,
+    targetColorSlots.length / 4,
+    capacity,
+  );
+  for (let i = 0; i < targetLimit; i++) {
+    const offset = i * 4;
+    const amplitude = targetSlots[offset + 3] ?? 0;
+    const weight = targetColorSlots[offset + 3] ?? 0;
+    if (amplitude <= 0 && weight <= 0) continue;
+    targetColorMap.set(
+      modeKey(
+        targetSlots[offset],
+        targetSlots[offset + 1],
+        targetSlots[offset + 2],
+      ),
+      {
+        r: targetColorSlots[offset],
+        g: targetColorSlots[offset + 1],
+        b: targetColorSlots[offset + 2],
+        weight,
+      },
+    );
+  }
+
+  const survivors = [];
+  for (let i = 0; i < slotLimit; i++) {
+    const offset = i * 4;
+    const amplitude = state.slots[offset + 3] ?? 0;
+    if (amplitude <= 0) continue;
+
+    const key = modeKey(
+      state.slots[offset],
+      state.slots[offset + 1],
+      state.slots[offset + 2],
+    );
+    const current = currentColorMap.get(key);
+    const target = targetColorMap.get(key);
+    const blendFactor = current && target ? tracking : attack;
+    const base = current ?? { r: 0, g: 0, b: 0, weight: 0 };
+    const next = target
+      ? {
+          r: base.r + (target.r - base.r) * blendFactor,
+          g: base.g + (target.g - base.g) * blendFactor,
+          b: base.b + (target.b - base.b) * blendFactor,
+          weight: base.weight + (target.weight - base.weight) * blendFactor,
+        }
+      : {
+          r: base.r,
+          g: base.g,
+          b: base.b,
+          weight: base.weight * release,
+        };
+
+    survivors.push({
+      offset,
+      amplitude,
+      ...next,
+      contribution: amplitude * Math.max(0, next.weight),
+    });
+  }
+
+  survivors.sort((left, right) => right.contribution - left.contribution);
+  for (let i = maxActiveSlots; i < survivors.length; i++) {
+    survivors[i].weight = 0;
+  }
+  survivors.sort((left, right) => left.offset - right.offset);
+
+  state.colorSlots.fill(0);
+  for (const survivor of survivors) {
+    state.colorSlots[survivor.offset] = survivor.r;
+    state.colorSlots[survivor.offset + 1] = survivor.g;
+    state.colorSlots[survivor.offset + 2] = survivor.b;
+    state.colorSlots[survivor.offset + 3] = survivor.weight;
+  }
+
+  state.referenceColorSlots.fill(0);
+  for (let i = 0; i < slotLimit; i++) {
+    const offset = i * 4;
+    const key = modeKey(
+      state.slots[offset],
+      state.slots[offset + 1],
+      state.slots[offset + 2],
+    );
+    const target = targetColorMap.get(key);
+    if (!target) continue;
+    state.referenceColorSlots[offset] = target.r;
+    state.referenceColorSlots[offset + 1] = target.g;
+    state.referenceColorSlots[offset + 2] = target.b;
+    state.referenceColorSlots[offset + 3] = target.weight;
+  }
 }
 
 export function combineModalLayers(target, layers, capacity) {

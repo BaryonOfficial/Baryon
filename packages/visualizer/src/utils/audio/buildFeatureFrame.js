@@ -10,6 +10,7 @@ import {
   MAX_STACK_SLOTS,
   BAND_BUCKET_COUNT,
   BLEND_MAX_FRESH_PER_FRAME,
+  blendColorStack,
   blendModalStack,
   clearModalStack,
   combineModalLayers,
@@ -44,6 +45,14 @@ const BACKBONE_RELEASE = 0.96;
 const DETAIL_ATTACK = 0.55;
 const DETAIL_RELEASE = 0.82;
 const DETAIL_FRESH_CAP = 0;
+const BACKBONE_COLOR_ATTACK = 0.38;
+const BACKBONE_COLOR_TRACKING = 0.22;
+const BACKBONE_COLOR_RELEASE = 0.96;
+const DETAIL_COLOR_ATTACK = 0.5;
+const DETAIL_COLOR_TRACKING = 0.28;
+const DETAIL_COLOR_RELEASE = 0.9;
+const BACKBONE_COLOR_SLOT_LIMIT = 4;
+const DETAIL_COLOR_SLOT_LIMIT = 5;
 const BAND_LIMITS_HZ = [140, 600, 2400, 8000];
 const DEFAULT_MIC_PROFILE = "voice-tone";
 const MIC_CALIBRATION_WINDOW_MS = 750;
@@ -149,6 +158,16 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     slotLength,
   );
   const modeSlots = ensureArrayField(analysisMemory, "modeSlots", slotLength);
+  const backboneColorSlots = ensureArrayField(
+    analysisMemory,
+    "backboneColorSlots",
+    slotLength,
+  );
+  const detailColorSlots = ensureArrayField(
+    analysisMemory,
+    "detailColorSlots",
+    slotLength,
+  );
   const referenceBackboneSlots = ensureArrayField(
     analysisMemory,
     "referenceBackboneSlots",
@@ -204,6 +223,8 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     backboneSlots,
     detailSlots,
     modeSlots,
+    backboneColorSlots,
+    detailColorSlots,
     referenceBackboneSlots,
     referenceDetailSlots,
     referenceModeSlots,
@@ -365,6 +386,8 @@ function emptyFrozenLayers(auditState) {
   auditState.frozenBackboneSlots.fill(0);
   auditState.frozenDetailSlots.fill(0);
   auditState.frozenModeSlots.fill(0);
+  auditState.frozenBackboneColorSlots.fill(0);
+  auditState.frozenDetailColorSlots.fill(0);
 }
 
 function setLayerMetadata(
@@ -380,6 +403,7 @@ function setLayerMetadata(
   layerState.analysisEngine = engine;
   layerState.uniqueModeCount = stackBuild.uniqueModeCount;
   layerState.lastStableAt = getFrameTimestamp();
+  layerState.chromesthesiaComponents = stackBuild.components ?? [];
 }
 
 function clearLayerMetadata(layerState) {
@@ -388,6 +412,7 @@ function clearLayerMetadata(layerState) {
   layerState.fundamentalConfidence = 0;
   layerState.analysisEngine = "none";
   layerState.uniqueModeCount = 0;
+  layerState.chromesthesiaComponents = [];
 }
 
 function shouldBuildDetailedDebug(auditSettings) {
@@ -429,6 +454,7 @@ function buildDebugSummary({
   backboneSlots,
   detailSlots,
   modeSlots,
+  chromesthesiaComponents = [],
   transientEnergy = 0,
   spectralCentroid = 0,
   spectralFlux = 0,
@@ -512,6 +538,7 @@ function buildDebugSummary({
     candidateFrames: 0,
     latchHoldFrames: 0,
     latchLowSupportFrames: 0,
+    chromesthesiaComponents,
   };
 }
 
@@ -527,6 +554,8 @@ function buildZeroDebugSnapshot({
   backboneSlots,
   detailSlots,
   modeSlots,
+  backboneColorSlots,
+  detailColorSlots,
   auditSettings,
 }) {
   const debug = buildDebugSummary({
@@ -543,6 +572,7 @@ function buildZeroDebugSnapshot({
     backboneSlots,
     detailSlots,
     modeSlots,
+    chromesthesiaComponents: [],
     beatDetected: false,
     beatPulseId: 0,
     beatStrength: 0,
@@ -568,6 +598,8 @@ function buildZeroDebugSnapshot({
     referenceModeSlots: Array.from(referenceModeSlots),
     backboneSlots: Array.from(backboneSlots),
     detailSlots: Array.from(detailSlots),
+    backboneColorSlots: Array.from(backboneColorSlots),
+    detailColorSlots: Array.from(detailColorSlots),
     bandEnergies: Array.from(bandEnergies),
     slotAmplitudeDeltas: Array.from(new Float32Array(MAX_STACK_SLOTS)),
   };
@@ -582,6 +614,8 @@ export function buildSilentFeatureFrame({
   detailSlots,
   modeSlots,
   referenceModeSlots,
+  backboneColorSlots,
+  detailColorSlots,
   bandEnergies,
   backboneState,
   detailState,
@@ -592,6 +626,8 @@ export function buildSilentFeatureFrame({
   detailSlots.fill(0);
   modeSlots.fill(0);
   referenceModeSlots.fill(0);
+  backboneColorSlots.fill(0);
+  detailColorSlots.fill(0);
   bandEnergies.fill(0);
   clearModalStack(backboneState);
   clearModalStack(detailState);
@@ -615,6 +651,8 @@ export function buildSilentFeatureFrame({
     fftMagnitudes: silentFft,
     backboneSlots,
     detailSlots,
+    backboneColorSlots,
+    detailColorSlots,
     bandEnergies,
     transientEnergy: 0,
     spectralCentroid: 0,
@@ -639,6 +677,8 @@ export function buildSilentFeatureFrame({
       backboneSlots,
       detailSlots,
       modeSlots,
+      backboneColorSlots,
+      detailColorSlots,
       auditSettings,
     }),
   };
@@ -972,6 +1012,13 @@ function buildEmptyTarget(capacity) {
 
 function releaseLayer(layerState, capacity, options) {
   blendModalStack(layerState, buildEmptyTarget(capacity), capacity, options);
+  blendColorStack(
+    layerState,
+    buildEmptyTarget(capacity),
+    buildEmptyTarget(capacity),
+    capacity,
+    options.colorOptions,
+  );
   clearLayerMetadata(layerState);
 }
 
@@ -1276,6 +1323,7 @@ function resolveLayeredModalStacks({
   capacity,
   micNoiseGateActive,
   auditSettings,
+  spectralCentroid,
 }) {
   let analysisEngine = "none";
   let pitchSource = "none";
@@ -1298,6 +1346,7 @@ function resolveLayeredModalStacks({
       fftSize: status.fftSize,
       radius,
       capacity: backboneCapacity,
+      spectralCentroid,
     });
     const detailBuild = buildModalSlotsFromSpectralPeaks({
       fftMagnitudes,
@@ -1307,11 +1356,16 @@ function resolveLayeredModalStacks({
       capacity: detailCapacity,
       peakCount: DETAIL_PEAK_COUNT,
       slotLimit: detailCapacity,
+      spectralCentroid,
     });
     copyFloatArray(backboneState.slots, backboneBuild.slots);
     copyFloatArray(backboneState.referenceSlots, backboneBuild.referenceSlots);
+    copyFloatArray(backboneState.colorSlots, backboneBuild.colorSlots);
+    copyFloatArray(backboneState.referenceColorSlots, backboneBuild.colorSlots);
     copyFloatArray(detailState.slots, detailBuild.slots);
     copyFloatArray(detailState.referenceSlots, detailBuild.referenceSlots);
+    copyFloatArray(detailState.colorSlots, detailBuild.colorSlots);
+    copyFloatArray(detailState.referenceColorSlots, detailBuild.colorSlots);
     setLayerMetadata(
       backboneState,
       backboneBuild,
@@ -1339,6 +1393,7 @@ function resolveLayeredModalStacks({
       capacity,
       peakCount: BACKBONE_PEAK_COUNT,
       slotLimit: backboneCapacity,
+      spectralCentroid,
     });
     const detailTarget = buildModalSlotsFromSpectralPeaks({
       fftMagnitudes,
@@ -1348,6 +1403,7 @@ function resolveLayeredModalStacks({
       capacity,
       peakCount: DETAIL_PEAK_COUNT,
       slotLimit: detailCapacity,
+      spectralCentroid,
     });
 
     spectralCandidates = detailTarget.peaks ?? backboneTarget.peaks ?? [];
@@ -1364,12 +1420,36 @@ function resolveLayeredModalStacks({
         release: BACKBONE_RELEASE,
         freshCap: BLEND_MAX_FRESH_PER_FRAME,
       });
+      blendColorStack(
+        backboneState,
+        backboneTarget.slots,
+        backboneTarget.colorSlots,
+        backboneCapacity,
+        {
+          attack: BACKBONE_COLOR_ATTACK,
+          tracking: BACKBONE_COLOR_TRACKING,
+          release: BACKBONE_COLOR_RELEASE,
+          maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
+        },
+      );
       blendModalStack(detailState, detailTarget.slots, detailCapacity, {
         attack: DETAIL_ATTACK,
         tracking: DETAIL_ATTACK,
         release: DETAIL_RELEASE,
         freshCap: DETAIL_FRESH_CAP,
       });
+      blendColorStack(
+        detailState,
+        detailTarget.slots,
+        detailTarget.colorSlots,
+        detailCapacity,
+        {
+          attack: DETAIL_COLOR_ATTACK,
+          tracking: DETAIL_COLOR_TRACKING,
+          release: DETAIL_COLOR_RELEASE,
+          maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
+        },
+      );
       setLayerMetadata(
         backboneState,
         backboneTarget,
@@ -1395,12 +1475,24 @@ function resolveLayeredModalStacks({
         tracking: BACKBONE_ATTACK,
         release: BACKBONE_RELEASE,
         freshCap: BLEND_MAX_FRESH_PER_FRAME,
+        colorOptions: {
+          attack: BACKBONE_COLOR_ATTACK,
+          tracking: BACKBONE_COLOR_TRACKING,
+          release: BACKBONE_COLOR_RELEASE,
+          maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
+        },
       });
       releaseLayer(detailState, detailCapacity, {
         attack: DETAIL_ATTACK,
         tracking: DETAIL_ATTACK,
         release: DETAIL_RELEASE,
         freshCap: DETAIL_FRESH_CAP,
+        colorOptions: {
+          attack: DETAIL_COLOR_ATTACK,
+          tracking: DETAIL_COLOR_TRACKING,
+          release: DETAIL_COLOR_RELEASE,
+          maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
+        },
       });
       usedDecay = true;
     } else {
@@ -1418,12 +1510,24 @@ function resolveLayeredModalStacks({
       tracking: BACKBONE_ATTACK,
       release: BACKBONE_RELEASE,
       freshCap: BLEND_MAX_FRESH_PER_FRAME,
+      colorOptions: {
+        attack: BACKBONE_COLOR_ATTACK,
+        tracking: BACKBONE_COLOR_TRACKING,
+        release: BACKBONE_COLOR_RELEASE,
+        maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
+      },
     });
     releaseLayer(detailState, detailCapacity, {
       attack: DETAIL_ATTACK,
       tracking: DETAIL_ATTACK,
       release: DETAIL_RELEASE,
       freshCap: DETAIL_FRESH_CAP,
+      colorOptions: {
+        attack: DETAIL_COLOR_ATTACK,
+        tracking: DETAIL_COLOR_TRACKING,
+        release: DETAIL_COLOR_RELEASE,
+        maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
+      },
     });
     usedDecay = true;
   } else {
@@ -1463,6 +1567,8 @@ function finalizeFeatureDebugSnapshot({
   backboneSlots,
   detailSlots,
   modeSlots,
+  backboneColorSlots,
+  detailColorSlots,
   referenceModeSlots,
   bandEnergies,
   transientEnergy,
@@ -1504,6 +1610,12 @@ function finalizeFeatureDebugSnapshot({
     backboneSlots,
     detailSlots,
     modeSlots,
+    chromesthesiaComponents: [
+      ...(backboneState?.chromesthesiaComponents ?? []),
+      ...(detailState?.chromesthesiaComponents ?? []),
+    ]
+      .sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0))
+      .slice(0, 8),
     transientEnergy,
     spectralCentroid,
     spectralFlux,
@@ -1550,6 +1662,8 @@ function finalizeFeatureDebugSnapshot({
     referenceModeSlots: Array.from(referenceModeSlots),
     backboneSlots: Array.from(backboneSlots),
     detailSlots: Array.from(detailSlots),
+    backboneColorSlots: Array.from(backboneColorSlots),
+    detailColorSlots: Array.from(detailColorSlots),
     bandEnergies: Array.from(bandEnergies),
     slotAmplitudeDeltas: Array.from(slotAmplitudeDeltas),
   };
@@ -1571,6 +1685,8 @@ export function buildAudioFeatureFrame({
     backboneSlots,
     detailSlots,
     modeSlots,
+    backboneColorSlots,
+    detailColorSlots,
     referenceBackboneSlots,
     referenceDetailSlots,
     referenceModeSlots,
@@ -1617,6 +1733,8 @@ export function buildAudioFeatureFrame({
       backboneSlots,
       detailSlots,
       modeSlots,
+      backboneColorSlots,
+      detailColorSlots,
       referenceModeSlots,
       bandEnergies,
       backboneState,
@@ -1639,6 +1757,10 @@ export function buildAudioFeatureFrame({
   const analyserRms = snapshot?.rms ?? 0;
   const fftMagnitudesSource =
     snapshot?.fftMagnitudes ?? new Float32Array(fftSize / 2);
+  const spectralCentroidHint = computeSpectralCentroid(
+    fftMagnitudesSource,
+    sampleRate,
+  );
 
   const micNoiseGateActive = resolveMicNoiseGate({
     analysisMemory,
@@ -1667,10 +1789,13 @@ export function buildAudioFeatureFrame({
       capacity,
       micNoiseGateActive,
       auditSettings: resolvedAuditSettings,
+      spectralCentroid: spectralCentroidHint,
     });
 
   copyFloatArray(backboneSlots, backboneState.slots);
   copyFloatArray(detailSlots, detailState.slots);
+  copyFloatArray(backboneColorSlots, backboneState.colorSlots);
+  copyFloatArray(detailColorSlots, detailState.colorSlots);
   copyFloatArray(referenceBackboneSlots, backboneState.referenceSlots);
   copyFloatArray(referenceDetailSlots, detailState.referenceSlots);
   combineModalLayers(
@@ -1693,6 +1818,8 @@ export function buildAudioFeatureFrame({
   let returnedBackboneSlots = backboneSlots;
   let returnedDetailSlots = detailSlots;
   let returnedModeSlots = modeSlots;
+  let returnedBackboneColorSlots = backboneColorSlots;
+  let returnedDetailColorSlots = detailColorSlots;
   if (resolvedAuditSettings.freezeModeSlots && auditState) {
     const hasFrozen =
       auditState.frozenBackboneSlots.some((value) => value !== 0) ||
@@ -1701,10 +1828,14 @@ export function buildAudioFeatureFrame({
       auditState.frozenBackboneSlots.set(backboneSlots);
       auditState.frozenDetailSlots.set(detailSlots);
       auditState.frozenModeSlots.set(modeSlots);
+      auditState.frozenBackboneColorSlots.set(backboneColorSlots);
+      auditState.frozenDetailColorSlots.set(detailColorSlots);
     }
     returnedBackboneSlots = auditState.frozenBackboneSlots;
     returnedDetailSlots = auditState.frozenDetailSlots;
     returnedModeSlots = auditState.frozenModeSlots;
+    returnedBackboneColorSlots = auditState.frozenBackboneColorSlots;
+    returnedDetailColorSlots = auditState.frozenDetailColorSlots;
   } else if (auditState) {
     emptyFrozenLayers(auditState);
   }
@@ -1808,6 +1939,8 @@ export function buildAudioFeatureFrame({
     fftMagnitudes,
     backboneSlots: returnedBackboneSlots,
     detailSlots: returnedDetailSlots,
+    backboneColorSlots: returnedBackboneColorSlots,
+    detailColorSlots: returnedDetailColorSlots,
     modeSlots: returnedModeSlots,
     referenceModeSlots,
     bandEnergies,
@@ -1843,6 +1976,8 @@ export function buildAudioFeatureFrame({
     fftMagnitudes,
     backboneSlots: returnedBackboneSlots,
     detailSlots: returnedDetailSlots,
+    backboneColorSlots: returnedBackboneColorSlots,
+    detailColorSlots: returnedDetailColorSlots,
     bandEnergies,
     transientEnergy,
     spectralCentroid,

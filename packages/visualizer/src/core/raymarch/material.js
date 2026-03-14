@@ -78,6 +78,7 @@ class BaryonVolumeNodeMaterial extends VolumeNodeMaterial {
 
 function accumulateLayer({
   buffer,
+  colorBuffer,
   capacity,
   weight,
   pi,
@@ -87,6 +88,8 @@ function accumulateLayer({
   gradX,
   gradY,
   gradZ,
+  colorSum,
+  colorWeight,
 }) {
   Loop(capacity, ({ i }) => {
     const slot = buffer.element(i);
@@ -106,16 +109,29 @@ function accumulateLayer({
     const gz = cos(w.mul(pi).mul(localPosition.z).mul(invRadius)).mul(
       w.mul(pi).mul(invRadius),
     );
-    field.addAssign(amplitude.mul(sx).mul(sy).mul(sz));
+    const localShape = sx.mul(sy).mul(sz);
+    field.addAssign(amplitude.mul(localShape));
     gradX.addAssign(amplitude.mul(gx).mul(sy).mul(sz));
     gradY.addAssign(amplitude.mul(sx).mul(gy).mul(sz));
     gradZ.addAssign(amplitude.mul(sx).mul(sy).mul(gz));
+    if (colorBuffer && colorSum && colorWeight) {
+      const colorSlot = colorBuffer.element(i);
+      const localInfluence = amplitude.mul(abs(localShape));
+      colorSum.addAssign(
+        vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(
+          localInfluence.mul(colorSlot.w),
+        ),
+      );
+      colorWeight.addAssign(localInfluence.mul(colorSlot.w));
+    }
   });
 }
 
 function createScatteringNode({
   backboneModeBuffer,
   detailModeBuffer,
+  backboneColorBuffer,
+  detailColorBuffer,
   capacity,
   uniforms,
 }) {
@@ -129,6 +145,7 @@ function createScatteringNode({
     uDetailModeCount,
     uColor,
     uSurfaceColor,
+    uChromesthesiaMix,
     uDensityGain,
     uAbsorption,
     uContourSharpness,
@@ -166,9 +183,12 @@ function createScatteringNode({
       const gradX = float(0.0).toVar();
       const gradY = float(0.0).toVar();
       const gradZ = float(0.0).toVar();
+      const colorSum = vec3(0.0).toVar();
+      const colorWeight = float(0.0).toVar();
 
       accumulateLayer({
         buffer: backboneModeBuffer,
+        colorBuffer: backboneColorBuffer,
         capacity,
         weight: float(1.0),
         pi,
@@ -178,9 +198,12 @@ function createScatteringNode({
         gradX,
         gradY,
         gradZ,
+        colorSum,
+        colorWeight,
       });
       accumulateLayer({
         buffer: detailModeBuffer,
+        colorBuffer: detailColorBuffer,
         capacity,
         weight: float(DETAIL_LAYER_WEIGHT),
         pi,
@@ -190,6 +213,8 @@ function createScatteringNode({
         gradX,
         gradY,
         gradZ,
+        colorSum,
+        colorWeight,
       });
 
       const fieldAbs = abs(field);
@@ -349,6 +374,26 @@ function createScatteringNode({
         float(1.0),
       );
       const baseColor = mix(uColor, uSurfaceColor, spectralColorBias);
+      const spectralColor = colorSum.div(colorWeight.max(float(1e-4)));
+      const chromesthesiaPresence = smoothstep(
+        float(0.0),
+        float(0.18),
+        colorWeight,
+      );
+      const chromesthesiaColor = mix(
+        baseColor,
+        spectralColor,
+        clamp(
+          uChromesthesiaMix.mul(chromesthesiaPresence),
+          float(0.0),
+          float(1.0),
+        ),
+      );
+      const contourAnchoredColor = mix(
+        chromesthesiaColor,
+        uSurfaceColor,
+        contourMix.mul(float(0.18)).add(rimIntensity.mul(float(0.12))),
+      );
       const detailPresence = smoothstep(float(0.0), float(1.0), detailCount);
       const backbonePresence = smoothstep(
         float(0.0),
@@ -356,8 +401,8 @@ function createScatteringNode({
         backboneCount,
       );
       const volumeColor = mix(
-        baseColor.mul(float(0.92)),
-        baseColor,
+        contourAnchoredColor.mul(float(0.92)),
+        contourAnchoredColor,
         backbonePresence.add(detailPresence.mul(float(0.15))),
       );
 
@@ -370,6 +415,8 @@ export function createRaymarchVolumeMesh({
   radius,
   backboneModeBuffer,
   detailModeBuffer,
+  backboneColorBuffer,
+  detailColorBuffer,
   capacity,
   uniforms,
 }) {
@@ -385,6 +432,8 @@ export function createRaymarchVolumeMesh({
   material.scatteringNode = createScatteringNode({
     backboneModeBuffer,
     detailModeBuffer,
+    backboneColorBuffer,
+    detailColorBuffer,
     capacity,
     uniforms,
   });

@@ -110,6 +110,8 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
   [CONTROL_HANDLERS.raymarch]: Object.freeze([
     "volumeColor",
     "surfaceColor",
+    "colorMode",
+    "chromesthesiaMix",
     "zeroPointPrecision",
     "structureMin",
     "structureMax",
@@ -176,9 +178,16 @@ export function applyRaymarchControls(runtimeState, controls) {
   const uniforms = runtimeState.uniforms;
   const idleLogoAlpha = deriveIdleLogoAlpha(controls.idleLogoIntensity);
   const stepBudget = Math.round(controls.raymarchSteps ?? STEP_REFERENCE);
+  const colorMode =
+    controls.colorMode === "chromesthesia" ? "chromesthesia" : "static";
+  const chromesthesiaMix =
+    colorMode === "chromesthesia"
+      ? clamp01(controls.chromesthesiaMix ?? RENDER_DEFAULTS.chromesthesiaMix)
+      : 0;
 
   uniforms.uColor.value.set(controls.volumeColor);
   uniforms.uSurfaceColor.value.set(controls.surfaceColor);
+  uniforms.uChromesthesiaMix.value = chromesthesiaMix;
   uniforms.uThreshold.value = controls.zeroPointPrecision;
   uniforms.uStructureMin.value = controls.structureMin;
   uniforms.uStructureMax.value = controls.structureMax;
@@ -205,6 +214,11 @@ export function applyRaymarchControls(runtimeState, controls) {
     stepCompensation: deriveStepCompensation(stepBudget),
     lowStepBloomGuard: deriveLowStepBloomGuard(stepBudget),
   };
+  runtimeState.chromesthesia = {
+    ...(runtimeState.chromesthesia ?? {}),
+    colorMode,
+    chromesthesiaMix,
+  };
 
   if (runtimeState.volumeMesh?.material) {
     runtimeState.volumeMesh.material.steps = stepBudget;
@@ -223,6 +237,8 @@ export function applyRaymarchControls(runtimeState, controls) {
     uniforms: {
       volumeColor: controls.volumeColor,
       surfaceColor: controls.surfaceColor,
+      colorMode,
+      chromesthesiaMix,
       threshold: uniforms.uThreshold.value,
       structureMin: uniforms.uStructureMin.value,
       structureMax: uniforms.uStructureMax.value,

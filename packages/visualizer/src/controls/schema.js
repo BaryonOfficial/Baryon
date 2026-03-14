@@ -254,6 +254,43 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
+      key: "colorMode",
+      label: "Color Mode",
+      title:
+        "Choose whether the volume uses the fixed palette or the chromesthesia-driven spectral color field",
+      defaultValue: RENDER_DEFAULTS.colorMode,
+      methods: RAYMARCH_METHODS,
+      binding: {
+        options: {
+          Static: "static",
+          Chromesthesia: "chromesthesia",
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.chromesthesia.colorMode",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.look,
+  ),
+  withControlGroup(
+    {
+      key: "chromesthesiaMix",
+      label: "Color Mix",
+      title:
+        "How strongly the chromesthesia color field blends into the volumetric palette when chromesthesia mode is enabled",
+      defaultValue: RENDER_DEFAULTS.chromesthesiaMix,
+      methods: RAYMARCH_METHODS,
+      binding: { min: 0, max: 1, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uChromesthesiaMix.value",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.look,
+  ),
+  withControlGroup(
+    {
       key: "rotationMode",
       label: "Rotation Mode",
       title:

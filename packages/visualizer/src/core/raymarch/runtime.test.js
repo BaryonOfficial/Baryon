@@ -21,6 +21,18 @@ function createRuntimeState() {
         needsUpdate: false,
       },
     },
+    backboneColorBuffer: {
+      value: {
+        array: new Float32Array(32),
+        needsUpdate: false,
+      },
+    },
+    detailColorBuffer: {
+      value: {
+        array: new Float32Array(32),
+        needsUpdate: false,
+      },
+    },
     uniforms: {
       uTime: { value: 0 },
       uFieldState: { value: 0 },
@@ -31,6 +43,7 @@ function createRuntimeState() {
       uTransientEnergy: { value: 0 },
       uSpectralCentroid: { value: 0 },
       uSpectralFlux: { value: 0 },
+      uChromesthesiaMix: { value: 0.65 },
       uBandEnergies: { value: new THREE.Vector4() },
       uDensityGain: { value: 2.8 },
       uAbsorption: { value: 1.8 },
@@ -97,6 +110,10 @@ describe("tickRaymarchRuntime", () => {
       averageAmplitude: 48,
       backboneSlots: new Float32Array([3, 4, 6, 0.8, 1, 3, 7, 0.6]),
       detailSlots: new Float32Array([4, 5, 5, 0.55, 2, 2, 6, 0.4]),
+      backboneColorSlots: new Float32Array([
+        1, 0.1, 0.1, 0.9, 0.8, 0.2, 0.1, 0.7,
+      ]),
+      detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5, 0.7, 0.2, 1, 0.45]),
       bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
       transientEnergy: 0.7,
       spectralCentroid: 0.42,
@@ -118,6 +135,8 @@ describe("tickRaymarchRuntime", () => {
 
     expect(runtimeState.backboneModeBuffer.value.array[0]).toBe(3);
     expect(runtimeState.detailModeBuffer.value.array[0]).toBe(4);
+    expect(runtimeState.backboneColorBuffer.value.array[0]).toBe(1);
+    expect(runtimeState.detailColorBuffer.value.array[2]).toBe(1);
     expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(2);
     expect(runtimeState.uniforms.uDetailModeCount.value).toBe(2);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(4);
@@ -162,6 +181,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.raymarchDebug.bloomRisk).toBeGreaterThan(
       0,
     );
+    expect(runtimeState.debugSnapshot.raymarchDebug.chromesthesiaMix).toBe(
+      0.65,
+    );
   });
 
   it("hides the volume and shows the idle overlay in idle state", () => {
@@ -173,6 +195,8 @@ describe("tickRaymarchRuntime", () => {
         averageAmplitude: 0,
         backboneSlots: new Float32Array(32),
         detailSlots: new Float32Array(32),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
         bandEnergies: new Float32Array(4),
         transientEnergy: 0,
         spectralCentroid: 0,
@@ -202,6 +226,10 @@ describe("tickRaymarchRuntime", () => {
         averageAmplitude: 22,
         backboneSlots: new Float32Array(32),
         detailSlots: new Float32Array([4, 5, 5, 0.45, 2, 2, 6, 0.3]),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array([
+          0.2, 0.5, 1, 0.5, 0.7, 0.2, 1, 0.45,
+        ]),
         bandEnergies: new Float32Array(4),
         transientEnergy: 0,
         spectralCentroid: 0.15,
@@ -233,6 +261,8 @@ describe("tickRaymarchRuntime", () => {
         averageAmplitude: 18,
         backboneSlots: new Float32Array([3, 4, 6, 0.5]),
         detailSlots: new Float32Array(32),
+        backboneColorSlots: new Float32Array([1, 0.1, 0.1, 0.9]),
+        detailColorSlots: new Float32Array(32),
         bandEnergies: new Float32Array([0.6, 0.4, 0.2, 0.1]),
         transientEnergy: 0.85,
         spectralCentroid: 0.33,
@@ -270,6 +300,8 @@ describe("tickRaymarchRuntime", () => {
       averageAmplitude: 18,
       backboneSlots: new Float32Array([3, 4, 6, 0.5]),
       detailSlots: new Float32Array(32),
+      backboneColorSlots: new Float32Array([1, 0.1, 0.1, 0.9]),
+      detailColorSlots: new Float32Array(32),
       bandEnergies: new Float32Array([0.6, 0.3, 0.1, 0.05]),
       transientEnergy: 0.4,
       spectralCentroid: 0.22,
@@ -317,6 +349,8 @@ describe("tickRaymarchRuntime", () => {
         averageAmplitude: 18,
         backboneSlots: new Float32Array([3, 4, 6, 0.5]),
         detailSlots: new Float32Array(32),
+        backboneColorSlots: new Float32Array([1, 0.1, 0.1, 0.9]),
+        detailColorSlots: new Float32Array(32),
         bandEnergies: new Float32Array([0.6, 0.3, 0.1, 0.05]),
         transientEnergy: 0.4,
         spectralCentroid: 0.22,
@@ -353,6 +387,8 @@ describe("tickRaymarchRuntime", () => {
         averageAmplitude: 18,
         backboneSlots: new Float32Array([3, 4, 6, 0.5]),
         detailSlots: new Float32Array(32),
+        backboneColorSlots: new Float32Array([1, 0.1, 0.1, 0.9]),
+        detailColorSlots: new Float32Array(32),
         bandEnergies: new Float32Array([0.6, 0.3, 0.1, 0.05]),
         transientEnergy: 0.4,
         spectralCentroid: 0.22,

@@ -26,6 +26,7 @@ function createRaymarchHarness() {
     uniforms: {
       uColor: { value: { set: vi.fn() } },
       uSurfaceColor: { value: { set: vi.fn() } },
+      uChromesthesiaMix: { value: 0 },
       uThreshold: { value: 0 },
       uStructureMin: { value: 0 },
       uStructureMax: { value: 0 },
@@ -55,6 +56,10 @@ function createRaymarchHarness() {
       effectiveThreshold: 0.44,
     },
     baseDensityGain: 0,
+    chromesthesia: {
+      colorMode: "static",
+      chromesthesiaMix: 0,
+    },
     volumeMesh: {
       material: {
         steps: 0,
@@ -129,6 +134,8 @@ describe("control runtime sync", () => {
     controls.motionAmount = 1.1;
     controls.structurePersistence = 1.4;
     controls.raymarchSteps = 64;
+    controls.colorMode = "chromesthesia";
+    controls.chromesthesiaMix = 0.6;
 
     const gl = {
       setClearColor: vi.fn(),
@@ -150,6 +157,11 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.65);
     expect(runtimeState.uniforms.uRimCompression.value).toBe(0.72);
     expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
+    expect(runtimeState.uniforms.uChromesthesiaMix.value).toBe(0.6);
+    expect(runtimeState.chromesthesia).toEqual({
+      colorMode: "chromesthesia",
+      chromesthesiaMix: 0.6,
+    });
     expect(runtimeState.reactivityTuning).toEqual({
       reactivity: 1.2,
       motionAmount: 1.1,
@@ -173,6 +185,8 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.motionAmount).toBe(1.1);
     expect(snapshot.uniforms.structurePersistence).toBe(1.4);
     expect(snapshot.uniforms.raymarchSteps).toBe(64);
+    expect(snapshot.uniforms.colorMode).toBe("chromesthesia");
+    expect(snapshot.uniforms.chromesthesiaMix).toBe(0.6);
     expect(snapshot.overlay.scale).toBe(1.4);
   });
 
@@ -211,6 +225,8 @@ describe("control runtime sync", () => {
     controls.reactivity = 0.9;
     controls.motionAmount = 1.3;
     controls.structurePersistence = 0.75;
+    controls.colorMode = "static";
+    controls.chromesthesiaMix = 0.88;
 
     const runtimeState = createRaymarchHarness();
     const snapshot = applyRaymarchControls(runtimeState, controls);
@@ -230,14 +246,18 @@ describe("control runtime sync", () => {
       deriveStepCompensation(72),
     );
     expect(runtimeState.bloomTuning.lowStepBloomGuard).toBe(0);
+    expect(runtimeState.uniforms.uChromesthesiaMix.value).toBe(0);
     expect(runtimeState.idleOverlay.material.color.set).toHaveBeenCalledWith(
       "#88ccff",
     );
     expect(snapshot.uniforms.surfaceColor).toBe("#88ccff");
+    expect(snapshot.uniforms.colorMode).toBe("static");
+    expect(snapshot.uniforms.chromesthesiaMix).toBe(0);
   });
 
   it("applies bloom controls to the pipeline", () => {
     const controls = createControlState();
+    controls.raymarchSteps = STEP_REFERENCE;
     controls.bloomEnabled = false;
     controls.bloomStrength = 0.77;
     controls.bloomRadius = 0.31;

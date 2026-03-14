@@ -21,6 +21,8 @@ export const RENDER_DEFAULTS = Object.freeze({
   backgroundColor: "#000000",
   volumeColor: "#cfb53b",
   surfaceColor: "#ffffff",
+  colorMode: /** @type {"static" | "chromesthesia"} */ ("static"),
+  chromesthesiaMix: 0.65,
   bloomEnabled: true,
   bloomStrength: 0.11,
   bloomRadius: 0.09,
@@ -29,9 +31,9 @@ export const RENDER_DEFAULTS = Object.freeze({
 });
 
 export const REACTIVITY_DEFAULTS = Object.freeze({
-  reactivity: 1,
-  motionAmount: 1,
-  structurePersistence: 1,
+  reactivity: 2.5,
+  motionAmount: 1.5,
+  structurePersistence: 0.75,
 });
 
 export const BEAT_DEFAULTS = Object.freeze({
@@ -45,7 +47,7 @@ export const BEAT_DEFAULTS = Object.freeze({
 });
 
 export const RAYMARCH_DEFAULTS = Object.freeze({
-  raymarchSteps: 96,
+  raymarchSteps: 80,
   densityGain: 2.8,
   absorption: 1.8,
   contourSharpness: 4.0,
