@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { getDefaultAudioSession } from "@baryon/visualizer";
+import {
+  getDefaultAudioSession,
+  DEFAULT_MIC_ANALYSIS_SETTINGS,
+} from "@baryon/visualizer";
 import { AudioContext } from "./AudioContext";
 import { useAudioLogic } from "../components/hooks/useAudioLogic";
 import {
@@ -196,6 +199,14 @@ export function AudioProvider({ children }) {
   const [isMuted, setIsMuted] = useState(false);
   const [audioDevices, setAudioDevices] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null);
+  const [micProfile, setMicProfile] = useState(
+    DEFAULT_MIC_ANALYSIS_SETTINGS.profile,
+  );
+  const [micRuntimeStatus, setMicRuntimeStatus] = useState(() => ({
+    active: false,
+    calibrating: false,
+    profile: DEFAULT_MIC_ANALYSIS_SETTINGS.profile,
+  }));
   const [showDeviceMenu, setShowDeviceMenu] = useState(false);
   const [isEngineReady, setIsEngineReady] = useState(false);
   const [activeSource, setActiveSource] = useState("upload");
@@ -235,6 +246,7 @@ export function AudioProvider({ children }) {
     handlePlayPause: handleLocalPlayPause,
     handleStop: handleLocalStop,
     handleMicToggle: handleLocalMicToggle,
+    handleMicProfileChange,
     handleVolumeChange: handleLocalVolumeChange,
     handleMuteToggle: handleLocalMuteToggle,
   } = useAudioLogic({
@@ -262,9 +274,11 @@ export function AudioProvider({ children }) {
     setIsMuted,
     setAudioDevices,
     setSelectedDevice,
+    setSelectedMicProfile: setMicProfile,
     isAudioLoaded,
     isMicActive,
     selectedDevice,
+    selectedMicProfile: micProfile,
   });
 
   useEffect(() => {
@@ -901,6 +915,8 @@ export function AudioProvider({ children }) {
     isEngineReady,
     audioDevices,
     selectedDevice,
+    micProfile,
+    micRuntimeStatus,
     showDeviceMenu,
     showSoundCloudPanel,
     soundCloudInput,
@@ -921,6 +937,8 @@ export function AudioProvider({ children }) {
     setIsMuted,
     setShowDeviceMenu,
     setSelectedDevice,
+    setMicProfile,
+    setMicRuntimeStatus,
     setShowSoundCloudPanel,
     setSoundCloudInput,
     resetAudioSession,
@@ -929,6 +947,7 @@ export function AudioProvider({ children }) {
     handlePlayPause,
     handleStop,
     handleMicToggle,
+    handleMicProfileChange,
     handleVolumeChange,
     handleMuteToggle,
     loadSoundCloudTrack,

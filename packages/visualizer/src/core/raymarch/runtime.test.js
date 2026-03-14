@@ -45,10 +45,10 @@ function createRuntimeState() {
         },
       },
     },
-    beatTuning: {
-      beatSensitivity: 1,
-      pulseAmount: 0.055,
-      pulseDecayMs: 180,
+    reactivityTuning: {
+      reactivity: 1,
+      motionAmount: 1,
+      structurePersistence: 1,
     },
     bloomTuning: {
       bloomResponseBias: 0.4,
@@ -60,8 +60,11 @@ function createRuntimeState() {
       effectiveThreshold: 0.44,
     },
     baseDensityGain: 2.8,
-    pulseEnvelope: 0,
-    lastConsumedBeatPulseId: 0,
+    responseEnvelope: 0,
+    accentEnvelope: 0,
+    motionSignal: 0,
+    scaleSignal: 0,
+    bloomResponseSignal: 0,
     volumeMesh: {
       visible: false,
       material: {
@@ -98,6 +101,10 @@ describe("tickRaymarchRuntime", () => {
       transientEnergy: 0.7,
       spectralCentroid: 0.42,
       spectralFlux: 0.28,
+      structureSignal: 0.74,
+      energySignal: 0.68,
+      changeSignal: 0.61,
+      pulseSignal: 0.32,
       beatDetected: true,
       beatPulseId: 3,
       beatStrength: 0.82,
@@ -117,8 +124,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.7);
     expect(runtimeState.uniforms.uSpectralCentroid.value).toBe(0.42);
     expect(runtimeState.uniforms.uSpectralFlux.value).toBe(0.28);
-    expect(runtimeState.lastConsumedBeatPulseId).toBe(3);
-    expect(runtimeState.pulseEnvelope).toBeGreaterThan(0);
+    expect(runtimeState.responseEnvelope).toBeGreaterThan(0);
+    expect(runtimeState.scaleSignal).toBeGreaterThan(0);
+    expect(runtimeState.bloomResponseSignal).toBeGreaterThan(0);
     expect(runtimeState.visualRoot.scale.x).toBeGreaterThan(1);
     const [sub, lowMid, highMid, air] =
       runtimeState.uniforms.uBandEnergies.value.toArray();
@@ -131,9 +139,10 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.raymarchDebug.backboneModeCount).toBe(2);
     expect(runtimeState.debugSnapshot.raymarchDebug.detailModeCount).toBe(2);
     expect(runtimeState.debugSnapshot.raymarchDebug.transientEnergy).toBe(0.7);
-    expect(
-      runtimeState.debugSnapshot.raymarchDebug.pulseEnvelope,
-    ).toBeGreaterThan(0);
+    expect(runtimeState.debugSnapshot.raymarchDebug.structureSignal).toBe(0.74);
+    expect(runtimeState.debugSnapshot.raymarchDebug.energySignal).toBe(0.68);
+    expect(runtimeState.debugSnapshot.raymarchDebug.changeSignal).toBe(0.61);
+    expect(runtimeState.debugSnapshot.raymarchDebug.pulseSignal).toBe(0.32);
     expect(runtimeState.debugSnapshot.raymarchDebug.stepReference).toBe(96);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.stepCompensation,
@@ -168,6 +177,10 @@ describe("tickRaymarchRuntime", () => {
         transientEnergy: 0,
         spectralCentroid: 0,
         spectralFlux: 0,
+        structureSignal: 0,
+        energySignal: 0,
+        changeSignal: 0,
+        pulseSignal: 0,
       },
       1,
       1 / 60,
@@ -193,6 +206,10 @@ describe("tickRaymarchRuntime", () => {
         transientEnergy: 0,
         spectralCentroid: 0.15,
         spectralFlux: 0.05,
+        structureSignal: 0.32,
+        energySignal: 0.28,
+        changeSignal: 0.14,
+        pulseSignal: 0.05,
         debug: {},
       },
       2,
@@ -220,6 +237,10 @@ describe("tickRaymarchRuntime", () => {
         transientEnergy: 0.85,
         spectralCentroid: 0.33,
         spectralFlux: 0.72,
+        structureSignal: 0.51,
+        energySignal: 0.64,
+        changeSignal: 0.82,
+        pulseSignal: 0.28,
         debug: {},
       },
       3,
@@ -242,7 +263,7 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.raymarchDebug.transientEnergy).toBe(0.85);
   });
 
-  it("consumes each beat pulse id once and decays the scale envelope", () => {
+  it("keeps the continuous response alive between adjacent active frames", () => {
     const runtimeState = createRuntimeState();
     const featureFrame = {
       fieldState: "active",
@@ -253,26 +274,106 @@ describe("tickRaymarchRuntime", () => {
       transientEnergy: 0.4,
       spectralCentroid: 0.22,
       spectralFlux: 0.3,
-      beatDetected: true,
-      beatPulseId: 7,
-      beatStrength: 0.9,
-      beatConfidence: 0.8,
+      structureSignal: 0.62,
+      energySignal: 0.58,
+      changeSignal: 0.49,
+      pulseSignal: 0.22,
       debug: {},
     };
 
     tickRaymarchRuntime(runtimeState, featureFrame, 2, 1 / 60);
-    const firstEnvelope = runtimeState.pulseEnvelope;
+    const firstEnvelope = runtimeState.responseEnvelope;
     const firstScale = runtimeState.visualRoot.scale.x;
 
     tickRaymarchRuntime(
       runtimeState,
-      { ...featureFrame, beatDetected: false },
+      {
+        ...featureFrame,
+        structureSignal: 0.18,
+        energySignal: 0.12,
+        changeSignal: 0.08,
+        pulseSignal: 0,
+      },
       2.016,
       1 / 60,
     );
 
-    expect(runtimeState.lastConsumedBeatPulseId).toBe(7);
-    expect(runtimeState.pulseEnvelope).toBeLessThan(firstEnvelope);
+    expect(runtimeState.responseEnvelope).toBeGreaterThan(0);
+    expect(runtimeState.responseEnvelope).toBeGreaterThanOrEqual(
+      firstEnvelope * 0.8,
+    );
+    expect(runtimeState.visualRoot.scale.x).toBeGreaterThan(1);
     expect(runtimeState.visualRoot.scale.x).toBeLessThan(firstScale);
+  });
+
+  it("disables automatic response when reactivity is zero", () => {
+    const runtimeState = createRuntimeState();
+    runtimeState.reactivityTuning.reactivity = 0;
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        averageAmplitude: 18,
+        backboneSlots: new Float32Array([3, 4, 6, 0.5]),
+        detailSlots: new Float32Array(32),
+        bandEnergies: new Float32Array([0.6, 0.3, 0.1, 0.05]),
+        transientEnergy: 0.4,
+        spectralCentroid: 0.22,
+        spectralFlux: 0.3,
+        structureSignal: 0.62,
+        energySignal: 0.58,
+        changeSignal: 0.49,
+        pulseSignal: 0.22,
+        debug: {},
+      },
+      2,
+      1 / 60,
+    );
+
+    expect(runtimeState.responseEnvelope).toBe(0);
+    expect(runtimeState.accentEnvelope).toBe(0);
+    expect(runtimeState.motionSignal).toBe(0);
+    expect(runtimeState.scaleSignal).toBe(0);
+    expect(runtimeState.bloomResponseSignal).toBe(0);
+    expect(runtimeState.visualRoot.scale.x).toBe(1);
+    expect(runtimeState.uniforms.uDensityGain.value).toBe(2.8);
+  });
+
+  it("returns scale and density toward neutral in idle state", () => {
+    const runtimeState = createRuntimeState();
+    runtimeState.responseEnvelope = 0.8;
+    runtimeState.scaleSignal = 0.8;
+    runtimeState.visualRoot.scale.setScalar(1.05);
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        averageAmplitude: 18,
+        backboneSlots: new Float32Array([3, 4, 6, 0.5]),
+        detailSlots: new Float32Array(32),
+        bandEnergies: new Float32Array([0.6, 0.3, 0.1, 0.05]),
+        transientEnergy: 0.4,
+        spectralCentroid: 0.22,
+        spectralFlux: 0.3,
+        structureSignal: 0,
+        energySignal: 0,
+        changeSignal: 0,
+        pulseSignal: 0,
+        debug: {},
+      },
+      2,
+      1 / 60,
+    );
+
+    expect(runtimeState.responseEnvelope).toBeLessThan(0.8);
+    expect(runtimeState.visualRoot.scale.x).toBeLessThan(1.05);
+    expect(runtimeState.uniforms.uDensityGain.value).toBeGreaterThanOrEqual(
+      2.8,
+    );
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.responseEnvelope,
+    ).toBeLessThan(0.8);
   });
 });

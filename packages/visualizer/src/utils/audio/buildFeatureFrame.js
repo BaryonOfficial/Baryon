@@ -21,6 +21,7 @@ import {
   buildModalSlotsFromFundamental,
   buildModalSlotsFromPeakDrivers,
   buildModalSlotsFromSpectralPeaks,
+  findSpectralPeakFrequencies,
   HARMONIC_ORDERS,
 } from "./modalResolvers.js";
 import { deriveFieldState } from "./fieldState.js";
@@ -29,7 +30,7 @@ import { FIELD_STATES } from "./types.js";
 
 const {
   micSilenceAvgAmplitude: MIC_SILENCE_AVG_AMPLITUDE,
-  micSilenceRms: MIC_SILENCE_RMS,
+  micSignalPeakAmplitude: MIC_SIGNAL_PEAK_AMPLITUDE,
   requestedPitchSource: REQUESTED_PITCH_SOURCE,
 } = AUDIO_ANALYSIS_POLICY;
 const TEST_TONE_HARMONIC_ATTENUATION =
@@ -44,6 +45,53 @@ const DETAIL_ATTACK = 0.55;
 const DETAIL_RELEASE = 0.82;
 const DETAIL_FRESH_CAP = 0;
 const BAND_LIMITS_HZ = [140, 600, 2400, 8000];
+const DEFAULT_MIC_PROFILE = "voice-tone";
+const MIC_CALIBRATION_WINDOW_MS = 750;
+const MIC_CALIBRATION_SMOOTHING_MS = 180;
+const MIC_PROFILE_CONFIGS = Object.freeze({
+  "voice-tone": Object.freeze({
+    absoluteAvgAmplitude: Math.max(4, MIC_SILENCE_AVG_AMPLITUDE * 0.5),
+    absoluteRmsFloor: 0.009,
+    absolutePeakFloor: 0.1,
+    absoluteCentroidFloor: 0.006,
+    openFrames: 1,
+    closeFrames: 4,
+    rmsOpenMultiplier: 1.15,
+    rmsOpenOffset: 0.0002,
+    peakOpenMultiplier: 1.4,
+    peakOpenOffset: 0.024,
+    centroidOpenMultiplier: 1,
+    centroidOpenOffset: 0.002,
+    lowBandOpenMultiplier: 1.45,
+    lowBandOpenOffset: 0.002,
+    rmsCloseMultiplier: 1.03,
+    rmsCloseOffset: 0.0001,
+    peakCloseMultiplier: 1.15,
+    peakCloseOffset: 0.015,
+    minPeakClarity: 0.38,
+  }),
+  ambient: Object.freeze({
+    absoluteAvgAmplitude: Math.max(3, MIC_SILENCE_AVG_AMPLITUDE * 0.4),
+    absoluteRmsFloor: 0.007,
+    absolutePeakFloor: 0.1,
+    absoluteCentroidFloor: 0,
+    openFrames: 1,
+    closeFrames: 4,
+    rmsOpenMultiplier: 1.08,
+    rmsOpenOffset: 0.00012,
+    peakOpenMultiplier: 1.2,
+    peakOpenOffset: 0.02,
+    centroidOpenMultiplier: 1,
+    centroidOpenOffset: 0,
+    lowBandOpenMultiplier: 1.15,
+    lowBandOpenOffset: 0.001,
+    rmsCloseMultiplier: 1.02,
+    rmsCloseOffset: 0.00008,
+    peakCloseMultiplier: 1.05,
+    peakCloseOffset: 0.01,
+    minPeakClarity: 0,
+  }),
+});
 const LOW_BAND_PRIMARY_WEIGHT = 0.7;
 const LOW_BAND_SECONDARY_WEIGHT = 0.3;
 const BEAT_LOW_BAND_RISE_WEIGHT = 0.5;
@@ -51,6 +99,23 @@ const BEAT_SPECTRAL_FLUX_WEIGHT = 0.35;
 const BEAT_RMS_DELTA_WEIGHT = 0.15;
 const MIN_BEAT_THRESHOLD = 0.024;
 const DEFAULT_FRAME_TIME_MS = 1000 / 60;
+
+export const DEFAULT_MIC_ANALYSIS_SETTINGS = Object.freeze({
+  profile: DEFAULT_MIC_PROFILE,
+});
+
+export const MIC_PROFILE_OPTIONS = Object.freeze([
+  Object.freeze({
+    value: "voice-tone",
+    label: "Voice",
+    description: "Best for voice, humming, and simple sung notes.",
+  }),
+  Object.freeze({
+    value: "ambient",
+    label: "Ambient",
+    description: "Most sensitive. Use for room texture and quieter sound beds.",
+  }),
+]);
 
 export { createAudioFeatureState, FIELD_STATES };
 
@@ -158,6 +223,50 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, value));
 }
 
+function averageArray(values) {
+  if (!values?.length) return 0;
+
+  let total = 0;
+  for (let i = 0; i < values.length; i++) {
+    total += values[i] ?? 0;
+  }
+
+  return total / values.length;
+}
+
+function getSourceNormalization({
+  inputMode,
+  avgAmplitude,
+  analyserRms,
+  spectralCentroid,
+  bandState,
+}) {
+  if (inputMode === "mic") {
+    const baselineRms = Math.max(0, bandState?.micBaselineRms ?? 0);
+    const baselineCentroid = Math.max(0, bandState?.micBaselineCentroid ?? 0);
+    return {
+      normalizedRms: clamp01(
+        baselineRms > 0
+          ? (analyserRms - baselineRms * 0.45) /
+              Math.max(0.0015, baselineRms * 4.5)
+          : analyserRms / 0.018,
+      ),
+      normalizedAmplitude: clamp01(avgAmplitude / 18),
+      normalizedCentroid: clamp01(
+        baselineCentroid > 0
+          ? spectralCentroid / Math.max(0.02, baselineCentroid * 1.8)
+          : spectralCentroid / 0.25,
+      ),
+    };
+  }
+
+  return {
+    normalizedRms: clamp01(analyserRms * 2.8),
+    normalizedAmplitude: clamp01(avgAmplitude / 96),
+    normalizedCentroid: clamp01(spectralCentroid * 1.25),
+  };
+}
+
 function getFrameDeltaMs(previousFrameAtMs, currentFrameAtMs) {
   if (!Number.isFinite(previousFrameAtMs) || previousFrameAtMs <= 0) {
     return DEFAULT_FRAME_TIME_MS;
@@ -172,6 +281,58 @@ function computeEmaAlpha(deltaMs, smoothingMs) {
   }
 
   return 1 - Math.exp(-deltaMs / smoothingMs);
+}
+
+function resetMicGateState(
+  bandState,
+  { inputMode = "idle", profile = DEFAULT_MIC_PROFILE } = {},
+) {
+  bandState.micInputMode = inputMode;
+  bandState.micProfile = profile;
+  bandState.micGateState = "closed";
+  bandState.micCalibrationActive = false;
+  bandState.micCalibrationStartedAtMs = Number.NEGATIVE_INFINITY;
+  bandState.micPreviousFrameAtMs = 0;
+  bandState.micBaselineRms = 0;
+  bandState.micBaselinePeak = 0;
+  bandState.micBaselineCentroid = 0;
+  bandState.micBaselineLowBandEnergy = 0;
+  bandState.micOpenFrames = 0;
+  bandState.micQuietFrames = 0;
+}
+
+function beginMicCalibration(bandState, currentFrameAtMs, profile) {
+  resetMicGateState(bandState, {
+    inputMode: "mic",
+    profile,
+  });
+  bandState.micGateState = "calibrating";
+  bandState.micCalibrationActive = true;
+  bandState.micCalibrationStartedAtMs = currentFrameAtMs;
+  bandState.micPreviousFrameAtMs = currentFrameAtMs;
+}
+
+function normalizeMicProfile(profile) {
+  return MIC_PROFILE_CONFIGS[profile] ? profile : DEFAULT_MIC_PROFILE;
+}
+
+function normalizeMicAnalysisSettings(settings = undefined) {
+  return {
+    profile: normalizeMicProfile(settings?.profile),
+  };
+}
+
+function getMicProfileConfig(profile) {
+  return (
+    MIC_PROFILE_CONFIGS[normalizeMicProfile(profile)] ??
+    MIC_PROFILE_CONFIGS[DEFAULT_MIC_PROFILE]
+  );
+}
+
+function getFrameTimeMs(frameTimeMs) {
+  return Number.isFinite(frameTimeMs) && frameTimeMs >= 0
+    ? frameTimeMs
+    : getFrameTimestamp();
 }
 
 function resetBeatTrackingState(analysisMemory) {
@@ -191,6 +352,10 @@ function resetBeatTrackingState(analysisMemory) {
   bandState.beatPulseId = 0;
   bandState.beatStrength = 0;
   bandState.beatConfidence = 0;
+  resetMicGateState(bandState, {
+    inputMode: bandState.micInputMode ?? "idle",
+    profile: bandState.micProfile ?? DEFAULT_MIC_PROFILE,
+  });
   if (analysisMemory.previousSpectrum instanceof Float32Array) {
     analysisMemory.previousSpectrum.fill(0);
   }
@@ -250,6 +415,10 @@ function buildDebugSummary({
   analysisEngine = "none",
   fieldState = FIELD_STATES.idle,
   micNoiseGateActive = false,
+  micCalibrationActive = false,
+  micProfile = DEFAULT_MIC_PROFILE,
+  micBaselineRms = 0,
+  micBaselinePeak = 0,
   backboneState,
   detailState,
   dominantFrequency = 0,
@@ -263,6 +432,10 @@ function buildDebugSummary({
   transientEnergy = 0,
   spectralCentroid = 0,
   spectralFlux = 0,
+  structureSignal = 0,
+  energySignal = 0,
+  changeSignal = 0,
+  pulseSignal = 0,
   beatDetected = false,
   beatPulseId = 0,
   beatStrength = 0,
@@ -292,6 +465,10 @@ function buildDebugSummary({
     fileActive: soundActive,
     micActive,
     micNoiseGateActive,
+    micCalibrationActive,
+    micProfile,
+    micBaselineRms,
+    micBaselinePeak,
     analysisSourceUsed: inputMode === "idle" ? "none" : inputMode,
     fundamentalFrequency: backboneState?.fundamental ?? 0,
     fundamentalConfidence: backboneState?.fundamentalConfidence ?? 0,
@@ -309,6 +486,10 @@ function buildDebugSummary({
     transientEnergy,
     spectralCentroid,
     spectralFlux,
+    structureSignal,
+    energySignal,
+    changeSignal,
+    pulseSignal,
     beatDetected,
     beatPulseId,
     beatStrength,
@@ -369,6 +550,10 @@ function buildZeroDebugSnapshot({
     beatLowBandEnergy: 0,
     beatOnsetDriver: 0,
     beatThreshold: 0,
+    structureSignal: 0,
+    energySignal: 0,
+    changeSignal: 0,
+    pulseSignal: 0,
   });
 
   if (!shouldBuildDetailedDebug(auditSettings)) {
@@ -434,6 +619,10 @@ export function buildSilentFeatureFrame({
     transientEnergy: 0,
     spectralCentroid: 0,
     spectralFlux: 0,
+    structureSignal: 0,
+    energySignal: 0,
+    changeSignal: 0,
+    pulseSignal: 0,
     beatDetected: false,
     beatPulseId: 0,
     beatStrength: 0,
@@ -514,18 +703,260 @@ export function applyTestToneToSnapshot({
   };
 }
 
+function computeMicMetrics({
+  avgAmplitude,
+  rms,
+  fftMagnitudes,
+  sampleRate,
+  fftSize,
+}) {
+  const spectrum = fftMagnitudes ?? new Float32Array(0);
+  const peaks = findSpectralPeakFrequencies(spectrum, sampleRate, fftSize, 3);
+  let peakAmplitude = 0;
+  for (let i = 0; i < spectrum.length; i++) {
+    peakAmplitude = Math.max(peakAmplitude, spectrum[i] ?? 0);
+  }
+  const totalPeakAmplitude = peaks.reduce(
+    (sum, peak) => sum + (peak?.amplitude ?? 0),
+    0,
+  );
+  const peakClarity =
+    peakAmplitude > 0
+      ? peakAmplitude / Math.max(peakAmplitude, totalPeakAmplitude)
+      : 0;
+  const bandEnergies = computeBandEnergies(spectrum, sampleRate, fftSize);
+  const lowBandEnergy =
+    (bandEnergies[0] ?? 0) * LOW_BAND_PRIMARY_WEIGHT +
+    (bandEnergies[1] ?? 0) * LOW_BAND_SECONDARY_WEIGHT;
+
+  return {
+    avgAmplitude,
+    rms,
+    peakAmplitude,
+    peakClarity,
+    spectralCentroid: computeSpectralCentroid(spectrum, sampleRate),
+    lowBandEnergy,
+  };
+}
+
 export function detectMicNoiseGate({
   injectTestTone,
   inputMode,
   avgAmplitude,
   rms,
+  fftMagnitudes,
+  sampleRate = 44100,
+  fftSize = 4096,
+  micAnalysisSettings = DEFAULT_MIC_ANALYSIS_SETTINGS,
 }) {
+  const profile = normalizeMicAnalysisSettings(micAnalysisSettings).profile;
+  const config = getMicProfileConfig(profile);
+  const metrics = computeMicMetrics({
+    avgAmplitude,
+    rms,
+    fftMagnitudes,
+    sampleRate,
+    fftSize,
+  });
+
   return (
     !injectTestTone &&
     inputMode === "mic" &&
-    avgAmplitude < MIC_SILENCE_AVG_AMPLITUDE &&
-    rms < MIC_SILENCE_RMS
+    metrics.avgAmplitude < config.absoluteAvgAmplitude &&
+    metrics.rms < config.absoluteRmsFloor &&
+    metrics.peakAmplitude < config.absolutePeakFloor &&
+    metrics.spectralCentroid < config.absoluteCentroidFloor
   );
+}
+
+function updateMicCalibrationBaseline(bandState, metrics, deltaMs) {
+  const alpha = computeEmaAlpha(deltaMs, MIC_CALIBRATION_SMOOTHING_MS);
+  if (
+    !(bandState.micBaselineRms > 0) &&
+    !(bandState.micBaselinePeak > 0) &&
+    !(bandState.micBaselineCentroid > 0) &&
+    !(bandState.micBaselineLowBandEnergy > 0)
+  ) {
+    bandState.micBaselineRms = metrics.rms;
+    bandState.micBaselinePeak = metrics.peakAmplitude;
+    bandState.micBaselineCentroid = metrics.spectralCentroid;
+    bandState.micBaselineLowBandEnergy = metrics.lowBandEnergy;
+    return;
+  }
+
+  bandState.micBaselineRms += (metrics.rms - bandState.micBaselineRms) * alpha;
+  bandState.micBaselinePeak +=
+    (metrics.peakAmplitude - bandState.micBaselinePeak) * alpha;
+  bandState.micBaselineCentroid +=
+    (metrics.spectralCentroid - bandState.micBaselineCentroid) * alpha;
+  bandState.micBaselineLowBandEnergy +=
+    (metrics.lowBandEnergy - bandState.micBaselineLowBandEnergy) * alpha;
+}
+
+function deriveMicThresholds(bandState, profileConfig) {
+  return {
+    openRms: Math.max(
+      profileConfig.absoluteRmsFloor * 0.2,
+      bandState.micBaselineRms * profileConfig.rmsOpenMultiplier +
+        profileConfig.rmsOpenOffset,
+    ),
+    closeRms: Math.max(
+      profileConfig.absoluteRmsFloor * 0.15,
+      bandState.micBaselineRms * profileConfig.rmsCloseMultiplier +
+        profileConfig.rmsCloseOffset,
+    ),
+    openPeak: profileConfig.absolutePeakFloor,
+    closePeak: Math.max(
+      MIC_SIGNAL_PEAK_AMPLITUDE * 0.7,
+      profileConfig.absolutePeakFloor * 0.85,
+    ),
+    openCentroid:
+      bandState.micBaselineCentroid * profileConfig.centroidOpenMultiplier +
+      profileConfig.centroidOpenOffset,
+    openLowBand:
+      bandState.micBaselineLowBandEnergy * profileConfig.lowBandOpenMultiplier +
+      profileConfig.lowBandOpenOffset,
+  };
+}
+
+function qualifiesMicOpen(metrics, thresholds, profile, profileConfig) {
+  if (profile === "ambient") {
+    return (
+      metrics.rms >= thresholds.openRms ||
+      metrics.peakAmplitude >= thresholds.openPeak ||
+      metrics.lowBandEnergy >= thresholds.openLowBand
+    );
+  }
+
+  return (
+    metrics.rms >= thresholds.openRms &&
+    metrics.peakAmplitude >= thresholds.openPeak &&
+    (metrics.spectralCentroid >= thresholds.openCentroid ||
+      metrics.peakClarity >= profileConfig.minPeakClarity)
+  );
+}
+
+function qualifiesMicHold(metrics, thresholds, profile) {
+  if (profile === "ambient") {
+    return (
+      metrics.rms >= thresholds.closeRms ||
+      metrics.peakAmplitude >= thresholds.closePeak ||
+      metrics.lowBandEnergy >= thresholds.openLowBand * 0.8
+    );
+  }
+
+  return (
+    metrics.rms >= thresholds.closeRms ||
+    metrics.peakAmplitude >= thresholds.closePeak
+  );
+}
+
+function resolveMicNoiseGate({
+  analysisMemory,
+  injectTestTone,
+  inputMode,
+  avgAmplitude,
+  rms,
+  fftMagnitudes,
+  sampleRate,
+  fftSize,
+  currentFrameAtMs,
+  micAnalysisSettings,
+}) {
+  const bandState = analysisMemory.bandState;
+  const { profile } = normalizeMicAnalysisSettings(micAnalysisSettings);
+  if (injectTestTone || inputMode !== "mic") {
+    resetMicGateState(bandState, {
+      inputMode,
+      profile,
+    });
+    return false;
+  }
+
+  if (
+    bandState.micInputMode !== "mic" ||
+    bandState.micProfile !== profile ||
+    currentFrameAtMs < (bandState.micPreviousFrameAtMs ?? 0)
+  ) {
+    beginMicCalibration(bandState, currentFrameAtMs, profile);
+  }
+
+  const profileConfig = getMicProfileConfig(profile);
+  const metrics = computeMicMetrics({
+    avgAmplitude,
+    rms,
+    fftMagnitudes,
+    sampleRate,
+    fftSize,
+  });
+  const deltaMs = getFrameDeltaMs(
+    bandState.micPreviousFrameAtMs,
+    currentFrameAtMs,
+  );
+  bandState.micInputMode = "mic";
+  bandState.micProfile = profile;
+  bandState.micPreviousFrameAtMs = currentFrameAtMs;
+
+  if (bandState.micCalibrationActive) {
+    updateMicCalibrationBaseline(bandState, metrics, deltaMs);
+    if (
+      currentFrameAtMs - bandState.micCalibrationStartedAtMs <
+      MIC_CALIBRATION_WINDOW_MS
+    ) {
+      return true;
+    }
+
+    bandState.micCalibrationActive = false;
+    bandState.micGateState = "closed";
+    bandState.micOpenFrames = 0;
+    bandState.micQuietFrames = 0;
+  }
+
+  const hardGateActive = detectMicNoiseGate({
+    injectTestTone,
+    inputMode,
+    avgAmplitude,
+    rms,
+    fftMagnitudes,
+    sampleRate,
+    fftSize,
+    micAnalysisSettings: { profile },
+  });
+  const thresholds = deriveMicThresholds(bandState, profileConfig);
+
+  if (bandState.micGateState === "open") {
+    if (!hardGateActive && qualifiesMicHold(metrics, thresholds, profile)) {
+      bandState.micQuietFrames = 0;
+      return false;
+    }
+
+    bandState.micQuietFrames += 1;
+    if (bandState.micQuietFrames < profileConfig.closeFrames) {
+      return false;
+    }
+
+    bandState.micGateState = "closed";
+    bandState.micQuietFrames = 0;
+    bandState.micOpenFrames = 0;
+    return true;
+  }
+
+  if (
+    !hardGateActive &&
+    qualifiesMicOpen(metrics, thresholds, profile, profileConfig)
+  ) {
+    bandState.micOpenFrames += 1;
+    if (bandState.micOpenFrames >= profileConfig.openFrames) {
+      bandState.micGateState = "open";
+      bandState.micOpenFrames = 0;
+      bandState.micQuietFrames = 0;
+      return false;
+    }
+    return true;
+  }
+
+  bandState.micOpenFrames = 0;
+  return true;
 }
 
 function getLayerSlotLimit(layerType, capacity) {
@@ -604,6 +1035,115 @@ function computeSpectralFlux(fftMagnitudes, previousSpectrum) {
   }
 
   return Math.min(1, positiveDelta / Math.max(1, limit));
+}
+
+function deriveModeDeltaMetrics(modeSlots, referenceModeSlots, capacity) {
+  const slotCount = Math.min(
+    capacity,
+    Math.floor((modeSlots?.length ?? 0) / 4),
+    Math.floor((referenceModeSlots?.length ?? 0) / 4),
+  );
+  if (slotCount <= 0) {
+    return {
+      averageDelta: 0,
+      turnoverRatio: 0,
+    };
+  }
+
+  let deltaTotal = 0;
+  let turnoverCount = 0;
+  for (let i = 0; i < slotCount; i++) {
+    const amplitude = modeSlots[i * 4 + 3] ?? 0;
+    const referenceAmplitude = referenceModeSlots[i * 4 + 3] ?? 0;
+    const delta = Math.abs(amplitude - referenceAmplitude);
+    deltaTotal += delta;
+    if (delta > 0.08 || amplitude > 0 !== referenceAmplitude > 0) {
+      turnoverCount += 1;
+    }
+  }
+
+  return {
+    averageDelta: clamp01(deltaTotal / slotCount),
+    turnoverRatio: clamp01(turnoverCount / slotCount),
+  };
+}
+
+function deriveCompositeSignals({
+  inputMode,
+  capacity,
+  modeSlots,
+  referenceModeSlots,
+  backboneState,
+  detailState,
+  bandEnergies,
+  analyserRms,
+  avgAmplitude,
+  dominantAmplitude,
+  spectralCentroid,
+  spectralFlux,
+  transientEnergy,
+  beatDetected,
+  beatStrength,
+  beatConfidence,
+  beatOnsetDriver,
+  beatThreshold,
+  bandState,
+}) {
+  const activeModeCount = countActiveSlots(modeSlots, capacity);
+  const uniqueModeCount =
+    (backboneState?.uniqueModeCount ?? 0) + (detailState?.uniqueModeCount ?? 0);
+  const harmonicSupport = averageArray(backboneState?.harmonicSupport);
+  const bandDistribution =
+    (bandEnergies?.reduce(
+      (count, energy) => count + ((energy ?? 0) > 0.04 ? 1 : 0),
+      0,
+    ) ?? 0) / Math.max(1, bandEnergies?.length ?? 1);
+  const { averageDelta, turnoverRatio } = deriveModeDeltaMetrics(
+    modeSlots,
+    referenceModeSlots,
+    capacity,
+  );
+  const { normalizedRms, normalizedAmplitude, normalizedCentroid } =
+    getSourceNormalization({
+      inputMode,
+      avgAmplitude,
+      analyserRms,
+      spectralCentroid,
+      bandState,
+    });
+
+  const structureSignal = clamp01(
+    (activeModeCount / Math.max(1, capacity * 0.55)) * 0.34 +
+      (uniqueModeCount / Math.max(1, capacity * 0.7)) * 0.24 +
+      harmonicSupport * 0.18 +
+      bandDistribution * 0.14 +
+      normalizedCentroid * 0.1,
+  );
+  const energySignal = clamp01(
+    normalizedRms * 0.42 +
+      normalizedAmplitude * 0.26 +
+      averageArray(bandEnergies) * 0.2 +
+      clamp01(dominantAmplitude) * 0.12,
+  );
+  const changeSignal = clamp01(
+    clamp01(spectralFlux * 8) * 0.28 +
+      transientEnergy * 0.26 +
+      averageDelta * 0.2 +
+      turnoverRatio * 0.16 +
+      clamp01(Math.abs(normalizedCentroid - bandDistribution) * 1.2) * 0.1,
+  );
+  const pulseDriver = beatThreshold > 0 ? beatOnsetDriver / beatThreshold : 0;
+  const pulseSignal = clamp01(
+    (beatDetected ? beatStrength * 0.56 + beatConfidence * 0.24 : 0) +
+      clamp01(pulseDriver * 0.22),
+  );
+
+  return {
+    structureSignal,
+    energySignal,
+    changeSignal,
+    pulseSignal,
+  };
 }
 
 function updateBandState({
@@ -908,6 +1448,10 @@ function finalizeFeatureDebugSnapshot({
   soundActive,
   micActive,
   micNoiseGateActive,
+  micCalibrationActive,
+  micProfile,
+  micBaselineRms,
+  micBaselinePeak,
   backboneState,
   detailState,
   dominantFrequency,
@@ -924,6 +1468,10 @@ function finalizeFeatureDebugSnapshot({
   transientEnergy,
   spectralCentroid,
   spectralFlux,
+  structureSignal,
+  energySignal,
+  changeSignal,
+  pulseSignal,
   beatDetected,
   beatPulseId,
   beatStrength,
@@ -942,6 +1490,10 @@ function finalizeFeatureDebugSnapshot({
     analysisEngine,
     fieldState,
     micNoiseGateActive,
+    micCalibrationActive,
+    micProfile,
+    micBaselineRms,
+    micBaselinePeak,
     backboneState,
     detailState,
     dominantFrequency,
@@ -955,6 +1507,10 @@ function finalizeFeatureDebugSnapshot({
     transientEnergy,
     spectralCentroid,
     spectralFlux,
+    structureSignal,
+    energySignal,
+    changeSignal,
+    pulseSignal,
     beatDetected,
     beatPulseId,
     beatStrength,
@@ -1007,6 +1563,7 @@ export function buildAudioFeatureFrame({
   auditSettings = undefined,
   beatSettings = undefined,
   frameTimeMs = undefined,
+  micAnalysisSettings = DEFAULT_MIC_ANALYSIS_SETTINGS,
 }) {
   const capacity = featureState?.capacity ?? AUDIO_DEFAULTS.capacity;
   const analysisMemory = getAnalysisMemory(featureState, capacity);
@@ -1020,6 +1577,7 @@ export function buildAudioFeatureFrame({
     bandEnergies,
     backboneState,
     detailState,
+    bandState,
   } = ensureAnalysisMemoryShape(featureState, analysisMemory, capacity);
   const auditState = featureState?.audit;
   const resolvedAuditSettings = auditSettings ??
@@ -1031,6 +1589,9 @@ export function buildAudioFeatureFrame({
   const inputMode = status?.audioInputMode ?? "idle";
   const soundActive = Boolean(status?.isPlaying);
   const micActive = Boolean(status?.isMicActive);
+  const currentFrameAtMs = getFrameTimeMs(frameTimeMs);
+  const resolvedMicAnalysisSettings =
+    normalizeMicAnalysisSettings(micAnalysisSettings);
   const currentFrame = (analysisMemory.frameId ?? 0) + 1;
 
   if (featureState?.analysis) {
@@ -1042,6 +1603,12 @@ export function buildAudioFeatureFrame({
   if (resolvedAuditSettings.injectTestTone) sourceMode = "test";
 
   if (!analysisSnapshot && !resolvedAuditSettings.injectTestTone) {
+    if (inputMode !== "mic") {
+      resetMicGateState(analysisMemory.bandState, {
+        inputMode,
+        profile: resolvedMicAnalysisSettings.profile,
+      });
+    }
     return buildSilentFeatureFrame({
       featureState,
       inputMode,
@@ -1073,11 +1640,17 @@ export function buildAudioFeatureFrame({
   const fftMagnitudesSource =
     snapshot?.fftMagnitudes ?? new Float32Array(fftSize / 2);
 
-  const micNoiseGateActive = detectMicNoiseGate({
+  const micNoiseGateActive = resolveMicNoiseGate({
+    analysisMemory,
     injectTestTone: resolvedAuditSettings.injectTestTone,
     inputMode,
     avgAmplitude,
     rms: analyserRms,
+    fftMagnitudes: fftMagnitudesSource,
+    sampleRate,
+    fftSize,
+    currentFrameAtMs,
+    micAnalysisSettings: resolvedMicAnalysisSettings,
   });
 
   const { analysisEngine, pitchSource, spectralCandidates, usedDecay } =
@@ -1162,7 +1735,7 @@ export function buildAudioFeatureFrame({
     sampleRate,
     fftSize,
     rms: analyserRms,
-    frameTimeMs,
+    frameTimeMs: currentFrameAtMs,
     beatSettings,
   });
 
@@ -1176,6 +1749,28 @@ export function buildAudioFeatureFrame({
         fftSize,
       )
     : 0;
+  const { structureSignal, energySignal, changeSignal, pulseSignal } =
+    deriveCompositeSignals({
+      inputMode,
+      capacity,
+      modeSlots: returnedModeSlots,
+      referenceModeSlots,
+      backboneState,
+      detailState,
+      bandEnergies,
+      analyserRms,
+      avgAmplitude,
+      dominantAmplitude,
+      spectralCentroid,
+      spectralFlux,
+      transientEnergy,
+      beatDetected,
+      beatStrength,
+      beatConfidence,
+      beatOnsetDriver,
+      beatThreshold,
+      bandState,
+    });
 
   const activeModeCount = countActiveSlots(returnedModeSlots, capacity);
   const { fieldState, hasModalField } = deriveFieldState({
@@ -1199,6 +1794,10 @@ export function buildAudioFeatureFrame({
     soundActive,
     micActive,
     micNoiseGateActive,
+    micCalibrationActive: Boolean(bandState.micCalibrationActive),
+    micProfile: bandState.micProfile ?? resolvedMicAnalysisSettings.profile,
+    micBaselineRms: bandState.micBaselineRms ?? 0,
+    micBaselinePeak: bandState.micBaselinePeak ?? 0,
     backboneState,
     detailState,
     dominantFrequency,
@@ -1215,6 +1814,10 @@ export function buildAudioFeatureFrame({
     transientEnergy,
     spectralCentroid,
     spectralFlux,
+    structureSignal,
+    energySignal,
+    changeSignal,
+    pulseSignal,
     beatDetected,
     beatPulseId,
     beatStrength,
@@ -1244,6 +1847,10 @@ export function buildAudioFeatureFrame({
     transientEnergy,
     spectralCentroid,
     spectralFlux,
+    structureSignal,
+    energySignal,
+    changeSignal,
+    pulseSignal,
     beatDetected,
     beatPulseId,
     beatStrength,

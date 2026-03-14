@@ -1,5 +1,64 @@
 import { CONTROL_STATUSES } from "./schema.js";
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeLegacyReactivity(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  const next = { ...raw };
+  const hasMotionAmount = Object.prototype.hasOwnProperty.call(
+    raw,
+    "motionAmount",
+  );
+  const hasLegacyRotation = typeof raw.rotationAudioAmount === "number";
+  const legacyRotation = raw.rotationAudioAmount;
+  if (
+    !Object.prototype.hasOwnProperty.call(next, "motionAmount") &&
+    typeof legacyRotation === "number"
+  ) {
+    next.motionAmount = clamp(legacyRotation, 0, 3);
+  }
+
+  const pulseAmount = raw.pulseAmount;
+  if (
+    !Object.prototype.hasOwnProperty.call(next, "reactivity") &&
+    typeof pulseAmount === "number"
+  ) {
+    next.reactivity = clamp(pulseAmount / 0.055, 0, 3);
+  }
+
+  const beatSensitivity = raw.beatSensitivity;
+  if (
+    !Object.prototype.hasOwnProperty.call(next, "motionAmount") &&
+    typeof beatSensitivity === "number"
+  ) {
+    next.motionAmount = clamp(beatSensitivity / 0.78, 0, 3);
+  }
+
+  const pulseDecayMs = raw.pulseDecayMs;
+  if (
+    !Object.prototype.hasOwnProperty.call(next, "structurePersistence") &&
+    typeof pulseDecayMs === "number"
+  ) {
+    next.structurePersistence = clamp(pulseDecayMs / 180, 0.2, 3);
+  }
+
+  if (raw.pulseEnabled === false) {
+    if (!Object.prototype.hasOwnProperty.call(raw, "reactivity")) {
+      next.reactivity = 0;
+    }
+    if (!hasMotionAmount && !hasLegacyRotation) {
+      next.motionAmount = 0;
+    }
+  }
+
+  return next;
+}
+
 /**
  * Serialize a control state object to a plain JSON-safe object.
  * Only live (non-debug) controls are included so that audit/dev settings
@@ -32,10 +91,19 @@ export function deserializeControls(raw, definitions) {
   const result = Object.fromEntries(
     definitions.map((d) => [d.key, d.defaultValue]),
   );
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return result;
+  const normalizedRaw = normalizeLegacyReactivity(raw);
+  if (
+    !normalizedRaw ||
+    typeof normalizedRaw !== "object" ||
+    Array.isArray(normalizedRaw)
+  ) {
+    return result;
+  }
   for (const def of definitions) {
-    if (Object.prototype.hasOwnProperty.call(raw, def.key)) {
-      const val = /** @type {Record<string, unknown>} */ (raw)[def.key];
+    if (Object.prototype.hasOwnProperty.call(normalizedRaw, def.key)) {
+      const val = /** @type {Record<string, unknown>} */ (normalizedRaw)[
+        def.key
+      ];
       // Accept the stored value only if its type matches the default value's type
       if (typeof val === typeof def.defaultValue) {
         result[def.key] = val;

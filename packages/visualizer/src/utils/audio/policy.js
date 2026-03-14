@@ -3,6 +3,7 @@ export const AUDIO_ANALYSIS_POLICY = Object.freeze({
   minPeakClarity: 0.72,
   micSilenceAvgAmplitude: 8,
   micSilenceRms: 0.018,
+  micSignalPeakAmplitude: 0.16,
 });
 
 export const SPECTRAL_MODAL_POLICY = Object.freeze({

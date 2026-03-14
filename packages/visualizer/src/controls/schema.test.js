@@ -5,6 +5,8 @@ import {
   CONTROL_STATUSES,
   CONTROL_TARGET_TYPES,
   createControlState,
+  getControlFolders,
+  getControlsForFolder,
   getControlsForMethod,
 } from "./schema.js";
 import { auditControlSchema } from "./audit.js";
@@ -26,7 +28,9 @@ const EXPECTED_CONTROL_KEYS = [
   "backgroundColor",
   "volumeColor",
   "surfaceColor",
+  "rotationMode",
   "rotationSpeed",
+  "reactivity",
   "zeroPointPrecision",
   "structureMin",
   "structureMax",
@@ -36,9 +40,8 @@ const EXPECTED_CONTROL_KEYS = [
   "contourSharpness",
   "rimBloomBias",
   "rimCompression",
-  "beatSensitivity",
-  "pulseAmount",
-  "pulseDecayMs",
+  "motionAmount",
+  "structurePersistence",
   "idleLogoIntensity",
   "idleLogoSize",
   "auditEnabled",
@@ -113,7 +116,9 @@ describe("control schema", () => {
       "backgroundColor",
       "volumeColor",
       "surfaceColor",
+      "rotationMode",
       "rotationSpeed",
+      "reactivity",
       "zeroPointPrecision",
       "structureMin",
       "structureMax",
@@ -123,9 +128,8 @@ describe("control schema", () => {
       "contourSharpness",
       "rimBloomBias",
       "rimCompression",
-      "beatSensitivity",
-      "pulseAmount",
-      "pulseDecayMs",
+      "motionAmount",
+      "structurePersistence",
       "idleLogoIntensity",
       "idleLogoSize",
       "auditEnabled",
@@ -135,6 +139,59 @@ describe("control schema", () => {
       "testToneHz",
       "testToneAmplitude",
       "logEveryFrames",
+    ]);
+  });
+
+  it("orders pane folders by user-facing groups", () => {
+    expect(getControlFolders(DEFAULT_VISUALIZATION_METHOD)).toEqual([
+      "Mic Processing",
+      "Field",
+      "Look",
+      "Motion",
+      "Advanced Field",
+      "Advanced Look",
+      "Diagnostics",
+    ]);
+  });
+
+  it("assigns controls to the intended pane groups", () => {
+    expect(
+      getControlsForFolder("Field", DEFAULT_VISUALIZATION_METHOD).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual([
+      "zeroPointPrecision",
+      "structureMin",
+      "structureMax",
+      "densityGain",
+      "absorption",
+      "contourSharpness",
+    ]);
+    expect(
+      getControlsForFolder("Look", DEFAULT_VISUALIZATION_METHOD).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual([
+      "bloomEnabled",
+      "bloomStrength",
+      "bloomRadius",
+      "bloomThreshold",
+      "backgroundColor",
+      "volumeColor",
+      "surfaceColor",
+      "idleLogoIntensity",
+      "idleLogoSize",
+    ]);
+    expect(
+      getControlsForFolder("Motion", DEFAULT_VISUALIZATION_METHOD).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual([
+      "rotationMode",
+      "rotationSpeed",
+      "reactivity",
+      "motionAmount",
+      "structurePersistence",
     ]);
   });
 

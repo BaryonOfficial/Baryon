@@ -104,12 +104,13 @@ export function useBaryonControls() {
       ).filter((folderTitle) => getVisibleControls(folderTitle).length > 0);
 
       for (const folderTitle of visibleFolders) {
+        const visibleControls = getVisibleControls(folderTitle);
         const folder = pane.addFolder({
           title: folderTitle,
-          expanded: false,
+          expanded: visibleControls[0]?.groupExpanded ?? false,
         });
 
-        for (const definition of getVisibleControls(folderTitle)) {
+        for (const definition of visibleControls) {
           const binding = folder.addBinding(p, definition.key, {
             label: definition.label,
             ...(definition.binding ?? {}),

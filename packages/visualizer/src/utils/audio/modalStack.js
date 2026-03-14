@@ -42,6 +42,18 @@ function createBandState() {
     beatStrength: 0,
     beatConfidence: 0,
     beatSensitivity: BEAT_DEFAULTS.beatSensitivity,
+    micInputMode: "idle",
+    micProfile: "voice-tone",
+    micGateState: "closed",
+    micCalibrationActive: false,
+    micCalibrationStartedAtMs: Number.NEGATIVE_INFINITY,
+    micPreviousFrameAtMs: 0,
+    micBaselineRms: 0,
+    micBaselinePeak: 0,
+    micBaselineCentroid: 0,
+    micBaselineLowBandEnergy: 0,
+    micOpenFrames: 0,
+    micQuietFrames: 0,
   };
 }
 

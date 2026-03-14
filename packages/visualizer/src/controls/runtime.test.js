@@ -40,10 +40,10 @@ function createRaymarchHarness() {
       uRaymarchSteps: { value: 0 },
       uRadius: { value: 3 },
     },
-    beatTuning: {
-      beatSensitivity: 1,
-      pulseAmount: 0.055,
-      pulseDecayMs: 180,
+    reactivityTuning: {
+      reactivity: 1,
+      motionAmount: 1,
+      structurePersistence: 1,
     },
     bloomTuning: {
       bloomResponseBias: 0.4,
@@ -60,8 +60,21 @@ function createRaymarchHarness() {
         steps: 0,
       },
     },
+    points: {
+      rotation: { y: 0 },
+    },
+    sceneMotion: {
+      yaw: 0,
+      angularVelocity: 0,
+      targetAngularVelocity: 0,
+      lastMotionSignal: 0,
+      lastBeatPulseId: 0,
+      idleLogoYaw: 0,
+    },
+    responseEnvelope: 0,
     idleOverlay: {
       visible: false,
+      rotation: { y: 0 },
       scale: {
         x: 1,
         setScalar(value) {
@@ -112,9 +125,9 @@ describe("control runtime sync", () => {
     controls.contourSharpness = 5.2;
     controls.rimBloomBias = 0.65;
     controls.rimCompression = 0.72;
-    controls.beatSensitivity = 1.2;
-    controls.pulseAmount = 0.08;
-    controls.pulseDecayMs = 240;
+    controls.reactivity = 1.2;
+    controls.motionAmount = 1.1;
+    controls.structurePersistence = 1.4;
     controls.raymarchSteps = 64;
 
     const gl = {
@@ -137,10 +150,10 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.65);
     expect(runtimeState.uniforms.uRimCompression.value).toBe(0.72);
     expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
-    expect(runtimeState.beatTuning).toEqual({
-      beatSensitivity: 1.2,
-      pulseAmount: 0.08,
-      pulseDecayMs: 240,
+    expect(runtimeState.reactivityTuning).toEqual({
+      reactivity: 1.2,
+      motionAmount: 1.1,
+      structurePersistence: 1.4,
     });
     expect(runtimeState.bloomTuning.stepReference).toBe(STEP_REFERENCE);
     expect(runtimeState.bloomTuning.stepCompensation).toBeCloseTo(
@@ -156,9 +169,9 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.absorption).toBe(1.35);
     expect(snapshot.uniforms.rimBloomBias).toBe(0.65);
     expect(snapshot.uniforms.rimCompression).toBe(0.72);
-    expect(snapshot.uniforms.beatSensitivity).toBe(1.2);
-    expect(snapshot.uniforms.pulseAmount).toBe(0.08);
-    expect(snapshot.uniforms.pulseDecayMs).toBe(240);
+    expect(snapshot.uniforms.reactivity).toBe(1.2);
+    expect(snapshot.uniforms.motionAmount).toBe(1.1);
+    expect(snapshot.uniforms.structurePersistence).toBe(1.4);
     expect(snapshot.uniforms.raymarchSteps).toBe(64);
     expect(snapshot.overlay.scale).toBe(1.4);
   });
@@ -195,9 +208,9 @@ describe("control runtime sync", () => {
     controls.contourSharpness = 6.4;
     controls.rimBloomBias = 0.35;
     controls.rimCompression = 0.5;
-    controls.beatSensitivity = 0.9;
-    controls.pulseAmount = 0.04;
-    controls.pulseDecayMs = 120;
+    controls.reactivity = 0.9;
+    controls.motionAmount = 1.3;
+    controls.structurePersistence = 0.75;
 
     const runtimeState = createRaymarchHarness();
     const snapshot = applyRaymarchControls(runtimeState, controls);
@@ -210,9 +223,9 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uContourSharpness.value).toBe(6.4);
     expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.35);
     expect(runtimeState.uniforms.uRimCompression.value).toBe(0.5);
-    expect(runtimeState.beatTuning.beatSensitivity).toBe(0.9);
-    expect(runtimeState.beatTuning.pulseAmount).toBe(0.04);
-    expect(runtimeState.beatTuning.pulseDecayMs).toBe(120);
+    expect(runtimeState.reactivityTuning.reactivity).toBe(0.9);
+    expect(runtimeState.reactivityTuning.motionAmount).toBe(1.3);
+    expect(runtimeState.reactivityTuning.structurePersistence).toBe(0.75);
     expect(runtimeState.bloomTuning.stepCompensation).toBeCloseTo(
       deriveStepCompensation(72),
     );
@@ -367,14 +380,257 @@ describe("control runtime sync", () => {
     expect(snapshot.logEveryFrames).toBe(12);
   });
 
-  it("applies scene controls to points rotation", () => {
+  it("preserves constant rotation in manual mode", () => {
     const controls = createControlState();
+    controls.rotationMode = "manual";
     controls.rotationSpeed = 2;
-    const points = { rotation: { y: 1 } };
+    const runtimeState = createRaymarchHarness();
+    runtimeState.points.rotation.y = 1;
+    runtimeState.sceneMotion.yaw = 1;
 
-    const snapshot = applySceneControls(points, controls, 0.5);
-    expect(points.rotation.y).toBeCloseTo(0.5);
+    const snapshot = applySceneControls(runtimeState, controls, 0.5);
+    expect(runtimeState.points.rotation.y).toBeCloseTo(0.5);
+    expect(snapshot.rotationMode).toBe("manual");
     expect(snapshot.rotationSpeed).toBe(2);
+  });
+
+  it("settles rotation back to neutral in off mode", () => {
+    const controls = createControlState();
+    controls.rotationMode = "off";
+    const runtimeState = createRaymarchHarness();
+    runtimeState.points.rotation.y = 1.2;
+    runtimeState.sceneMotion.yaw = 1.2;
+    runtimeState.sceneMotion.angularVelocity = -1.4;
+
+    const snapshot = applySceneControls(runtimeState, controls, 0.5);
+    expect(Math.abs(runtimeState.points.rotation.y)).toBeLessThan(1.2);
+    expect(Math.abs(snapshot.angularVelocity)).toBeLessThan(1.4);
+    expect(snapshot.rotationMode).toBe("off");
+  });
+
+  it("adds a beat impulse on top of field-driven rotation in audio mode", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.motionAmount = 1.4;
+    const beatlessRuntimeState = createRaymarchHarness();
+    beatlessRuntimeState.responseEnvelope = 0.5;
+    const beatRuntimeState = createRaymarchHarness();
+    beatRuntimeState.responseEnvelope = 0.5;
+
+    const baseFrame = {
+      fieldState: "active",
+      structureSignal: 0.55,
+      energySignal: 0.72,
+      changeSignal: 0.64,
+      pulseSignal: 0.3,
+    };
+    const status = {
+      isPlaying: true,
+      isMicActive: false,
+    };
+
+    const beatlessSnapshot = applySceneControls(
+      beatlessRuntimeState,
+      controls,
+      1 / 60,
+      baseFrame,
+      status,
+    );
+    const beatSnapshot = applySceneControls(
+      beatRuntimeState,
+      controls,
+      1 / 60,
+      {
+        ...baseFrame,
+        beatDetected: true,
+        beatPulseId: 9,
+        beatStrength: 0.78,
+        beatConfidence: 0.72,
+      },
+      status,
+    );
+
+    expect(beatSnapshot.rotationMode).toBe("audio");
+    expect(beatSnapshot.motionAmount).toBe(1.4);
+    expect(beatSnapshot.motionSignal).toBeGreaterThan(0.4);
+    expect(beatSnapshot.targetAngularVelocity).toBeLessThan(0);
+    expect(beatSnapshot.angularVelocity).toBeLessThan(
+      beatlessSnapshot.angularVelocity,
+    );
+    expect(beatRuntimeState.sceneMotion.lastBeatPulseId).toBe(9);
+    expect(beatRuntimeState.points.rotation.y).toBeLessThan(0);
+  });
+
+  it("consumes each beat pulse id only once for audio rotation", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.motionAmount = 1.2;
+    const freshBeatRuntimeState = createRaymarchHarness();
+    freshBeatRuntimeState.responseEnvelope = 0.42;
+    const consumedBeatRuntimeState = createRaymarchHarness();
+    consumedBeatRuntimeState.responseEnvelope = 0.42;
+    consumedBeatRuntimeState.sceneMotion.lastBeatPulseId = 17;
+
+    const featureFrame = {
+      fieldState: "active",
+      structureSignal: 0.48,
+      energySignal: 0.58,
+      changeSignal: 0.46,
+      pulseSignal: 0.22,
+      beatDetected: true,
+      beatPulseId: 17,
+      beatStrength: 0.74,
+      beatConfidence: 0.69,
+    };
+    const status = {
+      isPlaying: true,
+      isMicActive: false,
+    };
+
+    const freshBeatSnapshot = applySceneControls(
+      freshBeatRuntimeState,
+      controls,
+      1 / 60,
+      featureFrame,
+      status,
+    );
+    const consumedBeatSnapshot = applySceneControls(
+      consumedBeatRuntimeState,
+      controls,
+      1 / 60,
+      featureFrame,
+      status,
+    );
+
+    expect(freshBeatRuntimeState.sceneMotion.lastBeatPulseId).toBe(17);
+    expect(consumedBeatRuntimeState.sceneMotion.lastBeatPulseId).toBe(17);
+    expect(freshBeatSnapshot.angularVelocity).toBeLessThan(
+      consumedBeatSnapshot.angularVelocity,
+    );
+  });
+
+  it("stays strongly reactive on sustained playback without a fresh beat trigger", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.motionAmount = 1;
+    const runtimeState = createRaymarchHarness();
+    runtimeState.responseEnvelope = 0.62;
+
+    const snapshot = applySceneControls(
+      runtimeState,
+      controls,
+      1 / 60,
+      {
+        fieldState: "active",
+        structureSignal: 0.78,
+        energySignal: 0.84,
+        changeSignal: 0.22,
+        pulseSignal: 0.05,
+      },
+      {
+        isPlaying: true,
+        isMicActive: false,
+      },
+    );
+
+    expect(snapshot.rotationMode).toBe("audio");
+    expect(snapshot.targetAngularVelocity).toBeLessThan(-1);
+    expect(snapshot.angularVelocity).toBeLessThan(-0.15);
+    expect(runtimeState.points.rotation.y).toBeLessThan(0);
+  });
+
+  it("lets audio rotation settle near stillness when structural change is weak", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.motionAmount = 1;
+    const runtimeState = createRaymarchHarness();
+    runtimeState.responseEnvelope = 0.18;
+
+    const snapshot = applySceneControls(
+      runtimeState,
+      controls,
+      1 / 60,
+      {
+        fieldState: "active",
+        structureSignal: 0.18,
+        energySignal: 0.16,
+        changeSignal: 0.03,
+        pulseSignal: 0,
+      },
+      {
+        isPlaying: true,
+        isMicActive: false,
+      },
+    );
+
+    expect(snapshot.rotationMode).toBe("audio");
+    expect(Math.abs(snapshot.targetAngularVelocity)).toBeLessThan(0.4);
+    expect(Math.abs(snapshot.angularVelocity)).toBeLessThan(0.2);
+  });
+
+  it("keeps the idle logo synced to manual rotation speed in audio mode", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.rotationSpeed = 2;
+    const runtimeState = createRaymarchHarness();
+
+    const snapshot = applySceneControls(
+      runtimeState,
+      controls,
+      0.5,
+      {
+        fieldState: "idle",
+        structureSignal: 0,
+        energySignal: 0,
+        changeSignal: 0,
+        pulseSignal: 0,
+      },
+      {
+        isPlaying: false,
+        isMicActive: false,
+      },
+    );
+
+    expect(snapshot.rotationMode).toBe("audio");
+    expect(runtimeState.points.rotation.y).toBe(0);
+    expect(runtimeState.sceneMotion.idleLogoYaw).toBeCloseTo(-0.5);
+    expect(runtimeState.idleOverlay.rotation.y).toBeCloseTo(-0.5);
+  });
+
+  it("disables sustained and beat-driven audio rotation when motion amount is zero", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.motionAmount = 0;
+    const runtimeState = createRaymarchHarness();
+    runtimeState.responseEnvelope = 0.5;
+
+    const snapshot = applySceneControls(
+      runtimeState,
+      controls,
+      1 / 60,
+      {
+        fieldState: "active",
+        structureSignal: 0.55,
+        energySignal: 0.72,
+        changeSignal: 0.64,
+        pulseSignal: 0.3,
+        beatDetected: true,
+        beatPulseId: 9,
+        beatStrength: 0.78,
+        beatConfidence: 0.72,
+      },
+      {
+        isPlaying: true,
+        isMicActive: false,
+      },
+    );
+
+    expect(snapshot.rotationMode).toBe("audio");
+    expect(snapshot.motionAmount).toBe(0);
+    expect(Math.abs(snapshot.targetAngularVelocity)).toBe(0);
+    expect(Math.abs(snapshot.angularVelocity)).toBe(0);
+    expect(Math.abs(runtimeState.points.rotation.y)).toBe(0);
+    expect(runtimeState.sceneMotion.lastBeatPulseId).toBe(9);
   });
 
   it("builds a control inspection snapshot", () => {

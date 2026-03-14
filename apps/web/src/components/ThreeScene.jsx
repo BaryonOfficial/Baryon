@@ -93,6 +93,8 @@ const ThreeScene = () => {
     setIsPlaying,
     setIsAudioLoaded,
     setIsEngineReady,
+    setMicRuntimeStatus,
+    micProfile,
     resetAudioSession,
   } = useAudio();
 
@@ -283,6 +285,8 @@ const ThreeScene = () => {
                 setIsPlaying={setIsPlaying}
                 setIsAudioLoaded={setIsAudioLoaded}
                 setIsEngineReady={setIsEngineReady}
+                setMicRuntimeStatus={setMicRuntimeStatus}
+                micProfile={micProfile}
                 controlsRef={controlsRef}
               />
             </Suspense>

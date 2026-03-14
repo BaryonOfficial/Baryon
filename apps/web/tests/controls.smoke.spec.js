@@ -227,6 +227,61 @@ test.describe("Baryon control smoke", () => {
     await setControl(page, "injectTestTone", false);
   });
 
+  test("defaults rotation to audio mode and supports manual and off overrides", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          rotationMode:
+            window.__baryonControls?.getState?.().rotationMode ?? null,
+          motionAmount:
+            window.__baryonControls?.getState?.().motionAmount ?? null,
+        })),
+      )
+      .toEqual({
+        rotationMode: "audio",
+        motionAmount: 1,
+      });
+
+    await setControl(page, "rotationMode", "manual");
+    await setControl(page, "rotationSpeed", 2);
+
+    const manualStart = await page.evaluate(
+      () => window.__baryonControlState?.scene?.rotationY ?? 0,
+    );
+    await page.waitForTimeout(120);
+    const manualEnd = await page.evaluate(
+      () => window.__baryonControlState?.scene?.rotationY ?? 0,
+    );
+
+    expect(manualEnd).not.toBeCloseTo(manualStart, 3);
+
+    await setControl(page, "rotationMode", "off");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControlState?.scene?.rotationMode ?? null,
+        ),
+      )
+      .toBe("off");
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const velocity =
+            window.__baryonControlState?.scene?.angularVelocity ?? 1;
+          return Math.abs(velocity) < 0.05;
+        }),
+      )
+      .toBe(true);
+  });
+
   test("forces the WebGL2 fallback backend through the audit controls", async ({
     page,
     browserName,
@@ -329,6 +384,41 @@ test.describe("Baryon control smoke", () => {
         fieldState: "idle",
         idleOverlayVisible: true,
       });
+  });
+
+  test("shows clear mic presets and visible calibration status", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await installFakeMicrophone(page);
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.getByTitle("Select audio input").click();
+    await expect(
+      page.locator(".am-device-item-label", { hasText: "Voice" }).first(),
+    ).toBeVisible();
+    await expect(
+      page.locator(".am-device-item-label", { hasText: "Speech + Humming" }),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(".am-device-item-label", { hasText: "Ambient" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Auto$/ })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Fake Microphone" }).click();
+
+    await expect(page.getByTestId("mic-status")).toHaveText("Calibrating");
+    await expect
+      .poll(async () => {
+        return (await page.getByTestId("mic-status").textContent())?.trim();
+      })
+      .toBe("Voice");
+
+    await page.getByTitle("Stop mic input").click();
+    await expect(page.getByTestId("mic-status")).toHaveCount(0);
   });
 
   test("clears the stale upload label after switching from file playback to mic mode", async ({

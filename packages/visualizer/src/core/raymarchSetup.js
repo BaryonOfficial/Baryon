@@ -1,6 +1,6 @@
 import { instancedArray } from "three/tsl";
 import {
-  BEAT_DEFAULTS,
+  REACTIVITY_DEFAULTS,
   RAYMARCH_DEFAULTS,
   RENDER_DEFAULTS,
 } from "../defaults.js";
@@ -67,10 +67,10 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     stabilityStats: estimateProjectedSphereStats({
       radius: parameters.radius,
     }),
-    beatTuning: {
-      beatSensitivity: BEAT_DEFAULTS.beatSensitivity,
-      pulseAmount: BEAT_DEFAULTS.pulseAmount,
-      pulseDecayMs: BEAT_DEFAULTS.pulseDecayMs,
+    reactivityTuning: {
+      reactivity: REACTIVITY_DEFAULTS.reactivity,
+      motionAmount: REACTIVITY_DEFAULTS.motionAmount,
+      structurePersistence: REACTIVITY_DEFAULTS.structurePersistence,
     },
     bloomTuning: {
       bloomResponseBias: RENDER_DEFAULTS.bloomResponseBias,
@@ -84,8 +84,19 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
       effectiveThreshold: RENDER_DEFAULTS.bloomThreshold,
     },
     baseDensityGain: uniforms.uDensityGain.value,
-    pulseEnvelope: 0,
-    lastConsumedBeatPulseId: 0,
+    sceneMotion: {
+      yaw: 0,
+      angularVelocity: 0,
+      targetAngularVelocity: 0,
+      lastMotionSignal: 0,
+      lastBeatPulseId: 0,
+      idleLogoYaw: 0,
+    },
+    responseEnvelope: 0,
+    accentEnvelope: 0,
+    motionSignal: 0,
+    scaleSignal: 0,
+    bloomResponseSignal: 0,
     debugSnapshot: null,
   };
 }

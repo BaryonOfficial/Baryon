@@ -56,6 +56,8 @@ export function useBaryonVisualizer({
   setIsPlaying,
   setIsAudioLoaded,
   setIsEngineReady,
+  setMicRuntimeStatus,
+  micProfile,
   controlsRef,
   ensurePipeline,
   postNodesRef,
@@ -68,6 +70,7 @@ export function useBaryonVisualizer({
   const runtimeStateRef = useRef(null);
   const lastLiveFrameRef = useRef(null);
   const lastActiveFrameRef = useRef(null);
+  const lastMicRuntimeStatusRef = useRef(null);
   const [points, setPoints] = useState(null);
 
   useEffect(() => {
@@ -96,13 +99,28 @@ export function useBaryonVisualizer({
       }
       lastLiveFrameRef.current = null;
       lastActiveFrameRef.current = null;
+      const lastMicProfile =
+        lastMicRuntimeStatusRef.current?.profile ?? "voice-tone";
+      lastMicRuntimeStatusRef.current = null;
+      setMicRuntimeStatus?.({
+        active: false,
+        calibrating: false,
+        profile: lastMicProfile,
+      });
       if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
         delete window.__baryonAuditSnapshot;
         delete window.__baryonControlState;
       }
       resetBaryonTestReady();
     };
-  }, [camera, gl, setIsAudioLoaded, setIsEngineReady, setIsPlaying]);
+  }, [
+    camera,
+    gl,
+    setIsAudioLoaded,
+    setIsEngineReady,
+    setIsPlaying,
+    setMicRuntimeStatus,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -172,8 +190,14 @@ export function useBaryonVisualizer({
       lastLiveFrameRef.current = null;
       lastActiveFrameRef.current = null;
       audioFeatureRef.current = null;
+      lastMicRuntimeStatusRef.current = null;
+      setMicRuntimeStatus?.({
+        active: false,
+        calibrating: false,
+        profile: micProfile ?? "voice-tone",
+      });
     };
-  }, [baryonGeometry, setIsEngineReady]);
+  }, [baryonGeometry, micProfile, setIsEngineReady, setMicRuntimeStatus]);
 
   useFrame((state) => {
     const pipeline = ensurePipeline();
@@ -216,9 +240,33 @@ export function useBaryonVisualizer({
       featureState,
       radius: runtimeState.uniforms.uRadius.value,
       status,
-      beatSettings: runtimeState.beatTuning,
       frameTimeMs: time * 1000,
+      micAnalysisSettings: {
+        profile: micProfile,
+      },
     });
+    const nextMicRuntimeStatus = status.isMicActive
+      ? {
+          active: true,
+          calibrating: Boolean(featureFrame.debug?.micCalibrationActive),
+          profile: featureFrame.debug?.micProfile ?? micProfile ?? "voice-tone",
+        }
+      : {
+          active: false,
+          calibrating: false,
+          profile: micProfile ?? "voice-tone",
+        };
+    const previousMicRuntimeStatus = lastMicRuntimeStatusRef.current;
+    if (
+      !previousMicRuntimeStatus ||
+      previousMicRuntimeStatus.active !== nextMicRuntimeStatus.active ||
+      previousMicRuntimeStatus.calibrating !==
+        nextMicRuntimeStatus.calibrating ||
+      previousMicRuntimeStatus.profile !== nextMicRuntimeStatus.profile
+    ) {
+      lastMicRuntimeStatusRef.current = nextMicRuntimeStatus;
+      setMicRuntimeStatus?.(nextMicRuntimeStatus);
+    }
 
     if (status.isPlaying || status.isMicActive) {
       lastLiveFrameRef.current = featureFrame;
@@ -242,7 +290,8 @@ export function useBaryonVisualizer({
 
     if (controls.bloomEnabled && postNodesRef.current?.bloomPass) {
       postNodesRef.current.bloomPass.strength.value =
-        bloomSnapshot.strength * (1 + (runtimeState.pulseEnvelope ?? 0) * 0.15);
+        bloomSnapshot.strength *
+        (1 + (runtimeState.bloomResponseSignal ?? 0) * 0.16);
     }
 
     if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
@@ -270,9 +319,11 @@ export function useBaryonVisualizer({
     }
 
     const sceneSnapshot = applySceneControls(
-      runtimeState.points,
+      runtimeState,
       controls,
       deltaTime,
+      featureFrame,
+      status,
     );
 
     if (DEVTOOLS_ENABLED && typeof window !== "undefined") {

@@ -8,6 +8,8 @@ export function BaryonScene({
   setIsPlaying,
   setIsAudioLoaded,
   setIsEngineReady,
+  setMicRuntimeStatus,
+  micProfile,
   controlsRef,
 }) {
   const { camera, gl, scene } = useThree();
@@ -20,6 +22,8 @@ export function BaryonScene({
     setIsPlaying,
     setIsAudioLoaded,
     setIsEngineReady,
+    setMicRuntimeStatus,
+    micProfile,
     controlsRef,
     ensurePipeline,
     postNodesRef,

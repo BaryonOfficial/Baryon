@@ -1,17 +1,21 @@
 import React from "react";
+import { MIC_PROFILE_OPTIONS } from "../utils/audioFeatures.js";
 
 export function AudioControlsView({
   fileName,
   isPlaying,
   isMicActive,
+  micStatusLabel,
   isAudioLoaded,
   showDeviceMenu,
   audioDevices,
   selectedDevice,
+  selectedMicProfile,
   handleFileChange,
   handlePlayPause,
   handleStop,
   handleMicToggle,
+  handleMicProfileChange,
   setShowDeviceMenu,
   setSelectedDevice,
 }) {
@@ -80,6 +84,14 @@ export function AudioControlsView({
                 </svg>
               )}
             </button>
+            {isMicActive && micStatusLabel ? (
+              <span
+                className="baryon-audio-controls__mic-status"
+                data-testid="mic-status"
+              >
+                {micStatusLabel}
+              </span>
+            ) : null}
             {showDeviceMenu && audioDevices.length > 0 && (
               <div className="baryon-audio-controls__menu">
                 <div>
@@ -98,6 +110,30 @@ export function AudioControlsView({
                       }`}
                     >
                       {device.label || `Device ${device.deviceId.slice(0, 8)}`}
+                    </button>
+                  ))}
+                  <div className="baryon-audio-controls__menu-label">
+                    Input Profile
+                  </div>
+                  <div className="baryon-audio-controls__menu-note">
+                    Auto-calibrates when mic starts or when you change profile.
+                  </div>
+                  {MIC_PROFILE_OPTIONS.map((profile) => (
+                    <button
+                      key={profile.value}
+                      onClick={() => handleMicProfileChange?.(profile.value)}
+                      className={`baryon-audio-controls__menu-item${
+                        selectedMicProfile === profile.value
+                          ? " baryon-audio-controls__menu-item--selected"
+                          : ""
+                      }`}
+                    >
+                      <span className="baryon-audio-controls__menu-item-title">
+                        {profile.label}
+                      </span>
+                      <span className="baryon-audio-controls__menu-item-description">
+                        {profile.description}
+                      </span>
                     </button>
                   ))}
                 </div>

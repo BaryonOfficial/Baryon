@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { CONTROL_HANDLERS } from "./schema.js";
 import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
-import { RENDER_DEFAULTS } from "../defaults.js";
+import { REACTIVITY_DEFAULTS, RENDER_DEFAULTS } from "../defaults.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -12,9 +12,67 @@ const IDLE_LOGO_ALPHA_RATIO =
   RENDER_DEFAULTS.idleLogoIntensity > 0
     ? RENDER_DEFAULTS.idleLogoAlpha / RENDER_DEFAULTS.idleLogoIntensity
     : 1;
+const MANUAL_ROTATION_RATE_SCALE = -0.5;
+const AUDIO_ROTATION_MIN_SPEED = 0.03;
+const AUDIO_ROTATION_MAX_SPEED = 4.8;
+const AUDIO_ROTATION_ATTACK = 14;
+const AUDIO_ROTATION_RELEASE = 4.8;
+const AUDIO_ROTATION_IDLE_DAMP = 5.5;
+const AUDIO_ROTATION_RETURN = 4.5;
+const AUDIO_ROTATION_SUSTAIN_SCALE = 4.8;
+const AUDIO_ROTATION_IMPULSE_SCALE = 1.75;
+const AUDIO_ROTATION_BEAT_IMPULSE_SCALE = 0.9;
+const AUDIO_ROTATION_BEAT_CONFIDENCE_FLOOR = 0.3;
+const AUDIO_ROTATION_DRIVE_DEADZONE = 0.08;
 
 function deriveIdleLogoAlpha(intensity) {
   return Math.min(1, intensity * IDLE_LOGO_ALPHA_RATIO);
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function clamp01(value) {
+  return clamp(value, 0, 1);
+}
+
+function damp(current, target, smoothing, deltaTime) {
+  const factor = 1 - Math.exp(-Math.max(0, smoothing) * Math.max(0, deltaTime));
+  return current + (target - current) * factor;
+}
+
+function wrapAngle(angle) {
+  const turn = Math.PI * 2;
+  let wrapped = angle;
+  while (wrapped <= -Math.PI) wrapped += turn;
+  while (wrapped > Math.PI) wrapped -= turn;
+  return wrapped;
+}
+
+function dampAngle(current, target, smoothing, deltaTime) {
+  const delta = wrapAngle(target - current);
+  return wrapAngle(
+    current + delta * (1 - Math.exp(-smoothing * Math.max(0, deltaTime))),
+  );
+}
+
+function normalizeRotationMode(mode) {
+  if (mode === "manual" || mode === "off") {
+    return mode;
+  }
+  return "audio";
+}
+
+function createSceneMotionState(initialYaw = 0) {
+  return {
+    yaw: initialYaw,
+    angularVelocity: 0,
+    targetAngularVelocity: 0,
+    lastMotionSignal: 0,
+    lastBeatPulseId: 0,
+    idleLogoYaw: initialYaw,
+  };
 }
 
 function deriveBloomResponse(controls, stepBudget) {
@@ -59,11 +117,10 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "densityGain",
     "absorption",
     "contourSharpness",
+    "reactivity",
+    "structurePersistence",
     "rimBloomBias",
     "rimCompression",
-    "beatSensitivity",
-    "pulseAmount",
-    "pulseDecayMs",
     "idleLogoIntensity",
     "idleLogoSize",
   ]),
@@ -74,7 +131,11 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "bloomThreshold",
     "bloomResponseBias",
   ]),
-  [CONTROL_HANDLERS.scene]: Object.freeze(["rotationSpeed"]),
+  [CONTROL_HANDLERS.scene]: Object.freeze([
+    "rotationMode",
+    "rotationSpeed",
+    "motionAmount",
+  ]),
   [CONTROL_HANDLERS.audit]: Object.freeze([
     "auditEnabled",
     "freezeModeSlots",
@@ -131,11 +192,12 @@ export function applyRaymarchControls(runtimeState, controls) {
   uniforms.uRimCompression.value = controls.rimCompression;
   uniforms.uRaymarchSteps.value = stepBudget;
   runtimeState.baseDensityGain = controls.densityGain;
-  runtimeState.beatTuning = {
-    ...(runtimeState.beatTuning ?? {}),
-    beatSensitivity: controls.beatSensitivity,
-    pulseAmount: controls.pulseAmount,
-    pulseDecayMs: controls.pulseDecayMs,
+  runtimeState.reactivityTuning = {
+    ...(runtimeState.reactivityTuning ?? {}),
+    reactivity: controls.reactivity ?? REACTIVITY_DEFAULTS.reactivity,
+    motionAmount: controls.motionAmount ?? REACTIVITY_DEFAULTS.motionAmount,
+    structurePersistence:
+      controls.structurePersistence ?? REACTIVITY_DEFAULTS.structurePersistence,
   };
   runtimeState.bloomTuning = {
     ...(runtimeState.bloomTuning ?? {}),
@@ -170,11 +232,11 @@ export function applyRaymarchControls(runtimeState, controls) {
       densityGain: uniforms.uDensityGain.value,
       absorption: uniforms.uAbsorption.value,
       contourSharpness: uniforms.uContourSharpness.value,
+      reactivity: runtimeState.reactivityTuning?.reactivity,
+      motionAmount: runtimeState.reactivityTuning?.motionAmount,
+      structurePersistence: runtimeState.reactivityTuning?.structurePersistence,
       rimBloomBias: uniforms.uRimBloomBias.value,
       rimCompression: uniforms.uRimCompression.value,
-      beatSensitivity: runtimeState.beatTuning?.beatSensitivity,
-      pulseAmount: runtimeState.beatTuning?.pulseAmount,
-      pulseDecayMs: runtimeState.beatTuning?.pulseDecayMs,
       raymarchSteps: Math.round(runtimeState.volumeMesh.material.steps),
     },
     overlay: {
@@ -270,11 +332,177 @@ export function applyAuditControls(featureState, controls) {
   return { ...featureState.audit.settings };
 }
 
-export function applySceneControls(points, controls, deltaTime) {
-  if (!points) return null;
-  points.rotation.y -= deltaTime * 0.5 * controls.rotationSpeed;
+export function applySceneControls(
+  target,
+  controls,
+  deltaTime,
+  featureFrame,
+  status,
+) {
+  const runtimeState = target?.points ? target : null;
+  const points = runtimeState?.points ?? target;
+  if (!points?.rotation) return null;
+
+  const sceneMotion =
+    runtimeState?.sceneMotion ?? createSceneMotionState(points.rotation.y ?? 0);
+  const rotationMode = normalizeRotationMode(controls.rotationMode);
+  const manualVelocity =
+    (controls.rotationSpeed ?? RENDER_DEFAULTS.rotationSpeed) *
+    MANUAL_ROTATION_RATE_SCALE;
+  const motionAmount = Math.max(
+    0,
+    controls.motionAmount ??
+      runtimeState?.reactivityTuning?.motionAmount ??
+      REACTIVITY_DEFAULTS.motionAmount,
+  );
+  const audioActive =
+    status?.isPlaying ||
+    status?.isMicActive ||
+    featureFrame?.fieldState === "test";
+  const fieldDriven =
+    featureFrame?.fieldState && featureFrame.fieldState !== "idle";
+  const structureSignal = clamp01(featureFrame?.structureSignal ?? 0);
+  const energySignal = clamp01(featureFrame?.energySignal ?? 0);
+  const changeSignal = clamp01(featureFrame?.changeSignal ?? 0);
+  const pulseSignal = clamp01(featureFrame?.pulseSignal ?? 0);
+  const beatPulseId = featureFrame?.beatPulseId ?? 0;
+  const beatStrength = clamp01(featureFrame?.beatStrength ?? 0);
+  const beatConfidence = clamp01(featureFrame?.beatConfidence ?? 0);
+  const responseEnvelope = clamp01(runtimeState?.responseEnvelope ?? 0);
+  const motionSignal = clamp01(
+    changeSignal * 0.56 +
+      pulseSignal * 0.22 +
+      energySignal * 0.14 +
+      responseEnvelope * 0.08,
+  );
+  const motionImpulse = clamp01(
+    motionSignal - (sceneMotion.lastMotionSignal ?? 0) * 0.7,
+  );
+  const bedSignal = clamp01(
+    structureSignal * 0.14 + energySignal * 0.22 + responseEnvelope * 0.24,
+  );
+  const reactiveSignal = clamp01(
+    changeSignal * 0.62 + motionImpulse * 0.82 + pulseSignal * 0.18,
+  );
+  const rotationDrive = clamp01(bedSignal * 0.4 + reactiveSignal * 0.6);
+  const shapedDrive =
+    rotationDrive <= AUDIO_ROTATION_DRIVE_DEADZONE
+      ? 0
+      : Math.pow(
+          (rotationDrive - AUDIO_ROTATION_DRIVE_DEADZONE) /
+            (1 - AUDIO_ROTATION_DRIVE_DEADZONE),
+          1.35,
+        );
+
+  sceneMotion.yaw = points.rotation.y ?? sceneMotion.yaw ?? 0;
+
+  if (rotationMode === "manual") {
+    sceneMotion.targetAngularVelocity = manualVelocity;
+    sceneMotion.angularVelocity = manualVelocity;
+    sceneMotion.yaw = wrapAngle(sceneMotion.yaw + manualVelocity * deltaTime);
+  } else if (rotationMode === "audio" && audioActive && fieldDriven) {
+    sceneMotion.targetAngularVelocity = -clamp(
+      motionAmount *
+        (AUDIO_ROTATION_MIN_SPEED +
+          shapedDrive * AUDIO_ROTATION_SUSTAIN_SCALE +
+          reactiveSignal * 0.45),
+      0,
+      AUDIO_ROTATION_MAX_SPEED,
+    );
+    if (
+      beatPulseId > 0 &&
+      beatPulseId !== sceneMotion.lastBeatPulseId &&
+      featureFrame?.beatDetected
+    ) {
+      sceneMotion.lastBeatPulseId = beatPulseId;
+      sceneMotion.angularVelocity = clamp(
+        sceneMotion.angularVelocity -
+          motionAmount *
+            AUDIO_ROTATION_BEAT_IMPULSE_SCALE *
+            Math.max(0.18, beatStrength) *
+            Math.max(AUDIO_ROTATION_BEAT_CONFIDENCE_FLOOR, beatConfidence),
+        -AUDIO_ROTATION_MAX_SPEED,
+        AUDIO_ROTATION_MAX_SPEED,
+      );
+    }
+    if (motionImpulse > 0.04) {
+      sceneMotion.angularVelocity = clamp(
+        sceneMotion.angularVelocity -
+          motionImpulse * motionAmount * AUDIO_ROTATION_IMPULSE_SCALE,
+        -AUDIO_ROTATION_MAX_SPEED,
+        AUDIO_ROTATION_MAX_SPEED,
+      );
+    }
+    const smoothing =
+      Math.abs(sceneMotion.targetAngularVelocity) >
+      Math.abs(sceneMotion.angularVelocity)
+        ? AUDIO_ROTATION_ATTACK
+        : AUDIO_ROTATION_RELEASE;
+    sceneMotion.angularVelocity = clamp(
+      damp(
+        sceneMotion.angularVelocity,
+        sceneMotion.targetAngularVelocity,
+        smoothing,
+        deltaTime,
+      ),
+      -AUDIO_ROTATION_MAX_SPEED,
+      AUDIO_ROTATION_MAX_SPEED,
+    );
+    sceneMotion.yaw = wrapAngle(
+      sceneMotion.yaw + sceneMotion.angularVelocity * deltaTime,
+    );
+  } else {
+    sceneMotion.targetAngularVelocity = 0;
+    sceneMotion.angularVelocity = damp(
+      sceneMotion.angularVelocity,
+      0,
+      AUDIO_ROTATION_IDLE_DAMP,
+      deltaTime,
+    );
+    sceneMotion.yaw = wrapAngle(
+      sceneMotion.yaw + sceneMotion.angularVelocity * deltaTime,
+    );
+    sceneMotion.yaw = dampAngle(
+      sceneMotion.yaw,
+      0,
+      AUDIO_ROTATION_RETURN,
+      deltaTime,
+    );
+    if (Math.abs(sceneMotion.angularVelocity) < 1e-4) {
+      sceneMotion.angularVelocity = 0;
+    }
+    if (Math.abs(sceneMotion.yaw) < 1e-4) {
+      sceneMotion.yaw = 0;
+    }
+  }
+  sceneMotion.lastMotionSignal = motionSignal;
+
+  points.rotation.y = sceneMotion.yaw;
+  if (runtimeState?.idleOverlay?.rotation) {
+    sceneMotion.idleLogoYaw = wrapAngle(
+      (sceneMotion.idleLogoYaw ?? sceneMotion.yaw ?? 0) +
+        manualVelocity * deltaTime,
+    );
+    runtimeState.idleOverlay.rotation.y = wrapAngle(
+      sceneMotion.idleLogoYaw - sceneMotion.yaw,
+    );
+  }
+  if (runtimeState) {
+    runtimeState.sceneMotion = sceneMotion;
+  }
+
   return {
+    rotationMode,
     rotationSpeed: controls.rotationSpeed,
+    motionAmount,
+    structureSignal,
+    energySignal,
+    changeSignal,
+    pulseSignal,
+    motionSignal,
+    responseEnvelope,
+    angularVelocity: sceneMotion.angularVelocity,
+    targetAngularVelocity: sceneMotion.targetAngularVelocity,
     rotationY: points.rotation.y,
   };
 }

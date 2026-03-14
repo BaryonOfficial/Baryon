@@ -36,6 +36,8 @@ export * from "./three/loaders/setupLoaders.js";
 export {
   createAudioFeatureState,
   buildAudioFeatureFrame,
+  DEFAULT_MIC_ANALYSIS_SETTINGS,
+  MIC_PROFILE_OPTIONS,
 } from "./utils/audioFeatures.js";
 export { AudioControlsView } from "./react/AudioControlsView.jsx";
 export { useSharedAudioLogic } from "./react/useSharedAudioLogic.js";

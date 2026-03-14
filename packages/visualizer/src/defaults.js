@@ -13,13 +13,14 @@ export const SIMULATION_DEFAULTS = Object.freeze({
 });
 
 export const RENDER_DEFAULTS = Object.freeze({
+  rotationMode: "audio",
   rotationSpeed: 2.5,
   idleLogoIntensity: 0.04,
   idleLogoAlpha: 0.08,
   idleLogoSize: 1.0,
   backgroundColor: "#000000",
-  volumeColor: "#0586ff",
-  surfaceColor: "#DEF0FA",
+  volumeColor: "#cfb53b",
+  surfaceColor: "#ffffff",
   bloomEnabled: true,
   bloomStrength: 0.11,
   bloomRadius: 0.09,
@@ -27,11 +28,18 @@ export const RENDER_DEFAULTS = Object.freeze({
   bloomResponseBias: 0.4,
 });
 
+export const REACTIVITY_DEFAULTS = Object.freeze({
+  reactivity: 1,
+  motionAmount: 1,
+  structurePersistence: 1,
+});
+
 export const BEAT_DEFAULTS = Object.freeze({
   beatSensitivity: 0.78,
   lowBandFloor: 0.05,
   refractoryMs: 140,
   thresholdSmoothingMs: 250,
+  pulseEnabled: true,
   pulseAmount: 0.055,
   pulseDecayMs: 180,
 });
@@ -59,6 +67,7 @@ export const DEFAULTS = Object.freeze({
   ...AUDIO_DEFAULTS,
   ...SIMULATION_DEFAULTS,
   ...RENDER_DEFAULTS,
+  ...REACTIVITY_DEFAULTS,
   ...BEAT_DEFAULTS,
   ...RAYMARCH_DEFAULTS,
   ...AUDIT_DEFAULTS,

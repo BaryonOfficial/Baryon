@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
+import { MIC_PROFILE_OPTIONS } from "@baryon/visualizer";
 import { useAudio } from "../context/AudioContext";
 
 // ─── SVG Icons ───────────────────────────────────────────────────────────────
@@ -193,6 +194,14 @@ function formatFileSize(totalBytes) {
     return `${Math.round(safeBytes / 1024)} KB`;
   }
   return `${safeBytes} B`;
+}
+
+function getMicProfileLabel(profile) {
+  return (
+    MIC_PROFILE_OPTIONS.find((option) => option.value === profile)?.label ??
+    MIC_PROFILE_OPTIONS[0]?.label ??
+    "Voice"
+  );
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
@@ -480,7 +489,12 @@ const CSS = `
 .am-btn--stop:not(:disabled):active { transform: scale(0.94); }
 
 /* ── Mic ── */
-.am-mic-wrap { position: relative; }
+.am-mic-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
 
 .am-btn--mic {
   width: 30px;
@@ -496,6 +510,20 @@ const CSS = `
   animation: am-pulse 1.5s ease-in-out infinite;
 }
 .am-btn--mic-active:hover { background: rgba(255, 69, 58, 0.42) !important; }
+
+.am-mic-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.95rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.74rem;
+  line-height: 1rem;
+  white-space: nowrap;
+}
 
 /* ── Volume ── */
 .am-volume {
@@ -893,6 +921,14 @@ const CSS = `
   margin: 0;
 }
 
+.am-device-note {
+  padding: 0 1rem 0.55rem;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.46);
+  margin: 0;
+}
+
 .am-device-item {
   display: block;
   width: 100%;
@@ -906,8 +942,22 @@ const CSS = `
   cursor: pointer;
   transition: background 100ms;
 }
+
+.am-device-item-label {
+  display: block;
+}
+
+.am-device-item-hint {
+  display: block;
+  margin-top: 0.16rem;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .am-device-item:hover { background: rgba(255, 255, 255, 0.08); }
 .am-device-item--active { color: #0a84ff; }
+.am-device-item--active .am-device-item-hint { color: rgba(160, 204, 255, 0.82); }
 
 @media (max-width: 960px) {
   .am-player-shell {
@@ -1181,11 +1231,14 @@ function AudioControls() {
     showDeviceMenu,
     audioDevices,
     selectedDevice,
+    micProfile,
+    micRuntimeStatus,
     handleFileChange,
     handleRecentUploadSelect,
     handlePlayPause,
     handleStop,
     handleMicToggle,
+    handleMicProfileChange,
     handleVolumeChange,
     handleMuteToggle,
     setShowDeviceMenu,
@@ -1228,6 +1281,12 @@ function AudioControls() {
     soundCloudListStart,
     soundCloudListStart + 4,
   );
+  const micStatusLabel =
+    isMicActive && micRuntimeStatus?.calibrating
+      ? "Calibrating"
+      : isMicActive
+        ? getMicProfileLabel(micRuntimeStatus?.profile ?? micProfile)
+        : null;
   const timelineValue =
     isScrubbing && scrubPreviewSeconds != null
       ? scrubPreviewSeconds
@@ -1458,30 +1517,62 @@ function AudioControls() {
                 >
                   <MicIcon />
                 </button>
+                {micStatusLabel ? (
+                  <span className="am-mic-status" data-testid="mic-status">
+                    {micStatusLabel}
+                  </span>
+                ) : null}
 
                 {showDeviceMenu && (
                   <div className="am-device-menu">
                     {audioDevices.length === 0 ? (
                       <p className="am-device-empty">No input devices found</p>
                     ) : (
-                      audioDevices.map((device) => (
-                        <button
-                          key={device.deviceId}
-                          className={`am-device-item${
-                            selectedDevice === device.deviceId
-                              ? " am-device-item--active"
-                              : ""
-                          }`}
-                          onClick={async () => {
-                            setSelectedDevice(device.deviceId);
-                            setShowDeviceMenu(false);
-                            await handleMicToggle();
-                          }}
-                        >
-                          {device.label ||
-                            `Device ${device.deviceId.slice(0, 8)}`}
-                        </button>
-                      ))
+                      <>
+                        {audioDevices.map((device) => (
+                          <button
+                            key={device.deviceId}
+                            className={`am-device-item${
+                              selectedDevice === device.deviceId
+                                ? " am-device-item--active"
+                                : ""
+                            }`}
+                            onClick={async () => {
+                              setSelectedDevice(device.deviceId);
+                              setShowDeviceMenu(false);
+                              await handleMicToggle();
+                            }}
+                          >
+                            {device.label ||
+                              `Device ${device.deviceId.slice(0, 8)}`}
+                          </button>
+                        ))}
+                        <p className="am-device-empty">Input profile</p>
+                        <p className="am-device-note">
+                          Auto-calibrates when mic starts or when you change
+                          profile.
+                        </p>
+                        {MIC_PROFILE_OPTIONS.map((profile) => (
+                          <button
+                            key={profile.value}
+                            className={`am-device-item${
+                              micProfile === profile.value
+                                ? " am-device-item--active"
+                                : ""
+                            }`}
+                            onClick={() =>
+                              handleMicProfileChange(profile.value)
+                            }
+                          >
+                            <span className="am-device-item-label">
+                              {profile.label}
+                            </span>
+                            <span className="am-device-item-hint">
+                              {profile.description}
+                            </span>
+                          </button>
+                        ))}
+                      </>
                     )}
                   </div>
                 )}

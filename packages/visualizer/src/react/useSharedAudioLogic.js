@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { getDefaultAudioSession } from "../core/audio/audioSetup.js";
+import { DEFAULT_MIC_ANALYSIS_SETTINGS } from "../utils/audioFeatures.js";
 
 export function useSharedAudioLogic({
   setFileName,
@@ -12,12 +13,15 @@ export function useSharedAudioLogic({
   setIsMuted,
   setAudioDevices,
   setSelectedDevice,
+  setSelectedMicProfile,
   isAudioLoaded,
   isMicActive,
   selectedDevice,
+  selectedMicProfile,
 }) {
   const audioSession = getDefaultAudioSession();
   const activeFileUrlRef = useRef(null);
+  void selectedMicProfile;
 
   const clearLoadedFileState = useCallback(
     ({ resetLabel = true } = {}) => {
@@ -183,6 +187,13 @@ export function useSharedAudioLogic({
     syncStatus();
   }, [audioSession, syncStatus]);
 
+  const handleMicProfileChange = useCallback(
+    (profile) => {
+      setSelectedMicProfile?.(profile ?? DEFAULT_MIC_ANALYSIS_SETTINGS.profile);
+    },
+    [setSelectedMicProfile],
+  );
+
   const handleRecentFileSelect = useCallback(
     async (file) => {
       await loadLocalFile(file);
@@ -198,5 +209,6 @@ export function useSharedAudioLogic({
     handleMicToggle,
     handleVolumeChange,
     handleMuteToggle,
+    handleMicProfileChange,
   };
 }
