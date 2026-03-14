@@ -190,7 +190,7 @@ export function useBaryonVisualizer({
     const analysisSnapshot = audio.readAnalysisSnapshot();
 
     const bloomSnapshot = applyBloomControls(
-      { ensurePipeline, postNodesRef },
+      { ensurePipeline, postNodesRef, runtimeState },
       controls,
     );
     const audioSnapshot = audio.getMicSettings();
@@ -216,6 +216,8 @@ export function useBaryonVisualizer({
       featureState,
       radius: runtimeState.uniforms.uRadius.value,
       status,
+      beatSettings: runtimeState.beatTuning,
+      frameTimeMs: time * 1000,
     });
 
     if (status.isPlaying || status.isMicActive) {
@@ -237,6 +239,11 @@ export function useBaryonVisualizer({
       time,
       deltaTime,
     });
+
+    if (controls.bloomEnabled && postNodesRef.current?.bloomPass) {
+      postNodesRef.current.bloomPass.strength.value =
+        bloomSnapshot.strength * (1 + (runtimeState.pulseEnvelope ?? 0) * 0.15);
+    }
 
     if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
       window.__baryonAuditSnapshot = {

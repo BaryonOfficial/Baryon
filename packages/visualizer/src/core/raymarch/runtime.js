@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { BEAT_DEFAULTS } from "../../defaults.js";
 import { isFieldDrivenState } from "../fieldState.js";
 
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
@@ -44,6 +45,16 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const densityGain = runtimeState.uniforms.uDensityGain.value;
   const absorption = runtimeState.uniforms.uAbsorption.value;
   const stepBudget = Math.round(runtimeState.volumeMesh.material.steps);
+  const rimBloomBias = runtimeState.uniforms.uRimBloomBias?.value ?? 0;
+  const rimCompression = runtimeState.uniforms.uRimCompression?.value ?? 0;
+  const bloomResponseBias = runtimeState.bloomTuning?.bloomResponseBias ?? 0;
+  const stepReference = runtimeState.bloomTuning?.stepReference ?? stepBudget;
+  const stepCompensation = runtimeState.bloomTuning?.stepCompensation ?? 1;
+  const lowStepBloomGuard = runtimeState.bloomTuning?.lowStepBloomGuard ?? 0;
+  const effectiveBloomStrength =
+    runtimeState.bloomTuning?.effectiveStrength ?? 0;
+  const effectiveBloomThreshold =
+    runtimeState.bloomTuning?.effectiveThreshold ?? 0;
   const transientEnergy = featureFrame?.transientEnergy ?? 0;
   const spectralFlux = featureFrame?.spectralFlux ?? 0;
   const avgDensity = Math.min(
@@ -55,6 +66,15 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     avgDensity * (stepBudget / 48) * (0.8 + spectralFlux * 0.12),
   );
   const earlyExitRatio = Math.min(1, avgOpacity * 0.72);
+  const bloomRisk = Math.min(
+    1,
+    avgDensity *
+      (1 + rimBloomBias * 0.22) *
+      (1 - rimCompression * 0.12) *
+      (0.7 + effectiveBloomStrength * 1.6) *
+      (1.1 - effectiveBloomThreshold * 0.4) *
+      (1 - bloomResponseBias * 0.18),
+  );
   const {
     avgRaySegmentLength = 0,
     missRatio = 0,
@@ -77,6 +97,21 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     transientEnergy,
     spectralCentroid: featureFrame?.spectralCentroid ?? 0,
     spectralFlux,
+    beatDetected: featureFrame?.beatDetected ?? false,
+    beatPulseId: featureFrame?.beatPulseId ?? 0,
+    beatStrength: featureFrame?.beatStrength ?? 0,
+    beatConfidence: featureFrame?.beatConfidence ?? 0,
+    pulseEnvelope: runtimeState.pulseEnvelope ?? 0,
+    visualScale: runtimeState.visualRoot?.scale?.x ?? 1,
+    stepReference,
+    stepCompensation,
+    lowStepBloomGuard,
+    rimBloomBias,
+    rimCompression,
+    bloomResponseBias,
+    effectiveBloomStrength,
+    effectiveBloomThreshold,
+    bloomRisk,
     avgRaySegmentLength,
     missRatio,
     avgSilhouetteSuppression,
@@ -85,7 +120,49 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   };
 }
 
-export function tickRaymarchRuntime(runtimeState, featureFrame, time) {
+function applyPulseEnvelope(runtimeState, featureFrame, deltaTime) {
+  const pulseAmount =
+    runtimeState.beatTuning?.pulseAmount ?? BEAT_DEFAULTS.pulseAmount;
+  const pulseDecayMs =
+    runtimeState.beatTuning?.pulseDecayMs ?? BEAT_DEFAULTS.pulseDecayMs;
+  const beatPulseId = featureFrame?.beatPulseId ?? 0;
+  let triggered = false;
+
+  if (
+    beatPulseId > 0 &&
+    beatPulseId !== runtimeState.lastConsumedBeatPulseId &&
+    featureFrame?.beatDetected
+  ) {
+    runtimeState.lastConsumedBeatPulseId = beatPulseId;
+    runtimeState.pulseEnvelope = Math.max(
+      runtimeState.pulseEnvelope ?? 0,
+      featureFrame?.beatStrength ?? 0,
+    );
+    triggered = true;
+  }
+
+  if (!triggered) {
+    const decayFactor = Math.exp(
+      -Math.max(0, deltaTime * 1000) / Math.max(1, pulseDecayMs),
+    );
+    runtimeState.pulseEnvelope =
+      (runtimeState.pulseEnvelope ?? 0) * decayFactor;
+  }
+  if ((runtimeState.pulseEnvelope ?? 0) < 1e-4) {
+    runtimeState.pulseEnvelope = 0;
+  }
+
+  runtimeState.visualRoot?.scale?.setScalar?.(
+    1 + (runtimeState.pulseEnvelope ?? 0) * pulseAmount,
+  );
+}
+
+export function tickRaymarchRuntime(
+  runtimeState,
+  featureFrame,
+  time,
+  deltaTime,
+) {
   const {
     backboneModeBuffer,
     detailModeBuffer,
@@ -95,6 +172,7 @@ export function tickRaymarchRuntime(runtimeState, featureFrame, time) {
   } = runtimeState;
 
   uniforms.uTime.value = time;
+  applyPulseEnvelope(runtimeState, featureFrame, deltaTime);
   const fieldState = featureFrame?.fieldState ?? "idle";
   const fieldDriven = isFieldDrivenState(fieldState);
   uniforms.uFieldState.value =
@@ -126,6 +204,9 @@ export function tickRaymarchRuntime(runtimeState, featureFrame, time) {
   uniforms.uTransientEnergy.value = featureFrame?.transientEnergy ?? 0;
   uniforms.uSpectralCentroid.value = featureFrame?.spectralCentroid ?? 0;
   uniforms.uSpectralFlux.value = featureFrame?.spectralFlux ?? 0;
+  uniforms.uDensityGain.value =
+    (runtimeState.baseDensityGain ?? uniforms.uDensityGain.value) *
+    (1 + (runtimeState.pulseEnvelope ?? 0) * 0.12);
   const bandEnergies = featureFrame?.bandEnergies ?? EMPTY_BAND_ENERGIES;
   uniforms.uBandEnergies.value.set(
     bandEnergies[0] ?? 0,
@@ -159,8 +240,10 @@ export function disposeRaymarchRuntime(runtimeState) {
 
 export function createRaymarchSceneRoot({ volumeMesh, idleOverlay, radius }) {
   const root = new THREE.Group();
-  root.add(volumeMesh);
-  root.add(idleOverlay);
+  const visualRoot = new THREE.Group();
+  visualRoot.add(volumeMesh);
+  visualRoot.add(idleOverlay);
+  root.add(visualRoot);
 
   const keyLight = new THREE.PointLight(0xbfe3ff, 26, radius * 8, 2);
   keyLight.position.set(radius * 1.5, radius * 1.2, radius * 2.4);
@@ -174,5 +257,5 @@ export function createRaymarchSceneRoot({ volumeMesh, idleOverlay, radius }) {
   fillLight.shadow.mapSize.set(256, 256);
   root.add(fillLight);
 
-  return root;
+  return { root, visualRoot };
 }

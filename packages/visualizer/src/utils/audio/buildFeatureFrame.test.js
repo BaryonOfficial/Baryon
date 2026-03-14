@@ -74,6 +74,27 @@ function createAuditSettings(overrides = {}) {
   };
 }
 
+function buildTimedFrame({
+  featureState,
+  fftMagnitudes,
+  avgAmplitude = 24,
+  rms = 0.2,
+  frameTimeMs = 0,
+  status = makeActiveStatus(),
+}) {
+  return buildAudioFeatureFrame({
+    analysisSnapshot: createSnapshot({
+      avgAmplitude,
+      fftMagnitudes,
+      rms,
+    }),
+    featureState,
+    radius: 3,
+    status,
+    frameTimeMs,
+  });
+}
+
 function readModeKeys(slotBuffer) {
   const keys = [];
   for (let i = 0; i < slotBuffer.length; i += 4) {
@@ -243,6 +264,216 @@ describe("buildAudioFeatureFrame layered contract", () => {
     expect(repeated.transientEnergy).toBeLessThanOrEqual(first.transientEnergy);
     expect(attack.spectralFlux).toBeGreaterThan(repeated.spectralFlux);
     expect(attack.transientEnergy).toBeGreaterThan(repeated.transientEnergy);
+  });
+
+  it("detects a strong low-end onset and increments the beat pulse id", () => {
+    const featureState = createAudioFeatureState();
+    buildTimedFrame({
+      featureState,
+      fftMagnitudes: new Float32Array(BIN_COUNT),
+      avgAmplitude: 8,
+      rms: 0.05,
+      frameTimeMs: 0,
+    });
+
+    const beat = buildTimedFrame({
+      featureState,
+      fftMagnitudes: makeFft([
+        [60, 1],
+        [120, 0.7],
+      ]),
+      avgAmplitude: 72,
+      rms: 0.4,
+      frameTimeMs: 40,
+    });
+
+    expect(beat.beatDetected).toBe(true);
+    expect(beat.beatPulseId).toBe(1);
+    expect(beat.beatStrength).toBeGreaterThan(0);
+    expect(beat.beatConfidence).toBeGreaterThan(0);
+    expect(beat.debug.beatDetected).toBe(true);
+  });
+
+  it("detects a moderate kick with the tuned default sensitivity", () => {
+    const featureState = createAudioFeatureState();
+    buildTimedFrame({
+      featureState,
+      fftMagnitudes: new Float32Array(BIN_COUNT),
+      avgAmplitude: 10,
+      rms: 0.06,
+      frameTimeMs: 0,
+    });
+
+    const beat = buildTimedFrame({
+      featureState,
+      fftMagnitudes: makeFft([
+        [60, 0.72],
+        [120, 0.42],
+      ]),
+      avgAmplitude: 46,
+      rms: 0.22,
+      frameTimeMs: 50,
+    });
+
+    expect(beat.beatDetected).toBe(true);
+    expect(beat.beatStrength).toBeGreaterThan(0);
+  });
+
+  it("does not treat high-frequency only bursts as beats", () => {
+    const featureState = createAudioFeatureState();
+    buildTimedFrame({
+      featureState,
+      fftMagnitudes: new Float32Array(BIN_COUNT),
+      avgAmplitude: 10,
+      rms: 0.04,
+      frameTimeMs: 0,
+    });
+
+    const hats = buildTimedFrame({
+      featureState,
+      fftMagnitudes: makeFft([
+        [5000, 1],
+        [9000, 0.8],
+      ]),
+      avgAmplitude: 56,
+      rms: 0.35,
+      frameTimeMs: 35,
+    });
+
+    expect(hats.spectralFlux).toBeGreaterThan(0);
+    expect(hats.beatDetected).toBe(false);
+    expect(hats.beatPulseId).toBe(0);
+  });
+
+  it("does not retrigger on sustained bass without a fresh onset", () => {
+    const featureState = createAudioFeatureState();
+    const bassFft = makeFft([
+      [60, 1],
+      [120, 0.6],
+    ]);
+
+    const first = buildTimedFrame({
+      featureState,
+      fftMagnitudes: bassFft,
+      avgAmplitude: 68,
+      rms: 0.36,
+      frameTimeMs: 0,
+    });
+    const held = buildTimedFrame({
+      featureState,
+      fftMagnitudes: bassFft,
+      avgAmplitude: 68,
+      rms: 0.36,
+      frameTimeMs: 220,
+    });
+
+    expect(first.beatDetected).toBe(true);
+    expect(held.beatDetected).toBe(false);
+    expect(held.beatPulseId).toBe(first.beatPulseId);
+  });
+
+  it("keeps low-level mic noise from producing beat pulses", () => {
+    const featureState = createAudioFeatureState();
+    const frame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "mic",
+        avgAmplitude: 2,
+        fftMagnitudes: makeFft([[80, 0.12]]),
+        rms: 0.01,
+      }),
+      featureState,
+      radius: 3,
+      status: createStatus({
+        audioInputMode: "mic",
+        analysisSource: "mic",
+        isMicActive: true,
+        hasAnalysisSource: true,
+      }),
+      frameTimeMs: 25,
+    });
+
+    expect(frame.debug.micNoiseGateActive).toBe(true);
+    expect(frame.beatDetected).toBe(false);
+    expect(frame.beatPulseId).toBe(0);
+  });
+
+  it("suppresses consecutive kicks inside the refractory window and retriggers after it", () => {
+    const featureState = createAudioFeatureState();
+    const kickFft = makeFft([
+      [60, 1],
+      [120, 0.65],
+    ]);
+    const silenceFft = new Float32Array(BIN_COUNT);
+
+    const first = buildTimedFrame({
+      featureState,
+      fftMagnitudes: kickFft,
+      avgAmplitude: 70,
+      rms: 0.38,
+      frameTimeMs: 0,
+    });
+    buildTimedFrame({
+      featureState,
+      fftMagnitudes: silenceFft,
+      avgAmplitude: 6,
+      rms: 0.03,
+      frameTimeMs: 60,
+    });
+    const blocked = buildTimedFrame({
+      featureState,
+      fftMagnitudes: kickFft,
+      avgAmplitude: 70,
+      rms: 0.38,
+      frameTimeMs: 100,
+    });
+    buildTimedFrame({
+      featureState,
+      fftMagnitudes: silenceFft,
+      avgAmplitude: 6,
+      rms: 0.03,
+      frameTimeMs: 180,
+    });
+    const retriggered = buildTimedFrame({
+      featureState,
+      fftMagnitudes: kickFft,
+      avgAmplitude: 72,
+      rms: 0.4,
+      frameTimeMs: 260,
+    });
+
+    expect(first.beatDetected).toBe(true);
+    expect(blocked.beatDetected).toBe(false);
+    expect(blocked.beatPulseId).toBe(first.beatPulseId);
+    expect(retriggered.beatDetected).toBe(true);
+    expect(retriggered.beatPulseId).toBe(first.beatPulseId + 1);
+  });
+
+  it("resets beat tracking when playback time rewinds for a new play session", () => {
+    const featureState = createAudioFeatureState();
+    const kickFft = makeFft([
+      [60, 1],
+      [120, 0.7],
+    ]);
+
+    const firstSessionBeat = buildTimedFrame({
+      featureState,
+      fftMagnitudes: kickFft,
+      avgAmplitude: 72,
+      rms: 0.4,
+      frameTimeMs: 1800,
+    });
+
+    const secondSessionBeat = buildTimedFrame({
+      featureState,
+      fftMagnitudes: kickFft,
+      avgAmplitude: 74,
+      rms: 0.42,
+      frameTimeMs: 40,
+    });
+
+    expect(firstSessionBeat.beatDetected).toBe(true);
+    expect(secondSessionBeat.beatDetected).toBe(true);
+    expect(secondSessionBeat.beatPulseId).toBe(1);
   });
 
   it("keeps spectral flux near zero across repeated identical frames", () => {

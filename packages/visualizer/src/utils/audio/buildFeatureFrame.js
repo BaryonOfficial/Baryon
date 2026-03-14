@@ -1,4 +1,8 @@
-import { AUDIT_DEFAULTS, AUDIO_DEFAULTS } from "../../defaults.js";
+import {
+  AUDIT_DEFAULTS,
+  AUDIO_DEFAULTS,
+  BEAT_DEFAULTS,
+} from "../../defaults.js";
 import { sampleFFTAmplitudeForFrequency } from "../normalModes.js";
 import {
   BACKBONE_STACK_SLOTS,
@@ -40,6 +44,13 @@ const DETAIL_ATTACK = 0.55;
 const DETAIL_RELEASE = 0.82;
 const DETAIL_FRESH_CAP = 0;
 const BAND_LIMITS_HZ = [140, 600, 2400, 8000];
+const LOW_BAND_PRIMARY_WEIGHT = 0.7;
+const LOW_BAND_SECONDARY_WEIGHT = 0.3;
+const BEAT_LOW_BAND_RISE_WEIGHT = 0.5;
+const BEAT_SPECTRAL_FLUX_WEIGHT = 0.35;
+const BEAT_RMS_DELTA_WEIGHT = 0.15;
+const MIN_BEAT_THRESHOLD = 0.024;
+const DEFAULT_FRAME_TIME_MS = 1000 / 60;
 
 export { createAudioFeatureState, FIELD_STATES };
 
@@ -110,6 +121,15 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     analysisMemory.bandState =
       createAudioFeatureState(capacity).analysis.bandState;
   }
+  if (!Number.isFinite(analysisMemory.bandState.lowBandEnergy)) {
+    const replacement = createAudioFeatureState(capacity).analysis.bandState;
+    analysisMemory.bandState = {
+      ...replacement,
+      ...analysisMemory.bandState,
+      bandEnergies:
+        analysisMemory.bandState.bandEnergies ?? replacement.bandEnergies,
+    };
+  }
 
   if (featureState?.analysis) {
     featureState.analysis = analysisMemory;
@@ -132,6 +152,48 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
 
 function getFrameTimestamp() {
   return performance.now();
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function getFrameDeltaMs(previousFrameAtMs, currentFrameAtMs) {
+  if (!Number.isFinite(previousFrameAtMs) || previousFrameAtMs <= 0) {
+    return DEFAULT_FRAME_TIME_MS;
+  }
+
+  return Math.max(1, currentFrameAtMs - previousFrameAtMs);
+}
+
+function computeEmaAlpha(deltaMs, smoothingMs) {
+  if (!(deltaMs > 0) || !(smoothingMs > 0)) {
+    return 1;
+  }
+
+  return 1 - Math.exp(-deltaMs / smoothingMs);
+}
+
+function resetBeatTrackingState(analysisMemory) {
+  const bandState = analysisMemory.bandState;
+  bandState.bandEnergies.fill(0);
+  bandState.transientEnergy = 0;
+  bandState.spectralCentroid = 0;
+  bandState.spectralFlux = 0;
+  bandState.previousRms = 0;
+  bandState.lowBandEnergy = 0;
+  bandState.lowBandEnergyEma = 0;
+  bandState.previousLowBandEnergy = 0;
+  bandState.onsetDriver = 0;
+  bandState.onsetThresholdEma = 0;
+  bandState.previousBeatAtMs = Number.NEGATIVE_INFINITY;
+  bandState.previousFrameAtMs = 0;
+  bandState.beatPulseId = 0;
+  bandState.beatStrength = 0;
+  bandState.beatConfidence = 0;
+  if (analysisMemory.previousSpectrum instanceof Float32Array) {
+    analysisMemory.previousSpectrum.fill(0);
+  }
 }
 
 function emptyFrozenLayers(auditState) {
@@ -201,6 +263,13 @@ function buildDebugSummary({
   transientEnergy = 0,
   spectralCentroid = 0,
   spectralFlux = 0,
+  beatDetected = false,
+  beatPulseId = 0,
+  beatStrength = 0,
+  beatConfidence = 0,
+  beatLowBandEnergy = 0,
+  beatOnsetDriver = 0,
+  beatThreshold = 0,
   sampleRate = 0,
   fftSize = 0,
 }) {
@@ -240,6 +309,13 @@ function buildDebugSummary({
     transientEnergy,
     spectralCentroid,
     spectralFlux,
+    beatDetected,
+    beatPulseId,
+    beatStrength,
+    beatConfidence,
+    beatLowBandEnergy,
+    beatOnsetDriver,
+    beatThreshold,
     referencePitchBinAmplitude: dominantFrequency
       ? sampleFFTAmplitudeForFrequency(
           dominantFrequency,
@@ -286,6 +362,13 @@ function buildZeroDebugSnapshot({
     backboneSlots,
     detailSlots,
     modeSlots,
+    beatDetected: false,
+    beatPulseId: 0,
+    beatStrength: 0,
+    beatConfidence: 0,
+    beatLowBandEnergy: 0,
+    beatOnsetDriver: 0,
+    beatThreshold: 0,
   });
 
   if (!shouldBuildDetailedDebug(auditSettings)) {
@@ -351,6 +434,10 @@ export function buildSilentFeatureFrame({
     transientEnergy: 0,
     spectralCentroid: 0,
     spectralFlux: 0,
+    beatDetected: false,
+    beatPulseId: 0,
+    beatStrength: 0,
+    beatConfidence: 0,
     modeSlots,
     referenceModeSlots,
     sourceMode: "silent",
@@ -525,14 +612,75 @@ function updateBandState({
   sampleRate,
   fftSize,
   rms,
+  frameTimeMs,
+  beatSettings,
 }) {
   const previousSpectrum = analysisMemory.previousSpectrum;
   const bandState = analysisMemory.bandState;
+  if (
+    Number.isFinite(frameTimeMs) &&
+    frameTimeMs >= 0 &&
+    Number.isFinite(bandState.previousFrameAtMs) &&
+    bandState.previousFrameAtMs > frameTimeMs
+  ) {
+    resetBeatTrackingState(analysisMemory);
+  }
   const bandEnergies = computeBandEnergies(fftMagnitudes, sampleRate, fftSize);
   const spectralCentroid = computeSpectralCentroid(fftMagnitudes, sampleRate);
   const spectralFlux = computeSpectralFlux(fftMagnitudes, previousSpectrum);
   const rmsDelta = Math.max(0, rms - (bandState.previousRms ?? 0));
   const transientEnergy = Math.min(1, spectralFlux * 0.75 + rmsDelta * 0.25);
+  const resolvedBeatSettings = {
+    ...BEAT_DEFAULTS,
+    ...beatSettings,
+  };
+  const lowBandEnergy =
+    (bandEnergies[0] ?? 0) * LOW_BAND_PRIMARY_WEIGHT +
+    (bandEnergies[1] ?? 0) * LOW_BAND_SECONDARY_WEIGHT;
+  const lowBandRise = Math.max(
+    0,
+    lowBandEnergy - (bandState.previousLowBandEnergy ?? 0),
+  );
+  const onsetDriver = clamp01(
+    lowBandRise * BEAT_LOW_BAND_RISE_WEIGHT +
+      spectralFlux * BEAT_SPECTRAL_FLUX_WEIGHT +
+      rmsDelta * BEAT_RMS_DELTA_WEIGHT,
+  );
+  const currentFrameAtMs =
+    Number.isFinite(frameTimeMs) && frameTimeMs >= 0
+      ? frameTimeMs
+      : getFrameTimestamp();
+  const deltaMs = getFrameDeltaMs(
+    bandState.previousFrameAtMs,
+    currentFrameAtMs,
+  );
+  const thresholdAlpha = computeEmaAlpha(
+    deltaMs,
+    resolvedBeatSettings.thresholdSmoothingMs,
+  );
+  const nextThresholdEma =
+    (bandState.onsetThresholdEma ?? 0) +
+    (onsetDriver - (bandState.onsetThresholdEma ?? 0)) * thresholdAlpha;
+  const adaptiveThreshold = Math.max(
+    MIN_BEAT_THRESHOLD,
+    (bandState.onsetThresholdEma ?? 0) *
+      (1 + 0.25 * resolvedBeatSettings.beatSensitivity),
+  );
+  const refractorySatisfied =
+    currentFrameAtMs -
+      (bandState.previousBeatAtMs ?? Number.NEGATIVE_INFINITY) >=
+    resolvedBeatSettings.refractoryMs;
+  const onsetExcess = clamp01(
+    (onsetDriver - adaptiveThreshold) / Math.max(1e-4, 1 - adaptiveThreshold),
+  );
+  const beatConfidence = clamp01(onsetExcess * 0.75 + lowBandEnergy * 0.25);
+  const beatDetected =
+    onsetDriver > adaptiveThreshold &&
+    lowBandEnergy >= resolvedBeatSettings.lowBandFloor &&
+    refractorySatisfied;
+  const beatStrength = beatDetected
+    ? clamp01(lowBandEnergy * 0.6 + beatConfidence * 0.4)
+    : 0;
 
   analysisMemory.bandEnergies.set(bandEnergies);
   bandState.bandEnergies.set(bandEnergies);
@@ -540,6 +688,21 @@ function updateBandState({
   bandState.spectralFlux = spectralFlux;
   bandState.transientEnergy = transientEnergy;
   bandState.previousRms = rms;
+  bandState.lowBandEnergy = lowBandEnergy;
+  bandState.lowBandEnergyEma =
+    (bandState.lowBandEnergyEma ?? 0) +
+    (lowBandEnergy - (bandState.lowBandEnergyEma ?? 0)) * thresholdAlpha;
+  bandState.previousLowBandEnergy = lowBandEnergy;
+  bandState.onsetDriver = onsetDriver;
+  bandState.onsetThresholdEma = nextThresholdEma;
+  bandState.previousFrameAtMs = currentFrameAtMs;
+  bandState.beatSensitivity = resolvedBeatSettings.beatSensitivity;
+  bandState.beatConfidence = beatConfidence;
+  bandState.beatStrength = beatStrength;
+  if (beatDetected) {
+    bandState.previousBeatAtMs = currentFrameAtMs;
+    bandState.beatPulseId = (bandState.beatPulseId ?? 0) + 1;
+  }
 
   if (
     !(previousSpectrum instanceof Float32Array) ||
@@ -554,6 +717,13 @@ function updateBandState({
     spectralCentroid,
     spectralFlux,
     transientEnergy,
+    beatDetected,
+    beatPulseId: bandState.beatPulseId ?? 0,
+    beatStrength,
+    beatConfidence,
+    beatLowBandEnergy: lowBandEnergy,
+    beatOnsetDriver: onsetDriver,
+    beatThreshold: adaptiveThreshold,
   };
 }
 
@@ -754,6 +924,13 @@ function finalizeFeatureDebugSnapshot({
   transientEnergy,
   spectralCentroid,
   spectralFlux,
+  beatDetected,
+  beatPulseId,
+  beatStrength,
+  beatConfidence,
+  beatLowBandEnergy,
+  beatOnsetDriver,
+  beatThreshold,
   sampleRate,
   fftSize,
 }) {
@@ -778,6 +955,13 @@ function finalizeFeatureDebugSnapshot({
     transientEnergy,
     spectralCentroid,
     spectralFlux,
+    beatDetected,
+    beatPulseId,
+    beatStrength,
+    beatConfidence,
+    beatLowBandEnergy,
+    beatOnsetDriver,
+    beatThreshold,
     sampleRate,
     fftSize,
   });
@@ -821,6 +1005,8 @@ export function buildAudioFeatureFrame({
   radius,
   status,
   auditSettings = undefined,
+  beatSettings = undefined,
+  frameTimeMs = undefined,
 }) {
   const capacity = featureState?.capacity ?? AUDIO_DEFAULTS.capacity;
   const analysisMemory = getAnalysisMemory(featureState, capacity);
@@ -959,12 +1145,25 @@ export function buildAudioFeatureFrame({
   }
   fftMagnitudes.set(fftMagnitudesSource);
 
-  const { spectralCentroid, spectralFlux, transientEnergy } = updateBandState({
+  const {
+    spectralCentroid,
+    spectralFlux,
+    transientEnergy,
+    beatDetected,
+    beatPulseId,
+    beatStrength,
+    beatConfidence,
+    beatLowBandEnergy,
+    beatOnsetDriver,
+    beatThreshold,
+  } = updateBandState({
     analysisMemory,
     fftMagnitudes,
     sampleRate,
     fftSize,
     rms: analyserRms,
+    frameTimeMs,
+    beatSettings,
   });
 
   const dominantFrequency =
@@ -1016,6 +1215,13 @@ export function buildAudioFeatureFrame({
     transientEnergy,
     spectralCentroid,
     spectralFlux,
+    beatDetected,
+    beatPulseId,
+    beatStrength,
+    beatConfidence,
+    beatLowBandEnergy,
+    beatOnsetDriver,
+    beatThreshold,
     sampleRate,
     fftSize,
   });
@@ -1038,6 +1244,10 @@ export function buildAudioFeatureFrame({
     transientEnergy,
     spectralCentroid,
     spectralFlux,
+    beatDetected,
+    beatPulseId,
+    beatStrength,
+    beatConfidence,
     modeSlots: returnedModeSlots,
     referenceModeSlots,
     sourceMode,

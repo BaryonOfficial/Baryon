@@ -14,6 +14,11 @@ import {
 import { CONTROL_HANDLERS, createControlState } from "./schema.js";
 import { createVisualizationRuntime } from "../visualization/runtimeFactory.js";
 import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
+import {
+  deriveLowStepBloomGuard,
+  deriveStepCompensation,
+  STEP_REFERENCE,
+} from "../core/raymarch/stepStability.js";
 
 function createRaymarchHarness() {
   return {
@@ -30,9 +35,26 @@ function createRaymarchHarness() {
       uDensityGain: { value: 0 },
       uAbsorption: { value: 0 },
       uContourSharpness: { value: 0 },
+      uRimBloomBias: { value: 0 },
+      uRimCompression: { value: 0 },
       uRaymarchSteps: { value: 0 },
       uRadius: { value: 3 },
     },
+    beatTuning: {
+      beatSensitivity: 1,
+      pulseAmount: 0.055,
+      pulseDecayMs: 180,
+    },
+    bloomTuning: {
+      bloomResponseBias: 0.4,
+      stepReference: STEP_REFERENCE,
+      stepCompensation: deriveStepCompensation(STEP_REFERENCE),
+      lowStepBloomGuard: deriveLowStepBloomGuard(STEP_REFERENCE),
+      effectiveStrength: 0.11,
+      effectiveRadius: 0.09,
+      effectiveThreshold: 0.44,
+    },
+    baseDensityGain: 0,
     volumeMesh: {
       material: {
         steps: 0,
@@ -88,6 +110,11 @@ describe("control runtime sync", () => {
     controls.densityGain = 1.75;
     controls.absorption = 1.35;
     controls.contourSharpness = 5.2;
+    controls.rimBloomBias = 0.65;
+    controls.rimCompression = 0.72;
+    controls.beatSensitivity = 1.2;
+    controls.pulseAmount = 0.08;
+    controls.pulseDecayMs = 240;
     controls.raymarchSteps = 64;
 
     const gl = {
@@ -104,9 +131,22 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uStructureMin.value).toBe(0.12);
     expect(runtimeState.uniforms.uStructureMax.value).toBe(0.48);
     expect(runtimeState.uniforms.uDensityGain.value).toBe(1.75);
+    expect(runtimeState.baseDensityGain).toBe(1.75);
     expect(runtimeState.uniforms.uAbsorption.value).toBe(1.35);
     expect(runtimeState.uniforms.uContourSharpness.value).toBe(5.2);
+    expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.65);
+    expect(runtimeState.uniforms.uRimCompression.value).toBe(0.72);
     expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
+    expect(runtimeState.beatTuning).toEqual({
+      beatSensitivity: 1.2,
+      pulseAmount: 0.08,
+      pulseDecayMs: 240,
+    });
+    expect(runtimeState.bloomTuning.stepReference).toBe(STEP_REFERENCE);
+    expect(runtimeState.bloomTuning.stepCompensation).toBeCloseTo(
+      deriveStepCompensation(64),
+    );
+    expect(runtimeState.bloomTuning.lowStepBloomGuard).toBe(0);
     expect(runtimeState.volumeMesh.material.steps).toBe(64);
     expect(runtimeState.idleOverlay.scale.x).toBe(1.4);
     expect(runtimeState.idleOverlay.material.opacity).toBe(0.84);
@@ -114,6 +154,11 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.idleLogoAlpha).toBe(0.84);
     expect(snapshot.uniforms.densityGain).toBe(1.75);
     expect(snapshot.uniforms.absorption).toBe(1.35);
+    expect(snapshot.uniforms.rimBloomBias).toBe(0.65);
+    expect(snapshot.uniforms.rimCompression).toBe(0.72);
+    expect(snapshot.uniforms.beatSensitivity).toBe(1.2);
+    expect(snapshot.uniforms.pulseAmount).toBe(0.08);
+    expect(snapshot.uniforms.pulseDecayMs).toBe(240);
     expect(snapshot.uniforms.raymarchSteps).toBe(64);
     expect(snapshot.overlay.scale).toBe(1.4);
   });
@@ -148,6 +193,11 @@ describe("control runtime sync", () => {
     controls.densityGain = 2.1;
     controls.absorption = 1.6;
     controls.contourSharpness = 6.4;
+    controls.rimBloomBias = 0.35;
+    controls.rimCompression = 0.5;
+    controls.beatSensitivity = 0.9;
+    controls.pulseAmount = 0.04;
+    controls.pulseDecayMs = 120;
 
     const runtimeState = createRaymarchHarness();
     const snapshot = applyRaymarchControls(runtimeState, controls);
@@ -155,8 +205,18 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(72);
     expect(runtimeState.volumeMesh.material.steps).toBe(72);
     expect(runtimeState.uniforms.uDensityGain.value).toBe(2.1);
+    expect(runtimeState.baseDensityGain).toBe(2.1);
     expect(runtimeState.uniforms.uAbsorption.value).toBe(1.6);
     expect(runtimeState.uniforms.uContourSharpness.value).toBe(6.4);
+    expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.35);
+    expect(runtimeState.uniforms.uRimCompression.value).toBe(0.5);
+    expect(runtimeState.beatTuning.beatSensitivity).toBe(0.9);
+    expect(runtimeState.beatTuning.pulseAmount).toBe(0.04);
+    expect(runtimeState.beatTuning.pulseDecayMs).toBe(120);
+    expect(runtimeState.bloomTuning.stepCompensation).toBeCloseTo(
+      deriveStepCompensation(72),
+    );
+    expect(runtimeState.bloomTuning.lowStepBloomGuard).toBe(0);
     expect(runtimeState.idleOverlay.material.color.set).toHaveBeenCalledWith(
       "#88ccff",
     );
@@ -169,6 +229,7 @@ describe("control runtime sync", () => {
     controls.bloomStrength = 0.77;
     controls.bloomRadius = 0.31;
     controls.bloomThreshold = 0.44;
+    controls.bloomResponseBias = 0.5;
 
     const pipeline = { outputNode: null };
     const sceneColor = {
@@ -184,20 +245,26 @@ describe("control runtime sync", () => {
       {
         ensurePipeline: () => pipeline,
         postNodesRef: { current: { sceneColor, bloomPass } },
+        runtimeState: createRaymarchHarness(),
       },
       controls,
     );
 
-    expect(bloomPass.strength.value).toBe(0.77);
-    expect(bloomPass.radius.value).toBe(0.31);
-    expect(bloomPass.threshold.value).toBe(0.44);
+    expect(bloomPass.strength.value).toBeCloseTo(0.6853);
+    expect(bloomPass.radius.value).toBeCloseTo(0.2976);
+    expect(bloomPass.threshold.value).toBeCloseTo(0.48);
     expect(pipeline.outputNode).toBe(sceneColor);
     expect(snapshot.enabled).toBe(false);
+    expect(snapshot.bloomResponseBias).toBe(0.5);
+    expect(snapshot.stepReference).toBe(STEP_REFERENCE);
+    expect(snapshot.stepCompensation).toBe(1);
+    expect(snapshot.lowStepBloomGuard).toBe(0);
   });
 
   it("enables bloom output when the control is on", () => {
     const controls = createControlState();
     controls.bloomEnabled = true;
+    controls.bloomResponseBias = 0.4;
 
     const pipeline = { outputNode: null };
     const sceneColor = { add: vi.fn(() => "bloomed-output") };
@@ -211,6 +278,7 @@ describe("control runtime sync", () => {
       {
         ensurePipeline: () => pipeline,
         postNodesRef: { current: { sceneColor, bloomPass } },
+        runtimeState: createRaymarchHarness(),
       },
       controls,
     );
@@ -218,6 +286,46 @@ describe("control runtime sync", () => {
     expect(sceneColor.add).toHaveBeenCalledWith(bloomPass);
     expect(pipeline.outputNode).toBe("bloomed-output");
     expect(snapshot.enabled).toBe(true);
+    expect(snapshot.strength).toBeCloseTo(controls.bloomStrength * 0.912);
+    expect(snapshot.lowStepBloomGuard).toBe(0);
+  });
+
+  it("guards bloom response below 64 steps", () => {
+    const controls = createControlState();
+    controls.bloomEnabled = true;
+    controls.bloomResponseBias = 0.4;
+    controls.raymarchSteps = 32;
+
+    const runtimeState = createRaymarchHarness();
+    const pipeline = { outputNode: null };
+    const sceneColor = { add: vi.fn(() => "bloomed-output") };
+    const bloomPass = {
+      strength: { value: 0 },
+      radius: { value: 0 },
+      threshold: { value: 0 },
+    };
+
+    const snapshot = applyBloomControls(
+      {
+        ensurePipeline: () => pipeline,
+        postNodesRef: { current: { sceneColor, bloomPass } },
+        runtimeState,
+      },
+      controls,
+    );
+
+    expect(snapshot.lowStepBloomGuard).toBeCloseTo(deriveLowStepBloomGuard(32));
+    expect(snapshot.stepCompensation).toBeCloseTo(deriveStepCompensation(32));
+    expect(snapshot.strength).toBeCloseTo(
+      controls.bloomStrength * 0.912 * 0.92,
+    );
+    expect(snapshot.radius).toBeCloseTo(controls.bloomRadius * 0.968);
+    expect(snapshot.threshold).toBeCloseTo(
+      controls.bloomThreshold + 0.032 + 0.0333333333,
+    );
+    expect(runtimeState.bloomTuning.lowStepBloomGuard).toBeCloseTo(
+      deriveLowStepBloomGuard(32),
+    );
   });
 
   it("applies audit controls to feature state", () => {
@@ -316,8 +424,11 @@ describe("control runtime sync", () => {
     expect(runtimeState.method).toBe(DEFAULT_VISUALIZATION_METHOD);
     expect(runtimeState.volumeMesh).toBeTruthy();
     expect(runtimeState.idleOverlay).toBeTruthy();
-    expect(runtimeState.points.children).toContain(runtimeState.volumeMesh);
-    expect(runtimeState.points.children).toContain(runtimeState.idleOverlay);
+    expect(runtimeState.visualRoot.children).toContain(runtimeState.volumeMesh);
+    expect(runtimeState.visualRoot.children).toContain(
+      runtimeState.idleOverlay,
+    );
+    expect(runtimeState.points.children).toContain(runtimeState.visualRoot);
     expect(runtimeState.stabilityStats.avgRaySegmentLength).toBeGreaterThan(0);
     expect(runtimeState.stabilityStats.missRatio).toBeGreaterThan(0);
 

@@ -1,4 +1,8 @@
-import { AUDIT_DEFAULTS, AUDIO_DEFAULTS } from "../../defaults.js";
+import {
+  AUDIT_DEFAULTS,
+  AUDIO_DEFAULTS,
+  BEAT_DEFAULTS,
+} from "../../defaults.js";
 
 export const MAX_STACK_SLOTS = AUDIO_DEFAULTS.capacity;
 export const BACKBONE_STACK_SLOTS = 6;
@@ -27,6 +31,17 @@ function createBandState() {
     spectralCentroid: 0,
     spectralFlux: 0,
     previousRms: 0,
+    lowBandEnergy: 0,
+    lowBandEnergyEma: 0,
+    previousLowBandEnergy: 0,
+    onsetDriver: 0,
+    onsetThresholdEma: 0,
+    previousBeatAtMs: Number.NEGATIVE_INFINITY,
+    previousFrameAtMs: 0,
+    beatPulseId: 0,
+    beatStrength: 0,
+    beatConfidence: 0,
+    beatSensitivity: BEAT_DEFAULTS.beatSensitivity,
   };
 }
 

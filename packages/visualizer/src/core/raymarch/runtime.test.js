@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { tickRaymarchRuntime } from "./runtime.js";
+import {
+  deriveLowStepBloomGuard,
+  deriveStepCompensation,
+  STEP_REFERENCE,
+} from "./stepStability.js";
 
 function createRuntimeState() {
   return {
@@ -29,7 +34,34 @@ function createRuntimeState() {
       uBandEnergies: { value: new THREE.Vector4() },
       uDensityGain: { value: 2.8 },
       uAbsorption: { value: 1.8 },
+      uRimBloomBias: { value: 0.5 },
+      uRimCompression: { value: 0.48 },
     },
+    visualRoot: {
+      scale: {
+        x: 1,
+        setScalar(value) {
+          this.x = value;
+        },
+      },
+    },
+    beatTuning: {
+      beatSensitivity: 1,
+      pulseAmount: 0.055,
+      pulseDecayMs: 180,
+    },
+    bloomTuning: {
+      bloomResponseBias: 0.4,
+      stepReference: STEP_REFERENCE,
+      stepCompensation: deriveStepCompensation(64),
+      lowStepBloomGuard: deriveLowStepBloomGuard(64),
+      effectiveStrength: 0.11,
+      effectiveRadius: 0.09,
+      effectiveThreshold: 0.44,
+    },
+    baseDensityGain: 2.8,
+    pulseEnvelope: 0,
+    lastConsumedBeatPulseId: 0,
     volumeMesh: {
       visible: false,
       material: {
@@ -66,12 +98,16 @@ describe("tickRaymarchRuntime", () => {
       transientEnergy: 0.7,
       spectralCentroid: 0.42,
       spectralFlux: 0.28,
+      beatDetected: true,
+      beatPulseId: 3,
+      beatStrength: 0.82,
+      beatConfidence: 0.76,
       debug: {
         dominantFrequency: 440,
       },
     };
 
-    tickRaymarchRuntime(runtimeState, featureFrame, 12.5);
+    tickRaymarchRuntime(runtimeState, featureFrame, 12.5, 1 / 60);
 
     expect(runtimeState.backboneModeBuffer.value.array[0]).toBe(3);
     expect(runtimeState.detailModeBuffer.value.array[0]).toBe(4);
@@ -81,6 +117,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.7);
     expect(runtimeState.uniforms.uSpectralCentroid.value).toBe(0.42);
     expect(runtimeState.uniforms.uSpectralFlux.value).toBe(0.28);
+    expect(runtimeState.lastConsumedBeatPulseId).toBe(3);
+    expect(runtimeState.pulseEnvelope).toBeGreaterThan(0);
+    expect(runtimeState.visualRoot.scale.x).toBeGreaterThan(1);
     const [sub, lowMid, highMid, air] =
       runtimeState.uniforms.uBandEnergies.value.toArray();
     expect(sub).toBeCloseTo(0.4);
@@ -92,6 +131,28 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.raymarchDebug.backboneModeCount).toBe(2);
     expect(runtimeState.debugSnapshot.raymarchDebug.detailModeCount).toBe(2);
     expect(runtimeState.debugSnapshot.raymarchDebug.transientEnergy).toBe(0.7);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.pulseEnvelope,
+    ).toBeGreaterThan(0);
+    expect(runtimeState.debugSnapshot.raymarchDebug.stepReference).toBe(96);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.stepCompensation,
+    ).toBeCloseTo(deriveStepCompensation(64));
+    expect(runtimeState.debugSnapshot.raymarchDebug.lowStepBloomGuard).toBe(0);
+    expect(runtimeState.debugSnapshot.raymarchDebug.rimBloomBias).toBe(0.5);
+    expect(runtimeState.debugSnapshot.raymarchDebug.rimCompression).toBe(0.48);
+    expect(runtimeState.debugSnapshot.raymarchDebug.bloomResponseBias).toBe(
+      0.4,
+    );
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.effectiveBloomStrength,
+    ).toBe(0.11);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.effectiveBloomThreshold,
+    ).toBe(0.44);
+    expect(runtimeState.debugSnapshot.raymarchDebug.bloomRisk).toBeGreaterThan(
+      0,
+    );
   });
 
   it("hides the volume and shows the idle overlay in idle state", () => {
@@ -109,6 +170,7 @@ describe("tickRaymarchRuntime", () => {
         spectralFlux: 0,
       },
       1,
+      1 / 60,
     );
 
     expect(runtimeState.volumeMesh.visible).toBe(false);
@@ -134,6 +196,7 @@ describe("tickRaymarchRuntime", () => {
         debug: {},
       },
       2,
+      1 / 60,
     );
 
     expect(runtimeState.volumeMesh.visible).toBe(true);
@@ -160,6 +223,7 @@ describe("tickRaymarchRuntime", () => {
         debug: {},
       },
       3,
+      1 / 60,
     );
 
     expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(1);
@@ -176,5 +240,39 @@ describe("tickRaymarchRuntime", () => {
     expect(air).toBeCloseTo(0.1);
     expect(runtimeState.debugSnapshot.raymarchDebug.modeSlotCount).toBe(1);
     expect(runtimeState.debugSnapshot.raymarchDebug.transientEnergy).toBe(0.85);
+  });
+
+  it("consumes each beat pulse id once and decays the scale envelope", () => {
+    const runtimeState = createRuntimeState();
+    const featureFrame = {
+      fieldState: "active",
+      averageAmplitude: 18,
+      backboneSlots: new Float32Array([3, 4, 6, 0.5]),
+      detailSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.6, 0.3, 0.1, 0.05]),
+      transientEnergy: 0.4,
+      spectralCentroid: 0.22,
+      spectralFlux: 0.3,
+      beatDetected: true,
+      beatPulseId: 7,
+      beatStrength: 0.9,
+      beatConfidence: 0.8,
+      debug: {},
+    };
+
+    tickRaymarchRuntime(runtimeState, featureFrame, 2, 1 / 60);
+    const firstEnvelope = runtimeState.pulseEnvelope;
+    const firstScale = runtimeState.visualRoot.scale.x;
+
+    tickRaymarchRuntime(
+      runtimeState,
+      { ...featureFrame, beatDetected: false },
+      2.016,
+      1 / 60,
+    );
+
+    expect(runtimeState.lastConsumedBeatPulseId).toBe(7);
+    expect(runtimeState.pulseEnvelope).toBeLessThan(firstEnvelope);
+    expect(runtimeState.visualRoot.scale.x).toBeLessThan(firstScale);
   });
 });

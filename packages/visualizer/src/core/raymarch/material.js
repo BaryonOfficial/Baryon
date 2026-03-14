@@ -24,22 +24,39 @@ import {
   RAYMARCH_GRAZING_END,
   RAYMARCH_GRAZING_START,
 } from "./intersection.js";
-
-const EDGE_FADE_START = 0.88;
-const EDGE_FADE_END = 1.0;
-const SHELL_WEIGHT_MIN = 0.42;
-const SHELL_WEIGHT_START = 0.16;
-const SHELL_WEIGHT_END = 0.96;
-const COLOR_BLEND_START = 0.32;
-const COLOR_BLEND_END = 0.88;
-const DENSITY_BOOST = 3.5;
-const DENSITY_MAX = 6.0;
-const LOW_DENSITY_FADE_START = 0.14;
-const LOW_DENSITY_FADE_END = 0.42;
-const WEAK_CONTOUR_START = 0.32;
-const WEAK_CONTOUR_END = 0.82;
-const SILHOUETTE_MIN_VISIBILITY = 0.2;
-const DETAIL_LAYER_WEIGHT = 0.35;
+import {
+  AIR_BAND_WEIGHT,
+  BODY_BOUNDARY_REDUCTION,
+  BODY_DENSITY_GAIN,
+  BROAD_BAND_SCALE,
+  COLOR_BIAS_SCALE,
+  COLOR_BLEND_END,
+  COLOR_BLEND_START,
+  CONTOUR_BLEND,
+  DENSITY_BOOST,
+  DENSITY_MAX,
+  DETAIL_LAYER_WEIGHT,
+  EDGE_FADE_END,
+  EDGE_FADE_START,
+  HIGHLIGHT_MASK_END,
+  HIGHLIGHT_MASK_START,
+  HIGH_MID_BAND_WEIGHT,
+  INNER_BAND_WEIGHT,
+  INTERIOR_MASK_END,
+  INTERIOR_MASK_START,
+  LOW_DENSITY_FADE_END,
+  LOW_DENSITY_FADE_START,
+  LOW_MID_BAND_WEIGHT,
+  RIM_BLOOM_BIAS_BASE,
+  RIM_BLOOM_BIAS_GAIN,
+  SHELL_WEIGHT_END,
+  SHELL_WEIGHT_MAX,
+  SHELL_WEIGHT_MIN,
+  SHELL_WEIGHT_START,
+  SILHOUETTE_MIN_VISIBILITY,
+  WEAK_CONTOUR_END,
+  WEAK_CONTOUR_START,
+} from "./fieldShaping.js";
 
 /**
  * @typedef {{ positionRay: any }} ScatteringNodeInputs
@@ -115,6 +132,8 @@ function createScatteringNode({
     uDensityGain,
     uAbsorption,
     uContourSharpness,
+    uRimBloomBias,
+    uRimCompression,
     uBandEnergies,
     uTransientEnergy,
     uSpectralCentroid,
@@ -182,6 +201,13 @@ function createScatteringNode({
       const nodeBand = float(1.0).sub(
         smoothstep(float(0.0), uThreshold, fieldAbs),
       );
+      const broadBand = float(1.0).sub(
+        smoothstep(
+          float(0.0),
+          uThreshold.mul(float(BROAD_BAND_SCALE)),
+          fieldAbs,
+        ),
+      );
       const structure = smoothstep(
         uStructureMin,
         uStructureMax,
@@ -197,33 +223,66 @@ function createScatteringNode({
         float(1.0),
         radialDistance,
       );
+      const rimBandBias = float(RIM_BLOOM_BIAS_BASE).add(
+        uRimBloomBias.mul(float(RIM_BLOOM_BIAS_GAIN)),
+      );
       const shellBandMod = float(1.0)
         .add(
           uBandEnergies.x
-            .mul(float(0.18))
+            .mul(float(INNER_BAND_WEIGHT))
             .mul(float(1.0).sub(innerShellAccent)),
         )
-        .add(uBandEnergies.y.mul(float(0.1)))
-        .add(uBandEnergies.z.mul(float(0.12)).mul(outerShellAccent))
-        .add(uBandEnergies.w.mul(float(0.18)).mul(outerShellAccent));
+        .add(uBandEnergies.y.mul(float(LOW_MID_BAND_WEIGHT)))
+        .add(
+          uBandEnergies.z
+            .mul(float(HIGH_MID_BAND_WEIGHT))
+            .mul(rimBandBias)
+            .mul(outerShellAccent),
+        )
+        .add(
+          uBandEnergies.w
+            .mul(float(AIR_BAND_WEIGHT))
+            .mul(rimBandBias)
+            .mul(outerShellAccent),
+        );
       const shellWeight = mix(
         float(SHELL_WEIGHT_MIN),
-        float(1.0),
+        float(SHELL_WEIGHT_MAX),
         smoothstep(
           float(SHELL_WEIGHT_START),
           float(SHELL_WEIGHT_END),
           radialDistance,
         ),
       ).mul(shellBandMod);
-      const contour = nodeBand.pow(uContourSharpness.mul(contourGain));
+      const contourCore = nodeBand.pow(uContourSharpness.mul(contourGain));
+      const contourShape = mix(broadBand, contourCore, float(CONTOUR_BLEND));
       const activeMask = smoothstep(float(0.0), float(1.0), activeCount);
       const densityMod = float(1.0)
         .add(uTransientEnergy.mul(0.3))
         .add(uSpectralFlux.mul(0.2));
+      const boundaryMask = smoothstep(
+        float(RAYMARCH_BOUNDARY_START),
+        float(RAYMARCH_BOUNDARY_END),
+        radialDistance,
+      );
+      const interiorMask = float(1.0).sub(
+        smoothstep(
+          float(INTERIOR_MASK_START),
+          float(INTERIOR_MASK_END),
+          radialDistance,
+        ),
+      );
+      const bodyDensity = broadBand
+        .mul(structure)
+        .mul(edgeFade)
+        .mul(activeMask)
+        .mul(interiorMask)
+        .mul(float(BODY_DENSITY_GAIN))
+        .mul(float(1.0).sub(boundaryMask.mul(float(BODY_BOUNDARY_REDUCTION))));
+      const coreDensity = contourShape.mul(structure).mul(shellWeight);
       const density = clamp(
-        contour
-          .mul(structure)
-          .mul(shellWeight)
+        coreDensity
+          .add(bodyDensity)
           .mul(edgeFade)
           .mul(uDensityGain)
           .mul(uAbsorption)
@@ -246,33 +305,46 @@ function createScatteringNode({
       const grazingFactor = float(1.0).sub(
         abs(dot(viewDirection, radialNormal)),
       );
-      const boundaryMask = smoothstep(
-        float(RAYMARCH_BOUNDARY_START),
-        float(RAYMARCH_BOUNDARY_END),
-        radialDistance,
-      );
       const grazingMask = smoothstep(
         float(RAYMARCH_GRAZING_START),
         float(RAYMARCH_GRAZING_END),
         grazingFactor,
       );
       const weakContourMask = float(1.0).sub(
-        smoothstep(float(WEAK_CONTOUR_START), float(WEAK_CONTOUR_END), contour),
+        smoothstep(
+          float(WEAK_CONTOUR_START),
+          float(WEAK_CONTOUR_END),
+          contourCore,
+        ),
+      );
+      const rimIntensity = boundaryMask.mul(grazingMask);
+      const silhouetteMask = rimIntensity.mul(
+        mix(float(0.4), float(1.0), weakContourMask),
       );
       const silhouetteSuppression = mix(
         float(1.0),
         float(SILHOUETTE_MIN_VISIBILITY),
-        boundaryMask.mul(grazingMask).mul(weakContourMask),
+        silhouetteMask,
       );
+      const highlightMask = smoothstep(
+        float(HIGHLIGHT_MASK_START),
+        float(HIGHLIGHT_MASK_END),
+        visibleDensity,
+      );
+      const rimCompressionMask = float(1.0).sub(
+        rimIntensity.mul(highlightMask).mul(uRimCompression).mul(float(0.28)),
+      );
+      const stabilizedDensity = visibleDensity.mul(rimCompressionMask);
       const contourMix = smoothstep(
         float(COLOR_BLEND_START),
         float(COLOR_BLEND_END),
-        contour,
+        contourShape,
       );
       const spectralColorBias = clamp(
         contourMix
           .add(uSpectralCentroid.mul(0.25))
-          .add(uTransientEnergy.mul(0.1)),
+          .add(uTransientEnergy.mul(0.1))
+          .mul(float(COLOR_BIAS_SCALE)),
         float(0.0),
         float(1.0),
       );
@@ -289,7 +361,7 @@ function createScatteringNode({
         backbonePresence.add(detailPresence.mul(float(0.15))),
       );
 
-      return volumeColor.mul(visibleDensity).mul(silhouetteSuppression);
+      return volumeColor.mul(stabilizedDensity).mul(silhouetteSuppression);
     },
   );
 }

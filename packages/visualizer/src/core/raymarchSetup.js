@@ -1,4 +1,9 @@
 import { instancedArray } from "three/tsl";
+import {
+  BEAT_DEFAULTS,
+  RAYMARCH_DEFAULTS,
+  RENDER_DEFAULTS,
+} from "../defaults.js";
 import { FIELD_STATE_VALUES } from "./fieldState.js";
 import {
   createRaymarchVolumeMesh,
@@ -11,6 +16,11 @@ import {
   tickRaymarchRuntime,
 } from "./raymarch/runtime.js";
 import { createRaymarchUniforms } from "./raymarch/uniforms.js";
+import {
+  deriveLowStepBloomGuard,
+  deriveStepCompensation,
+  STEP_REFERENCE,
+} from "./raymarch/stepStability.js";
 import { VISUALIZATION_METHODS } from "../visualization/types.js";
 
 function createModeBuffer(capacity) {
@@ -35,7 +45,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     baryonGeometry,
     uniforms,
   });
-  const points = createRaymarchSceneRoot({
+  const { root: points, visualRoot } = createRaymarchSceneRoot({
     volumeMesh,
     idleOverlay,
     radius: parameters.radius,
@@ -45,6 +55,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     method: VISUALIZATION_METHODS.raymarch,
     points,
     object: points,
+    visualRoot,
     volumeMesh,
     idleOverlay,
     uniforms,
@@ -56,13 +67,38 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     stabilityStats: estimateProjectedSphereStats({
       radius: parameters.radius,
     }),
+    beatTuning: {
+      beatSensitivity: BEAT_DEFAULTS.beatSensitivity,
+      pulseAmount: BEAT_DEFAULTS.pulseAmount,
+      pulseDecayMs: BEAT_DEFAULTS.pulseDecayMs,
+    },
+    bloomTuning: {
+      bloomResponseBias: RENDER_DEFAULTS.bloomResponseBias,
+      stepReference: STEP_REFERENCE,
+      stepCompensation: deriveStepCompensation(RAYMARCH_DEFAULTS.raymarchSteps),
+      lowStepBloomGuard: deriveLowStepBloomGuard(
+        RAYMARCH_DEFAULTS.raymarchSteps,
+      ),
+      effectiveStrength: RENDER_DEFAULTS.bloomStrength,
+      effectiveRadius: RENDER_DEFAULTS.bloomRadius,
+      effectiveThreshold: RENDER_DEFAULTS.bloomThreshold,
+    },
+    baseDensityGain: uniforms.uDensityGain.value,
+    pulseEnvelope: 0,
+    lastConsumedBeatPulseId: 0,
     debugSnapshot: null,
   };
 }
 
-export function tickRaymarch(renderer, raymarchState, featureFrame, time) {
+export function tickRaymarch(
+  renderer,
+  raymarchState,
+  featureFrame,
+  time,
+  deltaTime,
+) {
   void renderer;
-  tickRaymarchRuntime(raymarchState, featureFrame, time);
+  tickRaymarchRuntime(raymarchState, featureFrame, time, deltaTime);
 }
 
 export function disposeRaymarch(raymarchState) {
