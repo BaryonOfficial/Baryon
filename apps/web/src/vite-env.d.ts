@@ -18,9 +18,23 @@ declare global {
     __baryonAuditSnapshot?: Record<string, unknown>;
     __baryonRendererInfo?: {
       forceWebGLFallbackTest: boolean;
+      backendType: "webgl" | "webgpu" | null;
       backend: string | null;
       isFallback: boolean;
       error: string | null;
+    };
+    __baryonSupportProbe?: {
+      status: string;
+      failureCode: string | null;
+      platform: string;
+      browserFamily: string;
+      rawError: string | null;
+      diagnostics: string[];
+      guidance: {
+        summary: string;
+        steps: string[];
+        caveat: string | null;
+      } | null;
     };
     __baryonTestReady?: boolean;
   }

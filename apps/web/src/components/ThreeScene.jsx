@@ -10,6 +10,9 @@ import { useBaryonControls } from "./hooks/useBaryonControls";
 import { useAudioScene } from "../context/AudioContext";
 import {
   BROWSER_SUPPORT_STATUS,
+  BROWSER_FAILURE_CODES,
+  createFailureProbe,
+  createRendererInitFailureProbe,
   getInitialBrowserSupportStatus,
   isMobileDevice,
   probeBrowserSupport,
@@ -18,20 +21,6 @@ import {
 const CANVAS_SWAP_DELAY_MS = 650;
 const WEBGPU_RENDERER_INIT_ERROR = "WebGPURendererInitError";
 
-function formatRendererInitError(error) {
-  const cause = error?.cause;
-  if (cause instanceof Error) {
-    return cause.message;
-  }
-  if (cause != null) {
-    return String(cause);
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-}
-
 function clearRendererDiagnostics() {
   if (typeof window === "undefined") {
     return;
@@ -39,6 +28,7 @@ function clearRendererDiagnostics() {
 
   delete window.__baryonRendererInfo;
   delete window.__baryonAuditSnapshot;
+  delete window.__baryonSupportProbe;
 }
 
 class RendererErrorBoundary extends Component {
@@ -81,7 +71,16 @@ const ThreeScene = () => {
   const [unsupportedReason, setUnsupportedReason] = useState(() =>
     !initialRendererFallback && isMobileDevice() ? "mobile" : "browser",
   );
-  const [unsupportedDetails, setUnsupportedDetails] = useState([]);
+  const [supportProbe, setSupportProbe] = useState(() =>
+    !initialRendererFallback && isMobileDevice()
+      ? createFailureProbe({
+          failureCode: BROWSER_FAILURE_CODES.mobileUnsupported,
+          diagnostics: [
+            "Mobile browsers are currently treated as unsupported.",
+          ],
+        })
+      : null,
+  );
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [forceWebGLFallbackTest, setForceWebGLFallbackTest] = useState(
     initialRendererFallback,
@@ -114,34 +113,51 @@ const ThreeScene = () => {
   } = useAudioScene();
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (supportProbe) {
+      window.__baryonSupportProbe = supportProbe;
+      return;
+    }
+
+    delete window.__baryonSupportProbe;
+  }, [supportProbe]);
+
+  useEffect(() => {
     let isCancelled = false;
 
     if (forceWebGLFallbackTest) {
       setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.supported);
       setUnsupportedReason("browser");
-      setUnsupportedDetails([]);
+      setSupportProbe(null);
       return undefined;
     }
 
     if (isMobileDevice()) {
+      const mobileProbe = createFailureProbe({
+        failureCode: BROWSER_FAILURE_CODES.mobileUnsupported,
+        diagnostics: ["Mobile browsers are currently treated as unsupported."],
+      });
       setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.unsupported);
       setUnsupportedReason("mobile");
-      setUnsupportedDetails([
-        "Mobile browsers are currently treated as unsupported.",
-      ]);
+      setSupportProbe(mobileProbe);
       return undefined;
     }
 
     setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.checking);
     setUnsupportedReason("browser");
-    setUnsupportedDetails([]);
+    setSupportProbe(null);
 
     void (async () => {
       const probe = await probeBrowserSupport(forceWebGLFallbackTest);
       if (!isCancelled) {
         setBrowserSupportStatus(probe.status);
-        setUnsupportedReason(probe.reason);
-        setUnsupportedDetails(probe.diagnostics);
+        setUnsupportedReason(
+          probe.failureCode === "mobile-unsupported" ? "mobile" : "browser",
+        );
+        setSupportProbe(probe);
       }
     })();
 
@@ -208,9 +224,7 @@ const ThreeScene = () => {
     setShowCanvas(false);
     setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.unsupported);
     setUnsupportedReason("browser");
-    setUnsupportedDetails([
-      `\`WebGPURenderer.init()\` failed: ${formatRendererInitError(error)}`,
-    ]);
+    setSupportProbe(createRendererInitFailureProbe(error));
   };
 
   return (
@@ -278,6 +292,7 @@ const ThreeScene = () => {
                 if (typeof window !== "undefined") {
                   window.__baryonRendererInfo = {
                     forceWebGLFallbackTest: activeRendererFallback,
+                    backendType: null,
                     backend: null,
                     isFallback: activeRendererFallback,
                     error: String(error),
@@ -296,6 +311,8 @@ const ThreeScene = () => {
                 const backend = /** @type {any} */ (renderer.backend);
                 window.__baryonRendererInfo = {
                   forceWebGLFallbackTest: activeRendererFallback,
+                  backendType:
+                    backend?.isWebGLBackend === true ? "webgl" : "webgpu",
                   backend: backend?.constructor?.name ?? null,
                   isFallback: backend?.isWebGLBackend === true,
                   error: null,
@@ -322,10 +339,7 @@ const ThreeScene = () => {
       <ParticleDebugOverlay />
 
       {isUnsupported && (
-        <UnsupportedWarning
-          reason={unsupportedReason}
-          details={unsupportedDetails}
-        />
+        <UnsupportedWarning reason={unsupportedReason} probe={supportProbe} />
       )}
     </div>
   );
