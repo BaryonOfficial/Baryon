@@ -1380,6 +1380,28 @@ describe("chromesthesia feature frame outputs", () => {
     });
   });
 
+  it("skips chromesthesia color work when the render path does not need it", () => {
+    const featureState = createAudioFeatureState();
+    const frame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        fftMagnitudes: makeFft([
+          [220, 0.95],
+          [440, 0.72],
+          [660, 0.44],
+          [880, 0.28],
+        ]),
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      includeChromesthesia: false,
+    });
+
+    expect(frame.backboneColorSlots.some((value) => value > 0)).toBe(false);
+    expect(frame.detailColorSlots.some((value) => value > 0)).toBe(false);
+    expect(frame.debug.chromesthesiaComponents).toEqual([]);
+  });
+
   it("freezes chromesthesia color slots alongside frozen modal slots", () => {
     const featureState = createAudioFeatureState();
     const first = buildAudioFeatureFrame({

@@ -212,6 +212,9 @@ export function useBaryonVisualizer({
     const audio = audioRef.current;
     const status = audio.getStatus();
     const analysisSnapshot = audio.readAnalysisSnapshot();
+    const chromesthesiaEnabled =
+      controls.colorMode === "chromesthesia" &&
+      (controls.chromesthesiaMix ?? RENDER_DEFAULTS.chromesthesiaMix) > 0;
 
     const bloomSnapshot = applyBloomControls(
       { ensurePipeline, postNodesRef, runtimeState },
@@ -244,6 +247,7 @@ export function useBaryonVisualizer({
       micAnalysisSettings: {
         profile: micProfile,
       },
+      includeChromesthesia: chromesthesiaEnabled,
     });
     const nextMicRuntimeStatus = status.isMicActive
       ? {

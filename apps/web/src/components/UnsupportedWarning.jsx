@@ -1,6 +1,20 @@
 import React from "react";
 
-const UnsupportedWarning = ({ reason = "browser" }) => (
+const listStyle = {
+  margin: "8px 0 0",
+  padding: 0,
+  listStyle: "none",
+  fontFamily: "monospace",
+  fontSize: "12px",
+  lineHeight: 1.5,
+  opacity: 0.95,
+};
+
+const itemStyle = {
+  margin: 0,
+};
+
+const UnsupportedWarning = ({ reason = "browser", details = [] }) => (
   <div
     style={{
       position: "fixed",
@@ -14,9 +28,20 @@ const UnsupportedWarning = ({ reason = "browser" }) => (
       zIndex: 1000,
     }}
   >
-    {reason === "mobile"
-      ? "Baryon runs best on desktop. Mobile support is currently degraded, so please open the web app on a desktop browser."
-      : "The music visualizer requires a browser with WebGPU support. Please switch to a WebGPU-capable desktop browser and try again."}
+    <div>
+      {reason === "mobile"
+        ? "Baryon runs best on desktop. Mobile support is currently degraded, so please open the web app on a desktop browser."
+        : "The music visualizer requires a working WebGPU stack. The startup diagnostics below show the exact failure."}
+    </div>
+    {details.length > 0 && (
+      <ul style={listStyle} aria-label="WebGPU diagnostics">
+        {details.map((detail) => (
+          <li key={detail} style={itemStyle}>
+            {detail}
+          </li>
+        ))}
+      </ul>
+    )}
   </div>
 );
 

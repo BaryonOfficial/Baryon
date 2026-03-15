@@ -7,16 +7,30 @@ import ParticleDebugOverlay from "./ParticleDebugOverlay.jsx";
 import UnsupportedWarning from "./UnsupportedWarning.jsx";
 import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
 import { useBaryonControls } from "./hooks/useBaryonControls";
-import { useAudio } from "../context/AudioContext";
+import { useAudioScene } from "../context/AudioContext";
 import {
   BROWSER_SUPPORT_STATUS,
-  getBrowserSupportStatus,
   getInitialBrowserSupportStatus,
   isMobileDevice,
+  probeBrowserSupport,
 } from "./browserSupport.js";
 
 const CANVAS_SWAP_DELAY_MS = 650;
 const WEBGPU_RENDERER_INIT_ERROR = "WebGPURendererInitError";
+
+function formatRendererInitError(error) {
+  const cause = error?.cause;
+  if (cause instanceof Error) {
+    return cause.message;
+  }
+  if (cause != null) {
+    return String(cause);
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
 
 function clearRendererDiagnostics() {
   if (typeof window === "undefined") {
@@ -67,6 +81,7 @@ const ThreeScene = () => {
   const [unsupportedReason, setUnsupportedReason] = useState(() =>
     !initialRendererFallback && isMobileDevice() ? "mobile" : "browser",
   );
+  const [unsupportedDetails, setUnsupportedDetails] = useState([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [forceWebGLFallbackTest, setForceWebGLFallbackTest] = useState(
     initialRendererFallback,
@@ -96,7 +111,7 @@ const ThreeScene = () => {
     setMicRuntimeStatus,
     micProfile,
     resetAudioSession,
-  } = useAudio();
+  } = useAudioScene();
 
   useEffect(() => {
     let isCancelled = false;
@@ -104,23 +119,29 @@ const ThreeScene = () => {
     if (forceWebGLFallbackTest) {
       setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.supported);
       setUnsupportedReason("browser");
+      setUnsupportedDetails([]);
       return undefined;
     }
 
     if (isMobileDevice()) {
       setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.unsupported);
       setUnsupportedReason("mobile");
+      setUnsupportedDetails([
+        "Mobile browsers are currently treated as unsupported.",
+      ]);
       return undefined;
     }
 
     setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.checking);
     setUnsupportedReason("browser");
+    setUnsupportedDetails([]);
 
     void (async () => {
-      const nextStatus = await getBrowserSupportStatus(forceWebGLFallbackTest);
+      const probe = await probeBrowserSupport(forceWebGLFallbackTest);
       if (!isCancelled) {
-        setBrowserSupportStatus(nextStatus);
-        setUnsupportedReason("browser");
+        setBrowserSupportStatus(probe.status);
+        setUnsupportedReason(probe.reason);
+        setUnsupportedDetails(probe.diagnostics);
       }
     })();
 
@@ -187,6 +208,9 @@ const ThreeScene = () => {
     setShowCanvas(false);
     setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.unsupported);
     setUnsupportedReason("browser");
+    setUnsupportedDetails([
+      `\`WebGPURenderer.init()\` failed: ${formatRendererInitError(error)}`,
+    ]);
   };
 
   return (
@@ -297,7 +321,12 @@ const ThreeScene = () => {
       {isSupportReady && !isFullscreen && <AudioControls />}
       <ParticleDebugOverlay />
 
-      {isUnsupported && <UnsupportedWarning reason={unsupportedReason} />}
+      {isUnsupported && (
+        <UnsupportedWarning
+          reason={unsupportedReason}
+          details={unsupportedDetails}
+        />
+      )}
     </div>
   );
 };

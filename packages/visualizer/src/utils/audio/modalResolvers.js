@@ -98,6 +98,7 @@ export function buildModalSlotsFromFundamental({
   radius,
   capacity,
   spectralCentroid = 0,
+  includeChromesthesia = true,
 }) {
   const slotLimit = Math.min(capacity, MAX_STACK_SLOTS);
   const slots = new Float32Array(capacity * 4);
@@ -105,8 +106,8 @@ export function buildModalSlotsFromFundamental({
   const colorSlots = new Float32Array(capacity * 4);
   const harmonicSupport = new Float32Array(HARMONIC_ORDERS.length);
   const seenModes = new Set();
-  const colorFamilies = [];
-  const components = [];
+  const colorFamilies = includeChromesthesia ? [] : null;
+  const components = includeChromesthesia ? [] : null;
   const primarySupport = sampleFFTAmplitudeForFrequency(
     frequency,
     fftMagnitudes,
@@ -145,14 +146,18 @@ export function buildModalSlotsFromFundamental({
       radius,
       familyLimit * 3,
     );
-    const colorComponent = buildColorComponent({
-      frequency: harmonicFrequency,
-      strength: clamp01(support * attenuation),
-      stability: clamp01(i === 0 ? confidence : Math.max(0.5, confidence)),
-      spectralCentroid,
-      families: colorFamilies,
-    });
-    components.push(colorComponent);
+    const colorComponent = includeChromesthesia
+      ? buildColorComponent({
+          frequency: harmonicFrequency,
+          strength: clamp01(support * attenuation),
+          stability: clamp01(i === 0 ? confidence : Math.max(0.5, confidence)),
+          spectralCentroid,
+          families: colorFamilies,
+        })
+      : null;
+    if (colorComponent) {
+      components.push(colorComponent);
+    }
 
     let familyIndex = 0;
     for (const mode of family) {
@@ -169,12 +174,14 @@ export function buildModalSlotsFromFundamental({
         (i === 0 ? confidence : Math.max(0.5, confidence));
       writeSlot(slots, slotIndex, mode, amplitude);
       writeSlot(referenceSlots, slotIndex, mode, support * familyAttenuation);
-      writeColorSlot(
-        colorSlots,
-        slotIndex,
-        colorComponent.rgb,
-        clamp01(colorComponent.weight * familyAttenuation),
-      );
+      if (colorComponent) {
+        writeColorSlot(
+          colorSlots,
+          slotIndex,
+          colorComponent.rgb,
+          clamp01(colorComponent.weight * familyAttenuation),
+        );
+      }
       slotIndex++;
       familyIndex++;
     }
@@ -186,7 +193,7 @@ export function buildModalSlotsFromFundamental({
     colorSlots,
     harmonicSupport,
     uniqueModeCount: slotIndex,
-    components: limitColorComponents(components),
+    components: includeChromesthesia ? limitColorComponents(components) : [],
   };
 }
 
@@ -200,6 +207,7 @@ export function buildModalSlotsFromSpectralPeaks({
   slotLimit = null,
   peakFamilyCount = SPECTRAL_PEAK_FAMILY_COUNT,
   spectralCentroid = 0,
+  includeChromesthesia = true,
 }) {
   const maxSlots =
     slotLimit ?? Math.min(capacity, DETAIL_STACK_SLOTS, MAX_STACK_SLOTS);
@@ -208,8 +216,8 @@ export function buildModalSlotsFromSpectralPeaks({
   const colorSlots = new Float32Array(capacity * 4);
   const harmonicSupport = new Float32Array(HARMONIC_ORDERS.length);
   const seenModes = new Set();
-  const colorFamilies = [];
-  const components = [];
+  const colorFamilies = includeChromesthesia ? [] : null;
+  const components = includeChromesthesia ? [] : null;
   const peaks = findSpectralPeakFrequencies(
     fftMagnitudes,
     sampleRate,
@@ -226,14 +234,18 @@ export function buildModalSlotsFromSpectralPeaks({
       radius,
       familyLimit * 3,
     );
-    const colorComponent = buildColorComponent({
-      frequency: peak.frequency,
-      strength: clamp01(peak.amplitude),
-      stability: clamp01(peak.amplitude * 0.8 + 0.2),
-      spectralCentroid,
-      families: colorFamilies,
-    });
-    components.push(colorComponent);
+    const colorComponent = includeChromesthesia
+      ? buildColorComponent({
+          frequency: peak.frequency,
+          strength: clamp01(peak.amplitude),
+          stability: clamp01(peak.amplitude * 0.8 + 0.2),
+          spectralCentroid,
+          families: colorFamilies,
+        })
+      : null;
+    if (colorComponent) {
+      components.push(colorComponent);
+    }
 
     let familyIndex = 0;
     for (const mode of family) {
@@ -254,12 +266,14 @@ export function buildModalSlotsFromSpectralPeaks({
         mode,
         peak.amplitude * getFamilyAttenuation(familyIndex),
       );
-      writeColorSlot(
-        colorSlots,
-        slotIndex,
-        colorComponent.rgb,
-        clamp01(colorComponent.weight * getFamilyAttenuation(familyIndex)),
-      );
+      if (colorComponent) {
+        writeColorSlot(
+          colorSlots,
+          slotIndex,
+          colorComponent.rgb,
+          clamp01(colorComponent.weight * getFamilyAttenuation(familyIndex)),
+        );
+      }
       if (slotIndex < harmonicSupport.length) {
         harmonicSupport[slotIndex] = peak.amplitude;
       }
@@ -275,7 +289,7 @@ export function buildModalSlotsFromSpectralPeaks({
     harmonicSupport,
     uniqueModeCount: slotIndex,
     peaks,
-    components: limitColorComponents(components),
+    components: includeChromesthesia ? limitColorComponents(components) : [],
   };
 }
 
@@ -367,6 +381,7 @@ export function buildModalSlotsFromPeakDrivers({
   slotLimit = BACKBONE_STACK_SLOTS,
   minimumConfidence = 0.45,
   spectralCentroid = 0,
+  includeChromesthesia = true,
 }) {
   const peaks = findSpectralPeakFrequencies(
     fftMagnitudes,
@@ -402,6 +417,7 @@ export function buildModalSlotsFromPeakDrivers({
       radius,
       capacity: Math.min(capacity, slotLimit),
       spectralCentroid,
+      includeChromesthesia,
     });
 
     for (let i = 0; i < build.slots.length; i += 4) {
