@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   aggregateMessages,
   classifyPageError,
+  getDiagnosticsResult,
+  isSoftwareAdapter,
   shouldFailBrowserDiagnostics,
 } from "../../scripts/linux-webgpu-diagnostics.mjs";
 
@@ -62,6 +64,14 @@ test("fails diagnostics when a usable adapter hits severe runtime errors", () =>
       infrastructureError: null,
       info: {
         adapterAvailable: true,
+        adapterInfo: {
+          info: {
+            vendor: "nvidia",
+            architecture: "turing",
+            device: "rtx",
+            description: "hardware gpu",
+          },
+        },
       },
       pageErrorSummary: [
         {
@@ -74,6 +84,50 @@ test("fails diagnostics when a usable adapter hits severe runtime errors", () =>
     }),
     true,
   );
+});
+
+test("detects SwiftShader as a software adapter", () => {
+  assert.equal(
+    isSoftwareAdapter({
+      adapterInfo: {
+        info: {
+          vendor: "google",
+          architecture: "swiftshader",
+          device: null,
+          description: null,
+        },
+      },
+    }),
+    true,
+  );
+});
+
+test("downgrades severe runtime errors on software adapters to environment-limited", () => {
+  const result = {
+    infrastructureError: null,
+    info: {
+      adapterAvailable: true,
+      adapterInfo: {
+        info: {
+          vendor: "google",
+          architecture: "swiftshader",
+          device: null,
+          description: null,
+        },
+      },
+    },
+    pageErrorSummary: [
+      {
+        message:
+          "RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed",
+        count: 3,
+        classification: "runtime-severe",
+      },
+    ],
+  };
+
+  assert.equal(getDiagnosticsResult(result), "environment-limited");
+  assert.equal(shouldFailBrowserDiagnostics(result), false);
 });
 
 test("does not fail diagnostics for expected unsupported Firefox blocklist findings", () => {

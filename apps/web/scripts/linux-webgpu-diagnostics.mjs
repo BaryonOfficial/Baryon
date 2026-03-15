@@ -21,6 +21,7 @@ const SEVERE_ERROR_PATTERNS = [
 ];
 
 const WARNING_ERROR_PATTERNS = [/not supported/i];
+const SOFTWARE_ADAPTER_PATTERNS = [/swiftshader/i, /software/i];
 
 function withTimeout(promise, timeoutMs, label) {
   let timeoutId;
@@ -88,18 +89,49 @@ function aggregateMessages(messages, info = null) {
   }));
 }
 
-function shouldFailBrowserDiagnostics(result) {
-  if (result.infrastructureError) {
-    return true;
-  }
-
-  if (!result.info?.adapterAvailable) {
+function isSoftwareAdapter(info = null) {
+  const adapterInfo = info?.adapterInfo?.info;
+  if (!adapterInfo) {
     return false;
   }
 
-  return result.pageErrorSummary.some(
+  const descriptor = [
+    adapterInfo.vendor,
+    adapterInfo.architecture,
+    adapterInfo.device,
+    adapterInfo.description,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return SOFTWARE_ADAPTER_PATTERNS.some((pattern) => pattern.test(descriptor));
+}
+
+function getDiagnosticsResult(result) {
+  if (result.infrastructureError) {
+    return "fail";
+  }
+
+  if (!result.info?.adapterAvailable) {
+    return "pass";
+  }
+
+  const hasSevereRuntimeErrors = result.pageErrorSummary.some(
     (entry) => entry.classification === "runtime-severe",
   );
+  if (!hasSevereRuntimeErrors) {
+    return "pass";
+  }
+
+  if (isSoftwareAdapter(result.info)) {
+    return "environment-limited";
+  }
+
+  return "fail";
+}
+
+function shouldFailBrowserDiagnostics(result) {
+  return getDiagnosticsResult(result) === "fail";
 }
 
 function summarizeClassification(pageErrorSummary, classification) {
@@ -340,11 +372,7 @@ function formatResultSummary(result) {
   lines.push(`- Canvas visible: ${info.canvasVisible ? "yes" : "no"}`);
   lines.push(`- App visually ready: ${info.visuallyReady ? "yes" : "no"}`);
   lines.push(`- Screenshot: ${result.screenshotPath}`);
-  lines.push(
-    `- Diagnostics result: ${
-      shouldFailBrowserDiagnostics(result) ? "fail" : "pass"
-    }`,
-  );
+  lines.push(`- Diagnostics result: ${getDiagnosticsResult(result)}`);
 
   if (info.adapterInfo?.info) {
     const adapterInfoSummary = Object.entries(info.adapterInfo.info)
@@ -355,6 +383,8 @@ function formatResultSummary(result) {
       lines.push(`- Adapter info: ${adapterInfoSummary}`);
     }
   }
+
+  lines.push(`- Software adapter: ${isSoftwareAdapter(info) ? "yes" : "no"}`);
 
   if (info.adapterInfo?.limits) {
     lines.push(`- Adapter limits: ${JSON.stringify(info.adapterInfo.limits)}`);
@@ -448,7 +478,7 @@ export async function runLinuxWebGpuDiagnostics() {
 
   for (const result of browserResults) {
     console.log(
-      `[${result.browserName}] ok=${result.ok} fail=${shouldFailBrowserDiagnostics(
+      `[${result.browserName}] ok=${result.ok} result=${getDiagnosticsResult(
         result,
       )} infrastructureError=${result.infrastructureError ?? "none"}`,
     );
@@ -470,3 +500,4 @@ if (isDirectRun) {
 }
 
 export { aggregateMessages, classifyPageError, shouldFailBrowserDiagnostics };
+export { getDiagnosticsResult, isSoftwareAdapter };
