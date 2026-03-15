@@ -259,14 +259,16 @@ export function tickRaymarchRuntime(
     );
   }
   backboneModeBuffer.value.needsUpdate = true;
-  const backboneColorArray = backboneColorBuffer.value.array;
-  backboneColorArray.fill(0);
-  if (featureFrame?.backboneColorSlots?.length) {
-    backboneColorArray.set(
-      featureFrame.backboneColorSlots.subarray(0, backboneColorArray.length),
-    );
+  if ((uniforms.uChromesthesiaMix?.value ?? 0) > 0) {
+    const backboneColorArray = backboneColorBuffer.value.array;
+    backboneColorArray.fill(0);
+    if (featureFrame?.backboneColorSlots?.length) {
+      backboneColorArray.set(
+        featureFrame.backboneColorSlots.subarray(0, backboneColorArray.length),
+      );
+    }
+    backboneColorBuffer.value.needsUpdate = true;
   }
-  backboneColorBuffer.value.needsUpdate = true;
 
   const detailArray = detailModeBuffer.value.array;
   detailArray.fill(0);
@@ -274,14 +276,16 @@ export function tickRaymarchRuntime(
     detailArray.set(featureFrame.detailSlots.subarray(0, detailArray.length));
   }
   detailModeBuffer.value.needsUpdate = true;
-  const detailColorArray = detailColorBuffer.value.array;
-  detailColorArray.fill(0);
-  if (featureFrame?.detailColorSlots?.length) {
-    detailColorArray.set(
-      featureFrame.detailColorSlots.subarray(0, detailColorArray.length),
-    );
+  if ((uniforms.uChromesthesiaMix?.value ?? 0) > 0) {
+    const detailColorArray = detailColorBuffer.value.array;
+    detailColorArray.fill(0);
+    if (featureFrame?.detailColorSlots?.length) {
+      detailColorArray.set(
+        featureFrame.detailColorSlots.subarray(0, detailColorArray.length),
+      );
+    }
+    detailColorBuffer.value.needsUpdate = true;
   }
-  detailColorBuffer.value.needsUpdate = true;
 
   const backboneModeCount = countActiveModes(featureFrame?.backboneSlots);
   const detailModeCount = countActiveModes(featureFrame?.detailSlots);

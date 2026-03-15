@@ -5,6 +5,7 @@ import {
   getBrowserSupportStatus,
   getInitialBrowserSupportStatus,
   isMobileDevice,
+  probeBrowserSupport,
 } from "../../src/components/browserSupport.js";
 
 test("starts in checking mode for normal WebGPU boot", () => {
@@ -50,6 +51,37 @@ test("treats browsers without WebGPU as unsupported", async () => {
   );
 });
 
+test("reports missing navigator.gpu in probe diagnostics", async () => {
+  assert.deepEqual(
+    await probeBrowserSupport(false, {
+      userAgent:
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36",
+    }),
+    {
+      status: BROWSER_SUPPORT_STATUS.unsupported,
+      reason: "browser",
+      diagnostics: ["`navigator.gpu` is not available in this browser."],
+    },
+  );
+});
+
+test("reports missing requestAdapter in probe diagnostics", async () => {
+  assert.deepEqual(
+    await probeBrowserSupport(false, {
+      userAgent:
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36",
+      gpu: {},
+    }),
+    {
+      status: BROWSER_SUPPORT_STATUS.unsupported,
+      reason: "browser",
+      diagnostics: [
+        "`navigator.gpu.requestAdapter` is not available in this browser.",
+      ],
+    },
+  );
+});
+
 test("treats browsers without a usable WebGPU adapter as unsupported", async () => {
   assert.equal(
     await getBrowserSupportStatus(false, {
@@ -58,6 +90,23 @@ test("treats browsers without a usable WebGPU adapter as unsupported", async () 
       },
     }),
     BROWSER_SUPPORT_STATUS.unsupported,
+  );
+});
+
+test("reports null adapter results in probe diagnostics", async () => {
+  assert.deepEqual(
+    await probeBrowserSupport(false, {
+      userAgent:
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36",
+      gpu: {
+        requestAdapter: async () => null,
+      },
+    }),
+    {
+      status: BROWSER_SUPPORT_STATUS.unsupported,
+      reason: "browser",
+      diagnostics: ["`navigator.gpu.requestAdapter()` returned `null`."],
+    },
   );
 });
 
@@ -71,6 +120,27 @@ test("treats adapter probe failures as unsupported", async () => {
       },
     }),
     BROWSER_SUPPORT_STATUS.unsupported,
+  );
+});
+
+test("reports thrown adapter probe failures in diagnostics", async () => {
+  assert.deepEqual(
+    await probeBrowserSupport(false, {
+      userAgent:
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36",
+      gpu: {
+        requestAdapter: async () => {
+          throw new Error("adapter probe failed");
+        },
+      },
+    }),
+    {
+      status: BROWSER_SUPPORT_STATUS.unsupported,
+      reason: "browser",
+      diagnostics: [
+        "`navigator.gpu.requestAdapter()` failed: adapter probe failed",
+      ],
+    },
   );
 });
 

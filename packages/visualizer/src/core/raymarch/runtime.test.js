@@ -217,6 +217,44 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.modeSlotCount).toBe(0);
   });
 
+  it("skips color buffer uploads when chromesthesia mixing is disabled", () => {
+    const runtimeState = createRuntimeState();
+    runtimeState.uniforms.uChromesthesiaMix.value = 0;
+    runtimeState.backboneColorBuffer.value.array.set([9, 9, 9, 9]);
+    runtimeState.detailColorBuffer.value.array.set([7, 7, 7, 7]);
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        averageAmplitude: 48,
+        backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+        detailSlots: new Float32Array([4, 5, 5, 0.55]),
+        backboneColorSlots: new Float32Array([1, 0.1, 0.1, 0.9]),
+        detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5]),
+        bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+        transientEnergy: 0.7,
+        spectralCentroid: 0.42,
+        spectralFlux: 0.28,
+        structureSignal: 0.74,
+        energySignal: 0.68,
+        changeSignal: 0.61,
+        pulseSignal: 0.32,
+      },
+      1,
+      1 / 60,
+    );
+
+    expect(
+      Array.from(runtimeState.backboneColorBuffer.value.array.slice(0, 4)),
+    ).toEqual([9, 9, 9, 9]);
+    expect(
+      Array.from(runtimeState.detailColorBuffer.value.array.slice(0, 4)),
+    ).toEqual([7, 7, 7, 7]);
+    expect(runtimeState.backboneColorBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.detailColorBuffer.value.needsUpdate).toBe(false);
+  });
+
   it("keeps the volume active when only detail slots are populated", () => {
     const runtimeState = createRuntimeState();
     tickRaymarchRuntime(

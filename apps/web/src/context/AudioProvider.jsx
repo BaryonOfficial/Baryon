@@ -1,9 +1,15 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   getDefaultAudioSession,
   DEFAULT_MIC_ANALYSIS_SETTINGS,
 } from "@baryon/visualizer";
-import { AudioContext } from "./AudioContext";
+import { AudioContext, AudioSceneContext } from "./AudioContext";
 import { useAudioLogic } from "../components/hooks/useAudioLogic";
 import {
   SOUNDCLOUD_ENABLED,
@@ -901,6 +907,25 @@ export function AudioProvider({ children }) {
     };
   }, [resetAudioSession]);
 
+  const sceneValue = useMemo(
+    () => ({
+      setIsPlaying,
+      setIsAudioLoaded,
+      setIsEngineReady,
+      setMicRuntimeStatus,
+      micProfile,
+      resetAudioSession,
+    }),
+    [
+      micProfile,
+      resetAudioSession,
+      setIsAudioLoaded,
+      setIsEngineReady,
+      setIsPlaying,
+      setMicRuntimeStatus,
+    ],
+  );
+
   const value = {
     soundCloudEnabled: SOUNDCLOUD_ENABLED,
     activeSource,
@@ -958,6 +983,8 @@ export function AudioProvider({ children }) {
   };
 
   return (
-    <AudioContext.Provider value={value}>{children}</AudioContext.Provider>
+    <AudioSceneContext.Provider value={sceneValue}>
+      <AudioContext.Provider value={value}>{children}</AudioContext.Provider>
+    </AudioSceneContext.Provider>
   );
 }

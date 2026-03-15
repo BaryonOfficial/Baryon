@@ -1012,13 +1012,18 @@ function buildEmptyTarget(capacity) {
 
 function releaseLayer(layerState, capacity, options) {
   blendModalStack(layerState, buildEmptyTarget(capacity), capacity, options);
-  blendColorStack(
-    layerState,
-    buildEmptyTarget(capacity),
-    buildEmptyTarget(capacity),
-    capacity,
-    options.colorOptions,
-  );
+  if (options.colorOptions) {
+    blendColorStack(
+      layerState,
+      buildEmptyTarget(capacity),
+      buildEmptyTarget(capacity),
+      capacity,
+      options.colorOptions,
+    );
+  } else {
+    layerState.colorSlots?.fill(0);
+    layerState.referenceColorSlots?.fill(0);
+  }
   clearLayerMetadata(layerState);
 }
 
@@ -1324,6 +1329,7 @@ function resolveLayeredModalStacks({
   micNoiseGateActive,
   auditSettings,
   spectralCentroid,
+  includeChromesthesia,
 }) {
   let analysisEngine = "none";
   let pitchSource = "none";
@@ -1347,6 +1353,7 @@ function resolveLayeredModalStacks({
       radius,
       capacity: backboneCapacity,
       spectralCentroid,
+      includeChromesthesia,
     });
     const detailBuild = buildModalSlotsFromSpectralPeaks({
       fftMagnitudes,
@@ -1357,6 +1364,7 @@ function resolveLayeredModalStacks({
       peakCount: DETAIL_PEAK_COUNT,
       slotLimit: detailCapacity,
       spectralCentroid,
+      includeChromesthesia,
     });
     copyFloatArray(backboneState.slots, backboneBuild.slots);
     copyFloatArray(backboneState.referenceSlots, backboneBuild.referenceSlots);
@@ -1394,6 +1402,7 @@ function resolveLayeredModalStacks({
       peakCount: BACKBONE_PEAK_COUNT,
       slotLimit: backboneCapacity,
       spectralCentroid,
+      includeChromesthesia,
     });
     const detailTarget = buildModalSlotsFromSpectralPeaks({
       fftMagnitudes,
@@ -1404,6 +1413,7 @@ function resolveLayeredModalStacks({
       peakCount: DETAIL_PEAK_COUNT,
       slotLimit: detailCapacity,
       spectralCentroid,
+      includeChromesthesia,
     });
 
     spectralCandidates = detailTarget.peaks ?? backboneTarget.peaks ?? [];
@@ -1420,36 +1430,46 @@ function resolveLayeredModalStacks({
         release: BACKBONE_RELEASE,
         freshCap: BLEND_MAX_FRESH_PER_FRAME,
       });
-      blendColorStack(
-        backboneState,
-        backboneTarget.slots,
-        backboneTarget.colorSlots,
-        backboneCapacity,
-        {
-          attack: BACKBONE_COLOR_ATTACK,
-          tracking: BACKBONE_COLOR_TRACKING,
-          release: BACKBONE_COLOR_RELEASE,
-          maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
-        },
-      );
+      if (includeChromesthesia) {
+        blendColorStack(
+          backboneState,
+          backboneTarget.slots,
+          backboneTarget.colorSlots,
+          backboneCapacity,
+          {
+            attack: BACKBONE_COLOR_ATTACK,
+            tracking: BACKBONE_COLOR_TRACKING,
+            release: BACKBONE_COLOR_RELEASE,
+            maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
+          },
+        );
+      } else {
+        backboneState.colorSlots.fill(0);
+        backboneState.referenceColorSlots.fill(0);
+      }
       blendModalStack(detailState, detailTarget.slots, detailCapacity, {
         attack: DETAIL_ATTACK,
         tracking: DETAIL_ATTACK,
         release: DETAIL_RELEASE,
         freshCap: DETAIL_FRESH_CAP,
       });
-      blendColorStack(
-        detailState,
-        detailTarget.slots,
-        detailTarget.colorSlots,
-        detailCapacity,
-        {
-          attack: DETAIL_COLOR_ATTACK,
-          tracking: DETAIL_COLOR_TRACKING,
-          release: DETAIL_COLOR_RELEASE,
-          maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
-        },
-      );
+      if (includeChromesthesia) {
+        blendColorStack(
+          detailState,
+          detailTarget.slots,
+          detailTarget.colorSlots,
+          detailCapacity,
+          {
+            attack: DETAIL_COLOR_ATTACK,
+            tracking: DETAIL_COLOR_TRACKING,
+            release: DETAIL_COLOR_RELEASE,
+            maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
+          },
+        );
+      } else {
+        detailState.colorSlots.fill(0);
+        detailState.referenceColorSlots.fill(0);
+      }
       setLayerMetadata(
         backboneState,
         backboneTarget,
@@ -1475,24 +1495,28 @@ function resolveLayeredModalStacks({
         tracking: BACKBONE_ATTACK,
         release: BACKBONE_RELEASE,
         freshCap: BLEND_MAX_FRESH_PER_FRAME,
-        colorOptions: {
-          attack: BACKBONE_COLOR_ATTACK,
-          tracking: BACKBONE_COLOR_TRACKING,
-          release: BACKBONE_COLOR_RELEASE,
-          maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
-        },
+        colorOptions: includeChromesthesia
+          ? {
+              attack: BACKBONE_COLOR_ATTACK,
+              tracking: BACKBONE_COLOR_TRACKING,
+              release: BACKBONE_COLOR_RELEASE,
+              maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
+            }
+          : null,
       });
       releaseLayer(detailState, detailCapacity, {
         attack: DETAIL_ATTACK,
         tracking: DETAIL_ATTACK,
         release: DETAIL_RELEASE,
         freshCap: DETAIL_FRESH_CAP,
-        colorOptions: {
-          attack: DETAIL_COLOR_ATTACK,
-          tracking: DETAIL_COLOR_TRACKING,
-          release: DETAIL_COLOR_RELEASE,
-          maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
-        },
+        colorOptions: includeChromesthesia
+          ? {
+              attack: DETAIL_COLOR_ATTACK,
+              tracking: DETAIL_COLOR_TRACKING,
+              release: DETAIL_COLOR_RELEASE,
+              maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
+            }
+          : null,
       });
       usedDecay = true;
     } else {
@@ -1510,24 +1534,28 @@ function resolveLayeredModalStacks({
       tracking: BACKBONE_ATTACK,
       release: BACKBONE_RELEASE,
       freshCap: BLEND_MAX_FRESH_PER_FRAME,
-      colorOptions: {
-        attack: BACKBONE_COLOR_ATTACK,
-        tracking: BACKBONE_COLOR_TRACKING,
-        release: BACKBONE_COLOR_RELEASE,
-        maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
-      },
+      colorOptions: includeChromesthesia
+        ? {
+            attack: BACKBONE_COLOR_ATTACK,
+            tracking: BACKBONE_COLOR_TRACKING,
+            release: BACKBONE_COLOR_RELEASE,
+            maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
+          }
+        : null,
     });
     releaseLayer(detailState, detailCapacity, {
       attack: DETAIL_ATTACK,
       tracking: DETAIL_ATTACK,
       release: DETAIL_RELEASE,
       freshCap: DETAIL_FRESH_CAP,
-      colorOptions: {
-        attack: DETAIL_COLOR_ATTACK,
-        tracking: DETAIL_COLOR_TRACKING,
-        release: DETAIL_COLOR_RELEASE,
-        maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
-      },
+      colorOptions: includeChromesthesia
+        ? {
+            attack: DETAIL_COLOR_ATTACK,
+            tracking: DETAIL_COLOR_TRACKING,
+            release: DETAIL_COLOR_RELEASE,
+            maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
+          }
+        : null,
     });
     usedDecay = true;
   } else {
@@ -1678,6 +1706,7 @@ export function buildAudioFeatureFrame({
   beatSettings = undefined,
   frameTimeMs = undefined,
   micAnalysisSettings = DEFAULT_MIC_ANALYSIS_SETTINGS,
+  includeChromesthesia = true,
 }) {
   const capacity = featureState?.capacity ?? AUDIO_DEFAULTS.capacity;
   const analysisMemory = getAnalysisMemory(featureState, capacity);
@@ -1708,6 +1737,11 @@ export function buildAudioFeatureFrame({
   const currentFrameAtMs = getFrameTimeMs(frameTimeMs);
   const resolvedMicAnalysisSettings =
     normalizeMicAnalysisSettings(micAnalysisSettings);
+  const shouldBuildChromesthesia = Boolean(
+    includeChromesthesia ||
+    resolvedAuditSettings.enabled ||
+    resolvedAuditSettings.freezeModeSlots,
+  );
   const currentFrame = (analysisMemory.frameId ?? 0) + 1;
 
   if (featureState?.analysis) {
@@ -1790,12 +1824,18 @@ export function buildAudioFeatureFrame({
       micNoiseGateActive,
       auditSettings: resolvedAuditSettings,
       spectralCentroid: spectralCentroidHint,
+      includeChromesthesia: shouldBuildChromesthesia,
     });
 
   copyFloatArray(backboneSlots, backboneState.slots);
   copyFloatArray(detailSlots, detailState.slots);
-  copyFloatArray(backboneColorSlots, backboneState.colorSlots);
-  copyFloatArray(detailColorSlots, detailState.colorSlots);
+  if (shouldBuildChromesthesia) {
+    copyFloatArray(backboneColorSlots, backboneState.colorSlots);
+    copyFloatArray(detailColorSlots, detailState.colorSlots);
+  } else {
+    backboneColorSlots.fill(0);
+    detailColorSlots.fill(0);
+  }
   copyFloatArray(referenceBackboneSlots, backboneState.referenceSlots);
   copyFloatArray(referenceDetailSlots, detailState.referenceSlots);
   combineModalLayers(
