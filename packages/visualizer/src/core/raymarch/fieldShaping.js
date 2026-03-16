@@ -1,36 +1,51 @@
 export const EDGE_FADE_START = 0.88;
 export const EDGE_FADE_END = 1.0;
-export const SHELL_WEIGHT_MIN = 0.62;
+export const SHELL_WEIGHT_MIN = 0.54;
 export const SHELL_WEIGHT_START = 0.16;
 export const SHELL_WEIGHT_END = 0.96;
-export const SHELL_WEIGHT_MAX = 0.78;
+export const SHELL_WEIGHT_MAX = 0.7;
 export const COLOR_BLEND_START = 0.42;
 export const COLOR_BLEND_END = 0.94;
-export const DENSITY_BOOST = 3.5;
+export const DENSITY_BOOST = 4.6;
 export const DENSITY_MAX = 6.0;
-export const LOW_DENSITY_FADE_START = 0.14;
-export const LOW_DENSITY_FADE_END = 0.42;
+export const LOW_DENSITY_FADE_START = 0.18;
+export const LOW_DENSITY_FADE_END = 0.3;
 export const WEAK_CONTOUR_START = 0.32;
 export const WEAK_CONTOUR_END = 0.82;
 export const SILHOUETTE_MIN_VISIBILITY = 0.28;
 export const DETAIL_LAYER_WEIGHT = 0.35;
 export const BROAD_BAND_SCALE = 1.65;
-export const CONTOUR_BLEND = 0.72;
+export const CONTOUR_BLEND = 0.82;
 export const INTERIOR_MASK_START = 0.52;
 export const INTERIOR_MASK_END = 0.96;
-export const BODY_DENSITY_GAIN = 0.26;
+export const BODY_DENSITY_GAIN = 0.12;
+export const BODY_DENSITY_MIX = 0.5;
 export const BODY_BOUNDARY_REDUCTION = 0.35;
 export const RIM_BLOOM_BIAS_BASE = 0.35;
 export const RIM_BLOOM_BIAS_GAIN = 0.45;
+export const RIM_COMPRESSION_BOUNDARY_GAIN = 0.45;
+export const RIM_COMPRESSION_OUTER_GAIN = 0.12;
 export const INNER_BAND_WEIGHT = 0.18;
 export const LOW_MID_BAND_WEIGHT = 0.08;
-export const HIGH_MID_BAND_WEIGHT = 0.05;
-export const AIR_BAND_WEIGHT = 0.08;
+export const HIGH_MID_BAND_WEIGHT = 0.035;
+export const AIR_BAND_WEIGHT = 0.055;
 export const COLOR_BIAS_SCALE = 0.82;
+export const BEAM_POWER_BASE = 1.55;
+export const BEAM_POWER_TRANSIENT_GAIN = 0.35;
+export const BEAM_TRANSIENT_GAIN = 0.9;
+export const BEAM_SPECTRAL_GAIN = 0.55;
+export const EMISSION_ROLLOFF_BASE = 0.42;
+export const EMISSION_ROLLOFF_TRANSIENT_GAIN = 0.18;
+export const EMISSION_ROLLOFF_MIX = 0.68;
+export const HOT_CORE_START = 0.56;
+export const HOT_CORE_END = 0.94;
 export const HIGHLIGHT_MASK_START = 0.38;
 export const HIGHLIGHT_MASK_END = 0.96;
 export const BOUNDARY_CONTOUR_ACCENT_WEIGHT = 0.08;
 export const HIGHLIGHT_CONTOUR_ACCENT_WEIGHT = 0.04;
+export const HOLOGRAPHIC_TINT_RED = 0.62;
+export const HOLOGRAPHIC_TINT_GREEN = 0.94;
+export const HOLOGRAPHIC_TINT_BLUE = 1.0;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -38,6 +53,10 @@ function clamp01(value) {
 
 function mix(a, b, t) {
   return a * (1 - t) + b * t;
+}
+
+function mixColor(left, right, t) {
+  return left.map((channel, index) => mix(channel, right[index] ?? channel, t));
 }
 
 function smoothstep(edge0, edge1, x) {
@@ -140,6 +159,136 @@ export function deriveBodyDensity({
     interiorMask,
     bodyDensity,
   };
+}
+
+export function deriveBeamMask({
+  contourShape,
+  shellWeight,
+  structure,
+  transientEnergy,
+  spectralFlux,
+  radialDistance,
+  rimCompression,
+  boundaryMask,
+}) {
+  const outerShellAccent = smoothstep(0.35, 1.0, radialDistance);
+  const transientBoost =
+    1 +
+    transientEnergy * BEAM_TRANSIENT_GAIN +
+    spectralFlux * BEAM_SPECTRAL_GAIN;
+  const rimCompressionMix = clamp01(
+    boundaryMask * rimCompression * RIM_COMPRESSION_BOUNDARY_GAIN +
+      outerShellAccent * rimCompression * RIM_COMPRESSION_OUTER_GAIN,
+  );
+  const compressedShellWeight = shellWeight * (1 - rimCompressionMix);
+  const beamCore = Math.pow(
+    contourShape,
+    BEAM_POWER_BASE + transientEnergy * BEAM_POWER_TRANSIENT_GAIN,
+  );
+  const beamMask =
+    beamCore * structure * compressedShellWeight * transientBoost;
+
+  return {
+    outerShellAccent,
+    transientBoost,
+    rimCompressionMix,
+    compressedShellWeight,
+    beamCore,
+    beamMask,
+  };
+}
+
+export function deriveEmissionRolloff({ beamDensity, transientEnergy }) {
+  const rolloffStrength =
+    EMISSION_ROLLOFF_BASE + transientEnergy * EMISSION_ROLLOFF_TRANSIENT_GAIN;
+  const softCappedBeamDensity =
+    beamDensity / (1 + beamDensity * rolloffStrength);
+  const rolledBeamDensity = mix(
+    beamDensity,
+    softCappedBeamDensity,
+    EMISSION_ROLLOFF_MIX,
+  );
+
+  return {
+    rolloffStrength,
+    softCappedBeamDensity,
+    rolledBeamDensity,
+  };
+}
+
+export function deriveVisibleDensity({ density }) {
+  const visibilityGate = smoothstep(
+    LOW_DENSITY_FADE_START,
+    LOW_DENSITY_FADE_END,
+    density,
+  );
+
+  return {
+    visibilityGate,
+    visibleDensity: density * visibilityGate,
+  };
+}
+
+export function deriveHolographicFresnel({
+  normalViewDot,
+  holographicIntensity,
+  holographicFresnelPower,
+}) {
+  const fresnelBase = clamp01(
+    Math.pow(
+      1 - Math.abs(normalViewDot),
+      Math.max(0.01, holographicFresnelPower ?? 1),
+    ),
+  );
+  const holographicFresnel = fresnelBase * clamp01(holographicIntensity ?? 0);
+
+  return {
+    fresnelBase,
+    holographicFresnel,
+  };
+}
+
+export function deriveHolographicColorMix({
+  baseColor,
+  surfaceColor,
+  holographicShift,
+  holographicFresnel,
+}) {
+  const tintTarget = [
+    HOLOGRAPHIC_TINT_RED,
+    HOLOGRAPHIC_TINT_GREEN,
+    HOLOGRAPHIC_TINT_BLUE,
+  ];
+  const tintBlend = clamp01(0.25 + (holographicShift ?? 0) * 0.75);
+  const accentColor = mixColor(surfaceColor, tintTarget, tintBlend);
+  const colorMix = clamp01(
+    (holographicFresnel ?? 0) * (0.35 + (holographicShift ?? 0) * 0.65),
+  );
+  const emissiveLift = clamp01(
+    (holographicFresnel ?? 0) * (0.12 + (holographicShift ?? 0) * 0.18),
+  );
+
+  return {
+    accentColor,
+    colorMix,
+    emissiveLift,
+    holographicColor: mixColor(baseColor, accentColor, colorMix),
+  };
+}
+
+export function deriveHotCoreMix({
+  beamMask,
+  highlightMask,
+  contourMix,
+  transientEnergy,
+}) {
+  const hotCoreSignal =
+    beamMask * (0.76 + contourMix * 0.14) +
+    highlightMask * 0.12 +
+    transientEnergy * 0.08;
+  const compressedHotCoreSignal = hotCoreSignal / (1 + hotCoreSignal * 0.22);
+
+  return smoothstep(HOT_CORE_START, HOT_CORE_END, compressedHotCoreSignal);
 }
 
 export function deriveStableContourAccent({

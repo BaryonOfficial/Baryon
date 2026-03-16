@@ -7,9 +7,9 @@ export const AUDIO_DEFAULTS = Object.freeze({
 
 export const SIMULATION_DEFAULTS = Object.freeze({
   radius: 3.0,
-  zeroPointPrecision: 0.15,
-  structureMin: 0.08,
-  structureMax: 0.4,
+  zeroPointPrecision: 0.22,
+  structureMin: 0.12,
+  structureMax: 0.46,
 });
 
 export const RENDER_DEFAULTS = Object.freeze({
@@ -19,17 +19,18 @@ export const RENDER_DEFAULTS = Object.freeze({
   idleLogoAlpha: 0.08,
   idleLogoSize: 1.0,
   backgroundColor: "#000000",
-  volumeColor: "#cfb53b",
-  surfaceColor: "#ffffff",
+  volumeColor: "#56d7ff",
+  surfaceColor: "#f7fdff",
   colorMode: /** @type {"static" | "chromesthesia"} */ ("static"),
   chromesthesiaMix: 0.65,
   outputMode: "transparent",
   outputBackgroundColor: "#000000",
   bloomEnabled: true,
-  bloomStrength: 0.16,
-  bloomRadius: 0.09,
-  bloomThreshold: 0.34,
-  bloomResponseBias: 0.4,
+  bloomStrength: 0.1,
+  bloomRadius: 0.04,
+  bloomThreshold: 0.46,
+  bloomResponseBias: 0.52,
+  performanceHudEnabled: false,
 });
 
 export const REACTIVITY_DEFAULTS = Object.freeze({
@@ -49,13 +50,16 @@ export const BEAT_DEFAULTS = Object.freeze({
 });
 
 export const RAYMARCH_DEFAULTS = Object.freeze({
-  raymarchSteps: 80,
-  densityGain: 3.4,
-  absorption: 2.1,
-  opacityGain: 1.35,
-  contourSharpness: 4.8,
-  rimBloomBias: 0.5,
-  rimCompression: 0.48,
+  raymarchSteps: 64,
+  densityGain: 2.2,
+  absorption: 2.55,
+  opacityGain: 1.24,
+  contourSharpness: 7.3,
+  rimBloomBias: 0.34,
+  rimCompression: 0.84,
+  holographicIntensity: 0.45,
+  holographicShift: 0.35,
+  holographicFresnelPower: 3.2,
 });
 
 export const AUDIT_DEFAULTS = Object.freeze({

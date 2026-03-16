@@ -83,11 +83,16 @@ export function setupCymatics2d(baryonGeometry, parameters, audioConfig) {
       lowStepBloomGuard: deriveLowStepBloomGuard(
         RAYMARCH_DEFAULTS.raymarchSteps,
       ),
+      baseStrength: RENDER_DEFAULTS.bloomStrength,
+      baseRadius: RENDER_DEFAULTS.bloomRadius,
+      baseThreshold: RENDER_DEFAULTS.bloomThreshold,
       effectiveStrength: RENDER_DEFAULTS.bloomStrength,
       effectiveRadius: RENDER_DEFAULTS.bloomRadius,
       effectiveThreshold: RENDER_DEFAULTS.bloomThreshold,
     },
     baseDensityGain: uniforms.uDensityGain.value,
+    baseThreshold: uniforms.uThreshold.value,
+    baseContourSharpness: uniforms.uContourSharpness.value,
     chromesthesia: {
       colorMode: RENDER_DEFAULTS.colorMode,
       chromesthesiaMix:

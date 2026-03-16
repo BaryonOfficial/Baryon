@@ -14,6 +14,7 @@ export function BaryonScene({
   micProfile,
   controlsRef,
   visualizationMethod,
+  onPerformanceHudSnapshotChange,
 }) {
   const { camera, gl, scene } = useThree();
   const { ensurePipeline, postNodesRef } = useBaryonPipeline(gl, scene, camera);
@@ -45,6 +46,7 @@ export function BaryonScene({
     visualizationMethod,
     ensurePipeline,
     postNodesRef,
+    onPerformanceHudSnapshotChange,
   });
 
   return (

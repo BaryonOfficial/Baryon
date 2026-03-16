@@ -22,6 +22,7 @@ describe("raymarch volume material", () => {
     expect(mesh.geometry).toBeInstanceOf(THREE.BoxGeometry);
     expect(mesh.material.transparent).toBe(true);
     expect(mesh.material.outputNode).toBeTruthy();
+    expect(mesh.material.offsetNode).toBeTruthy();
     expect(raymarchOpacityNode.isPropertyNode).toBe(true);
   });
 });

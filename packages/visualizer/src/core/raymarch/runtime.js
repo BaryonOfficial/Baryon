@@ -1,15 +1,24 @@
 import * as THREE from "three";
 import { REACTIVITY_DEFAULTS } from "../../defaults.js";
 import { isFieldDrivenState } from "../fieldState.js";
+import {
+  deriveHolographicColorMix,
+  deriveHolographicFresnel,
+} from "./fieldShaping.js";
 
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
 const RESPONSE_ATTACK = 7;
 const RESPONSE_RELEASE = 2.6;
 const RESPONSE_IDLE_RELEASE = 5.5;
-const ACCENT_ATTACK = 10;
-const ACCENT_RELEASE = 6.5;
+const ACCENT_ATTACK = 15;
+const ACCENT_RELEASE = 8.5;
 const SCALE_RESPONSE_AMOUNT = 0.065;
-const DENSITY_RESPONSE_AMOUNT = 0.18;
+const DENSITY_RESPONSE_AMOUNT = 0.08;
+const THRESHOLD_RESPONSE_REDUCTION = 0.42;
+const CONTOUR_RESPONSE_GAIN = 1.85;
+const BLOOM_STRENGTH_RESPONSE_GAIN = 0.24;
+const BLOOM_RADIUS_RESPONSE_GAIN = 0.22;
+const BLOOM_THRESHOLD_RESPONSE_GAIN = 0.06;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -60,6 +69,11 @@ function estimateLayeredAmplitude(featureFrame) {
   return backboneAmplitude + detailAmplitude * 0.35;
 }
 
+function deriveLightAsymmetry(primaryIntensity, secondaryIntensity) {
+  const strongest = Math.max(primaryIntensity, secondaryIntensity, 1e-4);
+  return Math.abs(primaryIntensity - secondaryIntensity) / strongest;
+}
+
 function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const avgAmplitude = estimateLayeredAmplitude(featureFrame);
   const densityGain = runtimeState.uniforms.uDensityGain.value;
@@ -68,12 +82,18 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const stepBudget = Math.round(runtimeState.volumeMesh.material.steps);
   const rimBloomBias = runtimeState.uniforms.uRimBloomBias?.value ?? 0;
   const rimCompression = runtimeState.uniforms.uRimCompression?.value ?? 0;
+  const holographicIntensity =
+    runtimeState.uniforms.uHolographicIntensity?.value ?? 0;
+  const holographicShift = runtimeState.uniforms.uHolographicShift?.value ?? 0;
+  const holographicFresnelPower =
+    runtimeState.uniforms.uHolographicFresnelPower?.value ?? 0;
   const bloomResponseBias = runtimeState.bloomTuning?.bloomResponseBias ?? 0;
   const stepReference = runtimeState.bloomTuning?.stepReference ?? stepBudget;
   const stepCompensation = runtimeState.bloomTuning?.stepCompensation ?? 1;
   const lowStepBloomGuard = runtimeState.bloomTuning?.lowStepBloomGuard ?? 0;
   const effectiveBloomStrength =
     runtimeState.bloomTuning?.effectiveStrength ?? 0;
+  const effectiveBloomRadius = runtimeState.bloomTuning?.effectiveRadius ?? 0;
   const effectiveBloomThreshold =
     runtimeState.bloomTuning?.effectiveThreshold ?? 0;
   const transientEnergy = featureFrame?.transientEnergy ?? 0;
@@ -105,6 +125,24 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     missRatio = 0,
     avgSilhouetteSuppression = 0,
   } = runtimeState.stabilityStats ?? {};
+  const primaryLightIntensity =
+    runtimeState.sceneLighting?.primary?.intensity ?? 0;
+  const secondaryLightIntensity =
+    runtimeState.sceneLighting?.secondary?.intensity ?? 0;
+  const { holographicFresnel } = deriveHolographicFresnel({
+    normalViewDot: 0.35,
+    holographicIntensity,
+    holographicFresnelPower,
+  });
+  const { colorMix: holographicColorMix, emissiveLift } =
+    deriveHolographicColorMix({
+      baseColor: [0.34, 0.62, 0.9],
+      surfaceColor: [0.66, 0.86, 1.0],
+      holographicShift,
+      holographicFresnel,
+    });
+  const holographicReferenceStrength =
+    holographicFresnel * (0.7 + holographicColorMix * 0.3) + emissiveLift * 0.2;
 
   return {
     fieldState,
@@ -141,14 +179,28 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     lowStepBloomGuard,
     rimBloomBias,
     rimCompression,
+    holographicIntensity,
+    holographicShift,
+    holographicFresnelPower,
     bloomResponseBias,
     effectiveBloomStrength,
+    effectiveBloomRadius,
     effectiveBloomThreshold,
     bloomRisk,
+    effectiveThreshold: runtimeState.uniforms.uThreshold?.value ?? 0,
+    effectiveContourSharpness:
+      runtimeState.uniforms.uContourSharpness?.value ?? 0,
     chromesthesiaMix: runtimeState.uniforms.uChromesthesiaMix?.value ?? 0,
+    holographicReferenceStrength,
     avgRaySegmentLength,
     missRatio,
     avgSilhouetteSuppression,
+    primaryLightIntensity,
+    secondaryLightIntensity,
+    sceneLightAsymmetry: deriveLightAsymmetry(
+      primaryLightIntensity,
+      secondaryLightIntensity,
+    ),
     volumeVisible: runtimeState.volumeMesh.visible,
     idleOverlayVisible: runtimeState.idleOverlay.visible,
   };
@@ -229,6 +281,73 @@ function updateReactiveResponse(
   );
 }
 
+function updateLaserResponse(runtimeState, featureFrame) {
+  const uniforms = runtimeState.uniforms;
+  const baseThreshold =
+    runtimeState.baseThreshold ?? uniforms.uThreshold?.value ?? 0.001;
+  const baseContourSharpness =
+    runtimeState.baseContourSharpness ?? uniforms.uContourSharpness?.value ?? 1;
+  const baseBloomStrength =
+    runtimeState.bloomTuning?.baseStrength ??
+    runtimeState.bloomTuning?.effectiveStrength ??
+    0;
+  const baseBloomRadius =
+    runtimeState.bloomTuning?.baseRadius ??
+    runtimeState.bloomTuning?.effectiveRadius ??
+    0;
+  const baseBloomThreshold =
+    runtimeState.bloomTuning?.baseThreshold ??
+    runtimeState.bloomTuning?.effectiveThreshold ??
+    0;
+  const reactiveGate = clamp01(runtimeState.reactivityTuning?.reactivity ?? 1);
+  const transientEnergy =
+    clamp01(featureFrame?.transientEnergy ?? 0) * reactiveGate;
+  const spectralFlux = clamp01(featureFrame?.spectralFlux ?? 0) * reactiveGate;
+  const responseEnvelope = clamp01(runtimeState.responseEnvelope ?? 0);
+  const accentEnvelope = clamp01(runtimeState.accentEnvelope ?? 0);
+  const bloomResponseSignal = clamp01(runtimeState.bloomResponseSignal ?? 0);
+  const thresholdResponse = clamp01(
+    responseEnvelope * 0.24 +
+      accentEnvelope * 0.58 +
+      bloomResponseSignal * 0.22 +
+      transientEnergy * 0.18,
+  );
+  const contourResponse = clamp01(
+    responseEnvelope * 0.2 +
+      accentEnvelope * 0.66 +
+      bloomResponseSignal * 0.28 +
+      transientEnergy * 0.34 +
+      spectralFlux * 0.22,
+  );
+  const bloomPulse = clamp01(
+    accentEnvelope * 0.68 + bloomResponseSignal * 0.42 + transientEnergy * 0.28,
+  );
+
+  uniforms.uThreshold.value = Math.max(
+    0.001,
+    baseThreshold * (1 - thresholdResponse * THRESHOLD_RESPONSE_REDUCTION),
+  );
+  uniforms.uContourSharpness.value = clamp(
+    baseContourSharpness + contourResponse * CONTOUR_RESPONSE_GAIN,
+    1,
+    8,
+  );
+  runtimeState.bloomTuning = {
+    ...(runtimeState.bloomTuning ?? {}),
+    effectiveStrength:
+      baseBloomStrength * (1 + bloomPulse * BLOOM_STRENGTH_RESPONSE_GAIN),
+    effectiveRadius: Math.max(
+      0,
+      baseBloomRadius * (1 - bloomPulse * BLOOM_RADIUS_RESPONSE_GAIN),
+    ),
+    effectiveThreshold: clamp(
+      baseBloomThreshold + bloomPulse * BLOOM_THRESHOLD_RESPONSE_GAIN,
+      0,
+      1,
+    ),
+  };
+}
+
 export function tickRaymarchRuntime(
   runtimeState,
   featureFrame,
@@ -298,6 +417,7 @@ export function tickRaymarchRuntime(
   uniforms.uTransientEnergy.value = featureFrame?.transientEnergy ?? 0;
   uniforms.uSpectralCentroid.value = featureFrame?.spectralCentroid ?? 0;
   uniforms.uSpectralFlux.value = featureFrame?.spectralFlux ?? 0;
+  updateLaserResponse(runtimeState, featureFrame);
   uniforms.uDensityGain.value =
     (runtimeState.baseDensityGain ?? uniforms.uDensityGain.value) *
     (1 + (runtimeState.scaleSignal ?? 0) * DENSITY_RESPONSE_AMOUNT);
@@ -339,17 +459,24 @@ export function createRaymarchSceneRoot({ volumeMesh, idleOverlay, radius }) {
   visualRoot.add(idleOverlay);
   root.add(visualRoot);
 
-  const keyLight = new THREE.PointLight(0xfff6e8, 26, radius * 8, 2);
-  keyLight.position.set(radius * 1.5, radius * 1.2, radius * 2.4);
-  keyLight.castShadow = true;
-  keyLight.shadow.mapSize.set(256, 256);
-  root.add(keyLight);
+  // Keep the orb primarily self-emissive, but retain a very weak symmetric fill
+  // rig so the volume stays readable across backends that expect direct lights.
+  const primaryLight = new THREE.PointLight(0xe6f7ff, 0.9, radius * 6, 2);
+  primaryLight.position.set(radius * 1.15, radius * 0.85, radius * 1.8);
+  primaryLight.castShadow = false;
+  root.add(primaryLight);
 
-  const fillLight = new THREE.PointLight(0xffd7a3, 18, radius * 8, 2);
-  fillLight.position.set(-radius * 1.7, -radius * 1.1, radius * 1.8);
-  fillLight.castShadow = true;
-  fillLight.shadow.mapSize.set(256, 256);
-  root.add(fillLight);
+  const secondaryLight = new THREE.PointLight(0xe6f7ff, 0.9, radius * 6, 2);
+  secondaryLight.position.set(-radius * 1.15, radius * 0.85, radius * 1.8);
+  secondaryLight.castShadow = false;
+  root.add(secondaryLight);
 
-  return { root, visualRoot };
+  return {
+    root,
+    visualRoot,
+    sceneLighting: {
+      primary: primaryLight,
+      secondary: secondaryLight,
+    },
+  };
 }

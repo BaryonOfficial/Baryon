@@ -55,14 +55,14 @@ function deriveBloomResponse(controls, stepBudget) {
     strength: Math.max(
       0,
       controls.bloomStrength *
-        (1 - bloomResponseBias * 0.22) *
+        (1 - bloomResponseBias * 0.2) *
         (1 - lowStepBloomGuard * 0.12),
     ),
-    radius: Math.max(0, controls.bloomRadius * (1 - bloomResponseBias * 0.08)),
+    radius: Math.max(0, controls.bloomRadius * (1 - bloomResponseBias * 0.16)),
     threshold: Math.min(
       1,
       controls.bloomThreshold +
-        bloomResponseBias * 0.08 +
+        bloomResponseBias * 0.1 +
         lowStepBloomGuard * 0.05,
     ),
   };
@@ -76,6 +76,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
   ]),
   [CONTROL_HANDLERS.shared]: Object.freeze([
     "backgroundColor",
+    "performanceHudEnabled",
     "visualizationMethod",
   ]),
   [CONTROL_HANDLERS.output]: Object.freeze([
@@ -99,6 +100,9 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "structurePersistence",
     "rimBloomBias",
     "rimCompression",
+    "holographicIntensity",
+    "holographicShift",
+    "holographicFresnelPower",
     "idleLogoIntensity",
     "idleLogoSize",
   ]),
@@ -148,6 +152,7 @@ export function applySharedControls(gl, controls) {
   gl.setClearColor(TRANSPARENT_CLEAR_COLOR, 0);
   return {
     backgroundColor: controls.backgroundColor,
+    performanceHudEnabled: Boolean(controls.performanceHudEnabled),
     clearAlpha: 0,
     visualizationMethod: controls.visualizationMethod,
   };
@@ -206,6 +211,8 @@ function applyCommonVisualizationControls(runtimeState, controls) {
   uniforms.uOpacityGain.value = controls.opacityGain;
   uniforms.uContourSharpness.value = controls.contourSharpness;
   runtimeState.baseDensityGain = controls.densityGain;
+  runtimeState.baseThreshold = controls.zeroPointPrecision;
+  runtimeState.baseContourSharpness = controls.contourSharpness;
   runtimeState.reactivityTuning = {
     ...(runtimeState.reactivityTuning ?? {}),
     reactivity: controls.reactivity ?? REACTIVITY_DEFAULTS.reactivity,
@@ -287,6 +294,9 @@ export function applyRaymarchControls(runtimeState, controls) {
   uniforms.uAbsorption.value = controls.absorption;
   uniforms.uRimBloomBias.value = controls.rimBloomBias;
   uniforms.uRimCompression.value = controls.rimCompression;
+  uniforms.uHolographicIntensity.value = controls.holographicIntensity;
+  uniforms.uHolographicShift.value = controls.holographicShift;
+  uniforms.uHolographicFresnelPower.value = controls.holographicFresnelPower;
   uniforms.uRaymarchSteps.value = stepBudget;
 
   if (runtimeState.volumeMesh?.material) {
@@ -304,6 +314,9 @@ export function applyRaymarchControls(runtimeState, controls) {
       absorption: uniforms.uAbsorption.value,
       rimBloomBias: uniforms.uRimBloomBias.value,
       rimCompression: uniforms.uRimCompression.value,
+      holographicIntensity: uniforms.uHolographicIntensity.value,
+      holographicShift: uniforms.uHolographicShift.value,
+      holographicFresnelPower: uniforms.uHolographicFresnelPower.value,
       raymarchSteps: Math.round(runtimeState.volumeMesh.material.steps),
     },
   });
@@ -361,6 +374,9 @@ export function applyBloomControls(pipelineState, controls) {
       stepReference: effective.stepReference,
       stepCompensation: effective.stepCompensation,
       lowStepBloomGuard: effective.lowStepBloomGuard,
+      baseStrength: effective.strength,
+      baseRadius: effective.radius,
+      baseThreshold: effective.threshold,
       effectiveStrength: effective.strength,
       effectiveRadius: effective.radius,
       effectiveThreshold: effective.threshold,

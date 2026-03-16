@@ -24,8 +24,12 @@ export function createRuntimeDiagnostics() {
   return {
     activeFrameCount: 0,
     averageFrameTimeMs: 0,
+    smoothedFrameTimeMs: 0,
     worstFrameTimeMs: 0,
     longFrameCount: 0,
+    currentPixelRatio: 1,
+    basePixelRatio: 1,
+    lastFrameWallTimeMs: null,
     lastLongFrame: null,
     lastVisibilityChange: null,
     rendererMode: null,

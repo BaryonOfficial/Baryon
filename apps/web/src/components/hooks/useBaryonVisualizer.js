@@ -21,7 +21,9 @@ import {
 } from "./baryonVisualizerRuntimeState.js";
 import {
   applyCachedControlSnapshots,
+  applyReactiveBloomState,
   getPlaybackDiagnosticDpr,
+  publishPerformanceHudSnapshot,
   publishDevtoolsSnapshots,
   resolveFeatureFrame,
   syncMicRuntimeStatus,
@@ -46,8 +48,13 @@ export function useBaryonVisualizer({
   visualizationMethod = DEFAULT_VISUALIZATION_METHOD,
   ensurePipeline,
   postNodesRef,
+  onPerformanceHudSnapshotChange,
 }) {
   const audioRef = useRef(getDefaultAudioSession());
+  const performanceHudStateRef = useRef({
+    lastPublishedAtMs: Number.NEGATIVE_INFINITY,
+    wasVisible: false,
+  });
   const {
     points,
     runtimeRef,
@@ -115,8 +122,13 @@ export function useBaryonVisualizer({
         lastMicRuntimeStatusRef.current?.profile ?? "voice-tone";
       lastMicRuntimeStatusRef.current = null;
       runtimeDiagnosticsRef.current = createRuntimeDiagnostics();
+      performanceHudStateRef.current = {
+        lastPublishedAtMs: Number.NEGATIVE_INFINITY,
+        wasVisible: false,
+      };
       lastAudioIssueSignatureRef.current = null;
       clearCachedControlsSnapshot(cachedControlSnapshotsRef);
+      onPerformanceHudSnapshotChange?.(null);
       setMicRuntimeStatus?.({
         active: false,
         calibrating: false,
@@ -140,6 +152,7 @@ export function useBaryonVisualizer({
     pixelRatioRef,
     runtimeDiagnosticsRef,
     cachedControlSnapshotsRef,
+    onPerformanceHudSnapshotChange,
     setIsAudioLoaded,
     setIsPlaying,
     setMicRuntimeStatus,
@@ -263,6 +276,19 @@ export function useBaryonVisualizer({
       gl: renderLoopContext.gl,
       renderLoopRefs,
     });
+    if (controls.performanceHudEnabled) {
+      publishPerformanceHudSnapshot({
+        runtimeDiagnostics,
+        onPerformanceHudSnapshotChange,
+        performanceHudState: performanceHudStateRef.current,
+      });
+      performanceHudStateRef.current.wasVisible = true;
+    } else if (performanceHudStateRef.current.wasVisible) {
+      performanceHudStateRef.current.wasVisible = false;
+      performanceHudStateRef.current.lastPublishedAtMs =
+        Number.NEGATIVE_INFINITY;
+      onPerformanceHudSnapshotChange?.(null);
+    }
     const chromesthesiaEnabled =
       controls.colorMode === "chromesthesia" &&
       (controls.chromesthesiaMix ?? RENDER_DEFAULTS.chromesthesiaMix) > 0;
@@ -305,13 +331,12 @@ export function useBaryonVisualizer({
       deltaTime,
     });
 
-    if (
-      controls.bloomEnabled &&
-      renderLoopContext.postNodesRef.current?.bloomPass
-    ) {
-      renderLoopContext.postNodesRef.current.bloomPass.strength.value =
-        bloom.strength * (1 + (runtimeState.bloomResponseSignal ?? 0) * 0.16);
-    }
+    const reactiveBloom = applyReactiveBloomState({
+      controls,
+      runtimeState,
+      postNodesRef: renderLoopContext.postNodesRef,
+      bloom,
+    });
 
     const sceneSnapshot = applySceneControls(
       runtimeState,
@@ -333,7 +358,7 @@ export function useBaryonVisualizer({
         shared,
         output,
         visualization,
-        bloom,
+        bloom: reactiveBloom,
         audit,
         sceneSnapshot,
         audio,

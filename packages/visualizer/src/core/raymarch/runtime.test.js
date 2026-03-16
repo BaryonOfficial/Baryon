@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { tickRaymarchRuntime } from "./runtime.js";
+import { createRaymarchSceneRoot, tickRaymarchRuntime } from "./runtime.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -40,6 +40,7 @@ function createRuntimeState() {
       uBackboneModeCount: { value: 0 },
       uDetailModeCount: { value: 0 },
       uAverageAmplitude: { value: 0 },
+      uThreshold: { value: 0.045 },
       uTransientEnergy: { value: 0 },
       uSpectralCentroid: { value: 0 },
       uSpectralFlux: { value: 0 },
@@ -47,8 +48,13 @@ function createRuntimeState() {
       uBandEnergies: { value: new THREE.Vector4() },
       uDensityGain: { value: 2.8 },
       uAbsorption: { value: 1.8 },
+      uOpacityGain: { value: 1.05 },
+      uContourSharpness: { value: 6.6 },
       uRimBloomBias: { value: 0.5 },
       uRimCompression: { value: 0.48 },
+      uHolographicIntensity: { value: 0.45 },
+      uHolographicShift: { value: 0.35 },
+      uHolographicFresnelPower: { value: 3.2 },
     },
     visualRoot: {
       scale: {
@@ -73,6 +79,8 @@ function createRuntimeState() {
       effectiveThreshold: 0.44,
     },
     baseDensityGain: 2.8,
+    baseThreshold: 0.045,
+    baseContourSharpness: 6.6,
     responseEnvelope: 0,
     accentEnvelope: 0,
     motionSignal: 0,
@@ -103,6 +111,27 @@ function createRuntimeState() {
 }
 
 describe("tickRaymarchRuntime", () => {
+  it("creates a self-lit scene root with weak symmetric fill lights", () => {
+    const volumeMesh = new THREE.Mesh();
+    const idleOverlay = new THREE.LineSegments();
+    const { root, visualRoot, sceneLighting } = createRaymarchSceneRoot({
+      volumeMesh,
+      idleOverlay,
+      radius: 3,
+    });
+
+    expect(root.children).toContain(visualRoot);
+    expect(root.children.filter((child) => child.isLight)).toHaveLength(2);
+    expect(sceneLighting.primary.intensity).toBeCloseTo(0.9);
+    expect(sceneLighting.secondary.intensity).toBeCloseTo(0.9);
+    expect(sceneLighting.primary.position.x).toBeCloseTo(3 * 1.15);
+    expect(sceneLighting.secondary.position.x).toBeCloseTo(-3 * 1.15);
+    expect(sceneLighting.primary.position.y).toBeCloseTo(3 * 0.85);
+    expect(sceneLighting.secondary.position.y).toBeCloseTo(3 * 0.85);
+    expect(sceneLighting.primary.position.z).toBeCloseTo(3 * 1.8);
+    expect(sceneLighting.secondary.position.z).toBeCloseTo(3 * 1.8);
+  });
+
   it("writes backbone/detail slots and modulation metrics into the runtime", () => {
     const runtimeState = createRuntimeState();
     const featureFrame = {
@@ -143,6 +172,8 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.7);
     expect(runtimeState.uniforms.uSpectralCentroid.value).toBe(0.42);
     expect(runtimeState.uniforms.uSpectralFlux.value).toBe(0.28);
+    expect(runtimeState.uniforms.uThreshold.value).toBeLessThan(0.045);
+    expect(runtimeState.uniforms.uContourSharpness.value).toBeGreaterThan(6.6);
     expect(runtimeState.responseEnvelope).toBeGreaterThan(0);
     expect(runtimeState.scaleSignal).toBeGreaterThan(0);
     expect(runtimeState.bloomResponseSignal).toBeGreaterThan(0);
@@ -169,6 +200,15 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.raymarchDebug.lowStepBloomGuard).toBe(0);
     expect(runtimeState.debugSnapshot.raymarchDebug.rimBloomBias).toBe(0.5);
     expect(runtimeState.debugSnapshot.raymarchDebug.rimCompression).toBe(0.48);
+    expect(runtimeState.debugSnapshot.raymarchDebug.holographicIntensity).toBe(
+      0.45,
+    );
+    expect(runtimeState.debugSnapshot.raymarchDebug.holographicShift).toBe(
+      0.35,
+    );
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.holographicFresnelPower,
+    ).toBe(3.2);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.avgSilhouetteSuppression,
     ).toBe(0);
@@ -177,16 +217,31 @@ describe("tickRaymarchRuntime", () => {
     );
     expect(
       runtimeState.debugSnapshot.raymarchDebug.effectiveBloomStrength,
-    ).toBe(0.11);
+    ).toBeGreaterThan(0.11);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.effectiveBloomRadius,
+    ).toBeLessThan(0.09);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.effectiveBloomThreshold,
-    ).toBe(0.44);
+    ).toBeGreaterThan(0.44);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.effectiveThreshold,
+    ).toBeLessThan(0.045);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.effectiveContourSharpness,
+    ).toBeGreaterThan(6.6);
+    expect(runtimeState.debugSnapshot.raymarchDebug.sceneLightAsymmetry).toBe(
+      0,
+    );
     expect(runtimeState.debugSnapshot.raymarchDebug.bloomRisk).toBeGreaterThan(
       0,
     );
     expect(runtimeState.debugSnapshot.raymarchDebug.chromesthesiaMix).toBe(
       0.65,
     );
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.holographicReferenceStrength,
+    ).toBeGreaterThan(0);
   });
 
   it("hides the volume and shows the idle overlay in idle state", () => {
@@ -332,6 +387,58 @@ describe("tickRaymarchRuntime", () => {
     expect(air).toBeCloseTo(0.1);
     expect(runtimeState.debugSnapshot.raymarchDebug.modeSlotCount).toBe(1);
     expect(runtimeState.debugSnapshot.raymarchDebug.transientEnergy).toBe(0.85);
+  });
+
+  it("sharpens transient beams more than it swells the body density", () => {
+    const steadyRuntimeState = createRuntimeState();
+    const transientRuntimeState = createRuntimeState();
+    const steadyFrame = {
+      fieldState: "active",
+      averageAmplitude: 32,
+      backboneSlots: new Float32Array([3, 4, 6, 0.5]),
+      detailSlots: new Float32Array([4, 5, 5, 0.2]),
+      backboneColorSlots: new Float32Array([1, 1, 1, 1]),
+      detailColorSlots: new Float32Array([1, 1, 1, 1]),
+      bandEnergies: new Float32Array([0.2, 0.2, 0.15, 0.1]),
+      transientEnergy: 0.08,
+      spectralCentroid: 0.28,
+      spectralFlux: 0.06,
+      structureSignal: 0.52,
+      energySignal: 0.48,
+      changeSignal: 0.12,
+      pulseSignal: 0.08,
+      debug: {},
+    };
+    const transientFrame = {
+      ...steadyFrame,
+      transientEnergy: 0.82,
+      spectralFlux: 0.58,
+      changeSignal: 0.76,
+      pulseSignal: 0.55,
+    };
+
+    tickRaymarchRuntime(steadyRuntimeState, steadyFrame, 1, 1 / 60);
+    tickRaymarchRuntime(transientRuntimeState, transientFrame, 1, 1 / 60);
+
+    expect(
+      transientRuntimeState.debugSnapshot.raymarchDebug
+        .effectiveContourSharpness,
+    ).toBeGreaterThan(
+      steadyRuntimeState.debugSnapshot.raymarchDebug.effectiveContourSharpness,
+    );
+    expect(
+      transientRuntimeState.debugSnapshot.raymarchDebug.effectiveBloomStrength,
+    ).toBeGreaterThan(
+      steadyRuntimeState.debugSnapshot.raymarchDebug.effectiveBloomStrength,
+    );
+    expect(
+      transientRuntimeState.debugSnapshot.raymarchDebug.effectiveBloomRadius,
+    ).toBeLessThan(
+      steadyRuntimeState.debugSnapshot.raymarchDebug.effectiveBloomRadius,
+    );
+    expect(transientRuntimeState.uniforms.uDensityGain.value).toBeLessThan(
+      steadyRuntimeState.uniforms.uDensityGain.value * 1.08,
+    );
   });
 
   it("keeps the continuous response alive between adjacent active frames", () => {

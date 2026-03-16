@@ -6,8 +6,10 @@ import {
   abs,
   clamp,
   cos,
+  dot,
   float,
   length,
+  max,
   mix,
   modelWorldMatrixInverse,
   sin,
@@ -28,6 +30,11 @@ import {
   AIR_BAND_WEIGHT,
   BODY_BOUNDARY_REDUCTION,
   BODY_DENSITY_GAIN,
+  BODY_DENSITY_MIX,
+  BEAM_POWER_BASE,
+  BEAM_POWER_TRANSIENT_GAIN,
+  BEAM_SPECTRAL_GAIN,
+  BEAM_TRANSIENT_GAIN,
   BROAD_BAND_SCALE,
   COLOR_BIAS_SCALE,
   COLOR_BLEND_END,
@@ -36,11 +43,19 @@ import {
   DENSITY_BOOST,
   DENSITY_MAX,
   DETAIL_LAYER_WEIGHT,
+  EMISSION_ROLLOFF_BASE,
+  EMISSION_ROLLOFF_MIX,
+  EMISSION_ROLLOFF_TRANSIENT_GAIN,
   EDGE_FADE_END,
   EDGE_FADE_START,
   HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
+  HOT_CORE_END,
+  HOT_CORE_START,
   HIGHLIGHT_MASK_END,
   HIGHLIGHT_MASK_START,
+  HOLOGRAPHIC_TINT_BLUE,
+  HOLOGRAPHIC_TINT_GREEN,
+  HOLOGRAPHIC_TINT_RED,
   HIGH_MID_BAND_WEIGHT,
   INNER_BAND_WEIGHT,
   INTERIOR_MASK_END,
@@ -50,14 +65,27 @@ import {
   LOW_MID_BAND_WEIGHT,
   RIM_BLOOM_BIAS_BASE,
   RIM_BLOOM_BIAS_GAIN,
+  RIM_COMPRESSION_BOUNDARY_GAIN,
+  RIM_COMPRESSION_OUTER_GAIN,
   SHELL_WEIGHT_END,
   SHELL_WEIGHT_MAX,
   SHELL_WEIGHT_MIN,
   SHELL_WEIGHT_START,
 } from "./fieldShaping.js";
+import {
+  STABLE_STEP_JITTER_AMPLITUDE,
+  STABLE_STEP_JITTER_BIAS,
+  STABLE_STEP_JITTER_DIRECTION_WEIGHT,
+  STABLE_STEP_JITTER_PHASE_SCALE,
+  STABLE_STEP_JITTER_SEED,
+} from "./stepStability.js";
 
 /**
- * @typedef {{ positionRay: any }} ScatteringNodeInputs
+ * @typedef {{
+ *   positionRay: any,
+ *   positionRayLocal: any,
+ *   viewDirLocal: any
+ * }} ScatteringNodeInputs
  */
 
 /**
@@ -65,7 +93,8 @@ import {
  *   steps: number,
  *   radiusNode?: any,
  *   scatteringNode?: any,
- *   opacityGainNode?: any
+ *   opacityGainNode?: any,
+ *   offsetNode?: any | ((args: { startPosLocal: any, rayDirLocal: any, radiusNode: any }) => any)
  * }} BaryonVolumeMaterial
  */
 
@@ -149,6 +178,10 @@ function createScatteringNode({
     uAbsorption,
     uContourSharpness,
     uRimBloomBias,
+    uRimCompression,
+    uHolographicIntensity,
+    uHolographicShift,
+    uHolographicFresnelPower,
     uBandEnergies,
     uTransientEnergy,
     uSpectralCentroid,
@@ -161,10 +194,10 @@ function createScatteringNode({
     /**
      * @param {ScatteringNodeInputs} args
      */
-    ({ positionRay }) => {
-      const localPosition = modelWorldMatrixInverse.mul(
-        vec4(positionRay, 1.0),
-      ).xyz;
+    ({ positionRay, positionRayLocal, viewDirLocal }) => {
+      const localPosition =
+        positionRayLocal ??
+        modelWorldMatrixInverse.mul(vec4(positionRay, 1.0)).xyz;
       const normalizedPosition = localPosition.div(uRadius);
       const radialDistance = length(normalizedPosition);
       const edgeFade = float(1.0).sub(
@@ -213,7 +246,9 @@ function createScatteringNode({
       });
 
       const fieldAbs = abs(field);
-      const gradientMagnitude = length(vec3(gradX, gradY, gradZ));
+      const gradient = vec3(gradX, gradY, gradZ).toVar();
+      const gradientMagnitude = length(gradient);
+      const gradientNormal = gradient.div(max(gradientMagnitude, float(1e-4)));
       const activeCount = float(uActiveModeCount);
       const backboneCount = float(uBackboneModeCount);
       const detailCount = float(uDetailModeCount);
@@ -299,10 +334,49 @@ function createScatteringNode({
         .mul(interiorMask)
         .mul(float(BODY_DENSITY_GAIN))
         .mul(float(1.0).sub(boundaryMask.mul(float(BODY_BOUNDARY_REDUCTION))));
-      const coreDensity = contourShape.mul(structure).mul(shellWeight);
+      const transientBoost = float(1.0)
+        .add(uTransientEnergy.mul(float(BEAM_TRANSIENT_GAIN)))
+        .add(uSpectralFlux.mul(float(BEAM_SPECTRAL_GAIN)));
+      const rimCompressionMix = clamp(
+        boundaryMask
+          .mul(uRimCompression)
+          .mul(float(RIM_COMPRESSION_BOUNDARY_GAIN))
+          .add(
+            outerShellAccent
+              .mul(uRimCompression)
+              .mul(float(RIM_COMPRESSION_OUTER_GAIN)),
+          ),
+        float(0.0),
+        float(1.0),
+      );
+      const compressedShellWeight = shellWeight.mul(
+        float(1.0).sub(rimCompressionMix),
+      );
+      const beamCore = contourShape.pow(
+        float(BEAM_POWER_BASE).add(
+          uTransientEnergy.mul(float(BEAM_POWER_TRANSIENT_GAIN)),
+        ),
+      );
+      const beamDensity = beamCore
+        .mul(structure)
+        .mul(compressedShellWeight)
+        .mul(transientBoost);
+      const rolledBeamDensity = mix(
+        beamDensity,
+        beamDensity.div(
+          float(1.0).add(
+            beamDensity.mul(
+              float(EMISSION_ROLLOFF_BASE).add(
+                uTransientEnergy.mul(float(EMISSION_ROLLOFF_TRANSIENT_GAIN)),
+              ),
+            ),
+          ),
+        ),
+        float(EMISSION_ROLLOFF_MIX),
+      );
       const density = clamp(
-        coreDensity
-          .add(bodyDensity)
+        rolledBeamDensity
+          .add(bodyDensity.mul(float(BODY_DENSITY_MIX)))
           .mul(edgeFade)
           .mul(uDensityGain)
           .mul(uAbsorption)
@@ -311,13 +385,7 @@ function createScatteringNode({
         float(0.0),
         float(DENSITY_MAX),
       ).mul(float(DENSITY_BOOST));
-      const visibleDensity = density.mul(
-        smoothstep(
-          float(LOW_DENSITY_FADE_START),
-          float(LOW_DENSITY_FADE_END),
-          density,
-        ),
-      );
+      const { visibleDensity } = deriveVisibleDensityNode(density);
       const highlightMask = smoothstep(
         float(HIGHLIGHT_MASK_START),
         float(HIGHLIGHT_MASK_END),
@@ -358,10 +426,80 @@ function createScatteringNode({
         .mul(float(0.18))
         .add(boundaryMask.mul(float(BOUNDARY_CONTOUR_ACCENT_WEIGHT)))
         .add(highlightMask.mul(float(HIGHLIGHT_CONTOUR_ACCENT_WEIGHT)));
+      const hotCoreMix = smoothstep(
+        float(HOT_CORE_START),
+        float(HOT_CORE_END),
+        rolledBeamDensity
+          .mul(contourMix.mul(float(0.14)).add(float(0.76)))
+          .add(highlightMask.mul(float(0.12)))
+          .add(uTransientEnergy.mul(float(0.08)))
+          .div(
+            float(1.0).add(
+              rolledBeamDensity
+                .mul(contourMix.mul(float(0.14)).add(float(0.76)))
+                .add(highlightMask.mul(float(0.12)))
+                .add(uTransientEnergy.mul(float(0.08)))
+                .mul(float(0.22)),
+            ),
+          ),
+      );
+      const fresnelBase = clamp(
+        float(1.0)
+          .sub(abs(dot(gradientNormal, viewDirLocal.negate())))
+          .pow(max(uHolographicFresnelPower, float(0.01))),
+        float(0.0),
+        float(1.0),
+      );
+      const holographicFresnel = fresnelBase
+        .mul(uHolographicIntensity)
+        .mul(structure)
+        .mul(edgeFade);
+      const holographicAccentColor = mix(
+        uSurfaceColor,
+        vec3(
+          float(HOLOGRAPHIC_TINT_RED),
+          float(HOLOGRAPHIC_TINT_GREEN),
+          float(HOLOGRAPHIC_TINT_BLUE),
+        ),
+        clamp(
+          float(0.25).add(uHolographicShift.mul(float(0.75))),
+          float(0.0),
+          float(1.0),
+        ),
+      );
+      const holographicColorMix = clamp(
+        holographicFresnel.mul(
+          float(0.35).add(uHolographicShift.mul(float(0.65))),
+        ),
+        float(0.0),
+        float(1.0),
+      );
+      const holographicEmissionLift = clamp(
+        holographicFresnel.mul(
+          float(0.12).add(uHolographicShift.mul(float(0.18))),
+        ),
+        float(0.0),
+        float(1.0),
+      );
       const staticContourColor = mix(
         staticBaseColor,
         uSurfaceColor,
         contourAccent,
+      );
+      const staticLaserColor = mix(
+        staticContourColor,
+        vec3(1.0),
+        hotCoreMix.mul(float(0.72)),
+      );
+      const staticHolographicColor = mix(
+        staticLaserColor,
+        holographicAccentColor,
+        holographicColorMix,
+      );
+      const staticHolographicLaserColor = mix(
+        staticHolographicColor,
+        vec3(1.0),
+        holographicEmissionLift.mul(float(0.45)),
       );
       const chromesthesiaNeutralColor = mix(
         vec3(0.72),
@@ -378,6 +516,21 @@ function createScatteringNode({
         chromesthesiaBaseColor,
         contourAccent,
       );
+      const chromesthesiaLaserColor = mix(
+        chromesthesiaContourColor,
+        vec3(1.0),
+        hotCoreMix.mul(float(0.68)),
+      );
+      const chromesthesiaHolographicColor = mix(
+        chromesthesiaLaserColor,
+        holographicAccentColor,
+        holographicColorMix,
+      );
+      const chromesthesiaHolographicLaserColor = mix(
+        chromesthesiaHolographicColor,
+        vec3(1.0),
+        holographicEmissionLift.mul(float(0.4)),
+      );
       const detailPresence = smoothstep(float(0.0), float(1.0), detailCount);
       const backbonePresence = smoothstep(
         float(0.0),
@@ -388,13 +541,13 @@ function createScatteringNode({
         detailPresence.mul(float(0.15)),
       );
       const staticVolumeColor = mix(
-        staticContourColor.mul(float(0.92)),
-        staticContourColor,
+        staticHolographicLaserColor.mul(float(0.9)),
+        staticHolographicLaserColor,
         activityAccent,
       );
       const chromesthesiaVolumeColor = mix(
-        chromesthesiaContourColor.mul(float(0.92)),
-        chromesthesiaContourColor,
+        chromesthesiaHolographicLaserColor.mul(float(0.9)),
+        chromesthesiaHolographicLaserColor,
         activityAccent,
       );
       const volumeColor = mix(
@@ -406,6 +559,41 @@ function createScatteringNode({
       return volumeColor.mul(stabilizedDensity);
     },
   );
+}
+
+function deriveVisibleDensityNode(density) {
+  const visibilityGate = smoothstep(
+    float(LOW_DENSITY_FADE_START),
+    float(LOW_DENSITY_FADE_END),
+    density,
+  );
+
+  return {
+    visibilityGate,
+    visibleDensity: density.mul(visibilityGate),
+  };
+}
+
+function createRaymarchOffsetNode(radiusNode) {
+  return ({ startPosLocal, rayDirLocal, radiusNode: runtimeRadiusNode }) => {
+    const activeRadiusNode = runtimeRadiusNode ?? radiusNode;
+    const safeRadius = max(activeRadiusNode, float(1e-4));
+    const jitterSource = startPosLocal
+      .div(safeRadius)
+      .add(rayDirLocal.mul(float(STABLE_STEP_JITTER_DIRECTION_WEIGHT)));
+    const jitterPhase = dot(
+      jitterSource,
+      vec3(
+        float(STABLE_STEP_JITTER_SEED[0]),
+        float(STABLE_STEP_JITTER_SEED[1]),
+        float(STABLE_STEP_JITTER_SEED[2]),
+      ),
+    ).mul(float(STABLE_STEP_JITTER_PHASE_SCALE));
+
+    return sin(jitterPhase)
+      .mul(float(STABLE_STEP_JITTER_AMPLITUDE))
+      .add(float(STABLE_STEP_JITTER_BIAS));
+  };
 }
 
 export function createRaymarchVolumeMesh({
@@ -428,6 +616,7 @@ export function createRaymarchVolumeMesh({
   material.steps = Math.round(uniforms.uRaymarchSteps.value);
   material.radiusNode = uniforms.uRadius;
   material.opacityGainNode = uniforms.uOpacityGain;
+  material.offsetNode = createRaymarchOffsetNode(uniforms.uRadius);
   material.scatteringNode = createScatteringNode({
     backboneModeBuffer,
     detailModeBuffer,
