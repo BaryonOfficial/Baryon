@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  BOUNDARY_CONTOUR_ACCENT_WEIGHT,
   BODY_DENSITY_GAIN,
   CONTOUR_BLEND,
+  HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
   SHELL_WEIGHT_MAX,
   SHELL_WEIGHT_MIN,
   deriveBodyDensity,
   deriveContourShape,
   deriveShellWeight,
+  deriveStableContourAccent,
 } from "./fieldShaping.js";
 
 describe("field shaping", () => {
@@ -58,5 +61,23 @@ describe("field shaping", () => {
     expect(contour.contourShape).toBeGreaterThan(contour.contourCore);
     expect(coreDensity).toBeGreaterThan(body.bodyDensity);
     expect(body.bodyDensity / coreDensity).toBeGreaterThan(0.1);
+  });
+
+  it("drives contour accent from boundary and highlight masks without camera terms", () => {
+    const accent = deriveStableContourAccent({
+      contourMix: 0.55,
+      boundaryMask: 0.7,
+      highlightMask: 0.35,
+    });
+    const contourOnly = deriveStableContourAccent({
+      contourMix: 0.55,
+      boundaryMask: 0,
+      highlightMask: 0,
+    });
+
+    expect(BOUNDARY_CONTOUR_ACCENT_WEIGHT).toBeCloseTo(0.08);
+    expect(HIGHLIGHT_CONTOUR_ACCENT_WEIGHT).toBeCloseTo(0.04);
+    expect(accent).toBeCloseTo(0.55 * 0.18 + 0.7 * 0.08 + 0.35 * 0.04);
+    expect(accent).toBeGreaterThan(contourOnly);
   });
 });

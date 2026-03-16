@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import {
   aggregateMessages,
   classifyPageError,
+  formatResultSummary,
+  getDiagnosticsResult,
+  isSoftwareAdapter,
+  summarizeClassification,
   shouldFailBrowserDiagnostics,
 } from "../../scripts/linux-webgpu-diagnostics.mjs";
 
@@ -62,6 +66,14 @@ test("fails diagnostics when a usable adapter hits severe runtime errors", () =>
       infrastructureError: null,
       info: {
         adapterAvailable: true,
+        adapterInfo: {
+          info: {
+            vendor: "nvidia",
+            architecture: "turing",
+            device: "rtx",
+            description: "hardware gpu",
+          },
+        },
       },
       pageErrorSummary: [
         {
@@ -74,6 +86,50 @@ test("fails diagnostics when a usable adapter hits severe runtime errors", () =>
     }),
     true,
   );
+});
+
+test("detects SwiftShader as a software adapter", () => {
+  assert.equal(
+    isSoftwareAdapter({
+      adapterInfo: {
+        info: {
+          vendor: "google",
+          architecture: "swiftshader",
+          device: null,
+          description: null,
+        },
+      },
+    }),
+    true,
+  );
+});
+
+test("downgrades severe runtime errors on software adapters to environment-limited", () => {
+  const result = {
+    infrastructureError: null,
+    info: {
+      adapterAvailable: true,
+      adapterInfo: {
+        info: {
+          vendor: "google",
+          architecture: "swiftshader",
+          device: null,
+          description: null,
+        },
+      },
+    },
+    pageErrorSummary: [
+      {
+        message:
+          "RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed",
+        count: 3,
+        classification: "runtime-severe",
+      },
+    ],
+  };
+
+  assert.equal(getDiagnosticsResult(result), "environment-limited");
+  assert.equal(shouldFailBrowserDiagnostics(result), false);
 });
 
 test("does not fail diagnostics for expected unsupported Firefox blocklist findings", () => {
@@ -93,4 +149,91 @@ test("does not fail diagnostics for expected unsupported Firefox blocklist findi
     }),
     false,
   );
+});
+
+test("summarizes classifications without mutating the source list", () => {
+  const pageErrorSummary = [
+    {
+      message: "createBuffer failed",
+      count: 2,
+      classification: "runtime-severe",
+    },
+    {
+      message: "Not supported",
+      count: 1,
+      classification: "runtime-warning",
+    },
+  ];
+
+  assert.deepEqual(
+    summarizeClassification(pageErrorSummary, "runtime-severe"),
+    [pageErrorSummary[0]],
+  );
+  assert.equal(pageErrorSummary.length, 2);
+});
+
+test("formats result summaries with diagnostics, adapter details, and warnings", () => {
+  const summary = formatResultSummary({
+    browserName: "chromium-linux-webgpu",
+    ok: true,
+    infrastructureError: null,
+    screenshotPath: "test-results/linux-webgpu-screenshots/chromium.png",
+    info: {
+      hasGpu: true,
+      hasRequestAdapter: true,
+      adapterAvailable: true,
+      adapterError: null,
+      adapterInfo: {
+        info: {
+          vendor: "google",
+          architecture: "swiftshader",
+          device: "swiftshader-device",
+          description: "software adapter",
+        },
+        limits: {
+          maxBufferSize: 1024,
+        },
+        features: ["timestamp-query"],
+      },
+      supportProbe: {
+        failureCode: "adapter-blocklisted",
+        diagnostics: ["WebGPU is blocklisted."],
+      },
+      rendererInfo: {
+        backendType: "webgpu",
+        backend: "WebGPUBackend",
+        error: null,
+      },
+      canvasPresent: true,
+      canvasVisible: true,
+      visuallyReady: true,
+    },
+    pageErrorSummary: [
+      {
+        message: "createBuffer failed",
+        count: 2,
+        classification: "runtime-severe",
+      },
+      {
+        message: "Not supported",
+        count: 1,
+        classification: "runtime-warning",
+      },
+    ],
+    consoleMessages: [
+      { type: "warning", text: "first warning" },
+      { type: "debug", text: "hidden debug" },
+    ],
+  });
+
+  assert.match(summary, /Diagnostics result: environment-limited/);
+  assert.match(
+    summary,
+    /Adapter info: vendor=google, architecture=swiftshader/,
+  );
+  assert.match(summary, /Software adapter: yes/);
+  assert.match(summary, /Severe runtime errors:/);
+  assert.match(summary, /Runtime warnings:/);
+  assert.match(summary, /Console messages:/);
+  assert.doesNotMatch(summary, /hidden debug/);
 });

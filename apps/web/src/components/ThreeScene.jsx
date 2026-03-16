@@ -1,95 +1,72 @@
-import { Component, Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import { WebGPURenderer } from "three/webgpu";
 import { BaryonScene } from "./BaryonScene";
 import AudioControls from "./AudioControls";
 import ParticleDebugOverlay from "./ParticleDebugOverlay.jsx";
+import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
 import UnsupportedWarning from "./UnsupportedWarning.jsx";
+import {
+  createBaryonRenderer,
+  WEBGPU_RENDERER_INIT_ERROR,
+} from "./rendererDiagnostics.js";
 import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
 import { useBaryonControls } from "./hooks/useBaryonControls";
+import { useBrowserSupportState } from "./hooks/useBrowserSupportState.js";
+import { useRendererModeState } from "./hooks/useRendererModeState.js";
 import { useAudioScene } from "../context/AudioContext";
-import {
-  BROWSER_SUPPORT_STATUS,
-  BROWSER_FAILURE_CODES,
-  createFailureProbe,
-  createRendererInitFailureProbe,
-  getInitialBrowserSupportStatus,
-  isMobileDevice,
-  probeBrowserSupport,
-} from "./browserSupport.js";
 
-const CANVAS_SWAP_DELAY_MS = 650;
-const WEBGPU_RENDERER_INIT_ERROR = "WebGPURendererInitError";
+const AdvancedControlsSidebar = lazy(
+  () => import("./AdvancedControlsSidebar.jsx"),
+);
+const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
 
-function clearRendererDiagnostics() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  delete window.__baryonRendererInfo;
-  delete window.__baryonAuditSnapshot;
-  delete window.__baryonSupportProbe;
-}
-
-class RendererErrorBoundary extends Component {
-  state = { hasError: false };
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error) {
-    this.props.onError?.(error);
-  }
-
-  componentDidUpdate(prevProps) {
-    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
-      this.setState({ hasError: false });
-    }
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return null;
-    }
-
-    return this.props.children;
-  }
+function ControlsIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="18" x2="20" y2="18" />
+      <circle cx="9" cy="6" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="11" cy="18" r="1.8" fill="currentColor" stroke="none" />
+    </svg>
+  );
 }
 
 const ThreeScene = () => {
   const containerRef = useRef(null);
-  const rendererModeRef = useRef(null);
-  const hasMountedCanvasRef = useRef(false);
-  const controlsRef = useBaryonControls();
+  const {
+    controlsRef,
+    controlsState,
+    controlGroups,
+    presets,
+    presetName,
+    selectedPresetName,
+    isControlsPanelLoaded,
+    isControlsPanelOpen,
+    setPresetName,
+    updateControl,
+    resetControls,
+    savePreset,
+    loadPreset,
+    deletePreset,
+    closeControlsPanel,
+    toggleControlsPanel,
+  } = useBaryonControls();
   const initialRendererFallback = Boolean(
     /** @type {any} */ (controlsRef.current).forceWebGLFallbackTest,
   );
-  const [browserSupportStatus, setBrowserSupportStatus] = useState(() =>
-    getInitialBrowserSupportStatus(initialRendererFallback),
-  );
-  const [unsupportedReason, setUnsupportedReason] = useState(() =>
-    !initialRendererFallback && isMobileDevice() ? "mobile" : "browser",
-  );
-  const [supportProbe, setSupportProbe] = useState(() =>
-    !initialRendererFallback && isMobileDevice()
-      ? createFailureProbe({
-          failureCode: BROWSER_FAILURE_CODES.mobileUnsupported,
-          diagnostics: [
-            "Mobile browsers are currently treated as unsupported.",
-          ],
-        })
-      : null,
-  );
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [forceWebGLFallbackTest, setForceWebGLFallbackTest] = useState(
-    initialRendererFallback,
-  );
-  const [activeRendererFallback, setActiveRendererFallback] = useState(
-    initialRendererFallback,
-  );
-  const [canvasEpoch, setCanvasEpoch] = useState(0);
-  const [showCanvas, setShowCanvas] = useState(true);
 
   // fullscreen targets the outer container div
   useFullscreen(containerRef);
@@ -112,107 +89,25 @@ const ThreeScene = () => {
     resetAudioSession,
   } = useAudioScene();
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    if (supportProbe) {
-      window.__baryonSupportProbe = supportProbe;
-      return;
-    }
-
-    delete window.__baryonSupportProbe;
-  }, [supportProbe]);
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    if (forceWebGLFallbackTest) {
-      setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.supported);
-      setUnsupportedReason("browser");
-      setSupportProbe(null);
-      return undefined;
-    }
-
-    if (isMobileDevice()) {
-      const mobileProbe = createFailureProbe({
-        failureCode: BROWSER_FAILURE_CODES.mobileUnsupported,
-        diagnostics: ["Mobile browsers are currently treated as unsupported."],
-      });
-      setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.unsupported);
-      setUnsupportedReason("mobile");
-      setSupportProbe(mobileProbe);
-      return undefined;
-    }
-
-    setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.checking);
-    setUnsupportedReason("browser");
-    setSupportProbe(null);
-
-    void (async () => {
-      const probe = await probeBrowserSupport(forceWebGLFallbackTest);
-      if (!isCancelled) {
-        setBrowserSupportStatus(probe.status);
-        setUnsupportedReason(
-          probe.failureCode === "mobile-unsupported" ? "mobile" : "browser",
-        );
-        setSupportProbe(probe);
-      }
-    })();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [forceWebGLFallbackTest]);
-
-  useEffect(() => {
-    const handleControlsChange = (event) => {
-      setForceWebGLFallbackTest(
-        Boolean(event.detail?.forceWebGLFallbackTest ?? false),
-      );
-    };
-
-    window.addEventListener("__baryon-controls-change", handleControlsChange);
-    return () =>
-      window.removeEventListener(
-        "__baryon-controls-change",
-        handleControlsChange,
-      );
-  }, []);
-
-  useEffect(() => {
-    if (!hasMountedCanvasRef.current) {
-      hasMountedCanvasRef.current = true;
-      rendererModeRef.current = forceWebGLFallbackTest;
-      return;
-    }
-
-    if (rendererModeRef.current === forceWebGLFallbackTest) {
-      return;
-    }
-
-    rendererModeRef.current = forceWebGLFallbackTest;
-    void resetAudioSession();
-    setIsEngineReady(false);
-    setShowCanvas(false);
-    clearRendererDiagnostics();
-
-    const timeout = window.setTimeout(() => {
-      setActiveRendererFallback(forceWebGLFallbackTest);
-      setCanvasEpoch((value) => value + 1);
-      setShowCanvas(true);
-    }, CANVAS_SWAP_DELAY_MS);
-
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [forceWebGLFallbackTest, resetAudioSession, setIsEngineReady]);
-
-  const isUnsupported =
-    browserSupportStatus === BROWSER_SUPPORT_STATUS.unsupported;
-  const isSupportReady =
-    browserSupportStatus === BROWSER_SUPPORT_STATUS.supported;
+  const {
+    forceWebGLFallbackTest,
+    activeRendererFallback,
+    canvasEpoch,
+    showCanvas,
+    setShowCanvas,
+  } = useRendererModeState({
+    initialRendererFallback,
+    resetAudioSession,
+    setIsEngineReady,
+  });
+  const {
+    supportProbe,
+    unsupportedReason,
+    isUnsupported,
+    isSupportReady,
+    markRendererInitUnsupported,
+  } = useBrowserSupportState(forceWebGLFallbackTest);
+  const showOverlayUi = isSupportReady && !isFullscreen;
 
   const handleCanvasError = (error) => {
     if (error?.name !== WEBGPU_RENDERER_INIT_ERROR) {
@@ -222,20 +117,53 @@ const ThreeScene = () => {
     void resetAudioSession();
     setIsEngineReady(false);
     setShowCanvas(false);
-    setBrowserSupportStatus(BROWSER_SUPPORT_STATUS.unsupported);
-    setUnsupportedReason("browser");
-    setSupportProbe(createRendererInitFailureProbe(error));
+    markRendererInitUnsupported(error);
   };
+
+  /** @type {import("react").CSSProperties} */
+  const controlsToggleStyle = isControlsPanelOpen
+    ? {
+        position: "absolute",
+        top: "0.9rem",
+        left: `calc(${ADVANCED_CONTROLS_DOCK_WIDTH} + 0.15rem)`,
+        zIndex: 61,
+        width: "2rem",
+        height: "2.35rem",
+        border: "1px solid rgba(255, 255, 255, 0.14)",
+        borderRadius: "0 0.9rem 0.9rem 0",
+        borderLeft: "0",
+        background:
+          "linear-gradient(180deg, rgba(17, 21, 27, 0.9), rgba(9, 12, 17, 0.88))",
+        color: "rgba(255, 255, 255, 0.82)",
+        boxShadow: "0 10px 28px rgba(0, 0, 0, 0.2)",
+        cursor: "pointer",
+      }
+    : {
+        position: "absolute",
+        top: "var(--app-floating-control-top)",
+        left: "var(--app-floating-control-left)",
+        zIndex: 61,
+        width: "var(--app-floating-control-size)",
+        height: "var(--app-floating-control-size)",
+        border: "var(--app-floating-control-border)",
+        borderRadius: "var(--app-floating-control-radius)",
+        background: "var(--app-floating-control-background)",
+        color: "var(--app-floating-control-color)",
+        backdropFilter: "var(--app-floating-control-backdrop)",
+        boxShadow: "var(--app-floating-control-shadow)",
+        cursor: "pointer",
+      };
 
   return (
     <div
       ref={containerRef}
+      data-testid="baryon-scene-root"
       style={{
         width: "100vw",
         height: "100vh",
         position: "absolute",
         zIndex: 1,
-        background: "#000000",
+        background: controlsState.backgroundColor,
       }}
     >
       {showCanvas && isSupportReady && (
@@ -245,81 +173,19 @@ const ThreeScene = () => {
         >
           <Canvas
             key={`${activeRendererFallback ? "force-webgl-fallback" : "webgpu-default"}-${canvasEpoch}`}
-            style={{ position: "absolute", top: 0, left: 0, zIndex: 10 }}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              zIndex: 10,
+              background: "transparent",
+            }}
             dpr={[1, 2]}
             camera={{ position: [0, 0, 9], fov: 65, near: 0.1, far: 100 }}
             // @ts-ignore — WebGPURenderer is runtime-compatible; R3F types predate WebGPU
-            gl={async (glDefaults) => {
-              const canvas = /** @type {HTMLCanvasElement} */ (
-                glDefaults.canvas
-              );
-              const context = activeRendererFallback
-                ? canvas.getContext("webgl2", {
-                    antialias: true,
-                    alpha: true,
-                  })
-                : undefined;
-              const rendererParameters = /** @type {any} */ ({
-                canvas,
-                antialias: true,
-                forceWebGL: activeRendererFallback,
-                ...(context ? { context } : {}),
-              });
-              const renderer = new WebGPURenderer(rendererParameters);
-
-              const syncInitialRendererSize = () => {
-                const parent = canvas.parentElement;
-                if (!parent) {
-                  return;
-                }
-
-                const { width, height } = parent.getBoundingClientRect();
-                if (width <= 0 || height <= 0) {
-                  return;
-                }
-
-                const dpr = Math.min(window.devicePixelRatio || 1, 2);
-                renderer.setPixelRatio(dpr);
-                renderer.setSize(width, height, false);
-              };
-
-              // Keep the renderer's internal size bookkeeping aligned with the
-              // canvas before WebGPU allocates its MSAA/resolve attachments.
-              syncInitialRendererSize();
-              try {
-                await renderer.init();
-              } catch (error) {
-                if (typeof window !== "undefined") {
-                  window.__baryonRendererInfo = {
-                    forceWebGLFallbackTest: activeRendererFallback,
-                    backendType: null,
-                    backend: null,
-                    isFallback: activeRendererFallback,
-                    error: String(error),
-                  };
-                }
-
-                const rendererInitError = new Error(
-                  "WebGPU renderer initialization failed",
-                  { cause: error },
-                );
-                rendererInitError.name = WEBGPU_RENDERER_INIT_ERROR;
-                throw rendererInitError;
-              }
-              syncInitialRendererSize();
-              if (typeof window !== "undefined") {
-                const backend = /** @type {any} */ (renderer.backend);
-                window.__baryonRendererInfo = {
-                  forceWebGLFallbackTest: activeRendererFallback,
-                  backendType:
-                    backend?.isWebGLBackend === true ? "webgl" : "webgpu",
-                  backend: backend?.constructor?.name ?? null,
-                  isFallback: backend?.isWebGLBackend === true,
-                  error: null,
-                };
-              }
-              return renderer;
-            }}
+            gl={(glDefaults) =>
+              createBaryonRenderer(glDefaults, activeRendererFallback)
+            }
           >
             <Suspense fallback={null}>
               <BaryonScene
@@ -335,8 +201,57 @@ const ThreeScene = () => {
         </RendererErrorBoundary>
       )}
 
-      {isSupportReady && !isFullscreen && <AudioControls />}
-      <ParticleDebugOverlay />
+      {showOverlayUi && (
+        <button
+          type="button"
+          aria-label="Toggle advanced controls"
+          data-testid="advanced-controls-trigger"
+          aria-expanded={isControlsPanelOpen}
+          onClick={toggleControlsPanel}
+          title={
+            isControlsPanelOpen
+              ? "Hide advanced controls"
+              : "Show advanced controls"
+          }
+          style={controlsToggleStyle}
+        >
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "100%",
+              height: "100%",
+            }}
+          >
+            <ControlsIcon />
+          </span>
+        </button>
+      )}
+
+      {showOverlayUi && isControlsPanelLoaded ? (
+        <Suspense fallback={null}>
+          <AdvancedControlsSidebar
+            controlGroups={controlGroups}
+            controlsState={controlsState}
+            presets={presets}
+            presetName={presetName}
+            selectedPresetName={selectedPresetName}
+            isOpen={isControlsPanelOpen}
+            setPresetName={setPresetName}
+            updateControl={updateControl}
+            resetControls={resetControls}
+            savePreset={savePreset}
+            loadPreset={loadPreset}
+            deletePreset={deletePreset}
+            onClose={closeControlsPanel}
+            dockWidth={ADVANCED_CONTROLS_DOCK_WIDTH}
+          />
+        </Suspense>
+      ) : null}
+
+      {showOverlayUi && <AudioControls />}
+      {!isFullscreen && <ParticleDebugOverlay />}
 
       {isUnsupported && (
         <UnsupportedWarning reason={unsupportedReason} probe={supportProbe} />

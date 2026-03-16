@@ -1,6 +1,25 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("Baryon production smoke", () => {
+  test("switches floating chrome by viewport width instead of device type", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.setViewportSize({ width: 740, height: 900 });
+    await page.goto("/");
+    await expect(page.locator(".app-legal-links")).toBeVisible();
+    await expect(page.locator(".app-legal-mobile")).toBeHidden();
+
+    await page.setViewportSize({ width: 700, height: 900 });
+    await expect(page.locator(".app-legal-links")).toBeHidden();
+    await expect(page.locator(".app-legal-mobile")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Toggle advanced controls" }),
+    ).toBeVisible();
+  });
+
   test("keeps user controls but omits developer tooling from the production build", async ({
     page,
     browserName,
@@ -14,8 +33,10 @@ test.describe("Baryon production smoke", () => {
       0,
     );
     await expect(page.getByLabel("SoundCloud URL")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Baryon" })).toBeVisible();
-    await expect(page.getByText("Field").first()).toBeAttached(); // folder exists in pane; may be collapsed
+    await expect(
+      page.getByRole("button", { name: "Toggle advanced controls" }),
+    ).toBeVisible();
+    await expect(page.getByTestId("advanced-controls-sidebar")).toHaveCount(0);
     await expect(page.getByText("Audit")).toHaveCount(0);
 
     const debugSurface = await page.evaluate(() => ({
@@ -31,5 +52,120 @@ test.describe("Baryon production smoke", () => {
     });
 
     await expect(page.getByTestId("raymarch-debug-overlay")).toHaveCount(0);
+
+    await page
+      .getByRole("button", { name: "Toggle advanced controls" })
+      .click();
+    await expect(page.getByTestId("advanced-controls-sidebar")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Close advanced controls backdrop" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Toggle advanced controls" }),
+    ).toBeVisible();
+    await expect(page.getByText("Field").first()).toBeVisible();
+    await expect(page.getByText("Audit")).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Toggle advanced controls" })
+      .click();
+    await expect(page.getByTestId("advanced-controls-sidebar")).toBeHidden();
+  });
+
+  test("shows control help outside the card without shifting slider layout", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Toggle advanced controls" })
+      .click();
+    await page.getByRole("button", { name: /^Field\s/ }).click();
+
+    const slider = page.getByRole("slider", { name: "Node Threshold" });
+    const helpTrigger = page.getByRole("button", {
+      name: "Show help for Node Threshold",
+    });
+
+    const before = await slider.boundingBox();
+    expect(before).not.toBeNull();
+
+    await helpTrigger.hover();
+    const tooltip = page.getByTestId("advanced-controls-help-tooltip");
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toContainText("Node Threshold");
+
+    const after = await slider.boundingBox();
+    expect(after).not.toBeNull();
+    expect(after?.x).toBeCloseTo(before?.x ?? 0, 1);
+    expect(after?.y).toBeCloseTo(before?.y ?? 0, 1);
+    expect(after?.width).toBeCloseTo(before?.width ?? 0, 1);
+    expect(after?.height).toBeCloseTo(before?.height ?? 0, 1);
+
+    await page.mouse.click(900, 40);
+    await expect(tooltip).toHaveCount(0);
+  });
+
+  test("toggles the bloom switch from the dock", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Toggle advanced controls" })
+      .click();
+    await page.getByRole("button", { name: /^Look\s/ }).click();
+
+    const bloomToggle = page.locator("#baryon-control-bloomEnabled");
+    await expect(bloomToggle).toBeChecked();
+
+    await bloomToggle.click();
+    await expect(bloomToggle).not.toBeChecked();
+
+    await bloomToggle.click();
+    await expect(bloomToggle).toBeChecked();
+  });
+
+  test("hides all overlay chrome while fullscreen is active", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Toggle advanced controls" })
+      .click();
+    await expect(page.getByTestId("advanced-controls-sidebar")).toBeVisible();
+    await expect(page.getByText("Upload Audio")).toBeVisible();
+
+    await page.keyboard.press("f");
+    await expect
+      .poll(async () =>
+        page.evaluate(() => Boolean(document.fullscreenElement)),
+      )
+      .toBe(true);
+
+    await expect(
+      page.getByRole("button", { name: "Toggle advanced controls" }),
+    ).toHaveCount(0);
+    await expect(page.getByTestId("advanced-controls-sidebar")).toHaveCount(0);
+    await expect(page.getByText("Upload Audio")).toHaveCount(0);
+
+    await page.keyboard.press("f");
+    await expect
+      .poll(async () =>
+        page.evaluate(() => Boolean(document.fullscreenElement)),
+      )
+      .toBe(false);
+
+    await expect(
+      page.getByRole("button", { name: "Toggle advanced controls" }),
+    ).toBeVisible();
+    await expect(page.getByTestId("advanced-controls-sidebar")).toBeVisible();
+    await expect(page.getByText("Upload Audio")).toBeVisible();
   });
 });

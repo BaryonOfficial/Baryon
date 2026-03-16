@@ -1,1 +1,1 @@
-export { useSharedAudioLogic as useAudioLogic } from "@baryon/visualizer";
+export { useSharedAudioLogic as useAudioLogic } from "@baryon/visualizer/react/useSharedAudioLogic";

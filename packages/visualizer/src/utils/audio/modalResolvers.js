@@ -108,12 +108,31 @@ export function buildModalSlotsFromFundamental({
   const seenModes = new Set();
   const colorFamilies = includeChromesthesia ? [] : null;
   const components = includeChromesthesia ? [] : null;
-  const primarySupport = sampleFFTAmplitudeForFrequency(
+  let primarySupport = sampleFFTAmplitudeForFrequency(
     frequency,
     fftMagnitudes,
     sampleRate,
     fftSize,
   );
+  if (primarySupport < HARMONIC_SUPPORT_FLOOR) {
+    for (let i = 1; i < HARMONIC_ORDERS.length; i++) {
+      const harmonicFrequency = frequency * HARMONIC_ORDERS[i];
+      const harmonicSupport = sampleFFTAmplitudeForFrequency(
+        harmonicFrequency,
+        fftMagnitudes,
+        sampleRate,
+        fftSize,
+      );
+      const attenuation =
+        HARMONIC_ATTENUATION[i] ??
+        HARMONIC_ATTENUATION[HARMONIC_ATTENUATION.length - 1] ??
+        1;
+      primarySupport = Math.max(
+        primarySupport,
+        attenuation > 0 ? harmonicSupport / attenuation : harmonicSupport,
+      );
+    }
+  }
   const supportThreshold = Math.max(
     HARMONIC_SUPPORT_FLOOR,
     primarySupport * HARMONIC_SUPPORT_RATIO,
@@ -122,12 +141,16 @@ export function buildModalSlotsFromFundamental({
   let slotIndex = 0;
   for (let i = 0; i < HARMONIC_ORDERS.length && slotIndex < slotLimit; i++) {
     const harmonicFrequency = frequency * HARMONIC_ORDERS[i];
-    const support = sampleFFTAmplitudeForFrequency(
+    const sampledSupport = sampleFFTAmplitudeForFrequency(
       harmonicFrequency,
       fftMagnitudes,
       sampleRate,
       fftSize,
     );
+    const support =
+      i === 0
+        ? Math.max(sampledSupport, primarySupport * 0.72)
+        : sampledSupport;
     harmonicSupport[i] = support;
 
     if (i > 0 && support < supportThreshold) {
@@ -208,6 +231,8 @@ export function buildModalSlotsFromSpectralPeaks({
   peakFamilyCount = SPECTRAL_PEAK_FAMILY_COUNT,
   spectralCentroid = 0,
   includeChromesthesia = true,
+  peaks = null,
+  peakOptions = undefined,
 }) {
   const maxSlots =
     slotLimit ?? Math.min(capacity, DETAIL_STACK_SLOTS, MAX_STACK_SLOTS);
@@ -218,15 +243,18 @@ export function buildModalSlotsFromSpectralPeaks({
   const seenModes = new Set();
   const colorFamilies = includeChromesthesia ? [] : null;
   const components = includeChromesthesia ? [] : null;
-  const peaks = findSpectralPeakFrequencies(
-    fftMagnitudes,
-    sampleRate,
-    fftSize,
-    peakCount ?? maxSlots * 2,
-  );
+  const resolvedPeaks =
+    peaks ??
+    findSpectralPeakFrequencies(
+      fftMagnitudes,
+      sampleRate,
+      fftSize,
+      peakCount ?? maxSlots * 2,
+      peakOptions,
+    );
 
   let slotIndex = 0;
-  for (const peak of peaks) {
+  for (const peak of resolvedPeaks) {
     if (slotIndex >= maxSlots) break;
     const familyLimit = Math.min(maxSlots - slotIndex, peakFamilyCount);
     const family = solveModeFamilyForPitch(
@@ -288,7 +316,7 @@ export function buildModalSlotsFromSpectralPeaks({
     colorSlots,
     harmonicSupport,
     uniqueModeCount: slotIndex,
-    peaks,
+    peaks: resolvedPeaks,
     components: includeChromesthesia ? limitColorComponents(components) : [],
   };
 }
@@ -382,26 +410,31 @@ export function buildModalSlotsFromPeakDrivers({
   minimumConfidence = 0.45,
   spectralCentroid = 0,
   includeChromesthesia = true,
+  peaks = null,
+  peakOptions = undefined,
 }) {
-  const peaks = findSpectralPeakFrequencies(
-    fftMagnitudes,
-    sampleRate,
-    fftSize,
-    peakCount,
-  );
-  if (!peaks.length) {
+  const resolvedPeaks =
+    peaks ??
+    findSpectralPeakFrequencies(
+      fftMagnitudes,
+      sampleRate,
+      fftSize,
+      peakCount,
+      peakOptions,
+    );
+  if (!resolvedPeaks.length) {
     return {
       slots: new Float32Array(capacity * 4),
       referenceSlots: new Float32Array(capacity * 4),
       colorSlots: new Float32Array(capacity * 4),
       harmonicSupport: new Float32Array(HARMONIC_ORDERS.length),
       uniqueModeCount: 0,
-      peaks,
+      peaks: resolvedPeaks,
       components: [],
     };
   }
 
-  const builds = peaks.map((peak, index) => {
+  const builds = resolvedPeaks.map((peak, index) => {
     const attenuation =
       BACKBONE_DRIVER_ATTENUATION[index] ??
       BACKBONE_DRIVER_ATTENUATION[BACKBONE_DRIVER_ATTENUATION.length - 1] ??
@@ -431,7 +464,7 @@ export function buildModalSlotsFromPeakDrivers({
 
   return {
     ...mergeModeBuilds(builds, Math.min(capacity, slotLimit)),
-    peaks,
+    peaks: resolvedPeaks,
   };
 }
 
@@ -440,27 +473,40 @@ export function findSpectralPeakFrequencies(
   sampleRate,
   fftSize,
   count,
+  options = undefined,
 ) {
   if (!fftMagnitudes?.length || !sampleRate || !fftSize || count <= 0) {
     return [];
   }
 
   const nyquist = sampleRate * 0.5;
+  const minFrequency = Math.max(0, options?.minFrequency ?? 0);
+  const maxFrequency = Math.min(
+    nyquist,
+    options?.maxFrequency ?? MAX_SPECTRAL_FREQUENCY,
+  );
+  const minimumAmplitude =
+    options?.minimumAmplitude ?? MIN_SPECTRAL_BIN_AMPLITUDE;
+  const minBinGapHz = options?.minBinGapHz ?? MIN_SPECTRAL_BIN_GAP_HZ;
+  const regionRanges = Array.isArray(options?.regionRanges)
+    ? options.regionRanges
+    : null;
+  const perRegionCount = Math.max(1, options?.perRegionCount ?? 1);
   const minBinGap = Math.max(
     1,
-    Math.round((MIN_SPECTRAL_BIN_GAP_HZ / nyquist) * (fftSize * 0.5 - 1)),
+    Math.round((minBinGapHz / nyquist) * (fftSize * 0.5 - 1)),
   );
   const candidates = [];
 
   for (let i = 1; i < fftMagnitudes.length - 1; i++) {
     const amplitude = fftMagnitudes[i];
     if (
-      amplitude >= MIN_SPECTRAL_BIN_AMPLITUDE &&
+      amplitude >= minimumAmplitude &&
       amplitude >= fftMagnitudes[i - 1] &&
       amplitude > fftMagnitudes[i + 1]
     ) {
       const frequency = (i / (fftSize * 0.5 - 1)) * nyquist;
-      if (frequency > 0 && frequency <= MAX_SPECTRAL_FREQUENCY) {
+      if (frequency >= minFrequency && frequency <= maxFrequency) {
         candidates.push({ bin: i, amplitude, frequency });
       }
     }
@@ -468,13 +514,51 @@ export function findSpectralPeakFrequencies(
 
   candidates.sort((a, b) => b.amplitude - a.amplitude);
 
+  if (!regionRanges?.length) {
+    const selected = [];
+    for (const candidate of candidates) {
+      if (selected.length >= count) break;
+      const tooClose = selected.some(
+        (existing) => Math.abs(existing.bin - candidate.bin) < minBinGap,
+      );
+      if (!tooClose) selected.push(candidate);
+    }
+
+    return selected;
+  }
+
+  const regionalCandidates = regionRanges.map(([start, end]) =>
+    candidates.filter(
+      (candidate) =>
+        candidate.frequency >= Math.max(minFrequency, start ?? minFrequency) &&
+        candidate.frequency <= Math.min(maxFrequency, end ?? maxFrequency),
+    ),
+  );
+
   const selected = [];
-  for (const candidate of candidates) {
-    if (selected.length >= count) break;
-    const tooClose = selected.some(
-      (existing) => Math.abs(existing.bin - candidate.bin) < minBinGap,
-    );
-    if (!tooClose) selected.push(candidate);
+  let exhaustedRegions = 0;
+  for (
+    let round = 0;
+    selected.length < count && exhaustedRegions < regionalCandidates.length;
+    round++
+  ) {
+    exhaustedRegions = 0;
+    for (const region of regionalCandidates) {
+      const candidate = region[round];
+      if (!candidate || round >= perRegionCount) {
+        exhaustedRegions += 1;
+        continue;
+      }
+      const tooClose = selected.some(
+        (existing) => Math.abs(existing.bin - candidate.bin) < minBinGap,
+      );
+      if (!tooClose) {
+        selected.push(candidate);
+        if (selected.length >= count) {
+          break;
+        }
+      }
+    }
   }
 
   return selected;

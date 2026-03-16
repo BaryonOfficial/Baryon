@@ -3,6 +3,6 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["src/**/*.js", "../../node_modules/vite-plugin-glsl/ext.d.ts"],
+  "include": ["src/**/*.js"],
   "exclude": ["node_modules", "dist", "src/**/*.test.js"]
 }

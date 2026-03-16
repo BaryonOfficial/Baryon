@@ -1,8 +1,11 @@
 import { defineConfig } from "vite";
 import path from "path";
+import { fileURLToPath } from "node:url";
 import { createBaseViteConfig } from "@baryon/config";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import tailwindcss from "@tailwindcss/vite";
+
+const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** @returns {import('vite').UserConfig} */
 export default defineConfig(() => {
@@ -31,7 +34,7 @@ export default defineConfig(() => {
     },
     resolve: {
       alias: {
-        "@": path.resolve(__dirname, "./src"),
+        "@": path.resolve(dirname, "./src"),
       },
     },
   };

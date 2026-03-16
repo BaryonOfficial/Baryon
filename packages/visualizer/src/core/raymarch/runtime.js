@@ -64,6 +64,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const avgAmplitude = estimateLayeredAmplitude(featureFrame);
   const densityGain = runtimeState.uniforms.uDensityGain.value;
   const absorption = runtimeState.uniforms.uAbsorption.value;
+  const opacityGain = runtimeState.uniforms.uOpacityGain?.value ?? 1;
   const stepBudget = Math.round(runtimeState.volumeMesh.material.steps);
   const rimBloomBias = runtimeState.uniforms.uRimBloomBias?.value ?? 0;
   const rimCompression = runtimeState.uniforms.uRimCompression?.value ?? 0;
@@ -87,7 +88,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   );
   const avgOpacity = Math.min(
     1,
-    avgDensity * (stepBudget / 48) * (0.8 + spectralFlux * 0.12),
+    avgDensity * opacityGain * (stepBudget / 48) * (0.8 + spectralFlux * 0.12),
   );
   const earlyExitRatio = Math.min(1, avgOpacity * 0.72);
   const bloomRisk = Math.min(
@@ -116,6 +117,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
       0,
     avgOpacity,
     avgDensity,
+    opacityGain,
     earlyExitRatio,
     stepBudget,
     transientEnergy,

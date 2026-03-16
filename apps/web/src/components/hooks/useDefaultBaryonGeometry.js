@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { setupLoaders } from "@baryon/visualizer";
+import { setupLoaders } from "@baryon/visualizer/three/loaders";
 import { prepareBaryonGeometryFromScene } from "./defaultBaryonGeometry";
 
 export function useDefaultBaryonGeometry() {

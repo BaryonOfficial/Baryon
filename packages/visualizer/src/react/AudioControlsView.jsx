@@ -19,6 +19,13 @@ export function AudioControlsView({
   setShowDeviceMenu,
   setSelectedDevice,
 }) {
+  void micStatusLabel;
+
+  const selectedMicProfileOption =
+    MIC_PROFILE_OPTIONS.find(
+      (profile) => profile.value === selectedMicProfile,
+    ) ?? MIC_PROFILE_OPTIONS[0];
+
   return (
     <div className="baryon-audio-controls">
       <div className="baryon-audio-controls__stack">
@@ -84,14 +91,32 @@ export function AudioControlsView({
                 </svg>
               )}
             </button>
-            {isMicActive && micStatusLabel ? (
-              <span
-                className="baryon-audio-controls__mic-status"
-                data-testid="mic-status"
+            <div className="baryon-audio-controls__profile-select-wrap">
+              <select
+                className="baryon-audio-controls__profile-select"
+                data-testid="mic-profile-select"
+                value={selectedMicProfile}
+                aria-label="Mic input profile"
+                title={
+                  selectedMicProfileOption
+                    ? `Mic input profile: ${selectedMicProfileOption.label}. ${selectedMicProfileOption.description}`
+                    : "Mic input profile"
+                }
+                onFocus={() => {
+                  setShowDeviceMenu(false);
+                }}
+                onChange={(event) => {
+                  setShowDeviceMenu(false);
+                  handleMicProfileChange?.(event.target.value);
+                }}
               >
-                {micStatusLabel}
-              </span>
-            ) : null}
+                {MIC_PROFILE_OPTIONS.map((profile) => (
+                  <option key={profile.value} value={profile.value}>
+                    {profile.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             {showDeviceMenu && audioDevices.length > 0 && (
               <div className="baryon-audio-controls__menu">
                 <div>
@@ -112,30 +137,6 @@ export function AudioControlsView({
                       {device.label || `Device ${device.deviceId.slice(0, 8)}`}
                     </button>
                   ))}
-                  <div className="baryon-audio-controls__menu-label">
-                    Input Profile
-                  </div>
-                  <div className="baryon-audio-controls__menu-note">
-                    Auto-calibrates when mic starts or when you change profile.
-                  </div>
-                  {MIC_PROFILE_OPTIONS.map((profile) => (
-                    <button
-                      key={profile.value}
-                      onClick={() => handleMicProfileChange?.(profile.value)}
-                      className={`baryon-audio-controls__menu-item${
-                        selectedMicProfile === profile.value
-                          ? " baryon-audio-controls__menu-item--selected"
-                          : ""
-                      }`}
-                    >
-                      <span className="baryon-audio-controls__menu-item-title">
-                        {profile.label}
-                      </span>
-                      <span className="baryon-audio-controls__menu-item-description">
-                        {profile.description}
-                      </span>
-                    </button>
-                  ))}
                 </div>
               </div>
             )}
@@ -145,7 +146,7 @@ export function AudioControlsView({
         {audioDevices.length === 0 && (
           <div className="baryon-audio-controls__helper-text">
             No audio input devices found. Make sure your device is connected and
-            try clicking &quot;Mic Mode&quot; first.
+            try clicking &quot;Select Input&quot; first.
           </div>
         )}
       </div>

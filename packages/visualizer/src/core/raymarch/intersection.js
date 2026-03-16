@@ -55,15 +55,12 @@ export function intersectRaySphereSegment(
 export function estimateProjectedSphereStats({
   radius,
   samples = 33,
-  grazingStart = RAYMARCH_GRAZING_START,
-  grazingEnd = RAYMARCH_GRAZING_END,
   boundaryStart = RAYMARCH_BOUNDARY_START,
   boundaryEnd = RAYMARCH_BOUNDARY_END,
 }) {
   let hits = 0;
   let misses = 0;
   let totalLength = 0;
-  let totalSuppression = 0;
 
   for (let yIndex = 0; yIndex < samples; yIndex += 1) {
     const y = ((yIndex / (samples - 1)) * 2 - 1) * radius;
@@ -85,15 +82,10 @@ export function estimateProjectedSphereStats({
         boundaryEnd,
         normalizedRadialDistance,
       );
-      const grazingMask = smoothstep(
-        grazingStart,
-        grazingEnd,
-        normalizedRadialDistance,
-      );
 
       hits += 1;
       totalLength += segmentLength;
-      totalSuppression += boundaryMask * grazingMask;
+      void boundaryMask;
     }
   }
 
@@ -102,6 +94,7 @@ export function estimateProjectedSphereStats({
   return {
     avgRaySegmentLength: hits > 0 ? totalLength / hits : 0,
     missRatio: sampleCount > 0 ? misses / sampleCount : 0,
-    avgSilhouetteSuppression: hits > 0 ? totalSuppression / hits : 0,
+    // Kept for debug-contract compatibility after removing camera-angle suppression.
+    avgSilhouetteSuppression: 0,
   };
 }

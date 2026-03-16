@@ -26,6 +26,8 @@ const EXPECTED_CONTROL_KEYS = [
   "bloomThreshold",
   "bloomResponseBias",
   "backgroundColor",
+  "outputMode",
+  "outputBackgroundColor",
   "volumeColor",
   "surfaceColor",
   "colorMode",
@@ -39,6 +41,7 @@ const EXPECTED_CONTROL_KEYS = [
   "raymarchSteps",
   "densityGain",
   "absorption",
+  "opacityGain",
   "contourSharpness",
   "rimBloomBias",
   "rimCompression",
@@ -49,6 +52,7 @@ const EXPECTED_CONTROL_KEYS = [
   "auditEnabled",
   "freezeModeSlots",
   "forceWebGLFallbackTest",
+  "lowLoadPlaybackDiagnostics",
   "injectTestTone",
   "testToneHz",
   "testToneAmplitude",
@@ -77,6 +81,27 @@ describe("control schema", () => {
       max: 0.3,
       step: 0.001,
     });
+  });
+
+  it("treats background color as the presentation backdrop", () => {
+    const backgroundControl = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "backgroundColor",
+    );
+
+    expect(backgroundControl?.runtimePath).toBe("ui.backdropColor");
+    expect(backgroundControl?.title).toMatch(/backdrop/i);
+  });
+
+  it("defines program output controls separately from the preview backdrop", () => {
+    const outputModeControl = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "outputMode",
+    );
+    const outputFillControl = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "outputBackgroundColor",
+    );
+
+    expect(outputModeControl?.runtimePath).toBe("program.outputMode");
+    expect(outputFillControl?.runtimePath).toBe("program.backgroundColor");
   });
 
   it("has a valid audit report", () => {
@@ -116,6 +141,8 @@ describe("control schema", () => {
       "bloomThreshold",
       "bloomResponseBias",
       "backgroundColor",
+      "outputMode",
+      "outputBackgroundColor",
       "volumeColor",
       "surfaceColor",
       "colorMode",
@@ -129,6 +156,7 @@ describe("control schema", () => {
       "raymarchSteps",
       "densityGain",
       "absorption",
+      "opacityGain",
       "contourSharpness",
       "rimBloomBias",
       "rimCompression",
@@ -139,6 +167,7 @@ describe("control schema", () => {
       "auditEnabled",
       "freezeModeSlots",
       "forceWebGLFallbackTest",
+      "lowLoadPlaybackDiagnostics",
       "injectTestTone",
       "testToneHz",
       "testToneAmplitude",
@@ -169,6 +198,7 @@ describe("control schema", () => {
       "structureMax",
       "densityGain",
       "absorption",
+      "opacityGain",
       "contourSharpness",
     ]);
     expect(
@@ -181,6 +211,8 @@ describe("control schema", () => {
       "bloomRadius",
       "bloomThreshold",
       "backgroundColor",
+      "outputMode",
+      "outputBackgroundColor",
       "volumeColor",
       "surfaceColor",
       "colorMode",

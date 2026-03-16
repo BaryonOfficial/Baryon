@@ -5,10 +5,8 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  getDefaultAudioSession,
-  DEFAULT_MIC_ANALYSIS_SETTINGS,
-} from "@baryon/visualizer";
+import { getDefaultAudioSession } from "@baryon/visualizer/audio";
+import { DEFAULT_MIC_ANALYSIS_SETTINGS } from "@baryon/visualizer/audio-features";
 import { AudioContext, AudioSceneContext } from "./AudioContext";
 import { useAudioLogic } from "../components/hooks/useAudioLogic";
 import {

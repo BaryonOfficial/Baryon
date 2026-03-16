@@ -13,9 +13,9 @@
     ".": "./vite.base.js"
   },
   "devDependencies": {
-    "@vitejs/plugin-react-swc": "^3.7.2",
-    "vite": "^6.0.11",
-    "vite-plugin-glsl": "^1.3.1",
-    "vite-plugin-top-level-await": "^1.4.4"
+    "@vitejs/plugin-react-swc": "^4.3.0",
+    "vite": "^7.3.1",
+    "vite-plugin-glsl": "^1.5.6",
+    "vite-plugin-top-level-await": "^1.6.0"
   }
 }

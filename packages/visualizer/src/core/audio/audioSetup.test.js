@@ -86,6 +86,7 @@ class MockAudioContext {
     this.destination = {};
     this.createdBufferSources = [];
     this.createdMediaElementSources = [];
+    this.onstatechange = null;
   }
 
   resume = vi.fn(async () => {
@@ -123,6 +124,11 @@ class MockAudioContext {
   decodeAudioData = vi.fn(async () => ({
     duration: 5,
   }));
+
+  dispatchStateChange(nextState) {
+    this.state = nextState;
+    this.onstatechange?.();
+  }
 }
 
 class MockMediaElement {
@@ -264,6 +270,8 @@ describe("audio session", () => {
       audioInputMode: "file",
       isPlaying: true,
       analysisSource: "file",
+      playbackSessionId: 1,
+      lastPlaybackEndReason: null,
     });
     const fileSnapshot = session.readAnalysisSnapshot();
     expect(fileSnapshot).toMatchObject({
@@ -273,6 +281,14 @@ describe("audio session", () => {
     expect(fileSnapshot?.avgAmplitude).toBeGreaterThan(0);
     expect(fileSnapshot?.fftMagnitudes).toBeInstanceOf(Float32Array);
     expect(fileSnapshot?.timeData).toBeInstanceOf(Float32Array);
+    expect(session.getStatus().lastPlaybackDiagnostics).toMatchObject({
+      playbackSessionId: 1,
+      sourceKind: "file",
+      offsetSeconds: 0,
+      durationSeconds: 5,
+      audioContextStateAtStart: "running",
+      latestAudioContextState: "running",
+    });
 
     await session.playPauseAudio();
     expect(session.getStatus()).toMatchObject({
@@ -502,6 +518,7 @@ describe("audio session", () => {
       isPlaying: false,
       audioInputMode: "stopped",
       analysisSource: "idle",
+      lastPlaybackEndReason: "stopped",
     });
   });
 
@@ -742,6 +759,7 @@ describe("audio session", () => {
     session.setAudioEndedCallback(callback);
     await session.loadAudio("good");
     await session.playPauseAudio();
+    lastAudioContext.currentTime = 17;
 
     const activeSource = lastAudioContext.createdBufferSources[0];
     if (activeSource?.onended) {
@@ -752,6 +770,92 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "stopped",
       isPlaying: false,
+      lastPlaybackEndReason: "natural",
+    });
+  });
+
+  it("classifies early buffer endings as premature and preserves playback offset", async () => {
+    const session = createAttachedSession();
+    const callback = vi.fn();
+
+    session.setAudioEndedCallback(callback);
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+    lastAudioContext.currentTime = 13.2;
+
+    const activeSource = lastAudioContext.createdBufferSources[0];
+    activeSource?.onended?.();
+
+    expect(callback).not.toHaveBeenCalled();
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "idle",
+      isPlaying: false,
+      lastPlaybackEndReason: "premature",
+    });
+    expect(session.getTransportState()).toMatchObject({
+      durationSeconds: 5,
+      canSeek: true,
+    });
+    expect(session.getTransportState().currentTimeSeconds).toBeCloseTo(1.2, 5);
+    expect(session.getStatus().lastPlaybackDiagnostics).toMatchObject({
+      playbackSessionId: 1,
+      reason: "premature",
+    });
+    expect(
+      session.getStatus().lastPlaybackDiagnostics?.actualPlayedDurationSeconds,
+    ).toBeCloseTo(1.2, 5);
+  });
+
+  it("records audio context state changes and resumes interrupted playback on interaction", async () => {
+    const session = createAttachedSession();
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+
+    lastAudioContext.dispatchStateChange("suspended");
+
+    expect(session.getStatus()).toMatchObject({
+      isPlaying: false,
+      lastPlaybackEndReason: null,
+    });
+    expect(session.getStatus().lastPlaybackDiagnostics).toMatchObject({
+      latestAudioContextState: "suspended",
+      lastContextStateChange: {
+        from: "running",
+        to: "suspended",
+      },
+    });
+
+    await session.playPauseAudio();
+
+    expect(lastAudioContext.resume).toHaveBeenCalledTimes(1);
+    expect(session.getStatus()).toMatchObject({
+      isPlaying: true,
+    });
+    expect(session.getStatus().lastPlaybackDiagnostics).toMatchObject({
+      latestAudioContextState: "running",
+      lastResumeAttempt: {
+        succeeded: true,
+        nextAudioContextState: "running",
+      },
+    });
+  });
+
+  it("does not misclassify pause, resume, and seek as playback interruptions", async () => {
+    const session = createAttachedSession();
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+
+    lastAudioContext.currentTime = 13;
+    await session.playPauseAudio();
+    await session.playPauseAudio();
+    await session.seekTo(2.25);
+
+    expect(session.getStatus()).toMatchObject({
+      isPlaying: true,
+      lastPlaybackEndReason: null,
+    });
+    expect(session.getTransportState()).toMatchObject({
+      currentTimeSeconds: 2.25,
     });
   });
 
@@ -782,6 +886,7 @@ describe("audio session", () => {
       audioInputMode: "stopped",
       isPlaying: false,
       sourceKind: "soundcloud",
+      lastPlaybackEndReason: "natural",
     });
   });
 

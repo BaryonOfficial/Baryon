@@ -14,6 +14,7 @@ import {
   modelWorldMatrixInverse,
   positionWorld,
   property,
+  clamp,
   sqrt,
   uniform,
   vec3,
@@ -22,6 +23,7 @@ import {
   max,
   min,
 } from "three/tsl";
+import { RAYMARCH_DEFAULTS } from "../../defaults.js";
 import {
   MAX_STEP_COMPENSATION,
   STEP_COMPENSATION_EXPONENT,
@@ -30,7 +32,8 @@ import {
 
 const scatteringDensity = property("vec3");
 const linearDepthRay = property("vec3");
-const outgoingRayLight = property("vec3");
+export const raymarchLightNode = property("vec3", "baryonRaymarchLight");
+export const raymarchOpacityNode = property("float", "baryonRaymarchOpacity");
 const EXTINCTION_SCALE = 0.08;
 const OUTPUT_GAIN = 1.35;
 const REFERENCE_STEPS = STEP_REFERENCE;
@@ -39,6 +42,7 @@ const REFERENCE_STEPS = STEP_REFERENCE;
  * @typedef {import("three").Material & {
  *   steps?: number,
  *   radiusNode?: any,
+ *   opacityGainNode?: any,
  *   offsetNode?: any,
  *   depthNode?: any,
  *   scatteringNode?: ((args: { positionRay: any }) => any) | null
@@ -72,6 +76,8 @@ export default class SafeVolumetricLightingModel extends LightingModel {
         /** @type {RuntimeVolumeMaterial} */ (runtimeMaterial).steps ?? 0,
     );
     const radiusNode = material.radiusNode ?? modelRadius;
+    const opacityGainNode =
+      material.opacityGainNode ?? uniform(RAYMARCH_DEFAULTS.opacityGain);
     const startPosLocal = modelWorldMatrixInverse
       .mul(vec4(startPos, 1))
       .xyz.toVar();
@@ -97,6 +103,8 @@ export default class SafeVolumetricLightingModel extends LightingModel {
     const stepCompensation = float(1.0).toVar();
     const distTravelled = float(0.0).toVar();
     const transmittance = vec3(1).toVar();
+    raymarchLightNode.assign(vec3(0));
+    raymarchOpacityNode.assign(0.0);
 
     If(stepRatio.greaterThan(1.0), () => {
       stepCompensation.assign(
@@ -182,12 +190,23 @@ export default class SafeVolumetricLightingModel extends LightingModel {
           distTravelled.addAssign(stepSize);
         });
 
-        outgoingRayLight.addAssign(
+        raymarchLightNode.addAssign(
           transmittance
             .saturate()
             .oneMinus()
             .mul(OUTPUT_GAIN)
             .mul(stepCompensation),
+        );
+        const visibility = transmittance.saturate().oneMinus().toVar();
+        raymarchOpacityNode.assign(
+          clamp(
+            max(max(visibility.x, visibility.y), visibility.z)
+              .mul(opacityGainNode)
+              .mul(OUTPUT_GAIN)
+              .mul(stepCompensation),
+            0.0,
+            1.0,
+          ),
         );
       });
     });
@@ -229,6 +248,6 @@ export default class SafeVolumetricLightingModel extends LightingModel {
   }
 
   finish(builder) {
-    builder.context.outgoingLight.assign(outgoingRayLight);
+    builder.context.outgoingLight.assign(raymarchLightNode);
   }
 }

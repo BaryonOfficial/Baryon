@@ -17,7 +17,7 @@ packages/
   config/     @baryon/config     Shared Vite config
 ```
 
-`apps/web` consumes `@baryon/visualizer` today, and `apps/desktop` is reserved for the future desktop host surface. Static runtime assets such as `public/glb/` remain app-local because they are loaded by URL at runtime.
+`apps/web` consumes `@baryon/visualizer` today, and `apps/desktop` is reserved for the future desktop host surface. Static runtime assets stay app-local under `apps/web/public/` because they are loaded by URL at runtime.
 
 ## Licensing
 
@@ -126,6 +126,10 @@ pnpm build:web
 
 That keeps the pre-push gate strict without forcing Playwright/browser setup or product-specific build toolchains on every push.
 
+Generated output:
+
+- `apps/web/dist/` is build output from Vite, not source. Treat it as disposable local output during review and cleanup work.
+
 ## Runtime Requirements
 
 Current renderer requirements:
@@ -214,10 +218,19 @@ Important behavior:
 Important web pieces:
 
 - `apps/web/src/components/ThreeScene.jsx`
+- `apps/web/src/components/hooks/useBrowserSupportState.js`
+- `apps/web/src/components/hooks/useRendererModeState.js`
 - `apps/web/src/components/BaryonScene.jsx`
 - `apps/web/src/components/hooks/useBaryonControls.js`
 - `apps/web/src/components/hooks/useBaryonPipeline.js`
 - `apps/web/src/components/hooks/useBaryonVisualizer.js`
+
+Where to change common web concerns:
+
+- WebGPU/browser gating and user-facing support diagnostics live in `apps/web/src/components/browserSupport.js` and `apps/web/src/components/hooks/useBrowserSupportState.js`.
+- Renderer init diagnostics and backend bookkeeping live in `apps/web/src/components/rendererDiagnostics.js`.
+- Linux browser diagnostics automation keeps its side effects in `apps/web/scripts/linux-webgpu-diagnostics.mjs` and its pure classification/formatting logic in `apps/web/scripts/linux-webgpu-diagnostics-helpers.mjs`.
+- Runtime-loaded assets for the web app live in `apps/web/public/`.
 - `apps/web/src/context/AudioProvider.jsx`
 
 The web scene is intentionally hook-composed now:

@@ -51,6 +51,26 @@ function makeFft(peaks) {
   return fft;
 }
 
+function makeTimeData({
+  frequency,
+  amplitude = 0.45,
+  harmonics = [],
+  sampleRate = SAMPLE_RATE,
+  fftSize = FFT_SIZE,
+}) {
+  const timeData = new Float32Array(fftSize);
+  for (let index = 0; index < fftSize; index += 1) {
+    const t = index / sampleRate;
+    let sample = Math.sin(2 * Math.PI * frequency * t) * amplitude;
+    for (const [multiple, harmonicAmplitude] of harmonics) {
+      sample +=
+        Math.sin(2 * Math.PI * frequency * multiple * t) * harmonicAmplitude;
+    }
+    timeData[index] = Math.max(-1, Math.min(1, sample));
+  }
+  return timeData;
+}
+
 function makeActiveStatus(overrides = {}) {
   return createStatus({
     audioInputMode: "file",
@@ -113,12 +133,14 @@ function buildMicFrame({
   frameTimeMs,
   profile = "voice-tone",
   status = makeMicStatus(),
+  timeData = new Float32Array(FFT_SIZE),
 }) {
   return buildAudioFeatureFrame({
     analysisSnapshot: createSnapshot({
       sourceMode: "mic",
       avgAmplitude,
       fftMagnitudes: makeFft(peaks),
+      timeData,
       rms,
     }),
     featureState,
@@ -420,7 +442,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
     expect(ambientFrame.debug.micNoiseGateActive).toBe(false);
   });
 
-  it("holds the mic gate open across brief dropouts and closes after four quiet frames", () => {
+  it("keeps a short low-energy hold and then returns to idle", () => {
     const featureState = createAudioFeatureState();
     buildMicFrame({
       featureState,
@@ -517,10 +539,50 @@ describe("buildAudioFeatureFrame layered contract", () => {
     });
 
     expect(quiet1.debug.micNoiseGateActive).toBe(false);
-    expect(quiet2.debug.micNoiseGateActive).toBe(false);
-    expect(quiet3.debug.micNoiseGateActive).toBe(false);
+    expect(quiet2.debug.micNoiseGateActive).toBe(true);
+    expect(quiet3.debug.micNoiseGateActive).toBe(true);
     expect(quiet4.debug.micNoiseGateActive).toBe(true);
+    expect(quiet2.fieldState).toBe("idle");
     expect(quiet4.fieldState).toBe("idle");
+  });
+
+  it("drops to idle on the first hard-silence frame while mic stays active", () => {
+    const featureState = createAudioFeatureState();
+    buildMicFrame({
+      featureState,
+      peaks: [
+        [220, 0.3],
+        [440, 0.18],
+        [880, 0.1],
+      ],
+      avgAmplitude: 7,
+      rms: 0.028,
+      frameTimeMs: 0,
+    });
+    buildMicFrame({
+      featureState,
+      peaks: [
+        [220, 0.31],
+        [440, 0.19],
+        [880, 0.11],
+      ],
+      avgAmplitude: 7.2,
+      rms: 0.029,
+      frameTimeMs: 30,
+    });
+
+    const silence = buildMicFrame({
+      featureState,
+      peaks: [],
+      avgAmplitude: 0,
+      rms: 0,
+      frameTimeMs: 60,
+    });
+
+    expect(silence.debug.micNoiseGateActive).toBe(true);
+    expect(silence.debug.micHardSilenceActive).toBe(true);
+    expect(silence.fieldState).toBe("idle");
+    expect(silence.debug.driverFrequency).toBe(0);
   });
 
   it("recalibrates when mic mode is restarted", () => {
@@ -809,6 +871,14 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.00185,
       frameTimeMs: 800,
       profile: "voice-tone",
+      timeData: makeTimeData({
+        frequency: 220,
+        amplitude: 0.06,
+        harmonics: [
+          [2, 0.03],
+          [3, 0.02],
+        ],
+      }),
     });
     const secondVoice = buildMicFrame({
       featureState,
@@ -822,6 +892,14 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.00192,
       frameTimeMs: 830,
       profile: "voice-tone",
+      timeData: makeTimeData({
+        frequency: 220,
+        amplitude: 0.065,
+        harmonics: [
+          [2, 0.03],
+          [3, 0.02],
+        ],
+      }),
     });
 
     expect(firstVoice.debug.micBaselineRms).toBeLessThan(0.0013);
@@ -829,6 +907,244 @@ describe("buildAudioFeatureFrame layered contract", () => {
     expect(firstVoice.debug.micNoiseGateActive).toBe(false);
     expect(secondVoice.debug.micNoiseGateActive).toBe(false);
     expect(secondVoice.fieldState).toBe("active");
+  });
+
+  it("tracks high singing without jumping to stronger upper harmonics", () => {
+    const featureState = createAudioFeatureState();
+    buildMicFrame({
+      featureState,
+      peaks: [
+        [110, 0.08],
+        [220, 0.06],
+      ],
+      avgAmplitude: 2.3,
+      rms: 0.006,
+      frameTimeMs: 0,
+      timeData: makeTimeData({ frequency: 110, amplitude: 0.12 }),
+    });
+    buildMicFrame({
+      featureState,
+      peaks: [
+        [110, 0.08],
+        [220, 0.06],
+      ],
+      avgAmplitude: 2.3,
+      rms: 0.006,
+      frameTimeMs: 320,
+      timeData: makeTimeData({ frequency: 110, amplitude: 0.12 }),
+    });
+    buildMicFrame({
+      featureState,
+      peaks: [
+        [110, 0.08],
+        [220, 0.06],
+      ],
+      avgAmplitude: 2.3,
+      rms: 0.006,
+      frameTimeMs: 770,
+      timeData: makeTimeData({ frequency: 110, amplitude: 0.12 }),
+    });
+
+    const frame = buildMicFrame({
+      featureState,
+      peaks: [
+        [880, 0.22],
+        [1760, 0.31],
+        [2640, 0.16],
+      ],
+      avgAmplitude: 6.4,
+      rms: 0.03,
+      frameTimeMs: 820,
+      timeData: makeTimeData({
+        frequency: 880,
+        amplitude: 0.28,
+        harmonics: [
+          [2, 0.34],
+          [3, 0.12],
+        ],
+      }),
+    });
+
+    expect(frame.fieldState).toBe("active");
+    expect(frame.debug.pitchSource).toBe("fundamental");
+    expect(frame.debug.driverFrequency).toBeGreaterThan(820);
+    expect(frame.debug.driverFrequency).toBeLessThan(940);
+    expect(frame.debug.driverFrequency).toBeLessThan(1760);
+  });
+
+  it("keeps a spoken pitch latched when a weak trailing frame proposes a false high note", () => {
+    const featureState = createAudioFeatureState();
+    for (const frameTimeMs of [0, 320, 770]) {
+      buildMicFrame({
+        featureState,
+        peaks: [
+          [110, 0.08],
+          [220, 0.06],
+        ],
+        avgAmplitude: 2.3,
+        rms: 0.006,
+        frameTimeMs,
+        timeData: makeTimeData({ frequency: 110, amplitude: 0.12 }),
+      });
+    }
+
+    buildMicFrame({
+      featureState,
+      peaks: [
+        [190, 0.18],
+        [380, 0.11],
+        [570, 0.07],
+      ],
+      avgAmplitude: 6.2,
+      rms: 0.022,
+      frameTimeMs: 820,
+      timeData: makeTimeData({
+        frequency: 190,
+        amplitude: 0.14,
+        harmonics: [
+          [2, 0.05],
+          [3, 0.02],
+        ],
+      }),
+    });
+
+    const trailingFrame = buildMicFrame({
+      featureState,
+      peaks: [
+        [190, 0.04],
+        [760, 0.29],
+        [1520, 0.05],
+      ],
+      avgAmplitude: 4.7,
+      rms: 0.0019,
+      frameTimeMs: 850,
+      timeData: makeTimeData({
+        frequency: 190,
+        amplitude: 0.013,
+        harmonics: [[4, 0.003]],
+      }),
+    });
+
+    expect(trailingFrame.fieldState).toBe("active");
+    expect(trailingFrame.debug.pitchSource).toBe("latched-fundamental");
+    expect(trailingFrame.debug.driverFrequency).toBeGreaterThan(150);
+    expect(trailingFrame.debug.driverFrequency).toBeLessThan(260);
+    expect(trailingFrame.debug.candidateFrames).toBe(0);
+    expect(trailingFrame.debug.candidateLowEnergy).toBe(true);
+    expect(
+      trailingFrame.debug.candidateFrequency < 300 ||
+        trailingFrame.debug.highCandidateRejected,
+    ).toBe(true);
+  });
+
+  it("prefers an inferred lower vocal pitch over a stronger overtone", () => {
+    const featureState = createAudioFeatureState();
+    for (const frameTimeMs of [0, 320, 770]) {
+      buildMicFrame({
+        featureState,
+        peaks: [
+          [110, 0.08],
+          [220, 0.06],
+        ],
+        avgAmplitude: 2.3,
+        rms: 0.006,
+        frameTimeMs,
+        timeData: makeTimeData({ frequency: 110, amplitude: 0.12 }),
+      });
+    }
+
+    const frame = buildMicFrame({
+      featureState,
+      peaks: [
+        [220, 0.04],
+        [440, 0.24],
+        [660, 0.16],
+        [880, 0.09],
+      ],
+      avgAmplitude: 6.8,
+      rms: 0.024,
+      frameTimeMs: 820,
+      timeData: makeTimeData({
+        frequency: 220,
+        amplitude: 0.09,
+        harmonics: [
+          [2, 0.19],
+          [3, 0.11],
+          [4, 0.06],
+        ],
+      }),
+    });
+
+    expect(frame.fieldState).toBe("active");
+    expect(frame.debug.pitchSource).toBe("fundamental");
+    expect(frame.debug.driverFrequency).toBeGreaterThan(180);
+    expect(frame.debug.driverFrequency).toBeLessThan(280);
+    expect(frame.debug.driverFrequency).toBeLessThan(440);
+    expect(frame.debug.candidateHarmonicSupport).toBeGreaterThan(0.09);
+    expect(frame.debug.periodicity).toBeGreaterThan(0.2);
+  });
+
+  it("keeps ambient multi-source instead of collapsing to one dominant pitch", () => {
+    const featureState = createAudioFeatureState();
+    buildMicFrame({
+      featureState,
+      peaks: [
+        [120, 0.14],
+        [260, 0.1],
+        [520, 0.08],
+      ],
+      avgAmplitude: 3.2,
+      rms: 0.01,
+      frameTimeMs: 0,
+      profile: "ambient",
+    });
+    buildMicFrame({
+      featureState,
+      peaks: [
+        [120, 0.14],
+        [260, 0.1],
+        [520, 0.08],
+      ],
+      avgAmplitude: 3.2,
+      rms: 0.01,
+      frameTimeMs: 320,
+      profile: "ambient",
+    });
+    buildMicFrame({
+      featureState,
+      peaks: [
+        [120, 0.14],
+        [260, 0.1],
+        [520, 0.08],
+      ],
+      avgAmplitude: 3.2,
+      rms: 0.01,
+      frameTimeMs: 770,
+      profile: "ambient",
+    });
+
+    const frame = buildMicFrame({
+      featureState,
+      peaks: [
+        [110, 0.28],
+        [330, 0.24],
+        [660, 0.18],
+        [1480, 0.2],
+        [2600, 0.17],
+        [4200, 0.16],
+      ],
+      avgAmplitude: 10.5,
+      rms: 0.042,
+      frameTimeMs: 820,
+      profile: "ambient",
+    });
+
+    expect(frame.fieldState).toBe("active");
+    expect(frame.debug.pitchSource).toBe("multi-spectral");
+    expect(frame.debug.analysisEngine).toBe("multi-spectral");
+    expect(frame.debug.backboneModeCount).toBeGreaterThan(2);
+    expect(frame.debug.detailModeCount).toBeGreaterThan(2);
+    expect(frame.debug.fundamentalFrequency).toBeGreaterThan(0);
   });
 
   it("builds layered backbone/detail slots from spectral peaks", () => {

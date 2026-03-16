@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { CONTROL_HANDLERS } from "./schema.js";
 import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
 import { REACTIVITY_DEFAULTS, RENDER_DEFAULTS } from "../defaults.js";
+import { normalizeOutputMode } from "../render/outputPipeline.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -24,6 +25,7 @@ const AUDIO_ROTATION_IMPULSE_SCALE = 1.75;
 const AUDIO_ROTATION_BEAT_IMPULSE_SCALE = 0.9;
 const AUDIO_ROTATION_BEAT_CONFIDENCE_FLOOR = 0.3;
 const AUDIO_ROTATION_DRIVE_DEADZONE = 0.08;
+const TRANSPARENT_CLEAR_COLOR = new THREE.Color(0x000000);
 
 function deriveIdleLogoAlpha(intensity) {
   return Math.min(1, intensity * IDLE_LOGO_ALPHA_RATIO);
@@ -107,6 +109,10 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "autoGainControl",
   ]),
   [CONTROL_HANDLERS.shared]: Object.freeze(["backgroundColor"]),
+  [CONTROL_HANDLERS.output]: Object.freeze([
+    "outputMode",
+    "outputBackgroundColor",
+  ]),
   [CONTROL_HANDLERS.raymarch]: Object.freeze([
     "volumeColor",
     "surfaceColor",
@@ -118,6 +124,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "raymarchSteps",
     "densityGain",
     "absorption",
+    "opacityGain",
     "contourSharpness",
     "reactivity",
     "structurePersistence",
@@ -142,6 +149,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "auditEnabled",
     "freezeModeSlots",
     "forceWebGLFallbackTest",
+    "lowLoadPlaybackDiagnostics",
     "injectTestTone",
     "testToneHz",
     "testToneAmplitude",
@@ -168,9 +176,39 @@ export async function applyAudioControls(audioSession, controls) {
 }
 
 export function applySharedControls(gl, controls) {
-  gl.setClearColor(new THREE.Color(controls.backgroundColor));
+  gl.setClearColor(TRANSPARENT_CLEAR_COLOR, 0);
   return {
     backgroundColor: controls.backgroundColor,
+    clearAlpha: 0,
+  };
+}
+
+export function applyOutputControls(pipelineState, controls) {
+  const outputMode = normalizeOutputMode(controls.outputMode);
+  const outputBackgroundColor =
+    controls.outputBackgroundColor ?? RENDER_DEFAULTS.outputBackgroundColor;
+  const pipeline = pipelineState.ensurePipeline();
+  const postNodes = pipelineState.postNodesRef.current;
+
+  if (!pipeline || !postNodes) {
+    return {
+      outputMode,
+      outputBackgroundColor,
+    };
+  }
+
+  postNodes.outputUniforms?.backgroundColor?.value?.set(outputBackgroundColor);
+  pipeline.outputNode = postNodes.composeOutputNode
+    ? postNodes.composeOutputNode({
+        bloomEnabled: controls.bloomEnabled,
+        outputMode,
+      })
+    : pipeline.outputNode;
+  pipeline.needsUpdate = true;
+
+  return {
+    outputMode,
+    outputBackgroundColor,
   };
 }
 
@@ -196,6 +234,7 @@ export function applyRaymarchControls(runtimeState, controls) {
   uniforms.uIdleLogoSize.value = controls.idleLogoSize;
   uniforms.uDensityGain.value = controls.densityGain;
   uniforms.uAbsorption.value = controls.absorption;
+  uniforms.uOpacityGain.value = controls.opacityGain;
   uniforms.uContourSharpness.value = controls.contourSharpness;
   uniforms.uRimBloomBias.value = controls.rimBloomBias;
   uniforms.uRimCompression.value = controls.rimCompression;
@@ -247,6 +286,7 @@ export function applyRaymarchControls(runtimeState, controls) {
       idleLogoSize: uniforms.uIdleLogoSize.value,
       densityGain: uniforms.uDensityGain.value,
       absorption: uniforms.uAbsorption.value,
+      opacityGain: uniforms.uOpacityGain.value,
       contourSharpness: uniforms.uContourSharpness.value,
       reactivity: runtimeState.reactivityTuning?.reactivity,
       motionAmount: runtimeState.reactivityTuning?.motionAmount,
@@ -310,13 +350,19 @@ export function applyBloomControls(pipelineState, controls) {
     };
   }
 
-  const { sceneColor, bloomPass } = postNodes;
+  const { sceneColor, bloomPass, composeOutputNode } = postNodes;
   bloomPass.strength.value = effective.strength;
   bloomPass.radius.value = effective.radius;
   bloomPass.threshold.value = effective.threshold;
-  pipeline.outputNode = controls.bloomEnabled
-    ? sceneColor.add(bloomPass)
-    : sceneColor;
+  pipeline.outputNode = composeOutputNode
+    ? composeOutputNode({
+        bloomEnabled: controls.bloomEnabled,
+        outputMode: controls.outputMode,
+      })
+    : controls.bloomEnabled
+      ? sceneColor.add(bloomPass)
+      : sceneColor;
+  pipeline.needsUpdate = true;
 
   return {
     enabled: controls.bloomEnabled,
@@ -339,6 +385,7 @@ export function applyAuditControls(featureState, controls) {
     enabled: controls.auditEnabled,
     freezeModeSlots: controls.freezeModeSlots,
     forceWebGLFallbackTest: controls.forceWebGLFallbackTest,
+    lowLoadPlaybackDiagnostics: controls.lowLoadPlaybackDiagnostics,
     injectTestTone: controls.injectTestTone,
     testToneHz: controls.testToneHz,
     testToneAmplitude: controls.testToneAmplitude,
@@ -527,6 +574,7 @@ export function buildControlInspectionSnapshot({
   method = DEFAULT_VISUALIZATION_METHOD,
   audio,
   shared,
+  output,
   raymarch,
   bloom,
   audit,
@@ -536,6 +584,7 @@ export function buildControlInspectionSnapshot({
     method,
     ...(audio === undefined ? {} : { audio }),
     shared,
+    output,
     raymarch,
     simulation: raymarch,
     bloom,

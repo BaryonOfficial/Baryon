@@ -25,6 +25,7 @@ import {
   findSpectralPeakFrequencies,
   HARMONIC_ORDERS,
 } from "./modalResolvers.js";
+import { detectVoicePitch } from "./pitchDetection.js";
 import { deriveFieldState } from "./fieldState.js";
 import { AUDIO_ANALYSIS_POLICY, SPECTRAL_MODAL_POLICY } from "./policy.js";
 import { FIELD_STATES } from "./types.js";
@@ -57,6 +58,15 @@ const BAND_LIMITS_HZ = [140, 600, 2400, 8000];
 const DEFAULT_MIC_PROFILE = "voice-tone";
 const MIC_CALIBRATION_WINDOW_MS = 750;
 const MIC_CALIBRATION_SMOOTHING_MS = 180;
+const VOICE_DETAIL_HARMONIC_LIMIT = 5;
+const VOICE_LATCH_DECAY = 0.94;
+const VOICE_CANDIDATE_MATCH_TOLERANCE = 0.065;
+const AMBIENT_REGION_RANGES = Object.freeze([
+  Object.freeze([70, 240]),
+  Object.freeze([240, 720]),
+  Object.freeze([720, 1800]),
+  Object.freeze([1800, 5000]),
+]);
 const MIC_PROFILE_CONFIGS = Object.freeze({
   "voice-tone": Object.freeze({
     absoluteAvgAmplitude: Math.max(4, MIC_SILENCE_AVG_AMPLITUDE * 0.5),
@@ -64,7 +74,7 @@ const MIC_PROFILE_CONFIGS = Object.freeze({
     absolutePeakFloor: 0.1,
     absoluteCentroidFloor: 0.006,
     openFrames: 1,
-    closeFrames: 4,
+    closeFrames: 2,
     rmsOpenMultiplier: 1.15,
     rmsOpenOffset: 0.0002,
     peakOpenMultiplier: 1.4,
@@ -78,6 +88,28 @@ const MIC_PROFILE_CONFIGS = Object.freeze({
     peakCloseMultiplier: 1.15,
     peakCloseOffset: 0.015,
     minPeakClarity: 0.38,
+    hardSilenceRmsMultiplier: 1.08,
+    hardSilenceRmsOffset: 0.00012,
+    hardSilencePeakMultiplier: 1.02,
+    hardSilencePeakOffset: 0.006,
+    hardSilenceAvgMultiplier: 0.4,
+    hardSilenceAvgOffset: 0.35,
+    latchHoldFrames: 3,
+    pitchMinHz: 70,
+    pitchMaxHz: 1400,
+    pitchAutocorrelationMaxHz: 650,
+    pitchConfidence: 0.28,
+    pitchLatchConfidence: 0.2,
+    pitchLowEnergyRms: 0.018,
+    pitchStrongPeriodicity: 0.58,
+    highPitchMinHz: 650,
+    highPitchMinConfidence: 0.36,
+    highPitchMinPeriodicity: 0.58,
+    highPitchMinHarmonicSupport: 0.24,
+    highPitchMinSupportSources: 2,
+    highPitchStableFrames: 2,
+    highPitchStableConfidence: 0.34,
+    spectralPeakMaxHz: 3200,
   }),
   ambient: Object.freeze({
     absoluteAvgAmplitude: Math.max(3, MIC_SILENCE_AVG_AMPLITUDE * 0.4),
@@ -99,6 +131,13 @@ const MIC_PROFILE_CONFIGS = Object.freeze({
     peakCloseMultiplier: 1.05,
     peakCloseOffset: 0.01,
     minPeakClarity: 0,
+    hardSilenceRmsMultiplier: 1.06,
+    hardSilenceRmsOffset: 0.00008,
+    hardSilencePeakMultiplier: 1.02,
+    hardSilencePeakOffset: 0.006,
+    hardSilenceAvgMultiplier: 0.4,
+    hardSilenceAvgOffset: 0.3,
+    spectralPeakMaxHz: 5000,
   }),
 });
 const LOW_BAND_PRIMARY_WEIGHT = 0.7;
@@ -117,12 +156,14 @@ export const MIC_PROFILE_OPTIONS = Object.freeze([
   Object.freeze({
     value: "voice-tone",
     label: "Voice",
-    description: "Best for voice, humming, and simple sung notes.",
+    description:
+      "Speech and singing. Tracks a lead vocal pitch and uses harmonics as texture.",
   }),
   Object.freeze({
     value: "ambient",
     label: "Ambient",
-    description: "Most sensitive. Use for room texture and quieter sound beds.",
+    description:
+      "Crowds, rooms, parties, and mixed music. Represents multiple simultaneous sources.",
   }),
 ]);
 
@@ -440,6 +481,7 @@ function buildDebugSummary({
   analysisEngine = "none",
   fieldState = FIELD_STATES.idle,
   micNoiseGateActive = false,
+  micHardSilenceActive = false,
   micCalibrationActive = false,
   micProfile = DEFAULT_MIC_PROFILE,
   micBaselineRms = 0,
@@ -491,6 +533,7 @@ function buildDebugSummary({
     fileActive: soundActive,
     micActive,
     micNoiseGateActive,
+    micHardSilenceActive,
     micCalibrationActive,
     micProfile,
     micBaselineRms,
@@ -531,13 +574,20 @@ function buildDebugSummary({
           fftSize,
         )
       : 0,
-    driverFrequency: dominantFrequency,
+    driverFrequency: backboneState?.driverFrequency ?? dominantFrequency,
     driverLocked: backboneModeCount > 0,
-    candidateFrequency: 0,
-    candidateConfidence: 0,
-    candidateFrames: 0,
-    latchHoldFrames: 0,
-    latchLowSupportFrames: 0,
+    candidateFrequency: backboneState?.candidateFrequency ?? 0,
+    candidateConfidence: backboneState?.candidateConfidence ?? 0,
+    candidateFrames: backboneState?.candidateFrames ?? 0,
+    periodicity: backboneState?.candidatePeriodicity ?? 0,
+    candidateHarmonicSupport: backboneState?.candidateHarmonicSupport ?? 0,
+    candidateDirectSupport: backboneState?.candidateDirectSupport ?? 0,
+    candidateLowEnergy: backboneState?.candidateLowEnergy ?? false,
+    voicingActive: backboneState?.voicingActive ?? false,
+    highCandidateRejected: backboneState?.highCandidateRejected ?? false,
+    rejectionReason: backboneState?.rejectionReason ?? "none",
+    latchHoldFrames: backboneState?.latchHoldFrames ?? 0,
+    latchLowSupportFrames: backboneState?.latchLowSupportFrames ?? 0,
     chromesthesiaComponents,
   };
 }
@@ -566,6 +616,7 @@ function buildZeroDebugSnapshot({
     analysisEngine,
     fieldState,
     micNoiseGateActive: false,
+    micHardSilenceActive: false,
     backboneState: null,
     detailState: null,
     fftMagnitudes: null,
@@ -779,6 +830,14 @@ function computeMicMetrics({
   };
 }
 
+function detectMicHardSilence(metrics, thresholds) {
+  return (
+    metrics.avgAmplitude <= thresholds.hardSilenceAvg &&
+    metrics.rms <= thresholds.hardSilenceRms &&
+    metrics.peakAmplitude <= thresholds.hardSilencePeak
+  );
+}
+
 export function detectMicNoiseGate({
   injectTestTone,
   inputMode,
@@ -798,13 +857,16 @@ export function detectMicNoiseGate({
     sampleRate,
     fftSize,
   });
+  const thresholds = {
+    hardSilenceAvg: config.absoluteAvgAmplitude,
+    hardSilenceRms: config.absoluteRmsFloor,
+    hardSilencePeak: config.absolutePeakFloor,
+  };
 
   return (
     !injectTestTone &&
     inputMode === "mic" &&
-    metrics.avgAmplitude < config.absoluteAvgAmplitude &&
-    metrics.rms < config.absoluteRmsFloor &&
-    metrics.peakAmplitude < config.absolutePeakFloor &&
+    detectMicHardSilence(metrics, thresholds) &&
     metrics.spectralCentroid < config.absoluteCentroidFloor
   );
 }
@@ -856,6 +918,20 @@ function deriveMicThresholds(bandState, profileConfig) {
     openLowBand:
       bandState.micBaselineLowBandEnergy * profileConfig.lowBandOpenMultiplier +
       profileConfig.lowBandOpenOffset,
+    hardSilenceRms: Math.max(
+      profileConfig.absoluteRmsFloor * 0.8,
+      bandState.micBaselineRms * profileConfig.hardSilenceRmsMultiplier +
+        profileConfig.hardSilenceRmsOffset,
+    ),
+    hardSilencePeak: Math.max(
+      profileConfig.absolutePeakFloor * 0.4,
+      bandState.micBaselinePeak * profileConfig.hardSilencePeakMultiplier +
+        profileConfig.hardSilencePeakOffset,
+    ),
+    hardSilenceAvg:
+      profileConfig.absoluteAvgAmplitude *
+        profileConfig.hardSilenceAvgMultiplier +
+      profileConfig.hardSilenceAvgOffset,
   };
 }
 
@@ -910,7 +986,10 @@ function resolveMicNoiseGate({
       inputMode,
       profile,
     });
-    return false;
+    return {
+      active: false,
+      hardSilence: false,
+    };
   }
 
   if (
@@ -943,7 +1022,10 @@ function resolveMicNoiseGate({
       currentFrameAtMs - bandState.micCalibrationStartedAtMs <
       MIC_CALIBRATION_WINDOW_MS
     ) {
-      return true;
+      return {
+        active: true,
+        hardSilence: true,
+      };
     }
 
     bandState.micCalibrationActive = false;
@@ -963,22 +1045,42 @@ function resolveMicNoiseGate({
     micAnalysisSettings: { profile },
   });
   const thresholds = deriveMicThresholds(bandState, profileConfig);
+  const hardSilence = detectMicHardSilence(metrics, thresholds);
+
+  if (hardSilence) {
+    bandState.micGateState = "closed";
+    bandState.micQuietFrames = 0;
+    bandState.micOpenFrames = 0;
+    return {
+      active: true,
+      hardSilence: true,
+    };
+  }
 
   if (bandState.micGateState === "open") {
     if (!hardGateActive && qualifiesMicHold(metrics, thresholds, profile)) {
       bandState.micQuietFrames = 0;
-      return false;
+      return {
+        active: false,
+        hardSilence: false,
+      };
     }
 
     bandState.micQuietFrames += 1;
     if (bandState.micQuietFrames < profileConfig.closeFrames) {
-      return false;
+      return {
+        active: false,
+        hardSilence: false,
+      };
     }
 
     bandState.micGateState = "closed";
     bandState.micQuietFrames = 0;
     bandState.micOpenFrames = 0;
-    return true;
+    return {
+      active: true,
+      hardSilence: false,
+    };
   }
 
   if (
@@ -990,13 +1092,353 @@ function resolveMicNoiseGate({
       bandState.micGateState = "open";
       bandState.micOpenFrames = 0;
       bandState.micQuietFrames = 0;
-      return false;
+      return {
+        active: false,
+        hardSilence: false,
+      };
     }
-    return true;
+    return {
+      active: true,
+      hardSilence: false,
+    };
   }
 
   bandState.micOpenFrames = 0;
-  return true;
+  return {
+    active: true,
+    hardSilence: false,
+  };
+}
+
+function areFrequenciesClose(
+  left,
+  right,
+  tolerance = VOICE_CANDIDATE_MATCH_TOLERANCE,
+) {
+  if (!(left > 0) || !(right > 0)) {
+    return false;
+  }
+
+  return Math.abs(left - right) / Math.max(left, right) <= tolerance;
+}
+
+function isPeakHarmonicallyRelated(frequency, fundamental) {
+  if (!(frequency > 0) || !(fundamental > 0)) {
+    return false;
+  }
+
+  const ratio = frequency / fundamental;
+  const nearest = Math.max(1, Math.round(ratio));
+  return Math.abs(ratio - nearest) <= 0.14;
+}
+
+function clearVocalLatchState(layerState) {
+  layerState.latchedFundamentalHz = 0;
+  layerState.latchedFundamentalConfidence = 0;
+  layerState.latchHoldFrames = 0;
+  layerState.latchLowSupportFrames = 0;
+  layerState.driverFrequency = 0;
+}
+
+function clearVocalDriverDiagnostics(layerState) {
+  layerState.candidateFrequency = 0;
+  layerState.candidateConfidence = 0;
+  layerState.candidateFrames = 0;
+  layerState.candidatePeriodicity = 0;
+  layerState.candidateHarmonicSupport = 0;
+  layerState.candidateDirectSupport = 0;
+  layerState.candidateLowEnergy = false;
+  layerState.voicingActive = false;
+  layerState.highCandidateRejected = false;
+  layerState.rejectionReason = "none";
+}
+
+function clearVocalDriverState(layerState) {
+  clearVocalLatchState(layerState);
+  clearVocalDriverDiagnostics(layerState);
+}
+
+function updateVoiceDetectionDiagnostics(
+  layerState,
+  detection,
+  {
+    voicingActive = false,
+    highCandidateRejected = false,
+    rejectionReason = "none",
+  } = {},
+) {
+  layerState.candidatePeriodicity = detection?.periodicity ?? 0;
+  layerState.candidateHarmonicSupport = detection?.harmonicSupport ?? 0;
+  layerState.candidateDirectSupport = detection?.directSupport ?? 0;
+  layerState.candidateLowEnergy = Boolean(detection?.lowEnergy);
+  layerState.voicingActive = voicingActive;
+  layerState.highCandidateRejected = highCandidateRejected;
+  layerState.rejectionReason = rejectionReason;
+}
+
+function updateVoiceCandidateState({
+  backboneState,
+  detection,
+  profileConfig,
+}) {
+  const candidateFrequency = detection?.frequencyHz ?? 0;
+  const candidateConfidence = detection?.confidence ?? 0;
+  const lowEnergy = Boolean(detection?.lowEnergy);
+  const trackableCandidate =
+    candidateFrequency > 0 &&
+    candidateConfidence >= profileConfig.pitchLatchConfidence;
+
+  if (!trackableCandidate) {
+    backboneState.candidateFrequency = 0;
+    backboneState.candidateConfidence = 0;
+    backboneState.candidateFrames = 0;
+    return {
+      candidateFrequency,
+      candidateConfidence,
+      candidateFrames: 0,
+      stableCandidate: false,
+    };
+  }
+
+  const matchedPrevious =
+    !lowEnergy &&
+    areFrequenciesClose(
+      candidateFrequency,
+      backboneState.candidateFrequency ?? 0,
+    );
+
+  backboneState.candidateFrequency = candidateFrequency;
+  backboneState.candidateConfidence = candidateConfidence;
+  if (lowEnergy) {
+    backboneState.candidateFrames = 0;
+  } else if (matchedPrevious) {
+    backboneState.candidateFrames = (backboneState.candidateFrames ?? 0) + 1;
+  } else {
+    backboneState.candidateFrames = 1;
+  }
+
+  const stableCandidate =
+    backboneState.candidateFrames >= profileConfig.highPitchStableFrames ||
+    areFrequenciesClose(
+      candidateFrequency,
+      backboneState.latchedFundamentalHz ?? 0,
+    );
+
+  return {
+    candidateFrequency,
+    candidateConfidence,
+    candidateFrames: backboneState.candidateFrames,
+    stableCandidate,
+  };
+}
+
+function resolveVoiceVoicing({
+  detection,
+  profileConfig,
+  candidateFrames,
+  stableCandidate,
+}) {
+  const candidateFrequency = detection?.frequencyHz ?? 0;
+  const candidateConfidence = detection?.confidence ?? 0;
+
+  if (!(candidateFrequency > 0)) {
+    return {
+      active: false,
+      highCandidateRejected: false,
+      rejectionReason: "no-candidate",
+    };
+  }
+
+  if (detection?.lowEnergy) {
+    return {
+      active: false,
+      highCandidateRejected: candidateFrequency >= profileConfig.highPitchMinHz,
+      rejectionReason: "low-energy",
+    };
+  }
+
+  if (!(candidateConfidence >= profileConfig.pitchConfidence)) {
+    return {
+      active: false,
+      highCandidateRejected: candidateFrequency >= profileConfig.highPitchMinHz,
+      rejectionReason: "low-confidence",
+    };
+  }
+
+  if (!detection?.voiced) {
+    return {
+      active: false,
+      highCandidateRejected: candidateFrequency >= profileConfig.highPitchMinHz,
+      rejectionReason: "unvoiced",
+    };
+  }
+
+  if (candidateFrequency < profileConfig.highPitchMinHz) {
+    return {
+      active: true,
+      highCandidateRejected: false,
+      rejectionReason: "none",
+    };
+  }
+
+  const periodicity = detection?.periodicity ?? 0;
+  const harmonicSupport = detection?.harmonicSupport ?? 0;
+  const supportSources = detection?.supportSources ?? 0;
+  const strongPeriodicity =
+    periodicity >= profileConfig.highPitchMinPeriodicity;
+  const strongHarmonicSupport =
+    harmonicSupport >= profileConfig.highPitchMinHarmonicSupport &&
+    supportSources >= profileConfig.highPitchMinSupportSources;
+  const stableHighCandidate =
+    stableCandidate &&
+    candidateFrames >= profileConfig.highPitchStableFrames &&
+    candidateConfidence >= profileConfig.highPitchStableConfidence;
+
+  if (!(candidateConfidence >= profileConfig.highPitchMinConfidence)) {
+    return {
+      active: false,
+      highCandidateRejected: true,
+      rejectionReason: "low-confidence-high",
+    };
+  }
+
+  if (
+    strongPeriodicity ||
+    strongHarmonicSupport ||
+    stableHighCandidate ||
+    (periodicity >= profileConfig.pitchStrongPeriodicity &&
+      supportSources >= profileConfig.highPitchMinSupportSources)
+  ) {
+    return {
+      active: true,
+      highCandidateRejected: false,
+      rejectionReason: "none",
+    };
+  }
+
+  return {
+    active: false,
+    highCandidateRejected: true,
+    rejectionReason:
+      supportSources < profileConfig.highPitchMinSupportSources &&
+      harmonicSupport < profileConfig.highPitchMinHarmonicSupport
+        ? "sparse-high-harmonics"
+        : "weak-high-candidate",
+  };
+}
+
+function resolveVoiceDriver({
+  backboneState,
+  detection,
+  hardSilence,
+  profileConfig,
+}) {
+  if (hardSilence) {
+    clearVocalDriverState(backboneState);
+    return {
+      frequency: 0,
+      confidence: 0,
+      pitchSource: "none",
+    };
+  }
+
+  const {
+    candidateFrequency,
+    candidateConfidence,
+    candidateFrames,
+    stableCandidate,
+  } = updateVoiceCandidateState({
+    backboneState,
+    detection,
+    profileConfig,
+  });
+  const voicing = resolveVoiceVoicing({
+    detection,
+    profileConfig,
+    candidateFrames,
+    stableCandidate,
+  });
+  updateVoiceDetectionDiagnostics(backboneState, detection, {
+    voicingActive: voicing.active,
+    highCandidateRejected: voicing.highCandidateRejected,
+    rejectionReason: voicing.rejectionReason,
+  });
+
+  if (
+    voicing.active &&
+    candidateFrequency > 0 &&
+    candidateConfidence >= profileConfig.pitchConfidence
+  ) {
+    backboneState.latchedFundamentalHz = candidateFrequency;
+    backboneState.latchedFundamentalConfidence = candidateConfidence;
+    backboneState.latchHoldFrames = profileConfig.latchHoldFrames;
+    backboneState.latchLowSupportFrames = 0;
+    backboneState.driverFrequency = candidateFrequency;
+    return {
+      frequency: candidateFrequency,
+      confidence: candidateConfidence,
+      pitchSource: "fundamental",
+    };
+  }
+
+  if (
+    backboneState.latchedFundamentalHz > 0 &&
+    backboneState.latchHoldFrames > 0
+  ) {
+    backboneState.latchHoldFrames -= 1;
+    backboneState.latchLowSupportFrames = voicing.active
+      ? 0
+      : (backboneState.latchLowSupportFrames ?? 0) + 1;
+    backboneState.latchedFundamentalConfidence *= VOICE_LATCH_DECAY;
+    backboneState.driverFrequency = backboneState.latchedFundamentalHz;
+    return {
+      frequency: backboneState.latchedFundamentalHz,
+      confidence: backboneState.latchedFundamentalConfidence,
+      pitchSource: "latched-fundamental",
+    };
+  }
+
+  clearVocalLatchState(backboneState);
+
+  return {
+    frequency: 0,
+    confidence: 0,
+    pitchSource: "none",
+  };
+}
+
+function resolveVoiceDetailPeaks({
+  fftMagnitudes,
+  sampleRate,
+  fftSize,
+  fundamental,
+  profileConfig,
+}) {
+  if (!(fundamental > 0)) {
+    return [];
+  }
+
+  return findSpectralPeakFrequencies(
+    fftMagnitudes,
+    sampleRate,
+    fftSize,
+    DETAIL_PEAK_COUNT + 2,
+    {
+      minFrequency: fundamental * 0.8,
+      maxFrequency: Math.min(
+        profileConfig.spectralPeakMaxHz,
+        fundamental * VOICE_DETAIL_HARMONIC_LIMIT + 120,
+      ),
+    },
+  ).filter((peak) => isPeakHarmonicallyRelated(peak.frequency, fundamental));
+}
+
+function resolveAmbientPeakOptions(profileConfig) {
+  return {
+    maxFrequency: profileConfig.spectralPeakMaxHz,
+    regionRanges: AMBIENT_REGION_RANGES,
+    perRegionCount: 2,
+  };
 }
 
 function getLayerSlotLimit(layerType, capacity) {
@@ -1025,6 +1467,22 @@ function releaseLayer(layerState, capacity, options) {
     layerState.referenceColorSlots?.fill(0);
   }
   clearLayerMetadata(layerState);
+}
+
+function applyLayerBlend(layerState, targetBuild, capacity, options) {
+  blendModalStack(layerState, targetBuild.slots, capacity, options);
+  if (options.colorOptions) {
+    blendColorStack(
+      layerState,
+      targetBuild.slots,
+      targetBuild.colorSlots,
+      capacity,
+      options.colorOptions,
+    );
+  } else {
+    layerState.colorSlots.fill(0);
+    layerState.referenceColorSlots.fill(0);
+  }
 }
 
 function computeBandEnergies(fftMagnitudes, sampleRate, fftSize) {
@@ -1327,6 +1785,8 @@ function resolveLayeredModalStacks({
   radius,
   capacity,
   micNoiseGateActive,
+  micHardSilenceActive,
+  micProfile,
   auditSettings,
   spectralCentroid,
   includeChromesthesia,
@@ -1338,6 +1798,7 @@ function resolveLayeredModalStacks({
 
   const backboneCapacity = getLayerSlotLimit("backbone", capacity);
   const detailCapacity = getLayerSlotLimit("detail", capacity);
+  const profileConfig = getMicProfileConfig(micProfile);
 
   if (auditSettings.injectTestTone) {
     const selectedFrequency = auditSettings.testToneHz;
@@ -1393,143 +1854,7 @@ function resolveLayeredModalStacks({
     spectralCandidates = detailBuild.peaks ?? [];
   } else if (!micNoiseGateActive && analysisSnapshot?.fftMagnitudes) {
     const fftMagnitudes = analysisSnapshot.fftMagnitudes;
-    const backboneTarget = buildModalSlotsFromPeakDrivers({
-      fftMagnitudes,
-      sampleRate: status.sampleRate,
-      fftSize: status.fftSize,
-      radius,
-      capacity,
-      peakCount: BACKBONE_PEAK_COUNT,
-      slotLimit: backboneCapacity,
-      spectralCentroid,
-      includeChromesthesia,
-    });
-    const detailTarget = buildModalSlotsFromSpectralPeaks({
-      fftMagnitudes,
-      sampleRate: status.sampleRate,
-      fftSize: status.fftSize,
-      radius,
-      capacity,
-      peakCount: DETAIL_PEAK_COUNT,
-      slotLimit: detailCapacity,
-      spectralCentroid,
-      includeChromesthesia,
-    });
-
-    spectralCandidates = detailTarget.peaks ?? backboneTarget.peaks ?? [];
-    const dominantPeak =
-      backboneTarget.peaks?.[0] ?? detailTarget.peaks?.[0] ?? null;
-
-    if (
-      backboneTarget.uniqueModeCount > 0 ||
-      detailTarget.uniqueModeCount > 0
-    ) {
-      blendModalStack(backboneState, backboneTarget.slots, backboneCapacity, {
-        attack: BACKBONE_ATTACK,
-        tracking: BACKBONE_ATTACK,
-        release: BACKBONE_RELEASE,
-        freshCap: BLEND_MAX_FRESH_PER_FRAME,
-      });
-      if (includeChromesthesia) {
-        blendColorStack(
-          backboneState,
-          backboneTarget.slots,
-          backboneTarget.colorSlots,
-          backboneCapacity,
-          {
-            attack: BACKBONE_COLOR_ATTACK,
-            tracking: BACKBONE_COLOR_TRACKING,
-            release: BACKBONE_COLOR_RELEASE,
-            maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
-          },
-        );
-      } else {
-        backboneState.colorSlots.fill(0);
-        backboneState.referenceColorSlots.fill(0);
-      }
-      blendModalStack(detailState, detailTarget.slots, detailCapacity, {
-        attack: DETAIL_ATTACK,
-        tracking: DETAIL_ATTACK,
-        release: DETAIL_RELEASE,
-        freshCap: DETAIL_FRESH_CAP,
-      });
-      if (includeChromesthesia) {
-        blendColorStack(
-          detailState,
-          detailTarget.slots,
-          detailTarget.colorSlots,
-          detailCapacity,
-          {
-            attack: DETAIL_COLOR_ATTACK,
-            tracking: DETAIL_COLOR_TRACKING,
-            release: DETAIL_COLOR_RELEASE,
-            maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
-          },
-        );
-      } else {
-        detailState.colorSlots.fill(0);
-        detailState.referenceColorSlots.fill(0);
-      }
-      setLayerMetadata(
-        backboneState,
-        backboneTarget,
-        dominantPeak?.frequency ?? 0,
-        dominantPeak?.amplitude ?? 0,
-        "layered",
-      );
-      setLayerMetadata(
-        detailState,
-        detailTarget,
-        dominantPeak?.frequency ?? 0,
-        dominantPeak?.amplitude ?? 0,
-        "layered",
-      );
-      analysisEngine = "layered";
-      pitchSource = "spectral";
-    } else if (
-      countActiveSlots(backboneState.slots, capacity) > 0 ||
-      countActiveSlots(detailState.slots, capacity) > 0
-    ) {
-      releaseLayer(backboneState, backboneCapacity, {
-        attack: BACKBONE_ATTACK,
-        tracking: BACKBONE_ATTACK,
-        release: BACKBONE_RELEASE,
-        freshCap: BLEND_MAX_FRESH_PER_FRAME,
-        colorOptions: includeChromesthesia
-          ? {
-              attack: BACKBONE_COLOR_ATTACK,
-              tracking: BACKBONE_COLOR_TRACKING,
-              release: BACKBONE_COLOR_RELEASE,
-              maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
-            }
-          : null,
-      });
-      releaseLayer(detailState, detailCapacity, {
-        attack: DETAIL_ATTACK,
-        tracking: DETAIL_ATTACK,
-        release: DETAIL_RELEASE,
-        freshCap: DETAIL_FRESH_CAP,
-        colorOptions: includeChromesthesia
-          ? {
-              attack: DETAIL_COLOR_ATTACK,
-              tracking: DETAIL_COLOR_TRACKING,
-              release: DETAIL_COLOR_RELEASE,
-              maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
-            }
-          : null,
-      });
-      usedDecay = true;
-    } else {
-      clearModalStack(backboneState);
-      clearModalStack(detailState);
-    }
-  } else if (
-    status.audioInputMode !== "idle" &&
-    !micNoiseGateActive &&
-    (backboneState.analysisEngine !== "none" ||
-      detailState.analysisEngine !== "none")
-  ) {
-    releaseLayer(backboneState, backboneCapacity, {
+    const layerBlendOptions = {
       attack: BACKBONE_ATTACK,
       tracking: BACKBONE_ATTACK,
       release: BACKBONE_RELEASE,
@@ -1542,8 +1867,8 @@ function resolveLayeredModalStacks({
             maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
           }
         : null,
-    });
-    releaseLayer(detailState, detailCapacity, {
+    };
+    const detailBlendOptions = {
       attack: DETAIL_ATTACK,
       tracking: DETAIL_ATTACK,
       release: DETAIL_RELEASE,
@@ -1556,11 +1881,232 @@ function resolveLayeredModalStacks({
             maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
           }
         : null,
-    });
+    };
+    const isVoiceMic =
+      status.audioInputMode === "mic" && micProfile === "voice-tone";
+    const isAmbientMic =
+      status.audioInputMode === "mic" && micProfile === "ambient";
+
+    if (isVoiceMic) {
+      const detection = detectVoicePitch({
+        timeData: analysisSnapshot?.timeData,
+        fftMagnitudes,
+        sampleRate: status.sampleRate,
+        fftSize: status.fftSize,
+        autocorrelation: {
+          minFrequency: profileConfig.pitchMinHz,
+          maxFrequency: profileConfig.pitchAutocorrelationMaxHz,
+          lowEnergyRms: profileConfig.pitchLowEnergyRms,
+          minConfidence: profileConfig.pitchConfidence,
+        },
+        spectral: {
+          minFrequency: profileConfig.pitchMinHz,
+          maxFrequency: profileConfig.pitchMaxHz,
+          maxPeakFrequency: profileConfig.spectralPeakMaxHz,
+          minConfidence: profileConfig.pitchConfidence,
+        },
+      });
+      const voiceDriver = resolveVoiceDriver({
+        backboneState,
+        detection,
+        hardSilence: micHardSilenceActive,
+        profileConfig,
+      });
+      const voiceDetailPeaks = resolveVoiceDetailPeaks({
+        fftMagnitudes,
+        sampleRate: status.sampleRate,
+        fftSize: status.fftSize,
+        fundamental: voiceDriver.frequency,
+        profileConfig,
+      });
+      spectralCandidates = voiceDetailPeaks;
+
+      if (voiceDriver.frequency > 0) {
+        const backboneTarget = buildModalSlotsFromFundamental({
+          frequency: voiceDriver.frequency,
+          confidence: voiceDriver.confidence,
+          fftMagnitudes,
+          sampleRate: status.sampleRate,
+          fftSize: status.fftSize,
+          radius,
+          capacity: backboneCapacity,
+          spectralCentroid,
+          includeChromesthesia,
+        });
+        const detailTarget = buildModalSlotsFromSpectralPeaks({
+          fftMagnitudes,
+          sampleRate: status.sampleRate,
+          fftSize: status.fftSize,
+          radius,
+          capacity,
+          slotLimit: detailCapacity,
+          spectralCentroid,
+          includeChromesthesia,
+          peaks: voiceDetailPeaks,
+        });
+
+        applyLayerBlend(
+          backboneState,
+          backboneTarget,
+          backboneCapacity,
+          layerBlendOptions,
+        );
+        applyLayerBlend(
+          detailState,
+          detailTarget,
+          detailCapacity,
+          detailBlendOptions,
+        );
+        setLayerMetadata(
+          backboneState,
+          backboneTarget,
+          voiceDriver.frequency,
+          voiceDriver.confidence,
+          "vocal",
+        );
+        setLayerMetadata(
+          detailState,
+          detailTarget,
+          voiceDriver.frequency,
+          voiceDriver.confidence,
+          "vocal",
+        );
+        analysisEngine = "vocal";
+        pitchSource = voiceDriver.pitchSource;
+      } else if (
+        countActiveSlots(backboneState.slots, capacity) > 0 ||
+        countActiveSlots(detailState.slots, capacity) > 0
+      ) {
+        releaseLayer(backboneState, backboneCapacity, layerBlendOptions);
+        releaseLayer(detailState, detailCapacity, detailBlendOptions);
+        usedDecay = true;
+        pitchSource = voiceDriver.pitchSource;
+      } else {
+        clearModalStack(backboneState);
+        clearModalStack(detailState);
+        clearVocalDriverState(backboneState);
+      }
+    } else {
+      clearVocalDriverState(backboneState);
+      const peakOptions = isAmbientMic
+        ? resolveAmbientPeakOptions(profileConfig)
+        : undefined;
+      const backboneTarget = buildModalSlotsFromPeakDrivers({
+        fftMagnitudes,
+        sampleRate: status.sampleRate,
+        fftSize: status.fftSize,
+        radius,
+        capacity,
+        peakCount: isAmbientMic ? 4 : BACKBONE_PEAK_COUNT,
+        slotLimit: backboneCapacity,
+        spectralCentroid,
+        includeChromesthesia,
+        peakOptions,
+      });
+      const detailTarget = buildModalSlotsFromSpectralPeaks({
+        fftMagnitudes,
+        sampleRate: status.sampleRate,
+        fftSize: status.fftSize,
+        radius,
+        capacity,
+        peakCount: isAmbientMic ? 6 : DETAIL_PEAK_COUNT,
+        slotLimit: detailCapacity,
+        spectralCentroid,
+        includeChromesthesia,
+        peakOptions,
+      });
+
+      spectralCandidates = detailTarget.peaks ?? backboneTarget.peaks ?? [];
+      const dominantPeak =
+        backboneTarget.peaks?.[0] ?? detailTarget.peaks?.[0] ?? null;
+
+      if (
+        backboneTarget.uniqueModeCount > 0 ||
+        detailTarget.uniqueModeCount > 0
+      ) {
+        applyLayerBlend(
+          backboneState,
+          backboneTarget,
+          backboneCapacity,
+          layerBlendOptions,
+        );
+        applyLayerBlend(
+          detailState,
+          detailTarget,
+          detailCapacity,
+          detailBlendOptions,
+        );
+        setLayerMetadata(
+          backboneState,
+          backboneTarget,
+          dominantPeak?.frequency ?? 0,
+          dominantPeak?.amplitude ?? 0,
+          isAmbientMic ? "multi-spectral" : "layered",
+        );
+        setLayerMetadata(
+          detailState,
+          detailTarget,
+          dominantPeak?.frequency ?? 0,
+          dominantPeak?.amplitude ?? 0,
+          isAmbientMic ? "multi-spectral" : "layered",
+        );
+        analysisEngine = isAmbientMic ? "multi-spectral" : "layered";
+        pitchSource = isAmbientMic ? "multi-spectral" : "spectral";
+      } else if (
+        countActiveSlots(backboneState.slots, capacity) > 0 ||
+        countActiveSlots(detailState.slots, capacity) > 0
+      ) {
+        releaseLayer(backboneState, backboneCapacity, layerBlendOptions);
+        releaseLayer(detailState, detailCapacity, detailBlendOptions);
+        usedDecay = true;
+      } else {
+        clearModalStack(backboneState);
+        clearModalStack(detailState);
+      }
+    }
+  } else if (
+    status.audioInputMode !== "idle" &&
+    !micNoiseGateActive &&
+    (backboneState.analysisEngine !== "none" ||
+      detailState.analysisEngine !== "none")
+  ) {
+    const layerBlendOptions = {
+      attack: BACKBONE_ATTACK,
+      tracking: BACKBONE_ATTACK,
+      release: BACKBONE_RELEASE,
+      freshCap: BLEND_MAX_FRESH_PER_FRAME,
+      colorOptions: includeChromesthesia
+        ? {
+            attack: BACKBONE_COLOR_ATTACK,
+            tracking: BACKBONE_COLOR_TRACKING,
+            release: BACKBONE_COLOR_RELEASE,
+            maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
+          }
+        : null,
+    };
+    const detailBlendOptions = {
+      attack: DETAIL_ATTACK,
+      tracking: DETAIL_ATTACK,
+      release: DETAIL_RELEASE,
+      freshCap: DETAIL_FRESH_CAP,
+      colorOptions: includeChromesthesia
+        ? {
+            attack: DETAIL_COLOR_ATTACK,
+            tracking: DETAIL_COLOR_TRACKING,
+            release: DETAIL_COLOR_RELEASE,
+            maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
+          }
+        : null,
+    };
+    releaseLayer(backboneState, backboneCapacity, layerBlendOptions);
+    releaseLayer(detailState, detailCapacity, detailBlendOptions);
     usedDecay = true;
   } else {
     clearModalStack(backboneState);
     clearModalStack(detailState);
+    if (micProfile === "voice-tone") {
+      clearVocalDriverState(backboneState);
+    }
   }
 
   return {
@@ -1580,6 +2126,7 @@ function finalizeFeatureDebugSnapshot({
   soundActive,
   micActive,
   micNoiseGateActive,
+  micHardSilenceActive,
   micCalibrationActive,
   micProfile,
   micBaselineRms,
@@ -1624,6 +2171,7 @@ function finalizeFeatureDebugSnapshot({
     analysisEngine,
     fieldState,
     micNoiseGateActive,
+    micHardSilenceActive,
     micCalibrationActive,
     micProfile,
     micBaselineRms,
@@ -1796,18 +2344,19 @@ export function buildAudioFeatureFrame({
     sampleRate,
   );
 
-  const micNoiseGateActive = resolveMicNoiseGate({
-    analysisMemory,
-    injectTestTone: resolvedAuditSettings.injectTestTone,
-    inputMode,
-    avgAmplitude,
-    rms: analyserRms,
-    fftMagnitudes: fftMagnitudesSource,
-    sampleRate,
-    fftSize,
-    currentFrameAtMs,
-    micAnalysisSettings: resolvedMicAnalysisSettings,
-  });
+  const { active: micNoiseGateActive, hardSilence: micHardSilenceActive } =
+    resolveMicNoiseGate({
+      analysisMemory,
+      injectTestTone: resolvedAuditSettings.injectTestTone,
+      inputMode,
+      avgAmplitude,
+      rms: analyserRms,
+      fftMagnitudes: fftMagnitudesSource,
+      sampleRate,
+      fftSize,
+      currentFrameAtMs,
+      micAnalysisSettings: resolvedMicAnalysisSettings,
+    });
 
   const { analysisEngine, pitchSource, spectralCandidates, usedDecay } =
     resolveLayeredModalStacks({
@@ -1822,6 +2371,8 @@ export function buildAudioFeatureFrame({
       radius,
       capacity,
       micNoiseGateActive,
+      micHardSilenceActive,
+      micProfile: resolvedMicAnalysisSettings.profile,
       auditSettings: resolvedAuditSettings,
       spectralCentroid: spectralCentroidHint,
       includeChromesthesia: shouldBuildChromesthesia,
@@ -1965,6 +2516,7 @@ export function buildAudioFeatureFrame({
     soundActive,
     micActive,
     micNoiseGateActive,
+    micHardSilenceActive,
     micCalibrationActive: Boolean(bandState.micCalibrationActive),
     micProfile: bandState.micProfile ?? resolvedMicAnalysisSettings.profile,
     micBaselineRms: bandState.micBaselineRms ?? 0,

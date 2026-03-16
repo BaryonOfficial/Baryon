@@ -19,6 +19,7 @@
     "test:web-smoke:dev": "pnpm --filter @baryon/web test:smoke:dev",
     "lint": "turbo lint",
     "lint:all": "pnpm -r --filter './apps/*' --filter './packages/*' --if-present lint",
+    "audit:deps": "knip --dependencies --isolate-workspaces",
     "typecheck": "pnpm --reporter append-only -r --filter './apps/*' --filter './packages/*' --if-present typecheck",
     "verify": "pnpm lint:all && pnpm typecheck && pnpm test:visualizer",
     "verify:full": "pnpm verify && turbo build"
@@ -31,17 +32,18 @@
     "*.{ts,tsx,cjs,mjs,json,md,css,scss,html,yml,yaml}": "prettier --write"
   },
   "devDependencies": {
-    "@eslint/js": "^9.27.0",
-    "eslint": "^9.27.0",
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
-    "eslint-plugin-react-refresh": "^0.4.26",
-    "globals": "^15.15.0",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.4.0",
     "husky": "^9.1.7",
-    "lint-staged": "^16.3.3",
+    "knip": "^5.86.0",
+    "lint-staged": "^16.4.0",
     "prettier": "^3.8.1",
-    "turbo": "^2.3.0",
-    "typescript": "^5.8.3"
+    "turbo": "^2.8.17",
+    "typescript": "^5.9.3"
   },
   "packageManager": "pnpm@10.12.4"
 }
