@@ -42,5 +42,6 @@ export function createRaymarchUniforms(parameters) {
     uTransientEnergy: uniform(0.0),
     uSpectralCentroid: uniform(0.0),
     uSpectralFlux: uniform(0.0),
+    uSlicePosition: uniform(0.0),
   };
 }

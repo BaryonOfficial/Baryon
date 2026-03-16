@@ -6,6 +6,7 @@ import {
   applyBloomControls,
   applyOutputControls,
   applyRaymarchControls,
+  applyVisualizationControls,
   applySharedControls,
   applySceneControls,
   applySimulationControls,
@@ -14,16 +15,19 @@ import {
 } from "./runtime.js";
 import { CONTROL_HANDLERS, createControlState } from "./schema.js";
 import { createVisualizationRuntime } from "../visualization/runtimeFactory.js";
-import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
+import {
+  DEFAULT_VISUALIZATION_METHOD,
+  VISUALIZATION_METHODS,
+} from "../visualization/types.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
   STEP_REFERENCE,
 } from "../core/raymarch/stepStability.js";
 
-function createRaymarchHarness() {
+function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
   return {
-    method: DEFAULT_VISUALIZATION_METHOD,
+    method,
     uniforms: {
       uColor: { value: { set: vi.fn() } },
       uSurfaceColor: { value: { set: vi.fn() } },
@@ -41,6 +45,7 @@ function createRaymarchHarness() {
       uRimBloomBias: { value: 0 },
       uRimCompression: { value: 0 },
       uRaymarchSteps: { value: 0 },
+      uSlicePosition: { value: 0 },
       uRadius: { value: 3 },
     },
     reactivityTuning: {
@@ -219,9 +224,43 @@ describe("control runtime sync", () => {
     );
     expect(sharedSnapshot.backgroundColor).toBe("#123456");
     expect(sharedSnapshot.clearAlpha).toBe(0);
+    expect(sharedSnapshot.visualizationMethod).toBe(
+      DEFAULT_VISUALIZATION_METHOD,
+    );
     expect(raymarchSnapshot.uniforms.threshold).toBe(
       controls.zeroPointPrecision,
     );
+  });
+
+  it("applies fullscreen 2d controls without touching raymarch-only uniforms", () => {
+    const controls = createControlState();
+    controls.visualizationMethod = VISUALIZATION_METHODS.cymatics2d;
+    controls.volumeColor = "#113355";
+    controls.surfaceColor = "#ddeeff";
+    controls.reactivity = 1.3;
+    controls.motionAmount = 0.8;
+    controls.structurePersistence = 1.5;
+
+    const runtimeState = createRaymarchHarness(
+      VISUALIZATION_METHODS.cymatics2d,
+    );
+    const snapshot = applyVisualizationControls(
+      VISUALIZATION_METHODS.cymatics2d,
+      runtimeState,
+      controls,
+    );
+
+    expect(runtimeState.uniforms.uColor.value.set).toHaveBeenCalledWith(
+      "#113355",
+    );
+    expect(runtimeState.uniforms.uSurfaceColor.value.set).toHaveBeenCalledWith(
+      "#ddeeff",
+    );
+    expect(runtimeState.uniforms.uSlicePosition.value).toBe(0);
+    expect(snapshot.uniforms.reactivity).toBe(1.3);
+    expect(snapshot.uniforms.motionAmount).toBe(0.8);
+    expect(snapshot.uniforms.structurePersistence).toBe(1.5);
+    expect(snapshot.uniforms.slicePosition).toBe(0);
   });
 
   it("applies raymarch controls directly", () => {
@@ -735,7 +774,7 @@ describe("control runtime sync", () => {
       audio: { echoCancellation: false },
       shared: { test: 0 },
       output: { test: 0.5 },
-      raymarch: { test: 5 },
+      visualization: { test: 5 },
       bloom: { test: 2 },
       audit: { test: 3 },
       scene: { test: 4 },
@@ -746,6 +785,7 @@ describe("control runtime sync", () => {
       audio: { echoCancellation: false },
       shared: { test: 0 },
       output: { test: 0.5 },
+      visualization: { test: 5 },
       raymarch: { test: 5 },
       simulation: { test: 5 },
       bloom: { test: 2 },
@@ -754,9 +794,30 @@ describe("control runtime sync", () => {
     });
   });
 
+  it("keeps the legacy raymarch alias in inspection snapshots", () => {
+    const snapshot = buildControlInspectionSnapshot({
+      method: VISUALIZATION_METHODS.cymatics2d,
+      raymarch: { test: 7 },
+    });
+
+    expect(snapshot.visualization).toEqual({ test: 7 });
+    expect(snapshot.raymarch).toEqual({ test: 7 });
+    expect(snapshot.simulation).toEqual({ test: 7 });
+  });
+
   it("defaults the internal visualization runtime to raymarch", () => {
     const runtime = createVisualizationRuntime();
     expect(runtime.method).toBe(DEFAULT_VISUALIZATION_METHOD);
+    expect(typeof runtime.setup).toBe("function");
+    expect(typeof runtime.tick).toBe("function");
+    expect(typeof runtime.dispose).toBe("function");
+  });
+
+  it("creates the fullscreen 2d visualization runtime on demand", () => {
+    const runtime = createVisualizationRuntime(
+      VISUALIZATION_METHODS.cymatics2d,
+    );
+    expect(runtime.method).toBe(VISUALIZATION_METHODS.cymatics2d);
     expect(typeof runtime.setup).toBe("function");
     expect(typeof runtime.tick).toBe("function");
     expect(typeof runtime.dispose).toBe("function");
@@ -785,6 +846,32 @@ describe("control runtime sync", () => {
     expect(runtimeState.points.children).toContain(runtimeState.visualRoot);
     expect(runtimeState.stabilityStats.avgRaySegmentLength).toBeGreaterThan(0);
     expect(runtimeState.stabilityStats.missRatio).toBeGreaterThan(0);
+
+    expect(() => runtime.dispose(runtimeState)).not.toThrow();
+  });
+
+  it("sets up and disposes a fullscreen 2d runtime scene root", () => {
+    const runtime = createVisualizationRuntime(
+      VISUALIZATION_METHODS.cymatics2d,
+    );
+    const runtimeState = runtime.setup({
+      baryonGeometry: new THREE.IcosahedronGeometry(1, 0),
+      parameters: {
+        radius: 3,
+      },
+      audioConfig: {
+        capacity: 8,
+        fftSize: 2048,
+      },
+    });
+
+    expect(runtimeState.method).toBe(VISUALIZATION_METHODS.cymatics2d);
+    expect(runtimeState.fieldMesh).toBeTruthy();
+    expect(runtimeState.idleOverlay).toBeTruthy();
+    expect(runtimeState.visualRoot.children).toContain(runtimeState.fieldMesh);
+    expect(runtimeState.visualRoot.children).toContain(
+      runtimeState.idleOverlay,
+    );
 
     expect(() => runtime.dispose(runtimeState)).not.toThrow();
   });

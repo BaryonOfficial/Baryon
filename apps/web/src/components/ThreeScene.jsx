@@ -195,6 +195,7 @@ const ThreeScene = () => {
                 setMicRuntimeStatus={setMicRuntimeStatus}
                 micProfile={micProfile}
                 controlsRef={controlsRef}
+                visualizationMethod={controlsState.visualizationMethod}
               />
             </Suspense>
           </Canvas>

@@ -31,7 +31,15 @@ export const CONTROL_HANDLERS = Object.freeze({
   audit: "audit",
 });
 
-const RAYMARCH_METHODS = [VISUALIZATION_METHODS.raymarch];
+const ALL_METHODS = Object.freeze(Object.values(VISUALIZATION_METHODS));
+const METHOD_SCOPES = Object.freeze({
+  shared: ALL_METHODS,
+  raymarchOnly: Object.freeze([VISUALIZATION_METHODS.raymarch]),
+});
+
+function methodsFor(scope) {
+  return METHOD_SCOPES[scope];
+}
 
 const CONTROL_GROUPS = Object.freeze({
   input: Object.freeze({
@@ -89,7 +97,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Suppress speaker bleed and room echo from the mic input; useful with speakers, but it colors the spectrum",
       defaultValue: AUDIO_DEFAULTS.echoCancellation,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audio,
       handler: CONTROL_HANDLERS.audio,
       runtimePath: "audioSession.micSettings.echoCancellation",
@@ -104,7 +112,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Reduce steady background noise before analysis; helps in noisy rooms, but can smear quieter harmonics",
       defaultValue: AUDIO_DEFAULTS.noiseSuppression,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audio,
       handler: CONTROL_HANDLERS.audio,
       runtimePath: "audioSession.micSettings.noiseSuppression",
@@ -119,7 +127,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Continuously normalize mic level for audibility; convenient for speech, but it flattens dynamics for visualization",
       defaultValue: AUDIO_DEFAULTS.autoGainControl,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audio,
       handler: CONTROL_HANDLERS.audio,
       runtimePath: "audioSession.micSettings.autoGainControl",
@@ -133,7 +141,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       label: "Enabled",
       title: "Toggle the bloom (glow) post-processing effect on or off",
       defaultValue: RENDER_DEFAULTS.bloomEnabled,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "pipeline.outputNode",
@@ -148,7 +156,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "How bright and intense the bloom glow is — higher values create a more pronounced halo around bright highlights",
       defaultValue: RENDER_DEFAULTS.bloomStrength,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { min: 0, max: 3, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.bloom,
@@ -164,7 +172,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "How far the bloom glow spreads outward from bright areas — higher values create a softer, wider glow",
       defaultValue: RENDER_DEFAULTS.bloomRadius,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.bloom,
@@ -180,7 +188,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Minimum brightness required for a pixel to contribute to bloom — raise this to limit glow to the strongest contour bands",
       defaultValue: RENDER_DEFAULTS.bloomThreshold,
-      methods: RAYMARCH_METHODS,
+      methods: methodsFor("shared"),
       binding: { min: 0, max: 1, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.bloom,
@@ -196,7 +204,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Shift bloom toward a smaller, more stable halo by slightly raising threshold and trimming response strength",
       defaultValue: RENDER_DEFAULTS.bloomResponseBias,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.bloom,
@@ -212,7 +220,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Presentation backdrop color shown behind the transparent volumetric render",
       defaultValue: RENDER_DEFAULTS.backgroundColor,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { view: "color" },
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.shared,
@@ -228,7 +236,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Use Transparent when Baryon needs to sit over video, graphics, or another scene; use Opaque when Baryon should render its own solid background for fullscreen or stage output",
       defaultValue: RENDER_DEFAULTS.outputMode,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: {
         options: {
           Transparent: "transparent",
@@ -249,11 +257,32 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Background color used only when the program output is set to opaque",
       defaultValue: RENDER_DEFAULTS.outputBackgroundColor,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { view: "color" },
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.output,
       runtimePath: "program.backgroundColor",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.look,
+  ),
+  withControlGroup(
+    {
+      key: "visualizationMethod",
+      label: "Visualizer",
+      title:
+        "Choose between the volumetric 3D orb and the fullscreen 2D cymatic projection",
+      defaultValue: VISUALIZATION_METHODS.raymarch,
+      methods: ALL_METHODS,
+      binding: {
+        options: {
+          "3D Volume": VISUALIZATION_METHODS.raymarch,
+          "2D Fullscreen": VISUALIZATION_METHODS.cymatics2d,
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.shared,
+      runtimePath: "runtime.method",
       status: CONTROL_STATUSES.live,
     },
     CONTROL_GROUPS.look,
@@ -265,7 +294,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Base color of the interior volumetric emission for the cymatic field",
       defaultValue: RENDER_DEFAULTS.volumeColor,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { view: "color" },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -281,7 +310,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Highlight color for the sharpest nodal contour bands inside the volume",
       defaultValue: RENDER_DEFAULTS.surfaceColor,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { view: "color" },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -297,7 +326,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Choose whether the volume uses the fixed palette or the chromesthesia-driven spectral color field",
       defaultValue: RENDER_DEFAULTS.colorMode,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: {
         options: {
           Static: "static",
@@ -318,7 +347,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "How vividly the chromesthesia spectral hues are expressed when chromesthesia mode is enabled",
       defaultValue: RENDER_DEFAULTS.chromesthesiaMix,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -334,7 +363,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Choose whether the orb rotates from live audio, a fixed manual speed, or stays still",
       defaultValue: RENDER_DEFAULTS.rotationMode,
-      methods: RAYMARCH_METHODS,
+      methods: methodsFor("raymarchOnly"),
       binding: {
         options: {
           Audio: "audio",
@@ -356,7 +385,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Fixed Y-axis rotation speed used only in manual mode — negative values reverse direction, zero disables rotation",
       defaultValue: RENDER_DEFAULTS.rotationSpeed,
-      methods: RAYMARCH_METHODS,
+      methods: methodsFor("raymarchOnly"),
       binding: { min: -12, max: 12, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.scene,
@@ -372,7 +401,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Overall sensitivity of the visual response to sound structure, intensity, and change",
       defaultValue: REACTIVITY_DEFAULTS.reactivity,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { min: 0, max: 3, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.raymarch,
@@ -388,7 +417,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "How tightly the field must approach zero for a sample to contribute to a nodal band — lower values create sharper structure",
       defaultValue: SIMULATION_DEFAULTS.zeroPointPrecision,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { min: 0.001, max: 0.3, step: 0.001 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -404,7 +433,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Lower field-structure cutoff — trims the weakest, least legible regions of the volume",
       defaultValue: SIMULATION_DEFAULTS.structureMin,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -420,7 +449,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Upper field-structure cutoff — helps suppress the densest regions before they flatten into fog",
       defaultValue: SIMULATION_DEFAULTS.structureMax,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -436,7 +465,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Number of raymarch samples used through the volume — higher values improve fidelity but cost more GPU time",
       defaultValue: RAYMARCH_DEFAULTS.raymarchSteps,
-      methods: [VISUALIZATION_METHODS.raymarch],
+      methods: methodsFor("raymarchOnly"),
       binding: { min: 16, max: 192, step: 1 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -452,7 +481,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Overall density and emission gain for the raymarched volume — higher values make the cymatic body thicker and brighter",
       defaultValue: RAYMARCH_DEFAULTS.densityGain,
-      methods: [VISUALIZATION_METHODS.raymarch],
+      methods: methodsFor("shared"),
       binding: { min: 0.1, max: 4, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -468,7 +497,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Extinction strength of the volume — increase this to sharpen internal depth and reduce washed-out haze",
       defaultValue: RAYMARCH_DEFAULTS.absorption,
-      methods: [VISUALIZATION_METHODS.raymarch],
+      methods: methodsFor("raymarchOnly"),
       binding: { min: 0.1, max: 4, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -484,7 +513,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Additional alpha gain for the transparent volume — increase this to make the orb read more solid without over-brightening emission",
       defaultValue: RAYMARCH_DEFAULTS.opacityGain,
-      methods: [VISUALIZATION_METHODS.raymarch],
+      methods: ALL_METHODS,
       binding: { min: 0.1, max: 3, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -500,7 +529,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "How aggressively the renderer favors narrow nodal bands over softer field regions",
       defaultValue: RAYMARCH_DEFAULTS.contourSharpness,
-      methods: [VISUALIZATION_METHODS.raymarch],
+      methods: ALL_METHODS,
       binding: { min: 1, max: 8, step: 0.1 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -516,7 +545,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "How much the outer shell can bias emissive brightness toward the rim before bloom picks it up",
       defaultValue: RAYMARCH_DEFAULTS.rimBloomBias,
-      methods: [VISUALIZATION_METHODS.raymarch],
+      methods: methodsFor("raymarchOnly"),
       binding: { min: 0, max: 1.2, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -532,7 +561,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Compress grazing-angle highlight spikes before they reach the bloom pass",
       defaultValue: RAYMARCH_DEFAULTS.rimCompression,
-      methods: [VISUALIZATION_METHODS.raymarch],
+      methods: methodsFor("raymarchOnly"),
       binding: { min: 0, max: 1.2, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -548,7 +577,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "How much rotation and accent motion react when the field structure changes",
       defaultValue: REACTIVITY_DEFAULTS.motionAmount,
-      methods: [VISUALIZATION_METHODS.raymarch],
+      methods: ALL_METHODS,
       binding: { min: 0, max: 3, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.scene,
@@ -564,7 +593,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "How long structural response lingers between changes before settling back toward stillness",
       defaultValue: REACTIVITY_DEFAULTS.structurePersistence,
-      methods: [VISUALIZATION_METHODS.raymarch],
+      methods: methodsFor("shared"),
       binding: { min: 0.2, max: 3, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.raymarch,
@@ -579,7 +608,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       label: "Logo Intensity",
       title: "Strength of the idle logo overlay when no audio is playing",
       defaultValue: RENDER_DEFAULTS.idleLogoIntensity,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { min: 0, max: 0.25, step: 0.005 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -595,7 +624,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Scale of the idle logo overlay shown when the field falls back to idle",
       defaultValue: RENDER_DEFAULTS.idleLogoSize,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { min: 0.1, max: 2, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -611,7 +640,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Enable frame-by-frame debug logging for the audio and active visualization pipeline",
       defaultValue: AUDIT_DEFAULTS.auditEnabled,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audit,
       handler: CONTROL_HANDLERS.audit,
       runtimePath: "featureState.audit.settings.enabled",
@@ -626,7 +655,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Lock the current modal frequency slots so they stop updating from live audio — useful for inspecting a specific cymatic pattern",
       defaultValue: AUDIT_DEFAULTS.freezeModeSlots,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audit,
       handler: CONTROL_HANDLERS.audit,
       runtimePath: "featureState.audit.settings.freezeModeSlots",
@@ -641,7 +670,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Reinitialize the renderer on the WebGL2 fallback backend for compatibility testing — this is a diagnostic toggle and will remount the canvas",
       defaultValue: AUDIT_DEFAULTS.forceWebGLFallbackTest,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audit,
       handler: CONTROL_HANDLERS.audit,
       runtimePath: "featureState.audit.settings.forceWebGLFallbackTest",
@@ -656,7 +685,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Reduce render overhead during playback diagnostics by forcing a lower pixel ratio and suppressing non-essential audit work while audio is active",
       defaultValue: AUDIT_DEFAULTS.lowLoadPlaybackDiagnostics,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audit,
       handler: CONTROL_HANDLERS.audit,
       runtimePath: "featureState.audit.settings.lowLoadPlaybackDiagnostics",
@@ -671,7 +700,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Replace live audio input with a synthetic test tone — use with Tone Hz and Tone Amp to diagnose specific frequency responses",
       defaultValue: AUDIT_DEFAULTS.injectTestTone,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audit,
       handler: CONTROL_HANDLERS.audit,
       runtimePath: "featureState.audit.settings.injectTestTone",
@@ -686,7 +715,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Frequency in Hz of the injected test tone — try values like 110, 220, 440 to see how different pitches shape the cymatic field",
       defaultValue: AUDIT_DEFAULTS.testToneHz,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { min: 40, max: 2000, step: 1 },
       targetType: CONTROL_TARGET_TYPES.audit,
       handler: CONTROL_HANDLERS.audit,
@@ -702,7 +731,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Amplitude of the injected test tone — lower values produce subtler pattern excitation",
       defaultValue: AUDIT_DEFAULTS.testToneAmplitude,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.audit,
       handler: CONTROL_HANDLERS.audit,
@@ -718,7 +747,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Log a debug snapshot every N frames to the browser console — set to 1 to log every frame, higher to reduce noise",
       defaultValue: AUDIT_DEFAULTS.logEveryFrames,
-      methods: RAYMARCH_METHODS,
+      methods: ALL_METHODS,
       binding: { min: 1, max: 240, step: 1 },
       targetType: CONTROL_TARGET_TYPES.audit,
       handler: CONTROL_HANDLERS.audit,

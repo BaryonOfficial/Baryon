@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createControlState } from "@baryon/visualizer/controls/schema";
+import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
 import {
   CONTROLS_PERSIST_DELAY_MS,
   PRESETS_KEY,
@@ -54,6 +55,26 @@ test("hides debug-only control groups unless devtools are enabled", () => {
   );
   assert.equal(
     devGroups.some((group) => group.title === "Diagnostics"),
+    true,
+  );
+});
+
+test("switches visible groups with the fullscreen 2d method", () => {
+  const groups = getVisibleControlGroups({
+    devtoolsEnabled: false,
+    method: VISUALIZATION_METHODS.cymatics2d,
+  });
+
+  assert.equal(
+    groups.some((group) =>
+      group.controls.some((control) => control.key === "rotationMode"),
+    ),
+    false,
+  );
+  assert.equal(
+    groups.some((group) =>
+      group.controls.some((control) => control.key === "visualizationMethod"),
+    ),
     true,
   );
 });
