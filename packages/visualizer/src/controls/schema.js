@@ -199,6 +199,20 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
+      key: "performanceHudEnabled",
+      label: "Performance HUD",
+      title: "Show a compact FPS and render-resolution overlay for end users",
+      defaultValue: RENDER_DEFAULTS.performanceHudEnabled,
+      methods: ALL_METHODS,
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.shared,
+      runtimePath: "ui.performanceHudEnabled",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.look,
+  ),
+  withControlGroup(
+    {
       key: "bloomResponseBias",
       label: "Bloom Bias",
       title:
@@ -567,6 +581,54 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uRimCompression.value",
       status: CONTROL_STATUSES.debugOnly,
+    },
+    CONTROL_GROUPS.advancedLook,
+  ),
+  withControlGroup(
+    {
+      key: "holographicIntensity",
+      label: "Holo Intensity",
+      title:
+        "Overall strength of the camera-dependent holographic sheen layered over the raymarched volume",
+      defaultValue: RAYMARCH_DEFAULTS.holographicIntensity,
+      methods: methodsFor("raymarchOnly"),
+      binding: { min: 0, max: 1, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uHolographicIntensity.value",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.advancedLook,
+  ),
+  withControlGroup(
+    {
+      key: "holographicShift",
+      label: "Holo Shift",
+      title:
+        "How far grazing angles shift from the current palette toward a cool cyan-blue holographic accent",
+      defaultValue: RAYMARCH_DEFAULTS.holographicShift,
+      methods: methodsFor("raymarchOnly"),
+      binding: { min: 0, max: 1, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uHolographicShift.value",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.advancedLook,
+  ),
+  withControlGroup(
+    {
+      key: "holographicFresnelPower",
+      label: "Holo Fresnel",
+      title:
+        "Edge falloff for the holographic sheen; higher values keep the color shift tighter to grazing angles",
+      defaultValue: RAYMARCH_DEFAULTS.holographicFresnelPower,
+      methods: methodsFor("raymarchOnly"),
+      binding: { min: 0.5, max: 8, step: 0.1 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uHolographicFresnelPower.value",
+      status: CONTROL_STATUSES.live,
     },
     CONTROL_GROUPS.advancedLook,
   ),

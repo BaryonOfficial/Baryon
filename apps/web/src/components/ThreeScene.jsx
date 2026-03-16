@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { BaryonScene } from "./BaryonScene";
 import AudioControls from "./AudioControls";
 import ParticleDebugOverlay from "./ParticleDebugOverlay.jsx";
+import PerformanceHud from "./PerformanceHud.jsx";
 import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
 import UnsupportedWarning from "./UnsupportedWarning.jsx";
 import {
@@ -67,6 +68,7 @@ const ThreeScene = () => {
     /** @type {any} */ (controlsRef.current).forceWebGLFallbackTest,
   );
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [performanceHudMetrics, setPerformanceHudMetrics] = useState(null);
 
   // fullscreen targets the outer container div
   useFullscreen(containerRef);
@@ -196,6 +198,7 @@ const ThreeScene = () => {
                 micProfile={micProfile}
                 controlsRef={controlsRef}
                 visualizationMethod={controlsState.visualizationMethod}
+                onPerformanceHudSnapshotChange={setPerformanceHudMetrics}
               />
             </Suspense>
           </Canvas>
@@ -252,6 +255,11 @@ const ThreeScene = () => {
       ) : null}
 
       {showOverlayUi && <AudioControls />}
+      <PerformanceHud
+        metrics={
+          controlsState.performanceHudEnabled ? performanceHudMetrics : null
+        }
+      />
       {!isFullscreen && <ParticleDebugOverlay />}
 
       {isUnsupported && (

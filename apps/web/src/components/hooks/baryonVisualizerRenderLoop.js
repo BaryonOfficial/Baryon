@@ -13,6 +13,8 @@ import {
 } from "./baryonVisualizerRuntimeState.js";
 
 const LONG_FRAME_THRESHOLD_MS = 34;
+const PERFORMANCE_HUD_PUBLISH_INTERVAL_MS = 150;
+const PERFORMANCE_HUD_SMOOTHING_ALPHA = 0.12;
 
 function snapshotFeatureFrame(featureFrame) {
   return {
@@ -48,9 +50,59 @@ export function getPlaybackDiagnosticDpr() {
   return Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
 }
 
+function getRenderLoopWallTimeMs() {
+  if (typeof globalThis.performance?.now === "function") {
+    return globalThis.performance.now();
+  }
+
+  return 0;
+}
+
+export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
+  const smoothedFrameTimeMs = runtimeDiagnostics?.smoothedFrameTimeMs ?? 0;
+  return {
+    fps:
+      smoothedFrameTimeMs > 0 && Number.isFinite(smoothedFrameTimeMs)
+        ? 1000 / smoothedFrameTimeMs
+        : 0,
+    smoothedFrameTimeMs,
+    currentPixelRatio: runtimeDiagnostics?.currentPixelRatio ?? 1,
+    basePixelRatio: runtimeDiagnostics?.basePixelRatio ?? 1,
+    rendererMode: runtimeDiagnostics?.rendererMode ?? null,
+  };
+}
+
+export function publishPerformanceHudSnapshot(
+  { runtimeDiagnostics, onPerformanceHudSnapshotChange, performanceHudState },
+  {
+    getWallTimeMs = getRenderLoopWallTimeMs,
+    publishIntervalMs = PERFORMANCE_HUD_PUBLISH_INTERVAL_MS,
+  } = {},
+) {
+  if (!onPerformanceHudSnapshotChange || !performanceHudState) {
+    return null;
+  }
+
+  const wallTimeMs = getWallTimeMs();
+  if (
+    wallTimeMs - (performanceHudState.lastPublishedAtMs ?? 0) <
+    publishIntervalMs
+  ) {
+    return null;
+  }
+
+  const snapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
+  performanceHudState.lastPublishedAtMs = wallTimeMs;
+  onPerformanceHudSnapshotChange(snapshot);
+  return snapshot;
+}
+
 export function updateRendererDiagnostics(
   { state, controls, status, time, deltaTime, gl, renderLoopRefs },
-  { getTargetDpr = getPlaybackDiagnosticDpr } = {},
+  {
+    getTargetDpr = getPlaybackDiagnosticDpr,
+    getWallTimeMs = getRenderLoopWallTimeMs,
+  } = {},
 ) {
   const runtimeDiagnostics = renderLoopRefs.runtimeDiagnosticsRef.current;
   const rendererMode =
@@ -70,7 +122,26 @@ export function updateRendererDiagnostics(
   const lowLoadActive = Boolean(
     controls.lowLoadPlaybackDiagnostics && status.isPlaying,
   );
-  const targetPixelRatio = lowLoadActive ? 1 : getTargetDpr();
+  const basePixelRatio = getTargetDpr();
+  const targetPixelRatio = lowLoadActive ? 1 : basePixelRatio;
+  const wallTimeMs = getWallTimeMs();
+  const wallFrameTimeMs =
+    typeof runtimeDiagnostics.lastFrameWallTimeMs === "number"
+      ? Math.max(0, wallTimeMs - runtimeDiagnostics.lastFrameWallTimeMs)
+      : null;
+  const frameTimeMs =
+    wallFrameTimeMs && Number.isFinite(wallFrameTimeMs)
+      ? wallFrameTimeMs
+      : Math.max(0, deltaTime * 1000);
+  runtimeDiagnostics.lastFrameWallTimeMs = wallTimeMs;
+  runtimeDiagnostics.smoothedFrameTimeMs =
+    runtimeDiagnostics.smoothedFrameTimeMs > 0
+      ? runtimeDiagnostics.smoothedFrameTimeMs +
+        (frameTimeMs - runtimeDiagnostics.smoothedFrameTimeMs) *
+          PERFORMANCE_HUD_SMOOTHING_ALPHA
+      : frameTimeMs;
+  runtimeDiagnostics.currentPixelRatio = targetPixelRatio;
+  runtimeDiagnostics.basePixelRatio = basePixelRatio;
   if (renderLoopRefs.pixelRatioRef.current !== targetPixelRatio) {
     gl.setPixelRatio(targetPixelRatio);
     gl.setSize(state.size.width, state.size.height, false);
@@ -80,16 +151,16 @@ export function updateRendererDiagnostics(
   if (status.isPlaying) {
     runtimeDiagnostics.activeFrameCount += 1;
     runtimeDiagnostics.averageFrameTimeMs +=
-      (deltaTime * 1000 - runtimeDiagnostics.averageFrameTimeMs) /
+      (frameTimeMs - runtimeDiagnostics.averageFrameTimeMs) /
       runtimeDiagnostics.activeFrameCount;
     runtimeDiagnostics.worstFrameTimeMs = Math.max(
       runtimeDiagnostics.worstFrameTimeMs,
-      deltaTime * 1000,
+      frameTimeMs,
     );
-    if (deltaTime * 1000 >= LONG_FRAME_THRESHOLD_MS) {
+    if (frameTimeMs >= LONG_FRAME_THRESHOLD_MS) {
       runtimeDiagnostics.longFrameCount += 1;
       runtimeDiagnostics.lastLongFrame = {
-        durationMs: deltaTime * 1000,
+        durationMs: frameTimeMs,
         atElapsedTimeSeconds: time,
         playbackSessionId: status.playbackSessionId ?? null,
       };
@@ -290,6 +361,31 @@ export function syncMicRuntimeStatus({
   }
 
   return nextMicRuntimeStatus;
+}
+
+export function applyReactiveBloomState({
+  controls,
+  runtimeState,
+  postNodesRef,
+  bloom,
+}) {
+  const bloomPass = postNodesRef.current?.bloomPass;
+  if (!bloomPass || !bloom) {
+    return bloom;
+  }
+
+  const reactiveBloom = {
+    ...bloom,
+    strength: runtimeState?.bloomTuning?.effectiveStrength ?? bloom.strength,
+    radius: runtimeState?.bloomTuning?.effectiveRadius ?? bloom.radius,
+    threshold: runtimeState?.bloomTuning?.effectiveThreshold ?? bloom.threshold,
+  };
+
+  bloomPass.strength.value = reactiveBloom.strength;
+  bloomPass.radius.value = reactiveBloom.radius;
+  bloomPass.threshold.value = reactiveBloom.threshold;
+
+  return controls.bloomEnabled ? reactiveBloom : bloom;
 }
 
 function buildAuditSnapshotPayload({

@@ -49,7 +49,11 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     baryonGeometry,
     uniforms,
   });
-  const { root: points, visualRoot } = createRaymarchSceneRoot({
+  const {
+    root: points,
+    visualRoot,
+    sceneLighting,
+  } = createRaymarchSceneRoot({
     volumeMesh,
     idleOverlay,
     radius: parameters.radius,
@@ -60,6 +64,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     points,
     object: points,
     visualRoot,
+    sceneLighting,
     volumeMesh,
     idleOverlay,
     uniforms,
@@ -85,11 +90,16 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
       lowStepBloomGuard: deriveLowStepBloomGuard(
         RAYMARCH_DEFAULTS.raymarchSteps,
       ),
+      baseStrength: RENDER_DEFAULTS.bloomStrength,
+      baseRadius: RENDER_DEFAULTS.bloomRadius,
+      baseThreshold: RENDER_DEFAULTS.bloomThreshold,
       effectiveStrength: RENDER_DEFAULTS.bloomStrength,
       effectiveRadius: RENDER_DEFAULTS.bloomRadius,
       effectiveThreshold: RENDER_DEFAULTS.bloomThreshold,
     },
     baseDensityGain: uniforms.uDensityGain.value,
+    baseThreshold: uniforms.uThreshold.value,
+    baseContourSharpness: uniforms.uContourSharpness.value,
     chromesthesia: {
       colorMode: RENDER_DEFAULTS.colorMode,
       chromesthesiaMix:

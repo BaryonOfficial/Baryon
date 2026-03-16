@@ -1,5 +1,6 @@
 import { LightingModel } from "three/webgpu";
 import {
+  Break,
   If,
   Loop,
   cameraFar,
@@ -34,18 +35,63 @@ const scatteringDensity = property("vec3");
 const linearDepthRay = property("vec3");
 export const raymarchLightNode = property("vec3", "baryonRaymarchLight");
 export const raymarchOpacityNode = property("float", "baryonRaymarchOpacity");
-const EXTINCTION_SCALE = 0.08;
-const OUTPUT_GAIN = 1.35;
+const EXTINCTION_SCALE = 0.082;
+const OUTPUT_GAIN = 1.38;
+export const SOFT_KNEE_START = 0.62;
+export const SOFT_KNEE_STRENGTH = 1.15;
 const REFERENCE_STEPS = STEP_REFERENCE;
+const EARLY_EXIT_TRANSMITTANCE_EPSILON = 1e-3;
+export const EMISSION_SAMPLE_GAIN = 1.6;
+export const DIRECT_LIGHT_RESPONSE_GAIN = 0.14;
+
+export function applySoftKneeCompression(
+  value,
+  kneeStart = SOFT_KNEE_START,
+  kneeStrength = SOFT_KNEE_STRENGTH,
+) {
+  const aboveKnee = Math.max(0, value - kneeStart);
+  return (
+    Math.min(value, kneeStart) + aboveKnee / (1 + aboveKnee * kneeStrength)
+  );
+}
+
+export function composeEmissionContribution(
+  sampleValue,
+  lightValue = 0,
+  emissionSampleGain = EMISSION_SAMPLE_GAIN,
+  directLightResponseGain = DIRECT_LIGHT_RESPONSE_GAIN,
+) {
+  return (
+    sampleValue * emissionSampleGain +
+    sampleValue * lightValue * directLightResponseGain
+  );
+}
+
+function applySoftKneeCompressionNode(value) {
+  const kneeStart = float(SOFT_KNEE_START);
+  const aboveKnee = max(value.sub(kneeStart), 0.0);
+  return min(value, kneeStart).add(
+    aboveKnee.div(float(1.0).add(aboveKnee.mul(float(SOFT_KNEE_STRENGTH)))),
+  );
+}
 
 /**
  * @typedef {import("three").Material & {
  *   steps?: number,
  *   radiusNode?: any,
  *   opacityGainNode?: any,
- *   offsetNode?: any,
+ *   offsetNode?: any | ((args: {
+ *     startPosLocal: any,
+ *     endPosLocal: any,
+ *     rayDirLocal: any,
+ *     radiusNode: any
+ *   }) => any),
  *   depthNode?: any,
- *   scatteringNode?: ((args: { positionRay: any }) => any) | null
+ *   scatteringNode?: ((args: {
+ *     positionRay: any,
+ *     positionRayLocal: any,
+ *     viewDirLocal: any
+ *   }) => any) | null
  * }} RuntimeVolumeMaterial
  */
 
@@ -83,6 +129,9 @@ export default class SafeVolumetricLightingModel extends LightingModel {
       .xyz.toVar();
     const endPosLocal = modelWorldMatrixInverse
       .mul(vec4(endPos, 1))
+      .xyz.toVar();
+    const cameraPositionLocal = modelWorldMatrixInverse
+      .mul(vec4(cameraPosition, 1))
       .xyz.toVar();
     const viewVectorLocal = endPosLocal.sub(startPosLocal).toVar();
     const rayDirLocal = viewVectorLocal.normalize().toVar();
@@ -135,7 +184,16 @@ export default class SafeVolumetricLightingModel extends LightingModel {
         distTravelled.assign(entryDistance);
 
         if (material.offsetNode) {
-          distTravelled.addAssign(material.offsetNode.mul(stepSize));
+          const offsetNode =
+            typeof material.offsetNode === "function"
+              ? material.offsetNode({
+                  startPosLocal,
+                  endPosLocal,
+                  rayDirLocal,
+                  radiusNode,
+                })
+              : material.offsetNode;
+          distTravelled.addAssign(offsetNode.mul(stepSize));
         }
 
         Loop(steps, () => {
@@ -172,13 +230,30 @@ export default class SafeVolumetricLightingModel extends LightingModel {
 
           let scatteringNode;
           if (material.scatteringNode) {
-            scatteringNode = material.scatteringNode({ positionRay });
+            const viewDirLocal = cameraPositionLocal
+              .sub(positionRayLocal)
+              .normalize()
+              .toVar();
+            scatteringNode = material.scatteringNode({
+              positionRay,
+              positionRayLocal,
+              viewDirLocal,
+            });
           }
 
           super.start(builder);
 
           if (scatteringNode) {
-            scatteringDensity.mulAssign(scatteringNode);
+            const directLightContribution = scatteringDensity.toVar();
+            scatteringDensity.assign(
+              scatteringNode
+                .mul(float(EMISSION_SAMPLE_GAIN))
+                .add(
+                  directLightContribution
+                    .mul(scatteringNode)
+                    .mul(float(DIRECT_LIGHT_RESPONSE_GAIN)),
+                ),
+            );
           }
 
           const falloff = scatteringDensity
@@ -187,26 +262,40 @@ export default class SafeVolumetricLightingModel extends LightingModel {
             .mul(stepSize)
             .exp();
           transmittance.mulAssign(falloff);
+          const remainingTransmittance = max(
+            max(transmittance.x, transmittance.y),
+            transmittance.z,
+          ).toVar();
+          If(
+            remainingTransmittance.lessThan(
+              float(EARLY_EXIT_TRANSMITTANCE_EPSILON),
+            ),
+            () => {
+              Break();
+            },
+          );
           distTravelled.addAssign(stepSize);
         });
 
-        raymarchLightNode.addAssign(
-          transmittance
-            .saturate()
-            .oneMinus()
-            .mul(OUTPUT_GAIN)
-            .mul(stepCompensation),
-        );
         const visibility = transmittance.saturate().oneMinus().toVar();
+        const compensatedVisibility = visibility
+          .mul(OUTPUT_GAIN)
+          .mul(stepCompensation)
+          .toVar();
+        const visibilityPeak = max(
+          max(compensatedVisibility.x, compensatedVisibility.y),
+          compensatedVisibility.z,
+        ).toVar();
+        const compressedVisibilityPeak =
+          applySoftKneeCompressionNode(visibilityPeak).toVar();
+        const visibilityCompressionRatio = compressedVisibilityPeak
+          .div(max(visibilityPeak, float(1e-4)))
+          .toVar();
+        raymarchLightNode.addAssign(
+          compensatedVisibility.mul(visibilityCompressionRatio),
+        );
         raymarchOpacityNode.assign(
-          clamp(
-            max(max(visibility.x, visibility.y), visibility.z)
-              .mul(opacityGainNode)
-              .mul(OUTPUT_GAIN)
-              .mul(stepCompensation),
-            0.0,
-            1.0,
-          ),
+          clamp(compressedVisibilityPeak.mul(opacityGainNode), 0.0, 1.0),
         );
       });
     });

@@ -37,6 +37,11 @@ export function createRaymarchUniforms(parameters) {
     uContourSharpness: uniform(RAYMARCH_DEFAULTS.contourSharpness),
     uRimBloomBias: uniform(RAYMARCH_DEFAULTS.rimBloomBias),
     uRimCompression: uniform(RAYMARCH_DEFAULTS.rimCompression),
+    uHolographicIntensity: uniform(RAYMARCH_DEFAULTS.holographicIntensity),
+    uHolographicShift: uniform(RAYMARCH_DEFAULTS.holographicShift),
+    uHolographicFresnelPower: uniform(
+      RAYMARCH_DEFAULTS.holographicFresnelPower,
+    ),
     uRaymarchSteps: uniform(RAYMARCH_DEFAULTS.raymarchSteps),
     uBandEnergies: uniform(new THREE.Vector4(0, 0, 0, 0)),
     uTransientEnergy: uniform(0.0),

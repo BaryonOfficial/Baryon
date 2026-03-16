@@ -44,6 +44,9 @@ function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
       uContourSharpness: { value: 0 },
       uRimBloomBias: { value: 0 },
       uRimCompression: { value: 0 },
+      uHolographicIntensity: { value: 0 },
+      uHolographicShift: { value: 0 },
+      uHolographicFresnelPower: { value: 0 },
       uRaymarchSteps: { value: 0 },
       uSlicePosition: { value: 0 },
       uRadius: { value: 3 },
@@ -138,6 +141,9 @@ describe("control runtime sync", () => {
     controls.contourSharpness = 5.2;
     controls.rimBloomBias = 0.65;
     controls.rimCompression = 0.72;
+    controls.holographicIntensity = 0.52;
+    controls.holographicShift = 0.41;
+    controls.holographicFresnelPower = 4.1;
     controls.reactivity = 1.2;
     controls.motionAmount = 1.1;
     controls.structurePersistence = 1.4;
@@ -166,6 +172,9 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uContourSharpness.value).toBe(5.2);
     expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.65);
     expect(runtimeState.uniforms.uRimCompression.value).toBe(0.72);
+    expect(runtimeState.uniforms.uHolographicIntensity.value).toBe(0.52);
+    expect(runtimeState.uniforms.uHolographicShift.value).toBe(0.41);
+    expect(runtimeState.uniforms.uHolographicFresnelPower.value).toBe(4.1);
     expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
     expect(runtimeState.uniforms.uChromesthesiaMix.value).toBe(0.6);
     expect(runtimeState.chromesthesia).toEqual({
@@ -192,6 +201,9 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.opacityGain).toBe(1.4);
     expect(snapshot.uniforms.rimBloomBias).toBe(0.65);
     expect(snapshot.uniforms.rimCompression).toBe(0.72);
+    expect(snapshot.uniforms.holographicIntensity).toBe(0.52);
+    expect(snapshot.uniforms.holographicShift).toBe(0.41);
+    expect(snapshot.uniforms.holographicFresnelPower).toBe(4.1);
     expect(snapshot.uniforms.reactivity).toBe(1.2);
     expect(snapshot.uniforms.motionAmount).toBe(1.1);
     expect(snapshot.uniforms.structurePersistence).toBe(1.4);
@@ -199,6 +211,8 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.colorMode).toBe("chromesthesia");
     expect(snapshot.uniforms.chromesthesiaMix).toBe(0.6);
     expect(snapshot.overlay.scale).toBe(1.4);
+    expect(runtimeState.baseThreshold).toBe(0.033);
+    expect(runtimeState.baseContourSharpness).toBe(5.2);
   });
 
   it("applies shared and raymarch controls through method-aware helpers", () => {
@@ -274,6 +288,9 @@ describe("control runtime sync", () => {
     controls.contourSharpness = 6.4;
     controls.rimBloomBias = 0.35;
     controls.rimCompression = 0.5;
+    controls.holographicIntensity = 0.61;
+    controls.holographicShift = 0.24;
+    controls.holographicFresnelPower = 2.8;
     controls.reactivity = 0.9;
     controls.motionAmount = 1.3;
     controls.structurePersistence = 0.75;
@@ -292,6 +309,9 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uContourSharpness.value).toBe(6.4);
     expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.35);
     expect(runtimeState.uniforms.uRimCompression.value).toBe(0.5);
+    expect(runtimeState.uniforms.uHolographicIntensity.value).toBe(0.61);
+    expect(runtimeState.uniforms.uHolographicShift.value).toBe(0.24);
+    expect(runtimeState.uniforms.uHolographicFresnelPower.value).toBe(2.8);
     expect(runtimeState.reactivityTuning.reactivity).toBe(0.9);
     expect(runtimeState.reactivityTuning.motionAmount).toBe(1.3);
     expect(runtimeState.reactivityTuning.structurePersistence).toBe(0.75);
@@ -307,6 +327,9 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.colorMode).toBe("static");
     expect(snapshot.uniforms.chromesthesiaMix).toBe(0);
     expect(snapshot.uniforms.opacityGain).toBe(1.75);
+    expect(snapshot.uniforms.holographicIntensity).toBe(0.61);
+    expect(snapshot.uniforms.holographicShift).toBe(0.24);
+    expect(snapshot.uniforms.holographicFresnelPower).toBe(2.8);
   });
 
   it("applies bloom controls to the pipeline", () => {
@@ -340,9 +363,9 @@ describe("control runtime sync", () => {
       controls,
     );
 
-    expect(bloomPass.strength.value).toBeCloseTo(0.6853);
-    expect(bloomPass.radius.value).toBeCloseTo(0.2976);
-    expect(bloomPass.threshold.value).toBeCloseTo(0.48);
+    expect(bloomPass.strength.value).toBeCloseTo(0.693);
+    expect(bloomPass.radius.value).toBeCloseTo(0.2852);
+    expect(bloomPass.threshold.value).toBeCloseTo(0.49);
     expect(composeOutputNode).toHaveBeenCalledWith({
       bloomEnabled: false,
       outputMode: controls.outputMode,
@@ -388,7 +411,7 @@ describe("control runtime sync", () => {
     expect(pipeline.outputNode).toBe("transparent-output");
     expect(pipeline.needsUpdate).toBe(true);
     expect(snapshot.enabled).toBe(true);
-    expect(snapshot.strength).toBeCloseTo(controls.bloomStrength * 0.912);
+    expect(snapshot.strength).toBeCloseTo(controls.bloomStrength * 0.92);
     expect(snapshot.lowStepBloomGuard).toBe(0);
   });
 
@@ -421,12 +444,10 @@ describe("control runtime sync", () => {
 
     expect(snapshot.lowStepBloomGuard).toBeCloseTo(deriveLowStepBloomGuard(32));
     expect(snapshot.stepCompensation).toBeCloseTo(deriveStepCompensation(32));
-    expect(snapshot.strength).toBeCloseTo(
-      controls.bloomStrength * 0.912 * 0.92,
-    );
-    expect(snapshot.radius).toBeCloseTo(controls.bloomRadius * 0.968);
+    expect(snapshot.strength).toBeCloseTo(controls.bloomStrength * 0.92 * 0.92);
+    expect(snapshot.radius).toBeCloseTo(controls.bloomRadius * 0.936);
     expect(snapshot.threshold).toBeCloseTo(
-      controls.bloomThreshold + 0.032 + 0.0333333333,
+      controls.bloomThreshold + 0.04 + 0.0333333333,
     );
     expect(composeOutputNode).toHaveBeenCalledWith({
       bloomEnabled: true,
@@ -846,6 +867,23 @@ describe("control runtime sync", () => {
     expect(runtimeState.points.children).toContain(runtimeState.visualRoot);
     expect(runtimeState.stabilityStats.avgRaySegmentLength).toBeGreaterThan(0);
     expect(runtimeState.stabilityStats.missRatio).toBeGreaterThan(0);
+    expect(
+      runtimeState.points.children.filter((child) => child.isLight),
+    ).toHaveLength(2);
+    expect(runtimeState.sceneLighting.primary.intensity).toBeCloseTo(0.9);
+    expect(runtimeState.sceneLighting.secondary.intensity).toBeCloseTo(0.9);
+    expect(runtimeState.sceneLighting.primary.position.x).toBeCloseTo(3 * 1.15);
+    expect(runtimeState.sceneLighting.secondary.position.x).toBeCloseTo(
+      -3 * 1.15,
+    );
+    expect(runtimeState.sceneLighting.primary.position.y).toBeCloseTo(3 * 0.85);
+    expect(runtimeState.sceneLighting.secondary.position.y).toBeCloseTo(
+      3 * 0.85,
+    );
+    expect(runtimeState.sceneLighting.primary.position.z).toBeCloseTo(3 * 1.8);
+    expect(runtimeState.sceneLighting.secondary.position.z).toBeCloseTo(
+      3 * 1.8,
+    );
 
     expect(() => runtime.dispose(runtimeState)).not.toThrow();
   });

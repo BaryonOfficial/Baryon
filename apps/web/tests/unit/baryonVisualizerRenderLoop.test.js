@@ -2,9 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   applyCachedControlSnapshots,
+  applyReactiveBloomState,
+  buildPerformanceHudSnapshot,
+  publishPerformanceHudSnapshot,
   publishDevtoolsSnapshots,
   resolveFeatureFrame,
   syncMicRuntimeStatus,
+  updateRendererDiagnostics,
 } from "../../src/components/hooks/baryonVisualizerRenderLoop.js";
 
 function createRenderLoopRefs() {
@@ -106,6 +110,196 @@ function createDevtoolsDeps({ controlSnapshots, auditLogs, markedReady } = {}) {
     },
   };
 }
+
+function createRuntimeDiagnostics(overrides = {}) {
+  return {
+    activeFrameCount: 0,
+    averageFrameTimeMs: 0,
+    smoothedFrameTimeMs: 0,
+    worstFrameTimeMs: 0,
+    longFrameCount: 0,
+    currentPixelRatio: 1,
+    basePixelRatio: 1,
+    lastFrameWallTimeMs: null,
+    lastLongFrame: null,
+    lastVisibilityChange: null,
+    rendererMode: null,
+    lastRendererModeChange: null,
+    lastPlaybackIssue: null,
+    ...overrides,
+  };
+}
+
+test("updates smoothed frame time and DPR diagnostics for the performance HUD", () => {
+  const renderLoopRefs = createRenderLoopRefs();
+  renderLoopRefs.runtimeDiagnosticsRef.current = createRuntimeDiagnostics();
+  const gl = {
+    backend: { isWebGLBackend: false },
+    setPixelRatio() {},
+    setSize() {},
+  };
+
+  const { runtimeDiagnostics } = updateRendererDiagnostics(
+    {
+      state: { size: { width: 1280, height: 720 } },
+      controls: {
+        lowLoadPlaybackDiagnostics: false,
+      },
+      status: {
+        isPlaying: true,
+        isMicActive: false,
+        playbackSessionId: 10,
+        lastPlaybackEndReason: null,
+        lastPlaybackDiagnostics: null,
+      },
+      time: 1,
+      deltaTime: 1 / 60,
+      gl,
+      renderLoopRefs,
+    },
+    {
+      getTargetDpr() {
+        return 2;
+      },
+      getWallTimeMs() {
+        return 100;
+      },
+    },
+  );
+
+  assert.equal(runtimeDiagnostics.currentPixelRatio, 2);
+  assert.equal(runtimeDiagnostics.basePixelRatio, 2);
+  assert.ok(runtimeDiagnostics.smoothedFrameTimeMs > 0);
+  assert.equal(runtimeDiagnostics.rendererMode, "webgpu");
+});
+
+test("builds a compact performance HUD snapshot from runtime diagnostics", () => {
+  const snapshot = buildPerformanceHudSnapshot(
+    createRuntimeDiagnostics({
+      smoothedFrameTimeMs: 20,
+      currentPixelRatio: 1.5,
+      basePixelRatio: 2,
+      rendererMode: "webgpu",
+    }),
+  );
+
+  assert.equal(snapshot.fps, 50);
+  assert.equal(snapshot.smoothedFrameTimeMs, 20);
+  assert.equal(snapshot.currentPixelRatio, 1.5);
+  assert.equal(snapshot.basePixelRatio, 2);
+  assert.equal(snapshot.rendererMode, "webgpu");
+});
+
+test("keeps paused-playback HUD frame timing tied to render cadence", () => {
+  const renderLoopRefs = createRenderLoopRefs();
+  renderLoopRefs.runtimeDiagnosticsRef.current = createRuntimeDiagnostics({
+    smoothedFrameTimeMs: 16,
+    lastFrameWallTimeMs: 100,
+  });
+  const gl = {
+    backend: { isWebGLBackend: false },
+    setPixelRatio() {},
+    setSize() {},
+  };
+
+  const { runtimeDiagnostics } = updateRendererDiagnostics(
+    {
+      state: { size: { width: 1280, height: 720 } },
+      controls: {
+        lowLoadPlaybackDiagnostics: false,
+      },
+      status: {
+        isPlaying: false,
+        isMicActive: false,
+        playbackSessionId: null,
+        lastPlaybackEndReason: null,
+        lastPlaybackDiagnostics: null,
+      },
+      time: 2,
+      deltaTime: 0,
+      gl,
+      renderLoopRefs,
+    },
+    {
+      getTargetDpr() {
+        return 2;
+      },
+      getWallTimeMs() {
+        return 116;
+      },
+    },
+  );
+
+  assert.equal(runtimeDiagnostics.smoothedFrameTimeMs, 16);
+  assert.equal(buildPerformanceHudSnapshot(runtimeDiagnostics).fps, 62.5);
+});
+
+test("throttles performance HUD publications to the configured interval", () => {
+  const snapshots = [];
+  const performanceHudState = {
+    lastPublishedAtMs: Number.NEGATIVE_INFINITY,
+  };
+
+  const first = publishPerformanceHudSnapshot(
+    {
+      runtimeDiagnostics: createRuntimeDiagnostics({
+        smoothedFrameTimeMs: 25,
+        currentPixelRatio: 2,
+        basePixelRatio: 2,
+      }),
+      onPerformanceHudSnapshotChange(snapshot) {
+        snapshots.push(snapshot);
+      },
+      performanceHudState,
+    },
+    {
+      getWallTimeMs() {
+        return 100;
+      },
+    },
+  );
+  const second = publishPerformanceHudSnapshot(
+    {
+      runtimeDiagnostics: createRuntimeDiagnostics({
+        smoothedFrameTimeMs: 15,
+        currentPixelRatio: 1,
+        basePixelRatio: 2,
+      }),
+      onPerformanceHudSnapshotChange(snapshot) {
+        snapshots.push(snapshot);
+      },
+      performanceHudState,
+    },
+    {
+      getWallTimeMs() {
+        return 180;
+      },
+    },
+  );
+  const third = publishPerformanceHudSnapshot(
+    {
+      runtimeDiagnostics: createRuntimeDiagnostics({
+        smoothedFrameTimeMs: 15,
+        currentPixelRatio: 1,
+        basePixelRatio: 2,
+      }),
+      onPerformanceHudSnapshotChange(snapshot) {
+        snapshots.push(snapshot);
+      },
+      performanceHudState,
+    },
+    {
+      getWallTimeMs() {
+        return 260;
+      },
+    },
+  );
+
+  assert.equal(first?.smoothedFrameTimeMs, 25);
+  assert.equal(second, null);
+  assert.equal(third?.smoothedFrameTimeMs, 15);
+  assert.equal(snapshots.length, 2);
+});
 
 test("refreshes cached control snapshots only when invalidated", () => {
   const renderLoopRefs = createRenderLoopRefs();
@@ -351,6 +545,44 @@ test("emits mic runtime status changes only when the status meaningfully changes
     calibrating: false,
     profile: "voice-tone",
   });
+});
+
+test("applies reactive bloom tuning after the runtime tick", () => {
+  const bloomPass = {
+    strength: { value: 0.2 },
+    radius: { value: 0.08 },
+    threshold: { value: 0.4 },
+  };
+
+  const reactiveBloom = applyReactiveBloomState({
+    controls: {
+      bloomEnabled: true,
+    },
+    runtimeState: {
+      bloomTuning: {
+        effectiveStrength: 0.31,
+        effectiveRadius: 0.045,
+        effectiveThreshold: 0.52,
+      },
+    },
+    postNodesRef: {
+      current: { bloomPass },
+    },
+    bloom: {
+      strength: 0.2,
+      radius: 0.08,
+      threshold: 0.4,
+    },
+  });
+
+  assert.deepEqual(reactiveBloom, {
+    strength: 0.31,
+    radius: 0.045,
+    threshold: 0.52,
+  });
+  assert.equal(bloomPass.strength.value, 0.31);
+  assert.equal(bloomPass.radius.value, 0.045);
+  assert.equal(bloomPass.threshold.value, 0.52);
 });
 
 test("deletes the audit snapshot when audit publishing is disabled", () => {

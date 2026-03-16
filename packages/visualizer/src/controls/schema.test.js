@@ -10,6 +10,7 @@ import {
   getControlsForMethod,
 } from "./schema.js";
 import { auditControlSchema } from "./audit.js";
+import { RAYMARCH_DEFAULTS, RENDER_DEFAULTS } from "../defaults.js";
 import {
   DEFAULT_VISUALIZATION_METHOD,
   VISUALIZATION_METHODS,
@@ -24,6 +25,7 @@ const EXPECTED_CONTROL_KEYS = [
   "bloomStrength",
   "bloomRadius",
   "bloomThreshold",
+  "performanceHudEnabled",
   "bloomResponseBias",
   "backgroundColor",
   "outputMode",
@@ -46,6 +48,9 @@ const EXPECTED_CONTROL_KEYS = [
   "contourSharpness",
   "rimBloomBias",
   "rimCompression",
+  "holographicIntensity",
+  "holographicShift",
+  "holographicFresnelPower",
   "motionAmount",
   "structurePersistence",
   "idleLogoIntensity",
@@ -70,6 +75,31 @@ describe("control schema", () => {
   it("creates state for every control key", () => {
     const state = createControlState();
     expect(Object.keys(state)).toEqual(EXPECTED_CONTROL_KEYS);
+  });
+
+  it("defaults the raymarch surface to the cyan laser baseline", () => {
+    const state = createControlState();
+
+    expect(state.volumeColor).toBe("#56d7ff");
+    expect(state.surfaceColor).toBe("#f7fdff");
+    expect(state.zeroPointPrecision).toBe(0.22);
+    expect(state.structureMin).toBe(0.12);
+    expect(state.structureMax).toBe(0.46);
+    expect(state.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
+    expect(state.densityGain).toBe(2.2);
+    expect(state.absorption).toBe(2.55);
+    expect(state.opacityGain).toBe(1.24);
+    expect(state.contourSharpness).toBe(7.3);
+    expect(state.holographicIntensity).toBe(0.45);
+    expect(state.holographicShift).toBe(0.35);
+    expect(state.holographicFresnelPower).toBe(3.2);
+    expect(state.bloomStrength).toBe(0.1);
+    expect(state.bloomRadius).toBe(0.04);
+    expect(state.bloomThreshold).toBe(0.46);
+    expect(state.performanceHudEnabled).toBe(
+      RENDER_DEFAULTS.performanceHudEnabled,
+    );
+    expect(state.bloomResponseBias).toBe(0.52);
   });
 
   it("keeps the node-threshold slider wide enough for cymatic tuning", () => {
@@ -140,6 +170,7 @@ describe("control schema", () => {
       "bloomStrength",
       "bloomRadius",
       "bloomThreshold",
+      "performanceHudEnabled",
       "bloomResponseBias",
       "backgroundColor",
       "outputMode",
@@ -162,6 +193,9 @@ describe("control schema", () => {
       "contourSharpness",
       "rimBloomBias",
       "rimCompression",
+      "holographicIntensity",
+      "holographicShift",
+      "holographicFresnelPower",
       "motionAmount",
       "structurePersistence",
       "idleLogoIntensity",
@@ -212,6 +246,7 @@ describe("control schema", () => {
       "bloomStrength",
       "bloomRadius",
       "bloomThreshold",
+      "performanceHudEnabled",
       "backgroundColor",
       "outputMode",
       "outputBackgroundColor",
@@ -261,6 +296,9 @@ describe("control schema", () => {
     expect(cymatics2dControls).not.toContain("absorption");
     expect(cymatics2dControls).not.toContain("rimBloomBias");
     expect(cymatics2dControls).not.toContain("rimCompression");
+    expect(cymatics2dControls).not.toContain("holographicIntensity");
+    expect(cymatics2dControls).not.toContain("holographicShift");
+    expect(cymatics2dControls).not.toContain("holographicFresnelPower");
     expect(cymatics2dControls).toContain("visualizationMethod");
     expect(cymatics2dControls).toContain("bloomThreshold");
     expect(cymatics2dControls).toContain("densityGain");
@@ -294,6 +332,7 @@ describe("control schema", () => {
       "bloomStrength",
       "bloomRadius",
       "bloomThreshold",
+      "performanceHudEnabled",
       "backgroundColor",
       "outputMode",
       "outputBackgroundColor",
@@ -319,9 +358,25 @@ describe("control schema", () => {
     const rimCompression = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "rimCompression",
     );
+    const holographicIntensity = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "holographicIntensity",
+    );
+    const holographicShift = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "holographicShift",
+    );
+    const holographicFresnelPower = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "holographicFresnelPower",
+    );
 
     expect(rimBloomBias?.methods).toEqual([VISUALIZATION_METHODS.raymarch]);
     expect(rimCompression?.methods).toEqual([VISUALIZATION_METHODS.raymarch]);
+    expect(holographicIntensity?.methods).toEqual([
+      VISUALIZATION_METHODS.raymarch,
+    ]);
+    expect(holographicShift?.methods).toEqual([VISUALIZATION_METHODS.raymarch]);
+    expect(holographicFresnelPower?.methods).toEqual([
+      VISUALIZATION_METHODS.raymarch,
+    ]);
   });
 
   it("fails audit when a live control lacks runtime coverage", () => {
