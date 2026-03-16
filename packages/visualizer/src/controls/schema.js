@@ -43,18 +43,23 @@ function methodsFor(scope) {
 
 const CONTROL_GROUPS = Object.freeze({
   input: Object.freeze({
-    title: "Mic Processing",
+    title: "Mic",
     order: 10,
     expanded: false,
   }),
-  field: Object.freeze({
-    title: "Field",
+  shape: Object.freeze({
+    title: "Shape",
     order: 20,
     expanded: false,
   }),
-  look: Object.freeze({
-    title: "Look",
+  color: Object.freeze({
+    title: "Color",
     order: 30,
+    expanded: false,
+  }),
+  logo: Object.freeze({
+    title: "Logo",
+    order: 35,
     expanded: false,
   }),
   motion: Object.freeze({
@@ -62,19 +67,20 @@ const CONTROL_GROUPS = Object.freeze({
     order: 40,
     expanded: false,
   }),
-  advancedField: Object.freeze({
-    title: "Advanced Field",
+  display: Object.freeze({
+    title: "Display",
     order: 50,
     expanded: false,
   }),
-  advancedLook: Object.freeze({
-    title: "Advanced Look",
-    order: 60,
+  // Controls rendered inline under the Presets section, not as a collapsible folder
+  presetsArea: Object.freeze({
+    title: "PresetsArea",
+    order: 55,
     expanded: false,
   }),
   diagnostics: Object.freeze({
     title: "Diagnostics",
-    order: 70,
+    order: 60,
     expanded: false,
   }),
 });
@@ -90,12 +96,13 @@ function withControlGroup(definition, group) {
 }
 
 export const CONTROL_DEFINITIONS = Object.freeze([
+  // ── Mic ────────────────────────────────────────────────────────────────────
   withControlGroup(
     {
       key: "echoCancellation",
       label: "Echo Cancel",
       title:
-        "Suppress speaker bleed and room echo from the mic input; useful with speakers, but it colors the spectrum",
+        "Suppress speaker bleed and room echo from mic input — helpful when using speakers, but may color the audio spectrum",
       defaultValue: AUDIO_DEFAULTS.echoCancellation,
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audio,
@@ -110,7 +117,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "noiseSuppression",
       label: "Noise Suppress",
       title:
-        "Reduce steady background noise before analysis; helps in noisy rooms, but can smear quieter harmonics",
+        "Filter out steady background noise before analysis — good for noisy rooms, but can soften quieter harmonics",
       defaultValue: AUDIO_DEFAULTS.noiseSuppression,
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audio,
@@ -125,7 +132,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "autoGainControl",
       label: "Auto Gain",
       title:
-        "Continuously normalize mic level for audibility; convenient for speech, but it flattens dynamics for visualization",
+        "Automatically normalize mic volume — convenient for speech, but flattens dynamics for visualization",
       defaultValue: AUDIO_DEFAULTS.autoGainControl,
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audio,
@@ -135,178 +142,143 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     },
     CONTROL_GROUPS.input,
   ),
+
+  // ── Shape ──────────────────────────────────────────────────────────────────
   withControlGroup(
     {
-      key: "bloomEnabled",
-      label: "Enabled",
-      title: "Toggle the bloom (glow) post-processing effect on or off",
-      defaultValue: RENDER_DEFAULTS.bloomEnabled,
+      key: "zeroPointPrecision",
+      label: "Node Threshold",
+      title:
+        "How sharp the glowing ring structures appear — lower values create crisper, more defined rings; higher values soften them into blends",
+      defaultValue: SIMULATION_DEFAULTS.zeroPointPrecision,
       methods: ALL_METHODS,
-      targetType: CONTROL_TARGET_TYPES.pipeline,
-      handler: CONTROL_HANDLERS.bloom,
-      runtimePath: "pipeline.outputNode",
+      binding: { min: 0.001, max: 0.3, step: 0.001 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uThreshold.value",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.look,
+    CONTROL_GROUPS.shape,
   ),
   withControlGroup(
     {
-      key: "bloomStrength",
-      label: "Bloom Strength",
+      key: "structureMin",
+      label: "Structure Min",
       title:
-        "How bright and intense the bloom glow is — higher values create a more pronounced halo around bright highlights",
-      defaultValue: RENDER_DEFAULTS.bloomStrength,
-      methods: ALL_METHODS,
-      binding: { min: 0, max: 3, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.pipeline,
-      handler: CONTROL_HANDLERS.bloom,
-      runtimePath: "bloomPass.strength.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.look,
-  ),
-  withControlGroup(
-    {
-      key: "bloomRadius",
-      label: "Bloom Radius",
-      title:
-        "How far the bloom glow spreads outward from bright areas — higher values create a softer, wider glow",
-      defaultValue: RENDER_DEFAULTS.bloomRadius,
+        "Fades out the faintest, noisiest areas of the field — raise to clean up thin wisps and noise",
+      defaultValue: SIMULATION_DEFAULTS.structureMin,
       methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.pipeline,
-      handler: CONTROL_HANDLERS.bloom,
-      runtimePath: "bloomPass.radius.value",
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uStructureMin.value",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.look,
+    CONTROL_GROUPS.shape,
   ),
   withControlGroup(
     {
-      key: "bloomThreshold",
-      label: "Bloom Threshold",
+      key: "structureMax",
+      label: "Structure Max",
       title:
-        "Minimum brightness required for a pixel to contribute to bloom — raise this to limit glow to the strongest contour bands",
-      defaultValue: RENDER_DEFAULTS.bloomThreshold,
+        "Trims the densest inner regions — raise if the center looks too solid or foggy",
+      defaultValue: SIMULATION_DEFAULTS.structureMax,
+      methods: ALL_METHODS,
+      binding: { min: 0, max: 1, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uStructureMax.value",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.shape,
+  ),
+  withControlGroup(
+    {
+      key: "densityGain",
+      label: "Density",
+      title:
+        "How thick and bright the overall volume glow appears — raise for a bolder, denser orb",
+      defaultValue: RAYMARCH_DEFAULTS.densityGain,
       methods: methodsFor("shared"),
-      binding: { min: 0, max: 1, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.pipeline,
-      handler: CONTROL_HANDLERS.bloom,
-      runtimePath: "bloomPass.threshold.value",
+      binding: { min: 0.1, max: 4, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uDensityGain.value",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.look,
+    CONTROL_GROUPS.shape,
   ),
   withControlGroup(
     {
-      key: "performanceHudEnabled",
-      label: "Performance HUD",
-      title: "Show a compact FPS and render-resolution overlay for end users",
-      defaultValue: RENDER_DEFAULTS.performanceHudEnabled,
-      methods: ALL_METHODS,
-      targetType: CONTROL_TARGET_TYPES.object,
-      handler: CONTROL_HANDLERS.shared,
-      runtimePath: "ui.performanceHudEnabled",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.look,
-  ),
-  withControlGroup(
-    {
-      key: "bloomResponseBias",
-      label: "Bloom Bias",
+      key: "absorption",
+      label: "Absorption",
       title:
-        "Shift bloom toward a smaller, more stable halo by slightly raising threshold and trimming response strength",
-      defaultValue: RENDER_DEFAULTS.bloomResponseBias,
-      methods: ALL_METHODS,
-      binding: { min: 0, max: 1, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.pipeline,
-      handler: CONTROL_HANDLERS.bloom,
-      runtimePath: "runtime.bloomTuning.bloomResponseBias",
-      status: CONTROL_STATUSES.debugOnly,
+        "Depth contrast inside the orb — raise for crisper internal layers and less haze",
+      defaultValue: RAYMARCH_DEFAULTS.absorption,
+      methods: methodsFor("raymarchOnly"),
+      binding: { min: 0.1, max: 4, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uAbsorption.value",
+      status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.advancedLook,
+    CONTROL_GROUPS.shape,
   ),
   withControlGroup(
     {
-      key: "backgroundColor",
-      label: "Background",
+      key: "opacityGain",
+      label: "Opacity",
       title:
-        "Presentation backdrop color shown behind the transparent volumetric render",
-      defaultValue: RENDER_DEFAULTS.backgroundColor,
+        "How solid the orb appears — raise for a stronger presence, especially when compositing over video",
+      defaultValue: RAYMARCH_DEFAULTS.opacityGain,
       methods: ALL_METHODS,
-      binding: { view: "color" },
-      targetType: CONTROL_TARGET_TYPES.object,
-      handler: CONTROL_HANDLERS.shared,
-      runtimePath: "ui.backdropColor",
+      binding: { min: 0.1, max: 3, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uOpacityGain.value",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.look,
+    CONTROL_GROUPS.shape,
   ),
   withControlGroup(
     {
-      key: "outputMode",
-      label: "Program Output",
+      key: "contourSharpness",
+      label: "Sharpness",
       title:
-        "Use Transparent when Baryon needs to sit over video, graphics, or another scene; use Opaque when Baryon should render its own solid background for fullscreen or stage output",
-      defaultValue: RENDER_DEFAULTS.outputMode,
+        "How prominent the bright ring edges are — raise for a crisper, more angular look",
+      defaultValue: RAYMARCH_DEFAULTS.contourSharpness,
       methods: ALL_METHODS,
-      binding: {
-        options: {
-          Transparent: "transparent",
-          Opaque: "opaque",
-        },
-      },
-      targetType: CONTROL_TARGET_TYPES.pipeline,
-      handler: CONTROL_HANDLERS.output,
-      runtimePath: "program.outputMode",
+      binding: { min: 1, max: 8, step: 0.1 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uContourSharpness.value",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.look,
+    CONTROL_GROUPS.shape,
   ),
   withControlGroup(
     {
-      key: "outputBackgroundColor",
-      label: "Program Fill",
+      key: "raymarchSteps",
+      label: "Steps",
       title:
-        "Background color used only when the program output is set to opaque",
-      defaultValue: RENDER_DEFAULTS.outputBackgroundColor,
-      methods: ALL_METHODS,
-      binding: { view: "color" },
-      targetType: CONTROL_TARGET_TYPES.pipeline,
-      handler: CONTROL_HANDLERS.output,
-      runtimePath: "program.backgroundColor",
+        "Rendering quality vs. speed — higher values look smoother but may reduce frame rate on slower GPUs",
+      defaultValue: RAYMARCH_DEFAULTS.raymarchSteps,
+      methods: methodsFor("raymarchOnly"),
+      binding: { min: 16, max: 192, step: 1 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.volumeMesh.material.steps",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.look,
+    CONTROL_GROUPS.shape,
   ),
-  withControlGroup(
-    {
-      key: "visualizationMethod",
-      label: "Visualizer",
-      title:
-        "Choose between the volumetric 3D orb and the fullscreen 2D cymatic projection",
-      defaultValue: VISUALIZATION_METHODS.raymarch,
-      methods: ALL_METHODS,
-      binding: {
-        options: {
-          "3D Volume": VISUALIZATION_METHODS.raymarch,
-          "2D Fullscreen": VISUALIZATION_METHODS.cymatics2d,
-        },
-      },
-      targetType: CONTROL_TARGET_TYPES.object,
-      handler: CONTROL_HANDLERS.shared,
-      runtimePath: "runtime.method",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.look,
-  ),
+
+  // ── Color ──────────────────────────────────────────────────────────────────
   withControlGroup(
     {
       key: "volumeColor",
       label: "Volume",
-      title:
-        "Base color of the interior volumetric emission for the cymatic field",
+      title: "Main glow color of the orb interior",
       defaultValue: RENDER_DEFAULTS.volumeColor,
       methods: ALL_METHODS,
       binding: { view: "color" },
@@ -315,14 +287,13 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       runtimePath: "runtime.uniforms.uColor.value",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.look,
+    CONTROL_GROUPS.color,
   ),
   withControlGroup(
     {
       key: "surfaceColor",
       label: "Contour",
-      title:
-        "Highlight color for the sharpest nodal contour bands inside the volume",
+      title: "Color of the sharpest ring edges and contour highlights",
       defaultValue: RENDER_DEFAULTS.surfaceColor,
       methods: ALL_METHODS,
       binding: { view: "color" },
@@ -331,14 +302,14 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       runtimePath: "runtime.uniforms.uSurfaceColor.value",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.look,
+    CONTROL_GROUPS.color,
   ),
   withControlGroup(
     {
       key: "colorMode",
       label: "Color Mode",
       title:
-        "Choose whether the volume uses the fixed palette or the chromesthesia-driven spectral color field",
+        "Static uses your chosen colors; Chromesthesia shifts colors dynamically with the music's harmonic content",
       defaultValue: RENDER_DEFAULTS.colorMode,
       methods: ALL_METHODS,
       binding: {
@@ -352,14 +323,14 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       runtimePath: "runtime.chromesthesia.colorMode",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.look,
+    CONTROL_GROUPS.color,
   ),
   withControlGroup(
     {
       key: "chromesthesiaMix",
       label: "Color Mix",
       title:
-        "How vividly the chromesthesia spectral hues are expressed when chromesthesia mode is enabled",
+        "How strongly the Chromesthesia colors tint the volume — only applies when Color Mode is set to Chromesthesia",
       defaultValue: RENDER_DEFAULTS.chromesthesiaMix,
       methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
@@ -368,14 +339,92 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       runtimePath: "runtime.uniforms.uChromesthesiaMix.value",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.look,
+    CONTROL_GROUPS.color,
   ),
+  withControlGroup(
+    {
+      key: "holographicIntensity",
+      label: "Sheen",
+      title: "Adds a holographic sheen to the orb's surface edges",
+      defaultValue: RAYMARCH_DEFAULTS.holographicIntensity,
+      methods: methodsFor("raymarchOnly"),
+      binding: { min: 0, max: 1, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uHolographicIntensity.value",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.color,
+  ),
+  withControlGroup(
+    {
+      key: "holographicShift",
+      label: "Sheen Color",
+      title: "How far the sheen color shifts toward cool blue-green tones",
+      defaultValue: RAYMARCH_DEFAULTS.holographicShift,
+      methods: methodsFor("raymarchOnly"),
+      binding: { min: 0, max: 1, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uHolographicShift.value",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.color,
+  ),
+  withControlGroup(
+    {
+      key: "holographicFresnelPower",
+      label: "Sheen Edge",
+      title:
+        "How tight the sheen is to the very edge — higher values confine it to a thinner rim",
+      defaultValue: RAYMARCH_DEFAULTS.holographicFresnelPower,
+      methods: methodsFor("raymarchOnly"),
+      binding: { min: 0.5, max: 8, step: 0.1 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uHolographicFresnelPower.value",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.color,
+  ),
+  withControlGroup(
+    {
+      key: "idleLogoIntensity",
+      label: "Logo Intensity",
+      title: "Brightness of the idle logo shown when no audio is playing",
+      defaultValue: RENDER_DEFAULTS.idleLogoIntensity,
+      methods: ALL_METHODS,
+      binding: { min: 0, max: 0.25, step: 0.005 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uIdleLogoIntensity.value",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.logo,
+  ),
+  withControlGroup(
+    {
+      key: "idleLogoSize",
+      label: "Logo Size",
+      title: "Size of the idle logo overlay shown when no audio is playing",
+      defaultValue: RENDER_DEFAULTS.idleLogoSize,
+      methods: ALL_METHODS,
+      binding: { min: 0.1, max: 2, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.idleOverlay.scale",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.logo,
+  ),
+
+  // ── Motion ─────────────────────────────────────────────────────────────────
   withControlGroup(
     {
       key: "rotationMode",
       label: "Rotation Mode",
       title:
-        "Choose whether the orb rotates from live audio, a fixed manual speed, or stays still",
+        "Audio = orb rotates with the music; Manual = set a fixed speed below; Off = stationary",
       defaultValue: RENDER_DEFAULTS.rotationMode,
       methods: methodsFor("raymarchOnly"),
       binding: {
@@ -397,7 +446,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "rotationSpeed",
       label: "Manual Rotation",
       title:
-        "Fixed Y-axis rotation speed used only in manual mode — negative values reverse direction, zero disables rotation",
+        "Spin speed in Manual rotation mode — negative values reverse direction",
       defaultValue: RENDER_DEFAULTS.rotationSpeed,
       methods: methodsFor("raymarchOnly"),
       binding: { min: -12, max: 12, step: 0.01 },
@@ -413,7 +462,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "reactivity",
       label: "Reactivity",
       title:
-        "Overall sensitivity of the visual response to sound structure, intensity, and change",
+        "How strongly the visuals respond to the audio — raise for more dramatic reactions",
       defaultValue: REACTIVITY_DEFAULTS.reactivity,
       methods: ALL_METHODS,
       binding: { min: 0, max: 3, step: 0.01 },
@@ -426,218 +475,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
-      key: "zeroPointPrecision",
-      label: "Node Threshold",
-      title:
-        "How tightly the field must approach zero for a sample to contribute to a nodal band — lower values create sharper structure",
-      defaultValue: SIMULATION_DEFAULTS.zeroPointPrecision,
-      methods: ALL_METHODS,
-      binding: { min: 0.001, max: 0.3, step: 0.001 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uThreshold.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.field,
-  ),
-  withControlGroup(
-    {
-      key: "structureMin",
-      label: "Structure Min",
-      title:
-        "Lower field-structure cutoff — trims the weakest, least legible regions of the volume",
-      defaultValue: SIMULATION_DEFAULTS.structureMin,
-      methods: ALL_METHODS,
-      binding: { min: 0, max: 1, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uStructureMin.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.field,
-  ),
-  withControlGroup(
-    {
-      key: "structureMax",
-      label: "Structure Max",
-      title:
-        "Upper field-structure cutoff — helps suppress the densest regions before they flatten into fog",
-      defaultValue: SIMULATION_DEFAULTS.structureMax,
-      methods: ALL_METHODS,
-      binding: { min: 0, max: 1, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uStructureMax.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.field,
-  ),
-  withControlGroup(
-    {
-      key: "raymarchSteps",
-      label: "Steps",
-      title:
-        "Number of raymarch samples used through the volume — higher values improve fidelity but cost more GPU time",
-      defaultValue: RAYMARCH_DEFAULTS.raymarchSteps,
-      methods: methodsFor("raymarchOnly"),
-      binding: { min: 16, max: 192, step: 1 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.volumeMesh.material.steps",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.advancedField,
-  ),
-  withControlGroup(
-    {
-      key: "densityGain",
-      label: "Density",
-      title:
-        "Overall density and emission gain for the raymarched volume — higher values make the cymatic body thicker and brighter",
-      defaultValue: RAYMARCH_DEFAULTS.densityGain,
-      methods: methodsFor("shared"),
-      binding: { min: 0.1, max: 4, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uDensityGain.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.field,
-  ),
-  withControlGroup(
-    {
-      key: "absorption",
-      label: "Absorption",
-      title:
-        "Extinction strength of the volume — increase this to sharpen internal depth and reduce washed-out haze",
-      defaultValue: RAYMARCH_DEFAULTS.absorption,
-      methods: methodsFor("raymarchOnly"),
-      binding: { min: 0.1, max: 4, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uAbsorption.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.field,
-  ),
-  withControlGroup(
-    {
-      key: "opacityGain",
-      label: "Opacity",
-      title:
-        "Additional alpha gain for the transparent volume — increase this to make the orb read more solid without over-brightening emission",
-      defaultValue: RAYMARCH_DEFAULTS.opacityGain,
-      methods: ALL_METHODS,
-      binding: { min: 0.1, max: 3, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uOpacityGain.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.field,
-  ),
-  withControlGroup(
-    {
-      key: "contourSharpness",
-      label: "Sharpness",
-      title:
-        "How aggressively the renderer favors narrow nodal bands over softer field regions",
-      defaultValue: RAYMARCH_DEFAULTS.contourSharpness,
-      methods: ALL_METHODS,
-      binding: { min: 1, max: 8, step: 0.1 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uContourSharpness.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.field,
-  ),
-  withControlGroup(
-    {
-      key: "rimBloomBias",
-      label: "Rim Bias",
-      title:
-        "How much the outer shell can bias emissive brightness toward the rim before bloom picks it up",
-      defaultValue: RAYMARCH_DEFAULTS.rimBloomBias,
-      methods: methodsFor("raymarchOnly"),
-      binding: { min: 0, max: 1.2, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uRimBloomBias.value",
-      status: CONTROL_STATUSES.debugOnly,
-    },
-    CONTROL_GROUPS.advancedLook,
-  ),
-  withControlGroup(
-    {
-      key: "rimCompression",
-      label: "Rim Compress",
-      title:
-        "Compress grazing-angle highlight spikes before they reach the bloom pass",
-      defaultValue: RAYMARCH_DEFAULTS.rimCompression,
-      methods: methodsFor("raymarchOnly"),
-      binding: { min: 0, max: 1.2, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uRimCompression.value",
-      status: CONTROL_STATUSES.debugOnly,
-    },
-    CONTROL_GROUPS.advancedLook,
-  ),
-  withControlGroup(
-    {
-      key: "holographicIntensity",
-      label: "Holo Intensity",
-      title:
-        "Overall strength of the camera-dependent holographic sheen layered over the raymarched volume",
-      defaultValue: RAYMARCH_DEFAULTS.holographicIntensity,
-      methods: methodsFor("raymarchOnly"),
-      binding: { min: 0, max: 1, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uHolographicIntensity.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.advancedLook,
-  ),
-  withControlGroup(
-    {
-      key: "holographicShift",
-      label: "Holo Shift",
-      title:
-        "How far grazing angles shift from the current palette toward a cool cyan-blue holographic accent",
-      defaultValue: RAYMARCH_DEFAULTS.holographicShift,
-      methods: methodsFor("raymarchOnly"),
-      binding: { min: 0, max: 1, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uHolographicShift.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.advancedLook,
-  ),
-  withControlGroup(
-    {
-      key: "holographicFresnelPower",
-      label: "Holo Fresnel",
-      title:
-        "Edge falloff for the holographic sheen; higher values keep the color shift tighter to grazing angles",
-      defaultValue: RAYMARCH_DEFAULTS.holographicFresnelPower,
-      methods: methodsFor("raymarchOnly"),
-      binding: { min: 0.5, max: 8, step: 0.1 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uHolographicFresnelPower.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.advancedLook,
-  ),
-  withControlGroup(
-    {
       key: "motionAmount",
       label: "Motion Amount",
-      title:
-        "How much rotation and accent motion react when the field structure changes",
+      title: "How much the orb shifts and moves with changes in the sound",
       defaultValue: REACTIVITY_DEFAULTS.motionAmount,
       methods: ALL_METHODS,
       binding: { min: 0, max: 3, step: 0.01 },
@@ -653,7 +493,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "structurePersistence",
       label: "Structure Persistence",
       title:
-        "How long structural response lingers between changes before settling back toward stillness",
+        "How long the current pattern holds before settling — raise for slower, more sustained transitions",
       defaultValue: REACTIVITY_DEFAULTS.structurePersistence,
       methods: methodsFor("shared"),
       binding: { min: 0.2, max: 3, step: 0.01 },
@@ -664,36 +504,202 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     },
     CONTROL_GROUPS.motion,
   ),
+
+  // ── Display ────────────────────────────────────────────────────────────────
   withControlGroup(
     {
-      key: "idleLogoIntensity",
-      label: "Logo Intensity",
-      title: "Strength of the idle logo overlay when no audio is playing",
-      defaultValue: RENDER_DEFAULTS.idleLogoIntensity,
+      key: "bloomEnabled",
+      label: "Glow",
+      title: "Toggle the glow/halo effect around bright parts of the orb",
+      defaultValue: RENDER_DEFAULTS.bloomEnabled,
       methods: ALL_METHODS,
-      binding: { min: 0, max: 0.25, step: 0.005 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uIdleLogoIntensity.value",
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.bloom,
+      runtimePath: "pipeline.outputNode",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.look,
+    CONTROL_GROUPS.display,
   ),
   withControlGroup(
     {
-      key: "idleLogoSize",
-      label: "Logo Size",
-      title:
-        "Scale of the idle logo overlay shown when the field falls back to idle",
-      defaultValue: RENDER_DEFAULTS.idleLogoSize,
+      key: "bloomStrength",
+      label: "Glow Strength",
+      title: "How bright the glow halo is",
+      defaultValue: RENDER_DEFAULTS.bloomStrength,
       methods: ALL_METHODS,
-      binding: { min: 0.1, max: 2, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.idleOverlay.scale",
+      binding: { min: 0, max: 3, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.bloom,
+      runtimePath: "bloomPass.strength.value",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.look,
+    CONTROL_GROUPS.display,
+  ),
+  withControlGroup(
+    {
+      key: "bloomRadius",
+      label: "Glow Radius",
+      title: "How far the glow spreads from bright areas",
+      defaultValue: RENDER_DEFAULTS.bloomRadius,
+      methods: ALL_METHODS,
+      binding: { min: 0, max: 1, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.bloom,
+      runtimePath: "bloomPass.radius.value",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.display,
+  ),
+  withControlGroup(
+    {
+      key: "bloomThreshold",
+      label: "Glow Threshold",
+      title:
+        "Minimum brightness before a region contributes to the glow — raise to limit it to the brightest highlights",
+      defaultValue: RENDER_DEFAULTS.bloomThreshold,
+      methods: methodsFor("shared"),
+      binding: { min: 0, max: 1, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.bloom,
+      runtimePath: "bloomPass.threshold.value",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.display,
+  ),
+  withControlGroup(
+    {
+      key: "backgroundColor",
+      label: "Background",
+      title: "Backdrop color shown behind the orb in transparent output mode",
+      defaultValue: RENDER_DEFAULTS.backgroundColor,
+      methods: ALL_METHODS,
+      binding: { view: "color" },
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.shared,
+      runtimePath: "ui.backdropColor",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.display,
+  ),
+  withControlGroup(
+    {
+      key: "outputMode",
+      label: "Output Mode",
+      title:
+        "Transparent composites over other content; Opaque renders its own solid background",
+      defaultValue: RENDER_DEFAULTS.outputMode,
+      methods: ALL_METHODS,
+      binding: {
+        options: {
+          Transparent: "transparent",
+          Opaque: "opaque",
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.output,
+      runtimePath: "program.outputMode",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.display,
+  ),
+  withControlGroup(
+    {
+      key: "outputBackgroundColor",
+      label: "Output Color",
+      title: "Background fill color used in Opaque output mode",
+      defaultValue: RENDER_DEFAULTS.outputBackgroundColor,
+      methods: ALL_METHODS,
+      binding: { view: "color" },
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.output,
+      runtimePath: "program.backgroundColor",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.display,
+  ),
+  withControlGroup(
+    {
+      key: "performanceHudEnabled",
+      label: "Performance HUD",
+      title: "Shows FPS and render resolution on screen",
+      defaultValue: RENDER_DEFAULTS.performanceHudEnabled,
+      methods: ALL_METHODS,
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.shared,
+      runtimePath: "ui.performanceHudEnabled",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.presetsArea,
+  ),
+  withControlGroup(
+    {
+      key: "visualizationMethod",
+      label: "Visualizer",
+      title: "Switch between the 3D orb and a flat 2D cymatic view",
+      defaultValue: VISUALIZATION_METHODS.raymarch,
+      methods: ALL_METHODS,
+      binding: {
+        options: {
+          "3D Volume": VISUALIZATION_METHODS.raymarch,
+          "2D Fullscreen": VISUALIZATION_METHODS.cymatics2d,
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.shared,
+      runtimePath: "runtime.method",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.display,
+  ),
+
+  // ── Diagnostics (debug-only) ───────────────────────────────────────────────
+  withControlGroup(
+    {
+      key: "bloomResponseBias",
+      label: "Bloom Bias",
+      title:
+        "Shift bloom toward a smaller, more stable halo by slightly raising threshold and trimming response strength",
+      defaultValue: RENDER_DEFAULTS.bloomResponseBias,
+      methods: ALL_METHODS,
+      binding: { min: 0, max: 1, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.bloom,
+      runtimePath: "runtime.bloomTuning.bloomResponseBias",
+      status: CONTROL_STATUSES.debugOnly,
+    },
+    CONTROL_GROUPS.diagnostics,
+  ),
+  withControlGroup(
+    {
+      key: "rimBloomBias",
+      label: "Rim Bias",
+      title:
+        "How much the outer shell can bias emissive brightness toward the rim before bloom picks it up",
+      defaultValue: RAYMARCH_DEFAULTS.rimBloomBias,
+      methods: methodsFor("raymarchOnly"),
+      binding: { min: 0, max: 1.2, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uRimBloomBias.value",
+      status: CONTROL_STATUSES.debugOnly,
+    },
+    CONTROL_GROUPS.diagnostics,
+  ),
+  withControlGroup(
+    {
+      key: "rimCompression",
+      label: "Rim Compress",
+      title:
+        "Compress grazing-angle highlight spikes before they reach the bloom pass",
+      defaultValue: RAYMARCH_DEFAULTS.rimCompression,
+      methods: methodsFor("raymarchOnly"),
+      binding: { min: 0, max: 1.2, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uRimCompression.value",
+      status: CONTROL_STATUSES.debugOnly,
+    },
+    CONTROL_GROUPS.diagnostics,
   ),
   withControlGroup(
     {
