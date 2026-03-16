@@ -25,4 +25,25 @@ describe("raymarch volume material", () => {
     expect(mesh.material.offsetNode).toBeTruthy();
     expect(raymarchOpacityNode.isPropertyNode).toBe(true);
   });
+
+  it("keeps the raymarch material runtime bindings intact", () => {
+    const uniforms = {
+      uRaymarchSteps: { value: 64 },
+      uRadius: { value: 3 },
+      uOpacityGain: { value: 1.35 },
+    };
+    const mesh = createRaymarchVolumeMesh({
+      radius: 3,
+      backboneModeBuffer: {},
+      detailModeBuffer: {},
+      backboneColorBuffer: {},
+      detailColorBuffer: {},
+      capacity: 8,
+      uniforms,
+    });
+
+    expect(mesh.material.steps).toBe(64);
+    expect(mesh.material.radiusNode).toBe(uniforms.uRadius);
+    expect(mesh.material.opacityGainNode).toBe(uniforms.uOpacityGain);
+  });
 });

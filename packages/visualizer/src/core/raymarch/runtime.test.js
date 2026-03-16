@@ -239,6 +239,15 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.raymarchDebug.chromesthesiaMix).toBe(
       0.65,
     );
+    expect(runtimeState.debugSnapshot.raymarchDebug.earlyExitEnabled).toBe(
+      true,
+    );
+    expect(runtimeState.debugSnapshot.raymarchDebug.earlyExitThreshold).toBe(
+      0.001,
+    );
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.earlyExitRatio,
+    ).toBeGreaterThan(0);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.holographicReferenceStrength,
     ).toBeGreaterThan(0);

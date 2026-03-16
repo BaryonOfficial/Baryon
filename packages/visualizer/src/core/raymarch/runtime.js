@@ -19,6 +19,7 @@ const CONTOUR_RESPONSE_GAIN = 1.85;
 const BLOOM_STRENGTH_RESPONSE_GAIN = 0.24;
 const BLOOM_RADIUS_RESPONSE_GAIN = 0.22;
 const BLOOM_THRESHOLD_RESPONSE_GAIN = 0.06;
+const EARLY_EXIT_TRANSMITTANCE_EPSILON = 1e-3;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -156,6 +157,8 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     avgOpacity,
     avgDensity,
     opacityGain,
+    earlyExitEnabled: true,
+    earlyExitThreshold: EARLY_EXIT_TRANSMITTANCE_EPSILON,
     earlyExitRatio,
     stepBudget,
     transientEnergy,

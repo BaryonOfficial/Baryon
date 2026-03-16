@@ -1,5 +1,6 @@
 import { LightingModel } from "three/webgpu";
 import {
+  Break,
   If,
   Loop,
   cameraFar,
@@ -39,6 +40,7 @@ const OUTPUT_GAIN = 1.38;
 export const SOFT_KNEE_START = 0.62;
 export const SOFT_KNEE_STRENGTH = 1.15;
 const REFERENCE_STEPS = STEP_REFERENCE;
+const EARLY_EXIT_TRANSMITTANCE_EPSILON = 1e-3;
 export const EMISSION_SAMPLE_GAIN = 1.6;
 export const DIRECT_LIGHT_RESPONSE_GAIN = 0.14;
 
@@ -260,6 +262,18 @@ export default class SafeVolumetricLightingModel extends LightingModel {
             .mul(stepSize)
             .exp();
           transmittance.mulAssign(falloff);
+          const remainingTransmittance = max(
+            max(transmittance.x, transmittance.y),
+            transmittance.z,
+          ).toVar();
+          If(
+            remainingTransmittance.lessThan(
+              float(EARLY_EXIT_TRANSMITTANCE_EPSILON),
+            ),
+            () => {
+              Break();
+            },
+          );
           distTravelled.addAssign(stepSize);
         });
 

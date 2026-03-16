@@ -85,7 +85,7 @@ export default function ParticleDebugOverlay() {
       <div>Analysis: {snapshot.analysisSourceUsed ?? "none"}</div>
       <div>Avg Opacity: {formatNumber(debugSnapshot.avgOpacity)}</div>
       <div>Avg Density: {formatNumber(debugSnapshot.avgDensity)}</div>
-      <div>Early Exit: {formatNumber(debugSnapshot.earlyExitRatio)}</div>
+      <div>Early Exit Est.: {formatNumber(debugSnapshot.earlyExitRatio)}</div>
       <div>Steps: {debugSnapshot.stepBudget ?? "n/a"}</div>
       <div>Volume: {String(debugSnapshot.volumeVisible)}</div>
       <div>Idle Overlay: {String(debugSnapshot.idleOverlayVisible)}</div>
