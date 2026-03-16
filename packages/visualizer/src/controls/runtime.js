@@ -398,9 +398,10 @@ export function applyBloomControls(pipelineState, controls) {
   }
 
   const { sceneColor, bloomPass, composeOutputNode } = postNodes;
+  const bloomActive = controls.bloomEnabled && effective.strength > 1e-4;
   bloomPass.strength.value = effective.strength;
   bloomPass.radius.value = effective.radius;
-  bloomPass.threshold.value = effective.threshold;
+  bloomPass.threshold.value = bloomActive ? effective.threshold : 999;
   pipeline.outputNode = composeOutputNode
     ? composeOutputNode({
         bloomEnabled: controls.bloomEnabled,

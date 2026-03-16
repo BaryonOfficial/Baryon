@@ -49,6 +49,10 @@ function estimateAverageModeAmplitude(modeSlots) {
   return count > 0 ? total / count : 0;
 }
 
+function setIfChanged(uniformNode, value) {
+  if (uniformNode.value !== value) uniformNode.value = value;
+}
+
 function countActiveModes(modeSlots) {
   if (!modeSlots?.length) return 0;
 
@@ -371,59 +375,84 @@ export function tickRaymarchRuntime(
   const fieldState = featureFrame?.fieldState ?? "idle";
   const fieldDriven = isFieldDrivenState(fieldState);
   updateReactiveResponse(runtimeState, featureFrame, fieldDriven, deltaTime);
-  uniforms.uFieldState.value =
+  setIfChanged(
+    uniforms.uFieldState,
     runtimeState.fieldStateValues[fieldState] ??
-    runtimeState.fieldStateValues.idle;
+      runtimeState.fieldStateValues.idle,
+  );
 
   const backboneArray = backboneModeBuffer.value.array;
-  backboneArray.fill(0);
-  if (featureFrame?.backboneSlots?.length) {
-    backboneArray.set(
-      featureFrame.backboneSlots.subarray(0, backboneArray.length),
-    );
+  const backboneDataLen = featureFrame?.backboneSlots?.length
+    ? Math.min(featureFrame.backboneSlots.length, backboneArray.length)
+    : 0;
+  if (backboneDataLen > 0) {
+    backboneArray.set(featureFrame.backboneSlots.subarray(0, backboneDataLen));
+  }
+  if (backboneDataLen < backboneArray.length) {
+    backboneArray.fill(0, backboneDataLen);
   }
   backboneModeBuffer.value.needsUpdate = true;
   if ((uniforms.uChromesthesiaMix?.value ?? 0) > 0) {
     const backboneColorArray = backboneColorBuffer.value.array;
-    backboneColorArray.fill(0);
-    if (featureFrame?.backboneColorSlots?.length) {
+    const bcDataLen = featureFrame?.backboneColorSlots?.length
+      ? Math.min(
+          featureFrame.backboneColorSlots.length,
+          backboneColorArray.length,
+        )
+      : 0;
+    if (bcDataLen > 0) {
       backboneColorArray.set(
-        featureFrame.backboneColorSlots.subarray(0, backboneColorArray.length),
+        featureFrame.backboneColorSlots.subarray(0, bcDataLen),
       );
+    }
+    if (bcDataLen < backboneColorArray.length) {
+      backboneColorArray.fill(0, bcDataLen);
     }
     backboneColorBuffer.value.needsUpdate = true;
   }
 
   const detailArray = detailModeBuffer.value.array;
-  detailArray.fill(0);
-  if (featureFrame?.detailSlots?.length) {
-    detailArray.set(featureFrame.detailSlots.subarray(0, detailArray.length));
+  const detailDataLen = featureFrame?.detailSlots?.length
+    ? Math.min(featureFrame.detailSlots.length, detailArray.length)
+    : 0;
+  if (detailDataLen > 0) {
+    detailArray.set(featureFrame.detailSlots.subarray(0, detailDataLen));
+  }
+  if (detailDataLen < detailArray.length) {
+    detailArray.fill(0, detailDataLen);
   }
   detailModeBuffer.value.needsUpdate = true;
   if ((uniforms.uChromesthesiaMix?.value ?? 0) > 0) {
     const detailColorArray = detailColorBuffer.value.array;
-    detailColorArray.fill(0);
-    if (featureFrame?.detailColorSlots?.length) {
+    const dcDataLen = featureFrame?.detailColorSlots?.length
+      ? Math.min(featureFrame.detailColorSlots.length, detailColorArray.length)
+      : 0;
+    if (dcDataLen > 0) {
       detailColorArray.set(
-        featureFrame.detailColorSlots.subarray(0, detailColorArray.length),
+        featureFrame.detailColorSlots.subarray(0, dcDataLen),
       );
+    }
+    if (dcDataLen < detailColorArray.length) {
+      detailColorArray.fill(0, dcDataLen);
     }
     detailColorBuffer.value.needsUpdate = true;
   }
 
   const backboneModeCount = countActiveModes(featureFrame?.backboneSlots);
   const detailModeCount = countActiveModes(featureFrame?.detailSlots);
-  uniforms.uBackboneModeCount.value = backboneModeCount;
-  uniforms.uDetailModeCount.value = detailModeCount;
-  uniforms.uActiveModeCount.value = backboneModeCount + detailModeCount;
-  uniforms.uAverageAmplitude.value = featureFrame?.averageAmplitude ?? 0;
-  uniforms.uTransientEnergy.value = featureFrame?.transientEnergy ?? 0;
-  uniforms.uSpectralCentroid.value = featureFrame?.spectralCentroid ?? 0;
-  uniforms.uSpectralFlux.value = featureFrame?.spectralFlux ?? 0;
+  setIfChanged(uniforms.uBackboneModeCount, backboneModeCount);
+  setIfChanged(uniforms.uDetailModeCount, detailModeCount);
+  setIfChanged(uniforms.uActiveModeCount, backboneModeCount + detailModeCount);
+  setIfChanged(uniforms.uAverageAmplitude, featureFrame?.averageAmplitude ?? 0);
+  setIfChanged(uniforms.uTransientEnergy, featureFrame?.transientEnergy ?? 0);
+  setIfChanged(uniforms.uSpectralCentroid, featureFrame?.spectralCentroid ?? 0);
+  setIfChanged(uniforms.uSpectralFlux, featureFrame?.spectralFlux ?? 0);
   updateLaserResponse(runtimeState, featureFrame);
   uniforms.uDensityGain.value =
     (runtimeState.baseDensityGain ?? uniforms.uDensityGain.value) *
     (1 + (runtimeState.scaleSignal ?? 0) * DENSITY_RESPONSE_AMOUNT);
+  uniforms.uDensityAbsorption.value =
+    uniforms.uDensityGain.value * uniforms.uAbsorption.value;
   const bandEnergies = featureFrame?.bandEnergies ?? EMPTY_BAND_ENERGIES;
   uniforms.uBandEnergies.value.set(
     bandEnergies[0] ?? 0,

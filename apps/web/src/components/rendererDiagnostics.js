@@ -65,7 +65,7 @@ export async function createBaryonRenderer(glDefaults, forceWebGLFallbackTest) {
   const rendererParameters = /** @type {any} */ ({
     canvas,
     alpha: true,
-    antialias: true,
+    antialias: !!forceWebGLFallbackTest,
     forceWebGL: forceWebGLFallbackTest,
     ...(context ? { context } : {}),
   });

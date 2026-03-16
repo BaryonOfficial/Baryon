@@ -381,9 +381,10 @@ export function applyReactiveBloomState({
     threshold: runtimeState?.bloomTuning?.effectiveThreshold ?? bloom.threshold,
   };
 
+  const bloomActive = controls.bloomEnabled && reactiveBloom.strength > 1e-4;
   bloomPass.strength.value = reactiveBloom.strength;
   bloomPass.radius.value = reactiveBloom.radius;
-  bloomPass.threshold.value = reactiveBloom.threshold;
+  bloomPass.threshold.value = bloomActive ? reactiveBloom.threshold : 999;
 
   return controls.bloomEnabled ? reactiveBloom : bloom;
 }

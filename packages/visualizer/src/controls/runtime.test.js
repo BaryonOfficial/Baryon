@@ -365,7 +365,9 @@ describe("control runtime sync", () => {
 
     expect(bloomPass.strength.value).toBeCloseTo(0.693);
     expect(bloomPass.radius.value).toBeCloseTo(0.2852);
-    expect(bloomPass.threshold.value).toBeCloseTo(0.49);
+    // Bloom bypass: when bloomEnabled is false, threshold is set to 999
+    // to short-circuit the bloom pass computation
+    expect(bloomPass.threshold.value).toBe(999);
     expect(composeOutputNode).toHaveBeenCalledWith({
       bloomEnabled: false,
       outputMode: controls.outputMode,

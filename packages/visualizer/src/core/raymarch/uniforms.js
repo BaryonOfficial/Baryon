@@ -33,6 +33,9 @@ export function createRaymarchUniforms(parameters) {
     ),
     uDensityGain: uniform(RAYMARCH_DEFAULTS.densityGain),
     uAbsorption: uniform(RAYMARCH_DEFAULTS.absorption),
+    uDensityAbsorption: uniform(
+      RAYMARCH_DEFAULTS.densityGain * RAYMARCH_DEFAULTS.absorption,
+    ),
     uOpacityGain: uniform(RAYMARCH_DEFAULTS.opacityGain),
     uContourSharpness: uniform(RAYMARCH_DEFAULTS.contourSharpness),
     uRimBloomBias: uniform(RAYMARCH_DEFAULTS.rimBloomBias),
