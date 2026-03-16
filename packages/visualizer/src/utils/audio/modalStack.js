@@ -29,6 +29,21 @@ function createModalLayerState(capacity) {
     uniqueModeCount: 0,
     lastStableAt: 0,
     chromesthesiaComponents: [],
+    latchedFundamentalHz: 0,
+    latchedFundamentalConfidence: 0,
+    latchHoldFrames: 0,
+    latchLowSupportFrames: 0,
+    driverFrequency: 0,
+    candidateFrequency: 0,
+    candidateConfidence: 0,
+    candidateFrames: 0,
+    candidatePeriodicity: 0,
+    candidateHarmonicSupport: 0,
+    candidateDirectSupport: 0,
+    candidateLowEnergy: false,
+    voicingActive: false,
+    highCandidateRejected: false,
+    rejectionReason: "none",
   };
 }
 
@@ -123,6 +138,15 @@ export function clearModalStack(state) {
   if ("candidateFrequency" in state) state.candidateFrequency = 0;
   if ("candidateConfidence" in state) state.candidateConfidence = 0;
   if ("candidateFrames" in state) state.candidateFrames = 0;
+  if ("candidatePeriodicity" in state) state.candidatePeriodicity = 0;
+  if ("candidateHarmonicSupport" in state) {
+    state.candidateHarmonicSupport = 0;
+  }
+  if ("candidateDirectSupport" in state) state.candidateDirectSupport = 0;
+  if ("candidateLowEnergy" in state) state.candidateLowEnergy = false;
+  if ("voicingActive" in state) state.voicingActive = false;
+  if ("highCandidateRejected" in state) state.highCandidateRejected = false;
+  if ("rejectionReason" in state) state.rejectionReason = "none";
 }
 
 export function decayModalStack(state) {
@@ -143,6 +167,15 @@ export function decayModalStack(state) {
   if ("candidateFrequency" in state) state.candidateFrequency = 0;
   if ("candidateConfidence" in state) state.candidateConfidence = 0;
   if ("candidateFrames" in state) state.candidateFrames = 0;
+  if ("candidatePeriodicity" in state) state.candidatePeriodicity = 0;
+  if ("candidateHarmonicSupport" in state) {
+    state.candidateHarmonicSupport = 0;
+  }
+  if ("candidateDirectSupport" in state) state.candidateDirectSupport = 0;
+  if ("candidateLowEnergy" in state) state.candidateLowEnergy = false;
+  if ("voicingActive" in state) state.voicingActive = false;
+  if ("highCandidateRejected" in state) state.highCandidateRejected = false;
+  if ("rejectionReason" in state) state.rejectionReason = "none";
 }
 
 export function writeSlot(target, index, mode, amplitude) {

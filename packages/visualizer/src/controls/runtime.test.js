@@ -4,6 +4,7 @@ import {
   applyAudioControls,
   applyAuditControls,
   applyBloomControls,
+  applyOutputControls,
   applyRaymarchControls,
   applySharedControls,
   applySceneControls,
@@ -35,6 +36,7 @@ function createRaymarchHarness() {
       uIdleLogoSize: { value: 0 },
       uDensityGain: { value: 0 },
       uAbsorption: { value: 0 },
+      uOpacityGain: { value: 0 },
       uContourSharpness: { value: 0 },
       uRimBloomBias: { value: 0 },
       uRimCompression: { value: 0 },
@@ -127,6 +129,7 @@ describe("control runtime sync", () => {
     controls.structureMax = 0.48;
     controls.densityGain = 1.75;
     controls.absorption = 1.35;
+    controls.opacityGain = 1.4;
     controls.contourSharpness = 5.2;
     controls.rimBloomBias = 0.65;
     controls.rimCompression = 0.72;
@@ -144,6 +147,7 @@ describe("control runtime sync", () => {
     const snapshot = applySimulationControls(gl, runtimeState, controls);
 
     expect(gl.setClearColor).toHaveBeenCalledTimes(1);
+    expect(gl.setClearColor).toHaveBeenCalledWith(expect.any(THREE.Color), 0);
     expect(runtimeState.uniforms.uThreshold.value).toBe(0.033);
     expect(runtimeState.uniforms.uIdleLogoIntensity.value).toBe(0.42);
     expect(runtimeState.uniforms.uIdleLogoAlpha.value).toBe(0.84);
@@ -153,6 +157,7 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uDensityGain.value).toBe(1.75);
     expect(runtimeState.baseDensityGain).toBe(1.75);
     expect(runtimeState.uniforms.uAbsorption.value).toBe(1.35);
+    expect(runtimeState.uniforms.uOpacityGain.value).toBe(1.4);
     expect(runtimeState.uniforms.uContourSharpness.value).toBe(5.2);
     expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.65);
     expect(runtimeState.uniforms.uRimCompression.value).toBe(0.72);
@@ -179,6 +184,7 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.idleLogoAlpha).toBe(0.84);
     expect(snapshot.uniforms.densityGain).toBe(1.75);
     expect(snapshot.uniforms.absorption).toBe(1.35);
+    expect(snapshot.uniforms.opacityGain).toBe(1.4);
     expect(snapshot.uniforms.rimBloomBias).toBe(0.65);
     expect(snapshot.uniforms.rimCompression).toBe(0.72);
     expect(snapshot.uniforms.reactivity).toBe(1.2);
@@ -206,7 +212,13 @@ describe("control runtime sync", () => {
     );
 
     expect(gl.setClearColor).toHaveBeenCalledTimes(2);
+    expect(gl.setClearColor).toHaveBeenNthCalledWith(
+      1,
+      expect.any(THREE.Color),
+      0,
+    );
     expect(sharedSnapshot.backgroundColor).toBe("#123456");
+    expect(sharedSnapshot.clearAlpha).toBe(0);
     expect(raymarchSnapshot.uniforms.threshold).toBe(
       controls.zeroPointPrecision,
     );
@@ -219,6 +231,7 @@ describe("control runtime sync", () => {
     controls.raymarchSteps = 72;
     controls.densityGain = 2.1;
     controls.absorption = 1.6;
+    controls.opacityGain = 1.75;
     controls.contourSharpness = 6.4;
     controls.rimBloomBias = 0.35;
     controls.rimCompression = 0.5;
@@ -236,6 +249,7 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uDensityGain.value).toBe(2.1);
     expect(runtimeState.baseDensityGain).toBe(2.1);
     expect(runtimeState.uniforms.uAbsorption.value).toBe(1.6);
+    expect(runtimeState.uniforms.uOpacityGain.value).toBe(1.75);
     expect(runtimeState.uniforms.uContourSharpness.value).toBe(6.4);
     expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.35);
     expect(runtimeState.uniforms.uRimCompression.value).toBe(0.5);
@@ -253,6 +267,7 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.surfaceColor).toBe("#88ccff");
     expect(snapshot.uniforms.colorMode).toBe("static");
     expect(snapshot.uniforms.chromesthesiaMix).toBe(0);
+    expect(snapshot.uniforms.opacityGain).toBe(1.75);
   });
 
   it("applies bloom controls to the pipeline", () => {
@@ -264,7 +279,7 @@ describe("control runtime sync", () => {
     controls.bloomThreshold = 0.44;
     controls.bloomResponseBias = 0.5;
 
-    const pipeline = { outputNode: null };
+    const pipeline = { outputNode: null, needsUpdate: false };
     const sceneColor = {
       tag: "sceneColor",
       add: vi.fn(() => "bloomed-output"),
@@ -274,10 +289,13 @@ describe("control runtime sync", () => {
       radius: { value: 0 },
       threshold: { value: 0 },
     };
+    const composeOutputNode = vi.fn(() => "transparent-output");
     const snapshot = applyBloomControls(
       {
         ensurePipeline: () => pipeline,
-        postNodesRef: { current: { sceneColor, bloomPass } },
+        postNodesRef: {
+          current: { sceneColor, bloomPass, composeOutputNode },
+        },
         runtimeState: createRaymarchHarness(),
       },
       controls,
@@ -286,7 +304,12 @@ describe("control runtime sync", () => {
     expect(bloomPass.strength.value).toBeCloseTo(0.6853);
     expect(bloomPass.radius.value).toBeCloseTo(0.2976);
     expect(bloomPass.threshold.value).toBeCloseTo(0.48);
-    expect(pipeline.outputNode).toBe(sceneColor);
+    expect(composeOutputNode).toHaveBeenCalledWith({
+      bloomEnabled: false,
+      outputMode: controls.outputMode,
+    });
+    expect(pipeline.outputNode).toBe("transparent-output");
+    expect(pipeline.needsUpdate).toBe(true);
     expect(snapshot.enabled).toBe(false);
     expect(snapshot.bloomResponseBias).toBe(0.5);
     expect(snapshot.stepReference).toBe(STEP_REFERENCE);
@@ -299,25 +322,32 @@ describe("control runtime sync", () => {
     controls.bloomEnabled = true;
     controls.bloomResponseBias = 0.4;
 
-    const pipeline = { outputNode: null };
+    const pipeline = { outputNode: null, needsUpdate: false };
     const sceneColor = { add: vi.fn(() => "bloomed-output") };
     const bloomPass = {
       strength: { value: 0 },
       radius: { value: 0 },
       threshold: { value: 0 },
     };
+    const composeOutputNode = vi.fn(() => "transparent-output");
 
     const snapshot = applyBloomControls(
       {
         ensurePipeline: () => pipeline,
-        postNodesRef: { current: { sceneColor, bloomPass } },
+        postNodesRef: {
+          current: { sceneColor, bloomPass, composeOutputNode },
+        },
         runtimeState: createRaymarchHarness(),
       },
       controls,
     );
 
-    expect(sceneColor.add).toHaveBeenCalledWith(bloomPass);
-    expect(pipeline.outputNode).toBe("bloomed-output");
+    expect(composeOutputNode).toHaveBeenCalledWith({
+      bloomEnabled: true,
+      outputMode: controls.outputMode,
+    });
+    expect(pipeline.outputNode).toBe("transparent-output");
+    expect(pipeline.needsUpdate).toBe(true);
     expect(snapshot.enabled).toBe(true);
     expect(snapshot.strength).toBeCloseTo(controls.bloomStrength * 0.912);
     expect(snapshot.lowStepBloomGuard).toBe(0);
@@ -330,18 +360,21 @@ describe("control runtime sync", () => {
     controls.raymarchSteps = 32;
 
     const runtimeState = createRaymarchHarness();
-    const pipeline = { outputNode: null };
+    const pipeline = { outputNode: null, needsUpdate: false };
     const sceneColor = { add: vi.fn(() => "bloomed-output") };
     const bloomPass = {
       strength: { value: 0 },
       radius: { value: 0 },
       threshold: { value: 0 },
     };
+    const composeOutputNode = vi.fn(() => "transparent-output");
 
     const snapshot = applyBloomControls(
       {
         ensurePipeline: () => pipeline,
-        postNodesRef: { current: { sceneColor, bloomPass } },
+        postNodesRef: {
+          current: { sceneColor, bloomPass, composeOutputNode },
+        },
         runtimeState,
       },
       controls,
@@ -356,9 +389,48 @@ describe("control runtime sync", () => {
     expect(snapshot.threshold).toBeCloseTo(
       controls.bloomThreshold + 0.032 + 0.0333333333,
     );
+    expect(composeOutputNode).toHaveBeenCalledWith({
+      bloomEnabled: true,
+      outputMode: controls.outputMode,
+    });
+    expect(pipeline.needsUpdate).toBe(true);
     expect(runtimeState.bloomTuning.lowStepBloomGuard).toBeCloseTo(
       deriveLowStepBloomGuard(32),
     );
+  });
+
+  it("applies output controls to the program pipeline", () => {
+    const controls = createControlState();
+    controls.outputMode = "opaque";
+    controls.outputBackgroundColor = "#123456";
+    controls.bloomEnabled = true;
+
+    const pipeline = { outputNode: null, needsUpdate: false };
+    const outputUniforms = {
+      backgroundColor: { value: new THREE.Color("#000000") },
+    };
+    const composeOutputNode = vi.fn(() => "opaque-output");
+    const snapshot = applyOutputControls(
+      {
+        ensurePipeline: () => pipeline,
+        postNodesRef: {
+          current: { outputUniforms, composeOutputNode },
+        },
+      },
+      controls,
+    );
+
+    expect(outputUniforms.backgroundColor.value.getHexString()).toBe("123456");
+    expect(composeOutputNode).toHaveBeenCalledWith({
+      bloomEnabled: true,
+      outputMode: "opaque",
+    });
+    expect(pipeline.outputNode).toBe("opaque-output");
+    expect(pipeline.needsUpdate).toBe(true);
+    expect(snapshot).toEqual({
+      outputMode: "opaque",
+      outputBackgroundColor: "#123456",
+    });
   });
 
   it("applies audit controls to feature state", () => {
@@ -366,6 +438,7 @@ describe("control runtime sync", () => {
     controls.auditEnabled = true;
     controls.freezeModeSlots = true;
     controls.forceWebGLFallbackTest = true;
+    controls.lowLoadPlaybackDiagnostics = true;
     controls.injectTestTone = true;
     controls.testToneHz = 660;
     controls.testToneAmplitude = 0.75;
@@ -377,6 +450,7 @@ describe("control runtime sync", () => {
           enabled: false,
           freezeModeSlots: false,
           forceWebGLFallbackTest: false,
+          lowLoadPlaybackDiagnostics: false,
           injectTestTone: false,
           testToneHz: 440,
           testToneAmplitude: 0.5,
@@ -389,12 +463,14 @@ describe("control runtime sync", () => {
     expect(featureState.audit.settings.enabled).toBe(true);
     expect(featureState.audit.settings.freezeModeSlots).toBe(true);
     expect(featureState.audit.settings.forceWebGLFallbackTest).toBe(true);
+    expect(featureState.audit.settings.lowLoadPlaybackDiagnostics).toBe(true);
     expect(featureState.audit.settings.injectTestTone).toBe(true);
     expect(featureState.audit.settings.testToneHz).toBe(660);
     expect(featureState.audit.settings.testToneAmplitude).toBe(0.75);
     expect(featureState.audit.settings.logEveryFrames).toBe(12);
     expect(snapshot.enabled).toBe(true);
     expect(snapshot.forceWebGLFallbackTest).toBe(true);
+    expect(snapshot.lowLoadPlaybackDiagnostics).toBe(true);
     expect(snapshot.testToneHz).toBe(660);
     expect(snapshot.testToneAmplitude).toBe(0.75);
     expect(snapshot.logEveryFrames).toBe(12);
@@ -658,6 +734,7 @@ describe("control runtime sync", () => {
       method: DEFAULT_VISUALIZATION_METHOD,
       audio: { echoCancellation: false },
       shared: { test: 0 },
+      output: { test: 0.5 },
       raymarch: { test: 5 },
       bloom: { test: 2 },
       audit: { test: 3 },
@@ -668,6 +745,7 @@ describe("control runtime sync", () => {
       method: DEFAULT_VISUALIZATION_METHOD,
       audio: { echoCancellation: false },
       shared: { test: 0 },
+      output: { test: 0.5 },
       raymarch: { test: 5 },
       simulation: { test: 5 },
       bloom: { test: 2 },

@@ -125,6 +125,35 @@ function setMediaElementTime(element, timeSeconds) {
   }
 }
 
+function getTimingNowMs() {
+  if (typeof globalThis.performance?.now === "function") {
+    return globalThis.performance.now();
+  }
+
+  return Date.now();
+}
+
+function clonePlaybackDiagnostics(diagnostics) {
+  if (!diagnostics) {
+    return null;
+  }
+
+  return {
+    ...diagnostics,
+    contextStateTransitions: Array.isArray(diagnostics.contextStateTransitions)
+      ? diagnostics.contextStateTransitions.map((transition) => ({
+          ...transition,
+        }))
+      : [],
+    lastContextStateChange: diagnostics.lastContextStateChange
+      ? { ...diagnostics.lastContextStateChange }
+      : null,
+    lastResumeAttempt: diagnostics.lastResumeAttempt
+      ? { ...diagnostics.lastResumeAttempt }
+      : null,
+  };
+}
+
 export function createAudioSession() {
   const state = {
     fftSize: 4096,
@@ -157,11 +186,18 @@ export function createAudioSession() {
       label: "",
       sourceKind: "idle",
     },
+    playbackSessionId: null,
+    lastPlaybackEndReason: null,
+    lastPlaybackDiagnostics: null,
+    activePlaybackDiagnostics: null,
+    audioContextState: "uninitialized",
+    audioContextStateListenerAttached: false,
   };
 
   let isAudioLoaded = false;
   let endedCallback = null;
   let activeMicSettingsSync = null;
+  let nextPlaybackSessionId = 0;
   const clockState = {
     mode: "realtime",
     previousElapsedTime: 0,
@@ -185,7 +221,135 @@ export function createAudioSession() {
     }
 
     state.audioCtx = new AudioContextCtor();
+    state.audioContextState = state.audioCtx.state ?? "unknown";
+    if (!state.audioContextStateListenerAttached) {
+      state.audioCtx.onstatechange = () => {
+        handleAudioContextStateChange();
+      };
+      state.audioContextStateListenerAttached = true;
+    }
     return state.audioCtx;
+  }
+
+  function getPlaybackDiagnosticsSnapshot() {
+    return clonePlaybackDiagnostics(
+      state.activePlaybackDiagnostics ?? state.lastPlaybackDiagnostics,
+    );
+  }
+
+  function resetPlaybackDiagnostics() {
+    state.playbackSessionId = null;
+    state.lastPlaybackEndReason = null;
+    state.lastPlaybackDiagnostics = null;
+    state.activePlaybackDiagnostics = null;
+  }
+
+  function updateActivePlaybackDiagnostics(mutator) {
+    if (!state.activePlaybackDiagnostics) {
+      return null;
+    }
+
+    mutator(state.activePlaybackDiagnostics);
+    state.lastPlaybackDiagnostics = clonePlaybackDiagnostics(
+      state.activePlaybackDiagnostics,
+    );
+    return state.activePlaybackDiagnostics;
+  }
+
+  function finalizePlaybackDiagnostics(reason, overrides = {}) {
+    const activeDiagnostics = clonePlaybackDiagnostics(
+      state.activePlaybackDiagnostics,
+    );
+    const finalizedDiagnostics = {
+      ...(activeDiagnostics ?? {
+        playbackSessionId: state.playbackSessionId,
+        sourceKind: state.sourceMetadata.sourceKind || "idle",
+        durationSeconds: normalizeDurationSeconds(
+          state.playbackDurationSeconds,
+        ),
+        latestAudioContextState:
+          state.audioCtx?.state ?? state.audioContextState,
+        contextStateTransitions: [],
+        startedAtWallTimeMs: getTimingNowMs(),
+      }),
+      ...overrides,
+      latestAudioContextState: state.audioCtx?.state ?? state.audioContextState,
+      audioContextStateAtEnd:
+        overrides.audioContextStateAtEnd ??
+        state.audioCtx?.state ??
+        state.audioContextState,
+      reason,
+    };
+
+    state.lastPlaybackEndReason = reason;
+    state.lastPlaybackDiagnostics = finalizedDiagnostics;
+    state.activePlaybackDiagnostics = null;
+    return finalizedDiagnostics;
+  }
+
+  function handleAudioContextStateChange() {
+    const audioCtx = state.audioCtx;
+    const nextState = audioCtx?.state ?? "unknown";
+    const previousState = state.audioContextState;
+    if (previousState === nextState) {
+      return;
+    }
+
+    state.audioContextState = nextState;
+    updateActivePlaybackDiagnostics((diagnostics) => {
+      const transition = {
+        from: previousState,
+        to: nextState,
+        atContextTimeSeconds: audioCtx?.currentTime ?? 0,
+        atWallTimeMs: getTimingNowMs(),
+      };
+      diagnostics.latestAudioContextState = nextState;
+      diagnostics.lastContextStateChange = transition;
+      diagnostics.contextStateTransitions.push(transition);
+      if (diagnostics.contextStateTransitions.length > 12) {
+        diagnostics.contextStateTransitions.shift();
+      }
+    });
+  }
+
+  async function maybeResumeAudioContext(reason = "interaction") {
+    const audioCtx = state.audioCtx;
+    if (!audioCtx || audioCtx.state === "running") {
+      return false;
+    }
+
+    updateActivePlaybackDiagnostics((diagnostics) => {
+      diagnostics.lastResumeAttempt = {
+        reason,
+        attemptedAtContextTimeSeconds: audioCtx.currentTime ?? 0,
+        attemptedAtWallTimeMs: getTimingNowMs(),
+        previousAudioContextState: audioCtx.state,
+      };
+    });
+
+    try {
+      await audioCtx.resume();
+      handleAudioContextStateChange();
+      updateActivePlaybackDiagnostics((diagnostics) => {
+        if (diagnostics.lastResumeAttempt) {
+          diagnostics.lastResumeAttempt.succeeded =
+            audioCtx.state === "running";
+          diagnostics.lastResumeAttempt.nextAudioContextState = audioCtx.state;
+        }
+      });
+      return audioCtx.state === "running";
+    } catch (error) {
+      updateActivePlaybackDiagnostics((diagnostics) => {
+        if (diagnostics.lastResumeAttempt) {
+          diagnostics.lastResumeAttempt.succeeded = false;
+          diagnostics.lastResumeAttempt.nextAudioContextState =
+            audioCtx.state ?? "unknown";
+          diagnostics.lastResumeAttempt.errorMessage =
+            error instanceof Error ? error.message : String(error);
+        }
+      });
+      throw error;
+    }
   }
 
   function ensurePlaybackAudioGraph() {
@@ -300,6 +464,15 @@ export function createAudioSession() {
     setMediaElementTime(element, 0);
     resetPlaybackPosition();
     setAudioInputMode("stopped");
+    finalizePlaybackDiagnostics("natural", {
+      playbackSessionId:
+        state.playbackSessionId ??
+        state.lastPlaybackDiagnostics?.playbackSessionId ??
+        null,
+      sourceKind: state.sourceMetadata.sourceKind || "stream",
+      endedAtContextTimeSeconds: state.audioCtx?.currentTime ?? 0,
+      endedAtPlaybackTimeSeconds: normalizeDurationSeconds(element.duration),
+    });
     endedCallback?.();
   }
 
@@ -355,6 +528,8 @@ export function createAudioSession() {
     };
     resetPlaybackPosition();
     isAudioLoaded = false;
+    state.playbackSessionId = null;
+    state.activePlaybackDiagnostics = null;
     if (state.audioInputMode !== "mic") {
       setAudioInputMode("idle");
     }
@@ -363,8 +538,10 @@ export function createAudioSession() {
   function stopBufferPlayback({
     resetOffset = false,
     stoppedMode = null,
+    endReason = null,
   } = {}) {
     const playbackTime = getCurrentPlaybackTime();
+    const audioCtx = state.audioCtx;
     if (resetOffset) {
       resetPlaybackPosition();
     } else {
@@ -385,6 +562,22 @@ export function createAudioSession() {
       disconnectAudioNode(source);
     }
 
+    if (endReason) {
+      finalizePlaybackDiagnostics(endReason, {
+        endedAtContextTimeSeconds: audioCtx?.currentTime ?? 0,
+        endedAtPlaybackTimeSeconds: resetOffset ? 0 : playbackTime,
+        actualPlayedDurationSeconds:
+          playbackTime -
+          normalizeDurationSeconds(
+            state.lastPlaybackDiagnostics?.offsetSeconds ??
+              state.activePlaybackDiagnostics?.offsetSeconds ??
+              0,
+          ),
+      });
+    } else {
+      state.activePlaybackDiagnostics = null;
+    }
+
     if (stoppedMode) {
       setAudioInputMode(stoppedMode);
     } else if (state.audioInputMode === "file") {
@@ -395,6 +588,7 @@ export function createAudioSession() {
   function stopStreamPlayback({
     resetOffset = false,
     stoppedMode = null,
+    endReason = null,
   } = {}) {
     const element = state.mediaElement;
     const playbackTime = getCurrentPlaybackTime();
@@ -412,6 +606,18 @@ export function createAudioSession() {
       resetPlaybackPosition(playbackTime);
     }
 
+    if (endReason) {
+      finalizePlaybackDiagnostics(endReason, {
+        playbackSessionId:
+          state.playbackSessionId ??
+          state.lastPlaybackDiagnostics?.playbackSessionId ??
+          null,
+        sourceKind: state.sourceMetadata.sourceKind || "stream",
+        endedAtContextTimeSeconds: state.audioCtx?.currentTime ?? 0,
+        endedAtPlaybackTimeSeconds: resetOffset ? 0 : playbackTime,
+      });
+    }
+
     if (stoppedMode) {
       setAudioInputMode(stoppedMode);
     } else if (state.audioInputMode === "file") {
@@ -419,15 +625,28 @@ export function createAudioSession() {
     }
   }
 
-  function stopPlayback({ resetOffset = false, stoppedMode = null } = {}) {
+  function stopPlayback({
+    resetOffset = false,
+    stoppedMode = null,
+    endReason = null,
+  } = {}) {
     if (state.loadedPlaybackSourceKind === "stream") {
-      stopStreamPlayback({ resetOffset, stoppedMode });
+      stopStreamPlayback({ resetOffset, stoppedMode, endReason });
       return;
     }
 
     if (state.activeBufferSource || state.playbackOffsetSeconds > 0) {
-      stopBufferPlayback({ resetOffset, stoppedMode });
+      stopBufferPlayback({ resetOffset, stoppedMode, endReason });
       return;
+    }
+
+    if (endReason) {
+      finalizePlaybackDiagnostics(endReason, {
+        endedAtContextTimeSeconds: state.audioCtx?.currentTime ?? 0,
+        endedAtPlaybackTimeSeconds: resetOffset
+          ? 0
+          : state.playbackOffsetSeconds,
+      });
     }
 
     if (stoppedMode) {
@@ -442,15 +661,58 @@ export function createAudioSession() {
       return;
     }
 
+    const audioCtx = state.audioCtx;
+    const activeDiagnostics = clonePlaybackDiagnostics(
+      state.activePlaybackDiagnostics,
+    );
+    const playbackTime = clampPlaybackTime(getCurrentPlaybackTime());
+    const offsetSeconds = normalizeDurationSeconds(
+      activeDiagnostics?.offsetSeconds ?? state.playbackOffsetSeconds,
+    );
+    const expectedRemainingDurationSeconds = normalizeDurationSeconds(
+      activeDiagnostics?.expectedRemainingDurationSeconds ??
+        state.playbackDurationSeconds - offsetSeconds,
+    );
+    const actualPlayedDurationSeconds = Math.max(
+      0,
+      playbackTime - offsetSeconds,
+    );
+    const expectedPlaybackTime = clampPlaybackTime(
+      offsetSeconds + expectedRemainingDurationSeconds,
+    );
+    const endedNearExpectedTime =
+      expectedRemainingDurationSeconds <= 0 ||
+      playbackTime >= expectedPlaybackTime - 0.05;
+    const endReason = endedNearExpectedTime
+      ? "natural"
+      : audioCtx?.state === "running"
+        ? "premature"
+        : "interrupted";
+
     clearActiveBufferSource();
-    resetPlaybackPosition();
-    setAudioInputMode("stopped");
-    endedCallback?.();
+    if (endReason === "natural") {
+      resetPlaybackPosition();
+      setAudioInputMode("stopped");
+    } else {
+      resetPlaybackPosition(playbackTime);
+      setAudioInputMode("idle");
+    }
+    finalizePlaybackDiagnostics(endReason, {
+      endedAtContextTimeSeconds: audioCtx?.currentTime ?? 0,
+      endedAtPlaybackTimeSeconds: playbackTime,
+      actualPlayedDurationSeconds,
+      expectedPlaybackTimeSeconds: expectedPlaybackTime,
+      prematureBySeconds: Math.max(0, expectedPlaybackTime - playbackTime),
+    });
+    if (endReason === "natural") {
+      endedCallback?.();
+    }
   }
 
   function getStatus() {
     const isPlaying = Boolean(
-      state.activeBufferSource || isStreamSourcePlaying(),
+      (state.activeBufferSource && state.audioCtx?.state === "running") ||
+      isStreamSourcePlaying(),
     );
     const isMicActive = Boolean(state.gumStream?.active && state.micAnalyser);
     const sourceKind = isMicActive
@@ -483,6 +745,12 @@ export function createAudioSession() {
       micSettings: cloneMicSettings(state.micSettings),
       sourceKind,
       sourceLabel: state.sourceMetadata.label || "",
+      playbackSessionId:
+        state.playbackSessionId ??
+        state.lastPlaybackDiagnostics?.playbackSessionId ??
+        null,
+      lastPlaybackEndReason: state.lastPlaybackEndReason,
+      lastPlaybackDiagnostics: getPlaybackDiagnosticsSnapshot(),
     };
   }
 
@@ -583,6 +851,7 @@ export function createAudioSession() {
 
   async function loadAudio(url) {
     ensurePlaybackAudioGraph();
+    resetPlaybackDiagnostics();
 
     if (state.gumStream?.active) {
       stopMicRecordStream();
@@ -628,6 +897,7 @@ export function createAudioSession() {
     }
 
     ensurePlaybackAudioGraph();
+    resetPlaybackDiagnostics();
 
     if (state.gumStream?.active) {
       stopMicRecordStream();
@@ -665,8 +935,8 @@ export function createAudioSession() {
     const audioCtx = ensureAudioContext();
     ensurePlaybackAudioGraph();
 
-    if (audioCtx.state === "suspended") {
-      await audioCtx.resume();
+    if (audioCtx.state !== "running") {
+      await maybeResumeAudioContext("start-buffer-playback");
     }
 
     const source = audioCtx.createBufferSource();
@@ -683,6 +953,31 @@ export function createAudioSession() {
     );
     resetPlaybackPosition(nextOffset);
     state.playbackStartedAtSeconds = audioCtx.currentTime;
+    state.playbackSessionId = ++nextPlaybackSessionId;
+    state.lastPlaybackEndReason = null;
+    state.activePlaybackDiagnostics = {
+      playbackSessionId: state.playbackSessionId,
+      sourceKind: "file",
+      startedAtContextTimeSeconds: audioCtx.currentTime,
+      startedAtWallTimeMs: getTimingNowMs(),
+      offsetSeconds: nextOffset,
+      durationSeconds: normalizeDurationSeconds(state.playbackDurationSeconds),
+      expectedRemainingDurationSeconds: Math.max(
+        0,
+        state.playbackDurationSeconds - nextOffset,
+      ),
+      expectedEndTimeSeconds:
+        audioCtx.currentTime +
+        Math.max(0, state.playbackDurationSeconds - nextOffset),
+      audioContextStateAtStart: audioCtx.state,
+      latestAudioContextState: audioCtx.state,
+      contextStateTransitions: [],
+      lastContextStateChange: null,
+      lastResumeAttempt: null,
+    };
+    state.lastPlaybackDiagnostics = clonePlaybackDiagnostics(
+      state.activePlaybackDiagnostics,
+    );
     state.activeBufferSource = source;
     setAudioInputMode("file");
     source.start(0, nextOffset);
@@ -690,6 +985,11 @@ export function createAudioSession() {
   }
 
   async function playPauseAudio() {
+    const audioCtx = state.audioCtx;
+    if (state.activeBufferSource && audioCtx && audioCtx.state !== "running") {
+      return maybeResumeAudioContext("play-pause-resume");
+    }
+
     if (state.activeBufferSource) {
       stopBufferPlayback();
       return false;
@@ -701,11 +1001,11 @@ export function createAudioSession() {
     }
 
     if (state.loadedPlaybackSourceKind === "stream" && state.mediaElement) {
-      const audioCtx = ensureAudioContext();
+      const streamAudioCtx = ensureAudioContext();
       ensurePlaybackAudioGraph();
 
-      if (audioCtx.state === "suspended") {
-        await audioCtx.resume();
+      if (streamAudioCtx.state !== "running") {
+        await maybeResumeAudioContext("stream-playback");
       }
 
       if (
@@ -734,8 +1034,16 @@ export function createAudioSession() {
       state.activeBufferSource ||
       state.playbackOffsetSeconds > 0
     ) {
-      stopPlayback({ resetOffset: true, stoppedMode: "stopped" });
+      stopPlayback({
+        resetOffset: true,
+        stoppedMode: "stopped",
+        endReason: "stopped",
+      });
     } else if (state.audioInputMode === "file") {
+      finalizePlaybackDiagnostics("stopped", {
+        endedAtContextTimeSeconds: state.audioCtx?.currentTime ?? 0,
+        endedAtPlaybackTimeSeconds: 0,
+      });
       setAudioInputMode("stopped");
     }
   }
@@ -762,6 +1070,9 @@ export function createAudioSession() {
     const nextTimeSeconds = clampPlaybackTime(timeSeconds);
 
     if (state.loadedPlaybackSourceKind === "stream" && state.mediaElement) {
+      if (state.audioCtx?.state && state.audioCtx.state !== "running") {
+        await maybeResumeAudioContext("seek");
+      }
       setMediaElementTime(state.mediaElement, nextTimeSeconds);
       resetPlaybackPosition(nextTimeSeconds);
       return true;
@@ -880,8 +1191,8 @@ export function createAudioSession() {
     state.appliedMicSettings = cloneMicSettings(state.micSettings);
 
     const audioCtx = ensureAudioContext();
-    if (audioCtx.state === "suspended") {
-      await audioCtx.resume();
+    if (audioCtx.state !== "running") {
+      await maybeResumeAudioContext("start-mic-record");
     }
 
     state.micNode = audioCtx.createMediaStreamSource(state.gumStream);
@@ -950,6 +1261,8 @@ export function createAudioSession() {
     };
     resetPlaybackPosition();
     state.audioCtx = null;
+    state.audioContextState = "closed";
+    state.audioContextStateListenerAttached = false;
     isAudioLoaded = false;
     clockState.mode = "realtime";
     clockState.previousElapsedTime = 0;

@@ -96,7 +96,7 @@ function createRuntimeState() {
     stabilityStats: {
       avgRaySegmentLength: 1.2,
       missRatio: 0.15,
-      avgSilhouetteSuppression: 0.25,
+      avgSilhouetteSuppression: 0,
     },
     debugSnapshot: null,
   };
@@ -169,6 +169,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.raymarchDebug.lowStepBloomGuard).toBe(0);
     expect(runtimeState.debugSnapshot.raymarchDebug.rimBloomBias).toBe(0.5);
     expect(runtimeState.debugSnapshot.raymarchDebug.rimCompression).toBe(0.48);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.avgSilhouetteSuppression,
+    ).toBe(0);
     expect(runtimeState.debugSnapshot.raymarchDebug.bloomResponseBias).toBe(
       0.4,
     );

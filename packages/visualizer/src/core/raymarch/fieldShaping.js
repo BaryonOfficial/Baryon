@@ -29,6 +29,8 @@ export const AIR_BAND_WEIGHT = 0.08;
 export const COLOR_BIAS_SCALE = 0.82;
 export const HIGHLIGHT_MASK_START = 0.38;
 export const HIGHLIGHT_MASK_END = 0.96;
+export const BOUNDARY_CONTOUR_ACCENT_WEIGHT = 0.08;
+export const HIGHLIGHT_CONTOUR_ACCENT_WEIGHT = 0.04;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -138,4 +140,16 @@ export function deriveBodyDensity({
     interiorMask,
     bodyDensity,
   };
+}
+
+export function deriveStableContourAccent({
+  contourMix,
+  boundaryMask,
+  highlightMask,
+}) {
+  return (
+    contourMix * 0.18 +
+    boundaryMask * BOUNDARY_CONTOUR_ACCENT_WEIGHT +
+    highlightMask * HIGHLIGHT_CONTOUR_ACCENT_WEIGHT
+  );
 }

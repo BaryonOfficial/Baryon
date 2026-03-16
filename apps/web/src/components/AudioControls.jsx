@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
-import { MIC_PROFILE_OPTIONS } from "@baryon/visualizer";
+import { MIC_PROFILE_OPTIONS } from "@baryon/visualizer/audio-features";
 import { useAudio } from "../context/AudioContext";
 
 // ─── SVG Icons ───────────────────────────────────────────────────────────────
@@ -194,14 +194,6 @@ function formatFileSize(totalBytes) {
     return `${Math.round(safeBytes / 1024)} KB`;
   }
   return `${safeBytes} B`;
-}
-
-function getMicProfileLabel(profile) {
-  return (
-    MIC_PROFILE_OPTIONS.find((option) => option.value === profile)?.label ??
-    MIC_PROFILE_OPTIONS[0]?.label ??
-    "Voice"
-  );
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
@@ -493,7 +485,9 @@ const CSS = `
   position: relative;
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 0.45rem;
+  flex-shrink: 0;
 }
 
 .am-btn--mic {
@@ -511,18 +505,52 @@ const CSS = `
 }
 .am-btn--mic-active:hover { background: rgba(255, 69, 58, 0.42) !important; }
 
-.am-mic-status {
-  display: inline-flex;
+.am-mic-profile {
+  position: relative;
+  display: flex;
   align-items: center;
+}
+
+.am-mic-profile::after {
+  content: "";
+  position: absolute;
+  right: 0.8rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-right: 1.5px solid rgba(255, 255, 255, 0.55);
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.55);
+  transform: translateY(-50%) rotate(45deg);
+  top: 50%;
+  pointer-events: none;
+}
+
+.am-mic-profile-select {
+  appearance: none;
+  -webkit-appearance: none;
   min-height: 1.95rem;
-  padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.1);
+  width: 8.5rem;
+  padding: 0.25rem 1.95rem 0.25rem 0.75rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.88);
+  font: inherit;
   font-size: 0.74rem;
   line-height: 1rem;
-  white-space: nowrap;
+  cursor: pointer;
+}
+
+.am-mic-profile-select:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.am-mic-profile-select:focus-visible {
+  outline: 2px solid rgba(122, 189, 255, 0.82);
+  outline-offset: 2px;
+}
+
+.am-mic-profile-select option {
+  color: #111827;
 }
 
 /* ── Volume ── */
@@ -998,8 +1026,11 @@ const CSS = `
   }
 
   .am-player {
-    padding: 0.7rem 0.75rem;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0.65rem 0.7rem;
     border-radius: 1.6rem;
+    white-space: normal;
   }
 
   .am-source-row,
@@ -1030,6 +1061,11 @@ const CSS = `
     gap: 0.35rem;
     grid-column: 3;
     justify-self: end;
+  }
+
+  .am-mic-wrap {
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .am-volume-row {
@@ -1180,6 +1216,11 @@ const CSS = `
     height: 42px;
   }
 
+  .am-mic-profile-select {
+    min-height: 2.25rem;
+    width: 7.5rem;
+  }
+
   .am-btn--soundcloud {
     width: 56px;
     height: 40px;
@@ -1232,7 +1273,6 @@ function AudioControls() {
     audioDevices,
     selectedDevice,
     micProfile,
-    micRuntimeStatus,
     handleFileChange,
     handleRecentUploadSelect,
     handlePlayPause,
@@ -1281,12 +1321,9 @@ function AudioControls() {
     soundCloudListStart,
     soundCloudListStart + 4,
   );
-  const micStatusLabel =
-    isMicActive && micRuntimeStatus?.calibrating
-      ? "Calibrating"
-      : isMicActive
-        ? getMicProfileLabel(micRuntimeStatus?.profile ?? micProfile)
-        : null;
+  const selectedMicProfileOption =
+    MIC_PROFILE_OPTIONS.find((option) => option.value === micProfile) ??
+    MIC_PROFILE_OPTIONS[0];
   const timelineValue =
     isScrubbing && scrubPreviewSeconds != null
       ? scrubPreviewSeconds
@@ -1517,11 +1554,36 @@ function AudioControls() {
                 >
                   <MicIcon />
                 </button>
-                {micStatusLabel ? (
-                  <span className="am-mic-status" data-testid="mic-status">
-                    {micStatusLabel}
-                  </span>
-                ) : null}
+                <div className="am-mic-profile">
+                  <select
+                    className="am-mic-profile-select"
+                    data-testid="mic-profile-select"
+                    value={micProfile}
+                    aria-label="Mic input profile"
+                    title={
+                      selectedMicProfileOption
+                        ? `Mic input profile: ${selectedMicProfileOption.label}. ${selectedMicProfileOption.description}`
+                        : "Mic input profile"
+                    }
+                    onFocus={() => {
+                      setShowRecentUploadsPanel(false);
+                      setShowSoundCloudPanel(false);
+                      setShowDeviceMenu(false);
+                    }}
+                    onChange={(event) => {
+                      setShowRecentUploadsPanel(false);
+                      setShowSoundCloudPanel(false);
+                      setShowDeviceMenu(false);
+                      handleMicProfileChange(event.target.value);
+                    }}
+                  >
+                    {MIC_PROFILE_OPTIONS.map((profile) => (
+                      <option key={profile.value} value={profile.value}>
+                        {profile.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
                 {showDeviceMenu && (
                   <div className="am-device-menu">
@@ -1545,31 +1607,6 @@ function AudioControls() {
                           >
                             {device.label ||
                               `Device ${device.deviceId.slice(0, 8)}`}
-                          </button>
-                        ))}
-                        <p className="am-device-empty">Input profile</p>
-                        <p className="am-device-note">
-                          Auto-calibrates when mic starts or when you change
-                          profile.
-                        </p>
-                        {MIC_PROFILE_OPTIONS.map((profile) => (
-                          <button
-                            key={profile.value}
-                            className={`am-device-item${
-                              micProfile === profile.value
-                                ? " am-device-item--active"
-                                : ""
-                            }`}
-                            onClick={() =>
-                              handleMicProfileChange(profile.value)
-                            }
-                          >
-                            <span className="am-device-item-label">
-                              {profile.label}
-                            </span>
-                            <span className="am-device-item-hint">
-                              {profile.description}
-                            </span>
                           </button>
                         ))}
                       </>

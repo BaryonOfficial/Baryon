@@ -52,10 +52,11 @@ export default function ParticleDebugOverlay() {
       data-testid="raymarch-debug-overlay"
       style={{
         position: "fixed",
-        left: "1rem",
-        bottom: "1rem",
+        top: "1rem",
+        right: "1rem",
         zIndex: 10001,
         minWidth: "18rem",
+        maxWidth: "min(18rem, calc(100vw - 2rem))",
         padding: "0.75rem 0.9rem",
         borderRadius: "0.75rem",
         background: "rgba(0, 0, 0, 0.78)",

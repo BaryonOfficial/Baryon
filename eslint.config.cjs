@@ -2,7 +2,9 @@ const js = require("@eslint/js");
 const globals = require("globals");
 const reactPlugin = require("eslint-plugin-react");
 const reactHooksPlugin = require("eslint-plugin-react-hooks");
-const reactRefreshPlugin = require("eslint-plugin-react-refresh");
+const reactRefreshPluginModule = require("eslint-plugin-react-refresh");
+const reactRefreshPlugin =
+  reactRefreshPluginModule.default ?? reactRefreshPluginModule;
 
 function cleanGlobals(source) {
   return Object.fromEntries(

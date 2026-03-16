@@ -28,7 +28,7 @@ export function createBaseViteConfig() {
   return {
     /** @type {import('vite').ESBuildOptions} */
     esbuild: {
-      drop: /** @type {import('esbuild').Drop[]} */ (["console", "debugger"]),
+      drop: ["console", "debugger"],
     },
     build: {
       emptyOutDir: true,

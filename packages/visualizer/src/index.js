@@ -62,6 +62,7 @@ export {
   applyAudioControls,
   applySimulationControls,
   applySharedControls,
+  applyOutputControls,
   applyRaymarchControls,
   applyVisualizationControls,
   applyBloomControls,

@@ -4,10 +4,8 @@ import {
   Fn,
   Loop,
   abs,
-  cameraPosition,
   clamp,
   cos,
-  dot,
   float,
   length,
   mix,
@@ -17,14 +15,16 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import SafeVolumetricLightingModel from "./SafeVolumetricLightingModel.js";
+import SafeVolumetricLightingModel, {
+  raymarchLightNode,
+  raymarchOpacityNode,
+} from "./SafeVolumetricLightingModel.js";
 import {
   RAYMARCH_BOUNDARY_END,
   RAYMARCH_BOUNDARY_START,
-  RAYMARCH_GRAZING_END,
-  RAYMARCH_GRAZING_START,
 } from "./intersection.js";
 import {
+  BOUNDARY_CONTOUR_ACCENT_WEIGHT,
   AIR_BAND_WEIGHT,
   BODY_BOUNDARY_REDUCTION,
   BODY_DENSITY_GAIN,
@@ -38,6 +38,7 @@ import {
   DETAIL_LAYER_WEIGHT,
   EDGE_FADE_END,
   EDGE_FADE_START,
+  HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
   HIGHLIGHT_MASK_END,
   HIGHLIGHT_MASK_START,
   HIGH_MID_BAND_WEIGHT,
@@ -53,9 +54,6 @@ import {
   SHELL_WEIGHT_MAX,
   SHELL_WEIGHT_MIN,
   SHELL_WEIGHT_START,
-  SILHOUETTE_MIN_VISIBILITY,
-  WEAK_CONTOUR_END,
-  WEAK_CONTOUR_START,
 } from "./fieldShaping.js";
 
 /**
@@ -66,7 +64,8 @@ import {
  * @typedef {import("three/webgpu").VolumeNodeMaterial & {
  *   steps: number,
  *   radiusNode?: any,
- *   scatteringNode?: any
+ *   scatteringNode?: any,
+ *   opacityGainNode?: any
  * }} BaryonVolumeMaterial
  */
 
@@ -150,7 +149,6 @@ function createScatteringNode({
     uAbsorption,
     uContourSharpness,
     uRimBloomBias,
-    uRimCompression,
     uBandEnergies,
     uTransientEnergy,
     uSpectralCentroid,
@@ -166,9 +164,6 @@ function createScatteringNode({
     ({ positionRay }) => {
       const localPosition = modelWorldMatrixInverse.mul(
         vec4(positionRay, 1.0),
-      ).xyz;
-      const cameraLocal = modelWorldMatrixInverse.mul(
-        vec4(cameraPosition, 1.0),
       ).xyz;
       const normalizedPosition = localPosition.div(uRadius);
       const radialDistance = length(normalizedPosition);
@@ -323,43 +318,12 @@ function createScatteringNode({
           density,
         ),
       );
-      const radialNormal = localPosition.div(
-        length(localPosition).max(float(1e-4)),
-      );
-      const viewDirection = cameraLocal.sub(localPosition).normalize();
-      const grazingFactor = float(1.0).sub(
-        abs(dot(viewDirection, radialNormal)),
-      );
-      const grazingMask = smoothstep(
-        float(RAYMARCH_GRAZING_START),
-        float(RAYMARCH_GRAZING_END),
-        grazingFactor,
-      );
-      const weakContourMask = float(1.0).sub(
-        smoothstep(
-          float(WEAK_CONTOUR_START),
-          float(WEAK_CONTOUR_END),
-          contourCore,
-        ),
-      );
-      const rimIntensity = boundaryMask.mul(grazingMask);
-      const silhouetteMask = rimIntensity.mul(
-        mix(float(0.4), float(1.0), weakContourMask),
-      );
-      const silhouetteSuppression = mix(
-        float(1.0),
-        float(SILHOUETTE_MIN_VISIBILITY),
-        silhouetteMask,
-      );
       const highlightMask = smoothstep(
         float(HIGHLIGHT_MASK_START),
         float(HIGHLIGHT_MASK_END),
         visibleDensity,
       );
-      const rimCompressionMask = float(1.0).sub(
-        rimIntensity.mul(highlightMask).mul(uRimCompression).mul(float(0.28)),
-      );
-      const stabilizedDensity = visibleDensity.mul(rimCompressionMask);
+      const stabilizedDensity = visibleDensity;
       const contourMix = smoothstep(
         float(COLOR_BLEND_START),
         float(COLOR_BLEND_END),
@@ -373,26 +337,46 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
-      const baseColor = mix(uColor, uSurfaceColor, spectralColorBias);
+      const staticBaseColor = mix(uColor, uSurfaceColor, spectralColorBias);
       const spectralColor = colorSum.div(colorWeight.max(float(1e-4)));
       const chromesthesiaPresence = smoothstep(
         float(0.0),
         float(0.18),
         colorWeight,
       );
-      const chromesthesiaColor = mix(
-        baseColor,
-        spectralColor,
-        clamp(
-          uChromesthesiaMix.mul(chromesthesiaPresence),
-          float(0.0),
-          float(1.0),
-        ),
+      const chromesthesiaEnabled = smoothstep(
+        float(0.0),
+        float(1e-4),
+        uChromesthesiaMix,
       );
-      const contourAnchoredColor = mix(
-        chromesthesiaColor,
+      const chromesthesiaWeight = clamp(
+        uChromesthesiaMix.mul(chromesthesiaPresence),
+        float(0.0),
+        float(1.0),
+      );
+      const contourAccent = contourMix
+        .mul(float(0.18))
+        .add(boundaryMask.mul(float(BOUNDARY_CONTOUR_ACCENT_WEIGHT)))
+        .add(highlightMask.mul(float(HIGHLIGHT_CONTOUR_ACCENT_WEIGHT)));
+      const staticContourColor = mix(
+        staticBaseColor,
         uSurfaceColor,
-        contourMix.mul(float(0.18)).add(rimIntensity.mul(float(0.12))),
+        contourAccent,
+      );
+      const chromesthesiaNeutralColor = mix(
+        vec3(0.72),
+        vec3(1.0),
+        spectralColorBias,
+      );
+      const chromesthesiaBaseColor = mix(
+        chromesthesiaNeutralColor,
+        spectralColor,
+        chromesthesiaWeight,
+      );
+      const chromesthesiaContourColor = mix(
+        chromesthesiaBaseColor.mul(float(0.92)),
+        chromesthesiaBaseColor,
+        contourAccent,
       );
       const detailPresence = smoothstep(float(0.0), float(1.0), detailCount);
       const backbonePresence = smoothstep(
@@ -400,13 +384,26 @@ function createScatteringNode({
         float(1.0),
         backboneCount,
       );
+      const activityAccent = backbonePresence.add(
+        detailPresence.mul(float(0.15)),
+      );
+      const staticVolumeColor = mix(
+        staticContourColor.mul(float(0.92)),
+        staticContourColor,
+        activityAccent,
+      );
+      const chromesthesiaVolumeColor = mix(
+        chromesthesiaContourColor.mul(float(0.92)),
+        chromesthesiaContourColor,
+        activityAccent,
+      );
       const volumeColor = mix(
-        contourAnchoredColor.mul(float(0.92)),
-        contourAnchoredColor,
-        backbonePresence.add(detailPresence.mul(float(0.15))),
+        staticVolumeColor,
+        chromesthesiaVolumeColor,
+        chromesthesiaEnabled,
       );
 
-      return volumeColor.mul(stabilizedDensity).mul(silhouetteSuppression);
+      return volumeColor.mul(stabilizedDensity);
     },
   );
 }
@@ -426,9 +423,11 @@ export function createRaymarchVolumeMesh({
   );
   material.transparent = true;
   material.blending = THREE.NormalBlending;
+  material.outputNode = vec4(raymarchLightNode, raymarchOpacityNode);
 
   material.steps = Math.round(uniforms.uRaymarchSteps.value);
   material.radiusNode = uniforms.uRadius;
+  material.opacityGainNode = uniforms.uOpacityGain;
   material.scatteringNode = createScatteringNode({
     backboneModeBuffer,
     detailModeBuffer,

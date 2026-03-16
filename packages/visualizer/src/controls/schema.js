@@ -23,6 +23,7 @@ export const CONTROL_STATUSES = Object.freeze({
 
 export const CONTROL_HANDLERS = Object.freeze({
   shared: "shared",
+  output: "output",
   raymarch: "raymarch",
   bloom: "bloom",
   scene: "scene",
@@ -209,13 +210,50 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "backgroundColor",
       label: "Background",
       title:
-        "Scene background color — use deep black for the most contrast with the volumetric cymatic orb",
+        "Presentation backdrop color shown behind the transparent volumetric render",
       defaultValue: RENDER_DEFAULTS.backgroundColor,
       methods: RAYMARCH_METHODS,
       binding: { view: "color" },
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.shared,
-      runtimePath: "renderer.clearColor",
+      runtimePath: "ui.backdropColor",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.look,
+  ),
+  withControlGroup(
+    {
+      key: "outputMode",
+      label: "Program Output",
+      title:
+        "Use Transparent when Baryon needs to sit over video, graphics, or another scene; use Opaque when Baryon should render its own solid background for fullscreen or stage output",
+      defaultValue: RENDER_DEFAULTS.outputMode,
+      methods: RAYMARCH_METHODS,
+      binding: {
+        options: {
+          Transparent: "transparent",
+          Opaque: "opaque",
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.output,
+      runtimePath: "program.outputMode",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.look,
+  ),
+  withControlGroup(
+    {
+      key: "outputBackgroundColor",
+      label: "Program Fill",
+      title:
+        "Background color used only when the program output is set to opaque",
+      defaultValue: RENDER_DEFAULTS.outputBackgroundColor,
+      methods: RAYMARCH_METHODS,
+      binding: { view: "color" },
+      targetType: CONTROL_TARGET_TYPES.pipeline,
+      handler: CONTROL_HANDLERS.output,
+      runtimePath: "program.backgroundColor",
       status: CONTROL_STATUSES.live,
     },
     CONTROL_GROUPS.look,
@@ -278,7 +316,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "chromesthesiaMix",
       label: "Color Mix",
       title:
-        "How strongly the chromesthesia color field blends into the volumetric palette when chromesthesia mode is enabled",
+        "How vividly the chromesthesia spectral hues are expressed when chromesthesia mode is enabled",
       defaultValue: RENDER_DEFAULTS.chromesthesiaMix,
       methods: RAYMARCH_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
@@ -441,6 +479,22 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
+      key: "opacityGain",
+      label: "Opacity",
+      title:
+        "Additional alpha gain for the transparent volume — increase this to make the orb read more solid without over-brightening emission",
+      defaultValue: RAYMARCH_DEFAULTS.opacityGain,
+      methods: [VISUALIZATION_METHODS.raymarch],
+      binding: { min: 0.1, max: 3, step: 0.01 },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uOpacityGain.value",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.field,
+  ),
+  withControlGroup(
+    {
       key: "contourSharpness",
       label: "Sharpness",
       title:
@@ -591,6 +645,21 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       targetType: CONTROL_TARGET_TYPES.audit,
       handler: CONTROL_HANDLERS.audit,
       runtimePath: "featureState.audit.settings.forceWebGLFallbackTest",
+      status: CONTROL_STATUSES.debugOnly,
+    },
+    CONTROL_GROUPS.diagnostics,
+  ),
+  withControlGroup(
+    {
+      key: "lowLoadPlaybackDiagnostics",
+      label: "Low-load Playback",
+      title:
+        "Reduce render overhead during playback diagnostics by forcing a lower pixel ratio and suppressing non-essential audit work while audio is active",
+      defaultValue: AUDIT_DEFAULTS.lowLoadPlaybackDiagnostics,
+      methods: RAYMARCH_METHODS,
+      targetType: CONTROL_TARGET_TYPES.audit,
+      handler: CONTROL_HANDLERS.audit,
+      runtimePath: "featureState.audit.settings.lowLoadPlaybackDiagnostics",
       status: CONTROL_STATUSES.debugOnly,
     },
     CONTROL_GROUPS.diagnostics,
