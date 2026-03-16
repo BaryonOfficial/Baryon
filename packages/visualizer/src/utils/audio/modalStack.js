@@ -44,6 +44,12 @@ function createModalLayerState(capacity) {
     voicingActive: false,
     highCandidateRejected: false,
     rejectionReason: "none",
+    _poolCurrentMap: new Map(),
+    _poolTargetMap: new Map(),
+    _poolAdmittedKeys: new Set(),
+    _poolBlendedMap: new Map(),
+    _poolCurrentColorMap: new Map(),
+    _poolTargetColorMap: new Map(),
   };
 }
 
@@ -217,7 +223,8 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
   const freshCap = options.freshCap ?? BLEND_MAX_FRESH_PER_FRAME;
   const slotLimit = Math.min(state.slots.length / 4, capacity);
 
-  const currentMap = new Map();
+  const currentMap = state._poolCurrentMap ?? new Map();
+  currentMap.clear();
   for (let i = 0; i < slotLimit; i++) {
     const offset = i * 4;
     const amp = state.slots[offset + 3];
@@ -230,7 +237,8 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
   }
 
   const targetLimit = Math.min(targetSlots.length / 4, capacity);
-  const targetMap = new Map();
+  const targetMap = state._poolTargetMap ?? new Map();
+  targetMap.clear();
   for (let i = 0; i < targetLimit; i++) {
     const offset = i * 4;
     const amp = targetSlots[offset + 3];
@@ -243,7 +251,8 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
   }
 
   let freshAdmitted = 0;
-  const admittedTargetKeys = new Set();
+  const admittedTargetKeys = state._poolAdmittedKeys ?? new Set();
+  admittedTargetKeys.clear();
   for (const key of targetMap.keys()) {
     if (currentMap.has(key)) {
       admittedTargetKeys.add(key);
@@ -258,7 +267,8 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
     }
   }
 
-  const blended = new Map();
+  const blended = state._poolBlendedMap ?? new Map();
+  blended.clear();
   for (const key of admittedTargetKeys) {
     const target = targetMap.get(key);
     const current = currentMap.get(key);
@@ -327,7 +337,8 @@ export function blendColorStack(
   const release = options.release ?? BLEND_RELEASE;
   const maxActiveSlots = options.maxActiveSlots ?? capacity;
   const slotLimit = Math.min(state.slots.length / 4, capacity);
-  const currentColorMap = new Map();
+  const currentColorMap = state._poolCurrentColorMap ?? new Map();
+  currentColorMap.clear();
 
   for (let i = 0; i < slotLimit; i++) {
     const offset = i * 4;
@@ -349,7 +360,8 @@ export function blendColorStack(
     );
   }
 
-  const targetColorMap = new Map();
+  const targetColorMap = state._poolTargetColorMap ?? new Map();
+  targetColorMap.clear();
   const targetLimit = Math.min(
     targetSlots.length / 4,
     targetColorSlots.length / 4,
@@ -412,9 +424,11 @@ export function blendColorStack(
     });
   }
 
-  survivors.sort((left, right) => right.contribution - left.contribution);
-  for (let i = maxActiveSlots; i < survivors.length; i++) {
-    survivors[i].weight = 0;
+  if (survivors.length > maxActiveSlots) {
+    survivors.sort((left, right) => right.contribution - left.contribution);
+    for (let i = maxActiveSlots; i < survivors.length; i++) {
+      survivors[i].weight = 0;
+    }
   }
   survivors.sort((left, right) => left.offset - right.offset);
 

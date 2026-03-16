@@ -27,6 +27,7 @@ import {
 import { RAYMARCH_DEFAULTS } from "../../defaults.js";
 import {
   MAX_STEP_COMPENSATION,
+  MIN_ADAPTIVE_STEPS,
   STEP_COMPENSATION_EXPONENT,
   STEP_REFERENCE,
 } from "./stepStability.js";
@@ -133,6 +134,7 @@ export default class SafeVolumetricLightingModel extends LightingModel {
     const cameraPositionLocal = modelWorldMatrixInverse
       .mul(vec4(cameraPosition, 1))
       .xyz.toVar();
+    const modelViewMatrix = cameraViewMatrix.mul(modelWorldMatrix).toVar();
     const viewVectorLocal = endPosLocal.sub(startPosLocal).toVar();
     const rayDirLocal = viewVectorLocal.normalize().toVar();
     const maxDistance = viewVectorLocal.length().toVar();
@@ -148,21 +150,11 @@ export default class SafeVolumetricLightingModel extends LightingModel {
     const segmentLength = float(0.0).toVar();
     const stepSize = float(0.0).toVar();
     const stepCount = max(float(steps), 1.0).toVar();
-    const stepRatio = float(REFERENCE_STEPS).div(stepCount).toVar();
     const stepCompensation = float(1.0).toVar();
     const distTravelled = float(0.0).toVar();
     const transmittance = vec3(1).toVar();
     raymarchLightNode.assign(vec3(0));
     raymarchOpacityNode.assign(0.0);
-
-    If(stepRatio.greaterThan(1.0), () => {
-      stepCompensation.assign(
-        min(
-          float(MAX_STEP_COMPENSATION),
-          stepRatio.pow(float(STEP_COMPENSATION_EXPONENT)),
-        ),
-      );
-    });
 
     If(discriminant.greaterThan(0.0), () => {
       const intersectionRoot = sqrt(discriminant).toVar();
@@ -180,7 +172,23 @@ export default class SafeVolumetricLightingModel extends LightingModel {
 
       If(exitDistance.greaterThan(entryDistance), () => {
         segmentLength.assign(exitDistance.sub(entryDistance));
-        stepSize.assign(segmentLength.div(stepCount));
+        const diameter = radiusNode.mul(2.0);
+        const stepsPerUnit = stepCount.div(max(diameter, float(1e-4)));
+        const effectiveSteps = clamp(
+          segmentLength.mul(stepsPerUnit),
+          float(MIN_ADAPTIVE_STEPS),
+          stepCount,
+        ).toVar();
+        stepSize.assign(segmentLength.div(max(effectiveSteps, float(1.0))));
+        const stepRatio = float(REFERENCE_STEPS).div(effectiveSteps).toVar();
+        If(stepRatio.greaterThan(1.0), () => {
+          stepCompensation.assign(
+            min(
+              float(MAX_STEP_COMPENSATION),
+              stepRatio.pow(float(STEP_COMPENSATION_EXPONENT)),
+            ),
+          );
+        });
         distTravelled.assign(entryDistance);
 
         if (material.offsetNode) {
@@ -204,8 +212,8 @@ export default class SafeVolumetricLightingModel extends LightingModel {
           const positionRay = modelWorldMatrix
             .mul(vec4(positionRayLocal, 1))
             .xyz.toVar();
-          const positionViewRay = cameraViewMatrix.mul(
-            vec4(positionRay, 1),
+          const positionViewRay = modelViewMatrix.mul(
+            vec4(positionRayLocal, 1),
           ).xyz;
 
           if (material.depthNode !== null) {
@@ -275,6 +283,9 @@ export default class SafeVolumetricLightingModel extends LightingModel {
             },
           );
           distTravelled.addAssign(stepSize);
+          If(distTravelled.greaterThanEqual(exitDistance), () => {
+            Break();
+          });
         });
 
         const visibility = transmittance.saturate().oneMinus().toVar();

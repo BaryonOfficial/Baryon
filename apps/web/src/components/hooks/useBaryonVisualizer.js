@@ -106,9 +106,6 @@ export function useBaryonVisualizer({
 
     audio.attach(camera);
     gl.setClearColor(new THREE.Color(0x000000), 0);
-    if (gl.shadowMap) {
-      gl.shadowMap.enabled = true;
-    }
 
     audio.setAudioEndedCallback(() => {
       setIsPlaying(false);

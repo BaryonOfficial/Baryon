@@ -1,4 +1,5 @@
 export const STEP_REFERENCE = 96;
+export const MIN_ADAPTIVE_STEPS = 16;
 export const LOW_STEP_BLOOM_GUARD_START = 64;
 export const LOW_STEP_BLOOM_GUARD_RANGE = 48;
 export const MAX_STEP_COMPENSATION = 1.08;

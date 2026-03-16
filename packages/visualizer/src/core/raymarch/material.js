@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { VolumeNodeMaterial } from "three/webgpu";
 import {
   Fn,
+  If,
   Loop,
   abs,
   clamp,
@@ -119,23 +120,24 @@ function accumulateLayer({
   colorSum,
   colorWeight,
 }) {
+  const piInvRadius = pi.mul(invRadius);
   Loop(capacity, ({ i }) => {
     const slot = buffer.element(i);
     const amplitude = slot.w.mul(weight);
     const u = slot.x;
     const v = slot.y;
     const w = slot.z;
-    const sx = sin(u.mul(pi).mul(localPosition.x).mul(invRadius));
-    const sy = sin(v.mul(pi).mul(localPosition.y).mul(invRadius));
-    const sz = sin(w.mul(pi).mul(localPosition.z).mul(invRadius));
-    const gx = cos(u.mul(pi).mul(localPosition.x).mul(invRadius)).mul(
-      u.mul(pi).mul(invRadius),
+    const sx = sin(u.mul(piInvRadius).mul(localPosition.x));
+    const sy = sin(v.mul(piInvRadius).mul(localPosition.y));
+    const sz = sin(w.mul(piInvRadius).mul(localPosition.z));
+    const gx = cos(u.mul(piInvRadius).mul(localPosition.x)).mul(
+      u.mul(piInvRadius),
     );
-    const gy = cos(v.mul(pi).mul(localPosition.y).mul(invRadius)).mul(
-      v.mul(pi).mul(invRadius),
+    const gy = cos(v.mul(piInvRadius).mul(localPosition.y)).mul(
+      v.mul(piInvRadius),
     );
-    const gz = cos(w.mul(pi).mul(localPosition.z).mul(invRadius)).mul(
-      w.mul(pi).mul(invRadius),
+    const gz = cos(w.mul(piInvRadius).mul(localPosition.z)).mul(
+      w.mul(piInvRadius),
     );
     const localShape = sx.mul(sy).mul(sz);
     field.addAssign(amplitude.mul(localShape));
@@ -174,8 +176,7 @@ function createScatteringNode({
     uColor,
     uSurfaceColor,
     uChromesthesiaMix,
-    uDensityGain,
-    uAbsorption,
+    uDensityAbsorption,
     uContourSharpness,
     uRimBloomBias,
     uRimCompression,
@@ -378,8 +379,7 @@ function createScatteringNode({
         rolledBeamDensity
           .add(bodyDensity.mul(float(BODY_DENSITY_MIX)))
           .mul(edgeFade)
-          .mul(uDensityGain)
-          .mul(uAbsorption)
+          .mul(uDensityAbsorption)
           .mul(densityMod)
           .mul(activeMask),
         float(0.0),
@@ -501,36 +501,6 @@ function createScatteringNode({
         vec3(1.0),
         holographicEmissionLift.mul(float(0.45)),
       );
-      const chromesthesiaNeutralColor = mix(
-        vec3(0.72),
-        vec3(1.0),
-        spectralColorBias,
-      );
-      const chromesthesiaBaseColor = mix(
-        chromesthesiaNeutralColor,
-        spectralColor,
-        chromesthesiaWeight,
-      );
-      const chromesthesiaContourColor = mix(
-        chromesthesiaBaseColor.mul(float(0.92)),
-        chromesthesiaBaseColor,
-        contourAccent,
-      );
-      const chromesthesiaLaserColor = mix(
-        chromesthesiaContourColor,
-        vec3(1.0),
-        hotCoreMix.mul(float(0.68)),
-      );
-      const chromesthesiaHolographicColor = mix(
-        chromesthesiaLaserColor,
-        holographicAccentColor,
-        holographicColorMix,
-      );
-      const chromesthesiaHolographicLaserColor = mix(
-        chromesthesiaHolographicColor,
-        vec3(1.0),
-        holographicEmissionLift.mul(float(0.4)),
-      );
       const detailPresence = smoothstep(float(0.0), float(1.0), detailCount);
       const backbonePresence = smoothstep(
         float(0.0),
@@ -545,16 +515,51 @@ function createScatteringNode({
         staticHolographicLaserColor,
         activityAccent,
       );
-      const chromesthesiaVolumeColor = mix(
-        chromesthesiaHolographicLaserColor.mul(float(0.9)),
-        chromesthesiaHolographicLaserColor,
-        activityAccent,
-      );
-      const volumeColor = mix(
-        staticVolumeColor,
-        chromesthesiaVolumeColor,
-        chromesthesiaEnabled,
-      );
+      const volumeColor = staticVolumeColor.toVar();
+      If(chromesthesiaEnabled.greaterThan(0.5), () => {
+        const chromesthesiaNeutralColor = mix(
+          vec3(0.72),
+          vec3(1.0),
+          spectralColorBias,
+        );
+        const chromesthesiaBaseColor = mix(
+          chromesthesiaNeutralColor,
+          spectralColor,
+          chromesthesiaWeight,
+        );
+        const chromesthesiaContourColor = mix(
+          chromesthesiaBaseColor.mul(float(0.92)),
+          chromesthesiaBaseColor,
+          contourAccent,
+        );
+        const chromesthesiaLaserColor = mix(
+          chromesthesiaContourColor,
+          vec3(1.0),
+          hotCoreMix.mul(float(0.68)),
+        );
+        const chromesthesiaHolographicColor = mix(
+          chromesthesiaLaserColor,
+          holographicAccentColor,
+          holographicColorMix,
+        );
+        const chromesthesiaHolographicLaserColor = mix(
+          chromesthesiaHolographicColor,
+          vec3(1.0),
+          holographicEmissionLift.mul(float(0.4)),
+        );
+        const chromesthesiaVolumeColor = mix(
+          chromesthesiaHolographicLaserColor.mul(float(0.9)),
+          chromesthesiaHolographicLaserColor,
+          activityAccent,
+        );
+        volumeColor.assign(
+          mix(
+            staticVolumeColor,
+            chromesthesiaVolumeColor,
+            chromesthesiaEnabled,
+          ),
+        );
+      });
 
       return volumeColor.mul(stabilizedDensity);
     },
@@ -628,7 +633,6 @@ export function createRaymarchVolumeMesh({
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.frustumCulled = false;
-  mesh.receiveShadow = true;
 
   return mesh;
 }

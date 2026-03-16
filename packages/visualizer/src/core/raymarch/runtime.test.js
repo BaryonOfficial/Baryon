@@ -48,6 +48,7 @@ function createRuntimeState() {
       uBandEnergies: { value: new THREE.Vector4() },
       uDensityGain: { value: 2.8 },
       uAbsorption: { value: 1.8 },
+      uDensityAbsorption: { value: 2.8 * 1.8 },
       uOpacityGain: { value: 1.05 },
       uContourSharpness: { value: 6.6 },
       uRimBloomBias: { value: 0.5 },
