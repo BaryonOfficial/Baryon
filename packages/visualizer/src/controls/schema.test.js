@@ -18,43 +18,52 @@ import {
 import { CONTROL_RUNTIME_COVERAGE } from "./runtime.js";
 
 const EXPECTED_CONTROL_KEYS = [
+  // Mic
   "echoCancellation",
   "noiseSuppression",
   "autoGainControl",
-  "bloomEnabled",
-  "bloomStrength",
-  "bloomRadius",
-  "bloomThreshold",
-  "performanceHudEnabled",
-  "bloomResponseBias",
-  "backgroundColor",
-  "outputMode",
-  "outputBackgroundColor",
-  "visualizationMethod",
-  "volumeColor",
-  "surfaceColor",
-  "colorMode",
-  "chromesthesiaMix",
-  "rotationMode",
-  "rotationSpeed",
-  "reactivity",
+  // Shape
   "zeroPointPrecision",
   "structureMin",
   "structureMax",
-  "raymarchSteps",
   "densityGain",
   "absorption",
   "opacityGain",
   "contourSharpness",
-  "rimBloomBias",
-  "rimCompression",
+  "raymarchSteps",
+  // Color
+  "volumeColor",
+  "surfaceColor",
+  "colorMode",
+  "chromesthesiaMix",
   "holographicIntensity",
   "holographicShift",
   "holographicFresnelPower",
-  "motionAmount",
-  "structurePersistence",
+  // Logo
   "idleLogoIntensity",
   "idleLogoSize",
+  // Motion
+  "rotationMode",
+  "rotationSpeed",
+  "reactivity",
+  "motionAmount",
+  "structurePersistence",
+  // Display
+  "bloomEnabled",
+  "bloomStrength",
+  "bloomRadius",
+  "bloomThreshold",
+  "backgroundColor",
+  "outputMode",
+  "outputBackgroundColor",
+  // PresetsArea (rendered inline in Presets, but defined here in file order)
+  "performanceHudEnabled",
+  // Display (continued)
+  "visualizationMethod",
+  // Diagnostics
+  "bloomResponseBias",
+  "rimBloomBias",
+  "rimCompression",
   "auditEnabled",
   "freezeModeSlots",
   "forceWebGLFallbackTest",
@@ -93,9 +102,9 @@ describe("control schema", () => {
     expect(state.holographicIntensity).toBe(0.45);
     expect(state.holographicShift).toBe(0.35);
     expect(state.holographicFresnelPower).toBe(3.2);
-    expect(state.bloomStrength).toBe(0.1);
-    expect(state.bloomRadius).toBe(0.04);
-    expect(state.bloomThreshold).toBe(0.46);
+    expect(state.bloomStrength).toBe(0.75);
+    expect(state.bloomRadius).toBe(0.16);
+    expect(state.bloomThreshold).toBe(0.64);
     expect(state.performanceHudEnabled).toBe(
       RENDER_DEFAULTS.performanceHudEnabled,
     );
@@ -162,70 +171,27 @@ describe("control schema", () => {
     const methodControls = getControlsForMethod(DEFAULT_VISUALIZATION_METHOD);
 
     expect(DEFAULT_VISUALIZATION_METHOD).toBe(VISUALIZATION_METHODS.raymarch);
-    expect(methodControls.map((definition) => definition.key)).toEqual([
-      "echoCancellation",
-      "noiseSuppression",
-      "autoGainControl",
-      "bloomEnabled",
-      "bloomStrength",
-      "bloomRadius",
-      "bloomThreshold",
-      "performanceHudEnabled",
-      "bloomResponseBias",
-      "backgroundColor",
-      "outputMode",
-      "outputBackgroundColor",
-      "visualizationMethod",
-      "volumeColor",
-      "surfaceColor",
-      "colorMode",
-      "chromesthesiaMix",
-      "rotationMode",
-      "rotationSpeed",
-      "reactivity",
-      "zeroPointPrecision",
-      "structureMin",
-      "structureMax",
-      "raymarchSteps",
-      "densityGain",
-      "absorption",
-      "opacityGain",
-      "contourSharpness",
-      "rimBloomBias",
-      "rimCompression",
-      "holographicIntensity",
-      "holographicShift",
-      "holographicFresnelPower",
-      "motionAmount",
-      "structurePersistence",
-      "idleLogoIntensity",
-      "idleLogoSize",
-      "auditEnabled",
-      "freezeModeSlots",
-      "forceWebGLFallbackTest",
-      "lowLoadPlaybackDiagnostics",
-      "injectTestTone",
-      "testToneHz",
-      "testToneAmplitude",
-      "logEveryFrames",
-    ]);
+    expect(methodControls.map((definition) => definition.key)).toEqual(
+      EXPECTED_CONTROL_KEYS,
+    );
   });
 
   it("orders pane folders by user-facing groups", () => {
     expect(getControlFolders(DEFAULT_VISUALIZATION_METHOD)).toEqual([
-      "Mic Processing",
-      "Field",
-      "Look",
+      "Mic",
+      "Shape",
+      "Color",
+      "Logo",
       "Motion",
-      "Advanced Field",
-      "Advanced Look",
+      "Display",
+      "PresetsArea",
       "Diagnostics",
     ]);
   });
 
   it("assigns controls to the intended pane groups", () => {
     expect(
-      getControlsForFolder("Field", DEFAULT_VISUALIZATION_METHOD).map(
+      getControlsForFolder("Shape", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
     ).toEqual([
@@ -236,9 +202,28 @@ describe("control schema", () => {
       "absorption",
       "opacityGain",
       "contourSharpness",
+      "raymarchSteps",
     ]);
     expect(
-      getControlsForFolder("Look", DEFAULT_VISUALIZATION_METHOD).map(
+      getControlsForFolder("Color", DEFAULT_VISUALIZATION_METHOD).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual([
+      "volumeColor",
+      "surfaceColor",
+      "colorMode",
+      "chromesthesiaMix",
+      "holographicIntensity",
+      "holographicShift",
+      "holographicFresnelPower",
+    ]);
+    expect(
+      getControlsForFolder("Logo", DEFAULT_VISUALIZATION_METHOD).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual(["idleLogoIntensity", "idleLogoSize"]);
+    expect(
+      getControlsForFolder("Display", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
     ).toEqual([
@@ -246,18 +231,16 @@ describe("control schema", () => {
       "bloomStrength",
       "bloomRadius",
       "bloomThreshold",
-      "performanceHudEnabled",
       "backgroundColor",
       "outputMode",
       "outputBackgroundColor",
       "visualizationMethod",
-      "volumeColor",
-      "surfaceColor",
-      "colorMode",
-      "chromesthesiaMix",
-      "idleLogoIntensity",
-      "idleLogoSize",
     ]);
+    expect(
+      getControlsForFolder("PresetsArea", DEFAULT_VISUALIZATION_METHOD).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual(["performanceHudEnabled"]);
     expect(
       getControlsForFolder("Motion", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
@@ -304,15 +287,17 @@ describe("control schema", () => {
     expect(cymatics2dControls).toContain("densityGain");
     expect(cymatics2dControls).toContain("structurePersistence");
     expect(getControlFolders(VISUALIZATION_METHODS.cymatics2d)).toEqual([
-      "Mic Processing",
-      "Field",
-      "Look",
+      "Mic",
+      "Shape",
+      "Color",
+      "Logo",
       "Motion",
-      "Advanced Look",
+      "Display",
+      "PresetsArea",
       "Diagnostics",
     ]);
     expect(
-      getControlsForFolder("Field", VISUALIZATION_METHODS.cymatics2d).map(
+      getControlsForFolder("Shape", VISUALIZATION_METHODS.cymatics2d).map(
         (definition) => definition.key,
       ),
     ).toEqual([
@@ -324,7 +309,17 @@ describe("control schema", () => {
       "contourSharpness",
     ]);
     expect(
-      getControlsForFolder("Look", VISUALIZATION_METHODS.cymatics2d).map(
+      getControlsForFolder("Color", VISUALIZATION_METHODS.cymatics2d).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual(["volumeColor", "surfaceColor", "colorMode", "chromesthesiaMix"]);
+    expect(
+      getControlsForFolder("Logo", VISUALIZATION_METHODS.cymatics2d).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual(["idleLogoIntensity", "idleLogoSize"]);
+    expect(
+      getControlsForFolder("Display", VISUALIZATION_METHODS.cymatics2d).map(
         (definition) => definition.key,
       ),
     ).toEqual([
@@ -332,18 +327,16 @@ describe("control schema", () => {
       "bloomStrength",
       "bloomRadius",
       "bloomThreshold",
-      "performanceHudEnabled",
       "backgroundColor",
       "outputMode",
       "outputBackgroundColor",
       "visualizationMethod",
-      "volumeColor",
-      "surfaceColor",
-      "colorMode",
-      "chromesthesiaMix",
-      "idleLogoIntensity",
-      "idleLogoSize",
     ]);
+    expect(
+      getControlsForFolder("PresetsArea", VISUALIZATION_METHODS.cymatics2d).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual(["performanceHudEnabled"]);
     expect(
       getControlsForFolder("Motion", VISUALIZATION_METHODS.cymatics2d).map(
         (definition) => definition.key,

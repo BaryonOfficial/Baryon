@@ -3,6 +3,9 @@ import { resolveAdvancedControlsHelpPosition } from "./advancedControlsHelpPosit
 
 const CLOSE_HELP_DELAY_MS = 110;
 
+// Controls rendered inline inside the Presets section rather than in a folder
+const PRESETS_AREA_GROUP = "PresetsArea";
+
 const CSS = `
 .baryon-controls-sidebar {
   position: fixed;
@@ -179,6 +182,17 @@ const CSS = `
 
 .baryon-controls-text-input::placeholder {
   color: rgba(255, 255, 255, 0.34);
+}
+
+.baryon-controls-presets-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.28rem 0.62rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 0.78rem;
 }
 
 .baryon-controls-group-toggle {
@@ -377,11 +391,35 @@ const CSS = `
   accent-color: #7aaeff;
 }
 
-.baryon-controls-value {
-  min-width: 3.2rem;
-  text-align: right;
+.baryon-controls-number-input {
+  width: 3.5rem;
+  min-width: 3.5rem;
+  padding: 0.18rem 0.32rem;
+  border-radius: 0.36rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+  font: inherit;
   font-size: 0.62rem;
-  color: rgba(255, 255, 255, 0.66);
+  text-align: right;
+  box-sizing: border-box;
+}
+
+.baryon-controls-number-input::-webkit-inner-spin-button,
+.baryon-controls-number-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.baryon-controls-number-input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.baryon-controls-number-input:focus {
+  outline: none;
+  border-color: rgba(122, 174, 255, 0.42);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .baryon-controls-color-row {
@@ -416,18 +454,6 @@ const CSS = `
   }
 }
 `;
-
-function formatControlValue(definition, value) {
-  if (typeof value === "number") {
-    const step = definition.binding?.step;
-    if (Number.isInteger(step)) {
-      return String(value);
-    }
-    return value.toFixed(step && step < 1 ? 2 : 0);
-  }
-
-  return String(value);
-}
 
 function HelpIcon() {
   return (
@@ -477,6 +503,76 @@ function ControlHelpTrigger({
     >
       <HelpIcon />
     </button>
+  );
+}
+
+/**
+ * Editable number input paired with a range slider.
+ * Maintains a local draft so the user can type freely (e.g. "0.") without
+ * the value snapping back mid-edit; commits and clamps on blur.
+ */
+function SliderWithNumberInput({ controlId, definition, value, onChange }) {
+  const binding = definition.binding ?? {};
+  const min = binding.min ?? 0;
+  const max = binding.max ?? 100;
+  const step = binding.step ?? 1;
+
+  // Local draft state lets the user type partial values without interruption
+  const [draft, setDraft] = useState(null);
+
+  // When the slider (or an external update) changes the committed value,
+  // discard any stale draft so the field shows the new value
+  const committedValue = Number(value);
+  const displayValue = draft ?? String(committedValue);
+
+  function commitDraft(rawString) {
+    setDraft(null);
+    const parsed = parseFloat(rawString);
+    if (!isNaN(parsed)) {
+      onChange(Math.min(max, Math.max(min, parsed)));
+    }
+  }
+
+  return (
+    <span className="baryon-controls-slider-row">
+      <input
+        aria-hidden="true"
+        className="baryon-controls-slider"
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={committedValue}
+        onChange={(event) => {
+          setDraft(null);
+          onChange(Number(event.target.value));
+        }}
+      />
+      <input
+        id={controlId}
+        aria-label={definition.label}
+        className="baryon-controls-number-input"
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={displayValue}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          const parsed = parseFloat(event.target.value);
+          if (!isNaN(parsed)) {
+            onChange(Math.min(max, Math.max(min, parsed)));
+          }
+        }}
+        onBlur={(event) => commitDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            commitDraft(event.currentTarget.value);
+            event.currentTarget.blur();
+          }
+        }}
+      />
+    </span>
   );
 }
 
@@ -595,22 +691,12 @@ function ControlField({
           </label>
           {helpTrigger}
         </div>
-        <span className="baryon-controls-slider-row">
-          <input
-            id={controlId}
-            aria-label={definition.label}
-            className="baryon-controls-slider"
-            type="range"
-            min={binding.min ?? 0}
-            max={binding.max ?? 100}
-            step={binding.step ?? 1}
-            value={Number(value)}
-            onChange={(event) => onChange(Number(event.target.value))}
-          />
-          <span className="baryon-controls-value">
-            {formatControlValue(definition, Number(value))}
-          </span>
-        </span>
+        <SliderWithNumberInput
+          controlId={controlId}
+          definition={definition}
+          value={value}
+          onChange={onChange}
+        />
       </div>
     );
   }
@@ -720,6 +806,15 @@ export default function AdvancedControlsSidebar({
   );
   const [activeHelpKey, setActiveHelpKey] = useState("");
   const [activeHelpPosition, setActiveHelpPosition] = useState(null);
+
+  // Separate controls that live in the Presets section from the folder list
+  const presetsAreaGroups = controlGroups.filter(
+    (g) => g.title === PRESETS_AREA_GROUP,
+  );
+  const presetsAreaControls = presetsAreaGroups.flatMap((g) => g.controls);
+  const folderGroups = controlGroups.filter(
+    (g) => g.title !== PRESETS_AREA_GROUP,
+  );
 
   const helpDefinitions = new Map();
   for (const group of controlGroups) {
@@ -904,6 +999,24 @@ export default function AdvancedControlsSidebar({
     [clearPendingHelpClose],
   );
 
+  const helpEventHandlers = {
+    onHelpPointerEnter: (key) => {
+      if (hasHoverSupport) openHelp(key);
+    },
+    onHelpPointerLeave: () => {
+      if (hasHoverSupport) scheduleHelpClose();
+    },
+    onHelpFocus: (key) => openHelp(key),
+    onHelpBlur: () => scheduleHelpClose(),
+    onHelpClick: (key) => {
+      if (hasHoverSupport) {
+        openHelp(key);
+        return;
+      }
+      toggleHelp(key);
+    },
+  };
+
   return (
     <>
       <style>{CSS}</style>
@@ -982,7 +1095,34 @@ export default function AdvancedControlsSidebar({
               </button>
             </section>
 
-            {controlGroups.map((group) => (
+            {presetsAreaControls.map((definition) => (
+              <div
+                key={definition.key}
+                className="baryon-controls-presets-toggle-row"
+              >
+                <label
+                  className="baryon-controls-card-label"
+                  htmlFor={`presets-area-${definition.key}`}
+                >
+                  {definition.label}
+                </label>
+                <span className="baryon-controls-toggle">
+                  <input
+                    id={`presets-area-${definition.key}`}
+                    type="checkbox"
+                    checked={Boolean(controlsState[definition.key])}
+                    onChange={(event) =>
+                      updateControl(definition.key, event.target.checked)
+                    }
+                  />
+                  <span className="baryon-controls-toggle-track">
+                    <span className="baryon-controls-toggle-thumb" />
+                  </span>
+                </span>
+              </div>
+            ))}
+
+            {folderGroups.map((group) => (
               <ControlGroup
                 key={group.title}
                 group={group}
@@ -990,29 +1130,7 @@ export default function AdvancedControlsSidebar({
                 onChange={updateControl}
                 activeHelpKey={activeHelpKey}
                 registerHelpTrigger={registerHelpTrigger}
-                onHelpPointerEnter={(key) => {
-                  if (hasHoverSupport) {
-                    openHelp(key);
-                  }
-                }}
-                onHelpPointerLeave={() => {
-                  if (hasHoverSupport) {
-                    scheduleHelpClose();
-                  }
-                }}
-                onHelpFocus={(key) => {
-                  openHelp(key);
-                }}
-                onHelpBlur={() => {
-                  scheduleHelpClose();
-                }}
-                onHelpClick={(key) => {
-                  if (hasHoverSupport) {
-                    openHelp(key);
-                    return;
-                  }
-                  toggleHelp(key);
-                }}
+                {...helpEventHandlers}
               />
             ))}
           </div>
