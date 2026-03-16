@@ -28,6 +28,7 @@ const EXPECTED_CONTROL_KEYS = [
   "backgroundColor",
   "outputMode",
   "outputBackgroundColor",
+  "visualizationMethod",
   "volumeColor",
   "surfaceColor",
   "colorMode",
@@ -143,6 +144,7 @@ describe("control schema", () => {
       "backgroundColor",
       "outputMode",
       "outputBackgroundColor",
+      "visualizationMethod",
       "volumeColor",
       "surfaceColor",
       "colorMode",
@@ -213,6 +215,7 @@ describe("control schema", () => {
       "backgroundColor",
       "outputMode",
       "outputBackgroundColor",
+      "visualizationMethod",
       "volumeColor",
       "surfaceColor",
       "colorMode",
@@ -242,6 +245,83 @@ describe("control schema", () => {
     for (const key of liveKeys) {
       expect(coveredKeys).toContain(key);
     }
+  });
+
+  it("filters out 3d-only controls from the fullscreen 2d method", () => {
+    const cymatics2dControls = getControlsForMethod(
+      VISUALIZATION_METHODS.cymatics2d,
+    ).map((definition) => definition.key);
+
+    expect(getControlsForMethod(VISUALIZATION_METHODS.cymatics2d)).not.toEqual(
+      getControlsForMethod(VISUALIZATION_METHODS.raymarch),
+    );
+    expect(cymatics2dControls).not.toContain("rotationMode");
+    expect(cymatics2dControls).not.toContain("rotationSpeed");
+    expect(cymatics2dControls).not.toContain("raymarchSteps");
+    expect(cymatics2dControls).not.toContain("absorption");
+    expect(cymatics2dControls).not.toContain("rimBloomBias");
+    expect(cymatics2dControls).not.toContain("rimCompression");
+    expect(cymatics2dControls).toContain("visualizationMethod");
+    expect(cymatics2dControls).toContain("bloomThreshold");
+    expect(cymatics2dControls).toContain("densityGain");
+    expect(cymatics2dControls).toContain("structurePersistence");
+    expect(getControlFolders(VISUALIZATION_METHODS.cymatics2d)).toEqual([
+      "Mic Processing",
+      "Field",
+      "Look",
+      "Motion",
+      "Advanced Look",
+      "Diagnostics",
+    ]);
+    expect(
+      getControlsForFolder("Field", VISUALIZATION_METHODS.cymatics2d).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual([
+      "zeroPointPrecision",
+      "structureMin",
+      "structureMax",
+      "densityGain",
+      "opacityGain",
+      "contourSharpness",
+    ]);
+    expect(
+      getControlsForFolder("Look", VISUALIZATION_METHODS.cymatics2d).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual([
+      "bloomEnabled",
+      "bloomStrength",
+      "bloomRadius",
+      "bloomThreshold",
+      "backgroundColor",
+      "outputMode",
+      "outputBackgroundColor",
+      "visualizationMethod",
+      "volumeColor",
+      "surfaceColor",
+      "colorMode",
+      "chromesthesiaMix",
+      "idleLogoIntensity",
+      "idleLogoSize",
+    ]);
+    expect(
+      getControlsForFolder("Motion", VISUALIZATION_METHODS.cymatics2d).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual(["reactivity", "motionAmount", "structurePersistence"]);
+  });
+
+  it("keeps 3d-only debug controls scoped to the raymarch method", () => {
+    const rimBloomBias = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "rimBloomBias",
+    );
+    const rimCompression = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "rimCompression",
+    );
+
+    expect(rimBloomBias?.methods).toEqual([VISUALIZATION_METHODS.raymarch]);
+    expect(rimCompression?.methods).toEqual([VISUALIZATION_METHODS.raymarch]);
   });
 
   it("fails audit when a live control lacks runtime coverage", () => {

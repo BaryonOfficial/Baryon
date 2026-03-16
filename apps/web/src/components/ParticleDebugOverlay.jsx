@@ -8,7 +8,7 @@ function formatNumber(value, digits = 3) {
 
 function selectDebugSnapshot(snapshot) {
   if (!snapshot) return null;
-  return snapshot.raymarchDebug ?? snapshot;
+  return snapshot.raymarchDebug ?? snapshot.cymatics2dDebug ?? snapshot;
 }
 
 export default function ParticleDebugOverlay() {
@@ -70,7 +70,7 @@ export default function ParticleDebugOverlay() {
       }}
     >
       <div style={{ fontWeight: 700, marginBottom: "0.45rem" }}>
-        Raymarch Debug
+        Visualization Debug
       </div>
       <div>Method: {method}</div>
       <div>Field: {debugSnapshot.fieldState}</div>

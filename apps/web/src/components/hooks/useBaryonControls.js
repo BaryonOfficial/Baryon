@@ -4,6 +4,7 @@ import {
   CONTROL_DEFINITIONS,
   createControlState,
 } from "@baryon/visualizer/controls/schema";
+import { DEFAULT_VISUALIZATION_METHOD } from "@baryon/visualizer/visualization/types";
 import { DEVTOOLS_ENABLED } from "../../devtools/config.js";
 import {
   markBaryonTestControlsReady,
@@ -65,6 +66,7 @@ export function useBaryonControls() {
   const persistScheduler = persistSchedulerRef.current;
   const controlGroups = getVisibleControlGroups({
     devtoolsEnabled: DEVTOOLS_ENABLED,
+    method: controlsState.visualizationMethod ?? DEFAULT_VISUALIZATION_METHOD,
   });
 
   const syncControlState = useCallback(

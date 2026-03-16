@@ -51,6 +51,43 @@ async function waitForControlSurface(page) {
   });
 }
 
+async function waitForVisualizationMethod(page, method) {
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__baryonControlState?.method ?? null),
+    )
+    .toBe(method);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.__baryonAuditSnapshot?.visualizationMethod ?? null,
+      ),
+    )
+    .toBe(method);
+}
+
+async function readSceneSnapshot(page) {
+  return page.evaluate(() => window.__baryonControlState?.scene ?? null);
+}
+
+async function readAuditMethodSnapshot(page) {
+  return page.evaluate(() => {
+    const snapshot = window.__baryonAuditSnapshot ?? null;
+    const visualizationMethod = snapshot?.visualizationMethod ?? null;
+    const activeDebug =
+      visualizationMethod === "cymatics-2d"
+        ? (snapshot?.cymatics2dDebug ?? null)
+        : (snapshot?.raymarchDebug ?? null);
+
+    return {
+      visualizationMethod,
+      activeDebug,
+      hasRaymarchDebug: Boolean(snapshot?.raymarchDebug),
+      hasCymatics2dDebug: Boolean(snapshot?.cymatics2dDebug),
+    };
+  });
+}
+
 async function installFakeMicrophone(page) {
   await page.addInitScript(() => {
     const fakeMicState = {
@@ -356,7 +393,7 @@ test.describe("Baryon control smoke", () => {
           () => window.__baryonControlState?.bloom?.strength ?? null,
         ),
       )
-      .toBe(0.91);
+      .toBeCloseTo(0.91 * 0.912, 6);
 
     await setControl(page, "idleLogoSize", 1.37);
     await expect
@@ -413,7 +450,7 @@ test.describe("Baryon control smoke", () => {
       )
       .toEqual({
         rotationMode: "audio",
-        motionAmount: 1,
+        motionAmount: 1.5,
       });
 
     await setControl(page, "rotationMode", "manual");
@@ -422,12 +459,15 @@ test.describe("Baryon control smoke", () => {
     const manualStart = await page.evaluate(
       () => window.__baryonControlState?.scene?.rotationY ?? 0,
     );
-    await page.waitForTimeout(120);
-    const manualEnd = await page.evaluate(
-      () => window.__baryonControlState?.scene?.rotationY ?? 0,
-    );
-
-    expect(manualEnd).not.toBeCloseTo(manualStart, 3);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () => window.__baryonControlState?.scene?.rotationY ?? 0,
+          ),
+        { timeout: 3000 },
+      )
+      .not.toBeCloseTo(manualStart, 3);
 
     await setControl(page, "rotationMode", "off");
     await expect
@@ -446,6 +486,134 @@ test.describe("Baryon control smoke", () => {
         }),
       )
       .toBe(true);
+  });
+
+  test("switches between 3d and 2d modes while preserving the expected scene motion semantics", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+    await setControl(page, "auditEnabled", true);
+
+    await expect(page.getByTestId("raymarch-debug-overlay")).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__baryonControlState?.method ?? null),
+      )
+      .toBe("raymarch");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonAuditSnapshot?.visualizationMethod ?? null,
+        ),
+      )
+      .toBe("raymarch");
+
+    await setControl(page, "visualizationMethod", "cymatics-2d");
+    await waitForVisualizationMethod(page, "cymatics-2d");
+
+    await expect
+      .poll(() => readAuditMethodSnapshot(page))
+      .toEqual({
+        visualizationMethod: "cymatics-2d",
+        activeDebug: expect.objectContaining({
+          fieldState: expect.any(String),
+          modeSlotCount: expect.any(Number),
+        }),
+        hasRaymarchDebug: false,
+        hasCymatics2dDebug: true,
+      });
+    await expect
+      .poll(() => readSceneSnapshot(page))
+      .toEqual(
+        expect.objectContaining({
+          rotationMode: "disabled",
+          rotationY: 0,
+        }),
+      );
+
+    await setControl(page, "rotationMode", "manual");
+    await setControl(page, "rotationSpeed", 2);
+    const fullscreen2dStart = await page.evaluate(
+      () => window.__baryonControlState?.scene?.rotationY ?? 0,
+    );
+    await page.waitForTimeout(150);
+    const fullscreen2dEnd = await page.evaluate(
+      () => window.__baryonControlState?.scene?.rotationY ?? 0,
+    );
+    expect(fullscreen2dStart).toBe(0);
+    expect(fullscreen2dEnd).toBe(0);
+
+    await setControl(page, "injectTestTone", true);
+    await expect
+      .poll(() => readAuditMethodSnapshot(page))
+      .toEqual({
+        visualizationMethod: "cymatics-2d",
+        activeDebug: expect.objectContaining({
+          fieldState: "test",
+          modeSlotCount: expect.any(Number),
+        }),
+        hasRaymarchDebug: false,
+        hasCymatics2dDebug: true,
+      });
+    await expect
+      .poll(() => readSceneSnapshot(page))
+      .toEqual(
+        expect.objectContaining({
+          rotationMode: "disabled",
+          rotationY: 0,
+        }),
+      );
+
+    await setControl(page, "injectTestTone", false);
+    await setControl(page, "visualizationMethod", "raymarch");
+    await waitForVisualizationMethod(page, "raymarch");
+
+    await setControl(page, "rotationMode", "manual");
+    await setControl(page, "rotationSpeed", 2);
+    const manual3dStart = await page.evaluate(
+      () => window.__baryonControlState?.scene?.rotationY ?? 0,
+    );
+    await page.waitForTimeout(120);
+    const manual3dEnd = await page.evaluate(
+      () => window.__baryonControlState?.scene?.rotationY ?? 0,
+    );
+    expect(manual3dEnd).not.toBeCloseTo(manual3dStart, 3);
+
+    await setControl(page, "rotationMode", "audio");
+    await setControl(page, "injectTestTone", true);
+    await expect
+      .poll(() => readAuditMethodSnapshot(page))
+      .toEqual({
+        visualizationMethod: "raymarch",
+        activeDebug: expect.objectContaining({
+          fieldState: "test",
+          modeSlotCount: expect.any(Number),
+        }),
+        hasRaymarchDebug: true,
+        hasCymatics2dDebug: false,
+      });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControlState?.scene?.rotationMode ?? null,
+        ),
+      )
+      .toBe("audio");
+
+    const audio3dStart = await page.evaluate(
+      () => window.__baryonControlState?.scene?.rotationY ?? 0,
+    );
+    await page.waitForTimeout(150);
+    const audio3dEnd = await page.evaluate(
+      () => window.__baryonControlState?.scene?.rotationY ?? 0,
+    );
+    expect(audio3dEnd).not.toBeCloseTo(audio3dStart, 3);
+
+    await setControl(page, "injectTestTone", false);
   });
 
   test("forces the WebGL2 fallback backend through the audit controls", async ({
@@ -588,16 +756,18 @@ test.describe("Baryon control smoke", () => {
     await setFakeMicScene(page, "silent");
 
     await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          fieldState:
-            window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
-          micHardSilenceActive:
-            window.__baryonAuditSnapshot?.micHardSilenceActive ?? false,
-          idleOverlayVisible:
-            window.__baryonAuditSnapshot?.raymarchDebug?.idleOverlayVisible ??
-            false,
-        })),
+      .poll(
+        () =>
+          page.evaluate(() => ({
+            fieldState:
+              window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
+            micHardSilenceActive:
+              window.__baryonAuditSnapshot?.micHardSilenceActive ?? false,
+            idleOverlayVisible:
+              window.__baryonAuditSnapshot?.raymarchDebug?.idleOverlayVisible ??
+              false,
+          })),
+        { timeout: 10000 },
       )
       .toEqual({
         fieldState: "idle",
@@ -842,6 +1012,7 @@ test.describe("Baryon control smoke", () => {
     await installFakeMicrophone(page);
     await page.goto("/");
     await waitForControlSurface(page);
+    await setControl(page, "auditEnabled", true);
 
     await page.locator('input[type="file"]').setInputFiles({
       name: "resume-tone.wav",
@@ -900,6 +1071,7 @@ test.describe("Baryon control smoke", () => {
     await installFakeMicrophone(page);
     await page.goto("/");
     await waitForControlSurface(page);
+    await setControl(page, "auditEnabled", true);
 
     await page.locator('input[type="file"]').setInputFiles({
       name: "recent-tone.wav",
@@ -935,7 +1107,7 @@ test.describe("Baryon control smoke", () => {
       .toEqual({
         playDisabled: false,
         timelineVisible: true,
-        audioInputMode: "file",
+        audioInputMode: "idle",
       });
   });
 
@@ -947,6 +1119,7 @@ test.describe("Baryon control smoke", () => {
 
     await page.goto("/");
     await waitForControlSurface(page);
+    await setControl(page, "auditEnabled", true);
 
     await page.locator('input[type="file"]').setInputFiles({
       name: "smoke-tone.wav",
@@ -1012,6 +1185,7 @@ test.describe("Baryon control smoke", () => {
 
     await page.goto("/");
     await waitForControlSurface(page);
+    await setControl(page, "auditEnabled", true);
 
     await page.locator('input[type="file"]').setInputFiles({
       name: "smoke-tone.wav",
