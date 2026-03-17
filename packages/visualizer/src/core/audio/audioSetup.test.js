@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AUDIO_SLOT_CAPACITY } from "../../defaults.js";
 
 class MockAnalyserNode {
   constructor() {
@@ -263,6 +264,7 @@ describe("audio session", () => {
       isAudioLoaded: true,
       isPlaying: false,
       analysisSource: "idle",
+      capacity: AUDIO_SLOT_CAPACITY,
     });
 
     await session.playPauseAudio();

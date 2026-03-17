@@ -1,5 +1,14 @@
+const DEFAULT_BACKBONE_STACK_SLOTS = 8;
+const DEFAULT_DETAIL_STACK_SLOTS = 8;
+
+export const AUDIO_SLOT_CAPACITY =
+  DEFAULT_BACKBONE_STACK_SLOTS + DEFAULT_DETAIL_STACK_SLOTS;
+export const AUDIO_SIGNAL_NORMALIZATION_SLOTS = AUDIO_SLOT_CAPACITY;
+
 export const AUDIO_DEFAULTS = Object.freeze({
-  capacity: 8,
+  backboneStackSlots: DEFAULT_BACKBONE_STACK_SLOTS,
+  detailStackSlots: DEFAULT_DETAIL_STACK_SLOTS,
+  signalNormalizationSlots: AUDIO_SIGNAL_NORMALIZATION_SLOTS,
   echoCancellation: false,
   noiseSuppression: false,
   autoGainControl: false,
@@ -51,9 +60,9 @@ export const BEAT_DEFAULTS = Object.freeze({
 
 export const RAYMARCH_DEFAULTS = Object.freeze({
   raymarchSteps: 64,
-  densityGain: 2.2,
-  absorption: 2.55,
-  opacityGain: 1.24,
+  densityGain: 3.01,
+  absorption: 3.55,
+  opacityGain: 2.52,
   contourSharpness: 7.3,
   rimBloomBias: 0.34,
   rimCompression: 0.84,

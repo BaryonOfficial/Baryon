@@ -187,9 +187,53 @@ function createScatteringNode({
     uTransientEnergy,
     uSpectralCentroid,
     uSpectralFlux,
+    uStructureSignal,
+    uEnergySignal,
+    uChangeSignal,
+    uHarmonicity,
+    uBassSalience,
+    uTextureSpread,
+    uNovelty,
+    uBeatPulse,
+    uBeatPhase,
+    uRhythmicDensity,
+    uKeyTint,
+    uKeyTintStrength,
+    uKeyMode,
   } = uniforms;
   const pi = float(Math.PI);
   const invRadius = float(1.0).div(uRadius);
+
+  // Uniform-only expressions: hoist outside the Fn so they are loop-invariant
+  // at the TSL graph level and do not re-evaluate every raymarch step.
+  const dynamicEdgeFadeStart = float(EDGE_FADE_START).sub(
+    uEnergySignal.mul(0.06),
+  );
+  const dynamicInteriorMaskStart = float(INTERIOR_MASK_START).add(
+    uStructureSignal.mul(0.1),
+  );
+  // Beat phase decay: 1.0 on the beat, fades to 0 at ~2/3 of the beat period.
+  // Uniform-only — loop-invariant, hoisted outside the Fn.
+  const beatPhaseDecay = max(float(0.0), float(1.0).sub(uBeatPhase.mul(1.5)));
+  const hotCoreStartDynamic = float(HOT_CORE_START)
+    .sub(uBeatPulse.mul(0.12))
+    .sub(beatPhaseDecay.mul(0.07))
+    .add(uRhythmicDensity.mul(0.04));
+  const contourGainBase = uStructureSignal
+    .mul(0.3)
+    .add(uHarmonicity.mul(0.15))
+    .add(beatPhaseDecay.mul(0.18));
+  const dynamicHolographicIntensity = uHolographicIntensity
+    .mul(float(1.0).add(uTextureSpread.mul(0.35)))
+    .mul(float(1.0).add(beatPhaseDecay.mul(0.22)));
+  const dynamicHolographicShift = clamp(
+    uHolographicShift.add(uNovelty.mul(0.2)).sub(uKeyMode.mul(0.12)),
+    float(0.0),
+    float(1.0),
+  );
+  const spectralColorBiasHintOffset = uHarmonicity
+    .mul(0.12)
+    .sub(uChangeSignal.mul(0.08));
 
   return Fn(
     /**
@@ -201,12 +245,9 @@ function createScatteringNode({
         modelWorldMatrixInverse.mul(vec4(positionRay, 1.0)).xyz;
       const normalizedPosition = localPosition.div(uRadius);
       const radialDistance = length(normalizedPosition);
+      // High energy = tighter boundary (more solid); low energy = diffuse, ghostly
       const edgeFade = float(1.0).sub(
-        smoothstep(
-          float(EDGE_FADE_START),
-          float(EDGE_FADE_END),
-          radialDistance,
-        ),
+        smoothstep(dynamicEdgeFadeStart, float(EDGE_FADE_END), radialDistance),
       );
       const field = float(0.0).toVar();
       const gradX = float(0.0).toVar();
@@ -253,7 +294,11 @@ function createScatteringNode({
       const activeCount = float(uActiveModeCount);
       const backboneCount = float(uBackboneModeCount);
       const detailCount = float(uDetailModeCount);
-      const contourGain = float(1.0).add(uTransientEnergy.mul(0.25));
+      // Harmonic/complex audio = sharper, crisper nodal lines
+      // contourGainBase (structure + harmonicity terms) is pre-computed above the Fn
+      const contourGain = float(1.0)
+        .add(uTransientEnergy.mul(0.25))
+        .add(contourGainBase);
       const nodeBand = float(1.0).sub(
         smoothstep(float(0.0), uThreshold, fieldAbs),
       );
@@ -301,6 +346,10 @@ function createScatteringNode({
             .mul(rimBandBias)
             .mul(outerShellAccent),
         );
+      // Bass salience thickens the inner shell — bass-heavy music looks heavier
+      const bassShellBoost = uBassSalience
+        .mul(0.2)
+        .mul(float(1.0).sub(outerShellAccent));
       const shellWeight = mix(
         float(SHELL_WEIGHT_MIN),
         float(SHELL_WEIGHT_MAX),
@@ -309,21 +358,26 @@ function createScatteringNode({
           float(SHELL_WEIGHT_END),
           radialDistance,
         ),
-      ).mul(shellBandMod);
+      )
+        .mul(shellBandMod)
+        .mul(float(1.0).add(bassShellBoost));
       const contourCore = nodeBand.pow(uContourSharpness.mul(contourGain));
       const contourShape = mix(broadBand, contourCore, float(CONTOUR_BLEND));
       const activeMask = smoothstep(float(0.0), float(1.0), activeCount);
+      // Beat pulse drives a visible density surge through the volume
       const densityMod = float(1.0)
         .add(uTransientEnergy.mul(0.3))
-        .add(uSpectralFlux.mul(0.2));
+        .add(uSpectralFlux.mul(0.2))
+        .add(uBeatPulse.mul(0.35));
       const boundaryMask = smoothstep(
         float(RAYMARCH_BOUNDARY_START),
         float(RAYMARCH_BOUNDARY_END),
         radialDistance,
       );
+      // Complex harmonic content opens up the interior — more inner detail visible
       const interiorMask = float(1.0).sub(
         smoothstep(
-          float(INTERIOR_MASK_START),
+          dynamicInteriorMaskStart,
           float(INTERIOR_MASK_END),
           radialDistance,
         ),
@@ -335,9 +389,11 @@ function createScatteringNode({
         .mul(interiorMask)
         .mul(float(BODY_DENSITY_GAIN))
         .mul(float(1.0).sub(boundaryMask.mul(float(BODY_BOUNDARY_REDUCTION))));
+      // Beat pulse adds an emission flash — each hit brightens the beam layer
       const transientBoost = float(1.0)
         .add(uTransientEnergy.mul(float(BEAM_TRANSIENT_GAIN)))
-        .add(uSpectralFlux.mul(float(BEAM_SPECTRAL_GAIN)));
+        .add(uSpectralFlux.mul(float(BEAM_SPECTRAL_GAIN)))
+        .add(uBeatPulse.mul(0.5));
       const rimCompressionMix = clamp(
         boundaryMask
           .mul(uRimCompression)
@@ -397,10 +453,13 @@ function createScatteringNode({
         float(COLOR_BLEND_END),
         contourShape,
       );
+      // Harmonic content warms color; rapid change cools it
+      // spectralColorBiasHintOffset (harmonicity - changeSignal terms) is pre-computed above the Fn
       const spectralColorBias = clamp(
         contourMix
           .add(uSpectralCentroid.mul(0.25))
           .add(uTransientEnergy.mul(0.1))
+          .add(spectralColorBiasHintOffset)
           .mul(float(COLOR_BIAS_SCALE)),
         float(0.0),
         float(1.0),
@@ -426,8 +485,10 @@ function createScatteringNode({
         .mul(float(0.18))
         .add(boundaryMask.mul(float(BOUNDARY_CONTOUR_ACCENT_WEIGHT)))
         .add(highlightMask.mul(float(HIGHLIGHT_CONTOUR_ACCENT_WEIGHT)));
+      // Beat pulse briefly expands the bright hot core — "bloom from within" on hits
+      // hotCoreStartDynamic is pre-computed above the Fn
       const hotCoreMix = smoothstep(
-        float(HOT_CORE_START),
+        hotCoreStartDynamic,
         float(HOT_CORE_END),
         rolledBeamDensity
           .mul(contourMix.mul(float(0.14)).add(float(0.76)))
@@ -450,8 +511,10 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
+      // Rich timbres (high textureSpread) boost iridescence; novelty shifts the hue
+      // dynamicHolographicIntensity and dynamicHolographicShift pre-computed above the Fn
       const holographicFresnel = fresnelBase
-        .mul(uHolographicIntensity)
+        .mul(dynamicHolographicIntensity)
         .mul(structure)
         .mul(edgeFade);
       const holographicAccentColor = mix(
@@ -462,21 +525,21 @@ function createScatteringNode({
           float(HOLOGRAPHIC_TINT_BLUE),
         ),
         clamp(
-          float(0.25).add(uHolographicShift.mul(float(0.75))),
+          float(0.25).add(dynamicHolographicShift.mul(float(0.75))),
           float(0.0),
           float(1.0),
         ),
       );
       const holographicColorMix = clamp(
         holographicFresnel.mul(
-          float(0.35).add(uHolographicShift.mul(float(0.65))),
+          float(0.35).add(dynamicHolographicShift.mul(float(0.65))),
         ),
         float(0.0),
         float(1.0),
       );
       const holographicEmissionLift = clamp(
         holographicFresnel.mul(
-          float(0.12).add(uHolographicShift.mul(float(0.18))),
+          float(0.12).add(dynamicHolographicShift.mul(float(0.18))),
         ),
         float(0.0),
         float(1.0),
@@ -517,10 +580,11 @@ function createScatteringNode({
       );
       const volumeColor = staticVolumeColor.toVar();
       If(chromesthesiaEnabled.greaterThan(0.5), () => {
+        const neutralBase = mix(vec3(0.72), vec3(1.0), spectralColorBias);
         const chromesthesiaNeutralColor = mix(
-          vec3(0.72),
-          vec3(1.0),
-          spectralColorBias,
+          neutralBase,
+          uKeyTint,
+          uKeyTintStrength.mul(float(0.38)),
         );
         const chromesthesiaBaseColor = mix(
           chromesthesiaNeutralColor,

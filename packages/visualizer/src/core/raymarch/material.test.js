@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
+import { AUDIO_SLOT_CAPACITY } from "../../defaults.js";
 import { createRaymarchVolumeMesh } from "./material.js";
+import { createRaymarchUniforms } from "./uniforms.js";
 import { raymarchOpacityNode } from "./SafeVolumetricLightingModel.js";
+
+function makeMeshUniforms(overrides = {}) {
+  const base = createRaymarchUniforms({
+    radius: 3,
+    steps: 64,
+  });
+  return { ...base, ...overrides };
+}
 
 describe("raymarch volume material", () => {
   it("binds volumetric opacity to the material alpha path", () => {
@@ -11,12 +21,8 @@ describe("raymarch volume material", () => {
       detailModeBuffer: {},
       backboneColorBuffer: {},
       detailColorBuffer: {},
-      capacity: 8,
-      uniforms: {
-        uRaymarchSteps: { value: 64 },
-        uRadius: { value: 3 },
-        uOpacityGain: { value: 1.35 },
-      },
+      capacity: AUDIO_SLOT_CAPACITY,
+      uniforms: makeMeshUniforms(),
     });
 
     expect(mesh.geometry).toBeInstanceOf(THREE.BoxGeometry);
@@ -27,18 +33,14 @@ describe("raymarch volume material", () => {
   });
 
   it("keeps the raymarch material runtime bindings intact", () => {
-    const uniforms = {
-      uRaymarchSteps: { value: 64 },
-      uRadius: { value: 3 },
-      uOpacityGain: { value: 1.35 },
-    };
+    const uniforms = makeMeshUniforms();
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
       backboneModeBuffer: {},
       detailModeBuffer: {},
       backboneColorBuffer: {},
       detailColorBuffer: {},
-      capacity: 8,
+      capacity: AUDIO_SLOT_CAPACITY,
       uniforms,
     });
 

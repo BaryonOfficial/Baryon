@@ -2,7 +2,7 @@ const SOUND_SPEED = 340.0;
 const TOLERANCE_HZ = 1.0;
 const MAX_ITERATIONS = 24;
 const MAX_MODE = 24;
-const FAMILY_DIVERSITY_DISTANCE = 3;
+const FAMILY_DIVERSITY_DISTANCE = 4;
 
 function modalFrequencyFromMagnitude(magnitude, radius) {
   return (SOUND_SPEED * 0.5 * magnitude) / radius;

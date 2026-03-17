@@ -95,9 +95,9 @@ describe("control schema", () => {
     expect(state.structureMin).toBe(0.12);
     expect(state.structureMax).toBe(0.46);
     expect(state.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
-    expect(state.densityGain).toBe(2.2);
-    expect(state.absorption).toBe(2.55);
-    expect(state.opacityGain).toBe(1.24);
+    expect(state.densityGain).toBe(3.01);
+    expect(state.absorption).toBe(3.55);
+    expect(state.opacityGain).toBe(2.52);
     expect(state.contourSharpness).toBe(7.3);
     expect(state.holographicIntensity).toBe(0.45);
     expect(state.holographicShift).toBe(0.35);

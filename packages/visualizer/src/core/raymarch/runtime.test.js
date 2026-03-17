@@ -56,6 +56,21 @@ function createRuntimeState() {
       uHolographicIntensity: { value: 0.45 },
       uHolographicShift: { value: 0.35 },
       uHolographicFresnelPower: { value: 3.2 },
+      uStructureSignal: { value: 0 },
+      uEnergySignal: { value: 0 },
+      uChangeSignal: { value: 0 },
+      uPulseSignal: { value: 0 },
+      uHarmonicity: { value: 0 },
+      uBassSalience: { value: 0 },
+      uTextureSpread: { value: 0 },
+      uNovelty: { value: 0 },
+      uBeatPulse: { value: 0 },
+      uBeatPhase: { value: 0 },
+      uTempoNorm: { value: 0 },
+      uRhythmicDensity: { value: 0 },
+      uKeyTint: { value: { setHSL: () => {} } },
+      uKeyTintStrength: { value: 0 },
+      uKeyMode: { value: 0 },
     },
     visualRoot: {
       scale: {
@@ -84,6 +99,9 @@ function createRuntimeState() {
     baseContourSharpness: 6.6,
     responseEnvelope: 0,
     accentEnvelope: 0,
+    beatPulseEnvelope: 0,
+    keyHue: 0,
+    keyModeSmooth: 0,
     motionSignal: 0,
     scaleSignal: 0,
     bloomResponseSignal: 0,
@@ -569,5 +587,106 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.debugSnapshot.raymarchDebug.responseEnvelope,
     ).toBeLessThan(0.8);
+  });
+
+  it("uploads rhythmicDensity to uRhythmicDensity uniform", () => {
+    const runtimeState = createRuntimeState();
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        averageAmplitude: 24,
+        backboneSlots: new Float32Array([3, 4, 6, 0.5]),
+        detailSlots: new Float32Array(32),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array(4),
+        transientEnergy: 0,
+        spectralCentroid: 0.2,
+        spectralFlux: 0.1,
+        structureSignal: 0,
+        energySignal: 0,
+        changeSignal: 0,
+        pulseSignal: 0,
+        rhythmicDensity: 0.72,
+        debug: {},
+      },
+      1,
+      1 / 60,
+    );
+    expect(runtimeState.uniforms.uRhythmicDensity.value).toBeCloseTo(0.72);
+  });
+
+  it("treats missing rhythmicDensity as 0 without error", () => {
+    const runtimeState = createRuntimeState();
+    runtimeState.uniforms.uRhythmicDensity.value = 0.5;
+    expect(() =>
+      tickRaymarchRuntime(
+        runtimeState,
+        {
+          fieldState: "active",
+          averageAmplitude: 24,
+          backboneSlots: new Float32Array([3, 4, 6, 0.5]),
+          detailSlots: new Float32Array(32),
+          backboneColorSlots: new Float32Array(32),
+          detailColorSlots: new Float32Array(32),
+          bandEnergies: new Float32Array(4),
+          transientEnergy: 0,
+          spectralCentroid: 0.2,
+          spectralFlux: 0.1,
+          structureSignal: 0,
+          energySignal: 0,
+          changeSignal: 0,
+          pulseSignal: 0,
+          debug: {},
+        },
+        1,
+        1 / 60,
+      ),
+    ).not.toThrow();
+    expect(runtimeState.uniforms.uRhythmicDensity.value).toBe(0);
+  });
+
+  it("releases responseEnvelope faster at high rhythmicDensity than at low", () => {
+    const edmRuntime = createRuntimeState();
+    const ambientRuntime = createRuntimeState();
+    // Pre-charge both envelopes equally
+    edmRuntime.responseEnvelope = 0.7;
+    ambientRuntime.responseEnvelope = 0.7;
+
+    const baseFrame = {
+      fieldState: "active",
+      averageAmplitude: 24,
+      backboneSlots: new Float32Array([3, 4, 6, 0.5]),
+      detailSlots: new Float32Array(32),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array(4),
+      transientEnergy: 0,
+      spectralCentroid: 0.2,
+      spectralFlux: 0.1,
+      structureSignal: 0,
+      energySignal: 0,
+      changeSignal: 0,
+      pulseSignal: 0,
+      debug: {},
+    };
+
+    tickRaymarchRuntime(
+      edmRuntime,
+      { ...baseFrame, rhythmicDensity: 1.0 },
+      1,
+      1 / 60,
+    );
+    tickRaymarchRuntime(
+      ambientRuntime,
+      { ...baseFrame, rhythmicDensity: 0.0 },
+      1,
+      1 / 60,
+    );
+
+    expect(edmRuntime.responseEnvelope).toBeLessThan(
+      ambientRuntime.responseEnvelope,
+    );
   });
 });

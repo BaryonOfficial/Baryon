@@ -9,7 +9,7 @@ This README is the developer entrypoint: setup, architecture, workflows, and the
 ```text
 apps/
   web/        @baryon/web       Vite + React + R3F visualizer app
-  desktop/    @baryon/desktop   Neutral desktop app shell reserved for the flagship desktop product
+  desktop/    @baryon/desktop   Flagship Electron desktop product shell
   marketing/  @baryon/marketing Marketing site scaffold
 packages/
   visualizer/ @baryon/visualizer Core audio + visualization engine
@@ -17,7 +17,24 @@ packages/
   config/     @baryon/config     Shared Vite config
 ```
 
-`apps/web` consumes `@baryon/visualizer` today, and `apps/desktop` is reserved for the future desktop host surface. Static runtime assets stay app-local under `apps/web/public/` because they are loaded by URL at runtime.
+`apps/web` consumes `@baryon/visualizer` today, and `apps/desktop` is the shell for the licensed Electron desktop product described in the product roadmap. Static runtime assets stay app-local under `apps/web/public/` because they are loaded by URL at runtime.
+
+## Product Roadmap
+
+Baryon has two product surfaces:
+
+- `apps/web` is the free funnel product: a high-quality cymatic visualizer for discovery, file playback, and mic-driven exploration.
+- `apps/desktop` is the paid flagship product: a licensed Electron app for live-performance and studio workflows.
+
+Current roadmap priorities, derived from the PRD:
+
+1. Keep the web app strong as a genuine demo, not a crippled teaser.
+2. Ship the desktop MVP as an Electron app with live audio input, flagship WebGPU volumetric rendering, and on-screen playback.
+3. Add Syphon on macOS and Spout on Windows so Baryon can be used as a source in TouchDesigner, Resolume, and related tools.
+4. Add OSC input for external parameter automation.
+5. Ship the first paid desktop release on macOS and Windows, with Linux as best-effort visualization-only support.
+
+See [`ROADMAP.md`](ROADMAP.md) for the public roadmap and phase breakdown.
 
 ## Licensing
 
@@ -330,7 +347,7 @@ When making changes:
 
 ## Desktop Notes
 
-`apps/desktop` is now a neutral desktop shell reserved for the future flagship desktop host. Shared audio UI behavior remains available through:
+`apps/desktop` is the current shell for the flagship Electron desktop host. Shared audio UI behavior remains available through:
 
 - `packages/visualizer/src/react/useSharedAudioLogic.js`
 

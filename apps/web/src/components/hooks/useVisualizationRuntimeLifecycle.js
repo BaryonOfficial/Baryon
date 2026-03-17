@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createVisualizationRuntime } from "@baryon/visualizer/visualization/runtime";
-import { createAudioFeatureState } from "@baryon/visualizer/audio-features";
+import {
+  createAudioFeatureAnalyzer,
+  createAudioFeatureState,
+  createNoopAudioFeatureAnalyzer,
+} from "@baryon/visualizer/audio-features";
 import { SIMULATION_DEFAULTS } from "@baryon/visualizer/defaults";
 import {
   clearFrameCache,
@@ -20,6 +24,7 @@ export function useVisualizationRuntimeLifecycle({
   const runtimeRef = useRef(createVisualizationRuntime(visualizationMethod));
   const runtimeStateRef = useRef(null);
   const audioFeatureRef = useRef(null);
+  const audioFeatureAnalyzerRef = useRef(createNoopAudioFeatureAnalyzer());
   const lastLiveFrameRef = useRef(null);
   const lastActiveFrameRef = useRef(null);
   const lastIdleFrameRef = useRef(null);
@@ -75,6 +80,8 @@ export function useVisualizationRuntimeLifecycle({
         sampleRate: audioStatus.sampleRate,
       };
 
+      audioFeatureAnalyzerRef.current?.dispose?.();
+      audioFeatureAnalyzerRef.current = createAudioFeatureAnalyzer();
       audioFeatureRef.current = createAudioFeatureState(audioConfig.capacity);
       const runtimeState = runtime.setup({
         baryonGeometry,
@@ -101,6 +108,8 @@ export function useVisualizationRuntimeLifecycle({
         runtime.dispose(runtimeStateRef.current);
         runtimeStateRef.current = null;
       }
+      audioFeatureAnalyzerRef.current?.dispose?.();
+      audioFeatureAnalyzerRef.current = createNoopAudioFeatureAnalyzer();
       clearFrameCache(frameCacheRefs);
       audioFeatureRef.current = null;
       lastMicRuntimeStatusRef.current = null;
@@ -127,6 +136,7 @@ export function useVisualizationRuntimeLifecycle({
     runtimeRef,
     runtimeStateRef,
     audioFeatureRef,
+    audioFeatureAnalyzerRef,
     runtimeDiagnosticsRef,
     frameCacheRefs,
     controlCacheRefs,

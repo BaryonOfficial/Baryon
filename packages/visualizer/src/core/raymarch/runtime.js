@@ -10,6 +10,7 @@ const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
 const RESPONSE_ATTACK = 7;
 const RESPONSE_RELEASE = 2.6;
 const RESPONSE_IDLE_RELEASE = 5.5;
+const RHYTHMIC_RELEASE_RATE_GAIN = 2.5;
 const ACCENT_ATTACK = 15;
 const ACCENT_RELEASE = 8.5;
 const SCALE_RESPONSE_AMOUNT = 0.065;
@@ -229,6 +230,7 @@ function updateReactiveResponse(
   const pulseSignal = clamp01(featureFrame?.pulseSignal ?? 0);
   const persistence = Math.max(0.2, tuning.structurePersistence);
   const reactivity = Math.max(0, tuning.reactivity);
+  const rhythmicDensity = clamp01(featureFrame?.rhythmicDensity ?? 0);
   const gatedStructureSignal = clamp01(structureSignal * reactivity);
   const gatedEnergySignal = clamp01(energySignal * reactivity);
   const gatedChangeSignal = clamp01(changeSignal * reactivity);
@@ -246,7 +248,8 @@ function updateReactiveResponse(
     envelopeTarget > (runtimeState.responseEnvelope ?? 0)
       ? RESPONSE_ATTACK
       : fieldDriven
-        ? RESPONSE_RELEASE + persistence * 0.9
+        ? (RESPONSE_RELEASE + persistence * 0.9) *
+          (1 + rhythmicDensity * RHYTHMIC_RELEASE_RATE_GAIN)
         : RESPONSE_IDLE_RELEASE,
     deltaTime,
   );
@@ -447,6 +450,54 @@ export function tickRaymarchRuntime(
   setIfChanged(uniforms.uTransientEnergy, featureFrame?.transientEnergy ?? 0);
   setIfChanged(uniforms.uSpectralCentroid, featureFrame?.spectralCentroid ?? 0);
   setIfChanged(uniforms.uSpectralFlux, featureFrame?.spectralFlux ?? 0);
+  setIfChanged(uniforms.uStructureSignal, featureFrame?.structureSignal ?? 0);
+  setIfChanged(uniforms.uEnergySignal, featureFrame?.energySignal ?? 0);
+  setIfChanged(uniforms.uChangeSignal, featureFrame?.changeSignal ?? 0);
+  setIfChanged(uniforms.uPulseSignal, featureFrame?.pulseSignal ?? 0);
+  setIfChanged(uniforms.uHarmonicity, featureFrame?.harmonicity ?? 0);
+  setIfChanged(uniforms.uBassSalience, featureFrame?.bassSalience ?? 0);
+  setIfChanged(uniforms.uTextureSpread, featureFrame?.textureSpread ?? 0);
+  setIfChanged(uniforms.uNovelty, featureFrame?.novelty ?? 0);
+  const beatTarget =
+    featureFrame?.beatDetected && (featureFrame?.beatStrength ?? 0) > 0.3
+      ? clamp01(
+          (featureFrame.beatStrength ?? 0) * 0.8 +
+            (featureFrame.beatConfidence ?? 0) * 0.2,
+        )
+      : 0;
+  runtimeState.beatPulseEnvelope = damp(
+    runtimeState.beatPulseEnvelope ?? 0,
+    beatTarget,
+    beatTarget > (runtimeState.beatPulseEnvelope ?? 0) ? 25 : 6,
+    deltaTime,
+  );
+  setIfChanged(uniforms.uBeatPulse, runtimeState.beatPulseEnvelope);
+  setIfChanged(uniforms.uBeatPhase, featureFrame?.beatPhase ?? 0);
+  setIfChanged(
+    uniforms.uTempoNorm,
+    clamp01(((featureFrame?.estimatedTempo ?? 0) - 40) / 200),
+  );
+  setIfChanged(uniforms.uRhythmicDensity, featureFrame?.rhythmicDensity ?? 0);
+
+  // Key tonic hue — EMA with circular shortest-path wrapping
+  const rawKeyHue = featureFrame?.keyTonicHue ?? runtimeState.keyHue;
+  const keyConf = featureFrame?.keyConfidence ?? 0;
+  if (keyConf > 0.35) {
+    let hueDelta = rawKeyHue - runtimeState.keyHue;
+    if (hueDelta > 0.5) hueDelta -= 1;
+    if (hueDelta < -0.5) hueDelta += 1;
+    runtimeState.keyHue = (runtimeState.keyHue + hueDelta * 0.01 + 1) % 1;
+  }
+  runtimeState.keyModeSmooth = damp(
+    runtimeState.keyModeSmooth,
+    featureFrame?.keyMode === "minor" ? 1 : 0,
+    2.0,
+    deltaTime,
+  );
+  uniforms.uKeyTint.value.setHSL(runtimeState.keyHue, 0.68, 0.6);
+  setIfChanged(uniforms.uKeyTintStrength, clamp01(keyConf * 1.4));
+  setIfChanged(uniforms.uKeyMode, runtimeState.keyModeSmooth);
+
   updateLaserResponse(runtimeState, featureFrame);
   uniforms.uDensityGain.value =
     (runtimeState.baseDensityGain ?? uniforms.uDensityGain.value) *

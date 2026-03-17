@@ -260,6 +260,7 @@ export function resolveFeatureFrame(
   {
     audio,
     featureState,
+    featureAnalyzer,
     runtimeState,
     controls,
     status,
@@ -288,8 +289,18 @@ export function resolveFeatureFrame(
 
   let featureFrame = lastActiveFrameRef.current;
   if (!shouldReusePausedFrame && !shouldReuseStaticIdleFrame) {
+    const analysisSnapshot = audio.readAnalysisSnapshot();
+    featureAnalyzer?.enqueueAnalysisFrame?.({
+      analysisSnapshot,
+      status,
+      frameTimeMs: time * 1000,
+    });
+    const analysisHints = featureAnalyzer?.readHints?.({
+      status,
+      frameTimeMs: time * 1000,
+    });
     featureFrame = buildFeatureFrame({
-      analysisSnapshot: audio.readAnalysisSnapshot(),
+      analysisSnapshot,
       featureState,
       radius: runtimeState.uniforms.uRadius.value,
       status,
@@ -298,6 +309,7 @@ export function resolveFeatureFrame(
         profile: micProfile,
       },
       includeChromesthesia: chromesthesiaEnabled,
+      analysisHints,
     });
 
     if (shouldReuseIdleFrame(status, controls)) {
