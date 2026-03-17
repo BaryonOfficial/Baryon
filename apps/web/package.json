@@ -17,13 +17,11 @@
     "test:smoke:prod": "playwright test -c playwright.prod.config.js tests/production.smoke.spec.js"
   },
   "dependencies": {
-    "@baryon/visualizer": "workspace:*",
+    "@baryon/app-shell": "workspace:*",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
-    "hls.js": "^1.6.15",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "tailwindcss-animate": "^1.0.7",
     "three": "^0.183.2"
   },
   "devDependencies": {

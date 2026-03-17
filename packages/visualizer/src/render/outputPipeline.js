@@ -94,6 +94,7 @@ export function createRenderOutputPipeline(gl, scene, camera) {
   // surface. Loosen edgeDepthDiff so TRAA treats fewer ray-march depth transitions as
   // "edges" and uses history more aggressively throughout the volume body.
   traaNode.edgeDepthDiff = 0.005;
+  // @ts-ignore — getTextureNode() exists in TRAANode source but is missing from its .d.ts
   const traaColor = traaNode.getTextureNode();
 
   const bloomPass = bloom(

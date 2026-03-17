@@ -485,19 +485,21 @@ function createScatteringNode({
       const hotCoreMix = smoothstep(
         hotCoreStartDynamic,
         float(HOT_CORE_END),
-        rolledBeamDensity
-          .mul(contourMix.mul(float(0.14)).add(float(0.76)))
-          .add(highlightMask.mul(float(0.12)))
-          .add(uTransientEnergy.mul(float(0.08)))
-          .div(
-            float(1.0).add(
-              rolledBeamDensity
-                .mul(contourMix.mul(float(0.14)).add(float(0.76)))
-                .add(highlightMask.mul(float(0.12)))
-                .add(uTransientEnergy.mul(float(0.08)))
-                .mul(float(0.22)),
-            ),
-          ),
+        /** @type {any} */ (
+          rolledBeamDensity
+            .mul(contourMix.mul(float(0.14)).add(float(0.76)))
+            .add(highlightMask.mul(float(0.12)))
+            .add(uTransientEnergy.mul(float(0.08)))
+            .div(
+              float(1.0).add(
+                rolledBeamDensity
+                  .mul(contourMix.mul(float(0.14)).add(float(0.76)))
+                  .add(highlightMask.mul(float(0.12)))
+                  .add(uTransientEnergy.mul(float(0.08)))
+                  .mul(float(0.22)),
+              ),
+            )
+        ),
       );
       const fresnelBase = clamp(
         float(1.0)
@@ -552,12 +554,12 @@ function createScatteringNode({
       const staticHolographicColor = mix(
         staticLaserColor,
         holographicAccentColor,
-        holographicColorMix,
+        /** @type {any} */ (holographicColorMix),
       );
       const staticHolographicLaserColor = mix(
         staticHolographicColor,
         vec3(1.0),
-        holographicEmissionLift.mul(float(0.45)),
+        /** @type {any} */ (holographicEmissionLift.mul(float(0.45))),
       );
       const detailPresence = smoothstep(float(0.0), float(1.0), detailCount);
       const backbonePresence = smoothstep(
@@ -599,12 +601,12 @@ function createScatteringNode({
         const chromesthesiaHolographicColor = mix(
           chromesthesiaLaserColor,
           holographicAccentColor,
-          holographicColorMix,
+          /** @type {any} */ (holographicColorMix),
         );
         const chromesthesiaHolographicLaserColor = mix(
           chromesthesiaHolographicColor,
           vec3(1.0),
-          holographicEmissionLift.mul(float(0.4)),
+          /** @type {any} */ (holographicEmissionLift.mul(float(0.4))),
         );
         const chromesthesiaVolumeColor = mix(
           chromesthesiaHolographicLaserColor.mul(float(0.9)),

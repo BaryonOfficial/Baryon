@@ -32,10 +32,20 @@ export default defineConfig(() => {
       ...base.build,
       outDir: "dist",
     },
+    optimizeDeps: {
+      exclude: ["@baryon/visualizer", "@baryon/app-shell"],
+    },
     resolve: {
       alias: {
         "@": path.resolve(dirname, "./src"),
+        // Force zustand to resolve from the root monorepo copy (v5, which has
+        // ./traditional), preventing tunnel-rat's nested zustand@4 from being
+        // picked up by Rollup's CommonJS resolver.
+        zustand: path.resolve(dirname, "../../node_modules/zustand"),
       },
+      // Force single instances of packages that break when duplicated.
+      // @baryon/app-shell as a workspace package can otherwise pull in its own copies.
+      dedupe: ["react", "react-dom", "three", "@react-three/fiber", "zustand"],
     },
   };
 });

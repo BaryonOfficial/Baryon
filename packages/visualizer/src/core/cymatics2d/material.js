@@ -199,7 +199,7 @@ function createFieldNode({
       float(CYMATICS_2D_TUNING.densityMax),
     );
     const visibleDensity = density.mul(
-      smoothstep(float(0.02), float(0.24), density),
+      smoothstep(float(0.02), float(0.24), /** @type {any} */ (density)),
     );
     const opacity = clamp(
       visibleDensity
@@ -211,7 +211,7 @@ function createFieldNode({
     const highlightMask = smoothstep(
       float(CYMATICS_2D_TUNING.highlightStart),
       float(CYMATICS_2D_TUNING.highlightEnd),
-      visibleDensity,
+      /** @type {any} */ (visibleDensity),
     );
     const contourMix = smoothstep(
       float(CYMATICS_2D_TUNING.colorBlendStart),
