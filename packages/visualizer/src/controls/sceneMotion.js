@@ -12,6 +12,12 @@ const AUDIO_ROTATION_IMPULSE_SCALE = 1.75;
 const AUDIO_ROTATION_BEAT_IMPULSE_SCALE = 0.9;
 const AUDIO_ROTATION_BEAT_CONFIDENCE_FLOOR = 0.3;
 const AUDIO_ROTATION_DRIVE_DEADZONE = 0.08;
+const AUDIO_ROTATION_IMPULSE_OVERSHOOT_CAP = 2.0;
+
+const AUTO_MOTION_ENVELOPE_ATTACK = 3.0;
+const AUTO_MOTION_ENVELOPE_RELEASE = 0.22;
+const AUTO_MOTION_AMOUNT_MIN = 0.6;
+const AUTO_MOTION_AMOUNT_MAX = 2.0;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -56,7 +62,25 @@ export function createSceneMotionState(initialYaw = 0) {
     lastMotionSignal: 0,
     lastBeatPulseId: 0,
     idleLogoYaw: initialYaw,
+    motionAmountEnvelope: 0.5,
   };
+}
+
+export function deriveAutoMotionAmount(sceneMotion, energySignal, deltaTime) {
+  const energy = clamp01(energySignal ?? 0);
+  const currentEnvelope = sceneMotion.motionAmountEnvelope ?? 0.5;
+  const smoothing =
+    energy > currentEnvelope
+      ? AUTO_MOTION_ENVELOPE_ATTACK
+      : AUTO_MOTION_ENVELOPE_RELEASE;
+  sceneMotion.motionAmountEnvelope = clamp01(
+    damp(currentEnvelope, energy, smoothing, deltaTime),
+  );
+  return (
+    AUTO_MOTION_AMOUNT_MIN +
+    sceneMotion.motionAmountEnvelope *
+      (AUTO_MOTION_AMOUNT_MAX - AUTO_MOTION_AMOUNT_MIN)
+  );
 }
 
 export function getMotionAmount(controls, runtimeState) {
@@ -93,7 +117,7 @@ export function deriveSceneSignals(
   );
   const motionImpulse = clamp01(motionSignal - (lastMotionSignal ?? 0) * 0.7);
   const bedSignal = clamp01(
-    structureSignal * 0.14 +
+    structureSignal * energySignal * 0.2 +
       energySignal * 0.22 +
       normalizedResponseEnvelope * 0.24,
   );
@@ -177,6 +201,15 @@ export function stepAudioSceneMotion(
         motionImpulse * motionAmount * AUDIO_ROTATION_IMPULSE_SCALE,
       -AUDIO_ROTATION_MAX_SPEED,
       AUDIO_ROTATION_MAX_SPEED,
+    );
+  }
+
+  if (sceneMotion.targetAngularVelocity < 0) {
+    const impulseCap =
+      sceneMotion.targetAngularVelocity * AUDIO_ROTATION_IMPULSE_OVERSHOOT_CAP;
+    sceneMotion.angularVelocity = Math.max(
+      sceneMotion.angularVelocity,
+      impulseCap,
     );
   }
 

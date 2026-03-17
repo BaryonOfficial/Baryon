@@ -476,8 +476,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "motionAmount",
-      label: "Motion Amount",
-      title: "How much the orb shifts and moves with changes in the sound",
+      label: "Motion Scale",
+      title:
+        "Scales the auto-calibrated rotation in Audio mode (1 = fully automatic; lower = calmer, higher = more intense). Has no effect in Manual rotation mode.",
       defaultValue: REACTIVITY_DEFAULTS.motionAmount,
       methods: ALL_METHODS,
       binding: { min: 0, max: 3, step: 0.01 },

@@ -610,7 +610,7 @@ describe("control runtime sync", () => {
     );
 
     expect(beatSnapshot.rotationMode).toBe("audio");
-    expect(beatSnapshot.motionAmount).toBe(1.4);
+    expect(beatSnapshot.motionAmount).toBeGreaterThan(1.4);
     expect(beatSnapshot.motionSignal).toBeGreaterThan(0.4);
     expect(beatSnapshot.targetAngularVelocity).toBeLessThan(0);
     expect(beatSnapshot.angularVelocity).toBeLessThan(

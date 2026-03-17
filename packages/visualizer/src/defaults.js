@@ -44,7 +44,7 @@ export const RENDER_DEFAULTS = Object.freeze({
 
 export const REACTIVITY_DEFAULTS = Object.freeze({
   reactivity: 2.5,
-  motionAmount: 1.5,
+  motionAmount: 1.0,
   structurePersistence: 0.75,
 });
 

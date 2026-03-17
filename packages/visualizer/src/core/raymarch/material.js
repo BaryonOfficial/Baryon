@@ -9,10 +9,12 @@ import {
   cos,
   dot,
   float,
+  fract,
   length,
   max,
   mix,
   modelWorldMatrixInverse,
+  screenCoordinate,
   sin,
   smoothstep,
   vec3,
@@ -73,13 +75,6 @@ import {
   SHELL_WEIGHT_MIN,
   SHELL_WEIGHT_START,
 } from "./fieldShaping.js";
-import {
-  STABLE_STEP_JITTER_AMPLITUDE,
-  STABLE_STEP_JITTER_BIAS,
-  STABLE_STEP_JITTER_DIRECTION_WEIGHT,
-  STABLE_STEP_JITTER_PHASE_SCALE,
-  STABLE_STEP_JITTER_SEED,
-} from "./stepStability.js";
 
 /**
  * @typedef {{
@@ -643,25 +638,16 @@ function deriveVisibleDensityNode(density) {
   };
 }
 
-function createRaymarchOffsetNode(radiusNode) {
-  return ({ startPosLocal, rayDirLocal, radiusNode: runtimeRadiusNode }) => {
-    const activeRadiusNode = runtimeRadiusNode ?? radiusNode;
-    const safeRadius = max(activeRadiusNode, float(1e-4));
-    const jitterSource = startPosLocal
-      .div(safeRadius)
-      .add(rayDirLocal.mul(float(STABLE_STEP_JITTER_DIRECTION_WEIGHT)));
-    const jitterPhase = dot(
-      jitterSource,
-      vec3(
-        float(STABLE_STEP_JITTER_SEED[0]),
-        float(STABLE_STEP_JITTER_SEED[1]),
-        float(STABLE_STEP_JITTER_SEED[2]),
-      ),
-    ).mul(float(STABLE_STEP_JITTER_PHASE_SCALE));
-
-    return sin(jitterPhase)
-      .mul(float(STABLE_STEP_JITTER_AMPLITUDE))
-      .add(float(STABLE_STEP_JITTER_BIAS));
+function createRaymarchOffsetNode() {
+  // IGN (Interleaved Gradient Noise) — Jorge Jimenez's formula.
+  // No temporal phase here: TRAA's Halton sub-pixel camera jitter provides temporal
+  // decorrelation across frames. Animating the noise would cause TRAA to accumulate
+  // the scintillation instead of cancelling it, defeating the history pass.
+  return () => {
+    const c = screenCoordinate.x
+      .mul(0.06711056)
+      .add(screenCoordinate.y.mul(0.00583715));
+    return fract(fract(c).mul(52.9829189));
   };
 }
 
@@ -685,7 +671,7 @@ export function createRaymarchVolumeMesh({
   material.steps = Math.round(uniforms.uRaymarchSteps.value);
   material.radiusNode = uniforms.uRadius;
   material.opacityGainNode = uniforms.uOpacityGain;
-  material.offsetNode = createRaymarchOffsetNode(uniforms.uRadius);
+  material.offsetNode = createRaymarchOffsetNode();
   material.scatteringNode = createScatteringNode({
     backboneModeBuffer,
     detailModeBuffer,

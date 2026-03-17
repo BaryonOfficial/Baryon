@@ -15,6 +15,7 @@ import {
   buildSceneSnapshot,
   createDisabledSceneSnapshot,
   createSceneMotionState,
+  deriveAutoMotionAmount,
   deriveSceneSignals,
   getManualVelocity,
   getMotionAmount,
@@ -467,7 +468,7 @@ export function applySceneControls(
     runtimeState?.sceneMotion ?? createSceneMotionState(points.rotation.y ?? 0);
   const rotationMode = normalizeRotationMode(controls.rotationMode);
   const manualVelocity = getManualVelocity(controls);
-  const motionAmount = getMotionAmount(controls, runtimeState);
+  const userScale = getMotionAmount(controls, runtimeState);
   const audioActive =
     status?.isPlaying ||
     status?.isMicActive ||
@@ -482,11 +483,23 @@ export function applySceneControls(
 
   sceneMotion.yaw = points.rotation.y ?? sceneMotion.yaw ?? 0;
 
+  let effectiveMotionAmount;
+  if (rotationMode === "audio" && audioActive && fieldDriven) {
+    const autoBase = deriveAutoMotionAmount(
+      sceneMotion,
+      signals.energySignal,
+      deltaTime,
+    );
+    effectiveMotionAmount = userScale * autoBase;
+  } else {
+    effectiveMotionAmount = userScale;
+  }
+
   if (rotationMode === "manual") {
     stepManualSceneMotion(sceneMotion, manualVelocity, deltaTime);
   } else if (rotationMode === "audio" && audioActive && fieldDriven) {
     stepAudioSceneMotion(sceneMotion, {
-      motionAmount,
+      motionAmount: effectiveMotionAmount,
       shapedDrive: signals.shapedDrive,
       reactiveSignal: signals.reactiveSignal,
       motionImpulse: signals.motionImpulse,
@@ -510,7 +523,7 @@ export function applySceneControls(
   return buildSceneSnapshot({
     rotationMode,
     rotationSpeed: controls.rotationSpeed,
-    motionAmount,
+    motionAmount: effectiveMotionAmount,
     signals,
     sceneMotion,
     rotationY: points.rotation.y,
