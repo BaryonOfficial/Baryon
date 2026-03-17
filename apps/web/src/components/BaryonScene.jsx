@@ -17,7 +17,14 @@ export function BaryonScene({
   onPerformanceHudSnapshotChange,
 }) {
   const { camera, gl, scene } = useThree();
-  const { ensurePipeline, postNodesRef } = useBaryonPipeline(gl, scene, camera);
+  const { ensurePipeline, postNodesRef, disposePipeline } = useBaryonPipeline(
+    gl,
+    scene,
+    camera,
+  );
+
+  // Free TRAANode's two HalfFloat render targets (history + resolve) on unmount.
+  useEffect(() => disposePipeline, [disposePipeline]);
   const baryonGeometry = useDefaultBaryonGeometry();
   const isFullscreen2d =
     visualizationMethod === VISUALIZATION_METHODS.cymatics2d;

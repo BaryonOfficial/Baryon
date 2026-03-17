@@ -1,7 +1,17 @@
 import * as THREE from "three";
 import * as THREEWebGPU from "three/webgpu";
-import { float, max, pass, uniform, vec4 } from "three/tsl";
+import {
+  float,
+  max,
+  mrt,
+  output,
+  pass,
+  uniform,
+  vec4,
+  velocity,
+} from "three/tsl";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
+import { traa } from "three/examples/jsm/tsl/display/TRAANode.js";
 import { RENDER_DEFAULTS } from "../defaults.js";
 
 const { RenderPipeline } = /** @type {any} */ (THREEWebGPU);
@@ -61,9 +71,33 @@ export function createRenderOutputPipeline(gl, scene, camera) {
     ),
   };
   const scenePass = pass(scene, camera);
+  // Enable velocity MRT so TRAANode can reproject history across frames.
+  // `output` must be included so MRTNode.setup() fills index 0 of renderTarget.textures;
+  // omitting it leaves members[0] undefined and crashes OutputStructNode.generate().
+  // Our sphere has no transform animation (audio drives shader uniforms only),
+  // so velocity is zero everywhere — no ghosting risk.
+  scenePass.setMRT(mrt({ output, velocity }));
+
   const sceneColor = scenePass.getTextureNode("output");
+  const depthNode = scenePass.getTextureNode("depth");
+  const velocityNode = scenePass.getTextureNode("velocity");
+
+  // TRAA: temporal reprojection AA with Halton sub-pixel jitter + variance
+  // clipping. This is the real frame-accumulation pass; bloom runs on the
+  // resolved anti-aliased output so the two effects reinforce each other.
+  const traaNode = traa(sceneColor, depthNode, velocityNode, camera);
+  // useSubpixelCorrection increases current-frame weight when velocity is subpixel —
+  // designed for moving objects. Our velocity is always zero, so it adds the "square
+  // pattern artifact" the docs warn about without any benefit.
+  traaNode.useSubpixelCorrection = false;
+  // The raymarched volume writes depth at the first ray hit, not a classical polygon
+  // surface. Loosen edgeDepthDiff so TRAA treats fewer ray-march depth transitions as
+  // "edges" and uses history more aggressively throughout the volume body.
+  traaNode.edgeDepthDiff = 0.005;
+  const traaColor = traaNode.getTextureNode();
+
   const bloomPass = bloom(
-    sceneColor,
+    traaColor,
     /** @type {any} */ (bloomUniforms.strength),
     /** @type {any} */ (bloomUniforms.radius),
     /** @type {any} */ (bloomUniforms.threshold),
@@ -74,7 +108,7 @@ export function createRenderOutputPipeline(gl, scene, camera) {
     outputMode = RENDER_DEFAULTS.outputMode,
   } = {}) =>
     composeRenderOutputNode({
-      sceneColor,
+      sceneColor: traaColor,
       bloomPass,
       bloomEnabled,
       outputMode,
@@ -88,6 +122,8 @@ export function createRenderOutputPipeline(gl, scene, camera) {
     pipeline,
     postNodes: {
       sceneColor,
+      traaNode,
+      traaColor,
       bloomPass,
       bloomUniforms,
       outputUniforms,

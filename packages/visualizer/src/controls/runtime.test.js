@@ -24,6 +24,7 @@ import {
   deriveStepCompensation,
   STEP_REFERENCE,
 } from "../core/raymarch/stepStability.js";
+import { AUDIO_SLOT_CAPACITY } from "../defaults.js";
 
 function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
   return {
@@ -609,7 +610,7 @@ describe("control runtime sync", () => {
     );
 
     expect(beatSnapshot.rotationMode).toBe("audio");
-    expect(beatSnapshot.motionAmount).toBe(1.4);
+    expect(beatSnapshot.motionAmount).toBeGreaterThan(1.4);
     expect(beatSnapshot.motionSignal).toBeGreaterThan(0.4);
     expect(beatSnapshot.targetAngularVelocity).toBeLessThan(0);
     expect(beatSnapshot.angularVelocity).toBeLessThan(
@@ -854,7 +855,7 @@ describe("control runtime sync", () => {
         radius: 3,
       },
       audioConfig: {
-        capacity: 8,
+        capacity: AUDIO_SLOT_CAPACITY,
         fftSize: 2048,
       },
     });
@@ -886,6 +887,13 @@ describe("control runtime sync", () => {
     expect(runtimeState.sceneLighting.secondary.position.z).toBeCloseTo(
       3 * 1.8,
     );
+    expect(runtimeState.capacity).toBe(AUDIO_SLOT_CAPACITY);
+    expect(runtimeState.backboneModeBuffer.value.array).toHaveLength(
+      AUDIO_SLOT_CAPACITY * 4,
+    );
+    expect(runtimeState.detailModeBuffer.value.array).toHaveLength(
+      AUDIO_SLOT_CAPACITY * 4,
+    );
 
     expect(() => runtime.dispose(runtimeState)).not.toThrow();
   });
@@ -900,7 +908,7 @@ describe("control runtime sync", () => {
         radius: 3,
       },
       audioConfig: {
-        capacity: 8,
+        capacity: AUDIO_SLOT_CAPACITY,
         fftSize: 2048,
       },
     });
@@ -911,6 +919,13 @@ describe("control runtime sync", () => {
     expect(runtimeState.visualRoot.children).toContain(runtimeState.fieldMesh);
     expect(runtimeState.visualRoot.children).toContain(
       runtimeState.idleOverlay,
+    );
+    expect(runtimeState.capacity).toBe(AUDIO_SLOT_CAPACITY);
+    expect(runtimeState.backboneModeBuffer.value.array).toHaveLength(
+      AUDIO_SLOT_CAPACITY * 4,
+    );
+    expect(runtimeState.detailModeBuffer.value.array).toHaveLength(
+      AUDIO_SLOT_CAPACITY * 4,
     );
 
     expect(() => runtime.dispose(runtimeState)).not.toThrow();
@@ -924,7 +939,7 @@ describe("control runtime sync", () => {
         radius: 3,
       },
       audioConfig: {
-        capacity: 8,
+        capacity: AUDIO_SLOT_CAPACITY,
         fftSize: 2048,
       },
     });

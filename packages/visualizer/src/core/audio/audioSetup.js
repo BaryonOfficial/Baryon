@@ -1,4 +1,4 @@
-import { AUDIO_DEFAULTS } from "../../defaults.js";
+import { AUDIO_DEFAULTS, AUDIO_SLOT_CAPACITY } from "../../defaults.js";
 import {
   createAnalyserReader,
   createNodeAnalyser,
@@ -157,7 +157,7 @@ function clonePlaybackDiagnostics(diagnostics) {
 export function createAudioSession() {
   const state = {
     fftSize: 4096,
-    capacity: AUDIO_DEFAULTS.capacity,
+    capacity: AUDIO_SLOT_CAPACITY,
     pitchSourceMode: "spectral",
     audioInputMode: "idle",
     audioCtx: null,

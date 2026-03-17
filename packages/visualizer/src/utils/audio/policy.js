@@ -7,11 +7,11 @@ export const AUDIO_ANALYSIS_POLICY = Object.freeze({
 });
 
 export const SPECTRAL_MODAL_POLICY = Object.freeze({
-  harmonicOrders: [1, 2, 3, 4],
-  harmonicAttenuation: [1.0, 0.72, 0.52, 0.38],
+  harmonicOrders: [1, 2, 3, 4, 5, 6],
+  harmonicAttenuation: [1.0, 0.72, 0.52, 0.38, 0.27, 0.19],
   harmonicSupportFloor: 0.1,
   harmonicSupportRatio: 0.2,
   minSpectralBinAmplitude: 0.12,
-  minSpectralBinGapHz: 45,
-  maxSpectralFrequency: 1800,
+  minSpectralBinGapHz: 30,
+  maxSpectralFrequency: 2200,
 });

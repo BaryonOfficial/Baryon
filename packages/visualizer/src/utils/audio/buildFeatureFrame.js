@@ -1,6 +1,7 @@
 import {
   AUDIT_DEFAULTS,
-  AUDIO_DEFAULTS,
+  AUDIO_SIGNAL_NORMALIZATION_SLOTS,
+  AUDIO_SLOT_CAPACITY,
   BEAT_DEFAULTS,
 } from "../../defaults.js";
 import { sampleFFTAmplitudeForFrequency } from "../normalModes.js";
@@ -29,6 +30,13 @@ import { detectVoicePitch } from "./pitchDetection.js";
 import { deriveFieldState } from "./fieldState.js";
 import { AUDIO_ANALYSIS_POLICY, SPECTRAL_MODAL_POLICY } from "./policy.js";
 import { FIELD_STATES } from "./types.js";
+import {
+  buildChromaVector,
+  smoothChromaInPlace,
+  detectKeyFromChroma,
+} from "./chromaAnalysis.js";
+import { pitchClassToHue } from "./chromesthesia.js";
+import { annotatePeakSalience } from "./harmonicSalience.js";
 
 const {
   micSilenceAvgAmplitude: MIC_SILENCE_AVG_AMPLITUDE,
@@ -40,12 +48,21 @@ const TEST_TONE_HARMONIC_ATTENUATION =
 
 const BACKBONE_PEAK_COUNT = 3;
 const DETAIL_PEAK_COUNT = 4;
+const INTERNAL_CANDIDATE_POOL_SIZE = 16;
+const BACKBONE_SALIENCE_WEIGHT = 1.2;
 const DETAIL_LAYER_WEIGHT = 0.35;
 const BACKBONE_ATTACK = 0.22;
 const BACKBONE_RELEASE = 0.96;
 const DETAIL_ATTACK = 0.55;
 const DETAIL_RELEASE = 0.82;
 const DETAIL_FRESH_CAP = 0;
+const BACKBONE_EVICTION_RELEASE = 0.78;
+const DETAIL_EVICTION_RELEASE = 0.58;
+const DETAIL_EVICTION_FRAMES = 2;
+const BACKBONE_EVICTION_FRAMES = 4;
+const DETAIL_NOVELTY_EVICTION_THRESHOLD = 0.65;
+const BACKBONE_NOVELTY_EVICTION_THRESHOLD = 0.8;
+const LOW_HARMONICITY_THRESHOLD = 0.35;
 const BACKBONE_COLOR_ATTACK = 0.38;
 const BACKBONE_COLOR_TRACKING = 0.22;
 const BACKBONE_COLOR_RELEASE = 0.96;
@@ -117,7 +134,7 @@ const MIC_PROFILE_CONFIGS = Object.freeze({
     absolutePeakFloor: 0.1,
     absoluteCentroidFloor: 0,
     openFrames: 1,
-    closeFrames: 4,
+    closeFrames: 30,
     rmsOpenMultiplier: 1.08,
     rmsOpenOffset: 0.00012,
     peakOpenMultiplier: 1.2,
@@ -147,6 +164,32 @@ const BEAT_SPECTRAL_FLUX_WEIGHT = 0.35;
 const BEAT_RMS_DELTA_WEIGHT = 0.15;
 const MIN_BEAT_THRESHOLD = 0.024;
 const DEFAULT_FRAME_TIME_MS = 1000 / 60;
+const BEAT_HISTORY_SIZE_LOCAL = 8;
+const ONSET_DENSITY_WINDOW_MS = 4000;
+const ONSET_DENSITY_MAX_BEATS = 8; // matches BEAT_HISTORY_SIZE_LOCAL; 8 beats in 4s = 2 BPS
+const ONSET_DENSITY_SMOOTHING_MS = 8000;
+const MIC_MODAL_FFT_TARGET = 0.65;
+const MIC_MODAL_FFT_MAX_GAIN = 12.0;
+// Minimum harmonic salience for a peak to drive the ambient backbone.
+// Prevents isolated noise peaks (fricatives, room noise, broadband bursts)
+// from injecting incoherent high-mode-number modes.
+//
+// The salience score formula is: Σ amp(k*f) * weight[k] / MAX_SCORE
+// where SALIENCE_WEIGHTS = [1.0, 0.9, 0.7, 0.55, 0.4, 0.3], MAX_SCORE = 3.85.
+//
+// A problematic case: 3382 Hz fricative with harmonicSupport:[1, 0.235, 0, ...]
+// gives salienceScore ≈ (1.0 + 0.235*0.9) / 3.85 = 0.315.
+// A threshold of 0.32 blocks single-harmonic peaks while allowing genuine
+// tonal content (singing bowls, instruments) that have 3+ visible harmonics
+// (typical score ≥ 0.40).
+const AMBIENT_MIC_BACKBONE_MIN_SALIENCE = 0.32;
+const MIN_TEMPO_BPM = 40;
+const MAX_TEMPO_BPM = 240;
+const MIN_IBI_MS = 60000 / MAX_TEMPO_BPM; // 250ms
+const MAX_IBI_MS = 60000 / MIN_TEMPO_BPM; // 1500ms
+const TEMPO_EMA_FAST = 0.35;
+const TEMPO_EMA_SLOW = 0.1;
+const CHROMA_EMA_ALPHA = 0.1;
 
 export const DEFAULT_MIC_ANALYSIS_SETTINGS = Object.freeze({
   profile: DEFAULT_MIC_PROFILE,
@@ -158,12 +201,6 @@ export const MIC_PROFILE_OPTIONS = Object.freeze([
     label: "Voice",
     description:
       "Speech and singing. Tracks a lead vocal pitch and uses harmonics as texture.",
-  }),
-  Object.freeze({
-    value: "ambient",
-    label: "Ambient",
-    description:
-      "Crowds, rooms, parties, and mixed music. Represents multiple simultaneous sources.",
   }),
 ]);
 
@@ -184,6 +221,10 @@ function ensureArrayField(container, key, length) {
     container[key] = value;
   }
   return value;
+}
+
+function getActiveAnalysisHints(analysisHints) {
+  return analysisHints?.active ? analysisHints : null;
 }
 
 function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
@@ -375,6 +416,9 @@ function beginMicCalibration(bandState, currentFrameAtMs, profile) {
 }
 
 function normalizeMicProfile(profile) {
+  // "ambient" is disabled — redirect to the default so any saved preferences
+  // or direct callers are silently migrated rather than breaking.
+  if (profile === "ambient") return DEFAULT_MIC_PROFILE;
   return MIC_PROFILE_CONFIGS[profile] ? profile : DEFAULT_MIC_PROFILE;
 }
 
@@ -414,6 +458,7 @@ function resetBeatTrackingState(analysisMemory) {
   bandState.beatPulseId = 0;
   bandState.beatStrength = 0;
   bandState.beatConfidence = 0;
+  bandState.onsetDensityEma = 0;
   resetMicGateState(bandState, {
     inputMode: bandState.micInputMode ?? "idle",
     profile: bandState.micProfile ?? DEFAULT_MIC_PROFILE,
@@ -454,6 +499,272 @@ function clearLayerMetadata(layerState) {
   layerState.analysisEngine = "none";
   layerState.uniqueModeCount = 0;
   layerState.chromesthesiaComponents = [];
+}
+
+function slotModeKey(u, v, w) {
+  return `${u}:${v}:${w}`;
+}
+
+function buildModeAmplitudeMap(slotBuffer, capacity) {
+  const modeMap = new Map();
+  const slotCount = Math.min(
+    capacity,
+    Math.floor((slotBuffer?.length ?? 0) / 4),
+  );
+  for (let index = 0; index < slotCount; index += 1) {
+    const offset = index * 4;
+    const amplitude = slotBuffer[offset + 3] ?? 0;
+    if (amplitude <= 0) continue;
+    modeMap.set(
+      slotModeKey(
+        slotBuffer[offset],
+        slotBuffer[offset + 1],
+        slotBuffer[offset + 2],
+      ),
+      amplitude,
+    );
+  }
+  return modeMap;
+}
+
+function getPeakSelectionDistanceHz(kind, frequency) {
+  const baseDistance = kind === "detail" ? 55 : 70;
+  const proportionalDistance =
+    kind === "detail" ? frequency * 0.08 : frequency * 0.12;
+  return Math.max(baseDistance, proportionalDistance);
+}
+
+function scoreCandidatePeak(peak, analysisHints, kind) {
+  const hints = getActiveAnalysisHints(analysisHints);
+  const baseAmplitude = peak?.amplitude ?? 0;
+  if (!(baseAmplitude > 0)) {
+    return 0;
+  }
+
+  const normalizedFrequency = clamp01((peak.frequency ?? 0) / 5000);
+  const bassBias =
+    1 + (hints?.bassSalience ?? 0) * (1 - normalizedFrequency) * 0.55;
+  const harmonicBias =
+    kind === "backbone"
+      ? 1 +
+        (hints?.harmonicity ?? 0) * 0.65 +
+        (hints?.pitchConfidence ?? 0) * 0.4
+      : 1 + (hints?.harmonicity ?? 0) * 0.18;
+  const changeBias =
+    kind === "detail"
+      ? 1 +
+        (hints?.transientSalience ?? 0) * 0.55 +
+        (hints?.novelty ?? 0) * 0.7 +
+        (hints?.textureSpread ?? 0) * 0.35
+      : 1 + (hints?.novelty ?? 0) * 0.18;
+
+  const salienceBias =
+    kind === "backbone"
+      ? 1 + (peak.salienceScore ?? 0) * BACKBONE_SALIENCE_WEIGHT
+      : 1;
+
+  return baseAmplitude * bassBias * harmonicBias * changeBias * salienceBias;
+}
+
+function selectScoredPeaks(candidates, limit, analysisHints, kind) {
+  if (!Array.isArray(candidates) || limit <= 0) {
+    return [];
+  }
+
+  const hints = getActiveAnalysisHints(analysisHints);
+  const selected = [];
+  const remaining = candidates
+    .map((candidate) => ({
+      ...candidate,
+      baseScore: scoreCandidatePeak(candidate, hints, kind),
+    }))
+    .filter((candidate) => candidate.baseScore > 0);
+
+  while (selected.length < limit && remaining.length > 0) {
+    let bestIndex = -1;
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    for (let index = 0; index < remaining.length; index += 1) {
+      const candidate = remaining[index];
+      const minDistanceHz =
+        selected.length > 0
+          ? Math.min(
+              ...selected.map((entry) =>
+                Math.abs((entry.frequency ?? 0) - (candidate.frequency ?? 0)),
+              ),
+            )
+          : Number.POSITIVE_INFINITY;
+      const diversityBoost =
+        selected.length === 0
+          ? 1
+          : 1 +
+            (hints?.textureSpread ?? 0) *
+              clamp01(minDistanceHz / Math.max(1, candidate.frequency ?? 1));
+      const candidateScore = candidate.baseScore * diversityBoost;
+      if (candidateScore > bestScore) {
+        bestScore = candidateScore;
+        bestIndex = index;
+      }
+    }
+
+    if (bestIndex < 0) {
+      break;
+    }
+
+    const [chosen] = remaining.splice(bestIndex, 1);
+    selected.push(chosen);
+    const minDistance = getPeakSelectionDistanceHz(kind, chosen.frequency ?? 0);
+    for (let index = remaining.length - 1; index >= 0; index -= 1) {
+      if (
+        Math.abs((remaining[index].frequency ?? 0) - (chosen.frequency ?? 0)) <
+        minDistance
+      ) {
+        remaining.splice(index, 1);
+      }
+    }
+  }
+
+  return selected;
+}
+
+function createLayerReleaseOptions(
+  layerState,
+  targetSlots,
+  capacity,
+  baseOptions,
+  analysisHints,
+  layerType,
+) {
+  const currentModes = buildModeAmplitudeMap(layerState?.slots, capacity);
+  if (currentModes.size === 0) {
+    return baseOptions;
+  }
+
+  const targetModes = buildModeAmplitudeMap(targetSlots, capacity);
+  const previousMetrics = layerState?._slotMetricMap ?? new Map();
+  const releaseOverrides = new Map();
+  const novelty = clamp01(analysisHints?.novelty ?? 0);
+  const harmonicity = clamp01(analysisHints?.harmonicity ?? 0);
+  const disagreementLimit =
+    layerType === "detail" ? DETAIL_EVICTION_FRAMES : BACKBONE_EVICTION_FRAMES;
+  const noveltyLimit =
+    layerType === "detail"
+      ? DETAIL_NOVELTY_EVICTION_THRESHOLD
+      : BACKBONE_NOVELTY_EVICTION_THRESHOLD;
+  const evictionRelease =
+    layerType === "detail"
+      ? DETAIL_EVICTION_RELEASE
+      : BACKBONE_EVICTION_RELEASE;
+
+  for (const key of currentModes.keys()) {
+    if (targetModes.has(key)) {
+      continue;
+    }
+    const disagreementCount =
+      (previousMetrics.get(key)?.disagreementCount ?? 0) + 1;
+    const noveltyEviction =
+      novelty >= noveltyLimit &&
+      (layerType === "detail" || harmonicity <= LOW_HARMONICITY_THRESHOLD);
+    if (disagreementCount >= disagreementLimit || noveltyEviction) {
+      releaseOverrides.set(key, evictionRelease);
+    }
+  }
+
+  if (releaseOverrides.size === 0) {
+    return baseOptions;
+  }
+
+  return {
+    ...baseOptions,
+    releaseOverrides,
+  };
+}
+
+function updateLayerSlotTracking(
+  layerState,
+  targetSlots,
+  capacity,
+  currentFrame,
+  analysisHints,
+  layerType,
+) {
+  if (!layerState) {
+    return;
+  }
+
+  const previousMetrics = layerState._slotMetricMap ?? new Map();
+  const nextMetrics = new Map();
+  const targetModes = buildModeAmplitudeMap(targetSlots, capacity);
+  const slotCount = Math.min(
+    capacity,
+    Math.floor((layerState.slots?.length ?? 0) / 4),
+  );
+  const slotAgeFrames = layerState.slotAgeFrames;
+  const slotConfidence = layerState.slotConfidence;
+  const slotDisagreementCounts = layerState.slotDisagreementCounts;
+  const slotLastConfirmedFrames = layerState.slotLastConfirmedFrames;
+  const hints = getActiveAnalysisHints(analysisHints);
+
+  slotAgeFrames?.fill(0);
+  slotConfidence?.fill(0);
+  slotDisagreementCounts?.fill(0);
+  slotLastConfirmedFrames?.fill(0);
+
+  for (let index = 0; index < slotCount; index += 1) {
+    const offset = index * 4;
+    const amplitude = layerState.slots[offset + 3] ?? 0;
+    if (amplitude <= 0) {
+      continue;
+    }
+
+    const key = slotModeKey(
+      layerState.slots[offset],
+      layerState.slots[offset + 1],
+      layerState.slots[offset + 2],
+    );
+    const previous = previousMetrics.get(key) ?? {
+      ageFrames: 0,
+      confidence: 0,
+      disagreementCount: 0,
+      lastConfirmedFrame: 0,
+    };
+    const confirmed = targetModes.has(key);
+    const disagreementCount = confirmed ? 0 : previous.disagreementCount + 1;
+    const ageFrames = confirmed ? 0 : previous.ageFrames + 1;
+    const hintBias =
+      layerType === "detail"
+        ? 1 +
+          (hints?.transientSalience ?? 0) * 0.18 +
+          (hints?.novelty ?? 0) * 0.22
+        : 1 +
+          (hints?.harmonicity ?? 0) * 0.28 +
+          (hints?.pitchConfidence ?? 0) * 0.14;
+    const confidence = clamp01(
+      (confirmed
+        ? (targetModes.get(key) ?? amplitude)
+        : previous.confidence * 0.88) * hintBias,
+    );
+    const lastConfirmedFrame = confirmed
+      ? currentFrame
+      : (previous.lastConfirmedFrame ?? 0);
+
+    if (slotAgeFrames) slotAgeFrames[index] = Math.min(65535, ageFrames);
+    if (slotConfidence) slotConfidence[index] = confidence;
+    if (slotDisagreementCounts) {
+      slotDisagreementCounts[index] = Math.min(255, disagreementCount);
+    }
+    if (slotLastConfirmedFrames) {
+      slotLastConfirmedFrames[index] = Math.min(0xffffffff, lastConfirmedFrame);
+    }
+    nextMetrics.set(key, {
+      ageFrames,
+      confidence,
+      disagreementCount,
+      lastConfirmedFrame,
+    });
+  }
+
+  layerState._slotMetricMap = nextMetrics;
 }
 
 function shouldBuildDetailedDebug(auditSettings) {
@@ -513,6 +824,7 @@ function buildDebugSummary({
   beatThreshold = 0,
   sampleRate = 0,
   fftSize = 0,
+  analysisHints = null,
 }) {
   const backboneModeCount = countActiveSlots(
     backboneSlots,
@@ -527,9 +839,9 @@ function buildDebugSummary({
     requestedPitchSource: REQUESTED_PITCH_SOURCE,
     analysisEngine,
     fieldState,
-    workerState: "none",
-    pitchFrameAge: null,
-    workerStatus: null,
+    workerState: analysisHints?.workerState ?? "none",
+    pitchFrameAge: analysisHints?.ageMs ?? null,
+    workerStatus: analysisHints?.workerStatus ?? null,
     fileActive: soundActive,
     micActive,
     micNoiseGateActive,
@@ -563,6 +875,15 @@ function buildDebugSummary({
     beatPulseId,
     beatStrength,
     beatConfidence,
+    hintSource: analysisHints?.hintSource ?? "none",
+    analysisLatencyMs: analysisHints?.analysisLatencyMs ?? 0,
+    novelty: clamp01(analysisHints?.novelty ?? 0),
+    harmonicity: clamp01(analysisHints?.harmonicity ?? 0),
+    transientSalience: clamp01(analysisHints?.transientSalience ?? 0),
+    bassSalience: clamp01(analysisHints?.bassSalience ?? 0),
+    textureSpread: clamp01(analysisHints?.textureSpread ?? 0),
+    voicingProbability: clamp01(analysisHints?.voicingProbability ?? 0),
+    releaseBias: clamp01(analysisHints?.releaseBias ?? 0),
     beatLowBandEnergy,
     beatOnsetDriver,
     beatThreshold,
@@ -607,6 +928,7 @@ function buildZeroDebugSnapshot({
   backboneColorSlots,
   detailColorSlots,
   auditSettings,
+  analysisHints = null,
 }) {
   const debug = buildDebugSummary({
     inputMode,
@@ -635,6 +957,7 @@ function buildZeroDebugSnapshot({
     energySignal: 0,
     changeSignal: 0,
     pulseSignal: 0,
+    analysisHints,
   });
 
   if (!shouldBuildDetailedDebug(auditSettings)) {
@@ -672,6 +995,7 @@ export function buildSilentFeatureFrame({
   detailState,
   fftSize,
   auditSettings,
+  analysisHints = null,
 }) {
   backboneSlots.fill(0);
   detailSlots.fill(0);
@@ -716,6 +1040,18 @@ export function buildSilentFeatureFrame({
     beatPulseId: 0,
     beatStrength: 0,
     beatConfidence: 0,
+    estimatedTempo: 0,
+    tempoConfidence: 0,
+    beatPhase: 0,
+    rhythmicDensity: 0,
+    keyTonic: 0,
+    keyMode: "major",
+    keyConfidence: 0,
+    keyTonicHue: 0,
+    harmonicity: 0,
+    bassSalience: 0,
+    textureSpread: 0,
+    novelty: 0,
     modeSlots,
     referenceModeSlots,
     sourceMode: "silent",
@@ -731,6 +1067,7 @@ export function buildSilentFeatureFrame({
       backboneColorSlots,
       detailColorSlots,
       auditSettings,
+      analysisHints,
     }),
   };
 }
@@ -1413,16 +1750,17 @@ function resolveVoiceDetailPeaks({
   fftSize,
   fundamental,
   profileConfig,
+  analysisHints,
 }) {
   if (!(fundamental > 0)) {
     return [];
   }
 
-  return findSpectralPeakFrequencies(
+  const candidates = findSpectralPeakFrequencies(
     fftMagnitudes,
     sampleRate,
     fftSize,
-    DETAIL_PEAK_COUNT + 2,
+    INTERNAL_CANDIDATE_POOL_SIZE,
     {
       minFrequency: fundamental * 0.8,
       maxFrequency: Math.min(
@@ -1431,13 +1769,20 @@ function resolveVoiceDetailPeaks({
       ),
     },
   ).filter((peak) => isPeakHarmonicallyRelated(peak.frequency, fundamental));
+
+  return selectScoredPeaks(
+    candidates,
+    DETAIL_PEAK_COUNT,
+    analysisHints,
+    "detail",
+  );
 }
 
 function resolveAmbientPeakOptions(profileConfig) {
   return {
     maxFrequency: profileConfig.spectralPeakMaxHz,
     regionRanges: AMBIENT_REGION_RANGES,
-    perRegionCount: 2,
+    perRegionCount: 4,
   };
 }
 
@@ -1452,12 +1797,13 @@ function buildEmptyTarget(capacity) {
   return new Float32Array(capacity * 4);
 }
 
-function releaseLayer(layerState, capacity, options) {
-  blendModalStack(layerState, buildEmptyTarget(capacity), capacity, options);
+function releaseLayer(layerState, capacity, options, targetSlots = null) {
+  const resolvedTargetSlots = targetSlots ?? buildEmptyTarget(capacity);
+  blendModalStack(layerState, resolvedTargetSlots, capacity, options);
   if (options.colorOptions) {
     blendColorStack(
       layerState,
-      buildEmptyTarget(capacity),
+      resolvedTargetSlots,
       buildEmptyTarget(capacity),
       capacity,
       options.colorOptions,
@@ -1580,7 +1926,8 @@ function deriveModeDeltaMetrics(modeSlots, referenceModeSlots, capacity) {
 
 function deriveCompositeSignals({
   inputMode,
-  capacity,
+  modeCapacity,
+  signalNormalizationSlots,
   modeSlots,
   referenceModeSlots,
   backboneState,
@@ -1598,8 +1945,10 @@ function deriveCompositeSignals({
   beatOnsetDriver,
   beatThreshold,
   bandState,
+  analysisHints,
 }) {
-  const activeModeCount = countActiveSlots(modeSlots, capacity);
+  const hints = getActiveAnalysisHints(analysisHints);
+  const activeModeCount = countActiveSlots(modeSlots, modeCapacity);
   const uniqueModeCount =
     (backboneState?.uniqueModeCount ?? 0) + (detailState?.uniqueModeCount ?? 0);
   const harmonicSupport = averageArray(backboneState?.harmonicSupport);
@@ -1611,7 +1960,7 @@ function deriveCompositeSignals({
   const { averageDelta, turnoverRatio } = deriveModeDeltaMetrics(
     modeSlots,
     referenceModeSlots,
-    capacity,
+    modeCapacity,
   );
   const { normalizedRms, normalizedAmplitude, normalizedCentroid } =
     getSourceNormalization({
@@ -1623,29 +1972,36 @@ function deriveCompositeSignals({
     });
 
   const structureSignal = clamp01(
-    (activeModeCount / Math.max(1, capacity * 0.55)) * 0.34 +
-      (uniqueModeCount / Math.max(1, capacity * 0.7)) * 0.24 +
+    (activeModeCount / Math.max(1, signalNormalizationSlots * 0.55)) * 0.34 +
+      (uniqueModeCount / Math.max(1, signalNormalizationSlots * 0.7)) * 0.24 +
       harmonicSupport * 0.18 +
       bandDistribution * 0.14 +
-      normalizedCentroid * 0.1,
+      normalizedCentroid * 0.1 +
+      (hints?.harmonicity ?? 0) * 0.08 +
+      (hints?.textureSpread ?? 0) * 0.06,
   );
   const energySignal = clamp01(
     normalizedRms * 0.42 +
       normalizedAmplitude * 0.26 +
       averageArray(bandEnergies) * 0.2 +
-      clamp01(dominantAmplitude) * 0.12,
+      clamp01(dominantAmplitude) * 0.12 +
+      (hints?.bassSalience ?? 0) * 0.08,
   );
   const changeSignal = clamp01(
     clamp01(spectralFlux * 8) * 0.28 +
       transientEnergy * 0.26 +
       averageDelta * 0.2 +
       turnoverRatio * 0.16 +
-      clamp01(Math.abs(normalizedCentroid - bandDistribution) * 1.2) * 0.1,
+      clamp01(Math.abs(normalizedCentroid - bandDistribution) * 1.2) * 0.1 +
+      (hints?.novelty ?? 0) * 0.18 +
+      (hints?.transientSalience ?? 0) * 0.12,
   );
   const pulseDriver = beatThreshold > 0 ? beatOnsetDriver / beatThreshold : 0;
   const pulseSignal = clamp01(
     (beatDetected ? beatStrength * 0.56 + beatConfidence * 0.24 : 0) +
-      clamp01(pulseDriver * 0.22),
+      clamp01(pulseDriver * 0.22) +
+      (hints?.transientSalience ?? 0) * 0.12 +
+      (hints?.novelty ?? 0) * 0.06,
   );
 
   return {
@@ -1754,6 +2110,19 @@ function updateBandState({
     bandState.beatPulseId = (bandState.beatPulseId ?? 0) + 1;
   }
 
+  const { estimatedTempo, tempoConfidence, beatPhase } = updateTempoState(
+    bandState,
+    beatDetected,
+    beatConfidence,
+    currentFrameAtMs,
+  );
+
+  const rhythmicDensity = computeRhythmicDensity(
+    bandState,
+    deltaMs,
+    currentFrameAtMs,
+  );
+
   if (
     !(previousSpectrum instanceof Float32Array) ||
     previousSpectrum.length !== fftMagnitudes.length
@@ -1771,10 +2140,118 @@ function updateBandState({
     beatPulseId: bandState.beatPulseId ?? 0,
     beatStrength,
     beatConfidence,
+    estimatedTempo,
+    tempoConfidence,
+    beatPhase,
+    rhythmicDensity,
     beatLowBandEnergy: lowBandEnergy,
     beatOnsetDriver: onsetDriver,
     beatThreshold: adaptiveThreshold,
   };
+}
+
+function updateTempoState(
+  bandState,
+  beatDetected,
+  beatConfidence,
+  currentFrameAtMs,
+) {
+  if (beatDetected) {
+    const idx = bandState.beatTimestampWriteIdx % BEAT_HISTORY_SIZE_LOCAL;
+    bandState.beatTimestamps[idx] = currentFrameAtMs;
+    bandState.beatTimestampWriteIdx += 1;
+    bandState.beatTimestampCount = Math.min(
+      bandState.beatTimestampCount + 1,
+      BEAT_HISTORY_SIZE_LOCAL,
+    );
+
+    if (bandState.beatTimestampCount >= 2) {
+      const ibis = [];
+      const n = Math.min(bandState.beatTimestampCount, BEAT_HISTORY_SIZE_LOCAL);
+      for (let i = 1; i < n; i += 1) {
+        const wi = bandState.beatTimestampWriteIdx;
+        const a =
+          bandState.beatTimestamps[
+            (wi - i - 1 + BEAT_HISTORY_SIZE_LOCAL) % BEAT_HISTORY_SIZE_LOCAL
+          ];
+        const b =
+          bandState.beatTimestamps[
+            (wi - i + BEAT_HISTORY_SIZE_LOCAL) % BEAT_HISTORY_SIZE_LOCAL
+          ];
+        const ibi = b - a;
+        if (ibi >= MIN_IBI_MS && ibi <= MAX_IBI_MS) {
+          ibis.push(ibi);
+        }
+      }
+      if (ibis.length >= 1) {
+        ibis.sort((x, y) => x - y);
+        const medianIbi = ibis[Math.floor(ibis.length / 2)];
+        const newBpm = 60000 / medianIbi;
+        const alpha =
+          TEMPO_EMA_SLOW +
+          (TEMPO_EMA_FAST - TEMPO_EMA_SLOW) * clamp01(beatConfidence);
+        bandState.tempoEma =
+          bandState.tempoEma === 0
+            ? newBpm
+            : bandState.tempoEma + (newBpm - bandState.tempoEma) * alpha;
+        bandState.estimatedTempo = bandState.tempoEma;
+        bandState.tempoConfidence = clamp01(
+          ibis.length / (BEAT_HISTORY_SIZE_LOCAL - 1),
+        );
+      }
+    }
+  }
+
+  if (
+    bandState.estimatedTempo > 0 &&
+    Number.isFinite(bandState.previousBeatAtMs)
+  ) {
+    const msSince = Math.max(0, currentFrameAtMs - bandState.previousBeatAtMs);
+    const periodMs = 60000 / bandState.estimatedTempo;
+    bandState.beatPhase = clamp01(msSince / periodMs);
+  }
+
+  return {
+    estimatedTempo: bandState.estimatedTempo,
+    tempoConfidence: bandState.tempoConfidence,
+    beatPhase: bandState.beatPhase,
+  };
+}
+
+function computeRhythmicDensity(bandState, deltaMs, currentFrameAtMs) {
+  const n = Math.min(bandState.beatTimestampCount, BEAT_HISTORY_SIZE_LOCAL);
+  let beatsInWindow = 0;
+  const windowStart = currentFrameAtMs - ONSET_DENSITY_WINDOW_MS;
+  for (let i = 0; i < n; i += 1) {
+    const idx =
+      (bandState.beatTimestampWriteIdx - 1 - i + BEAT_HISTORY_SIZE_LOCAL) %
+      BEAT_HISTORY_SIZE_LOCAL;
+    if (bandState.beatTimestamps[idx] >= windowStart) {
+      beatsInWindow += 1;
+    }
+  }
+  const rawDensity = beatsInWindow / ONSET_DENSITY_MAX_BEATS;
+  const alpha = computeEmaAlpha(deltaMs, ONSET_DENSITY_SMOOTHING_MS);
+  bandState.onsetDensityEma += (rawDensity - bandState.onsetDensityEma) * alpha;
+  return clamp01(bandState.onsetDensityEma);
+}
+
+function computeMicFftNormGain(fftMagnitudes, target, maxGain) {
+  let peak = 0;
+  for (let i = 0; i < fftMagnitudes.length; i++) {
+    if (fftMagnitudes[i] > peak) peak = fftMagnitudes[i];
+  }
+  if (peak <= 0) return 1.0;
+  return Math.min(Math.max(target / peak, 1.0), maxGain);
+}
+
+function scaledFftCopy(fftMagnitudes, gain) {
+  if (gain === 1.0) return fftMagnitudes;
+  const out = new Float32Array(fftMagnitudes.length);
+  for (let i = 0; i < fftMagnitudes.length; i++) {
+    out[i] = fftMagnitudes[i] * gain;
+  }
+  return out;
 }
 
 function resolveLayeredModalStacks({
@@ -1784,12 +2261,14 @@ function resolveLayeredModalStacks({
   detailState,
   radius,
   capacity,
+  currentFrame,
   micNoiseGateActive,
   micHardSilenceActive,
   micProfile,
   auditSettings,
   spectralCentroid,
   includeChromesthesia,
+  analysisHints,
 }) {
   let analysisEngine = "none";
   let pitchSource = "none";
@@ -1799,6 +2278,8 @@ function resolveLayeredModalStacks({
   const backboneCapacity = getLayerSlotLimit("backbone", capacity);
   const detailCapacity = getLayerSlotLimit("detail", capacity);
   const profileConfig = getMicProfileConfig(micProfile);
+  let backboneTrackingSlots = buildEmptyTarget(backboneCapacity);
+  let detailTrackingSlots = buildEmptyTarget(detailCapacity);
 
   if (auditSettings.injectTestTone) {
     const selectedFrequency = auditSettings.testToneHz;
@@ -1852,6 +2333,8 @@ function resolveLayeredModalStacks({
     analysisEngine = "test";
     pitchSource = "test";
     spectralCandidates = detailBuild.peaks ?? [];
+    backboneTrackingSlots = backboneBuild.slots;
+    detailTrackingSlots = detailBuild.slots;
   } else if (!micNoiseGateActive && analysisSnapshot?.fftMagnitudes) {
     const fftMagnitudes = analysisSnapshot.fftMagnitudes;
     const layerBlendOptions = {
@@ -1912,20 +2395,34 @@ function resolveLayeredModalStacks({
         hardSilence: micHardSilenceActive,
         profileConfig,
       });
+      const hintedVoiceConfidence = clamp01(
+        voiceDriver.confidence *
+          (0.72 +
+            (analysisHints?.pitchConfidence ?? 0) * 0.18 +
+            (analysisHints?.voicingProbability ?? 0) * 0.2),
+      );
       const voiceDetailPeaks = resolveVoiceDetailPeaks({
         fftMagnitudes,
         sampleRate: status.sampleRate,
         fftSize: status.fftSize,
         fundamental: voiceDriver.frequency,
         profileConfig,
+        analysisHints,
       });
       spectralCandidates = voiceDetailPeaks;
+
+      const micNormGain = computeMicFftNormGain(
+        fftMagnitudes,
+        MIC_MODAL_FFT_TARGET,
+        MIC_MODAL_FFT_MAX_GAIN,
+      );
+      const modalFft = scaledFftCopy(fftMagnitudes, micNormGain);
 
       if (voiceDriver.frequency > 0) {
         const backboneTarget = buildModalSlotsFromFundamental({
           frequency: voiceDriver.frequency,
-          confidence: voiceDriver.confidence,
-          fftMagnitudes,
+          confidence: hintedVoiceConfidence,
+          fftMagnitudes: modalFft,
           sampleRate: status.sampleRate,
           fftSize: status.fftSize,
           radius,
@@ -1934,51 +2431,93 @@ function resolveLayeredModalStacks({
           includeChromesthesia,
         });
         const detailTarget = buildModalSlotsFromSpectralPeaks({
-          fftMagnitudes,
+          fftMagnitudes: modalFft,
           sampleRate: status.sampleRate,
           fftSize: status.fftSize,
           radius,
-          capacity,
+          capacity: detailCapacity,
           slotLimit: detailCapacity,
           spectralCentroid,
           includeChromesthesia,
           peaks: voiceDetailPeaks,
         });
+        const resolvedBackboneBlendOptions = createLayerReleaseOptions(
+          backboneState,
+          backboneTarget.slots,
+          backboneCapacity,
+          layerBlendOptions,
+          analysisHints,
+          "backbone",
+        );
+        const resolvedDetailBlendOptions = createLayerReleaseOptions(
+          detailState,
+          detailTarget.slots,
+          detailCapacity,
+          detailBlendOptions,
+          analysisHints,
+          "detail",
+        );
 
         applyLayerBlend(
           backboneState,
           backboneTarget,
           backboneCapacity,
-          layerBlendOptions,
+          resolvedBackboneBlendOptions,
         );
         applyLayerBlend(
           detailState,
           detailTarget,
           detailCapacity,
-          detailBlendOptions,
+          resolvedDetailBlendOptions,
         );
         setLayerMetadata(
           backboneState,
           backboneTarget,
           voiceDriver.frequency,
-          voiceDriver.confidence,
+          hintedVoiceConfidence,
           "vocal",
         );
         setLayerMetadata(
           detailState,
           detailTarget,
           voiceDriver.frequency,
-          voiceDriver.confidence,
+          hintedVoiceConfidence,
           "vocal",
         );
         analysisEngine = "vocal";
         pitchSource = voiceDriver.pitchSource;
+        backboneTrackingSlots = backboneTarget.slots;
+        detailTrackingSlots = detailTarget.slots;
       } else if (
-        countActiveSlots(backboneState.slots, capacity) > 0 ||
-        countActiveSlots(detailState.slots, capacity) > 0
+        countActiveSlots(backboneState.slots, backboneCapacity) > 0 ||
+        countActiveSlots(detailState.slots, detailCapacity) > 0
       ) {
-        releaseLayer(backboneState, backboneCapacity, layerBlendOptions);
-        releaseLayer(detailState, detailCapacity, detailBlendOptions);
+        releaseLayer(
+          backboneState,
+          backboneCapacity,
+          createLayerReleaseOptions(
+            backboneState,
+            backboneTrackingSlots,
+            backboneCapacity,
+            layerBlendOptions,
+            analysisHints,
+            "backbone",
+          ),
+          backboneTrackingSlots,
+        );
+        releaseLayer(
+          detailState,
+          detailCapacity,
+          createLayerReleaseOptions(
+            detailState,
+            detailTrackingSlots,
+            detailCapacity,
+            detailBlendOptions,
+            analysisHints,
+            "detail",
+          ),
+          detailTrackingSlots,
+        );
         usedDecay = true;
         pitchSource = voiceDriver.pitchSource;
       } else {
@@ -1988,53 +2527,170 @@ function resolveLayeredModalStacks({
       }
     } else {
       clearVocalDriverState(backboneState);
-      const peakOptions = isAmbientMic
-        ? resolveAmbientPeakOptions(profileConfig)
+      const micNormGainAmbient = isAmbientMic
+        ? computeMicFftNormGain(
+            fftMagnitudes,
+            MIC_MODAL_FFT_TARGET,
+            MIC_MODAL_FFT_MAX_GAIN,
+          )
+        : 1.0;
+      const modalFftAmbient = scaledFftCopy(fftMagnitudes, micNormGainAmbient);
+      // Peak detection uses the original FFT with a proportionally scaled
+      // threshold: noise bins that would exceed 0.12 only after normalization
+      // are excluded, while genuine signal peaks that are just quiet in the
+      // original still pass. Region-based spreading (AMBIENT_REGION_RANGES) is
+      // intentionally omitted here — it was designed for true broadband ambient
+      // (crowd, room) but for music it guarantees harmonically unrelated peaks
+      // across bass/mid/treble that produce incoherent superposition. The
+      // salience scorer picks the most harmonically coherent peaks instead.
+      const peakDetectionMinAmplitude = isAmbientMic
+        ? SPECTRAL_MODAL_POLICY.minSpectralBinAmplitude / micNormGainAmbient
         : undefined;
-      const backboneTarget = buildModalSlotsFromPeakDrivers({
+      const peakOptions = isAmbientMic
+        ? {
+            maxFrequency: resolveAmbientPeakOptions(profileConfig).maxFrequency,
+            minimumAmplitude: peakDetectionMinAmplitude,
+          }
+        : undefined;
+      const candidatePool = findSpectralPeakFrequencies(
         fftMagnitudes,
-        sampleRate: status.sampleRate,
-        fftSize: status.fftSize,
-        radius,
-        capacity,
-        peakCount: isAmbientMic ? 4 : BACKBONE_PEAK_COUNT,
-        slotLimit: backboneCapacity,
-        spectralCentroid,
-        includeChromesthesia,
+        status.sampleRate,
+        status.fftSize,
+        INTERNAL_CANDIDATE_POOL_SIZE,
         peakOptions,
-      });
+      );
+      annotatePeakSalience(
+        candidatePool,
+        modalFftAmbient,
+        status.sampleRate,
+        status.fftSize,
+      );
+      // Backbone strategy differs by mode:
+      // - Ambient mic: drive from a SINGLE dominant peak via buildModalSlotsFromFundamental.
+      //   buildModalSlotsFromPeakDrivers with 3 peaks picks harmonically-related
+      //   frequencies (f, 2f, 3f after normalization flattens the harmonic envelope)
+      //   and treats each as an independent fundamental, generating overlapping
+      //   high-mode-number series → incoherent ray patterns. Single-peak mirrors
+      //   voice mode: one coherent standing wave, detail carries harmonic texture.
+      // - File / system audio: use buildModalSlotsFromPeakDrivers with BACKBONE_PEAK_COUNT
+      //   peaks for polyphonic chord support (harmonically unrelated notes each
+      //   drive their own standing wave at natural amplitude levels).
+      const detailPeaks = selectScoredPeaks(
+        candidatePool,
+        DETAIL_PEAK_COUNT,
+        analysisHints,
+        "detail",
+      );
+      let backboneTarget;
+      let dominantPeak;
+      if (isAmbientMic) {
+        dominantPeak =
+          selectScoredPeaks(candidatePool, 1, analysisHints, "backbone")[0] ??
+          null;
+        // Only update backbone if the peak has real harmonic structure.
+        // Noise peaks (fricatives, room transients) have salienceScore ≈ 0;
+        // tonal music/humming scores ≥ 0.15. Below the gate the backbone
+        // holds its current EMA state and decays naturally — no incoherent
+        // noise mode injected.
+        const hasTonalContent =
+          dominantPeak !== null &&
+          (dominantPeak.salienceScore ?? 0) >=
+            AMBIENT_MIC_BACKBONE_MIN_SALIENCE;
+        backboneTarget = hasTonalContent
+          ? buildModalSlotsFromFundamental({
+              frequency: dominantPeak.frequency,
+              confidence: Math.max(
+                0.45,
+                dominantPeak.amplitude * micNormGainAmbient,
+              ),
+              fftMagnitudes: modalFftAmbient,
+              sampleRate: status.sampleRate,
+              fftSize: status.fftSize,
+              radius,
+              capacity: backboneCapacity,
+              spectralCentroid,
+              includeChromesthesia,
+            })
+          : {
+              slots: new Float32Array(backboneCapacity * 4),
+              referenceSlots: new Float32Array(backboneCapacity * 4),
+              colorSlots: new Float32Array(backboneCapacity * 4),
+              harmonicSupport: new Float32Array(HARMONIC_ORDERS.length),
+              uniqueModeCount: 0,
+              components: [],
+              peaks: [],
+            };
+      } else {
+        const backbonePeaks = selectScoredPeaks(
+          candidatePool,
+          BACKBONE_PEAK_COUNT,
+          analysisHints,
+          "backbone",
+        );
+        dominantPeak = backbonePeaks[0] ?? null;
+        backboneTarget = buildModalSlotsFromPeakDrivers({
+          fftMagnitudes: modalFftAmbient,
+          sampleRate: status.sampleRate,
+          fftSize: status.fftSize,
+          radius,
+          capacity: backboneCapacity,
+          peakCount: backbonePeaks.length || BACKBONE_PEAK_COUNT,
+          slotLimit: backboneCapacity,
+          spectralCentroid,
+          includeChromesthesia,
+          peaks: backbonePeaks,
+        });
+      }
       const detailTarget = buildModalSlotsFromSpectralPeaks({
-        fftMagnitudes,
+        fftMagnitudes: modalFftAmbient,
         sampleRate: status.sampleRate,
         fftSize: status.fftSize,
         radius,
-        capacity,
-        peakCount: isAmbientMic ? 6 : DETAIL_PEAK_COUNT,
+        capacity: detailCapacity,
+        peakCount: detailPeaks.length || DETAIL_PEAK_COUNT,
         slotLimit: detailCapacity,
         spectralCentroid,
         includeChromesthesia,
-        peakOptions,
+        peaks: detailPeaks,
       });
 
-      spectralCandidates = detailTarget.peaks ?? backboneTarget.peaks ?? [];
-      const dominantPeak =
-        backboneTarget.peaks?.[0] ?? detailTarget.peaks?.[0] ?? null;
+      spectralCandidates = detailPeaks.length
+        ? detailPeaks
+        : dominantPeak
+          ? [dominantPeak]
+          : [];
 
       if (
         backboneTarget.uniqueModeCount > 0 ||
         detailTarget.uniqueModeCount > 0
       ) {
+        const resolvedBackboneBlendOptions = createLayerReleaseOptions(
+          backboneState,
+          backboneTarget.slots,
+          backboneCapacity,
+          layerBlendOptions,
+          analysisHints,
+          "backbone",
+        );
+        const resolvedDetailBlendOptions = createLayerReleaseOptions(
+          detailState,
+          detailTarget.slots,
+          detailCapacity,
+          detailBlendOptions,
+          analysisHints,
+          "detail",
+        );
         applyLayerBlend(
           backboneState,
           backboneTarget,
           backboneCapacity,
-          layerBlendOptions,
+          resolvedBackboneBlendOptions,
         );
         applyLayerBlend(
           detailState,
           detailTarget,
           detailCapacity,
-          detailBlendOptions,
+          resolvedDetailBlendOptions,
         );
         setLayerMetadata(
           backboneState,
@@ -2052,12 +2708,38 @@ function resolveLayeredModalStacks({
         );
         analysisEngine = isAmbientMic ? "multi-spectral" : "layered";
         pitchSource = isAmbientMic ? "multi-spectral" : "spectral";
+        backboneTrackingSlots = backboneTarget.slots;
+        detailTrackingSlots = detailTarget.slots;
       } else if (
-        countActiveSlots(backboneState.slots, capacity) > 0 ||
-        countActiveSlots(detailState.slots, capacity) > 0
+        countActiveSlots(backboneState.slots, backboneCapacity) > 0 ||
+        countActiveSlots(detailState.slots, detailCapacity) > 0
       ) {
-        releaseLayer(backboneState, backboneCapacity, layerBlendOptions);
-        releaseLayer(detailState, detailCapacity, detailBlendOptions);
+        releaseLayer(
+          backboneState,
+          backboneCapacity,
+          createLayerReleaseOptions(
+            backboneState,
+            backboneTrackingSlots,
+            backboneCapacity,
+            layerBlendOptions,
+            analysisHints,
+            "backbone",
+          ),
+          backboneTrackingSlots,
+        );
+        releaseLayer(
+          detailState,
+          detailCapacity,
+          createLayerReleaseOptions(
+            detailState,
+            detailTrackingSlots,
+            detailCapacity,
+            detailBlendOptions,
+            analysisHints,
+            "detail",
+          ),
+          detailTrackingSlots,
+        );
         usedDecay = true;
       } else {
         clearModalStack(backboneState);
@@ -2098,8 +2780,32 @@ function resolveLayeredModalStacks({
           }
         : null,
     };
-    releaseLayer(backboneState, backboneCapacity, layerBlendOptions);
-    releaseLayer(detailState, detailCapacity, detailBlendOptions);
+    releaseLayer(
+      backboneState,
+      backboneCapacity,
+      createLayerReleaseOptions(
+        backboneState,
+        backboneTrackingSlots,
+        backboneCapacity,
+        layerBlendOptions,
+        analysisHints,
+        "backbone",
+      ),
+      backboneTrackingSlots,
+    );
+    releaseLayer(
+      detailState,
+      detailCapacity,
+      createLayerReleaseOptions(
+        detailState,
+        detailTrackingSlots,
+        detailCapacity,
+        detailBlendOptions,
+        analysisHints,
+        "detail",
+      ),
+      detailTrackingSlots,
+    );
     usedDecay = true;
   } else {
     clearModalStack(backboneState);
@@ -2108,6 +2814,23 @@ function resolveLayeredModalStacks({
       clearVocalDriverState(backboneState);
     }
   }
+
+  updateLayerSlotTracking(
+    backboneState,
+    backboneTrackingSlots,
+    backboneCapacity,
+    currentFrame,
+    analysisHints,
+    "backbone",
+  );
+  updateLayerSlotTracking(
+    detailState,
+    detailTrackingSlots,
+    detailCapacity,
+    currentFrame,
+    analysisHints,
+    "detail",
+  );
 
   return {
     analysisEngine,
@@ -2162,6 +2885,7 @@ function finalizeFeatureDebugSnapshot({
   beatThreshold,
   sampleRate,
   fftSize,
+  analysisHints = null,
 }) {
   const debug = buildDebugSummary({
     inputMode,
@@ -2208,6 +2932,7 @@ function finalizeFeatureDebugSnapshot({
     beatThreshold,
     sampleRate,
     fftSize,
+    analysisHints,
   });
 
   if (!shouldBuildDetailedDebug(auditSettings)) {
@@ -2255,8 +2980,9 @@ export function buildAudioFeatureFrame({
   frameTimeMs = undefined,
   micAnalysisSettings = DEFAULT_MIC_ANALYSIS_SETTINGS,
   includeChromesthesia = true,
+  analysisHints = null,
 }) {
-  const capacity = featureState?.capacity ?? AUDIO_DEFAULTS.capacity;
+  const capacity = featureState?.capacity ?? AUDIO_SLOT_CAPACITY;
   const analysisMemory = getAnalysisMemory(featureState, capacity);
   const {
     backboneSlots,
@@ -2323,6 +3049,7 @@ export function buildAudioFeatureFrame({
       detailState,
       fftSize,
       auditSettings: resolvedAuditSettings,
+      analysisHints,
     });
   }
 
@@ -2370,12 +3097,14 @@ export function buildAudioFeatureFrame({
       detailState,
       radius,
       capacity,
+      currentFrame,
       micNoiseGateActive,
       micHardSilenceActive,
       micProfile: resolvedMicAnalysisSettings.profile,
       auditSettings: resolvedAuditSettings,
       spectralCentroid: spectralCentroidHint,
       includeChromesthesia: shouldBuildChromesthesia,
+      analysisHints,
     });
 
   copyFloatArray(backboneSlots, backboneState.slots);
@@ -2395,7 +3124,7 @@ export function buildAudioFeatureFrame({
       { slots: backboneSlots, weight: 1 },
       { slots: detailSlots, weight: DETAIL_LAYER_WEIGHT },
     ],
-    Math.min(capacity, MAX_STACK_SLOTS),
+    capacity,
   );
   combineModalLayers(
     referenceModeSlots,
@@ -2403,7 +3132,7 @@ export function buildAudioFeatureFrame({
       { slots: referenceBackboneSlots, weight: 1 },
       { slots: referenceDetailSlots, weight: DETAIL_LAYER_WEIGHT },
     ],
-    Math.min(capacity, MAX_STACK_SLOTS),
+    capacity,
   );
 
   let returnedBackboneSlots = backboneSlots;
@@ -2440,6 +3169,16 @@ export function buildAudioFeatureFrame({
   }
   fftMagnitudes.set(fftMagnitudesSource);
 
+  // Chroma + key detection
+  const chromaState = featureState.analysis.chromaState;
+  const rawChroma = buildChromaVector(fftMagnitudes, sampleRate, fftSize);
+  smoothChromaInPlace(chromaState.smoothedChroma, rawChroma, CHROMA_EMA_ALPHA);
+  const keyResult = detectKeyFromChroma(chromaState.smoothedChroma);
+  chromaState.keyTonic = keyResult.tonic;
+  chromaState.keyMode = keyResult.mode;
+  chromaState.keyConfidence = keyResult.confidence;
+  chromaState.keyTonicHue = pitchClassToHue(keyResult.tonic);
+
   const {
     spectralCentroid,
     spectralFlux,
@@ -2448,6 +3187,10 @@ export function buildAudioFeatureFrame({
     beatPulseId,
     beatStrength,
     beatConfidence,
+    estimatedTempo,
+    tempoConfidence,
+    beatPhase,
+    rhythmicDensity,
     beatLowBandEnergy,
     beatOnsetDriver,
     beatThreshold,
@@ -2474,7 +3217,8 @@ export function buildAudioFeatureFrame({
   const { structureSignal, energySignal, changeSignal, pulseSignal } =
     deriveCompositeSignals({
       inputMode,
-      capacity,
+      modeCapacity: capacity,
+      signalNormalizationSlots: AUDIO_SIGNAL_NORMALIZATION_SLOTS,
       modeSlots: returnedModeSlots,
       referenceModeSlots,
       backboneState,
@@ -2492,6 +3236,7 @@ export function buildAudioFeatureFrame({
       beatOnsetDriver,
       beatThreshold,
       bandState,
+      analysisHints,
     });
 
   const activeModeCount = countActiveSlots(returnedModeSlots, capacity);
@@ -2552,6 +3297,7 @@ export function buildAudioFeatureFrame({
     beatThreshold,
     sampleRate,
     fftSize,
+    analysisHints,
   });
 
   if (auditState) {
@@ -2582,6 +3328,18 @@ export function buildAudioFeatureFrame({
     beatPulseId,
     beatStrength,
     beatConfidence,
+    estimatedTempo,
+    tempoConfidence,
+    beatPhase,
+    rhythmicDensity,
+    keyTonic: chromaState.keyTonic,
+    keyMode: chromaState.keyMode,
+    keyConfidence: chromaState.keyConfidence,
+    keyTonicHue: chromaState.keyTonicHue,
+    harmonicity: clamp01(analysisHints?.harmonicity ?? 0),
+    bassSalience: clamp01(analysisHints?.bassSalience ?? 0),
+    textureSpread: clamp01(analysisHints?.textureSpread ?? 0),
+    novelty: clamp01(analysisHints?.novelty ?? 0),
     modeSlots: returnedModeSlots,
     referenceModeSlots,
     sourceMode,

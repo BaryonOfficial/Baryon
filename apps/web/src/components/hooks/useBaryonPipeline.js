@@ -28,9 +28,18 @@ export function useBaryonPipeline(gl, scene, camera) {
     return pipelineState.pipeline;
   }, [camera, gl, scene]);
 
+  // TRAANode allocates two HalfFloat render targets (history + resolve) that must
+  // be explicitly freed — dropping the ref alone does not release GPU memory.
+  const disposePipeline = useCallback(() => {
+    postNodesRef.current?.traaNode?.dispose();
+    pipelineRef.current = null;
+    postNodesRef.current = null;
+  }, []);
+
   return {
     pipelineRef,
     postNodesRef,
     ensurePipeline,
+    disposePipeline,
   };
 }

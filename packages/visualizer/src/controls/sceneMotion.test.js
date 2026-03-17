@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createDisabledSceneSnapshot,
   createSceneMotionState,
+  deriveAutoMotionAmount,
   deriveSceneSignals,
   stepAudioSceneMotion,
   syncIdleOverlayRotation,
@@ -118,6 +119,51 @@ describe("scene motion helpers", () => {
     expect(freshSceneMotion.angularVelocity).toBeLessThan(
       consumedSceneMotion.angularVelocity,
     );
+  });
+
+  it("caps impulse-pushed velocity to 2× target angular velocity", () => {
+    const motion = createSceneMotionState(0);
+    // Use a high motionAmount + max beat to produce a kick that would exceed 2× target
+    stepAudioSceneMotion(motion, {
+      motionAmount: 3.0,
+      shapedDrive: 0.05,
+      reactiveSignal: 0.05,
+      motionImpulse: 0,
+      beatPulseId: 42,
+      beatStrength: 1.0,
+      beatConfidence: 1.0,
+      beatDetected: true,
+      deltaTime: 1 / 60,
+    });
+    // targetAngularVelocity ≈ -0.878; uncapped impulse would push velocity to ~-3.6
+    expect(motion.targetAngularVelocity).toBeLessThan(0);
+    expect(motion.angularVelocity).toBeGreaterThanOrEqual(
+      motion.targetAngularVelocity * 2.0,
+    );
+  });
+
+  it("deriveAutoMotionAmount rises quickly on fast attack", () => {
+    const sceneMotion = createSceneMotionState(0);
+    sceneMotion.motionAmountEnvelope = 0.5;
+    const before = sceneMotion.motionAmountEnvelope;
+    const result = deriveAutoMotionAmount(sceneMotion, 0.9, 1 / 60);
+    expect(sceneMotion.motionAmountEnvelope).toBeGreaterThan(before);
+    expect(result).toBeGreaterThanOrEqual(0.6);
+    expect(result).toBeLessThanOrEqual(2.0);
+  });
+
+  it("deriveAutoMotionAmount decays slowly on release", () => {
+    const sceneMotion = createSceneMotionState(0);
+    // Prime envelope to high value
+    for (let i = 0; i < 120; i++) {
+      deriveAutoMotionAmount(sceneMotion, 0.9, 1 / 60);
+    }
+    const primed = sceneMotion.motionAmountEnvelope;
+    // One frame of release toward low signal
+    deriveAutoMotionAmount(sceneMotion, 0.1, 1 / 60);
+    const change = primed - sceneMotion.motionAmountEnvelope;
+    // Release should move the envelope very little per frame (< 0.01)
+    expect(change).toBeLessThan(0.01);
   });
 
   it("keeps the idle overlay synced to manual velocity", () => {

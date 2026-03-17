@@ -17,7 +17,7 @@ import { SPECTRAL_MODAL_POLICY } from "./policy.js";
 
 export const HARMONIC_ORDERS = SPECTRAL_MODAL_POLICY.harmonicOrders;
 const HARMONIC_ATTENUATION = SPECTRAL_MODAL_POLICY.harmonicAttenuation;
-const HARMONIC_FAMILY_COUNTS = [3, 2, 2, 1];
+const HARMONIC_FAMILY_COUNTS = [3, 2, 2, 1, 1, 1];
 const FAMILY_ATTENUATION = [1.0, 0.84, 0.7, 0.58];
 const HARMONIC_SUPPORT_FLOOR = SPECTRAL_MODAL_POLICY.harmonicSupportFloor;
 const HARMONIC_SUPPORT_RATIO = SPECTRAL_MODAL_POLICY.harmonicSupportRatio;

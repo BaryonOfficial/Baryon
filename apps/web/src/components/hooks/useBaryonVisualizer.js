@@ -60,6 +60,7 @@ export function useBaryonVisualizer({
     runtimeRef,
     runtimeStateRef,
     audioFeatureRef,
+    audioFeatureAnalyzerRef,
     runtimeDiagnosticsRef,
     frameCacheRefs,
     controlCacheRefs,
@@ -97,6 +98,7 @@ export function useBaryonVisualizer({
     runtimeRef,
     runtimeStateRef,
     audioFeatureRef,
+    audioFeatureAnalyzerRef,
     controlsRef,
     micProfile,
   };
@@ -303,6 +305,7 @@ export function useBaryonVisualizer({
     const { featureFrame, effectiveFrame } = resolveFeatureFrame({
       audio,
       featureState,
+      featureAnalyzer: renderLoopContext.audioFeatureAnalyzerRef.current,
       runtimeState,
       controls,
       status,

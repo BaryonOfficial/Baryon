@@ -36,6 +36,9 @@ export * from "./three/loaders/setupLoaders.js";
 export {
   createAudioFeatureState,
   buildAudioFeatureFrame,
+  createAudioFeatureAnalyzer,
+  createNoopAudioFeatureAnalyzer,
+  DEFAULT_FEATURE_ANALYSIS_SETTINGS,
   DEFAULT_MIC_ANALYSIS_SETTINGS,
   MIC_PROFILE_OPTIONS,
 } from "./utils/audioFeatures.js";

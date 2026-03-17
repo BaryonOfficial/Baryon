@@ -1,15 +1,20 @@
 import {
   AUDIT_DEFAULTS,
   AUDIO_DEFAULTS,
+  AUDIO_SLOT_CAPACITY,
   BEAT_DEFAULTS,
 } from "../../defaults.js";
 
-export const MAX_STACK_SLOTS = AUDIO_DEFAULTS.capacity;
-export const BACKBONE_STACK_SLOTS = 6;
-export const DETAIL_STACK_SLOTS = 8;
+/** @type {number} */
+export const BACKBONE_STACK_SLOTS = AUDIO_DEFAULTS.backboneStackSlots;
+/** @type {number} */
+export const DETAIL_STACK_SLOTS = AUDIO_DEFAULTS.detailStackSlots;
+/** @type {number} */
+export const MAX_STACK_SLOTS = AUDIO_SLOT_CAPACITY;
 export const BAND_BUCKET_COUNT = 4;
+export const BEAT_HISTORY_SIZE = 8;
 export const DECAY_PER_FRAME = 0.9;
-const HARMONIC_SUPPORT_COUNT = 4;
+const HARMONIC_SUPPORT_COUNT = 6;
 const COLOR_SLOT_STRIDE = 4;
 
 function createColorSlotArray(capacity) {
@@ -44,6 +49,11 @@ function createModalLayerState(capacity) {
     voicingActive: false,
     highCandidateRejected: false,
     rejectionReason: "none",
+    slotAgeFrames: new Uint16Array(capacity),
+    slotConfidence: new Float32Array(capacity),
+    slotDisagreementCounts: new Uint8Array(capacity),
+    slotLastConfirmedFrames: new Uint32Array(capacity),
+    _slotMetricMap: new Map(),
     _poolCurrentMap: new Map(),
     _poolTargetMap: new Map(),
     _poolAdmittedKeys: new Set(),
@@ -70,6 +80,14 @@ function createBandState() {
     beatPulseId: 0,
     beatStrength: 0,
     beatConfidence: 0,
+    beatTimestamps: new Float64Array(BEAT_HISTORY_SIZE),
+    beatTimestampWriteIdx: 0,
+    beatTimestampCount: 0,
+    estimatedTempo: 0,
+    tempoEma: 0,
+    tempoConfidence: 0,
+    beatPhase: 0,
+    onsetDensityEma: 0,
     beatSensitivity: BEAT_DEFAULTS.beatSensitivity,
     micInputMode: "idle",
     micProfile: "voice-tone",
@@ -86,7 +104,17 @@ function createBandState() {
   };
 }
 
-export function createAudioFeatureState(capacity = AUDIO_DEFAULTS.capacity) {
+export function createChromaState() {
+  return {
+    smoothedChroma: new Float32Array(12),
+    keyTonic: 0, // pitch class 0-11
+    keyMode: "major", // "major" | "minor"
+    keyConfidence: 0, // 0-1
+    keyTonicHue: 0, // pitchClassToHue(keyTonic)
+  };
+}
+
+export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
   return {
     capacity,
     analysis: {
@@ -104,6 +132,7 @@ export function createAudioFeatureState(capacity = AUDIO_DEFAULTS.capacity) {
       backboneState: createModalLayerState(capacity),
       detailState: createModalLayerState(capacity),
       bandState: createBandState(),
+      chromaState: createChromaState(),
       previousSpectrum: new Float32Array(0),
     },
     audit: {
@@ -153,6 +182,11 @@ export function clearModalStack(state) {
   if ("voicingActive" in state) state.voicingActive = false;
   if ("highCandidateRejected" in state) state.highCandidateRejected = false;
   if ("rejectionReason" in state) state.rejectionReason = "none";
+  state.slotAgeFrames?.fill(0);
+  state.slotConfidence?.fill(0);
+  state.slotDisagreementCounts?.fill(0);
+  state.slotLastConfirmedFrames?.fill(0);
+  state._slotMetricMap?.clear?.();
 }
 
 export function decayModalStack(state) {
@@ -182,6 +216,11 @@ export function decayModalStack(state) {
   if ("voicingActive" in state) state.voicingActive = false;
   if ("highCandidateRejected" in state) state.highCandidateRejected = false;
   if ("rejectionReason" in state) state.rejectionReason = "none";
+  state.slotAgeFrames?.fill(0);
+  state.slotConfidence?.fill(0);
+  state.slotDisagreementCounts?.fill(0);
+  state.slotLastConfirmedFrames?.fill(0);
+  state._slotMetricMap?.clear?.();
 }
 
 export function writeSlot(target, index, mode, amplitude) {
@@ -220,6 +259,7 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
   const attack = options.attack ?? BLEND_ATTACK;
   const tracking = options.tracking ?? BLEND_TRACKING;
   const release = options.release ?? BLEND_RELEASE;
+  const releaseOverrides = options.releaseOverrides ?? null;
   const freshCap = options.freshCap ?? BLEND_MAX_FRESH_PER_FRAME;
   const slotLimit = Math.min(state.slots.length / 4, capacity);
 
@@ -287,7 +327,8 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
 
   for (const [key, entry] of currentMap.entries()) {
     if (!admittedTargetKeys.has(key)) {
-      const newAmp = entry.amplitude * release;
+      const releaseFactor = releaseOverrides?.get?.(key) ?? release;
+      const newAmp = entry.amplitude * releaseFactor;
       if (newAmp >= BLEND_DROP_THRESHOLD) {
         blended.set(key, {
           u: entry.u,

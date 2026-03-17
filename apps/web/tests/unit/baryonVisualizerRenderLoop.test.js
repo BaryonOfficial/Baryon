@@ -499,6 +499,64 @@ test("resolves feature frames across live, paused, and idle reuse states", () =>
   assert.deepEqual(idleResult.featureFrame, { debug: { idle: true } });
 });
 
+test("feeds the analyzer and forwards valid hints into feature-frame building", () => {
+  const renderLoopRefs = createRenderLoopRefs();
+  const analyzerCalls = [];
+  const analysisHints = {
+    active: true,
+    novelty: 0.7,
+    transientSalience: 0.4,
+  };
+  const buildFeatureFrame = (args) => {
+    analyzerCalls.push(args);
+    return {
+      debug: {},
+      backboneSlots: new Float32Array([1, 2]),
+    };
+  };
+
+  resolveFeatureFrame(
+    {
+      audio: {
+        readAnalysisSnapshot() {
+          return { fftMagnitudes: new Float32Array([0, 1, 0.4]) };
+        },
+      },
+      featureAnalyzer: {
+        enqueueAnalysisFrame(args) {
+          analyzerCalls.push({ enqueued: args });
+        },
+        readHints() {
+          return analysisHints;
+        },
+      },
+      featureState: {},
+      runtimeState: {
+        uniforms: {
+          uRadius: { value: 3 },
+        },
+      },
+      controls: {
+        injectTestTone: false,
+      },
+      status: {
+        isPlaying: true,
+        isMicActive: false,
+      },
+      time: 1,
+      clockMode: "playback",
+      micProfile: "voice-tone",
+      renderLoopRefs,
+      chromesthesiaEnabled: false,
+    },
+    { buildFeatureFrame },
+  );
+
+  assert.equal(analyzerCalls.length, 2);
+  assert.deepEqual(analyzerCalls[1].analysisHints, analysisHints);
+  assert.ok(analyzerCalls[0].enqueued.analysisSnapshot);
+});
+
 test("emits mic runtime status changes only when the status meaningfully changes", () => {
   const renderLoopRefs = createRenderLoopRefs();
   const emitted = [];
