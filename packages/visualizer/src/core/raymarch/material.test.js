@@ -25,7 +25,7 @@ describe("raymarch volume material", () => {
       uniforms: makeMeshUniforms(),
     });
 
-    expect(mesh.geometry).toBeInstanceOf(THREE.BoxGeometry);
+    expect(mesh.geometry).toBeInstanceOf(THREE.SphereGeometry);
     expect(mesh.material.transparent).toBe(true);
     expect(mesh.material.outputNode).toBeTruthy();
     expect(mesh.material.offsetNode).toBeTruthy();
