@@ -35,7 +35,7 @@ export const RENDER_DEFAULTS = Object.freeze({
   outputMode: "transparent",
   outputBackgroundColor: "#000000",
   bloomEnabled: true,
-  bloomStrength: 0.75,
+  bloomStrength: 0.3,
   bloomRadius: 0.16,
   bloomThreshold: 0.64,
   bloomResponseBias: 0.52,
