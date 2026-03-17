@@ -102,7 +102,7 @@ describe("control schema", () => {
     expect(state.holographicIntensity).toBe(0.45);
     expect(state.holographicShift).toBe(0.35);
     expect(state.holographicFresnelPower).toBe(3.2);
-    expect(state.bloomStrength).toBe(0.75);
+    expect(state.bloomStrength).toBe(0.3);
     expect(state.bloomRadius).toBe(0.16);
     expect(state.bloomThreshold).toBe(0.64);
     expect(state.performanceHudEnabled).toBe(
