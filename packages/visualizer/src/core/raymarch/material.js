@@ -660,7 +660,14 @@ export function createRaymarchVolumeMesh({
   capacity,
   uniforms,
 }) {
-  const geometry = new THREE.BoxGeometry(radius * 2, radius * 2, radius * 2);
+  // SphereGeometry instead of BoxGeometry: vertex velocities land on the actual
+  // sphere surface, so TRAA's interpolated velocity at each fragment closely matches
+  // the true sphere-surface motion during mesh rotation. BoxGeometry corners sit at
+  // depth sqrt(3)*radius ≈ 1.73r — far from the sphere surface — causing reprojection
+  // errors that blur the history buffer during rotation. Sphere geometry also culls
+  // the box corners (~22% fewer fragment invocations).
+  // 1% radius padding avoids precision clipping at the silhouette.
+  const geometry = new THREE.SphereGeometry(radius * 1.01, 32, 32);
   const material = /** @type {BaryonVolumeMaterial} */ (
     new BaryonVolumeNodeMaterial()
   );
