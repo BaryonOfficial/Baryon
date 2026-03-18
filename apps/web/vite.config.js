@@ -33,7 +33,10 @@ export default defineConfig(() => {
       outDir: "dist",
     },
     optimizeDeps: {
-      exclude: ["@baryon/visualizer", "@baryon/app-shell"],
+      // Only exclude @baryon/visualizer — it has Vite-specific ?worker/?url imports
+      // that esbuild can't process. @baryon/app-shell uses only relative imports so
+      // it can be crawled normally.
+      exclude: ["@baryon/visualizer"],
     },
     resolve: {
       alias: {
