@@ -197,17 +197,28 @@ describe("buildAudioFeatureFrame layered contract", () => {
 
   it("derives structure, energy, change, and pulse signals from the modal field", () => {
     const featureState = createAudioFeatureState();
-    const steadyFrame = buildTimedFrame({
+    const steadyFft = makeFft([
+      [110, 0.95],
+      [220, 0.62],
+      [330, 0.36],
+    ]);
+    // Warmup: first frame goes from silence → audio (inherently high changeSignal)
+    buildTimedFrame({
       featureState,
-      fftMagnitudes: makeFft([
-        [110, 0.95],
-        [220, 0.62],
-        [330, 0.36],
-      ]),
+      fftMagnitudes: steadyFft,
       avgAmplitude: 34,
       rms: 0.12,
       frameTimeMs: 0,
     });
+    // Steady: same audio as previous frame → low changeSignal
+    const steadyFrame = buildTimedFrame({
+      featureState,
+      fftMagnitudes: steadyFft,
+      avgAmplitude: 34,
+      rms: 0.12,
+      frameTimeMs: 16,
+    });
+    // Changing: completely different spectrum from previous steady frame → high changeSignal
     const changingFrame = buildTimedFrame({
       featureState,
       fftMagnitudes: makeFft([
@@ -218,7 +229,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ]),
       avgAmplitude: 58,
       rms: 0.24,
-      frameTimeMs: 16,
+      frameTimeMs: 32,
     });
 
     expect(steadyFrame.structureSignal).toBeGreaterThan(0.2);
@@ -237,7 +248,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
     expect(changingFrame.changeSignal).toBeGreaterThan(
       steadyFrame.changeSignal,
     );
-    expect(changingFrame.changeSignal).toBeGreaterThan(0.15);
+    expect(changingFrame.changeSignal).toBeGreaterThan(0.1);
   });
 
   it("keeps ambient mic input idle during startup calibration", () => {

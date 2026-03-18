@@ -16,6 +16,8 @@ module.exports = [
   {
     ignores: [
       "**/dist/**",
+      "**/out/**",
+      "**/.vite/**",
       "**/public/**",
       "**/node_modules/**",
       "**/coverage/**",
@@ -61,6 +63,20 @@ module.exports = [
       sourceType: "module",
       globals: {
         ...cleanGlobals(globals.node),
+      },
+    },
+  },
+  {
+    // Electron main/preload processes run in Node.js.
+    // MAIN_WINDOW_VITE_* are compile-time constants injected by electron-forge.
+    files: ["apps/desktop/electron/**/*.js"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        ...cleanGlobals(globals.node),
+        MAIN_WINDOW_VITE_DEV_SERVER_URL: "readonly",
+        MAIN_WINDOW_VITE_NAME: "readonly",
       },
     },
   },

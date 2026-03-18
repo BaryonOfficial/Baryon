@@ -118,7 +118,7 @@ export default class SafeVolumetricLightingModel extends LightingModel {
       endPos.assign(cameraPosition);
     });
 
-    const steps = uniform("int").onRenderUpdate(
+    const steps = uniform(0, /** @type {any} */ ("int")).onRenderUpdate(
       ({ material: runtimeMaterial }) =>
         /** @type {RuntimeVolumeMaterial} */ (runtimeMaterial).steps ?? 0,
     );
@@ -204,6 +204,7 @@ export default class SafeVolumetricLightingModel extends LightingModel {
           distTravelled.addAssign(offsetNode.mul(stepSize));
         }
 
+        // @ts-ignore — TSL Loop types expect number but UniformNode<int> is valid at runtime
         Loop(steps, () => {
           const sampleDistance = min(distTravelled, exitDistance);
           const positionRayLocal = startPosLocal
@@ -264,11 +265,9 @@ export default class SafeVolumetricLightingModel extends LightingModel {
             );
           }
 
-          const falloff = scatteringDensity
-            .mul(EXTINCTION_SCALE)
-            .negate()
-            .mul(stepSize)
-            .exp();
+          const falloff = /** @type {any} */ (
+            scatteringDensity.mul(EXTINCTION_SCALE).negate().mul(stepSize)
+          ).exp();
           transmittance.mulAssign(falloff);
           const remainingTransmittance = max(
             max(transmittance.x, transmittance.y),

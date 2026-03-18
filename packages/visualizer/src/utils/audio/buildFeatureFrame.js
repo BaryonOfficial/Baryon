@@ -10,7 +10,6 @@ import {
   DETAIL_STACK_SLOTS,
   MAX_STACK_SLOTS,
   BAND_BUCKET_COUNT,
-  BLEND_MAX_FRESH_PER_FRAME,
   blendColorStack,
   blendModalStack,
   clearModalStack,
@@ -46,9 +45,9 @@ const {
 const TEST_TONE_HARMONIC_ATTENUATION =
   SPECTRAL_MODAL_POLICY.harmonicAttenuation;
 
-const BACKBONE_PEAK_COUNT = 3;
-const DETAIL_PEAK_COUNT = 4;
-const INTERNAL_CANDIDATE_POOL_SIZE = 16;
+const BACKBONE_PEAK_COUNT = 5;
+const DETAIL_PEAK_COUNT = 8;
+const INTERNAL_CANDIDATE_POOL_SIZE = 24;
 const BACKBONE_SALIENCE_WEIGHT = 1.2;
 const DETAIL_LAYER_WEIGHT = 0.35;
 const BACKBONE_ATTACK = 0.22;
@@ -56,21 +55,22 @@ const BACKBONE_RELEASE = 0.96;
 const DETAIL_ATTACK = 0.55;
 const DETAIL_RELEASE = 0.82;
 const DETAIL_FRESH_CAP = 0;
+const BACKBONE_FRESH_CAP = 4;
 const BACKBONE_EVICTION_RELEASE = 0.78;
 const DETAIL_EVICTION_RELEASE = 0.58;
 const DETAIL_EVICTION_FRAMES = 2;
 const BACKBONE_EVICTION_FRAMES = 4;
-const DETAIL_NOVELTY_EVICTION_THRESHOLD = 0.65;
-const BACKBONE_NOVELTY_EVICTION_THRESHOLD = 0.8;
-const LOW_HARMONICITY_THRESHOLD = 0.35;
+const DETAIL_NOVELTY_EVICTION_THRESHOLD = 0.8;
+const BACKBONE_NOVELTY_EVICTION_THRESHOLD = 0.9;
+const LOW_HARMONICITY_THRESHOLD = 0.28;
 const BACKBONE_COLOR_ATTACK = 0.38;
 const BACKBONE_COLOR_TRACKING = 0.22;
 const BACKBONE_COLOR_RELEASE = 0.96;
 const DETAIL_COLOR_ATTACK = 0.5;
 const DETAIL_COLOR_TRACKING = 0.28;
 const DETAIL_COLOR_RELEASE = 0.9;
-const BACKBONE_COLOR_SLOT_LIMIT = 4;
-const DETAIL_COLOR_SLOT_LIMIT = 5;
+const BACKBONE_COLOR_SLOT_LIMIT = 6;
+const DETAIL_COLOR_SLOT_LIMIT = 7;
 const BAND_LIMITS_HZ = [140, 600, 2400, 8000];
 const DEFAULT_MIC_PROFILE = "voice-tone";
 const MIC_CALIBRATION_WINDOW_MS = 750;
@@ -548,7 +548,8 @@ function scoreCandidatePeak(peak, analysisHints, kind) {
     kind === "backbone"
       ? 1 +
         (hints?.harmonicity ?? 0) * 0.65 +
-        (hints?.pitchConfidence ?? 0) * 0.4
+        (hints?.pitchConfidence ?? 0) * 0.4 +
+        (hints?.voicingProbability ?? 0) * 0.3
       : 1 + (hints?.harmonicity ?? 0) * 0.18;
   const changeBias =
     kind === "detail"
@@ -645,6 +646,15 @@ function createLayerReleaseOptions(
   const releaseOverrides = new Map();
   const novelty = clamp01(analysisHints?.novelty ?? 0);
   const harmonicity = clamp01(analysisHints?.harmonicity ?? 0);
+  const releaseBias = clamp01(analysisHints?.releaseBias ?? 0);
+  const effectiveRelease =
+    releaseBias > 0
+      ? baseOptions.release * (1 - releaseBias * 0.25)
+      : baseOptions.release;
+  const effectiveBaseOptions =
+    effectiveRelease !== baseOptions.release
+      ? { ...baseOptions, release: effectiveRelease }
+      : baseOptions;
   const disagreementLimit =
     layerType === "detail" ? DETAIL_EVICTION_FRAMES : BACKBONE_EVICTION_FRAMES;
   const noveltyLimit =
@@ -671,11 +681,11 @@ function createLayerReleaseOptions(
   }
 
   if (releaseOverrides.size === 0) {
-    return baseOptions;
+    return effectiveBaseOptions;
   }
 
   return {
-    ...baseOptions,
+    ...effectiveBaseOptions,
     releaseOverrides,
   };
 }
@@ -2341,7 +2351,7 @@ function resolveLayeredModalStacks({
       attack: BACKBONE_ATTACK,
       tracking: BACKBONE_ATTACK,
       release: BACKBONE_RELEASE,
-      freshCap: BLEND_MAX_FRESH_PER_FRAME,
+      freshCap: BACKBONE_FRESH_CAP,
       colorOptions: includeChromesthesia
         ? {
             attack: BACKBONE_COLOR_ATTACK,
@@ -2756,7 +2766,7 @@ function resolveLayeredModalStacks({
       attack: BACKBONE_ATTACK,
       tracking: BACKBONE_ATTACK,
       release: BACKBONE_RELEASE,
-      freshCap: BLEND_MAX_FRESH_PER_FRAME,
+      freshCap: BACKBONE_FRESH_CAP,
       colorOptions: includeChromesthesia
         ? {
             attack: BACKBONE_COLOR_ATTACK,

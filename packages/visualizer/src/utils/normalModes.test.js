@@ -143,7 +143,7 @@ describe("solveModeFamilyForPitch", () => {
     const primary = solveNormalModesForPitch(440, RADIUS);
     const family = solveModeFamilyForPitch(440, RADIUS, 4);
 
-    expect(family[0]).toEqual(primary);
+    expect(family[0]).toMatchObject(primary);
   });
 
   it("spreads the returned family across distinct triplets", () => {

@@ -32,10 +32,23 @@ export default defineConfig(() => {
       ...base.build,
       outDir: "dist",
     },
+    optimizeDeps: {
+      // Only exclude @baryon/visualizer — it has Vite-specific ?worker/?url imports
+      // that esbuild can't process. @baryon/app-shell uses only relative imports so
+      // it can be crawled normally.
+      exclude: ["@baryon/visualizer"],
+    },
     resolve: {
       alias: {
         "@": path.resolve(dirname, "./src"),
+        // Force zustand to resolve from the root monorepo copy (v5, which has
+        // ./traditional), preventing tunnel-rat's nested zustand@4 from being
+        // picked up by Rollup's CommonJS resolver.
+        zustand: path.resolve(dirname, "../../node_modules/zustand"),
       },
+      // Force single instances of packages that break when duplicated.
+      // @baryon/app-shell as a workspace package can otherwise pull in its own copies.
+      dedupe: ["react", "react-dom", "three", "@react-three/fiber", "zustand"],
     },
   };
 });

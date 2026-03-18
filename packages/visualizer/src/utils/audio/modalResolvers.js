@@ -45,6 +45,10 @@ function getFamilyAttenuation(index) {
   );
 }
 
+function getModeMatchQuality(magnitudeError) {
+  return Math.max(0.35, 1 - (magnitudeError ?? 0) * 0.35);
+}
+
 function buildColorComponent({
   frequency,
   strength,
@@ -194,7 +198,8 @@ export function buildModalSlotsFromFundamental({
         support *
         attenuation *
         familyAttenuation *
-        (i === 0 ? confidence : Math.max(0.5, confidence));
+        (i === 0 ? confidence : Math.max(0.5, confidence)) *
+        getModeMatchQuality(mode.magnitudeError);
       writeSlot(slots, slotIndex, mode, amplitude);
       writeSlot(referenceSlots, slotIndex, mode, support * familyAttenuation);
       if (colorComponent) {
@@ -287,7 +292,12 @@ export function buildModalSlotsFromSpectralPeaks({
         (HARMONIC_ATTENUATION[
           Math.min(slotIndex, HARMONIC_ATTENUATION.length - 1)
         ] ?? 1);
-      writeSlot(slots, slotIndex, mode, peak.amplitude * attenuation);
+      writeSlot(
+        slots,
+        slotIndex,
+        mode,
+        peak.amplitude * attenuation * getModeMatchQuality(mode.magnitudeError),
+      );
       writeSlot(
         referenceSlots,
         slotIndex,
@@ -505,9 +515,19 @@ export function findSpectralPeakFrequencies(
       amplitude >= fftMagnitudes[i - 1] &&
       amplitude > fftMagnitudes[i + 1]
     ) {
-      const frequency = (i / (fftSize * 0.5 - 1)) * nyquist;
+      const prev = fftMagnitudes[i - 1];
+      const next = fftMagnitudes[i + 1];
+      const denom = prev - 2 * amplitude + next;
+      const delta = Math.abs(denom) > 1e-10 ? (0.5 * (prev - next)) / denom : 0;
+      const trueBin = i + delta;
+      const frequency = (trueBin / (fftSize * 0.5 - 1)) * nyquist;
+      const interpolatedAmplitude = amplitude - 0.25 * delta * (prev - next);
       if (frequency >= minFrequency && frequency <= maxFrequency) {
-        candidates.push({ bin: i, amplitude, frequency });
+        candidates.push({
+          bin: i,
+          amplitude: interpolatedAmplitude,
+          frequency,
+        });
       }
     }
   }

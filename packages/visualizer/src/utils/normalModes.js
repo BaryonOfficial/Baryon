@@ -1,7 +1,7 @@
 const SOUND_SPEED = 340.0;
 const TOLERANCE_HZ = 1.0;
 const MAX_ITERATIONS = 24;
-const MAX_MODE = 24;
+const MAX_MODE = 36;
 const FAMILY_DIVERSITY_DISTANCE = 4;
 
 function modalFrequencyFromMagnitude(magnitude, radius) {
@@ -161,7 +161,7 @@ export function solveModeFamilyForPitch(pitch, radius, count = 1) {
 
   const magnitude = resolveMagnitudeForPitch(pitch, radius);
   const family = pickModeFamily(rankTriplets(magnitude, MAX_MODE), count).map(
-    ({ u, v, w }) => ({ u, v, w }),
+    ({ u, v, w, magnitudeError }) => ({ u, v, w, magnitudeError }),
   );
 
   return family;
