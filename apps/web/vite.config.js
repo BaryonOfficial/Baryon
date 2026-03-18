@@ -1,11 +1,16 @@
 import { defineConfig } from "vite";
 import path from "path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { createBaseViteConfig } from "@baryon/config";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import tailwindcss from "@tailwindcss/vite";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+// Resolve zustand v5 relative to this package (direct dep), so pnpm strict
+// isolation always finds the right version regardless of what gets hoisted.
+const zustandDir = path.dirname(require.resolve("zustand/package.json"));
 
 /** @returns {import('vite').UserConfig} */
 export default defineConfig(() => {
@@ -41,21 +46,15 @@ export default defineConfig(() => {
     resolve: {
       alias: [
         { find: "@", replacement: path.resolve(dirname, "./src") },
-        // Force zustand (and its subpaths) to resolve from the root monorepo
-        // copy (v5), preventing tunnel-rat's nested zustand@4 from being picked
-        // up by Rollup's CommonJS resolver. Explicit subpath aliases are needed
-        // because pnpm@9 strict isolation prevents Rollup from following
-        // transitive symlinks from @react-three/fiber's virtual store location.
-        {
-          find: /^zustand$/,
-          replacement: path.resolve(dirname, "../../node_modules/zustand"),
-        },
+        // Force zustand (and its subpaths) to resolve from apps/web's own v5
+        // copy, preventing tunnel-rat's nested zustand@4 (via @react-three/drei)
+        // from being picked up by Rollup's CommonJS resolver. Using createRequire
+        // to find the path dynamically works under pnpm@9 strict isolation where
+        // hardcoded root-relative paths may point to the wrong (v4) copy.
+        { find: /^zustand$/, replacement: zustandDir },
         {
           find: /^zustand\/traditional$/,
-          replacement: path.resolve(
-            dirname,
-            "../../node_modules/zustand/traditional.js",
-          ),
+          replacement: path.join(zustandDir, "traditional.js"),
         },
       ],
       // Force single instances of packages that break when duplicated.
