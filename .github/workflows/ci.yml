@@ -23,7 +23,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: pnpm exec eslint packages/visualizer/src packages/app-shell/src/components/hooks
+        run: pnpm exec eslint packages/visualizer/src packages/app-shell/src
 
       - name: Typecheck
         run: pnpm --filter @baryon/visualizer typecheck
