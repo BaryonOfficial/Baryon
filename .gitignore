@@ -50,3 +50,4 @@ playwright-report/
 
 # Local Codex/Claude worktrees and metadata
 .claude/
+.vercel
