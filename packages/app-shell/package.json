@@ -1,0 +1,24 @@
+{
+  "name": "@baryon/app-shell",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/App.jsx",
+    "./index.css": "./src/index.css",
+    "./baryon-env": "./src/baryon-env.d.ts"
+  },
+  "dependencies": {
+    "@baryon/visualizer": "workspace:*",
+    "hls.js": "^1.6.15",
+    "tailwind-merge": "^3.2.0",
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "peerDependencies": {
+    "@react-three/drei": "^10.0.0",
+    "@react-three/fiber": "^9.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.183.0"
+  }
+}
