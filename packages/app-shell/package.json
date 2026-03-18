@@ -17,8 +17,10 @@
   "peerDependencies": {
     "@react-three/drei": "^10.0.0",
     "@react-three/fiber": "^9.0.0",
+    "@tailwindcss/vite": "^4.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "tailwindcss": "^4.0.0",
     "three": "^0.183.0"
   }
 }
