@@ -161,7 +161,7 @@ export function solveModeFamilyForPitch(pitch, radius, count = 1) {
 
   const magnitude = resolveMagnitudeForPitch(pitch, radius);
   const family = pickModeFamily(rankTriplets(magnitude, MAX_MODE), count).map(
-    ({ u, v, w }) => ({ u, v, w }),
+    ({ u, v, w, magnitudeError }) => ({ u, v, w, magnitudeError }),
   );
 
   return family;

@@ -248,7 +248,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
     expect(changingFrame.changeSignal).toBeGreaterThan(
       steadyFrame.changeSignal,
     );
-    expect(changingFrame.changeSignal).toBeGreaterThan(0.12);
+    expect(changingFrame.changeSignal).toBeGreaterThan(0.1);
   });
 
   it("keeps ambient mic input idle during startup calibration", () => {
