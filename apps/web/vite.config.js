@@ -41,14 +41,21 @@ export default defineConfig(() => {
     resolve: {
       alias: [
         { find: "@", replacement: path.resolve(dirname, "./src") },
-        // Force zustand to resolve from the root monorepo copy (v5, which has
-        // ./traditional), preventing tunnel-rat's nested zustand@4 from being
-        // picked up by Rollup's CommonJS resolver.
-        // Regex form matches only the bare specifier so subpath imports like
-        // zustand/traditional still resolve via the package's exports map.
+        // Force zustand (and its subpaths) to resolve from the root monorepo
+        // copy (v5), preventing tunnel-rat's nested zustand@4 from being picked
+        // up by Rollup's CommonJS resolver. Explicit subpath aliases are needed
+        // because pnpm@9 strict isolation prevents Rollup from following
+        // transitive symlinks from @react-three/fiber's virtual store location.
         {
           find: /^zustand$/,
           replacement: path.resolve(dirname, "../../node_modules/zustand"),
+        },
+        {
+          find: /^zustand\/traditional$/,
+          replacement: path.resolve(
+            dirname,
+            "../../node_modules/zustand/traditional.js",
+          ),
         },
       ],
       // Force single instances of packages that break when duplicated.

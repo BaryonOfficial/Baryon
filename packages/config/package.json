@@ -9,8 +9,12 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "main": "./vite.base.js",
+  "types": "./vite.base.d.ts",
   "exports": {
-    ".": "./vite.base.js"
+    ".": {
+      "types": "./vite.base.d.ts",
+      "default": "./vite.base.js"
+    }
   },
   "devDependencies": {
     "@vitejs/plugin-react-swc": "^4.3.0",
