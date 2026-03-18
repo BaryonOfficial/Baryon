@@ -1241,6 +1241,22 @@ export function createAudioSession() {
 
   async function dispose() {
     const audioCtx = state.audioCtx;
+
+    globalThis.removeEventListener?.("pagehide", handlePageUnload);
+
+    // Ramp gain to zero before disconnecting to prevent an audio pop
+    if (audioCtx?.state === "running" && state.playbackOutputGain?.gain) {
+      const now = audioCtx.currentTime;
+      const fadeSec = 0.06;
+      state.playbackOutputGain.gain.cancelScheduledValues(now);
+      state.playbackOutputGain.gain.setValueAtTime(
+        state.playbackOutputGain.gain.value,
+        now,
+      );
+      state.playbackOutputGain.gain.linearRampToValueAtTime(0, now + fadeSec);
+      await new Promise((resolve) => setTimeout(resolve, fadeSec * 1000 + 10));
+    }
+
     stopAudio();
     stopMicRecordStream();
     endedCallback = null;
@@ -1277,6 +1293,18 @@ export function createAudioSession() {
       }
     }
   }
+
+  // Synchronous pagehide guard: zero the gain immediately so a hard browser
+  // refresh or tab close can't produce an audio pop before the OS cuts the stream.
+  function handlePageUnload() {
+    if (state.playbackOutputGain?.gain) {
+      state.playbackOutputGain.gain.cancelScheduledValues(0);
+      state.playbackOutputGain.gain.value = 0;
+    }
+    state.audioCtx?.suspend();
+  }
+
+  globalThis.addEventListener?.("pagehide", handlePageUnload);
 
   return {
     attach,

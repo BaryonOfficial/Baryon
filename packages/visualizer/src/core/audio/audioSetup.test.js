@@ -32,7 +32,12 @@ class MockAnalyserNode {
 
 class MockGainNode {
   constructor() {
-    this.gain = { value: 1 };
+    this.gain = {
+      value: 1,
+      cancelScheduledValues: vi.fn(),
+      setValueAtTime: vi.fn(),
+      linearRampToValueAtTime: vi.fn(),
+    };
   }
 
   connect() {}
