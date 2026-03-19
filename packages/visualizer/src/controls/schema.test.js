@@ -18,7 +18,7 @@ import {
 import { CONTROL_RUNTIME_COVERAGE } from "./runtime.js";
 
 const EXPECTED_CONTROL_KEYS = [
-  // Mic
+  // Live Input
   "echoCancellation",
   "noiseSuppression",
   "autoGainControl",
@@ -178,7 +178,7 @@ describe("control schema", () => {
 
   it("orders pane folders by user-facing groups", () => {
     expect(getControlFolders(DEFAULT_VISUALIZATION_METHOD)).toEqual([
-      "Mic",
+      "Live Input",
       "Shape",
       "Color",
       "Logo",
@@ -287,7 +287,7 @@ describe("control schema", () => {
     expect(cymatics2dControls).toContain("densityGain");
     expect(cymatics2dControls).toContain("structurePersistence");
     expect(getControlFolders(VISUALIZATION_METHODS.cymatics2d)).toEqual([
-      "Mic",
+      "Live Input",
       "Shape",
       "Color",
       "Logo",

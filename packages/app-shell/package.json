@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/App.jsx",
+    ".": "./src/index.js",
     "./index.css": "./src/index.css",
     "./baryon-env": "./src/baryon-env.d.ts"
   },

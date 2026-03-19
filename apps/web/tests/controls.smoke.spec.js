@@ -88,7 +88,7 @@ async function readAuditMethodSnapshot(page) {
   });
 }
 
-async function installFakeMicrophone(page) {
+async function installFakeLiveInput(page) {
   await page.addInitScript(() => {
     const fakeMicState = {
       scene: "voice",
@@ -118,7 +118,7 @@ async function installFakeMicrophone(page) {
       }
     }
 
-    function applyFakeMicScene(nodes, scene) {
+    function applyFakeLiveInputScene(nodes, scene) {
       if (!nodes?.audioContext) {
         return;
       }
@@ -150,7 +150,7 @@ async function installFakeMicrophone(page) {
       }
     }
 
-    function createFakeMicStream() {
+    function createFakeLiveInputStream() {
       const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
       const audioContext = new AudioContextCtor();
       const destination = audioContext.createMediaStreamDestination();
@@ -177,7 +177,7 @@ async function installFakeMicrophone(page) {
         oscillators: partialGains.map((entry) => entry.oscillator),
       };
       window.__baryonFakeMicNodes = nodes;
-      applyFakeMicScene(nodes, fakeMicState.scene);
+      applyFakeLiveInputScene(nodes, fakeMicState.scene);
 
       const originalTracks = destination.stream.getAudioTracks();
       const wrappedStream = new MediaStream(originalTracks);
@@ -204,9 +204,9 @@ async function installFakeMicrophone(page) {
       return wrappedStream;
     }
 
-    window.__setFakeMicScene = (scene) => {
+    window.__setFakeLiveInputScene = (scene) => {
       fakeMicState.scene = scene;
-      applyFakeMicScene(window.__baryonFakeMicNodes, scene);
+      applyFakeLiveInputScene(window.__baryonFakeMicNodes, scene);
     };
 
     if (!navigator.mediaDevices) {
@@ -217,12 +217,12 @@ async function installFakeMicrophone(page) {
     }
     const { mediaDevices } = navigator;
 
-    mediaDevices.getUserMedia = async () => createFakeMicStream();
+    mediaDevices.getUserMedia = async () => createFakeLiveInputStream();
     mediaDevices.enumerateDevices = async () => [
       {
         kind: "audioinput",
-        deviceId: "fake-mic-device",
-        label: "Fake Microphone",
+        deviceId: "fake-live-input-device",
+        label: "Fake Live Input",
         groupId: "fake-group",
       },
     ];
@@ -231,9 +231,9 @@ async function installFakeMicrophone(page) {
   });
 }
 
-async function setFakeMicScene(page, scene) {
+async function setFakeLiveInputScene(page, scene) {
   await page.evaluate((nextScene) => {
-    window.__setFakeMicScene?.(nextScene);
+    window.__setFakeLiveInputScene?.(nextScene);
   }, scene);
 }
 
@@ -244,6 +244,64 @@ async function setControl(page, key, value) {
     },
     [key, value],
   );
+}
+
+async function startFakeLiveInput(page) {
+  await page.getByTestId("live-input-source-tab").click();
+  await page
+    .getByTestId("live-input-device-select")
+    .selectOption({ label: "Fake Live Input" });
+  await page.getByTestId("source-live-button").click();
+}
+
+async function setLiveInputProfile(page, profile) {
+  const sidebar = page.getByTestId("advanced-controls-sidebar");
+  const isSidebarOpen =
+    (await sidebar.count()) > 0 &&
+    (await sidebar.getAttribute("data-open")) === "true";
+
+  if (!isSidebarOpen) {
+    await page.getByTestId("advanced-controls-trigger").click();
+  }
+
+  const voiceModeSelect = page.getByLabel("Voice Mode", { exact: true });
+  if (!(await voiceModeSelect.isVisible().catch(() => false))) {
+    await page.getByRole("button", { name: /Live Input/ }).click();
+  }
+
+  await voiceModeSelect.selectOption(profile);
+  await expect(voiceModeSelect).toHaveValue(profile);
+}
+
+function trackBlockedAriaHiddenWarnings(page) {
+  const blockedWarnings = [];
+  page.on("console", (message) => {
+    if (message.text().includes("Blocked aria-hidden")) {
+      blockedWarnings.push(message.text());
+    }
+  });
+  return blockedWarnings;
+}
+
+async function ensureAdvancedSliderVisible(page) {
+  await page.waitForSelector(
+    ".baryon-controls-group-toggle, .baryon-controls-slider",
+  );
+  const slider = page.locator(".baryon-controls-slider").first();
+  if ((await slider.count()) > 0) {
+    return slider;
+  }
+
+  const groupToggles = page.locator(".baryon-controls-group-toggle");
+  const toggleCount = await groupToggles.count();
+  for (let index = 0; index < toggleCount; index += 1) {
+    await groupToggles.nth(index).click();
+    if ((await slider.count()) > 0) {
+      return slider;
+    }
+  }
+
+  return slider;
 }
 
 async function readTimelineValue(page) {
@@ -669,41 +727,42 @@ test.describe("Baryon control smoke", () => {
       });
   });
 
-  test("returns to the idle logo state after mic input is turned off", async ({
+  test("returns to the idle logo state after live input is turned off", async ({
     page,
     browserName,
   }) => {
     test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
 
-    await installFakeMicrophone(page);
+    await installFakeLiveInput(page);
     await page.goto("/");
     await waitForControlSurface(page);
     await setControl(page, "auditEnabled", true);
 
-    await page.getByTitle("Select audio input").click();
-    await page.getByRole("button", { name: "Fake Microphone" }).click();
+    await startFakeLiveInput(page);
 
     await expect
       .poll(() =>
         page.evaluate(() => ({
-          micActive: window.__baryonAuditSnapshot?.micActive ?? false,
+          liveInputActive:
+            window.__baryonAuditSnapshot?.liveInputActive ?? false,
           audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
           analysisSourceUsed:
             window.__baryonAuditSnapshot?.analysisSourceUsed ?? null,
         })),
       )
       .toEqual({
-        micActive: true,
-        audioInputMode: "mic",
-        analysisSourceUsed: "mic",
+        liveInputActive: true,
+        audioInputMode: "live",
+        analysisSourceUsed: "live",
       });
 
-    await page.getByTitle("Stop mic input").click();
+    await page.getByTestId("source-live-button").click();
 
     await expect
       .poll(() =>
         page.evaluate(() => ({
-          micActive: window.__baryonAuditSnapshot?.micActive ?? true,
+          liveInputActive:
+            window.__baryonAuditSnapshot?.liveInputActive ?? true,
           visualizationMethod:
             window.__baryonAuditSnapshot?.visualizationMethod ?? null,
           fieldState:
@@ -714,46 +773,45 @@ test.describe("Baryon control smoke", () => {
         })),
       )
       .toEqual({
-        micActive: false,
+        liveInputActive: false,
         visualizationMethod: "raymarch",
         fieldState: "idle",
         idleOverlayVisible: true,
       });
   });
 
-  test("returns to the idle logo immediately when an active mic scene goes silent", async ({
+  test("returns to the idle logo immediately when an active live input scene goes silent", async ({
     page,
     browserName,
   }) => {
     test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
 
-    await installFakeMicrophone(page);
+    await installFakeLiveInput(page);
     await page.goto("/");
     await waitForControlSurface(page);
     await setControl(page, "auditEnabled", true);
 
-    await page.getByTestId("mic-profile-select").selectOption("ambient");
-    await setFakeMicScene(page, "ambient");
-    await page.getByTitle("Select audio input").click();
-    await page.getByRole("button", { name: "Fake Microphone" }).click();
+    await setFakeLiveInputScene(page, "ambient");
+    await startFakeLiveInput(page);
 
     await expect
       .poll(() =>
         page.evaluate(() => ({
           fieldState:
             window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
-          micActive: window.__baryonAuditSnapshot?.micActive ?? false,
-          micCalibrationActive:
-            window.__baryonAuditSnapshot?.micCalibrationActive ?? true,
+          liveInputActive:
+            window.__baryonAuditSnapshot?.liveInputActive ?? false,
+          liveInputCalibrationActive:
+            window.__baryonAuditSnapshot?.liveInputCalibrationActive ?? true,
         })),
       )
       .toEqual({
         fieldState: "active",
-        micActive: true,
-        micCalibrationActive: false,
+        liveInputActive: true,
+        liveInputCalibrationActive: false,
       });
 
-    await setFakeMicScene(page, "silent");
+    await setFakeLiveInputScene(page, "silent");
 
     await expect
       .poll(
@@ -761,8 +819,8 @@ test.describe("Baryon control smoke", () => {
           page.evaluate(() => ({
             fieldState:
               window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
-            micHardSilenceActive:
-              window.__baryonAuditSnapshot?.micHardSilenceActive ?? false,
+            liveInputHardSilenceActive:
+              window.__baryonAuditSnapshot?.liveInputHardSilenceActive ?? false,
             idleOverlayVisible:
               window.__baryonAuditSnapshot?.raymarchDebug?.idleOverlayVisible ??
               false,
@@ -771,7 +829,7 @@ test.describe("Baryon control smoke", () => {
       )
       .toEqual({
         fieldState: "idle",
-        micHardSilenceActive: true,
+        liveInputHardSilenceActive: true,
         idleOverlayVisible: true,
       });
   });
@@ -782,30 +840,29 @@ test.describe("Baryon control smoke", () => {
   }) => {
     test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
 
-    await installFakeMicrophone(page);
+    await installFakeLiveInput(page);
     await page.goto("/");
     await waitForControlSurface(page);
     await setControl(page, "auditEnabled", true);
 
-    await page.getByTestId("mic-profile-select").selectOption("voice-tone");
-    await setFakeMicScene(page, "ambient");
-    await page.getByTitle("Select audio input").click();
-    await page.getByRole("button", { name: "Fake Microphone" }).click();
+    await setFakeLiveInputScene(page, "ambient");
+    await startFakeLiveInput(page);
 
     await expect
       .poll(() =>
         page.evaluate(() => ({
-          micActive: window.__baryonAuditSnapshot?.micActive ?? false,
-          micCalibrationActive:
-            window.__baryonAuditSnapshot?.micCalibrationActive ?? true,
+          liveInputActive:
+            window.__baryonAuditSnapshot?.liveInputActive ?? false,
+          liveInputCalibrationActive:
+            window.__baryonAuditSnapshot?.liveInputCalibrationActive ?? true,
         })),
       )
       .toEqual({
-        micActive: true,
-        micCalibrationActive: false,
+        liveInputActive: true,
+        liveInputCalibrationActive: false,
       });
 
-    await setFakeMicScene(page, "voice-flutter");
+    await setFakeLiveInputScene(page, "voice-flutter");
 
     const samples = await page.evaluate(async () => {
       const collected = [];
@@ -813,7 +870,7 @@ test.describe("Baryon control smoke", () => {
       while (performance.now() - startedAt < 900) {
         const snapshot = window.__baryonAuditSnapshot ?? {};
         collected.push({
-          micActive: snapshot.micActive ?? false,
+          liveInputActive: snapshot.liveInputActive ?? false,
           driverFrequency: snapshot.driverFrequency ?? 0,
           candidateFrequency: snapshot.candidateFrequency ?? 0,
           highCandidateRejected: snapshot.highCandidateRejected ?? false,
@@ -826,7 +883,7 @@ test.describe("Baryon control smoke", () => {
       return collected;
     });
 
-    expect(samples.some((sample) => sample.micActive)).toBe(true);
+    expect(samples.some((sample) => sample.liveInputActive)).toBe(true);
     expect(
       samples.every(
         (sample) =>
@@ -843,51 +900,115 @@ test.describe("Baryon control smoke", () => {
     ).toBe(true);
   });
 
-  test("uses a multi-source field for the ambient mic profile", async ({
+  test("keeps source settings on the mode pill and the red live state on the CTA", async ({
     page,
     browserName,
   }) => {
     test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
 
-    await installFakeMicrophone(page);
+    await installFakeLiveInput(page);
     await page.goto("/");
     await waitForControlSurface(page);
-    await setControl(page, "auditEnabled", true);
 
-    await page.getByTestId("mic-profile-select").selectOption("ambient");
-    await setFakeMicScene(page, "ambient");
-    await page.getByTitle("Select audio input").click();
-    await page.getByRole("button", { name: "Fake Microphone" }).click();
+    const fileSourceTab = page.getByTestId("file-source-tab");
+    const micSourceTab = page.getByTestId("live-input-source-tab");
+    const liveButton = page.getByTestId("source-live-button");
+    const settingsPopover = page.getByTestId("source-settings-popover");
 
-    await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          fieldState:
-            window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
-          pitchSource: window.__baryonAuditSnapshot?.pitchSource ?? null,
-          analysisEngine: window.__baryonAuditSnapshot?.analysisEngine ?? null,
-          hasBackboneModes:
-            (window.__baryonAuditSnapshot?.backboneModeCount ?? 0) > 0,
-          hasDetailModes:
-            (window.__baryonAuditSnapshot?.detailModeCount ?? 0) > 0,
-        })),
-      )
-      .toEqual({
-        fieldState: "active",
-        pitchSource: "multi-spectral",
-        analysisEngine: "multi-spectral",
-        hasBackboneModes: true,
-        hasDetailModes: true,
-      });
+    await expect(liveButton).toContainText("Go Live");
+    await expect(settingsPopover).toHaveCount(0);
+
+    await micSourceTab.click();
+    await expect(settingsPopover).toBeVisible();
+    await expect(page.getByTestId("live-input-device-select")).toBeVisible();
+
+    await fileSourceTab.click();
+    await expect(settingsPopover).toHaveCount(0);
+
+    await micSourceTab.click();
+    await expect(settingsPopover).toBeVisible();
+    await page
+      .getByTestId("live-input-device-select")
+      .selectOption({ label: "Fake Live Input" });
+
+    const beforeState = await Promise.all([
+      liveButton.evaluate((element) => element.getBoundingClientRect().width),
+      micSourceTab.evaluate((element) => getComputedStyle(element).color),
+    ]);
+
+    await liveButton.click();
+
+    await expect(liveButton).toContainText("Live");
+    await expect(liveButton).toHaveAttribute("data-state", "live");
+    await expect(liveButton).toHaveAttribute("title", "Stop live input");
+    await expect(liveButton).toHaveClass(/ac-source-live-btn--active/);
+
+    const afterState = await Promise.all([
+      liveButton.evaluate((element) => element.getBoundingClientRect().width),
+      micSourceTab.evaluate((element) => getComputedStyle(element).color),
+    ]);
+
+    expect(Math.abs(afterState[0] - beforeState[0])).toBeLessThan(1);
+    expect(beforeState[1].startsWith("rgba(255, 255, 255")).toBe(true);
+    expect(afterState[1].startsWith("rgba(255, 255, 255")).toBe(true);
   });
 
-  test("shows a standalone mic profile selector and recalibrates on profile changes", async ({
+  test("web app stays listener-first and does not expose desktop-only mode chrome", async ({
     page,
     browserName,
   }) => {
     test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
 
-    await installFakeMicrophone(page);
+    await installFakeLiveInput(page);
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    const fileSourceTab = page.getByTestId("file-source-tab");
+    const liveButton = page.getByTestId("source-live-button");
+
+    await expect(page.getByTestId("app-mode-toggle")).toHaveCount(0);
+    await expect(page.getByTestId("performer-live-device-select")).toHaveCount(
+      0,
+    );
+    await expect(fileSourceTab).toBeVisible();
+    await expect(liveButton).toContainText("Go Live");
+    await expect(liveButton).toHaveAttribute("data-state", "disabled");
+  });
+
+  test("hides live-input-only advanced controls when the selected live device is system-classified", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        "baryon:deviceClassification",
+        JSON.stringify({
+          "fake-live-input-device": "system",
+        }),
+      );
+    });
+    await installFakeLiveInput(page);
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.getByTestId("advanced-controls-trigger").click();
+
+    await expect(page.getByRole("button", { name: /Live Input/ })).toHaveCount(
+      0,
+    );
+    await expect(page.getByText("Voice Mode")).toHaveCount(0);
+    await expect(page.getByText("Echo Cancel")).toHaveCount(0);
+  });
+
+  test("shows Voice Mode for mic-classified live input and applies it to the runtime", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await installFakeLiveInput(page);
     await page.goto("/");
     await waitForControlSurface(page);
     await setControl(page, "auditEnabled", true);
@@ -901,115 +1022,106 @@ test.describe("Baryon control smoke", () => {
         buffer: createMonoWavBuffer({ durationSeconds: 4 }),
       });
 
-    const micButton = page.getByTitle("Select audio input");
-    const profileSelect = page.getByTestId("mic-profile-select");
+    await expect(page.getByTestId("live-input-source-tab")).toBeVisible();
+    await setLiveInputProfile(page, "voice-tone");
+    const voiceModeSelect = page.getByLabel("Voice Mode", { exact: true });
+    await expect(voiceModeSelect).toHaveValue("voice-tone");
+    await expect(voiceModeSelect.locator("option")).toHaveCount(1);
 
-    await expect(micButton).toBeVisible();
-    await expect(profileSelect).toBeVisible();
-    await expect(profileSelect).toHaveValue("voice-tone");
-
-    const micButtonBox = await micButton.boundingBox();
-    const profileSelectBox = await profileSelect.boundingBox();
-    expect(micButtonBox).not.toBeNull();
-    expect(profileSelectBox).not.toBeNull();
-    expect(profileSelectBox.x).toBeGreaterThan(micButtonBox.x);
-    expect(Math.abs(profileSelectBox.y - micButtonBox.y)).toBeLessThan(24);
-
-    await profileSelect.selectOption("ambient");
-    await expect(profileSelect).toHaveValue("ambient");
-
-    await page.getByTitle("Select audio input").click();
-    await expect(
-      page.getByRole("button", { name: "Fake Microphone" }),
-    ).toBeVisible();
-    await expect(page.locator(".am-device-item-label")).toHaveCount(0);
-    await expect(page.getByText("Input profile")).toHaveCount(0);
-
-    await page.getByRole("button", { name: "Fake Microphone" }).click();
-
+    await startFakeLiveInput(page);
     await expect
       .poll(async () => {
         return page.evaluate(() => ({
-          micActive: window.__baryonAuditSnapshot?.micActive ?? false,
-          micCalibrationActive:
-            window.__baryonAuditSnapshot?.micCalibrationActive ?? false,
-          micProfile: window.__baryonAuditSnapshot?.micProfile ?? null,
+          liveInputActive:
+            window.__baryonAuditSnapshot?.liveInputActive ?? false,
+          liveInputCalibrationActive:
+            window.__baryonAuditSnapshot?.liveInputCalibrationActive ?? true,
+          liveInputProfile:
+            window.__baryonAuditSnapshot?.liveInputProfile ?? null,
         }));
       })
       .toEqual({
-        micActive: true,
-        micCalibrationActive: true,
-        micProfile: "ambient",
+        liveInputActive: true,
+        liveInputCalibrationActive: false,
+        liveInputProfile: "voice-tone",
       });
 
+    await page.getByTestId("source-live-button").click();
     await expect
       .poll(async () => {
         return page.evaluate(() => ({
-          micActive: window.__baryonAuditSnapshot?.micActive ?? false,
-          micCalibrationActive:
-            window.__baryonAuditSnapshot?.micCalibrationActive ?? true,
-          micProfile: window.__baryonAuditSnapshot?.micProfile ?? null,
+          liveInputActive:
+            window.__baryonAuditSnapshot?.liveInputActive ?? true,
+          liveInputCalibrationActive:
+            window.__baryonAuditSnapshot?.liveInputCalibrationActive ?? true,
         }));
       })
       .toEqual({
-        micActive: true,
-        micCalibrationActive: false,
-        micProfile: "ambient",
-      });
-
-    await profileSelect.selectOption("voice-tone");
-    await expect
-      .poll(async () => {
-        return page.evaluate(() => ({
-          micActive: window.__baryonAuditSnapshot?.micActive ?? false,
-          micCalibrationActive:
-            window.__baryonAuditSnapshot?.micCalibrationActive ?? false,
-          micProfile: window.__baryonAuditSnapshot?.micProfile ?? null,
-        }));
-      })
-      .toEqual({
-        micActive: true,
-        micCalibrationActive: true,
-        micProfile: "voice-tone",
-      });
-
-    await expect
-      .poll(async () => {
-        return page.evaluate(() => ({
-          micActive: window.__baryonAuditSnapshot?.micActive ?? false,
-          micCalibrationActive:
-            window.__baryonAuditSnapshot?.micCalibrationActive ?? true,
-          micProfile: window.__baryonAuditSnapshot?.micProfile ?? null,
-        }));
-      })
-      .toEqual({
-        micActive: true,
-        micCalibrationActive: false,
-        micProfile: "voice-tone",
-      });
-
-    await page.getByTitle("Stop mic input").click();
-    await expect
-      .poll(async () => {
-        return page.evaluate(() => ({
-          micActive: window.__baryonAuditSnapshot?.micActive ?? true,
-          micCalibrationActive:
-            window.__baryonAuditSnapshot?.micCalibrationActive ?? true,
-        }));
-      })
-      .toEqual({
-        micActive: false,
-        micCalibrationActive: false,
+        liveInputActive: false,
+        liveInputCalibrationActive: false,
       });
   });
 
-  test("clears the stale upload label after switching from file playback to mic mode", async ({
+  test("restores focus to the trigger when advanced controls close from a focused slider", async ({
     page,
     browserName,
   }) => {
     test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
 
-    await installFakeMicrophone(page);
+    const blockedWarnings = trackBlockedAriaHiddenWarnings(page);
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.getByTestId("advanced-controls-trigger").click();
+    const slider = await ensureAdvancedSliderVisible(page);
+    const sliderRow = slider.locator("xpath=..");
+    const numberInput = sliderRow.locator(".baryon-controls-number-input");
+
+    await expect(slider).toBeVisible();
+    await slider.focus();
+    await expect(slider).toBeFocused();
+
+    const initialSliderValue = Number(await slider.inputValue());
+    await page.keyboard.press("ArrowLeft");
+    await expect
+      .poll(async () => Number(await slider.inputValue()))
+      .not.toBe(initialSliderValue);
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("advanced-controls-trigger")).toBeFocused();
+    await expect(page.getByTestId("advanced-controls-sidebar")).toBeHidden();
+
+    await page.getByTestId("advanced-controls-trigger").click();
+    await expect(slider).toBeVisible();
+
+    const sliderValueAfterKeyboard = Number(await slider.inputValue());
+    const min = Number(await numberInput.getAttribute("min"));
+    const max = Number(await numberInput.getAttribute("max"));
+    const step = Number(await numberInput.getAttribute("step"));
+    const nextNumberValue = String(
+      Number(
+        (sliderValueAfterKeyboard + step <= max
+          ? sliderValueAfterKeyboard + step
+          : Math.max(min, sliderValueAfterKeyboard - step)
+        ).toFixed(6),
+      ),
+    );
+    await numberInput.fill(nextNumberValue);
+    await numberInput.press("Tab");
+
+    await expect(numberInput).toHaveValue(nextNumberValue);
+    await expect(slider).toHaveValue(nextNumberValue);
+    expect(blockedWarnings).toEqual([]);
+  });
+
+  test("clears the stale upload label after switching from file playback to live input mode", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await installFakeLiveInput(page);
     await page.goto("/");
     await waitForControlSurface(page);
     await setControl(page, "auditEnabled", true);
@@ -1024,8 +1136,7 @@ test.describe("Baryon control smoke", () => {
     await page.locator(".am-btn--play").click();
     await expect(page.locator('.am-btn--play[title="Pause"]')).toBeVisible();
 
-    await page.getByTitle("Select audio input").click();
-    await page.getByRole("button", { name: "Fake Microphone" }).click();
+    await startFakeLiveInput(page);
 
     await expect
       .poll(() =>
@@ -1040,10 +1151,10 @@ test.describe("Baryon control smoke", () => {
       .toEqual({
         fileLabel: "Upload Audio",
         playDisabled: true,
-        audioInputMode: "mic",
+        audioInputMode: "live",
       });
 
-    await page.getByTitle("Stop mic input").click();
+    await page.getByTestId("source-live-button").click();
 
     await expect
       .poll(() =>
@@ -1062,13 +1173,13 @@ test.describe("Baryon control smoke", () => {
       });
   });
 
-  test("can reload the last uploaded file from recent uploads after mic mode", async ({
+  test("can reload the last uploaded file from recent uploads after live input mode", async ({
     page,
     browserName,
   }) => {
     test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
 
-    await installFakeMicrophone(page);
+    await installFakeLiveInput(page);
     await page.goto("/");
     await waitForControlSurface(page);
     await setControl(page, "auditEnabled", true);
@@ -1083,9 +1194,8 @@ test.describe("Baryon control smoke", () => {
     await page.locator(".am-btn--play").click();
     await expect(page.locator('.am-btn--play[title="Pause"]')).toBeVisible();
 
-    await page.getByTitle("Select audio input").click();
-    await page.getByRole("button", { name: "Fake Microphone" }).click();
-    await page.getByTitle("Stop mic input").click();
+    await startFakeLiveInput(page);
+    await page.getByTestId("source-live-button").click();
 
     await page.getByTitle("Recent uploads").click();
     await expect(page.getByTestId("recent-uploads-panel")).toBeVisible();
@@ -1469,18 +1579,17 @@ test.describe("Baryon control smoke", () => {
     await expect.poll(() => readTimelineValue(page)).toBeGreaterThan(2);
   });
 
-  test("hides the playback timeline while mic input is active", async ({
+  test("hides the playback timeline while live input is active", async ({
     page,
     browserName,
   }) => {
     test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
 
-    await installFakeMicrophone(page);
+    await installFakeLiveInput(page);
     await page.goto("/");
     await waitForControlSurface(page);
 
-    await page.getByTitle("Select audio input").click();
-    await page.getByRole("button", { name: "Fake Microphone" }).click();
+    await startFakeLiveInput(page);
 
     await expect(page.getByTestId("playback-timeline")).toHaveCount(0);
   });

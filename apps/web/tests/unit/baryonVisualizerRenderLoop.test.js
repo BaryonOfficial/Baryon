@@ -7,7 +7,7 @@ import {
   publishPerformanceHudSnapshot,
   publishDevtoolsSnapshots,
   resolveFeatureFrame,
-  syncMicRuntimeStatus,
+  syncLiveInputRuntimeStatus,
   updateRendererDiagnostics,
 } from "../../src/components/hooks/baryonVisualizerRenderLoop.js";
 
@@ -16,7 +16,7 @@ function createRenderLoopRefs() {
     runtimeDiagnosticsRef: { current: null },
     pixelRatioRef: { current: null },
     lastAudioIssueSignatureRef: { current: null },
-    lastMicRuntimeStatusRef: { current: null },
+    lastLiveInputRuntimeStatusRef: { current: null },
     frameCacheRefs: {
       lastLiveFrameRef: { current: null },
       lastActiveFrameRef: { current: null },
@@ -84,7 +84,7 @@ function createDevtoolsPublishArgs(overrides = {}) {
     audit: { audit: true },
     sceneSnapshot: { rotationY: 1 },
     audio: {
-      getMicSettings() {
+      getLiveInputSettings() {
         return { echoCancellation: false };
       },
       ...(overrides.audio ?? {}),
@@ -147,7 +147,7 @@ test("updates smoothed frame time and DPR diagnostics for the performance HUD", 
       },
       status: {
         isPlaying: true,
-        isMicActive: false,
+        isLiveInputActive: false,
         playbackSessionId: 10,
         lastPlaybackEndReason: null,
         lastPlaybackDiagnostics: null,
@@ -210,7 +210,7 @@ test("keeps paused-playback HUD frame timing tied to render cadence", () => {
       },
       status: {
         isPlaying: false,
-        isMicActive: false,
+        isLiveInputActive: false,
         playbackSessionId: null,
         lastPlaybackEndReason: null,
         lastPlaybackDiagnostics: null,
@@ -429,7 +429,7 @@ test("resolves feature frames across live, paused, and idle reuse states", () =>
     controls: {
       injectTestTone: false,
     },
-    micProfile: "voice-tone",
+    liveInputProfile: "voice-tone",
     renderLoopRefs,
     chromesthesiaEnabled: false,
   };
@@ -439,7 +439,7 @@ test("resolves feature frames across live, paused, and idle reuse states", () =>
       ...baseArgs,
       status: {
         isPlaying: true,
-        isMicActive: false,
+        isLiveInputActive: false,
       },
       time: 1,
       clockMode: "playback",
@@ -459,7 +459,7 @@ test("resolves feature frames across live, paused, and idle reuse states", () =>
       ...baseArgs,
       status: {
         isPlaying: false,
-        isMicActive: false,
+        isLiveInputActive: false,
       },
       time: 2,
       clockMode: "paused-playback",
@@ -487,7 +487,7 @@ test("resolves feature frames across live, paused, and idle reuse states", () =>
       ...baseArgs,
       status: {
         isPlaying: false,
-        isMicActive: false,
+        isLiveInputActive: false,
       },
       time: 3,
       clockMode: "realtime",
@@ -541,11 +541,11 @@ test("feeds the analyzer and forwards valid hints into feature-frame building", 
       },
       status: {
         isPlaying: true,
-        isMicActive: false,
+        isLiveInputActive: false,
       },
       time: 1,
       clockMode: "playback",
-      micProfile: "voice-tone",
+      liveInputProfile: "voice-tone",
       renderLoopRefs,
       chromesthesiaEnabled: false,
     },
@@ -557,28 +557,28 @@ test("feeds the analyzer and forwards valid hints into feature-frame building", 
   assert.ok(analyzerCalls[0].enqueued.analysisSnapshot);
 });
 
-test("emits mic runtime status changes only when the status meaningfully changes", () => {
+test("emits live input runtime status changes only when the status meaningfully changes", () => {
   const renderLoopRefs = createRenderLoopRefs();
   const emitted = [];
   const args = {
     status: {
-      isMicActive: true,
+      isLiveInputActive: true,
     },
     featureFrame: {
       debug: {
-        micCalibrationActive: true,
-        micProfile: "studio",
+        liveInputCalibrationActive: true,
+        liveInputProfile: "studio",
       },
     },
-    micProfile: "voice-tone",
-    setMicRuntimeStatus(value) {
+    liveInputProfile: "voice-tone",
+    setLiveInputRuntimeStatus(value) {
       emitted.push(value);
     },
     renderLoopRefs,
   };
 
-  syncMicRuntimeStatus(args);
-  syncMicRuntimeStatus(args);
+  syncLiveInputRuntimeStatus(args);
+  syncLiveInputRuntimeStatus(args);
 
   assert.equal(emitted.length, 1);
   assert.deepEqual(emitted[0], {
@@ -587,10 +587,10 @@ test("emits mic runtime status changes only when the status meaningfully changes
     profile: "studio",
   });
 
-  syncMicRuntimeStatus({
+  syncLiveInputRuntimeStatus({
     ...args,
     status: {
-      isMicActive: false,
+      isLiveInputActive: false,
     },
     featureFrame: {
       debug: {},
@@ -680,7 +680,7 @@ test("deletes the audit snapshot when audit publishing is disabled", () => {
         },
         sceneSnapshot: { rotationY: 0 },
         audio: {
-          getMicSettings() {
+          getLiveInputSettings() {
             return { echoCancellation: true };
           },
         },

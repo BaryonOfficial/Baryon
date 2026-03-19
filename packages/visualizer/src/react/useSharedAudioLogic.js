@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
 import { getDefaultAudioSession } from "../core/audio/audioSetup.js";
-import { DEFAULT_MIC_ANALYSIS_SETTINGS } from "../utils/audioFeatures.js";
 
 export function useSharedAudioLogic({
   setFileName,
@@ -8,20 +7,18 @@ export function useSharedAudioLogic({
   registerRecentFile,
   setIsAudioLoaded,
   setIsPlaying,
-  setIsMicActive,
+  setIsLiveInputActive,
+  setLiveInputKind,
   setVolume,
   setIsMuted,
   setAudioDevices,
   setSelectedDevice,
-  setSelectedMicProfile,
   isAudioLoaded,
-  isMicActive,
+  isLiveInputActive,
   selectedDevice,
-  selectedMicProfile,
 }) {
   const audioSession = getDefaultAudioSession();
   const activeFileUrlRef = useRef(null);
-  void selectedMicProfile;
 
   const clearLoadedFileState = useCallback(
     ({ resetLabel = true } = {}) => {
@@ -40,15 +37,17 @@ export function useSharedAudioLogic({
     const status = audioSession.getStatus();
     setIsAudioLoaded(status.isAudioLoaded);
     setIsPlaying(status.isPlaying);
-    setIsMicActive(status.isMicActive);
+    setIsLiveInputActive(status.isLiveInputActive);
+    setLiveInputKind?.(status.liveInputKind ?? null);
     setVolume?.(status.volume ?? 1);
     setIsMuted?.(status.muted ?? false);
     return status;
   }, [
     audioSession,
     setIsAudioLoaded,
-    setIsMicActive,
+    setIsLiveInputActive,
     setIsPlaying,
+    setLiveInputKind,
     setVolume,
     setIsMuted,
   ]);
@@ -93,8 +92,8 @@ export function useSharedAudioLogic({
         return false;
       }
 
-      if (isMicActive) {
-        audioSession.stopMicRecordStream();
+      if (isLiveInputActive) {
+        audioSession.stopLiveInputStream();
       }
 
       setFileName(file.name);
@@ -119,7 +118,7 @@ export function useSharedAudioLogic({
     },
     [
       audioSession,
-      isMicActive,
+      isLiveInputActive,
       registerRecentFile,
       setFileName,
       setIsAudioLoaded,
@@ -128,10 +127,10 @@ export function useSharedAudioLogic({
   );
 
   const handleFileChange = useCallback(
-    (event) => {
+    async (event) => {
       const file = event.target.files[0];
-      if (!file) return;
-      void loadLocalFile(file);
+      if (!file) return false;
+      return loadLocalFile(file);
     },
     [loadLocalFile],
   );
@@ -151,24 +150,24 @@ export function useSharedAudioLogic({
     syncStatus();
   }, [audioSession, syncStatus]);
 
-  const handleMicToggle = useCallback(async () => {
+  const handleLiveInputToggle = useCallback(async () => {
     try {
-      if (isMicActive) {
-        audioSession.stopMicRecordStream();
+      if (isLiveInputActive) {
+        audioSession.stopLiveInputStream();
       } else {
         clearLoadedFileState();
         audioSession.stopAudio();
-        await audioSession.startMicRecordStream(selectedDevice);
+        await audioSession.startLiveInputStream(selectedDevice);
       }
       syncStatus();
     } catch (error) {
-      console.error("Error toggling microphone:", error);
+      console.error("Error toggling live input:", error);
       syncStatus();
     }
   }, [
     audioSession,
     clearLoadedFileState,
-    isMicActive,
+    isLiveInputActive,
     selectedDevice,
     syncStatus,
   ]);
@@ -187,16 +186,9 @@ export function useSharedAudioLogic({
     syncStatus();
   }, [audioSession, syncStatus]);
 
-  const handleMicProfileChange = useCallback(
-    (profile) => {
-      setSelectedMicProfile?.(profile ?? DEFAULT_MIC_ANALYSIS_SETTINGS.profile);
-    },
-    [setSelectedMicProfile],
-  );
-
   const handleRecentFileSelect = useCallback(
     async (file) => {
-      await loadLocalFile(file);
+      return loadLocalFile(file);
     },
     [loadLocalFile],
   );
@@ -206,9 +198,8 @@ export function useSharedAudioLogic({
     handleRecentFileSelect,
     handlePlayPause,
     handleStop,
-    handleMicToggle,
+    handleLiveInputToggle,
     handleVolumeChange,
     handleMuteToggle,
-    handleMicProfileChange,
   };
 }

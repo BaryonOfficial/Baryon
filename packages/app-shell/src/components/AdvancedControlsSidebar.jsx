@@ -516,6 +516,8 @@ function SliderWithNumberInput({ controlId, definition, value, onChange }) {
   const min = binding.min ?? 0;
   const max = binding.max ?? 100;
   const step = binding.step ?? 1;
+  const sliderAriaLabel = `${definition.label} slider`;
+  const numberInputAriaLabel = `${definition.label} value`;
 
   // Local draft state lets the user type partial values without interruption
   const [draft, setDraft] = useState(null);
@@ -524,19 +526,20 @@ function SliderWithNumberInput({ controlId, definition, value, onChange }) {
   // discard any stale draft so the field shows the new value
   const committedValue = Number(value);
   const displayValue = draft ?? String(committedValue);
+  const clampValue = (nextValue) => Math.min(max, Math.max(min, nextValue));
 
   function commitDraft(rawString) {
     setDraft(null);
     const parsed = parseFloat(rawString);
     if (!isNaN(parsed)) {
-      onChange(Math.min(max, Math.max(min, parsed)));
+      onChange(clampValue(parsed));
     }
   }
 
   return (
     <span className="baryon-controls-slider-row">
       <input
-        aria-hidden="true"
+        aria-label={sliderAriaLabel}
         className="baryon-controls-slider"
         type="range"
         min={min}
@@ -550,7 +553,7 @@ function SliderWithNumberInput({ controlId, definition, value, onChange }) {
       />
       <input
         id={controlId}
-        aria-label={definition.label}
+        aria-label={numberInputAriaLabel}
         className="baryon-controls-number-input"
         type="number"
         min={min}
@@ -561,7 +564,7 @@ function SliderWithNumberInput({ controlId, definition, value, onChange }) {
           setDraft(event.target.value);
           const parsed = parseFloat(event.target.value);
           if (!isNaN(parsed)) {
-            onChange(Math.min(max, Math.max(min, parsed)));
+            onChange(clampValue(parsed));
           }
         }}
         onBlur={(event) => commitDraft(event.target.value)}
@@ -791,6 +794,7 @@ export default function AdvancedControlsSidebar({
   deletePreset,
   onClose,
   dockWidth,
+  triggerRef,
 }) {
   /** @type {import("react").CSSProperties & { "--baryon-controls-dock-width": string }} */
   const dockStyle = {
@@ -799,6 +803,8 @@ export default function AdvancedControlsSidebar({
   const helpTriggerRefs = useRef(new Map());
   const helpOverlayRef = useRef(null);
   const helpCloseTimerRef = useRef(null);
+  const shellRef = useRef(null);
+  const wasOpenRef = useRef(isOpen);
   const [hasHoverSupport, setHasHoverSupport] = useState(() =>
     typeof window === "undefined"
       ? false
@@ -999,6 +1005,28 @@ export default function AdvancedControlsSidebar({
     [clearPendingHelpClose],
   );
 
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) {
+      wasOpenRef.current = isOpen;
+      return;
+    }
+
+    const shouldRestoreFocus =
+      !isOpen &&
+      wasOpenRef.current &&
+      document.activeElement instanceof HTMLElement &&
+      shell.contains(document.activeElement);
+
+    shell.inert = !isOpen;
+
+    if (shouldRestoreFocus) {
+      triggerRef?.current?.focus({ preventScroll: true });
+    }
+
+    wasOpenRef.current = isOpen;
+  }, [isOpen, triggerRef]);
+
   const helpEventHandlers = {
     onHelpPointerEnter: (key) => {
       if (hasHoverSupport) openHelp(key);
@@ -1027,9 +1055,9 @@ export default function AdvancedControlsSidebar({
         style={dockStyle}
       >
         <div
+          ref={shellRef}
           className="baryon-controls-shell"
           data-open={isOpen ? "true" : "false"}
-          aria-hidden={isOpen ? "false" : "true"}
         >
           <header className="baryon-controls-header">
             <div className="baryon-controls-header-text">

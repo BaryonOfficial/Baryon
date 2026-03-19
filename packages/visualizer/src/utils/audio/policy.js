@@ -1,9 +1,9 @@
 export const AUDIO_ANALYSIS_POLICY = Object.freeze({
   requestedPitchSource: "spectral",
   minPeakClarity: 0.72,
-  micSilenceAvgAmplitude: 8,
-  micSilenceRms: 0.018,
-  micSignalPeakAmplitude: 0.16,
+  liveInputSilenceAvgAmplitude: 8,
+  liveInputSilenceRms: 0.018,
+  liveInputSignalPeakAmplitude: 0.16,
 });
 
 export const SPECTRAL_MODAL_POLICY = Object.freeze({

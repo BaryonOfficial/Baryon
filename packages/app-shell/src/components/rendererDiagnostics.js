@@ -2,12 +2,21 @@ import { WebGPURenderer } from "three/webgpu";
 
 export const WEBGPU_RENDERER_INIT_ERROR = "WebGPURendererInitError";
 
+/**
+ * @typedef {NonNullable<Window["__baryonRendererInfo"]>} RendererInfoSnapshot
+ */
+
 export function clearRendererDiagnostics() {
   if (typeof window === "undefined") {
     return;
   }
 
   delete window.__baryonRendererInfo;
+  window.dispatchEvent(
+    new CustomEvent("__baryon-renderer-info-change", {
+      detail: null,
+    }),
+  );
   delete window.__baryonAuditSnapshot;
   delete window.__baryonSupportProbe;
 }
@@ -34,24 +43,38 @@ function setRendererInfo(renderer, forceWebGLFallbackTest, error) {
   }
 
   if (error) {
-    window.__baryonRendererInfo = {
+    /** @type {RendererInfoSnapshot} */
+    const snapshot = {
       forceWebGLFallbackTest,
       backendType: null,
       backend: null,
       isFallback: forceWebGLFallbackTest,
       error: String(error),
     };
+    window.__baryonRendererInfo = snapshot;
+    window.dispatchEvent(
+      new CustomEvent("__baryon-renderer-info-change", {
+        detail: snapshot,
+      }),
+    );
     return;
   }
 
   const backend = /** @type {any} */ (renderer.backend);
-  window.__baryonRendererInfo = {
+  /** @type {RendererInfoSnapshot} */
+  const snapshot = {
     forceWebGLFallbackTest,
     backendType: backend?.isWebGLBackend === true ? "webgl" : "webgpu",
     backend: backend?.constructor?.name ?? null,
     isFallback: backend?.isWebGLBackend === true,
     error: null,
   };
+  window.__baryonRendererInfo = snapshot;
+  window.dispatchEvent(
+    new CustomEvent("__baryon-renderer-info-change", {
+      detail: snapshot,
+    }),
+  );
 }
 
 export async function createBaryonRenderer(glDefaults, forceWebGLFallbackTest) {

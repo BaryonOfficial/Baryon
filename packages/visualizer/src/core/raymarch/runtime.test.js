@@ -125,6 +125,7 @@ function createRuntimeState() {
       missRatio: 0.15,
       avgSilhouetteSuppression: 0,
     },
+    auditEnabled: true,
     debugSnapshot: null,
   };
 }
@@ -262,7 +263,7 @@ describe("tickRaymarchRuntime", () => {
       true,
     );
     expect(runtimeState.debugSnapshot.raymarchDebug.earlyExitThreshold).toBe(
-      0.001,
+      0.005,
     );
     expect(
       runtimeState.debugSnapshot.raymarchDebug.earlyExitRatio,

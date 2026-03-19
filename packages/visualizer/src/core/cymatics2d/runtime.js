@@ -42,14 +42,12 @@ function estimateAverageModeAmplitude(modeSlots) {
   return count > 0 ? total / count : 0;
 }
 
-function countActiveModes(modeSlots) {
-  if (!modeSlots?.length) return 0;
-
+function countActiveSlots(slots) {
+  if (!slots?.length) return 0;
   let count = 0;
-  for (let i = 0; i < modeSlots.length; i += 4) {
-    if ((modeSlots[i + 3] ?? 0) > 0) count += 1;
+  for (let i = 0; i < slots.length; i += 4) {
+    if ((slots[i + 3] ?? 0) > 0) count += 1;
   }
-
   return count;
 }
 
@@ -292,8 +290,12 @@ export function tickCymatics2dRuntime(
     detailColorBuffer.value.needsUpdate = true;
   }
 
-  const backboneModeCount = countActiveModes(featureFrame?.backboneSlots);
-  const detailModeCount = countActiveModes(featureFrame?.detailSlots);
+  const backboneModeCount =
+    featureFrame?.activeBackboneModeCount ??
+    countActiveSlots(featureFrame?.backboneSlots);
+  const detailModeCount =
+    featureFrame?.activeDetailModeCount ??
+    countActiveSlots(featureFrame?.detailSlots);
   uniforms.uBackboneModeCount.value = backboneModeCount;
   uniforms.uDetailModeCount.value = detailModeCount;
   uniforms.uActiveModeCount.value = backboneModeCount + detailModeCount;

@@ -83,6 +83,9 @@ export default function ParticleDebugOverlay() {
       </div>
       <div>Pitch: {snapshot.pitchSource ?? "none"}</div>
       <div>Analysis: {snapshot.analysisSourceUsed ?? "none"}</div>
+      <div>Excitation: {formatNumber(debugSnapshot.fieldExcitation)}</div>
+      <div>BB Amp: {formatNumber(debugSnapshot.maxBackboneAmplitude)}</div>
+      <div>Det/BB: {formatNumber(debugSnapshot.detailBackboneRatio, 2)}</div>
       <div>Avg Opacity: {formatNumber(debugSnapshot.avgOpacity)}</div>
       <div>Avg Density: {formatNumber(debugSnapshot.avgDensity)}</div>
       <div>Early Exit Est.: {formatNumber(debugSnapshot.earlyExitRatio)}</div>

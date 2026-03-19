@@ -17,7 +17,9 @@ export function createEmptyControlSnapshots(controlsSnapshot = null) {
 }
 
 export function shouldReuseIdleFrame(status, controls) {
-  return !status.isPlaying && !status.isMicActive && !controls.injectTestTone;
+  return (
+    !status.isPlaying && !status.isLiveInputActive && !controls.injectTestTone
+  );
 }
 
 export function createRuntimeDiagnostics() {
@@ -29,7 +31,6 @@ export function createRuntimeDiagnostics() {
     longFrameCount: 0,
     currentPixelRatio: 1,
     basePixelRatio: 1,
-    lastFrameWallTimeMs: null,
     lastLongFrame: null,
     lastVisibilityChange: null,
     rendererMode: null,

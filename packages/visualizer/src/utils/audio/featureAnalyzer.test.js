@@ -13,7 +13,7 @@ function makeStatus(overrides = {}) {
   return {
     audioInputMode: "file",
     isPlaying: true,
-    isMicActive: false,
+    isLiveInputActive: false,
     playbackSessionId: 4,
     fftSize: FFT_SIZE,
     sampleRate: SAMPLE_RATE,

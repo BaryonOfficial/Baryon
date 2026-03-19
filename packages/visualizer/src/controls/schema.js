@@ -6,6 +6,7 @@ import {
   RENDER_DEFAULTS,
   SIMULATION_DEFAULTS,
 } from "../defaults.js";
+import {} from "../utils/audioFeatures.js";
 import { VISUALIZATION_METHODS } from "../visualization/types.js";
 
 export const CONTROL_TARGET_TYPES = Object.freeze({
@@ -43,7 +44,7 @@ function methodsFor(scope) {
 
 const CONTROL_GROUPS = Object.freeze({
   input: Object.freeze({
-    title: "Mic",
+    title: "Live Input",
     order: 10,
     expanded: false,
   }),
@@ -96,7 +97,7 @@ function withControlGroup(definition, group) {
 }
 
 export const CONTROL_DEFINITIONS = Object.freeze([
-  // ── Mic ────────────────────────────────────────────────────────────────────
+  // ── Live Input ─────────────────────────────────────────────────────────────
   withControlGroup(
     {
       key: "echoCancellation",
@@ -107,7 +108,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audio,
       handler: CONTROL_HANDLERS.audio,
-      runtimePath: "audioSession.micSettings.echoCancellation",
+      runtimePath: "audioSession.liveInputSettings.echoCancellation",
       status: CONTROL_STATUSES.live,
     },
     CONTROL_GROUPS.input,
@@ -122,7 +123,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audio,
       handler: CONTROL_HANDLERS.audio,
-      runtimePath: "audioSession.micSettings.noiseSuppression",
+      runtimePath: "audioSession.liveInputSettings.noiseSuppression",
       status: CONTROL_STATUSES.live,
     },
     CONTROL_GROUPS.input,
@@ -137,7 +138,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audio,
       handler: CONTROL_HANDLERS.audio,
-      runtimePath: "audioSession.micSettings.autoGainControl",
+      runtimePath: "audioSession.liveInputSettings.autoGainControl",
       status: CONTROL_STATUSES.live,
     },
     CONTROL_GROUPS.input,

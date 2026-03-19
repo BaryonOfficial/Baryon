@@ -76,6 +76,12 @@ import {
   SHELL_WEIGHT_START,
 } from "./fieldShaping.js";
 
+// Excitation gate: smoothstep range for uAverageAmplitude / 255.
+// Below LOW the field is under-excited; gating reduces body fill and hot-core.
+// Above HIGH the gate is fully open and behavior is identical to pre-fix.
+const EXCITATION_GATE_LOW = 0.04;
+const EXCITATION_GATE_HIGH = 0.35;
+
 /**
  * @typedef {{
  *   positionRay: any,
@@ -165,6 +171,7 @@ function createScatteringNode({
     uThreshold,
     uStructureMin,
     uStructureMax,
+    uAverageAmplitude,
     uActiveModeCount,
     uBackboneModeCount,
     uDetailModeCount,
@@ -229,6 +236,20 @@ function createScatteringNode({
   const spectralColorBiasHintOffset = uHarmonicity
     .mul(0.12)
     .sub(uChangeSignal.mul(0.08));
+  // Excitation gate: 0 when field is under-excited (weak/noisy input), 1 when
+  // fully excited. Three-input weighted formula prevents noise-floor-elevated
+  // amplitude alone from keeping the gate open — coherent structure and tonal
+  // purity are required. Hoisted as loop-invariant — does not re-evaluate per step.
+  const excitationInput = uAverageAmplitude
+    .div(float(255.0))
+    .mul(float(0.3))
+    .add(uStructureSignal.mul(float(0.45)))
+    .add(uHarmonicity.mul(float(0.25)));
+  const excitationGate = smoothstep(
+    float(EXCITATION_GATE_LOW),
+    float(EXCITATION_GATE_HIGH),
+    excitationInput,
+  );
 
   return Fn(
     /**
@@ -383,7 +404,9 @@ function createScatteringNode({
         .mul(activeMask)
         .mul(interiorMask)
         .mul(float(BODY_DENSITY_GAIN))
-        .mul(float(1.0).sub(boundaryMask.mul(float(BODY_BOUNDARY_REDUCTION))));
+        .mul(float(1.0).sub(boundaryMask.mul(float(BODY_BOUNDARY_REDUCTION))))
+        // Under-excited fields get much less body fill to avoid diffuse white fog
+        .mul(excitationGate.pow(float(1.5)));
       // Beat pulse adds an emission flash — each hit brightens the beam layer
       const transientBoost = float(1.0)
         .add(uTransientEnergy.mul(float(BEAM_TRANSIENT_GAIN)))
@@ -481,7 +504,8 @@ function createScatteringNode({
         .add(boundaryMask.mul(float(BOUNDARY_CONTOUR_ACCENT_WEIGHT)))
         .add(highlightMask.mul(float(HIGHLIGHT_CONTOUR_ACCENT_WEIGHT)));
       // Beat pulse briefly expands the bright hot core — "bloom from within" on hits
-      // hotCoreStartDynamic is pre-computed above the Fn
+      // hotCoreStartDynamic is pre-computed above the Fn.
+      // excitationGate prevents weak tonal fields from triggering the white laser core.
       const hotCoreMix = smoothstep(
         hotCoreStartDynamic,
         float(HOT_CORE_END),
@@ -500,7 +524,7 @@ function createScatteringNode({
               ),
             )
         ),
-      );
+      ).mul(excitationGate);
       const fresnelBase = clamp(
         float(1.0)
           .sub(abs(dot(gradientNormal, viewDirLocal.negate())))
@@ -548,7 +572,7 @@ function createScatteringNode({
       );
       const staticLaserColor = mix(
         staticContourColor,
-        vec3(1.0),
+        uSurfaceColor,
         hotCoreMix.mul(float(0.72)),
       );
       const staticHolographicColor = mix(
@@ -595,7 +619,7 @@ function createScatteringNode({
         );
         const chromesthesiaLaserColor = mix(
           chromesthesiaContourColor,
-          vec3(1.0),
+          uSurfaceColor,
           hotCoreMix.mul(float(0.68)),
         );
         const chromesthesiaHolographicColor = mix(

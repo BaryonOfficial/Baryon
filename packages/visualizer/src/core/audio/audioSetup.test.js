@@ -417,34 +417,72 @@ describe("audio session", () => {
     });
   });
 
-  it("tracks mic lifecycle and clears state on stop", async () => {
+  it("tracks live input lifecycle and clears state on stop", async () => {
     const session = createAttachedSession();
-    await session.startMicRecordStream("device-1");
+    await session.startLiveInputStream("device-1");
 
+    expect(session.getStatus().liveInputCalibrationVersion).toBeGreaterThan(0);
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "mic",
-      isMicActive: true,
-      analysisSource: "mic",
-      micSettings: {
+      audioInputMode: "live",
+      isLiveInputActive: true,
+      analysisSource: "live",
+      liveInputSettings: {
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
       },
     });
-    const micSnapshot = session.readAnalysisSnapshot();
-    expect(micSnapshot).toMatchObject({
-      sourceMode: "mic",
+    const liveInputSnapshot = session.readAnalysisSnapshot();
+    expect(liveInputSnapshot).toMatchObject({
+      sourceMode: "live",
       rms: 0.25,
     });
-    expect(micSnapshot?.avgAmplitude).toBeGreaterThan(0);
+    expect(liveInputSnapshot?.avgAmplitude).toBeGreaterThan(0);
 
-    session.stopMicRecordStream();
+    session.stopLiveInputStream();
     expect(mockTrackStop).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "idle",
-      isMicActive: false,
+      isLiveInputActive: false,
       analysisSource: "idle",
     });
+  });
+
+  it("treats system-classified live input as file-style analysis", async () => {
+    const session = createAttachedSession();
+    await session.setLiveInputSettings({
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    });
+
+    await session.startLiveInputStream("device-1", "system");
+
+    expect(getUserMediaMock).toHaveBeenLastCalledWith({
+      audio: {
+        deviceId: { exact: "device-1" },
+      },
+    });
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "system",
+      isLiveInputActive: true,
+      liveInputKind: "system",
+      liveInputCalibrationVersion: 0,
+      sourceKind: "system",
+      analysisSource: "file",
+    });
+    expect(session.readAnalysisSnapshot()).toMatchObject({
+      sourceMode: "system",
+      rms: 0.25,
+    });
+
+    await session.setLiveInputSettings({
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    });
+
+    expect(mockTrackApplyConstraints).not.toHaveBeenCalled();
   });
 
   it("disposes host state deterministically", async () => {
@@ -681,7 +719,7 @@ describe("audio session", () => {
     });
   });
 
-  it("clears paused file playback state when switching to mic input", async () => {
+  it("clears paused file playback state when switching to live input", async () => {
     const session = createAttachedSession();
     await session.loadAudio("good");
     await session.playPauseAudio();
@@ -693,13 +731,13 @@ describe("audio session", () => {
       time: 1,
     });
 
-    await session.startMicRecordStream("device-1");
+    await session.startLiveInputStream("device-1");
 
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "mic",
-      isMicActive: true,
+      audioInputMode: "live",
+      isLiveInputActive: true,
       isPlaying: false,
-      analysisSource: "mic",
+      analysisSource: "live",
     });
     expect(session.readClockSnapshot(3)).toMatchObject({
       clockMode: "realtime",
@@ -707,12 +745,12 @@ describe("audio session", () => {
       deltaTime: 0,
     });
     expect(session.readAnalysisSnapshot()).toMatchObject({
-      sourceMode: "mic",
+      sourceMode: "live",
       rms: 0.25,
     });
   });
 
-  it("clears loaded stream playback state when switching to mic input", async () => {
+  it("clears loaded stream playback state when switching to live input", async () => {
     const session = createAttachedSession();
     const mediaElement = new MockMediaElement({
       duration: 8,
@@ -726,20 +764,20 @@ describe("audio session", () => {
       sourceKind: "soundcloud",
     });
 
-    await session.startMicRecordStream("device-1");
+    await session.startLiveInputStream("device-1");
 
     expect(mediaElement.pause).toHaveBeenCalledTimes(2);
     expect(session.getStatus()).toMatchObject({
-      audioInputMode: "mic",
-      isMicActive: true,
+      audioInputMode: "live",
+      isLiveInputActive: true,
       isPlaying: false,
-      sourceKind: "mic",
-      analysisSource: "mic",
+      sourceKind: "live",
+      analysisSource: "live",
       isAudioLoaded: false,
     });
   });
 
-  it("marks unloaded and mic sources as non-seekable", async () => {
+  it("marks unloaded and live input sources as non-seekable", async () => {
     const session = createAttachedSession();
 
     expect(session.getTransportState()).toEqual({
@@ -749,7 +787,7 @@ describe("audio session", () => {
     });
     await expect(session.seekTo(1)).resolves.toBe(false);
 
-    await session.startMicRecordStream("device-1");
+    await session.startLiveInputStream("device-1");
 
     expect(session.getTransportState()).toEqual({
       currentTimeSeconds: 0,
@@ -897,31 +935,31 @@ describe("audio session", () => {
     });
   });
 
-  it("releases mic resources and closes the audio context on dispose", async () => {
+  it("releases live input resources and closes the audio context on dispose", async () => {
     const session = createAttachedSession();
-    await session.startMicRecordStream("device-1");
+    await session.startLiveInputStream("device-1");
 
     await session.dispose();
 
     expect(mockTrackStop).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "idle",
-      isMicActive: false,
+      isLiveInputActive: false,
       isPlaying: false,
       analysisSource: "idle",
     });
     expect(lastAudioContext.close).toHaveBeenCalledTimes(1);
   });
 
-  it("requests mic input with the selected device and current DSP settings", async () => {
+  it("requests live input with the selected device and current DSP settings", async () => {
     const session = createAttachedSession();
-    await session.setMicSettings({
+    await session.setLiveInputSettings({
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
     });
 
-    await session.startMicRecordStream("device-1");
+    await session.startLiveInputStream("device-1");
 
     expect(getUserMediaMock).toHaveBeenCalledWith({
       audio: {
@@ -931,18 +969,18 @@ describe("audio session", () => {
         autoGainControl: true,
       },
     });
-    expect(session.getMicSettings()).toEqual({
+    expect(session.getLiveInputSettings()).toEqual({
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
     });
   });
 
-  it("applies updated mic DSP settings to the active track", async () => {
+  it("applies updated live input DSP settings to the active track", async () => {
     const session = createAttachedSession();
-    await session.startMicRecordStream("device-1");
+    await session.startLiveInputStream("device-1");
 
-    await session.setMicSettings({
+    await session.setLiveInputSettings({
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: false,
@@ -953,7 +991,7 @@ describe("audio session", () => {
       noiseSuppression: true,
       autoGainControl: false,
     });
-    expect(session.getStatus().micSettings).toEqual({
+    expect(session.getStatus().liveInputSettings).toEqual({
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: false,

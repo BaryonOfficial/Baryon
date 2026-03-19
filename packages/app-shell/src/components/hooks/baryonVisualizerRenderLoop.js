@@ -11,10 +11,11 @@ import {
   shouldReuseIdleFrame,
   snapshotRuntimeDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
+import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
 
 const LONG_FRAME_THRESHOLD_MS = 34;
 const PERFORMANCE_HUD_PUBLISH_INTERVAL_MS = 150;
-const PERFORMANCE_HUD_SMOOTHING_ALPHA = 0.12;
+const PERFORMANCE_HUD_SMOOTHING_ALPHA = 0.25;
 
 function snapshotFeatureFrame(featureFrame) {
   return {
@@ -98,11 +99,8 @@ export function publishPerformanceHudSnapshot(
 }
 
 export function updateRendererDiagnostics(
-  { state, controls, status, time, deltaTime, gl, renderLoopRefs },
-  {
-    getTargetDpr = getPlaybackDiagnosticDpr,
-    getWallTimeMs = getRenderLoopWallTimeMs,
-  } = {},
+  { state, controls, status, time, deltaTime, rfDelta, gl, renderLoopRefs },
+  { getTargetDpr = getPlaybackDiagnosticDpr } = {},
 ) {
   const runtimeDiagnostics = renderLoopRefs.runtimeDiagnosticsRef.current;
   const rendererMode =
@@ -124,22 +122,22 @@ export function updateRendererDiagnostics(
   );
   const basePixelRatio = getTargetDpr();
   const targetPixelRatio = lowLoadActive ? 1 : basePixelRatio;
-  const wallTimeMs = getWallTimeMs();
-  const wallFrameTimeMs =
-    typeof runtimeDiagnostics.lastFrameWallTimeMs === "number"
-      ? Math.max(0, wallTimeMs - runtimeDiagnostics.lastFrameWallTimeMs)
-      : null;
   const frameTimeMs =
-    wallFrameTimeMs && Number.isFinite(wallFrameTimeMs)
-      ? wallFrameTimeMs
-      : Math.max(0, deltaTime * 1000);
-  runtimeDiagnostics.lastFrameWallTimeMs = wallTimeMs;
-  runtimeDiagnostics.smoothedFrameTimeMs =
-    runtimeDiagnostics.smoothedFrameTimeMs > 0
-      ? runtimeDiagnostics.smoothedFrameTimeMs +
-        (frameTimeMs - runtimeDiagnostics.smoothedFrameTimeMs) *
-          PERFORMANCE_HUD_SMOOTHING_ALPHA
-      : frameTimeMs;
+    typeof rfDelta === "number" && rfDelta > 0 && Number.isFinite(rfDelta)
+      ? rfDelta * 1000
+      : typeof deltaTime === "number" &&
+          deltaTime > 0 &&
+          Number.isFinite(deltaTime)
+        ? deltaTime * 1000
+        : null;
+  if (frameTimeMs !== null) {
+    runtimeDiagnostics.smoothedFrameTimeMs =
+      runtimeDiagnostics.smoothedFrameTimeMs > 0
+        ? runtimeDiagnostics.smoothedFrameTimeMs +
+          (frameTimeMs - runtimeDiagnostics.smoothedFrameTimeMs) *
+            PERFORMANCE_HUD_SMOOTHING_ALPHA
+        : frameTimeMs;
+  }
   runtimeDiagnostics.currentPixelRatio = targetPixelRatio;
   runtimeDiagnostics.basePixelRatio = basePixelRatio;
   if (renderLoopRefs.pixelRatioRef.current !== targetPixelRatio) {
@@ -148,7 +146,7 @@ export function updateRendererDiagnostics(
     renderLoopRefs.pixelRatioRef.current = targetPixelRatio;
   }
 
-  if (status.isPlaying) {
+  if (status.isPlaying && frameTimeMs !== null) {
     runtimeDiagnostics.activeFrameCount += 1;
     runtimeDiagnostics.averageFrameTimeMs +=
       (frameTimeMs - runtimeDiagnostics.averageFrameTimeMs) /
@@ -250,6 +248,9 @@ export function applyCachedControlSnapshots(
       hasBloomPass,
       controlsSnapshot: cachedControlSnapshotsRef.current.controlsSnapshot,
     };
+    if (runtimeState) {
+      runtimeState.auditEnabled = controls.auditEnabled;
+    }
     appliedControlVersionRef.current = controlVersionRef.current;
   }
 
@@ -266,7 +267,6 @@ export function resolveFeatureFrame(
     status,
     time,
     clockMode,
-    micProfile,
     renderLoopRefs,
     chromesthesiaEnabled,
   },
@@ -305,9 +305,6 @@ export function resolveFeatureFrame(
       radius: runtimeState.uniforms.uRadius.value,
       status,
       frameTimeMs: time * 1000,
-      micAnalysisSettings: {
-        profile: micProfile,
-      },
       includeChromesthesia: chromesthesiaEnabled,
       analysisHints,
     });
@@ -321,7 +318,7 @@ export function resolveFeatureFrame(
     featureFrame = lastIdleFrameRef.current;
   }
 
-  if (status.isPlaying || status.isMicActive) {
+  if (status.isPlaying || status.isLiveInputActive) {
     lastLiveFrameRef.current = featureFrame;
     lastActiveFrameRef.current = null;
     lastIdleFrameRef.current = null;
@@ -341,38 +338,32 @@ export function resolveFeatureFrame(
   };
 }
 
-export function syncMicRuntimeStatus({
+export function syncLiveInputRuntimeStatus({
   status,
-  featureFrame,
-  micProfile,
-  setMicRuntimeStatus,
+  setLiveInputRuntimeStatus,
   renderLoopRefs,
 }) {
-  const nextMicRuntimeStatus = status.isMicActive
+  const nextLiveInputRuntimeStatus = status.isLiveInputActive
     ? {
         active: true,
-        calibrating: Boolean(featureFrame.debug?.micCalibrationActive),
-        profile: featureFrame.debug?.micProfile ?? micProfile ?? "voice-tone",
       }
-    : {
-        active: false,
-        calibrating: false,
-        profile: micProfile ?? "voice-tone",
-      };
-  const previousMicRuntimeStatus =
-    renderLoopRefs.lastMicRuntimeStatusRef.current;
+    : createLiveInputRuntimeStatus();
+  const previousLiveInputRuntimeStatus =
+    renderLoopRefs.lastLiveInputRuntimeStatusRef.current;
 
   if (
-    !previousMicRuntimeStatus ||
-    previousMicRuntimeStatus.active !== nextMicRuntimeStatus.active ||
-    previousMicRuntimeStatus.calibrating !== nextMicRuntimeStatus.calibrating ||
-    previousMicRuntimeStatus.profile !== nextMicRuntimeStatus.profile
+    !previousLiveInputRuntimeStatus ||
+    previousLiveInputRuntimeStatus.active !== nextLiveInputRuntimeStatus.active
   ) {
-    renderLoopRefs.lastMicRuntimeStatusRef.current = nextMicRuntimeStatus;
-    setMicRuntimeStatus?.(nextMicRuntimeStatus);
+    renderLoopRefs.lastLiveInputRuntimeStatusRef.current =
+      nextLiveInputRuntimeStatus;
+    setLiveInputRuntimeStatus?.((currentStatus) => ({
+      ...(currentStatus ?? {}),
+      ...nextLiveInputRuntimeStatus,
+    }));
   }
 
-  return nextMicRuntimeStatus;
+  return nextLiveInputRuntimeStatus;
 }
 
 export function applyReactiveBloomState({
@@ -386,19 +377,17 @@ export function applyReactiveBloomState({
     return bloom;
   }
 
-  const reactiveBloom = {
-    ...bloom,
-    strength: runtimeState?.bloomTuning?.effectiveStrength ?? bloom.strength,
-    radius: runtimeState?.bloomTuning?.effectiveRadius ?? bloom.radius,
-    threshold: runtimeState?.bloomTuning?.effectiveThreshold ?? bloom.threshold,
-  };
+  const bt = runtimeState?.bloomTuning;
+  const strength = bt?.effectiveStrength ?? bloom.strength;
+  const radius = bt?.effectiveRadius ?? bloom.radius;
+  const threshold = bt?.effectiveThreshold ?? bloom.threshold;
 
-  const bloomActive = controls.bloomEnabled && reactiveBloom.strength > 1e-4;
-  bloomPass.strength.value = reactiveBloom.strength;
-  bloomPass.radius.value = reactiveBloom.radius;
-  bloomPass.threshold.value = bloomActive ? reactiveBloom.threshold : 999;
+  const bloomActive = controls.bloomEnabled && strength > 1e-4;
+  bloomPass.strength.value = strength;
+  bloomPass.radius.value = radius;
+  bloomPass.threshold.value = bloomActive ? threshold : 999;
 
-  return controls.bloomEnabled ? reactiveBloom : bloom;
+  return bloom;
 }
 
 function buildAuditSnapshotPayload({
@@ -474,7 +463,7 @@ function publishControlSnapshot(
 
   window.__baryonControlState = buildControlSnapshot({
     method: runtime.method,
-    audio: audio.getMicSettings(),
+    audio: audio.getLiveInputSettings(),
     shared,
     output,
     visualization,

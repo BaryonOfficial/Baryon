@@ -2,7 +2,19 @@ import React from "react";
 
 import "./App.css";
 import ThreeScene from "./components/ThreeScene.jsx";
+import { ListenerControls } from "./components/AudioControls.jsx";
 import { AudioProvider } from "./context/AudioProvider";
+
+const LEGAL_LINKS = [
+  {
+    href: "https://github.com/BaryonOfficial/Baryon",
+    label: "Source",
+  },
+  {
+    href: "https://github.com/BaryonOfficial/Baryon/blob/main/LICENSING.md",
+    label: "License",
+  },
+];
 
 function LinkIcon() {
   return (
@@ -22,59 +34,49 @@ function LinkIcon() {
   );
 }
 
+function LegalLinks() {
+  return LEGAL_LINKS.map((link) => (
+    <a key={link.href} href={link.href} target="_blank" rel="noreferrer">
+      {link.label}
+    </a>
+  ));
+}
+
+export function AppFrame({ children }) {
+  return (
+    <div className="app-shell">
+      {children}
+      <div
+        className="app-legal-links"
+        role="contentinfo"
+        aria-label="Licensing and source"
+      >
+        <LegalLinks />
+      </div>
+      <div className="app-legal-mobile">
+        <details className="app-legal-mobile-details">
+          <summary
+            className="app-legal-mobile-summary"
+            aria-label="Licensing and source"
+            title="Licensing and source"
+          >
+            <LinkIcon />
+          </summary>
+          <div className="app-legal-mobile-menu">
+            <LegalLinks />
+          </div>
+        </details>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   return (
     <AudioProvider>
-      <div className="app-shell">
-        <ThreeScene />
-        <div
-          className="app-legal-links"
-          role="contentinfo"
-          aria-label="Licensing and source"
-        >
-          <a
-            href="https://github.com/BaryonOfficial/Baryon"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Source
-          </a>
-          <a
-            href="https://github.com/BaryonOfficial/Baryon/blob/main/LICENSING.md"
-            target="_blank"
-            rel="noreferrer"
-          >
-            License
-          </a>
-        </div>
-        <div className="app-legal-mobile">
-          <details className="app-legal-mobile-details">
-            <summary
-              className="app-legal-mobile-summary"
-              aria-label="Licensing and source"
-              title="Licensing and source"
-            >
-              <LinkIcon />
-            </summary>
-            <div className="app-legal-mobile-menu">
-              <a
-                href="https://github.com/BaryonOfficial/Baryon"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Source
-              </a>
-              <a
-                href="https://github.com/BaryonOfficial/Baryon/blob/main/LICENSING.md"
-                target="_blank"
-                rel="noreferrer"
-              >
-                License
-              </a>
-            </div>
-          </details>
-        </div>
-      </div>
+      <AppFrame>
+        <ThreeScene controlsOverlay={<ListenerControls />} />
+      </AppFrame>
     </AudioProvider>
   );
 }

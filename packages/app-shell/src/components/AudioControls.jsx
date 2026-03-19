@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from "react";
-import { MIC_PROFILE_OPTIONS } from "@baryon/visualizer/audio-features";
 import { useAudio } from "../context/AudioContext";
+import { SourceSelector } from "./controls/SourceSelector";
 
 // ─── SVG Icons ───────────────────────────────────────────────────────────────
 
@@ -44,26 +44,6 @@ function StopIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
       <rect x="4" y="4" width="16" height="16" rx="2" />
-    </svg>
-  );
-}
-
-function MicIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-      <line x1="12" y1="19" x2="12" y2="23" />
-      <line x1="8" y1="23" x2="16" y2="23" />
     </svg>
   );
 }
@@ -169,9 +149,19 @@ function ScrollingText({ text }) {
 
 // ─── Status dot ──────────────────────────────────────────────────────────────
 
-function getStatusConfig(isEngineReady, isAudioLoaded, isPlaying, isMicActive) {
-  if (isMicActive)
-    return { color: "#ff453a", pulse: true, label: "Mic active" };
+function getStatusConfig(
+  isEngineReady,
+  isAudioLoaded,
+  isPlaying,
+  isLiveInputActive,
+  liveInputKind,
+) {
+  if (isLiveInputActive)
+    return {
+      color: "#ff453a",
+      pulse: true,
+      label: liveInputKind === "system" ? "System input active" : "Mic active",
+    };
   if (isPlaying) return { color: "#32d74b", pulse: true, label: "Playing" };
   if (isAudioLoaded) return { color: "#0a84ff", pulse: false, label: "Loaded" };
   if (isEngineReady) return { color: "#32d74b", pulse: false, label: "Ready" };
@@ -330,6 +320,7 @@ const CSS = `
 
 /* ── Track section ── */
 .am-track {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -362,6 +353,51 @@ const CSS = `
   align-items: center;
   gap: 0.4rem;
   min-width: 0;
+}
+
+.am-track-popup {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.55rem);
+  transform: translateX(-50%) translateY(0.2rem);
+  min-width: 13rem;
+  max-width: min(18rem, calc(100vw - 2rem));
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(255, 177, 92, 0.26);
+  border-radius: 0.8rem;
+  background: rgba(26, 20, 12, 0.94);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
+  color: rgba(255, 232, 204, 0.96);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 150ms ease,
+    visibility 150ms ease,
+    transform 150ms ease;
+  z-index: 75;
+}
+
+.am-track-popup::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 0.7rem;
+  height: 0.7rem;
+  background: rgba(26, 20, 12, 0.94);
+  border-right: 1px solid rgba(255, 177, 92, 0.22);
+  border-bottom: 1px solid rgba(255, 177, 92, 0.22);
+  transform: translateX(-50%) translateY(-50%) rotate(45deg);
+}
+
+.am-track-popup--visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
 }
 
 .am-btn--soundcloud {
@@ -481,7 +517,7 @@ const CSS = `
 .am-btn--stop:not(:disabled):active { transform: scale(0.94); }
 
 /* ── Mic ── */
-.am-mic-wrap {
+.am-live-input-wrap {
   position: relative;
   display: flex;
   align-items: center;
@@ -490,68 +526,20 @@ const CSS = `
   flex-shrink: 0;
 }
 
-.am-btn--mic {
+.am-btn--live-input {
   width: 30px;
   height: 30px;
   background: rgba(255, 255, 255, 0.07);
 }
-.am-btn--mic:hover { background: rgba(255, 255, 255, 0.14); }
-.am-btn--mic:active { transform: scale(0.94); }
+.am-btn--live-input:hover { background: rgba(255, 255, 255, 0.14); }
+.am-btn--live-input:active { transform: scale(0.94); }
 
-.am-btn--mic-active {
+.am-btn--live-input-active {
   background: rgba(255, 69, 58, 0.28) !important;
   color: #ff453a !important;
   animation: am-pulse 1.5s ease-in-out infinite;
 }
-.am-btn--mic-active:hover { background: rgba(255, 69, 58, 0.42) !important; }
-
-.am-mic-profile {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.am-mic-profile::after {
-  content: "";
-  position: absolute;
-  right: 0.8rem;
-  width: 0.42rem;
-  height: 0.42rem;
-  border-right: 1.5px solid rgba(255, 255, 255, 0.55);
-  border-bottom: 1.5px solid rgba(255, 255, 255, 0.55);
-  transform: translateY(-50%) rotate(45deg);
-  top: 50%;
-  pointer-events: none;
-}
-
-.am-mic-profile-select {
-  appearance: none;
-  -webkit-appearance: none;
-  min-height: 1.95rem;
-  width: 8.5rem;
-  padding: 0.25rem 1.95rem 0.25rem 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.88);
-  font: inherit;
-  font-size: 0.74rem;
-  line-height: 1rem;
-  cursor: pointer;
-}
-
-.am-mic-profile-select:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.am-mic-profile-select:focus-visible {
-  outline: 2px solid rgba(122, 189, 255, 0.82);
-  outline-offset: 2px;
-}
-
-.am-mic-profile-select option {
-  color: #111827;
-}
+.am-btn--live-input-active:hover { background: rgba(255, 69, 58, 0.42) !important; }
 
 /* ── Volume ── */
 .am-volume {
@@ -745,8 +733,17 @@ const CSS = `
   transition: background 120ms ease, transform 80ms ease;
 }
 
+.am-recent-item--pending {
+  background: rgba(255, 159, 10, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 159, 10, 0.22);
+}
+
 .am-recent-item:hover {
   background: rgba(10, 132, 255, 0.16);
+}
+
+.am-recent-item--pending:hover {
+  background: rgba(255, 159, 10, 0.2);
 }
 
 .am-recent-item:active {
@@ -782,6 +779,10 @@ const CSS = `
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.am-recent-item-action--pending {
+  color: rgba(255, 190, 112, 0.92);
 }
 
 .am-soundcloud-header {
@@ -1063,7 +1064,7 @@ const CSS = `
     justify-self: end;
   }
 
-  .am-mic-wrap {
+  .am-live-input-wrap {
     flex-wrap: wrap;
     justify-content: flex-end;
   }
@@ -1211,14 +1212,9 @@ const CSS = `
     height: 36px;
   }
 
-  .am-btn--mic {
+  .am-btn--live-input {
     width: 42px;
     height: 42px;
-  }
-
-  .am-mic-profile-select {
-    min-height: 2.25rem;
-    width: 7.5rem;
   }
 
   .am-btn--soundcloud {
@@ -1255,34 +1251,31 @@ const CSS = `
 
 `;
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── Listener Controls ───────────────────────────────────────────────────────
 
-function AudioControls() {
+export function ListenerControls() {
   const {
     soundCloudEnabled,
     activeSource,
     displayName,
+    liveReturnLocalFile,
+    queuedNextLocalFile,
+    hasQueuedNextLocalFile,
     recentUploads,
     isPlaying,
-    isMicActive,
+    isLiveInputActive,
+    liveInputKind,
     isAudioLoaded,
     volume,
     isMuted,
     isEngineReady,
-    showDeviceMenu,
-    audioDevices,
-    selectedDevice,
-    micProfile,
     handleFileChange,
     handleRecentUploadSelect,
     handlePlayPause,
     handleStop,
-    handleMicToggle,
-    handleMicProfileChange,
     handleVolumeChange,
     handleMuteToggle,
     setShowDeviceMenu,
-    setSelectedDevice,
     showSoundCloudPanel,
     setShowSoundCloudPanel,
     soundCloudInput,
@@ -1305,15 +1298,18 @@ function AudioControls() {
   } = useAudio();
 
   const fileInputRef = useRef(null);
+  const queuedPopupTimeoutRef = useRef(0);
   const recentUploadsButtonRef = useRef(null);
   const recentUploadsPanelRef = useRef(null);
   const timelinePointerActiveRef = useRef(false);
   const [showRecentUploadsPanel, setShowRecentUploadsPanel] = useState(false);
+  const [showQueuedPopup, setShowQueuedPopup] = useState(false);
   const { color, pulse, label } = getStatusConfig(
     isEngineReady,
     isAudioLoaded,
     isPlaying,
-    isMicActive,
+    isLiveInputActive,
+    liveInputKind,
   );
   const volumePercent = Math.round(volume * 100);
   const soundCloudListStart = Math.max(0, soundCloudCurrentIndex - 1);
@@ -1321,9 +1317,6 @@ function AudioControls() {
     soundCloudListStart,
     soundCloudListStart + 4,
   );
-  const selectedMicProfileOption =
-    MIC_PROFILE_OPTIONS.find((option) => option.value === micProfile) ??
-    MIC_PROFILE_OPTIONS[0];
   const timelineValue =
     isScrubbing && scrubPreviewSeconds != null
       ? scrubPreviewSeconds
@@ -1338,6 +1331,19 @@ function AudioControls() {
     "--am-progress-percent": `${timelineProgressPercent}%`,
   };
   const hasRecentUploads = recentUploads.length > 0;
+  const isQueuedNextUnderLive = hasQueuedNextLocalFile && isLiveInputActive;
+  const trackTitle = isQueuedNextUnderLive
+    ? "Queued local file"
+    : "Upload audio";
+  const recentUploadsHelper = isQueuedNextUnderLive
+    ? "Selecting a local file while LIVE is active queues one next file."
+    : hasQueuedNextLocalFile
+      ? "The queued next local file stays highlighted here until you load it."
+      : "Reload a recent local file without reopening the picker.";
+  const playDisabled = !isAudioLoaded;
+  const queuedPopupMessage = liveReturnLocalFile?.name
+    ? `${queuedNextLocalFile?.name || "This file"} is queued next. ${liveReturnLocalFile.name} will be restored first when LIVE stops.`
+    : `${queuedNextLocalFile?.name || "This file"} is queued and will load when LIVE stops.`;
 
   useEffect(() => {
     if (!showRecentUploadsPanel) {
@@ -1367,6 +1373,26 @@ function AudioControls() {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [showRecentUploadsPanel]);
+
+  useEffect(() => {
+    window.clearTimeout(queuedPopupTimeoutRef.current);
+
+    if (!isQueuedNextUnderLive || !queuedNextLocalFile?.id) {
+      setShowQueuedPopup(false);
+      return undefined;
+    }
+
+    setShowQueuedPopup(true);
+    queuedPopupTimeoutRef.current = window.setTimeout(() => {
+      setShowQueuedPopup(false);
+      queuedPopupTimeoutRef.current = 0;
+    }, 2600);
+
+    return () => {
+      window.clearTimeout(queuedPopupTimeoutRef.current);
+      queuedPopupTimeoutRef.current = 0;
+    };
+  }, [isQueuedNextUnderLive, queuedNextLocalFile?.id]);
 
   return (
     <>
@@ -1452,8 +1478,29 @@ function AudioControls() {
                 setShowSoundCloudPanel(false);
                 fileInputRef.current?.click();
               }}
-              title="Upload audio"
+              onMouseEnter={() => {
+                if (isQueuedNextUnderLive) {
+                  setShowQueuedPopup(true);
+                }
+              }}
+              onMouseLeave={() => {
+                window.clearTimeout(queuedPopupTimeoutRef.current);
+                queuedPopupTimeoutRef.current = 0;
+                setShowQueuedPopup(false);
+              }}
+              title={trackTitle}
             >
+              <span
+                className={`am-track-popup${
+                  isQueuedNextUnderLive && showQueuedPopup
+                    ? " am-track-popup--visible"
+                    : ""
+                }`}
+                role="status"
+                aria-live="polite"
+              >
+                {queuedPopupMessage}
+              </span>
               <span className="am-track-label">
                 <MusicNoteIcon />
                 <ScrollingText text={displayName} />
@@ -1520,7 +1567,7 @@ function AudioControls() {
               <button
                 className="am-btn am-btn--play"
                 onClick={handlePlayPause}
-                disabled={!isAudioLoaded}
+                disabled={playDisabled}
                 title={isPlaying ? "Pause" : "Play"}
               >
                 {isPlaying ? <PauseIcon /> : <PlayIcon />}
@@ -1538,82 +1585,12 @@ function AudioControls() {
             <div className="am-divider" />
 
             <div className="am-utility-row">
-              {/* ── Right: mic + device menu ── */}
-              <div className="am-mic-wrap">
-                <button
-                  className={`am-btn am-btn--mic${isMicActive ? " am-btn--mic-active" : ""}`}
-                  onClick={async () => {
-                    setShowRecentUploadsPanel(false);
-                    if (isMicActive) {
-                      await handleMicToggle();
-                    } else {
-                      setShowDeviceMenu(!showDeviceMenu);
-                    }
-                  }}
-                  title={isMicActive ? "Stop mic input" : "Select audio input"}
-                >
-                  <MicIcon />
-                </button>
-                <div className="am-mic-profile">
-                  <select
-                    className="am-mic-profile-select"
-                    data-testid="mic-profile-select"
-                    value={micProfile}
-                    aria-label="Mic input profile"
-                    title={
-                      selectedMicProfileOption
-                        ? `Mic input profile: ${selectedMicProfileOption.label}. ${selectedMicProfileOption.description}`
-                        : "Mic input profile"
-                    }
-                    onFocus={() => {
-                      setShowRecentUploadsPanel(false);
-                      setShowSoundCloudPanel(false);
-                      setShowDeviceMenu(false);
-                    }}
-                    onChange={(event) => {
-                      setShowRecentUploadsPanel(false);
-                      setShowSoundCloudPanel(false);
-                      setShowDeviceMenu(false);
-                      handleMicProfileChange(event.target.value);
-                    }}
-                  >
-                    {MIC_PROFILE_OPTIONS.map((profile) => (
-                      <option key={profile.value} value={profile.value}>
-                        {profile.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {showDeviceMenu && (
-                  <div className="am-device-menu">
-                    {audioDevices.length === 0 ? (
-                      <p className="am-device-empty">No input devices found</p>
-                    ) : (
-                      <>
-                        {audioDevices.map((device) => (
-                          <button
-                            key={device.deviceId}
-                            className={`am-device-item${
-                              selectedDevice === device.deviceId
-                                ? " am-device-item--active"
-                                : ""
-                            }`}
-                            onClick={async () => {
-                              setSelectedDevice(device.deviceId);
-                              setShowDeviceMenu(false);
-                              await handleMicToggle();
-                            }}
-                          >
-                            {device.label ||
-                              `Device ${device.deviceId.slice(0, 8)}`}
-                          </button>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
+              <SourceSelector
+                onInteraction={() => {
+                  setShowRecentUploadsPanel(false);
+                  setShowDeviceMenu(false);
+                }}
+              />
             </div>
           </div>
 
@@ -1663,31 +1640,56 @@ function AudioControls() {
               </span>
               <span>This tab only</span>
             </div>
-            <p className="am-recent-helper">
-              Reload a recent local file without reopening the picker.
-            </p>
+            <p className="am-recent-helper">{recentUploadsHelper}</p>
             <ul className="am-recent-list">
-              {recentUploads.map((upload) => (
-                <li key={upload.id}>
-                  <button
-                    className="am-recent-item"
-                    onClick={async () => {
-                      setShowRecentUploadsPanel(false);
-                      await handleRecentUploadSelect(upload.id);
-                    }}
-                  >
-                    <span className="am-recent-item-main">
-                      <span className="am-recent-item-title">
-                        {upload.name}
+              {recentUploads.map((upload) => {
+                const isQueuedUpload = queuedNextLocalFile?.id === upload.id;
+                const actionLabel = isLiveInputActive
+                  ? isQueuedUpload
+                    ? "Queued"
+                    : "Queue"
+                  : isQueuedUpload
+                    ? "Next"
+                    : "Reload";
+                return (
+                  <li key={upload.id}>
+                    <button
+                      className={`am-recent-item${
+                        isQueuedUpload ? " am-recent-item--pending" : ""
+                      }`}
+                      onClick={async () => {
+                        setShowRecentUploadsPanel(false);
+                        await handleRecentUploadSelect(upload.id);
+                      }}
+                      title={
+                        isLiveInputActive
+                          ? "Queue this file until LIVE stops"
+                          : isQueuedUpload
+                            ? "Load the queued next local file"
+                            : "Reload this local file"
+                      }
+                    >
+                      <span className="am-recent-item-main">
+                        <span className="am-recent-item-title">
+                          {upload.name}
+                        </span>
+                        <span className="am-recent-item-meta">
+                          {formatFileSize(upload.size)}
+                        </span>
                       </span>
-                      <span className="am-recent-item-meta">
-                        {formatFileSize(upload.size)}
+                      <span
+                        className={`am-recent-item-action${
+                          isQueuedUpload
+                            ? " am-recent-item-action--pending"
+                            : ""
+                        }`}
+                      >
+                        {actionLabel}
                       </span>
-                    </span>
-                    <span className="am-recent-item-action">Reload</span>
-                  </button>
-                </li>
-              ))}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         ) : null}
@@ -1772,4 +1774,4 @@ function AudioControls() {
   );
 }
 
-export default AudioControls;
+export default ListenerControls;

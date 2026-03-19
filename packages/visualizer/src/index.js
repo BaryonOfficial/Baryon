@@ -11,14 +11,14 @@ export {
   seekTo,
   setAudioVolume,
   setAudioMuted,
-  setMicSettings,
-  startMicRecordStream,
-  stopMicRecordStream,
+  setLiveInputSettings,
+  startLiveInputStream,
+  stopLiveInputStream,
   setAudioEndedCallback,
   getIsAudioLoaded,
   getAnalysisState,
   getStatus,
-  getMicSettings,
+  getLiveInputSettings,
   readClockSnapshot,
   readAnalysisSnapshot,
   disposeAudio,
@@ -39,8 +39,6 @@ export {
   createAudioFeatureAnalyzer,
   createNoopAudioFeatureAnalyzer,
   DEFAULT_FEATURE_ANALYSIS_SETTINGS,
-  DEFAULT_MIC_ANALYSIS_SETTINGS,
-  MIC_PROFILE_OPTIONS,
 } from "./utils/audioFeatures.js";
 export { AudioControlsView } from "./react/AudioControlsView.jsx";
 export { useSharedAudioLogic } from "./react/useSharedAudioLogic.js";

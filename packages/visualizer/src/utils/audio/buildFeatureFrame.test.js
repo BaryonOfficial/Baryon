@@ -5,7 +5,7 @@ import {
   applyTestToneToSnapshot,
   buildAudioFeatureFrame,
   createAudioFeatureState,
-  detectMicNoiseGate,
+  detectLiveInputNoiseGate,
 } from "./buildFeatureFrame.js";
 
 const FFT_SIZE = 4096;
@@ -23,9 +23,10 @@ function createStatus(overrides = {}) {
     sampleRate: SAMPLE_RATE,
     isAudioLoaded: false,
     isPlaying: false,
-    isMicActive: false,
+    isLiveInputActive: false,
     hasAnalysisSource: false,
     workerStatus: null,
+    liveInputCalibrationVersion: 0,
     ...overrides,
   };
 }
@@ -96,12 +97,23 @@ function createAuditSettings(overrides = {}) {
   };
 }
 
-function makeMicStatus(overrides = {}) {
+function makeLiveInputStatus(overrides = {}) {
   return createStatus({
-    audioInputMode: "mic",
-    analysisSource: "mic",
-    isMicActive: true,
+    audioInputMode: "live",
+    analysisSource: "live",
+    isLiveInputActive: true,
     hasAnalysisSource: true,
+    ...overrides,
+  });
+}
+
+function makeSystemStatus(overrides = {}) {
+  return createStatus({
+    audioInputMode: "system",
+    analysisSource: "file",
+    isLiveInputActive: true,
+    hasAnalysisSource: true,
+    liveInputKind: "system",
     ...overrides,
   });
 }
@@ -127,19 +139,19 @@ function buildTimedFrame({
   });
 }
 
-function buildMicFrame({
+function buildLiveInputFrame({
   featureState,
   peaks,
   avgAmplitude,
   rms,
   frameTimeMs,
   profile = "voice-tone",
-  status = makeMicStatus(),
+  status = makeLiveInputStatus(),
   timeData = new Float32Array(FFT_SIZE),
 }) {
   return buildAudioFeatureFrame({
     analysisSnapshot: createSnapshot({
-      sourceMode: "mic",
+      sourceMode: "live",
       avgAmplitude,
       fftMagnitudes: makeFft(peaks),
       timeData,
@@ -149,8 +161,36 @@ function buildMicFrame({
     radius: 3,
     status,
     frameTimeMs,
-    micAnalysisSettings: { profile },
+    liveInputAnalysisSettings: { profile },
   });
+}
+
+function calibrateLiveInput(
+  featureState,
+  {
+    profile = "voice-tone",
+    peaks = [
+      [90, 0.09],
+      [180, 0.07],
+    ],
+    avgAmplitude = 2.5,
+    rms = 0.006,
+    status = makeLiveInputStatus(),
+    timeData = new Float32Array(FFT_SIZE),
+  } = {},
+) {
+  for (const frameTimeMs of [0, 300, 760]) {
+    buildLiveInputFrame({
+      featureState,
+      peaks,
+      avgAmplitude,
+      rms,
+      frameTimeMs,
+      profile,
+      status,
+      timeData,
+    });
+  }
 }
 
 function readModeKeys(slotBuffer) {
@@ -253,7 +293,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
 
   it("keeps ambient mic input idle during startup calibration", () => {
     const featureState = createAudioFeatureState();
-    const first = buildMicFrame({
+    const first = buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -263,7 +303,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.006,
       frameTimeMs: 0,
     });
-    const mid = buildMicFrame({
+    const mid = buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -273,7 +313,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.0065,
       frameTimeMs: 400,
     });
-    const done = buildMicFrame({
+    const done = buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -285,18 +325,18 @@ describe("buildAudioFeatureFrame layered contract", () => {
     });
 
     expect(first.fieldState).toBe("idle");
-    expect(first.debug.micNoiseGateActive).toBe(true);
-    expect(first.debug.micCalibrationActive).toBe(true);
-    expect(mid.debug.micCalibrationActive).toBe(true);
-    expect(done.debug.micCalibrationActive).toBe(false);
-    expect(done.debug.micNoiseGateActive).toBe(true);
-    expect(done.debug.micBaselineRms).toBeGreaterThan(0);
-    expect(done.debug.micBaselinePeak).toBeGreaterThan(0);
+    expect(first.debug.liveInputNoiseGateActive).toBe(true);
+    expect(first.debug.liveInputCalibrationActive).toBe(true);
+    expect(mid.debug.liveInputCalibrationActive).toBe(true);
+    expect(done.debug.liveInputCalibrationActive).toBe(false);
+    expect(done.debug.liveInputNoiseGateActive).toBe(true);
+    expect(done.debug.liveInputBaselineRms).toBeGreaterThan(0);
+    expect(done.debug.liveInputBaselinePeak).toBeGreaterThan(0);
   });
 
   it("opens quickly for voice after calibration", () => {
     const featureState = createAudioFeatureState();
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -306,7 +346,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.006,
       frameTimeMs: 0,
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -316,7 +356,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.0065,
       frameTimeMs: 300,
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -326,7 +366,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.0065,
       frameTimeMs: 760,
     });
-    const firstVoice = buildMicFrame({
+    const firstVoice = buildLiveInputFrame({
       featureState,
       peaks: [
         [180, 0.22],
@@ -338,7 +378,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.021,
       frameTimeMs: 800,
     });
-    const secondVoice = buildMicFrame({
+    const secondVoice = buildLiveInputFrame({
       featureState,
       peaks: [
         [180, 0.24],
@@ -351,16 +391,15 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 830,
     });
 
-    expect(firstVoice.debug.micNoiseGateActive).toBe(false);
-    expect(secondVoice.debug.micNoiseGateActive).toBe(false);
-    expect(secondVoice.debug.micProfile).toBe("voice-tone");
+    expect(firstVoice.debug.liveInputNoiseGateActive).toBe(false);
+    expect(secondVoice.debug.liveInputNoiseGateActive).toBe(false);
     expect(secondVoice.fieldState).toBe("active");
     expect(secondVoice.debug.modeSlotCount).toBeGreaterThan(0);
   });
 
   it("keeps steady fan-like noise gated after voice calibration", () => {
     const featureState = createAudioFeatureState();
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.18],
@@ -371,7 +410,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.012,
       frameTimeMs: 0,
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.18],
@@ -382,7 +421,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.012,
       frameTimeMs: 300,
     });
-    const frame = buildMicFrame({
+    const frame = buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.18],
@@ -394,14 +433,14 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 780,
     });
 
-    expect(frame.debug.micCalibrationActive).toBe(false);
-    expect(frame.debug.micNoiseGateActive).toBe(true);
+    expect(frame.debug.liveInputCalibrationActive).toBe(false);
+    expect(frame.debug.liveInputNoiseGateActive).toBe(true);
     expect(frame.fieldState).toBe("idle");
   });
 
   it("keeps a short low-energy hold and then returns to idle", () => {
     const featureState = createAudioFeatureState();
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -411,7 +450,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.006,
       frameTimeMs: 0,
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -421,7 +460,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.0065,
       frameTimeMs: 300,
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -431,7 +470,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.0065,
       frameTimeMs: 760,
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [220, 0.3],
@@ -442,7 +481,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.028,
       frameTimeMs: 800,
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [220, 0.31],
@@ -454,7 +493,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 830,
     });
 
-    const quiet1 = buildMicFrame({
+    const quiet1 = buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -464,7 +503,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.006,
       frameTimeMs: 860,
     });
-    const quiet2 = buildMicFrame({
+    const quiet2 = buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -474,7 +513,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.006,
       frameTimeMs: 890,
     });
-    const quiet3 = buildMicFrame({
+    const quiet3 = buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -484,7 +523,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.006,
       frameTimeMs: 920,
     });
-    const quiet4 = buildMicFrame({
+    const quiet4 = buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -495,17 +534,17 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 950,
     });
 
-    expect(quiet1.debug.micNoiseGateActive).toBe(false);
-    expect(quiet2.debug.micNoiseGateActive).toBe(true);
-    expect(quiet3.debug.micNoiseGateActive).toBe(true);
-    expect(quiet4.debug.micNoiseGateActive).toBe(true);
+    expect(quiet1.debug.liveInputNoiseGateActive).toBe(false);
+    expect(quiet2.debug.liveInputNoiseGateActive).toBe(true);
+    expect(quiet3.debug.liveInputNoiseGateActive).toBe(true);
+    expect(quiet4.debug.liveInputNoiseGateActive).toBe(true);
     expect(quiet2.fieldState).toBe("idle");
     expect(quiet4.fieldState).toBe("idle");
   });
 
   it("drops to idle on the first hard-silence frame while mic stays active", () => {
     const featureState = createAudioFeatureState();
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [220, 0.3],
@@ -516,7 +555,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.028,
       frameTimeMs: 0,
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [220, 0.31],
@@ -528,7 +567,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 30,
     });
 
-    const silence = buildMicFrame({
+    const silence = buildLiveInputFrame({
       featureState,
       peaks: [],
       avgAmplitude: 0,
@@ -536,15 +575,15 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 60,
     });
 
-    expect(silence.debug.micNoiseGateActive).toBe(true);
-    expect(silence.debug.micHardSilenceActive).toBe(true);
+    expect(silence.debug.liveInputNoiseGateActive).toBe(true);
+    expect(silence.debug.liveInputHardSilenceActive).toBe(true);
     expect(silence.fieldState).toBe("idle");
     expect(silence.debug.driverFrequency).toBe(0);
   });
 
   it("recalibrates when mic mode is restarted", () => {
     const featureState = createAudioFeatureState();
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -554,7 +593,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.006,
       frameTimeMs: 0,
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -564,7 +603,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.0065,
       frameTimeMs: 300,
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [90, 0.09],
@@ -574,7 +613,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.0065,
       frameTimeMs: 760,
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [220, 0.3],
@@ -585,7 +624,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       rms: 0.028,
       frameTimeMs: 800,
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [220, 0.31],
@@ -605,7 +644,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 1200,
     });
 
-    const restarted = buildMicFrame({
+    const restarted = buildLiveInputFrame({
       featureState,
       peaks: [
         [220, 0.3],
@@ -617,15 +656,112 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 1400,
     });
 
-    expect(restarted.debug.micCalibrationActive).toBe(true);
-    expect(restarted.debug.micNoiseGateActive).toBe(true);
+    expect(restarted.debug.liveInputCalibrationActive).toBe(true);
+    expect(restarted.debug.liveInputNoiseGateActive).toBe(true);
     expect(restarted.fieldState).toBe("idle");
+  });
+
+  it("auto-invalidates clipped mic calibration and suppresses modal output", () => {
+    const featureState = createAudioFeatureState();
+
+    buildLiveInputFrame({
+      featureState,
+      peaks: [
+        [120, 1.0],
+        [240, 0.22],
+        [360, 0.11],
+      ],
+      avgAmplitude: 1.2,
+      rms: 0.0044,
+      frameTimeMs: 0,
+    });
+    buildLiveInputFrame({
+      featureState,
+      peaks: [
+        [120, 0.99],
+        [240, 0.21],
+        [360, 0.1],
+      ],
+      avgAmplitude: 1.1,
+      rms: 0.0042,
+      frameTimeMs: 300,
+    });
+    const invalidFrame = buildLiveInputFrame({
+      featureState,
+      peaks: [
+        [120, 0.99],
+        [240, 0.21],
+        [360, 0.1],
+      ],
+      avgAmplitude: 1.1,
+      rms: 0.0042,
+      frameTimeMs: 760,
+    });
+
+    expect(invalidFrame.debug.liveInputCalibrationInvalid).toBe(true);
+    expect(invalidFrame.debug.liveInputCalibrationInvalidReason).toBe(
+      "baseline-clipping",
+    );
+    expect(invalidFrame.debug.liveInputCalibrationActive).toBe(true);
+    expect(invalidFrame.debug.liveInputNoiseGateActive).toBe(true);
+    expect(invalidFrame.fieldState).toBe("idle");
+    expect(invalidFrame.debug.modeSlotCount).toBe(0);
+  });
+
+  it("re-enters calibration when the live-input calibration version changes", () => {
+    const featureState = createAudioFeatureState();
+    const initialStatus = makeLiveInputStatus({
+      liveInputCalibrationVersion: 1,
+    });
+    const resetStatus = makeLiveInputStatus({ liveInputCalibrationVersion: 2 });
+    const timeData = makeTimeData({
+      frequency: 220,
+      amplitude: 0.16,
+      harmonics: [
+        [2, 0.08],
+        [3, 0.04],
+      ],
+    });
+
+    calibrateLiveInput(featureState, { status: initialStatus });
+
+    const activeFrame = buildLiveInputFrame({
+      featureState,
+      peaks: [
+        [220, 0.3],
+        [440, 0.18],
+        [660, 0.1],
+      ],
+      avgAmplitude: 7.0,
+      rms: 0.028,
+      frameTimeMs: 820,
+      status: initialStatus,
+      timeData,
+    });
+    const resetFrame = buildLiveInputFrame({
+      featureState,
+      peaks: [
+        [220, 0.3],
+        [440, 0.18],
+        [660, 0.1],
+      ],
+      avgAmplitude: 7.0,
+      rms: 0.028,
+      frameTimeMs: 850,
+      status: resetStatus,
+      timeData,
+    });
+
+    expect(activeFrame.fieldState).toBe("active");
+    expect(resetFrame.debug.liveInputCalibrationActive).toBe(true);
+    expect(resetFrame.debug.liveInputNoiseGateActive).toBe(true);
+    expect(resetFrame.fieldState).toBe("idle");
   });
 
   it("still opens voice when calibration captured a strong narrowband background peak", () => {
     const featureState = createAudioFeatureState();
 
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [120, 0.76],
@@ -637,7 +773,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 0,
       profile: "voice-tone",
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [120, 0.75],
@@ -649,7 +785,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 300,
       profile: "voice-tone",
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [120, 0.75],
@@ -662,7 +798,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       profile: "voice-tone",
     });
 
-    const firstVoice = buildMicFrame({
+    const firstVoice = buildLiveInputFrame({
       featureState,
       peaks: [
         [180, 0.24],
@@ -675,7 +811,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 800,
       profile: "voice-tone",
     });
-    const secondVoice = buildMicFrame({
+    const secondVoice = buildLiveInputFrame({
       featureState,
       peaks: [
         [180, 0.25],
@@ -689,16 +825,16 @@ describe("buildAudioFeatureFrame layered contract", () => {
       profile: "voice-tone",
     });
 
-    expect(firstVoice.debug.micBaselinePeak).toBeGreaterThan(0.7);
-    expect(firstVoice.debug.micNoiseGateActive).toBe(false);
-    expect(secondVoice.debug.micNoiseGateActive).toBe(false);
+    expect(firstVoice.debug.liveInputBaselinePeak).toBeGreaterThan(0.7);
+    expect(firstVoice.debug.liveInputNoiseGateActive).toBe(false);
+    expect(secondVoice.debug.liveInputNoiseGateActive).toBe(false);
     expect(secondVoice.fieldState).toBe("active");
   });
 
   it("opens voice for low-rms desk voice levels after calibration", () => {
     const featureState = createAudioFeatureState();
 
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [120, 0.83],
@@ -710,7 +846,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 0,
       profile: "voice-tone",
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [120, 0.82],
@@ -722,7 +858,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 300,
       profile: "voice-tone",
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [120, 0.82],
@@ -735,7 +871,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       profile: "voice-tone",
     });
 
-    const firstVoice = buildMicFrame({
+    const firstVoice = buildLiveInputFrame({
       featureState,
       peaks: [
         [220, 0.14],
@@ -756,7 +892,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
         ],
       }),
     });
-    const secondVoice = buildMicFrame({
+    const secondVoice = buildLiveInputFrame({
       featureState,
       peaks: [
         [220, 0.145],
@@ -778,16 +914,16 @@ describe("buildAudioFeatureFrame layered contract", () => {
       }),
     });
 
-    expect(firstVoice.debug.micBaselineRms).toBeLessThan(0.0013);
-    expect(firstVoice.debug.micBaselinePeak).toBeGreaterThan(0.8);
-    expect(firstVoice.debug.micNoiseGateActive).toBe(false);
-    expect(secondVoice.debug.micNoiseGateActive).toBe(false);
+    expect(firstVoice.debug.liveInputBaselineRms).toBeLessThan(0.0013);
+    expect(firstVoice.debug.liveInputBaselinePeak).toBeGreaterThan(0.8);
+    expect(firstVoice.debug.liveInputNoiseGateActive).toBe(false);
+    expect(secondVoice.debug.liveInputNoiseGateActive).toBe(false);
     expect(secondVoice.fieldState).toBe("active");
   });
 
   it("tracks high singing without jumping to stronger upper harmonics", () => {
     const featureState = createAudioFeatureState();
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [110, 0.08],
@@ -798,7 +934,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 0,
       timeData: makeTimeData({ frequency: 110, amplitude: 0.12 }),
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [110, 0.08],
@@ -809,7 +945,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       frameTimeMs: 320,
       timeData: makeTimeData({ frequency: 110, amplitude: 0.12 }),
     });
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [110, 0.08],
@@ -821,7 +957,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       timeData: makeTimeData({ frequency: 110, amplitude: 0.12 }),
     });
 
-    const frame = buildMicFrame({
+    const frame = buildLiveInputFrame({
       featureState,
       peaks: [
         [880, 0.22],
@@ -851,7 +987,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
   it("keeps a spoken pitch latched when a weak trailing frame proposes a false high note", () => {
     const featureState = createAudioFeatureState();
     for (const frameTimeMs of [0, 320, 770]) {
-      buildMicFrame({
+      buildLiveInputFrame({
         featureState,
         peaks: [
           [110, 0.08],
@@ -864,7 +1000,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       });
     }
 
-    buildMicFrame({
+    buildLiveInputFrame({
       featureState,
       peaks: [
         [190, 0.18],
@@ -884,7 +1020,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       }),
     });
 
-    const trailingFrame = buildMicFrame({
+    const trailingFrame = buildLiveInputFrame({
       featureState,
       peaks: [
         [190, 0.04],
@@ -916,7 +1052,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
   it("prefers an inferred lower vocal pitch over a stronger overtone", () => {
     const featureState = createAudioFeatureState();
     for (const frameTimeMs of [0, 320, 770]) {
-      buildMicFrame({
+      buildLiveInputFrame({
         featureState,
         peaks: [
           [110, 0.08],
@@ -929,7 +1065,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       });
     }
 
-    const frame = buildMicFrame({
+    const frame = buildLiveInputFrame({
       featureState,
       peaks: [
         [220, 0.04],
@@ -958,6 +1094,56 @@ describe("buildAudioFeatureFrame layered contract", () => {
     expect(frame.debug.driverFrequency).toBeLessThan(440);
     expect(frame.debug.candidateHarmonicSupport).toBeGreaterThan(0.09);
     expect(frame.debug.periodicity).toBeGreaterThan(0.2);
+  });
+
+  it("suppresses a dense fog field from a weak saturated mic frame after a voice latch", () => {
+    const featureState = createAudioFeatureState();
+
+    calibrateLiveInput(featureState);
+
+    buildLiveInputFrame({
+      featureState,
+      peaks: [
+        [220, 0.24],
+        [440, 0.15],
+        [660, 0.11],
+        [880, 0.07],
+      ],
+      avgAmplitude: 6.7,
+      rms: 0.024,
+      frameTimeMs: 820,
+      timeData: makeTimeData({
+        frequency: 220,
+        amplitude: 0.12,
+        harmonics: [
+          [2, 0.08],
+          [3, 0.04],
+        ],
+      }),
+    });
+
+    const fogFrame = buildLiveInputFrame({
+      featureState,
+      peaks: [
+        [85, 1.0],
+        [170, 0.52],
+        [255, 0.34],
+        [340, 0.28],
+        [425, 0.22],
+        [510, 0.18],
+        [595, 0.14],
+      ],
+      avgAmplitude: 4.4,
+      rms: 0.0073,
+      frameTimeMs: 850,
+      timeData: new Float32Array(FFT_SIZE),
+    });
+
+    expect(fogFrame.debug.liveInputCalibrationInvalid).toBe(false);
+    expect(fogFrame.fieldState).toBe("idle");
+    expect(fogFrame.debug.modeSlotCount).toBe(0);
+    expect(fogFrame.backboneSlots.every((value) => value === 0)).toBe(true);
+    expect(fogFrame.detailSlots.every((value) => value === 0)).toBe(true);
   });
 
   it("builds layered backbone/detail slots from spectral peaks", () => {
@@ -1237,7 +1423,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
     const featureState = createAudioFeatureState();
     const frame = buildAudioFeatureFrame({
       analysisSnapshot: createSnapshot({
-        sourceMode: "mic",
+        sourceMode: "live",
         avgAmplitude: 2,
         fftMagnitudes: makeFft([[80, 0.12]]),
         rms: 0.01,
@@ -1245,15 +1431,15 @@ describe("buildAudioFeatureFrame layered contract", () => {
       featureState,
       radius: 3,
       status: createStatus({
-        audioInputMode: "mic",
-        analysisSource: "mic",
-        isMicActive: true,
+        audioInputMode: "live",
+        analysisSource: "live",
+        isLiveInputActive: true,
         hasAnalysisSource: true,
       }),
       frameTimeMs: 25,
     });
 
-    expect(frame.debug.micNoiseGateActive).toBe(true);
+    expect(frame.debug.liveInputNoiseGateActive).toBe(true);
     expect(frame.beatDetected).toBe(false);
     expect(frame.beatPulseId).toBe(0);
   });
@@ -1476,7 +1662,8 @@ describe("buildAudioFeatureFrame layered contract", () => {
     expect(frame.debug.pitchSource).toBe("test");
     expect(frame.debug.backboneModeCount).toBeGreaterThan(0);
     expect(frame.debug.modeSlotCount).toBeGreaterThan(0);
-    expect(frame.averageAmplitude).toBeCloseTo(191.25);
+    // avgAmplitude is now RMS-derived: amplitude / sqrt(2) * 255
+    expect(frame.averageAmplitude).toBeCloseTo((0.75 / Math.SQRT2) * 255, 1);
   });
 
   it("returns a lightweight debug summary when audit is disabled", () => {
@@ -1754,12 +1941,12 @@ describe("chromesthesia feature frame outputs", () => {
   });
 });
 
-describe("mic noise gate", () => {
+describe("live input noise gate", () => {
   it("opens when mic energy exceeds the voice hard floor", () => {
     expect(
-      detectMicNoiseGate({
+      detectLiveInputNoiseGate({
         injectTestTone: false,
-        inputMode: "mic",
+        inputMode: "live",
         avgAmplitude: 16,
         rms: 0.04,
       }),
@@ -1768,25 +1955,25 @@ describe("mic noise gate", () => {
 
   it("keeps tiny voice-profile ambient noise gated", () => {
     expect(
-      detectMicNoiseGate({
+      detectLiveInputNoiseGate({
         injectTestTone: false,
-        inputMode: "mic",
+        inputMode: "live",
         avgAmplitude: 1.8,
         rms: 0.005,
         fftMagnitudes: makeFft([
           [90, 0.08],
           [180, 0.06],
         ]),
-        micAnalysisSettings: { profile: "voice-tone" },
+        liveInputAnalysisSettings: { profile: "voice-tone" },
       }),
     ).toBe(true);
   });
 
   it("lets ambient profile clear the hard floor for modest room audio", () => {
     expect(
-      detectMicNoiseGate({
+      detectLiveInputNoiseGate({
         injectTestTone: false,
-        inputMode: "mic",
+        inputMode: "live",
         avgAmplitude: 4.5,
         rms: 0.015,
         fftMagnitudes: makeFft([
@@ -1794,9 +1981,55 @@ describe("mic noise gate", () => {
           [240, 0.15],
           [360, 0.12],
         ]),
-        micAnalysisSettings: { profile: "ambient" },
+        liveInputAnalysisSettings: { profile: "ambient" },
       }),
     ).toBe(false);
+  });
+
+  it("matches file analysis for system-classified live input", () => {
+    const fileFeatureState = createAudioFeatureState();
+    const systemFeatureState = createAudioFeatureState();
+    const fftMagnitudes = makeFft([
+      [110, 0.82],
+      [220, 0.41],
+      [330, 0.22],
+      [440, 0.17],
+    ]);
+    const analysisSnapshot = createSnapshot({
+      fftMagnitudes,
+      avgAmplitude: 36,
+      rms: 0.27,
+    });
+
+    const fileFrame = buildAudioFeatureFrame({
+      analysisSnapshot,
+      featureState: fileFeatureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 32,
+      liveInputAnalysisSettings: { profile: "ambient" },
+    });
+    const systemFrame = buildAudioFeatureFrame({
+      analysisSnapshot,
+      featureState: systemFeatureState,
+      radius: 3,
+      status: makeSystemStatus(),
+      frameTimeMs: 32,
+      liveInputAnalysisSettings: { profile: "voice-tone" },
+    });
+
+    expect(systemFrame.sourceMode).toBe("system");
+    expect(systemFrame.debug.analysisSourceUsed).toBe("system");
+    expect(systemFrame.debug.micActive).toBe(false);
+    expect(Array.from(systemFrame.backboneSlots)).toEqual(
+      Array.from(fileFrame.backboneSlots),
+    );
+    expect(Array.from(systemFrame.detailSlots)).toEqual(
+      Array.from(fileFrame.detailSlots),
+    );
+    expect(Array.from(systemFrame.modeSlots)).toEqual(
+      Array.from(fileFrame.modeSlots),
+    );
   });
 });
 
@@ -1905,39 +2138,61 @@ describe("test-tone snapshot generation", () => {
       sampleRate: SAMPLE_RATE,
     });
 
-    expect(snapshot.avgAmplitude).toBeCloseTo(127.5);
+    // avgAmplitude is now RMS-derived (pure sine: amplitude / sqrt(2) * 255)
+    expect(snapshot.avgAmplitude).toBeCloseTo((0.5 / Math.SQRT2) * 255, 1);
     expect(snapshot.fftMagnitudes.some((value) => value > 0)).toBe(true);
+  });
+
+  it("produces non-zero rms that scales with tone amplitude", () => {
+    const low = applyTestToneToSnapshot({
+      analysisSnapshot: null,
+      auditSettings: { testToneHz: 440, testToneAmplitude: 0.1 },
+      fftSize: FFT_SIZE,
+      sampleRate: SAMPLE_RATE,
+    });
+    const high = applyTestToneToSnapshot({
+      analysisSnapshot: null,
+      auditSettings: { testToneHz: 440, testToneAmplitude: 0.8 },
+      fftSize: FFT_SIZE,
+      sampleRate: SAMPLE_RATE,
+    });
+
+    expect(low.rms).toBeCloseTo(0.1 / Math.SQRT2, 4);
+    expect(high.rms).toBeCloseTo(0.8 / Math.SQRT2, 4);
+    expect(low.avgAmplitude).toBeCloseTo(low.rms * 255, 1);
+    expect(high.avgAmplitude).toBeCloseTo(high.rms * 255, 1);
+    expect(high.avgAmplitude).toBeGreaterThan(low.avgAmplitude);
+  });
+
+  it("low-amplitude tone has lower avgAmplitude than high-amplitude tone (excitation fidelity)", () => {
+    const lowAmp = applyTestToneToSnapshot({
+      analysisSnapshot: null,
+      auditSettings: { testToneHz: 440, testToneAmplitude: 0.08 },
+      fftSize: FFT_SIZE,
+      sampleRate: SAMPLE_RATE,
+    });
+    const highAmp = applyTestToneToSnapshot({
+      analysisSnapshot: null,
+      auditSettings: { testToneHz: 440, testToneAmplitude: 0.75 },
+      fftSize: FFT_SIZE,
+      sampleRate: SAMPLE_RATE,
+    });
+
+    // Low amplitude should produce avgAmplitude well below the 255/5 = 51 midpoint
+    expect(lowAmp.avgAmplitude).toBeLessThan(30);
+    // High amplitude should be substantially stronger
+    expect(highAmp.avgAmplitude).toBeGreaterThan(100);
+    // FFT should still have content in both cases
+    expect(lowAmp.fftMagnitudes.some((v) => v > 0)).toBe(true);
+    expect(highAmp.fftMagnitudes.some((v) => v > 0)).toBe(true);
   });
 });
 
-describe("mic FFT normalization — slot amplitude lift", () => {
-  // Helpers: calibrate with near-silent noise, then present a signal frame.
-  // Calibration captures the quiet baseline so the subsequent signal clears
-  // the noise gate. Calibration window is 750ms; use frames at 0, 300, 760ms.
-  /*function calibrateMicSilence(featureState, profile = "ambient") {
-    const silentFft = makeFft([[90, 0.003]]);
-    for (const t of [0, 300, 760]) {
-      buildAudioFeatureFrame({
-        analysisSnapshot: createSnapshot({
-          sourceMode: "mic",
-          avgAmplitude: 0.1,
-          fftMagnitudes: silentFft,
-          timeData: new Float32Array(FFT_SIZE),
-          rms: 0.001,
-        }),
-        featureState,
-        radius: 3,
-        status: makeMicStatus(),
-        micAnalysisSettings: { profile },
-        frameTimeMs: t,
-      });
-    }
-  }*/
-
-  function maxBackboneAmplitude(frame) {
+describe("live input FFT normalization — slot amplitude lift", () => {
+  function maxSlotAmplitude(slotBuffer) {
     let max = 0;
-    for (let i = 0; i < frame.backboneSlots.length; i += 4) {
-      if (frame.backboneSlots[i + 3] > max) max = frame.backboneSlots[i + 3];
+    for (let i = 0; i < slotBuffer.length; i += 4) {
+      if (slotBuffer[i + 3] > max) max = slotBuffer[i + 3];
     }
     return max;
   }
@@ -1956,7 +2211,212 @@ describe("mic FFT normalization — slot amplitude lift", () => {
       status: makeActiveStatus(),
     });
 
-    // No normalization for file mode → all slots at zero amplitude
-    expect(maxBackboneAmplitude(frame)).toBeLessThan(0.1);
+    expect(maxSlotAmplitude(frame.backboneSlots)).toBeLessThan(0.1);
+    expect(frame.debug.micFftNormGain).toBe(1);
+    expect(frame.debug.preModalFftPeak).toBeCloseTo(0.05, 6);
+  });
+
+  it("keeps calibrated mic backbone/detail amplitudes close to file for the same harmonic input", () => {
+    // Mic picks up a distant source: FFT peak at 0.24, noise floor calibrated to ~0.09.
+    // This is a normal calibrated mic frame, so normalization should stay out of
+    // the way and keep the modal response close to the equivalent file input.
+    const micFeatureState = createAudioFeatureState();
+    const fileFeatureState = createAudioFeatureState();
+    const micPeaks = [
+      [220, 0.24],
+      [440, 0.16],
+      [660, 0.11],
+      [880, 0.07],
+    ];
+    const timeData = makeTimeData({
+      frequency: 220,
+      amplitude: 0.18,
+      harmonics: [
+        [2, 0.1],
+        [3, 0.06],
+        [4, 0.04],
+      ],
+    });
+
+    calibrateLiveInput(micFeatureState);
+
+    const micFrame = buildLiveInputFrame({
+      featureState: micFeatureState,
+      peaks: micPeaks,
+      avgAmplitude: 6.2,
+      rms: 0.0225,
+      frameTimeMs: 820,
+      timeData,
+    });
+    const fileFrame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 6.2,
+        fftMagnitudes: makeFft(micPeaks),
+        timeData,
+        rms: 0.0225,
+      }),
+      featureState: fileFeatureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 820,
+    });
+
+    const micBackbone = maxSlotAmplitude(micFrame.backboneSlots);
+    const fileBackbone = maxSlotAmplitude(fileFrame.backboneSlots);
+    const micDetail = maxSlotAmplitude(micFrame.detailSlots);
+    const fileDetail = maxSlotAmplitude(fileFrame.detailSlots);
+
+    expect(micBackbone).toBeGreaterThan(0);
+    expect(fileBackbone).toBeGreaterThan(0);
+    expect(micDetail).toBeGreaterThan(0);
+    expect(fileDetail).toBeGreaterThan(0);
+    expect(micBackbone / fileBackbone).toBeGreaterThanOrEqual(0.8);
+    expect(micBackbone / fileBackbone).toBeLessThanOrEqual(1.2);
+    expect(micDetail / fileDetail).toBeGreaterThanOrEqual(0.8);
+    expect(micDetail / fileDetail).toBeLessThanOrEqual(1.2);
+    expect(micFrame.debug.micFftNormGain).toBe(1);
+    expect(fileFrame.debug.micFftNormGain).toBe(1);
+    expect(micFrame.debug.preModalFftPeak).toBeCloseTo(0.24, 6);
+    expect(micFrame.debug.sourceNormalization.normalizedAmplitude).toBeCloseTo(
+      6.2 / 72,
+      6,
+    );
+  });
+
+  it("keeps mic energy response below whiteout territory for speech-like harmonic input", () => {
+    const featureState = createAudioFeatureState();
+    const peaks = [
+      [180, 0.24],
+      [320, 0.19],
+      [540, 0.13],
+      [960, 0.085],
+    ];
+    const timeData = makeTimeData({
+      frequency: 180,
+      amplitude: 0.16,
+      harmonics: [
+        [2, 0.09],
+        [3, 0.05],
+      ],
+    });
+
+    calibrateLiveInput(featureState);
+
+    const frame = buildLiveInputFrame({
+      featureState,
+      peaks,
+      avgAmplitude: 6.2,
+      rms: 0.0225,
+      frameTimeMs: 820,
+      timeData,
+    });
+
+    expect(frame.energySignal).toBeGreaterThan(0.05);
+    expect(frame.energySignal).toBeLessThan(0.37);
+    expect(frame.debug.energySignal).toBe(frame.energySignal);
+    expect(frame.debug.micFftNormGain).toBe(1);
+    expect(frame.debug.preModalFftPeak).toBeCloseTo(0.24, 6);
+    expect(frame.debug.sourceNormalization.normalizedRms).toBeGreaterThan(0);
+    expect(frame.debug.sourceNormalization.normalizedAmplitude).toBeCloseTo(
+      6.2 / 72,
+      6,
+    );
+    expect(frame.debug.sourceNormalization.normalizedCentroid).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("applies mic FFT normalization when gate is open and signal exceeds noise floor", () => {
+    const featureState = createAudioFeatureState();
+    calibrateLiveInput(featureState); // baseline peak ≈ 0.09
+
+    const frame = buildLiveInputFrame({
+      featureState,
+      peaks: [
+        [440, 0.13],
+        [880, 0.065],
+      ],
+      avgAmplitude: 6.0,
+      rms: 0.022,
+      frameTimeMs: 820,
+    });
+
+    // Noise-floor calibration is only used to decide whether normalization should
+    // run; ordinary calibrated peaks stay unnormalized, while genuinely weak
+    // peaks still get lifted using the raw peak value.
+    expect(frame.debug.micFftNormGain).toBeGreaterThan(1);
+    expect(frame.debug.micFftNormGain).toBeCloseTo(5.0, 1);
+  });
+
+  it("does not apply normalization for file input with the same FFT content", () => {
+    const featureState = createAudioFeatureState();
+    const frame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 6.0,
+        fftMagnitudes: makeFft([
+          [440, 0.24],
+          [880, 0.12],
+        ]),
+        rms: 0.022,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 820,
+    });
+
+    expect(frame.debug.micFftNormGain).toBe(1);
+  });
+
+  it("caps normalization gain at MIC_NORMALIZATION_MAX_GAIN (6×)", () => {
+    const featureState = createAudioFeatureState();
+    // Near-zero noise floor so signalPeak is small → uncapped gain would exceed 6×
+    calibrateLiveInput(featureState, {
+      peaks: [[90, 0.01]],
+      avgAmplitude: 0.5,
+      rms: 0.002,
+    });
+
+    const frame = buildLiveInputFrame({
+      featureState,
+      // preModalFftPeak = 0.105 (> absolutePeakFloor 0.10 → gate opens)
+      // noiseFloor ≈ 0.01; raw-peak gain would be 0.65 / 0.105 ≈ 6.19 → capped at 6
+      peaks: [[440, 0.105]],
+      avgAmplitude: 5.0,
+      rms: 0.02,
+      frameTimeMs: 820,
+    });
+
+    expect(frame.debug.micFftNormGain).toBeLessThanOrEqual(6.0);
+    expect(frame.debug.micFftNormGain).toBeGreaterThan(1);
+  });
+
+  it("does not normalize when signal peak is at or below the noise floor", () => {
+    const featureState = createAudioFeatureState();
+    // Calibrate with a strong noise floor
+    calibrateLiveInput(featureState, {
+      peaks: [
+        [440, 0.22],
+        [880, 0.18],
+      ],
+      avgAmplitude: 5.0,
+      rms: 0.018,
+    });
+
+    const frame = buildLiveInputFrame({
+      featureState,
+      // preModalFftPeak = 0.20; noiseFloor ≈ 0.22; signalPeak ≤ 0 → no normalization
+      peaks: [
+        [440, 0.2],
+        [880, 0.12],
+      ],
+      avgAmplitude: 5.0,
+      rms: 0.018,
+      frameTimeMs: 820,
+    });
+
+    expect(frame.debug.micFftNormGain).toBe(1);
   });
 });

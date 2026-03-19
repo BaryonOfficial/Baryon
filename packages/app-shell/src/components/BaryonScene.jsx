@@ -7,11 +7,8 @@ import { useDefaultBaryonGeometry } from "./hooks/useDefaultBaryonGeometry";
 import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
 
 export function BaryonScene({
-  setIsPlaying,
-  setIsAudioLoaded,
   setIsEngineReady,
-  setMicRuntimeStatus,
-  micProfile,
+  setLiveInputRuntimeStatus,
   controlsRef,
   visualizationMethod,
   onPerformanceHudSnapshotChange,
@@ -44,11 +41,8 @@ export function BaryonScene({
     baryonGeometry,
     camera,
     gl,
-    setIsPlaying,
-    setIsAudioLoaded,
     setIsEngineReady,
-    setMicRuntimeStatus,
-    micProfile,
+    setLiveInputRuntimeStatus,
     controlsRef,
     visualizationMethod,
     ensurePipeline,
