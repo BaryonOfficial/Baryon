@@ -19,6 +19,7 @@ import {
   createRuntimeDiagnostics,
   shouldPreservePausedFrameOnControlsChange,
 } from "./baryonVisualizerRuntimeState.js";
+import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
 import {
   applyCachedControlSnapshots,
   applyReactiveBloomState,
@@ -26,7 +27,7 @@ import {
   publishPerformanceHudSnapshot,
   publishDevtoolsSnapshots,
   resolveFeatureFrame,
-  syncMicRuntimeStatus,
+  syncLiveInputRuntimeStatus,
   updateRendererDiagnostics,
 } from "./baryonVisualizerRenderLoop.js";
 import { useVisualizationRuntimeLifecycle } from "./useVisualizationRuntimeLifecycle.js";
@@ -39,11 +40,8 @@ export function useBaryonVisualizer({
   baryonGeometry,
   camera,
   gl,
-  setIsPlaying,
-  setIsAudioLoaded,
   setIsEngineReady,
-  setMicRuntimeStatus,
-  micProfile,
+  setLiveInputRuntimeStatus,
   controlsRef,
   visualizationMethod = DEFAULT_VISUALIZATION_METHOD,
   ensurePipeline,
@@ -65,16 +63,15 @@ export function useBaryonVisualizer({
     frameCacheRefs,
     controlCacheRefs,
     pixelRatioRef,
-    lastMicRuntimeStatusRef,
+    lastLiveInputRuntimeStatusRef,
     lastAudioIssueSignatureRef,
   } = useVisualizationRuntimeLifecycle({
     audioRef,
     baryonGeometry,
     controlsRef,
-    micProfile,
     visualizationMethod,
     setIsEngineReady,
-    setMicRuntimeStatus,
+    setLiveInputRuntimeStatus,
   });
   const { lastActiveFrameRef, lastIdleFrameRef } = frameCacheRefs;
   const {
@@ -86,7 +83,7 @@ export function useBaryonVisualizer({
     runtimeDiagnosticsRef,
     pixelRatioRef,
     lastAudioIssueSignatureRef,
-    lastMicRuntimeStatusRef,
+    lastLiveInputRuntimeStatusRef,
     frameCacheRefs,
     controlCacheRefs,
   };
@@ -100,7 +97,6 @@ export function useBaryonVisualizer({
     audioFeatureRef,
     audioFeatureAnalyzerRef,
     controlsRef,
-    micProfile,
   };
 
   useEffect(() => {
@@ -109,17 +105,9 @@ export function useBaryonVisualizer({
     audio.attach(camera);
     gl.setClearColor(new THREE.Color(0x000000), 0);
 
-    audio.setAudioEndedCallback(() => {
-      setIsPlaying(false);
-      setIsAudioLoaded(true);
-    });
-
     return () => {
-      audio.setAudioEndedCallback(null);
       clearFrameCache(frameCacheRefs);
-      const lastMicProfile =
-        lastMicRuntimeStatusRef.current?.profile ?? "voice-tone";
-      lastMicRuntimeStatusRef.current = null;
+      lastLiveInputRuntimeStatusRef.current = null;
       runtimeDiagnosticsRef.current = createRuntimeDiagnostics();
       performanceHudStateRef.current = {
         lastPublishedAtMs: Number.NEGATIVE_INFINITY,
@@ -128,11 +116,7 @@ export function useBaryonVisualizer({
       lastAudioIssueSignatureRef.current = null;
       clearCachedControlsSnapshot(cachedControlSnapshotsRef);
       onPerformanceHudSnapshotChange?.(null);
-      setMicRuntimeStatus?.({
-        active: false,
-        calibrating: false,
-        profile: lastMicProfile,
-      });
+      setLiveInputRuntimeStatus?.(createLiveInputRuntimeStatus());
       const defaultDpr = getPlaybackDiagnosticDpr();
       gl.setPixelRatio(defaultDpr);
       pixelRatioRef.current = defaultDpr;
@@ -147,14 +131,12 @@ export function useBaryonVisualizer({
     frameCacheRefs,
     gl,
     lastAudioIssueSignatureRef,
-    lastMicRuntimeStatusRef,
+    lastLiveInputRuntimeStatusRef,
     pixelRatioRef,
     runtimeDiagnosticsRef,
     cachedControlSnapshotsRef,
     onPerformanceHudSnapshotChange,
-    setIsAudioLoaded,
-    setIsPlaying,
-    setMicRuntimeStatus,
+    setLiveInputRuntimeStatus,
   ]);
 
   useEffect(() => {
@@ -188,7 +170,10 @@ export function useBaryonVisualizer({
     const syncAudioControls = (event) => {
       const nextControls = event?.detail ?? controlsRef.current;
       void applyAudioControls(audio, nextControls).catch((error) => {
-        console.error("[Baryon audio] Failed to apply mic settings:", error);
+        console.error(
+          "[Baryon audio] Failed to apply live input settings:",
+          error,
+        );
       });
     };
 
@@ -250,7 +235,7 @@ export function useBaryonVisualizer({
     lastIdleFrameRef,
   ]);
 
-  useFrame((state) => {
+  useFrame((state, rfDelta) => {
     const pipeline = renderLoopContext.ensurePipeline();
     const runtime = renderLoopContext.runtimeRef.current;
     const runtimeState = renderLoopContext.runtimeStateRef.current;
@@ -272,6 +257,7 @@ export function useBaryonVisualizer({
       status,
       time,
       deltaTime,
+      rfDelta,
       gl: renderLoopContext.gl,
       renderLoopRefs,
     });
@@ -311,15 +297,12 @@ export function useBaryonVisualizer({
       status,
       time,
       clockMode,
-      micProfile: renderLoopContext.micProfile,
       renderLoopRefs,
       chromesthesiaEnabled,
     });
-    syncMicRuntimeStatus({
+    syncLiveInputRuntimeStatus({
       status,
-      featureFrame,
-      micProfile: renderLoopContext.micProfile,
-      setMicRuntimeStatus,
+      setLiveInputRuntimeStatus,
       renderLoopRefs,
     });
 

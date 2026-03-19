@@ -85,50 +85,6 @@
   transform: rotate(180deg);
 }
 
-.baryon-audio-controls__profile-select-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
-
-.baryon-audio-controls__profile-select-wrap::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  right: 0.75rem;
-  width: 0.45rem;
-  height: 0.45rem;
-  border-right: 1.5px solid rgba(17, 24, 39, 0.58);
-  border-bottom: 1.5px solid rgba(17, 24, 39, 0.58);
-  transform: translateY(-60%) rotate(45deg);
-  pointer-events: none;
-}
-
-.baryon-audio-controls__profile-select {
-  appearance: none;
-  -webkit-appearance: none;
-  min-height: 2rem;
-  width: 8.25rem;
-  border: 0;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #111827;
-  padding: 0.25rem 1.9rem 0.25rem 0.75rem;
-  font: inherit;
-  font-size: 0.75rem;
-  line-height: 1rem;
-  cursor: pointer;
-}
-
-.baryon-audio-controls__profile-select:hover {
-  background: #f5f5f5;
-}
-
-.baryon-audio-controls__profile-select:focus-visible {
-  outline: 2px solid rgba(59, 130, 246, 0.55);
-  outline-offset: 2px;
-}
-
 .baryon-audio-controls__menu {
   position: absolute;
   left: 0;

@@ -6,6 +6,7 @@ import {
   createNoopAudioFeatureAnalyzer,
 } from "@baryon/visualizer/audio-features";
 import { SIMULATION_DEFAULTS } from "@baryon/visualizer/defaults";
+import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
 import {
   clearFrameCache,
   createEmptyControlSnapshots,
@@ -16,10 +17,9 @@ export function useVisualizationRuntimeLifecycle({
   audioRef,
   baryonGeometry,
   controlsRef,
-  micProfile,
   visualizationMethod,
   setIsEngineReady,
-  setMicRuntimeStatus,
+  setLiveInputRuntimeStatus,
 }) {
   const runtimeRef = useRef(createVisualizationRuntime(visualizationMethod));
   const runtimeStateRef = useRef(null);
@@ -28,7 +28,7 @@ export function useVisualizationRuntimeLifecycle({
   const lastLiveFrameRef = useRef(null);
   const lastActiveFrameRef = useRef(null);
   const lastIdleFrameRef = useRef(null);
-  const lastMicRuntimeStatusRef = useRef(null);
+  const lastLiveInputRuntimeStatusRef = useRef(null);
   const controlVersionRef = useRef(0);
   const appliedControlVersionRef = useRef(-1);
   const runtimeDiagnosticsRef = useRef(createRuntimeDiagnostics());
@@ -112,22 +112,17 @@ export function useVisualizationRuntimeLifecycle({
       audioFeatureAnalyzerRef.current = createNoopAudioFeatureAnalyzer();
       clearFrameCache(frameCacheRefs);
       audioFeatureRef.current = null;
-      lastMicRuntimeStatusRef.current = null;
+      lastLiveInputRuntimeStatusRef.current = null;
       cachedControlSnapshotsRef.current = createEmptyControlSnapshots(null);
-      setMicRuntimeStatus?.({
-        active: false,
-        calibrating: false,
-        profile: micProfile ?? "voice-tone",
-      });
+      setLiveInputRuntimeStatus?.(createLiveInputRuntimeStatus());
     };
   }, [
     audioRef,
     baryonGeometry,
     controlsRef,
     frameCacheRefs,
-    micProfile,
     setIsEngineReady,
-    setMicRuntimeStatus,
+    setLiveInputRuntimeStatus,
     visualizationMethod,
   ]);
 
@@ -141,7 +136,7 @@ export function useVisualizationRuntimeLifecycle({
     frameCacheRefs,
     controlCacheRefs,
     pixelRatioRef,
-    lastMicRuntimeStatusRef,
+    lastLiveInputRuntimeStatusRef,
     lastAudioIssueSignatureRef,
   };
 }

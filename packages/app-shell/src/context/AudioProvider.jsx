@@ -6,9 +6,10 @@ import React, {
   useState,
 } from "react";
 import { getDefaultAudioSession } from "@baryon/visualizer/audio";
-import { DEFAULT_MIC_ANALYSIS_SETTINGS } from "@baryon/visualizer/audio-features";
 import { AudioContext, AudioSceneContext } from "./AudioContext";
+import { createLiveInputRuntimeStatus } from "./liveInputRuntimeStatus.js";
 import { useAudioLogic } from "../components/hooks/useAudioLogic";
+import { getDeviceBucketById } from "../components/controls/deviceClassification.js";
 import {
   SOUNDCLOUD_ENABLED,
   canUseNativeStreamPlayback,
@@ -30,6 +31,23 @@ const RECENT_UPLOAD_LIMIT = 4;
 
 function getRecentUploadId(file) {
   return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function createLocalFileEntry(file) {
+  return {
+    id: getRecentUploadId(file),
+    file,
+    name: file.name,
+    size: file.size,
+    lastModified: file.lastModified,
+  };
+}
+
+function createLiveReturnLocalFile(file, resumeTimeSeconds = 0) {
+  return {
+    ...createLocalFileEntry(file),
+    resumeTimeSeconds: clampTransportTime(resumeTimeSeconds, 0),
+  };
 }
 
 function clampTransportTime(value, durationSeconds) {
@@ -196,24 +214,25 @@ async function attachStreamToAudioElement(audioElement, stream) {
 export function AudioProvider({ children }) {
   const [fileName, setFileName] = useState(DEFAULT_FILE_NAME);
   const [recentUploads, setRecentUploads] = useState([]);
+  const [currentLoadedLocalFile, setCurrentLoadedLocalFile] = useState(null);
+  const [liveReturnLocalFile, setLiveReturnLocalFile] = useState(null);
+  const [queuedNextLocalFile, setQueuedNextLocalFile] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMicActive, setIsMicActive] = useState(false);
+  const [isLiveInputActive, setIsLiveInputActive] = useState(false);
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [audioDevices, setAudioDevices] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null);
-  const [micProfile, setMicProfile] = useState(
-    DEFAULT_MIC_ANALYSIS_SETTINGS.profile,
+  const [liveInputRuntimeStatus, setLiveInputRuntimeStatus] = useState(() =>
+    createLiveInputRuntimeStatus(),
   );
-  const [micRuntimeStatus, setMicRuntimeStatus] = useState(() => ({
-    active: false,
-    calibrating: false,
-    profile: DEFAULT_MIC_ANALYSIS_SETTINGS.profile,
-  }));
   const [showDeviceMenu, setShowDeviceMenu] = useState(false);
   const [isEngineReady, setIsEngineReady] = useState(false);
   const [activeSource, setActiveSource] = useState("upload");
+  const [selectedSource, setSelectedSource] = useState("file");
+  const [selectedSystemDevice, setSelectedSystemDevice] = useState(null);
+  const [liveInputKind, setLiveInputKind] = useState(null);
   const [showSoundCloudPanel, setShowSoundCloudPanel] = useState(false);
   const [soundCloudInput, setSoundCloudInput] = useState("");
   const [soundCloudCollectionTitle, setSoundCloudCollectionTitle] = useState(
@@ -244,45 +263,41 @@ export function AudioProvider({ children }) {
   const resumeAfterScrubRef = useRef(false);
   const isScrubbingRef = useRef(false);
 
+  const registerRecentUpload = useCallback((file) => {
+    setRecentUploads((currentUploads) => {
+      const nextUpload = {
+        ...createLocalFileEntry(file),
+      };
+      return [
+        nextUpload,
+        ...currentUploads.filter((upload) => upload.id !== nextUpload.id),
+      ].slice(0, RECENT_UPLOAD_LIMIT);
+    });
+  }, []);
+
   const {
     handleFileChange: handleLocalFileChange,
     handleRecentFileSelect: handleLocalRecentFileSelect,
     handlePlayPause: handleLocalPlayPause,
     handleStop: handleLocalStop,
-    handleMicToggle: handleLocalMicToggle,
-    handleMicProfileChange,
+    handleLiveInputToggle: handleLocalLiveInputToggle,
     handleVolumeChange: handleLocalVolumeChange,
     handleMuteToggle: handleLocalMuteToggle,
   } = useAudioLogic({
     setFileName,
     resetFileName: () => setFileName(DEFAULT_FILE_NAME),
-    registerRecentFile: (file) => {
-      setRecentUploads((currentUploads) => {
-        const nextUpload = {
-          id: getRecentUploadId(file),
-          file,
-          name: file.name,
-          size: file.size,
-          lastModified: file.lastModified,
-        };
-        return [
-          nextUpload,
-          ...currentUploads.filter((upload) => upload.id !== nextUpload.id),
-        ].slice(0, RECENT_UPLOAD_LIMIT);
-      });
-    },
+    registerRecentFile: registerRecentUpload,
     setIsAudioLoaded,
     setIsPlaying,
-    setIsMicActive,
+    setIsLiveInputActive,
+    setLiveInputKind,
     setVolume,
     setIsMuted,
     setAudioDevices,
     setSelectedDevice,
-    setSelectedMicProfile: setMicProfile,
     isAudioLoaded,
-    isMicActive,
+    isLiveInputActive,
     selectedDevice,
-    selectedMicProfile: micProfile,
   });
 
   useEffect(() => {
@@ -304,6 +319,44 @@ export function AudioProvider({ children }) {
     setScrubPreviewSeconds(null);
   }, []);
 
+  const clearLiveLocalFileState = useCallback(() => {
+    setLiveReturnLocalFile(null);
+    setQueuedNextLocalFile(null);
+  }, []);
+
+  const queueNextLocalFile = useCallback(
+    (file) => {
+      if (!file) {
+        return;
+      }
+      registerRecentUpload(file);
+      setQueuedNextLocalFile(createLocalFileEntry(file));
+    },
+    [registerRecentUpload],
+  );
+
+  const createLiveReturnSnapshot = useCallback(() => {
+    if (
+      isLiveInputActive ||
+      !isAudioLoaded ||
+      activeSource === "soundcloud" ||
+      !currentLoadedLocalFile?.file
+    ) {
+      return null;
+    }
+
+    return createLiveReturnLocalFile(
+      currentLoadedLocalFile.file,
+      transportState.currentTimeSeconds,
+    );
+  }, [
+    activeSource,
+    currentLoadedLocalFile,
+    isAudioLoaded,
+    isLiveInputActive,
+    transportState.currentTimeSeconds,
+  ]);
+
   const syncTransportState = useCallback(() => {
     const nextTransportState = getDefaultAudioSession().getTransportState();
     setTransportState(nextTransportState);
@@ -316,9 +369,14 @@ export function AudioProvider({ children }) {
     const nextTransportState = audioSession.getTransportState();
     setIsAudioLoaded(status.isAudioLoaded);
     setIsPlaying(status.isPlaying);
-    setIsMicActive(status.isMicActive);
+    setIsLiveInputActive(status.isLiveInputActive);
+    setLiveInputKind(status.liveInputKind ?? null);
     setVolume(status.volume ?? 1);
     setIsMuted(status.muted ?? false);
+    setLiveInputRuntimeStatus((currentStatus) => ({
+      ...currentStatus,
+      active: Boolean(status.isLiveInputActive),
+    }));
     setTransportState(nextTransportState);
     if ((status.volume ?? 0) > 0.001) {
       lastNonZeroVolumeRef.current = status.volume;
@@ -329,15 +387,21 @@ export function AudioProvider({ children }) {
     return status;
   }, [clearScrubState]);
 
+  const selectedLiveDeviceId = selectedSystemDevice ?? selectedDevice ?? null;
+  const selectedLiveInputKind = getDeviceBucketById(
+    audioDevices,
+    selectedLiveDeviceId,
+  );
+
   useEffect(() => {
-    if (isAudioLoaded && !isMicActive) {
+    if (isAudioLoaded && !isLiveInputActive) {
       syncTransportState();
       return;
     }
 
     clearScrubState();
     setTransportState(DEFAULT_TRANSPORT_STATE);
-  }, [clearScrubState, isAudioLoaded, isMicActive, syncTransportState]);
+  }, [clearScrubState, isAudioLoaded, isLiveInputActive, syncTransportState]);
 
   const ensureSoundCloudAudioElement = useCallback(() => {
     const audioElement = soundCloudAudioRef.current;
@@ -407,7 +471,7 @@ export function AudioProvider({ children }) {
         formatQueueInfo(track, nextIndex, queue.length, "Buffering"),
       );
 
-      audioSession.stopMicRecordStream();
+      audioSession.stopLiveInputStream();
 
       try {
         const stream = await resolveSoundCloudStream(track);
@@ -577,6 +641,8 @@ export function AudioProvider({ children }) {
     setIsSoundCloudLoading(true);
     setShowDeviceMenu(false);
     setActiveSource("soundcloud");
+    setCurrentLoadedLocalFile(null);
+    clearLiveLocalFileState();
     setSoundCloudError("");
 
     try {
@@ -613,18 +679,111 @@ export function AudioProvider({ children }) {
         error?.message || "SoundCloud could not load that public link.",
       );
     }
-  }, [loadSoundCloudQueueIndex, soundCloudInput]);
+  }, [clearLiveLocalFileState, loadSoundCloudQueueIndex, soundCloudInput]);
+
+  const loadImmediateLocalFile = useCallback(
+    async (file, { seekTimeSeconds = null, clearQueuedNext = true } = {}) => {
+      if (!file) {
+        return false;
+      }
+
+      const loaded = await handleLocalRecentFileSelect(file);
+      if (!loaded) {
+        return false;
+      }
+
+      if (seekTimeSeconds != null) {
+        await getDefaultAudioSession().seekTo(seekTimeSeconds);
+        syncSessionStatus();
+        syncTransportState();
+      }
+
+      setCurrentLoadedLocalFile(createLocalFileEntry(file));
+      setActiveSource("upload");
+      setSelectedSource("file");
+      setShowDeviceMenu(false);
+      setShowSoundCloudPanel(false);
+      setLiveReturnLocalFile(null);
+      if (clearQueuedNext) {
+        setQueuedNextLocalFile(null);
+      }
+      return true;
+    },
+    [handleLocalRecentFileSelect, syncSessionStatus, syncTransportState],
+  );
+
+  const restoreAfterLiveStop = useCallback(async () => {
+    if (liveReturnLocalFile?.file) {
+      return loadImmediateLocalFile(liveReturnLocalFile.file, {
+        seekTimeSeconds: liveReturnLocalFile.resumeTimeSeconds,
+        clearQueuedNext: false,
+      });
+    }
+
+    if (!queuedNextLocalFile?.file) {
+      return false;
+    }
+
+    return loadImmediateLocalFile(queuedNextLocalFile.file, {
+      clearQueuedNext: true,
+    });
+  }, [liveReturnLocalFile, loadImmediateLocalFile, queuedNextLocalFile]);
+
+  useEffect(() => {
+    const audioSession = getDefaultAudioSession();
+    audioSession.setAudioEndedCallback(async () => {
+      if (activeSourceRef.current === "soundcloud") {
+        return;
+      }
+
+      if (queuedNextLocalFile?.file) {
+        await loadImmediateLocalFile(queuedNextLocalFile.file, {
+          clearQueuedNext: true,
+        });
+        return;
+      }
+
+      setIsPlaying(false);
+      setIsAudioLoaded(true);
+    });
+
+    return () => {
+      audioSession.setAudioEndedCallback(null);
+    };
+  }, [loadImmediateLocalFile, queuedNextLocalFile]);
 
   const handleFileChange = useCallback(
-    (event) => {
+    async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        return;
+      }
+
       clearScrubState();
       resetSoundCloudTransport();
       setActiveSource("upload");
       setShowDeviceMenu(false);
       setShowSoundCloudPanel(false);
-      handleLocalFileChange(event);
+      if (isLiveInputActive) {
+        queueNextLocalFile(file);
+      } else {
+        clearLiveLocalFileState();
+        setSelectedSource("file");
+        const loaded = await handleLocalFileChange(event);
+        if (loaded) {
+          setCurrentLoadedLocalFile(createLocalFileEntry(file));
+        }
+      }
+      event.target.value = "";
     },
-    [clearScrubState, handleLocalFileChange, resetSoundCloudTransport],
+    [
+      clearLiveLocalFileState,
+      clearScrubState,
+      handleLocalFileChange,
+      isLiveInputActive,
+      queueNextLocalFile,
+      resetSoundCloudTransport,
+    ],
   );
 
   const handleRecentUploadSelect = useCallback(
@@ -641,11 +800,24 @@ export function AudioProvider({ children }) {
       setActiveSource("upload");
       setShowDeviceMenu(false);
       setShowSoundCloudPanel(false);
-      await handleLocalRecentFileSelect(recentUpload.file);
+      if (isLiveInputActive) {
+        queueNextLocalFile(recentUpload.file);
+        return;
+      }
+
+      clearLiveLocalFileState();
+      setSelectedSource("file");
+      const loaded = await handleLocalRecentFileSelect(recentUpload.file);
+      if (loaded) {
+        setCurrentLoadedLocalFile(createLocalFileEntry(recentUpload.file));
+      }
     },
     [
+      clearLiveLocalFileState,
       clearScrubState,
       handleLocalRecentFileSelect,
+      isLiveInputActive,
+      queueNextLocalFile,
       recentUploads,
       resetSoundCloudTransport,
     ],
@@ -715,21 +887,103 @@ export function AudioProvider({ children }) {
     syncTransportState,
   ]);
 
-  const handleMicToggle = useCallback(async () => {
+  const handleLiveInputToggle = useCallback(async () => {
     clearScrubState();
-    if (!isMicActive) {
+    const liveReturnSnapshot = createLiveReturnSnapshot();
+
+    if (!isLiveInputActive) {
+      setLiveReturnLocalFile(liveReturnSnapshot);
       resetSoundCloudTransport();
-      setActiveSource("mic");
     }
-    await handleLocalMicToggle();
-    if (isMicActive) {
-      setActiveSource("upload");
+    await handleLocalLiveInputToggle();
+    const status = getDefaultAudioSession().getStatus();
+    if (isLiveInputActive && !status.isLiveInputActive) {
+      await restoreAfterLiveStop();
+    } else if (
+      !isLiveInputActive &&
+      !status.isLiveInputActive &&
+      liveReturnSnapshot?.file
+    ) {
+      await loadImmediateLocalFile(liveReturnSnapshot.file, {
+        seekTimeSeconds: liveReturnSnapshot.resumeTimeSeconds,
+        clearQueuedNext: false,
+      });
     }
   }, [
     clearScrubState,
-    handleLocalMicToggle,
-    isMicActive,
+    createLiveReturnSnapshot,
+    handleLocalLiveInputToggle,
+    isLiveInputActive,
+    loadImmediateLocalFile,
     resetSoundCloudTransport,
+    restoreAfterLiveStop,
+  ]);
+
+  const handleSourceChange = useCallback(
+    async (next) => {
+      if (next === selectedSource) return;
+      if (isLiveInputActive && next === "file") {
+        getDefaultAudioSession().stopLiveInputStream();
+        syncSessionStatus();
+        await restoreAfterLiveStop();
+      }
+      setSelectedSource(next);
+    },
+    [
+      isLiveInputActive,
+      restoreAfterLiveStop,
+      selectedSource,
+      syncSessionStatus,
+    ],
+  );
+
+  const handleSystemToggle = useCallback(async () => {
+    const audioSession = getDefaultAudioSession();
+    clearScrubState();
+    const liveReturnSnapshot = createLiveReturnSnapshot();
+    try {
+      if (isLiveInputActive) {
+        audioSession.stopLiveInputStream();
+        syncSessionStatus();
+        if (!audioSession.getStatus().isLiveInputActive) {
+          await restoreAfterLiveStop();
+        }
+      } else {
+        setLiveReturnLocalFile(liveReturnSnapshot);
+        resetSoundCloudTransport();
+        await audioSession.startLiveInputStream(
+          selectedLiveDeviceId,
+          selectedLiveInputKind,
+        );
+        syncSessionStatus();
+        if (audioSession.getStatus().isLiveInputActive) {
+          setActiveSource("upload");
+          setFileName(DEFAULT_FILE_NAME);
+        }
+      }
+    } catch (error) {
+      console.error("Error toggling system audio:", error);
+      syncSessionStatus();
+      if (
+        !audioSession.getStatus().isLiveInputActive &&
+        liveReturnSnapshot?.file
+      ) {
+        await loadImmediateLocalFile(liveReturnSnapshot.file, {
+          seekTimeSeconds: liveReturnSnapshot.resumeTimeSeconds,
+          clearQueuedNext: false,
+        });
+      }
+    }
+  }, [
+    clearScrubState,
+    createLiveReturnSnapshot,
+    isLiveInputActive,
+    loadImmediateLocalFile,
+    resetSoundCloudTransport,
+    restoreAfterLiveStop,
+    selectedLiveDeviceId,
+    selectedLiveInputKind,
+    syncSessionStatus,
   ]);
 
   const handleVolumeChange = useCallback(
@@ -764,6 +1018,7 @@ export function AudioProvider({ children }) {
 
   const displayName =
     activeSource === "soundcloud" ? soundCloudTrackTitle : fileName;
+  const hasQueuedNextLocalFile = Boolean(queuedNextLocalFile?.file);
   const soundCloudCurrentTrack =
     soundCloudQueue[soundCloudCurrentIndex] ?? soundCloudQueue[0] ?? null;
 
@@ -882,12 +1137,18 @@ export function AudioProvider({ children }) {
       clearQueue: true,
     });
     setFileName(DEFAULT_FILE_NAME);
+    setCurrentLoadedLocalFile(null);
+    setLiveReturnLocalFile(null);
+    setQueuedNextLocalFile(null);
     setIsPlaying(false);
-    setIsMicActive(false);
+    setIsLiveInputActive(false);
     setIsAudioLoaded(false);
+    setLiveInputRuntimeStatus(createLiveInputRuntimeStatus());
     setShowDeviceMenu(false);
     setIsEngineReady(false);
     setActiveSource("upload");
+    setSelectedSource("file");
+    setSelectedSystemDevice(null);
     setShowSoundCloudPanel(false);
     setSoundCloudInput("");
     setSoundCloudCollectionTitle(DEFAULT_SOUNDCLOUD_LABEL);
@@ -910,36 +1171,42 @@ export function AudioProvider({ children }) {
       setIsPlaying,
       setIsAudioLoaded,
       setIsEngineReady,
-      setMicRuntimeStatus,
-      micProfile,
+      setLiveInputRuntimeStatus,
       resetAudioSession,
     }),
     [
-      micProfile,
       resetAudioSession,
       setIsAudioLoaded,
       setIsEngineReady,
       setIsPlaying,
-      setMicRuntimeStatus,
+      setLiveInputRuntimeStatus,
     ],
   );
 
   const value = {
     soundCloudEnabled: SOUNDCLOUD_ENABLED,
     activeSource,
+    liveInputKind,
+    selectedSource,
+    selectedSystemDevice,
+    selectedLiveDeviceId,
+    selectedLiveInputKind,
     fileName,
     displayName,
+    currentLoadedLocalFile,
+    liveReturnLocalFile,
+    queuedNextLocalFile,
+    hasQueuedNextLocalFile,
     recentUploads,
     isPlaying,
-    isMicActive,
+    isLiveInputActive,
     isAudioLoaded,
     volume,
     isMuted,
     isEngineReady,
     audioDevices,
     selectedDevice,
-    micProfile,
-    micRuntimeStatus,
+    liveInputRuntimeStatus,
     showDeviceMenu,
     showSoundCloudPanel,
     soundCloudInput,
@@ -960,17 +1227,19 @@ export function AudioProvider({ children }) {
     setIsMuted,
     setShowDeviceMenu,
     setSelectedDevice,
-    setMicProfile,
-    setMicRuntimeStatus,
+    setLiveInputRuntimeStatus,
     setShowSoundCloudPanel,
     setSoundCloudInput,
+    setSelectedSource,
+    setSelectedSystemDevice,
     resetAudioSession,
     handleFileChange,
     handleRecentUploadSelect,
     handlePlayPause,
     handleStop,
-    handleMicToggle,
-    handleMicProfileChange,
+    handleLiveInputToggle,
+    handleSystemToggle,
+    handleSourceChange,
     handleVolumeChange,
     handleMuteToggle,
     loadSoundCloudTrack,

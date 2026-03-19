@@ -63,7 +63,7 @@ test("reuses idle frames only while playback and mic input are inactive", () => 
     shouldReuseIdleFrame(
       {
         isPlaying: false,
-        isMicActive: false,
+        isLiveInputActive: false,
       },
       {
         injectTestTone: false,
@@ -76,7 +76,7 @@ test("reuses idle frames only while playback and mic input are inactive", () => 
     shouldReuseIdleFrame(
       {
         isPlaying: true,
-        isMicActive: false,
+        isLiveInputActive: false,
       },
       {
         injectTestTone: false,
@@ -89,7 +89,7 @@ test("reuses idle frames only while playback and mic input are inactive", () => 
     shouldReuseIdleFrame(
       {
         isPlaying: false,
-        isMicActive: true,
+        isLiveInputActive: true,
       },
       {
         injectTestTone: false,
@@ -102,7 +102,7 @@ test("reuses idle frames only while playback and mic input are inactive", () => 
     shouldReuseIdleFrame(
       {
         isPlaying: false,
-        isMicActive: false,
+        isLiveInputActive: false,
       },
       {
         injectTestTone: true,

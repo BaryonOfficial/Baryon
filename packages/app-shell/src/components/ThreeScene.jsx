@@ -1,7 +1,6 @@
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { BaryonScene } from "./BaryonScene";
-import AudioControls from "./AudioControls";
 import ParticleDebugOverlay from "./ParticleDebugOverlay.jsx";
 import PerformanceHud from "./PerformanceHud.jsx";
 import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
@@ -14,7 +13,7 @@ import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
 import { useBaryonControls } from "./hooks/useBaryonControls";
 import { useBrowserSupportState } from "./hooks/useBrowserSupportState.js";
 import { useRendererModeState } from "./hooks/useRendererModeState.js";
-import { useAudioScene } from "../context/AudioContext";
+import { useAudio, useAudioScene } from "../context/AudioContext";
 
 const AdvancedControlsSidebar = lazy(
   () => import("./AdvancedControlsSidebar.jsx"),
@@ -44,8 +43,20 @@ function ControlsIcon() {
   );
 }
 
-const ThreeScene = () => {
+/**
+ * @param {{
+ *   controlsOverlay?: import("react").ReactNode,
+ *   topRightOverlay?: import("react").ReactNode,
+ *   onCanvasReady?: (canvas: HTMLCanvasElement | null) => void,
+ * }} props
+ */
+const ThreeScene = ({
+  controlsOverlay = null,
+  topRightOverlay = null,
+  onCanvasReady = null,
+}) => {
   const containerRef = useRef(null);
+  const advancedControlsTriggerRef = useRef(null);
   const {
     controlsRef,
     controlsState,
@@ -82,14 +93,9 @@ const ThreeScene = () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-  const {
-    setIsPlaying,
-    setIsAudioLoaded,
-    setIsEngineReady,
-    setMicRuntimeStatus,
-    micProfile,
-    resetAudioSession,
-  } = useAudioScene();
+  const { setIsEngineReady, setLiveInputRuntimeStatus, resetAudioSession } =
+    useAudioScene();
+  const { selectedLiveInputKind } = useAudio();
 
   const {
     forceWebGLFallbackTest,
@@ -110,6 +116,27 @@ const ThreeScene = () => {
     markRendererInitUnsupported,
   } = useBrowserSupportState(forceWebGLFallbackTest);
   const showOverlayUi = isSupportReady && !isFullscreen;
+
+  const filteredControlGroups = useMemo(() => {
+    if (selectedLiveInputKind !== "system") {
+      return controlGroups;
+    }
+
+    const liveInputOnlyKeys = new Set([
+      "echoCancellation",
+      "noiseSuppression",
+      "autoGainControl",
+    ]);
+
+    return controlGroups
+      .map((group) => ({
+        ...group,
+        controls: group.controls.filter(
+          (definition) => !liveInputOnlyKeys.has(definition.key),
+        ),
+      }))
+      .filter((group) => group.controls.length > 0);
+  }, [controlGroups, selectedLiveInputKind]);
 
   const handleCanvasError = (error) => {
     if (error?.name !== WEBGPU_RENDERER_INIT_ERROR) {
@@ -184,6 +211,9 @@ const ThreeScene = () => {
             }}
             dpr={[1, 2]}
             camera={{ position: [0, 0, 9], fov: 65, near: 0.1, far: 100 }}
+            onCreated={(state) => {
+              onCanvasReady?.(state.gl.domElement);
+            }}
             // @ts-ignore — WebGPURenderer is runtime-compatible; R3F types predate WebGPU
             gl={(glDefaults) =>
               createBaryonRenderer(glDefaults, activeRendererFallback)
@@ -191,11 +221,8 @@ const ThreeScene = () => {
           >
             <Suspense fallback={null}>
               <BaryonScene
-                setIsPlaying={setIsPlaying}
-                setIsAudioLoaded={setIsAudioLoaded}
                 setIsEngineReady={setIsEngineReady}
-                setMicRuntimeStatus={setMicRuntimeStatus}
-                micProfile={micProfile}
+                setLiveInputRuntimeStatus={setLiveInputRuntimeStatus}
                 controlsRef={controlsRef}
                 visualizationMethod={controlsState.visualizationMethod}
                 onPerformanceHudSnapshotChange={setPerformanceHudMetrics}
@@ -207,6 +234,7 @@ const ThreeScene = () => {
 
       {showOverlayUi && (
         <button
+          ref={advancedControlsTriggerRef}
           type="button"
           aria-label="Toggle advanced controls"
           data-testid="advanced-controls-trigger"
@@ -236,7 +264,7 @@ const ThreeScene = () => {
       {showOverlayUi && isControlsPanelLoaded ? (
         <Suspense fallback={null}>
           <AdvancedControlsSidebar
-            controlGroups={controlGroups}
+            controlGroups={filteredControlGroups}
             controlsState={controlsState}
             presets={presets}
             presetName={presetName}
@@ -250,11 +278,13 @@ const ThreeScene = () => {
             deletePreset={deletePreset}
             onClose={closeControlsPanel}
             dockWidth={ADVANCED_CONTROLS_DOCK_WIDTH}
+            triggerRef={advancedControlsTriggerRef}
           />
         </Suspense>
       ) : null}
 
-      {showOverlayUi && <AudioControls />}
+      {showOverlayUi && topRightOverlay}
+      {showOverlayUi && controlsOverlay}
       <PerformanceHud
         metrics={
           controlsState.performanceHudEnabled ? performanceHudMetrics : null

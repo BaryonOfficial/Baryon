@@ -141,11 +141,11 @@ function getAudioControlSnapshot(controls) {
 
 export async function applyAudioControls(audioSession, controls) {
   const snapshot = getAudioControlSnapshot(controls);
-  if (!audioSession?.setMicSettings) {
+  if (!audioSession?.setLiveInputSettings) {
     return snapshot;
   }
 
-  await audioSession.setMicSettings(snapshot);
+  await audioSession.setLiveInputSettings(snapshot);
   return snapshot;
 }
 
@@ -471,7 +471,7 @@ export function applySceneControls(
   const userScale = getMotionAmount(controls, runtimeState);
   const audioActive =
     status?.isPlaying ||
-    status?.isMicActive ||
+    status?.isLiveInputActive ||
     featureFrame?.fieldState === "test";
   const fieldDriven =
     featureFrame?.fieldState && featureFrame.fieldState !== "idle";

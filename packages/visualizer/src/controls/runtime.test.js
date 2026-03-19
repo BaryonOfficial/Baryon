@@ -113,11 +113,11 @@ describe("control runtime sync", () => {
     controls.autoGainControl = false;
 
     const audioSession = {
-      setMicSettings: vi.fn(async () => undefined),
+      setLiveInputSettings: vi.fn(async () => undefined),
     };
     const snapshot = await applyAudioControls(audioSession, controls);
 
-    expect(audioSession.setMicSettings).toHaveBeenCalledWith({
+    expect(audioSession.setLiveInputSettings).toHaveBeenCalledWith({
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: false,
@@ -585,7 +585,7 @@ describe("control runtime sync", () => {
     };
     const status = {
       isPlaying: true,
-      isMicActive: false,
+      isLiveInputActive: false,
     };
 
     const beatlessSnapshot = applySceneControls(
@@ -643,7 +643,7 @@ describe("control runtime sync", () => {
     };
     const status = {
       isPlaying: true,
-      isMicActive: false,
+      isLiveInputActive: false,
     };
 
     const freshBeatSnapshot = applySceneControls(
@@ -688,7 +688,7 @@ describe("control runtime sync", () => {
       },
       {
         isPlaying: true,
-        isMicActive: false,
+        isLiveInputActive: false,
       },
     );
 
@@ -718,7 +718,7 @@ describe("control runtime sync", () => {
       },
       {
         isPlaying: true,
-        isMicActive: false,
+        isLiveInputActive: false,
       },
     );
 
@@ -746,7 +746,7 @@ describe("control runtime sync", () => {
       },
       {
         isPlaying: false,
-        isMicActive: false,
+        isLiveInputActive: false,
       },
     );
 
@@ -780,7 +780,7 @@ describe("control runtime sync", () => {
       },
       {
         isPlaying: true,
-        isMicActive: false,
+        isLiveInputActive: false,
       },
     );
 

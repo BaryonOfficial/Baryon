@@ -12,12 +12,13 @@ apps/
   desktop/    @baryon/desktop   Flagship Electron desktop product shell
   marketing/  @baryon/marketing Marketing site scaffold
 packages/
+  app-shell/  @baryon/app-shell  Shared React shell: AudioProvider, scene surface, listener UI
   visualizer/ @baryon/visualizer Core audio + visualization engine
   ui/         @baryon/ui         Shared UI utilities
   config/     @baryon/config     Shared Vite config
 ```
 
-`apps/web` consumes `@baryon/visualizer` today, and `apps/desktop` is the shell for the licensed Electron desktop product described in the product roadmap. Static runtime assets stay app-local under `apps/web/public/` because they are loaded by URL at runtime.
+`apps/web` consumes the default listener-first `App` export from `@baryon/app-shell`. `apps/desktop` composes its own desktop wrapper around named `@baryon/app-shell` exports so desktop-only mode chrome and performer UI stay out of the shared renderer shell. Static runtime assets stay app-local under each app's `public/` directory because they are loaded by URL at runtime.
 
 ## Product Roadmap
 
@@ -81,6 +82,7 @@ pnpm typecheck            # Workspace typecheck where configured
 pnpm test:visualizer      # Visualizer unit tests
 pnpm test:web-smoke       # Stable production browser smoke
 pnpm test:web-smoke:dev   # Dev-only control/devtools integration smoke
+pnpm --filter @baryon/desktop test:smoke   # Packaged Electron desktop shell smoke
 pnpm verify               # Local pre-push gate: lint, typecheck, visualizer unit test
 pnpm verify:full          # Full local verification, including workspace builds
 ```
@@ -95,6 +97,9 @@ cd apps/web && pnpm lint
 cd apps/web && pnpm typecheck
 cd apps/web && pnpm test:smoke
 cd apps/web && pnpm test:smoke:dev
+
+cd apps/desktop && pnpm typecheck
+cd apps/desktop && pnpm test:smoke
 
 cd packages/visualizer && pnpm test
 cd packages/visualizer && pnpm typecheck
@@ -138,6 +143,7 @@ Browser smoke and app-specific builds remain manual or CI-driven for now:
 
 ```bash
 pnpm test:web-smoke
+pnpm --filter @baryon/desktop test:smoke
 pnpm build:web
 ```
 
@@ -232,31 +238,35 @@ Important behavior:
 
 ## React / App Structure
 
-Important web pieces:
+Important shared renderer pieces:
 
-- `apps/web/src/components/ThreeScene.jsx`
-- `apps/web/src/components/hooks/useBrowserSupportState.js`
-- `apps/web/src/components/hooks/useRendererModeState.js`
-- `apps/web/src/components/BaryonScene.jsx`
-- `apps/web/src/components/hooks/useBaryonControls.js`
-- `apps/web/src/components/hooks/useBaryonPipeline.js`
-- `apps/web/src/components/hooks/useBaryonVisualizer.js`
+- `packages/app-shell/src/App.jsx`
+- `packages/app-shell/src/components/ThreeScene.jsx`
+- `packages/app-shell/src/components/AudioControls.jsx`
+- `packages/app-shell/src/components/hooks/useBrowserSupportState.js`
+- `packages/app-shell/src/components/hooks/useRendererModeState.js`
+- `packages/app-shell/src/components/BaryonScene.jsx`
+- `packages/app-shell/src/components/hooks/useBaryonControls.js`
+- `packages/app-shell/src/components/hooks/useBaryonPipeline.js`
+- `packages/app-shell/src/components/hooks/useBaryonVisualizer.js`
 
-Where to change common web concerns:
+Where to change common renderer concerns:
 
-- WebGPU/browser gating and user-facing support diagnostics live in `apps/web/src/components/browserSupport.js` and `apps/web/src/components/hooks/useBrowserSupportState.js`.
-- Renderer init diagnostics and backend bookkeeping live in `apps/web/src/components/rendererDiagnostics.js`.
+- WebGPU/browser gating and user-facing support diagnostics live in `packages/app-shell/src/components/browserSupport.js` and `packages/app-shell/src/components/hooks/useBrowserSupportState.js`.
+- Renderer init diagnostics and backend bookkeeping live in `packages/app-shell/src/components/rendererDiagnostics.js`.
 - Linux browser diagnostics automation keeps its side effects in `apps/web/scripts/linux-webgpu-diagnostics.mjs` and its pure classification/formatting logic in `apps/web/scripts/linux-webgpu-diagnostics-helpers.mjs`.
-- Runtime-loaded assets for the web app live in `apps/web/public/`.
-- `apps/web/src/context/AudioProvider.jsx`
+- Runtime-loaded assets stay app-local in `apps/web/public/` and `apps/desktop/public/`.
+- `packages/app-shell/src/context/AudioProvider.jsx`
 
-The web scene is intentionally hook-composed now:
+The shared scene is intentionally hook-composed now:
 
 - controls
 - pipeline
 - visualizer runtime
 
 Avoid re-centralizing that logic into a single god component.
+
+Desktop-specific renderer composition now lives in `apps/desktop/src/DesktopApp.jsx`, `apps/desktop/src/context/AppModeProvider.jsx`, and `apps/desktop/src/components/`. `@baryon/app-shell` exports the shared building blocks (`AppFrame`, `AudioProvider`, `SceneSurface`, `ListenerControls`) but does not own desktop-only mode state or performer UI.
 
 ## GUI Controls And Verification
 

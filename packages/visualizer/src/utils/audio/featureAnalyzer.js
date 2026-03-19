@@ -75,8 +75,10 @@ function createMelFilterbank(sampleRate, fftSize, binCount) {
 }
 
 export function buildAnalysisSessionKey(status) {
-  const inputMode = status?.isMicActive
-    ? "mic"
+  const inputMode = status?.isLiveInputActive
+    ? status?.liveInputKind === "system"
+      ? "system"
+      : "live"
     : status?.isPlaying
       ? "file"
       : (status?.audioInputMode ?? "idle");
@@ -85,8 +87,12 @@ export function buildAnalysisSessionKey(status) {
     return `file:${status?.playbackSessionId ?? "none"}`;
   }
 
-  if (inputMode === "mic") {
-    return "mic";
+  if (inputMode === "live") {
+    return "live";
+  }
+
+  if (inputMode === "system") {
+    return "system";
   }
 
   return "idle";

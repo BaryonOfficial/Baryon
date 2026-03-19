@@ -67,6 +67,14 @@ describe("deserializeControls", () => {
     expect(result).not.toHaveProperty("anotherStaleKey");
   });
 
+  it("ignores legacy live input profile settings that are no longer in the schema", () => {
+    const raw = { liveInputProfile: "voice-tone", bloomStrength: 0.75 };
+    const result = deserializeControls(raw, CONTROL_DEFINITIONS);
+
+    expect(result).not.toHaveProperty("liveInputProfile");
+    expect(result.bloomStrength).toBe(0.75);
+  });
+
   it("falls back to default when the stored type does not match", () => {
     const bloomDef = CONTROL_DEFINITIONS.find((d) => d.key === "bloomStrength");
     // bloomStrength default is a number — pass a string instead

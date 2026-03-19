@@ -1,30 +1,22 @@
 import React from "react";
-import { MIC_PROFILE_OPTIONS } from "../utils/audioFeatures.js";
 
 export function AudioControlsView({
   fileName,
   isPlaying,
-  isMicActive,
+  isLiveInputActive,
   micStatusLabel,
   isAudioLoaded,
   showDeviceMenu,
   audioDevices,
   selectedDevice,
-  selectedMicProfile,
   handleFileChange,
   handlePlayPause,
   handleStop,
-  handleMicToggle,
-  handleMicProfileChange,
+  handleLiveInputToggle,
   setShowDeviceMenu,
   setSelectedDevice,
 }) {
   void micStatusLabel;
-
-  const selectedMicProfileOption =
-    MIC_PROFILE_OPTIONS.find(
-      (profile) => profile.value === selectedMicProfile,
-    ) ?? MIC_PROFILE_OPTIONS[0];
 
   return (
     <div className="baryon-audio-controls">
@@ -62,16 +54,16 @@ export function AudioControlsView({
           <div className="baryon-audio-controls__menu-anchor">
             <button
               onClick={async () => {
-                if (!isMicActive) {
+                if (!isLiveInputActive) {
                   setShowDeviceMenu(!showDeviceMenu);
                 } else {
-                  await handleMicToggle();
+                  await handleLiveInputToggle();
                 }
               }}
               className="baryon-audio-controls__button baryon-audio-controls__select-button"
             >
-              {isMicActive ? "Stop Input" : "Select Input"}
-              {!isMicActive && (
+              {isLiveInputActive ? "Stop Input" : "Select Input"}
+              {!isLiveInputActive && (
                 <svg
                   className={`baryon-audio-controls__chevron${
                     showDeviceMenu
@@ -91,32 +83,6 @@ export function AudioControlsView({
                 </svg>
               )}
             </button>
-            <div className="baryon-audio-controls__profile-select-wrap">
-              <select
-                className="baryon-audio-controls__profile-select"
-                data-testid="mic-profile-select"
-                value={selectedMicProfile}
-                aria-label="Mic input profile"
-                title={
-                  selectedMicProfileOption
-                    ? `Mic input profile: ${selectedMicProfileOption.label}. ${selectedMicProfileOption.description}`
-                    : "Mic input profile"
-                }
-                onFocus={() => {
-                  setShowDeviceMenu(false);
-                }}
-                onChange={(event) => {
-                  setShowDeviceMenu(false);
-                  handleMicProfileChange?.(event.target.value);
-                }}
-              >
-                {MIC_PROFILE_OPTIONS.map((profile) => (
-                  <option key={profile.value} value={profile.value}>
-                    {profile.label}
-                  </option>
-                ))}
-              </select>
-            </div>
             {showDeviceMenu && audioDevices.length > 0 && (
               <div className="baryon-audio-controls__menu">
                 <div>
@@ -126,7 +92,7 @@ export function AudioControlsView({
                       onClick={async () => {
                         setSelectedDevice(device.deviceId);
                         setShowDeviceMenu(false);
-                        await handleMicToggle();
+                        await handleLiveInputToggle();
                       }}
                       className={`baryon-audio-controls__menu-item${
                         selectedDevice === device.deviceId

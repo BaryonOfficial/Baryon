@@ -38,12 +38,31 @@ import { pitchClassToHue } from "./chromesthesia.js";
 import { annotatePeakSalience } from "./harmonicSalience.js";
 
 const {
-  micSilenceAvgAmplitude: MIC_SILENCE_AVG_AMPLITUDE,
-  micSignalPeakAmplitude: MIC_SIGNAL_PEAK_AMPLITUDE,
+  liveInputSilenceAvgAmplitude: LIVE_INPUT_SILENCE_AVG_AMPLITUDE,
+  liveInputSignalPeakAmplitude: LIVE_INPUT_SIGNAL_PEAK_AMPLITUDE,
   requestedPitchSource: REQUESTED_PITCH_SOURCE,
 } = AUDIO_ANALYSIS_POLICY;
 const TEST_TONE_HARMONIC_ATTENUATION =
   SPECTRAL_MODAL_POLICY.harmonicAttenuation;
+
+const LIVE_INPUT_NORMALIZATION_TARGET = 0.65;
+const LIVE_INPUT_NORMALIZATION_MAX_GAIN = 6.0;
+const LIVE_INPUT_NORMALIZATION_MIN_SIGNAL = 0.03;
+const LIVE_INPUT_NORMALIZATION_MAX_RAW_PEAK = 0.16;
+const LIVE_INPUT_INVALID_BASELINE_PEAK = 0.94;
+const LIVE_INPUT_INVALID_COMPRESSED_BASELINE_PEAK = 0.82;
+const LIVE_INPUT_INVALID_COMPRESSED_BASELINE_RMS = 0.0085;
+const LIVE_INPUT_INVALID_CURRENT_SATURATED_PEAK = 0.98;
+const LIVE_INPUT_INVALID_CURRENT_WEAK_RMS = 0.012;
+const LIVE_INPUT_INVALID_CURRENT_WEAK_AVG = 10;
+const LIVE_INPUT_VOICE_LOCK_MIN_PERIODICITY = 0.12;
+const LIVE_INPUT_VOICE_LOCK_MIN_HARMONIC_SUPPORT = 0.1;
+const LIVE_INPUT_VOICE_LOCK_MIN_DIRECT_SUPPORT = 0.18;
+const LIVE_INPUT_VOICE_LOCK_MIN_SUPPORT_SOURCES = 3;
+const LIVE_INPUT_VOICE_LOCK_MIN_RMS = 0.018;
+const LIVE_INPUT_VOICE_LOCK_MIN_AVG_AMPLITUDE = 5;
+const LIVE_INPUT_FOG_SUPPRESSION_MODE_COUNT = 10;
+const LIVE_INPUT_FOG_SUPPRESSION_MAX_PERIODICITY = 0.05;
 
 const BACKBONE_PEAK_COUNT = 5;
 const DETAIL_PEAK_COUNT = 8;
@@ -72,9 +91,9 @@ const DETAIL_COLOR_RELEASE = 0.9;
 const BACKBONE_COLOR_SLOT_LIMIT = 6;
 const DETAIL_COLOR_SLOT_LIMIT = 7;
 const BAND_LIMITS_HZ = [140, 600, 2400, 8000];
-const DEFAULT_MIC_PROFILE = "voice-tone";
-const MIC_CALIBRATION_WINDOW_MS = 750;
-const MIC_CALIBRATION_SMOOTHING_MS = 180;
+const DEFAULT_LIVE_INPUT_PROFILE = "voice-tone";
+const LIVE_INPUT_CALIBRATION_WINDOW_MS = 750;
+const LIVE_INPUT_CALIBRATION_SMOOTHING_MS = 180;
 const VOICE_DETAIL_HARMONIC_LIMIT = 5;
 const VOICE_LATCH_DECAY = 0.94;
 const VOICE_CANDIDATE_MATCH_TOLERANCE = 0.065;
@@ -84,9 +103,9 @@ const AMBIENT_REGION_RANGES = Object.freeze([
   Object.freeze([720, 1800]),
   Object.freeze([1800, 5000]),
 ]);
-const MIC_PROFILE_CONFIGS = Object.freeze({
+const LIVE_INPUT_PROFILE_CONFIGS = Object.freeze({
   "voice-tone": Object.freeze({
-    absoluteAvgAmplitude: Math.max(4, MIC_SILENCE_AVG_AMPLITUDE * 0.5),
+    absoluteAvgAmplitude: Math.max(4, LIVE_INPUT_SILENCE_AVG_AMPLITUDE * 0.5),
     absoluteRmsFloor: 0.009,
     absolutePeakFloor: 0.1,
     absoluteCentroidFloor: 0.006,
@@ -129,7 +148,7 @@ const MIC_PROFILE_CONFIGS = Object.freeze({
     spectralPeakMaxHz: 3200,
   }),
   ambient: Object.freeze({
-    absoluteAvgAmplitude: Math.max(3, MIC_SILENCE_AVG_AMPLITUDE * 0.4),
+    absoluteAvgAmplitude: Math.max(3, LIVE_INPUT_SILENCE_AVG_AMPLITUDE * 0.4),
     absoluteRmsFloor: 0.007,
     absolutePeakFloor: 0.1,
     absoluteCentroidFloor: 0,
@@ -168,8 +187,6 @@ const BEAT_HISTORY_SIZE_LOCAL = 8;
 const ONSET_DENSITY_WINDOW_MS = 4000;
 const ONSET_DENSITY_MAX_BEATS = 8; // matches BEAT_HISTORY_SIZE_LOCAL; 8 beats in 4s = 2 BPS
 const ONSET_DENSITY_SMOOTHING_MS = 8000;
-const MIC_MODAL_FFT_TARGET = 0.65;
-const MIC_MODAL_FFT_MAX_GAIN = 12.0;
 // Minimum harmonic salience for a peak to drive the ambient backbone.
 // Prevents isolated noise peaks (fricatives, room noise, broadband bursts)
 // from injecting incoherent high-mode-number modes.
@@ -182,7 +199,7 @@ const MIC_MODAL_FFT_MAX_GAIN = 12.0;
 // A threshold of 0.32 blocks single-harmonic peaks while allowing genuine
 // tonal content (singing bowls, instruments) that have 3+ visible harmonics
 // (typical score ≥ 0.40).
-const AMBIENT_MIC_BACKBONE_MIN_SALIENCE = 0.32;
+const AMBIENT_LIVE_INPUT_BACKBONE_MIN_SALIENCE = 0.32;
 const MIN_TEMPO_BPM = 40;
 const MAX_TEMPO_BPM = 240;
 const MIN_IBI_MS = 60000 / MAX_TEMPO_BPM; // 250ms
@@ -190,12 +207,16 @@ const MAX_IBI_MS = 60000 / MIN_TEMPO_BPM; // 1500ms
 const TEMPO_EMA_FAST = 0.35;
 const TEMPO_EMA_SLOW = 0.1;
 const CHROMA_EMA_ALPHA = 0.1;
+const LIVE_INPUT_STRUCTURE_RESPONSE_SCALE = 0.8;
+const LIVE_INPUT_ENERGY_RESPONSE_SCALE = 0.55;
+const LIVE_INPUT_CHANGE_RESPONSE_SCALE = 0.45;
+const LIVE_INPUT_PULSE_RESPONSE_SCALE = 0.9;
 
-export const DEFAULT_MIC_ANALYSIS_SETTINGS = Object.freeze({
-  profile: DEFAULT_MIC_PROFILE,
+export const DEFAULT_LIVE_INPUT_ANALYSIS_SETTINGS = Object.freeze({
+  profile: DEFAULT_LIVE_INPUT_PROFILE,
 });
 
-export const MIC_PROFILE_OPTIONS = Object.freeze([
+export const LIVE_INPUT_PROFILE_OPTIONS = Object.freeze([
   Object.freeze({
     value: "voice-tone",
     label: "Voice",
@@ -344,17 +365,20 @@ function getSourceNormalization({
   spectralCentroid,
   bandState,
 }) {
-  if (inputMode === "mic") {
-    const baselineRms = Math.max(0, bandState?.micBaselineRms ?? 0);
-    const baselineCentroid = Math.max(0, bandState?.micBaselineCentroid ?? 0);
+  if (inputMode === "live") {
+    const baselineRms = Math.max(0, bandState?.liveInputBaselineRms ?? 0);
+    const baselineCentroid = Math.max(
+      0,
+      bandState?.liveInputBaselineCentroid ?? 0,
+    );
     return {
       normalizedRms: clamp01(
         baselineRms > 0
-          ? (analyserRms - baselineRms * 0.45) /
-              Math.max(0.0015, baselineRms * 4.5)
-          : analyserRms / 0.018,
+          ? (analyserRms - baselineRms * 0.75) /
+              Math.max(0.003, baselineRms * 12)
+          : analyserRms / 0.028,
       ),
-      normalizedAmplitude: clamp01(avgAmplitude / 18),
+      normalizedAmplitude: clamp01(avgAmplitude / 72),
       normalizedCentroid: clamp01(
         baselineCentroid > 0
           ? spectralCentroid / Math.max(0.02, baselineCentroid * 1.8)
@@ -386,52 +410,75 @@ function computeEmaAlpha(deltaMs, smoothingMs) {
   return 1 - Math.exp(-deltaMs / smoothingMs);
 }
 
-function resetMicGateState(
+function resetLiveInputGateState(
   bandState,
-  { inputMode = "idle", profile = DEFAULT_MIC_PROFILE } = {},
+  {
+    inputMode = "idle",
+    profile = DEFAULT_LIVE_INPUT_PROFILE,
+    calibrationVersion = bandState.liveInputCalibrationVersion ?? 0,
+    invalid = false,
+    invalidReason = "none",
+  } = {},
 ) {
-  bandState.micInputMode = inputMode;
-  bandState.micProfile = profile;
-  bandState.micGateState = "closed";
-  bandState.micCalibrationActive = false;
-  bandState.micCalibrationStartedAtMs = Number.NEGATIVE_INFINITY;
-  bandState.micPreviousFrameAtMs = 0;
-  bandState.micBaselineRms = 0;
-  bandState.micBaselinePeak = 0;
-  bandState.micBaselineCentroid = 0;
-  bandState.micBaselineLowBandEnergy = 0;
-  bandState.micOpenFrames = 0;
-  bandState.micQuietFrames = 0;
+  bandState.liveInputMode = inputMode;
+  bandState.liveInputProfile = profile;
+  bandState.liveInputGateState = "closed";
+  bandState.liveInputCalibrationActive = false;
+  bandState.liveInputCalibrationStartedAtMs = Number.NEGATIVE_INFINITY;
+  bandState.liveInputCalibrationVersion = calibrationVersion;
+  bandState.liveInputCalibrationInvalid = invalid;
+  bandState.liveInputCalibrationInvalidReason = invalidReason;
+  bandState.liveInputPreviousFrameAtMs = 0;
+  bandState.liveInputBaselineRms = 0;
+  bandState.liveInputBaselinePeak = 0;
+  bandState.liveInputBaselineCentroid = 0;
+  bandState.liveInputBaselineLowBandEnergy = 0;
+  bandState.liveInputOpenFrames = 0;
+  bandState.liveInputQuietFrames = 0;
 }
 
-function beginMicCalibration(bandState, currentFrameAtMs, profile) {
-  resetMicGateState(bandState, {
-    inputMode: "mic",
+function beginLiveInputCalibration(
+  bandState,
+  currentFrameAtMs,
+  profile,
+  {
+    calibrationVersion = bandState.liveInputCalibrationVersion ?? 0,
+    invalid = false,
+    invalidReason = "none",
+  } = {},
+) {
+  resetLiveInputGateState(bandState, {
+    inputMode: "live",
     profile,
+    calibrationVersion,
+    invalid,
+    invalidReason,
   });
-  bandState.micGateState = "calibrating";
-  bandState.micCalibrationActive = true;
-  bandState.micCalibrationStartedAtMs = currentFrameAtMs;
-  bandState.micPreviousFrameAtMs = currentFrameAtMs;
+  bandState.liveInputGateState = "calibrating";
+  bandState.liveInputCalibrationActive = true;
+  bandState.liveInputCalibrationStartedAtMs = currentFrameAtMs;
+  bandState.liveInputPreviousFrameAtMs = currentFrameAtMs;
 }
 
-function normalizeMicProfile(profile) {
+function normalizeLiveInputProfile(profile) {
   // "ambient" is disabled — redirect to the default so any saved preferences
   // or direct callers are silently migrated rather than breaking.
-  if (profile === "ambient") return DEFAULT_MIC_PROFILE;
-  return MIC_PROFILE_CONFIGS[profile] ? profile : DEFAULT_MIC_PROFILE;
+  if (profile === "ambient") return DEFAULT_LIVE_INPUT_PROFILE;
+  return LIVE_INPUT_PROFILE_CONFIGS[profile]
+    ? profile
+    : DEFAULT_LIVE_INPUT_PROFILE;
 }
 
-function normalizeMicAnalysisSettings(settings = undefined) {
+function normalizeLiveInputAnalysisSettings(settings = undefined) {
   return {
-    profile: normalizeMicProfile(settings?.profile),
+    profile: normalizeLiveInputProfile(settings?.profile),
   };
 }
 
-function getMicProfileConfig(profile) {
+function getLiveInputProfileConfig(profile) {
   return (
-    MIC_PROFILE_CONFIGS[normalizeMicProfile(profile)] ??
-    MIC_PROFILE_CONFIGS[DEFAULT_MIC_PROFILE]
+    LIVE_INPUT_PROFILE_CONFIGS[normalizeLiveInputProfile(profile)] ??
+    LIVE_INPUT_PROFILE_CONFIGS[DEFAULT_LIVE_INPUT_PROFILE]
   );
 }
 
@@ -459,9 +506,9 @@ function resetBeatTrackingState(analysisMemory) {
   bandState.beatStrength = 0;
   bandState.beatConfidence = 0;
   bandState.onsetDensityEma = 0;
-  resetMicGateState(bandState, {
-    inputMode: bandState.micInputMode ?? "idle",
-    profile: bandState.micProfile ?? DEFAULT_MIC_PROFILE,
+  resetLiveInputGateState(bandState, {
+    inputMode: bandState.liveInputMode ?? "idle",
+    profile: bandState.liveInputProfile ?? DEFAULT_LIVE_INPUT_PROFILE,
   });
   if (analysisMemory.previousSpectrum instanceof Float32Array) {
     analysisMemory.previousSpectrum.fill(0);
@@ -794,6 +841,17 @@ function countNonZeroFFTBinCount(fftMagnitudes) {
   return count;
 }
 
+function findPeakFftMagnitude(fftMagnitudes) {
+  if (!fftMagnitudes?.length) return 0;
+
+  let peak = 0;
+  for (let i = 0; i < fftMagnitudes.length; i++) {
+    peak = Math.max(peak, fftMagnitudes[i] ?? 0);
+  }
+
+  return peak;
+}
+
 function buildDebugSummary({
   inputMode,
   soundActive,
@@ -801,12 +859,14 @@ function buildDebugSummary({
   pitchSource = "none",
   analysisEngine = "none",
   fieldState = FIELD_STATES.idle,
-  micNoiseGateActive = false,
-  micHardSilenceActive = false,
-  micCalibrationActive = false,
-  micProfile = DEFAULT_MIC_PROFILE,
-  micBaselineRms = 0,
-  micBaselinePeak = 0,
+  liveInputNoiseGateActive = false,
+  liveInputHardSilenceActive = false,
+  liveInputCalibrationActive = false,
+  liveInputCalibrationInvalid = false,
+  liveInputCalibrationInvalidReason = "none",
+  liveInputProfile = DEFAULT_LIVE_INPUT_PROFILE,
+  liveInputBaselineRms = 0,
+  liveInputBaselinePeak = 0,
   backboneState,
   detailState,
   dominantFrequency = 0,
@@ -835,6 +895,9 @@ function buildDebugSummary({
   sampleRate = 0,
   fftSize = 0,
   analysisHints = null,
+  micFftNormGain = 1,
+  preModalFftPeak = 0,
+  sourceNormalization = undefined,
 }) {
   const backboneModeCount = countActiveSlots(
     backboneSlots,
@@ -854,12 +917,14 @@ function buildDebugSummary({
     workerStatus: analysisHints?.workerStatus ?? null,
     fileActive: soundActive,
     micActive,
-    micNoiseGateActive,
-    micHardSilenceActive,
-    micCalibrationActive,
-    micProfile,
-    micBaselineRms,
-    micBaselinePeak,
+    liveInputNoiseGateActive,
+    liveInputHardSilenceActive,
+    liveInputCalibrationActive,
+    liveInputCalibrationInvalid,
+    liveInputCalibrationInvalidReason,
+    liveInputProfile,
+    liveInputBaselineRms,
+    liveInputBaselinePeak,
     analysisSourceUsed: inputMode === "idle" ? "none" : inputMode,
     fundamentalFrequency: backboneState?.fundamental ?? 0,
     fundamentalConfidence: backboneState?.fundamentalConfidence ?? 0,
@@ -871,6 +936,8 @@ function buildDebugSummary({
       (backboneState?.uniqueModeCount ?? 0) +
       (detailState?.uniqueModeCount ?? 0),
     nonZeroFFTBinCount: countNonZeroFFTBinCount(fftMagnitudes),
+    micFftNormGain,
+    preModalFftPeak,
     modeSlotCount,
     backboneModeCount,
     detailModeCount,
@@ -919,6 +986,11 @@ function buildDebugSummary({
     rejectionReason: backboneState?.rejectionReason ?? "none",
     latchHoldFrames: backboneState?.latchHoldFrames ?? 0,
     latchLowSupportFrames: backboneState?.latchLowSupportFrames ?? 0,
+    sourceNormalization: sourceNormalization ?? {
+      normalizedRms: 0,
+      normalizedAmplitude: 0,
+      normalizedCentroid: 0,
+    },
     chromesthesiaComponents,
   };
 }
@@ -947,8 +1019,8 @@ function buildZeroDebugSnapshot({
     pitchSource,
     analysisEngine,
     fieldState,
-    micNoiseGateActive: false,
-    micHardSilenceActive: false,
+    liveInputNoiseGateActive: false,
+    liveInputHardSilenceActive: false,
     backboneState: null,
     detailState: null,
     fftMagnitudes: null,
@@ -1132,16 +1204,20 @@ export function applyTestToneToSnapshot({
     writeHarmonicBin(harmonicFrequency, testBinAmplitude * attenuation);
   }
 
+  // Pure sine RMS = amplitude / sqrt(2); scale to 0-255 range like real analyser output.
+  const syntheticRms = testBinAmplitude / Math.SQRT2;
+  const syntheticAvgAmplitude = syntheticRms * 255;
+
   return {
     ...snapshot,
     sourceMode: "test",
-    avgAmplitude: testBinAmplitude * 255,
+    avgAmplitude: syntheticAvgAmplitude,
     fftMagnitudes,
-    rms: snapshot.rms ?? 0,
+    rms: syntheticRms,
   };
 }
 
-function computeMicMetrics({
+function computeLiveInputMetrics({
   avgAmplitude,
   rms,
   fftMagnitudes,
@@ -1177,7 +1253,7 @@ function computeMicMetrics({
   };
 }
 
-function detectMicHardSilence(metrics, thresholds) {
+function detectLiveInputHardSilence(metrics, thresholds) {
   return (
     metrics.avgAmplitude <= thresholds.hardSilenceAvg &&
     metrics.rms <= thresholds.hardSilenceRms &&
@@ -1185,7 +1261,7 @@ function detectMicHardSilence(metrics, thresholds) {
   );
 }
 
-export function detectMicNoiseGate({
+export function detectLiveInputNoiseGate({
   injectTestTone,
   inputMode,
   avgAmplitude,
@@ -1193,11 +1269,12 @@ export function detectMicNoiseGate({
   fftMagnitudes,
   sampleRate = 44100,
   fftSize = 4096,
-  micAnalysisSettings = DEFAULT_MIC_ANALYSIS_SETTINGS,
+  micAnalysisSettings = DEFAULT_LIVE_INPUT_ANALYSIS_SETTINGS,
 }) {
-  const profile = normalizeMicAnalysisSettings(micAnalysisSettings).profile;
-  const config = getMicProfileConfig(profile);
-  const metrics = computeMicMetrics({
+  const profile =
+    normalizeLiveInputAnalysisSettings(micAnalysisSettings).profile;
+  const config = getLiveInputProfileConfig(profile);
+  const metrics = computeLiveInputMetrics({
     avgAmplitude,
     rms,
     fftMagnitudes,
@@ -1212,67 +1289,92 @@ export function detectMicNoiseGate({
 
   return (
     !injectTestTone &&
-    inputMode === "mic" &&
-    detectMicHardSilence(metrics, thresholds) &&
+    inputMode === "live" &&
+    detectLiveInputHardSilence(metrics, thresholds) &&
     metrics.spectralCentroid < config.absoluteCentroidFloor
   );
 }
 
-function updateMicCalibrationBaseline(bandState, metrics, deltaMs) {
-  const alpha = computeEmaAlpha(deltaMs, MIC_CALIBRATION_SMOOTHING_MS);
+function updateLiveInputCalibrationBaseline(bandState, metrics, deltaMs) {
+  const alpha = computeEmaAlpha(deltaMs, LIVE_INPUT_CALIBRATION_SMOOTHING_MS);
   if (
-    !(bandState.micBaselineRms > 0) &&
-    !(bandState.micBaselinePeak > 0) &&
-    !(bandState.micBaselineCentroid > 0) &&
-    !(bandState.micBaselineLowBandEnergy > 0)
+    !(bandState.liveInputBaselineRms > 0) &&
+    !(bandState.liveInputBaselinePeak > 0) &&
+    !(bandState.liveInputBaselineCentroid > 0) &&
+    !(bandState.liveInputBaselineLowBandEnergy > 0)
   ) {
-    bandState.micBaselineRms = metrics.rms;
-    bandState.micBaselinePeak = metrics.peakAmplitude;
-    bandState.micBaselineCentroid = metrics.spectralCentroid;
-    bandState.micBaselineLowBandEnergy = metrics.lowBandEnergy;
+    bandState.liveInputBaselineRms = metrics.rms;
+    bandState.liveInputBaselinePeak = metrics.peakAmplitude;
+    bandState.liveInputBaselineCentroid = metrics.spectralCentroid;
+    bandState.liveInputBaselineLowBandEnergy = metrics.lowBandEnergy;
     return;
   }
 
-  bandState.micBaselineRms += (metrics.rms - bandState.micBaselineRms) * alpha;
-  bandState.micBaselinePeak +=
-    (metrics.peakAmplitude - bandState.micBaselinePeak) * alpha;
-  bandState.micBaselineCentroid +=
-    (metrics.spectralCentroid - bandState.micBaselineCentroid) * alpha;
-  bandState.micBaselineLowBandEnergy +=
-    (metrics.lowBandEnergy - bandState.micBaselineLowBandEnergy) * alpha;
+  bandState.liveInputBaselineRms +=
+    (metrics.rms - bandState.liveInputBaselineRms) * alpha;
+  bandState.liveInputBaselinePeak +=
+    (metrics.peakAmplitude - bandState.liveInputBaselinePeak) * alpha;
+  bandState.liveInputBaselineCentroid +=
+    (metrics.spectralCentroid - bandState.liveInputBaselineCentroid) * alpha;
+  bandState.liveInputBaselineLowBandEnergy +=
+    (metrics.lowBandEnergy - bandState.liveInputBaselineLowBandEnergy) * alpha;
 }
 
-function deriveMicThresholds(bandState, profileConfig) {
+function classifyLiveInputCalibrationInvalid(bandState, metrics) {
+  const baselinePeak = Math.max(0, bandState?.liveInputBaselinePeak ?? 0);
+  const baselineRms = Math.max(0, bandState?.liveInputBaselineRms ?? 0);
+
+  if (baselinePeak >= LIVE_INPUT_INVALID_BASELINE_PEAK) {
+    return "baseline-clipping";
+  }
+
+  if (
+    baselinePeak >= LIVE_INPUT_INVALID_COMPRESSED_BASELINE_PEAK &&
+    baselineRms <= LIVE_INPUT_INVALID_COMPRESSED_BASELINE_RMS &&
+    metrics.peakAmplitude >= LIVE_INPUT_INVALID_CURRENT_SATURATED_PEAK &&
+    metrics.rms <= LIVE_INPUT_INVALID_CURRENT_WEAK_RMS &&
+    metrics.avgAmplitude <= LIVE_INPUT_INVALID_CURRENT_WEAK_AVG
+  ) {
+    return "compressed-baseline";
+  }
+
+  return "none";
+}
+
+function deriveLiveInputThresholds(bandState, profileConfig) {
   return {
     openRms: Math.max(
       profileConfig.absoluteRmsFloor * 0.2,
-      bandState.micBaselineRms * profileConfig.rmsOpenMultiplier +
+      bandState.liveInputBaselineRms * profileConfig.rmsOpenMultiplier +
         profileConfig.rmsOpenOffset,
     ),
     closeRms: Math.max(
       profileConfig.absoluteRmsFloor * 0.15,
-      bandState.micBaselineRms * profileConfig.rmsCloseMultiplier +
+      bandState.liveInputBaselineRms * profileConfig.rmsCloseMultiplier +
         profileConfig.rmsCloseOffset,
     ),
     openPeak: profileConfig.absolutePeakFloor,
     closePeak: Math.max(
-      MIC_SIGNAL_PEAK_AMPLITUDE * 0.7,
+      LIVE_INPUT_SIGNAL_PEAK_AMPLITUDE * 0.7,
       profileConfig.absolutePeakFloor * 0.85,
     ),
     openCentroid:
-      bandState.micBaselineCentroid * profileConfig.centroidOpenMultiplier +
+      bandState.liveInputBaselineCentroid *
+        profileConfig.centroidOpenMultiplier +
       profileConfig.centroidOpenOffset,
     openLowBand:
-      bandState.micBaselineLowBandEnergy * profileConfig.lowBandOpenMultiplier +
+      bandState.liveInputBaselineLowBandEnergy *
+        profileConfig.lowBandOpenMultiplier +
       profileConfig.lowBandOpenOffset,
     hardSilenceRms: Math.max(
       profileConfig.absoluteRmsFloor * 0.8,
-      bandState.micBaselineRms * profileConfig.hardSilenceRmsMultiplier +
+      bandState.liveInputBaselineRms * profileConfig.hardSilenceRmsMultiplier +
         profileConfig.hardSilenceRmsOffset,
     ),
     hardSilencePeak: Math.max(
       profileConfig.absolutePeakFloor * 0.4,
-      bandState.micBaselinePeak * profileConfig.hardSilencePeakMultiplier +
+      bandState.liveInputBaselinePeak *
+        profileConfig.hardSilencePeakMultiplier +
         profileConfig.hardSilencePeakOffset,
     ),
     hardSilenceAvg:
@@ -1282,7 +1384,7 @@ function deriveMicThresholds(bandState, profileConfig) {
   };
 }
 
-function qualifiesMicOpen(metrics, thresholds, profile, profileConfig) {
+function qualifiesLiveInputOpen(metrics, thresholds, profile, profileConfig) {
   if (profile === "ambient") {
     return (
       metrics.rms >= thresholds.openRms ||
@@ -1299,7 +1401,7 @@ function qualifiesMicOpen(metrics, thresholds, profile, profileConfig) {
   );
 }
 
-function qualifiesMicHold(metrics, thresholds, profile) {
+function qualifiesLiveInputHold(metrics, thresholds, profile) {
   if (profile === "ambient") {
     return (
       metrics.rms >= thresholds.closeRms ||
@@ -1314,7 +1416,7 @@ function qualifiesMicHold(metrics, thresholds, profile) {
   );
 }
 
-function resolveMicNoiseGate({
+function resolveLiveInputNoiseGate({
   analysisMemory,
   injectTestTone,
   inputMode,
@@ -1324,31 +1426,38 @@ function resolveMicNoiseGate({
   sampleRate,
   fftSize,
   currentFrameAtMs,
+  calibrationVersion = 0,
   micAnalysisSettings,
 }) {
   const bandState = analysisMemory.bandState;
-  const { profile } = normalizeMicAnalysisSettings(micAnalysisSettings);
-  if (injectTestTone || inputMode !== "mic") {
-    resetMicGateState(bandState, {
+  const { profile } = normalizeLiveInputAnalysisSettings(micAnalysisSettings);
+  if (injectTestTone || inputMode !== "live") {
+    resetLiveInputGateState(bandState, {
       inputMode,
       profile,
+      calibrationVersion,
     });
     return {
       active: false,
       hardSilence: false,
+      invalid: false,
+      invalidReason: "none",
     };
   }
 
   if (
-    bandState.micInputMode !== "mic" ||
-    bandState.micProfile !== profile ||
-    currentFrameAtMs < (bandState.micPreviousFrameAtMs ?? 0)
+    bandState.liveInputCalibrationVersion !== calibrationVersion ||
+    bandState.liveInputMode !== "live" ||
+    bandState.liveInputProfile !== profile ||
+    currentFrameAtMs < (bandState.liveInputPreviousFrameAtMs ?? 0)
   ) {
-    beginMicCalibration(bandState, currentFrameAtMs, profile);
+    beginLiveInputCalibration(bandState, currentFrameAtMs, profile, {
+      calibrationVersion,
+    });
   }
 
-  const profileConfig = getMicProfileConfig(profile);
-  const metrics = computeMicMetrics({
+  const profileConfig = getLiveInputProfileConfig(profile);
+  const metrics = computeLiveInputMetrics({
     avgAmplitude,
     rms,
     fftMagnitudes,
@@ -1356,32 +1465,72 @@ function resolveMicNoiseGate({
     fftSize,
   });
   const deltaMs = getFrameDeltaMs(
-    bandState.micPreviousFrameAtMs,
+    bandState.liveInputPreviousFrameAtMs,
     currentFrameAtMs,
   );
-  bandState.micInputMode = "mic";
-  bandState.micProfile = profile;
-  bandState.micPreviousFrameAtMs = currentFrameAtMs;
+  bandState.liveInputMode = "live";
+  bandState.liveInputProfile = profile;
+  bandState.liveInputPreviousFrameAtMs = currentFrameAtMs;
 
-  if (bandState.micCalibrationActive) {
-    updateMicCalibrationBaseline(bandState, metrics, deltaMs);
+  if (bandState.liveInputCalibrationActive) {
+    updateLiveInputCalibrationBaseline(bandState, metrics, deltaMs);
     if (
-      currentFrameAtMs - bandState.micCalibrationStartedAtMs <
-      MIC_CALIBRATION_WINDOW_MS
+      currentFrameAtMs - bandState.liveInputCalibrationStartedAtMs <
+      LIVE_INPUT_CALIBRATION_WINDOW_MS
     ) {
       return {
         active: true,
         hardSilence: true,
+        invalid: bandState.liveInputCalibrationInvalid,
+        invalidReason: bandState.liveInputCalibrationInvalidReason ?? "none",
       };
     }
 
-    bandState.micCalibrationActive = false;
-    bandState.micGateState = "closed";
-    bandState.micOpenFrames = 0;
-    bandState.micQuietFrames = 0;
+    const calibrationInvalidReason = classifyLiveInputCalibrationInvalid(
+      bandState,
+      metrics,
+    );
+    if (calibrationInvalidReason !== "none") {
+      beginLiveInputCalibration(bandState, currentFrameAtMs, profile, {
+        calibrationVersion,
+        invalid: true,
+        invalidReason: calibrationInvalidReason,
+      });
+      return {
+        active: true,
+        hardSilence: true,
+        invalid: true,
+        invalidReason: calibrationInvalidReason,
+      };
+    }
+
+    bandState.liveInputCalibrationActive = false;
+    bandState.liveInputGateState = "closed";
+    bandState.liveInputOpenFrames = 0;
+    bandState.liveInputQuietFrames = 0;
+    bandState.liveInputCalibrationInvalid = false;
+    bandState.liveInputCalibrationInvalidReason = "none";
   }
 
-  const hardGateActive = detectMicNoiseGate({
+  const invalidCalibrationReason = classifyLiveInputCalibrationInvalid(
+    bandState,
+    metrics,
+  );
+  if (invalidCalibrationReason !== "none") {
+    beginLiveInputCalibration(bandState, currentFrameAtMs, profile, {
+      calibrationVersion,
+      invalid: true,
+      invalidReason: invalidCalibrationReason,
+    });
+    return {
+      active: true,
+      hardSilence: true,
+      invalid: true,
+      invalidReason: invalidCalibrationReason,
+    };
+  }
+
+  const hardGateActive = detectLiveInputNoiseGate({
     injectTestTone,
     inputMode,
     avgAmplitude,
@@ -1391,54 +1540,65 @@ function resolveMicNoiseGate({
     fftSize,
     micAnalysisSettings: { profile },
   });
-  const thresholds = deriveMicThresholds(bandState, profileConfig);
-  const hardSilence = detectMicHardSilence(metrics, thresholds);
+  const thresholds = deriveLiveInputThresholds(bandState, profileConfig);
+  const hardSilence = detectLiveInputHardSilence(metrics, thresholds);
 
   if (hardSilence) {
-    bandState.micGateState = "closed";
-    bandState.micQuietFrames = 0;
-    bandState.micOpenFrames = 0;
+    bandState.liveInputGateState = "closed";
+    bandState.liveInputQuietFrames = 0;
+    bandState.liveInputOpenFrames = 0;
     return {
       active: true,
       hardSilence: true,
+      invalid: false,
+      invalidReason: "none",
     };
   }
 
-  if (bandState.micGateState === "open") {
-    if (!hardGateActive && qualifiesMicHold(metrics, thresholds, profile)) {
-      bandState.micQuietFrames = 0;
+  if (bandState.liveInputGateState === "open") {
+    if (
+      !hardGateActive &&
+      qualifiesLiveInputHold(metrics, thresholds, profile)
+    ) {
+      bandState.liveInputQuietFrames = 0;
       return {
         active: false,
         hardSilence: false,
+        invalid: false,
+        invalidReason: "none",
       };
     }
 
-    bandState.micQuietFrames += 1;
-    if (bandState.micQuietFrames < profileConfig.closeFrames) {
+    bandState.liveInputQuietFrames += 1;
+    if (bandState.liveInputQuietFrames < profileConfig.closeFrames) {
       return {
         active: false,
         hardSilence: false,
+        invalid: false,
+        invalidReason: "none",
       };
     }
 
-    bandState.micGateState = "closed";
-    bandState.micQuietFrames = 0;
-    bandState.micOpenFrames = 0;
+    bandState.liveInputGateState = "closed";
+    bandState.liveInputQuietFrames = 0;
+    bandState.liveInputOpenFrames = 0;
     return {
       active: true,
       hardSilence: false,
+      invalid: false,
+      invalidReason: "none",
     };
   }
 
   if (
     !hardGateActive &&
-    qualifiesMicOpen(metrics, thresholds, profile, profileConfig)
+    qualifiesLiveInputOpen(metrics, thresholds, profile, profileConfig)
   ) {
-    bandState.micOpenFrames += 1;
-    if (bandState.micOpenFrames >= profileConfig.openFrames) {
-      bandState.micGateState = "open";
-      bandState.micOpenFrames = 0;
-      bandState.micQuietFrames = 0;
+    bandState.liveInputOpenFrames += 1;
+    if (bandState.liveInputOpenFrames >= profileConfig.openFrames) {
+      bandState.liveInputGateState = "open";
+      bandState.liveInputOpenFrames = 0;
+      bandState.liveInputQuietFrames = 0;
       return {
         active: false,
         hardSilence: false,
@@ -1450,10 +1610,12 @@ function resolveMicNoiseGate({
     };
   }
 
-  bandState.micOpenFrames = 0;
+  bandState.liveInputOpenFrames = 0;
   return {
     active: true,
     hardSilence: false,
+    invalid: false,
+    invalidReason: "none",
   };
 }
 
@@ -1674,11 +1836,71 @@ function resolveVoiceVoicing({
   };
 }
 
+function resolveLiveInputVoiceValidity({
+  detection,
+  profileConfig,
+  candidateFrames,
+  stableCandidate,
+  analyserRms,
+  avgAmplitude,
+  preModalFftPeak,
+  baselinePeak,
+}) {
+  const periodicity = detection?.periodicity ?? 0;
+  const harmonicSupport = detection?.harmonicSupport ?? 0;
+  const directSupport = detection?.directSupport ?? 0;
+  const supportSources = detection?.supportSources ?? 0;
+  const hasMeaningfulTimeSignal =
+    periodicity >= LIVE_INPUT_VOICE_LOCK_MIN_PERIODICITY;
+  const hasStrongSpectralSignal =
+    supportSources >= LIVE_INPUT_VOICE_LOCK_MIN_SUPPORT_SOURCES &&
+    analyserRms >= LIVE_INPUT_VOICE_LOCK_MIN_RMS &&
+    avgAmplitude >= LIVE_INPUT_VOICE_LOCK_MIN_AVG_AMPLITUDE &&
+    (harmonicSupport >= LIVE_INPUT_VOICE_LOCK_MIN_HARMONIC_SUPPORT ||
+      directSupport >= LIVE_INPUT_VOICE_LOCK_MIN_DIRECT_SUPPORT);
+  const hasStableLatchEvidence =
+    stableCandidate &&
+    candidateFrames >= Math.max(1, profileConfig.highPitchStableFrames);
+
+  if (
+    hasMeaningfulTimeSignal ||
+    hasStrongSpectralSignal ||
+    hasStableLatchEvidence
+  ) {
+    return {
+      allowed: true,
+      rejectionReason: "none",
+    };
+  }
+
+  if (
+    periodicity <= LIVE_INPUT_FOG_SUPPRESSION_MAX_PERIODICITY &&
+    analyserRms <= LIVE_INPUT_INVALID_CURRENT_WEAK_RMS &&
+    avgAmplitude <= LIVE_INPUT_INVALID_CURRENT_WEAK_AVG &&
+    preModalFftPeak >= LIVE_INPUT_INVALID_CURRENT_SATURATED_PEAK &&
+    baselinePeak >= LIVE_INPUT_INVALID_COMPRESSED_BASELINE_PEAK
+  ) {
+    return {
+      allowed: false,
+      rejectionReason: "invalid-clipped-mic",
+    };
+  }
+
+  return {
+    allowed: false,
+    rejectionReason: "insufficient-voicing-evidence",
+  };
+}
+
 function resolveVoiceDriver({
   backboneState,
   detection,
   hardSilence,
   profileConfig,
+  analyserRms,
+  avgAmplitude,
+  preModalFftPeak,
+  baselinePeak,
 }) {
   if (hardSilence) {
     clearVocalDriverState(backboneState);
@@ -1705,14 +1927,27 @@ function resolveVoiceDriver({
     candidateFrames,
     stableCandidate,
   });
+  const voiceValidity = resolveLiveInputVoiceValidity({
+    detection,
+    profileConfig,
+    candidateFrames,
+    stableCandidate,
+    analyserRms,
+    avgAmplitude,
+    preModalFftPeak,
+    baselinePeak,
+  });
   updateVoiceDetectionDiagnostics(backboneState, detection, {
-    voicingActive: voicing.active,
+    voicingActive: voicing.active && voiceValidity.allowed,
     highCandidateRejected: voicing.highCandidateRejected,
-    rejectionReason: voicing.rejectionReason,
+    rejectionReason: voiceValidity.allowed
+      ? voicing.rejectionReason
+      : voiceValidity.rejectionReason,
   });
 
   if (
     voicing.active &&
+    voiceValidity.allowed &&
     candidateFrequency > 0 &&
     candidateConfidence >= profileConfig.pitchConfidence
   ) {
@@ -1725,6 +1960,18 @@ function resolveVoiceDriver({
       frequency: candidateFrequency,
       confidence: candidateConfidence,
       pitchSource: "fundamental",
+    };
+  }
+
+  if (
+    !voiceValidity.allowed &&
+    voiceValidity.rejectionReason === "invalid-clipped-mic"
+  ) {
+    clearVocalLatchState(backboneState);
+    return {
+      frequency: 0,
+      confidence: 0,
+      pitchSource: "none",
     };
   }
 
@@ -1956,6 +2203,7 @@ function deriveCompositeSignals({
   beatThreshold,
   bandState,
   analysisHints,
+  sourceNormalization = undefined,
 }) {
   const hints = getActiveAnalysisHints(analysisHints);
   const activeModeCount = countActiveSlots(modeSlots, modeCapacity);
@@ -1973,6 +2221,7 @@ function deriveCompositeSignals({
     modeCapacity,
   );
   const { normalizedRms, normalizedAmplitude, normalizedCentroid } =
+    sourceNormalization ??
     getSourceNormalization({
       inputMode,
       avgAmplitude,
@@ -2014,12 +2263,47 @@ function deriveCompositeSignals({
       (hints?.novelty ?? 0) * 0.06,
   );
 
+  if (inputMode === "live") {
+    return {
+      structureSignal: clamp01(
+        structureSignal * LIVE_INPUT_STRUCTURE_RESPONSE_SCALE,
+      ),
+      energySignal: clamp01(energySignal * LIVE_INPUT_ENERGY_RESPONSE_SCALE),
+      changeSignal: clamp01(changeSignal * LIVE_INPUT_CHANGE_RESPONSE_SCALE),
+      pulseSignal: clamp01(pulseSignal * LIVE_INPUT_PULSE_RESPONSE_SCALE),
+    };
+  }
+
   return {
     structureSignal,
     energySignal,
     changeSignal,
     pulseSignal,
   };
+}
+
+function shouldSuppressLiveInputFogField({
+  inputMode,
+  activeModeCount,
+  analyserRms,
+  avgAmplitude,
+  periodicity,
+  preModalFftPeak,
+  liveInputCalibrationInvalid,
+  liveInputNoiseGateActive,
+  liveInputHardSilenceActive,
+}) {
+  return (
+    inputMode === "live" &&
+    !liveInputCalibrationInvalid &&
+    !liveInputNoiseGateActive &&
+    !liveInputHardSilenceActive &&
+    activeModeCount >= LIVE_INPUT_FOG_SUPPRESSION_MODE_COUNT &&
+    analyserRms <= LIVE_INPUT_INVALID_CURRENT_WEAK_RMS &&
+    avgAmplitude <= LIVE_INPUT_INVALID_CURRENT_WEAK_AVG &&
+    periodicity <= LIVE_INPUT_FOG_SUPPRESSION_MAX_PERIODICITY &&
+    preModalFftPeak >= LIVE_INPUT_INVALID_CURRENT_SATURATED_PEAK
+  );
 }
 
 function updateBandState({
@@ -2246,24 +2530,6 @@ function computeRhythmicDensity(bandState, deltaMs, currentFrameAtMs) {
   return clamp01(bandState.onsetDensityEma);
 }
 
-function computeMicFftNormGain(fftMagnitudes, target, maxGain) {
-  let peak = 0;
-  for (let i = 0; i < fftMagnitudes.length; i++) {
-    if (fftMagnitudes[i] > peak) peak = fftMagnitudes[i];
-  }
-  if (peak <= 0) return 1.0;
-  return Math.min(Math.max(target / peak, 1.0), maxGain);
-}
-
-function scaledFftCopy(fftMagnitudes, gain) {
-  if (gain === 1.0) return fftMagnitudes;
-  const out = new Float32Array(fftMagnitudes.length);
-  for (let i = 0; i < fftMagnitudes.length; i++) {
-    out[i] = fftMagnitudes[i] * gain;
-  }
-  return out;
-}
-
 function resolveLayeredModalStacks({
   analysisSnapshot,
   status,
@@ -2272,13 +2538,17 @@ function resolveLayeredModalStacks({
   radius,
   capacity,
   currentFrame,
-  micNoiseGateActive,
-  micHardSilenceActive,
-  micProfile,
+  liveInputNoiseGateActive,
+  liveInputHardSilenceActive,
+  liveInputProfile,
   auditSettings,
   spectralCentroid,
   includeChromesthesia,
   analysisHints,
+  analyserRms,
+  avgAmplitude,
+  preModalFftPeak,
+  liveInputBaselinePeak,
 }) {
   let analysisEngine = "none";
   let pitchSource = "none";
@@ -2287,7 +2557,7 @@ function resolveLayeredModalStacks({
 
   const backboneCapacity = getLayerSlotLimit("backbone", capacity);
   const detailCapacity = getLayerSlotLimit("detail", capacity);
-  const profileConfig = getMicProfileConfig(micProfile);
+  const profileConfig = getLiveInputProfileConfig(liveInputProfile);
   let backboneTrackingSlots = buildEmptyTarget(backboneCapacity);
   let detailTrackingSlots = buildEmptyTarget(detailCapacity);
 
@@ -2345,7 +2615,7 @@ function resolveLayeredModalStacks({
     spectralCandidates = detailBuild.peaks ?? [];
     backboneTrackingSlots = backboneBuild.slots;
     detailTrackingSlots = detailBuild.slots;
-  } else if (!micNoiseGateActive && analysisSnapshot?.fftMagnitudes) {
+  } else if (!liveInputNoiseGateActive && analysisSnapshot?.fftMagnitudes) {
     const fftMagnitudes = analysisSnapshot.fftMagnitudes;
     const layerBlendOptions = {
       attack: BACKBONE_ATTACK,
@@ -2376,9 +2646,9 @@ function resolveLayeredModalStacks({
         : null,
     };
     const isVoiceMic =
-      status.audioInputMode === "mic" && micProfile === "voice-tone";
+      status.audioInputMode === "live" && liveInputProfile === "voice-tone";
     const isAmbientMic =
-      status.audioInputMode === "mic" && micProfile === "ambient";
+      status.audioInputMode === "live" && liveInputProfile === "ambient";
 
     if (isVoiceMic) {
       const detection = detectVoicePitch({
@@ -2402,8 +2672,12 @@ function resolveLayeredModalStacks({
       const voiceDriver = resolveVoiceDriver({
         backboneState,
         detection,
-        hardSilence: micHardSilenceActive,
+        hardSilence: liveInputHardSilenceActive,
         profileConfig,
+        analyserRms,
+        avgAmplitude,
+        preModalFftPeak,
+        baselinePeak: liveInputBaselinePeak,
       });
       const hintedVoiceConfidence = clamp01(
         voiceDriver.confidence *
@@ -2421,18 +2695,11 @@ function resolveLayeredModalStacks({
       });
       spectralCandidates = voiceDetailPeaks;
 
-      const micNormGain = computeMicFftNormGain(
-        fftMagnitudes,
-        MIC_MODAL_FFT_TARGET,
-        MIC_MODAL_FFT_MAX_GAIN,
-      );
-      const modalFft = scaledFftCopy(fftMagnitudes, micNormGain);
-
       if (voiceDriver.frequency > 0) {
         const backboneTarget = buildModalSlotsFromFundamental({
           frequency: voiceDriver.frequency,
           confidence: hintedVoiceConfidence,
-          fftMagnitudes: modalFft,
+          fftMagnitudes,
           sampleRate: status.sampleRate,
           fftSize: status.fftSize,
           radius,
@@ -2441,7 +2708,7 @@ function resolveLayeredModalStacks({
           includeChromesthesia,
         });
         const detailTarget = buildModalSlotsFromSpectralPeaks({
-          fftMagnitudes: modalFft,
+          fftMagnitudes,
           sampleRate: status.sampleRate,
           fftSize: status.fftSize,
           radius,
@@ -2537,29 +2804,16 @@ function resolveLayeredModalStacks({
       }
     } else {
       clearVocalDriverState(backboneState);
-      const micNormGainAmbient = isAmbientMic
-        ? computeMicFftNormGain(
-            fftMagnitudes,
-            MIC_MODAL_FFT_TARGET,
-            MIC_MODAL_FFT_MAX_GAIN,
-          )
-        : 1.0;
-      const modalFftAmbient = scaledFftCopy(fftMagnitudes, micNormGainAmbient);
-      // Peak detection uses the original FFT with a proportionally scaled
-      // threshold: noise bins that would exceed 0.12 only after normalization
-      // are excluded, while genuine signal peaks that are just quiet in the
-      // original still pass. Region-based spreading (AMBIENT_REGION_RANGES) is
-      // intentionally omitted here — it was designed for true broadband ambient
+      // Peak detection uses the original FFT directly. Region-based spreading
+      // (AMBIENT_REGION_RANGES) is intentionally omitted here — it was designed
+      // for true broadband ambient
       // (crowd, room) but for music it guarantees harmonically unrelated peaks
       // across bass/mid/treble that produce incoherent superposition. The
       // salience scorer picks the most harmonically coherent peaks instead.
-      const peakDetectionMinAmplitude = isAmbientMic
-        ? SPECTRAL_MODAL_POLICY.minSpectralBinAmplitude / micNormGainAmbient
-        : undefined;
       const peakOptions = isAmbientMic
         ? {
             maxFrequency: resolveAmbientPeakOptions(profileConfig).maxFrequency,
-            minimumAmplitude: peakDetectionMinAmplitude,
+            minimumAmplitude: SPECTRAL_MODAL_POLICY.minSpectralBinAmplitude,
           }
         : undefined;
       const candidatePool = findSpectralPeakFrequencies(
@@ -2571,7 +2825,7 @@ function resolveLayeredModalStacks({
       );
       annotatePeakSalience(
         candidatePool,
-        modalFftAmbient,
+        fftMagnitudes,
         status.sampleRate,
         status.fftSize,
       );
@@ -2605,15 +2859,12 @@ function resolveLayeredModalStacks({
         const hasTonalContent =
           dominantPeak !== null &&
           (dominantPeak.salienceScore ?? 0) >=
-            AMBIENT_MIC_BACKBONE_MIN_SALIENCE;
+            AMBIENT_LIVE_INPUT_BACKBONE_MIN_SALIENCE;
         backboneTarget = hasTonalContent
           ? buildModalSlotsFromFundamental({
               frequency: dominantPeak.frequency,
-              confidence: Math.max(
-                0.45,
-                dominantPeak.amplitude * micNormGainAmbient,
-              ),
-              fftMagnitudes: modalFftAmbient,
+              confidence: Math.max(0.45, dominantPeak.amplitude),
+              fftMagnitudes,
               sampleRate: status.sampleRate,
               fftSize: status.fftSize,
               radius,
@@ -2639,7 +2890,7 @@ function resolveLayeredModalStacks({
         );
         dominantPeak = backbonePeaks[0] ?? null;
         backboneTarget = buildModalSlotsFromPeakDrivers({
-          fftMagnitudes: modalFftAmbient,
+          fftMagnitudes,
           sampleRate: status.sampleRate,
           fftSize: status.fftSize,
           radius,
@@ -2652,7 +2903,7 @@ function resolveLayeredModalStacks({
         });
       }
       const detailTarget = buildModalSlotsFromSpectralPeaks({
-        fftMagnitudes: modalFftAmbient,
+        fftMagnitudes,
         sampleRate: status.sampleRate,
         fftSize: status.fftSize,
         radius,
@@ -2758,7 +3009,7 @@ function resolveLayeredModalStacks({
     }
   } else if (
     status.audioInputMode !== "idle" &&
-    !micNoiseGateActive &&
+    !liveInputNoiseGateActive &&
     (backboneState.analysisEngine !== "none" ||
       detailState.analysisEngine !== "none")
   ) {
@@ -2820,7 +3071,7 @@ function resolveLayeredModalStacks({
   } else {
     clearModalStack(backboneState);
     clearModalStack(detailState);
-    if (micProfile === "voice-tone") {
+    if (liveInputProfile === "voice-tone") {
       clearVocalDriverState(backboneState);
     }
   }
@@ -2858,12 +3109,14 @@ function finalizeFeatureDebugSnapshot({
   fieldState,
   soundActive,
   micActive,
-  micNoiseGateActive,
-  micHardSilenceActive,
-  micCalibrationActive,
-  micProfile,
-  micBaselineRms,
-  micBaselinePeak,
+  liveInputNoiseGateActive,
+  liveInputHardSilenceActive,
+  liveInputCalibrationActive,
+  liveInputCalibrationInvalid = false,
+  liveInputCalibrationInvalidReason = "none",
+  liveInputProfile,
+  liveInputBaselineRms,
+  liveInputBaselinePeak,
   backboneState,
   detailState,
   dominantFrequency,
@@ -2896,6 +3149,9 @@ function finalizeFeatureDebugSnapshot({
   sampleRate,
   fftSize,
   analysisHints = null,
+  micFftNormGain = 1,
+  preModalFftPeak = 0,
+  sourceNormalization = undefined,
 }) {
   const debug = buildDebugSummary({
     inputMode,
@@ -2904,12 +3160,14 @@ function finalizeFeatureDebugSnapshot({
     pitchSource,
     analysisEngine,
     fieldState,
-    micNoiseGateActive,
-    micHardSilenceActive,
-    micCalibrationActive,
-    micProfile,
-    micBaselineRms,
-    micBaselinePeak,
+    liveInputNoiseGateActive,
+    liveInputHardSilenceActive,
+    liveInputCalibrationActive,
+    liveInputCalibrationInvalid,
+    liveInputCalibrationInvalidReason,
+    liveInputProfile,
+    liveInputBaselineRms,
+    liveInputBaselinePeak,
     backboneState,
     detailState,
     dominantFrequency,
@@ -2943,6 +3201,9 @@ function finalizeFeatureDebugSnapshot({
     sampleRate,
     fftSize,
     analysisHints,
+    micFftNormGain,
+    preModalFftPeak,
+    sourceNormalization,
   });
 
   if (!shouldBuildDetailedDebug(auditSettings)) {
@@ -2988,7 +3249,7 @@ export function buildAudioFeatureFrame({
   auditSettings = undefined,
   beatSettings = undefined,
   frameTimeMs = undefined,
-  micAnalysisSettings = DEFAULT_MIC_ANALYSIS_SETTINGS,
+  micAnalysisSettings = DEFAULT_LIVE_INPUT_ANALYSIS_SETTINGS,
   includeChromesthesia = true,
   analysisHints = null,
 }) {
@@ -3016,11 +3277,15 @@ export function buildAudioFeatureFrame({
   const sampleRate = status?.sampleRate ?? 44100;
   const fftSize = status?.fftSize ?? 4096;
   const inputMode = status?.audioInputMode ?? "idle";
-  const soundActive = Boolean(status?.isPlaying);
-  const micActive = Boolean(status?.isMicActive);
+  const calibrationVersion = status?.liveInputCalibrationVersion ?? 0;
+  const liveInputKind = status?.liveInputKind ?? null;
+  const soundActive = Boolean(status?.isPlaying || liveInputKind === "system");
+  const micActive = Boolean(
+    status?.isLiveInputActive && liveInputKind === "live",
+  );
   const currentFrameAtMs = getFrameTimeMs(frameTimeMs);
   const resolvedMicAnalysisSettings =
-    normalizeMicAnalysisSettings(micAnalysisSettings);
+    normalizeLiveInputAnalysisSettings(micAnalysisSettings);
   const shouldBuildChromesthesia = Boolean(
     includeChromesthesia ||
     resolvedAuditSettings.enabled ||
@@ -3033,14 +3298,19 @@ export function buildAudioFeatureFrame({
   }
 
   let sourceMode =
-    inputMode === "file" ? "file" : inputMode === "mic" ? "mic" : "silent";
+    inputMode === "live"
+      ? "mic"
+      : inputMode === "file" || inputMode === "system"
+        ? inputMode
+        : "silent";
   if (resolvedAuditSettings.injectTestTone) sourceMode = "test";
 
   if (!analysisSnapshot && !resolvedAuditSettings.injectTestTone) {
-    if (inputMode !== "mic") {
-      resetMicGateState(analysisMemory.bandState, {
+    if (inputMode !== "live") {
+      resetLiveInputGateState(analysisMemory.bandState, {
         inputMode,
         profile: resolvedMicAnalysisSettings.profile,
+        calibrationVersion,
       });
     }
     return buildSilentFeatureFrame({
@@ -3076,24 +3346,59 @@ export function buildAudioFeatureFrame({
   const analyserRms = snapshot?.rms ?? 0;
   const fftMagnitudesSource =
     snapshot?.fftMagnitudes ?? new Float32Array(fftSize / 2);
+  const preModalFftPeak = findPeakFftMagnitude(fftMagnitudesSource);
   const spectralCentroidHint = computeSpectralCentroid(
     fftMagnitudesSource,
     sampleRate,
   );
 
-  const { active: micNoiseGateActive, hardSilence: micHardSilenceActive } =
-    resolveMicNoiseGate({
-      analysisMemory,
-      injectTestTone: resolvedAuditSettings.injectTestTone,
-      inputMode,
-      avgAmplitude,
-      rms: analyserRms,
-      fftMagnitudes: fftMagnitudesSource,
-      sampleRate,
-      fftSize,
-      currentFrameAtMs,
-      micAnalysisSettings: resolvedMicAnalysisSettings,
-    });
+  const {
+    active: liveInputNoiseGateActive,
+    hardSilence: liveInputHardSilenceActive,
+    invalid: liveInputCalibrationInvalid,
+    invalidReason: liveInputCalibrationInvalidReason,
+  } = resolveLiveInputNoiseGate({
+    analysisMemory,
+    injectTestTone: resolvedAuditSettings.injectTestTone,
+    inputMode,
+    avgAmplitude,
+    rms: analyserRms,
+    fftMagnitudes: fftMagnitudesSource,
+    sampleRate,
+    fftSize,
+    currentFrameAtMs,
+    calibrationVersion,
+    micAnalysisSettings: resolvedMicAnalysisSettings,
+  });
+
+  // Mic FFT peak normalization: when the gate is open and a genuinely weak
+  // signal is detected above the noise floor, derive a gain that would bring
+  // the raw peak toward a consistent target amplitude. The gain is applied
+  // post-hoc to the copied slot amplitudes (not the snapshot FFT) so that pitch
+  // detection and spectral peak ranking in resolveLayeredModalStacks remain
+  // unaffected, and stronger calibrated mic frames are left alone.
+  // Only applies to mic input; file, test-tone, and system-capture are unaffected.
+  let micFftNormGain = 1;
+  if (
+    inputMode === "live" &&
+    !liveInputNoiseGateActive &&
+    !liveInputHardSilenceActive
+  ) {
+    const noiseFloor = bandState.liveInputBaselinePeak ?? 0;
+    const signalPeak = Math.max(0, preModalFftPeak - noiseFloor);
+    if (
+      signalPeak >= LIVE_INPUT_NORMALIZATION_MIN_SIGNAL &&
+      preModalFftPeak <= LIVE_INPUT_NORMALIZATION_MAX_RAW_PEAK
+    ) {
+      const normGain = Math.min(
+        LIVE_INPUT_NORMALIZATION_MAX_GAIN,
+        LIVE_INPUT_NORMALIZATION_TARGET / Math.max(preModalFftPeak, 1e-6),
+      );
+      if (normGain > 1.05) {
+        micFftNormGain = normGain;
+      }
+    }
+  }
 
   const { analysisEngine, pitchSource, spectralCandidates, usedDecay } =
     resolveLayeredModalStacks({
@@ -3108,17 +3413,27 @@ export function buildAudioFeatureFrame({
       radius,
       capacity,
       currentFrame,
-      micNoiseGateActive,
-      micHardSilenceActive,
-      micProfile: resolvedMicAnalysisSettings.profile,
+      liveInputNoiseGateActive,
+      liveInputHardSilenceActive,
+      liveInputProfile: resolvedMicAnalysisSettings.profile,
       auditSettings: resolvedAuditSettings,
       spectralCentroid: spectralCentroidHint,
       includeChromesthesia: shouldBuildChromesthesia,
       analysisHints,
+      analyserRms,
+      avgAmplitude,
+      preModalFftPeak,
+      liveInputBaselinePeak: bandState.liveInputBaselinePeak ?? 0,
     });
 
   copyFloatArray(backboneSlots, backboneState.slots);
   copyFloatArray(detailSlots, detailState.slots);
+  if (micFftNormGain !== 1) {
+    for (let i = 3; i < backboneSlots.length; i += 4)
+      backboneSlots[i] *= micFftNormGain;
+    for (let i = 3; i < detailSlots.length; i += 4)
+      detailSlots[i] *= micFftNormGain;
+  }
   if (shouldBuildChromesthesia) {
     copyFloatArray(backboneColorSlots, backboneState.colorSlots);
     copyFloatArray(detailColorSlots, detailState.colorSlots);
@@ -3224,7 +3539,14 @@ export function buildAudioFeatureFrame({
         fftSize,
       )
     : 0;
-  const { structureSignal, energySignal, changeSignal, pulseSignal } =
+  const sourceNormalization = getSourceNormalization({
+    inputMode,
+    avgAmplitude,
+    analyserRms,
+    spectralCentroid,
+    bandState,
+  });
+  let { structureSignal, energySignal, changeSignal, pulseSignal } =
     deriveCompositeSignals({
       inputMode,
       modeCapacity: capacity,
@@ -3247,9 +3569,44 @@ export function buildAudioFeatureFrame({
       beatThreshold,
       bandState,
       analysisHints,
+      sourceNormalization,
     });
 
-  const activeModeCount = countActiveSlots(returnedModeSlots, capacity);
+  let activeBackboneModeCount = countActiveSlots(
+    returnedBackboneSlots,
+    BACKBONE_STACK_SLOTS,
+  );
+  let activeDetailModeCount = countActiveSlots(
+    returnedDetailSlots,
+    DETAIL_STACK_SLOTS,
+  );
+  let activeModeCount = activeBackboneModeCount + activeDetailModeCount;
+  if (
+    shouldSuppressLiveInputFogField({
+      inputMode,
+      activeModeCount,
+      analyserRms,
+      avgAmplitude,
+      periodicity: backboneState.candidatePeriodicity ?? 0,
+      preModalFftPeak,
+      liveInputCalibrationInvalid,
+      liveInputNoiseGateActive,
+      liveInputHardSilenceActive,
+    })
+  ) {
+    returnedBackboneSlots.fill(0);
+    returnedDetailSlots.fill(0);
+    returnedModeSlots.fill(0);
+    returnedBackboneColorSlots.fill(0);
+    returnedDetailColorSlots.fill(0);
+    activeBackboneModeCount = 0;
+    activeDetailModeCount = 0;
+    activeModeCount = 0;
+    structureSignal = 0;
+    energySignal = 0;
+    changeSignal = 0;
+    pulseSignal = 0;
+  }
   const { fieldState, hasModalField } = deriveFieldState({
     injectTestTone: resolvedAuditSettings.injectTestTone,
     activeModeCount,
@@ -3270,12 +3627,17 @@ export function buildAudioFeatureFrame({
     fieldState,
     soundActive,
     micActive,
-    micNoiseGateActive,
-    micHardSilenceActive,
-    micCalibrationActive: Boolean(bandState.micCalibrationActive),
-    micProfile: bandState.micProfile ?? resolvedMicAnalysisSettings.profile,
-    micBaselineRms: bandState.micBaselineRms ?? 0,
-    micBaselinePeak: bandState.micBaselinePeak ?? 0,
+    liveInputNoiseGateActive,
+    liveInputHardSilenceActive,
+    liveInputCalibrationActive: Boolean(bandState.liveInputCalibrationActive),
+    liveInputCalibrationInvalid,
+    liveInputCalibrationInvalidReason,
+    liveInputProfile:
+      inputMode === "live"
+        ? (bandState.liveInputProfile ?? resolvedMicAnalysisSettings.profile)
+        : null,
+    liveInputBaselineRms: bandState.liveInputBaselineRms ?? 0,
+    liveInputBaselinePeak: bandState.liveInputBaselinePeak ?? 0,
     backboneState,
     detailState,
     dominantFrequency,
@@ -3308,6 +3670,9 @@ export function buildAudioFeatureFrame({
     sampleRate,
     fftSize,
     analysisHints,
+    micFftNormGain,
+    preModalFftPeak,
+    sourceNormalization,
   });
 
   if (auditState) {
@@ -3324,6 +3689,8 @@ export function buildAudioFeatureFrame({
     fftMagnitudes,
     backboneSlots: returnedBackboneSlots,
     detailSlots: returnedDetailSlots,
+    activeBackboneModeCount,
+    activeDetailModeCount,
     backboneColorSlots: returnedBackboneColorSlots,
     detailColorSlots: returnedDetailColorSlots,
     bandEnergies,

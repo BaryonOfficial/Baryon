@@ -20,7 +20,7 @@ const CONTOUR_RESPONSE_GAIN = 1.85;
 const BLOOM_STRENGTH_RESPONSE_GAIN = 0.24;
 const BLOOM_RADIUS_RESPONSE_GAIN = 0.22;
 const BLOOM_THRESHOLD_RESPONSE_GAIN = 0.06;
-const EARLY_EXIT_TRANSMITTANCE_EPSILON = 1e-3;
+const EARLY_EXIT_TRANSMITTANCE_EPSILON = 5e-3;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -54,14 +54,12 @@ function setIfChanged(uniformNode, value) {
   if (uniformNode.value !== value) uniformNode.value = value;
 }
 
-function countActiveModes(modeSlots) {
-  if (!modeSlots?.length) return 0;
-
+function countActiveSlots(slots) {
+  if (!slots?.length) return 0;
   let count = 0;
-  for (let i = 0; i < modeSlots.length; i += 4) {
-    if ((modeSlots[i + 3] ?? 0) > 0) count += 1;
+  for (let i = 0; i < slots.length; i += 4) {
+    if ((slots[i + 3] ?? 0) > 0) count += 1;
   }
-
   return count;
 }
 
@@ -75,6 +73,29 @@ function estimateLayeredAmplitude(featureFrame) {
   return backboneAmplitude + detailAmplitude * 0.35;
 }
 
+function maxSlotAmplitude(slots) {
+  if (!slots?.length) return 0;
+  let max = 0;
+  for (let i = 0; i < slots.length; i += 4) {
+    const amp = slots[i + 3] ?? 0;
+    if (amp > max) max = amp;
+  }
+  return max;
+}
+
+function deriveFieldExcitation(featureFrame) {
+  const avgAmplitude = (featureFrame?.averageAmplitude ?? 0) / 255;
+  const structureSignal = featureFrame?.structureSignal ?? 0;
+  const harmonicity = featureFrame?.harmonicity ?? 0;
+  return Math.min(
+    1,
+    Math.max(
+      0,
+      avgAmplitude * 0.3 + structureSignal * 0.45 + harmonicity * 0.25,
+    ),
+  );
+}
+
 function deriveLightAsymmetry(primaryIntensity, secondaryIntensity) {
   const strongest = Math.max(primaryIntensity, secondaryIntensity, 1e-4);
   return Math.abs(primaryIntensity - secondaryIntensity) / strongest;
@@ -82,6 +103,10 @@ function deriveLightAsymmetry(primaryIntensity, secondaryIntensity) {
 
 function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const avgAmplitude = estimateLayeredAmplitude(featureFrame);
+  const maxBackboneAmplitude = maxSlotAmplitude(featureFrame?.backboneSlots);
+  const maxDetailAmplitude = maxSlotAmplitude(featureFrame?.detailSlots);
+  const activeModeCount = runtimeState.uniforms.uActiveModeCount.value;
+  const fieldExcitation = deriveFieldExcitation(featureFrame);
   const densityGain = runtimeState.uniforms.uDensityGain.value;
   const absorption = runtimeState.uniforms.uAbsorption.value;
   const opacityGain = runtimeState.uniforms.uOpacityGain?.value ?? 1;
@@ -152,13 +177,18 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
 
   return {
     fieldState,
-    modeSlotCount: runtimeState.uniforms.uActiveModeCount.value,
+    modeSlotCount: activeModeCount,
     backboneModeCount: runtimeState.uniforms.uBackboneModeCount.value,
     detailModeCount: runtimeState.uniforms.uDetailModeCount.value,
     dominantFrequency:
       featureFrame?.debug?.dominantFrequency ??
       featureFrame?.debug?.fundamentalFrequency ??
       0,
+    fieldExcitation,
+    maxBackboneAmplitude,
+    maxDetailAmplitude,
+    detailBackboneRatio:
+      maxDetailAmplitude / Math.max(maxBackboneAmplitude, 1e-4),
     avgOpacity,
     avgDensity,
     opacityGain,
@@ -220,16 +250,19 @@ function updateReactiveResponse(
   fieldDriven,
   deltaTime,
 ) {
-  const tuning = {
-    ...REACTIVITY_DEFAULTS,
-    ...(runtimeState.reactivityTuning ?? {}),
-  };
+  const rt = runtimeState.reactivityTuning;
   const structureSignal = clamp01(featureFrame?.structureSignal ?? 0);
   const energySignal = clamp01(featureFrame?.energySignal ?? 0);
   const changeSignal = clamp01(featureFrame?.changeSignal ?? 0);
   const pulseSignal = clamp01(featureFrame?.pulseSignal ?? 0);
-  const persistence = Math.max(0.2, tuning.structurePersistence);
-  const reactivity = Math.max(0, tuning.reactivity);
+  const persistence = Math.max(
+    0.2,
+    rt?.structurePersistence ?? REACTIVITY_DEFAULTS.structurePersistence,
+  );
+  const reactivity = Math.max(
+    0,
+    rt?.reactivity ?? REACTIVITY_DEFAULTS.reactivity,
+  );
   const rhythmicDensity = clamp01(featureFrame?.rhythmicDensity ?? 0);
   const gatedStructureSignal = clamp01(structureSignal * reactivity);
   const gatedEnergySignal = clamp01(energySignal * reactivity);
@@ -342,20 +375,18 @@ function updateLaserResponse(runtimeState, featureFrame) {
     1,
     8,
   );
-  runtimeState.bloomTuning = {
-    ...(runtimeState.bloomTuning ?? {}),
-    effectiveStrength:
-      baseBloomStrength * (1 + bloomPulse * BLOOM_STRENGTH_RESPONSE_GAIN),
-    effectiveRadius: Math.max(
-      0,
-      baseBloomRadius * (1 - bloomPulse * BLOOM_RADIUS_RESPONSE_GAIN),
-    ),
-    effectiveThreshold: clamp(
-      baseBloomThreshold + bloomPulse * BLOOM_THRESHOLD_RESPONSE_GAIN,
-      0,
-      1,
-    ),
-  };
+  const bt = runtimeState.bloomTuning;
+  bt.effectiveStrength =
+    baseBloomStrength * (1 + bloomPulse * BLOOM_STRENGTH_RESPONSE_GAIN);
+  bt.effectiveRadius = Math.max(
+    0,
+    baseBloomRadius * (1 - bloomPulse * BLOOM_RADIUS_RESPONSE_GAIN),
+  );
+  bt.effectiveThreshold = clamp(
+    baseBloomThreshold + bloomPulse * BLOOM_THRESHOLD_RESPONSE_GAIN,
+    0,
+    1,
+  );
 }
 
 export function tickRaymarchRuntime(
@@ -441,8 +472,12 @@ export function tickRaymarchRuntime(
     detailColorBuffer.value.needsUpdate = true;
   }
 
-  const backboneModeCount = countActiveModes(featureFrame?.backboneSlots);
-  const detailModeCount = countActiveModes(featureFrame?.detailSlots);
+  const backboneModeCount =
+    featureFrame?.activeBackboneModeCount ??
+    countActiveSlots(featureFrame?.backboneSlots);
+  const detailModeCount =
+    featureFrame?.activeDetailModeCount ??
+    countActiveSlots(featureFrame?.detailSlots);
   setIfChanged(uniforms.uBackboneModeCount, backboneModeCount);
   setIfChanged(uniforms.uDetailModeCount, detailModeCount);
   setIfChanged(uniforms.uActiveModeCount, backboneModeCount + detailModeCount);
@@ -515,14 +550,18 @@ export function tickRaymarchRuntime(
   volumeMesh.visible = fieldDriven;
   idleOverlay.visible = !fieldDriven;
 
-  const raymarchDebug = buildRaymarchDebugSnapshot(
-    runtimeState,
-    featureFrame,
-    fieldState,
-  );
-  runtimeState.debugSnapshot = featureFrame?.debug
-    ? { ...featureFrame.debug, raymarchDebug, ...raymarchDebug }
-    : raymarchDebug;
+  if (runtimeState.auditEnabled) {
+    const raymarchDebug = buildRaymarchDebugSnapshot(
+      runtimeState,
+      featureFrame,
+      fieldState,
+    );
+    runtimeState.debugSnapshot = featureFrame?.debug
+      ? { ...featureFrame.debug, raymarchDebug, ...raymarchDebug }
+      : raymarchDebug;
+  } else {
+    runtimeState.debugSnapshot = null;
+  }
 }
 
 export function disposeRaymarchRuntime(runtimeState) {
