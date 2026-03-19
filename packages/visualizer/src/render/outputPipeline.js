@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import * as THREEWebGPU from "three/webgpu";
+import { RenderTarget, NearestFilter } from "three/webgpu";
 import {
   float,
   max,
@@ -129,6 +130,156 @@ export function createRenderOutputPipeline(gl, scene, camera) {
       bloomUniforms,
       outputUniforms,
       composeOutputNode,
+    },
+  };
+}
+
+function createOutputCamera(sourceCamera, aspect) {
+  if (sourceCamera?.isPerspectiveCamera) {
+    const outputCamera = new THREE.PerspectiveCamera();
+    syncOutputCamera(outputCamera, sourceCamera, aspect);
+    return outputCamera;
+  }
+
+  if (sourceCamera?.isOrthographicCamera) {
+    const outputCamera = new THREE.OrthographicCamera();
+    syncOutputCamera(outputCamera, sourceCamera, aspect);
+    return outputCamera;
+  }
+
+  return (
+    sourceCamera?.clone?.() ?? new THREE.PerspectiveCamera(65, aspect, 0.1, 100)
+  );
+}
+
+function syncOrthographicOutputCamera(outputCamera, sourceCamera, aspect) {
+  const centerX = (sourceCamera.left + sourceCamera.right) * 0.5;
+  const centerY = (sourceCamera.top + sourceCamera.bottom) * 0.5;
+  const halfHeight = (sourceCamera.top - sourceCamera.bottom) * 0.5;
+  const halfWidth = halfHeight * aspect;
+
+  outputCamera.left = centerX - halfWidth;
+  outputCamera.right = centerX + halfWidth;
+  outputCamera.top = centerY + halfHeight;
+  outputCamera.bottom = centerY - halfHeight;
+  outputCamera.near = sourceCamera.near;
+  outputCamera.far = sourceCamera.far;
+  outputCamera.zoom = sourceCamera.zoom;
+}
+
+function syncPerspectiveOutputCamera(outputCamera, sourceCamera, aspect) {
+  outputCamera.fov = sourceCamera.fov;
+  outputCamera.aspect = aspect;
+  outputCamera.near = sourceCamera.near;
+  outputCamera.far = sourceCamera.far;
+  outputCamera.zoom = sourceCamera.zoom;
+  outputCamera.focus = sourceCamera.focus;
+  outputCamera.filmGauge = sourceCamera.filmGauge;
+  outputCamera.filmOffset = sourceCamera.filmOffset;
+}
+
+function syncOutputCamera(outputCamera, sourceCamera, aspect) {
+  if (!outputCamera || !sourceCamera) {
+    return;
+  }
+
+  if (outputCamera.isPerspectiveCamera && sourceCamera.isPerspectiveCamera) {
+    syncPerspectiveOutputCamera(outputCamera, sourceCamera, aspect);
+  } else if (
+    outputCamera.isOrthographicCamera &&
+    sourceCamera.isOrthographicCamera
+  ) {
+    syncOrthographicOutputCamera(outputCamera, sourceCamera, aspect);
+  }
+
+  outputCamera.layers.mask = sourceCamera.layers.mask;
+  outputCamera.position.copy(sourceCamera.position);
+  outputCamera.quaternion.copy(sourceCamera.quaternion);
+  outputCamera.scale.copy(sourceCamera.scale);
+  outputCamera.up.copy(sourceCamera.up);
+  outputCamera.matrixAutoUpdate = sourceCamera.matrixAutoUpdate;
+  outputCamera.updateProjectionMatrix();
+  outputCamera.updateMatrixWorld(true);
+}
+
+/**
+ * Creates a dedicated production output session that renders the shared scene
+ * with a fixed-aspect output camera into an independent render target.
+ *
+ * @param {any} renderer
+ * @param {import("three").Scene} scene
+ * @param {import("three").Camera} sourceCamera
+ * @param {number} width
+ * @param {number} height
+ * @returns {{ width: number, height: number, renderFrame: Function, readPixelsAsync: Function, dispose: Function }}
+ */
+export function createCaptureOutputSession(
+  renderer,
+  scene,
+  sourceCamera,
+  width,
+  height,
+) {
+  const aspect = width / height;
+  const outputCamera = createOutputCamera(sourceCamera, aspect);
+  const pipelineState = createRenderOutputPipeline(
+    renderer,
+    scene,
+    outputCamera,
+  );
+  const target = new RenderTarget(width, height, {
+    format: THREE.RGBAFormat,
+    type: THREE.UnsignedByteType,
+    magFilter: NearestFilter,
+    minFilter: NearestFilter,
+    generateMipmaps: false,
+    depthBuffer: false,
+  });
+
+  if (!pipelineState) {
+    return null;
+  }
+
+  return {
+    width,
+    height,
+    renderFrame() {
+      syncOutputCamera(outputCamera, sourceCamera, aspect);
+
+      const previousRenderTarget = renderer.getRenderTarget();
+      const previousOutputRenderTarget = renderer.getOutputRenderTarget();
+      const previousViewport = renderer.getViewport(new THREE.Vector4());
+      const previousScissor = renderer.getScissor(new THREE.Vector4());
+      const previousScissorTest = renderer.getScissorTest();
+      const savedSize = renderer.getSize(new THREE.Vector2());
+      const savedDpr = renderer.getPixelRatio();
+
+      // Force CanvasTarget to report the capture resolution so PassNode/TRAA/bloom
+      // allocate against the fixed production size instead of the live preview canvas.
+      renderer.setDrawingBufferSize(width, height, 1);
+
+      renderer.setRenderTarget(null);
+      renderer.setOutputRenderTarget(target);
+      renderer.setViewport(0, 0, width, height);
+      renderer.setScissor(0, 0, width, height);
+      renderer.setScissorTest(false);
+
+      pipelineState.pipeline.render();
+
+      renderer.setOutputRenderTarget(previousOutputRenderTarget);
+      renderer.setRenderTarget(previousRenderTarget);
+      renderer.setDrawingBufferSize(savedSize.x, savedSize.y, savedDpr);
+      renderer.setViewport(previousViewport);
+      renderer.setScissor(previousScissor);
+      renderer.setScissorTest(previousScissorTest);
+    },
+    readPixelsAsync() {
+      return renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height);
+    },
+    dispose() {
+      pipelineState.postNodes?.traaNode?.dispose?.();
+      pipelineState.pipeline.dispose?.();
+      target.dispose();
     },
   };
 }

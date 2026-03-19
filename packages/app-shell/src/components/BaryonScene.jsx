@@ -12,6 +12,10 @@ export function BaryonScene({
   controlsRef,
   visualizationMethod,
   onPerformanceHudSnapshotChange,
+  outputFrameConfig = null,
+  onOutputFrame = null,
+  onFrameState = null,
+  externalFrameRef = null,
 }) {
   const { camera, gl, scene } = useThree();
   const { ensurePipeline, postNodesRef, disposePipeline } = useBaryonPipeline(
@@ -45,9 +49,14 @@ export function BaryonScene({
     setLiveInputRuntimeStatus,
     controlsRef,
     visualizationMethod,
+    scene,
     ensurePipeline,
     postNodesRef,
     onPerformanceHudSnapshotChange,
+    outputFrameConfig,
+    onOutputFrame,
+    onFrameState,
+    externalFrameRef,
   });
 
   return (

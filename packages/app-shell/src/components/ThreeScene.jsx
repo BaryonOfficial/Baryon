@@ -47,13 +47,17 @@ function ControlsIcon() {
  * @param {{
  *   controlsOverlay?: import("react").ReactNode,
  *   topRightOverlay?: import("react").ReactNode,
- *   onCanvasReady?: (canvas: HTMLCanvasElement | null) => void,
+ *   outputFrameConfig?: { enabled: boolean, width: number, height: number } | null,
+ *   onOutputFrame?: (frame: { width: number, height: number, rgba: ArrayBuffer }) => Promise<void> | void,
+ *   onFrameState?: (state: Record<string, unknown>) => void,
  * }} props
  */
 const ThreeScene = ({
   controlsOverlay = null,
   topRightOverlay = null,
-  onCanvasReady = null,
+  outputFrameConfig = null,
+  onOutputFrame = null,
+  onFrameState = null,
 }) => {
   const containerRef = useRef(null);
   const advancedControlsTriggerRef = useRef(null);
@@ -211,9 +215,6 @@ const ThreeScene = ({
             }}
             dpr={[1, 2]}
             camera={{ position: [0, 0, 9], fov: 65, near: 0.1, far: 100 }}
-            onCreated={(state) => {
-              onCanvasReady?.(state.gl.domElement);
-            }}
             // @ts-ignore — WebGPURenderer is runtime-compatible; R3F types predate WebGPU
             gl={(glDefaults) =>
               createBaryonRenderer(glDefaults, activeRendererFallback)
@@ -226,6 +227,9 @@ const ThreeScene = ({
                 controlsRef={controlsRef}
                 visualizationMethod={controlsState.visualizationMethod}
                 onPerformanceHudSnapshotChange={setPerformanceHudMetrics}
+                outputFrameConfig={outputFrameConfig}
+                onOutputFrame={onOutputFrame}
+                onFrameState={onFrameState}
               />
             </Suspense>
           </Canvas>
