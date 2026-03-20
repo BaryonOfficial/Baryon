@@ -19,10 +19,20 @@ export {
   getAnalysisState,
   getStatus,
   getLiveInputSettings,
+  getLiveInputAnalysisSettings,
   readClockSnapshot,
   readAnalysisSnapshot,
   disposeAudio,
 } from "./core/audio/audioSetup.js";
+export {
+  LIVE_INPUT_ANALYSIS_CLASSES,
+  DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
+  DEFAULT_RESOLVED_LIVE_INPUT_ANALYSIS_CLASS,
+  normalizeLiveInputAnalysisClass,
+  normalizeLiveInputAnalysisOverrides,
+  isLikelyLineFeedDeviceLabel,
+  resolveLiveInputAnalysisClass,
+} from "./core/audio/liveInputAnalysis.js";
 export {
   DEFAULT_VISUALIZATION_METHOD,
   VISUALIZATION_METHODS,

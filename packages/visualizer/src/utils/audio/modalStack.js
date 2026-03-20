@@ -90,7 +90,7 @@ function createBandState() {
     onsetDensityEma: 0,
     beatSensitivity: BEAT_DEFAULTS.beatSensitivity,
     liveInputMode: "idle",
-    liveInputProfile: "voice-tone",
+    liveInputProfile: "acoustic-mic",
     liveInputGateState: "closed",
     liveInputCalibrationActive: false,
     liveInputCalibrationStartedAtMs: Number.NEGATIVE_INFINITY,

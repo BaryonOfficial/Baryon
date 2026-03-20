@@ -12,6 +12,10 @@ const FFT_SIZE = 4096;
 const SAMPLE_RATE = 44100;
 const BIN_COUNT = FFT_SIZE / 2;
 const NYQUIST = SAMPLE_RATE / 2;
+const LIVE_INPUT_CALIBRATION_MID_MS = 400;
+const LIVE_INPUT_CALIBRATION_DONE_MS = 1200;
+const LIVE_INPUT_POST_CALIBRATION_MS = 1240;
+const LIVE_INPUT_POST_CALIBRATION_NEXT_MS = 1270;
 
 function createStatus(overrides = {}) {
   return {
@@ -179,7 +183,11 @@ function calibrateLiveInput(
     timeData = new Float32Array(FFT_SIZE),
   } = {},
 ) {
-  for (const frameTimeMs of [0, 300, 760]) {
+  for (const frameTimeMs of [
+    0,
+    LIVE_INPUT_CALIBRATION_MID_MS,
+    LIVE_INPUT_CALIBRATION_DONE_MS,
+  ]) {
     buildLiveInputFrame({
       featureState,
       peaks,
@@ -311,7 +319,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.6,
       rms: 0.0065,
-      frameTimeMs: 400,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_MID_MS,
     });
     const done = buildLiveInputFrame({
       featureState,
@@ -321,7 +329,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.6,
       rms: 0.0065,
-      frameTimeMs: 760,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_DONE_MS,
     });
 
     expect(first.fieldState).toBe("idle");
@@ -354,7 +362,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.6,
       rms: 0.0065,
-      frameTimeMs: 300,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_MID_MS,
     });
     buildLiveInputFrame({
       featureState,
@@ -364,7 +372,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.6,
       rms: 0.0065,
-      frameTimeMs: 760,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_DONE_MS,
     });
     const firstVoice = buildLiveInputFrame({
       featureState,
@@ -376,7 +384,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 5.9,
       rms: 0.021,
-      frameTimeMs: 800,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
     });
     const secondVoice = buildLiveInputFrame({
       featureState,
@@ -388,7 +396,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 6.2,
       rms: 0.0225,
-      frameTimeMs: 830,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_NEXT_MS,
     });
 
     expect(firstVoice.debug.liveInputNoiseGateActive).toBe(false);
@@ -419,7 +427,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 3,
       rms: 0.012,
-      frameTimeMs: 300,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_MID_MS,
     });
     const frame = buildLiveInputFrame({
       featureState,
@@ -430,7 +438,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 3,
       rms: 0.012,
-      frameTimeMs: 780,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_DONE_MS,
     });
 
     expect(frame.debug.liveInputCalibrationActive).toBe(false);
@@ -458,7 +466,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.6,
       rms: 0.0065,
-      frameTimeMs: 300,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_MID_MS,
     });
     buildLiveInputFrame({
       featureState,
@@ -468,7 +476,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.6,
       rms: 0.0065,
-      frameTimeMs: 760,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_DONE_MS,
     });
     buildLiveInputFrame({
       featureState,
@@ -479,7 +487,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 7,
       rms: 0.028,
-      frameTimeMs: 800,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
     });
     buildLiveInputFrame({
       featureState,
@@ -490,7 +498,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 7.2,
       rms: 0.029,
-      frameTimeMs: 830,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_NEXT_MS,
     });
 
     const quiet1 = buildLiveInputFrame({
@@ -501,7 +509,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.4,
       rms: 0.006,
-      frameTimeMs: 860,
+      frameTimeMs: 1300,
     });
     const quiet2 = buildLiveInputFrame({
       featureState,
@@ -511,7 +519,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.4,
       rms: 0.006,
-      frameTimeMs: 890,
+      frameTimeMs: 1330,
     });
     const quiet3 = buildLiveInputFrame({
       featureState,
@@ -521,7 +529,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.4,
       rms: 0.006,
-      frameTimeMs: 920,
+      frameTimeMs: 1360,
     });
     const quiet4 = buildLiveInputFrame({
       featureState,
@@ -531,14 +539,14 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.4,
       rms: 0.006,
-      frameTimeMs: 950,
+      frameTimeMs: 1390,
     });
 
     expect(quiet1.debug.liveInputNoiseGateActive).toBe(false);
-    expect(quiet2.debug.liveInputNoiseGateActive).toBe(true);
-    expect(quiet3.debug.liveInputNoiseGateActive).toBe(true);
+    expect(quiet2.debug.liveInputNoiseGateActive).toBe(false);
+    expect(quiet3.debug.liveInputNoiseGateActive).toBe(false);
     expect(quiet4.debug.liveInputNoiseGateActive).toBe(true);
-    expect(quiet2.fieldState).toBe("idle");
+    expect(quiet2.fieldState).toBe("active");
     expect(quiet4.fieldState).toBe("idle");
   });
 
@@ -601,7 +609,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.6,
       rms: 0.0065,
-      frameTimeMs: 300,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_MID_MS,
     });
     buildLiveInputFrame({
       featureState,
@@ -611,7 +619,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.6,
       rms: 0.0065,
-      frameTimeMs: 760,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_DONE_MS,
     });
     buildLiveInputFrame({
       featureState,
@@ -622,7 +630,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 7,
       rms: 0.028,
-      frameTimeMs: 800,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
     });
     buildLiveInputFrame({
       featureState,
@@ -633,7 +641,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 7.2,
       rms: 0.029,
-      frameTimeMs: 830,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_NEXT_MS,
     });
 
     buildAudioFeatureFrame({
@@ -684,7 +692,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 1.1,
       rms: 0.0042,
-      frameTimeMs: 300,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_MID_MS,
     });
     const invalidFrame = buildLiveInputFrame({
       featureState,
@@ -695,7 +703,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 1.1,
       rms: 0.0042,
-      frameTimeMs: 760,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_DONE_MS,
     });
 
     expect(invalidFrame.debug.liveInputCalibrationInvalid).toBe(true);
@@ -734,7 +742,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 7.0,
       rms: 0.028,
-      frameTimeMs: 820,
+      frameTimeMs: 1260,
       status: initialStatus,
       timeData,
     });
@@ -747,7 +755,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 7.0,
       rms: 0.028,
-      frameTimeMs: 850,
+      frameTimeMs: 1290,
       status: resetStatus,
       timeData,
     });
@@ -782,7 +790,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 1.2,
       rms: 0.0043,
-      frameTimeMs: 300,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_MID_MS,
       profile: "voice-tone",
     });
     buildLiveInputFrame({
@@ -794,7 +802,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 1.1,
       rms: 0.0042,
-      frameTimeMs: 760,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_DONE_MS,
       profile: "voice-tone",
     });
 
@@ -808,7 +816,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 6.1,
       rms: 0.021,
-      frameTimeMs: 800,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
       profile: "voice-tone",
     });
     const secondVoice = buildLiveInputFrame({
@@ -821,11 +829,11 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 6.3,
       rms: 0.022,
-      frameTimeMs: 830,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_NEXT_MS,
       profile: "voice-tone",
     });
 
-    expect(firstVoice.debug.liveInputBaselinePeak).toBeGreaterThan(0.7);
+    expect(firstVoice.debug.liveInputBaselinePeak).toBeGreaterThan(0.68);
     expect(firstVoice.debug.liveInputNoiseGateActive).toBe(false);
     expect(secondVoice.debug.liveInputNoiseGateActive).toBe(false);
     expect(secondVoice.fieldState).toBe("active");
@@ -855,7 +863,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 1.1,
       rms: 0.0012,
-      frameTimeMs: 300,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_MID_MS,
       profile: "voice-tone",
     });
     buildLiveInputFrame({
@@ -867,7 +875,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 1.1,
       rms: 0.0012,
-      frameTimeMs: 760,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_DONE_MS,
       profile: "voice-tone",
     });
 
@@ -881,7 +889,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 4.42,
       rms: 0.00185,
-      frameTimeMs: 800,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
       profile: "voice-tone",
       timeData: makeTimeData({
         frequency: 220,
@@ -902,7 +910,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 4.5,
       rms: 0.00192,
-      frameTimeMs: 830,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_NEXT_MS,
       profile: "voice-tone",
       timeData: makeTimeData({
         frequency: 220,
@@ -915,7 +923,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
     });
 
     expect(firstVoice.debug.liveInputBaselineRms).toBeLessThan(0.0013);
-    expect(firstVoice.debug.liveInputBaselinePeak).toBeGreaterThan(0.8);
+    expect(firstVoice.debug.liveInputBaselinePeak).toBeGreaterThan(0.73);
     expect(firstVoice.debug.liveInputNoiseGateActive).toBe(false);
     expect(secondVoice.debug.liveInputNoiseGateActive).toBe(false);
     expect(secondVoice.fieldState).toBe("active");
@@ -942,7 +950,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.3,
       rms: 0.006,
-      frameTimeMs: 320,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_MID_MS,
       timeData: makeTimeData({ frequency: 110, amplitude: 0.12 }),
     });
     buildLiveInputFrame({
@@ -953,7 +961,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 2.3,
       rms: 0.006,
-      frameTimeMs: 770,
+      frameTimeMs: LIVE_INPUT_CALIBRATION_DONE_MS,
       timeData: makeTimeData({ frequency: 110, amplitude: 0.12 }),
     });
 
@@ -966,7 +974,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 6.4,
       rms: 0.03,
-      frameTimeMs: 820,
+      frameTimeMs: 1260,
       timeData: makeTimeData({
         frequency: 880,
         amplitude: 0.28,
@@ -986,7 +994,11 @@ describe("buildAudioFeatureFrame layered contract", () => {
 
   it("keeps a spoken pitch latched when a weak trailing frame proposes a false high note", () => {
     const featureState = createAudioFeatureState();
-    for (const frameTimeMs of [0, 320, 770]) {
+    for (const frameTimeMs of [
+      0,
+      LIVE_INPUT_CALIBRATION_MID_MS,
+      LIVE_INPUT_CALIBRATION_DONE_MS,
+    ]) {
       buildLiveInputFrame({
         featureState,
         peaks: [
@@ -1009,7 +1021,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 6.2,
       rms: 0.022,
-      frameTimeMs: 820,
+      frameTimeMs: 1260,
       timeData: makeTimeData({
         frequency: 190,
         amplitude: 0.14,
@@ -1029,7 +1041,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 4.7,
       rms: 0.0019,
-      frameTimeMs: 850,
+      frameTimeMs: 1290,
       timeData: makeTimeData({
         frequency: 190,
         amplitude: 0.013,
@@ -1051,7 +1063,11 @@ describe("buildAudioFeatureFrame layered contract", () => {
 
   it("prefers an inferred lower vocal pitch over a stronger overtone", () => {
     const featureState = createAudioFeatureState();
-    for (const frameTimeMs of [0, 320, 770]) {
+    for (const frameTimeMs of [
+      0,
+      LIVE_INPUT_CALIBRATION_MID_MS,
+      LIVE_INPUT_CALIBRATION_DONE_MS,
+    ]) {
       buildLiveInputFrame({
         featureState,
         peaks: [
@@ -1075,7 +1091,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 6.8,
       rms: 0.024,
-      frameTimeMs: 820,
+      frameTimeMs: 1260,
       timeData: makeTimeData({
         frequency: 220,
         amplitude: 0.09,
@@ -1111,7 +1127,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 6.7,
       rms: 0.024,
-      frameTimeMs: 820,
+      frameTimeMs: 1260,
       timeData: makeTimeData({
         frequency: 220,
         amplitude: 0.12,
@@ -1135,7 +1151,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
       ],
       avgAmplitude: 4.4,
       rms: 0.0073,
-      frameTimeMs: 850,
+      frameTimeMs: 1290,
       timeData: new Float32Array(FFT_SIZE),
     });
 
@@ -1953,7 +1969,7 @@ describe("live input noise gate", () => {
     ).toBe(false);
   });
 
-  it("keeps tiny voice-profile ambient noise gated", () => {
+  it("does not hard-gate tiny weak tonal acoustic mic input", () => {
     expect(
       detectLiveInputNoiseGate({
         injectTestTone: false,
@@ -1966,7 +1982,7 @@ describe("live input noise gate", () => {
         ]),
         liveInputAnalysisSettings: { profile: "voice-tone" },
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("lets ambient profile clear the hard floor for modest room audio", () => {
@@ -2245,7 +2261,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       peaks: micPeaks,
       avgAmplitude: 6.2,
       rms: 0.0225,
-      frameTimeMs: 820,
+      frameTimeMs: 1260,
       timeData,
     });
     const fileFrame = buildAudioFeatureFrame({
@@ -2259,7 +2275,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       featureState: fileFeatureState,
       radius: 3,
       status: makeActiveStatus(),
-      frameTimeMs: 820,
+      frameTimeMs: 1260,
     });
 
     const micBackbone = maxSlotAmplitude(micFrame.backboneSlots);
@@ -2308,7 +2324,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       peaks,
       avgAmplitude: 6.2,
       rms: 0.0225,
-      frameTimeMs: 820,
+      frameTimeMs: 1260,
       timeData,
     });
 
@@ -2339,7 +2355,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       ],
       avgAmplitude: 6.0,
       rms: 0.022,
-      frameTimeMs: 820,
+      frameTimeMs: 1260,
     });
 
     // Noise-floor calibration is only used to decide whether normalization should
@@ -2364,7 +2380,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       featureState,
       radius: 3,
       status: makeActiveStatus(),
-      frameTimeMs: 820,
+      frameTimeMs: 1260,
     });
 
     expect(frame.debug.micFftNormGain).toBe(1);
@@ -2386,7 +2402,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       peaks: [[440, 0.105]],
       avgAmplitude: 5.0,
       rms: 0.02,
-      frameTimeMs: 820,
+      frameTimeMs: 1260,
     });
 
     expect(frame.debug.micFftNormGain).toBeLessThanOrEqual(6.0);
@@ -2414,7 +2430,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       ],
       avgAmplitude: 5.0,
       rms: 0.018,
-      frameTimeMs: 820,
+      frameTimeMs: 1260,
     });
 
     expect(frame.debug.micFftNormGain).toBe(1);

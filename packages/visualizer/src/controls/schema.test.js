@@ -19,6 +19,7 @@ import { CONTROL_RUNTIME_COVERAGE } from "./runtime.js";
 
 const EXPECTED_CONTROL_KEYS = [
   // Live Input
+  "liveInputAnalysisClass",
   "echoCancellation",
   "noiseSuppression",
   "autoGainControl",
@@ -54,6 +55,7 @@ const EXPECTED_CONTROL_KEYS = [
   "bloomRadius",
   "bloomThreshold",
   "backgroundColor",
+  "renderQualityPreset",
   "outputMode",
   "outputBackgroundColor",
   // PresetsArea (rendered inline in Presets, but defined here in file order)
@@ -108,6 +110,7 @@ describe("control schema", () => {
     expect(state.performanceHudEnabled).toBe(
       RENDER_DEFAULTS.performanceHudEnabled,
     );
+    expect(state.renderQualityPreset).toBe(RENDER_DEFAULTS.renderQualityPreset);
     expect(state.bloomResponseBias).toBe(0.52);
   });
 
@@ -191,6 +194,16 @@ describe("control schema", () => {
 
   it("assigns controls to the intended pane groups", () => {
     expect(
+      getControlsForFolder("Live Input", DEFAULT_VISUALIZATION_METHOD).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual([
+      "liveInputAnalysisClass",
+      "echoCancellation",
+      "noiseSuppression",
+      "autoGainControl",
+    ]);
+    expect(
       getControlsForFolder("Shape", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
@@ -232,6 +245,7 @@ describe("control schema", () => {
       "bloomRadius",
       "bloomThreshold",
       "backgroundColor",
+      "renderQualityPreset",
       "outputMode",
       "outputBackgroundColor",
       "visualizationMethod",
@@ -328,6 +342,7 @@ describe("control schema", () => {
       "bloomRadius",
       "bloomThreshold",
       "backgroundColor",
+      "renderQualityPreset",
       "outputMode",
       "outputBackgroundColor",
       "visualizationMethod",

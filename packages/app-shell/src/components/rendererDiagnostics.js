@@ -21,7 +21,7 @@ export function clearRendererDiagnostics() {
   delete window.__baryonSupportProbe;
 }
 
-function syncInitialRendererSize(renderer, canvas) {
+function syncInitialRendererSize(renderer, canvas, initialPixelRatio = null) {
   const parent = canvas.parentElement;
   if (!parent) {
     return;
@@ -32,7 +32,7 @@ function syncInitialRendererSize(renderer, canvas) {
     return;
   }
 
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = initialPixelRatio ?? Math.min(window.devicePixelRatio || 1, 2);
   renderer.setPixelRatio(dpr);
   renderer.setSize(width, height, false);
 }
@@ -77,7 +77,11 @@ function setRendererInfo(renderer, forceWebGLFallbackTest, error) {
   );
 }
 
-export async function createBaryonRenderer(glDefaults, forceWebGLFallbackTest) {
+export async function createBaryonRenderer(
+  glDefaults,
+  forceWebGLFallbackTest,
+  { initialPixelRatio = null } = {},
+) {
   const canvas = /** @type {HTMLCanvasElement} */ (glDefaults.canvas);
   const context = forceWebGLFallbackTest
     ? canvas.getContext("webgl2", {
@@ -96,7 +100,7 @@ export async function createBaryonRenderer(glDefaults, forceWebGLFallbackTest) {
 
   // Keep the renderer's internal size bookkeeping aligned with the canvas
   // before WebGPU allocates its MSAA/resolve attachments.
-  syncInitialRendererSize(renderer, canvas);
+  syncInitialRendererSize(renderer, canvas, initialPixelRatio);
 
   try {
     await renderer.init();
@@ -111,7 +115,7 @@ export async function createBaryonRenderer(glDefaults, forceWebGLFallbackTest) {
     throw rendererInitError;
   }
 
-  syncInitialRendererSize(renderer, canvas);
+  syncInitialRendererSize(renderer, canvas, initialPixelRatio);
   setRendererInfo(renderer, forceWebGLFallbackTest, null);
   return renderer;
 }

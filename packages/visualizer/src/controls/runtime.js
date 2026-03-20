@@ -4,8 +4,15 @@ import {
   DEFAULT_VISUALIZATION_METHOD,
   VISUALIZATION_METHODS,
 } from "../visualization/types.js";
-import { REACTIVITY_DEFAULTS, RENDER_DEFAULTS } from "../defaults.js";
-import { normalizeOutputMode } from "../render/outputPipeline.js";
+import {
+  AUDIO_DEFAULTS,
+  REACTIVITY_DEFAULTS,
+  RENDER_DEFAULTS,
+} from "../defaults.js";
+import {
+  normalizeOutputMode,
+  normalizeRenderQualityPreset,
+} from "../render/outputPipeline.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -71,6 +78,7 @@ function deriveBloomResponse(controls, stepBudget) {
 
 export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
   [CONTROL_HANDLERS.audio]: Object.freeze([
+    "liveInputAnalysisClass",
     "echoCancellation",
     "noiseSuppression",
     "autoGainControl",
@@ -78,6 +86,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
   [CONTROL_HANDLERS.shared]: Object.freeze([
     "backgroundColor",
     "performanceHudEnabled",
+    "renderQualityPreset",
     "visualizationMethod",
   ]),
   [CONTROL_HANDLERS.output]: Object.freeze([
@@ -133,6 +142,8 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
 
 function getAudioControlSnapshot(controls) {
   return {
+    liveInputAnalysisClass:
+      controls.liveInputAnalysisClass ?? AUDIO_DEFAULTS.liveInputAnalysisClass,
     echoCancellation: Boolean(controls.echoCancellation),
     noiseSuppression: Boolean(controls.noiseSuppression),
     autoGainControl: Boolean(controls.autoGainControl),
@@ -145,7 +156,14 @@ export async function applyAudioControls(audioSession, controls) {
     return snapshot;
   }
 
-  await audioSession.setLiveInputSettings(snapshot);
+  audioSession.setLiveInputAnalysisSettings?.({
+    analysisClass: snapshot.liveInputAnalysisClass,
+  });
+  await audioSession.setLiveInputSettings({
+    echoCancellation: snapshot.echoCancellation,
+    noiseSuppression: snapshot.noiseSuppression,
+    autoGainControl: snapshot.autoGainControl,
+  });
   return snapshot;
 }
 
@@ -154,6 +172,9 @@ export function applySharedControls(gl, controls) {
   return {
     backgroundColor: controls.backgroundColor,
     performanceHudEnabled: Boolean(controls.performanceHudEnabled),
+    renderQualityPreset: normalizeRenderQualityPreset(
+      controls.renderQualityPreset,
+    ),
     clearAlpha: 0,
     visualizationMethod: controls.visualizationMethod,
   };
@@ -163,11 +184,14 @@ export function applyOutputControls(pipelineState, controls) {
   const outputMode = normalizeOutputMode(controls.outputMode);
   const outputBackgroundColor =
     controls.outputBackgroundColor ?? RENDER_DEFAULTS.outputBackgroundColor;
+  const bloomAllowed = pipelineState.renderProfileRef?.current?.bloomAllowed;
+  const effectiveBloomEnabled = controls.bloomEnabled && bloomAllowed !== false;
   const pipeline = pipelineState.ensurePipeline();
   const postNodes = pipelineState.postNodesRef.current;
 
   if (!pipeline || !postNodes) {
     return {
+      bloomEnabled: effectiveBloomEnabled,
       outputMode,
       outputBackgroundColor,
     };
@@ -176,13 +200,14 @@ export function applyOutputControls(pipelineState, controls) {
   postNodes.outputUniforms?.backgroundColor?.value?.set(outputBackgroundColor);
   pipeline.outputNode = postNodes.composeOutputNode
     ? postNodes.composeOutputNode({
-        bloomEnabled: controls.bloomEnabled,
+        bloomEnabled: effectiveBloomEnabled,
         outputMode,
       })
     : pipeline.outputNode;
   pipeline.needsUpdate = true;
 
   return {
+    bloomEnabled: effectiveBloomEnabled,
     outputMode,
     outputBackgroundColor,
   };
@@ -368,6 +393,8 @@ export function applyBloomControls(pipelineState, controls) {
       STEP_REFERENCE,
   );
   const effective = deriveBloomResponse(controls, stepBudget);
+  const bloomAllowed = pipelineState.renderProfileRef?.current?.bloomAllowed;
+  const effectiveBloomEnabled = controls.bloomEnabled && bloomAllowed !== false;
   if (pipelineState.runtimeState) {
     pipelineState.runtimeState.bloomTuning = {
       ...(pipelineState.runtimeState.bloomTuning ?? {}),
@@ -387,7 +414,7 @@ export function applyBloomControls(pipelineState, controls) {
   const postNodes = pipelineState.postNodesRef.current;
   if (!pipeline || !postNodes) {
     return {
-      enabled: controls.bloomEnabled,
+      enabled: effectiveBloomEnabled,
       strength: effective.strength,
       radius: effective.radius,
       threshold: effective.threshold,
@@ -399,25 +426,27 @@ export function applyBloomControls(pipelineState, controls) {
   }
 
   const { sceneColor, bloomPass, composeOutputNode } = postNodes;
-  const bloomActive = controls.bloomEnabled && effective.strength > 1e-4;
-  bloomPass.strength.value = effective.strength;
-  bloomPass.radius.value = effective.radius;
-  bloomPass.threshold.value = bloomActive ? effective.threshold : 999;
+  const bloomActive = effectiveBloomEnabled && effective.strength > 1e-4;
+  if (bloomPass) {
+    bloomPass.strength.value = effective.strength;
+    bloomPass.radius.value = effective.radius;
+    bloomPass.threshold.value = bloomActive ? effective.threshold : 999;
+  }
   pipeline.outputNode = composeOutputNode
     ? composeOutputNode({
-        bloomEnabled: controls.bloomEnabled,
+        bloomEnabled: effectiveBloomEnabled,
         outputMode: controls.outputMode,
       })
-    : controls.bloomEnabled
+    : bloomActive && bloomPass
       ? sceneColor.add(bloomPass)
       : sceneColor;
   pipeline.needsUpdate = true;
 
   return {
-    enabled: controls.bloomEnabled,
-    strength: bloomPass.strength.value,
-    radius: bloomPass.radius.value,
-    threshold: bloomPass.threshold.value,
+    enabled: effectiveBloomEnabled,
+    strength: bloomPass?.strength?.value ?? effective.strength,
+    radius: bloomPass?.radius?.value ?? effective.radius,
+    threshold: bloomPass?.threshold?.value ?? effective.threshold,
     bloomResponseBias: effective.bloomResponseBias,
     stepReference: effective.stepReference,
     stepCompensation: effective.stepCompensation,

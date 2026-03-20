@@ -12,6 +12,7 @@ export const AUDIO_DEFAULTS = Object.freeze({
   echoCancellation: false,
   noiseSuppression: false,
   autoGainControl: false,
+  liveInputAnalysisClass: "auto",
 });
 
 export const SIMULATION_DEFAULTS = Object.freeze({
@@ -28,6 +29,7 @@ export const RENDER_DEFAULTS = Object.freeze({
   idleLogoAlpha: 0.08,
   idleLogoSize: 1.0,
   backgroundColor: "#000000",
+  renderQualityPreset: "auto",
   volumeColor: "#56d7ff",
   surfaceColor: "#f7fdff",
   colorMode: /** @type {"static" | "chromesthesia"} */ ("chromesthesia"),

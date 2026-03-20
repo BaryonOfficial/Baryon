@@ -113,16 +113,21 @@ describe("control runtime sync", () => {
     controls.autoGainControl = false;
 
     const audioSession = {
+      setLiveInputAnalysisSettings: vi.fn(),
       setLiveInputSettings: vi.fn(async () => undefined),
     };
     const snapshot = await applyAudioControls(audioSession, controls);
 
+    expect(audioSession.setLiveInputAnalysisSettings).toHaveBeenCalledWith({
+      analysisClass: "auto",
+    });
     expect(audioSession.setLiveInputSettings).toHaveBeenCalledWith({
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: false,
     });
     expect(snapshot).toEqual({
+      liveInputAnalysisClass: "auto",
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: false,
@@ -239,6 +244,7 @@ describe("control runtime sync", () => {
     );
     expect(sharedSnapshot.backgroundColor).toBe("#123456");
     expect(sharedSnapshot.clearAlpha).toBe(0);
+    expect(sharedSnapshot.renderQualityPreset).toBe("auto");
     expect(sharedSnapshot.visualizationMethod).toBe(
       DEFAULT_VISUALIZATION_METHOD,
     );
@@ -491,6 +497,7 @@ describe("control runtime sync", () => {
     expect(pipeline.outputNode).toBe("opaque-output");
     expect(pipeline.needsUpdate).toBe(true);
     expect(snapshot).toEqual({
+      bloomEnabled: true,
       outputMode: "opaque",
       outputBackgroundColor: "#123456",
     });

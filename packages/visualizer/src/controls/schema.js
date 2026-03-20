@@ -7,6 +7,7 @@ import {
   SIMULATION_DEFAULTS,
 } from "../defaults.js";
 import {} from "../utils/audioFeatures.js";
+import { RENDER_QUALITY_PRESETS } from "../render/outputPipeline.js";
 import { VISUALIZATION_METHODS } from "../visualization/types.js";
 
 export const CONTROL_TARGET_TYPES = Object.freeze({
@@ -98,6 +99,28 @@ function withControlGroup(definition, group) {
 
 export const CONTROL_DEFINITIONS = Object.freeze([
   // ── Live Input ─────────────────────────────────────────────────────────────
+  withControlGroup(
+    {
+      key: "liveInputAnalysisClass",
+      label: "Live Input Mode",
+      title:
+        "Choose how unknown live devices should be analyzed. Auto uses heuristics, Line Feed pushes live devices through the file-style path, and Acoustic Mic keeps the forgiving mic-specific path.",
+      defaultValue: AUDIO_DEFAULTS.liveInputAnalysisClass,
+      methods: ALL_METHODS,
+      binding: {
+        options: {
+          Auto: "auto",
+          "Line Feed": "line-feed",
+          "Acoustic Mic": "acoustic-mic",
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.audio,
+      handler: CONTROL_HANDLERS.audio,
+      runtimePath: "audioSession.liveInputAnalysisSettings.analysisClass",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.input,
+  ),
   withControlGroup(
     {
       key: "echoCancellation",
@@ -579,6 +602,28 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.shared,
       runtimePath: "ui.backdropColor",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.display,
+  ),
+  withControlGroup(
+    {
+      key: "renderQualityPreset",
+      label: "Render Quality",
+      title:
+        "Balances frame rate against visual fidelity. Auto keeps full quality unless the canvas is large enough that a lighter profile is safer.",
+      defaultValue: RENDER_DEFAULTS.renderQualityPreset,
+      methods: ALL_METHODS,
+      binding: {
+        options: {
+          Auto: RENDER_QUALITY_PRESETS.auto,
+          Performance: RENDER_QUALITY_PRESETS.performance,
+          Quality: RENDER_QUALITY_PRESETS.quality,
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.shared,
+      runtimePath: "ui.renderQualityPreset",
       status: CONTROL_STATUSES.live,
     },
     CONTROL_GROUPS.display,

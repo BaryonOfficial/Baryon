@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAudio } from "../../context/AudioContext";
+import {
+  getLiveInputStatusLabel,
+  isLiveInputTransitionLocked,
+} from "../../context/liveInputRuntimeStatus.js";
 
 // Inject styles once into document head to avoid rendering a <style> tag
 // as a flex item inside the player row.
@@ -15,6 +19,14 @@ function ensureStyles() {
   gap: 0.35rem;
   position: relative;
   flex-shrink: 0;
+  min-width: 0;
+}
+
+.ac-source-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
   min-width: 0;
 }
 
@@ -324,6 +336,24 @@ function ensureStyles() {
   color: rgba(255, 176, 92, 0.96);
 }
 
+.ac-source-status {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 1.3rem;
+  padding: 0.18rem 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.72);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 @media (max-width: 720px) {
   .ac-source-selector {
     min-width: 0;
@@ -490,7 +520,11 @@ export function SourceSelector({ onInteraction } = {}) {
     handleSystemToggle,
     selectedSystemDevice,
     selectedLiveInputKind,
+    selectedLiveInputAnalysisOverride,
+    selectedResolvedLiveInputAnalysisClass,
+    liveInputRuntimeStatus,
     setSelectedSystemDevice,
+    setSelectedLiveInputAnalysisClass,
   } = useAudio();
 
   const [showPopover, setShowPopover] = useState(false);
@@ -527,11 +561,6 @@ export function SourceSelector({ onInteraction } = {}) {
       ? `Stop ${activeLiveLabel}`
       : "Start live input";
   const popoverTitle = "Live Input";
-  const popoverCopy = isLiveInputActive
-    ? "Stop live input to choose a different device."
-    : selectedLiveInputKind === "system"
-      ? "Choose the loopback device to route through file-style analysis."
-      : "Choose the input device to route into the live view.";
 
   // Close popover on outside click
   useEffect(() => {
@@ -563,6 +592,22 @@ export function SourceSelector({ onInteraction } = {}) {
 
   const liveDevices = audioDevices;
   const selectedLiveDeviceId = selectedSystemDevice ?? selectedDevice ?? "";
+  const transitionLocked = isLiveInputTransitionLocked(liveInputRuntimeStatus);
+  const popoverCopy = transitionLocked
+    ? "Wait for the live input transition to finish."
+    : selectedLiveInputKind === "system"
+      ? "Choose the loopback device to route through file-style analysis."
+      : "Choose the input device to route into the live view.";
+  const liveInputStatusLabel = getLiveInputStatusLabel(liveInputRuntimeStatus);
+  const fallbackResolvedLabel =
+    isLiveSource && selectedResolvedLiveInputAnalysisClass
+      ? `Resolved: ${
+          selectedResolvedLiveInputAnalysisClass === "line-feed"
+            ? "Line Feed"
+            : "Acoustic Mic"
+        }`
+      : "";
+  const liveInputStatusText = liveInputStatusLabel || fallbackResolvedLabel;
 
   const handleTabClick = useCallback(
     (source) => {
@@ -625,148 +670,182 @@ export function SourceSelector({ onInteraction } = {}) {
   }, [pendingAction]);
   return (
     <div className="ac-source-selector" ref={triggerRef}>
-      <div className="ac-source-cluster">
-        {/* Segmented tab control with sliding highlight */}
-        <div
-          className="ac-source-tabs"
-          data-testid="source-mode-pill"
-          style={tabStyle}
-        >
-          {/* Absolutely-positioned slider — never affects container size */}
-          <div className="ac-source-tab-slider" aria-hidden="true" />
-
-          <button
-            className={`ac-source-tab ac-source-tab--file${selectedSource === "file" ? " ac-source-tab--active" : ""}`}
-            data-testid="file-source-tab"
-            onClick={() => handleTabClick("file")}
-            title="Use a file as audio source"
-          >
-            File
-          </button>
-          <button
-            className={`ac-source-tab ac-source-tab--system${resolvedSource === "system" ? " ac-source-tab--active" : ""}`}
-            data-testid="live-input-source-tab"
-            onClick={() => handleTabClick("system")}
-            title={
-              isCurrentLive
-                ? "Live input active — stop it to change the input"
-                : "Use live input / loopback device"
-            }
-          >
-            System
-          </button>
-        </div>
-
-        {/* Device settings popover */}
-        {showPopover && isLiveSource && (
+      <div className="ac-source-stack">
+        <div className="ac-source-cluster">
+          {/* Segmented tab control with sliding highlight */}
           <div
-            className="ac-source-popover"
-            data-testid="source-settings-popover"
-            ref={popoverRef}
+            className="ac-source-tabs"
+            data-testid="source-mode-pill"
+            style={tabStyle}
           >
-            <div className="ac-source-popover-header">
-              <span className="ac-source-popover-label">Live Input</span>
-              <span className="ac-source-popover-title">{popoverTitle}</span>
-              <span
-                className={`ac-source-popover-copy${
-                  isLiveInputActive ? " ac-source-popover-copy--locked" : ""
-                }`}
-              >
-                {popoverCopy}
-              </span>
-            </div>
+            {/* Absolutely-positioned slider — never affects container size */}
+            <div className="ac-source-tab-slider" aria-hidden="true" />
 
-            <div className="ac-source-popover-row">
-              {liveDevices.length === 0 ? (
-                <span className="ac-source-empty">
-                  No audio input devices found
-                </span>
-              ) : (
-                <select
-                  className="ac-source-device-select"
-                  data-testid="live-input-device-select"
-                  value={selectedLiveDeviceId}
-                  onChange={(e) => setSelectedSystemDevice(e.target.value)}
-                  aria-label="Live input device"
-                  disabled={isLiveInputActive}
-                >
-                  {liveDevices.map((d) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {d.label || `Device ${d.deviceId.slice(0, 6)}`}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Go Live / Live — shared toggle outside the segmented control */}
-        {pendingAction ? (
-          <div
-            className="ac-live-confirm-row"
-            role="group"
-            aria-label="Confirm live action"
-          >
             <button
-              className={`ac-live-confirm-btn ac-live-confirm-btn--${pendingAction === "start" ? "start" : "stop"}`}
-              onClick={handleConfirm}
-              aria-label={
-                pendingAction === "start"
-                  ? "Confirm go live"
-                  : pendingAction === "stop"
-                    ? "Confirm stop live"
-                    : "Confirm stop live and switch to file"
+              className={`ac-source-tab ac-source-tab--file${selectedSource === "file" ? " ac-source-tab--active" : ""}`}
+              data-testid="file-source-tab"
+              onClick={() => handleTabClick("file")}
+              title="Use a file as audio source"
+            >
+              File
+            </button>
+            <button
+              className={`ac-source-tab ac-source-tab--system${resolvedSource === "system" ? " ac-source-tab--active" : ""}`}
+              data-testid="live-input-source-tab"
+              onClick={() => handleTabClick("system")}
+              title={
+                isCurrentLive
+                  ? "Live input active"
+                  : "Use live input / loopback device"
               }
-              autoFocus
             >
-              {pendingAction === "start"
-                ? "Go Live?"
-                : pendingAction === "stop"
-                  ? "Stop?"
-                  : "Stop & Switch?"}
-            </button>
-            <button
-              className="ac-live-cancel-btn"
-              onClick={handleCancel}
-              aria-label="Cancel"
-            >
-              Cancel
+              System
             </button>
           </div>
-        ) : (
-          <button
-            className={`ac-source-live-btn${isCurrentLive ? " ac-source-live-btn--active" : ""}`}
-            data-testid="source-live-button"
-            data-state={
-              !isLiveSource ? "disabled" : isCurrentLive ? "live" : "idle"
-            }
-            disabled={!isLiveSource}
-            onClick={handleLiveButtonClick}
-            aria-label={liveButtonActionLabel}
-            title={liveButtonActionLabel}
-          >
-            <span className="ac-source-live-btn-content">
-              <span className="ac-source-live-btn-labels">
+
+          {/* Device settings popover */}
+          {showPopover && isLiveSource && (
+            <div
+              className="ac-source-popover"
+              data-testid="source-settings-popover"
+              ref={popoverRef}
+            >
+              <div className="ac-source-popover-header">
+                <span className="ac-source-popover-label">Live Input</span>
+                <span className="ac-source-popover-title">{popoverTitle}</span>
                 <span
-                  className={`ac-source-live-btn-label${
-                    isCurrentLive ? " ac-source-live-btn-label--hidden" : ""
+                  className={`ac-source-popover-copy${
+                    transitionLocked ? " ac-source-popover-copy--locked" : ""
                   }`}
                 >
-                  Go Live
+                  {popoverCopy}
                 </span>
-                <span
-                  className={`ac-source-live-btn-label${
-                    isCurrentLive ? "" : " ac-source-live-btn-label--hidden"
-                  }`}
-                >
-                  Live
+              </div>
+
+              <div className="ac-source-popover-row">
+                {liveDevices.length === 0 ? (
+                  <span className="ac-source-empty">
+                    No audio input devices found
+                  </span>
+                ) : (
+                  <select
+                    className="ac-source-device-select"
+                    data-testid="live-input-device-select"
+                    value={selectedLiveDeviceId}
+                    onChange={(e) => setSelectedSystemDevice(e.target.value)}
+                    aria-label="Live input device"
+                    disabled={transitionLocked}
+                  >
+                    {liveDevices.map((d) => (
+                      <option key={d.deviceId} value={d.deviceId}>
+                        {d.label || `Device ${d.deviceId.slice(0, 6)}`}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {liveDevices.length > 0 ? (
+                <>
+                  <div className="ac-source-popover-label">Mode</div>
+                  <div className="ac-source-popover-row">
+                    <select
+                      className="ac-source-device-select"
+                      data-testid="live-input-analysis-select"
+                      value={selectedLiveInputAnalysisOverride}
+                      onChange={(event) =>
+                        setSelectedLiveInputAnalysisClass(event.target.value)
+                      }
+                      aria-label="Live input mode"
+                      disabled={transitionLocked}
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="line-feed">Line Feed</option>
+                      <option value="acoustic-mic">Acoustic Mic</option>
+                    </select>
+                  </div>
+                  <div className="ac-source-popover-copy">
+                    Resolved path:{" "}
+                    {selectedResolvedLiveInputAnalysisClass === "line-feed"
+                      ? "Line Feed"
+                      : "Acoustic Mic"}
+                  </div>
+                </>
+              ) : null}
+            </div>
+          )}
+
+          {/* Go Live / Live — shared toggle outside the segmented control */}
+          {pendingAction ? (
+            <div
+              className="ac-live-confirm-row"
+              role="group"
+              aria-label="Confirm live action"
+            >
+              <button
+                className={`ac-live-confirm-btn ac-live-confirm-btn--${pendingAction === "start" ? "start" : "stop"}`}
+                onClick={handleConfirm}
+                aria-label={
+                  pendingAction === "start"
+                    ? "Confirm go live"
+                    : pendingAction === "stop"
+                      ? "Confirm stop live"
+                      : "Confirm stop live and switch to file"
+                }
+                autoFocus
+              >
+                {pendingAction === "start"
+                  ? "Go Live?"
+                  : pendingAction === "stop"
+                    ? "Stop?"
+                    : "Stop & Switch?"}
+              </button>
+              <button
+                className="ac-live-cancel-btn"
+                onClick={handleCancel}
+                aria-label="Cancel"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              className={`ac-source-live-btn${isCurrentLive ? " ac-source-live-btn--active" : ""}`}
+              data-testid="source-live-button"
+              data-state={
+                !isLiveSource ? "disabled" : isCurrentLive ? "live" : "idle"
+              }
+              disabled={!isLiveSource || transitionLocked}
+              onClick={handleLiveButtonClick}
+              aria-label={liveButtonActionLabel}
+              title={liveButtonActionLabel}
+            >
+              <span className="ac-source-live-btn-content">
+                <span className="ac-source-live-btn-labels">
+                  <span
+                    className={`ac-source-live-btn-label${
+                      isCurrentLive ? " ac-source-live-btn-label--hidden" : ""
+                    }`}
+                  >
+                    Go Live
+                  </span>
+                  <span
+                    className={`ac-source-live-btn-label${
+                      isCurrentLive ? "" : " ac-source-live-btn-label--hidden"
+                    }`}
+                  >
+                    Live
+                  </span>
+                  <span className="ac-source-live-btn-measure">Go Live</span>
                 </span>
-                <span className="ac-source-live-btn-measure">Go Live</span>
               </span>
-            </span>
-          </button>
-        )}
+            </button>
+          )}
+        </div>
+        {liveInputStatusText ? (
+          <div className="ac-source-status" aria-live="polite">
+            {liveInputStatusText}
+          </div>
+        ) : null}
       </div>
     </div>
   );

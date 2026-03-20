@@ -55,7 +55,8 @@ function refreshSpectrumCache(reader) {
     Float32Array,
   );
   normaliseSpectrumInto(sourceData, reader._normalizedFrequencyData);
-  reader._averageFrequency = computeAverageFrequency(sourceData);
+  reader._averageFrequency =
+    computeAverageFrequency(reader._normalizedFrequencyData) * 255;
 
   return {
     avgAmplitude: reader._averageFrequency,
@@ -100,11 +101,20 @@ export function computeRms(timeData) {
   return Math.sqrt(sum / timeData.length);
 }
 
-export function createAnalyserReader(analyserNode, readFrequencyData) {
+/**
+ * @param {AnalyserNode} analyserNode
+ * @param {(data: Uint8Array | Float32Array) => Uint8Array | Float32Array} readFrequencyData
+ * @param {Uint8ArrayConstructor | Float32ArrayConstructor} [RawType=Uint8Array]
+ */
+export function createAnalyserReader(
+  analyserNode,
+  readFrequencyData,
+  RawType = Uint8Array,
+) {
   return {
     analyser: analyserNode,
     _readFrequencyData: readFrequencyData,
-    _rawFrequencyData: new Uint8Array(analyserNode.frequencyBinCount),
+    _rawFrequencyData: new RawType(analyserNode.frequencyBinCount),
     _spectrumData: null,
     _normalizedFrequencyData: new Float32Array(analyserNode.frequencyBinCount),
     _timeDomainData: new Float32Array(analyserNode.fftSize),
@@ -123,15 +133,53 @@ export function createAnalyserReader(analyserNode, readFrequencyData) {
   };
 }
 
+function normalizeDecibelMagnitude(value, minDecibels, maxDecibels) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  const span = Math.max(1e-6, maxDecibels - minDecibels);
+  return Math.max(0, Math.min(1, (value - minDecibels) / span));
+}
+
 export function createNodeAnalyser(audioCtx, sourceNode, fftSize) {
   const analyserNode = audioCtx.createAnalyser();
   analyserNode.fftSize = fftSize;
   sourceNode.connect(analyserNode);
 
-  return createAnalyserReader(analyserNode, (data) => {
-    analyserNode.getByteFrequencyData(data);
-    return data;
-  });
+  const supportsFloatFrequencyData =
+    typeof analyserNode.getFloatFrequencyData === "function";
+
+  return createAnalyserReader(
+    analyserNode,
+    (data) => {
+      if (!supportsFloatFrequencyData) {
+        const byteData = new Uint8Array(data.length);
+        analyserNode.getByteFrequencyData(byteData);
+        for (let index = 0; index < data.length; index += 1) {
+          data[index] = (byteData[index] ?? 0) / 255;
+        }
+        return data;
+      }
+
+      analyserNode.getFloatFrequencyData(data);
+      const minDecibels = Number.isFinite(analyserNode.minDecibels)
+        ? analyserNode.minDecibels
+        : -100;
+      const maxDecibels = Number.isFinite(analyserNode.maxDecibels)
+        ? analyserNode.maxDecibels
+        : -30;
+      for (let index = 0; index < data.length; index += 1) {
+        data[index] = normalizeDecibelMagnitude(
+          data[index],
+          minDecibels,
+          maxDecibels,
+        );
+      }
+      return data;
+    },
+    Float32Array,
+  );
 }
 
 export function sampleAnalyser(analyser) {

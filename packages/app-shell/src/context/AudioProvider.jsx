@@ -6,10 +6,29 @@ import React, {
   useState,
 } from "react";
 import { getDefaultAudioSession } from "@baryon/visualizer/audio";
+import {
+  DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
+  LIVE_INPUT_ANALYSIS_CLASSES,
+  normalizeLiveInputAnalysisClass,
+  normalizeResolvedLiveInputAnalysisClass,
+  normalizeLiveInputAnalysisOverrides,
+  resolveLiveInputAnalysisClass,
+} from "@baryon/visualizer/audio/liveInputAnalysis";
 import { AudioContext, AudioSceneContext } from "./AudioContext";
-import { createLiveInputRuntimeStatus } from "./liveInputRuntimeStatus.js";
+import {
+  LIVE_INPUT_ERROR_CODES,
+  LIVE_INPUT_UI_STATES,
+  buildLiveInputRuntimeStatus,
+  createLiveInputRuntimeStatus,
+  mapLiveInputStartError,
+} from "./liveInputRuntimeStatus.js";
 import { useAudioLogic } from "../components/hooks/useAudioLogic";
 import { getDeviceBucketById } from "../components/controls/deviceClassification.js";
+import {
+  SETTINGS_KEY,
+  readStoredJson,
+  writeStoredJson,
+} from "../components/hooks/baryonControlsState.js";
 import {
   SOUNDCLOUD_ENABLED,
   canUseNativeStreamPlayback,
@@ -28,6 +47,15 @@ const DEFAULT_TRANSPORT_STATE = {
   canSeek: false,
 };
 const RECENT_UPLOAD_LIMIT = 4;
+const LIVE_INPUT_ANALYSIS_OVERRIDES_KEY = "liveInputAnalysisOverrides";
+
+function getBrowserStorage() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage;
+}
 
 function getRecentUploadId(file) {
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -59,6 +87,40 @@ function clampTransportTime(value, durationSeconds) {
     return Math.min(nextValue, durationSeconds);
   }
   return nextValue;
+}
+
+function loadLiveInputAnalysisOverrides(storage) {
+  return normalizeLiveInputAnalysisOverrides(
+    readStoredJson(storage, SETTINGS_KEY)?.[LIVE_INPUT_ANALYSIS_OVERRIDES_KEY],
+  );
+}
+
+function persistLiveInputAnalysisOverrides(storage, overrides) {
+  const currentSettings = readStoredJson(storage, SETTINGS_KEY) ?? {};
+  writeStoredJson(storage, SETTINGS_KEY, {
+    ...currentSettings,
+    [LIVE_INPUT_ANALYSIS_OVERRIDES_KEY]:
+      normalizeLiveInputAnalysisOverrides(overrides),
+  });
+}
+
+function normalizeProviderLiveInputUiState(value) {
+  return value === LIVE_INPUT_UI_STATES.starting ||
+    value === LIVE_INPUT_UI_STATES.active ||
+    value === LIVE_INPUT_UI_STATES.stopping ||
+    value === LIVE_INPUT_UI_STATES.error
+    ? value
+    : LIVE_INPUT_UI_STATES.idle;
+}
+
+function normalizeProviderLiveInputErrorCode(value) {
+  return value === LIVE_INPUT_ERROR_CODES.permissionDenied ||
+    value === LIVE_INPUT_ERROR_CODES.deviceMissing ||
+    value === LIVE_INPUT_ERROR_CODES.deviceDisconnected ||
+    value === LIVE_INPUT_ERROR_CODES.startFailed ||
+    value === LIVE_INPUT_ERROR_CODES.calibrationInvalid
+    ? value
+    : LIVE_INPUT_ERROR_CODES.none;
 }
 
 let hlsModulePromise = null;
@@ -212,6 +274,7 @@ async function attachStreamToAudioElement(audioElement, stream) {
 }
 
 export function AudioProvider({ children }) {
+  const storage = getBrowserStorage();
   const [fileName, setFileName] = useState(DEFAULT_FILE_NAME);
   const [recentUploads, setRecentUploads] = useState([]);
   const [currentLoadedLocalFile, setCurrentLoadedLocalFile] = useState(null);
@@ -233,6 +296,26 @@ export function AudioProvider({ children }) {
   const [selectedSource, setSelectedSource] = useState("file");
   const [selectedSystemDevice, setSelectedSystemDevice] = useState(null);
   const [liveInputKind, setLiveInputKind] = useState(null);
+  const [liveInputUiState, setLiveInputUiState] = useState(
+    /** @type {import("./liveInputRuntimeStatus.js").LiveInputUiState} */ (
+      LIVE_INPUT_UI_STATES.idle
+    ),
+  );
+  const [liveInputErrorCode, setLiveInputErrorCode] = useState(
+    /** @type {import("./liveInputRuntimeStatus.js").LiveInputErrorCode} */ (
+      LIVE_INPUT_ERROR_CODES.none
+    ),
+  );
+  const [liveInputAnalysisClass, setLiveInputAnalysisClass] = useState(
+    /** @type {import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputAnalysisClass} */ (
+      DEFAULT_LIVE_INPUT_ANALYSIS_CLASS
+    ),
+  );
+  const [resolvedLiveInputAnalysisClass, setResolvedLiveInputAnalysisClass] =
+    useState(null);
+  const [liveInputAnalysisOverrides, setLiveInputAnalysisOverrides] = useState(
+    () => loadLiveInputAnalysisOverrides(storage),
+  );
   const [showSoundCloudPanel, setShowSoundCloudPanel] = useState(false);
   const [soundCloudInput, setSoundCloudInput] = useState("");
   const [soundCloudCollectionTitle, setSoundCloudCollectionTitle] = useState(
@@ -262,6 +345,16 @@ export function AudioProvider({ children }) {
   const transportFrameRef = useRef(0);
   const resumeAfterScrubRef = useRef(false);
   const isScrubbingRef = useRef(false);
+  const liveInputUiStateRef = useRef(
+    /** @type {import("./liveInputRuntimeStatus.js").LiveInputUiState} */ (
+      LIVE_INPUT_UI_STATES.idle
+    ),
+  );
+  const liveInputErrorCodeRef = useRef(
+    /** @type {import("./liveInputRuntimeStatus.js").LiveInputErrorCode} */ (
+      LIVE_INPUT_ERROR_CODES.none
+    ),
+  );
 
   const registerRecentUpload = useCallback((file) => {
     setRecentUploads((currentUploads) => {
@@ -280,7 +373,6 @@ export function AudioProvider({ children }) {
     handleRecentFileSelect: handleLocalRecentFileSelect,
     handlePlayPause: handleLocalPlayPause,
     handleStop: handleLocalStop,
-    handleLiveInputToggle: handleLocalLiveInputToggle,
     handleVolumeChange: handleLocalVolumeChange,
     handleMuteToggle: handleLocalMuteToggle,
   } = useAudioLogic({
@@ -363,6 +455,37 @@ export function AudioProvider({ children }) {
     return nextTransportState;
   }, []);
 
+  const applyLiveInputUiState = useCallback(
+    /**
+     * @param {import("./liveInputRuntimeStatus.js").LiveInputUiState | unknown} nextUiState
+     * @param {import("./liveInputRuntimeStatus.js").LiveInputErrorCode | unknown} [nextErrorCode]
+     * @param {any} [statusOverride]
+     */
+    (
+      nextUiState,
+      nextErrorCode = LIVE_INPUT_ERROR_CODES.none,
+      statusOverride = undefined,
+    ) => {
+      /** @type {import("./liveInputRuntimeStatus.js").LiveInputUiState} */
+      const normalizedUiState = normalizeProviderLiveInputUiState(nextUiState);
+      /** @type {import("./liveInputRuntimeStatus.js").LiveInputErrorCode} */
+      const normalizedErrorCode =
+        normalizeProviderLiveInputErrorCode(nextErrorCode);
+      liveInputUiStateRef.current = normalizedUiState;
+      liveInputErrorCodeRef.current = normalizedErrorCode;
+      setLiveInputUiState(normalizedUiState);
+      setLiveInputErrorCode(normalizedErrorCode);
+      setLiveInputRuntimeStatus(
+        buildLiveInputRuntimeStatus({
+          status: statusOverride ?? getDefaultAudioSession().getStatus(),
+          liveInputUiState: normalizedUiState,
+          liveInputErrorCode: normalizedErrorCode,
+        }),
+      );
+    },
+    [],
+  );
+
   const syncSessionStatus = useCallback(() => {
     const audioSession = getDefaultAudioSession();
     const status = audioSession.getStatus();
@@ -371,12 +494,36 @@ export function AudioProvider({ children }) {
     setIsPlaying(status.isPlaying);
     setIsLiveInputActive(status.isLiveInputActive);
     setLiveInputKind(status.liveInputKind ?? null);
+    setLiveInputAnalysisClass(
+      normalizeLiveInputAnalysisClass(status.liveInputAnalysisClass),
+    );
+    setResolvedLiveInputAnalysisClass(
+      status.resolvedLiveInputAnalysisClass
+        ? normalizeResolvedLiveInputAnalysisClass(
+            status.resolvedLiveInputAnalysisClass,
+          )
+        : null,
+    );
+    /** @type {import("./liveInputRuntimeStatus.js").LiveInputUiState} */
+    const nextUiState =
+      liveInputUiStateRef.current === LIVE_INPUT_UI_STATES.starting ||
+      liveInputUiStateRef.current === LIVE_INPUT_UI_STATES.stopping ||
+      liveInputUiStateRef.current === LIVE_INPUT_UI_STATES.error
+        ? liveInputUiStateRef.current
+        : status.isLiveInputActive
+          ? LIVE_INPUT_UI_STATES.active
+          : LIVE_INPUT_UI_STATES.idle;
+    liveInputUiStateRef.current = nextUiState;
+    setLiveInputUiState(nextUiState);
     setVolume(status.volume ?? 1);
     setIsMuted(status.muted ?? false);
-    setLiveInputRuntimeStatus((currentStatus) => ({
-      ...currentStatus,
-      active: Boolean(status.isLiveInputActive),
-    }));
+    setLiveInputRuntimeStatus(
+      buildLiveInputRuntimeStatus({
+        status,
+        liveInputUiState: nextUiState,
+        liveInputErrorCode: liveInputErrorCodeRef.current,
+      }),
+    );
     setTransportState(nextTransportState);
     if ((status.volume ?? 0) > 0.001) {
       lastNonZeroVolumeRef.current = status.volume;
@@ -392,6 +539,199 @@ export function AudioProvider({ children }) {
     audioDevices,
     selectedLiveDeviceId,
   );
+  const selectedLiveDevice =
+    audioDevices.find((device) => device.deviceId === selectedLiveDeviceId) ??
+    null;
+  const selectedLiveInputAnalysisOverride =
+    selectedLiveDeviceId != null
+      ? normalizeLiveInputAnalysisClass(
+          liveInputAnalysisOverrides[selectedLiveDeviceId],
+        )
+      : DEFAULT_LIVE_INPUT_ANALYSIS_CLASS;
+  const selectedResolvedLiveInputAnalysisClass = resolveLiveInputAnalysisClass({
+    liveInputKind: selectedLiveInputKind,
+    selectedDeviceId: selectedLiveDeviceId,
+    selectedDeviceLabel: selectedLiveDevice?.label ?? "",
+    analysisClass: liveInputAnalysisClass,
+    overrides: liveInputAnalysisOverrides,
+  });
+
+  const startLiveInputSession = useCallback(
+    async ({
+      deviceId = selectedLiveDeviceId,
+      liveInputKind: nextLiveInputKind = selectedLiveInputKind,
+    } = {}) => {
+      const audioSession = getDefaultAudioSession();
+      if (!deviceId) {
+        applyLiveInputUiState(
+          LIVE_INPUT_UI_STATES.error,
+          LIVE_INPUT_ERROR_CODES.deviceMissing,
+        );
+        return false;
+      }
+
+      applyLiveInputUiState(LIVE_INPUT_UI_STATES.starting);
+      try {
+        await audioSession.startLiveInputStream(deviceId, nextLiveInputKind);
+        const status = syncSessionStatus();
+        if (!status.isLiveInputActive) {
+          applyLiveInputUiState(
+            LIVE_INPUT_UI_STATES.error,
+            LIVE_INPUT_ERROR_CODES.startFailed,
+            status,
+          );
+          return false;
+        }
+
+        applyLiveInputUiState(
+          LIVE_INPUT_UI_STATES.active,
+          LIVE_INPUT_ERROR_CODES.none,
+          status,
+        );
+        return true;
+      } catch (error) {
+        console.error("Error starting live input:", error);
+        const status = syncSessionStatus();
+        applyLiveInputUiState(
+          LIVE_INPUT_UI_STATES.error,
+          mapLiveInputStartError(error),
+          status,
+        );
+        return false;
+      }
+    },
+    [
+      applyLiveInputUiState,
+      selectedLiveDeviceId,
+      selectedLiveInputKind,
+      syncSessionStatus,
+    ],
+  );
+
+  const stopLiveInputSession = useCallback(
+    /**
+     * @param {{
+     *   nextUiState?: import("./liveInputRuntimeStatus.js").LiveInputUiState,
+     *   nextErrorCode?: import("./liveInputRuntimeStatus.js").LiveInputErrorCode,
+     * }=} options
+     */
+    ({
+      nextUiState = LIVE_INPUT_UI_STATES.idle,
+      nextErrorCode = LIVE_INPUT_ERROR_CODES.none,
+    } = {}) => {
+      const audioSession = getDefaultAudioSession();
+      applyLiveInputUiState(LIVE_INPUT_UI_STATES.stopping);
+      audioSession.stopLiveInputStream();
+      const status = syncSessionStatus();
+      applyLiveInputUiState(nextUiState, nextErrorCode, status);
+      return status;
+    },
+    [applyLiveInputUiState, syncSessionStatus],
+  );
+
+  const handleSelectedSystemDeviceChange = useCallback(
+    async (nextDeviceId) => {
+      const normalizedDeviceId = nextDeviceId || null;
+      if (normalizedDeviceId === selectedSystemDevice) {
+        return;
+      }
+
+      setSelectedSystemDevice(normalizedDeviceId);
+      applyLiveInputUiState(
+        liveInputUiStateRef.current === LIVE_INPUT_UI_STATES.error
+          ? LIVE_INPUT_UI_STATES.idle
+          : liveInputUiStateRef.current,
+        LIVE_INPUT_ERROR_CODES.none,
+      );
+
+      if (!normalizedDeviceId) {
+        if (isLiveInputActive) {
+          stopLiveInputSession({
+            nextUiState: LIVE_INPUT_UI_STATES.error,
+            nextErrorCode: LIVE_INPUT_ERROR_CODES.deviceMissing,
+          });
+        }
+        return;
+      }
+
+      if (!isLiveInputActive) {
+        return;
+      }
+
+      stopLiveInputSession();
+      await startLiveInputSession({
+        deviceId: normalizedDeviceId,
+        liveInputKind: getDeviceBucketById(audioDevices, normalizedDeviceId),
+      });
+    },
+    [
+      applyLiveInputUiState,
+      audioDevices,
+      isLiveInputActive,
+      selectedSystemDevice,
+      startLiveInputSession,
+      stopLiveInputSession,
+    ],
+  );
+
+  useEffect(() => {
+    getDefaultAudioSession().setLiveInputAnalysisSettings({
+      overrides: liveInputAnalysisOverrides,
+    });
+  }, [liveInputAnalysisOverrides]);
+
+  useEffect(() => {
+    if (!selectedSystemDevice) {
+      return;
+    }
+
+    const deviceStillAvailable = audioDevices.some(
+      (device) => device.deviceId === selectedSystemDevice,
+    );
+    if (deviceStillAvailable) {
+      return;
+    }
+
+    setSelectedSystemDevice(null);
+    const nextErrorCode = isLiveInputActive
+      ? LIVE_INPUT_ERROR_CODES.deviceDisconnected
+      : LIVE_INPUT_ERROR_CODES.deviceMissing;
+    if (isLiveInputActive) {
+      getDefaultAudioSession().stopLiveInputStream();
+      const status = syncSessionStatus();
+      applyLiveInputUiState(LIVE_INPUT_UI_STATES.error, nextErrorCode, status);
+      return;
+    }
+
+    if (selectedSource === "system") {
+      applyLiveInputUiState(LIVE_INPUT_UI_STATES.error, nextErrorCode);
+    }
+  }, [
+    applyLiveInputUiState,
+    audioDevices,
+    isLiveInputActive,
+    selectedSource,
+    selectedSystemDevice,
+    syncSessionStatus,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleControlsChanged = () => {
+      syncSessionStatus();
+    };
+
+    window.addEventListener("__baryon-controls-change", handleControlsChanged);
+    return () => {
+      window.removeEventListener(
+        "__baryon-controls-change",
+        handleControlsChanged,
+      );
+    };
+  }, [syncSessionStatus]);
 
   useEffect(() => {
     if (isAudioLoaded && !isLiveInputActive) {
@@ -895,79 +1235,93 @@ export function AudioProvider({ children }) {
       setLiveReturnLocalFile(liveReturnSnapshot);
       resetSoundCloudTransport();
     }
-    await handleLocalLiveInputToggle();
-    const status = getDefaultAudioSession().getStatus();
-    if (isLiveInputActive && !status.isLiveInputActive) {
+    if (isLiveInputActive) {
+      const status = stopLiveInputSession();
       await restoreAfterLiveStop();
-    } else if (
-      !isLiveInputActive &&
-      !status.isLiveInputActive &&
-      liveReturnSnapshot?.file
-    ) {
+      if (status.isLiveInputActive) {
+        applyLiveInputUiState(
+          LIVE_INPUT_UI_STATES.error,
+          LIVE_INPUT_ERROR_CODES.startFailed,
+          status,
+        );
+      }
+      return;
+    }
+
+    const started = await startLiveInputSession({
+      deviceId: selectedDevice,
+      liveInputKind: "live",
+    });
+    if (!started && liveReturnSnapshot?.file) {
       await loadImmediateLocalFile(liveReturnSnapshot.file, {
         seekTimeSeconds: liveReturnSnapshot.resumeTimeSeconds,
         clearQueuedNext: false,
       });
     }
   }, [
+    applyLiveInputUiState,
     clearScrubState,
     createLiveReturnSnapshot,
-    handleLocalLiveInputToggle,
     isLiveInputActive,
     loadImmediateLocalFile,
     resetSoundCloudTransport,
     restoreAfterLiveStop,
+    selectedDevice,
+    startLiveInputSession,
+    stopLiveInputSession,
   ]);
 
   const handleSourceChange = useCallback(
     async (next) => {
       if (next === selectedSource) return;
       if (isLiveInputActive && next === "file") {
-        getDefaultAudioSession().stopLiveInputStream();
-        syncSessionStatus();
+        stopLiveInputSession();
         await restoreAfterLiveStop();
+      }
+      if (next !== "system") {
+        applyLiveInputUiState(LIVE_INPUT_UI_STATES.idle);
       }
       setSelectedSource(next);
     },
     [
+      applyLiveInputUiState,
       isLiveInputActive,
       restoreAfterLiveStop,
       selectedSource,
-      syncSessionStatus,
+      stopLiveInputSession,
     ],
   );
 
   const handleSystemToggle = useCallback(async () => {
-    const audioSession = getDefaultAudioSession();
     clearScrubState();
     const liveReturnSnapshot = createLiveReturnSnapshot();
     try {
       if (isLiveInputActive) {
-        audioSession.stopLiveInputStream();
-        syncSessionStatus();
-        if (!audioSession.getStatus().isLiveInputActive) {
+        const status = stopLiveInputSession();
+        if (!status.isLiveInputActive) {
           await restoreAfterLiveStop();
         }
       } else {
         setLiveReturnLocalFile(liveReturnSnapshot);
         resetSoundCloudTransport();
-        await audioSession.startLiveInputStream(
-          selectedLiveDeviceId,
-          selectedLiveInputKind,
-        );
-        syncSessionStatus();
-        if (audioSession.getStatus().isLiveInputActive) {
+        const started = await startLiveInputSession({
+          deviceId: selectedLiveDeviceId,
+          liveInputKind: selectedLiveInputKind,
+        });
+        if (started) {
           setActiveSource("upload");
           setFileName(DEFAULT_FILE_NAME);
         }
       }
     } catch (error) {
       console.error("Error toggling system audio:", error);
-      syncSessionStatus();
-      if (
-        !audioSession.getStatus().isLiveInputActive &&
-        liveReturnSnapshot?.file
-      ) {
+      const status = syncSessionStatus();
+      applyLiveInputUiState(
+        LIVE_INPUT_UI_STATES.error,
+        mapLiveInputStartError(error),
+        status,
+      );
+      if (!status.isLiveInputActive && liveReturnSnapshot?.file) {
         await loadImmediateLocalFile(liveReturnSnapshot.file, {
           seekTimeSeconds: liveReturnSnapshot.resumeTimeSeconds,
           clearQueuedNext: false,
@@ -975,6 +1329,7 @@ export function AudioProvider({ children }) {
       }
     }
   }, [
+    applyLiveInputUiState,
     clearScrubState,
     createLiveReturnSnapshot,
     isLiveInputActive,
@@ -983,8 +1338,50 @@ export function AudioProvider({ children }) {
     restoreAfterLiveStop,
     selectedLiveDeviceId,
     selectedLiveInputKind,
+    startLiveInputSession,
+    stopLiveInputSession,
     syncSessionStatus,
   ]);
+
+  const setSelectedLiveInputAnalysisClass = useCallback(
+    (nextAnalysisClass) => {
+      const normalizedAnalysisClass =
+        normalizeLiveInputAnalysisClass(nextAnalysisClass);
+      if (!selectedLiveDeviceId) {
+        return;
+      }
+
+      setLiveInputAnalysisOverrides((currentOverrides) => {
+        const nextOverrides = {
+          ...currentOverrides,
+        };
+        if (normalizedAnalysisClass === LIVE_INPUT_ANALYSIS_CLASSES.auto) {
+          delete nextOverrides[selectedLiveDeviceId];
+        } else {
+          nextOverrides[selectedLiveDeviceId] = normalizedAnalysisClass;
+        }
+        persistLiveInputAnalysisOverrides(storage, nextOverrides);
+        getDefaultAudioSession().setLiveInputAnalysisSettings({
+          overrides: nextOverrides,
+        });
+        return nextOverrides;
+      });
+      applyLiveInputUiState(
+        isLiveInputActive
+          ? LIVE_INPUT_UI_STATES.active
+          : LIVE_INPUT_UI_STATES.idle,
+        LIVE_INPUT_ERROR_CODES.none,
+      );
+      syncSessionStatus();
+    },
+    [
+      applyLiveInputUiState,
+      isLiveInputActive,
+      selectedLiveDeviceId,
+      storage,
+      syncSessionStatus,
+    ],
+  );
 
   const handleVolumeChange = useCallback(
     (value) => {
@@ -1143,12 +1540,19 @@ export function AudioProvider({ children }) {
     setIsPlaying(false);
     setIsLiveInputActive(false);
     setIsAudioLoaded(false);
+    liveInputUiStateRef.current = LIVE_INPUT_UI_STATES.idle;
+    liveInputErrorCodeRef.current = LIVE_INPUT_ERROR_CODES.none;
+    setLiveInputUiState(LIVE_INPUT_UI_STATES.idle);
+    setLiveInputErrorCode(LIVE_INPUT_ERROR_CODES.none);
     setLiveInputRuntimeStatus(createLiveInputRuntimeStatus());
     setShowDeviceMenu(false);
     setIsEngineReady(false);
     setActiveSource("upload");
     setSelectedSource("file");
     setSelectedSystemDevice(null);
+    setLiveInputAnalysisClass(DEFAULT_LIVE_INPUT_ANALYSIS_CLASS);
+    setResolvedLiveInputAnalysisClass(null);
+    setLiveInputAnalysisOverrides(loadLiveInputAnalysisOverrides(storage));
     setShowSoundCloudPanel(false);
     setSoundCloudInput("");
     setSoundCloudCollectionTitle(DEFAULT_SOUNDCLOUD_LABEL);
@@ -1158,7 +1562,7 @@ export function AudioProvider({ children }) {
     setTransportState(DEFAULT_TRANSPORT_STATE);
 
     return audioSession.dispose();
-  }, [clearScrubState, resetSoundCloudTransport]);
+  }, [clearScrubState, resetSoundCloudTransport, storage]);
 
   useEffect(() => {
     return () => {
@@ -1171,10 +1575,16 @@ export function AudioProvider({ children }) {
       setIsPlaying,
       setIsAudioLoaded,
       setIsEngineReady,
+      liveInputUiState,
+      liveInputErrorCode,
+      liveInputRuntimeStatus,
       setLiveInputRuntimeStatus,
       resetAudioSession,
     }),
     [
+      liveInputErrorCode,
+      liveInputRuntimeStatus,
+      liveInputUiState,
       resetAudioSession,
       setIsAudioLoaded,
       setIsEngineReady,
@@ -1191,6 +1601,12 @@ export function AudioProvider({ children }) {
     selectedSystemDevice,
     selectedLiveDeviceId,
     selectedLiveInputKind,
+    liveInputAnalysisClass,
+    resolvedLiveInputAnalysisClass,
+    liveInputUiState,
+    liveInputErrorCode,
+    selectedLiveInputAnalysisOverride,
+    selectedResolvedLiveInputAnalysisClass,
     fileName,
     displayName,
     currentLoadedLocalFile,
@@ -1231,7 +1647,8 @@ export function AudioProvider({ children }) {
     setShowSoundCloudPanel,
     setSoundCloudInput,
     setSelectedSource,
-    setSelectedSystemDevice,
+    setSelectedSystemDevice: handleSelectedSystemDeviceChange,
+    setSelectedLiveInputAnalysisClass,
     resetAudioSession,
     handleFileChange,
     handleRecentUploadSelect,

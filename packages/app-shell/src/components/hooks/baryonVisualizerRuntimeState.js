@@ -39,6 +39,14 @@ export function createRuntimeDiagnostics() {
   };
 }
 
+export function shouldRenderExternalFrame({
+  externalFrameState,
+  shouldAdvance,
+  controlsChanged,
+}) {
+  return !externalFrameState || shouldAdvance || controlsChanged;
+}
+
 export function snapshotRuntimeDiagnostics(runtimeDiagnostics) {
   return {
     ...runtimeDiagnostics,

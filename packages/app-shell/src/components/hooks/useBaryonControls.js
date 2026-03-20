@@ -22,6 +22,8 @@ import {
   writeStoredJson,
 } from "./baryonControlsState.js";
 
+const EXTERNAL_CONTROL_COMMAND_EVENT = "__baryon-controls-command";
+
 function getBrowserStorage() {
   if (typeof window === "undefined") {
     return null;
@@ -194,8 +196,27 @@ export function useBaryonControls() {
 
     emitControlsChanged(controlsRef.current);
 
+    const handleExternalControlCommand = (event) => {
+      const key = event?.detail?.key;
+      if (typeof key !== "string" || !(key in controlsRef.current)) {
+        return;
+      }
+
+      const persistMode =
+        event?.detail?.persistMode === "debounced" ? "debounced" : "immediate";
+      updateControl(key, event.detail.value, { persistMode });
+    };
+    window.addEventListener(
+      EXTERNAL_CONTROL_COMMAND_EVENT,
+      handleExternalControlCommand,
+    );
+
     return () => {
       persistScheduler.cancel();
+      window.removeEventListener(
+        EXTERNAL_CONTROL_COMMAND_EVENT,
+        handleExternalControlCommand,
+      );
       if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
         delete window.__baryonControls;
       }

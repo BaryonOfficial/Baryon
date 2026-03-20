@@ -11,7 +11,7 @@ function selectDebugSnapshot(snapshot) {
   return snapshot.raymarchDebug ?? snapshot.cymatics2dDebug ?? snapshot;
 }
 
-export default function ParticleDebugOverlay() {
+export default function ParticleDebugOverlay({ top = "1rem", right = "1rem" }) {
   const [overlayState, setOverlayState] = useState({
     enabled: false,
     snapshot: null,
@@ -52,8 +52,8 @@ export default function ParticleDebugOverlay() {
       data-testid="raymarch-debug-overlay"
       style={{
         position: "fixed",
-        top: "1rem",
-        right: "1rem",
+        top,
+        right,
         zIndex: 10001,
         minWidth: "18rem",
         maxWidth: "min(18rem, calc(100vw - 2rem))",

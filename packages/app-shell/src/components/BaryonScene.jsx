@@ -5,23 +5,35 @@ import { useBaryonPipeline } from "./hooks/useBaryonPipeline";
 import { useBaryonVisualizer } from "./hooks/useBaryonVisualizer";
 import { useDefaultBaryonGeometry } from "./hooks/useDefaultBaryonGeometry";
 import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
+import { resolveRenderQualityProfile } from "@baryon/visualizer/render/outputPipeline";
 
 export function BaryonScene({
   setIsEngineReady,
   setLiveInputRuntimeStatus,
+  liveInputUiState,
+  liveInputErrorCode,
   controlsRef,
   visualizationMethod,
+  renderQualityPreset,
   onPerformanceHudSnapshotChange,
   outputFrameConfig = null,
   onOutputFrame = null,
   onFrameState = null,
   externalFrameRef = null,
+  basePixelRatio = null,
+  onStageRender = null,
 }) {
-  const { camera, gl, scene } = useThree();
+  const { camera, gl, scene, size } = useThree();
+  const renderProfile = resolveRenderQualityProfile({
+    qualityPreset: renderQualityPreset,
+    outputWidth: size.width,
+    outputHeight: size.height,
+  });
   const { ensurePipeline, postNodesRef, disposePipeline } = useBaryonPipeline(
     gl,
     scene,
     camera,
+    renderProfile,
   );
 
   // Free TRAANode's two HalfFloat render targets (history + resolve) on unmount.
@@ -47,6 +59,8 @@ export function BaryonScene({
     gl,
     setIsEngineReady,
     setLiveInputRuntimeStatus,
+    liveInputUiState,
+    liveInputErrorCode,
     controlsRef,
     visualizationMethod,
     scene,
@@ -57,6 +71,9 @@ export function BaryonScene({
     onOutputFrame,
     onFrameState,
     externalFrameRef,
+    renderProfile,
+    basePixelRatio,
+    onStageRender,
   });
 
   return (

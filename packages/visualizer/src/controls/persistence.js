@@ -1,4 +1,5 @@
 import { CONTROL_STATUSES } from "./schema.js";
+import { normalizeLiveInputAnalysisClass } from "../core/audio/liveInputAnalysis.js";
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -59,6 +60,24 @@ function normalizeLegacyReactivity(raw) {
   return next;
 }
 
+function normalizeLegacyLiveInputAnalysis(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  const next = { ...raw };
+  if (
+    !Object.prototype.hasOwnProperty.call(next, "liveInputAnalysisClass") &&
+    typeof raw.liveInputProfile === "string"
+  ) {
+    next.liveInputAnalysisClass = normalizeLiveInputAnalysisClass(
+      raw.liveInputProfile,
+    );
+  }
+
+  return next;
+}
+
 /**
  * Serialize a control state object to a plain JSON-safe object.
  * Only live (non-debug) controls are included so that audit/dev settings
@@ -91,7 +110,9 @@ export function deserializeControls(raw, definitions) {
   const result = Object.fromEntries(
     definitions.map((d) => [d.key, d.defaultValue]),
   );
-  const normalizedRaw = normalizeLegacyReactivity(raw);
+  const normalizedRaw = normalizeLegacyLiveInputAnalysis(
+    normalizeLegacyReactivity(raw),
+  );
   if (
     !normalizedRaw ||
     typeof normalizedRaw !== "object" ||

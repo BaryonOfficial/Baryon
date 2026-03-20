@@ -13,6 +13,7 @@
   "exports": {
     ".": "./src/index.js",
     "./audio": "./src/core/audio/audioSetup.js",
+    "./audio/liveInputAnalysis": "./src/core/audio/liveInputAnalysis.js",
     "./audio-features": "./src/utils/audioFeatures.js",
     "./controls/persistence": "./src/controls/persistence.js",
     "./controls/runtime": "./src/controls/runtime.js",

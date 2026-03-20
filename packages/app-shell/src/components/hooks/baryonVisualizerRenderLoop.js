@@ -11,7 +11,7 @@ import {
   shouldReuseIdleFrame,
   snapshotRuntimeDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
-import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
+export { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 
 const LONG_FRAME_THRESHOLD_MS = 34;
 const PERFORMANCE_HUD_PUBLISH_INTERVAL_MS = 150;
@@ -100,7 +100,7 @@ export function publishPerformanceHudSnapshot(
 
 export function updateRendererDiagnostics(
   { state, controls, status, time, deltaTime, rfDelta, gl, renderLoopRefs },
-  { getTargetDpr = getPlaybackDiagnosticDpr } = {},
+  { getTargetDpr = getPlaybackDiagnosticDpr, renderScale = 1 } = {},
 ) {
   const runtimeDiagnostics = renderLoopRefs.runtimeDiagnosticsRef.current;
   const rendererMode =
@@ -121,7 +121,8 @@ export function updateRendererDiagnostics(
     controls.lowLoadPlaybackDiagnostics && status.isPlaying,
   );
   const basePixelRatio = getTargetDpr();
-  const targetPixelRatio = lowLoadActive ? 1 : basePixelRatio;
+  const scaledPixelRatio = Math.max(0.25, basePixelRatio * renderScale);
+  const targetPixelRatio = lowLoadActive ? 1 : scaledPixelRatio;
   const frameTimeMs =
     typeof rfDelta === "number" && rfDelta > 0 && Number.isFinite(rfDelta)
       ? rfDelta * 1000
@@ -208,6 +209,7 @@ export function applyCachedControlSnapshots(
     gl,
     ensurePipeline,
     postNodesRef,
+    renderProfileRef,
     renderLoopRefs,
   },
   appliers = {
@@ -232,7 +234,7 @@ export function applyCachedControlSnapshots(
     cachedControlSnapshotsRef.current = {
       shared: appliers.applySharedControls(gl, controls),
       output: appliers.applyOutputControls(
-        { ensurePipeline, postNodesRef },
+        { ensurePipeline, postNodesRef, renderProfileRef },
         controls,
       ),
       visualization: appliers.applyVisualizationControls(
@@ -241,7 +243,7 @@ export function applyCachedControlSnapshots(
         controls,
       ),
       bloom: appliers.applyBloomControls(
-        { ensurePipeline, postNodesRef, runtimeState },
+        { ensurePipeline, postNodesRef, renderProfileRef, runtimeState },
         controls,
       ),
       audit: appliers.applyAuditControls(featureState, controls),
@@ -254,7 +256,10 @@ export function applyCachedControlSnapshots(
     appliedControlVersionRef.current = controlVersionRef.current;
   }
 
-  return cachedControlSnapshotsRef.current;
+  return {
+    ...cachedControlSnapshotsRef.current,
+    controlsChanged,
+  };
 }
 
 export function resolveFeatureFrame(
@@ -336,34 +341,6 @@ export function resolveFeatureFrame(
     featureFrame,
     effectiveFrame,
   };
-}
-
-export function syncLiveInputRuntimeStatus({
-  status,
-  setLiveInputRuntimeStatus,
-  renderLoopRefs,
-}) {
-  const nextLiveInputRuntimeStatus = status.isLiveInputActive
-    ? {
-        active: true,
-      }
-    : createLiveInputRuntimeStatus();
-  const previousLiveInputRuntimeStatus =
-    renderLoopRefs.lastLiveInputRuntimeStatusRef.current;
-
-  if (
-    !previousLiveInputRuntimeStatus ||
-    previousLiveInputRuntimeStatus.active !== nextLiveInputRuntimeStatus.active
-  ) {
-    renderLoopRefs.lastLiveInputRuntimeStatusRef.current =
-      nextLiveInputRuntimeStatus;
-    setLiveInputRuntimeStatus?.((currentStatus) => ({
-      ...(currentStatus ?? {}),
-      ...nextLiveInputRuntimeStatus,
-    }));
-  }
-
-  return nextLiveInputRuntimeStatus;
 }
 
 export function applyReactiveBloomState({

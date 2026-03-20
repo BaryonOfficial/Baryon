@@ -17,6 +17,7 @@ import { shouldSkipChromesthesiaStaticColorInvalidation } from "./controlInvalid
 import {
   clearFrameCache,
   createRuntimeDiagnostics,
+  shouldRenderExternalFrame,
   shouldPreservePausedFrameOnControlsChange,
 } from "./baryonVisualizerRuntimeState.js";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
@@ -45,6 +46,8 @@ export function useBaryonVisualizer({
   scene,
   setIsEngineReady,
   setLiveInputRuntimeStatus,
+  liveInputUiState,
+  liveInputErrorCode,
   controlsRef,
   visualizationMethod = DEFAULT_VISUALIZATION_METHOD,
   ensurePipeline,
@@ -54,6 +57,9 @@ export function useBaryonVisualizer({
   onOutputFrame = null,
   onFrameState = null,
   externalFrameRef = null,
+  renderProfile = null,
+  basePixelRatio = null,
+  onStageRender = null,
 }) {
   const audioRef = useRef(getDefaultAudioSession());
   const outputSessionRef = useRef(null);
@@ -108,6 +114,8 @@ export function useBaryonVisualizer({
     audioFeatureAnalyzerRef,
     controlsRef,
   };
+  const renderProfileRef = useRef(renderProfile);
+  renderProfileRef.current = renderProfile;
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -284,21 +292,28 @@ export function useBaryonVisualizer({
       time,
       deltaTime,
       frameSequence: externalFrameSequence,
+      shouldAdvance,
     } = getSourceAuthoritativeClock({
       externalFrameState,
       lastAppliedFrameSequence: lastAppliedExternalFrameSequenceRef.current,
       fallbackClockSnapshot,
     });
-    const { lowLoadActive, runtimeDiagnostics } = updateRendererDiagnostics({
-      state,
-      controls,
-      status,
-      time,
-      deltaTime,
-      rfDelta,
-      gl: renderLoopContext.gl,
-      renderLoopRefs,
-    });
+    const { lowLoadActive, runtimeDiagnostics } = updateRendererDiagnostics(
+      {
+        state,
+        controls,
+        status,
+        time,
+        deltaTime,
+        rfDelta,
+        gl: renderLoopContext.gl,
+        renderLoopRefs,
+      },
+      {
+        getTargetDpr: () => basePixelRatio ?? getPlaybackDiagnosticDpr(),
+        renderScale: renderProfileRef.current?.renderScale ?? 1,
+      },
+    );
     if (controls.performanceHudEnabled) {
       publishPerformanceHudSnapshot({
         runtimeDiagnostics,
@@ -315,17 +330,34 @@ export function useBaryonVisualizer({
     const chromesthesiaEnabled =
       controls.colorMode === "chromesthesia" &&
       (controls.chromesthesiaMix ?? RENDER_DEFAULTS.chromesthesiaMix) > 0;
-    const { shared, output, visualization, bloom, audit } =
-      applyCachedControlSnapshots({
-        controls,
-        runtime,
-        runtimeState,
-        featureState,
-        gl: renderLoopContext.gl,
-        ensurePipeline: renderLoopContext.ensurePipeline,
-        postNodesRef: renderLoopContext.postNodesRef,
-        renderLoopRefs,
-      });
+    const controlSnapshots = applyCachedControlSnapshots({
+      controls,
+      runtime,
+      runtimeState,
+      featureState,
+      gl: renderLoopContext.gl,
+      ensurePipeline: renderLoopContext.ensurePipeline,
+      postNodesRef: renderLoopContext.postNodesRef,
+      renderProfileRef,
+      renderLoopRefs,
+    });
+    const {
+      shared,
+      output,
+      visualization,
+      bloom,
+      audit,
+      controlsChanged = false,
+    } = controlSnapshots;
+    if (
+      !shouldRenderExternalFrame({
+        externalFrameState,
+        shouldAdvance,
+        controlsChanged,
+      })
+    ) {
+      return;
+    }
     const { featureFrame, effectiveFrame } = externalFrameState?.featureFrame
       ? {
           featureFrame: externalFrameState.featureFrame,
@@ -354,6 +386,9 @@ export function useBaryonVisualizer({
 
     syncLiveInputRuntimeStatus({
       status,
+      featureFrame: effectiveFrame,
+      liveInputUiState,
+      liveInputErrorCode,
       setLiveInputRuntimeStatus,
       renderLoopRefs,
     });
@@ -416,6 +451,10 @@ export function useBaryonVisualizer({
 
     if (pipeline) {
       pipeline.render();
+      onStageRender?.({
+        frameSequence: externalFrameSequence,
+        qualityPreset: renderProfileRef.current?.qualityPreset ?? null,
+      });
       if (outputFrameConfig?.enabled && onOutputFrame) {
         const { width, height } = outputFrameConfig;
         const currentSession = outputSessionRef.current;
@@ -432,6 +471,7 @@ export function useBaryonVisualizer({
             state.camera,
             width,
             height,
+            { renderProfile: renderProfileRef.current },
           );
           outputCaptureInFlightRef.current = false;
         }
@@ -459,6 +499,10 @@ export function useBaryonVisualizer({
       outputSessionRef.current = null;
       outputCaptureInFlightRef.current = false;
       renderLoopContext.gl.render(state.scene, state.camera);
+      onStageRender?.({
+        frameSequence: externalFrameSequence,
+        qualityPreset: renderProfileRef.current?.qualityPreset ?? null,
+      });
     }
   }, 1);
 

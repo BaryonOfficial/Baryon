@@ -19,6 +19,8 @@ const AdvancedControlsSidebar = lazy(
   () => import("./AdvancedControlsSidebar.jsx"),
 );
 const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
+const TOP_RIGHT_OVERLAY_CLEARANCE = "4.35rem";
+const STACKED_TOP_RIGHT_PANEL_OFFSET = "5.15rem";
 
 function ControlsIcon() {
   return (
@@ -97,8 +99,13 @@ const ThreeScene = ({
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-  const { setIsEngineReady, setLiveInputRuntimeStatus, resetAudioSession } =
-    useAudioScene();
+  const {
+    setIsEngineReady,
+    setLiveInputRuntimeStatus,
+    liveInputUiState,
+    liveInputErrorCode,
+    resetAudioSession,
+  } = useAudioScene();
   const { selectedLiveInputKind } = useAudio();
 
   const {
@@ -120,6 +127,11 @@ const ThreeScene = ({
     markRendererInitUnsupported,
   } = useBrowserSupportState(forceWebGLFallbackTest);
   const showOverlayUi = isSupportReady && !isFullscreen;
+  const topRightPanelTop =
+    showOverlayUi && topRightOverlay ? TOP_RIGHT_OVERLAY_CLEARANCE : "1rem";
+  const diagnosticsPanelTop = controlsState.performanceHudEnabled
+    ? `calc(${topRightPanelTop} + ${STACKED_TOP_RIGHT_PANEL_OFFSET})`
+    : topRightPanelTop;
 
   const filteredControlGroups = useMemo(() => {
     if (selectedLiveInputKind !== "system") {
@@ -224,8 +236,11 @@ const ThreeScene = ({
               <BaryonScene
                 setIsEngineReady={setIsEngineReady}
                 setLiveInputRuntimeStatus={setLiveInputRuntimeStatus}
+                liveInputUiState={liveInputUiState}
+                liveInputErrorCode={liveInputErrorCode}
                 controlsRef={controlsRef}
                 visualizationMethod={controlsState.visualizationMethod}
+                renderQualityPreset={controlsState.renderQualityPreset}
                 onPerformanceHudSnapshotChange={setPerformanceHudMetrics}
                 outputFrameConfig={outputFrameConfig}
                 onOutputFrame={onOutputFrame}
@@ -293,8 +308,9 @@ const ThreeScene = ({
         metrics={
           controlsState.performanceHudEnabled ? performanceHudMetrics : null
         }
+        top={topRightPanelTop}
       />
-      {!isFullscreen && <ParticleDebugOverlay />}
+      {!isFullscreen && <ParticleDebugOverlay top={diagnosticsPanelTop} />}
 
       {isUnsupported && (
         <UnsupportedWarning reason={unsupportedReason} probe={supportProbe} />

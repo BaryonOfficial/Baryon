@@ -17,6 +17,102 @@ import { RENDER_DEFAULTS } from "../defaults.js";
 
 const { RenderPipeline } = /** @type {any} */ (THREEWebGPU);
 
+export const RENDER_QUALITY_PRESETS = Object.freeze({
+  auto: "auto",
+  performance: "performance",
+  quality: "quality",
+});
+export const DEFAULT_RENDER_QUALITY_PRESET = RENDER_QUALITY_PRESETS.auto;
+
+/**
+ * @typedef {"auto" | "performance" | "quality"} RenderQualityPreset
+ */
+
+/**
+ * @typedef {{
+ *   qualityPreset: RenderQualityPreset,
+ *   renderScale: number,
+ *   traaEnabled: boolean,
+ *   bloomAllowed: boolean,
+ * }} RenderQualityProfile
+ */
+
+/**
+ * @param {unknown} value
+ * @returns {RenderQualityPreset}
+ */
+export function normalizeRenderQualityPreset(value) {
+  if (value === RENDER_QUALITY_PRESETS.performance) {
+    return RENDER_QUALITY_PRESETS.performance;
+  }
+  if (value === RENDER_QUALITY_PRESETS.quality) {
+    return RENDER_QUALITY_PRESETS.quality;
+  }
+  return DEFAULT_RENDER_QUALITY_PRESET;
+}
+
+/**
+ * @param {{
+ *   qualityPreset?: RenderQualityPreset,
+ *   outputWidth?: number,
+ *   outputHeight?: number,
+ * }=} param0
+ * @returns {RenderQualityProfile}
+ */
+export function resolveRenderQualityProfile({
+  qualityPreset = DEFAULT_RENDER_QUALITY_PRESET,
+  outputWidth = 0,
+  outputHeight = 0,
+} = {}) {
+  const normalizedPreset = normalizeRenderQualityPreset(qualityPreset);
+  if (normalizedPreset === RENDER_QUALITY_PRESETS.performance) {
+    return {
+      qualityPreset: normalizedPreset,
+      renderScale: 0.67,
+      traaEnabled: false,
+      bloomAllowed: false,
+    };
+  }
+
+  if (normalizedPreset === RENDER_QUALITY_PRESETS.quality) {
+    return {
+      qualityPreset: normalizedPreset,
+      renderScale: 1,
+      traaEnabled: true,
+      bloomAllowed: true,
+    };
+  }
+
+  const isHighResolutionOutput =
+    Number.isFinite(outputWidth) &&
+    Number.isFinite(outputHeight) &&
+    (outputWidth >= 3840 || outputHeight >= 2160);
+  if (isHighResolutionOutput) {
+    return {
+      qualityPreset: normalizedPreset,
+      renderScale: 0.75,
+      traaEnabled: false,
+      bloomAllowed: true,
+    };
+  }
+
+  return {
+    qualityPreset: normalizedPreset,
+    renderScale: 1,
+    traaEnabled: true,
+    bloomAllowed: true,
+  };
+}
+
+export function getRenderQualityProfileKey(profile) {
+  return [
+    normalizeRenderQualityPreset(profile?.qualityPreset),
+    profile?.renderScale ?? 1,
+    profile?.traaEnabled === false ? "no-traa" : "traa",
+    profile?.bloomAllowed === false ? "no-bloom" : "bloom",
+  ].join(":");
+}
+
 export const OUTPUT_MODES = Object.freeze({
   transparent: "transparent",
   opaque: "opaque",
@@ -38,13 +134,14 @@ export function composeRenderOutputNode({
   const normalizedMode = normalizeOutputMode(outputMode);
   const sceneRgb = sceneColor.rgb;
   const sceneAlpha = sceneColor.a;
-  const bloomAlpha = bloomEnabled
+  const bloomActive = bloomEnabled && bloomPass;
+  const bloomAlpha = bloomActive
     ? max(max(bloomPass.r, bloomPass.g), bloomPass.b).clamp()
     : float(0.0);
-  const finalAlpha = bloomEnabled
+  const finalAlpha = bloomActive
     ? max(sceneAlpha, bloomAlpha).clamp()
     : sceneAlpha;
-  const finalRgb = bloomEnabled ? sceneRgb.add(bloomPass.rgb) : sceneRgb;
+  const finalRgb = bloomActive ? sceneRgb.add(bloomPass.rgb) : sceneRgb;
 
   if (normalizedMode === OUTPUT_MODES.opaque) {
     const opaqueRgb = outputBackgroundNode
@@ -56,11 +153,19 @@ export function composeRenderOutputNode({
   return vec4(finalRgb, finalAlpha);
 }
 
-export function createRenderOutputPipeline(gl, scene, camera) {
+export function createRenderOutputPipeline(
+  gl,
+  scene,
+  camera,
+  { renderProfile = null } = {},
+) {
   if (gl?.backend?.isWebGLBackend === true) {
     return null;
   }
 
+  const resolvedRenderProfile = resolveRenderQualityProfile(
+    renderProfile ?? {},
+  );
   const bloomUniforms = {
     strength: uniform(RENDER_DEFAULTS.bloomStrength),
     radius: uniform(RENDER_DEFAULTS.bloomRadius),
@@ -72,38 +177,50 @@ export function createRenderOutputPipeline(gl, scene, camera) {
     ),
   };
   const scenePass = pass(scene, camera);
-  // Enable velocity MRT so TRAANode can reproject history across frames.
-  // `output` must be included so MRTNode.setup() fills index 0 of renderTarget.textures;
-  // omitting it leaves members[0] undefined and crashes OutputStructNode.generate().
-  // Our sphere has no transform animation (audio drives shader uniforms only),
-  // so velocity is zero everywhere — no ghosting risk.
-  scenePass.setMRT(mrt({ output, velocity }));
+  let sceneColor = null;
+  let traaNode = null;
+  let traaColor = null;
+  let bloomPass = null;
 
-  const sceneColor = scenePass.getTextureNode("output");
-  const depthNode = scenePass.getTextureNode("depth");
-  const velocityNode = scenePass.getTextureNode("velocity");
+  if (resolvedRenderProfile.traaEnabled) {
+    // Enable velocity MRT so TRAANode can reproject history across frames.
+    // `output` must be included so MRTNode.setup() fills index 0 of renderTarget.textures;
+    // omitting it leaves members[0] undefined and crashes OutputStructNode.generate().
+    // Our sphere has no transform animation (audio drives shader uniforms only),
+    // so velocity is zero everywhere — no ghosting risk.
+    scenePass.setMRT(mrt({ output, velocity }));
 
-  // TRAA: temporal reprojection AA with Halton sub-pixel jitter + variance
-  // clipping. This is the real frame-accumulation pass; bloom runs on the
-  // resolved anti-aliased output so the two effects reinforce each other.
-  const traaNode = traa(sceneColor, depthNode, velocityNode, camera);
-  // useSubpixelCorrection increases current-frame weight when velocity is subpixel —
-  // designed for moving objects. Our velocity is always zero, so it adds the "square
-  // pattern artifact" the docs warn about without any benefit.
-  traaNode.useSubpixelCorrection = false;
-  // The raymarched volume writes depth at the first ray hit, not a classical polygon
-  // surface. Loosen edgeDepthDiff so TRAA treats fewer ray-march depth transitions as
-  // "edges" and uses history more aggressively throughout the volume body.
-  traaNode.edgeDepthDiff = 0.005;
-  // @ts-ignore — getTextureNode() exists in TRAANode source but is missing from its .d.ts
-  const traaColor = traaNode.getTextureNode();
+    sceneColor = scenePass.getTextureNode("output");
+    const depthNode = scenePass.getTextureNode("depth");
+    const velocityNode = scenePass.getTextureNode("velocity");
 
-  const bloomPass = bloom(
-    traaColor,
-    /** @type {any} */ (bloomUniforms.strength),
-    /** @type {any} */ (bloomUniforms.radius),
-    /** @type {any} */ (bloomUniforms.threshold),
-  );
+    // TRAA: temporal reprojection AA with Halton sub-pixel jitter + variance
+    // clipping. This is the real frame-accumulation pass; bloom runs on the
+    // resolved anti-aliased output so the two effects reinforce each other.
+    traaNode = traa(sceneColor, depthNode, velocityNode, camera);
+    // useSubpixelCorrection increases current-frame weight when velocity is subpixel —
+    // designed for moving objects. Our velocity is always zero, so it adds the "square
+    // pattern artifact" the docs warn about without any benefit.
+    traaNode.useSubpixelCorrection = false;
+    // The raymarched volume writes depth at the first ray hit, not a classical polygon
+    // surface. Loosen edgeDepthDiff so TRAA treats fewer ray-march depth transitions as
+    // "edges" and uses history more aggressively throughout the volume body.
+    traaNode.edgeDepthDiff = 0.005;
+    // @ts-ignore — getTextureNode() exists in TRAANode source but is missing from its .d.ts
+    traaColor = traaNode.getTextureNode();
+  } else {
+    sceneColor = scenePass.getTextureNode("output");
+    traaColor = sceneColor;
+  }
+
+  if (resolvedRenderProfile.bloomAllowed) {
+    bloomPass = bloom(
+      traaColor,
+      /** @type {any} */ (bloomUniforms.strength),
+      /** @type {any} */ (bloomUniforms.radius),
+      /** @type {any} */ (bloomUniforms.threshold),
+    );
+  }
   const pipeline = new RenderPipeline(gl);
   const composeOutputNode = ({
     bloomEnabled = RENDER_DEFAULTS.bloomEnabled,
@@ -112,7 +229,7 @@ export function createRenderOutputPipeline(gl, scene, camera) {
     composeRenderOutputNode({
       sceneColor: traaColor,
       bloomPass,
-      bloomEnabled,
+      bloomEnabled: bloomEnabled && resolvedRenderProfile.bloomAllowed,
       outputMode,
       outputBackgroundNode: outputUniforms.backgroundColor,
     });
@@ -130,6 +247,7 @@ export function createRenderOutputPipeline(gl, scene, camera) {
       bloomUniforms,
       outputUniforms,
       composeOutputNode,
+      renderProfile: resolvedRenderProfile,
     },
   };
 }
@@ -219,6 +337,7 @@ export function createCaptureOutputSession(
   sourceCamera,
   width,
   height,
+  { renderProfile = null } = {},
 ) {
   const aspect = width / height;
   const outputCamera = createOutputCamera(sourceCamera, aspect);
@@ -226,6 +345,7 @@ export function createCaptureOutputSession(
     renderer,
     scene,
     outputCamera,
+    { renderProfile },
   );
   const target = new RenderTarget(width, height, {
     format: THREE.RGBAFormat,

@@ -15,7 +15,7 @@ export const SETTINGS_KEY = "baryon:settings";
 export const PRESETS_KEY = "baryon:presets";
 export const CONTROLS_PERSIST_DELAY_MS = 500;
 
-function readStoredJson(storage, key) {
+export function readStoredJson(storage, key) {
   if (!storage) {
     return null;
   }
@@ -85,11 +85,24 @@ export function getVisibleControlGroups({
 }
 
 export function persistControls(storage, controls) {
-  writeStoredJson(
-    storage,
-    SETTINGS_KEY,
-    serializeControls(controls, CONTROL_DEFINITIONS),
+  const existingSettings = readStoredJson(storage, SETTINGS_KEY);
+  const serializedControls = serializeControls(controls, CONTROL_DEFINITIONS);
+  const knownControlKeys = new Set(
+    CONTROL_DEFINITIONS.map((definition) => definition.key),
   );
+  const persistedExtras =
+    existingSettings && typeof existingSettings === "object"
+      ? Object.fromEntries(
+          Object.entries(existingSettings).filter(
+            ([key]) => !knownControlKeys.has(key),
+          ),
+        )
+      : {};
+
+  writeStoredJson(storage, SETTINGS_KEY, {
+    ...persistedExtras,
+    ...serializedControls,
+  });
 }
 
 export function savePresetCollection(

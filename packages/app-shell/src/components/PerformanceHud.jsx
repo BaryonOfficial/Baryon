@@ -10,7 +10,11 @@ function formatNumber(value, digits = 1) {
   return value.toFixed(digits);
 }
 
-export default function PerformanceHud({ metrics }) {
+export default function PerformanceHud({
+  metrics,
+  top = "1rem",
+  right = "1rem",
+}) {
   if (!metrics) {
     return null;
   }
@@ -20,8 +24,8 @@ export default function PerformanceHud({ metrics }) {
       data-testid="performance-hud"
       style={{
         position: "fixed",
-        top: "1rem",
-        right: "1rem",
+        top,
+        right,
         zIndex: 10000,
         minWidth: "9rem",
         padding: "0.55rem 0.7rem",
