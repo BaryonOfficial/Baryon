@@ -34,6 +34,8 @@ function melToHz(mel) {
   return 700 * (10 ** (mel / 2595) - 1);
 }
 
+import { DEFAULT_SAMPLE_RATE } from "../../defaults.js";
+
 function createMelFilterbank(sampleRate, fftSize, binCount) {
   const key = `${sampleRate}:${fftSize}:${binCount}`;
   const cached = MEL_FILTER_CACHE.get(key);
@@ -150,7 +152,7 @@ export function buildCompactAnalyzerFrame({
 }) {
   const fftMagnitudes = analysisSnapshot?.fftMagnitudes;
   const fftSize = status?.fftSize ?? analysisSnapshot?.timeData?.length ?? 0;
-  const sampleRate = status?.sampleRate ?? 44100;
+  const sampleRate = status?.sampleRate ?? DEFAULT_SAMPLE_RATE;
   if (!fftMagnitudes?.length || !(fftSize > 0)) {
     return null;
   }

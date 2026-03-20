@@ -23,7 +23,7 @@ plasmic.json
 .vscode/*
 !.vscode/extensions.json
 .idea
-.DS_Store
+*.DS_Store
 *.suo
 *.ntvs*
 *.njsproj

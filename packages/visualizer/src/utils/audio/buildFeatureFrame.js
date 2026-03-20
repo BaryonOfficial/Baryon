@@ -3,6 +3,8 @@ import {
   AUDIO_SIGNAL_NORMALIZATION_SLOTS,
   AUDIO_SLOT_CAPACITY,
   BEAT_DEFAULTS,
+  DEFAULT_FFT_SIZE,
+  DEFAULT_SAMPLE_RATE,
 } from "../../defaults.js";
 import { sampleFFTAmplitudeForFrequency } from "../normalModes.js";
 import {
@@ -1319,8 +1321,8 @@ export function detectLiveInputNoiseGate({
   avgAmplitude,
   rms,
   fftMagnitudes,
-  sampleRate = 44100,
-  fftSize = 4096,
+  sampleRate = DEFAULT_SAMPLE_RATE,
+  fftSize = DEFAULT_FFT_SIZE,
   micAnalysisSettings = undefined,
   liveInputAnalysisSettings = undefined,
 }) {
@@ -3381,8 +3383,8 @@ export function buildAudioFeatureFrame({
     auditState?.settings ?? {
       ...AUDIT_DEFAULTS,
     };
-  const sampleRate = status?.sampleRate ?? 44100;
-  const fftSize = status?.fftSize ?? 4096;
+  const sampleRate = status?.sampleRate ?? DEFAULT_SAMPLE_RATE;
+  const fftSize = status?.fftSize ?? DEFAULT_FFT_SIZE;
   const inputMode = status?.audioInputMode ?? "idle";
   const calibrationVersion = status?.liveInputCalibrationVersion ?? 0;
   const liveInputKind = status?.liveInputKind ?? null;
