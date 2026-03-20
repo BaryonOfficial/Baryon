@@ -251,27 +251,43 @@ export function createCaptureOutputSession(
       const previousViewport = renderer.getViewport(new THREE.Vector4());
       const previousScissor = renderer.getScissor(new THREE.Vector4());
       const previousScissorTest = renderer.getScissorTest();
-      const savedSize = renderer.getSize(new THREE.Vector2());
-      const savedDpr = renderer.getPixelRatio();
 
-      // Force CanvasTarget to report the capture resolution so PassNode/TRAA/bloom
-      // allocate against the fixed production size instead of the live preview canvas.
-      renderer.setDrawingBufferSize(width, height, 1);
+      // Temporarily override getSize/getPixelRatio so all PassNodes (scenePass,
+      // TRAA, bloom) allocate their internal buffers at the fixed capture
+      // resolution instead of reading the live preview canvas size.
+      //
+      // This avoids setDrawingBufferSize, which calls backend.updateSize() →
+      // delete(canvasTarget), causing the WebGPU context getter to re-call
+      // context.configure() (which per spec first calls unconfigure()). That
+      // unconfigures the swap chain mid-frame, destabilising the main pipeline
+      // and crashing on resolution changes.
+      const origGetSize = renderer.getSize;
+      const origGetPixelRatio = renderer.getPixelRatio;
+      renderer.getSize = (target) => {
+        if (target) {
+          target.set(width, height);
+          return target;
+        }
+        return new THREE.Vector2(width, height);
+      };
+      renderer.getPixelRatio = () => 1;
 
       renderer.setRenderTarget(null);
       renderer.setOutputRenderTarget(target);
       renderer.setViewport(0, 0, width, height);
       renderer.setScissor(0, 0, width, height);
       renderer.setScissorTest(false);
-
-      pipelineState.pipeline.render();
-
-      renderer.setOutputRenderTarget(previousOutputRenderTarget);
-      renderer.setRenderTarget(previousRenderTarget);
-      renderer.setDrawingBufferSize(savedSize.x, savedSize.y, savedDpr);
-      renderer.setViewport(previousViewport);
-      renderer.setScissor(previousScissor);
-      renderer.setScissorTest(previousScissorTest);
+      try {
+        pipelineState.pipeline.render();
+      } finally {
+        renderer.getSize = origGetSize;
+        renderer.getPixelRatio = origGetPixelRatio;
+        renderer.setOutputRenderTarget(previousOutputRenderTarget);
+        renderer.setRenderTarget(previousRenderTarget);
+        renderer.setViewport(previousViewport);
+        renderer.setScissor(previousScissor);
+        renderer.setScissorTest(previousScissorTest);
+      }
     },
     readPixelsAsync() {
       return renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height);

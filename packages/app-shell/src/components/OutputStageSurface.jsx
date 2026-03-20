@@ -12,18 +12,21 @@ import {
  *   controlsRef: import("react").MutableRefObject<Record<string, unknown>>,
  *   visualizationMethod: string,
  *   externalFrameRef?: import("react").MutableRefObject<any>,
+ *   backgroundColor?: string,
  * }} props
  */
 export function OutputStageSurface({
   controlsRef,
   visualizationMethod,
   externalFrameRef = null,
+  backgroundColor: backgroundColorProp = null,
 }) {
   const [rendererError, setRendererError] = useState(null);
-  const backgroundColor =
-    typeof controlsRef.current?.backgroundColor === "string"
+  const resolvedBackgroundColor =
+    backgroundColorProp ??
+    (typeof controlsRef.current?.backgroundColor === "string"
       ? controlsRef.current.backgroundColor
-      : "#000000";
+      : "#000000");
 
   const handleCanvasError = (error) => {
     if (error?.name !== WEBGPU_RENDERER_INIT_ERROR) {
@@ -41,7 +44,7 @@ export function OutputStageSurface({
         height: "100vh",
         position: "fixed",
         inset: 0,
-        background: backgroundColor,
+        background: resolvedBackgroundColor,
       }}
     >
       {rendererError ? (

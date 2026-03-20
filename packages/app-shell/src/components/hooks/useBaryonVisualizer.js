@@ -32,6 +32,7 @@ import {
   updateRendererDiagnostics,
 } from "./baryonVisualizerRenderLoop.js";
 import { useVisualizationRuntimeLifecycle } from "./useVisualizationRuntimeLifecycle.js";
+import { getSourceAuthoritativeClock } from "./externalFrameClock.js";
 
 function clearCachedControlsSnapshot(cachedControlSnapshotsRef) {
   cachedControlSnapshotsRef.current.controlsSnapshot = null;
@@ -57,6 +58,7 @@ export function useBaryonVisualizer({
   const audioRef = useRef(getDefaultAudioSession());
   const outputSessionRef = useRef(null);
   const outputCaptureInFlightRef = useRef(false);
+  const lastAppliedExternalFrameSequenceRef = useRef(null);
   const performanceHudStateRef = useRef({
     lastPublishedAtMs: Number.NEGATIVE_INFINITY,
     wasVisible: false,
@@ -117,6 +119,7 @@ export function useBaryonVisualizer({
       outputSessionRef.current?.dispose?.();
       outputSessionRef.current = null;
       outputCaptureInFlightRef.current = false;
+      lastAppliedExternalFrameSequenceRef.current = null;
       clearFrameCache(frameCacheRefs);
       lastLiveInputRuntimeStatusRef.current = null;
       runtimeDiagnosticsRef.current = createRuntimeDiagnostics();
@@ -271,10 +274,21 @@ export function useBaryonVisualizer({
     const controls = renderLoopContext.controlsRef.current;
     const audio = renderLoopContext.audioRef.current;
     const externalFrameState = externalFrameRef?.current ?? null;
-    const status = externalFrameState?.status ?? audio.getStatus();
-    const { clockMode, time, deltaTime } =
-      externalFrameState ??
-      audio.readClockSnapshot(state.clock.getElapsedTime());
+    const fallbackClockSnapshot = {
+      status: audio.getStatus(),
+      ...audio.readClockSnapshot(state.clock.getElapsedTime()),
+    };
+    const {
+      status,
+      clockMode,
+      time,
+      deltaTime,
+      frameSequence: externalFrameSequence,
+    } = getSourceAuthoritativeClock({
+      externalFrameState,
+      lastAppliedFrameSequence: lastAppliedExternalFrameSequenceRef.current,
+      fallbackClockSnapshot,
+    });
     const { lowLoadActive, runtimeDiagnostics } = updateRendererDiagnostics({
       state,
       controls,
@@ -332,6 +346,10 @@ export function useBaryonVisualizer({
 
     if (!featureFrame || !effectiveFrame) {
       return;
+    }
+
+    if (externalFrameState?.featureFrame) {
+      lastAppliedExternalFrameSequenceRef.current = externalFrameSequence;
     }
 
     syncLiveInputRuntimeStatus({
