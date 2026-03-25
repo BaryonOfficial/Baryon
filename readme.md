@@ -55,17 +55,12 @@ Public-facing/shared docs:
 
 ## Licensing
 
-Baryon's engine (`packages/visualizer`, `packages/ui`, `packages/config`) and web app
-(`apps/web`) are licensed under `Elastic License 2.0 (ELv2)`. The canonical license text is in
-`LICENSE`.
+The Baryon engine is available under the **PolyForm Strict License 1.0.0** for
+personal, non-commercial use. A Commercial License is required to distribute
+any product built on the engine, whether free or paid.
 
-The desktop app (`apps/desktop`) is a separate commercial product. A desktop license is required
-to use distributed builds and is purchased at `baryon.live`.
-
-Public licensing references:
-
-- `LICENSE`
-- `LICENSING.md`
+See [`LICENSING.md`](LICENSING.md) for the full summary, and
+[`COMMERCIAL_LICENSE.md`](COMMERCIAL_LICENSE.md) for commercial use details.
 
 ## Prerequisites
 
