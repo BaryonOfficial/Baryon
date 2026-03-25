@@ -2472,6 +2472,89 @@ function resolveVoiceDetailPeaks({
   );
 }
 
+function getLayerSlotLimit(layerType, capacity) {
+  return Math.min(
+    capacity,
+    layerType === "backbone" ? BACKBONE_STACK_SLOTS : DETAIL_STACK_SLOTS,
+  );
+}
+
+function buildEmptyTarget(capacity) {
+  return new Float32Array(capacity * 4);
+}
+
+function releaseLayer(
+  layerState,
+  capacity,
+  options,
+  targetSlots = null,
+  emptyTargetSlots = null,
+) {
+  const resolvedTargetSlots = targetSlots ?? buildEmptyTarget(capacity);
+  const resolvedEmptyTargetSlots = emptyTargetSlots ?? resolvedTargetSlots;
+  blendModalStack(layerState, resolvedTargetSlots, capacity, options);
+  if (options.colorOptions) {
+    blendColorStack(
+      layerState,
+      resolvedTargetSlots,
+      resolvedEmptyTargetSlots,
+      capacity,
+      options.colorOptions,
+    );
+  } else {
+    layerState.colorSlots?.fill(0);
+    layerState.referenceColorSlots?.fill(0);
+  }
+  clearLayerMetadata(layerState);
+}
+
+function applyLayerBlend(layerState, targetBuild, capacity, options) {
+  blendModalStack(layerState, targetBuild.slots, capacity, options);
+  if (options.colorOptions) {
+    blendColorStack(
+      layerState,
+      targetBuild.slots,
+      targetBuild.colorSlots,
+      capacity,
+      options.colorOptions,
+    );
+  } else {
+    layerState.colorSlots.fill(0);
+    layerState.referenceColorSlots.fill(0);
+  }
+}
+
+function computeBandEnergies(fftMagnitudes, sampleRate, fftSize) {
+  const bands = new Float32Array(BAND_BUCKET_COUNT);
+  if (!fftMagnitudes?.length || !sampleRate || !fftSize) {
+    return bands;
+  }
+
+  const nyquist = sampleRate * 0.5;
+  const sums = new Float32Array(BAND_BUCKET_COUNT);
+  const counts = new Float32Array(BAND_BUCKET_COUNT);
+
+  for (let i = 0; i < fftMagnitudes.length; i++) {
+    const frequency = (i / Math.max(1, fftMagnitudes.length - 1)) * nyquist;
+    const amplitude = fftMagnitudes[i] ?? 0;
+    let bandIndex = BAND_BUCKET_COUNT - 1;
+    for (let j = 0; j < BAND_LIMITS_HZ.length; j++) {
+      if (frequency <= BAND_LIMITS_HZ[j]) {
+        bandIndex = j;
+        break;
+      }
+    }
+    sums[bandIndex] += amplitude;
+    counts[bandIndex] += 1;
+  }
+
+  for (let i = 0; i < BAND_BUCKET_COUNT; i++) {
+    bands[i] = counts[i] > 0 ? Math.min(1, sums[i] / counts[i]) : 0;
+  }
+
+  return bands;
+}
+
 function computeSpectralBandOutputs(fftMagnitudes, sampleRate) {
   const spectralBandEnergies = new Float32Array(SPECTRAL_BAND_6_COUNT);
   if (!fftMagnitudes?.length || !sampleRate) {
@@ -2998,6 +3081,7 @@ export function updateAudioFeatureTempoState({
     rhythmicDensity,
   };
 }
+
 function resolveLayeredModalStacks({
   analysisSnapshot,
   status,
