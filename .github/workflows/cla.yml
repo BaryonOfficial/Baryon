@@ -24,10 +24,8 @@ jobs:
         with:
           path-to-signatures: "cla-signatures/signatures.json"
           path-to-document: "https://github.com/BaryonOfficial/Baryon/blob/main/CLA.md"
-          branch: "main"
-          allowlist: bot*
+          branch: "cla-signatures"
+          allowlist: bot*,RektTillNoon
           lock-pullrequest-aftermerge: false
-          sign-comment: >
+          custom-pr-sign-comment: >
             I have read the CLA Document and I hereby sign the CLA
-          signed-label: "cla: signed"
-          unsigned-label: "cla: unsigned"
