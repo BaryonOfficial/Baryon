@@ -1,11 +1,10 @@
-import {
-  solveModeFamilyForPitch,
-  sampleFFTAmplitudeForFrequency,
-} from "../normalModes.js";
+import { sampleFFTAmplitudeForFrequency } from "../cavityModes.js";
+import { getModalGeometryBackend } from "../../core/modalGeometryBackend.js";
 import {
   BACKBONE_STACK_SLOTS,
   DETAIL_STACK_SLOTS,
   MAX_STACK_SLOTS,
+  createModalTargetBuild,
   writeColorSlot,
   writeSlot,
 } from "./modalStack.js";
@@ -93,23 +92,51 @@ function limitColorComponents(components) {
     .slice(0, MAX_COLOR_COMPONENTS);
 }
 
-export function buildModalSlotsFromFundamental({
-  frequency,
-  confidence,
-  fftMagnitudes,
-  sampleRate,
-  fftSize,
-  radius,
-  capacity,
-  spectralCentroid = 0,
-  includeChromesthesia = true,
-}) {
-  const slotLimit = Math.min(capacity, MAX_STACK_SLOTS);
-  const slots = new Float32Array(capacity * 4);
-  const referenceSlots = new Float32Array(capacity * 4);
-  const colorSlots = new Float32Array(capacity * 4);
-  const harmonicSupport = new Float32Array(HARMONIC_ORDERS.length);
+function resetModalTargetBuild(target, peaks = []) {
+  target.slots.fill(0);
+  target.referenceSlots.fill(0);
+  target.colorSlots.fill(0);
+  target.harmonicSupport.fill(0);
+  target.uniqueModeCount = 0;
+  target.peaks = peaks;
+  target.components = [];
+  return target;
+}
+
+function ensureMergeScratch(target) {
+  if (!(target._mergeScratch instanceof Map)) {
+    target._mergeScratch = new Map();
+  }
+  return target._mergeScratch;
+}
+
+export function writeModalSlotsFromFundamental(
+  target,
+  {
+    frequency,
+    confidence,
+    fftMagnitudes,
+    sampleRate,
+    fftSize,
+    radius,
+    capacity,
+    cavityGeometry = "rectangular",
+    spectralCentroid = 0,
+    includeChromesthesia = true,
+  },
+) {
+  resetModalTargetBuild(target);
+  const slotLimit = Math.min(
+    capacity,
+    MAX_STACK_SLOTS,
+    Math.floor((target.slots?.length ?? 0) / 4),
+  );
+  const slots = target.slots;
+  const referenceSlots = target.referenceSlots;
+  const colorSlots = target.colorSlots;
+  const harmonicSupport = target.harmonicSupport;
   const seenModes = new Set();
+  const geometryBackend = getModalGeometryBackend(cavityGeometry);
   const colorFamilies = includeChromesthesia ? [] : null;
   const components = includeChromesthesia ? [] : null;
   let primarySupport = sampleFFTAmplitudeForFrequency(
@@ -168,11 +195,11 @@ export function buildModalSlotsFromFundamental({
       slotLimit - slotIndex,
       HARMONIC_FAMILY_COUNTS[i] ?? 1,
     );
-    const family = solveModeFamilyForPitch(
-      harmonicFrequency,
+    const family = geometryBackend.solveTermsForPitch({
+      pitch: harmonicFrequency,
       radius,
-      familyLimit * 3,
-    );
+      count: familyLimit * 3,
+    });
     const colorComponent = includeChromesthesia
       ? buildColorComponent({
           frequency: harmonicFrequency,
@@ -215,39 +242,46 @@ export function buildModalSlotsFromFundamental({
     }
   }
 
-  return {
-    slots,
-    referenceSlots,
-    colorSlots,
-    harmonicSupport,
-    uniqueModeCount: slotIndex,
-    components: includeChromesthesia ? limitColorComponents(components) : [],
-  };
+  target.uniqueModeCount = slotIndex;
+  target.components = includeChromesthesia
+    ? limitColorComponents(components)
+    : [];
+  return target;
 }
 
-export function buildModalSlotsFromSpectralPeaks({
-  fftMagnitudes,
-  sampleRate,
-  fftSize,
-  radius,
-  capacity,
-  peakCount = null,
-  slotLimit = null,
-  peakFamilyCount = SPECTRAL_PEAK_FAMILY_COUNT,
-  spectralCentroid = 0,
-  includeChromesthesia = true,
-  peaks = null,
-  peakOptions = undefined,
-}) {
+export function buildModalSlotsFromFundamental(options) {
+  return writeModalSlotsFromFundamental(
+    createModalTargetBuild(options.capacity),
+    options,
+  );
+}
+
+export function writeModalSlotsFromSpectralPeaks(
+  target,
+  {
+    fftMagnitudes,
+    sampleRate,
+    fftSize,
+    radius,
+    capacity,
+    cavityGeometry = "rectangular",
+    peakCount = null,
+    slotLimit = null,
+    peakFamilyCount = SPECTRAL_PEAK_FAMILY_COUNT,
+    spectralCentroid = 0,
+    includeChromesthesia = true,
+    peaks = null,
+    peakOptions = undefined,
+  },
+) {
   const maxSlots =
-    slotLimit ?? Math.min(capacity, DETAIL_STACK_SLOTS, MAX_STACK_SLOTS);
-  const slots = new Float32Array(capacity * 4);
-  const referenceSlots = new Float32Array(capacity * 4);
-  const colorSlots = new Float32Array(capacity * 4);
-  const harmonicSupport = new Float32Array(HARMONIC_ORDERS.length);
-  const seenModes = new Set();
-  const colorFamilies = includeChromesthesia ? [] : null;
-  const components = includeChromesthesia ? [] : null;
+    slotLimit ??
+    Math.min(
+      capacity,
+      DETAIL_STACK_SLOTS,
+      MAX_STACK_SLOTS,
+      Math.floor((target.slots?.length ?? 0) / 4),
+    );
   const resolvedPeaks =
     peaks ??
     findSpectralPeakFrequencies(
@@ -257,16 +291,25 @@ export function buildModalSlotsFromSpectralPeaks({
       peakCount ?? maxSlots * 2,
       peakOptions,
     );
+  resetModalTargetBuild(target, resolvedPeaks);
+  const slots = target.slots;
+  const referenceSlots = target.referenceSlots;
+  const colorSlots = target.colorSlots;
+  const harmonicSupport = target.harmonicSupport;
+  const seenModes = new Set();
+  const geometryBackend = getModalGeometryBackend(cavityGeometry);
+  const colorFamilies = includeChromesthesia ? [] : null;
+  const components = includeChromesthesia ? [] : null;
 
   let slotIndex = 0;
   for (const peak of resolvedPeaks) {
     if (slotIndex >= maxSlots) break;
     const familyLimit = Math.min(maxSlots - slotIndex, peakFamilyCount);
-    const family = solveModeFamilyForPitch(
-      peak.frequency,
+    const family = geometryBackend.solveTermsForPitch({
+      pitch: peak.frequency,
       radius,
-      familyLimit * 3,
-    );
+      count: familyLimit * 3,
+    });
     const colorComponent = includeChromesthesia
       ? buildColorComponent({
           frequency: peak.frequency,
@@ -320,76 +363,62 @@ export function buildModalSlotsFromSpectralPeaks({
     }
   }
 
-  return {
-    slots,
-    referenceSlots,
-    colorSlots,
-    harmonicSupport,
-    uniqueModeCount: slotIndex,
-    peaks: resolvedPeaks,
-    components: includeChromesthesia ? limitColorComponents(components) : [],
-  };
+  target.uniqueModeCount = slotIndex;
+  target.components = includeChromesthesia
+    ? limitColorComponents(components)
+    : [];
+  return target;
 }
 
-function mergeModeBuilds(builds, capacity) {
-  const slots = new Float32Array(capacity * 4);
-  const referenceSlots = new Float32Array(capacity * 4);
-  const colorSlots = new Float32Array(capacity * 4);
-  const harmonicSupport = new Float32Array(HARMONIC_ORDERS.length);
-  const merged = new Map();
-  const components = [];
+export function buildModalSlotsFromSpectralPeaks(options) {
+  return writeModalSlotsFromSpectralPeaks(
+    createModalTargetBuild(options.capacity),
+    options,
+  );
+}
 
-  for (const build of builds) {
-    if (!build) continue;
-    if (Array.isArray(build.components)) {
-      components.push(...build.components);
-    }
-    harmonicSupport.forEach((_, index) => {
-      harmonicSupport[index] = Math.max(
-        harmonicSupport[index],
-        build.harmonicSupport?.[index] ?? 0,
-      );
-    });
-    for (let i = 0; i < build.slots.length; i += 4) {
-      const amplitude = build.slots[i + 3];
-      if (amplitude <= 0) continue;
-      const u = build.slots[i];
-      const v = build.slots[i + 1];
-      const w = build.slots[i + 2];
-      const key = `${u}:${v}:${w}`;
-      const existing = merged.get(key) ?? {
-        u,
-        v,
-        w,
-        amplitude: 0,
-        referenceAmplitude: 0,
-        colorR: 0,
-        colorG: 0,
-        colorB: 0,
-        colorWeight: 0,
-      };
-      existing.amplitude += amplitude;
-      existing.referenceAmplitude += build.referenceSlots[i + 3] ?? 0;
-      existing.colorR += (build.colorSlots?.[i] ?? 0) * amplitude;
-      existing.colorG += (build.colorSlots?.[i + 1] ?? 0) * amplitude;
-      existing.colorB += (build.colorSlots?.[i + 2] ?? 0) * amplitude;
-      existing.colorWeight += build.colorSlots?.[i + 3] ?? 0;
-      merged.set(key, existing);
-    }
+function mergeDriverBuildIntoScratch(merged, build) {
+  for (let offset = 0; offset < build.slots.length; offset += 4) {
+    const amplitude = build.slots[offset + 3] ?? 0;
+    if (amplitude <= 0) continue;
+    const u = build.slots[offset];
+    const v = build.slots[offset + 1];
+    const w = build.slots[offset + 2];
+    const key = `${u}:${v}:${w}`;
+    const existing = merged.get(key) ?? {
+      u,
+      v,
+      w,
+      amplitude: 0,
+      referenceAmplitude: 0,
+      colorR: 0,
+      colorG: 0,
+      colorB: 0,
+      colorWeight: 0,
+    };
+    existing.amplitude += amplitude;
+    existing.referenceAmplitude += build.referenceSlots[offset + 3] ?? 0;
+    existing.colorR += (build.colorSlots?.[offset] ?? 0) * amplitude;
+    existing.colorG += (build.colorSlots?.[offset + 1] ?? 0) * amplitude;
+    existing.colorB += (build.colorSlots?.[offset + 2] ?? 0) * amplitude;
+    existing.colorWeight += build.colorSlots?.[offset + 3] ?? 0;
+    merged.set(key, existing);
   }
+}
 
+function writeMergedDriverScratch(target, capacity, merged) {
   const survivors = Array.from(merged.values())
-    .sort((a, b) => b.amplitude - a.amplitude)
+    .sort((left, right) => right.amplitude - left.amplitude)
     .slice(0, capacity);
 
-  for (let i = 0; i < survivors.length; i++) {
-    const entry = survivors[i];
-    writeSlot(slots, i, entry, entry.amplitude);
-    writeSlot(referenceSlots, i, entry, entry.referenceAmplitude);
+  for (let index = 0; index < survivors.length; index += 1) {
+    const entry = survivors[index];
+    writeSlot(target.slots, index, entry, entry.amplitude);
+    writeSlot(target.referenceSlots, index, entry, entry.referenceAmplitude);
     const amplitude = Math.max(entry.amplitude, 1e-4);
     writeColorSlot(
-      colorSlots,
-      i,
+      target.colorSlots,
+      index,
       {
         r: entry.colorR / amplitude,
         g: entry.colorG / amplitude,
@@ -399,30 +428,28 @@ function mergeModeBuilds(builds, capacity) {
     );
   }
 
-  return {
-    slots,
-    referenceSlots,
-    colorSlots,
-    harmonicSupport,
-    uniqueModeCount: survivors.length,
-    components: limitColorComponents(components),
-  };
+  target.uniqueModeCount = survivors.length;
 }
 
-export function buildModalSlotsFromPeakDrivers({
-  fftMagnitudes,
-  sampleRate,
-  fftSize,
-  radius,
-  capacity,
-  peakCount = 3,
-  slotLimit = BACKBONE_STACK_SLOTS,
-  minimumConfidence = 0.45,
-  spectralCentroid = 0,
-  includeChromesthesia = true,
-  peaks = null,
-  peakOptions = undefined,
-}) {
+export function writeModalSlotsFromPeakDrivers(
+  target,
+  {
+    fftMagnitudes,
+    sampleRate,
+    fftSize,
+    radius,
+    capacity,
+    cavityGeometry = "rectangular",
+    peakCount = 3,
+    slotLimit = BACKBONE_STACK_SLOTS,
+    minimumConfidence = 0.45,
+    spectralCentroid = 0,
+    includeChromesthesia = true,
+    peaks = null,
+    peakOptions = undefined,
+    scratchTarget = null,
+  },
+) {
   const resolvedPeaks =
     peaks ??
     findSpectralPeakFrequencies(
@@ -432,50 +459,72 @@ export function buildModalSlotsFromPeakDrivers({
       peakCount,
       peakOptions,
     );
+  resetModalTargetBuild(target, resolvedPeaks);
   if (!resolvedPeaks.length) {
-    return {
-      slots: new Float32Array(capacity * 4),
-      referenceSlots: new Float32Array(capacity * 4),
-      colorSlots: new Float32Array(capacity * 4),
-      harmonicSupport: new Float32Array(HARMONIC_ORDERS.length),
-      uniqueModeCount: 0,
-      peaks: resolvedPeaks,
-      components: [],
-    };
+    return target;
   }
 
-  const builds = resolvedPeaks.map((peak, index) => {
+  const resolvedCapacity = Math.min(capacity, slotLimit);
+  const resolvedScratchTarget =
+    scratchTarget ?? createModalTargetBuild(resolvedCapacity);
+  const merged = ensureMergeScratch(target);
+  const components = [];
+  merged.clear();
+
+  for (let index = 0; index < resolvedPeaks.length; index += 1) {
+    const peak = resolvedPeaks[index];
     const attenuation =
       BACKBONE_DRIVER_ATTENUATION[index] ??
       BACKBONE_DRIVER_ATTENUATION[BACKBONE_DRIVER_ATTENUATION.length - 1] ??
       1;
     const confidence =
       Math.max(minimumConfidence, peak.amplitude) * attenuation;
-    const build = buildModalSlotsFromFundamental({
+    const build = writeModalSlotsFromFundamental(resolvedScratchTarget, {
       frequency: peak.frequency,
       confidence,
       fftMagnitudes,
       sampleRate,
       fftSize,
       radius,
-      capacity: Math.min(capacity, slotLimit),
+      capacity: resolvedCapacity,
+      cavityGeometry,
       spectralCentroid,
       includeChromesthesia,
     });
 
-    for (let i = 0; i < build.slots.length; i += 4) {
-      build.slots[i + 3] *= attenuation;
-      build.referenceSlots[i + 3] *= attenuation;
-      build.colorSlots[i + 3] = clamp01(build.colorSlots[i + 3] * attenuation);
+    if (Array.isArray(build.components)) {
+      components.push(...build.components);
     }
+    for (
+      let harmonicIndex = 0;
+      harmonicIndex < target.harmonicSupport.length;
+      harmonicIndex += 1
+    ) {
+      target.harmonicSupport[harmonicIndex] = Math.max(
+        target.harmonicSupport[harmonicIndex],
+        build.harmonicSupport?.[harmonicIndex] ?? 0,
+      );
+    }
+    for (let offset = 0; offset < build.slots.length; offset += 4) {
+      build.slots[offset + 3] *= attenuation;
+      build.referenceSlots[offset + 3] *= attenuation;
+      build.colorSlots[offset + 3] = clamp01(
+        build.colorSlots[offset + 3] * attenuation,
+      );
+    }
+    mergeDriverBuildIntoScratch(merged, build);
+  }
 
-    return build;
-  });
+  writeMergedDriverScratch(target, resolvedCapacity, merged);
+  target.components = limitColorComponents(components);
+  return target;
+}
 
-  return {
-    ...mergeModeBuilds(builds, Math.min(capacity, slotLimit)),
-    peaks: resolvedPeaks,
-  };
+export function buildModalSlotsFromPeakDrivers(options) {
+  return writeModalSlotsFromPeakDrivers(
+    createModalTargetBuild(options.capacity),
+    options,
+  );
 }
 
 export function findSpectralPeakFrequencies(

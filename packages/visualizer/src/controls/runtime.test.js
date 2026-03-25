@@ -4,6 +4,7 @@ import {
   applyAudioControls,
   applyAuditControls,
   applyBloomControls,
+  applyEffectiveRaymarchStepBudget,
   applyOutputControls,
   applyRaymarchControls,
   applyVisualizationControls,
@@ -24,9 +25,11 @@ import {
   deriveStepCompensation,
   STEP_REFERENCE,
 } from "../core/raymarch/stepStability.js";
-import { AUDIO_SLOT_CAPACITY } from "../defaults.js";
+import { AUDIO_DEFAULTS, AUDIO_SLOT_CAPACITY } from "../defaults.js";
 
 function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
+  const dirichletMaterial = { steps: 0 };
+  const neumannMaterial = { steps: 0 };
   return {
     method,
     uniforms: {
@@ -36,6 +39,7 @@ function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
       uThreshold: { value: 0 },
       uStructureMin: { value: 0 },
       uStructureMax: { value: 0 },
+      uBoundaryMode: { value: 1 },
       uIdleLogoIntensity: { value: 0 },
       uIdleLogoAlpha: { value: 0 },
       uIdleLogoSize: { value: 0 },
@@ -72,8 +76,21 @@ function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
       chromesthesiaMix: 0,
     },
     volumeMesh: {
-      material: {
-        steps: 0,
+      material: neumannMaterial,
+      userData: {
+        raymarchBoundaryMode: "neumann",
+        raymarchFieldEvaluationMode: "analytic",
+        raymarchCavityGeometry: "rectangular",
+        raymarchMaterialCache: {
+          dirichlet: {
+            analytic: { rectangular: dirichletMaterial },
+            cached: {},
+          },
+          neumann: {
+            analytic: { rectangular: neumannMaterial },
+            cached: {},
+          },
+        },
       },
     },
     points: {
@@ -113,16 +130,21 @@ describe("control runtime sync", () => {
     controls.autoGainControl = false;
 
     const audioSession = {
+      setLiveInputAnalysisSettings: vi.fn(),
       setLiveInputSettings: vi.fn(async () => undefined),
     };
     const snapshot = await applyAudioControls(audioSession, controls);
 
+    expect(audioSession.setLiveInputAnalysisSettings).toHaveBeenCalledWith({
+      analysisClass: "auto",
+    });
     expect(audioSession.setLiveInputSettings).toHaveBeenCalledWith({
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: false,
     });
     expect(snapshot).toEqual({
+      liveInputAnalysisClass: "auto",
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: false,
@@ -136,6 +158,7 @@ describe("control runtime sync", () => {
     controls.idleLogoSize = 1.4;
     controls.structureMin = 0.12;
     controls.structureMax = 0.48;
+    controls.boundaryMode = "dirichlet";
     controls.densityGain = 1.75;
     controls.absorption = 1.35;
     controls.opacityGain = 1.4;
@@ -166,6 +189,15 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uIdleLogoSize.value).toBe(1.4);
     expect(runtimeState.uniforms.uStructureMin.value).toBe(0.12);
     expect(runtimeState.uniforms.uStructureMax.value).toBe(0.48);
+    expect(runtimeState.uniforms.uBoundaryMode.value).toBe(0);
+    expect(runtimeState.volumeMesh.userData.raymarchBoundaryMode).toBe(
+      "dirichlet",
+    );
+    expect(runtimeState.requestedCavityGeometry).toBe("rectangular");
+    expect(runtimeState.effectiveCavityGeometry).toBe("rectangular");
+    expect(runtimeState.volumeMesh.userData.raymarchCavityGeometry).toBe(
+      "rectangular",
+    );
     expect(runtimeState.uniforms.uDensityGain.value).toBe(1.75);
     expect(runtimeState.baseDensityGain).toBe(1.75);
     expect(runtimeState.uniforms.uAbsorption.value).toBe(1.35);
@@ -193,6 +225,14 @@ describe("control runtime sync", () => {
     );
     expect(runtimeState.bloomTuning.lowStepBloomGuard).toBe(0);
     expect(runtimeState.volumeMesh.material.steps).toBe(64);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchMaterialCache.dirichlet.analytic
+        .rectangular.steps,
+    ).toBe(64);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchMaterialCache.neumann.analytic
+        .rectangular.steps,
+    ).toBe(64);
     expect(runtimeState.idleOverlay.scale.x).toBe(1.4);
     expect(runtimeState.idleOverlay.material.opacity).toBe(0.84);
     expect(snapshot.uniforms.idleLogoIntensity).toBe(0.42);
@@ -211,14 +251,59 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.raymarchSteps).toBe(64);
     expect(snapshot.uniforms.colorMode).toBe("chromesthesia");
     expect(snapshot.uniforms.chromesthesiaMix).toBe(0.6);
+    expect(snapshot.uniforms.boundaryMode).toBe("dirichlet");
+    expect(snapshot.uniforms.requestedCavityGeometry).toBe("rectangular");
+    expect(snapshot.uniforms.effectiveCavityGeometry).toBe("rectangular");
     expect(snapshot.overlay.scale).toBe(1.4);
     expect(runtimeState.baseThreshold).toBe(0.033);
     expect(runtimeState.baseContourSharpness).toBe(5.2);
   });
 
+  it("keeps requested and effective raymarch steps distinct", () => {
+    const controls = createControlState();
+    controls.raymarchSteps = 64;
+    const runtimeState = createRaymarchHarness();
+
+    applyRaymarchControls(runtimeState, controls);
+    const effectiveStepBudget = applyEffectiveRaymarchStepBudget(
+      runtimeState,
+      controls,
+      40,
+    );
+
+    expect(effectiveStepBudget).toBe(40);
+    expect(runtimeState.requestedRaymarchSteps).toBe(64);
+    expect(runtimeState.effectiveRaymarchSteps).toBe(40);
+    expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(40);
+    expect(runtimeState.volumeMesh.material.steps).toBe(40);
+    expect(runtimeState.bloomTuning.stepCompensation).toBeCloseTo(
+      deriveStepCompensation(64),
+    );
+    expect(runtimeState.bloomTuning.lowStepBloomGuard).toBeCloseTo(
+      deriveLowStepBloomGuard(64),
+    );
+  });
+
+  it("keeps requested cavity geometry distinct from the effective rectangular backend", () => {
+    const controls = createControlState();
+    controls.cavityGeometry = "spherical";
+    const runtimeState = createRaymarchHarness();
+
+    const snapshot = applyRaymarchControls(runtimeState, controls);
+
+    expect(runtimeState.requestedCavityGeometry).toBe("spherical");
+    expect(runtimeState.effectiveCavityGeometry).toBe("rectangular");
+    expect(runtimeState.volumeMesh.userData.raymarchCavityGeometry).toBe(
+      "rectangular",
+    );
+    expect(snapshot.uniforms.requestedCavityGeometry).toBe("spherical");
+    expect(snapshot.uniforms.effectiveCavityGeometry).toBe("rectangular");
+  });
+
   it("applies shared and raymarch controls through method-aware helpers", () => {
     const controls = createControlState();
     controls.backgroundColor = "#123456";
+    controls.boundaryMode = "dirichlet";
 
     const gl = {
       setClearColor: vi.fn(),
@@ -239,12 +324,46 @@ describe("control runtime sync", () => {
     );
     expect(sharedSnapshot.backgroundColor).toBe("#123456");
     expect(sharedSnapshot.clearAlpha).toBe(0);
+    expect(sharedSnapshot.renderQualityPreset).toBe("auto");
+    expect(sharedSnapshot.customPerformanceTargetFps).toBe(60);
     expect(sharedSnapshot.visualizationMethod).toBe(
       DEFAULT_VISUALIZATION_METHOD,
     );
     expect(raymarchSnapshot.uniforms.threshold).toBe(
       controls.zeroPointPrecision,
     );
+    expect(raymarchSnapshot.uniforms.boundaryMode).toBe("dirichlet");
+  });
+
+  it("applies fullscreen 2d controls without touching raymarch-only uniforms", () => {
+    const controls = createControlState();
+    controls.visualizationMethod = VISUALIZATION_METHODS.cymatics2d;
+    controls.volumeColor = "#113355";
+    controls.surfaceColor = "#ddeeff";
+    controls.reactivity = 1.3;
+    controls.motionAmount = 0.8;
+    controls.structurePersistence = 1.5;
+
+    const runtimeState = createRaymarchHarness(
+      VISUALIZATION_METHODS.cymatics2d,
+    );
+    const snapshot = applyVisualizationControls(
+      VISUALIZATION_METHODS.cymatics2d,
+      runtimeState,
+      controls,
+    );
+
+    expect(runtimeState.uniforms.uColor.value.set).toHaveBeenCalledWith(
+      "#113355",
+    );
+    expect(runtimeState.uniforms.uSurfaceColor.value.set).toHaveBeenCalledWith(
+      "#ddeeff",
+    );
+    expect(runtimeState.uniforms.uSlicePosition.value).toBe(0);
+    expect(snapshot.uniforms.reactivity).toBe(1.3);
+    expect(snapshot.uniforms.motionAmount).toBe(0.8);
+    expect(snapshot.uniforms.structurePersistence).toBe(1.5);
+    expect(snapshot.uniforms.slicePosition).toBe(0);
   });
 
   it("applies fullscreen 2d controls without touching raymarch-only uniforms", () => {
@@ -327,10 +446,22 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.surfaceColor).toBe("#88ccff");
     expect(snapshot.uniforms.colorMode).toBe("static");
     expect(snapshot.uniforms.chromesthesiaMix).toBe(0);
+    expect(snapshot.uniforms.boundaryMode).toBe("neumann");
     expect(snapshot.uniforms.opacityGain).toBe(1.75);
     expect(snapshot.uniforms.holographicIntensity).toBe(0.61);
     expect(snapshot.uniforms.holographicShift).toBe(0.24);
     expect(snapshot.uniforms.holographicFresnelPower).toBe(2.8);
+  });
+
+  it("allows structurePersistence to be set to zero", () => {
+    const controls = createControlState();
+    controls.structurePersistence = 0;
+
+    const runtimeState = createRaymarchHarness();
+    const snapshot = applyRaymarchControls(runtimeState, controls);
+
+    expect(runtimeState.reactivityTuning.structurePersistence).toBe(0);
+    expect(snapshot.uniforms.structurePersistence).toBe(0);
   });
 
   it("applies bloom controls to the pipeline", () => {
@@ -491,6 +622,7 @@ describe("control runtime sync", () => {
     expect(pipeline.outputNode).toBe("opaque-output");
     expect(pipeline.needsUpdate).toBe(true);
     expect(snapshot).toEqual({
+      bloomEnabled: true,
       outputMode: "opaque",
       outputBackgroundColor: "#123456",
     });
@@ -502,6 +634,7 @@ describe("control runtime sync", () => {
     controls.freezeModeSlots = true;
     controls.forceWebGLFallbackTest = true;
     controls.lowLoadPlaybackDiagnostics = true;
+    controls.fieldCacheOverride = "cached";
     controls.injectTestTone = true;
     controls.testToneHz = 660;
     controls.testToneAmplitude = 0.75;
@@ -534,6 +667,7 @@ describe("control runtime sync", () => {
     expect(snapshot.enabled).toBe(true);
     expect(snapshot.forceWebGLFallbackTest).toBe(true);
     expect(snapshot.lowLoadPlaybackDiagnostics).toBe(true);
+    expect(snapshot.fieldCacheOverride).toBe("cached");
     expect(snapshot.testToneHz).toBe(660);
     expect(snapshot.testToneAmplitude).toBe(0.75);
     expect(snapshot.logEveryFrames).toBe(12);
@@ -887,12 +1021,23 @@ describe("control runtime sync", () => {
     expect(runtimeState.sceneLighting.secondary.position.z).toBeCloseTo(
       3 * 1.8,
     );
-    expect(runtimeState.capacity).toBe(AUDIO_SLOT_CAPACITY);
+    expect(runtimeState.sharedModeCapacity).toBe(AUDIO_SLOT_CAPACITY);
+    expect(runtimeState.capacity).toBe(runtimeState.sharedModeCapacity);
+    expect(runtimeState.backboneCapacity).toBe(
+      AUDIO_DEFAULTS.backboneStackSlots,
+    );
+    expect(runtimeState.detailCapacity).toBe(AUDIO_DEFAULTS.detailStackSlots);
     expect(runtimeState.backboneModeBuffer.value.array).toHaveLength(
-      AUDIO_SLOT_CAPACITY * 4,
+      runtimeState.backboneCapacity * 4,
     );
     expect(runtimeState.detailModeBuffer.value.array).toHaveLength(
-      AUDIO_SLOT_CAPACITY * 4,
+      runtimeState.detailCapacity * 4,
+    );
+    expect(runtimeState.backboneColorBuffer.value.array).toHaveLength(
+      runtimeState.backboneCapacity * 4,
+    );
+    expect(runtimeState.detailColorBuffer.value.array).toHaveLength(
+      runtimeState.detailCapacity * 4,
     );
 
     expect(() => runtime.dispose(runtimeState)).not.toThrow();
@@ -920,12 +1065,13 @@ describe("control runtime sync", () => {
     expect(runtimeState.visualRoot.children).toContain(
       runtimeState.idleOverlay,
     );
-    expect(runtimeState.capacity).toBe(AUDIO_SLOT_CAPACITY);
+    expect(runtimeState.sharedModeCapacity).toBe(AUDIO_SLOT_CAPACITY);
+    expect(runtimeState.capacity).toBe(runtimeState.sharedModeCapacity);
     expect(runtimeState.backboneModeBuffer.value.array).toHaveLength(
-      AUDIO_SLOT_CAPACITY * 4,
+      runtimeState.sharedModeCapacity * 4,
     );
     expect(runtimeState.detailModeBuffer.value.array).toHaveLength(
-      AUDIO_SLOT_CAPACITY * 4,
+      runtimeState.sharedModeCapacity * 4,
     );
 
     expect(() => runtime.dispose(runtimeState)).not.toThrow();

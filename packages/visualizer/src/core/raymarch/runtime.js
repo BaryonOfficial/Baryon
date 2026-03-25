@@ -1,19 +1,48 @@
 import * as THREE from "three";
 import { REACTIVITY_DEFAULTS } from "../../defaults.js";
-import { isFieldDrivenState } from "../fieldState.js";
 import {
+  DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
+  normalizeCavityGeometry,
+} from "../cavityGeometry.js";
+import { getBoundaryModeFromValue } from "../modeFamily.js";
+import { isFieldDrivenState } from "../fieldState.js";
+import { resolveRaymarchFieldCacheOverride } from "../../visualization/fieldEvaluation.js";
+import {
+  disposeRaymarchFieldCache,
+  enqueueRaymarchFieldCacheRebuild,
+  isRaymarchFieldCacheReadyForDescriptor,
+  shouldRebuildRaymarchFieldCache,
+  buildRaymarchFieldCacheDescriptor,
+  RAYMARCH_FIELD_CACHE_RESOLUTION,
+} from "./fieldCache.js";
+import {
+  DETAIL_LAYER_WEIGHT,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
 } from "./fieldShaping.js";
+import {
+  buildRaymarchPerformanceGovernor,
+  copyBudgetedModeLayer,
+  deriveFieldExcitation,
+  inferLayerCapacity,
+} from "./performanceGovernor.js";
+import {
+  setRaymarchCavityGeometry,
+  setRaymarchFieldEvaluationMode,
+} from "./material.js";
 
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
 const RESPONSE_ATTACK = 7;
 const RESPONSE_RELEASE = 2.6;
 const RESPONSE_IDLE_RELEASE = 5.5;
 const RHYTHMIC_RELEASE_RATE_GAIN = 2.5;
+const DECAY_RELEASE_ENERGY_END = 0.22;
+const DECAY_RELEASE_CHANGE_END = 0.12;
+const DECAY_RELEASE_STRUCTURE_END = 0.42;
+const DECAY_RELEASE_TARGET_REDUCTION = 0.55;
+const DECAY_RELEASE_RATE_GAIN = 1.9;
 const ACCENT_ATTACK = 15;
 const ACCENT_RELEASE = 8.5;
-const SCALE_RESPONSE_AMOUNT = 0.065;
 const DENSITY_RESPONSE_AMOUNT = 0.08;
 const THRESHOLD_RESPONSE_REDUCTION = 0.42;
 const CONTOUR_RESPONSE_GAIN = 1.85;
@@ -35,6 +64,30 @@ function damp(current, target, smoothing, deltaTime) {
   return current + (target - current) * factor;
 }
 
+function deriveDecayReleaseMask({
+  fieldState,
+  gatedStructureSignal,
+  gatedEnergySignal,
+  gatedChangeSignal,
+}) {
+  if (fieldState !== "decay") {
+    return 0;
+  }
+
+  const lowEnergyMask = clamp01(
+    (DECAY_RELEASE_ENERGY_END - gatedEnergySignal) / DECAY_RELEASE_ENERGY_END,
+  );
+  const lowChangeMask = clamp01(
+    (DECAY_RELEASE_CHANGE_END - gatedChangeSignal) / DECAY_RELEASE_CHANGE_END,
+  );
+  const lowStructureMask = clamp01(
+    (DECAY_RELEASE_STRUCTURE_END - gatedStructureSignal) /
+      DECAY_RELEASE_STRUCTURE_END,
+  );
+
+  return clamp01(Math.min(lowEnergyMask, lowChangeMask) * lowStructureMask);
+}
+
 function estimateAverageModeAmplitude(modeSlots) {
   if (!modeSlots?.length) return 0;
 
@@ -54,13 +107,21 @@ function setIfChanged(uniformNode, value) {
   if (uniformNode.value !== value) uniformNode.value = value;
 }
 
-function countActiveSlots(slots) {
-  if (!slots?.length) return 0;
-  let count = 0;
-  for (let i = 0; i < slots.length; i += 4) {
-    if ((slots[i + 3] ?? 0) > 0) count += 1;
+// Sum of all slot amplitudes weighted by layer, matching accumulateSpecializedLayer's
+// weight assignment (backbone × 1.0, detail × DETAIL_LAYER_WEIGHT). Used to
+// normalize the Chladni field in the shader so structural pattern is amplitude-invariant.
+function sumLayeredAmplitude(featureFrame) {
+  let total = 0;
+  const backbone = featureFrame?.backboneSlots;
+  const detail = featureFrame?.detailSlots;
+  if (backbone) {
+    for (let i = 3; i < backbone.length; i += 4) total += backbone[i] ?? 0;
   }
-  return count;
+  if (detail) {
+    for (let i = 3; i < detail.length; i += 4)
+      total += (detail[i] ?? 0) * DETAIL_LAYER_WEIGHT;
+  }
+  return total;
 }
 
 function estimateLayeredAmplitude(featureFrame) {
@@ -83,22 +144,39 @@ function maxSlotAmplitude(slots) {
   return max;
 }
 
-function deriveFieldExcitation(featureFrame) {
-  const avgAmplitude = (featureFrame?.averageAmplitude ?? 0) / 255;
-  const structureSignal = featureFrame?.structureSignal ?? 0;
-  const harmonicity = featureFrame?.harmonicity ?? 0;
-  return Math.min(
-    1,
-    Math.max(
-      0,
-      avgAmplitude * 0.3 + structureSignal * 0.45 + harmonicity * 0.25,
-    ),
-  );
-}
-
 function deriveLightAsymmetry(primaryIntensity, secondaryIntensity) {
   const strongest = Math.max(primaryIntensity, secondaryIntensity, 1e-4);
   return Math.abs(primaryIntensity - secondaryIntensity) / strongest;
+}
+
+function getRuntimeBoundaryMode(runtimeState) {
+  return getBoundaryModeFromValue(
+    runtimeState.uniforms.uBoundaryMode?.value ?? 1,
+  );
+}
+
+function getRuntimeEffectiveCavityGeometry(runtimeState) {
+  return normalizeCavityGeometry(
+    runtimeState?.effectiveCavityGeometry ??
+      runtimeState?.volumeMesh?.userData?.raymarchCavityGeometry ??
+      DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
+  );
+}
+
+function getRaymarchFieldCacheOverride() {
+  return resolveRaymarchFieldCacheOverride(
+    typeof window === "undefined"
+      ? undefined
+      : /** @type {any} */ (window).__baryonFieldCacheOverride,
+  );
+}
+
+function publishAuditSnapshot(snapshot) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  /** @type {any} */ (window).__baryonAuditSnapshot = snapshot;
 }
 
 function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
@@ -107,6 +185,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const maxDetailAmplitude = maxSlotAmplitude(featureFrame?.detailSlots);
   const activeModeCount = runtimeState.uniforms.uActiveModeCount.value;
   const fieldExcitation = deriveFieldExcitation(featureFrame);
+  const performanceGovernor = runtimeState.performanceGovernor ?? null;
   const densityGain = runtimeState.uniforms.uDensityGain.value;
   const absorption = runtimeState.uniforms.uAbsorption.value;
   const opacityGain = runtimeState.uniforms.uOpacityGain?.value ?? 1;
@@ -132,6 +211,10 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const structureSignal = featureFrame?.structureSignal ?? 0;
   const energySignal = featureFrame?.energySignal ?? 0;
   const changeSignal = featureFrame?.changeSignal ?? 0;
+  const changeBreakdown =
+    featureFrame?.debug?.changeBreakdown ??
+    featureFrame?.changeBreakdown ??
+    null;
   const pulseSignal = featureFrame?.pulseSignal ?? 0;
   const avgDensity = Math.min(
     1,
@@ -174,17 +257,51 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     });
   const holographicReferenceStrength =
     holographicFresnel * (0.7 + holographicColorMix * 0.3) + emissiveLift * 0.2;
+  const boundaryMode = getRuntimeBoundaryMode(runtimeState);
+  const requestedCavityGeometry = normalizeCavityGeometry(
+    runtimeState?.requestedCavityGeometry,
+  );
+  const effectiveCavityGeometry =
+    getRuntimeEffectiveCavityGeometry(runtimeState);
+  const fieldCache = runtimeState.fieldCache ?? null;
+  const fieldCacheOverride = getRaymarchFieldCacheOverride();
 
   return {
     fieldState,
     modeSlotCount: activeModeCount,
+    originalModeSlotCount:
+      performanceGovernor?.originalModeCount ?? activeModeCount,
+    uploadedModeSlotCount:
+      performanceGovernor?.uploadedModeCount ?? activeModeCount,
     backboneModeCount: runtimeState.uniforms.uBackboneModeCount.value,
     detailModeCount: runtimeState.uniforms.uDetailModeCount.value,
+    originalBackboneModeCount:
+      performanceGovernor?.backbone?.originalActiveCount ??
+      runtimeState.uniforms.uBackboneModeCount.value,
+    originalDetailModeCount:
+      performanceGovernor?.detail?.originalActiveCount ??
+      runtimeState.uniforms.uDetailModeCount.value,
+    uploadedBackboneModeCount:
+      performanceGovernor?.backbone?.uploadedActiveCount ??
+      runtimeState.uniforms.uBackboneModeCount.value,
+    uploadedDetailModeCount:
+      performanceGovernor?.detail?.uploadedActiveCount ??
+      runtimeState.uniforms.uDetailModeCount.value,
     dominantFrequency:
       featureFrame?.debug?.dominantFrequency ??
       featureFrame?.debug?.fundamentalFrequency ??
       0,
     fieldExcitation,
+    complexityScore: performanceGovernor?.complexityScore ?? 0,
+    complexityExcitation: performanceGovernor?.excitation ?? fieldExcitation,
+    complexityWeightedPermutationLoad:
+      performanceGovernor?.weightedPermutationLoad ?? 0,
+    complexityCountLoad: performanceGovernor?.countLoad ?? 0,
+    proactiveStepBudget: performanceGovernor?.proactiveStepBudget ?? stepBudget,
+    proactiveRenderScale: performanceGovernor?.proactiveRenderScale ?? 1,
+    bloomStrengthGuard: performanceGovernor?.bloomStrengthScale ?? 1,
+    bloomThresholdGuard: performanceGovernor?.bloomThresholdOffset ?? 0,
+    bloomGuardAllowed: performanceGovernor?.bloomAllowed ?? true,
     maxBackboneAmplitude,
     maxDetailAmplitude,
     detailBackboneRatio:
@@ -206,7 +323,15 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     structureSignal,
     energySignal,
     changeSignal,
+    changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
     pulseSignal,
+    modeCoherence: featureFrame?.modeCoherence ?? 0,
+    trebleTonalEnergy: featureFrame?.trebleTonalEnergy ?? 0,
+    trebleBroadbandEnergy: featureFrame?.trebleBroadbandEnergy ?? 0,
+    totalSlotAmplitude: sumLayeredAmplitude(featureFrame),
+    spectralBandEnergies: featureFrame?.spectralBandEnergies
+      ? Array.from(featureFrame.spectralBandEnergies)
+      : null,
     responseEnvelope: runtimeState.responseEnvelope ?? 0,
     motionSignal: runtimeState.motionSignal ?? 0,
     scaleSignal: runtimeState.scaleSignal ?? 0,
@@ -228,6 +353,30 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     effectiveThreshold: runtimeState.uniforms.uThreshold?.value ?? 0,
     effectiveContourSharpness:
       runtimeState.uniforms.uContourSharpness?.value ?? 0,
+    boundaryMode,
+    requestedCavityGeometry,
+    effectiveCavityGeometry,
+    boundaryMaterialMode:
+      runtimeState.volumeMesh?.userData?.raymarchBoundaryMode ?? boundaryMode,
+    materialCavityGeometry:
+      runtimeState.volumeMesh?.userData?.raymarchCavityGeometry ??
+      effectiveCavityGeometry,
+    fieldEvaluationMode:
+      runtimeState.volumeMesh?.userData?.raymarchFieldEvaluationMode ??
+      fieldCache?.mode ??
+      "analytic",
+    fieldCacheActive: fieldCache?.active ?? false,
+    fieldCacheResolution:
+      fieldCache?.resolution ?? RAYMARCH_FIELD_CACHE_RESOLUTION,
+    fieldCacheRebuildCount: fieldCache?.rebuildCount ?? 0,
+    fieldCacheRebuildReason: fieldCache?.lastRebuildReason ?? "uninitialized",
+    fieldCacheHysteresisState:
+      (fieldCache?.active ?? false) ? "cached" : "analytic",
+    fieldCacheOverride,
+    fieldCacheBackend: fieldCache?.backend ?? "compute",
+    fieldCacheReady: fieldCache?.ready ?? false,
+    fieldCacheRebuildPending: fieldCache?.rebuildPending ?? false,
+    fieldCacheLastError: fieldCache?.lastError ?? null,
     chromesthesiaMix: runtimeState.uniforms.uChromesthesiaMix?.value ?? 0,
     holographicReferenceStrength,
     avgRaySegmentLength,
@@ -247,6 +396,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
 function updateReactiveResponse(
   runtimeState,
   featureFrame,
+  fieldState,
   fieldDriven,
   deltaTime,
 ) {
@@ -256,7 +406,7 @@ function updateReactiveResponse(
   const changeSignal = clamp01(featureFrame?.changeSignal ?? 0);
   const pulseSignal = clamp01(featureFrame?.pulseSignal ?? 0);
   const persistence = Math.max(
-    0.2,
+    0,
     rt?.structurePersistence ?? REACTIVITY_DEFAULTS.structurePersistence,
   );
   const reactivity = Math.max(
@@ -268,9 +418,17 @@ function updateReactiveResponse(
   const gatedEnergySignal = clamp01(energySignal * reactivity);
   const gatedChangeSignal = clamp01(changeSignal * reactivity);
   const gatedPulseSignal = clamp01(pulseSignal * reactivity);
+  const decayReleaseMask = deriveDecayReleaseMask({
+    fieldState,
+    gatedStructureSignal,
+    gatedEnergySignal,
+    gatedChangeSignal,
+  });
   const envelopeTarget = fieldDriven
     ? clamp01(
-        gatedStructureSignal * (0.34 + persistence * 0.08) +
+        gatedStructureSignal *
+          (0.34 + persistence * 0.08) *
+          (1 - decayReleaseMask * DECAY_RELEASE_TARGET_REDUCTION) +
           gatedEnergySignal * 0.38 +
           gatedChangeSignal * 0.23,
       )
@@ -282,7 +440,9 @@ function updateReactiveResponse(
       ? RESPONSE_ATTACK
       : fieldDriven
         ? (RESPONSE_RELEASE + persistence * 0.9) *
-          (1 + rhythmicDensity * RHYTHMIC_RELEASE_RATE_GAIN)
+          (1 +
+            rhythmicDensity * RHYTHMIC_RELEASE_RATE_GAIN +
+            decayReleaseMask * DECAY_RELEASE_RATE_GAIN)
         : RESPONSE_IDLE_RELEASE,
     deltaTime,
   );
@@ -319,9 +479,7 @@ function updateReactiveResponse(
   );
   runtimeState.scaleSignal = scaleSignal;
   runtimeState.bloomResponseSignal = bloomResponseSignal;
-  runtimeState.visualRoot?.scale?.setScalar?.(
-    1 + scaleSignal * SCALE_RESPONSE_AMOUNT,
-  );
+  runtimeState.visualRoot?.scale?.setScalar?.(1);
 }
 
 function updateLaserResponse(runtimeState, featureFrame) {
@@ -376,17 +534,108 @@ function updateLaserResponse(runtimeState, featureFrame) {
     8,
   );
   const bt = runtimeState.bloomTuning;
+  const performanceGovernor = runtimeState.performanceGovernor ?? null;
+  const bloomStrengthScale = performanceGovernor?.bloomStrengthScale ?? 1;
+  const bloomThresholdOffset = performanceGovernor?.bloomThresholdOffset ?? 0;
+  const bloomAllowed = performanceGovernor?.bloomAllowed ?? true;
   bt.effectiveStrength =
-    baseBloomStrength * (1 + bloomPulse * BLOOM_STRENGTH_RESPONSE_GAIN);
+    baseBloomStrength *
+    (1 + bloomPulse * BLOOM_STRENGTH_RESPONSE_GAIN) *
+    bloomStrengthScale;
   bt.effectiveRadius = Math.max(
     0,
     baseBloomRadius * (1 - bloomPulse * BLOOM_RADIUS_RESPONSE_GAIN),
   );
   bt.effectiveThreshold = clamp(
-    baseBloomThreshold + bloomPulse * BLOOM_THRESHOLD_RESPONSE_GAIN,
+    baseBloomThreshold +
+      bloomPulse * BLOOM_THRESHOLD_RESPONSE_GAIN +
+      bloomThresholdOffset,
     0,
     1,
   );
+  bt.bloomAllowed = bloomAllowed;
+}
+
+function copyLayerUpload({
+  slots,
+  colorSlots,
+  targetSlots,
+  targetColorSlots,
+  layer,
+  includeColors,
+}) {
+  copyBudgetedModeLayer({
+    sourceSlots: slots,
+    sourceColorSlots: colorSlots,
+    targetSlots,
+    targetColorSlots,
+    selectedIndices: layer.selectedIndices,
+    capacity: layer.capacity,
+    includeColors,
+  });
+}
+
+function updateFieldCache(
+  runtimeState,
+  renderer,
+  { backboneCapacity, detailCapacity },
+) {
+  const fieldCache = runtimeState.fieldCache;
+  if (!fieldCache || !runtimeState.volumeMesh) {
+    return;
+  }
+
+  const requestedMode = getRaymarchFieldCacheOverride();
+  const cachedRequested =
+    requestedMode === "cached" && fieldCache.backend !== "unavailable";
+  fieldCache.active = cachedRequested;
+  fieldCache.mode = requestedMode;
+  if (!cachedRequested) {
+    if (fieldCache.lastRebuildReason === "uninitialized") {
+      fieldCache.lastRebuildReason = "inactive";
+    }
+    setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, "analytic");
+    return;
+  }
+
+  const descriptor = buildRaymarchFieldCacheDescriptor({
+    backboneSlots: runtimeState.backboneModeBuffer?.value?.array,
+    detailSlots: runtimeState.detailModeBuffer?.value?.array,
+    backboneCount: runtimeState.uniforms.uBackboneModeCount?.value ?? 0,
+    detailCount: runtimeState.uniforms.uDetailModeCount?.value ?? 0,
+    boundaryMode: getRuntimeBoundaryMode(runtimeState),
+    cavityGeometry: getRuntimeEffectiveCavityGeometry(runtimeState),
+    radius: runtimeState.uniforms.uRadius?.value ?? 1,
+  });
+  const { needsRebuild, reason } = shouldRebuildRaymarchFieldCache(
+    fieldCache,
+    descriptor,
+  );
+
+  if (needsRebuild) {
+    enqueueRaymarchFieldCacheRebuild(fieldCache, renderer, descriptor, reason, {
+      backboneModeBuffer: runtimeState.backboneModeBuffer,
+      detailModeBuffer: runtimeState.detailModeBuffer,
+      backboneCapacity,
+      detailCapacity,
+      uniforms: runtimeState.uniforms,
+    });
+  }
+
+  if (
+    fieldCache.backend !== "unavailable" &&
+    isRaymarchFieldCacheReadyForDescriptor(fieldCache, descriptor)
+  ) {
+    setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, "cached");
+    return;
+  }
+
+  if (cachedRequested && fieldCache.ready) {
+    setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, "cached");
+    return;
+  }
+
+  setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, "analytic");
 }
 
 export function tickRaymarchRuntime(
@@ -394,6 +643,7 @@ export function tickRaymarchRuntime(
   featureFrame,
   time,
   deltaTime,
+  renderer = null,
 ) {
   const {
     backboneModeBuffer,
@@ -404,83 +654,90 @@ export function tickRaymarchRuntime(
     volumeMesh,
     idleOverlay,
   } = runtimeState;
+  const backboneCapacity = inferLayerCapacity(
+    runtimeState.backboneCapacity,
+    backboneModeBuffer.value.array,
+  );
+  const detailCapacity = inferLayerCapacity(
+    runtimeState.detailCapacity,
+    detailModeBuffer.value.array,
+  );
 
   uniforms.uTime.value = time;
   const fieldState = featureFrame?.fieldState ?? "idle";
   const fieldDriven = isFieldDrivenState(fieldState);
-  updateReactiveResponse(runtimeState, featureFrame, fieldDriven, deltaTime);
+  updateReactiveResponse(
+    runtimeState,
+    featureFrame,
+    fieldState,
+    fieldDriven,
+    deltaTime,
+  );
   setIfChanged(
     uniforms.uFieldState,
     runtimeState.fieldStateValues[fieldState] ??
       runtimeState.fieldStateValues.idle,
   );
 
+  const chromesthesiaEnabled = (uniforms.uChromesthesiaMix?.value ?? 0) > 0;
+  const performanceGovernor = buildRaymarchPerformanceGovernor({
+    backboneSlots: featureFrame?.backboneSlots,
+    detailSlots: featureFrame?.detailSlots,
+    backboneCapacity,
+    detailCapacity,
+    featureFrame,
+    cavityGeometry: getRuntimeEffectiveCavityGeometry(runtimeState),
+    requestedStepBudget:
+      runtimeState.effectiveRaymarchSteps ??
+      runtimeState.requestedRaymarchSteps ??
+      volumeMesh.material.steps,
+    requestedRenderScale: 1,
+  });
+  const { backbone: backboneLayer, detail: detailLayer } = performanceGovernor;
+  runtimeState.performanceGovernor = performanceGovernor;
   const backboneArray = backboneModeBuffer.value.array;
-  const backboneDataLen = featureFrame?.backboneSlots?.length
-    ? Math.min(featureFrame.backboneSlots.length, backboneArray.length)
-    : 0;
-  if (backboneDataLen > 0) {
-    backboneArray.set(featureFrame.backboneSlots.subarray(0, backboneDataLen));
-  }
-  if (backboneDataLen < backboneArray.length) {
-    backboneArray.fill(0, backboneDataLen);
-  }
+  const backboneColorArray = backboneColorBuffer.value.array;
+  copyLayerUpload({
+    slots: featureFrame?.backboneSlots,
+    colorSlots: featureFrame?.backboneColorSlots,
+    targetSlots: backboneArray,
+    targetColorSlots: backboneColorArray,
+    layer: backboneLayer,
+    includeColors: chromesthesiaEnabled,
+  });
   backboneModeBuffer.value.needsUpdate = true;
-  if ((uniforms.uChromesthesiaMix?.value ?? 0) > 0) {
-    const backboneColorArray = backboneColorBuffer.value.array;
-    const bcDataLen = featureFrame?.backboneColorSlots?.length
-      ? Math.min(
-          featureFrame.backboneColorSlots.length,
-          backboneColorArray.length,
-        )
-      : 0;
-    if (bcDataLen > 0) {
-      backboneColorArray.set(
-        featureFrame.backboneColorSlots.subarray(0, bcDataLen),
-      );
-    }
-    if (bcDataLen < backboneColorArray.length) {
-      backboneColorArray.fill(0, bcDataLen);
-    }
+  if (chromesthesiaEnabled) {
     backboneColorBuffer.value.needsUpdate = true;
   }
 
   const detailArray = detailModeBuffer.value.array;
-  const detailDataLen = featureFrame?.detailSlots?.length
-    ? Math.min(featureFrame.detailSlots.length, detailArray.length)
-    : 0;
-  if (detailDataLen > 0) {
-    detailArray.set(featureFrame.detailSlots.subarray(0, detailDataLen));
-  }
-  if (detailDataLen < detailArray.length) {
-    detailArray.fill(0, detailDataLen);
-  }
+  const detailColorArray = detailColorBuffer.value.array;
+  copyLayerUpload({
+    slots: featureFrame?.detailSlots,
+    colorSlots: featureFrame?.detailColorSlots,
+    targetSlots: detailArray,
+    targetColorSlots: detailColorArray,
+    layer: detailLayer,
+    includeColors: chromesthesiaEnabled,
+  });
   detailModeBuffer.value.needsUpdate = true;
-  if ((uniforms.uChromesthesiaMix?.value ?? 0) > 0) {
-    const detailColorArray = detailColorBuffer.value.array;
-    const dcDataLen = featureFrame?.detailColorSlots?.length
-      ? Math.min(featureFrame.detailColorSlots.length, detailColorArray.length)
-      : 0;
-    if (dcDataLen > 0) {
-      detailColorArray.set(
-        featureFrame.detailColorSlots.subarray(0, dcDataLen),
-      );
-    }
-    if (dcDataLen < detailColorArray.length) {
-      detailColorArray.fill(0, dcDataLen);
-    }
+  if (chromesthesiaEnabled) {
     detailColorBuffer.value.needsUpdate = true;
   }
 
-  const backboneModeCount =
-    featureFrame?.activeBackboneModeCount ??
-    countActiveSlots(featureFrame?.backboneSlots);
-  const detailModeCount =
-    featureFrame?.activeDetailModeCount ??
-    countActiveSlots(featureFrame?.detailSlots);
+  const backboneModeCount = backboneLayer.uploadedActiveCount;
+  const detailModeCount = detailLayer.uploadedActiveCount;
   setIfChanged(uniforms.uBackboneModeCount, backboneModeCount);
   setIfChanged(uniforms.uDetailModeCount, detailModeCount);
   setIfChanged(uniforms.uActiveModeCount, backboneModeCount + detailModeCount);
+  setRaymarchCavityGeometry(
+    runtimeState.volumeMesh,
+    getRuntimeEffectiveCavityGeometry(runtimeState),
+  );
+  updateFieldCache(runtimeState, renderer, {
+    backboneCapacity,
+    detailCapacity,
+  });
   setIfChanged(uniforms.uAverageAmplitude, featureFrame?.averageAmplitude ?? 0);
   setIfChanged(uniforms.uTransientEnergy, featureFrame?.transientEnergy ?? 0);
   setIfChanged(uniforms.uSpectralCentroid, featureFrame?.spectralCentroid ?? 0);
@@ -513,6 +770,12 @@ export function tickRaymarchRuntime(
     clamp01(((featureFrame?.estimatedTempo ?? 0) - 40) / 200),
   );
   setIfChanged(uniforms.uRhythmicDensity, featureFrame?.rhythmicDensity ?? 0);
+  setIfChanged(
+    uniforms.uTrebleBroadbandEnergy,
+    featureFrame?.trebleBroadbandEnergy ?? 0,
+  );
+  setIfChanged(uniforms.uModeCoherence, featureFrame?.modeCoherence ?? 0);
+  setIfChanged(uniforms.uTotalSlotAmplitude, sumLayeredAmplitude(featureFrame));
 
   // Key tonic hue — EMA with circular shortest-path wrapping
   const rawKeyHue = featureFrame?.keyTonicHue ?? runtimeState.keyHue;
@@ -559,15 +822,25 @@ export function tickRaymarchRuntime(
     runtimeState.debugSnapshot = featureFrame?.debug
       ? { ...featureFrame.debug, raymarchDebug, ...raymarchDebug }
       : raymarchDebug;
+    publishAuditSnapshot(runtimeState.debugSnapshot);
   } else {
     runtimeState.debugSnapshot = null;
+    publishAuditSnapshot(null);
   }
 }
 
 export function disposeRaymarchRuntime(runtimeState) {
+  disposeRaymarchFieldCache(runtimeState?.fieldCache);
   runtimeState?.points?.traverse?.((child) => {
     child.geometry?.dispose?.();
-    child.material?.dispose?.();
+    const materialCache = child.userData?.raymarchMaterialCache;
+    if (materialCache) {
+      Object.values(materialCache).forEach((material) => {
+        material?.dispose?.();
+      });
+    } else {
+      child.material?.dispose?.();
+    }
     if (child.isLight && child.shadow?.map) {
       child.shadow.map.dispose?.();
     }

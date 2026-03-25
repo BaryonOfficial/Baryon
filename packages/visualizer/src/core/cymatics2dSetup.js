@@ -29,16 +29,17 @@ function createModeBuffer(capacity) {
 
 export function setupCymatics2d(baryonGeometry, parameters, audioConfig) {
   const uniforms = createRaymarchUniforms(parameters);
-  const backboneModeBuffer = createModeBuffer(audioConfig.capacity);
-  const detailModeBuffer = createModeBuffer(audioConfig.capacity);
-  const backboneColorBuffer = createModeBuffer(audioConfig.capacity);
-  const detailColorBuffer = createModeBuffer(audioConfig.capacity);
+  const sharedModeCapacity = audioConfig.capacity;
+  const backboneModeBuffer = createModeBuffer(sharedModeCapacity);
+  const detailModeBuffer = createModeBuffer(sharedModeCapacity);
+  const backboneColorBuffer = createModeBuffer(sharedModeCapacity);
+  const detailColorBuffer = createModeBuffer(sharedModeCapacity);
   const fieldMesh = createFullscreenFieldMesh({
     backboneModeBuffer,
     detailModeBuffer,
     backboneColorBuffer,
     detailColorBuffer,
-    capacity: audioConfig.capacity,
+    capacity: sharedModeCapacity,
     uniforms,
   });
   const idleOverlay = createIdleOverlay({
@@ -63,7 +64,9 @@ export function setupCymatics2d(baryonGeometry, parameters, audioConfig) {
     detailModeBuffer,
     backboneColorBuffer,
     detailColorBuffer,
-    capacity: audioConfig.capacity,
+    sharedModeCapacity,
+    // Compatibility alias for older runtime call sites that still read `capacity`.
+    capacity: sharedModeCapacity,
     fftSize: audioConfig.fftSize,
     fieldStateValues: FIELD_STATE_VALUES,
     stabilityStats: {

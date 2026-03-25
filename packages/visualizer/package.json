@@ -13,14 +13,18 @@
   "exports": {
     ".": "./src/index.js",
     "./audio": "./src/core/audio/audioSetup.js",
+    "./audio/inputDeviceSemantics": "./src/core/audio/inputDeviceSemantics.js",
+    "./audio/liveInputAnalysis": "./src/core/audio/liveInputAnalysis.js",
     "./audio-features": "./src/utils/audioFeatures.js",
     "./controls/persistence": "./src/controls/persistence.js",
     "./controls/runtime": "./src/controls/runtime.js",
     "./controls/schema": "./src/controls/schema.js",
+    "./core/raymarch/performanceGovernor": "./src/core/raymarch/performanceGovernor.js",
     "./defaults": "./src/defaults.js",
     "./render/outputPipeline": "./src/render/outputPipeline.js",
     "./react/useSharedAudioLogic": "./src/react/useSharedAudioLogic.js",
     "./three/loaders": "./src/three/loaders/setupLoaders.js",
+    "./visualization/fieldEvaluation": "./src/visualization/fieldEvaluation.js",
     "./visualization/runtime": "./src/visualization/runtimeFactory.js",
     "./visualization/types": "./src/visualization/types.js",
     "./styles.css": "./src/styles.css"

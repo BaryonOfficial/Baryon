@@ -8,6 +8,7 @@ export function useSharedAudioLogic({
   setIsAudioLoaded,
   setIsPlaying,
   setIsLiveInputActive,
+  setLiveInputDeviceKind,
   setLiveInputKind,
   setVolume,
   setIsMuted,
@@ -19,6 +20,36 @@ export function useSharedAudioLogic({
 }) {
   const audioSession = getDefaultAudioSession();
   const activeFileUrlRef = useRef(null);
+
+  const refreshAudioInputs = useCallback(async () => {
+    const mediaDevices = navigator.mediaDevices;
+    if (!mediaDevices?.enumerateDevices) {
+      setAudioDevices([]);
+      return [];
+    }
+
+    try {
+      const devices = await mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter(
+        (device) => device.kind === "audioinput",
+      );
+      setAudioDevices(audioInputs);
+      if (audioInputs.length === 0) {
+        return audioInputs;
+      }
+
+      const hasSelectedDevice = audioInputs.some(
+        (device) => device.deviceId === selectedDevice,
+      );
+      if (!hasSelectedDevice) {
+        setSelectedDevice(audioInputs[0].deviceId);
+      }
+      return audioInputs;
+    } catch (error) {
+      console.error("Error loading audio devices:", error);
+      return [];
+    }
+  }, [selectedDevice, setAudioDevices, setSelectedDevice]);
 
   const clearLoadedFileState = useCallback(
     ({ resetLabel = true } = {}) => {
@@ -35,10 +66,13 @@ export function useSharedAudioLogic({
 
   const syncStatus = useCallback(() => {
     const status = audioSession.getStatus();
+    const liveInputDeviceKind =
+      status.liveInputDeviceKind ?? status.liveInputKind ?? null;
     setIsAudioLoaded(status.isAudioLoaded);
     setIsPlaying(status.isPlaying);
     setIsLiveInputActive(status.isLiveInputActive);
-    setLiveInputKind?.(status.liveInputKind ?? null);
+    setLiveInputDeviceKind?.(liveInputDeviceKind);
+    setLiveInputKind?.(liveInputDeviceKind);
     setVolume?.(status.volume ?? 1);
     setIsMuted?.(status.muted ?? false);
     return status;
@@ -47,38 +81,20 @@ export function useSharedAudioLogic({
     setIsAudioLoaded,
     setIsLiveInputActive,
     setIsPlaying,
+    setLiveInputDeviceKind,
     setLiveInputKind,
     setVolume,
     setIsMuted,
   ]);
 
   useEffect(() => {
-    const loadDevices = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
-        stream.getTracks().forEach((track) => track.stop());
-
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const audioInputs = devices.filter(
-          (device) => device.kind === "audioinput",
-        );
-        setAudioDevices(audioInputs);
-        if (audioInputs.length > 0) {
-          setSelectedDevice(audioInputs[0].deviceId);
-        }
-      } catch (error) {
-        console.error("Error loading audio devices:", error);
-      }
-    };
-
-    loadDevices();
-    navigator.mediaDevices.addEventListener("devicechange", loadDevices);
+    const mediaDevices = navigator.mediaDevices;
+    refreshAudioInputs();
+    mediaDevices?.addEventListener?.("devicechange", refreshAudioInputs);
     return () => {
-      navigator.mediaDevices.removeEventListener("devicechange", loadDevices);
+      mediaDevices?.removeEventListener?.("devicechange", refreshAudioInputs);
     };
-  }, [setAudioDevices, setSelectedDevice]);
+  }, [refreshAudioInputs]);
 
   useEffect(() => {
     return () => {
@@ -201,5 +217,6 @@ export function useSharedAudioLogic({
     handleLiveInputToggle,
     handleVolumeChange,
     handleMuteToggle,
+    refreshAudioInputs,
   };
 }

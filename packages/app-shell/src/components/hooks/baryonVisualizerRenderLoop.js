@@ -1,21 +1,63 @@
 import {
   applyAuditControls,
   applyBloomControls,
+  applyEffectiveRaymarchStepBudget,
   applyOutputControls,
   applySharedControls,
   applyVisualizationControls,
   buildControlInspectionSnapshot,
 } from "@baryon/visualizer/controls/runtime";
-import { buildAudioFeatureFrame } from "@baryon/visualizer/audio-features";
 import {
+  buildAudioFeatureTransportFrame,
+  buildAudioFeatureFrame,
+  composeAudioFeatureFrame,
+  prepareAudioFeatureFrameInputs,
+  runHeavyAudioFeatureAnalysis,
+} from "@baryon/visualizer/audio-features";
+import * as raymarchPerformanceGovernor from "@baryon/visualizer/core/raymarch/performanceGovernor";
+import {
+  DEFAULT_PERFORMANCE_TARGET_FPS,
+  normalizePerformanceTargetFps,
+  PERFORMANCE_PROFILES,
+} from "@baryon/visualizer/render/outputPipeline";
+import {
+  createEmptyAnalysisSchedulerState,
+  maybePublishRuntimePerfSnapshot,
+  recordRuntimePerfSample,
   shouldReuseIdleFrame,
   snapshotRuntimeDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
-import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
+export { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 
 const LONG_FRAME_THRESHOLD_MS = 34;
+const FRAME_DROP_THRESHOLD_16_7_MS = 16.7;
+const FRAME_DROP_THRESHOLD_25_MS = 25;
+const FRAME_DROP_THRESHOLD_33_3_MS = 33.3;
+const FRAME_DROP_THRESHOLD_50_MS = 50;
+const MAX_RECENT_LONG_FRAME_SAMPLES = 8;
 const PERFORMANCE_HUD_PUBLISH_INTERVAL_MS = 150;
 const PERFORMANCE_HUD_SMOOTHING_ALPHA = 0.25;
+const ACTIVE_FEATURE_ANALYSIS_HZ = 30;
+const ACTIVE_FEATURE_ANALYSIS_INTERVAL_MS = 1000 / ACTIVE_FEATURE_ANALYSIS_HZ;
+const MAX_ANALYSIS_AGE_MS = 50;
+const AUTO_RAYMARCH_DECISION_WINDOW_SECONDS = 0.5;
+const AUTO_RAYMARCH_MIN_DECISION_WINDOW_FRAMES = 12;
+const AUTO_RAYMARCH_MAX_DECISION_WINDOW_FRAMES = 45;
+const AUTO_RAYMARCH_RECOVERY_WINDOWS = 4;
+const AUTO_RAYMARCH_STEP_DOWN_LONG_FRAME_RATIO = 0.1;
+const AUTO_RAYMARCH_PRESSURE_SAFETY_MARGIN = 0.94;
+const AUTO_RAYMARCH_SCALE_PRESSURE_SAFETY_MARGIN = 0.985;
+const AUTO_RAYMARCH_PRESSURE_FRAME_TIME_RATIO = 1.08;
+const AUTO_RAYMARCH_SCALE_PRESSURE_FRAME_TIME_RATIO = 1.015;
+const AUTO_RAYMARCH_STABLE_FRAME_TIME_RATIO = 0.93;
+const AUTO_RAYMARCH_LONG_FRAME_TIME_RATIO = 1.5;
+const AUTO_RAYMARCH_RECOVERY_MIN_ENERGY_SIGNAL = 0.08;
+const AUTO_RAYMARCH_STEP_LADDER = Object.freeze([
+  16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192,
+]);
+const AUTO_RAYMARCH_RENDER_SCALE_LADDER = Object.freeze([
+  0.67, 0.75, 0.84, 0.92, 1,
+]);
 
 function snapshotFeatureFrame(featureFrame) {
   return {
@@ -59,8 +101,132 @@ function getRenderLoopWallTimeMs() {
   return 0;
 }
 
+function serializeReplayArray(values) {
+  if (values instanceof Float32Array || values instanceof Uint8Array) {
+    return Array.from(values);
+  }
+
+  return values ?? null;
+}
+
+function maybeCaptureReplayFrame({
+  analysisSnapshot,
+  analysisHints,
+  status,
+  frameTimeMs,
+}) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const capture = /** @type {any} */ (window).__baryonPerfReplayCapture;
+  if (!capture?.enabled) {
+    return;
+  }
+
+  const frames = Array.isArray(capture.frames) ? capture.frames : [];
+  frames.push({
+    frameTimeMs,
+    status: {
+      audioInputMode: status?.audioInputMode ?? "idle",
+      isPlaying: Boolean(status?.isPlaying),
+      isLiveInputActive: Boolean(status?.isLiveInputActive),
+      liveInputDeviceKind:
+        status?.liveInputDeviceKind ?? status?.liveInputKind ?? null,
+      liveInputKind: status?.liveInputKind ?? null,
+      playbackSessionId: status?.playbackSessionId ?? null,
+      sampleRate: status?.sampleRate ?? null,
+      fftSize: status?.fftSize ?? null,
+      liveInputCalibrationVersion: status?.liveInputCalibrationVersion ?? null,
+    },
+    analysisHints: analysisHints
+      ? {
+          ...analysisHints,
+        }
+      : null,
+    analysisSnapshot: analysisSnapshot
+      ? {
+          sourceMode: analysisSnapshot.sourceMode ?? null,
+          avgAmplitude: analysisSnapshot.avgAmplitude ?? 0,
+          rms: analysisSnapshot.rms ?? 0,
+          spectralCentroid: analysisSnapshot.spectralCentroid ?? 0,
+          spectralFlux: analysisSnapshot.spectralFlux ?? 0,
+          fftMagnitudes: serializeReplayArray(analysisSnapshot.fftMagnitudes),
+          timeData: serializeReplayArray(analysisSnapshot.timeData),
+        }
+      : null,
+  });
+
+  const maxFrames = Math.max(1, Math.round(capture.maxFrames ?? 24));
+  if (frames.length > maxFrames) {
+    frames.splice(0, frames.length - maxFrames);
+  }
+
+  /** @type {any} */ (window).__baryonPerfReplayCapture = {
+    ...capture,
+    frames,
+  };
+}
+
+function snapshotMatchesPreparedInputs(engineSnapshot, preparedInputs) {
+  return hasMatchingAnalysisContext(engineSnapshot, preparedInputs);
+}
+
+function hasMatchingAnalysisContext(previousAnalysis, preparedInputs) {
+  return Boolean(
+    previousAnalysis &&
+    preparedInputs &&
+    previousAnalysis.analysisSessionKey === preparedInputs.analysisSessionKey &&
+    previousAnalysis.analysisInputsSignature ===
+      preparedInputs.analysisInputsSignature,
+  );
+}
+
+function shouldRunHeavyFeatureAnalysis({
+  schedulerState,
+  preparedInputs,
+  frameTimeMs,
+  runtimeDiagnostics,
+}) {
+  const analysisAgeMs = Number.isFinite(schedulerState.lastHeavyAnalysisAtMs)
+    ? Math.max(0, frameTimeMs - schedulerState.lastHeavyAnalysisAtMs)
+    : Number.POSITIVE_INFINITY;
+  const targetIntervalMs =
+    (runtimeDiagnostics?.smoothedFrameTimeMs ?? 0) >
+    ACTIVE_FEATURE_ANALYSIS_INTERVAL_MS
+      ? MAX_ANALYSIS_AGE_MS
+      : ACTIVE_FEATURE_ANALYSIS_INTERVAL_MS;
+  const forced =
+    !schedulerState.lastHeavyAnalysisResult ||
+    !hasMatchingAnalysisContext(
+      {
+        analysisSessionKey: schedulerState.lastAnalysisSessionKey,
+        analysisInputsSignature: schedulerState.lastAnalysisInputsSignature,
+      },
+      preparedInputs,
+    ) ||
+    analysisAgeMs >= MAX_ANALYSIS_AGE_MS;
+
+  return {
+    analysisAgeMs,
+    forced,
+    shouldRun: forced || analysisAgeMs >= targetIntervalMs,
+  };
+}
+
+function resetAnalysisSchedulerState(analysisSchedulerRef) {
+  if (analysisSchedulerRef?.current) {
+    analysisSchedulerRef.current = createEmptyAnalysisSchedulerState();
+  }
+}
+
+function getAnalysisSchedulerState(analysisSchedulerRef) {
+  return analysisSchedulerRef?.current ?? createEmptyAnalysisSchedulerState();
+}
+
 export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
   const smoothedFrameTimeMs = runtimeDiagnostics?.smoothedFrameTimeMs ?? 0;
+  const render = runtimeDiagnostics?.render ?? null;
   return {
     fps:
       smoothedFrameTimeMs > 0 && Number.isFinite(smoothedFrameTimeMs)
@@ -70,7 +236,76 @@ export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
     currentPixelRatio: runtimeDiagnostics?.currentPixelRatio ?? 1,
     basePixelRatio: runtimeDiagnostics?.basePixelRatio ?? 1,
     rendererMode: runtimeDiagnostics?.rendererMode ?? null,
+    visualizationMethod: render?.visualizationMethod ?? null,
+    qualityPreset: render?.qualityPreset ?? null,
+    targetFps: render?.targetFps ?? DEFAULT_PERFORMANCE_TARGET_FPS,
+    requestedRenderScale: render?.requestedRenderScale ?? 1,
+    renderScale: render?.renderScale ?? 1,
+    requestedRaymarchSteps: render?.requestedRaymarchSteps ?? 0,
+    effectiveRaymarchSteps: render?.effectiveRaymarchSteps ?? 0,
+    adaptiveRaymarchActive: render?.adaptiveRaymarchActive ?? false,
   };
+}
+
+function normalizeAdaptiveRenderScale(renderScale) {
+  if (!Number.isFinite(renderScale) || renderScale <= 0) {
+    return 1;
+  }
+
+  return Math.max(0.5, Math.min(1, renderScale));
+}
+
+function resolveAdaptiveTargetFps(renderProfile, controls) {
+  if (renderProfile?.qualityPreset === PERFORMANCE_PROFILES.custom) {
+    return normalizePerformanceTargetFps(controls?.customPerformanceTargetFps);
+  }
+
+  return DEFAULT_PERFORMANCE_TARGET_FPS;
+}
+
+function buildAdaptiveRaymarchTuning(targetFps) {
+  const normalizedTargetFps = normalizePerformanceTargetFps(targetFps);
+  const targetFrameTimeMs = 1000 / normalizedTargetFps;
+  const decisionFrameCount = Math.min(
+    AUTO_RAYMARCH_MAX_DECISION_WINDOW_FRAMES,
+    Math.max(
+      AUTO_RAYMARCH_MIN_DECISION_WINDOW_FRAMES,
+      Math.round(normalizedTargetFps * AUTO_RAYMARCH_DECISION_WINDOW_SECONDS),
+    ),
+  );
+
+  return {
+    targetFps: normalizedTargetFps,
+    targetFrameTimeMs,
+    pressureFrameTimeMs:
+      targetFrameTimeMs * AUTO_RAYMARCH_PRESSURE_FRAME_TIME_RATIO,
+    scalePressureFrameTimeMs:
+      targetFrameTimeMs * AUTO_RAYMARCH_SCALE_PRESSURE_FRAME_TIME_RATIO,
+    stableFrameTimeMs:
+      targetFrameTimeMs * AUTO_RAYMARCH_STABLE_FRAME_TIME_RATIO,
+    decisionFrameCount,
+    longFrameThresholdMs:
+      targetFrameTimeMs * AUTO_RAYMARCH_LONG_FRAME_TIME_RATIO,
+    stepDownLongFrameCount: Math.max(
+      1,
+      Math.round(decisionFrameCount * AUTO_RAYMARCH_STEP_DOWN_LONG_FRAME_RATIO),
+    ),
+  };
+}
+
+export function getEffectiveAdaptiveRenderScale(
+  runtimeDiagnostics,
+  requestedRenderScale = 1,
+) {
+  const normalizedRequestedRenderScale =
+    normalizeAdaptiveRenderScale(requestedRenderScale);
+  const effectiveRenderScale =
+    runtimeDiagnostics?.adaptiveRaymarch?.adaptiveRaymarchActive &&
+    Number.isFinite(runtimeDiagnostics?.adaptiveRaymarch?.effectiveRenderScale)
+      ? runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale
+      : normalizedRequestedRenderScale;
+
+  return normalizeAdaptiveRenderScale(effectiveRenderScale);
 }
 
 export function publishPerformanceHudSnapshot(
@@ -100,7 +335,7 @@ export function publishPerformanceHudSnapshot(
 
 export function updateRendererDiagnostics(
   { state, controls, status, time, deltaTime, rfDelta, gl, renderLoopRefs },
-  { getTargetDpr = getPlaybackDiagnosticDpr } = {},
+  { getTargetDpr = getPlaybackDiagnosticDpr, renderScale = 1 } = {},
 ) {
   const runtimeDiagnostics = renderLoopRefs.runtimeDiagnosticsRef.current;
   const rendererMode =
@@ -121,7 +356,8 @@ export function updateRendererDiagnostics(
     controls.lowLoadPlaybackDiagnostics && status.isPlaying,
   );
   const basePixelRatio = getTargetDpr();
-  const targetPixelRatio = lowLoadActive ? 1 : basePixelRatio;
+  const scaledPixelRatio = Math.max(0.25, basePixelRatio * renderScale);
+  const targetPixelRatio = lowLoadActive ? 1 : scaledPixelRatio;
   const frameTimeMs =
     typeof rfDelta === "number" && rfDelta > 0 && Number.isFinite(rfDelta)
       ? rfDelta * 1000
@@ -131,12 +367,48 @@ export function updateRendererDiagnostics(
         ? deltaTime * 1000
         : null;
   if (frameTimeMs !== null) {
+    runtimeDiagnostics.lastFrameTimeMs = frameTimeMs;
     runtimeDiagnostics.smoothedFrameTimeMs =
       runtimeDiagnostics.smoothedFrameTimeMs > 0
         ? runtimeDiagnostics.smoothedFrameTimeMs +
           (frameTimeMs - runtimeDiagnostics.smoothedFrameTimeMs) *
             PERFORMANCE_HUD_SMOOTHING_ALPHA
         : frameTimeMs;
+    runtimeDiagnostics.worstFrameTimeMs = Math.max(
+      runtimeDiagnostics.worstFrameTimeMs,
+      frameTimeMs,
+    );
+    if (frameTimeMs > FRAME_DROP_THRESHOLD_16_7_MS) {
+      runtimeDiagnostics.frameDrops.framesOver16_7Ms += 1;
+    }
+    if (frameTimeMs > FRAME_DROP_THRESHOLD_25_MS) {
+      runtimeDiagnostics.frameDrops.framesOver25Ms += 1;
+    }
+    if (frameTimeMs > FRAME_DROP_THRESHOLD_33_3_MS) {
+      runtimeDiagnostics.frameDrops.framesOver33_3Ms += 1;
+    }
+    if (frameTimeMs > FRAME_DROP_THRESHOLD_50_MS) {
+      runtimeDiagnostics.frameDrops.framesOver50Ms += 1;
+    }
+    if (frameTimeMs >= LONG_FRAME_THRESHOLD_MS) {
+      runtimeDiagnostics.longFrameCount += 1;
+      runtimeDiagnostics.lastLongFrame = {
+        durationMs: frameTimeMs,
+        atElapsedTimeSeconds: time,
+        playbackSessionId: status.playbackSessionId ?? null,
+      };
+      runtimeDiagnostics.frameDrops.recentLongFramesMs.push(frameTimeMs);
+      if (
+        runtimeDiagnostics.frameDrops.recentLongFramesMs.length >
+        MAX_RECENT_LONG_FRAME_SAMPLES
+      ) {
+        runtimeDiagnostics.frameDrops.recentLongFramesMs.splice(
+          0,
+          runtimeDiagnostics.frameDrops.recentLongFramesMs.length -
+            MAX_RECENT_LONG_FRAME_SAMPLES,
+        );
+      }
+    }
   }
   runtimeDiagnostics.currentPixelRatio = targetPixelRatio;
   runtimeDiagnostics.basePixelRatio = basePixelRatio;
@@ -151,18 +423,6 @@ export function updateRendererDiagnostics(
     runtimeDiagnostics.averageFrameTimeMs +=
       (frameTimeMs - runtimeDiagnostics.averageFrameTimeMs) /
       runtimeDiagnostics.activeFrameCount;
-    runtimeDiagnostics.worstFrameTimeMs = Math.max(
-      runtimeDiagnostics.worstFrameTimeMs,
-      frameTimeMs,
-    );
-    if (frameTimeMs >= LONG_FRAME_THRESHOLD_MS) {
-      runtimeDiagnostics.longFrameCount += 1;
-      runtimeDiagnostics.lastLongFrame = {
-        durationMs: frameTimeMs,
-        atElapsedTimeSeconds: time,
-        playbackSessionId: status.playbackSessionId ?? null,
-      };
-    }
   }
 
   const playbackIssueSignature =
@@ -199,6 +459,457 @@ export function updateRendererDiagnostics(
   };
 }
 
+function normalizeRequestedRaymarchSteps(runtimeState, controls) {
+  const requestedSteps =
+    controls?.raymarchSteps ??
+    runtimeState?.requestedRaymarchSteps ??
+    runtimeState?.effectiveRaymarchSteps ??
+    runtimeState?.volumeMesh?.material?.steps ??
+    64;
+
+  return Math.max(16, Math.round(requestedSteps || 0));
+}
+
+function buildAdaptiveRaymarchLadder(requestedStepBudget) {
+  const normalizedRequestedStepBudget = normalizeRequestedRaymarchSteps(null, {
+    raymarchSteps: requestedStepBudget,
+  });
+  const rungSet = new Set(
+    AUTO_RAYMARCH_STEP_LADDER.filter(
+      (stepBudget) => stepBudget < normalizedRequestedStepBudget,
+    ),
+  );
+  rungSet.add(normalizedRequestedStepBudget);
+  return Array.from(rungSet).sort((left, right) => left - right);
+}
+
+function buildAdaptiveRenderScaleLadder(requestedRenderScale) {
+  const normalizedRequestedRenderScale =
+    normalizeAdaptiveRenderScale(requestedRenderScale);
+  const rungSet = new Set(
+    AUTO_RAYMARCH_RENDER_SCALE_LADDER.filter(
+      (renderScale) => renderScale < normalizedRequestedRenderScale,
+    ),
+  );
+  rungSet.add(normalizedRequestedRenderScale);
+  return Array.from(rungSet).sort((left, right) => left - right);
+}
+
+function getAdaptiveLadderMaxRung(ladder) {
+  return Math.max(0, ladder.length - 1);
+}
+
+function clampAdaptiveLadderRung(rung, ladder) {
+  return Math.min(Math.max(0, rung), getAdaptiveLadderMaxRung(ladder));
+}
+
+function resolveAdaptiveCurrentRung({
+  currentRung,
+  resumeRung,
+  ladder,
+  reactivating = false,
+}) {
+  if (reactivating && Number.isFinite(resumeRung)) {
+    return clampAdaptiveLadderRung(resumeRung, ladder);
+  }
+  if (Number.isFinite(currentRung)) {
+    return clampAdaptiveLadderRung(currentRung, ladder);
+  }
+  if (Number.isFinite(resumeRung)) {
+    return clampAdaptiveLadderRung(resumeRung, ladder);
+  }
+  return getAdaptiveLadderMaxRung(ladder);
+}
+
+function resetAdaptiveRaymarchState(
+  adaptiveRaymarch,
+  requestedStepBudget,
+  requestedRenderScale = 1,
+  { preserveHistory = false, startRung = null, startScaleRung = null } = {},
+) {
+  const ladder = buildAdaptiveRaymarchLadder(requestedStepBudget);
+  const scaleLadder = buildAdaptiveRenderScaleLadder(requestedRenderScale);
+  const normalizedRequestedRenderScale =
+    normalizeAdaptiveRenderScale(requestedRenderScale);
+  adaptiveRaymarch.requestedRaymarchSteps = requestedStepBudget;
+  adaptiveRaymarch.requestedRenderScale = normalizedRequestedRenderScale;
+  const resolvedStartRung = Number.isFinite(startRung)
+    ? clampAdaptiveLadderRung(startRung, ladder)
+    : getAdaptiveLadderMaxRung(ladder);
+  const resolvedStartScaleRung = Number.isFinite(startScaleRung)
+    ? clampAdaptiveLadderRung(startScaleRung, scaleLadder)
+    : getAdaptiveLadderMaxRung(scaleLadder);
+  adaptiveRaymarch.currentRung = resolvedStartRung;
+  adaptiveRaymarch.currentScaleRung = resolvedStartScaleRung;
+  adaptiveRaymarch.effectiveRaymarchSteps = ladder[resolvedStartRung];
+  adaptiveRaymarch.effectiveRenderScale = scaleLadder[resolvedStartScaleRung];
+  adaptiveRaymarch.decisionFrameCount = 0;
+  adaptiveRaymarch.longFrameCountInWindow = 0;
+  adaptiveRaymarch.stableWindowCount = 0;
+  adaptiveRaymarch.recoveryEligible = false;
+  adaptiveRaymarch.recoveryBlockedReason = "none";
+  if (!preserveHistory) {
+    adaptiveRaymarch.stepDownCount = 0;
+    adaptiveRaymarch.stepUpCount = 0;
+    adaptiveRaymarch.scaleStepDownCount = 0;
+    adaptiveRaymarch.scaleStepUpCount = 0;
+  }
+  return {
+    ladder,
+    scaleLadder,
+  };
+}
+
+function findAdaptiveRaymarchRungAtOrBelow(ladder, stepBudget) {
+  let rung = 0;
+  for (let index = 0; index < ladder.length; index += 1) {
+    if (ladder[index] <= stepBudget) {
+      rung = index;
+      continue;
+    }
+    break;
+  }
+  return rung;
+}
+
+function findAdaptiveRenderScaleRungAtOrBelow(scaleLadder, renderScale) {
+  let rung = 0;
+  for (let index = 0; index < scaleLadder.length; index += 1) {
+    if (scaleLadder[index] <= renderScale + 1e-6) {
+      rung = index;
+      continue;
+    }
+    break;
+  }
+  return rung;
+}
+
+function deriveAdaptivePressureRung({
+  ladder,
+  currentRung,
+  targetFrameTimeMs,
+  smoothedFrameTimeMs,
+}) {
+  if (!(smoothedFrameTimeMs > 0)) {
+    return Math.max(0, currentRung - 1);
+  }
+
+  const currentBudget = ladder[currentRung] ?? ladder[ladder.length - 1] ?? 16;
+  const estimatedBudget =
+    currentBudget *
+    (targetFrameTimeMs / smoothedFrameTimeMs) *
+    AUTO_RAYMARCH_PRESSURE_SAFETY_MARGIN;
+  const estimatedRung = findAdaptiveRaymarchRungAtOrBelow(
+    ladder,
+    estimatedBudget,
+  );
+  return Math.max(0, Math.min(currentRung - 1, estimatedRung));
+}
+
+function deriveAdaptivePressureScaleRung({
+  scaleLadder,
+  currentScaleRung,
+  targetFrameTimeMs,
+  smoothedFrameTimeMs,
+}) {
+  if (!(smoothedFrameTimeMs > 0)) {
+    return Math.max(0, currentScaleRung - 1);
+  }
+
+  const currentRenderScale =
+    scaleLadder[currentScaleRung] ?? scaleLadder[scaleLadder.length - 1] ?? 1;
+  const estimatedRenderScale =
+    currentRenderScale *
+    Math.sqrt(targetFrameTimeMs / smoothedFrameTimeMs) *
+    AUTO_RAYMARCH_SCALE_PRESSURE_SAFETY_MARGIN;
+  const estimatedRung = findAdaptiveRenderScaleRungAtOrBelow(
+    scaleLadder,
+    estimatedRenderScale,
+  );
+  return Math.max(0, Math.min(currentScaleRung - 1, estimatedRung));
+}
+
+function deriveAdaptiveRecoveryState({
+  controls,
+  effectiveFrame,
+  status,
+  adaptiveRaymarch,
+}) {
+  const playbackSessionId = status?.playbackSessionId ?? null;
+  const sessionTransition =
+    playbackSessionId != null &&
+    adaptiveRaymarch?.lastPlaybackSessionId != null &&
+    adaptiveRaymarch.lastPlaybackSessionId !== playbackSessionId;
+
+  let recoveryBlockedReason = "none";
+  if (!controls?.injectTestTone) {
+    const sourceMode = effectiveFrame?.sourceMode ?? null;
+    const fieldState = effectiveFrame?.fieldState ?? "idle";
+    const energySignal = effectiveFrame?.energySignal ?? 0;
+
+    if (sessionTransition) {
+      recoveryBlockedReason = "session-transition";
+    } else if (sourceMode === "silent") {
+      recoveryBlockedReason = "silent-source";
+    } else if (fieldState !== "active") {
+      recoveryBlockedReason = "inactive-field";
+    } else if (!(energySignal >= AUTO_RAYMARCH_RECOVERY_MIN_ENERGY_SIGNAL)) {
+      recoveryBlockedReason = "low-energy";
+    }
+  }
+
+  return {
+    recoveryEligible: recoveryBlockedReason === "none",
+    recoveryBlockedReason,
+    playbackSessionId,
+    sessionTransition,
+  };
+}
+
+export function updateAdaptiveRaymarchStepBudget({
+  controls,
+  runtime,
+  runtimeState,
+  renderProfile,
+  effectiveFrame,
+  status,
+  runtimeDiagnostics,
+}) {
+  if (!runtimeState || !runtimeDiagnostics) {
+    return 0;
+  }
+
+  const requestedStepBudget = normalizeRequestedRaymarchSteps(
+    runtimeState,
+    controls,
+  );
+  const requestedRenderScale = normalizeAdaptiveRenderScale(
+    renderProfile?.renderScale ?? 1,
+  );
+  const backboneCapacity = raymarchPerformanceGovernor.inferLayerCapacity(
+    runtimeState?.backboneCapacity,
+    runtimeState?.backboneModeBuffer?.value?.array,
+  );
+  const detailCapacity = raymarchPerformanceGovernor.inferLayerCapacity(
+    runtimeState?.detailCapacity,
+    runtimeState?.detailModeBuffer?.value?.array,
+  );
+  const performanceGovernor =
+    raymarchPerformanceGovernor.buildRaymarchPerformanceGovernor({
+      backboneSlots: effectiveFrame?.backboneSlots,
+      detailSlots: effectiveFrame?.detailSlots,
+      backboneCapacity,
+      detailCapacity,
+      featureFrame: effectiveFrame,
+      requestedStepBudget,
+      requestedRenderScale,
+    });
+  runtimeState.performanceGovernor = {
+    ...runtimeState.performanceGovernor,
+    ...performanceGovernor,
+  };
+  const governedStepBudget = Math.min(
+    requestedStepBudget,
+    performanceGovernor.proactiveStepBudget,
+  );
+  const governedRenderScale = Math.min(
+    requestedRenderScale,
+    performanceGovernor.proactiveRenderScale,
+  );
+  const adaptiveTuning = buildAdaptiveRaymarchTuning(
+    resolveAdaptiveTargetFps(renderProfile, controls),
+  );
+  const adaptiveRaymarch = runtimeDiagnostics.adaptiveRaymarch;
+  const activeModeCount =
+    effectiveFrame?.activeModeCount ??
+    (effectiveFrame?.activeBackboneModeCount ?? 0) +
+      (effectiveFrame?.activeDetailModeCount ?? 0);
+  adaptiveRaymarch.targetFps = adaptiveTuning.targetFps;
+  adaptiveRaymarch.targetFrameTimeMs = adaptiveTuning.targetFrameTimeMs;
+
+  const autoAdaptiveActive = Boolean(
+    runtime?.method === "raymarch" &&
+    (renderProfile?.qualityPreset === PERFORMANCE_PROFILES.auto ||
+      renderProfile?.qualityPreset === PERFORMANCE_PROFILES.custom) &&
+    (status?.isPlaying ||
+      status?.isLiveInputActive ||
+      controls?.injectTestTone) &&
+    activeModeCount > 0,
+  );
+
+  let ladder = buildAdaptiveRaymarchLadder(governedStepBudget);
+  let scaleLadder = buildAdaptiveRenderScaleLadder(governedRenderScale);
+  const requestedChanged =
+    adaptiveRaymarch.requestedRaymarchSteps !== governedStepBudget ||
+    adaptiveRaymarch.requestedRenderScale !== governedRenderScale;
+  if (requestedChanged) {
+    ({ ladder, scaleLadder } = resetAdaptiveRaymarchState(
+      adaptiveRaymarch,
+      governedStepBudget,
+      governedRenderScale,
+      {
+        startRung: Number.isFinite(runtimeState.autoRaymarchResumeRung)
+          ? runtimeState.autoRaymarchResumeRung
+          : null,
+        startScaleRung: Number.isFinite(
+          runtimeState.autoRaymarchResumeScaleRung,
+        )
+          ? runtimeState.autoRaymarchResumeScaleRung
+          : null,
+      },
+    ));
+  }
+
+  if (!autoAdaptiveActive) {
+    runtimeState.autoRaymarchResumeRung = adaptiveRaymarch.currentRung;
+    runtimeState.autoRaymarchResumeScaleRung =
+      adaptiveRaymarch.currentScaleRung;
+    adaptiveRaymarch.adaptiveRaymarchActive = false;
+    ({ ladder, scaleLadder } = resetAdaptiveRaymarchState(
+      adaptiveRaymarch,
+      governedStepBudget,
+      governedRenderScale,
+    ));
+    const effectiveStepBudget = ladder[ladder.length - 1];
+    applyEffectiveRaymarchStepBudget(
+      runtimeState,
+      controls,
+      effectiveStepBudget,
+    );
+    return effectiveStepBudget;
+  }
+
+  const wasAdaptiveActive = adaptiveRaymarch.adaptiveRaymarchActive === true;
+  adaptiveRaymarch.adaptiveRaymarchActive = true;
+  adaptiveRaymarch.currentRung = resolveAdaptiveCurrentRung({
+    currentRung: adaptiveRaymarch.currentRung,
+    resumeRung: runtimeState.autoRaymarchResumeRung,
+    ladder,
+    reactivating: !wasAdaptiveActive,
+  });
+  adaptiveRaymarch.currentScaleRung = resolveAdaptiveCurrentRung({
+    currentRung: adaptiveRaymarch.currentScaleRung,
+    resumeRung: runtimeState.autoRaymarchResumeScaleRung,
+    ladder: scaleLadder,
+    reactivating: !wasAdaptiveActive,
+  });
+  const recoveryState = deriveAdaptiveRecoveryState({
+    controls,
+    effectiveFrame,
+    status,
+    adaptiveRaymarch,
+  });
+  adaptiveRaymarch.recoveryEligible = recoveryState.recoveryEligible;
+  adaptiveRaymarch.recoveryBlockedReason = recoveryState.recoveryBlockedReason;
+  adaptiveRaymarch.lastPlaybackSessionId = recoveryState.playbackSessionId;
+  if (recoveryState.sessionTransition) {
+    adaptiveRaymarch.stableWindowCount = 0;
+  }
+
+  adaptiveRaymarch.decisionFrameCount += 1;
+  if (
+    (runtimeDiagnostics.lastFrameTimeMs ?? 0) >
+    adaptiveTuning.longFrameThresholdMs
+  ) {
+    adaptiveRaymarch.longFrameCountInWindow += 1;
+  }
+
+  if (
+    adaptiveRaymarch.decisionFrameCount >= adaptiveTuning.decisionFrameCount
+  ) {
+    const smoothedFrameTimeMs = runtimeDiagnostics.smoothedFrameTimeMs ?? 0;
+    const underPressure =
+      smoothedFrameTimeMs > adaptiveTuning.pressureFrameTimeMs ||
+      adaptiveRaymarch.longFrameCountInWindow >=
+        adaptiveTuning.stepDownLongFrameCount;
+    const scaleUnderPressure =
+      smoothedFrameTimeMs > adaptiveTuning.scalePressureFrameTimeMs ||
+      adaptiveRaymarch.longFrameCountInWindow > 0;
+    const stableWindow =
+      smoothedFrameTimeMs > 0 &&
+      smoothedFrameTimeMs < adaptiveTuning.stableFrameTimeMs &&
+      adaptiveRaymarch.longFrameCountInWindow === 0;
+
+    if (underPressure) {
+      let handledPressure = false;
+
+      if (scaleUnderPressure && adaptiveRaymarch.currentScaleRung > 0) {
+        const nextPressureScaleRung = deriveAdaptivePressureScaleRung({
+          scaleLadder,
+          currentScaleRung: adaptiveRaymarch.currentScaleRung,
+          targetFrameTimeMs: adaptiveTuning.targetFrameTimeMs,
+          smoothedFrameTimeMs,
+        });
+        if (nextPressureScaleRung < adaptiveRaymarch.currentScaleRung) {
+          adaptiveRaymarch.scaleStepDownCount +=
+            adaptiveRaymarch.currentScaleRung - nextPressureScaleRung;
+          adaptiveRaymarch.currentScaleRung = nextPressureScaleRung;
+          handledPressure = true;
+        }
+      }
+
+      if (!handledPressure && adaptiveRaymarch.currentRung > 0) {
+        const nextPressureRung = deriveAdaptivePressureRung({
+          ladder,
+          currentRung: adaptiveRaymarch.currentRung,
+          targetFrameTimeMs: adaptiveTuning.targetFrameTimeMs,
+          smoothedFrameTimeMs,
+        });
+        if (nextPressureRung < adaptiveRaymarch.currentRung) {
+          adaptiveRaymarch.stepDownCount +=
+            adaptiveRaymarch.currentRung - nextPressureRung;
+          adaptiveRaymarch.currentRung = nextPressureRung;
+        }
+      }
+      adaptiveRaymarch.stableWindowCount = 0;
+    } else if (stableWindow && recoveryState.recoveryEligible) {
+      adaptiveRaymarch.stableWindowCount += 1;
+      if (
+        adaptiveRaymarch.stableWindowCount >= AUTO_RAYMARCH_RECOVERY_WINDOWS
+      ) {
+        if (adaptiveRaymarch.currentRung < ladder.length - 1) {
+          adaptiveRaymarch.currentRung += 1;
+          adaptiveRaymarch.stepUpCount += 1;
+        } else if (adaptiveRaymarch.currentScaleRung < scaleLadder.length - 1) {
+          adaptiveRaymarch.currentScaleRung += 1;
+          adaptiveRaymarch.scaleStepUpCount += 1;
+        }
+        adaptiveRaymarch.stableWindowCount = 0;
+      }
+    } else {
+      adaptiveRaymarch.stableWindowCount = 0;
+    }
+
+    adaptiveRaymarch.decisionFrameCount = 0;
+    adaptiveRaymarch.longFrameCountInWindow = 0;
+  }
+
+  const effectiveStepBudget =
+    ladder[clampAdaptiveLadderRung(adaptiveRaymarch.currentRung, ladder)];
+  adaptiveRaymarch.effectiveRaymarchSteps = effectiveStepBudget;
+  adaptiveRaymarch.effectiveRenderScale =
+    scaleLadder[
+      clampAdaptiveLadderRung(adaptiveRaymarch.currentScaleRung, scaleLadder)
+    ];
+  adaptiveRaymarch.complexityScore = performanceGovernor.complexityScore;
+  adaptiveRaymarch.uploadedModeCount = performanceGovernor.uploadedModeCount;
+  adaptiveRaymarch.originalModeCount = performanceGovernor.originalModeCount;
+  adaptiveRaymarch.proactiveStepBudget =
+    performanceGovernor.proactiveStepBudget;
+  adaptiveRaymarch.proactiveRenderScale =
+    performanceGovernor.proactiveRenderScale;
+  adaptiveRaymarch.bloomAllowed = performanceGovernor.bloomAllowed;
+  runtimeState.autoRaymarchResumeRung = adaptiveRaymarch.currentRung;
+  runtimeState.autoRaymarchResumeScaleRung = adaptiveRaymarch.currentScaleRung;
+  runtimeState.performanceGovernor = {
+    ...runtimeState.performanceGovernor,
+    effectiveRenderScale: adaptiveRaymarch.effectiveRenderScale,
+    effectiveStepBudget,
+  };
+  applyEffectiveRaymarchStepBudget(runtimeState, controls, effectiveStepBudget);
+  return effectiveStepBudget;
+}
+
 export function applyCachedControlSnapshots(
   {
     controls,
@@ -208,6 +919,7 @@ export function applyCachedControlSnapshots(
     gl,
     ensurePipeline,
     postNodesRef,
+    renderProfileRef,
     renderLoopRefs,
   },
   appliers = {
@@ -232,7 +944,7 @@ export function applyCachedControlSnapshots(
     cachedControlSnapshotsRef.current = {
       shared: appliers.applySharedControls(gl, controls),
       output: appliers.applyOutputControls(
-        { ensurePipeline, postNodesRef },
+        { ensurePipeline, postNodesRef, renderProfileRef },
         controls,
       ),
       visualization: appliers.applyVisualizationControls(
@@ -241,7 +953,7 @@ export function applyCachedControlSnapshots(
         controls,
       ),
       bloom: appliers.applyBloomControls(
-        { ensurePipeline, postNodesRef, runtimeState },
+        { ensurePipeline, postNodesRef, renderProfileRef, runtimeState },
         controls,
       ),
       audit: appliers.applyAuditControls(featureState, controls),
@@ -254,7 +966,10 @@ export function applyCachedControlSnapshots(
     appliedControlVersionRef.current = controlVersionRef.current;
   }
 
-  return cachedControlSnapshotsRef.current;
+  return {
+    ...cachedControlSnapshotsRef.current,
+    controlsChanged,
+  };
 }
 
 export function resolveFeatureFrame(
@@ -262,6 +977,8 @@ export function resolveFeatureFrame(
     audio,
     featureState,
     featureAnalyzer,
+    featureEngine,
+    runtimeDiagnostics = null,
     runtimeState,
     controls,
     status,
@@ -270,10 +987,19 @@ export function resolveFeatureFrame(
     renderLoopRefs,
     chromesthesiaEnabled,
   },
-  { buildFeatureFrame = buildAudioFeatureFrame } = {},
+  {
+    buildFeatureFrame = buildAudioFeatureFrame,
+    prepareFeatureFrame = prepareAudioFeatureFrameInputs,
+    runHeavyFeatureAnalysis = runHeavyAudioFeatureAnalysis,
+    composeFeatureFrame = composeAudioFeatureFrame,
+  } = {},
 ) {
-  const { lastLiveFrameRef, lastActiveFrameRef, lastIdleFrameRef } =
-    renderLoopRefs.frameCacheRefs;
+  const {
+    lastLiveFrameRef,
+    lastActiveFrameRef,
+    lastIdleFrameRef,
+    analysisSchedulerRef,
+  } = renderLoopRefs.frameCacheRefs;
 
   if (clockMode === "paused-playback" && !lastActiveFrameRef.current) {
     const liveFrame = lastLiveFrameRef.current;
@@ -289,25 +1015,268 @@ export function resolveFeatureFrame(
 
   let featureFrame = lastActiveFrameRef.current;
   if (!shouldReusePausedFrame && !shouldReuseStaticIdleFrame) {
+    const buildFeatureFrameStartedAt = getRenderLoopWallTimeMs();
+    const analysisSnapshotStartedAt = getRenderLoopWallTimeMs();
     const analysisSnapshot = audio.readAnalysisSnapshot();
+    recordRuntimePerfSample(
+      runtimeDiagnostics,
+      "readAnalysisSnapshotMs",
+      getRenderLoopWallTimeMs() - analysisSnapshotStartedAt,
+    );
+
+    const enqueueAnalysisFrameStartedAt = getRenderLoopWallTimeMs();
     featureAnalyzer?.enqueueAnalysisFrame?.({
       analysisSnapshot,
       status,
       frameTimeMs: time * 1000,
     });
+    recordRuntimePerfSample(
+      runtimeDiagnostics,
+      "enqueueAnalysisFrameMs",
+      getRenderLoopWallTimeMs() - enqueueAnalysisFrameStartedAt,
+    );
+
+    const readHintsStartedAt = getRenderLoopWallTimeMs();
     const analysisHints = featureAnalyzer?.readHints?.({
       status,
       frameTimeMs: time * 1000,
     });
-    featureFrame = buildFeatureFrame({
+    recordRuntimePerfSample(
+      runtimeDiagnostics,
+      "readAnalysisHintsMs",
+      getRenderLoopWallTimeMs() - readHintsStartedAt,
+    );
+
+    maybeCaptureReplayFrame({
       analysisSnapshot,
-      featureState,
-      radius: runtimeState.uniforms.uRadius.value,
+      analysisHints,
       status,
       frameTimeMs: time * 1000,
-      includeChromesthesia: chromesthesiaEnabled,
-      analysisHints,
     });
+
+    const shouldUseLegacyBuildPath =
+      !featureEngine?.enqueueTransportFrame &&
+      buildFeatureFrame !== buildAudioFeatureFrame &&
+      prepareFeatureFrame === prepareAudioFeatureFrameInputs &&
+      runHeavyFeatureAnalysis === runHeavyAudioFeatureAnalysis &&
+      composeFeatureFrame === composeAudioFeatureFrame;
+
+    if (shouldUseLegacyBuildPath) {
+      featureFrame = buildFeatureFrame({
+        analysisSnapshot,
+        featureState,
+        radius: runtimeState.uniforms.uRadius.value,
+        cavityGeometry: controls.cavityGeometry,
+        status,
+        frameTimeMs: time * 1000,
+        includeChromesthesia: chromesthesiaEnabled,
+        analysisHints,
+        structuralImplementation: controls.structuralImplementation,
+      });
+    } else {
+      const preparedInputs = prepareFeatureFrame({
+        analysisSnapshot,
+        featureState,
+        radius: runtimeState.uniforms.uRadius.value,
+        cavityGeometry: controls.cavityGeometry,
+        status,
+        frameTimeMs: time * 1000,
+        includeChromesthesia: chromesthesiaEnabled,
+        analysisHints,
+        structuralImplementation: controls.structuralImplementation,
+      });
+
+      if (preparedInputs.silentFeatureFrame) {
+        featureFrame = preparedInputs.silentFeatureFrame;
+        featureEngine?.reset?.("silent-frame");
+        resetAnalysisSchedulerState(analysisSchedulerRef);
+      } else {
+        if (featureEngine?.enqueueTransportFrame) {
+          const engineEnqueueStartedAt = getRenderLoopWallTimeMs();
+          const transportFrame = buildAudioFeatureTransportFrame({
+            analysisSnapshot,
+            status: {
+              ...status,
+              capacity: featureState?.capacity ?? null,
+            },
+            frameTimeMs: preparedInputs.currentFrameAtMs,
+            radius: runtimeState.uniforms.uRadius.value,
+            cavityGeometry: controls.cavityGeometry,
+            includeChromesthesia: chromesthesiaEnabled,
+            analysisHints,
+            auditSettings: featureState?.audit?.settings ?? null,
+            structuralImplementation: controls.structuralImplementation,
+          });
+          featureEngine.enqueueTransportFrame(transportFrame);
+          recordRuntimePerfSample(
+            runtimeDiagnostics,
+            "engineEnqueueMs",
+            getRenderLoopWallTimeMs() - engineEnqueueStartedAt,
+          );
+
+          const readEngineSnapshotStartedAt = getRenderLoopWallTimeMs();
+          const engineSnapshot = featureEngine.readLatestSnapshot({
+            frameTimeMs: preparedInputs.currentFrameAtMs,
+          });
+          recordRuntimePerfSample(
+            runtimeDiagnostics,
+            "readEngineSnapshotMs",
+            getRenderLoopWallTimeMs() - readEngineSnapshotStartedAt,
+          );
+
+          const engineStatus = featureEngine.getStatus?.() ?? null;
+          if (runtimeDiagnostics?.engine) {
+            runtimeDiagnostics.engine.snapshotAgeMs =
+              engineStatus?.latestSnapshotAgeMs ?? 0;
+            runtimeDiagnostics.engine.publishCount =
+              engineStatus?.publishCount ?? 0;
+            runtimeDiagnostics.engine.droppedFrameCount =
+              engineStatus?.droppedFrameCount ?? 0;
+            runtimeDiagnostics.engine.transportDropCount =
+              engineStatus?.transportDropCount ??
+              engineStatus?.droppedFrameCount ??
+              0;
+            runtimeDiagnostics.engine.publishSkipCount =
+              engineStatus?.publishSkipCount ?? 0;
+            runtimeDiagnostics.engine.fastSignalUpdateCount =
+              engineStatus?.fastSignalUpdateCount ?? 0;
+            runtimeDiagnostics.engine.structuralUpdateCount =
+              engineStatus?.structuralUpdateCount ?? 0;
+            runtimeDiagnostics.engine.chromaUpdateCount =
+              engineStatus?.chromaUpdateCount ?? 0;
+            runtimeDiagnostics.engine.tempoUpdateCount =
+              engineStatus?.tempoUpdateCount ?? 0;
+            runtimeDiagnostics.engine.latestProcessedFrameId =
+              engineStatus?.latestProcessedFrameId ?? 0;
+            runtimeDiagnostics.engine.latestPublishedFrameId =
+              engineStatus?.latestPublishedFrameId ?? 0;
+            runtimeDiagnostics.engine.workerFastSignalMs =
+              engineStatus?.workerFastSignalMs ?? 0;
+            runtimeDiagnostics.engine.workerStructuralMs =
+              engineStatus?.workerStructuralMs ?? 0;
+            runtimeDiagnostics.engine.workerPeakScanMs =
+              engineStatus?.workerPeakScanMs ?? 0;
+            runtimeDiagnostics.engine.workerModalResolveMs =
+              engineStatus?.workerModalResolveMs ?? 0;
+            runtimeDiagnostics.engine.workerProjectionMs =
+              engineStatus?.workerProjectionMs ?? 0;
+            runtimeDiagnostics.engine.workerChromaMs =
+              engineStatus?.workerChromaMs ?? 0;
+            runtimeDiagnostics.engine.workerTempoMs =
+              engineStatus?.workerTempoMs ?? 0;
+            runtimeDiagnostics.engine.queueDepth =
+              engineStatus?.queueDepth ?? 0;
+            runtimeDiagnostics.engine.state = engineStatus?.state ?? "none";
+            runtimeDiagnostics.engine.reason = engineStatus?.reason ?? null;
+          }
+
+          if (snapshotMatchesPreparedInputs(engineSnapshot, preparedInputs)) {
+            const fastComposeStartedAt = getRenderLoopWallTimeMs();
+            featureFrame = composeFeatureFrame({
+              preparedInputs,
+              analysisResult: engineSnapshot.analysisResult,
+              analysisHints,
+              previousFrame: lastLiveFrameRef.current,
+              reuseHeavyAnalysis: true,
+            });
+            recordRuntimePerfSample(
+              runtimeDiagnostics,
+              "fastComposeMs",
+              getRenderLoopWallTimeMs() - fastComposeStartedAt,
+            );
+          } else {
+            featureFrame =
+              lastLiveFrameRef.current ??
+              lastActiveFrameRef.current ??
+              preparedInputs.silentFeatureFrame;
+          }
+        } else {
+          const schedulerState =
+            getAnalysisSchedulerState(analysisSchedulerRef);
+          const { shouldRun, forced, analysisAgeMs } =
+            shouldRunHeavyFeatureAnalysis({
+              schedulerState,
+              preparedInputs,
+              frameTimeMs: preparedInputs.currentFrameAtMs,
+              runtimeDiagnostics,
+            });
+
+          if (runtimeDiagnostics?.analysisScheduler) {
+            runtimeDiagnostics.analysisScheduler.analysisAgeMs =
+              Number.isFinite(analysisAgeMs) ? analysisAgeMs : 0;
+          }
+
+          if (shouldRun) {
+            const heavyAnalysisStartedAt = getRenderLoopWallTimeMs();
+            const analysisResult = runHeavyFeatureAnalysis(preparedInputs);
+            recordRuntimePerfSample(
+              runtimeDiagnostics,
+              "heavyAnalysisMs",
+              getRenderLoopWallTimeMs() - heavyAnalysisStartedAt,
+            );
+
+            const fastComposeStartedAt = getRenderLoopWallTimeMs();
+            featureFrame = composeFeatureFrame({
+              preparedInputs,
+              analysisResult,
+              analysisHints,
+              previousFrame: schedulerState.lastComposedFeatureFrame,
+              reuseHeavyAnalysis: false,
+            });
+            recordRuntimePerfSample(
+              runtimeDiagnostics,
+              "fastComposeMs",
+              getRenderLoopWallTimeMs() - fastComposeStartedAt,
+            );
+
+            if (analysisSchedulerRef?.current) {
+              analysisSchedulerRef.current = {
+                lastHeavyAnalysisAtMs: preparedInputs.currentFrameAtMs,
+                lastHeavyAnalysisResult: analysisResult,
+                lastComposedFeatureFrame: featureFrame,
+                lastAnalysisSessionKey: preparedInputs.analysisSessionKey,
+                lastAnalysisInputsSignature:
+                  preparedInputs.analysisInputsSignature,
+              };
+            }
+            if (runtimeDiagnostics?.analysisScheduler && forced) {
+              runtimeDiagnostics.analysisScheduler.forcedAnalysisCount += 1;
+            }
+          } else {
+            const fastComposeStartedAt = getRenderLoopWallTimeMs();
+            featureFrame = composeFeatureFrame({
+              preparedInputs,
+              analysisResult: schedulerState.lastHeavyAnalysisResult,
+              analysisHints,
+              previousFrame: schedulerState.lastComposedFeatureFrame,
+              reuseHeavyAnalysis: true,
+            });
+            recordRuntimePerfSample(
+              runtimeDiagnostics,
+              "fastComposeMs",
+              getRenderLoopWallTimeMs() - fastComposeStartedAt,
+            );
+
+            if (analysisSchedulerRef?.current) {
+              analysisSchedulerRef.current = {
+                ...schedulerState,
+                lastComposedFeatureFrame: featureFrame,
+              };
+            }
+            if (runtimeDiagnostics?.analysisScheduler) {
+              runtimeDiagnostics.analysisScheduler.analysisReuseCount += 1;
+              runtimeDiagnostics.analysisScheduler.skippedAnalysisCount += 1;
+            }
+          }
+        }
+      }
+    }
+
+    recordRuntimePerfSample(
+      runtimeDiagnostics,
+      "buildFeatureFrameMs",
+      getRenderLoopWallTimeMs() - buildFeatureFrameStartedAt,
+    );
 
     if (shouldReuseIdleFrame(status, controls)) {
       lastIdleFrameRef.current = featureFrame;
@@ -325,6 +1294,10 @@ export function resolveFeatureFrame(
   } else if (clockMode !== "paused-playback") {
     lastLiveFrameRef.current = null;
     lastActiveFrameRef.current = null;
+    if (!controls.injectTestTone) {
+      featureEngine?.reset?.("idle");
+    }
+    resetAnalysisSchedulerState(analysisSchedulerRef);
   }
 
   const effectiveFrame =
@@ -336,34 +1309,6 @@ export function resolveFeatureFrame(
     featureFrame,
     effectiveFrame,
   };
-}
-
-export function syncLiveInputRuntimeStatus({
-  status,
-  setLiveInputRuntimeStatus,
-  renderLoopRefs,
-}) {
-  const nextLiveInputRuntimeStatus = status.isLiveInputActive
-    ? {
-        active: true,
-      }
-    : createLiveInputRuntimeStatus();
-  const previousLiveInputRuntimeStatus =
-    renderLoopRefs.lastLiveInputRuntimeStatusRef.current;
-
-  if (
-    !previousLiveInputRuntimeStatus ||
-    previousLiveInputRuntimeStatus.active !== nextLiveInputRuntimeStatus.active
-  ) {
-    renderLoopRefs.lastLiveInputRuntimeStatusRef.current =
-      nextLiveInputRuntimeStatus;
-    setLiveInputRuntimeStatus?.((currentStatus) => ({
-      ...(currentStatus ?? {}),
-      ...nextLiveInputRuntimeStatus,
-    }));
-  }
-
-  return nextLiveInputRuntimeStatus;
 }
 
 export function applyReactiveBloomState({
@@ -378,11 +1323,14 @@ export function applyReactiveBloomState({
   }
 
   const bt = runtimeState?.bloomTuning;
+  const performanceGovernor = runtimeState?.performanceGovernor;
   const strength = bt?.effectiveStrength ?? bloom.strength;
   const radius = bt?.effectiveRadius ?? bloom.radius;
   const threshold = bt?.effectiveThreshold ?? bloom.threshold;
+  const bloomAllowed =
+    (bt?.bloomAllowed ?? true) && (performanceGovernor?.bloomAllowed ?? true);
 
-  const bloomActive = controls.bloomEnabled && strength > 1e-4;
+  const bloomActive = controls.bloomEnabled && bloomAllowed && strength > 1e-4;
   bloomPass.strength.value = strength;
   bloomPass.radius.value = radius;
   bloomPass.threshold.value = bloomActive ? threshold : 999;
@@ -537,3 +1485,5 @@ export function publishDevtoolsSnapshots(
 
   markRuntimeReady();
 }
+
+export { maybePublishRuntimePerfSnapshot };

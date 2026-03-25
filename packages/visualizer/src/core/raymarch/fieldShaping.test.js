@@ -1,25 +1,34 @@
 import { describe, expect, it } from "vitest";
 import {
+  BASS_STRUCTURE_FLOOR_MAX,
   BEAM_POWER_BASE,
   BOUNDARY_CONTOUR_ACCENT_WEIGHT,
   BODY_DENSITY_MIX,
   BODY_DENSITY_GAIN,
   CONTOUR_BLEND,
   EMISSION_ROLLOFF_MIX,
+  EXCITATION_VISIBILITY_COHERENCE_WEIGHT,
+  EXCITATION_VISIBILITY_HARMONICITY_WEIGHT,
+  EXCITATION_VISIBILITY_MAX_FLOOR,
   HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
   HOT_CORE_END,
   HOT_CORE_START,
+  LATCHED_FOG_BEAM_REDUCTION,
+  LATCHED_FOG_BODY_REDUCTION,
   SHELL_WEIGHT_MAX,
   SHELL_WEIGHT_MIN,
   deriveBeamMask,
   deriveBodyDensity,
   deriveContourShape,
   deriveEmissionRolloff,
+  deriveExcitationVisibility,
+  deriveLatchedFogMask,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
   deriveHotCoreMix,
   deriveShellWeight,
   deriveStableContourAccent,
+  deriveVisibleStructure,
   deriveVisibleDensity,
 } from "./fieldShaping.js";
 
@@ -54,6 +63,111 @@ describe("field shaping", () => {
     expect(BODY_DENSITY_GAIN).toBeCloseTo(0.12);
     expect(body.interiorMask).toBeGreaterThan(0);
     expect(body.bodyDensity).toBeGreaterThan(0);
+  });
+
+  it("applies the latched-fog mask only to high-structure low-change states", () => {
+    const fogged = deriveLatchedFogMask({
+      structureSignal: 0.9,
+      changeSignal: 0.01,
+    });
+    const active = deriveLatchedFogMask({
+      structureSignal: 0.9,
+      changeSignal: 0.14,
+    });
+    const weak = deriveLatchedFogMask({
+      structureSignal: 0.35,
+      changeSignal: 0.01,
+    });
+
+    expect(fogged).toBeGreaterThan(0);
+    expect(active).toBe(0);
+    expect(weak).toBe(0);
+  });
+
+  it("keeps a bounded visibility floor for weak but coherent excitation", () => {
+    const weakCoherent = deriveExcitationVisibility({
+      excitationGate: 0.04,
+      modeCoherence: 0.72,
+      harmonicity: 0.6,
+    });
+    const noisyWeak = deriveExcitationVisibility({
+      excitationGate: 0.04,
+      modeCoherence: 0.08,
+      harmonicity: 0.05,
+    });
+
+    expect(EXCITATION_VISIBILITY_COHERENCE_WEIGHT).toBeCloseTo(0.22);
+    expect(EXCITATION_VISIBILITY_HARMONICITY_WEIGHT).toBeCloseTo(0.08);
+    expect(EXCITATION_VISIBILITY_MAX_FLOOR).toBeCloseTo(0.3);
+    expect(weakCoherent).toBeGreaterThan(0.1);
+    expect(noisyWeak).toBeCloseTo(0.04);
+  });
+
+  it("does not create body density when sparse bass structure is absent", () => {
+    const body = deriveBodyDensity({
+      fieldAbs: 0.28,
+      threshold: 0.15,
+      structure: 0,
+      edgeFade: 0.9,
+      activeMask: 1,
+      radialDistance: 0.45,
+      boundaryMask: 0.05,
+    });
+
+    expect(body.bodyDensity).toBe(0);
+  });
+
+  it("documents the CPU parity formula for latched-fog body reduction", () => {
+    const baseline = deriveBodyDensity({
+      fieldAbs: 0.02,
+      threshold: 0.15,
+      structure: 0.8,
+      edgeFade: 0.9,
+      activeMask: 1,
+      radialDistance: 0.45,
+      boundaryMask: 0.05,
+      structureSignal: 0.9,
+      changeSignal: 0.14,
+    });
+    const fogged = deriveBodyDensity({
+      fieldAbs: 0.02,
+      threshold: 0.15,
+      structure: 0.8,
+      edgeFade: 0.9,
+      activeMask: 1,
+      radialDistance: 0.45,
+      boundaryMask: 0.05,
+      structureSignal: 0.9,
+      changeSignal: 0.01,
+    });
+
+    expect(LATCHED_FOG_BODY_REDUCTION).toBeCloseTo(0.18);
+    expect(fogged.latchedFogMask).toBeGreaterThan(0);
+    expect(fogged.bodyDensity).toBeLessThan(baseline.bodyDensity);
+  });
+
+  it("adds a bounded bass visibility floor without replacing real structure", () => {
+    const lowOrder = deriveVisibleStructure({
+      structure: 0.03,
+      nodeBand: 0.92,
+      bassSalience: 0.7,
+      bandEnergies: [0.7, 0.3, 0.05, 0.02],
+      radialDistance: 0.38,
+    });
+    const brightTreble = deriveVisibleStructure({
+      structure: 0.34,
+      nodeBand: 0.4,
+      bassSalience: 0.05,
+      bandEnergies: [0.05, 0.08, 0.35, 0.45],
+      radialDistance: 0.82,
+    });
+
+    expect(lowOrder.bassStructureFloor).toBeGreaterThan(0.03);
+    expect(lowOrder.bassStructureFloor).toBeLessThanOrEqual(
+      BASS_STRUCTURE_FLOOR_MAX,
+    );
+    expect(lowOrder.visibleStructure).toBeGreaterThan(0.03);
+    expect(brightTreble.visibleStructure).toBeCloseTo(0.34);
   });
 
   it("keeps contour shaping dominant while cutting the old fog-heavy fill", () => {
@@ -123,6 +237,37 @@ describe("field shaping", () => {
       uncompressed.compressedShellWeight,
     );
     expect(compressed.beamMask).toBeLessThan(uncompressed.beamMask);
+  });
+
+  it("documents the CPU parity formula for latched-fog beam reduction", () => {
+    const baseline = deriveBeamMask({
+      contourShape: 0.82,
+      shellWeight: 0.88,
+      structure: 0.76,
+      transientEnergy: 0.2,
+      spectralFlux: 0.08,
+      radialDistance: 0.72,
+      rimCompression: 0.1,
+      boundaryMask: 0.2,
+      structureSignal: 0.9,
+      changeSignal: 0.14,
+    });
+    const fogged = deriveBeamMask({
+      contourShape: 0.82,
+      shellWeight: 0.88,
+      structure: 0.76,
+      transientEnergy: 0.2,
+      spectralFlux: 0.08,
+      radialDistance: 0.72,
+      rimCompression: 0.1,
+      boundaryMask: 0.2,
+      structureSignal: 0.9,
+      changeSignal: 0.01,
+    });
+
+    expect(LATCHED_FOG_BEAM_REDUCTION).toBeCloseTo(0.12);
+    expect(fogged.latchedFogMask).toBeGreaterThan(0);
+    expect(fogged.beamMask).toBeLessThan(baseline.beamMask);
   });
 
   it("applies a soft emission rolloff before beam peaks blow out", () => {

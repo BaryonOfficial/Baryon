@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveAdvancedControlsHelpPosition } from "../../src/components/advancedControlsHelpPosition.js";
+import { resolveAdvancedControlsHelpPosition } from "../../../../packages/app-shell/src/components/advancedControlsHelpPosition.js";
 
 test("prefers the right side when there is room", () => {
   const position = resolveAdvancedControlsHelpPosition({

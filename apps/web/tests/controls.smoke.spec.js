@@ -90,9 +90,25 @@ async function readAuditMethodSnapshot(page) {
 
 async function installFakeLiveInput(page) {
   await page.addInitScript(() => {
+    const REDACTED_DEFAULT_AUDIO_INPUT = Object.freeze({
+      kind: "audioinput",
+      deviceId: "",
+      label: "",
+      groupId: "fake-group",
+    });
+    const GRANTED_FAKE_AUDIO_INPUTS = Object.freeze([
+      {
+        kind: "audioinput",
+        deviceId: "fake-live-input-device",
+        label: "Fake Live Input",
+        groupId: "fake-group",
+      },
+    ]);
     const fakeMicState = {
       scene: "voice",
       timerId: 0,
+      permissionBehavior: "granted",
+      permissionGranted: false,
     };
 
     function setPartialTargets(nodes, targets, timeConstant = 0.015) {
@@ -208,6 +224,12 @@ async function installFakeLiveInput(page) {
       fakeMicState.scene = scene;
       applyFakeLiveInputScene(window.__baryonFakeMicNodes, scene);
     };
+    window.__setFakeLiveInputPermission = (behavior) => {
+      fakeMicState.permissionBehavior = behavior;
+      if (behavior !== "granted") {
+        fakeMicState.permissionGranted = false;
+      }
+    };
 
     if (!navigator.mediaDevices) {
       Object.defineProperty(navigator, "mediaDevices", {
@@ -217,15 +239,25 @@ async function installFakeLiveInput(page) {
     }
     const { mediaDevices } = navigator;
 
-    mediaDevices.getUserMedia = async () => createFakeLiveInputStream();
-    mediaDevices.enumerateDevices = async () => [
-      {
-        kind: "audioinput",
-        deviceId: "fake-live-input-device",
-        label: "Fake Live Input",
-        groupId: "fake-group",
-      },
-    ];
+    mediaDevices.getUserMedia = async () => {
+      if (fakeMicState.permissionBehavior === "denied") {
+        const error = new Error("permission blocked");
+        error.name = "NotAllowedError";
+        throw error;
+      }
+      if (fakeMicState.permissionBehavior === "unsupported") {
+        const error = new Error("secure context required");
+        error.name = "SecurityError";
+        throw error;
+      }
+
+      fakeMicState.permissionGranted = true;
+      return createFakeLiveInputStream();
+    };
+    mediaDevices.enumerateDevices = async () =>
+      fakeMicState.permissionGranted
+        ? GRANTED_FAKE_AUDIO_INPUTS
+        : [REDACTED_DEFAULT_AUDIO_INPUT];
     mediaDevices.addEventListener ??= () => {};
     mediaDevices.removeEventListener ??= () => {};
   });
@@ -235,6 +267,12 @@ async function setFakeLiveInputScene(page, scene) {
   await page.evaluate((nextScene) => {
     window.__setFakeLiveInputScene?.(nextScene);
   }, scene);
+}
+
+async function setFakeLiveInputPermission(page, behavior) {
+  await page.evaluate((nextBehavior) => {
+    window.__setFakeLiveInputPermission?.(nextBehavior);
+  }, behavior);
 }
 
 async function setControl(page, key, value) {
@@ -248,6 +286,7 @@ async function setControl(page, key, value) {
 
 async function startFakeLiveInput(page) {
   await page.getByTestId("live-input-source-tab").click();
+  await expect(page.getByTestId("live-input-device-select")).toBeVisible();
   await page
     .getByTestId("live-input-device-select")
     .selectOption({ label: "Fake Live Input" });
@@ -913,20 +952,26 @@ test.describe("Baryon control smoke", () => {
     const fileSourceTab = page.getByTestId("file-source-tab");
     const micSourceTab = page.getByTestId("live-input-source-tab");
     const liveButton = page.getByTestId("source-live-button");
-    const settingsPopover = page.getByTestId("source-settings-popover");
+    const inputPanel = page.getByTestId("live-input-status-panel");
 
-    await expect(liveButton).toContainText("Go Live");
-    await expect(settingsPopover).toHaveCount(0);
+    await expect(inputPanel).toHaveCount(0);
+    await expect(liveButton).toHaveCount(0);
 
     await micSourceTab.click();
-    await expect(settingsPopover).toBeVisible();
+    await expect(inputPanel).toBeVisible();
     await expect(page.getByTestId("live-input-device-select")).toBeVisible();
+    await expect(
+      page.getByTestId("live-input-device-select").locator("option"),
+    ).toContainText(["Fake Live Input"]);
+    await expect(liveButton).toContainText("Go Live");
+    await expect(liveButton).toBeEnabled();
 
     await fileSourceTab.click();
-    await expect(settingsPopover).toHaveCount(0);
+    await expect(inputPanel).toHaveCount(0);
+    await expect(liveButton).toHaveCount(0);
 
     await micSourceTab.click();
-    await expect(settingsPopover).toBeVisible();
+    await expect(inputPanel).toBeVisible();
     await page
       .getByTestId("live-input-device-select")
       .selectOption({ label: "Fake Live Input" });
@@ -940,8 +985,7 @@ test.describe("Baryon control smoke", () => {
 
     await expect(liveButton).toContainText("Live");
     await expect(liveButton).toHaveAttribute("data-state", "live");
-    await expect(liveButton).toHaveAttribute("title", "Stop live input");
-    await expect(liveButton).toHaveClass(/ac-source-live-btn--active/);
+    await expect(liveButton).toHaveAttribute("title", "Stop Live");
 
     const afterState = await Promise.all([
       liveButton.evaluate((element) => element.getBoundingClientRect().width),
@@ -951,6 +995,36 @@ test.describe("Baryon control smoke", () => {
     expect(Math.abs(afterState[0] - beforeState[0])).toBeLessThan(1);
     expect(beforeState[1].startsWith("rgba(255, 255, 255")).toBe(true);
     expect(afterState[1].startsWith("rgba(255, 255, 255")).toBe(true);
+  });
+
+  test("keeps the live-input popover open with retry guidance when mic permission is denied", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await installFakeLiveInput(page);
+    await page.goto("/");
+    await waitForControlSurface(page);
+    await setFakeLiveInputPermission(page, "denied");
+
+    await page.getByTestId("live-input-source-tab").click();
+
+    await expect(page.getByTestId("live-input-status-panel")).toBeVisible();
+    await expect(
+      page.getByText("Audio access is blocked.", { exact: false }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Retry Access" }),
+    ).toBeVisible();
+
+    await setFakeLiveInputPermission(page, "granted");
+    await page.getByRole("button", { name: "Retry Access" }).click();
+
+    await expect(page.getByTestId("live-input-device-select")).toBeVisible();
+    await expect(
+      page.getByTestId("live-input-device-select").locator("option"),
+    ).toContainText(["Fake Live Input"]);
   });
 
   test("web app stays listener-first and does not expose desktop-only mode chrome", async ({
@@ -964,15 +1038,14 @@ test.describe("Baryon control smoke", () => {
     await waitForControlSurface(page);
 
     const fileSourceTab = page.getByTestId("file-source-tab");
-    const liveButton = page.getByTestId("source-live-button");
 
     await expect(page.getByTestId("app-mode-toggle")).toHaveCount(0);
     await expect(page.getByTestId("performer-live-device-select")).toHaveCount(
       0,
     );
     await expect(fileSourceTab).toBeVisible();
-    await expect(liveButton).toContainText("Go Live");
-    await expect(liveButton).toHaveAttribute("data-state", "disabled");
+    await expect(page.getByTestId("live-input-status-panel")).toHaveCount(0);
+    await expect(page.getByTestId("source-live-button")).toHaveCount(0);
   });
 
   test("hides live-input-only advanced controls when the selected live device is system-classified", async ({

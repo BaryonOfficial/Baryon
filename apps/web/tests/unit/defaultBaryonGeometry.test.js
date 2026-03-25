@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { prepareBaryonGeometryFromScene } from "../../src/components/hooks/defaultBaryonGeometry.js";
+import { prepareBaryonGeometryFromScene } from "../../../../packages/app-shell/src/components/hooks/defaultBaryonGeometry.js";
 
 test("prepareBaryonGeometryFromScene clones mesh geometry and bakes scale", () => {
   const geometry = new THREE.BufferGeometry();

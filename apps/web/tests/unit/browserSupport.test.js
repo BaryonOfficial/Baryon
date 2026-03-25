@@ -16,7 +16,7 @@ import {
   getSupportProbeTechnicalDetails,
   isMobileDevice,
   probeBrowserSupport,
-} from "../../src/components/browserSupport.js";
+} from "../../../../packages/app-shell/src/components/browserSupport.js";
 
 test("starts in checking mode for normal WebGPU boot", () => {
   assert.equal(

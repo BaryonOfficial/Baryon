@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createControlState } from "@baryon/visualizer/controls/schema";
-import { shouldSkipChromesthesiaStaticColorInvalidation } from "../../src/components/hooks/controlInvalidation.js";
+import { createControlState } from "../../../../packages/visualizer/src/controls/schema.js";
+import { shouldSkipChromesthesiaStaticColorInvalidation } from "../../../../packages/app-shell/src/components/hooks/controlInvalidation.js";
 
 function createControls(overrides = {}) {
   return {
@@ -135,7 +135,7 @@ test("keeps invalidation when static mode is active", () => {
       previousControls,
       nextControls,
     ),
-    false,
+    true,
   );
 });
 

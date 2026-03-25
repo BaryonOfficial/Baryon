@@ -1,9 +1,25 @@
-import { AUDIO_DEFAULTS, AUDIO_SLOT_CAPACITY } from "../../defaults.js";
+import {
+  AUDIO_DEFAULTS,
+  AUDIO_SLOT_CAPACITY,
+  DEFAULT_FFT_SIZE,
+  DEFAULT_SAMPLE_RATE,
+} from "../../defaults.js";
 import {
   createAnalyserReader,
   createNodeAnalyser,
   sampleAnalyser,
 } from "./analyserSampler.js";
+import {
+  DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
+  normalizeLiveInputAnalysisClass,
+  normalizeLiveInputAnalysisOverrides,
+  resolveLiveInputAnalysisClass,
+} from "./liveInputAnalysis.js";
+import {
+  LIVE_INPUT_DEVICE_KINDS,
+  isLoopbackLiveInputDeviceKind,
+  normalizeLiveInputDeviceKind,
+} from "./inputDeviceSemantics.js";
 
 function normalizeLiveInputSettings(settings = {}) {
   return {
@@ -27,6 +43,47 @@ function cloneLiveInputSettings(settings) {
   };
 }
 
+function normalizeLiveInputAnalysisSettings(
+  settings = {},
+  previous = undefined,
+) {
+  return {
+    analysisClass: normalizeLiveInputAnalysisClass(
+      settings.analysisClass ??
+        previous?.analysisClass ??
+        AUDIO_DEFAULTS.liveInputAnalysisClass,
+    ),
+    overrides: normalizeLiveInputAnalysisOverrides(
+      settings.overrides ?? previous?.overrides,
+    ),
+  };
+}
+
+function cloneLiveInputAnalysisSettings(settings) {
+  return {
+    analysisClass: normalizeLiveInputAnalysisClass(settings?.analysisClass),
+    overrides: normalizeLiveInputAnalysisOverrides(settings?.overrides),
+  };
+}
+
+function areLiveInputAnalysisSettingsEqual(left, right) {
+  const normalizedLeft = cloneLiveInputAnalysisSettings(left);
+  const normalizedRight = cloneLiveInputAnalysisSettings(right);
+  if (normalizedLeft.analysisClass !== normalizedRight.analysisClass) {
+    return false;
+  }
+
+  const leftKeys = Object.keys(normalizedLeft.overrides);
+  const rightKeys = Object.keys(normalizedRight.overrides);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every(
+    (key) => normalizedLeft.overrides[key] === normalizedRight.overrides[key],
+  );
+}
+
 function areLiveInputSettingsEqual(left, right) {
   return (
     Boolean(left?.echoCancellation) === Boolean(right?.echoCancellation) &&
@@ -48,12 +105,12 @@ function buildSystemConstraints(deviceId) {
   };
 }
 
-function normalizeLiveInputKind(kind) {
-  return kind === "system" ? "system" : "live";
-}
-
-function buildLiveInputConstraints(liveInputKind, deviceId, liveInputSettings) {
-  return liveInputKind === "system"
+function buildLiveInputConstraints(
+  liveInputDeviceKind,
+  deviceId,
+  liveInputSettings,
+) {
+  return isLoopbackLiveInputDeviceKind(liveInputDeviceKind)
     ? buildSystemConstraints(deviceId)
     : buildLiveConstraints(deviceId, liveInputSettings);
 }
@@ -83,7 +140,11 @@ function disconnectAudioNode(node, target = undefined) {
 function getAnalysisSource(status) {
   if (status.isPlaying && status.sourceKind !== "live") return "file";
   if (status.isLiveInputActive) {
-    return status.liveInputKind === "system" ? "file" : "live";
+    return isLoopbackLiveInputDeviceKind(
+      status.liveInputDeviceKind ?? status.liveInputKind,
+    )
+      ? "file"
+      : "live";
   }
   return "idle";
 }
@@ -100,6 +161,8 @@ function createDefaultAudioSessionBindings(instance) {
     setAudioVolume: (value) => instance.setVolume(value),
     setAudioMuted: (value) => instance.setMuted(value),
     setLiveInputSettings: (settings) => instance.setLiveInputSettings(settings),
+    setLiveInputAnalysisSettings: (settings) =>
+      instance.setLiveInputAnalysisSettings(settings),
     startLiveInputStream: (deviceId, liveInputKind) =>
       instance.startLiveInputStream(deviceId, liveInputKind),
     stopLiveInputStream: () => instance.stopLiveInputStream(),
@@ -108,6 +171,7 @@ function createDefaultAudioSessionBindings(instance) {
     getAnalysisState: () => instance.getAnalysisState(),
     getStatus: () => instance.getStatus(),
     getLiveInputSettings: () => instance.getLiveInputSettings(),
+    getLiveInputAnalysisSettings: () => instance.getLiveInputAnalysisSettings(),
     readClockSnapshot: (elapsedTime) => instance.readClockSnapshot(elapsedTime),
     readAnalysisSnapshot: () => instance.readAnalysisSnapshot(),
     disposeAudio: () => instance.dispose(),
@@ -178,7 +242,7 @@ function clonePlaybackDiagnostics(diagnostics) {
 
 export function createAudioSession() {
   const state = {
-    fftSize: 4096,
+    fftSize: DEFAULT_FFT_SIZE,
     capacity: AUDIO_SLOT_CAPACITY,
     pitchSourceMode: "spectral",
     audioInputMode: "idle",
@@ -201,7 +265,9 @@ export function createAudioSession() {
     gumStream: null,
     liveInputSettings: normalizeLiveInputSettings(),
     appliedLiveInputSettings: normalizeLiveInputSettings(),
+    liveInputAnalysisSettings: normalizeLiveInputAnalysisSettings(),
     selectedLiveInputDeviceId: null,
+    selectedLiveInputDeviceLabel: "",
     liveInputKind: null,
     liveInputCalibrationVersion: 0,
     volume: 1,
@@ -234,6 +300,16 @@ export function createAudioSession() {
 
   function getEffectiveVolume() {
     return state.muted ? 0 : state.volume;
+  }
+
+  function getResolvedLiveInputAnalysisClass() {
+    return resolveLiveInputAnalysisClass({
+      liveInputKind: state.liveInputKind,
+      selectedDeviceId: state.selectedLiveInputDeviceId,
+      selectedDeviceLabel: state.selectedLiveInputDeviceLabel,
+      analysisClass: state.liveInputAnalysisSettings.analysisClass,
+      overrides: state.liveInputAnalysisSettings.overrides,
+    });
   }
 
   function ensureAudioContext() {
@@ -741,8 +817,11 @@ export function createAudioSession() {
     const isLiveInputActive = Boolean(
       state.gumStream?.active && state.liveInputAnalyser,
     );
+    const liveInputDeviceKind = isLiveInputActive
+      ? normalizeLiveInputDeviceKind(state.liveInputKind)
+      : null;
     const sourceKind = isLiveInputActive
-      ? state.liveInputKind === "system"
+      ? isLoopbackLiveInputDeviceKind(liveInputDeviceKind)
         ? "system"
         : "live"
       : state.loadedPlaybackSourceKind === "stream"
@@ -753,7 +832,8 @@ export function createAudioSession() {
     const analysisSource = getAnalysisSource({
       isPlaying,
       isLiveInputActive,
-      liveInputKind: state.liveInputKind,
+      liveInputKind: liveInputDeviceKind,
+      liveInputDeviceKind,
       sourceKind,
     });
 
@@ -763,7 +843,7 @@ export function createAudioSession() {
       pitchSourceMode: state.pitchSourceMode,
       fftSize: state.fftSize,
       capacity: state.capacity,
-      sampleRate: state.audioCtx?.sampleRate ?? 44100,
+      sampleRate: state.audioCtx?.sampleRate ?? DEFAULT_SAMPLE_RATE,
       isAudioLoaded,
       isPlaying,
       isLiveInputActive,
@@ -772,10 +852,17 @@ export function createAudioSession() {
       volume: state.volume,
       muted: state.muted,
       liveInputSettings: cloneLiveInputSettings(state.liveInputSettings),
-      liveInputKind: isLiveInputActive
-        ? normalizeLiveInputKind(state.liveInputKind)
+      liveInputAnalysisClass:
+        state.liveInputAnalysisSettings.analysisClass ??
+        DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
+      resolvedLiveInputAnalysisClass: isLiveInputActive
+        ? getResolvedLiveInputAnalysisClass()
         : null,
+      liveInputKind: liveInputDeviceKind,
+      liveInputDeviceKind,
       liveInputCalibrationVersion: state.liveInputCalibrationVersion,
+      selectedLiveInputDeviceId: state.selectedLiveInputDeviceId,
+      selectedLiveInputDeviceLabel: state.selectedLiveInputDeviceLabel,
       sourceKind,
       sourceLabel: state.sourceMetadata.label || "",
       playbackSessionId:
@@ -811,6 +898,10 @@ export function createAudioSession() {
       audioInputMode: status.audioInputMode,
       pitchSourceMode: status.pitchSourceMode,
       workerStatus: status.workerStatus,
+      liveInputAnalysisClass:
+        status.liveInputAnalysisClass ?? DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
+      resolvedLiveInputAnalysisClass:
+        status.resolvedLiveInputAnalysisClass ?? null,
     };
   }
 
@@ -1147,9 +1238,11 @@ export function createAudioSession() {
 
   async function applyLiveInputSettingsToActiveStream(targetSettings) {
     const track = state.gumStream?.getAudioTracks?.()?.[0];
-    const resolvedLiveInputKind = normalizeLiveInputKind(state.liveInputKind);
+    const resolvedLiveInputDeviceKind = normalizeLiveInputDeviceKind(
+      state.liveInputKind,
+    );
 
-    if (resolvedLiveInputKind === "system") {
+    if (isLoopbackLiveInputDeviceKind(resolvedLiveInputDeviceKind)) {
       state.appliedLiveInputSettings = cloneLiveInputSettings(targetSettings);
       return cloneLiveInputSettings(state.appliedLiveInputSettings);
     }
@@ -1167,7 +1260,7 @@ export function createAudioSession() {
 
     const selectedDeviceId = state.selectedLiveInputDeviceId;
     stopLiveInputStream();
-    await startLiveInputStream(selectedDeviceId, resolvedLiveInputKind);
+    await startLiveInputStream(selectedDeviceId, resolvedLiveInputDeviceKind);
     state.appliedLiveInputSettings = cloneLiveInputSettings(
       state.liveInputSettings,
     );
@@ -1214,7 +1307,36 @@ export function createAudioSession() {
     return cloneLiveInputSettings(state.liveInputSettings);
   }
 
-  async function startLiveInputStream(deviceId, liveInputKind = "live") {
+  function getLiveInputAnalysisSettings() {
+    return cloneLiveInputAnalysisSettings(state.liveInputAnalysisSettings);
+  }
+
+  function setLiveInputAnalysisSettings(nextSettings) {
+    const normalized = normalizeLiveInputAnalysisSettings(
+      nextSettings,
+      state.liveInputAnalysisSettings,
+    );
+    if (
+      areLiveInputAnalysisSettingsEqual(
+        state.liveInputAnalysisSettings,
+        normalized,
+      )
+    ) {
+      return cloneLiveInputAnalysisSettings(state.liveInputAnalysisSettings);
+    }
+
+    state.liveInputAnalysisSettings = normalized;
+    return cloneLiveInputAnalysisSettings(state.liveInputAnalysisSettings);
+  }
+
+  /**
+   * @param {string | null | undefined} deviceId
+   * @param {import("./inputDeviceSemantics.js").LiveInputDeviceKind} [liveInputKind]
+   */
+  async function startLiveInputStream(
+    deviceId,
+    liveInputKind = LIVE_INPUT_DEVICE_KINDS.acousticMic,
+  ) {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("getUserMedia not supported");
     }
@@ -1227,10 +1349,11 @@ export function createAudioSession() {
       clearLoadedPlaybackState();
     }
 
-    const resolvedLiveInputKind = normalizeLiveInputKind(liveInputKind);
+    const resolvedLiveInputDeviceKind =
+      normalizeLiveInputDeviceKind(liveInputKind);
     const constraints = {
       audio: buildLiveInputConstraints(
-        resolvedLiveInputKind,
+        resolvedLiveInputDeviceKind,
         deviceId,
         state.liveInputSettings,
       ),
@@ -1238,8 +1361,10 @@ export function createAudioSession() {
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     state.gumStream = stream;
     state.selectedLiveInputDeviceId = deviceId ?? null;
-    state.liveInputKind = resolvedLiveInputKind;
-    if (resolvedLiveInputKind === "live") {
+    state.liveInputKind = resolvedLiveInputDeviceKind;
+    state.selectedLiveInputDeviceLabel =
+      stream.getAudioTracks?.()?.[0]?.label?.trim?.() ?? "";
+    if (resolvedLiveInputDeviceKind === LIVE_INPUT_DEVICE_KINDS.acousticMic) {
       state.liveInputCalibrationVersion += 1;
     }
     state.appliedLiveInputSettings = cloneLiveInputSettings(
@@ -1257,7 +1382,7 @@ export function createAudioSession() {
       state.liveInputNode,
       state.fftSize,
     );
-    setAudioInputMode(resolvedLiveInputKind);
+    setAudioInputMode(resolvedLiveInputDeviceKind);
   }
 
   function stopLiveInputStream() {
@@ -1272,6 +1397,7 @@ export function createAudioSession() {
     state.liveInputNode = null;
     state.gumStream = null;
     state.selectedLiveInputDeviceId = null;
+    state.selectedLiveInputDeviceLabel = "";
     state.liveInputKind = null;
 
     if (state.audioInputMode === "live" || state.audioInputMode === "system") {
@@ -1282,15 +1408,16 @@ export function createAudioSession() {
   function readAnalysisSnapshot() {
     const status = getStatus();
     if (status.analysisSource === "file") {
+      const activeLiveInputDeviceKind =
+        status.liveInputDeviceKind ?? status.liveInputKind;
       return {
-        sourceMode:
-          status.liveInputKind === "system"
-            ? "system"
-            : state.loadedPlaybackSourceKind === "stream"
-              ? "stream"
-              : "file",
+        sourceMode: isLoopbackLiveInputDeviceKind(activeLiveInputDeviceKind)
+          ? "system"
+          : state.loadedPlaybackSourceKind === "stream"
+            ? "stream"
+            : "file",
         ...sampleAnalyser(
-          status.liveInputKind === "system"
+          isLoopbackLiveInputDeviceKind(activeLiveInputDeviceKind)
             ? state.liveInputAnalyser
             : state.playbackAnalyser,
         ),
@@ -1381,6 +1508,7 @@ export function createAudioSession() {
     setVolume,
     setMuted,
     setLiveInputSettings,
+    setLiveInputAnalysisSettings,
     startLiveInputStream,
     stopLiveInputStream,
     setAudioEndedCallback,
@@ -1389,6 +1517,7 @@ export function createAudioSession() {
     getStatus,
     getTransportState,
     getLiveInputSettings,
+    getLiveInputAnalysisSettings,
     readClockSnapshot,
     readAnalysisSnapshot,
     seekTo,
@@ -1412,6 +1541,7 @@ export const { seekTo } = defaultBindings;
 export const { setAudioVolume } = defaultBindings;
 export const { setAudioMuted } = defaultBindings;
 export const { setLiveInputSettings } = defaultBindings;
+export const { setLiveInputAnalysisSettings } = defaultBindings;
 export const { startLiveInputStream } = defaultBindings;
 export const { stopLiveInputStream } = defaultBindings;
 export const { setAudioEndedCallback } = defaultBindings;
@@ -1419,6 +1549,7 @@ export const { getIsAudioLoaded } = defaultBindings;
 export const { getAnalysisState } = defaultBindings;
 export const { getStatus } = defaultBindings;
 export const { getLiveInputSettings } = defaultBindings;
+export const { getLiveInputAnalysisSettings } = defaultBindings;
 export const { readClockSnapshot } = defaultBindings;
 export const { readAnalysisSnapshot } = defaultBindings;
 export const { disposeAudio } = defaultBindings;

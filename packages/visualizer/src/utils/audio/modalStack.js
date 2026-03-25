@@ -4,6 +4,8 @@ import {
   AUDIO_SLOT_CAPACITY,
   BEAT_DEFAULTS,
 } from "../../defaults.js";
+import { createBlendableLayerState } from "./blendState.js";
+import { createModalExcitationState } from "./modalExcitation.js";
 
 /** @type {number} */
 export const BACKBONE_STACK_SLOTS = AUDIO_DEFAULTS.backboneStackSlots;
@@ -21,12 +23,26 @@ function createColorSlotArray(capacity) {
   return new Float32Array(capacity * COLOR_SLOT_STRIDE);
 }
 
+function createZeroTargetArray(capacity) {
+  return new Float32Array(capacity * 4);
+}
+
+export function createModalTargetBuild(capacity) {
+  return {
+    slots: createZeroTargetArray(capacity),
+    referenceSlots: createZeroTargetArray(capacity),
+    colorSlots: createColorSlotArray(capacity),
+    harmonicSupport: new Float32Array(HARMONIC_SUPPORT_COUNT),
+    uniqueModeCount: 0,
+    peaks: [],
+    components: [],
+    _mergeScratch: new Map(),
+  };
+}
+
 function createModalLayerState(capacity) {
   return {
-    slots: new Float32Array(capacity * 4),
-    referenceSlots: new Float32Array(capacity * 4),
-    colorSlots: createColorSlotArray(capacity),
-    referenceColorSlots: createColorSlotArray(capacity),
+    ...createBlendableLayerState(capacity),
     harmonicSupport: new Float32Array(HARMONIC_SUPPORT_COUNT),
     fundamental: 0,
     fundamentalConfidence: 0,
@@ -54,12 +70,6 @@ function createModalLayerState(capacity) {
     slotDisagreementCounts: new Uint8Array(capacity),
     slotLastConfirmedFrames: new Uint32Array(capacity),
     _slotMetricMap: new Map(),
-    _poolCurrentMap: new Map(),
-    _poolTargetMap: new Map(),
-    _poolAdmittedKeys: new Set(),
-    _poolBlendedMap: new Map(),
-    _poolCurrentColorMap: new Map(),
-    _poolTargetColorMap: new Map(),
   };
 }
 
@@ -90,7 +100,7 @@ function createBandState() {
     onsetDensityEma: 0,
     beatSensitivity: BEAT_DEFAULTS.beatSensitivity,
     liveInputMode: "idle",
-    liveInputProfile: "voice-tone",
+    liveInputProfile: "acoustic-mic",
     liveInputGateState: "closed",
     liveInputCalibrationActive: false,
     liveInputCalibrationStartedAtMs: Number.NEGATIVE_INFINITY,
@@ -118,6 +128,9 @@ export function createChromaState() {
 }
 
 export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
+  const backboneCapacity = Math.min(capacity, BACKBONE_STACK_SLOTS);
+  const detailCapacity = Math.min(capacity, DETAIL_STACK_SLOTS);
+
   return {
     capacity,
     analysis: {
@@ -137,6 +150,14 @@ export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
       bandState: createBandState(),
       chromaState: createChromaState(),
       previousSpectrum: new Float32Array(0),
+      zeroBackboneTargetSlots: createZeroTargetArray(backboneCapacity),
+      zeroDetailTargetSlots: createZeroTargetArray(detailCapacity),
+      nonAcousticBackboneTarget: createModalTargetBuild(backboneCapacity),
+      nonAcousticDetailTarget: createModalTargetBuild(detailCapacity),
+      nonAcousticPeakDriverScratch: createModalTargetBuild(backboneCapacity),
+      acousticBackboneTarget: createModalTargetBuild(backboneCapacity),
+      acousticDetailTarget: createModalTargetBuild(detailCapacity),
+      modalExcitationState: createModalExcitationState(capacity),
     },
     audit: {
       frame: 0,

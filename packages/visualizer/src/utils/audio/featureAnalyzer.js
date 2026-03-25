@@ -1,4 +1,7 @@
-import FeatureAnalyzerWorker from "./featureAnalyzer.worker?worker";
+import {
+  isLoopbackLiveInputDeviceKind,
+  normalizeLiveInputDeviceKind,
+} from "../../core/audio/inputDeviceSemantics.js";
 
 const MEL_BIN_COUNT = 64;
 const HINT_WINDOW_SIZE = 32;
@@ -33,6 +36,8 @@ function hzToMel(frequency) {
 function melToHz(mel) {
   return 700 * (10 ** (mel / 2595) - 1);
 }
+
+import { DEFAULT_SAMPLE_RATE } from "../../defaults.js";
 
 function createMelFilterbank(sampleRate, fftSize, binCount) {
   const key = `${sampleRate}:${fftSize}:${binCount}`;
@@ -75,8 +80,11 @@ function createMelFilterbank(sampleRate, fftSize, binCount) {
 }
 
 export function buildAnalysisSessionKey(status) {
+  const liveInputDeviceKind = normalizeLiveInputDeviceKind(
+    status?.liveInputDeviceKind ?? status?.liveInputKind,
+  );
   const inputMode = status?.isLiveInputActive
-    ? status?.liveInputKind === "system"
+    ? isLoopbackLiveInputDeviceKind(liveInputDeviceKind)
       ? "system"
       : "live"
     : status?.isPlaying
@@ -150,7 +158,7 @@ export function buildCompactAnalyzerFrame({
 }) {
   const fftMagnitudes = analysisSnapshot?.fftMagnitudes;
   const fftSize = status?.fftSize ?? analysisSnapshot?.timeData?.length ?? 0;
-  const sampleRate = status?.sampleRate ?? 44100;
+  const sampleRate = status?.sampleRate ?? DEFAULT_SAMPLE_RATE;
   if (!fftMagnitudes?.length || !(fftSize > 0)) {
     return null;
   }
@@ -256,7 +264,11 @@ export function createNoopAudioFeatureAnalyzer(settings = {}) {
 export function createAudioFeatureAnalyzer(settings = {}, dependencies = {}) {
   const normalizedSettings = normalizeFeatureAnalysisSettings(settings);
   const workerFactory =
-    dependencies.createWorker ?? (() => new FeatureAnalyzerWorker());
+    dependencies.createWorker ??
+    (() =>
+      new Worker(new URL("./featureAnalyzer.worker.js", import.meta.url), {
+        type: "module",
+      }));
 
   if (
     normalizedSettings.mode !== "hybrid" ||
