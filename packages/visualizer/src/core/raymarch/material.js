@@ -465,51 +465,6 @@ function createScatteringNode({
     ),
   );
 
-  // Uniform-only expressions: hoist outside the Fn so they are loop-invariant
-  // at the TSL graph level and do not re-evaluate every raymarch step.
-  const dynamicEdgeFadeStart = float(EDGE_FADE_START).sub(
-    uEnergySignal.mul(0.06),
-  );
-  const dynamicInteriorMaskStart = float(INTERIOR_MASK_START).add(
-    uStructureSignal.mul(0.1),
-  );
-  // Beat phase decay: 1.0 on the beat, fades to 0 at ~2/3 of the beat period.
-  // Uniform-only — loop-invariant, hoisted outside the Fn.
-  const beatPhaseDecay = max(float(0.0), float(1.0).sub(uBeatPhase.mul(1.5)));
-  const hotCoreStartDynamic = float(HOT_CORE_START)
-    .sub(uBeatPulse.mul(0.12))
-    .sub(beatPhaseDecay.mul(0.07))
-    .add(uRhythmicDensity.mul(0.04));
-  const contourGainBase = uStructureSignal
-    .mul(0.3)
-    .add(uHarmonicity.mul(0.15))
-    .add(beatPhaseDecay.mul(0.18));
-  const dynamicHolographicIntensity = uHolographicIntensity
-    .mul(float(1.0).add(uTextureSpread.mul(0.35)))
-    .mul(float(1.0).add(beatPhaseDecay.mul(0.22)));
-  const dynamicHolographicShift = clamp(
-    uHolographicShift.add(uNovelty.mul(0.2)).sub(uKeyMode.mul(0.12)),
-    float(0.0),
-    float(1.0),
-  );
-  const spectralColorBiasHintOffset = uHarmonicity
-    .mul(0.12)
-    .sub(uChangeSignal.mul(0.08));
-  // Excitation gate: 0 when field is under-excited (weak/noisy input), 1 when
-  // fully excited. Three-input weighted formula prevents noise-floor-elevated
-  // amplitude alone from keeping the gate open — coherent structure and tonal
-  // purity are required. Hoisted as loop-invariant — does not re-evaluate per step.
-  const excitationInput = uAverageAmplitude
-    .div(float(255.0))
-    .mul(float(0.3))
-    .add(uStructureSignal.mul(float(0.45)))
-    .add(uHarmonicity.mul(float(0.25)));
-  const excitationGate = smoothstep(
-    float(EXCITATION_GATE_LOW),
-    float(EXCITATION_GATE_HIGH),
-    excitationInput,
-  );
-
   return Fn(
     /**
      * @param {ScatteringNodeInputs} args
