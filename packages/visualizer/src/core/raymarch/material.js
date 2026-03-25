@@ -574,13 +574,6 @@ function createScatteringNode({
           normalizedFieldAbs,
         ),
       );
-      const broadBand = float(1.0).sub(
-        smoothstep(
-          float(0.0),
-          uThreshold.mul(float(BROAD_BAND_SCALE)),
-          fieldAbs,
-        ),
-      );
       const structure = smoothstep(
         uStructureMin,
         uStructureMax,
