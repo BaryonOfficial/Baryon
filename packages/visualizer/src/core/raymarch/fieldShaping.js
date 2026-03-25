@@ -29,6 +29,10 @@ export const INNER_BAND_WEIGHT = 0.18;
 export const LOW_MID_BAND_WEIGHT = 0.08;
 export const HIGH_MID_BAND_WEIGHT = 0.035;
 export const AIR_BAND_WEIGHT = 0.055;
+export const BASS_STRUCTURE_FLOOR_MAX = 0.24;
+export const BASS_STRUCTURE_FLOOR_BAND_WEIGHT = 0.22;
+export const BASS_STRUCTURE_FLOOR_SALIENCE_WEIGHT = 0.18;
+export const BASS_STRUCTURE_FLOOR_OUTER_REDUCTION = 0.35;
 export const COLOR_BIAS_SCALE = 0.82;
 export const BEAM_POWER_BASE = 1.55;
 export const BEAM_POWER_TRANSIENT_GAIN = 0.35;
@@ -46,6 +50,14 @@ export const HIGHLIGHT_CONTOUR_ACCENT_WEIGHT = 0.04;
 export const HOLOGRAPHIC_TINT_RED = 0.62;
 export const HOLOGRAPHIC_TINT_GREEN = 0.94;
 export const HOLOGRAPHIC_TINT_BLUE = 1.0;
+export const LATCHED_FOG_STRUCTURE_START = 0.55;
+export const LATCHED_FOG_STRUCTURE_RANGE = 0.25;
+export const LATCHED_FOG_CHANGE_END = 0.08;
+export const LATCHED_FOG_BODY_REDUCTION = 0.18;
+export const LATCHED_FOG_BEAM_REDUCTION = 0.12;
+export const EXCITATION_VISIBILITY_COHERENCE_WEIGHT = 0.22;
+export const EXCITATION_VISIBILITY_HARMONICITY_WEIGHT = 0.08;
+export const EXCITATION_VISIBILITY_MAX_FLOOR = 0.3;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -77,6 +89,35 @@ function deriveBroadBand(fieldAbs, threshold) {
 
 function deriveInteriorMask(radialDistance) {
   return 1 - smoothstep(INTERIOR_MASK_START, INTERIOR_MASK_END, radialDistance);
+}
+
+export function deriveLatchedFogMask({
+  structureSignal = 0,
+  changeSignal = 1,
+}) {
+  return (
+    clamp01(
+      (structureSignal - LATCHED_FOG_STRUCTURE_START) /
+        LATCHED_FOG_STRUCTURE_RANGE,
+    ) *
+    clamp01((LATCHED_FOG_CHANGE_END - changeSignal) / LATCHED_FOG_CHANGE_END)
+  );
+}
+
+export function deriveExcitationVisibility({
+  excitationGate = 0,
+  modeCoherence = 0,
+  harmonicity = 0,
+}) {
+  const excitationFloor = Math.min(
+    EXCITATION_VISIBILITY_MAX_FLOOR,
+    clamp01(
+      modeCoherence * EXCITATION_VISIBILITY_COHERENCE_WEIGHT +
+        harmonicity * EXCITATION_VISIBILITY_HARMONICITY_WEIGHT,
+    ),
+  );
+
+  return Math.max(excitationGate, excitationFloor);
 }
 
 export function deriveContourShape({
@@ -141,10 +182,16 @@ export function deriveBodyDensity({
   activeMask,
   radialDistance,
   boundaryMask,
+  structureSignal = 0,
+  changeSignal = 1,
 }) {
   const broadBand = deriveBroadBand(fieldAbs, threshold);
   const interiorMask = deriveInteriorMask(radialDistance);
   const bodyBoundaryAttenuation = 1 - boundaryMask * BODY_BOUNDARY_REDUCTION;
+  const latchedFogMask = deriveLatchedFogMask({
+    structureSignal,
+    changeSignal,
+  });
   const bodyDensity =
     broadBand *
     structure *
@@ -152,12 +199,42 @@ export function deriveBodyDensity({
     activeMask *
     interiorMask *
     BODY_DENSITY_GAIN *
-    bodyBoundaryAttenuation;
+    bodyBoundaryAttenuation *
+    (1 - latchedFogMask * LATCHED_FOG_BODY_REDUCTION);
 
   return {
     broadBand,
     interiorMask,
+    latchedFogMask,
     bodyDensity,
+  };
+}
+
+export function deriveVisibleStructure({
+  structure,
+  nodeBand,
+  bassSalience = 0,
+  bandEnergies,
+  radialDistance,
+}) {
+  const [sub = 0, lowMid = 0] = bandEnergies ?? [];
+  const outerShellAccent = smoothstep(0.35, 1.0, radialDistance);
+  const bassEnvelope = clamp01(
+    sub * BASS_STRUCTURE_FLOOR_BAND_WEIGHT +
+      lowMid * LOW_MID_BAND_WEIGHT +
+      bassSalience * BASS_STRUCTURE_FLOOR_SALIENCE_WEIGHT,
+  );
+  const bassStructureFloor =
+    bassEnvelope *
+    nodeBand *
+    (1 - outerShellAccent * BASS_STRUCTURE_FLOOR_OUTER_REDUCTION) *
+    BASS_STRUCTURE_FLOOR_MAX;
+
+  return {
+    outerShellAccent,
+    bassEnvelope,
+    bassStructureFloor,
+    visibleStructure: Math.max(structure, bassStructureFloor),
   };
 }
 
@@ -170,6 +247,8 @@ export function deriveBeamMask({
   radialDistance,
   rimCompression,
   boundaryMask,
+  structureSignal = 0,
+  changeSignal = 1,
 }) {
   const outerShellAccent = smoothstep(0.35, 1.0, radialDistance);
   const transientBoost =
@@ -185,8 +264,16 @@ export function deriveBeamMask({
     contourShape,
     BEAM_POWER_BASE + transientEnergy * BEAM_POWER_TRANSIENT_GAIN,
   );
+  const latchedFogMask = deriveLatchedFogMask({
+    structureSignal,
+    changeSignal,
+  });
   const beamMask =
-    beamCore * structure * compressedShellWeight * transientBoost;
+    beamCore *
+    structure *
+    compressedShellWeight *
+    transientBoost *
+    (1 - latchedFogMask * LATCHED_FOG_BEAM_REDUCTION);
 
   return {
     outerShellAccent,
@@ -194,6 +281,7 @@ export function deriveBeamMask({
     rimCompressionMix,
     compressedShellWeight,
     beamCore,
+    latchedFogMask,
     beamMask,
   };
 }

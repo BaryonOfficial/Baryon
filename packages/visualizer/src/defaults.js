@@ -1,3 +1,5 @@
+import { DEFAULT_REQUESTED_CAVITY_GEOMETRY } from "./core/cavityGeometry.js";
+
 const DEFAULT_BACKBONE_STACK_SLOTS = 8;
 const DEFAULT_DETAIL_STACK_SLOTS = 8;
 export const DEFAULT_FFT_SIZE = 4096;
@@ -19,9 +21,11 @@ export const AUDIO_DEFAULTS = Object.freeze({
 
 export const SIMULATION_DEFAULTS = Object.freeze({
   radius: 3.0,
-  zeroPointPrecision: 0.22,
+  zeroPointPrecision: 0.043,
   structureMin: 0.12,
   structureMax: 0.46,
+  boundaryMode: "neumann",
+  cavityGeometry: DEFAULT_REQUESTED_CAVITY_GEOMETRY,
 });
 
 export const RENDER_DEFAULTS = Object.freeze({
@@ -32,6 +36,7 @@ export const RENDER_DEFAULTS = Object.freeze({
   idleLogoSize: 1.0,
   backgroundColor: "#000000",
   renderQualityPreset: "auto",
+  customPerformanceTargetFps: 60,
   volumeColor: "#56d7ff",
   surfaceColor: "#f7fdff",
   colorMode: /** @type {"static" | "chromesthesia"} */ ("chromesthesia"),
@@ -49,7 +54,7 @@ export const RENDER_DEFAULTS = Object.freeze({
 export const REACTIVITY_DEFAULTS = Object.freeze({
   reactivity: 2.5,
   motionAmount: 1.0,
-  structurePersistence: 0.75,
+  structurePersistence: 0,
 });
 
 export const BEAT_DEFAULTS = Object.freeze({
@@ -64,10 +69,10 @@ export const BEAT_DEFAULTS = Object.freeze({
 
 export const RAYMARCH_DEFAULTS = Object.freeze({
   raymarchSteps: 64,
-  densityGain: 3.01,
-  absorption: 3.55,
-  opacityGain: 2.52,
-  contourSharpness: 7.3,
+  densityGain: 4,
+  absorption: 1.27,
+  opacityGain: 2.32,
+  contourSharpness: 8,
   rimBloomBias: 0.34,
   rimCompression: 0.84,
   holographicIntensity: 0.45,
@@ -80,10 +85,12 @@ export const AUDIT_DEFAULTS = Object.freeze({
   freezeModeSlots: false,
   forceWebGLFallbackTest: false,
   lowLoadPlaybackDiagnostics: false,
+  fieldCacheOverride: "cached",
   injectTestTone: false,
   testToneHz: 440,
   testToneAmplitude: 0.5,
   logEveryFrames: 30,
+  structuralImplementation: "modal-excitation",
 });
 
 export const DEFAULTS = Object.freeze({

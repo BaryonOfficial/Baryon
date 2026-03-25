@@ -17,20 +17,27 @@ import { RENDER_DEFAULTS } from "../defaults.js";
 
 const { RenderPipeline } = /** @type {any} */ (THREEWebGPU);
 
-export const RENDER_QUALITY_PRESETS = Object.freeze({
+export const MIN_PERFORMANCE_TARGET_FPS = 24;
+export const MAX_PERFORMANCE_TARGET_FPS = 120;
+export const DEFAULT_PERFORMANCE_TARGET_FPS = 60;
+
+export const PERFORMANCE_PROFILES = Object.freeze({
   auto: "auto",
-  performance: "performance",
-  quality: "quality",
+  custom: "custom",
+  none: "none",
 });
-export const DEFAULT_RENDER_QUALITY_PRESET = RENDER_QUALITY_PRESETS.auto;
+export const DEFAULT_PERFORMANCE_PROFILE = PERFORMANCE_PROFILES.auto;
+export const RENDER_QUALITY_PRESETS = PERFORMANCE_PROFILES;
+export const DEFAULT_RENDER_QUALITY_PRESET = DEFAULT_PERFORMANCE_PROFILE;
 
 /**
- * @typedef {"auto" | "performance" | "quality"} RenderQualityPreset
+ * @typedef {"auto" | "custom" | "none"} PerformanceProfile
  */
 
 /**
  * @typedef {{
- *   qualityPreset: RenderQualityPreset,
+ *   qualityPreset: PerformanceProfile,
+ *   targetFps: number,
  *   renderScale: number,
  *   traaEnabled: boolean,
  *   bloomAllowed: boolean,
@@ -38,49 +45,120 @@ export const DEFAULT_RENDER_QUALITY_PRESET = RENDER_QUALITY_PRESETS.auto;
  */
 
 /**
- * @param {unknown} value
- * @returns {RenderQualityPreset}
+ * @typedef {{
+ *   renderScale?: number,
+ *   traaEnabled?: boolean,
+ *   bloomAllowed?: boolean,
+ * }} RenderQualityProfileOverrides
  */
-export function normalizeRenderQualityPreset(value) {
-  if (value === RENDER_QUALITY_PRESETS.performance) {
-    return RENDER_QUALITY_PRESETS.performance;
+
+/**
+ * @param {unknown} value
+ * @returns {PerformanceProfile}
+ */
+export function normalizePerformanceProfile(value) {
+  if (value === PERFORMANCE_PROFILES.custom) {
+    return PERFORMANCE_PROFILES.custom;
   }
-  if (value === RENDER_QUALITY_PRESETS.quality) {
-    return RENDER_QUALITY_PRESETS.quality;
+  if (value === PERFORMANCE_PROFILES.none) {
+    return PERFORMANCE_PROFILES.none;
   }
-  return DEFAULT_RENDER_QUALITY_PRESET;
+  return DEFAULT_PERFORMANCE_PROFILE;
+}
+
+export const normalizeRenderQualityPreset = normalizePerformanceProfile;
+
+/**
+ * @param {unknown} value
+ * @returns {number}
+ */
+export function normalizePerformanceTargetFps(value) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_PERFORMANCE_TARGET_FPS;
+  }
+
+  const numericValue = /** @type {number} */ (value);
+  return Math.min(
+    MAX_PERFORMANCE_TARGET_FPS,
+    Math.max(MIN_PERFORMANCE_TARGET_FPS, Math.round(numericValue)),
+  );
+}
+
+/**
+ * @param {RenderQualityProfile} profile
+ * @param {RenderQualityProfileOverrides | null | undefined} overrides
+ * @returns {RenderQualityProfile}
+ */
+export function applyRenderQualityProfileOverrides(profile, overrides) {
+  if (!profile || !overrides) {
+    return profile;
+  }
+
+  const nextProfile = { ...profile };
+  if (Number.isFinite(overrides.renderScale) && overrides.renderScale > 0) {
+    nextProfile.renderScale = overrides.renderScale;
+  }
+  if (typeof overrides.traaEnabled === "boolean") {
+    nextProfile.traaEnabled = overrides.traaEnabled;
+  }
+  if (typeof overrides.bloomAllowed === "boolean") {
+    nextProfile.bloomAllowed = overrides.bloomAllowed;
+  }
+
+  return nextProfile;
 }
 
 /**
  * @param {{
- *   qualityPreset?: RenderQualityPreset,
+ *   qualityPreset?: PerformanceProfile,
+ *   targetFps?: number,
  *   outputWidth?: number,
  *   outputHeight?: number,
+ *   overrides?: RenderQualityProfileOverrides | null,
+ *   renderScale?: number,
+ *   traaEnabled?: boolean,
+ *   bloomAllowed?: boolean,
  * }=} param0
  * @returns {RenderQualityProfile}
  */
 export function resolveRenderQualityProfile({
-  qualityPreset = DEFAULT_RENDER_QUALITY_PRESET,
+  qualityPreset = DEFAULT_PERFORMANCE_PROFILE,
+  targetFps = DEFAULT_PERFORMANCE_TARGET_FPS,
   outputWidth = 0,
   outputHeight = 0,
+  overrides = null,
+  renderScale,
+  traaEnabled,
+  bloomAllowed,
 } = {}) {
-  const normalizedPreset = normalizeRenderQualityPreset(qualityPreset);
-  if (normalizedPreset === RENDER_QUALITY_PRESETS.performance) {
-    return {
-      qualityPreset: normalizedPreset,
-      renderScale: 0.67,
-      traaEnabled: false,
-      bloomAllowed: false,
-    };
-  }
-
-  if (normalizedPreset === RENDER_QUALITY_PRESETS.quality) {
-    return {
-      qualityPreset: normalizedPreset,
-      renderScale: 1,
-      traaEnabled: true,
-      bloomAllowed: true,
-    };
+  const effectiveOverrides =
+    overrides ??
+    (Number.isFinite(renderScale) ||
+    typeof traaEnabled === "boolean" ||
+    typeof bloomAllowed === "boolean"
+      ? {
+          renderScale,
+          traaEnabled,
+          bloomAllowed,
+        }
+      : null);
+  const normalizedPerformanceProfile =
+    normalizePerformanceProfile(qualityPreset);
+  const resolvedTargetFps =
+    normalizedPerformanceProfile === PERFORMANCE_PROFILES.custom
+      ? normalizePerformanceTargetFps(targetFps)
+      : DEFAULT_PERFORMANCE_TARGET_FPS;
+  if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.none) {
+    return applyRenderQualityProfileOverrides(
+      {
+        qualityPreset: normalizedPerformanceProfile,
+        targetFps: DEFAULT_PERFORMANCE_TARGET_FPS,
+        renderScale: 1,
+        traaEnabled: true,
+        bloomAllowed: true,
+      },
+      effectiveOverrides,
+    );
   }
 
   const isHighResolutionOutput =
@@ -88,25 +166,33 @@ export function resolveRenderQualityProfile({
     Number.isFinite(outputHeight) &&
     (outputWidth >= 3840 || outputHeight >= 2160);
   if (isHighResolutionOutput) {
-    return {
-      qualityPreset: normalizedPreset,
-      renderScale: 0.75,
-      traaEnabled: false,
-      bloomAllowed: true,
-    };
+    return applyRenderQualityProfileOverrides(
+      {
+        qualityPreset: normalizedPerformanceProfile,
+        targetFps: resolvedTargetFps,
+        renderScale: 0.75,
+        traaEnabled: false,
+        bloomAllowed: true,
+      },
+      effectiveOverrides,
+    );
   }
 
-  return {
-    qualityPreset: normalizedPreset,
-    renderScale: 1,
-    traaEnabled: true,
-    bloomAllowed: true,
-  };
+  return applyRenderQualityProfileOverrides(
+    {
+      qualityPreset: normalizedPerformanceProfile,
+      targetFps: resolvedTargetFps,
+      renderScale: 1,
+      traaEnabled: true,
+      bloomAllowed: true,
+    },
+    effectiveOverrides,
+  );
 }
 
 export function getRenderQualityProfileKey(profile) {
   return [
-    normalizeRenderQualityPreset(profile?.qualityPreset),
+    normalizePerformanceProfile(profile?.qualityPreset),
     profile?.renderScale ?? 1,
     profile?.traaEnabled === false ? "no-traa" : "traa",
     profile?.bloomAllowed === false ? "no-bloom" : "bloom",

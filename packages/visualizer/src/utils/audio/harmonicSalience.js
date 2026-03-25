@@ -1,4 +1,4 @@
-import { sampleFFTAmplitudeForFrequency } from "../normalModes.js";
+import { sampleFFTAmplitudeForFrequency } from "../cavityModes.js";
 
 // Harmonic orders and weights for salience scoring.
 // Order 1 = fundamental itself (highest weight).
@@ -13,7 +13,7 @@ const SALIENCE_MAX_SCORE = SALIENCE_WEIGHTS.reduce((a, b) => a + b, 0);
  * Score a frequency's harmonic salience: how strongly it appears as a
  * genuine fundamental in the FFT by checking energy at its harmonic series.
  *
- * Reuses `sampleFFTAmplitudeForFrequency` from normalModes.js for bin lookup.
+ * Reuses `sampleFFTAmplitudeForFrequency` from cavityModes.js for bin lookup.
  *
  * @param {number} frequency - Candidate fundamental frequency in Hz
  * @param {Float32Array} fftMagnitudes

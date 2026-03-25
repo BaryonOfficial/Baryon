@@ -1,9 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback } from "react";
 import { useAudio } from "../../context/AudioContext";
-import {
-  getLiveInputStatusLabel,
-  isLiveInputTransitionLocked,
-} from "../../context/liveInputRuntimeStatus.js";
+import { isLiveInputTransitionLocked } from "../../context/liveInputRuntimeStatus.js";
 
 // Inject styles once into document head to avoid rendering a <style> tag
 // as a flex item inside the player row.
@@ -119,9 +116,7 @@ function ensureStyles() {
 }
 
 .ac-source-tab:focus-visible,
-.ac-source-live-btn:focus-visible,
-.ac-source-device-select:focus-visible,
-.ac-source-reclassify:focus-visible {
+.ac-source-live-btn:focus-visible {
   outline: 2px solid rgba(122, 189, 255, 0.82);
   outline-offset: 2px;
 }
@@ -233,127 +228,6 @@ function ensureStyles() {
   pointer-events: none;
 }
 
-/* ── Device / profile popover ──────────────────────────────── */
-
-.ac-source-popover {
-  position: absolute;
-  bottom: calc(100% + 0.5rem);
-  left: 0;
-  z-index: 200;
-  background: rgba(22, 22, 24, 0.96);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 12px;
-  padding: 0.65rem 0.75rem;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  min-width: 228px;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
-}
-
-.ac-source-popover-header {
-  display: flex;
-  flex-direction: column;
-  gap: 0.16rem;
-}
-
-.ac-source-popover-row {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.ac-source-device-select {
-  flex: 1;
-  min-width: 0;
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 7px;
-  color: rgba(255,255,255,0.88);
-  font-size: 0.69rem;
-  font-family: inherit;
-  padding: 0.25rem 0.5rem;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ac-source-device-select:focus {
-  outline: none;
-  border-color: rgba(255,255,255,0.28);
-}
-
-.ac-source-reclassify {
-  background: none;
-  border: none;
-  color: rgba(255,255,255,0.28);
-  font-size: 0.6rem;
-  font-family: inherit;
-  cursor: pointer;
-  padding: 0.08rem 0.2rem;
-  border-radius: 4px;
-  flex-shrink: 0;
-  white-space: nowrap;
-  transition: color 0.12s;
-}
-
-.ac-source-reclassify:hover {
-  color: rgba(255,255,255,0.55);
-}
-
-.ac-source-empty {
-  color: rgba(255,255,255,0.35);
-  font-size: 0.67rem;
-  font-style: italic;
-}
-
-.ac-source-popover-label {
-  font-size: 0.6rem;
-  color: rgba(255,255,255,0.34);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 600;
-}
-
-.ac-source-popover-title {
-  color: rgba(255,255,255,0.92);
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.ac-source-popover-copy {
-  color: rgba(255,255,255,0.48);
-  font-size: 0.68rem;
-  line-height: 1.45;
-}
-
-.ac-source-popover-copy--locked {
-  color: rgba(255, 176, 92, 0.96);
-}
-
-.ac-source-status {
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  min-height: 1.3rem;
-  padding: 0.18rem 0.5rem;
-  border-radius: 9999px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.05);
-  color: rgba(255,255,255,0.72);
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 @media (max-width: 720px) {
   .ac-source-selector {
     min-width: 0;
@@ -414,90 +288,6 @@ function ensureStyles() {
   }
 }
 
-/* ── Inline live confirmation row ──────────────────────────── */
-
-.ac-live-confirm-row {
-  display: inline-flex;
-  gap: 0.35rem;
-  align-items: center;
-  animation: ac-confirm-fadein 0.12s ease;
-}
-
-@keyframes ac-confirm-fadein {
-  from { opacity: 0; transform: scale(0.93); }
-  to   { opacity: 1; transform: scale(1); }
-}
-
-.ac-live-confirm-btn {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.3rem 0.65rem;
-  border-radius: 9999px;
-  font-size: 0.66rem;
-  font-weight: 650;
-  letter-spacing: 0.01em;
-  font-family: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.1s ease, transform 0.08s ease;
-}
-
-.ac-live-confirm-btn--start {
-  background: linear-gradient(180deg, rgba(52,199,89,0.32), rgba(40,175,70,0.2));
-  border: 1px solid rgba(52,199,89,0.45);
-  color: #34c759;
-  box-shadow: 0 8px 18px rgba(10,50,20,0.22), inset 0 1px 0 rgba(180,255,200,0.18);
-}
-
-.ac-live-confirm-btn--start:hover {
-  background: linear-gradient(180deg, rgba(52,199,89,0.42), rgba(40,175,70,0.28));
-}
-
-.ac-live-confirm-btn--stop {
-  background: linear-gradient(180deg, rgba(255,91,82,0.32), rgba(255,69,58,0.2));
-  border: 1px solid rgba(255,69,58,0.45);
-  color: #ff453a;
-  box-shadow: 0 8px 18px rgba(83,16,12,0.22), inset 0 1px 0 rgba(255,190,186,0.18);
-}
-
-.ac-live-confirm-btn--stop:hover {
-  background: linear-gradient(180deg, rgba(255,91,82,0.42), rgba(255,69,58,0.28));
-}
-
-.ac-live-confirm-btn:active { transform: scale(0.97); }
-
-.ac-live-confirm-btn:focus-visible,
-.ac-live-cancel-btn:focus-visible {
-  outline: 2px solid rgba(122,189,255,0.82);
-  outline-offset: 2px;
-}
-
-.ac-live-cancel-btn {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.3rem 0.55rem;
-  border-radius: 9999px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: transparent;
-  color: rgba(255,255,255,0.44);
-  font-size: 0.66rem;
-  font-weight: 550;
-  font-family: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.1s ease, border-color 0.1s ease, transform 0.08s ease;
-}
-
-.ac-live-cancel-btn:hover {
-  color: rgba(255,255,255,0.7);
-  border-color: rgba(255,255,255,0.2);
-}
-
-.ac-live-cancel-btn:active { transform: scale(0.97); }
 `;
   document.head.appendChild(el);
 }
@@ -505,39 +295,30 @@ function ensureStyles() {
 /**
  * @param {{
  *   onInteraction?: (() => void) | undefined,
+ *   showLiveButton?: boolean | undefined,
  * }} props
  */
-export function SourceSelector({ onInteraction } = {}) {
+export function SourceSelector({ onInteraction, showLiveButton = true } = {}) {
   ensureStyles();
 
   const {
+    platform,
     selectedSource,
     handleSourceChange,
     isLiveInputActive,
-    liveInputKind,
-    audioDevices,
-    selectedDevice,
+    liveInputDeviceKind,
+    liveInputPermissionState,
     handleSystemToggle,
-    selectedSystemDevice,
-    selectedLiveInputKind,
-    selectedLiveInputAnalysisOverride,
-    selectedResolvedLiveInputAnalysisClass,
     liveInputRuntimeStatus,
-    setSelectedSystemDevice,
-    setSelectedLiveInputAnalysisClass,
   } = useAudio();
 
-  const [showPopover, setShowPopover] = useState(false);
-  // null | 'start' | 'stop' | 'switch-to-file'
-  const [pendingAction, setPendingAction] = useState(null);
-  const popoverRef = useRef(null);
-  const triggerRef = useRef(null);
+  const isWebPlatform = platform === "web";
 
   const resolvedSource = selectedSource === "file" ? "file" : "system";
   const isLiveSource = resolvedSource === "system";
   const isCurrentLive = isLiveInputActive && isLiveSource;
   const activeLiveLabel =
-    liveInputKind === "system" ? "system input" : "live input";
+    liveInputDeviceKind === "system" ? "system input" : "live input";
   const tabMetrics = {
     file: { width: "var(--tab-file-width)", offset: "0rem" },
     system: {
@@ -560,116 +341,30 @@ export function SourceSelector({ onInteraction } = {}) {
     : isCurrentLive
       ? `Stop ${activeLiveLabel}`
       : "Start live input";
-  const popoverTitle = "Live Input";
-
-  // Close popover on outside click
-  useEffect(() => {
-    if (resolvedSource === "file") {
-      setShowPopover(false);
-    }
-  }, [resolvedSource]);
-
-  useEffect(() => {
-    if (!showPopover) return undefined;
-    const handleDown = (e) => {
-      if (
-        popoverRef.current?.contains(e.target) ||
-        triggerRef.current?.contains(e.target)
-      )
-        return;
-      setShowPopover(false);
-    };
-    const handleKey = (e) => {
-      if (e.key === "Escape") setShowPopover(false);
-    };
-    document.addEventListener("pointerdown", handleDown);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("pointerdown", handleDown);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [showPopover]);
-
-  const liveDevices = audioDevices;
-  const selectedLiveDeviceId = selectedSystemDevice ?? selectedDevice ?? "";
   const transitionLocked = isLiveInputTransitionLocked(liveInputRuntimeStatus);
-  const popoverCopy = transitionLocked
-    ? "Wait for the live input transition to finish."
-    : selectedLiveInputKind === "system"
-      ? "Choose the loopback device to route through file-style analysis."
-      : "Choose the input device to route into the live view.";
-  const liveInputStatusLabel = getLiveInputStatusLabel(liveInputRuntimeStatus);
-  const fallbackResolvedLabel =
-    isLiveSource && selectedResolvedLiveInputAnalysisClass
-      ? `Resolved: ${
-          selectedResolvedLiveInputAnalysisClass === "line-feed"
-            ? "Line Feed"
-            : "Acoustic Mic"
-        }`
-      : "";
-  const liveInputStatusText = liveInputStatusLabel || fallbackResolvedLabel;
+  const permissionGranted = liveInputPermissionState === "granted";
+  const liveStartDisabled =
+    !isLiveSource ||
+    transitionLocked ||
+    (isWebPlatform && !isCurrentLive && !permissionGranted);
 
   const handleTabClick = useCallback(
     (source) => {
       onInteraction?.();
       if (source === "file") {
-        if (isCurrentLive) {
-          setPendingAction("switch-to-file");
-          return;
-        }
-        handleSourceChange("file");
-        setShowPopover(false);
+        void handleSourceChange("file");
         return;
       }
-      if (resolvedSource !== source) {
-        handleSourceChange(source);
-        // Only auto-open device picker if no device has been configured yet
-        if (!selectedLiveDeviceId || audioDevices.length === 0) {
-          setShowPopover(true);
-        }
-        return;
-      }
-      setShowPopover((visible) => !visible);
+      void handleSourceChange(source);
     },
-    [
-      audioDevices.length,
-      handleSourceChange,
-      isCurrentLive,
-      onInteraction,
-      resolvedSource,
-      selectedLiveDeviceId,
-    ],
+    [handleSourceChange, onInteraction],
   );
   const handleLiveButtonClick = useCallback(() => {
     onInteraction?.();
-    setPendingAction(isCurrentLive ? "stop" : "start");
-  }, [isCurrentLive, onInteraction]);
-  const handleConfirm = useCallback(() => {
-    const action = pendingAction;
-    setPendingAction(null);
-    if (action === "start" || action === "stop") {
-      void handleSystemToggle();
-    } else if (action === "switch-to-file") {
-      handleSourceChange("file");
-      setShowPopover(false);
-    }
-  }, [pendingAction, handleSystemToggle, handleSourceChange]);
-  const handleCancel = useCallback(() => setPendingAction(null), []);
-  useEffect(() => {
-    if (!pendingAction) return undefined;
-    const t = setTimeout(() => setPendingAction(null), 3000);
-    return () => clearTimeout(t);
-  }, [pendingAction]);
-  useEffect(() => {
-    if (!pendingAction) return undefined;
-    const onKey = (e) => {
-      if (e.key === "Escape") setPendingAction(null);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [pendingAction]);
+    void handleSystemToggle();
+  }, [handleSystemToggle, onInteraction]);
   return (
-    <div className="ac-source-selector" ref={triggerRef}>
+    <div className="ac-source-selector">
       <div className="ac-source-stack">
         <div className="ac-source-cluster">
           {/* Segmented tab control with sliding highlight */}
@@ -703,118 +398,14 @@ export function SourceSelector({ onInteraction } = {}) {
             </button>
           </div>
 
-          {/* Device settings popover */}
-          {showPopover && isLiveSource && (
-            <div
-              className="ac-source-popover"
-              data-testid="source-settings-popover"
-              ref={popoverRef}
-            >
-              <div className="ac-source-popover-header">
-                <span className="ac-source-popover-label">Live Input</span>
-                <span className="ac-source-popover-title">{popoverTitle}</span>
-                <span
-                  className={`ac-source-popover-copy${
-                    transitionLocked ? " ac-source-popover-copy--locked" : ""
-                  }`}
-                >
-                  {popoverCopy}
-                </span>
-              </div>
-
-              <div className="ac-source-popover-row">
-                {liveDevices.length === 0 ? (
-                  <span className="ac-source-empty">
-                    No audio input devices found
-                  </span>
-                ) : (
-                  <select
-                    className="ac-source-device-select"
-                    data-testid="live-input-device-select"
-                    value={selectedLiveDeviceId}
-                    onChange={(e) => setSelectedSystemDevice(e.target.value)}
-                    aria-label="Live input device"
-                    disabled={transitionLocked}
-                  >
-                    {liveDevices.map((d) => (
-                      <option key={d.deviceId} value={d.deviceId}>
-                        {d.label || `Device ${d.deviceId.slice(0, 6)}`}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              {liveDevices.length > 0 ? (
-                <>
-                  <div className="ac-source-popover-label">Mode</div>
-                  <div className="ac-source-popover-row">
-                    <select
-                      className="ac-source-device-select"
-                      data-testid="live-input-analysis-select"
-                      value={selectedLiveInputAnalysisOverride}
-                      onChange={(event) =>
-                        setSelectedLiveInputAnalysisClass(event.target.value)
-                      }
-                      aria-label="Live input mode"
-                      disabled={transitionLocked}
-                    >
-                      <option value="auto">Auto</option>
-                      <option value="line-feed">Line Feed</option>
-                      <option value="acoustic-mic">Acoustic Mic</option>
-                    </select>
-                  </div>
-                  <div className="ac-source-popover-copy">
-                    Resolved path:{" "}
-                    {selectedResolvedLiveInputAnalysisClass === "line-feed"
-                      ? "Line Feed"
-                      : "Acoustic Mic"}
-                  </div>
-                </>
-              ) : null}
-            </div>
-          )}
-
-          {/* Go Live / Live — shared toggle outside the segmented control */}
-          {pendingAction ? (
-            <div
-              className="ac-live-confirm-row"
-              role="group"
-              aria-label="Confirm live action"
-            >
-              <button
-                className={`ac-live-confirm-btn ac-live-confirm-btn--${pendingAction === "start" ? "start" : "stop"}`}
-                onClick={handleConfirm}
-                aria-label={
-                  pendingAction === "start"
-                    ? "Confirm go live"
-                    : pendingAction === "stop"
-                      ? "Confirm stop live"
-                      : "Confirm stop live and switch to file"
-                }
-                autoFocus
-              >
-                {pendingAction === "start"
-                  ? "Go Live?"
-                  : pendingAction === "stop"
-                    ? "Stop?"
-                    : "Stop & Switch?"}
-              </button>
-              <button
-                className="ac-live-cancel-btn"
-                onClick={handleCancel}
-                aria-label="Cancel"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
+          {showLiveButton ? (
             <button
               className={`ac-source-live-btn${isCurrentLive ? " ac-source-live-btn--active" : ""}`}
               data-testid="source-live-button"
               data-state={
                 !isLiveSource ? "disabled" : isCurrentLive ? "live" : "idle"
               }
-              disabled={!isLiveSource || transitionLocked}
+              disabled={liveStartDisabled}
               onClick={handleLiveButtonClick}
               aria-label={liveButtonActionLabel}
               title={liveButtonActionLabel}
@@ -839,13 +430,8 @@ export function SourceSelector({ onInteraction } = {}) {
                 </span>
               </span>
             </button>
-          )}
+          ) : null}
         </div>
-        {liveInputStatusText ? (
-          <div className="ac-source-status" aria-live="polite">
-            {liveInputStatusText}
-          </div>
-        ) : null}
       </div>
     </div>
   );

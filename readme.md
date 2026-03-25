@@ -35,7 +35,23 @@ Current roadmap priorities, derived from the PRD:
 4. Add OSC input for external parameter automation.
 5. Ship the first paid desktop release on macOS and Windows, with Linux as best-effort visualization-only support.
 
+Current engineering direction for performance work:
+
+- shared-core `AudioFeatureEngine` optimization lands first so both web and desktop benefit
+- desktop-only transport and host acceleration come after remeasurement, once the remaining bottlenecks are clearly desktop-specific
+- cymatic semantics should stay materially intact while performance work lands
+
 See [`ROADMAP.md`](ROADMAP.md) for the public roadmap and phase breakdown.
+
+Additional engineering reference docs:
+
+Public-facing/shared docs:
+
+- [`documentation/public/architecture-map.md`](documentation/public/architecture-map.md)
+- [`documentation/public/contracts-and-boundaries.md`](documentation/public/contracts-and-boundaries.md)
+- [`documentation/public/output-integration-architecture.md`](documentation/public/output-integration-architecture.md)
+- [`documentation/public/controls.md`](documentation/public/controls.md)
+
 
 ## Licensing
 
@@ -270,7 +286,7 @@ Desktop-specific renderer composition now lives in `apps/desktop/src/DesktopApp.
 
 ## GUI Controls And Verification
 
-The control surface is schema-driven. For a full reference of every control, what it does, and how the controls interact, see [`documentation/controls.md`](documentation/controls.md).
+The control surface is schema-driven. For a full reference of every control, what it does, and how the controls interact, see [`documentation/public/controls.md`](documentation/public/controls.md).
 
 Source of truth:
 

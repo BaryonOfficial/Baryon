@@ -1,6 +1,7 @@
 import {
   DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
   DEFAULT_RESOLVED_LIVE_INPUT_ANALYSIS_CLASS,
+  normalizeLiveInputDeviceKind,
   normalizeLiveInputAnalysisClass,
   normalizeResolvedLiveInputAnalysisClass,
 } from "@baryon/visualizer/audio/liveInputAnalysis";
@@ -25,6 +26,7 @@ import {
  * @typedef {{
  *   active: boolean,
  *   phase: LiveInputPhase,
+ *   liveInputDeviceKind: import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputDeviceKind | null,
  *   liveInputKind: "live" | "system" | null,
  *   selectedDeviceId: string | null,
  *   selectedDeviceLabel: string,
@@ -74,20 +76,10 @@ export const LIVE_INPUT_ERROR_CODES = Object.freeze({
   calibrationInvalid: "calibration-invalid",
 });
 
-function getAutoResolvedStatusLabel(status) {
-  if (status.requestedAnalysisClass !== DEFAULT_LIVE_INPUT_ANALYSIS_CLASS) {
-    return "";
-  }
-
-  if (status.resolvedAnalysisClass === "line-feed") {
-    return "Auto: detected line feed";
-  }
-
-  if (status.resolvedAnalysisClass === "acoustic-mic") {
-    return "Auto: using acoustic mic";
-  }
-
-  return "";
+function getResolvedAnalysisStatusLabel(status) {
+  return status.resolvedAnalysisClass === "line-feed"
+    ? "Live Input: Line Feed"
+    : "Live Input: Acoustic Mic";
 }
 
 /**
@@ -122,10 +114,15 @@ function normalizeErrorCode(value) {
  * @returns {LiveInputRuntimeStatus}
  */
 export function createLiveInputRuntimeStatus(overrides = {}) {
+  const liveInputDeviceKind =
+    overrides.liveInputDeviceKind == null && overrides.liveInputKind == null
+      ? null
+      : normalizeLiveInputDeviceKind(
+          overrides.liveInputDeviceKind ?? overrides.liveInputKind,
+        );
   return {
     active: false,
     phase: LIVE_INPUT_PHASES.idle,
-    liveInputKind: null,
     selectedDeviceId: null,
     selectedDeviceLabel: "",
     requestedAnalysisClass: DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
@@ -138,6 +135,8 @@ export function createLiveInputRuntimeStatus(overrides = {}) {
     signalState: LIVE_INPUT_SIGNAL_STATES.ok,
     errorCode: LIVE_INPUT_ERROR_CODES.none,
     ...overrides,
+    liveInputDeviceKind,
+    liveInputKind: liveInputDeviceKind,
   };
 }
 
@@ -306,7 +305,8 @@ export function buildLiveInputRuntimeStatus({
   return createLiveInputRuntimeStatus({
     active,
     phase,
-    liveInputKind: status?.liveInputKind ?? null,
+    liveInputDeviceKind:
+      status?.liveInputDeviceKind ?? status?.liveInputKind ?? null,
     selectedDeviceId: status?.selectedLiveInputDeviceId ?? null,
     selectedDeviceLabel: status?.selectedLiveInputDeviceLabel ?? "",
     requestedAnalysisClass,
@@ -355,7 +355,6 @@ export function isLiveInputTransitionLocked(runtimeStatus) {
  */
 export function getLiveInputStatusLabel(runtimeStatus) {
   const status = createLiveInputRuntimeStatus(runtimeStatus);
-  const autoResolvedStatusLabel = getAutoResolvedStatusLabel(status);
 
   if (status.errorCode === LIVE_INPUT_ERROR_CODES.permissionDenied) {
     return "Microphone permission blocked";
@@ -378,11 +377,11 @@ export function getLiveInputStatusLabel(runtimeStatus) {
   if (status.phase === LIVE_INPUT_PHASES.weakSignal) {
     return "Input too weak";
   }
-  if (autoResolvedStatusLabel) {
-    return autoResolvedStatusLabel;
+  if (!status.active) {
+    return "";
   }
   if (status.phase === LIVE_INPUT_PHASES.listening) {
-    return "Listening";
+    return getResolvedAnalysisStatusLabel(status);
   }
 
   return "";

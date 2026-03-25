@@ -7,7 +7,7 @@ import {
   isSoundCloudUrl,
   resolveSoundCloudQueue,
   resolveSoundCloudStream,
-} from "../../src/utils/soundcloud.js";
+} from "../../../../packages/app-shell/src/utils/soundcloud.js";
 
 test("accepts standard and shortlink SoundCloud URLs", () => {
   assert.equal(isSoundCloudUrl("https://soundcloud.com/artist/track"), true);

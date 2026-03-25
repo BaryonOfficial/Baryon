@@ -15,6 +15,11 @@ import {
   normalizeLiveInputAnalysisOverrides,
   resolveLiveInputAnalysisClass,
 } from "./liveInputAnalysis.js";
+import {
+  LIVE_INPUT_DEVICE_KINDS,
+  isLoopbackLiveInputDeviceKind,
+  normalizeLiveInputDeviceKind,
+} from "./inputDeviceSemantics.js";
 
 function normalizeLiveInputSettings(settings = {}) {
   return {
@@ -100,12 +105,12 @@ function buildSystemConstraints(deviceId) {
   };
 }
 
-function normalizeLiveInputKind(kind) {
-  return kind === "system" ? "system" : "live";
-}
-
-function buildLiveInputConstraints(liveInputKind, deviceId, liveInputSettings) {
-  return liveInputKind === "system"
+function buildLiveInputConstraints(
+  liveInputDeviceKind,
+  deviceId,
+  liveInputSettings,
+) {
+  return isLoopbackLiveInputDeviceKind(liveInputDeviceKind)
     ? buildSystemConstraints(deviceId)
     : buildLiveConstraints(deviceId, liveInputSettings);
 }
@@ -135,7 +140,11 @@ function disconnectAudioNode(node, target = undefined) {
 function getAnalysisSource(status) {
   if (status.isPlaying && status.sourceKind !== "live") return "file";
   if (status.isLiveInputActive) {
-    return status.liveInputKind === "system" ? "file" : "live";
+    return isLoopbackLiveInputDeviceKind(
+      status.liveInputDeviceKind ?? status.liveInputKind,
+    )
+      ? "file"
+      : "live";
   }
   return "idle";
 }
@@ -808,8 +817,11 @@ export function createAudioSession() {
     const isLiveInputActive = Boolean(
       state.gumStream?.active && state.liveInputAnalyser,
     );
+    const liveInputDeviceKind = isLiveInputActive
+      ? normalizeLiveInputDeviceKind(state.liveInputKind)
+      : null;
     const sourceKind = isLiveInputActive
-      ? state.liveInputKind === "system"
+      ? isLoopbackLiveInputDeviceKind(liveInputDeviceKind)
         ? "system"
         : "live"
       : state.loadedPlaybackSourceKind === "stream"
@@ -820,7 +832,8 @@ export function createAudioSession() {
     const analysisSource = getAnalysisSource({
       isPlaying,
       isLiveInputActive,
-      liveInputKind: state.liveInputKind,
+      liveInputKind: liveInputDeviceKind,
+      liveInputDeviceKind,
       sourceKind,
     });
 
@@ -845,9 +858,8 @@ export function createAudioSession() {
       resolvedLiveInputAnalysisClass: isLiveInputActive
         ? getResolvedLiveInputAnalysisClass()
         : null,
-      liveInputKind: isLiveInputActive
-        ? normalizeLiveInputKind(state.liveInputKind)
-        : null,
+      liveInputKind: liveInputDeviceKind,
+      liveInputDeviceKind,
       liveInputCalibrationVersion: state.liveInputCalibrationVersion,
       selectedLiveInputDeviceId: state.selectedLiveInputDeviceId,
       selectedLiveInputDeviceLabel: state.selectedLiveInputDeviceLabel,
@@ -1226,9 +1238,11 @@ export function createAudioSession() {
 
   async function applyLiveInputSettingsToActiveStream(targetSettings) {
     const track = state.gumStream?.getAudioTracks?.()?.[0];
-    const resolvedLiveInputKind = normalizeLiveInputKind(state.liveInputKind);
+    const resolvedLiveInputDeviceKind = normalizeLiveInputDeviceKind(
+      state.liveInputKind,
+    );
 
-    if (resolvedLiveInputKind === "system") {
+    if (isLoopbackLiveInputDeviceKind(resolvedLiveInputDeviceKind)) {
       state.appliedLiveInputSettings = cloneLiveInputSettings(targetSettings);
       return cloneLiveInputSettings(state.appliedLiveInputSettings);
     }
@@ -1246,7 +1260,7 @@ export function createAudioSession() {
 
     const selectedDeviceId = state.selectedLiveInputDeviceId;
     stopLiveInputStream();
-    await startLiveInputStream(selectedDeviceId, resolvedLiveInputKind);
+    await startLiveInputStream(selectedDeviceId, resolvedLiveInputDeviceKind);
     state.appliedLiveInputSettings = cloneLiveInputSettings(
       state.liveInputSettings,
     );
@@ -1315,7 +1329,14 @@ export function createAudioSession() {
     return cloneLiveInputAnalysisSettings(state.liveInputAnalysisSettings);
   }
 
-  async function startLiveInputStream(deviceId, liveInputKind = "live") {
+  /**
+   * @param {string | null | undefined} deviceId
+   * @param {import("./inputDeviceSemantics.js").LiveInputDeviceKind} [liveInputKind]
+   */
+  async function startLiveInputStream(
+    deviceId,
+    liveInputKind = LIVE_INPUT_DEVICE_KINDS.acousticMic,
+  ) {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("getUserMedia not supported");
     }
@@ -1328,10 +1349,11 @@ export function createAudioSession() {
       clearLoadedPlaybackState();
     }
 
-    const resolvedLiveInputKind = normalizeLiveInputKind(liveInputKind);
+    const resolvedLiveInputDeviceKind =
+      normalizeLiveInputDeviceKind(liveInputKind);
     const constraints = {
       audio: buildLiveInputConstraints(
-        resolvedLiveInputKind,
+        resolvedLiveInputDeviceKind,
         deviceId,
         state.liveInputSettings,
       ),
@@ -1339,10 +1361,10 @@ export function createAudioSession() {
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     state.gumStream = stream;
     state.selectedLiveInputDeviceId = deviceId ?? null;
-    state.liveInputKind = resolvedLiveInputKind;
+    state.liveInputKind = resolvedLiveInputDeviceKind;
     state.selectedLiveInputDeviceLabel =
       stream.getAudioTracks?.()?.[0]?.label?.trim?.() ?? "";
-    if (resolvedLiveInputKind === "live") {
+    if (resolvedLiveInputDeviceKind === LIVE_INPUT_DEVICE_KINDS.acousticMic) {
       state.liveInputCalibrationVersion += 1;
     }
     state.appliedLiveInputSettings = cloneLiveInputSettings(
@@ -1360,7 +1382,7 @@ export function createAudioSession() {
       state.liveInputNode,
       state.fftSize,
     );
-    setAudioInputMode(resolvedLiveInputKind);
+    setAudioInputMode(resolvedLiveInputDeviceKind);
   }
 
   function stopLiveInputStream() {
@@ -1386,15 +1408,16 @@ export function createAudioSession() {
   function readAnalysisSnapshot() {
     const status = getStatus();
     if (status.analysisSource === "file") {
+      const activeLiveInputDeviceKind =
+        status.liveInputDeviceKind ?? status.liveInputKind;
       return {
-        sourceMode:
-          status.liveInputKind === "system"
-            ? "system"
-            : state.loadedPlaybackSourceKind === "stream"
-              ? "stream"
-              : "file",
+        sourceMode: isLoopbackLiveInputDeviceKind(activeLiveInputDeviceKind)
+          ? "system"
+          : state.loadedPlaybackSourceKind === "stream"
+            ? "stream"
+            : "file",
         ...sampleAnalyser(
-          status.liveInputKind === "system"
+          isLoopbackLiveInputDeviceKind(activeLiveInputDeviceKind)
             ? state.liveInputAnalyser
             : state.playbackAnalyser,
         ),

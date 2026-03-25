@@ -5,18 +5,17 @@ import {
   Loop,
   abs,
   clamp,
-  cos,
   float,
   length,
   max,
   mix,
   screenUV,
-  sin,
   smoothstep,
   vec2,
   vec3,
   vec4,
 } from "three/tsl";
+import { evaluatePermutationFamilyNode } from "../modeFamilyNode.js";
 
 const CYMATICS_2D_TUNING = Object.freeze({
   detailLayerWeight: 0.35,
@@ -39,6 +38,7 @@ function accumulateLayer({
   x,
   y,
   slice,
+  boundaryMode,
   field,
   gradX,
   gradY,
@@ -48,30 +48,23 @@ function accumulateLayer({
   Loop(capacity, ({ i }) => {
     const slot = buffer.element(i);
     const amplitude = slot.w.mul(weight);
-    const sx = sin(slot.x.mul(pi).mul(x));
-    const sy = sin(slot.y.mul(pi).mul(y));
-    const sz = sin(slot.z.mul(pi).mul(slice));
-    const localShape = sx.mul(sy).mul(sz);
-    field.addAssign(amplitude.mul(localShape));
-
-    gradX.addAssign(
-      amplitude
-        .mul(cos(slot.x.mul(pi).mul(x)))
-        .mul(slot.x.mul(pi))
-        .mul(sy)
-        .mul(sz),
-    );
-    gradY.addAssign(
-      amplitude
-        .mul(sx)
-        .mul(cos(slot.y.mul(pi).mul(y)))
-        .mul(slot.y.mul(pi))
-        .mul(sz),
-    );
+    const family = evaluatePermutationFamilyNode({
+      u: slot.x,
+      v: slot.y,
+      w: slot.z,
+      xCoord: x,
+      yCoord: y,
+      zCoord: slice,
+      scale: pi,
+      boundaryMode,
+    });
+    field.addAssign(amplitude.mul(family.field));
+    gradX.addAssign(amplitude.mul(family.gradX));
+    gradY.addAssign(amplitude.mul(family.gradY));
 
     if (colorBuffer && colorSum && colorWeight) {
       const colorSlot = colorBuffer.element(i);
-      const localInfluence = amplitude.mul(abs(localShape));
+      const localInfluence = amplitude.mul(abs(family.field));
       colorSum.addAssign(
         vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(
           localInfluence.mul(colorSlot.w),
@@ -94,6 +87,7 @@ function createFieldNode({
     uThreshold,
     uStructureMin,
     uStructureMax,
+    uBoundaryMode,
     uActiveModeCount,
     uBackboneModeCount,
     uDetailModeCount,
@@ -136,6 +130,7 @@ function createFieldNode({
       x: centered.x,
       y: centered.y,
       slice: uSlicePosition,
+      boundaryMode: uBoundaryMode,
       field,
       gradX,
       gradY,
@@ -151,6 +146,7 @@ function createFieldNode({
       x: centered.x,
       y: centered.y,
       slice: uSlicePosition,
+      boundaryMode: uBoundaryMode,
       field,
       gradX,
       gradY,

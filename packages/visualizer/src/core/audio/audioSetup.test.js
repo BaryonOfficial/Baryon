@@ -466,6 +466,7 @@ describe("audio session", () => {
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "system",
       isLiveInputActive: true,
+      liveInputDeviceKind: "system",
       liveInputKind: "system",
       liveInputCalibrationVersion: 0,
       sourceKind: "system",

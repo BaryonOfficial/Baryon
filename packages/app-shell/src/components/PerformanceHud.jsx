@@ -14,18 +14,31 @@ export default function PerformanceHud({
   metrics,
   top = "1rem",
   right = "1rem",
+  stacked = false,
 }) {
   if (!metrics) {
     return null;
   }
 
+  const showRaymarchSteps =
+    metrics.visualizationMethod === "raymarch" &&
+    metrics.requestedRaymarchSteps > 0;
+  const raymarchStepsLabel = showRaymarchSteps
+    ? `${Math.round(metrics.effectiveRaymarchSteps)} / ${Math.round(metrics.requestedRaymarchSteps)}`
+    : null;
+  const renderScaleLabel =
+    typeof metrics.renderScale === "number" &&
+    typeof metrics.requestedRenderScale === "number"
+      ? `${formatNumber(metrics.renderScale, 3)} / ${formatNumber(metrics.requestedRenderScale, 3)}`
+      : null;
+
   return (
     <aside
       data-testid="performance-hud"
       style={{
-        position: "fixed",
-        top,
-        right,
+        position: stacked ? "relative" : "fixed",
+        top: stacked ? "auto" : top,
+        right: stacked ? "auto" : right,
         zIndex: 10000,
         minWidth: "9rem",
         padding: "0.55rem 0.7rem",
@@ -50,6 +63,14 @@ export default function PerformanceHud({
         DPR: {formatNumber(metrics.currentPixelRatio, 3)} /{" "}
         {formatNumber(metrics.basePixelRatio, 3)}
       </div>
+      {renderScaleLabel ? <div>Scale: {renderScaleLabel}</div> : null}
+      {metrics.qualityPreset ? (
+        <div>Performance Profile: {metrics.qualityPreset}</div>
+      ) : null}
+      {typeof metrics.targetFps === "number" ? (
+        <div>Target FPS: {Math.round(metrics.targetFps)}</div>
+      ) : null}
+      {raymarchStepsLabel ? <div>Steps: {raymarchStepsLabel}</div> : null}
     </aside>
   );
 }

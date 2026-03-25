@@ -34,6 +34,7 @@ function createRuntimeState() {
       uActiveModeCount: { value: 0 },
       uBackboneModeCount: { value: 0 },
       uDetailModeCount: { value: 0 },
+      uBoundaryMode: { value: 1 },
       uAverageAmplitude: { value: 0 },
       uTransientEnergy: { value: 0 },
       uSpectralCentroid: { value: 0 },
@@ -123,6 +124,9 @@ describe("tickCymatics2dRuntime", () => {
     expect(runtimeState.volumeMesh.visible).toBe(true);
     expect(runtimeState.idleOverlay.visible).toBe(false);
     expect(runtimeState.debugSnapshot.cymatics2dDebug.modeSlotCount).toBe(4);
+    expect(runtimeState.debugSnapshot.cymatics2dDebug.boundaryMode).toBe(
+      "neumann",
+    );
     expect(runtimeState.debugSnapshot.cymatics2dDebug.slicePosition).not.toBe(
       0,
     );

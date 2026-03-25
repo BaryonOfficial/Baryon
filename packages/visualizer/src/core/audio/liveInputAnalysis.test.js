@@ -18,7 +18,7 @@ describe("live input analysis classification", () => {
   it("always resolves system capture to line-feed", () => {
     expect(
       resolveLiveInputAnalysisClass({
-        liveInputKind: "system",
+        liveInputDeviceKind: "system",
       }),
     ).toBe(LIVE_INPUT_ANALYSIS_CLASSES.lineFeed);
   });

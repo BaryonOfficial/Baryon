@@ -13,5 +13,5 @@ export const SPECTRAL_MODAL_POLICY = Object.freeze({
   harmonicSupportRatio: 0.2,
   minSpectralBinAmplitude: 0.09,
   minSpectralBinGapHz: 20,
-  maxSpectralFrequency: 3500,
+  maxSpectralFrequency: 8000,
 });

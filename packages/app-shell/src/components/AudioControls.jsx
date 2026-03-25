@@ -154,13 +154,14 @@ function getStatusConfig(
   isAudioLoaded,
   isPlaying,
   isLiveInputActive,
-  liveInputKind,
+  liveInputDeviceKind,
 ) {
   if (isLiveInputActive)
     return {
       color: "#ff453a",
       pulse: true,
-      label: liveInputKind === "system" ? "System input active" : "Mic active",
+      label:
+        liveInputDeviceKind === "system" ? "System input active" : "Mic active",
     };
   if (isPlaying) return { color: "#32d74b", pulse: true, label: "Playing" };
   if (isAudioLoaded) return { color: "#0a84ff", pulse: false, label: "Loaded" };
@@ -1253,7 +1254,7 @@ const CSS = `
 
 // ─── Listener Controls ───────────────────────────────────────────────────────
 
-export function ListenerControls() {
+export function ListenerControls({ showSourceLiveButton = true } = {}) {
   const {
     soundCloudEnabled,
     activeSource,
@@ -1264,7 +1265,7 @@ export function ListenerControls() {
     recentUploads,
     isPlaying,
     isLiveInputActive,
-    liveInputKind,
+    liveInputDeviceKind,
     isAudioLoaded,
     volume,
     isMuted,
@@ -1309,7 +1310,7 @@ export function ListenerControls() {
     isAudioLoaded,
     isPlaying,
     isLiveInputActive,
-    liveInputKind,
+    liveInputDeviceKind,
   );
   const volumePercent = Math.round(volume * 100);
   const soundCloudListStart = Math.max(0, soundCloudCurrentIndex - 1);
@@ -1590,6 +1591,7 @@ export function ListenerControls() {
                   setShowRecentUploadsPanel(false);
                   setShowDeviceMenu(false);
                 }}
+                showLiveButton={showSourceLiveButton}
               />
             </div>
           </div>

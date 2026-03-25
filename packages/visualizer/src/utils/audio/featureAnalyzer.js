@@ -1,4 +1,7 @@
-import FeatureAnalyzerWorker from "./featureAnalyzer.worker?worker";
+import {
+  isLoopbackLiveInputDeviceKind,
+  normalizeLiveInputDeviceKind,
+} from "../../core/audio/inputDeviceSemantics.js";
 
 const MEL_BIN_COUNT = 64;
 const HINT_WINDOW_SIZE = 32;
@@ -77,8 +80,11 @@ function createMelFilterbank(sampleRate, fftSize, binCount) {
 }
 
 export function buildAnalysisSessionKey(status) {
+  const liveInputDeviceKind = normalizeLiveInputDeviceKind(
+    status?.liveInputDeviceKind ?? status?.liveInputKind,
+  );
   const inputMode = status?.isLiveInputActive
-    ? status?.liveInputKind === "system"
+    ? isLoopbackLiveInputDeviceKind(liveInputDeviceKind)
       ? "system"
       : "live"
     : status?.isPlaying
@@ -258,7 +264,11 @@ export function createNoopAudioFeatureAnalyzer(settings = {}) {
 export function createAudioFeatureAnalyzer(settings = {}, dependencies = {}) {
   const normalizedSettings = normalizeFeatureAnalysisSettings(settings);
   const workerFactory =
-    dependencies.createWorker ?? (() => new FeatureAnalyzerWorker());
+    dependencies.createWorker ??
+    (() =>
+      new Worker(new URL("./featureAnalyzer.worker.js", import.meta.url), {
+        type: "module",
+      }));
 
   if (
     normalizedSettings.mode !== "hybrid" ||

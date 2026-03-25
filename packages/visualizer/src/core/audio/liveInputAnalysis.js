@@ -1,9 +1,27 @@
+import {
+  LIVE_INPUT_DEVICE_KINDS,
+  isLoopbackLiveInputDeviceKind,
+  normalizeLiveInputDeviceKind,
+} from "./inputDeviceSemantics.js";
+
+export {
+  LIVE_INPUT_DEVICE_KINDS,
+  isAcousticLiveInputDeviceKind,
+  isLoopbackLiveInputDeviceKind,
+  getLiveInputDeviceKindLabel,
+  normalizeLiveInputDeviceKind,
+} from "./inputDeviceSemantics.js";
+
 /**
  * @typedef {"auto" | "line-feed" | "acoustic-mic"} LiveInputAnalysisClass
  */
 
 /**
  * @typedef {"line-feed" | "acoustic-mic"} ResolvedLiveInputAnalysisClass
+ */
+
+/**
+ * @typedef {import("./inputDeviceSemantics.js").LiveInputDeviceKind} LiveInputDeviceKind
  */
 
 export const LIVE_INPUT_ANALYSIS_CLASSES = Object.freeze({
@@ -103,7 +121,8 @@ export function isLikelyLineFeedDeviceLabel(label = "") {
 
 /**
  * @param {{
- *   liveInputKind?: "live" | "system" | null,
+ *   liveInputKind?: import("./inputDeviceSemantics.js").LiveInputDeviceKind | null,
+ *   liveInputDeviceKind?: import("./inputDeviceSemantics.js").LiveInputDeviceKind | null,
  *   selectedDeviceId?: string | null,
  *   selectedDeviceLabel?: string,
  *   analysisClass?: LiveInputAnalysisClass,
@@ -113,12 +132,21 @@ export function isLikelyLineFeedDeviceLabel(label = "") {
  */
 export function resolveLiveInputAnalysisClass({
   liveInputKind = null,
+  liveInputDeviceKind = liveInputKind,
   selectedDeviceId = null,
   selectedDeviceLabel = "",
   analysisClass = DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
   overrides = undefined,
 } = {}) {
-  if (liveInputKind === "system") {
+  const resolvedLiveInputDeviceKind =
+    liveInputDeviceKind == null
+      ? null
+      : normalizeLiveInputDeviceKind(liveInputDeviceKind);
+
+  if (
+    resolvedLiveInputDeviceKind === LIVE_INPUT_DEVICE_KINDS.loopback ||
+    isLoopbackLiveInputDeviceKind(liveInputKind)
+  ) {
     return LIVE_INPUT_ANALYSIS_CLASSES.lineFeed;
   }
 

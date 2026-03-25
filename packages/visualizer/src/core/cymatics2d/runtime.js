@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { REACTIVITY_DEFAULTS } from "../../defaults.js";
+import { getBoundaryModeFromValue } from "../modeFamily.js";
 import { isFieldDrivenState } from "../fieldState.js";
 
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
@@ -20,6 +21,14 @@ function clamp(value, min, max) {
 
 function clamp01(value) {
   return clamp(value, 0, 1);
+}
+
+function publishAuditSnapshot(snapshot) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  /** @type {any} */ (window).__baryonAuditSnapshot = snapshot;
 }
 
 function damp(current, target, smoothing, deltaTime) {
@@ -108,6 +117,9 @@ function buildCymatics2dDebugSnapshot(runtimeState, featureFrame, fieldState) {
     scaleSignal: runtimeState.scaleSignal ?? 0,
     bloomResponseSignal: runtimeState.bloomResponseSignal ?? 0,
     visualScale: runtimeState.visualRoot?.scale?.x ?? 1,
+    boundaryMode: getBoundaryModeFromValue(
+      runtimeState.uniforms.uBoundaryMode?.value ?? 1,
+    ),
     chromesthesiaMix: runtimeState.uniforms.uChromesthesiaMix?.value ?? 0,
     slicePosition: runtimeState.uniforms.uSlicePosition?.value ?? 0,
     sliceVelocity: runtimeState.sliceVelocity ?? 0,
@@ -130,7 +142,7 @@ function updateReactiveResponse(
   const energySignal = clamp01(featureFrame?.energySignal ?? 0);
   const changeSignal = clamp01(featureFrame?.changeSignal ?? 0);
   const pulseSignal = clamp01(featureFrame?.pulseSignal ?? 0);
-  const persistence = Math.max(0.2, tuning.structurePersistence);
+  const persistence = Math.max(0, tuning.structurePersistence);
   const reactivity = Math.max(0, tuning.reactivity);
   const gatedStructureSignal = clamp01(structureSignal * reactivity);
   const gatedEnergySignal = clamp01(energySignal * reactivity);
@@ -325,6 +337,7 @@ export function tickCymatics2dRuntime(
   runtimeState.debugSnapshot = featureFrame?.debug
     ? { ...featureFrame.debug, cymatics2dDebug, ...cymatics2dDebug }
     : cymatics2dDebug;
+  publishAuditSnapshot(runtimeState.debugSnapshot);
 }
 
 export function disposeCymatics2dRuntime(runtimeState) {

@@ -1,5 +1,10 @@
 import { instancedArray } from "three/tsl";
 import {
+  DEFAULT_REQUESTED_CAVITY_GEOMETRY,
+  resolveEffectiveCavityGeometry,
+} from "./cavityGeometry.js";
+import {
+  AUDIO_DEFAULTS,
   REACTIVITY_DEFAULTS,
   RAYMARCH_DEFAULTS,
   RENDER_DEFAULTS,
@@ -9,6 +14,7 @@ import {
   createRaymarchVolumeMesh,
   createIdleOverlay,
 } from "./raymarch/material.js";
+import { createRaymarchFieldCache } from "./raymarch/fieldCache.js";
 import { estimateProjectedSphereStats } from "./raymarch/intersection.js";
 import {
   createRaymarchSceneRoot,
@@ -30,20 +36,54 @@ function createModeBuffer(capacity) {
   return modeBuffer;
 }
 
+function resolveLayerCapacity(
+  explicitCapacity,
+  sharedCapacity,
+  defaultCapacity,
+) {
+  const requestedCapacity = Number.isFinite(explicitCapacity)
+    ? explicitCapacity
+    : sharedCapacity;
+  return Math.max(
+    1,
+    Math.min(Math.round(requestedCapacity || defaultCapacity), defaultCapacity),
+  );
+}
+
 export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const uniforms = createRaymarchUniforms(parameters);
-  const backboneModeBuffer = createModeBuffer(audioConfig.capacity);
-  const detailModeBuffer = createModeBuffer(audioConfig.capacity);
-  const backboneColorBuffer = createModeBuffer(audioConfig.capacity);
-  const detailColorBuffer = createModeBuffer(audioConfig.capacity);
+  const requestedCavityGeometry =
+    parameters.cavityGeometry ?? DEFAULT_REQUESTED_CAVITY_GEOMETRY;
+  const effectiveCavityGeometry = resolveEffectiveCavityGeometry(
+    requestedCavityGeometry,
+  );
+  const sharedModeCapacity = audioConfig?.capacity;
+  const backboneCapacity = resolveLayerCapacity(
+    audioConfig?.backboneCapacity,
+    sharedModeCapacity,
+    AUDIO_DEFAULTS.backboneStackSlots,
+  );
+  const detailCapacity = resolveLayerCapacity(
+    audioConfig?.detailCapacity,
+    sharedModeCapacity,
+    AUDIO_DEFAULTS.detailStackSlots,
+  );
+  const backboneModeBuffer = createModeBuffer(backboneCapacity);
+  const detailModeBuffer = createModeBuffer(detailCapacity);
+  const backboneColorBuffer = createModeBuffer(backboneCapacity);
+  const detailColorBuffer = createModeBuffer(detailCapacity);
+  const fieldCache = createRaymarchFieldCache();
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
     backboneModeBuffer,
     detailModeBuffer,
     backboneColorBuffer,
     detailColorBuffer,
-    capacity: audioConfig.capacity,
+    fieldCacheTexture: fieldCache.texture,
+    backboneCapacity,
+    detailCapacity,
     uniforms,
+    cavityGeometry: effectiveCavityGeometry,
   });
   const idleOverlay = createIdleOverlay({
     baryonGeometry,
@@ -72,7 +112,14 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     detailModeBuffer,
     backboneColorBuffer,
     detailColorBuffer,
-    capacity: audioConfig.capacity,
+    fieldCache,
+    sharedModeCapacity,
+    // Compatibility alias for older runtime call sites that still read `capacity`.
+    capacity: sharedModeCapacity,
+    backboneCapacity,
+    detailCapacity,
+    requestedCavityGeometry,
+    effectiveCavityGeometry,
     fftSize: audioConfig.fftSize,
     fieldStateValues: FIELD_STATE_VALUES,
     stabilityStats: estimateProjectedSphereStats({
@@ -134,8 +181,7 @@ export function tickRaymarch(
   time,
   deltaTime,
 ) {
-  void renderer;
-  tickRaymarchRuntime(raymarchState, featureFrame, time, deltaTime);
+  tickRaymarchRuntime(raymarchState, featureFrame, time, deltaTime, renderer);
 }
 
 export function disposeRaymarch(raymarchState) {

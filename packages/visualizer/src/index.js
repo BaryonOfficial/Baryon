@@ -37,6 +37,11 @@ export {
   DEFAULT_VISUALIZATION_METHOD,
   VISUALIZATION_METHODS,
 } from "./visualization/types.js";
+export {
+  RAYMARCH_FIELD_CACHE_OVERRIDE_MODES,
+  normalizeRaymarchFieldCacheOverride,
+  resolveRaymarchFieldCacheOverride,
+} from "./visualization/fieldEvaluation.js";
 export { createVisualizationRuntime } from "./visualization/runtimeFactory.js";
 
 // Three
@@ -47,7 +52,9 @@ export {
   createAudioFeatureState,
   buildAudioFeatureFrame,
   createAudioFeatureAnalyzer,
+  createAudioFeatureEngine,
   createNoopAudioFeatureAnalyzer,
+  createNoopAudioFeatureEngine,
   DEFAULT_FEATURE_ANALYSIS_SETTINGS,
 } from "./utils/audioFeatures.js";
 export { AudioControlsView } from "./react/AudioControlsView.jsx";

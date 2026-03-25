@@ -46,6 +46,8 @@ test("maps acoustic mic runtime phases from calibration to listening to weak sig
     liveInputUiState: LIVE_INPUT_UI_STATES.active,
   });
   assert.equal(calibrating.phase, LIVE_INPUT_PHASES.calibrating);
+  assert.equal(calibrating.liveInputDeviceKind, "live");
+  assert.equal(calibrating.liveInputKind, "live");
   assert.equal(calibrating.calibrationActive, true);
   assert.equal(calibrating.gateOpen, false);
   assert.equal(calibrating.signalState, LIVE_INPUT_SIGNAL_STATES.ok);
@@ -60,7 +62,7 @@ test("maps acoustic mic runtime phases from calibration to listening to weak sig
   });
   assert.equal(listening.phase, LIVE_INPUT_PHASES.listening);
   assert.equal(listening.gateOpen, true);
-  assert.equal(getLiveInputStatusLabel(listening), "Auto: using acoustic mic");
+  assert.equal(getLiveInputStatusLabel(listening), "Live Input: Acoustic Mic");
 
   const weak = buildLiveInputRuntimeStatus({
     status: createStatus({ isLiveInputActive: true }),
@@ -104,12 +106,11 @@ test("treats line feed input as listening without mic calibration states", () =>
   });
 
   assert.equal(runtimeStatus.phase, LIVE_INPUT_PHASES.listening);
+  assert.equal(runtimeStatus.liveInputDeviceKind, "system");
+  assert.equal(runtimeStatus.liveInputKind, "system");
   assert.equal(runtimeStatus.calibrationActive, false);
   assert.equal(runtimeStatus.gateOpen, true);
-  assert.equal(
-    getLiveInputStatusLabel(runtimeStatus),
-    "Auto: detected line feed",
-  );
+  assert.equal(getLiveInputStatusLabel(runtimeStatus), "Live Input: Line Feed");
 });
 
 test("maps invalid calibration to clipped error status", () => {
@@ -176,17 +177,14 @@ test("maps provider start errors and transition locking", () => {
   );
 });
 
-test("keeps auto classification labels available while idle", () => {
+test("hides classification labels while live input is idle", () => {
   const idleAutoMic = buildLiveInputRuntimeStatus({
     status: createStatus({
       isLiveInputActive: false,
       resolvedLiveInputAnalysisClass: "acoustic-mic",
     }),
   });
-  assert.equal(
-    getLiveInputStatusLabel(idleAutoMic),
-    "Auto: using acoustic mic",
-  );
+  assert.equal(getLiveInputStatusLabel(idleAutoMic), "");
 
   const idleAutoLine = buildLiveInputRuntimeStatus({
     status: createStatus({
@@ -194,8 +192,5 @@ test("keeps auto classification labels available while idle", () => {
       resolvedLiveInputAnalysisClass: "line-feed",
     }),
   });
-  assert.equal(
-    getLiveInputStatusLabel(idleAutoLine),
-    "Auto: detected line feed",
-  );
+  assert.equal(getLiveInputStatusLabel(idleAutoLine), "");
 });

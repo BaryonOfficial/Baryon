@@ -18,6 +18,8 @@ examples
 prompts
 plasmic.json
 .cache_ggshield
+tmp/
+.venv-pdf
 
 # Editor directories and files
 .vscode/*
@@ -53,3 +55,8 @@ playwright-report/
 # Local Codex/Claude worktrees and metadata
 .claude/
 .vercel
+.codex/
+
+# Private/internal notes that should never land in the public repo
+documentation/private/
+apps/desktop/private/

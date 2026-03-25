@@ -1,13 +1,29 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { createRaymarchSceneRoot, tickRaymarchRuntime } from "./runtime.js";
+import { createRaymarchFieldCache } from "./fieldCache.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
   STEP_REFERENCE,
 } from "./stepStability.js";
 
-function createRuntimeState() {
+function createRuntimeState({ withFieldCache = false } = {}) {
+  const fieldCache = withFieldCache
+    ? createRaymarchFieldCache({ resolution: 8 })
+    : null;
+  const materialCache = withFieldCache
+    ? {
+        neumann: {
+          analytic: { rectangular: { steps: 64 } },
+          cached: { rectangular: { steps: 64 } },
+        },
+        dirichlet: {
+          analytic: { rectangular: { steps: 64 } },
+          cached: { rectangular: { steps: 64 } },
+        },
+      }
+    : null;
   return {
     backboneModeBuffer: {
       value: {
@@ -36,11 +52,13 @@ function createRuntimeState() {
     uniforms: {
       uTime: { value: 0 },
       uFieldState: { value: 0 },
+      uRadius: { value: 3 },
       uActiveModeCount: { value: 0 },
       uBackboneModeCount: { value: 0 },
       uDetailModeCount: { value: 0 },
       uAverageAmplitude: { value: 0 },
       uThreshold: { value: 0.045 },
+      uBoundaryMode: { value: 1 },
       uTransientEnergy: { value: 0 },
       uSpectralCentroid: { value: 0 },
       uSpectralFlux: { value: 0 },
@@ -71,6 +89,9 @@ function createRuntimeState() {
       uKeyTint: { value: { setHSL: () => {} } },
       uKeyTintStrength: { value: 0 },
       uKeyMode: { value: 0 },
+      uTrebleBroadbandEnergy: { value: 0 },
+      uModeCoherence: { value: 0 },
+      uTotalSlotAmplitude: { value: 0 },
     },
     visualRoot: {
       scale: {
@@ -107,9 +128,19 @@ function createRuntimeState() {
     bloomResponseSignal: 0,
     volumeMesh: {
       visible: false,
-      material: {
-        steps: 64,
-      },
+      material: withFieldCache
+        ? materialCache.neumann.analytic.rectangular
+        : {
+            steps: 64,
+          },
+      userData: withFieldCache
+        ? {
+            raymarchMaterialCache: materialCache,
+            raymarchBoundaryMode: "neumann",
+            raymarchFieldEvaluationMode: "analytic",
+            raymarchCavityGeometry: "rectangular",
+          }
+        : undefined,
     },
     idleOverlay: {
       visible: true,
@@ -126,8 +157,17 @@ function createRuntimeState() {
       avgSilhouetteSuppression: 0,
     },
     auditEnabled: true,
+    fieldCache,
+    requestedCavityGeometry: "rectangular",
+    effectiveCavityGeometry: "rectangular",
     debugSnapshot: null,
   };
+}
+
+async function flushMicrotasks(count = 3) {
+  for (let i = 0; i < count; i += 1) {
+    await Promise.resolve();
+  }
 }
 
 describe("tickRaymarchRuntime", () => {
@@ -170,7 +210,18 @@ describe("tickRaymarchRuntime", () => {
       structureSignal: 0.74,
       energySignal: 0.68,
       changeSignal: 0.61,
+      changeBreakdown: {
+        flux: 0.12,
+        hit: 0.14,
+        slotDelta: 0.1,
+        turnover: 0.08,
+        timbre: 0.07,
+        hint: 0.1,
+      },
       pulseSignal: 0.32,
+      modeCoherence: 0.58,
+      trebleBroadbandEnergy: 0.18,
+      trebleTonalEnergy: 0.24,
       beatDetected: true,
       beatPulseId: 3,
       beatStrength: 0.82,
@@ -197,7 +248,14 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.responseEnvelope).toBeGreaterThan(0);
     expect(runtimeState.scaleSignal).toBeGreaterThan(0);
     expect(runtimeState.bloomResponseSignal).toBeGreaterThan(0);
-    expect(runtimeState.visualRoot.scale.x).toBeGreaterThan(1);
+    expect(runtimeState.visualRoot.scale.x).toBe(1);
+    expect(runtimeState.uniforms.uModeCoherence.value).toBeCloseTo(0.58);
+    expect(runtimeState.uniforms.uTrebleBroadbandEnergy.value).toBeCloseTo(
+      0.18,
+    );
+    expect(runtimeState.uniforms.uTotalSlotAmplitude.value).toBeCloseTo(
+      0.8 + 0.6 + (0.55 + 0.4) * 0.45,
+    );
     const [sub, lowMid, highMid, air] =
       runtimeState.uniforms.uBandEnergies.value.toArray();
     expect(sub).toBeCloseTo(0.4);
@@ -208,11 +266,38 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.idleOverlay.visible).toBe(false);
     expect(runtimeState.debugSnapshot.raymarchDebug.backboneModeCount).toBe(2);
     expect(runtimeState.debugSnapshot.raymarchDebug.detailModeCount).toBe(2);
+    expect(runtimeState.debugSnapshot.raymarchDebug.boundaryMode).toBe(
+      "neumann",
+    );
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.requestedCavityGeometry,
+    ).toBe("rectangular");
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.effectiveCavityGeometry,
+    ).toBe("rectangular");
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.materialCavityGeometry,
+    ).toBe("rectangular");
     expect(runtimeState.debugSnapshot.raymarchDebug.transientEnergy).toBe(0.7);
     expect(runtimeState.debugSnapshot.raymarchDebug.structureSignal).toBe(0.74);
     expect(runtimeState.debugSnapshot.raymarchDebug.energySignal).toBe(0.68);
     expect(runtimeState.debugSnapshot.raymarchDebug.changeSignal).toBe(0.61);
+    expect(runtimeState.debugSnapshot.raymarchDebug.changeBreakdown).toEqual({
+      flux: 0.12,
+      hit: 0.14,
+      slotDelta: 0.1,
+      turnover: 0.08,
+      timbre: 0.07,
+      hint: 0.1,
+    });
     expect(runtimeState.debugSnapshot.raymarchDebug.pulseSignal).toBe(0.32);
+    expect(runtimeState.debugSnapshot.raymarchDebug.modeCoherence).toBe(0.58);
+    expect(runtimeState.debugSnapshot.raymarchDebug.trebleBroadbandEnergy).toBe(
+      0.18,
+    );
+    expect(runtimeState.debugSnapshot.raymarchDebug.trebleTonalEnergy).toBe(
+      0.24,
+    );
     expect(runtimeState.debugSnapshot.raymarchDebug.stepReference).toBe(96);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.stepCompensation,
@@ -273,6 +358,43 @@ describe("tickRaymarchRuntime", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("reports requested spherical geometry while keeping the effective backend rectangular", () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    runtimeState.requestedCavityGeometry = "spherical";
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        averageAmplitude: 22,
+        backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+        detailSlots: new Float32Array([4, 5, 5, 0.55]),
+        backboneColorSlots: new Float32Array(16),
+        detailColorSlots: new Float32Array(16),
+        bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+        transientEnergy: 0.7,
+        spectralCentroid: 0.42,
+        spectralFlux: 0.28,
+        structureSignal: 0.74,
+        energySignal: 0.68,
+        changeSignal: 0.61,
+        pulseSignal: 0.32,
+      },
+      1,
+      1 / 60,
+    );
+
+    expect(runtimeState.volumeMesh.userData.raymarchCavityGeometry).toBe(
+      "rectangular",
+    );
+    expect(runtimeState.debugSnapshot.requestedCavityGeometry).toBe(
+      "spherical",
+    );
+    expect(runtimeState.debugSnapshot.effectiveCavityGeometry).toBe(
+      "rectangular",
+    );
+  });
+
   it("hides the volume and shows the idle overlay in idle state", () => {
     const runtimeState = createRuntimeState();
     tickRaymarchRuntime(
@@ -302,6 +424,238 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
     expect(runtimeState.debugSnapshot.raymarchDebug).toBeUndefined();
     expect(runtimeState.debugSnapshot.modeSlotCount).toBe(0);
+  });
+
+  it("switches to cached field evaluation after a compute-backed rebuild settles", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    const renderer = {
+      computeAsync: vi.fn(async () => undefined),
+    };
+    const originalWindow = globalThis.window;
+    globalThis.window = /** @type {any} */ ({
+      __baryonFieldCacheOverride: "cached",
+    });
+    const denseFrame = {
+      fieldState: "active",
+      averageAmplitude: 180,
+      backboneSlots: new Float32Array([
+        1, 2, 3, 1.0, 1, 3, 4, 0.95, 2, 3, 4, 0.9, 2, 4, 5, 0.85, 3, 4, 5, 0.8,
+        3, 5, 6, 0.75, 4, 5, 6, 0.7, 4, 6, 7, 0.65,
+      ]),
+      detailSlots: new Float32Array([
+        2, 2, 3, 0.8, 2, 3, 3, 0.75, 3, 3, 4, 0.7, 3, 4, 4, 0.65, 4, 4, 5, 0.6,
+        4, 5, 5, 0.55, 5, 5, 6, 0.5, 5, 6, 6, 0.45,
+      ]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.5, 0.45, 0.4, 0.35]),
+      transientEnergy: 0.72,
+      spectralCentroid: 0.56,
+      spectralFlux: 0.41,
+      structureSignal: 0.86,
+      energySignal: 0.82,
+      changeSignal: 0.64,
+      pulseSignal: 0.34,
+      harmonicity: 0.79,
+    };
+
+    try {
+      tickRaymarchRuntime(runtimeState, denseFrame, 1, 1 / 60, renderer);
+
+      expect(runtimeState.fieldCache.active).toBe(true);
+      expect(runtimeState.fieldCache.rebuildPending).toBe(true);
+      expect(runtimeState.fieldCache.ready).toBe(false);
+      expect(runtimeState.fieldCache.rebuildCount).toBe(0);
+      expect(renderer.computeAsync).toHaveBeenCalledTimes(0);
+      expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
+        "analytic",
+      );
+      expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("analytic");
+      expect(runtimeState.debugSnapshot.fieldCacheReady).toBe(false);
+      expect(runtimeState.debugSnapshot.fieldCacheRebuildPending).toBe(true);
+
+      await flushMicrotasks();
+      expect(renderer.computeAsync).toHaveBeenCalledTimes(1);
+
+      tickRaymarchRuntime(runtimeState, denseFrame, 2, 1 / 60, renderer);
+
+      expect(runtimeState.fieldCache.rebuildPending).toBe(false);
+      expect(runtimeState.fieldCache.ready).toBe(true);
+      expect(runtimeState.fieldCache.rebuildCount).toBe(1);
+      expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
+        "cached",
+      );
+      expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("cached");
+      expect(runtimeState.debugSnapshot.fieldCacheActive).toBe(true);
+      expect(runtimeState.debugSnapshot.fieldCacheBackend).toBe("compute");
+      expect(runtimeState.debugSnapshot.fieldCacheReady).toBe(true);
+      expect(runtimeState.debugSnapshot.fieldCacheRebuildPending).toBe(false);
+      expect(runtimeState.debugSnapshot.fieldCacheRebuildCount).toBe(1);
+    } finally {
+      globalThis.window = originalWindow;
+    }
+  });
+
+  it("defaults to cached evaluation when no override has been written yet", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    const renderer = {
+      computeAsync: vi.fn(async () => undefined),
+    };
+    const originalWindow = globalThis.window;
+    globalThis.window = /** @type {any} */ ({});
+    const denseFrame = {
+      fieldState: "active",
+      averageAmplitude: 180,
+      backboneSlots: new Float32Array([
+        1, 2, 3, 1.0, 1, 3, 4, 0.95, 2, 3, 4, 0.9, 2, 4, 5, 0.85, 3, 4, 5, 0.8,
+        3, 5, 6, 0.75, 4, 5, 6, 0.7, 4, 6, 7, 0.65,
+      ]),
+      detailSlots: new Float32Array([
+        2, 2, 3, 0.8, 2, 3, 3, 0.75, 3, 3, 4, 0.7, 3, 4, 4, 0.65, 4, 4, 5, 0.6,
+        4, 5, 5, 0.55, 5, 5, 6, 0.5, 5, 6, 6, 0.45,
+      ]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.5, 0.45, 0.4, 0.35]),
+      transientEnergy: 0.72,
+      spectralCentroid: 0.56,
+      spectralFlux: 0.41,
+      structureSignal: 0.86,
+      energySignal: 0.82,
+      changeSignal: 0.64,
+      pulseSignal: 0.34,
+      harmonicity: 0.79,
+    };
+
+    try {
+      tickRaymarchRuntime(runtimeState, denseFrame, 1, 1 / 60, renderer);
+
+      expect(runtimeState.fieldCache.active).toBe(true);
+      expect(runtimeState.fieldCache.mode).toBe("cached");
+      expect(runtimeState.fieldCache.rebuildPending).toBe(true);
+
+      await flushMicrotasks();
+      tickRaymarchRuntime(runtimeState, denseFrame, 2, 1 / 60, renderer);
+
+      expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
+        "cached",
+      );
+      expect(runtimeState.debugSnapshot.fieldCacheOverride).toBe("cached");
+    } finally {
+      globalThis.window = originalWindow;
+    }
+  });
+
+  it("falls back invalid override values to cached evaluation", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    const renderer = {
+      computeAsync: vi.fn(async () => undefined),
+    };
+    const originalWindow = globalThis.window;
+    globalThis.window = /** @type {any} */ ({
+      __baryonFieldCacheOverride: "weird",
+    });
+    const denseFrame = {
+      fieldState: "active",
+      averageAmplitude: 180,
+      backboneSlots: new Float32Array([
+        1, 2, 3, 1.0, 1, 3, 4, 0.95, 2, 3, 4, 0.9, 2, 4, 5, 0.85, 3, 4, 5, 0.8,
+        3, 5, 6, 0.75, 4, 5, 6, 0.7, 4, 6, 7, 0.65,
+      ]),
+      detailSlots: new Float32Array([
+        2, 2, 3, 0.8, 2, 3, 3, 0.75, 3, 3, 4, 0.7, 3, 4, 4, 0.65, 4, 4, 5, 0.6,
+        4, 5, 5, 0.55, 5, 5, 6, 0.5, 5, 6, 6, 0.45,
+      ]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.5, 0.45, 0.4, 0.35]),
+      transientEnergy: 0.72,
+      spectralCentroid: 0.56,
+      spectralFlux: 0.41,
+      structureSignal: 0.86,
+      energySignal: 0.82,
+      changeSignal: 0.64,
+      pulseSignal: 0.34,
+      harmonicity: 0.79,
+    };
+
+    try {
+      tickRaymarchRuntime(runtimeState, denseFrame, 1, 1 / 60, renderer);
+      await flushMicrotasks();
+      tickRaymarchRuntime(runtimeState, denseFrame, 2, 1 / 60, renderer);
+
+      expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
+        "cached",
+      );
+      expect(runtimeState.debugSnapshot.fieldCacheOverride).toBe("cached");
+    } finally {
+      globalThis.window = originalWindow;
+    }
+  });
+
+  it("keeps forced cached evaluation active while a refreshed cache rebuild is pending", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    const renderer = {
+      computeAsync: vi.fn(async () => undefined),
+    };
+    const originalWindow = globalThis.window;
+    globalThis.window = /** @type {any} */ ({
+      __baryonFieldCacheOverride: "cached",
+    });
+    const denseFrame = {
+      fieldState: "active",
+      averageAmplitude: 180,
+      backboneSlots: new Float32Array([
+        1, 2, 3, 1.0, 1, 3, 4, 0.95, 2, 3, 4, 0.9, 2, 4, 5, 0.85, 3, 4, 5, 0.8,
+        3, 5, 6, 0.75, 4, 5, 6, 0.7, 4, 6, 7, 0.65,
+      ]),
+      detailSlots: new Float32Array([
+        2, 2, 3, 0.8, 2, 3, 3, 0.75, 3, 3, 4, 0.7, 3, 4, 4, 0.65, 4, 4, 5, 0.6,
+        4, 5, 5, 0.55, 5, 5, 6, 0.5, 5, 6, 6, 0.45,
+      ]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.5, 0.45, 0.4, 0.35]),
+      transientEnergy: 0.72,
+      spectralCentroid: 0.56,
+      spectralFlux: 0.41,
+      structureSignal: 0.86,
+      energySignal: 0.82,
+      changeSignal: 0.64,
+      pulseSignal: 0.34,
+      harmonicity: 0.79,
+    };
+    const changedFrame = {
+      ...denseFrame,
+      backboneSlots: new Float32Array([
+        1, 2, 3, 1.0, 1, 3, 4, 0.95, 2, 3, 4, 0.9, 2, 4, 5, 0.85, 3, 4, 5, 0.8,
+        3, 5, 6, 0.75, 4, 5, 6, 0.7, 5, 6, 7, 0.92,
+      ]),
+    };
+
+    try {
+      tickRaymarchRuntime(runtimeState, denseFrame, 1, 1 / 60, renderer);
+      await flushMicrotasks();
+      tickRaymarchRuntime(runtimeState, denseFrame, 2, 1 / 60, renderer);
+
+      expect(runtimeState.fieldCache.ready).toBe(true);
+      expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
+        "cached",
+      );
+
+      tickRaymarchRuntime(runtimeState, changedFrame, 3, 1 / 60, renderer);
+
+      expect(runtimeState.fieldCache.rebuildPending).toBe(true);
+      expect(runtimeState.fieldCache.ready).toBe(true);
+      expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
+        "cached",
+      );
+      expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("cached");
+      expect(runtimeState.debugSnapshot.fieldCacheReady).toBe(true);
+      expect(runtimeState.debugSnapshot.fieldCacheRebuildPending).toBe(true);
+    } finally {
+      globalThis.window = originalWindow;
+    }
   });
 
   it("skips color buffer uploads when chromesthesia mixing is disabled", () => {
@@ -334,10 +688,10 @@ describe("tickRaymarchRuntime", () => {
 
     expect(
       Array.from(runtimeState.backboneColorBuffer.value.array.slice(0, 4)),
-    ).toEqual([9, 9, 9, 9]);
+    ).toEqual([0, 0, 0, 0]);
     expect(
       Array.from(runtimeState.detailColorBuffer.value.array.slice(0, 4)),
-    ).toEqual([7, 7, 7, 7]);
+    ).toEqual([0, 0, 0, 0]);
     expect(runtimeState.backboneColorBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.detailColorBuffer.value.needsUpdate).toBe(false);
   });
@@ -492,7 +846,6 @@ describe("tickRaymarchRuntime", () => {
 
     tickRaymarchRuntime(runtimeState, featureFrame, 2, 1 / 60);
     const firstEnvelope = runtimeState.responseEnvelope;
-    const firstScale = runtimeState.visualRoot.scale.x;
 
     tickRaymarchRuntime(
       runtimeState,
@@ -511,8 +864,7 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.responseEnvelope).toBeGreaterThanOrEqual(
       firstEnvelope * 0.8,
     );
-    expect(runtimeState.visualRoot.scale.x).toBeGreaterThan(1);
-    expect(runtimeState.visualRoot.scale.x).toBeLessThan(firstScale);
+    expect(runtimeState.visualRoot.scale.x).toBe(1);
   });
 
   it("disables automatic response when reactivity is zero", () => {
@@ -581,13 +933,89 @@ describe("tickRaymarchRuntime", () => {
     );
 
     expect(runtimeState.responseEnvelope).toBeLessThan(0.8);
-    expect(runtimeState.visualRoot.scale.x).toBeLessThan(1.05);
+    expect(runtimeState.visualRoot.scale.x).toBe(1);
     expect(runtimeState.uniforms.uDensityGain.value).toBeGreaterThanOrEqual(
       2.8,
     );
     expect(
       runtimeState.debugSnapshot.raymarchDebug.responseEnvelope,
     ).toBeLessThan(0.8);
+  });
+
+  it("releases responseEnvelope faster for weak decay tails than active tails", () => {
+    const decayRuntime = createRuntimeState();
+    const activeRuntime = createRuntimeState();
+    decayRuntime.responseEnvelope = 0.72;
+    activeRuntime.responseEnvelope = 0.72;
+
+    const weakTailFrame = {
+      averageAmplitude: 8,
+      backboneSlots: new Float32Array([3, 4, 6, 0.18]),
+      detailSlots: new Float32Array(32),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.08, 0.05, 0.03, 0.01]),
+      transientEnergy: 0,
+      spectralCentroid: 0.16,
+      spectralFlux: 0.02,
+      structureSignal: 0.2,
+      energySignal: 0.07,
+      changeSignal: 0.03,
+      pulseSignal: 0,
+      rhythmicDensity: 0,
+      debug: {},
+    };
+
+    tickRaymarchRuntime(
+      decayRuntime,
+      { ...weakTailFrame, fieldState: "decay" },
+      2,
+      1 / 60,
+    );
+    tickRaymarchRuntime(
+      activeRuntime,
+      { ...weakTailFrame, fieldState: "active" },
+      2,
+      1 / 60,
+    );
+
+    expect(decayRuntime.responseEnvelope).toBeLessThan(
+      activeRuntime.responseEnvelope,
+    );
+  });
+
+  it("keeps the outer radius fixed while internal response stays active", () => {
+    const runtimeState = createRuntimeState();
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        averageAmplitude: 64,
+        backboneSlots: new Float32Array([3, 4, 6, 0.7]),
+        detailSlots: new Float32Array([4, 5, 5, 0.35]),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array([0.5, 0.3, 0.2, 0.1]),
+        transientEnergy: 0.52,
+        spectralCentroid: 0.36,
+        spectralFlux: 0.31,
+        structureSignal: 0.66,
+        energySignal: 0.62,
+        changeSignal: 0.48,
+        pulseSignal: 0.22,
+        modeCoherence: 0.61,
+        trebleBroadbandEnergy: 0.14,
+        debug: {},
+      },
+      1,
+      1 / 60,
+    );
+
+    expect(runtimeState.scaleSignal).toBeGreaterThan(0);
+    expect(runtimeState.bloomResponseSignal).toBeGreaterThan(0);
+    expect(runtimeState.visualRoot.scale.x).toBe(1);
+    expect(runtimeState.debugSnapshot.raymarchDebug.visualScale).toBe(1);
   });
 
   it("uploads rhythmicDensity to uRhythmicDensity uniform", () => {

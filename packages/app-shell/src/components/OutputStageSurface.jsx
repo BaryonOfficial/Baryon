@@ -3,6 +3,10 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { BaryonScene } from "./BaryonScene.jsx";
 import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
 import {
+  getCameraConfigForPreset,
+  resolveDefaultCameraViewPreset,
+} from "./cameraViewPresets.js";
+import {
   createBaryonRenderer,
   WEBGPU_RENDERER_INIT_ERROR,
 } from "./rendererDiagnostics.js";
@@ -46,6 +50,11 @@ export function OutputStageSurface({
   onStageRender = null,
 }) {
   const [rendererError, setRendererError] = useState(null);
+  const defaultCameraViewPreset = resolveDefaultCameraViewPreset({
+    liveInputUiState: "idle",
+    fieldState: "idle",
+  });
+  const cameraConfig = getCameraConfigForPreset(defaultCameraViewPreset);
   const resolvedBackgroundColor =
     backgroundColorProp ??
     (typeof controlsRef.current?.backgroundColor === "string"
@@ -100,7 +109,13 @@ export function OutputStageSurface({
               background: "transparent",
             }}
             dpr={1}
-            camera={{ position: [0, 0, 9], fov: 65, near: 0.1, far: 100 }}
+            camera={{
+              position: cameraConfig.position,
+              up: cameraConfig.up,
+              fov: 65,
+              near: 0.1,
+              far: 100,
+            }}
             // @ts-ignore — WebGPURenderer is runtime-compatible; R3F types predate WebGPU
             gl={(glDefaults) =>
               createBaryonRenderer(glDefaults, false, {
@@ -124,6 +139,7 @@ export function OutputStageSurface({
                 externalFrameRef={externalFrameRef}
                 basePixelRatio={1}
                 onStageRender={onStageRender}
+                cameraViewPreset={defaultCameraViewPreset}
               />
             </Suspense>
           </Canvas>

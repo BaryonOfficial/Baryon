@@ -11,6 +11,7 @@ import {
   resetBaryonTestReady,
 } from "../../devtools/testReady.js";
 import {
+  ANALYSIS_MODE_BASE_KEY,
   PRESETS_KEY,
   createControlsPersistScheduler,
   createInitialControlState,
@@ -23,6 +24,7 @@ import {
 } from "./baryonControlsState.js";
 
 const EXTERNAL_CONTROL_COMMAND_EVENT = "__baryon-controls-command";
+const NON_DUAL_ANALYSIS_MODES = new Set(["legacy-peak", "modal-excitation"]);
 
 function getBrowserStorage() {
   if (typeof window === "undefined") {
@@ -102,6 +104,12 @@ export function useBaryonControls() {
       }
 
       controlsRef.current[key] = value;
+      if (
+        key === "structuralImplementation" &&
+        NON_DUAL_ANALYSIS_MODES.has(value)
+      ) {
+        controlsRef.current[ANALYSIS_MODE_BASE_KEY] = value;
+      }
       syncControlState(controlsRef.current, options);
     },
     [syncControlState],
@@ -110,6 +118,8 @@ export function useBaryonControls() {
   const resetControls = useCallback(() => {
     const defaults = createControlState();
     Object.assign(controlsRef.current, defaults);
+    controlsRef.current[ANALYSIS_MODE_BASE_KEY] =
+      defaults.structuralImplementation;
     syncControlState(controlsRef.current, { persistMode: "immediate" });
   }, [syncControlState]);
 
@@ -141,6 +151,10 @@ export function useBaryonControls() {
         controlsRef.current,
         deserializeControls(preset.controls, CONTROL_DEFINITIONS),
       );
+      controlsRef.current[ANALYSIS_MODE_BASE_KEY] =
+        controlsRef.current.structuralImplementation === "legacy-peak"
+          ? "legacy-peak"
+          : "modal-excitation";
       setSelectedPresetName(name);
       syncControlState(controlsRef.current, {
         persistMode: "immediate",
