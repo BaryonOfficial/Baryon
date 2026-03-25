@@ -73,9 +73,12 @@ export function AppFrame({ children }) {
 
 function App() {
   return (
-    <AudioProvider>
+    <AudioProvider platform="web">
       <AppFrame>
-        <ThreeScene controlsOverlay={<ListenerControls />} />
+        <ThreeScene
+          controlsOverlay={<ListenerControls showSourceLiveButton={false} />}
+          showLiveInputActionInPanel
+        />
       </AppFrame>
     </AudioProvider>
   );

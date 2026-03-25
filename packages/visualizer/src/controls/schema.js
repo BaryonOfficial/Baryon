@@ -7,7 +7,11 @@ import {
   SIMULATION_DEFAULTS,
 } from "../defaults.js";
 import {} from "../utils/audioFeatures.js";
-import { RENDER_QUALITY_PRESETS } from "../render/outputPipeline.js";
+import {
+  MAX_PERFORMANCE_TARGET_FPS,
+  MIN_PERFORMANCE_TARGET_FPS,
+  PERFORMANCE_PROFILES,
+} from "../render/outputPipeline.js";
 import { VISUALIZATION_METHODS } from "../visualization/types.js";
 
 export const CONTROL_TARGET_TYPES = Object.freeze({
@@ -45,8 +49,13 @@ function methodsFor(scope) {
 
 const CONTROL_GROUPS = Object.freeze({
   input: Object.freeze({
-    title: "Live Input",
+    title: "Mic Settings",
     order: 10,
+    expanded: false,
+  }),
+  mode: Object.freeze({
+    title: "Mode",
+    order: 15,
     expanded: false,
   }),
   shape: Object.freeze({
@@ -118,6 +127,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.audio,
       runtimePath: "audioSession.liveInputAnalysisSettings.analysisClass",
       status: CONTROL_STATUSES.live,
+      sidebarHidden: true,
     },
     CONTROL_GROUPS.input,
   ),
@@ -133,6 +143,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.audio,
       runtimePath: "audioSession.liveInputSettings.echoCancellation",
       status: CONTROL_STATUSES.live,
+      sidebarHidden: true,
     },
     CONTROL_GROUPS.input,
   ),
@@ -148,6 +159,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.audio,
       runtimePath: "audioSession.liveInputSettings.noiseSuppression",
       status: CONTROL_STATUSES.live,
+      sidebarHidden: true,
     },
     CONTROL_GROUPS.input,
   ),
@@ -163,6 +175,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       handler: CONTROL_HANDLERS.audio,
       runtimePath: "audioSession.liveInputSettings.autoGainControl",
       status: CONTROL_STATUSES.live,
+      sidebarHidden: true,
     },
     CONTROL_GROUPS.input,
   ),
@@ -215,6 +228,27 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       status: CONTROL_STATUSES.live,
     },
     CONTROL_GROUPS.shape,
+  ),
+  withControlGroup(
+    {
+      key: "boundaryMode",
+      label: "Boundary",
+      title:
+        "Choose whether the modal family behaves like a reflective boundary (Neumann) or a fixed node at the boundary (Dirichlet)",
+      defaultValue: SIMULATION_DEFAULTS.boundaryMode,
+      methods: methodsFor("shared"),
+      binding: {
+        options: {
+          Neumann: "neumann",
+          Dirichlet: "dirichlet",
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.uniform,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.uniforms.uBoundaryMode.value",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.mode,
   ),
   withControlGroup(
     {
@@ -347,7 +381,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       runtimePath: "runtime.chromesthesia.colorMode",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.color,
+    CONTROL_GROUPS.mode,
   ),
   withControlGroup(
     {
@@ -463,7 +497,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       runtimePath: "runtime.sceneMotion.rotationMode",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.motion,
+    CONTROL_GROUPS.mode,
   ),
   withControlGroup(
     {
@@ -518,10 +552,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "structurePersistence",
       label: "Structure Persistence",
       title:
-        "How long the current pattern holds before settling — raise for slower, more sustained transitions",
+        "How long the current pattern holds before settling — set to 0 to disable persistence, raise for slower transitions",
       defaultValue: REACTIVITY_DEFAULTS.structurePersistence,
       methods: methodsFor("shared"),
-      binding: { min: 0.2, max: 3, step: 0.01 },
+      binding: { min: 0, max: 3, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.reactivityTuning.structurePersistence",
@@ -609,16 +643,16 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "renderQualityPreset",
-      label: "Render Quality",
+      label: "Performance Profile",
       title:
-        "Balances frame rate against visual fidelity. Auto keeps full quality unless the canvas is large enough that a lighter profile is safer.",
+        "Auto targets a stable default frame rate, Custom adapts toward your chosen FPS, and None disables preset behavior so advanced display controls apply directly.",
       defaultValue: RENDER_DEFAULTS.renderQualityPreset,
       methods: ALL_METHODS,
       binding: {
         options: {
-          Auto: RENDER_QUALITY_PRESETS.auto,
-          Performance: RENDER_QUALITY_PRESETS.performance,
-          Quality: RENDER_QUALITY_PRESETS.quality,
+          Auto: PERFORMANCE_PROFILES.auto,
+          Custom: PERFORMANCE_PROFILES.custom,
+          None: PERFORMANCE_PROFILES.none,
         },
       },
       targetType: CONTROL_TARGET_TYPES.object,
@@ -626,7 +660,27 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       runtimePath: "ui.renderQualityPreset",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.display,
+    CONTROL_GROUPS.mode,
+  ),
+  withControlGroup(
+    {
+      key: "customPerformanceTargetFps",
+      label: "Custom Target FPS",
+      title:
+        "Used only when the Performance Profile is Custom to set the adaptive frame-rate target.",
+      defaultValue: RENDER_DEFAULTS.customPerformanceTargetFps,
+      methods: ALL_METHODS,
+      binding: {
+        min: MIN_PERFORMANCE_TARGET_FPS,
+        max: MAX_PERFORMANCE_TARGET_FPS,
+        step: 1,
+      },
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.shared,
+      runtimePath: "ui.customPerformanceTargetFps",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.mode,
   ),
   withControlGroup(
     {
@@ -647,7 +701,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       runtimePath: "program.outputMode",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.display,
+    CONTROL_GROUPS.mode,
   ),
   withControlGroup(
     {
@@ -696,7 +750,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       runtimePath: "runtime.method",
       status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.display,
+    CONTROL_GROUPS.mode,
   ),
 
   // ── Diagnostics (debug-only) ───────────────────────────────────────────────
@@ -810,6 +864,48 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
+      key: "fieldCacheOverride",
+      label: "3D Field Eval",
+      title:
+        "Choose how the 3D raymarch field is evaluated for diagnostics — Analytic forces the exact shader path and Cached forces the compute-backed field-cache path",
+      defaultValue: AUDIT_DEFAULTS.fieldCacheOverride,
+      methods: methodsFor("raymarchOnly"),
+      binding: {
+        options: {
+          Analytic: "analytic",
+          Cached: "cached",
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.audit,
+      handler: CONTROL_HANDLERS.audit,
+      runtimePath: "controls.fieldCacheOverride",
+      status: CONTROL_STATUSES.debugOnly,
+    },
+    CONTROL_GROUPS.diagnostics,
+  ),
+  withControlGroup(
+    {
+      key: "cavityGeometry",
+      label: "Cavity Geometry",
+      title:
+        "Diagnostic-only requested cavity geometry. Spherical is wired through the pipeline, but the effective backend stays rectangular until spherical basis support lands.",
+      defaultValue: SIMULATION_DEFAULTS.cavityGeometry,
+      methods: methodsFor("raymarchOnly"),
+      binding: {
+        options: {
+          Rectangular: "rectangular",
+          Spherical: "spherical",
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.requestedCavityGeometry",
+      status: CONTROL_STATUSES.debugOnly,
+    },
+    CONTROL_GROUPS.diagnostics,
+  ),
+  withControlGroup(
+    {
       key: "injectTestTone",
       label: "Inject Tone",
       title:
@@ -871,6 +967,28 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     },
     CONTROL_GROUPS.diagnostics,
   ),
+  withControlGroup(
+    {
+      key: "structuralImplementation",
+      label: "Analysis Mode",
+      title:
+        "Switch between structural analysis modes — Legacy Peak uses the original peak-driven stack, Modal Excitation uses the resonator-bank path, and Dual runs both for comparison diagnostics",
+      defaultValue: AUDIT_DEFAULTS.structuralImplementation,
+      methods: ALL_METHODS,
+      binding: {
+        options: {
+          "Legacy Peak": "legacy-peak",
+          "Modal Excitation": "modal-excitation",
+          "Dual (Compare)": "dual",
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.audit,
+      handler: CONTROL_HANDLERS.audit,
+      runtimePath: "controls.structuralImplementation",
+      status: CONTROL_STATUSES.debugOnly,
+    },
+    CONTROL_GROUPS.diagnostics,
+  ),
 ]);
 
 export function createControlState() {
@@ -888,6 +1006,7 @@ export function getControlsForMethod(method = VISUALIZATION_METHODS.raymarch) {
 
 export function getControlFolders(method = VISUALIZATION_METHODS.raymarch) {
   return getControlsForMethod(method)
+    .filter((definition) => definition.sidebarHidden !== true)
     .slice()
     .sort((left, right) => {
       const leftOrder = left.groupOrder ?? Number.MAX_SAFE_INTEGER;
@@ -913,6 +1032,8 @@ export function getControlsForFolder(
   method = VISUALIZATION_METHODS.raymarch,
 ) {
   return getControlsForMethod(method).filter(
-    (definition) => (definition.group ?? definition.folder) === folder,
+    (definition) =>
+      definition.sidebarHidden !== true &&
+      (definition.group ?? definition.folder) === folder,
   );
 }

@@ -6,9 +6,14 @@ import {
 } from "../visualization/types.js";
 import {
   AUDIO_DEFAULTS,
+  AUDIT_DEFAULTS,
   REACTIVITY_DEFAULTS,
   RENDER_DEFAULTS,
 } from "../defaults.js";
+import {
+  normalizeCavityGeometry,
+  resolveEffectiveCavityGeometry,
+} from "../core/cavityGeometry.js";
 import {
   normalizeOutputMode,
   normalizeRenderQualityPreset,
@@ -16,8 +21,18 @@ import {
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
+  normalizeStepBudget,
   STEP_REFERENCE,
 } from "../core/raymarch/stepStability.js";
+import {
+  getBoundaryModeValue,
+  normalizeBoundaryMode,
+} from "../core/modeFamily.js";
+import {
+  setRaymarchCavityGeometry,
+  setRaymarchBoundaryMode,
+  syncRaymarchMaterialSteps,
+} from "../core/raymarch/material.js";
 import {
   buildSceneSnapshot,
   createDisabledSceneSnapshot,
@@ -87,6 +102,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "backgroundColor",
     "performanceHudEnabled",
     "renderQualityPreset",
+    "customPerformanceTargetFps",
     "visualizationMethod",
   ]),
   [CONTROL_HANDLERS.output]: Object.freeze([
@@ -101,6 +117,8 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "zeroPointPrecision",
     "structureMin",
     "structureMax",
+    "boundaryMode",
+    "cavityGeometry",
     "raymarchSteps",
     "densityGain",
     "absorption",
@@ -133,10 +151,12 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "freezeModeSlots",
     "forceWebGLFallbackTest",
     "lowLoadPlaybackDiagnostics",
+    "fieldCacheOverride",
     "injectTestTone",
     "testToneHz",
     "testToneAmplitude",
     "logEveryFrames",
+    "structuralImplementation",
   ]),
 });
 
@@ -175,6 +195,9 @@ export function applySharedControls(gl, controls) {
     renderQualityPreset: normalizeRenderQualityPreset(
       controls.renderQualityPreset,
     ),
+    customPerformanceTargetFps:
+      controls.customPerformanceTargetFps ??
+      RENDER_DEFAULTS.customPerformanceTargetFps,
     clearAlpha: 0,
     visualizationMethod: controls.visualizationMethod,
   };
@@ -216,13 +239,22 @@ export function applyOutputControls(pipelineState, controls) {
 function applyCommonVisualizationControls(runtimeState, controls) {
   const uniforms = runtimeState.uniforms;
   const idleLogoAlpha = deriveIdleLogoAlpha(controls.idleLogoIntensity);
-  const stepBudget = Math.round(controls.raymarchSteps ?? STEP_REFERENCE);
+  const stepBudget = normalizeStepBudget(
+    controls.raymarchSteps ?? STEP_REFERENCE,
+  );
   const colorMode =
     controls.colorMode === "chromesthesia" ? "chromesthesia" : "static";
   const chromesthesiaMix =
     colorMode === "chromesthesia"
       ? clamp01(controls.chromesthesiaMix ?? RENDER_DEFAULTS.chromesthesiaMix)
       : 0;
+  const boundaryMode = normalizeBoundaryMode(controls.boundaryMode);
+  const requestedCavityGeometry = normalizeCavityGeometry(
+    controls.cavityGeometry,
+  );
+  const effectiveCavityGeometry = resolveEffectiveCavityGeometry(
+    requestedCavityGeometry,
+  );
 
   uniforms.uColor.value.set(controls.volumeColor);
   uniforms.uSurfaceColor.value.set(controls.surfaceColor);
@@ -230,6 +262,16 @@ function applyCommonVisualizationControls(runtimeState, controls) {
   uniforms.uThreshold.value = controls.zeroPointPrecision;
   uniforms.uStructureMin.value = controls.structureMin;
   uniforms.uStructureMax.value = controls.structureMax;
+  if (uniforms.uBoundaryMode) {
+    uniforms.uBoundaryMode.value = getBoundaryModeValue(boundaryMode);
+  }
+  if (runtimeState?.method !== VISUALIZATION_METHODS.cymatics2d) {
+    setRaymarchBoundaryMode(runtimeState?.volumeMesh, boundaryMode);
+    setRaymarchCavityGeometry(
+      runtimeState?.volumeMesh,
+      effectiveCavityGeometry,
+    );
+  }
   uniforms.uIdleLogoIntensity.value = controls.idleLogoIntensity;
   uniforms.uIdleLogoAlpha.value = idleLogoAlpha;
   uniforms.uIdleLogoSize.value = controls.idleLogoSize;
@@ -246,12 +288,16 @@ function applyCommonVisualizationControls(runtimeState, controls) {
     structurePersistence:
       controls.structurePersistence ?? REACTIVITY_DEFAULTS.structurePersistence,
   };
+  runtimeState.requestedRaymarchSteps = stepBudget;
+  runtimeState.requestedCavityGeometry = requestedCavityGeometry;
+  runtimeState.effectiveCavityGeometry = effectiveCavityGeometry;
   runtimeState.bloomTuning = {
     ...(runtimeState.bloomTuning ?? {}),
     stepReference: STEP_REFERENCE,
     stepCompensation: deriveStepCompensation(stepBudget),
     lowStepBloomGuard: deriveLowStepBloomGuard(stepBudget),
   };
+  applyEffectiveRaymarchStepBudget(runtimeState, controls, stepBudget);
   runtimeState.chromesthesia = {
     ...(runtimeState.chromesthesia ?? {}),
     colorMode,
@@ -274,7 +320,41 @@ function applyCommonVisualizationControls(runtimeState, controls) {
     stepBudget,
     colorMode,
     chromesthesiaMix,
+    boundaryMode,
+    requestedCavityGeometry,
+    effectiveCavityGeometry,
   };
+}
+
+export function applyEffectiveRaymarchStepBudget(
+  runtimeState,
+  controls,
+  nextStepBudget,
+) {
+  if (!runtimeState) {
+    return normalizeStepBudget(nextStepBudget ?? STEP_REFERENCE);
+  }
+
+  const requestedStepBudget = normalizeStepBudget(
+    controls?.raymarchSteps ??
+      runtimeState.requestedRaymarchSteps ??
+      nextStepBudget ??
+      STEP_REFERENCE,
+  );
+  const effectiveStepBudget = normalizeStepBudget(
+    nextStepBudget ?? requestedStepBudget,
+  );
+
+  runtimeState.requestedRaymarchSteps = requestedStepBudget;
+  runtimeState.effectiveRaymarchSteps = effectiveStepBudget;
+  if (runtimeState.uniforms?.uRaymarchSteps) {
+    runtimeState.uniforms.uRaymarchSteps.value = effectiveStepBudget;
+  }
+  if (runtimeState.volumeMesh?.material) {
+    syncRaymarchMaterialSteps(runtimeState.volumeMesh, effectiveStepBudget);
+  }
+
+  return effectiveStepBudget;
 }
 
 function buildVisualizationControlSnapshot({
@@ -284,6 +364,9 @@ function buildVisualizationControlSnapshot({
   idleLogoAlpha,
   colorMode,
   chromesthesiaMix,
+  boundaryMode,
+  requestedCavityGeometry,
+  effectiveCavityGeometry,
   extraUniforms = {},
 }) {
   return {
@@ -292,6 +375,9 @@ function buildVisualizationControlSnapshot({
       surfaceColor: controls.surfaceColor,
       colorMode,
       chromesthesiaMix,
+      boundaryMode,
+      requestedCavityGeometry,
+      effectiveCavityGeometry,
       threshold: uniforms.uThreshold.value,
       structureMin: uniforms.uStructureMin.value,
       structureMax: uniforms.uStructureMax.value,
@@ -314,8 +400,15 @@ function buildVisualizationControlSnapshot({
 }
 
 export function applyRaymarchControls(runtimeState, controls) {
-  const { uniforms, idleLogoAlpha, stepBudget, colorMode, chromesthesiaMix } =
-    applyCommonVisualizationControls(runtimeState, controls);
+  const {
+    uniforms,
+    idleLogoAlpha,
+    colorMode,
+    chromesthesiaMix,
+    boundaryMode,
+    requestedCavityGeometry,
+    effectiveCavityGeometry,
+  } = applyCommonVisualizationControls(runtimeState, controls);
 
   uniforms.uAbsorption.value = controls.absorption;
   uniforms.uRimBloomBias.value = controls.rimBloomBias;
@@ -323,11 +416,6 @@ export function applyRaymarchControls(runtimeState, controls) {
   uniforms.uHolographicIntensity.value = controls.holographicIntensity;
   uniforms.uHolographicShift.value = controls.holographicShift;
   uniforms.uHolographicFresnelPower.value = controls.holographicFresnelPower;
-  uniforms.uRaymarchSteps.value = stepBudget;
-
-  if (runtimeState.volumeMesh?.material) {
-    runtimeState.volumeMesh.material.steps = stepBudget;
-  }
 
   return buildVisualizationControlSnapshot({
     controls,
@@ -336,6 +424,9 @@ export function applyRaymarchControls(runtimeState, controls) {
     idleLogoAlpha,
     colorMode,
     chromesthesiaMix,
+    boundaryMode,
+    requestedCavityGeometry,
+    effectiveCavityGeometry,
     extraUniforms: {
       absorption: uniforms.uAbsorption.value,
       rimBloomBias: uniforms.uRimBloomBias.value,
@@ -349,8 +440,15 @@ export function applyRaymarchControls(runtimeState, controls) {
 }
 
 export function applyCymatics2dControls(runtimeState, controls) {
-  const { uniforms, idleLogoAlpha, colorMode, chromesthesiaMix } =
-    applyCommonVisualizationControls(runtimeState, controls);
+  const {
+    uniforms,
+    idleLogoAlpha,
+    colorMode,
+    chromesthesiaMix,
+    boundaryMode,
+    requestedCavityGeometry,
+    effectiveCavityGeometry,
+  } = applyCommonVisualizationControls(runtimeState, controls);
 
   return buildVisualizationControlSnapshot({
     controls,
@@ -359,6 +457,9 @@ export function applyCymatics2dControls(runtimeState, controls) {
     idleLogoAlpha,
     colorMode,
     chromesthesiaMix,
+    boundaryMode,
+    requestedCavityGeometry,
+    effectiveCavityGeometry,
     extraUniforms: {
       slicePosition: uniforms.uSlicePosition?.value ?? 0,
     },
@@ -387,8 +488,9 @@ export const applySimulationControls = (gl, runtimeState, controls) => ({
 });
 
 export function applyBloomControls(pipelineState, controls) {
-  const stepBudget = Math.round(
+  const stepBudget = normalizeStepBudget(
     controls.raymarchSteps ??
+      pipelineState.runtimeState?.requestedRaymarchSteps ??
       pipelineState.runtimeState?.volumeMesh?.material?.steps ??
       STEP_REFERENCE,
   );
@@ -455,8 +557,10 @@ export function applyBloomControls(pipelineState, controls) {
 }
 
 export function applyAuditControls(featureState, controls) {
+  const fieldCacheOverride =
+    controls.fieldCacheOverride ?? AUDIT_DEFAULTS.fieldCacheOverride;
   if (!featureState?.audit?.settings) {
-    return null;
+    return { fieldCacheOverride };
   }
 
   Object.assign(featureState.audit.settings, {
@@ -470,7 +574,10 @@ export function applyAuditControls(featureState, controls) {
     logEveryFrames: controls.logEveryFrames,
   });
 
-  return { ...featureState.audit.settings };
+  return {
+    ...featureState.audit.settings,
+    fieldCacheOverride,
+  };
 }
 
 export function applySceneControls(

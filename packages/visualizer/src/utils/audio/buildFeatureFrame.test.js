@@ -3,9 +3,12 @@ import { AUDIO_SLOT_CAPACITY } from "../../defaults.js";
 import { BACKBONE_STACK_SLOTS, DETAIL_STACK_SLOTS } from "./modalStack.js";
 import {
   applyTestToneToSnapshot,
-  buildAudioFeatureFrame,
+  buildAudioFeatureFrame as buildAudioFeatureFrameBase,
+  composeAudioFeatureFrame,
   createAudioFeatureState,
   detectLiveInputNoiseGate,
+  prepareAudioFeatureFrameInputs as prepareAudioFeatureFrameInputsBase,
+  runHeavyAudioFeatureAnalysis,
 } from "./buildFeatureFrame.js";
 
 const FFT_SIZE = 4096;
@@ -16,6 +19,23 @@ const LIVE_INPUT_CALIBRATION_MID_MS = 400;
 const LIVE_INPUT_CALIBRATION_DONE_MS = 1200;
 const LIVE_INPUT_POST_CALIBRATION_MS = 1240;
 const LIVE_INPUT_POST_CALIBRATION_NEXT_MS = 1270;
+const LEGACY_PEAK = "legacy-peak";
+const MODAL_EXCITATION = "modal-excitation";
+const DUAL = "dual";
+
+function prepareAudioFeatureFrameInputs(options) {
+  return prepareAudioFeatureFrameInputsBase({
+    structuralImplementation: LEGACY_PEAK,
+    ...options,
+  });
+}
+
+function buildAudioFeatureFrame(options) {
+  return buildAudioFeatureFrameBase({
+    structuralImplementation: LEGACY_PEAK,
+    ...options,
+  });
+}
 
 function createStatus(overrides = {}) {
   return {
@@ -111,6 +131,16 @@ function makeLiveInputStatus(overrides = {}) {
   });
 }
 
+function makeResolvedLineFeedLiveStatus(overrides = {}) {
+  return makeLiveInputStatus({
+    liveInputKind: "live",
+    liveInputDeviceKind: "live",
+    liveInputAnalysisClass: "auto",
+    resolvedLiveInputAnalysisClass: "line-feed",
+    ...overrides,
+  });
+}
+
 function makeSystemStatus(overrides = {}) {
   return createStatus({
     audioInputMode: "system",
@@ -118,6 +148,19 @@ function makeSystemStatus(overrides = {}) {
     isLiveInputActive: true,
     hasAnalysisSource: true,
     liveInputKind: "system",
+    ...overrides,
+  });
+}
+
+function makeLoopbackLiveStatus(overrides = {}) {
+  return createStatus({
+    audioInputMode: "live",
+    analysisSource: "live",
+    isLiveInputActive: true,
+    hasAnalysisSource: true,
+    liveInputKind: "system",
+    liveInputDeviceKind: "system",
+    liveInputAnalysisClass: "line-feed",
     ...overrides,
   });
 }
@@ -141,6 +184,51 @@ function buildTimedFrame({
     status,
     frameTimeMs,
   });
+}
+
+function sumSlotAmplitudes(slots) {
+  const slotCount = Math.floor((slots?.length ?? 0) / 4);
+  let total = 0;
+  for (let index = 0; index < slotCount; index += 1) {
+    total += slots[index * 4 + 3] ?? 0;
+  }
+  return total;
+}
+
+function buildModalExcitationAnalysisFrame({
+  featureState,
+  fftMagnitudes,
+  timeData = new Float32Array(FFT_SIZE),
+  avgAmplitude = 24,
+  rms = 0.2,
+  frameTimeMs = 0,
+  previousFrame = null,
+}) {
+  const preparedInputs = prepareAudioFeatureFrameInputs({
+    analysisSnapshot: createSnapshot({
+      avgAmplitude,
+      fftMagnitudes,
+      timeData,
+      rms,
+    }),
+    featureState,
+    radius: 3,
+    status: makeActiveStatus(),
+    frameTimeMs,
+    structuralImplementation: MODAL_EXCITATION,
+  });
+  const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
+  const frame = composeAudioFeatureFrame({
+    preparedInputs,
+    analysisResult,
+    previousFrame,
+  });
+
+  return {
+    preparedInputs,
+    analysisResult,
+    frame,
+  };
 }
 
 function buildLiveInputFrame({
@@ -223,7 +311,7 @@ function readModeAmplitudeMap(slotBuffer) {
   return amplitudes;
 }
 
-describe("buildAudioFeatureFrame layered contract", () => {
+describe("buildAudioFeatureFrame legacy-peak layered contract", () => {
   it("returns idle output for missing analysis input", () => {
     const featureState = createAudioFeatureState();
     const frame = buildAudioFeatureFrame({
@@ -929,6 +1017,31 @@ describe("buildAudioFeatureFrame layered contract", () => {
     expect(secondVoice.fieldState).toBe("active");
   });
 
+  it("keeps acoustic fallback active when voiced pitch is absent but spectral peaks are valid", () => {
+    const featureState = createAudioFeatureState();
+
+    calibrateLiveInput(featureState);
+
+    const frame = buildLiveInputFrame({
+      featureState,
+      peaks: [
+        [730, 0.28],
+        [1190, 0.21],
+        [1730, 0.14],
+      ],
+      avgAmplitude: 6.1,
+      rms: 0.018,
+      frameTimeMs: 1260,
+      profile: "voice-tone",
+      timeData: new Float32Array(FFT_SIZE),
+    });
+
+    expect(frame.fieldState).toBe("active");
+    expect(frame.debug.analysisEngine).toBe("spectral-fallback");
+    expect(frame.debug.pitchSource).toBe("spectral-fallback");
+    expect(frame.debug.modeSlotCount).toBeGreaterThan(0);
+  });
+
   it("tracks high singing without jumping to stronger upper harmonics", () => {
     const featureState = createAudioFeatureState();
     buildLiveInputFrame({
@@ -986,6 +1099,7 @@ describe("buildAudioFeatureFrame layered contract", () => {
     });
 
     expect(frame.fieldState).toBe("active");
+    expect(frame.debug.analysisEngine).toBe("vocal");
     expect(frame.debug.pitchSource).toBe("fundamental");
     expect(frame.debug.driverFrequency).toBeGreaterThan(820);
     expect(frame.debug.driverFrequency).toBeLessThan(940);
@@ -1110,6 +1224,125 @@ describe("buildAudioFeatureFrame layered contract", () => {
     expect(frame.debug.driverFrequency).toBeLessThan(440);
     expect(frame.debug.candidateHarmonicSupport).toBeGreaterThan(0.09);
     expect(frame.debug.periodicity).toBeGreaterThan(0.2);
+  });
+
+  it("derives a line-feed runtime profile from the resolved live-input class", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "live",
+        avgAmplitude: 6.4,
+        fftMagnitudes: makeFft([
+          [110, 0.22],
+          [220, 0.31],
+          [330, 0.16],
+        ]),
+        timeData: makeTimeData({ frequency: 110, amplitude: 0.18 }),
+        rms: 0.01,
+      }),
+      featureState,
+      radius: 3,
+      status: makeResolvedLineFeedLiveStatus(),
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
+      liveInputAnalysisSettings: { profile: "voice-tone" },
+    });
+
+    expect(preparedInputs.resolvedLiveInputAnalysisClass).toBe("line-feed");
+    expect(preparedInputs.liveInputProfile).toBe("line-feed");
+    expect(preparedInputs.isAcousticLiveInput).toBe(false);
+  });
+
+  it("does not use the vocal lane for a live device resolved as line-feed", () => {
+    const featureState = createAudioFeatureState();
+    const frame = buildLiveInputFrame({
+      featureState,
+      peaks: [
+        [110, 0.28],
+        [164.81, 0.24],
+        [196, 0.21],
+        [261.63, 0.2],
+      ],
+      avgAmplitude: 6.8,
+      rms: 0.024,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
+      profile: "voice-tone",
+      status: makeResolvedLineFeedLiveStatus(),
+      timeData: makeTimeData({
+        frequency: 110,
+        amplitude: 0.11,
+        harmonics: [
+          [1.5, 0.05],
+          [2, 0.08],
+          [2.378, 0.04],
+        ],
+      }),
+    });
+
+    expect(frame.sourceMode).toBe("line-feed");
+    expect(frame.debug.resolvedLiveInputAnalysisClass).toBe("line-feed");
+    expect(frame.debug.liveInputProfile).toBe("line-feed");
+    expect(frame.debug.analysisEngine).not.toBe("vocal");
+    expect(frame.debug.pitchSource).not.toBe("fundamental");
+    expect(frame.debug.pitchSource).not.toBe("latched-fundamental");
+  });
+
+  it("clears vocal latch state when switching from acoustic mic to line-feed", () => {
+    const featureState = createAudioFeatureState();
+    calibrateLiveInput(featureState);
+
+    const acousticFrame = buildLiveInputFrame({
+      featureState,
+      peaks: [
+        [190, 0.18],
+        [380, 0.11],
+        [570, 0.07],
+      ],
+      avgAmplitude: 6.2,
+      rms: 0.022,
+      frameTimeMs: 1260,
+      timeData: makeTimeData({
+        frequency: 190,
+        amplitude: 0.14,
+        harmonics: [
+          [2, 0.05],
+          [3, 0.02],
+        ],
+      }),
+    });
+
+    const lineFeedFrame = buildLiveInputFrame({
+      featureState,
+      peaks: [
+        [82.41, 0.26],
+        [110, 0.21],
+        [164.81, 0.24],
+        [196, 0.18],
+        [261.63, 0.15],
+      ],
+      avgAmplitude: 6.8,
+      rms: 0.024,
+      frameTimeMs: 1295,
+      profile: "voice-tone",
+      status: makeResolvedLineFeedLiveStatus(),
+      timeData: makeTimeData({
+        frequency: 82.41,
+        amplitude: 0.12,
+        harmonics: [
+          [1.335, 0.05],
+          [2, 0.07],
+          [2.378, 0.04],
+          [3.173, 0.03],
+        ],
+      }),
+    });
+
+    expect(acousticFrame.debug.analysisEngine).toBe("vocal");
+    expect(acousticFrame.debug.pitchSource).toBe("fundamental");
+    expect(lineFeedFrame.debug.liveInputProfile).toBe("line-feed");
+    expect(lineFeedFrame.debug.analysisEngine).not.toBe("vocal");
+    expect(lineFeedFrame.debug.pitchSource).not.toBe("fundamental");
+    expect(lineFeedFrame.debug.pitchSource).not.toBe("latched-fundamental");
+    expect(lineFeedFrame.debug.latchHoldFrames).toBe(0);
   });
 
   it("suppresses a dense fog field from a weak saturated mic frame after a voice latch", () => {
@@ -1682,6 +1915,37 @@ describe("buildAudioFeatureFrame layered contract", () => {
     expect(frame.averageAmplitude).toBeCloseTo((0.75 / Math.SQRT2) * 255, 1);
   });
 
+  it("injects a richer modal test-tone excitation for the modal path", () => {
+    const featureState = createAudioFeatureState();
+    const frame = buildAudioFeatureFrame({
+      analysisSnapshot: null,
+      featureState,
+      radius: 3,
+      status: createStatus(),
+      auditSettings: createAuditSettings({
+        injectTestTone: true,
+        testToneHz: 660,
+        testToneAmplitude: 0.2,
+      }),
+      structuralImplementation: MODAL_EXCITATION,
+    });
+
+    expect(frame.fieldState).toBe("test");
+    expect(frame.debug.pitchSource).toBe("resonator-bank");
+    expect(frame.debug.analysisEngine).toBe("modal-excitation");
+    expect(frame.debug.modeSlotCount).toBeGreaterThan(1);
+    expect(
+      frame.backboneSlots.some(
+        (_, index) => index % 4 === 3 && frame.backboneSlots[index] > 0,
+      ),
+    ).toBe(true);
+    expect(
+      frame.detailSlots.some(
+        (_, index) => index % 4 === 3 && frame.detailSlots[index] > 0,
+      ),
+    ).toBe(true);
+  });
+
   it("returns a lightweight debug summary when audit is disabled", () => {
     const featureState = createAudioFeatureState();
     const frame = buildAudioFeatureFrame({
@@ -2045,6 +2309,236 @@ describe("live input noise gate", () => {
     );
     expect(Array.from(systemFrame.modeSlots)).toEqual(
       Array.from(fileFrame.modeSlots),
+    );
+  });
+
+  it("keeps loopback-classified live input structurally active", () => {
+    const featureState = createAudioFeatureState();
+    const frame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "live",
+        avgAmplitude: 36,
+        rms: 0.27,
+        fftMagnitudes: makeFft([
+          [110, 0.82],
+          [220, 0.41],
+          [330, 0.22],
+          [440, 0.17],
+        ]),
+      }),
+      featureState,
+      radius: 3,
+      status: makeLoopbackLiveStatus(),
+      frameTimeMs: 32,
+      liveInputAnalysisSettings: { profile: "voice-tone" },
+    });
+
+    expect(frame.fieldState).not.toBe("idle");
+    expect(frame.hasModalField).toBe(true);
+    expect(frame.sourceMode).toBe("line-feed");
+    expect(frame.debug.liveInputProfile).toBe("line-feed");
+    expect(frame.debug.analysisEngine).not.toBe("vocal");
+    expect(
+      frame.activeBackboneModeCount + frame.activeDetailModeCount,
+    ).toBeGreaterThan(0);
+    expect(frame.debug.dominantFrequency).toBeGreaterThan(0);
+    expect(frame.structureSignal).toBeGreaterThan(0);
+  });
+
+  it("reuses zero-target buffers and rebuilds them when capacity changes", () => {
+    const featureState = createAudioFeatureState(8);
+    const status = makeActiveStatus({ capacity: 8 });
+    const analysisSnapshot = createSnapshot({
+      fftMagnitudes: makeFft([
+        [110, 0.82],
+        [220, 0.41],
+      ]),
+    });
+
+    prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 16,
+    });
+    const firstBackboneTargets = featureState.analysis.zeroBackboneTargetSlots;
+    const firstDetailTargets = featureState.analysis.zeroDetailTargetSlots;
+
+    prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 32,
+    });
+
+    expect(featureState.analysis.zeroBackboneTargetSlots).toBe(
+      firstBackboneTargets,
+    );
+    expect(featureState.analysis.zeroDetailTargetSlots).toBe(
+      firstDetailTargets,
+    );
+
+    featureState.capacity = 2;
+    prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status: makeActiveStatus({ capacity: 2 }),
+      frameTimeMs: 48,
+    });
+
+    expect(featureState.analysis.zeroBackboneTargetSlots).not.toBe(
+      firstBackboneTargets,
+    );
+    expect(featureState.analysis.zeroDetailTargetSlots).not.toBe(
+      firstDetailTargets,
+    );
+    expect(featureState.analysis.zeroBackboneTargetSlots.length).toBe(
+      Math.min(2, BACKBONE_STACK_SLOTS) * 4,
+    );
+    expect(featureState.analysis.zeroDetailTargetSlots.length).toBe(
+      Math.min(2, DETAIL_STACK_SLOTS) * 4,
+    );
+  });
+
+  it("reuses non-acoustic target buffers and rebuilds them when capacity changes", () => {
+    const featureState = createAudioFeatureState(8);
+    const status = makeActiveStatus({ capacity: 8 });
+    const analysisSnapshot = createSnapshot({
+      fftMagnitudes: makeFft([
+        [110, 0.82],
+        [220, 0.41],
+        [330, 0.22],
+      ]),
+    });
+
+    prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 16,
+    });
+    const firstBackboneTargetSlots =
+      featureState.analysis.nonAcousticBackboneTarget.slots;
+    const firstDetailTargetSlots =
+      featureState.analysis.nonAcousticDetailTarget.slots;
+    const firstPeakDriverScratchSlots =
+      featureState.analysis.nonAcousticPeakDriverScratch.slots;
+
+    prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 32,
+    });
+
+    expect(featureState.analysis.nonAcousticBackboneTarget.slots).toBe(
+      firstBackboneTargetSlots,
+    );
+    expect(featureState.analysis.nonAcousticDetailTarget.slots).toBe(
+      firstDetailTargetSlots,
+    );
+    expect(featureState.analysis.nonAcousticPeakDriverScratch.slots).toBe(
+      firstPeakDriverScratchSlots,
+    );
+
+    featureState.capacity = 2;
+    prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status: makeActiveStatus({ capacity: 2 }),
+      frameTimeMs: 48,
+    });
+
+    expect(featureState.analysis.nonAcousticBackboneTarget.slots).not.toBe(
+      firstBackboneTargetSlots,
+    );
+    expect(featureState.analysis.nonAcousticDetailTarget.slots).not.toBe(
+      firstDetailTargetSlots,
+    );
+    expect(featureState.analysis.nonAcousticPeakDriverScratch.slots).not.toBe(
+      firstPeakDriverScratchSlots,
+    );
+    expect(featureState.analysis.nonAcousticBackboneTarget.slots.length).toBe(
+      Math.min(2, BACKBONE_STACK_SLOTS) * 4,
+    );
+    expect(featureState.analysis.nonAcousticDetailTarget.slots.length).toBe(
+      Math.min(2, DETAIL_STACK_SLOTS) * 4,
+    );
+    expect(
+      featureState.analysis.nonAcousticPeakDriverScratch.slots.length,
+    ).toBe(Math.min(2, BACKBONE_STACK_SLOTS) * 4);
+  });
+
+  it("reuses acoustic target buffers and rebuilds them when capacity changes", () => {
+    const featureState = createAudioFeatureState(8);
+    const status = makeLiveInputStatus({ capacity: 8, liveInputKind: "live" });
+    const analysisSnapshot = createSnapshot({
+      sourceMode: "live",
+      fftMagnitudes: makeFft([
+        [180, 0.22],
+        [320, 0.18],
+        [540, 0.12],
+      ]),
+      timeData: makeTimeData({
+        frequency: 180,
+        amplitude: 0.4,
+        harmonics: [[2, 0.14]],
+      }),
+    });
+
+    prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 16,
+    });
+    const firstBackboneTargetSlots =
+      featureState.analysis.acousticBackboneTarget.slots;
+    const firstDetailTargetSlots =
+      featureState.analysis.acousticDetailTarget.slots;
+
+    prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 32,
+    });
+
+    expect(featureState.analysis.acousticBackboneTarget.slots).toBe(
+      firstBackboneTargetSlots,
+    );
+    expect(featureState.analysis.acousticDetailTarget.slots).toBe(
+      firstDetailTargetSlots,
+    );
+
+    featureState.capacity = 2;
+    prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status: makeLiveInputStatus({ capacity: 2, liveInputKind: "live" }),
+      frameTimeMs: 48,
+    });
+
+    expect(featureState.analysis.acousticBackboneTarget.slots).not.toBe(
+      firstBackboneTargetSlots,
+    );
+    expect(featureState.analysis.acousticDetailTarget.slots).not.toBe(
+      firstDetailTargetSlots,
+    );
+    expect(featureState.analysis.acousticBackboneTarget.slots.length).toBe(
+      Math.min(2, BACKBONE_STACK_SLOTS) * 4,
+    );
+    expect(featureState.analysis.acousticDetailTarget.slots.length).toBe(
+      Math.min(2, DETAIL_STACK_SLOTS) * 4,
     );
   });
 });
@@ -2434,5 +2928,519 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     });
 
     expect(frame.debug.micFftNormGain).toBe(1);
+  });
+
+  it("reuses heavy analysis while refreshing fast-lane pulse and novelty outputs", () => {
+    const featureState = createAudioFeatureState();
+    const status = createStatus({
+      audioInputMode: "file",
+      isPlaying: true,
+      hasAnalysisSource: true,
+      playbackSessionId: 42,
+    });
+    const analysisSnapshot = createSnapshot({
+      sourceMode: "file",
+      avgAmplitude: 36,
+      fftMagnitudes: makeFft([
+        [110, 0.92],
+        [220, 0.48],
+        [440, 0.24],
+      ]),
+      rms: 0.34,
+    });
+    const heavyHints = {
+      active: true,
+      harmonicity: 0.55,
+      bassSalience: 0.46,
+      textureSpread: 0.18,
+      novelty: 0.12,
+      transientSalience: 0.14,
+      workerState: "ready",
+      hintSource: "onnx-worker",
+    };
+    const prepared = prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 1000,
+      analysisHints: heavyHints,
+    });
+    const analysisResult = runHeavyAudioFeatureAnalysis(prepared);
+    const first = composeAudioFeatureFrame({
+      preparedInputs: prepared,
+      analysisResult,
+      analysisHints: heavyHints,
+    });
+
+    const transientHints = {
+      ...heavyHints,
+      novelty: 0.9,
+      transientSalience: 0.92,
+      bassSalience: 0.78,
+    };
+    const preparedReuse = prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 1012,
+      analysisHints: transientHints,
+    });
+    const reused = composeAudioFeatureFrame({
+      preparedInputs: preparedReuse,
+      analysisResult,
+      analysisHints: transientHints,
+      previousFrame: first,
+      reuseHeavyAnalysis: true,
+    });
+
+    expect(reused.backboneSlots).toBe(first.backboneSlots);
+    expect(reused.modeSlots).toBe(first.modeSlots);
+    expect(reused.keyTonic).toBe(first.keyTonic);
+    expect(reused.pulseSignal).toBeGreaterThan(first.pulseSignal);
+    expect(reused.changeSignal).toBeGreaterThan(first.changeSignal);
+    expect(reused.novelty).toBeCloseTo(0.9, 4);
+  });
+});
+
+describe("full-range music handling", () => {
+  it("frequency ceiling: 6 kHz peak reaches detail slots", () => {
+    const featureState = createAudioFeatureState();
+    const fftMagnitudes = makeFft([[6000, 0.7]]);
+    const frame = buildTimedFrame({
+      featureState,
+      fftMagnitudes,
+      avgAmplitude: 80,
+      rms: 0.4,
+    });
+
+    // At least one detail slot must have non-zero amplitude
+    let hasDetailActivity = false;
+    for (let i = 3; i < frame.detailSlots.length; i += 4) {
+      if ((frame.detailSlots[i] ?? 0) > 0) {
+        hasDetailActivity = true;
+        break;
+      }
+    }
+    expect(hasDetailActivity).toBe(true);
+  });
+
+  it("backbone/detail routing: 200 Hz in backbone, 6 kHz in detail only", () => {
+    const featureState = createAudioFeatureState();
+    // Strong low peak + strong high peak
+    const fftMagnitudes = makeFft([
+      [200, 0.85],
+      [6000, 0.8],
+    ]);
+    const frame = buildTimedFrame({
+      featureState,
+      fftMagnitudes,
+      avgAmplitude: 100,
+      rms: 0.5,
+    });
+
+    // Backbone: slots should have activity (200 Hz)
+    let backboneActivity = false;
+    for (let i = 3; i < frame.backboneSlots.length; i += 4) {
+      if ((frame.backboneSlots[i] ?? 0) > 0) {
+        backboneActivity = true;
+        break;
+      }
+    }
+    expect(backboneActivity).toBe(true);
+
+    // Detail: should have activity (6 kHz)
+    let detailActivity = false;
+    for (let i = 3; i < frame.detailSlots.length; i += 4) {
+      if ((frame.detailSlots[i] ?? 0) > 0) {
+        detailActivity = true;
+        break;
+      }
+    }
+    expect(detailActivity).toBe(true);
+  });
+
+  it("fade-out: structureSignal collapses proportionally with energy", () => {
+    const featureState = createAudioFeatureState();
+    const fftMagnitudes = makeFft([
+      [440, 0.8],
+      [880, 0.5],
+      [1320, 0.3],
+    ]);
+
+    // Warm up the feature state at full amplitude over several frames
+    for (let i = 0; i < 30; i++) {
+      buildTimedFrame({
+        featureState,
+        fftMagnitudes,
+        avgAmplitude: 200,
+        rms: 0.8,
+        frameTimeMs: i * 16,
+      });
+    }
+    const fullFrame = buildTimedFrame({
+      featureState,
+      fftMagnitudes,
+      avgAmplitude: 200,
+      rms: 0.8,
+      frameTimeMs: 30 * 16,
+    });
+
+    // Now drive to near-silence (rms = 0.02, avgAmplitude = 3) — all subsequent frames
+    const silentFft = new Float32Array(BIN_COUNT);
+    for (let i = 0; i < 50; i++) {
+      buildTimedFrame({
+        featureState,
+        fftMagnitudes: silentFft,
+        avgAmplitude: 3,
+        rms: 0.02,
+        frameTimeMs: (30 + i) * 16,
+      });
+    }
+    const silentFrame = buildTimedFrame({
+      featureState,
+      fftMagnitudes: silentFft,
+      avgAmplitude: 3,
+      rms: 0.02,
+      frameTimeMs: 80 * 16,
+    });
+
+    // structureSignal at silence must be well below that at full amplitude
+    expect(silentFrame.structureSignal).toBeLessThanOrEqual(
+      fullFrame.structureSignal * 0.5,
+    );
+  });
+
+  it("broadband treble: flat high-frequency noise produces trebleBroadbandEnergy", () => {
+    const featureState = createAudioFeatureState();
+    // Fill bins from 3200–10000 Hz with uniform amplitude (high flatness)
+    const fftMagnitudes = new Float32Array(BIN_COUNT);
+    const loFreqBin = freqToBin(3200);
+    const hiFreqBin = freqToBin(10000);
+    for (let i = loFreqBin; i <= hiFreqBin && i < BIN_COUNT; i++) {
+      fftMagnitudes[i] = 0.6;
+    }
+    const frame = buildTimedFrame({
+      featureState,
+      fftMagnitudes,
+      avgAmplitude: 120,
+      rms: 0.5,
+    });
+
+    expect(frame.trebleBroadbandEnergy).toBeGreaterThan(0.1);
+    // spectralBandEnergies must be populated (6 bands)
+    expect(frame.spectralBandEnergies).toBeInstanceOf(Float32Array);
+    expect(frame.spectralBandEnergies.length).toBe(6);
+    // Presence (band 4: 3200–6400) and air (band 5: 6400–12000) should have energy
+    expect(frame.spectralBandEnergies[4]).toBeGreaterThan(0);
+  });
+
+  it("tonal treble: narrow peaks above 3200 Hz produce trebleTonalEnergy and modeCoherence", () => {
+    const featureState = createAudioFeatureState();
+    const fftMagnitudes = makeFft([
+      [440, 0.9],
+      [880, 0.7],
+      [4000, 0.75],
+      [8000, 0.65],
+    ]);
+
+    // Warm up with several frames so modal state stabilises
+    for (let i = 0; i < 15; i++) {
+      buildTimedFrame({
+        featureState,
+        fftMagnitudes,
+        avgAmplitude: 150,
+        rms: 0.6,
+        frameTimeMs: i * 16,
+      });
+    }
+    const frame = buildTimedFrame({
+      featureState,
+      fftMagnitudes,
+      avgAmplitude: 150,
+      rms: 0.6,
+      frameTimeMs: 15 * 16,
+    });
+
+    expect(frame.trebleTonalEnergy).toBeGreaterThan(0);
+    expect(frame.modeCoherence).toBeGreaterThan(0);
+  });
+
+  it("mixed low-end backbone and broadband treble stays structured without foggy promotion", () => {
+    const featureState = createAudioFeatureState();
+    const fftMagnitudes = new Float32Array(BIN_COUNT);
+    for (const [frequency, amplitude] of [
+      [110, 0.9],
+      [220, 0.5],
+      [440, 0.25],
+    ]) {
+      fftMagnitudes[freqToBin(frequency)] = amplitude;
+    }
+    for (
+      let bin = freqToBin(3200);
+      bin <= freqToBin(10000) && bin < BIN_COUNT;
+      bin += 1
+    ) {
+      fftMagnitudes[bin] = 0.32;
+    }
+
+    const frame = buildTimedFrame({
+      featureState,
+      fftMagnitudes,
+      avgAmplitude: 130,
+      rms: 0.56,
+    });
+
+    expect(
+      frame.backboneSlots.some(
+        (_, index) => index % 4 === 3 && frame.backboneSlots[index] > 0,
+      ),
+    ).toBe(true);
+    expect(frame.trebleBroadbandEnergy).toBeGreaterThan(0.05);
+    expect(frame.structureSignal).toBeLessThan(0.9);
+    expect(frame.modeCoherence).toBeGreaterThan(0);
+  });
+});
+
+describe("modal excitation integration", () => {
+  it("keeps the renderer contract stable while using resonator-driven structure", () => {
+    const featureState = createAudioFeatureState();
+    const fftMagnitudes = makeFft([
+      [110, 0.95],
+      [220, 0.52],
+      [6600, 0.38],
+    ]);
+    const timeData = makeTimeData({
+      frequency: 110,
+      amplitude: 0.45,
+      harmonics: [[2, 0.08]],
+    });
+
+    const frame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        avgAmplitude: 120,
+        fftMagnitudes,
+        timeData,
+        rms: 0.52,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 33,
+      structuralImplementation: MODAL_EXCITATION,
+    });
+
+    expect(frame.backboneSlots).toBeInstanceOf(Float32Array);
+    expect(frame.detailSlots).toBeInstanceOf(Float32Array);
+    expect(frame.modeSlots).toBeInstanceOf(Float32Array);
+    expect(frame.referenceModeSlots).toBeInstanceOf(Float32Array);
+    expect(frame.structureSignal).toBeGreaterThan(0);
+    expect(frame.modeCoherence).toBeGreaterThan(0);
+    expect(frame.debug.excitedModeCount).toBeGreaterThan(0);
+    expect(frame.debug.modalPersistence).toBeGreaterThanOrEqual(0);
+    expect(frame.debug.driveSource).toBe("time-domain");
+  });
+
+  it("surfaces side-by-side modal comparison diagnostics in dual mode", () => {
+    const featureState = createAudioFeatureState();
+    const fftMagnitudes = makeFft([
+      [110, 0.95],
+      [220, 0.52],
+      [6600, 0.38],
+    ]);
+    const timeData = makeTimeData({
+      frequency: 110,
+      amplitude: 0.45,
+      harmonics: [[2, 0.08]],
+    });
+
+    const frame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        avgAmplitude: 120,
+        fftMagnitudes,
+        timeData,
+        rms: 0.52,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 33,
+      structuralImplementation: DUAL,
+    });
+
+    expect(frame.debug.analysisEngine).toBe("layered");
+    expect(frame.debug.comparisonDebug).toMatchObject({
+      analysisEngine: "modal-excitation",
+      pitchSource: "resonator-bank",
+      structureSignal: expect.any(Number),
+      changeSignal: expect.any(Number),
+      modeCoherence: expect.any(Number),
+      activeModeCount: expect.any(Number),
+    });
+    expect(frame.debug.structuralComparison).toMatchObject({
+      activeModeCountDelta: expect.any(Number),
+      dominantFrequencyDeltaCents: expect.any(Number),
+      modeCoherenceDelta: expect.any(Number),
+    });
+  });
+
+  it("keeps modal output identical when spherical is only requested and the effective backend stays rectangular", () => {
+    const featureStateRectangular = createAudioFeatureState();
+    const featureStateSpherical = createAudioFeatureState();
+    const fftMagnitudes = makeFft([
+      [110, 0.95],
+      [220, 0.52],
+      [6600, 0.38],
+    ]);
+    const timeData = makeTimeData({
+      frequency: 110,
+      amplitude: 0.45,
+      harmonics: [[2, 0.08]],
+    });
+    const analysisSnapshot = createSnapshot({
+      avgAmplitude: 120,
+      fftMagnitudes,
+      timeData,
+      rms: 0.52,
+    });
+
+    const rectangularFrame = buildAudioFeatureFrameBase({
+      analysisSnapshot,
+      featureState: featureStateRectangular,
+      radius: 3,
+      cavityGeometry: "rectangular",
+      status: makeActiveStatus(),
+      frameTimeMs: 33,
+      structuralImplementation: MODAL_EXCITATION,
+    });
+    const sphericalRequestedFrame = buildAudioFeatureFrameBase({
+      analysisSnapshot,
+      featureState: featureStateSpherical,
+      radius: 3,
+      cavityGeometry: "spherical",
+      status: makeActiveStatus(),
+      frameTimeMs: 33,
+      structuralImplementation: MODAL_EXCITATION,
+    });
+
+    expect(Array.from(sphericalRequestedFrame.backboneSlots)).toEqual(
+      Array.from(rectangularFrame.backboneSlots),
+    );
+    expect(Array.from(sphericalRequestedFrame.detailSlots)).toEqual(
+      Array.from(rectangularFrame.detailSlots),
+    );
+    expect(Array.from(sphericalRequestedFrame.modeSlots)).toEqual(
+      Array.from(rectangularFrame.modeSlots),
+    );
+    expect(sphericalRequestedFrame.debug.requestedCavityGeometry).toBe(
+      "spherical",
+    );
+    expect(sphericalRequestedFrame.debug.effectiveCavityGeometry).toBe(
+      "rectangular",
+    );
+  });
+
+  it("drops modal structure faster than the visible release tail on silence", () => {
+    const featureState = createAudioFeatureState();
+    const activeFft = makeFft([
+      [110, 0.95],
+      [220, 0.52],
+      [6600, 0.38],
+    ]);
+    const activeTimeData = makeTimeData({
+      frequency: 110,
+      amplitude: 0.45,
+      harmonics: [[2, 0.08]],
+    });
+    const silentFft = new Float32Array(BIN_COUNT);
+    const silentTimeData = new Float32Array(FFT_SIZE);
+    let previousFrame = null;
+    let activeFrame = null;
+    let silentResult = null;
+
+    for (let frameIndex = 0; frameIndex < 10; frameIndex += 1) {
+      const result = buildModalExcitationAnalysisFrame({
+        featureState,
+        fftMagnitudes: activeFft,
+        timeData: activeTimeData,
+        avgAmplitude: 120,
+        rms: 0.52,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+      activeFrame = result.frame;
+    }
+
+    for (let frameIndex = 10; frameIndex < 16; frameIndex += 1) {
+      silentResult = buildModalExcitationAnalysisFrame({
+        featureState,
+        fftMagnitudes: silentFft,
+        timeData: silentTimeData,
+        avgAmplitude: 0,
+        rms: 0,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = silentResult.frame;
+    }
+
+    expect(silentResult.analysisResult.usedDecay).toBe(true);
+    expect(
+      sumSlotAmplitudes(silentResult.analysisResult.modeSlots),
+    ).toBeGreaterThan(
+      sumSlotAmplitudes(silentResult.analysisResult.signalModeSlots),
+    );
+    expect(sumSlotAmplitudes(silentResult.frame.backboneSlots)).toBeGreaterThan(
+      0,
+    );
+    expect(silentResult.frame.structureSignal).toBeLessThan(
+      activeFrame.structureSignal * 0.65,
+    );
+    expect(silentResult.frame.changeSignal).toBeGreaterThanOrEqual(0);
+  });
+
+  it("keeps dense low-change modal input visually pruned without collapsing reactivity", () => {
+    const featureState = createAudioFeatureState();
+    let previousFrame = null;
+    let result = null;
+
+    for (let frameIndex = 0; frameIndex < 12; frameIndex += 1) {
+      result = buildModalExcitationAnalysisFrame({
+        featureState,
+        fftMagnitudes: makeFft([
+          [90, 0.92],
+          [110, 0.95],
+          [220, 0.84],
+          [330, 0.7],
+          [440, 0.58],
+          [660, 0.52],
+          [6200, 0.44],
+          [6800, 0.41],
+          [7600, 0.38],
+        ]),
+        timeData: makeTimeData({
+          frequency: 110,
+          amplitude: 0.55,
+          harmonics: [
+            [2, 0.12],
+            [3, 0.08],
+          ],
+        }),
+        avgAmplitude: 135,
+        rms: 0.58,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+    }
+
+    expect(sumSlotAmplitudes(result.analysisResult.modeSlots)).toBeLessThan(
+      sumSlotAmplitudes(result.analysisResult.signalModeSlots),
+    );
+    expect(result.frame.structureSignal).toBeGreaterThan(0);
+    expect(result.frame.changeSignal).toBeGreaterThanOrEqual(0);
+    expect(result.frame.modeCoherence).toBeGreaterThan(0);
   });
 });

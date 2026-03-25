@@ -6,6 +6,7 @@ import {
   SIMULATION_DEFAULTS,
 } from "../../defaults.js";
 import { FIELD_STATE_VALUES } from "../fieldState.js";
+import { getBoundaryModeValue } from "../modeFamily.js";
 
 export { FIELD_STATE_VALUES };
 
@@ -18,6 +19,9 @@ export function createRaymarchUniforms(parameters) {
     uThreshold: uniform(parameters.threshold),
     uStructureMin: uniform(SIMULATION_DEFAULTS.structureMin),
     uStructureMax: uniform(SIMULATION_DEFAULTS.structureMax),
+    uBoundaryMode: uniform(
+      getBoundaryModeValue(SIMULATION_DEFAULTS.boundaryMode),
+    ),
     uActiveModeCount: uniform(0),
     uBackboneModeCount: uniform(0),
     uDetailModeCount: uniform(0),
@@ -66,5 +70,8 @@ export function createRaymarchUniforms(parameters) {
     uKeyTint: uniform(new THREE.Color(0x56d7ff)),
     uKeyTintStrength: uniform(0.0),
     uKeyMode: uniform(0.0),
+    uTrebleBroadbandEnergy: uniform(0.0),
+    uModeCoherence: uniform(0.0),
+    uTotalSlotAmplitude: uniform(0.0),
   };
 }

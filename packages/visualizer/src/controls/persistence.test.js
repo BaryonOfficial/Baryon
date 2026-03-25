@@ -35,6 +35,15 @@ describe("serializeControls", () => {
     }
   });
 
+  it("keeps cavity geometry out of preset serialization while it is debug-only", () => {
+    const state = createControlState();
+    state.cavityGeometry = "spherical";
+
+    const serialized = serializeControls(state, CONTROL_DEFINITIONS);
+
+    expect(serialized).not.toHaveProperty("cavityGeometry");
+  });
+
   it("preserves the values from the control state", () => {
     const state = createControlState();
     state.bloomStrength = 1.5;

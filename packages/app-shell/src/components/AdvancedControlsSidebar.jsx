@@ -606,6 +606,35 @@ function ControlField({
     />
   );
 
+  if (binding.view === "toggle") {
+    return (
+      <div className="baryon-controls-card">
+        <div className="baryon-controls-card-header">
+          <span className="baryon-controls-card-text">
+            <span className="baryon-controls-card-title-row">
+              <label className="baryon-controls-card-label" htmlFor={controlId}>
+                {definition.label}
+              </label>
+              {helpTrigger}
+            </span>
+          </span>
+          <span className="baryon-controls-toggle">
+            <input
+              id={controlId}
+              aria-label={definition.label}
+              type="checkbox"
+              checked={Boolean(value)}
+              onChange={(event) => onChange(event.target.checked)}
+            />
+            <span className="baryon-controls-toggle-track">
+              <span className="baryon-controls-toggle-thumb" />
+            </span>
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   if (typeof definition.defaultValue === "boolean") {
     return (
       <div className="baryon-controls-card">
@@ -737,6 +766,28 @@ function ControlGroup({
   onHelpClick,
 }) {
   const [isExpanded, setIsExpanded] = useState(group.expanded);
+  const getDefinitionValue = useCallback(
+    (definition) => {
+      if (typeof definition.getValue === "function") {
+        return definition.getValue(controlsState);
+      }
+
+      return controlsState[definition.key];
+    },
+    [controlsState],
+  );
+
+  const handleDefinitionChange = useCallback(
+    (definition, nextValue) => {
+      if (typeof definition.applyChange === "function") {
+        definition.applyChange(nextValue, controlsState, onChange);
+        return;
+      }
+
+      onChange(definition.key, nextValue);
+    },
+    [controlsState, onChange],
+  );
 
   return (
     <section className="baryon-controls-group">
@@ -762,8 +813,10 @@ function ControlGroup({
             <ControlField
               key={definition.key}
               definition={definition}
-              value={controlsState[definition.key]}
-              onChange={(nextValue) => onChange(definition.key, nextValue)}
+              value={getDefinitionValue(definition)}
+              onChange={(nextValue) =>
+                handleDefinitionChange(definition, nextValue)
+              }
               activeHelpKey={activeHelpKey}
               registerHelpTrigger={registerHelpTrigger}
               onHelpPointerEnter={onHelpPointerEnter}
@@ -1061,9 +1114,11 @@ export default function AdvancedControlsSidebar({
         >
           <header className="baryon-controls-header">
             <div className="baryon-controls-header-text">
-              <p className="baryon-controls-header-label">Tune</p>
+              <p className="baryon-controls-header-label">
+                Baryon | Advanced Controls
+              </p>
               <p className="baryon-controls-header-note">
-                Keep the scene visible while shaping the field.
+                Tune the cymatic visuals
               </p>
             </div>
           </header>

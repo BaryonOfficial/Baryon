@@ -27,6 +27,7 @@ const EXPECTED_CONTROL_KEYS = [
   "zeroPointPrecision",
   "structureMin",
   "structureMax",
+  "boundaryMode",
   "densityGain",
   "absorption",
   "opacityGain",
@@ -56,6 +57,7 @@ const EXPECTED_CONTROL_KEYS = [
   "bloomThreshold",
   "backgroundColor",
   "renderQualityPreset",
+  "customPerformanceTargetFps",
   "outputMode",
   "outputBackgroundColor",
   // PresetsArea (rendered inline in Presets, but defined here in file order)
@@ -70,10 +72,13 @@ const EXPECTED_CONTROL_KEYS = [
   "freezeModeSlots",
   "forceWebGLFallbackTest",
   "lowLoadPlaybackDiagnostics",
+  "fieldCacheOverride",
+  "cavityGeometry",
   "injectTestTone",
   "testToneHz",
   "testToneAmplitude",
   "logEveryFrames",
+  "structuralImplementation",
 ];
 
 describe("control schema", () => {
@@ -93,14 +98,15 @@ describe("control schema", () => {
 
     expect(state.volumeColor).toBe("#56d7ff");
     expect(state.surfaceColor).toBe("#f7fdff");
-    expect(state.zeroPointPrecision).toBe(0.22);
+    expect(state.zeroPointPrecision).toBe(0.043);
     expect(state.structureMin).toBe(0.12);
     expect(state.structureMax).toBe(0.46);
+    expect(state.boundaryMode).toBe("neumann");
     expect(state.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
-    expect(state.densityGain).toBe(3.01);
-    expect(state.absorption).toBe(3.55);
-    expect(state.opacityGain).toBe(2.52);
-    expect(state.contourSharpness).toBe(7.3);
+    expect(state.densityGain).toBe(4);
+    expect(state.absorption).toBe(RAYMARCH_DEFAULTS.absorption);
+    expect(state.opacityGain).toBe(2.32);
+    expect(state.contourSharpness).toBe(8);
     expect(state.holographicIntensity).toBe(0.45);
     expect(state.holographicShift).toBe(0.35);
     expect(state.holographicFresnelPower).toBe(3.2);
@@ -111,6 +117,9 @@ describe("control schema", () => {
       RENDER_DEFAULTS.performanceHudEnabled,
     );
     expect(state.renderQualityPreset).toBe(RENDER_DEFAULTS.renderQualityPreset);
+    expect(state.customPerformanceTargetFps).toBe(
+      RENDER_DEFAULTS.customPerformanceTargetFps,
+    );
     expect(state.bloomResponseBias).toBe(0.52);
   });
 
@@ -147,6 +156,66 @@ describe("control schema", () => {
     expect(outputFillControl?.runtimePath).toBe("program.backgroundColor");
   });
 
+  it("exposes structural implementation as a debug audit control", () => {
+    const structuralImplementationControl = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "structuralImplementation",
+    );
+
+    expect(structuralImplementationControl).toMatchObject({
+      label: "Analysis Mode",
+      defaultValue: "modal-excitation",
+      targetType: CONTROL_TARGET_TYPES.audit,
+      handler: CONTROL_HANDLERS.audit,
+      runtimePath: "controls.structuralImplementation",
+      status: CONTROL_STATUSES.debugOnly,
+    });
+    expect(structuralImplementationControl?.binding?.options).toEqual({
+      "Legacy Peak": "legacy-peak",
+      "Modal Excitation": "modal-excitation",
+      "Dual (Compare)": "dual",
+    });
+  });
+
+  it("exposes a debug selector for 3d field evaluation mode", () => {
+    const fieldCacheOverrideControl = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "fieldCacheOverride",
+    );
+
+    expect(fieldCacheOverrideControl).toMatchObject({
+      label: "3D Field Eval",
+      defaultValue: "cached",
+      targetType: CONTROL_TARGET_TYPES.audit,
+      handler: CONTROL_HANDLERS.audit,
+      runtimePath: "controls.fieldCacheOverride",
+      status: CONTROL_STATUSES.debugOnly,
+      methods: [VISUALIZATION_METHODS.raymarch],
+    });
+    expect(fieldCacheOverrideControl?.binding?.options).toEqual({
+      Analytic: "analytic",
+      Cached: "cached",
+    });
+  });
+
+  it("exposes cavity geometry as a debug-only requested-state control", () => {
+    const cavityGeometryControl = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "cavityGeometry",
+    );
+
+    expect(cavityGeometryControl).toMatchObject({
+      label: "Cavity Geometry",
+      defaultValue: "rectangular",
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.raymarch,
+      runtimePath: "runtime.requestedCavityGeometry",
+      status: CONTROL_STATUSES.debugOnly,
+      methods: [VISUALIZATION_METHODS.raymarch],
+    });
+    expect(cavityGeometryControl?.binding?.options).toEqual({
+      Rectangular: "rectangular",
+      Spherical: "spherical",
+    });
+  });
+
   it("has a valid audit report", () => {
     const report = auditControlSchema();
     expect(report.isValid).toBe(true);
@@ -181,7 +250,7 @@ describe("control schema", () => {
 
   it("orders pane folders by user-facing groups", () => {
     expect(getControlFolders(DEFAULT_VISUALIZATION_METHOD)).toEqual([
-      "Live Input",
+      "Mode",
       "Shape",
       "Color",
       "Logo",
@@ -194,14 +263,17 @@ describe("control schema", () => {
 
   it("assigns controls to the intended pane groups", () => {
     expect(
-      getControlsForFolder("Live Input", DEFAULT_VISUALIZATION_METHOD).map(
+      getControlsForFolder("Mode", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
     ).toEqual([
-      "liveInputAnalysisClass",
-      "echoCancellation",
-      "noiseSuppression",
-      "autoGainControl",
+      "boundaryMode",
+      "colorMode",
+      "rotationMode",
+      "renderQualityPreset",
+      "customPerformanceTargetFps",
+      "outputMode",
+      "visualizationMethod",
     ]);
     expect(
       getControlsForFolder("Shape", DEFAULT_VISUALIZATION_METHOD).map(
@@ -224,7 +296,6 @@ describe("control schema", () => {
     ).toEqual([
       "volumeColor",
       "surfaceColor",
-      "colorMode",
       "chromesthesiaMix",
       "holographicIntensity",
       "holographicShift",
@@ -245,10 +316,7 @@ describe("control schema", () => {
       "bloomRadius",
       "bloomThreshold",
       "backgroundColor",
-      "renderQualityPreset",
-      "outputMode",
       "outputBackgroundColor",
-      "visualizationMethod",
     ]);
     expect(
       getControlsForFolder("PresetsArea", DEFAULT_VISUALIZATION_METHOD).map(
@@ -260,7 +328,6 @@ describe("control schema", () => {
         (definition) => definition.key,
       ),
     ).toEqual([
-      "rotationMode",
       "rotationSpeed",
       "reactivity",
       "motionAmount",
@@ -299,9 +366,10 @@ describe("control schema", () => {
     expect(cymatics2dControls).toContain("visualizationMethod");
     expect(cymatics2dControls).toContain("bloomThreshold");
     expect(cymatics2dControls).toContain("densityGain");
+    expect(cymatics2dControls).toContain("boundaryMode");
     expect(cymatics2dControls).toContain("structurePersistence");
     expect(getControlFolders(VISUALIZATION_METHODS.cymatics2d)).toEqual([
-      "Live Input",
+      "Mode",
       "Shape",
       "Color",
       "Logo",
@@ -323,10 +391,22 @@ describe("control schema", () => {
       "contourSharpness",
     ]);
     expect(
+      getControlsForFolder("Mode", VISUALIZATION_METHODS.cymatics2d).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual([
+      "boundaryMode",
+      "colorMode",
+      "renderQualityPreset",
+      "customPerformanceTargetFps",
+      "outputMode",
+      "visualizationMethod",
+    ]);
+    expect(
       getControlsForFolder("Color", VISUALIZATION_METHODS.cymatics2d).map(
         (definition) => definition.key,
       ),
-    ).toEqual(["volumeColor", "surfaceColor", "colorMode", "chromesthesiaMix"]);
+    ).toEqual(["volumeColor", "surfaceColor", "chromesthesiaMix"]);
     expect(
       getControlsForFolder("Logo", VISUALIZATION_METHODS.cymatics2d).map(
         (definition) => definition.key,
@@ -342,10 +422,7 @@ describe("control schema", () => {
       "bloomRadius",
       "bloomThreshold",
       "backgroundColor",
-      "renderQualityPreset",
-      "outputMode",
       "outputBackgroundColor",
-      "visualizationMethod",
     ]);
     expect(
       getControlsForFolder("PresetsArea", VISUALIZATION_METHODS.cymatics2d).map(

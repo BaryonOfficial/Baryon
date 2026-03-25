@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createControlState } from "@baryon/visualizer/controls/schema";
-import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
+import { createControlState } from "../../../../packages/visualizer/src/controls/schema.js";
+import { VISUALIZATION_METHODS } from "../../../../packages/visualizer/src/visualization/types.js";
 import {
+  ANALYSIS_MODE_BASE_KEY,
   CONTROLS_PERSIST_DELAY_MS,
+  DUAL_COMPARE_TOGGLE_KEY,
   PRESETS_KEY,
   SETTINGS_KEY,
   createControlsPersistScheduler,
@@ -12,7 +14,7 @@ import {
   getVisibleControlGroups,
   loadStoredPresets,
   savePresetCollection,
-} from "../../src/components/hooks/baryonControlsState.js";
+} from "../../../../packages/app-shell/src/components/hooks/baryonControlsState.js";
 
 function createMemoryStorage(seed = {}) {
   const store = new Map(Object.entries(seed));
@@ -48,6 +50,11 @@ test("restores stored control settings on startup", () => {
 test("hides debug-only control groups unless devtools are enabled", () => {
   const prodGroups = getVisibleControlGroups({ devtoolsEnabled: false });
   const devGroups = getVisibleControlGroups({ devtoolsEnabled: true });
+  const prodModeGroup = prodGroups.find((group) => group.title === "Mode");
+  const devModeGroup = devGroups.find((group) => group.title === "Mode");
+  const devDiagnosticsGroup = devGroups.find(
+    (group) => group.title === "Diagnostics",
+  );
 
   assert.equal(
     prodGroups.some((group) => group.title === "Diagnostics"),
@@ -56,6 +63,55 @@ test("hides debug-only control groups unless devtools are enabled", () => {
   assert.equal(
     devGroups.some((group) => group.title === "Diagnostics"),
     true,
+  );
+  assert.equal(
+    prodModeGroup?.controls.some(
+      (control) => control.key === ANALYSIS_MODE_BASE_KEY,
+    ),
+    true,
+  );
+  assert.equal(
+    prodModeGroup?.controls.some(
+      (control) => control.key === "fieldCacheOverride",
+    ),
+    true,
+  );
+  assert.deepEqual(
+    devModeGroup?.controls.find(
+      (control) => control.key === ANALYSIS_MODE_BASE_KEY,
+    )?.binding?.options,
+    {
+      "Legacy Peak (physics-artistic mix)": "legacy-peak",
+      "Modal Excitation (true-to-nature)": "modal-excitation",
+    },
+  );
+  assert.deepEqual(
+    devModeGroup?.controls
+      .filter((control) =>
+        ["boundaryMode", ANALYSIS_MODE_BASE_KEY, "fieldCacheOverride"].includes(
+          control.key,
+        ),
+      )
+      .map((control) => control.key),
+    ["boundaryMode", ANALYSIS_MODE_BASE_KEY, "fieldCacheOverride"],
+  );
+  assert.equal(
+    devDiagnosticsGroup?.controls.some(
+      (control) => control.label === "Analysis Mode",
+    ),
+    false,
+  );
+  assert.equal(
+    devDiagnosticsGroup?.controls.some(
+      (control) => control.label === "3D Field Eval",
+    ),
+    false,
+  );
+  assert.deepEqual(
+    devDiagnosticsGroup?.controls.find(
+      (control) => control.key === DUAL_COMPARE_TOGGLE_KEY,
+    )?.binding,
+    { view: "toggle" },
   );
 });
 

@@ -2,13 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { createVisualizationRuntime } from "@baryon/visualizer/visualization/runtime";
 import {
   createAudioFeatureAnalyzer,
+  createAudioFeatureEngine,
   createAudioFeatureState,
   createNoopAudioFeatureAnalyzer,
+  createNoopAudioFeatureEngine,
 } from "@baryon/visualizer/audio-features";
 import { SIMULATION_DEFAULTS } from "@baryon/visualizer/defaults";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
 import {
   clearFrameCache,
+  createEmptyAnalysisSchedulerState,
   createEmptyControlSnapshots,
   createRuntimeDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
@@ -25,9 +28,11 @@ export function useVisualizationRuntimeLifecycle({
   const runtimeStateRef = useRef(null);
   const audioFeatureRef = useRef(null);
   const audioFeatureAnalyzerRef = useRef(createNoopAudioFeatureAnalyzer());
+  const audioFeatureEngineRef = useRef(createNoopAudioFeatureEngine());
   const lastLiveFrameRef = useRef(null);
   const lastActiveFrameRef = useRef(null);
   const lastIdleFrameRef = useRef(null);
+  const analysisSchedulerRef = useRef(createEmptyAnalysisSchedulerState());
   const lastLiveInputRuntimeStatusRef = useRef(null);
   const controlVersionRef = useRef(0);
   const appliedControlVersionRef = useRef(-1);
@@ -45,6 +50,7 @@ export function useVisualizationRuntimeLifecycle({
     lastLiveFrameRef,
     lastActiveFrameRef,
     lastIdleFrameRef,
+    analysisSchedulerRef,
   }).current;
   const controlCacheRefs = useRef({
     controlVersionRef,
@@ -82,6 +88,8 @@ export function useVisualizationRuntimeLifecycle({
 
       audioFeatureAnalyzerRef.current?.dispose?.();
       audioFeatureAnalyzerRef.current = createAudioFeatureAnalyzer();
+      audioFeatureEngineRef.current?.dispose?.();
+      audioFeatureEngineRef.current = createAudioFeatureEngine();
       audioFeatureRef.current = createAudioFeatureState(audioConfig.capacity);
       const runtimeState = runtime.setup({
         baryonGeometry,
@@ -104,12 +112,17 @@ export function useVisualizationRuntimeLifecycle({
       const runtime = runtimeRef.current;
       setIsEngineReady?.(false);
       setPoints(null);
+      if (typeof window !== "undefined") {
+        delete (/** @type {any} */ (window).__baryonPerfMetrics);
+      }
       if (runtimeStateRef.current) {
         runtime.dispose(runtimeStateRef.current);
         runtimeStateRef.current = null;
       }
       audioFeatureAnalyzerRef.current?.dispose?.();
       audioFeatureAnalyzerRef.current = createNoopAudioFeatureAnalyzer();
+      audioFeatureEngineRef.current?.dispose?.();
+      audioFeatureEngineRef.current = createNoopAudioFeatureEngine();
       clearFrameCache(frameCacheRefs);
       audioFeatureRef.current = null;
       lastLiveInputRuntimeStatusRef.current = null;
@@ -132,6 +145,7 @@ export function useVisualizationRuntimeLifecycle({
     runtimeStateRef,
     audioFeatureRef,
     audioFeatureAnalyzerRef,
+    audioFeatureEngineRef,
     runtimeDiagnosticsRef,
     frameCacheRefs,
     controlCacheRefs,
