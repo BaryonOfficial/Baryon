@@ -338,6 +338,30 @@ describe("blendModalStack", () => {
       out.find((e) => e.u === 2 && e.v === 2 && e.w === 2).amplitude,
     ).toBeCloseTo(0.6 * BLEND_RELEASE);
   });
+
+  it("emptyTargetRelease accelerates silence tails", () => {
+    const state = makeBlendState(4, [{ u: 2, v: 2, w: 2, amplitude: 0.5 }]);
+    const target = makeTargetSlots(4, []);
+    blendModalStack(state, target, 4, { emptyTargetRelease: 0.7 });
+    const out = readSlots(state, 4);
+    expect(out).toHaveLength(1);
+    expect(out[0].amplitude).toBeCloseTo(0.5 * 0.7);
+  });
+
+  it("lowSignalRelease accelerates weak residual slots", () => {
+    const state = makeBlendState(4, [{ u: 4, v: 4, w: 4, amplitude: 0.08 }]);
+    const target = makeTargetSlots(4, [{ u: 1, v: 1, w: 1, amplitude: 0.4 }]);
+    blendModalStack(state, target, 4, {
+      lowSignalReleaseThreshold: 0.1,
+      lowSignalRelease: 0.5,
+    });
+    const out = readSlots(state, 4);
+    expect(out).toHaveLength(2);
+    expect(
+      out.find((entry) => entry.u === 4 && entry.v === 4 && entry.w === 4)
+        .amplitude,
+    ).toBeCloseTo(0.08 * 0.5);
+  });
 });
 
 describe("blendColorStack", () => {

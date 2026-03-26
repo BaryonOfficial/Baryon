@@ -24,6 +24,10 @@ export function getCavityModeFrequency(u, v, w, radius) {
   return getFrequencyForMagnitude(Math.hypot(u, v, w), radius);
 }
 
+export function getMinimumCavityFrequency(radius) {
+  return getCavityModeFrequency(1, 1, 1, radius);
+}
+
 function compareCavityCandidates(left, right) {
   if (Math.abs(left.frequencyError - right.frequencyError) > 1e-9) {
     return left.frequencyError - right.frequencyError;

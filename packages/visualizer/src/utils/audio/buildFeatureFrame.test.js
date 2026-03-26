@@ -231,6 +231,56 @@ function buildModalExcitationAnalysisFrame({
   };
 }
 
+function buildLegacyAnalysisFrame({
+  featureState,
+  fftMagnitudes,
+  timeData = new Float32Array(FFT_SIZE),
+  avgAmplitude = 24,
+  rms = 0.2,
+  frameTimeMs = 0,
+  previousFrame = null,
+  status = makeActiveStatus(),
+  radius = 3,
+}) {
+  const preparedInputs = prepareAudioFeatureFrameInputs({
+    analysisSnapshot: createSnapshot({
+      avgAmplitude,
+      fftMagnitudes,
+      timeData,
+      rms,
+    }),
+    featureState,
+    radius,
+    status,
+    frameTimeMs,
+    structuralImplementation: LEGACY_PEAK,
+  });
+  const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
+  const frame = composeAudioFeatureFrame({
+    preparedInputs,
+    analysisResult,
+    previousFrame,
+  });
+
+  return {
+    preparedInputs,
+    analysisResult,
+    frame,
+  };
+}
+
+const BRIDGED_SUBFLOOR_PEAKS = [
+  [60, 0.94],
+  [120, 0.82],
+  [180, 0.74],
+  [240, 0.69],
+];
+
+const WEAK_SUBFLOOR_WITH_DETAIL_PEAKS = [
+  [60, 0.095],
+  [4000, 0.7],
+];
+
 function buildLiveInputFrame({
   featureState,
   peaks,
@@ -1420,6 +1470,165 @@ describe("buildAudioFeatureFrame legacy-peak layered contract", () => {
     expect(frame.debug.modeSlotCount).toBeGreaterThan(0);
     expect(frame.backboneSlots.some((value) => value !== 0)).toBe(true);
     expect(frame.detailSlots.some((value) => value !== 0)).toBe(true);
+  });
+
+  it("keeps sub-floor bass active when bridge harmonics provide structure", () => {
+    const featureState = createAudioFeatureState();
+    let previousFrame = null;
+    let result = null;
+
+    for (let frameIndex = 0; frameIndex < 4; frameIndex += 1) {
+      result = buildLegacyAnalysisFrame({
+        featureState,
+        fftMagnitudes: makeFft(BRIDGED_SUBFLOOR_PEAKS),
+        avgAmplitude: 90,
+        rms: 0.34,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+    }
+
+    expect(result.analysisResult.usedDecay).toBe(false);
+    expect(result.frame.fieldState).toBe("active");
+    expect(result.frame.debug.analysisEngine).toBe("layered");
+    expect(result.frame.debug.backboneModeCount).toBeGreaterThan(0);
+  });
+
+  it("releases weak sub-floor residuals instead of rebuilding them as active", () => {
+    const featureState = createAudioFeatureState();
+    let previousFrame = null;
+    let result = null;
+
+    for (let frameIndex = 0; frameIndex < 4; frameIndex += 1) {
+      result = buildLegacyAnalysisFrame({
+        featureState,
+        fftMagnitudes: makeFft(BRIDGED_SUBFLOOR_PEAKS),
+        avgAmplitude: 90,
+        rms: 0.34,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+    }
+
+    for (let frameIndex = 4; frameIndex < 7; frameIndex += 1) {
+      result = buildLegacyAnalysisFrame({
+        featureState,
+        fftMagnitudes: makeFft([[60, 0.08]]),
+        avgAmplitude: 2.5,
+        rms: 0.01,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+    }
+
+    expect(result.analysisResult.usedDecay).toBe(true);
+    expect(result.frame.fieldState).toBe("decay");
+    expect(result.frame.debug.analysisEngine).toBe("none");
+  });
+
+  it("does not trigger the sub-floor residual gate when another backbone peak is above floor", () => {
+    const featureState = createAudioFeatureState();
+    let previousFrame = null;
+    let result = null;
+
+    for (let frameIndex = 0; frameIndex < 2; frameIndex += 1) {
+      result = buildLegacyAnalysisFrame({
+        featureState,
+        fftMagnitudes: makeFft([
+          [60, 0.09],
+          [400, 0.14],
+        ]),
+        avgAmplitude: 6,
+        rms: 0.018,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+    }
+
+    expect(result.analysisResult.usedDecay).toBe(false);
+    expect(result.frame.fieldState).toBe("active");
+    expect(result.frame.debug.analysisEngine).toBe("layered");
+  });
+
+  it("keeps steady detail active when the backbone residual gate trips", () => {
+    const featureState = createAudioFeatureState();
+    let previousFrame = null;
+    let result = null;
+
+    for (let frameIndex = 0; frameIndex < 6; frameIndex += 1) {
+      result = buildLegacyAnalysisFrame({
+        featureState,
+        fftMagnitudes: makeFft(WEAK_SUBFLOOR_WITH_DETAIL_PEAKS),
+        avgAmplitude: 12,
+        rms: 0.05,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+    }
+
+    expect(result.analysisResult.usedDecay).toBe(false);
+    expect(result.frame.fieldState).toBe("active");
+    expect(result.frame.debug.analysisEngine).toBe("layered");
+    expect(result.frame.debug.detailModeCount).toBeGreaterThan(0);
+    expect(result.frame.detailSlots.some((value) => value !== 0)).toBe(true);
+  });
+
+  it("releases the backbone while keeping detail active", () => {
+    const featureState = createAudioFeatureState();
+    let previousFrame = null;
+    let result = null;
+
+    for (let frameIndex = 0; frameIndex < 4; frameIndex += 1) {
+      result = buildLegacyAnalysisFrame({
+        featureState,
+        fftMagnitudes: makeFft(BRIDGED_SUBFLOOR_PEAKS),
+        avgAmplitude: 90,
+        rms: 0.34,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+    }
+
+    const seededBackboneAmplitude = sumSlotAmplitudes(
+      result.frame.backboneSlots,
+    );
+
+    result = buildLegacyAnalysisFrame({
+      featureState,
+      fftMagnitudes: makeFft(WEAK_SUBFLOOR_WITH_DETAIL_PEAKS),
+      avgAmplitude: 12,
+      rms: 0.05,
+      frameTimeMs: 4 * 33,
+      previousFrame,
+    });
+    previousFrame = result.frame;
+    const releasedBackboneAmplitude = sumSlotAmplitudes(
+      result.frame.backboneSlots,
+    );
+
+    result = buildLegacyAnalysisFrame({
+      featureState,
+      fftMagnitudes: makeFft(WEAK_SUBFLOOR_WITH_DETAIL_PEAKS),
+      avgAmplitude: 12,
+      rms: 0.05,
+      frameTimeMs: 5 * 33,
+      previousFrame,
+    });
+
+    expect(result.analysisResult.usedDecay).toBe(false);
+    expect(result.frame.fieldState).toBe("active");
+    expect(result.frame.debug.analysisEngine).toBe("layered");
+    expect(result.frame.debug.detailModeCount).toBeGreaterThan(0);
+    expect(sumSlotAmplitudes(result.frame.backboneSlots)).toBeLessThan(
+      releasedBackboneAmplitude,
+    );
+    expect(releasedBackboneAmplitude).toBeLessThan(seededBackboneAmplitude);
   });
 
   it("updates detail slots immediately while the backbone stays structurally continuous", () => {

@@ -12,7 +12,10 @@ import {
   normalizeCavityGeometry,
   resolveEffectiveCavityGeometry,
 } from "../../core/cavityGeometry.js";
-import { sampleFFTAmplitudeForFrequency } from "../cavityModes.js";
+import {
+  getMinimumCavityFrequency,
+  sampleFFTAmplitudeForFrequency,
+} from "../cavityModes.js";
 import {
   BACKBONE_STACK_SLOTS,
   DETAIL_STACK_SLOTS,
@@ -104,8 +107,17 @@ const BACKBONE_SALIENCE_WEIGHT = 1.2;
 const DETAIL_LAYER_WEIGHT = 0.35;
 const BACKBONE_ATTACK = 0.22;
 const BACKBONE_RELEASE = 0.96;
+const BACKBONE_SILENCE_RELEASE = 0.9;
+const BACKBONE_LOW_SIGNAL_RELEASE_THRESHOLD = 0.085;
+const BACKBONE_LOW_SIGNAL_RELEASE = 0.72;
+const LEGACY_SUBFLOOR_RESIDUAL_PEAK_THRESHOLD = 0.1;
+const LEGACY_SUBFLOOR_RESIDUAL_FLUX_THRESHOLD = 0.001;
+const LEGACY_SUBFLOOR_RESIDUAL_TRANSIENT_THRESHOLD = 0.001;
 const DETAIL_ATTACK = 0.55;
 const DETAIL_RELEASE = 0.82;
+const DETAIL_SILENCE_RELEASE = 0.74;
+const DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD = 0.07;
+const DETAIL_LOW_SIGNAL_RELEASE = 0.58;
 const DETAIL_FRESH_CAP = 0;
 const BACKBONE_FRESH_CAP = 4;
 const BACKBONE_EVICTION_RELEASE = 0.78;
@@ -3110,6 +3122,8 @@ function resolveLayeredModalStacks({
   avgAmplitude,
   preModalFftPeak,
   liveInputBaselinePeak,
+  spectralFlux,
+  transientEnergy,
 }) {
   let analysisEngine = "none";
   let pitchSource = "none";
@@ -3187,6 +3201,9 @@ function resolveLayeredModalStacks({
       attack: BACKBONE_ATTACK,
       tracking: BACKBONE_ATTACK,
       release: BACKBONE_RELEASE,
+      emptyTargetRelease: BACKBONE_SILENCE_RELEASE,
+      lowSignalReleaseThreshold: BACKBONE_LOW_SIGNAL_RELEASE_THRESHOLD,
+      lowSignalRelease: BACKBONE_LOW_SIGNAL_RELEASE,
       freshCap: BACKBONE_FRESH_CAP,
       colorOptions: includeChromesthesia
         ? {
@@ -3201,6 +3218,9 @@ function resolveLayeredModalStacks({
       attack: DETAIL_ATTACK,
       tracking: DETAIL_ATTACK,
       release: DETAIL_RELEASE,
+      emptyTargetRelease: DETAIL_SILENCE_RELEASE,
+      lowSignalReleaseThreshold: DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD,
+      lowSignalRelease: DETAIL_LOW_SIGNAL_RELEASE,
       freshCap: DETAIL_FRESH_CAP,
       colorOptions: includeChromesthesia
         ? {
@@ -3534,11 +3554,30 @@ function resolveLayeredModalStacks({
         : dominantPeak
           ? [dominantPeak]
           : [];
+      const shouldReleaseWeakSubfloorResidual =
+        shouldReleaseLegacySubfloorResidual({
+          bridgeMeta: backboneTarget.subfloorBridgeMeta,
+          radius,
+          spectralFlux,
+          transientEnergy,
+        });
+      const dominantPeakFrequency = dominantPeak?.frequency ?? 0;
+      const dominantPeakAmplitude = dominantPeak?.amplitude ?? 0;
+      const backboneHasActiveModes =
+        countActiveSlots(backboneState.slots, backboneCapacity) > 0;
+      const detailHasActiveModes =
+        countActiveSlots(detailState.slots, detailCapacity) > 0;
+      const shouldBlendBackbone =
+        backboneTarget.uniqueModeCount > 0 &&
+        !shouldReleaseWeakSubfloorResidual;
+      const shouldBlendDetail = detailTarget.uniqueModeCount > 0;
+      const hasActiveBlend = shouldBlendBackbone || shouldBlendDetail;
+      const shouldReleaseBackbone =
+        !shouldBlendBackbone &&
+        (shouldReleaseWeakSubfloorResidual || backboneHasActiveModes);
+      const shouldReleaseDetail = !shouldBlendDetail && detailHasActiveModes;
 
-      if (
-        backboneTarget.uniqueModeCount > 0 ||
-        detailTarget.uniqueModeCount > 0
-      ) {
+      if (shouldBlendBackbone) {
         const resolvedBackboneBlendOptions = createLayerReleaseOptions(
           backboneState,
           backboneTarget.slots,
@@ -3547,48 +3586,21 @@ function resolveLayeredModalStacks({
           analysisHints,
           "backbone",
         );
-        const resolvedDetailBlendOptions = createLayerReleaseOptions(
-          detailState,
-          detailTarget.slots,
-          detailCapacity,
-          detailBlendOptions,
-          analysisHints,
-          "detail",
-        );
         applyLayerBlend(
           backboneState,
           backboneTarget,
           backboneCapacity,
           resolvedBackboneBlendOptions,
         );
-        applyLayerBlend(
-          detailState,
-          detailTarget,
-          detailCapacity,
-          resolvedDetailBlendOptions,
-        );
         setLayerMetadata(
           backboneState,
           backboneTarget,
-          dominantPeak?.frequency ?? 0,
-          dominantPeak?.amplitude ?? 0,
+          dominantPeakFrequency,
+          dominantPeakAmplitude,
           "layered",
         );
-        setLayerMetadata(
-          detailState,
-          detailTarget,
-          dominantPeak?.frequency ?? 0,
-          dominantPeak?.amplitude ?? 0,
-          "layered",
-        );
-        analysisEngine = "layered";
-        pitchSource = "spectral";
         backboneTrackingSlots = backboneTarget.slots;
-        detailTrackingSlots = detailTarget.slots;
-      } else if (
-        countActiveSlots(backboneState.slots, backboneCapacity) > 0 ||
-        countActiveSlots(detailState.slots, detailCapacity) > 0
-      ) {
+      } else if (shouldReleaseBackbone) {
         releaseLayer(
           backboneState,
           backboneCapacity,
@@ -3603,6 +3615,34 @@ function resolveLayeredModalStacks({
           backboneTrackingSlots,
           zeroBackboneTargetSlots,
         );
+      } else {
+        clearModalStack(backboneState);
+      }
+
+      if (shouldBlendDetail) {
+        const resolvedDetailBlendOptions = createLayerReleaseOptions(
+          detailState,
+          detailTarget.slots,
+          detailCapacity,
+          detailBlendOptions,
+          analysisHints,
+          "detail",
+        );
+        applyLayerBlend(
+          detailState,
+          detailTarget,
+          detailCapacity,
+          resolvedDetailBlendOptions,
+        );
+        setLayerMetadata(
+          detailState,
+          detailTarget,
+          dominantPeakFrequency,
+          dominantPeakAmplitude,
+          "layered",
+        );
+        detailTrackingSlots = detailTarget.slots;
+      } else if (shouldReleaseDetail) {
         releaseLayer(
           detailState,
           detailCapacity,
@@ -3617,10 +3657,15 @@ function resolveLayeredModalStacks({
           detailTrackingSlots,
           zeroDetailTargetSlots,
         );
-        usedDecay = true;
       } else {
-        clearModalStack(backboneState);
         clearModalStack(detailState);
+      }
+
+      if (hasActiveBlend) {
+        analysisEngine = "layered";
+        pitchSource = "spectral";
+      } else if (shouldReleaseBackbone || shouldReleaseDetail) {
+        usedDecay = true;
       }
     }
   } else if (
@@ -3633,6 +3678,9 @@ function resolveLayeredModalStacks({
       attack: BACKBONE_ATTACK,
       tracking: BACKBONE_ATTACK,
       release: BACKBONE_RELEASE,
+      emptyTargetRelease: BACKBONE_SILENCE_RELEASE,
+      lowSignalReleaseThreshold: BACKBONE_LOW_SIGNAL_RELEASE_THRESHOLD,
+      lowSignalRelease: BACKBONE_LOW_SIGNAL_RELEASE,
       freshCap: BACKBONE_FRESH_CAP,
       colorOptions: includeChromesthesia
         ? {
@@ -3647,6 +3695,9 @@ function resolveLayeredModalStacks({
       attack: DETAIL_ATTACK,
       tracking: DETAIL_ATTACK,
       release: DETAIL_RELEASE,
+      emptyTargetRelease: DETAIL_SILENCE_RELEASE,
+      lowSignalReleaseThreshold: DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD,
+      lowSignalRelease: DETAIL_LOW_SIGNAL_RELEASE,
       freshCap: DETAIL_FRESH_CAP,
       colorOptions: includeChromesthesia
         ? {
@@ -3718,6 +3769,28 @@ function resolveLayeredModalStacks({
     usedDecay,
     peakScanMs,
   };
+}
+
+function shouldReleaseLegacySubfloorResidual({
+  bridgeMeta,
+  radius,
+  spectralFlux,
+  transientEnergy,
+}) {
+  if (!bridgeMeta) {
+    return false;
+  }
+
+  return (
+    bridgeMeta.dominantPeakFrequency > 0 &&
+    bridgeMeta.dominantPeakFrequency < getMinimumCavityFrequency(radius) &&
+    bridgeMeta.dominantPeakBridgeCount === 0 &&
+    bridgeMeta.meaningfulAboveFloorPeakCount === 0 &&
+    bridgeMeta.dominantPeakAmplitude <=
+      LEGACY_SUBFLOOR_RESIDUAL_PEAK_THRESHOLD &&
+    spectralFlux <= LEGACY_SUBFLOOR_RESIDUAL_FLUX_THRESHOLD &&
+    transientEnergy <= LEGACY_SUBFLOOR_RESIDUAL_TRANSIENT_THRESHOLD
+  );
 }
 
 function finalizeFeatureDebugSnapshot({
@@ -5010,6 +5083,8 @@ function updateLegacyAudioFeatureStructuralState(
     avgAmplitude,
     preModalFftPeak,
     liveInputBaselinePeak: bandState.liveInputBaselinePeak ?? 0,
+    spectralFlux: fastSignalState.spectralFlux,
+    transientEnergy: fastSignalState.transientEnergy,
   });
   const structuralTotalMs = getAudioPerfNow() - structuralStartedAt;
   const modalResolveMs = Math.max(0, structuralTotalMs - peakScanMs);
