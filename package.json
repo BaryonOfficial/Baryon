@@ -2,7 +2,7 @@
   "name": "baryon-monorepo",
   "private": true,
   "version": "0.0.0",
-  "license": "LicenseRef-ELv2",
+  "license": "LicenseRef-PolyForm-Strict-1.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/BaryonOfficial/Baryon.git"
