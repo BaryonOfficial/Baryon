@@ -348,6 +348,10 @@ function readModeKeys(slotBuffer) {
   return keys;
 }
 
+function hasNewModeKey(nextKeys, previousKeys) {
+  return nextKeys.some((key) => !previousKeys.includes(key));
+}
+
 function readModeAmplitudeMap(slotBuffer) {
   const amplitudes = new Map();
   for (let i = 0; i < slotBuffer.length; i += 4) {
@@ -3451,6 +3455,132 @@ describe("modal excitation integration", () => {
     expect(frame.debug.driveSource).toBe("time-domain");
   });
 
+  it("surfaces a newly visible composed detail key within two bright treble frames", () => {
+    const featureState = createAudioFeatureState();
+    const firstFrame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        avgAmplitude: 118,
+        fftMagnitudes: makeFft([
+          [6200, 0.92],
+          [7600, 0.72],
+        ]),
+        timeData: makeTimeData({
+          frequency: 6200,
+          amplitude: 0.36,
+        }),
+        rms: 0.42,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 0,
+      structuralImplementation: MODAL_EXCITATION,
+    });
+    const firstFrameDetailKeys = readModeKeys(firstFrame.detailSlots);
+    let frame = null;
+
+    for (let frameIndex = 1; frameIndex <= 2; frameIndex += 1) {
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          avgAmplitude: 118,
+          fftMagnitudes: makeFft([
+            [8600, 0.96],
+            [9800, 0.7],
+          ]),
+          timeData: makeTimeData({
+            frequency: 8600,
+            amplitude: 0.34,
+          }),
+          rms: 0.42,
+        }),
+        featureState,
+        radius: 3,
+        status: makeActiveStatus(),
+        frameTimeMs: frameIndex * 33,
+        structuralImplementation: MODAL_EXCITATION,
+      });
+    }
+
+    expect(frame.debug.analysisEngine).toBe("modal-excitation");
+    const switchedDetailKeys = readModeKeys(frame.detailSlots);
+    expect(hasNewModeKey(switchedDetailKeys, firstFrameDetailKeys)).toBe(true);
+  });
+
+  it("surfaces a newly visible composed detail key for calibrated line-feed modal excitation", () => {
+    const featureState = createAudioFeatureState();
+    const status = makeResolvedLineFeedLiveStatus();
+
+    calibrateLiveInput(featureState, {
+      profile: "line-feed",
+      status,
+      peaks: [
+        [180, 0.09],
+        [360, 0.07],
+      ],
+      avgAmplitude: 2.5,
+      rms: 0.006,
+      timeData: new Float32Array(FFT_SIZE),
+    });
+
+    const firstFrame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "live",
+        avgAmplitude: 5.2,
+        fftMagnitudes: makeFft([
+          [6200, 0.2],
+          [7600, 0.14],
+          [9100, 0.1],
+        ]),
+        timeData: makeTimeData({
+          frequency: 6200,
+          amplitude: 0.12,
+        }),
+        rms: 0.02,
+      }),
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
+      liveInputAnalysisSettings: { profile: "line-feed" },
+      structuralImplementation: MODAL_EXCITATION,
+    });
+    const firstFrameDetailKeys = readModeKeys(firstFrame.detailSlots);
+    let frame = null;
+
+    for (const frameTimeMs of [
+      LIVE_INPUT_POST_CALIBRATION_NEXT_MS,
+      LIVE_INPUT_POST_CALIBRATION_NEXT_MS + 33,
+    ]) {
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "live",
+          avgAmplitude: 5.4,
+          fftMagnitudes: makeFft([
+            [9800, 0.24],
+            [10800, 0.16],
+          ]),
+          timeData: makeTimeData({
+            frequency: 9800,
+            amplitude: 0.13,
+          }),
+          rms: 0.02,
+        }),
+        featureState,
+        radius: 3,
+        status,
+        frameTimeMs,
+        liveInputAnalysisSettings: { profile: "line-feed" },
+        structuralImplementation: MODAL_EXCITATION,
+      });
+    }
+
+    expect(frame.debug.analysisEngine).toBe("modal-excitation");
+    expect(frame.sourceMode).toBe("line-feed");
+    expect(frame.debug.liveInputProfile).toBe("line-feed");
+    const switchedDetailKeys = readModeKeys(frame.detailSlots);
+    expect(hasNewModeKey(switchedDetailKeys, firstFrameDetailKeys)).toBe(true);
+  });
+
   it("surfaces side-by-side modal comparison diagnostics in dual mode", () => {
     const featureState = createAudioFeatureState();
     const fftMagnitudes = makeFft([
@@ -3550,7 +3680,7 @@ describe("modal excitation integration", () => {
     );
   });
 
-  it("drops modal structure faster than the visible release tail on silence", () => {
+  it("keeps a brief visible release tail on near-silence", () => {
     const featureState = createAudioFeatureState();
     const activeFft = makeFft([
       [110, 0.95],
@@ -3587,8 +3717,8 @@ describe("modal excitation integration", () => {
         featureState,
         fftMagnitudes: silentFft,
         timeData: silentTimeData,
-        avgAmplitude: 0,
-        rms: 0,
+        avgAmplitude: 2.5,
+        rms: 0.01,
         frameTimeMs: frameIndex * 33,
         previousFrame,
       });
@@ -3608,6 +3738,65 @@ describe("modal excitation integration", () => {
       activeFrame.structureSignal * 0.65,
     );
     expect(silentResult.frame.changeSignal).toBeGreaterThanOrEqual(0);
+  });
+
+  it("clears modal cymatics quickly on true hard silence", () => {
+    const featureState = createAudioFeatureState();
+    const activeFft = makeFft([
+      [110, 0.95],
+      [220, 0.52],
+      [6600, 0.38],
+    ]);
+    const activeTimeData = makeTimeData({
+      frequency: 110,
+      amplitude: 0.45,
+      harmonics: [[2, 0.08]],
+    });
+    const silentFft = new Float32Array(BIN_COUNT);
+    const silentTimeData = new Float32Array(FFT_SIZE);
+    let previousFrame = null;
+    let silentResult = null;
+    let activeBackboneAmplitude = 0;
+    let activeDetailAmplitude = 0;
+
+    for (let frameIndex = 0; frameIndex < 10; frameIndex += 1) {
+      const result = buildModalExcitationAnalysisFrame({
+        featureState,
+        fftMagnitudes: activeFft,
+        timeData: activeTimeData,
+        avgAmplitude: 120,
+        rms: 0.52,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+      activeBackboneAmplitude = sumSlotAmplitudes(result.frame.backboneSlots);
+      activeDetailAmplitude = sumSlotAmplitudes(result.frame.detailSlots);
+    }
+
+    for (let frameIndex = 10; frameIndex < 16; frameIndex += 1) {
+      silentResult = buildModalExcitationAnalysisFrame({
+        featureState,
+        fftMagnitudes: silentFft,
+        timeData: silentTimeData,
+        avgAmplitude: 0,
+        rms: 0,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = silentResult.frame;
+    }
+
+    expect(silentResult.analysisResult.usedDecay).toBe(true);
+    expect(sumSlotAmplitudes(silentResult.analysisResult.signalModeSlots)).toBe(
+      0,
+    );
+    expect(sumSlotAmplitudes(silentResult.frame.backboneSlots)).toBeLessThan(
+      activeBackboneAmplitude * 0.08,
+    );
+    expect(sumSlotAmplitudes(silentResult.frame.detailSlots)).toBeLessThan(
+      activeDetailAmplitude * 0.08,
+    );
   });
 
   it("keeps dense low-change modal input visually pruned without collapsing reactivity", () => {
