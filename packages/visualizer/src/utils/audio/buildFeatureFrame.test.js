@@ -241,6 +241,7 @@ function buildLegacyAnalysisFrame({
   previousFrame = null,
   status = makeActiveStatus(),
   radius = 3,
+  analysisHints = null,
 }) {
   const preparedInputs = prepareAudioFeatureFrameInputs({
     analysisSnapshot: createSnapshot({
@@ -254,6 +255,7 @@ function buildLegacyAnalysisFrame({
     status,
     frameTimeMs,
     structuralImplementation: LEGACY_PEAK,
+    analysisHints,
   });
   const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
   const frame = composeAudioFeatureFrame({
@@ -280,6 +282,35 @@ const WEAK_SUBFLOOR_WITH_DETAIL_PEAKS = [
   [60, 0.095],
   [4000, 0.7],
 ];
+const BEAT_MASKED_TONAL_TREBLE_PEAKS = [
+  [60, 1],
+  [80, 0.95],
+  [100, 0.92],
+  [120, 0.88],
+  [160, 0.76],
+  [4000, 0.45],
+  [5600, 0.35],
+];
+const HEAVY_LOW_END_WITH_TONAL_TREBLE_PEAKS = [
+  [100, 0.95],
+  [200, 0.82],
+  [300, 0.74],
+  [500, 0.68],
+  [800, 0.62],
+  [1200, 0.56],
+  [2400, 0.5],
+  [4800, 0.42],
+];
+const LEGACY_VOCAL_OVER_BEAT_HINTS = {
+  active: true,
+  harmonicity: 0.55,
+  bassSalience: 0.85,
+  textureSpread: 0.4,
+  novelty: 0.12,
+  transientSalience: 0.08,
+  pitchConfidence: 0.3,
+  voicingProbability: 0.45,
+};
 
 function buildLiveInputFrame({
   featureState,
@@ -305,6 +336,46 @@ function buildLiveInputFrame({
     frameTimeMs,
     liveInputAnalysisSettings: { profile },
   });
+}
+
+function buildLiveInputAnalysisFrame({
+  featureState,
+  peaks,
+  avgAmplitude,
+  rms,
+  frameTimeMs,
+  profile = "voice-tone",
+  status = makeLiveInputStatus(),
+  timeData = new Float32Array(FFT_SIZE),
+  analysisHints = null,
+}) {
+  const preparedInputs = prepareAudioFeatureFrameInputs({
+    analysisSnapshot: createSnapshot({
+      sourceMode: "live",
+      avgAmplitude,
+      fftMagnitudes: makeFft(peaks),
+      timeData,
+      rms,
+    }),
+    featureState,
+    radius: 3,
+    status,
+    frameTimeMs,
+    structuralImplementation: LEGACY_PEAK,
+    liveInputAnalysisSettings: { profile },
+    analysisHints,
+  });
+  const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
+  const frame = composeAudioFeatureFrame({
+    preparedInputs,
+    analysisResult,
+  });
+
+  return {
+    preparedInputs,
+    analysisResult,
+    frame,
+  };
 }
 
 function calibrateLiveInput(
@@ -363,6 +434,56 @@ function readModeAmplitudeMap(slotBuffer) {
     );
   }
   return amplitudes;
+}
+
+function sumModeAmplitudeForKeys(slotBuffer, keys) {
+  const amplitudes = readModeAmplitudeMap(slotBuffer);
+  let total = 0;
+  for (const key of keys) {
+    total += amplitudes.get(key) ?? 0;
+  }
+  return total;
+}
+
+function runSteadyLegacyFrames({
+  featureState,
+  fftMagnitudes,
+  frameCount = 4,
+  avgAmplitude = 24,
+  rms = 0.2,
+  frameStepMs = 33,
+  analysisHints = null,
+  status = makeActiveStatus(),
+}) {
+  let previousFrame = null;
+  let result = null;
+
+  for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+    result = buildLegacyAnalysisFrame({
+      featureState,
+      fftMagnitudes,
+      avgAmplitude,
+      rms,
+      frameTimeMs: frameIndex * frameStepMs,
+      previousFrame,
+      analysisHints,
+      status,
+    });
+    previousFrame = result.frame;
+  }
+
+  return result;
+}
+
+function readDetailOnlyKeys(frame) {
+  const backboneKeys = readModeKeys(frame.backboneSlots);
+  return readModeKeys(frame.detailSlots).filter(
+    (key) => !backboneKeys.includes(key),
+  );
+}
+
+function readDetailOnlyAmplitude(frame) {
+  return sumModeAmplitudeForKeys(frame.modeSlots, readDetailOnlyKeys(frame));
 }
 
 describe("buildAudioFeatureFrame legacy-peak layered contract", () => {
@@ -1096,6 +1217,71 @@ describe("buildAudioFeatureFrame legacy-peak layered contract", () => {
     expect(frame.debug.modeSlotCount).toBeGreaterThan(0);
   });
 
+  it("keeps vocal analysis active with bass accompaniment while preserving detail harmonics", () => {
+    const featureState = createAudioFeatureState();
+
+    calibrateLiveInput(featureState);
+
+    const frame = buildLiveInputFrame({
+      featureState,
+      peaks: [
+        [80, 0.7],
+        [330, 0.18],
+        [660, 0.24],
+        [990, 0.16],
+        [1320, 0.09],
+      ],
+      avgAmplitude: 6.8,
+      rms: 0.03,
+      frameTimeMs: 1260,
+      profile: "voice-tone",
+      timeData: makeTimeData({
+        frequency: 330,
+        amplitude: 0.16,
+        harmonics: [
+          [2, 0.12],
+          [3, 0.08],
+          [4, 0.05],
+          [5, 0.03],
+        ],
+      }),
+    });
+
+    expect(frame.debug.analysisEngine).toBe("vocal");
+    expect(frame.debug.detailModeCount).toBeGreaterThan(0);
+  });
+
+  it("keeps salient upper harmonics in acoustic spectral fallback under low-end pressure", () => {
+    const featureState = createAudioFeatureState();
+
+    calibrateLiveInput(featureState);
+
+    const result = buildLiveInputAnalysisFrame({
+      featureState,
+      peaks: [
+        [90, 0.8],
+        [1900, 0.5],
+        [2800, 0.4],
+      ],
+      avgAmplitude: 6.2,
+      rms: 0.018,
+      frameTimeMs: 1260,
+      analysisHints: {
+        ...LEGACY_VOCAL_OVER_BEAT_HINTS,
+        bassSalience: 0.8,
+        voicingProbability: 0.1,
+      },
+      timeData: new Float32Array(FFT_SIZE),
+    });
+
+    expect(result.frame.debug.analysisEngine).toBe("spectral-fallback");
+    expect(
+      result.analysisResult.spectralCandidates.some(
+        (peak) => (peak.frequency ?? 0) >= 1800,
+      ),
+    ).toBe(true);
+  });
+
   it("tracks high singing without jumping to stronger upper harmonics", () => {
     const featureState = createAudioFeatureState();
     buildLiveInputFrame({
@@ -1474,6 +1660,118 @@ describe("buildAudioFeatureFrame legacy-peak layered contract", () => {
     expect(frame.debug.modeSlotCount).toBeGreaterThan(0);
     expect(frame.backboneSlots.some((value) => value !== 0)).toBe(true);
     expect(frame.detailSlots.some((value) => value !== 0)).toBe(true);
+  });
+
+  it("preserves tonal treble detail against a strong low-end beat", () => {
+    const featureState = createAudioFeatureState();
+    const result = runSteadyLegacyFrames({
+      featureState,
+      fftMagnitudes: makeFft(BEAT_MASKED_TONAL_TREBLE_PEAKS),
+      avgAmplitude: 68,
+      rms: 0.26,
+      analysisHints: LEGACY_VOCAL_OVER_BEAT_HINTS,
+    });
+
+    const composedKeys = readModeKeys(result.frame.modeSlots);
+    const detailOnlyKeys = readDetailOnlyKeys(result.frame);
+
+    expect(result.frame.debug.backboneModeCount).toBeGreaterThan(0);
+    expect(result.frame.debug.detailModeCount).toBeGreaterThan(0);
+    expect(result.frame.debug.beatLowBandEnergy).toBeGreaterThanOrEqual(0.08);
+    expect(result.frame.trebleTonalEnergy).toBeGreaterThanOrEqual(0.12);
+    expect(result.frame.modeCoherence).toBeGreaterThanOrEqual(0.18);
+    expect(
+      result.analysisResult.spectralCandidates.some(
+        (peak) => (peak.frequency ?? 0) >= 1800,
+      ),
+    ).toBe(true);
+    expect(detailOnlyKeys.length).toBeGreaterThan(0);
+    expect(detailOnlyKeys.some((key) => composedKeys.includes(key))).toBe(true);
+  });
+
+  it("keeps reserved tonal treble candidates in the legacy detail selection", () => {
+    const featureState = createAudioFeatureState();
+    const result = buildLegacyAnalysisFrame({
+      featureState,
+      fftMagnitudes: makeFft(HEAVY_LOW_END_WITH_TONAL_TREBLE_PEAKS),
+      avgAmplitude: 74,
+      rms: 0.3,
+      analysisHints: {
+        ...LEGACY_VOCAL_OVER_BEAT_HINTS,
+        bassSalience: 0.9,
+        textureSpread: 0.46,
+      },
+    });
+
+    const selectedFrequencies = result.analysisResult.spectralCandidates.map(
+      (peak) => peak.frequency ?? 0,
+    );
+
+    expect(
+      selectedFrequencies.some((frequency) => Math.abs(frequency - 2400) < 120),
+    ).toBe(true);
+    expect(
+      selectedFrequencies.some((frequency) => Math.abs(frequency - 4800) < 160),
+    ).toBe(true);
+  });
+
+  it("does not force weak broadband treble into the reserved detail quota", () => {
+    const featureState = createAudioFeatureState();
+    const fftMagnitudes = new Float32Array(BIN_COUNT);
+    for (const [frequency, amplitude] of [
+      [100, 0.95],
+      [200, 0.88],
+      [300, 0.82],
+      [450, 0.76],
+      [620, 0.7],
+      [820, 0.64],
+      [1040, 0.58],
+      [1320, 0.52],
+    ]) {
+      fftMagnitudes[freqToBin(frequency)] = amplitude;
+    }
+    for (
+      let bin = freqToBin(2000);
+      bin <= freqToBin(5000) && bin < BIN_COUNT;
+      bin += 1
+    ) {
+      fftMagnitudes[bin] = 0.04;
+    }
+
+    const result = buildLegacyAnalysisFrame({
+      featureState,
+      fftMagnitudes,
+      avgAmplitude: 80,
+      rms: 0.32,
+      analysisHints: {
+        ...LEGACY_VOCAL_OVER_BEAT_HINTS,
+        bassSalience: 0.92,
+        harmonicity: 0.18,
+        voicingProbability: 0.04,
+      },
+    });
+
+    expect(
+      result.analysisResult.spectralCandidates.some(
+        (peak) => (peak.frequency ?? 0) >= 1800,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps backbone dominant while making tonal detail visible in the composed field", () => {
+    const featureState = createAudioFeatureState();
+    const result = runSteadyLegacyFrames({
+      featureState,
+      fftMagnitudes: makeFft(BEAT_MASKED_TONAL_TREBLE_PEAKS),
+      avgAmplitude: 68,
+      rms: 0.26,
+      analysisHints: LEGACY_VOCAL_OVER_BEAT_HINTS,
+    });
+    const detailOnlyAmplitude = readDetailOnlyAmplitude(result.frame);
+    const backboneAmplitude = sumSlotAmplitudes(result.frame.backboneSlots);
+
+    expect(detailOnlyAmplitude).toBeGreaterThan(0);
+    expect(backboneAmplitude).toBeGreaterThan(detailOnlyAmplitude);
   });
 
   it("keeps sub-floor bass active when bridge harmonics provide structure", () => {
@@ -3413,6 +3711,57 @@ describe("full-range music handling", () => {
     expect(frame.trebleBroadbandEnergy).toBeGreaterThan(0.05);
     expect(frame.structureSignal).toBeLessThan(0.9);
     expect(frame.modeCoherence).toBeGreaterThan(0);
+  });
+
+  it("does not apply tonal-detail preservation weights to broadband treble", () => {
+    const tonalFeatureState = createAudioFeatureState();
+    const tonalResult = runSteadyLegacyFrames({
+      featureState: tonalFeatureState,
+      fftMagnitudes: makeFft(BEAT_MASKED_TONAL_TREBLE_PEAKS),
+      avgAmplitude: 68,
+      rms: 0.26,
+      analysisHints: LEGACY_VOCAL_OVER_BEAT_HINTS,
+    });
+
+    const broadbandFeatureState = createAudioFeatureState();
+    let broadbandResult = null;
+    for (let frameIndex = 0; frameIndex < 4; frameIndex += 1) {
+      const broadbandFft = new Float32Array(BIN_COUNT);
+      for (const [frequency, amplitude] of [
+        [80, 0.8],
+        [160, 0.6],
+      ]) {
+        broadbandFft[freqToBin(frequency)] = amplitude;
+      }
+      for (
+        let bin = freqToBin(3200);
+        bin <= freqToBin(10000) && bin < BIN_COUNT;
+        bin += 1
+      ) {
+        broadbandFft[bin] = 0.16;
+      }
+
+      broadbandResult = buildLegacyAnalysisFrame({
+        featureState: broadbandFeatureState,
+        fftMagnitudes: broadbandFft,
+        avgAmplitude: 68,
+        rms: 0.26,
+        frameTimeMs: frameIndex * 33,
+        previousFrame: broadbandResult?.frame ?? null,
+        analysisHints: LEGACY_VOCAL_OVER_BEAT_HINTS,
+      });
+    }
+
+    const tonalDetailOnlyAmplitude = readDetailOnlyAmplitude(tonalResult.frame);
+    const broadbandDetailOnlyAmplitude = readDetailOnlyAmplitude(
+      broadbandResult.frame,
+    );
+
+    expect(broadbandResult.frame.trebleTonalEnergy).toBeLessThan(0.12);
+    expect(tonalDetailOnlyAmplitude).toBeGreaterThan(0);
+    expect(broadbandDetailOnlyAmplitude).toBeLessThanOrEqual(
+      tonalDetailOnlyAmplitude,
+    );
   });
 });
 
