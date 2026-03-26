@@ -36,35 +36,47 @@ const MODE_ATLAS_CACHE_MAX_SIZE = 8;
 const EXCITATION_BACKBONE_BLEND_ATTACK = 0.28;
 const EXCITATION_BACKBONE_BLEND_TRACKING = 0.32;
 const EXCITATION_BACKBONE_BLEND_RELEASE = 0.9;
+const EXCITATION_BACKBONE_SILENCE_RELEASE = 0.82;
+const EXCITATION_BACKBONE_HARD_SILENCE_RELEASE = 0.5;
+const EXCITATION_BACKBONE_LOW_SIGNAL_RELEASE_THRESHOLD = 0.08;
+const EXCITATION_BACKBONE_LOW_SIGNAL_RELEASE = 0.62;
 const EXCITATION_BACKBONE_FRESH_CAP = 3;
 const EXCITATION_DETAIL_BLEND_ATTACK = 0.45;
-const EXCITATION_DETAIL_BLEND_TRACKING = 0.45;
+const EXCITATION_DETAIL_BLEND_TRACKING = 0.5;
 const EXCITATION_DETAIL_BLEND_RELEASE = 0.68;
-const EXCITATION_DETAIL_FRESH_CAP = 1;
+const EXCITATION_DETAIL_SILENCE_RELEASE = 0.58;
+const EXCITATION_DETAIL_HARD_SILENCE_RELEASE = 0.42;
+const EXCITATION_DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD = 0.06;
+const EXCITATION_DETAIL_LOW_SIGNAL_RELEASE = 0.48;
+const EXCITATION_DETAIL_FRESH_CAP = 2;
 const BACKBONE_SIGNAL_MIN_DRIVE_ENERGY = 0.045;
-const DETAIL_SIGNAL_MIN_DRIVE_ENERGY = 0.06;
+const DETAIL_SIGNAL_MIN_DRIVE_ENERGY = 0.05;
 const BACKBONE_SIGNAL_STALE_WINDOW_MS = 66;
 const DETAIL_SIGNAL_STALE_WINDOW_MS = 33;
 const BACKBONE_SIGNAL_SCORE_DRIVE_WEIGHT = 0.7;
 const BACKBONE_SIGNAL_SCORE_AMPLITUDE_WEIGHT = 0.3;
-const DETAIL_SIGNAL_SCORE_DRIVE_WEIGHT = 0.8;
-const DETAIL_SIGNAL_SCORE_AMPLITUDE_WEIGHT = 0.2;
+const DETAIL_SIGNAL_SCORE_DRIVE_WEIGHT = 0.7;
+const DETAIL_SIGNAL_SCORE_AMPLITUDE_WEIGHT = 0.14;
+const DETAIL_SIGNAL_SCORE_FRESHNESS_WEIGHT = 0.16;
 const BACKBONE_DISPLAY_SCORE_DRIVE_WEIGHT = 0.42;
 const BACKBONE_DISPLAY_SCORE_COHERENCE_WEIGHT = 0.33;
 const BACKBONE_DISPLAY_SCORE_AMPLITUDE_WEIGHT = 0.17;
 const BACKBONE_DISPLAY_SCORE_FRESHNESS_WEIGHT = 0.08;
-const DETAIL_DISPLAY_SCORE_DRIVE_WEIGHT = 0.46;
-const DETAIL_DISPLAY_SCORE_COHERENCE_WEIGHT = 0.22;
-const DETAIL_DISPLAY_SCORE_AMPLITUDE_WEIGHT = 0.14;
-const DETAIL_DISPLAY_SCORE_FRESHNESS_WEIGHT = 0.18;
+const DETAIL_DISPLAY_SCORE_DRIVE_WEIGHT = 0.56;
+const DETAIL_DISPLAY_SCORE_COHERENCE_WEIGHT = 0.14;
+const DETAIL_DISPLAY_SCORE_AMPLITUDE_WEIGHT = 0.1;
+const DETAIL_DISPLAY_SCORE_FRESHNESS_WEIGHT = 0.2;
 const BACKBONE_DISPLAY_MIN_SIGNAL_AMPLITUDE = 0.08;
-const DETAIL_DISPLAY_MIN_SIGNAL_AMPLITUDE = 0.06;
+const DETAIL_DISPLAY_MIN_SIGNAL_AMPLITUDE = 0.05;
 const BACKBONE_DISPLAY_DUPLICATE_WINDOW = 0.09;
 const DETAIL_DISPLAY_DUPLICATE_WINDOW = 0.06;
 const BACKBONE_DISPLAY_MAX_VISIBLE = 6;
-const DETAIL_DISPLAY_MAX_VISIBLE = 4;
+const DETAIL_DISPLAY_MAX_VISIBLE = 5;
 const EXCITATION_DECAY_DRIVE_THRESHOLD = 0.065;
-const EXCITATION_DECAY_SIGNAL_DISPLAY_RATIO = 0.4;
+const EXCITATION_DECAY_SIGNAL_DISPLAY_RATIO = 0.55;
+const EXCITATION_HARD_SILENCE_MAX_AVG_AMPLITUDE = 1;
+const EXCITATION_HARD_SILENCE_MAX_RMS = 0.004;
+const EXCITATION_HARD_SILENCE_MAX_FFT_PEAK = 0.003;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -123,6 +135,16 @@ function computeDecayTauMs(mode) {
   return Math.max(
     RESONATOR_MIN_DECAY_MS,
     Math.min(RESONATOR_MAX_DECAY_MS, tau),
+  );
+}
+
+function isHardSilentFrame(preparedInputs) {
+  return (
+    (preparedInputs?.avgAmplitude ?? 0) <=
+      EXCITATION_HARD_SILENCE_MAX_AVG_AMPLITUDE &&
+    (preparedInputs?.analyserRms ?? 0) <= EXCITATION_HARD_SILENCE_MAX_RMS &&
+    (preparedInputs?.preModalFftPeak ?? 0) <=
+      EXCITATION_HARD_SILENCE_MAX_FFT_PEAK
   );
 }
 
@@ -535,24 +557,34 @@ function average(values) {
   return sum / values.length;
 }
 
+function getFreshness(entry) {
+  return 1 - (entry?.persistence ?? 0);
+}
+
 function getSignalScore(entry, layer) {
-  const driveWeight =
-    layer === "backbone"
-      ? BACKBONE_SIGNAL_SCORE_DRIVE_WEIGHT
-      : DETAIL_SIGNAL_SCORE_DRIVE_WEIGHT;
-  const amplitudeWeight =
-    layer === "backbone"
-      ? BACKBONE_SIGNAL_SCORE_AMPLITUDE_WEIGHT
-      : DETAIL_SIGNAL_SCORE_AMPLITUDE_WEIGHT;
+  const coherence = clamp01(entry?.coherence ?? 0);
+  const driveEnergy = entry?.currentDriveEnergy ?? entry?.driveEnergy ?? 0;
+  const amplitude = entry?.amplitude ?? 0;
+  const freshness = getFreshness(entry);
+
+  if (layer === "detail") {
+    return (
+      (driveEnergy * DETAIL_SIGNAL_SCORE_DRIVE_WEIGHT +
+        amplitude * DETAIL_SIGNAL_SCORE_AMPLITUDE_WEIGHT +
+        freshness * DETAIL_SIGNAL_SCORE_FRESHNESS_WEIGHT) *
+      clamp01(0.45 + coherence * 0.55)
+    );
+  }
+
   return (
-    (entry?.coherence ?? 0) *
-    ((entry?.currentDriveEnergy ?? entry?.driveEnergy ?? 0) * driveWeight +
-      (entry?.amplitude ?? 0) * amplitudeWeight)
+    coherence *
+    (driveEnergy * BACKBONE_SIGNAL_SCORE_DRIVE_WEIGHT +
+      amplitude * BACKBONE_SIGNAL_SCORE_AMPLITUDE_WEIGHT)
   );
 }
 
 function buildSignalShortlist(entries, layer, currentFrameAtMs, capacity) {
-  const coherenceThreshold = layer === "backbone" ? 0.08 : 0.06;
+  const coherenceThreshold = layer === "backbone" ? 0.08 : 0.05;
   const driveThreshold =
     layer === "backbone"
       ? BACKBONE_SIGNAL_MIN_DRIVE_ENERGY
@@ -605,21 +637,135 @@ function buildSignalShortlist(entries, layer, currentFrameAtMs, capacity) {
 }
 
 function getDisplayScore(entry, layer) {
+  const driveEnergy = entry?.currentDriveEnergy ?? 0;
+  const coherence = entry?.coherence ?? 0;
+  const amplitude = entry?.amplitude ?? 0;
+  const freshness = getFreshness(entry);
+
   if (layer === "backbone") {
     return (
-      (entry?.currentDriveEnergy ?? 0) * BACKBONE_DISPLAY_SCORE_DRIVE_WEIGHT +
-      (entry?.coherence ?? 0) * BACKBONE_DISPLAY_SCORE_COHERENCE_WEIGHT +
-      (entry?.amplitude ?? 0) * BACKBONE_DISPLAY_SCORE_AMPLITUDE_WEIGHT +
-      (1 - (entry?.persistence ?? 0)) * BACKBONE_DISPLAY_SCORE_FRESHNESS_WEIGHT
+      driveEnergy * BACKBONE_DISPLAY_SCORE_DRIVE_WEIGHT +
+      coherence * BACKBONE_DISPLAY_SCORE_COHERENCE_WEIGHT +
+      amplitude * BACKBONE_DISPLAY_SCORE_AMPLITUDE_WEIGHT +
+      freshness * BACKBONE_DISPLAY_SCORE_FRESHNESS_WEIGHT
     );
   }
 
   return (
-    (entry?.currentDriveEnergy ?? 0) * DETAIL_DISPLAY_SCORE_DRIVE_WEIGHT +
-    (entry?.coherence ?? 0) * DETAIL_DISPLAY_SCORE_COHERENCE_WEIGHT +
-    (entry?.amplitude ?? 0) * DETAIL_DISPLAY_SCORE_AMPLITUDE_WEIGHT +
-    (1 - (entry?.persistence ?? 0)) * DETAIL_DISPLAY_SCORE_FRESHNESS_WEIGHT
+    driveEnergy * DETAIL_DISPLAY_SCORE_DRIVE_WEIGHT +
+    coherence * DETAIL_DISPLAY_SCORE_COHERENCE_WEIGHT +
+    amplitude * DETAIL_DISPLAY_SCORE_AMPLITUDE_WEIGHT +
+    freshness * DETAIL_DISPLAY_SCORE_FRESHNESS_WEIGHT
   );
+}
+
+function compareFastDetailAssistEntries(left, right) {
+  const driveDelta =
+    (right?.currentDriveEnergy ?? 0) - (left?.currentDriveEnergy ?? 0);
+  if (Math.abs(driveDelta) > 1e-9) {
+    return driveDelta;
+  }
+
+  const freshnessDelta = getFreshness(right) - getFreshness(left);
+  if (Math.abs(freshnessDelta) > 1e-9) {
+    return freshnessDelta;
+  }
+
+  return (right?.signalAmplitude ?? 0) - (left?.signalAmplitude ?? 0);
+}
+
+function selectFastDetailAssist(entries, currentFrameAtMs) {
+  return (
+    entries
+      .filter((entry) => {
+        if ((entry?.layer ?? "detail") !== "detail") {
+          return false;
+        }
+
+        return (
+          (entry?.currentDriveEnergy ?? 0) >= 0.12 &&
+          (entry?.signalAmplitude ?? 0) >=
+            DETAIL_DISPLAY_MIN_SIGNAL_AMPLITUDE &&
+          currentFrameAtMs -
+            (entry?.lastExcitedAtMs ?? Number.NEGATIVE_INFINITY) <=
+            DETAIL_SIGNAL_STALE_WINDOW_MS &&
+          (entry?.persistence ?? 1) <= 0.72
+        );
+      })
+      .sort(compareFastDetailAssistEntries)[0] ?? null
+  );
+}
+
+function mergeFastDetailAssist(displayEntries, assistEntry) {
+  const visibleEntries = displayEntries.slice(0, DETAIL_DISPLAY_MAX_VISIBLE);
+  if (!assistEntry) {
+    return {
+      entries: visibleEntries,
+      assistEntry: null,
+      assistNeedsReservedAdmission: false,
+    };
+  }
+
+  const mergedEntries = [...visibleEntries];
+  const duplicateIndex = mergedEntries.findIndex(
+    (entry) =>
+      getRelativeFrequencyDistance(
+        entry.naturalFrequencyHz,
+        assistEntry.naturalFrequencyHz,
+      ) <= DETAIL_DISPLAY_DUPLICATE_WINDOW,
+  );
+
+  if (duplicateIndex === -1) {
+    return {
+      entries: [
+        assistEntry,
+        ...mergedEntries.filter(
+          (entry) => entry.modeKey !== assistEntry.modeKey,
+        ),
+      ].slice(0, DETAIL_DISPLAY_MAX_VISIBLE),
+      assistEntry,
+      assistNeedsReservedAdmission: true,
+    };
+  }
+
+  const duplicateEntry = mergedEntries[duplicateIndex];
+  if (compareFastDetailAssistEntries(assistEntry, duplicateEntry) >= 0) {
+    return {
+      entries: visibleEntries,
+      assistEntry: null,
+      assistNeedsReservedAdmission: false,
+    };
+  }
+
+  mergedEntries.splice(duplicateIndex, 1, assistEntry);
+  return {
+    entries: [
+      assistEntry,
+      ...mergedEntries.filter((entry) => entry.modeKey !== assistEntry.modeKey),
+    ].slice(0, DETAIL_DISPLAY_MAX_VISIBLE),
+    assistEntry,
+    assistNeedsReservedAdmission:
+      duplicateEntry?.modeKey !== assistEntry.modeKey,
+  };
+}
+
+function hasVisibleModeKey(slots, modeKey) {
+  if (!modeKey || !(slots instanceof Float32Array)) {
+    return false;
+  }
+
+  for (let index = 0; index < slots.length; index += 4) {
+    if ((slots[index + 3] ?? 0) <= 0) {
+      continue;
+    }
+    if (
+      buildModeKey(slots[index], slots[index + 1], slots[index + 2]) === modeKey
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function buildDisplayShortlist(entries, layer) {
@@ -794,6 +940,7 @@ export function buildModalExcitationStructuralState({
     peak: drivePeak,
     driveSource,
   } = computeDriveBuffer(preparedInputs, fastSignalState);
+  const hardSilentFrame = isHardSilentFrame(preparedInputs);
   const periodicity = computeDrivePeriodicity(
     driveBuffer,
     preparedInputs.sampleRate,
@@ -920,11 +1067,27 @@ export function buildModalExcitationStructuralState({
     preparedInputs.currentFrameAtMs,
     detailCapacity,
   );
-  const displayBackboneEntries = buildDisplayShortlist(
-    backboneEntries,
-    "backbone",
+  const fastDetailAssist = selectFastDetailAssist(
+    detailEntries,
+    preparedInputs.currentFrameAtMs,
   );
-  const displayDetailEntries = buildDisplayShortlist(detailEntries, "detail");
+  const displayBackboneEntries = hardSilentFrame
+    ? []
+    : buildDisplayShortlist(backboneEntries, "backbone");
+  const {
+    entries: displayDetailEntries,
+    assistEntry: mergedFastDetailAssist,
+    assistNeedsReservedAdmission,
+  } = hardSilentFrame
+    ? {
+        entries: [],
+        assistEntry: null,
+        assistNeedsReservedAdmission: false,
+      }
+    : mergeFastDetailAssist(
+        buildDisplayShortlist(detailEntries, "detail"),
+        fastDetailAssist,
+      );
 
   writeShortlistedEntries(
     state.backbone,
@@ -961,9 +1124,19 @@ export function buildModalExcitationStructuralState({
       attack: EXCITATION_BACKBONE_BLEND_ATTACK,
       tracking: EXCITATION_BACKBONE_BLEND_TRACKING,
       release: EXCITATION_BACKBONE_BLEND_RELEASE,
+      emptyTargetRelease: hardSilentFrame
+        ? EXCITATION_BACKBONE_HARD_SILENCE_RELEASE
+        : EXCITATION_BACKBONE_SILENCE_RELEASE,
+      lowSignalReleaseThreshold:
+        EXCITATION_BACKBONE_LOW_SIGNAL_RELEASE_THRESHOLD,
+      lowSignalRelease: EXCITATION_BACKBONE_LOW_SIGNAL_RELEASE,
       freshCap: EXCITATION_BACKBONE_FRESH_CAP,
     },
   );
+  const detailAssistNeedsFreshAdmission =
+    assistNeedsReservedAdmission &&
+    mergedFastDetailAssist &&
+    !hasVisibleModeKey(state.blendDetail.slots, mergedFastDetailAssist.modeKey);
   blendModalStack(
     state.blendDetail,
     state.displayDetail.slots,
@@ -972,7 +1145,13 @@ export function buildModalExcitationStructuralState({
       attack: EXCITATION_DETAIL_BLEND_ATTACK,
       tracking: EXCITATION_DETAIL_BLEND_TRACKING,
       release: EXCITATION_DETAIL_BLEND_RELEASE,
-      freshCap: EXCITATION_DETAIL_FRESH_CAP,
+      emptyTargetRelease: hardSilentFrame
+        ? EXCITATION_DETAIL_HARD_SILENCE_RELEASE
+        : EXCITATION_DETAIL_SILENCE_RELEASE,
+      lowSignalReleaseThreshold: EXCITATION_DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD,
+      lowSignalRelease: EXCITATION_DETAIL_LOW_SIGNAL_RELEASE,
+      freshCap:
+        EXCITATION_DETAIL_FRESH_CAP + (detailAssistNeedsFreshAdmission ? 1 : 0),
     },
   );
 

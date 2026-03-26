@@ -285,6 +285,10 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
   const release = options.release ?? BLEND_RELEASE;
   const releaseOverrides = options.releaseOverrides ?? null;
   const freshCap = options.freshCap ?? BLEND_MAX_FRESH_PER_FRAME;
+  const dropThreshold = options.dropThreshold ?? BLEND_DROP_THRESHOLD;
+  const emptyTargetRelease = options.emptyTargetRelease;
+  const lowSignalReleaseThreshold = options.lowSignalReleaseThreshold ?? 0;
+  const lowSignalRelease = options.lowSignalRelease;
   const slotLimit = Math.min(state.slots.length / 4, capacity);
 
   const currentMap = state._poolCurrentMap ?? new Map();
@@ -339,7 +343,7 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
     const newAmp = current
       ? current.amplitude + (target.amplitude - current.amplitude) * tracking
       : target.amplitude * attack;
-    if (newAmp >= BLEND_DROP_THRESHOLD) {
+    if (newAmp >= dropThreshold) {
       blended.set(key, {
         u: target.u,
         v: target.v,
@@ -351,9 +355,19 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
 
   for (const [key, entry] of currentMap.entries()) {
     if (!admittedTargetKeys.has(key)) {
-      const releaseFactor = releaseOverrides?.get?.(key) ?? release;
+      let releaseFactor = releaseOverrides?.get?.(key) ?? release;
+      if (Number.isFinite(emptyTargetRelease) && targetMap.size === 0) {
+        releaseFactor = Math.min(releaseFactor, emptyTargetRelease);
+      }
+      if (
+        Number.isFinite(lowSignalRelease) &&
+        lowSignalReleaseThreshold > 0 &&
+        entry.amplitude <= lowSignalReleaseThreshold
+      ) {
+        releaseFactor = Math.min(releaseFactor, lowSignalRelease);
+      }
       const newAmp = entry.amplitude * releaseFactor;
-      if (newAmp >= BLEND_DROP_THRESHOLD) {
+      if (newAmp >= dropThreshold) {
         blended.set(key, {
           u: entry.u,
           v: entry.v,

@@ -42,6 +42,20 @@ function expectTargetBuildToMatch(actual, expected) {
   expect(actual.peaks).toEqual(expected.peaks);
 }
 
+function readModeKeys(targetBuild) {
+  const modeKeys = [];
+  for (let index = 0; index < targetBuild.slots.length; index += 4) {
+    const amplitude = targetBuild.slots[index + 3] ?? 0;
+    if (amplitude <= 0) {
+      continue;
+    }
+    modeKeys.push(
+      `${targetBuild.slots[index]}:${targetBuild.slots[index + 1]}:${targetBuild.slots[index + 2]}`,
+    );
+  }
+  return modeKeys;
+}
+
 describe("modal resolver writers", () => {
   it("matches the allocating fundamental resolver", () => {
     const fftMagnitudes = makeFft([
@@ -150,5 +164,95 @@ describe("modal resolver writers", () => {
     });
 
     expectTargetBuildToMatch(actual, expected);
+  });
+
+  it("adds above-floor bridge families for sub-floor backbone peaks", () => {
+    const sparse = writeModalSlotsFromPeakDrivers(createModalTargetBuild(8), {
+      fftMagnitudes: makeFft([[60, 0.92]]),
+      sampleRate: SAMPLE_RATE,
+      fftSize: FFT_SIZE,
+      radius: 3,
+      capacity: 8,
+      slotLimit: 8,
+      spectralCentroid: 0.18,
+      includeChromesthesia: true,
+      peaks: [{ frequency: 60, amplitude: 0.92 }],
+      scratchTarget: createModalTargetBuild(8),
+    });
+    const enriched = writeModalSlotsFromPeakDrivers(createModalTargetBuild(8), {
+      fftMagnitudes: makeFft([
+        [60, 0.92],
+        [120, 0.82],
+        [180, 0.74],
+        [240, 0.68],
+      ]),
+      sampleRate: SAMPLE_RATE,
+      fftSize: FFT_SIZE,
+      radius: 3,
+      capacity: 8,
+      slotLimit: 8,
+      spectralCentroid: 0.18,
+      includeChromesthesia: true,
+      peaks: [{ frequency: 60, amplitude: 0.92 }],
+      scratchTarget: createModalTargetBuild(8),
+    });
+
+    expect(enriched.subfloorBridgeMeta).toMatchObject({
+      dominantPeakFrequency: 60,
+      dominantPeakAmplitude: 0.92,
+      dominantPeakBridgeCount: 3,
+      meaningfulAboveFloorPeakCount: 1,
+    });
+    expect(readModeKeys(enriched)).not.toEqual(readModeKeys(sparse));
+  });
+
+  it("keeps sub-floor peaks sparse when above-floor harmonics are absent", () => {
+    const target = writeModalSlotsFromPeakDrivers(createModalTargetBuild(8), {
+      fftMagnitudes: makeFft([[60, 0.88]]),
+      sampleRate: SAMPLE_RATE,
+      fftSize: FFT_SIZE,
+      radius: 3,
+      capacity: 8,
+      slotLimit: 8,
+      spectralCentroid: 0.15,
+      includeChromesthesia: true,
+      peaks: [{ frequency: 60, amplitude: 0.88 }],
+      scratchTarget: createModalTargetBuild(8),
+    });
+
+    expect(target.subfloorBridgeMeta).toMatchObject({
+      dominantPeakFrequency: 60,
+      dominantPeakAmplitude: 0.88,
+      dominantPeakBridgeCount: 0,
+      meaningfulAboveFloorPeakCount: 0,
+    });
+  });
+
+  it("counts native above-floor backbone peaks as meaningful support", () => {
+    const target = writeModalSlotsFromPeakDrivers(createModalTargetBuild(8), {
+      fftMagnitudes: makeFft([
+        [60, 0.86],
+        [400, 0.7],
+      ]),
+      sampleRate: SAMPLE_RATE,
+      fftSize: FFT_SIZE,
+      radius: 3,
+      capacity: 8,
+      slotLimit: 8,
+      spectralCentroid: 0.2,
+      includeChromesthesia: true,
+      peaks: [
+        { frequency: 60, amplitude: 0.86 },
+        { frequency: 400, amplitude: 0.7 },
+      ],
+      scratchTarget: createModalTargetBuild(8),
+    });
+
+    expect(target.subfloorBridgeMeta).toMatchObject({
+      dominantPeakFrequency: 60,
+      dominantPeakAmplitude: 0.86,
+      dominantPeakBridgeCount: 0,
+      meaningfulAboveFloorPeakCount: 1,
+    });
   });
 });

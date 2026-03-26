@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getMinimumCavityFrequency,
   sampleFFTAmplitudeForFrequency,
   solveCavityModeFamilyForPitch,
   solveCavityModeForPitch,
@@ -82,6 +83,14 @@ describe("solveCavityModeFamilyForPitch", () => {
     const frequencyErrors = family.map((mode) => mode.frequencyError);
 
     expect(frequencyErrors).toEqual([...frequencyErrors].sort((a, b) => a - b));
+  });
+});
+
+describe("getMinimumCavityFrequency", () => {
+  it("matches the (1,1,1) cavity mode frequency across radii", () => {
+    expect(getMinimumCavityFrequency(1)).toBeCloseTo(170 * Math.sqrt(3));
+    expect(getMinimumCavityFrequency(3)).toBeCloseTo((170 * Math.sqrt(3)) / 3);
+    expect(getMinimumCavityFrequency(5)).toBeCloseTo((170 * Math.sqrt(3)) / 5);
   });
 });
 
