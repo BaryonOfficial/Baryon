@@ -1222,7 +1222,7 @@ describe("buildAudioFeatureFrame legacy-peak layered contract", () => {
 
     calibrateLiveInput(featureState);
 
-    const frame = buildLiveInputFrame({
+    const result = buildLiveInputAnalysisFrame({
       featureState,
       peaks: [
         [80, 0.7],
@@ -1247,8 +1247,16 @@ describe("buildAudioFeatureFrame legacy-peak layered contract", () => {
       }),
     });
 
-    expect(frame.debug.analysisEngine).toBe("vocal");
-    expect(frame.debug.detailModeCount).toBeGreaterThan(0);
+    expect(result.frame.debug.analysisEngine).toBe("vocal");
+    expect(result.frame.debug.detailModeCount).toBeGreaterThan(0);
+    // Verify upper harmonic detail survived over the bass accompaniment — a candidate
+    // near the second harmonic (660 Hz) confirms the vocal path selected harmonics,
+    // not just the bass or the fundamental alone.
+    expect(
+      result.analysisResult.spectralCandidates.some(
+        (peak) => Math.abs((peak.frequency ?? 0) - 660) < 80,
+      ),
+    ).toBe(true);
   });
 
   it("keeps salient upper harmonics in acoustic spectral fallback under low-end pressure", () => {
