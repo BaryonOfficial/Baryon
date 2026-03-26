@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.js",
     "./index.css": "./src/index.css",
+    "./camera-view-presets": "./src/components/cameraViewPresets.js",
     "./baryon-env": "./src/baryon-env.d.ts"
   },
   "dependencies": {

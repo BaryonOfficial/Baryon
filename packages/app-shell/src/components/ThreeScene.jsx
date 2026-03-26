@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { Canvas } from "@react-three/fiber";
-import { BaryonScene } from "./BaryonScene";
+import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene";
 import {
   CAMERA_VIEW_PRESETS,
   getCameraConfigForPreset,
@@ -335,6 +335,7 @@ const ThreeScene = ({
                 outputFrameConfig={outputFrameConfig}
                 onOutputFrame={onOutputFrame}
                 onFrameState={handleFrameState}
+                cameraControlMode={CAMERA_CONTROL_MODES.previewLocal}
                 cameraViewPreset={effectiveCameraViewPreset}
                 cameraResetNonce={cameraResetNonce}
               />
