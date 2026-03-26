@@ -68,14 +68,16 @@ function createPreparedInputs({
   timeData,
   status = createStatus(),
   cavityGeometry = "rectangular",
+  avgAmplitude = 24,
+  rms = 0.2,
 }) {
   return prepareAudioFeatureFrameInputs({
     analysisSnapshot: {
       sourceMode: "file",
-      avgAmplitude: 24,
+      avgAmplitude,
       fftMagnitudes,
       timeData,
-      rms: 0.2,
+      rms,
       spectralCentroid: 0.2,
       spectralFlux: 0.1,
     },
@@ -124,6 +126,24 @@ function countActiveSlotsLocal(slots) {
     }
   }
   return total;
+}
+
+function readModeKeys(slots) {
+  const keys = [];
+  const slotCount = Math.floor((slots?.length ?? 0) / 4);
+  for (let index = 0; index < slotCount; index += 1) {
+    if ((slots[index * 4 + 3] ?? 0) <= 0) {
+      continue;
+    }
+    keys.push(
+      `${slots[index * 4]}:${slots[index * 4 + 1]}:${slots[index * 4 + 2]}`,
+    );
+  }
+  return keys;
+}
+
+function hasNewModeKey(nextKeys, previousKeys) {
+  return nextKeys.some((key) => !previousKeys.includes(key));
 }
 
 function average(values) {
@@ -486,6 +506,8 @@ describe("modal excitation structural state", () => {
         frameTimeMs: frame * 33,
         fftMagnitudes: silentFft,
         timeData: silentTimeData,
+        avgAmplitude: 2.5,
+        rms: 0.01,
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -509,6 +531,60 @@ describe("modal excitation structural state", () => {
     expect(silenceFrames.at(-1).blended).toBeGreaterThan(
       silenceFrames.at(-1).signal,
     );
+  });
+
+  it("clears the visible tail quickly on true hard silence", () => {
+    const state = createModalExcitationState(16);
+    const activeFft = makeFft([
+      [110, 0.95],
+      [220, 0.52],
+    ]);
+    const silentFft = new Float32Array(BIN_COUNT);
+    const silentTimeData = new Float32Array(FFT_SIZE);
+    let activeBlendedAmplitude = 0;
+    let hardSilentStructural = null;
+
+    for (let frame = 0; frame < 10; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: activeFft,
+        timeData: makeTimeData({ frequency: 110 }),
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      const structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+      activeBlendedAmplitude = sumAmplitudes(structural.backboneSlotsSource);
+    }
+
+    for (let frame = 10; frame < 16; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: silentFft,
+        timeData: silentTimeData,
+        avgAmplitude: 0,
+        rms: 0,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      hardSilentStructural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(sumAmplitudes(hardSilentStructural.signalBackboneSlotsSource)).toBe(
+      0,
+    );
+    expect(
+      sumAmplitudes(hardSilentStructural.backboneSlotsSource),
+    ).toBeLessThan(activeBlendedAmplitude * 0.08);
   });
 
   it("reduces noisy-input jitter after the post-resonator blend", () => {
@@ -560,6 +636,258 @@ describe("modal excitation structural state", () => {
     expect(average(blendedDeltas.slice(-10))).toBeLessThan(
       average(rawDeltas.slice(-10)),
     );
+  });
+
+  it("surfaces multiple visible detail modes within two bright treble frames", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    for (let frame = 0; frame < 2; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft([
+          [6200, 0.92],
+          [7600, 0.72],
+          [9100, 0.58],
+        ]),
+        timeData: makeTimeData({ frequency: 6200, amplitude: 0.38 }),
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBeGreaterThan(
+      1,
+    );
+  });
+
+  it("replaces stale visible detail keys within two frames of a treble switch", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    const firstInputs = createPreparedInputs({
+      frameTimeMs: 0,
+      fftMagnitudes: makeFft([
+        [6200, 0.92],
+        [6800, 0.74],
+      ]),
+      timeData: makeTimeData({ frequency: 6200, amplitude: 0.36 }),
+    });
+    firstInputs.modalExcitationState = state;
+    const firstFastSignal = updateAudioFeatureFastSignalState(firstInputs);
+    const firstStructural = buildModalExcitationStructuralState({
+      preparedInputs: firstInputs,
+      fastSignalState: firstFastSignal,
+      existingState: state,
+      performanceNow: () => 0,
+    });
+    const firstVisibleKeys = readModeKeys(firstStructural.detailSlotsSource);
+    const firstDominantKey = firstVisibleKeys[0] ?? null;
+
+    for (let frame = 1; frame <= 2; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft([
+          [8200, 0.94],
+          [9800, 0.68],
+        ]),
+        timeData: makeTimeData({ frequency: 8200, amplitude: 0.34 }),
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    const switchedVisibleKeys = readModeKeys(structural.detailSlotsSource);
+    expect(hasNewModeKey(switchedVisibleKeys, firstVisibleKeys)).toBe(true);
+    expect(
+      switchedVisibleKeys.length > 1 ||
+        switchedVisibleKeys[0] !== firstDominantKey,
+    ).toBe(true);
+  });
+
+  it("surfaces a new visible detail key within one frame under incumbent pressure", () => {
+    const state = createModalExcitationState(16);
+    const seededInputs = createPreparedInputs({
+      frameTimeMs: 0,
+      fftMagnitudes: makeFft([
+        [5600, 0.84],
+        [6400, 0.8],
+        [7200, 0.76],
+        [8600, 0.68],
+        [9800, 0.6],
+      ]),
+      timeData: makeTimeData({ frequency: 6400, amplitude: 0.3 }),
+    });
+    seededInputs.modalExcitationState = state;
+    const seededFastSignal = updateAudioFeatureFastSignalState(seededInputs);
+    const seededStructural = buildModalExcitationStructuralState({
+      preparedInputs: seededInputs,
+      fastSignalState: seededFastSignal,
+      existingState: state,
+      performanceNow: () => 0,
+    });
+    const seededVisibleKeys = readModeKeys(seededStructural.detailSlotsSource);
+
+    const freshInputs = createPreparedInputs({
+      frameTimeMs: 33,
+      fftMagnitudes: makeFft([
+        [5600, 0.62],
+        [6400, 0.58],
+        [7200, 0.54],
+        [8600, 0.46],
+        [10800, 0.96],
+      ]),
+      timeData: makeTimeData({ frequency: 10800, amplitude: 0.34 }),
+    });
+    freshInputs.modalExcitationState = state;
+    const freshFastSignal = updateAudioFeatureFastSignalState(freshInputs);
+    const freshStructural = buildModalExcitationStructuralState({
+      preparedInputs: freshInputs,
+      fastSignalState: freshFastSignal,
+      existingState: state,
+      performanceNow: () => 1,
+    });
+
+    const freshVisibleKeys = readModeKeys(freshStructural.detailSlotsSource);
+    expect(hasNewModeKey(freshVisibleKeys, seededVisibleKeys)).toBe(true);
+  });
+
+  it("keeps visible detail keys as a subset of the raw signal shortlist", () => {
+    const state = createModalExcitationState(16);
+    const inputs = createPreparedInputs({
+      frameTimeMs: 0,
+      fftMagnitudes: makeFft([
+        [6200, 0.92],
+        [7600, 0.72],
+        [9100, 0.58],
+      ]),
+      timeData: makeTimeData({ frequency: 6200, amplitude: 0.38 }),
+    });
+    inputs.modalExcitationState = state;
+    const fastSignal = updateAudioFeatureFastSignalState(inputs);
+    const structural = buildModalExcitationStructuralState({
+      preparedInputs: inputs,
+      fastSignalState: fastSignal,
+      existingState: state,
+      performanceNow: () => 0,
+    });
+    const signalKeys = readModeKeys(structural.signalDetailSlotsSource);
+
+    expect(
+      readModeKeys(structural.detailSlotsSource).every((key) =>
+        signalKeys.includes(key),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not let a weaker near-duplicate assist evict a stronger incumbent", () => {
+    const state = createModalExcitationState(16);
+    const firstInputs = createPreparedInputs({
+      frameTimeMs: 0,
+      fftMagnitudes: makeFft([
+        [6200, 0.96],
+        [7600, 0.58],
+      ]),
+      timeData: makeTimeData({ frequency: 6200, amplitude: 0.38 }),
+    });
+    firstInputs.modalExcitationState = state;
+    const firstFastSignal = updateAudioFeatureFastSignalState(firstInputs);
+    const firstStructural = buildModalExcitationStructuralState({
+      preparedInputs: firstInputs,
+      fastSignalState: firstFastSignal,
+      existingState: state,
+      performanceNow: () => 0,
+    });
+    const firstDominantKey = readModeKeys(firstStructural.detailSlotsSource)[0];
+
+    const secondInputs = createPreparedInputs({
+      frameTimeMs: 33,
+      fftMagnitudes: makeFft([
+        [6450, 0.62],
+        [7600, 0.58],
+      ]),
+      timeData: makeTimeData({ frequency: 6450, amplitude: 0.22 }),
+    });
+    secondInputs.modalExcitationState = state;
+    const secondFastSignal = updateAudioFeatureFastSignalState(secondInputs);
+    const secondStructural = buildModalExcitationStructuralState({
+      preparedInputs: secondInputs,
+      fastSignalState: secondFastSignal,
+      existingState: state,
+      performanceNow: () => 1,
+    });
+
+    expect(readModeKeys(secondStructural.detailSlotsSource)[0]).toBe(
+      firstDominantKey,
+    );
+  });
+
+  it("limits reserved fresh admission to one assist-led extra detail key", () => {
+    const state = createModalExcitationState(16);
+    const seededInputs = createPreparedInputs({
+      frameTimeMs: 0,
+      fftMagnitudes: makeFft([
+        [5200, 0.88],
+        [6200, 0.84],
+        [7200, 0.8],
+        [8600, 0.74],
+        [9800, 0.68],
+      ]),
+      timeData: makeTimeData({ frequency: 6200, amplitude: 0.34 }),
+    });
+    seededInputs.modalExcitationState = state;
+    const seededFastSignal = updateAudioFeatureFastSignalState(seededInputs);
+    const seededStructural = buildModalExcitationStructuralState({
+      preparedInputs: seededInputs,
+      fastSignalState: seededFastSignal,
+      existingState: state,
+      performanceNow: () => 0,
+    });
+    const seededVisibleKeys = readModeKeys(seededStructural.detailSlotsSource);
+
+    const freshInputs = createPreparedInputs({
+      frameTimeMs: 33,
+      fftMagnitudes: makeFft([
+        [5400, 0.42],
+        [6800, 0.48],
+        [8200, 0.56],
+        [9400, 0.62],
+        [11100, 0.98],
+      ]),
+      timeData: makeTimeData({ frequency: 11100, amplitude: 0.34 }),
+    });
+    freshInputs.modalExcitationState = state;
+    const freshFastSignal = updateAudioFeatureFastSignalState(freshInputs);
+    const freshStructural = buildModalExcitationStructuralState({
+      preparedInputs: freshInputs,
+      fastSignalState: freshFastSignal,
+      existingState: state,
+      performanceNow: () => 1,
+    });
+    const freshVisibleKeys = readModeKeys(freshStructural.detailSlotsSource);
+    const newVisibleKeys = freshVisibleKeys.filter(
+      (key) => !seededVisibleKeys.includes(key),
+    );
+
+    expect(newVisibleKeys.length).toBeLessThanOrEqual(3);
+    expect(newVisibleKeys.length).toBeGreaterThan(0);
+    expect(
+      readModeKeys(freshStructural.signalDetailSlotsSource).includes(
+        newVisibleKeys[0],
+      ),
+    ).toBe(true);
   });
 
   it("collapses signal slots before the display blend releases to zero", () => {

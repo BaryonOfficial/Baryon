@@ -21,9 +21,9 @@ export const AUDIO_DEFAULTS = Object.freeze({
 
 export const SIMULATION_DEFAULTS = Object.freeze({
   radius: 3.0,
-  zeroPointPrecision: 0.043,
-  structureMin: 0.12,
-  structureMax: 0.46,
+  zeroPointPrecision: 0.026,
+  structureMin: 0.3,
+  structureMax: 0.35,
   boundaryMode: "neumann",
   cavityGeometry: DEFAULT_REQUESTED_CAVITY_GEOMETRY,
 });
@@ -44,16 +44,16 @@ export const RENDER_DEFAULTS = Object.freeze({
   outputMode: "transparent",
   outputBackgroundColor: "#000000",
   bloomEnabled: true,
-  bloomStrength: 0.3,
-  bloomRadius: 0.16,
-  bloomThreshold: 0.64,
+  bloomStrength: 1.07,
+  bloomRadius: 0,
+  bloomThreshold: 0.38,
   bloomResponseBias: 0.52,
-  performanceHudEnabled: false,
+  performanceHudEnabled: true,
 });
 
 export const REACTIVITY_DEFAULTS = Object.freeze({
   reactivity: 2.5,
-  motionAmount: 1.0,
+  motionAmount: 0.88,
   structurePersistence: 0,
 });
 
@@ -68,14 +68,14 @@ export const BEAT_DEFAULTS = Object.freeze({
 });
 
 export const RAYMARCH_DEFAULTS = Object.freeze({
-  raymarchSteps: 64,
-  densityGain: 4,
-  absorption: 1.27,
-  opacityGain: 2.32,
+  raymarchSteps: 72,
+  densityGain: 3.72,
+  absorption: 2.02,
+  opacityGain: 3,
   contourSharpness: 8,
   rimBloomBias: 0.34,
   rimCompression: 0.84,
-  holographicIntensity: 0.45,
+  holographicIntensity: 0.61,
   holographicShift: 0.35,
   holographicFresnelPower: 3.2,
 });

@@ -1,4 +1,7 @@
-import { sampleFFTAmplitudeForFrequency } from "../cavityModes.js";
+import {
+  getMinimumCavityFrequency,
+  sampleFFTAmplitudeForFrequency,
+} from "../cavityModes.js";
 import { getModalGeometryBackend } from "../../core/modalGeometryBackend.js";
 import {
   BACKBONE_STACK_SLOTS,
@@ -100,6 +103,7 @@ function resetModalTargetBuild(target, peaks = []) {
   target.uniqueModeCount = 0;
   target.peaks = peaks;
   target.components = [];
+  target.subfloorBridgeMeta = null;
   return target;
 }
 
@@ -431,6 +435,69 @@ function writeMergedDriverScratch(target, capacity, merged) {
   target.uniqueModeCount = survivors.length;
 }
 
+function resolveSubfloorPseudoDrivers({
+  peak,
+  fftMagnitudes,
+  sampleRate,
+  fftSize,
+  floorHz,
+}) {
+  const primarySupport = sampleFFTAmplitudeForFrequency(
+    peak.frequency,
+    fftMagnitudes,
+    sampleRate,
+    fftSize,
+  );
+  const supportThreshold = Math.max(
+    HARMONIC_SUPPORT_FLOOR,
+    primarySupport * HARMONIC_SUPPORT_RATIO,
+  );
+  const pseudoDrivers = [
+    {
+      frequency: peak.frequency,
+      attenuation: 1,
+      bridge: false,
+    },
+  ];
+  let bridgeCount = 0;
+
+  for (
+    let harmonicIndex = 1;
+    harmonicIndex < HARMONIC_ORDERS.length && bridgeCount < 3;
+    harmonicIndex += 1
+  ) {
+    const harmonicHz = peak.frequency * HARMONIC_ORDERS[harmonicIndex];
+    if (harmonicHz < floorHz) {
+      continue;
+    }
+
+    const support = sampleFFTAmplitudeForFrequency(
+      harmonicHz,
+      fftMagnitudes,
+      sampleRate,
+      fftSize,
+    );
+    if (support < supportThreshold) {
+      continue;
+    }
+
+    pseudoDrivers.push({
+      frequency: harmonicHz,
+      attenuation:
+        HARMONIC_ATTENUATION[harmonicIndex] ??
+        HARMONIC_ATTENUATION[HARMONIC_ATTENUATION.length - 1] ??
+        1,
+      bridge: true,
+    });
+    bridgeCount += 1;
+  }
+
+  return {
+    pseudoDrivers,
+    bridgeCount,
+  };
+}
+
 export function writeModalSlotsFromPeakDrivers(
   target,
   {
@@ -469,6 +536,9 @@ export function writeModalSlotsFromPeakDrivers(
     scratchTarget ?? createModalTargetBuild(resolvedCapacity);
   const merged = ensureMergeScratch(target);
   const components = [];
+  const floorHz = getMinimumCavityFrequency(radius);
+  let dominantPeakBridgeCount = 0;
+  let meaningfulAboveFloorPeakCount = 0;
   merged.clear();
 
   for (let index = 0; index < resolvedPeaks.length; index += 1) {
@@ -479,44 +549,81 @@ export function writeModalSlotsFromPeakDrivers(
       1;
     const confidence =
       Math.max(minimumConfidence, peak.amplitude) * attenuation;
-    const build = writeModalSlotsFromFundamental(resolvedScratchTarget, {
-      frequency: peak.frequency,
-      confidence,
-      fftMagnitudes,
-      sampleRate,
-      fftSize,
-      radius,
-      capacity: resolvedCapacity,
-      cavityGeometry,
-      spectralCentroid,
-      includeChromesthesia,
-    });
+    const peakIsAboveFloor = peak.frequency >= floorHz;
+    const { pseudoDrivers, bridgeCount } = peakIsAboveFloor
+      ? {
+          pseudoDrivers: [
+            {
+              frequency: peak.frequency,
+              attenuation: 1,
+              bridge: false,
+            },
+          ],
+          bridgeCount: 0,
+        }
+      : resolveSubfloorPseudoDrivers({
+          peak,
+          fftMagnitudes,
+          sampleRate,
+          fftSize,
+          floorHz,
+        });
+    if (index === 0) {
+      dominantPeakBridgeCount = bridgeCount;
+    }
+    if (peakIsAboveFloor || bridgeCount > 0) {
+      meaningfulAboveFloorPeakCount += 1;
+    }
 
-    if (Array.isArray(build.components)) {
-      components.push(...build.components);
+    for (const pseudoDriver of pseudoDrivers) {
+      const build = writeModalSlotsFromFundamental(resolvedScratchTarget, {
+        frequency: pseudoDriver.frequency,
+        confidence,
+        fftMagnitudes,
+        sampleRate,
+        fftSize,
+        radius,
+        capacity: resolvedCapacity,
+        cavityGeometry,
+        spectralCentroid,
+        includeChromesthesia,
+      });
+
+      if (Array.isArray(build.components)) {
+        components.push(...build.components);
+      }
+      for (
+        let harmonicIndex = 0;
+        harmonicIndex < target.harmonicSupport.length;
+        harmonicIndex += 1
+      ) {
+        target.harmonicSupport[harmonicIndex] = Math.max(
+          target.harmonicSupport[harmonicIndex],
+          build.harmonicSupport?.[harmonicIndex] ?? 0,
+        );
+      }
+      for (let offset = 0; offset < build.slots.length; offset += 4) {
+        const combinedAttenuation = attenuation * pseudoDriver.attenuation;
+        build.slots[offset + 3] *= combinedAttenuation;
+        build.referenceSlots[offset + 3] *= combinedAttenuation;
+        build.colorSlots[offset + 3] = clamp01(
+          build.colorSlots[offset + 3] * combinedAttenuation,
+        );
+      }
+      mergeDriverBuildIntoScratch(merged, build);
     }
-    for (
-      let harmonicIndex = 0;
-      harmonicIndex < target.harmonicSupport.length;
-      harmonicIndex += 1
-    ) {
-      target.harmonicSupport[harmonicIndex] = Math.max(
-        target.harmonicSupport[harmonicIndex],
-        build.harmonicSupport?.[harmonicIndex] ?? 0,
-      );
-    }
-    for (let offset = 0; offset < build.slots.length; offset += 4) {
-      build.slots[offset + 3] *= attenuation;
-      build.referenceSlots[offset + 3] *= attenuation;
-      build.colorSlots[offset + 3] = clamp01(
-        build.colorSlots[offset + 3] * attenuation,
-      );
-    }
-    mergeDriverBuildIntoScratch(merged, build);
   }
 
   writeMergedDriverScratch(target, resolvedCapacity, merged);
   target.components = limitColorComponents(components);
+  // The base pseudo-driver may internally climb harmonics, but residual gating
+  // only relies on explicit bridge drivers and cross-peak above-floor presence.
+  target.subfloorBridgeMeta = {
+    dominantPeakFrequency: resolvedPeaks[0]?.frequency ?? 0,
+    dominantPeakAmplitude: resolvedPeaks[0]?.amplitude ?? 0,
+    dominantPeakBridgeCount,
+    meaningfulAboveFloorPeakCount,
+  };
   return target;
 }
 

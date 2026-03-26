@@ -98,21 +98,21 @@ describe("control schema", () => {
 
     expect(state.volumeColor).toBe("#56d7ff");
     expect(state.surfaceColor).toBe("#f7fdff");
-    expect(state.zeroPointPrecision).toBe(0.043);
-    expect(state.structureMin).toBe(0.12);
-    expect(state.structureMax).toBe(0.46);
+    expect(state.zeroPointPrecision).toBe(0.026);
+    expect(state.structureMin).toBe(0.3);
+    expect(state.structureMax).toBe(0.35);
     expect(state.boundaryMode).toBe("neumann");
     expect(state.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
-    expect(state.densityGain).toBe(4);
+    expect(state.densityGain).toBe(3.72);
     expect(state.absorption).toBe(RAYMARCH_DEFAULTS.absorption);
-    expect(state.opacityGain).toBe(2.32);
+    expect(state.opacityGain).toBe(3);
     expect(state.contourSharpness).toBe(8);
-    expect(state.holographicIntensity).toBe(0.45);
+    expect(state.holographicIntensity).toBe(0.61);
     expect(state.holographicShift).toBe(0.35);
     expect(state.holographicFresnelPower).toBe(3.2);
-    expect(state.bloomStrength).toBe(0.3);
-    expect(state.bloomRadius).toBe(0.16);
-    expect(state.bloomThreshold).toBe(0.64);
+    expect(state.bloomStrength).toBe(1.07);
+    expect(state.bloomRadius).toBe(0);
+    expect(state.bloomThreshold).toBe(0.38);
     expect(state.performanceHudEnabled).toBe(
       RENDER_DEFAULTS.performanceHudEnabled,
     );
