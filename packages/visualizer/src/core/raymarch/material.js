@@ -100,6 +100,7 @@ const EXCITATION_GATE_HIGH = 0.35;
 const DIRECT_CHROMESTHESIA_PRESENCE_END = 0.18;
 const CACHED_CHROMESTHESIA_PRESENCE_END = 0.26;
 
+/** @type {{ off: string; direct: string; cached: string; tonalFallback: string }} */
 export const RAYMARCH_CHROMA_EVALUATION_MODES = Object.freeze({
   off: "off",
   direct: "direct",
