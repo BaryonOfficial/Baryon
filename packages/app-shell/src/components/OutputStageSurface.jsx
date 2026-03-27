@@ -1,10 +1,12 @@
 import { Suspense, useEffect, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import { BaryonScene } from "./BaryonScene.jsx";
+import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene.jsx";
 import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
 import {
+  CAMERA_VIEW_PRESETS,
   getCameraConfigForPreset,
-  resolveDefaultCameraViewPreset,
+  normalizeCameraViewPreset,
+  resolveCameraDistanceOverride,
 } from "./cameraViewPresets.js";
 import {
   createBaryonRenderer,
@@ -36,6 +38,8 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  *   renderQualityPreset?: string,
  *   externalFrameRef?: import("react").MutableRefObject<any>,
  *   backgroundColor?: string,
+ *   cameraViewPreset?: "top-down" | "side" | null,
+ *   cameraDistance?: number | null,
  *   registerRenderRequester?: ((requester: (() => void) | null) => void) | null,
  *   onStageRender?: (payload: { frameSequence: number | null, qualityPreset: string | null }) => void,
  * }} props
@@ -46,15 +50,23 @@ export function OutputStageSurface({
   renderQualityPreset = DEFAULT_RENDER_QUALITY_PRESET,
   externalFrameRef = null,
   backgroundColor: backgroundColorProp = null,
+  cameraViewPreset = null,
+  cameraDistance = null,
   registerRenderRequester = null,
   onStageRender = null,
 }) {
   const [rendererError, setRendererError] = useState(null);
-  const defaultCameraViewPreset = resolveDefaultCameraViewPreset({
-    liveInputUiState: "idle",
-    fieldState: "idle",
-  });
-  const cameraConfig = getCameraConfigForPreset(defaultCameraViewPreset);
+  const resolvedCameraViewPreset = /** @type {"top-down" | "side"} */ (
+    normalizeCameraViewPreset(cameraViewPreset, CAMERA_VIEW_PRESETS.topDown)
+  );
+  const resolvedCameraDistance = resolveCameraDistanceOverride(
+    resolvedCameraViewPreset,
+    cameraDistance,
+  );
+  const cameraConfig = getCameraConfigForPreset(
+    resolvedCameraViewPreset,
+    resolvedCameraDistance,
+  );
   const resolvedBackgroundColor =
     backgroundColorProp ??
     (typeof controlsRef.current?.backgroundColor === "string"
@@ -139,7 +151,9 @@ export function OutputStageSurface({
                 externalFrameRef={externalFrameRef}
                 basePixelRatio={1}
                 onStageRender={onStageRender}
-                cameraViewPreset={defaultCameraViewPreset}
+                cameraControlMode={CAMERA_CONTROL_MODES.externalSynced}
+                cameraViewPreset={resolvedCameraViewPreset}
+                cameraDistance={resolvedCameraDistance}
               />
             </Suspense>
           </Canvas>

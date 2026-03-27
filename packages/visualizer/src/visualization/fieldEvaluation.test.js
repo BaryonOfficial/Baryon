@@ -7,10 +7,11 @@ import {
 describe("fieldEvaluation", () => {
   it("normalizes the supported field-evaluation overrides", () => {
     expect(normalizeRaymarchFieldCacheOverride("cached")).toBe("cached");
-    expect(normalizeRaymarchFieldCacheOverride("analytic")).toBe("analytic");
+    expect(normalizeRaymarchFieldCacheOverride("direct")).toBe("direct");
   });
 
-  it("falls back invalid explicit override values to cached", () => {
+  it("falls back legacy and invalid explicit override values to cached", () => {
+    expect(normalizeRaymarchFieldCacheOverride("analytic")).toBe("cached");
     expect(normalizeRaymarchFieldCacheOverride("weird")).toBe("cached");
   });
 

@@ -3,9 +3,6 @@ import { resolveAdvancedControlsHelpPosition } from "./advancedControlsHelpPosit
 
 const CLOSE_HELP_DELAY_MS = 110;
 
-// Controls rendered inline inside the Presets section rather than in a folder
-const PRESETS_AREA_GROUP = "PresetsArea";
-
 const CSS = `
 .baryon-controls-sidebar {
   position: fixed;
@@ -182,17 +179,6 @@ const CSS = `
 
 .baryon-controls-text-input::placeholder {
   color: rgba(255, 255, 255, 0.34);
-}
-
-.baryon-controls-presets-toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.28rem 0.62rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 0.78rem;
 }
 
 .baryon-controls-group-toggle {
@@ -753,6 +739,28 @@ function ControlField({
   );
 }
 
+function getDefinitionValue(definition, controlsState) {
+  if (typeof definition.getValue === "function") {
+    return definition.getValue(controlsState);
+  }
+
+  return controlsState[definition.key];
+}
+
+function applyDefinitionChange(
+  definition,
+  nextValue,
+  controlsState,
+  updateControl,
+) {
+  if (typeof definition.applyChange === "function") {
+    definition.applyChange(nextValue, controlsState, updateControl);
+    return;
+  }
+
+  updateControl(definition.key, nextValue);
+}
+
 function ControlGroup({
   group,
   controlsState,
@@ -766,26 +774,9 @@ function ControlGroup({
   onHelpClick,
 }) {
   const [isExpanded, setIsExpanded] = useState(group.expanded);
-  const getDefinitionValue = useCallback(
-    (definition) => {
-      if (typeof definition.getValue === "function") {
-        return definition.getValue(controlsState);
-      }
-
-      return controlsState[definition.key];
-    },
-    [controlsState],
-  );
-
   const handleDefinitionChange = useCallback(
-    (definition, nextValue) => {
-      if (typeof definition.applyChange === "function") {
-        definition.applyChange(nextValue, controlsState, onChange);
-        return;
-      }
-
-      onChange(definition.key, nextValue);
-    },
+    (definition, nextValue) =>
+      applyDefinitionChange(definition, nextValue, controlsState, onChange),
     [controlsState, onChange],
   );
 
@@ -813,7 +804,7 @@ function ControlGroup({
             <ControlField
               key={definition.key}
               definition={definition}
-              value={getDefinitionValue(definition)}
+              value={getDefinitionValue(definition, controlsState)}
               onChange={(nextValue) =>
                 handleDefinitionChange(definition, nextValue)
               }
@@ -833,7 +824,8 @@ function ControlGroup({
 }
 
 export default function AdvancedControlsSidebar({
-  controlGroups,
+  folderGroups,
+  presetsAreaControls = [],
   controlsState,
   presets,
   presetName,
@@ -866,17 +858,11 @@ export default function AdvancedControlsSidebar({
   const [activeHelpKey, setActiveHelpKey] = useState("");
   const [activeHelpPosition, setActiveHelpPosition] = useState(null);
 
-  // Separate controls that live in the Presets section from the folder list
-  const presetsAreaGroups = controlGroups.filter(
-    (g) => g.title === PRESETS_AREA_GROUP,
-  );
-  const presetsAreaControls = presetsAreaGroups.flatMap((g) => g.controls);
-  const folderGroups = controlGroups.filter(
-    (g) => g.title !== PRESETS_AREA_GROUP,
-  );
-
   const helpDefinitions = new Map();
-  for (const group of controlGroups) {
+  for (const group of [
+    ...folderGroups,
+    { title: "Performance", controls: presetsAreaControls },
+  ]) {
     for (const definition of group.controls) {
       if (definition.title) {
         helpDefinitions.set(definition.key, definition);
@@ -1178,32 +1164,33 @@ export default function AdvancedControlsSidebar({
               </button>
             </section>
 
-            {presetsAreaControls.map((definition) => (
-              <div
-                key={definition.key}
-                className="baryon-controls-presets-toggle-row"
-              >
-                <label
-                  className="baryon-controls-card-label"
-                  htmlFor={`presets-area-${definition.key}`}
-                >
-                  {definition.label}
-                </label>
-                <span className="baryon-controls-toggle">
-                  <input
-                    id={`presets-area-${definition.key}`}
-                    type="checkbox"
-                    checked={Boolean(controlsState[definition.key])}
-                    onChange={(event) =>
-                      updateControl(definition.key, event.target.checked)
+            {presetsAreaControls.length > 0 ? (
+              <section className="baryon-controls-presets">
+                <p className="baryon-controls-section-label">Performance</p>
+                {presetsAreaControls.map((definition) => (
+                  <ControlField
+                    key={definition.key}
+                    definition={definition}
+                    value={getDefinitionValue(definition, controlsState)}
+                    onChange={(nextValue) =>
+                      applyDefinitionChange(
+                        definition,
+                        nextValue,
+                        controlsState,
+                        updateControl,
+                      )
                     }
+                    activeHelpKey={activeHelpKey}
+                    registerHelpTrigger={registerHelpTrigger}
+                    onHelpPointerEnter={helpEventHandlers.onHelpPointerEnter}
+                    onHelpPointerLeave={helpEventHandlers.onHelpPointerLeave}
+                    onHelpFocus={helpEventHandlers.onHelpFocus}
+                    onHelpBlur={helpEventHandlers.onHelpBlur}
+                    onHelpClick={helpEventHandlers.onHelpClick}
                   />
-                  <span className="baryon-controls-toggle-track">
-                    <span className="baryon-controls-toggle-thumb" />
-                  </span>
-                </span>
-              </div>
-            ))}
+                ))}
+              </section>
+            ) : null}
 
             {folderGroups.map((group) => (
               <ControlGroup

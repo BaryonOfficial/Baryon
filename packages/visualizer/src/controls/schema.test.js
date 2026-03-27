@@ -191,7 +191,7 @@ describe("control schema", () => {
       methods: [VISUALIZATION_METHODS.raymarch],
     });
     expect(fieldCacheOverrideControl?.binding?.options).toEqual({
-      Analytic: "analytic",
+      Direct: "direct",
       Cached: "cached",
     });
   });
