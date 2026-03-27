@@ -19,7 +19,8 @@ prompts
 plasmic.json
 .cache_ggshield
 tmp/
-.venv-pdf
+.venv
+.mcp.json
 
 # Editor directories and files
 .vscode/*
