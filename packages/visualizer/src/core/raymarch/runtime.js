@@ -8,9 +8,14 @@ import { getBoundaryModeFromValue } from "../modeFamily.js";
 import { isFieldDrivenState } from "../fieldState.js";
 import { resolveRaymarchFieldCacheOverride } from "../../visualization/fieldEvaluation.js";
 import {
+  buildRaymarchChromaCacheDescriptor,
   disposeRaymarchFieldCache,
+  disposeRaymarchChromaCache,
   enqueueRaymarchFieldCacheRebuild,
+  enqueueRaymarchChromaCacheRebuild,
+  isRaymarchChromaCacheReadyForDescriptor,
   isRaymarchFieldCacheReadyForDescriptor,
+  shouldRebuildRaymarchChromaCache,
   shouldRebuildRaymarchFieldCache,
   buildRaymarchFieldCacheDescriptor,
   RAYMARCH_FIELD_CACHE_RESOLUTION,
@@ -27,6 +32,8 @@ import {
   inferLayerCapacity,
 } from "./performanceGovernor.js";
 import {
+  RAYMARCH_CHROMA_EVALUATION_MODES,
+  setRaymarchChromaEvaluationMode,
   setRaymarchCavityGeometry,
   setRaymarchFieldEvaluationMode,
 } from "./material.js";
@@ -264,6 +271,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const effectiveCavityGeometry =
     getRuntimeEffectiveCavityGeometry(runtimeState);
   const fieldCache = runtimeState.fieldCache ?? null;
+  const chromaCache = runtimeState.chromaCache ?? null;
   const fieldCacheOverride = getRaymarchFieldCacheOverride();
 
   return {
@@ -365,6 +373,10 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
       runtimeState.volumeMesh?.userData?.raymarchFieldEvaluationMode ??
       fieldCache?.mode ??
       "analytic",
+    chromesthesiaEvaluationMode:
+      runtimeState.volumeMesh?.userData?.raymarchChromaEvaluationMode ??
+      chromaCache?.mode ??
+      RAYMARCH_CHROMA_EVALUATION_MODES.off,
     fieldCacheActive: fieldCache?.active ?? false,
     fieldCacheResolution:
       fieldCache?.resolution ?? RAYMARCH_FIELD_CACHE_RESOLUTION,
@@ -377,6 +389,11 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     fieldCacheReady: fieldCache?.ready ?? false,
     fieldCacheRebuildPending: fieldCache?.rebuildPending ?? false,
     fieldCacheLastError: fieldCache?.lastError ?? null,
+    chromesthesiaCacheActive: chromaCache?.active ?? false,
+    chromesthesiaCacheReady: chromaCache?.ready ?? false,
+    chromesthesiaCacheRebuildPending: chromaCache?.rebuildPending ?? false,
+    chromesthesiaCacheRebuildCount: chromaCache?.rebuildCount ?? 0,
+    chromesthesiaCacheLastError: chromaCache?.lastError ?? null,
     chromesthesiaMix: runtimeState.uniforms.uChromesthesiaMix?.value ?? 0,
     holographicReferenceStrength,
     avgRaySegmentLength,
@@ -579,8 +596,10 @@ function updateFieldCache(
   runtimeState,
   renderer,
   { backboneCapacity, detailCapacity },
+  { chromesthesiaEnabled, fieldDescriptor, chromaDescriptor },
 ) {
   const fieldCache = runtimeState.fieldCache;
+  const chromaCache = runtimeState.chromaCache;
   if (!fieldCache || !runtimeState.volumeMesh) {
     return;
   }
@@ -590,52 +609,134 @@ function updateFieldCache(
     requestedMode === "cached" && fieldCache.backend !== "unavailable";
   fieldCache.active = cachedRequested;
   fieldCache.mode = requestedMode;
+  if (chromaCache) {
+    chromaCache.active =
+      cachedRequested &&
+      chromesthesiaEnabled &&
+      chromaCache.backend !== "unavailable";
+  }
   if (!cachedRequested) {
     if (fieldCache.lastRebuildReason === "uninitialized") {
       fieldCache.lastRebuildReason = "inactive";
     }
     setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, "analytic");
+    setRaymarchChromaEvaluationMode(
+      runtimeState.volumeMesh,
+      chromesthesiaEnabled
+        ? RAYMARCH_CHROMA_EVALUATION_MODES.analytic
+        : RAYMARCH_CHROMA_EVALUATION_MODES.off,
+    );
     return;
   }
 
-  const descriptor = buildRaymarchFieldCacheDescriptor({
-    backboneSlots: runtimeState.backboneModeBuffer?.value?.array,
-    detailSlots: runtimeState.detailModeBuffer?.value?.array,
-    backboneCount: runtimeState.uniforms.uBackboneModeCount?.value ?? 0,
-    detailCount: runtimeState.uniforms.uDetailModeCount?.value ?? 0,
-    boundaryMode: getRuntimeBoundaryMode(runtimeState),
-    cavityGeometry: getRuntimeEffectiveCavityGeometry(runtimeState),
-    radius: runtimeState.uniforms.uRadius?.value ?? 1,
-  });
   const { needsRebuild, reason } = shouldRebuildRaymarchFieldCache(
     fieldCache,
-    descriptor,
+    fieldDescriptor,
   );
 
   if (needsRebuild) {
-    enqueueRaymarchFieldCacheRebuild(fieldCache, renderer, descriptor, reason, {
-      backboneModeBuffer: runtimeState.backboneModeBuffer,
-      detailModeBuffer: runtimeState.detailModeBuffer,
-      backboneCapacity,
-      detailCapacity,
-      uniforms: runtimeState.uniforms,
-    });
+    enqueueRaymarchFieldCacheRebuild(
+      fieldCache,
+      renderer,
+      fieldDescriptor,
+      reason,
+      {
+        backboneModeBuffer: runtimeState.backboneModeBuffer,
+        detailModeBuffer: runtimeState.detailModeBuffer,
+        backboneCapacity,
+        detailCapacity,
+        uniforms: runtimeState.uniforms,
+      },
+    );
+  }
+
+  let fieldEvaluationMode = "analytic";
+  if (
+    fieldCache.backend !== "unavailable" &&
+    isRaymarchFieldCacheReadyForDescriptor(fieldCache, fieldDescriptor)
+  ) {
+    fieldEvaluationMode = "cached";
+  } else if (cachedRequested && fieldCache.ready) {
+    fieldEvaluationMode = "cached";
+  }
+
+  setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, fieldEvaluationMode);
+
+  if (!chromesthesiaEnabled || !chromaCache) {
+    setRaymarchChromaEvaluationMode(
+      runtimeState.volumeMesh,
+      chromesthesiaEnabled
+        ? RAYMARCH_CHROMA_EVALUATION_MODES.analytic
+        : RAYMARCH_CHROMA_EVALUATION_MODES.off,
+    );
+    return;
+  }
+
+  chromaCache.mode =
+    fieldEvaluationMode === "cached"
+      ? RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback
+      : RAYMARCH_CHROMA_EVALUATION_MODES.analytic;
+
+  const chromaUploadReady =
+    Boolean(chromaDescriptor) && runtimeState.chromaBuffersUploaded === true;
+  if (chromaUploadReady) {
+    const chromaRebuild = shouldRebuildRaymarchChromaCache(
+      chromaCache,
+      chromaDescriptor,
+    );
+    if (chromaRebuild.needsRebuild) {
+      enqueueRaymarchChromaCacheRebuild(
+        chromaCache,
+        renderer,
+        chromaDescriptor,
+        chromaRebuild.reason,
+        {
+          backboneModeBuffer: runtimeState.backboneModeBuffer,
+          detailModeBuffer: runtimeState.detailModeBuffer,
+          backboneColorBuffer: runtimeState.backboneColorBuffer,
+          detailColorBuffer: runtimeState.detailColorBuffer,
+          backboneCapacity,
+          detailCapacity,
+          uniforms: runtimeState.uniforms,
+        },
+      );
+    }
+  }
+
+  if (fieldEvaluationMode !== "cached") {
+    setRaymarchChromaEvaluationMode(
+      runtimeState.volumeMesh,
+      RAYMARCH_CHROMA_EVALUATION_MODES.analytic,
+    );
+    return;
   }
 
   if (
-    fieldCache.backend !== "unavailable" &&
-    isRaymarchFieldCacheReadyForDescriptor(fieldCache, descriptor)
+    chromaCache.backend !== "unavailable" &&
+    chromaDescriptor &&
+    isRaymarchChromaCacheReadyForDescriptor(chromaCache, chromaDescriptor)
   ) {
-    setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, "cached");
+    chromaCache.mode = RAYMARCH_CHROMA_EVALUATION_MODES.cached;
+    setRaymarchChromaEvaluationMode(
+      runtimeState.volumeMesh,
+      RAYMARCH_CHROMA_EVALUATION_MODES.cached,
+    );
     return;
   }
 
-  if (cachedRequested && fieldCache.ready) {
-    setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, "cached");
+  if (chromaCache.ready) {
+    chromaCache.mode = RAYMARCH_CHROMA_EVALUATION_MODES.cached;
+    setRaymarchChromaEvaluationMode(
+      runtimeState.volumeMesh,
+      RAYMARCH_CHROMA_EVALUATION_MODES.cached,
+    );
     return;
   }
 
-  setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, "analytic");
+  setRaymarchChromaEvaluationMode(
+    runtimeState.volumeMesh,
+    RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback,
+  );
 }
 
 export function tickRaymarchRuntime(
@@ -730,14 +831,46 @@ export function tickRaymarchRuntime(
   setIfChanged(uniforms.uBackboneModeCount, backboneModeCount);
   setIfChanged(uniforms.uDetailModeCount, detailModeCount);
   setIfChanged(uniforms.uActiveModeCount, backboneModeCount + detailModeCount);
+  const fieldDescriptor = buildRaymarchFieldCacheDescriptor({
+    backboneSlots: runtimeState.backboneModeBuffer?.value?.array,
+    detailSlots: runtimeState.detailModeBuffer?.value?.array,
+    backboneCount: backboneModeCount,
+    detailCount: detailModeCount,
+    boundaryMode: getRuntimeBoundaryMode(runtimeState),
+    cavityGeometry: getRuntimeEffectiveCavityGeometry(runtimeState),
+    radius: runtimeState.uniforms.uRadius?.value ?? 1,
+  });
+  const chromaDescriptor = chromesthesiaEnabled
+    ? buildRaymarchChromaCacheDescriptor({
+        backboneSlots: runtimeState.backboneModeBuffer?.value?.array,
+        detailSlots: runtimeState.detailModeBuffer?.value?.array,
+        backboneColorSlots: runtimeState.backboneColorBuffer?.value?.array,
+        detailColorSlots: runtimeState.detailColorBuffer?.value?.array,
+        backboneCount: backboneModeCount,
+        detailCount: detailModeCount,
+        boundaryMode: getRuntimeBoundaryMode(runtimeState),
+        cavityGeometry: getRuntimeEffectiveCavityGeometry(runtimeState),
+        radius: runtimeState.uniforms.uRadius?.value ?? 1,
+      })
+    : null;
+  runtimeState.chromaBuffersUploaded = chromesthesiaEnabled;
   setRaymarchCavityGeometry(
     runtimeState.volumeMesh,
     getRuntimeEffectiveCavityGeometry(runtimeState),
   );
-  updateFieldCache(runtimeState, renderer, {
-    backboneCapacity,
-    detailCapacity,
-  });
+  updateFieldCache(
+    runtimeState,
+    renderer,
+    {
+      backboneCapacity,
+      detailCapacity,
+    },
+    {
+      chromesthesiaEnabled,
+      fieldDescriptor,
+      chromaDescriptor,
+    },
+  );
   setIfChanged(uniforms.uAverageAmplitude, featureFrame?.averageAmplitude ?? 0);
   setIfChanged(uniforms.uTransientEnergy, featureFrame?.transientEnergy ?? 0);
   setIfChanged(uniforms.uSpectralCentroid, featureFrame?.spectralCentroid ?? 0);
@@ -831,6 +964,7 @@ export function tickRaymarchRuntime(
 
 export function disposeRaymarchRuntime(runtimeState) {
   disposeRaymarchFieldCache(runtimeState?.fieldCache);
+  disposeRaymarchChromaCache(runtimeState?.chromaCache);
   runtimeState?.points?.traverse?.((child) => {
     child.geometry?.dispose?.();
     const materialCache = child.userData?.raymarchMaterialCache;

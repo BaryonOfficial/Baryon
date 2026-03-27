@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildRaymarchChromaCacheDescriptor,
   buildRaymarchFieldCacheDescriptor,
+  createRaymarchChromaCache,
   createRaymarchFieldCache,
   evaluateRaymarchFieldCachePoint,
+  isRaymarchChromaCacheReadyForDescriptor,
+  shouldRebuildRaymarchChromaCache,
   shouldRebuildRaymarchFieldCache,
 } from "./fieldCache.js";
 
@@ -141,6 +145,117 @@ describe("fieldCache", () => {
 
     expect(rebuild.needsRebuild).toBe(true);
     expect(rebuild.reason).toBe("mode-slots");
+  });
+
+  it("keeps field descriptors unchanged when only color slots change", () => {
+    const first = buildRaymarchFieldCacheDescriptor({
+      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+    const second = buildRaymarchFieldCacheDescriptor({
+      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+
+    expect(second).toEqual(first);
+  });
+
+  it("detects chroma rebuilds when color slots change", () => {
+    const chromaCache = createRaymarchChromaCache({ resolution: 8 });
+    const first = buildRaymarchChromaCacheDescriptor({
+      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backboneColorSlots: new Float32Array([1, 0.2, 0.1, 0.9]),
+      detailColorSlots: new Float32Array([0.2, 0.6, 1, 0.4]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+    const second = buildRaymarchChromaCacheDescriptor({
+      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backboneColorSlots: new Float32Array([0.8, 0.2, 0.1, 0.9]),
+      detailColorSlots: new Float32Array([0.2, 0.6, 1, 0.4]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+
+    chromaCache.activeDescriptor = first;
+    const rebuild = shouldRebuildRaymarchChromaCache(chromaCache, second);
+
+    expect(rebuild.needsRebuild).toBe(true);
+    expect(rebuild.reason).toBe("color-slots");
+  });
+
+  it("detects chroma rebuilds when modal geometry changes", () => {
+    const chromaCache = createRaymarchChromaCache({ resolution: 8 });
+    const first = buildRaymarchChromaCacheDescriptor({
+      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backboneColorSlots: new Float32Array([1, 0.2, 0.1, 0.9]),
+      detailColorSlots: new Float32Array([0.2, 0.6, 1, 0.4]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+    const second = buildRaymarchChromaCacheDescriptor({
+      backboneSlots: new Float32Array([1, 3, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backboneColorSlots: new Float32Array([1, 0.2, 0.1, 0.9]),
+      detailColorSlots: new Float32Array([0.2, 0.6, 1, 0.4]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+
+    chromaCache.activeDescriptor = first;
+    const rebuild = shouldRebuildRaymarchChromaCache(chromaCache, second);
+
+    expect(rebuild.needsRebuild).toBe(true);
+    expect(rebuild.reason).toBe("mode-slots");
+  });
+
+  it("tracks chroma readiness against the full chroma descriptor", () => {
+    const chromaCache = createRaymarchChromaCache({ resolution: 8 });
+    const descriptor = buildRaymarchChromaCacheDescriptor({
+      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backboneColorSlots: new Float32Array([1, 0.2, 0.1, 0.9]),
+      detailColorSlots: new Float32Array([0.2, 0.6, 1, 0.4]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+
+    chromaCache.ready = true;
+    chromaCache.activeDescriptor = descriptor;
+
+    expect(
+      isRaymarchChromaCacheReadyForDescriptor(chromaCache, descriptor),
+    ).toBe(true);
+  });
+
+  it("keeps field and chroma compute-node maps separate", () => {
+    const fieldCache = createRaymarchFieldCache({ resolution: 8 });
+    const chromaCache = createRaymarchChromaCache({ resolution: 8 });
+
+    expect(fieldCache.computeNodesByKey).not.toBe(
+      chromaCache.computeNodesByKey,
+    );
   });
 
   it("evaluates pointwise cpu field values for parity checks", () => {

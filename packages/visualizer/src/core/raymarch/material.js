@@ -97,6 +97,29 @@ import {
 // Above HIGH the gate is fully open and behavior is identical to pre-fix.
 const EXCITATION_GATE_LOW = 0.04;
 const EXCITATION_GATE_HIGH = 0.35;
+const ANALYTIC_CHROMESTHESIA_PRESENCE_END = 0.18;
+const CACHED_CHROMESTHESIA_PRESENCE_END = 0.26;
+
+export const RAYMARCH_CHROMA_EVALUATION_MODES = Object.freeze({
+  off: "off",
+  analytic: "analytic",
+  cached: "cached",
+  tonalFallback: "tonal-fallback",
+});
+
+function normalizeChromaEvaluationMode(chromaEvaluationMode) {
+  switch (chromaEvaluationMode) {
+    case RAYMARCH_CHROMA_EVALUATION_MODES.off:
+      return RAYMARCH_CHROMA_EVALUATION_MODES.off;
+    case RAYMARCH_CHROMA_EVALUATION_MODES.cached:
+      return RAYMARCH_CHROMA_EVALUATION_MODES.cached;
+    case RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback:
+      return RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback;
+    case RAYMARCH_CHROMA_EVALUATION_MODES.analytic:
+    default:
+      return RAYMARCH_CHROMA_EVALUATION_MODES.analytic;
+  }
+}
 
 /**
  * @typedef {{
@@ -113,7 +136,8 @@ const EXCITATION_GATE_HIGH = 0.35;
  *   scatteringNode?: any,
  *   opacityGainNode?: any,
  *   offsetNode?: any | ((args: { startPosLocal: any, rayDirLocal: any, radiusNode: any }) => any),
- *   fieldEvaluationMode?: string
+ *   fieldEvaluationMode?: string,
+ *   chromaEvaluationMode?: string
  * }} BaryonVolumeMaterial
  */
 
@@ -354,6 +378,8 @@ function createScatteringNode({
   boundaryMode = BOUNDARY_MODES.neumann,
   cavityGeometry = "rectangular",
   fieldCacheTexture = null,
+  chromaCacheTexture = null,
+  chromaEvaluationMode = RAYMARCH_CHROMA_EVALUATION_MODES.analytic,
 }) {
   const {
     uRadius,
@@ -490,6 +516,15 @@ function createScatteringNode({
         float(1e-4),
         uChromesthesiaMix,
       );
+      const analyticChromaEnabled =
+        chromaEvaluationMode === RAYMARCH_CHROMA_EVALUATION_MODES.analytic;
+      const cachedChromaEnabled =
+        chromaEvaluationMode === RAYMARCH_CHROMA_EVALUATION_MODES.cached &&
+        Boolean(chromaCacheTexture);
+      const tonalFallbackEnabled =
+        chromaEvaluationMode === RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback;
+      const chromaModeEnabled =
+        analyticChromaEnabled || cachedChromaEnabled || tonalFallbackEnabled;
       const backboneActiveCount = int(uBackboneModeCount);
       const detailActiveCount = int(uDetailModeCount);
       if (fieldCacheTexture) {
@@ -504,23 +539,35 @@ function createScatteringNode({
         gradY.assign(cachedSample.z);
         gradZ.assign(cachedSample.w);
 
-        accumulateColorLayers({
-          backboneModeBuffer,
-          detailModeBuffer,
-          backboneColorBuffer,
-          detailColorBuffer,
-          backboneCapacity,
-          detailCapacity,
-          backboneActiveCount,
-          detailActiveCount,
-          localPosition,
-          uRadius,
-          boundaryMode,
-          cavityGeometry,
-          chromesthesiaEnabled,
-          colorSum,
-          colorWeight,
-        });
+        if (cachedChromaEnabled) {
+          const cacheUv = clamp(
+            normalizedPosition.mul(float(0.5)).add(vec3(0.5)),
+            vec3(0.0),
+            vec3(1.0),
+          );
+          const cachedChromaSample =
+            texture3D(chromaCacheTexture).sample(cacheUv);
+          colorSum.assign(cachedChromaSample.xyz);
+          colorWeight.assign(cachedChromaSample.w);
+        } else if (analyticChromaEnabled) {
+          accumulateColorLayers({
+            backboneModeBuffer,
+            detailModeBuffer,
+            backboneColorBuffer,
+            detailColorBuffer,
+            backboneCapacity,
+            detailCapacity,
+            backboneActiveCount,
+            detailActiveCount,
+            localPosition,
+            uRadius,
+            boundaryMode,
+            cavityGeometry,
+            chromesthesiaEnabled,
+            colorSum,
+            colorWeight,
+          });
+        }
       } else {
         accumulateFieldLayers({
           backboneModeBuffer,
@@ -535,7 +582,9 @@ function createScatteringNode({
           uRadius,
           boundaryMode,
           cavityGeometry,
-          chromesthesiaEnabled,
+          chromesthesiaEnabled: analyticChromaEnabled
+            ? chromesthesiaEnabled
+            : float(0.0),
           field,
           gradX,
           gradY,
@@ -772,16 +821,6 @@ function createScatteringNode({
       );
       const staticBaseColor = mix(uColor, uSurfaceColor, spectralColorBias);
       const spectralColor = colorSum.div(colorWeight.max(float(1e-4)));
-      const chromesthesiaPresence = smoothstep(
-        float(0.0),
-        float(0.18),
-        colorWeight,
-      );
-      const chromesthesiaWeight = clamp(
-        uChromesthesiaMix.mul(chromesthesiaPresence),
-        float(0.0),
-        float(1.0),
-      );
       const contourAccent = contourMix
         .mul(float(0.18))
         .add(boundaryMask.mul(float(BOUNDARY_CONTOUR_ACCENT_WEIGHT)))
@@ -883,51 +922,79 @@ function createScatteringNode({
         activityAccent,
       );
       const volumeColor = staticVolumeColor.toVar();
-      If(chromesthesiaEnabled.greaterThan(0.5), () => {
-        const neutralBase = mix(vec3(0.72), vec3(1.0), spectralColorBias);
-        const chromesthesiaNeutralColor = mix(
-          neutralBase,
-          uKeyTint,
-          uKeyTintStrength.mul(float(0.38)),
-        );
-        const chromesthesiaBaseColor = mix(
-          chromesthesiaNeutralColor,
-          spectralColor,
-          chromesthesiaWeight,
-        );
-        const chromesthesiaContourColor = mix(
-          chromesthesiaBaseColor.mul(float(0.92)),
-          chromesthesiaBaseColor,
-          contourAccent,
-        );
-        const chromesthesiaLaserColor = mix(
-          chromesthesiaContourColor,
-          uSurfaceColor,
-          hotCoreMix.mul(float(0.68)),
-        );
-        const chromesthesiaHolographicColor = mix(
-          chromesthesiaLaserColor,
-          holographicAccentColor,
-          /** @type {any} */ (holographicColorMix),
-        );
-        const chromesthesiaHolographicLaserColor = mix(
-          chromesthesiaHolographicColor,
-          vec3(1.0),
-          /** @type {any} */ (holographicEmissionLift.mul(float(0.4))),
-        );
-        const chromesthesiaVolumeColor = mix(
-          chromesthesiaHolographicLaserColor.mul(float(0.9)),
-          chromesthesiaHolographicLaserColor,
-          activityAccent,
-        );
-        volumeColor.assign(
-          mix(
-            staticVolumeColor,
-            chromesthesiaVolumeColor,
-            chromesthesiaEnabled,
-          ),
-        );
-      });
+      const neutralBase = mix(vec3(0.72), vec3(1.0), spectralColorBias);
+      const chromesthesiaNeutralColor = mix(
+        neutralBase,
+        uKeyTint,
+        uKeyTintStrength.mul(float(0.38)),
+      );
+      if (chromaModeEnabled) {
+        If(chromesthesiaEnabled.greaterThan(0.5), () => {
+          const chromesthesiaPresenceEnd = float(
+            cachedChromaEnabled
+              ? CACHED_CHROMESTHESIA_PRESENCE_END
+              : ANALYTIC_CHROMESTHESIA_PRESENCE_END,
+          );
+          const chromesthesiaPresence = smoothstep(
+            float(0.0),
+            chromesthesiaPresenceEnd,
+            colorWeight,
+          );
+          const cachedChromesthesiaWeight = clamp(
+            uChromesthesiaMix.mul(chromesthesiaPresence),
+            float(0.0),
+            float(1.0),
+          );
+          const tonalFallbackWeight = clamp(
+            uChromesthesiaMix.mul(excitationVisibility),
+            float(0.0),
+            float(1.0),
+          );
+          const chromesthesiaBlendWeight = tonalFallbackEnabled
+            ? tonalFallbackWeight
+            : cachedChromesthesiaWeight;
+          const chromesthesiaTargetColor = tonalFallbackEnabled
+            ? chromesthesiaNeutralColor
+            : spectralColor;
+          const chromesthesiaBaseColor = mix(
+            chromesthesiaNeutralColor,
+            chromesthesiaTargetColor,
+            chromesthesiaBlendWeight,
+          );
+          const chromesthesiaContourColor = mix(
+            chromesthesiaBaseColor.mul(float(0.92)),
+            chromesthesiaBaseColor,
+            contourAccent,
+          );
+          const chromesthesiaLaserColor = mix(
+            chromesthesiaContourColor,
+            uSurfaceColor,
+            hotCoreMix.mul(float(0.68)),
+          );
+          const chromesthesiaHolographicColor = mix(
+            chromesthesiaLaserColor,
+            holographicAccentColor,
+            /** @type {any} */ (holographicColorMix),
+          );
+          const chromesthesiaHolographicLaserColor = mix(
+            chromesthesiaHolographicColor,
+            vec3(1.0),
+            /** @type {any} */ (holographicEmissionLift.mul(float(0.4))),
+          );
+          const chromesthesiaVolumeColor = mix(
+            chromesthesiaHolographicLaserColor.mul(float(0.9)),
+            chromesthesiaHolographicLaserColor,
+            activityAccent,
+          );
+          volumeColor.assign(
+            mix(
+              staticVolumeColor,
+              chromesthesiaVolumeColor,
+              chromesthesiaEnabled,
+            ),
+          );
+        });
+      }
 
       return volumeColor.mul(stabilizedDensity);
     },
@@ -967,6 +1034,7 @@ export function createRaymarchVolumeMesh({
   backboneColorBuffer,
   detailColorBuffer,
   fieldCacheTexture = null,
+  chromaCacheTexture = null,
   capacity = null,
   backboneCapacity = capacity ?? 0,
   detailCapacity = capacity ?? 0,
@@ -985,6 +1053,7 @@ export function createRaymarchVolumeMesh({
   const createMaterialForBoundaryMode = (
     boundaryMode,
     fieldEvaluationMode,
+    chromaEvaluationMode,
     materialCavityGeometry,
   ) => {
     const material = /** @type {BaryonVolumeMaterial} */ (
@@ -1009,41 +1078,57 @@ export function createRaymarchVolumeMesh({
       cavityGeometry: materialCavityGeometry,
       fieldCacheTexture:
         fieldEvaluationMode === "cached" ? fieldCacheTexture : null,
+      chromaCacheTexture:
+        chromaEvaluationMode === RAYMARCH_CHROMA_EVALUATION_MODES.cached
+          ? chromaCacheTexture
+          : null,
+      chromaEvaluationMode,
     });
     material.fieldEvaluationMode = fieldEvaluationMode;
+    material.chromaEvaluationMode = chromaEvaluationMode;
     return material;
   };
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
   const materialCache = {
     [BOUNDARY_MODES.dirichlet]: {
       analytic: {
-        [normalizedCavityGeometry]: createMaterialForBoundaryMode(
-          BOUNDARY_MODES.dirichlet,
-          "analytic",
-          normalizedCavityGeometry,
-        ),
+        [RAYMARCH_CHROMA_EVALUATION_MODES.analytic]: {
+          [normalizedCavityGeometry]: createMaterialForBoundaryMode(
+            BOUNDARY_MODES.dirichlet,
+            "analytic",
+            RAYMARCH_CHROMA_EVALUATION_MODES.analytic,
+            normalizedCavityGeometry,
+          ),
+        },
       },
       cached: {},
     },
     [BOUNDARY_MODES.neumann]: {
       analytic: {
-        [normalizedCavityGeometry]: createMaterialForBoundaryMode(
-          BOUNDARY_MODES.neumann,
-          "analytic",
-          normalizedCavityGeometry,
-        ),
+        [RAYMARCH_CHROMA_EVALUATION_MODES.analytic]: {
+          [normalizedCavityGeometry]: createMaterialForBoundaryMode(
+            BOUNDARY_MODES.neumann,
+            "analytic",
+            RAYMARCH_CHROMA_EVALUATION_MODES.analytic,
+            normalizedCavityGeometry,
+          ),
+        },
       },
       cached: {},
     },
   };
   const mesh = new THREE.Mesh(
     geometry,
-    materialCache[BOUNDARY_MODES.neumann].analytic[normalizedCavityGeometry],
+    materialCache[BOUNDARY_MODES.neumann].analytic.analytic[
+      normalizedCavityGeometry
+    ],
   );
   mesh.userData.raymarchMaterialCache = materialCache;
   mesh.userData.raymarchCreateMaterialVariant = createMaterialForBoundaryMode;
   mesh.userData.raymarchBoundaryMode = BOUNDARY_MODES.neumann;
   mesh.userData.raymarchFieldEvaluationMode = "analytic";
+  mesh.userData.raymarchChromaEvaluationMode =
+    RAYMARCH_CHROMA_EVALUATION_MODES.analytic;
   mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
   mesh.frustumCulled = false;
 
@@ -1058,6 +1143,7 @@ function getOrCreateRaymarchMaterial(
   mesh,
   boundaryMode,
   fieldEvaluationMode,
+  chromaEvaluationMode,
   cavityGeometry,
 ) {
   const materialCache = getRaymarchMaterialCache(mesh);
@@ -1072,10 +1158,15 @@ function getOrCreateRaymarchMaterial(
 
   const normalizedFieldEvaluationMode =
     fieldEvaluationMode === "cached" ? "cached" : "analytic";
+  const normalizedChromaEvaluationMode =
+    normalizeChromaEvaluationMode(chromaEvaluationMode);
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
-  const geometryMaterials =
+  const chromaMaterials =
     boundaryMaterials[normalizedFieldEvaluationMode] ??
     (boundaryMaterials[normalizedFieldEvaluationMode] = {});
+  const geometryMaterials =
+    chromaMaterials[normalizedChromaEvaluationMode] ??
+    (chromaMaterials[normalizedChromaEvaluationMode] = {});
   if (geometryMaterials[normalizedCavityGeometry]) {
     return geometryMaterials[normalizedCavityGeometry];
   }
@@ -1088,6 +1179,7 @@ function getOrCreateRaymarchMaterial(
   const material = createMaterialVariant(
     boundaryMode,
     normalizedFieldEvaluationMode,
+    normalizedChromaEvaluationMode,
     normalizedCavityGeometry,
   );
   geometryMaterials[normalizedCavityGeometry] = material;
@@ -1108,10 +1200,14 @@ export function setRaymarchBoundaryMode(mesh, boundaryMode) {
     mesh?.userData?.raymarchFieldEvaluationMode === "cached"
       ? "cached"
       : "analytic";
+  const chromaEvaluationMode = normalizeChromaEvaluationMode(
+    mesh?.userData?.raymarchChromaEvaluationMode,
+  );
   const nextMaterial = getOrCreateRaymarchMaterial(
     mesh,
     normalizedBoundaryMode,
     fieldEvaluationMode,
+    chromaEvaluationMode,
     normalizedCavityGeometry,
   );
   if (!nextMaterial || mesh.material === nextMaterial) {
@@ -1139,10 +1235,14 @@ export function setRaymarchFieldEvaluationMode(mesh, fieldEvaluationMode) {
   const normalizedCavityGeometry = normalizeCavityGeometry(
     mesh?.userData?.raymarchCavityGeometry,
   );
+  const normalizedChromaEvaluationMode = normalizeChromaEvaluationMode(
+    mesh?.userData?.raymarchChromaEvaluationMode,
+  );
   const nextMaterial = getOrCreateRaymarchMaterial(
     mesh,
     normalizedBoundaryMode,
     normalizedFieldEvaluationMode,
+    normalizedChromaEvaluationMode,
     normalizedCavityGeometry,
   );
   if (!nextMaterial || mesh.material === nextMaterial) {
@@ -1154,6 +1254,42 @@ export function setRaymarchFieldEvaluationMode(mesh, fieldEvaluationMode) {
   nextMaterial.steps = currentMaterial?.steps ?? nextMaterial.steps;
   mesh.material = nextMaterial;
   mesh.userData.raymarchFieldEvaluationMode = normalizedFieldEvaluationMode;
+}
+
+export function setRaymarchChromaEvaluationMode(mesh, chromaEvaluationMode) {
+  const materialCache = getRaymarchMaterialCache(mesh);
+  if (!materialCache) {
+    return;
+  }
+
+  const normalizedChromaEvaluationMode =
+    normalizeChromaEvaluationMode(chromaEvaluationMode);
+  const normalizedBoundaryMode = normalizeBoundaryMode(
+    mesh?.userData?.raymarchBoundaryMode,
+  );
+  const normalizedFieldEvaluationMode =
+    mesh?.userData?.raymarchFieldEvaluationMode === "cached"
+      ? "cached"
+      : "analytic";
+  const normalizedCavityGeometry = normalizeCavityGeometry(
+    mesh?.userData?.raymarchCavityGeometry,
+  );
+  const nextMaterial = getOrCreateRaymarchMaterial(
+    mesh,
+    normalizedBoundaryMode,
+    normalizedFieldEvaluationMode,
+    normalizedChromaEvaluationMode,
+    normalizedCavityGeometry,
+  );
+  if (!nextMaterial || mesh.material === nextMaterial) {
+    mesh.userData.raymarchChromaEvaluationMode = normalizedChromaEvaluationMode;
+    return;
+  }
+
+  const currentMaterial = mesh.material;
+  nextMaterial.steps = currentMaterial?.steps ?? nextMaterial.steps;
+  mesh.material = nextMaterial;
+  mesh.userData.raymarchChromaEvaluationMode = normalizedChromaEvaluationMode;
 }
 
 export function setRaymarchCavityGeometry(mesh, cavityGeometry) {
@@ -1170,10 +1306,14 @@ export function setRaymarchCavityGeometry(mesh, cavityGeometry) {
     mesh?.userData?.raymarchFieldEvaluationMode === "cached"
       ? "cached"
       : "analytic";
+  const normalizedChromaEvaluationMode = normalizeChromaEvaluationMode(
+    mesh?.userData?.raymarchChromaEvaluationMode,
+  );
   const nextMaterial = getOrCreateRaymarchMaterial(
     mesh,
     normalizedBoundaryMode,
     normalizedFieldEvaluationMode,
+    normalizedChromaEvaluationMode,
     normalizedCavityGeometry,
   );
   if (!nextMaterial || mesh.material === nextMaterial) {
@@ -1197,14 +1337,19 @@ export function syncRaymarchMaterialSteps(mesh, steps) {
   }
 
   Object.values(materialCache).forEach((boundaryMaterials) => {
-    Object.values(boundaryMaterials).forEach((geometryMaterials) => {
-      if (!geometryMaterials || typeof geometryMaterials !== "object") {
+    Object.values(boundaryMaterials).forEach((chromaMaterials) => {
+      if (!chromaMaterials || typeof chromaMaterials !== "object") {
         return;
       }
-      Object.values(geometryMaterials).forEach((material) => {
-        if (material) {
-          material.steps = steps;
+      Object.values(chromaMaterials).forEach((geometryMaterials) => {
+        if (!geometryMaterials || typeof geometryMaterials !== "object") {
+          return;
         }
+        Object.values(geometryMaterials).forEach((material) => {
+          if (material) {
+            material.steps = steps;
+          }
+        });
       });
     });
   });
