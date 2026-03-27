@@ -1,4 +1,5 @@
 # Policy and automation files require maintainer review.
+* @RektTillNoon 
 /.github/workflows/* @RektTillNoon
 /.github/CODEOWNERS @RektTillNoon
 /CLA.md @RektTillNoon
