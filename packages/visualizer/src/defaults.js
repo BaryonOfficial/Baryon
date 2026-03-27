@@ -48,7 +48,7 @@ export const RENDER_DEFAULTS = Object.freeze({
   bloomRadius: 0,
   bloomThreshold: 0.38,
   bloomResponseBias: 0.52,
-  performanceHudEnabled: true,
+  performanceHudEnabled: false,
 });
 
 export const REACTIVITY_DEFAULTS = Object.freeze({

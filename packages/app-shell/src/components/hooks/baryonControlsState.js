@@ -17,8 +17,29 @@ export const PRESETS_KEY = "baryon:presets";
 export const CONTROLS_PERSIST_DELAY_MS = 500;
 const MODE_GROUP = "Mode";
 const DIAGNOSTICS_GROUP = "Diagnostics";
+const PRESETS_AREA_GROUP = "PresetsArea";
 export const ANALYSIS_MODE_BASE_KEY = "__analysisModeBase";
 export const DUAL_COMPARE_TOGGLE_KEY = "__dualCompareEnabled";
+const PRESETS_AREA_CONTROL_ORDER = Object.freeze([
+  "performanceHudEnabled",
+  "renderQualityPreset",
+  "customPerformanceTargetFps",
+]);
+const DIAGNOSTICS_CONTROL_ORDER = Object.freeze([
+  DUAL_COMPARE_TOGGLE_KEY,
+  "freezeModeSlots",
+  "injectTestTone",
+  "testToneHz",
+  "testToneAmplitude",
+  "cavityGeometry",
+  "auditEnabled",
+  "logEveryFrames",
+  "lowLoadPlaybackDiagnostics",
+  "bloomResponseBias",
+  "rimBloomBias",
+  "rimCompression",
+  "forceWebGLFallbackTest",
+]);
 
 function cloneControlDefinition(definition, overrides = {}) {
   return {
@@ -57,7 +78,7 @@ function createPromotedModeControls(method) {
       cloneControlDefinition(structuralImplementation, {
         key: ANALYSIS_MODE_BASE_KEY,
         title:
-          "Choose how Baryon reads the sound. Legacy Peak is a physics-artistic mix. Modal Excitation is true-to-nature.",
+          "Choose which analysis model drives the visuals. Modal Excitation follows the resonant-mode model, and Legacy Peak keeps the older peak-driven behavior.",
         binding: {
           ...(structuralImplementation.binding ?? {}),
           options: {
@@ -87,7 +108,7 @@ function createPromotedModeControls(method) {
     promotedControls.push(
       cloneControlDefinition(fieldCacheOverride, {
         title:
-          "Cached is faster, but loses precision. Direct is computationally expensive, but precise.",
+          "Cached is faster and usually looks the same. Direct recomputes the field live instead of using the 3D cache, so it costs more.",
         group: MODE_GROUP,
         folder: MODE_GROUP,
       }),
@@ -116,6 +137,19 @@ function insertModeControlsAfterBoundary(controls, promotedControls) {
   ];
 }
 
+function orderControlsByKey(controls, orderedKeys) {
+  const keyOrder = new Map(orderedKeys.map((key, index) => [key, index]));
+
+  return controls.slice().sort((left, right) => {
+    const leftOrder = keyOrder.get(left.key) ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = keyOrder.get(right.key) ?? Number.MAX_SAFE_INTEGER;
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+    return 0;
+  });
+}
+
 function createDiagnosticsControls(controls, method) {
   const filteredControls = controls.filter(
     (definition) =>
@@ -131,36 +165,101 @@ function createDiagnosticsControls(controls, method) {
     return filteredControls;
   }
 
-  return [
-    ...filteredControls,
-    cloneControlDefinition(structuralImplementation, {
-      key: DUAL_COMPARE_TOGGLE_KEY,
-      label: "Dual Compare",
-      title:
-        "Temporarily run both analysis modes at the same time so you can compare them in diagnostics. Turn this off to go back to the analysis mode selected above.",
-      binding: {
-        view: "toggle",
-      },
-      defaultValue: false,
-      group: DIAGNOSTICS_GROUP,
-      folder: DIAGNOSTICS_GROUP,
-      getValue(controlsState) {
-        return controlsState.structuralImplementation === "dual";
-      },
-      applyChange(nextValue, controlsState, updateControl) {
-        if (nextValue) {
-          updateControl("structuralImplementation", "dual");
-          return;
-        }
+  return orderControlsByKey(
+    [
+      ...filteredControls,
+      cloneControlDefinition(structuralImplementation, {
+        key: DUAL_COMPARE_TOGGLE_KEY,
+        label: "Dual Compare",
+        title:
+          "Run both analysis modes at the same time so you can compare them in Diagnostics. Turn this off to go back to the selected mode above.",
+        binding: {
+          view: "toggle",
+        },
+        defaultValue: false,
+        group: DIAGNOSTICS_GROUP,
+        folder: DIAGNOSTICS_GROUP,
+        getValue(controlsState) {
+          return controlsState.structuralImplementation === "dual";
+        },
+        applyChange(nextValue, controlsState, updateControl) {
+          if (nextValue) {
+            updateControl("structuralImplementation", "dual");
+            return;
+          }
 
-        updateControl(
-          "structuralImplementation",
-          controlsState[ANALYSIS_MODE_BASE_KEY] ??
-            AUDIT_DEFAULTS.structuralImplementation,
+          updateControl(
+            "structuralImplementation",
+            controlsState[ANALYSIS_MODE_BASE_KEY] ??
+              AUDIT_DEFAULTS.structuralImplementation,
+          );
+        },
+      }),
+    ],
+    DIAGNOSTICS_CONTROL_ORDER,
+  );
+}
+
+function createVisibleFolderGroups({
+  devtoolsEnabled,
+  method = DEFAULT_VISUALIZATION_METHOD,
+}) {
+  return getControlFolders(method)
+    .map((title) => {
+      let controls = getControlsForFolder(title, method).filter(
+        (definition) =>
+          devtoolsEnabled || definition.status !== CONTROL_STATUSES.debugOnly,
+      );
+
+      if (title === MODE_GROUP) {
+        controls = insertModeControlsAfterBoundary(
+          controls,
+          createPromotedModeControls(method),
         );
-      },
-    }),
-  ];
+      } else if (title === DIAGNOSTICS_GROUP && devtoolsEnabled) {
+        controls = createDiagnosticsControls(controls, method);
+      }
+
+      if (controls.length === 0) {
+        return null;
+      }
+
+      return {
+        title,
+        expanded: controls[0]?.groupExpanded ?? false,
+        controls,
+      };
+    })
+    .filter(Boolean);
+}
+
+function splitPresentationGroups(folderGroups) {
+  const controlByKey = new Map();
+  for (const group of folderGroups) {
+    for (const definition of group.controls) {
+      controlByKey.set(definition.key, definition);
+    }
+  }
+
+  const presetsAreaControls = PRESETS_AREA_CONTROL_ORDER.map((key) =>
+    controlByKey.get(key),
+  ).filter(Boolean);
+  const presetsAreaControlKeys = new Set(PRESETS_AREA_CONTROL_ORDER);
+  const visibleGroups = folderGroups
+    .map((group) => ({
+      ...group,
+      controls: group.controls.filter(
+        (definition) => !presetsAreaControlKeys.has(definition.key),
+      ),
+    }))
+    .filter(
+      (group) => group.title !== PRESETS_AREA_GROUP && group.controls.length,
+    );
+
+  return {
+    folderGroups: visibleGroups,
+    presetsAreaControls,
+  };
 }
 
 export function readStoredJson(storage, key) {
@@ -216,37 +315,20 @@ export function loadStoredPresets(storage) {
   return Array.isArray(presets) ? presets : [];
 }
 
+export function getVisibleControlLayout({
+  devtoolsEnabled,
+  method = DEFAULT_VISUALIZATION_METHOD,
+}) {
+  return splitPresentationGroups(
+    createVisibleFolderGroups({ devtoolsEnabled, method }),
+  );
+}
+
 export function getVisibleControlGroups({
   devtoolsEnabled,
   method = DEFAULT_VISUALIZATION_METHOD,
 }) {
-  return getControlFolders(method)
-    .map((title) => {
-      let controls = getControlsForFolder(title, method).filter(
-        (definition) =>
-          devtoolsEnabled || definition.status !== CONTROL_STATUSES.debugOnly,
-      );
-
-      if (title === MODE_GROUP) {
-        controls = insertModeControlsAfterBoundary(
-          controls,
-          createPromotedModeControls(method),
-        );
-      } else if (title === DIAGNOSTICS_GROUP && devtoolsEnabled) {
-        controls = createDiagnosticsControls(controls, method);
-      }
-
-      if (controls.length === 0) {
-        return null;
-      }
-
-      return {
-        title,
-        expanded: controls[0]?.groupExpanded ?? false,
-        controls,
-      };
-    })
-    .filter(Boolean);
+  return getVisibleControlLayout({ devtoolsEnabled, method }).folderGroups;
 }
 
 export function persistControls(storage, controls) {

@@ -101,7 +101,8 @@ const ThreeScene = ({
   const {
     controlsRef,
     controlsState,
-    controlGroups,
+    folderGroups,
+    presetsAreaControls,
     presets,
     presetName,
     selectedPresetName,
@@ -251,12 +252,15 @@ const ThreeScene = ({
     ? {
         position: "absolute",
         top: "0.9rem",
-        left: `calc(${ADVANCED_CONTROLS_DOCK_WIDTH} + 2.6rem)`,
+        left: "50%",
+        transform: "translateX(-50%)",
         zIndex: 61,
         display: "inline-flex",
         alignItems: "center",
+        justifyContent: "center",
         gap: "0.22rem",
         padding: "0.18rem",
+        maxWidth: "calc(100vw - 2rem)",
         borderRadius: "999px",
         border: "1px solid rgba(255, 255, 255, 0.12)",
         background: "rgba(17, 21, 27, 0.84)",
@@ -268,12 +272,15 @@ const ThreeScene = ({
     : {
         position: "absolute",
         top: "0.9rem",
-        left: "calc(var(--app-floating-control-left) + var(--app-floating-control-size) + 0.55rem)",
+        left: "50%",
+        transform: "translateX(-50%)",
         zIndex: 61,
         display: "inline-flex",
         alignItems: "center",
+        justifyContent: "center",
         gap: "0.22rem",
         padding: "0.18rem",
+        maxWidth: "calc(100vw - 2rem)",
         borderRadius: "999px",
         border: "1px solid rgba(255, 255, 255, 0.12)",
         background: "rgba(17, 21, 27, 0.84)",
@@ -460,7 +467,8 @@ const ThreeScene = ({
       {showOverlayUi && isControlsPanelLoaded ? (
         <Suspense fallback={null}>
           <AdvancedControlsSidebar
-            controlGroups={controlGroups}
+            folderGroups={folderGroups}
+            presetsAreaControls={presetsAreaControls}
             controlsState={controlsState}
             presets={presets}
             presetName={presetName}

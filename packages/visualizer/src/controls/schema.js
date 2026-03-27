@@ -759,7 +759,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "bloomResponseBias",
       label: "Bloom Bias",
       title:
-        "Shift bloom toward a smaller, more stable halo by slightly raising threshold and trimming response strength",
+        "Makes the glow smaller and more stable by trimming how easily bloom reacts.",
       defaultValue: RENDER_DEFAULTS.bloomResponseBias,
       methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
@@ -775,7 +775,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "rimBloomBias",
       label: "Rim Bias",
       title:
-        "How much the outer shell can bias emissive brightness toward the rim before bloom picks it up",
+        "Pushes more brightness toward the outer rim before bloom is applied.",
       defaultValue: RAYMARCH_DEFAULTS.rimBloomBias,
       methods: methodsFor("raymarchOnly"),
       binding: { min: 0, max: 1.2, step: 0.01 },
@@ -789,9 +789,8 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "rimCompression",
-      label: "Rim Compress",
-      title:
-        "Compress grazing-angle highlight spikes before they reach the bloom pass",
+      label: "Rim Compression",
+      title: "Tames sharp edge spikes before they reach the bloom pass.",
       defaultValue: RAYMARCH_DEFAULTS.rimCompression,
       methods: methodsFor("raymarchOnly"),
       binding: { min: 0, max: 1.2, step: 0.01 },
@@ -805,9 +804,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "auditEnabled",
-      label: "Enabled",
+      label: "Capture Debug Data",
       title:
-        "Enable frame-by-frame debug logging for the audio and active visualization pipeline",
+        "Record per-frame debug data for the active analysis and renderer.",
       defaultValue: AUDIT_DEFAULTS.auditEnabled,
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audit,
@@ -820,9 +819,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   withControlGroup(
     {
       key: "freezeModeSlots",
-      label: "Freeze Slots",
+      label: "Freeze Pattern",
       title:
-        "Lock the current modal frequency slots so they stop updating from live audio — useful for inspecting a specific cymatic pattern",
+        "Hold the current modal pattern in place instead of updating it from live audio.",
       defaultValue: AUDIT_DEFAULTS.freezeModeSlots,
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audit,
@@ -837,7 +836,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "forceWebGLFallbackTest",
       label: "Force WebGL2",
       title:
-        "Reinitialize the renderer on the WebGL2 fallback backend for compatibility testing — this is a diagnostic toggle and will remount the canvas",
+        "Restart the renderer on the WebGL2 fallback path for compatibility testing. This remounts the canvas.",
       defaultValue: AUDIT_DEFAULTS.forceWebGLFallbackTest,
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audit,
@@ -852,7 +851,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "lowLoadPlaybackDiagnostics",
       label: "Low-load Playback",
       title:
-        "Reduce render overhead during playback diagnostics by forcing a lower pixel ratio and suppressing non-essential audit work while audio is active",
+        "Reduce render overhead during playback diagnostics so you can inspect behavior on slower systems or heavier songs.",
       defaultValue: AUDIT_DEFAULTS.lowLoadPlaybackDiagnostics,
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audit,
@@ -867,7 +866,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "fieldCacheOverride",
       label: "3D Field Eval",
       title:
-        "Choose how the 3D raymarch field is evaluated for diagnostics — Direct forces the exact shader path and Cached forces the compute-backed field-cache path",
+        "Cached is faster and usually looks the same. Direct recomputes the field live instead of using the 3D cache, so it costs more.",
       defaultValue: AUDIT_DEFAULTS.fieldCacheOverride,
       methods: methodsFor("raymarchOnly"),
       binding: {
@@ -888,7 +887,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "cavityGeometry",
       label: "Cavity Geometry",
       title:
-        "Diagnostic-only requested cavity geometry. Spherical is wired through the pipeline, but the effective backend stays rectangular until spherical basis support lands.",
+        "Choose which cavity geometry to request for diagnostics. Spherical is wired through the pipeline, but the renderer still falls back to the rectangular basis today.",
       defaultValue: SIMULATION_DEFAULTS.cavityGeometry,
       methods: methodsFor("raymarchOnly"),
       binding: {
@@ -909,7 +908,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "injectTestTone",
       label: "Inject Tone",
       title:
-        "Replace live audio input with a synthetic test tone — use with Tone Hz and Tone Amp to diagnose specific frequency responses",
+        "Replace live audio with a synthetic test tone so you can inspect a known, repeatable input.",
       defaultValue: AUDIT_DEFAULTS.injectTestTone,
       methods: ALL_METHODS,
       targetType: CONTROL_TARGET_TYPES.audit,
@@ -924,7 +923,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "testToneHz",
       label: "Tone Hz",
       title:
-        "Frequency in Hz of the injected test tone — try values like 110, 220, 440 to see how different pitches shape the cymatic field",
+        "Frequency of the injected test tone in Hz. Try values like 110, 220, or 440 to compare how pitch changes the pattern.",
       defaultValue: AUDIT_DEFAULTS.testToneHz,
       methods: ALL_METHODS,
       binding: { min: 40, max: 2000, step: 1 },
@@ -939,8 +938,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     {
       key: "testToneAmplitude",
       label: "Tone Amp",
-      title:
-        "Amplitude of the injected test tone — lower values produce subtler pattern excitation",
+      title: "How strongly the injected test tone excites the pattern.",
       defaultValue: AUDIT_DEFAULTS.testToneAmplitude,
       methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
@@ -956,7 +954,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "logEveryFrames",
       label: "Log Frames",
       title:
-        "Log a debug snapshot every N frames to the browser console — set to 1 to log every frame, higher to reduce noise",
+        "Write a debug snapshot to the browser console every N frames. Use 1 for every frame.",
       defaultValue: AUDIT_DEFAULTS.logEveryFrames,
       methods: ALL_METHODS,
       binding: { min: 1, max: 240, step: 1 },
@@ -972,7 +970,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "structuralImplementation",
       label: "Analysis Mode",
       title:
-        "Switch between structural analysis modes — Legacy Peak uses the original peak-driven stack, Modal Excitation uses the resonator-bank path, and Dual runs both for comparison diagnostics",
+        "Choose which analysis model drives the visuals. Modal Excitation follows the resonant-mode path, Legacy Peak keeps the older peak-driven behavior, and Dual runs both for comparison.",
       defaultValue: AUDIT_DEFAULTS.structuralImplementation,
       methods: ALL_METHODS,
       binding: {
