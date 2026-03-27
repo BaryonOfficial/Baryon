@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { createRaymarchSceneRoot, tickRaymarchRuntime } from "./runtime.js";
-import { createRaymarchFieldCache } from "./fieldCache.js";
+import {
+  buildRaymarchFieldCacheDescriptor,
+  createRaymarchChromaCache,
+  createRaymarchFieldCache,
+} from "./fieldCache.js";
+import { RAYMARCH_CHROMA_EVALUATION_MODES } from "./material.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -12,15 +17,30 @@ function createRuntimeState({ withFieldCache = false } = {}) {
   const fieldCache = withFieldCache
     ? createRaymarchFieldCache({ resolution: 8 })
     : null;
+  const chromaCache = withFieldCache
+    ? createRaymarchChromaCache({ resolution: 8 })
+    : null;
   const materialCache = withFieldCache
     ? {
         neumann: {
-          analytic: { rectangular: { steps: 64 } },
-          cached: { rectangular: { steps: 64 } },
+          direct: {
+            direct: { rectangular: { steps: 64 } },
+          },
+          cached: {
+            off: { rectangular: { steps: 64 } },
+            cached: { rectangular: { steps: 64 } },
+            "tonal-fallback": { rectangular: { steps: 64 } },
+          },
         },
         dirichlet: {
-          analytic: { rectangular: { steps: 64 } },
-          cached: { rectangular: { steps: 64 } },
+          direct: {
+            direct: { rectangular: { steps: 64 } },
+          },
+          cached: {
+            off: { rectangular: { steps: 64 } },
+            cached: { rectangular: { steps: 64 } },
+            "tonal-fallback": { rectangular: { steps: 64 } },
+          },
         },
       }
     : null;
@@ -129,7 +149,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     volumeMesh: {
       visible: false,
       material: withFieldCache
-        ? materialCache.neumann.analytic.rectangular
+        ? materialCache.neumann.direct.direct.rectangular
         : {
             steps: 64,
           },
@@ -137,7 +157,9 @@ function createRuntimeState({ withFieldCache = false } = {}) {
         ? {
             raymarchMaterialCache: materialCache,
             raymarchBoundaryMode: "neumann",
-            raymarchFieldEvaluationMode: "analytic",
+            raymarchFieldEvaluationMode: "direct",
+            raymarchChromaEvaluationMode:
+              RAYMARCH_CHROMA_EVALUATION_MODES.direct,
             raymarchCavityGeometry: "rectangular",
           }
         : undefined,
@@ -158,6 +180,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     },
     auditEnabled: true,
     fieldCache,
+    chromaCache,
     requestedCavityGeometry: "rectangular",
     effectiveCavityGeometry: "rectangular",
     debugSnapshot: null,
@@ -468,29 +491,141 @@ describe("tickRaymarchRuntime", () => {
       expect(runtimeState.fieldCache.rebuildCount).toBe(0);
       expect(renderer.computeAsync).toHaveBeenCalledTimes(0);
       expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
-        "analytic",
+        "direct",
       );
-      expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("analytic");
+      expect(
+        runtimeState.volumeMesh.userData.raymarchChromaEvaluationMode,
+      ).toBe(RAYMARCH_CHROMA_EVALUATION_MODES.direct);
+      expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("direct");
       expect(runtimeState.debugSnapshot.fieldCacheReady).toBe(false);
       expect(runtimeState.debugSnapshot.fieldCacheRebuildPending).toBe(true);
+      expect(runtimeState.debugSnapshot.chromesthesiaCacheReady).toBe(false);
+      expect(runtimeState.debugSnapshot.chromesthesiaCacheRebuildPending).toBe(
+        true,
+      );
 
       await flushMicrotasks();
-      expect(renderer.computeAsync).toHaveBeenCalledTimes(1);
+      expect(renderer.computeAsync).toHaveBeenCalledTimes(2);
 
       tickRaymarchRuntime(runtimeState, denseFrame, 2, 1 / 60, renderer);
 
       expect(runtimeState.fieldCache.rebuildPending).toBe(false);
       expect(runtimeState.fieldCache.ready).toBe(true);
       expect(runtimeState.fieldCache.rebuildCount).toBe(1);
+      expect(runtimeState.chromaCache.rebuildPending).toBe(false);
+      expect(runtimeState.chromaCache.ready).toBe(true);
+      expect(runtimeState.chromaCache.rebuildCount).toBe(1);
       expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
         "cached",
       );
+      expect(
+        runtimeState.volumeMesh.userData.raymarchChromaEvaluationMode,
+      ).toBe(RAYMARCH_CHROMA_EVALUATION_MODES.cached);
       expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("cached");
       expect(runtimeState.debugSnapshot.fieldCacheActive).toBe(true);
       expect(runtimeState.debugSnapshot.fieldCacheBackend).toBe("compute");
       expect(runtimeState.debugSnapshot.fieldCacheReady).toBe(true);
       expect(runtimeState.debugSnapshot.fieldCacheRebuildPending).toBe(false);
       expect(runtimeState.debugSnapshot.fieldCacheRebuildCount).toBe(1);
+      expect(runtimeState.debugSnapshot.chromesthesiaEvaluationMode).toBe(
+        RAYMARCH_CHROMA_EVALUATION_MODES.cached,
+      );
+      expect(runtimeState.debugSnapshot.chromesthesiaCacheReady).toBe(true);
+      expect(runtimeState.debugSnapshot.chromesthesiaCacheRebuildPending).toBe(
+        false,
+      );
+      expect(runtimeState.debugSnapshot.chromesthesiaCacheRebuildCount).toBe(1);
+    } finally {
+      globalThis.window = originalWindow;
+    }
+  });
+
+  it("uses tonal fallback while cached field is ready but chroma rebuild is still pending", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    let chromaResolve;
+    const renderer = {
+      computeAsync: vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            chromaResolve = resolve;
+          }),
+      ),
+    };
+    const originalWindow = globalThis.window;
+    globalThis.window = /** @type {any} */ ({
+      __baryonFieldCacheOverride: "cached",
+    });
+    const denseFrame = {
+      fieldState: "active",
+      averageAmplitude: 180,
+      backboneSlots: new Float32Array([
+        1, 2, 3, 1.0, 1, 3, 4, 0.95, 2, 3, 4, 0.9, 2, 4, 5, 0.85, 3, 4, 5, 0.8,
+        3, 5, 6, 0.75, 4, 5, 6, 0.7, 4, 6, 7, 0.65,
+      ]),
+      detailSlots: new Float32Array([
+        2, 2, 3, 0.8, 2, 3, 3, 0.75, 3, 3, 4, 0.7, 3, 4, 4, 0.65, 4, 4, 5, 0.6,
+        4, 5, 5, 0.55, 5, 5, 6, 0.5, 5, 6, 6, 0.45,
+      ]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.5, 0.45, 0.4, 0.35]),
+      transientEnergy: 0.72,
+      spectralCentroid: 0.56,
+      spectralFlux: 0.41,
+      structureSignal: 0.86,
+      energySignal: 0.82,
+      changeSignal: 0.64,
+      pulseSignal: 0.34,
+      harmonicity: 0.79,
+    };
+
+    try {
+      runtimeState.backboneModeBuffer.value.array.set(denseFrame.backboneSlots);
+      runtimeState.detailModeBuffer.value.array.set(denseFrame.detailSlots);
+      runtimeState.backboneColorBuffer.value.array.set(
+        denseFrame.backboneColorSlots,
+      );
+      runtimeState.detailColorBuffer.value.array.set(
+        denseFrame.detailColorSlots,
+      );
+      runtimeState.uniforms.uBackboneModeCount.value =
+        denseFrame.backboneSlots.length / 4;
+      runtimeState.uniforms.uDetailModeCount.value =
+        denseFrame.detailSlots.length / 4;
+      runtimeState.uniforms.uActiveModeCount.value =
+        runtimeState.uniforms.uBackboneModeCount.value +
+        runtimeState.uniforms.uDetailModeCount.value;
+      runtimeState.fieldCache.ready = true;
+      runtimeState.fieldCache.activeDescriptor =
+        buildRaymarchFieldCacheDescriptor({
+          backboneSlots: runtimeState.backboneModeBuffer.value.array,
+          detailSlots: runtimeState.detailModeBuffer.value.array,
+          backboneCount: runtimeState.uniforms.uBackboneModeCount.value,
+          detailCount: runtimeState.uniforms.uDetailModeCount.value,
+          boundaryMode: "neumann",
+          cavityGeometry: "rectangular",
+          radius: runtimeState.uniforms.uRadius.value,
+        });
+      tickRaymarchRuntime(runtimeState, denseFrame, 1, 1 / 60, renderer);
+
+      expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
+        "cached",
+      );
+      expect(
+        runtimeState.volumeMesh.userData.raymarchChromaEvaluationMode,
+      ).toBe(RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback);
+      expect(runtimeState.chromaCache.rebuildPending).toBe(true);
+      expect(runtimeState.chromaCache.ready).toBe(false);
+
+      await Promise.resolve();
+      chromaResolve();
+      await flushMicrotasks();
+      tickRaymarchRuntime(runtimeState, denseFrame, 2, 1 / 60, renderer);
+
+      expect(
+        runtimeState.volumeMesh.userData.raymarchChromaEvaluationMode,
+      ).toBe(RAYMARCH_CHROMA_EVALUATION_MODES.cached);
+      expect(runtimeState.chromaCache.ready).toBe(true);
     } finally {
       globalThis.window = originalWindow;
     }
@@ -639,20 +774,36 @@ describe("tickRaymarchRuntime", () => {
       tickRaymarchRuntime(runtimeState, denseFrame, 2, 1 / 60, renderer);
 
       expect(runtimeState.fieldCache.ready).toBe(true);
+      expect(runtimeState.chromaCache.ready).toBe(true);
       expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
         "cached",
       );
+      expect(
+        runtimeState.volumeMesh.userData.raymarchChromaEvaluationMode,
+      ).toBe(RAYMARCH_CHROMA_EVALUATION_MODES.cached);
 
       tickRaymarchRuntime(runtimeState, changedFrame, 3, 1 / 60, renderer);
 
       expect(runtimeState.fieldCache.rebuildPending).toBe(true);
       expect(runtimeState.fieldCache.ready).toBe(true);
+      expect(runtimeState.chromaCache.rebuildPending).toBe(true);
+      expect(runtimeState.chromaCache.ready).toBe(true);
       expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
         "cached",
       );
+      expect(
+        runtimeState.volumeMesh.userData.raymarchChromaEvaluationMode,
+      ).toBe(RAYMARCH_CHROMA_EVALUATION_MODES.cached);
       expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("cached");
       expect(runtimeState.debugSnapshot.fieldCacheReady).toBe(true);
       expect(runtimeState.debugSnapshot.fieldCacheRebuildPending).toBe(true);
+      expect(runtimeState.debugSnapshot.chromesthesiaEvaluationMode).toBe(
+        RAYMARCH_CHROMA_EVALUATION_MODES.cached,
+      );
+      expect(runtimeState.debugSnapshot.chromesthesiaCacheReady).toBe(true);
+      expect(runtimeState.debugSnapshot.chromesthesiaCacheRebuildPending).toBe(
+        true,
+      );
     } finally {
       globalThis.window = originalWindow;
     }

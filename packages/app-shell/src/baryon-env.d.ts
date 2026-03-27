@@ -6,7 +6,7 @@ declare global {
     };
     __baryonControlState?: Record<string, unknown>;
     __baryonAuditSnapshot?: Record<string, unknown>;
-    __baryonFieldCacheOverride?: "analytic" | "cached";
+    __baryonFieldCacheOverride?: "direct" | "cached";
     __baryonRendererInfo?: {
       forceWebGLFallbackTest: boolean;
       backendType: "webgl" | "webgpu" | null;

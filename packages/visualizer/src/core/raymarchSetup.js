@@ -14,7 +14,10 @@ import {
   createRaymarchVolumeMesh,
   createIdleOverlay,
 } from "./raymarch/material.js";
-import { createRaymarchFieldCache } from "./raymarch/fieldCache.js";
+import {
+  createRaymarchChromaCache,
+  createRaymarchFieldCache,
+} from "./raymarch/fieldCache.js";
 import { estimateProjectedSphereStats } from "./raymarch/intersection.js";
 import {
   createRaymarchSceneRoot,
@@ -73,6 +76,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const backboneColorBuffer = createModeBuffer(backboneCapacity);
   const detailColorBuffer = createModeBuffer(detailCapacity);
   const fieldCache = createRaymarchFieldCache();
+  const chromaCache = createRaymarchChromaCache();
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
     backboneModeBuffer,
@@ -80,6 +84,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     backboneColorBuffer,
     detailColorBuffer,
     fieldCacheTexture: fieldCache.texture,
+    chromaCacheTexture: chromaCache.texture,
     backboneCapacity,
     detailCapacity,
     uniforms,
@@ -113,6 +118,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     backboneColorBuffer,
     detailColorBuffer,
     fieldCache,
+    chromaCache,
     sharedModeCapacity,
     // Compatibility alias for older runtime call sites that still read `capacity`.
     capacity: sharedModeCapacity,

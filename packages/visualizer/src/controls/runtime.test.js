@@ -79,15 +79,16 @@ function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
       material: neumannMaterial,
       userData: {
         raymarchBoundaryMode: "neumann",
-        raymarchFieldEvaluationMode: "analytic",
+        raymarchFieldEvaluationMode: "direct",
+        raymarchChromaEvaluationMode: "direct",
         raymarchCavityGeometry: "rectangular",
         raymarchMaterialCache: {
           dirichlet: {
-            analytic: { rectangular: dirichletMaterial },
+            direct: { direct: { rectangular: dirichletMaterial } },
             cached: {},
           },
           neumann: {
-            analytic: { rectangular: neumannMaterial },
+            direct: { direct: { rectangular: neumannMaterial } },
             cached: {},
           },
         },
@@ -226,12 +227,12 @@ describe("control runtime sync", () => {
     expect(runtimeState.bloomTuning.lowStepBloomGuard).toBe(0);
     expect(runtimeState.volumeMesh.material.steps).toBe(64);
     expect(
-      runtimeState.volumeMesh.userData.raymarchMaterialCache.dirichlet.analytic
-        .rectangular.steps,
+      runtimeState.volumeMesh.userData.raymarchMaterialCache.dirichlet.direct
+        .direct.rectangular.steps,
     ).toBe(64);
     expect(
-      runtimeState.volumeMesh.userData.raymarchMaterialCache.neumann.analytic
-        .rectangular.steps,
+      runtimeState.volumeMesh.userData.raymarchMaterialCache.neumann.direct
+        .direct.rectangular.steps,
     ).toBe(64);
     expect(runtimeState.idleOverlay.scale.x).toBe(1.4);
     expect(runtimeState.idleOverlay.material.opacity).toBe(0.84);

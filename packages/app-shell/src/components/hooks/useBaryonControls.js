@@ -16,7 +16,7 @@ import {
   createControlsPersistScheduler,
   createInitialControlState,
   deletePresetFromCollection,
-  getVisibleControlGroups,
+  getVisibleControlLayout,
   loadStoredPresets,
   persistControls,
   savePresetCollection,
@@ -68,7 +68,7 @@ export function useBaryonControls() {
   }
 
   const persistScheduler = persistSchedulerRef.current;
-  const controlGroups = getVisibleControlGroups({
+  const { folderGroups, presetsAreaControls } = getVisibleControlLayout({
     devtoolsEnabled: DEVTOOLS_ENABLED,
     method: controlsState.visualizationMethod ?? DEFAULT_VISUALIZATION_METHOD,
   });
@@ -241,7 +241,8 @@ export function useBaryonControls() {
   return {
     controlsRef,
     controlsState,
-    controlGroups,
+    folderGroups,
+    presetsAreaControls,
     presets,
     presetName,
     selectedPresetName,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useBaryonPipeline } from "./hooks/useBaryonPipeline";
@@ -8,7 +8,13 @@ import {
   CAMERA_VIEW_PRESETS,
   applyCameraViewPreset,
 } from "./cameraViewPresets.js";
-import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
+import {
+  augmentFrameStateWithCameraSync,
+  CAMERA_CONTROL_MODES,
+  resolveAppliedCameraState,
+  shouldMountOrbitControls,
+} from "./baryonSceneCameraSync.js";
+export { CAMERA_CONTROL_MODES } from "./baryonSceneCameraSync.js";
 import { resolveRenderQualityProfile } from "@baryon/visualizer/render/outputPipeline";
 
 const RENDER_PROFILE_COMMAND_EVENT = "__baryon-render-profile-command";
@@ -50,7 +56,11 @@ export function BaryonScene({
   cameraViewPreset = /** @type {"top-down" | "side"} */ (
     CAMERA_VIEW_PRESETS.topDown
   ),
+  cameraDistance = null,
   cameraResetNonce = 0,
+  cameraControlMode = /** @type {"preview-local" | "external-synced"} */ (
+    CAMERA_CONTROL_MODES.previewLocal
+  ),
 }) {
   const { camera, gl, scene, size } = useThree();
   const orbitControlsRef = useRef(null);
@@ -75,8 +85,6 @@ export function BaryonScene({
   // Free TRAANode's two HalfFloat render targets (history + resolve) on unmount.
   useEffect(() => disposePipeline, [disposePipeline]);
   const baryonGeometry = useDefaultBaryonGeometry();
-  const isFullscreen2d =
-    visualizationMethod === VISUALIZATION_METHODS.cymatics2d;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -108,25 +116,41 @@ export function BaryonScene({
     };
   }, []);
 
+  const handleFrameState = useCallback(
+    (frameState) => {
+      if (!onFrameState) {
+        return;
+      }
+
+      onFrameState(
+        augmentFrameStateWithCameraSync(frameState, {
+          visualizationMethod,
+          cameraViewPreset,
+          orbitControls: orbitControlsRef.current,
+          camera,
+        }),
+      );
+    },
+    [camera, cameraViewPreset, onFrameState, visualizationMethod],
+  );
+
   useEffect(() => {
-    if (!isFullscreen2d) {
-      return;
-    }
+    const { preset, distance } = resolveAppliedCameraState({
+      visualizationMethod,
+      cameraControlMode,
+      cameraViewPreset,
+      cameraDistance,
+    });
 
-    applyCameraViewPreset(
-      camera,
-      orbitControlsRef.current,
-      CAMERA_VIEW_PRESETS.side,
-    );
-  }, [camera, isFullscreen2d]);
-
-  useEffect(() => {
-    if (isFullscreen2d) {
-      return;
-    }
-
-    applyCameraViewPreset(camera, orbitControlsRef.current, cameraViewPreset);
-  }, [camera, cameraResetNonce, cameraViewPreset, isFullscreen2d]);
+    applyCameraViewPreset(camera, orbitControlsRef.current, preset, distance);
+  }, [
+    camera,
+    cameraControlMode,
+    cameraDistance,
+    cameraResetNonce,
+    cameraViewPreset,
+    visualizationMethod,
+  ]);
 
   const points = useBaryonVisualizer({
     baryonGeometry,
@@ -144,7 +168,7 @@ export function BaryonScene({
     onPerformanceHudSnapshotChange,
     outputFrameConfig,
     onOutputFrame,
-    onFrameState,
+    onFrameState: handleFrameState,
     externalFrameRef,
     renderProfile,
     basePixelRatio,
@@ -153,7 +177,7 @@ export function BaryonScene({
 
   return (
     <>
-      {!isFullscreen2d ? (
+      {shouldMountOrbitControls(visualizationMethod, cameraControlMode) ? (
         <OrbitControls ref={orbitControlsRef} enableDamping />
       ) : null}
       {/* eslint-disable-next-line react/no-unknown-property */}
