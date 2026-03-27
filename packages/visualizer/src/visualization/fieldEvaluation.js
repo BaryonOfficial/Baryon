@@ -1,11 +1,11 @@
 export const RAYMARCH_FIELD_CACHE_OVERRIDE_MODES = Object.freeze({
-  analytic: "analytic",
+  direct: "direct",
   cached: "cached",
 });
 
 export function normalizeRaymarchFieldCacheOverride(value) {
-  return value === RAYMARCH_FIELD_CACHE_OVERRIDE_MODES.analytic
-    ? RAYMARCH_FIELD_CACHE_OVERRIDE_MODES.analytic
+  return value === RAYMARCH_FIELD_CACHE_OVERRIDE_MODES.direct
+    ? RAYMARCH_FIELD_CACHE_OVERRIDE_MODES.direct
     : RAYMARCH_FIELD_CACHE_OVERRIDE_MODES.cached;
 }
 

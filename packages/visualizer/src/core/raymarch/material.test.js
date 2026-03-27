@@ -79,7 +79,7 @@ describe("raymarch volume material", () => {
     expect(mesh.material.steps).toBe(72);
   });
 
-  it("caches analytic and field-cache material variants per boundary mode", () => {
+  it("caches direct and field-cache material variants per boundary mode", () => {
     const fieldCache = createRaymarchFieldCache({ resolution: 8 });
     const chromaCache = createRaymarchChromaCache({ resolution: 8 });
     const mesh = createRaymarchVolumeMesh({
@@ -96,13 +96,13 @@ describe("raymarch volume material", () => {
     });
     const materialCache = getRaymarchMaterialCache(mesh);
 
-    expect(materialCache.neumann.analytic.analytic.rectangular).toBeTruthy();
+    expect(materialCache.neumann.direct.direct.rectangular).toBeTruthy();
     expect(materialCache.neumann.cached).toEqual({});
-    expect(materialCache.dirichlet.analytic.analytic.rectangular).toBeTruthy();
+    expect(materialCache.dirichlet.direct.direct.rectangular).toBeTruthy();
     expect(materialCache.dirichlet.cached).toEqual({});
-    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("analytic");
+    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("direct");
     expect(mesh.userData.raymarchChromaEvaluationMode).toBe(
-      RAYMARCH_CHROMA_EVALUATION_MODES.analytic,
+      RAYMARCH_CHROMA_EVALUATION_MODES.direct,
     );
     expect(mesh.userData.raymarchCavityGeometry).toBe("rectangular");
 

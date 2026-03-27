@@ -372,7 +372,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     fieldEvaluationMode:
       runtimeState.volumeMesh?.userData?.raymarchFieldEvaluationMode ??
       fieldCache?.mode ??
-      "analytic",
+      "direct",
     chromesthesiaEvaluationMode:
       runtimeState.volumeMesh?.userData?.raymarchChromaEvaluationMode ??
       chromaCache?.mode ??
@@ -383,7 +383,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     fieldCacheRebuildCount: fieldCache?.rebuildCount ?? 0,
     fieldCacheRebuildReason: fieldCache?.lastRebuildReason ?? "uninitialized",
     fieldCacheHysteresisState:
-      (fieldCache?.active ?? false) ? "cached" : "analytic",
+      (fieldCache?.active ?? false) ? "cached" : "direct",
     fieldCacheOverride,
     fieldCacheBackend: fieldCache?.backend ?? "compute",
     fieldCacheReady: fieldCache?.ready ?? false,
@@ -592,41 +592,24 @@ function copyLayerUpload({
   });
 }
 
-function updateFieldCache(
+function resolveFieldEvaluationMode(
   runtimeState,
   renderer,
   { backboneCapacity, detailCapacity },
-  { chromesthesiaEnabled, fieldDescriptor, chromaDescriptor },
+  { requestedMode, cachedRequested, fieldDescriptor },
 ) {
   const fieldCache = runtimeState.fieldCache;
-  const chromaCache = runtimeState.chromaCache;
   if (!fieldCache || !runtimeState.volumeMesh) {
-    return;
+    return "direct";
   }
 
-  const requestedMode = getRaymarchFieldCacheOverride();
-  const cachedRequested =
-    requestedMode === "cached" && fieldCache.backend !== "unavailable";
   fieldCache.active = cachedRequested;
   fieldCache.mode = requestedMode;
-  if (chromaCache) {
-    chromaCache.active =
-      cachedRequested &&
-      chromesthesiaEnabled &&
-      chromaCache.backend !== "unavailable";
-  }
   if (!cachedRequested) {
     if (fieldCache.lastRebuildReason === "uninitialized") {
       fieldCache.lastRebuildReason = "inactive";
     }
-    setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, "analytic");
-    setRaymarchChromaEvaluationMode(
-      runtimeState.volumeMesh,
-      chromesthesiaEnabled
-        ? RAYMARCH_CHROMA_EVALUATION_MODES.analytic
-        : RAYMARCH_CHROMA_EVALUATION_MODES.off,
-    );
-    return;
+    return "direct";
   }
 
   const { needsRebuild, reason } = shouldRebuildRaymarchFieldCache(
@@ -650,7 +633,7 @@ function updateFieldCache(
     );
   }
 
-  let fieldEvaluationMode = "analytic";
+  let fieldEvaluationMode = "direct";
   if (
     fieldCache.backend !== "unavailable" &&
     isRaymarchFieldCacheReadyForDescriptor(fieldCache, fieldDescriptor)
@@ -660,22 +643,44 @@ function updateFieldCache(
     fieldEvaluationMode = "cached";
   }
 
-  setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, fieldEvaluationMode);
+  return fieldEvaluationMode;
+}
 
-  if (!chromesthesiaEnabled || !chromaCache) {
-    setRaymarchChromaEvaluationMode(
-      runtimeState.volumeMesh,
-      chromesthesiaEnabled
-        ? RAYMARCH_CHROMA_EVALUATION_MODES.analytic
-        : RAYMARCH_CHROMA_EVALUATION_MODES.off,
-    );
-    return;
+function resolveChromaEvaluationMode(
+  runtimeState,
+  renderer,
+  { backboneCapacity, detailCapacity },
+  {
+    chromesthesiaEnabled,
+    fieldEvaluationMode,
+    chromaDescriptor,
+    cachedRequested,
+  },
+) {
+  const chromaCache = runtimeState.chromaCache;
+  if (!chromaCache) {
+    return chromesthesiaEnabled
+      ? RAYMARCH_CHROMA_EVALUATION_MODES.direct
+      : RAYMARCH_CHROMA_EVALUATION_MODES.off;
+  }
+
+  const chromaCachedRequested =
+    cachedRequested && chromaCache.backend !== "unavailable";
+  chromaCache.active = chromaCachedRequested && chromesthesiaEnabled;
+
+  if (!chromesthesiaEnabled) {
+    return RAYMARCH_CHROMA_EVALUATION_MODES.off;
+  }
+
+  if (!chromaCachedRequested) {
+    chromaCache.mode = RAYMARCH_CHROMA_EVALUATION_MODES.direct;
+    return RAYMARCH_CHROMA_EVALUATION_MODES.direct;
   }
 
   chromaCache.mode =
     fieldEvaluationMode === "cached"
       ? RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback
-      : RAYMARCH_CHROMA_EVALUATION_MODES.analytic;
+      : RAYMARCH_CHROMA_EVALUATION_MODES.direct;
 
   const chromaUploadReady =
     Boolean(chromaDescriptor) && runtimeState.chromaBuffersUploaded === true;
@@ -704,11 +709,7 @@ function updateFieldCache(
   }
 
   if (fieldEvaluationMode !== "cached") {
-    setRaymarchChromaEvaluationMode(
-      runtimeState.volumeMesh,
-      RAYMARCH_CHROMA_EVALUATION_MODES.analytic,
-    );
-    return;
+    return RAYMARCH_CHROMA_EVALUATION_MODES.direct;
   }
 
   if (
@@ -717,25 +718,57 @@ function updateFieldCache(
     isRaymarchChromaCacheReadyForDescriptor(chromaCache, chromaDescriptor)
   ) {
     chromaCache.mode = RAYMARCH_CHROMA_EVALUATION_MODES.cached;
-    setRaymarchChromaEvaluationMode(
-      runtimeState.volumeMesh,
-      RAYMARCH_CHROMA_EVALUATION_MODES.cached,
-    );
-    return;
+    return RAYMARCH_CHROMA_EVALUATION_MODES.cached;
   }
 
   if (chromaCache.ready) {
     chromaCache.mode = RAYMARCH_CHROMA_EVALUATION_MODES.cached;
-    setRaymarchChromaEvaluationMode(
-      runtimeState.volumeMesh,
-      RAYMARCH_CHROMA_EVALUATION_MODES.cached,
-    );
+    return RAYMARCH_CHROMA_EVALUATION_MODES.cached;
+  }
+
+  return RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback;
+}
+
+function updateRaymarchEvaluationModes(
+  runtimeState,
+  renderer,
+  capacities,
+  { chromesthesiaEnabled, fieldDescriptor, chromaDescriptor },
+) {
+  if (!runtimeState.fieldCache || !runtimeState.volumeMesh) {
     return;
   }
 
+  const requestedMode = getRaymarchFieldCacheOverride();
+  const cachedRequested =
+    requestedMode === "cached" &&
+    runtimeState.fieldCache.backend !== "unavailable";
+  const fieldEvaluationMode = resolveFieldEvaluationMode(
+    runtimeState,
+    renderer,
+    capacities,
+    {
+      requestedMode,
+      cachedRequested,
+      fieldDescriptor,
+    },
+  );
+  setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, fieldEvaluationMode);
+
+  const chromaEvaluationMode = resolveChromaEvaluationMode(
+    runtimeState,
+    renderer,
+    capacities,
+    {
+      chromesthesiaEnabled,
+      fieldEvaluationMode,
+      chromaDescriptor,
+      cachedRequested,
+    },
+  );
   setRaymarchChromaEvaluationMode(
     runtimeState.volumeMesh,
-    RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback,
+    chromaEvaluationMode,
   );
 }
 
@@ -858,7 +891,7 @@ export function tickRaymarchRuntime(
     runtimeState.volumeMesh,
     getRuntimeEffectiveCavityGeometry(runtimeState),
   );
-  updateFieldCache(
+  updateRaymarchEvaluationModes(
     runtimeState,
     renderer,
     {

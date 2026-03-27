@@ -97,15 +97,19 @@ import {
 // Above HIGH the gate is fully open and behavior is identical to pre-fix.
 const EXCITATION_GATE_LOW = 0.04;
 const EXCITATION_GATE_HIGH = 0.35;
-const ANALYTIC_CHROMESTHESIA_PRESENCE_END = 0.18;
+const DIRECT_CHROMESTHESIA_PRESENCE_END = 0.18;
 const CACHED_CHROMESTHESIA_PRESENCE_END = 0.26;
 
 export const RAYMARCH_CHROMA_EVALUATION_MODES = Object.freeze({
   off: "off",
-  analytic: "analytic",
+  direct: "direct",
   cached: "cached",
   tonalFallback: "tonal-fallback",
 });
+
+function normalizeFieldEvaluationMode(fieldEvaluationMode) {
+  return fieldEvaluationMode === "cached" ? "cached" : "direct";
+}
 
 function normalizeChromaEvaluationMode(chromaEvaluationMode) {
   switch (chromaEvaluationMode) {
@@ -115,9 +119,9 @@ function normalizeChromaEvaluationMode(chromaEvaluationMode) {
       return RAYMARCH_CHROMA_EVALUATION_MODES.cached;
     case RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback:
       return RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback;
-    case RAYMARCH_CHROMA_EVALUATION_MODES.analytic:
+    case RAYMARCH_CHROMA_EVALUATION_MODES.direct:
     default:
-      return RAYMARCH_CHROMA_EVALUATION_MODES.analytic;
+      return RAYMARCH_CHROMA_EVALUATION_MODES.direct;
   }
 }
 
@@ -379,7 +383,7 @@ function createScatteringNode({
   cavityGeometry = "rectangular",
   fieldCacheTexture = null,
   chromaCacheTexture = null,
-  chromaEvaluationMode = RAYMARCH_CHROMA_EVALUATION_MODES.analytic,
+  chromaEvaluationMode = RAYMARCH_CHROMA_EVALUATION_MODES.direct,
 }) {
   const {
     uRadius,
@@ -516,15 +520,15 @@ function createScatteringNode({
         float(1e-4),
         uChromesthesiaMix,
       );
-      const analyticChromaEnabled =
-        chromaEvaluationMode === RAYMARCH_CHROMA_EVALUATION_MODES.analytic;
+      const directChromaEnabled =
+        chromaEvaluationMode === RAYMARCH_CHROMA_EVALUATION_MODES.direct;
       const cachedChromaEnabled =
         chromaEvaluationMode === RAYMARCH_CHROMA_EVALUATION_MODES.cached &&
         Boolean(chromaCacheTexture);
       const tonalFallbackEnabled =
         chromaEvaluationMode === RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback;
       const chromaModeEnabled =
-        analyticChromaEnabled || cachedChromaEnabled || tonalFallbackEnabled;
+        directChromaEnabled || cachedChromaEnabled || tonalFallbackEnabled;
       const backboneActiveCount = int(uBackboneModeCount);
       const detailActiveCount = int(uDetailModeCount);
       if (fieldCacheTexture) {
@@ -549,7 +553,7 @@ function createScatteringNode({
             texture3D(chromaCacheTexture).sample(cacheUv);
           colorSum.assign(cachedChromaSample.xyz);
           colorWeight.assign(cachedChromaSample.w);
-        } else if (analyticChromaEnabled) {
+        } else if (directChromaEnabled) {
           accumulateColorLayers({
             backboneModeBuffer,
             detailModeBuffer,
@@ -582,7 +586,7 @@ function createScatteringNode({
           uRadius,
           boundaryMode,
           cavityGeometry,
-          chromesthesiaEnabled: analyticChromaEnabled
+          chromesthesiaEnabled: directChromaEnabled
             ? chromesthesiaEnabled
             : float(0.0),
           field,
@@ -598,7 +602,7 @@ function createScatteringNode({
       const gradient = vec3(gradX, gradY, gradZ).toVar();
       const gradientMagnitude = length(gradient);
       const gradientNormal = gradient.div(max(gradientMagnitude, float(1e-4)));
-      // Keep analytic and cached field evaluation semantically identical.
+      // Keep direct and cached field evaluation semantically identical.
       // The cache descriptor already hashes slot amplitudes, so the cached field
       // rebuilds when amplitudes change; both paths can safely use the same
       // amplitude-normalized shaping terms.
@@ -933,7 +937,7 @@ function createScatteringNode({
           const chromesthesiaPresenceEnd = float(
             cachedChromaEnabled
               ? CACHED_CHROMESTHESIA_PRESENCE_END
-              : ANALYTIC_CHROMESTHESIA_PRESENCE_END,
+              : DIRECT_CHROMESTHESIA_PRESENCE_END,
           );
           const chromesthesiaPresence = smoothstep(
             float(0.0),
@@ -1091,12 +1095,12 @@ export function createRaymarchVolumeMesh({
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
   const materialCache = {
     [BOUNDARY_MODES.dirichlet]: {
-      analytic: {
-        [RAYMARCH_CHROMA_EVALUATION_MODES.analytic]: {
+      direct: {
+        [RAYMARCH_CHROMA_EVALUATION_MODES.direct]: {
           [normalizedCavityGeometry]: createMaterialForBoundaryMode(
             BOUNDARY_MODES.dirichlet,
-            "analytic",
-            RAYMARCH_CHROMA_EVALUATION_MODES.analytic,
+            "direct",
+            RAYMARCH_CHROMA_EVALUATION_MODES.direct,
             normalizedCavityGeometry,
           ),
         },
@@ -1104,12 +1108,12 @@ export function createRaymarchVolumeMesh({
       cached: {},
     },
     [BOUNDARY_MODES.neumann]: {
-      analytic: {
-        [RAYMARCH_CHROMA_EVALUATION_MODES.analytic]: {
+      direct: {
+        [RAYMARCH_CHROMA_EVALUATION_MODES.direct]: {
           [normalizedCavityGeometry]: createMaterialForBoundaryMode(
             BOUNDARY_MODES.neumann,
-            "analytic",
-            RAYMARCH_CHROMA_EVALUATION_MODES.analytic,
+            "direct",
+            RAYMARCH_CHROMA_EVALUATION_MODES.direct,
             normalizedCavityGeometry,
           ),
         },
@@ -1119,16 +1123,16 @@ export function createRaymarchVolumeMesh({
   };
   const mesh = new THREE.Mesh(
     geometry,
-    materialCache[BOUNDARY_MODES.neumann].analytic.analytic[
+    materialCache[BOUNDARY_MODES.neumann].direct.direct[
       normalizedCavityGeometry
     ],
   );
   mesh.userData.raymarchMaterialCache = materialCache;
   mesh.userData.raymarchCreateMaterialVariant = createMaterialForBoundaryMode;
   mesh.userData.raymarchBoundaryMode = BOUNDARY_MODES.neumann;
-  mesh.userData.raymarchFieldEvaluationMode = "analytic";
+  mesh.userData.raymarchFieldEvaluationMode = "direct";
   mesh.userData.raymarchChromaEvaluationMode =
-    RAYMARCH_CHROMA_EVALUATION_MODES.analytic;
+    RAYMARCH_CHROMA_EVALUATION_MODES.direct;
   mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
   mesh.frustumCulled = false;
 
@@ -1157,7 +1161,7 @@ function getOrCreateRaymarchMaterial(
   }
 
   const normalizedFieldEvaluationMode =
-    fieldEvaluationMode === "cached" ? "cached" : "analytic";
+    normalizeFieldEvaluationMode(fieldEvaluationMode);
   const normalizedChromaEvaluationMode =
     normalizeChromaEvaluationMode(chromaEvaluationMode);
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
@@ -1196,10 +1200,9 @@ export function setRaymarchBoundaryMode(mesh, boundaryMode) {
   const normalizedCavityGeometry = normalizeCavityGeometry(
     mesh?.userData?.raymarchCavityGeometry,
   );
-  const fieldEvaluationMode =
-    mesh?.userData?.raymarchFieldEvaluationMode === "cached"
-      ? "cached"
-      : "analytic";
+  const fieldEvaluationMode = normalizeFieldEvaluationMode(
+    mesh?.userData?.raymarchFieldEvaluationMode,
+  );
   const chromaEvaluationMode = normalizeChromaEvaluationMode(
     mesh?.userData?.raymarchChromaEvaluationMode,
   );
@@ -1228,7 +1231,7 @@ export function setRaymarchFieldEvaluationMode(mesh, fieldEvaluationMode) {
   }
 
   const normalizedFieldEvaluationMode =
-    fieldEvaluationMode === "cached" ? "cached" : "analytic";
+    normalizeFieldEvaluationMode(fieldEvaluationMode);
   const normalizedBoundaryMode = normalizeBoundaryMode(
     mesh?.userData?.raymarchBoundaryMode,
   );
@@ -1267,10 +1270,9 @@ export function setRaymarchChromaEvaluationMode(mesh, chromaEvaluationMode) {
   const normalizedBoundaryMode = normalizeBoundaryMode(
     mesh?.userData?.raymarchBoundaryMode,
   );
-  const normalizedFieldEvaluationMode =
-    mesh?.userData?.raymarchFieldEvaluationMode === "cached"
-      ? "cached"
-      : "analytic";
+  const normalizedFieldEvaluationMode = normalizeFieldEvaluationMode(
+    mesh?.userData?.raymarchFieldEvaluationMode,
+  );
   const normalizedCavityGeometry = normalizeCavityGeometry(
     mesh?.userData?.raymarchCavityGeometry,
   );
@@ -1302,10 +1304,9 @@ export function setRaymarchCavityGeometry(mesh, cavityGeometry) {
   const normalizedBoundaryMode = normalizeBoundaryMode(
     mesh?.userData?.raymarchBoundaryMode,
   );
-  const normalizedFieldEvaluationMode =
-    mesh?.userData?.raymarchFieldEvaluationMode === "cached"
-      ? "cached"
-      : "analytic";
+  const normalizedFieldEvaluationMode = normalizeFieldEvaluationMode(
+    mesh?.userData?.raymarchFieldEvaluationMode,
+  );
   const normalizedChromaEvaluationMode = normalizeChromaEvaluationMode(
     mesh?.userData?.raymarchChromaEvaluationMode,
   );

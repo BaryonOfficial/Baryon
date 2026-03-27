@@ -867,12 +867,12 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       key: "fieldCacheOverride",
       label: "3D Field Eval",
       title:
-        "Choose how the 3D raymarch field is evaluated for diagnostics — Analytic forces the exact shader path and Cached forces the compute-backed field-cache path",
+        "Choose how the 3D raymarch field is evaluated for diagnostics — Direct forces the exact shader path and Cached forces the compute-backed field-cache path",
       defaultValue: AUDIT_DEFAULTS.fieldCacheOverride,
       methods: methodsFor("raymarchOnly"),
       binding: {
         options: {
-          Analytic: "analytic",
+          Direct: "direct",
           Cached: "cached",
         },
       },

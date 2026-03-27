@@ -49,18 +49,18 @@ function formatFieldEvalMode({
   }
 
   if (fieldCacheBackend === "unavailable") {
-    return "analytic (cache unavailable)";
+    return "direct (cache unavailable)";
   }
 
   if (fieldCacheRebuildPending) {
-    return "analytic (cache pending)";
+    return "direct (cache pending)";
   }
 
   if (fieldCacheReady) {
-    return "analytic (cache ready)";
+    return "direct (cache ready)";
   }
 
-  return "analytic";
+  return "direct";
 }
 
 function formatFieldCacheState({
@@ -102,7 +102,7 @@ const DEBUG_METRIC_TOOLTIPS = {
     "How many display-visible modal slots are active in the current frame.",
   Eval: "Which 3D field-evaluation path is actually active right now. This reflects the renderer’s live material path, not just the selector setting.",
   Cache:
-    "Current field-cache lifecycle state. Building means compute work has been enqueued, Ready means the cache can be sampled, Unavailable means the renderer fell back to analytic.",
+    "Current field-cache lifecycle state. Building means compute work has been enqueued, Ready means the cache can be sampled, Unavailable means the renderer fell back to direct evaluation.",
   Structure:
     "Overall structural confidence. Higher values mean the analyzer sees a stronger organized modal field.",
   Change:

@@ -23,8 +23,8 @@ function createRuntimeState({ withFieldCache = false } = {}) {
   const materialCache = withFieldCache
     ? {
         neumann: {
-          analytic: {
-            analytic: { rectangular: { steps: 64 } },
+          direct: {
+            direct: { rectangular: { steps: 64 } },
           },
           cached: {
             off: { rectangular: { steps: 64 } },
@@ -33,8 +33,8 @@ function createRuntimeState({ withFieldCache = false } = {}) {
           },
         },
         dirichlet: {
-          analytic: {
-            analytic: { rectangular: { steps: 64 } },
+          direct: {
+            direct: { rectangular: { steps: 64 } },
           },
           cached: {
             off: { rectangular: { steps: 64 } },
@@ -149,7 +149,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     volumeMesh: {
       visible: false,
       material: withFieldCache
-        ? materialCache.neumann.analytic.analytic.rectangular
+        ? materialCache.neumann.direct.direct.rectangular
         : {
             steps: 64,
           },
@@ -157,9 +157,9 @@ function createRuntimeState({ withFieldCache = false } = {}) {
         ? {
             raymarchMaterialCache: materialCache,
             raymarchBoundaryMode: "neumann",
-            raymarchFieldEvaluationMode: "analytic",
+            raymarchFieldEvaluationMode: "direct",
             raymarchChromaEvaluationMode:
-              RAYMARCH_CHROMA_EVALUATION_MODES.analytic,
+              RAYMARCH_CHROMA_EVALUATION_MODES.direct,
             raymarchCavityGeometry: "rectangular",
           }
         : undefined,
@@ -491,12 +491,12 @@ describe("tickRaymarchRuntime", () => {
       expect(runtimeState.fieldCache.rebuildCount).toBe(0);
       expect(renderer.computeAsync).toHaveBeenCalledTimes(0);
       expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
-        "analytic",
+        "direct",
       );
       expect(
         runtimeState.volumeMesh.userData.raymarchChromaEvaluationMode,
-      ).toBe(RAYMARCH_CHROMA_EVALUATION_MODES.analytic);
-      expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("analytic");
+      ).toBe(RAYMARCH_CHROMA_EVALUATION_MODES.direct);
+      expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("direct");
       expect(runtimeState.debugSnapshot.fieldCacheReady).toBe(false);
       expect(runtimeState.debugSnapshot.fieldCacheRebuildPending).toBe(true);
       expect(runtimeState.debugSnapshot.chromesthesiaCacheReady).toBe(false);

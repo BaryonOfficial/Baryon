@@ -87,7 +87,7 @@ function createPromotedModeControls(method) {
     promotedControls.push(
       cloneControlDefinition(fieldCacheOverride, {
         title:
-          "Cached is faster, but loses precision. Analytic is computationally expensive, but precise.",
+          "Cached is faster, but loses precision. Direct is computationally expensive, but precise.",
         group: MODE_GROUP,
         folder: MODE_GROUP,
       }),

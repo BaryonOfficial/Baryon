@@ -24,8 +24,11 @@ export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 /*
 Dev overrides for manual testing:
 
-window.__baryonFieldCacheOverride = "analytic";
+window.__baryonFieldCacheOverride = "direct";
 window.__baryonFieldCacheOverride = "cached";
+
+Legacy note: "analytic" is no longer recognized here and now falls back to
+"cached".
 
 You can confirm the active mode in window.__baryonAuditSnapshot:
 
@@ -157,7 +160,7 @@ export function createRaymarchFieldCache({
   return createCacheState({
     resolution: normalizedResolution,
     texture,
-    mode: RAYMARCH_FIELD_CACHE_OVERRIDE_MODES.analytic,
+    mode: RAYMARCH_FIELD_CACHE_OVERRIDE_MODES.direct,
   });
 }
 
