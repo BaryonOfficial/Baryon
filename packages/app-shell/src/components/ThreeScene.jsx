@@ -383,6 +383,34 @@ const ThreeScene = ({
         </div>
       )}
 
+      {showOverlayUi && !isControlsPanelOpen && (
+        <div
+          style={{
+            position: "absolute",
+            top: "var(--app-floating-control-top)",
+            left: `calc(var(--app-floating-control-left) + var(--app-floating-control-size) + 0.6rem)`,
+            zIndex: 61,
+            display: "flex",
+            alignItems: "center",
+            height: "var(--app-floating-control-size)",
+            pointerEvents: "none",
+          }}
+        >
+          <span
+            style={{
+              fontFamily: "Orbitron, sans-serif",
+              fontSize: "0.7rem",
+              fontWeight: 500,
+              letterSpacing: "0.08em",
+              color: "rgba(255, 255, 255, 1)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Baryon | Cymatics
+          </span>
+        </div>
+      )}
+
       {showCameraControls ? (
         <div style={cameraControlsStyle}>
           <span

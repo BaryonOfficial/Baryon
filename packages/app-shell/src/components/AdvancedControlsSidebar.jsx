@@ -70,7 +70,7 @@ const CSS = `
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(140, 191, 255, 0.72);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .baryon-controls-header-note {
