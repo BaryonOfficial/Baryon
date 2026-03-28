@@ -177,6 +177,21 @@ const CSS = `
   box-sizing: border-box;
 }
 
+.baryon-controls-select {
+  color-scheme: dark;
+  background-color: rgb(18, 22, 29);
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.02)
+  );
+}
+
+.baryon-controls-select option {
+  background-color: rgb(18, 22, 29);
+  color: rgba(245, 248, 255, 0.96);
+}
+
 .baryon-controls-text-input::placeholder {
   color: rgba(255, 255, 255, 0.34);
 }

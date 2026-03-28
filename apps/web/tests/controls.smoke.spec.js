@@ -1135,6 +1135,37 @@ test.describe("Baryon control smoke", () => {
       });
   });
 
+  test("renders advanced-controls selects with an explicit dark surface", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.getByTestId("advanced-controls-trigger").click();
+
+    const loadPresetSelect = page.getByLabel("Load preset");
+    await expect(loadPresetSelect).toBeVisible();
+
+    const selectStyles = await loadPresetSelect.evaluate((node) => {
+      const styles = getComputedStyle(node);
+      const firstOption = node.options[0];
+      const optionStyles = firstOption ? getComputedStyle(firstOption) : null;
+
+      return {
+        colorScheme: styles.colorScheme,
+        backgroundColor: styles.backgroundColor,
+        optionBackgroundColor: optionStyles?.backgroundColor ?? null,
+      };
+    });
+
+    expect(selectStyles.colorScheme).toBe("dark");
+    expect(selectStyles.backgroundColor).toBe("rgb(18, 22, 29)");
+    expect(selectStyles.optionBackgroundColor).toBe("rgb(18, 22, 29)");
+  });
+
   test("restores focus to the trigger when advanced controls close from a focused slider", async ({
     page,
     browserName,
