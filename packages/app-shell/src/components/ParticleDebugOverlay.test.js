@@ -10,6 +10,7 @@ describe("ParticleDebugOverlay external output items", () => {
   it("builds compact Syphon OSR diagnostics rows", () => {
     expect(
       buildExternalOutputItems({
+        renderMode: "legacy-double-render",
         frameSize: { width: 3840, height: 2160 },
         hasClients: true,
         syphon: {
@@ -33,6 +34,7 @@ describe("ParticleDebugOverlay external output items", () => {
         },
       }),
     ).toEqual([
+      { label: "Render Mode", value: "legacy-double-render" },
       { label: "Output", value: "3840x2160" },
       { label: "Profile", value: "auto" },
       { label: "Req Scale", value: "1.000" },

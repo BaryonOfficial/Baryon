@@ -83,6 +83,7 @@ export function useBaryonVisualizer({
   renderProfile = null,
   basePixelRatio = null,
   onStageRender = null,
+  suppressRender = false,
 }) {
   const audioRef = useRef(getDefaultAudioSession());
   const outputSessionRef = useRef(null);
@@ -629,7 +630,11 @@ export function useBaryonVisualizer({
       backgroundColor: controls.backgroundColor,
     });
 
-    if (pipeline) {
+    if (suppressRender) {
+      outputSessionRef.current?.dispose?.();
+      outputSessionRef.current = null;
+      outputCaptureInFlightRef.current = false;
+    } else if (pipeline) {
       const pipelineRenderStartedAt = getWallTimeMs();
       pipeline.render();
       recordMeasuredRuntimePerf(

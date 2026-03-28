@@ -56,6 +56,7 @@ export function BaryonScene({
   externalFrameRef = null,
   basePixelRatio = null,
   onStageRender = null,
+  suppressRender = false,
   cameraViewPreset = /** @type {"top-down" | "side"} */ (
     CAMERA_VIEW_PRESETS.topDown
   ),
@@ -186,6 +187,7 @@ export function BaryonScene({
     renderProfile,
     basePixelRatio,
     onStageRender,
+    suppressRender,
   });
 
   return (

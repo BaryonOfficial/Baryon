@@ -85,6 +85,11 @@ function CameraIcon() {
  *   outputFrameConfig?: { enabled: boolean, width: number, height: number } | null,
  *   onOutputFrame?: (frame: { width: number, height: number, rgba: ArrayBuffer }) => Promise<void> | void,
  *   onFrameState?: (state: Record<string, unknown>) => void,
+ *   sharedPreviewMode?: {
+ *     enabled?: boolean,
+ *     renderMode?: "legacy-double-render" | "single-render-shared-preview",
+ *     canvasId?: string | null,
+ *   } | null,
  * }} props
  */
 const ThreeScene = ({
@@ -95,6 +100,7 @@ const ThreeScene = ({
   outputFrameConfig = null,
   onOutputFrame = null,
   onFrameState = null,
+  sharedPreviewMode = null,
 }) => {
   const containerRef = useRef(null);
   const advancedControlsTriggerRef = useRef(null);
@@ -175,6 +181,10 @@ const ThreeScene = ({
     markRendererInitUnsupported,
   } = useBrowserSupportState(forceWebGLFallbackTest);
   const showOverlayUi = isSupportReady && !isFullscreen;
+  const sharedPreviewVisible = sharedPreviewMode?.enabled === true;
+  const sharedPreviewCanvasId = sharedPreviewMode?.canvasId ?? null;
+  const usingSharedPreview =
+    sharedPreviewMode?.renderMode === "single-render-shared-preview";
   const liveInputStatusPanelVisible =
     showOverlayUi &&
     (selectedSource === "system" || Boolean(forceLiveInputPanelVisible));
@@ -302,6 +312,25 @@ const ThreeScene = ({
         background: controlsState.backgroundColor,
       }}
     >
+      {sharedPreviewVisible ? (
+        <canvas
+          id={sharedPreviewCanvasId ?? undefined}
+          data-testid="shared-output-preview-canvas"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            zIndex: 10,
+            width: "100%",
+            height: "100%",
+            display: "block",
+            background: "transparent",
+            opacity: usingSharedPreview ? 1 : 0,
+            pointerEvents: "none",
+          }}
+        />
+      ) : null}
+
       {showCanvas && isSupportReady && (
         <RendererErrorBoundary
           resetKey={`${activeRendererFallback ? "force-webgl-fallback" : "webgpu-default"}-${canvasEpoch}`}
@@ -313,8 +342,10 @@ const ThreeScene = ({
               position: "absolute",
               top: 0,
               left: 0,
-              zIndex: 10,
+              zIndex: 9,
               background: "transparent",
+              opacity: usingSharedPreview ? 0 : 1,
+              pointerEvents: usingSharedPreview ? "none" : "auto",
             }}
             dpr={[1, 2]}
             camera={{
@@ -345,6 +376,7 @@ const ThreeScene = ({
                 cameraControlMode={CAMERA_CONTROL_MODES.previewLocal}
                 cameraViewPreset={effectiveCameraViewPreset}
                 cameraResetNonce={cameraResetNonce}
+                suppressRender={usingSharedPreview}
               />
             </Suspense>
           </Canvas>

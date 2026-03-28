@@ -141,6 +141,8 @@ const DEBUG_METRIC_TOOLTIPS = {
     "Difference in dominant frequency between the primary and comparison analyses, in cents.",
   "Coh Δ":
     "Difference in coherence between the primary and comparison analyses.",
+  "Render Mode":
+    "Whether the visible preview is still locally rendered or is showing the shared external-output feed.",
   Output: "Current external-output frame size routed to Syphon.",
   Profile:
     "Requested external-output quality profile after desktop output resolution and profile selection.",
@@ -270,6 +272,10 @@ export function buildExternalOutputItems(externalOutputDiagnostics) {
     (syphon.unhealthy ? "unhealthy" : "none");
 
   return [
+    {
+      label: "Render Mode",
+      value: externalOutputDiagnostics.renderMode ?? "legacy-double-render",
+    },
     {
       label: "Output",
       value: formatExternalOutputLabel(externalOutputDiagnostics.frameSize),
