@@ -8,8 +8,6 @@ import {
   isLiveInputTransitionLocked,
 } from "../context/liveInputRuntimeStatus.js";
 
-const LIVE_ACTION_ATTENTION_ANIMATION = "baryon-live-action-pulse";
-
 function getSignalBadgeStyle(status) {
   if (
     status.phase === LIVE_INPUT_PHASES.error ||
@@ -266,20 +264,6 @@ export default function LiveInputStatusPanel({
       }}
       aria-live="polite"
     >
-      <style>
-        {`@keyframes ${LIVE_ACTION_ATTENTION_ANIMATION} {
-          0%, 100% {
-            transform: translateY(0);
-            box-shadow: 0 10px 22px rgba(30, 64, 175, 0.14);
-          }
-          50% {
-            transform: translateY(-1px);
-            box-shadow:
-              0 0 0 1px rgba(147, 197, 253, 0.26),
-              0 14px 28px rgba(37, 99, 235, 0.22);
-          }
-        }`}
-      </style>
       {/* Header */}
       <div
         style={{
@@ -730,10 +714,9 @@ export default function LiveInputStatusPanel({
                   ? "none"
                   : isLiveInputActive
                     ? "0 10px 22px rgba(83, 16, 12, 0.18)"
-                    : "0 10px 22px rgba(30, 64, 175, 0.14)",
-                animation: showLiveActionAttention
-                  ? `${LIVE_ACTION_ATTENTION_ANIMATION} 1.85s ease-in-out infinite`
-                  : "none",
+                    : showLiveActionAttention
+                      ? "0 0 0 1px rgba(147, 197, 253, 0.26), 0 14px 28px rgba(37, 99, 235, 0.22)"
+                      : "0 10px 22px rgba(30, 64, 175, 0.14)",
                 transition:
                   "background 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 140ms ease",
               }}

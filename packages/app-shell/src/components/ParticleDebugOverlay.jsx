@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { formatPerformanceProfileLabel } from "@baryon/visualizer/render/outputPipeline";
 import { DEVTOOLS_ENABLED } from "../devtools/config.js";
 
 function formatNumber(value, digits = 3) {
@@ -246,79 +245,10 @@ function buildComparisonRows({
   ];
 }
 
-function formatExternalOutputLabel(frameSize) {
-  if (
-    !frameSize ||
-    !Number.isFinite(frameSize.width) ||
-    !Number.isFinite(frameSize.height)
-  ) {
-    return "n/a";
-  }
-
-  return `${frameSize.width}x${frameSize.height}`;
-}
-
-export function buildExternalOutputItems(externalOutputDiagnostics) {
-  if (!externalOutputDiagnostics?.syphon) {
-    return null;
-  }
-
-  const syphon = externalOutputDiagnostics.syphon;
-  const renderProfile = syphon.renderProfile ?? null;
-  const liveRender = syphon.osrPerfMetrics?.render ?? null;
-  const stallLabel =
-    syphon.stallClassification ??
-    syphon.stallReason ??
-    (syphon.unhealthy ? "unhealthy" : "none");
-
-  return [
-    {
-      label: "Render Mode",
-      value: externalOutputDiagnostics.renderMode ?? "legacy-double-render",
-    },
-    {
-      label: "Output",
-      value: formatExternalOutputLabel(externalOutputDiagnostics.frameSize),
-    },
-    {
-      label: "Profile",
-      value: formatPerformanceProfileLabel(renderProfile?.qualityPreset),
-    },
-    {
-      label: "Req Scale",
-      value: formatNumber(renderProfile?.renderScale),
-    },
-    {
-      label: "Live Scale",
-      value: formatNumber(liveRender?.renderScale),
-    },
-    {
-      label: "FPS",
-      value: formatNumber(syphon.osrPerfMetrics?.fps, 1),
-    },
-    {
-      label: "TRAA",
-      value: String(
-        liveRender?.traaEnabled ?? renderProfile?.traaEnabled ?? false,
-      ),
-    },
-    {
-      label: "Phase",
-      value: syphon.phase ?? "n/a",
-    },
-    {
-      label: "Clients",
-      value: String(externalOutputDiagnostics.hasClients ?? false),
-    },
-    {
-      label: "Publishes",
-      value: syphon.publishCount ?? 0,
-    },
-    {
-      label: "Stall",
-      value: stallLabel,
-    },
-  ];
+export function normalizeDebugOverlayItems(debugOverlayExtraItems) {
+  return Array.isArray(debugOverlayExtraItems) && debugOverlayExtraItems.length
+    ? debugOverlayExtraItems
+    : null;
 }
 
 function CompactGrid({
@@ -576,6 +506,7 @@ export default function ParticleDebugOverlay({
   top = "1rem",
   right = "1rem",
   stacked = false,
+  debugOverlayExtraItems = null,
 }) {
   const overlayRef = useRef(null);
   const dragStateRef = useRef(null);
@@ -728,8 +659,8 @@ export default function ParticleDebugOverlay({
     primaryDominantFrequency: snapshot.dominantFrequency,
     comparisonDebug,
   });
-  const externalOutputItems = buildExternalOutputItems(
-    snapshot.externalOutputDiagnostics,
+  const externalOutputItems = normalizeDebugOverlayItems(
+    debugOverlayExtraItems,
   );
   const handleHeaderPointerDown = (event) => {
     if (event.button !== 0) {

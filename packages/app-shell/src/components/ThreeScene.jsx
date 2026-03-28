@@ -34,6 +34,19 @@ const AdvancedControlsSidebar = lazy(
   () => import("./AdvancedControlsSidebar.jsx"),
 );
 const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
+
+export function resolveLiveInputPanelConfig({ liveInputPanel = null } = {}) {
+  return {
+    forceVisible: Boolean(liveInputPanel?.forceVisible),
+    showAction: Boolean(liveInputPanel?.showAction),
+    deviceSelectTestId:
+      typeof liveInputPanel?.deviceSelectTestId === "string" &&
+      liveInputPanel.deviceSelectTestId
+        ? liveInputPanel.deviceSelectTestId
+        : "live-input-device-select",
+  };
+}
+
 function ControlsIcon() {
   return (
     <svg
@@ -80,8 +93,12 @@ function CameraIcon() {
  * @param {{
  *   controlsOverlay?: import("react").ReactNode,
  *   topRightOverlay?: import("react").ReactNode,
- *   forceLiveInputPanelVisible?: boolean,
- *   showLiveInputActionInPanel?: boolean,
+ *   liveInputPanel?: {
+ *     forceVisible?: boolean,
+ *     showAction?: boolean,
+ *     deviceSelectTestId?: string,
+ *   } | null,
+ *   debugOverlayExtraItems?: Array<{ label: string, value: string | number | boolean }> | null,
  *   outputFrameConfig?: { enabled: boolean, width: number, height: number } | null,
  *   onOutputFrame?: (frame: { width: number, height: number, rgba: ArrayBuffer }) => Promise<void> | void,
  *   onFrameState?: (state: Record<string, unknown>) => void,
@@ -95,8 +112,8 @@ function CameraIcon() {
 const ThreeScene = ({
   controlsOverlay = null,
   topRightOverlay = null,
-  forceLiveInputPanelVisible = false,
-  showLiveInputActionInPanel = false,
+  liveInputPanel = null,
+  debugOverlayExtraItems = null,
   outputFrameConfig = null,
   onOutputFrame = null,
   onFrameState = null,
@@ -180,6 +197,9 @@ const ThreeScene = ({
     isSupportReady,
     markRendererInitUnsupported,
   } = useBrowserSupportState(forceWebGLFallbackTest);
+  const resolvedLiveInputPanel = resolveLiveInputPanelConfig({
+    liveInputPanel,
+  });
   const showOverlayUi = isSupportReady && !isFullscreen;
   const sharedPreviewVisible = sharedPreviewMode?.enabled === true;
   const sharedPreviewCanvasId = sharedPreviewMode?.canvasId ?? null;
@@ -187,7 +207,7 @@ const ThreeScene = ({
     sharedPreviewMode?.renderMode === "single-render-shared-preview";
   const liveInputStatusPanelVisible =
     showOverlayUi &&
-    (selectedSource === "system" || Boolean(forceLiveInputPanelVisible));
+    (selectedSource === "system" || resolvedLiveInputPanel.forceVisible);
   const showCameraControls =
     showOverlayUi && controlsState.visualizationMethod !== "cymatics2d";
   const stackedTopRightOverlay = isValidElement(topRightOverlay)
@@ -572,14 +592,10 @@ const ThreeScene = ({
               stacked
               visible
               showLiveAction={
-                Boolean(showLiveInputActionInPanel) &&
+                resolvedLiveInputPanel.showAction &&
                 Boolean(liveInputStatusPanelVisible)
               }
-              deviceSelectTestId={
-                forceLiveInputPanelVisible
-                  ? "performer-live-device-select"
-                  : "live-input-device-select"
-              }
+              deviceSelectTestId={resolvedLiveInputPanel.deviceSelectTestId}
               echoCancellation={Boolean(controlsState.echoCancellation)}
               noiseSuppression={Boolean(controlsState.noiseSuppression)}
               autoGainControl={Boolean(controlsState.autoGainControl)}
@@ -592,7 +608,10 @@ const ThreeScene = ({
             }
             stacked
           />
-          <ParticleDebugOverlay stacked />
+          <ParticleDebugOverlay
+            stacked
+            debugOverlayExtraItems={debugOverlayExtraItems}
+          />
         </div>
       ) : null}
       {showOverlayUi && controlsOverlay}
