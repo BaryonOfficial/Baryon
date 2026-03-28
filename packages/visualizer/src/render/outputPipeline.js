@@ -29,9 +29,17 @@ export const PERFORMANCE_PROFILES = Object.freeze({
 export const DEFAULT_PERFORMANCE_PROFILE = PERFORMANCE_PROFILES.auto;
 export const RENDER_QUALITY_PRESETS = PERFORMANCE_PROFILES;
 export const DEFAULT_RENDER_QUALITY_PRESET = DEFAULT_PERFORMANCE_PROFILE;
+export const RENDER_CONTEXTS = Object.freeze({
+  preview: "preview",
+  externalOutput: "external-output",
+});
 
 /**
  * @typedef {"auto" | "custom" | "none"} PerformanceProfile
+ */
+
+/**
+ * @typedef {"preview" | "external-output"} RenderContext
  */
 
 /**
@@ -85,6 +93,28 @@ export function normalizePerformanceTargetFps(value) {
 }
 
 /**
+ * @param {unknown} qualityPreset
+ * @param {unknown} targetFps
+ * @returns {string}
+ */
+export function formatPerformanceProfileLabel(qualityPreset, targetFps = null) {
+  const normalizedPerformanceProfile =
+    normalizePerformanceProfile(qualityPreset);
+
+  if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.custom) {
+    return Number.isFinite(targetFps)
+      ? `custom ${normalizePerformanceTargetFps(targetFps)} fps`
+      : PERFORMANCE_PROFILES.custom;
+  }
+
+  if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.none) {
+    return "Max Quality";
+  }
+
+  return normalizedPerformanceProfile;
+}
+
+/**
  * @param {RenderQualityProfile} profile
  * @param {RenderQualityProfileOverrides | null | undefined} overrides
  * @returns {RenderQualityProfile}
@@ -118,6 +148,7 @@ export function applyRenderQualityProfileOverrides(profile, overrides) {
  *   renderScale?: number,
  *   traaEnabled?: boolean,
  *   bloomAllowed?: boolean,
+ *   renderContext?: RenderContext,
  * }=} param0
  * @returns {RenderQualityProfile}
  */
@@ -130,6 +161,7 @@ export function resolveRenderQualityProfile({
   renderScale,
   traaEnabled,
   bloomAllowed,
+  renderContext = RENDER_CONTEXTS.preview,
 } = {}) {
   const effectiveOverrides =
     overrides ??
@@ -165,7 +197,10 @@ export function resolveRenderQualityProfile({
     Number.isFinite(outputWidth) &&
     Number.isFinite(outputHeight) &&
     (outputWidth >= 3840 || outputHeight >= 2160);
-  if (isHighResolutionOutput) {
+  if (
+    isHighResolutionOutput &&
+    renderContext !== RENDER_CONTEXTS.externalOutput
+  ) {
     return applyRenderQualityProfileOverrides(
       {
         qualityPreset: normalizedPerformanceProfile,

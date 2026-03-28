@@ -4,6 +4,7 @@ import {
   applyRenderQualityProfileOverrides,
   DEFAULT_RENDER_QUALITY_PRESET,
   DEFAULT_PERFORMANCE_PROFILE,
+  formatPerformanceProfileLabel,
   normalizePerformanceProfile,
   normalizePerformanceTargetFps,
   normalizeRenderQualityPreset,
@@ -41,6 +42,14 @@ describe("render quality profiles", () => {
     );
   });
 
+  it("formats operator-facing performance profile labels", () => {
+    expect(formatPerformanceProfileLabel("auto")).toBe("auto");
+    expect(formatPerformanceProfileLabel("none")).toBe("Max Quality");
+    expect(formatPerformanceProfileLabel("custom")).toBe("custom");
+    expect(formatPerformanceProfileLabel("custom", 48)).toBe("custom 48 fps");
+    expect(formatPerformanceProfileLabel("unexpected")).toBe("auto");
+  });
+
   it("keeps full quality for auto at 1080p", () => {
     expect(
       resolveRenderQualityProfile({
@@ -73,6 +82,23 @@ describe("render quality profiles", () => {
     });
   });
 
+  it("keeps full quality for external-output auto at 2160p", () => {
+    expect(
+      resolveRenderQualityProfile({
+        qualityPreset: "auto",
+        outputWidth: 3840,
+        outputHeight: 2160,
+        renderContext: "external-output",
+      }),
+    ).toEqual({
+      qualityPreset: "auto",
+      targetFps: 60,
+      renderScale: 1,
+      traaEnabled: true,
+      bloomAllowed: true,
+    });
+  });
+
   it("uses the auto baseline while preserving the custom target fps", () => {
     expect(
       resolveRenderQualityProfile({
@@ -90,12 +116,47 @@ describe("render quality profiles", () => {
     });
   });
 
+  it("keeps full quality for external-output custom at 2160p", () => {
+    expect(
+      resolveRenderQualityProfile({
+        qualityPreset: "custom",
+        targetFps: 48,
+        outputWidth: 3840,
+        outputHeight: 2160,
+        renderContext: "external-output",
+      }),
+    ).toEqual({
+      qualityPreset: "custom",
+      targetFps: 48,
+      renderScale: 1,
+      traaEnabled: true,
+      bloomAllowed: true,
+    });
+  });
+
   it("uses a manual baseline for the none profile", () => {
     expect(
       resolveRenderQualityProfile({
         qualityPreset: "none",
         outputWidth: 3840,
         outputHeight: 2160,
+      }),
+    ).toEqual({
+      qualityPreset: "none",
+      targetFps: 60,
+      renderScale: 1,
+      traaEnabled: true,
+      bloomAllowed: true,
+    });
+  });
+
+  it("keeps full quality for external-output none at 2160p", () => {
+    expect(
+      resolveRenderQualityProfile({
+        qualityPreset: "none",
+        outputWidth: 3840,
+        outputHeight: 2160,
+        renderContext: "external-output",
       }),
     ).toEqual({
       qualityPreset: "none",

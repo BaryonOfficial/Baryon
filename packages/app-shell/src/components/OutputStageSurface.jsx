@@ -12,7 +12,10 @@ import {
   createBaryonRenderer,
   WEBGPU_RENDERER_INIT_ERROR,
 } from "./rendererDiagnostics.js";
-import { DEFAULT_RENDER_QUALITY_PRESET } from "@baryon/visualizer/render/outputPipeline";
+import {
+  DEFAULT_RENDER_QUALITY_PRESET,
+  RENDER_CONTEXTS,
+} from "@baryon/visualizer/render/outputPipeline";
 
 function StageInvalidateBridge({ registerRenderRequester }) {
   const { invalidate } = useThree();
@@ -154,6 +157,7 @@ export function OutputStageSurface({
                 cameraControlMode={CAMERA_CONTROL_MODES.externalSynced}
                 cameraViewPreset={resolvedCameraViewPreset}
                 cameraDistance={resolvedCameraDistance}
+                renderContext={RENDER_CONTEXTS.externalOutput}
               />
             </Suspense>
           </Canvas>

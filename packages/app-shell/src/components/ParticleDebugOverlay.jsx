@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { formatPerformanceProfileLabel } from "@baryon/visualizer/render/outputPipeline";
 import { DEVTOOLS_ENABLED } from "../devtools/config.js";
 
 function formatNumber(value, digits = 3) {
@@ -140,6 +141,22 @@ const DEBUG_METRIC_TOOLTIPS = {
     "Difference in dominant frequency between the primary and comparison analyses, in cents.",
   "Coh Δ":
     "Difference in coherence between the primary and comparison analyses.",
+  Output: "Current external-output frame size routed to Syphon.",
+  Profile:
+    "Requested external-output quality profile after desktop output resolution and profile selection.",
+  "Req Scale":
+    "Requested internal render scale for the hidden Syphon output stage.",
+  "Live Scale":
+    "Current effective render scale reported by the hidden Syphon output stage runtime.",
+  FPS: "Current FPS reported by the hidden Syphon output stage runtime snapshot.",
+  TRAA: "Whether temporal resolve/anti-aliasing is enabled in the hidden Syphon stage.",
+  Phase:
+    "Current Syphon stage lifecycle phase in the desktop output controller.",
+  Clients: "Whether the Syphon server currently reports any attached clients.",
+  Publishes:
+    "Successful Syphon publish count reported by the desktop output controller.",
+  Stall:
+    "Latest Syphon stall classification or reason. 'none' means the controller does not currently report a stall.",
 };
 const CHANGE_MIX_FIELDS = [
   ["Flux", "flux"],
@@ -223,6 +240,77 @@ function buildComparisonRows({
       label: "Decay",
       primary: "n/a",
       compare: String(comparisonDebug.usedDecay),
+    },
+  ];
+}
+
+function formatExternalOutputLabel(frameSize) {
+  if (
+    !frameSize ||
+    !Number.isFinite(frameSize.width) ||
+    !Number.isFinite(frameSize.height)
+  ) {
+    return "n/a";
+  }
+
+  return `${frameSize.width}x${frameSize.height}`;
+}
+
+export function buildExternalOutputItems(externalOutputDiagnostics) {
+  if (!externalOutputDiagnostics?.syphon) {
+    return null;
+  }
+
+  const syphon = externalOutputDiagnostics.syphon;
+  const renderProfile = syphon.renderProfile ?? null;
+  const liveRender = syphon.osrPerfMetrics?.render ?? null;
+  const stallLabel =
+    syphon.stallClassification ??
+    syphon.stallReason ??
+    (syphon.unhealthy ? "unhealthy" : "none");
+
+  return [
+    {
+      label: "Output",
+      value: formatExternalOutputLabel(externalOutputDiagnostics.frameSize),
+    },
+    {
+      label: "Profile",
+      value: formatPerformanceProfileLabel(renderProfile?.qualityPreset),
+    },
+    {
+      label: "Req Scale",
+      value: formatNumber(renderProfile?.renderScale),
+    },
+    {
+      label: "Live Scale",
+      value: formatNumber(liveRender?.renderScale),
+    },
+    {
+      label: "FPS",
+      value: formatNumber(syphon.osrPerfMetrics?.fps, 1),
+    },
+    {
+      label: "TRAA",
+      value: String(
+        liveRender?.traaEnabled ?? renderProfile?.traaEnabled ?? false,
+      ),
+    },
+    {
+      label: "Phase",
+      value: syphon.phase ?? "n/a",
+    },
+    {
+      label: "Clients",
+      value: String(externalOutputDiagnostics.hasClients ?? false),
+    },
+    {
+      label: "Publishes",
+      value: syphon.publishCount ?? 0,
+    },
+    {
+      label: "Stall",
+      value: stallLabel,
     },
   ];
 }
@@ -634,6 +722,9 @@ export default function ParticleDebugOverlay({
     primaryDominantFrequency: snapshot.dominantFrequency,
     comparisonDebug,
   });
+  const externalOutputItems = buildExternalOutputItems(
+    snapshot.externalOutputDiagnostics,
+  );
   const handleHeaderPointerDown = (event) => {
     if (event.button !== 0) {
       return;
@@ -773,6 +864,17 @@ export default function ParticleDebugOverlay({
         onMetricEnter={handleMetricEnter}
         onMetricLeave={handleMetricLeave}
       />
+      {externalOutputItems ? (
+        <>
+          <SectionKicker>External Output</SectionKicker>
+          <CompactGrid
+            items={externalOutputItems}
+            columns={3}
+            onMetricEnter={handleMetricEnter}
+            onMetricLeave={handleMetricLeave}
+          />
+        </>
+      ) : null}
       {comparisonDebug ? (
         <>
           <SectionKicker>Compare</SectionKicker>

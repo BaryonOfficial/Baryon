@@ -1348,6 +1348,7 @@ function buildAuditSnapshotPayload({
   return {
     visualizationMethod: runtime.method,
     renderer: window.__baryonRendererInfo ?? null,
+    externalOutputDiagnostics: window.__baryonExternalOutputDiagnostics ?? null,
     audioDiagnostics: {
       playbackSessionId: status.playbackSessionId,
       lastPlaybackEndReason: status.lastPlaybackEndReason,
