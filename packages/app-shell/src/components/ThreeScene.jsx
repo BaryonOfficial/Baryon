@@ -34,6 +34,19 @@ const AdvancedControlsSidebar = lazy(
   () => import("./AdvancedControlsSidebar.jsx"),
 );
 const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
+
+export function resolveLiveInputPanelConfig({ liveInputPanel = null } = {}) {
+  return {
+    forceVisible: Boolean(liveInputPanel?.forceVisible),
+    showAction: Boolean(liveInputPanel?.showAction),
+    deviceSelectTestId:
+      typeof liveInputPanel?.deviceSelectTestId === "string" &&
+      liveInputPanel.deviceSelectTestId
+        ? liveInputPanel.deviceSelectTestId
+        : "live-input-device-select",
+  };
+}
+
 function ControlsIcon() {
   return (
     <svg
@@ -80,21 +93,31 @@ function CameraIcon() {
  * @param {{
  *   controlsOverlay?: import("react").ReactNode,
  *   topRightOverlay?: import("react").ReactNode,
- *   forceLiveInputPanelVisible?: boolean,
- *   showLiveInputActionInPanel?: boolean,
+ *   liveInputPanel?: {
+ *     forceVisible?: boolean,
+ *     showAction?: boolean,
+ *     deviceSelectTestId?: string,
+ *   } | null,
+ *   debugOverlayExtraItems?: Array<{ label: string, value: string | number | boolean }> | null,
  *   outputFrameConfig?: { enabled: boolean, width: number, height: number } | null,
  *   onOutputFrame?: (frame: { width: number, height: number, rgba: ArrayBuffer }) => Promise<void> | void,
  *   onFrameState?: (state: Record<string, unknown>) => void,
+ *   sharedPreviewMode?: {
+ *     enabled?: boolean,
+ *     renderMode?: "legacy-double-render" | "single-render-shared-preview",
+ *     canvasId?: string | null,
+ *   } | null,
  * }} props
  */
 const ThreeScene = ({
   controlsOverlay = null,
   topRightOverlay = null,
-  forceLiveInputPanelVisible = false,
-  showLiveInputActionInPanel = false,
+  liveInputPanel = null,
+  debugOverlayExtraItems = null,
   outputFrameConfig = null,
   onOutputFrame = null,
   onFrameState = null,
+  sharedPreviewMode = null,
 }) => {
   const containerRef = useRef(null);
   const advancedControlsTriggerRef = useRef(null);
@@ -174,10 +197,17 @@ const ThreeScene = ({
     isSupportReady,
     markRendererInitUnsupported,
   } = useBrowserSupportState(forceWebGLFallbackTest);
+  const resolvedLiveInputPanel = resolveLiveInputPanelConfig({
+    liveInputPanel,
+  });
   const showOverlayUi = isSupportReady && !isFullscreen;
+  const sharedPreviewVisible = sharedPreviewMode?.enabled === true;
+  const sharedPreviewCanvasId = sharedPreviewMode?.canvasId ?? null;
+  const usingSharedPreview =
+    sharedPreviewMode?.renderMode === "single-render-shared-preview";
   const liveInputStatusPanelVisible =
     showOverlayUi &&
-    (selectedSource === "system" || Boolean(forceLiveInputPanelVisible));
+    (selectedSource === "system" || resolvedLiveInputPanel.forceVisible);
   const showCameraControls =
     showOverlayUi && controlsState.visualizationMethod !== "cymatics2d";
   const stackedTopRightOverlay = isValidElement(topRightOverlay)
@@ -302,6 +332,25 @@ const ThreeScene = ({
         background: controlsState.backgroundColor,
       }}
     >
+      {sharedPreviewVisible ? (
+        <canvas
+          id={sharedPreviewCanvasId ?? undefined}
+          data-testid="shared-output-preview-canvas"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            zIndex: 10,
+            width: "100%",
+            height: "100%",
+            display: "block",
+            background: "transparent",
+            opacity: usingSharedPreview ? 1 : 0,
+            pointerEvents: "none",
+          }}
+        />
+      ) : null}
+
       {showCanvas && isSupportReady && (
         <RendererErrorBoundary
           resetKey={`${activeRendererFallback ? "force-webgl-fallback" : "webgpu-default"}-${canvasEpoch}`}
@@ -313,8 +362,10 @@ const ThreeScene = ({
               position: "absolute",
               top: 0,
               left: 0,
-              zIndex: 10,
+              zIndex: 9,
               background: "transparent",
+              opacity: usingSharedPreview ? 0 : 1,
+              pointerEvents: usingSharedPreview ? "none" : "auto",
             }}
             dpr={[1, 2]}
             camera={{
@@ -345,6 +396,7 @@ const ThreeScene = ({
                 cameraControlMode={CAMERA_CONTROL_MODES.previewLocal}
                 cameraViewPreset={effectiveCameraViewPreset}
                 cameraResetNonce={cameraResetNonce}
+                suppressRender={usingSharedPreview}
               />
             </Suspense>
           </Canvas>
@@ -380,6 +432,34 @@ const ThreeScene = ({
           >
             <ControlsIcon />
           </button>
+        </div>
+      )}
+
+      {showOverlayUi && !isControlsPanelOpen && (
+        <div
+          style={{
+            position: "absolute",
+            top: "var(--app-floating-control-top)",
+            left: `calc(var(--app-floating-control-left) + var(--app-floating-control-size) + 0.6rem)`,
+            zIndex: 61,
+            display: "flex",
+            alignItems: "center",
+            height: "var(--app-floating-control-size)",
+            pointerEvents: "none",
+          }}
+        >
+          <span
+            style={{
+              fontFamily: "Orbitron, sans-serif",
+              fontSize: "0.7rem",
+              fontWeight: 500,
+              letterSpacing: "0.08em",
+              color: "rgba(255, 255, 255, 1)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Baryon | Cymatics
+          </span>
         </div>
       )}
 
@@ -512,14 +592,10 @@ const ThreeScene = ({
               stacked
               visible
               showLiveAction={
-                Boolean(showLiveInputActionInPanel) &&
+                resolvedLiveInputPanel.showAction &&
                 Boolean(liveInputStatusPanelVisible)
               }
-              deviceSelectTestId={
-                forceLiveInputPanelVisible
-                  ? "performer-live-device-select"
-                  : "live-input-device-select"
-              }
+              deviceSelectTestId={resolvedLiveInputPanel.deviceSelectTestId}
               echoCancellation={Boolean(controlsState.echoCancellation)}
               noiseSuppression={Boolean(controlsState.noiseSuppression)}
               autoGainControl={Boolean(controlsState.autoGainControl)}
@@ -532,7 +608,10 @@ const ThreeScene = ({
             }
             stacked
           />
-          <ParticleDebugOverlay stacked />
+          <ParticleDebugOverlay
+            stacked
+            debugOverlayExtraItems={debugOverlayExtraItems}
+          />
         </div>
       ) : null}
       {showOverlayUi && controlsOverlay}

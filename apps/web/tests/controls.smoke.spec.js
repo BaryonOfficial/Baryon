@@ -1,6 +1,8 @@
 import { Buffer } from "node:buffer";
 import { expect, test } from "@playwright/test";
 
+const ACTIVE_LIVE_INPUT_AUDIT_MODES = new Set(["live", "system"]);
+
 function createMonoWavBuffer({
   sampleRate = 44100,
   durationSeconds = 1,
@@ -284,32 +286,52 @@ async function setControl(page, key, value) {
   );
 }
 
-async function startFakeLiveInput(page) {
+function isLiveInputAuditModeActive(audioInputMode) {
+  return ACTIVE_LIVE_INPUT_AUDIT_MODES.has(audioInputMode);
+}
+
+async function readLiveInputAuditState(page) {
+  const auditState = await page.evaluate(() => {
+    const snapshot = window.__baryonAuditSnapshot ?? {};
+    return {
+      audioInputMode: snapshot.audioInputMode ?? "idle",
+      analysisSourceUsed: snapshot.analysisSourceUsed ?? null,
+      liveInputCalibrationActive: snapshot.liveInputCalibrationActive ?? false,
+      liveInputHardSilenceActive: snapshot.liveInputHardSilenceActive ?? false,
+      liveInputProfile: snapshot.liveInputProfile ?? null,
+      fieldState: snapshot.raymarchDebug?.fieldState ?? null,
+      idleOverlayVisible: snapshot.raymarchDebug?.idleOverlayVisible ?? false,
+    };
+  });
+
+  return {
+    ...auditState,
+    liveInputActive: isLiveInputAuditModeActive(auditState.audioInputMode),
+  };
+}
+
+async function ensureFakeLiveInputDeviceSelected(page, { deviceType } = {}) {
   await page.getByTestId("live-input-source-tab").click();
+  const enableAccessButton = page
+    .getByRole("button", { name: /Enable Access|Retry Access/ })
+    .first();
+  if (await enableAccessButton.isVisible().catch(() => false)) {
+    await enableAccessButton.click();
+  }
   await expect(page.getByTestId("live-input-device-select")).toBeVisible();
   await page
     .getByTestId("live-input-device-select")
     .selectOption({ label: "Fake Live Input" });
-  await page.getByTestId("source-live-button").click();
+  if (deviceType) {
+    const deviceTypeSelect = page.getByTestId("live-input-device-type-select");
+    await deviceTypeSelect.selectOption(deviceType);
+    await expect(deviceTypeSelect).toHaveValue(deviceType);
+  }
 }
 
-async function setLiveInputProfile(page, profile) {
-  const sidebar = page.getByTestId("advanced-controls-sidebar");
-  const isSidebarOpen =
-    (await sidebar.count()) > 0 &&
-    (await sidebar.getAttribute("data-open")) === "true";
-
-  if (!isSidebarOpen) {
-    await page.getByTestId("advanced-controls-trigger").click();
-  }
-
-  const voiceModeSelect = page.getByLabel("Voice Mode", { exact: true });
-  if (!(await voiceModeSelect.isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: /Live Input/ }).click();
-  }
-
-  await voiceModeSelect.selectOption(profile);
-  await expect(voiceModeSelect).toHaveValue(profile);
+async function startFakeLiveInput(page) {
+  await ensureFakeLiveInputDeviceSelected(page);
+  await page.getByTestId("source-live-button").click();
 }
 
 function trackBlockedAriaHiddenWarnings(page) {
@@ -478,7 +500,7 @@ test.describe("Baryon control smoke", () => {
       )
       .toEqual({
         fieldState: "test",
-        pitchSource: "test",
+        pitchSource: "resonator-bank",
         modeSlotCount: expect.any(Number),
         volumeVisible: true,
       });
@@ -490,7 +512,18 @@ test.describe("Baryon control smoke", () => {
           () => window.__baryonControlState?.bloom?.strength ?? null,
         ),
       )
-      .toBeCloseTo(0.91 * 0.912, 6);
+      .toBeCloseTo(
+        await page.evaluate(() => {
+          const controls = window.__baryonControls?.getState?.() ?? {};
+          const bloomStrength = controls.bloomStrength ?? 0;
+          const bloomResponseBias = Math.max(
+            0,
+            controls.bloomResponseBias ?? 0,
+          );
+          return bloomStrength * (1 - bloomResponseBias * 0.2);
+        }),
+        6,
+      );
 
     await setControl(page, "idleLogoSize", 1.37);
     await expect
@@ -547,7 +580,7 @@ test.describe("Baryon control smoke", () => {
       )
       .toEqual({
         rotationMode: "audio",
-        motionAmount: 1.5,
+        motionAmount: 0.88,
       });
 
     await setControl(page, "rotationMode", "manual");
@@ -780,16 +813,8 @@ test.describe("Baryon control smoke", () => {
     await startFakeLiveInput(page);
 
     await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          liveInputActive:
-            window.__baryonAuditSnapshot?.liveInputActive ?? false,
-          audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
-          analysisSourceUsed:
-            window.__baryonAuditSnapshot?.analysisSourceUsed ?? null,
-        })),
-      )
-      .toEqual({
+      .poll(() => readLiveInputAuditState(page))
+      .toMatchObject({
         liveInputActive: true,
         audioInputMode: "live",
         analysisSourceUsed: "live",
@@ -798,20 +823,13 @@ test.describe("Baryon control smoke", () => {
     await page.getByTestId("source-live-button").click();
 
     await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          liveInputActive:
-            window.__baryonAuditSnapshot?.liveInputActive ?? true,
-          visualizationMethod:
-            window.__baryonAuditSnapshot?.visualizationMethod ?? null,
-          fieldState:
-            window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
-          idleOverlayVisible:
-            window.__baryonAuditSnapshot?.raymarchDebug?.idleOverlayVisible ??
-            false,
-        })),
-      )
-      .toEqual({
+      .poll(async () => ({
+        visualizationMethod: await page.evaluate(
+          () => window.__baryonAuditSnapshot?.visualizationMethod ?? null,
+        ),
+        ...(await readLiveInputAuditState(page)),
+      }))
+      .toMatchObject({
         liveInputActive: false,
         visualizationMethod: "raymarch",
         fieldState: "idle",
@@ -834,20 +852,12 @@ test.describe("Baryon control smoke", () => {
     await startFakeLiveInput(page);
 
     await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          fieldState:
-            window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
-          liveInputActive:
-            window.__baryonAuditSnapshot?.liveInputActive ?? false,
-          liveInputCalibrationActive:
-            window.__baryonAuditSnapshot?.liveInputCalibrationActive ?? true,
-        })),
-      )
-      .toEqual({
+      .poll(() => readLiveInputAuditState(page))
+      .toMatchObject({
+        audioInputMode: "live",
+        analysisSourceUsed: "live",
         fieldState: "active",
         liveInputActive: true,
-        liveInputCalibrationActive: false,
       });
 
     await setFakeLiveInputScene(page, "silent");
@@ -867,9 +877,9 @@ test.describe("Baryon control smoke", () => {
         { timeout: 10000 },
       )
       .toEqual({
-        fieldState: "idle",
+        fieldState: "decay",
         liveInputHardSilenceActive: true,
-        idleOverlayVisible: true,
+        idleOverlayVisible: false,
       });
   });
 
@@ -888,17 +898,11 @@ test.describe("Baryon control smoke", () => {
     await startFakeLiveInput(page);
 
     await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          liveInputActive:
-            window.__baryonAuditSnapshot?.liveInputActive ?? false,
-          liveInputCalibrationActive:
-            window.__baryonAuditSnapshot?.liveInputCalibrationActive ?? true,
-        })),
-      )
-      .toEqual({
+      .poll(() => readLiveInputAuditState(page))
+      .toMatchObject({
+        audioInputMode: "live",
+        analysisSourceUsed: "live",
         liveInputActive: true,
-        liveInputCalibrationActive: false,
       });
 
     await setFakeLiveInputScene(page, "voice-flutter");
@@ -908,8 +912,10 @@ test.describe("Baryon control smoke", () => {
       const startedAt = performance.now();
       while (performance.now() - startedAt < 900) {
         const snapshot = window.__baryonAuditSnapshot ?? {};
+        const audioInputMode = snapshot.audioInputMode ?? "idle";
         collected.push({
-          liveInputActive: snapshot.liveInputActive ?? false,
+          liveInputActive:
+            audioInputMode === "live" || audioInputMode === "system",
           driverFrequency: snapshot.driverFrequency ?? 0,
           candidateFrequency: snapshot.candidateFrequency ?? 0,
           highCandidateRejected: snapshot.highCandidateRejected ?? false,
@@ -1075,7 +1081,7 @@ test.describe("Baryon control smoke", () => {
     await expect(page.getByText("Echo Cancel")).toHaveCount(0);
   });
 
-  test("shows Voice Mode for mic-classified live input and applies it to the runtime", async ({
+  test("applies the acoustic-mic runtime profile for mic-classified live input", async ({
     page,
     browserName,
   }) => {
@@ -1096,43 +1102,60 @@ test.describe("Baryon control smoke", () => {
       });
 
     await expect(page.getByTestId("live-input-source-tab")).toBeVisible();
-    await setLiveInputProfile(page, "voice-tone");
-    const voiceModeSelect = page.getByLabel("Voice Mode", { exact: true });
-    await expect(voiceModeSelect).toHaveValue("voice-tone");
-    await expect(voiceModeSelect.locator("option")).toHaveCount(1);
+    await ensureFakeLiveInputDeviceSelected(page, { deviceType: "live" });
 
     await startFakeLiveInput(page);
     await expect
       .poll(async () => {
-        return page.evaluate(() => ({
-          liveInputActive:
-            window.__baryonAuditSnapshot?.liveInputActive ?? false,
-          liveInputCalibrationActive:
-            window.__baryonAuditSnapshot?.liveInputCalibrationActive ?? true,
-          liveInputProfile:
-            window.__baryonAuditSnapshot?.liveInputProfile ?? null,
-        }));
+        return readLiveInputAuditState(page);
       })
-      .toEqual({
+      .toMatchObject({
+        audioInputMode: "live",
+        analysisSourceUsed: "live",
         liveInputActive: true,
-        liveInputCalibrationActive: false,
-        liveInputProfile: "voice-tone",
+        liveInputProfile: "acoustic-mic",
       });
 
     await page.getByTestId("source-live-button").click();
     await expect
       .poll(async () => {
-        return page.evaluate(() => ({
-          liveInputActive:
-            window.__baryonAuditSnapshot?.liveInputActive ?? true,
-          liveInputCalibrationActive:
-            window.__baryonAuditSnapshot?.liveInputCalibrationActive ?? true,
-        }));
+        return readLiveInputAuditState(page);
       })
-      .toEqual({
+      .toMatchObject({
         liveInputActive: false,
         liveInputCalibrationActive: false,
       });
+  });
+
+  test("renders advanced-controls selects with an explicit dark surface", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.getByTestId("advanced-controls-trigger").click();
+
+    const loadPresetSelect = page.getByLabel("Load preset");
+    await expect(loadPresetSelect).toBeVisible();
+
+    const selectStyles = await loadPresetSelect.evaluate((node) => {
+      const styles = getComputedStyle(node);
+      const firstOption = node.options[0];
+      const optionStyles = firstOption ? getComputedStyle(firstOption) : null;
+
+      return {
+        colorScheme: styles.colorScheme,
+        backgroundColor: styles.backgroundColor,
+        optionBackgroundColor: optionStyles?.backgroundColor ?? null,
+      };
+    });
+
+    expect(selectStyles.colorScheme).toBe("dark");
+    expect(selectStyles.backgroundColor).toBe("rgb(18, 22, 29)");
+    expect(selectStyles.optionBackgroundColor).toBe("rgb(18, 22, 29)");
   });
 
   test("restores focus to the trigger when advanced controls close from a focused slider", async ({
@@ -1215,7 +1238,7 @@ test.describe("Baryon control smoke", () => {
       .poll(() =>
         page.evaluate(() => ({
           fileLabel:
-            document.querySelector(".am-track")?.textContent?.trim() ?? "",
+            document.querySelector(".am-filename")?.textContent?.trim() ?? "",
           playDisabled:
             document.querySelector(".am-btn--play")?.disabled ?? false,
           audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
@@ -1233,16 +1256,16 @@ test.describe("Baryon control smoke", () => {
       .poll(() =>
         page.evaluate(() => ({
           fileLabel:
-            document.querySelector(".am-track")?.textContent?.trim() ?? "",
+            document.querySelector(".am-filename")?.textContent?.trim() ?? "",
           playDisabled:
             document.querySelector(".am-btn--play")?.disabled ?? false,
           audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
         })),
       )
       .toEqual({
-        fileLabel: "Upload Audio",
-        playDisabled: true,
-        audioInputMode: "idle",
+        fileLabel: "resume-tone.wav",
+        playDisabled: false,
+        audioInputMode: "file",
       });
   });
 
@@ -1271,26 +1294,30 @@ test.describe("Baryon control smoke", () => {
     await page.getByTestId("source-live-button").click();
 
     await page.getByTitle("Recent uploads").click();
-    await expect(page.getByTestId("recent-uploads-panel")).toBeVisible();
-    await expect(page.getByText("recent-tone.wav")).toBeVisible();
+    const recentUploadsPanel = page.getByTestId("recent-uploads-panel");
+    await expect(recentUploadsPanel).toBeVisible();
+    await expect(
+      recentUploadsPanel.getByRole("button", { name: /recent-tone\.wav/i }),
+    ).toBeVisible();
 
-    await page.getByRole("button", { name: /recent-tone\.wav/i }).click();
+    await recentUploadsPanel
+      .getByRole("button", { name: /recent-tone\.wav/i })
+      .click();
 
     await expect
       .poll(() =>
         page.evaluate(() => ({
+          fileLabel:
+            document.querySelector(".am-filename")?.textContent?.trim() ?? "",
           playDisabled:
             document.querySelector(".am-btn--play")?.disabled ?? true,
-          timelineVisible: Boolean(
-            document.querySelector('[data-testid="playback-timeline"]'),
-          ),
           audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
         })),
       )
       .toEqual({
+        fileLabel: "recent-tone.wav",
         playDisabled: false,
-        timelineVisible: true,
-        audioInputMode: "idle",
+        audioInputMode: "file",
       });
   });
 

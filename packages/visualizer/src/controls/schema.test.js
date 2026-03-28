@@ -144,6 +144,21 @@ describe("control schema", () => {
     expect(backgroundControl?.title).toMatch(/backdrop/i);
   });
 
+  it("labels the highest performance profile as Max Quality", () => {
+    const performanceProfileControl = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "renderQualityPreset",
+    );
+
+    expect(performanceProfileControl?.title).toContain("Max Quality");
+    expect(performanceProfileControl?.binding).toMatchObject({
+      options: {
+        Auto: "auto",
+        Custom: "custom",
+        "Max Quality": "none",
+      },
+    });
+  });
+
   it("defines program output controls separately from the preview backdrop", () => {
     const outputModeControl = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "outputMode",

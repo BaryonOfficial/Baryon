@@ -34,6 +34,18 @@ test("builds the advanced controls presentation layout", () => {
     modeGroup.controls.map((control) => control.key).slice(0, 4),
     ["boundaryMode", ANALYSIS_MODE_BASE_KEY, "fieldCacheOverride", "colorMode"],
   );
+  const analysisModeControl = modeGroup.controls.find(
+    (control) => control.key === ANALYSIS_MODE_BASE_KEY,
+  );
+  assert.ok(analysisModeControl);
+  assert.equal(
+    analysisModeControl.title,
+    "Choose which analysis model drives the visuals. Modal Excitation is the true-to-nature resonant-mode model, and Legacy Peak keeps the older peak-driven behavior.",
+  );
+  assert.deepEqual(analysisModeControl.binding?.options, {
+    "Legacy Peak": "legacy-peak",
+    "Modal Excitation": "modal-excitation",
+  });
   assert.equal(
     modeGroup.controls.find((control) => control.key === "fieldCacheOverride")
       ?.title,

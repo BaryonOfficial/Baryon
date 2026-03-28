@@ -78,12 +78,12 @@ function createPromotedModeControls(method) {
       cloneControlDefinition(structuralImplementation, {
         key: ANALYSIS_MODE_BASE_KEY,
         title:
-          "Choose which analysis model drives the visuals. Modal Excitation follows the resonant-mode model, and Legacy Peak keeps the older peak-driven behavior.",
+          "Choose which analysis model drives the visuals. Modal Excitation is the true-to-nature resonant-mode model, and Legacy Peak keeps the older peak-driven behavior.",
         binding: {
           ...(structuralImplementation.binding ?? {}),
           options: {
-            "Legacy Peak (physics-artistic mix)": "legacy-peak",
-            "Modal Excitation (true-to-nature)": "modal-excitation",
+            "Legacy Peak": "legacy-peak",
+            "Modal Excitation": "modal-excitation",
           },
         },
         group: MODE_GROUP,

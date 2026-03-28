@@ -1,4 +1,4 @@
-export { default, AppFrame } from "./App.jsx";
+export { AppFrame } from "./App.jsx";
 export { AudioProvider } from "./context/AudioProvider.jsx";
 export { useAudio, useAudioScene } from "./context/AudioContext.jsx";
 export {
