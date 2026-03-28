@@ -15,7 +15,10 @@ import {
   shouldMountOrbitControls,
 } from "./baryonSceneCameraSync.js";
 export { CAMERA_CONTROL_MODES } from "./baryonSceneCameraSync.js";
-import { resolveRenderQualityProfile } from "@baryon/visualizer/render/outputPipeline";
+import {
+  RENDER_CONTEXTS,
+  resolveRenderQualityProfile,
+} from "@baryon/visualizer/render/outputPipeline";
 
 const RENDER_PROFILE_COMMAND_EVENT = "__baryon-render-profile-command";
 
@@ -53,6 +56,7 @@ export function BaryonScene({
   externalFrameRef = null,
   basePixelRatio = null,
   onStageRender = null,
+  suppressRender = false,
   cameraViewPreset = /** @type {"top-down" | "side"} */ (
     CAMERA_VIEW_PRESETS.topDown
   ),
@@ -60,6 +64,9 @@ export function BaryonScene({
   cameraResetNonce = 0,
   cameraControlMode = /** @type {"preview-local" | "external-synced"} */ (
     CAMERA_CONTROL_MODES.previewLocal
+  ),
+  renderContext = /** @type {"preview" | "external-output"} */ (
+    RENDER_CONTEXTS.preview
   ),
 }) {
   const { camera, gl, scene, size } = useThree();
@@ -72,8 +79,15 @@ export function BaryonScene({
         outputWidth: size.width,
         outputHeight: size.height,
         overrides: renderProfileOverrides,
+        renderContext,
       }),
-    [performanceProfile, renderProfileOverrides, size.height, size.width],
+    [
+      performanceProfile,
+      renderContext,
+      renderProfileOverrides,
+      size.height,
+      size.width,
+    ],
   );
   const { ensurePipeline, postNodesRef, disposePipeline } = useBaryonPipeline(
     gl,
@@ -173,6 +187,7 @@ export function BaryonScene({
     renderProfile,
     basePixelRatio,
     onStageRender,
+    suppressRender,
   });
 
   return (

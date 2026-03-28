@@ -6,6 +6,7 @@ declare global {
     };
     __baryonControlState?: Record<string, unknown>;
     __baryonAuditSnapshot?: Record<string, unknown>;
+    __baryonExternalOutputDiagnostics?: Record<string, unknown> | null;
     __baryonFieldCacheOverride?: "direct" | "cached";
     __baryonRendererInfo?: {
       forceWebGLFallbackTest: boolean;

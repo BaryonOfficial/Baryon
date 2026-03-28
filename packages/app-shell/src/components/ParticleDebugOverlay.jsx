@@ -140,6 +140,24 @@ const DEBUG_METRIC_TOOLTIPS = {
     "Difference in dominant frequency between the primary and comparison analyses, in cents.",
   "Coh Δ":
     "Difference in coherence between the primary and comparison analyses.",
+  "Render Mode":
+    "Whether the visible preview is still locally rendered or is showing the shared external-output feed.",
+  Output: "Current external-output frame size routed to Syphon.",
+  Profile:
+    "Requested external-output quality profile after desktop output resolution and profile selection.",
+  "Req Scale":
+    "Requested internal render scale for the hidden Syphon output stage.",
+  "Live Scale":
+    "Current effective render scale reported by the hidden Syphon output stage runtime.",
+  FPS: "Current FPS reported by the hidden Syphon output stage runtime snapshot.",
+  TRAA: "Whether temporal resolve/anti-aliasing is enabled in the hidden Syphon stage.",
+  Phase:
+    "Current Syphon stage lifecycle phase in the desktop output controller.",
+  Clients: "Whether the Syphon server currently reports any attached clients.",
+  Publishes:
+    "Successful Syphon publish count reported by the desktop output controller.",
+  Stall:
+    "Latest Syphon stall classification or reason. 'none' means the controller does not currently report a stall.",
 };
 const CHANGE_MIX_FIELDS = [
   ["Flux", "flux"],
@@ -225,6 +243,12 @@ function buildComparisonRows({
       compare: String(comparisonDebug.usedDecay),
     },
   ];
+}
+
+export function normalizeDebugOverlayItems(debugOverlayExtraItems) {
+  return Array.isArray(debugOverlayExtraItems) && debugOverlayExtraItems.length
+    ? debugOverlayExtraItems
+    : null;
 }
 
 function CompactGrid({
@@ -482,6 +506,7 @@ export default function ParticleDebugOverlay({
   top = "1rem",
   right = "1rem",
   stacked = false,
+  debugOverlayExtraItems = null,
 }) {
   const overlayRef = useRef(null);
   const dragStateRef = useRef(null);
@@ -634,6 +659,9 @@ export default function ParticleDebugOverlay({
     primaryDominantFrequency: snapshot.dominantFrequency,
     comparisonDebug,
   });
+  const externalOutputItems = normalizeDebugOverlayItems(
+    debugOverlayExtraItems,
+  );
   const handleHeaderPointerDown = (event) => {
     if (event.button !== 0) {
       return;
@@ -773,6 +801,17 @@ export default function ParticleDebugOverlay({
         onMetricEnter={handleMetricEnter}
         onMetricLeave={handleMetricLeave}
       />
+      {externalOutputItems ? (
+        <>
+          <SectionKicker>External Output</SectionKicker>
+          <CompactGrid
+            items={externalOutputItems}
+            columns={3}
+            onMetricEnter={handleMetricEnter}
+            onMetricLeave={handleMetricLeave}
+          />
+        </>
+      ) : null}
       {comparisonDebug ? (
         <>
           <SectionKicker>Compare</SectionKicker>

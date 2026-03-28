@@ -1,9 +1,6 @@
 import React from "react";
 
 import "./App.css";
-import ThreeScene from "./components/ThreeScene.jsx";
-import { ListenerControls } from "./components/AudioControls.jsx";
-import { AudioProvider } from "./context/AudioProvider";
 
 const LEGAL_LINKS = [
   {
@@ -70,18 +67,3 @@ export function AppFrame({ children }) {
     </div>
   );
 }
-
-function App() {
-  return (
-    <AudioProvider platform="web">
-      <AppFrame>
-        <ThreeScene
-          controlsOverlay={<ListenerControls showSourceLiveButton={false} />}
-          showLiveInputActionInPanel
-        />
-      </AppFrame>
-    </AudioProvider>
-  );
-}
-
-export default App;

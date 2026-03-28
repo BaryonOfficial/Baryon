@@ -1783,6 +1783,21 @@ test("publishes the audit snapshot payload and logs on the configured interval",
 
   globalThis.window = {
     __baryonRendererInfo: { backend: "webgpu" },
+    __baryonExternalOutputDiagnostics: {
+      syphonEnabled: true,
+      syphon: {
+        renderProfile: {
+          qualityPreset: "auto",
+          renderScale: 1,
+        },
+        osrPerfMetrics: {
+          render: {
+            requestedRenderScale: 1,
+            renderScale: 1,
+          },
+        },
+      },
+    },
   };
 
   try {
@@ -1806,6 +1821,10 @@ test("publishes the audit snapshot payload and logs on the configured interval",
       lastPlaybackDiagnostics: { id: 1 },
       runtime: { snapshot: { sample: "runtime" } },
     });
+    assert.deepEqual(
+      globalThis.window.__baryonAuditSnapshot.externalOutputDiagnostics,
+      globalThis.window.__baryonExternalOutputDiagnostics,
+    );
     assert.equal(auditLogs.length, 1);
     assert.deepEqual(auditLogs[0], [
       "[Baryon audit]",
