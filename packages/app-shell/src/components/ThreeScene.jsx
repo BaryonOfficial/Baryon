@@ -15,6 +15,7 @@ import {
   getCameraConfigForPreset,
   resolveDefaultCameraViewPreset,
 } from "./cameraViewPresets.js";
+import { dispatchCameraControlCommand } from "./cameraControlEvents.js";
 import ParticleDebugOverlay from "./ParticleDebugOverlay.jsx";
 import PerformanceHud from "./PerformanceHud.jsx";
 import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
@@ -149,6 +150,7 @@ const ThreeScene = ({
   const [cameraViewPreset, setCameraViewPreset] = useState(
     CAMERA_VIEW_PRESETS.topDown,
   );
+  const [cameraUiPreset, setCameraUiPreset] = useState(null);
   const [cameraResetNonce, setCameraResetNonce] = useState(0);
   const [frameFieldState, setFrameFieldState] = useState("idle");
 
@@ -207,6 +209,9 @@ const ThreeScene = ({
   const usingSharedPreview =
     sharedPreviewMode?.renderMode === "single-render-shared-preview";
   const omitLocalScene = sharedPreviewMode?.omitLocalScene === true;
+  const activeCameraControlPreset = omitLocalScene
+    ? (cameraUiPreset ?? defaultCameraViewPreset)
+    : effectiveCameraViewPreset;
   const liveInputStatusPanelVisible =
     showOverlayUi &&
     (selectedSource === "system" || resolvedLiveInputPanel.forceVisible);
@@ -232,8 +237,18 @@ const ThreeScene = ({
 
   const applyCameraPreset = (preset) => {
     setCameraViewPreset(preset);
+    setCameraUiPreset(preset);
     setCameraResetNonce((current) => current + 1);
+    dispatchCameraControlCommand({
+      cameraViewPreset: preset,
+    });
   };
+
+  useEffect(() => {
+    if (!omitLocalScene) {
+      setCameraUiPreset(null);
+    }
+  }, [omitLocalScene]);
 
   const handleFrameState = useCallback(
     (state) => {
@@ -492,12 +507,14 @@ const ThreeScene = ({
               testId: "camera-side-view-button",
             },
           ].map((preset) => {
-            const active = effectiveCameraViewPreset === preset.key;
+            const active = activeCameraControlPreset === preset.key;
             return (
               <button
                 key={preset.key}
                 type="button"
                 data-testid={preset.testId}
+                data-state={active ? "active" : "idle"}
+                aria-pressed={active}
                 onClick={() => applyCameraPreset(preset.key)}
                 title={`${preset.label} view`}
                 style={{

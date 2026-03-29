@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef } from "react";
-import { useFrame, useThree } from "@react-three/fiber";
+import { useEffect, useRef } from "react";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { resolveRaymarchFieldCacheOverride } from "@baryon/visualizer";
-import { getRenderQualityProfileKey } from "@baryon/visualizer/render/outputPipeline";
 import {
   applyAudioControls,
   applySceneControls,
@@ -17,7 +16,6 @@ import {
 } from "../../devtools/testReady.js";
 import { shouldSkipChromesthesiaStaticColorInvalidation } from "./controlInvalidation.js";
 import {
-  clearAdaptiveRaymarchResumeState,
   maybePublishRuntimePerfSnapshot,
   clearFrameCache,
   createRuntimeDiagnostics,
@@ -78,21 +76,16 @@ export function useBaryonVisualizer({
   ensurePipeline,
   postNodesRef,
   onPerformanceHudSnapshotChange,
-  onAuditSnapshotChange,
   outputFrameConfig = null,
   onOutputFrame = null,
   onFrameState = null,
   externalFrameRef = null,
-  structuralControlVersion = 0,
-  liveControlSignalRef = null,
-  adaptiveResetNonce = 0,
   renderProfile = null,
   basePixelRatio = null,
   onStageRender = null,
   suppressRender = false,
   enableControlEventSync = true,
 }) {
-  const { invalidate } = useThree();
   const audioRef = useRef(getDefaultAudioSession());
   const outputSessionRef = useRef(null);
   const outputCaptureInFlightRef = useRef(false);
@@ -112,7 +105,6 @@ export function useBaryonVisualizer({
     frameCacheRefs,
     controlCacheRefs,
     pixelRatioRef,
-    renderSurfaceSizeRef,
     lastLiveInputRuntimeStatusRef,
     lastAudioIssueSignatureRef,
   } = useVisualizationRuntimeLifecycle({
@@ -132,7 +124,6 @@ export function useBaryonVisualizer({
   const renderLoopRefs = {
     runtimeDiagnosticsRef,
     pixelRatioRef,
-    renderSurfaceSizeRef,
     lastAudioIssueSignatureRef,
     lastLiveInputRuntimeStatusRef,
     frameCacheRefs,
@@ -152,11 +143,6 @@ export function useBaryonVisualizer({
   };
   const renderProfileRef = useRef(renderProfile);
   renderProfileRef.current = renderProfile;
-  const renderProfileKeyRef = useRef(getRenderQualityProfileKey(renderProfile));
-  const lastObservedLiveControlSignalVersionRef = useRef(
-    liveControlSignalRef?.current?.version ?? 0,
-  );
-  const forcedExternalRenderPendingRef = useRef(false);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -179,15 +165,10 @@ export function useBaryonVisualizer({
       lastAudioIssueSignatureRef.current = null;
       clearCachedControlsSnapshot(cachedControlSnapshotsRef);
       onPerformanceHudSnapshotChange?.(null);
-      onAuditSnapshotChange?.({
-        enabled: false,
-        snapshot: null,
-      });
       setLiveInputRuntimeStatus?.(createLiveInputRuntimeStatus());
       const defaultDpr = getPlaybackDiagnosticDpr();
       gl.setPixelRatio(defaultDpr);
       pixelRatioRef.current = defaultDpr;
-      renderSurfaceSizeRef.current = null;
       if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
         delete window.__baryonAuditSnapshot;
         delete window.__baryonControlState;
@@ -202,34 +183,12 @@ export function useBaryonVisualizer({
     lastAudioIssueSignatureRef,
     lastLiveInputRuntimeStatusRef,
     pixelRatioRef,
-    renderSurfaceSizeRef,
     runtimeDiagnosticsRef,
     cachedControlSnapshotsRef,
     scene,
     onPerformanceHudSnapshotChange,
-    onAuditSnapshotChange,
     setLiveInputRuntimeStatus,
   ]);
-
-  useEffect(() => {
-    clearAdaptiveRaymarchResumeState(runtimeStateRef.current);
-    forcedExternalRenderPendingRef.current = true;
-    invalidate();
-  }, [adaptiveResetNonce, invalidate, runtimeStateRef]);
-
-  useEffect(() => {
-    const nextRenderProfileKey = getRenderQualityProfileKey(renderProfile);
-    if (renderProfileKeyRef.current === nextRenderProfileKey) {
-      return;
-    }
-
-    renderProfileKeyRef.current = nextRenderProfileKey;
-    // Profile-only output changes still need one forced draw so the external
-    // frame path emits a fresh rendered frame and downstream sinks can republish.
-    clearAdaptiveRaymarchResumeState(runtimeStateRef.current);
-    forcedExternalRenderPendingRef.current = true;
-    invalidate();
-  }, [invalidate, renderProfile, runtimeStateRef]);
 
   useEffect(() => {
     if (outputFrameConfig?.enabled) {
@@ -329,8 +288,13 @@ export function useBaryonVisualizer({
     };
   }, [controlsRef, enableControlEventSync]);
 
-  const applyControlInvalidation = useCallback(
-    (nextControls, { clearPausedFrameCache = false } = {}) => {
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleControlsChange = (event) => {
+      const nextControls = event?.detail ?? controlsRef.current;
       const previousControls =
         cachedControlSnapshotsRef.current.controlsSnapshot;
       const shouldSkipInvalidation =
@@ -343,54 +307,20 @@ export function useBaryonVisualizer({
         : null;
 
       if (shouldSkipInvalidation) {
-        return false;
+        return;
       }
+
+      const preservePausedFrame = shouldPreservePausedFrameOnControlsChange(
+        previousControls,
+        nextControls,
+      );
 
       controlVersionRef.current += 1;
       appliedControlVersionRef.current = -1;
-      if (clearPausedFrameCache) {
-        const preservePausedFrame = shouldPreservePausedFrameOnControlsChange(
-          previousControls,
-          nextControls,
-        );
-        if (!preservePausedFrame) {
-          lastActiveFrameRef.current = null;
-          lastIdleFrameRef.current = null;
-        }
+      if (!preservePausedFrame) {
+        lastActiveFrameRef.current = null;
+        lastIdleFrameRef.current = null;
       }
-      return true;
-    },
-    [
-      appliedControlVersionRef,
-      cachedControlSnapshotsRef,
-      controlVersionRef,
-      lastActiveFrameRef,
-      lastIdleFrameRef,
-    ],
-  );
-
-  useEffect(() => {
-    if (
-      !Number.isInteger(structuralControlVersion) ||
-      structuralControlVersion <= 0
-    ) {
-      return;
-    }
-
-    applyControlInvalidation(controlsRef.current, {
-      clearPausedFrameCache: true,
-    });
-  }, [applyControlInvalidation, structuralControlVersion, controlsRef]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return undefined;
-    }
-
-    const handleControlsChange = (event) => {
-      applyControlInvalidation(event?.detail ?? controlsRef.current, {
-        clearPausedFrameCache: true,
-      });
     };
 
     window.addEventListener("__baryon-controls-change", handleControlsChange);
@@ -400,7 +330,14 @@ export function useBaryonVisualizer({
         handleControlsChange,
       );
     };
-  }, [applyControlInvalidation, controlsRef]);
+  }, [
+    appliedControlVersionRef,
+    cachedControlSnapshotsRef,
+    controlVersionRef,
+    controlsRef,
+    lastActiveFrameRef,
+    lastIdleFrameRef,
+  ]);
 
   useFrame((state, rfDelta) => {
     const pipeline = renderLoopContext.ensurePipeline();
@@ -413,17 +350,6 @@ export function useBaryonVisualizer({
     }
 
     const controls = renderLoopContext.controlsRef.current;
-    const nextLiveControlSignalVersion =
-      liveControlSignalRef?.current?.version ?? 0;
-    if (
-      Number.isInteger(nextLiveControlSignalVersion) &&
-      nextLiveControlSignalVersion >
-        lastObservedLiveControlSignalVersionRef.current
-    ) {
-      lastObservedLiveControlSignalVersionRef.current =
-        nextLiveControlSignalVersion;
-      applyControlInvalidation(controls);
-    }
     const audio = renderLoopContext.audioRef.current;
     const externalFrameState = externalFrameRef?.current ?? null;
     const fallbackClockSnapshot = {
@@ -509,7 +435,6 @@ export function useBaryonVisualizer({
         externalFrameState,
         shouldAdvance,
         controlsChanged,
-        forceRender: forcedExternalRenderPendingRef.current,
       })
     ) {
       return;
@@ -630,7 +555,6 @@ export function useBaryonVisualizer({
     if (externalFrameState?.featureFrame) {
       lastAppliedExternalFrameSequenceRef.current = externalFrameSequence;
     }
-    forcedExternalRenderPendingRef.current = false;
 
     const syncLiveInputRuntimeStatusStartedAt = getWallTimeMs();
     syncLiveInputRuntimeStatus({
@@ -707,15 +631,12 @@ export function useBaryonVisualizer({
       },
       {
         markRuntimeReady: markBaryonTestRuntimeReady,
-        onAuditSnapshotChange,
       },
     );
     onFrameState?.({
       controls,
       controlsVersion: controlVersionRef.current,
       visualizationMethod: runtime.method,
-      qualityPreset: renderProfileRef.current?.qualityPreset ?? null,
-      resolvedRenderProfile: renderProfileRef.current,
       status,
       time,
       deltaTime,

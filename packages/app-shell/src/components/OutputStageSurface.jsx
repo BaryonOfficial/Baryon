@@ -162,6 +162,7 @@ export function OutputStageSurface({
                 cameraViewPreset={resolvedCameraViewPreset}
                 cameraDistance={resolvedCameraDistance}
                 renderContext={RENDER_CONTEXTS.externalOutput}
+                enableControlEventSync={false}
               />
             </Suspense>
           </Canvas>
