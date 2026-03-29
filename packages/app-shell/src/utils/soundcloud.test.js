@@ -1,5 +1,4 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { expect, test } from "vitest";
 import {
   assertSoundCloudClientId,
   canUseNativeStreamPlayback,
@@ -7,24 +6,23 @@ import {
   isSoundCloudUrl,
   resolveSoundCloudQueue,
   resolveSoundCloudStream,
-} from "../../../../packages/app-shell/src/utils/soundcloud.js";
+} from "./soundcloud.js";
 
 test("accepts standard and shortlink SoundCloud URLs", () => {
-  assert.equal(isSoundCloudUrl("https://soundcloud.com/artist/track"), true);
-  assert.equal(isSoundCloudUrl("https://on.soundcloud.com/abc123"), true);
-  assert.equal(isSoundCloudUrl("https://example.com/not-soundcloud"), false);
+  expect(isSoundCloudUrl("https://soundcloud.com/artist/track")).toBe(true);
+  expect(isSoundCloudUrl("https://on.soundcloud.com/abc123")).toBe(true);
+  expect(isSoundCloudUrl("https://example.com/not-soundcloud")).toBe(false);
 });
 
 test("fails fast when the SoundCloud client id is missing", () => {
-  assert.throws(
-    () => assertSoundCloudClientId({}),
+  expect(() => assertSoundCloudClientId({})).toThrow(
     /VITE_SOUNDCLOUD_CLIENT_ID/,
   );
 });
 
 test("resolves a public track into a playable queue item", async () => {
   const fetchImpl = async (url) => {
-    assert.match(String(url), /\/resolve\?/);
+    expect(String(url)).toMatch(/\/resolve\?/);
     return {
       ok: true,
       async json() {
@@ -62,11 +60,11 @@ test("resolves a public track into a playable queue item", async () => {
     },
   );
 
-  assert.equal(result.kind, "track");
-  assert.equal(result.title, "Native Track");
-  assert.equal(result.queue.length, 1);
-  assert.equal(result.queue[0].title, "Native Track");
-  assert.equal(result.queue[0].protocol, "hls");
+  expect(result.kind).toBe("track");
+  expect(result.title).toBe("Native Track");
+  expect(result.queue).toHaveLength(1);
+  expect(result.queue[0].title).toBe("Native Track");
+  expect(result.queue[0].protocol).toBe("hls");
 });
 
 test("resolves a public playlist into an ordered queue", async () => {
@@ -125,10 +123,10 @@ test("resolves a public playlist into an ordered queue", async () => {
     },
   );
 
-  assert.equal(result.kind, "playlist");
-  assert.equal(result.queue.length, 2);
-  assert.equal(result.queue[0].title, "First");
-  assert.equal(result.queue[1].title, "Second");
+  expect(result.kind).toBe("playlist");
+  expect(result.queue).toHaveLength(2);
+  expect(result.queue[0].title).toBe("First");
+  expect(result.queue[1].title).toBe("Second");
 });
 
 test("passes shortlinks through SoundCloud resolve", async () => {
@@ -164,25 +162,25 @@ test("passes shortlinks through SoundCloud resolve", async () => {
     fetchImpl,
   });
 
-  assert.match(requestedUrl, /url=https%3A%2F%2Fon\.soundcloud\.com%2Fabc123/);
+  expect(requestedUrl).toMatch(
+    /url=https%3A%2F%2Fon\.soundcloud\.com%2Fabc123/,
+  );
 });
 
 test("rejects non-SoundCloud URLs with a user-facing error", async () => {
-  await assert.rejects(
-    () =>
-      resolveSoundCloudQueue("https://example.com/not-soundcloud", {
-        clientId: "client-id",
-        fetchImpl: async () => {
-          throw new Error("should not fetch");
-        },
-      }),
-    /Paste a valid SoundCloud track or playlist URL/,
-  );
+  await expect(
+    resolveSoundCloudQueue("https://example.com/not-soundcloud", {
+      clientId: "client-id",
+      fetchImpl: async () => {
+        throw new Error("should not fetch");
+      },
+    }),
+  ).rejects.toThrow(/Paste a valid SoundCloud track or playlist URL/);
 });
 
 test("resolves a track transcoding into a playable stream URL", async () => {
   const fetchImpl = async (url) => {
-    assert.match(String(url), /client_id=client-id/);
+    expect(String(url)).toMatch(/client_id=client-id/);
     return {
       ok: true,
       async json() {
@@ -205,23 +203,21 @@ test("resolves a track transcoding into a playable stream URL", async () => {
     },
   );
 
-  assert.equal(
-    result.streamUrl,
+  expect(result.streamUrl).toBe(
     "https://cf-hls-media.sndcdn.com/media/playlist.m3u8",
   );
-  assert.equal(result.mimeType, "application/vnd.apple.mpegurl");
-  assert.equal(result.protocol, "hls");
+  expect(result.mimeType).toBe("application/vnd.apple.mpegurl");
+  expect(result.protocol).toBe("hls");
 });
 
 test("detects HLS streams and native playback capability", () => {
-  assert.equal(
+  expect(
     isHlsStream({
       mimeType: "application/vnd.apple.mpegurl",
       protocol: "hls",
     }),
-    true,
-  );
-  assert.equal(
+  ).toBe(true);
+  expect(
     canUseNativeStreamPlayback(
       {
         canPlayType: (mimeType) =>
@@ -229,6 +225,5 @@ test("detects HLS streams and native playback capability", () => {
       },
       "application/vnd.apple.mpegurl",
     ),
-    true,
-  );
+  ).toBe(true);
 });

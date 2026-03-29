@@ -90,11 +90,13 @@ pnpm format:check         # Check formatting without rewriting files
 pnpm lint                 # Workspace lint via turbo
 pnpm lint:all             # Repo-wide lint across apps/packages
 pnpm typecheck            # Workspace typecheck where configured
+pnpm test:app-shell       # Shared app-shell unit tests
+pnpm test:desktop         # Desktop renderer-side unit tests
 pnpm test:visualizer      # Visualizer unit tests
 pnpm test:web-smoke       # Stable production browser smoke
 pnpm test:web-smoke:dev   # Dev-only control/devtools integration smoke
 pnpm --filter @baryon/desktop test:smoke   # Packaged Electron desktop shell smoke
-pnpm verify               # Local pre-push gate: lint, typecheck, visualizer unit test
+pnpm verify               # Local pre-push gate: lint, typecheck, visualizer + app-shell + desktop unit tests
 pnpm verify:full          # Full local verification, including workspace builds
 ```
 
@@ -110,7 +112,11 @@ cd apps/web && pnpm test:smoke
 cd apps/web && pnpm test:smoke:dev
 
 cd apps/desktop && pnpm typecheck
+cd apps/desktop && pnpm test
+cd apps/desktop && pnpm test:platform
 cd apps/desktop && pnpm test:smoke
+
+cd packages/app-shell && pnpm test
 
 cd packages/visualizer && pnpm test
 cd packages/visualizer && pnpm typecheck
@@ -145,10 +151,14 @@ Manual equivalents:
 pnpm format
 pnpm lint:all
 pnpm typecheck
+pnpm test:app-shell
+pnpm test:desktop
 pnpm test:visualizer
 pnpm verify
 pnpm verify:full
 ```
+
+Treat `pnpm test:app-shell` as the shared app-shell source of truth. `apps/web/tests/unit` is for web-specific unit coverage only.
 
 Browser smoke and app-specific builds remain manual or CI-driven for now:
 

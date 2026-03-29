@@ -14,6 +14,8 @@
     "prepare": "husky",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "test:app-shell": "pnpm --filter @baryon/app-shell test",
+    "test:desktop": "pnpm --filter @baryon/desktop test",
     "test:visualizer": "pnpm --filter @baryon/visualizer test",
     "test:web-smoke": "pnpm --filter @baryon/web test:smoke",
     "test:web-smoke:dev": "pnpm --filter @baryon/web test:smoke:dev",
@@ -21,7 +23,7 @@
     "lint:all": "pnpm -r --filter './apps/*' --filter './packages/*' --if-present lint",
     "audit:deps": "knip --dependencies --isolate-workspaces",
     "typecheck": "pnpm --reporter append-only -r --filter './apps/*' --filter './packages/*' --if-present typecheck",
-    "verify": "pnpm lint:all && pnpm typecheck && pnpm test:visualizer",
+    "verify": "pnpm lint:all && pnpm typecheck && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop",
     "verify:full": "pnpm verify && turbo build"
   },
   "lint-staged": {

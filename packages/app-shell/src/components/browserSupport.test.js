@@ -1,5 +1,4 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { expect, test } from "vitest";
 import {
   BROWSER_FAILURE_CODES,
   BROWSER_FAMILY,
@@ -16,26 +15,24 @@ import {
   getSupportProbeTechnicalDetails,
   isMobileDevice,
   probeBrowserSupport,
-} from "../../../../packages/app-shell/src/components/browserSupport.js";
+} from "./browserSupport.js";
 
 test("starts in checking mode for normal WebGPU boot", () => {
-  assert.equal(
+  expect(
     getInitialBrowserSupportStatus(false, {
       userAgent:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36",
     }),
-    BROWSER_SUPPORT_STATUS.checking,
-  );
+  ).toBe(BROWSER_SUPPORT_STATUS.checking);
 });
 
 test("detects mobile browsers", () => {
-  assert.equal(
+  expect(
     isMobileDevice({
       userAgent:
         "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
     }),
-    true,
-  );
+  ).toBe(true);
 });
 
 test("detects Linux platform and Chromium browser family", () => {
@@ -44,31 +41,29 @@ test("detects Linux platform and Chromium browser family", () => {
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36",
   };
 
-  assert.equal(detectPlatform(navigatorObject), BROWSER_PLATFORM.linux);
-  assert.equal(detectBrowserFamily(navigatorObject), BROWSER_FAMILY.chromium);
+  expect(detectPlatform(navigatorObject)).toBe(BROWSER_PLATFORM.linux);
+  expect(detectBrowserFamily(navigatorObject)).toBe(BROWSER_FAMILY.chromium);
 });
 
 test("maps Firefox user agents to the firefox browser family", () => {
-  assert.equal(
+  expect(
     detectBrowserFamily({
       userAgent:
         "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
     }),
-    BROWSER_FAMILY.firefox,
-  );
+  ).toBe(BROWSER_FAMILY.firefox);
 });
 
 test("treats mobile browsers as unsupported even with a WebGPU adapter", async () => {
-  assert.equal(
-    await getBrowserSupportStatus(false, {
+  await expect(
+    getBrowserSupportStatus(false, {
       gpu: {
         requestAdapter: async () => ({}),
       },
       userAgent:
         "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
     }),
-    BROWSER_SUPPORT_STATUS.unsupported,
-  );
+  ).resolves.toBe(BROWSER_SUPPORT_STATUS.unsupported);
 });
 
 test("reports missing navigator.gpu with Linux Chromium guidance", async () => {
@@ -77,11 +72,11 @@ test("reports missing navigator.gpu with Linux Chromium guidance", async () => {
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36",
   });
 
-  assert.equal(result.failureCode, BROWSER_FAILURE_CODES.gpuMissing);
-  assert.equal(result.platform, BROWSER_PLATFORM.linux);
-  assert.equal(result.browserFamily, BROWSER_FAMILY.chromium);
-  assert.match(result.guidance.summary, /Chromium-based browsers/i);
-  assert.deepEqual(result.diagnostics, [
+  expect(result.failureCode).toBe(BROWSER_FAILURE_CODES.gpuMissing);
+  expect(result.platform).toBe(BROWSER_PLATFORM.linux);
+  expect(result.browserFamily).toBe(BROWSER_FAMILY.chromium);
+  expect(result.guidance.summary).toMatch(/Chromium-based browsers/i);
+  expect(result.diagnostics).toStrictEqual([
     "`navigator.gpu` is not available in this browser.",
   ]);
 });
@@ -93,8 +88,8 @@ test("reports missing requestAdapter with Linux Chromium guidance", async () => 
     gpu: {},
   });
 
-  assert.equal(result.failureCode, BROWSER_FAILURE_CODES.requestAdapterMissing);
-  assert.match(result.guidance.steps[0], /enable-unsafe-webgpu/i);
+  expect(result.failureCode).toBe(BROWSER_FAILURE_CODES.requestAdapterMissing);
+  expect(result.guidance.steps[0]).toMatch(/enable-unsafe-webgpu/i);
 });
 
 test("maps a null adapter to the adapter-null failure code", async () => {
@@ -106,7 +101,7 @@ test("maps a null adapter to the adapter-null failure code", async () => {
     },
   });
 
-  assert.equal(result.failureCode, BROWSER_FAILURE_CODES.adapterNull);
+  expect(result.failureCode).toBe(BROWSER_FAILURE_CODES.adapterNull);
 });
 
 test("classifies blocklisted Firefox adapters distinctly", async () => {
@@ -120,9 +115,9 @@ test("classifies blocklisted Firefox adapters distinctly", async () => {
     },
   });
 
-  assert.equal(result.failureCode, BROWSER_FAILURE_CODES.adapterBlocklisted);
-  assert.equal(result.browserFamily, BROWSER_FAMILY.firefox);
-  assert.match(result.guidance.summary, /Firefox/i);
+  expect(result.failureCode).toBe(BROWSER_FAILURE_CODES.adapterBlocklisted);
+  expect(result.browserFamily).toBe(BROWSER_FAMILY.firefox);
+  expect(result.guidance.summary).toMatch(/Firefox/i);
 });
 
 test("uses the generic adapter-error failure code for non-blocklist errors", async () => {
@@ -136,8 +131,8 @@ test("uses the generic adapter-error failure code for non-blocklist errors", asy
     },
   });
 
-  assert.equal(result.failureCode, BROWSER_FAILURE_CODES.adapterError);
-  assert.equal(result.rawError, "adapter probe failed");
+  expect(result.failureCode).toBe(BROWSER_FAILURE_CODES.adapterError);
+  expect(result.rawError).toBe("adapter probe failed");
 });
 
 test("maps renderer init failures to renderer-init-error", () => {
@@ -151,9 +146,9 @@ test("maps renderer init failures to renderer-init-error", () => {
     },
   );
 
-  assert.equal(probe.failureCode, BROWSER_FAILURE_CODES.rendererInitError);
-  assert.equal(probe.rawError, "device lost");
-  assert.match(probe.diagnostics[0], /WebGPURenderer\.init\(\) failed/i);
+  expect(probe.failureCode).toBe(BROWSER_FAILURE_CODES.rendererInitError);
+  expect(probe.rawError).toBe("device lost");
+  expect(probe.diagnostics[0]).toMatch(/WebGPURenderer\.init\(\) failed/i);
 });
 
 test("builds Firefox Linux guidance with a Nightly recommendation", () => {
@@ -163,8 +158,8 @@ test("builds Firefox Linux guidance with a Nightly recommendation", () => {
     browserFamily: BROWSER_FAMILY.firefox,
   });
 
-  assert.match(guidance.summary, /Firefox/i);
-  assert.match(guidance.steps[0], /Nightly/i);
+  expect(guidance.summary).toMatch(/Firefox/i);
+  expect(guidance.steps[0]).toMatch(/Nightly/i);
 });
 
 test("builds mobile guidance when the failure code is mobile-unsupported", () => {
@@ -174,7 +169,7 @@ test("builds mobile guidance when the failure code is mobile-unsupported", () =>
     browserFamily: BROWSER_FAMILY.safari,
   });
 
-  assert.match(guidance.summary, /desktop/i);
+  expect(guidance.summary).toMatch(/desktop/i);
 });
 
 test("formats support probes into stable technical detail lines", () => {
@@ -187,7 +182,7 @@ test("formats support probes into stable technical detail lines", () => {
     diagnostics: ["`navigator.gpu` is not available in this browser."],
   });
 
-  assert.deepEqual(getSupportProbeTechnicalDetails(probe), [
+  expect(getSupportProbeTechnicalDetails(probe)).toStrictEqual([
     "Status: unsupported",
     "Failure code: gpu-missing",
     "Platform: linux",
@@ -210,18 +205,16 @@ test("formats clipboard diagnostics with guidance and steps", () => {
 
   const clipboardText = formatSupportProbeForClipboard(probe);
 
-  assert.match(clipboardText, /Baryon WebGPU diagnostics/);
-  assert.match(clipboardText, /Failure code: request-adapter-missing/);
-  assert.match(clipboardText, /Suggested next steps:/);
+  expect(clipboardText).toMatch(/Baryon WebGPU diagnostics/);
+  expect(clipboardText).toMatch(/Failure code: request-adapter-missing/);
+  expect(clipboardText).toMatch(/Suggested next steps:/);
 });
 
 test("allows the forced WebGL fallback test path", async () => {
-  assert.equal(
-    getInitialBrowserSupportStatus(true),
+  expect(getInitialBrowserSupportStatus(true)).toBe(
     BROWSER_SUPPORT_STATUS.supported,
   );
-  assert.equal(
-    await getBrowserSupportStatus(true, {}),
+  await expect(getBrowserSupportStatus(true, {})).resolves.toBe(
     BROWSER_SUPPORT_STATUS.supported,
   );
 });

@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { createRuntimeDiagnostics } from "./baryonVisualizerRuntimeState.js";
 import { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 import {
@@ -109,14 +108,13 @@ function primeAdaptiveRecoveryAttempt(runtimeDiagnostics) {
 }
 
 function assertAdaptiveRecoveryBlocked(runtimeDiagnostics, blockedReason) {
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.currentRung, 3);
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.currentScaleRung, 2);
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.stepUpCount, 0);
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.scaleStepUpCount, 0);
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.stableWindowCount, 0);
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible, false);
-  assert.equal(
-    runtimeDiagnostics.adaptiveRaymarch.recoveryBlockedReason,
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(3);
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentScaleRung).toBe(2);
+  expect(runtimeDiagnostics.adaptiveRaymarch.stepUpCount).toBe(0);
+  expect(runtimeDiagnostics.adaptiveRaymarch.scaleStepUpCount).toBe(0);
+  expect(runtimeDiagnostics.adaptiveRaymarch.stableWindowCount).toBe(0);
+  expect(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible).toBe(false);
+  expect(runtimeDiagnostics.adaptiveRaymarch.recoveryBlockedReason).toBe(
     blockedReason,
   );
 }
@@ -207,8 +205,8 @@ test("publishes live runtime status changes only when fields change", () => {
     setLiveInputRuntimeStatus: setter.set,
     renderLoopRefs,
   });
-  assert.equal(first.phase, LIVE_INPUT_PHASES.calibrating);
-  assert.equal(setter.callCount, 1);
+  expect(first.phase).toBe(LIVE_INPUT_PHASES.calibrating);
+  expect(setter.callCount).toBe(1);
 
   syncLiveInputRuntimeStatus({
     status: sharedStatus,
@@ -223,7 +221,7 @@ test("publishes live runtime status changes only when fields change", () => {
     setLiveInputRuntimeStatus: setter.set,
     renderLoopRefs,
   });
-  assert.equal(setter.callCount, 1);
+  expect(setter.callCount).toBe(1);
 
   const updated = syncLiveInputRuntimeStatus({
     status: sharedStatus,
@@ -238,9 +236,9 @@ test("publishes live runtime status changes only when fields change", () => {
     setLiveInputRuntimeStatus: setter.set,
     renderLoopRefs,
   });
-  assert.equal(updated.phase, LIVE_INPUT_PHASES.weakSignal);
-  assert.equal(setter.callCount, 2);
-  assert.equal(setter.currentValue.phase, LIVE_INPUT_PHASES.weakSignal);
+  expect(updated.phase).toBe(LIVE_INPUT_PHASES.weakSignal);
+  expect(setter.callCount).toBe(2);
+  expect(setter.currentValue.phase).toBe(LIVE_INPUT_PHASES.weakSignal);
 });
 
 test("publishes provider transition phases even before live audio becomes active", () => {
@@ -265,10 +263,10 @@ test("publishes provider transition phases even before live audio becomes active
     renderLoopRefs,
   });
 
-  assert.equal(runtimeStatus.phase, LIVE_INPUT_PHASES.starting);
-  assert.equal(runtimeStatus.active, false);
-  assert.equal(setter.callCount, 1);
-  assert.equal(setter.currentValue.phase, LIVE_INPUT_PHASES.starting);
+  expect(runtimeStatus.phase).toBe(LIVE_INPUT_PHASES.starting);
+  expect(runtimeStatus.active).toBe(false);
+  expect(setter.callCount).toBe(1);
+  expect(setter.currentValue.phase).toBe(LIVE_INPUT_PHASES.starting);
 });
 
 test("auto raymarch drops render scale before bottoming out step budget", () => {
@@ -318,23 +316,24 @@ test("auto raymarch drops render scale before bottoming out step budget", () => 
     updateAdaptiveRaymarchStepBudget(baseArgs);
   }
 
-  assert.equal(runtimeState.effectiveRaymarchSteps, 64);
-  assert.ok(
-    getEffectiveAdaptiveRenderScale(runtimeDiagnostics, 1) < 1,
-    "expected adaptive render scale to step down first",
+  expect(runtimeState.effectiveRaymarchSteps).toBe(64);
+  expect(getEffectiveAdaptiveRenderScale(runtimeDiagnostics, 1)).toBeLessThan(
+    1,
   );
-  assert.ok(runtimeDiagnostics.adaptiveRaymarch.scaleStepDownCount > 0);
+  expect(
+    runtimeDiagnostics.adaptiveRaymarch.scaleStepDownCount,
+  ).toBeGreaterThan(0);
 });
 
 test("performance HUD scale falls back to requested render scale when adaptive mode is idle", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
 
-  assert.equal(getEffectiveAdaptiveRenderScale(runtimeDiagnostics, 0.75), 0.75);
+  expect(getEffectiveAdaptiveRenderScale(runtimeDiagnostics, 0.75)).toBe(0.75);
 
   runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive = true;
   runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale = 0.67;
 
-  assert.equal(getEffectiveAdaptiveRenderScale(runtimeDiagnostics, 0.75), 0.67);
+  expect(getEffectiveAdaptiveRenderScale(runtimeDiagnostics, 0.75)).toBe(0.67);
 });
 
 test("custom profile uses the selected target fps for adaptive tuning", () => {
@@ -380,11 +379,8 @@ test("custom profile uses the selected target fps for adaptive tuning", () => {
     runtimeDiagnostics,
   });
 
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.targetFps, 48);
-  assert.equal(
-    runtimeDiagnostics.adaptiveRaymarch.targetFrameTimeMs,
-    1000 / 48,
-  );
+  expect(runtimeDiagnostics.adaptiveRaymarch.targetFps).toBe(48);
+  expect(runtimeDiagnostics.adaptiveRaymarch.targetFrameTimeMs).toBe(1000 / 48);
 });
 
 test("auto raymarch does not recover during decay frames", () => {
@@ -435,11 +431,10 @@ test("auto raymarch resumes recovery on sustained active audio", () => {
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.currentRung, 4);
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.stepUpCount, 1);
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible, true);
-  assert.equal(
-    runtimeDiagnostics.adaptiveRaymarch.recoveryBlockedReason,
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(4);
+  expect(runtimeDiagnostics.adaptiveRaymarch.stepUpCount).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible).toBe(true);
+  expect(runtimeDiagnostics.adaptiveRaymarch.recoveryBlockedReason).toBe(
     "none",
   );
 });
@@ -455,14 +450,12 @@ test("playback session changes clear adaptive recovery momentum", () => {
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.stableWindowCount, 0);
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible, false);
-  assert.equal(
-    runtimeDiagnostics.adaptiveRaymarch.recoveryBlockedReason,
+  expect(runtimeDiagnostics.adaptiveRaymarch.stableWindowCount).toBe(0);
+  expect(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible).toBe(false);
+  expect(runtimeDiagnostics.adaptiveRaymarch.recoveryBlockedReason).toBe(
     "session-transition",
   );
-  assert.equal(
-    runtimeDiagnostics.adaptiveRaymarch.lastPlaybackSessionId,
+  expect(runtimeDiagnostics.adaptiveRaymarch.lastPlaybackSessionId).toBe(
     "song-2",
   );
 });
@@ -487,11 +480,10 @@ test("inject test tone bypasses the recovery gate", () => {
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.currentRung, 4);
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.stepUpCount, 1);
-  assert.equal(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible, true);
-  assert.equal(
-    runtimeDiagnostics.adaptiveRaymarch.recoveryBlockedReason,
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(4);
+  expect(runtimeDiagnostics.adaptiveRaymarch.stepUpCount).toBe(1);
+  expect(runtimeDiagnostics.adaptiveRaymarch.recoveryEligible).toBe(true);
+  expect(runtimeDiagnostics.adaptiveRaymarch.recoveryBlockedReason).toBe(
     "none",
   );
 });
@@ -512,7 +504,7 @@ test("resolveFeatureFrame passes cavity geometry into prepared inputs", () => {
     },
   });
 
-  assert.equal(preparedArgs.cavityGeometry, "spherical");
+  expect(preparedArgs.cavityGeometry).toBe("spherical");
 });
 
 test("resolveFeatureFrame forwards cavity geometry into the worker transport payload", () => {
@@ -543,5 +535,5 @@ test("resolveFeatureFrame forwards cavity geometry into the worker transport pay
     },
   });
 
-  assert.equal(featureEngine.lastFrame.cavityGeometry, "spherical");
+  expect(featureEngine.lastFrame.cavityGeometry).toBe("spherical");
 });

@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
   "exports": {
     ".": "./src/index.js",
     "./index.css": "./src/index.css",
@@ -24,5 +27,10 @@
     "react-dom": "^19.0.0",
     "tailwindcss": "^4.0.0",
     "three": "^0.183.0"
+  },
+  "devDependencies": {
+    "@baryon/config": "workspace:*",
+    "jsdom": "^27.0.1",
+    "vitest": "^4.1.0"
   }
 }
