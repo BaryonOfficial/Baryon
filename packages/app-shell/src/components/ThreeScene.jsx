@@ -105,6 +105,7 @@ function CameraIcon() {
  *   sharedPreviewMode?: {
  *     enabled?: boolean,
  *     renderMode?: "legacy-double-render" | "single-render-shared-preview",
+ *     omitLocalScene?: boolean,
  *     canvasId?: string | null,
  *   } | null,
  * }} props
@@ -205,6 +206,7 @@ const ThreeScene = ({
   const sharedPreviewCanvasId = sharedPreviewMode?.canvasId ?? null;
   const usingSharedPreview =
     sharedPreviewMode?.renderMode === "single-render-shared-preview";
+  const omitLocalScene = sharedPreviewMode?.omitLocalScene === true;
   const liveInputStatusPanelVisible =
     showOverlayUi &&
     (selectedSource === "system" || resolvedLiveInputPanel.forceVisible);
@@ -351,7 +353,7 @@ const ThreeScene = ({
         />
       ) : null}
 
-      {showCanvas && isSupportReady && (
+      {showCanvas && isSupportReady && !omitLocalScene && (
         <RendererErrorBoundary
           resetKey={`${activeRendererFallback ? "force-webgl-fallback" : "webgpu-default"}-${canvasEpoch}`}
           onError={handleCanvasError}

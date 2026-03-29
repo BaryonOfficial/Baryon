@@ -7,6 +7,7 @@
     ".": "./src/index.js",
     "./index.css": "./src/index.css",
     "./camera-view-presets": "./src/components/cameraViewPresets.js",
+    "./live-input-runtime-status": "./src/context/liveInputRuntimeStatus.js",
     "./baryon-env": "./src/baryon-env.d.ts"
   },
   "dependencies": {

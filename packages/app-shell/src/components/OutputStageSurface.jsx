@@ -45,6 +45,7 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  *   cameraDistance?: number | null,
  *   registerRenderRequester?: ((requester: (() => void) | null) => void) | null,
  *   onStageRender?: (payload: { frameSequence: number | null, qualityPreset: string | null }) => void,
+ *   onLiveInputRuntimeStatusChange?: ((status: unknown) => void) | null,
  * }} props
  */
 export function OutputStageSurface({
@@ -57,6 +58,7 @@ export function OutputStageSurface({
   cameraDistance = null,
   registerRenderRequester = null,
   onStageRender = null,
+  onLiveInputRuntimeStatusChange = null,
 }) {
   const [rendererError, setRendererError] = useState(null);
   const resolvedCameraViewPreset = /** @type {"top-down" | "side"} */ (
@@ -144,7 +146,9 @@ export function OutputStageSurface({
               />
               <BaryonScene
                 setIsEngineReady={() => {}}
-                setLiveInputRuntimeStatus={() => {}}
+                setLiveInputRuntimeStatus={
+                  onLiveInputRuntimeStatusChange ?? (() => {})
+                }
                 liveInputUiState="idle"
                 liveInputErrorCode="none"
                 controlsRef={controlsRef}

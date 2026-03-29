@@ -1254,7 +1254,10 @@ const CSS = `
 
 // ─── Listener Controls ───────────────────────────────────────────────────────
 
-export function ListenerControls({ showSourceLiveButton = true } = {}) {
+export function ListenerControls({
+  showSourceLiveButton = true,
+  allowSystemSource = true,
+} = {}) {
   const {
     soundCloudEnabled,
     activeSource,
@@ -1592,6 +1595,7 @@ export function ListenerControls({ showSourceLiveButton = true } = {}) {
                   setShowDeviceMenu(false);
                 }}
                 showLiveButton={showSourceLiveButton}
+                allowSystemSource={allowSystemSource}
               />
             </div>
           </div>

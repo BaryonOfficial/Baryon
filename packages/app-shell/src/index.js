@@ -1,6 +1,11 @@
 export { AppFrame } from "./App.jsx";
 export { AudioProvider } from "./context/AudioProvider.jsx";
-export { useAudio, useAudioScene } from "./context/AudioContext.jsx";
+export {
+  AudioContext,
+  AudioSceneContext,
+  useAudio,
+  useAudioScene,
+} from "./context/AudioContext.jsx";
 export {
   createLiveInputRuntimeStatus,
   getLiveInputStatusLabel,

@@ -296,10 +296,16 @@ function ensureStyles() {
  * @param {{
  *   onInteraction?: (() => void) | undefined,
  *   showLiveButton?: boolean | undefined,
+ *   allowSystemSource?: boolean | undefined,
  * }} props
  */
-export function SourceSelector({ onInteraction, showLiveButton = true } = {}) {
+export function SourceSelector({
+  onInteraction,
+  showLiveButton = true,
+  allowSystemSource = true,
+} = {}) {
   ensureStyles();
+  const showSystemSource = allowSystemSource && showLiveButton !== false;
 
   const {
     platform,
@@ -314,7 +320,8 @@ export function SourceSelector({ onInteraction, showLiveButton = true } = {}) {
 
   const isWebPlatform = platform === "web";
 
-  const resolvedSource = selectedSource === "file" ? "file" : "system";
+  const resolvedSource =
+    !showSystemSource || selectedSource === "file" ? "file" : "system";
   const isLiveSource = resolvedSource === "system";
   const isCurrentLive = isLiveInputActive && isLiveSource;
   const activeLiveLabel =
@@ -336,14 +343,17 @@ export function SourceSelector({ onInteraction, showLiveButton = true } = {}) {
     "--slider-width": sliderMetrics.width,
     "--slider-offset": sliderMetrics.offset,
   };
-  const liveButtonActionLabel = !isLiveSource
-    ? "Select System to go live"
-    : isCurrentLive
-      ? `Stop ${activeLiveLabel}`
-      : "Start live input";
+  const liveButtonActionLabel = !showSystemSource
+    ? "Live input unavailable"
+    : !isLiveSource
+      ? "Select System to go live"
+      : isCurrentLive
+        ? `Stop ${activeLiveLabel}`
+        : "Start live input";
   const transitionLocked = isLiveInputTransitionLocked(liveInputRuntimeStatus);
   const permissionGranted = liveInputPermissionState === "granted";
   const liveStartDisabled =
+    !showSystemSource ||
     !isLiveSource ||
     transitionLocked ||
     (isWebPlatform && !isCurrentLive && !permissionGranted);
@@ -384,21 +394,23 @@ export function SourceSelector({ onInteraction, showLiveButton = true } = {}) {
             >
               File
             </button>
-            <button
-              className={`ac-source-tab ac-source-tab--system${resolvedSource === "system" ? " ac-source-tab--active" : ""}`}
-              data-testid="live-input-source-tab"
-              onClick={() => handleTabClick("system")}
-              title={
-                isCurrentLive
-                  ? "Live input active"
-                  : "Use live input / loopback device"
-              }
-            >
-              System
-            </button>
+            {showSystemSource ? (
+              <button
+                className={`ac-source-tab ac-source-tab--system${resolvedSource === "system" ? " ac-source-tab--active" : ""}`}
+                data-testid="live-input-source-tab"
+                onClick={() => handleTabClick("system")}
+                title={
+                  isCurrentLive
+                    ? "Live input active"
+                    : "Use live input / loopback device"
+                }
+              >
+                System
+              </button>
+            ) : null}
           </div>
 
-          {showLiveButton ? (
+          {showLiveButton && showSystemSource ? (
             <button
               className={`ac-source-live-btn${isCurrentLive ? " ac-source-live-btn--active" : ""}`}
               data-testid="source-live-button"
