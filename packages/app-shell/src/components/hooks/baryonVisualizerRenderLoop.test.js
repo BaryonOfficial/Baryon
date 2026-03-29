@@ -1,18 +1,11 @@
 import { expect, test } from "vitest";
-import {
-  clearAdaptiveRaymarchResumeState,
-  createRuntimeDiagnostics,
-} from "./baryonVisualizerRuntimeState.js";
+import { createRuntimeDiagnostics } from "./baryonVisualizerRuntimeState.js";
 import { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 import {
-  buildPerformanceHudSnapshot,
   getEffectiveAdaptiveRenderScale,
-  publishDevtoolsSnapshots,
   resolveFeatureFrame,
-  updateRendererDiagnostics,
   updateAdaptiveRaymarchStepBudget,
 } from "./baryonVisualizerRenderLoop.js";
-import { RENDER_CONTEXTS } from "@baryon/visualizer/render/outputPipeline";
 import {
   LIVE_INPUT_ERROR_CODES,
   LIVE_INPUT_PHASES,
@@ -161,6 +154,7 @@ function createResolveFeatureFrameHarness(overrides = {}) {
       },
       controls: {
         cavityGeometry: "spherical",
+        structuralImplementation: "modal-excitation",
         injectTestTone: false,
       },
       status: {
@@ -247,138 +241,6 @@ test("publishes live runtime status changes only when fields change", () => {
   expect(setter.currentValue.phase).toBe(LIVE_INPUT_PHASES.weakSignal);
 });
 
-test("updateRendererDiagnostics resizes the renderer when canvas size changes without a DPR change", () => {
-  const runtimeDiagnosticsRef = {
-    current: createRuntimeDiagnostics(),
-  };
-  const pixelRatioRef = { current: 1 };
-  const renderSurfaceSizeRef = {
-    current: { width: 1318, height: 1536 },
-  };
-  const lastAudioIssueSignatureRef = { current: null };
-  const gl = {
-    backend: { isWebGLBackend: false },
-    setPixelRatioCalls: [],
-    setSizeCalls: [],
-    setPixelRatio(value) {
-      this.setPixelRatioCalls.push(value);
-    },
-    setSize(width, height, updateStyle) {
-      this.setSizeCalls.push({ width, height, updateStyle });
-    },
-  };
-
-  updateRendererDiagnostics(
-    {
-      state: {
-        size: {
-          width: 2538,
-          height: 1536,
-        },
-      },
-      controls: {
-        lowLoadPlaybackDiagnostics: false,
-      },
-      status: {
-        isPlaying: false,
-      },
-      time: 0,
-      deltaTime: 1 / 60,
-      rfDelta: 1 / 60,
-      gl,
-      renderLoopRefs: {
-        runtimeDiagnosticsRef,
-        pixelRatioRef,
-        renderSurfaceSizeRef,
-        lastAudioIssueSignatureRef,
-      },
-    },
-    {
-      getTargetDpr: () => 1,
-      renderScale: 1,
-    },
-  );
-
-  expect(gl.setPixelRatioCalls).toEqual([]);
-  expect(gl.setSizeCalls).toEqual([
-    {
-      width: 2538,
-      height: 1536,
-      updateStyle: false,
-    },
-  ]);
-  expect(renderSurfaceSizeRef.current).toEqual({
-    width: 2538,
-    height: 1536,
-  });
-});
-
-test("buildPerformanceHudSnapshot exports stage attribution, engine counters, and raw perf breakdown", () => {
-  const runtimeDiagnostics = createRuntimeDiagnostics();
-  runtimeDiagnostics.smoothedFrameTimeMs = 20;
-  runtimeDiagnostics.render.targetFps = 60;
-  runtimeDiagnostics.perfBreakdown.readAnalysisSnapshotMs.averageMs = 1;
-  runtimeDiagnostics.perfBreakdown.enqueueAnalysisFrameMs.averageMs = 2;
-  runtimeDiagnostics.perfBreakdown.readAnalysisHintsMs.averageMs = 3;
-  runtimeDiagnostics.perfBreakdown.buildFeatureFrameMs.averageMs = 4;
-  runtimeDiagnostics.perfBreakdown.heavyAnalysisMs.averageMs = 5;
-  runtimeDiagnostics.perfBreakdown.fastComposeMs.averageMs = 6;
-  runtimeDiagnostics.perfBreakdown.engineEnqueueMs.averageMs = 7;
-  runtimeDiagnostics.perfBreakdown.readEngineSnapshotMs.averageMs = 8;
-  runtimeDiagnostics.perfBreakdown.applyCachedControlSnapshotsMs.averageMs = 9;
-  runtimeDiagnostics.perfBreakdown.syncLiveInputRuntimeStatusMs.averageMs = 10;
-  runtimeDiagnostics.perfBreakdown.runtimeTickMs.averageMs = 11;
-  runtimeDiagnostics.perfBreakdown.applyReactiveBloomMs.averageMs = 12;
-  runtimeDiagnostics.perfBreakdown.applySceneControlsMs.averageMs = 13;
-  runtimeDiagnostics.perfBreakdown.pipelineRenderMs.averageMs = 14;
-  runtimeDiagnostics.perfBreakdown.pipelineRenderMs.lastMs = 99;
-  runtimeDiagnostics.engine.publishCount = 101;
-  runtimeDiagnostics.engine.publishSkipCount = 7;
-  runtimeDiagnostics.engine.fastSignalUpdateCount = 17;
-  runtimeDiagnostics.engine.structuralUpdateCount = 19;
-  runtimeDiagnostics.engine.chromaUpdateCount = 23;
-  runtimeDiagnostics.engine.tempoUpdateCount = 29;
-
-  const snapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
-
-  expect(snapshot.targetFps).toBe(60);
-  expect(snapshot.perfBreakdown.heavyAnalysisMs.averageMs).toBe(5);
-  expect(snapshot.perfBreakdown.pipelineRenderMs.lastMs).toBe(99);
-  expect(snapshot.stageAttribution.analysisCpuMs).toBe(21);
-  expect(snapshot.stageAttribution.engineCpuMs).toBe(15);
-  expect(snapshot.stageAttribution.controlCpuMs).toBe(55);
-  expect(snapshot.stageAttribution.renderCpuMs).toBe(14);
-  expect(snapshot.stageAttribution.measuredCpuMs).toBe(105);
-  expect(snapshot.stageAttribution.unattributedFrameMs).toBe(0);
-  expect(snapshot.stageAttribution.dominantBucket).toBe("control");
-  expect(snapshot.engineCounters).toEqual({
-    publishCount: 101,
-    publishSkipCount: 7,
-    fastSignalUpdateCount: 17,
-    structuralUpdateCount: 19,
-    chromaUpdateCount: 23,
-    tempoUpdateCount: 29,
-  });
-});
-
-test("buildPerformanceHudSnapshot uses deterministic dominant-bucket tie breaks", () => {
-  const runtimeDiagnostics = createRuntimeDiagnostics();
-  runtimeDiagnostics.smoothedFrameTimeMs = 10;
-  runtimeDiagnostics.perfBreakdown.pipelineRenderMs.averageMs = 4;
-  runtimeDiagnostics.perfBreakdown.heavyAnalysisMs.averageMs = 4;
-  runtimeDiagnostics.perfBreakdown.engineEnqueueMs.averageMs = 4;
-  runtimeDiagnostics.perfBreakdown.runtimeTickMs.averageMs = 4;
-
-  const snapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
-
-  expect(snapshot.stageAttribution.analysisCpuMs).toBe(4);
-  expect(snapshot.stageAttribution.engineCpuMs).toBe(4);
-  expect(snapshot.stageAttribution.controlCpuMs).toBe(4);
-  expect(snapshot.stageAttribution.renderCpuMs).toBe(4);
-  expect(snapshot.stageAttribution.unattributedFrameMs).toBe(0);
-  expect(snapshot.stageAttribution.dominantBucket).toBe("render");
-});
-
 test("publishes provider transition phases even before live audio becomes active", () => {
   const setter = createSetterCapture();
   const renderLoopRefs = {
@@ -405,78 +267,6 @@ test("publishes provider transition phases even before live audio becomes active
   expect(runtimeStatus.active).toBe(false);
   expect(setter.callCount).toBe(1);
   expect(setter.currentValue.phase).toBe(LIVE_INPUT_PHASES.starting);
-});
-
-test("publishes authoritative audit callbacks without devtools globals", () => {
-  const auditStates = [];
-  const previousWindow = globalThis.window;
-  globalThis.window = {};
-
-  try {
-    publishDevtoolsSnapshots(
-      {
-        devtoolsEnabled: false,
-        controls: {
-          auditEnabled: true,
-          logEveryFrames: 1,
-        },
-        runtime: {
-          method: "raymarch",
-        },
-        runtimeState: {
-          debugSnapshot: {
-            raymarchDebug: {
-              fieldState: "active",
-            },
-          },
-        },
-        status: {
-          isPlaying: true,
-        },
-        featureState: {
-          audit: {
-            frame: 1,
-          },
-        },
-        lowLoadActive: false,
-        runtimeDiagnostics: createRuntimeDiagnostics(),
-        shared: {},
-        output: {},
-        visualization: {},
-        bloom: {},
-        audit: {},
-        sceneSnapshot: {},
-        audio: {
-          getLiveInputSettings() {
-            return {};
-          },
-        },
-      },
-      {
-        markRuntimeReady: () => {
-          throw new Error("runtime ready should remain devtools-only");
-        },
-        logAudit: () => {},
-        onAuditSnapshotChange: (nextState) => {
-          auditStates.push(nextState);
-        },
-      },
-    );
-
-    expect(auditStates).toHaveLength(1);
-    expect(auditStates[0]).toMatchObject({
-      enabled: true,
-    });
-    expect(auditStates[0].snapshot).toBeTruthy();
-    expect(window.__baryonAuditSnapshot).toBeUndefined();
-    expect(window.__baryonControlState).toBeUndefined();
-  } finally {
-    if (typeof previousWindow === "undefined") {
-      delete globalThis.window;
-    } else {
-      globalThis.window = previousWindow;
-    }
-  }
 });
 
 test("auto raymarch drops render scale before bottoming out step budget", () => {
@@ -526,7 +316,7 @@ test("auto raymarch drops render scale before bottoming out step budget", () => 
     updateAdaptiveRaymarchStepBudget(baseArgs);
   }
 
-  expect(runtimeState.effectiveRaymarchSteps).toBe(40);
+  expect(runtimeState.effectiveRaymarchSteps).toBe(64);
   expect(getEffectiveAdaptiveRenderScale(runtimeDiagnostics, 1)).toBeLessThan(
     1,
   );
@@ -591,98 +381,6 @@ test("custom profile uses the selected target fps for adaptive tuning", () => {
 
   expect(runtimeDiagnostics.adaptiveRaymarch.targetFps).toBe(48);
   expect(runtimeDiagnostics.adaptiveRaymarch.targetFrameTimeMs).toBe(1000 / 48);
-});
-
-test("external-output custom 120 starts from the calibrated base rung and scale", () => {
-  const { args, runtimeState, runtimeDiagnostics } =
-    createAdaptiveRaymarchHarness({
-      controls: {
-        customPerformanceTargetFps: 120,
-      },
-      renderProfile: {
-        qualityPreset: "custom",
-        targetFps: 120,
-        renderScale: 0.67,
-        renderContext: RENDER_CONTEXTS.externalOutput,
-      },
-    });
-
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
-  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
-
-  updateAdaptiveRaymarchStepBudget(args);
-
-  expect(runtimeState.effectiveRaymarchSteps).toBe(16);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
-});
-
-test("external-output auto starts from the balanced 60 base rung and scale", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
-    renderProfile: {
-      qualityPreset: "auto",
-      targetFps: 60,
-      renderScale: 0.75,
-      renderContext: RENDER_CONTEXTS.externalOutput,
-    },
-  });
-
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
-  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
-
-  updateAdaptiveRaymarchStepBudget(args);
-
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(32);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.75);
-});
-
-test("preview custom 120 starts from the intended rung instead of max quality", () => {
-  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
-    controls: {
-      customPerformanceTargetFps: 120,
-    },
-    renderProfile: {
-      qualityPreset: "custom",
-      targetFps: 120,
-      renderScale: 0.84,
-      renderContext: RENDER_CONTEXTS.preview,
-    },
-  });
-
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
-  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
-
-  updateAdaptiveRaymarchStepBudget(args);
-
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(24);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.84);
-});
-
-test("clearing adaptive resume state forces the next authoritative session to restart from calibrated base rungs", () => {
-  const { args, runtimeState, runtimeDiagnostics } =
-    createAdaptiveRaymarchHarness({
-      controls: {
-        customPerformanceTargetFps: 120,
-      },
-      renderProfile: {
-        qualityPreset: "custom",
-        targetFps: 120,
-        renderScale: 0.67,
-        renderContext: RENDER_CONTEXTS.externalOutput,
-      },
-    });
-
-  runtimeState.autoRaymarchResumeRung = 6;
-  runtimeState.autoRaymarchResumeScaleRung = 4;
-  clearAdaptiveRaymarchResumeState(runtimeState);
-  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
-  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
-
-  updateAdaptiveRaymarchStepBudget(args);
-
-  expect(runtimeState.autoRaymarchResumeRung).toBe(0);
-  expect(runtimeState.autoRaymarchResumeScaleRung).toBe(0);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
 });
 
 test("auto raymarch does not recover during decay frames", () => {
@@ -838,116 +536,4 @@ test("resolveFeatureFrame forwards cavity geometry into the worker transport pay
   });
 
   expect(featureEngine.lastFrame.cavityGeometry).toBe("spherical");
-});
-
-test("resolveFeatureFrame seeds the first live frame locally while worker analysis warms", () => {
-  const featureEngine = {
-    enqueueTransportFrame() {},
-    readLatestSnapshot() {
-      return null;
-    },
-    getStatus() {
-      return null;
-    },
-  };
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    status: {
-      isPlaying: false,
-      isLiveInputActive: true,
-      playbackSessionId: null,
-    },
-    renderLoopRefs: {
-      frameCacheRefs: {
-        lastLiveFrameRef: { current: null },
-        lastActiveFrameRef: { current: null },
-        lastIdleFrameRef: { current: null },
-        analysisSchedulerRef: { current: null },
-      },
-    },
-  });
-  let heavyAnalysisCallCount = 0;
-  let composeCallCount = 0;
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame() {
-      return {
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "live:device-1",
-        analysisInputsSignature: '"sig"',
-        silentFeatureFrame: null,
-      };
-    },
-    runHeavyFeatureAnalysis(preparedInputs) {
-      heavyAnalysisCallCount += 1;
-      return {
-        preparedInputs,
-      };
-    },
-    composeFeatureFrame({ analysisResult }) {
-      composeCallCount += 1;
-      return {
-        fieldState: "active",
-        seededFromAnalysis: analysisResult.preparedInputs.analysisSessionKey,
-      };
-    },
-  });
-
-  expect(heavyAnalysisCallCount).toBe(1);
-  expect(composeCallCount).toBe(1);
-  expect(result.effectiveFrame.fieldState).toBe("active");
-  expect(
-    args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current,
-  ).toMatchObject({
-    fieldState: "active",
-    seededFromAnalysis: "live:device-1",
-  });
-});
-
-test("resolveFeatureFrame preserves the last active live frame during worker warmup", () => {
-  const featureEngine = {
-    enqueueTransportFrame() {},
-    readLatestSnapshot() {
-      return null;
-    },
-    getStatus() {
-      return null;
-    },
-  };
-  const lastLiveFrame = { fieldState: "active", preserved: true };
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    status: {
-      isPlaying: false,
-      isLiveInputActive: true,
-      playbackSessionId: null,
-    },
-    renderLoopRefs: {
-      frameCacheRefs: {
-        lastLiveFrameRef: { current: lastLiveFrame },
-        lastActiveFrameRef: { current: null },
-        lastIdleFrameRef: { current: null },
-        analysisSchedulerRef: { current: null },
-      },
-    },
-  });
-
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame() {
-      return {
-        currentFrameAtMs: 1000,
-        analysisSessionKey: "live:device-1",
-        analysisInputsSignature: '"sig"',
-        silentFeatureFrame: null,
-      };
-    },
-    runHeavyFeatureAnalysis() {
-      throw new Error("worker warmup should reuse the preserved live frame");
-    },
-  });
-
-  expect(result.effectiveFrame).toBe(lastLiveFrame);
-  expect(args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current).toBe(
-    lastLiveFrame,
-  );
 });

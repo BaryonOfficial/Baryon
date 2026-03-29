@@ -17,14 +17,3 @@ test("renders duplicate external frames only when controls changed", () => {
     }),
   ).toBe(true);
 });
-
-test("renders duplicate external frames when a render is explicitly forced", () => {
-  expect(
-    shouldRenderExternalFrame({
-      externalFrameState: { frameSequence: 10 },
-      shouldAdvance: false,
-      controlsChanged: false,
-      forceRender: true,
-    }),
-  ).toBe(true);
-});

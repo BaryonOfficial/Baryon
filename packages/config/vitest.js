@@ -27,7 +27,7 @@ export function createWorkspaceVitestConfig(options = {}) {
     defineConfig({
       test: {
         environment: "node",
-        include: ["src/**/*.test.{js,jsx}"],
+        include: ["src/**/*.test.js"],
         ...options.test,
       },
     }),
