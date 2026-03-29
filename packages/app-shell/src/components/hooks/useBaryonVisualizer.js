@@ -84,6 +84,7 @@ export function useBaryonVisualizer({
   basePixelRatio = null,
   onStageRender = null,
   suppressRender = false,
+  enableControlEventSync = true,
 }) {
   const audioRef = useRef(getDefaultAudioSession());
   const outputSessionRef = useRef(null);
@@ -223,6 +224,10 @@ export function useBaryonVisualizer({
   }, [runtimeDiagnosticsRef]);
 
   useEffect(() => {
+    if (!enableControlEventSync) {
+      return undefined;
+    }
+
     if (typeof window === "undefined") {
       return undefined;
     }
@@ -248,15 +253,19 @@ export function useBaryonVisualizer({
         delete window.__baryonFieldCacheOverride;
       }
     };
-  }, [controlsRef]);
+  }, [controlsRef, enableControlEventSync]);
 
   useEffect(() => {
+    if (!enableControlEventSync) {
+      return undefined;
+    }
+
     if (typeof window === "undefined") {
       return undefined;
     }
 
     const audio = audioRef.current;
-    const syncAudioControls = (event) => {
+    const handleAudioControlsChange = (event) => {
       const nextControls = event?.detail ?? controlsRef.current;
       void applyAudioControls(audio, nextControls).catch((error) => {
         console.error(
@@ -266,12 +275,18 @@ export function useBaryonVisualizer({
       });
     };
 
-    syncAudioControls();
-    window.addEventListener("__baryon-controls-change", syncAudioControls);
+    handleAudioControlsChange();
+    window.addEventListener(
+      "__baryon-controls-change",
+      handleAudioControlsChange,
+    );
     return () => {
-      window.removeEventListener("__baryon-controls-change", syncAudioControls);
+      window.removeEventListener(
+        "__baryon-controls-change",
+        handleAudioControlsChange,
+      );
     };
-  }, [controlsRef]);
+  }, [controlsRef, enableControlEventSync]);
 
   useEffect(() => {
     if (typeof window === "undefined") {

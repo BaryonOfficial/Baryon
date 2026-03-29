@@ -57,6 +57,7 @@ export function BaryonScene({
   basePixelRatio = null,
   onStageRender = null,
   suppressRender = false,
+  enableControlEventSync = true,
   cameraViewPreset = /** @type {"top-down" | "side"} */ (
     CAMERA_VIEW_PRESETS.topDown
   ),
@@ -188,6 +189,7 @@ export function BaryonScene({
     basePixelRatio,
     onStageRender,
     suppressRender,
+    enableControlEventSync,
   });
 
   return (
