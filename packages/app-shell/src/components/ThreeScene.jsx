@@ -2,6 +2,7 @@ import {
   Suspense,
   cloneElement,
   isValidElement,
+  lazy,
   useCallback,
   useEffect,
   useRef,
@@ -9,19 +10,11 @@ import {
 } from "react";
 import { Canvas } from "@react-three/fiber";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene";
-import AdvancedControlsDock from "./AdvancedControlsDock.jsx";
-import {
-  useControlsActions,
-  useControlsSnapshot,
-  useControlsStore,
-} from "../controls/useControlsStore.js";
-import FloatingCameraControls from "./FloatingCameraControls.jsx";
 import {
   CAMERA_VIEW_PRESETS,
   getCameraConfigForPreset,
   resolveDefaultCameraViewPreset,
 } from "./cameraViewPresets.js";
-import { dispatchCameraControlCommand } from "./cameraControlEvents.js";
 import ParticleDebugOverlay from "./ParticleDebugOverlay.jsx";
 import PerformanceHud from "./PerformanceHud.jsx";
 import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
@@ -32,19 +25,69 @@ import {
   WEBGPU_RENDERER_INIT_ERROR,
 } from "./rendererDiagnostics.js";
 import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
+import { useBaryonControls } from "./hooks/useBaryonControls";
 import { useBrowserSupportState } from "./hooks/useBrowserSupportState.js";
 import { useRendererModeState } from "./hooks/useRendererModeState.js";
 import { useAudio, useAudioScene } from "../context/AudioContext";
-import {
-  composeAuthoritativePerformanceHudMetrics,
-  resolveActiveCameraControlPreset,
-  resolveCameraControlFieldState,
-  resolveLiveInputPanelConfig,
-  resolvePreviewOverlayState,
-  shouldUseAuthoritativePerformanceHud,
-} from "./threeSceneState.js";
 
+const AdvancedControlsSidebar = lazy(
+  () => import("./AdvancedControlsSidebar.jsx"),
+);
 const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
+
+export function resolveLiveInputPanelConfig({ liveInputPanel = null } = {}) {
+  return {
+    forceVisible: Boolean(liveInputPanel?.forceVisible),
+    showAction: Boolean(liveInputPanel?.showAction),
+    deviceSelectTestId:
+      typeof liveInputPanel?.deviceSelectTestId === "string" &&
+      liveInputPanel.deviceSelectTestId
+        ? liveInputPanel.deviceSelectTestId
+        : "live-input-device-select",
+  };
+}
+
+function ControlsIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="18" x2="20" y2="18" />
+      <circle cx="9" cy="6" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="11" cy="18" r="1.8" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 7h4l1.5-2h5L16 7h4v12H4z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </svg>
+  );
+}
 
 /**
  * @param {{
@@ -59,36 +102,11 @@ const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
  *   outputFrameConfig?: { enabled: boolean, width: number, height: number } | null,
  *   onOutputFrame?: (frame: { width: number, height: number, rgba: ArrayBuffer }) => Promise<void> | void,
  *   onFrameState?: (state: Record<string, unknown>) => void,
- *   previewState?: {
+ *   sharedPreviewMode?: {
  *     enabled?: boolean,
- *     requested?: boolean,
- *     rendering?: boolean,
- *     startupFailed?: boolean,
- *     recovering?: boolean,
- *     failureReason?: string | null,
- *     renderMode?: "local-presented" | "preview-presented",
+ *     renderMode?: "legacy-double-render" | "single-render-shared-preview",
  *     omitLocalScene?: boolean,
- *     supported?: boolean,
- *     connected?: boolean,
- *     canvasAttached?: boolean,
- *     healthy?: boolean,
- *     stale?: boolean,
  *     canvasId?: string | null,
- *   } | null,
- *   authoritativeOutputHudMetrics?: {
- *     outputTargetFps?: number | null,
- *     outputFps?: number | null,
- *     outputPaintFps?: number | null,
- *     renderCompletedToPaintMs?: number | null,
- *   } | null,
- *   authoritativeStageTelemetry?: {
- *     performanceHudSnapshot?: Record<string, unknown> | null,
- *     auditSnapshot?: Record<string, unknown> | null,
- *     auditEnabled?: boolean,
- *   } | null,
- *   authoritativeStageStatus?: {
- *     lastRenderedFieldState?: string | null,
- *     lastRenderedCameraViewPreset?: "top-down" | "side" | null,
  *   } | null,
  * }} props
  */
@@ -100,47 +118,50 @@ const ThreeScene = ({
   outputFrameConfig = null,
   onOutputFrame = null,
   onFrameState = null,
-  previewState = null,
-  authoritativeOutputHudMetrics = null,
-  authoritativeStageTelemetry = null,
-  authoritativeStageStatus = null,
+  sharedPreviewMode = null,
 }) => {
   const containerRef = useRef(null);
-  const controlsRef = useControlsStore().controlsRef;
-  const controlsState = useControlsSnapshot(
-    (snapshot) => snapshot.controlsState,
-  );
-  const { updateControl } = useControlsActions();
-  const [isControlsDockOpen, setIsControlsDockOpen] = useState(false);
-  const operatorControlKeys = previewState ? ["auditEnabled"] : [];
+  const advancedControlsTriggerRef = useRef(null);
+  const {
+    controlsRef,
+    controlsState,
+    folderGroups,
+    presetsAreaControls,
+    presets,
+    presetName,
+    selectedPresetName,
+    isControlsPanelLoaded,
+    isControlsPanelOpen,
+    setPresetName,
+    updateControl,
+    resetControls,
+    savePreset,
+    loadPreset,
+    deletePreset,
+    closeControlsPanel,
+    toggleControlsPanel,
+  } = useBaryonControls();
   const initialRendererFallback = Boolean(
     /** @type {any} */ (controlsRef.current).forceWebGLFallbackTest,
   );
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [performanceHudMetrics, setPerformanceHudMetrics] = useState(null);
   const [cameraViewPreset, setCameraViewPreset] = useState(
     CAMERA_VIEW_PRESETS.topDown,
   );
   const [cameraResetNonce, setCameraResetNonce] = useState(0);
   const [frameFieldState, setFrameFieldState] = useState("idle");
-  const [viewportWidth, setViewportWidth] = useState(() =>
-    typeof window === "undefined" ? 1440 : window.innerWidth,
-  );
 
-  const { isFullscreen } = useFullscreen(containerRef);
+  // fullscreen targets the outer container div
+  useFullscreen(containerRef);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return undefined;
-    }
-
-    const handleResize = () => {
-      setViewportWidth(window.innerWidth);
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
     };
-
-    window.addEventListener("resize", handleResize);
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
   const {
@@ -151,23 +172,12 @@ const ThreeScene = ({
     resetAudioSession,
   } = useAudioScene();
   const { selectedSource } = useAudio();
-  const previewVisible = previewState?.requested === true;
-  const previewCanvasId = previewState?.canvasId ?? null;
-  const usingPreview = previewState?.rendering === true;
-  const omitLocalScene = previewState?.omitLocalScene === true;
-  const resolvedFrameFieldState = resolveCameraControlFieldState({
-    frameFieldState,
-    previewState,
-    authoritativeStageStatus,
-  });
   const defaultCameraViewPreset = resolveDefaultCameraViewPreset({
     liveInputUiState,
-    fieldState: resolvedFrameFieldState,
+    fieldState: frameFieldState,
   });
   const effectiveCameraViewPreset =
-    resolvedFrameFieldState === "idle"
-      ? defaultCameraViewPreset
-      : cameraViewPreset;
+    frameFieldState === "idle" ? defaultCameraViewPreset : cameraViewPreset;
   const cameraConfig = getCameraConfigForPreset(effectiveCameraViewPreset);
 
   const {
@@ -192,59 +202,22 @@ const ThreeScene = ({
     liveInputPanel,
   });
   const showOverlayUi = isSupportReady && !isFullscreen;
-  const previewOverlayState = resolvePreviewOverlayState(previewState);
-  const activeCameraControlPreset = /** @type {"top-down" | "side"} */ (
-    resolveActiveCameraControlPreset({
-      previewState,
-      authoritativeStageStatus,
-      fallbackCameraViewPreset: effectiveCameraViewPreset,
-    })
-  );
-  const useAuthoritativePerformanceHud = shouldUseAuthoritativePerformanceHud({
-    previewState,
-    authoritativeStageTelemetry,
-    authoritativeOutputHudMetrics,
-  });
-  const resolvedPerformanceHudMetrics = controlsState.performanceHudEnabled
-    ? useAuthoritativePerformanceHud
-      ? composeAuthoritativePerformanceHudMetrics(
-          authoritativeStageTelemetry?.performanceHudSnapshot ?? null,
-          authoritativeOutputHudMetrics,
-        )
-      : performanceHudMetrics
-    : null;
-  const debugOverlayEnabledOverride = omitLocalScene
-    ? authoritativeStageTelemetry?.auditEnabled === true
-    : undefined;
-  const debugOverlaySnapshotOverride = omitLocalScene
-    ? (authoritativeStageTelemetry?.auditSnapshot ?? null)
-    : undefined;
+  const sharedPreviewVisible = sharedPreviewMode?.enabled === true;
+  const sharedPreviewCanvasId = sharedPreviewMode?.canvasId ?? null;
+  const usingSharedPreview =
+    sharedPreviewMode?.renderMode === "single-render-shared-preview";
+  const omitLocalScene = sharedPreviewMode?.omitLocalScene === true;
   const liveInputStatusPanelVisible =
     showOverlayUi &&
     (selectedSource === "system" || resolvedLiveInputPanel.forceVisible);
   const showCameraControls =
     showOverlayUi && controlsState.visualizationMethod !== "cymatics2d";
-  const isPhoneViewport = viewportWidth <= 640;
-  const isTabletPortraitViewport = viewportWidth > 640 && viewportWidth <= 820;
-  const isTabletViewport = viewportWidth <= 1024;
-  const isCompactViewport = isTabletViewport;
-  const overlayTopInset = isPhoneViewport ? "0.7rem" : "0.9rem";
-  const overlaySideInset = isPhoneViewport ? "0.6rem" : "0.9rem";
   const stackedTopRightOverlay = isValidElement(topRightOverlay)
     ? cloneElement(
         /** @type {import("react").ReactElement<any>} */ (topRightOverlay),
         { embedded: true },
       )
     : topRightOverlay;
-  const shouldShowModeOverlay = Boolean(stackedTopRightOverlay);
-  const shouldShowLiveStatusOverlay =
-    liveInputStatusPanelVisible && (!isCompactViewport || !isControlsDockOpen);
-  const shouldShowPerformanceOverlay =
-    Boolean(resolvedPerformanceHudMetrics) &&
-    !isPhoneViewport &&
-    !isTabletPortraitViewport &&
-    (!isCompactViewport || !isControlsDockOpen);
-  const shouldShowDebugOverlay = !isTabletViewport;
 
   const handleCanvasError = (error) => {
     if (error?.name !== WEBGPU_RENDERER_INIT_ERROR) {
@@ -260,9 +233,6 @@ const ThreeScene = ({
   const applyCameraPreset = (preset) => {
     setCameraViewPreset(preset);
     setCameraResetNonce((current) => current + 1);
-    dispatchCameraControlCommand({
-      cameraViewPreset: preset,
-    });
   };
 
   const handleFrameState = useCallback(
@@ -276,6 +246,82 @@ const ThreeScene = ({
     [onFrameState],
   );
 
+  /** @type {import("react").CSSProperties} */
+  const controlsToggleStyle = isControlsPanelOpen
+    ? {
+        position: "absolute",
+        top: "0.9rem",
+        left: `calc(${ADVANCED_CONTROLS_DOCK_WIDTH} + 0.15rem)`,
+        zIndex: 61,
+        width: "2rem",
+        height: "2.35rem",
+        border: "1px solid rgba(255, 255, 255, 0.14)",
+        borderRadius: "0 0.9rem 0.9rem 0",
+        borderLeft: "0",
+        background:
+          "linear-gradient(180deg, rgba(17, 21, 27, 0.9), rgba(9, 12, 17, 0.88))",
+        color: "rgba(255, 255, 255, 0.82)",
+        boxShadow: "0 10px 28px rgba(0, 0, 0, 0.2)",
+        cursor: "pointer",
+      }
+    : {
+        position: "absolute",
+        top: "var(--app-floating-control-top)",
+        left: "var(--app-floating-control-left)",
+        zIndex: 61,
+        width: "var(--app-floating-control-size)",
+        height: "var(--app-floating-control-size)",
+        border: "var(--app-floating-control-border)",
+        borderRadius: "var(--app-floating-control-radius)",
+        background: "var(--app-floating-control-background)",
+        color: "var(--app-floating-control-color)",
+        backdropFilter: "var(--app-floating-control-backdrop)",
+        boxShadow: "var(--app-floating-control-shadow)",
+        cursor: "pointer",
+      };
+  /** @type {import('react').CSSProperties} */
+  const cameraControlsStyle = isControlsPanelOpen
+    ? {
+        position: "absolute",
+        top: "0.9rem",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 61,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "0.22rem",
+        padding: "0.18rem",
+        maxWidth: "calc(100vw - 2rem)",
+        borderRadius: "999px",
+        border: "1px solid rgba(255, 255, 255, 0.12)",
+        background: "rgba(17, 21, 27, 0.84)",
+        color: "rgba(255, 255, 255, 0.86)",
+        backdropFilter: "blur(18px) saturate(140%)",
+        WebkitBackdropFilter: "blur(18px) saturate(140%)",
+        boxShadow: "0 10px 28px rgba(0, 0, 0, 0.22)",
+      }
+    : {
+        position: "absolute",
+        top: "0.9rem",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 61,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "0.22rem",
+        padding: "0.18rem",
+        maxWidth: "calc(100vw - 2rem)",
+        borderRadius: "999px",
+        border: "1px solid rgba(255, 255, 255, 0.12)",
+        background: "rgba(17, 21, 27, 0.84)",
+        color: "rgba(255, 255, 255, 0.86)",
+        backdropFilter: "blur(18px) saturate(140%)",
+        WebkitBackdropFilter: "blur(18px) saturate(140%)",
+        boxShadow: "0 10px 28px rgba(0, 0, 0, 0.22)",
+      };
+
   return (
     <div
       ref={containerRef}
@@ -288,88 +334,23 @@ const ThreeScene = ({
         background: controlsState.backgroundColor,
       }}
     >
-      {previewVisible ? (
-        <>
-          <canvas
-            id={previewCanvasId ?? undefined}
-            data-testid="preview-canvas"
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              zIndex: 10,
-              width: "100%",
-              height: "100%",
-              display: "block",
-              background: "transparent",
-              objectFit: "contain",
-              objectPosition: "center",
-              opacity: usingPreview ? 1 : 0,
-              pointerEvents: "none",
-            }}
-          />
-          {previewOverlayState ? (
-            <div
-              data-testid="preview-overlay"
-              data-state={previewOverlayState.state}
-              style={{
-                position: "absolute",
-                inset: 0,
-                zIndex: 11,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                pointerEvents: "none",
-                background:
-                  "linear-gradient(180deg, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.62))",
-              }}
-            >
-              <div
-                style={{
-                  minWidth: "min(22rem, calc(100vw - 3rem))",
-                  maxWidth: "min(28rem, calc(100vw - 3rem))",
-                  padding: "0.95rem 1rem",
-                  borderRadius: "0.92rem",
-                  border: "1px solid var(--nd-border-visible)",
-                  background: "var(--nd-surface)",
-                  boxShadow: "var(--nd-shell-shadow)",
-                  color: "var(--nd-text-primary)",
-                  fontFamily: '"Space Grotesk", system-ui, sans-serif',
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: "0.62rem",
-                    letterSpacing: "0.16em",
-                    textTransform: "uppercase",
-                    color: "var(--nd-text-secondary)",
-                    marginBottom: "0.35rem",
-                  }}
-                >
-                  Presented Performer Preview
-                </div>
-                <div
-                  style={{
-                    fontSize: "1rem",
-                    fontWeight: 600,
-                    marginBottom: "0.25rem",
-                  }}
-                >
-                  {previewOverlayState.title}
-                </div>
-                <div
-                  style={{
-                    fontSize: "0.82rem",
-                    lineHeight: 1.45,
-                    color: "var(--nd-text-secondary)",
-                  }}
-                >
-                  {previewOverlayState.message}
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </>
+      {sharedPreviewVisible ? (
+        <canvas
+          id={sharedPreviewCanvasId ?? undefined}
+          data-testid="shared-output-preview-canvas"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            zIndex: 10,
+            width: "100%",
+            height: "100%",
+            display: "block",
+            background: "transparent",
+            opacity: usingSharedPreview ? 1 : 0,
+            pointerEvents: "none",
+          }}
+        />
       ) : null}
 
       {showCanvas && isSupportReady && !omitLocalScene && (
@@ -385,8 +366,8 @@ const ThreeScene = ({
               left: 0,
               zIndex: 9,
               background: "transparent",
-              opacity: usingPreview ? 0 : 1,
-              pointerEvents: usingPreview ? "none" : "auto",
+              opacity: usingSharedPreview ? 0 : 1,
+              pointerEvents: usingSharedPreview ? "none" : "auto",
             }}
             dpr={[1, 2]}
             camera={{
@@ -417,61 +398,198 @@ const ThreeScene = ({
                 cameraControlMode={CAMERA_CONTROL_MODES.previewLocal}
                 cameraViewPreset={effectiveCameraViewPreset}
                 cameraResetNonce={cameraResetNonce}
-                suppressRender={usingPreview}
+                suppressRender={usingSharedPreview}
               />
             </Suspense>
           </Canvas>
         </RendererErrorBoundary>
       )}
 
+      {showOverlayUi && (
+        <div style={controlsToggleStyle}>
+          <button
+            ref={advancedControlsTriggerRef}
+            type="button"
+            aria-label="Toggle advanced controls"
+            data-testid="advanced-controls-trigger"
+            aria-expanded={isControlsPanelOpen}
+            onClick={toggleControlsPanel}
+            title={
+              isControlsPanelOpen
+                ? "Hide advanced controls"
+                : "Show advanced controls"
+            }
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "100%",
+              height: "100%",
+              border: "none",
+              background: "transparent",
+              padding: 0,
+              color: "inherit",
+              cursor: "pointer",
+            }}
+          >
+            <ControlsIcon />
+          </button>
+        </div>
+      )}
+
+      {showOverlayUi && !isControlsPanelOpen && (
+        <div
+          style={{
+            position: "absolute",
+            top: "var(--app-floating-control-top)",
+            left: `calc(var(--app-floating-control-left) + var(--app-floating-control-size) + 0.6rem)`,
+            zIndex: 61,
+            display: "flex",
+            alignItems: "center",
+            height: "var(--app-floating-control-size)",
+            pointerEvents: "none",
+          }}
+        >
+          <span
+            style={{
+              fontFamily: "Orbitron, sans-serif",
+              fontSize: "0.7rem",
+              fontWeight: 500,
+              letterSpacing: "0.08em",
+              color: "rgba(255, 255, 255, 1)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Baryon | Cymatics
+          </span>
+        </div>
+      )}
+
       {showCameraControls ? (
-        <FloatingCameraControls
-          activePreset={activeCameraControlPreset}
-          onPresetSelect={applyCameraPreset}
-          onPresetReset={() => applyCameraPreset(activeCameraControlPreset)}
-          rootTestId="camera-controls"
-          topButtonTestId="camera-top-view-button"
-          sideButtonTestId="camera-side-view-button"
-          resetButtonTestId="camera-reset-view-button"
-        />
+        <div style={cameraControlsStyle}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "1.7rem",
+              height: "1.7rem",
+              color: "rgba(255, 255, 255, 0.58)",
+            }}
+            aria-hidden="true"
+          >
+            <CameraIcon />
+          </span>
+          {[
+            {
+              key: CAMERA_VIEW_PRESETS.topDown,
+              label: "Top",
+              testId: "camera-top-view-button",
+            },
+            {
+              key: CAMERA_VIEW_PRESETS.side,
+              label: "Side",
+              testId: "camera-side-view-button",
+            },
+          ].map((preset) => {
+            const active = effectiveCameraViewPreset === preset.key;
+            return (
+              <button
+                key={preset.key}
+                type="button"
+                data-testid={preset.testId}
+                onClick={() => applyCameraPreset(preset.key)}
+                title={`${preset.label} view`}
+                style={{
+                  minHeight: "1.7rem",
+                  padding: "0 0.7rem",
+                  borderRadius: "999px",
+                  border: active
+                    ? "1px solid rgba(122, 174, 255, 0.42)"
+                    : "1px solid rgba(255, 255, 255, 0.08)",
+                  background: active
+                    ? "rgba(122, 174, 255, 0.16)"
+                    : "rgba(255, 255, 255, 0.04)",
+                  color: active
+                    ? "rgba(224, 238, 255, 0.96)"
+                    : "rgba(255, 255, 255, 0.72)",
+                  font: "inherit",
+                  fontSize: "0.66rem",
+                  fontWeight: 650,
+                  cursor: "pointer",
+                }}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            data-testid="camera-reset-view-button"
+            onClick={() => applyCameraPreset(defaultCameraViewPreset)}
+            title="Reset camera to default"
+            style={{
+              minHeight: "1.7rem",
+              padding: "0 0.7rem",
+              borderRadius: "999px",
+              border: "1px solid rgba(255, 255, 255, 0.08)",
+              background: "rgba(255, 255, 255, 0.04)",
+              color: "rgba(255, 255, 255, 0.72)",
+              font: "inherit",
+              fontSize: "0.66rem",
+              fontWeight: 650,
+              cursor: "pointer",
+            }}
+          >
+            Reset
+          </button>
+        </div>
       ) : null}
 
-      {showOverlayUi ? (
-        <AdvancedControlsDock
-          visible={showOverlayUi}
-          operatorControlKeys={operatorControlKeys}
-          dockWidth={ADVANCED_CONTROLS_DOCK_WIDTH}
-          onOpenChange={setIsControlsDockOpen}
-        />
+      {showOverlayUi && isControlsPanelLoaded ? (
+        <Suspense fallback={null}>
+          <AdvancedControlsSidebar
+            folderGroups={folderGroups}
+            presetsAreaControls={presetsAreaControls}
+            controlsState={controlsState}
+            presets={presets}
+            presetName={presetName}
+            selectedPresetName={selectedPresetName}
+            isOpen={isControlsPanelOpen}
+            setPresetName={setPresetName}
+            updateControl={updateControl}
+            resetControls={resetControls}
+            savePreset={savePreset}
+            loadPreset={loadPreset}
+            deletePreset={deletePreset}
+            onClose={closeControlsPanel}
+            dockWidth={ADVANCED_CONTROLS_DOCK_WIDTH}
+            triggerRef={advancedControlsTriggerRef}
+          />
+        </Suspense>
       ) : null}
 
       {showOverlayUi ? (
         <div
           style={{
             position: "fixed",
-            top: overlayTopInset,
-            right: overlaySideInset,
+            top: "0.9rem",
+            right: "0.9rem",
             zIndex: 9998,
             display: "flex",
             flexDirection: "column",
             alignItems: "flex-end",
-            gap: isPhoneViewport ? "0.85rem" : "0.9rem",
-            maxWidth: isPhoneViewport
-              ? "min(11.5rem, calc(100vw - 1rem))"
-              : isTabletPortraitViewport
-                ? "min(15rem, calc(100vw - 1.2rem))"
-                : isTabletViewport
-                  ? "min(18rem, calc(100vw - 1.2rem))"
-                  : "min(22rem, calc(100vw - 1rem))",
+            gap: "0.65rem",
+            maxWidth: "min(22rem, calc(100vw - 1rem))",
             pointerEvents: "none",
           }}
         >
-          {shouldShowModeOverlay ? (
+          {stackedTopRightOverlay ? (
             <div style={{ pointerEvents: "auto" }}>
               {stackedTopRightOverlay}
             </div>
           ) : null}
-          {shouldShowLiveStatusOverlay ? (
+          {liveInputStatusPanelVisible ? (
             <LiveInputStatusPanel
               stacked
               visible
@@ -486,17 +604,16 @@ const ThreeScene = ({
               onMicControlChange={(key, value) => updateControl(key, value)}
             />
           ) : null}
-          {shouldShowPerformanceOverlay ? (
-            <PerformanceHud metrics={resolvedPerformanceHudMetrics} stacked />
-          ) : null}
-          {shouldShowDebugOverlay ? (
-            <ParticleDebugOverlay
-              stacked
-              debugOverlayExtraItems={debugOverlayExtraItems}
-              enabledOverride={debugOverlayEnabledOverride}
-              snapshotOverride={debugOverlaySnapshotOverride}
-            />
-          ) : null}
+          <PerformanceHud
+            metrics={
+              controlsState.performanceHudEnabled ? performanceHudMetrics : null
+            }
+            stacked
+          />
+          <ParticleDebugOverlay
+            stacked
+            debugOverlayExtraItems={debugOverlayExtraItems}
+          />
         </div>
       ) : null}
       {showOverlayUi && controlsOverlay}
