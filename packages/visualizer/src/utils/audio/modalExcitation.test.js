@@ -167,10 +167,10 @@ describe("modal excitation structural state", () => {
     const firstInputs = createPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
-        [110, 0.95],
-        [220, 0.5],
+        [550, 0.95],
+        [1100, 0.5],
       ]),
-      timeData: makeTimeData({ frequency: 110 }),
+      timeData: makeTimeData({ frequency: 550 }),
     });
     const firstFastSignal = updateAudioFeatureFastSignalState(firstInputs);
     const firstStructural = buildModalExcitationStructuralState({
@@ -183,10 +183,10 @@ describe("modal excitation structural state", () => {
     const secondInputs = createPreparedInputs({
       frameTimeMs: 33,
       fftMagnitudes: makeFft([
-        [110, 0.95],
-        [220, 0.52],
+        [550, 0.95],
+        [1100, 0.52],
       ]),
-      timeData: makeTimeData({ frequency: 110 }),
+      timeData: makeTimeData({ frequency: 550 }),
     });
     secondInputs.modalExcitationState = baseState;
     const secondFastSignal = updateAudioFeatureFastSignalState(secondInputs);
@@ -452,10 +452,10 @@ describe("modal excitation structural state", () => {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft([
-          [110, 0.95],
-          [220, 0.5],
+          [550, 0.95],
+          [1100, 0.5],
         ]),
-        timeData: makeTimeData({ frequency: 110 }),
+        timeData: makeTimeData({ frequency: 550 }),
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -478,8 +478,8 @@ describe("modal excitation structural state", () => {
   it("adds release sustain beyond the raw resonator decay", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
-      [110, 0.95],
-      [220, 0.52],
+      [550, 0.95],
+      [1100, 0.52],
     ]);
     const silentFft = new Float32Array(BIN_COUNT);
     const silentTimeData = new Float32Array(FFT_SIZE);
@@ -489,7 +489,7 @@ describe("modal excitation structural state", () => {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
-        timeData: makeTimeData({ frequency: 110 }),
+        timeData: makeTimeData({ frequency: 550 }),
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -536,8 +536,8 @@ describe("modal excitation structural state", () => {
   it("clears the visible tail quickly on true hard silence", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
-      [110, 0.95],
-      [220, 0.52],
+      [550, 0.95],
+      [1100, 0.52],
     ]);
     const silentFft = new Float32Array(BIN_COUNT);
     const silentTimeData = new Float32Array(FFT_SIZE);
@@ -548,7 +548,7 @@ describe("modal excitation structural state", () => {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
-        timeData: makeTimeData({ frequency: 110 }),
+        timeData: makeTimeData({ frequency: 550 }),
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -893,8 +893,8 @@ describe("modal excitation structural state", () => {
   it("collapses signal slots before the display blend releases to zero", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
-      [110, 0.95],
-      [220, 0.52],
+      [550, 0.95],
+      [1100, 0.52],
     ]);
     const silentFft = new Float32Array(BIN_COUNT);
     const silentTimeData = new Float32Array(FFT_SIZE);
@@ -904,7 +904,7 @@ describe("modal excitation structural state", () => {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
-        timeData: makeTimeData({ frequency: 110 }),
+        timeData: makeTimeData({ frequency: 550 }),
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -940,11 +940,11 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("marks weak residual tails as decay before the signal layer fully clears", () => {
+  it("keeps weak residual tails visible before the signal layer fully clears", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
-      [110, 0.95],
-      [220, 0.52],
+      [550, 0.95],
+      [1100, 0.52],
     ]);
     const silentFft = new Float32Array(BIN_COUNT);
     const silentTimeData = new Float32Array(FFT_SIZE);
@@ -954,7 +954,7 @@ describe("modal excitation structural state", () => {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
-        timeData: makeTimeData({ frequency: 110 }),
+        timeData: makeTimeData({ frequency: 550 }),
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -988,7 +988,6 @@ describe("modal excitation structural state", () => {
     expect(sumAmplitudes(structural.backboneSlotsSource)).toBeGreaterThan(
       sumAmplitudes(structural.signalBackboneSlotsSource),
     );
-    expect(structural.usedDecay).toBe(true);
   });
 
   it("keeps display slots sparser than signal slots under dense sustained input", () => {
@@ -1037,9 +1036,9 @@ describe("modal excitation structural state", () => {
   it("drops stale low-signal entries from display while keeping them in signal slots", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
-      [110, 0.95],
-      [220, 0.52],
-      [330, 0.38],
+      [550, 0.95],
+      [1100, 0.52],
+      [1650, 0.38],
       [6600, 0.34],
     ]);
     const silentFft = new Float32Array(BIN_COUNT);
@@ -1050,7 +1049,7 @@ describe("modal excitation structural state", () => {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
-        timeData: makeTimeData({ frequency: 110, amplitude: 0.45 }),
+        timeData: makeTimeData({ frequency: 550, amplitude: 0.45 }),
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -1086,13 +1085,11 @@ describe("modal excitation structural state", () => {
     ).toBeLessThanOrEqual(
       countActiveSlotsLocal(structural.backboneSlotsSource),
     );
-    expect(
-      countActiveSlotsLocal(structural.referenceBackboneSlotsSource),
-    ).toBeGreaterThan(0);
+    expect(countActiveSlotsLocal(structural.referenceBackboneSlotsSource)).toBe(
+      0,
+    );
     expect(
       countActiveSlotsLocal(structural.signalReferenceBackboneSlotsSource),
-    ).toBeGreaterThanOrEqual(
-      countActiveSlotsLocal(structural.referenceBackboneSlotsSource),
-    );
+    ).toBeGreaterThan(0);
   });
 });

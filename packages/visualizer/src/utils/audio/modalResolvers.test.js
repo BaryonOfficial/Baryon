@@ -168,7 +168,7 @@ describe("modal resolver writers", () => {
 
   it("adds above-floor bridge families for sub-floor backbone peaks", () => {
     const sparse = writeModalSlotsFromPeakDrivers(createModalTargetBuild(8), {
-      fftMagnitudes: makeFft([[60, 0.92]]),
+      fftMagnitudes: makeFft([[120, 0.92]]),
       sampleRate: SAMPLE_RATE,
       fftSize: FFT_SIZE,
       radius: 3,
@@ -176,15 +176,15 @@ describe("modal resolver writers", () => {
       slotLimit: 8,
       spectralCentroid: 0.18,
       includeChromesthesia: true,
-      peaks: [{ frequency: 60, amplitude: 0.92 }],
+      peaks: [{ frequency: 120, amplitude: 0.92 }],
       scratchTarget: createModalTargetBuild(8),
     });
     const enriched = writeModalSlotsFromPeakDrivers(createModalTargetBuild(8), {
       fftMagnitudes: makeFft([
-        [60, 0.92],
-        [120, 0.82],
-        [180, 0.74],
-        [240, 0.68],
+        [120, 0.92],
+        [480, 0.82],
+        [600, 0.74],
+        [720, 0.68],
       ]),
       sampleRate: SAMPLE_RATE,
       fftSize: FFT_SIZE,
@@ -193,12 +193,12 @@ describe("modal resolver writers", () => {
       slotLimit: 8,
       spectralCentroid: 0.18,
       includeChromesthesia: true,
-      peaks: [{ frequency: 60, amplitude: 0.92 }],
+      peaks: [{ frequency: 120, amplitude: 0.92 }],
       scratchTarget: createModalTargetBuild(8),
     });
 
     expect(enriched.subfloorBridgeMeta).toMatchObject({
-      dominantPeakFrequency: 60,
+      dominantPeakFrequency: 120,
       dominantPeakAmplitude: 0.92,
       dominantPeakBridgeCount: 3,
       meaningfulAboveFloorPeakCount: 1,
@@ -232,7 +232,7 @@ describe("modal resolver writers", () => {
     const target = writeModalSlotsFromPeakDrivers(createModalTargetBuild(8), {
       fftMagnitudes: makeFft([
         [60, 0.86],
-        [400, 0.7],
+        [600, 0.7],
       ]),
       sampleRate: SAMPLE_RATE,
       fftSize: FFT_SIZE,
@@ -243,7 +243,7 @@ describe("modal resolver writers", () => {
       includeChromesthesia: true,
       peaks: [
         { frequency: 60, amplitude: 0.86 },
-        { frequency: 400, amplitude: 0.7 },
+        { frequency: 600, amplitude: 0.7 },
       ],
       scratchTarget: createModalTargetBuild(8),
     });

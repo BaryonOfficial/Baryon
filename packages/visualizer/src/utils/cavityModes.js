@@ -1,4 +1,4 @@
-const SOUND_SPEED = 340.0;
+const SOUND_SPEED_WATER = 1480;
 const MIN_CAVITY_INDEX = 1;
 const MIN_CAVITY_MAGNITUDE = Math.sqrt(3);
 const INITIAL_SHELL_HALF_WIDTH = 0.5;
@@ -6,11 +6,11 @@ const SHELL_HALF_WIDTH_STEP = 0.5;
 const MAX_SHELL_EXPANSIONS = 32;
 
 function getTargetMagnitude(pitch, radius) {
-  return (2 * pitch * radius) / SOUND_SPEED;
+  return (2 * pitch * radius) / SOUND_SPEED_WATER;
 }
 
 function getFrequencyForMagnitude(magnitude, radius) {
-  return (SOUND_SPEED * 0.5 * magnitude) / radius;
+  return (SOUND_SPEED_WATER * 0.5 * magnitude) / radius;
 }
 
 export function getCavityModeFrequency(u, v, w, radius) {

@@ -46,7 +46,7 @@ function emitControlsChanged(state) {
   );
 }
 
-export function useBaryonControls() {
+export function useBaryonControls({ operatorControlKeys = [] } = {}) {
   const storage = getBrowserStorage();
   const controlsRef = useRef(createInitialControlState(storage));
   const persistSchedulerRef = useRef(null);
@@ -71,6 +71,7 @@ export function useBaryonControls() {
   const { folderGroups, presetsAreaControls } = getVisibleControlLayout({
     devtoolsEnabled: DEVTOOLS_ENABLED,
     method: controlsState.visualizationMethod ?? DEFAULT_VISUALIZATION_METHOD,
+    operatorControlKeys,
   });
 
   const syncControlState = useCallback(

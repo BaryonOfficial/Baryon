@@ -251,6 +251,42 @@ export function normalizeDebugOverlayItems(debugOverlayExtraItems) {
     : null;
 }
 
+export function resolveDebugOverlayState({
+  localState,
+  enabledOverride,
+  snapshotOverride,
+}) {
+  if (typeof enabledOverride === "boolean") {
+    return {
+      enabled: enabledOverride,
+      snapshot: snapshotOverride ?? null,
+    };
+  }
+
+  return (
+    localState ?? {
+      enabled: false,
+      snapshot: null,
+    }
+  );
+}
+
+export function shouldRenderDebugOverlay({
+  devtoolsEnabled = DEVTOOLS_ENABLED,
+  enabledOverride,
+  overlayState,
+}) {
+  if (!overlayState?.enabled || !overlayState.snapshot) {
+    return false;
+  }
+
+  if (typeof enabledOverride === "boolean") {
+    return true;
+  }
+
+  return devtoolsEnabled;
+}
+
 function CompactGrid({
   items,
   columns = 2,
@@ -507,6 +543,8 @@ export default function ParticleDebugOverlay({
   right = "1rem",
   stacked = false,
   debugOverlayExtraItems = null,
+  enabledOverride = undefined,
+  snapshotOverride = undefined,
 }) {
   const overlayRef = useRef(null);
   const dragStateRef = useRef(null);
@@ -573,11 +611,22 @@ export default function ParticleDebugOverlay({
     };
   }, []);
 
-  if (!DEVTOOLS_ENABLED || !overlayState.enabled || !overlayState.snapshot) {
+  const resolvedOverlayState = resolveDebugOverlayState({
+    localState: overlayState,
+    enabledOverride,
+    snapshotOverride,
+  });
+
+  if (
+    !shouldRenderDebugOverlay({
+      enabledOverride,
+      overlayState: resolvedOverlayState,
+    })
+  ) {
     return null;
   }
 
-  const snapshot = overlayState.snapshot;
+  const snapshot = resolvedOverlayState.snapshot;
   const debugSnapshot = selectDebugSnapshot(snapshot);
   if (!debugSnapshot) {
     return null;

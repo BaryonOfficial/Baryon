@@ -1,43 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { resolveLiveInputPanelConfig } from "./ThreeScene.jsx";
+import { resolveSharedPreviewOverlayState } from "./ThreeScene.jsx";
 
-describe("resolveLiveInputPanelConfig", () => {
-  it("defaults to the web selector without forcing visibility", () => {
-    expect(resolveLiveInputPanelConfig()).toEqual({
-      forceVisible: false,
-      showAction: false,
-      deviceSelectTestId: "live-input-device-select",
+describe("resolveSharedPreviewOverlayState", () => {
+  it("returns an unsupported state when presented performer preview is requested without support", () => {
+    expect(
+      resolveSharedPreviewOverlayState({
+        requested: true,
+        rendering: false,
+        supported: false,
+      }),
+    ).toMatchObject({
+      state: "unsupported",
     });
   });
 
-  it("prefers the host-neutral config object", () => {
+  it("returns null once shared preview is actively rendering", () => {
     expect(
-      resolveLiveInputPanelConfig({
-        liveInputPanel: {
-          forceVisible: true,
-          showAction: true,
-          deviceSelectTestId: "performer-live-device-select",
-        },
+      resolveSharedPreviewOverlayState({
+        requested: true,
+        rendering: true,
+        supported: true,
+        connected: true,
+        canvasAttached: true,
+        healthy: true,
+        stale: false,
       }),
-    ).toEqual({
-      forceVisible: true,
-      showAction: true,
-      deviceSelectTestId: "performer-live-device-select",
-    });
-  });
-
-  it("fills in the default selector id when omitted", () => {
-    expect(
-      resolveLiveInputPanelConfig({
-        liveInputPanel: {
-          forceVisible: true,
-          showAction: true,
-        },
-      }),
-    ).toEqual({
-      forceVisible: true,
-      showAction: true,
-      deviceSelectTestId: "live-input-device-select",
-    });
+    ).toBeNull();
   });
 });

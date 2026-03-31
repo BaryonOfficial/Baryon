@@ -1369,10 +1369,21 @@ function publishAuditSnapshot(
     lowLoadActive,
     runtimeDiagnostics,
   },
-  { snapshotDiagnostics, logAudit },
+  {
+    snapshotDiagnostics,
+    logAudit,
+    onAuditSnapshotChange = null,
+    persistWindowSnapshot = true,
+  },
 ) {
   if (!controls.auditEnabled || !runtimeState.debugSnapshot) {
-    delete window.__baryonAuditSnapshot;
+    if (persistWindowSnapshot && typeof window !== "undefined") {
+      delete window.__baryonAuditSnapshot;
+    }
+    onAuditSnapshotChange?.({
+      enabled: false,
+      snapshot: null,
+    });
     return;
   }
 
@@ -1383,7 +1394,13 @@ function publishAuditSnapshot(
     runtimeDiagnostics,
     snapshotDiagnostics,
   });
-  window.__baryonAuditSnapshot = payload;
+  if (persistWindowSnapshot && typeof window !== "undefined") {
+    window.__baryonAuditSnapshot = payload;
+  }
+  onAuditSnapshotChange?.({
+    enabled: true,
+    snapshot: payload,
+  });
 
   const frame = featureState.audit?.frame ?? 0;
   const interval = Math.max(1, Math.floor(controls.logEveryFrames));
@@ -1446,9 +1463,10 @@ export function publishDevtoolsSnapshots(
     snapshotDiagnostics = snapshotRuntimeDiagnostics,
     logAudit = console.log,
     markRuntimeReady = () => {},
+    onAuditSnapshotChange = null,
   } = {},
 ) {
-  if (!devtoolsEnabled || typeof window === "undefined") {
+  if (typeof window === "undefined") {
     return;
   }
 
@@ -1465,8 +1483,13 @@ export function publishDevtoolsSnapshots(
     {
       snapshotDiagnostics,
       logAudit,
+      onAuditSnapshotChange,
+      persistWindowSnapshot: devtoolsEnabled,
     },
   );
+  if (!devtoolsEnabled) {
+    return;
+  }
   publishControlSnapshot(
     {
       runtime,

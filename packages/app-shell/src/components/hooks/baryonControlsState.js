@@ -41,6 +41,14 @@ const DIAGNOSTICS_CONTROL_ORDER = Object.freeze([
   "forceWebGLFallbackTest",
 ]);
 
+function createOperatorControlKeySet(operatorControlKeys = []) {
+  return new Set(
+    Array.isArray(operatorControlKeys)
+      ? operatorControlKeys.filter((key) => typeof key === "string")
+      : [],
+  );
+}
+
 function cloneControlDefinition(definition, overrides = {}) {
   return {
     ...definition,
@@ -203,12 +211,17 @@ function createDiagnosticsControls(controls, method) {
 function createVisibleFolderGroups({
   devtoolsEnabled,
   method = DEFAULT_VISUALIZATION_METHOD,
+  operatorControlKeys = [],
 }) {
+  const operatorControlKeySet =
+    createOperatorControlKeySet(operatorControlKeys);
   return getControlFolders(method)
     .map((title) => {
       let controls = getControlsForFolder(title, method).filter(
         (definition) =>
-          devtoolsEnabled || definition.status !== CONTROL_STATUSES.debugOnly,
+          devtoolsEnabled ||
+          operatorControlKeySet.has(definition.key) ||
+          definition.status !== CONTROL_STATUSES.debugOnly,
       );
 
       if (title === MODE_GROUP) {
@@ -318,17 +331,23 @@ export function loadStoredPresets(storage) {
 export function getVisibleControlLayout({
   devtoolsEnabled,
   method = DEFAULT_VISUALIZATION_METHOD,
+  operatorControlKeys = [],
 }) {
   return splitPresentationGroups(
-    createVisibleFolderGroups({ devtoolsEnabled, method }),
+    createVisibleFolderGroups({ devtoolsEnabled, method, operatorControlKeys }),
   );
 }
 
 export function getVisibleControlGroups({
   devtoolsEnabled,
   method = DEFAULT_VISUALIZATION_METHOD,
+  operatorControlKeys = [],
 }) {
-  return getVisibleControlLayout({ devtoolsEnabled, method }).folderGroups;
+  return getVisibleControlLayout({
+    devtoolsEnabled,
+    method,
+    operatorControlKeys,
+  }).folderGroups;
 }
 
 export function persistControls(storage, controls) {
