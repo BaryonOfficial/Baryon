@@ -1,5 +1,8 @@
 import { expect, test } from "vitest";
-import { createRuntimeDiagnostics } from "./baryonVisualizerRuntimeState.js";
+import {
+  clearAdaptiveRaymarchResumeState,
+  createRuntimeDiagnostics,
+} from "./baryonVisualizerRuntimeState.js";
 import { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 import {
   getEffectiveAdaptiveRenderScale,
@@ -7,6 +10,7 @@ import {
   resolveFeatureFrame,
   updateAdaptiveRaymarchStepBudget,
 } from "./baryonVisualizerRenderLoop.js";
+import { RENDER_CONTEXTS } from "@baryon/visualizer/render/outputPipeline";
 import {
   LIVE_INPUT_ERROR_CODES,
   LIVE_INPUT_PHASES,
@@ -454,6 +458,57 @@ test("custom profile uses the selected target fps for adaptive tuning", () => {
 
   expect(runtimeDiagnostics.adaptiveRaymarch.targetFps).toBe(48);
   expect(runtimeDiagnostics.adaptiveRaymarch.targetFrameTimeMs).toBe(1000 / 48);
+});
+
+test("external-output custom 120 starts from the calibrated base rung and scale", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      controls: {
+        customPerformanceTargetFps: 120,
+      },
+      renderProfile: {
+        qualityPreset: "custom",
+        targetFps: 120,
+        renderScale: 0.67,
+        renderContext: RENDER_CONTEXTS.externalOutput,
+      },
+    });
+
+  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeState.effectiveRaymarchSteps).toBe(16);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
+});
+
+test("clearing adaptive resume state forces the next authoritative session to restart from calibrated base rungs", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      controls: {
+        customPerformanceTargetFps: 120,
+      },
+      renderProfile: {
+        qualityPreset: "custom",
+        targetFps: 120,
+        renderScale: 0.67,
+        renderContext: RENDER_CONTEXTS.externalOutput,
+      },
+    });
+
+  runtimeState.autoRaymarchResumeRung = 6;
+  runtimeState.autoRaymarchResumeScaleRung = 4;
+  clearAdaptiveRaymarchResumeState(runtimeState);
+  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeState.autoRaymarchResumeRung).toBe(0);
+  expect(runtimeState.autoRaymarchResumeScaleRung).toBe(0);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
 });
 
 test("auto raymarch does not recover during decay frames", () => {

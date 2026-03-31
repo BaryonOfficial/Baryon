@@ -237,7 +237,7 @@ export function recordRuntimePerfSample(
       : nextDurationMs;
 }
 
-export function snapshotRuntimePerfBreakdown(perfBreakdown) {
+function snapshotRuntimePerfBreakdown(perfBreakdown) {
   return Object.fromEntries(
     Object.entries(perfBreakdown ?? {}).map(([key, value]) => [
       key,
@@ -259,7 +259,7 @@ function getRuntimePerfWallTimeMs() {
   return 0;
 }
 
-function buildRuntimePerfSnapshot(runtimeDiagnostics) {
+export function buildRuntimePerfSnapshot(runtimeDiagnostics) {
   return {
     fps:
       runtimeDiagnostics?.smoothedFrameTimeMs > 0
@@ -391,9 +391,8 @@ export function shouldRenderExternalFrame({
   externalFrameState,
   shouldAdvance,
   controlsChanged,
-  forceRender = false,
 }) {
-  return !externalFrameState || shouldAdvance || controlsChanged || forceRender;
+  return !externalFrameState || shouldAdvance || controlsChanged;
 }
 
 export function snapshotRuntimeDiagnostics(runtimeDiagnostics) {

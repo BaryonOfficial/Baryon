@@ -19,6 +19,7 @@ import {
   DEFAULT_PERFORMANCE_TARGET_FPS,
   normalizePerformanceTargetFps,
   PERFORMANCE_PROFILES,
+  RENDER_CONTEXTS,
 } from "@baryon/visualizer/render/outputPipeline";
 import {
   createEmptyAnalysisSchedulerState,
@@ -503,6 +504,96 @@ function clampAdaptiveLadderRung(rung, ladder) {
   return Math.min(Math.max(0, rung), getAdaptiveLadderMaxRung(ladder));
 }
 
+function findAdaptiveLadderRungForValue(ladder, value) {
+  const normalizedValue =
+    typeof value === "number" ? Number(value.toFixed(2)) : value;
+  const matchedIndex = ladder.findIndex(
+    (entry) => Number(entry.toFixed(2)) === normalizedValue,
+  );
+  if (matchedIndex >= 0) {
+    return matchedIndex;
+  }
+
+  const fallbackIndex = ladder.findIndex((entry) => entry >= value);
+  return fallbackIndex >= 0 ? fallbackIndex : getAdaptiveLadderMaxRung(ladder);
+}
+
+function resolveAdaptiveStartInputs({
+  renderProfile,
+  requestedStepBudget,
+  requestedRenderScale,
+}) {
+  if (renderProfile?.renderContext !== RENDER_CONTEXTS.externalOutput) {
+    return {
+      startRung: null,
+      startScaleRung: null,
+    };
+  }
+
+  const normalizedTargetFps = normalizePerformanceTargetFps(
+    renderProfile?.targetFps ?? DEFAULT_PERFORMANCE_TARGET_FPS,
+  );
+  const normalizedRenderScale = normalizeAdaptiveRenderScale(
+    renderProfile?.renderScale ?? requestedRenderScale,
+  );
+  const stepLadder = buildAdaptiveRaymarchLadder(requestedStepBudget);
+  const scaleLadder = buildAdaptiveRenderScaleLadder(requestedRenderScale);
+  const resolvedScaleRung = findAdaptiveLadderRungForValue(
+    scaleLadder,
+    normalizedRenderScale,
+  );
+
+  if (renderProfile?.qualityPreset === PERFORMANCE_PROFILES.maxQuality) {
+    return {
+      startRung: getAdaptiveLadderMaxRung(stepLadder),
+      startScaleRung: getAdaptiveLadderMaxRung(scaleLadder),
+    };
+  }
+
+  if (renderProfile?.qualityPreset === PERFORMANCE_PROFILES.auto) {
+    return {
+      startRung:
+        normalizedRenderScale >= 0.84
+          ? findAdaptiveLadderRungForValue(stepLadder, 40)
+          : findAdaptiveLadderRungForValue(stepLadder, 32),
+      startScaleRung: resolvedScaleRung,
+    };
+  }
+
+  if (normalizedTargetFps <= 48) {
+    return {
+      startRung:
+        normalizedRenderScale >= 1
+          ? findAdaptiveLadderRungForValue(stepLadder, 48)
+          : findAdaptiveLadderRungForValue(stepLadder, 40),
+      startScaleRung: resolvedScaleRung,
+    };
+  }
+  if (normalizedTargetFps <= 72) {
+    return {
+      startRung:
+        normalizedRenderScale >= 0.92
+          ? findAdaptiveLadderRungForValue(stepLadder, 40)
+          : findAdaptiveLadderRungForValue(stepLadder, 32),
+      startScaleRung: resolvedScaleRung,
+    };
+  }
+  if (normalizedTargetFps <= 96) {
+    return {
+      startRung:
+        normalizedRenderScale >= 0.75
+          ? findAdaptiveLadderRungForValue(stepLadder, 24)
+          : findAdaptiveLadderRungForValue(stepLadder, 16),
+      startScaleRung: resolvedScaleRung,
+    };
+  }
+
+  return {
+    startRung: findAdaptiveLadderRungForValue(stepLadder, 16),
+    startScaleRung: resolvedScaleRung,
+  };
+}
+
 function resolveAdaptiveCurrentRung({
   currentRung,
   resumeRung,
@@ -739,6 +830,11 @@ export function updateAdaptiveRaymarchStepBudget({
 
   let ladder = buildAdaptiveRaymarchLadder(governedStepBudget);
   let scaleLadder = buildAdaptiveRenderScaleLadder(governedRenderScale);
+  const adaptiveStartInputs = resolveAdaptiveStartInputs({
+    renderProfile,
+    requestedStepBudget: governedStepBudget,
+    requestedRenderScale: governedRenderScale,
+  });
   const requestedChanged =
     adaptiveRaymarch.requestedRaymarchSteps !== governedStepBudget ||
     adaptiveRaymarch.requestedRenderScale !== governedRenderScale;
@@ -750,12 +846,12 @@ export function updateAdaptiveRaymarchStepBudget({
       {
         startRung: Number.isFinite(runtimeState.autoRaymarchResumeRung)
           ? runtimeState.autoRaymarchResumeRung
-          : null,
+          : adaptiveStartInputs.startRung,
         startScaleRung: Number.isFinite(
           runtimeState.autoRaymarchResumeScaleRung,
         )
           ? runtimeState.autoRaymarchResumeScaleRung
-          : null,
+          : adaptiveStartInputs.startScaleRung,
       },
     ));
   }

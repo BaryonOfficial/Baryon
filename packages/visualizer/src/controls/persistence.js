@@ -1,6 +1,6 @@
 import { CONTROL_STATUSES } from "./schema.js";
 import { normalizeLiveInputAnalysisClass } from "../core/audio/liveInputAnalysis.js";
-import { normalizePerformanceProfile } from "../render/outputProfilePolicy.js";
+import { normalizePerformanceProfile } from "../render/outputPipeline.js";
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));

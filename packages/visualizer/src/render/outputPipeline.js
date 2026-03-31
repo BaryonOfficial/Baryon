@@ -14,22 +14,397 @@ import {
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
 import { traa } from "three/examples/jsm/tsl/display/TRAANode.js";
 import { RENDER_DEFAULTS } from "../defaults.js";
-import {
-  OUTPUT_MODES,
-  normalizeOutputMode,
-  resolveRenderQualityProfile,
-} from "./outputProfilePolicy.js";
 
 const { RenderPipeline } = /** @type {any} */ (THREEWebGPU);
 
-export * from "./outputProfilePolicy.js";
+export const MIN_PERFORMANCE_TARGET_FPS = 24;
+export const MAX_PERFORMANCE_TARGET_FPS = 120;
+export const DEFAULT_PERFORMANCE_TARGET_FPS = 60;
+
+export const PERFORMANCE_PROFILES = Object.freeze({
+  auto: "auto",
+  custom: "custom",
+  maxQuality: "max-quality",
+});
+export const DEFAULT_PERFORMANCE_PROFILE = PERFORMANCE_PROFILES.auto;
+export const RENDER_QUALITY_PRESETS = PERFORMANCE_PROFILES;
+export const DEFAULT_RENDER_QUALITY_PRESET = DEFAULT_PERFORMANCE_PROFILE;
+export const RENDER_CONTEXTS = Object.freeze({
+  preview: "preview",
+  externalOutput: "external-output",
+});
 
 /**
- * @typedef {import("./outputProfilePolicy.js").PerformanceProfile} PerformanceProfile
- * @typedef {import("./outputProfilePolicy.js").RenderContext} RenderContext
- * @typedef {import("./outputProfilePolicy.js").RenderQualityProfile} RenderQualityProfile
- * @typedef {import("./outputProfilePolicy.js").RenderQualityProfileOverrides} RenderQualityProfileOverrides
+ * @typedef {"auto" | "custom" | "max-quality"} PerformanceProfile
  */
+
+/**
+ * @typedef {"preview" | "external-output"} RenderContext
+ */
+
+/**
+ * @typedef {{
+ *   qualityPreset: PerformanceProfile,
+ *   targetFps: number,
+ *   renderScale: number,
+ *   traaEnabled: boolean,
+ *   bloomAllowed: boolean,
+ *   renderContext: RenderContext,
+ * }} RenderQualityProfile
+ */
+
+/**
+ * @typedef {{
+ *   renderScale?: number,
+ *   traaEnabled?: boolean,
+ *   bloomAllowed?: boolean,
+ * }} RenderQualityProfileOverrides
+ */
+
+/**
+ * @param {unknown} value
+ * @returns {PerformanceProfile}
+ */
+export function normalizePerformanceProfile(value) {
+  if (value === PERFORMANCE_PROFILES.custom) {
+    return PERFORMANCE_PROFILES.custom;
+  }
+  if (value === PERFORMANCE_PROFILES.maxQuality || value === "none") {
+    return PERFORMANCE_PROFILES.maxQuality;
+  }
+  return DEFAULT_PERFORMANCE_PROFILE;
+}
+
+export const normalizeRenderQualityPreset = normalizePerformanceProfile;
+
+/**
+ * @param {unknown} value
+ * @returns {number}
+ */
+export function normalizePerformanceTargetFps(value) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_PERFORMANCE_TARGET_FPS;
+  }
+
+  const numericValue = /** @type {number} */ (value);
+  return Math.min(
+    MAX_PERFORMANCE_TARGET_FPS,
+    Math.max(MIN_PERFORMANCE_TARGET_FPS, Math.round(numericValue)),
+  );
+}
+
+/**
+ * @param {unknown} qualityPreset
+ * @param {unknown} targetFps
+ * @returns {string}
+ */
+export function formatPerformanceProfileLabel(qualityPreset, targetFps = null) {
+  const normalizedPerformanceProfile =
+    normalizePerformanceProfile(qualityPreset);
+
+  if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.custom) {
+    return Number.isFinite(targetFps)
+      ? `Custom ${normalizePerformanceTargetFps(targetFps)} FPS`
+      : "Custom";
+  }
+
+  if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.maxQuality) {
+    return "Max Quality";
+  }
+
+  return "Auto";
+}
+
+function resolveOutputResolutionBand(outputWidth, outputHeight) {
+  if (!Number.isFinite(outputWidth) || !Number.isFinite(outputHeight)) {
+    return "unknown";
+  }
+
+  if (outputWidth >= 3840 || outputHeight >= 2160) {
+    return "2160p+";
+  }
+
+  if (outputWidth >= 2560 || outputHeight >= 1440) {
+    return "1440p";
+  }
+
+  return "1080p-";
+}
+
+function resolveExternalOutputCustomTargetBand(targetFps) {
+  const normalizedTargetFps = normalizePerformanceTargetFps(targetFps);
+
+  if (normalizedTargetFps <= 48) {
+    return "24-48";
+  }
+  if (normalizedTargetFps <= 72) {
+    return "49-72";
+  }
+  if (normalizedTargetFps <= 96) {
+    return "73-96";
+  }
+  return "97-120";
+}
+
+function buildRenderQualityProfile({
+  qualityPreset,
+  targetFps,
+  renderScale,
+  traaEnabled,
+  bloomAllowed = true,
+  renderContext,
+}) {
+  return {
+    qualityPreset,
+    targetFps,
+    renderScale,
+    traaEnabled,
+    bloomAllowed,
+    renderContext,
+  };
+}
+
+function resolveExternalOutputProfile({
+  normalizedPerformanceProfile,
+  resolvedTargetFps,
+  outputWidth,
+  outputHeight,
+}) {
+  const resolutionBand = resolveOutputResolutionBand(outputWidth, outputHeight);
+
+  if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.maxQuality) {
+    return buildRenderQualityProfile({
+      qualityPreset: normalizedPerformanceProfile,
+      targetFps: DEFAULT_PERFORMANCE_TARGET_FPS,
+      renderScale: 1,
+      traaEnabled: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
+  }
+
+  if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.auto) {
+    if (resolutionBand === "2160p+") {
+      return buildRenderQualityProfile({
+        qualityPreset: normalizedPerformanceProfile,
+        targetFps: DEFAULT_PERFORMANCE_TARGET_FPS,
+        renderScale: 0.67,
+        traaEnabled: false,
+        renderContext: RENDER_CONTEXTS.externalOutput,
+      });
+    }
+    if (resolutionBand === "1440p") {
+      return buildRenderQualityProfile({
+        qualityPreset: normalizedPerformanceProfile,
+        targetFps: DEFAULT_PERFORMANCE_TARGET_FPS,
+        renderScale: 0.75,
+        traaEnabled: true,
+        renderContext: RENDER_CONTEXTS.externalOutput,
+      });
+    }
+    return buildRenderQualityProfile({
+      qualityPreset: normalizedPerformanceProfile,
+      targetFps: DEFAULT_PERFORMANCE_TARGET_FPS,
+      renderScale: 0.84,
+      traaEnabled: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
+  }
+
+  const targetBand = resolveExternalOutputCustomTargetBand(resolvedTargetFps);
+  if (targetBand === "24-48") {
+    return buildRenderQualityProfile({
+      qualityPreset: normalizedPerformanceProfile,
+      targetFps: resolvedTargetFps,
+      renderScale: resolutionBand === "2160p+" ? 0.84 : 1,
+      traaEnabled: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
+  }
+  if (targetBand === "49-72") {
+    if (resolutionBand === "2160p+") {
+      return buildRenderQualityProfile({
+        qualityPreset: normalizedPerformanceProfile,
+        targetFps: resolvedTargetFps,
+        renderScale: 0.75,
+        traaEnabled: false,
+        renderContext: RENDER_CONTEXTS.externalOutput,
+      });
+    }
+    if (resolutionBand === "1440p") {
+      return buildRenderQualityProfile({
+        qualityPreset: normalizedPerformanceProfile,
+        targetFps: resolvedTargetFps,
+        renderScale: 0.84,
+        traaEnabled: true,
+        renderContext: RENDER_CONTEXTS.externalOutput,
+      });
+    }
+    return buildRenderQualityProfile({
+      qualityPreset: normalizedPerformanceProfile,
+      targetFps: resolvedTargetFps,
+      renderScale: 0.92,
+      traaEnabled: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
+  }
+  if (targetBand === "73-96") {
+    return buildRenderQualityProfile({
+      qualityPreset: normalizedPerformanceProfile,
+      targetFps: resolvedTargetFps,
+      renderScale: resolutionBand === "1080p-" ? 0.75 : 0.67,
+      traaEnabled: resolutionBand === "1080p-",
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
+  }
+
+  return buildRenderQualityProfile({
+    qualityPreset: normalizedPerformanceProfile,
+    targetFps: resolvedTargetFps,
+    renderScale: 0.67,
+    traaEnabled: false,
+    renderContext: RENDER_CONTEXTS.externalOutput,
+  });
+}
+
+/**
+ * @param {RenderQualityProfile} profile
+ * @param {RenderQualityProfileOverrides | null | undefined} overrides
+ * @returns {RenderQualityProfile}
+ */
+export function applyRenderQualityProfileOverrides(profile, overrides) {
+  if (!profile || !overrides) {
+    return profile;
+  }
+
+  const nextProfile = { ...profile };
+  if (Number.isFinite(overrides.renderScale) && overrides.renderScale > 0) {
+    nextProfile.renderScale = overrides.renderScale;
+  }
+  if (typeof overrides.traaEnabled === "boolean") {
+    nextProfile.traaEnabled = overrides.traaEnabled;
+  }
+  if (typeof overrides.bloomAllowed === "boolean") {
+    nextProfile.bloomAllowed = overrides.bloomAllowed;
+  }
+
+  return nextProfile;
+}
+
+/**
+ * @param {{
+ *   qualityPreset?: PerformanceProfile,
+ *   targetFps?: number,
+ *   outputWidth?: number,
+ *   outputHeight?: number,
+ *   overrides?: RenderQualityProfileOverrides | null,
+ *   renderScale?: number,
+ *   traaEnabled?: boolean,
+ *   bloomAllowed?: boolean,
+ *   renderContext?: RenderContext,
+ * }=} param0
+ * @returns {RenderQualityProfile}
+ */
+export function resolveRenderQualityProfile({
+  qualityPreset = DEFAULT_PERFORMANCE_PROFILE,
+  targetFps = DEFAULT_PERFORMANCE_TARGET_FPS,
+  outputWidth = 0,
+  outputHeight = 0,
+  overrides = null,
+  renderScale,
+  traaEnabled,
+  bloomAllowed,
+  renderContext = RENDER_CONTEXTS.preview,
+} = {}) {
+  const effectiveOverrides =
+    overrides ??
+    (Number.isFinite(renderScale) ||
+    typeof traaEnabled === "boolean" ||
+    typeof bloomAllowed === "boolean"
+      ? {
+          renderScale,
+          traaEnabled,
+          bloomAllowed,
+        }
+      : null);
+  const normalizedPerformanceProfile =
+    normalizePerformanceProfile(qualityPreset);
+  const resolvedTargetFps =
+    normalizedPerformanceProfile === PERFORMANCE_PROFILES.custom
+      ? normalizePerformanceTargetFps(targetFps)
+      : DEFAULT_PERFORMANCE_TARGET_FPS;
+  if (renderContext === RENDER_CONTEXTS.externalOutput) {
+    return applyRenderQualityProfileOverrides(
+      resolveExternalOutputProfile({
+        normalizedPerformanceProfile,
+        resolvedTargetFps,
+        outputWidth,
+        outputHeight,
+      }),
+      effectiveOverrides,
+    );
+  }
+
+  if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.maxQuality) {
+    return applyRenderQualityProfileOverrides(
+      buildRenderQualityProfile({
+        qualityPreset: normalizedPerformanceProfile,
+        targetFps: DEFAULT_PERFORMANCE_TARGET_FPS,
+        renderScale: 1,
+        traaEnabled: true,
+        renderContext,
+      }),
+      effectiveOverrides,
+    );
+  }
+
+  const isHighResolutionOutput =
+    Number.isFinite(outputWidth) &&
+    Number.isFinite(outputHeight) &&
+    (outputWidth >= 3840 || outputHeight >= 2160);
+  if (isHighResolutionOutput) {
+    return applyRenderQualityProfileOverrides(
+      buildRenderQualityProfile({
+        qualityPreset: normalizedPerformanceProfile,
+        targetFps: resolvedTargetFps,
+        renderScale: 0.75,
+        traaEnabled: false,
+        renderContext,
+      }),
+      effectiveOverrides,
+    );
+  }
+
+  return applyRenderQualityProfileOverrides(
+    buildRenderQualityProfile({
+      qualityPreset: normalizedPerformanceProfile,
+      targetFps: resolvedTargetFps,
+      renderScale: 1,
+      traaEnabled: true,
+      renderContext,
+    }),
+    effectiveOverrides,
+  );
+}
+
+export function getRenderQualityProfileKey(profile) {
+  return [
+    normalizePerformanceProfile(profile?.qualityPreset),
+    profile?.renderScale ?? 1,
+    profile?.traaEnabled === false ? "no-traa" : "traa",
+    profile?.bloomAllowed === false ? "no-bloom" : "bloom",
+  ].join(":");
+}
+
+export const OUTPUT_MODES = Object.freeze({
+  transparent: "transparent",
+  opaque: "opaque",
+});
+
+export function normalizeOutputMode(mode) {
+  return mode === OUTPUT_MODES.opaque
+    ? OUTPUT_MODES.opaque
+    : OUTPUT_MODES.transparent;
+}
 
 export function composeRenderOutputNode({
   sceneColor,

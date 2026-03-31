@@ -40,7 +40,6 @@ export function useVisualizationRuntimeLifecycle({
   const appliedControlVersionRef = useRef(-1);
   const runtimeDiagnosticsRef = useRef(createRuntimeDiagnostics());
   const pixelRatioRef = useRef(null);
-  const renderSurfaceSizeRef = useRef(null);
   const lastAudioIssueSignatureRef = useRef(null);
   const cachedControlSnapshotsRef = useRef(
     createEmptyControlSnapshots(
@@ -155,7 +154,6 @@ export function useVisualizationRuntimeLifecycle({
     frameCacheRefs,
     controlCacheRefs,
     pixelRatioRef,
-    renderSurfaceSizeRef,
     lastLiveInputRuntimeStatusRef,
     lastAudioIssueSignatureRef,
   };

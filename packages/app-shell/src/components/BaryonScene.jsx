@@ -49,6 +49,7 @@ export function BaryonScene({
   controlsRef,
   visualizationMethod,
   renderQualityPreset: performanceProfile,
+  renderProfileOverrides: renderProfileOverridesProp = null,
   onPerformanceHudSnapshotChange,
   onAuditSnapshotChange = null,
   outputFrameConfig = null,
@@ -56,6 +57,7 @@ export function BaryonScene({
   onFrameState = null,
   externalFrameRef = null,
   controlVersion = 0,
+  adaptiveResetNonce = 0,
   basePixelRatio = null,
   onStageRender = null,
   suppressRender = false,
@@ -75,19 +77,29 @@ export function BaryonScene({
   const { camera, gl, scene, size } = useThree();
   const orbitControlsRef = useRef(null);
   const [renderProfileOverrides, setRenderProfileOverrides] = useState(null);
+  const effectiveRenderProfileOverrides = useMemo(
+    () => ({
+      ...(renderProfileOverridesProp ?? {}),
+      ...(renderProfileOverrides ?? {}),
+    }),
+    [renderProfileOverrides, renderProfileOverridesProp],
+  );
   const renderProfile = useMemo(
     () =>
       resolveRenderQualityProfile({
         qualityPreset: performanceProfile,
         outputWidth: size.width,
         outputHeight: size.height,
-        overrides: renderProfileOverrides,
+        overrides:
+          Object.keys(effectiveRenderProfileOverrides).length > 0
+            ? effectiveRenderProfileOverrides
+            : null,
         renderContext,
       }),
     [
+      effectiveRenderProfileOverrides,
       performanceProfile,
       renderContext,
-      renderProfileOverrides,
       size.height,
       size.width,
     ],
@@ -189,6 +201,7 @@ export function BaryonScene({
     onFrameState: handleFrameState,
     externalFrameRef,
     controlVersion,
+    adaptiveResetNonce,
     renderProfile,
     basePixelRatio,
     onStageRender,
