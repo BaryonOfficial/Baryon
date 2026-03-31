@@ -76,10 +76,12 @@ export function useBaryonVisualizer({
   ensurePipeline,
   postNodesRef,
   onPerformanceHudSnapshotChange,
+  onAuditSnapshotChange,
   outputFrameConfig = null,
   onOutputFrame = null,
   onFrameState = null,
   externalFrameRef = null,
+  controlVersion = 0,
   renderProfile = null,
   basePixelRatio = null,
   onStageRender = null,
@@ -165,6 +167,10 @@ export function useBaryonVisualizer({
       lastAudioIssueSignatureRef.current = null;
       clearCachedControlsSnapshot(cachedControlSnapshotsRef);
       onPerformanceHudSnapshotChange?.(null);
+      onAuditSnapshotChange?.({
+        enabled: false,
+        snapshot: null,
+      });
       setLiveInputRuntimeStatus?.(createLiveInputRuntimeStatus());
       const defaultDpr = getPlaybackDiagnosticDpr();
       gl.setPixelRatio(defaultDpr);
@@ -187,6 +193,7 @@ export function useBaryonVisualizer({
     cachedControlSnapshotsRef,
     scene,
     onPerformanceHudSnapshotChange,
+    onAuditSnapshotChange,
     setLiveInputRuntimeStatus,
   ]);
 
@@ -287,6 +294,47 @@ export function useBaryonVisualizer({
       );
     };
   }, [controlsRef, enableControlEventSync]);
+
+  useEffect(() => {
+    if (!Number.isInteger(controlVersion) || controlVersion <= 0) {
+      return;
+    }
+
+    const nextControls = controlsRef.current;
+    const previousControls = cachedControlSnapshotsRef.current.controlsSnapshot;
+    const shouldSkipInvalidation =
+      shouldSkipChromesthesiaStaticColorInvalidation(
+        previousControls,
+        nextControls,
+      );
+    cachedControlSnapshotsRef.current.controlsSnapshot = nextControls
+      ? { ...nextControls }
+      : null;
+
+    if (shouldSkipInvalidation) {
+      return;
+    }
+
+    const preservePausedFrame = shouldPreservePausedFrameOnControlsChange(
+      previousControls,
+      nextControls,
+    );
+
+    controlVersionRef.current += 1;
+    appliedControlVersionRef.current = -1;
+    if (!preservePausedFrame) {
+      lastActiveFrameRef.current = null;
+      lastIdleFrameRef.current = null;
+    }
+  }, [
+    appliedControlVersionRef,
+    cachedControlSnapshotsRef,
+    controlVersion,
+    controlVersionRef,
+    controlsRef,
+    lastActiveFrameRef,
+    lastIdleFrameRef,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -631,6 +679,7 @@ export function useBaryonVisualizer({
       },
       {
         markRuntimeReady: markBaryonTestRuntimeReady,
+        onAuditSnapshotChange,
       },
     );
     onFrameState?.({

@@ -16,19 +16,15 @@ import {
 } from "@baryon/visualizer/audio-features";
 import * as raymarchPerformanceGovernor from "@baryon/visualizer/core/raymarch/performanceGovernor";
 import {
-  CUSTOM_TARGET_FPS_BANDS,
   DEFAULT_PERFORMANCE_TARGET_FPS,
   normalizePerformanceTargetFps,
   PERFORMANCE_PROFILES,
-  RENDER_CONTEXTS,
-  resolveCustomTargetFpsBand,
-  usesBalancedPerformanceBaseline,
 } from "@baryon/visualizer/render/outputPipeline";
 import {
   createEmptyAnalysisSchedulerState,
+  maybePublishRuntimePerfSnapshot,
   recordRuntimePerfSample,
   shouldReuseIdleFrame,
-  snapshotRuntimePerfBreakdown,
   snapshotRuntimeDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
 export { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
@@ -62,115 +58,6 @@ const AUTO_RAYMARCH_STEP_LADDER = Object.freeze([
 const AUTO_RAYMARCH_RENDER_SCALE_LADDER = Object.freeze([
   0.67, 0.75, 0.84, 0.92, 1,
 ]);
-const STAGE_ATTRIBUTION_TIEBREAK_ORDER = Object.freeze([
-  "unattributed",
-  "render",
-  "analysis",
-  "control",
-  "engine",
-]);
-const STAGE_ATTRIBUTION_BUCKET_PERF_KEYS = Object.freeze({
-  analysis: Object.freeze([
-    "readAnalysisSnapshotMs",
-    "enqueueAnalysisFrameMs",
-    "readAnalysisHintsMs",
-    "buildFeatureFrameMs",
-    "heavyAnalysisMs",
-    "fastComposeMs",
-  ]),
-  engine: Object.freeze(["engineEnqueueMs", "readEngineSnapshotMs"]),
-  control: Object.freeze([
-    "applyCachedControlSnapshotsMs",
-    "syncLiveInputRuntimeStatusMs",
-    "runtimeTickMs",
-    "applyReactiveBloomMs",
-    "applySceneControlsMs",
-  ]),
-  render: Object.freeze(["pipelineRenderMs"]),
-});
-
-function readPerfAverageMs(perfBreakdown, key) {
-  const averageMs = perfBreakdown?.[key]?.averageMs;
-  return Number.isFinite(averageMs) ? Number(averageMs) : 0;
-}
-
-function sumPerfAverageMs(perfBreakdown, keys) {
-  return keys.reduce(
-    (totalMs, key) => totalMs + readPerfAverageMs(perfBreakdown, key),
-    0,
-  );
-}
-
-function resolveDominantStageAttributionBucket(bucketValues) {
-  let dominantBucket = STAGE_ATTRIBUTION_TIEBREAK_ORDER[0];
-  let dominantValue = Number.NEGATIVE_INFINITY;
-  for (const bucketName of STAGE_ATTRIBUTION_TIEBREAK_ORDER) {
-    const bucketValue = bucketValues[bucketName];
-    if (bucketValue > dominantValue) {
-      dominantBucket = bucketName;
-      dominantValue = bucketValue;
-    }
-  }
-
-  return dominantBucket;
-}
-
-function buildStageAttribution(runtimeDiagnostics, perfBreakdown) {
-  const smoothedFrameTimeMs = Number.isFinite(
-    runtimeDiagnostics?.smoothedFrameTimeMs,
-  )
-    ? Number(runtimeDiagnostics.smoothedFrameTimeMs)
-    : 0;
-  const analysisCpuMs = sumPerfAverageMs(
-    perfBreakdown,
-    STAGE_ATTRIBUTION_BUCKET_PERF_KEYS.analysis,
-  );
-  const engineCpuMs = sumPerfAverageMs(
-    perfBreakdown,
-    STAGE_ATTRIBUTION_BUCKET_PERF_KEYS.engine,
-  );
-  const controlCpuMs = sumPerfAverageMs(
-    perfBreakdown,
-    STAGE_ATTRIBUTION_BUCKET_PERF_KEYS.control,
-  );
-  const renderCpuMs = sumPerfAverageMs(
-    perfBreakdown,
-    STAGE_ATTRIBUTION_BUCKET_PERF_KEYS.render,
-  );
-  const measuredCpuMs =
-    analysisCpuMs + engineCpuMs + controlCpuMs + renderCpuMs;
-  const unattributedFrameMs = Math.max(0, smoothedFrameTimeMs - measuredCpuMs);
-  const bucketValues = {
-    unattributed: unattributedFrameMs,
-    render: renderCpuMs,
-    analysis: analysisCpuMs,
-    control: controlCpuMs,
-    engine: engineCpuMs,
-  };
-
-  return {
-    analysisCpuMs,
-    engineCpuMs,
-    controlCpuMs,
-    renderCpuMs,
-    measuredCpuMs,
-    unattributedFrameMs,
-    dominantBucket: resolveDominantStageAttributionBucket(bucketValues),
-  };
-}
-
-function buildStageEngineCounters(runtimeDiagnostics) {
-  return {
-    publishCount: runtimeDiagnostics?.engine?.publishCount ?? 0,
-    publishSkipCount: runtimeDiagnostics?.engine?.publishSkipCount ?? 0,
-    fastSignalUpdateCount:
-      runtimeDiagnostics?.engine?.fastSignalUpdateCount ?? 0,
-    structuralUpdateCount:
-      runtimeDiagnostics?.engine?.structuralUpdateCount ?? 0,
-    chromaUpdateCount: runtimeDiagnostics?.engine?.chromaUpdateCount ?? 0,
-    tempoUpdateCount: runtimeDiagnostics?.engine?.tempoUpdateCount ?? 0,
-  };
-}
 
 function snapshotFeatureFrame(featureFrame) {
   return {
@@ -337,55 +224,9 @@ function getAnalysisSchedulerState(analysisSchedulerRef) {
   return analysisSchedulerRef?.current ?? createEmptyAnalysisSchedulerState();
 }
 
-function isNonIdleFeatureFrame(featureFrame) {
-  return (featureFrame?.fieldState ?? "idle") !== "idle";
-}
-
-function shouldSeedLiveInputWarmupFrame({
-  status,
-  lastLiveFrame,
-  lastActiveFrame,
-}) {
-  return (
-    status?.isLiveInputActive === true &&
-    !isNonIdleFeatureFrame(lastLiveFrame) &&
-    !lastActiveFrame
-  );
-}
-
-function shouldCaptureLastLiveFrame({ status, featureFrame }) {
-  return (
-    status?.isPlaying === true ||
-    status?.isLiveInputActive !== true ||
-    isNonIdleFeatureFrame(featureFrame)
-  );
-}
-
-function storeComposedAnalysisResult(
-  analysisSchedulerRef,
-  preparedInputs,
-  analysisResult,
-  featureFrame,
-) {
-  if (!analysisSchedulerRef?.current) {
-    return;
-  }
-
-  analysisSchedulerRef.current = {
-    lastHeavyAnalysisAtMs: preparedInputs.currentFrameAtMs,
-    lastHeavyAnalysisResult: analysisResult,
-    lastComposedFeatureFrame: featureFrame,
-    lastAnalysisSessionKey: preparedInputs.analysisSessionKey,
-    lastAnalysisInputsSignature: preparedInputs.analysisInputsSignature,
-  };
-}
-
 export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
   const smoothedFrameTimeMs = runtimeDiagnostics?.smoothedFrameTimeMs ?? 0;
   const render = runtimeDiagnostics?.render ?? null;
-  const perfBreakdown = snapshotRuntimePerfBreakdown(
-    runtimeDiagnostics?.perfBreakdown,
-  );
   return {
     fps:
       smoothedFrameTimeMs > 0 && Number.isFinite(smoothedFrameTimeMs)
@@ -403,9 +244,6 @@ export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
     requestedRaymarchSteps: render?.requestedRaymarchSteps ?? 0,
     effectiveRaymarchSteps: render?.effectiveRaymarchSteps ?? 0,
     adaptiveRaymarchActive: render?.adaptiveRaymarchActive ?? false,
-    perfBreakdown,
-    stageAttribution: buildStageAttribution(runtimeDiagnostics, perfBreakdown),
-    engineCounters: buildStageEngineCounters(runtimeDiagnostics),
   };
 }
 
@@ -574,23 +412,10 @@ export function updateRendererDiagnostics(
   }
   runtimeDiagnostics.currentPixelRatio = targetPixelRatio;
   runtimeDiagnostics.basePixelRatio = basePixelRatio;
-  const nextRenderSurfaceWidth = state?.size?.width ?? 0;
-  const nextRenderSurfaceHeight = state?.size?.height ?? 0;
-  const previousRenderSurfaceSize =
-    renderLoopRefs.renderSurfaceSizeRef.current ?? null;
-  const renderSurfaceSizeChanged =
-    previousRenderSurfaceSize?.width !== nextRenderSurfaceWidth ||
-    previousRenderSurfaceSize?.height !== nextRenderSurfaceHeight;
   if (renderLoopRefs.pixelRatioRef.current !== targetPixelRatio) {
     gl.setPixelRatio(targetPixelRatio);
-    renderLoopRefs.pixelRatioRef.current = targetPixelRatio;
-  }
-  if (renderSurfaceSizeChanged) {
     gl.setSize(state.size.width, state.size.height, false);
-    renderLoopRefs.renderSurfaceSizeRef.current = {
-      width: nextRenderSurfaceWidth,
-      height: nextRenderSurfaceHeight,
-    };
+    renderLoopRefs.pixelRatioRef.current = targetPixelRatio;
   }
 
   if (status.isPlaying && frameTimeMs !== null) {
@@ -676,103 +501,6 @@ function getAdaptiveLadderMaxRung(ladder) {
 
 function clampAdaptiveLadderRung(rung, ladder) {
   return Math.min(Math.max(0, rung), getAdaptiveLadderMaxRung(ladder));
-}
-
-function findAdaptiveLadderRungForValue(ladder, value) {
-  const normalizedValue =
-    typeof value === "number" ? Number(value.toFixed(2)) : value;
-  const matchedIndex = ladder.findIndex(
-    (entry) => Number(entry.toFixed(2)) === normalizedValue,
-  );
-  if (matchedIndex >= 0) {
-    return matchedIndex;
-  }
-
-  const fallbackIndex = ladder.findIndex((entry) => entry >= value);
-  return fallbackIndex >= 0 ? fallbackIndex : getAdaptiveLadderMaxRung(ladder);
-}
-
-function resolveAdaptiveStartInputs({
-  renderProfile,
-  requestedStepBudget,
-  requestedRenderScale,
-}) {
-  const stepLadder = buildAdaptiveRaymarchLadder(requestedStepBudget);
-  const scaleLadder = buildAdaptiveRenderScaleLadder(requestedRenderScale);
-  const resolvedScaleRung = findAdaptiveLadderRungForValue(
-    scaleLadder,
-    normalizeAdaptiveRenderScale(
-      renderProfile?.renderScale ?? requestedRenderScale,
-    ),
-  );
-
-  if (renderProfile?.qualityPreset === PERFORMANCE_PROFILES.maxQuality) {
-    return {
-      startRung: getAdaptiveLadderMaxRung(stepLadder),
-      startScaleRung: getAdaptiveLadderMaxRung(scaleLadder),
-    };
-  }
-
-  const renderContext =
-    renderProfile?.renderContext === RENDER_CONTEXTS.externalOutput
-      ? RENDER_CONTEXTS.externalOutput
-      : RENDER_CONTEXTS.preview;
-  const targetBand = resolveCustomTargetFpsBand(
-    renderProfile?.targetFps ?? DEFAULT_PERFORMANCE_TARGET_FPS,
-  );
-  const usesBalancedBaseline = usesBalancedPerformanceBaseline(
-    renderProfile?.qualityPreset,
-    renderProfile?.targetFps ?? DEFAULT_PERFORMANCE_TARGET_FPS,
-  );
-
-  if (renderContext === RENDER_CONTEXTS.externalOutput) {
-    if (usesBalancedBaseline) {
-      return {
-        startRung: findAdaptiveLadderRungForValue(stepLadder, 32),
-        startScaleRung: resolvedScaleRung,
-      };
-    }
-    if (targetBand === CUSTOM_TARGET_FPS_BANDS.low) {
-      return {
-        startRung: findAdaptiveLadderRungForValue(stepLadder, 40),
-        startScaleRung: resolvedScaleRung,
-      };
-    }
-    if (targetBand === CUSTOM_TARGET_FPS_BANDS.high) {
-      return {
-        startRung: findAdaptiveLadderRungForValue(stepLadder, 24),
-        startScaleRung: resolvedScaleRung,
-      };
-    }
-    return {
-      startRung: findAdaptiveLadderRungForValue(stepLadder, 16),
-      startScaleRung: resolvedScaleRung,
-    };
-  }
-
-  if (usesBalancedBaseline) {
-    return {
-      startRung: findAdaptiveLadderRungForValue(stepLadder, 40),
-      startScaleRung: resolvedScaleRung,
-    };
-  }
-  if (targetBand === CUSTOM_TARGET_FPS_BANDS.low) {
-    return {
-      startRung: findAdaptiveLadderRungForValue(stepLadder, 48),
-      startScaleRung: resolvedScaleRung,
-    };
-  }
-  if (targetBand === CUSTOM_TARGET_FPS_BANDS.high) {
-    return {
-      startRung: findAdaptiveLadderRungForValue(stepLadder, 32),
-      startScaleRung: resolvedScaleRung,
-    };
-  }
-
-  return {
-    startRung: findAdaptiveLadderRungForValue(stepLadder, 24),
-    startScaleRung: resolvedScaleRung,
-  };
 }
 
 function resolveAdaptiveCurrentRung({
@@ -1011,11 +739,6 @@ export function updateAdaptiveRaymarchStepBudget({
 
   let ladder = buildAdaptiveRaymarchLadder(governedStepBudget);
   let scaleLadder = buildAdaptiveRenderScaleLadder(governedRenderScale);
-  const adaptiveStartInputs = resolveAdaptiveStartInputs({
-    renderProfile,
-    requestedStepBudget: governedStepBudget,
-    requestedRenderScale: governedRenderScale,
-  });
   const requestedChanged =
     adaptiveRaymarch.requestedRaymarchSteps !== governedStepBudget ||
     adaptiveRaymarch.requestedRenderScale !== governedRenderScale;
@@ -1027,12 +750,12 @@ export function updateAdaptiveRaymarchStepBudget({
       {
         startRung: Number.isFinite(runtimeState.autoRaymarchResumeRung)
           ? runtimeState.autoRaymarchResumeRung
-          : adaptiveStartInputs.startRung,
+          : null,
         startScaleRung: Number.isFinite(
           runtimeState.autoRaymarchResumeScaleRung,
         )
           ? runtimeState.autoRaymarchResumeScaleRung
-          : adaptiveStartInputs.startScaleRung,
+          : null,
       },
     ));
   }
@@ -1348,6 +1071,7 @@ export function resolveFeatureFrame(
         frameTimeMs: time * 1000,
         includeChromesthesia: chromesthesiaEnabled,
         analysisHints,
+        structuralImplementation: controls.structuralImplementation,
       });
     } else {
       const preparedInputs = prepareFeatureFrame({
@@ -1359,6 +1083,7 @@ export function resolveFeatureFrame(
         frameTimeMs: time * 1000,
         includeChromesthesia: chromesthesiaEnabled,
         analysisHints,
+        structuralImplementation: controls.structuralImplementation,
       });
 
       if (preparedInputs.silentFeatureFrame) {
@@ -1367,8 +1092,6 @@ export function resolveFeatureFrame(
         resetAnalysisSchedulerState(analysisSchedulerRef);
       } else {
         if (featureEngine?.enqueueTransportFrame) {
-          const schedulerState =
-            getAnalysisSchedulerState(analysisSchedulerRef);
           const engineEnqueueStartedAt = getRenderLoopWallTimeMs();
           const transportFrame = buildAudioFeatureTransportFrame({
             analysisSnapshot,
@@ -1382,6 +1105,7 @@ export function resolveFeatureFrame(
             includeChromesthesia: chromesthesiaEnabled,
             analysisHints,
             auditSettings: featureState?.audit?.settings ?? null,
+            structuralImplementation: controls.structuralImplementation,
           });
           featureEngine.enqueueTransportFrame(transportFrame);
           recordRuntimePerfSample(
@@ -1460,44 +1184,6 @@ export function resolveFeatureFrame(
               "fastComposeMs",
               getRenderLoopWallTimeMs() - fastComposeStartedAt,
             );
-          } else if (
-            shouldSeedLiveInputWarmupFrame({
-              status,
-              lastLiveFrame: lastLiveFrameRef.current,
-              lastActiveFrame: lastActiveFrameRef.current,
-            })
-          ) {
-            const heavyAnalysisStartedAt = getRenderLoopWallTimeMs();
-            const analysisResult = runHeavyFeatureAnalysis(preparedInputs);
-            recordRuntimePerfSample(
-              runtimeDiagnostics,
-              "heavyAnalysisMs",
-              getRenderLoopWallTimeMs() - heavyAnalysisStartedAt,
-            );
-
-            const fastComposeStartedAt = getRenderLoopWallTimeMs();
-            featureFrame = composeFeatureFrame({
-              preparedInputs,
-              analysisResult,
-              analysisHints,
-              previousFrame: schedulerState.lastComposedFeatureFrame,
-              reuseHeavyAnalysis: false,
-            });
-            recordRuntimePerfSample(
-              runtimeDiagnostics,
-              "fastComposeMs",
-              getRenderLoopWallTimeMs() - fastComposeStartedAt,
-            );
-
-            storeComposedAnalysisResult(
-              analysisSchedulerRef,
-              preparedInputs,
-              analysisResult,
-              featureFrame,
-            );
-            if (runtimeDiagnostics?.analysisScheduler) {
-              runtimeDiagnostics.analysisScheduler.forcedAnalysisCount += 1;
-            }
           } else {
             featureFrame =
               lastLiveFrameRef.current ??
@@ -1543,12 +1229,16 @@ export function resolveFeatureFrame(
               getRenderLoopWallTimeMs() - fastComposeStartedAt,
             );
 
-            storeComposedAnalysisResult(
-              analysisSchedulerRef,
-              preparedInputs,
-              analysisResult,
-              featureFrame,
-            );
+            if (analysisSchedulerRef?.current) {
+              analysisSchedulerRef.current = {
+                lastHeavyAnalysisAtMs: preparedInputs.currentFrameAtMs,
+                lastHeavyAnalysisResult: analysisResult,
+                lastComposedFeatureFrame: featureFrame,
+                lastAnalysisSessionKey: preparedInputs.analysisSessionKey,
+                lastAnalysisInputsSignature:
+                  preparedInputs.analysisInputsSignature,
+              };
+            }
             if (runtimeDiagnostics?.analysisScheduler && forced) {
               runtimeDiagnostics.analysisScheduler.forcedAnalysisCount += 1;
             }
@@ -1598,9 +1288,7 @@ export function resolveFeatureFrame(
   }
 
   if (status.isPlaying || status.isLiveInputActive) {
-    if (shouldCaptureLastLiveFrame({ status, featureFrame })) {
-      lastLiveFrameRef.current = featureFrame;
-    }
+    lastLiveFrameRef.current = featureFrame;
     lastActiveFrameRef.current = null;
     lastIdleFrameRef.current = null;
   } else if (clockMode !== "paused-playback") {
@@ -1821,3 +1509,5 @@ export function publishDevtoolsSnapshots(
 
   markRuntimeReady();
 }
+
+export { maybePublishRuntimePerfSnapshot };

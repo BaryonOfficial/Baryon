@@ -3,7 +3,7 @@ import {
   normalizeDebugOverlayItems,
   resolveDebugOverlayState,
   shouldRenderDebugOverlay,
-} from "./ParticleDebugOverlayState.js";
+} from "./ParticleDebugOverlay.jsx";
 
 describe("normalizeDebugOverlayItems", () => {
   it("returns null when none are provided", () => {
@@ -13,7 +13,7 @@ describe("normalizeDebugOverlayItems", () => {
   });
 
   it("passes through non-empty host-provided items", () => {
-    const items = [{ label: "Authority", value: "local-presented" }];
+    const items = [{ label: "Authority", value: "listener-local" }];
     expect(normalizeDebugOverlayItems(items)).toBe(items);
   });
 });

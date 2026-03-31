@@ -48,6 +48,43 @@ export function resolveLiveInputPanelConfig({ liveInputPanel = null } = {}) {
   };
 }
 
+export function resolveSharedPreviewOverlayState(sharedPreviewMode = null) {
+  if (sharedPreviewMode?.requested !== true || sharedPreviewMode.rendering) {
+    return null;
+  }
+
+  if (!sharedPreviewMode.supported) {
+    return {
+      state: "unsupported",
+      title: "Preview unavailable",
+      message:
+        "Shared preview is not supported for this presented performer output.",
+    };
+  }
+
+  if (!sharedPreviewMode.connected || !sharedPreviewMode.canvasAttached) {
+    return {
+      state: "attaching",
+      title: "Attaching preview",
+      message: "Connecting the shared preview surface to the desktop window.",
+    };
+  }
+
+  if (sharedPreviewMode.stale) {
+    return {
+      state: "stale",
+      title: "Preview recovering",
+      message: "Waiting for fresh frames from the hidden output stage.",
+    };
+  }
+
+  return {
+    state: "waiting",
+    title: "Waiting for frames",
+    message: "The hidden output stage has not delivered preview frames yet.",
+  };
+}
+
 function ControlsIcon() {
   return (
     <svg
@@ -105,9 +142,21 @@ function CameraIcon() {
  *   onFrameState?: (state: Record<string, unknown>) => void,
  *   sharedPreviewMode?: {
  *     enabled?: boolean,
+ *     requested?: boolean,
+ *     rendering?: boolean,
  *     renderMode?: "legacy-double-render" | "single-render-shared-preview",
  *     omitLocalScene?: boolean,
+ *     supported?: boolean,
+ *     connected?: boolean,
+ *     canvasAttached?: boolean,
+ *     healthy?: boolean,
+ *     stale?: boolean,
  *     canvasId?: string | null,
+ *   } | null,
+ *   authoritativeStageTelemetry?: {
+ *     performanceHudSnapshot?: Record<string, unknown> | null,
+ *     auditSnapshot?: Record<string, unknown> | null,
+ *     auditEnabled?: boolean,
  *   } | null,
  * }} props
  */
@@ -120,9 +169,11 @@ const ThreeScene = ({
   onOutputFrame = null,
   onFrameState = null,
   sharedPreviewMode = null,
+  authoritativeStageTelemetry = null,
 }) => {
   const containerRef = useRef(null);
   const advancedControlsTriggerRef = useRef(null);
+  const operatorControlKeys = sharedPreviewMode ? ["auditEnabled"] : [];
   const {
     controlsRef,
     controlsState,
@@ -141,7 +192,7 @@ const ThreeScene = ({
     deletePreset,
     closeControlsPanel,
     toggleControlsPanel,
-  } = useBaryonControls();
+  } = useBaryonControls({ operatorControlKeys });
   const initialRendererFallback = Boolean(
     /** @type {any} */ (controlsRef.current).forceWebGLFallbackTest,
   );
@@ -204,14 +255,26 @@ const ThreeScene = ({
     liveInputPanel,
   });
   const showOverlayUi = isSupportReady && !isFullscreen;
-  const sharedPreviewVisible = sharedPreviewMode?.enabled === true;
+  const sharedPreviewVisible = sharedPreviewMode?.requested === true;
   const sharedPreviewCanvasId = sharedPreviewMode?.canvasId ?? null;
-  const usingSharedPreview =
-    sharedPreviewMode?.renderMode === "single-render-shared-preview";
+  const usingSharedPreview = sharedPreviewMode?.rendering === true;
   const omitLocalScene = sharedPreviewMode?.omitLocalScene === true;
+  const sharedPreviewOverlayState =
+    resolveSharedPreviewOverlayState(sharedPreviewMode);
   const activeCameraControlPreset = omitLocalScene
     ? (cameraUiPreset ?? defaultCameraViewPreset)
     : effectiveCameraViewPreset;
+  const resolvedPerformanceHudMetrics = controlsState.performanceHudEnabled
+    ? omitLocalScene
+      ? (authoritativeStageTelemetry?.performanceHudSnapshot ?? null)
+      : performanceHudMetrics
+    : null;
+  const debugOverlayEnabledOverride = omitLocalScene
+    ? authoritativeStageTelemetry?.auditEnabled === true
+    : undefined;
+  const debugOverlaySnapshotOverride = omitLocalScene
+    ? (authoritativeStageTelemetry?.auditSnapshot ?? null)
+    : undefined;
   const liveInputStatusPanelVisible =
     showOverlayUi &&
     (selectedSource === "system" || resolvedLiveInputPanel.forceVisible);
@@ -350,22 +413,89 @@ const ThreeScene = ({
       }}
     >
       {sharedPreviewVisible ? (
-        <canvas
-          id={sharedPreviewCanvasId ?? undefined}
-          data-testid="shared-output-preview-canvas"
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            zIndex: 10,
-            width: "100%",
-            height: "100%",
-            display: "block",
-            background: "transparent",
-            opacity: usingSharedPreview ? 1 : 0,
-            pointerEvents: "none",
-          }}
-        />
+        <>
+          <canvas
+            id={sharedPreviewCanvasId ?? undefined}
+            data-testid="shared-output-preview-canvas"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              zIndex: 10,
+              width: "100%",
+              height: "100%",
+              display: "block",
+              background: "transparent",
+              objectFit: "contain",
+              objectPosition: "center",
+              opacity: usingSharedPreview ? 1 : 0,
+              pointerEvents: "none",
+            }}
+          />
+          {sharedPreviewOverlayState ? (
+            <div
+              data-testid="shared-output-preview-overlay"
+              data-state={sharedPreviewOverlayState.state}
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 11,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                pointerEvents: "none",
+                background:
+                  "linear-gradient(180deg, rgba(4, 8, 14, 0.58), rgba(4, 8, 14, 0.74))",
+              }}
+            >
+              <div
+                style={{
+                  minWidth: "min(22rem, calc(100vw - 3rem))",
+                  maxWidth: "min(28rem, calc(100vw - 3rem))",
+                  padding: "0.95rem 1rem",
+                  borderRadius: "1rem",
+                  border: "1px solid rgba(255, 255, 255, 0.12)",
+                  background:
+                    "linear-gradient(180deg, rgba(16, 21, 28, 0.92), rgba(8, 11, 16, 0.9))",
+                  boxShadow: "0 24px 50px rgba(0, 0, 0, 0.28)",
+                  backdropFilter: "blur(18px)",
+                  color: "rgba(241, 247, 255, 0.96)",
+                  fontFamily: '"Space Grotesk", "Inter", system-ui, sans-serif',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "0.7rem",
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    opacity: 0.66,
+                    marginBottom: "0.35rem",
+                  }}
+                >
+                  Presented Performer Preview
+                </div>
+                <div
+                  style={{
+                    fontSize: "1rem",
+                    fontWeight: 600,
+                    marginBottom: "0.25rem",
+                  }}
+                >
+                  {sharedPreviewOverlayState.title}
+                </div>
+                <div
+                  style={{
+                    fontSize: "0.84rem",
+                    lineHeight: 1.45,
+                    color: "rgba(226, 236, 249, 0.82)",
+                  }}
+                >
+                  {sharedPreviewOverlayState.message}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </>
       ) : null}
 
       {showCanvas && isSupportReady && !omitLocalScene && (
@@ -621,15 +751,12 @@ const ThreeScene = ({
               onMicControlChange={(key, value) => updateControl(key, value)}
             />
           ) : null}
-          <PerformanceHud
-            metrics={
-              controlsState.performanceHudEnabled ? performanceHudMetrics : null
-            }
-            stacked
-          />
+          <PerformanceHud metrics={resolvedPerformanceHudMetrics} stacked />
           <ParticleDebugOverlay
             stacked
             debugOverlayExtraItems={debugOverlayExtraItems}
+            enabledOverride={debugOverlayEnabledOverride}
+            snapshotOverride={debugOverlaySnapshotOverride}
           />
         </div>
       ) : null}

@@ -43,9 +43,12 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  *   backgroundColor?: string,
  *   cameraViewPreset?: "top-down" | "side" | null,
  *   cameraDistance?: number | null,
+ *   controlVersion?: number,
  *   registerRenderRequester?: ((requester: (() => void) | null) => void) | null,
  *   onStageRender?: (payload: { frameSequence: number | null, qualityPreset: string | null }) => void,
  *   onLiveInputRuntimeStatusChange?: ((status: unknown) => void) | null,
+ *   onPerformanceHudSnapshotChange?: ((snapshot: Record<string, unknown> | null) => void) | null,
+ *   onAuditSnapshotChange?: ((state: { enabled: boolean, snapshot: Record<string, unknown> | null }) => void) | null,
  * }} props
  */
 export function OutputStageSurface({
@@ -56,9 +59,12 @@ export function OutputStageSurface({
   backgroundColor: backgroundColorProp = null,
   cameraViewPreset = null,
   cameraDistance = null,
+  controlVersion = 0,
   registerRenderRequester = null,
   onStageRender = null,
   onLiveInputRuntimeStatusChange = null,
+  onPerformanceHudSnapshotChange = null,
+  onAuditSnapshotChange = null,
 }) {
   const [rendererError, setRendererError] = useState(null);
   const resolvedCameraViewPreset = /** @type {"top-down" | "side"} */ (
@@ -146,23 +152,22 @@ export function OutputStageSurface({
               />
               <BaryonScene
                 setIsEngineReady={() => {}}
-                setLiveInputRuntimeStatus={
-                  onLiveInputRuntimeStatusChange ?? (() => {})
-                }
+                setLiveInputRuntimeStatus={onLiveInputRuntimeStatusChange}
                 liveInputUiState="idle"
                 liveInputErrorCode="none"
                 controlsRef={controlsRef}
                 visualizationMethod={visualizationMethod}
                 renderQualityPreset={renderQualityPreset}
-                onPerformanceHudSnapshotChange={() => {}}
+                onPerformanceHudSnapshotChange={onPerformanceHudSnapshotChange}
+                onAuditSnapshotChange={onAuditSnapshotChange}
                 externalFrameRef={externalFrameRef}
                 basePixelRatio={1}
                 onStageRender={onStageRender}
                 cameraControlMode={CAMERA_CONTROL_MODES.externalSynced}
                 cameraViewPreset={resolvedCameraViewPreset}
                 cameraDistance={resolvedCameraDistance}
+                controlVersion={controlVersion}
                 renderContext={RENDER_CONTEXTS.externalOutput}
-                enableControlEventSync={false}
               />
             </Suspense>
           </Canvas>

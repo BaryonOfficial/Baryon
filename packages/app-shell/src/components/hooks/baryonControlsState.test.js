@@ -84,3 +84,18 @@ test("builds the advanced controls presentation layout", () => {
     ],
   );
 });
+
+test("operator control keys can surface Capture Debug Data without enabling all devtools controls", () => {
+  const { folderGroups } = getVisibleControlLayout({
+    devtoolsEnabled: false,
+    method: "raymarch",
+    operatorControlKeys: ["auditEnabled"],
+  });
+  const diagnosticsGroup = folderGroups.find(
+    (group) => group.title === "Diagnostics",
+  );
+
+  expect(
+    diagnosticsGroup?.controls.map((control) => control.key),
+  ).toStrictEqual(["auditEnabled"]);
+});

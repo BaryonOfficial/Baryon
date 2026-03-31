@@ -3,6 +3,7 @@ import { createRuntimeDiagnostics } from "./baryonVisualizerRuntimeState.js";
 import { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 import {
   getEffectiveAdaptiveRenderScale,
+  publishDevtoolsSnapshots,
   resolveFeatureFrame,
   updateAdaptiveRaymarchStepBudget,
 } from "./baryonVisualizerRenderLoop.js";
@@ -267,6 +268,78 @@ test("publishes provider transition phases even before live audio becomes active
   expect(runtimeStatus.active).toBe(false);
   expect(setter.callCount).toBe(1);
   expect(setter.currentValue.phase).toBe(LIVE_INPUT_PHASES.starting);
+});
+
+test("publishes authoritative audit callbacks without devtools globals", () => {
+  const auditStates = [];
+  const previousWindow = globalThis.window;
+  globalThis.window = {};
+
+  try {
+    publishDevtoolsSnapshots(
+      {
+        devtoolsEnabled: false,
+        controls: {
+          auditEnabled: true,
+          logEveryFrames: 1,
+        },
+        runtime: {
+          method: "raymarch",
+        },
+        runtimeState: {
+          debugSnapshot: {
+            raymarchDebug: {
+              fieldState: "active",
+            },
+          },
+        },
+        status: {
+          isPlaying: true,
+        },
+        featureState: {
+          audit: {
+            frame: 1,
+          },
+        },
+        lowLoadActive: false,
+        runtimeDiagnostics: createRuntimeDiagnostics(),
+        shared: {},
+        output: {},
+        visualization: {},
+        bloom: {},
+        audit: {},
+        sceneSnapshot: {},
+        audio: {
+          getLiveInputSettings() {
+            return {};
+          },
+        },
+      },
+      {
+        markRuntimeReady: () => {
+          throw new Error("runtime ready should remain devtools-only");
+        },
+        logAudit: () => {},
+        onAuditSnapshotChange: (nextState) => {
+          auditStates.push(nextState);
+        },
+      },
+    );
+
+    expect(auditStates).toHaveLength(1);
+    expect(auditStates[0]).toMatchObject({
+      enabled: true,
+    });
+    expect(auditStates[0].snapshot).toBeTruthy();
+    expect(window.__baryonAuditSnapshot).toBeUndefined();
+    expect(window.__baryonControlState).toBeUndefined();
+  } finally {
+    if (typeof previousWindow === "undefined") {
+      delete globalThis.window;
+    } else {
+      globalThis.window = previousWindow;
+    }
+  }
 });
 
 test("auto raymarch drops render scale before bottoming out step budget", () => {

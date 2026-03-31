@@ -1,10 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { DEVTOOLS_ENABLED } from "../devtools/config.js";
-import {
-  normalizeDebugOverlayItems,
-  resolveDebugOverlayState,
-  shouldRenderDebugOverlay,
-} from "./ParticleDebugOverlayState.js";
 
 function formatNumber(value, digits = 3) {
   if (typeof value !== "number" || Number.isNaN(value)) return "n/a";
@@ -17,6 +12,19 @@ function humanizeDebugToken(value) {
   }
 
   return value.replace(/-/g, " ");
+}
+
+function formatAnalysisMode(value) {
+  switch (value) {
+    case "legacy-peak":
+      return "legacy peak";
+    case "modal-excitation":
+      return "modal excitation";
+    case "dual":
+      return "dual compare";
+    default:
+      return humanizeDebugToken(value);
+  }
 }
 
 function formatAnalysisPath(mode, path) {
@@ -85,6 +93,7 @@ const DEBUG_METRIC_TOOLTIPS = {
     "Which renderer is drawing the frame. This is the visualization path, not the audio analysis mode.",
   Field:
     "Whether the raymarched field is actively rendering or falling back to an idle/inactive state.",
+  Mode: "The selected audio analysis mode driving the structural snapshot.",
   Path: "The internal analysis path used inside that mode. Legacy often reports layered here.",
   Pitch: "Which pitch-detection source the analysis favored for this frame.",
   Input:
@@ -111,6 +120,13 @@ const DEBUG_METRIC_TOOLTIPS = {
   Density: "Average body density in the raymarched field this frame.",
   Exit: "Estimated early-exit ratio in the raymarch. Higher values usually mean more rays are terminating sooner.",
   Volume: "Whether the volumetric field is currently considered visible.",
+  Signal:
+    "Modal signal-slot count used for reactivity in the modal comparison path.",
+  Struct: "Structure signal for that side of the comparison.",
+  Coh: "Mode coherence for that side of the comparison.",
+  "Dom Hz": "Dominant frequency estimate for that analysis result.",
+  Decay:
+    "Whether the modal path is surviving on release/decay rather than fresh excitation.",
   Flux: "Weighted spectral-flux contribution to Change. Higher values mean more fresh frequency-bin motion.",
   Hit: "Weighted transient-energy contribution to Change. Higher values mean stronger attacks and onsets.",
   "Slot Δ": "Weighted average slot-amplitude delta contribution to Change.",
@@ -118,6 +134,12 @@ const DEBUG_METRIC_TOOLTIPS = {
   Timbre:
     "Weighted timbral-redistribution contribution to Change, based on centroid versus band spread.",
   Hint: "Weighted higher-level hint contribution to Change, combining novelty and transient salience.",
+  "Mode Δ":
+    "Difference in active mode count between the primary and comparison analyses.",
+  "Freq Δ":
+    "Difference in dominant frequency between the primary and comparison analyses, in cents.",
+  "Coh Δ":
+    "Difference in coherence between the primary and comparison analyses.",
   "Render Mode":
     "Whether the visible preview is still locally rendered or is showing the shared external-output feed.",
   Output: "Current external-output frame size routed to Syphon.",
@@ -153,6 +175,10 @@ function getMetricTooltip(label) {
   );
 }
 
+function joinDebugMeta(...parts) {
+  return parts.filter(Boolean).join(" · ");
+}
+
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -166,6 +192,99 @@ function buildChangeMixItems(changeBreakdown) {
     label,
     value: formatNumber(changeBreakdown[key]),
   }));
+}
+
+function buildComparisonRows({
+  primaryModeCount,
+  primaryStructureSignal,
+  primaryChangeSignal,
+  primaryCoherence,
+  primaryDominantFrequency,
+  comparisonDebug,
+}) {
+  if (!comparisonDebug) {
+    return null;
+  }
+
+  return [
+    {
+      label: "Modes",
+      primary: primaryModeCount,
+      compare: comparisonDebug.modeSlotCount ?? 0,
+    },
+    {
+      label: "Signal",
+      primary: "n/a",
+      compare: comparisonDebug.signalModeCount ?? 0,
+    },
+    {
+      label: "Struct",
+      primary: formatNumber(primaryStructureSignal),
+      compare: formatNumber(comparisonDebug.structureSignal),
+    },
+    {
+      label: "Change",
+      primary: formatNumber(primaryChangeSignal),
+      compare: formatNumber(comparisonDebug.changeSignal),
+    },
+    {
+      label: "Coh",
+      primary: formatNumber(primaryCoherence),
+      compare: formatNumber(comparisonDebug.modeCoherence),
+    },
+    {
+      label: "Dom Hz",
+      primary: formatNumber(primaryDominantFrequency, 1),
+      compare: formatNumber(comparisonDebug.dominantFrequency, 1),
+    },
+    {
+      label: "Decay",
+      primary: "n/a",
+      compare: String(comparisonDebug.usedDecay),
+    },
+  ];
+}
+
+export function normalizeDebugOverlayItems(debugOverlayExtraItems) {
+  return Array.isArray(debugOverlayExtraItems) && debugOverlayExtraItems.length
+    ? debugOverlayExtraItems
+    : null;
+}
+
+export function resolveDebugOverlayState({
+  localState,
+  enabledOverride,
+  snapshotOverride,
+}) {
+  if (typeof enabledOverride === "boolean") {
+    return {
+      enabled: enabledOverride,
+      snapshot: snapshotOverride ?? null,
+    };
+  }
+
+  return (
+    localState ?? {
+      enabled: false,
+      snapshot: null,
+    }
+  );
+}
+
+export function shouldRenderDebugOverlay({
+  devtoolsEnabled = DEVTOOLS_ENABLED,
+  enabledOverride,
+  overlayState,
+}) {
+  if (!overlayState?.enabled || !overlayState.snapshot) {
+    return false;
+  }
+
+  if (typeof enabledOverride === "boolean") {
+    return true;
+  }
+
+  return devtoolsEnabled;
 }
 
 function CompactGrid({
@@ -243,6 +362,178 @@ function SectionKicker({ children }) {
       }}
     >
       {children}
+    </div>
+  );
+}
+
+function CompareTable({
+  primaryLabel,
+  primaryMeta,
+  compareLabel,
+  compareMeta,
+  rows,
+  onMetricEnter,
+  onMetricLeave,
+}) {
+  return (
+    <div
+      style={{
+        borderRadius: "0.85rem",
+        overflow: "hidden",
+        border: "1px solid rgba(255,255,255,0.08)",
+        background: "rgba(255,255,255,0.035)",
+      }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr)",
+          background: "rgba(255,255,255,0.04)",
+        }}
+      >
+        <div
+          style={{
+            padding: "0.45rem 0.45rem 0.4rem",
+            borderRight: "1px solid rgba(255,255,255,0.06)",
+          }}
+        />
+        <div
+          style={{
+            padding: "0.4rem 0.5rem",
+            borderRight: "1px solid rgba(255,255,255,0.06)",
+          }}
+        >
+          <div style={{ color: "#ffffff", fontWeight: 700 }}>
+            {primaryLabel}
+          </div>
+          <div
+            style={{
+              color: "rgba(217,236,255,0.62)",
+              fontSize: "10px",
+              marginTop: "0.08rem",
+            }}
+          >
+            {primaryMeta}
+          </div>
+        </div>
+        <div style={{ padding: "0.4rem 0.5rem" }}>
+          <div style={{ color: "#ffffff", fontWeight: 700 }}>
+            {compareLabel}
+          </div>
+          <div
+            style={{
+              color: "rgba(217,236,255,0.62)",
+              fontSize: "10px",
+              marginTop: "0.08rem",
+            }}
+          >
+            {compareMeta}
+          </div>
+        </div>
+      </div>
+      {rows.map(({ label, primary, compare }, index) => (
+        <div
+          key={label}
+          onPointerEnter={(event) => onMetricEnter?.(event, label)}
+          onPointerLeave={onMetricLeave}
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr)",
+            borderTop:
+              index === 0
+                ? "1px solid rgba(255,255,255,0.06)"
+                : "1px solid rgba(255,255,255,0.045)",
+            pointerEvents: "auto",
+            cursor: "help",
+          }}
+        >
+          <div
+            style={{
+              padding: "0.36rem 0.48rem",
+              color: "rgba(217,236,255,0.64)",
+              fontSize: "10px",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              borderRight: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            {label}
+          </div>
+          <div
+            style={{
+              padding: "0.36rem 0.5rem",
+              borderRight: "1px solid rgba(255,255,255,0.06)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {primary}
+          </div>
+          <div
+            style={{
+              padding: "0.36rem 0.5rem",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {compare}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DeltaStrip({ items, onMetricEnter, onMetricLeave }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))`,
+        gap: "0.35rem",
+      }}
+    >
+      {items.map(({ label, value }) => (
+        <div
+          key={label}
+          onPointerEnter={(event) => onMetricEnter?.(event, label)}
+          onPointerLeave={onMetricLeave}
+          style={{
+            minWidth: 0,
+            padding: "0.38rem 0.45rem",
+            borderRadius: "0.62rem",
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.07)",
+            pointerEvents: "auto",
+            cursor: "help",
+          }}
+        >
+          <div
+            style={{
+              color: "rgba(217,236,255,0.62)",
+              fontSize: "10px",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              marginBottom: "0.12rem",
+            }}
+          >
+            {label}
+          </div>
+          <div
+            style={{
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              fontWeight: 700,
+            }}
+          >
+            {value}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -342,14 +633,22 @@ export default function ParticleDebugOverlay({
   }
 
   const method = snapshot.visualizationMethod ?? "raymarch";
+  const comparisonDebug = snapshot.comparisonDebug ?? null;
+  const structuralComparison = snapshot.structuralComparison ?? null;
   const primaryModeCount =
     snapshot.modeSlotCount ?? snapshot.activeModeCount ?? 0;
   const primaryCoherence =
     snapshot.modeCoherence ?? debugSnapshot.modeCoherence;
+  const primaryModeLabel = formatAnalysisMode(
+    snapshot.structuralImplementation,
+  );
   const primaryPathLabel = formatAnalysisPath(
-    "modal-excitation",
+    snapshot.structuralImplementation,
     snapshot.analysisEngine,
   );
+  const comparisonPathLabel = comparisonDebug
+    ? formatAnalysisPath("modal-excitation", comparisonDebug.analysisEngine)
+    : null;
   const currentPitchLabel = humanizeDebugToken(snapshot.pitchSource ?? "none");
   const currentInputLabel = humanizeDebugToken(
     snapshot.analysisSourceUsed ?? "none",
@@ -361,6 +660,7 @@ export default function ParticleDebugOverlay({
       label: "Eval",
       value: formatFieldEvalMode(debugSnapshot),
     },
+    { label: "Mode", value: primaryModeLabel },
     { label: "Pitch", value: currentPitchLabel },
     { label: "Input", value: currentInputLabel },
     {
@@ -400,6 +700,14 @@ export default function ParticleDebugOverlay({
       value: formatFieldCacheState(debugSnapshot),
     },
   ];
+  const comparisonRows = buildComparisonRows({
+    primaryModeCount,
+    primaryStructureSignal: snapshot.structureSignal,
+    primaryChangeSignal: snapshot.changeSignal,
+    primaryCoherence,
+    primaryDominantFrequency: snapshot.dominantFrequency,
+    comparisonDebug,
+  });
   const externalOutputItems = normalizeDebugOverlayItems(
     debugOverlayExtraItems,
   );
@@ -548,6 +856,52 @@ export default function ParticleDebugOverlay({
           <CompactGrid
             items={externalOutputItems}
             columns={3}
+            onMetricEnter={handleMetricEnter}
+            onMetricLeave={handleMetricLeave}
+          />
+        </>
+      ) : null}
+      {comparisonDebug ? (
+        <>
+          <SectionKicker>Compare</SectionKicker>
+          <CompareTable
+            primaryLabel="Primary"
+            primaryMeta={joinDebugMeta(primaryPathLabel, currentPitchLabel)}
+            compareLabel="Modal"
+            compareMeta={joinDebugMeta(
+              comparisonPathLabel,
+              humanizeDebugToken(comparisonDebug.pitchSource ?? "none"),
+            )}
+            rows={comparisonRows}
+            onMetricEnter={handleMetricEnter}
+            onMetricLeave={handleMetricLeave}
+          />
+        </>
+      ) : null}
+      {structuralComparison ? (
+        <>
+          <SectionKicker>Delta</SectionKicker>
+          <DeltaStrip
+            items={[
+              {
+                label: "Mode Δ",
+                value: formatNumber(
+                  structuralComparison.activeModeCountDelta,
+                  0,
+                ),
+              },
+              {
+                label: "Freq Δ",
+                value: `${formatNumber(
+                  structuralComparison.dominantFrequencyDeltaCents,
+                  1,
+                )}c`,
+              },
+              {
+                label: "Coh Δ",
+                value: formatNumber(structuralComparison.modeCoherenceDelta),
+              },
+            ]}
             onMetricEnter={handleMetricEnter}
             onMetricLeave={handleMetricLeave}
           />
