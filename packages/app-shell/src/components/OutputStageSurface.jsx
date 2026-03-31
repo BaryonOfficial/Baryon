@@ -39,11 +39,13 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  *   controlsRef: import("react").MutableRefObject<Record<string, unknown>>,
  *   visualizationMethod: string,
  *   renderQualityPreset?: string,
+ *   renderProfileOverrides?: { renderScale?: number, traaEnabled?: boolean, bloomAllowed?: boolean } | null,
  *   externalFrameRef?: import("react").MutableRefObject<any>,
  *   backgroundColor?: string,
  *   cameraViewPreset?: "top-down" | "side" | null,
  *   cameraDistance?: number | null,
  *   controlVersion?: number,
+ *   adaptiveResetNonce?: number,
  *   registerRenderRequester?: ((requester: (() => void) | null) => void) | null,
  *   onStageRender?: (payload: { frameSequence: number | null, qualityPreset: string | null }) => void,
  *   onFrameState?: ((state: Record<string, unknown>) => void) | null,
@@ -56,11 +58,13 @@ export function OutputStageSurface({
   controlsRef,
   visualizationMethod,
   renderQualityPreset = DEFAULT_RENDER_QUALITY_PRESET,
+  renderProfileOverrides = null,
   externalFrameRef = null,
   backgroundColor: backgroundColorProp = null,
   cameraViewPreset = null,
   cameraDistance = null,
   controlVersion = 0,
+  adaptiveResetNonce = 0,
   registerRenderRequester = null,
   onStageRender = null,
   onFrameState = null,
@@ -160,6 +164,7 @@ export function OutputStageSurface({
                 controlsRef={controlsRef}
                 visualizationMethod={visualizationMethod}
                 renderQualityPreset={renderQualityPreset}
+                renderProfileOverrides={renderProfileOverrides}
                 onPerformanceHudSnapshotChange={onPerformanceHudSnapshotChange}
                 onAuditSnapshotChange={onAuditSnapshotChange}
                 externalFrameRef={externalFrameRef}
@@ -170,6 +175,7 @@ export function OutputStageSurface({
                 cameraViewPreset={resolvedCameraViewPreset}
                 cameraDistance={resolvedCameraDistance}
                 controlVersion={controlVersion}
+                adaptiveResetNonce={adaptiveResetNonce}
                 renderContext={RENDER_CONTEXTS.externalOutput}
               />
             </Suspense>

@@ -154,7 +154,7 @@ describe("control schema", () => {
       options: {
         Auto: "auto",
         Custom: "custom",
-        "Max Quality": "none",
+        "Max Quality": "max-quality",
       },
     });
   });

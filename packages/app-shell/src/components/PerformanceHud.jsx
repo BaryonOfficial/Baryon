@@ -1,3 +1,5 @@
+import { formatPerformanceProfileLabel } from "@baryon/visualizer/render/outputPipeline";
+
 function formatNumber(value, digits = 1) {
   if (
     typeof value !== "number" ||
@@ -91,7 +93,13 @@ export default function PerformanceHud({
       </div>
       {renderScaleLabel ? <div>Scale: {renderScaleLabel}</div> : null}
       {metrics.qualityPreset ? (
-        <div>Performance Profile: {metrics.qualityPreset}</div>
+        <div>
+          Performance Profile:{" "}
+          {formatPerformanceProfileLabel(
+            metrics.qualityPreset,
+            resolvedTargetFps ?? metrics.targetFps,
+          )}
+        </div>
       ) : null}
       {typeof resolvedTargetFps === "number" ? (
         <div>Target FPS: {Math.round(resolvedTargetFps)}</div>

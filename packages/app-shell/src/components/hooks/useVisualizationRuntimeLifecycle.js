@@ -11,9 +11,11 @@ import { SIMULATION_DEFAULTS } from "@baryon/visualizer/defaults";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
 import {
   clearFrameCache,
+  clearAdaptiveRaymarchResumeState,
   createEmptyAnalysisSchedulerState,
   createEmptyControlSnapshots,
   createRuntimeDiagnostics,
+  initializeAdaptiveRaymarchRuntimeState,
 } from "./baryonVisualizerRuntimeState.js";
 
 export function useVisualizationRuntimeLifecycle({
@@ -96,6 +98,7 @@ export function useVisualizationRuntimeLifecycle({
         parameters,
         audioConfig,
       });
+      initializeAdaptiveRaymarchRuntimeState(runtimeState);
       runtimeState.method = runtime.method;
       runtimeStateRef.current = runtimeState;
       cachedControlSnapshotsRef.current = createEmptyControlSnapshots(
@@ -116,6 +119,7 @@ export function useVisualizationRuntimeLifecycle({
         delete (/** @type {any} */ (window).__baryonPerfMetrics);
       }
       if (runtimeStateRef.current) {
+        clearAdaptiveRaymarchResumeState(runtimeStateRef.current);
         runtime.dispose(runtimeStateRef.current);
         runtimeStateRef.current = null;
       }

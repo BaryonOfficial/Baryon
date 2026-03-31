@@ -61,6 +61,15 @@ describe("serializeControls", () => {
     expect(serialized.bloomStrength).toBe(1.5);
     expect(serialized.volumeColor).toBe("#ff0000");
   });
+
+  it("serializes the canonical max-quality performance profile", () => {
+    const state = createControlState();
+    state.renderQualityPreset = "none";
+
+    const serialized = serializeControls(state, CONTROL_DEFINITIONS);
+
+    expect(serialized.renderQualityPreset).toBe("max-quality");
+  });
 });
 
 describe("deserializeControls", () => {
@@ -91,6 +100,15 @@ describe("deserializeControls", () => {
 
     expect(result.liveInputAnalysisClass).toBe("acoustic-mic");
     expect(result.bloomStrength).toBe(0.75);
+  });
+
+  it("migrates legacy none performance profile values to max-quality", () => {
+    const result = deserializeControls(
+      { renderQualityPreset: "none" },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.renderQualityPreset).toBe("max-quality");
   });
 
   it("falls back to default when the stored type does not match", () => {

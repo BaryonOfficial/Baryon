@@ -9,6 +9,7 @@ import {
   normalizePerformanceTargetFps,
   normalizeRenderQualityPreset,
   PERFORMANCE_PROFILES,
+  RENDER_CONTEXTS,
   RENDER_QUALITY_PRESETS,
   resolveRenderQualityProfile,
 } from "./outputPipeline.js";
@@ -27,7 +28,8 @@ describe("render quality profiles", () => {
 
   it("normalizes quality presets and defaults to auto", () => {
     expect(normalizeRenderQualityPreset("custom")).toBe("custom");
-    expect(normalizeRenderQualityPreset("none")).toBe("none");
+    expect(normalizeRenderQualityPreset("none")).toBe("max-quality");
+    expect(normalizeRenderQualityPreset("max-quality")).toBe("max-quality");
     expect(normalizeRenderQualityPreset("unexpected")).toBe(
       DEFAULT_RENDER_QUALITY_PRESET,
     );
@@ -43,11 +45,12 @@ describe("render quality profiles", () => {
   });
 
   it("formats operator-facing performance profile labels", () => {
-    expect(formatPerformanceProfileLabel("auto")).toBe("auto");
+    expect(formatPerformanceProfileLabel("auto")).toBe("Auto");
     expect(formatPerformanceProfileLabel("none")).toBe("Max Quality");
-    expect(formatPerformanceProfileLabel("custom")).toBe("custom");
-    expect(formatPerformanceProfileLabel("custom", 48)).toBe("custom 48 fps");
-    expect(formatPerformanceProfileLabel("unexpected")).toBe("auto");
+    expect(formatPerformanceProfileLabel("max-quality")).toBe("Max Quality");
+    expect(formatPerformanceProfileLabel("custom")).toBe("Custom");
+    expect(formatPerformanceProfileLabel("custom", 48)).toBe("Custom 48 FPS");
+    expect(formatPerformanceProfileLabel("unexpected")).toBe("Auto");
   });
 
   it("keeps full quality for auto at 1080p", () => {
@@ -63,6 +66,7 @@ describe("render quality profiles", () => {
       renderScale: 1,
       traaEnabled: true,
       bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.preview,
     });
   });
 
@@ -79,10 +83,29 @@ describe("render quality profiles", () => {
       renderScale: 0.75,
       traaEnabled: false,
       bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.preview,
     });
   });
 
-  it("keeps full quality for external-output auto at 2160p", () => {
+  it("uses external-output auto calibration at 1080p", () => {
+    expect(
+      resolveRenderQualityProfile({
+        qualityPreset: "auto",
+        outputWidth: 1920,
+        outputHeight: 1080,
+        renderContext: "external-output",
+      }),
+    ).toEqual({
+      qualityPreset: "auto",
+      targetFps: 60,
+      renderScale: 0.84,
+      traaEnabled: true,
+      bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
+  });
+
+  it("uses external-output auto calibration at 2160p", () => {
     expect(
       resolveRenderQualityProfile({
         qualityPreset: "auto",
@@ -93,9 +116,10 @@ describe("render quality profiles", () => {
     ).toEqual({
       qualityPreset: "auto",
       targetFps: 60,
-      renderScale: 1,
-      traaEnabled: true,
+      renderScale: 0.67,
+      traaEnabled: false,
       bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
     });
   });
 
@@ -113,57 +137,80 @@ describe("render quality profiles", () => {
       renderScale: 1,
       traaEnabled: true,
       bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.preview,
     });
   });
 
-  it("keeps full quality for external-output custom at 2160p", () => {
+  it("uses external-output custom calibration for 49-72 fps at 1440p", () => {
     expect(
       resolveRenderQualityProfile({
         qualityPreset: "custom",
-        targetFps: 48,
+        targetFps: 60,
+        outputWidth: 2560,
+        outputHeight: 1440,
+        renderContext: "external-output",
+      }),
+    ).toEqual({
+      qualityPreset: "custom",
+      targetFps: 60,
+      renderScale: 0.84,
+      traaEnabled: true,
+      bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
+  });
+
+  it("uses external-output custom calibration for 97-120 fps", () => {
+    expect(
+      resolveRenderQualityProfile({
+        qualityPreset: "custom",
+        targetFps: 120,
         outputWidth: 3840,
         outputHeight: 2160,
         renderContext: "external-output",
       }),
     ).toEqual({
       qualityPreset: "custom",
-      targetFps: 48,
-      renderScale: 1,
-      traaEnabled: true,
+      targetFps: 120,
+      renderScale: 0.67,
+      traaEnabled: false,
       bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
     });
   });
 
-  it("uses a manual baseline for the none profile", () => {
+  it("keeps full quality for max-quality preview at 2160p", () => {
     expect(
       resolveRenderQualityProfile({
-        qualityPreset: "none",
+        qualityPreset: "max-quality",
         outputWidth: 3840,
         outputHeight: 2160,
       }),
     ).toEqual({
-      qualityPreset: "none",
+      qualityPreset: "max-quality",
       targetFps: 60,
       renderScale: 1,
       traaEnabled: true,
       bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.preview,
     });
   });
 
-  it("keeps full quality for external-output none at 2160p", () => {
+  it("keeps full quality for max-quality external-output at 2160p", () => {
     expect(
       resolveRenderQualityProfile({
-        qualityPreset: "none",
+        qualityPreset: "max-quality",
         outputWidth: 3840,
         outputHeight: 2160,
         renderContext: "external-output",
       }),
     ).toEqual({
-      qualityPreset: "none",
+      qualityPreset: "max-quality",
       targetFps: 60,
       renderScale: 1,
       traaEnabled: true,
       bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
     });
   });
 
@@ -185,6 +232,7 @@ describe("render quality profiles", () => {
       renderScale: 0.67,
       traaEnabled: false,
       bloomAllowed: false,
+      renderContext: RENDER_CONTEXTS.preview,
     });
   });
 
@@ -192,11 +240,12 @@ describe("render quality profiles", () => {
     expect(
       applyRenderQualityProfileOverrides(
         {
-          qualityPreset: "none",
+          qualityPreset: "max-quality",
           targetFps: 60,
           renderScale: 1,
           traaEnabled: true,
           bloomAllowed: true,
+          renderContext: RENDER_CONTEXTS.preview,
         },
         {
           renderScale: 0,
@@ -205,11 +254,12 @@ describe("render quality profiles", () => {
         },
       ),
     ).toEqual({
-      qualityPreset: "none",
+      qualityPreset: "max-quality",
       targetFps: 60,
       renderScale: 1,
       traaEnabled: true,
       bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.preview,
     });
   });
 
@@ -227,6 +277,7 @@ describe("render quality profiles", () => {
       renderScale: 0.67,
       traaEnabled: false,
       bloomAllowed: false,
+      renderContext: RENDER_CONTEXTS.preview,
     });
   });
 });

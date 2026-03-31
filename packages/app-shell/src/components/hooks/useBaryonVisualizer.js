@@ -16,6 +16,7 @@ import {
 } from "../../devtools/testReady.js";
 import { shouldSkipChromesthesiaStaticColorInvalidation } from "./controlInvalidation.js";
 import {
+  clearAdaptiveRaymarchResumeState,
   maybePublishRuntimePerfSnapshot,
   clearFrameCache,
   createRuntimeDiagnostics,
@@ -82,6 +83,7 @@ export function useBaryonVisualizer({
   onFrameState = null,
   externalFrameRef = null,
   controlVersion = 0,
+  adaptiveResetNonce = 0,
   renderProfile = null,
   basePixelRatio = null,
   onStageRender = null,
@@ -196,6 +198,10 @@ export function useBaryonVisualizer({
     onAuditSnapshotChange,
     setLiveInputRuntimeStatus,
   ]);
+
+  useEffect(() => {
+    clearAdaptiveRaymarchResumeState(runtimeStateRef.current);
+  }, [adaptiveResetNonce, runtimeStateRef]);
 
   useEffect(() => {
     if (outputFrameConfig?.enabled) {

@@ -182,6 +182,40 @@ export function createRuntimeDiagnostics() {
   };
 }
 
+export function initializeAdaptiveRaymarchRuntimeState(runtimeState) {
+  if (!runtimeState || typeof runtimeState !== "object") {
+    return runtimeState;
+  }
+
+  if (
+    !Object.prototype.hasOwnProperty.call(
+      runtimeState,
+      "autoRaymarchResumeRung",
+    )
+  ) {
+    runtimeState.autoRaymarchResumeRung = null;
+  }
+  if (
+    !Object.prototype.hasOwnProperty.call(
+      runtimeState,
+      "autoRaymarchResumeScaleRung",
+    )
+  ) {
+    runtimeState.autoRaymarchResumeScaleRung = null;
+  }
+
+  return runtimeState;
+}
+
+export function clearAdaptiveRaymarchResumeState(runtimeState) {
+  if (!runtimeState || typeof runtimeState !== "object") {
+    return;
+  }
+
+  runtimeState.autoRaymarchResumeRung = null;
+  runtimeState.autoRaymarchResumeScaleRung = null;
+}
+
 export function recordRuntimePerfSample(
   runtimeDiagnostics,
   key,

@@ -652,7 +652,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
         options: {
           Auto: PERFORMANCE_PROFILES.auto,
           Custom: PERFORMANCE_PROFILES.custom,
-          "Max Quality": PERFORMANCE_PROFILES.none,
+          "Max Quality": PERFORMANCE_PROFILES.maxQuality,
         },
       },
       targetType: CONTROL_TARGET_TYPES.object,
