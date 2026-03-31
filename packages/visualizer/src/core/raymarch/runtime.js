@@ -40,7 +40,7 @@ import {
 
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
 const RESPONSE_ATTACK = 7;
-const RESPONSE_RELEASE = 3.6;
+const RESPONSE_RELEASE = 2.6;
 const RESPONSE_IDLE_RELEASE = 5.5;
 const RHYTHMIC_RELEASE_RATE_GAIN = 2.5;
 const DECAY_RELEASE_ENERGY_END = 0.22;
@@ -49,13 +49,13 @@ const DECAY_RELEASE_STRUCTURE_END = 0.42;
 const DECAY_RELEASE_TARGET_REDUCTION = 0.55;
 const DECAY_RELEASE_RATE_GAIN = 1.9;
 const ACCENT_ATTACK = 15;
-const ACCENT_RELEASE = 11;
+const ACCENT_RELEASE = 8.5;
 const DENSITY_RESPONSE_AMOUNT = 0.08;
 const THRESHOLD_RESPONSE_REDUCTION = 0.42;
 const CONTOUR_RESPONSE_GAIN = 1.85;
-const BLOOM_STRENGTH_RESPONSE_GAIN = 0.18;
-const BLOOM_RADIUS_RESPONSE_GAIN = 0.16;
-const BLOOM_THRESHOLD_RESPONSE_GAIN = 0.08;
+const BLOOM_STRENGTH_RESPONSE_GAIN = 0.24;
+const BLOOM_RADIUS_RESPONSE_GAIN = 0.22;
+const BLOOM_THRESHOLD_RESPONSE_GAIN = 0.06;
 const EARLY_EXIT_TRANSMITTANCE_EPSILON = 5e-3;
 
 function clamp(value, min, max) {
@@ -180,11 +180,6 @@ function getRaymarchFieldCacheOverride() {
 
 function publishAuditSnapshot(snapshot) {
   if (typeof window === "undefined") {
-    return;
-  }
-
-  if (snapshot == null) {
-    delete (/** @type {any} */ (window).__baryonAuditSnapshot);
     return;
   }
 
@@ -547,9 +542,6 @@ function updateLaserResponse(runtimeState, featureFrame) {
   const transientEnergy =
     clamp01(featureFrame?.transientEnergy ?? 0) * reactiveGate;
   const spectralFlux = clamp01(featureFrame?.spectralFlux ?? 0) * reactiveGate;
-  const rawChangeSignal =
-    clamp01(featureFrame?.changeSignal ?? 0) * reactiveGate;
-  const rawPulseSignal = clamp01(featureFrame?.pulseSignal ?? 0) * reactiveGate;
   const responseEnvelope = clamp01(runtimeState.responseEnvelope ?? 0);
   const accentEnvelope = clamp01(runtimeState.accentEnvelope ?? 0);
   const bloomResponseSignal = clamp01(runtimeState.bloomResponseSignal ?? 0);
@@ -566,17 +558,9 @@ function updateLaserResponse(runtimeState, featureFrame) {
       transientEnergy * 0.34 +
       spectralFlux * 0.22,
   );
-  const bloomStrengthPulse = clamp01(
-    accentEnvelope * 0.84 + transientEnergy * 0.4,
+  const bloomPulse = clamp01(
+    accentEnvelope * 0.68 + bloomResponseSignal * 0.42 + transientEnergy * 0.28,
   );
-  const bloomThresholdPulse = clamp01(
-    accentEnvelope * 0.2 +
-      rawChangeSignal * 0.34 +
-      rawPulseSignal * 0.24 +
-      transientEnergy * 0.18 +
-      bloomResponseSignal * 0.04,
-  );
-  const bloomStrengthTransientGate = 0.94 + transientEnergy * 0.06;
 
   uniforms.uThreshold.value = Math.max(
     0.001,
@@ -594,16 +578,15 @@ function updateLaserResponse(runtimeState, featureFrame) {
   const bloomAllowed = performanceGovernor?.bloomAllowed ?? true;
   bt.effectiveStrength =
     baseBloomStrength *
-    (1 + bloomStrengthPulse * BLOOM_STRENGTH_RESPONSE_GAIN) *
-    bloomStrengthScale *
-    bloomStrengthTransientGate;
+    (1 + bloomPulse * BLOOM_STRENGTH_RESPONSE_GAIN) *
+    bloomStrengthScale;
   bt.effectiveRadius = Math.max(
     0,
-    baseBloomRadius * (1 - bloomStrengthPulse * BLOOM_RADIUS_RESPONSE_GAIN),
+    baseBloomRadius * (1 - bloomPulse * BLOOM_RADIUS_RESPONSE_GAIN),
   );
   bt.effectiveThreshold = clamp(
     baseBloomThreshold +
-      bloomThresholdPulse * BLOOM_THRESHOLD_RESPONSE_GAIN +
+      bloomPulse * BLOOM_THRESHOLD_RESPONSE_GAIN +
       bloomThresholdOffset,
     0,
     1,
@@ -1002,7 +985,7 @@ export function tickRaymarchRuntime(
   runtimeState.beatPulseEnvelope = damp(
     runtimeState.beatPulseEnvelope ?? 0,
     beatTarget,
-    beatTarget > (runtimeState.beatPulseEnvelope ?? 0) ? 25 : 8,
+    beatTarget > (runtimeState.beatPulseEnvelope ?? 0) ? 25 : 6,
     deltaTime,
   );
   setIfChanged(uniforms.uBeatPulse, runtimeState.beatPulseEnvelope);
