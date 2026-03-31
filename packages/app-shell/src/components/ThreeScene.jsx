@@ -13,6 +13,7 @@ import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene";
 import {
   CAMERA_VIEW_PRESETS,
   getCameraConfigForPreset,
+  normalizeCameraViewPreset,
   resolveDefaultCameraViewPreset,
 } from "./cameraViewPresets.js";
 import { dispatchCameraControlCommand } from "./cameraControlEvents.js";
@@ -83,6 +84,54 @@ export function resolveSharedPreviewOverlayState(sharedPreviewMode = null) {
     title: "Waiting for frames",
     message: "The hidden output stage has not delivered preview frames yet.",
   };
+}
+
+function shouldUseAuthoritativeStageViewState(sharedPreviewMode = null) {
+  return sharedPreviewMode?.omitLocalScene === true;
+}
+
+export function resolveCameraControlFieldState({
+  frameFieldState = "idle",
+  sharedPreviewMode = null,
+  authoritativeStageStatus = null,
+} = {}) {
+  if (
+    shouldUseAuthoritativeStageViewState(sharedPreviewMode) &&
+    typeof authoritativeStageStatus?.renderedFieldState === "string" &&
+    authoritativeStageStatus.renderedFieldState
+  ) {
+    return authoritativeStageStatus.renderedFieldState;
+  }
+
+  return frameFieldState;
+}
+
+/**
+ * @param {{
+ *   sharedPreviewMode?: {
+ *     omitLocalScene?: boolean,
+ *   } | null,
+ *   authoritativeStageStatus?: {
+ *     renderedCameraViewPreset?: "top-down" | "side" | null,
+ *   } | null,
+ *   fallbackCameraViewPreset?: "top-down" | "side",
+ * }} [options]
+ */
+export function resolveActiveCameraControlPreset({
+  sharedPreviewMode = null,
+  authoritativeStageStatus = null,
+  fallbackCameraViewPreset,
+} = {}) {
+  if (!shouldUseAuthoritativeStageViewState(sharedPreviewMode)) {
+    return fallbackCameraViewPreset;
+  }
+
+  return (
+    normalizeCameraViewPreset(
+      authoritativeStageStatus?.renderedCameraViewPreset,
+      fallbackCameraViewPreset,
+    ) ?? fallbackCameraViewPreset
+  );
 }
 
 function ControlsIcon() {
@@ -158,6 +207,10 @@ function CameraIcon() {
  *     auditSnapshot?: Record<string, unknown> | null,
  *     auditEnabled?: boolean,
  *   } | null,
+ *   authoritativeStageStatus?: {
+ *     renderedFieldState?: string | null,
+ *     renderedCameraViewPreset?: "top-down" | "side" | null,
+ *   } | null,
  * }} props
  */
 const ThreeScene = ({
@@ -170,6 +223,7 @@ const ThreeScene = ({
   onFrameState = null,
   sharedPreviewMode = null,
   authoritativeStageTelemetry = null,
+  authoritativeStageStatus = null,
 }) => {
   const containerRef = useRef(null);
   const advancedControlsTriggerRef = useRef(null);
@@ -201,7 +255,6 @@ const ThreeScene = ({
   const [cameraViewPreset, setCameraViewPreset] = useState(
     CAMERA_VIEW_PRESETS.topDown,
   );
-  const [cameraUiPreset, setCameraUiPreset] = useState(null);
   const [cameraResetNonce, setCameraResetNonce] = useState(0);
   const [frameFieldState, setFrameFieldState] = useState("idle");
 
@@ -225,12 +278,24 @@ const ThreeScene = ({
     resetAudioSession,
   } = useAudioScene();
   const { selectedSource } = useAudio();
+  const sharedPreviewVisible = sharedPreviewMode?.requested === true;
+  const sharedPreviewCanvasId = sharedPreviewMode?.canvasId ?? null;
+  const usingSharedPreview = sharedPreviewMode?.rendering === true;
+  const omitLocalScene =
+    shouldUseAuthoritativeStageViewState(sharedPreviewMode);
+  const resolvedFrameFieldState = resolveCameraControlFieldState({
+    frameFieldState,
+    sharedPreviewMode,
+    authoritativeStageStatus,
+  });
   const defaultCameraViewPreset = resolveDefaultCameraViewPreset({
     liveInputUiState,
-    fieldState: frameFieldState,
+    fieldState: resolvedFrameFieldState,
   });
   const effectiveCameraViewPreset =
-    frameFieldState === "idle" ? defaultCameraViewPreset : cameraViewPreset;
+    resolvedFrameFieldState === "idle"
+      ? defaultCameraViewPreset
+      : cameraViewPreset;
   const cameraConfig = getCameraConfigForPreset(effectiveCameraViewPreset);
 
   const {
@@ -255,15 +320,13 @@ const ThreeScene = ({
     liveInputPanel,
   });
   const showOverlayUi = isSupportReady && !isFullscreen;
-  const sharedPreviewVisible = sharedPreviewMode?.requested === true;
-  const sharedPreviewCanvasId = sharedPreviewMode?.canvasId ?? null;
-  const usingSharedPreview = sharedPreviewMode?.rendering === true;
-  const omitLocalScene = sharedPreviewMode?.omitLocalScene === true;
   const sharedPreviewOverlayState =
     resolveSharedPreviewOverlayState(sharedPreviewMode);
-  const activeCameraControlPreset = omitLocalScene
-    ? (cameraUiPreset ?? defaultCameraViewPreset)
-    : effectiveCameraViewPreset;
+  const activeCameraControlPreset = resolveActiveCameraControlPreset({
+    sharedPreviewMode,
+    authoritativeStageStatus,
+    fallbackCameraViewPreset: effectiveCameraViewPreset,
+  });
   const resolvedPerformanceHudMetrics = controlsState.performanceHudEnabled
     ? omitLocalScene
       ? (authoritativeStageTelemetry?.performanceHudSnapshot ?? null)
@@ -300,18 +363,11 @@ const ThreeScene = ({
 
   const applyCameraPreset = (preset) => {
     setCameraViewPreset(preset);
-    setCameraUiPreset(preset);
     setCameraResetNonce((current) => current + 1);
     dispatchCameraControlCommand({
       cameraViewPreset: preset,
     });
   };
-
-  useEffect(() => {
-    if (!omitLocalScene) {
-      setCameraUiPreset(null);
-    }
-  }, [omitLocalScene]);
 
   const handleFrameState = useCallback(
     (state) => {

@@ -46,6 +46,7 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  *   controlVersion?: number,
  *   registerRenderRequester?: ((requester: (() => void) | null) => void) | null,
  *   onStageRender?: (payload: { frameSequence: number | null, qualityPreset: string | null }) => void,
+ *   onFrameState?: ((state: Record<string, unknown>) => void) | null,
  *   onLiveInputRuntimeStatusChange?: ((status: unknown) => void) | null,
  *   onPerformanceHudSnapshotChange?: ((snapshot: Record<string, unknown> | null) => void) | null,
  *   onAuditSnapshotChange?: ((state: { enabled: boolean, snapshot: Record<string, unknown> | null }) => void) | null,
@@ -62,6 +63,7 @@ export function OutputStageSurface({
   controlVersion = 0,
   registerRenderRequester = null,
   onStageRender = null,
+  onFrameState = null,
   onLiveInputRuntimeStatusChange = null,
   onPerformanceHudSnapshotChange = null,
   onAuditSnapshotChange = null,
@@ -163,6 +165,7 @@ export function OutputStageSurface({
                 externalFrameRef={externalFrameRef}
                 basePixelRatio={1}
                 onStageRender={onStageRender}
+                onFrameState={onFrameState}
                 cameraControlMode={CAMERA_CONTROL_MODES.externalSynced}
                 cameraViewPreset={resolvedCameraViewPreset}
                 cameraDistance={resolvedCameraDistance}
