@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveSharedPreviewOverlayState } from "./ThreeScene.jsx";
+import {
+  resolveActiveCameraControlPreset,
+  resolveCameraControlFieldState,
+  resolveSharedPreviewOverlayState,
+} from "./ThreeScene.jsx";
 
 describe("resolveSharedPreviewOverlayState", () => {
   it("returns an unsupported state when presented performer preview is requested without support", () => {
@@ -26,5 +30,47 @@ describe("resolveSharedPreviewOverlayState", () => {
         stale: false,
       }),
     ).toBeNull();
+  });
+});
+
+describe("shared preview camera control state", () => {
+  it("uses the authoritative stage field state once the local scene is omitted", () => {
+    expect(
+      resolveCameraControlFieldState({
+        frameFieldState: "idle",
+        sharedPreviewMode: {
+          omitLocalScene: true,
+        },
+        authoritativeStageStatus: {
+          renderedFieldState: "active",
+        },
+      }),
+    ).toBe("active");
+  });
+
+  it("uses the authoritative rendered camera preset for shared preview controls", () => {
+    expect(
+      resolveActiveCameraControlPreset({
+        sharedPreviewMode: {
+          omitLocalScene: true,
+        },
+        authoritativeStageStatus: {
+          renderedCameraViewPreset: "top-down",
+        },
+        fallbackCameraViewPreset: "side",
+      }),
+    ).toBe("top-down");
+
+    expect(
+      resolveActiveCameraControlPreset({
+        sharedPreviewMode: {
+          omitLocalScene: true,
+        },
+        authoritativeStageStatus: {
+          renderedCameraViewPreset: "invalid",
+        },
+        fallbackCameraViewPreset: "side",
+      }),
+    ).toBe("side");
   });
 });
