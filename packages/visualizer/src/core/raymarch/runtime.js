@@ -186,6 +186,27 @@ function publishAuditSnapshot(snapshot) {
   /** @type {any} */ (window).__baryonAuditSnapshot = snapshot;
 }
 
+function publishRaymarchRuntimeAuditSnapshot(
+  runtimeState,
+  featureFrame,
+  fieldState,
+) {
+  if (runtimeState.auditEnabled) {
+    const raymarchDebug = buildRaymarchDebugSnapshot(
+      runtimeState,
+      featureFrame,
+      fieldState,
+    );
+    runtimeState.debugSnapshot = featureFrame?.debug
+      ? { ...featureFrame.debug, raymarchDebug, ...raymarchDebug }
+      : raymarchDebug;
+    publishAuditSnapshot(runtimeState.debugSnapshot);
+  } else {
+    runtimeState.debugSnapshot = null;
+    publishAuditSnapshot(null);
+  }
+}
+
 function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const avgAmplitude = estimateLayeredAmplitude(featureFrame);
   const maxBackboneAmplitude = maxSlotAmplitude(featureFrame?.backboneSlots);
@@ -813,6 +834,44 @@ export function tickRaymarchRuntime(
       runtimeState.fieldStateValues.idle,
   );
 
+  if (!fieldDriven) {
+    runtimeState.performanceGovernor = null;
+    runtimeState.chromaBuffersUploaded = false;
+    setIfChanged(uniforms.uBackboneModeCount, 0);
+    setIfChanged(uniforms.uDetailModeCount, 0);
+    setIfChanged(uniforms.uActiveModeCount, 0);
+    setIfChanged(uniforms.uAverageAmplitude, 0);
+    setIfChanged(uniforms.uTransientEnergy, 0);
+    setIfChanged(uniforms.uSpectralCentroid, 0);
+    setIfChanged(uniforms.uSpectralFlux, 0);
+    setIfChanged(uniforms.uStructureSignal, 0);
+    setIfChanged(uniforms.uEnergySignal, 0);
+    setIfChanged(uniforms.uChangeSignal, 0);
+    setIfChanged(uniforms.uPulseSignal, 0);
+    setIfChanged(uniforms.uHarmonicity, 0);
+    setIfChanged(uniforms.uBassSalience, 0);
+    setIfChanged(uniforms.uTextureSpread, 0);
+    setIfChanged(uniforms.uNovelty, 0);
+    setIfChanged(uniforms.uBeatPulse, 0);
+    setIfChanged(uniforms.uBeatPhase, 0);
+    setIfChanged(uniforms.uTempoNorm, 0);
+    setIfChanged(uniforms.uRhythmicDensity, 0);
+    setIfChanged(uniforms.uTrebleBroadbandEnergy, 0);
+    setIfChanged(uniforms.uModeCoherence, 0);
+    setIfChanged(uniforms.uTotalSlotAmplitude, 0);
+    setIfChanged(uniforms.uKeyTintStrength, 0);
+    setIfChanged(uniforms.uKeyMode, 0);
+    uniforms.uBandEnergies.value.set(0, 0, 0, 0);
+    uniforms.uDensityGain.value =
+      runtimeState.baseDensityGain ?? uniforms.uDensityGain.value;
+    uniforms.uDensityAbsorption.value =
+      uniforms.uDensityGain.value * uniforms.uAbsorption.value;
+    volumeMesh.visible = false;
+    idleOverlay.visible = true;
+    publishRaymarchRuntimeAuditSnapshot(runtimeState, featureFrame, fieldState);
+    return;
+  }
+
   const chromesthesiaEnabled = (uniforms.uChromesthesiaMix?.value ?? 0) > 0;
   const performanceGovernor = buildRaymarchPerformanceGovernor({
     backboneSlots: featureFrame?.backboneSlots,
@@ -978,21 +1037,7 @@ export function tickRaymarchRuntime(
 
   volumeMesh.visible = fieldDriven;
   idleOverlay.visible = !fieldDriven;
-
-  if (runtimeState.auditEnabled) {
-    const raymarchDebug = buildRaymarchDebugSnapshot(
-      runtimeState,
-      featureFrame,
-      fieldState,
-    );
-    runtimeState.debugSnapshot = featureFrame?.debug
-      ? { ...featureFrame.debug, raymarchDebug, ...raymarchDebug }
-      : raymarchDebug;
-    publishAuditSnapshot(runtimeState.debugSnapshot);
-  } else {
-    runtimeState.debugSnapshot = null;
-    publishAuditSnapshot(null);
-  }
+  publishRaymarchRuntimeAuditSnapshot(runtimeState, featureFrame, fieldState);
 }
 
 export function disposeRaymarchRuntime(runtimeState) {

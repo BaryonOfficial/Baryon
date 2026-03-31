@@ -420,6 +420,8 @@ describe("tickRaymarchRuntime", () => {
 
   it("hides the volume and shows the idle overlay in idle state", () => {
     const runtimeState = createRuntimeState();
+    runtimeState.backboneModeBuffer.value.needsUpdate = false;
+    runtimeState.detailModeBuffer.value.needsUpdate = false;
     tickRaymarchRuntime(
       runtimeState,
       {
@@ -445,6 +447,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.volumeMesh.visible).toBe(false);
     expect(runtimeState.idleOverlay.visible).toBe(true);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
+    expect(runtimeState.backboneModeBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.detailModeBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.performanceGovernor).toBeNull();
     expect(runtimeState.debugSnapshot.raymarchDebug).toBeUndefined();
     expect(runtimeState.debugSnapshot.modeSlotCount).toBe(0);
   });
