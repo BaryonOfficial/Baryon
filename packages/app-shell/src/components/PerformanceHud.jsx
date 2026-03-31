@@ -20,6 +20,15 @@ export default function PerformanceHud({
     return null;
   }
 
+  const splitAuthoritativeMetrics =
+    Object.prototype.hasOwnProperty.call(metrics, "outputTargetFps") ||
+    Object.prototype.hasOwnProperty.call(metrics, "outputFps") ||
+    Object.prototype.hasOwnProperty.call(metrics, "outputPaintFps") ||
+    Object.prototype.hasOwnProperty.call(metrics, "renderCompletedToPaintMs");
+  const resolvedTargetFps = splitAuthoritativeMetrics
+    ? (metrics.outputTargetFps ?? metrics.targetFps)
+    : metrics.targetFps;
+
   const showRaymarchSteps =
     metrics.visualizationMethod === "raymarch" &&
     metrics.requestedRaymarchSteps > 0;
@@ -57,8 +66,25 @@ export default function PerformanceHud({
       <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
         Performance
       </div>
-      <div>FPS: {formatNumber(metrics.fps, 1)}</div>
-      <div>Frame ms: {formatNumber(metrics.smoothedFrameTimeMs, 2)}</div>
+      {splitAuthoritativeMetrics ? (
+        <>
+          <div>Stage FPS: {formatNumber(metrics.fps, 1)}</div>
+          <div>
+            Stage Frame ms: {formatNumber(metrics.smoothedFrameTimeMs, 2)}
+          </div>
+          <div>Output FPS: {formatNumber(metrics.outputFps, 1)}</div>
+          <div>Output Paint FPS: {formatNumber(metrics.outputPaintFps, 1)}</div>
+          <div>
+            Render-&gt;Paint ms:{" "}
+            {formatNumber(metrics.renderCompletedToPaintMs, 2)}
+          </div>
+        </>
+      ) : (
+        <>
+          <div>FPS: {formatNumber(metrics.fps, 1)}</div>
+          <div>Frame ms: {formatNumber(metrics.smoothedFrameTimeMs, 2)}</div>
+        </>
+      )}
       <div>
         DPR: {formatNumber(metrics.currentPixelRatio, 3)} /{" "}
         {formatNumber(metrics.basePixelRatio, 3)}
@@ -67,8 +93,8 @@ export default function PerformanceHud({
       {metrics.qualityPreset ? (
         <div>Performance Profile: {metrics.qualityPreset}</div>
       ) : null}
-      {typeof metrics.targetFps === "number" ? (
-        <div>Target FPS: {Math.round(metrics.targetFps)}</div>
+      {typeof resolvedTargetFps === "number" ? (
+        <div>Target FPS: {Math.round(resolvedTargetFps)}</div>
       ) : null}
       {raymarchStepsLabel ? <div>Steps: {raymarchStepsLabel}</div> : null}
     </aside>
