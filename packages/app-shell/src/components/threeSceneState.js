@@ -12,84 +12,58 @@ export function resolveLiveInputPanelConfig({ liveInputPanel = null } = {}) {
   };
 }
 
-export function resolvePreviewOverlayState(previewState = null) {
-  if (previewState?.requested !== true || previewState.rendering) {
+export function resolveSharedPreviewOverlayState(sharedPreviewMode = null) {
+  if (sharedPreviewMode?.requested !== true || sharedPreviewMode.rendering) {
     return null;
   }
 
-  if (!previewState.supported) {
+  if (!sharedPreviewMode.supported) {
     return {
       state: "unsupported",
       title: "Preview unavailable",
       message:
-        "Perform requires the authoritative preview path on this platform and backend.",
+        "Shared preview is not supported for this presented performer output.",
     };
   }
 
-  if (previewState.startupFailed) {
+  if (!sharedPreviewMode.connected || !sharedPreviewMode.canvasAttached) {
     return {
-      state: "startup-failed",
-      title: "Performer startup failed",
-      message:
-        previewState.failureReason ??
-        "The authoritative output stage did not become healthy in time.",
+      state: "attaching",
+      title: "Attaching preview",
+      message: "Connecting the shared preview surface to the desktop window.",
     };
   }
 
-  if (previewState.recovering) {
+  if (sharedPreviewMode.stale) {
     return {
-      state: "recovering",
+      state: "stale",
       title: "Preview recovering",
-      message: "Restoring the authoritative output stage and preview delivery.",
-    };
-  }
-
-  if (!previewState.connected || !previewState.canvasAttached) {
-    return {
-      state: "connecting",
-      title: "Connecting preview",
-      message:
-        "Connecting the authoritative performer preview to the desktop window.",
+      message: "Waiting for fresh frames from the hidden output stage.",
     };
   }
 
   return {
-    state: "connecting",
-    title: "Waiting for preview frames",
-    message:
-      "The authoritative output stage has not delivered preview frames yet.",
+    state: "waiting",
+    title: "Waiting for frames",
+    message: "The hidden output stage has not delivered preview frames yet.",
   };
 }
 
-function shouldUseAuthoritativeStageViewState(previewState = null) {
-  return previewState?.omitLocalScene === true;
-}
-
-export function shouldUseAuthoritativePerformanceHud({
-  previewState = null,
-  authoritativeStageTelemetry = null,
-  authoritativeOutputHudMetrics = null,
-} = {}) {
-  const authoritativeOutputActive =
-    previewState?.authorityMode === "output-stage-authoritative";
-  const hasAuthoritativeHudData =
-    authoritativeStageTelemetry?.performanceHudSnapshot != null ||
-    authoritativeOutputHudMetrics != null;
-
-  return authoritativeOutputActive && hasAuthoritativeHudData;
+function shouldUseAuthoritativeStageViewState(sharedPreviewMode = null) {
+  return sharedPreviewMode?.omitLocalScene === true;
 }
 
 export function resolveCameraControlFieldState({
   frameFieldState = "idle",
-  previewState = null,
+  sharedPreviewMode = null,
   authoritativeStageStatus = null,
 } = {}) {
   if (
-    shouldUseAuthoritativeStageViewState(previewState) &&
-    typeof authoritativeStageStatus?.lastRenderedFieldState === "string" &&
-    authoritativeStageStatus.lastRenderedFieldState
+    shouldUseAuthoritativeStageViewState(sharedPreviewMode) &&
+    typeof authoritativeStageStatus?.renderedFieldState === "string" &&
+    authoritativeStageStatus.renderedFieldState
   ) {
-    return authoritativeStageStatus.lastRenderedFieldState;
+    return authoritativeStageStatus.renderedFieldState;
   }
 
   return frameFieldState;
@@ -97,27 +71,27 @@ export function resolveCameraControlFieldState({
 
 /**
  * @param {{
- *   previewState?: {
+ *   sharedPreviewMode?: {
  *     omitLocalScene?: boolean,
  *   } | null,
  *   authoritativeStageStatus?: {
- *     lastRenderedCameraViewPreset?: "top-down" | "side" | null,
+ *     renderedCameraViewPreset?: "top-down" | "side" | null,
  *   } | null,
  *   fallbackCameraViewPreset?: "top-down" | "side",
  * }} [options]
  */
 export function resolveActiveCameraControlPreset({
-  previewState = null,
+  sharedPreviewMode = null,
   authoritativeStageStatus = null,
   fallbackCameraViewPreset,
 } = {}) {
-  if (!shouldUseAuthoritativeStageViewState(previewState)) {
+  if (!shouldUseAuthoritativeStageViewState(sharedPreviewMode)) {
     return fallbackCameraViewPreset;
   }
 
   return (
     normalizeCameraViewPreset(
-      authoritativeStageStatus?.lastRenderedCameraViewPreset,
+      authoritativeStageStatus?.renderedCameraViewPreset,
       fallbackCameraViewPreset,
     ) ?? fallbackCameraViewPreset
   );

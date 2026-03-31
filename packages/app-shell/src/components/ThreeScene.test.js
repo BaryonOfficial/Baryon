@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  composeAuthoritativePerformanceHudMetrics,
   resolveActiveCameraControlPreset,
   resolveCameraControlFieldState,
   resolveSharedPreviewOverlayState,
-} from "./ThreeScene.jsx";
+} from "./threeSceneState.js";
 
 describe("resolveSharedPreviewOverlayState", () => {
   it("returns an unsupported state when presented performer preview is requested without support", () => {
@@ -72,5 +73,33 @@ describe("shared preview camera control state", () => {
         fallbackCameraViewPreset: "side",
       }),
     ).toBe("side");
+  });
+});
+
+describe("authoritative performance HUD composition", () => {
+  it("combines stage render metrics with output publish metrics", () => {
+    expect(
+      composeAuthoritativePerformanceHudMetrics(
+        {
+          fps: 60,
+          smoothedFrameTimeMs: 16.67,
+          targetFps: 60,
+        },
+        {
+          outputTargetFps: 48,
+          outputFps: 47.5,
+          outputPaintFps: 48.2,
+          renderCompletedToPaintMs: 9.5,
+        },
+      ),
+    ).toMatchObject({
+      fps: 60,
+      smoothedFrameTimeMs: 16.67,
+      targetFps: 60,
+      outputTargetFps: 48,
+      outputFps: 47.5,
+      outputPaintFps: 48.2,
+      renderCompletedToPaintMs: 9.5,
+    });
   });
 });

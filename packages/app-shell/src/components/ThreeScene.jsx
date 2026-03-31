@@ -13,7 +13,6 @@ import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene";
 import {
   CAMERA_VIEW_PRESETS,
   getCameraConfigForPreset,
-  normalizeCameraViewPreset,
   resolveDefaultCameraViewPreset,
 } from "./cameraViewPresets.js";
 import { dispatchCameraControlCommand } from "./cameraControlEvents.js";
@@ -31,108 +30,18 @@ import { useBaryonControls } from "./hooks/useBaryonControls";
 import { useBrowserSupportState } from "./hooks/useBrowserSupportState.js";
 import { useRendererModeState } from "./hooks/useRendererModeState.js";
 import { useAudio, useAudioScene } from "../context/AudioContext";
+import {
+  composeAuthoritativePerformanceHudMetrics,
+  resolveActiveCameraControlPreset,
+  resolveCameraControlFieldState,
+  resolveLiveInputPanelConfig,
+  resolveSharedPreviewOverlayState,
+} from "./threeSceneState.js";
 
 const AdvancedControlsSidebar = lazy(
   () => import("./AdvancedControlsSidebar.jsx"),
 );
 const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
-
-export function resolveLiveInputPanelConfig({ liveInputPanel = null } = {}) {
-  return {
-    forceVisible: Boolean(liveInputPanel?.forceVisible),
-    showAction: Boolean(liveInputPanel?.showAction),
-    deviceSelectTestId:
-      typeof liveInputPanel?.deviceSelectTestId === "string" &&
-      liveInputPanel.deviceSelectTestId
-        ? liveInputPanel.deviceSelectTestId
-        : "live-input-device-select",
-  };
-}
-
-export function resolveSharedPreviewOverlayState(sharedPreviewMode = null) {
-  if (sharedPreviewMode?.requested !== true || sharedPreviewMode.rendering) {
-    return null;
-  }
-
-  if (!sharedPreviewMode.supported) {
-    return {
-      state: "unsupported",
-      title: "Preview unavailable",
-      message:
-        "Shared preview is not supported for this presented performer output.",
-    };
-  }
-
-  if (!sharedPreviewMode.connected || !sharedPreviewMode.canvasAttached) {
-    return {
-      state: "attaching",
-      title: "Attaching preview",
-      message: "Connecting the shared preview surface to the desktop window.",
-    };
-  }
-
-  if (sharedPreviewMode.stale) {
-    return {
-      state: "stale",
-      title: "Preview recovering",
-      message: "Waiting for fresh frames from the hidden output stage.",
-    };
-  }
-
-  return {
-    state: "waiting",
-    title: "Waiting for frames",
-    message: "The hidden output stage has not delivered preview frames yet.",
-  };
-}
-
-function shouldUseAuthoritativeStageViewState(sharedPreviewMode = null) {
-  return sharedPreviewMode?.omitLocalScene === true;
-}
-
-export function resolveCameraControlFieldState({
-  frameFieldState = "idle",
-  sharedPreviewMode = null,
-  authoritativeStageStatus = null,
-} = {}) {
-  if (
-    shouldUseAuthoritativeStageViewState(sharedPreviewMode) &&
-    typeof authoritativeStageStatus?.renderedFieldState === "string" &&
-    authoritativeStageStatus.renderedFieldState
-  ) {
-    return authoritativeStageStatus.renderedFieldState;
-  }
-
-  return frameFieldState;
-}
-
-/**
- * @param {{
- *   sharedPreviewMode?: {
- *     omitLocalScene?: boolean,
- *   } | null,
- *   authoritativeStageStatus?: {
- *     renderedCameraViewPreset?: "top-down" | "side" | null,
- *   } | null,
- *   fallbackCameraViewPreset?: "top-down" | "side",
- * }} [options]
- */
-export function resolveActiveCameraControlPreset({
-  sharedPreviewMode = null,
-  authoritativeStageStatus = null,
-  fallbackCameraViewPreset,
-} = {}) {
-  if (!shouldUseAuthoritativeStageViewState(sharedPreviewMode)) {
-    return fallbackCameraViewPreset;
-  }
-
-  return (
-    normalizeCameraViewPreset(
-      authoritativeStageStatus?.renderedCameraViewPreset,
-      fallbackCameraViewPreset,
-    ) ?? fallbackCameraViewPreset
-  );
-}
 
 function ControlsIcon() {
   return (
@@ -202,6 +111,12 @@ function CameraIcon() {
  *     stale?: boolean,
  *     canvasId?: string | null,
  *   } | null,
+ *   authoritativeOutputHudMetrics?: {
+ *     outputTargetFps?: number | null,
+ *     outputFps?: number | null,
+ *     outputPaintFps?: number | null,
+ *     renderCompletedToPaintMs?: number | null,
+ *   } | null,
  *   authoritativeStageTelemetry?: {
  *     performanceHudSnapshot?: Record<string, unknown> | null,
  *     auditSnapshot?: Record<string, unknown> | null,
@@ -222,6 +137,7 @@ const ThreeScene = ({
   onOutputFrame = null,
   onFrameState = null,
   sharedPreviewMode = null,
+  authoritativeOutputHudMetrics = null,
   authoritativeStageTelemetry = null,
   authoritativeStageStatus = null,
 }) => {
@@ -281,8 +197,7 @@ const ThreeScene = ({
   const sharedPreviewVisible = sharedPreviewMode?.requested === true;
   const sharedPreviewCanvasId = sharedPreviewMode?.canvasId ?? null;
   const usingSharedPreview = sharedPreviewMode?.rendering === true;
-  const omitLocalScene =
-    shouldUseAuthoritativeStageViewState(sharedPreviewMode);
+  const omitLocalScene = sharedPreviewMode?.omitLocalScene === true;
   const resolvedFrameFieldState = resolveCameraControlFieldState({
     frameFieldState,
     sharedPreviewMode,
@@ -329,7 +244,10 @@ const ThreeScene = ({
   });
   const resolvedPerformanceHudMetrics = controlsState.performanceHudEnabled
     ? omitLocalScene
-      ? (authoritativeStageTelemetry?.performanceHudSnapshot ?? null)
+      ? composeAuthoritativePerformanceHudMetrics(
+          authoritativeStageTelemetry?.performanceHudSnapshot ?? null,
+          authoritativeOutputHudMetrics,
+        )
       : performanceHudMetrics
     : null;
   const debugOverlayEnabledOverride = omitLocalScene

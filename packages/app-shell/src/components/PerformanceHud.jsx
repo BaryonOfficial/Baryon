@@ -1,5 +1,3 @@
-import { formatPerformanceProfileLabel } from "@baryon/visualizer/render/outputProfilePolicy";
-
 function formatNumber(value, digits = 1) {
   if (
     typeof value !== "number" ||
@@ -38,8 +36,9 @@ export default function PerformanceHud({
     ? `${Math.round(metrics.effectiveRaymarchSteps)} / ${Math.round(metrics.requestedRaymarchSteps)}`
     : null;
   const renderScaleLabel =
-    typeof metrics.renderScale === "number"
-      ? formatNumber(metrics.renderScale, 3)
+    typeof metrics.renderScale === "number" &&
+    typeof metrics.requestedRenderScale === "number"
+      ? `${formatNumber(metrics.renderScale, 3)} / ${formatNumber(metrics.requestedRenderScale, 3)}`
       : null;
 
   return (
@@ -50,29 +49,21 @@ export default function PerformanceHud({
         top: stacked ? "auto" : top,
         right: stacked ? "auto" : right,
         zIndex: 10000,
-        minWidth: "9.25rem",
-        padding: "0.7rem 0.78rem",
-        borderRadius: "0.78rem",
-        background: "var(--nd-surface)",
-        border: "1px solid var(--nd-border-visible)",
-        color: "var(--nd-text-primary)",
+        minWidth: "9rem",
+        padding: "0.55rem 0.7rem",
+        borderRadius: "0.75rem",
+        background: "rgba(6, 10, 15, 0.74)",
+        border: "1px solid rgba(255, 255, 255, 0.1)",
+        color: "#ecf5ff",
         fontFamily:
           '"Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontSize: "10.5px",
+        fontSize: "11px",
         lineHeight: 1.45,
         pointerEvents: "none",
-        boxShadow: "var(--nd-shell-shadow)",
+        backdropFilter: "blur(10px)",
       }}
     >
-      <div
-        style={{
-          fontWeight: 700,
-          marginBottom: "0.32rem",
-          textTransform: "uppercase",
-          letterSpacing: "0.14em",
-          color: "var(--nd-text-secondary)",
-        }}
-      >
+      <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
         Performance
       </div>
       {splitAuthoritativeMetrics ? (
@@ -98,15 +89,9 @@ export default function PerformanceHud({
         DPR: {formatNumber(metrics.currentPixelRatio, 3)} /{" "}
         {formatNumber(metrics.basePixelRatio, 3)}
       </div>
-      {renderScaleLabel ? <div>Render Scale: {renderScaleLabel}</div> : null}
+      {renderScaleLabel ? <div>Scale: {renderScaleLabel}</div> : null}
       {metrics.qualityPreset ? (
-        <div>
-          Performance Profile:{" "}
-          {formatPerformanceProfileLabel(
-            metrics.qualityPreset,
-            resolvedTargetFps ?? metrics.targetFps,
-          )}
-        </div>
+        <div>Performance Profile: {metrics.qualityPreset}</div>
       ) : null}
       {typeof resolvedTargetFps === "number" ? (
         <div>Target FPS: {Math.round(resolvedTargetFps)}</div>
