@@ -5,6 +5,7 @@ import {
 } from "./baryonVisualizerRuntimeState.js";
 import { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 import {
+  buildPerformanceHudSnapshot,
   getEffectiveAdaptiveRenderScale,
   publishDevtoolsSnapshots,
   resolveFeatureFrame,
@@ -244,6 +245,71 @@ test("publishes live runtime status changes only when fields change", () => {
   expect(updated.phase).toBe(LIVE_INPUT_PHASES.weakSignal);
   expect(setter.callCount).toBe(2);
   expect(setter.currentValue.phase).toBe(LIVE_INPUT_PHASES.weakSignal);
+});
+
+test("buildPerformanceHudSnapshot exports stage attribution, engine counters, and raw perf breakdown", () => {
+  const runtimeDiagnostics = createRuntimeDiagnostics();
+  runtimeDiagnostics.smoothedFrameTimeMs = 20;
+  runtimeDiagnostics.render.targetFps = 60;
+  runtimeDiagnostics.perfBreakdown.readAnalysisSnapshotMs.averageMs = 1;
+  runtimeDiagnostics.perfBreakdown.enqueueAnalysisFrameMs.averageMs = 2;
+  runtimeDiagnostics.perfBreakdown.readAnalysisHintsMs.averageMs = 3;
+  runtimeDiagnostics.perfBreakdown.buildFeatureFrameMs.averageMs = 4;
+  runtimeDiagnostics.perfBreakdown.heavyAnalysisMs.averageMs = 5;
+  runtimeDiagnostics.perfBreakdown.fastComposeMs.averageMs = 6;
+  runtimeDiagnostics.perfBreakdown.engineEnqueueMs.averageMs = 7;
+  runtimeDiagnostics.perfBreakdown.readEngineSnapshotMs.averageMs = 8;
+  runtimeDiagnostics.perfBreakdown.applyCachedControlSnapshotsMs.averageMs = 9;
+  runtimeDiagnostics.perfBreakdown.syncLiveInputRuntimeStatusMs.averageMs = 10;
+  runtimeDiagnostics.perfBreakdown.runtimeTickMs.averageMs = 11;
+  runtimeDiagnostics.perfBreakdown.applyReactiveBloomMs.averageMs = 12;
+  runtimeDiagnostics.perfBreakdown.applySceneControlsMs.averageMs = 13;
+  runtimeDiagnostics.perfBreakdown.pipelineRenderMs.averageMs = 14;
+  runtimeDiagnostics.perfBreakdown.pipelineRenderMs.lastMs = 99;
+  runtimeDiagnostics.engine.publishCount = 101;
+  runtimeDiagnostics.engine.publishSkipCount = 7;
+  runtimeDiagnostics.engine.fastSignalUpdateCount = 17;
+  runtimeDiagnostics.engine.structuralUpdateCount = 19;
+  runtimeDiagnostics.engine.chromaUpdateCount = 23;
+  runtimeDiagnostics.engine.tempoUpdateCount = 29;
+
+  const snapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
+
+  expect(snapshot.perfBreakdown.heavyAnalysisMs.averageMs).toBe(5);
+  expect(snapshot.perfBreakdown.pipelineRenderMs.lastMs).toBe(99);
+  expect(snapshot.stageAttribution.analysisCpuMs).toBe(21);
+  expect(snapshot.stageAttribution.engineCpuMs).toBe(15);
+  expect(snapshot.stageAttribution.controlCpuMs).toBe(55);
+  expect(snapshot.stageAttribution.renderCpuMs).toBe(14);
+  expect(snapshot.stageAttribution.measuredCpuMs).toBe(105);
+  expect(snapshot.stageAttribution.unattributedFrameMs).toBe(0);
+  expect(snapshot.stageAttribution.dominantBucket).toBe("control");
+  expect(snapshot.engineCounters).toEqual({
+    publishCount: 101,
+    publishSkipCount: 7,
+    fastSignalUpdateCount: 17,
+    structuralUpdateCount: 19,
+    chromaUpdateCount: 23,
+    tempoUpdateCount: 29,
+  });
+});
+
+test("buildPerformanceHudSnapshot uses deterministic dominant-bucket tie breaks", () => {
+  const runtimeDiagnostics = createRuntimeDiagnostics();
+  runtimeDiagnostics.smoothedFrameTimeMs = 10;
+  runtimeDiagnostics.perfBreakdown.pipelineRenderMs.averageMs = 4;
+  runtimeDiagnostics.perfBreakdown.heavyAnalysisMs.averageMs = 4;
+  runtimeDiagnostics.perfBreakdown.engineEnqueueMs.averageMs = 4;
+  runtimeDiagnostics.perfBreakdown.runtimeTickMs.averageMs = 4;
+
+  const snapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
+
+  expect(snapshot.stageAttribution.analysisCpuMs).toBe(4);
+  expect(snapshot.stageAttribution.engineCpuMs).toBe(4);
+  expect(snapshot.stageAttribution.controlCpuMs).toBe(4);
+  expect(snapshot.stageAttribution.renderCpuMs).toBe(4);
+  expect(snapshot.stageAttribution.unattributedFrameMs).toBe(0);
+  expect(snapshot.stageAttribution.dominantBucket).toBe("render");
 });
 
 test("publishes provider transition phases even before live audio becomes active", () => {

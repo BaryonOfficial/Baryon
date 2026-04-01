@@ -237,7 +237,7 @@ export function recordRuntimePerfSample(
       : nextDurationMs;
 }
 
-function snapshotRuntimePerfBreakdown(perfBreakdown) {
+export function snapshotRuntimePerfBreakdown(perfBreakdown) {
   return Object.fromEntries(
     Object.entries(perfBreakdown ?? {}).map(([key, value]) => [
       key,

@@ -26,6 +26,7 @@ import {
   maybePublishRuntimePerfSnapshot,
   recordRuntimePerfSample,
   shouldReuseIdleFrame,
+  snapshotRuntimePerfBreakdown,
   snapshotRuntimeDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
 export { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
@@ -59,6 +60,115 @@ const AUTO_RAYMARCH_STEP_LADDER = Object.freeze([
 const AUTO_RAYMARCH_RENDER_SCALE_LADDER = Object.freeze([
   0.67, 0.75, 0.84, 0.92, 1,
 ]);
+const STAGE_ATTRIBUTION_TIEBREAK_ORDER = Object.freeze([
+  "unattributed",
+  "render",
+  "analysis",
+  "control",
+  "engine",
+]);
+const STAGE_ATTRIBUTION_BUCKET_PERF_KEYS = Object.freeze({
+  analysis: Object.freeze([
+    "readAnalysisSnapshotMs",
+    "enqueueAnalysisFrameMs",
+    "readAnalysisHintsMs",
+    "buildFeatureFrameMs",
+    "heavyAnalysisMs",
+    "fastComposeMs",
+  ]),
+  engine: Object.freeze(["engineEnqueueMs", "readEngineSnapshotMs"]),
+  control: Object.freeze([
+    "applyCachedControlSnapshotsMs",
+    "syncLiveInputRuntimeStatusMs",
+    "runtimeTickMs",
+    "applyReactiveBloomMs",
+    "applySceneControlsMs",
+  ]),
+  render: Object.freeze(["pipelineRenderMs"]),
+});
+
+function readPerfAverageMs(perfBreakdown, key) {
+  const averageMs = perfBreakdown?.[key]?.averageMs;
+  return Number.isFinite(averageMs) ? Number(averageMs) : 0;
+}
+
+function sumPerfAverageMs(perfBreakdown, keys) {
+  return keys.reduce(
+    (totalMs, key) => totalMs + readPerfAverageMs(perfBreakdown, key),
+    0,
+  );
+}
+
+function resolveDominantStageAttributionBucket(bucketValues) {
+  let dominantBucket = STAGE_ATTRIBUTION_TIEBREAK_ORDER[0];
+  let dominantValue = Number.NEGATIVE_INFINITY;
+  for (const bucketName of STAGE_ATTRIBUTION_TIEBREAK_ORDER) {
+    const bucketValue = bucketValues[bucketName];
+    if (bucketValue > dominantValue) {
+      dominantBucket = bucketName;
+      dominantValue = bucketValue;
+    }
+  }
+
+  return dominantBucket;
+}
+
+function buildStageAttribution(runtimeDiagnostics, perfBreakdown) {
+  const smoothedFrameTimeMs = Number.isFinite(
+    runtimeDiagnostics?.smoothedFrameTimeMs,
+  )
+    ? Number(runtimeDiagnostics.smoothedFrameTimeMs)
+    : 0;
+  const analysisCpuMs = sumPerfAverageMs(
+    perfBreakdown,
+    STAGE_ATTRIBUTION_BUCKET_PERF_KEYS.analysis,
+  );
+  const engineCpuMs = sumPerfAverageMs(
+    perfBreakdown,
+    STAGE_ATTRIBUTION_BUCKET_PERF_KEYS.engine,
+  );
+  const controlCpuMs = sumPerfAverageMs(
+    perfBreakdown,
+    STAGE_ATTRIBUTION_BUCKET_PERF_KEYS.control,
+  );
+  const renderCpuMs = sumPerfAverageMs(
+    perfBreakdown,
+    STAGE_ATTRIBUTION_BUCKET_PERF_KEYS.render,
+  );
+  const measuredCpuMs =
+    analysisCpuMs + engineCpuMs + controlCpuMs + renderCpuMs;
+  const unattributedFrameMs = Math.max(0, smoothedFrameTimeMs - measuredCpuMs);
+  const bucketValues = {
+    unattributed: unattributedFrameMs,
+    render: renderCpuMs,
+    analysis: analysisCpuMs,
+    control: controlCpuMs,
+    engine: engineCpuMs,
+  };
+
+  return {
+    analysisCpuMs,
+    engineCpuMs,
+    controlCpuMs,
+    renderCpuMs,
+    measuredCpuMs,
+    unattributedFrameMs,
+    dominantBucket: resolveDominantStageAttributionBucket(bucketValues),
+  };
+}
+
+function buildStageEngineCounters(runtimeDiagnostics) {
+  return {
+    publishCount: runtimeDiagnostics?.engine?.publishCount ?? 0,
+    publishSkipCount: runtimeDiagnostics?.engine?.publishSkipCount ?? 0,
+    fastSignalUpdateCount:
+      runtimeDiagnostics?.engine?.fastSignalUpdateCount ?? 0,
+    structuralUpdateCount:
+      runtimeDiagnostics?.engine?.structuralUpdateCount ?? 0,
+    chromaUpdateCount: runtimeDiagnostics?.engine?.chromaUpdateCount ?? 0,
+    tempoUpdateCount: runtimeDiagnostics?.engine?.tempoUpdateCount ?? 0,
+  };
+}
 
 function snapshotFeatureFrame(featureFrame) {
   return {
@@ -228,6 +338,9 @@ function getAnalysisSchedulerState(analysisSchedulerRef) {
 export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
   const smoothedFrameTimeMs = runtimeDiagnostics?.smoothedFrameTimeMs ?? 0;
   const render = runtimeDiagnostics?.render ?? null;
+  const perfBreakdown = snapshotRuntimePerfBreakdown(
+    runtimeDiagnostics?.perfBreakdown,
+  );
   return {
     fps:
       smoothedFrameTimeMs > 0 && Number.isFinite(smoothedFrameTimeMs)
@@ -245,6 +358,9 @@ export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
     requestedRaymarchSteps: render?.requestedRaymarchSteps ?? 0,
     effectiveRaymarchSteps: render?.effectiveRaymarchSteps ?? 0,
     adaptiveRaymarchActive: render?.adaptiveRaymarchActive ?? false,
+    perfBreakdown,
+    stageAttribution: buildStageAttribution(runtimeDiagnostics, perfBreakdown),
+    engineCounters: buildStageEngineCounters(runtimeDiagnostics),
   };
 }
 
