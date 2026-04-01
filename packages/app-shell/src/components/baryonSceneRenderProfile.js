@@ -1,7 +1,6 @@
 import {
   applyRenderQualityProfileOverrides,
   normalizePerformanceProfile,
-  normalizeRenderQualityProfileOverrides,
   normalizeResolvedRenderQualityProfile,
   RENDER_CONTEXTS,
   resolveRenderQualityProfile,
@@ -12,7 +11,28 @@ import {
  * @returns {{ renderScale?: number, traaEnabled?: boolean, bloomAllowed?: boolean } | null}
  */
 export function sanitizeRenderProfileOverrides(overrides) {
-  return normalizeRenderQualityProfileOverrides(overrides);
+  if (!overrides || typeof overrides !== "object") {
+    return null;
+  }
+
+  const candidate = /** @type {Record<string, unknown>} */ (overrides);
+  const nextOverrides = {};
+  const renderScaleCandidate = candidate.renderScale;
+  if (
+    typeof renderScaleCandidate === "number" &&
+    Number.isFinite(renderScaleCandidate) &&
+    renderScaleCandidate > 0
+  ) {
+    nextOverrides.renderScale = renderScaleCandidate;
+  }
+  if (typeof candidate.traaEnabled === "boolean") {
+    nextOverrides.traaEnabled = candidate.traaEnabled;
+  }
+  if (typeof candidate.bloomAllowed === "boolean") {
+    nextOverrides.bloomAllowed = candidate.bloomAllowed;
+  }
+
+  return Object.keys(nextOverrides).length > 0 ? nextOverrides : null;
 }
 
 /**

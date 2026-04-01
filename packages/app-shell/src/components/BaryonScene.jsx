@@ -15,31 +15,14 @@ import {
   shouldMountOrbitControls,
 } from "./baryonSceneCameraSync.js";
 export { CAMERA_CONTROL_MODES } from "./baryonSceneCameraSync.js";
+import { RENDER_CONTEXTS } from "@baryon/visualizer/render/outputPipeline";
 import {
-  RENDER_CONTEXTS,
-  resolveRenderQualityProfile,
-} from "@baryon/visualizer/render/outputPipeline";
+  resolveSceneRenderQualityProfile,
+  sanitizeRenderProfileOverrides,
+  shouldAllowLocalRenderProfileCommands,
+} from "./baryonSceneRenderProfile.js";
 
 const RENDER_PROFILE_COMMAND_EVENT = "__baryon-render-profile-command";
-
-function sanitizeRenderProfileOverrides(overrides) {
-  if (!overrides || typeof overrides !== "object") {
-    return null;
-  }
-
-  const nextOverrides = {};
-  if (Number.isFinite(overrides.renderScale) && overrides.renderScale > 0) {
-    nextOverrides.renderScale = overrides.renderScale;
-  }
-  if (typeof overrides.traaEnabled === "boolean") {
-    nextOverrides.traaEnabled = overrides.traaEnabled;
-  }
-  if (typeof overrides.bloomAllowed === "boolean") {
-    nextOverrides.bloomAllowed = overrides.bloomAllowed;
-  }
-
-  return Object.keys(nextOverrides).length > 0 ? nextOverrides : null;
-}
 
 export function BaryonScene({
   setIsEngineReady,
@@ -50,6 +33,7 @@ export function BaryonScene({
   visualizationMethod,
   renderQualityPreset: performanceProfile,
   renderProfileOverrides: renderProfileOverridesProp = null,
+  resolvedRenderProfile = null,
   onPerformanceHudSnapshotChange,
   onAuditSnapshotChange = null,
   outputFrameConfig = null,
@@ -77,29 +61,23 @@ export function BaryonScene({
   const { camera, gl, scene, size } = useThree();
   const orbitControlsRef = useRef(null);
   const [renderProfileOverrides, setRenderProfileOverrides] = useState(null);
-  const effectiveRenderProfileOverrides = useMemo(
-    () => ({
-      ...(renderProfileOverridesProp ?? {}),
-      ...(renderProfileOverrides ?? {}),
-    }),
-    [renderProfileOverrides, renderProfileOverridesProp],
-  );
   const renderProfile = useMemo(
     () =>
-      resolveRenderQualityProfile({
-        qualityPreset: performanceProfile,
+      resolveSceneRenderQualityProfile({
+        performanceProfile,
+        renderContext,
         outputWidth: size.width,
         outputHeight: size.height,
-        overrides:
-          Object.keys(effectiveRenderProfileOverrides).length > 0
-            ? effectiveRenderProfileOverrides
-            : null,
-        renderContext,
+        resolvedRenderProfile,
+        syncedRenderProfileOverrides: renderProfileOverridesProp,
+        localRenderProfileOverrides: renderProfileOverrides,
       }),
     [
-      effectiveRenderProfileOverrides,
       performanceProfile,
       renderContext,
+      renderProfileOverrides,
+      renderProfileOverridesProp,
+      resolvedRenderProfile,
       size.height,
       size.width,
     ],
@@ -117,6 +95,11 @@ export function BaryonScene({
 
   useEffect(() => {
     if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    if (!shouldAllowLocalRenderProfileCommands(renderContext)) {
+      setRenderProfileOverrides(null);
       return undefined;
     }
 
@@ -143,7 +126,7 @@ export function BaryonScene({
         handleRenderProfileCommand,
       );
     };
-  }, []);
+  }, [renderContext]);
 
   const handleFrameState = useCallback(
     (frameState) => {

@@ -291,6 +291,44 @@ export function applyRenderQualityProfileOverrides(profile, overrides) {
 }
 
 /**
+ * @param {unknown} profile
+ * @returns {RenderQualityProfile | null}
+ */
+export function normalizeResolvedRenderQualityProfile(profile) {
+  if (!profile || typeof profile !== "object") {
+    return null;
+  }
+
+  const candidate = /** @type {Record<string, unknown>} */ (profile);
+  const renderScaleCandidate = candidate.renderScale;
+  const renderScale =
+    typeof renderScaleCandidate === "number" &&
+    Number.isFinite(renderScaleCandidate) &&
+    renderScaleCandidate > 0
+      ? renderScaleCandidate
+      : null;
+  const traaEnabled = candidate.traaEnabled;
+  if (renderScale == null || typeof traaEnabled !== "boolean") {
+    return null;
+  }
+
+  return {
+    qualityPreset: normalizePerformanceProfile(candidate.qualityPreset),
+    targetFps: normalizePerformanceTargetFps(candidate.targetFps),
+    renderScale,
+    traaEnabled,
+    bloomAllowed:
+      typeof candidate.bloomAllowed === "boolean"
+        ? candidate.bloomAllowed
+        : true,
+    renderContext:
+      candidate.renderContext === RENDER_CONTEXTS.externalOutput
+        ? RENDER_CONTEXTS.externalOutput
+        : RENDER_CONTEXTS.preview,
+  };
+}
+
+/**
  * @param {{
  *   qualityPreset?: PerformanceProfile,
  *   targetFps?: number,
