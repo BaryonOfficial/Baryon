@@ -39,6 +39,7 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  *   controlsRef: import("react").MutableRefObject<Record<string, unknown>>,
  *   visualizationMethod: string,
  *   renderQualityPreset?: string,
+ *   resolvedRenderProfile?: import("@baryon/visualizer/render/outputPipeline").RenderQualityProfile | null,
  *   renderProfileOverrides?: { renderScale?: number, traaEnabled?: boolean, bloomAllowed?: boolean } | null,
  *   externalFrameRef?: import("react").MutableRefObject<any>,
  *   backgroundColor?: string,
@@ -58,6 +59,7 @@ export function OutputStageSurface({
   controlsRef,
   visualizationMethod,
   renderQualityPreset = DEFAULT_RENDER_QUALITY_PRESET,
+  resolvedRenderProfile = null,
   renderProfileOverrides = null,
   externalFrameRef = null,
   backgroundColor: backgroundColorProp = null,
@@ -164,6 +166,7 @@ export function OutputStageSurface({
                 controlsRef={controlsRef}
                 visualizationMethod={visualizationMethod}
                 renderQualityPreset={renderQualityPreset}
+                resolvedRenderProfile={resolvedRenderProfile}
                 renderProfileOverrides={renderProfileOverrides}
                 onPerformanceHudSnapshotChange={onPerformanceHudSnapshotChange}
                 onAuditSnapshotChange={onAuditSnapshotChange}

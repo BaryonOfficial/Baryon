@@ -7,6 +7,7 @@ import {
   formatPerformanceProfileLabel,
   normalizePerformanceProfile,
   normalizePerformanceTargetFps,
+  normalizeResolvedRenderQualityProfile,
   normalizeRenderQualityPreset,
   PERFORMANCE_PROFILES,
   RENDER_CONTEXTS,
@@ -51,6 +52,33 @@ describe("render quality profiles", () => {
     expect(formatPerformanceProfileLabel("custom")).toBe("Custom");
     expect(formatPerformanceProfileLabel("custom", 48)).toBe("Custom 48 FPS");
     expect(formatPerformanceProfileLabel("unexpected")).toBe("Auto");
+  });
+
+  it("normalizes resolved render profiles into the canonical internal shape", () => {
+    expect(
+      normalizeResolvedRenderQualityProfile({
+        qualityPreset: "none",
+        targetFps: 61.7,
+        renderScale: 0.84,
+        traaEnabled: true,
+        renderContext: "external-output",
+      }),
+    ).toEqual({
+      qualityPreset: "max-quality",
+      targetFps: 62,
+      renderScale: 0.84,
+      traaEnabled: true,
+      bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
+
+    expect(
+      normalizeResolvedRenderQualityProfile({
+        qualityPreset: "auto",
+        renderScale: 0,
+        traaEnabled: true,
+      }),
+    ).toBeNull();
   });
 
   it("keeps full quality for auto at 1080p", () => {
