@@ -45,7 +45,8 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  *   backgroundColor?: string,
  *   cameraViewPreset?: "top-down" | "side" | null,
  *   cameraDistance?: number | null,
- *   controlVersion?: number,
+ *   structuralControlVersion?: number,
+ *   liveControlSignalRef?: import("react").MutableRefObject<{ version: number }> | null,
  *   enableControlEventSync?: boolean,
  *   adaptiveResetNonce?: number,
  *   registerRenderRequester?: ((requester: (() => void) | null) => void) | null,
@@ -66,7 +67,8 @@ export function OutputStageSurface({
   backgroundColor: backgroundColorProp = null,
   cameraViewPreset = null,
   cameraDistance = null,
-  controlVersion = 0,
+  structuralControlVersion = 0,
+  liveControlSignalRef = null,
   enableControlEventSync = false,
   adaptiveResetNonce = 0,
   registerRenderRequester = null,
@@ -179,7 +181,8 @@ export function OutputStageSurface({
                 cameraControlMode={CAMERA_CONTROL_MODES.externalSynced}
                 cameraViewPreset={resolvedCameraViewPreset}
                 cameraDistance={resolvedCameraDistance}
-                controlVersion={controlVersion}
+                structuralControlVersion={structuralControlVersion}
+                liveControlSignalRef={liveControlSignalRef}
                 enableControlEventSync={enableControlEventSync}
                 adaptiveResetNonce={adaptiveResetNonce}
                 renderContext={RENDER_CONTEXTS.externalOutput}

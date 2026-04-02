@@ -16,8 +16,8 @@ import {
 } from "../core/cavityGeometry.js";
 import {
   normalizeOutputMode,
-  normalizePerformanceProfile,
-} from "../render/outputProfilePolicy.js";
+  normalizeRenderQualityPreset,
+} from "../render/outputPipeline.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -188,6 +188,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "testToneHz",
     "testToneAmplitude",
     "logEveryFrames",
+    "structuralImplementation",
   ]),
 });
 
@@ -223,7 +224,7 @@ export function applySharedControls(gl, controls) {
   return {
     backgroundColor: controls.backgroundColor,
     performanceHudEnabled: Boolean(controls.performanceHudEnabled),
-    renderQualityPreset: normalizePerformanceProfile(
+    renderQualityPreset: normalizeRenderQualityPreset(
       controls.renderQualityPreset,
     ),
     customPerformanceTargetFps:
