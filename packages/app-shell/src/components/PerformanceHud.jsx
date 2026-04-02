@@ -40,7 +40,7 @@ export default function PerformanceHud({
   const renderScaleLabel =
     typeof metrics.renderScale === "number" &&
     typeof metrics.requestedRenderScale === "number"
-      ? `${formatNumber(metrics.renderScale, 3)} / ${formatNumber(metrics.requestedRenderScale, 3)}`
+      ? `${formatNumber(metrics.renderScale, 3)} (requested ${formatNumber(metrics.requestedRenderScale, 3)}, full 1.000)`
       : null;
 
   return (
