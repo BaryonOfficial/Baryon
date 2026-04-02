@@ -46,6 +46,7 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  *   cameraViewPreset?: "top-down" | "side" | null,
  *   cameraDistance?: number | null,
  *   controlVersion?: number,
+ *   enableControlEventSync?: boolean,
  *   adaptiveResetNonce?: number,
  *   registerRenderRequester?: ((requester: (() => void) | null) => void) | null,
  *   onStageRender?: (payload: { frameSequence: number | null, qualityPreset: string | null }) => void,
@@ -66,6 +67,7 @@ export function OutputStageSurface({
   cameraViewPreset = null,
   cameraDistance = null,
   controlVersion = 0,
+  enableControlEventSync = false,
   adaptiveResetNonce = 0,
   registerRenderRequester = null,
   onStageRender = null,
@@ -178,6 +180,7 @@ export function OutputStageSurface({
                 cameraViewPreset={resolvedCameraViewPreset}
                 cameraDistance={resolvedCameraDistance}
                 controlVersion={controlVersion}
+                enableControlEventSync={enableControlEventSync}
                 adaptiveResetNonce={adaptiveResetNonce}
                 renderContext={RENDER_CONTEXTS.externalOutput}
               />
