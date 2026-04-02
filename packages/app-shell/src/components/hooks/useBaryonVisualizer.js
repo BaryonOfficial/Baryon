@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { resolveRaymarchFieldCacheOverride } from "@baryon/visualizer";
@@ -82,7 +82,8 @@ export function useBaryonVisualizer({
   onOutputFrame = null,
   onFrameState = null,
   externalFrameRef = null,
-  controlVersion = 0,
+  structuralControlVersion = 0,
+  liveControlSignalRef = null,
   adaptiveResetNonce = 0,
   renderProfile = null,
   basePixelRatio = null,
@@ -147,6 +148,9 @@ export function useBaryonVisualizer({
   };
   const renderProfileRef = useRef(renderProfile);
   renderProfileRef.current = renderProfile;
+  const lastObservedLiveControlSignalVersionRef = useRef(
+    liveControlSignalRef?.current?.version ?? 0,
+  );
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -301,54 +305,8 @@ export function useBaryonVisualizer({
     };
   }, [controlsRef, enableControlEventSync]);
 
-  useEffect(() => {
-    if (!Number.isInteger(controlVersion) || controlVersion <= 0) {
-      return;
-    }
-
-    const nextControls = controlsRef.current;
-    const previousControls = cachedControlSnapshotsRef.current.controlsSnapshot;
-    const shouldSkipInvalidation =
-      shouldSkipChromesthesiaStaticColorInvalidation(
-        previousControls,
-        nextControls,
-      );
-    cachedControlSnapshotsRef.current.controlsSnapshot = nextControls
-      ? { ...nextControls }
-      : null;
-
-    if (shouldSkipInvalidation) {
-      return;
-    }
-
-    const preservePausedFrame = shouldPreservePausedFrameOnControlsChange(
-      previousControls,
-      nextControls,
-    );
-
-    controlVersionRef.current += 1;
-    appliedControlVersionRef.current = -1;
-    if (!preservePausedFrame) {
-      lastActiveFrameRef.current = null;
-      lastIdleFrameRef.current = null;
-    }
-  }, [
-    appliedControlVersionRef,
-    cachedControlSnapshotsRef,
-    controlVersion,
-    controlVersionRef,
-    controlsRef,
-    lastActiveFrameRef,
-    lastIdleFrameRef,
-  ]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return undefined;
-    }
-
-    const handleControlsChange = (event) => {
-      const nextControls = event?.detail ?? controlsRef.current;
+  const applyControlInvalidation = useCallback(
+    (nextControls, { clearPausedFrameCache = false } = {}) => {
       const previousControls =
         cachedControlSnapshotsRef.current.controlsSnapshot;
       const shouldSkipInvalidation =
@@ -361,20 +319,54 @@ export function useBaryonVisualizer({
         : null;
 
       if (shouldSkipInvalidation) {
-        return;
+        return false;
       }
-
-      const preservePausedFrame = shouldPreservePausedFrameOnControlsChange(
-        previousControls,
-        nextControls,
-      );
 
       controlVersionRef.current += 1;
       appliedControlVersionRef.current = -1;
-      if (!preservePausedFrame) {
-        lastActiveFrameRef.current = null;
-        lastIdleFrameRef.current = null;
+      if (clearPausedFrameCache) {
+        const preservePausedFrame = shouldPreservePausedFrameOnControlsChange(
+          previousControls,
+          nextControls,
+        );
+        if (!preservePausedFrame) {
+          lastActiveFrameRef.current = null;
+          lastIdleFrameRef.current = null;
+        }
       }
+      return true;
+    },
+    [
+      appliedControlVersionRef,
+      cachedControlSnapshotsRef,
+      controlVersionRef,
+      lastActiveFrameRef,
+      lastIdleFrameRef,
+    ],
+  );
+
+  useEffect(() => {
+    if (
+      !Number.isInteger(structuralControlVersion) ||
+      structuralControlVersion <= 0
+    ) {
+      return;
+    }
+
+    applyControlInvalidation(controlsRef.current, {
+      clearPausedFrameCache: true,
+    });
+  }, [applyControlInvalidation, structuralControlVersion, controlsRef]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleControlsChange = (event) => {
+      applyControlInvalidation(event?.detail ?? controlsRef.current, {
+        clearPausedFrameCache: true,
+      });
     };
 
     window.addEventListener("__baryon-controls-change", handleControlsChange);
@@ -384,14 +376,7 @@ export function useBaryonVisualizer({
         handleControlsChange,
       );
     };
-  }, [
-    appliedControlVersionRef,
-    cachedControlSnapshotsRef,
-    controlVersionRef,
-    controlsRef,
-    lastActiveFrameRef,
-    lastIdleFrameRef,
-  ]);
+  }, [applyControlInvalidation, controlsRef]);
 
   useFrame((state, rfDelta) => {
     const pipeline = renderLoopContext.ensurePipeline();
@@ -404,6 +389,17 @@ export function useBaryonVisualizer({
     }
 
     const controls = renderLoopContext.controlsRef.current;
+    const nextLiveControlSignalVersion =
+      liveControlSignalRef?.current?.version ?? 0;
+    if (
+      Number.isInteger(nextLiveControlSignalVersion) &&
+      nextLiveControlSignalVersion >
+        lastObservedLiveControlSignalVersionRef.current
+    ) {
+      lastObservedLiveControlSignalVersionRef.current =
+        nextLiveControlSignalVersion;
+      applyControlInvalidation(controls);
+    }
     const audio = renderLoopContext.audioRef.current;
     const externalFrameState = externalFrameRef?.current ?? null;
     const fallbackClockSnapshot = {
