@@ -85,6 +85,15 @@ pnpm dev                  # Start apps/web
 pnpm dev:desktop          # Start apps/desktop shell
 pnpm build                # Build all apps/packages
 pnpm build:web            # Build apps/web only
+pnpm repo:map             # Refresh the generated workspace map
+pnpm repo:map:check       # Fail if the checked-in repo map is stale
+pnpm deps:graph:dot       # Write tmp/dependency-graph.dot
+pnpm deps:graph:svg       # Write tmp/dependency-graph.dot and tmp/dependency-graph.svg
+pnpm nav -- workspaces    # List or fuzzy-pick workspaces
+pnpm nav -- entrypoints   # List curated high-signal entrypoints
+pnpm nav -- files stage   # Find matching files quickly
+pnpm nav -- scripts smoke # Find useful root/workspace scripts
+pnpm ast -- examples      # Show syntax-aware ast-grep examples
 pnpm format               # Format the repo with Prettier
 pnpm format:check         # Check formatting without rewriting files
 pnpm lint                 # Workspace lint via turbo
@@ -134,6 +143,18 @@ Optional fixed host/port:
 ```bash
 pnpm --filter @baryon/web preview -- --host 127.0.0.1 --port 4174
 ```
+
+## Navigation Tooling
+
+Large changes are easier to orient with four repo-local tools:
+
+- `pnpm repo:map` refreshes [`documentation/internal/repo-map.md`](documentation/internal/repo-map.md), which captures workspace roles, internal dependencies, and likely entrypoints.
+- `pnpm deps:graph:dot` and `pnpm deps:graph:svg` visualize the existing `dependency-cruiser` rules and workspace edges.
+- `pnpm nav -- ...` provides quick workspace, entrypoint, file, and script discovery. If `fzf` is installed it becomes interactive; otherwise it prints plain results.
+- if `bat` is installed, `pnpm nav` also shows live previews in the `fzf` picker.
+- `pnpm ast -- ...` wraps `ast-grep` for syntax-aware search when `rg` matches too much text, and `pnpm ast -- recipes` lists saved Baryon-specific searches.
+
+See [`documentation/internal/repo-navigation.md`](documentation/internal/repo-navigation.md) for usage details and examples.
 
 ## Local Git Hooks
 
