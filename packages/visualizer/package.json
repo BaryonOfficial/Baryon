@@ -1,8 +1,8 @@
 {
   "name": "@baryon/visualizer",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "private": true,
-  "license": "LicenseRef-PolyForm-Strict-1.0",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
     "lint": "eslint src --report-unused-disable-directives --max-warnings 0",
@@ -21,7 +21,6 @@
     "./controls/schema": "./src/controls/schema.js",
     "./core/raymarch/performanceGovernor": "./src/core/raymarch/performanceGovernor.js",
     "./defaults": "./src/defaults.js",
-    "./render/outputProfilePolicy": "./src/render/outputProfilePolicy.js",
     "./render/outputPipeline": "./src/render/outputPipeline.js",
     "./react/useSharedAudioLogic": "./src/react/useSharedAudioLogic.js",
     "./three/loaders": "./src/three/loaders/setupLoaders.js",
@@ -31,8 +30,8 @@
     "./styles.css": "./src/styles.css"
   },
   "peerDependencies": {
-    "react": "^19.2.4",
-    "three": "^0.183.2"
+    "react": "^19.0.0",
+    "three": "^0.183.0"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

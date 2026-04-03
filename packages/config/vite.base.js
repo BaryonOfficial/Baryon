@@ -2,6 +2,7 @@ import path from "node:path";
 import { transformWithOxc } from "vite";
 import react from "@vitejs/plugin-react";
 import glsl from "vite-plugin-glsl";
+import topLevelAwait from "vite-plugin-top-level-await";
 
 export const baryonCommonViteDedupe = [
   "react",
@@ -111,21 +112,20 @@ export function createBaseViteConfig() {
   const plugins = [
     react(),
     glsl(),
+    topLevelAwait({
+      promiseExportName: "__tla",
+      promiseImportName: (i) => `__tla_${i}`,
+    }),
     {
       name: "load+transform-js-files-as-jsx",
-      transform: {
-        filter: {
-          id: /[\\/]src[\\/].*\.js$/,
-          code: /<[/A-Za-z>]/,
-        },
-        async handler(code, id) {
-          return transformWithOxc(code, id, {
-            lang: "jsx",
-            jsx: {
-              runtime: "automatic",
-            },
-          });
-        },
+      async transform(code, id) {
+        if (!id.match(/src\/.*\.js$/)) return null;
+        return transformWithOxc(code, id, {
+          lang: "jsx",
+          jsx: {
+            runtime: "automatic",
+          },
+        });
       },
     },
   ];
