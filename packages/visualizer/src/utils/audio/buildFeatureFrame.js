@@ -33,8 +33,8 @@ import {
 import {
   buildModalExcitationStructuralState,
   compareStructuralStates,
-  createModalExcitationState,
 } from "./modalExcitation.js";
+import { createModalExcitationState } from "./modalExcitationState.js";
 import {
   buildModalSlotsFromFundamental,
   buildModalSlotsFromSpectralPeaks,

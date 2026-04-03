@@ -5,7 +5,7 @@ import {
   BEAT_DEFAULTS,
 } from "../../defaults.js";
 import { createBlendableLayerState } from "./blendState.js";
-import { createModalExcitationState } from "./modalExcitation.js";
+import { createModalExcitationState } from "./modalExcitationState.js";
 
 /** @type {number} */
 export const BACKBONE_STACK_SLOTS = AUDIO_DEFAULTS.backboneStackSlots;
