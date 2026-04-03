@@ -23,19 +23,19 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "three": "^0.183.2",
-    "zustand": "^5.0.0"
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@baryon/config": "workspace:*",
-    "@playwright/test": "^1.58.2",
-    "@tailwindcss/vite": "^4.2.1",
+    "@playwright/test": "^1.59.1",
+    "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.183.1",
-    "@vitejs/plugin-basic-ssl": "^2.2.0",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "cross-env": "^10.1.0",
-    "tailwindcss": "^4.2.1",
-    "vite": "^7.3.1"
+    "tailwindcss": "^4.2.2",
+    "vite": "^8.0.3"
   }
 }
