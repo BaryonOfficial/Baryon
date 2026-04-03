@@ -17,7 +17,6 @@
   "dependencies": {
     "@baryon/visualizer": "workspace:*",
     "hls.js": "^1.6.15",
-    "tailwind-merge": "^3.5.0",
     "tailwindcss-animate": "^1.0.7"
   },
   "peerDependencies": {
@@ -31,7 +30,7 @@
   },
   "devDependencies": {
     "@baryon/config": "workspace:*",
-    "jsdom": "^27.4.0",
+    "jsdom": "^29.0.1",
     "vitest": "^4.1.2"
   }
 }
