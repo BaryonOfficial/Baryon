@@ -16,10 +16,13 @@ import {
 } from "@baryon/visualizer/audio-features";
 import * as raymarchPerformanceGovernor from "@baryon/visualizer/core/raymarch/performanceGovernor";
 import {
+  CUSTOM_TARGET_FPS_BANDS,
   DEFAULT_PERFORMANCE_TARGET_FPS,
   normalizePerformanceTargetFps,
   PERFORMANCE_PROFILES,
   RENDER_CONTEXTS,
+  resolveCustomTargetFpsBand,
+  usesBalancedPerformanceBaseline,
 } from "@baryon/visualizer/render/outputPipeline";
 import {
   createEmptyAnalysisSchedulerState,
@@ -639,24 +642,13 @@ function resolveAdaptiveStartInputs({
   requestedStepBudget,
   requestedRenderScale,
 }) {
-  if (renderProfile?.renderContext !== RENDER_CONTEXTS.externalOutput) {
-    return {
-      startRung: null,
-      startScaleRung: null,
-    };
-  }
-
-  const normalizedTargetFps = normalizePerformanceTargetFps(
-    renderProfile?.targetFps ?? DEFAULT_PERFORMANCE_TARGET_FPS,
-  );
-  const normalizedRenderScale = normalizeAdaptiveRenderScale(
-    renderProfile?.renderScale ?? requestedRenderScale,
-  );
   const stepLadder = buildAdaptiveRaymarchLadder(requestedStepBudget);
   const scaleLadder = buildAdaptiveRenderScaleLadder(requestedRenderScale);
   const resolvedScaleRung = findAdaptiveLadderRungForValue(
     scaleLadder,
-    normalizedRenderScale,
+    normalizeAdaptiveRenderScale(
+      renderProfile?.renderScale ?? requestedRenderScale,
+    ),
   );
 
   if (renderProfile?.qualityPreset === PERFORMANCE_PROFILES.maxQuality) {
@@ -666,46 +658,64 @@ function resolveAdaptiveStartInputs({
     };
   }
 
-  if (renderProfile?.qualityPreset === PERFORMANCE_PROFILES.auto) {
+  const renderContext =
+    renderProfile?.renderContext === RENDER_CONTEXTS.externalOutput
+      ? RENDER_CONTEXTS.externalOutput
+      : RENDER_CONTEXTS.preview;
+  const targetBand = resolveCustomTargetFpsBand(
+    renderProfile?.targetFps ?? DEFAULT_PERFORMANCE_TARGET_FPS,
+  );
+  const usesBalancedBaseline = usesBalancedPerformanceBaseline(
+    renderProfile?.qualityPreset,
+    renderProfile?.targetFps ?? DEFAULT_PERFORMANCE_TARGET_FPS,
+  );
+
+  if (renderContext === RENDER_CONTEXTS.externalOutput) {
+    if (usesBalancedBaseline) {
+      return {
+        startRung: findAdaptiveLadderRungForValue(stepLadder, 32),
+        startScaleRung: resolvedScaleRung,
+      };
+    }
+    if (targetBand === CUSTOM_TARGET_FPS_BANDS.low) {
+      return {
+        startRung: findAdaptiveLadderRungForValue(stepLadder, 40),
+        startScaleRung: resolvedScaleRung,
+      };
+    }
+    if (targetBand === CUSTOM_TARGET_FPS_BANDS.high) {
+      return {
+        startRung: findAdaptiveLadderRungForValue(stepLadder, 24),
+        startScaleRung: resolvedScaleRung,
+      };
+    }
     return {
-      startRung:
-        normalizedRenderScale >= 0.84
-          ? findAdaptiveLadderRungForValue(stepLadder, 40)
-          : findAdaptiveLadderRungForValue(stepLadder, 32),
+      startRung: findAdaptiveLadderRungForValue(stepLadder, 16),
       startScaleRung: resolvedScaleRung,
     };
   }
 
-  if (normalizedTargetFps <= 48) {
+  if (usesBalancedBaseline) {
     return {
-      startRung:
-        normalizedRenderScale >= 1
-          ? findAdaptiveLadderRungForValue(stepLadder, 48)
-          : findAdaptiveLadderRungForValue(stepLadder, 40),
+      startRung: findAdaptiveLadderRungForValue(stepLadder, 40),
       startScaleRung: resolvedScaleRung,
     };
   }
-  if (normalizedTargetFps <= 72) {
+  if (targetBand === CUSTOM_TARGET_FPS_BANDS.low) {
     return {
-      startRung:
-        normalizedRenderScale >= 0.92
-          ? findAdaptiveLadderRungForValue(stepLadder, 40)
-          : findAdaptiveLadderRungForValue(stepLadder, 32),
+      startRung: findAdaptiveLadderRungForValue(stepLadder, 48),
       startScaleRung: resolvedScaleRung,
     };
   }
-  if (normalizedTargetFps <= 96) {
+  if (targetBand === CUSTOM_TARGET_FPS_BANDS.high) {
     return {
-      startRung:
-        normalizedRenderScale >= 0.75
-          ? findAdaptiveLadderRungForValue(stepLadder, 24)
-          : findAdaptiveLadderRungForValue(stepLadder, 16),
+      startRung: findAdaptiveLadderRungForValue(stepLadder, 32),
       startScaleRung: resolvedScaleRung,
     };
   }
 
   return {
-    startRung: findAdaptiveLadderRungForValue(stepLadder, 16),
+    startRung: findAdaptiveLadderRungForValue(stepLadder, 24),
     startScaleRung: resolvedScaleRung,
   };
 }
