@@ -842,12 +842,35 @@ function createLayerStateSummary(entries, periodicity, tonalness, layer) {
   };
 }
 
+function computeComparisonMetrics(primaryState, comparisonState) {
+  const primaryFreq = primaryState?.dominantFrequency ?? 0;
+  const comparisonFreq = comparisonState?.dominantFrequency ?? 0;
+  const dominantFrequencyRatio =
+    primaryFreq > 0 && comparisonFreq > 0
+      ? Math.log2(comparisonFreq / primaryFreq)
+      : 0;
+  return {
+    activeModeCountDelta:
+      (comparisonState?.activeModeCount ?? 0) -
+      (primaryState?.activeModeCount ?? 0),
+    dominantFrequencyRatio,
+    dominantFrequencyDeltaCents: dominantFrequencyRatio * 1200,
+    modeCoherenceDelta:
+      (comparisonState?.structuralMetrics?.modeCoherence ?? 0) -
+      (primaryState?.structuralMetrics?.modeCoherence ?? 0),
+  };
+}
+
 export function getAtlasCacheSize() {
   return MODE_ATLAS_CACHE.size;
 }
 
 export { computeDrivePeriodicity };
 export { createModalExcitationState };
+
+export function compareStructuralStates(primaryState, comparisonState) {
+  return computeComparisonMetrics(primaryState, comparisonState);
+}
 
 export function buildModalExcitationStructuralState({
   preparedInputs,

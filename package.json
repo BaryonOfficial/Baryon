@@ -7,11 +7,16 @@
     "type": "git",
     "url": "git+https://github.com/BaryonOfficial/Baryon.git"
   },
+  "engines": {
+    "node": ">=24.14.1 <25"
+  },
   "scripts": {
     "dev": "turbo dev --filter=@baryon/web",
     "dev:desktop:probe": "BARYON_DEV_PERF_PROBE=1 pnpm --filter @baryon/desktop dev",
     "build": "turbo build",
     "build:web": "turbo build --filter=@baryon/web",
+    "deps:versions": "syncpack lint --dependency-types prod,dev,peer",
+    "deps:versions:fix": "syncpack fix --dependency-types prod,dev,peer",
     "prepare": "husky",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -22,9 +27,11 @@
     "test:web-smoke:dev": "pnpm --filter @baryon/web test:smoke:dev",
     "lint": "turbo lint",
     "lint:all": "pnpm -r --filter './apps/*' --filter './packages/*' --if-present lint",
+    "lint:deps": "depcruise --config .dependency-cruiser.cjs apps packages",
+    "lint:deps:graph": "depcruise --config .dependency-cruiser.cjs --output-type dot --output-to dependency-graph.dot apps packages",
     "audit:deps": "knip --dependencies",
     "typecheck": "pnpm --reporter append-only -r --filter './apps/*' --filter './packages/*' --if-present typecheck",
-    "verify": "pnpm lint:all && pnpm typecheck && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop",
+    "verify": "pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop",
     "verify:full": "pnpm verify && turbo build"
   },
   "lint-staged": {
@@ -36,6 +43,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "dependency-cruiser": "^17.3.10",
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
@@ -45,6 +53,7 @@
     "knip": "^6.3.0",
     "lint-staged": "^16.4.0",
     "prettier": "^3.8.1",
+    "syncpack": "^14.3.0",
     "turbo": "^2.9.3",
     "typescript": "^6.0.2"
   },

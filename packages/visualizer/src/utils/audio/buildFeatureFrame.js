@@ -1,5 +1,6 @@
 import {
   AUDIT_DEFAULTS,
+  AUDIO_SIGNAL_NORMALIZATION_SLOTS,
   AUDIO_SLOT_CAPACITY,
   BEAT_DEFAULTS,
   DEFAULT_FFT_SIZE,
@@ -11,12 +12,17 @@ import {
   normalizeCavityGeometry,
   resolveEffectiveCavityGeometry,
 } from "../../core/cavityGeometry.js";
-import { sampleFFTAmplitudeForFrequency } from "../cavityModes.js";
+import {
+  getMinimumCavityFrequency,
+  sampleFFTAmplitudeForFrequency,
+} from "../cavityModes.js";
 import {
   BACKBONE_STACK_SLOTS,
   DETAIL_STACK_SLOTS,
   MAX_STACK_SLOTS,
   BAND_BUCKET_COUNT,
+  blendColorStack,
+  blendModalStack,
   clearModalStack,
   combineModalLayers,
   copyFloatArray,
@@ -24,12 +30,21 @@ import {
   createAudioFeatureState,
   createModalTargetBuild,
 } from "./modalStack.js";
-import { buildModalExcitationStructuralState } from "./modalExcitation.js";
+import {
+  buildModalExcitationStructuralState,
+  compareStructuralStates,
+} from "./modalExcitation.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
 import {
+  buildModalSlotsFromFundamental,
+  buildModalSlotsFromSpectralPeaks,
   findSpectralPeakFrequencies,
   HARMONIC_ORDERS,
+  writeModalSlotsFromFundamental,
+  writeModalSlotsFromPeakDrivers,
+  writeModalSlotsFromSpectralPeaks,
 } from "./modalResolvers.js";
+import { detectVoicePitch } from "./pitchDetection.js";
 import { deriveFieldState } from "./fieldState.js";
 import { AUDIO_ANALYSIS_POLICY, SPECTRAL_MODAL_POLICY } from "./policy.js";
 import { FIELD_STATES } from "./types.js";
@@ -39,6 +54,7 @@ import {
   detectKeyFromChroma,
 } from "./chromaAnalysis.js";
 import { pitchClassToHue } from "./chromesthesia.js";
+import { annotatePeakSalience } from "./harmonicSalience.js";
 import {
   DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
   DEFAULT_RESOLVED_LIVE_INPUT_ANALYSIS_CLASS,
@@ -72,7 +88,57 @@ const LIVE_INPUT_INVALID_COMPRESSED_BASELINE_RMS = 0.0085;
 const LIVE_INPUT_INVALID_CURRENT_SATURATED_PEAK = 0.98;
 const LIVE_INPUT_INVALID_CURRENT_WEAK_RMS = 0.012;
 const LIVE_INPUT_INVALID_CURRENT_WEAK_AVG = 10;
+const LIVE_INPUT_VOICE_LOCK_MIN_PERIODICITY = 0.12;
+const LIVE_INPUT_VOICE_LOCK_MIN_HARMONIC_SUPPORT = 0.1;
+const LIVE_INPUT_VOICE_LOCK_MIN_DIRECT_SUPPORT = 0.18;
+const LIVE_INPUT_VOICE_LOCK_MIN_SUPPORT_SOURCES = 3;
+const LIVE_INPUT_VOICE_LOCK_MIN_RMS = 0.018;
+const LIVE_INPUT_VOICE_LOCK_MIN_AVG_AMPLITUDE = 5;
+const LIVE_INPUT_FOG_SUPPRESSION_MODE_COUNT = 10;
+const LIVE_INPUT_FOG_SUPPRESSION_MAX_PERIODICITY = 0.05;
+
+const BACKBONE_PEAK_COUNT = 5;
+const DETAIL_PEAK_COUNT = 8;
+const INTERNAL_CANDIDATE_POOL_SIZE = 24;
+// Backbone selection stays in the low/mid range where modes produce clear
+// standing-wave structure. Peaks above this are routed to detail only.
+const BACKBONE_PEAK_MAX_HZ = 3200;
+const BACKBONE_SALIENCE_WEIGHT = 1.2;
 const DETAIL_LAYER_WEIGHT = 0.35;
+const BACKBONE_ATTACK = 0.22;
+const BACKBONE_RELEASE = 0.96;
+const BACKBONE_SILENCE_RELEASE = 0.9;
+const BACKBONE_LOW_SIGNAL_RELEASE_THRESHOLD = 0.085;
+const BACKBONE_LOW_SIGNAL_RELEASE = 0.72;
+const LEGACY_SUBFLOOR_RESIDUAL_PEAK_THRESHOLD = 0.1;
+const LEGACY_SUBFLOOR_RESIDUAL_FLUX_THRESHOLD = 0.001;
+const LEGACY_SUBFLOOR_RESIDUAL_TRANSIENT_THRESHOLD = 0.001;
+const DETAIL_ATTACK = 0.55;
+const DETAIL_RELEASE = 0.82;
+const DETAIL_SILENCE_RELEASE = 0.74;
+const DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD = 0.07;
+const DETAIL_LOW_SIGNAL_RELEASE = 0.58;
+// 0 = unlimited fresh admission per frame (sentinel value in blendModalStack)
+const DETAIL_FRESH_CAP = 0;
+const BACKBONE_FRESH_CAP = 4;
+const BACKBONE_EVICTION_RELEASE = 0.78;
+const DETAIL_EVICTION_RELEASE = 0.58;
+const DETAIL_EVICTION_FRAMES = 2;
+const BACKBONE_EVICTION_FRAMES = 4;
+const DETAIL_NOVELTY_EVICTION_THRESHOLD = 0.8;
+const BACKBONE_NOVELTY_EVICTION_THRESHOLD = 0.9;
+const LOW_HARMONICITY_THRESHOLD = 0.28;
+const BACKBONE_COLOR_ATTACK = 0.38;
+const BACKBONE_COLOR_TRACKING = 0.22;
+const BACKBONE_COLOR_RELEASE = 0.96;
+const DETAIL_COLOR_ATTACK = 0.5;
+const DETAIL_COLOR_TRACKING = 0.28;
+const DETAIL_COLOR_RELEASE = 0.9;
+const BACKBONE_COLOR_SLOT_LIMIT = 6;
+const DETAIL_COLOR_SLOT_LIMIT = 7;
+const TONAL_RESERVE_COUNT = 2;
+const TONAL_RESERVE_MIN_HZ = 1800;
+const TONAL_RESERVE_MIN_SALIENCE = 0.08;
 const BAND_LIMITS_HZ = [140, 600, 2400, 8000];
 const SPECTRAL_BAND_6_LIMITS_HZ = [140, 400, 1200, 3200, 6400, 12000];
 const SPECTRAL_BAND_6_COUNT = 6;
@@ -82,6 +148,9 @@ const LEGACY_ACOUSTIC_MIC_PROFILE = "voice-tone";
 const DEFAULT_LIVE_INPUT_PROFILE = LIVE_INPUT_ANALYSIS_CLASSES.acousticMic;
 const LIVE_INPUT_CALIBRATION_WINDOW_MS = 1100;
 const LIVE_INPUT_CALIBRATION_SMOOTHING_MS = 320;
+const VOICE_DETAIL_HARMONIC_LIMIT = 5;
+const VOICE_LATCH_DECAY = 0.94;
+const VOICE_CANDIDATE_MATCH_TOLERANCE = 0.065;
 const LIVE_INPUT_PROFILE_CONFIGS = Object.freeze({
   "acoustic-mic": Object.freeze({
     absoluteAvgAmplitude: Math.max(2.2, LIVE_INPUT_SILENCE_AVG_AMPLITUDE * 0.3),
@@ -154,7 +223,34 @@ const LIVE_INPUT_PULSE_RESPONSE_SCALE = 0.9;
 const LEGACY_PRESERVATION_BACKBONE_WEIGHT = 0.94;
 const LEGACY_PRESERVATION_DETAIL_WEIGHT = 0.4;
 
-export { createAudioFeatureState };
+export const DEFAULT_LIVE_INPUT_ANALYSIS_SETTINGS = Object.freeze({
+  analysisClass: DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
+});
+
+export const LIVE_INPUT_ANALYSIS_OPTIONS = Object.freeze([
+  Object.freeze({
+    value: LIVE_INPUT_ANALYSIS_CLASSES.auto,
+    label: "Auto",
+    description:
+      "Use heuristics. System capture and obvious loopback devices become line feeds; other inputs stay acoustic mics.",
+  }),
+  Object.freeze({
+    value: LIVE_INPUT_ANALYSIS_CLASSES.lineFeed,
+    label: "Line Feed",
+    description:
+      "Use the file-style analysis path for live feeds, virtual cables, and line-level capture.",
+  }),
+  Object.freeze({
+    value: LIVE_INPUT_ANALYSIS_CLASSES.acousticMic,
+    label: "Acoustic Mic",
+    description:
+      "Use the forgiving mic path for laptop mics, headsets, and room pickup.",
+  }),
+]);
+
+export const LIVE_INPUT_PROFILE_OPTIONS = LIVE_INPUT_ANALYSIS_OPTIONS;
+
+export { createAudioFeatureState, FIELD_STATES };
 
 function getAnalysisMemory(featureState, capacity) {
   if (featureState?.analysis) {
@@ -623,6 +719,436 @@ function emptyFrozenLayers(auditState) {
   auditState.frozenDetailColorSlots.fill(0);
 }
 
+function setLayerMetadata(
+  layerState,
+  stackBuild,
+  fundamental,
+  confidence,
+  engine,
+) {
+  layerState.harmonicSupport.set(stackBuild.harmonicSupport);
+  layerState.fundamental = fundamental;
+  layerState.fundamentalConfidence = confidence;
+  layerState.analysisEngine = engine;
+  layerState.uniqueModeCount = stackBuild.uniqueModeCount;
+  layerState.lastStableAt = getFrameTimestamp();
+  layerState.chromesthesiaComponents = stackBuild.components ?? [];
+}
+
+function clearLayerMetadata(layerState) {
+  layerState.harmonicSupport.fill(0);
+  layerState.fundamental = 0;
+  layerState.fundamentalConfidence = 0;
+  layerState.analysisEngine = "none";
+  layerState.uniqueModeCount = 0;
+  layerState.chromesthesiaComponents = [];
+}
+
+function slotModeKey(u, v, w) {
+  return `${u}:${v}:${w}`;
+}
+
+function buildModeAmplitudeMap(slotBuffer, capacity) {
+  const modeMap = new Map();
+  const slotCount = Math.min(
+    capacity,
+    Math.floor((slotBuffer?.length ?? 0) / 4),
+  );
+  for (let index = 0; index < slotCount; index += 1) {
+    const offset = index * 4;
+    const amplitude = slotBuffer[offset + 3] ?? 0;
+    if (amplitude <= 0) continue;
+    modeMap.set(
+      slotModeKey(
+        slotBuffer[offset],
+        slotBuffer[offset + 1],
+        slotBuffer[offset + 2],
+      ),
+      amplitude,
+    );
+  }
+  return modeMap;
+}
+
+function getPeakSelectionDistanceHz(kind, frequency) {
+  const baseDistance = kind === "detail" ? 55 : 70;
+  const proportionalDistance =
+    kind === "detail" ? frequency * 0.08 : frequency * 0.12;
+  return Math.max(baseDistance, proportionalDistance);
+}
+
+function scoreCandidatePeak(peak, analysisHints, kind) {
+  const hints = getActiveAnalysisHints(analysisHints);
+  const baseAmplitude = peak?.amplitude ?? 0;
+  if (!(baseAmplitude > 0)) {
+    return 0;
+  }
+
+  const changeBias =
+    kind === "detail"
+      ? 1 +
+        (hints?.transientSalience ?? 0) * 0.55 +
+        (hints?.novelty ?? 0) * 0.7 +
+        (hints?.textureSpread ?? 0) * 0.35
+      : 1 + (hints?.novelty ?? 0) * 0.18;
+
+  if (kind === "detail") {
+    const detailHarmonicBias =
+      1 +
+      (hints?.harmonicity ?? 0) * 0.22 +
+      (hints?.pitchConfidence ?? 0) * 0.12 +
+      (hints?.voicingProbability ?? 0) * 0.18;
+    const detailTrebleLift =
+      1 + clamp01(((peak.frequency ?? 0) - 1800) / 3200) * 0.22;
+    const detailSalienceBias = 1 + (peak.salienceScore ?? 0) * 0.25;
+    return (
+      baseAmplitude *
+      detailHarmonicBias *
+      changeBias *
+      detailTrebleLift *
+      detailSalienceBias
+    );
+  }
+
+  const normalizedFrequency = clamp01((peak.frequency ?? 0) / 5000);
+  const bassBias =
+    1 + (hints?.bassSalience ?? 0) * (1 - normalizedFrequency) * 0.55;
+  const backboneHarmonicBias =
+    1 +
+    (hints?.harmonicity ?? 0) * 0.65 +
+    (hints?.pitchConfidence ?? 0) * 0.4 +
+    (hints?.voicingProbability ?? 0) * 0.3;
+  const backboneSalienceBias =
+    1 + (peak.salienceScore ?? 0) * BACKBONE_SALIENCE_WEIGHT;
+
+  return (
+    baseAmplitude *
+    bassBias *
+    backboneHarmonicBias *
+    changeBias *
+    backboneSalienceBias
+  );
+}
+
+function buildPreparedCandidatePool(candidates, analysisHints) {
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    return [];
+  }
+
+  const hints = getActiveAnalysisHints(analysisHints);
+  return candidates
+    .map((candidate) => ({
+      ...candidate,
+      backboneBaseScore: scoreCandidatePeak(candidate, hints, "backbone"),
+      detailBaseScore: scoreCandidatePeak(candidate, hints, "detail"),
+    }))
+    .filter(
+      (candidate) =>
+        candidate.backboneBaseScore > 0 || candidate.detailBaseScore > 0,
+    );
+}
+
+function selectPreparedPeaks(preparedCandidates, limit, analysisHints, kind) {
+  if (!Array.isArray(preparedCandidates) || limit <= 0) {
+    return [];
+  }
+
+  const hints = getActiveAnalysisHints(analysisHints);
+  const selected = [];
+  const scoreKey =
+    kind === "backbone" ? "backboneBaseScore" : "detailBaseScore";
+  const remaining = preparedCandidates
+    .filter((candidate) => (candidate?.[scoreKey] ?? 0) > 0)
+    .map((candidate) => ({
+      ...candidate,
+      baseScore: candidate[scoreKey] ?? 0,
+    }));
+
+  while (selected.length < limit && remaining.length > 0) {
+    let bestIndex = -1;
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    for (let index = 0; index < remaining.length; index += 1) {
+      const candidate = remaining[index];
+      const minDistanceHz =
+        selected.length > 0
+          ? Math.min(
+              ...selected.map((entry) =>
+                Math.abs((entry.frequency ?? 0) - (candidate.frequency ?? 0)),
+              ),
+            )
+          : Number.POSITIVE_INFINITY;
+      const diversityBoost =
+        selected.length === 0
+          ? 1
+          : 1 +
+            (hints?.textureSpread ?? 0) *
+              clamp01(minDistanceHz / Math.max(1, candidate.frequency ?? 1));
+      const candidateScore = candidate.baseScore * diversityBoost;
+      if (candidateScore > bestScore) {
+        bestScore = candidateScore;
+        bestIndex = index;
+      }
+    }
+
+    if (bestIndex < 0) {
+      break;
+    }
+
+    const [chosen] = remaining.splice(bestIndex, 1);
+    selected.push(chosen);
+    const minDistance = getPeakSelectionDistanceHz(kind, chosen.frequency ?? 0);
+    for (let index = remaining.length - 1; index >= 0; index -= 1) {
+      if (
+        Math.abs((remaining[index].frequency ?? 0) - (chosen.frequency ?? 0)) <
+        minDistance
+      ) {
+        remaining.splice(index, 1);
+      }
+    }
+  }
+
+  return selected;
+}
+
+function selectScoredPeaks(candidates, limit, analysisHints, kind) {
+  return selectPreparedPeaks(
+    buildPreparedCandidatePool(candidates, analysisHints),
+    limit,
+    analysisHints,
+    kind,
+  );
+}
+
+function buildAnnotatedCandidatePool(
+  fftMagnitudes,
+  sampleRate,
+  fftSize,
+  poolSize,
+  options = undefined,
+) {
+  const candidatePool = findSpectralPeakFrequencies(
+    fftMagnitudes,
+    sampleRate,
+    fftSize,
+    poolSize,
+    options,
+  );
+
+  if (candidatePool.length > 0) {
+    annotatePeakSalience(candidatePool, fftMagnitudes, sampleRate, fftSize);
+  }
+
+  return candidatePool;
+}
+
+function deriveSelectedCandidatePeaks(candidatePool, analysisHints) {
+  const preparedCandidatePool = buildPreparedCandidatePool(
+    candidatePool,
+    analysisHints,
+  );
+  const reserveEligibleCandidates = preparedCandidatePool.filter(
+    (candidate) =>
+      (candidate.frequency ?? 0) >= TONAL_RESERVE_MIN_HZ &&
+      (candidate.salienceScore ?? 0) >= TONAL_RESERVE_MIN_SALIENCE,
+  );
+  const reservedDetailPeaks = selectPreparedPeaks(
+    reserveEligibleCandidates,
+    TONAL_RESERVE_COUNT,
+    analysisHints,
+    "detail",
+  );
+  const reserveOverlappingCandidates = new Set(
+    preparedCandidatePool.filter((candidate) =>
+      reservedDetailPeaks.some(
+        (reservedPeak) =>
+          Math.abs((candidate.frequency ?? 0) - (reservedPeak.frequency ?? 0)) <
+          getPeakSelectionDistanceHz("detail", reservedPeak.frequency ?? 0),
+      ),
+    ),
+  );
+  const remainingDetailPool = preparedCandidatePool.filter(
+    (candidate) => !reserveOverlappingCandidates.has(candidate),
+  );
+  // Detail sees all candidates up to the policy ceiling (8 kHz), with a small
+  // reserved quota for salient tonal treble so loud bass does not crowd it out.
+  const detailPeaks = [
+    ...reservedDetailPeaks,
+    ...selectPreparedPeaks(
+      remainingDetailPool,
+      DETAIL_PEAK_COUNT - reservedDetailPeaks.length,
+      analysisHints,
+      "detail",
+    ),
+  ];
+  // Backbone is restricted to low/mid frequencies so that treble peaks
+  // route to detail rather than masking low-end standing-wave structure.
+  const backboneCandidates = preparedCandidatePool.filter(
+    (c) => (c.frequency ?? 0) <= BACKBONE_PEAK_MAX_HZ,
+  );
+  const backbonePeaks = selectPreparedPeaks(
+    backboneCandidates,
+    BACKBONE_PEAK_COUNT,
+    analysisHints,
+    "backbone",
+  );
+
+  return {
+    detailPeaks,
+    backbonePeaks,
+    dominantPeak: backbonePeaks[0] ?? null,
+  };
+}
+
+function createLayerReleaseOptions(
+  layerState,
+  targetSlots,
+  capacity,
+  baseOptions,
+  analysisHints,
+  layerType,
+) {
+  const currentModes = buildModeAmplitudeMap(layerState?.slots, capacity);
+  if (currentModes.size === 0) {
+    return baseOptions;
+  }
+
+  const targetModes = buildModeAmplitudeMap(targetSlots, capacity);
+  const previousMetrics = layerState?._slotMetricMap ?? new Map();
+  const releaseOverrides = new Map();
+  const novelty = clamp01(analysisHints?.novelty ?? 0);
+  const harmonicity = clamp01(analysisHints?.harmonicity ?? 0);
+  const releaseBias = clamp01(analysisHints?.releaseBias ?? 0);
+  const effectiveRelease =
+    releaseBias > 0
+      ? baseOptions.release * (1 - releaseBias * 0.25)
+      : baseOptions.release;
+  const effectiveBaseOptions =
+    effectiveRelease !== baseOptions.release
+      ? { ...baseOptions, release: effectiveRelease }
+      : baseOptions;
+  const disagreementLimit =
+    layerType === "detail" ? DETAIL_EVICTION_FRAMES : BACKBONE_EVICTION_FRAMES;
+  const noveltyLimit =
+    layerType === "detail"
+      ? DETAIL_NOVELTY_EVICTION_THRESHOLD
+      : BACKBONE_NOVELTY_EVICTION_THRESHOLD;
+  const evictionRelease =
+    layerType === "detail"
+      ? DETAIL_EVICTION_RELEASE
+      : BACKBONE_EVICTION_RELEASE;
+
+  for (const key of currentModes.keys()) {
+    if (targetModes.has(key)) {
+      continue;
+    }
+    const disagreementCount =
+      (previousMetrics.get(key)?.disagreementCount ?? 0) + 1;
+    const noveltyEviction =
+      novelty >= noveltyLimit &&
+      (layerType === "detail" || harmonicity <= LOW_HARMONICITY_THRESHOLD);
+    if (disagreementCount >= disagreementLimit || noveltyEviction) {
+      releaseOverrides.set(key, evictionRelease);
+    }
+  }
+
+  if (releaseOverrides.size === 0) {
+    return effectiveBaseOptions;
+  }
+
+  return {
+    ...effectiveBaseOptions,
+    releaseOverrides,
+  };
+}
+
+function updateLayerSlotTracking(
+  layerState,
+  targetSlots,
+  capacity,
+  currentFrame,
+  analysisHints,
+  layerType,
+) {
+  if (!layerState) {
+    return;
+  }
+
+  const previousMetrics = layerState._slotMetricMap ?? new Map();
+  const nextMetrics = new Map();
+  const targetModes = buildModeAmplitudeMap(targetSlots, capacity);
+  const slotCount = Math.min(
+    capacity,
+    Math.floor((layerState.slots?.length ?? 0) / 4),
+  );
+  const slotAgeFrames = layerState.slotAgeFrames;
+  const slotConfidence = layerState.slotConfidence;
+  const slotDisagreementCounts = layerState.slotDisagreementCounts;
+  const slotLastConfirmedFrames = layerState.slotLastConfirmedFrames;
+  const hints = getActiveAnalysisHints(analysisHints);
+
+  slotAgeFrames?.fill(0);
+  slotConfidence?.fill(0);
+  slotDisagreementCounts?.fill(0);
+  slotLastConfirmedFrames?.fill(0);
+
+  for (let index = 0; index < slotCount; index += 1) {
+    const offset = index * 4;
+    const amplitude = layerState.slots[offset + 3] ?? 0;
+    if (amplitude <= 0) {
+      continue;
+    }
+
+    const key = slotModeKey(
+      layerState.slots[offset],
+      layerState.slots[offset + 1],
+      layerState.slots[offset + 2],
+    );
+    const previous = previousMetrics.get(key) ?? {
+      ageFrames: 0,
+      confidence: 0,
+      disagreementCount: 0,
+      lastConfirmedFrame: 0,
+    };
+    const confirmed = targetModes.has(key);
+    const disagreementCount = confirmed ? 0 : previous.disagreementCount + 1;
+    const ageFrames = confirmed ? 0 : previous.ageFrames + 1;
+    const hintBias =
+      layerType === "detail"
+        ? 1 +
+          (hints?.transientSalience ?? 0) * 0.18 +
+          (hints?.novelty ?? 0) * 0.22
+        : 1 +
+          (hints?.harmonicity ?? 0) * 0.28 +
+          (hints?.pitchConfidence ?? 0) * 0.14;
+    const confidence = clamp01(
+      (confirmed
+        ? (targetModes.get(key) ?? amplitude)
+        : previous.confidence * 0.88) * hintBias,
+    );
+    const lastConfirmedFrame = confirmed
+      ? currentFrame
+      : (previous.lastConfirmedFrame ?? 0);
+
+    if (slotAgeFrames) slotAgeFrames[index] = Math.min(65535, ageFrames);
+    if (slotConfidence) slotConfidence[index] = confidence;
+    if (slotDisagreementCounts) {
+      slotDisagreementCounts[index] = Math.min(255, disagreementCount);
+    }
+    if (slotLastConfirmedFrames) {
+      slotLastConfirmedFrames[index] = Math.min(0xffffffff, lastConfirmedFrame);
+    }
+    nextMetrics.set(key, {
+      ageFrames,
+      confidence,
+      disagreementCount,
+      lastConfirmedFrame,
+    });
+  }
+
+  layerState._slotMetricMap = nextMetrics;
+}
+
 function shouldBuildDetailedDebug(auditSettings) {
   return Boolean(auditSettings?.enabled);
 }
@@ -718,6 +1244,7 @@ function buildDetailStateSummary(detailState) {
 function buildDebugSummary({
   inputMode,
   analysisInputMode = inputMode,
+  structuralImplementation = "legacy-peak",
   soundActive,
   micActive,
   pitchSource = "none",
@@ -764,6 +1291,8 @@ function buildDebugSummary({
   fftSize = 0,
   analysisHints = null,
   structuralMetrics = null,
+  structuralComparison = null,
+  comparisonDebug = null,
   micFftNormGain = 1,
   preModalFftPeak = 0,
   postNormalizationFftPeak = preModalFftPeak,
@@ -785,6 +1314,7 @@ function buildDebugSummary({
 
   return {
     audioInputMode: inputMode,
+    structuralImplementation,
     pitchSource,
     requestedCavityGeometry,
     effectiveCavityGeometry,
@@ -879,6 +1409,8 @@ function buildDebugSummary({
     modalPersistence: structuralMetrics?.modalPersistence ?? 0,
     modalDriveEnergy: structuralMetrics?.modalDriveEnergy ?? 0,
     driveSource: structuralMetrics?.driveSource ?? "none",
+    structuralComparison,
+    comparisonDebug,
     sourceNormalization: sourceNormalization ?? {
       normalizedRms: 0,
       normalizedAmplitude: 0,
@@ -892,6 +1424,7 @@ function buildZeroDebugSnapshot({
   inputMode,
   soundActive,
   micActive,
+  structuralImplementation = "legacy-peak",
   pitchSource = "none",
   analysisEngine = "none",
   fieldState = FIELD_STATES.idle,
@@ -913,6 +1446,7 @@ function buildZeroDebugSnapshot({
 }) {
   const debug = buildDebugSummary({
     inputMode,
+    structuralImplementation,
     soundActive,
     micActive,
     pitchSource,
@@ -962,7 +1496,7 @@ function buildZeroDebugSnapshot({
   };
 }
 
-function buildSilentFeatureFrame({
+export function buildSilentFeatureFrame({
   featureState,
   inputMode,
   soundActive,
@@ -1048,6 +1582,7 @@ function buildSilentFeatureFrame({
       inputMode,
       soundActive,
       micActive,
+      structuralImplementation: "legacy-peak",
       referenceModeSlots,
       bandEnergies,
       backboneSlots,
@@ -1586,6 +2121,474 @@ function resolveLiveInputNoiseGate({
   };
 }
 
+function areFrequenciesClose(
+  left,
+  right,
+  tolerance = VOICE_CANDIDATE_MATCH_TOLERANCE,
+) {
+  if (!(left > 0) || !(right > 0)) {
+    return false;
+  }
+
+  return Math.abs(left - right) / Math.max(left, right) <= tolerance;
+}
+
+function isPeakHarmonicallyRelated(frequency, fundamental) {
+  if (!(frequency > 0) || !(fundamental > 0)) {
+    return false;
+  }
+
+  const ratio = frequency / fundamental;
+  const nearest = Math.max(1, Math.round(ratio));
+  return Math.abs(ratio - nearest) <= 0.14;
+}
+
+function clearVocalLatchState(layerState) {
+  layerState.latchedFundamentalHz = 0;
+  layerState.latchedFundamentalConfidence = 0;
+  layerState.latchHoldFrames = 0;
+  layerState.latchLowSupportFrames = 0;
+  layerState.driverFrequency = 0;
+}
+
+function clearVocalDriverDiagnostics(layerState) {
+  layerState.candidateFrequency = 0;
+  layerState.candidateConfidence = 0;
+  layerState.candidateFrames = 0;
+  layerState.candidatePeriodicity = 0;
+  layerState.candidateHarmonicSupport = 0;
+  layerState.candidateDirectSupport = 0;
+  layerState.candidateLowEnergy = false;
+  layerState.voicingActive = false;
+  layerState.highCandidateRejected = false;
+  layerState.rejectionReason = "none";
+}
+
+function clearVocalDriverState(layerState) {
+  clearVocalLatchState(layerState);
+  clearVocalDriverDiagnostics(layerState);
+}
+
+function updateVoiceDetectionDiagnostics(
+  layerState,
+  detection,
+  {
+    voicingActive = false,
+    highCandidateRejected = false,
+    rejectionReason = "none",
+  } = {},
+) {
+  layerState.candidatePeriodicity = detection?.periodicity ?? 0;
+  layerState.candidateHarmonicSupport = detection?.harmonicSupport ?? 0;
+  layerState.candidateDirectSupport = detection?.directSupport ?? 0;
+  layerState.candidateLowEnergy = Boolean(detection?.lowEnergy);
+  layerState.voicingActive = voicingActive;
+  layerState.highCandidateRejected = highCandidateRejected;
+  layerState.rejectionReason = rejectionReason;
+}
+
+function updateVoiceCandidateState({
+  backboneState,
+  detection,
+  profileConfig,
+}) {
+  const candidateFrequency = detection?.frequencyHz ?? 0;
+  const candidateConfidence = detection?.confidence ?? 0;
+  const lowEnergy = Boolean(detection?.lowEnergy);
+  const trackableCandidate =
+    candidateFrequency > 0 &&
+    candidateConfidence >= profileConfig.pitchLatchConfidence;
+
+  if (!trackableCandidate) {
+    backboneState.candidateFrequency = 0;
+    backboneState.candidateConfidence = 0;
+    backboneState.candidateFrames = 0;
+    return {
+      candidateFrequency,
+      candidateConfidence,
+      candidateFrames: 0,
+      stableCandidate: false,
+    };
+  }
+
+  const matchedPrevious =
+    !lowEnergy &&
+    areFrequenciesClose(
+      candidateFrequency,
+      backboneState.candidateFrequency ?? 0,
+    );
+
+  backboneState.candidateFrequency = candidateFrequency;
+  backboneState.candidateConfidence = candidateConfidence;
+  if (lowEnergy) {
+    backboneState.candidateFrames = 0;
+  } else if (matchedPrevious) {
+    backboneState.candidateFrames = (backboneState.candidateFrames ?? 0) + 1;
+  } else {
+    backboneState.candidateFrames = 1;
+  }
+
+  const stableCandidate =
+    backboneState.candidateFrames >= profileConfig.highPitchStableFrames ||
+    areFrequenciesClose(
+      candidateFrequency,
+      backboneState.latchedFundamentalHz ?? 0,
+    );
+
+  return {
+    candidateFrequency,
+    candidateConfidence,
+    candidateFrames: backboneState.candidateFrames,
+    stableCandidate,
+  };
+}
+
+function resolveVoiceVoicing({
+  detection,
+  profileConfig,
+  candidateFrames,
+  stableCandidate,
+}) {
+  const candidateFrequency = detection?.frequencyHz ?? 0;
+  const candidateConfidence = detection?.confidence ?? 0;
+
+  if (!(candidateFrequency > 0)) {
+    return {
+      active: false,
+      highCandidateRejected: false,
+      rejectionReason: "no-candidate",
+    };
+  }
+
+  if (detection?.lowEnergy) {
+    return {
+      active: false,
+      highCandidateRejected: candidateFrequency >= profileConfig.highPitchMinHz,
+      rejectionReason: "low-energy",
+    };
+  }
+
+  if (!(candidateConfidence >= profileConfig.pitchConfidence)) {
+    return {
+      active: false,
+      highCandidateRejected: candidateFrequency >= profileConfig.highPitchMinHz,
+      rejectionReason: "low-confidence",
+    };
+  }
+
+  if (!detection?.voiced) {
+    return {
+      active: false,
+      highCandidateRejected: candidateFrequency >= profileConfig.highPitchMinHz,
+      rejectionReason: "unvoiced",
+    };
+  }
+
+  if (candidateFrequency < profileConfig.highPitchMinHz) {
+    return {
+      active: true,
+      highCandidateRejected: false,
+      rejectionReason: "none",
+    };
+  }
+
+  const periodicity = detection?.periodicity ?? 0;
+  const harmonicSupport = detection?.harmonicSupport ?? 0;
+  const supportSources = detection?.supportSources ?? 0;
+  const strongPeriodicity =
+    periodicity >= profileConfig.highPitchMinPeriodicity;
+  const strongHarmonicSupport =
+    harmonicSupport >= profileConfig.highPitchMinHarmonicSupport &&
+    supportSources >= profileConfig.highPitchMinSupportSources;
+  const stableHighCandidate =
+    stableCandidate &&
+    candidateFrames >= profileConfig.highPitchStableFrames &&
+    candidateConfidence >= profileConfig.highPitchStableConfidence;
+
+  if (!(candidateConfidence >= profileConfig.highPitchMinConfidence)) {
+    return {
+      active: false,
+      highCandidateRejected: true,
+      rejectionReason: "low-confidence-high",
+    };
+  }
+
+  if (
+    strongPeriodicity ||
+    strongHarmonicSupport ||
+    stableHighCandidate ||
+    (periodicity >= profileConfig.pitchStrongPeriodicity &&
+      supportSources >= profileConfig.highPitchMinSupportSources)
+  ) {
+    return {
+      active: true,
+      highCandidateRejected: false,
+      rejectionReason: "none",
+    };
+  }
+
+  return {
+    active: false,
+    highCandidateRejected: true,
+    rejectionReason:
+      supportSources < profileConfig.highPitchMinSupportSources &&
+      harmonicSupport < profileConfig.highPitchMinHarmonicSupport
+        ? "sparse-high-harmonics"
+        : "weak-high-candidate",
+  };
+}
+
+function resolveLiveInputVoiceValidity({
+  detection,
+  profileConfig,
+  candidateFrames,
+  stableCandidate,
+  analyserRms,
+  avgAmplitude,
+  preModalFftPeak,
+  baselinePeak,
+}) {
+  const periodicity = detection?.periodicity ?? 0;
+  const harmonicSupport = detection?.harmonicSupport ?? 0;
+  const directSupport = detection?.directSupport ?? 0;
+  const supportSources = detection?.supportSources ?? 0;
+  const hasMeaningfulTimeSignal =
+    periodicity >= LIVE_INPUT_VOICE_LOCK_MIN_PERIODICITY;
+  const hasStrongSpectralSignal =
+    supportSources >= LIVE_INPUT_VOICE_LOCK_MIN_SUPPORT_SOURCES &&
+    analyserRms >= LIVE_INPUT_VOICE_LOCK_MIN_RMS &&
+    avgAmplitude >= LIVE_INPUT_VOICE_LOCK_MIN_AVG_AMPLITUDE &&
+    (harmonicSupport >= LIVE_INPUT_VOICE_LOCK_MIN_HARMONIC_SUPPORT ||
+      directSupport >= LIVE_INPUT_VOICE_LOCK_MIN_DIRECT_SUPPORT);
+  const hasStableLatchEvidence =
+    stableCandidate &&
+    candidateFrames >= Math.max(1, profileConfig.highPitchStableFrames);
+
+  if (
+    hasMeaningfulTimeSignal ||
+    hasStrongSpectralSignal ||
+    hasStableLatchEvidence
+  ) {
+    return {
+      allowed: true,
+      rejectionReason: "none",
+    };
+  }
+
+  if (
+    periodicity <= LIVE_INPUT_FOG_SUPPRESSION_MAX_PERIODICITY &&
+    analyserRms <= LIVE_INPUT_INVALID_CURRENT_WEAK_RMS &&
+    avgAmplitude <= LIVE_INPUT_INVALID_CURRENT_WEAK_AVG &&
+    preModalFftPeak >= LIVE_INPUT_INVALID_CURRENT_SATURATED_PEAK &&
+    baselinePeak >= LIVE_INPUT_INVALID_COMPRESSED_BASELINE_PEAK
+  ) {
+    return {
+      allowed: false,
+      rejectionReason: "invalid-clipped-mic",
+    };
+  }
+
+  return {
+    allowed: false,
+    rejectionReason: "insufficient-voicing-evidence",
+  };
+}
+
+function resolveVoiceDriver({
+  backboneState,
+  detection,
+  hardSilence,
+  profileConfig,
+  analyserRms,
+  avgAmplitude,
+  preModalFftPeak,
+  baselinePeak,
+}) {
+  if (hardSilence) {
+    clearVocalDriverState(backboneState);
+    return {
+      frequency: 0,
+      confidence: 0,
+      pitchSource: "none",
+    };
+  }
+
+  const {
+    candidateFrequency,
+    candidateConfidence,
+    candidateFrames,
+    stableCandidate,
+  } = updateVoiceCandidateState({
+    backboneState,
+    detection,
+    profileConfig,
+  });
+  const voicing = resolveVoiceVoicing({
+    detection,
+    profileConfig,
+    candidateFrames,
+    stableCandidate,
+  });
+  const voiceValidity = resolveLiveInputVoiceValidity({
+    detection,
+    profileConfig,
+    candidateFrames,
+    stableCandidate,
+    analyserRms,
+    avgAmplitude,
+    preModalFftPeak,
+    baselinePeak,
+  });
+  updateVoiceDetectionDiagnostics(backboneState, detection, {
+    voicingActive: voicing.active && voiceValidity.allowed,
+    highCandidateRejected: voicing.highCandidateRejected,
+    rejectionReason: voiceValidity.allowed
+      ? voicing.rejectionReason
+      : voiceValidity.rejectionReason,
+  });
+
+  if (
+    voicing.active &&
+    voiceValidity.allowed &&
+    candidateFrequency > 0 &&
+    candidateConfidence >= profileConfig.pitchConfidence
+  ) {
+    backboneState.latchedFundamentalHz = candidateFrequency;
+    backboneState.latchedFundamentalConfidence = candidateConfidence;
+    backboneState.latchHoldFrames = profileConfig.latchHoldFrames;
+    backboneState.latchLowSupportFrames = 0;
+    backboneState.driverFrequency = candidateFrequency;
+    return {
+      frequency: candidateFrequency,
+      confidence: candidateConfidence,
+      pitchSource: "fundamental",
+    };
+  }
+
+  if (
+    !voiceValidity.allowed &&
+    voiceValidity.rejectionReason === "invalid-clipped-mic"
+  ) {
+    clearVocalLatchState(backboneState);
+    return {
+      frequency: 0,
+      confidence: 0,
+      pitchSource: "none",
+    };
+  }
+
+  if (
+    backboneState.latchedFundamentalHz > 0 &&
+    backboneState.latchHoldFrames > 0
+  ) {
+    backboneState.latchHoldFrames -= 1;
+    backboneState.latchLowSupportFrames = voicing.active
+      ? 0
+      : (backboneState.latchLowSupportFrames ?? 0) + 1;
+    backboneState.latchedFundamentalConfidence *= VOICE_LATCH_DECAY;
+    backboneState.driverFrequency = backboneState.latchedFundamentalHz;
+    return {
+      frequency: backboneState.latchedFundamentalHz,
+      confidence: backboneState.latchedFundamentalConfidence,
+      pitchSource: "latched-fundamental",
+    };
+  }
+
+  clearVocalLatchState(backboneState);
+
+  return {
+    frequency: 0,
+    confidence: 0,
+    pitchSource: "none",
+  };
+}
+
+function resolveVoiceDetailPeaks({
+  fftMagnitudes,
+  sampleRate,
+  fftSize,
+  fundamental,
+  profileConfig,
+  analysisHints,
+}) {
+  if (!(fundamental > 0)) {
+    return [];
+  }
+
+  const candidates = findSpectralPeakFrequencies(
+    fftMagnitudes,
+    sampleRate,
+    fftSize,
+    INTERNAL_CANDIDATE_POOL_SIZE,
+    {
+      minFrequency: fundamental * 0.8,
+      maxFrequency: Math.min(
+        profileConfig.spectralPeakMaxHz,
+        fundamental * VOICE_DETAIL_HARMONIC_LIMIT + 120,
+      ),
+    },
+  ).filter((peak) => isPeakHarmonicallyRelated(peak.frequency, fundamental));
+
+  return selectScoredPeaks(
+    candidates,
+    DETAIL_PEAK_COUNT,
+    analysisHints,
+    "detail",
+  );
+}
+
+function getLayerSlotLimit(layerType, capacity) {
+  return Math.min(
+    capacity,
+    layerType === "backbone" ? BACKBONE_STACK_SLOTS : DETAIL_STACK_SLOTS,
+  );
+}
+
+function buildEmptyTarget(capacity) {
+  return new Float32Array(capacity * 4);
+}
+
+function releaseLayer(
+  layerState,
+  capacity,
+  options,
+  targetSlots = null,
+  emptyTargetSlots = null,
+) {
+  const resolvedTargetSlots = targetSlots ?? buildEmptyTarget(capacity);
+  const resolvedEmptyTargetSlots = emptyTargetSlots ?? resolvedTargetSlots;
+  blendModalStack(layerState, resolvedTargetSlots, capacity, options);
+  if (options.colorOptions) {
+    blendColorStack(
+      layerState,
+      resolvedTargetSlots,
+      resolvedEmptyTargetSlots,
+      capacity,
+      options.colorOptions,
+    );
+  } else {
+    layerState.colorSlots?.fill(0);
+    layerState.referenceColorSlots?.fill(0);
+  }
+  clearLayerMetadata(layerState);
+}
+
+function applyLayerBlend(layerState, targetBuild, capacity, options) {
+  blendModalStack(layerState, targetBuild.slots, capacity, options);
+  if (options.colorOptions) {
+    blendColorStack(
+      layerState,
+      targetBuild.slots,
+      targetBuild.colorSlots,
+      capacity,
+      options.colorOptions,
+    );
+  } else {
+    layerState.colorSlots.fill(0);
+    layerState.referenceColorSlots.fill(0);
+  }
+}
+
 function computeBandEnergies(fftMagnitudes, sampleRate, fftSize) {
   const bands = new Float32Array(BAND_BUCKET_COUNT);
   if (!fftMagnitudes?.length || !sampleRate || !fftSize) {
@@ -1803,9 +2806,6 @@ function deriveCompositeSignals({
     structuralMetrics?.distributedExcitation ?? 0,
   );
   const resonatorCoherence = clamp01(structuralMetrics?.modeCoherence ?? 0);
-  const lowBandStructureSupport = clamp01(
-    (bandEnergies?.[0] ?? 0) * 3 + (bandEnergies?.[1] ?? 0) * 2,
-  );
   const structureSignal = clamp01(
     (activeModeCount / Math.max(1, signalNormalizationSlots * 0.55)) *
       0.36 *
@@ -1814,9 +2814,7 @@ function deriveCompositeSignals({
         0.26 *
         energyCoupling +
       harmonicSupport * 0.2 * energyCoupling +
-      modalPersistence * 0.06 * energyCoupling +
-      lowBandStructureSupport * 0.08 +
-      clamp01((bandEnergies?.[0] ?? 0) * (hints?.bassSalience ?? 0)) * 0.08 +
+      modalPersistence * 0.06 +
       // Removed: bandDistribution (not energy-sensitive — stays elevated during fades)
       // Removed: normalizedCentroid (treble centroid ≠ modal structure)
       (hints?.harmonicity ?? 0) * 0.12 +
@@ -1837,10 +2835,9 @@ function deriveCompositeSignals({
   const energySignal = clamp01(
     normalizedRms * 0.42 +
       normalizedAmplitude * 0.26 +
-      averageArray(bandEnergies) * 0.16 +
-      (bandEnergies?.[0] ?? 0) * 0.06 +
+      averageArray(bandEnergies) * 0.2 +
       clamp01(dominantAmplitude) * 0.12 +
-      (hints?.bassSalience ?? 0) * 0.12,
+      (hints?.bassSalience ?? 0) * 0.08,
   );
   const changeBreakdown = {
     flux: clamp01(spectralFlux * 8) * 0.28,
@@ -1888,6 +2885,30 @@ function deriveCompositeSignals({
     modeCoherence,
     changeBreakdown,
   };
+}
+
+function shouldSuppressLiveInputFogField({
+  inputMode,
+  activeModeCount,
+  analyserRms,
+  avgAmplitude,
+  periodicity,
+  preModalFftPeak,
+  liveInputCalibrationInvalid,
+  liveInputNoiseGateActive,
+  liveInputHardSilenceActive,
+}) {
+  return (
+    inputMode === "live" &&
+    !liveInputCalibrationInvalid &&
+    !liveInputNoiseGateActive &&
+    !liveInputHardSilenceActive &&
+    activeModeCount >= LIVE_INPUT_FOG_SUPPRESSION_MODE_COUNT &&
+    analyserRms <= LIVE_INPUT_INVALID_CURRENT_WEAK_RMS &&
+    avgAmplitude <= LIVE_INPUT_INVALID_CURRENT_WEAK_AVG &&
+    periodicity <= LIVE_INPUT_FOG_SUPPRESSION_MAX_PERIODICITY &&
+    preModalFftPeak >= LIVE_INPUT_INVALID_CURRENT_SATURATED_PEAK
+  );
 }
 
 function recordBeatTimestamp(bandState, currentFrameAtMs) {
@@ -2126,10 +3147,710 @@ export function updateAudioFeatureTempoState({
   };
 }
 
+function resolveLayeredModalStacks({
+  analysisSnapshot,
+  status,
+  backboneState,
+  detailState,
+  zeroBackboneTargetSlots,
+  zeroDetailTargetSlots,
+  nonAcousticBackboneTarget,
+  nonAcousticDetailTarget,
+  nonAcousticPeakDriverScratch,
+  acousticBackboneTarget,
+  acousticDetailTarget,
+  radius,
+  effectiveCavityGeometry = DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
+  capacity,
+  currentFrame,
+  liveInputNoiseGateActive,
+  liveInputHardSilenceActive,
+  liveInputProfile,
+  resolvedLiveInputAnalysisClass,
+  auditSettings,
+  spectralCentroid,
+  includeChromesthesia,
+  analysisHints,
+  analyserRms,
+  avgAmplitude,
+  preModalFftPeak,
+  liveInputBaselinePeak,
+  spectralFlux,
+  transientEnergy,
+}) {
+  let analysisEngine = "none";
+  let pitchSource = "none";
+  let spectralCandidates = [];
+  let usedDecay = false;
+  let peakScanMs = 0;
+
+  const backboneCapacity = getLayerSlotLimit("backbone", capacity);
+  const detailCapacity = getLayerSlotLimit("detail", capacity);
+  const profileConfig = getLiveInputProfileConfig(liveInputProfile);
+  let backboneTrackingSlots =
+    zeroBackboneTargetSlots ?? buildEmptyTarget(backboneCapacity);
+  let detailTrackingSlots =
+    zeroDetailTargetSlots ?? buildEmptyTarget(detailCapacity);
+
+  if (auditSettings.injectTestTone) {
+    const selectedFrequency = auditSettings.testToneHz;
+    const selectedConfidence = 1;
+    const fftMagnitudes =
+      analysisSnapshot?.fftMagnitudes ?? new Float32Array(status.fftSize / 2);
+    const backboneBuild = buildModalSlotsFromFundamental({
+      frequency: selectedFrequency,
+      confidence: selectedConfidence,
+      fftMagnitudes,
+      sampleRate: status.sampleRate,
+      fftSize: status.fftSize,
+      radius,
+      capacity: backboneCapacity,
+      cavityGeometry: effectiveCavityGeometry,
+      spectralCentroid,
+      includeChromesthesia,
+    });
+    const detailBuild = buildModalSlotsFromSpectralPeaks({
+      fftMagnitudes,
+      sampleRate: status.sampleRate,
+      fftSize: status.fftSize,
+      radius,
+      capacity: detailCapacity,
+      cavityGeometry: effectiveCavityGeometry,
+      peakCount: DETAIL_PEAK_COUNT,
+      slotLimit: detailCapacity,
+      spectralCentroid,
+      includeChromesthesia,
+    });
+    copyFloatArray(backboneState.slots, backboneBuild.slots);
+    copyFloatArray(backboneState.referenceSlots, backboneBuild.referenceSlots);
+    copyFloatArray(backboneState.colorSlots, backboneBuild.colorSlots);
+    copyFloatArray(backboneState.referenceColorSlots, backboneBuild.colorSlots);
+    copyFloatArray(detailState.slots, detailBuild.slots);
+    copyFloatArray(detailState.referenceSlots, detailBuild.referenceSlots);
+    copyFloatArray(detailState.colorSlots, detailBuild.colorSlots);
+    copyFloatArray(detailState.referenceColorSlots, detailBuild.colorSlots);
+    setLayerMetadata(
+      backboneState,
+      backboneBuild,
+      selectedFrequency,
+      selectedConfidence,
+      "test",
+    );
+    setLayerMetadata(
+      detailState,
+      detailBuild,
+      selectedFrequency,
+      selectedConfidence,
+      "test",
+    );
+    analysisEngine = "test";
+    pitchSource = "test";
+    spectralCandidates = detailBuild.peaks ?? [];
+    backboneTrackingSlots = backboneBuild.slots;
+    detailTrackingSlots = detailBuild.slots;
+  } else if (!liveInputNoiseGateActive && analysisSnapshot?.fftMagnitudes) {
+    const fftMagnitudes = analysisSnapshot.fftMagnitudes;
+    const layerBlendOptions = {
+      attack: BACKBONE_ATTACK,
+      tracking: BACKBONE_ATTACK,
+      release: BACKBONE_RELEASE,
+      emptyTargetRelease: BACKBONE_SILENCE_RELEASE,
+      lowSignalReleaseThreshold: BACKBONE_LOW_SIGNAL_RELEASE_THRESHOLD,
+      lowSignalRelease: BACKBONE_LOW_SIGNAL_RELEASE,
+      freshCap: BACKBONE_FRESH_CAP,
+      colorOptions: includeChromesthesia
+        ? {
+            attack: BACKBONE_COLOR_ATTACK,
+            tracking: BACKBONE_COLOR_TRACKING,
+            release: BACKBONE_COLOR_RELEASE,
+            maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
+          }
+        : null,
+    };
+    const detailBlendOptions = {
+      attack: DETAIL_ATTACK,
+      tracking: DETAIL_ATTACK,
+      release: DETAIL_RELEASE,
+      emptyTargetRelease: DETAIL_SILENCE_RELEASE,
+      lowSignalReleaseThreshold: DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD,
+      lowSignalRelease: DETAIL_LOW_SIGNAL_RELEASE,
+      freshCap: DETAIL_FRESH_CAP,
+      colorOptions: includeChromesthesia
+        ? {
+            attack: DETAIL_COLOR_ATTACK,
+            tracking: DETAIL_COLOR_TRACKING,
+            release: DETAIL_COLOR_RELEASE,
+            maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
+          }
+        : null,
+    };
+    const isAcousticMic =
+      status.audioInputMode === "live" &&
+      resolvedLiveInputAnalysisClass ===
+        LIVE_INPUT_ANALYSIS_CLASSES.acousticMic;
+
+    if (isAcousticMic) {
+      const detection = detectVoicePitch({
+        timeData: analysisSnapshot?.timeData,
+        fftMagnitudes,
+        sampleRate: status.sampleRate,
+        fftSize: status.fftSize,
+        autocorrelation: {
+          minFrequency: profileConfig.pitchMinHz,
+          maxFrequency: profileConfig.pitchAutocorrelationMaxHz,
+          lowEnergyRms: profileConfig.pitchLowEnergyRms,
+          minConfidence: profileConfig.pitchConfidence,
+        },
+        spectral: {
+          minFrequency: profileConfig.pitchMinHz,
+          maxFrequency: profileConfig.pitchMaxHz,
+          maxPeakFrequency: profileConfig.spectralPeakMaxHz,
+          minConfidence: profileConfig.pitchConfidence,
+        },
+      });
+      const voiceDriver = resolveVoiceDriver({
+        backboneState,
+        detection,
+        hardSilence: liveInputHardSilenceActive,
+        profileConfig,
+        analyserRms,
+        avgAmplitude,
+        preModalFftPeak,
+        baselinePeak: liveInputBaselinePeak,
+      });
+      const hintedVoiceConfidence = clamp01(
+        voiceDriver.confidence *
+          (0.72 +
+            (analysisHints?.pitchConfidence ?? 0) * 0.18 +
+            (analysisHints?.voicingProbability ?? 0) * 0.2),
+      );
+      const voiceDetailPeaks = resolveVoiceDetailPeaks({
+        fftMagnitudes,
+        sampleRate: status.sampleRate,
+        fftSize: status.fftSize,
+        fundamental: voiceDriver.frequency,
+        profileConfig,
+        analysisHints,
+      });
+      spectralCandidates = voiceDetailPeaks;
+      let fallbackDetailPeaks = [];
+      let fallbackDominantPeak = null;
+      if (voiceDriver.frequency <= 0) {
+        const peakScanStartedAt = getAudioPerfNow();
+        const fallbackCandidatePool = buildAnnotatedCandidatePool(
+          fftMagnitudes,
+          status.sampleRate,
+          status.fftSize,
+          INTERNAL_CANDIDATE_POOL_SIZE,
+          {
+            maxFrequency: profileConfig.spectralPeakMaxHz,
+            minimumAmplitude: SPECTRAL_MODAL_POLICY.minSpectralBinAmplitude,
+          },
+        );
+        ({
+          detailPeaks: fallbackDetailPeaks,
+          dominantPeak: fallbackDominantPeak,
+        } = deriveSelectedCandidatePeaks(fallbackCandidatePool, analysisHints));
+        peakScanMs += getAudioPerfNow() - peakScanStartedAt;
+      }
+
+      if (voiceDriver.frequency > 0) {
+        const backboneTarget = writeModalSlotsFromFundamental(
+          acousticBackboneTarget,
+          {
+            frequency: voiceDriver.frequency,
+            confidence: hintedVoiceConfidence,
+            fftMagnitudes,
+            sampleRate: status.sampleRate,
+            fftSize: status.fftSize,
+            radius,
+            capacity: backboneCapacity,
+            cavityGeometry: effectiveCavityGeometry,
+            spectralCentroid,
+            includeChromesthesia,
+          },
+        );
+        const detailTarget = writeModalSlotsFromSpectralPeaks(
+          acousticDetailTarget,
+          {
+            fftMagnitudes,
+            sampleRate: status.sampleRate,
+            fftSize: status.fftSize,
+            radius,
+            capacity: detailCapacity,
+            cavityGeometry: effectiveCavityGeometry,
+            slotLimit: detailCapacity,
+            spectralCentroid,
+            includeChromesthesia,
+            peaks: voiceDetailPeaks,
+          },
+        );
+        const resolvedBackboneBlendOptions = createLayerReleaseOptions(
+          backboneState,
+          backboneTarget.slots,
+          backboneCapacity,
+          layerBlendOptions,
+          analysisHints,
+          "backbone",
+        );
+        const resolvedDetailBlendOptions = createLayerReleaseOptions(
+          detailState,
+          detailTarget.slots,
+          detailCapacity,
+          detailBlendOptions,
+          analysisHints,
+          "detail",
+        );
+
+        applyLayerBlend(
+          backboneState,
+          backboneTarget,
+          backboneCapacity,
+          resolvedBackboneBlendOptions,
+        );
+        applyLayerBlend(
+          detailState,
+          detailTarget,
+          detailCapacity,
+          resolvedDetailBlendOptions,
+        );
+        setLayerMetadata(
+          backboneState,
+          backboneTarget,
+          voiceDriver.frequency,
+          hintedVoiceConfidence,
+          "vocal",
+        );
+        setLayerMetadata(
+          detailState,
+          detailTarget,
+          voiceDriver.frequency,
+          hintedVoiceConfidence,
+          "vocal",
+        );
+        analysisEngine = "vocal";
+        pitchSource = voiceDriver.pitchSource;
+        backboneTrackingSlots = backboneTarget.slots;
+        detailTrackingSlots = detailTarget.slots;
+      } else if (
+        fallbackDominantPeak &&
+        ((fallbackDominantPeak.salienceScore ?? 0) >= 0.12 ||
+          fallbackDetailPeaks.length >= 2)
+      ) {
+        const backboneTarget = writeModalSlotsFromFundamental(
+          acousticBackboneTarget,
+          {
+            frequency: fallbackDominantPeak.frequency,
+            confidence: Math.max(0.28, fallbackDominantPeak.amplitude ?? 0),
+            fftMagnitudes,
+            sampleRate: status.sampleRate,
+            fftSize: status.fftSize,
+            radius,
+            capacity: backboneCapacity,
+            cavityGeometry: effectiveCavityGeometry,
+            spectralCentroid,
+            includeChromesthesia,
+          },
+        );
+        const detailTarget = writeModalSlotsFromSpectralPeaks(
+          acousticDetailTarget,
+          {
+            fftMagnitudes,
+            sampleRate: status.sampleRate,
+            fftSize: status.fftSize,
+            radius,
+            capacity: detailCapacity,
+            cavityGeometry: effectiveCavityGeometry,
+            slotLimit: detailCapacity,
+            spectralCentroid,
+            includeChromesthesia,
+            peaks: fallbackDetailPeaks,
+          },
+        );
+        const resolvedBackboneBlendOptions = createLayerReleaseOptions(
+          backboneState,
+          backboneTarget.slots,
+          backboneCapacity,
+          layerBlendOptions,
+          analysisHints,
+          "backbone",
+        );
+        const resolvedDetailBlendOptions = createLayerReleaseOptions(
+          detailState,
+          detailTarget.slots,
+          detailCapacity,
+          detailBlendOptions,
+          analysisHints,
+          "detail",
+        );
+
+        applyLayerBlend(
+          backboneState,
+          backboneTarget,
+          backboneCapacity,
+          resolvedBackboneBlendOptions,
+        );
+        applyLayerBlend(
+          detailState,
+          detailTarget,
+          detailCapacity,
+          resolvedDetailBlendOptions,
+        );
+        setLayerMetadata(
+          backboneState,
+          backboneTarget,
+          fallbackDominantPeak.frequency,
+          fallbackDominantPeak.amplitude ?? 0,
+          "spectral-fallback",
+        );
+        setLayerMetadata(
+          detailState,
+          detailTarget,
+          fallbackDominantPeak.frequency,
+          fallbackDominantPeak.amplitude ?? 0,
+          "spectral-fallback",
+        );
+        spectralCandidates = fallbackDetailPeaks.length
+          ? fallbackDetailPeaks
+          : [fallbackDominantPeak];
+        analysisEngine = "spectral-fallback";
+        pitchSource = "spectral-fallback";
+        backboneTrackingSlots = backboneTarget.slots;
+        detailTrackingSlots = detailTarget.slots;
+      } else if (
+        countActiveSlots(backboneState.slots, backboneCapacity) > 0 ||
+        countActiveSlots(detailState.slots, detailCapacity) > 0
+      ) {
+        releaseLayer(
+          backboneState,
+          backboneCapacity,
+          createLayerReleaseOptions(
+            backboneState,
+            backboneTrackingSlots,
+            backboneCapacity,
+            layerBlendOptions,
+            analysisHints,
+            "backbone",
+          ),
+          backboneTrackingSlots,
+          zeroBackboneTargetSlots,
+        );
+        releaseLayer(
+          detailState,
+          detailCapacity,
+          createLayerReleaseOptions(
+            detailState,
+            detailTrackingSlots,
+            detailCapacity,
+            detailBlendOptions,
+            analysisHints,
+            "detail",
+          ),
+          detailTrackingSlots,
+          zeroDetailTargetSlots,
+        );
+        usedDecay = true;
+        pitchSource = voiceDriver.pitchSource;
+      } else {
+        clearModalStack(backboneState);
+        clearModalStack(detailState);
+        clearVocalDriverState(backboneState);
+      }
+    } else {
+      clearVocalDriverState(backboneState);
+      const peakScanStartedAt = getAudioPerfNow();
+      const candidatePool = buildAnnotatedCandidatePool(
+        fftMagnitudes,
+        status.sampleRate,
+        status.fftSize,
+        INTERNAL_CANDIDATE_POOL_SIZE,
+      );
+      const { detailPeaks, backbonePeaks, dominantPeak } =
+        deriveSelectedCandidatePeaks(candidatePool, analysisHints);
+      peakScanMs += getAudioPerfNow() - peakScanStartedAt;
+      const backboneTarget = writeModalSlotsFromPeakDrivers(
+        nonAcousticBackboneTarget,
+        {
+          fftMagnitudes,
+          sampleRate: status.sampleRate,
+          fftSize: status.fftSize,
+          radius,
+          capacity: backboneCapacity,
+          cavityGeometry: effectiveCavityGeometry,
+          peakCount: backbonePeaks.length || BACKBONE_PEAK_COUNT,
+          slotLimit: backboneCapacity,
+          spectralCentroid,
+          includeChromesthesia,
+          peaks: backbonePeaks,
+          scratchTarget: nonAcousticPeakDriverScratch,
+        },
+      );
+      const detailTarget = writeModalSlotsFromSpectralPeaks(
+        nonAcousticDetailTarget,
+        {
+          fftMagnitudes,
+          sampleRate: status.sampleRate,
+          fftSize: status.fftSize,
+          radius,
+          capacity: detailCapacity,
+          cavityGeometry: effectiveCavityGeometry,
+          peakCount: detailPeaks.length || DETAIL_PEAK_COUNT,
+          slotLimit: detailCapacity,
+          spectralCentroid,
+          includeChromesthesia,
+          peaks: detailPeaks,
+        },
+      );
+
+      spectralCandidates = detailPeaks.length
+        ? detailPeaks
+        : dominantPeak
+          ? [dominantPeak]
+          : [];
+      const shouldReleaseWeakSubfloorResidual =
+        shouldReleaseLegacySubfloorResidual({
+          bridgeMeta: backboneTarget.subfloorBridgeMeta,
+          radius,
+          spectralFlux,
+          transientEnergy,
+        });
+      const dominantPeakFrequency = dominantPeak?.frequency ?? 0;
+      const dominantPeakAmplitude = dominantPeak?.amplitude ?? 0;
+      const backboneHasActiveModes =
+        countActiveSlots(backboneState.slots, backboneCapacity) > 0;
+      const detailHasActiveModes =
+        countActiveSlots(detailState.slots, detailCapacity) > 0;
+      const shouldBlendBackbone =
+        backboneTarget.uniqueModeCount > 0 &&
+        !shouldReleaseWeakSubfloorResidual;
+      const shouldBlendDetail = detailTarget.uniqueModeCount > 0;
+      const hasActiveBlend = shouldBlendBackbone || shouldBlendDetail;
+      const shouldReleaseBackbone =
+        !shouldBlendBackbone &&
+        (shouldReleaseWeakSubfloorResidual || backboneHasActiveModes);
+      const shouldReleaseDetail = !shouldBlendDetail && detailHasActiveModes;
+
+      if (shouldBlendBackbone) {
+        const resolvedBackboneBlendOptions = createLayerReleaseOptions(
+          backboneState,
+          backboneTarget.slots,
+          backboneCapacity,
+          layerBlendOptions,
+          analysisHints,
+          "backbone",
+        );
+        applyLayerBlend(
+          backboneState,
+          backboneTarget,
+          backboneCapacity,
+          resolvedBackboneBlendOptions,
+        );
+        setLayerMetadata(
+          backboneState,
+          backboneTarget,
+          dominantPeakFrequency,
+          dominantPeakAmplitude,
+          "layered",
+        );
+        backboneTrackingSlots = backboneTarget.slots;
+      } else if (shouldReleaseBackbone) {
+        releaseLayer(
+          backboneState,
+          backboneCapacity,
+          createLayerReleaseOptions(
+            backboneState,
+            backboneTrackingSlots,
+            backboneCapacity,
+            layerBlendOptions,
+            analysisHints,
+            "backbone",
+          ),
+          backboneTrackingSlots,
+          zeroBackboneTargetSlots,
+        );
+      } else {
+        clearModalStack(backboneState);
+      }
+
+      if (shouldBlendDetail) {
+        const resolvedDetailBlendOptions = createLayerReleaseOptions(
+          detailState,
+          detailTarget.slots,
+          detailCapacity,
+          detailBlendOptions,
+          analysisHints,
+          "detail",
+        );
+        applyLayerBlend(
+          detailState,
+          detailTarget,
+          detailCapacity,
+          resolvedDetailBlendOptions,
+        );
+        setLayerMetadata(
+          detailState,
+          detailTarget,
+          dominantPeakFrequency,
+          dominantPeakAmplitude,
+          "layered",
+        );
+        detailTrackingSlots = detailTarget.slots;
+      } else if (shouldReleaseDetail) {
+        releaseLayer(
+          detailState,
+          detailCapacity,
+          createLayerReleaseOptions(
+            detailState,
+            detailTrackingSlots,
+            detailCapacity,
+            detailBlendOptions,
+            analysisHints,
+            "detail",
+          ),
+          detailTrackingSlots,
+          zeroDetailTargetSlots,
+        );
+      } else {
+        clearModalStack(detailState);
+      }
+
+      if (hasActiveBlend) {
+        analysisEngine = "layered";
+        pitchSource = "spectral";
+      } else if (shouldReleaseBackbone || shouldReleaseDetail) {
+        usedDecay = true;
+      }
+    }
+  } else if (
+    status.audioInputMode !== "idle" &&
+    !liveInputNoiseGateActive &&
+    (backboneState.analysisEngine !== "none" ||
+      detailState.analysisEngine !== "none")
+  ) {
+    const layerBlendOptions = {
+      attack: BACKBONE_ATTACK,
+      tracking: BACKBONE_ATTACK,
+      release: BACKBONE_RELEASE,
+      emptyTargetRelease: BACKBONE_SILENCE_RELEASE,
+      lowSignalReleaseThreshold: BACKBONE_LOW_SIGNAL_RELEASE_THRESHOLD,
+      lowSignalRelease: BACKBONE_LOW_SIGNAL_RELEASE,
+      freshCap: BACKBONE_FRESH_CAP,
+      colorOptions: includeChromesthesia
+        ? {
+            attack: BACKBONE_COLOR_ATTACK,
+            tracking: BACKBONE_COLOR_TRACKING,
+            release: BACKBONE_COLOR_RELEASE,
+            maxActiveSlots: BACKBONE_COLOR_SLOT_LIMIT,
+          }
+        : null,
+    };
+    const detailBlendOptions = {
+      attack: DETAIL_ATTACK,
+      tracking: DETAIL_ATTACK,
+      release: DETAIL_RELEASE,
+      emptyTargetRelease: DETAIL_SILENCE_RELEASE,
+      lowSignalReleaseThreshold: DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD,
+      lowSignalRelease: DETAIL_LOW_SIGNAL_RELEASE,
+      freshCap: DETAIL_FRESH_CAP,
+      colorOptions: includeChromesthesia
+        ? {
+            attack: DETAIL_COLOR_ATTACK,
+            tracking: DETAIL_COLOR_TRACKING,
+            release: DETAIL_COLOR_RELEASE,
+            maxActiveSlots: DETAIL_COLOR_SLOT_LIMIT,
+          }
+        : null,
+    };
+    releaseLayer(
+      backboneState,
+      backboneCapacity,
+      createLayerReleaseOptions(
+        backboneState,
+        backboneTrackingSlots,
+        backboneCapacity,
+        layerBlendOptions,
+        analysisHints,
+        "backbone",
+      ),
+      backboneTrackingSlots,
+      zeroBackboneTargetSlots,
+    );
+    releaseLayer(
+      detailState,
+      detailCapacity,
+      createLayerReleaseOptions(
+        detailState,
+        detailTrackingSlots,
+        detailCapacity,
+        detailBlendOptions,
+        analysisHints,
+        "detail",
+      ),
+      detailTrackingSlots,
+      zeroDetailTargetSlots,
+    );
+    usedDecay = true;
+  } else {
+    clearModalStack(backboneState);
+    clearModalStack(detailState);
+    if (liveInputProfile === LIVE_INPUT_ANALYSIS_CLASSES.acousticMic) {
+      clearVocalDriverState(backboneState);
+    }
+  }
+
+  updateLayerSlotTracking(
+    backboneState,
+    backboneTrackingSlots,
+    backboneCapacity,
+    currentFrame,
+    analysisHints,
+    "backbone",
+  );
+  updateLayerSlotTracking(
+    detailState,
+    detailTrackingSlots,
+    detailCapacity,
+    currentFrame,
+    analysisHints,
+    "detail",
+  );
+
+  return {
+    analysisEngine,
+    pitchSource,
+    spectralCandidates,
+    usedDecay,
+    peakScanMs,
+  };
+}
+
+function shouldReleaseLegacySubfloorResidual({
+  bridgeMeta,
+  radius,
+  spectralFlux,
+  transientEnergy,
+}) {
+  if (!bridgeMeta) {
+    return false;
+  }
+
+  return (
+    bridgeMeta.dominantPeakFrequency > 0 &&
+    bridgeMeta.dominantPeakFrequency < getMinimumCavityFrequency(radius) &&
+    bridgeMeta.dominantPeakBridgeCount === 0 &&
+    bridgeMeta.meaningfulAboveFloorPeakCount === 0 &&
+    bridgeMeta.dominantPeakAmplitude <=
+      LEGACY_SUBFLOOR_RESIDUAL_PEAK_THRESHOLD &&
+    spectralFlux <= LEGACY_SUBFLOOR_RESIDUAL_FLUX_THRESHOLD &&
+    transientEnergy <= LEGACY_SUBFLOOR_RESIDUAL_TRANSIENT_THRESHOLD
+  );
+}
+
 function finalizeFeatureDebugSnapshot({
   auditSettings,
   inputMode,
   analysisInputMode = inputMode,
+  structuralImplementation = "legacy-peak",
   pitchSource,
   analysisEngine,
   fieldState,
@@ -2181,6 +3902,8 @@ function finalizeFeatureDebugSnapshot({
   fftSize,
   analysisHints = null,
   structuralMetrics = null,
+  structuralComparison = null,
+  comparisonDebug = null,
   micFftNormGain = 1,
   preModalFftPeak = 0,
   postNormalizationFftPeak = preModalFftPeak,
@@ -2196,6 +3919,7 @@ function finalizeFeatureDebugSnapshot({
   const debug = buildDebugSummary({
     inputMode,
     analysisInputMode,
+    structuralImplementation,
     soundActive,
     micActive,
     pitchSource,
@@ -2249,6 +3973,8 @@ function finalizeFeatureDebugSnapshot({
     fftSize,
     analysisHints,
     structuralMetrics,
+    structuralComparison,
+    comparisonDebug,
     micFftNormGain,
     preModalFftPeak,
     postNormalizationFftPeak,
@@ -2314,6 +4040,7 @@ function resolveFeatureAnalysisSessionKey(status, inputMode) {
 function buildFeatureAnalysisInputsSignature({
   inputMode,
   analysisInputMode,
+  structuralImplementation,
   requestedCavityGeometry = /** @type {CavityGeometry} */ (
     DEFAULT_REQUESTED_CAVITY_GEOMETRY
   ),
@@ -2334,6 +4061,7 @@ function buildFeatureAnalysisInputsSignature({
   return JSON.stringify({
     inputMode,
     analysisInputMode,
+    structuralImplementation,
     requestedCavityGeometry,
     effectiveCavityGeometry,
     liveInputDeviceKind,
@@ -2378,18 +4106,16 @@ function buildHintMetrics(analysisHints) {
   };
 }
 
-function resolveComposeAnalysisHints(analysisHints, fallbackAnalysisHints) {
-  const activeHints =
-    getActiveAnalysisHints(analysisHints) ??
-    getActiveAnalysisHints(fallbackAnalysisHints);
-  if (!activeHints) {
-    return null;
+function resolveComposeAnalysisHints(analysisHints, analysisResult) {
+  const activeHints = getActiveAnalysisHints(analysisHints);
+  if (activeHints) {
+    return {
+      ...activeHints,
+      ...buildHintMetrics(activeHints),
+    };
   }
 
-  return {
-    ...activeHints,
-    ...buildHintMetrics(activeHints),
-  };
+  return analysisResult?.baseAnalysisHints ?? null;
 }
 
 export function prepareAudioFeatureFrameInputs({
@@ -2405,6 +4131,7 @@ export function prepareAudioFeatureFrameInputs({
   liveInputAnalysisSettings = undefined,
   includeChromesthesia = true,
   analysisHints = null,
+  structuralImplementation = "legacy-peak",
 }) {
   const capacity = featureState?.capacity ?? AUDIO_SLOT_CAPACITY;
   const analysisMemory = getAnalysisMemory(featureState, capacity);
@@ -2558,6 +4285,7 @@ export function prepareAudioFeatureFrameInputs({
       analysisInputsSignature: buildFeatureAnalysisInputsSignature({
         inputMode,
         analysisInputMode,
+        structuralImplementation,
         requestedCavityGeometry,
         effectiveCavityGeometry,
         liveInputDeviceKind,
@@ -2712,6 +4440,7 @@ export function prepareAudioFeatureFrameInputs({
     analysisInputsSignature: buildFeatureAnalysisInputsSignature({
       inputMode,
       analysisInputMode,
+      structuralImplementation,
       requestedCavityGeometry,
       effectiveCavityGeometry,
       liveInputDeviceKind,
@@ -2725,6 +4454,7 @@ export function prepareAudioFeatureFrameInputs({
       liveInputCalibrationInvalidReason,
       sourceMode,
     }),
+    structuralImplementation,
     silentFeatureFrame: null,
   };
 }
@@ -3014,7 +4744,7 @@ function buildStructuralFingerprint({
   };
 }
 
-function materializeAudioFeatureStructuralSnapshot(
+export function materializeAudioFeatureStructuralSnapshot(
   preparedInputs,
   structuralState,
   legacyCompositionContext = null,
@@ -3184,6 +4914,22 @@ function materializeAudioFeatureSignalSnapshot(
   };
 }
 
+function combineBackboneAndDetailLayers(
+  target,
+  capacity,
+  backboneSlots,
+  detailSlots,
+) {
+  combineModalLayers(
+    target,
+    [
+      { slots: backboneSlots, weight: 1 },
+      { slots: detailSlots, weight: DETAIL_LAYER_WEIGHT },
+    ],
+    capacity,
+  );
+}
+
 function resolveLegacyCompositionWeights(context, activeDetailModeCount) {
   const isLegacyEngine =
     context?.analysisEngine === "layered" ||
@@ -3206,6 +4952,115 @@ function resolveLegacyCompositionWeights(context, activeDetailModeCount) {
   return {
     backboneWeight: 1,
     detailWeight: DETAIL_LAYER_WEIGHT,
+  };
+}
+
+function buildDualComparisonDebugSummary({
+  preparedInputs,
+  analysisResult,
+  analysisHints,
+}) {
+  const comparisonState = analysisResult.structuralState?.comparisonState;
+  if (!comparisonState) {
+    return null;
+  }
+
+  const capacity = preparedInputs.capacity;
+  const projectionSources = resolveStructuralProjectionSources(
+    preparedInputs,
+    comparisonState,
+  );
+  const signalSources = resolveStructuralSignalSources(
+    preparedInputs,
+    comparisonState,
+  );
+  const modeSlots = new Float32Array(capacity * 4);
+  const referenceModeSlots = new Float32Array(capacity * 4);
+  const signalModeSlots = new Float32Array(capacity * 4);
+  const signalReferenceModeSlots = new Float32Array(capacity * 4);
+  const backboneState =
+    comparisonState.backboneStateSource ?? preparedInputs.backboneState;
+  const detailState =
+    comparisonState.detailStateSource ?? preparedInputs.detailState;
+
+  combineBackboneAndDetailLayers(
+    modeSlots,
+    capacity,
+    projectionSources.backboneSlotsSource,
+    projectionSources.detailSlotsSource,
+  );
+  combineBackboneAndDetailLayers(
+    referenceModeSlots,
+    capacity,
+    projectionSources.referenceBackboneSlotsSource,
+    projectionSources.referenceDetailSlotsSource,
+  );
+  combineBackboneAndDetailLayers(
+    signalModeSlots,
+    capacity,
+    signalSources.signalBackboneSlotsSource,
+    signalSources.signalDetailSlotsSource,
+  );
+  combineBackboneAndDetailLayers(
+    signalReferenceModeSlots,
+    capacity,
+    signalSources.signalReferenceBackboneSlotsSource,
+    signalSources.signalReferenceDetailSlotsSource,
+  );
+
+  const {
+    structureSignal,
+    energySignal,
+    changeSignal,
+    changeBreakdown,
+    pulseSignal,
+    modeCoherence,
+  } = deriveCompositeSignals({
+    inputMode: preparedInputs.analysisInputMode,
+    modeCapacity: capacity,
+    signalNormalizationSlots: AUDIO_SIGNAL_NORMALIZATION_SLOTS,
+    modeSlots: signalModeSlots,
+    referenceModeSlots: signalReferenceModeSlots,
+    backboneState,
+    detailState,
+    bandEnergies: analysisResult.bandEnergies,
+    analyserRms: analysisResult.analyserRms,
+    avgAmplitude: analysisResult.avgAmplitude,
+    dominantAmplitude: comparisonState.dominantAmplitude ?? 0,
+    spectralCentroid: analysisResult.spectralCentroid,
+    spectralFlux: analysisResult.spectralFlux,
+    transientEnergy: analysisResult.transientEnergy,
+    beatDetected: analysisResult.beatDetected,
+    beatStrength: analysisResult.beatStrength,
+    beatConfidence: analysisResult.beatConfidence,
+    beatOnsetDriver: analysisResult.beatOnsetDriver,
+    beatThreshold: analysisResult.beatThreshold,
+    bandState: analysisResult.bandState ?? null,
+    analysisHints,
+    structuralMetrics: comparisonState.structuralMetrics,
+    sourceNormalization: analysisResult.sourceNormalization,
+  });
+
+  return {
+    analysisEngine: comparisonState.analysisEngine ?? "none",
+    pitchSource: comparisonState.pitchSource ?? "none",
+    dominantFrequency: comparisonState.dominantFrequency ?? 0,
+    dominantAmplitude: comparisonState.dominantAmplitude ?? 0,
+    activeBackboneModeCount: projectionSources.activeBackboneModeCount,
+    activeDetailModeCount: projectionSources.activeDetailModeCount,
+    activeModeCount: projectionSources.activeModeCount,
+    signalModeCount: countActiveSlots(signalModeSlots, capacity),
+    modeSlotCount: countActiveSlots(modeSlots, capacity),
+    structureSignal,
+    energySignal,
+    changeSignal,
+    changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
+    pulseSignal,
+    modeCoherence,
+    usedDecay: Boolean(comparisonState.usedDecay),
+    structuralMetrics: comparisonState.structuralMetrics
+      ? { ...comparisonState.structuralMetrics }
+      : null,
   };
 }
 
@@ -3251,24 +5106,239 @@ export function updateAudioFeatureFastSignalState(preparedInputs) {
   };
 }
 
+function updateLegacyAudioFeatureStructuralState(
+  preparedInputs,
+  fastSignalState,
+) {
+  const {
+    status,
+    capacity,
+    backboneState,
+    detailState,
+    zeroBackboneTargetSlots,
+    zeroDetailTargetSlots,
+    nonAcousticBackboneTarget,
+    nonAcousticDetailTarget,
+    nonAcousticPeakDriverScratch,
+    acousticBackboneTarget,
+    acousticDetailTarget,
+    bandState,
+    resolvedAuditSettings,
+    sampleRate,
+    fftSize,
+    analysisInputMode,
+    shouldBuildChromesthesia,
+    currentFrame,
+    analysisHints,
+    avgAmplitude,
+    analyserRms,
+    preModalFftPeak,
+    spectralCentroidHint,
+    liveInputNoiseGateActive,
+    liveInputHardSilenceActive,
+    liveInputCalibrationInvalid,
+    sourceMode,
+  } = preparedInputs;
+
+  const structuralStartedAt = getAudioPerfNow();
+  const {
+    analysisEngine,
+    pitchSource,
+    spectralCandidates,
+    usedDecay,
+    peakScanMs,
+  } = resolveLayeredModalStacks({
+    analysisSnapshot: fastSignalState.effectiveSnapshot,
+    status: {
+      ...status,
+      audioInputMode: analysisInputMode,
+      sampleRate,
+      fftSize,
+    },
+    backboneState,
+    detailState,
+    zeroBackboneTargetSlots,
+    zeroDetailTargetSlots,
+    nonAcousticBackboneTarget,
+    nonAcousticDetailTarget,
+    nonAcousticPeakDriverScratch,
+    acousticBackboneTarget,
+    acousticDetailTarget,
+    radius: preparedInputs.radius,
+    effectiveCavityGeometry: preparedInputs.effectiveCavityGeometry,
+    capacity,
+    currentFrame,
+    liveInputNoiseGateActive,
+    liveInputHardSilenceActive,
+    liveInputProfile: preparedInputs.liveInputProfile,
+    resolvedLiveInputAnalysisClass:
+      preparedInputs.resolvedLiveInputAnalysisClass,
+    auditSettings: resolvedAuditSettings,
+    spectralCentroid: spectralCentroidHint,
+    includeChromesthesia: shouldBuildChromesthesia,
+    analysisHints,
+    analyserRms,
+    avgAmplitude,
+    preModalFftPeak,
+    liveInputBaselinePeak: bandState.liveInputBaselinePeak ?? 0,
+    spectralFlux: fastSignalState.spectralFlux,
+    transientEnergy: fastSignalState.transientEnergy,
+  });
+  const structuralTotalMs = getAudioPerfNow() - structuralStartedAt;
+  const modalResolveMs = Math.max(0, structuralTotalMs - peakScanMs);
+
+  const dominantFrequency =
+    backboneState.fundamental || detailState.fundamental;
+  const dominantAmplitude = dominantFrequency
+    ? sampleFFTAmplitudeForFrequency(
+        dominantFrequency,
+        fastSignalState.fftMagnitudes,
+        sampleRate,
+        fftSize,
+      )
+    : 0;
+  let activeBackboneModeCount = countActiveSlots(
+    backboneState.slots,
+    BACKBONE_STACK_SLOTS,
+  );
+  let activeDetailModeCount = countActiveSlots(
+    detailState.slots,
+    DETAIL_STACK_SLOTS,
+  );
+  let activeModeCount = activeBackboneModeCount + activeDetailModeCount;
+  const suppressedByFog = shouldSuppressLiveInputFogField({
+    inputMode: analysisInputMode,
+    activeModeCount,
+    analyserRms,
+    avgAmplitude,
+    periodicity: backboneState.candidatePeriodicity ?? 0,
+    preModalFftPeak,
+    liveInputCalibrationInvalid,
+    liveInputNoiseGateActive,
+    liveInputHardSilenceActive,
+  });
+
+  if (suppressedByFog) {
+    activeBackboneModeCount = 0;
+    activeDetailModeCount = 0;
+    activeModeCount = 0;
+  }
+
+  const structuralState = {
+    sourceMode,
+    backboneSlotsSource: backboneState.slots,
+    detailSlotsSource: detailState.slots,
+    referenceBackboneSlotsSource: backboneState.referenceSlots,
+    referenceDetailSlotsSource: detailState.referenceSlots,
+    backboneColorSlotsSource: shouldBuildChromesthesia
+      ? backboneState.colorSlots
+      : null,
+    detailColorSlotsSource: shouldBuildChromesthesia
+      ? detailState.colorSlots
+      : null,
+    freezeModeSlots: Boolean(resolvedAuditSettings.freezeModeSlots),
+    activeBackboneModeCount,
+    activeDetailModeCount,
+    activeModeCount,
+    dominantFrequency,
+    dominantAmplitude,
+    analysisEngine,
+    pitchSource,
+    spectralCandidates,
+    usedDecay,
+    suppressedByFog,
+    structuralPerf: {
+      peakScanMs,
+      modalResolveMs,
+      projectionMs: 0,
+    },
+  };
+
+  structuralState.structuralFingerprint = buildStructuralFingerprint({
+    preparedInputs,
+    structuralState,
+    activeBackboneModeCount,
+    activeDetailModeCount,
+    activeModeCount,
+  });
+
+  return structuralState;
+}
+
 export function updateAudioFeatureStructuralState(
   preparedInputs,
   fastSignalState,
 ) {
-  const structuralState = buildModalExcitationStructuralState({
+  const attachStructuralFingerprint = (structuralState) => {
+    structuralState.structuralFingerprint = buildStructuralFingerprint({
+      preparedInputs,
+      structuralState,
+      activeBackboneModeCount: structuralState.activeBackboneModeCount,
+      activeDetailModeCount: structuralState.activeDetailModeCount,
+      activeModeCount: structuralState.activeModeCount,
+    });
+    return structuralState;
+  };
+  const structuralImplementation =
+    preparedInputs.structuralImplementation ?? "legacy-peak";
+
+  if (structuralImplementation === "modal-excitation") {
+    return attachStructuralFingerprint(
+      buildModalExcitationStructuralState({
+        preparedInputs,
+        fastSignalState,
+        existingState: preparedInputs.modalExcitationState,
+        performanceNow: getAudioPerfNow,
+      }),
+    );
+  }
+
+  const legacyStructuralState = updateLegacyAudioFeatureStructuralState(
     preparedInputs,
     fastSignalState,
-    existingState: preparedInputs.modalExcitationState,
-    performanceNow: getAudioPerfNow,
-  });
-  structuralState.structuralFingerprint = buildStructuralFingerprint({
-    preparedInputs,
-    structuralState,
-    activeBackboneModeCount: structuralState.activeBackboneModeCount,
-    activeDetailModeCount: structuralState.activeDetailModeCount,
-    activeModeCount: structuralState.activeModeCount,
-  });
-  return structuralState;
+  );
+
+  if (structuralImplementation === "legacy-peak") {
+    return legacyStructuralState;
+  }
+
+  const modalStructuralState = attachStructuralFingerprint(
+    buildModalExcitationStructuralState({
+      preparedInputs,
+      fastSignalState,
+      existingState: preparedInputs.modalExcitationState,
+      performanceNow: getAudioPerfNow,
+    }),
+  );
+
+  const comparison = compareStructuralStates(
+    legacyStructuralState,
+    modalStructuralState,
+  );
+
+  return {
+    ...legacyStructuralState,
+    comparisonState: modalStructuralState,
+    structuralMetrics: legacyStructuralState.structuralMetrics ?? {
+      excitedModeCount:
+        modalStructuralState.structuralMetrics?.excitedModeCount ?? 0,
+      distributedExcitation:
+        modalStructuralState.structuralMetrics?.distributedExcitation ?? 0,
+      lowOrderModalEnergy:
+        modalStructuralState.structuralMetrics?.lowOrderModalEnergy ?? 0,
+      highOrderModalEnergy:
+        modalStructuralState.structuralMetrics?.highOrderModalEnergy ?? 0,
+      modalPersistence:
+        modalStructuralState.structuralMetrics?.modalPersistence ?? 0,
+      modalDriveEnergy:
+        modalStructuralState.structuralMetrics?.modalDriveEnergy ?? 0,
+      modeCoherence: modalStructuralState.structuralMetrics?.modeCoherence ?? 0,
+      driveSource:
+        modalStructuralState.structuralMetrics?.driveSource ??
+        "spectral-fallback",
+    },
+    structuralComparison: comparison,
+  };
 }
 
 export function updateAudioFeatureChromaState(preparedInputs, fastSignalState) {
@@ -3520,6 +5590,7 @@ export function buildCurrentAudioFeatureAnalysisResult({
     activeModeCount: resolvedStructural.activeModeCount,
     structuralFingerprint: resolvedStructural.structuralFingerprint,
     structuralMetrics: resolvedStructural.structuralMetrics ?? null,
+    structuralComparison: resolvedStructural.structuralComparison ?? null,
     structuralState: {
       ...currentStructural,
     },
@@ -3528,7 +5599,11 @@ export function buildCurrentAudioFeatureAnalysisResult({
       modalResolveMs: resolvedStructural.structuralPerf?.modalResolveMs ?? 0,
       projectionMs: resolvedStructural.structuralPerf?.projectionMs ?? 0,
     },
-    analysisHints: preparedInputs.analysisHints,
+    baseAnalysisHints: resolveComposeAnalysisHints(
+      preparedInputs.analysisHints,
+      null,
+    ),
+    lastAnalysisHints: preparedInputs.analysisHints,
     debug: null,
   };
 }
@@ -3565,6 +5640,14 @@ export function buildAudioFeatureAnalysisSnapshot({
   analysisResult,
   publishCount = 0,
 }) {
+  const comparisonDebug =
+    analysisResult.comparisonDebug ??
+    buildDualComparisonDebugSummary({
+      preparedInputs,
+      analysisResult,
+      analysisHints:
+        analysisResult.lastAnalysisHints ?? analysisResult.baseAnalysisHints,
+    });
   const backboneStateSummary = buildBackboneStateSummary(
     analysisResult.backboneState,
   );
@@ -3667,8 +5750,22 @@ export function buildAudioFeatureAnalysisSnapshot({
       structuralMetrics: analysisResult.structuralMetrics
         ? { ...analysisResult.structuralMetrics }
         : null,
-      analysisHints: cloneAnalysisHintsForSnapshot(
-        analysisResult.analysisHints,
+      structuralComparison: analysisResult.structuralComparison
+        ? { ...analysisResult.structuralComparison }
+        : null,
+      comparisonDebug: comparisonDebug
+        ? {
+            ...comparisonDebug,
+            changeBreakdown: comparisonDebug.changeBreakdown
+              ? { ...comparisonDebug.changeBreakdown }
+              : null,
+          }
+        : null,
+      baseAnalysisHints: cloneAnalysisHintsForSnapshot(
+        analysisResult.baseAnalysisHints,
+      ),
+      lastAnalysisHints: cloneAnalysisHintsForSnapshot(
+        analysisResult.lastAnalysisHints,
       ),
       chromesthesiaComponents,
       nonZeroFFTBinCount,
@@ -3691,10 +5788,10 @@ export function composeAudioFeatureFrame({
     analysisResult.detailStateSummary ?? analysisResult.detailState;
   const effectiveAnalysisHints = resolveComposeAnalysisHints(
     analysisHints,
-    analysisResult.analysisHints,
+    analysisResult,
   );
   const debugAnalysisHints =
-    analysisHints ?? analysisResult.analysisHints ?? effectiveAnalysisHints;
+    analysisHints ?? analysisResult.lastAnalysisHints ?? effectiveAnalysisHints;
   let {
     structureSignal,
     energySignal,
@@ -3705,7 +5802,7 @@ export function composeAudioFeatureFrame({
   } = deriveCompositeSignals({
     inputMode: preparedInputs.analysisInputMode,
     modeCapacity: preparedInputs.capacity,
-    signalNormalizationSlots: AUDIO_SLOT_CAPACITY,
+    signalNormalizationSlots: AUDIO_SIGNAL_NORMALIZATION_SLOTS,
     modeSlots: analysisResult.signalModeSlots ?? analysisResult.modeSlots,
     referenceModeSlots:
       analysisResult.signalReferenceModeSlots ??
@@ -3740,8 +5837,8 @@ export function composeAudioFeatureFrame({
       structureSignal,
       deltaMs,
       {
-        attackMs: 70,
-        releaseMs: 120,
+        attackMs: 90,
+        releaseMs: 160,
       },
     );
     energySignal = smoothFeatureSignal(
@@ -3749,8 +5846,8 @@ export function composeAudioFeatureFrame({
       energySignal,
       deltaMs,
       {
-        attackMs: 35,
-        releaseMs: 80,
+        attackMs: 45,
+        releaseMs: 120,
       },
     );
     changeSignal = smoothFeatureSignal(
@@ -3758,8 +5855,8 @@ export function composeAudioFeatureFrame({
       changeSignal,
       deltaMs,
       {
-        attackMs: 10,
-        releaseMs: 42,
+        attackMs: 14,
+        releaseMs: 70,
       },
     );
     pulseSignal = smoothFeatureSignal(
@@ -3767,8 +5864,8 @@ export function composeAudioFeatureFrame({
       pulseSignal,
       deltaMs,
       {
-        attackMs: 8,
-        releaseMs: 50,
+        attackMs: 10,
+        releaseMs: 90,
       },
     );
   }
@@ -3788,9 +5885,17 @@ export function composeAudioFeatureFrame({
 
   let debug = analysisResult.debug;
   if (!debug) {
+    const comparisonDebug =
+      analysisResult.comparisonDebug ??
+      buildDualComparisonDebugSummary({
+        preparedInputs,
+        analysisResult,
+        analysisHints: effectiveAnalysisHints,
+      });
     debug = finalizeFeatureDebugSnapshot({
       auditSettings: preparedInputs.resolvedAuditSettings,
       inputMode: preparedInputs.inputMode,
+      structuralImplementation: preparedInputs.structuralImplementation,
       pitchSource: analysisResult.pitchSource,
       analysisEngine: analysisResult.analysisEngine,
       fieldState,
@@ -3855,6 +5960,8 @@ export function composeAudioFeatureFrame({
       fftSize: preparedInputs.fftSize,
       analysisHints: debugAnalysisHints,
       structuralMetrics: analysisResult.structuralMetrics,
+      structuralComparison: analysisResult.structuralComparison,
+      comparisonDebug,
       micFftNormGain: analysisResult.micFftNormGain,
       preModalFftPeak: analysisResult.preModalFftPeak,
       postNormalizationFftPeak: analysisResult.postNormalizationFftPeak,
