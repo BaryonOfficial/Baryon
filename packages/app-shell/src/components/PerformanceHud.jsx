@@ -38,9 +38,8 @@ export default function PerformanceHud({
     ? `${Math.round(metrics.effectiveRaymarchSteps)} / ${Math.round(metrics.requestedRaymarchSteps)}`
     : null;
   const renderScaleLabel =
-    typeof metrics.renderScale === "number" &&
-    typeof metrics.requestedRenderScale === "number"
-      ? `${formatNumber(metrics.renderScale, 3)} (requested ${formatNumber(metrics.requestedRenderScale, 3)}, full 1.000)`
+    typeof metrics.renderScale === "number"
+      ? formatNumber(metrics.renderScale, 3)
       : null;
 
   return (
@@ -91,7 +90,7 @@ export default function PerformanceHud({
         DPR: {formatNumber(metrics.currentPixelRatio, 3)} /{" "}
         {formatNumber(metrics.basePixelRatio, 3)}
       </div>
-      {renderScaleLabel ? <div>Scale: {renderScaleLabel}</div> : null}
+      {renderScaleLabel ? <div>Render Scale: {renderScaleLabel}</div> : null}
       {metrics.qualityPreset ? (
         <div>
           Performance Profile:{" "}

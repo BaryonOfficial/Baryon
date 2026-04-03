@@ -19,7 +19,7 @@ test("authoritative external-output ignores local render-profile command overrid
       qualityPreset: "custom",
       targetFps: 120,
       renderScale: 0.67,
-      traaEnabled: false,
+      traaEnabled: true,
       bloomAllowed: true,
       renderContext: RENDER_CONTEXTS.externalOutput,
     },
@@ -36,7 +36,7 @@ test("authoritative external-output ignores local render-profile command overrid
     qualityPreset: "custom",
     targetFps: 120,
     renderScale: 0.67,
-    traaEnabled: false,
+    traaEnabled: true,
     renderContext: RENDER_CONTEXTS.externalOutput,
   });
 });
@@ -56,7 +56,7 @@ test("preview scenes still honor local render-profile command overrides", () => 
   expect(profile).toMatchObject({
     qualityPreset: "auto",
     renderScale: 0.5,
-    traaEnabled: false,
+    traaEnabled: true,
     renderContext: RENDER_CONTEXTS.preview,
   });
 });

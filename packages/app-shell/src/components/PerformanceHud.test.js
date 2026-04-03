@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import PerformanceHud from "./PerformanceHud.jsx";
 
 describe("PerformanceHud", () => {
-  it("labels scale against requested and full resolution", () => {
+  it("shows the effective render scale without a duplicate governor target", () => {
     const markup = renderToStaticMarkup(
       React.createElement(PerformanceHud, {
         metrics: {
@@ -21,6 +21,7 @@ describe("PerformanceHud", () => {
       }),
     );
 
-    expect(markup).toContain("Scale: 0.670 (requested 0.670, full 1.000)");
+    expect(markup).toContain("Render Scale: 0.670");
+    expect(markup).not.toContain("Governor Target:");
   });
 });

@@ -275,6 +275,7 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
 
   const snapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
 
+  expect(snapshot.targetFps).toBe(60);
   expect(snapshot.perfBreakdown.heavyAnalysisMs.averageMs).toBe(5);
   expect(snapshot.perfBreakdown.pipelineRenderMs.lastMs).toBe(99);
   expect(snapshot.stageAttribution.analysisCpuMs).toBe(21);
@@ -459,7 +460,7 @@ test("auto raymarch drops render scale before bottoming out step budget", () => 
     updateAdaptiveRaymarchStepBudget(baseArgs);
   }
 
-  expect(runtimeState.effectiveRaymarchSteps).toBe(64);
+  expect(runtimeState.effectiveRaymarchSteps).toBe(40);
   expect(getEffectiveAdaptiveRenderScale(runtimeDiagnostics, 1)).toBeLessThan(
     1,
   );
@@ -547,6 +548,47 @@ test("external-output custom 120 starts from the calibrated base rung and scale"
 
   expect(runtimeState.effectiveRaymarchSteps).toBe(16);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
+});
+
+test("external-output auto starts from the balanced 60 base rung and scale", () => {
+  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
+    renderProfile: {
+      qualityPreset: "auto",
+      targetFps: 60,
+      renderScale: 0.75,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    },
+  });
+
+  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(32);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.75);
+});
+
+test("preview custom 120 starts from the intended rung instead of max quality", () => {
+  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
+    controls: {
+      customPerformanceTargetFps: 120,
+    },
+    renderProfile: {
+      qualityPreset: "custom",
+      targetFps: 120,
+      renderScale: 0.84,
+      renderContext: RENDER_CONTEXTS.preview,
+    },
+  });
+
+  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(24);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.84);
 });
 
 test("clearing adaptive resume state forces the next authoritative session to restart from calibrated base rungs", () => {

@@ -29,6 +29,12 @@ export const PERFORMANCE_PROFILES = Object.freeze({
 export const DEFAULT_PERFORMANCE_PROFILE = PERFORMANCE_PROFILES.auto;
 export const RENDER_QUALITY_PRESETS = PERFORMANCE_PROFILES;
 export const DEFAULT_RENDER_QUALITY_PRESET = DEFAULT_PERFORMANCE_PROFILE;
+export const CUSTOM_TARGET_FPS_BANDS = Object.freeze({
+  low: "24-48",
+  balanced: "49-72",
+  high: "73-96",
+  ultra: "97-120",
+});
 export const RENDER_CONTEXTS = Object.freeze({
   preview: "preview",
   externalOutput: "external-output",
@@ -131,19 +137,26 @@ function resolveOutputResolutionBand(outputWidth, outputHeight) {
   return "1080p-";
 }
 
-function resolveExternalOutputCustomTargetBand(targetFps) {
+export function resolveCustomTargetFpsBand(targetFps) {
   const normalizedTargetFps = normalizePerformanceTargetFps(targetFps);
 
   if (normalizedTargetFps <= 48) {
-    return "24-48";
+    return CUSTOM_TARGET_FPS_BANDS.low;
   }
   if (normalizedTargetFps <= 72) {
-    return "49-72";
+    return CUSTOM_TARGET_FPS_BANDS.balanced;
   }
   if (normalizedTargetFps <= 96) {
-    return "73-96";
+    return CUSTOM_TARGET_FPS_BANDS.high;
   }
-  return "97-120";
+  return CUSTOM_TARGET_FPS_BANDS.ultra;
+}
+
+export function usesBalancedPerformanceBaseline(qualityPreset, targetFps) {
+  return (
+    normalizePerformanceProfile(qualityPreset) === PERFORMANCE_PROFILES.auto ||
+    resolveCustomTargetFpsBand(targetFps) === CUSTOM_TARGET_FPS_BANDS.balanced
+  );
 }
 
 function buildRenderQualityProfile({
@@ -171,6 +184,7 @@ function resolveExternalOutputProfile({
   outputHeight,
 }) {
   const resolutionBand = resolveOutputResolutionBand(outputWidth, outputHeight);
+  const targetBand = resolveCustomTargetFpsBand(resolvedTargetFps);
 
   if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.maxQuality) {
     return buildRenderQualityProfile({
@@ -182,87 +196,80 @@ function resolveExternalOutputProfile({
     });
   }
 
-  if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.auto) {
-    if (resolutionBand === "2160p+") {
-      return buildRenderQualityProfile({
-        qualityPreset: normalizedPerformanceProfile,
-        targetFps: DEFAULT_PERFORMANCE_TARGET_FPS,
-        renderScale: 0.67,
-        traaEnabled: false,
-        renderContext: RENDER_CONTEXTS.externalOutput,
-      });
-    }
-    if (resolutionBand === "1440p") {
-      return buildRenderQualityProfile({
-        qualityPreset: normalizedPerformanceProfile,
-        targetFps: DEFAULT_PERFORMANCE_TARGET_FPS,
-        renderScale: 0.75,
-        traaEnabled: true,
-        renderContext: RENDER_CONTEXTS.externalOutput,
-      });
-    }
-    return buildRenderQualityProfile({
-      qualityPreset: normalizedPerformanceProfile,
-      targetFps: DEFAULT_PERFORMANCE_TARGET_FPS,
-      renderScale: 0.84,
-      traaEnabled: true,
-      renderContext: RENDER_CONTEXTS.externalOutput,
-    });
-  }
-
-  const targetBand = resolveExternalOutputCustomTargetBand(resolvedTargetFps);
-  if (targetBand === "24-48") {
-    return buildRenderQualityProfile({
-      qualityPreset: normalizedPerformanceProfile,
-      targetFps: resolvedTargetFps,
-      renderScale: resolutionBand === "2160p+" ? 0.84 : 1,
-      traaEnabled: true,
-      renderContext: RENDER_CONTEXTS.externalOutput,
-    });
-  }
-  if (targetBand === "49-72") {
-    if (resolutionBand === "2160p+") {
-      return buildRenderQualityProfile({
-        qualityPreset: normalizedPerformanceProfile,
-        targetFps: resolvedTargetFps,
-        renderScale: 0.75,
-        traaEnabled: false,
-        renderContext: RENDER_CONTEXTS.externalOutput,
-      });
-    }
-    if (resolutionBand === "1440p") {
-      return buildRenderQualityProfile({
-        qualityPreset: normalizedPerformanceProfile,
-        targetFps: resolvedTargetFps,
-        renderScale: 0.84,
-        traaEnabled: true,
-        renderContext: RENDER_CONTEXTS.externalOutput,
-      });
-    }
-    return buildRenderQualityProfile({
-      qualityPreset: normalizedPerformanceProfile,
-      targetFps: resolvedTargetFps,
-      renderScale: 0.92,
-      traaEnabled: true,
-      renderContext: RENDER_CONTEXTS.externalOutput,
-    });
-  }
-  if (targetBand === "73-96") {
-    return buildRenderQualityProfile({
-      qualityPreset: normalizedPerformanceProfile,
-      targetFps: resolvedTargetFps,
-      renderScale: resolutionBand === "1080p-" ? 0.75 : 0.67,
-      traaEnabled: resolutionBand === "1080p-",
-      renderContext: RENDER_CONTEXTS.externalOutput,
-    });
+  let renderScale = 0.67;
+  if (
+    usesBalancedPerformanceBaseline(
+      normalizedPerformanceProfile,
+      resolvedTargetFps,
+    )
+  ) {
+    renderScale = resolutionBand === "1080p-" ? 0.75 : 0.67;
+  } else if (targetBand === CUSTOM_TARGET_FPS_BANDS.low) {
+    renderScale =
+      resolutionBand === "2160p+"
+        ? 0.75
+        : resolutionBand === "1440p"
+          ? 0.84
+          : 0.92;
   }
 
   return buildRenderQualityProfile({
     qualityPreset: normalizedPerformanceProfile,
-    targetFps: resolvedTargetFps,
-    renderScale: 0.67,
-    traaEnabled: false,
+    targetFps:
+      normalizedPerformanceProfile === PERFORMANCE_PROFILES.auto
+        ? DEFAULT_PERFORMANCE_TARGET_FPS
+        : resolvedTargetFps,
+    renderScale,
+    traaEnabled: true,
     renderContext: RENDER_CONTEXTS.externalOutput,
+  });
+}
+
+function resolvePreviewProfile({
+  normalizedPerformanceProfile,
+  resolvedTargetFps,
+  outputWidth,
+  outputHeight,
+}) {
+  const resolutionBand = resolveOutputResolutionBand(outputWidth, outputHeight);
+  const targetBand = resolveCustomTargetFpsBand(resolvedTargetFps);
+
+  if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.maxQuality) {
+    return buildRenderQualityProfile({
+      qualityPreset: normalizedPerformanceProfile,
+      targetFps: DEFAULT_PERFORMANCE_TARGET_FPS,
+      renderScale: 1,
+      traaEnabled: true,
+      renderContext: RENDER_CONTEXTS.preview,
+    });
+  }
+
+  const isHighResolutionOutput = resolutionBand === "2160p+";
+  let renderScale = 1;
+  if (
+    usesBalancedPerformanceBaseline(
+      normalizedPerformanceProfile,
+      resolvedTargetFps,
+    )
+  ) {
+    renderScale = isHighResolutionOutput ? 0.84 : 1;
+  } else if (targetBand === CUSTOM_TARGET_FPS_BANDS.low) {
+    renderScale = isHighResolutionOutput ? 0.92 : 1;
+  } else if (targetBand === CUSTOM_TARGET_FPS_BANDS.high) {
+    renderScale = isHighResolutionOutput ? 0.75 : 0.92;
+  } else if (targetBand === CUSTOM_TARGET_FPS_BANDS.ultra) {
+    renderScale = isHighResolutionOutput ? 0.67 : 0.84;
+  }
+
+  return buildRenderQualityProfile({
+    qualityPreset: normalizedPerformanceProfile,
+    targetFps:
+      normalizedPerformanceProfile === PERFORMANCE_PROFILES.auto
+        ? DEFAULT_PERFORMANCE_TARGET_FPS
+        : resolvedTargetFps,
+    renderScale,
+    traaEnabled: true,
+    renderContext: RENDER_CONTEXTS.preview,
   });
 }
 
@@ -286,6 +293,7 @@ export function applyRenderQualityProfileOverrides(profile, overrides) {
   if (typeof overrides.bloomAllowed === "boolean") {
     nextProfile.bloomAllowed = overrides.bloomAllowed;
   }
+  nextProfile.traaEnabled = true;
 
   return nextProfile;
 }
@@ -370,56 +378,20 @@ export function resolveRenderQualityProfile({
     normalizedPerformanceProfile === PERFORMANCE_PROFILES.custom
       ? normalizePerformanceTargetFps(targetFps)
       : DEFAULT_PERFORMANCE_TARGET_FPS;
-  if (renderContext === RENDER_CONTEXTS.externalOutput) {
-    return applyRenderQualityProfileOverrides(
-      resolveExternalOutputProfile({
-        normalizedPerformanceProfile,
-        resolvedTargetFps,
-        outputWidth,
-        outputHeight,
-      }),
-      effectiveOverrides,
-    );
-  }
-
-  if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.maxQuality) {
-    return applyRenderQualityProfileOverrides(
-      buildRenderQualityProfile({
-        qualityPreset: normalizedPerformanceProfile,
-        targetFps: DEFAULT_PERFORMANCE_TARGET_FPS,
-        renderScale: 1,
-        traaEnabled: true,
-        renderContext,
-      }),
-      effectiveOverrides,
-    );
-  }
-
-  const isHighResolutionOutput =
-    Number.isFinite(outputWidth) &&
-    Number.isFinite(outputHeight) &&
-    (outputWidth >= 3840 || outputHeight >= 2160);
-  if (isHighResolutionOutput) {
-    return applyRenderQualityProfileOverrides(
-      buildRenderQualityProfile({
-        qualityPreset: normalizedPerformanceProfile,
-        targetFps: resolvedTargetFps,
-        renderScale: 0.75,
-        traaEnabled: false,
-        renderContext,
-      }),
-      effectiveOverrides,
-    );
-  }
-
   return applyRenderQualityProfileOverrides(
-    buildRenderQualityProfile({
-      qualityPreset: normalizedPerformanceProfile,
-      targetFps: resolvedTargetFps,
-      renderScale: 1,
-      traaEnabled: true,
-      renderContext,
-    }),
+    renderContext === RENDER_CONTEXTS.externalOutput
+      ? resolveExternalOutputProfile({
+          normalizedPerformanceProfile,
+          resolvedTargetFps,
+          outputWidth,
+          outputHeight,
+        })
+      : resolvePreviewProfile({
+          normalizedPerformanceProfile,
+          resolvedTargetFps,
+          outputWidth,
+          outputHeight,
+        }),
     effectiveOverrides,
   );
 }
