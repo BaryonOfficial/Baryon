@@ -14,7 +14,6 @@ apps/
 packages/
   app-shell/  @baryon/app-shell Shared React shell and orchestration
   visualizer/ @baryon/visualizer Shared audio + visualization engine
-  ui/         @baryon/ui        Shared UI utilities
   config/     @baryon/config    Shared Vite and Vitest config
 ```
 
