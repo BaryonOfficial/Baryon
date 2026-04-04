@@ -21,6 +21,32 @@ module.exports = {
         path: "^apps/",
       },
     },
+    {
+      name: "desktop-no-direct-visualizer-subpaths",
+      severity: "error",
+      comment:
+        "Desktop should centralize engine-facing imports in apps/desktop/shared/desktopShell.js so private adapter seams stay explicit.",
+      from: {
+        path: "^apps/desktop/",
+        pathNot: "^apps/desktop/shared/(desktopShell|renderPolicy)\\.js$",
+      },
+      to: {
+        path: "^@baryon/visualizer/",
+      },
+    },
+    {
+      name: "desktop-no-direct-app-shell-desktop-subpaths",
+      severity: "error",
+      comment:
+        "Desktop should consume camera/runtime helper subpaths through its private desktopShell adapter instead of scattering deep app-shell imports.",
+      from: {
+        path: "^apps/desktop/",
+        pathNot: "^apps/desktop/shared/desktopShell\\.js$",
+      },
+      to: {
+        path: "^@baryon/app-shell/(camera-control-events|camera-view-presets|live-input-runtime-status)$",
+      },
+    },
   ],
   options: {
     doNotFollow: {

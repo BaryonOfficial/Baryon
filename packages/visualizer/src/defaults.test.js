@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AUDIO_DEFAULTS,
+  AUDIO_SIGNAL_NORMALIZATION_SLOTS,
   AUDIO_SLOT_CAPACITY,
   AUDIT_DEFAULTS,
   BEAT_DEFAULTS,
@@ -28,7 +29,7 @@ describe("defaults compatibility surface", () => {
     expect(DEFAULT_FFT_SIZE).toBe(4096);
     expect(DEFAULT_SAMPLE_RATE).toBe(44100);
     expect(AUDIO_SLOT_CAPACITY).toBe(16);
-    expect(AUDIO_DEFAULTS.signalNormalizationSlots).toBe(AUDIO_SLOT_CAPACITY);
+    expect(AUDIO_SIGNAL_NORMALIZATION_SLOTS).toBe(AUDIO_SLOT_CAPACITY);
   });
 
   it("keeps DEFAULTS aligned with the merged domain defaults", () => {

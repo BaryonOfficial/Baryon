@@ -10,8 +10,6 @@
   "exports": {
     ".": "./src/index.js",
     "./index.css": "./src/index.css",
-    "./camera-control-events": "./src/components/cameraControlEvents.js",
-    "./camera-view-presets": "./src/components/cameraViewPresets.js",
     "./live-input-runtime-status": "./src/context/liveInputRuntimeStatus.js",
     "./baryon-env": "./src/baryon-env.d.ts"
   },

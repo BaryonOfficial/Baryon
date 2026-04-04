@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import process from "node:process";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -125,7 +126,7 @@ try {
     cwd: rootDir,
     stdio: "pipe",
   });
-} catch (error) {
+} catch {
   errors.push(
     "documentation/internal/generated/repo-map.md is stale; run 'pnpm repo:map' and commit the updated generated file",
   );
@@ -136,7 +137,7 @@ try {
     cwd: rootDir,
     stdio: "pipe",
   });
-} catch (error) {
+} catch {
   errors.push(
     "workspace package versions are out of sync with the root version",
   );
@@ -169,7 +170,6 @@ const expectedLicenses = new Map([
   ["packages/app-shell/package.json", polyformLicense],
   ["packages/visualizer/package.json", polyformLicense],
   ["packages/config/package.json", polyformLicense],
-  ["packages/ui/package.json", polyformLicense],
   ["apps/desktop/package.json", "UNLICENSED"],
   ["apps/marketing/package.json", "UNLICENSED"],
 ]);

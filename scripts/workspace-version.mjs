@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -12,7 +13,6 @@ const manifestPaths = [
   "apps/web/package.json",
   "packages/app-shell/package.json",
   "packages/config/package.json",
-  "packages/ui/package.json",
   "packages/visualizer/package.json",
 ];
 
