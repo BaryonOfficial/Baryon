@@ -126,7 +126,9 @@ try {
     stdio: "pipe",
   });
 } catch (error) {
-  errors.push("documentation/internal/generated/repo-map.md is stale");
+  errors.push(
+    "documentation/internal/generated/repo-map.md is stale; run 'pnpm repo:map' and commit the updated generated file",
+  );
 }
 
 try {
