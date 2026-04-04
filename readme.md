@@ -91,9 +91,21 @@ Use:
 ```bash
 pnpm version:check
 pnpm version:set 1.0.1
+pnpm release:patch
+pnpm release:minor
+pnpm release:major
+pnpm release:build
 ```
 
-That keeps the desktop app, web surface, and shared packages on the same release number.
+Normal development does not need version bumps. Use `release:patch`, `release:minor`, or `release:major` when you are cutting a release. Those commands bump every manifest together, create a release commit, and create a matching git tag such as `v1.0.1`.
+
+`release:build` is the guarded packaging path. It refuses to run unless:
+
+- the worktree is clean
+- all workspace versions match the root version
+- `HEAD` is tagged with the matching release tag, such as `v1.0.1`
+
+That keeps the desktop app, web surface, and shared packages on one release number and makes the release path harder to mis-run.
 
 ## Documentation
 
