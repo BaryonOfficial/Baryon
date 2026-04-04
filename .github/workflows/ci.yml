@@ -28,6 +28,12 @@ jobs:
       - name: Check dependency boundaries
         run: pnpm lint:deps
 
+      - name: Check workspace version alignment
+        run: pnpm version:check
+
+      - name: Check documentation
+        run: pnpm docs:check
+
       - name: Lint
         run: pnpm exec eslint packages/visualizer/src packages/app-shell/src
 
