@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { getLegacyAnalysisRadius } from "../../utils/cavityModes.js";
 import {
   createAudioFeatureState,
   prepareAudioFeatureFrameInputs,
@@ -70,6 +71,7 @@ function createPreparedInputs({
   cavityGeometry = "rectangular",
   avgAmplitude = 24,
   rms = 0.2,
+  radius = 3,
 }) {
   return prepareAudioFeatureFrameInputs({
     analysisSnapshot: {
@@ -82,7 +84,7 @@ function createPreparedInputs({
       spectralFlux: 0.1,
     },
     featureState: createAudioFeatureState(),
-    radius: 3,
+    radius,
     cavityGeometry,
     status,
     frameTimeMs,
@@ -1091,5 +1093,60 @@ describe("modal excitation structural state", () => {
     expect(
       countActiveSlotsLocal(structural.signalReferenceBackboneSlotsSource),
     ).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Negative regression: legacy peak compensation must not leak into excitation
+// ---------------------------------------------------------------------------
+
+function readExcitationModeKeys(slots) {
+  const keys = [];
+  for (let offset = 0; offset < slots.length; offset += 4) {
+    if ((slots[offset + 3] ?? 0) > 0) {
+      keys.push(`${slots[offset]}:${slots[offset + 1]}:${slots[offset + 2]}`);
+    }
+  }
+  return keys;
+}
+
+function runExcitationForRadius(radius) {
+  const state = createModalExcitationState(16);
+  const fft = makeFft([
+    [440, 0.9],
+    [880, 0.5],
+  ]);
+  const preparedInputs = createPreparedInputs({
+    frameTimeMs: 0,
+    fftMagnitudes: fft,
+    timeData: makeTimeData({ frequency: 440 }),
+    radius,
+  });
+  preparedInputs.modalExcitationState = state;
+  const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
+  return buildModalExcitationStructuralState({
+    preparedInputs,
+    fastSignalState,
+    existingState: state,
+    performanceNow: () => 0,
+  });
+}
+
+describe("modal excitation is not affected by legacy peak compensation", () => {
+  it("produces different mode assignments for different physical radii", () => {
+    const smallRadius = 0.5;
+    const legacyRadius = getLegacyAnalysisRadius(smallRadius);
+
+    const physicalResult = runExcitationForRadius(smallRadius);
+    const legacyResult = runExcitationForRadius(legacyRadius);
+
+    const physicalKeys = readExcitationModeKeys(
+      physicalResult.backboneSlotsSource,
+    );
+    const legacyKeys = readExcitationModeKeys(legacyResult.backboneSlotsSource);
+
+    // The two radii differ, so the atlas and mode assignments must differ.
+    // If compensation leaked into excitation both would yield the same keys.
+    expect(physicalKeys).not.toEqual(legacyKeys);
   });
 });

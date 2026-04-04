@@ -146,6 +146,24 @@ export function solveCavityModeFamilyForPitch(pitch, radius, count = 1) {
   );
 }
 
+export const LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ = 180;
+const LEGACY_PEAK_ANALYSIS_MIN_RADIUS =
+  (SOUND_SPEED_WATER * Math.sqrt(3)) / (2 * LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ);
+
+/**
+ * Returns the minimum cavity radius such that the physical floor frequency
+ * does not exceed LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ. Used exclusively by the
+ * legacy peak-to-family mapping paths — must not leak into renderer or
+ * modal-excitation code.
+ */
+export function getLegacyAnalysisRadius(radius) {
+  return Math.max(radius, LEGACY_PEAK_ANALYSIS_MIN_RADIUS);
+}
+
+export function getLegacyAnalysisFloorHz(radius) {
+  return getMinimumCavityFrequency(getLegacyAnalysisRadius(radius));
+}
+
 export function sampleFFTAmplitudeForFrequency(
   frequency,
   fftMagnitudes,

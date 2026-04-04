@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ,
   getCavityModeFrequency,
+  getLegacyAnalysisFloorHz,
+  getLegacyAnalysisRadius,
   getMinimumCavityFrequency,
   sampleFFTAmplitudeForFrequency,
   solveCavityModeFamilyForPitch,
@@ -174,5 +177,38 @@ describe("solveCavityModeFamilyForPitch", () => {
     expect(solveCavityModeFamilyForPitch(0, RADIUS, 4)).toStrictEqual([]);
     expect(solveCavityModeFamilyForPitch(440, 0, 4)).toStrictEqual([]);
     expect(solveCavityModeFamilyForPitch(440, RADIUS, 0)).toStrictEqual([]);
+  });
+});
+
+describe("getLegacyAnalysisRadius", () => {
+  it("yields a legacy floor of approximately LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ for small radii", () => {
+    const legacyRadius = getLegacyAnalysisRadius(0.1);
+    expect(legacyRadius).toBeGreaterThan(0.1);
+    expect(getLegacyAnalysisFloorHz(0.1)).toBeCloseTo(
+      LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ,
+      1,
+    );
+  });
+
+  it("is a no-op when the physical floor is already at or below LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ", () => {
+    // radius large enough that physical floor < 180 Hz
+    const largeRadius = 10;
+    expect(getLegacyAnalysisRadius(largeRadius)).toBe(largeRadius);
+    expect(getMinimumCavityFrequency(largeRadius)).toBeLessThan(
+      LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ,
+    );
+  });
+
+  it("is a no-op when the physical floor equals exactly LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ", () => {
+    const exactRadius = getLegacyAnalysisRadius(0.1);
+    expect(getLegacyAnalysisRadius(exactRadius)).toBeCloseTo(exactRadius, 6);
+  });
+
+  it("clamps upward so the resulting legacy floor never exceeds LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ", () => {
+    for (const r of [0.01, 0.1, 0.5, 1, 2, 3]) {
+      expect(getLegacyAnalysisFloorHz(r)).toBeLessThanOrEqual(
+        LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ + 0.01,
+      );
+    }
   });
 });

@@ -12,10 +12,7 @@ import {
   normalizeCavityGeometry,
   resolveEffectiveCavityGeometry,
 } from "../../core/cavityGeometry.js";
-import {
-  getMinimumCavityFrequency,
-  sampleFFTAmplitudeForFrequency,
-} from "../cavityModes.js";
+import { sampleFFTAmplitudeForFrequency } from "../cavityModes.js";
 import {
   BACKBONE_STACK_SLOTS,
   DETAIL_STACK_SLOTS,
@@ -3610,7 +3607,6 @@ function resolveLayeredModalStacks({
       const shouldReleaseWeakSubfloorResidual =
         shouldReleaseLegacySubfloorResidual({
           bridgeMeta: backboneTarget.subfloorBridgeMeta,
-          radius,
           spectralFlux,
           transientEnergy,
         });
@@ -3826,7 +3822,6 @@ function resolveLayeredModalStacks({
 
 function shouldReleaseLegacySubfloorResidual({
   bridgeMeta,
-  radius,
   spectralFlux,
   transientEnergy,
 }) {
@@ -3834,9 +3829,10 @@ function shouldReleaseLegacySubfloorResidual({
     return false;
   }
 
+  const legacyFloorHz = bridgeMeta.legacyAnalysisFloorHz ?? 0;
   return (
     bridgeMeta.dominantPeakFrequency > 0 &&
-    bridgeMeta.dominantPeakFrequency < getMinimumCavityFrequency(radius) &&
+    bridgeMeta.dominantPeakFrequency < legacyFloorHz &&
     bridgeMeta.dominantPeakBridgeCount === 0 &&
     bridgeMeta.meaningfulAboveFloorPeakCount === 0 &&
     bridgeMeta.dominantPeakAmplitude <=
