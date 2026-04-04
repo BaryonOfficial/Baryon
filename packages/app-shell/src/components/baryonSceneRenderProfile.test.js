@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import { RENDER_CONTEXTS } from "@baryon/visualizer/render/outputPipeline";
 import {
   resolveSceneRenderQualityProfile,
+  sanitizeRenderProfileOverrides,
   shouldAllowLocalRenderProfileCommands,
 } from "./baryonSceneRenderProfile.js";
 
@@ -9,6 +10,29 @@ test("preview scenes keep the local render-profile command path", () => {
   expect(shouldAllowLocalRenderProfileCommands(RENDER_CONTEXTS.preview)).toBe(
     true,
   );
+});
+
+test("render-profile overrides keep only supported fields", () => {
+  expect(
+    sanitizeRenderProfileOverrides({
+      renderScale: 0.5,
+      traaEnabled: false,
+      bloomAllowed: false,
+      unexpected: true,
+    }),
+  ).toEqual({
+    renderScale: 0.5,
+    traaEnabled: false,
+    bloomAllowed: false,
+  });
+
+  expect(
+    sanitizeRenderProfileOverrides({
+      renderScale: 0,
+      traaEnabled: "nope",
+      bloomAllowed: null,
+    }),
+  ).toBeNull();
 });
 
 test("authoritative external-output ignores local render-profile command overrides", () => {

@@ -11,7 +11,7 @@ import {
   MAX_PERFORMANCE_TARGET_FPS,
   MIN_PERFORMANCE_TARGET_FPS,
   PERFORMANCE_PROFILES,
-} from "../render/outputPipeline.js";
+} from "../render/outputProfilePolicy.js";
 import { VISUALIZATION_METHODS } from "../visualization/types.js";
 
 export const CONTROL_TARGET_TYPES = Object.freeze({

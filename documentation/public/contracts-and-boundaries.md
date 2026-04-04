@@ -115,19 +115,25 @@ Do not casually rename these string values without coordinating all consumers.
 
 ## Performance Profile Contract
 
-The canonical performance-profile contract lives in:
+The canonical performance-profile contract is publicly exported from:
 
 - `packages/visualizer/src/render/outputPipeline.js`
 
-Current canonical values:
+Internally, pure render-profile policy may live separately from the renderer/WebGPU pipeline implementation. Treat the public `outputPipeline` import path as the compatibility boundary.
+
+Current canonical internal values:
 
 - `auto`
+- `max-quality`
+
+Compatibility alias still accepted:
+
 - `none`
 
 Current product meaning:
 
 - `auto`: adaptive performance behavior is active
-- `none`: manual mode, meaning auto is off and explicit advanced settings should apply directly
+- `max-quality`: manual mode, meaning auto is off and explicit advanced settings should apply directly
 
 Compatibility note:
 

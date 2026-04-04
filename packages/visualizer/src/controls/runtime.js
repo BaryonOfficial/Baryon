@@ -17,7 +17,7 @@ import {
 import {
   normalizeOutputMode,
   normalizeRenderQualityPreset,
-} from "../render/outputPipeline.js";
+} from "../render/outputProfilePolicy.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
