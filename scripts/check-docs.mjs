@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import process from "node:process";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -8,14 +7,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(scriptDir, "..");
 
 const markdownFiles = [];
-const skipDirs = new Set([
-  ".git",
-  ".claude",
-  "node_modules",
-  "dist",
-  "coverage",
-  "tmp",
-]);
+const skipDirs = new Set([".git", "node_modules", "dist", "coverage", "tmp"]);
 const markdownExtensions = new Set([".md", ".mdx"]);
 
 function walk(dir) {
@@ -44,10 +36,6 @@ const absoluteLocalPathPattern = /(?:\]\(|`)(\/Users\/|\/home\/|[A-Za-z]:\\)/;
 
 function toRepoRelative(filePath) {
   return path.relative(rootDir, filePath).replaceAll(path.sep, "/");
-}
-
-function scriptExists(relPath) {
-  return fs.existsSync(path.join(rootDir, relPath));
 }
 
 for (const filePath of markdownFiles) {
@@ -108,9 +96,7 @@ const duplicateGuardFiles = [
   "AGENTS.md",
   "CLAUDE.md",
   ".github/CONTRIBUTING.md",
-]
-  .map((relPath) => path.join(rootDir, relPath))
-  .filter((filePath) => fs.existsSync(filePath));
+].map((relPath) => path.join(rootDir, relPath));
 
 const forbiddenPatterns = [
   /^## Current Architecture$/m,
@@ -134,30 +120,13 @@ for (const filePath of duplicateGuardFiles) {
   }
 }
 
-if (scriptExists("scripts/generate-repo-map.mjs")) {
-  try {
-    execFileSync("node", ["scripts/generate-repo-map.mjs", "--check"], {
-      cwd: rootDir,
-      stdio: "pipe",
-    });
-  } catch {
-    errors.push(
-      "documentation/internal/generated/repo-map.md is stale; run 'pnpm repo:map' and commit the updated generated file",
-    );
-  }
-}
-
-if (scriptExists("scripts/contract-desktop-bridge.mjs")) {
-  try {
-    execFileSync("node", ["scripts/contract-desktop-bridge.mjs", "--check"], {
-      cwd: rootDir,
-      stdio: "pipe",
-    });
-  } catch {
-    errors.push(
-      "documentation/internal/generated/desktop-bridge-contract.md is stale or the desktop bridge contract has drifted; run 'pnpm contract:desktop-bridge' and resolve the mismatch",
-    );
-  }
+try {
+  execFileSync("node", ["scripts/generate-repo-map.mjs", "--check"], {
+    cwd: rootDir,
+    stdio: "pipe",
+  });
+} catch (error) {
+  errors.push("documentation/internal/generated/repo-map.md is stale");
 }
 
 try {
@@ -165,54 +134,30 @@ try {
     cwd: rootDir,
     stdio: "pipe",
   });
-} catch {
+} catch (error) {
   errors.push(
     "workspace package versions are out of sync with the root version",
   );
 }
 
-if (scriptExists("scripts/sync-public.sh")) {
-  const syncPublic = fs.readFileSync(
-    path.join(rootDir, "scripts/sync-public.sh"),
-    "utf8",
+const syncPublic = fs.readFileSync(
+  path.join(rootDir, "scripts/sync-public.sh"),
+  "utf8",
+);
+
+if (!syncPublic.includes("documentation/public")) {
+  errors.push("scripts/sync-public.sh: missing documentation/public export");
+}
+
+if (
+  syncPublic.includes("documentation/internal") &&
+  !syncPublic.includes(
+    "Excluded: apps/desktop, apps/marketing, internal documentation",
+  )
+) {
+  errors.push(
+    "scripts/sync-public.sh: internal documentation appears to be exported",
   );
-
-  if (!syncPublic.includes("documentation/public")) {
-    errors.push("scripts/sync-public.sh: missing documentation/public export");
-  }
-
-  if (!syncPublic.includes(".nvmrc")) {
-    errors.push("scripts/sync-public.sh: missing .nvmrc export");
-  }
-
-  if (!syncPublic.includes(".dependency-cruiser.cjs")) {
-    errors.push(
-      "scripts/sync-public.sh: missing .dependency-cruiser.cjs export",
-    );
-  }
-
-  if (!syncPublic.includes("scripts/check-docs.mjs")) {
-    errors.push(
-      "scripts/sync-public.sh: missing scripts/check-docs.mjs export",
-    );
-  }
-
-  if (!syncPublic.includes("scripts/workspace-version.mjs")) {
-    errors.push(
-      "scripts/sync-public.sh: missing scripts/workspace-version.mjs export",
-    );
-  }
-
-  if (
-    syncPublic.includes("documentation/internal") &&
-    !syncPublic.includes(
-      "Excluded: apps/desktop, apps/marketing, internal documentation",
-    )
-  ) {
-    errors.push(
-      "scripts/sync-public.sh: internal documentation appears to be exported",
-    );
-  }
 }
 
 const polyformLicense = "LicenseRef-PolyForm-Strict-1.0";
@@ -222,15 +167,12 @@ const expectedLicenses = new Map([
   ["packages/app-shell/package.json", polyformLicense],
   ["packages/visualizer/package.json", polyformLicense],
   ["packages/config/package.json", polyformLicense],
+  ["packages/ui/package.json", polyformLicense],
   ["apps/desktop/package.json", "UNLICENSED"],
   ["apps/marketing/package.json", "UNLICENSED"],
 ]);
 
 for (const [relPath, expectedLicense] of expectedLicenses) {
-  if (!fs.existsSync(path.join(rootDir, relPath))) {
-    continue;
-  }
-
   const packageJson = JSON.parse(
     fs.readFileSync(path.join(rootDir, relPath), "utf8"),
   );

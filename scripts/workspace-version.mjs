@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -13,11 +12,9 @@ const manifestPaths = [
   "apps/web/package.json",
   "packages/app-shell/package.json",
   "packages/config/package.json",
+  "packages/ui/package.json",
   "packages/visualizer/package.json",
 ];
-const existingManifestPaths = manifestPaths.filter((relPath) =>
-  fs.existsSync(path.join(rootDir, relPath)),
-);
 
 const args = process.argv.slice(2);
 const checkOnly = args.includes("--check");
@@ -47,7 +44,7 @@ if (!semverPattern.test(targetVersion)) {
 }
 
 const mismatches = [];
-for (const relPath of existingManifestPaths) {
+for (const relPath of manifestPaths) {
   const manifest = readManifest(relPath);
   if (manifest.version !== targetVersion) {
     mismatches.push({
@@ -70,12 +67,12 @@ if (checkOnly) {
   process.exit(0);
 }
 
-for (const relPath of existingManifestPaths) {
+for (const relPath of manifestPaths) {
   const manifest = readManifest(relPath);
   manifest.version = targetVersion;
   writeManifest(relPath, manifest);
 }
 
 console.log(
-  `Updated ${existingManifestPaths.length} workspace manifests to version ${targetVersion}`,
+  `Updated ${manifestPaths.length} workspace manifests to version ${targetVersion}`,
 );

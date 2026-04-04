@@ -76,8 +76,6 @@ pnpm verify
 
 Fix any failures before pushing.
 
-Release commands such as `pnpm release:patch`, `pnpm release:minor`, and `pnpm release:major` are for release-time only. Do not run them during normal feature work.
-
 ---
 
 ## Commit messages

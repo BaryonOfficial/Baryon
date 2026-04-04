@@ -1,7 +1,7 @@
 {
   "name": "baryon-monorepo",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "license": "LicenseRef-PolyForm-Strict-1.0",
   "repository": {
     "type": "git",
@@ -17,6 +17,9 @@
     "build:web": "turbo build --filter=@baryon/web",
     "repo:map": "node scripts/generate-repo-map.mjs",
     "repo:map:check": "node scripts/generate-repo-map.mjs --check",
+    "docs:check": "node scripts/check-docs.mjs",
+    "version:check": "node scripts/workspace-version.mjs --check",
+    "version:set": "node scripts/workspace-version.mjs",
     "nav": "node scripts/repo-nav.mjs",
     "ast": "node scripts/ast-grep.mjs",
     "deps:versions": "syncpack lint --dependency-types prod,dev,peer",
@@ -37,7 +40,7 @@
     "deps:graph:svg": "node scripts/render-dependency-graph.mjs --svg",
     "audit:deps": "knip --dependencies",
     "typecheck": "pnpm --reporter append-only -r --filter './apps/*' --filter './packages/*' --if-present typecheck",
-    "verify": "pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop",
+    "verify": "pnpm version:check && pnpm docs:check && pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop",
     "verify:full": "pnpm verify && turbo build"
   },
   "lint-staged": {
