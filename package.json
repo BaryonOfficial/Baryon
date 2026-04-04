@@ -12,9 +12,11 @@
   },
   "scripts": {
     "dev": "turbo dev --filter=@baryon/web",
+    "dev:marketing": "turbo dev --filter=@baryon/marketing",
     "dev:desktop:probe": "BARYON_DEV_PERF_PROBE=1 pnpm --filter @baryon/desktop dev",
     "build": "turbo build",
     "build:web": "turbo build --filter=@baryon/web",
+    "build:marketing": "turbo build --filter=@baryon/marketing",
     "repo:map": "node scripts/generate-repo-map.mjs",
     "repo:map:check": "node scripts/generate-repo-map.mjs --check",
     "docs:check": "node scripts/check-docs.mjs",
@@ -44,7 +46,7 @@
     "deps:graph:svg": "node scripts/render-dependency-graph.mjs --svg",
     "audit:deps": "knip --dependencies",
     "typecheck": "pnpm --reporter append-only -r --filter './apps/*' --filter './packages/*' --if-present typecheck",
-    "verify": "pnpm version:check && pnpm docs:check && pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop",
+    "verify": "pnpm version:check && pnpm docs:check && pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm build:marketing && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop",
     "verify:full": "pnpm verify && turbo build"
   },
   "lint-staged": {
@@ -73,6 +75,9 @@
   },
   "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",
   "pnpm": {
+    "overrides": {
+      "@baryon/marketing>vite": "7.3.1"
+    },
     "onlyBuiltDependencies": [
       "@swc/core",
       "electron",

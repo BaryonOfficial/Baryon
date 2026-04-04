@@ -10,7 +10,7 @@ This README is the repo entrypoint. It covers setup, common commands, and where 
 apps/
   web/        @baryon/web       Free discovery surface
   desktop/    @baryon/desktop   Flagship Electron product
-  marketing/  @baryon/marketing Marketing site scaffold
+  marketing/  @baryon/marketing Static-first marketing site
 packages/
   app-shell/  @baryon/app-shell Shared React shell and orchestration
   visualizer/ @baryon/visualizer Shared audio + visualization engine
@@ -44,8 +44,10 @@ pnpm install
 ```bash
 pnpm dev                  # Start apps/web
 pnpm dev:desktop          # Start apps/desktop
+pnpm dev:marketing        # Start apps/marketing
 pnpm build                # Build all apps and packages
 pnpm build:web            # Build apps/web only
+pnpm build:marketing      # Build apps/marketing only
 pnpm repo:map             # Refresh the generated workspace map
 pnpm repo:map:check       # Verify the generated workspace map is current
 pnpm version:check        # Ensure every workspace manifest matches the repo version
@@ -68,6 +70,7 @@ Useful package-local commands:
 
 ```bash
 cd apps/web && pnpm dev:https    # HTTPS dev server for mic testing outside localhost
+cd apps/marketing && pnpm preview
 cd apps/web && pnpm test:smoke:dev
 cd apps/desktop && pnpm test:platform
 cd apps/desktop && pnpm test:smoke
