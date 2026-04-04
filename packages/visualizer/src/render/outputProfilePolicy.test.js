@@ -2,23 +2,38 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PERFORMANCE_TARGET_FPS,
   applyRenderQualityProfileOverrides,
+  DEFAULT_RENDER_QUALITY_PRESET,
   DEFAULT_PERFORMANCE_PROFILE,
   formatPerformanceProfileLabel,
   normalizePerformanceProfile,
   normalizeRenderQualityProfileOverrides,
   normalizePerformanceTargetFps,
   normalizeResolvedRenderQualityProfile,
+  normalizeRenderQualityPreset,
+  PERFORMANCE_PROFILES,
   RENDER_CONTEXTS,
+  RENDER_QUALITY_PRESETS,
   resolveRenderQualityProfile,
 } from "./outputProfilePolicy.js";
 
 describe("render quality profiles", () => {
+  it("keeps the canonical performance profile constants aligned with the legacy aliases", () => {
+    expect(PERFORMANCE_PROFILES).toBe(RENDER_QUALITY_PRESETS);
+    expect(DEFAULT_PERFORMANCE_PROFILE).toBe(DEFAULT_RENDER_QUALITY_PRESET);
+    expect(normalizeRenderQualityPreset("none")).toBe(
+      normalizePerformanceProfile("none"),
+    );
+    expect(normalizeRenderQualityPreset("unexpected")).toBe(
+      normalizePerformanceProfile("unexpected"),
+    );
+  });
+
   it("normalizes quality presets and defaults to auto", () => {
-    expect(normalizePerformanceProfile("custom")).toBe("custom");
-    expect(normalizePerformanceProfile("none")).toBe("max-quality");
-    expect(normalizePerformanceProfile("max-quality")).toBe("max-quality");
-    expect(normalizePerformanceProfile("unexpected")).toBe(
-      DEFAULT_PERFORMANCE_PROFILE,
+    expect(normalizeRenderQualityPreset("custom")).toBe("custom");
+    expect(normalizeRenderQualityPreset("none")).toBe("max-quality");
+    expect(normalizeRenderQualityPreset("max-quality")).toBe("max-quality");
+    expect(normalizeRenderQualityPreset("unexpected")).toBe(
+      DEFAULT_RENDER_QUALITY_PRESET,
     );
   });
 
@@ -152,26 +167,8 @@ describe("render quality profiles", () => {
       }),
     ).toEqual({
       qualityPreset: "auto",
-      targetFps: 30,
-      renderScale: 0.5,
-      traaEnabled: true,
-      bloomAllowed: true,
-      renderContext: RENDER_CONTEXTS.externalOutput,
-    });
-  });
-
-  it("uses external-output auto calibration at 1440p", () => {
-    expect(
-      resolveRenderQualityProfile({
-        qualityPreset: "auto",
-        outputWidth: 2560,
-        outputHeight: 1440,
-        renderContext: "external-output",
-      }),
-    ).toEqual({
-      qualityPreset: "auto",
-      targetFps: 48,
-      renderScale: 0.59,
+      targetFps: 60,
+      renderScale: 0.67,
       traaEnabled: true,
       bloomAllowed: true,
       renderContext: RENDER_CONTEXTS.externalOutput,
@@ -208,7 +205,7 @@ describe("render quality profiles", () => {
     ).toEqual({
       qualityPreset: "custom",
       targetFps: 60,
-      renderScale: 0.59,
+      renderScale: 0.67,
       traaEnabled: true,
       bloomAllowed: true,
       renderContext: RENDER_CONTEXTS.externalOutput,
@@ -227,7 +224,7 @@ describe("render quality profiles", () => {
     ).toEqual({
       qualityPreset: "custom",
       targetFps: 120,
-      renderScale: 0.5,
+      renderScale: 0.67,
       traaEnabled: true,
       bloomAllowed: true,
       renderContext: RENDER_CONTEXTS.externalOutput,
@@ -294,65 +291,44 @@ describe("render quality profiles", () => {
     });
   });
 
-  it("uses more conservative auto cadence than custom 60 for high-resolution external output", () => {
-    expect(
-      resolveRenderQualityProfile({
-        qualityPreset: "auto",
-        outputWidth: 2560,
-        outputHeight: 1440,
-        renderContext: RENDER_CONTEXTS.externalOutput,
-      }),
-    ).toMatchObject({
-      targetFps: 48,
-      renderScale: 0.59,
-      traaEnabled: true,
-      bloomAllowed: true,
-      renderContext: RENDER_CONTEXTS.externalOutput,
-    });
-    expect(
-      resolveRenderQualityProfile({
-        qualityPreset: "custom",
+  it("keeps auto and custom 60 identical for external output across resolution bands", () => {
+    for (const [outputWidth, outputHeight] of [
+      [1920, 1080],
+      [2560, 1440],
+      [3840, 2160],
+    ]) {
+      const expectedRenderScale =
+        outputWidth >= 2560 || outputHeight >= 1440 ? 0.67 : 0.75;
+      expect(
+        resolveRenderQualityProfile({
+          qualityPreset: "auto",
+          outputWidth,
+          outputHeight,
+          renderContext: RENDER_CONTEXTS.externalOutput,
+        }),
+      ).toMatchObject({
         targetFps: 60,
-        outputWidth: 2560,
-        outputHeight: 1440,
+        renderScale: expectedRenderScale,
+        traaEnabled: true,
+        bloomAllowed: true,
         renderContext: RENDER_CONTEXTS.externalOutput,
-      }),
-    ).toMatchObject({
-      targetFps: 60,
-      renderScale: 0.59,
-      traaEnabled: true,
-      bloomAllowed: true,
-      renderContext: RENDER_CONTEXTS.externalOutput,
-    });
-    expect(
-      resolveRenderQualityProfile({
-        qualityPreset: "auto",
-        outputWidth: 3840,
-        outputHeight: 2160,
-        renderContext: RENDER_CONTEXTS.externalOutput,
-      }),
-    ).toMatchObject({
-      targetFps: 30,
-      renderScale: 0.5,
-      traaEnabled: true,
-      bloomAllowed: true,
-      renderContext: RENDER_CONTEXTS.externalOutput,
-    });
-    expect(
-      resolveRenderQualityProfile({
-        qualityPreset: "custom",
+      });
+      expect(
+        resolveRenderQualityProfile({
+          qualityPreset: "custom",
+          targetFps: 60,
+          outputWidth,
+          outputHeight,
+          renderContext: RENDER_CONTEXTS.externalOutput,
+        }),
+      ).toMatchObject({
         targetFps: 60,
-        outputWidth: 3840,
-        outputHeight: 2160,
+        renderScale: expectedRenderScale,
+        traaEnabled: true,
+        bloomAllowed: true,
         renderContext: RENDER_CONTEXTS.externalOutput,
-      }),
-    ).toMatchObject({
-      targetFps: 60,
-      renderScale: 0.5,
-      traaEnabled: true,
-      bloomAllowed: true,
-      renderContext: RENDER_CONTEXTS.externalOutput,
-    });
+      });
+    }
   });
 
   it("keeps TRAA enabled for every external-output custom band", () => {

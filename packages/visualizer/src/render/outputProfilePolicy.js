@@ -8,6 +8,8 @@ export const PERFORMANCE_PROFILES = Object.freeze({
   maxQuality: "max-quality",
 });
 export const DEFAULT_PERFORMANCE_PROFILE = PERFORMANCE_PROFILES.auto;
+export const RENDER_QUALITY_PRESETS = PERFORMANCE_PROFILES;
+export const DEFAULT_RENDER_QUALITY_PRESET = DEFAULT_PERFORMANCE_PROFILE;
 export const CUSTOM_TARGET_FPS_BANDS = Object.freeze({
   low: "24-48",
   balanced: "49-72",
@@ -59,6 +61,8 @@ export function normalizePerformanceProfile(value) {
   }
   return DEFAULT_PERFORMANCE_PROFILE;
 }
+
+export const normalizeRenderQualityPreset = normalizePerformanceProfile;
 
 /**
  * @param {unknown} value
@@ -161,6 +165,7 @@ function resolveExternalOutputProfile({
   outputHeight,
 }) {
   const resolutionBand = resolveOutputResolutionBand(outputWidth, outputHeight);
+  const targetBand = resolveCustomTargetFpsBand(resolvedTargetFps);
 
   if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.maxQuality) {
     return buildRenderQualityProfile({
@@ -172,24 +177,28 @@ function resolveExternalOutputProfile({
     });
   }
 
-  const autoTargetFps =
-    resolutionBand === "2160p+"
-      ? 30
-      : resolutionBand === "1440p"
-        ? 48
-        : DEFAULT_PERFORMANCE_TARGET_FPS;
-  const renderScale =
-    resolutionBand === "2160p+"
-      ? 0.5
-      : resolutionBand === "1440p"
-        ? 0.59
-        : 0.75;
+  let renderScale = 0.67;
+  if (
+    usesBalancedPerformanceBaseline(
+      normalizedPerformanceProfile,
+      resolvedTargetFps,
+    )
+  ) {
+    renderScale = resolutionBand === "1080p-" ? 0.75 : 0.67;
+  } else if (targetBand === CUSTOM_TARGET_FPS_BANDS.low) {
+    renderScale =
+      resolutionBand === "2160p+"
+        ? 0.75
+        : resolutionBand === "1440p"
+          ? 0.84
+          : 0.92;
+  }
 
   return buildRenderQualityProfile({
     qualityPreset: normalizedPerformanceProfile,
     targetFps:
       normalizedPerformanceProfile === PERFORMANCE_PROFILES.auto
-        ? autoTargetFps
+        ? DEFAULT_PERFORMANCE_TARGET_FPS
         : resolvedTargetFps,
     renderScale,
     traaEnabled: true,
