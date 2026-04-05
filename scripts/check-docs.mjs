@@ -152,6 +152,10 @@ if (!syncPublic.includes("documentation/public")) {
   errors.push("scripts/sync-public.sh: missing documentation/public export");
 }
 
+if (!syncPublic.includes(".nvmrc")) {
+  errors.push("scripts/sync-public.sh: missing .nvmrc export");
+}
+
 if (
   syncPublic.includes("documentation/internal") &&
   !syncPublic.includes(
