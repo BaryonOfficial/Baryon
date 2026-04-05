@@ -53,6 +53,20 @@ function shouldUseAuthoritativeStageViewState(sharedPreviewMode = null) {
   return sharedPreviewMode?.omitLocalScene === true;
 }
 
+export function shouldUseAuthoritativePerformanceHud({
+  sharedPreviewMode = null,
+  authoritativeStageTelemetry = null,
+  authoritativeOutputHudMetrics = null,
+} = {}) {
+  const authoritativeOutputActive =
+    sharedPreviewMode?.authorityMode === "performer-output-authoritative";
+  const hasAuthoritativeHudData =
+    authoritativeStageTelemetry?.performanceHudSnapshot != null ||
+    authoritativeOutputHudMetrics != null;
+
+  return authoritativeOutputActive && hasAuthoritativeHudData;
+}
+
 export function resolveCameraControlFieldState({
   frameFieldState = "idle",
   sharedPreviewMode = null,

@@ -37,7 +37,7 @@
     "test:desktop": "pnpm --filter @baryon/desktop test",
     "test:desktop:platform": "pnpm --filter @baryon/desktop test:platform",
     "test:visualizer": "pnpm --filter @baryon/visualizer test",
-    "test:web-smoke": "pnpm --filter @baryon/web test:smoke",
+    "test:web-smoke": "pnpm --filter @baryon/web test:smoke:prod",
     "test:web-smoke:dev": "pnpm --filter @baryon/web test:smoke:dev",
     "lint": "turbo lint",
     "lint:all": "pnpm -r --filter './apps/*' --filter './packages/*' --if-present lint",
