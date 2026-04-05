@@ -3520,6 +3520,52 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(reused.changeSignal).toBeGreaterThan(first.changeSignal);
     expect(reused.novelty).toBeCloseTo(0.9, 4);
   });
+
+  it("reuses stored analysis hints when compose receives no fresh hint payload", () => {
+    const featureState = createAudioFeatureState();
+    const status = createStatus({
+      audioInputMode: "file",
+      isPlaying: true,
+      hasAnalysisSource: true,
+      playbackSessionId: 42,
+    });
+    const heavyHints = {
+      active: true,
+      harmonicity: 0.55,
+      bassSalience: 0.46,
+      textureSpread: 0.18,
+      novelty: 0.12,
+      transientSalience: 0.14,
+      workerState: "ready",
+      hintSource: "onnx-worker",
+    };
+    const prepared = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 36,
+        fftMagnitudes: makeFft([
+          [110, 0.92],
+          [220, 0.48],
+          [440, 0.24],
+        ]),
+        rms: 0.34,
+      }),
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 1000,
+      analysisHints: heavyHints,
+    });
+    const analysisResult = runHeavyAudioFeatureAnalysis(prepared);
+    const frame = composeAudioFeatureFrame({
+      preparedInputs: prepared,
+      analysisResult,
+    });
+
+    expect(frame.novelty).toBeCloseTo(heavyHints.novelty, 4);
+    expect(frame.debug.workerState).toBe("ready");
+    expect(frame.debug.hintSource).toBe("onnx-worker");
+  });
 });
 
 describe("full-range music handling", () => {

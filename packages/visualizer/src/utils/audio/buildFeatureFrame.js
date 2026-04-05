@@ -4102,16 +4102,18 @@ function buildHintMetrics(analysisHints) {
   };
 }
 
-function resolveComposeAnalysisHints(analysisHints, analysisResult) {
-  const activeHints = getActiveAnalysisHints(analysisHints);
-  if (activeHints) {
-    return {
-      ...activeHints,
-      ...buildHintMetrics(activeHints),
-    };
+function resolveComposeAnalysisHints(analysisHints, fallbackAnalysisHints) {
+  const activeHints =
+    getActiveAnalysisHints(analysisHints) ??
+    getActiveAnalysisHints(fallbackAnalysisHints);
+  if (!activeHints) {
+    return null;
   }
 
-  return analysisResult?.baseAnalysisHints ?? null;
+  return {
+    ...activeHints,
+    ...buildHintMetrics(activeHints),
+  };
 }
 
 export function prepareAudioFeatureFrameInputs({
@@ -5595,11 +5597,7 @@ export function buildCurrentAudioFeatureAnalysisResult({
       modalResolveMs: resolvedStructural.structuralPerf?.modalResolveMs ?? 0,
       projectionMs: resolvedStructural.structuralPerf?.projectionMs ?? 0,
     },
-    baseAnalysisHints: resolveComposeAnalysisHints(
-      preparedInputs.analysisHints,
-      null,
-    ),
-    lastAnalysisHints: preparedInputs.analysisHints,
+    analysisHints: preparedInputs.analysisHints,
     debug: null,
   };
 }
@@ -5641,8 +5639,10 @@ export function buildAudioFeatureAnalysisSnapshot({
     buildDualComparisonDebugSummary({
       preparedInputs,
       analysisResult,
-      analysisHints:
-        analysisResult.lastAnalysisHints ?? analysisResult.baseAnalysisHints,
+      analysisHints: resolveComposeAnalysisHints(
+        null,
+        analysisResult.analysisHints,
+      ),
     });
   const backboneStateSummary = buildBackboneStateSummary(
     analysisResult.backboneState,
@@ -5757,11 +5757,8 @@ export function buildAudioFeatureAnalysisSnapshot({
               : null,
           }
         : null,
-      baseAnalysisHints: cloneAnalysisHintsForSnapshot(
-        analysisResult.baseAnalysisHints,
-      ),
-      lastAnalysisHints: cloneAnalysisHintsForSnapshot(
-        analysisResult.lastAnalysisHints,
+      analysisHints: cloneAnalysisHintsForSnapshot(
+        analysisResult.analysisHints,
       ),
       chromesthesiaComponents,
       nonZeroFFTBinCount,
@@ -5784,10 +5781,10 @@ export function composeAudioFeatureFrame({
     analysisResult.detailStateSummary ?? analysisResult.detailState;
   const effectiveAnalysisHints = resolveComposeAnalysisHints(
     analysisHints,
-    analysisResult,
+    analysisResult.analysisHints,
   );
   const debugAnalysisHints =
-    analysisHints ?? analysisResult.lastAnalysisHints ?? effectiveAnalysisHints;
+    analysisHints ?? analysisResult.analysisHints ?? effectiveAnalysisHints;
   let {
     structureSignal,
     energySignal,

@@ -621,6 +621,40 @@ describe("audio feature engine snapshots", () => {
     });
   });
 
+  it("stores one canonical analysis hint payload in worker snapshots", () => {
+    const featureState = createAudioFeatureState();
+    const analysisHints = {
+      active: true,
+      novelty: 0.42,
+      transientSalience: 0.31,
+      workerState: "ready",
+      hintSource: "onnx-worker",
+    };
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 48,
+        rms: 0.28,
+        fftMagnitudes: new Float32Array([0, 0.9, 0.55, 0.2, 0.08]),
+      }),
+      featureState,
+      radius: 3,
+      status: createStatus(),
+      frameTimeMs: 2000,
+      analysisHints,
+    });
+    const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
+    const snapshot = buildAudioFeatureAnalysisSnapshot({
+      preparedInputs,
+      analysisResult,
+      publishCount: 2,
+    });
+
+    expect(snapshot.analysisResult.analysisHints).toMatchObject(analysisHints);
+    expect(snapshot.analysisResult).not.toHaveProperty("baseAnalysisHints");
+    expect(snapshot.analysisResult).not.toHaveProperty("lastAnalysisHints");
+  });
+
   it("uses time-domain modal drive for both file and system-classified input", () => {
     const fileFeatureState = createAudioFeatureState();
     const systemFeatureState = createAudioFeatureState();
