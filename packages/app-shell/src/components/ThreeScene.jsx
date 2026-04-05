@@ -36,6 +36,7 @@ import {
   resolveCameraControlFieldState,
   resolveLiveInputPanelConfig,
   resolveSharedPreviewOverlayState,
+  shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
 
 const AdvancedControlsSidebar = lazy(
@@ -242,8 +243,13 @@ const ThreeScene = ({
     authoritativeStageStatus,
     fallbackCameraViewPreset: effectiveCameraViewPreset,
   });
+  const useAuthoritativePerformanceHud = shouldUseAuthoritativePerformanceHud({
+    sharedPreviewMode,
+    authoritativeStageTelemetry,
+    authoritativeOutputHudMetrics,
+  });
   const resolvedPerformanceHudMetrics = controlsState.performanceHudEnabled
-    ? omitLocalScene
+    ? useAuthoritativePerformanceHud
       ? composeAuthoritativePerformanceHudMetrics(
           authoritativeStageTelemetry?.performanceHudSnapshot ?? null,
           authoritativeOutputHudMetrics,

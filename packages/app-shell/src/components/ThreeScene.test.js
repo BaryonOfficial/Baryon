@@ -4,6 +4,7 @@ import {
   resolveActiveCameraControlPreset,
   resolveCameraControlFieldState,
   resolveSharedPreviewOverlayState,
+  shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
 
 describe("resolveSharedPreviewOverlayState", () => {
@@ -77,6 +78,28 @@ describe("shared preview camera control state", () => {
 });
 
 describe("authoritative performance HUD composition", () => {
+  it("stays on authoritative metrics when output-authoritative mode is active without shared preview", () => {
+    expect(
+      shouldUseAuthoritativePerformanceHud({
+        sharedPreviewMode: {
+          enabled: false,
+          requested: false,
+          rendering: false,
+          omitLocalScene: false,
+          authorityMode: "performer-output-authoritative",
+        },
+        authoritativeStageTelemetry: {
+          performanceHudSnapshot: {
+            fps: 58.6,
+          },
+        },
+        authoritativeOutputHudMetrics: {
+          outputFps: 57.9,
+        },
+      }),
+    ).toBe(true);
+  });
+
   it("combines stage render metrics with output publish metrics", () => {
     expect(
       composeAuthoritativePerformanceHudMetrics(

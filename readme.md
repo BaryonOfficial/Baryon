@@ -74,6 +74,8 @@ cd apps/marketing && pnpm preview
 cd apps/web && pnpm test:smoke:dev
 cd apps/desktop && pnpm test:platform
 cd apps/desktop && pnpm test:smoke
+cd apps/desktop && pnpm perf                # Canonical live-source desktop perf probe
+cd apps/desktop && pnpm perf:packaged       # Packaged desktop Syphon / OSR benchmark
 cd packages/visualizer && pnpm typecheck
 ```
 
