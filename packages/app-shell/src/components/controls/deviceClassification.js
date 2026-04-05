@@ -81,6 +81,25 @@ export function getLiveInputDeviceKindById(devices, deviceId) {
 }
 
 /**
+ * Classify a list of audioinput devices into mic and system buckets.
+ * @param {MediaDeviceInfo[]} devices
+ * @returns {{ live: MediaDeviceInfo[], system: MediaDeviceInfo[] }}
+ */
+export function classifyLiveInputDevices(devices) {
+  const live = [];
+  const system = [];
+  for (const device of devices) {
+    const bucket = getLiveInputDeviceKind(device);
+    if (bucket === LIVE_INPUT_DEVICE_KINDS.loopback) {
+      system.push(device);
+    } else {
+      live.push(device);
+    }
+  }
+  return { live, system };
+}
+
+/**
  * Manually assign a device to a bucket, persisted to localStorage.
  * @param {string} deviceId
  * @param {import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputDeviceKind} bucket
