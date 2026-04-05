@@ -35,6 +35,7 @@
     "format:check": "prettier --check .",
     "test:app-shell": "pnpm --filter @baryon/app-shell test",
     "test:desktop": "pnpm --filter @baryon/desktop test",
+    "test:desktop:platform": "pnpm --filter @baryon/desktop test:platform",
     "test:visualizer": "pnpm --filter @baryon/visualizer test",
     "test:web-smoke": "pnpm --filter @baryon/web test:smoke",
     "test:web-smoke:dev": "pnpm --filter @baryon/web test:smoke:dev",
@@ -46,7 +47,7 @@
     "deps:graph:svg": "node scripts/render-dependency-graph.mjs --svg",
     "audit:deps": "knip --dependencies",
     "typecheck": "pnpm --reporter append-only -r --filter './apps/*' --filter './packages/*' --if-present typecheck",
-    "verify": "pnpm version:check && pnpm docs:check && pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm build:marketing && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop",
+    "verify": "pnpm version:check && pnpm docs:check && pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm build:marketing && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop && pnpm test:desktop:platform",
     "verify:full": "pnpm verify && turbo build"
   },
   "lint-staged": {
