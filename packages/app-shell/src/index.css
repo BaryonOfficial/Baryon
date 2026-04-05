@@ -1,53 +1,5 @@
 @import "tailwindcss";
 
-@font-face {
-  font-family: "Space Grotesk";
-  src: url("/fonts/SpaceGrotesk/SpaceGrotesk-300.ttf") format("truetype");
-  font-weight: 300;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Space Grotesk";
-  src: url("/fonts/SpaceGrotesk/SpaceGrotesk-400.ttf") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Space Grotesk";
-  src: url("/fonts/SpaceGrotesk/SpaceGrotesk-500.ttf") format("truetype");
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Space Grotesk";
-  src: url("/fonts/SpaceGrotesk/SpaceGrotesk-700.ttf") format("truetype");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Space Mono";
-  src: url("/fonts/SpaceMono/SpaceMono-400.ttf") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Space Mono";
-  src: url("/fonts/SpaceMono/SpaceMono-700.ttf") format("truetype");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
 @plugin 'tailwindcss-animate';
 
 @custom-variant dark (&:is(.dark *));
@@ -148,31 +100,6 @@
 
 @layer base {
   :root {
-    --baryon-breakpoint-phone-max: 640px;
-    --baryon-breakpoint-tablet-portrait-max: 820px;
-    --baryon-breakpoint-tablet-max: 1024px;
-    --baryon-breakpoint-desktop-min: 1025px;
-    --baryon-compact-dock-min-width: 19rem;
-    --baryon-compact-sheet-min-width: 18.5rem;
-
-    --nd-black: #050505;
-    --nd-surface: #111111;
-    --nd-surface-raised: #1a1a1a;
-    --nd-border: #222222;
-    --nd-border-visible: #333333;
-    --nd-text-disabled: #666666;
-    --nd-text-secondary: #999999;
-    --nd-text-primary: #e8e8e8;
-    --nd-text-display: #ffffff;
-    --nd-accent: #ff3b30;
-    --nd-accent-subtle: rgba(255, 59, 48, 0.15);
-    --nd-success: #4a9e5c;
-    --nd-warning: #d4a843;
-    --nd-info: #5b9bf6;
-    --nd-grid: rgba(255, 255, 255, 0.08);
-    --nd-shell-shadow: 0 24px 64px rgba(0, 0, 0, 0.42);
-    --nd-transition: 180ms cubic-bezier(0.25, 0.1, 0.25, 1);
-
     --background: 0 0% 100%;
     --foreground: 240 10% 3.9%;
 
@@ -205,7 +132,6 @@
   }
 
   .dark {
-    --nd-grid: rgba(255, 255, 255, 0.08);
     --background: 240 10% 3.9%;
     --foreground: 0 0% 98%;
 
@@ -250,20 +176,6 @@
     @apply bg-background text-foreground;
     min-height: 100vh;
     min-width: 100vw;
-    background:
-      radial-gradient(
-        circle at top left,
-        rgba(255, 255, 255, 0.05),
-        transparent 28%
-      ),
-      radial-gradient(
-        circle at bottom right,
-        rgba(255, 59, 48, 0.08),
-        transparent 20%
-      ),
-      var(--nd-black);
-    color: var(--nd-text-primary);
-    font-family: "Space Grotesk", system-ui, sans-serif;
   }
 
   #root {
@@ -280,20 +192,5 @@
     position: absolute;
     top: 0;
     left: 0;
-  }
-
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    background-image: radial-gradient(
-      circle,
-      var(--nd-grid) 0.7px,
-      transparent 0.7px
-    );
-    background-size: 14px 14px;
-    opacity: 0.3;
-    mix-blend-mode: screen;
   }
 }
