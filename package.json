@@ -70,6 +70,7 @@
     "knip": "^6.3.0",
     "lint-staged": "^16.4.0",
     "prettier": "^3.8.1",
+    "prettier-plugin-astro": "0.14.1",
     "syncpack": "^14.3.0",
     "turbo": "^2.9.3",
     "typescript": "^6.0.2"
