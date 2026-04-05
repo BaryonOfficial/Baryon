@@ -63,7 +63,7 @@ test.describe("Baryon production smoke", () => {
     await expect(
       page.getByRole("button", { name: "Toggle advanced controls" }),
     ).toBeVisible();
-    await expect(page.getByText("Field").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Shape\s/ })).toBeVisible();
     await expect(page.getByText("Audit")).toHaveCount(0);
     await page
       .getByRole("button", { name: "Toggle advanced controls" })
@@ -81,7 +81,7 @@ test.describe("Baryon production smoke", () => {
     await page
       .getByRole("button", { name: "Toggle advanced controls" })
       .click();
-    await page.getByRole("button", { name: /^Field\s/ }).click();
+    await page.getByRole("button", { name: /^Shape\s/ }).click();
 
     const slider = page.getByRole("slider", { name: "Node Threshold" });
     const helpTrigger = page.getByRole("button", {
@@ -117,7 +117,7 @@ test.describe("Baryon production smoke", () => {
     await page
       .getByRole("button", { name: "Toggle advanced controls" })
       .click();
-    await page.getByRole("button", { name: /^Look\s/ }).click();
+    await page.getByRole("button", { name: /^Display\s/ }).click();
 
     const bloomToggle = page.locator("#baryon-control-bloomEnabled");
     await expect(bloomToggle).toBeChecked();

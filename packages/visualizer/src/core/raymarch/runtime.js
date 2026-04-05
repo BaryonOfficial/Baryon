@@ -183,6 +183,11 @@ function publishAuditSnapshot(snapshot) {
     return;
   }
 
+  if (snapshot == null) {
+    delete (/** @type {any} */ (window).__baryonAuditSnapshot);
+    return;
+  }
+
   /** @type {any} */ (window).__baryonAuditSnapshot = snapshot;
 }
 
