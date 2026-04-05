@@ -1,9 +1,16 @@
-@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500&display=swap");
 @import "tailwindcss";
 
 @plugin 'tailwindcss-animate';
 
 @custom-variant dark (&:is(.dark *));
+
+@font-face {
+  font-family: "Orbitron";
+  src: url("/fonts/Orbitron/Orbitron-VariableFont_wght.ttf") format("truetype");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
 
 @utility container {
   margin-inline: auto;
