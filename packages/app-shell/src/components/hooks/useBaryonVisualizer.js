@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { resolveRaymarchFieldCacheOverride } from "@baryon/visualizer";
+import { getRenderQualityProfileKey } from "@baryon/visualizer/render/outputPipeline";
 import {
   applyAudioControls,
   applySceneControls,
@@ -91,6 +92,7 @@ export function useBaryonVisualizer({
   suppressRender = false,
   enableControlEventSync = true,
 }) {
+  const { invalidate } = useThree();
   const audioRef = useRef(getDefaultAudioSession());
   const outputSessionRef = useRef(null);
   const outputCaptureInFlightRef = useRef(false);
@@ -148,9 +150,11 @@ export function useBaryonVisualizer({
   };
   const renderProfileRef = useRef(renderProfile);
   renderProfileRef.current = renderProfile;
+  const renderProfileKeyRef = useRef(getRenderQualityProfileKey(renderProfile));
   const lastObservedLiveControlSignalVersionRef = useRef(
     liveControlSignalRef?.current?.version ?? 0,
   );
+  const forcedExternalRenderPendingRef = useRef(false);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -205,7 +209,23 @@ export function useBaryonVisualizer({
 
   useEffect(() => {
     clearAdaptiveRaymarchResumeState(runtimeStateRef.current);
-  }, [adaptiveResetNonce, runtimeStateRef]);
+    forcedExternalRenderPendingRef.current = true;
+    invalidate();
+  }, [adaptiveResetNonce, invalidate, runtimeStateRef]);
+
+  useEffect(() => {
+    const nextRenderProfileKey = getRenderQualityProfileKey(renderProfile);
+    if (renderProfileKeyRef.current === nextRenderProfileKey) {
+      return;
+    }
+
+    renderProfileKeyRef.current = nextRenderProfileKey;
+    // Profile-only output changes still need one forced draw so the external
+    // frame path emits a fresh rendered frame and downstream sinks can republish.
+    clearAdaptiveRaymarchResumeState(runtimeStateRef.current);
+    forcedExternalRenderPendingRef.current = true;
+    invalidate();
+  }, [invalidate, renderProfile, runtimeStateRef]);
 
   useEffect(() => {
     if (outputFrameConfig?.enabled) {
@@ -485,6 +505,7 @@ export function useBaryonVisualizer({
         externalFrameState,
         shouldAdvance,
         controlsChanged,
+        forceRender: forcedExternalRenderPendingRef.current,
       })
     ) {
       return;
@@ -605,6 +626,7 @@ export function useBaryonVisualizer({
     if (externalFrameState?.featureFrame) {
       lastAppliedExternalFrameSequenceRef.current = externalFrameSequence;
     }
+    forcedExternalRenderPendingRef.current = false;
 
     const syncLiveInputRuntimeStatusStartedAt = getWallTimeMs();
     syncLiveInputRuntimeStatus({
@@ -688,6 +710,8 @@ export function useBaryonVisualizer({
       controls,
       controlsVersion: controlVersionRef.current,
       visualizationMethod: runtime.method,
+      qualityPreset: renderProfileRef.current?.qualityPreset ?? null,
+      resolvedRenderProfile: renderProfileRef.current,
       status,
       time,
       deltaTime,

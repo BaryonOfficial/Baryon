@@ -391,8 +391,9 @@ export function shouldRenderExternalFrame({
   externalFrameState,
   shouldAdvance,
   controlsChanged,
+  forceRender = false,
 }) {
-  return !externalFrameState || shouldAdvance || controlsChanged;
+  return !externalFrameState || shouldAdvance || controlsChanged || forceRender;
 }
 
 export function snapshotRuntimeDiagnostics(runtimeDiagnostics) {
