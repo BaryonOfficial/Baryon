@@ -165,7 +165,6 @@ function resolveExternalOutputProfile({
   outputHeight,
 }) {
   const resolutionBand = resolveOutputResolutionBand(outputWidth, outputHeight);
-  const targetBand = resolveCustomTargetFpsBand(resolvedTargetFps);
 
   if (normalizedPerformanceProfile === PERFORMANCE_PROFILES.maxQuality) {
     return buildRenderQualityProfile({
@@ -177,28 +176,24 @@ function resolveExternalOutputProfile({
     });
   }
 
-  let renderScale = 0.67;
-  if (
-    usesBalancedPerformanceBaseline(
-      normalizedPerformanceProfile,
-      resolvedTargetFps,
-    )
-  ) {
-    renderScale = resolutionBand === "1080p-" ? 0.75 : 0.67;
-  } else if (targetBand === CUSTOM_TARGET_FPS_BANDS.low) {
-    renderScale =
-      resolutionBand === "2160p+"
-        ? 0.75
-        : resolutionBand === "1440p"
-          ? 0.84
-          : 0.92;
-  }
+  const autoTargetFps =
+    resolutionBand === "2160p+"
+      ? 30
+      : resolutionBand === "1440p"
+        ? 48
+        : DEFAULT_PERFORMANCE_TARGET_FPS;
+  const renderScale =
+    resolutionBand === "2160p+"
+      ? 0.5
+      : resolutionBand === "1440p"
+        ? 0.59
+        : 0.75;
 
   return buildRenderQualityProfile({
     qualityPreset: normalizedPerformanceProfile,
     targetFps:
       normalizedPerformanceProfile === PERFORMANCE_PROFILES.auto
-        ? DEFAULT_PERFORMANCE_TARGET_FPS
+        ? autoTargetFps
         : resolvedTargetFps,
     renderScale,
     traaEnabled: true,
