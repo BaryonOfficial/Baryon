@@ -30,7 +30,6 @@ const visualizationLifecycleState = vi.hoisted(() => ({
     cachedControlSnapshotsRef: { current: { controlsSnapshot: null } },
   },
   pixelRatioRef: { current: 1 },
-  renderSurfaceSizeRef: { current: null },
   lastLiveInputRuntimeStatusRef: { current: null },
   lastAudioIssueSignatureRef: { current: null },
 }));
