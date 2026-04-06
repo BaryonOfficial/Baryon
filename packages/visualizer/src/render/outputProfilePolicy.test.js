@@ -167,8 +167,26 @@ describe("render quality profiles", () => {
       }),
     ).toEqual({
       qualityPreset: "auto",
-      targetFps: 60,
-      renderScale: 0.67,
+      targetFps: 30,
+      renderScale: 0.5,
+      traaEnabled: true,
+      bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
+  });
+
+  it("uses external-output auto calibration at 1440p", () => {
+    expect(
+      resolveRenderQualityProfile({
+        qualityPreset: "auto",
+        outputWidth: 2560,
+        outputHeight: 1440,
+        renderContext: "external-output",
+      }),
+    ).toEqual({
+      qualityPreset: "auto",
+      targetFps: 48,
+      renderScale: 0.59,
       traaEnabled: true,
       bloomAllowed: true,
       renderContext: RENDER_CONTEXTS.externalOutput,
@@ -205,7 +223,7 @@ describe("render quality profiles", () => {
     ).toEqual({
       qualityPreset: "custom",
       targetFps: 60,
-      renderScale: 0.67,
+      renderScale: 0.59,
       traaEnabled: true,
       bloomAllowed: true,
       renderContext: RENDER_CONTEXTS.externalOutput,
@@ -224,7 +242,7 @@ describe("render quality profiles", () => {
     ).toEqual({
       qualityPreset: "custom",
       targetFps: 120,
-      renderScale: 0.67,
+      renderScale: 0.5,
       traaEnabled: true,
       bloomAllowed: true,
       renderContext: RENDER_CONTEXTS.externalOutput,
@@ -291,44 +309,65 @@ describe("render quality profiles", () => {
     });
   });
 
-  it("keeps auto and custom 60 identical for external output across resolution bands", () => {
-    for (const [outputWidth, outputHeight] of [
-      [1920, 1080],
-      [2560, 1440],
-      [3840, 2160],
-    ]) {
-      const expectedRenderScale =
-        outputWidth >= 2560 || outputHeight >= 1440 ? 0.67 : 0.75;
-      expect(
-        resolveRenderQualityProfile({
-          qualityPreset: "auto",
-          outputWidth,
-          outputHeight,
-          renderContext: RENDER_CONTEXTS.externalOutput,
-        }),
-      ).toMatchObject({
-        targetFps: 60,
-        renderScale: expectedRenderScale,
-        traaEnabled: true,
-        bloomAllowed: true,
+  it("uses more conservative auto cadence than custom 60 for high-resolution external output", () => {
+    expect(
+      resolveRenderQualityProfile({
+        qualityPreset: "auto",
+        outputWidth: 2560,
+        outputHeight: 1440,
         renderContext: RENDER_CONTEXTS.externalOutput,
-      });
-      expect(
-        resolveRenderQualityProfile({
-          qualityPreset: "custom",
-          targetFps: 60,
-          outputWidth,
-          outputHeight,
-          renderContext: RENDER_CONTEXTS.externalOutput,
-        }),
-      ).toMatchObject({
+      }),
+    ).toMatchObject({
+      targetFps: 48,
+      renderScale: 0.59,
+      traaEnabled: true,
+      bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
+    expect(
+      resolveRenderQualityProfile({
+        qualityPreset: "custom",
         targetFps: 60,
-        renderScale: expectedRenderScale,
-        traaEnabled: true,
-        bloomAllowed: true,
+        outputWidth: 2560,
+        outputHeight: 1440,
         renderContext: RENDER_CONTEXTS.externalOutput,
-      });
-    }
+      }),
+    ).toMatchObject({
+      targetFps: 60,
+      renderScale: 0.59,
+      traaEnabled: true,
+      bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
+    expect(
+      resolveRenderQualityProfile({
+        qualityPreset: "auto",
+        outputWidth: 3840,
+        outputHeight: 2160,
+        renderContext: RENDER_CONTEXTS.externalOutput,
+      }),
+    ).toMatchObject({
+      targetFps: 30,
+      renderScale: 0.5,
+      traaEnabled: true,
+      bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
+    expect(
+      resolveRenderQualityProfile({
+        qualityPreset: "custom",
+        targetFps: 60,
+        outputWidth: 3840,
+        outputHeight: 2160,
+        renderContext: RENDER_CONTEXTS.externalOutput,
+      }),
+    ).toMatchObject({
+      targetFps: 60,
+      renderScale: 0.5,
+      traaEnabled: true,
+      bloomAllowed: true,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
   });
 
   it("keeps TRAA enabled for every external-output custom band", () => {
