@@ -22,30 +22,42 @@ export function resolveOutputMirrorOverlayState(outputMirrorState = null) {
       state: "unsupported",
       title: "Mirror unavailable",
       message:
-        "The output mirror is not supported for this presented performer output.",
+        "Perform requires the authoritative output mirror on this platform and backend.",
+    };
+  }
+
+  if (outputMirrorState.startupFailed) {
+    return {
+      state: "startup-failed",
+      title: "Performer startup failed",
+      message:
+        outputMirrorState.failureReason ??
+        "The authoritative output stage did not become healthy in time.",
+    };
+  }
+
+  if (outputMirrorState.recovering) {
+    return {
+      state: "recovering",
+      title: "Mirror recovering",
+      message: "Restoring the authoritative output stage and mirror delivery.",
     };
   }
 
   if (!outputMirrorState.connected || !outputMirrorState.canvasAttached) {
     return {
-      state: "attaching",
-      title: "Attaching mirror",
-      message: "Connecting the output mirror surface to the desktop window.",
-    };
-  }
-
-  if (outputMirrorState.stale) {
-    return {
-      state: "stale",
-      title: "Mirror recovering",
-      message: "Waiting for fresh frames from the hidden output stage.",
+      state: "connecting",
+      title: "Connecting mirror",
+      message:
+        "Connecting the authoritative output mirror to the desktop window.",
     };
   }
 
   return {
-    state: "waiting",
-    title: "Waiting for frames",
-    message: "The hidden output stage has not delivered mirror frames yet.",
+    state: "connecting",
+    title: "Waiting for mirror frames",
+    message:
+      "The authoritative output stage has not delivered mirror frames yet.",
   };
 }
 
@@ -59,7 +71,7 @@ export function shouldUseAuthoritativePerformanceHud({
   authoritativeOutputHudMetrics = null,
 } = {}) {
   const authoritativeOutputActive =
-    outputMirrorState?.authorityMode === "performer-output-authoritative";
+    outputMirrorState?.authorityMode === "output-stage-authoritative";
   const hasAuthoritativeHudData =
     authoritativeStageTelemetry?.performanceHudSnapshot != null ||
     authoritativeOutputHudMetrics != null;

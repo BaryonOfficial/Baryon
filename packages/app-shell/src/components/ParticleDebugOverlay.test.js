@@ -13,7 +13,7 @@ describe("normalizeDebugOverlayItems", () => {
   });
 
   it("passes through non-empty host-provided items", () => {
-    const items = [{ label: "Authority", value: "listener-local" }];
+    const items = [{ label: "Authority", value: "local-presented" }];
     expect(normalizeDebugOverlayItems(items)).toBe(items);
   });
 });
