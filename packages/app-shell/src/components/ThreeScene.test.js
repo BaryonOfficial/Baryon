@@ -20,6 +20,38 @@ describe("resolveOutputMirrorOverlayState", () => {
     });
   });
 
+  it("returns a startup-failed state when the authoritative stage misses startup watchdogs", () => {
+    expect(
+      resolveOutputMirrorOverlayState({
+        requested: true,
+        rendering: false,
+        supported: true,
+        connected: true,
+        canvasAttached: true,
+        startupFailed: true,
+        failureReason: "Timed out waiting for the first publish.",
+      }),
+    ).toMatchObject({
+      state: "startup-failed",
+      message: "Timed out waiting for the first publish.",
+    });
+  });
+
+  it("returns a recovering state while the authoritative runtime is retrying", () => {
+    expect(
+      resolveOutputMirrorOverlayState({
+        requested: true,
+        rendering: false,
+        supported: true,
+        connected: true,
+        canvasAttached: true,
+        recovering: true,
+      }),
+    ).toMatchObject({
+      state: "recovering",
+    });
+  });
+
   it("returns null once the output mirror is actively rendering", () => {
     expect(
       resolveOutputMirrorOverlayState({
@@ -86,7 +118,7 @@ describe("authoritative performance HUD composition", () => {
           requested: false,
           rendering: false,
           omitLocalScene: false,
-          authorityMode: "performer-output-authoritative",
+          authorityMode: "output-stage-authoritative",
         },
         authoritativeStageTelemetry: {
           performanceHudSnapshot: {
