@@ -338,6 +338,49 @@ function getAnalysisSchedulerState(analysisSchedulerRef) {
   return analysisSchedulerRef?.current ?? createEmptyAnalysisSchedulerState();
 }
 
+function isNonIdleFeatureFrame(featureFrame) {
+  return (featureFrame?.fieldState ?? "idle") !== "idle";
+}
+
+function shouldSeedLiveInputWarmupFrame({
+  status,
+  lastLiveFrame,
+  lastActiveFrame,
+}) {
+  return (
+    status?.isLiveInputActive === true &&
+    !isNonIdleFeatureFrame(lastLiveFrame) &&
+    !lastActiveFrame
+  );
+}
+
+function shouldCaptureLastLiveFrame({ status, featureFrame }) {
+  return (
+    status?.isPlaying === true ||
+    status?.isLiveInputActive !== true ||
+    isNonIdleFeatureFrame(featureFrame)
+  );
+}
+
+function storeComposedAnalysisResult(
+  analysisSchedulerRef,
+  preparedInputs,
+  analysisResult,
+  featureFrame,
+) {
+  if (!analysisSchedulerRef?.current) {
+    return;
+  }
+
+  analysisSchedulerRef.current = {
+    lastHeavyAnalysisAtMs: preparedInputs.currentFrameAtMs,
+    lastHeavyAnalysisResult: analysisResult,
+    lastComposedFeatureFrame: featureFrame,
+    lastAnalysisSessionKey: preparedInputs.analysisSessionKey,
+    lastAnalysisInputsSignature: preparedInputs.analysisInputsSignature,
+  };
+}
+
 export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
   const smoothedFrameTimeMs = runtimeDiagnostics?.smoothedFrameTimeMs ?? 0;
   const render = runtimeDiagnostics?.render ?? null;
@@ -1314,6 +1357,8 @@ export function resolveFeatureFrame(
         resetAnalysisSchedulerState(analysisSchedulerRef);
       } else {
         if (featureEngine?.enqueueTransportFrame) {
+          const schedulerState =
+            getAnalysisSchedulerState(analysisSchedulerRef);
           const engineEnqueueStartedAt = getRenderLoopWallTimeMs();
           const transportFrame = buildAudioFeatureTransportFrame({
             analysisSnapshot,
@@ -1406,6 +1451,44 @@ export function resolveFeatureFrame(
               "fastComposeMs",
               getRenderLoopWallTimeMs() - fastComposeStartedAt,
             );
+          } else if (
+            shouldSeedLiveInputWarmupFrame({
+              status,
+              lastLiveFrame: lastLiveFrameRef.current,
+              lastActiveFrame: lastActiveFrameRef.current,
+            })
+          ) {
+            const heavyAnalysisStartedAt = getRenderLoopWallTimeMs();
+            const analysisResult = runHeavyFeatureAnalysis(preparedInputs);
+            recordRuntimePerfSample(
+              runtimeDiagnostics,
+              "heavyAnalysisMs",
+              getRenderLoopWallTimeMs() - heavyAnalysisStartedAt,
+            );
+
+            const fastComposeStartedAt = getRenderLoopWallTimeMs();
+            featureFrame = composeFeatureFrame({
+              preparedInputs,
+              analysisResult,
+              analysisHints,
+              previousFrame: schedulerState.lastComposedFeatureFrame,
+              reuseHeavyAnalysis: false,
+            });
+            recordRuntimePerfSample(
+              runtimeDiagnostics,
+              "fastComposeMs",
+              getRenderLoopWallTimeMs() - fastComposeStartedAt,
+            );
+
+            storeComposedAnalysisResult(
+              analysisSchedulerRef,
+              preparedInputs,
+              analysisResult,
+              featureFrame,
+            );
+            if (runtimeDiagnostics?.analysisScheduler) {
+              runtimeDiagnostics.analysisScheduler.forcedAnalysisCount += 1;
+            }
           } else {
             featureFrame =
               lastLiveFrameRef.current ??
@@ -1451,16 +1534,12 @@ export function resolveFeatureFrame(
               getRenderLoopWallTimeMs() - fastComposeStartedAt,
             );
 
-            if (analysisSchedulerRef?.current) {
-              analysisSchedulerRef.current = {
-                lastHeavyAnalysisAtMs: preparedInputs.currentFrameAtMs,
-                lastHeavyAnalysisResult: analysisResult,
-                lastComposedFeatureFrame: featureFrame,
-                lastAnalysisSessionKey: preparedInputs.analysisSessionKey,
-                lastAnalysisInputsSignature:
-                  preparedInputs.analysisInputsSignature,
-              };
-            }
+            storeComposedAnalysisResult(
+              analysisSchedulerRef,
+              preparedInputs,
+              analysisResult,
+              featureFrame,
+            );
             if (runtimeDiagnostics?.analysisScheduler && forced) {
               runtimeDiagnostics.analysisScheduler.forcedAnalysisCount += 1;
             }
@@ -1510,7 +1589,9 @@ export function resolveFeatureFrame(
   }
 
   if (status.isPlaying || status.isLiveInputActive) {
-    lastLiveFrameRef.current = featureFrame;
+    if (shouldCaptureLastLiveFrame({ status, featureFrame })) {
+      lastLiveFrameRef.current = featureFrame;
+    }
     lastActiveFrameRef.current = null;
     lastIdleFrameRef.current = null;
   } else if (clockMode !== "paused-playback") {

@@ -773,3 +773,115 @@ test("resolveFeatureFrame forwards cavity geometry into the worker transport pay
 
   expect(featureEngine.lastFrame.cavityGeometry).toBe("spherical");
 });
+
+test("resolveFeatureFrame seeds the first live frame locally while worker analysis warms", () => {
+  const featureEngine = {
+    enqueueTransportFrame() {},
+    readLatestSnapshot() {
+      return null;
+    },
+    getStatus() {
+      return null;
+    },
+  };
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: true,
+      playbackSessionId: null,
+    },
+    renderLoopRefs: {
+      frameCacheRefs: {
+        lastLiveFrameRef: { current: null },
+        lastActiveFrameRef: { current: null },
+        lastIdleFrameRef: { current: null },
+        analysisSchedulerRef: { current: null },
+      },
+    },
+  });
+  let heavyAnalysisCallCount = 0;
+  let composeCallCount = 0;
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame() {
+      return {
+        currentFrameAtMs: 1000,
+        analysisSessionKey: "live:device-1",
+        analysisInputsSignature: '"sig"',
+        silentFeatureFrame: null,
+      };
+    },
+    runHeavyFeatureAnalysis(preparedInputs) {
+      heavyAnalysisCallCount += 1;
+      return {
+        preparedInputs,
+      };
+    },
+    composeFeatureFrame({ analysisResult }) {
+      composeCallCount += 1;
+      return {
+        fieldState: "active",
+        seededFromAnalysis: analysisResult.preparedInputs.analysisSessionKey,
+      };
+    },
+  });
+
+  expect(heavyAnalysisCallCount).toBe(1);
+  expect(composeCallCount).toBe(1);
+  expect(result.effectiveFrame.fieldState).toBe("active");
+  expect(
+    args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current,
+  ).toMatchObject({
+    fieldState: "active",
+    seededFromAnalysis: "live:device-1",
+  });
+});
+
+test("resolveFeatureFrame preserves the last active live frame during worker warmup", () => {
+  const featureEngine = {
+    enqueueTransportFrame() {},
+    readLatestSnapshot() {
+      return null;
+    },
+    getStatus() {
+      return null;
+    },
+  };
+  const lastLiveFrame = { fieldState: "active", preserved: true };
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: true,
+      playbackSessionId: null,
+    },
+    renderLoopRefs: {
+      frameCacheRefs: {
+        lastLiveFrameRef: { current: lastLiveFrame },
+        lastActiveFrameRef: { current: null },
+        lastIdleFrameRef: { current: null },
+        analysisSchedulerRef: { current: null },
+      },
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame() {
+      return {
+        currentFrameAtMs: 1000,
+        analysisSessionKey: "live:device-1",
+        analysisInputsSignature: '"sig"',
+        silentFeatureFrame: null,
+      };
+    },
+    runHeavyFeatureAnalysis() {
+      throw new Error("worker warmup should reuse the preserved live frame");
+    },
+  });
+
+  expect(result.effectiveFrame).toBe(lastLiveFrame);
+  expect(args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current).toBe(
+    lastLiveFrame,
+  );
+});
