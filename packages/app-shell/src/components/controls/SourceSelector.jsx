@@ -10,10 +10,12 @@ function ensureStyles() {
   stylesInjected = true;
   const el = document.createElement("style");
   el.textContent = `
+/* ── Source Selector — Nothing Design System ── */
+
 .ac-source-selector {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 4px;
   position: relative;
   flex-shrink: 0;
   min-width: 0;
@@ -23,7 +25,7 @@ function ensureStyles() {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.35rem;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -31,11 +33,11 @@ function ensureStyles() {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 4px;
   min-width: 0;
 }
 
-/* ── Segmented control ─────────────────────────────────────── */
+/* ── Segmented control — Nothing: outlined, inverted active ── */
 
 .ac-source-tabs {
   --tab-file-width: 3.45rem;
@@ -44,36 +46,26 @@ function ensureStyles() {
   display: inline-flex;
   align-items: center;
   min-width: 0;
-  padding: 0.16rem;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 9999px;
+  padding: 2px;
+  background: transparent;
+  border: 1px solid #333333;
+  border-radius: 4px;
   flex-shrink: 0;
   overflow: hidden;
-  box-shadow:
-    0 8px 18px rgba(0,0,0,0.16),
-    inset 0 1px 0 rgba(255,255,255,0.08);
 }
 
-/* Sliding highlight — absolutely positioned so it never shifts layout */
+/* Sliding highlight — Nothing: inverted white bg */
 .ac-source-tab-slider {
   position: absolute;
-  top: 0.16rem;
-  bottom: 0.16rem;
-  left: calc(0.16rem + var(--slider-offset, 0rem));
+  top: 2px;
+  bottom: 2px;
+  left: calc(2px + var(--slider-offset, 0rem));
   width: var(--slider-width, 3.5rem);
-  border-radius: 9999px;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.11));
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.18),
-    0 6px 12px rgba(0,0,0,0.16);
+  border-radius: 2px;
+  background: #FFFFFF;
   transition:
-    left 0.22s cubic-bezier(0.34, 1.0, 0.64, 1.0),
-    width 0.18s ease,
-    background 0.15s,
-    box-shadow 0.15s;
+    left 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    width 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
   pointer-events: none;
   will-change: left, width;
   z-index: 0;
@@ -84,19 +76,20 @@ function ensureStyles() {
   z-index: 1;
   flex: 0 0 auto;
   text-align: center;
-  padding: 0.3rem 0;
+  padding: 4px 0;
   border: none;
-  border-radius: 9999px;
+  border-radius: 2px;
   background: transparent;
-  color: rgba(255,255,255,0.5);
-  font-size: 0.67rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  font-family: inherit;
+  color: #666666;
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.12s ease;
-  line-height: 1.4;
+  transition: color 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  line-height: 1.2;
 }
 
 .ac-source-tab--file {
@@ -108,20 +101,20 @@ function ensureStyles() {
 }
 
 .ac-source-tab--active {
-  color: rgba(255,255,255,0.95);
+  color: #000000;
 }
 
 .ac-source-tab:hover:not(.ac-source-tab--active) {
-  color: rgba(255,255,255,0.72);
+  color: #E8E8E8;
 }
 
 .ac-source-tab:focus-visible,
 .ac-source-live-btn:focus-visible {
-  outline: 2px solid rgba(122, 189, 255, 0.82);
+  outline: 2px solid #5B9BF6;
   outline-offset: 2px;
 }
 
-/* ── Go Live / Stop button ─────────────────────────────────── */
+/* ── Go Live / Stop button — Nothing: outlined, accent-red when active ── */
 
 .ac-source-live-btn {
   flex-shrink: 0;
@@ -130,67 +123,52 @@ function ensureStyles() {
   justify-content: center;
   position: relative;
   min-width: 5.25rem;
-  padding: 0.3rem 0.75rem;
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 9999px;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
-  color: rgba(255,255,255,0.8);
-  font-size: 0.66rem;
-  font-weight: 650;
-  letter-spacing: 0.01em;
-  font-family: inherit;
+  padding: 4px 12px;
+  border: 1px solid #333333;
+  border-radius: 999px;
+  background: transparent;
+  color: #999999;
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   cursor: pointer;
   white-space: nowrap;
-  box-shadow:
-    0 8px 18px rgba(0,0,0,0.16),
-    inset 0 1px 0 rgba(255,255,255,0.08);
   transition:
-    background 0.14s ease,
-    color 0.14s ease,
-    border-color 0.14s ease,
-    box-shadow 0.14s ease,
-    transform 0.1s ease;
+    border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 .ac-source-live-btn:hover {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.11), rgba(255,255,255,0.06));
-  color: rgba(255,255,255,0.96);
+  border-color: #E8E8E8;
+  color: #E8E8E8;
 }
 
 .ac-source-live-btn:disabled {
   cursor: not-allowed;
-  color: rgba(255,255,255,0.42);
-  border-color: rgba(255,255,255,0.08);
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.025));
-  box-shadow:
-    0 8px 18px rgba(0,0,0,0.12),
-    inset 0 1px 0 rgba(255,255,255,0.05);
+  color: #666666;
+  border-color: #222222;
+  opacity: 0.4;
 }
 
 .ac-source-live-btn--active {
-  background:
-    linear-gradient(180deg, rgba(255, 91, 82, 0.32), rgba(255, 69, 58, 0.2));
-  border-color: rgba(255, 69, 58, 0.4);
-  color: #ff453a;
-  box-shadow:
-    0 12px 24px rgba(83,16,12,0.26),
-    inset 0 1px 0 rgba(255,190,186,0.22);
+  border-color: #D71921;
+  color: #D71921;
 }
 
 .ac-source-live-btn--active:hover {
-  background:
-    linear-gradient(180deg, rgba(255, 91, 82, 0.4), rgba(255, 69, 58, 0.26));
+  border-color: #ff453a;
+  color: #ff453a;
 }
 
 .ac-source-live-btn:active {
-  transform: scale(0.98);
+  opacity: 0.8;
 }
 
 .ac-source-live-btn:disabled:active {
-  transform: none;
+  opacity: 0.4;
 }
 
 .ac-source-live-btn-content {
@@ -215,7 +193,7 @@ function ensureStyles() {
 }
 
 .ac-source-live-btn-label {
-  transition: opacity 0.12s ease;
+  transition: opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 .ac-source-live-btn-label--hidden {
@@ -246,7 +224,7 @@ function ensureStyles() {
   }
 
   .ac-source-tab {
-    font-size: 0.65rem;
+    font-size: 10px;
   }
 
   .ac-source-tabs {
@@ -273,7 +251,7 @@ function ensureStyles() {
   }
 
   .ac-source-tab {
-    font-size: 0.66rem;
+    font-size: 10px;
   }
 
   .ac-source-tabs {
@@ -283,8 +261,8 @@ function ensureStyles() {
 
   .ac-source-live-btn {
     min-width: 4.85rem;
-    padding-left: 0.68rem;
-    padding-right: 0.68rem;
+    padding-left: 8px;
+    padding-right: 8px;
   }
 }
 

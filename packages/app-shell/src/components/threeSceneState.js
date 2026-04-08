@@ -12,32 +12,32 @@ export function resolveLiveInputPanelConfig({ liveInputPanel = null } = {}) {
   };
 }
 
-export function resolveSharedPreviewOverlayState(sharedPreviewMode = null) {
-  if (sharedPreviewMode?.requested !== true || sharedPreviewMode.rendering) {
+export function resolveOutputMirrorOverlayState(outputMirrorState = null) {
+  if (outputMirrorState?.requested !== true || outputMirrorState.rendering) {
     return null;
   }
 
-  if (!sharedPreviewMode.supported) {
+  if (!outputMirrorState.supported) {
     return {
       state: "unsupported",
-      title: "Preview unavailable",
+      title: "Mirror unavailable",
       message:
-        "Shared preview is not supported for this presented performer output.",
+        "The output mirror is not supported for this presented performer output.",
     };
   }
 
-  if (!sharedPreviewMode.connected || !sharedPreviewMode.canvasAttached) {
+  if (!outputMirrorState.connected || !outputMirrorState.canvasAttached) {
     return {
       state: "attaching",
-      title: "Attaching preview",
-      message: "Connecting the shared preview surface to the desktop window.",
+      title: "Attaching mirror",
+      message: "Connecting the output mirror surface to the desktop window.",
     };
   }
 
-  if (sharedPreviewMode.stale) {
+  if (outputMirrorState.stale) {
     return {
       state: "stale",
-      title: "Preview recovering",
+      title: "Mirror recovering",
       message: "Waiting for fresh frames from the hidden output stage.",
     };
   }
@@ -45,21 +45,21 @@ export function resolveSharedPreviewOverlayState(sharedPreviewMode = null) {
   return {
     state: "waiting",
     title: "Waiting for frames",
-    message: "The hidden output stage has not delivered preview frames yet.",
+    message: "The hidden output stage has not delivered mirror frames yet.",
   };
 }
 
-function shouldUseAuthoritativeStageViewState(sharedPreviewMode = null) {
-  return sharedPreviewMode?.omitLocalScene === true;
+function shouldUseAuthoritativeStageViewState(outputMirrorState = null) {
+  return outputMirrorState?.omitLocalScene === true;
 }
 
 export function shouldUseAuthoritativePerformanceHud({
-  sharedPreviewMode = null,
+  outputMirrorState = null,
   authoritativeStageTelemetry = null,
   authoritativeOutputHudMetrics = null,
 } = {}) {
   const authoritativeOutputActive =
-    sharedPreviewMode?.authorityMode === "performer-output-authoritative";
+    outputMirrorState?.authorityMode === "performer-output-authoritative";
   const hasAuthoritativeHudData =
     authoritativeStageTelemetry?.performanceHudSnapshot != null ||
     authoritativeOutputHudMetrics != null;
@@ -69,11 +69,11 @@ export function shouldUseAuthoritativePerformanceHud({
 
 export function resolveCameraControlFieldState({
   frameFieldState = "idle",
-  sharedPreviewMode = null,
+  outputMirrorState = null,
   authoritativeStageStatus = null,
 } = {}) {
   if (
-    shouldUseAuthoritativeStageViewState(sharedPreviewMode) &&
+    shouldUseAuthoritativeStageViewState(outputMirrorState) &&
     typeof authoritativeStageStatus?.renderedFieldState === "string" &&
     authoritativeStageStatus.renderedFieldState
   ) {
@@ -85,7 +85,7 @@ export function resolveCameraControlFieldState({
 
 /**
  * @param {{
- *   sharedPreviewMode?: {
+ *   outputMirrorState?: {
  *     omitLocalScene?: boolean,
  *   } | null,
  *   authoritativeStageStatus?: {
@@ -95,11 +95,11 @@ export function resolveCameraControlFieldState({
  * }} [options]
  */
 export function resolveActiveCameraControlPreset({
-  sharedPreviewMode = null,
+  outputMirrorState = null,
   authoritativeStageStatus = null,
   fallbackCameraViewPreset,
 } = {}) {
-  if (!shouldUseAuthoritativeStageViewState(sharedPreviewMode)) {
+  if (!shouldUseAuthoritativeStageViewState(outputMirrorState)) {
     return fallbackCameraViewPreset;
   }
 

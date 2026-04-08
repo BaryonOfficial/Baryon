@@ -2,17 +2,17 @@ import React, { useRef, useState, useEffect } from "react";
 import { useAudio } from "../context/AudioContext";
 import { SourceSelector } from "./controls/SourceSelector";
 
-// ─── SVG Icons ───────────────────────────────────────────────────────────────
+// ─── SVG Icons (Nothing: monoline, 1.5px stroke, no fill, round caps) ───────
 
 function MusicNoteIcon() {
   return (
     <svg
-      width="13"
-      height="13"
+      width="14"
+      height="14"
       viewBox="0 0 24 24"
       fill="none"
-      stroke="rgba(255,255,255,0.45)"
-      strokeWidth="2"
+      stroke="currentColor"
+      strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -25,7 +25,16 @@ function MusicNoteIcon() {
 
 function PlayIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <polygon points="5,3 19,12 5,21" />
     </svg>
   );
@@ -33,17 +42,35 @@ function PlayIcon() {
 
 function PauseIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-      <rect x="5" y="4" width="4" height="16" rx="1" />
-      <rect x="15" y="4" width="4" height="16" rx="1" />
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="6" y1="4" x2="6" y2="20" />
+      <line x1="18" y1="4" x2="18" y2="20" />
     </svg>
   );
 }
 
 function StopIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-      <rect x="4" y="4" width="16" height="16" rx="2" />
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="4" y="4" width="16" height="16" />
     </svg>
   );
 }
@@ -52,12 +79,12 @@ function VolumeIcon({ muted }) {
   if (muted) {
     return (
       <svg
-        width="13"
-        height="13"
+        width="14"
+        height="14"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
-        strokeWidth="2"
+        strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       >
@@ -70,12 +97,12 @@ function VolumeIcon({ muted }) {
 
   return (
     <svg
-      width="13"
-      height="13"
+      width="14"
+      height="14"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -88,7 +115,16 @@ function VolumeIcon({ muted }) {
 
 function SoundCloudIcon() {
   return (
-    <svg width="16" height="10" viewBox="0 0 64 40" fill="currentColor">
+    <svg
+      width="16"
+      height="10"
+      viewBox="0 0 64 40"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M25.2 15.1A11.3 11.3 0 0 0 14 26.4V28H9.6A9.6 9.6 0 0 0 0 37.6 2.4 2.4 0 0 0 2.4 40h50a11.6 11.6 0 0 0 0-23.1 15 15 0 0 0-27.2-1.8Z" />
     </svg>
   );
@@ -97,12 +133,12 @@ function SoundCloudIcon() {
 function HistoryIcon() {
   return (
     <svg
-      width="13"
-      height="13"
+      width="14"
+      height="14"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -158,15 +194,15 @@ function getStatusConfig(
 ) {
   if (isLiveInputActive)
     return {
-      color: "#ff453a",
+      color: "#D71921",
       pulse: true,
       label:
         liveInputDeviceKind === "system" ? "System input active" : "Mic active",
     };
-  if (isPlaying) return { color: "#32d74b", pulse: true, label: "Playing" };
-  if (isAudioLoaded) return { color: "#0a84ff", pulse: false, label: "Loaded" };
-  if (isEngineReady) return { color: "#32d74b", pulse: false, label: "Ready" };
-  return { color: "#ff9f0a", pulse: true, label: "Initializing" };
+  if (isPlaying) return { color: "#4A9E5C", pulse: true, label: "Playing" };
+  if (isAudioLoaded) return { color: "#5B9BF6", pulse: false, label: "Loaded" };
+  if (isEngineReady) return { color: "#4A9E5C", pulse: false, label: "Ready" };
+  return { color: "#D4A843", pulse: true, label: "Initializing" };
 }
 
 function formatClockTime(totalSeconds) {
@@ -187,9 +223,10 @@ function formatFileSize(totalBytes) {
   return `${safeBytes} B`;
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// ─── Styles (Nothing Design System — dark mode) ─────────────────────────────
 
 const CSS = `
+
 @keyframes am-pulse {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.3; }
@@ -204,7 +241,7 @@ const CSS = `
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.55rem;
+  gap: 8px;
   width: fit-content;
   max-width: calc(100vw - 1.5rem);
 }
@@ -213,17 +250,12 @@ const CSS = `
   position: relative;
   display: flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.5rem 0.875rem;
-  background: rgba(28, 28, 30, 0.85);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 9999px;
-  box-shadow:
-    0 8px 40px rgba(0, 0, 0, 0.55),
-    0 1px 0 rgba(255, 255, 255, 0.05) inset;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  gap: 4px;
+  padding: 8px 16px;
+  background: #111111;
+  border: 1px solid #222222;
+  border-radius: 8px;
+  font-family: "Space Grotesk", "DM Sans", system-ui, sans-serif;
   user-select: none;
   white-space: nowrap;
   box-sizing: border-box;
@@ -232,7 +264,7 @@ const CSS = `
 .am-controls-row {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: 4px;
   min-width: 0;
   width: 100%;
 }
@@ -244,33 +276,31 @@ const CSS = `
   display: contents;
 }
 
+/* ── Timeline — Nothing: flat surface, square-ended track ── */
 .am-timeline-shell {
   display: flex;
   align-items: center;
-  padding: 0.55rem 0.875rem 0.65rem;
-  background: rgba(28, 28, 30, 0.72);
-  backdrop-filter: blur(22px) saturate(170%);
-  -webkit-backdrop-filter: blur(22px) saturate(170%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9999px;
-  box-shadow:
-    0 8px 28px rgba(0, 0, 0, 0.38),
-    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  padding: 8px 16px 10px;
+  background: #111111;
+  border: 1px solid #222222;
+  border-radius: 8px;
 }
 
 .am-timeline-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
   min-width: 0;
   width: 100%;
 }
 
 .am-timeline-time {
-  min-width: 2.2rem;
-  color: rgba(255, 255, 255, 0.52);
-  font-size: 0.67rem;
+  min-width: 2.4rem;
+  color: #999999;
+  font-family: "Space Mono", "JetBrains Mono", "SF Mono", monospace;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
   text-align: center;
 }
 
@@ -281,104 +311,103 @@ const CSS = `
   flex: 1 1 auto;
   width: 100%;
   height: 4px;
-  border-radius: 9999px;
+  border-radius: 0;
   outline: none;
   cursor: pointer;
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.92) 0%,
-    rgba(255, 255, 255, 0.92) var(--am-progress-percent),
-    rgba(255, 255, 255, 0.14) var(--am-progress-percent),
-    rgba(255, 255, 255, 0.14) 100%
+    #E8E8E8 0%,
+    #E8E8E8 var(--am-progress-percent),
+    #222222 var(--am-progress-percent),
+    #222222 100%
   );
 }
 
 .am-progress::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  width: 10px;
+  height: 10px;
+  border-radius: 0;
+  background: #FFFFFF;
+  border: 1px solid #333333;
 }
 
 .am-progress::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  width: 10px;
+  height: 10px;
+  border: 1px solid #333333;
+  border-radius: 0;
+  background: #FFFFFF;
 }
 
 .am-progress::-moz-range-track {
   height: 4px;
   border: none;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.14);
+  border-radius: 0;
+  background: #222222;
 }
 
-/* ── Track section ── */
+/* ── Track section — Nothing: minimal, typographic ── */
 .am-track {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 9999px;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
   cursor: pointer;
-  transition: background 150ms;
-  max-width: 190px;
+  transition: border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  max-width: 200px;
   min-width: 0;
+  border: 1px solid transparent;
 }
-.am-track:hover { background: rgba(255, 255, 255, 0.08); }
+.am-track:hover { border-color: #333333; }
 
 .am-source-tools {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 4px;
 }
 
 .am-status-group {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
 }
 
 .am-track-label {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 8px;
   min-width: 0;
 }
 
 .am-track-popup {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 0.55rem);
-  transform: translateX(-50%) translateY(0.2rem);
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%) translateY(2px);
   min-width: 13rem;
   max-width: min(18rem, calc(100vw - 2rem));
-  padding: 0.55rem 0.7rem;
-  border: 1px solid rgba(255, 177, 92, 0.26);
-  border-radius: 0.8rem;
-  background: rgba(26, 20, 12, 0.94);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
-  color: rgba(255, 232, 204, 0.96);
-  font-size: 0.68rem;
-  line-height: 1.45;
+  padding: 8px 12px;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  background: #111111;
+  color: #E8E8E8;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
   white-space: normal;
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
   transition:
-    opacity 150ms ease,
-    visibility 150ms ease,
-    transform 150ms ease;
+    opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    visibility 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
   z-index: 75;
 }
 
@@ -387,11 +416,11 @@ const CSS = `
   position: absolute;
   left: 50%;
   top: 100%;
-  width: 0.7rem;
-  height: 0.7rem;
-  background: rgba(26, 20, 12, 0.94);
-  border-right: 1px solid rgba(255, 177, 92, 0.22);
-  border-bottom: 1px solid rgba(255, 177, 92, 0.22);
+  width: 8px;
+  height: 8px;
+  background: #111111;
+  border-right: 1px solid #333333;
+  border-bottom: 1px solid #333333;
   transform: translateX(-50%) translateY(-50%) rotate(45deg);
 }
 
@@ -401,56 +430,73 @@ const CSS = `
   transform: translateX(-50%) translateY(0);
 }
 
+/* ── Source buttons — Nothing: ghost/outline, no fills ── */
 .am-btn--soundcloud {
   width: 30px;
   height: 30px;
-  background: rgba(255, 85, 0, 0.16);
-  color: #ff7a1a;
+  background: transparent;
+  border: 1px solid #333333;
+  color: #999999;
 }
 
 .am-btn--soundcloud:hover {
-  background: rgba(255, 85, 0, 0.28);
+  border-color: #E8E8E8;
+  color: #E8E8E8;
 }
 
 .am-btn--soundcloud-active {
-  background: rgba(255, 85, 0, 0.32);
-  color: #ff9c52;
+  border-color: #E8E8E8;
+  color: #FFFFFF;
 }
 
 .am-btn--recent {
   width: 30px;
   height: 30px;
-  background: rgba(10, 132, 255, 0.13);
-  color: rgba(122, 189, 255, 0.92);
+  background: transparent;
+  border: 1px solid #333333;
+  color: #999999;
 }
 
 .am-btn--recent:hover {
-  background: rgba(10, 132, 255, 0.22);
+  border-color: #E8E8E8;
+  color: #E8E8E8;
 }
 
 .am-btn--recent-active {
-  background: rgba(10, 132, 255, 0.28);
-  color: #a9d5ff;
+  border-color: #E8E8E8;
+  color: #FFFFFF;
 }
 
+/* ── Status — Nothing: dot + instrument-panel label ── */
 .am-status-dot {
   flex-shrink: 0;
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
+}
+
+.am-status-label {
+  font-family: "Space Mono", monospace;
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #666666;
+  white-space: nowrap;
 }
 
 .am-filename-wrap {
   overflow: hidden;
-  max-width: 145px;
+  max-width: 150px;
   display: block;
   min-width: 0;
 }
 
 .am-filename {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.88);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  color: #E8E8E8;
   white-space: nowrap;
   display: inline-block;
 }
@@ -463,12 +509,12 @@ const CSS = `
   100% { transform: translateX(0); }
 }
 
-/* ── Divider ── */
+/* ── Divider — Nothing: structural border ── */
 .am-divider {
   width: 1px;
   height: 18px;
-  background: rgba(255, 255, 255, 0.12);
-  margin: 0 0.125rem;
+  background: #222222;
+  margin: 0 4px;
   flex-shrink: 0;
 }
 
@@ -476,46 +522,60 @@ const CSS = `
 .am-transport {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 4px;
 }
 
-/* ── Shared button base ── */
+/* ── Shared button base — Nothing: outlined, no fill, mechanical ── */
 .am-btn {
-  border: none;
+  border: 1px solid #333333;
+  background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  color: rgba(255, 255, 255, 0.88);
-  transition: background 150ms, transform 80ms, opacity 150ms;
+  border-radius: 4px;
+  color: #E8E8E8;
+  transition: border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+              color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+              opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
   flex-shrink: 0;
 }
 .am-btn:disabled {
-  opacity: 0.28;
+  opacity: 0.4;
   cursor: default;
+  border-color: #222222;
+  color: #666666;
 }
 
-/* Play/Pause — larger, slightly filled */
+/* Play/Pause — primary action, white bg inverted */
 .am-btn--play {
   width: 36px;
   height: 36px;
-  background: rgba(255, 255, 255, 0.14);
+  background: #FFFFFF;
+  border-color: #FFFFFF;
+  color: #000000;
 }
 .am-btn--play:not(:disabled):hover {
-  background: rgba(255, 255, 255, 0.24);
-  transform: scale(1.06);
+  background: #E8E8E8;
+  border-color: #E8E8E8;
 }
-.am-btn--play:not(:disabled):active { transform: scale(0.96); }
+.am-btn--play:not(:disabled):active { opacity: 0.8; }
+.am-btn--play:disabled {
+  background: #333333;
+  border-color: #333333;
+  color: #666666;
+}
 
-/* Stop — smaller */
+/* Stop — ghost */
 .am-btn--stop {
   width: 30px;
   height: 30px;
-  background: rgba(255, 255, 255, 0.07);
 }
-.am-btn--stop:not(:disabled):hover { background: rgba(255, 255, 255, 0.14); }
-.am-btn--stop:not(:disabled):active { transform: scale(0.94); }
+.am-btn--stop:not(:disabled):hover {
+  border-color: #E8E8E8;
+  color: #FFFFFF;
+}
+.am-btn--stop:not(:disabled):active { opacity: 0.8; }
 
 /* ── Mic ── */
 .am-live-input-wrap {
@@ -523,30 +583,35 @@ const CSS = `
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 0.45rem;
+  gap: 8px;
   flex-shrink: 0;
 }
 
 .am-btn--live-input {
   width: 30px;
   height: 30px;
-  background: rgba(255, 255, 255, 0.07);
 }
-.am-btn--live-input:hover { background: rgba(255, 255, 255, 0.14); }
-.am-btn--live-input:active { transform: scale(0.94); }
+.am-btn--live-input:hover {
+  border-color: #E8E8E8;
+  color: #FFFFFF;
+}
+.am-btn--live-input:active { opacity: 0.8; }
 
 .am-btn--live-input-active {
-  background: rgba(255, 69, 58, 0.28) !important;
-  color: #ff453a !important;
+  border-color: #D71921 !important;
+  color: #D71921 !important;
   animation: am-pulse 1.5s ease-in-out infinite;
 }
-.am-btn--live-input-active:hover { background: rgba(255, 69, 58, 0.42) !important; }
+.am-btn--live-input-active:hover {
+  border-color: #ff453a !important;
+  color: #ff453a !important;
+}
 
-/* ── Volume ── */
+/* ── Volume — Nothing: flat, monochrome, mechanical slider ── */
 .am-volume {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 8px;
 }
 
 .am-volume-meta {
@@ -556,18 +621,20 @@ const CSS = `
 .am-btn--volume {
   width: 30px;
   height: 30px;
-  background: rgba(255, 255, 255, 0.07);
 }
-.am-btn--volume:hover { background: rgba(255, 255, 255, 0.14); }
-.am-btn--volume:active { transform: scale(0.94); }
+.am-btn--volume:hover {
+  border-color: #E8E8E8;
+  color: #FFFFFF;
+}
+.am-btn--volume:active { opacity: 0.8; }
 
 .am-slider {
   appearance: none;
   -webkit-appearance: none;
   width: 88px;
   height: 4px;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.14);
+  border-radius: 0;
+  background: #222222;
   outline: none;
   cursor: pointer;
 }
@@ -575,138 +642,127 @@ const CSS = `
 .am-slider::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  width: 10px;
+  height: 10px;
+  border-radius: 0;
+  background: #FFFFFF;
+  border: 1px solid #333333;
 }
 
 .am-slider::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  width: 10px;
+  height: 10px;
+  border: 1px solid #333333;
+  border-radius: 0;
+  background: #FFFFFF;
 }
 
 .am-slider::-moz-range-track {
   height: 4px;
   border: none;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.14);
+  border-radius: 0;
+  background: #222222;
 }
 
-/* ── Device menu ── */
+/* ── Device menu — Nothing: flat surface, border separation ── */
 .am-device-menu {
   position: absolute;
-  bottom: calc(100% + 0.6rem);
+  bottom: calc(100% + 8px);
   right: 0;
   min-width: 14rem;
-  background: rgba(30, 30, 32, 0.92);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 0.75rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  padding: 0.375rem 0;
+  background: #1A1A1A;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  padding: 4px 0;
   z-index: 60;
   overflow: hidden;
 }
 
+/* ── Panels — Nothing: flat surfaces ── */
 .am-soundcloud-panel {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 0.8rem);
+  bottom: calc(100% + 12px);
   transform: translateX(-50%);
   width: min(30rem, calc(100vw - 1.5rem));
-  padding: 0.8rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 1rem;
-  background: rgba(20, 20, 24, 0.94);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.44);
+  padding: 16px;
+  border: 1px solid #333333;
+  border-radius: 12px;
+  background: #111111;
   z-index: 70;
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
   white-space: normal;
   transition:
-    opacity 160ms ease,
-    visibility 160ms ease,
-    transform 160ms ease;
+    opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    visibility 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 .am-soundcloud-hidden {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transform: translateX(-50%) translateY(0.4rem);
 }
 
 .am-recent-panel {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 0.8rem);
+  bottom: calc(100% + 12px);
   transform: translateX(-50%);
   width: min(24rem, calc(100vw - 1.5rem));
-  padding: 0.8rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 1rem;
-  background: rgba(18, 22, 28, 0.95);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.44);
+  padding: 16px;
+  border: 1px solid #333333;
+  border-radius: 12px;
+  background: #111111;
   z-index: 70;
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
   white-space: normal;
   transition:
-    opacity 160ms ease,
-    visibility 160ms ease,
-    transform 160ms ease;
+    opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    visibility 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 .am-recent-hidden {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transform: translateX(-50%) translateY(0.4rem);
 }
 
 .am-recent-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.6rem;
-  margin-bottom: 0.35rem;
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 0.84rem;
-  font-weight: 600;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: #E8E8E8;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .am-recent-header span:first-child {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 8px;
 }
 
 .am-recent-header span:last-child {
-  color: rgba(255, 255, 255, 0.42);
-  font-size: 0.68rem;
-  font-weight: 500;
+  color: #666666;
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  font-weight: 400;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .am-recent-helper {
-  margin: 0 0 0.65rem;
-  color: rgba(255, 255, 255, 0.54);
-  font-size: 0.74rem;
-  line-height: 1.45;
+  margin: 0 0 12px;
+  color: #999999;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .am-recent-list {
@@ -715,7 +771,7 @@ const CSS = `
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 1px;
 }
 
 .am-recent-item {
@@ -723,39 +779,45 @@ const CSS = `
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.7rem;
-  padding: 0.65rem 0.75rem;
+  gap: 12px;
+  padding: 12px 16px;
   border: none;
-  border-radius: 0.8rem;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.92);
+  border-radius: 0;
+  background: transparent;
+  color: #E8E8E8;
   text-align: left;
   cursor: pointer;
-  transition: background 120ms ease, transform 80ms ease;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  border-bottom: 1px solid #222222;
+  transition: background 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.am-recent-item:last-child {
+  border-bottom: none;
 }
 
 .am-recent-item--pending {
-  background: rgba(255, 159, 10, 0.14);
-  box-shadow: inset 0 0 0 1px rgba(255, 159, 10, 0.22);
+  background: rgba(215, 25, 33, 0.08);
+  border-left: 2px solid #D71921;
 }
 
 .am-recent-item:hover {
-  background: rgba(10, 132, 255, 0.16);
+  background: #1A1A1A;
 }
 
 .am-recent-item--pending:hover {
-  background: rgba(255, 159, 10, 0.2);
+  background: rgba(215, 25, 33, 0.12);
 }
 
 .am-recent-item:active {
-  transform: scale(0.99);
+  opacity: 0.8;
 }
 
 .am-recent-item-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 2px;
 }
 
 .am-recent-item-title {
@@ -763,139 +825,158 @@ const CSS = `
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.77rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  font-weight: 400;
+  color: #E8E8E8;
 }
 
 .am-recent-item-meta {
-  font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.48);
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  color: #666666;
+  letter-spacing: 0.04em;
 }
 
 .am-recent-item-action {
   flex-shrink: 0;
-  color: #7abdff;
-  font-size: 0.67rem;
-  font-weight: 700;
+  color: #999999;
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  font-weight: 400;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .am-recent-item-action--pending {
-  color: rgba(255, 190, 112, 0.92);
+  color: #D71921;
 }
 
+/* ── SoundCloud panel — Nothing style ── */
 .am-soundcloud-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.6rem;
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 0.85rem;
-  font-weight: 600;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #E8E8E8;
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .am-soundcloud-form {
   display: flex;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
 .am-soundcloud-input {
   flex: 1;
   min-width: 0;
-  height: 2.4rem;
-  padding: 0 0.85rem;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 0.82rem;
+  height: 40px;
+  padding: 0 12px;
+  border: none;
+  border-bottom: 1px solid #333333;
+  border-radius: 0;
+  background: transparent;
+  color: #E8E8E8;
+  font-family: "Space Mono", monospace;
+  font-size: 13px;
   outline: none;
 }
 
 .am-soundcloud-input::placeholder {
-  color: rgba(255, 255, 255, 0.42);
+  color: #666666;
 }
 
 .am-soundcloud-input:focus {
-  border-color: rgba(255, 122, 26, 0.68);
+  border-bottom-color: #E8E8E8;
 }
 
 .am-soundcloud-submit {
-  height: 2.4rem;
-  padding: 0 0.95rem;
-  border: none;
+  height: 40px;
+  padding: 0 24px;
+  border: 1px solid #333333;
   border-radius: 999px;
-  background: linear-gradient(135deg, #ff7a1a, #ff5500);
-  color: white;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  background: transparent;
+  color: #E8E8E8;
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
+  transition: border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+              color 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 .am-soundcloud-submit:hover {
-  filter: brightness(1.05);
+  border-color: #E8E8E8;
+  color: #FFFFFF;
 }
 
 .am-soundcloud-helper,
 .am-soundcloud-error {
-  margin: 0.55rem 0 0;
-  font-size: 0.76rem;
-  line-height: 1.45;
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
   white-space: normal;
   overflow-wrap: anywhere;
 }
 
 .am-soundcloud-helper {
-  color: rgba(255, 255, 255, 0.56);
+  color: #666666;
 }
 
 .am-soundcloud-error {
-  color: #ff8f85;
+  color: #D71921;
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 
 .am-soundcloud-meta {
-  margin-top: 0.7rem;
-  padding: 0.75rem 0.85rem;
-  border-radius: 0.8rem;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: 0;
+  background: #1A1A1A;
+  border: 1px solid #222222;
 }
 
 .am-soundcloud-title {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 8px;
   margin: 0;
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.am-soundcloud-index {
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 0.7rem;
+  color: #E8E8E8;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 14px;
   font-weight: 500;
 }
 
+.am-soundcloud-index {
+  color: #666666;
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+
 .am-soundcloud-subtitle {
-  margin: 0.35rem 0 0;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 0.72rem;
-  line-height: 1.45;
+  margin: 4px 0 0;
+  color: #999999;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .am-soundcloud-list {
-  margin: 0.65rem 0 0;
+  margin: 12px 0 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0;
 }
 
 .am-soundcloud-item {
@@ -903,16 +984,22 @@ const CSS = `
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 8px;
   min-width: 0;
-  padding: 0.45rem 0.55rem;
-  border-radius: 0.65rem;
-  background: rgba(255, 255, 255, 0.03);
+  padding: 8px 0;
+  border-radius: 0;
+  background: transparent;
+  border-bottom: 1px solid #222222;
+}
+
+.am-soundcloud-item:last-child {
+  border-bottom: none;
 }
 
 .am-soundcloud-item-current {
-  background: rgba(255, 122, 26, 0.16);
-  color: rgba(255, 255, 255, 0.96);
+  border-left: 2px solid #D71921;
+  padding-left: 8px;
+  background: transparent;
 }
 
 .am-soundcloud-item-title {
@@ -920,42 +1007,48 @@ const CSS = `
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.73rem;
-  color: rgba(255, 255, 255, 0.84);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 13px;
+  color: #E8E8E8;
 }
 
 .am-soundcloud-item-current .am-soundcloud-item-title {
-  color: rgba(255, 255, 255, 0.96);
+  color: #FFFFFF;
 }
 
 .am-soundcloud-item-artist {
   flex-shrink: 0;
-  font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.42);
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  color: #666666;
+  letter-spacing: 0.04em;
 }
 
 .am-soundcloud-empty {
-  margin: 0.7rem 0 0;
-  padding: 0.75rem 0.85rem;
-  border-radius: 0.8rem;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.48);
-  font-size: 0.74rem;
-  line-height: 1.45;
+  margin: 12px 0 0;
+  padding: 16px;
+  border-radius: 0;
+  background: #1A1A1A;
+  border: 1px solid #222222;
+  color: #666666;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .am-device-empty {
-  padding: 0.5rem 1rem;
-  font-size: 0.8125rem;
-  color: rgba(255, 255, 255, 0.38);
+  padding: 8px 16px;
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  color: #666666;
+  letter-spacing: 0.04em;
   margin: 0;
 }
 
 .am-device-note {
-  padding: 0 1rem 0.55rem;
-  font-size: 0.74rem;
-  line-height: 1.35;
-  color: rgba(255, 255, 255, 0.46);
+  padding: 0 16px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #666666;
   margin: 0;
 }
 
@@ -964,13 +1057,13 @@ const CSS = `
   width: 100%;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.82);
+  color: #E8E8E8;
   text-align: left;
-  padding: 0.5rem 1rem;
-  font-size: 0.8125rem;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-family: "Space Grotesk", system-ui, sans-serif;
   cursor: pointer;
-  transition: background 100ms;
+  transition: background 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 .am-device-item-label {
@@ -979,23 +1072,35 @@ const CSS = `
 
 .am-device-item-hint {
   display: block;
-  margin-top: 0.16rem;
-  color: rgba(255, 255, 255, 0.46);
-  font-size: 0.72rem;
-  line-height: 1.35;
+  margin-top: 2px;
+  color: #666666;
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
 }
 
-.am-device-item:hover { background: rgba(255, 255, 255, 0.08); }
-.am-device-item--active { color: #0a84ff; }
-.am-device-item--active .am-device-item-hint { color: rgba(160, 204, 255, 0.82); }
+.am-device-item:hover { background: #1A1A1A; }
+.am-device-item--active { color: #FFFFFF; }
+.am-device-item--active::before {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 12px;
+  background: #D71921;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.am-device-item--active .am-device-item-hint { color: #999999; }
 
+/* ── Responsive — Nothing: same rules, tighter spacing ── */
 @media (max-width: 960px) {
   .am-player-shell {
-    gap: 0.42rem;
+    gap: 6px;
   }
 
   .am-player {
-    padding: 0.45rem 0.75rem;
+    padding: 8px 12px;
   }
 
   .am-track {
@@ -1011,7 +1116,7 @@ const CSS = `
   }
 
   .am-timeline-shell {
-    padding: 0.48rem 0.75rem 0.58rem;
+    padding: 8px 12px;
   }
 
   .am-timeline-row {
@@ -1021,17 +1126,17 @@ const CSS = `
 
 @media (max-width: 720px) {
   .am-player-shell {
-    bottom: 1rem;
-    width: calc(100vw - 1rem);
+    bottom: 16px;
+    width: calc(100vw - 16px);
     max-width: none;
-    gap: 0.55rem;
+    gap: 8px;
   }
 
   .am-player {
     flex-direction: column;
     align-items: stretch;
-    padding: 0.65rem 0.7rem;
-    border-radius: 1.6rem;
+    padding: 12px;
+    border-radius: 8px;
     white-space: normal;
   }
 
@@ -1048,19 +1153,19 @@ const CSS = `
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
-    gap: 0.45rem;
+    gap: 8px;
   }
 
   .am-actions-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-    gap: 0.5rem;
+    gap: 8px;
   }
 
   .am-utility-row {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 4px;
     grid-column: 3;
     justify-self: end;
   }
@@ -1074,19 +1179,19 @@ const CSS = `
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    padding: 0 0.35rem;
-    gap: 0.35rem;
+    padding: 0 4px;
+    gap: 4px;
   }
 
   .am-timeline-shell {
-    padding: 0.58rem 0.75rem 0.66rem;
-    border-radius: 1.35rem;
+    padding: 8px 12px;
+    border-radius: 8px;
   }
 
   .am-timeline-row {
     width: 100%;
     min-width: 0;
-    gap: 0.45rem;
+    gap: 8px;
   }
 
   .am-status-group {
@@ -1100,7 +1205,7 @@ const CSS = `
     flex: 0 1 auto;
     width: min(15rem, calc(100vw - 8rem));
     max-width: none;
-    padding: 0.35rem 1rem;
+    padding: 4px 16px;
   }
 
   .am-source-row .am-track {
@@ -1118,7 +1223,7 @@ const CSS = `
   }
 
   .am-filename {
-    font-size: 0.78rem;
+    font-size: 13px;
   }
 
   .am-divider {
@@ -1128,17 +1233,17 @@ const CSS = `
   .am-transport {
     grid-column: 2;
     justify-self: center;
-    gap: 0.35rem;
+    gap: 4px;
   }
 
   .am-volume {
     width: min(100%, 20rem);
     min-width: 0;
-    gap: 0.35rem;
-    padding: 0.42rem 0.55rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.04);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    gap: 4px;
+    padding: 8px;
+    border-radius: 4px;
+    background: #1A1A1A;
+    border: 1px solid #222222;
   }
 
   .am-volume-meta {
@@ -1146,10 +1251,11 @@ const CSS = `
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 0.2rem;
-    color: rgba(255, 255, 255, 0.48);
-    font-size: 0.66rem;
-    font-weight: 600;
+    padding: 0 4px;
+    color: #666666;
+    font-family: "Space Mono", monospace;
+    font-size: 11px;
+    font-weight: 400;
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
@@ -1171,35 +1277,35 @@ const CSS = `
 
 @media (max-width: 480px) {
   .am-player-shell {
-    width: calc(100vw - 0.75rem);
+    width: calc(100vw - 12px);
   }
 
   .am-player {
-    padding: 0.65rem;
+    padding: 12px;
   }
 
   .am-track {
-    gap: 0.35rem;
+    gap: 4px;
     width: min(14rem, calc(100vw - 7.2rem));
-    padding: 0.32rem 0.9rem;
+    padding: 4px 12px;
   }
 
   .am-source-row,
   .am-actions-row,
   .am-volume-row {
-    gap: 0.3rem;
+    gap: 4px;
   }
 
   .am-utility-row {
-    gap: 0.3rem;
+    gap: 4px;
   }
 
   .am-volume-row {
-    padding: 0 0.2rem;
+    padding: 0 4px;
   }
 
   .am-timeline-shell {
-    padding: 0.54rem 0.65rem 0.62rem;
+    padding: 8px 12px;
   }
 
   .am-btn--play {
@@ -1236,17 +1342,17 @@ const CSS = `
 
   .am-volume {
     width: 100%;
-    padding: 0.38rem 0.5rem;
+    padding: 6px 8px;
   }
 
   .am-volume-meta {
     width: 100%;
-    font-size: 0.62rem;
+    font-size: 10px;
   }
 
   .am-timeline-time {
     min-width: 2rem;
-    font-size: 0.64rem;
+    font-size: 10px;
   }
 }
 
