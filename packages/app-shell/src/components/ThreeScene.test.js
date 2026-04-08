@@ -3,14 +3,14 @@ import {
   composeAuthoritativePerformanceHudMetrics,
   resolveActiveCameraControlPreset,
   resolveCameraControlFieldState,
-  resolveSharedPreviewOverlayState,
+  resolveOutputMirrorOverlayState,
   shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
 
-describe("resolveSharedPreviewOverlayState", () => {
+describe("resolveOutputMirrorOverlayState", () => {
   it("returns an unsupported state when presented performer preview is requested without support", () => {
     expect(
-      resolveSharedPreviewOverlayState({
+      resolveOutputMirrorOverlayState({
         requested: true,
         rendering: false,
         supported: false,
@@ -20,9 +20,9 @@ describe("resolveSharedPreviewOverlayState", () => {
     });
   });
 
-  it("returns null once shared preview is actively rendering", () => {
+  it("returns null once the output mirror is actively rendering", () => {
     expect(
-      resolveSharedPreviewOverlayState({
+      resolveOutputMirrorOverlayState({
         requested: true,
         rendering: true,
         supported: true,
@@ -35,12 +35,12 @@ describe("resolveSharedPreviewOverlayState", () => {
   });
 });
 
-describe("shared preview camera control state", () => {
+describe("output mirror camera control state", () => {
   it("uses the authoritative stage field state once the local scene is omitted", () => {
     expect(
       resolveCameraControlFieldState({
         frameFieldState: "idle",
-        sharedPreviewMode: {
+        outputMirrorState: {
           omitLocalScene: true,
         },
         authoritativeStageStatus: {
@@ -50,10 +50,10 @@ describe("shared preview camera control state", () => {
     ).toBe("active");
   });
 
-  it("uses the authoritative rendered camera preset for shared preview controls", () => {
+  it("uses the authoritative rendered camera preset for output mirror controls", () => {
     expect(
       resolveActiveCameraControlPreset({
-        sharedPreviewMode: {
+        outputMirrorState: {
           omitLocalScene: true,
         },
         authoritativeStageStatus: {
@@ -65,7 +65,7 @@ describe("shared preview camera control state", () => {
 
     expect(
       resolveActiveCameraControlPreset({
-        sharedPreviewMode: {
+        outputMirrorState: {
           omitLocalScene: true,
         },
         authoritativeStageStatus: {
@@ -78,10 +78,10 @@ describe("shared preview camera control state", () => {
 });
 
 describe("authoritative performance HUD composition", () => {
-  it("stays on authoritative metrics when output-authoritative mode is active without shared preview", () => {
+  it("stays on authoritative metrics when output-authoritative mode is active without the output mirror", () => {
     expect(
       shouldUseAuthoritativePerformanceHud({
-        sharedPreviewMode: {
+        outputMirrorState: {
           enabled: false,
           requested: false,
           rendering: false,

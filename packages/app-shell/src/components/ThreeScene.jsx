@@ -35,7 +35,7 @@ import {
   resolveActiveCameraControlPreset,
   resolveCameraControlFieldState,
   resolveLiveInputPanelConfig,
-  resolveSharedPreviewOverlayState,
+  resolveOutputMirrorOverlayState,
   shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
 
@@ -99,11 +99,11 @@ function CameraIcon() {
  *   outputFrameConfig?: { enabled: boolean, width: number, height: number } | null,
  *   onOutputFrame?: (frame: { width: number, height: number, rgba: ArrayBuffer }) => Promise<void> | void,
  *   onFrameState?: (state: Record<string, unknown>) => void,
- *   sharedPreviewMode?: {
+ *   outputMirrorState?: {
  *     enabled?: boolean,
  *     requested?: boolean,
  *     rendering?: boolean,
- *     renderMode?: "legacy-double-render" | "single-render-shared-preview",
+ *     renderMode?: "legacy-double-render" | "single-render-output-mirror",
  *     omitLocalScene?: boolean,
  *     supported?: boolean,
  *     connected?: boolean,
@@ -137,14 +137,14 @@ const ThreeScene = ({
   outputFrameConfig = null,
   onOutputFrame = null,
   onFrameState = null,
-  sharedPreviewMode = null,
+  outputMirrorState = null,
   authoritativeOutputHudMetrics = null,
   authoritativeStageTelemetry = null,
   authoritativeStageStatus = null,
 }) => {
   const containerRef = useRef(null);
   const advancedControlsTriggerRef = useRef(null);
-  const operatorControlKeys = sharedPreviewMode ? ["auditEnabled"] : [];
+  const operatorControlKeys = outputMirrorState ? ["auditEnabled"] : [];
   const {
     controlsRef,
     controlsState,
@@ -195,13 +195,13 @@ const ThreeScene = ({
     resetAudioSession,
   } = useAudioScene();
   const { selectedSource } = useAudio();
-  const sharedPreviewVisible = sharedPreviewMode?.requested === true;
-  const sharedPreviewCanvasId = sharedPreviewMode?.canvasId ?? null;
-  const usingSharedPreview = sharedPreviewMode?.rendering === true;
-  const omitLocalScene = sharedPreviewMode?.omitLocalScene === true;
+  const outputMirrorVisible = outputMirrorState?.requested === true;
+  const outputMirrorCanvasId = outputMirrorState?.canvasId ?? null;
+  const usingOutputMirror = outputMirrorState?.rendering === true;
+  const omitLocalScene = outputMirrorState?.omitLocalScene === true;
   const resolvedFrameFieldState = resolveCameraControlFieldState({
     frameFieldState,
-    sharedPreviewMode,
+    outputMirrorState,
     authoritativeStageStatus,
   });
   const defaultCameraViewPreset = resolveDefaultCameraViewPreset({
@@ -236,15 +236,15 @@ const ThreeScene = ({
     liveInputPanel,
   });
   const showOverlayUi = isSupportReady && !isFullscreen;
-  const sharedPreviewOverlayState =
-    resolveSharedPreviewOverlayState(sharedPreviewMode);
+  const outputMirrorOverlayState =
+    resolveOutputMirrorOverlayState(outputMirrorState);
   const activeCameraControlPreset = resolveActiveCameraControlPreset({
-    sharedPreviewMode,
+    outputMirrorState,
     authoritativeStageStatus,
     fallbackCameraViewPreset: effectiveCameraViewPreset,
   });
   const useAuthoritativePerformanceHud = shouldUseAuthoritativePerformanceHud({
-    sharedPreviewMode,
+    outputMirrorState,
     authoritativeStageTelemetry,
     authoritativeOutputHudMetrics,
   });
@@ -392,11 +392,11 @@ const ThreeScene = ({
         background: controlsState.backgroundColor,
       }}
     >
-      {sharedPreviewVisible ? (
+      {outputMirrorVisible ? (
         <>
           <canvas
-            id={sharedPreviewCanvasId ?? undefined}
-            data-testid="shared-output-preview-canvas"
+            id={outputMirrorCanvasId ?? undefined}
+            data-testid="output-mirror-canvas"
             style={{
               position: "absolute",
               top: 0,
@@ -408,14 +408,14 @@ const ThreeScene = ({
               background: "transparent",
               objectFit: "contain",
               objectPosition: "center",
-              opacity: usingSharedPreview ? 1 : 0,
+              opacity: usingOutputMirror ? 1 : 0,
               pointerEvents: "none",
             }}
           />
-          {sharedPreviewOverlayState ? (
+          {outputMirrorOverlayState ? (
             <div
-              data-testid="shared-output-preview-overlay"
-              data-state={sharedPreviewOverlayState.state}
+              data-testid="output-mirror-overlay"
+              data-state={outputMirrorOverlayState.state}
               style={{
                 position: "absolute",
                 inset: 0,
@@ -452,7 +452,7 @@ const ThreeScene = ({
                     marginBottom: "0.35rem",
                   }}
                 >
-                  Presented Performer Preview
+                  Presented Performer Mirror
                 </div>
                 <div
                   style={{
@@ -461,7 +461,7 @@ const ThreeScene = ({
                     marginBottom: "0.25rem",
                   }}
                 >
-                  {sharedPreviewOverlayState.title}
+                  {outputMirrorOverlayState.title}
                 </div>
                 <div
                   style={{
@@ -470,7 +470,7 @@ const ThreeScene = ({
                     color: "rgba(226, 236, 249, 0.82)",
                   }}
                 >
-                  {sharedPreviewOverlayState.message}
+                  {outputMirrorOverlayState.message}
                 </div>
               </div>
             </div>
@@ -491,8 +491,8 @@ const ThreeScene = ({
               left: 0,
               zIndex: 9,
               background: "transparent",
-              opacity: usingSharedPreview ? 0 : 1,
-              pointerEvents: usingSharedPreview ? "none" : "auto",
+              opacity: usingOutputMirror ? 0 : 1,
+              pointerEvents: usingOutputMirror ? "none" : "auto",
             }}
             dpr={[1, 2]}
             camera={{
@@ -523,7 +523,7 @@ const ThreeScene = ({
                 cameraControlMode={CAMERA_CONTROL_MODES.previewLocal}
                 cameraViewPreset={effectiveCameraViewPreset}
                 cameraResetNonce={cameraResetNonce}
-                suppressRender={usingSharedPreview}
+                suppressRender={usingOutputMirror}
               />
             </Suspense>
           </Canvas>
