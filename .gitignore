@@ -36,6 +36,7 @@ tmp/
 .repomixignore
 repomix*
 .cursorrules
+.impeccable.md
 
 # SSL Certificates
 *.pem
