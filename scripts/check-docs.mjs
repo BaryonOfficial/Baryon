@@ -140,6 +140,17 @@ try {
 }
 
 try {
+  execFileSync("node", ["scripts/contract-desktop-bridge.mjs", "--check"], {
+    cwd: rootDir,
+    stdio: "pipe",
+  });
+} catch {
+  errors.push(
+    "documentation/internal/generated/desktop-bridge-contract.md is stale or the desktop bridge contract has drifted; run 'pnpm contract:desktop-bridge' and resolve the mismatch",
+  );
+}
+
+try {
   execFileSync("node", ["scripts/workspace-version.mjs", "--check"], {
     cwd: rootDir,
     stdio: "pipe",
