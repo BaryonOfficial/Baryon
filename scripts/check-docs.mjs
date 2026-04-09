@@ -8,7 +8,14 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(scriptDir, "..");
 
 const markdownFiles = [];
-const skipDirs = new Set([".git", "node_modules", "dist", "coverage", "tmp"]);
+const skipDirs = new Set([
+  ".git",
+  ".claude",
+  "node_modules",
+  "dist",
+  "coverage",
+  "tmp",
+]);
 const markdownExtensions = new Set([".md", ".mdx"]);
 
 function walk(dir) {

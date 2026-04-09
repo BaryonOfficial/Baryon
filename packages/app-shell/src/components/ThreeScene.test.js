@@ -3,14 +3,14 @@ import {
   composeAuthoritativePerformanceHudMetrics,
   resolveActiveCameraControlPreset,
   resolveCameraControlFieldState,
-  resolveOutputMirrorOverlayState,
+  resolvePreviewOverlayState,
   shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
 
-describe("resolveOutputMirrorOverlayState", () => {
+describe("resolvePreviewOverlayState", () => {
   it("returns an unsupported state when presented performer preview is requested without support", () => {
     expect(
-      resolveOutputMirrorOverlayState({
+      resolvePreviewOverlayState({
         requested: true,
         rendering: false,
         supported: false,
@@ -22,7 +22,7 @@ describe("resolveOutputMirrorOverlayState", () => {
 
   it("returns a startup-failed state when the authoritative stage misses startup watchdogs", () => {
     expect(
-      resolveOutputMirrorOverlayState({
+      resolvePreviewOverlayState({
         requested: true,
         rendering: false,
         supported: true,
@@ -39,7 +39,7 @@ describe("resolveOutputMirrorOverlayState", () => {
 
   it("returns a recovering state while the authoritative runtime is retrying", () => {
     expect(
-      resolveOutputMirrorOverlayState({
+      resolvePreviewOverlayState({
         requested: true,
         rendering: false,
         supported: true,
@@ -52,9 +52,9 @@ describe("resolveOutputMirrorOverlayState", () => {
     });
   });
 
-  it("returns null once the output mirror is actively rendering", () => {
+  it("returns null once the preview is actively rendering", () => {
     expect(
-      resolveOutputMirrorOverlayState({
+      resolvePreviewOverlayState({
         requested: true,
         rendering: true,
         supported: true,
@@ -67,12 +67,12 @@ describe("resolveOutputMirrorOverlayState", () => {
   });
 });
 
-describe("output mirror camera control state", () => {
+describe("preview camera control state", () => {
   it("uses the authoritative stage field state once the local scene is omitted", () => {
     expect(
       resolveCameraControlFieldState({
         frameFieldState: "idle",
-        outputMirrorState: {
+        previewState: {
           omitLocalScene: true,
         },
         authoritativeStageStatus: {
@@ -82,10 +82,10 @@ describe("output mirror camera control state", () => {
     ).toBe("active");
   });
 
-  it("uses the authoritative rendered camera preset for output mirror controls", () => {
+  it("uses the authoritative rendered camera preset for preview controls", () => {
     expect(
       resolveActiveCameraControlPreset({
-        outputMirrorState: {
+        previewState: {
           omitLocalScene: true,
         },
         authoritativeStageStatus: {
@@ -97,7 +97,7 @@ describe("output mirror camera control state", () => {
 
     expect(
       resolveActiveCameraControlPreset({
-        outputMirrorState: {
+        previewState: {
           omitLocalScene: true,
         },
         authoritativeStageStatus: {
@@ -110,10 +110,10 @@ describe("output mirror camera control state", () => {
 });
 
 describe("authoritative performance HUD composition", () => {
-  it("stays on authoritative metrics when output-authoritative mode is active without the output mirror", () => {
+  it("stays on authoritative metrics when output-authoritative mode is active without the preview", () => {
     expect(
       shouldUseAuthoritativePerformanceHud({
-        outputMirrorState: {
+        previewState: {
           enabled: false,
           requested: false,
           rendering: false,

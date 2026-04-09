@@ -42,6 +42,12 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  *   resolvedRenderProfile?: import("@baryon/visualizer/render/outputPipeline").RenderQualityProfile | null,
  *   renderProfileOverrides?: { renderScale?: number, traaEnabled?: boolean, bloomAllowed?: boolean } | null,
  *   externalFrameRef?: import("react").MutableRefObject<any>,
+ *   externalCameraState?: {
+ *     position?: { x?: number, y?: number, z?: number },
+ *     target?: { x?: number, y?: number, z?: number },
+ *     up?: { x?: number, y?: number, z?: number },
+ *     fov?: number,
+ *   } | null,
  *   backgroundColor?: string,
  *   cameraViewPreset?: "top-down" | "side" | null,
  *   cameraDistance?: number | null,
@@ -64,6 +70,7 @@ export function OutputStageSurface({
   resolvedRenderProfile = null,
   renderProfileOverrides = null,
   externalFrameRef = null,
+  externalCameraState = null,
   backgroundColor: backgroundColorProp = null,
   cameraViewPreset = null,
   cameraDistance = null,
@@ -175,6 +182,7 @@ export function OutputStageSurface({
                 onPerformanceHudSnapshotChange={onPerformanceHudSnapshotChange}
                 onAuditSnapshotChange={onAuditSnapshotChange}
                 externalFrameRef={externalFrameRef}
+                externalCameraState={externalCameraState}
                 basePixelRatio={1}
                 onStageRender={onStageRender}
                 onFrameState={onFrameState}

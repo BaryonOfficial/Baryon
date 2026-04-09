@@ -40,6 +40,7 @@ export function BaryonScene({
   onOutputFrame = null,
   onFrameState = null,
   externalFrameRef = null,
+  externalCameraState = null,
   structuralControlVersion = 0,
   liveControlSignalRef = null,
   adaptiveResetNonce = 0,
@@ -164,6 +165,36 @@ export function BaryonScene({
     cameraViewPreset,
     visualizationMethod,
   ]);
+
+  useEffect(() => {
+    if (cameraControlMode !== CAMERA_CONTROL_MODES.externalSynced) {
+      return;
+    }
+
+    if (!externalCameraState) {
+      return;
+    }
+
+    camera.position.set(
+      externalCameraState.position.x,
+      externalCameraState.position.y,
+      externalCameraState.position.z,
+    );
+    camera.up.set(
+      externalCameraState.up.x,
+      externalCameraState.up.y,
+      externalCameraState.up.z,
+    );
+    if ("fov" in camera) {
+      camera.fov = externalCameraState.fov;
+    }
+    camera.lookAt(
+      externalCameraState.target.x,
+      externalCameraState.target.y,
+      externalCameraState.target.z,
+    );
+    camera.updateProjectionMatrix();
+  }, [camera, cameraControlMode, externalCameraState]);
 
   const points = useBaryonVisualizer({
     baryonGeometry,
