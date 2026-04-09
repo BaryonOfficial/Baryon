@@ -12,66 +12,66 @@ export function resolveLiveInputPanelConfig({ liveInputPanel = null } = {}) {
   };
 }
 
-export function resolveOutputMirrorOverlayState(outputMirrorState = null) {
-  if (outputMirrorState?.requested !== true || outputMirrorState.rendering) {
+export function resolvePreviewOverlayState(previewState = null) {
+  if (previewState?.requested !== true || previewState.rendering) {
     return null;
   }
 
-  if (!outputMirrorState.supported) {
+  if (!previewState.supported) {
     return {
       state: "unsupported",
-      title: "Mirror unavailable",
+      title: "Preview unavailable",
       message:
-        "Perform requires the authoritative output mirror on this platform and backend.",
+        "Perform requires the authoritative preview path on this platform and backend.",
     };
   }
 
-  if (outputMirrorState.startupFailed) {
+  if (previewState.startupFailed) {
     return {
       state: "startup-failed",
       title: "Performer startup failed",
       message:
-        outputMirrorState.failureReason ??
+        previewState.failureReason ??
         "The authoritative output stage did not become healthy in time.",
     };
   }
 
-  if (outputMirrorState.recovering) {
+  if (previewState.recovering) {
     return {
       state: "recovering",
-      title: "Mirror recovering",
-      message: "Restoring the authoritative output stage and mirror delivery.",
+      title: "Preview recovering",
+      message: "Restoring the authoritative output stage and preview delivery.",
     };
   }
 
-  if (!outputMirrorState.connected || !outputMirrorState.canvasAttached) {
+  if (!previewState.connected || !previewState.canvasAttached) {
     return {
       state: "connecting",
-      title: "Connecting mirror",
+      title: "Connecting preview",
       message:
-        "Connecting the authoritative output mirror to the desktop window.",
+        "Connecting the authoritative performer preview to the desktop window.",
     };
   }
 
   return {
     state: "connecting",
-    title: "Waiting for mirror frames",
+    title: "Waiting for preview frames",
     message:
-      "The authoritative output stage has not delivered mirror frames yet.",
+      "The authoritative output stage has not delivered preview frames yet.",
   };
 }
 
-function shouldUseAuthoritativeStageViewState(outputMirrorState = null) {
-  return outputMirrorState?.omitLocalScene === true;
+function shouldUseAuthoritativeStageViewState(previewState = null) {
+  return previewState?.omitLocalScene === true;
 }
 
 export function shouldUseAuthoritativePerformanceHud({
-  outputMirrorState = null,
+  previewState = null,
   authoritativeStageTelemetry = null,
   authoritativeOutputHudMetrics = null,
 } = {}) {
   const authoritativeOutputActive =
-    outputMirrorState?.authorityMode === "output-stage-authoritative";
+    previewState?.authorityMode === "output-stage-authoritative";
   const hasAuthoritativeHudData =
     authoritativeStageTelemetry?.performanceHudSnapshot != null ||
     authoritativeOutputHudMetrics != null;
@@ -81,11 +81,11 @@ export function shouldUseAuthoritativePerformanceHud({
 
 export function resolveCameraControlFieldState({
   frameFieldState = "idle",
-  outputMirrorState = null,
+  previewState = null,
   authoritativeStageStatus = null,
 } = {}) {
   if (
-    shouldUseAuthoritativeStageViewState(outputMirrorState) &&
+    shouldUseAuthoritativeStageViewState(previewState) &&
     typeof authoritativeStageStatus?.renderedFieldState === "string" &&
     authoritativeStageStatus.renderedFieldState
   ) {
@@ -97,7 +97,7 @@ export function resolveCameraControlFieldState({
 
 /**
  * @param {{
- *   outputMirrorState?: {
+ *   previewState?: {
  *     omitLocalScene?: boolean,
  *   } | null,
  *   authoritativeStageStatus?: {
@@ -107,11 +107,11 @@ export function resolveCameraControlFieldState({
  * }} [options]
  */
 export function resolveActiveCameraControlPreset({
-  outputMirrorState = null,
+  previewState = null,
   authoritativeStageStatus = null,
   fallbackCameraViewPreset,
 } = {}) {
-  if (!shouldUseAuthoritativeStageViewState(outputMirrorState)) {
+  if (!shouldUseAuthoritativeStageViewState(previewState)) {
     return fallbackCameraViewPreset;
   }
 
