@@ -5,6 +5,7 @@
   "license": "LicenseRef-PolyForm-Strict-1.0",
   "type": "module",
   "scripts": {
+    "lint": "eslint src --report-unused-disable-directives --max-warnings 0",
     "test": "vitest run"
   },
   "exports": {

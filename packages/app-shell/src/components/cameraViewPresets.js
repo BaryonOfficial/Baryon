@@ -3,7 +3,7 @@ export const CAMERA_VIEW_PRESETS = Object.freeze({
   side: "side",
 });
 
-export const CAMERA_DISTANCE_LIMITS = Object.freeze({
+const CAMERA_DISTANCE_LIMITS = Object.freeze({
   min: 0.1,
   max: 99,
 });

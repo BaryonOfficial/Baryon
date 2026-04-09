@@ -32,7 +32,7 @@ function damp(current, target, smoothing, deltaTime) {
   return current + (target - current) * factor;
 }
 
-export function wrapAngle(angle) {
+function wrapAngle(angle) {
   const turn = Math.PI * 2;
   let wrapped = angle;
   while (wrapped <= -Math.PI) wrapped += turn;
@@ -40,7 +40,7 @@ export function wrapAngle(angle) {
   return wrapped;
 }
 
-export function dampAngle(current, target, smoothing, deltaTime) {
+function dampAngle(current, target, smoothing, deltaTime) {
   const delta = wrapAngle(target - current);
   return wrapAngle(
     current + delta * (1 - Math.exp(-smoothing * Math.max(0, deltaTime))),

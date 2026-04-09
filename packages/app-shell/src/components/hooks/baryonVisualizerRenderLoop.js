@@ -26,7 +26,6 @@ import {
 } from "@baryon/visualizer/render/outputPipeline";
 import {
   createEmptyAnalysisSchedulerState,
-  maybePublishRuntimePerfSnapshot,
   recordRuntimePerfSample,
   shouldReuseIdleFrame,
   snapshotRuntimePerfBreakdown,
@@ -1812,5 +1811,3 @@ export function publishDevtoolsSnapshots(
 
   markRuntimeReady();
 }
-
-export { maybePublishRuntimePerfSnapshot };

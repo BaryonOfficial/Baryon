@@ -13,7 +13,7 @@ import {
   WEBGPU_RENDERER_INIT_ERROR,
 } from "./rendererDiagnostics.js";
 import {
-  DEFAULT_RENDER_QUALITY_PRESET,
+  DEFAULT_PERFORMANCE_PROFILE,
   RENDER_CONTEXTS,
 } from "@baryon/visualizer/render/outputPipeline";
 
@@ -66,7 +66,7 @@ function StageInvalidateBridge({ registerRenderRequester }) {
 export function OutputStageSurface({
   controlsRef,
   visualizationMethod,
-  renderQualityPreset = DEFAULT_RENDER_QUALITY_PRESET,
+  renderQualityPreset = DEFAULT_PERFORMANCE_PROFILE,
   resolvedRenderProfile = null,
   renderProfileOverrides = null,
   externalFrameRef = null,

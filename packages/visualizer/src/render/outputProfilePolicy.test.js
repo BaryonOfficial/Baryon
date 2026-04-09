@@ -2,38 +2,23 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PERFORMANCE_TARGET_FPS,
   applyRenderQualityProfileOverrides,
-  DEFAULT_RENDER_QUALITY_PRESET,
   DEFAULT_PERFORMANCE_PROFILE,
   formatPerformanceProfileLabel,
   normalizePerformanceProfile,
   normalizeRenderQualityProfileOverrides,
   normalizePerformanceTargetFps,
   normalizeResolvedRenderQualityProfile,
-  normalizeRenderQualityPreset,
-  PERFORMANCE_PROFILES,
   RENDER_CONTEXTS,
-  RENDER_QUALITY_PRESETS,
   resolveRenderQualityProfile,
 } from "./outputProfilePolicy.js";
 
 describe("render quality profiles", () => {
-  it("keeps the canonical performance profile constants aligned with the legacy aliases", () => {
-    expect(PERFORMANCE_PROFILES).toBe(RENDER_QUALITY_PRESETS);
-    expect(DEFAULT_PERFORMANCE_PROFILE).toBe(DEFAULT_RENDER_QUALITY_PRESET);
-    expect(normalizeRenderQualityPreset("none")).toBe(
-      normalizePerformanceProfile("none"),
-    );
-    expect(normalizeRenderQualityPreset("unexpected")).toBe(
-      normalizePerformanceProfile("unexpected"),
-    );
-  });
-
   it("normalizes quality presets and defaults to auto", () => {
-    expect(normalizeRenderQualityPreset("custom")).toBe("custom");
-    expect(normalizeRenderQualityPreset("none")).toBe("max-quality");
-    expect(normalizeRenderQualityPreset("max-quality")).toBe("max-quality");
-    expect(normalizeRenderQualityPreset("unexpected")).toBe(
-      DEFAULT_RENDER_QUALITY_PRESET,
+    expect(normalizePerformanceProfile("custom")).toBe("custom");
+    expect(normalizePerformanceProfile("none")).toBe("max-quality");
+    expect(normalizePerformanceProfile("max-quality")).toBe("max-quality");
+    expect(normalizePerformanceProfile("unexpected")).toBe(
+      DEFAULT_PERFORMANCE_PROFILE,
     );
   });
 

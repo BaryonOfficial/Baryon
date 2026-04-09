@@ -2638,5 +2638,3 @@ export function ListenerControls({
     </>
   );
 }
-
-export default ListenerControls;

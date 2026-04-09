@@ -14,7 +14,7 @@ import { DEFAULT_VISUALIZATION_METHOD } from "@baryon/visualizer/visualization/t
 
 export const SETTINGS_KEY = "baryon:settings";
 export const PRESETS_KEY = "baryon:presets";
-export const CONTROLS_PERSIST_DELAY_MS = 500;
+const CONTROLS_PERSIST_DELAY_MS = 500;
 const MODE_GROUP = "Mode";
 const DIAGNOSTICS_GROUP = "Diagnostics";
 const PRESETS_AREA_GROUP = "PresetsArea";
@@ -336,18 +336,6 @@ export function getVisibleControlLayout({
   return splitPresentationGroups(
     createVisibleFolderGroups({ devtoolsEnabled, method, operatorControlKeys }),
   );
-}
-
-export function getVisibleControlGroups({
-  devtoolsEnabled,
-  method = DEFAULT_VISUALIZATION_METHOD,
-  operatorControlKeys = [],
-}) {
-  return getVisibleControlLayout({
-    devtoolsEnabled,
-    method,
-    operatorControlKeys,
-  }).folderGroups;
 }
 
 export function persistControls(storage, controls) {

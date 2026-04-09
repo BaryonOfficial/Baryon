@@ -16,7 +16,7 @@ import {
 } from "../core/cavityGeometry.js";
 import {
   normalizeOutputMode,
-  normalizeRenderQualityPreset,
+  normalizePerformanceProfile,
 } from "../render/outputProfilePolicy.js";
 import {
   deriveLowStepBloomGuard,
@@ -224,7 +224,7 @@ export function applySharedControls(gl, controls) {
   return {
     backgroundColor: controls.backgroundColor,
     performanceHudEnabled: Boolean(controls.performanceHudEnabled),
-    renderQualityPreset: normalizeRenderQualityPreset(
+    renderQualityPreset: normalizePerformanceProfile(
       controls.renderQualityPreset,
     ),
     customPerformanceTargetFps:

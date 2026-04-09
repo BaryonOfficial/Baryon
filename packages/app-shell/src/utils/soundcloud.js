@@ -141,7 +141,7 @@ export function isSoundCloudUrl(value) {
   }
 }
 
-export function getSoundCloudClientId(env = import.meta.env) {
+function getSoundCloudClientId(env = import.meta.env) {
   return String(env?.VITE_SOUNDCLOUD_CLIENT_ID || "").trim();
 }
 

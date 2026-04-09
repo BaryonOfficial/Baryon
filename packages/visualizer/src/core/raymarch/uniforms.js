@@ -8,8 +8,6 @@ import {
 import { FIELD_STATE_VALUES } from "../fieldState.js";
 import { getBoundaryModeValue } from "../modeFamily.js";
 
-export { FIELD_STATE_VALUES };
-
 export function createRaymarchUniforms(parameters) {
   return {
     uTime: uniform(0.0),
