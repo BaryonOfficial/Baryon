@@ -206,6 +206,51 @@ function ensureStyles() {
   pointer-events: none;
 }
 
+.ac-source-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ac-source-compact-btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--nd-text-secondary, #999999);
+  cursor: pointer;
+  transition:
+    border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    background 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.ac-source-compact-btn[data-active="true"] {
+  background: var(--nd-text-display, #ffffff);
+  color: var(--nd-black, #050505);
+  border-color: var(--nd-text-display, #ffffff);
+}
+
+.ac-source-compact-btn[data-live="true"] {
+  border-color: var(--nd-accent, #ff3b30);
+  color: var(--nd-accent, #ff3b30);
+}
+
+.ac-source-compact-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ac-source-compact-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
 @media (max-width: 720px) {
   .ac-source-selector {
     min-width: 0;
@@ -235,8 +280,6 @@ function ensureStyles() {
   .ac-source-live-btn {
     min-width: 5rem;
   }
-}
-
 @media (max-width: 480px) {
   .ac-source-selector {
     justify-content: stretch;
@@ -270,20 +313,89 @@ function ensureStyles() {
   document.head.appendChild(el);
 }
 
+function FileIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M7 5.5h6l4 4V18a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 6 18V7A1.5 1.5 0 0 1 7.5 5.5Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M13 5.5V10h4.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function SystemIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect
+        x="4"
+        y="6"
+        width="16"
+        height="10"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M9 19h6"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M12 16v3"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function LiveDotIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="4.2" fill="currentColor" />
+      <path
+        d="M5.5 12a6.5 6.5 0 0 1 6.5-6.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M18.5 12A6.5 6.5 0 0 1 12 18.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 /**
  * @param {{
  *   onInteraction?: (() => void) | undefined,
  *   showLiveButton?: boolean | undefined,
  *   allowSystemSource?: boolean | undefined,
+ *   compactMode?: boolean | undefined,
  * }} props
  */
 export function SourceSelector({
   onInteraction,
   showLiveButton = true,
   allowSystemSource = true,
+  compactMode = false,
 } = {}) {
   ensureStyles();
-  const showSystemSource = allowSystemSource && showLiveButton !== false;
+  const showSystemSource = allowSystemSource;
 
   const {
     platform,
@@ -351,6 +463,50 @@ export function SourceSelector({
     onInteraction?.();
     void handleSystemToggle();
   }, [handleSystemToggle, onInteraction]);
+
+  if (compactMode) {
+    return (
+      <div className="ac-source-compact">
+        <button
+          className="ac-source-compact-btn"
+          data-active={resolvedSource === "file" ? "true" : "false"}
+          type="button"
+          onClick={() => handleTabClick("file")}
+          aria-label="Use file source"
+          title="Use file source"
+        >
+          <FileIcon />
+        </button>
+        {showSystemSource ? (
+          <button
+            className="ac-source-compact-btn"
+            data-active={resolvedSource === "system" ? "true" : "false"}
+            data-live={isCurrentLive ? "true" : "false"}
+            type="button"
+            onClick={() => handleTabClick("system")}
+            aria-label="Use system source"
+            title="Use system source"
+          >
+            <SystemIcon />
+          </button>
+        ) : null}
+        {showLiveButton && showSystemSource ? (
+          <button
+            className="ac-source-compact-btn"
+            data-live={isCurrentLive ? "true" : "false"}
+            type="button"
+            disabled={liveStartDisabled}
+            onClick={handleLiveButtonClick}
+            aria-label={liveButtonActionLabel}
+            title={liveButtonActionLabel}
+          >
+            <LiveDotIcon />
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="ac-source-selector">
       <div className="ac-source-stack">

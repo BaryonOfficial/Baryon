@@ -3,21 +3,15 @@
 import React from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { useAudioMock, useAudioTransportClockMock, useDraggableFloatingUiMock } =
-  vi.hoisted(() => ({
-    useAudioMock: vi.fn(),
-    useAudioTransportClockMock: vi.fn(),
-    useDraggableFloatingUiMock: vi.fn(),
-  }));
+const { useAudioMock, useDraggableFloatingUiMock } = vi.hoisted(() => ({
+  useAudioMock: vi.fn(),
+  useDraggableFloatingUiMock: vi.fn(),
+}));
 
 vi.mock("../context/AudioContext.jsx", () => ({
   useAudio: useAudioMock,
-}));
-
-vi.mock("../context/audioTransportClock.js", () => ({
-  useAudioTransportClock: useAudioTransportClockMock,
 }));
 
 vi.mock("./hooks/useDraggableFloatingUi.js", () => ({
@@ -29,12 +23,6 @@ import { ListenerControls } from "./AudioControls.jsx";
 describe("ListenerControls compact dock layout", () => {
   let container = null;
   let root = null;
-  let originalActEnvironment;
-
-  beforeEach(() => {
-    originalActEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT;
-    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  });
 
   afterEach(() => {
     act(() => {
@@ -45,24 +33,8 @@ describe("ListenerControls compact dock layout", () => {
     container = null;
     document.body.innerHTML = "";
     useAudioMock.mockReset();
-    useAudioTransportClockMock.mockReset();
     useDraggableFloatingUiMock.mockReset();
-    if (originalActEnvironment === undefined) {
-      delete globalThis.IS_REACT_ACT_ENVIRONMENT;
-    } else {
-      globalThis.IS_REACT_ACT_ENVIRONMENT = originalActEnvironment;
-    }
   });
-
-  function createRecentUpload(name = "set-a.wav") {
-    return {
-      id: `${name}:0:0`,
-      name,
-      file: {},
-      size: 0,
-      lastModified: 0,
-    };
-  }
 
   function renderControls(audioOverrides = {}) {
     useDraggableFloatingUiMock.mockReturnValue({
@@ -108,6 +80,11 @@ describe("ListenerControls compact dock layout", () => {
       soundCloudCurrentIndex: 0,
       isSoundCloudLoading: false,
       loadSoundCloudTrack: () => {},
+      transportState: {
+        currentTimeSeconds: 0,
+        durationSeconds: 0,
+        canSeek: false,
+      },
       scrubPreviewSeconds: null,
       isScrubbing: false,
       beginScrub: () => Promise.resolve(),
@@ -115,11 +92,6 @@ describe("ListenerControls compact dock layout", () => {
       commitScrub: () => Promise.resolve(),
       cancelScrub: () => Promise.resolve(),
       ...audioOverrides,
-    });
-    useAudioTransportClockMock.mockReturnValue({
-      currentTimeSeconds: 0,
-      durationSeconds: 0,
-      canSeek: false,
     });
 
     container = document.createElement("div");
@@ -149,11 +121,9 @@ describe("ListenerControls compact dock layout", () => {
       liveInputDeviceKind: "live",
     });
 
-    const trackMeta = container.querySelector(".am-compact-track-meta");
-    const trackTitle = container.querySelector(".am-compact-track-title");
-
-    expect(trackMeta?.textContent).toBe("Source");
-    expect(trackTitle?.textContent).toBe("System");
+    expect(container.textContent).toContain("Source");
+    expect(container.textContent).toContain("System");
+    expect(container.textContent).not.toContain("Mic");
   });
 
   it("shows upload-audio placeholder copy for the file source before a file is loaded", () => {
@@ -163,11 +133,8 @@ describe("ListenerControls compact dock layout", () => {
       displayName: "Upload Audio",
     });
 
-    const trackMeta = container.querySelector(".am-compact-track-meta");
-    const trackTitle = container.querySelector(".am-compact-track-title");
-
-    expect(trackMeta?.textContent).toBe("Source");
-    expect(trackTitle?.textContent).toBe("Upload Audio File");
+    expect(container.textContent).toContain("Source");
+    expect(container.textContent).toContain("Upload Audio File");
   });
 
   it("shows the loaded file name for the file source on compact layouts", () => {
@@ -178,11 +145,8 @@ describe("ListenerControls compact dock layout", () => {
       isAudioLoaded: true,
     });
 
-    const trackMeta = container.querySelector(".am-compact-track-meta");
-    const trackTitle = container.querySelector(".am-compact-track-title");
-
-    expect(trackMeta?.textContent).toBe("Source");
-    expect(trackTitle?.textContent).toBe("set-break-live.wav");
+    expect(container.textContent).toContain("Source");
+    expect(container.textContent).toContain("set-break-live.wav");
   });
 
   it("disables compact playback controls when system is selected", () => {
@@ -236,62 +200,51 @@ describe("ListenerControls compact dock layout", () => {
     expect(window.getComputedStyle(stateChip).justifyContent).toBe("center");
   });
 
-  it("keeps recent uploads in the transport cluster and out of the source cluster", () => {
+  it("keeps recent uploads outside the compact dock so primary controls stay visible", () => {
     renderControls({
-      recentUploads: [createRecentUpload()],
+      recentUploads: [{ name: "set-a.wav", file: {} }],
       isAudioLoaded: true,
     });
 
-    const sourceActions = container.querySelector(".am-compact-source-actions");
-    const transportCluster = container.querySelector(
-      ".am-compact-transport-right",
-    );
+    const dock = container.querySelector(".am-compact-dock");
+    const recentButton = dock?.querySelector('[aria-label="Recent uploads"]');
 
-    expect(sourceActions).not.toBeNull();
-    expect(transportCluster).not.toBeNull();
+    expect(dock).not.toBeNull();
+    expect(recentButton).toBeNull();
     expect(
-      sourceActions?.querySelector('[aria-label="Recent uploads"]'),
-    ).toBeNull();
-    expect(
-      transportCluster?.querySelector('[aria-label="Recent uploads"]'),
+      container.querySelector(
+        ".am-compact-unified-actions [aria-label='Recent uploads']",
+      ),
     ).not.toBeNull();
   });
 
-  it("keeps playback controls grouped inside the compact transport cluster", () => {
+  it("keeps the compact dock as a transport-only pill", () => {
     renderControls({
-      recentUploads: [createRecentUpload()],
+      recentUploads: [{ name: "set-a.wav", file: {} }],
       isAudioLoaded: true,
     });
 
     const unifiedActions = container.querySelector(
       ".am-compact-unified-actions",
     );
-    const sourceActions = container.querySelector(".am-compact-source-actions");
-    const transportCluster = container.querySelector(
-      ".am-compact-transport-right",
-    );
-    const playbackGroup = container.querySelector(
-      ".am-compact-action-group--playback",
-    );
+    const dock = container.querySelector(".am-compact-dock");
+    const stopButton = dock?.querySelector('[aria-label="Stop"]');
+    const headerButton = dock?.querySelector(".am-compact-header-button");
+    const sourceButton = dock?.querySelector(".ac-source-compact-btn");
+    const recentButton = dock?.querySelector('[aria-label="Recent uploads"]');
 
     expect(unifiedActions).not.toBeNull();
-    expect(sourceActions).not.toBeNull();
-    expect(transportCluster).not.toBeNull();
-    expect(playbackGroup).not.toBeNull();
-    expect(playbackGroup?.querySelector('[aria-label="Play"]')).not.toBeNull();
-    expect(playbackGroup?.querySelector('[aria-label="Stop"]')).not.toBeNull();
-    expect(
-      playbackGroup?.querySelector(".am-compact-header-button"),
-    ).toBeNull();
-    expect(playbackGroup?.querySelector(".ac-source-compact-btn")).toBeNull();
-    expect(
-      playbackGroup?.querySelector('[aria-label="Recent uploads"]'),
-    ).toBeNull();
+    expect(dock).not.toBeNull();
+    expect(stopButton).not.toBeNull();
+    expect(window.getComputedStyle(dock).display).toBe("flex");
+    expect(headerButton).toBeNull();
+    expect(sourceButton).toBeNull();
+    expect(recentButton).toBeNull();
   });
 
   it("places compact source controls before the transport group in the unified action row", () => {
     renderControls({
-      recentUploads: [createRecentUpload()],
+      recentUploads: [{ name: "set-a.wav", file: {} }],
       isAudioLoaded: true,
     });
 
@@ -325,7 +278,7 @@ describe("ListenerControls compact dock layout", () => {
     });
 
     const playButton = container.querySelector(
-      ".am-compact-action-group--playback [aria-label='Play']",
+      ".am-compact-dock [aria-label='Play']",
     );
 
     expect(playButton).not.toBeNull();

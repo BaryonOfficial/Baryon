@@ -28,6 +28,7 @@ import {
 import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
 import { useBaryonControls } from "./hooks/useBaryonControls";
 import { useBrowserSupportState } from "./hooks/useBrowserSupportState.js";
+import { useDraggableFloatingUi } from "./hooks/useDraggableFloatingUi.js";
 import { useRendererModeState } from "./hooks/useRendererModeState.js";
 import { useAudio, useAudioScene } from "../context/AudioContext";
 import {
@@ -82,6 +83,63 @@ function CameraIcon() {
     >
       <path d="M4 7h4l1.5-2h5L16 7h4v12H4z" />
       <circle cx="12" cy="13" r="3.5" />
+    </svg>
+  );
+}
+
+function TopViewIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 4.5v13" />
+      <path d="m6.8 12.3 5.2 5.2 5.2-5.2" />
+    </svg>
+  );
+}
+
+function SideViewIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M19.5 12H6.8" />
+      <path d="m11.8 6.8-5.2 5.2 5.2 5.2" />
+    </svg>
+  );
+}
+
+function ResetIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 12a9 9 0 1 0 3-6.708" />
+      <path d="M3 4v4h4" />
     </svg>
   );
 }
@@ -170,24 +228,38 @@ const ThreeScene = ({
   const initialRendererFallback = Boolean(
     /** @type {any} */ (controlsRef.current).forceWebGLFallbackTest,
   );
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [performanceHudMetrics, setPerformanceHudMetrics] = useState(null);
   const [cameraViewPreset, setCameraViewPreset] = useState(
     CAMERA_VIEW_PRESETS.topDown,
   );
   const [cameraResetNonce, setCameraResetNonce] = useState(0);
   const [frameFieldState, setFrameFieldState] = useState("idle");
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === "undefined" ? 1440 : window.innerWidth,
+  );
+  const {
+    dragOffset: cameraControlsDragOffset,
+    isDragging: isCameraControlsDragging,
+    handlePointerDown: handleCameraControlsPointerDown,
+    handlePointerUp: handleCameraControlsPointerUp,
+    handleDoubleClick: handleCameraControlsDoubleClick,
+  } = useDraggableFloatingUi();
 
-  // fullscreen targets the outer container div
-  useFullscreen(containerRef);
+  const { isFullscreen } = useFullscreen(containerRef);
 
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth);
     };
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () =>
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
   }, []);
 
   const {
@@ -269,12 +341,27 @@ const ThreeScene = ({
     (selectedSource === "system" || resolvedLiveInputPanel.forceVisible);
   const showCameraControls =
     showOverlayUi && controlsState.visualizationMethod !== "cymatics2d";
+  const isPhoneViewport = viewportWidth <= 640;
+  const isTabletPortraitViewport = viewportWidth > 640 && viewportWidth <= 820;
+  const isTabletViewport = viewportWidth <= 1024;
+  const isCompactViewport = isTabletViewport;
+  const overlayTopInset = isPhoneViewport ? "0.7rem" : "0.9rem";
+  const overlaySideInset = isPhoneViewport ? "0.6rem" : "0.9rem";
   const stackedTopRightOverlay = isValidElement(topRightOverlay)
     ? cloneElement(
         /** @type {import("react").ReactElement<any>} */ (topRightOverlay),
         { embedded: true },
       )
     : topRightOverlay;
+  const shouldShowModeOverlay = Boolean(stackedTopRightOverlay);
+  const shouldShowLiveStatusOverlay =
+    liveInputStatusPanelVisible && (!isCompactViewport || !isControlsPanelOpen);
+  const shouldShowPerformanceOverlay =
+    Boolean(resolvedPerformanceHudMetrics) &&
+    !isPhoneViewport &&
+    !isTabletPortraitViewport &&
+    (!isCompactViewport || !isControlsPanelOpen);
+  const shouldShowDebugOverlay = !isTabletViewport;
 
   const handleCanvasError = (error) => {
     if (error?.name !== WEBGPU_RENDERER_INIT_ERROR) {
@@ -310,25 +397,26 @@ const ThreeScene = ({
   const controlsToggleStyle = isControlsPanelOpen
     ? {
         position: "absolute",
-        top: "0.9rem",
+        top: overlayTopInset,
         left: `calc(${ADVANCED_CONTROLS_DOCK_WIDTH} + 0.15rem)`,
-        zIndex: 61,
+        zIndex: 59,
         width: "2rem",
         height: "2.35rem",
-        border: "1px solid rgba(255, 255, 255, 0.14)",
+        border: "1px solid var(--nd-border-visible)",
         borderRadius: "0 0.9rem 0.9rem 0",
         borderLeft: "0",
-        background:
-          "linear-gradient(180deg, rgba(17, 21, 27, 0.9), rgba(9, 12, 17, 0.88))",
-        color: "rgba(255, 255, 255, 0.82)",
-        boxShadow: "0 10px 28px rgba(0, 0, 0, 0.2)",
+        background: "var(--nd-surface)",
+        color: "var(--nd-text-primary)",
+        boxShadow: "var(--nd-shell-shadow)",
         cursor: "pointer",
       }
     : {
         position: "absolute",
-        top: "var(--app-floating-control-top)",
+        top: isPhoneViewport
+          ? overlayTopInset
+          : "var(--app-floating-control-top)",
         left: "var(--app-floating-control-left)",
-        zIndex: 61,
+        zIndex: 59,
         width: "var(--app-floating-control-size)",
         height: "var(--app-floating-control-size)",
         border: "var(--app-floating-control-border)",
@@ -342,44 +430,46 @@ const ThreeScene = ({
   /** @type {import('react').CSSProperties} */
   const cameraControlsStyle = isControlsPanelOpen
     ? {
-        position: "absolute",
-        top: "0.9rem",
+        position: isPhoneViewport ? "fixed" : "absolute",
+        top: overlayTopInset,
         left: "50%",
-        transform: "translateX(-50%)",
+        transform: `translate(calc(-50% + ${cameraControlsDragOffset.x}px), ${cameraControlsDragOffset.y}px)`,
         zIndex: 61,
+        boxSizing: "border-box",
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        gap: "0.22rem",
-        padding: "0.18rem",
-        maxWidth: "calc(100vw - 2rem)",
+        gap: isPhoneViewport ? "0.16rem" : "0.22rem",
+        padding: isPhoneViewport ? "0.16rem" : "0.18rem",
+        maxWidth: isPhoneViewport ? "calc(100vw - 1rem)" : "calc(100vw - 2rem)",
         borderRadius: "999px",
-        border: "1px solid rgba(255, 255, 255, 0.12)",
-        background: "rgba(17, 21, 27, 0.84)",
-        color: "rgba(255, 255, 255, 0.86)",
-        backdropFilter: "blur(18px) saturate(140%)",
-        WebkitBackdropFilter: "blur(18px) saturate(140%)",
-        boxShadow: "0 10px 28px rgba(0, 0, 0, 0.22)",
+        border: "1px solid var(--nd-border-visible)",
+        background: "var(--nd-surface)",
+        color: "var(--nd-text-primary)",
+        boxShadow: "var(--nd-shell-shadow)",
+        willChange: isCameraControlsDragging ? "transform" : "auto",
+        cursor: isCameraControlsDragging ? "grabbing" : "grab",
       }
     : {
-        position: "absolute",
-        top: "0.9rem",
+        position: isPhoneViewport ? "fixed" : "absolute",
+        top: overlayTopInset,
         left: "50%",
-        transform: "translateX(-50%)",
+        transform: `translate(calc(-50% + ${cameraControlsDragOffset.x}px), ${cameraControlsDragOffset.y}px)`,
         zIndex: 61,
+        boxSizing: "border-box",
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        gap: "0.22rem",
-        padding: "0.18rem",
-        maxWidth: "calc(100vw - 2rem)",
+        gap: isPhoneViewport ? "0.16rem" : "0.22rem",
+        padding: isPhoneViewport ? "0.16rem" : "0.18rem",
+        maxWidth: isPhoneViewport ? "calc(100vw - 1rem)" : "calc(100vw - 2rem)",
         borderRadius: "999px",
-        border: "1px solid rgba(255, 255, 255, 0.12)",
-        background: "rgba(17, 21, 27, 0.84)",
-        color: "rgba(255, 255, 255, 0.86)",
-        backdropFilter: "blur(18px) saturate(140%)",
-        WebkitBackdropFilter: "blur(18px) saturate(140%)",
-        boxShadow: "0 10px 28px rgba(0, 0, 0, 0.22)",
+        border: "1px solid var(--nd-border-visible)",
+        background: "var(--nd-surface)",
+        color: "var(--nd-text-primary)",
+        boxShadow: "var(--nd-shell-shadow)",
+        willChange: isCameraControlsDragging ? "transform" : "auto",
+        cursor: isCameraControlsDragging ? "grabbing" : "grab",
       };
 
   return (
@@ -427,7 +517,7 @@ const ThreeScene = ({
                 justifyContent: "center",
                 pointerEvents: "none",
                 background:
-                  "linear-gradient(180deg, rgba(4, 8, 14, 0.58), rgba(4, 8, 14, 0.74))",
+                  "linear-gradient(180deg, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.62))",
               }}
             >
               <div
@@ -435,22 +525,20 @@ const ThreeScene = ({
                   minWidth: "min(22rem, calc(100vw - 3rem))",
                   maxWidth: "min(28rem, calc(100vw - 3rem))",
                   padding: "0.95rem 1rem",
-                  borderRadius: "1rem",
-                  border: "1px solid rgba(255, 255, 255, 0.12)",
-                  background:
-                    "linear-gradient(180deg, rgba(16, 21, 28, 0.92), rgba(8, 11, 16, 0.9))",
-                  boxShadow: "0 24px 50px rgba(0, 0, 0, 0.28)",
-                  backdropFilter: "blur(18px)",
-                  color: "rgba(241, 247, 255, 0.96)",
-                  fontFamily: '"Space Grotesk", "Inter", system-ui, sans-serif',
+                  borderRadius: "0.92rem",
+                  border: "1px solid var(--nd-border-visible)",
+                  background: "var(--nd-surface)",
+                  boxShadow: "var(--nd-shell-shadow)",
+                  color: "var(--nd-text-primary)",
+                  fontFamily: '"Space Grotesk", system-ui, sans-serif',
                 }}
               >
                 <div
                   style={{
-                    fontSize: "0.7rem",
-                    letterSpacing: "0.12em",
+                    fontSize: "0.62rem",
+                    letterSpacing: "0.16em",
                     textTransform: "uppercase",
-                    opacity: 0.66,
+                    color: "var(--nd-text-secondary)",
                     marginBottom: "0.35rem",
                   }}
                 >
@@ -467,9 +555,9 @@ const ThreeScene = ({
                 </div>
                 <div
                   style={{
-                    fontSize: "0.84rem",
+                    fontSize: "0.82rem",
                     lineHeight: 1.45,
-                    color: "rgba(226, 236, 249, 0.82)",
+                    color: "var(--nd-text-secondary)",
                   }}
                 >
                   {previewOverlayState.message}
@@ -532,7 +620,7 @@ const ThreeScene = ({
         </RendererErrorBoundary>
       )}
 
-      {showOverlayUi && (
+      {showOverlayUi && !isControlsPanelOpen && (
         <div style={controlsToggleStyle}>
           <button
             ref={advancedControlsTriggerRef}
@@ -564,7 +652,7 @@ const ThreeScene = ({
         </div>
       )}
 
-      {showOverlayUi && !isControlsPanelOpen && (
+      {showOverlayUi && !isControlsPanelOpen && !isPhoneViewport && (
         <div
           style={{
             position: "absolute",
@@ -582,9 +670,10 @@ const ThreeScene = ({
               fontFamily: "Orbitron, sans-serif",
               fontSize: "0.7rem",
               fontWeight: 500,
-              letterSpacing: "0.08em",
-              color: "rgba(255, 255, 255, 1)",
+              letterSpacing: "0.12em",
+              color: "var(--nd-text-display)",
               whiteSpace: "nowrap",
+              textTransform: "uppercase",
             }}
           >
             Baryon | Cymatics
@@ -593,15 +682,24 @@ const ThreeScene = ({
       )}
 
       {showCameraControls ? (
-        <div style={cameraControlsStyle}>
+        <div
+          style={cameraControlsStyle}
+          onPointerDown={handleCameraControlsPointerDown}
+          onPointerUp={handleCameraControlsPointerUp}
+          onDoubleClick={handleCameraControlsDoubleClick}
+          title="Drag to move. Double-click or double-tap to reset."
+        >
           <span
             style={{
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              width: "1.7rem",
-              height: "1.7rem",
-              color: "rgba(255, 255, 255, 0.58)",
+              minWidth: isPhoneViewport ? "1.45rem" : "1.55rem",
+              minHeight: "1.7rem",
+              padding: 0,
+              background: "transparent",
+              color: "var(--nd-text-secondary)",
+              flex: "0 0 auto",
             }}
             aria-hidden="true"
           >
@@ -611,11 +709,13 @@ const ThreeScene = ({
             {
               key: CAMERA_VIEW_PRESETS.topDown,
               label: "Top",
+              icon: <TopViewIcon />,
               testId: "camera-top-view-button",
             },
             {
               key: CAMERA_VIEW_PRESETS.side,
               label: "Side",
+              icon: <SideViewIcon />,
               testId: "camera-side-view-button",
             },
           ].map((preset) => {
@@ -631,46 +731,52 @@ const ThreeScene = ({
                 title={`${preset.label} view`}
                 style={{
                   minHeight: "1.7rem",
-                  padding: "0 0.7rem",
+                  minWidth: isPhoneViewport ? "1.75rem" : undefined,
+                  padding: isPhoneViewport ? 0 : "0 0.7rem",
                   borderRadius: "999px",
                   border: active
-                    ? "1px solid rgba(122, 174, 255, 0.42)"
-                    : "1px solid rgba(255, 255, 255, 0.08)",
-                  background: active
-                    ? "rgba(122, 174, 255, 0.16)"
-                    : "rgba(255, 255, 255, 0.04)",
+                    ? "1px solid var(--nd-text-display)"
+                    : "1px solid var(--nd-border-visible)",
+                  background: active ? "var(--nd-text-display)" : "transparent",
                   color: active
-                    ? "rgba(224, 238, 255, 0.96)"
-                    : "rgba(255, 255, 255, 0.72)",
-                  font: "inherit",
-                  fontSize: "0.66rem",
-                  fontWeight: 650,
+                    ? "var(--nd-black)"
+                    : "var(--nd-text-secondary)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontFamily: isPhoneViewport
+                    ? undefined
+                    : '"Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+                  fontSize: isPhoneViewport ? undefined : "0.62rem",
+                  letterSpacing: isPhoneViewport ? undefined : "0.12em",
+                  textTransform: isPhoneViewport ? undefined : "uppercase",
+                  fontWeight: isPhoneViewport ? undefined : 700,
                   cursor: "pointer",
                 }}
               >
-                {preset.label}
+                {isPhoneViewport ? preset.icon : preset.label}
               </button>
             );
           })}
           <button
             type="button"
             data-testid="camera-reset-view-button"
-            onClick={() => applyCameraPreset(defaultCameraViewPreset)}
+            onClick={() => applyCameraPreset(activeCameraControlPreset)}
+            aria-label="Reset camera to default"
             title="Reset camera to default"
             style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
               minHeight: "1.7rem",
-              padding: "0 0.7rem",
-              borderRadius: "999px",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
-              background: "rgba(255, 255, 255, 0.04)",
-              color: "rgba(255, 255, 255, 0.72)",
-              font: "inherit",
-              fontSize: "0.66rem",
-              fontWeight: 650,
+              minWidth: isPhoneViewport ? "1.45rem" : "1.55rem",
+              padding: 0,
+              background: "transparent",
+              color: "var(--nd-text-secondary)",
               cursor: "pointer",
             }}
           >
-            Reset
+            <ResetIcon />
           </button>
         </div>
       ) : null}
@@ -702,23 +808,29 @@ const ThreeScene = ({
         <div
           style={{
             position: "fixed",
-            top: "0.9rem",
-            right: "0.9rem",
+            top: overlayTopInset,
+            right: overlaySideInset,
             zIndex: 9998,
             display: "flex",
             flexDirection: "column",
             alignItems: "flex-end",
-            gap: "0.65rem",
-            maxWidth: "min(22rem, calc(100vw - 1rem))",
+            gap: isPhoneViewport ? "0.85rem" : "0.9rem",
+            maxWidth: isPhoneViewport
+              ? "min(11.5rem, calc(100vw - 1rem))"
+              : isTabletPortraitViewport
+                ? "min(15rem, calc(100vw - 1.2rem))"
+                : isTabletViewport
+                  ? "min(18rem, calc(100vw - 1.2rem))"
+                  : "min(22rem, calc(100vw - 1rem))",
             pointerEvents: "none",
           }}
         >
-          {stackedTopRightOverlay ? (
+          {shouldShowModeOverlay ? (
             <div style={{ pointerEvents: "auto" }}>
               {stackedTopRightOverlay}
             </div>
           ) : null}
-          {liveInputStatusPanelVisible ? (
+          {shouldShowLiveStatusOverlay ? (
             <LiveInputStatusPanel
               stacked
               visible
@@ -733,13 +845,17 @@ const ThreeScene = ({
               onMicControlChange={(key, value) => updateControl(key, value)}
             />
           ) : null}
-          <PerformanceHud metrics={resolvedPerformanceHudMetrics} stacked />
-          <ParticleDebugOverlay
-            stacked
-            debugOverlayExtraItems={debugOverlayExtraItems}
-            enabledOverride={debugOverlayEnabledOverride}
-            snapshotOverride={debugOverlaySnapshotOverride}
-          />
+          {shouldShowPerformanceOverlay ? (
+            <PerformanceHud metrics={resolvedPerformanceHudMetrics} stacked />
+          ) : null}
+          {shouldShowDebugOverlay ? (
+            <ParticleDebugOverlay
+              stacked
+              debugOverlayExtraItems={debugOverlayExtraItems}
+              enabledOverride={debugOverlayEnabledOverride}
+              snapshotOverride={debugOverlaySnapshotOverride}
+            />
+          ) : null}
         </div>
       ) : null}
       {showOverlayUi && controlsOverlay}

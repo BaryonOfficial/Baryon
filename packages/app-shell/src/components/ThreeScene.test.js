@@ -1,4 +1,131 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+
+import React from "react";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { dispatchCameraControlCommandSpy } = vi.hoisted(() => ({
+  dispatchCameraControlCommandSpy: vi.fn(),
+}));
+
+vi.mock("@react-three/fiber", () => ({
+  Canvas: ({ children }) => React.createElement("div", null, children),
+}));
+
+vi.mock("./BaryonScene", () => ({
+  CAMERA_CONTROL_MODES: {
+    previewLocal: "preview-local",
+    externalSynced: "external-synced",
+  },
+  BaryonScene: () => null,
+}));
+
+vi.mock("./cameraControlEvents.js", () => ({
+  dispatchCameraControlCommand: dispatchCameraControlCommandSpy,
+}));
+
+vi.mock("./ParticleDebugOverlay.jsx", () => ({
+  default: () => null,
+}));
+
+vi.mock("./PerformanceHud.jsx", () => ({
+  default: () => null,
+}));
+
+vi.mock("./RendererErrorBoundary.jsx", () => ({
+  RendererErrorBoundary: ({ children }) => children,
+}));
+
+vi.mock("./UnsupportedWarning.jsx", () => ({
+  default: () => null,
+}));
+
+vi.mock("./LiveInputStatusPanel.jsx", () => ({
+  default: () => null,
+}));
+
+vi.mock("./rendererDiagnostics.js", () => ({
+  WEBGPU_RENDERER_INIT_ERROR: "WebGPURendererInitError",
+  createBaryonRenderer: () => ({}),
+}));
+
+vi.mock("./hooks/useFullScreenToggle.jsx", () => ({
+  useFullscreen: () => ({
+    isFullscreen: false,
+    toggleFullscreen: () => {},
+  }),
+}));
+
+vi.mock("./hooks/useBaryonControls", () => ({
+  useBaryonControls: () => ({
+    controlsRef: { current: { forceWebGLFallbackTest: false } },
+    controlsState: {
+      visualizationMethod: "raymarch",
+      backgroundColor: "#000000",
+      performanceHudEnabled: false,
+    },
+    folderGroups: [],
+    presetsAreaControls: [],
+    presets: [],
+    presetName: "",
+    selectedPresetName: "",
+    isControlsPanelLoaded: false,
+    isControlsPanelOpen: false,
+    setPresetName: () => {},
+    updateControl: () => {},
+    resetControls: () => {},
+    savePreset: () => {},
+    loadPreset: () => {},
+    deletePreset: () => {},
+    closeControlsPanel: () => {},
+    toggleControlsPanel: () => {},
+  }),
+}));
+
+vi.mock("./hooks/useBrowserSupportState.js", () => ({
+  useBrowserSupportState: () => ({
+    supportProbe: null,
+    unsupportedReason: null,
+    isUnsupported: false,
+    isSupportReady: true,
+    markRendererInitUnsupported: () => {},
+  }),
+}));
+
+vi.mock("./hooks/useDraggableFloatingUi.js", () => ({
+  useDraggableFloatingUi: () => ({
+    dragOffset: { x: 0, y: 0 },
+    isDragging: false,
+    handlePointerDown: () => {},
+    handlePointerUp: () => {},
+    handleDoubleClick: () => {},
+  }),
+}));
+
+vi.mock("./hooks/useRendererModeState.js", () => ({
+  useRendererModeState: () => ({
+    forceWebGLFallbackTest: false,
+    activeRendererFallback: false,
+    canvasEpoch: 0,
+    showCanvas: false,
+    setShowCanvas: () => {},
+  }),
+}));
+
+vi.mock("../context/AudioContext", () => ({
+  useAudioScene: () => ({
+    setIsEngineReady: () => {},
+    setLiveInputRuntimeStatus: () => {},
+    liveInputUiState: "active",
+    liveInputErrorCode: null,
+    resetAudioSession: () => {},
+  }),
+  useAudio: () => ({
+    selectedSource: "file",
+  }),
+}));
+
 import {
   composeAuthoritativePerformanceHudMetrics,
   resolveActiveCameraControlPreset,
@@ -6,6 +133,7 @@ import {
   resolvePreviewOverlayState,
   shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
+import ThreeScene from "./ThreeScene.jsx";
 
 describe("resolvePreviewOverlayState", () => {
   it("returns an unsupported state when presented performer preview is requested without support", () => {
@@ -156,5 +284,60 @@ describe("authoritative performance HUD composition", () => {
       outputPaintFps: 48.2,
       renderCompletedToPaintMs: 9.5,
     });
+  });
+});
+
+describe("camera reset control", () => {
+  /** @type {HTMLDivElement | null} */
+  let container = null;
+  /** @type {import('react-dom/client').Root | null} */
+  let root = null;
+
+  beforeEach(() => {
+    dispatchCameraControlCommandSpy.mockClear();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    if (root) {
+      await act(async () => {
+        root.unmount();
+      });
+    }
+    container?.remove();
+    root = null;
+    container = null;
+  });
+
+  it("reapplies the active preset when the reset button is pressed", async () => {
+    await act(async () => {
+      root.render(React.createElement(ThreeScene));
+    });
+
+    const sideButton = container.querySelector(
+      '[data-testid="camera-side-view-button"]',
+    );
+    const resetButton = container.querySelector(
+      '[data-testid="camera-reset-view-button"]',
+    );
+
+    expect(sideButton).toBeInstanceOf(HTMLButtonElement);
+    expect(resetButton).toBeInstanceOf(HTMLButtonElement);
+
+    await act(async () => {
+      sideButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await act(async () => {
+      resetButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(dispatchCameraControlCommandSpy.mock.calls).toStrictEqual([
+      [{ cameraViewPreset: "side" }],
+      [{ cameraViewPreset: "side" }],
+    ]);
+    expect(sideButton.getAttribute("aria-pressed")).toBe("true");
   });
 });
