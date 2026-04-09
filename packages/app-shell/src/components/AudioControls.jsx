@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { useAudio } from "../context/AudioContext";
 import { SourceSelector } from "./controls/SourceSelector";
+import { useDraggableFloatingUi } from "./hooks/useDraggableFloatingUi.js";
 
 // ─── SVG Icons (Nothing: monoline, 1.5px stroke, no fill, round caps) ───────
 
@@ -149,6 +150,25 @@ function HistoryIcon() {
   );
 }
 
+function UploadIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 16V4" />
+      <path d="m7 9 5-5 5 5" />
+      <path d="M5 20h14" />
+    </svg>
+  );
+}
+
 // ─── Scrolling filename ───────────────────────────────────────────────────────
 
 function ScrollingText({ text }) {
@@ -246,19 +266,35 @@ const CSS = `
   max-width: calc(100vw - 1.5rem);
 }
 
+.am-player-shell--compact {
+  align-items: flex-start;
+  bottom: 16px;
+  width: min(100%, var(--baryon-compact-dock-min-width));
+  max-width: min(calc(100vw - 1.5rem), var(--baryon-compact-dock-min-width));
+}
+
 .am-player {
   position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 8px 16px;
-  background: #111111;
-  border: 1px solid #222222;
+  background: var(--nd-surface);
+  border: 1px solid var(--nd-border-visible);
   border-radius: 8px;
-  font-family: "Space Grotesk", "DM Sans", system-ui, sans-serif;
+  box-shadow: var(--nd-shell-shadow);
+  font-family: "Space Grotesk", system-ui, sans-serif;
   user-select: none;
   white-space: nowrap;
   box-sizing: border-box;
+}
+
+.am-player--compact {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 
 .am-controls-row {
@@ -281,9 +317,10 @@ const CSS = `
   display: flex;
   align-items: center;
   padding: 8px 16px 10px;
-  background: #111111;
-  border: 1px solid #222222;
+  background: var(--nd-surface);
+  border: 1px solid var(--nd-border-visible);
   border-radius: 8px;
+  box-shadow: var(--nd-shell-shadow);
 }
 
 .am-timeline-row {
@@ -296,7 +333,7 @@ const CSS = `
 
 .am-timeline-time {
   min-width: 2.4rem;
-  color: #999999;
+  color: var(--nd-text-secondary);
   font-family: "Space Mono", "JetBrains Mono", "SF Mono", monospace;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -316,10 +353,10 @@ const CSS = `
   cursor: pointer;
   background: linear-gradient(
     90deg,
-    #E8E8E8 0%,
-    #E8E8E8 var(--am-progress-percent),
-    #222222 var(--am-progress-percent),
-    #222222 100%
+    var(--nd-text-display) 0%,
+    var(--nd-text-display) var(--am-progress-percent),
+    var(--nd-border) var(--am-progress-percent),
+    var(--nd-border) 100%
   );
 }
 
@@ -329,23 +366,23 @@ const CSS = `
   width: 10px;
   height: 10px;
   border-radius: 0;
-  background: #FFFFFF;
-  border: 1px solid #333333;
+  background: var(--nd-text-display);
+  border: 1px solid var(--nd-border-visible);
 }
 
 .am-progress::-moz-range-thumb {
   width: 10px;
   height: 10px;
-  border: 1px solid #333333;
+  border: 1px solid var(--nd-border-visible);
   border-radius: 0;
-  background: #FFFFFF;
+  background: var(--nd-text-display);
 }
 
 .am-progress::-moz-range-track {
   height: 4px;
   border: none;
   border-radius: 0;
-  background: #222222;
+  background: var(--nd-border);
 }
 
 /* ── Track section — Nothing: minimal, typographic ── */
@@ -362,7 +399,7 @@ const CSS = `
   min-width: 0;
   border: 1px solid transparent;
 }
-.am-track:hover { border-color: #333333; }
+.am-track:hover { border-color: var(--nd-border-visible); }
 
 .am-source-tools {
   display: flex;
@@ -394,10 +431,10 @@ const CSS = `
   min-width: 13rem;
   max-width: min(18rem, calc(100vw - 2rem));
   padding: 8px 12px;
-  border: 1px solid #333333;
+  border: 1px solid var(--nd-border-visible);
   border-radius: 8px;
-  background: #111111;
-  color: #E8E8E8;
+  background: var(--nd-surface);
+  color: var(--nd-text-primary);
   font-family: "Space Grotesk", system-ui, sans-serif;
   font-size: 12px;
   line-height: 1.4;
@@ -418,9 +455,9 @@ const CSS = `
   top: 100%;
   width: 8px;
   height: 8px;
-  background: #111111;
-  border-right: 1px solid #333333;
-  border-bottom: 1px solid #333333;
+  background: var(--nd-surface);
+  border-right: 1px solid var(--nd-border-visible);
+  border-bottom: 1px solid var(--nd-border-visible);
   transform: translateX(-50%) translateY(-50%) rotate(45deg);
 }
 
@@ -435,36 +472,36 @@ const CSS = `
   width: 30px;
   height: 30px;
   background: transparent;
-  border: 1px solid #333333;
-  color: #999999;
+  border: 1px solid var(--nd-border-visible);
+  color: var(--nd-text-secondary);
 }
 
 .am-btn--soundcloud:hover {
-  border-color: #E8E8E8;
-  color: #E8E8E8;
+  border-color: var(--nd-text-display);
+  color: var(--nd-text-display);
 }
 
 .am-btn--soundcloud-active {
-  border-color: #E8E8E8;
-  color: #FFFFFF;
+  border-color: var(--nd-text-display);
+  color: var(--nd-text-display);
 }
 
 .am-btn--recent {
   width: 30px;
   height: 30px;
   background: transparent;
-  border: 1px solid #333333;
-  color: #999999;
+  border: 1px solid var(--nd-border-visible);
+  color: var(--nd-text-secondary);
 }
 
 .am-btn--recent:hover {
-  border-color: #E8E8E8;
-  color: #E8E8E8;
+  border-color: var(--nd-text-display);
+  color: var(--nd-text-display);
 }
 
 .am-btn--recent-active {
-  border-color: #E8E8E8;
-  color: #FFFFFF;
+  border-color: var(--nd-text-display);
+  color: var(--nd-text-display);
 }
 
 /* ── Status — Nothing: dot + instrument-panel label ── */
@@ -481,7 +518,7 @@ const CSS = `
   font-weight: 400;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #666666;
+  color: var(--nd-text-disabled);
   white-space: nowrap;
 }
 
@@ -496,7 +533,7 @@ const CSS = `
   font-family: "Space Grotesk", system-ui, sans-serif;
   font-size: 14px;
   font-weight: 400;
-  color: #E8E8E8;
+  color: var(--nd-text-primary);
   white-space: nowrap;
   display: inline-block;
 }
@@ -513,7 +550,7 @@ const CSS = `
 .am-divider {
   width: 1px;
   height: 18px;
-  background: #222222;
+  background: var(--nd-border);
   margin: 0 4px;
   flex-shrink: 0;
 }
@@ -527,14 +564,18 @@ const CSS = `
 
 /* ── Shared button base — Nothing: outlined, no fill, mechanical ── */
 .am-btn {
-  border: 1px solid #333333;
+  border: 1px solid var(--nd-border-visible);
   background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  color: #E8E8E8;
+  color: var(--nd-text-primary);
+  font-family: "Space Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   transition: border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
               color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
               opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -543,27 +584,27 @@ const CSS = `
 .am-btn:disabled {
   opacity: 0.4;
   cursor: default;
-  border-color: #222222;
-  color: #666666;
+  border-color: var(--nd-border);
+  color: var(--nd-text-disabled);
 }
 
 /* Play/Pause — primary action, white bg inverted */
 .am-btn--play {
   width: 36px;
   height: 36px;
-  background: #FFFFFF;
-  border-color: #FFFFFF;
+  background: var(--nd-text-display);
+  border-color: var(--nd-text-display);
   color: #000000;
 }
 .am-btn--play:not(:disabled):hover {
-  background: #E8E8E8;
-  border-color: #E8E8E8;
+  background: #d9d9d6;
+  border-color: #d9d9d6;
 }
 .am-btn--play:not(:disabled):active { opacity: 0.8; }
 .am-btn--play:disabled {
-  background: #333333;
-  border-color: #333333;
-  color: #666666;
+  background: var(--nd-border-visible);
+  border-color: var(--nd-border-visible);
+  color: var(--nd-text-disabled);
 }
 
 /* Stop — ghost */
@@ -572,8 +613,8 @@ const CSS = `
   height: 30px;
 }
 .am-btn--stop:not(:disabled):hover {
-  border-color: #E8E8E8;
-  color: #FFFFFF;
+  border-color: var(--nd-text-display);
+  color: var(--nd-text-display);
 }
 .am-btn--stop:not(:disabled):active { opacity: 0.8; }
 
@@ -592,19 +633,19 @@ const CSS = `
   height: 30px;
 }
 .am-btn--live-input:hover {
-  border-color: #E8E8E8;
-  color: #FFFFFF;
+  border-color: var(--nd-text-display);
+  color: var(--nd-text-display);
 }
 .am-btn--live-input:active { opacity: 0.8; }
 
 .am-btn--live-input-active {
-  border-color: #D71921 !important;
-  color: #D71921 !important;
+  border-color: var(--nd-accent) !important;
+  color: var(--nd-accent) !important;
   animation: am-pulse 1.5s ease-in-out infinite;
 }
 .am-btn--live-input-active:hover {
-  border-color: #ff453a !important;
-  color: #ff453a !important;
+  border-color: var(--nd-accent) !important;
+  color: var(--nd-accent) !important;
 }
 
 /* ── Volume — Nothing: flat, monochrome, mechanical slider ── */
@@ -618,23 +659,379 @@ const CSS = `
   display: none;
 }
 
+.am-compact-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  width: min(100%, var(--baryon-compact-dock-min-width));
+  min-width: min(100%, var(--baryon-compact-dock-min-width));
+  max-width: var(--baryon-compact-dock-min-width);
+}
+
+.am-compact-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 10px;
+  padding: 14px 12px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--nd-border-visible);
+  background: var(--nd-surface);
+  box-shadow: var(--nd-shell-shadow);
+  box-sizing: border-box;
+}
+
+.am-compact-card .am-timeline-shell {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.am-compact-card .am-timeline-row {
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--nd-border);
+  border-radius: 999px;
+  background: var(--nd-surface-raised);
+  box-sizing: border-box;
+}
+
+.am-compact-card .am-timeline-time {
+  min-width: 2.25rem;
+}
+
+.am-compact-identity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 8px 6px;
+  box-sizing: border-box;
+}
+
+.am-compact-meta-stack {
+  display: flex;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.am-compact-source-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.am-compact-source-cluster {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 100%;
+}
+
+.am-compact-track-copy {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding-top: 1px;
+}
+
+.am-compact-track-meta {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--nd-text-disabled);
+  font-family: "Space Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.am-compact-track-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--nd-text-primary);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.am-compact-state-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 4.5rem;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--nd-border-visible);
+  background: var(--nd-surface-raised);
+  box-sizing: border-box;
+  color: var(--nd-text-secondary);
+  font-family: "Space Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.am-compact-state-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.am-compact-state-chip[data-state="live"] {
+  border-color: color-mix(in srgb, var(--nd-accent) 45%, var(--nd-border-visible));
+  color: var(--nd-accent);
+}
+
+.am-compact-state-chip[data-state="playing"] {
+  border-color: color-mix(in srgb, #4A9E5C 50%, var(--nd-border-visible));
+  color: #8dc09a;
+}
+
+.am-compact-dock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: auto;
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid var(--nd-border);
+  border-radius: 18px;
+  background: var(--nd-surface-raised);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.am-compact-action {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--nd-border-visible);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--nd-text-secondary);
+}
+
+.am-compact-action:hover {
+  border-color: var(--nd-text-display);
+  color: var(--nd-text-display);
+}
+
+.am-compact-action--primary {
+  background: var(--nd-text-display);
+  border-color: var(--nd-text-display);
+  color: #000000;
+}
+
+.am-compact-action--primary:hover {
+  background: #d9d9d6;
+  border-color: #d9d9d6;
+  color: #000000;
+}
+
+.am-compact-action--primary.am-compact-action--active,
+.am-compact-action--primary.am-compact-action--active:hover {
+  background: var(--nd-text-display);
+  border-color: var(--nd-text-display);
+  color: #000000;
+}
+
+.am-compact-action--active {
+  border-color: var(--nd-text-display);
+  color: var(--nd-text-display);
+}
+
+.am-compact-action-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.am-compact-action-group--playback {
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.am-compact-action-group--playback .am-compact-action--primary {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+}
+
+.am-compact-shell .am-volume-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--nd-text-disabled);
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.am-compact-shell .am-volume {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+}
+
+.am-compact-shell .am-slider {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.am-compact-source-actions .ac-source-compact {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  padding: 2px;
+  border: 1px solid var(--nd-border);
+  border-radius: 12px;
+  background: transparent;
+}
+
+.am-compact-source-actions .ac-source-compact-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.am-compact-utility-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+
+.am-compact-header-button,
+.am-compact-utility {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}
+
+.am-compact-header-button {
+  border: 1px solid var(--nd-border-visible);
+  background: transparent;
+  color: var(--nd-text-secondary);
+}
+
+.am-compact-header-button:hover {
+  border-color: var(--nd-text-display);
+  color: var(--nd-text-display);
+}
+
+.am-compact-utility--active {
+  border-color: var(--nd-text-display);
+  color: var(--nd-text-display);
+}
+
+.am-compact-volume-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  align-self: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  padding: 0 8px 0;
+  box-sizing: border-box;
+}
+
+.am-compact-volume-value {
+  min-width: 2.7rem;
+  color: var(--nd-text-secondary);
+  font-family: "Space Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-align: right;
+  justify-self: end;
+}
+
+.am-compact-volume-row .am-volume {
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  min-width: 0;
+  width: 100%;
+}
+
+.am-compact-volume-row .am-btn--volume {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--nd-text-primary);
+  padding: 0;
+}
+
+.am-compact-volume-row .am-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 5px;
+}
+
 .am-btn--volume {
   width: 30px;
   height: 30px;
 }
 .am-btn--volume:hover {
-  border-color: #E8E8E8;
-  color: #FFFFFF;
+  border-color: var(--nd-text-display);
+  color: var(--nd-text-display);
 }
 .am-btn--volume:active { opacity: 0.8; }
 
 .am-slider {
+  --am-slider-percent: 0%;
   appearance: none;
   -webkit-appearance: none;
   width: 88px;
   height: 4px;
   border-radius: 0;
-  background: #222222;
+  background: linear-gradient(
+    90deg,
+    var(--nd-text-display) 0%,
+    var(--nd-text-display) var(--am-slider-percent),
+    var(--nd-border) var(--am-slider-percent),
+    var(--nd-border) 100%
+  );
   outline: none;
   cursor: pointer;
 }
@@ -645,23 +1042,23 @@ const CSS = `
   width: 10px;
   height: 10px;
   border-radius: 0;
-  background: #FFFFFF;
-  border: 1px solid #333333;
+  background: var(--nd-text-display);
+  border: 1px solid var(--nd-border-visible);
 }
 
 .am-slider::-moz-range-thumb {
   width: 10px;
   height: 10px;
-  border: 1px solid #333333;
+  border: 1px solid var(--nd-border-visible);
   border-radius: 0;
-  background: #FFFFFF;
+  background: var(--nd-text-display);
 }
 
 .am-slider::-moz-range-track {
   height: 4px;
   border: none;
   border-radius: 0;
-  background: #222222;
+  background: var(--nd-border);
 }
 
 /* ── Device menu — Nothing: flat surface, border separation ── */
@@ -670,8 +1067,8 @@ const CSS = `
   bottom: calc(100% + 8px);
   right: 0;
   min-width: 14rem;
-  background: #1A1A1A;
-  border: 1px solid #333333;
+  background: var(--nd-surface);
+  border: 1px solid var(--nd-border-visible);
   border-radius: 8px;
   padding: 4px 0;
   z-index: 60;
@@ -686,9 +1083,9 @@ const CSS = `
   transform: translateX(-50%);
   width: min(30rem, calc(100vw - 1.5rem));
   padding: 16px;
-  border: 1px solid #333333;
+  border: 1px solid var(--nd-border-visible);
   border-radius: 12px;
-  background: #111111;
+  background: var(--nd-surface);
   z-index: 70;
   opacity: 1;
   visibility: visible;
@@ -712,9 +1109,9 @@ const CSS = `
   transform: translateX(-50%);
   width: min(24rem, calc(100vw - 1.5rem));
   padding: 16px;
-  border: 1px solid #333333;
+  border: 1px solid var(--nd-border-visible);
   border-radius: 12px;
-  background: #111111;
+  background: var(--nd-surface);
   z-index: 70;
   opacity: 1;
   visibility: visible;
@@ -737,7 +1134,7 @@ const CSS = `
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 4px;
-  color: #E8E8E8;
+  color: var(--nd-text-primary);
   font-family: "Space Grotesk", system-ui, sans-serif;
   font-size: 14px;
   font-weight: 500;
@@ -750,7 +1147,7 @@ const CSS = `
 }
 
 .am-recent-header span:last-child {
-  color: #666666;
+  color: var(--nd-text-disabled);
   font-family: "Space Mono", monospace;
   font-size: 11px;
   font-weight: 400;
@@ -760,7 +1157,7 @@ const CSS = `
 
 .am-recent-helper {
   margin: 0 0 12px;
-  color: #999999;
+  color: var(--nd-text-secondary);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -784,11 +1181,11 @@ const CSS = `
   border: none;
   border-radius: 0;
   background: transparent;
-  color: #E8E8E8;
+  color: var(--nd-text-primary);
   text-align: left;
   cursor: pointer;
   font-family: "Space Grotesk", system-ui, sans-serif;
-  border-bottom: 1px solid #222222;
+  border-bottom: 1px solid var(--nd-border);
   transition: background 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
@@ -797,16 +1194,16 @@ const CSS = `
 }
 
 .am-recent-item--pending {
-  background: rgba(215, 25, 33, 0.08);
-  border-left: 2px solid #D71921;
+  background: rgba(255, 59, 48, 0.08);
+  border-color: color-mix(in srgb, var(--nd-accent) 45%, var(--nd-border));
 }
 
 .am-recent-item:hover {
-  background: #1A1A1A;
+  background: var(--nd-surface-raised);
 }
 
 .am-recent-item--pending:hover {
-  background: rgba(215, 25, 33, 0.12);
+  background: rgba(255, 59, 48, 0.12);
 }
 
 .am-recent-item:active {
@@ -827,19 +1224,19 @@ const CSS = `
   white-space: nowrap;
   font-size: 14px;
   font-weight: 400;
-  color: #E8E8E8;
+  color: var(--nd-text-primary);
 }
 
 .am-recent-item-meta {
   font-family: "Space Mono", monospace;
   font-size: 11px;
-  color: #666666;
+  color: var(--nd-text-disabled);
   letter-spacing: 0.04em;
 }
 
 .am-recent-item-action {
   flex-shrink: 0;
-  color: #999999;
+  color: var(--nd-text-secondary);
   font-family: "Space Mono", monospace;
   font-size: 11px;
   font-weight: 400;
@@ -848,7 +1245,7 @@ const CSS = `
 }
 
 .am-recent-item-action--pending {
-  color: #D71921;
+  color: var(--nd-accent);
 }
 
 /* ── SoundCloud panel — Nothing style ── */
@@ -857,7 +1254,7 @@ const CSS = `
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
-  color: #E8E8E8;
+  color: var(--nd-text-primary);
   font-family: "Space Mono", monospace;
   font-size: 11px;
   font-weight: 400;
@@ -876,30 +1273,30 @@ const CSS = `
   height: 40px;
   padding: 0 12px;
   border: none;
-  border-bottom: 1px solid #333333;
+  border-bottom: 1px solid var(--nd-border-visible);
   border-radius: 0;
   background: transparent;
-  color: #E8E8E8;
+  color: var(--nd-text-primary);
   font-family: "Space Mono", monospace;
   font-size: 13px;
   outline: none;
 }
 
 .am-soundcloud-input::placeholder {
-  color: #666666;
+  color: var(--nd-text-disabled);
 }
 
 .am-soundcloud-input:focus {
-  border-bottom-color: #E8E8E8;
+  border-bottom-color: var(--nd-text-display);
 }
 
 .am-soundcloud-submit {
   height: 40px;
   padding: 0 24px;
-  border: 1px solid #333333;
+  border: 1px solid var(--nd-border-visible);
   border-radius: 999px;
   background: transparent;
-  color: #E8E8E8;
+  color: var(--nd-text-primary);
   font-family: "Space Mono", monospace;
   font-size: 11px;
   font-weight: 400;
@@ -911,8 +1308,8 @@ const CSS = `
 }
 
 .am-soundcloud-submit:hover {
-  border-color: #E8E8E8;
-  color: #FFFFFF;
+  border-color: var(--nd-text-display);
+  color: var(--nd-text-display);
 }
 
 .am-soundcloud-helper,
@@ -925,11 +1322,11 @@ const CSS = `
 }
 
 .am-soundcloud-helper {
-  color: #666666;
+  color: var(--nd-text-disabled);
 }
 
 .am-soundcloud-error {
-  color: #D71921;
+  color: var(--nd-accent);
   font-family: "Space Mono", monospace;
   font-size: 11px;
   letter-spacing: 0.04em;
@@ -939,8 +1336,8 @@ const CSS = `
   margin-top: 12px;
   padding: 12px 16px;
   border-radius: 0;
-  background: #1A1A1A;
-  border: 1px solid #222222;
+  background: var(--nd-surface-raised);
+  border: 1px solid var(--nd-border);
 }
 
 .am-soundcloud-title {
@@ -949,14 +1346,14 @@ const CSS = `
   justify-content: space-between;
   gap: 8px;
   margin: 0;
-  color: #E8E8E8;
+  color: var(--nd-text-primary);
   font-family: "Space Grotesk", system-ui, sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
 
 .am-soundcloud-index {
-  color: #666666;
+  color: var(--nd-text-disabled);
   font-family: "Space Mono", monospace;
   font-size: 11px;
   font-weight: 400;
@@ -965,7 +1362,7 @@ const CSS = `
 
 .am-soundcloud-subtitle {
   margin: 4px 0 0;
-  color: #999999;
+  color: var(--nd-text-secondary);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -989,7 +1386,7 @@ const CSS = `
   padding: 8px 0;
   border-radius: 0;
   background: transparent;
-  border-bottom: 1px solid #222222;
+  border-bottom: 1px solid var(--nd-border);
 }
 
 .am-soundcloud-item:last-child {
@@ -997,9 +1394,9 @@ const CSS = `
 }
 
 .am-soundcloud-item-current {
-  border-left: 2px solid #D71921;
   padding-left: 8px;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
 }
 
 .am-soundcloud-item-title {
@@ -1009,18 +1406,18 @@ const CSS = `
   white-space: nowrap;
   font-family: "Space Grotesk", system-ui, sans-serif;
   font-size: 13px;
-  color: #E8E8E8;
+  color: var(--nd-text-primary);
 }
 
 .am-soundcloud-item-current .am-soundcloud-item-title {
-  color: #FFFFFF;
+  color: var(--nd-text-display);
 }
 
 .am-soundcloud-item-artist {
   flex-shrink: 0;
   font-family: "Space Mono", monospace;
   font-size: 11px;
-  color: #666666;
+  color: var(--nd-text-disabled);
   letter-spacing: 0.04em;
 }
 
@@ -1028,9 +1425,9 @@ const CSS = `
   margin: 12px 0 0;
   padding: 16px;
   border-radius: 0;
-  background: #1A1A1A;
-  border: 1px solid #222222;
-  color: #666666;
+  background: var(--nd-surface-raised);
+  border: 1px solid var(--nd-border);
+  color: var(--nd-text-disabled);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -1039,7 +1436,7 @@ const CSS = `
   padding: 8px 16px;
   font-family: "Space Mono", monospace;
   font-size: 11px;
-  color: #666666;
+  color: var(--nd-text-disabled);
   letter-spacing: 0.04em;
   margin: 0;
 }
@@ -1048,7 +1445,7 @@ const CSS = `
   padding: 0 16px 8px;
   font-size: 12px;
   line-height: 1.4;
-  color: #666666;
+  color: var(--nd-text-disabled);
   margin: 0;
 }
 
@@ -1057,7 +1454,7 @@ const CSS = `
   width: 100%;
   border: none;
   background: transparent;
-  color: #E8E8E8;
+  color: var(--nd-text-primary);
   text-align: left;
   padding: 8px 16px;
   font-size: 13px;
@@ -1073,33 +1470,78 @@ const CSS = `
 .am-device-item-hint {
   display: block;
   margin-top: 2px;
-  color: #666666;
+  color: var(--nd-text-disabled);
   font-family: "Space Mono", monospace;
   font-size: 11px;
   line-height: 1.4;
   letter-spacing: 0.04em;
 }
 
-.am-device-item:hover { background: #1A1A1A; }
-.am-device-item--active { color: #FFFFFF; }
+.am-device-item:hover { background: var(--nd-surface-raised); }
+.am-device-item--active { color: var(--nd-text-display); }
 .am-device-item--active::before {
   content: "";
   display: inline-block;
   width: 2px;
   height: 12px;
-  background: #D71921;
+  background: var(--nd-accent);
   margin-right: 8px;
   vertical-align: middle;
 }
-.am-device-item--active .am-device-item-hint { color: #999999; }
+.am-device-item--active .am-device-item-hint { color: var(--nd-text-secondary); }
 
 /* ── Responsive — Nothing: same rules, tighter spacing ── */
+/* ── Unified actions row (compact dock) ── */
+.am-compact-unified-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+
+.am-compact-transport-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.am-compact-row-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--nd-border-visible);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 1024px) {
+  .am-player-shell {
+    width: min(42rem, calc(100vw - 1.5rem));
+  }
+
+  .am-player {
+    width: 100%;
+  }
+
+  .am-player-shell--compact {
+    width: min(100%, var(--baryon-compact-dock-min-width));
+    max-width: calc(100vw - 1.5rem);
+  }
+
+  .am-player--compact {
+    width: 100%;
+  }
+}
+
 @media (max-width: 960px) {
   .am-player-shell {
     gap: 6px;
   }
 
-  .am-player {
+  .am-player:not(.am-player--compact) {
     padding: 8px 12px;
   }
 
@@ -1124,20 +1566,23 @@ const CSS = `
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 640px) {
   .am-player-shell {
-    bottom: 16px;
     width: calc(100vw - 16px);
     max-width: none;
     gap: 8px;
   }
 
-  .am-player {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 12px;
-    border-radius: 8px;
-    white-space: normal;
+  .am-player-shell--compact {
+    align-items: center;
+    width: min(100%, var(--baryon-compact-dock-min-width));
+    max-width: calc(100vw - 16px);
+  }
+
+  .am-compact-shell {
+    margin: 0 auto;
+    max-width: 100%;
+    min-width: var(--baryon-compact-dock-min-width);
   }
 
   .am-source-row,
@@ -1242,8 +1687,8 @@ const CSS = `
     gap: 4px;
     padding: 8px;
     border-radius: 4px;
-    background: #1A1A1A;
-    border: 1px solid #222222;
+    background: var(--nd-surface-raised);
+    border: 1px solid var(--nd-border);
   }
 
   .am-volume-meta {
@@ -1252,7 +1697,7 @@ const CSS = `
     align-items: center;
     justify-content: space-between;
     padding: 0 4px;
-    color: #666666;
+    color: var(--nd-text-disabled);
     font-family: "Space Mono", monospace;
     font-size: 11px;
     font-weight: 400;
@@ -1280,14 +1725,19 @@ const CSS = `
     width: calc(100vw - 12px);
   }
 
-  .am-player {
-    padding: 12px;
+  .am-player-shell--compact {
+    width: min(100%, var(--baryon-compact-dock-min-width));
+    max-width: calc(100vw - 12px);
   }
 
   .am-track {
     gap: 4px;
     width: min(14rem, calc(100vw - 7.2rem));
     padding: 4px 12px;
+  }
+
+  .am-compact-shell {
+    min-width: var(--baryon-compact-dock-min-width);
   }
 
   .am-source-row,
@@ -1367,6 +1817,7 @@ export function ListenerControls({
   const {
     soundCloudEnabled,
     activeSource,
+    selectedSource,
     displayName,
     liveReturnLocalFile,
     queuedNextLocalFile,
@@ -1412,8 +1863,18 @@ export function ListenerControls({
   const recentUploadsButtonRef = useRef(null);
   const recentUploadsPanelRef = useRef(null);
   const timelinePointerActiveRef = useRef(false);
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === "undefined" ? 1280 : window.innerWidth,
+  );
   const [showRecentUploadsPanel, setShowRecentUploadsPanel] = useState(false);
   const [showQueuedPopup, setShowQueuedPopup] = useState(false);
+  const {
+    dragOffset: playerDragOffset,
+    isDragging: isPlayerDragging,
+    handlePointerDown: handlePlayerPointerDown,
+    handlePointerUp: handlePlayerPointerUp,
+    handleDoubleClick: handlePlayerDoubleClick,
+  } = useDraggableFloatingUi();
   const { color, pulse, label } = getStatusConfig(
     isEngineReady,
     isAudioLoaded,
@@ -1440,6 +1901,10 @@ export function ListenerControls({
   const timelineStyle = {
     "--am-progress-percent": `${timelineProgressPercent}%`,
   };
+  /** @type {import("react").CSSProperties & { "--am-slider-percent": string }} */
+  const volumeSliderStyle = {
+    "--am-slider-percent": `${volumePercent}%`,
+  };
   const hasRecentUploads = recentUploads.length > 0;
   const isQueuedNextUnderLive = hasQueuedNextLocalFile && isLiveInputActive;
   const trackTitle = isQueuedNextUnderLive
@@ -1450,10 +1915,54 @@ export function ListenerControls({
     : hasQueuedNextLocalFile
       ? "The queued next local file stays highlighted here until you load it."
       : "Reload a recent local file without reopening the picker.";
-  const playDisabled = !isAudioLoaded;
+  const fileTransportEnabled = selectedSource !== "system";
+  const playDisabled = !fileTransportEnabled || !isAudioLoaded;
+  const stopDisabled = !fileTransportEnabled || !isAudioLoaded;
+  const isCompactDock = viewportWidth <= 1024;
+  const compactTrackTitle = isQueuedNextUnderLive
+    ? "Queued local file"
+    : "Source";
+  const sourceSummary =
+    selectedSource === "system"
+      ? "System"
+      : activeSource === "soundcloud"
+        ? "SoundCloud"
+        : displayName === "Upload Audio"
+          ? "Upload Audio File"
+          : displayName;
+  const compactStateLabel = isLiveInputActive
+    ? "Live"
+    : isPlaying
+      ? "Playing"
+      : isAudioLoaded
+        ? "Loaded"
+        : isEngineReady
+          ? "Ready"
+          : "Init";
+  const compactStateTone = isLiveInputActive
+    ? "live"
+    : isPlaying
+      ? "playing"
+      : "idle";
+  /** @type {import("react").CSSProperties} */
+  const playerShellStyle = {
+    transform: `translate(calc(-50% + ${playerDragOffset.x}px), ${playerDragOffset.y}px)`,
+    willChange: isPlayerDragging ? "transform" : "auto",
+    cursor: isPlayerDragging ? "grabbing" : "grab",
+  };
   const queuedPopupMessage = liveReturnLocalFile?.name
     ? `${queuedNextLocalFile?.name || "This file"} is queued next. ${liveReturnLocalFile.name} will be restored first when LIVE stops.`
     : `${queuedNextLocalFile?.name || "This file"} is queued and will load when LIVE stops.`;
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     if (!showRecentUploadsPanel) {
@@ -1508,8 +2017,18 @@ export function ListenerControls({
     <>
       <style>{CSS}</style>
 
-      <div className="am-player-shell">
-        {isAudioLoaded && transportState.canSeek ? (
+      <div
+        className={`am-player-shell${isCompactDock ? " am-player-shell--compact" : ""}`}
+        style={playerShellStyle}
+        onPointerDown={handlePlayerPointerDown}
+        onPointerUp={handlePlayerPointerUp}
+        onDoubleClick={handlePlayerDoubleClick}
+        title="Drag to move. Double-click or double-tap to reset."
+      >
+        {!isCompactDock &&
+        fileTransportEnabled &&
+        isAudioLoaded &&
+        transportState.canSeek ? (
           <div className="am-timeline-shell">
             <div className="am-timeline-row">
               <span className="am-timeline-time" aria-hidden="true">
@@ -1564,178 +2083,412 @@ export function ListenerControls({
           </div>
         ) : null}
 
-        <div className="am-player">
-          <div className="am-source-row">
-            <div className="am-status-group">
-              <span
-                className="am-status-dot"
-                title={label}
-                style={{
-                  background: color,
-                  animation: pulse
-                    ? "am-pulse 1.5s ease-in-out infinite"
-                    : "none",
-                }}
-              />
-            </div>
+        <div
+          className={`am-player${isCompactDock ? " am-player--compact" : ""}`}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="audio/*"
+            hidden
+            onChange={(event) => {
+              setShowRecentUploadsPanel(false);
+              handleFileChange(event);
+            }}
+          />
 
-            {/* ── Center: track info ── */}
-            <div
-              className="am-track"
-              onClick={() => {
-                setShowRecentUploadsPanel(false);
-                setShowDeviceMenu(false);
-                setShowSoundCloudPanel(false);
-                fileInputRef.current?.click();
-              }}
-              onMouseEnter={() => {
-                if (isQueuedNextUnderLive) {
-                  setShowQueuedPopup(true);
-                }
-              }}
-              onMouseLeave={() => {
-                window.clearTimeout(queuedPopupTimeoutRef.current);
-                queuedPopupTimeoutRef.current = 0;
-                setShowQueuedPopup(false);
-              }}
-              title={trackTitle}
-            >
-              <span
-                className={`am-track-popup${
-                  isQueuedNextUnderLive && showQueuedPopup
-                    ? " am-track-popup--visible"
-                    : ""
-                }`}
-                role="status"
-                aria-live="polite"
-              >
-                {queuedPopupMessage}
-              </span>
-              <span className="am-track-label">
-                <MusicNoteIcon />
-                <ScrollingText text={displayName} />
-              </span>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="audio/*"
-                hidden
-                onChange={(event) => {
-                  setShowRecentUploadsPanel(false);
-                  handleFileChange(event);
-                }}
-              />
-            </div>
-
-            {soundCloudEnabled || hasRecentUploads ? (
-              <div className="am-source-tools">
-                {hasRecentUploads ? (
-                  <button
-                    ref={recentUploadsButtonRef}
-                    className={`am-btn am-btn--recent${
-                      showRecentUploadsPanel ? " am-btn--recent-active" : ""
-                    }`}
-                    onClick={() => {
-                      setShowDeviceMenu(false);
-                      setShowSoundCloudPanel(false);
-                      setShowRecentUploadsPanel(!showRecentUploadsPanel);
-                    }}
-                    title="Recent uploads"
-                    aria-label="Recent uploads"
-                  >
-                    <HistoryIcon />
-                  </button>
+          {isCompactDock ? (
+            <div className="am-compact-shell">
+              <div className="am-compact-card">
+                {fileTransportEnabled &&
+                isAudioLoaded &&
+                transportState.canSeek ? (
+                  <div className="am-timeline-shell">
+                    <div className="am-timeline-row">
+                      <span className="am-timeline-time" aria-hidden="true">
+                        {formatClockTime(timelineValue)}
+                      </span>
+                      <input
+                        className="am-progress"
+                        data-testid="playback-timeline"
+                        type="range"
+                        min="0"
+                        max={timelineDuration || 0}
+                        step="0.01"
+                        value={timelineValue}
+                        onPointerDown={(event) => {
+                          timelinePointerActiveRef.current = true;
+                          void beginScrub(Number(event.currentTarget.value));
+                        }}
+                        onPointerUp={(event) => {
+                          if (!timelinePointerActiveRef.current) {
+                            return;
+                          }
+                          timelinePointerActiveRef.current = false;
+                          void commitScrub(Number(event.currentTarget.value));
+                        }}
+                        onPointerCancel={() => {
+                          timelinePointerActiveRef.current = false;
+                          void cancelScrub();
+                        }}
+                        onBlur={(event) => {
+                          if (!timelinePointerActiveRef.current) {
+                            return;
+                          }
+                          timelinePointerActiveRef.current = false;
+                          void commitScrub(Number(event.currentTarget.value));
+                        }}
+                        onChange={(event) => {
+                          const nextValue = Number(event.target.value);
+                          if (timelinePointerActiveRef.current) {
+                            previewScrub(nextValue);
+                            return;
+                          }
+                          void commitScrub(nextValue);
+                        }}
+                        aria-label="Playback position"
+                        title={`Playback position ${formatClockTime(timelineValue)} of ${formatClockTime(timelineDuration)}`}
+                        style={timelineStyle}
+                      />
+                      <span className="am-timeline-time" aria-hidden="true">
+                        {formatClockTime(timelineDuration)}
+                      </span>
+                    </div>
+                  </div>
                 ) : null}
 
-                {soundCloudEnabled ? (
-                  <button
-                    className={`am-btn am-btn--soundcloud${
-                      showSoundCloudPanel || activeSource === "soundcloud"
-                        ? " am-btn--soundcloud-active"
+                <div className="am-compact-identity">
+                  <div className="am-compact-source-cluster">
+                    <div className="am-compact-track-copy">
+                      <span className="am-compact-track-meta">
+                        {compactTrackTitle}
+                      </span>
+                      <span
+                        className="am-compact-track-title"
+                        title={sourceSummary}
+                      >
+                        {sourceSummary}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="am-compact-meta-stack">
+                    <span
+                      className="am-compact-state-chip"
+                      data-state={compactStateTone}
+                      title={label}
+                    >
+                      <span
+                        className="am-compact-state-chip-dot"
+                        aria-hidden="true"
+                        style={{
+                          background: color,
+                          animation: pulse
+                            ? "am-pulse 1.5s ease-in-out infinite"
+                            : "none",
+                        }}
+                      />
+                      {compactStateLabel}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="am-compact-unified-actions">
+                  <div className="am-compact-source-actions">
+                    <button
+                      className="am-btn am-compact-header-button"
+                      onClick={() => {
+                        setShowRecentUploadsPanel(false);
+                        setShowDeviceMenu(false);
+                        setShowSoundCloudPanel(false);
+                        fileInputRef.current?.click();
+                      }}
+                      title={trackTitle}
+                      aria-label={trackTitle}
+                    >
+                      <UploadIcon />
+                    </button>
+
+                    <SourceSelector
+                      onInteraction={() => {
+                        setShowRecentUploadsPanel(false);
+                        setShowDeviceMenu(false);
+                      }}
+                      showLiveButton={showSourceLiveButton}
+                      allowSystemSource={allowSystemSource}
+                      compactMode
+                    />
+                  </div>
+
+                  <div className="am-compact-transport-right">
+                    {hasRecentUploads ? (
+                      <button
+                        ref={recentUploadsButtonRef}
+                        className={`am-btn am-compact-utility${
+                          showRecentUploadsPanel
+                            ? " am-compact-utility--active"
+                            : ""
+                        }`}
+                        onClick={() => {
+                          setShowDeviceMenu(false);
+                          setShowSoundCloudPanel(false);
+                          setShowRecentUploadsPanel(!showRecentUploadsPanel);
+                        }}
+                        title="Recent uploads"
+                        aria-label="Recent uploads"
+                      >
+                        <HistoryIcon />
+                      </button>
+                    ) : null}
+
+                    {soundCloudEnabled ? (
+                      <button
+                        className={`am-btn am-compact-utility${
+                          showSoundCloudPanel || activeSource === "soundcloud"
+                            ? " am-compact-utility--active"
+                            : ""
+                        }`}
+                        onClick={() => {
+                          setShowRecentUploadsPanel(false);
+                          setShowDeviceMenu(false);
+                          setShowSoundCloudPanel(!showSoundCloudPanel);
+                        }}
+                        title="Load SoundCloud track or playlist"
+                        aria-label="SoundCloud"
+                      >
+                        <SoundCloudIcon />
+                      </button>
+                    ) : null}
+
+                    {hasRecentUploads || soundCloudEnabled ? (
+                      <span
+                        className="am-compact-row-divider"
+                        aria-hidden="true"
+                      />
+                    ) : null}
+
+                    <div className="am-compact-action-group am-compact-action-group--playback">
+                      <button
+                        className={`am-btn am-compact-action am-compact-action--primary${
+                          isPlaying ? " am-compact-action--active" : ""
+                        }`}
+                        onClick={handlePlayPause}
+                        disabled={playDisabled}
+                        title={isPlaying ? "Pause" : "Play"}
+                        aria-label={isPlaying ? "Pause" : "Play"}
+                      >
+                        {isPlaying ? <PauseIcon /> : <PlayIcon />}
+                      </button>
+
+                      <button
+                        className="am-btn am-compact-action"
+                        onClick={handleStop}
+                        disabled={stopDisabled}
+                        title="Stop"
+                        aria-label="Stop"
+                      >
+                        <StopIcon />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="am-compact-volume-row">
+                  <div className="am-volume">
+                    <button
+                      className="am-btn am-btn--volume"
+                      onClick={handleMuteToggle}
+                      title={
+                        isMuted ? "Unmute app playback" : "Mute app playback"
+                      }
+                    >
+                      <VolumeIcon muted={isMuted || volume <= 0.001} />
+                    </button>
+                    <input
+                      className="am-slider"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={volume}
+                      onChange={(event) => {
+                        handleVolumeChange(Number(event.target.value));
+                      }}
+                      style={volumeSliderStyle}
+                      aria-label="App playback volume"
+                      title={`App playback volume ${volumePercent}%`}
+                    />
+                  </div>
+                  <span className="am-compact-volume-value" aria-hidden="true">
+                    {volumePercent}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="am-source-row">
+                <div className="am-status-group">
+                  <span
+                    className="am-status-dot"
+                    title={label}
+                    style={{
+                      background: color,
+                      animation: pulse
+                        ? "am-pulse 1.5s ease-in-out infinite"
+                        : "none",
+                    }}
+                  />
+                </div>
+
+                <div
+                  className="am-track"
+                  onClick={() => {
+                    setShowRecentUploadsPanel(false);
+                    setShowDeviceMenu(false);
+                    setShowSoundCloudPanel(false);
+                    fileInputRef.current?.click();
+                  }}
+                  onMouseEnter={() => {
+                    if (isQueuedNextUnderLive) {
+                      setShowQueuedPopup(true);
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    window.clearTimeout(queuedPopupTimeoutRef.current);
+                    queuedPopupTimeoutRef.current = 0;
+                    setShowQueuedPopup(false);
+                  }}
+                  title={trackTitle}
+                >
+                  <span
+                    className={`am-track-popup${
+                      isQueuedNextUnderLive && showQueuedPopup
+                        ? " am-track-popup--visible"
                         : ""
                     }`}
-                    onClick={() => {
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {queuedPopupMessage}
+                  </span>
+                  <span className="am-track-label">
+                    <MusicNoteIcon />
+                    <ScrollingText text={displayName} />
+                  </span>
+                </div>
+
+                {soundCloudEnabled || hasRecentUploads ? (
+                  <div className="am-source-tools">
+                    {hasRecentUploads ? (
+                      <button
+                        ref={recentUploadsButtonRef}
+                        className={`am-btn am-btn--recent${
+                          showRecentUploadsPanel ? " am-btn--recent-active" : ""
+                        }`}
+                        onClick={() => {
+                          setShowDeviceMenu(false);
+                          setShowSoundCloudPanel(false);
+                          setShowRecentUploadsPanel(!showRecentUploadsPanel);
+                        }}
+                        title="Recent uploads"
+                        aria-label="Recent uploads"
+                      >
+                        <HistoryIcon />
+                      </button>
+                    ) : null}
+
+                    {soundCloudEnabled ? (
+                      <button
+                        className={`am-btn am-btn--soundcloud${
+                          showSoundCloudPanel || activeSource === "soundcloud"
+                            ? " am-btn--soundcloud-active"
+                            : ""
+                        }`}
+                        onClick={() => {
+                          setShowRecentUploadsPanel(false);
+                          setShowDeviceMenu(false);
+                          setShowSoundCloudPanel(!showSoundCloudPanel);
+                        }}
+                        title="Load SoundCloud track or playlist"
+                        aria-label="SoundCloud"
+                      >
+                        <SoundCloudIcon />
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="am-divider" />
+              </div>
+
+              <div className="am-actions-row">
+                <div className="am-transport">
+                  <button
+                    className="am-btn am-btn--play"
+                    onClick={handlePlayPause}
+                    disabled={playDisabled}
+                    title={isPlaying ? "Pause" : "Play"}
+                  >
+                    {isPlaying ? <PauseIcon /> : <PlayIcon />}
+                  </button>
+                  <button
+                    className="am-btn am-btn--stop"
+                    onClick={handleStop}
+                    disabled={stopDisabled}
+                    title="Stop"
+                  >
+                    <StopIcon />
+                  </button>
+                </div>
+
+                <div className="am-divider" />
+
+                <div className="am-utility-row">
+                  <SourceSelector
+                    onInteraction={() => {
                       setShowRecentUploadsPanel(false);
                       setShowDeviceMenu(false);
-                      setShowSoundCloudPanel(!showSoundCloudPanel);
                     }}
-                    title="Load SoundCloud track or playlist"
-                    aria-label="SoundCloud"
-                  >
-                    <SoundCloudIcon />
-                  </button>
-                ) : null}
+                    showLiveButton={showSourceLiveButton}
+                    allowSystemSource={allowSystemSource}
+                  />
+                </div>
               </div>
-            ) : null}
 
-            <div className="am-divider" />
-          </div>
+              <div className="am-volume-row">
+                <div className="am-volume-meta" aria-hidden="true">
+                  <span>App Volume</span>
+                  <span>{volumePercent}%</span>
+                </div>
+                <div className="am-volume">
+                  <button
+                    className="am-btn am-btn--volume"
+                    onClick={handleMuteToggle}
+                    title={
+                      isMuted ? "Unmute app playback" : "Mute app playback"
+                    }
+                  >
+                    <VolumeIcon muted={isMuted || volume <= 0.001} />
+                  </button>
+                  <input
+                    className="am-slider"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={volume}
+                    onChange={(event) => {
+                      handleVolumeChange(Number(event.target.value));
+                    }}
+                    aria-label="App playback volume"
+                    title={`App playback volume ${volumePercent}%`}
+                  />
+                </div>
 
-          <div className="am-actions-row">
-            {/* ── Center: transport ── */}
-            <div className="am-transport">
-              <button
-                className="am-btn am-btn--play"
-                onClick={handlePlayPause}
-                disabled={playDisabled}
-                title={isPlaying ? "Pause" : "Play"}
-              >
-                {isPlaying ? <PauseIcon /> : <PlayIcon />}
-              </button>
-              <button
-                className="am-btn am-btn--stop"
-                onClick={handleStop}
-                disabled={!isAudioLoaded}
-                title="Stop"
-              >
-                <StopIcon />
-              </button>
-            </div>
-
-            <div className="am-divider" />
-
-            <div className="am-utility-row">
-              <SourceSelector
-                onInteraction={() => {
-                  setShowRecentUploadsPanel(false);
-                  setShowDeviceMenu(false);
-                }}
-                showLiveButton={showSourceLiveButton}
-                allowSystemSource={allowSystemSource}
-              />
-            </div>
-          </div>
-
-          <div className="am-volume-row">
-            <div className="am-volume-meta" aria-hidden="true">
-              <span>App Volume</span>
-              <span>{volumePercent}%</span>
-            </div>
-            <div className="am-volume">
-              <button
-                className="am-btn am-btn--volume"
-                onClick={handleMuteToggle}
-                title={isMuted ? "Unmute app playback" : "Mute app playback"}
-              >
-                <VolumeIcon muted={isMuted || volume <= 0.001} />
-              </button>
-              <input
-                className="am-slider"
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={volume}
-                onChange={(event) => {
-                  handleVolumeChange(Number(event.target.value));
-                }}
-                aria-label="App playback volume"
-                title={`App playback volume ${volumePercent}%`}
-              />
-            </div>
-
-            <div className="am-divider" />
-          </div>
+                <div className="am-divider" />
+              </div>
+            </>
+          )}
         </div>
 
         {hasRecentUploads ? (

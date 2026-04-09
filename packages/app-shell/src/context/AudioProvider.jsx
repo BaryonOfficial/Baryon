@@ -1330,6 +1330,10 @@ export function AudioProvider({ children, platform = "web" }) {
   );
 
   const handlePlayPause = useCallback(async () => {
+    if (selectedSource === "system") {
+      return;
+    }
+
     if (activeSource === "soundcloud") {
       if (!soundCloudQueueRef.current.length) {
         return;
@@ -1358,11 +1362,16 @@ export function AudioProvider({ children, platform = "web" }) {
   }, [
     activeSource,
     handleLocalPlayPause,
+    selectedSource,
     syncSessionStatus,
     syncTransportState,
   ]);
 
   const handleStop = useCallback(() => {
+    if (selectedSource === "system") {
+      return;
+    }
+
     clearScrubState();
     if (activeSource === "soundcloud") {
       getDefaultAudioSession().stopAudio();
@@ -1389,6 +1398,7 @@ export function AudioProvider({ children, platform = "web" }) {
     activeSource,
     clearScrubState,
     handleLocalStop,
+    selectedSource,
     syncSessionStatus,
     syncTransportState,
   ]);
@@ -1440,6 +1450,18 @@ export function AudioProvider({ children, platform = "web" }) {
   const handleSourceChange = useCallback(
     async (next) => {
       if (next === selectedSource) return;
+
+      if (next === "system") {
+        clearScrubState();
+        if (activeSource === "soundcloud") {
+          getDefaultAudioSession().stopAudio();
+          syncSessionStatus();
+        } else if (isAudioLoaded) {
+          handleLocalStop();
+          syncTransportState();
+        }
+      }
+
       if (isLiveInputActive && next === "file") {
         stopLiveInputSession();
         await restoreAfterLiveStop();
@@ -1457,13 +1479,19 @@ export function AudioProvider({ children, platform = "web" }) {
       }
     },
     [
+      activeSource,
       applyLiveInputUiState,
+      clearScrubState,
+      handleLocalStop,
+      isAudioLoaded,
       isLiveInputActive,
       isWebPlatform,
       liveInputPermissionState,
       requestLiveInputPermission,
       restoreAfterLiveStop,
       selectedSource,
+      syncSessionStatus,
+      syncTransportState,
       stopLiveInputSession,
     ],
   );

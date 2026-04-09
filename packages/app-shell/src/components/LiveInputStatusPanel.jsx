@@ -14,23 +14,23 @@ function getSignalBadgeStyle(status) {
     status.signalState === LIVE_INPUT_SIGNAL_STATES.clipped
   ) {
     return {
-      border: "1px solid rgba(248, 113, 113, 0.35)",
-      background: "rgba(239, 68, 68, 0.16)",
-      color: "rgba(255, 241, 242, 0.98)",
+      border: "1px solid rgba(255, 59, 48, 0.5)",
+      background: "rgba(255, 59, 48, 0.12)",
+      color: "var(--nd-text-display)",
     };
   }
   if (status.phase === LIVE_INPUT_PHASES.weakSignal) {
     return {
-      border: "1px solid rgba(252, 211, 77, 0.28)",
-      background: "rgba(245, 158, 11, 0.16)",
-      color: "rgba(255, 251, 235, 0.98)",
+      border: "1px solid rgba(255, 204, 102, 0.4)",
+      background: "rgba(255, 204, 102, 0.1)",
+      color: "var(--nd-text-display)",
     };
   }
   if (status.phase === LIVE_INPUT_PHASES.calibrating) {
     return {
-      border: "1px solid rgba(125, 211, 252, 0.3)",
-      background: "rgba(56, 189, 248, 0.16)",
-      color: "rgba(240, 249, 255, 0.98)",
+      border: "1px solid rgba(91, 155, 246, 0.42)",
+      background: "rgba(91, 155, 246, 0.1)",
+      color: "var(--nd-text-display)",
     };
   }
   if (
@@ -38,15 +38,15 @@ function getSignalBadgeStyle(status) {
     status.phase === LIVE_INPUT_PHASES.stopping
   ) {
     return {
-      border: "1px solid rgba(255, 255, 255, 0.14)",
-      background: "rgba(255, 255, 255, 0.08)",
-      color: "rgba(255, 255, 255, 0.94)",
+      border: "1px solid var(--nd-border-visible)",
+      background: "rgba(255, 255, 255, 0.03)",
+      color: "var(--nd-text-display)",
     };
   }
   return {
-    border: "1px solid rgba(110, 231, 183, 0.26)",
-    background: "rgba(16, 185, 129, 0.16)",
-    color: "rgba(236, 253, 245, 0.98)",
+    border: "1px solid rgba(74, 158, 92, 0.44)",
+    background: "rgba(74, 158, 92, 0.1)",
+    color: "var(--nd-text-display)",
   };
 }
 
@@ -87,19 +87,20 @@ function getSelectStyle(disabled) {
   const style = {
     width: "100%",
     minWidth: 0,
-    height: "1.7rem",
-    padding: "0 0.45rem",
+    height: "1.85rem",
+    padding: "0 0.55rem",
     borderRadius: "0.58rem",
-    border: "1px solid rgba(255, 255, 255, 0.1)",
-    background: disabled
-      ? "rgba(255, 255, 255, 0.03)"
-      : "rgba(255, 255, 255, 0.055)",
-    color: disabled ? "rgba(255, 255, 255, 0.42)" : "rgba(255, 255, 255, 0.92)",
-    fontSize: "0.68rem",
-    fontWeight: 500,
+    border: "1px solid var(--nd-border-visible)",
+    background: disabled ? "rgba(255, 255, 255, 0.02)" : "#0c0c0c",
+    color: disabled ? "var(--nd-text-disabled)" : "var(--nd-text-primary)",
+    fontFamily: '"Space Mono", ui-monospace, monospace',
+    fontSize: "0.62rem",
+    fontWeight: 700,
+    letterSpacing: "0.05em",
     outline: "none",
     appearance: "none",
     WebkitAppearance: "none",
+    textTransform: "uppercase",
   };
   return style;
 }
@@ -163,8 +164,8 @@ export default function LiveInputStatusPanel({
     selectedLiveInputDeviceKind === "system" ? "Loopback" : "Acoustic Mic";
   const resolvedTypeLabelStyle =
     selectedLiveInputDeviceKind === "system"
-      ? { color: "rgba(52, 211, 153, 0.9)" }
-      : { color: "rgba(147, 197, 253, 0.88)" };
+      ? { color: "var(--nd-success)" }
+      : { color: "var(--nd-info)" };
 
   const signalLabel =
     status.phase === LIVE_INPUT_PHASES.idle
@@ -173,9 +174,9 @@ export default function LiveInputStatusPanel({
   const signalBadgeStyle =
     status.phase === LIVE_INPUT_PHASES.idle
       ? {
-          border: "1px solid rgba(255, 255, 255, 0.1)",
-          background: "rgba(255, 255, 255, 0.06)",
-          color: "rgba(255, 255, 255, 0.7)",
+          border: "1px solid var(--nd-border-visible)",
+          background: "rgba(255, 255, 255, 0.03)",
+          color: "var(--nd-text-secondary)",
         }
       : getSignalBadgeStyle(status);
 
@@ -253,14 +254,13 @@ export default function LiveInputStatusPanel({
         zIndex: 9998,
         pointerEvents: "auto",
         width: "min(15.25rem, calc(100vw - 1rem))",
-        padding: "0.52rem 0.56rem",
+        padding: "0.62rem",
         borderRadius: "0.9rem",
-        border: "1px solid rgba(255, 255, 255, 0.09)",
-        background: "rgba(7, 10, 16, 0.76)",
-        color: "rgba(255, 255, 255, 0.95)",
-        boxShadow: "0 16px 36px rgba(0, 0, 0, 0.28)",
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
+        border: "1px solid var(--nd-border-visible)",
+        background: "var(--nd-surface)",
+        color: "var(--nd-text-primary)",
+        boxShadow: "var(--nd-shell-shadow)",
+        fontFamily: '"Space Grotesk", system-ui, sans-serif',
       }}
       aria-live="polite"
     >
@@ -280,7 +280,8 @@ export default function LiveInputStatusPanel({
             fontWeight: 700,
             letterSpacing: "0.16em",
             textTransform: "uppercase",
-            color: "rgba(255, 255, 255, 0.38)",
+            color: "var(--nd-text-secondary)",
+            fontFamily: '"Space Mono", ui-monospace, monospace',
           }}
         >
           Input
@@ -291,10 +292,11 @@ export default function LiveInputStatusPanel({
             flexShrink: 0,
             borderRadius: "999px",
             padding: "0.18rem 0.44rem",
-            fontSize: "0.56rem",
-            fontWeight: 600,
+            fontSize: "0.54rem",
+            fontWeight: 700,
             letterSpacing: "0.12em",
             textTransform: "uppercase",
+            fontFamily: '"Space Mono", ui-monospace, monospace',
           }}
         >
           {signalLabel}
@@ -308,7 +310,7 @@ export default function LiveInputStatusPanel({
             style={{
               padding: "0.18rem 0",
               fontSize: "0.67rem",
-              color: "rgba(255, 255, 255, 0.72)",
+              color: "var(--nd-text-secondary)",
             }}
           >
             Requesting audio access…
@@ -319,7 +321,7 @@ export default function LiveInputStatusPanel({
               style={{
                 fontSize: "0.66rem",
                 lineHeight: 1.35,
-                color: "rgba(255, 255, 255, 0.72)",
+                color: "var(--nd-text-secondary)",
               }}
             >
               Enable audio access to choose a loopback or live input device.
@@ -329,14 +331,17 @@ export default function LiveInputStatusPanel({
               onClick={() => void requestLiveInputPermission()}
               style={{
                 justifySelf: "start",
-                height: "1.65rem",
-                padding: "0 0.52rem",
+                height: "1.72rem",
+                padding: "0 0.6rem",
                 borderRadius: "999px",
-                border: "1px solid rgba(255, 255, 255, 0.12)",
-                background: "rgba(255, 255, 255, 0.06)",
-                color: "rgba(255, 255, 255, 0.92)",
-                fontSize: "0.63rem",
-                fontWeight: 600,
+                border: "1px solid var(--nd-border-visible)",
+                background: "transparent",
+                color: "var(--nd-text-display)",
+                fontFamily: '"Space Mono", ui-monospace, monospace',
+                fontSize: "0.58rem",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
                 cursor: "pointer",
               }}
             >
@@ -349,7 +354,7 @@ export default function LiveInputStatusPanel({
               style={{
                 fontSize: "0.66rem",
                 lineHeight: 1.35,
-                color: "rgba(255, 255, 255, 0.72)",
+                color: "var(--nd-text-secondary)",
               }}
             >
               {permissionDenied
@@ -362,14 +367,17 @@ export default function LiveInputStatusPanel({
                 onClick={() => void requestLiveInputPermission()}
                 style={{
                   justifySelf: "start",
-                  height: "1.65rem",
-                  padding: "0 0.52rem",
+                  height: "1.72rem",
+                  padding: "0 0.6rem",
                   borderRadius: "999px",
-                  border: "1px solid rgba(255, 255, 255, 0.12)",
-                  background: "rgba(255, 255, 255, 0.06)",
-                  color: "rgba(255, 255, 255, 0.92)",
-                  fontSize: "0.63rem",
-                  fontWeight: 600,
+                  border: "1px solid var(--nd-border-visible)",
+                  background: "transparent",
+                  color: "var(--nd-text-display)",
+                  fontFamily: '"Space Mono", ui-monospace, monospace',
+                  fontSize: "0.58rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
                   cursor: "pointer",
                 }}
               >
@@ -379,7 +387,7 @@ export default function LiveInputStatusPanel({
           </div>
         ) : audioDevices.length === 0 ? (
           <div
-            style={{ fontSize: "0.66rem", color: "rgba(255, 255, 255, 0.58)" }}
+            style={{ fontSize: "0.66rem", color: "var(--nd-text-secondary)" }}
           >
             No audio input devices found
           </div>
@@ -393,7 +401,8 @@ export default function LiveInputStatusPanel({
                   fontWeight: 700,
                   letterSpacing: "0.12em",
                   textTransform: "uppercase",
-                  color: "rgba(255, 255, 255, 0.36)",
+                  color: "var(--nd-text-secondary)",
+                  fontFamily: '"Space Mono", ui-monospace, monospace',
                 }}
               >
                 Device
@@ -431,7 +440,8 @@ export default function LiveInputStatusPanel({
                     fontWeight: 700,
                     letterSpacing: "0.12em",
                     textTransform: "uppercase",
-                    color: "rgba(255, 255, 255, 0.36)",
+                    color: "var(--nd-text-secondary)",
+                    fontFamily: '"Space Mono", ui-monospace, monospace',
                   }}
                 >
                   Type
@@ -450,8 +460,10 @@ export default function LiveInputStatusPanel({
                       fontSize: "0.54rem",
                       fontWeight: 600,
                       color: deviceTypeIsManual
-                        ? "rgba(251, 191, 36, 0.8)"
-                        : "rgba(148, 163, 184, 0.65)",
+                        ? "var(--nd-warning)"
+                        : "var(--nd-text-disabled)",
+                      fontFamily: '"Space Mono", ui-monospace, monospace',
+                      textTransform: "uppercase",
                     }}
                   >
                     {deviceTypeIsManual ? "manual" : "auto"}
@@ -498,9 +510,9 @@ export default function LiveInputStatusPanel({
               minHeight: "1.65rem",
               padding: "0.28rem 0.42rem",
               borderRadius: "0.58rem",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
-              background: "rgba(255, 255, 255, 0.04)",
-              color: "rgba(255, 255, 255, 0.88)",
+              border: "1px solid var(--nd-border)",
+              background: "var(--nd-surface-raised)",
+              color: "var(--nd-text-primary)",
               fontSize: "0.64rem",
               fontWeight: 600,
               cursor: "pointer",
@@ -521,7 +533,8 @@ export default function LiveInputStatusPanel({
                   fontWeight: 700,
                   letterSpacing: "0.12em",
                   textTransform: "uppercase",
-                  color: "rgba(255, 255, 255, 0.36)",
+                  color: "var(--nd-text-secondary)",
+                  fontFamily: '"Space Mono", ui-monospace, monospace',
                 }}
               >
                 Mic Settings
@@ -530,16 +543,18 @@ export default function LiveInputStatusPanel({
                 style={{
                   flexShrink: 0,
                   borderRadius: "999px",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
-                  background: "rgba(255, 255, 255, 0.04)",
+                  border: "1px solid var(--nd-border)",
+                  background: "rgba(255, 255, 255, 0.02)",
                   padding: "0.1rem 0.34rem",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
                   fontSize: "0.57rem",
                   color: micProcessingDisabled
-                    ? "rgba(255, 255, 255, 0.34)"
-                    : "rgba(255, 255, 255, 0.72)",
+                    ? "var(--nd-text-disabled)"
+                    : "var(--nd-text-secondary)",
+                  fontFamily: '"Space Mono", ui-monospace, monospace',
+                  textTransform: "uppercase",
                 }}
               >
                 {micProcessingSummary}
@@ -548,8 +563,9 @@ export default function LiveInputStatusPanel({
             <span
               style={{
                 flexShrink: 0,
-                color: "rgba(255, 255, 255, 0.4)",
+                color: "var(--nd-text-secondary)",
                 fontSize: "0.68rem",
+                fontFamily: '"Space Mono", ui-monospace, monospace',
               }}
             >
               {micSettingsOpen ? "▾" : "▸"}
@@ -568,7 +584,7 @@ export default function LiveInputStatusPanel({
                 style={{
                   fontSize: "0.61rem",
                   lineHeight: 1.35,
-                  color: "rgba(255, 255, 255, 0.48)",
+                  color: "var(--nd-text-secondary)",
                 }}
               >
                 {micProcessingDisabled
@@ -582,9 +598,9 @@ export default function LiveInputStatusPanel({
                     lineHeight: 1.4,
                     padding: "0.3rem 0.42rem",
                     borderRadius: "0.52rem",
-                    border: "1px solid rgba(251, 191, 36, 0.22)",
-                    background: "rgba(251, 191, 36, 0.08)",
-                    color: "rgba(253, 230, 138, 0.9)",
+                    border: "1px solid rgba(255, 204, 102, 0.3)",
+                    background: "rgba(255, 204, 102, 0.08)",
+                    color: "var(--nd-warning)",
                   }}
                 >
                   Using an audio interface? Set{" "}
@@ -611,20 +627,23 @@ export default function LiveInputStatusPanel({
                       padding: "0 0.48rem",
                       borderRadius: "0.56rem",
                       border: enabled
-                        ? "1px solid rgba(122, 174, 255, 0.34)"
-                        : "1px solid rgba(255, 255, 255, 0.08)",
+                        ? "1px solid var(--nd-text-display)"
+                        : "1px solid var(--nd-border)",
                       background: micProcessingDisabled
-                        ? "rgba(255, 255, 255, 0.03)"
+                        ? "rgba(255, 255, 255, 0.02)"
                         : enabled
-                          ? "rgba(122, 174, 255, 0.16)"
-                          : "rgba(255, 255, 255, 0.04)",
+                          ? "var(--nd-text-display)"
+                          : "var(--nd-surface-raised)",
                       color: micProcessingDisabled
-                        ? "rgba(255, 255, 255, 0.28)"
+                        ? "var(--nd-text-disabled)"
                         : enabled
-                          ? "rgba(224, 238, 255, 0.96)"
-                          : "rgba(255, 255, 255, 0.72)",
-                      fontSize: "0.62rem",
-                      fontWeight: 600,
+                          ? "var(--nd-black)"
+                          : "var(--nd-text-primary)",
+                      fontSize: "0.58rem",
+                      fontWeight: 700,
+                      fontFamily: '"Space Mono", ui-monospace, monospace',
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
                       textAlign: "left",
                       whiteSpace: "nowrap",
                       cursor: micProcessingDisabled ? "default" : "pointer",
@@ -646,20 +665,21 @@ export default function LiveInputStatusPanel({
                         borderRadius: "999px",
                         padding: "0.08rem 0.34rem",
                         border: enabled
-                          ? "1px solid rgba(122, 174, 255, 0.32)"
-                          : "1px solid rgba(255, 255, 255, 0.08)",
+                          ? "1px solid rgba(0, 0, 0, 0.16)"
+                          : "1px solid var(--nd-border-visible)",
                         background: enabled
-                          ? "rgba(122, 174, 255, 0.14)"
-                          : "rgba(255, 255, 255, 0.04)",
+                          ? "rgba(0, 0, 0, 0.06)"
+                          : "rgba(255, 255, 255, 0.02)",
                         color: micProcessingDisabled
-                          ? "rgba(255, 255, 255, 0.28)"
+                          ? "var(--nd-text-disabled)"
                           : enabled
-                            ? "rgba(224, 238, 255, 0.92)"
-                            : "rgba(255, 255, 255, 0.48)",
+                            ? "var(--nd-black)"
+                            : "var(--nd-text-secondary)",
                         fontSize: "0.54rem",
                         fontWeight: 700,
                         letterSpacing: "0.08em",
                         textTransform: "uppercase",
+                        fontFamily: '"Space Mono", ui-monospace, monospace',
                       }}
                     >
                       {enabled ? "On" : "Off"}
@@ -678,7 +698,7 @@ export default function LiveInputStatusPanel({
               display: "grid",
               gap: "0.18rem",
               paddingTop: "0.18rem",
-              borderTop: "1px solid rgba(255, 255, 255, 0.06)",
+              borderTop: "1px solid var(--nd-border)",
               marginTop: "0.08rem",
             }}
           >
@@ -694,31 +714,28 @@ export default function LiveInputStatusPanel({
                 padding: "0.34rem 0.58rem",
                 borderRadius: "0.66rem",
                 border: isLiveInputActive
-                  ? "1px solid rgba(255, 91, 82, 0.34)"
-                  : "1px solid rgba(122, 174, 255, 0.24)",
+                  ? "1px solid var(--nd-accent)"
+                  : "1px solid var(--nd-text-display)",
                 background: liveButtonDisabled
-                  ? "rgba(255, 255, 255, 0.04)"
+                  ? "rgba(255, 255, 255, 0.02)"
                   : isLiveInputActive
-                    ? "linear-gradient(180deg, rgba(255, 91, 82, 0.22), rgba(255, 69, 58, 0.12))"
-                    : "linear-gradient(180deg, rgba(122, 174, 255, 0.16), rgba(122, 174, 255, 0.08))",
+                    ? "rgba(255, 59, 48, 0.12)"
+                    : "var(--nd-text-display)",
                 color: liveButtonDisabled
-                  ? "rgba(255, 255, 255, 0.4)"
+                  ? "var(--nd-text-disabled)"
                   : isLiveInputActive
-                    ? "rgba(255, 235, 235, 0.94)"
-                    : "rgba(232, 242, 255, 0.94)",
-                fontSize: "0.68rem",
-                fontWeight: 650,
-                letterSpacing: "0.01em",
+                    ? "var(--nd-text-display)"
+                    : "var(--nd-black)",
+                fontSize: "0.6rem",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                fontFamily: '"Space Mono", ui-monospace, monospace',
                 cursor: liveButtonDisabled ? "not-allowed" : "pointer",
-                boxShadow: liveButtonDisabled
-                  ? "none"
-                  : isLiveInputActive
-                    ? "0 10px 22px rgba(83, 16, 12, 0.18)"
-                    : showLiveActionAttention
-                      ? "0 0 0 1px rgba(147, 197, 253, 0.26), 0 14px 28px rgba(37, 99, 235, 0.22)"
-                      : "0 10px 22px rgba(30, 64, 175, 0.14)",
                 transition:
-                  "background 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 140ms ease",
+                  "background 140ms ease, border-color 140ms ease, color 140ms ease, opacity 140ms ease",
+                opacity:
+                  liveButtonDisabled || !showLiveActionAttention ? 1 : 0.92,
               }}
               aria-label={liveActionLabel}
               title={
