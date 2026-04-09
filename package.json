@@ -32,6 +32,7 @@
     "rename": "node scripts/semantic-rename.mjs",
     "dead-exports": "node scripts/dead-exports.mjs",
     "shape": "node scripts/shape-trace.mjs",
+    "contract:desktop-bridge": "node scripts/contract-desktop-bridge.mjs",
     "deps:versions": "syncpack lint --dependency-types prod,dev,peer",
     "deps:versions:fix": "syncpack fix --dependency-types prod,dev,peer",
     "prepare": "husky",
