@@ -89,6 +89,7 @@ export const AUDIT_DEFAULTS = Object.freeze({
   testToneHz: 440,
   testToneAmplitude: 0.5,
   logEveryFrames: 30,
+  structuralImplementation: "modal-excitation",
 });
 
 export const DEFAULTS = Object.freeze({

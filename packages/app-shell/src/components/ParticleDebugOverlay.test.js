@@ -3,7 +3,7 @@ import {
   normalizeDebugOverlayItems,
   resolveDebugOverlayState,
   shouldRenderDebugOverlay,
-} from "./ParticleDebugOverlay.jsx";
+} from "./ParticleDebugOverlayState.js";
 
 describe("normalizeDebugOverlayItems", () => {
   it("returns null when none are provided", () => {

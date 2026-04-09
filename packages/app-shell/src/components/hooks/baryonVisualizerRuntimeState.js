@@ -259,7 +259,7 @@ function getRuntimePerfWallTimeMs() {
   return 0;
 }
 
-export function buildRuntimePerfSnapshot(runtimeDiagnostics) {
+function buildRuntimePerfSnapshot(runtimeDiagnostics) {
   return {
     fps:
       runtimeDiagnostics?.smoothedFrameTimeMs > 0

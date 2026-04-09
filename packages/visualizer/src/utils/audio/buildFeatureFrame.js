@@ -1,6 +1,5 @@
 import {
   AUDIT_DEFAULTS,
-  AUDIO_SIGNAL_NORMALIZATION_SLOTS,
   AUDIO_SLOT_CAPACITY,
   BEAT_DEFAULTS,
   DEFAULT_FFT_SIZE,
@@ -220,34 +219,7 @@ const LIVE_INPUT_PULSE_RESPONSE_SCALE = 0.9;
 const LEGACY_PRESERVATION_BACKBONE_WEIGHT = 0.94;
 const LEGACY_PRESERVATION_DETAIL_WEIGHT = 0.4;
 
-export const DEFAULT_LIVE_INPUT_ANALYSIS_SETTINGS = Object.freeze({
-  analysisClass: DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
-});
-
-export const LIVE_INPUT_ANALYSIS_OPTIONS = Object.freeze([
-  Object.freeze({
-    value: LIVE_INPUT_ANALYSIS_CLASSES.auto,
-    label: "Auto",
-    description:
-      "Use heuristics. System capture and obvious loopback devices become line feeds; other inputs stay acoustic mics.",
-  }),
-  Object.freeze({
-    value: LIVE_INPUT_ANALYSIS_CLASSES.lineFeed,
-    label: "Line Feed",
-    description:
-      "Use the file-style analysis path for live feeds, virtual cables, and line-level capture.",
-  }),
-  Object.freeze({
-    value: LIVE_INPUT_ANALYSIS_CLASSES.acousticMic,
-    label: "Acoustic Mic",
-    description:
-      "Use the forgiving mic path for laptop mics, headsets, and room pickup.",
-  }),
-]);
-
-export const LIVE_INPUT_PROFILE_OPTIONS = LIVE_INPUT_ANALYSIS_OPTIONS;
-
-export { createAudioFeatureState, FIELD_STATES };
+export { createAudioFeatureState };
 
 function getAnalysisMemory(featureState, capacity) {
   if (featureState?.analysis) {
@@ -1493,7 +1465,7 @@ function buildZeroDebugSnapshot({
   };
 }
 
-export function buildSilentFeatureFrame({
+function buildSilentFeatureFrame({
   featureState,
   inputMode,
   soundActive,
@@ -4742,7 +4714,7 @@ function buildStructuralFingerprint({
   };
 }
 
-export function materializeAudioFeatureStructuralSnapshot(
+function materializeAudioFeatureStructuralSnapshot(
   preparedInputs,
   structuralState,
   legacyCompositionContext = null,
@@ -5016,7 +4988,7 @@ function buildDualComparisonDebugSummary({
   } = deriveCompositeSignals({
     inputMode: preparedInputs.analysisInputMode,
     modeCapacity: capacity,
-    signalNormalizationSlots: AUDIO_SIGNAL_NORMALIZATION_SLOTS,
+    signalNormalizationSlots: AUDIO_SLOT_CAPACITY,
     modeSlots: signalModeSlots,
     referenceModeSlots: signalReferenceModeSlots,
     backboneState,
@@ -5795,7 +5767,7 @@ export function composeAudioFeatureFrame({
   } = deriveCompositeSignals({
     inputMode: preparedInputs.analysisInputMode,
     modeCapacity: preparedInputs.capacity,
-    signalNormalizationSlots: AUDIO_SIGNAL_NORMALIZATION_SLOTS,
+    signalNormalizationSlots: AUDIO_SLOT_CAPACITY,
     modeSlots: analysisResult.signalModeSlots ?? analysisResult.modeSlots,
     referenceModeSlots:
       analysisResult.signalReferenceModeSlots ??
