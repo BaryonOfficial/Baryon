@@ -65,6 +65,9 @@ importers:
       '@baryon/app-shell':
         specifier: workspace:*
         version: link:../../packages/app-shell
+      '@baryon/lumen':
+        specifier: workspace:*
+        version: link:../../packages/lumen
       '@baryon/visualizer':
         specifier: workspace:*
         version: link:../../packages/visualizer
@@ -74,9 +77,6 @@ importers:
       '@react-three/fiber':
         specifier: ^9.5.0
         version: 9.5.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2)
-      node-syphon:
-        specifier: file:./syphon/node-syphon
-        version: file:apps/desktop/syphon/node-syphon
       react:
         specifier: ^19.2.4
         version: 19.2.4
@@ -272,6 +272,15 @@ importers:
       vitest:
         specifier: ^4.1.2
         version: 4.1.2(@types/node@25.5.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.0)(@emnapi/runtime@1.9.0)(@types/node@25.5.0)(esbuild@0.27.4)(jiti@2.6.1)(terser@5.46.1)(yaml@2.8.3))
+
+  packages/lumen:
+    dependencies:
+      bindings:
+        specifier: ^1.5.0
+        version: 1.5.0
+      node-addon-api:
+        specifier: ^8.3.0
+        version: 8.7.0
 
   packages/visualizer:
     dependencies:
@@ -4135,6 +4144,10 @@ packages:
     resolution: {integrity: sha512-6u9UwL0HlAl21+agMN3YAMXcKByMqwGx+pq+P76vii5f7hTPtKDp08/H9py6DY+cfDw7kQNTGEj/rly3IgbNQA==}
     engines: {node: '>=10'}
 
+  node-addon-api@8.7.0:
+    resolution: {integrity: sha512-9MdFxmkKaOYVTV+XVRG8ArDwwQ77XIgIPyKASB1k3JPq3M8fGQQQE3YpMOrKm6g//Ktx8ivZr8xo1Qmtqub+GA==}
+    engines: {node: ^18 || ^20 || >= 21}
+
   node-api-version@0.2.1:
     resolution: {integrity: sha512-2xP/IGGMmmSQpI1+O/k72jF/ykvZ89JeuKX3TLJAYPDVLUalrshrLHkeVcCCZqG/eEa635cr8IBYzgnDvM2O8Q==}
 
@@ -4159,9 +4172,6 @@ packages:
 
   node-releases@2.0.37:
     resolution: {integrity: sha512-1h5gKZCF+pO/o3Iqt5Jp7wc9rH3eJJ0+nh/CIoiRwjRxde/hAHyLPXYN4V3CqKAbiZPSeJFSWHmJsbkicta0Eg==}
-
-  node-syphon@file:apps/desktop/syphon/node-syphon:
-    resolution: {directory: apps/desktop/syphon/node-syphon, type: directory}
 
   nopt@6.0.0:
     resolution: {integrity: sha512-ZwLpbTgdhuZUnZzjd7nb1ZV+4DoiC6/sfiVKok72ym/4Tlf+DFdlHYmT2JPmcNNWV6Pi3SDf1kT+A4r9RTuT9g==}
@@ -10309,6 +10319,8 @@ snapshots:
     dependencies:
       semver: 7.7.4
 
+  node-addon-api@8.7.0: {}
+
   node-api-version@0.2.1:
     dependencies:
       semver: 7.7.4
@@ -10331,10 +10343,6 @@ snapshots:
   node-mock-http@1.0.4: {}
 
   node-releases@2.0.37: {}
-
-  node-syphon@file:apps/desktop/syphon/node-syphon:
-    dependencies:
-      bindings: 1.5.0
 
   nopt@6.0.0:
     dependencies:
