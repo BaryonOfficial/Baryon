@@ -9,6 +9,7 @@ import {
   getEffectiveAdaptiveRenderScale,
   publishDevtoolsSnapshots,
   resolveFeatureFrame,
+  updateRendererDiagnostics,
   updateAdaptiveRaymarchStepBudget,
 } from "./baryonVisualizerRenderLoop.js";
 import { RENDER_CONTEXTS } from "@baryon/visualizer/render/outputPipeline";
@@ -245,6 +246,72 @@ test("publishes live runtime status changes only when fields change", () => {
   expect(updated.phase).toBe(LIVE_INPUT_PHASES.weakSignal);
   expect(setter.callCount).toBe(2);
   expect(setter.currentValue.phase).toBe(LIVE_INPUT_PHASES.weakSignal);
+});
+
+test("updateRendererDiagnostics resizes the renderer when canvas size changes without a DPR change", () => {
+  const runtimeDiagnosticsRef = {
+    current: createRuntimeDiagnostics(),
+  };
+  const pixelRatioRef = { current: 1 };
+  const renderSurfaceSizeRef = {
+    current: { width: 1318, height: 1536 },
+  };
+  const lastAudioIssueSignatureRef = { current: null };
+  const gl = {
+    backend: { isWebGLBackend: false },
+    setPixelRatioCalls: [],
+    setSizeCalls: [],
+    setPixelRatio(value) {
+      this.setPixelRatioCalls.push(value);
+    },
+    setSize(width, height, updateStyle) {
+      this.setSizeCalls.push({ width, height, updateStyle });
+    },
+  };
+
+  updateRendererDiagnostics(
+    {
+      state: {
+        size: {
+          width: 2538,
+          height: 1536,
+        },
+      },
+      controls: {
+        lowLoadPlaybackDiagnostics: false,
+      },
+      status: {
+        isPlaying: false,
+      },
+      time: 0,
+      deltaTime: 1 / 60,
+      rfDelta: 1 / 60,
+      gl,
+      renderLoopRefs: {
+        runtimeDiagnosticsRef,
+        pixelRatioRef,
+        renderSurfaceSizeRef,
+        lastAudioIssueSignatureRef,
+      },
+    },
+    {
+      getTargetDpr: () => 1,
+      renderScale: 1,
+    },
+  );
+
+  expect(gl.setPixelRatioCalls).toEqual([]);
+  expect(gl.setSizeCalls).toEqual([
+    {
+      width: 2538,
+      height: 1536,
+      updateStyle: false,
+    },
+  ]);
+  expect(renderSurfaceSizeRef.current).toEqual({
+    width: 2538,
+    height: 1536,
+  });
 });
 
 test("buildPerformanceHudSnapshot exports stage attribution, engine counters, and raw perf breakdown", () => {
