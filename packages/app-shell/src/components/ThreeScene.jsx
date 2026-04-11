@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Canvas } from "@react-three/fiber";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene";
+import FloatingCameraControls from "./FloatingCameraControls.jsx";
 import {
   CAMERA_VIEW_PRESETS,
   getCameraConfigForPreset,
@@ -28,7 +29,6 @@ import {
 import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
 import { useBaryonControls } from "./hooks/useBaryonControls";
 import { useBrowserSupportState } from "./hooks/useBrowserSupportState.js";
-import { useDraggableFloatingUi } from "./hooks/useDraggableFloatingUi.js";
 import { useRendererModeState } from "./hooks/useRendererModeState.js";
 import { useAudio, useAudioScene } from "../context/AudioContext";
 import {
@@ -64,82 +64,6 @@ function ControlsIcon() {
       <circle cx="9" cy="6" r="1.8" fill="currentColor" stroke="none" />
       <circle cx="15" cy="12" r="1.8" fill="currentColor" stroke="none" />
       <circle cx="11" cy="18" r="1.8" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-function CameraIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M4 7h4l1.5-2h5L16 7h4v12H4z" />
-      <circle cx="12" cy="13" r="3.5" />
-    </svg>
-  );
-}
-
-function TopViewIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.1"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 4.5v13" />
-      <path d="m6.8 12.3 5.2 5.2 5.2-5.2" />
-    </svg>
-  );
-}
-
-function SideViewIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.1"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M19.5 12H6.8" />
-      <path d="m11.8 6.8-5.2 5.2 5.2 5.2" />
-    </svg>
-  );
-}
-
-function ResetIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M3 12a9 9 0 1 0 3-6.708" />
-      <path d="M3 4v4h4" />
     </svg>
   );
 }
@@ -237,13 +161,6 @@ const ThreeScene = ({
   const [viewportWidth, setViewportWidth] = useState(() =>
     typeof window === "undefined" ? 1440 : window.innerWidth,
   );
-  const {
-    dragOffset: cameraControlsDragOffset,
-    isDragging: isCameraControlsDragging,
-    handlePointerDown: handleCameraControlsPointerDown,
-    handlePointerUp: handleCameraControlsPointerUp,
-    handleDoubleClick: handleCameraControlsDoubleClick,
-  } = useDraggableFloatingUi();
 
   const { isFullscreen } = useFullscreen(containerRef);
 
@@ -312,11 +229,13 @@ const ThreeScene = ({
   });
   const showOverlayUi = isSupportReady && !isFullscreen;
   const previewOverlayState = resolvePreviewOverlayState(previewState);
-  const activeCameraControlPreset = resolveActiveCameraControlPreset({
-    previewState,
-    authoritativeStageStatus,
-    fallbackCameraViewPreset: effectiveCameraViewPreset,
-  });
+  const activeCameraControlPreset = /** @type {"top-down" | "side"} */ (
+    resolveActiveCameraControlPreset({
+      previewState,
+      authoritativeStageStatus,
+      fallbackCameraViewPreset: effectiveCameraViewPreset,
+    })
+  );
   const useAuthoritativePerformanceHud = shouldUseAuthoritativePerformanceHud({
     previewState,
     authoritativeStageTelemetry,
@@ -427,51 +346,6 @@ const ThreeScene = ({
         boxShadow: "var(--app-floating-control-shadow)",
         cursor: "pointer",
       };
-  /** @type {import('react').CSSProperties} */
-  const cameraControlsStyle = isControlsPanelOpen
-    ? {
-        position: isPhoneViewport ? "fixed" : "absolute",
-        top: overlayTopInset,
-        left: "50%",
-        transform: `translate(calc(-50% + ${cameraControlsDragOffset.x}px), ${cameraControlsDragOffset.y}px)`,
-        zIndex: 61,
-        boxSizing: "border-box",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: isPhoneViewport ? "0.16rem" : "0.22rem",
-        padding: isPhoneViewport ? "0.16rem" : "0.18rem",
-        maxWidth: isPhoneViewport ? "calc(100vw - 1rem)" : "calc(100vw - 2rem)",
-        borderRadius: "999px",
-        border: "1px solid var(--nd-border-visible)",
-        background: "var(--nd-surface)",
-        color: "var(--nd-text-primary)",
-        boxShadow: "var(--nd-shell-shadow)",
-        willChange: isCameraControlsDragging ? "transform" : "auto",
-        cursor: isCameraControlsDragging ? "grabbing" : "grab",
-      }
-    : {
-        position: isPhoneViewport ? "fixed" : "absolute",
-        top: overlayTopInset,
-        left: "50%",
-        transform: `translate(calc(-50% + ${cameraControlsDragOffset.x}px), ${cameraControlsDragOffset.y}px)`,
-        zIndex: 61,
-        boxSizing: "border-box",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: isPhoneViewport ? "0.16rem" : "0.22rem",
-        padding: isPhoneViewport ? "0.16rem" : "0.18rem",
-        maxWidth: isPhoneViewport ? "calc(100vw - 1rem)" : "calc(100vw - 2rem)",
-        borderRadius: "999px",
-        border: "1px solid var(--nd-border-visible)",
-        background: "var(--nd-surface)",
-        color: "var(--nd-text-primary)",
-        boxShadow: "var(--nd-shell-shadow)",
-        willChange: isCameraControlsDragging ? "transform" : "auto",
-        cursor: isCameraControlsDragging ? "grabbing" : "grab",
-      };
-
   return (
     <div
       ref={containerRef}
@@ -682,103 +556,15 @@ const ThreeScene = ({
       )}
 
       {showCameraControls ? (
-        <div
-          style={cameraControlsStyle}
-          onPointerDown={handleCameraControlsPointerDown}
-          onPointerUp={handleCameraControlsPointerUp}
-          onDoubleClick={handleCameraControlsDoubleClick}
-          title="Drag to move. Double-click or double-tap to reset."
-        >
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              minWidth: isPhoneViewport ? "1.45rem" : "1.55rem",
-              minHeight: "1.7rem",
-              padding: 0,
-              background: "transparent",
-              color: "var(--nd-text-secondary)",
-              flex: "0 0 auto",
-            }}
-            aria-hidden="true"
-          >
-            <CameraIcon />
-          </span>
-          {[
-            {
-              key: CAMERA_VIEW_PRESETS.topDown,
-              label: "Top",
-              icon: <TopViewIcon />,
-              testId: "camera-top-view-button",
-            },
-            {
-              key: CAMERA_VIEW_PRESETS.side,
-              label: "Side",
-              icon: <SideViewIcon />,
-              testId: "camera-side-view-button",
-            },
-          ].map((preset) => {
-            const active = activeCameraControlPreset === preset.key;
-            return (
-              <button
-                key={preset.key}
-                type="button"
-                data-testid={preset.testId}
-                data-state={active ? "active" : "idle"}
-                aria-pressed={active}
-                onClick={() => applyCameraPreset(preset.key)}
-                title={`${preset.label} view`}
-                style={{
-                  minHeight: "1.7rem",
-                  minWidth: isPhoneViewport ? "1.75rem" : undefined,
-                  padding: isPhoneViewport ? 0 : "0 0.7rem",
-                  borderRadius: "999px",
-                  border: active
-                    ? "1px solid var(--nd-text-display)"
-                    : "1px solid var(--nd-border-visible)",
-                  background: active ? "var(--nd-text-display)" : "transparent",
-                  color: active
-                    ? "var(--nd-black)"
-                    : "var(--nd-text-secondary)",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontFamily: isPhoneViewport
-                    ? undefined
-                    : '"Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
-                  fontSize: isPhoneViewport ? undefined : "0.62rem",
-                  letterSpacing: isPhoneViewport ? undefined : "0.12em",
-                  textTransform: isPhoneViewport ? undefined : "uppercase",
-                  fontWeight: isPhoneViewport ? undefined : 700,
-                  cursor: "pointer",
-                }}
-              >
-                {isPhoneViewport ? preset.icon : preset.label}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            data-testid="camera-reset-view-button"
-            onClick={() => applyCameraPreset(activeCameraControlPreset)}
-            aria-label="Reset camera to default"
-            title="Reset camera to default"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              minHeight: "1.7rem",
-              minWidth: isPhoneViewport ? "1.45rem" : "1.55rem",
-              padding: 0,
-              background: "transparent",
-              color: "var(--nd-text-secondary)",
-              cursor: "pointer",
-            }}
-          >
-            <ResetIcon />
-          </button>
-        </div>
+        <FloatingCameraControls
+          activePreset={activeCameraControlPreset}
+          onPresetSelect={applyCameraPreset}
+          onPresetReset={() => applyCameraPreset(activeCameraControlPreset)}
+          rootTestId="camera-controls"
+          topButtonTestId="camera-top-view-button"
+          sideButtonTestId="camera-side-view-button"
+          resetButtonTestId="camera-reset-view-button"
+        />
       ) : null}
 
       {showOverlayUi && isControlsPanelLoaded ? (
