@@ -18,4 +18,5 @@ export { default as SceneSurface } from "./components/ThreeScene.jsx";
 export { OutputStageSurface } from "./components/OutputStageSurface.jsx";
 export { ListenerControls } from "./components/AudioControls.jsx";
 export { default as LiveInputStatusPanel } from "./components/LiveInputStatusPanel.jsx";
+export { default as FloatingCameraControls } from "./components/FloatingCameraControls.jsx";
 export { resolvePreviewOverlayState } from "./components/threeSceneState.js";
