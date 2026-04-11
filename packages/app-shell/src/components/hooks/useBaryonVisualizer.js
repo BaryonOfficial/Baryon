@@ -112,6 +112,7 @@ export function useBaryonVisualizer({
     frameCacheRefs,
     controlCacheRefs,
     pixelRatioRef,
+    renderSurfaceSizeRef,
     lastLiveInputRuntimeStatusRef,
     lastAudioIssueSignatureRef,
   } = useVisualizationRuntimeLifecycle({
@@ -131,6 +132,7 @@ export function useBaryonVisualizer({
   const renderLoopRefs = {
     runtimeDiagnosticsRef,
     pixelRatioRef,
+    renderSurfaceSizeRef,
     lastAudioIssueSignatureRef,
     lastLiveInputRuntimeStatusRef,
     frameCacheRefs,
@@ -185,6 +187,7 @@ export function useBaryonVisualizer({
       const defaultDpr = getPlaybackDiagnosticDpr();
       gl.setPixelRatio(defaultDpr);
       pixelRatioRef.current = defaultDpr;
+      renderSurfaceSizeRef.current = null;
       if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
         delete window.__baryonAuditSnapshot;
         delete window.__baryonControlState;
@@ -199,6 +202,7 @@ export function useBaryonVisualizer({
     lastAudioIssueSignatureRef,
     lastLiveInputRuntimeStatusRef,
     pixelRatioRef,
+    renderSurfaceSizeRef,
     runtimeDiagnosticsRef,
     cachedControlSnapshotsRef,
     scene,

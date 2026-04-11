@@ -574,10 +574,23 @@ export function updateRendererDiagnostics(
   }
   runtimeDiagnostics.currentPixelRatio = targetPixelRatio;
   runtimeDiagnostics.basePixelRatio = basePixelRatio;
+  const nextRenderSurfaceWidth = state?.size?.width ?? 0;
+  const nextRenderSurfaceHeight = state?.size?.height ?? 0;
+  const previousRenderSurfaceSize =
+    renderLoopRefs.renderSurfaceSizeRef.current ?? null;
+  const renderSurfaceSizeChanged =
+    previousRenderSurfaceSize?.width !== nextRenderSurfaceWidth ||
+    previousRenderSurfaceSize?.height !== nextRenderSurfaceHeight;
   if (renderLoopRefs.pixelRatioRef.current !== targetPixelRatio) {
     gl.setPixelRatio(targetPixelRatio);
-    gl.setSize(state.size.width, state.size.height, false);
     renderLoopRefs.pixelRatioRef.current = targetPixelRatio;
+  }
+  if (renderSurfaceSizeChanged) {
+    gl.setSize(state.size.width, state.size.height, false);
+    renderLoopRefs.renderSurfaceSizeRef.current = {
+      width: nextRenderSurfaceWidth,
+      height: nextRenderSurfaceHeight,
+    };
   }
 
   if (status.isPlaying && frameTimeMs !== null) {
