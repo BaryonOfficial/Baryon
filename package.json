@@ -12,6 +12,7 @@
   },
   "scripts": {
     "dev": "turbo dev --filter=@baryon/web",
+    "dev:desktop:packaged": "pnpm --filter @baryon/desktop test:smoke:prepare && pnpm --filter @baryon/desktop run:packaged",
     "dev:marketing": "turbo dev --filter=@baryon/marketing",
     "dev:desktop:probe": "BARYON_DEV_PERF_PROBE=1 pnpm --filter @baryon/desktop dev",
     "build": "turbo build",
