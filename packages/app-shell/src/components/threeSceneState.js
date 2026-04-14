@@ -86,10 +86,10 @@ export function resolveCameraControlFieldState({
 } = {}) {
   if (
     shouldUseAuthoritativeStageViewState(previewState) &&
-    typeof authoritativeStageStatus?.renderedFieldState === "string" &&
-    authoritativeStageStatus.renderedFieldState
+    typeof authoritativeStageStatus?.lastRenderedFieldState === "string" &&
+    authoritativeStageStatus.lastRenderedFieldState
   ) {
-    return authoritativeStageStatus.renderedFieldState;
+    return authoritativeStageStatus.lastRenderedFieldState;
   }
 
   return frameFieldState;
@@ -101,7 +101,7 @@ export function resolveCameraControlFieldState({
  *     omitLocalScene?: boolean,
  *   } | null,
  *   authoritativeStageStatus?: {
- *     renderedCameraViewPreset?: "top-down" | "side" | null,
+ *     lastRenderedCameraViewPreset?: "top-down" | "side" | null,
  *   } | null,
  *   fallbackCameraViewPreset?: "top-down" | "side",
  * }} [options]
@@ -117,7 +117,7 @@ export function resolveActiveCameraControlPreset({
 
   return (
     normalizeCameraViewPreset(
-      authoritativeStageStatus?.renderedCameraViewPreset,
+      authoritativeStageStatus?.lastRenderedCameraViewPreset,
       fallbackCameraViewPreset,
     ) ?? fallbackCameraViewPreset
   );

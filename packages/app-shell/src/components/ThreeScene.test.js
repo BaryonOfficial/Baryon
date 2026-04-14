@@ -204,7 +204,7 @@ describe("preview camera control state", () => {
           omitLocalScene: true,
         },
         authoritativeStageStatus: {
-          renderedFieldState: "active",
+          lastRenderedFieldState: "active",
         },
       }),
     ).toBe("active");
@@ -217,7 +217,7 @@ describe("preview camera control state", () => {
           omitLocalScene: true,
         },
         authoritativeStageStatus: {
-          renderedCameraViewPreset: "top-down",
+          lastRenderedCameraViewPreset: "top-down",
         },
         fallbackCameraViewPreset: "side",
       }),
@@ -229,7 +229,7 @@ describe("preview camera control state", () => {
           omitLocalScene: true,
         },
         authoritativeStageStatus: {
-          renderedCameraViewPreset: "invalid",
+          lastRenderedCameraViewPreset: "invalid",
         },
         fallbackCameraViewPreset: "side",
       }),

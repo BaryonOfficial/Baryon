@@ -35,6 +35,14 @@ function StageInvalidateBridge({ registerRenderRequester }) {
 }
 
 /**
+ * @typedef {{
+ *   position: [number, number, number],
+ *   up: [number, number, number],
+ *   fov?: number | null,
+ * }} StageCameraConfig
+ */
+
+/**
  * @param {{
  *   controlsRef: import("react").MutableRefObject<Record<string, unknown>>,
  *   visualizationMethod: string,
@@ -42,7 +50,7 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  *   resolvedRenderProfile?: import("@baryon/visualizer/render/outputPipeline").RenderQualityProfile | null,
  *   renderProfileOverrides?: { renderScale?: number, traaEnabled?: boolean, bloomAllowed?: boolean } | null,
  *   externalFrameRef?: import("react").MutableRefObject<any>,
- *   externalCameraState?: {
+ *   cameraPose?: {
  *     position?: { x?: number, y?: number, z?: number },
  *     target?: { x?: number, y?: number, z?: number },
  *     up?: { x?: number, y?: number, z?: number },
@@ -70,7 +78,7 @@ export function OutputStageSurface({
   resolvedRenderProfile = null,
   renderProfileOverrides = null,
   externalFrameRef = null,
-  externalCameraState = null,
+  cameraPose = null,
   backgroundColor: backgroundColorProp = null,
   cameraViewPreset = null,
   cameraDistance = null,
@@ -93,9 +101,25 @@ export function OutputStageSurface({
     resolvedCameraViewPreset,
     cameraDistance,
   );
-  const cameraConfig = getCameraConfigForPreset(
-    resolvedCameraViewPreset,
-    resolvedCameraDistance,
+  const cameraConfig = /** @type {StageCameraConfig} */ (
+    cameraPose == null
+      ? getCameraConfigForPreset(
+          resolvedCameraViewPreset,
+          resolvedCameraDistance,
+        )
+      : {
+          position: /** @type {[number, number, number]} */ ([
+            cameraPose.position.x,
+            cameraPose.position.y,
+            cameraPose.position.z,
+          ]),
+          up: /** @type {[number, number, number]} */ ([
+            cameraPose.up.x,
+            cameraPose.up.y,
+            cameraPose.up.z,
+          ]),
+          fov: cameraPose.fov,
+        }
   );
   const resolvedBackgroundColor =
     backgroundColorProp ??
@@ -154,7 +178,7 @@ export function OutputStageSurface({
             camera={{
               position: cameraConfig.position,
               up: cameraConfig.up,
-              fov: 65,
+              fov: cameraConfig.fov ?? 65,
               near: 0.1,
               far: 100,
             }}
@@ -182,7 +206,7 @@ export function OutputStageSurface({
                 onPerformanceHudSnapshotChange={onPerformanceHudSnapshotChange}
                 onAuditSnapshotChange={onAuditSnapshotChange}
                 externalFrameRef={externalFrameRef}
-                externalCameraState={externalCameraState}
+                cameraPose={cameraPose}
                 basePixelRatio={1}
                 onStageRender={onStageRender}
                 onFrameState={onFrameState}
