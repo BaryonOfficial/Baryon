@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useBaryonPipeline } from "./hooks/useBaryonPipeline";
@@ -10,6 +17,7 @@ import {
 } from "./cameraViewPresets.js";
 import {
   augmentFrameStateWithCameraSync,
+  applyExternalCameraPose,
   CAMERA_CONTROL_MODES,
   resolveAppliedCameraState,
   shouldMountOrbitControls,
@@ -40,7 +48,7 @@ export function BaryonScene({
   onOutputFrame = null,
   onFrameState = null,
   externalFrameRef = null,
-  externalCameraState = null,
+  cameraPose = null,
   structuralControlVersion = 0,
   liveControlSignalRef = null,
   adaptiveResetNonce = 0,
@@ -62,6 +70,7 @@ export function BaryonScene({
 }) {
   const { camera, gl, scene, size } = useThree();
   const orbitControlsRef = useRef(null);
+  const warnedMissingExternalCameraPoseRef = useRef(false);
   const [renderProfileOverrides, setRenderProfileOverrides] = useState(null);
   const renderProfile = useMemo(
     () =>
@@ -142,13 +151,24 @@ export function BaryonScene({
           cameraViewPreset,
           orbitControls: orbitControlsRef.current,
           camera,
+          cameraControlMode,
         }),
       );
     },
-    [camera, cameraViewPreset, onFrameState, visualizationMethod],
+    [
+      camera,
+      cameraControlMode,
+      cameraViewPreset,
+      onFrameState,
+      visualizationMethod,
+    ],
   );
 
   useEffect(() => {
+    if (cameraControlMode === CAMERA_CONTROL_MODES.externalSynced) {
+      return;
+    }
+
     const { preset, distance } = resolveAppliedCameraState({
       visualizationMethod,
       cameraControlMode,
@@ -166,35 +186,27 @@ export function BaryonScene({
     visualizationMethod,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (cameraControlMode !== CAMERA_CONTROL_MODES.externalSynced) {
       return;
     }
 
-    if (!externalCameraState) {
+    if (!cameraPose) {
+      if (
+        warnedMissingExternalCameraPoseRef.current === false &&
+        typeof console !== "undefined" &&
+        typeof console.warn === "function"
+      ) {
+        warnedMissingExternalCameraPoseRef.current = true;
+        console.warn(
+          "BaryonScene external-synced mode mounted without cameraPose; preserving current camera",
+        );
+      }
       return;
     }
-
-    camera.position.set(
-      externalCameraState.position.x,
-      externalCameraState.position.y,
-      externalCameraState.position.z,
-    );
-    camera.up.set(
-      externalCameraState.up.x,
-      externalCameraState.up.y,
-      externalCameraState.up.z,
-    );
-    if ("fov" in camera) {
-      camera.fov = externalCameraState.fov;
-    }
-    camera.lookAt(
-      externalCameraState.target.x,
-      externalCameraState.target.y,
-      externalCameraState.target.z,
-    );
-    camera.updateProjectionMatrix();
-  }, [camera, cameraControlMode, externalCameraState]);
+    warnedMissingExternalCameraPoseRef.current = false;
+    applyExternalCameraPose(cameraPose, camera);
+  }, [camera, cameraControlMode, cameraPose]);
 
   const points = useBaryonVisualizer({
     baryonGeometry,

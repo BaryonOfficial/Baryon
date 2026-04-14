@@ -109,8 +109,8 @@ function ControlsIcon() {
  *     auditEnabled?: boolean,
  *   } | null,
  *   authoritativeStageStatus?: {
- *     renderedFieldState?: string | null,
- *     renderedCameraViewPreset?: "top-down" | "side" | null,
+ *     lastRenderedFieldState?: string | null,
+ *     lastRenderedCameraViewPreset?: "top-down" | "side" | null,
  *   } | null,
  * }} props
  */

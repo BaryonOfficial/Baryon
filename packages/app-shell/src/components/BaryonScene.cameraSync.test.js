@@ -1,6 +1,7 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   augmentFrameStateWithCameraSync,
+  applyExternalCameraPose,
   CAMERA_CONTROL_MODES,
   resolveAppliedCameraState,
   resolveCameraDistanceForExport,
@@ -61,6 +62,19 @@ test("frame state augmentation only appends synced preset and distance", () => {
   expect("position" in augmented).toBe(false);
 });
 
+test("external-synced frame state augmentation preserves the original frame state", () => {
+  const frameState = { controlsVersion: 1, status: { isPlaying: true } };
+  const augmented = augmentFrameStateWithCameraSync(frameState, {
+    visualizationMethod: "raymarch",
+    cameraViewPreset: "top-down",
+    orbitControls: { getDistance: () => 7.125 },
+    camera: { position: { length: () => 10 } },
+    cameraControlMode: CAMERA_CONTROL_MODES.externalSynced,
+  });
+
+  expect(augmented).toBe(frameState);
+});
+
 test("applied camera state respects external sync and cymatics override ordering", () => {
   expect(
     resolveAppliedCameraState({
@@ -95,4 +109,29 @@ test("applied camera state respects external sync and cymatics override ordering
   expect(
     shouldMountOrbitControls("raymarch", CAMERA_CONTROL_MODES.externalSynced),
   ).toBe(false);
+});
+
+test("external camera pose application updates projection and world matrices", () => {
+  const camera = {
+    position: { set: vi.fn() },
+    up: { set: vi.fn() },
+    fov: 65,
+    lookAt: vi.fn(),
+    updateProjectionMatrix: vi.fn(),
+    updateMatrixWorld: vi.fn(),
+  };
+  const cameraPose = {
+    position: { x: 1, y: 2, z: 3 },
+    target: { x: 4, y: 5, z: 6 },
+    up: { x: 0, y: 1, z: 0 },
+    fov: 42,
+  };
+
+  expect(applyExternalCameraPose(cameraPose, camera)).toBe(true);
+  expect(camera.position.set).toHaveBeenCalledWith(1, 2, 3);
+  expect(camera.up.set).toHaveBeenCalledWith(0, 1, 0);
+  expect(camera.fov).toBe(42);
+  expect(camera.lookAt).toHaveBeenCalledWith(4, 5, 6);
+  expect(camera.updateProjectionMatrix).toHaveBeenCalledTimes(1);
+  expect(camera.updateMatrixWorld).toHaveBeenCalledWith(true);
 });
