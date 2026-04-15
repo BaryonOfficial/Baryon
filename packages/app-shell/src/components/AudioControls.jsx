@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from "react";
 import { useAudio } from "../context/AudioContext";
+import { useAudioTransportClock } from "../context/audioTransportClock.js";
 import { SourceSelector } from "./controls/SourceSelector";
 import { useDraggableFloatingUi } from "./hooks/useDraggableFloatingUi.js";
 
@@ -811,21 +812,6 @@ const CSS = `
   color: #8dc09a;
 }
 
-.am-compact-dock {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: auto;
-  min-width: 0;
-  padding: 5px;
-  border: 1px solid var(--nd-border);
-  border-radius: 18px;
-  background: var(--nd-surface-raised);
-  box-sizing: border-box;
-  overflow: hidden;
-}
-
 .am-compact-action {
   width: 36px;
   height: 36px;
@@ -923,14 +909,6 @@ const CSS = `
   width: 36px;
   height: 36px;
   border-radius: 10px;
-}
-
-.am-compact-utility-actions {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  justify-content: flex-end;
-  flex: 0 0 auto;
 }
 
 .am-compact-header-button,
@@ -1849,7 +1827,6 @@ export function ListenerControls({
     soundCloudCurrentIndex,
     isSoundCloudLoading,
     loadSoundCloudTrack,
-    transportState,
     scrubPreviewSeconds,
     isScrubbing,
     beginScrub,
@@ -1857,6 +1834,7 @@ export function ListenerControls({
     commitScrub,
     cancelScrub,
   } = useAudio();
+  const transportClock = useAudioTransportClock();
 
   const fileInputRef = useRef(null);
   const queuedPopupTimeoutRef = useRef(0);
@@ -1891,8 +1869,8 @@ export function ListenerControls({
   const timelineValue =
     isScrubbing && scrubPreviewSeconds != null
       ? scrubPreviewSeconds
-      : transportState.currentTimeSeconds;
-  const timelineDuration = transportState.durationSeconds;
+      : transportClock.currentTimeSeconds;
+  const timelineDuration = transportClock.durationSeconds;
   const timelineProgressPercent =
     timelineDuration > 0
       ? Math.max(0, Math.min(100, (timelineValue / timelineDuration) * 100))
@@ -2028,7 +2006,7 @@ export function ListenerControls({
         {!isCompactDock &&
         fileTransportEnabled &&
         isAudioLoaded &&
-        transportState.canSeek ? (
+        transportClock.canSeek ? (
           <div className="am-timeline-shell">
             <div className="am-timeline-row">
               <span className="am-timeline-time" aria-hidden="true">
@@ -2102,7 +2080,7 @@ export function ListenerControls({
               <div className="am-compact-card">
                 {fileTransportEnabled &&
                 isAudioLoaded &&
-                transportState.canSeek ? (
+                transportClock.canSeek ? (
                   <div className="am-timeline-shell">
                     <div className="am-timeline-row">
                       <span className="am-timeline-time" aria-hidden="true">
