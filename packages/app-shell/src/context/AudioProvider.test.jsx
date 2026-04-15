@@ -197,6 +197,19 @@ describe("AudioProvider source transport gating", () => {
     expect(handleLocalPlayPauseMock).not.toHaveBeenCalled();
   });
 
+  it("does not expose transport state through the shared audio context", async () => {
+    const onValue = vi.fn();
+    renderProvider(onValue);
+
+    const audio = onValue.mock.lastCall[0];
+
+    await act(async () => {
+      audio.setIsAudioLoaded(true);
+    });
+
+    expect(onValue.mock.lastCall[0].transportState).toBeUndefined();
+  });
+
   it("keeps non-timeline audio consumers stable while the transport clock ticks", async () => {
     let transportTimeSeconds = 0;
     const onAudioRender = vi.fn();
@@ -256,6 +269,7 @@ describe("AudioProvider source transport gating", () => {
     const audioRenderBaseline = onAudioRender.mock.calls.length;
     const initialClockRenderCount = onClockRender.mock.calls.length;
     const stableAudioReference = onAudioRender.mock.lastCall[0];
+    expect(stableAudioReference.transportState).toBeUndefined();
 
     transportTimeSeconds = 1;
     await flushAnimationFrame(16);

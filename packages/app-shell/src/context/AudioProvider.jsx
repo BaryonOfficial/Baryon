@@ -49,11 +49,17 @@ const DEFAULT_FILE_NAME = "Upload Audio";
 const DEFAULT_SOUNDCLOUD_LABEL = "SoundCloud";
 const SOUNDCLOUD_READY_MESSAGE =
   "Paste a public SoundCloud track or playlist to drive the live cymatic view.";
-const DEFAULT_TRANSPORT_STATE = {
-  currentTimeSeconds: 0,
+/**
+ * @typedef {Readonly<{
+ *   durationSeconds: number,
+ *   canSeek: boolean,
+ * }>} TransportSeekState
+ */
+/** @type {TransportSeekState} */
+const DEFAULT_TRANSPORT_SEEK_STATE = Object.freeze({
   durationSeconds: 0,
   canSeek: false,
-};
+});
 const RECENT_UPLOAD_LIMIT = 4;
 const LIVE_INPUT_ANALYSIS_OVERRIDES_KEY = "liveInputAnalysisOverrides";
 const LIVE_INPUT_PERMISSION_STATES = Object.freeze({
@@ -105,6 +111,14 @@ function clampTransportTime(value, durationSeconds) {
     return Math.min(nextValue, durationSeconds);
   }
   return nextValue;
+}
+
+/** @returns {TransportSeekState} */
+function createTransportSeekState(transportState) {
+  return {
+    durationSeconds: Number(transportState?.durationSeconds) || 0,
+    canSeek: transportState?.canSeek === true,
+  };
 }
 
 function loadLiveInputAnalysisOverrides(storage) {
@@ -390,7 +404,9 @@ export function AudioProvider({ children, platform = "web" }) {
   const [soundCloudQueue, setSoundCloudQueue] = useState([]);
   const [soundCloudCurrentIndex, setSoundCloudCurrentIndex] = useState(-1);
   const [isSoundCloudLoading, setIsSoundCloudLoading] = useState(false);
-  const [transportState, setTransportState] = useState(DEFAULT_TRANSPORT_STATE);
+  const [transportSeekState, setTransportSeekState] = useState(
+    DEFAULT_TRANSPORT_SEEK_STATE,
+  );
   const [scrubPreviewSeconds, setScrubPreviewSeconds] = useState(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
 
@@ -521,11 +537,11 @@ export function AudioProvider({ children, platform = "web" }) {
   }, [activeSource, currentLoadedLocalFile, isAudioLoaded, isLiveInputActive]);
 
   const syncTransportState = useCallback((options = {}) => {
-    const { includeProviderState = true } = options;
+    const { includeSeekState = true } = options;
     const nextTransportState = getDefaultAudioSession().getTransportState();
     publishAudioTransportClock(nextTransportState);
-    if (includeProviderState) {
-      setTransportState(nextTransportState);
+    if (includeSeekState) {
+      setTransportSeekState(createTransportSeekState(nextTransportState));
     }
     return nextTransportState;
   }, []);
@@ -602,7 +618,7 @@ export function AudioProvider({ children, platform = "web" }) {
       }),
     );
     publishAudioTransportClock(nextTransportState);
-    setTransportState(nextTransportState);
+    setTransportSeekState(createTransportSeekState(nextTransportState));
     if ((status.volume ?? 0) > 0.001) {
       lastNonZeroVolumeRef.current = status.volume;
     }
@@ -910,7 +926,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
     clearScrubState();
     resetAudioTransportClock();
-    setTransportState(DEFAULT_TRANSPORT_STATE);
+    setTransportSeekState(DEFAULT_TRANSPORT_SEEK_STATE);
   }, [clearScrubState, isAudioLoaded, isLiveInputActive, syncTransportState]);
 
   const ensureSoundCloudAudioElement = useCallback(() => {
@@ -946,7 +962,7 @@ export function AudioProvider({ children, platform = "web" }) {
       setSoundCloudCurrentIndex(-1);
       clearScrubState();
       resetAudioTransportClock();
-      setTransportState(DEFAULT_TRANSPORT_STATE);
+      setTransportSeekState(DEFAULT_TRANSPORT_SEEK_STATE);
 
       if (clearQueue) {
         soundCloudQueueRef.current = [];
@@ -1050,7 +1066,7 @@ export function AudioProvider({ children, platform = "web" }) {
   );
 
   useEffect(() => {
-    if (!isAudioLoaded || isScrubbing || !transportState.canSeek) {
+    if (!isAudioLoaded || !transportSeekState.canSeek || isScrubbing) {
       if (transportFrameRef.current) {
         window.cancelAnimationFrame(transportFrameRef.current);
         transportFrameRef.current = 0;
@@ -1059,7 +1075,7 @@ export function AudioProvider({ children, platform = "web" }) {
     }
 
     const tick = () => {
-      syncTransportState({ includeProviderState: false });
+      syncTransportState({ includeSeekState: false });
       transportFrameRef.current = window.requestAnimationFrame(tick);
     };
 
@@ -1070,7 +1086,12 @@ export function AudioProvider({ children, platform = "web" }) {
         transportFrameRef.current = 0;
       }
     };
-  }, [isAudioLoaded, isScrubbing, syncTransportState, transportState.canSeek]);
+  }, [
+    isAudioLoaded,
+    isScrubbing,
+    syncTransportState,
+    transportSeekState.canSeek,
+  ]);
 
   useEffect(() => {
     if (typeof Audio === "undefined") {
@@ -1670,7 +1691,7 @@ export function AudioProvider({ children, platform = "web" }) {
           setScrubPreviewSeconds(
             clampTransportTime(
               nextPreviewSeconds,
-              transportState.durationSeconds,
+              transportSeekState.durationSeconds,
             ),
           );
         }
@@ -1685,7 +1706,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
       isScrubbingRef.current = true;
       setIsScrubbing(true);
-      setTransportState(nextTransportState);
+      setTransportSeekState(createTransportSeekState(nextTransportState));
       setScrubPreviewSeconds(
         clampTransportTime(
           nextPreviewSeconds ?? nextTransportState.currentTimeSeconds,
@@ -1702,17 +1723,17 @@ export function AudioProvider({ children, platform = "web" }) {
         syncTransportState();
       }
     },
-    [syncSessionStatus, syncTransportState, transportState.durationSeconds],
+    [syncSessionStatus, syncTransportState, transportSeekState.durationSeconds],
   );
 
   const previewScrub = useCallback(
     (nextPreviewSeconds) => {
-      const durationSeconds = transportState.durationSeconds;
+      const durationSeconds = transportSeekState.durationSeconds;
       setScrubPreviewSeconds(
         clampTransportTime(nextPreviewSeconds, durationSeconds),
       );
     },
-    [transportState.durationSeconds],
+    [transportSeekState.durationSeconds],
   );
 
   const commitScrub = useCallback(
@@ -1721,7 +1742,7 @@ export function AudioProvider({ children, platform = "web" }) {
       const currentTransportState = audioSession.getTransportState();
       if (!currentTransportState.canSeek) {
         clearScrubState();
-        setTransportState(currentTransportState);
+        setTransportSeekState(createTransportSeekState(currentTransportState));
         return;
       }
 
@@ -1809,7 +1830,7 @@ export function AudioProvider({ children, platform = "web" }) {
     setSoundCloudError("");
     setSoundCloudInfo(SOUNDCLOUD_READY_MESSAGE);
     resetAudioTransportClock();
-    setTransportState(DEFAULT_TRANSPORT_STATE);
+    setTransportSeekState(DEFAULT_TRANSPORT_SEEK_STATE);
 
     return audioSession.dispose();
   }, [clearScrubState, isWebPlatform, resetSoundCloudTransport, storage]);
@@ -1888,7 +1909,6 @@ export function AudioProvider({ children, platform = "web" }) {
       soundCloudCurrentTrack,
       soundCloudCurrentIndex,
       isSoundCloudLoading,
-      transportState,
       scrubPreviewSeconds,
       isScrubbing,
       setIsPlaying,
@@ -1999,7 +2019,6 @@ export function AudioProvider({ children, platform = "web" }) {
       soundCloudInfo,
       soundCloudInput,
       soundCloudQueue,
-      transportState,
       volume,
     ],
   );
