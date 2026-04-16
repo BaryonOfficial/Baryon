@@ -1,20 +1,37 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import {
   AppFrame,
   AudioProvider,
+  ControlsProvider,
   ListenerControls,
   SceneSurface,
+  createControlsStore,
 } from "@baryon/app-shell";
 
 export default function App() {
+  const controlsStoreRef = useRef(null);
+
+  if (!controlsStoreRef.current) {
+    controlsStoreRef.current = createControlsStore();
+  }
+
+  useEffect(
+    () => () => {
+      controlsStoreRef.current?.dispose();
+    },
+    [],
+  );
+
   return (
     <AudioProvider platform="web">
-      <AppFrame>
-        <SceneSurface
-          controlsOverlay={<ListenerControls showSourceLiveButton={false} />}
-          liveInputPanel={{ showAction: true }}
-        />
-      </AppFrame>
+      <ControlsProvider store={controlsStoreRef.current}>
+        <AppFrame>
+          <SceneSurface
+            controlsOverlay={<ListenerControls showSourceLiveButton={false} />}
+            liveInputPanel={{ showAction: true }}
+          />
+        </AppFrame>
+      </ControlsProvider>
     </AudioProvider>
   );
 }

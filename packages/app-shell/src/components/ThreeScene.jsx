@@ -10,6 +10,11 @@ import {
 } from "react";
 import { Canvas } from "@react-three/fiber";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene";
+import {
+  useControlsActions,
+  useControlsSnapshot,
+  useControlsStore,
+} from "../controls/useControlsStore.js";
 import FloatingCameraControls from "./FloatingCameraControls.jsx";
 import {
   CAMERA_VIEW_PRESETS,
@@ -27,7 +32,6 @@ import {
   WEBGPU_RENDERER_INIT_ERROR,
 } from "./rendererDiagnostics.js";
 import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
-import { useBaryonControls } from "./hooks/useBaryonControls";
 import { useBrowserSupportState } from "./hooks/useBrowserSupportState.js";
 import { useRendererModeState } from "./hooks/useRendererModeState.js";
 import { useAudio, useAudioScene } from "../context/AudioContext";
@@ -40,33 +44,8 @@ import {
   shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
 
-const AdvancedControlsSidebar = lazy(
-  () => import("./AdvancedControlsSidebar.jsx"),
-);
+const AdvancedControlsDock = lazy(() => import("./AdvancedControlsDock.jsx"));
 const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
-
-function ControlsIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.9"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <line x1="4" y1="6" x2="20" y2="6" />
-      <line x1="4" y1="12" x2="20" y2="12" />
-      <line x1="4" y1="18" x2="20" y2="18" />
-      <circle cx="9" cy="6" r="1.8" fill="currentColor" stroke="none" />
-      <circle cx="15" cy="12" r="1.8" fill="currentColor" stroke="none" />
-      <circle cx="11" cy="18" r="1.8" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
 
 /**
  * @param {{
@@ -128,27 +107,13 @@ const ThreeScene = ({
   authoritativeStageStatus = null,
 }) => {
   const containerRef = useRef(null);
-  const advancedControlsTriggerRef = useRef(null);
+  const controlsRef = useControlsStore().controlsRef;
+  const controlsState = useControlsSnapshot(
+    (snapshot) => snapshot.controlsState,
+  );
+  const { updateControl } = useControlsActions();
+  const [isControlsDockOpen, setIsControlsDockOpen] = useState(false);
   const operatorControlKeys = previewState ? ["auditEnabled"] : [];
-  const {
-    controlsRef,
-    controlsState,
-    folderGroups,
-    presetsAreaControls,
-    presets,
-    presetName,
-    selectedPresetName,
-    isControlsPanelLoaded,
-    isControlsPanelOpen,
-    setPresetName,
-    updateControl,
-    resetControls,
-    savePreset,
-    loadPreset,
-    deletePreset,
-    closeControlsPanel,
-    toggleControlsPanel,
-  } = useBaryonControls({ operatorControlKeys });
   const initialRendererFallback = Boolean(
     /** @type {any} */ (controlsRef.current).forceWebGLFallbackTest,
   );
@@ -274,12 +239,12 @@ const ThreeScene = ({
     : topRightOverlay;
   const shouldShowModeOverlay = Boolean(stackedTopRightOverlay);
   const shouldShowLiveStatusOverlay =
-    liveInputStatusPanelVisible && (!isCompactViewport || !isControlsPanelOpen);
+    liveInputStatusPanelVisible && (!isCompactViewport || !isControlsDockOpen);
   const shouldShowPerformanceOverlay =
     Boolean(resolvedPerformanceHudMetrics) &&
     !isPhoneViewport &&
     !isTabletPortraitViewport &&
-    (!isCompactViewport || !isControlsPanelOpen);
+    (!isCompactViewport || !isControlsDockOpen);
   const shouldShowDebugOverlay = !isTabletViewport;
 
   const handleCanvasError = (error) => {
@@ -312,40 +277,6 @@ const ThreeScene = ({
     [onFrameState],
   );
 
-  /** @type {import("react").CSSProperties} */
-  const controlsToggleStyle = isControlsPanelOpen
-    ? {
-        position: "absolute",
-        top: overlayTopInset,
-        left: `calc(${ADVANCED_CONTROLS_DOCK_WIDTH} + 0.15rem)`,
-        zIndex: 59,
-        width: "2rem",
-        height: "2.35rem",
-        border: "1px solid var(--nd-border-visible)",
-        borderRadius: "0 0.9rem 0.9rem 0",
-        borderLeft: "0",
-        background: "var(--nd-surface)",
-        color: "var(--nd-text-primary)",
-        boxShadow: "var(--nd-shell-shadow)",
-        cursor: "pointer",
-      }
-    : {
-        position: "absolute",
-        top: isPhoneViewport
-          ? overlayTopInset
-          : "var(--app-floating-control-top)",
-        left: "var(--app-floating-control-left)",
-        zIndex: 59,
-        width: "var(--app-floating-control-size)",
-        height: "var(--app-floating-control-size)",
-        border: "var(--app-floating-control-border)",
-        borderRadius: "var(--app-floating-control-radius)",
-        background: "var(--app-floating-control-background)",
-        color: "var(--app-floating-control-color)",
-        backdropFilter: "var(--app-floating-control-backdrop)",
-        boxShadow: "var(--app-floating-control-shadow)",
-        cursor: "pointer",
-      };
   return (
     <div
       ref={containerRef}
@@ -494,67 +425,6 @@ const ThreeScene = ({
         </RendererErrorBoundary>
       )}
 
-      {showOverlayUi && !isControlsPanelOpen && (
-        <div style={controlsToggleStyle}>
-          <button
-            ref={advancedControlsTriggerRef}
-            type="button"
-            aria-label="Toggle advanced controls"
-            data-testid="advanced-controls-trigger"
-            aria-expanded={isControlsPanelOpen}
-            onClick={toggleControlsPanel}
-            title={
-              isControlsPanelOpen
-                ? "Hide advanced controls"
-                : "Show advanced controls"
-            }
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: "100%",
-              height: "100%",
-              border: "none",
-              background: "transparent",
-              padding: 0,
-              color: "inherit",
-              cursor: "pointer",
-            }}
-          >
-            <ControlsIcon />
-          </button>
-        </div>
-      )}
-
-      {showOverlayUi && !isControlsPanelOpen && !isPhoneViewport && (
-        <div
-          style={{
-            position: "absolute",
-            top: "var(--app-floating-control-top)",
-            left: `calc(var(--app-floating-control-left) + var(--app-floating-control-size) + 0.6rem)`,
-            zIndex: 61,
-            display: "flex",
-            alignItems: "center",
-            height: "var(--app-floating-control-size)",
-            pointerEvents: "none",
-          }}
-        >
-          <span
-            style={{
-              fontFamily: "Orbitron, sans-serif",
-              fontSize: "0.7rem",
-              fontWeight: 500,
-              letterSpacing: "0.12em",
-              color: "var(--nd-text-display)",
-              whiteSpace: "nowrap",
-              textTransform: "uppercase",
-            }}
-          >
-            Baryon | Cymatics
-          </span>
-        </div>
-      )}
-
       {showCameraControls ? (
         <FloatingCameraControls
           activePreset={activeCameraControlPreset}
@@ -567,25 +437,13 @@ const ThreeScene = ({
         />
       ) : null}
 
-      {showOverlayUi && isControlsPanelLoaded ? (
+      {showOverlayUi ? (
         <Suspense fallback={null}>
-          <AdvancedControlsSidebar
-            folderGroups={folderGroups}
-            presetsAreaControls={presetsAreaControls}
-            controlsState={controlsState}
-            presets={presets}
-            presetName={presetName}
-            selectedPresetName={selectedPresetName}
-            isOpen={isControlsPanelOpen}
-            setPresetName={setPresetName}
-            updateControl={updateControl}
-            resetControls={resetControls}
-            savePreset={savePreset}
-            loadPreset={loadPreset}
-            deletePreset={deletePreset}
-            onClose={closeControlsPanel}
+          <AdvancedControlsDock
+            visible={showOverlayUi}
+            operatorControlKeys={operatorControlKeys}
             dockWidth={ADVANCED_CONTROLS_DOCK_WIDTH}
-            triggerRef={advancedControlsTriggerRef}
+            onOpenChange={setIsControlsDockOpen}
           />
         </Suspense>
       ) : null}

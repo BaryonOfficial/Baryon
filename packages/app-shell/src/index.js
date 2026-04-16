@@ -15,8 +15,16 @@ export {
   LIVE_INPUT_SIGNAL_STATES,
 } from "./context/liveInputRuntimeStatus.js";
 export { default as SceneSurface } from "./components/ThreeScene.jsx";
+export { default as AdvancedControlsDock } from "./components/AdvancedControlsDock.jsx";
 export { OutputStageSurface } from "./components/OutputStageSurface.jsx";
 export { ListenerControls } from "./components/AudioControls.jsx";
 export { default as LiveInputStatusPanel } from "./components/LiveInputStatusPanel.jsx";
 export { default as FloatingCameraControls } from "./components/FloatingCameraControls.jsx";
 export { resolvePreviewOverlayState } from "./components/threeSceneState.js";
+export { createControlsStore } from "./controls/controlsStore.js";
+export { ControlsProvider } from "./controls/ControlsProvider.jsx";
+export {
+  useControlsActions,
+  useControlsSnapshot,
+  useControlsStore,
+} from "./controls/useControlsStore.js";
