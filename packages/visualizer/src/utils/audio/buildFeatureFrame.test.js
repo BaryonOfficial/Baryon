@@ -3882,6 +3882,75 @@ describe("full-range music handling", () => {
     expect(frame.modeCoherence).toBeGreaterThan(0);
   });
 
+  it("keeps multiple backbone modes active for low guitar chord material while preserving harmonic detail", () => {
+    const featureState = createAudioFeatureState();
+    const result = runSteadyLegacyFrames({
+      featureState,
+      fftMagnitudes: makeFft([
+        [82, 0.92],
+        [110, 0.76],
+        [147, 0.7],
+        [196, 0.58],
+        [330, 0.26],
+        [660, 0.18],
+        [3960, 0.12],
+        [5280, 0.08],
+      ]),
+      avgAmplitude: 132,
+      rms: 0.58,
+    });
+
+    expect(result.frame.activeBackboneModeCount).toBeGreaterThanOrEqual(2);
+    expect(result.analysisResult.backboneState.uniqueModeCount).toBeGreaterThan(
+      1,
+    );
+    expect(result.frame.activeDetailModeCount).toBeGreaterThan(0);
+    expect(result.frame.trebleTonalEnergy).toBeGreaterThan(0);
+  });
+
+  it("adds richer backbone structure for low chord tones than a root-only bass anchor", () => {
+    const rootOnlyFeatureState = createAudioFeatureState();
+    const rootOnlyResult = runSteadyLegacyFrames({
+      featureState: rootOnlyFeatureState,
+      fftMagnitudes: makeFft([
+        [82, 0.96],
+        [164, 0.62],
+        [328, 0.3],
+        [656, 0.2],
+      ]),
+      avgAmplitude: 126,
+      rms: 0.54,
+    });
+
+    const lowChordFeatureState = createAudioFeatureState();
+    const lowChordResult = runSteadyLegacyFrames({
+      featureState: lowChordFeatureState,
+      fftMagnitudes: makeFft([
+        [82, 0.92],
+        [110, 0.76],
+        [147, 0.7],
+        [196, 0.58],
+        [330, 0.26],
+        [660, 0.18],
+        [3960, 0.12],
+        [5280, 0.08],
+      ]),
+      avgAmplitude: 132,
+      rms: 0.58,
+    });
+
+    expect(lowChordResult.frame.activeBackboneModeCount).toBeGreaterThanOrEqual(
+      rootOnlyResult.frame.activeBackboneModeCount,
+    );
+    expect(lowChordResult.frame.structureSignal).toBeGreaterThan(
+      rootOnlyResult.frame.structureSignal,
+    );
+    expect(lowChordResult.frame.energySignal).toBeGreaterThan(
+      rootOnlyResult.frame.energySignal,
+    );
+    expect(lowChordResult.frame.structureSignal).toBeLessThan(0.9);
+  });
+
   it("does not apply tonal-detail preservation weights to broadband treble", () => {
     const tonalFeatureState = createAudioFeatureState();
     const tonalResult = runSteadyLegacyFrames({
