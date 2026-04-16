@@ -3566,6 +3566,122 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(frame.debug.workerState).toBe("ready");
     expect(frame.debug.hintSource).toBe("onnx-worker");
   });
+
+  it("releases detail residuals faster than backbone residuals on a low-energy follow-up frame", () => {
+    const featureState = createAudioFeatureState();
+    const first = buildLegacyAnalysisFrame({
+      featureState,
+      fftMagnitudes: makeFft(WEAK_SUBFLOOR_WITH_DETAIL_PEAKS),
+      avgAmplitude: 84,
+      rms: 0.42,
+      frameTimeMs: 1000,
+    });
+    const firstBackbone = sumSlotAmplitudes(first.frame.backboneSlots);
+    const firstDetail = sumSlotAmplitudes(first.frame.detailSlots);
+    let previousFrame = first.frame;
+    let finalFrame = first.frame;
+    for (let frameIndex = 1; frameIndex <= 3; frameIndex += 1) {
+      const followUp = buildLegacyAnalysisFrame({
+        featureState,
+        fftMagnitudes: makeFft([[60, 0.08]]),
+        avgAmplitude: 4,
+        rms: 0.015,
+        frameTimeMs: 1000 + frameIndex * 16,
+        previousFrame,
+      });
+      previousFrame = followUp.frame;
+      finalFrame = followUp.frame;
+    }
+
+    const finalBackbone = sumSlotAmplitudes(finalFrame.backboneSlots);
+    const finalDetail = sumSlotAmplitudes(finalFrame.detailSlots);
+    const backboneRetained = finalBackbone / firstBackbone;
+    const detailRetained = finalDetail / firstDetail;
+
+    expect(firstBackbone).toBeGreaterThan(0);
+    expect(firstDetail).toBeGreaterThan(0);
+    expect(detailRetained).toBeLessThan(0.7);
+    expect(detailRetained).toBeLessThan(backboneRetained);
+    expect(backboneRetained - detailRetained).toBeGreaterThan(0.05);
+  });
+
+  it("reused heavy-analysis frames shed transient-driven signals faster than structural ones", () => {
+    const featureState = createAudioFeatureState();
+    const status = createStatus({
+      audioInputMode: "file",
+      isPlaying: true,
+      hasAnalysisSource: true,
+      playbackSessionId: 7,
+    });
+    const analysisSnapshot = createSnapshot({
+      sourceMode: "file",
+      avgAmplitude: 16,
+      fftMagnitudes: makeFft([
+        [220, 0.58],
+        [440, 0.24],
+      ]),
+      rms: 0.08,
+    });
+    const transientHints = {
+      active: true,
+      harmonicity: 0.58,
+      bassSalience: 0.8,
+      textureSpread: 0.2,
+      novelty: 0.92,
+      transientSalience: 0.95,
+      workerState: "ready",
+      hintSource: "onnx-worker",
+    };
+    const prepared = prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 1000,
+      analysisHints: transientHints,
+    });
+    const analysisResult = runHeavyAudioFeatureAnalysis(prepared);
+    const first = composeAudioFeatureFrame({
+      preparedInputs: prepared,
+      analysisResult,
+      analysisHints: transientHints,
+    });
+
+    const calmHints = {
+      ...transientHints,
+      bassSalience: 0.2,
+      novelty: 0,
+      transientSalience: 0,
+    };
+    const preparedReuse = prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 1048,
+      analysisHints: calmHints,
+    });
+    const reused = composeAudioFeatureFrame({
+      preparedInputs: preparedReuse,
+      analysisResult,
+      analysisHints: calmHints,
+      previousFrame: first,
+      reuseHeavyAnalysis: true,
+    });
+
+    expect(reused.backboneSlots).toBe(first.backboneSlots);
+    expect(reused.modeSlots).toBe(first.modeSlots);
+    expect(reused.sourceMode).toBe(first.sourceMode);
+    expect(reused.keyTonic).toBe(first.keyTonic);
+    expect(reused.changeSignal / first.changeSignal).toBeLessThan(0.8);
+    expect(reused.pulseSignal / first.pulseSignal).toBeLessThan(0.84);
+    expect(reused.changeSignal / first.changeSignal).toBeLessThan(
+      reused.structureSignal / first.structureSignal,
+    );
+    expect(reused.pulseSignal / first.pulseSignal).toBeLessThan(
+      reused.energySignal / first.energySignal,
+    );
+  });
 });
 
 describe("full-range music handling", () => {

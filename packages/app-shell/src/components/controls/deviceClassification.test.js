@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import {
   classifyLiveInputDeviceKind,
   clearDeviceOverride,
@@ -7,30 +7,7 @@ import {
   getLiveInputDeviceKindById,
   saveLiveInputDeviceKindOverride,
 } from "./deviceClassification.js";
-
-/** @returns {Pick<Storage, "getItem" | "setItem" | "removeItem" | "clear">} */
-function createLocalStorageMock() {
-  const store = new Map();
-  return {
-    /** @param {string} key */
-    getItem(key) {
-      return store.has(key) ? store.get(key) : null;
-    },
-    /** @param {string} key
-     *  @param {string} value
-     */
-    setItem(key, value) {
-      store.set(key, String(value));
-    },
-    /** @param {string} key */
-    removeItem(key) {
-      store.delete(key);
-    },
-    clear() {
-      store.clear();
-    },
-  };
-}
+import { installLocalStorageMock } from "../../test/installLocalStorageMock.js";
 
 /** @returns {MediaDeviceInfo} */
 function createDevice(overrides = {}) {
@@ -47,7 +24,7 @@ function createDevice(overrides = {}) {
 }
 
 beforeEach(() => {
-  vi.stubGlobal("localStorage", createLocalStorageMock());
+  installLocalStorageMock();
   localStorage.clear();
 });
 

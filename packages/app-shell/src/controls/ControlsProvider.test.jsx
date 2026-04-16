@@ -4,6 +4,7 @@ import React from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { installLocalStorageMock } from "../test/installLocalStorageMock.js";
 import { createControlsStore } from "./controlsStore.js";
 
 const markBaryonTestControlsReady = vi.fn();
@@ -45,6 +46,7 @@ async function renderProvider(store) {
 
 describe("ControlsProvider bridges", () => {
   beforeEach(() => {
+    installLocalStorageMock();
     window.localStorage.clear();
     markBaryonTestControlsReady.mockClear();
     resetBaryonTestReady.mockClear();
