@@ -20,7 +20,9 @@ export { OutputStageSurface } from "./components/OutputStageSurface.jsx";
 export { ListenerControls } from "./components/AudioControls.jsx";
 export { default as LiveInputStatusPanel } from "./components/LiveInputStatusPanel.jsx";
 export { default as FloatingCameraControls } from "./components/FloatingCameraControls.jsx";
+export { default as PerformanceHud } from "./components/PerformanceHud.jsx";
 export { resolvePreviewOverlayState } from "./components/threeSceneState.js";
+export { composeAuthoritativePerformanceHudMetrics } from "./components/threeSceneState.js";
 export { createControlsStore } from "./controls/controlsStore.js";
 export { ControlsProvider } from "./controls/ControlsProvider.jsx";
 export {
