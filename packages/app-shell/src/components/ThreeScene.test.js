@@ -57,30 +57,8 @@ vi.mock("./hooks/useFullScreenToggle.jsx", () => ({
   }),
 }));
 
-vi.mock("./hooks/useBaryonControls", () => ({
-  useBaryonControls: () => ({
-    controlsRef: { current: { forceWebGLFallbackTest: false } },
-    controlsState: {
-      visualizationMethod: "raymarch",
-      backgroundColor: "#000000",
-      performanceHudEnabled: false,
-    },
-    folderGroups: [],
-    presetsAreaControls: [],
-    presets: [],
-    presetName: "",
-    selectedPresetName: "",
-    isControlsPanelLoaded: false,
-    isControlsPanelOpen: false,
-    setPresetName: () => {},
-    updateControl: () => {},
-    resetControls: () => {},
-    savePreset: () => {},
-    loadPreset: () => {},
-    deletePreset: () => {},
-    closeControlsPanel: () => {},
-    toggleControlsPanel: () => {},
-  }),
+vi.mock("./AdvancedControlsDock.jsx", () => ({
+  default: () => null,
 }));
 
 vi.mock("./hooks/useBrowserSupportState.js", () => ({
@@ -133,6 +111,8 @@ import {
   resolvePreviewOverlayState,
   shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
+import { ControlsProvider } from "../controls/ControlsProvider.jsx";
+import { createControlsStore } from "../controls/controlsStore.js";
 import ThreeScene from "./ThreeScene.jsx";
 
 describe("resolvePreviewOverlayState", () => {
@@ -312,8 +292,16 @@ describe("camera reset control", () => {
   });
 
   it("reapplies the active preset when the reset button is pressed", async () => {
+    const controlsStore = createControlsStore();
+
     await act(async () => {
-      root.render(React.createElement(ThreeScene));
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene),
+        ),
+      );
     });
 
     const sideButton = container.querySelector(
