@@ -135,6 +135,10 @@ const DETAIL_COLOR_SLOT_LIMIT = 7;
 const TONAL_RESERVE_COUNT = 2;
 const TONAL_RESERVE_MIN_HZ = 1800;
 const TONAL_RESERVE_MIN_SALIENCE = 0.08;
+const LOW_BAND_BACKBONE_MIN_HZ = 55;
+const LOW_BAND_BACKBONE_MAX_HZ = 260;
+const LOW_BAND_BACKBONE_RESERVED_COUNT = 2;
+const LOW_BAND_BACKBONE_MIN_SALIENCE = 0.14;
 const BAND_LIMITS_HZ = [140, 600, 2400, 8000];
 const SPECTRAL_BAND_6_LIMITS_HZ = [140, 400, 1200, 3200, 6400, 12000];
 const SPECTRAL_BAND_6_COUNT = 6;
@@ -746,6 +750,17 @@ function getPeakSelectionDistanceHz(kind, frequency) {
   return Math.max(baseDistance, proportionalDistance);
 }
 
+function getLowBandBackboneReserveDistanceHz(frequency) {
+  return Math.max(24, frequency * 0.045);
+}
+
+function isWithinLowBandBackboneReserveBand(frequency) {
+  return (
+    frequency >= LOW_BAND_BACKBONE_MIN_HZ &&
+    frequency <= LOW_BAND_BACKBONE_MAX_HZ
+  );
+}
+
 function scoreCandidatePeak(peak, analysisHints, kind) {
   const hints = getActiveAnalysisHints(analysisHints);
   const baseAmplitude = peak?.amplitude ?? 0;
@@ -789,13 +804,19 @@ function scoreCandidatePeak(peak, analysisHints, kind) {
     (hints?.voicingProbability ?? 0) * 0.3;
   const backboneSalienceBias =
     1 + (peak.salienceScore ?? 0) * BACKBONE_SALIENCE_WEIGHT;
+  const lowBandBackboneBias =
+    isWithinLowBandBackboneReserveBand(peak.frequency ?? 0) &&
+    (peak.salienceScore ?? 0) >= LOW_BAND_BACKBONE_MIN_SALIENCE
+      ? 1 + (hints?.bassSalience ?? 0) * 0.24
+      : 1;
 
   return (
     baseAmplitude *
     bassBias *
     backboneHarmonicBias *
     changeBias *
-    backboneSalienceBias
+    backboneSalienceBias *
+    lowBandBackboneBias
   );
 }
 
@@ -955,18 +976,118 @@ function deriveSelectedCandidatePeaks(candidatePool, analysisHints) {
   const backboneCandidates = preparedCandidatePool.filter(
     (c) => (c.frequency ?? 0) <= BACKBONE_PEAK_MAX_HZ,
   );
-  const backbonePeaks = selectPreparedPeaks(
+  const reservedBackbonePeaks = selectReservedLowBandBackbonePeaks(
     backboneCandidates,
-    BACKBONE_PEAK_COUNT,
     analysisHints,
-    "backbone",
   );
+  const remainingBackbonePool = backboneCandidates.filter(
+    (candidate) =>
+      !reservedBackbonePeaks.some(
+        (reservedPeak) =>
+          Math.abs((candidate.frequency ?? 0) - (reservedPeak.frequency ?? 0)) <
+          getPeakSelectionDistanceHz("backbone", reservedPeak.frequency ?? 0),
+      ),
+  );
+  const backbonePeaks = [
+    ...reservedBackbonePeaks,
+    ...selectPreparedPeaks(
+      remainingBackbonePool,
+      BACKBONE_PEAK_COUNT - reservedBackbonePeaks.length,
+      analysisHints,
+      "backbone",
+    ),
+  ];
 
   return {
     detailPeaks,
     backbonePeaks,
     dominantPeak: backbonePeaks[0] ?? null,
   };
+}
+
+function selectReservedLowBandBackbonePeaks(preparedCandidates, analysisHints) {
+  if (!Array.isArray(preparedCandidates) || preparedCandidates.length === 0) {
+    return [];
+  }
+
+  const hints = getActiveAnalysisHints(analysisHints);
+  const selected = [];
+  const remaining = preparedCandidates
+    .filter(
+      (candidate) =>
+        (candidate?.backboneBaseScore ?? 0) > 0 &&
+        isWithinLowBandBackboneReserveBand(candidate.frequency ?? 0) &&
+        (candidate.salienceScore ?? 0) >= LOW_BAND_BACKBONE_MIN_SALIENCE,
+    )
+    .map((candidate) => ({
+      ...candidate,
+      baseScore: candidate.backboneBaseScore ?? 0,
+    }));
+
+  while (
+    selected.length < LOW_BAND_BACKBONE_RESERVED_COUNT &&
+    remaining.length > 0
+  ) {
+    let bestIndex = -1;
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    for (let index = 0; index < remaining.length; index += 1) {
+      const candidate = remaining[index];
+      const candidateFrequency = candidate.frequency ?? 0;
+      const duplicatesLowerReserved = selected.some(
+        (reservedPeak) =>
+          (reservedPeak.frequency ?? 0) < candidateFrequency &&
+          isPeakHarmonicallyRelated(
+            candidateFrequency,
+            reservedPeak.frequency ?? 0,
+          ),
+      );
+      if (duplicatesLowerReserved) {
+        continue;
+      }
+
+      const minDistanceHz =
+        selected.length > 0
+          ? Math.min(
+              ...selected.map((entry) =>
+                Math.abs((entry.frequency ?? 0) - candidateFrequency),
+              ),
+            )
+          : Number.POSITIVE_INFINITY;
+      const diversityBoost =
+        selected.length === 0
+          ? 1
+          : 1 +
+            clamp01(minDistanceHz / Math.max(1, candidateFrequency)) * 0.45 +
+            (hints?.textureSpread ?? 0) *
+              clamp01(minDistanceHz / Math.max(1, candidateFrequency));
+      const candidateScore = candidate.baseScore * diversityBoost;
+      if (candidateScore > bestScore) {
+        bestScore = candidateScore;
+        bestIndex = index;
+      }
+    }
+
+    if (bestIndex < 0) {
+      break;
+    }
+
+    const [chosen] = remaining.splice(bestIndex, 1);
+    selected.push(chosen);
+    const minDistance = getLowBandBackboneReserveDistanceHz(
+      chosen.frequency ?? 0,
+    );
+    for (let index = remaining.length - 1; index >= 0; index -= 1) {
+      if (
+        Math.abs((remaining[index].frequency ?? 0) - (chosen.frequency ?? 0)) <
+        minDistance
+      ) {
+        remaining.splice(index, 1);
+      }
+    }
+  }
+
+  return selected;
 }
 
 function createLayerReleaseOptions(
@@ -2775,6 +2896,9 @@ function deriveCompositeSignals({
     structuralMetrics?.distributedExcitation ?? 0,
   );
   const resonatorCoherence = clamp01(structuralMetrics?.modeCoherence ?? 0);
+  const lowBandStructureSupport = clamp01(
+    (bandEnergies?.[0] ?? 0) * 3 + (bandEnergies?.[1] ?? 0) * 2,
+  );
   const structureSignal = clamp01(
     (activeModeCount / Math.max(1, signalNormalizationSlots * 0.55)) *
       0.36 *
@@ -2784,6 +2908,8 @@ function deriveCompositeSignals({
         energyCoupling +
       harmonicSupport * 0.2 * energyCoupling +
       modalPersistence * 0.06 +
+      lowBandStructureSupport * 0.08 +
+      clamp01((bandEnergies?.[0] ?? 0) * (hints?.bassSalience ?? 0)) * 0.08 +
       // Removed: bandDistribution (not energy-sensitive — stays elevated during fades)
       // Removed: normalizedCentroid (treble centroid ≠ modal structure)
       (hints?.harmonicity ?? 0) * 0.12 +
@@ -2804,9 +2930,10 @@ function deriveCompositeSignals({
   const energySignal = clamp01(
     normalizedRms * 0.42 +
       normalizedAmplitude * 0.26 +
-      averageArray(bandEnergies) * 0.2 +
+      averageArray(bandEnergies) * 0.16 +
+      (bandEnergies?.[0] ?? 0) * 0.06 +
       clamp01(dominantAmplitude) * 0.12 +
-      (hints?.bassSalience ?? 0) * 0.08,
+      (hints?.bassSalience ?? 0) * 0.12,
   );
   const changeBreakdown = {
     flux: clamp01(spectralFlux * 8) * 0.28,
