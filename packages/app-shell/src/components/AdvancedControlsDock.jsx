@@ -105,39 +105,43 @@ export default function AdvancedControlsDock({
 
   const isPhoneViewport = viewportWidth <= 640;
   const overlayTopInset = isPhoneViewport ? "0.7rem" : "0.9rem";
+  const openControlsToggleStyle =
+    /** @type {import("react").CSSProperties} */ ({
+      position: "absolute",
+      top: overlayTopInset,
+      left: `calc(${dockWidth} + 0.15rem)`,
+      zIndex: 59,
+      width: "2rem",
+      height: "2.35rem",
+      border: "1px solid var(--nd-border-visible)",
+      borderRadius: "0 0.9rem 0.9rem 0",
+      borderLeft: "0",
+      background: "var(--nd-surface)",
+      color: "var(--nd-text-primary)",
+      boxShadow: "var(--nd-shell-shadow)",
+      cursor: "pointer",
+    });
+  const closedControlsToggleStyle =
+    /** @type {import("react").CSSProperties} */ ({
+      position: "absolute",
+      top: isPhoneViewport
+        ? overlayTopInset
+        : "var(--app-floating-control-top)",
+      left: "var(--app-floating-control-left)",
+      zIndex: 59,
+      width: "var(--app-floating-control-size)",
+      height: "var(--app-floating-control-size)",
+      border: "var(--app-floating-control-border)",
+      borderRadius: "var(--app-floating-control-radius)",
+      background: "var(--app-floating-control-background)",
+      color: "var(--app-floating-control-color)",
+      backdropFilter: "var(--app-floating-control-backdrop)",
+      boxShadow: "var(--app-floating-control-shadow)",
+      cursor: "pointer",
+    });
   const controlsToggleStyle = isOpen
-    ? {
-        position: "absolute",
-        top: overlayTopInset,
-        left: `calc(${dockWidth} + 0.15rem)`,
-        zIndex: 59,
-        width: "2rem",
-        height: "2.35rem",
-        border: "1px solid var(--nd-border-visible)",
-        borderRadius: "0 0.9rem 0.9rem 0",
-        borderLeft: "0",
-        background: "var(--nd-surface)",
-        color: "var(--nd-text-primary)",
-        boxShadow: "var(--nd-shell-shadow)",
-        cursor: "pointer",
-      }
-    : {
-        position: "absolute",
-        top: isPhoneViewport
-          ? overlayTopInset
-          : "var(--app-floating-control-top)",
-        left: "var(--app-floating-control-left)",
-        zIndex: 59,
-        width: "var(--app-floating-control-size)",
-        height: "var(--app-floating-control-size)",
-        border: "var(--app-floating-control-border)",
-        borderRadius: "var(--app-floating-control-radius)",
-        background: "var(--app-floating-control-background)",
-        color: "var(--app-floating-control-color)",
-        backdropFilter: "var(--app-floating-control-backdrop)",
-        boxShadow: "var(--app-floating-control-shadow)",
-        cursor: "pointer",
-      };
+    ? openControlsToggleStyle
+    : closedControlsToggleStyle;
 
   return (
     <>
