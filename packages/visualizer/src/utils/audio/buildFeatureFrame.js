@@ -103,22 +103,22 @@ const BACKBONE_SALIENCE_WEIGHT = 1.2;
 const DETAIL_LAYER_WEIGHT = 0.35;
 const BACKBONE_ATTACK = 0.22;
 const BACKBONE_RELEASE = 0.96;
-const BACKBONE_SILENCE_RELEASE = 0.9;
+const BACKBONE_SILENCE_RELEASE = 0.86;
 const BACKBONE_LOW_SIGNAL_RELEASE_THRESHOLD = 0.085;
-const BACKBONE_LOW_SIGNAL_RELEASE = 0.72;
+const BACKBONE_LOW_SIGNAL_RELEASE = 0.68;
 const LEGACY_SUBFLOOR_RESIDUAL_PEAK_THRESHOLD = 0.1;
 const LEGACY_SUBFLOOR_RESIDUAL_FLUX_THRESHOLD = 0.001;
 const LEGACY_SUBFLOOR_RESIDUAL_TRANSIENT_THRESHOLD = 0.001;
 const DETAIL_ATTACK = 0.55;
-const DETAIL_RELEASE = 0.82;
-const DETAIL_SILENCE_RELEASE = 0.74;
+const DETAIL_RELEASE = 0.76;
+const DETAIL_SILENCE_RELEASE = 0.64;
 const DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD = 0.07;
 const DETAIL_LOW_SIGNAL_RELEASE = 0.58;
 // 0 = unlimited fresh admission per frame (sentinel value in blendModalStack)
 const DETAIL_FRESH_CAP = 0;
 const BACKBONE_FRESH_CAP = 4;
 const BACKBONE_EVICTION_RELEASE = 0.78;
-const DETAIL_EVICTION_RELEASE = 0.58;
+const DETAIL_EVICTION_RELEASE = 0.5;
 const DETAIL_EVICTION_FRAMES = 2;
 const BACKBONE_EVICTION_FRAMES = 4;
 const DETAIL_NOVELTY_EVICTION_THRESHOLD = 0.8;
@@ -5802,8 +5802,8 @@ export function composeAudioFeatureFrame({
       structureSignal,
       deltaMs,
       {
-        attackMs: 90,
-        releaseMs: 160,
+        attackMs: 70,
+        releaseMs: 120,
       },
     );
     energySignal = smoothFeatureSignal(
@@ -5811,8 +5811,8 @@ export function composeAudioFeatureFrame({
       energySignal,
       deltaMs,
       {
-        attackMs: 45,
-        releaseMs: 120,
+        attackMs: 35,
+        releaseMs: 80,
       },
     );
     changeSignal = smoothFeatureSignal(
@@ -5820,8 +5820,8 @@ export function composeAudioFeatureFrame({
       changeSignal,
       deltaMs,
       {
-        attackMs: 14,
-        releaseMs: 70,
+        attackMs: 10,
+        releaseMs: 42,
       },
     );
     pulseSignal = smoothFeatureSignal(
@@ -5829,8 +5829,8 @@ export function composeAudioFeatureFrame({
       pulseSignal,
       deltaMs,
       {
-        attackMs: 10,
-        releaseMs: 90,
+        attackMs: 8,
+        releaseMs: 50,
       },
     );
   }
