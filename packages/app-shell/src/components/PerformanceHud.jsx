@@ -1,4 +1,4 @@
-import { formatPerformanceProfileLabel } from "@baryon/visualizer/render/outputPipeline";
+import { formatPerformanceProfileLabel } from "@baryon/visualizer/render/outputProfilePolicy";
 
 function formatNumber(value, digits = 1) {
   if (
