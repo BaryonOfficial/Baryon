@@ -161,7 +161,6 @@ function createResolveFeatureFrameHarness(overrides = {}) {
       },
       controls: {
         cavityGeometry: "spherical",
-        structuralImplementation: "modal-excitation",
         injectTestTone: false,
       },
       status: {

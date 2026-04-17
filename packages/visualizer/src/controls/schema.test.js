@@ -78,7 +78,6 @@ const EXPECTED_CONTROL_KEYS = [
   "testToneHz",
   "testToneAmplitude",
   "logEveryFrames",
-  "structuralImplementation",
 ];
 
 describe("control schema", () => {
@@ -169,26 +168,6 @@ describe("control schema", () => {
 
     expect(outputModeControl?.runtimePath).toBe("program.outputMode");
     expect(outputFillControl?.runtimePath).toBe("program.backgroundColor");
-  });
-
-  it("exposes structural implementation as a debug audit control", () => {
-    const structuralImplementationControl = CONTROL_DEFINITIONS.find(
-      (definition) => definition.key === "structuralImplementation",
-    );
-
-    expect(structuralImplementationControl).toMatchObject({
-      label: "Analysis Mode",
-      defaultValue: "modal-excitation",
-      targetType: CONTROL_TARGET_TYPES.audit,
-      handler: CONTROL_HANDLERS.audit,
-      runtimePath: "controls.structuralImplementation",
-      status: CONTROL_STATUSES.debugOnly,
-    });
-    expect(structuralImplementationControl?.binding?.options).toEqual({
-      "Legacy Peak": "legacy-peak",
-      "Modal Excitation": "modal-excitation",
-      "Dual (Compare)": "dual",
-    });
   });
 
   it("exposes a debug selector for 3d field evaluation mode", () => {

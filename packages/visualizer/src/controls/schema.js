@@ -965,28 +965,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     },
     CONTROL_GROUPS.diagnostics,
   ),
-  withControlGroup(
-    {
-      key: "structuralImplementation",
-      label: "Analysis Mode",
-      title:
-        "Choose which analysis model drives the visuals. Modal Excitation follows the resonant-mode path, Legacy Peak keeps the older peak-driven behavior, and Dual runs both for comparison.",
-      defaultValue: AUDIT_DEFAULTS.structuralImplementation,
-      methods: ALL_METHODS,
-      binding: {
-        options: {
-          "Legacy Peak": "legacy-peak",
-          "Modal Excitation": "modal-excitation",
-          "Dual (Compare)": "dual",
-        },
-      },
-      targetType: CONTROL_TARGET_TYPES.audit,
-      handler: CONTROL_HANDLERS.audit,
-      runtimePath: "controls.structuralImplementation",
-      status: CONTROL_STATUSES.debugOnly,
-    },
-    CONTROL_GROUPS.diagnostics,
-  ),
 ]);
 
 export function createControlState() {

@@ -1348,7 +1348,6 @@ export function resolveFeatureFrame(
         frameTimeMs: time * 1000,
         includeChromesthesia: chromesthesiaEnabled,
         analysisHints,
-        structuralImplementation: controls.structuralImplementation,
       });
     } else {
       const preparedInputs = prepareFeatureFrame({
@@ -1360,7 +1359,6 @@ export function resolveFeatureFrame(
         frameTimeMs: time * 1000,
         includeChromesthesia: chromesthesiaEnabled,
         analysisHints,
-        structuralImplementation: controls.structuralImplementation,
       });
 
       if (preparedInputs.silentFeatureFrame) {
@@ -1384,7 +1382,6 @@ export function resolveFeatureFrame(
             includeChromesthesia: chromesthesiaEnabled,
             analysisHints,
             auditSettings: featureState?.audit?.settings ?? null,
-            structuralImplementation: controls.structuralImplementation,
           });
           featureEngine.enqueueTransportFrame(transportFrame);
           recordRuntimePerfSample(

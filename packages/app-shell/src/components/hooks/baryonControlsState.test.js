@@ -1,8 +1,9 @@
+import { createControlState } from "@baryon/visualizer/controls/schema";
 import { expect, test } from "vitest";
 import {
-  ANALYSIS_MODE_BASE_KEY,
-  DUAL_COMPARE_TOGGLE_KEY,
+  SETTINGS_KEY,
   getVisibleControlLayout,
+  persistControls,
 } from "./baryonControlsState.js";
 
 test("builds the advanced controls presentation layout", () => {
@@ -35,21 +36,10 @@ test("builds the advanced controls presentation layout", () => {
     modeGroup.controls.map((control) => control.key).slice(0, 4),
   ).toStrictEqual([
     "boundaryMode",
-    ANALYSIS_MODE_BASE_KEY,
     "fieldCacheOverride",
     "colorMode",
+    "rotationMode",
   ]);
-  const analysisModeControl = modeGroup.controls.find(
-    (control) => control.key === ANALYSIS_MODE_BASE_KEY,
-  );
-  expect(analysisModeControl).toBeTruthy();
-  expect(analysisModeControl.title).toBe(
-    "Choose which analysis model drives the visuals. Modal Excitation is the true-to-nature resonant-mode model, and Legacy Peak keeps the older peak-driven behavior.",
-  );
-  expect(analysisModeControl.binding?.options).toStrictEqual({
-    "Legacy Peak": "legacy-peak",
-    "Modal Excitation": "modal-excitation",
-  });
   expect(
     modeGroup.controls.find((control) => control.key === "fieldCacheOverride")
       ?.title,
@@ -68,19 +58,19 @@ test("builds the advanced controls presentation layout", () => {
   expect(diagnosticsGroup).toBeTruthy();
   expect(diagnosticsGroup.controls.map((control) => control.key)).toStrictEqual(
     [
-      DUAL_COMPARE_TOGGLE_KEY,
-      "freezeModeSlots",
-      "injectTestTone",
-      "testToneHz",
-      "testToneAmplitude",
-      "cavityGeometry",
-      "auditEnabled",
-      "logEveryFrames",
-      "lowLoadPlaybackDiagnostics",
       "bloomResponseBias",
       "rimBloomBias",
       "rimCompression",
+      "auditEnabled",
+      "freezeModeSlots",
       "forceWebGLFallbackTest",
+      "lowLoadPlaybackDiagnostics",
+      "fieldCacheOverride",
+      "cavityGeometry",
+      "injectTestTone",
+      "testToneHz",
+      "testToneAmplitude",
+      "logEveryFrames",
     ],
   );
 });
@@ -98,4 +88,39 @@ test("operator control keys can surface Capture Debug Data without enabling all 
   expect(
     diagnosticsGroup?.controls.map((control) => control.key),
   ).toStrictEqual(["auditEnabled"]);
+});
+
+test("persistControls rewrites settings to the current schema and drops removed keys", () => {
+  const storage = new Map([
+    [
+      SETTINGS_KEY,
+      JSON.stringify({
+        backgroundColor: "#010203",
+        structuralImplementation: "legacy-peak",
+      }),
+    ],
+  ]);
+  const controls = {
+    ...createControlState(),
+    backgroundColor: "#102030",
+  };
+
+  persistControls(
+    {
+      getItem(key) {
+        return storage.get(key) ?? null;
+      },
+      setItem(key, value) {
+        storage.set(key, value);
+      },
+    },
+    controls,
+  );
+
+  expect(JSON.parse(storage.get(SETTINGS_KEY))).toMatchObject({
+    backgroundColor: "#102030",
+  });
+  expect(JSON.parse(storage.get(SETTINGS_KEY))).not.toHaveProperty(
+    "structuralImplementation",
+  );
 });

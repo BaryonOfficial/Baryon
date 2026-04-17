@@ -20,16 +20,6 @@ import {
 
 const FFT_SIZE = 4096;
 const SAMPLE_RATE = 44100;
-const LEGACY_PEAK = "legacy-peak";
-const MODAL_EXCITATION = "modal-excitation";
-const DUAL = "dual";
-
-function buildLegacyTransportFrame(overrides = {}) {
-  return buildAudioFeatureTransportFrame({
-    structuralImplementation: LEGACY_PEAK,
-    ...overrides,
-  });
-}
 
 function createStatus(overrides = {}) {
   return {
@@ -72,7 +62,6 @@ function createPreparedInputs(frameTimeMs, overrides = {}) {
     radius: 3,
     status: createStatus(overrides.status),
     frameTimeMs,
-    structuralImplementation: overrides.structuralImplementation ?? LEGACY_PEAK,
   });
 }
 
@@ -105,8 +94,8 @@ function createSystemStatus(overrides = {}) {
 }
 
 describe("audio feature engine transport", () => {
-  it("keeps explicit legacy-peak file transport lean and without time data", () => {
-    const frame = buildLegacyTransportFrame({
+  it("always includes time data for file transport because modal excitation owns structural analysis", () => {
+    const frame = buildAudioFeatureTransportFrame({
       analysisSnapshot: createSnapshot({
         fftMagnitudes: new Float32Array([0, 1, 0.5]),
         timeData: new Float32Array([0, 0.1, -0.1]),
@@ -121,15 +110,14 @@ describe("audio feature engine transport", () => {
 
     expect(frame.sessionKey).toBe("file:file-session");
     expect(frame.audioInputMode).toBe("file");
-    expect(frame.structuralImplementation).toBe(LEGACY_PEAK);
     expect(frame.status).toBeUndefined();
     expect(frame.analysisSnapshot).toBeUndefined();
     expect(frame.fftMagnitudes).toBeInstanceOf(Float32Array);
-    expect(frame.timeData).toBeNull();
+    expect(frame.timeData).toBeInstanceOf(Float32Array);
     expect(frame.analysisHints).toEqual({ active: true, novelty: 0.6 });
   });
 
-  it("defaults file transport to modal excitation when structural implementation is omitted", () => {
+  it("does not expose structural implementation on transport frames", () => {
     const frame = buildAudioFeatureTransportFrame({
       analysisSnapshot: createSnapshot({
         timeData: new Float32Array([0, 0.1, -0.1]),
@@ -141,41 +129,7 @@ describe("audio feature engine transport", () => {
       radius: 3,
     });
 
-    expect(frame.structuralImplementation).toBe(MODAL_EXCITATION);
-    expect(frame.timeData).toBeInstanceOf(Float32Array);
-  });
-
-  it("includes time data for explicit modal-excitation file transport", () => {
-    const frame = buildAudioFeatureTransportFrame({
-      analysisSnapshot: createSnapshot({
-        timeData: new Float32Array([0, 0.1, -0.1]),
-      }),
-      status: createStatus({
-        playbackSessionId: "file-session",
-      }),
-      frameTimeMs: 1000,
-      radius: 3,
-      structuralImplementation: MODAL_EXCITATION,
-    });
-
-    expect(frame.structuralImplementation).toBe(MODAL_EXCITATION);
-    expect(frame.timeData).toBeInstanceOf(Float32Array);
-  });
-
-  it("includes time data for explicit dual file transport", () => {
-    const frame = buildAudioFeatureTransportFrame({
-      analysisSnapshot: createSnapshot({
-        timeData: new Float32Array([0, 0.1, -0.1]),
-      }),
-      status: createStatus({
-        playbackSessionId: "file-session",
-      }),
-      frameTimeMs: 1000,
-      radius: 3,
-      structuralImplementation: DUAL,
-    });
-
-    expect(frame.structuralImplementation).toBe(DUAL);
+    expect(frame).not.toHaveProperty("structuralImplementation");
     expect(frame.timeData).toBeInstanceOf(Float32Array);
   });
 
@@ -193,8 +147,8 @@ describe("audio feature engine transport", () => {
     expect(frame.cavityGeometry).toBe("spherical");
   });
 
-  it("includes time data for acoustic live input transport in explicit legacy-peak mode", () => {
-    const frame = buildLegacyTransportFrame({
+  it("includes time data for acoustic live input transport", () => {
+    const frame = buildAudioFeatureTransportFrame({
       analysisSnapshot: createSnapshot({
         sourceMode: "live",
         fftMagnitudes: new Float32Array([0, 0.8, 0.4]),
@@ -215,7 +169,7 @@ describe("audio feature engine transport", () => {
     expect(frame.timeData).toBeInstanceOf(Float32Array);
   });
 
-  it("includes time data for explicit modal-excitation system transport", () => {
+  it("includes time data for system transport", () => {
     const frame = buildAudioFeatureTransportFrame({
       analysisSnapshot: createSnapshot({
         sourceMode: "system",
@@ -224,7 +178,6 @@ describe("audio feature engine transport", () => {
       status: createSystemStatus(),
       frameTimeMs: 1500,
       radius: 3,
-      structuralImplementation: MODAL_EXCITATION,
     });
 
     expect(frame.audioInputMode).toBe("system");
@@ -478,7 +431,7 @@ describe("audio feature engine snapshots", () => {
       firstAnalysisResult.detailColorSlots,
     );
     expect(leanAnalysisResult.structuralState.backboneSlotsSource).toBe(
-      nextPreparedInputs.backboneState.slots,
+      nextStructuralState.backboneSlotsSource,
     );
   });
 
@@ -565,64 +518,6 @@ describe("audio feature engine snapshots", () => {
     expect(frame.structureSignal).toBeGreaterThan(0);
   });
 
-  it("includes modal-excitation comparison diagnostics when dual structural mode is enabled", () => {
-    const featureState = createAudioFeatureState();
-    const preparedInputs = prepareAudioFeatureFrameInputs({
-      analysisSnapshot: createSnapshot({
-        sourceMode: "file",
-        avgAmplitude: 48,
-        rms: 0.28,
-        fftMagnitudes: new Float32Array([0, 0.9, 0.55, 0.2, 0.08]),
-        timeData: new Float32Array(FFT_SIZE).map(
-          (_, index) =>
-            Math.sin((2 * Math.PI * 110 * index) / SAMPLE_RATE) * 0.4,
-        ),
-      }),
-      featureState,
-      radius: 3,
-      status: createStatus(),
-      frameTimeMs: 2000,
-      structuralImplementation: "dual",
-    });
-    const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
-    const structuralState = updateAudioFeatureStructuralState(
-      preparedInputs,
-      fastSignalState,
-    );
-    const analysisResult = buildCurrentAudioFeatureAnalysisResult({
-      preparedInputs,
-      fastSignalState,
-      structuralState,
-      materializeStructuralProjection: true,
-    });
-    const snapshot = buildAudioFeatureAnalysisSnapshot({
-      preparedInputs,
-      analysisResult,
-      publishCount: 2,
-    });
-
-    expect(structuralState.comparisonState?.analysisEngine).toBe(
-      "modal-excitation",
-    );
-    expect(snapshot.analysisResult.structuralMetrics).toMatchObject({
-      excitedModeCount: expect.any(Number),
-      modalPersistence: expect.any(Number),
-    });
-    expect(snapshot.analysisResult.structuralComparison).toMatchObject({
-      activeModeCountDelta: expect.any(Number),
-      dominantFrequencyRatio: expect.any(Number),
-      lowOrderModalEnergyDelta: expect.any(Number),
-      modalPersistenceDelta: expect.any(Number),
-    });
-    expect(snapshot.analysisResult.comparisonDebug).toMatchObject({
-      analysisEngine: "modal-excitation",
-      pitchSource: "resonator-bank",
-      structureSignal: expect.any(Number),
-      changeSignal: expect.any(Number),
-      modeCoherence: expect.any(Number),
-    });
-  });
-
   it("stores one canonical analysis hint payload in worker snapshots", () => {
     const featureState = createAudioFeatureState();
     const analysisHints = {
@@ -676,7 +571,6 @@ describe("audio feature engine snapshots", () => {
       radius: 3,
       status: createStatus(),
       frameTimeMs: 2000,
-      structuralImplementation: "modal-excitation",
     });
     const systemPreparedInputs = prepareAudioFeatureFrameInputs({
       analysisSnapshot: {
@@ -687,7 +581,6 @@ describe("audio feature engine snapshots", () => {
       radius: 3,
       status: createSystemStatus(),
       frameTimeMs: 2000,
-      structuralImplementation: "modal-excitation",
     });
 
     const fileFastSignal =

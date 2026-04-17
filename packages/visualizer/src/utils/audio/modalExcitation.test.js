@@ -88,7 +88,6 @@ function createPreparedInputs({
     cavityGeometry,
     status,
     frameTimeMs,
-    structuralImplementation: "modal-excitation",
   });
 }
 
