@@ -855,6 +855,12 @@ function computeComparisonMetrics(primaryState, comparisonState) {
       (primaryState?.activeModeCount ?? 0),
     dominantFrequencyRatio,
     dominantFrequencyDeltaCents: dominantFrequencyRatio * 1200,
+    lowOrderModalEnergyDelta:
+      (comparisonState?.structuralMetrics?.lowOrderModalEnergy ?? 0) -
+      (primaryState?.structuralMetrics?.lowOrderModalEnergy ?? 0),
+    modalPersistenceDelta:
+      (comparisonState?.structuralMetrics?.modalPersistence ?? 0) -
+      (primaryState?.structuralMetrics?.modalPersistence ?? 0),
     modeCoherenceDelta:
       (comparisonState?.structuralMetrics?.modeCoherence ?? 0) -
       (primaryState?.structuralMetrics?.modeCoherence ?? 0),

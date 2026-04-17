@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { AUDIO_SLOT_CAPACITY } from "../../defaults.js";
 import { BACKBONE_STACK_SLOTS, DETAIL_STACK_SLOTS } from "./modalStack.js";
+import { LEGACY_FAMILY_FIXTURES } from "./__fixtures__/legacyFamilyFixtureDefinitions.js";
 import {
   applyTestToneToSnapshot,
   buildAudioFeatureFrame as buildAudioFeatureFrameBase,
@@ -22,6 +24,13 @@ const LIVE_INPUT_POST_CALIBRATION_NEXT_MS = 1270;
 const LEGACY_PEAK = "legacy-peak";
 const MODAL_EXCITATION = "modal-excitation";
 const DUAL = "dual";
+const LEGACY_FAMILY_BASELINES = JSON.parse(
+  readFileSync(
+    new URL("./__fixtures__/legacy-family-baselines.json", import.meta.url),
+    "utf8",
+  ),
+);
+const DELTA_EPSILON = 1e-4;
 
 function prepareAudioFeatureFrameInputs(options) {
   return prepareAudioFeatureFrameInputsBase({
@@ -473,6 +482,55 @@ function runSteadyLegacyFrames({
   }
 
   return result;
+}
+
+function runSteadyDualFrames({
+  featureState,
+  fftMagnitudes,
+  timeData = new Float32Array(FFT_SIZE),
+  frameCount = 4,
+  avgAmplitude = 24,
+  rms = 0.2,
+  frameStepMs = 33,
+  analysisHints = null,
+  status = makeActiveStatus(),
+  legacyPeakSelectionMode = "families",
+}) {
+  let previousFrame = null;
+  let frame = null;
+
+  for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+    frame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        avgAmplitude,
+        fftMagnitudes,
+        timeData,
+        rms,
+      }),
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: frameIndex * frameStepMs,
+      previousFrame,
+      analysisHints,
+      structuralImplementation: DUAL,
+      legacyPeakSelectionMode,
+    });
+    previousFrame = frame;
+  }
+
+  return frame;
+}
+
+function expectDeltaRatioWithin(postDelta, preDelta, threshold) {
+  if (Math.abs(preDelta) < DELTA_EPSILON) {
+    expect(Math.abs(postDelta)).toBeLessThan(DELTA_EPSILON);
+    return;
+  }
+
+  expect(Math.abs(postDelta) / Math.abs(preDelta)).toBeLessThanOrEqual(
+    threshold,
+  );
 }
 
 function readDetailOnlyKeys(frame) {
@@ -4004,6 +4062,139 @@ describe("full-range music handling", () => {
 });
 
 describe("modal excitation integration", () => {
+  it("legacy file analysis writes structural metrics without relying on modal fallback", () => {
+    const featureState = createAudioFeatureState();
+    const frame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        avgAmplitude: 120,
+        fftMagnitudes: makeFft([
+          [82, 0.92],
+          [110, 0.76],
+          [147, 0.7],
+          [196, 0.58],
+          [330, 0.26],
+          [660, 0.18],
+        ]),
+        rms: 0.56,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 33,
+      structuralImplementation: LEGACY_PEAK,
+    });
+
+    expect(frame.debug.analysisEngine).toBe("layered");
+    expect(frame.debug.driveSource).toBe("spectral-family");
+    expect(frame.debug.lowOrderModalEnergy).toBeGreaterThan(0);
+    expect(frame.debug.modalPersistence).toBeGreaterThanOrEqual(0);
+  });
+
+  it("legacy families narrow dual structural deltas against raw baselines on tonal fixtures", () => {
+    for (const fixture of LEGACY_FAMILY_FIXTURES) {
+      const featureState = createAudioFeatureState();
+      const frame = runSteadyDualFrames({
+        featureState,
+        fftMagnitudes: makeFft(fixture.peaks),
+        timeData: fixture.timeData
+          ? makeTimeData(fixture.timeData)
+          : new Float32Array(FFT_SIZE),
+        frameCount: fixture.frameCount ?? 4,
+        avgAmplitude: fixture.avgAmplitude,
+        rms: fixture.rms,
+        analysisHints: fixture.analysisHints ?? null,
+      });
+      const baseline = LEGACY_FAMILY_BASELINES.fixtures[fixture.name];
+      const comparison = frame.debug.structuralComparison;
+
+      expect(comparison).toBeTruthy();
+      expectDeltaRatioWithin(
+        comparison.lowOrderModalEnergyDelta,
+        baseline.lowOrderModalEnergyDelta,
+        0.5,
+      );
+      expect(Math.abs(comparison.activeModeCountDelta)).toBeLessThanOrEqual(
+        Math.abs(baseline.activeModeCountDelta),
+      );
+
+      if (fixture.name === "sustained-drone") {
+        expectDeltaRatioWithin(
+          comparison.modalPersistenceDelta,
+          baseline.modalPersistenceDelta,
+          0.5,
+        );
+      }
+
+      if (
+        fixture.name === "low-guitar-chord" ||
+        fixture.name === "sustained-drone" ||
+        fixture.name === "transient-tonal-passage"
+      ) {
+        expectDeltaRatioWithin(
+          comparison.modeCoherenceDelta,
+          baseline.modeCoherenceDelta,
+          0.7,
+        );
+      }
+    }
+  });
+
+  it("legacy families do not keep structureSignal elevated through fade-out", () => {
+    const featureState = createAudioFeatureState();
+    let activeFrame = null;
+
+    for (let frameIndex = 0; frameIndex < 6; frameIndex += 1) {
+      activeFrame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          avgAmplitude: 118,
+          fftMagnitudes: makeFft([
+            [110, 0.95],
+            [220, 0.6],
+            [330, 0.32],
+            [3520, 0.12],
+          ]),
+          timeData: makeTimeData({
+            frequency: 110,
+            amplitude: 0.4,
+            harmonics: [
+              [2, 0.12],
+              [3, 0.08],
+            ],
+          }),
+          rms: 0.48,
+        }),
+        featureState,
+        radius: 3,
+        status: makeActiveStatus(),
+        frameTimeMs: frameIndex * 33,
+        structuralImplementation: LEGACY_PEAK,
+      });
+    }
+
+    let fadedFrame = activeFrame;
+    for (let frameIndex = 6; frameIndex < 14; frameIndex += 1) {
+      fadedFrame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          avgAmplitude: 2,
+          fftMagnitudes: new Float32Array(BIN_COUNT),
+          timeData: new Float32Array(FFT_SIZE),
+          rms: 0.004,
+        }),
+        featureState,
+        radius: 3,
+        status: makeActiveStatus(),
+        frameTimeMs: frameIndex * 33,
+        structuralImplementation: LEGACY_PEAK,
+      });
+    }
+
+    expect(activeFrame.structureSignal).toBeGreaterThan(0.5);
+    expect(fadedFrame.structureSignal).toBeLessThan(0.18);
+    expect(fadedFrame.structureSignal).toBeLessThan(
+      activeFrame.structureSignal * 0.35,
+    );
+  });
+
   it("keeps the renderer contract stable while using resonator-driven structure", () => {
     const featureState = createAudioFeatureState();
     const fftMagnitudes = makeFft([
@@ -4208,7 +4399,74 @@ describe("modal excitation integration", () => {
       activeModeCountDelta: expect.any(Number),
       dominantFrequencyDeltaCents: expect.any(Number),
       modeCoherenceDelta: expect.any(Number),
+      lowOrderModalEnergyDelta: expect.any(Number),
+      modalPersistenceDelta: expect.any(Number),
     });
+  });
+
+  it("modal path still collapses structure through fade-out after shared persistence gating", () => {
+    const featureState = createAudioFeatureState();
+    const fftMagnitudes = makeFft([
+      [110, 0.95],
+      [220, 0.52],
+      [6600, 0.38],
+    ]);
+    const timeData = makeTimeData({
+      frequency: 110,
+      amplitude: 0.45,
+      harmonics: [[2, 0.08]],
+    });
+
+    for (let i = 0; i < 20; i += 1) {
+      buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          avgAmplitude: 120,
+          fftMagnitudes,
+          timeData,
+          rms: 0.52,
+        }),
+        featureState,
+        radius: 3,
+        status: makeActiveStatus(),
+        frameTimeMs: i * 16,
+        structuralImplementation: MODAL_EXCITATION,
+      });
+    }
+
+    const activeFrame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        avgAmplitude: 120,
+        fftMagnitudes,
+        timeData,
+        rms: 0.52,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 20 * 16,
+      structuralImplementation: MODAL_EXCITATION,
+    });
+
+    let fadedFrame = null;
+    for (let i = 0; i < 30; i += 1) {
+      fadedFrame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          avgAmplitude: 3,
+          fftMagnitudes: new Float32Array(BIN_COUNT),
+          timeData: new Float32Array(FFT_SIZE),
+          rms: 0.02,
+        }),
+        featureState,
+        radius: 3,
+        status: makeActiveStatus(),
+        frameTimeMs: (21 + i) * 16,
+        structuralImplementation: MODAL_EXCITATION,
+      });
+    }
+
+    expect(fadedFrame.structureSignal).toBeLessThanOrEqual(
+      activeFrame.structureSignal * 0.5,
+    );
   });
 
   it("keeps modal output identical when spherical is only requested and the effective backend stays rectangular", () => {

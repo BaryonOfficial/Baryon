@@ -30,6 +30,10 @@ import {
   buildModalExcitationStructuralState,
   compareStructuralStates,
 } from "./modalExcitation.js";
+import {
+  createLegacyPeakFamilyState,
+  updateLegacyPeakSelection,
+} from "./legacyPeakFamilies.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
 import {
   buildModalSlotsFromFundamental,
@@ -369,6 +373,16 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     "acousticDetailTarget",
     Math.min(capacity, DETAIL_STACK_SLOTS),
   );
+  const legacySignalBackboneTarget = ensureTargetBuildField(
+    analysisMemory,
+    "legacySignalBackboneTarget",
+    Math.min(capacity, BACKBONE_STACK_SLOTS),
+  );
+  const legacySignalDetailTarget = ensureTargetBuildField(
+    analysisMemory,
+    "legacySignalDetailTarget",
+    Math.min(capacity, DETAIL_STACK_SLOTS),
+  );
   if (!analysisMemory.backboneState || !analysisMemory.detailState) {
     const replacement = createAudioFeatureState(capacity).analysis;
     analysisMemory.backboneState = replacement.backboneState;
@@ -394,6 +408,13 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
       bandEnergies:
         analysisMemory.bandState.bandEnergies ?? replacement.bandEnergies,
     };
+  }
+  if (
+    !analysisMemory.legacyPeakFamilyState ||
+    !(analysisMemory.legacyPeakFamilyState.backboneFamilies instanceof Map) ||
+    !(analysisMemory.legacyPeakFamilyState.detailFamilies instanceof Map)
+  ) {
+    analysisMemory.legacyPeakFamilyState = createLegacyPeakFamilyState();
   }
   if (
     !analysisMemory.modalExcitationState ||
@@ -425,6 +446,9 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     nonAcousticPeakDriverScratch,
     acousticBackboneTarget,
     acousticDetailTarget,
+    legacySignalBackboneTarget,
+    legacySignalDetailTarget,
+    legacyPeakFamilyState: analysisMemory.legacyPeakFamilyState,
     modalExcitationState: analysisMemory.modalExcitationState,
     backboneState: analysisMemory.backboneState,
     detailState: analysisMemory.detailState,
@@ -2907,7 +2931,7 @@ function deriveCompositeSignals({
         0.26 *
         energyCoupling +
       harmonicSupport * 0.2 * energyCoupling +
-      modalPersistence * 0.06 +
+      modalPersistence * 0.06 * energyCoupling +
       lowBandStructureSupport * 0.08 +
       clamp01((bandEnergies?.[0] ?? 0) * (hints?.bassSalience ?? 0)) * 0.08 +
       // Removed: bandDistribution (not energy-sensitive — stays elevated during fades)
@@ -3255,6 +3279,9 @@ function resolveLayeredModalStacks({
   nonAcousticPeakDriverScratch,
   acousticBackboneTarget,
   acousticDetailTarget,
+  legacySignalBackboneTarget,
+  legacySignalDetailTarget,
+  legacyPeakFamilyState,
   radius,
   effectiveCavityGeometry = DEFAULT_EFFECTIVE_CAVITY_GEOMETRY,
   capacity,
@@ -3267,6 +3294,7 @@ function resolveLayeredModalStacks({
   spectralCentroid,
   includeChromesthesia,
   analysisHints,
+  legacyPeakSelectionMode = "families",
   analyserRms,
   avgAmplitude,
   preModalFftPeak,
@@ -3279,6 +3307,11 @@ function resolveLayeredModalStacks({
   let spectralCandidates = [];
   let usedDecay = false;
   let peakScanMs = 0;
+  let structuralMetrics = null;
+  let signalBackboneSlotsSource = null;
+  let signalDetailSlotsSource = null;
+  let signalReferenceBackboneSlotsSource = null;
+  let signalReferenceDetailSlotsSource = null;
 
   const backboneCapacity = getLayerSlotLimit("backbone", capacity);
   const detailCapacity = getLayerSlotLimit("detail", capacity);
@@ -3661,8 +3694,23 @@ function resolveLayeredModalStacks({
         status.fftSize,
         INTERNAL_CANDIDATE_POOL_SIZE,
       );
-      const { detailPeaks, backbonePeaks, dominantPeak } =
-        deriveSelectedCandidatePeaks(candidatePool, analysisHints);
+      const {
+        detailPeaks: rawDetailPeaks,
+        backbonePeaks: rawBackbonePeaks,
+        dominantPeak,
+      } = deriveSelectedCandidatePeaks(candidatePool, analysisHints);
+      const {
+        detailPeaks: signalDetailPeaks,
+        backbonePeaks: signalBackbonePeaks,
+        backboneHarmonicSupport,
+        structuralMetrics: legacyStructuralMetrics,
+      } = updateLegacyPeakSelection({
+        state: legacyPeakFamilyState,
+        candidatePool,
+        analysisHints,
+        heavyFrameIndex: currentFrame,
+        selectionMode: legacyPeakSelectionMode,
+      });
       peakScanMs += getAudioPerfNow() - peakScanStartedAt;
       const backboneTarget = writeModalSlotsFromPeakDrivers(
         nonAcousticBackboneTarget,
@@ -3673,11 +3721,11 @@ function resolveLayeredModalStacks({
           radius,
           capacity: backboneCapacity,
           cavityGeometry: effectiveCavityGeometry,
-          peakCount: backbonePeaks.length || BACKBONE_PEAK_COUNT,
+          peakCount: rawBackbonePeaks.length || BACKBONE_PEAK_COUNT,
           slotLimit: backboneCapacity,
           spectralCentroid,
           includeChromesthesia,
-          peaks: backbonePeaks,
+          peaks: rawBackbonePeaks,
           scratchTarget: nonAcousticPeakDriverScratch,
         },
       );
@@ -3690,16 +3738,51 @@ function resolveLayeredModalStacks({
           radius,
           capacity: detailCapacity,
           cavityGeometry: effectiveCavityGeometry,
-          peakCount: detailPeaks.length || DETAIL_PEAK_COUNT,
+          peakCount: rawDetailPeaks.length || DETAIL_PEAK_COUNT,
           slotLimit: detailCapacity,
           spectralCentroid,
           includeChromesthesia,
-          peaks: detailPeaks,
+          peaks: rawDetailPeaks,
         },
       );
+      const signalBackboneTarget = writeModalSlotsFromPeakDrivers(
+        legacySignalBackboneTarget,
+        {
+          fftMagnitudes,
+          sampleRate: status.sampleRate,
+          fftSize: status.fftSize,
+          radius,
+          capacity: backboneCapacity,
+          cavityGeometry: effectiveCavityGeometry,
+          peakCount: signalBackbonePeaks.length || BACKBONE_PEAK_COUNT,
+          slotLimit: backboneCapacity,
+          spectralCentroid,
+          includeChromesthesia,
+          peaks: signalBackbonePeaks,
+          scratchTarget: nonAcousticPeakDriverScratch,
+        },
+      );
+      signalBackboneTarget.harmonicSupport.set(backboneHarmonicSupport);
+      const signalDetailTarget = writeModalSlotsFromSpectralPeaks(
+        legacySignalDetailTarget,
+        {
+          fftMagnitudes,
+          sampleRate: status.sampleRate,
+          fftSize: status.fftSize,
+          radius,
+          capacity: detailCapacity,
+          cavityGeometry: effectiveCavityGeometry,
+          peakCount: signalDetailPeaks.length || DETAIL_PEAK_COUNT,
+          slotLimit: detailCapacity,
+          spectralCentroid,
+          includeChromesthesia,
+          peaks: signalDetailPeaks,
+        },
+      );
+      structuralMetrics = legacyStructuralMetrics;
 
-      spectralCandidates = detailPeaks.length
-        ? detailPeaks
+      spectralCandidates = rawDetailPeaks.length
+        ? rawDetailPeaks
         : dominantPeak
           ? [dominantPeak]
           : [];
@@ -3747,7 +3830,11 @@ function resolveLayeredModalStacks({
           dominantPeakAmplitude,
           "layered",
         );
+        backboneState.harmonicSupport.set(backboneHarmonicSupport);
         backboneTrackingSlots = backboneTarget.slots;
+        signalBackboneSlotsSource = signalBackboneTarget.slots;
+        signalReferenceBackboneSlotsSource =
+          signalBackboneTarget.referenceSlots;
       } else if (shouldReleaseBackbone) {
         releaseLayer(
           backboneState,
@@ -3790,6 +3877,8 @@ function resolveLayeredModalStacks({
           "layered",
         );
         detailTrackingSlots = detailTarget.slots;
+        signalDetailSlotsSource = signalDetailTarget.slots;
+        signalReferenceDetailSlotsSource = signalDetailTarget.referenceSlots;
       } else if (shouldReleaseDetail) {
         releaseLayer(
           detailState,
@@ -3916,6 +4005,11 @@ function resolveLayeredModalStacks({
     spectralCandidates,
     usedDecay,
     peakScanMs,
+    structuralMetrics,
+    signalBackboneSlotsSource,
+    signalDetailSlotsSource,
+    signalReferenceBackboneSlotsSource,
+    signalReferenceDetailSlotsSource,
   };
 }
 
@@ -4229,6 +4323,7 @@ export function prepareAudioFeatureFrameInputs({
   includeChromesthesia = true,
   analysisHints = null,
   structuralImplementation = "legacy-peak",
+  legacyPeakSelectionMode = "families",
 }) {
   const capacity = featureState?.capacity ?? AUDIO_SLOT_CAPACITY;
   const analysisMemory = getAnalysisMemory(featureState, capacity);
@@ -4251,6 +4346,9 @@ export function prepareAudioFeatureFrameInputs({
     nonAcousticPeakDriverScratch,
     acousticBackboneTarget,
     acousticDetailTarget,
+    legacySignalBackboneTarget,
+    legacySignalDetailTarget,
+    legacyPeakFamilyState,
     modalExcitationState,
     backboneState,
     detailState,
@@ -4378,6 +4476,7 @@ export function prepareAudioFeatureFrameInputs({
       status,
       beatSettings,
       analysisHints,
+      legacyPeakSelectionMode,
       analysisSessionKey: resolveFeatureAnalysisSessionKey(status, inputMode),
       analysisInputsSignature: buildFeatureAnalysisInputsSignature({
         inputMode,
@@ -4480,6 +4579,7 @@ export function prepareAudioFeatureFrameInputs({
     status,
     beatSettings,
     analysisHints,
+    legacyPeakSelectionMode,
     capacity,
     analysisMemory,
     backboneSlots,
@@ -4500,6 +4600,9 @@ export function prepareAudioFeatureFrameInputs({
     nonAcousticPeakDriverScratch,
     acousticBackboneTarget,
     acousticDetailTarget,
+    legacySignalBackboneTarget,
+    legacySignalDetailTarget,
+    legacyPeakFamilyState,
     modalExcitationState,
     backboneState,
     detailState,
@@ -5219,6 +5322,9 @@ function updateLegacyAudioFeatureStructuralState(
     nonAcousticPeakDriverScratch,
     acousticBackboneTarget,
     acousticDetailTarget,
+    legacySignalBackboneTarget,
+    legacySignalDetailTarget,
+    legacyPeakFamilyState,
     bandState,
     resolvedAuditSettings,
     sampleRate,
@@ -5227,6 +5333,7 @@ function updateLegacyAudioFeatureStructuralState(
     shouldBuildChromesthesia,
     currentFrame,
     analysisHints,
+    legacyPeakSelectionMode,
     avgAmplitude,
     analyserRms,
     preModalFftPeak,
@@ -5244,6 +5351,11 @@ function updateLegacyAudioFeatureStructuralState(
     spectralCandidates,
     usedDecay,
     peakScanMs,
+    structuralMetrics,
+    signalBackboneSlotsSource,
+    signalDetailSlotsSource,
+    signalReferenceBackboneSlotsSource,
+    signalReferenceDetailSlotsSource,
   } = resolveLayeredModalStacks({
     analysisSnapshot: fastSignalState.effectiveSnapshot,
     status: {
@@ -5261,6 +5373,9 @@ function updateLegacyAudioFeatureStructuralState(
     nonAcousticPeakDriverScratch,
     acousticBackboneTarget,
     acousticDetailTarget,
+    legacySignalBackboneTarget,
+    legacySignalDetailTarget,
+    legacyPeakFamilyState,
     radius: preparedInputs.radius,
     effectiveCavityGeometry: preparedInputs.effectiveCavityGeometry,
     capacity,
@@ -5274,6 +5389,7 @@ function updateLegacyAudioFeatureStructuralState(
     spectralCentroid: spectralCentroidHint,
     includeChromesthesia: shouldBuildChromesthesia,
     analysisHints,
+    legacyPeakSelectionMode,
     analyserRms,
     avgAmplitude,
     preModalFftPeak,
@@ -5344,6 +5460,11 @@ function updateLegacyAudioFeatureStructuralState(
     spectralCandidates,
     usedDecay,
     suppressedByFog,
+    signalBackboneSlotsSource,
+    signalDetailSlotsSource,
+    signalReferenceBackboneSlotsSource,
+    signalReferenceDetailSlotsSource,
+    structuralMetrics,
     structuralPerf: {
       peakScanMs,
       modalResolveMs,
@@ -5416,24 +5537,7 @@ export function updateAudioFeatureStructuralState(
   return {
     ...legacyStructuralState,
     comparisonState: modalStructuralState,
-    structuralMetrics: legacyStructuralState.structuralMetrics ?? {
-      excitedModeCount:
-        modalStructuralState.structuralMetrics?.excitedModeCount ?? 0,
-      distributedExcitation:
-        modalStructuralState.structuralMetrics?.distributedExcitation ?? 0,
-      lowOrderModalEnergy:
-        modalStructuralState.structuralMetrics?.lowOrderModalEnergy ?? 0,
-      highOrderModalEnergy:
-        modalStructuralState.structuralMetrics?.highOrderModalEnergy ?? 0,
-      modalPersistence:
-        modalStructuralState.structuralMetrics?.modalPersistence ?? 0,
-      modalDriveEnergy:
-        modalStructuralState.structuralMetrics?.modalDriveEnergy ?? 0,
-      modeCoherence: modalStructuralState.structuralMetrics?.modeCoherence ?? 0,
-      driveSource:
-        modalStructuralState.structuralMetrics?.driveSource ??
-        "spectral-fallback",
-    },
+    structuralMetrics: legacyStructuralState.structuralMetrics,
     structuralComparison: comparison,
   };
 }
