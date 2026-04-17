@@ -17,6 +17,22 @@ const LOW_BAND_BACKBONE_RESERVED_COUNT = 2;
 const LOW_BAND_BACKBONE_MIN_SALIENCE = 0.14;
 const FAMILY_ACTIVITY_EPSILON = 1e-4;
 const HARMONIC_SPLIT_CONFIRM_FRAMES = 2;
+// Pending harmonic-split candidates are pruned if they go unseen for this
+// many heavy frames; prevents unbounded state growth in long sessions.
+const HARMONIC_SPLIT_PENDING_TTL_FRAMES = 6;
+// A gap this large between successive hits resets the split counter, enforcing
+// "roughly consecutive" independent support rather than accumulation across
+// arbitrary gaps.
+const HARMONIC_SPLIT_PENDING_GAP_RESET_FRAMES = 2;
+// Quantize pending-split candidate frequencies into musically meaningful
+// buckets. 0.1 Hz (the raw implementation) was too fine-grained for FFT
+// jitter to revisit the same bucket frame-to-frame.
+const PENDING_BUCKET_HZ = 8;
+// Caps the low-layer neighborhood merge distance so e.g. 55 Hz and 82 Hz
+// remain separate detail families rather than collapsing into one.
+const DETAIL_NEIGHBORHOOD_MIN_HZ = 8;
+const DETAIL_NEIGHBORHOOD_MAX_HZ = 36;
+const DETAIL_NEIGHBORHOOD_PROPORTIONAL = 0.12;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) return 0;
@@ -396,7 +412,8 @@ function deriveRawSelectedCandidatePeaks(candidatePool, analysisHints) {
 }
 
 function familyBucketKey(layer, frequency) {
-  return `${layer}:${Math.round(frequency * 10) / 10}`;
+  const bucket = Math.round((frequency ?? 0) / PENDING_BUCKET_HZ);
+  return `${layer}:${bucket}`;
 }
 
 function computeCandidateHarmonicSupport(candidate, sortedCandidates) {
@@ -429,11 +446,16 @@ function decayFamily(family, heavyFrameDelta) {
     ...family,
     amplitude,
     ageFrames: family.ageFrames + heavyFrameDelta,
-    disagreementCount: family.disagreementCount + heavyFrameDelta,
+    // disagreementCount advances only via selectFamilyForCandidate when a
+    // closer-matching family wins a candidate from this one — staleness is
+    // tracked separately by ageFrames.
   };
 }
 
 function buildFamilyConfidence(family) {
+  // Distinct from recency: disagreement counts how often other families have
+  // won candidates this one expected to match, capped to the last few heavy
+  // frames. Recency counts plain staleness.
   const disagreementPenalty = clamp01(1 - family.disagreementCount / 4);
   const recency = clamp01(1 - family.ageFrames / 4);
   return clamp01(
@@ -449,6 +471,23 @@ function buildFamilyPersistence(family) {
   );
 }
 
+function getNeighborhoodThresholdHz(layer, frequency) {
+  if (layer === "detail") {
+    // Proportional floor: at 55 Hz we want ≈7 Hz merge radius so 55 and 82
+    // stay distinct; at 3 kHz we cap at 36 Hz so close treble peaks still
+    // coalesce.
+    return Math.max(
+      DETAIL_NEIGHBORHOOD_MIN_HZ,
+      Math.min(
+        DETAIL_NEIGHBORHOOD_MAX_HZ,
+        frequency * DETAIL_NEIGHBORHOOD_PROPORTIONAL,
+      ),
+    );
+  }
+  const threshold = getPeakSelectionDistanceHz(layer, frequency);
+  return Math.min(36, threshold * 0.55);
+}
+
 function matchExistingFamily(families, candidate, layer) {
   const candidateFrequency = candidate.frequency ?? 0;
   let directMatch = null;
@@ -461,7 +500,10 @@ function matchExistingFamily(families, candidate, layer) {
     const familyFrequency = family.centerHz ?? 0;
     const distance = Math.abs(familyFrequency - candidateFrequency);
     const threshold = getPeakSelectionDistanceHz(layer, candidateFrequency);
-    const neighborhoodThreshold = Math.min(36, threshold * 0.55);
+    const neighborhoodThreshold = getNeighborhoodThresholdHz(
+      layer,
+      candidateFrequency,
+    );
     if (distance <= Math.min(18, threshold * 0.18)) {
       directMatch = family;
       break;
@@ -491,7 +533,13 @@ function matchExistingFamily(families, candidate, layer) {
   };
 }
 
-function selectFamilyForCandidate({ state, layer, candidate, families }) {
+function selectFamilyForCandidate({
+  state,
+  layer,
+  candidate,
+  families,
+  heavyFrameIndex,
+}) {
   const matches = matchExistingFamily(families, candidate, layer);
   if (matches.directMatch) {
     return matches.directMatch;
@@ -499,9 +547,18 @@ function selectFamilyForCandidate({ state, layer, candidate, families }) {
 
   if (layer === "backbone" && matches.lowerHarmonicMatch) {
     const key = familyBucketKey(layer, candidate.frequency ?? 0);
-    const pendingFrames =
-      (state.pendingIndependentCandidates.get(key) ?? 0) + 1;
-    state.pendingIndependentCandidates.set(key, pendingFrames);
+    const previous = state.pendingIndependentCandidates.get(key);
+    // Require roughly consecutive support: if the last sighting was more than
+    // GAP_RESET_FRAMES ago, restart the counter.
+    const gapTooLarge =
+      previous &&
+      heavyFrameIndex - previous.lastSeenFrame >
+        HARMONIC_SPLIT_PENDING_GAP_RESET_FRAMES;
+    const pendingFrames = previous && !gapTooLarge ? previous.count + 1 : 1;
+    state.pendingIndependentCandidates.set(key, {
+      count: pendingFrames,
+      lastSeenFrame: heavyFrameIndex,
+    });
     if (pendingFrames >= HARMONIC_SPLIT_CONFIRM_FRAMES) {
       state.pendingIndependentCandidates.delete(key);
       return null;
@@ -510,6 +567,17 @@ function selectFamilyForCandidate({ state, layer, candidate, families }) {
   }
 
   return matches.nearestMatch;
+}
+
+function prunePendingIndependentCandidates(state, heavyFrameIndex) {
+  for (const [key, entry] of state.pendingIndependentCandidates) {
+    if (
+      heavyFrameIndex - entry.lastSeenFrame >
+      HARMONIC_SPLIT_PENDING_TTL_FRAMES
+    ) {
+      state.pendingIndependentCandidates.delete(key);
+    }
+  }
 }
 
 function updateLayerFamilies({ state, layer, candidates, heavyFrameIndex }) {
@@ -534,12 +602,24 @@ function updateLayerFamilies({ state, layer, candidates, heavyFrameIndex }) {
       (left.frequency ?? 0) - (right.frequency ?? 0),
   );
   for (const candidate of sortedCandidates) {
+    const matches = matchExistingFamily(decayedFamilies, candidate, layer);
     const matchedFamily = selectFamilyForCandidate({
       state,
       layer,
       candidate,
       families: decayedFamilies,
+      heavyFrameIndex,
     });
+    // Wire real disagreement: if a backbone harmonic-related family expected
+    // this candidate but a closer direct/neighborhood family won it (or the
+    // split path took it), bump that harmonic family's disagreementCount.
+    if (
+      layer === "backbone" &&
+      matches.lowerHarmonicMatch &&
+      matchedFamily !== matches.lowerHarmonicMatch
+    ) {
+      matches.lowerHarmonicMatch.disagreementCount += 1;
+    }
     if (matchedFamily) {
       const candidateFrequency = candidate.frequency ?? 0;
       const harmonicMerge =
@@ -764,6 +844,10 @@ function buildStructuralMetrics({ state, backbonePeaks, detailPeaks }) {
   }, 0);
   const normalizedLowOrderModalEnergy = clamp01(lowOrderModalEnergy / 2.5);
   const normalizedHighOrderModalEnergy = clamp01(highOrderModalEnergy / 2.5);
+  // Legacy has no time-domain drive signal; we surface a spectral proxy
+  // (mean family amplitude) so diagnostic readouts that consume this field
+  // are comparable across implementations. True drive energy remains a
+  // modal-excitation-only concept.
   const modalDriveEnergy =
     selectedFamilies.length > 0
       ? clamp01(totalAmplitude / selectedFamilies.length)
@@ -873,6 +957,7 @@ export function updateLegacyPeakSelection({
     candidates: detailCandidates,
     heavyFrameIndex,
   });
+  prunePendingIndependentCandidates(nextState, heavyFrameIndex);
   nextState.heavyFrameId = heavyFrameIndex;
 
   const { detailPeaks, backbonePeaks, dominantPeak } = selectFamiliesByLayer({
