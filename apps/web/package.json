@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "license": "LicenseRef-PolyForm-Strict-1.0",
+  "engines": {
+    "node": ">=24.14.1 <25"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
