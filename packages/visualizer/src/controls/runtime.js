@@ -188,7 +188,6 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "testToneHz",
     "testToneAmplitude",
     "logEveryFrames",
-    "structuralImplementation",
   ]),
 });
 

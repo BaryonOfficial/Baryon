@@ -484,9 +484,6 @@ function processLatestFrame(engineState) {
     const preparedInputs = prepareAudioFeatureFrameInputs({
       ...toPreparedInputsFrame(frame),
       featureState,
-      structuralImplementation:
-        frame.structuralImplementation ??
-        engineState.settings.structuralImplementation,
     });
 
     if (preparedInputs.silentFeatureFrame) {

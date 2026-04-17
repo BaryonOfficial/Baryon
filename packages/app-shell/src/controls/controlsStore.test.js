@@ -2,7 +2,6 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  ANALYSIS_MODE_BASE_KEY,
   PRESETS_KEY,
   SETTINGS_KEY,
 } from "../components/hooks/baryonControlsState.js";
@@ -44,8 +43,8 @@ describe("createControlsStore", () => {
     const store = createControlsStore();
 
     expect(store.controlsRef.current.backgroundColor).toBe("#102030");
-    expect(store.controlsRef.current.structuralImplementation).toBe(
-      "legacy-peak",
+    expect(store.controlsRef.current).not.toHaveProperty(
+      "structuralImplementation",
     );
     expect(store.getSnapshot().presets).toStrictEqual([
       {
@@ -69,22 +68,6 @@ describe("createControlsStore", () => {
     expect(store.getSnapshot().controlsState.backgroundColor).toBe("#223344");
     expect(store.getSnapshot()).not.toHaveProperty("isOpen");
     expect(store.getSnapshot()).not.toHaveProperty("isLoaded");
-  });
-
-  it("updates ANALYSIS_MODE_BASE_KEY when structural implementation changes to a non-dual mode", () => {
-    const store = createControlsStore();
-
-    store.updateControl("structuralImplementation", "legacy-peak");
-
-    expect(store.controlsRef.current.structuralImplementation).toBe(
-      "legacy-peak",
-    );
-    expect(store.controlsRef.current[ANALYSIS_MODE_BASE_KEY]).toBe(
-      "legacy-peak",
-    );
-    expect(store.getSnapshot().controlsState[ANALYSIS_MODE_BASE_KEY]).toBe(
-      "legacy-peak",
-    );
   });
 
   it("notifies subscribers on state changes", () => {

@@ -5,7 +5,6 @@ import {
   getControlFolders,
   getControlsForFolder,
 } from "@baryon/visualizer/controls/schema";
-import { AUDIT_DEFAULTS } from "@baryon/visualizer/defaults";
 import {
   deserializeControls,
   serializeControls,
@@ -16,29 +15,11 @@ export const SETTINGS_KEY = "baryon:settings";
 export const PRESETS_KEY = "baryon:presets";
 const CONTROLS_PERSIST_DELAY_MS = 500;
 const MODE_GROUP = "Mode";
-const DIAGNOSTICS_GROUP = "Diagnostics";
 const PRESETS_AREA_GROUP = "PresetsArea";
-export const ANALYSIS_MODE_BASE_KEY = "__analysisModeBase";
-export const DUAL_COMPARE_TOGGLE_KEY = "__dualCompareEnabled";
 const PRESETS_AREA_CONTROL_ORDER = Object.freeze([
   "performanceHudEnabled",
   "renderQualityPreset",
   "customPerformanceTargetFps",
-]);
-const DIAGNOSTICS_CONTROL_ORDER = Object.freeze([
-  DUAL_COMPARE_TOGGLE_KEY,
-  "freezeModeSlots",
-  "injectTestTone",
-  "testToneHz",
-  "testToneAmplitude",
-  "cavityGeometry",
-  "auditEnabled",
-  "logEveryFrames",
-  "lowLoadPlaybackDiagnostics",
-  "bloomResponseBias",
-  "rimBloomBias",
-  "rimCompression",
-  "forceWebGLFallbackTest",
 ]);
 
 function createOperatorControlKeySet(operatorControlKeys = []) {
@@ -72,45 +53,10 @@ function getControlDefinitionForMethod(key, method) {
 
 function createPromotedModeControls(method) {
   const promotedControls = [];
-  const structuralImplementation = getControlDefinitionForMethod(
-    "structuralImplementation",
-    method,
-  );
   const fieldCacheOverride = getControlDefinitionForMethod(
     "fieldCacheOverride",
     method,
   );
-
-  if (structuralImplementation) {
-    promotedControls.push(
-      cloneControlDefinition(structuralImplementation, {
-        key: ANALYSIS_MODE_BASE_KEY,
-        title:
-          "Choose which analysis model drives the visuals. Modal Excitation is the true-to-nature resonant-mode model, and Legacy Peak keeps the older peak-driven behavior.",
-        binding: {
-          ...(structuralImplementation.binding ?? {}),
-          options: {
-            "Legacy Peak": "legacy-peak",
-            "Modal Excitation": "modal-excitation",
-          },
-        },
-        group: MODE_GROUP,
-        folder: MODE_GROUP,
-        getValue(controlsState) {
-          return (
-            controlsState[ANALYSIS_MODE_BASE_KEY] ??
-            AUDIT_DEFAULTS.structuralImplementation
-          );
-        },
-        applyChange(nextValue, controlsState, updateControl) {
-          updateControl(ANALYSIS_MODE_BASE_KEY, nextValue);
-          if (controlsState.structuralImplementation !== "dual") {
-            updateControl("structuralImplementation", nextValue);
-          }
-        },
-      }),
-    );
-  }
 
   if (fieldCacheOverride) {
     promotedControls.push(
@@ -145,69 +91,6 @@ function insertModeControlsAfterBoundary(controls, promotedControls) {
   ];
 }
 
-function orderControlsByKey(controls, orderedKeys) {
-  const keyOrder = new Map(orderedKeys.map((key, index) => [key, index]));
-
-  return controls.slice().sort((left, right) => {
-    const leftOrder = keyOrder.get(left.key) ?? Number.MAX_SAFE_INTEGER;
-    const rightOrder = keyOrder.get(right.key) ?? Number.MAX_SAFE_INTEGER;
-    if (leftOrder !== rightOrder) {
-      return leftOrder - rightOrder;
-    }
-    return 0;
-  });
-}
-
-function createDiagnosticsControls(controls, method) {
-  const filteredControls = controls.filter(
-    (definition) =>
-      definition.key !== "structuralImplementation" &&
-      definition.key !== "fieldCacheOverride",
-  );
-  const structuralImplementation = getControlDefinitionForMethod(
-    "structuralImplementation",
-    method,
-  );
-
-  if (!structuralImplementation) {
-    return filteredControls;
-  }
-
-  return orderControlsByKey(
-    [
-      ...filteredControls,
-      cloneControlDefinition(structuralImplementation, {
-        key: DUAL_COMPARE_TOGGLE_KEY,
-        label: "Dual Compare",
-        title:
-          "Run both analysis modes at the same time so you can compare them in Diagnostics. Turn this off to go back to the selected mode above.",
-        binding: {
-          view: "toggle",
-        },
-        defaultValue: false,
-        group: DIAGNOSTICS_GROUP,
-        folder: DIAGNOSTICS_GROUP,
-        getValue(controlsState) {
-          return controlsState.structuralImplementation === "dual";
-        },
-        applyChange(nextValue, controlsState, updateControl) {
-          if (nextValue) {
-            updateControl("structuralImplementation", "dual");
-            return;
-          }
-
-          updateControl(
-            "structuralImplementation",
-            controlsState[ANALYSIS_MODE_BASE_KEY] ??
-              AUDIT_DEFAULTS.structuralImplementation,
-          );
-        },
-      }),
-    ],
-    DIAGNOSTICS_CONTROL_ORDER,
-  );
-}
-
 function createVisibleFolderGroups({
   devtoolsEnabled,
   method = DEFAULT_VISUALIZATION_METHOD,
@@ -229,8 +112,6 @@ function createVisibleFolderGroups({
           controls,
           createPromotedModeControls(method),
         );
-      } else if (title === DIAGNOSTICS_GROUP && devtoolsEnabled) {
-        controls = createDiagnosticsControls(controls, method);
       }
 
       if (controls.length === 0) {
@@ -303,10 +184,6 @@ export function writeStoredJson(storage, key, value) {
 export function createInitialControlState(storage) {
   const controls = createControlState();
   const savedSettings = readStoredJson(storage, SETTINGS_KEY);
-  controls[ANALYSIS_MODE_BASE_KEY] =
-    controls.structuralImplementation === "legacy-peak"
-      ? "legacy-peak"
-      : AUDIT_DEFAULTS.structuralImplementation;
 
   if (!savedSettings) {
     return controls;
@@ -316,10 +193,6 @@ export function createInitialControlState(storage) {
     controls,
     deserializeControls(savedSettings, CONTROL_DEFINITIONS),
   );
-  controls[ANALYSIS_MODE_BASE_KEY] =
-    controls.structuralImplementation === "legacy-peak"
-      ? "legacy-peak"
-      : AUDIT_DEFAULTS.structuralImplementation;
   return controls;
 }
 
@@ -339,24 +212,8 @@ export function getVisibleControlLayout({
 }
 
 export function persistControls(storage, controls) {
-  const existingSettings = readStoredJson(storage, SETTINGS_KEY);
   const serializedControls = serializeControls(controls, CONTROL_DEFINITIONS);
-  const knownControlKeys = new Set(
-    CONTROL_DEFINITIONS.map((definition) => definition.key),
-  );
-  const persistedExtras =
-    existingSettings && typeof existingSettings === "object"
-      ? Object.fromEntries(
-          Object.entries(existingSettings).filter(
-            ([key]) => !knownControlKeys.has(key),
-          ),
-        )
-      : {};
-
-  writeStoredJson(storage, SETTINGS_KEY, {
-    ...persistedExtras,
-    ...serializedControls,
-  });
+  writeStoredJson(storage, SETTINGS_KEY, serializedControls);
 }
 
 export function savePresetCollection(
