@@ -1,5 +1,14 @@
 declare global {
   interface Window {
+    electronAPI?: {
+      windowControls?: {
+        toggleFullscreen(): Promise<{ fullscreen: boolean }>;
+        getFullscreenState(): { fullscreen: boolean };
+        subscribeFullscreenState(
+          listener: (state: { fullscreen: boolean }) => void,
+        ): () => void;
+      };
+    };
     __baryonControls?: {
       getState(): Record<string, unknown>;
       setControl(key: string, value: unknown): Record<string, unknown>;

@@ -34,6 +34,10 @@ import {
   writeStoredJson,
 } from "../components/hooks/baryonControlsState.js";
 import {
+  publishAudioTransportClock,
+  resetAudioTransportClock,
+} from "./audioTransportClock.js";
+import {
   SOUNDCLOUD_ENABLED,
   canUseNativeStreamPlayback,
   isHlsStream,
@@ -45,11 +49,17 @@ const DEFAULT_FILE_NAME = "Upload Audio";
 const DEFAULT_SOUNDCLOUD_LABEL = "SoundCloud";
 const SOUNDCLOUD_READY_MESSAGE =
   "Paste a public SoundCloud track or playlist to drive the live cymatic view.";
-const DEFAULT_TRANSPORT_STATE = {
-  currentTimeSeconds: 0,
+/**
+ * @typedef {Readonly<{
+ *   durationSeconds: number,
+ *   canSeek: boolean,
+ * }>} TransportSeekState
+ */
+/** @type {TransportSeekState} */
+const DEFAULT_TRANSPORT_SEEK_STATE = Object.freeze({
   durationSeconds: 0,
   canSeek: false,
-};
+});
 const RECENT_UPLOAD_LIMIT = 4;
 const LIVE_INPUT_ANALYSIS_OVERRIDES_KEY = "liveInputAnalysisOverrides";
 const LIVE_INPUT_PERMISSION_STATES = Object.freeze({
@@ -101,6 +111,14 @@ function clampTransportTime(value, durationSeconds) {
     return Math.min(nextValue, durationSeconds);
   }
   return nextValue;
+}
+
+/** @returns {TransportSeekState} */
+function createTransportSeekState(transportState) {
+  return {
+    durationSeconds: Number(transportState?.durationSeconds) || 0,
+    canSeek: transportState?.canSeek === true,
+  };
 }
 
 function loadLiveInputAnalysisOverrides(storage) {
@@ -386,7 +404,9 @@ export function AudioProvider({ children, platform = "web" }) {
   const [soundCloudQueue, setSoundCloudQueue] = useState([]);
   const [soundCloudCurrentIndex, setSoundCloudCurrentIndex] = useState(-1);
   const [isSoundCloudLoading, setIsSoundCloudLoading] = useState(false);
-  const [transportState, setTransportState] = useState(DEFAULT_TRANSPORT_STATE);
+  const [transportSeekState, setTransportSeekState] = useState(
+    DEFAULT_TRANSPORT_SEEK_STATE,
+  );
   const [scrubPreviewSeconds, setScrubPreviewSeconds] = useState(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
 
@@ -512,19 +532,17 @@ export function AudioProvider({ children, platform = "web" }) {
 
     return createLiveReturnLocalFile(
       currentLoadedLocalFile.file,
-      transportState.currentTimeSeconds,
+      getDefaultAudioSession().getTransportState().currentTimeSeconds,
     );
-  }, [
-    activeSource,
-    currentLoadedLocalFile,
-    isAudioLoaded,
-    isLiveInputActive,
-    transportState.currentTimeSeconds,
-  ]);
+  }, [activeSource, currentLoadedLocalFile, isAudioLoaded, isLiveInputActive]);
 
-  const syncTransportState = useCallback(() => {
+  const syncTransportState = useCallback((options = {}) => {
+    const { includeSeekState = true } = options;
     const nextTransportState = getDefaultAudioSession().getTransportState();
-    setTransportState(nextTransportState);
+    publishAudioTransportClock(nextTransportState);
+    if (includeSeekState) {
+      setTransportSeekState(createTransportSeekState(nextTransportState));
+    }
     return nextTransportState;
   }, []);
 
@@ -599,7 +617,8 @@ export function AudioProvider({ children, platform = "web" }) {
         liveInputErrorCode: liveInputErrorCodeRef.current,
       }),
     );
-    setTransportState(nextTransportState);
+    publishAudioTransportClock(nextTransportState);
+    setTransportSeekState(createTransportSeekState(nextTransportState));
     if ((status.volume ?? 0) > 0.001) {
       lastNonZeroVolumeRef.current = status.volume;
     }
@@ -906,7 +925,8 @@ export function AudioProvider({ children, platform = "web" }) {
     }
 
     clearScrubState();
-    setTransportState(DEFAULT_TRANSPORT_STATE);
+    resetAudioTransportClock();
+    setTransportSeekState(DEFAULT_TRANSPORT_SEEK_STATE);
   }, [clearScrubState, isAudioLoaded, isLiveInputActive, syncTransportState]);
 
   const ensureSoundCloudAudioElement = useCallback(() => {
@@ -941,7 +961,8 @@ export function AudioProvider({ children, platform = "web" }) {
       setSoundCloudTrackTitle(DEFAULT_SOUNDCLOUD_LABEL);
       setSoundCloudCurrentIndex(-1);
       clearScrubState();
-      setTransportState(DEFAULT_TRANSPORT_STATE);
+      resetAudioTransportClock();
+      setTransportSeekState(DEFAULT_TRANSPORT_SEEK_STATE);
 
       if (clearQueue) {
         soundCloudQueueRef.current = [];
@@ -1045,7 +1066,7 @@ export function AudioProvider({ children, platform = "web" }) {
   );
 
   useEffect(() => {
-    if (!isAudioLoaded || isScrubbing || !transportState.canSeek) {
+    if (!isAudioLoaded || !transportSeekState.canSeek || isScrubbing) {
       if (transportFrameRef.current) {
         window.cancelAnimationFrame(transportFrameRef.current);
         transportFrameRef.current = 0;
@@ -1054,7 +1075,7 @@ export function AudioProvider({ children, platform = "web" }) {
     }
 
     const tick = () => {
-      syncTransportState();
+      syncTransportState({ includeSeekState: false });
       transportFrameRef.current = window.requestAnimationFrame(tick);
     };
 
@@ -1065,7 +1086,12 @@ export function AudioProvider({ children, platform = "web" }) {
         transportFrameRef.current = 0;
       }
     };
-  }, [isAudioLoaded, isScrubbing, syncTransportState, transportState.canSeek]);
+  }, [
+    isAudioLoaded,
+    isScrubbing,
+    syncTransportState,
+    transportSeekState.canSeek,
+  ]);
 
   useEffect(() => {
     if (typeof Audio === "undefined") {
@@ -1330,6 +1356,10 @@ export function AudioProvider({ children, platform = "web" }) {
   );
 
   const handlePlayPause = useCallback(async () => {
+    if (selectedSource === "system") {
+      return;
+    }
+
     if (activeSource === "soundcloud") {
       if (!soundCloudQueueRef.current.length) {
         return;
@@ -1358,11 +1388,16 @@ export function AudioProvider({ children, platform = "web" }) {
   }, [
     activeSource,
     handleLocalPlayPause,
+    selectedSource,
     syncSessionStatus,
     syncTransportState,
   ]);
 
   const handleStop = useCallback(() => {
+    if (selectedSource === "system") {
+      return;
+    }
+
     clearScrubState();
     if (activeSource === "soundcloud") {
       getDefaultAudioSession().stopAudio();
@@ -1389,6 +1424,7 @@ export function AudioProvider({ children, platform = "web" }) {
     activeSource,
     clearScrubState,
     handleLocalStop,
+    selectedSource,
     syncSessionStatus,
     syncTransportState,
   ]);
@@ -1440,6 +1476,18 @@ export function AudioProvider({ children, platform = "web" }) {
   const handleSourceChange = useCallback(
     async (next) => {
       if (next === selectedSource) return;
+
+      if (next === "system") {
+        clearScrubState();
+        if (activeSource === "soundcloud") {
+          getDefaultAudioSession().stopAudio();
+          syncSessionStatus();
+        } else if (isAudioLoaded) {
+          handleLocalStop();
+          syncTransportState();
+        }
+      }
+
       if (isLiveInputActive && next === "file") {
         stopLiveInputSession();
         await restoreAfterLiveStop();
@@ -1457,13 +1505,19 @@ export function AudioProvider({ children, platform = "web" }) {
       }
     },
     [
+      activeSource,
       applyLiveInputUiState,
+      clearScrubState,
+      handleLocalStop,
+      isAudioLoaded,
       isLiveInputActive,
       isWebPlatform,
       liveInputPermissionState,
       requestLiveInputPermission,
       restoreAfterLiveStop,
       selectedSource,
+      syncSessionStatus,
+      syncTransportState,
       stopLiveInputSession,
     ],
   );
@@ -1637,7 +1691,7 @@ export function AudioProvider({ children, platform = "web" }) {
           setScrubPreviewSeconds(
             clampTransportTime(
               nextPreviewSeconds,
-              transportState.durationSeconds,
+              transportSeekState.durationSeconds,
             ),
           );
         }
@@ -1652,7 +1706,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
       isScrubbingRef.current = true;
       setIsScrubbing(true);
-      setTransportState(nextTransportState);
+      setTransportSeekState(createTransportSeekState(nextTransportState));
       setScrubPreviewSeconds(
         clampTransportTime(
           nextPreviewSeconds ?? nextTransportState.currentTimeSeconds,
@@ -1669,17 +1723,17 @@ export function AudioProvider({ children, platform = "web" }) {
         syncTransportState();
       }
     },
-    [syncSessionStatus, syncTransportState, transportState.durationSeconds],
+    [syncSessionStatus, syncTransportState, transportSeekState.durationSeconds],
   );
 
   const previewScrub = useCallback(
     (nextPreviewSeconds) => {
-      const durationSeconds = transportState.durationSeconds;
+      const durationSeconds = transportSeekState.durationSeconds;
       setScrubPreviewSeconds(
         clampTransportTime(nextPreviewSeconds, durationSeconds),
       );
     },
-    [transportState.durationSeconds],
+    [transportSeekState.durationSeconds],
   );
 
   const commitScrub = useCallback(
@@ -1688,7 +1742,7 @@ export function AudioProvider({ children, platform = "web" }) {
       const currentTransportState = audioSession.getTransportState();
       if (!currentTransportState.canSeek) {
         clearScrubState();
-        setTransportState(currentTransportState);
+        setTransportSeekState(createTransportSeekState(currentTransportState));
         return;
       }
 
@@ -1775,7 +1829,8 @@ export function AudioProvider({ children, platform = "web" }) {
     setSoundCloudTrackTitle(DEFAULT_SOUNDCLOUD_LABEL);
     setSoundCloudError("");
     setSoundCloudInfo(SOUNDCLOUD_READY_MESSAGE);
-    setTransportState(DEFAULT_TRANSPORT_STATE);
+    resetAudioTransportClock();
+    setTransportSeekState(DEFAULT_TRANSPORT_SEEK_STATE);
 
     return audioSession.dispose();
   }, [clearScrubState, isWebPlatform, resetSoundCloudTransport, storage]);
@@ -1809,86 +1864,164 @@ export function AudioProvider({ children, platform = "web" }) {
     ],
   );
 
-  const value = {
-    soundCloudEnabled: SOUNDCLOUD_ENABLED,
-    platform: audioPlatform,
-    activeSource,
-    liveInputDeviceKind,
-    liveInputKind,
-    liveInputPermissionState,
-    selectedSource,
-    selectedSystemDevice,
-    selectedLiveDeviceId,
-    selectedLiveInputDeviceKind,
-    selectedLiveInputKind: selectedLiveInputDeviceKind,
-    liveInputAnalysisClass,
-    resolvedLiveInputAnalysisClass,
-    liveInputUiState,
-    liveInputErrorCode,
-    selectedLiveInputAnalysisOverride,
-    selectedResolvedLiveInputAnalysisClass,
-    fileName,
-    displayName,
-    currentLoadedLocalFile,
-    liveReturnLocalFile,
-    queuedNextLocalFile,
-    hasQueuedNextLocalFile,
-    recentUploads,
-    isPlaying,
-    isLiveInputActive,
-    isAudioLoaded,
-    volume,
-    isMuted,
-    isEngineReady,
-    audioDevices,
-    selectedDevice,
-    liveInputRuntimeStatus,
-    showDeviceMenu,
-    showSoundCloudPanel,
-    soundCloudInput,
-    soundCloudError,
-    soundCloudInfo,
-    soundCloudQueue,
-    soundCloudCollectionTitle,
-    soundCloudCurrentTrack,
-    soundCloudCurrentIndex,
-    isSoundCloudLoading,
-    transportState,
-    scrubPreviewSeconds,
-    isScrubbing,
-    setIsPlaying,
-    setIsAudioLoaded,
-    setIsEngineReady,
-    setVolume,
-    setIsMuted,
-    setShowDeviceMenu,
-    setSelectedDevice,
-    setLiveInputRuntimeStatus,
-    setShowSoundCloudPanel,
-    setSoundCloudInput,
-    setSelectedSource,
-    setSelectedSystemDevice: handleSelectedSystemDeviceChange,
-    setSelectedLiveInputAnalysisClass,
-    setLiveInputAnalysisClass: handleLiveInputAnalysisClassChange,
-    saveDeviceKindOverride: handleSaveDeviceKindOverride,
-    clearDeviceKindOverride: handleClearDeviceKindOverride,
-    requestLiveInputPermission,
-    resetAudioSession,
-    handleFileChange,
-    handleRecentUploadSelect,
-    handlePlayPause,
-    handleStop,
-    handleLiveInputToggle,
-    handleSystemToggle,
-    handleSourceChange,
-    handleVolumeChange,
-    handleMuteToggle,
-    loadSoundCloudTrack,
-    beginScrub,
-    previewScrub,
-    commitScrub,
-    cancelScrub,
-  };
+  const value = useMemo(
+    () => ({
+      soundCloudEnabled: SOUNDCLOUD_ENABLED,
+      platform: audioPlatform,
+      activeSource,
+      liveInputDeviceKind,
+      liveInputKind,
+      liveInputPermissionState,
+      selectedSource,
+      selectedSystemDevice,
+      selectedLiveDeviceId,
+      selectedLiveInputDeviceKind,
+      selectedLiveInputKind: selectedLiveInputDeviceKind,
+      liveInputAnalysisClass,
+      resolvedLiveInputAnalysisClass,
+      liveInputUiState,
+      liveInputErrorCode,
+      selectedLiveInputAnalysisOverride,
+      selectedResolvedLiveInputAnalysisClass,
+      fileName,
+      displayName,
+      currentLoadedLocalFile,
+      liveReturnLocalFile,
+      queuedNextLocalFile,
+      hasQueuedNextLocalFile,
+      recentUploads,
+      isPlaying,
+      isLiveInputActive,
+      isAudioLoaded,
+      volume,
+      isMuted,
+      isEngineReady,
+      audioDevices,
+      selectedDevice,
+      liveInputRuntimeStatus,
+      showDeviceMenu,
+      showSoundCloudPanel,
+      soundCloudInput,
+      soundCloudError,
+      soundCloudInfo,
+      soundCloudQueue,
+      soundCloudCollectionTitle,
+      soundCloudCurrentTrack,
+      soundCloudCurrentIndex,
+      isSoundCloudLoading,
+      scrubPreviewSeconds,
+      isScrubbing,
+      setIsPlaying,
+      setIsAudioLoaded,
+      setIsEngineReady,
+      setVolume,
+      setIsMuted,
+      setShowDeviceMenu,
+      setSelectedDevice,
+      setLiveInputRuntimeStatus,
+      setShowSoundCloudPanel,
+      setSoundCloudInput,
+      setSelectedSource,
+      setSelectedSystemDevice: handleSelectedSystemDeviceChange,
+      setSelectedLiveInputAnalysisClass,
+      setLiveInputAnalysisClass: handleLiveInputAnalysisClassChange,
+      saveDeviceKindOverride: handleSaveDeviceKindOverride,
+      clearDeviceKindOverride: handleClearDeviceKindOverride,
+      requestLiveInputPermission,
+      resetAudioSession,
+      handleFileChange,
+      handleRecentUploadSelect,
+      handlePlayPause,
+      handleStop,
+      handleLiveInputToggle,
+      handleSystemToggle,
+      handleSourceChange,
+      handleVolumeChange,
+      handleMuteToggle,
+      loadSoundCloudTrack,
+      beginScrub,
+      previewScrub,
+      commitScrub,
+      cancelScrub,
+    }),
+    [
+      activeSource,
+      audioDevices,
+      audioPlatform,
+      beginScrub,
+      cancelScrub,
+      commitScrub,
+      currentLoadedLocalFile,
+      displayName,
+      fileName,
+      handleClearDeviceKindOverride,
+      handleFileChange,
+      handleLiveInputAnalysisClassChange,
+      handleLiveInputToggle,
+      handleMuteToggle,
+      handlePlayPause,
+      handleRecentUploadSelect,
+      handleSaveDeviceKindOverride,
+      handleSelectedSystemDeviceChange,
+      handleSourceChange,
+      handleStop,
+      handleSystemToggle,
+      handleVolumeChange,
+      hasQueuedNextLocalFile,
+      isAudioLoaded,
+      isEngineReady,
+      isLiveInputActive,
+      isMuted,
+      isPlaying,
+      isScrubbing,
+      isSoundCloudLoading,
+      liveInputAnalysisClass,
+      liveInputDeviceKind,
+      liveInputErrorCode,
+      liveInputKind,
+      liveInputPermissionState,
+      liveInputRuntimeStatus,
+      liveInputUiState,
+      liveReturnLocalFile,
+      loadSoundCloudTrack,
+      previewScrub,
+      queuedNextLocalFile,
+      recentUploads,
+      requestLiveInputPermission,
+      resetAudioSession,
+      resolvedLiveInputAnalysisClass,
+      scrubPreviewSeconds,
+      selectedDevice,
+      selectedLiveDeviceId,
+      selectedLiveInputAnalysisOverride,
+      selectedLiveInputDeviceKind,
+      selectedResolvedLiveInputAnalysisClass,
+      selectedSource,
+      selectedSystemDevice,
+      setIsAudioLoaded,
+      setIsEngineReady,
+      setIsMuted,
+      setIsPlaying,
+      setLiveInputRuntimeStatus,
+      setSelectedDevice,
+      setSelectedLiveInputAnalysisClass,
+      setSelectedSource,
+      setShowDeviceMenu,
+      setShowSoundCloudPanel,
+      setSoundCloudInput,
+      setVolume,
+      showDeviceMenu,
+      showSoundCloudPanel,
+      soundCloudCollectionTitle,
+      soundCloudCurrentIndex,
+      soundCloudCurrentTrack,
+      soundCloudError,
+      soundCloudInfo,
+      soundCloudInput,
+      soundCloudQueue,
+      volume,
+    ],
+  );
 
   return (
     <AudioSceneContext.Provider value={sceneValue}>

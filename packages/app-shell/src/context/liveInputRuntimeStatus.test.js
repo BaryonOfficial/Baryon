@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import {
   LIVE_INPUT_ERROR_CODES,
   LIVE_INPUT_PHASES,
@@ -45,12 +44,12 @@ test("maps acoustic mic runtime phases from calibration to listening to weak sig
     }),
     liveInputUiState: LIVE_INPUT_UI_STATES.active,
   });
-  assert.equal(calibrating.phase, LIVE_INPUT_PHASES.calibrating);
-  assert.equal(calibrating.liveInputDeviceKind, "live");
-  assert.equal(calibrating.liveInputKind, "live");
-  assert.equal(calibrating.calibrationActive, true);
-  assert.equal(calibrating.gateOpen, false);
-  assert.equal(calibrating.signalState, LIVE_INPUT_SIGNAL_STATES.ok);
+  expect(calibrating.phase).toBe(LIVE_INPUT_PHASES.calibrating);
+  expect(calibrating.liveInputDeviceKind).toBe("live");
+  expect(calibrating.liveInputKind).toBe("live");
+  expect(calibrating.calibrationActive).toBe(true);
+  expect(calibrating.gateOpen).toBe(false);
+  expect(calibrating.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.ok);
 
   const listening = buildLiveInputRuntimeStatus({
     status: createStatus({ isLiveInputActive: true }),
@@ -60,9 +59,9 @@ test("maps acoustic mic runtime phases from calibration to listening to weak sig
     }),
     liveInputUiState: LIVE_INPUT_UI_STATES.active,
   });
-  assert.equal(listening.phase, LIVE_INPUT_PHASES.listening);
-  assert.equal(listening.gateOpen, true);
-  assert.equal(getLiveInputStatusLabel(listening), "Live Input: Acoustic Mic");
+  expect(listening.phase).toBe(LIVE_INPUT_PHASES.listening);
+  expect(listening.gateOpen).toBe(true);
+  expect(getLiveInputStatusLabel(listening)).toBe("Live Input: Acoustic Mic");
 
   const weak = buildLiveInputRuntimeStatus({
     status: createStatus({ isLiveInputActive: true }),
@@ -73,9 +72,9 @@ test("maps acoustic mic runtime phases from calibration to listening to weak sig
     }),
     liveInputUiState: LIVE_INPUT_UI_STATES.active,
   });
-  assert.equal(weak.phase, LIVE_INPUT_PHASES.weakSignal);
-  assert.equal(weak.signalState, LIVE_INPUT_SIGNAL_STATES.weak);
-  assert.equal(getLiveInputStatusLabel(weak), "Input too weak");
+  expect(weak.phase).toBe(LIVE_INPUT_PHASES.weakSignal);
+  expect(weak.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.weak);
+  expect(getLiveInputStatusLabel(weak)).toBe("Input too weak");
 
   const silent = buildLiveInputRuntimeStatus({
     status: createStatus({ isLiveInputActive: true }),
@@ -86,8 +85,8 @@ test("maps acoustic mic runtime phases from calibration to listening to weak sig
     }),
     liveInputUiState: LIVE_INPUT_UI_STATES.active,
   });
-  assert.equal(silent.phase, LIVE_INPUT_PHASES.weakSignal);
-  assert.equal(silent.signalState, LIVE_INPUT_SIGNAL_STATES.silent);
+  expect(silent.phase).toBe(LIVE_INPUT_PHASES.weakSignal);
+  expect(silent.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.silent);
 });
 
 test("treats line feed input as listening without mic calibration states", () => {
@@ -105,12 +104,12 @@ test("treats line feed input as listening without mic calibration states", () =>
     liveInputUiState: LIVE_INPUT_UI_STATES.active,
   });
 
-  assert.equal(runtimeStatus.phase, LIVE_INPUT_PHASES.listening);
-  assert.equal(runtimeStatus.liveInputDeviceKind, "system");
-  assert.equal(runtimeStatus.liveInputKind, "system");
-  assert.equal(runtimeStatus.calibrationActive, false);
-  assert.equal(runtimeStatus.gateOpen, true);
-  assert.equal(getLiveInputStatusLabel(runtimeStatus), "Live Input: Line Feed");
+  expect(runtimeStatus.phase).toBe(LIVE_INPUT_PHASES.listening);
+  expect(runtimeStatus.liveInputDeviceKind).toBe("system");
+  expect(runtimeStatus.liveInputKind).toBe("system");
+  expect(runtimeStatus.calibrationActive).toBe(false);
+  expect(runtimeStatus.gateOpen).toBe(true);
+  expect(getLiveInputStatusLabel(runtimeStatus)).toBe("Live Input: Line Feed");
 });
 
 test("maps invalid calibration to clipped error status", () => {
@@ -124,57 +123,49 @@ test("maps invalid calibration to clipped error status", () => {
     liveInputUiState: LIVE_INPUT_UI_STATES.active,
   });
 
-  assert.equal(runtimeStatus.phase, LIVE_INPUT_PHASES.error);
-  assert.equal(runtimeStatus.calibrationInvalid, true);
-  assert.equal(
-    runtimeStatus.errorCode,
+  expect(runtimeStatus.phase).toBe(LIVE_INPUT_PHASES.error);
+  expect(runtimeStatus.calibrationInvalid).toBe(true);
+  expect(runtimeStatus.errorCode).toBe(
     LIVE_INPUT_ERROR_CODES.calibrationInvalid,
   );
-  assert.equal(runtimeStatus.signalState, LIVE_INPUT_SIGNAL_STATES.clipped);
-  assert.equal(
-    getLiveInputStatusLabel(runtimeStatus),
+  expect(runtimeStatus.signalState).toBe(LIVE_INPUT_SIGNAL_STATES.clipped);
+  expect(getLiveInputStatusLabel(runtimeStatus)).toBe(
     "Mic signal looks clipped",
   );
 });
 
 test("maps provider start errors and transition locking", () => {
-  assert.equal(
+  expect(
     mapLiveInputStartError({
       name: "NotAllowedError",
     }),
-    LIVE_INPUT_ERROR_CODES.permissionDenied,
-  );
-  assert.equal(
+  ).toBe(LIVE_INPUT_ERROR_CODES.permissionDenied);
+  expect(
     mapLiveInputStartError({
       name: "NotFoundError",
     }),
-    LIVE_INPUT_ERROR_CODES.deviceMissing,
-  );
-  assert.equal(
+  ).toBe(LIVE_INPUT_ERROR_CODES.deviceMissing);
+  expect(
     mapLiveInputStartError({
       message: "unexpected failure",
     }),
-    LIVE_INPUT_ERROR_CODES.startFailed,
-  );
+  ).toBe(LIVE_INPUT_ERROR_CODES.startFailed);
 
-  assert.equal(
+  expect(
     isLiveInputTransitionLocked({
       phase: LIVE_INPUT_PHASES.starting,
     }),
-    true,
-  );
-  assert.equal(
+  ).toBe(true);
+  expect(
     isLiveInputTransitionLocked({
       phase: LIVE_INPUT_PHASES.stopping,
     }),
-    true,
-  );
-  assert.equal(
+  ).toBe(true);
+  expect(
     isLiveInputTransitionLocked({
       phase: LIVE_INPUT_PHASES.listening,
     }),
-    false,
-  );
+  ).toBe(false);
 });
 
 test("hides classification labels while live input is idle", () => {
@@ -184,7 +175,7 @@ test("hides classification labels while live input is idle", () => {
       resolvedLiveInputAnalysisClass: "acoustic-mic",
     }),
   });
-  assert.equal(getLiveInputStatusLabel(idleAutoMic), "");
+  expect(getLiveInputStatusLabel(idleAutoMic)).toBe("");
 
   const idleAutoLine = buildLiveInputRuntimeStatus({
     status: createStatus({
@@ -192,5 +183,5 @@ test("hides classification labels while live input is idle", () => {
       resolvedLiveInputAnalysisClass: "line-feed",
     }),
   });
-  assert.equal(getLiveInputStatusLabel(idleAutoLine), "");
+  expect(getLiveInputStatusLabel(idleAutoLine)).toBe("");
 });

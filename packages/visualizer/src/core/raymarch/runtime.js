@@ -40,7 +40,7 @@ import {
 
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
 const RESPONSE_ATTACK = 7;
-const RESPONSE_RELEASE = 2.6;
+const RESPONSE_RELEASE = 3.6;
 const RESPONSE_IDLE_RELEASE = 5.5;
 const RHYTHMIC_RELEASE_RATE_GAIN = 2.5;
 const DECAY_RELEASE_ENERGY_END = 0.22;
@@ -49,13 +49,13 @@ const DECAY_RELEASE_STRUCTURE_END = 0.42;
 const DECAY_RELEASE_TARGET_REDUCTION = 0.55;
 const DECAY_RELEASE_RATE_GAIN = 1.9;
 const ACCENT_ATTACK = 15;
-const ACCENT_RELEASE = 8.5;
+const ACCENT_RELEASE = 11;
 const DENSITY_RESPONSE_AMOUNT = 0.08;
 const THRESHOLD_RESPONSE_REDUCTION = 0.42;
 const CONTOUR_RESPONSE_GAIN = 1.85;
-const BLOOM_STRENGTH_RESPONSE_GAIN = 0.24;
-const BLOOM_RADIUS_RESPONSE_GAIN = 0.22;
-const BLOOM_THRESHOLD_RESPONSE_GAIN = 0.06;
+const BLOOM_STRENGTH_RESPONSE_GAIN = 0.18;
+const BLOOM_RADIUS_RESPONSE_GAIN = 0.16;
+const BLOOM_THRESHOLD_RESPONSE_GAIN = 0.08;
 const EARLY_EXIT_TRANSMITTANCE_EPSILON = 5e-3;
 
 function clamp(value, min, max) {
@@ -183,7 +183,33 @@ function publishAuditSnapshot(snapshot) {
     return;
   }
 
+  if (snapshot == null) {
+    delete (/** @type {any} */ (window).__baryonAuditSnapshot);
+    return;
+  }
+
   /** @type {any} */ (window).__baryonAuditSnapshot = snapshot;
+}
+
+function publishRaymarchRuntimeAuditSnapshot(
+  runtimeState,
+  featureFrame,
+  fieldState,
+) {
+  if (runtimeState.auditEnabled) {
+    const raymarchDebug = buildRaymarchDebugSnapshot(
+      runtimeState,
+      featureFrame,
+      fieldState,
+    );
+    runtimeState.debugSnapshot = featureFrame?.debug
+      ? { ...featureFrame.debug, raymarchDebug, ...raymarchDebug }
+      : raymarchDebug;
+    publishAuditSnapshot(runtimeState.debugSnapshot);
+  } else {
+    runtimeState.debugSnapshot = null;
+    publishAuditSnapshot(null);
+  }
 }
 
 function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
@@ -521,6 +547,9 @@ function updateLaserResponse(runtimeState, featureFrame) {
   const transientEnergy =
     clamp01(featureFrame?.transientEnergy ?? 0) * reactiveGate;
   const spectralFlux = clamp01(featureFrame?.spectralFlux ?? 0) * reactiveGate;
+  const rawChangeSignal =
+    clamp01(featureFrame?.changeSignal ?? 0) * reactiveGate;
+  const rawPulseSignal = clamp01(featureFrame?.pulseSignal ?? 0) * reactiveGate;
   const responseEnvelope = clamp01(runtimeState.responseEnvelope ?? 0);
   const accentEnvelope = clamp01(runtimeState.accentEnvelope ?? 0);
   const bloomResponseSignal = clamp01(runtimeState.bloomResponseSignal ?? 0);
@@ -537,9 +566,17 @@ function updateLaserResponse(runtimeState, featureFrame) {
       transientEnergy * 0.34 +
       spectralFlux * 0.22,
   );
-  const bloomPulse = clamp01(
-    accentEnvelope * 0.68 + bloomResponseSignal * 0.42 + transientEnergy * 0.28,
+  const bloomStrengthPulse = clamp01(
+    accentEnvelope * 0.84 + transientEnergy * 0.4,
   );
+  const bloomThresholdPulse = clamp01(
+    accentEnvelope * 0.2 +
+      rawChangeSignal * 0.34 +
+      rawPulseSignal * 0.24 +
+      transientEnergy * 0.18 +
+      bloomResponseSignal * 0.04,
+  );
+  const bloomStrengthTransientGate = 0.94 + transientEnergy * 0.06;
 
   uniforms.uThreshold.value = Math.max(
     0.001,
@@ -557,15 +594,16 @@ function updateLaserResponse(runtimeState, featureFrame) {
   const bloomAllowed = performanceGovernor?.bloomAllowed ?? true;
   bt.effectiveStrength =
     baseBloomStrength *
-    (1 + bloomPulse * BLOOM_STRENGTH_RESPONSE_GAIN) *
-    bloomStrengthScale;
+    (1 + bloomStrengthPulse * BLOOM_STRENGTH_RESPONSE_GAIN) *
+    bloomStrengthScale *
+    bloomStrengthTransientGate;
   bt.effectiveRadius = Math.max(
     0,
-    baseBloomRadius * (1 - bloomPulse * BLOOM_RADIUS_RESPONSE_GAIN),
+    baseBloomRadius * (1 - bloomStrengthPulse * BLOOM_RADIUS_RESPONSE_GAIN),
   );
   bt.effectiveThreshold = clamp(
     baseBloomThreshold +
-      bloomPulse * BLOOM_THRESHOLD_RESPONSE_GAIN +
+      bloomThresholdPulse * BLOOM_THRESHOLD_RESPONSE_GAIN +
       bloomThresholdOffset,
     0,
     1,
@@ -813,6 +851,44 @@ export function tickRaymarchRuntime(
       runtimeState.fieldStateValues.idle,
   );
 
+  if (!fieldDriven) {
+    runtimeState.performanceGovernor = null;
+    runtimeState.chromaBuffersUploaded = false;
+    setIfChanged(uniforms.uBackboneModeCount, 0);
+    setIfChanged(uniforms.uDetailModeCount, 0);
+    setIfChanged(uniforms.uActiveModeCount, 0);
+    setIfChanged(uniforms.uAverageAmplitude, 0);
+    setIfChanged(uniforms.uTransientEnergy, 0);
+    setIfChanged(uniforms.uSpectralCentroid, 0);
+    setIfChanged(uniforms.uSpectralFlux, 0);
+    setIfChanged(uniforms.uStructureSignal, 0);
+    setIfChanged(uniforms.uEnergySignal, 0);
+    setIfChanged(uniforms.uChangeSignal, 0);
+    setIfChanged(uniforms.uPulseSignal, 0);
+    setIfChanged(uniforms.uHarmonicity, 0);
+    setIfChanged(uniforms.uBassSalience, 0);
+    setIfChanged(uniforms.uTextureSpread, 0);
+    setIfChanged(uniforms.uNovelty, 0);
+    setIfChanged(uniforms.uBeatPulse, 0);
+    setIfChanged(uniforms.uBeatPhase, 0);
+    setIfChanged(uniforms.uTempoNorm, 0);
+    setIfChanged(uniforms.uRhythmicDensity, 0);
+    setIfChanged(uniforms.uTrebleBroadbandEnergy, 0);
+    setIfChanged(uniforms.uModeCoherence, 0);
+    setIfChanged(uniforms.uTotalSlotAmplitude, 0);
+    setIfChanged(uniforms.uKeyTintStrength, 0);
+    setIfChanged(uniforms.uKeyMode, 0);
+    uniforms.uBandEnergies.value.set(0, 0, 0, 0);
+    uniforms.uDensityGain.value =
+      runtimeState.baseDensityGain ?? uniforms.uDensityGain.value;
+    uniforms.uDensityAbsorption.value =
+      uniforms.uDensityGain.value * uniforms.uAbsorption.value;
+    volumeMesh.visible = false;
+    idleOverlay.visible = true;
+    publishRaymarchRuntimeAuditSnapshot(runtimeState, featureFrame, fieldState);
+    return;
+  }
+
   const chromesthesiaEnabled = (uniforms.uChromesthesiaMix?.value ?? 0) > 0;
   const performanceGovernor = buildRaymarchPerformanceGovernor({
     backboneSlots: featureFrame?.backboneSlots,
@@ -926,7 +1002,7 @@ export function tickRaymarchRuntime(
   runtimeState.beatPulseEnvelope = damp(
     runtimeState.beatPulseEnvelope ?? 0,
     beatTarget,
-    beatTarget > (runtimeState.beatPulseEnvelope ?? 0) ? 25 : 6,
+    beatTarget > (runtimeState.beatPulseEnvelope ?? 0) ? 25 : 8,
     deltaTime,
   );
   setIfChanged(uniforms.uBeatPulse, runtimeState.beatPulseEnvelope);
@@ -978,21 +1054,7 @@ export function tickRaymarchRuntime(
 
   volumeMesh.visible = fieldDriven;
   idleOverlay.visible = !fieldDriven;
-
-  if (runtimeState.auditEnabled) {
-    const raymarchDebug = buildRaymarchDebugSnapshot(
-      runtimeState,
-      featureFrame,
-      fieldState,
-    );
-    runtimeState.debugSnapshot = featureFrame?.debug
-      ? { ...featureFrame.debug, raymarchDebug, ...raymarchDebug }
-      : raymarchDebug;
-    publishAuditSnapshot(runtimeState.debugSnapshot);
-  } else {
-    runtimeState.debugSnapshot = null;
-    publishAuditSnapshot(null);
-  }
+  publishRaymarchRuntimeAuditSnapshot(runtimeState, featureFrame, fieldState);
 }
 
 export function disposeRaymarchRuntime(runtimeState) {

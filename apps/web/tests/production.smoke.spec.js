@@ -20,6 +20,65 @@ test.describe("Baryon production smoke", () => {
     ).toBeVisible();
   });
 
+  test("keeps the compact dock bottom-anchored across tablet widths", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.setViewportSize({ width: 1024, height: 900 });
+    await page.goto("/");
+    await expect(page.locator(".am-compact-card")).toBeVisible();
+
+    const readBottomInset = async () =>
+      page.evaluate(() => {
+        const card = document.querySelector(".am-compact-card");
+        if (!(card instanceof HTMLElement)) {
+          throw new Error("Compact dock card not found");
+        }
+        const rect = card.getBoundingClientRect();
+        return window.innerHeight - rect.bottom;
+      });
+
+    const wideTabletBottomInset = await readBottomInset();
+
+    await page.setViewportSize({ width: 960, height: 900 });
+    await expect(page.locator(".am-compact-card")).toBeVisible();
+
+    const narrowTabletBottomInset = await readBottomInset();
+    expect(narrowTabletBottomInset).toBeCloseTo(wideTabletBottomInset, 0);
+  });
+
+  test("keeps the compact dock dimensions stable across tablet and phone widths", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.setViewportSize({ width: 700, height: 900 });
+    await page.goto("/");
+    await expect(page.locator(".am-compact-card")).toBeVisible();
+
+    const readCardSize = async () =>
+      page.evaluate(() => {
+        const card = document.querySelector(".am-compact-card");
+        if (!(card instanceof HTMLElement)) {
+          throw new Error("Compact dock card not found");
+        }
+        const rect = card.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+      });
+
+    const tabletSize = await readCardSize();
+
+    await page.setViewportSize({ width: 640, height: 900 });
+    await expect(page.locator(".am-compact-card")).toBeVisible();
+
+    const phoneSize = await readCardSize();
+    expect(phoneSize.width).toBeCloseTo(tabletSize.width, 0);
+    expect(phoneSize.height).toBeCloseTo(tabletSize.height, 0);
+  });
+
   test("keeps user controls but omits developer tooling from the production build", async ({
     page,
     browserName,
@@ -63,7 +122,7 @@ test.describe("Baryon production smoke", () => {
     await expect(
       page.getByRole("button", { name: "Toggle advanced controls" }),
     ).toBeVisible();
-    await expect(page.getByText("Field").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Shape\s/ })).toBeVisible();
     await expect(page.getByText("Audit")).toHaveCount(0);
     await page
       .getByRole("button", { name: "Toggle advanced controls" })
@@ -81,7 +140,7 @@ test.describe("Baryon production smoke", () => {
     await page
       .getByRole("button", { name: "Toggle advanced controls" })
       .click();
-    await page.getByRole("button", { name: /^Field\s/ }).click();
+    await page.getByRole("button", { name: /^Shape\s/ }).click();
 
     const slider = page.getByRole("slider", { name: "Node Threshold" });
     const helpTrigger = page.getByRole("button", {
@@ -117,7 +176,7 @@ test.describe("Baryon production smoke", () => {
     await page
       .getByRole("button", { name: "Toggle advanced controls" })
       .click();
-    await page.getByRole("button", { name: /^Look\s/ }).click();
+    await page.getByRole("button", { name: /^Display\s/ }).click();
 
     const bloomToggle = page.locator("#baryon-control-bloomEnabled");
     await expect(bloomToggle).toBeChecked();

@@ -1,6 +1,5 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import { resolveAdvancedControlsHelpPosition } from "../../../../packages/app-shell/src/components/advancedControlsHelpPosition.js";
+import { expect, test } from "vitest";
+import { resolveAdvancedControlsHelpPosition } from "./advancedControlsHelpPosition.js";
 
 test("prefers the right side when there is room", () => {
   const position = resolveAdvancedControlsHelpPosition({
@@ -10,9 +9,9 @@ test("prefers the right side when there is room", () => {
     viewportHeight: 320,
   });
 
-  assert.equal(position.horizontal, "right");
-  assert.equal(position.left, 50);
-  assert.equal(position.top, 58);
+  expect(position.horizontal).toBe("right");
+  expect(position.left).toBe(50);
+  expect(position.top).toBe(58);
 });
 
 test("flips to the left when the right edge would overflow", () => {
@@ -23,8 +22,8 @@ test("flips to the left when the right edge would overflow", () => {
     viewportHeight: 280,
   });
 
-  assert.equal(position.horizontal, "left");
-  assert.equal(position.left, 78);
+  expect(position.horizontal).toBe("left");
+  expect(position.left).toBe(78);
 });
 
 test("clamps the tooltip into the viewport vertically", () => {
@@ -35,6 +34,6 @@ test("clamps the tooltip into the viewport vertically", () => {
     viewportHeight: 180,
   });
 
-  assert.equal(position.top, 8);
-  assert.equal(position.vertical, "top");
+  expect(position.top).toBe(8);
+  expect(position.vertical).toBe("top");
 });

@@ -3,6 +3,6 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["vite.base.js"],
+  "include": ["vite.base.js", "vitest.js"],
   "exclude": ["node_modules", "dist"]
 }

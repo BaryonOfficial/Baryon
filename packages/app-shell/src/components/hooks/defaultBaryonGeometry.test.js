@@ -1,7 +1,6 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { expect, test } from "vitest";
 import * as THREE from "three";
-import { prepareBaryonGeometryFromScene } from "../../../../packages/app-shell/src/components/hooks/defaultBaryonGeometry.js";
+import { prepareBaryonGeometryFromScene } from "./defaultBaryonGeometry.js";
 
 test("prepareBaryonGeometryFromScene clones mesh geometry and bakes scale", () => {
   const geometry = new THREE.BufferGeometry();
@@ -19,18 +18,17 @@ test("prepareBaryonGeometryFromScene clones mesh geometry and bakes scale", () =
   const sourcePositions = geometry.attributes.position.array;
   const expectedPositions = [0.2, 0.4, 0.6, -0.8, 1, -1.2];
 
-  assert.notStrictEqual(preparedGeometry, geometry);
-  assert.deepEqual(Array.from(sourcePositions), [1, 2, 3, -4, 5, -6]);
+  expect(preparedGeometry).not.toBe(geometry);
+  expect(Array.from(sourcePositions)).toStrictEqual([1, 2, 3, -4, 5, -6]);
   Array.from(preparedPositions).forEach((value, index) => {
-    assert.ok(Math.abs(value - expectedPositions[index]) < 1e-6);
+    expect(Math.abs(value - expectedPositions[index]) < 1e-6).toBe(true);
   });
 });
 
 test("prepareBaryonGeometryFromScene throws when no mesh is present", () => {
   const scene = new THREE.Scene();
 
-  assert.throws(
-    () => prepareBaryonGeometryFromScene(scene),
+  expect(() => prepareBaryonGeometryFromScene(scene)).toThrow(
     /does not contain a mesh geometry/,
   );
 });

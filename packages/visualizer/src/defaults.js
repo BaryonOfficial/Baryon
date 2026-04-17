@@ -7,12 +7,11 @@ export const DEFAULT_SAMPLE_RATE = 44100;
 
 export const AUDIO_SLOT_CAPACITY =
   DEFAULT_BACKBONE_STACK_SLOTS + DEFAULT_DETAIL_STACK_SLOTS;
-export const AUDIO_SIGNAL_NORMALIZATION_SLOTS = AUDIO_SLOT_CAPACITY;
 
 export const AUDIO_DEFAULTS = Object.freeze({
   backboneStackSlots: DEFAULT_BACKBONE_STACK_SLOTS,
   detailStackSlots: DEFAULT_DETAIL_STACK_SLOTS,
-  signalNormalizationSlots: AUDIO_SIGNAL_NORMALIZATION_SLOTS,
+  signalNormalizationSlots: AUDIO_SLOT_CAPACITY,
   echoCancellation: false,
   noiseSuppression: false,
   autoGainControl: false,
@@ -90,7 +89,6 @@ export const AUDIT_DEFAULTS = Object.freeze({
   testToneHz: 440,
   testToneAmplitude: 0.5,
   logEveryFrames: 30,
-  structuralImplementation: "modal-excitation",
 });
 
 export const DEFAULTS = Object.freeze({

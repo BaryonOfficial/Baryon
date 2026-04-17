@@ -1,6 +1,6 @@
 /** @typedef {"rectangular" | "spherical"} CavityGeometry */
 
-export const CAVITY_GEOMETRIES = Object.freeze({
+const CAVITY_GEOMETRIES = Object.freeze({
   rectangular: "rectangular",
   spherical: "spherical",
 });

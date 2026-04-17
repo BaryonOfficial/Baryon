@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { normalizeDebugOverlayItems } from "./ParticleDebugOverlay.jsx";
+import {
+  normalizeDebugOverlayItems,
+  resolveDebugOverlayState,
+  shouldRenderDebugOverlay,
+} from "./ParticleDebugOverlayState.js";
 
 describe("normalizeDebugOverlayItems", () => {
   it("returns null when none are provided", () => {
@@ -9,7 +13,40 @@ describe("normalizeDebugOverlayItems", () => {
   });
 
   it("passes through non-empty host-provided items", () => {
-    const items = [{ label: "Authority", value: "listener-local" }];
+    const items = [{ label: "Authority", value: "local-presented" }];
     expect(normalizeDebugOverlayItems(items)).toBe(items);
+  });
+});
+
+describe("resolveDebugOverlayState", () => {
+  it("prefers authoritative overrides over stale local state", () => {
+    expect(
+      resolveDebugOverlayState({
+        localState: {
+          enabled: true,
+          snapshot: { visualizationMethod: "raymarch" },
+        },
+        enabledOverride: false,
+        snapshotOverride: null,
+      }),
+    ).toStrictEqual({
+      enabled: false,
+      snapshot: null,
+    });
+  });
+});
+
+describe("shouldRenderDebugOverlay", () => {
+  it("allows authoritative override rendering even when devtools are disabled", () => {
+    expect(
+      shouldRenderDebugOverlay({
+        devtoolsEnabled: false,
+        enabledOverride: true,
+        overlayState: {
+          enabled: true,
+          snapshot: { visualizationMethod: "raymarch" },
+        },
+      }),
+    ).toBe(true);
   });
 });

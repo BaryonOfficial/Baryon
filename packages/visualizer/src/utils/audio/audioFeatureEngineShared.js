@@ -1,9 +1,6 @@
-import { AUDIT_DEFAULTS } from "../../defaults.js";
-
 export const DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS = Object.freeze(
-  /** @type {{ runtime: string, structuralImplementation: string, structuralCadenceMs: number, snapshotPublishCadenceMs: number, chromaCadenceMs: number, tempoCadenceMs: number, maxSnapshotAgeMs: number }} */ ({
+  /** @type {{ runtime: string, structuralCadenceMs: number, snapshotPublishCadenceMs: number, chromaCadenceMs: number, tempoCadenceMs: number, maxSnapshotAgeMs: number }} */ ({
     runtime: "worker",
-    structuralImplementation: AUDIT_DEFAULTS.structuralImplementation,
     structuralCadenceMs: 33,
     snapshotPublishCadenceMs: 33,
     chromaCadenceMs: 66,
@@ -16,9 +13,6 @@ export function normalizeAudioFeatureEngineSettings(settings = {}) {
   return Object.freeze({
     ...DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS,
     ...settings,
-    structuralImplementation:
-      settings?.structuralImplementation ??
-      DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS.structuralImplementation,
     structuralCadenceMs: Math.max(
       16,
       Math.round(

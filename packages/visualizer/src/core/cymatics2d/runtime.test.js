@@ -160,4 +160,64 @@ describe("tickCymatics2dRuntime", () => {
     expect(runtimeState.idleOverlay.visible).toBe(true);
     expect(runtimeState.debugSnapshot.volumeVisible).toBe(false);
   });
+
+  it("keeps sustained material visually stable across adjacent active ticks", () => {
+    const runtimeState = createRuntimeState();
+
+    tickCymatics2dRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        averageAmplitude: 36,
+        backboneSlots: new Float32Array([3, 4, 6, 0.72]),
+        detailSlots: new Float32Array([4, 5, 5, 0.24]),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array([0.28, 0.22, 0.16, 0.08]),
+        transientEnergy: 0.08,
+        spectralCentroid: 0.24,
+        spectralFlux: 0.06,
+        structureSignal: 0.62,
+        energySignal: 0.44,
+        changeSignal: 0.1,
+        pulseSignal: 0.02,
+        debug: {},
+      },
+      1,
+      1 / 60,
+    );
+
+    const firstEnvelope = runtimeState.responseEnvelope;
+    const firstScale = runtimeState.visualRoot.scale.x;
+
+    tickCymatics2dRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        averageAmplitude: 32,
+        backboneSlots: new Float32Array([3, 4, 6, 0.66]),
+        detailSlots: new Float32Array([4, 5, 5, 0.18]),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array([0.24, 0.18, 0.14, 0.06]),
+        transientEnergy: 0.03,
+        spectralCentroid: 0.22,
+        spectralFlux: 0.03,
+        structureSignal: 0.56,
+        energySignal: 0.34,
+        changeSignal: 0.03,
+        pulseSignal: 0,
+        debug: {},
+      },
+      1.016,
+      1 / 60,
+    );
+
+    expect(runtimeState.responseEnvelope).toBeGreaterThan(0);
+    expect(runtimeState.responseEnvelope).toBeGreaterThan(firstEnvelope * 0.8);
+    expect(runtimeState.visualRoot.scale.x).toBeGreaterThan(1);
+    expect(runtimeState.visualRoot.scale.x).toBeLessThanOrEqual(firstScale);
+    expect(runtimeState.volumeMesh.visible).toBe(true);
+    expect(runtimeState.idleOverlay.visible).toBe(false);
+  });
 });

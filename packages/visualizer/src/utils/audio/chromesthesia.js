@@ -69,7 +69,7 @@ function hsvToRgb(h, s, v) {
   }
 }
 
-export function frequencyToMidi(frequency) {
+function frequencyToMidi(frequency) {
   if (!Number.isFinite(frequency) || frequency <= 0) return null;
   return 69 + 12 * Math.log2(frequency / 440);
 }
@@ -80,7 +80,7 @@ export function getPitchClassForFrequency(frequency) {
   return mod(Math.round(midi), 12);
 }
 
-export function getOctaveForFrequency(frequency) {
+function getOctaveForFrequency(frequency) {
   const midi = frequencyToMidi(frequency);
   if (midi == null) return null;
   return Math.floor(Math.round(midi) / 12) - 1;
@@ -96,7 +96,7 @@ export function pitchClassToHue(pitchClass) {
   return PITCH_CLASS_HUES[mod(pitchClass, 12)];
 }
 
-export function frequencyDistanceInSemitones(left, right) {
+function frequencyDistanceInSemitones(left, right) {
   if (
     !Number.isFinite(left) ||
     !Number.isFinite(right) ||

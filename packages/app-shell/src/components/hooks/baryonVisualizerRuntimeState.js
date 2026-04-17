@@ -182,6 +182,40 @@ export function createRuntimeDiagnostics() {
   };
 }
 
+export function initializeAdaptiveRaymarchRuntimeState(runtimeState) {
+  if (!runtimeState || typeof runtimeState !== "object") {
+    return runtimeState;
+  }
+
+  if (
+    !Object.prototype.hasOwnProperty.call(
+      runtimeState,
+      "autoRaymarchResumeRung",
+    )
+  ) {
+    runtimeState.autoRaymarchResumeRung = null;
+  }
+  if (
+    !Object.prototype.hasOwnProperty.call(
+      runtimeState,
+      "autoRaymarchResumeScaleRung",
+    )
+  ) {
+    runtimeState.autoRaymarchResumeScaleRung = null;
+  }
+
+  return runtimeState;
+}
+
+export function clearAdaptiveRaymarchResumeState(runtimeState) {
+  if (!runtimeState || typeof runtimeState !== "object") {
+    return;
+  }
+
+  runtimeState.autoRaymarchResumeRung = null;
+  runtimeState.autoRaymarchResumeScaleRung = null;
+}
+
 export function recordRuntimePerfSample(
   runtimeDiagnostics,
   key,
@@ -203,7 +237,7 @@ export function recordRuntimePerfSample(
       : nextDurationMs;
 }
 
-function snapshotRuntimePerfBreakdown(perfBreakdown) {
+export function snapshotRuntimePerfBreakdown(perfBreakdown) {
   return Object.fromEntries(
     Object.entries(perfBreakdown ?? {}).map(([key, value]) => [
       key,
@@ -225,7 +259,7 @@ function getRuntimePerfWallTimeMs() {
   return 0;
 }
 
-export function buildRuntimePerfSnapshot(runtimeDiagnostics) {
+function buildRuntimePerfSnapshot(runtimeDiagnostics) {
   return {
     fps:
       runtimeDiagnostics?.smoothedFrameTimeMs > 0
@@ -357,8 +391,9 @@ export function shouldRenderExternalFrame({
   externalFrameState,
   shouldAdvance,
   controlsChanged,
+  forceRender = false,
 }) {
-  return !externalFrameState || shouldAdvance || controlsChanged;
+  return !externalFrameState || shouldAdvance || controlsChanged || forceRender;
 }
 
 export function snapshotRuntimeDiagnostics(runtimeDiagnostics) {

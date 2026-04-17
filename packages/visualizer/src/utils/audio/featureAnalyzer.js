@@ -233,7 +233,10 @@ export function normalizeFeatureAnalysisSettings(settings = {}) {
   });
 }
 
-export function createNoopAudioFeatureAnalyzer(settings = {}) {
+function createStaticAudioFeatureAnalyzer(
+  settings = {},
+  { workerState = "none", workerStatus = null } = {},
+) {
   const normalizedSettings = normalizeFeatureAnalysisSettings(settings);
   return {
     settings: normalizedSettings,
@@ -243,8 +246,8 @@ export function createNoopAudioFeatureAnalyzer(settings = {}) {
       return normalizeHintPayload(
         status,
         {
-          workerState: "none",
-          workerStatus: null,
+          workerState,
+          workerStatus,
           frameTimeMs,
         },
         normalizedSettings,
@@ -253,12 +256,31 @@ export function createNoopAudioFeatureAnalyzer(settings = {}) {
     },
     getStatus() {
       return {
-        workerState: "none",
-        workerStatus: null,
+        workerState,
+        workerStatus,
       };
     },
     dispose() {},
   };
+}
+
+export function createNoopAudioFeatureAnalyzer(settings = {}) {
+  return createStaticAudioFeatureAnalyzer(settings);
+}
+
+function supportsWorkerWasmFeatureAnalysisRuntime(dependencies = {}) {
+  if (typeof dependencies.isCrossOriginIsolated === "boolean") {
+    return dependencies.isCrossOriginIsolated;
+  }
+
+  if (
+    typeof globalThis !== "undefined" &&
+    "crossOriginIsolated" in globalThis
+  ) {
+    return globalThis.crossOriginIsolated === true;
+  }
+
+  return true;
 }
 
 export function createAudioFeatureAnalyzer(settings = {}, dependencies = {}) {
@@ -275,6 +297,17 @@ export function createAudioFeatureAnalyzer(settings = {}, dependencies = {}) {
     normalizedSettings.runtime !== "worker-wasm"
   ) {
     return createNoopAudioFeatureAnalyzer(normalizedSettings);
+  }
+
+  if (!supportsWorkerWasmFeatureAnalysisRuntime(dependencies)) {
+    return createStaticAudioFeatureAnalyzer(normalizedSettings, {
+      workerState: "none",
+      workerStatus: {
+        state: "disabled",
+        reason: "cross-origin-isolation-required",
+        error: null,
+      },
+    });
   }
 
   let disposed = false;

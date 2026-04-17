@@ -5,7 +5,7 @@ import {
   BEAT_DEFAULTS,
 } from "../../defaults.js";
 import { createBlendableLayerState } from "./blendState.js";
-import { createModalExcitationState } from "./modalExcitation.js";
+import { createModalExcitationState } from "./modalExcitationState.js";
 
 /** @type {number} */
 export const BACKBONE_STACK_SLOTS = AUDIO_DEFAULTS.backboneStackSlots;
@@ -14,7 +14,7 @@ export const DETAIL_STACK_SLOTS = AUDIO_DEFAULTS.detailStackSlots;
 /** @type {number} */
 export const MAX_STACK_SLOTS = AUDIO_SLOT_CAPACITY;
 export const BAND_BUCKET_COUNT = 4;
-export const BEAT_HISTORY_SIZE = 8;
+const BEAT_HISTORY_SIZE = 8;
 export const DECAY_PER_FRAME = 0.9;
 const HARMONIC_SUPPORT_COUNT = 6;
 const COLOR_SLOT_STRIDE = 4;
@@ -117,7 +117,7 @@ function createBandState() {
   };
 }
 
-export function createChromaState() {
+function createChromaState() {
   return {
     smoothedChroma: new Float32Array(12),
     keyTonic: 0, // pitch class 0-11

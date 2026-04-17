@@ -30,7 +30,7 @@ Owns the shared engine and most domain semantics:
 - `AudioFeatureFrame` construction
 - control schema/defaults/runtime application
 - visualization runtime factories
-- render quality/profile resolution
+- render quality/profile policy and output pipeline composition
 - raymarch and `cymatics-2d` runtime implementations
 
 Start here when a change affects shared visualization behavior across hosts.
@@ -165,15 +165,15 @@ The default and flagship path is `raymarch`.
 
 ### Output/render profile resolution
 
-Render profile and output composition live in:
+Render profile policy is separated from renderer composition, but the public contract is still exported from:
 
 - `packages/visualizer/src/render/outputPipeline.js`
 
 This layer owns:
 
-- canonical performance-profile normalization
+- canonical performance-profile normalization and render-quality policy
 - render-scale / TRAA / bloom profile resolution
-- transparent vs opaque output composition
+- transparent vs opaque output composition and renderer pipeline setup
 
 If a change affects “Performance Profile” semantics, this file is part of the contract surface.
 
