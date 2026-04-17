@@ -2,7 +2,6 @@ import {
   Suspense,
   cloneElement,
   isValidElement,
-  lazy,
   useCallback,
   useEffect,
   useRef,
@@ -10,6 +9,7 @@ import {
 } from "react";
 import { Canvas } from "@react-three/fiber";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene";
+import AdvancedControlsDock from "./AdvancedControlsDock.jsx";
 import {
   useControlsActions,
   useControlsSnapshot,
@@ -44,7 +44,6 @@ import {
   shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
 
-const AdvancedControlsDock = lazy(() => import("./AdvancedControlsDock.jsx"));
 const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
 
 /**
@@ -438,14 +437,12 @@ const ThreeScene = ({
       ) : null}
 
       {showOverlayUi ? (
-        <Suspense fallback={null}>
-          <AdvancedControlsDock
-            visible={showOverlayUi}
-            operatorControlKeys={operatorControlKeys}
-            dockWidth={ADVANCED_CONTROLS_DOCK_WIDTH}
-            onOpenChange={setIsControlsDockOpen}
-          />
-        </Suspense>
+        <AdvancedControlsDock
+          visible={showOverlayUi}
+          operatorControlKeys={operatorControlKeys}
+          dockWidth={ADVANCED_CONTROLS_DOCK_WIDTH}
+          onOpenChange={setIsControlsDockOpen}
+        />
       ) : null}
 
       {showOverlayUi ? (
