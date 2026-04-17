@@ -1,5 +1,6 @@
 import {
-  getMinimumCavityFrequency,
+  getLegacyAnalysisFloorHz,
+  getLegacyAnalysisRadius,
   sampleFFTAmplitudeForFrequency,
 } from "../cavityModes.js";
 import { getModalGeometryBackend } from "../../core/modalGeometryBackend.js";
@@ -304,6 +305,7 @@ export function writeModalSlotsFromSpectralPeaks(
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
   const colorFamilies = includeChromesthesia ? [] : null;
   const components = includeChromesthesia ? [] : null;
+  const legacyRadius = getLegacyAnalysisRadius(radius);
 
   let slotIndex = 0;
   for (const peak of resolvedPeaks) {
@@ -311,7 +313,7 @@ export function writeModalSlotsFromSpectralPeaks(
     const familyLimit = Math.min(maxSlots - slotIndex, peakFamilyCount);
     const family = geometryBackend.solveTermsForPitch({
       pitch: peak.frequency,
-      radius,
+      radius: legacyRadius,
       count: familyLimit * 3,
     });
     const colorComponent = includeChromesthesia
@@ -536,7 +538,8 @@ export function writeModalSlotsFromPeakDrivers(
     scratchTarget ?? createModalTargetBuild(resolvedCapacity);
   const merged = ensureMergeScratch(target);
   const components = [];
-  const floorHz = getMinimumCavityFrequency(radius);
+  const legacyRadius = getLegacyAnalysisRadius(radius);
+  const legacyFloorHz = getLegacyAnalysisFloorHz(radius);
   let dominantPeakBridgeCount = 0;
   let meaningfulAboveFloorPeakCount = 0;
   merged.clear();
@@ -549,7 +552,7 @@ export function writeModalSlotsFromPeakDrivers(
       1;
     const confidence =
       Math.max(minimumConfidence, peak.amplitude) * attenuation;
-    const peakIsAboveFloor = peak.frequency >= floorHz;
+    const peakIsAboveFloor = peak.frequency >= legacyFloorHz;
     const { pseudoDrivers, bridgeCount } = peakIsAboveFloor
       ? {
           pseudoDrivers: [
@@ -566,7 +569,7 @@ export function writeModalSlotsFromPeakDrivers(
           fftMagnitudes,
           sampleRate,
           fftSize,
-          floorHz,
+          floorHz: legacyFloorHz,
         });
     if (index === 0) {
       dominantPeakBridgeCount = bridgeCount;
@@ -582,7 +585,7 @@ export function writeModalSlotsFromPeakDrivers(
         fftMagnitudes,
         sampleRate,
         fftSize,
-        radius,
+        radius: legacyRadius,
         capacity: resolvedCapacity,
         cavityGeometry,
         spectralCentroid,
@@ -623,6 +626,7 @@ export function writeModalSlotsFromPeakDrivers(
     dominantPeakAmplitude: resolvedPeaks[0]?.amplitude ?? 0,
     dominantPeakBridgeCount,
     meaningfulAboveFloorPeakCount,
+    legacyAnalysisFloorHz: legacyFloorHz,
   };
   return target;
 }

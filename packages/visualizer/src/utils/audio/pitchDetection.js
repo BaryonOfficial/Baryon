@@ -113,7 +113,7 @@ function refineLag(correlations, lag) {
  * @param {number | undefined} sampleRate
  * @param {AutocorrelationPitchOptions} [options]
  */
-export function detectAutocorrelationPitch(
+function detectAutocorrelationPitch(
   timeData,
   sampleRate,
   options = DEFAULT_AUTOCORR_OPTIONS,
@@ -298,7 +298,7 @@ function scoreSpectralCandidate(
  * @param {number | undefined} fftSize
  * @param {SpectralPitchOptions} [options]
  */
-export function detectSpectralPitch(
+function detectSpectralPitch(
   fftMagnitudes,
   sampleRate,
   fftSize,

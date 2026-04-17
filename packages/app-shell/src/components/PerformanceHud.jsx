@@ -1,3 +1,5 @@
+import { formatPerformanceProfileLabel } from "@baryon/visualizer/render/outputProfilePolicy";
+
 function formatNumber(value, digits = 1) {
   if (
     typeof value !== "number" ||
@@ -20,6 +22,15 @@ export default function PerformanceHud({
     return null;
   }
 
+  const splitAuthoritativeMetrics =
+    Object.prototype.hasOwnProperty.call(metrics, "outputTargetFps") ||
+    Object.prototype.hasOwnProperty.call(metrics, "outputFps") ||
+    Object.prototype.hasOwnProperty.call(metrics, "outputPaintFps") ||
+    Object.prototype.hasOwnProperty.call(metrics, "renderCompletedToPaintMs");
+  const resolvedTargetFps = splitAuthoritativeMetrics
+    ? (metrics.outputTargetFps ?? metrics.targetFps)
+    : metrics.targetFps;
+
   const showRaymarchSteps =
     metrics.visualizationMethod === "raymarch" &&
     metrics.requestedRaymarchSteps > 0;
@@ -27,9 +38,8 @@ export default function PerformanceHud({
     ? `${Math.round(metrics.effectiveRaymarchSteps)} / ${Math.round(metrics.requestedRaymarchSteps)}`
     : null;
   const renderScaleLabel =
-    typeof metrics.renderScale === "number" &&
-    typeof metrics.requestedRenderScale === "number"
-      ? `${formatNumber(metrics.renderScale, 3)} / ${formatNumber(metrics.requestedRenderScale, 3)}`
+    typeof metrics.renderScale === "number"
+      ? formatNumber(metrics.renderScale, 3)
       : null;
 
   return (
@@ -40,35 +50,66 @@ export default function PerformanceHud({
         top: stacked ? "auto" : top,
         right: stacked ? "auto" : right,
         zIndex: 10000,
-        minWidth: "9rem",
-        padding: "0.55rem 0.7rem",
-        borderRadius: "0.75rem",
-        background: "rgba(6, 10, 15, 0.74)",
-        border: "1px solid rgba(255, 255, 255, 0.1)",
-        color: "#ecf5ff",
+        minWidth: "9.25rem",
+        padding: "0.7rem 0.78rem",
+        borderRadius: "0.78rem",
+        background: "var(--nd-surface)",
+        border: "1px solid var(--nd-border-visible)",
+        color: "var(--nd-text-primary)",
         fontFamily:
           '"Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontSize: "11px",
+        fontSize: "10.5px",
         lineHeight: 1.45,
         pointerEvents: "none",
-        backdropFilter: "blur(10px)",
+        boxShadow: "var(--nd-shell-shadow)",
       }}
     >
-      <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
+      <div
+        style={{
+          fontWeight: 700,
+          marginBottom: "0.32rem",
+          textTransform: "uppercase",
+          letterSpacing: "0.14em",
+          color: "var(--nd-text-secondary)",
+        }}
+      >
         Performance
       </div>
-      <div>FPS: {formatNumber(metrics.fps, 1)}</div>
-      <div>Frame ms: {formatNumber(metrics.smoothedFrameTimeMs, 2)}</div>
+      {splitAuthoritativeMetrics ? (
+        <>
+          <div>Stage FPS: {formatNumber(metrics.fps, 1)}</div>
+          <div>
+            Stage Frame ms: {formatNumber(metrics.smoothedFrameTimeMs, 2)}
+          </div>
+          <div>Output FPS: {formatNumber(metrics.outputFps, 1)}</div>
+          <div>Output Paint FPS: {formatNumber(metrics.outputPaintFps, 1)}</div>
+          <div>
+            Render-&gt;Paint ms:{" "}
+            {formatNumber(metrics.renderCompletedToPaintMs, 2)}
+          </div>
+        </>
+      ) : (
+        <>
+          <div>FPS: {formatNumber(metrics.fps, 1)}</div>
+          <div>Frame ms: {formatNumber(metrics.smoothedFrameTimeMs, 2)}</div>
+        </>
+      )}
       <div>
         DPR: {formatNumber(metrics.currentPixelRatio, 3)} /{" "}
         {formatNumber(metrics.basePixelRatio, 3)}
       </div>
-      {renderScaleLabel ? <div>Scale: {renderScaleLabel}</div> : null}
+      {renderScaleLabel ? <div>Render Scale: {renderScaleLabel}</div> : null}
       {metrics.qualityPreset ? (
-        <div>Performance Profile: {metrics.qualityPreset}</div>
+        <div>
+          Performance Profile:{" "}
+          {formatPerformanceProfileLabel(
+            metrics.qualityPreset,
+            resolvedTargetFps ?? metrics.targetFps,
+          )}
+        </div>
       ) : null}
-      {typeof metrics.targetFps === "number" ? (
-        <div>Target FPS: {Math.round(metrics.targetFps)}</div>
+      {typeof resolvedTargetFps === "number" ? (
+        <div>Target FPS: {Math.round(resolvedTargetFps)}</div>
       ) : null}
       {raymarchStepsLabel ? <div>Steps: {raymarchStepsLabel}</div> : null}
     </aside>

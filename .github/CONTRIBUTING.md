@@ -21,7 +21,7 @@ one-time step — all future PRs from your GitHub account will be auto-approved.
 
 ## Setup
 
-Prerequisites: Node.js 18+, `pnpm`, Chrome or Edge (WebGPU required to run the visualizer).
+Prerequisites: Node.js `24.14.1` from [`.nvmrc`](../.nvmrc), `pnpm`, and Chrome or Edge for the primary WebGPU path.
 
 ```bash
 # Clone the repo (or your fork)
@@ -74,8 +74,9 @@ Run the verification gate locally — the same checks CI will run:
 pnpm verify
 ```
 
-This runs ESLint, typecheck, and the visualizer unit tests. Fix any failures
-before pushing.
+Fix any failures before pushing.
+
+Release commands such as `pnpm release:patch`, `pnpm release:minor`, and `pnpm release:major` are for release-time only. Do not run them during normal feature work.
 
 ---
 
@@ -105,16 +106,11 @@ Keep the first line under 72 characters. Use the body for context if needed.
 
 ## Adding controls
 
-New GUI controls must be added through the schema — not inline in the hook:
+New GUI controls must be added through the shared control schema and documented in the canonical control reference:
 
-- `packages/visualizer/src/controls/schema.js` — source of truth
-- `packages/visualizer/src/controls/runtime.js` — where each control is applied
-- Every `live` control needs explicit runtime coverage (verified by unit tests)
-- Include a `title` field with a plain-English tooltip description
-- Declare `methods` for which visualization modes the control applies to
-
-See [documentation/controls.md](../documentation/controls.md) for the full
-control reference.
+- [`documentation/public/reference/controls.md`](../documentation/public/reference/controls.md)
+- [`documentation/public/architecture/contracts.md`](../documentation/public/architecture/contracts.md)
+- [`documentation/README.md`](../documentation/README.md)
 
 ---
 

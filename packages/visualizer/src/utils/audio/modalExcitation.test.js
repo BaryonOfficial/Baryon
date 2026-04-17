@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { getLegacyAnalysisRadius } from "../../utils/cavityModes.js";
 import {
   createAudioFeatureState,
   prepareAudioFeatureFrameInputs,
@@ -70,6 +71,7 @@ function createPreparedInputs({
   cavityGeometry = "rectangular",
   avgAmplitude = 24,
   rms = 0.2,
+  radius = 3,
 }) {
   return prepareAudioFeatureFrameInputs({
     analysisSnapshot: {
@@ -82,11 +84,10 @@ function createPreparedInputs({
       spectralFlux: 0.1,
     },
     featureState: createAudioFeatureState(),
-    radius: 3,
+    radius,
     cavityGeometry,
     status,
     frameTimeMs,
-    structuralImplementation: "modal-excitation",
   });
 }
 
@@ -167,10 +168,10 @@ describe("modal excitation structural state", () => {
     const firstInputs = createPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
-        [110, 0.95],
-        [220, 0.5],
+        [550, 0.95],
+        [1100, 0.5],
       ]),
-      timeData: makeTimeData({ frequency: 110 }),
+      timeData: makeTimeData({ frequency: 550 }),
     });
     const firstFastSignal = updateAudioFeatureFastSignalState(firstInputs);
     const firstStructural = buildModalExcitationStructuralState({
@@ -183,10 +184,10 @@ describe("modal excitation structural state", () => {
     const secondInputs = createPreparedInputs({
       frameTimeMs: 33,
       fftMagnitudes: makeFft([
-        [110, 0.95],
-        [220, 0.52],
+        [550, 0.95],
+        [1100, 0.52],
       ]),
-      timeData: makeTimeData({ frequency: 110 }),
+      timeData: makeTimeData({ frequency: 550 }),
     });
     secondInputs.modalExcitationState = baseState;
     const secondFastSignal = updateAudioFeatureFastSignalState(secondInputs);
@@ -452,10 +453,10 @@ describe("modal excitation structural state", () => {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft([
-          [110, 0.95],
-          [220, 0.5],
+          [550, 0.95],
+          [1100, 0.5],
         ]),
-        timeData: makeTimeData({ frequency: 110 }),
+        timeData: makeTimeData({ frequency: 550 }),
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -478,8 +479,8 @@ describe("modal excitation structural state", () => {
   it("adds release sustain beyond the raw resonator decay", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
-      [110, 0.95],
-      [220, 0.52],
+      [550, 0.95],
+      [1100, 0.52],
     ]);
     const silentFft = new Float32Array(BIN_COUNT);
     const silentTimeData = new Float32Array(FFT_SIZE);
@@ -489,7 +490,7 @@ describe("modal excitation structural state", () => {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
-        timeData: makeTimeData({ frequency: 110 }),
+        timeData: makeTimeData({ frequency: 550 }),
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -536,8 +537,8 @@ describe("modal excitation structural state", () => {
   it("clears the visible tail quickly on true hard silence", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
-      [110, 0.95],
-      [220, 0.52],
+      [550, 0.95],
+      [1100, 0.52],
     ]);
     const silentFft = new Float32Array(BIN_COUNT);
     const silentTimeData = new Float32Array(FFT_SIZE);
@@ -548,7 +549,7 @@ describe("modal excitation structural state", () => {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
-        timeData: makeTimeData({ frequency: 110 }),
+        timeData: makeTimeData({ frequency: 550 }),
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -893,8 +894,8 @@ describe("modal excitation structural state", () => {
   it("collapses signal slots before the display blend releases to zero", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
-      [110, 0.95],
-      [220, 0.52],
+      [550, 0.95],
+      [1100, 0.52],
     ]);
     const silentFft = new Float32Array(BIN_COUNT);
     const silentTimeData = new Float32Array(FFT_SIZE);
@@ -904,7 +905,7 @@ describe("modal excitation structural state", () => {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
-        timeData: makeTimeData({ frequency: 110 }),
+        timeData: makeTimeData({ frequency: 550 }),
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -940,11 +941,11 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("marks weak residual tails as decay before the signal layer fully clears", () => {
+  it("keeps weak residual tails visible before the signal layer fully clears", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
-      [110, 0.95],
-      [220, 0.52],
+      [550, 0.95],
+      [1100, 0.52],
     ]);
     const silentFft = new Float32Array(BIN_COUNT);
     const silentTimeData = new Float32Array(FFT_SIZE);
@@ -954,7 +955,7 @@ describe("modal excitation structural state", () => {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
-        timeData: makeTimeData({ frequency: 110 }),
+        timeData: makeTimeData({ frequency: 550 }),
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -988,7 +989,6 @@ describe("modal excitation structural state", () => {
     expect(sumAmplitudes(structural.backboneSlotsSource)).toBeGreaterThan(
       sumAmplitudes(structural.signalBackboneSlotsSource),
     );
-    expect(structural.usedDecay).toBe(true);
   });
 
   it("keeps display slots sparser than signal slots under dense sustained input", () => {
@@ -1037,9 +1037,9 @@ describe("modal excitation structural state", () => {
   it("drops stale low-signal entries from display while keeping them in signal slots", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
-      [110, 0.95],
-      [220, 0.52],
-      [330, 0.38],
+      [550, 0.95],
+      [1100, 0.52],
+      [1650, 0.38],
       [6600, 0.34],
     ]);
     const silentFft = new Float32Array(BIN_COUNT);
@@ -1050,7 +1050,7 @@ describe("modal excitation structural state", () => {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
-        timeData: makeTimeData({ frequency: 110, amplitude: 0.45 }),
+        timeData: makeTimeData({ frequency: 550, amplitude: 0.45 }),
       });
       inputs.modalExcitationState = state;
       const fastSignal = updateAudioFeatureFastSignalState(inputs);
@@ -1086,13 +1086,66 @@ describe("modal excitation structural state", () => {
     ).toBeLessThanOrEqual(
       countActiveSlotsLocal(structural.backboneSlotsSource),
     );
-    expect(
-      countActiveSlotsLocal(structural.referenceBackboneSlotsSource),
-    ).toBeGreaterThan(0);
+    expect(countActiveSlotsLocal(structural.referenceBackboneSlotsSource)).toBe(
+      0,
+    );
     expect(
       countActiveSlotsLocal(structural.signalReferenceBackboneSlotsSource),
-    ).toBeGreaterThanOrEqual(
-      countActiveSlotsLocal(structural.referenceBackboneSlotsSource),
+    ).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Negative regression: legacy peak compensation must not leak into excitation
+// ---------------------------------------------------------------------------
+
+function readExcitationModeKeys(slots) {
+  const keys = [];
+  for (let offset = 0; offset < slots.length; offset += 4) {
+    if ((slots[offset + 3] ?? 0) > 0) {
+      keys.push(`${slots[offset]}:${slots[offset + 1]}:${slots[offset + 2]}`);
+    }
+  }
+  return keys;
+}
+
+function runExcitationForRadius(radius) {
+  const state = createModalExcitationState(16);
+  const fft = makeFft([
+    [440, 0.9],
+    [880, 0.5],
+  ]);
+  const preparedInputs = createPreparedInputs({
+    frameTimeMs: 0,
+    fftMagnitudes: fft,
+    timeData: makeTimeData({ frequency: 440 }),
+    radius,
+  });
+  preparedInputs.modalExcitationState = state;
+  const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
+  return buildModalExcitationStructuralState({
+    preparedInputs,
+    fastSignalState,
+    existingState: state,
+    performanceNow: () => 0,
+  });
+}
+
+describe("modal excitation is not affected by legacy peak compensation", () => {
+  it("produces different mode assignments for different physical radii", () => {
+    const smallRadius = 0.5;
+    const legacyRadius = getLegacyAnalysisRadius(smallRadius);
+
+    const physicalResult = runExcitationForRadius(smallRadius);
+    const legacyResult = runExcitationForRadius(legacyRadius);
+
+    const physicalKeys = readExcitationModeKeys(
+      physicalResult.backboneSlotsSource,
     );
+    const legacyKeys = readExcitationModeKeys(legacyResult.backboneSlotsSource);
+
+    // The two radii differ, so the atlas and mode assignments must differ.
+    // If compensation leaked into excitation both would yield the same keys.
+    expect(physicalKeys).not.toEqual(legacyKeys);
   });
 });

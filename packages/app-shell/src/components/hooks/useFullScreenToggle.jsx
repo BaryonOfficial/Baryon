@@ -1,7 +1,25 @@
-import { useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+
+function isEditingElement(element) {
+  return (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    (element instanceof HTMLElement && element.isContentEditable)
+  );
+}
 
 export function useFullscreen(elementRef) {
+  const [isFullscreen, setIsFullscreen] = useState(
+    () =>
+      typeof document !== "undefined" && Boolean(document.fullscreenElement),
+  );
   const toggleFullscreen = useCallback(() => {
+    const desktopWindowControls = window.electronAPI?.windowControls;
+    if (desktopWindowControls?.toggleFullscreen) {
+      void desktopWindowControls.toggleFullscreen();
+      return;
+    }
+
     if (!document.fullscreenElement) {
       elementRef.current?.requestFullscreen?.();
     } else {
@@ -10,15 +28,18 @@ export function useFullscreen(elementRef) {
   }, [elementRef]);
 
   useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+
     const handleKeyDown = (event) => {
-      // Don't fire when the user is typing in an input, textarea, or contenteditable
       const activeElement = document.activeElement;
-      const isEditing =
-        activeElement instanceof HTMLInputElement ||
-        activeElement instanceof HTMLTextAreaElement ||
-        (activeElement instanceof HTMLElement &&
-          activeElement.isContentEditable);
-      if (event.key === "f" && elementRef.current && !isEditing) {
+      if (
+        event.key === "f" &&
+        elementRef.current &&
+        !isEditingElement(activeElement)
+      ) {
+        event.preventDefault();
         toggleFullscreen();
       }
     };
@@ -27,5 +48,31 @@ export function useFullscreen(elementRef) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [elementRef, toggleFullscreen]);
 
-  return toggleFullscreen;
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const desktopWindowControls = window.electronAPI?.windowControls;
+    if (!desktopWindowControls?.subscribeFullscreenState) {
+      return undefined;
+    }
+
+    return desktopWindowControls.subscribeFullscreenState((nextState) => {
+      setIsFullscreen(nextState?.fullscreen === true);
+    });
+  }, []);
+
+  return { isFullscreen, toggleFullscreen };
 }

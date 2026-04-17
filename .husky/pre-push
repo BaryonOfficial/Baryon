@@ -1,2 +1,11 @@
 #!/usr/bin/env sh
+
+set -e
+
+if [ "${BARYON_PRE_PUSH_PREFLIGHT:-0}" = "1" ]; then
+  pnpm preflight:public
+  pnpm preflight:web:vercel
+  exit 0
+fi
+
 pnpm verify

@@ -4,7 +4,7 @@ This directory contains the public-facing engineering docs exported from the pri
 
 ## Public
 
-- [`architecture-map.md`](public/architecture-map.md)
-- [`contracts-and-boundaries.md`](public/contracts-and-boundaries.md)
-- [`output-integration-architecture.md`](public/output-integration-architecture.md)
-- [`controls.md`](public/controls.md)
+- [`architecture/system-overview.md`](public/architecture/system-overview.md)
+- [`architecture/contracts.md`](public/architecture/contracts.md)
+- [`architecture/output-sync.md`](public/architecture/output-sync.md)
+- [`reference/controls.md`](public/reference/controls.md)

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ,
+  getCavityModeFrequency,
+  getLegacyAnalysisFloorHz,
+  getLegacyAnalysisRadius,
   getMinimumCavityFrequency,
   sampleFFTAmplitudeForFrequency,
   solveCavityModeFamilyForPitch,
@@ -17,7 +21,7 @@ describe("solveCavityModeForPitch", () => {
   });
 
   it("maps the lowest cavity frequency to (1,1,1)", () => {
-    expect(solveCavityModeForPitch(170 * Math.sqrt(3), RADIUS)).toEqual({
+    expect(solveCavityModeForPitch(740 * Math.sqrt(3), RADIUS)).toEqual({
       u: 1,
       v: 1,
       w: 1,
@@ -25,12 +29,12 @@ describe("solveCavityModeForPitch", () => {
   });
 
   it("maps exact equal-sided cavity frequencies to canonical triplets", () => {
-    expect(solveCavityModeForPitch(170 * Math.sqrt(6), RADIUS)).toEqual({
+    expect(solveCavityModeForPitch(740 * Math.sqrt(6), RADIUS)).toEqual({
       u: 1,
       v: 1,
       w: 2,
     });
-    expect(solveCavityModeForPitch(510, RADIUS)).toEqual({
+    expect(solveCavityModeForPitch(2220, RADIUS)).toEqual({
       u: 1,
       v: 2,
       w: 2,
@@ -88,9 +92,20 @@ describe("solveCavityModeFamilyForPitch", () => {
 
 describe("getMinimumCavityFrequency", () => {
   it("matches the (1,1,1) cavity mode frequency across radii", () => {
-    expect(getMinimumCavityFrequency(1)).toBeCloseTo(170 * Math.sqrt(3));
-    expect(getMinimumCavityFrequency(3)).toBeCloseTo((170 * Math.sqrt(3)) / 3);
-    expect(getMinimumCavityFrequency(5)).toBeCloseTo((170 * Math.sqrt(3)) / 5);
+    expect(getMinimumCavityFrequency(1)).toBeCloseTo(740 * Math.sqrt(3));
+    expect(getMinimumCavityFrequency(3)).toBeCloseTo((740 * Math.sqrt(3)) / 3);
+    expect(getMinimumCavityFrequency(5)).toBeCloseTo((740 * Math.sqrt(3)) / 5);
+  });
+});
+
+describe("getCavityModeFrequency", () => {
+  it("returns the expected frequency for a known cavity triplet", () => {
+    expect(getCavityModeFrequency(1, 2, 2, RADIUS)).toBeCloseTo(2220);
+  });
+
+  it("returns 0 for invalid triplets or radius", () => {
+    expect(getCavityModeFrequency(NaN, 1, 1, RADIUS)).toBe(0);
+    expect(getCavityModeFrequency(1, 1, 1, 0)).toBe(0);
   });
 });
 
@@ -141,5 +156,59 @@ describe("sampleFFTAmplitudeForFrequency", () => {
         fftSize,
       ),
     ).toBe(0);
+  });
+
+  it("returns 0 for invalid sampling inputs", () => {
+    const fftMagnitudes = new Float32Array(16).fill(0.5);
+    expect(
+      sampleFFTAmplitudeForFrequency(-1, fftMagnitudes, sampleRate, fftSize),
+    ).toBe(0);
+    expect(sampleFFTAmplitudeForFrequency(440, fftMagnitudes, 0, fftSize)).toBe(
+      0,
+    );
+    expect(
+      sampleFFTAmplitudeForFrequency(440, fftMagnitudes, sampleRate, 0),
+    ).toBe(0);
+  });
+});
+
+describe("solveCavityModeFamilyForPitch", () => {
+  it("returns an empty family for invalid inputs", () => {
+    expect(solveCavityModeFamilyForPitch(0, RADIUS, 4)).toStrictEqual([]);
+    expect(solveCavityModeFamilyForPitch(440, 0, 4)).toStrictEqual([]);
+    expect(solveCavityModeFamilyForPitch(440, RADIUS, 0)).toStrictEqual([]);
+  });
+});
+
+describe("getLegacyAnalysisRadius", () => {
+  it("yields a legacy floor of approximately LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ for small radii", () => {
+    const legacyRadius = getLegacyAnalysisRadius(0.1);
+    expect(legacyRadius).toBeGreaterThan(0.1);
+    expect(getLegacyAnalysisFloorHz(0.1)).toBeCloseTo(
+      LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ,
+      1,
+    );
+  });
+
+  it("is a no-op when the physical floor is already at or below LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ", () => {
+    // radius large enough that physical floor < 180 Hz
+    const largeRadius = 10;
+    expect(getLegacyAnalysisRadius(largeRadius)).toBe(largeRadius);
+    expect(getMinimumCavityFrequency(largeRadius)).toBeLessThan(
+      LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ,
+    );
+  });
+
+  it("is a no-op when the physical floor equals exactly LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ", () => {
+    const exactRadius = getLegacyAnalysisRadius(0.1);
+    expect(getLegacyAnalysisRadius(exactRadius)).toBeCloseTo(exactRadius, 6);
+  });
+
+  it("clamps upward so the resulting legacy floor never exceeds LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ", () => {
+    for (const r of [0.01, 0.1, 0.5, 1, 2, 3]) {
+      expect(getLegacyAnalysisFloorHz(r)).toBeLessThanOrEqual(
+        LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ + 0.01,
+      );
+    }
   });
 });

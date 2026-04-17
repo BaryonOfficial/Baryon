@@ -594,6 +594,127 @@ describe("control runtime sync", () => {
     );
   });
 
+  it("skips pipeline topology rebuild when bloomEnabled and outputMode are unchanged", () => {
+    const controls = createControlState();
+    controls.bloomEnabled = true;
+
+    const pipeline = { outputNode: "initial-output", needsUpdate: false };
+    const bloomPass = {
+      strength: { value: 0 },
+      radius: { value: 0 },
+      threshold: { value: 0 },
+    };
+    const composeOutputNode = vi.fn(() => "new-output");
+    const postNodes = { sceneColor: {}, bloomPass, composeOutputNode };
+
+    // First call: no topology key cached yet → rebuilds
+    applyBloomControls(
+      {
+        ensurePipeline: () => pipeline,
+        postNodesRef: { current: postNodes },
+        runtimeState: createRaymarchHarness(),
+      },
+      controls,
+    );
+    expect(composeOutputNode).toHaveBeenCalledTimes(1);
+    expect(pipeline.needsUpdate).toBe(true);
+
+    // Reset needsUpdate, then call again with identical topology
+    pipeline.needsUpdate = false;
+    composeOutputNode.mockClear();
+
+    applyBloomControls(
+      {
+        ensurePipeline: () => pipeline,
+        postNodesRef: { current: postNodes },
+        runtimeState: createRaymarchHarness(),
+      },
+      controls,
+    );
+
+    // Topology unchanged: no rebuild
+    expect(composeOutputNode).not.toHaveBeenCalled();
+    expect(pipeline.needsUpdate).toBe(false);
+  });
+
+  it("rebuilds pipeline topology when bloomEnabled changes", () => {
+    const controls = createControlState();
+    controls.bloomEnabled = false;
+
+    const pipeline = { outputNode: null, needsUpdate: false };
+    const bloomPass = {
+      strength: { value: 0 },
+      radius: { value: 0 },
+      threshold: { value: 0 },
+    };
+    const composeOutputNode = vi.fn(() => "output");
+    const postNodes = { sceneColor: {}, bloomPass, composeOutputNode };
+
+    applyBloomControls(
+      {
+        ensurePipeline: () => pipeline,
+        postNodesRef: { current: postNodes },
+        runtimeState: createRaymarchHarness(),
+      },
+      controls,
+    );
+    expect(composeOutputNode).toHaveBeenCalledTimes(1);
+    pipeline.needsUpdate = false;
+    composeOutputNode.mockClear();
+
+    // Change bloomEnabled → topology must rebuild
+    controls.bloomEnabled = true;
+    applyBloomControls(
+      {
+        ensurePipeline: () => pipeline,
+        postNodesRef: { current: postNodes },
+        runtimeState: createRaymarchHarness(),
+      },
+      controls,
+    );
+    expect(composeOutputNode).toHaveBeenCalledTimes(1);
+    expect(pipeline.needsUpdate).toBe(true);
+  });
+
+  it("rebuilds pipeline topology when outputMode changes", () => {
+    const controls = createControlState();
+    controls.bloomEnabled = true;
+    controls.outputMode = "transparent";
+
+    const pipeline = { outputNode: null, needsUpdate: false };
+    const bloomPass = {
+      strength: { value: 0 },
+      radius: { value: 0 },
+      threshold: { value: 0 },
+    };
+    const composeOutputNode = vi.fn(() => "output");
+    const postNodes = { sceneColor: {}, bloomPass, composeOutputNode };
+
+    applyBloomControls(
+      {
+        ensurePipeline: () => pipeline,
+        postNodesRef: { current: postNodes },
+        runtimeState: createRaymarchHarness(),
+      },
+      controls,
+    );
+    expect(composeOutputNode).toHaveBeenCalledTimes(1);
+    pipeline.needsUpdate = false;
+    composeOutputNode.mockClear();
+
+    controls.outputMode = "opaque";
+    applyBloomControls(
+      {
+        ensurePipeline: () => pipeline,
+        postNodesRef: { current: postNodes },
+        runtimeState: createRaymarchHarness(),
+      },
+      controls,
+    );
+    expect(composeOutputNode).toHaveBeenCalledTimes(1);
+    expect(pipeline.needsUpdate).toBe(true);
+  });
+
   it("applies output controls to the program pipeline", () => {
     const controls = createControlState();
     controls.outputMode = "opaque";
@@ -616,12 +737,12 @@ describe("control runtime sync", () => {
     );
 
     expect(outputUniforms.backgroundColor.value.getHexString()).toBe("123456");
-    expect(composeOutputNode).toHaveBeenCalledWith({
-      bloomEnabled: true,
-      outputMode: "opaque",
-    });
-    expect(pipeline.outputNode).toBe("opaque-output");
-    expect(pipeline.needsUpdate).toBe(true);
+    // applyOutputControls no longer owns pipeline.outputNode or needsUpdate —
+    // topology rebuilds are deferred to applyBloomControls to avoid rebuilding
+    // the pipeline on every frame during continuous slider drag.
+    expect(composeOutputNode).not.toHaveBeenCalled();
+    expect(pipeline.outputNode).toBeNull();
+    expect(pipeline.needsUpdate).toBe(false);
     expect(snapshot).toEqual({
       bloomEnabled: true,
       outputMode: "opaque",

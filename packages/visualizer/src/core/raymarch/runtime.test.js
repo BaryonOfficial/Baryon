@@ -420,6 +420,8 @@ describe("tickRaymarchRuntime", () => {
 
   it("hides the volume and shows the idle overlay in idle state", () => {
     const runtimeState = createRuntimeState();
+    runtimeState.backboneModeBuffer.value.needsUpdate = false;
+    runtimeState.detailModeBuffer.value.needsUpdate = false;
     tickRaymarchRuntime(
       runtimeState,
       {
@@ -445,6 +447,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.volumeMesh.visible).toBe(false);
     expect(runtimeState.idleOverlay.visible).toBe(true);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
+    expect(runtimeState.backboneModeBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.detailModeBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.performanceGovernor).toBeNull();
     expect(runtimeState.debugSnapshot.raymarchDebug).toBeUndefined();
     expect(runtimeState.debugSnapshot.modeSlotCount).toBe(0);
   });
@@ -1267,6 +1272,105 @@ describe("tickRaymarchRuntime", () => {
 
     expect(edmRuntime.responseEnvelope).toBeLessThan(
       ambientRuntime.responseEnvelope,
+    );
+  });
+
+  it("drops accent and beat envelopes faster than response on the first tail tick", () => {
+    const runtimeState = createRuntimeState();
+    runtimeState.responseEnvelope = 0.24;
+    runtimeState.accentEnvelope = 0.18;
+    runtimeState.beatPulseEnvelope = 0.12;
+    const baselineResponse = runtimeState.responseEnvelope;
+    const baselineAccent = runtimeState.accentEnvelope;
+    const baselineBeat = runtimeState.beatPulseEnvelope;
+    const baseThreshold = runtimeState.baseThreshold;
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        averageAmplitude: 48,
+        backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+        detailSlots: new Float32Array([4, 5, 5, 0.42]),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array([0.46, 0.31, 0.18, 0.08]),
+        transientEnergy: 0.96,
+        spectralCentroid: 0.34,
+        spectralFlux: 0.88,
+        structureSignal: 0.72,
+        energySignal: 0.68,
+        changeSignal: 1,
+        pulseSignal: 1,
+        beatDetected: true,
+        beatStrength: 1,
+        beatConfidence: 0.92,
+        debug: {},
+      },
+      1,
+      1 / 60,
+    );
+
+    const transientResponse = runtimeState.responseEnvelope;
+    const transientAccent = runtimeState.accentEnvelope;
+    const transientBeat = runtimeState.beatPulseEnvelope;
+    const transientStrength = runtimeState.bloomTuning.effectiveStrength;
+    const transientRadius = runtimeState.bloomTuning.effectiveRadius;
+    const transientThreshold = runtimeState.bloomTuning.effectiveThreshold;
+
+    expect(transientResponse).toBeGreaterThan(baselineResponse);
+    expect(transientAccent).toBeGreaterThan(baselineAccent);
+    expect(transientBeat).toBeGreaterThan(baselineBeat);
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        averageAmplitude: 28,
+        backboneSlots: new Float32Array([3, 4, 6, 0.6]),
+        detailSlots: new Float32Array([4, 5, 5, 0.18]),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array([0.22, 0.14, 0.08, 0.03]),
+        transientEnergy: 0.04,
+        spectralCentroid: 0.26,
+        spectralFlux: 0.03,
+        structureSignal: 0,
+        energySignal: 0,
+        changeSignal: 0,
+        pulseSignal: 0,
+        beatDetected: false,
+        beatStrength: 0,
+        beatConfidence: 0,
+        debug: {},
+      },
+      1.016,
+      1 / 60,
+    );
+
+    const responseDropFraction =
+      (transientResponse - runtimeState.responseEnvelope) / transientResponse;
+    const accentDropFraction =
+      (transientAccent - runtimeState.accentEnvelope) / transientAccent;
+    const beatDropFraction =
+      (transientBeat - runtimeState.beatPulseEnvelope) / transientBeat;
+
+    expect(responseDropFraction).toBeGreaterThan(0.05);
+    expect(accentDropFraction).toBeGreaterThan(0.15);
+    expect(beatDropFraction).toBeGreaterThan(0.11);
+    expect(accentDropFraction).toBeGreaterThan(responseDropFraction);
+    expect(beatDropFraction).toBeGreaterThan(responseDropFraction);
+    expect(runtimeState.bloomTuning.effectiveStrength).toBeLessThan(
+      transientStrength,
+    );
+    expect(runtimeState.bloomTuning.effectiveRadius).toBeLessThan(
+      transientRadius,
+    );
+    expect(runtimeState.bloomTuning.effectiveThreshold).toBeGreaterThan(
+      baseThreshold,
+    );
+    expect(runtimeState.bloomTuning.effectiveThreshold).toBeLessThanOrEqual(
+      transientThreshold + 0.02,
     );
   });
 });

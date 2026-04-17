@@ -1,5 +1,3 @@
-export const RAYMARCH_GRAZING_START = 0.78;
-export const RAYMARCH_GRAZING_END = 0.98;
 export const RAYMARCH_BOUNDARY_START = 0.74;
 export const RAYMARCH_BOUNDARY_END = 0.98;
 

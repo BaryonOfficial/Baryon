@@ -11,7 +11,7 @@ import {
   MAX_PERFORMANCE_TARGET_FPS,
   MIN_PERFORMANCE_TARGET_FPS,
   PERFORMANCE_PROFILES,
-} from "../render/outputPipeline.js";
+} from "../render/outputProfilePolicy.js";
 import { VISUALIZATION_METHODS } from "../visualization/types.js";
 
 export const CONTROL_TARGET_TYPES = Object.freeze({
@@ -652,7 +652,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
         options: {
           Auto: PERFORMANCE_PROFILES.auto,
           Custom: PERFORMANCE_PROFILES.custom,
-          "Max Quality": PERFORMANCE_PROFILES.none,
+          "Max Quality": PERFORMANCE_PROFILES.maxQuality,
         },
       },
       targetType: CONTROL_TARGET_TYPES.object,
@@ -961,28 +961,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       targetType: CONTROL_TARGET_TYPES.audit,
       handler: CONTROL_HANDLERS.audit,
       runtimePath: "featureState.audit.settings.logEveryFrames",
-      status: CONTROL_STATUSES.debugOnly,
-    },
-    CONTROL_GROUPS.diagnostics,
-  ),
-  withControlGroup(
-    {
-      key: "structuralImplementation",
-      label: "Analysis Mode",
-      title:
-        "Choose which analysis model drives the visuals. Modal Excitation follows the resonant-mode path, Legacy Peak keeps the older peak-driven behavior, and Dual runs both for comparison.",
-      defaultValue: AUDIT_DEFAULTS.structuralImplementation,
-      methods: ALL_METHODS,
-      binding: {
-        options: {
-          "Legacy Peak": "legacy-peak",
-          "Modal Excitation": "modal-excitation",
-          "Dual (Compare)": "dual",
-        },
-      },
-      targetType: CONTROL_TARGET_TYPES.audit,
-      handler: CONTROL_HANDLERS.audit,
-      runtimePath: "controls.structuralImplementation",
       status: CONTROL_STATUSES.debugOnly,
     },
     CONTROL_GROUPS.diagnostics,

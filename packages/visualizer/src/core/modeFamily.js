@@ -3,7 +3,7 @@ export const BOUNDARY_MODES = Object.freeze({
   neumann: "neumann",
 });
 
-export const BOUNDARY_MODE_VALUES = Object.freeze({
+const BOUNDARY_MODE_VALUES = Object.freeze({
   [BOUNDARY_MODES.dirichlet]: 0,
   [BOUNDARY_MODES.neumann]: 1,
 });

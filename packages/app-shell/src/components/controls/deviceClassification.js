@@ -36,6 +36,11 @@ function loadOverrides() {
   }
 }
 
+/** @param {Record<string, string>} overrides */
+function persistOverrides(overrides) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+}
+
 /** @param {MediaDeviceInfo} device */
 export function classifyLiveInputDeviceKind(device) {
   const label = (device.label || "").toLowerCase();
@@ -43,9 +48,6 @@ export function classifyLiveInputDeviceKind(device) {
     ? LIVE_INPUT_DEVICE_KINDS.loopback
     : LIVE_INPUT_DEVICE_KINDS.acousticMic;
 }
-
-/** @deprecated Prefer `classifyLiveInputDeviceKind`. */
-export const heuristicClassify = classifyLiveInputDeviceKind;
 
 /**
  * Resolve the effective classification bucket for a device.
@@ -63,9 +65,6 @@ export function getLiveInputDeviceKind(device) {
   );
 }
 
-/** @deprecated Prefer `getLiveInputDeviceKind`. */
-export const getDeviceBucket = getLiveInputDeviceKind;
-
 /**
  * Resolve a device bucket from a device id and device list.
  * Falls back to mic semantics when the device is unknown.
@@ -81,31 +80,6 @@ export function getLiveInputDeviceKindById(devices, deviceId) {
   return getLiveInputDeviceKind(device);
 }
 
-/** @deprecated Prefer `getLiveInputDeviceKindById`. */
-export const getDeviceBucketById = getLiveInputDeviceKindById;
-
-/**
- * Classify a list of audioinput devices into mic and system buckets.
- * @param {MediaDeviceInfo[]} devices
- * @returns {{ live: MediaDeviceInfo[], system: MediaDeviceInfo[] }}
- */
-export function classifyLiveInputDevices(devices) {
-  const live = [];
-  const system = [];
-  for (const device of devices) {
-    const bucket = getLiveInputDeviceKind(device);
-    if (bucket === LIVE_INPUT_DEVICE_KINDS.loopback) {
-      system.push(device);
-    } else {
-      live.push(device);
-    }
-  }
-  return { live, system };
-}
-
-/** @deprecated Prefer `classifyLiveInputDevices`. */
-export const classifyDevices = classifyLiveInputDevices;
-
 /**
  * Manually assign a device to a bucket, persisted to localStorage.
  * @param {string} deviceId
@@ -114,11 +88,8 @@ export const classifyDevices = classifyLiveInputDevices;
 export function saveLiveInputDeviceKindOverride(deviceId, bucket) {
   const overrides = loadOverrides();
   overrides[deviceId] = normalizeLiveInputDeviceKind(bucket);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+  persistOverrides(overrides);
 }
-
-/** @deprecated Prefer `saveLiveInputDeviceKindOverride`. */
-export const saveDeviceOverride = saveLiveInputDeviceKindOverride;
 
 /**
  * Get the manual override kind for a device, or null if none is set.
@@ -139,5 +110,5 @@ export function getDeviceKindOverride(deviceId) {
 export function clearDeviceOverride(deviceId) {
   const overrides = loadOverrides();
   delete overrides[deviceId];
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+  persistOverrides(overrides);
 }

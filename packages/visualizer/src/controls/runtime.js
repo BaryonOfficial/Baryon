@@ -16,8 +16,8 @@ import {
 } from "../core/cavityGeometry.js";
 import {
   normalizeOutputMode,
-  normalizeRenderQualityPreset,
-} from "../render/outputPipeline.js";
+  normalizePerformanceProfile,
+} from "../render/outputProfilePolicy.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -53,6 +53,7 @@ const IDLE_LOGO_ALPHA_RATIO =
     ? RENDER_DEFAULTS.idleLogoAlpha / RENDER_DEFAULTS.idleLogoIntensity
     : 1;
 const TRANSPARENT_CLEAR_COLOR = new THREE.Color(0x000000);
+const OUTPUT_TOPOLOGY_KEY_FIELD = "__baryonOutputTopologyKey";
 
 function deriveIdleLogoAlpha(intensity) {
   return Math.min(1, intensity * IDLE_LOGO_ALPHA_RATIO);
@@ -64,6 +65,37 @@ function clamp(value, min, max) {
 
 function clamp01(value) {
   return clamp(value, 0, 1);
+}
+
+function resolveOutputTopologyKey({ bloomEnabled, outputMode }) {
+  return `${bloomEnabled ? 1 : 0}:${outputMode}`;
+}
+
+function rebuildOutputNodeTopologyIfNeeded(
+  pipeline,
+  postNodes,
+  { bloomEnabled, outputMode, bloomActive },
+) {
+  const nextTopologyKey = resolveOutputTopologyKey({
+    bloomEnabled,
+    outputMode,
+  });
+  if (postNodes?.[OUTPUT_TOPOLOGY_KEY_FIELD] === nextTopologyKey) {
+    return false;
+  }
+
+  const { sceneColor, bloomPass, composeOutputNode } = postNodes ?? {};
+  pipeline.outputNode = composeOutputNode
+    ? composeOutputNode({
+        bloomEnabled,
+        outputMode,
+      })
+    : bloomActive && bloomPass
+      ? sceneColor.add(bloomPass)
+      : sceneColor;
+  pipeline.needsUpdate = true;
+  postNodes[OUTPUT_TOPOLOGY_KEY_FIELD] = nextTopologyKey;
+  return true;
 }
 
 function deriveBloomResponse(controls, stepBudget) {
@@ -156,7 +188,6 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "testToneHz",
     "testToneAmplitude",
     "logEveryFrames",
-    "structuralImplementation",
   ]),
 });
 
@@ -192,7 +223,7 @@ export function applySharedControls(gl, controls) {
   return {
     backgroundColor: controls.backgroundColor,
     performanceHudEnabled: Boolean(controls.performanceHudEnabled),
-    renderQualityPreset: normalizeRenderQualityPreset(
+    renderQualityPreset: normalizePerformanceProfile(
       controls.renderQualityPreset,
     ),
     customPerformanceTargetFps:
@@ -221,13 +252,8 @@ export function applyOutputControls(pipelineState, controls) {
   }
 
   postNodes.outputUniforms?.backgroundColor?.value?.set(outputBackgroundColor);
-  pipeline.outputNode = postNodes.composeOutputNode
-    ? postNodes.composeOutputNode({
-        bloomEnabled: effectiveBloomEnabled,
-        outputMode,
-      })
-    : pipeline.outputNode;
-  pipeline.needsUpdate = true;
+  // Output node topology is managed by applyBloomControls (runs after this),
+  // which owns pipeline.outputNode and pipeline.needsUpdate.
 
   return {
     bloomEnabled: effectiveBloomEnabled,
@@ -497,6 +523,7 @@ export function applyBloomControls(pipelineState, controls) {
   const effective = deriveBloomResponse(controls, stepBudget);
   const bloomAllowed = pipelineState.renderProfileRef?.current?.bloomAllowed;
   const effectiveBloomEnabled = controls.bloomEnabled && bloomAllowed !== false;
+  const outputMode = normalizeOutputMode(controls.outputMode);
   if (pipelineState.runtimeState) {
     pipelineState.runtimeState.bloomTuning = {
       ...(pipelineState.runtimeState.bloomTuning ?? {}),
@@ -527,22 +554,21 @@ export function applyBloomControls(pipelineState, controls) {
     };
   }
 
-  const { sceneColor, bloomPass, composeOutputNode } = postNodes;
+  const { bloomPass } = postNodes;
   const bloomActive = effectiveBloomEnabled && effective.strength > 1e-4;
   if (bloomPass) {
     bloomPass.strength.value = effective.strength;
     bloomPass.radius.value = effective.radius;
     bloomPass.threshold.value = bloomActive ? effective.threshold : 999;
   }
-  pipeline.outputNode = composeOutputNode
-    ? composeOutputNode({
-        bloomEnabled: effectiveBloomEnabled,
-        outputMode: controls.outputMode,
-      })
-    : bloomActive && bloomPass
-      ? sceneColor.add(bloomPass)
-      : sceneColor;
-  pipeline.needsUpdate = true;
+  // Only rebuild the output node topology when bloomEnabled or outputMode
+  // actually changes. Rebuilding on every frame (e.g. during continuous slider
+  // drag) keeps the WebGPU pipeline in perpetual recompile, starving the OSR.
+  rebuildOutputNodeTopologyIfNeeded(pipeline, postNodes, {
+    bloomEnabled: effectiveBloomEnabled,
+    outputMode,
+    bloomActive,
+  });
 
   return {
     enabled: effectiveBloomEnabled,

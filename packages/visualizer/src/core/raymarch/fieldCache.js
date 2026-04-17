@@ -36,7 +36,7 @@ window.__baryonAuditSnapshot?.fieldEvaluationMode
 window.__baryonAuditSnapshot?.fieldCacheOverride
 
 */
-export const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
+const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
 
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -622,7 +622,7 @@ function createChromaComputeKernel({
   );
 }
 
-export function getOrCreateRaymarchFieldCacheComputeNode(
+function getOrCreateRaymarchFieldCacheComputeNode(
   fieldCache,
   {
     backboneModeBuffer,
@@ -660,7 +660,7 @@ export function getOrCreateRaymarchFieldCacheComputeNode(
   return computeNode;
 }
 
-export function getOrCreateRaymarchChromaCacheComputeNode(
+function getOrCreateRaymarchChromaCacheComputeNode(
   chromaCache,
   {
     backboneModeBuffer,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildCompactAnalyzerFrame,
   createAudioFeatureAnalyzer,
@@ -176,5 +176,41 @@ describe("feature analyzer", () => {
       Float32Array,
     );
     expect(fakeWorker.messages[1].payload.frame.frameId).toBe(1);
+  });
+
+  it("does not start the worker-wasm runtime without cross-origin isolation", () => {
+    const createWorker = vi.fn(() => new FakeWorker());
+    const analyzer = createAudioFeatureAnalyzer(
+      {},
+      {
+        createWorker,
+        isCrossOriginIsolated: false,
+      },
+    );
+
+    expect(createWorker).not.toHaveBeenCalled();
+    expect(analyzer.getStatus()).toEqual({
+      workerState: "none",
+      workerStatus: {
+        state: "disabled",
+        reason: "cross-origin-isolation-required",
+        error: null,
+      },
+    });
+
+    expect(
+      analyzer.readHints({
+        status: makeStatus(),
+        frameTimeMs: 80,
+      }),
+    ).toMatchObject({
+      active: false,
+      workerState: "none",
+      workerStatus: {
+        state: "disabled",
+        reason: "cross-origin-isolation-required",
+        error: null,
+      },
+    });
   });
 });

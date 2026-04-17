@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { getSourceAuthoritativeClock } from "./externalFrameClock.js";
 
 test("passes through source timing for a new external frame sequence", () => {
@@ -20,10 +19,10 @@ test("passes through source timing for a new external frame sequence", () => {
     },
   });
 
-  assert.equal(clock.shouldAdvance, true);
-  assert.equal(clock.frameSequence, 42);
-  assert.equal(clock.deltaTime, 1 / 60);
-  assert.deepEqual(clock.status, { isPlaying: true });
+  expect(clock.shouldAdvance).toBe(true);
+  expect(clock.frameSequence).toBe(42);
+  expect(clock.deltaTime).toBe(1 / 60);
+  expect(clock.status).toStrictEqual({ isPlaying: true });
 });
 
 test("zeros duplicate external frame deltas while keeping the source clock", () => {
@@ -44,10 +43,10 @@ test("zeros duplicate external frame deltas while keeping the source clock", () 
     },
   });
 
-  assert.equal(clock.shouldAdvance, false);
-  assert.equal(clock.frameSequence, 42);
-  assert.equal(clock.time, 12);
-  assert.equal(clock.deltaTime, 0);
+  expect(clock.shouldAdvance).toBe(false);
+  expect(clock.frameSequence).toBe(42);
+  expect(clock.time).toBe(12);
+  expect(clock.deltaTime).toBe(0);
 });
 
 test("falls back to local audio timing when no external frame is present", () => {
@@ -62,9 +61,9 @@ test("falls back to local audio timing when no external frame is present", () =>
     },
   });
 
-  assert.equal(clock.shouldAdvance, true);
-  assert.equal(clock.frameSequence, null);
-  assert.equal(clock.time, 3);
-  assert.equal(clock.deltaTime, 0.5);
-  assert.deepEqual(clock.status, { isPlaying: false });
+  expect(clock.shouldAdvance).toBe(true);
+  expect(clock.frameSequence).toBeNull();
+  expect(clock.time).toBe(3);
+  expect(clock.deltaTime).toBe(0.5);
+  expect(clock.status).toStrictEqual({ isPlaying: false });
 });

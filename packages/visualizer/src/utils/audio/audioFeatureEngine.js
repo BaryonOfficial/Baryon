@@ -1,7 +1,4 @@
-import {
-  DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS,
-  normalizeAudioFeatureEngineSettings,
-} from "./audioFeatureEngineShared.js";
+import { normalizeAudioFeatureEngineSettings } from "./audioFeatureEngineShared.js";
 import { buildAnalysisSessionKey } from "./featureAnalyzer.js";
 import {
   DEFAULT_REQUESTED_CAVITY_GEOMETRY,
@@ -12,9 +9,6 @@ export {
   DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS,
   normalizeAudioFeatureEngineSettings,
 } from "./audioFeatureEngineShared.js";
-
-const DEFAULT_STRUCTURAL_IMPLEMENTATION =
-  DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS.structuralImplementation;
 
 function cloneArray(values) {
   if (values instanceof Float32Array) {
@@ -45,51 +39,10 @@ function cloneAnalysisHints(analysisHints) {
   };
 }
 
-function normalizeStructuralImplementation(value) {
-  return value === "legacy-peak" ||
-    value === "modal-excitation" ||
-    value === "dual"
-    ? value
-    : DEFAULT_STRUCTURAL_IMPLEMENTATION;
-}
-
-function getStructuralImplementationOverride() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const override = /** @type {any} */ (window)
-    .__baryonStructuralImplementationOverride;
-  return override == null ? null : normalizeStructuralImplementation(override);
-}
-
-function resolveStructuralImplementation(value) {
-  return normalizeStructuralImplementation(
-    value ??
-      getStructuralImplementationOverride() ??
-      DEFAULT_STRUCTURAL_IMPLEMENTATION,
-  );
-}
-
-function shouldIncludeTransportTimeData({
-  audioInputMode,
-  liveInputDeviceKind,
-  liveInputAnalysisClass,
-  structuralImplementation,
-  timeData,
-}) {
-  const requiresModalTimeData =
-    structuralImplementation === "modal-excitation" ||
-    structuralImplementation === "dual";
-  const requiresAcousticPitchTimeData =
-    audioInputMode === "live" &&
-    liveInputDeviceKind !== "system" &&
-    liveInputAnalysisClass !== "line-feed";
-
-  return Boolean(
-    timeData?.length &&
-    (requiresModalTimeData || requiresAcousticPitchTimeData),
-  );
+function shouldIncludeTransportTimeData({ timeData }) {
+  // Modal excitation always needs time-domain data for resonator excitation
+  // regardless of input source.
+  return Boolean(timeData?.length);
 }
 
 function collectTransferables(value, transferables = []) {
@@ -124,22 +77,14 @@ export function buildAudioFeatureTransportFrame({
   auditSettings = null,
   beatSettings = null,
   liveInputAnalysisSettings = null,
-  structuralImplementation = null,
   cavityGeometry = DEFAULT_REQUESTED_CAVITY_GEOMETRY,
 }) {
   const audioInputMode = status?.audioInputMode ?? "idle";
   const liveInputDeviceKind =
     status?.liveInputDeviceKind ?? status?.liveInputKind ?? null;
   const liveInputAnalysisClass = status?.liveInputAnalysisClass ?? null;
-  const effectiveStructuralImplementation = resolveStructuralImplementation(
-    structuralImplementation,
-  );
   const fftMagnitudes = cloneArray(analysisSnapshot?.fftMagnitudes);
   const timeData = shouldIncludeTransportTimeData({
-    audioInputMode,
-    liveInputDeviceKind,
-    liveInputAnalysisClass,
-    structuralImplementation: effectiveStructuralImplementation,
     timeData: analysisSnapshot?.timeData,
   })
     ? cloneArray(analysisSnapshot?.timeData)
@@ -170,7 +115,6 @@ export function buildAudioFeatureTransportFrame({
     spectralFlux: analysisSnapshot?.spectralFlux ?? 0,
     fftMagnitudes,
     timeData,
-    structuralImplementation: effectiveStructuralImplementation,
     analysisHints: cloneAnalysisHints(analysisHints),
     auditSettings: auditSettings ? { ...auditSettings } : null,
     beatSettings: beatSettings ? { ...beatSettings } : null,
@@ -313,9 +257,6 @@ export function createAudioFeatureEngine(settings = {}, dependencies = {}) {
       const nextFrame = {
         ...frame,
         frameId: resolveTransportFrameId(frame.frameId, frameId),
-        structuralImplementation:
-          frame.structuralImplementation ??
-          getStructuralImplementationOverride(),
       };
       worker.postMessage(
         {

@@ -1,7 +1,6 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import { createControlState } from "../../../../packages/visualizer/src/controls/schema.js";
-import { shouldSkipChromesthesiaStaticColorInvalidation } from "../../../../packages/app-shell/src/components/hooks/controlInvalidation.js";
+import { expect, test } from "vitest";
+import { createControlState } from "@baryon/visualizer/controls/schema";
+import { shouldSkipChromesthesiaStaticColorInvalidation } from "./controlInvalidation.js";
 
 function createControls(overrides = {}) {
   return {
@@ -17,13 +16,12 @@ test("skips invalidation when only volume color changes in chromesthesia", () =>
     volumeColor: "#112233",
   });
 
-  assert.equal(
+  expect(
     shouldSkipChromesthesiaStaticColorInvalidation(
       previousControls,
       nextControls,
     ),
-    true,
-  );
+  ).toBe(true);
 });
 
 test("skips invalidation when only contour color changes in chromesthesia", () => {
@@ -33,13 +31,12 @@ test("skips invalidation when only contour color changes in chromesthesia", () =
     surfaceColor: "#ddeeff",
   });
 
-  assert.equal(
+  expect(
     shouldSkipChromesthesiaStaticColorInvalidation(
       previousControls,
       nextControls,
     ),
-    true,
-  );
+  ).toBe(true);
 });
 
 test("skips invalidation when both static color pickers change in chromesthesia", () => {
@@ -50,26 +47,24 @@ test("skips invalidation when both static color pickers change in chromesthesia"
     surfaceColor: "#ddeeff",
   });
 
-  assert.equal(
+  expect(
     shouldSkipChromesthesiaStaticColorInvalidation(
       previousControls,
       nextControls,
     ),
-    true,
-  );
+  ).toBe(true);
 });
 
 test("keeps invalidation when no control values changed", () => {
   const previousControls = createControls({ colorMode: "chromesthesia" });
   const nextControls = createControls(previousControls);
 
-  assert.equal(
+  expect(
     shouldSkipChromesthesiaStaticColorInvalidation(
       previousControls,
       nextControls,
     ),
-    false,
-  );
+  ).toBe(false);
 });
 
 test("keeps invalidation when a live chromesthesia control changes", () => {
@@ -80,13 +75,12 @@ test("keeps invalidation when a live chromesthesia control changes", () => {
     chromesthesiaMix: 0.9,
   });
 
-  assert.equal(
+  expect(
     shouldSkipChromesthesiaStaticColorInvalidation(
       previousControls,
       nextControls,
     ),
-    false,
-  );
+  ).toBe(false);
 });
 
 test("keeps invalidation when contour sharpness changes in chromesthesia", () => {
@@ -96,13 +90,12 @@ test("keeps invalidation when contour sharpness changes in chromesthesia", () =>
     contourSharpness: previousControls.contourSharpness + 0.5,
   });
 
-  assert.equal(
+  expect(
     shouldSkipChromesthesiaStaticColorInvalidation(
       previousControls,
       nextControls,
     ),
-    false,
-  );
+  ).toBe(false);
 });
 
 test("keeps invalidation when changing into chromesthesia with a color edit", () => {
@@ -113,13 +106,12 @@ test("keeps invalidation when changing into chromesthesia with a color edit", ()
     volumeColor: "#112233",
   });
 
-  assert.equal(
+  expect(
     shouldSkipChromesthesiaStaticColorInvalidation(
       previousControls,
       nextControls,
     ),
-    false,
-  );
+  ).toBe(false);
 });
 
 test("keeps invalidation when static mode is active", () => {
@@ -130,13 +122,12 @@ test("keeps invalidation when static mode is active", () => {
     surfaceColor: "#ddeeff",
   });
 
-  assert.equal(
+  expect(
     shouldSkipChromesthesiaStaticColorInvalidation(
       previousControls,
       nextControls,
     ),
-    true,
-  );
+  ).toBe(true);
 });
 
 test("keeps invalidation when control snapshots are missing", () => {
@@ -145,12 +136,10 @@ test("keeps invalidation when control snapshots are missing", () => {
     volumeColor: "#112233",
   });
 
-  assert.equal(
+  expect(
     shouldSkipChromesthesiaStaticColorInvalidation(null, nextControls),
-    false,
-  );
-  assert.equal(
+  ).toBe(false);
+  expect(
     shouldSkipChromesthesiaStaticColorInvalidation(nextControls, null),
-    false,
-  );
+  ).toBe(false);
 });

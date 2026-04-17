@@ -7,7 +7,7 @@ import {
   blendModalStack,
   countActiveSlots,
 } from "./modalStack.js";
-import { createBlendableLayerState } from "./blendState.js";
+import { createModalExcitationState } from "./modalExcitationState.js";
 
 const BACKBONE_MAX_HZ = 3200;
 const BACKBONE_MIN_HZ = 60;
@@ -84,14 +84,6 @@ function clamp01(value) {
   }
 
   return Math.min(1, Math.max(0, value));
-}
-
-function createLayerBuffer(slotCount) {
-  return {
-    slots: new Float32Array(slotCount * 4),
-    referenceSlots: new Float32Array(slotCount * 4),
-    colorSlots: new Float32Array(slotCount * 4),
-  };
 }
 
 function buildModeKey(u, v, w) {
@@ -850,66 +842,12 @@ function createLayerStateSummary(entries, periodicity, tonalness, layer) {
   };
 }
 
-function computeComparisonMetrics(primaryState, comparisonState) {
-  const primaryFreq = primaryState?.dominantFrequency ?? 0;
-  const comparisonFreq = comparisonState?.dominantFrequency ?? 0;
-  const dominantFrequencyRatio =
-    primaryFreq > 0 && comparisonFreq > 0
-      ? Math.log2(comparisonFreq / primaryFreq)
-      : 0;
-  return {
-    activeModeCountDelta:
-      (comparisonState?.activeModeCount ?? 0) -
-      (primaryState?.activeModeCount ?? 0),
-    dominantFrequencyRatio,
-    dominantFrequencyDeltaCents: dominantFrequencyRatio * 1200,
-    modeCoherenceDelta:
-      (comparisonState?.structuralMetrics?.modeCoherence ?? 0) -
-      (primaryState?.structuralMetrics?.modeCoherence ?? 0),
-  };
-}
-
 export function getAtlasCacheSize() {
   return MODE_ATLAS_CACHE.size;
 }
 
 export { computeDrivePeriodicity };
-
-export function createModalExcitationState(capacity = 16) {
-  const layerCapacity = Math.min(capacity, 8);
-  return {
-    capacity,
-    activeModes: new Map(),
-    atlasCacheKey: null,
-    atlasEntries: [],
-    backbone: createLayerBuffer(layerCapacity),
-    detail: createLayerBuffer(layerCapacity),
-    displayBackbone: createLayerBuffer(layerCapacity),
-    displayDetail: createLayerBuffer(layerCapacity),
-    blendBackbone: createBlendableLayerState(layerCapacity),
-    blendDetail: createBlendableLayerState(layerCapacity),
-    remappedBackboneRef: new Float32Array(layerCapacity * 4),
-    remappedDetailRef: new Float32Array(layerCapacity * 4),
-    remappedSignalBackboneRef: new Float32Array(layerCapacity * 4),
-    remappedSignalDetailRef: new Float32Array(layerCapacity * 4),
-    previousSignalBackboneSlots: new Float32Array(layerCapacity * 4),
-    previousSignalDetailSlots: new Float32Array(layerCapacity * 4),
-    diagnostics: {
-      excitedModeCount: 0,
-      distributedExcitation: 0,
-      lowOrderModalEnergy: 0,
-      highOrderModalEnergy: 0,
-      modalPersistence: 0,
-      modalDriveEnergy: 0,
-      modeCoherence: 0,
-      driveSource: "spectral-fallback",
-    },
-  };
-}
-
-export function compareStructuralStates(primaryState, comparisonState) {
-  return computeComparisonMetrics(primaryState, comparisonState);
-}
+export { createModalExcitationState };
 
 export function buildModalExcitationStructuralState({
   preparedInputs,
