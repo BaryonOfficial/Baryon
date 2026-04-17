@@ -82,4 +82,114 @@ describe("legacy peak families", () => {
     expect(decayedFamily.amplitude).toBeLessThan(amplitudeBeforeDecay);
     expect(decayedFamily.lastConfirmedHeavyFrame).toBe(1);
   });
+
+  it("resets split counter on non-consecutive harmonic support", () => {
+    const state = createLegacyPeakFamilyState();
+
+    updateLegacyPeakSelection({
+      state,
+      candidatePool: [makeCandidate(110, 0.95), makeCandidate(330, 0.46)],
+      analysisHints: null,
+      heavyFrameIndex: 1,
+    });
+    // Gap: 5 heavy frames with only the fundamental.
+    for (let frame = 2; frame <= 6; frame += 1) {
+      updateLegacyPeakSelection({
+        state,
+        candidatePool: [makeCandidate(110, 0.95)],
+        analysisHints: null,
+        heavyFrameIndex: frame,
+      });
+    }
+    const reappeared = updateLegacyPeakSelection({
+      state,
+      candidatePool: [makeCandidate(110, 0.95), makeCandidate(330, 0.46)],
+      analysisHints: null,
+      heavyFrameIndex: 7,
+    });
+
+    // Only ONE harmonic sighting after the gap; split must not fire yet.
+    expect(
+      reappeared.backbonePeaks.some(
+        (peak) => Math.abs((peak.frequency ?? 0) - 330) < 20,
+      ),
+    ).toBe(false);
+  });
+
+  it("prunes unused pending-split entries after their TTL expires", () => {
+    const state = createLegacyPeakFamilyState();
+
+    updateLegacyPeakSelection({
+      state,
+      candidatePool: [makeCandidate(110, 0.95), makeCandidate(330, 0.46)],
+      analysisHints: null,
+      heavyFrameIndex: 1,
+    });
+    expect(state.pendingIndependentCandidates.size).toBeGreaterThan(0);
+
+    // Drive forward past the TTL with fundamental only. Pruning runs per tick.
+    for (let frame = 2; frame <= 10; frame += 1) {
+      updateLegacyPeakSelection({
+        state,
+        candidatePool: [makeCandidate(110, 0.95)],
+        analysisHints: null,
+        heavyFrameIndex: frame,
+      });
+    }
+
+    expect(state.pendingIndependentCandidates.size).toBe(0);
+  });
+
+  it("keeps nearby low-frequency detail candidates in separate families", () => {
+    const state = createLegacyPeakFamilyState();
+
+    const candidatePool = [
+      // Both push into detail pool (below backbone max but detail accepts all).
+      { frequency: 55, amplitude: 0.88, salienceScore: 0.88 },
+      { frequency: 82, amplitude: 0.84, salienceScore: 0.84 },
+    ];
+
+    updateLegacyPeakSelection({
+      state,
+      candidatePool,
+      analysisHints: null,
+      heavyFrameIndex: 1,
+    });
+
+    // 55 Hz and 82 Hz are 27 Hz apart — must not collapse into a single
+    // detail family even though both are below the old 36 Hz cap.
+    expect(state.detailFamilies.size).toBeGreaterThanOrEqual(2);
+  });
+
+  it("increments disagreementCount when another family wins an expected candidate", () => {
+    const state = createLegacyPeakFamilyState();
+
+    // Establish a backbone fundamental at 110 Hz.
+    updateLegacyPeakSelection({
+      state,
+      candidatePool: [makeCandidate(110, 0.95)],
+      analysisHints: null,
+      heavyFrameIndex: 1,
+    });
+    // Present a ~330 Hz candidate twice: second sighting triggers split,
+    // meaning the fundamental's lowerHarmonicMatch expectation lost.
+    updateLegacyPeakSelection({
+      state,
+      candidatePool: [makeCandidate(110, 0.95), makeCandidate(330, 0.48)],
+      analysisHints: null,
+      heavyFrameIndex: 2,
+    });
+    updateLegacyPeakSelection({
+      state,
+      candidatePool: [makeCandidate(110, 0.95), makeCandidate(330, 0.48)],
+      analysisHints: null,
+      heavyFrameIndex: 3,
+    });
+
+    const fundamental = Array.from(state.backboneFamilies.values()).find(
+      (family) => Math.abs(family.centerHz - 110) < 8,
+    );
+    expect(fundamental).toBeTruthy();
+    expect(fundamental.disagreementCount).toBeGreaterThan(0);
+  });
 });
