@@ -171,42 +171,48 @@ try {
   );
 }
 
-const syncPublic = fs.readFileSync(
-  path.join(rootDir, "scripts/sync-public.sh"),
-  "utf8",
-);
-
-if (!syncPublic.includes("documentation/public")) {
-  errors.push("scripts/sync-public.sh: missing documentation/public export");
-}
-
-if (!syncPublic.includes(".nvmrc")) {
-  errors.push("scripts/sync-public.sh: missing .nvmrc export");
-}
-
-if (!syncPublic.includes(".dependency-cruiser.cjs")) {
-  errors.push("scripts/sync-public.sh: missing .dependency-cruiser.cjs export");
-}
-
-if (!syncPublic.includes("scripts/check-docs.mjs")) {
-  errors.push("scripts/sync-public.sh: missing scripts/check-docs.mjs export");
-}
-
-if (!syncPublic.includes("scripts/workspace-version.mjs")) {
-  errors.push(
-    "scripts/sync-public.sh: missing scripts/workspace-version.mjs export",
+if (scriptExists("scripts/sync-public.sh")) {
+  const syncPublic = fs.readFileSync(
+    path.join(rootDir, "scripts/sync-public.sh"),
+    "utf8",
   );
-}
 
-if (
-  syncPublic.includes("documentation/internal") &&
-  !syncPublic.includes(
-    "Excluded: apps/desktop, apps/marketing, internal documentation",
-  )
-) {
-  errors.push(
-    "scripts/sync-public.sh: internal documentation appears to be exported",
-  );
+  if (!syncPublic.includes("documentation/public")) {
+    errors.push("scripts/sync-public.sh: missing documentation/public export");
+  }
+
+  if (!syncPublic.includes(".nvmrc")) {
+    errors.push("scripts/sync-public.sh: missing .nvmrc export");
+  }
+
+  if (!syncPublic.includes(".dependency-cruiser.cjs")) {
+    errors.push(
+      "scripts/sync-public.sh: missing .dependency-cruiser.cjs export",
+    );
+  }
+
+  if (!syncPublic.includes("scripts/check-docs.mjs")) {
+    errors.push(
+      "scripts/sync-public.sh: missing scripts/check-docs.mjs export",
+    );
+  }
+
+  if (!syncPublic.includes("scripts/workspace-version.mjs")) {
+    errors.push(
+      "scripts/sync-public.sh: missing scripts/workspace-version.mjs export",
+    );
+  }
+
+  if (
+    syncPublic.includes("documentation/internal") &&
+    !syncPublic.includes(
+      "Excluded: apps/desktop, apps/marketing, internal documentation",
+    )
+  ) {
+    errors.push(
+      "scripts/sync-public.sh: internal documentation appears to be exported",
+    );
+  }
 }
 
 const polyformLicense = "LicenseRef-PolyForm-Strict-1.0";

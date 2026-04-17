@@ -39,6 +39,20 @@ pnpm install
 
 `pnpm install` also runs the repo `prepare` script and installs the committed Husky hooks.
 
+For a faster pre-push loop than `pnpm verify`, you can temporarily opt into the
+cheap checks only:
+
+```bash
+BARYON_PRE_PUSH_PREFLIGHT=1 git push
+```
+
+`pnpm preflight:web:vercel` defaults to the fast local reproduction using
+`pnpm@9`. To run the slower local Vercel builder instead, use:
+
+```bash
+BARYON_PREFLIGHT_VERCEL_BUILD=1 pnpm preflight:web:vercel
+```
+
 ## Common Commands
 
 ```bash
@@ -48,6 +62,8 @@ pnpm dev:marketing        # Start apps/marketing
 pnpm build                # Build all apps and packages
 pnpm build:web            # Build apps/web only
 pnpm build:marketing      # Build apps/marketing only
+pnpm preflight:public     # Fast public-repo CI preflight
+pnpm preflight:web:vercel # Fast web build check against the pnpm 9 Vercel path
 pnpm repo:map             # Refresh the generated workspace map
 pnpm repo:map:check       # Verify the generated workspace map is current
 pnpm version:check        # Ensure every workspace manifest matches the repo version

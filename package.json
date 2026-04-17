@@ -18,6 +18,8 @@
     "build": "turbo build",
     "build:web": "turbo build --filter=@baryon/web",
     "build:marketing": "turbo build --filter=@baryon/marketing",
+    "preflight:public": "bash scripts/preflight-public.sh",
+    "preflight:web:vercel": "bash scripts/preflight-web-vercel.sh",
     "repo:map": "node scripts/generate-repo-map.mjs",
     "repo:map:check": "node scripts/generate-repo-map.mjs --check",
     "docs:check": "node scripts/check-docs.mjs",
