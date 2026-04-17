@@ -611,6 +611,8 @@ describe("audio feature engine snapshots", () => {
     expect(snapshot.analysisResult.structuralComparison).toMatchObject({
       activeModeCountDelta: expect.any(Number),
       dominantFrequencyRatio: expect.any(Number),
+      lowOrderModalEnergyDelta: expect.any(Number),
+      modalPersistenceDelta: expect.any(Number),
     });
     expect(snapshot.analysisResult.comparisonDebug).toMatchObject({
       analysisEngine: "modal-excitation",

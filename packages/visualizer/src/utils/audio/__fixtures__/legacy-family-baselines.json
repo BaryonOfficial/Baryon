@@ -1,0 +1,24 @@
+{
+  "generatedAt": "2026-04-16T23:03:58.726Z",
+  "baselineSelectionMode": "raw",
+  "fixtures": {
+    "low-guitar-chord": {
+      "activeModeCountDelta": -10,
+      "lowOrderModalEnergyDelta": -1.1599937114925902,
+      "modalPersistenceDelta": 0.21858306123517934,
+      "modeCoherenceDelta": 0.5985798024674003
+    },
+    "sustained-drone": {
+      "activeModeCountDelta": -11,
+      "lowOrderModalEnergyDelta": -0.7117656984113004,
+      "modalPersistenceDelta": 0.22363201174409433,
+      "modeCoherenceDelta": 0.6352202684440258
+    },
+    "transient-tonal-passage": {
+      "activeModeCountDelta": -12,
+      "lowOrderModalEnergyDelta": -1.8086146156987308,
+      "modalPersistenceDelta": 0.2412301179090185,
+      "modeCoherenceDelta": 0.5955481907057179
+    }
+  }
+}

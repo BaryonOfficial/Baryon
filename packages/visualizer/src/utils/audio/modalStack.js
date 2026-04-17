@@ -5,6 +5,7 @@ import {
   BEAT_DEFAULTS,
 } from "../../defaults.js";
 import { createBlendableLayerState } from "./blendState.js";
+import { createLegacyPeakFamilyState } from "./legacyPeakFamilies.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
 
 /** @type {number} */
@@ -155,8 +156,11 @@ export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
       nonAcousticBackboneTarget: createModalTargetBuild(backboneCapacity),
       nonAcousticDetailTarget: createModalTargetBuild(detailCapacity),
       nonAcousticPeakDriverScratch: createModalTargetBuild(backboneCapacity),
+      legacySignalBackboneTarget: createModalTargetBuild(backboneCapacity),
+      legacySignalDetailTarget: createModalTargetBuild(detailCapacity),
       acousticBackboneTarget: createModalTargetBuild(backboneCapacity),
       acousticDetailTarget: createModalTargetBuild(detailCapacity),
+      legacyPeakFamilyState: createLegacyPeakFamilyState(),
       modalExcitationState: createModalExcitationState(capacity),
     },
     audit: {
