@@ -46,6 +46,10 @@ function toRepoRelative(filePath) {
   return path.relative(rootDir, filePath).replaceAll(path.sep, "/");
 }
 
+function scriptExists(relPath) {
+  return fs.existsSync(path.join(rootDir, relPath));
+}
+
 for (const filePath of markdownFiles) {
   const text = fs.readFileSync(filePath, "utf8");
   const relPath = toRepoRelative(filePath);
@@ -104,7 +108,9 @@ const duplicateGuardFiles = [
   "AGENTS.md",
   "CLAUDE.md",
   ".github/CONTRIBUTING.md",
-].map((relPath) => path.join(rootDir, relPath));
+]
+  .map((relPath) => path.join(rootDir, relPath))
+  .filter((filePath) => fs.existsSync(filePath));
 
 const forbiddenPatterns = [
   /^## Current Architecture$/m,
@@ -128,26 +134,30 @@ for (const filePath of duplicateGuardFiles) {
   }
 }
 
-try {
-  execFileSync("node", ["scripts/generate-repo-map.mjs", "--check"], {
-    cwd: rootDir,
-    stdio: "pipe",
-  });
-} catch {
-  errors.push(
-    "documentation/internal/generated/repo-map.md is stale; run 'pnpm repo:map' and commit the updated generated file",
-  );
+if (scriptExists("scripts/generate-repo-map.mjs")) {
+  try {
+    execFileSync("node", ["scripts/generate-repo-map.mjs", "--check"], {
+      cwd: rootDir,
+      stdio: "pipe",
+    });
+  } catch {
+    errors.push(
+      "documentation/internal/generated/repo-map.md is stale; run 'pnpm repo:map' and commit the updated generated file",
+    );
+  }
 }
 
-try {
-  execFileSync("node", ["scripts/contract-desktop-bridge.mjs", "--check"], {
-    cwd: rootDir,
-    stdio: "pipe",
-  });
-} catch {
-  errors.push(
-    "documentation/internal/generated/desktop-bridge-contract.md is stale or the desktop bridge contract has drifted; run 'pnpm contract:desktop-bridge' and resolve the mismatch",
-  );
+if (scriptExists("scripts/contract-desktop-bridge.mjs")) {
+  try {
+    execFileSync("node", ["scripts/contract-desktop-bridge.mjs", "--check"], {
+      cwd: rootDir,
+      stdio: "pipe",
+    });
+  } catch {
+    errors.push(
+      "documentation/internal/generated/desktop-bridge-contract.md is stale or the desktop bridge contract has drifted; run 'pnpm contract:desktop-bridge' and resolve the mismatch",
+    );
+  }
 }
 
 try {
@@ -178,6 +188,16 @@ if (!syncPublic.includes(".dependency-cruiser.cjs")) {
   errors.push("scripts/sync-public.sh: missing .dependency-cruiser.cjs export");
 }
 
+if (!syncPublic.includes("scripts/check-docs.mjs")) {
+  errors.push("scripts/sync-public.sh: missing scripts/check-docs.mjs export");
+}
+
+if (!syncPublic.includes("scripts/workspace-version.mjs")) {
+  errors.push(
+    "scripts/sync-public.sh: missing scripts/workspace-version.mjs export",
+  );
+}
+
 if (
   syncPublic.includes("documentation/internal") &&
   !syncPublic.includes(
@@ -201,6 +221,10 @@ const expectedLicenses = new Map([
 ]);
 
 for (const [relPath, expectedLicense] of expectedLicenses) {
+  if (!fs.existsSync(path.join(rootDir, relPath))) {
+    continue;
+  }
+
   const packageJson = JSON.parse(
     fs.readFileSync(path.join(rootDir, relPath), "utf8"),
   );

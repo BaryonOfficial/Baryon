@@ -15,6 +15,9 @@ const manifestPaths = [
   "packages/config/package.json",
   "packages/visualizer/package.json",
 ];
+const existingManifestPaths = manifestPaths.filter((relPath) =>
+  fs.existsSync(path.join(rootDir, relPath)),
+);
 
 const args = process.argv.slice(2);
 const checkOnly = args.includes("--check");
@@ -44,7 +47,7 @@ if (!semverPattern.test(targetVersion)) {
 }
 
 const mismatches = [];
-for (const relPath of manifestPaths) {
+for (const relPath of existingManifestPaths) {
   const manifest = readManifest(relPath);
   if (manifest.version !== targetVersion) {
     mismatches.push({
@@ -67,12 +70,12 @@ if (checkOnly) {
   process.exit(0);
 }
 
-for (const relPath of manifestPaths) {
+for (const relPath of existingManifestPaths) {
   const manifest = readManifest(relPath);
   manifest.version = targetVersion;
   writeManifest(relPath, manifest);
 }
 
 console.log(
-  `Updated ${manifestPaths.length} workspace manifests to version ${targetVersion}`,
+  `Updated ${existingManifestPaths.length} workspace manifests to version ${targetVersion}`,
 );
