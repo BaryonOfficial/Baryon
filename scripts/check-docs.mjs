@@ -174,6 +174,10 @@ if (!syncPublic.includes(".nvmrc")) {
   errors.push("scripts/sync-public.sh: missing .nvmrc export");
 }
 
+if (!syncPublic.includes(".dependency-cruiser.cjs")) {
+  errors.push("scripts/sync-public.sh: missing .dependency-cruiser.cjs export");
+}
+
 if (
   syncPublic.includes("documentation/internal") &&
   !syncPublic.includes(
