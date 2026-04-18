@@ -274,7 +274,7 @@ function createFieldNode({
       .mul(float(0.9).add(activityAccent.mul(float(0.08))))
       .mul(visibleDensity);
 
-    return vec4(color, opacity);
+    return vec4(/** @type {any} */ (color), opacity);
   })();
 }
 

@@ -57,8 +57,8 @@ importers:
         specifier: ^2.9.3
         version: 2.9.3
       typescript:
-        specifier: ^6.0.2
-        version: 6.0.2
+        specifier: ^5.9.3
+        version: 5.9.3
 
   apps/desktop:
     dependencies:
@@ -73,10 +73,10 @@ importers:
         version: link:../../packages/visualizer
       '@react-three/drei':
         specifier: ^10.7.7
-        version: 10.7.7(@react-three/fiber@9.5.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2))(@types/react@19.2.14)(@types/three@0.183.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2)
+        version: 10.7.7(@react-three/fiber@9.6.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0))(@types/react@19.2.14)(@types/three@0.184.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0)
       '@react-three/fiber':
-        specifier: ^9.5.0
-        version: 9.5.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2)
+        specifier: ^9.6.0
+        version: 9.6.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0)
       react:
         specifier: ^19.2.4
         version: 19.2.4
@@ -84,8 +84,8 @@ importers:
         specifier: ^19.2.4
         version: 19.2.4(react@19.2.4)
       three:
-        specifier: ^0.183.2
-        version: 0.183.2
+        specifier: ^0.184.0
+        version: 0.184.0
     devDependencies:
       '@baryon/config':
         specifier: workspace:*
@@ -118,8 +118,8 @@ importers:
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.14)
       '@types/three':
-        specifier: ^0.183.1
-        version: 0.183.1
+        specifier: ^0.184.0
+        version: 0.184.0
       electron:
         specifier: ^41.1.1
         version: 41.1.1
@@ -140,7 +140,7 @@ importers:
     devDependencies:
       '@astrojs/check':
         specifier: ^0.9.8
-        version: 0.9.8(prettier-plugin-astro@0.14.1)(prettier@3.8.1)(typescript@6.0.2)
+        version: 0.9.8(prettier-plugin-astro@0.14.1)(prettier@3.8.1)(typescript@5.9.3)
       '@astrojs/sitemap':
         specifier: ^3.7.2
         version: 3.7.2
@@ -149,7 +149,7 @@ importers:
         version: 4.2.2(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(yaml@2.8.3))
       astro:
         specifier: ^6.1.3
-        version: 6.1.3(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(rollup@4.59.0)(terser@5.46.1)(typescript@6.0.2)(yaml@2.8.3)
+        version: 6.1.3(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(rollup@4.59.0)(terser@5.46.1)(typescript@5.9.3)(yaml@2.8.3)
       tailwindcss:
         specifier: ^4.2.2
         version: 4.2.2
@@ -164,10 +164,10 @@ importers:
         version: link:../../packages/app-shell
       '@react-three/drei':
         specifier: ^10.7.7
-        version: 10.7.7(@react-three/fiber@9.5.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2))(@types/react@19.2.14)(@types/three@0.183.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2)
+        version: 10.7.7(@react-three/fiber@9.6.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0))(@types/react@19.2.14)(@types/three@0.184.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0)
       '@react-three/fiber':
-        specifier: ^9.5.0
-        version: 9.5.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2)
+        specifier: ^9.6.0
+        version: 9.6.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0)
       react:
         specifier: ^19.2.4
         version: 19.2.4
@@ -175,8 +175,8 @@ importers:
         specifier: ^19.2.4
         version: 19.2.4(react@19.2.4)
       three:
-        specifier: ^0.183.2
-        version: 0.183.2
+        specifier: ^0.184.0
+        version: 0.184.0
       zustand:
         specifier: ^5.0.12
         version: 5.0.12(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
@@ -200,8 +200,8 @@ importers:
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.14)
       '@types/three':
-        specifier: ^0.183.1
-        version: 0.183.1
+        specifier: ^0.184.0
+        version: 0.184.0
       '@vitejs/plugin-basic-ssl':
         specifier: ^2.3.0
         version: 2.3.0(vite@8.0.3(@emnapi/core@1.9.0)(@emnapi/runtime@1.9.0)(@types/node@25.5.0)(esbuild@0.27.4)(jiti@2.6.1)(terser@5.46.1)(yaml@2.8.3))
@@ -222,10 +222,10 @@ importers:
         version: link:../visualizer
       '@react-three/drei':
         specifier: ^10.7.7
-        version: 10.7.7(@react-three/fiber@9.5.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2))(@types/react@19.2.14)(@types/three@0.183.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2)
+        version: 10.7.7(@react-three/fiber@9.6.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0))(@types/react@19.2.14)(@types/three@0.184.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0)
       '@react-three/fiber':
-        specifier: ^9.5.0
-        version: 9.5.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2)
+        specifier: ^9.6.0
+        version: 9.6.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0)
       '@tailwindcss/vite':
         specifier: ^4.2.2
         version: 4.2.2(vite@8.0.3(@emnapi/core@1.9.0)(@emnapi/runtime@1.9.0)(@types/node@25.5.0)(esbuild@0.27.4)(jiti@2.6.1)(terser@5.46.1)(yaml@2.8.3))
@@ -238,15 +238,12 @@ importers:
       react-dom:
         specifier: ^19.2.4
         version: 19.2.4(react@19.2.4)
-      tailwindcss:
-        specifier: ^4.2.2
-        version: 4.2.2
       tailwindcss-animate:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@4.2.2)
       three:
-        specifier: ^0.183.2
-        version: 0.183.2
+        specifier: ^0.184.0
+        version: 0.184.0
     devDependencies:
       '@baryon/config':
         specifier: workspace:*
@@ -254,6 +251,9 @@ importers:
       jsdom:
         specifier: ^29.0.1
         version: 29.0.1
+      tailwindcss:
+        specifier: ^4.2.2
+        version: 4.2.2
       vitest:
         specifier: ^4.1.2
         version: 4.1.2(@types/node@25.5.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.0)(@emnapi/runtime@1.9.0)(@types/node@25.5.0)(esbuild@0.27.4)(jiti@2.6.1)(terser@5.46.1)(yaml@2.8.3))
@@ -291,8 +291,8 @@ importers:
         specifier: ^19.2.4
         version: 19.2.4
       three:
-        specifier: ^0.183.2
-        version: 0.183.2
+        specifier: ^0.184.0
+        version: 0.184.0
     devDependencies:
       '@types/node':
         specifier: ^25.5.0
@@ -1415,8 +1415,8 @@ packages:
       react-dom:
         optional: true
 
-  '@react-three/fiber@9.5.0':
-    resolution: {integrity: sha512-FiUzfYW4wB1+PpmsE47UM+mCads7j2+giRBltfwH7SNhah95rqJs3ltEs9V3pP8rYdS0QlNne+9Aj8dS/SiaIA==}
+  '@react-three/fiber@9.6.0':
+    resolution: {integrity: sha512-90abYK2q5/qDM+GACs9zRvc5KhEEpEWqWlHSd64zTPNxg+9wCJvTfyD9x2so7hlQhjRYO1Fa6flR3BC/kpTFkA==}
     peerDependencies:
       expo: '>=43.0'
       expo-asset: '>=8.4'
@@ -1949,8 +1949,8 @@ packages:
   '@types/stats.js@0.17.4':
     resolution: {integrity: sha512-jIBvWWShCvlBqBNIZt0KAshWpvSjhkwkEu4ZUcASoAvhmrgAUI2t1dXrjSL4xXVLB4FznPrIsX3nKXFl/Dt4vA==}
 
-  '@types/three@0.183.1':
-    resolution: {integrity: sha512-f2Pu5Hrepfgavttdye3PsH5RWyY/AvdZQwIVhrc4uNtvF7nOWJacQKcoVJn0S4f0yYbmAE6AR+ve7xDcuYtMGw==}
+  '@types/three@0.184.0':
+    resolution: {integrity: sha512-4mY2tZAu0y0B0567w7013BBXSpsP0+Z48NJvmNo4Y/Pf76yCyz6Jw4P3tUVs10WuYNXXZ+wmHyGWpCek3amJxA==}
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
@@ -2096,9 +2096,6 @@ packages:
 
   '@webassemblyjs/wast-printer@1.14.1':
     resolution: {integrity: sha512-kPSSXE6De1XOR820C90RIo2ogvZG+c3KiHzqUoO/F34Y2shGzesfqv7o57xrxovZJH/MetF5UjroJ/R/3isoiw==}
-
-  '@webgpu/types@0.1.69':
-    resolution: {integrity: sha512-RPmm6kgRbI8e98zSD3RVACvnuktIja5+yLgDAkTmxLr90BEwdTXRQWNLF3ETTTyH/8mKhznZuN5AveXYFEsMGQ==}
 
   '@xmldom/xmldom@0.8.12':
     resolution: {integrity: sha512-9k/gHF6n/pAi/9tqr3m3aqkuiNosYTurLLUtc7xQ9sxB/wm7WPygCv8GYa6mS0fLJEHhqMC1ATYhz++U/lRHqg==}
@@ -2334,6 +2331,9 @@ packages:
 
   brace-expansion@2.0.3:
     resolution: {integrity: sha512-MCV/fYJEbqx68aE58kv2cA/kiky1G8vux3OR6/jbS+jIMe/6fJWa0DTzJU7dqijOWYwHi1t29FlfYI9uytqlpA==}
+
+  brace-expansion@2.1.0:
+    resolution: {integrity: sha512-TN1kCZAgdgweJhWWpgKYrQaMNHcDULHkWwQIspdtjV4Y5aurRdZpjAqn6yX3FPqTA9ngHCc4hJxMAMgGfve85w==}
 
   braces@3.0.3:
     resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
@@ -3926,8 +3926,8 @@ packages:
     peerDependencies:
       three: '>=0.137'
 
-  meshoptimizer@1.0.1:
-    resolution: {integrity: sha512-Vix+QlA1YYT3FwmBBZ+49cE5y/b+pRrcXKqGpS5ouh33d3lSp2PoTpCw19E0cKDFWalembrHnIaZetf27a+W2g==}
+  meshoptimizer@1.1.1:
+    resolution: {integrity: sha512-oRFNWJRDA/WTrVj7NWvqa5HqE1t9MYDj2VaWirQCzCCrAd2GHrqR/sQezCxiWATPNlKTcRaPRHPJwIRoPBAp5g==}
 
   micromark-core-commonmark@2.0.3:
     resolution: {integrity: sha512-RDBrHEMSxVFLg6xvnXmb1Ayr2WzLAWjeSATAoxwKYJV94TeNavgoIdA0a9ytzDSVzBy2YKFK+emCPOEibLeCrg==}
@@ -5140,8 +5140,8 @@ packages:
     peerDependencies:
       three: '>=0.128.0'
 
-  three@0.183.2:
-    resolution: {integrity: sha512-di3BsL2FEQ1PA7Hcvn4fyJOlxRRgFYBpMTcyOgkwJIaDOdJMebEFPA+t98EvjuljDx4hNulAGwF6KIjtwI5jgQ==}
+  three@0.184.0:
+    resolution: {integrity: sha512-wtTRjG92pM5eUg/KuUnHsqSAlPM296brTOcLgMRqEeylYTh/CdtvKUvCyyCQTzFuStieWxvZb8mVTMvdPyUpxg==}
 
   tiny-inflate@1.0.3:
     resolution: {integrity: sha512-pkY1fj1cKHb2seWDy0B16HeWyczlJA9/WW3u3c4z/NiWDsO3DOU5D7nhTLE9CF0yXv/QZFY7sEJmj24dK+Rrqw==}
@@ -5292,8 +5292,8 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
-  typescript@6.0.2:
-    resolution: {integrity: sha512-bGdAIrZ0wiGDo5l8c++HWtbaNCWTS4UTv7RaTH/ThVIgjkveJt83m74bBHMJkuCbslY8ixgLBVZJIOiQlQTjfQ==}
+  typescript@5.9.3:
+    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -5986,12 +5986,12 @@ snapshots:
       '@ast-grep/cli-win32-ia32-msvc': 0.42.0
       '@ast-grep/cli-win32-x64-msvc': 0.42.0
 
-  '@astrojs/check@0.9.8(prettier-plugin-astro@0.14.1)(prettier@3.8.1)(typescript@6.0.2)':
+  '@astrojs/check@0.9.8(prettier-plugin-astro@0.14.1)(prettier@3.8.1)(typescript@5.9.3)':
     dependencies:
-      '@astrojs/language-server': 2.16.6(prettier-plugin-astro@0.14.1)(prettier@3.8.1)(typescript@6.0.2)
+      '@astrojs/language-server': 2.16.6(prettier-plugin-astro@0.14.1)(prettier@3.8.1)(typescript@5.9.3)
       chokidar: 4.0.3
       kleur: 4.1.5
-      typescript: 6.0.2
+      typescript: 5.9.3
       yargs: 17.7.2
     transitivePeerDependencies:
       - prettier
@@ -6005,12 +6005,12 @@ snapshots:
     dependencies:
       picomatch: 4.0.4
 
-  '@astrojs/language-server@2.16.6(prettier-plugin-astro@0.14.1)(prettier@3.8.1)(typescript@6.0.2)':
+  '@astrojs/language-server@2.16.6(prettier-plugin-astro@0.14.1)(prettier@3.8.1)(typescript@5.9.3)':
     dependencies:
       '@astrojs/compiler': 2.13.1
       '@astrojs/yaml2ts': 0.2.3
       '@jridgewell/sourcemap-codec': 1.5.5
-      '@volar/kit': 2.4.28(typescript@6.0.2)
+      '@volar/kit': 2.4.28(typescript@5.9.3)
       '@volar/language-core': 2.4.28
       '@volar/language-server': 2.4.28
       '@volar/language-service': 2.4.28
@@ -6904,10 +6904,10 @@ snapshots:
 
   '@mediapipe/tasks-vision@0.10.17': {}
 
-  '@monogrid/gainmap-js@3.4.0(three@0.183.2)':
+  '@monogrid/gainmap-js@3.4.0(three@0.184.0)':
     dependencies:
       promise-worker-transferable: 1.0.4
-      three: 0.183.2
+      three: 0.184.0
 
   '@napi-rs/wasm-runtime@1.1.2(@emnapi/core@1.9.0)(@emnapi/runtime@1.9.0)':
     dependencies:
@@ -7101,28 +7101,28 @@ snapshots:
 
   '@protobufjs/utf8@1.1.0': {}
 
-  '@react-three/drei@10.7.7(@react-three/fiber@9.5.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2))(@types/react@19.2.14)(@types/three@0.183.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2)':
+  '@react-three/drei@10.7.7(@react-three/fiber@9.6.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0))(@types/react@19.2.14)(@types/three@0.184.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0)':
     dependencies:
       '@babel/runtime': 7.29.2
       '@mediapipe/tasks-vision': 0.10.17
-      '@monogrid/gainmap-js': 3.4.0(three@0.183.2)
-      '@react-three/fiber': 9.5.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2)
+      '@monogrid/gainmap-js': 3.4.0(three@0.184.0)
+      '@react-three/fiber': 9.6.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0)
       '@use-gesture/react': 10.3.1(react@19.2.4)
-      camera-controls: 3.1.2(three@0.183.2)
+      camera-controls: 3.1.2(three@0.184.0)
       cross-env: 7.0.3
       detect-gpu: 5.0.70
       glsl-noise: 0.0.0
       hls.js: 1.6.15
-      maath: 0.10.8(@types/three@0.183.1)(three@0.183.2)
-      meshline: 3.3.1(three@0.183.2)
+      maath: 0.10.8(@types/three@0.184.0)(three@0.184.0)
+      meshline: 3.3.1(three@0.184.0)
       react: 19.2.4
-      stats-gl: 2.4.2(@types/three@0.183.1)(three@0.183.2)
+      stats-gl: 2.4.2(@types/three@0.184.0)(three@0.184.0)
       stats.js: 0.17.0
       suspend-react: 0.1.3(react@19.2.4)
-      three: 0.183.2
-      three-mesh-bvh: 0.8.3(three@0.183.2)
-      three-stdlib: 2.36.1(three@0.183.2)
-      troika-three-text: 0.52.4(three@0.183.2)
+      three: 0.184.0
+      three-mesh-bvh: 0.8.3(three@0.184.0)
+      three-stdlib: 2.36.1(three@0.184.0)
+      troika-three-text: 0.52.4(three@0.184.0)
       tunnel-rat: 0.1.2(@types/react@19.2.14)(react@19.2.4)
       use-sync-external-store: 1.6.0(react@19.2.4)
       utility-types: 3.11.0
@@ -7134,7 +7134,7 @@ snapshots:
       - '@types/three'
       - immer
 
-  '@react-three/fiber@9.5.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.183.2)':
+  '@react-three/fiber@9.6.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0)':
     dependencies:
       '@babel/runtime': 7.29.2
       '@types/webxr': 0.5.24
@@ -7145,7 +7145,7 @@ snapshots:
       react-use-measure: 2.1.7(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       scheduler: 0.27.0
       suspend-react: 0.1.3(react@19.2.4)
-      three: 0.183.2
+      three: 0.184.0
       use-sync-external-store: 1.6.0(react@19.2.4)
       zustand: 5.0.12(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
     optionalDependencies:
@@ -7540,15 +7540,14 @@ snapshots:
 
   '@types/stats.js@0.17.4': {}
 
-  '@types/three@0.183.1':
+  '@types/three@0.184.0':
     dependencies:
       '@dimforge/rapier3d-compat': 0.12.0
       '@tweenjs/tween.js': 23.1.3
       '@types/stats.js': 0.17.4
       '@types/webxr': 0.5.24
-      '@webgpu/types': 0.1.69
       fflate: 0.8.2
-      meshoptimizer: 1.0.1
+      meshoptimizer: 1.1.1
 
   '@types/unist@3.0.3': {}
 
@@ -7620,12 +7619,12 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.0
 
-  '@volar/kit@2.4.28(typescript@6.0.2)':
+  '@volar/kit@2.4.28(typescript@5.9.3)':
     dependencies:
       '@volar/language-service': 2.4.28
       '@volar/typescript': 2.4.28
       typesafe-path: 0.2.2
-      typescript: 6.0.2
+      typescript: 5.9.3
       vscode-languageserver-textdocument: 1.0.12
       vscode-uri: 3.1.0
 
@@ -7747,8 +7746,6 @@ snapshots:
     dependencies:
       '@webassemblyjs/ast': 1.14.1
       '@xtuc/long': 4.2.2
-
-  '@webgpu/types@0.1.69': {}
 
   '@xmldom/xmldom@0.8.12': {}
 
@@ -7929,7 +7926,7 @@ snapshots:
 
   assertion-error@2.0.1: {}
 
-  astro@6.1.3(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(rollup@4.59.0)(terser@5.46.1)(typescript@6.0.2)(yaml@2.8.3):
+  astro@6.1.3(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(rollup@4.59.0)(terser@5.46.1)(typescript@5.9.3)(yaml@2.8.3):
     dependencies:
       '@astrojs/compiler': 3.0.1
       '@astrojs/internal-helpers': 0.8.0
@@ -7975,7 +7972,7 @@ snapshots:
       tinyclip: 0.1.12
       tinyexec: 1.0.4
       tinyglobby: 0.2.15
-      tsconfck: 3.1.6(typescript@6.0.2)
+      tsconfck: 3.1.6(typescript@5.9.3)
       ultrahtml: 1.6.0
       unifont: 0.7.4
       unist-util-visit: 5.1.0
@@ -8086,6 +8083,10 @@ snapshots:
     dependencies:
       balanced-match: 1.0.2
 
+  brace-expansion@2.1.0:
+    dependencies:
+      balanced-match: 1.0.2
+
   braces@3.0.3:
     dependencies:
       fill-range: 7.1.1
@@ -8166,9 +8167,9 @@ snapshots:
 
   callsites@3.1.0: {}
 
-  camera-controls@3.1.2(three@0.183.2):
+  camera-controls@3.1.2(three@0.184.0):
     dependencies:
-      three: 0.183.2
+      three: 0.184.0
 
   caniuse-lite@1.0.30001784: {}
 
@@ -9823,10 +9824,10 @@ snapshots:
 
   lru-cache@7.18.3: {}
 
-  maath@0.10.8(@types/three@0.183.1)(three@0.183.2):
+  maath@0.10.8(@types/three@0.184.0)(three@0.184.0):
     dependencies:
-      '@types/three': 0.183.1
-      three: 0.183.2
+      '@types/three': 0.184.0
+      three: 0.184.0
 
   macos-alias@0.2.12:
     dependencies:
@@ -10012,11 +10013,11 @@ snapshots:
 
   merge2@1.4.1: {}
 
-  meshline@3.3.1(three@0.183.2):
+  meshline@3.3.1(three@0.184.0):
     dependencies:
-      three: 0.183.2
+      three: 0.184.0
 
-  meshoptimizer@1.0.1: {}
+  meshoptimizer@1.1.1: {}
 
   micromark-core-commonmark@2.0.3:
     dependencies:
@@ -10234,7 +10235,7 @@ snapshots:
 
   minimatch@5.1.9:
     dependencies:
-      brace-expansion: 2.0.3
+      brace-expansion: 2.1.0
 
   minimatch@9.0.9:
     dependencies:
@@ -11294,10 +11295,10 @@ snapshots:
 
   stackback@0.0.2: {}
 
-  stats-gl@2.4.2(@types/three@0.183.1)(three@0.183.2):
+  stats-gl@2.4.2(@types/three@0.184.0)(three@0.184.0):
     dependencies:
-      '@types/three': 0.183.1
-      three: 0.183.2
+      '@types/three': 0.184.0
+      three: 0.184.0
 
   stats.js@0.17.0: {}
 
@@ -11516,11 +11517,11 @@ snapshots:
       commander: 2.20.3
       source-map-support: 0.5.21
 
-  three-mesh-bvh@0.8.3(three@0.183.2):
+  three-mesh-bvh@0.8.3(three@0.184.0):
     dependencies:
-      three: 0.183.2
+      three: 0.184.0
 
-  three-stdlib@2.36.1(three@0.183.2):
+  three-stdlib@2.36.1(three@0.184.0):
     dependencies:
       '@types/draco3d': 1.4.10
       '@types/offscreencanvas': 2019.7.3
@@ -11528,9 +11529,9 @@ snapshots:
       draco3d: 1.5.7
       fflate: 0.6.10
       potpack: 1.0.2
-      three: 0.183.2
+      three: 0.184.0
 
-  three@0.183.2: {}
+  three@0.184.0: {}
 
   tiny-inflate@1.0.3: {}
 
@@ -11585,25 +11586,25 @@ snapshots:
     dependencies:
       escape-string-regexp: 1.0.5
 
-  troika-three-text@0.52.4(three@0.183.2):
+  troika-three-text@0.52.4(three@0.184.0):
     dependencies:
       bidi-js: 1.0.3
-      three: 0.183.2
-      troika-three-utils: 0.52.4(three@0.183.2)
+      three: 0.184.0
+      troika-three-utils: 0.52.4(three@0.184.0)
       troika-worker-utils: 0.52.0
       webgl-sdf-generator: 1.1.1
 
-  troika-three-utils@0.52.4(three@0.183.2):
+  troika-three-utils@0.52.4(three@0.184.0):
     dependencies:
-      three: 0.183.2
+      three: 0.184.0
 
   troika-worker-utils@0.52.0: {}
 
   trough@2.2.0: {}
 
-  tsconfck@3.1.6(typescript@6.0.2):
+  tsconfck@3.1.6(typescript@5.9.3):
     optionalDependencies:
-      typescript: 6.0.2
+      typescript: 5.9.3
 
   tsconfig-paths-webpack-plugin@4.2.0:
     dependencies:
@@ -11690,7 +11691,7 @@ snapshots:
 
   typescript@5.4.5: {}
 
-  typescript@6.0.2: {}
+  typescript@5.9.3: {}
 
   ufo@1.6.3: {}
 

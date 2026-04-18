@@ -315,7 +315,11 @@ export async function probeBrowserSupport(
     });
   }
 
-  if (!navigatorObject?.gpu) {
+  const gpu = /** @type {{ requestAdapter?: () => Promise<unknown> }} */ (
+    /** @type {{ gpu?: unknown } | undefined} */ (navigatorObject)?.gpu
+  );
+
+  if (!gpu) {
     return createFailureProbe({
       failureCode: BROWSER_FAILURE_CODES.gpuMissing,
       navigatorObject,
@@ -323,7 +327,7 @@ export async function probeBrowserSupport(
     });
   }
 
-  if (typeof navigatorObject.gpu.requestAdapter !== "function") {
+  if (typeof gpu.requestAdapter !== "function") {
     return createFailureProbe({
       failureCode: BROWSER_FAILURE_CODES.requestAdapterMissing,
       navigatorObject,
@@ -334,7 +338,7 @@ export async function probeBrowserSupport(
   }
 
   try {
-    const adapter = await navigatorObject.gpu.requestAdapter();
+    const adapter = await gpu.requestAdapter();
 
     if (!adapter) {
       return createFailureProbe({
