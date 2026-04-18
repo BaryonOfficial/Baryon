@@ -5,8 +5,6 @@ import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
 import {
   CAMERA_VIEW_PRESETS,
   getCameraConfigForPreset,
-  normalizeCameraViewPreset,
-  resolveCameraDistanceOverride,
 } from "./cameraViewPresets.js";
 import {
   createBaryonRenderer,
@@ -42,6 +40,15 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  * }} StageCameraConfig
  */
 
+const defaultStageCameraConfig = (() => {
+  const config = getCameraConfigForPreset(CAMERA_VIEW_PRESETS.topDown);
+  return /** @type {StageCameraConfig} */ ({
+    position: /** @type {[number, number, number]} */ (config.position),
+    up: /** @type {[number, number, number]} */ (config.up),
+    fov: 65,
+  });
+})();
+
 /**
  * @param {{
  *   controlsRef: import("react").MutableRefObject<Record<string, unknown>>,
@@ -57,8 +64,6 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  *     fov?: number,
  *   } | null,
  *   backgroundColor?: string,
- *   cameraViewPreset?: "top-down" | "side" | null,
- *   cameraDistance?: number | null,
  *   structuralControlVersion?: number,
  *   liveControlSignalRef?: import("react").MutableRefObject<{ version: number }> | null,
  *   enableControlEventSync?: boolean,
@@ -80,8 +85,6 @@ export function OutputStageSurface({
   externalFrameRef = null,
   cameraPose = null,
   backgroundColor: backgroundColorProp = null,
-  cameraViewPreset = null,
-  cameraDistance = null,
   structuralControlVersion = 0,
   liveControlSignalRef = null,
   enableControlEventSync = false,
@@ -94,19 +97,9 @@ export function OutputStageSurface({
   onAuditSnapshotChange = null,
 }) {
   const [rendererError, setRendererError] = useState(null);
-  const resolvedCameraViewPreset = /** @type {"top-down" | "side"} */ (
-    normalizeCameraViewPreset(cameraViewPreset, CAMERA_VIEW_PRESETS.topDown)
-  );
-  const resolvedCameraDistance = resolveCameraDistanceOverride(
-    resolvedCameraViewPreset,
-    cameraDistance,
-  );
   const cameraConfig = /** @type {StageCameraConfig} */ (
     cameraPose == null
-      ? getCameraConfigForPreset(
-          resolvedCameraViewPreset,
-          resolvedCameraDistance,
-        )
+      ? defaultStageCameraConfig
       : {
           position: /** @type {[number, number, number]} */ ([
             cameraPose.position.x,
@@ -211,8 +204,6 @@ export function OutputStageSurface({
                 onStageRender={onStageRender}
                 onFrameState={onFrameState}
                 cameraControlMode={CAMERA_CONTROL_MODES.externalSynced}
-                cameraViewPreset={resolvedCameraViewPreset}
-                cameraDistance={resolvedCameraDistance}
                 structuralControlVersion={structuralControlVersion}
                 liveControlSignalRef={liveControlSignalRef}
                 enableControlEventSync={enableControlEventSync}
