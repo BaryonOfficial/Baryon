@@ -22,6 +22,7 @@ plasmic.json
 tmp/
 .venv
 .mcp.json
+apps/marketing/Site Project/
 
 # Editor directories and files
 .vscode/*

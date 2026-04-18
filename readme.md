@@ -39,8 +39,8 @@ pnpm install
 
 `pnpm install` also runs the repo `prepare` script and installs the committed Husky hooks.
 
-For a faster pre-push loop than `pnpm verify`, you can temporarily opt into the
-cheap checks only:
+To front-load the public and Vercel preflight checks before the normal
+`pnpm verify` push gate, temporarily opt into:
 
 ```bash
 BARYON_PRE_PUSH_PREFLIGHT=1 git push
