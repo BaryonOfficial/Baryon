@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CAMERA_VIEW_PRESETS } from "./cameraViewPresets.js";
+import { CAMERA_VIEW_PRESETS } from "./cameraPosePresets.js";
 import { useDraggableFloatingUi } from "./hooks/useDraggableFloatingUi.js";
 
 function CameraIcon() {

@@ -106,11 +106,11 @@ vi.mock("../context/AudioContext", () => ({
 
 import {
   composeAuthoritativePerformanceHudMetrics,
-  resolveActiveCameraControlPreset,
   resolveCameraControlFieldState,
   resolvePreviewOverlayState,
   shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
+import { resolvePresetCameraPose } from "./cameraPosePresets.js";
 import { ControlsProvider } from "../controls/ControlsProvider.jsx";
 import { createControlsStore } from "../controls/controlsStore.js";
 import ThreeScene from "./ThreeScene.jsx";
@@ -190,30 +190,18 @@ describe("preview camera control state", () => {
     ).toBe("active");
   });
 
-  it("uses the authoritative rendered camera preset for preview controls", () => {
+  it("keeps preview camera control highlights source-owned even when the authoritative stage is mirrored", () => {
     expect(
-      resolveActiveCameraControlPreset({
+      resolveCameraControlFieldState({
+        frameFieldState: "idle",
         previewState: {
           omitLocalScene: true,
         },
         authoritativeStageStatus: {
-          lastRenderedCameraViewPreset: "top-down",
+          lastRenderedFieldState: "active",
         },
-        fallbackCameraViewPreset: "side",
       }),
-    ).toBe("top-down");
-
-    expect(
-      resolveActiveCameraControlPreset({
-        previewState: {
-          omitLocalScene: true,
-        },
-        authoritativeStageStatus: {
-          lastRenderedCameraViewPreset: "invalid",
-        },
-        fallbackCameraViewPreset: "side",
-      }),
-    ).toBe("side");
+    ).toBe("active");
   });
 });
 
@@ -323,8 +311,8 @@ describe("camera reset control", () => {
     });
 
     expect(dispatchCameraControlCommandSpy.mock.calls).toStrictEqual([
-      [{ cameraViewPreset: "side" }],
-      [{ cameraViewPreset: "side" }],
+      [{ cameraPose: resolvePresetCameraPose("side") }],
+      [{ cameraPose: resolvePresetCameraPose("side") }],
     ]);
     expect(sideButton.getAttribute("aria-pressed")).toBe("true");
   });

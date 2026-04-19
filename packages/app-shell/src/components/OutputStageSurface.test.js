@@ -111,12 +111,6 @@ describe("OutputStageSurface", () => {
 
     expect(baryonSceneSpy).toHaveBeenCalled();
     expect(baryonSceneSpy.mock.calls.at(-1)?.[0]).toMatchObject({ cameraPose });
-    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraViewPreset).toBe(
-      undefined,
-    );
-    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraDistance).toBe(
-      undefined,
-    );
   });
 
   it("passes frame-state updates through unchanged", async () => {

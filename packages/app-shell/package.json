@@ -10,6 +10,7 @@
   },
   "exports": {
     ".": "./src/index.js",
+    "./camera-pose-presets": "./src/components/cameraPosePresets.js",
     "./index.css": "./src/index.css",
     "./live-input-runtime-status": "./src/context/liveInputRuntimeStatus.js",
     "./baryon-env": "./src/baryon-env.d.ts"
@@ -21,17 +22,16 @@
   },
   "peerDependencies": {
     "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.6.0",
+    "@react-three/fiber": "^9.5.0",
     "@tailwindcss/vite": "^4.2.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "tailwindcss": "^4.2.2",
-    "three": "^0.184.0"
+    "three": "^0.183.2"
   },
   "devDependencies": {
     "@baryon/config": "workspace:*",
     "jsdom": "^29.0.1",
-    "tailwindcss": "^4.2.2",
     "vitest": "^4.1.2"
   }
 }

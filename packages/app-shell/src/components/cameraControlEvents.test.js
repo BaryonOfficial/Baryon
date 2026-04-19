@@ -12,9 +12,13 @@ test("camera control command normalizes preset and default distance", () => {
     createCameraControlCommand({
       cameraViewPreset: "side",
     }),
-  ).toStrictEqual({
-    cameraViewPreset: "side",
-    cameraDistance: 9,
+  ).toMatchObject({
+    cameraPose: {
+      position: { x: 0, y: 0, z: 9 },
+      target: { x: 0, y: 0, z: 0 },
+      up: { x: 0, y: 1, z: 0 },
+      fov: 65,
+    },
   });
 });
 
@@ -36,20 +40,34 @@ test("dispatchCameraControlCommand emits the normalized camera detail", () => {
   try {
     const detail = dispatchCameraControlCommand({
       cameraViewPreset: "top-down",
-      cameraDistance: 11.25,
     });
-    expect(detail).toStrictEqual({
-      cameraViewPreset: "top-down",
-      cameraDistance: 11.25,
+    expect(detail).toMatchObject({
+      cameraPose: {
+        position: {
+          x: 0,
+          y: expect.closeTo(9, 6),
+          z: expect.closeTo(0.001, 6),
+        },
+        target: { x: 0, y: 0, z: 0 },
+        up: { x: 0, y: 0, z: -1 },
+        fov: 65,
+      },
     });
   } finally {
     window.removeEventListener(CAMERA_CONTROL_COMMAND_EVENT, listener);
   }
 
-  expect(received).toStrictEqual([
-    {
-      cameraViewPreset: "top-down",
-      cameraDistance: 11.25,
+  expect(received).toHaveLength(1);
+  expect(received[0]).toMatchObject({
+    cameraPose: {
+      position: {
+        x: 0,
+        y: expect.closeTo(9, 6),
+        z: expect.closeTo(0.001, 6),
+      },
+      target: { x: 0, y: 0, z: 0 },
+      up: { x: 0, y: 0, z: -1 },
+      fov: 65,
     },
-  ]);
+  });
 });
