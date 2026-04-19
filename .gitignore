@@ -64,3 +64,4 @@ playwright-report/
 # Private/internal notes that should never land in the public repo
 documentation/private/
 apps/desktop/private/
+.project-workflow/local/
