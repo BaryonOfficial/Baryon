@@ -98,6 +98,34 @@ export function resolveCameraDistanceOverride(preset, distanceOverride) {
 }
 
 /**
+ * @param {{
+ *   cameraViewPreset?: string | null | undefined,
+ *   cameraDistance?: number | null | undefined,
+ * } | null | undefined} state
+ * @param {{
+ *   fallbackPreset?: string | null,
+ * }=} options
+ * @returns {{ cameraViewPreset: string, cameraDistance: number } | null}
+ */
+export function resolveCameraViewState(state, { fallbackPreset = null } = {}) {
+  const cameraViewPreset = normalizeCameraViewPreset(
+    state?.cameraViewPreset,
+    fallbackPreset,
+  );
+  if (!cameraViewPreset) {
+    return null;
+  }
+
+  return {
+    cameraViewPreset,
+    cameraDistance: resolveCameraDistanceOverride(
+      cameraViewPreset,
+      state?.cameraDistance,
+    ),
+  };
+}
+
+/**
  * @param {string} preset
  * @param {number | null | undefined} [distanceOverride]
  * @returns {{ position: [number, number, number], up: [number, number, number] }}

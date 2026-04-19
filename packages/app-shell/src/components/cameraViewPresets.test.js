@@ -7,6 +7,7 @@ import {
   normalizeCameraDistanceOverride,
   normalizeCameraViewPreset,
   resolveCameraDistanceOverride,
+  resolveCameraViewState,
 } from "./cameraViewPresets.js";
 
 test("default camera distance remains 9 for current presets", () => {
@@ -31,6 +32,35 @@ test("camera override normalization keeps canonical presets and clamp semantics"
   expect(normalizeCameraDistanceOverride(-2)).toBe(0.1);
   expect(normalizeCameraDistanceOverride(NaN)).toBeNull();
   expect(resolveCameraDistanceOverride(CAMERA_VIEW_PRESETS.side, null)).toBe(9);
+});
+
+test("camera view state resolves canonical preset-distance pairs from legacy payloads", () => {
+  expect(
+    resolveCameraViewState({
+      cameraViewPreset: "side",
+      cameraDistance: 11,
+    }),
+  ).toStrictEqual({
+    cameraViewPreset: CAMERA_VIEW_PRESETS.side,
+    cameraDistance: 11,
+  });
+
+  expect(
+    resolveCameraViewState(
+      {
+        cameraViewPreset: "invalid",
+        cameraDistance: 11,
+      },
+      {
+        fallbackPreset: CAMERA_VIEW_PRESETS.topDown,
+      },
+    ),
+  ).toStrictEqual({
+    cameraViewPreset: CAMERA_VIEW_PRESETS.topDown,
+    cameraDistance: 11,
+  });
+
+  expect(resolveCameraViewState({ cameraViewPreset: "invalid" })).toBeNull();
 });
 
 test("camera config preserves canonical orientation with custom distance", () => {

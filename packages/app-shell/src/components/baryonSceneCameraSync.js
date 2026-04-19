@@ -2,7 +2,7 @@ import {
   CAMERA_VIEW_PRESETS,
   clampCameraDistance,
   getDefaultCameraDistanceForPreset,
-  resolveCameraDistanceOverride,
+  resolveCameraViewState,
 } from "./cameraViewPresets.js";
 import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
 
@@ -158,20 +158,25 @@ export function resolveAppliedCameraState({
   );
 
   if (visualizationMethod === VISUALIZATION_METHODS.cymatics2d) {
+    const resolvedCameraViewState = resolveCameraViewState({
+      cameraViewPreset: CAMERA_VIEW_PRESETS.side,
+      cameraDistance,
+    });
     return {
-      preset: CAMERA_VIEW_PRESETS.side,
-      distance: resolveCameraDistanceOverride(
-        CAMERA_VIEW_PRESETS.side,
-        cameraDistance,
-      ),
+      preset: resolvedCameraViewState.cameraViewPreset,
+      distance: resolvedCameraViewState.cameraDistance,
     };
   }
 
+  const resolvedCameraViewState = resolveCameraViewState({
+    cameraViewPreset: resolvedPreset,
+    cameraDistance,
+  });
   return {
-    preset: resolvedPreset,
+    preset: resolvedCameraViewState.cameraViewPreset,
     distance:
       cameraControlMode === CAMERA_CONTROL_MODES.externalSynced
-        ? resolveCameraDistanceOverride(resolvedPreset, cameraDistance)
+        ? resolvedCameraViewState.cameraDistance
         : null,
   };
 }
