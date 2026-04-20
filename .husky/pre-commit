@@ -2,8 +2,8 @@
 
 if git diff --cached --name-only --diff-filter=ACMR | grep -qE '(^|/)package\.json$'; then
   echo "package.json changed; refreshing pnpm-lock.yaml"
-  pnpm install --lockfile-only || exit 1
+  corepack pnpm install --lockfile-only || exit 1
   git add pnpm-lock.yaml
 fi
 
-pnpm exec lint-staged
+corepack pnpm exec lint-staged
