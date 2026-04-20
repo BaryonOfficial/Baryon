@@ -186,6 +186,7 @@ let fetchMock;
 let lastAudioContext = null;
 let getUserMediaMock;
 let getAudioTracksMock;
+let enumerateDevicesMock;
 
 describe("audio session", () => {
   let createAudioSession;
@@ -205,6 +206,7 @@ describe("audio session", () => {
       active: true,
       getAudioTracks: getAudioTracksMock,
     }));
+    enumerateDevicesMock = vi.fn(async () => []);
 
     fetchMock = vi.fn(async (url) => {
       if (url === "bad") {
@@ -245,6 +247,7 @@ describe("audio session", () => {
       configurable: true,
       value: {
         mediaDevices: {
+          enumerateDevices: enumerateDevicesMock,
           getUserMedia: getUserMediaMock,
         },
       },
@@ -484,6 +487,75 @@ describe("audio session", () => {
     });
 
     expect(mockTrackApplyConstraints).not.toHaveBeenCalled();
+  });
+
+  it("resolves a session-local loopback device id from the selected device label", async () => {
+    enumerateDevicesMock.mockResolvedValue([
+      {
+        kind: "audioinput",
+        deviceId: "stage-device-1",
+        label: "BlackHole 2ch (Virtual)",
+      },
+    ]);
+    getUserMediaMock.mockResolvedValue({
+      active: true,
+      getAudioTracks: () => [
+        {
+          label: "BlackHole 2ch (Virtual)",
+          stop: mockTrackStop,
+          applyConstraints: mockTrackApplyConstraints,
+        },
+      ],
+    });
+
+    const session = createAttachedSession();
+    await session.startLiveInputStream(
+      "main-window-device-9",
+      "system",
+      "BlackHole 2ch (Virtual)",
+    );
+
+    expect(getUserMediaMock).toHaveBeenLastCalledWith({
+      audio: {
+        deviceId: { exact: "stage-device-1" },
+      },
+    });
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "system",
+      isLiveInputActive: true,
+      selectedLiveInputDeviceId: "stage-device-1",
+      selectedLiveInputDeviceLabel: "BlackHole 2ch (Virtual)",
+    });
+  });
+
+  it("does not block live input startup on a suspended audio context resume", async () => {
+    Object.defineProperty(globalThis, "AudioContext", {
+      configurable: true,
+      value: class extends MockAudioContext {
+        constructor() {
+          super();
+          this.state = "suspended";
+          lastAudioContext = this;
+        }
+
+        resume = vi.fn(() => new Promise(() => {}));
+      },
+    });
+
+    const session = createAttachedSession();
+    const result = await Promise.race([
+      session.startLiveInputStream("device-1", "system").then(() => "started"),
+      new Promise((resolve) => setTimeout(() => resolve("timeout"), 50)),
+    ]);
+
+    expect(result).toBe("started");
+    expect(lastAudioContext.resume).toHaveBeenCalledTimes(1);
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "system",
+      isLiveInputActive: true,
+      analysisSource: "file",
+      selectedLiveInputDeviceId: "device-1",
+    });
   });
 
   it("disposes host state deterministically", async () => {

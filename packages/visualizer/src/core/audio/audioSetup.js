@@ -115,6 +115,14 @@ function buildLiveInputConstraints(
     : buildLiveConstraints(deviceId, liveInputSettings);
 }
 
+function normalizeAudioDeviceLabel(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeAudioDeviceLabelKey(value) {
+  return normalizeAudioDeviceLabel(value).toLowerCase();
+}
+
 function normalizeAudioInputMode(mode) {
   return mode === "file" ||
     mode === "live" ||
@@ -1332,10 +1340,12 @@ export function createAudioSession() {
   /**
    * @param {string | null | undefined} deviceId
    * @param {import("./inputDeviceSemantics.js").LiveInputDeviceKind} [liveInputKind]
+   * @param {string | null | undefined} [deviceLabel]
    */
   async function startLiveInputStream(
     deviceId,
     liveInputKind = LIVE_INPUT_DEVICE_KINDS.acousticMic,
+    deviceLabel = null,
   ) {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("getUserMedia not supported");
@@ -1351,16 +1361,43 @@ export function createAudioSession() {
 
     const resolvedLiveInputDeviceKind =
       normalizeLiveInputDeviceKind(liveInputKind);
+    let resolvedDeviceId = deviceId ?? null;
+    if (typeof navigator.mediaDevices?.enumerateDevices === "function") {
+      try {
+        const availableAudioInputs = (
+          await navigator.mediaDevices.enumerateDevices()
+        ).filter((device) => device?.kind === "audioinput");
+        const hasExactDeviceId =
+          resolvedDeviceId == null
+            ? true
+            : availableAudioInputs.some(
+                (device) => device?.deviceId === resolvedDeviceId,
+              );
+        if (!hasExactDeviceId) {
+          const requestedLabelKey = normalizeAudioDeviceLabelKey(deviceLabel);
+          if (requestedLabelKey) {
+            const matchingDevice = availableAudioInputs.find(
+              (device) =>
+                normalizeAudioDeviceLabelKey(device?.label) ===
+                requestedLabelKey,
+            );
+            resolvedDeviceId = matchingDevice?.deviceId ?? resolvedDeviceId;
+          }
+        }
+      } catch {
+        // Preserve the requested device id if local enumeration is unavailable.
+      }
+    }
     const constraints = {
       audio: buildLiveInputConstraints(
         resolvedLiveInputDeviceKind,
-        deviceId,
+        resolvedDeviceId,
         state.liveInputSettings,
       ),
     };
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     state.gumStream = stream;
-    state.selectedLiveInputDeviceId = deviceId ?? null;
+    state.selectedLiveInputDeviceId = resolvedDeviceId ?? null;
     state.liveInputKind = resolvedLiveInputDeviceKind;
     state.selectedLiveInputDeviceLabel =
       stream.getAudioTracks?.()?.[0]?.label?.trim?.() ?? "";
@@ -1372,10 +1409,6 @@ export function createAudioSession() {
     );
 
     const audioCtx = ensureAudioContext();
-    if (audioCtx.state !== "running") {
-      await maybeResumeAudioContext("start-mic-record");
-    }
-
     state.liveInputNode = audioCtx.createMediaStreamSource(state.gumStream);
     state.liveInputAnalyser = createNodeAnalyser(
       audioCtx,
@@ -1383,6 +1416,13 @@ export function createAudioSession() {
       state.fftSize,
     );
     setAudioInputMode(resolvedLiveInputDeviceKind);
+    if (audioCtx.state !== "running") {
+      void maybeResumeAudioContext("start-mic-record").catch((error) => {
+        console.warn("Audio context resume skipped during live-input start:", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
   }
 
   function stopLiveInputStream() {
