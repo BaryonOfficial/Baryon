@@ -14,6 +14,7 @@ permissions:
 
 jobs:
   CLA:
+    if: ${{ !github.event.repository.private || vars.ENABLE_PRIVATE_CLA_ASSISTANT == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: CLA Assistant
