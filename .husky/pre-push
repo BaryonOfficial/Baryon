@@ -2,9 +2,4 @@
 
 set -e
 
-if [ "${BARYON_PRE_PUSH_PREFLIGHT:-0}" = "1" ]; then
-  pnpm preflight:public
-  pnpm preflight:web:vercel
-fi
-
-pnpm verify
+node scripts/run-pre-push-verify.mjs
