@@ -30,7 +30,7 @@ describe("LiveInputStatusPanel", () => {
     useAudioMock.mockReset();
   });
 
-  function renderPanel(audioOverrides = {}) {
+  function renderPanel(audioOverrides = {}, componentProps = {}) {
     useAudioMock.mockReturnValue({
       selectedSource: "system",
       isLiveInputActive: false,
@@ -63,7 +63,7 @@ describe("LiveInputStatusPanel", () => {
     root = createRoot(container);
 
     act(() => {
-      root.render(<LiveInputStatusPanel visible />);
+      root.render(<LiveInputStatusPanel visible {...componentProps} />);
     });
   }
 
@@ -79,5 +79,92 @@ describe("LiveInputStatusPanel", () => {
 
     expect(container.textContent).toContain("Ready");
     expect(container.textContent).not.toContain("Listening");
+  });
+
+  it("keeps Go Live enabled when canonical runtime status still owns the selected device", () => {
+    renderPanel(
+      {
+        audioDevices: [],
+        selectedDevice: null,
+        selectedSystemDevice: null,
+        liveInputRuntimeStatus: {
+          active: false,
+          phase: "idle",
+          signalState: "ok",
+          selectedDeviceId: "loopback-1",
+          selectedDeviceLabel: "BlackHole 2ch (Virtual)",
+          liveInputKind: "system",
+        },
+      },
+      { showLiveAction: true },
+    );
+
+    const liveButton = /** @type {HTMLButtonElement | null} */ (
+      container.querySelector('[data-testid="source-live-button"]')
+    );
+    expect(liveButton).not.toBeNull();
+    expect(liveButton?.disabled).toBe(false);
+  });
+
+  it("seeds the canonical runtime-selected device before Go Live when local selection is empty", async () => {
+    const setSelectedSystemDevice = vi.fn();
+    const handleSystemToggle = vi.fn();
+    renderPanel(
+      {
+        audioDevices: [],
+        selectedDevice: null,
+        selectedSystemDevice: null,
+        setSelectedSystemDevice,
+        handleSystemToggle,
+        liveInputRuntimeStatus: {
+          active: false,
+          phase: "idle",
+          signalState: "ok",
+          selectedDeviceId: "loopback-1",
+          selectedDeviceLabel: "BlackHole 2ch (Virtual)",
+          liveInputKind: "system",
+        },
+      },
+      { showLiveAction: true },
+    );
+
+    const liveButton = /** @type {HTMLButtonElement | null} */ (
+      container.querySelector('[data-testid="source-live-button"]')
+    );
+    expect(liveButton).not.toBeNull();
+
+    await act(async () => {
+      liveButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(setSelectedSystemDevice).toHaveBeenCalledWith("loopback-1");
+    expect(handleSystemToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the live button label canonical during a source-switch go-live path", () => {
+    renderPanel(
+      {
+        selectedSource: "live",
+        isLiveInputActive: false,
+        liveInputRuntimeStatus: {
+          active: false,
+          phase: "idle",
+          signalState: "ok",
+          selectedDeviceId: "loopback-1",
+          selectedDeviceLabel: "BlackHole 2ch (Virtual)",
+          liveInputKind: "system",
+        },
+      },
+      { showLiveAction: true },
+    );
+
+    const liveButton = /** @type {HTMLButtonElement | null} */ (
+      container.querySelector('[data-testid="source-live-button"]')
+    );
+    expect(liveButton?.textContent).toContain("Go Live");
+    expect(liveButton?.textContent).not.toContain("Switch To System");
   });
 });

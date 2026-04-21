@@ -169,7 +169,10 @@ export default function LiveInputStatusPanel({
   const permissionUnknown = liveInputPermissionState === "unknown";
   const transitionLocked = isLiveInputTransitionLocked(status);
 
-  const selectedLiveDeviceId = selectedSystemDevice ?? selectedDevice ?? "";
+  const runtimeSelectedLiveDeviceId = status.selectedDeviceId ?? "";
+  const runtimeSelectedLiveDeviceLabel = status.selectedDeviceLabel ?? "";
+  const selectedLiveDeviceId =
+    selectedSystemDevice ?? selectedDevice ?? runtimeSelectedLiveDeviceId;
   const deviceKindOverride = getDeviceKindOverride(
     selectedLiveDeviceId || null,
   );
@@ -177,7 +180,13 @@ export default function LiveInputStatusPanel({
   const deviceTypeIsManual = deviceKindOverride != null;
 
   const selectedLiveDevice =
-    audioDevices.find((d) => d.deviceId === selectedLiveDeviceId) ?? null;
+    audioDevices.find((d) => d.deviceId === selectedLiveDeviceId) ??
+    (selectedLiveDeviceId
+      ? {
+          deviceId: selectedLiveDeviceId,
+          label: runtimeSelectedLiveDeviceLabel,
+        }
+      : null);
   const showInterfaceHint =
     !deviceTypeIsManual &&
     selectedLiveInputDeviceKind === "live" &&
@@ -241,8 +250,7 @@ export default function LiveInputStatusPanel({
   const liveButtonDisabled =
     transitionLocked ||
     (!isLiveInputActive &&
-      (audioDevices.length === 0 ||
-        !selectedLiveDeviceId ||
+      (!selectedLiveDeviceId ||
         permissionRequesting ||
         permissionDenied ||
         permissionUnsupported));
@@ -263,6 +271,13 @@ export default function LiveInputStatusPanel({
     setHasInteractedWithLiveAction(true);
     if (!isLiveInputActive && selectedSource !== "system") {
       await handleSourceChange("system");
+    }
+    if (
+      !isLiveInputActive &&
+      !selectedSystemDevice &&
+      runtimeSelectedLiveDeviceId
+    ) {
+      await setSelectedSystemDevice(runtimeSelectedLiveDeviceId);
     }
     await handleSystemToggle();
   };
@@ -769,11 +784,7 @@ export default function LiveInputStatusPanel({
                   : liveActionLabel
               }
             >
-              {transitionLocked
-                ? "Transitioning…"
-                : selectedSource !== "system" && !isLiveInputActive
-                  ? "Switch To System + Go Live"
-                  : liveActionLabel}
+              {transitionLocked ? "Transitioning…" : liveActionLabel}
             </button>
           </div>
         ) : null}
