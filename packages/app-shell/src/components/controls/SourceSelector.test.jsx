@@ -64,7 +64,7 @@ describe("SourceSelector", () => {
       container.querySelector('[data-testid="live-input-source-tab"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector('[data-testid="source-live-button"]'),
+      container.querySelector('[data-testid="source-selector-live-button"]'),
     ).toBeNull();
   });
 

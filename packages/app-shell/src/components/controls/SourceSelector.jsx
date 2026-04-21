@@ -547,7 +547,7 @@ export function SourceSelector({
           {showLiveButton && showSystemSource ? (
             <button
               className={`ac-source-live-btn${isCurrentLive ? " ac-source-live-btn--active" : ""}`}
-              data-testid="source-live-button"
+              data-testid="source-selector-live-button"
               data-state={
                 !isLiveSource ? "disabled" : isCurrentLive ? "live" : "idle"
               }

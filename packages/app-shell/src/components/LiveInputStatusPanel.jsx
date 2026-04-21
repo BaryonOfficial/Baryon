@@ -68,6 +68,28 @@ function resolveSignalLabel(status) {
   return "Listening";
 }
 
+function resolveDisplayStatus(status, isLiveInputActive) {
+  if (isLiveInputActive || status.phase === LIVE_INPUT_PHASES.idle) {
+    return status;
+  }
+
+  if (
+    status.phase === LIVE_INPUT_PHASES.starting ||
+    status.phase === LIVE_INPUT_PHASES.stopping ||
+    status.phase === LIVE_INPUT_PHASES.calibrating ||
+    status.phase === LIVE_INPUT_PHASES.error ||
+    status.phase === LIVE_INPUT_PHASES.weakSignal
+  ) {
+    return status;
+  }
+
+  return createLiveInputRuntimeStatus({
+    ...status,
+    active: false,
+    phase: LIVE_INPUT_PHASES.idle,
+  });
+}
+
 const BUILTIN_MIC_PATTERNS = [
   "built-in",
   "internal",
@@ -137,12 +159,15 @@ export default function LiveInputStatusPanel({
     requestLiveInputPermission,
   } = useAudio();
 
-  const status = createLiveInputRuntimeStatus(liveInputRuntimeStatus);
+  const status = resolveDisplayStatus(
+    createLiveInputRuntimeStatus(liveInputRuntimeStatus),
+    isLiveInputActive,
+  );
   const permissionRequesting = liveInputPermissionState === "requesting";
   const permissionDenied = liveInputPermissionState === "denied";
   const permissionUnsupported = liveInputPermissionState === "unsupported";
   const permissionUnknown = liveInputPermissionState === "unknown";
-  const transitionLocked = isLiveInputTransitionLocked(liveInputRuntimeStatus);
+  const transitionLocked = isLiveInputTransitionLocked(status);
 
   const selectedLiveDeviceId = selectedSystemDevice ?? selectedDevice ?? "";
   const deviceKindOverride = getDeviceKindOverride(
