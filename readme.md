@@ -77,8 +77,9 @@ pnpm test:visualizer      # Visualizer unit tests
 pnpm test:app-shell       # Shared app-shell unit tests
 pnpm test:desktop         # Desktop unit tests
 pnpm test:web-smoke       # Stable production browser smoke
-pnpm verify               # Local pre-push gate
-pnpm verify:full          # Full verification including builds
+pnpm verify               # Fast local pre-push gate
+pnpm verify:acceptance    # Fast gate plus packaged desktop output contracts
+pnpm verify:full          # Acceptance verification plus all builds
 pnpm docs:check           # Validate doc links, doc invariants, and repo-map freshness
 ```
 
@@ -89,6 +90,7 @@ cd apps/web && pnpm dev:https    # HTTPS dev server for mic testing outside loca
 cd apps/marketing && pnpm preview
 cd apps/web && pnpm test:smoke:dev
 cd apps/desktop && pnpm test:platform
+cd apps/desktop && pnpm test:native:verify # Packaged desktop output contracts
 cd apps/desktop && pnpm test:smoke
 cd apps/desktop && pnpm perf                # Canonical live-source desktop perf probe
 cd apps/desktop && pnpm perf:packaged       # Packaged desktop Syphon / OSR benchmark

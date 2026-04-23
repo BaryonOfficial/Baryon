@@ -59,9 +59,10 @@
     "audit:dead:deps": "knip --dependencies",
     "audit:dead:exports": "node scripts/audit-dead-exports.mjs",
     "typecheck": "pnpm --reporter append-only -r --filter './apps/*' --filter './packages/*' --if-present typecheck",
-    "verify": "pnpm version:check && pnpm docs:check && pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm build:marketing && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop && pnpm test:desktop:platform && pnpm test:desktop:native:verify",
+    "verify": "pnpm version:check && pnpm docs:check && pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm build:marketing && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop && pnpm test:desktop:platform",
     "postverify": "node scripts/record-verify-success.mjs",
-    "verify:full": "pnpm verify && turbo build"
+    "verify:acceptance": "pnpm verify && pnpm test:desktop:native:verify",
+    "verify:full": "pnpm verify:acceptance && turbo build"
   },
   "lint-staged": {
     "*.{js,jsx}": [
