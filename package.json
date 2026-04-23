@@ -61,6 +61,7 @@
     "typecheck": "pnpm --reporter append-only -r --filter './apps/*' --filter './packages/*' --if-present typecheck",
     "verify": "pnpm version:check && pnpm docs:check && pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm build:marketing && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop && pnpm test:desktop:platform",
     "postverify": "node scripts/record-verify-success.mjs",
+    "verify:cache:check": "node scripts/check-verify-cache.mjs",
     "verify:acceptance": "pnpm verify && pnpm test:desktop:native:verify",
     "verify:full": "pnpm verify:acceptance && turbo build"
   },
