@@ -178,10 +178,11 @@ const ThreeScene = ({
     liveInputUiState,
     fieldState: resolvedFrameFieldState,
   });
-  const effectiveCameraViewPreset =
-    resolvedFrameFieldState === "idle"
-      ? defaultCameraViewPreset
-      : cameraViewPreset;
+  const shouldUseIdleCameraDefault =
+    liveInputUiState === "idle" && resolvedFrameFieldState === "idle";
+  const effectiveCameraViewPreset = shouldUseIdleCameraDefault
+    ? defaultCameraViewPreset
+    : cameraViewPreset;
   const effectiveCameraPose = resolvePresetCameraPose(
     effectiveCameraViewPreset,
   );

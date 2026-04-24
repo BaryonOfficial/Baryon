@@ -94,11 +94,12 @@ describe("deserializeControls", () => {
     expect(result).not.toHaveProperty("anotherStaleKey");
   });
 
-  it("migrates legacy live input profile settings to the new analysis class", () => {
+  it("migrates legacy live input profile settings to acoustic intent", () => {
     const raw = { liveInputProfile: "voice-tone", bloomStrength: 0.75 };
     const result = deserializeControls(raw, CONTROL_DEFINITIONS);
 
-    expect(result.liveInputAnalysisClass).toBe("acoustic-mic");
+    expect(result.liveInputAnalysisClass).toBe("auto");
+    expect(result.liveInputAcousticIntent).toBe("vocal");
     expect(result.bloomStrength).toBe(0.75);
   });
 

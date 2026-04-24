@@ -109,6 +109,7 @@ describe("AudioProvider source transport gating", () => {
   });
 
   function renderProvider(onValue) {
+    let sessionAcousticIntent = "ambient";
     session = {
       getStatus: () => ({
         isAudioLoaded: true,
@@ -120,6 +121,7 @@ describe("AudioProvider source transport gating", () => {
         liveInputKind: null,
         liveInputAnalysisClass: "auto",
         resolvedLiveInputAnalysisClass: "auto",
+        liveInputAcousticIntent: sessionAcousticIntent,
       }),
       getTransportState: () => ({
         currentTimeSeconds: 0,
@@ -127,12 +129,15 @@ describe("AudioProvider source transport gating", () => {
         canSeek: false,
       }),
       seekTo: () => {},
-      setLiveInputAnalysisSettings: () => {},
+      setLiveInputAnalysisSettings: vi.fn((settings = {}) => {
+        sessionAcousticIntent =
+          settings.acousticIntent ?? sessionAcousticIntent;
+      }),
       setAudioEndedCallback: () => {},
       stopAudio: () => {},
-      stopLiveInputStream: () => {},
+      stopLiveInputStream: vi.fn(),
       playPauseAudio: async () => {},
-      startLiveInputStream: async () => {},
+      startLiveInputStream: vi.fn(async () => {}),
       dispose: () => Promise.resolve(),
     };
     getDefaultAudioSessionMock.mockReturnValue(session);
@@ -149,6 +154,26 @@ describe("AudioProvider source transport gating", () => {
       );
     });
   }
+
+  it("updates acoustic intent without toggling live input or changing device", async () => {
+    const onValue = vi.fn();
+    renderProvider(onValue);
+
+    let audio = onValue.mock.lastCall[0];
+
+    await act(async () => {
+      audio.setLiveInputAcousticIntent("vocal");
+    });
+
+    audio = onValue.mock.lastCall[0];
+
+    expect(audio.liveInputAcousticIntent).toBe("vocal");
+    expect(session.setLiveInputAnalysisSettings).toHaveBeenCalledWith({
+      acousticIntent: "vocal",
+    });
+    expect(session.stopLiveInputStream).not.toHaveBeenCalled();
+    expect(session.startLiveInputStream).not.toHaveBeenCalled();
+  });
 
   function installAnimationFrameHarness() {
     originalRequestAnimationFrame = window.requestAnimationFrame;

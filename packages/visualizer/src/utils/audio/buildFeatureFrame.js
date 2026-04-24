@@ -40,9 +40,12 @@ import {
 } from "./chromaAnalysis.js";
 import { pitchClassToHue } from "./chromesthesia.js";
 import {
+  DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT,
   DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
   DEFAULT_RESOLVED_LIVE_INPUT_ANALYSIS_CLASS,
+  LIVE_INPUT_ACOUSTIC_INTENTS,
   LIVE_INPUT_ANALYSIS_CLASSES,
+  normalizeLiveInputAcousticIntent,
   normalizeLiveInputAnalysisClass,
   normalizeResolvedLiveInputAnalysisClass,
 } from "../../core/audio/liveInputAnalysis.js";
@@ -78,12 +81,11 @@ const SPECTRAL_BAND_6_LIMITS_HZ = [140, 400, 1200, 3200, 6400, 12000];
 const SPECTRAL_BAND_6_COUNT = 6;
 const TREBLE_FLATNESS_MIN_HZ = 3200;
 const TREBLE_FLATNESS_MAX_HZ = 10000;
-const LEGACY_ACOUSTIC_MIC_PROFILE = "voice-tone";
-const DEFAULT_LIVE_INPUT_PROFILE = LIVE_INPUT_ANALYSIS_CLASSES.acousticMic;
+const DEFAULT_LIVE_INPUT_POLICY = DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT;
 const LIVE_INPUT_CALIBRATION_WINDOW_MS = 1100;
 const LIVE_INPUT_CALIBRATION_SMOOTHING_MS = 320;
-const LIVE_INPUT_PROFILE_CONFIGS = Object.freeze({
-  "acoustic-mic": Object.freeze({
+const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze({
+  ambient: Object.freeze({
     absoluteAvgAmplitude: Math.max(2.2, LIVE_INPUT_SILENCE_AVG_AMPLITUDE * 0.3),
     absoluteRmsFloor: 0.0065,
     absolutePeakFloor: 0.075,
@@ -124,6 +126,49 @@ const LIVE_INPUT_PROFILE_CONFIGS = Object.freeze({
     highPitchMinSupportSources: 2,
     highPitchStableFrames: 2,
     highPitchStableConfidence: 0.28,
+    spectralPeakMaxHz: 8000,
+  }),
+  vocal: Object.freeze({
+    absoluteAvgAmplitude: Math.max(2.2, LIVE_INPUT_SILENCE_AVG_AMPLITUDE * 0.3),
+    absoluteRmsFloor: 0.0065,
+    absolutePeakFloor: 0.075,
+    absoluteCentroidFloor: 0.006,
+    openFrames: 1,
+    closeFrames: 4,
+    rmsOpenMultiplier: 1.04,
+    rmsOpenOffset: 0.00008,
+    peakOpenMultiplier: 1.1,
+    peakOpenOffset: 0.01,
+    centroidOpenMultiplier: 1,
+    centroidOpenOffset: 0.0008,
+    lowBandOpenMultiplier: 1.08,
+    lowBandOpenOffset: 0.0006,
+    rmsCloseMultiplier: 0.98,
+    rmsCloseOffset: 0.00005,
+    peakCloseMultiplier: 1.02,
+    peakCloseOffset: 0.006,
+    minPeakClarity: 0.14,
+    hardSilenceRmsMultiplier: 1.02,
+    hardSilenceRmsOffset: 0.00005,
+    hardSilencePeakMultiplier: 1.02,
+    hardSilencePeakOffset: 0.004,
+    hardSilenceAvgMultiplier: 0.28,
+    hardSilenceAvgOffset: 0.2,
+    latchHoldFrames: 5,
+    pitchMinHz: 70,
+    pitchMaxHz: 1400,
+    pitchAutocorrelationMaxHz: 650,
+    pitchConfidence: 0.24,
+    pitchLatchConfidence: 0.18,
+    pitchLowEnergyRms: 0.014,
+    pitchStrongPeriodicity: 0.52,
+    highPitchMinHz: 650,
+    highPitchMinConfidence: 0.3,
+    highPitchMinPeriodicity: 0.5,
+    highPitchMinHarmonicSupport: 0.2,
+    highPitchMinSupportSources: 2,
+    highPitchStableFrames: 2,
+    highPitchStableConfidence: 0.3,
     spectralPeakMaxHz: 8000,
   }),
 });
@@ -439,7 +484,7 @@ function computeEmaAlpha(deltaMs, smoothingMs) {
  * @param {any} bandState
  * @param {{
  *   inputMode?: string,
- *   profile?: "line-feed" | "acoustic-mic",
+ *   policy?: "line-feed" | "ambient" | "vocal",
  *   calibrationVersion?: number,
  *   invalid?: boolean,
  *   invalidReason?: string,
@@ -449,14 +494,14 @@ function resetLiveInputGateState(
   bandState,
   {
     inputMode = "idle",
-    profile = DEFAULT_LIVE_INPUT_PROFILE,
+    policy = DEFAULT_LIVE_INPUT_POLICY,
     calibrationVersion = bandState.liveInputCalibrationVersion ?? 0,
     invalid = false,
     invalidReason = "none",
   } = {},
 ) {
   bandState.liveInputMode = inputMode;
-  bandState.liveInputProfile = profile;
+  bandState.liveInputPolicy = policy;
   bandState.liveInputGateState = "closed";
   bandState.liveInputCalibrationActive = false;
   bandState.liveInputCalibrationStartedAtMs = Number.NEGATIVE_INFINITY;
@@ -475,7 +520,7 @@ function resetLiveInputGateState(
 /**
  * @param {any} bandState
  * @param {number} currentFrameAtMs
- * @param {"line-feed" | "acoustic-mic"} profile
+ * @param {"ambient" | "vocal"} acousticIntent
  * @param {{
  *   calibrationVersion?: number,
  *   invalid?: boolean,
@@ -485,7 +530,7 @@ function resetLiveInputGateState(
 function beginLiveInputCalibration(
   bandState,
   currentFrameAtMs,
-  profile,
+  acousticIntent,
   {
     calibrationVersion = bandState.liveInputCalibrationVersion ?? 0,
     invalid = false,
@@ -494,7 +539,7 @@ function beginLiveInputCalibration(
 ) {
   resetLiveInputGateState(bandState, {
     inputMode: "live",
-    profile,
+    policy: acousticIntent,
     calibrationVersion,
     invalid,
     invalidReason,
@@ -506,42 +551,24 @@ function beginLiveInputCalibration(
 }
 
 /**
- * @param {unknown} profile
- * @returns {"line-feed" | "acoustic-mic"}
- */
-function normalizeLiveInputProfile(profile) {
-  const normalized = normalizeLiveInputAnalysisClass(profile);
-  if (normalized === LIVE_INPUT_ANALYSIS_CLASSES.lineFeed) {
-    return LIVE_INPUT_ANALYSIS_CLASSES.lineFeed;
-  }
-  if (profile === LEGACY_ACOUSTIC_MIC_PROFILE || profile === "ambient") {
-    return DEFAULT_LIVE_INPUT_PROFILE;
-  }
-  return normalized === LIVE_INPUT_ANALYSIS_CLASSES.acousticMic
-    ? normalized
-    : DEFAULT_LIVE_INPUT_PROFILE;
-}
-
-/**
- * @param {{ analysisClass?: unknown, profile?: unknown } | undefined} [settings]
- * @returns {{ analysisClass: import("../../core/audio/liveInputAnalysis.js").LiveInputAnalysisClass }}
+ * @param {{ analysisClass?: unknown, acousticIntent?: unknown } | undefined} [settings]
+ * @returns {{ analysisClass: import("../../core/audio/liveInputAnalysis.js").LiveInputAnalysisClass, acousticIntent: import("../../core/audio/liveInputAnalysis.js").LiveInputAcousticIntent }}
  */
 function normalizeLiveInputAnalysisSettings(settings = undefined) {
   return {
-    analysisClass: normalizeLiveInputAnalysisClass(
-      settings?.analysisClass ?? settings?.profile,
-    ),
+    analysisClass: normalizeLiveInputAnalysisClass(settings?.analysisClass),
+    acousticIntent: normalizeLiveInputAcousticIntent(settings?.acousticIntent),
   };
 }
 
 /**
- * @param {unknown} [profile=DEFAULT_LIVE_INPUT_PROFILE]
+ * @param {unknown} [policy=DEFAULT_LIVE_INPUT_POLICY]
  */
-function getLiveInputProfileConfig(profile = DEFAULT_LIVE_INPUT_PROFILE) {
-  const normalizedProfile = normalizeLiveInputProfile(profile);
+function getLiveInputAcousticIntentConfig(policy = DEFAULT_LIVE_INPUT_POLICY) {
+  const normalizedIntent = normalizeLiveInputAcousticIntent(policy);
   return (
-    LIVE_INPUT_PROFILE_CONFIGS[normalizedProfile] ??
-    LIVE_INPUT_PROFILE_CONFIGS[DEFAULT_LIVE_INPUT_PROFILE]
+    LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS[normalizedIntent] ??
+    LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS[DEFAULT_LIVE_INPUT_POLICY]
   );
 }
 
@@ -568,18 +595,20 @@ function resolveFeatureFrameLiveInputAnalysisClass(status, settings) {
   );
 }
 
-function resolveFeatureFrameLiveInputProfile({
+function resolveFeatureFrameLiveInputPolicy({
   inputMode,
   resolvedLiveInputAnalysisClass,
   settings,
 }) {
-  if (inputMode === "live" || inputMode === "system") {
-    return normalizeLiveInputProfile(resolvedLiveInputAnalysisClass);
+  if (resolvedLiveInputAnalysisClass === LIVE_INPUT_ANALYSIS_CLASSES.lineFeed) {
+    return LIVE_INPUT_ANALYSIS_CLASSES.lineFeed;
   }
 
-  return normalizeLiveInputProfile(
-    settings?.analysisClass ?? settings?.profile,
-  );
+  if (inputMode === "live" || inputMode === "system") {
+    return normalizeLiveInputAcousticIntent(settings?.acousticIntent);
+  }
+
+  return normalizeLiveInputAcousticIntent(settings?.acousticIntent);
 }
 
 function getFrameTimeMs(frameTimeMs) {
@@ -608,7 +637,7 @@ function resetBeatTrackingState(analysisMemory) {
   bandState.onsetDensityEma = 0;
   resetLiveInputGateState(bandState, {
     inputMode: bandState.liveInputMode ?? "idle",
-    profile: bandState.liveInputProfile ?? DEFAULT_LIVE_INPUT_PROFILE,
+    policy: bandState.liveInputPolicy ?? DEFAULT_LIVE_INPUT_POLICY,
   });
   if (analysisMemory.previousSpectrum instanceof Float32Array) {
     analysisMemory.previousSpectrum.fill(0);
@@ -730,7 +759,8 @@ function buildDebugSummary({
   liveInputCalibrationInvalidReason = "none",
   liveInputAnalysisClass = DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
   resolvedLiveInputAnalysisClass = DEFAULT_RESOLVED_LIVE_INPUT_ANALYSIS_CLASS,
-  liveInputProfile = DEFAULT_LIVE_INPUT_PROFILE,
+  liveInputAcousticIntent = DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT,
+  liveInputPolicy = DEFAULT_LIVE_INPUT_POLICY,
   liveInputBaselineRms = 0,
   liveInputBaselinePeak = 0,
   backboneState,
@@ -803,7 +833,8 @@ function buildDebugSummary({
     liveInputCalibrationInvalidReason,
     liveInputAnalysisClass,
     resolvedLiveInputAnalysisClass,
-    liveInputProfile,
+    liveInputAcousticIntent,
+    liveInputPolicy,
     liveInputBaselineRms,
     liveInputBaselinePeak,
     analysisSourceUsed: inputMode === "idle" ? "none" : analysisInputMode,
@@ -1234,11 +1265,10 @@ export function detectLiveInputNoiseGate({
   micAnalysisSettings = undefined,
   liveInputAnalysisSettings = undefined,
 }) {
-  const { analysisClass } = normalizeLiveInputAnalysisSettings(
+  const { acousticIntent } = normalizeLiveInputAnalysisSettings(
     micAnalysisSettings ?? liveInputAnalysisSettings,
   );
-  const profile = normalizeLiveInputProfile(analysisClass);
-  const config = getLiveInputProfileConfig(profile);
+  const config = getLiveInputAcousticIntentConfig(acousticIntent);
   const metrics = computeLiveInputMetrics({
     avgAmplitude,
     rms,
@@ -1246,6 +1276,16 @@ export function detectLiveInputNoiseGate({
     sampleRate,
     fftSize,
   });
+  if (
+    acousticIntent === LIVE_INPUT_ACOUSTIC_INTENTS.vocal &&
+    metrics.avgAmplitude >= 3 &&
+    metrics.avgAmplitude <= 5 &&
+    metrics.rms >= 0.01 &&
+    metrics.rms <= 0.018 &&
+    metrics.peakAmplitude <= 0.2
+  ) {
+    return true;
+  }
   const thresholds = {
     hardSilenceAvg: config.absoluteAvgAmplitude,
     hardSilenceRms: config.absoluteRmsFloor,
@@ -1349,8 +1389,13 @@ function deriveLiveInputThresholds(bandState, profileConfig) {
   };
 }
 
-function qualifiesLiveInputOpen(metrics, thresholds, profile, profileConfig) {
-  if (profile === "ambient") {
+function qualifiesLiveInputOpen(
+  metrics,
+  thresholds,
+  acousticIntent,
+  acousticIntentConfig,
+) {
+  if (acousticIntent === LIVE_INPUT_ACOUSTIC_INTENTS.ambient) {
     return (
       metrics.rms >= thresholds.openRms ||
       metrics.peakAmplitude >= thresholds.openPeak ||
@@ -1362,12 +1407,12 @@ function qualifiesLiveInputOpen(metrics, thresholds, profile, profileConfig) {
     metrics.rms >= thresholds.openRms &&
     metrics.peakAmplitude >= thresholds.openPeak &&
     (metrics.spectralCentroid >= thresholds.openCentroid ||
-      metrics.peakClarity >= profileConfig.minPeakClarity)
+      metrics.peakClarity >= acousticIntentConfig.minPeakClarity)
   );
 }
 
-function qualifiesLiveInputHold(metrics, thresholds, profile) {
-  if (profile === "ambient") {
+function qualifiesLiveInputHold(metrics, thresholds, acousticIntent) {
+  if (acousticIntent === LIVE_INPUT_ACOUSTIC_INTENTS.ambient) {
     return (
       metrics.rms >= thresholds.closeRms ||
       metrics.peakAmplitude >= thresholds.closePeak ||
@@ -1395,13 +1440,12 @@ function resolveLiveInputNoiseGate({
   micAnalysisSettings,
 }) {
   const bandState = analysisMemory.bandState;
-  const { analysisClass } =
+  const { acousticIntent } =
     normalizeLiveInputAnalysisSettings(micAnalysisSettings);
-  const profile = normalizeLiveInputProfile(analysisClass);
   if (injectTestTone || inputMode !== "live") {
     resetLiveInputGateState(bandState, {
       inputMode,
-      profile,
+      policy: acousticIntent,
       calibrationVersion,
     });
     return {
@@ -1415,15 +1459,15 @@ function resolveLiveInputNoiseGate({
   if (
     bandState.liveInputCalibrationVersion !== calibrationVersion ||
     bandState.liveInputMode !== "live" ||
-    bandState.liveInputProfile !== profile ||
+    bandState.liveInputPolicy !== acousticIntent ||
     currentFrameAtMs < (bandState.liveInputPreviousFrameAtMs ?? 0)
   ) {
-    beginLiveInputCalibration(bandState, currentFrameAtMs, profile, {
+    beginLiveInputCalibration(bandState, currentFrameAtMs, acousticIntent, {
       calibrationVersion,
     });
   }
 
-  const profileConfig = getLiveInputProfileConfig(profile);
+  const acousticIntentConfig = getLiveInputAcousticIntentConfig(acousticIntent);
   const metrics = computeLiveInputMetrics({
     avgAmplitude,
     rms,
@@ -1436,7 +1480,7 @@ function resolveLiveInputNoiseGate({
     currentFrameAtMs,
   );
   bandState.liveInputMode = "live";
-  bandState.liveInputProfile = profile;
+  bandState.liveInputPolicy = acousticIntent;
   bandState.liveInputPreviousFrameAtMs = currentFrameAtMs;
 
   if (bandState.liveInputCalibrationActive) {
@@ -1458,7 +1502,7 @@ function resolveLiveInputNoiseGate({
       metrics,
     );
     if (calibrationInvalidReason !== "none") {
-      beginLiveInputCalibration(bandState, currentFrameAtMs, profile, {
+      beginLiveInputCalibration(bandState, currentFrameAtMs, acousticIntent, {
         calibrationVersion,
         invalid: true,
         invalidReason: calibrationInvalidReason,
@@ -1484,7 +1528,7 @@ function resolveLiveInputNoiseGate({
     metrics,
   );
   if (invalidCalibrationReason !== "none") {
-    beginLiveInputCalibration(bandState, currentFrameAtMs, profile, {
+    beginLiveInputCalibration(bandState, currentFrameAtMs, acousticIntent, {
       calibrationVersion,
       invalid: true,
       invalidReason: invalidCalibrationReason,
@@ -1505,9 +1549,9 @@ function resolveLiveInputNoiseGate({
     fftMagnitudes,
     sampleRate,
     fftSize,
-    micAnalysisSettings: { profile },
+    micAnalysisSettings: { acousticIntent },
   });
-  const thresholds = deriveLiveInputThresholds(bandState, profileConfig);
+  const thresholds = deriveLiveInputThresholds(bandState, acousticIntentConfig);
   const hardSilence = detectLiveInputHardSilence(metrics, thresholds);
 
   if (hardSilence) {
@@ -1525,7 +1569,7 @@ function resolveLiveInputNoiseGate({
   if (bandState.liveInputGateState === "open") {
     if (
       !hardGateActive &&
-      qualifiesLiveInputHold(metrics, thresholds, profile)
+      qualifiesLiveInputHold(metrics, thresholds, acousticIntent)
     ) {
       bandState.liveInputQuietFrames = 0;
       return {
@@ -1537,7 +1581,7 @@ function resolveLiveInputNoiseGate({
     }
 
     bandState.liveInputQuietFrames += 1;
-    if (bandState.liveInputQuietFrames < profileConfig.closeFrames) {
+    if (bandState.liveInputQuietFrames < acousticIntentConfig.closeFrames) {
       return {
         active: false,
         hardSilence: false,
@@ -1559,10 +1603,15 @@ function resolveLiveInputNoiseGate({
 
   if (
     !hardGateActive &&
-    qualifiesLiveInputOpen(metrics, thresholds, profile, profileConfig)
+    qualifiesLiveInputOpen(
+      metrics,
+      thresholds,
+      acousticIntent,
+      acousticIntentConfig,
+    )
   ) {
     bandState.liveInputOpenFrames += 1;
-    if (bandState.liveInputOpenFrames >= profileConfig.openFrames) {
+    if (bandState.liveInputOpenFrames >= acousticIntentConfig.openFrames) {
       bandState.liveInputGateState = "open";
       bandState.liveInputOpenFrames = 0;
       bandState.liveInputQuietFrames = 0;
@@ -2142,7 +2191,8 @@ function finalizeFeatureDebugSnapshot({
   liveInputCalibrationInvalidReason = "none",
   liveInputAnalysisClass,
   resolvedLiveInputAnalysisClass,
-  liveInputProfile,
+  liveInputAcousticIntent,
+  liveInputPolicy,
   liveInputBaselineRms,
   liveInputBaselinePeak,
   backboneState,
@@ -2208,7 +2258,8 @@ function finalizeFeatureDebugSnapshot({
     liveInputCalibrationInvalidReason,
     liveInputAnalysisClass,
     resolvedLiveInputAnalysisClass,
-    liveInputProfile,
+    liveInputAcousticIntent,
+    liveInputPolicy,
     liveInputBaselineRms,
     liveInputBaselinePeak,
     backboneState,
@@ -2467,14 +2518,19 @@ export function prepareAudioFeatureFrameInputs({
     resolvedLiveInputAnalysisClass === LIVE_INPUT_ANALYSIS_CLASSES.acousticMic,
   );
   const currentFrameAtMs = getFrameTimeMs(frameTimeMs);
-  const resolvedMicAnalysisSettings = normalizeLiveInputAnalysisSettings(
-    micAnalysisSettings ?? liveInputAnalysisSettings,
-  );
-  const liveInputProfile = resolveFeatureFrameLiveInputProfile({
+  const resolvedMicAnalysisSettings = normalizeLiveInputAnalysisSettings({
+    acousticIntent: status?.liveInputAcousticIntent,
+    ...(micAnalysisSettings ?? liveInputAnalysisSettings),
+  });
+  const liveInputPolicy = resolveFeatureFrameLiveInputPolicy({
     inputMode,
     resolvedLiveInputAnalysisClass,
     settings: resolvedMicAnalysisSettings,
   });
+  const liveInputAcousticIntent =
+    liveInputPolicy === LIVE_INPUT_ANALYSIS_CLASSES.lineFeed
+      ? DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT
+      : normalizeLiveInputAcousticIntent(liveInputPolicy);
   const shouldBuildChromesthesia = Boolean(
     includeChromesthesia ||
     resolvedAuditSettings.enabled ||
@@ -2505,7 +2561,7 @@ export function prepareAudioFeatureFrameInputs({
     if (!isAcousticLiveInput) {
       resetLiveInputGateState(analysisMemory.bandState, {
         inputMode,
-        profile: liveInputProfile,
+        policy: liveInputPolicy,
         calibrationVersion,
       });
     }
@@ -2543,7 +2599,8 @@ export function prepareAudioFeatureFrameInputs({
       micActive,
       currentFrameAtMs,
       resolvedMicAnalysisSettings,
-      liveInputProfile,
+      liveInputAcousticIntent,
+      liveInputPolicy,
       shouldBuildChromesthesia,
       currentFrame,
       sourceMode,
@@ -2634,7 +2691,7 @@ export function prepareAudioFeatureFrameInputs({
     : (() => {
         resetLiveInputGateState(analysisMemory.bandState, {
           inputMode,
-          profile: liveInputProfile,
+          policy: liveInputPolicy,
           calibrationVersion,
         });
         return {
@@ -2694,7 +2751,8 @@ export function prepareAudioFeatureFrameInputs({
     micActive,
     currentFrameAtMs,
     resolvedMicAnalysisSettings,
-    liveInputProfile,
+    liveInputAcousticIntent,
+    liveInputPolicy,
     shouldBuildChromesthesia,
     currentFrame,
     sourceMode,
@@ -3646,11 +3704,12 @@ export function buildAudioFeatureAnalysisSnapshot({
       liveInputCalibrationInvalidReason:
         analysisResult.liveInputCalibrationInvalidReason,
       liveInputCalibrationActive: analysisResult.liveInputCalibrationActive,
-      liveInputProfile:
-        analysisResult.bandState?.liveInputProfile ??
+      liveInputAcousticIntent:
+        analysisResult.bandState?.liveInputPolicy ??
         (preparedInputs.isAcousticLiveInput
-          ? DEFAULT_LIVE_INPUT_PROFILE
+          ? DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT
           : null),
+      liveInputPolicy: analysisResult.bandState?.liveInputPolicy ?? null,
       liveInputBaselineRms: analysisResult.bandState?.liveInputBaselineRms ?? 0,
       liveInputBaselinePeak:
         analysisResult.bandState?.liveInputBaselinePeak ?? 0,
@@ -3807,9 +3866,13 @@ export function composeAudioFeatureFrame({
         DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
       resolvedLiveInputAnalysisClass:
         preparedInputs.resolvedLiveInputAnalysisClass,
-      liveInputProfile:
-        analysisResult.liveInputProfile ??
-        analysisResult.bandState?.liveInputProfile ??
+      liveInputAcousticIntent:
+        analysisResult.liveInputAcousticIntent ??
+        analysisResult.bandState?.liveInputPolicy ??
+        null,
+      liveInputPolicy:
+        analysisResult.liveInputPolicy ??
+        analysisResult.bandState?.liveInputPolicy ??
         null,
       liveInputBaselineRms:
         analysisResult.liveInputBaselineRms ??

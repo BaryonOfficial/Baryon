@@ -16,6 +16,7 @@ export const AUDIO_DEFAULTS = Object.freeze({
   noiseSuppression: false,
   autoGainControl: false,
   liveInputAnalysisClass: "auto",
+  liveInputAcousticIntent: "ambient",
 });
 
 export const SIMULATION_DEFAULTS = Object.freeze({

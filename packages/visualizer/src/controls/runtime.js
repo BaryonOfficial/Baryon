@@ -126,6 +126,7 @@ function deriveBloomResponse(controls, stepBudget) {
 export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
   [CONTROL_HANDLERS.audio]: Object.freeze([
     "liveInputAnalysisClass",
+    "liveInputAcousticIntent",
     "echoCancellation",
     "noiseSuppression",
     "autoGainControl",
@@ -195,6 +196,9 @@ function getAudioControlSnapshot(controls) {
   return {
     liveInputAnalysisClass:
       controls.liveInputAnalysisClass ?? AUDIO_DEFAULTS.liveInputAnalysisClass,
+    liveInputAcousticIntent:
+      controls.liveInputAcousticIntent ??
+      AUDIO_DEFAULTS.liveInputAcousticIntent,
     echoCancellation: Boolean(controls.echoCancellation),
     noiseSuppression: Boolean(controls.noiseSuppression),
     autoGainControl: Boolean(controls.autoGainControl),
@@ -209,6 +213,7 @@ export async function applyAudioControls(audioSession, controls) {
 
   audioSession.setLiveInputAnalysisSettings?.({
     analysisClass: snapshot.liveInputAnalysisClass,
+    acousticIntent: snapshot.liveInputAcousticIntent,
   });
   await audioSession.setLiveInputSettings({
     echoCancellation: snapshot.echoCancellation,

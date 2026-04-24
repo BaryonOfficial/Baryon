@@ -298,7 +298,7 @@ async function readLiveInputAuditState(page) {
       analysisSourceUsed: snapshot.analysisSourceUsed ?? null,
       liveInputCalibrationActive: snapshot.liveInputCalibrationActive ?? false,
       liveInputHardSilenceActive: snapshot.liveInputHardSilenceActive ?? false,
-      liveInputProfile: snapshot.liveInputProfile ?? null,
+      liveInputPolicy: snapshot.liveInputPolicy ?? null,
       fieldState: snapshot.raymarchDebug?.fieldState ?? null,
       idleOverlayVisible: snapshot.raymarchDebug?.idleOverlayVisible ?? false,
     };
@@ -1081,7 +1081,7 @@ test.describe("Baryon control smoke", () => {
     await expect(page.getByText("Echo Cancel")).toHaveCount(0);
   });
 
-  test("applies the acoustic-mic runtime profile for mic-classified live input", async ({
+  test("applies the acoustic-mic runtime policy for mic-classified live input", async ({
     page,
     browserName,
   }) => {
@@ -1113,7 +1113,7 @@ test.describe("Baryon control smoke", () => {
         audioInputMode: "live",
         analysisSourceUsed: "live",
         liveInputActive: true,
-        liveInputProfile: "acoustic-mic",
+        liveInputPolicy: "ambient",
       });
 
     await page.getByTestId("source-live-button").click();

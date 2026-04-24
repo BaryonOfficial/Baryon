@@ -316,4 +316,30 @@ describe("camera reset control", () => {
     ]);
     expect(sideButton.getAttribute("aria-pressed")).toBe("true");
   });
+
+  it("keeps live input preview camera top-down when the frame falls back to idle", async () => {
+    const controlsStore = createControlsStore();
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene),
+        ),
+      );
+    });
+
+    const topButton = container.querySelector(
+      '[data-testid="camera-top-view-button"]',
+    );
+    const sideButton = container.querySelector(
+      '[data-testid="camera-side-view-button"]',
+    );
+
+    expect(topButton).toBeInstanceOf(HTMLButtonElement);
+    expect(sideButton).toBeInstanceOf(HTMLButtonElement);
+    expect(topButton.getAttribute("aria-pressed")).toBe("true");
+    expect(sideButton.getAttribute("aria-pressed")).toBe("false");
+  });
 });

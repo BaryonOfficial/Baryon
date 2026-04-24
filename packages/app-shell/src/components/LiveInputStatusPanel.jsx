@@ -157,6 +157,8 @@ export default function LiveInputStatusPanel({
     saveDeviceKindOverride,
     clearDeviceKindOverride,
     requestLiveInputPermission,
+    liveInputAcousticIntent,
+    setLiveInputAcousticIntent,
   } = useAudio();
 
   const status = resolveDisplayStatus(
@@ -215,6 +217,9 @@ export default function LiveInputStatusPanel({
       : getSignalBadgeStyle(status);
 
   const micProcessingDisabled = selectedLiveInputDeviceKind !== "live";
+  const showAcousticIntent = selectedLiveInputDeviceKind === "live";
+  const acousticIntentValue =
+    liveInputAcousticIntent === "vocal" ? "vocal" : "ambient";
   const activeMicSettingCount = [
     echoCancellation,
     noiseSuppression,
@@ -533,6 +538,38 @@ export default function LiveInputStatusPanel({
                 <option value="system">Loopback</option>
               </select>
             </div>
+
+            {showAcousticIntent ? (
+              <div style={{ display: "grid", gap: "0.16rem" }}>
+                <span
+                  style={{
+                    fontSize: "0.54rem",
+                    fontWeight: 700,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "var(--nd-text-secondary)",
+                    fontFamily: '"Space Mono", ui-monospace, monospace',
+                  }}
+                >
+                  Intent
+                </span>
+                <select
+                  data-testid="live-input-acoustic-intent-select"
+                  value={acousticIntentValue}
+                  onChange={(event) =>
+                    setLiveInputAcousticIntent?.(event.target.value)
+                  }
+                  aria-label="Acoustic mic intent"
+                  style={{
+                    ...getSelectStyle(false),
+                    fontSize: "0.64rem",
+                  }}
+                >
+                  <option value="ambient">Ambient</option>
+                  <option value="vocal">Vocal</option>
+                </select>
+              </div>
+            ) : null}
           </>
         )}
 

@@ -5,6 +5,7 @@ class MockAnalyserNode {
   constructor() {
     this._fftSize = 0;
     this.frequencyBinCount = 0;
+    this.disconnect = vi.fn();
   }
 
   set fftSize(value) {
@@ -17,8 +18,6 @@ class MockAnalyserNode {
   }
 
   connect() {}
-
-  disconnect() {}
 
   getByteFrequencyData(data) {
     data.fill(0);
@@ -91,6 +90,7 @@ class MockAudioContext {
     this.currentTime = 12;
     this.destination = {};
     this.createdBufferSources = [];
+    this.createdAnalysers = [];
     this.createdMediaElementSources = [];
     this.onstatechange = null;
   }
@@ -108,7 +108,9 @@ class MockAudioContext {
   }
 
   createAnalyser() {
-    return new MockAnalyserNode();
+    const analyser = new MockAnalyserNode();
+    this.createdAnalysers.push(analyser);
+    return analyser;
   }
 
   createMediaStreamSource() {
@@ -448,6 +450,22 @@ describe("audio session", () => {
       audioInputMode: "idle",
       isLiveInputActive: false,
       analysisSource: "idle",
+    });
+  });
+
+  it("replaces the active analysis tap when switching sources", async () => {
+    const session = createAttachedSession();
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+
+    const playbackAnalyser = lastAudioContext.createdAnalysers.at(-1);
+
+    await session.startLiveInputStream("device-1");
+
+    expect(playbackAnalyser.disconnect).toHaveBeenCalledTimes(1);
+    expect(session.readAnalysisSnapshot()).toMatchObject({
+      sourceMode: "live",
+      rms: 0.25,
     });
   });
 

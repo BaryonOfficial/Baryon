@@ -280,6 +280,9 @@ function ensureStyles() {
   .ac-source-live-btn {
     min-width: 5rem;
   }
+
+}
+
 @media (max-width: 480px) {
   .ac-source-selector {
     justify-content: stretch;
@@ -307,6 +310,7 @@ function ensureStyles() {
     padding-left: 8px;
     padding-right: 8px;
   }
+
 }
 
 `;

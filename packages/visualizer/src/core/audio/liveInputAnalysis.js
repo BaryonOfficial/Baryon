@@ -21,6 +21,10 @@ export {
  */
 
 /**
+ * @typedef {"ambient" | "vocal"} LiveInputAcousticIntent
+ */
+
+/**
  * @typedef {import("./inputDeviceSemantics.js").LiveInputDeviceKind} LiveInputDeviceKind
  */
 
@@ -35,6 +39,14 @@ export const DEFAULT_LIVE_INPUT_ANALYSIS_CLASS =
 
 export const DEFAULT_RESOLVED_LIVE_INPUT_ANALYSIS_CLASS =
   LIVE_INPUT_ANALYSIS_CLASSES.acousticMic;
+
+export const LIVE_INPUT_ACOUSTIC_INTENTS = Object.freeze({
+  ambient: "ambient",
+  vocal: "vocal",
+});
+
+export const DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT =
+  LIVE_INPUT_ACOUSTIC_INTENTS.ambient;
 
 const LINE_FEED_KEYWORDS = Object.freeze([
   "blackhole",
@@ -67,10 +79,21 @@ export function normalizeLiveInputAnalysisClass(value) {
   if (value === LIVE_INPUT_ANALYSIS_CLASSES.auto) {
     return LIVE_INPUT_ANALYSIS_CLASSES.auto;
   }
-  if (value === "voice-tone" || value === "ambient") {
-    return LIVE_INPUT_ANALYSIS_CLASSES.acousticMic;
-  }
   return DEFAULT_LIVE_INPUT_ANALYSIS_CLASS;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {LiveInputAcousticIntent}
+ */
+export function normalizeLiveInputAcousticIntent(value) {
+  if (value === LIVE_INPUT_ACOUSTIC_INTENTS.vocal || value === "voice-tone") {
+    return LIVE_INPUT_ACOUSTIC_INTENTS.vocal;
+  }
+  if (value === LIVE_INPUT_ACOUSTIC_INTENTS.ambient) {
+    return LIVE_INPUT_ACOUSTIC_INTENTS.ambient;
+  }
+  return DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT;
 }
 
 /**

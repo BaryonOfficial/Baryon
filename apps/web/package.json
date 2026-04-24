@@ -15,8 +15,8 @@
     "test:unit": "node --test tests/unit/**/*.test.js",
     "typecheck": "tsc -p tsconfig.json",
     "preview": "vite preview",
-    "test:smoke:dev": "playwright test tests/controls.smoke.spec.js",
-    "test:smoke:prod": "playwright test -c playwright.prod.config.js tests/production.smoke.spec.js"
+    "acceptance:dev": "playwright test tests/controls.smoke.spec.js",
+    "acceptance:prod": "playwright test -c playwright.prod.config.js tests/production.smoke.spec.js"
   },
   "dependencies": {
     "@baryon/app-shell": "workspace:*",

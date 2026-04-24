@@ -133,6 +133,28 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
+      key: "liveInputAcousticIntent",
+      label: "Mic Intent",
+      title:
+        "Choose how acoustic mic input should be interpreted. Ambient is forgiving for rooms and instruments; Vocal emphasizes singing and lead pitch.",
+      defaultValue: AUDIO_DEFAULTS.liveInputAcousticIntent,
+      methods: ALL_METHODS,
+      binding: {
+        options: {
+          Ambient: "ambient",
+          Vocal: "vocal",
+        },
+      },
+      targetType: CONTROL_TARGET_TYPES.audio,
+      handler: CONTROL_HANDLERS.audio,
+      runtimePath: "audioSession.liveInputAnalysisSettings.acousticIntent",
+      status: CONTROL_STATUSES.live,
+      sidebarHidden: true,
+    },
+    CONTROL_GROUPS.input,
+  ),
+  withControlGroup(
+    {
       key: "echoCancellation",
       label: "Echo Cancel",
       title:

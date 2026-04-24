@@ -49,6 +49,8 @@ describe("LiveInputStatusPanel", () => {
       selectedDevice: "loopback-1",
       selectedSystemDevice: "loopback-1",
       selectedLiveInputDeviceKind: "system",
+      liveInputAcousticIntent: "ambient",
+      setLiveInputAcousticIntent: vi.fn(),
       setSelectedSystemDevice: vi.fn(),
       handleSourceChange: vi.fn(),
       handleSystemToggle: vi.fn(),
@@ -166,5 +168,52 @@ describe("LiveInputStatusPanel", () => {
     );
     expect(liveButton?.textContent).toContain("Go Live");
     expect(liveButton?.textContent).not.toContain("Switch To System");
+  });
+
+  it("shows acoustic intent directly in the input panel for mic devices", () => {
+    const setLiveInputAcousticIntent = vi.fn();
+    renderPanel({
+      selectedLiveInputDeviceKind: "live",
+      liveInputAcousticIntent: "ambient",
+      setLiveInputAcousticIntent,
+      audioDevices: [
+        {
+          deviceId: "mic-1",
+          label: "Studio Mic",
+        },
+      ],
+      selectedDevice: "mic-1",
+      selectedSystemDevice: "mic-1",
+    });
+
+    const intentSelect = /** @type {HTMLSelectElement | null} */ (
+      container.querySelector(
+        '[data-testid="live-input-acoustic-intent-select"]',
+      )
+    );
+    expect(intentSelect).not.toBeNull();
+    expect(container.textContent).toContain("Intent");
+    expect(intentSelect?.value).toBe("ambient");
+
+    act(() => {
+      if (intentSelect) {
+        intentSelect.value = "vocal";
+        intentSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+
+    expect(setLiveInputAcousticIntent).toHaveBeenCalledWith("vocal");
+  });
+
+  it("hides acoustic intent for loopback devices", () => {
+    renderPanel({
+      selectedLiveInputDeviceKind: "system",
+    });
+
+    expect(
+      container.querySelector(
+        '[data-testid="live-input-acoustic-intent-select"]',
+      ),
+    ).toBeNull();
   });
 });

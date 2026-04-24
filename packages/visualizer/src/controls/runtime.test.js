@@ -138,6 +138,7 @@ describe("control runtime sync", () => {
 
     expect(audioSession.setLiveInputAnalysisSettings).toHaveBeenCalledWith({
       analysisClass: "auto",
+      acousticIntent: "ambient",
     });
     expect(audioSession.setLiveInputSettings).toHaveBeenCalledWith({
       echoCancellation: true,
@@ -146,6 +147,7 @@ describe("control runtime sync", () => {
     });
     expect(snapshot).toEqual({
       liveInputAnalysisClass: "auto",
+      liveInputAcousticIntent: "ambient",
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: false,

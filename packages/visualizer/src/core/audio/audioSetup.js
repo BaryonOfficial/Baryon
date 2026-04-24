@@ -4,13 +4,10 @@ import {
   DEFAULT_FFT_SIZE,
   DEFAULT_SAMPLE_RATE,
 } from "../../defaults.js";
-import {
-  createAnalyserReader,
-  createNodeAnalyser,
-  sampleAnalyser,
-} from "./analyserSampler.js";
+import { createNodeAnalyser, sampleAnalyser } from "./analyserSampler.js";
 import {
   DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
+  normalizeLiveInputAcousticIntent,
   normalizeLiveInputAnalysisClass,
   normalizeLiveInputAnalysisOverrides,
   resolveLiveInputAnalysisClass,
@@ -53,6 +50,11 @@ function normalizeLiveInputAnalysisSettings(
         previous?.analysisClass ??
         AUDIO_DEFAULTS.liveInputAnalysisClass,
     ),
+    acousticIntent: normalizeLiveInputAcousticIntent(
+      settings.acousticIntent ??
+        previous?.acousticIntent ??
+        AUDIO_DEFAULTS.liveInputAcousticIntent,
+    ),
     overrides: normalizeLiveInputAnalysisOverrides(
       settings.overrides ?? previous?.overrides,
     ),
@@ -62,6 +64,7 @@ function normalizeLiveInputAnalysisSettings(
 function cloneLiveInputAnalysisSettings(settings) {
   return {
     analysisClass: normalizeLiveInputAnalysisClass(settings?.analysisClass),
+    acousticIntent: normalizeLiveInputAcousticIntent(settings?.acousticIntent),
     overrides: normalizeLiveInputAnalysisOverrides(settings?.overrides),
   };
 }
@@ -70,6 +73,9 @@ function areLiveInputAnalysisSettingsEqual(left, right) {
   const normalizedLeft = cloneLiveInputAnalysisSettings(left);
   const normalizedRight = cloneLiveInputAnalysisSettings(right);
   if (normalizedLeft.analysisClass !== normalizedRight.analysisClass) {
+    return false;
+  }
+  if (normalizedLeft.acousticIntent !== normalizedRight.acousticIntent) {
     return false;
   }
 
@@ -145,6 +151,14 @@ function disconnectAudioNode(node, target = undefined) {
   }
 }
 
+function createAnalysisTap(audioCtx, sourceNode, fftSize) {
+  const reader = createNodeAnalyser(audioCtx, sourceNode, fftSize);
+  return {
+    reader,
+    analyserNode: reader.analyser,
+  };
+}
+
 function getAnalysisSource(status) {
   if (status.isPlaying && status.sourceKind !== "live") return "file";
   if (status.isLiveInputActive) {
@@ -188,13 +202,6 @@ function createDefaultAudioSessionBindings(instance) {
 
 function getAudioContextCtor() {
   return globalThis.AudioContext || globalThis.webkitAudioContext || null;
-}
-
-function createFrequencyReader(analyserNode) {
-  return createAnalyserReader(analyserNode, (data) => {
-    analyserNode.getByteFrequencyData(data);
-    return data;
-  });
 }
 
 function normalizeDurationSeconds(value) {
@@ -255,9 +262,9 @@ export function createAudioSession() {
     pitchSourceMode: "spectral",
     audioInputMode: "idle",
     audioCtx: null,
-    playbackAnalyserNode: null,
     playbackOutputGain: null,
     playbackAnalyser: null,
+    activeAnalysisTap: null,
     decodedBuffer: null,
     activeBufferSource: null,
     mediaElement: null,
@@ -462,21 +469,32 @@ export function createAudioSession() {
 
   function ensurePlaybackAudioGraph() {
     const audioCtx = ensureAudioContext();
-    if (!state.playbackAnalyserNode) {
-      state.playbackAnalyserNode = audioCtx.createAnalyser();
-      state.playbackAnalyserNode.fftSize = state.fftSize;
-      state.playbackAnalyser = createFrequencyReader(
-        state.playbackAnalyserNode,
-      );
-      state.analyser = state.playbackAnalyser;
-    }
-
     if (!state.playbackOutputGain) {
       state.playbackOutputGain = audioCtx.createGain();
       state.playbackOutputGain.connect(audioCtx.destination);
     }
 
     state.playbackOutputGain.gain.value = getEffectiveVolume();
+  }
+
+  function clearActiveAnalysisTap() {
+    disconnectAudioNode(state.activeAnalysisTap?.analyserNode);
+    state.activeAnalysisTap = null;
+    state.playbackAnalyser = null;
+    state.liveInputAnalyser = null;
+    state.analyser = null;
+  }
+
+  function replaceActiveAnalysisTap(tap, targetKind) {
+    clearActiveAnalysisTap();
+    state.activeAnalysisTap = tap;
+    state.analyser = tap.reader;
+    if (targetKind === "live") {
+      state.liveInputAnalyser = tap.reader;
+    } else {
+      state.playbackAnalyser = tap.reader;
+    }
+    return tap.reader;
   }
 
   function applyOutputVolume() {
@@ -531,6 +549,7 @@ export function createAudioSession() {
     state.activeBufferSource.onended = null;
     disconnectAudioNode(state.activeBufferSource);
     state.activeBufferSource = null;
+    clearActiveAnalysisTap();
   }
 
   function removeMediaElementListeners() {
@@ -555,6 +574,7 @@ export function createAudioSession() {
     removeMediaElementListeners();
     disconnectAudioNode(state.mediaElementSourceNode);
     state.mediaElementSourceNode = null;
+    clearActiveAnalysisTap();
     if (clearElement) {
       state.mediaElement = null;
     }
@@ -597,7 +617,10 @@ export function createAudioSession() {
 
     const audioCtx = ensureAudioContext();
     const sourceNode = audioCtx.createMediaElementSource(element);
-    sourceNode.connect(state.playbackAnalyserNode);
+    replaceActiveAnalysisTap(
+      createAnalysisTap(audioCtx, sourceNode, state.fftSize),
+      "playback",
+    );
     sourceNode.connect(state.playbackOutputGain);
 
     const handleEnded = () => {
@@ -668,6 +691,7 @@ export function createAudioSession() {
         }
       }
       disconnectAudioNode(source);
+      clearActiveAnalysisTap();
     }
 
     if (endReason) {
@@ -863,6 +887,9 @@ export function createAudioSession() {
       liveInputAnalysisClass:
         state.liveInputAnalysisSettings.analysisClass ??
         DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
+      liveInputAcousticIntent:
+        state.liveInputAnalysisSettings.acousticIntent ??
+        AUDIO_DEFAULTS.liveInputAcousticIntent,
       resolvedLiveInputAnalysisClass: isLiveInputActive
         ? getResolvedLiveInputAnalysisClass()
         : null,
@@ -908,6 +935,9 @@ export function createAudioSession() {
       workerStatus: status.workerStatus,
       liveInputAnalysisClass:
         status.liveInputAnalysisClass ?? DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
+      liveInputAcousticIntent:
+        status.liveInputAcousticIntent ??
+        AUDIO_DEFAULTS.liveInputAcousticIntent,
       resolvedLiveInputAnalysisClass:
         status.resolvedLiveInputAnalysisClass ?? null,
     };
@@ -1073,7 +1103,10 @@ export function createAudioSession() {
 
     const source = audioCtx.createBufferSource();
     source.buffer = state.decodedBuffer;
-    source.connect(state.playbackAnalyserNode);
+    replaceActiveAnalysisTap(
+      createAnalysisTap(audioCtx, source, state.fftSize),
+      "playback",
+    );
     source.connect(state.playbackOutputGain);
     source.onended = () => {
       handleBufferEnded(source);
@@ -1334,6 +1367,13 @@ export function createAudioSession() {
     }
 
     state.liveInputAnalysisSettings = normalized;
+    if (
+      state.gumStream?.active &&
+      normalizeLiveInputDeviceKind(state.liveInputKind) ===
+        LIVE_INPUT_DEVICE_KINDS.acousticMic
+    ) {
+      state.liveInputCalibrationVersion += 1;
+    }
     return cloneLiveInputAnalysisSettings(state.liveInputAnalysisSettings);
   }
 
@@ -1410,10 +1450,9 @@ export function createAudioSession() {
 
     const audioCtx = ensureAudioContext();
     state.liveInputNode = audioCtx.createMediaStreamSource(state.gumStream);
-    state.liveInputAnalyser = createNodeAnalyser(
-      audioCtx,
-      state.liveInputNode,
-      state.fftSize,
+    replaceActiveAnalysisTap(
+      createAnalysisTap(audioCtx, state.liveInputNode, state.fftSize),
+      "live",
     );
     setAudioInputMode(resolvedLiveInputDeviceKind);
     if (audioCtx.state !== "running") {
@@ -1443,6 +1482,7 @@ export function createAudioSession() {
     if (state.audioInputMode === "live" || state.audioInputMode === "system") {
       setAudioInputMode("idle");
     }
+    clearActiveAnalysisTap();
   }
 
   function readAnalysisSnapshot() {
@@ -1458,15 +1498,15 @@ export function createAudioSession() {
             : "file",
         ...sampleAnalyser(
           isLoopbackLiveInputDeviceKind(activeLiveInputDeviceKind)
-            ? state.liveInputAnalyser
-            : state.playbackAnalyser,
+            ? state.activeAnalysisTap?.reader
+            : state.activeAnalysisTap?.reader,
         ),
       };
     }
     if (status.analysisSource === "live") {
       return {
         sourceMode: "live",
-        ...sampleAnalyser(state.liveInputAnalyser),
+        ...sampleAnalyser(state.activeAnalysisTap?.reader),
       };
     }
     return null;
@@ -1496,9 +1536,7 @@ export function createAudioSession() {
 
     releaseStreamBinding({ clearElement: true });
     disconnectAudioNode(state.playbackOutputGain);
-    disconnectAudioNode(state.playbackAnalyserNode);
     state.playbackOutputGain = null;
-    state.playbackAnalyserNode = null;
     state.playbackAnalyser = null;
     state.analyser = null;
     state.decodedBuffer = null;
