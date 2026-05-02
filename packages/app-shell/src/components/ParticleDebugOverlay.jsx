@@ -575,7 +575,7 @@ export default function ParticleDebugOverlay({
         >
           <div
             style={{
-              color: "#ffffff",
+              color: "#E8DFD0",
               fontSize: "10px",
               fontWeight: 700,
               letterSpacing: "0.08em",

@@ -123,7 +123,7 @@ export function OutputStageSurface({
     backgroundColorProp ??
     (typeof controlsRef.current?.backgroundColor === "string"
       ? controlsRef.current.backgroundColor
-      : "#000000");
+      : "#0D0A07");
 
   const handleCanvasError = (error) => {
     if (error?.name !== WEBGPU_RENDERER_INIT_ERROR) {

@@ -10,7 +10,7 @@ function ensureStyles() {
   stylesInjected = true;
   const el = document.createElement("style");
   el.textContent = `
-/* ── Source Selector — Nothing Design System ── */
+/* Source selector — Bebop XR HUD control */
 
 .ac-source-selector {
   display: flex;
@@ -37,7 +37,7 @@ function ensureStyles() {
   min-width: 0;
 }
 
-/* ── Segmented control — Nothing: outlined, inverted active ── */
+/* Segmented control with an amber/cream stage highlight */
 
 .ac-source-tabs {
   --tab-file-width: 3.45rem;
@@ -48,13 +48,12 @@ function ensureStyles() {
   min-width: 0;
   padding: 2px;
   background: transparent;
-  border: 1px solid #333333;
+  border: 1px solid var(--nd-border-visible);
   border-radius: 4px;
   flex-shrink: 0;
   overflow: hidden;
 }
 
-/* Sliding highlight — Nothing: inverted white bg */
 .ac-source-tab-slider {
   position: absolute;
   top: 2px;
@@ -62,7 +61,7 @@ function ensureStyles() {
   left: calc(2px + var(--slider-offset, 0rem));
   width: var(--slider-width, 3.5rem);
   border-radius: 2px;
-  background: #FFFFFF;
+  background: var(--nd-text-display);
   transition:
     left 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
     width 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -80,8 +79,8 @@ function ensureStyles() {
   border: none;
   border-radius: 2px;
   background: transparent;
-  color: #666666;
-  font-family: "Space Mono", monospace;
+  color: var(--nd-text-disabled);
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.06em;
@@ -101,20 +100,20 @@ function ensureStyles() {
 }
 
 .ac-source-tab--active {
-  color: #000000;
+  color: var(--nd-black);
 }
 
 .ac-source-tab:hover:not(.ac-source-tab--active) {
-  color: #E8E8E8;
+  color: var(--nd-text-primary);
 }
 
 .ac-source-tab:focus-visible,
 .ac-source-live-btn:focus-visible {
-  outline: 2px solid #5B9BF6;
+  outline: 2px solid var(--baryon-resonance);
   outline-offset: 2px;
 }
 
-/* ── Go Live / Stop button — Nothing: outlined, accent-red when active ── */
+/* Go Live / Stop button — amber carries live action */
 
 .ac-source-live-btn {
   flex-shrink: 0;
@@ -124,11 +123,11 @@ function ensureStyles() {
   position: relative;
   min-width: 5.25rem;
   padding: 4px 12px;
-  border: 1px solid #333333;
+  border: 1px solid var(--nd-border-visible);
   border-radius: 999px;
   background: transparent;
-  color: #999999;
-  font-family: "Space Mono", monospace;
+  color: var(--nd-text-secondary);
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.06em;
@@ -142,25 +141,25 @@ function ensureStyles() {
 }
 
 .ac-source-live-btn:hover {
-  border-color: #E8E8E8;
-  color: #E8E8E8;
+  border-color: var(--nd-text-primary);
+  color: var(--nd-text-primary);
 }
 
 .ac-source-live-btn:disabled {
   cursor: not-allowed;
-  color: #666666;
-  border-color: #222222;
+  color: var(--nd-text-disabled);
+  border-color: var(--nd-border);
   opacity: 0.4;
 }
 
 .ac-source-live-btn--active {
-  border-color: #D71921;
-  color: #D71921;
+  border-color: var(--baryon-amber);
+  color: var(--baryon-amber);
 }
 
 .ac-source-live-btn--active:hover {
-  border-color: #ff453a;
-  color: #ff453a;
+  border-color: #F5B47A;
+  color: #F5B47A;
 }
 
 .ac-source-live-btn:active {
@@ -221,7 +220,7 @@ function ensureStyles() {
   border: 1px solid transparent;
   border-radius: 12px;
   background: transparent;
-  color: var(--nd-text-secondary, #999999);
+  color: var(--nd-text-secondary, #9A8E7E);
   cursor: pointer;
   transition:
     border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
@@ -231,14 +230,14 @@ function ensureStyles() {
 }
 
 .ac-source-compact-btn[data-active="true"] {
-  background: var(--nd-text-display, #ffffff);
-  color: var(--nd-black, #050505);
-  border-color: var(--nd-text-display, #ffffff);
+  background: var(--nd-text-display, #E8DFD0);
+  color: var(--nd-black, #0D0A07);
+  border-color: var(--nd-text-display, #E8DFD0);
 }
 
 .ac-source-compact-btn[data-live="true"] {
-  border-color: var(--nd-accent, #ff3b30);
-  color: var(--nd-accent, #ff3b30);
+  border-color: var(--nd-accent, #F2A05C);
+  color: var(--nd-accent, #F2A05C);
 }
 
 .ac-source-compact-btn:disabled {

@@ -18,6 +18,9 @@ import {
   normalizeLiveInputDeviceKind,
 } from "./inputDeviceSemantics.js";
 
+const LIVE_INPUT_INTERRUPTION_MUTE_TIMEOUT_MS = 1500;
+const LIVE_INPUT_INTERRUPTION_CONTEXT_TIMEOUT_MS = 1500;
+
 function normalizeLiveInputSettings(settings = {}) {
   return {
     echoCancellation: Boolean(
@@ -255,6 +258,10 @@ function clonePlaybackDiagnostics(diagnostics) {
   };
 }
 
+function cloneLiveInputInterruptionDiagnostics(diagnostics) {
+  return diagnostics ? { ...diagnostics } : null;
+}
+
 export function createAudioSession() {
   const state = {
     fftSize: DEFAULT_FFT_SIZE,
@@ -285,6 +292,11 @@ export function createAudioSession() {
     selectedLiveInputDeviceLabel: "",
     liveInputKind: null,
     liveInputCalibrationVersion: 0,
+    liveInputSessionId: null,
+    lastLiveInputInterruption: null,
+    liveInputTrackListeners: null,
+    liveInputMuteTimeoutId: null,
+    liveInputContextTimeoutId: null,
     volume: 1,
     muted: false,
     sourceMetadata: {
@@ -303,6 +315,7 @@ export function createAudioSession() {
   let endedCallback = null;
   let activeLiveInputSettingsSync = null;
   let nextPlaybackSessionId = 0;
+  let nextLiveInputSessionId = 0;
   const clockState = {
     mode: "realtime",
     previousElapsedTime: 0,
@@ -425,6 +438,31 @@ export function createAudioSession() {
         diagnostics.contextStateTransitions.shift();
       }
     });
+
+    if (state.audioInputMode !== "live" && state.audioInputMode !== "system") {
+      return;
+    }
+
+    if (nextState === "closed" || nextState === "interrupted") {
+      recoverInterruptedLiveInput("audio-context-interrupted");
+      return;
+    }
+
+    if (nextState === "suspended") {
+      const sessionId = state.liveInputSessionId;
+      clearLiveInputContextTimeout();
+      state.liveInputContextTimeoutId = globalThis.setTimeout?.(() => {
+        if (
+          state.liveInputSessionId === sessionId &&
+          (state.audioInputMode === "live" || state.audioInputMode === "system")
+        ) {
+          recoverInterruptedLiveInput("audio-context-interrupted");
+        }
+      }, LIVE_INPUT_INTERRUPTION_CONTEXT_TIMEOUT_MS);
+      return;
+    }
+
+    clearLiveInputContextTimeout();
   }
 
   async function maybeResumeAudioContext(reason = "interaction") {
@@ -483,6 +521,125 @@ export function createAudioSession() {
     state.playbackAnalyser = null;
     state.liveInputAnalyser = null;
     state.analyser = null;
+  }
+
+  function clearLiveInputMuteTimeout() {
+    if (state.liveInputMuteTimeoutId != null) {
+      globalThis.clearTimeout?.(state.liveInputMuteTimeoutId);
+      state.liveInputMuteTimeoutId = null;
+    }
+  }
+
+  function clearLiveInputContextTimeout() {
+    if (state.liveInputContextTimeoutId != null) {
+      globalThis.clearTimeout?.(state.liveInputContextTimeoutId);
+      state.liveInputContextTimeoutId = null;
+    }
+  }
+
+  function getActiveLiveInputTrack() {
+    return state.gumStream?.getAudioTracks?.()?.[0] ?? null;
+  }
+
+  function detachLiveInputTrackListeners() {
+    const listeners = state.liveInputTrackListeners;
+    if (!listeners?.track) {
+      state.liveInputTrackListeners = null;
+      return;
+    }
+
+    listeners.track.removeEventListener?.("ended", listeners.handleEnded);
+    listeners.track.removeEventListener?.("mute", listeners.handleMute);
+    listeners.track.removeEventListener?.("unmute", listeners.handleUnmute);
+    state.liveInputTrackListeners = null;
+  }
+
+  function clearLiveInputRuntimeState({ stopTracks = true } = {}) {
+    clearLiveInputMuteTimeout();
+    clearLiveInputContextTimeout();
+    detachLiveInputTrackListeners();
+
+    if (stopTracks && state.gumStream) {
+      state.gumStream.getAudioTracks().forEach((track) => track.stop());
+    }
+
+    activeLiveInputSettingsSync = null;
+    disconnectAudioNode(state.liveInputNode);
+
+    state.liveInputAnalyser = null;
+    state.liveInputNode = null;
+    state.gumStream = null;
+    state.selectedLiveInputDeviceId = null;
+    state.selectedLiveInputDeviceLabel = "";
+    state.liveInputKind = null;
+    state.liveInputSessionId = null;
+
+    if (state.audioInputMode === "live" || state.audioInputMode === "system") {
+      setAudioInputMode("idle");
+    }
+    clearActiveAnalysisTap();
+  }
+
+  function recoverInterruptedLiveInput(reason) {
+    if (state.audioInputMode !== "live" && state.audioInputMode !== "system") {
+      return;
+    }
+
+    const track = getActiveLiveInputTrack();
+    const diagnostics = {
+      reason,
+      sessionId: state.liveInputSessionId,
+      deviceId: state.selectedLiveInputDeviceId,
+      deviceLabel: state.selectedLiveInputDeviceLabel,
+      liveInputKind: state.liveInputKind,
+      audioContextState: state.audioCtx?.state ?? state.audioContextState,
+      trackMuted: Boolean(track?.muted),
+      atWallTimeMs: getTimingNowMs(),
+    };
+
+    clearLiveInputRuntimeState({ stopTracks: reason !== "track-ended" });
+    state.lastLiveInputInterruption = diagnostics;
+  }
+
+  function attachLiveInputTrackListeners(track, sessionId) {
+    if (!track?.addEventListener) {
+      return;
+    }
+
+    const handleEnded = () => {
+      if (state.liveInputSessionId === sessionId) {
+        recoverInterruptedLiveInput("track-ended");
+      }
+    };
+    const handleMute = () => {
+      if (state.liveInputSessionId !== sessionId) {
+        return;
+      }
+      clearLiveInputMuteTimeout();
+      state.liveInputMuteTimeoutId = globalThis.setTimeout?.(() => {
+        if (
+          state.liveInputSessionId === sessionId &&
+          getActiveLiveInputTrack()?.muted === true
+        ) {
+          recoverInterruptedLiveInput("track-muted-timeout");
+        }
+      }, LIVE_INPUT_INTERRUPTION_MUTE_TIMEOUT_MS);
+    };
+    const handleUnmute = () => {
+      if (state.liveInputSessionId === sessionId) {
+        clearLiveInputMuteTimeout();
+      }
+    };
+
+    track.addEventListener("ended", handleEnded);
+    track.addEventListener("mute", handleMute);
+    track.addEventListener("unmute", handleUnmute);
+    state.liveInputTrackListeners = {
+      track,
+      handleEnded,
+      handleMute,
+      handleUnmute,
+    };
   }
 
   function replaceActiveAnalysisTap(tap, targetKind) {
@@ -906,6 +1063,9 @@ export function createAudioSession() {
         null,
       lastPlaybackEndReason: state.lastPlaybackEndReason,
       lastPlaybackDiagnostics: getPlaybackDiagnosticsSnapshot(),
+      lastLiveInputInterruption: cloneLiveInputInterruptionDiagnostics(
+        state.lastLiveInputInterruption,
+      ),
     };
   }
 
@@ -1436,11 +1596,21 @@ export function createAudioSession() {
       ),
     };
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    detachLiveInputTrackListeners();
+    clearLiveInputMuteTimeout();
+    clearLiveInputContextTimeout();
+    const liveInputSessionId = ++nextLiveInputSessionId;
     state.gumStream = stream;
     state.selectedLiveInputDeviceId = resolvedDeviceId ?? null;
     state.liveInputKind = resolvedLiveInputDeviceKind;
     state.selectedLiveInputDeviceLabel =
       stream.getAudioTracks?.()?.[0]?.label?.trim?.() ?? "";
+    state.liveInputSessionId = liveInputSessionId;
+    state.lastLiveInputInterruption = null;
+    attachLiveInputTrackListeners(
+      stream.getAudioTracks?.()?.[0] ?? null,
+      liveInputSessionId,
+    );
     if (resolvedLiveInputDeviceKind === LIVE_INPUT_DEVICE_KINDS.acousticMic) {
       state.liveInputCalibrationVersion += 1;
     }
@@ -1465,24 +1635,7 @@ export function createAudioSession() {
   }
 
   function stopLiveInputStream() {
-    if (state.gumStream) {
-      state.gumStream.getAudioTracks().forEach((track) => track.stop());
-    }
-
-    activeLiveInputSettingsSync = null;
-    disconnectAudioNode(state.liveInputNode);
-
-    state.liveInputAnalyser = null;
-    state.liveInputNode = null;
-    state.gumStream = null;
-    state.selectedLiveInputDeviceId = null;
-    state.selectedLiveInputDeviceLabel = "";
-    state.liveInputKind = null;
-
-    if (state.audioInputMode === "live" || state.audioInputMode === "system") {
-      setAudioInputMode("idle");
-    }
-    clearActiveAnalysisTap();
+    clearLiveInputRuntimeState();
   }
 
   function readAnalysisSnapshot() {

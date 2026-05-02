@@ -363,7 +363,7 @@ const ThreeScene = ({
                   background: "var(--nd-surface)",
                   boxShadow: "var(--nd-shell-shadow)",
                   color: "var(--nd-text-primary)",
-                  fontFamily: '"Space Grotesk", system-ui, sans-serif',
+                  fontFamily: '"Aspekta", system-ui, sans-serif',
                 }}
               >
                 <div

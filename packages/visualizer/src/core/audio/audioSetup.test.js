@@ -184,6 +184,8 @@ class MockMediaElement {
 
 const mockTrackStop = vi.fn();
 const mockTrackApplyConstraints = vi.fn(async () => {});
+let mockTrackListeners;
+let mockTrack;
 let fetchMock;
 let lastAudioContext = null;
 let getUserMediaMock;
@@ -197,13 +199,25 @@ describe("audio session", () => {
     vi.resetModules();
     mockTrackStop.mockReset();
     mockTrackApplyConstraints.mockReset();
-    lastAudioContext = null;
-    getAudioTracksMock = vi.fn(() => [
-      {
-        stop: mockTrackStop,
-        applyConstraints: mockTrackApplyConstraints,
+    mockTrackListeners = new Map();
+    mockTrack = {
+      stop: mockTrackStop,
+      applyConstraints: mockTrackApplyConstraints,
+      muted: false,
+      addEventListener: vi.fn((type, listener) => {
+        const listeners = mockTrackListeners.get(type) ?? new Set();
+        listeners.add(listener);
+        mockTrackListeners.set(type, listeners);
+      }),
+      removeEventListener: vi.fn((type, listener) => {
+        mockTrackListeners.get(type)?.delete(listener);
+      }),
+      dispatchEvent(type) {
+        mockTrackListeners.get(type)?.forEach((listener) => listener());
       },
-    ]);
+    };
+    lastAudioContext = null;
+    getAudioTracksMock = vi.fn(() => [mockTrack]);
     getUserMediaMock = vi.fn(async () => ({
       active: true,
       getAudioTracks: getAudioTracksMock,
@@ -450,6 +464,89 @@ describe("audio session", () => {
       audioInputMode: "idle",
       isLiveInputActive: false,
       analysisSource: "idle",
+      lastLiveInputInterruption: null,
+    });
+  });
+
+  it("recovers live input when the media stream track ends unexpectedly", async () => {
+    const session = createAttachedSession();
+    await session.startLiveInputStream("device-1");
+
+    mockTrack.dispatchEvent("ended");
+
+    expect(mockTrackStop).not.toHaveBeenCalled();
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "idle",
+      isLiveInputActive: false,
+      analysisSource: "idle",
+      selectedLiveInputDeviceId: null,
+      selectedLiveInputDeviceLabel: "",
+      lastLiveInputInterruption: {
+        reason: "track-ended",
+        deviceId: "device-1",
+      },
+    });
+    expect(session.readAnalysisSnapshot()).toBeNull();
+  });
+
+  it("recovers live input after a sustained track mute but ignores a transient mute", async () => {
+    vi.useFakeTimers();
+    try {
+      const session = createAttachedSession();
+      await session.startLiveInputStream("device-1");
+
+      mockTrack.muted = true;
+      mockTrack.dispatchEvent("mute");
+      await vi.advanceTimersByTimeAsync(1499);
+
+      expect(session.getStatus()).toMatchObject({
+        audioInputMode: "live",
+        isLiveInputActive: true,
+        lastLiveInputInterruption: null,
+      });
+
+      mockTrack.muted = false;
+      mockTrack.dispatchEvent("unmute");
+      await vi.advanceTimersByTimeAsync(2);
+
+      expect(session.getStatus()).toMatchObject({
+        audioInputMode: "live",
+        isLiveInputActive: true,
+        lastLiveInputInterruption: null,
+      });
+
+      mockTrack.muted = true;
+      mockTrack.dispatchEvent("mute");
+      await vi.advanceTimersByTimeAsync(1500);
+
+      expect(session.getStatus()).toMatchObject({
+        audioInputMode: "idle",
+        isLiveInputActive: false,
+        analysisSource: "idle",
+        lastLiveInputInterruption: {
+          reason: "track-muted-timeout",
+          deviceId: "device-1",
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("recovers live input when the live audio context is interrupted", async () => {
+    const session = createAttachedSession();
+    await session.startLiveInputStream("device-1");
+
+    lastAudioContext.dispatchStateChange("interrupted");
+
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "idle",
+      isLiveInputActive: false,
+      analysisSource: "idle",
+      lastLiveInputInterruption: {
+        reason: "audio-context-interrupted",
+        deviceId: "device-1",
+      },
     });
   });
 

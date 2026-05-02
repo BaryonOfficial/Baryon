@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   clearAdaptiveRaymarchResumeState,
   createRuntimeDiagnostics,
@@ -950,4 +950,129 @@ test("resolveFeatureFrame preserves the last active live frame during worker war
   expect(args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current).toBe(
     lastLiveFrame,
   );
+});
+
+test("resolveFeatureFrame clears cached live frames and reactive response after live input interruption", () => {
+  const featureEngine = {
+    reset: vi.fn(),
+  };
+  const runtimeState = {
+    responseEnvelope: 0.7,
+    accentEnvelope: 0.6,
+    motionSignal: 0.5,
+    scaleSignal: 0.4,
+    bloomResponseSignal: 0.8,
+    beatPulseEnvelope: 0.3,
+    uniforms: {
+      uRadius: { value: 3 },
+    },
+  };
+  const frameCacheRefs = {
+    lastLiveFrameRef: { current: { fieldState: "active" } },
+    lastActiveFrameRef: { current: { fieldState: "active" } },
+    lastIdleFrameRef: { current: { fieldState: "idle" } },
+    analysisSchedulerRef: {
+      current: {
+        lastHeavyAnalysisAtMs: 900,
+        lastHeavyAnalysisResult: { stale: true },
+        lastComposedFeatureFrame: { fieldState: "active" },
+        lastAnalysisSessionKey: "live:device-1",
+        lastAnalysisInputsSignature: '"sig"',
+      },
+    },
+  };
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+    runtimeState,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: false,
+      playbackSessionId: null,
+      lastLiveInputInterruption: {
+        reason: "track-ended",
+      },
+    },
+    renderLoopRefs: {
+      frameCacheRefs,
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame() {
+      return {
+        currentFrameAtMs: 1000,
+        analysisSessionKey: "idle",
+        analysisInputsSignature: '"idle"',
+        silentFeatureFrame: { fieldState: "idle" },
+      };
+    },
+  });
+
+  expect(result.effectiveFrame).toMatchObject({ fieldState: "idle" });
+  expect(frameCacheRefs.lastLiveFrameRef.current).toBeNull();
+  expect(frameCacheRefs.lastActiveFrameRef.current).toBeNull();
+  expect(frameCacheRefs.lastIdleFrameRef.current).toBeNull();
+  expect(frameCacheRefs.analysisSchedulerRef.current).toMatchObject({
+    lastHeavyAnalysisAtMs: Number.NEGATIVE_INFINITY,
+    lastHeavyAnalysisResult: null,
+    lastComposedFeatureFrame: null,
+  });
+  expect(featureEngine.reset).toHaveBeenCalledWith("live-input-interrupted");
+  expect(runtimeState).toMatchObject({
+    responseEnvelope: 0,
+    accentEnvelope: 0,
+    motionSignal: 0,
+    scaleSignal: 0,
+    bloomResponseSignal: 0,
+    beatPulseEnvelope: 0,
+  });
+});
+
+test("resolveFeatureFrame keeps weak active live input out of the interruption reset path", () => {
+  const featureEngine = {
+    reset: vi.fn(),
+  };
+  const runtimeState = {
+    responseEnvelope: 0.7,
+    bloomResponseSignal: 0.8,
+    uniforms: {
+      uRadius: { value: 3 },
+    },
+  };
+  const frameCacheRefs = {
+    lastLiveFrameRef: { current: { fieldState: "active" } },
+    lastActiveFrameRef: { current: null },
+    lastIdleFrameRef: { current: null },
+    analysisSchedulerRef: { current: null },
+  };
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+    runtimeState,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: true,
+      playbackSessionId: null,
+      lastLiveInputInterruption: null,
+    },
+    renderLoopRefs: {
+      frameCacheRefs,
+    },
+  });
+
+  resolveFeatureFrame(args, {
+    prepareFeatureFrame() {
+      return {
+        currentFrameAtMs: 1000,
+        analysisSessionKey: "live:device-1",
+        analysisInputsSignature: '"weak"',
+        silentFeatureFrame: { fieldState: "idle" },
+      };
+    },
+  });
+
+  expect(featureEngine.reset).not.toHaveBeenCalledWith(
+    "live-input-interrupted",
+  );
+  expect(runtimeState.responseEnvelope).toBe(0.7);
+  expect(runtimeState.bloomResponseSignal).toBe(0.8);
 });

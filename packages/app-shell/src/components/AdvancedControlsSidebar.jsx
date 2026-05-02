@@ -91,7 +91,7 @@ const CSS = `
   border-radius: 1.05rem;
   box-shadow: var(--nd-shell-shadow);
   color: var(--nd-text-primary);
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: "Aspekta", system-ui, sans-serif;
   transform: translateX(calc(-100% - 0.75rem));
   opacity: 0;
   visibility: hidden;
@@ -129,7 +129,7 @@ const CSS = `
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--nd-text-display);
-  font-family: "Space Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 
 .baryon-controls-header-note {
@@ -146,7 +146,7 @@ const CSS = `
   border: 1px solid var(--nd-border-visible);
   background: transparent;
   color: var(--nd-text-secondary);
-  font-family: "Space Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -172,7 +172,7 @@ const CSS = `
   border: 1px solid var(--nd-border-visible);
   background: transparent;
   color: var(--nd-text-secondary);
-  font-family: "Space Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.57rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -232,7 +232,7 @@ const CSS = `
   scrollbar-width: none;
   border: 1px solid var(--nd-border);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--nd-surface-raised) 82%, #ffffff 4%);
+  background: color-mix(in srgb, var(--nd-surface-raised) 82%, #E8DFD0 4%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.03),
     0 0 0 1px rgba(255, 255, 255, 0.02);
@@ -249,7 +249,7 @@ const CSS = `
   border-radius: 999px;
   background: transparent;
   color: var(--nd-text-secondary);
-  font-family: "Space Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -291,7 +291,7 @@ const CSS = `
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--nd-text-secondary);
-  font-family: "Space Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 
 .baryon-controls-field,
@@ -315,10 +315,10 @@ const CSS = `
   min-height: 1.52rem;
   border-radius: 0.5rem;
   border: 1px solid var(--nd-border-visible);
-  background: #0c0c0c;
+  background: var(--nd-surface-raised);
   color: var(--nd-text-primary);
   padding: 0.24rem 0.44rem;
-  font-family: "Space Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.61rem;
   letter-spacing: 0.04em;
   box-sizing: border-box;
@@ -326,11 +326,11 @@ const CSS = `
 
 .baryon-controls-select {
   color-scheme: dark;
-  background-color: #0c0c0c;
+  background-color: var(--nd-surface-raised);
 }
 
 .baryon-controls-select option {
-  background-color: #0c0c0c;
+  background-color: var(--nd-surface-raised);
   color: var(--nd-text-primary);
 }
 
@@ -364,7 +364,7 @@ const CSS = `
 .baryon-controls-group-count {
   font-size: 0.54rem;
   color: var(--nd-text-disabled);
-  font-family: "Space Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
@@ -372,7 +372,7 @@ const CSS = `
 .baryon-controls-chevron {
   font-size: 0.54rem;
   color: var(--nd-text-secondary);
-  font-family: "Space Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 
 .baryon-controls-group-content {
@@ -413,7 +413,7 @@ const CSS = `
 .baryon-controls-card-label {
   font-size: 0.56rem;
   font-weight: 700;
-  font-family: "Space Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -474,7 +474,7 @@ const CSS = `
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--nd-text-secondary);
-  font-family: "Space Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 
 .baryon-controls-help-tooltip-copy {
@@ -515,7 +515,7 @@ const CSS = `
   width: 0.94rem;
   height: 0.94rem;
   border-radius: 999px;
-  background: #ffffff;
+  background: #E8DFD0;
   pointer-events: none;
   transition: transform 140ms ease;
 }
@@ -536,7 +536,7 @@ const CSS = `
 
 .baryon-controls-slider {
   flex: 1;
-  accent-color: #ffffff;
+  accent-color: #E8DFD0;
 }
 
 .baryon-controls-number-input {
@@ -545,9 +545,9 @@ const CSS = `
   padding: 0.14rem 0.28rem;
   border-radius: 0.36rem;
   border: 1px solid var(--nd-border-visible);
-  background: #0c0c0c;
+  background: var(--nd-surface-raised);
   color: var(--nd-text-primary);
-  font-family: "Space Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.58rem;
   text-align: right;
   box-sizing: border-box;
@@ -590,7 +590,7 @@ const CSS = `
   color: var(--nd-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-family: "Space Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 
 .baryon-controls-footer {
@@ -618,7 +618,7 @@ const CSS = `
   border-radius: 0.62rem;
   background: rgba(255, 255, 255, 0.02);
   color: var(--nd-text-primary);
-  font-family: "Space Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.54rem;
   font-weight: 700;
   letter-spacing: 0.12em;

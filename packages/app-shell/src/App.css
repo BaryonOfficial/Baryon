@@ -1,11 +1,15 @@
 @reference "./index.css";
 
 .btn-standard {
-  @apply bg-white text-black hover:bg-whitesmoke font-light py-1.5 px-3.5 rounded font-ubuntu cursor-pointer text-sm;
+  @apply font-aspekta cursor-pointer rounded py-1.5 px-3.5 text-sm font-light;
+  background: var(--baryon-amber);
+  color: var(--baryon-on-amber);
 }
 
 .file-btn-standard {
-  @apply bg-white text-black hover:bg-whitesmoke font-extralight py-1.5 px-3.5 rounded font-ubuntu cursor-pointer text-sm;
+  @apply font-aspekta cursor-pointer rounded py-1.5 px-3.5 text-sm font-extralight;
+  background: var(--baryon-amber-soft);
+  color: var(--baryon-amber);
 }
 
 .app-shell {
@@ -15,9 +19,9 @@
   isolation: isolate;
   --app-floating-control-size: 2.2rem;
   --app-floating-control-radius: 999px;
-  --app-floating-control-border: 1px solid var(--nd-border-visible, #333333);
-  --app-floating-control-background: var(--nd-surface, #111111);
-  --app-floating-control-color: var(--nd-text-secondary, #999999);
+  --app-floating-control-border: 1px solid var(--nd-border-visible, #2e241a);
+  --app-floating-control-background: var(--nd-surface, #15100a);
+  --app-floating-control-color: var(--nd-text-secondary, #9a8e7e);
   --app-floating-control-backdrop: none;
   --app-floating-control-shadow: none;
   --app-floating-control-top: max(0.9rem, env(safe-area-inset-top));
@@ -31,7 +35,15 @@
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 18%),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03), transparent 12%);
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--baryon-cream) 4%, transparent),
+      transparent 18%
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--baryon-cream) 3%, transparent),
+      transparent 12%
+    );
   opacity: 0.75;
 }

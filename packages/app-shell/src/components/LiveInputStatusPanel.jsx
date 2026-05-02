@@ -115,7 +115,7 @@ function getSelectStyle(disabled) {
     border: "1px solid var(--nd-border-visible)",
     background: disabled ? "rgba(255, 255, 255, 0.02)" : "#0c0c0c",
     color: disabled ? "var(--nd-text-disabled)" : "var(--nd-text-primary)",
-    fontFamily: '"Space Mono", ui-monospace, monospace',
+    fontFamily: '"JetBrains Mono", ui-monospace, monospace',
     fontSize: "0.62rem",
     fontWeight: 700,
     letterSpacing: "0.05em",
@@ -305,7 +305,7 @@ export default function LiveInputStatusPanel({
         background: "var(--nd-surface)",
         color: "var(--nd-text-primary)",
         boxShadow: "var(--nd-shell-shadow)",
-        fontFamily: '"Space Grotesk", system-ui, sans-serif',
+        fontFamily: '"Aspekta", system-ui, sans-serif',
       }}
       aria-live="polite"
     >
@@ -326,7 +326,7 @@ export default function LiveInputStatusPanel({
             letterSpacing: "0.16em",
             textTransform: "uppercase",
             color: "var(--nd-text-secondary)",
-            fontFamily: '"Space Mono", ui-monospace, monospace',
+            fontFamily: '"JetBrains Mono", ui-monospace, monospace',
           }}
         >
           Input
@@ -341,7 +341,7 @@ export default function LiveInputStatusPanel({
             fontWeight: 700,
             letterSpacing: "0.12em",
             textTransform: "uppercase",
-            fontFamily: '"Space Mono", ui-monospace, monospace',
+            fontFamily: '"JetBrains Mono", ui-monospace, monospace',
           }}
         >
           {signalLabel}
@@ -382,7 +382,7 @@ export default function LiveInputStatusPanel({
                 border: "1px solid var(--nd-border-visible)",
                 background: "transparent",
                 color: "var(--nd-text-display)",
-                fontFamily: '"Space Mono", ui-monospace, monospace',
+                fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                 fontSize: "0.58rem",
                 fontWeight: 700,
                 letterSpacing: "0.12em",
@@ -418,7 +418,7 @@ export default function LiveInputStatusPanel({
                   border: "1px solid var(--nd-border-visible)",
                   background: "transparent",
                   color: "var(--nd-text-display)",
-                  fontFamily: '"Space Mono", ui-monospace, monospace',
+                  fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                   fontSize: "0.58rem",
                   fontWeight: 700,
                   letterSpacing: "0.12em",
@@ -447,7 +447,7 @@ export default function LiveInputStatusPanel({
                   letterSpacing: "0.12em",
                   textTransform: "uppercase",
                   color: "var(--nd-text-secondary)",
-                  fontFamily: '"Space Mono", ui-monospace, monospace',
+                  fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                 }}
               >
                 Device
@@ -486,7 +486,7 @@ export default function LiveInputStatusPanel({
                     letterSpacing: "0.12em",
                     textTransform: "uppercase",
                     color: "var(--nd-text-secondary)",
-                    fontFamily: '"Space Mono", ui-monospace, monospace',
+                    fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                   }}
                 >
                   Type
@@ -507,7 +507,7 @@ export default function LiveInputStatusPanel({
                       color: deviceTypeIsManual
                         ? "var(--nd-warning)"
                         : "var(--nd-text-disabled)",
-                      fontFamily: '"Space Mono", ui-monospace, monospace',
+                      fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                       textTransform: "uppercase",
                     }}
                   >
@@ -548,7 +548,7 @@ export default function LiveInputStatusPanel({
                     letterSpacing: "0.12em",
                     textTransform: "uppercase",
                     color: "var(--nd-text-secondary)",
-                    fontFamily: '"Space Mono", ui-monospace, monospace',
+                    fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                   }}
                 >
                   Intent
@@ -611,7 +611,7 @@ export default function LiveInputStatusPanel({
                   letterSpacing: "0.12em",
                   textTransform: "uppercase",
                   color: "var(--nd-text-secondary)",
-                  fontFamily: '"Space Mono", ui-monospace, monospace',
+                  fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                 }}
               >
                 Mic Settings
@@ -630,7 +630,7 @@ export default function LiveInputStatusPanel({
                   color: micProcessingDisabled
                     ? "var(--nd-text-disabled)"
                     : "var(--nd-text-secondary)",
-                  fontFamily: '"Space Mono", ui-monospace, monospace',
+                  fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                   textTransform: "uppercase",
                 }}
               >
@@ -642,7 +642,7 @@ export default function LiveInputStatusPanel({
                 flexShrink: 0,
                 color: "var(--nd-text-secondary)",
                 fontSize: "0.68rem",
-                fontFamily: '"Space Mono", ui-monospace, monospace',
+                fontFamily: '"JetBrains Mono", ui-monospace, monospace',
               }}
             >
               {micSettingsOpen ? "▾" : "▸"}
@@ -718,7 +718,7 @@ export default function LiveInputStatusPanel({
                           : "var(--nd-text-primary)",
                       fontSize: "0.58rem",
                       fontWeight: 700,
-                      fontFamily: '"Space Mono", ui-monospace, monospace',
+                      fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                       letterSpacing: "0.08em",
                       textTransform: "uppercase",
                       textAlign: "left",
@@ -756,7 +756,7 @@ export default function LiveInputStatusPanel({
                         fontWeight: 700,
                         letterSpacing: "0.08em",
                         textTransform: "uppercase",
-                        fontFamily: '"Space Mono", ui-monospace, monospace',
+                        fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                       }}
                     >
                       {enabled ? "On" : "Off"}
@@ -794,20 +794,20 @@ export default function LiveInputStatusPanel({
                   ? "1px solid var(--nd-accent)"
                   : "1px solid var(--nd-text-display)",
                 background: liveButtonDisabled
-                  ? "rgba(255, 255, 255, 0.02)"
+                  ? "color-mix(in srgb, var(--baryon-cream) 2%, transparent)"
                   : isLiveInputActive
-                    ? "rgba(255, 59, 48, 0.12)"
+                    ? "var(--baryon-amber-soft)"
                     : "var(--nd-text-display)",
                 color: liveButtonDisabled
                   ? "var(--nd-text-disabled)"
                   : isLiveInputActive
-                    ? "var(--nd-text-display)"
+                    ? "var(--baryon-amber)"
                     : "var(--nd-black)",
                 fontSize: "0.6rem",
                 fontWeight: 700,
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
-                fontFamily: '"Space Mono", ui-monospace, monospace',
+                fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                 cursor: liveButtonDisabled ? "not-allowed" : "pointer",
                 transition:
                   "background 140ms ease, border-color 140ms ease, color 140ms ease, opacity 140ms ease",
