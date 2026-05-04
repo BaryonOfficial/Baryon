@@ -207,6 +207,46 @@ describe("modal excitation structural state", () => {
     expect(secondStructural.structuralMetrics.driveSource).toBe("time-domain");
   });
 
+  it("reports canonical chromesthesia components for modal-excitation color", () => {
+    const baseState = createModalExcitationState(16);
+    const preparedInputs = createPreparedInputs({
+      frameTimeMs: 0,
+      fftMagnitudes: makeFft([
+        [440, 0.98],
+        [880, 0.42],
+      ]),
+      timeData: makeTimeData({ frequency: 440 }),
+    });
+    const fastSignal = updateAudioFeatureFastSignalState(preparedInputs);
+    const structural = buildModalExcitationStructuralState({
+      preparedInputs,
+      fastSignalState: fastSignal,
+      existingState: baseState,
+    });
+
+    const component =
+      structural.backboneStateSource.chromesthesiaComponents[0] ??
+      structural.detailStateSource.chromesthesiaComponents[0];
+
+    expect(component).toMatchObject({
+      frequency: expect.any(Number),
+      familyFrequency: expect.any(Number),
+      noteName: expect.any(String),
+      pitchClass: expect.any(Number),
+      octave: expect.any(Number),
+      weight: expect.any(Number),
+      color: {
+        r: expect.any(Number),
+        g: expect.any(Number),
+        b: expect.any(Number),
+      },
+      saturation: expect.any(Number),
+      value: expect.any(Number),
+    });
+    expect(component.saturation).toBeGreaterThanOrEqual(0.55);
+    expect(component.value).toBeGreaterThan(0.5);
+  });
+
   it("routes bright coherent treble into detail modes", () => {
     const state = createModalExcitationState(16);
     const preparedInputs = createPreparedInputs({

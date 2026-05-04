@@ -62,4 +62,40 @@ describe("chromesthesia mapping", () => {
     expect(strong.saturation).toBeGreaterThan(weak.saturation);
     expect(strong.weight).toBeGreaterThan(weak.weight);
   });
+
+  it("keeps strong low notes visibly saturated instead of dim gray", () => {
+    const lowA = createChromesthesiaColor({
+      frequency: 110,
+      strength: 0.9,
+      stability: 0.9,
+      spectralCentroid: 0.18,
+    });
+
+    expect(lowA.noteName).toBe("A");
+    expect(lowA.saturation).toBeGreaterThanOrEqual(0.82);
+    expect(lowA.value).toBeGreaterThanOrEqual(0.58);
+  });
+
+  it("uses transients and bright spectral energy as short-lived color intensity", () => {
+    const sustained = createChromesthesiaColor({
+      frequency: 660,
+      strength: 0.55,
+      stability: 0.65,
+      spectralCentroid: 0.22,
+      transientEnergy: 0.05,
+      trebleBroadbandEnergy: 0.05,
+    });
+    const accented = createChromesthesiaColor({
+      frequency: 660,
+      strength: 0.55,
+      stability: 0.65,
+      spectralCentroid: 0.78,
+      transientEnergy: 0.8,
+      trebleBroadbandEnergy: 0.55,
+    });
+
+    expect(accented.saturation).toBeGreaterThan(sustained.saturation);
+    expect(accented.value).toBeGreaterThan(sustained.value);
+    expect(accented.weight).toBeGreaterThan(sustained.weight);
+  });
 });

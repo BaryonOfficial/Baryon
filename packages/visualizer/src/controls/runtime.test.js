@@ -212,10 +212,12 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uHolographicShift.value).toBe(0.41);
     expect(runtimeState.uniforms.uHolographicFresnelPower.value).toBe(4.1);
     expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
-    expect(runtimeState.uniforms.uChromesthesiaMix.value).toBe(0.6);
+    expect(runtimeState.uniforms.uChromesthesiaMix.value).toBeCloseTo(
+      Math.sqrt(0.6),
+    );
     expect(runtimeState.chromesthesia).toEqual({
       colorMode: "chromesthesia",
-      chromesthesiaMix: 0.6,
+      chromesthesiaMix: Math.sqrt(0.6),
     });
     expect(runtimeState.reactivityTuning).toEqual({
       reactivity: 1.2,
@@ -253,7 +255,7 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.structurePersistence).toBe(1.4);
     expect(snapshot.uniforms.raymarchSteps).toBe(64);
     expect(snapshot.uniforms.colorMode).toBe("chromesthesia");
-    expect(snapshot.uniforms.chromesthesiaMix).toBe(0.6);
+    expect(snapshot.uniforms.chromesthesiaMix).toBeCloseTo(Math.sqrt(0.6));
     expect(snapshot.uniforms.boundaryMode).toBe("dirichlet");
     expect(snapshot.uniforms.requestedCavityGeometry).toBe("rectangular");
     expect(snapshot.uniforms.effectiveCavityGeometry).toBe("rectangular");

@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { AUDIO_DEFAULTS } from "../../defaults.js";
 import {
   RAYMARCH_CHROMA_EVALUATION_MODES,
+  RAYMARCH_CHROMESTHESIA_TUNING,
   createRaymarchVolumeMesh,
   getRaymarchMaterialCache,
   setRaymarchBoundaryMode,
@@ -26,6 +27,13 @@ function makeMeshUniforms(overrides = {}) {
 }
 
 describe("raymarch volume material", () => {
+  it("keeps chromesthesia shader tuning vivid instead of neutralizing color", () => {
+    expect(RAYMARCH_CHROMESTHESIA_TUNING.keyTintStrength).toBeLessThan(0.3);
+    expect(RAYMARCH_CHROMESTHESIA_TUNING.contourShadow).toBeGreaterThan(0.95);
+    expect(RAYMARCH_CHROMESTHESIA_TUNING.hotCoreSurfacePull).toBeLessThan(0.55);
+    expect(RAYMARCH_CHROMESTHESIA_TUNING.whiteEmissionLift).toBeLessThan(0.3);
+  });
+
   it("binds volumetric opacity to the material alpha path", () => {
     const mesh = createRaymarchVolumeMesh({
       radius: 3,

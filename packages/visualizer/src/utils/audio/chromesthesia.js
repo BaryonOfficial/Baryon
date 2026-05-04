@@ -30,10 +30,10 @@ const PITCH_CLASS_HUES = Object.freeze([
 
 const LOW_OCTAVE = 2;
 const HIGH_OCTAVE = 6;
-const MIN_VALUE = 0.35;
-const MAX_VALUE = 0.95;
-const MIN_SATURATION = 0.3;
-const MAX_SATURATION = 0.95;
+const MIN_VALUE = 0.54;
+const MAX_VALUE = 0.98;
+const MIN_SATURATION = 0.42;
+const MAX_SATURATION = 0.98;
 const WEAK_COMPONENT_FLOOR = 0.24;
 const FAMILY_DISTANCE_SEMITONES = 1.15;
 
@@ -141,6 +141,8 @@ export function createChromesthesiaColor({
   strength = 0,
   stability = 0,
   spectralCentroid = 0,
+  transientEnergy = 0,
+  trebleBroadbandEnergy = 0,
 }) {
   const pitchClass = getPitchClassForFrequency(frequency);
   const octave = getOctaveForFrequency(frequency);
@@ -163,16 +165,36 @@ export function createChromesthesiaColor({
     (octave - LOW_OCTAVE) / (HIGH_OCTAVE - LOW_OCTAVE),
   );
   const centroidSignal = clamp01(spectralCentroid);
+  const transientSignal = clamp01(transientEnergy);
+  const trebleSignal = clamp01(trebleBroadbandEnergy);
+  const accentSignal = clamp01(transientSignal * 0.68 + trebleSignal * 0.32);
+  const tonalPurity = clamp01(strengthSignal * 0.58 + stabilitySignal * 0.42);
   const hue = pitchClassToHue(pitchClass);
   const saturation = Math.min(
     MAX_SATURATION,
     MIN_SATURATION +
-      strengthSignal * 0.45 +
-      stabilitySignal * 0.15 +
-      centroidSignal * 0.05,
+      strengthSignal * 0.28 +
+      stabilitySignal * 0.2 +
+      tonalPurity * 0.12 +
+      centroidSignal * 0.08 +
+      accentSignal * 0.12,
   );
-  const value = MIN_VALUE + (MAX_VALUE - MIN_VALUE) * octaveSignal;
-  const weight = clamp01(strengthSignal * 0.58 + stabilitySignal * 0.42);
+  const value = Math.min(
+    MAX_VALUE,
+    MIN_VALUE +
+      (MAX_VALUE - MIN_VALUE) *
+        (octaveSignal * 0.25 +
+          strengthSignal * 0.42 +
+          stabilitySignal * 0.18 +
+          centroidSignal * 0.07 +
+          accentSignal * 0.18),
+  );
+  const weight = clamp01(
+    strengthSignal * 0.5 +
+      stabilitySignal * 0.32 +
+      tonalPurity * 0.08 +
+      accentSignal * 0.1,
+  );
 
   return {
     rgb: hsvToRgb(hue, saturation, value),

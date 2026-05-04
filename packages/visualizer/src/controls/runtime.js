@@ -67,6 +67,10 @@ function clamp01(value) {
   return clamp(value, 0, 1);
 }
 
+function derivePerceptualChromesthesiaMix(mix) {
+  return Math.sqrt(clamp01(mix));
+}
+
 function resolveOutputTopologyKey({ bloomEnabled, outputMode }) {
   return `${bloomEnabled ? 1 : 0}:${outputMode}`;
 }
@@ -277,7 +281,9 @@ function applyCommonVisualizationControls(runtimeState, controls) {
     controls.colorMode === "chromesthesia" ? "chromesthesia" : "static";
   const chromesthesiaMix =
     colorMode === "chromesthesia"
-      ? clamp01(controls.chromesthesiaMix ?? RENDER_DEFAULTS.chromesthesiaMix)
+      ? derivePerceptualChromesthesiaMix(
+          controls.chromesthesiaMix ?? RENDER_DEFAULTS.chromesthesiaMix,
+        )
       : 0;
   const boundaryMode = normalizeBoundaryMode(controls.boundaryMode);
   const requestedCavityGeometry = normalizeCavityGeometry(
