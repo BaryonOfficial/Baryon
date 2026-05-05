@@ -653,9 +653,21 @@ const CSS = `
   object-fit: contain;
 }
 
+.baryon-controls-footer-social-links {
+  display: flex;
+  align-items: center;
+  gap: 0.86rem;
+  padding: 0.2rem 0.14rem 0.06rem;
+}
+
 .baryon-controls-footer-links a[data-icon-only="true"] {
+  width: auto;
+  min-height: auto;
+  padding: 0.08rem;
+  border-color: transparent;
+  border-radius: 0.42rem;
+  background: transparent;
   justify-content: center;
-  min-height: 2.18rem;
 }
 
 .baryon-controls-footer-links a[data-icon-only="true"] .baryon-controls-footer-link-icon {
@@ -1828,16 +1840,26 @@ export default function AdvancedControlsSidebar({
             <section className="baryon-controls-footer">
               <p className="baryon-controls-section-label">Info</p>
               <div className="baryon-controls-footer-links">
-                {INFO_LINKS.map((link) => (
+                {INFO_LINKS.filter((link) => !link.icon).map((link) => (
                   <a
                     key={link.href}
                     href={link.href}
                     target="_blank"
                     rel="noreferrer"
-                    aria-label={link.icon ? link.label : undefined}
-                    data-icon-only={link.icon ? "true" : undefined}
                   >
-                    {link.icon ? (
+                    <span>{link.label}</span>
+                  </a>
+                ))}
+                <div className="baryon-controls-footer-social-links">
+                  {INFO_LINKS.filter((link) => link.icon).map((link) => (
+                    <a
+                      key={link.href}
+                      href={link.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={link.label}
+                      data-icon-only="true"
+                    >
                       <span className="baryon-controls-footer-link-label">
                         <img
                           aria-hidden="true"
@@ -1847,11 +1869,9 @@ export default function AdvancedControlsSidebar({
                           src={link.icon}
                         />
                       </span>
-                    ) : (
-                      <span>{link.label}</span>
-                    )}
-                  </a>
-                ))}
+                    </a>
+                  ))}
+                </div>
               </div>
             </section>
           </div>

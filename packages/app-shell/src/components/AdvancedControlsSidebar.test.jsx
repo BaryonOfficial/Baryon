@@ -102,8 +102,21 @@ describe("AdvancedControlsSidebar info links", () => {
 
     expect(socialIconLabels).toEqual(["X", "Instagram"]);
 
+    const socialRow = container.querySelector(
+      ".baryon-controls-footer-social-links",
+    );
+
+    expect(
+      Array.from(socialRow?.querySelectorAll("a") ?? []).map((link) =>
+        link.getAttribute("data-icon-only"),
+      ),
+    ).toEqual(["true", "true"]);
+
     const styleText = container.querySelector("style")?.textContent ?? "";
 
+    expect(styleText).toContain(".baryon-controls-footer-social-links");
+    expect(styleText).toContain("border-color: transparent;");
+    expect(styleText).toContain("background: transparent;");
     expect(styleText).toContain("width: 0.82rem;");
     expect(styleText).toContain("height: 0.82rem;");
   });
