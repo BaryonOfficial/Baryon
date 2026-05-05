@@ -11,6 +11,14 @@ import {
   createModalExcitationState,
   getAtlasCacheSize,
 } from "./modalExcitation.js";
+import {
+  createBassHatFixture,
+  createBroadbandNoiseFixture,
+  createMajorTriadFixture,
+  createSineToneFixture,
+  createVocalLikeFixture,
+} from "./audioFixtures.js";
+import { pitchClassToHue } from "./chromesthesia.js";
 
 const FFT_SIZE = 4096;
 const SAMPLE_RATE = 44100;
@@ -72,6 +80,8 @@ function createPreparedInputs({
   avgAmplitude = 24,
   rms = 0.2,
   radius = 3,
+  featureState = createAudioFeatureState(),
+  includeChromesthesia = true,
 }) {
   return prepareAudioFeatureFrameInputs({
     analysisSnapshot: {
@@ -83,11 +93,12 @@ function createPreparedInputs({
       spectralCentroid: 0.2,
       spectralFlux: 0.1,
     },
-    featureState: createAudioFeatureState(),
+    featureState,
     radius,
     cavityGeometry,
     status,
     frameTimeMs,
+    includeChromesthesia,
   });
 }
 
@@ -205,6 +216,156 @@ describe("modal excitation structural state", () => {
     );
     expect(secondStructural.structuralMetrics.modeCoherence).toBeGreaterThan(0);
     expect(secondStructural.structuralMetrics.driveSource).toBe("time-domain");
+  });
+
+  it("reports canonical chromesthesia components for modal-excitation color", () => {
+    const baseState = createModalExcitationState(16);
+    const preparedInputs = createPreparedInputs({
+      frameTimeMs: 0,
+      fftMagnitudes: makeFft([
+        [440, 0.98],
+        [880, 0.42],
+      ]),
+      timeData: makeTimeData({ frequency: 440 }),
+    });
+    const fastSignal = updateAudioFeatureFastSignalState(preparedInputs);
+    const structural = buildModalExcitationStructuralState({
+      preparedInputs,
+      fastSignalState: fastSignal,
+      existingState: baseState,
+    });
+
+    const component =
+      structural.backboneStateSource.chromesthesiaComponents[0] ??
+      structural.detailStateSource.chromesthesiaComponents[0];
+
+    expect(component).toMatchObject({
+      frequency: expect.any(Number),
+      familyFrequency: expect.any(Number),
+      noteName: expect.any(String),
+      pitchClass: expect.any(Number),
+      octave: expect.any(Number),
+      weight: expect.any(Number),
+      color: {
+        r: expect.any(Number),
+        g: expect.any(Number),
+        b: expect.any(Number),
+      },
+      saturation: expect.any(Number),
+      value: expect.any(Number),
+    });
+    expect(component.saturation).toBeGreaterThanOrEqual(0.55);
+    expect(component.value).toBeGreaterThan(0.5);
+  });
+
+  it("keeps tone and chord fixtures stable in display and color slots", () => {
+    const fixtures = [
+      createSineToneFixture(220),
+      createSineToneFixture(440),
+      createSineToneFixture(660),
+      createMajorTriadFixture(261.626),
+      createBassHatFixture(),
+      createVocalLikeFixture(220),
+      createBroadbandNoiseFixture(),
+    ];
+
+    for (const [index, fixture] of fixtures.entries()) {
+      const state = createModalExcitationState(16);
+      const preparedInputs = createPreparedInputs({
+        frameTimeMs: index * 33,
+        fftMagnitudes: fixture.fftMagnitudes,
+        timeData: fixture.timeData,
+        avgAmplitude: index === fixtures.length - 1 ? 12 : 32,
+        rms: index === fixtures.length - 1 ? 0.08 : 0.24,
+      });
+      preparedInputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(preparedInputs);
+      const structural = buildModalExcitationStructuralState({
+        preparedInputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => index,
+      });
+
+      expect(structural.backboneSlotsSource.length).toBeGreaterThan(0);
+      expect(structural.detailSlotsSource.length).toBeGreaterThan(0);
+      expect(structural.backboneColorSlotsSource?.length).toBe(
+        structural.backboneSlotsSource.length,
+      );
+      expect(structural.detailColorSlotsSource?.length).toBe(
+        structural.detailSlotsSource.length,
+      );
+    }
+  });
+
+  it("passes key-relative context into modal-excitation chromesthesia components", () => {
+    const featureState = createAudioFeatureState();
+    featureState.analysis.chromaState.keyTonic = 7;
+    featureState.analysis.chromaState.keyMode = "major";
+    featureState.analysis.chromaState.keyConfidence = 1;
+    const state = createModalExcitationState(16);
+    const fixture = createMajorTriadFixture(261.626);
+    const preparedInputs = createPreparedInputs({
+      frameTimeMs: 0,
+      fftMagnitudes: fixture.fftMagnitudes,
+      timeData: fixture.timeData,
+      featureState,
+    });
+    preparedInputs.modalExcitationState = state;
+    const fastSignal = updateAudioFeatureFastSignalState(preparedInputs);
+    const structural = buildModalExcitationStructuralState({
+      preparedInputs,
+      fastSignalState: fastSignal,
+      existingState: state,
+      performanceNow: () => 0,
+    });
+
+    const components = [
+      ...structural.backboneStateSource.chromesthesiaComponents,
+      ...structural.detailStateSource.chromesthesiaComponents,
+    ].filter((component) => component.weight > 0);
+
+    expect(components.length).toBeGreaterThan(0);
+    for (const component of components) {
+      expect(component.keyTonic).toBe(7);
+      expect(component.keyMode).toBe("major");
+      expect(component.keyConfidence).toBe(1);
+      expect(
+        Math.abs(component.hue - pitchClassToHue(component.pitchClass)),
+      ).toBeLessThanOrEqual(0.035);
+    }
+  });
+
+  it("clears stale blended colors when chromesthesia turns back on", () => {
+    const state = createModalExcitationState(16);
+    state.blendBackbone.slots.set([8, 8, 8, 0.5]);
+    state.blendBackbone.colorSlots.set([0, 1, 0, 0.9]);
+
+    const fixture = createSineToneFixture(440);
+    const preparedInputs = createPreparedInputs({
+      frameTimeMs: 120,
+      fftMagnitudes: fixture.fftMagnitudes,
+      timeData: fixture.timeData,
+      includeChromesthesia: true,
+    });
+    preparedInputs.modalExcitationState = state;
+    const fastSignal = updateAudioFeatureFastSignalState(preparedInputs);
+    const structural = buildModalExcitationStructuralState({
+      preparedInputs,
+      fastSignalState: fastSignal,
+      existingState: state,
+      performanceNow: () => 3,
+    });
+
+    const colors = structural.backboneColorSlotsSource;
+    let staleGreenWeight = 0;
+    for (let offset = 0; offset < colors.length; offset += 4) {
+      if (colors[offset + 1] === 1 && colors[offset + 3] > staleGreenWeight) {
+        staleGreenWeight = colors[offset + 3];
+      }
+    }
+
+    expect(staleGreenWeight).toBe(0);
   });
 
   it("routes bright coherent treble into detail modes", () => {

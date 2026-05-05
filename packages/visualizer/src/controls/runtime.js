@@ -67,6 +67,10 @@ function clamp01(value) {
   return clamp(value, 0, 1);
 }
 
+function derivePerceptualChromesthesiaMix(mix) {
+  return Math.sqrt(clamp01(mix));
+}
+
 function resolveOutputTopologyKey({ bloomEnabled, outputMode }) {
   return `${bloomEnabled ? 1 : 0}:${outputMode}`;
 }
@@ -126,6 +130,7 @@ function deriveBloomResponse(controls, stepBudget) {
 export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
   [CONTROL_HANDLERS.audio]: Object.freeze([
     "liveInputAnalysisClass",
+    "liveInputAcousticIntent",
     "echoCancellation",
     "noiseSuppression",
     "autoGainControl",
@@ -195,6 +200,9 @@ function getAudioControlSnapshot(controls) {
   return {
     liveInputAnalysisClass:
       controls.liveInputAnalysisClass ?? AUDIO_DEFAULTS.liveInputAnalysisClass,
+    liveInputAcousticIntent:
+      controls.liveInputAcousticIntent ??
+      AUDIO_DEFAULTS.liveInputAcousticIntent,
     echoCancellation: Boolean(controls.echoCancellation),
     noiseSuppression: Boolean(controls.noiseSuppression),
     autoGainControl: Boolean(controls.autoGainControl),
@@ -209,6 +217,7 @@ export async function applyAudioControls(audioSession, controls) {
 
   audioSession.setLiveInputAnalysisSettings?.({
     analysisClass: snapshot.liveInputAnalysisClass,
+    acousticIntent: snapshot.liveInputAcousticIntent,
   });
   await audioSession.setLiveInputSettings({
     echoCancellation: snapshot.echoCancellation,
@@ -272,7 +281,9 @@ function applyCommonVisualizationControls(runtimeState, controls) {
     controls.colorMode === "chromesthesia" ? "chromesthesia" : "static";
   const chromesthesiaMix =
     colorMode === "chromesthesia"
-      ? clamp01(controls.chromesthesiaMix ?? RENDER_DEFAULTS.chromesthesiaMix)
+      ? derivePerceptualChromesthesiaMix(
+          controls.chromesthesiaMix ?? RENDER_DEFAULTS.chromesthesiaMix,
+        )
       : 0;
   const boundaryMode = normalizeBoundaryMode(controls.boundaryMode);
   const requestedCavityGeometry = normalizeCavityGeometry(

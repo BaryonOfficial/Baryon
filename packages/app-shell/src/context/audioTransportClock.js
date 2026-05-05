@@ -53,7 +53,7 @@ export function resetAudioTransportClock() {
   emitClockUpdate();
 }
 
-export function getAudioTransportClockSnapshot() {
+function getAudioTransportClockSnapshot() {
   return snapshot;
 }
 

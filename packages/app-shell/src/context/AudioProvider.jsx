@@ -7,8 +7,10 @@ import React, {
 } from "react";
 import { getDefaultAudioSession } from "@baryon/visualizer/audio";
 import {
+  DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT,
   DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
   LIVE_INPUT_ANALYSIS_CLASSES,
+  normalizeLiveInputAcousticIntent,
   normalizeLiveInputAnalysisClass,
   normalizeResolvedLiveInputAnalysisClass,
   normalizeLiveInputAnalysisOverrides,
@@ -62,6 +64,7 @@ const DEFAULT_TRANSPORT_SEEK_STATE = Object.freeze({
 });
 const RECENT_UPLOAD_LIMIT = 4;
 const LIVE_INPUT_ANALYSIS_OVERRIDES_KEY = "liveInputAnalysisOverrides";
+const LIVE_INPUT_ACOUSTIC_INTENT_KEY = "liveInputAcousticIntent";
 const LIVE_INPUT_PERMISSION_STATES = Object.freeze({
   unknown: "unknown",
   requesting: "requesting",
@@ -133,6 +136,21 @@ function persistLiveInputAnalysisOverrides(storage, overrides) {
     ...currentSettings,
     [LIVE_INPUT_ANALYSIS_OVERRIDES_KEY]:
       normalizeLiveInputAnalysisOverrides(overrides),
+  });
+}
+
+function loadLiveInputAcousticIntent(storage) {
+  return normalizeLiveInputAcousticIntent(
+    readStoredJson(storage, SETTINGS_KEY)?.[LIVE_INPUT_ACOUSTIC_INTENT_KEY],
+  );
+}
+
+function persistLiveInputAcousticIntent(storage, acousticIntent) {
+  const currentSettings = readStoredJson(storage, SETTINGS_KEY) ?? {};
+  writeStoredJson(storage, SETTINGS_KEY, {
+    ...currentSettings,
+    [LIVE_INPUT_ACOUSTIC_INTENT_KEY]:
+      normalizeLiveInputAcousticIntent(acousticIntent),
   });
 }
 
@@ -384,6 +402,9 @@ export function AudioProvider({ children, platform = "web" }) {
       DEFAULT_LIVE_INPUT_ANALYSIS_CLASS
     ),
   );
+  const [liveInputAcousticIntent, setLiveInputAcousticIntentState] = useState(
+    () => loadLiveInputAcousticIntent(storage),
+  );
   const [resolvedLiveInputAnalysisClass, setResolvedLiveInputAnalysisClass] =
     useState(null);
   const [liveInputAnalysisOverrides, setLiveInputAnalysisOverrides] = useState(
@@ -589,6 +610,9 @@ export function AudioProvider({ children, platform = "web" }) {
     );
     setLiveInputAnalysisClass(
       normalizeLiveInputAnalysisClass(status.liveInputAnalysisClass),
+    );
+    setLiveInputAcousticIntentState(
+      normalizeLiveInputAcousticIntent(status.liveInputAcousticIntent),
     );
     setResolvedLiveInputAnalysisClass(
       status.resolvedLiveInputAnalysisClass
@@ -861,9 +885,10 @@ export function AudioProvider({ children, platform = "web" }) {
 
   useEffect(() => {
     getDefaultAudioSession().setLiveInputAnalysisSettings({
+      acousticIntent: liveInputAcousticIntent,
       overrides: liveInputAnalysisOverrides,
     });
-  }, [liveInputAnalysisOverrides]);
+  }, [liveInputAcousticIntent, liveInputAnalysisOverrides]);
 
   useEffect(() => {
     if (!selectedSystemDevice) {
@@ -1625,7 +1650,34 @@ export function AudioProvider({ children, platform = "web" }) {
       persistLiveInputAnalysisOverrides(storage, clearedOverrides);
       getDefaultAudioSession().setLiveInputAnalysisSettings({
         analysisClass: normalizedAnalysisClass,
+        acousticIntent: liveInputAcousticIntent,
         overrides: clearedOverrides,
+      });
+      applyLiveInputUiState(
+        isLiveInputActive
+          ? LIVE_INPUT_UI_STATES.active
+          : LIVE_INPUT_UI_STATES.idle,
+        LIVE_INPUT_ERROR_CODES.none,
+      );
+      syncSessionStatus();
+    },
+    [
+      applyLiveInputUiState,
+      isLiveInputActive,
+      liveInputAcousticIntent,
+      storage,
+      syncSessionStatus,
+    ],
+  );
+
+  const handleLiveInputAcousticIntentChange = useCallback(
+    (nextAcousticIntent) => {
+      const normalizedAcousticIntent =
+        normalizeLiveInputAcousticIntent(nextAcousticIntent);
+      setLiveInputAcousticIntentState(normalizedAcousticIntent);
+      persistLiveInputAcousticIntent(storage, normalizedAcousticIntent);
+      getDefaultAudioSession().setLiveInputAnalysisSettings({
+        acousticIntent: normalizedAcousticIntent,
       });
       applyLiveInputUiState(
         isLiveInputActive
@@ -1637,6 +1689,8 @@ export function AudioProvider({ children, platform = "web" }) {
     },
     [applyLiveInputUiState, isLiveInputActive, storage, syncSessionStatus],
   );
+
+  const setLiveInputAcousticIntent = handleLiveInputAcousticIntentChange;
 
   const handleSaveDeviceKindOverride = useCallback((deviceId, kind) => {
     saveLiveInputDeviceKindOverride(deviceId, kind);
@@ -1821,6 +1875,7 @@ export function AudioProvider({ children, platform = "web" }) {
         : LIVE_INPUT_PERMISSION_STATES.granted,
     );
     setLiveInputAnalysisClass(DEFAULT_LIVE_INPUT_ANALYSIS_CLASS);
+    setLiveInputAcousticIntentState(DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT);
     setResolvedLiveInputAnalysisClass(null);
     setLiveInputAnalysisOverrides(loadLiveInputAnalysisOverrides(storage));
     setShowSoundCloudPanel(false);
@@ -1878,6 +1933,7 @@ export function AudioProvider({ children, platform = "web" }) {
       selectedLiveInputDeviceKind,
       selectedLiveInputKind: selectedLiveInputDeviceKind,
       liveInputAnalysisClass,
+      liveInputAcousticIntent,
       resolvedLiveInputAnalysisClass,
       liveInputUiState,
       liveInputErrorCode,
@@ -1925,6 +1981,7 @@ export function AudioProvider({ children, platform = "web" }) {
       setSelectedSystemDevice: handleSelectedSystemDeviceChange,
       setSelectedLiveInputAnalysisClass,
       setLiveInputAnalysisClass: handleLiveInputAnalysisClassChange,
+      setLiveInputAcousticIntent,
       saveDeviceKindOverride: handleSaveDeviceKindOverride,
       clearDeviceKindOverride: handleClearDeviceKindOverride,
       requestLiveInputPermission,
@@ -1976,6 +2033,7 @@ export function AudioProvider({ children, platform = "web" }) {
       isScrubbing,
       isSoundCloudLoading,
       liveInputAnalysisClass,
+      liveInputAcousticIntent,
       liveInputDeviceKind,
       liveInputErrorCode,
       liveInputKind,
@@ -2005,6 +2063,7 @@ export function AudioProvider({ children, platform = "web" }) {
       setLiveInputRuntimeStatus,
       setSelectedDevice,
       setSelectedLiveInputAnalysisClass,
+      setLiveInputAcousticIntent,
       setSelectedSource,
       setShowDeviceMenu,
       setShowSoundCloudPanel,

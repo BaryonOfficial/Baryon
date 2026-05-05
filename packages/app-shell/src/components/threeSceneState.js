@@ -1,5 +1,3 @@
-import { normalizeCameraViewPreset } from "./cameraViewPresets.js";
-
 export function resolveLiveInputPanelConfig({ liveInputPanel = null } = {}) {
   return {
     forceVisible: Boolean(liveInputPanel?.forceVisible),
@@ -93,34 +91,6 @@ export function resolveCameraControlFieldState({
   }
 
   return frameFieldState;
-}
-
-/**
- * @param {{
- *   previewState?: {
- *     omitLocalScene?: boolean,
- *   } | null,
- *   authoritativeStageStatus?: {
- *     lastRenderedCameraViewPreset?: "top-down" | "side" | null,
- *   } | null,
- *   fallbackCameraViewPreset?: "top-down" | "side",
- * }} [options]
- */
-export function resolveActiveCameraControlPreset({
-  previewState = null,
-  authoritativeStageStatus = null,
-  fallbackCameraViewPreset,
-} = {}) {
-  if (!shouldUseAuthoritativeStageViewState(previewState)) {
-    return fallbackCameraViewPreset;
-  }
-
-  return (
-    normalizeCameraViewPreset(
-      authoritativeStageStatus?.lastRenderedCameraViewPreset,
-      fallbackCameraViewPreset,
-    ) ?? fallbackCameraViewPreset
-  );
 }
 
 export function composeAuthoritativePerformanceHudMetrics(

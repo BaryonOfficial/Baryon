@@ -100,6 +100,13 @@ const EXCITATION_GATE_HIGH = 0.35;
 const DIRECT_CHROMESTHESIA_PRESENCE_END = 0.18;
 const CACHED_CHROMESTHESIA_PRESENCE_END = 0.26;
 
+export const RAYMARCH_CHROMESTHESIA_TUNING = Object.freeze({
+  keyTintStrength: 0.24,
+  contourShadow: 0.97,
+  hotCoreSurfacePull: 0.48,
+  whiteEmissionLift: 0.24,
+});
+
 /** @type {{ off: string; direct: string; cached: string; tonalFallback: string }} */
 export const RAYMARCH_CHROMA_EVALUATION_MODES = Object.freeze({
   off: "off",
@@ -931,7 +938,9 @@ function createScatteringNode({
       const chromesthesiaNeutralColor = mix(
         neutralBase,
         uKeyTint,
-        uKeyTintStrength.mul(float(0.38)),
+        uKeyTintStrength.mul(
+          float(RAYMARCH_CHROMESTHESIA_TUNING.keyTintStrength),
+        ),
       );
       if (chromaModeEnabled) {
         If(chromesthesiaEnabled.greaterThan(0.5), () => {
@@ -967,14 +976,18 @@ function createScatteringNode({
             chromesthesiaBlendWeight,
           );
           const chromesthesiaContourColor = mix(
-            chromesthesiaBaseColor.mul(float(0.92)),
+            chromesthesiaBaseColor.mul(
+              float(RAYMARCH_CHROMESTHESIA_TUNING.contourShadow),
+            ),
             chromesthesiaBaseColor,
             contourAccent,
           );
           const chromesthesiaLaserColor = mix(
             chromesthesiaContourColor,
             uSurfaceColor,
-            hotCoreMix.mul(float(0.68)),
+            hotCoreMix.mul(
+              float(RAYMARCH_CHROMESTHESIA_TUNING.hotCoreSurfacePull),
+            ),
           );
           const chromesthesiaHolographicColor = mix(
             chromesthesiaLaserColor,
@@ -984,7 +997,11 @@ function createScatteringNode({
           const chromesthesiaHolographicLaserColor = mix(
             chromesthesiaHolographicColor,
             vec3(1.0),
-            /** @type {any} */ (holographicEmissionLift.mul(float(0.4))),
+            /** @type {any} */ (
+              holographicEmissionLift.mul(
+                float(RAYMARCH_CHROMESTHESIA_TUNING.whiteEmissionLift),
+              )
+            ),
           );
           const chromesthesiaVolumeColor = mix(
             chromesthesiaHolographicLaserColor.mul(float(0.9)),

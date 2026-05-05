@@ -300,33 +300,38 @@ export async function probeBrowserSupport(
   forceWebGLFallbackTest,
   navigatorObject = globalThis.navigator,
 ) {
+  const runtimeNavigator = /** @type {Navigator & {
+   *   gpu?: {
+   *     requestAdapter?: () => Promise<any>,
+   *   },
+   * }} */ (navigatorObject ?? {});
   if (forceWebGLFallbackTest) {
     return createProbe({
       status: BROWSER_SUPPORT_STATUS.supported,
-      navigatorObject,
+      navigatorObject: runtimeNavigator,
     });
   }
 
-  if (isMobileDevice(navigatorObject)) {
+  if (isMobileDevice(runtimeNavigator)) {
     return createFailureProbe({
       failureCode: BROWSER_FAILURE_CODES.mobileUnsupported,
-      navigatorObject,
+      navigatorObject: runtimeNavigator,
       diagnostics: ["Mobile browsers are currently treated as unsupported."],
     });
   }
 
-  if (!navigatorObject?.gpu) {
+  if (!runtimeNavigator.gpu) {
     return createFailureProbe({
       failureCode: BROWSER_FAILURE_CODES.gpuMissing,
-      navigatorObject,
+      navigatorObject: runtimeNavigator,
       diagnostics: ["`navigator.gpu` is not available in this browser."],
     });
   }
 
-  if (typeof navigatorObject.gpu.requestAdapter !== "function") {
+  if (typeof runtimeNavigator.gpu.requestAdapter !== "function") {
     return createFailureProbe({
       failureCode: BROWSER_FAILURE_CODES.requestAdapterMissing,
-      navigatorObject,
+      navigatorObject: runtimeNavigator,
       diagnostics: [
         "`navigator.gpu.requestAdapter` is not available in this browser.",
       ],
@@ -334,12 +339,12 @@ export async function probeBrowserSupport(
   }
 
   try {
-    const adapter = await navigatorObject.gpu.requestAdapter();
+    const adapter = await runtimeNavigator.gpu.requestAdapter();
 
     if (!adapter) {
       return createFailureProbe({
         failureCode: BROWSER_FAILURE_CODES.adapterNull,
-        navigatorObject,
+        navigatorObject: runtimeNavigator,
         diagnostics: ["`navigator.gpu.requestAdapter()` returned `null`."],
       });
     }

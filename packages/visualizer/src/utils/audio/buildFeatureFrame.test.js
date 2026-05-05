@@ -227,7 +227,7 @@ function buildLiveInputFrame({
   avgAmplitude,
   rms,
   frameTimeMs,
-  profile = "voice-tone",
+  acousticIntent = "vocal",
   status = makeLiveInputStatus(),
   timeData = new Float32Array(FFT_SIZE),
 }) {
@@ -243,14 +243,14 @@ function buildLiveInputFrame({
     radius: 3,
     status,
     frameTimeMs,
-    liveInputAnalysisSettings: { profile },
+    liveInputAnalysisSettings: { acousticIntent },
   });
 }
 
 function calibrateLiveInput(
   featureState,
   {
-    profile = "voice-tone",
+    acousticIntent = "vocal",
     peaks = [
       [90, 0.09],
       [180, 0.07],
@@ -272,7 +272,7 @@ function calibrateLiveInput(
       avgAmplitude,
       rms,
       frameTimeMs,
-      profile,
+      acousticIntent,
       status,
       timeData,
     });
@@ -860,7 +860,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       avgAmplitude: 1.3,
       rms: 0.0044,
       frameTimeMs: 0,
-      profile: "voice-tone",
+      acousticIntent: "vocal",
     });
     buildLiveInputFrame({
       featureState,
@@ -872,7 +872,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       avgAmplitude: 1.2,
       rms: 0.0043,
       frameTimeMs: LIVE_INPUT_CALIBRATION_MID_MS,
-      profile: "voice-tone",
+      acousticIntent: "vocal",
     });
     buildLiveInputFrame({
       featureState,
@@ -884,7 +884,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       avgAmplitude: 1.1,
       rms: 0.0042,
       frameTimeMs: LIVE_INPUT_CALIBRATION_DONE_MS,
-      profile: "voice-tone",
+      acousticIntent: "vocal",
     });
 
     const firstVoice = buildLiveInputFrame({
@@ -898,7 +898,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       avgAmplitude: 6.1,
       rms: 0.021,
       frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
-      profile: "voice-tone",
+      acousticIntent: "vocal",
     });
     const secondVoice = buildLiveInputFrame({
       featureState,
@@ -911,7 +911,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       avgAmplitude: 6.3,
       rms: 0.022,
       frameTimeMs: LIVE_INPUT_POST_CALIBRATION_NEXT_MS,
-      profile: "voice-tone",
+      acousticIntent: "vocal",
     });
 
     expect(firstVoice.debug.liveInputBaselinePeak).toBeGreaterThan(0.68);
@@ -933,7 +933,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       avgAmplitude: 1.1,
       rms: 0.0012,
       frameTimeMs: 0,
-      profile: "voice-tone",
+      acousticIntent: "vocal",
     });
     buildLiveInputFrame({
       featureState,
@@ -945,7 +945,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       avgAmplitude: 1.1,
       rms: 0.0012,
       frameTimeMs: LIVE_INPUT_CALIBRATION_MID_MS,
-      profile: "voice-tone",
+      acousticIntent: "vocal",
     });
     buildLiveInputFrame({
       featureState,
@@ -957,7 +957,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       avgAmplitude: 1.1,
       rms: 0.0012,
       frameTimeMs: LIVE_INPUT_CALIBRATION_DONE_MS,
-      profile: "voice-tone",
+      acousticIntent: "vocal",
     });
 
     const firstVoice = buildLiveInputFrame({
@@ -971,7 +971,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       avgAmplitude: 4.42,
       rms: 0.00185,
       frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
-      profile: "voice-tone",
+      acousticIntent: "vocal",
       timeData: makeTimeData({
         frequency: 220,
         amplitude: 0.06,
@@ -992,7 +992,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
       avgAmplitude: 4.5,
       rms: 0.00192,
       frameTimeMs: LIVE_INPUT_POST_CALIBRATION_NEXT_MS,
-      profile: "voice-tone",
+      acousticIntent: "vocal",
       timeData: makeTimeData({
         frequency: 220,
         amplitude: 0.065,
@@ -1010,7 +1010,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(secondVoice.fieldState).toBe("active");
   });
 
-  it("derives a line-feed runtime profile from the resolved live-input class", () => {
+  it("derives a line-feed runtime policy from the resolved live-input class", () => {
     const featureState = createAudioFeatureState();
     const preparedInputs = prepareAudioFeatureFrameInputs({
       analysisSnapshot: createSnapshot({
@@ -1028,11 +1028,11 @@ describe("buildAudioFeatureFrame modal contract", () => {
       radius: 3,
       status: makeResolvedLineFeedLiveStatus(),
       frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
-      liveInputAnalysisSettings: { profile: "voice-tone" },
+      liveInputAnalysisSettings: { acousticIntent: "vocal" },
     });
 
     expect(preparedInputs.resolvedLiveInputAnalysisClass).toBe("line-feed");
-    expect(preparedInputs.liveInputProfile).toBe("line-feed");
+    expect(preparedInputs.liveInputPolicy).toBe("line-feed");
     expect(preparedInputs.isAcousticLiveInput).toBe(false);
   });
 
@@ -1879,12 +1879,12 @@ describe("live input noise gate", () => {
           [90, 0.08],
           [180, 0.06],
         ]),
-        liveInputAnalysisSettings: { profile: "voice-tone" },
+        liveInputAnalysisSettings: { acousticIntent: "vocal" },
       }),
     ).toBe(false);
   });
 
-  it("lets ambient profile clear the hard floor for modest room audio", () => {
+  it("lets ambient intent clear the hard floor for modest room audio", () => {
     expect(
       detectLiveInputNoiseGate({
         injectTestTone: false,
@@ -1896,9 +1896,36 @@ describe("live input noise gate", () => {
           [240, 0.15],
           [360, 0.12],
         ]),
-        liveInputAnalysisSettings: { profile: "ambient" },
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
       }),
     ).toBe(false);
+  });
+
+  it("keeps vocal mic intent stricter than ambient for modest resonant audio", () => {
+    const resonantInput = {
+      injectTestTone: false,
+      inputMode: "live",
+      avgAmplitude: 4.5,
+      rms: 0.015,
+      fftMagnitudes: makeFft([
+        [120, 0.18],
+        [240, 0.15],
+        [360, 0.12],
+      ]),
+    };
+
+    expect(
+      detectLiveInputNoiseGate({
+        ...resonantInput,
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
+      }),
+    ).toBe(false);
+    expect(
+      detectLiveInputNoiseGate({
+        ...resonantInput,
+        liveInputAnalysisSettings: { acousticIntent: "vocal" },
+      }),
+    ).toBe(true);
   });
 
   it("matches file analysis for system-classified live input", () => {
@@ -1922,7 +1949,7 @@ describe("live input noise gate", () => {
       radius: 3,
       status: makeActiveStatus(),
       frameTimeMs: 32,
-      liveInputAnalysisSettings: { profile: "ambient" },
+      liveInputAnalysisSettings: { acousticIntent: "ambient" },
     });
     const systemFrame = buildAudioFeatureFrame({
       analysisSnapshot,
@@ -1930,7 +1957,7 @@ describe("live input noise gate", () => {
       radius: 3,
       status: makeSystemStatus(),
       frameTimeMs: 32,
-      liveInputAnalysisSettings: { profile: "voice-tone" },
+      liveInputAnalysisSettings: { acousticIntent: "vocal" },
     });
 
     expect(systemFrame.sourceMode).toBe("system");
@@ -1965,13 +1992,13 @@ describe("live input noise gate", () => {
       radius: 3,
       status: makeLoopbackLiveStatus(),
       frameTimeMs: 32,
-      liveInputAnalysisSettings: { profile: "voice-tone" },
+      liveInputAnalysisSettings: { acousticIntent: "vocal" },
     });
 
     expect(frame.fieldState).not.toBe("idle");
     expect(frame.hasModalField).toBe(true);
     expect(frame.sourceMode).toBe("line-feed");
-    expect(frame.debug.liveInputProfile).toBe("line-feed");
+    expect(frame.debug.liveInputPolicy).toBe("line-feed");
     expect(frame.debug.analysisEngine).not.toBe("vocal");
     expect(
       frame.activeBackboneModeCount + frame.activeDetailModeCount,
@@ -3017,7 +3044,7 @@ describe("modal excitation integration", () => {
     const status = makeResolvedLineFeedLiveStatus();
 
     calibrateLiveInput(featureState, {
-      profile: "line-feed",
+      acousticIntent: "ambient",
       status,
       peaks: [
         [180, 0.09],
@@ -3047,7 +3074,7 @@ describe("modal excitation integration", () => {
       radius: 3,
       status,
       frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
-      liveInputAnalysisSettings: { profile: "line-feed" },
+      liveInputAnalysisSettings: { acousticIntent: "ambient" },
     });
     const firstFrameDetailKeys = readModeKeys(firstFrame.detailSlots);
     let frame = null;
@@ -3074,13 +3101,13 @@ describe("modal excitation integration", () => {
         radius: 3,
         status,
         frameTimeMs,
-        liveInputAnalysisSettings: { profile: "line-feed" },
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
       });
     }
 
     expect(frame.debug.analysisEngine).toBe("modal-excitation");
     expect(frame.sourceMode).toBe("line-feed");
-    expect(frame.debug.liveInputProfile).toBe("line-feed");
+    expect(frame.debug.liveInputPolicy).toBe("line-feed");
     const switchedDetailKeys = readModeKeys(frame.detailSlots);
     expect(hasNewModeKey(switchedDetailKeys, firstFrameDetailKeys)).toBe(true);
   });

@@ -284,7 +284,7 @@ const CSS = `
   border: 1px solid var(--nd-border-visible);
   border-radius: 8px;
   box-shadow: var(--nd-shell-shadow);
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: "Aspekta", system-ui, sans-serif;
   user-select: none;
   white-space: nowrap;
   box-sizing: border-box;
@@ -335,7 +335,7 @@ const CSS = `
 .am-timeline-time {
   min-width: 2.4rem;
   color: var(--nd-text-secondary);
-  font-family: "Space Mono", "JetBrains Mono", "SF Mono", monospace;
+  font-family: "JetBrains Mono", "SF Mono", monospace;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
@@ -436,7 +436,7 @@ const CSS = `
   border-radius: 8px;
   background: var(--nd-surface);
   color: var(--nd-text-primary);
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: "Aspekta", system-ui, sans-serif;
   font-size: 12px;
   line-height: 1.4;
   white-space: normal;
@@ -514,7 +514,7 @@ const CSS = `
 }
 
 .am-status-label {
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 9px;
   font-weight: 400;
   letter-spacing: 0.1em;
@@ -531,7 +531,7 @@ const CSS = `
 }
 
 .am-filename {
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: "Aspekta", system-ui, sans-serif;
   font-size: 14px;
   font-weight: 400;
   color: var(--nd-text-primary);
@@ -573,7 +573,7 @@ const CSS = `
   justify-content: center;
   border-radius: 4px;
   color: var(--nd-text-primary);
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 10.5px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -595,7 +595,7 @@ const CSS = `
   height: 36px;
   background: var(--nd-text-display);
   border-color: var(--nd-text-display);
-  color: #000000;
+  color: #0D0A07;
 }
 .am-btn--play:not(:disabled):hover {
   background: #d9d9d6;
@@ -756,7 +756,7 @@ const CSS = `
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--nd-text-disabled);
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 10px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -768,7 +768,7 @@ const CSS = `
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--nd-text-primary);
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: "Aspekta", system-ui, sans-serif;
   font-size: 14px;
   font-weight: 400;
 }
@@ -787,7 +787,7 @@ const CSS = `
   background: var(--nd-surface-raised);
   box-sizing: border-box;
   color: var(--nd-text-secondary);
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 10px;
   letter-spacing: 0.1em;
   text-align: center;
@@ -829,20 +829,20 @@ const CSS = `
 .am-compact-action--primary {
   background: var(--nd-text-display);
   border-color: var(--nd-text-display);
-  color: #000000;
+  color: #0D0A07;
 }
 
 .am-compact-action--primary:hover {
   background: #d9d9d6;
   border-color: #d9d9d6;
-  color: #000000;
+  color: #0D0A07;
 }
 
 .am-compact-action--primary.am-compact-action--active,
 .am-compact-action--primary.am-compact-action--active:hover {
   background: var(--nd-text-display);
   border-color: var(--nd-text-display);
-  color: #000000;
+  color: #0D0A07;
 }
 
 .am-compact-action--active {
@@ -873,7 +873,7 @@ const CSS = `
   align-items: center;
   justify-content: space-between;
   color: var(--nd-text-disabled);
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -950,7 +950,7 @@ const CSS = `
 .am-compact-volume-value {
   min-width: 2.7rem;
   color: var(--nd-text-secondary);
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 10px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1113,7 +1113,7 @@ const CSS = `
   gap: 8px;
   margin-bottom: 4px;
   color: var(--nd-text-primary);
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: "Aspekta", system-ui, sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
@@ -1126,7 +1126,7 @@ const CSS = `
 
 .am-recent-header span:last-child {
   color: var(--nd-text-disabled);
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.08em;
@@ -1162,7 +1162,7 @@ const CSS = `
   color: var(--nd-text-primary);
   text-align: left;
   cursor: pointer;
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: "Aspekta", system-ui, sans-serif;
   border-bottom: 1px solid var(--nd-border);
   transition: background 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
@@ -1206,7 +1206,7 @@ const CSS = `
 }
 
 .am-recent-item-meta {
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   color: var(--nd-text-disabled);
   letter-spacing: 0.04em;
@@ -1215,7 +1215,7 @@ const CSS = `
 .am-recent-item-action {
   flex-shrink: 0;
   color: var(--nd-text-secondary);
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.08em;
@@ -1233,7 +1233,7 @@ const CSS = `
   gap: 8px;
   margin-bottom: 12px;
   color: var(--nd-text-primary);
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.08em;
@@ -1255,7 +1255,7 @@ const CSS = `
   border-radius: 0;
   background: transparent;
   color: var(--nd-text-primary);
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 13px;
   outline: none;
 }
@@ -1275,7 +1275,7 @@ const CSS = `
   border-radius: 999px;
   background: transparent;
   color: var(--nd-text-primary);
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.06em;
@@ -1305,7 +1305,7 @@ const CSS = `
 
 .am-soundcloud-error {
   color: var(--nd-accent);
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   letter-spacing: 0.04em;
 }
@@ -1325,14 +1325,14 @@ const CSS = `
   gap: 8px;
   margin: 0;
   color: var(--nd-text-primary);
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: "Aspekta", system-ui, sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
 
 .am-soundcloud-index {
   color: var(--nd-text-disabled);
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.04em;
@@ -1382,7 +1382,7 @@ const CSS = `
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: "Aspekta", system-ui, sans-serif;
   font-size: 13px;
   color: var(--nd-text-primary);
 }
@@ -1393,7 +1393,7 @@ const CSS = `
 
 .am-soundcloud-item-artist {
   flex-shrink: 0;
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   color: var(--nd-text-disabled);
   letter-spacing: 0.04em;
@@ -1412,7 +1412,7 @@ const CSS = `
 
 .am-device-empty {
   padding: 8px 16px;
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   color: var(--nd-text-disabled);
   letter-spacing: 0.04em;
@@ -1436,7 +1436,7 @@ const CSS = `
   text-align: left;
   padding: 8px 16px;
   font-size: 13px;
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: "Aspekta", system-ui, sans-serif;
   cursor: pointer;
   transition: background 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
@@ -1449,7 +1449,7 @@ const CSS = `
   display: block;
   margin-top: 2px;
   color: var(--nd-text-disabled);
-  font-family: "Space Mono", monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   line-height: 1.4;
   letter-spacing: 0.04em;
@@ -1676,7 +1676,7 @@ const CSS = `
     justify-content: space-between;
     padding: 0 4px;
     color: var(--nd-text-disabled);
-    font-family: "Space Mono", monospace;
+    font-family: "JetBrains Mono", monospace;
     font-size: 11px;
     font-weight: 400;
     letter-spacing: 0.08em;

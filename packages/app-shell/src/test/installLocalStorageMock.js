@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 
 /** @returns {Pick<Storage, "getItem" | "setItem" | "removeItem" | "clear">} */
-export function createLocalStorageMock() {
+function createLocalStorageMock() {
   const store = new Map();
   return {
     /** @param {string} key */

@@ -68,6 +68,28 @@ function resolveSignalLabel(status) {
   return "Listening";
 }
 
+function resolveDisplayStatus(status, isLiveInputActive) {
+  if (isLiveInputActive || status.phase === LIVE_INPUT_PHASES.idle) {
+    return status;
+  }
+
+  if (
+    status.phase === LIVE_INPUT_PHASES.starting ||
+    status.phase === LIVE_INPUT_PHASES.stopping ||
+    status.phase === LIVE_INPUT_PHASES.calibrating ||
+    status.phase === LIVE_INPUT_PHASES.error ||
+    status.phase === LIVE_INPUT_PHASES.weakSignal
+  ) {
+    return status;
+  }
+
+  return createLiveInputRuntimeStatus({
+    ...status,
+    active: false,
+    phase: LIVE_INPUT_PHASES.idle,
+  });
+}
+
 const BUILTIN_MIC_PATTERNS = [
   "built-in",
   "internal",
@@ -93,7 +115,7 @@ function getSelectStyle(disabled) {
     border: "1px solid var(--nd-border-visible)",
     background: disabled ? "rgba(255, 255, 255, 0.02)" : "#0c0c0c",
     color: disabled ? "var(--nd-text-disabled)" : "var(--nd-text-primary)",
-    fontFamily: '"Space Mono", ui-monospace, monospace',
+    fontFamily: '"JetBrains Mono", ui-monospace, monospace',
     fontSize: "0.62rem",
     fontWeight: 700,
     letterSpacing: "0.05em",
@@ -135,16 +157,24 @@ export default function LiveInputStatusPanel({
     saveDeviceKindOverride,
     clearDeviceKindOverride,
     requestLiveInputPermission,
+    liveInputAcousticIntent,
+    setLiveInputAcousticIntent,
   } = useAudio();
 
-  const status = createLiveInputRuntimeStatus(liveInputRuntimeStatus);
+  const status = resolveDisplayStatus(
+    createLiveInputRuntimeStatus(liveInputRuntimeStatus),
+    isLiveInputActive,
+  );
   const permissionRequesting = liveInputPermissionState === "requesting";
   const permissionDenied = liveInputPermissionState === "denied";
   const permissionUnsupported = liveInputPermissionState === "unsupported";
   const permissionUnknown = liveInputPermissionState === "unknown";
-  const transitionLocked = isLiveInputTransitionLocked(liveInputRuntimeStatus);
+  const transitionLocked = isLiveInputTransitionLocked(status);
 
-  const selectedLiveDeviceId = selectedSystemDevice ?? selectedDevice ?? "";
+  const runtimeSelectedLiveDeviceId = status.selectedDeviceId ?? "";
+  const runtimeSelectedLiveDeviceLabel = status.selectedDeviceLabel ?? "";
+  const selectedLiveDeviceId =
+    selectedSystemDevice ?? selectedDevice ?? runtimeSelectedLiveDeviceId;
   const deviceKindOverride = getDeviceKindOverride(
     selectedLiveDeviceId || null,
   );
@@ -152,7 +182,13 @@ export default function LiveInputStatusPanel({
   const deviceTypeIsManual = deviceKindOverride != null;
 
   const selectedLiveDevice =
-    audioDevices.find((d) => d.deviceId === selectedLiveDeviceId) ?? null;
+    audioDevices.find((d) => d.deviceId === selectedLiveDeviceId) ??
+    (selectedLiveDeviceId
+      ? {
+          deviceId: selectedLiveDeviceId,
+          label: runtimeSelectedLiveDeviceLabel,
+        }
+      : null);
   const showInterfaceHint =
     !deviceTypeIsManual &&
     selectedLiveInputDeviceKind === "live" &&
@@ -181,6 +217,9 @@ export default function LiveInputStatusPanel({
       : getSignalBadgeStyle(status);
 
   const micProcessingDisabled = selectedLiveInputDeviceKind !== "live";
+  const showAcousticIntent = selectedLiveInputDeviceKind === "live";
+  const acousticIntentValue =
+    liveInputAcousticIntent === "vocal" ? "vocal" : "ambient";
   const activeMicSettingCount = [
     echoCancellation,
     noiseSuppression,
@@ -216,8 +255,7 @@ export default function LiveInputStatusPanel({
   const liveButtonDisabled =
     transitionLocked ||
     (!isLiveInputActive &&
-      (audioDevices.length === 0 ||
-        !selectedLiveDeviceId ||
+      (!selectedLiveDeviceId ||
         permissionRequesting ||
         permissionDenied ||
         permissionUnsupported));
@@ -238,6 +276,13 @@ export default function LiveInputStatusPanel({
     setHasInteractedWithLiveAction(true);
     if (!isLiveInputActive && selectedSource !== "system") {
       await handleSourceChange("system");
+    }
+    if (
+      !isLiveInputActive &&
+      !selectedSystemDevice &&
+      runtimeSelectedLiveDeviceId
+    ) {
+      await setSelectedSystemDevice(runtimeSelectedLiveDeviceId);
     }
     await handleSystemToggle();
   };
@@ -260,7 +305,7 @@ export default function LiveInputStatusPanel({
         background: "var(--nd-surface)",
         color: "var(--nd-text-primary)",
         boxShadow: "var(--nd-shell-shadow)",
-        fontFamily: '"Space Grotesk", system-ui, sans-serif',
+        fontFamily: '"Aspekta", system-ui, sans-serif',
       }}
       aria-live="polite"
     >
@@ -281,7 +326,7 @@ export default function LiveInputStatusPanel({
             letterSpacing: "0.16em",
             textTransform: "uppercase",
             color: "var(--nd-text-secondary)",
-            fontFamily: '"Space Mono", ui-monospace, monospace',
+            fontFamily: '"JetBrains Mono", ui-monospace, monospace',
           }}
         >
           Input
@@ -296,7 +341,7 @@ export default function LiveInputStatusPanel({
             fontWeight: 700,
             letterSpacing: "0.12em",
             textTransform: "uppercase",
-            fontFamily: '"Space Mono", ui-monospace, monospace',
+            fontFamily: '"JetBrains Mono", ui-monospace, monospace',
           }}
         >
           {signalLabel}
@@ -337,7 +382,7 @@ export default function LiveInputStatusPanel({
                 border: "1px solid var(--nd-border-visible)",
                 background: "transparent",
                 color: "var(--nd-text-display)",
-                fontFamily: '"Space Mono", ui-monospace, monospace',
+                fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                 fontSize: "0.58rem",
                 fontWeight: 700,
                 letterSpacing: "0.12em",
@@ -373,7 +418,7 @@ export default function LiveInputStatusPanel({
                   border: "1px solid var(--nd-border-visible)",
                   background: "transparent",
                   color: "var(--nd-text-display)",
-                  fontFamily: '"Space Mono", ui-monospace, monospace',
+                  fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                   fontSize: "0.58rem",
                   fontWeight: 700,
                   letterSpacing: "0.12em",
@@ -402,7 +447,7 @@ export default function LiveInputStatusPanel({
                   letterSpacing: "0.12em",
                   textTransform: "uppercase",
                   color: "var(--nd-text-secondary)",
-                  fontFamily: '"Space Mono", ui-monospace, monospace',
+                  fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                 }}
               >
                 Device
@@ -441,7 +486,7 @@ export default function LiveInputStatusPanel({
                     letterSpacing: "0.12em",
                     textTransform: "uppercase",
                     color: "var(--nd-text-secondary)",
-                    fontFamily: '"Space Mono", ui-monospace, monospace',
+                    fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                   }}
                 >
                   Type
@@ -462,7 +507,7 @@ export default function LiveInputStatusPanel({
                       color: deviceTypeIsManual
                         ? "var(--nd-warning)"
                         : "var(--nd-text-disabled)",
-                      fontFamily: '"Space Mono", ui-monospace, monospace',
+                      fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                       textTransform: "uppercase",
                     }}
                   >
@@ -493,6 +538,38 @@ export default function LiveInputStatusPanel({
                 <option value="system">Loopback</option>
               </select>
             </div>
+
+            {showAcousticIntent ? (
+              <div style={{ display: "grid", gap: "0.16rem" }}>
+                <span
+                  style={{
+                    fontSize: "0.54rem",
+                    fontWeight: 700,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "var(--nd-text-secondary)",
+                    fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                  }}
+                >
+                  Intent
+                </span>
+                <select
+                  data-testid="live-input-acoustic-intent-select"
+                  value={acousticIntentValue}
+                  onChange={(event) =>
+                    setLiveInputAcousticIntent?.(event.target.value)
+                  }
+                  aria-label="Acoustic mic intent"
+                  style={{
+                    ...getSelectStyle(false),
+                    fontSize: "0.64rem",
+                  }}
+                >
+                  <option value="ambient">Ambient</option>
+                  <option value="vocal">Vocal</option>
+                </select>
+              </div>
+            ) : null}
           </>
         )}
 
@@ -534,7 +611,7 @@ export default function LiveInputStatusPanel({
                   letterSpacing: "0.12em",
                   textTransform: "uppercase",
                   color: "var(--nd-text-secondary)",
-                  fontFamily: '"Space Mono", ui-monospace, monospace',
+                  fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                 }}
               >
                 Mic Settings
@@ -553,7 +630,7 @@ export default function LiveInputStatusPanel({
                   color: micProcessingDisabled
                     ? "var(--nd-text-disabled)"
                     : "var(--nd-text-secondary)",
-                  fontFamily: '"Space Mono", ui-monospace, monospace',
+                  fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                   textTransform: "uppercase",
                 }}
               >
@@ -565,7 +642,7 @@ export default function LiveInputStatusPanel({
                 flexShrink: 0,
                 color: "var(--nd-text-secondary)",
                 fontSize: "0.68rem",
-                fontFamily: '"Space Mono", ui-monospace, monospace',
+                fontFamily: '"JetBrains Mono", ui-monospace, monospace',
               }}
             >
               {micSettingsOpen ? "▾" : "▸"}
@@ -641,7 +718,7 @@ export default function LiveInputStatusPanel({
                           : "var(--nd-text-primary)",
                       fontSize: "0.58rem",
                       fontWeight: 700,
-                      fontFamily: '"Space Mono", ui-monospace, monospace',
+                      fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                       letterSpacing: "0.08em",
                       textTransform: "uppercase",
                       textAlign: "left",
@@ -679,7 +756,7 @@ export default function LiveInputStatusPanel({
                         fontWeight: 700,
                         letterSpacing: "0.08em",
                         textTransform: "uppercase",
-                        fontFamily: '"Space Mono", ui-monospace, monospace',
+                        fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                       }}
                     >
                       {enabled ? "On" : "Off"}
@@ -717,20 +794,20 @@ export default function LiveInputStatusPanel({
                   ? "1px solid var(--nd-accent)"
                   : "1px solid var(--nd-text-display)",
                 background: liveButtonDisabled
-                  ? "rgba(255, 255, 255, 0.02)"
+                  ? "color-mix(in srgb, var(--baryon-cream) 2%, transparent)"
                   : isLiveInputActive
-                    ? "rgba(255, 59, 48, 0.12)"
+                    ? "var(--baryon-amber-soft)"
                     : "var(--nd-text-display)",
                 color: liveButtonDisabled
                   ? "var(--nd-text-disabled)"
                   : isLiveInputActive
-                    ? "var(--nd-text-display)"
+                    ? "var(--baryon-amber)"
                     : "var(--nd-black)",
                 fontSize: "0.6rem",
                 fontWeight: 700,
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
-                fontFamily: '"Space Mono", ui-monospace, monospace',
+                fontFamily: '"JetBrains Mono", ui-monospace, monospace',
                 cursor: liveButtonDisabled ? "not-allowed" : "pointer",
                 transition:
                   "background 140ms ease, border-color 140ms ease, color 140ms ease, opacity 140ms ease",
@@ -744,11 +821,7 @@ export default function LiveInputStatusPanel({
                   : liveActionLabel
               }
             >
-              {transitionLocked
-                ? "Transitioning…"
-                : selectedSource !== "system" && !isLiveInputActive
-                  ? "Switch To System + Go Live"
-                  : liveActionLabel}
+              {transitionLocked ? "Transitioning…" : liveActionLabel}
             </button>
           </div>
         ) : null}

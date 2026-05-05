@@ -5,6 +5,7 @@ class MockAnalyserNode {
   constructor() {
     this._fftSize = 0;
     this.frequencyBinCount = 0;
+    this.disconnect = vi.fn();
   }
 
   set fftSize(value) {
@@ -17,8 +18,6 @@ class MockAnalyserNode {
   }
 
   connect() {}
-
-  disconnect() {}
 
   getByteFrequencyData(data) {
     data.fill(0);
@@ -91,6 +90,7 @@ class MockAudioContext {
     this.currentTime = 12;
     this.destination = {};
     this.createdBufferSources = [];
+    this.createdAnalysers = [];
     this.createdMediaElementSources = [];
     this.onstatechange = null;
   }
@@ -108,7 +108,9 @@ class MockAudioContext {
   }
 
   createAnalyser() {
-    return new MockAnalyserNode();
+    const analyser = new MockAnalyserNode();
+    this.createdAnalysers.push(analyser);
+    return analyser;
   }
 
   createMediaStreamSource() {
@@ -182,10 +184,13 @@ class MockMediaElement {
 
 const mockTrackStop = vi.fn();
 const mockTrackApplyConstraints = vi.fn(async () => {});
+let mockTrackListeners;
+let mockTrack;
 let fetchMock;
 let lastAudioContext = null;
 let getUserMediaMock;
 let getAudioTracksMock;
+let enumerateDevicesMock;
 
 describe("audio session", () => {
   let createAudioSession;
@@ -194,17 +199,30 @@ describe("audio session", () => {
     vi.resetModules();
     mockTrackStop.mockReset();
     mockTrackApplyConstraints.mockReset();
-    lastAudioContext = null;
-    getAudioTracksMock = vi.fn(() => [
-      {
-        stop: mockTrackStop,
-        applyConstraints: mockTrackApplyConstraints,
+    mockTrackListeners = new Map();
+    mockTrack = {
+      stop: mockTrackStop,
+      applyConstraints: mockTrackApplyConstraints,
+      muted: false,
+      addEventListener: vi.fn((type, listener) => {
+        const listeners = mockTrackListeners.get(type) ?? new Set();
+        listeners.add(listener);
+        mockTrackListeners.set(type, listeners);
+      }),
+      removeEventListener: vi.fn((type, listener) => {
+        mockTrackListeners.get(type)?.delete(listener);
+      }),
+      dispatchEvent(type) {
+        mockTrackListeners.get(type)?.forEach((listener) => listener());
       },
-    ]);
+    };
+    lastAudioContext = null;
+    getAudioTracksMock = vi.fn(() => [mockTrack]);
     getUserMediaMock = vi.fn(async () => ({
       active: true,
       getAudioTracks: getAudioTracksMock,
     }));
+    enumerateDevicesMock = vi.fn(async () => []);
 
     fetchMock = vi.fn(async (url) => {
       if (url === "bad") {
@@ -245,6 +263,7 @@ describe("audio session", () => {
       configurable: true,
       value: {
         mediaDevices: {
+          enumerateDevices: enumerateDevicesMock,
           getUserMedia: getUserMediaMock,
         },
       },
@@ -445,6 +464,105 @@ describe("audio session", () => {
       audioInputMode: "idle",
       isLiveInputActive: false,
       analysisSource: "idle",
+      lastLiveInputInterruption: null,
+    });
+  });
+
+  it("recovers live input when the media stream track ends unexpectedly", async () => {
+    const session = createAttachedSession();
+    await session.startLiveInputStream("device-1");
+
+    mockTrack.dispatchEvent("ended");
+
+    expect(mockTrackStop).not.toHaveBeenCalled();
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "idle",
+      isLiveInputActive: false,
+      analysisSource: "idle",
+      selectedLiveInputDeviceId: null,
+      selectedLiveInputDeviceLabel: "",
+      lastLiveInputInterruption: {
+        reason: "track-ended",
+        deviceId: "device-1",
+      },
+    });
+    expect(session.readAnalysisSnapshot()).toBeNull();
+  });
+
+  it("recovers live input after a sustained track mute but ignores a transient mute", async () => {
+    vi.useFakeTimers();
+    try {
+      const session = createAttachedSession();
+      await session.startLiveInputStream("device-1");
+
+      mockTrack.muted = true;
+      mockTrack.dispatchEvent("mute");
+      await vi.advanceTimersByTimeAsync(1499);
+
+      expect(session.getStatus()).toMatchObject({
+        audioInputMode: "live",
+        isLiveInputActive: true,
+        lastLiveInputInterruption: null,
+      });
+
+      mockTrack.muted = false;
+      mockTrack.dispatchEvent("unmute");
+      await vi.advanceTimersByTimeAsync(2);
+
+      expect(session.getStatus()).toMatchObject({
+        audioInputMode: "live",
+        isLiveInputActive: true,
+        lastLiveInputInterruption: null,
+      });
+
+      mockTrack.muted = true;
+      mockTrack.dispatchEvent("mute");
+      await vi.advanceTimersByTimeAsync(1500);
+
+      expect(session.getStatus()).toMatchObject({
+        audioInputMode: "idle",
+        isLiveInputActive: false,
+        analysisSource: "idle",
+        lastLiveInputInterruption: {
+          reason: "track-muted-timeout",
+          deviceId: "device-1",
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("recovers live input when the live audio context is interrupted", async () => {
+    const session = createAttachedSession();
+    await session.startLiveInputStream("device-1");
+
+    lastAudioContext.dispatchStateChange("interrupted");
+
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "idle",
+      isLiveInputActive: false,
+      analysisSource: "idle",
+      lastLiveInputInterruption: {
+        reason: "audio-context-interrupted",
+        deviceId: "device-1",
+      },
+    });
+  });
+
+  it("replaces the active analysis tap when switching sources", async () => {
+    const session = createAttachedSession();
+    await session.loadAudio("good");
+    await session.playPauseAudio();
+
+    const playbackAnalyser = lastAudioContext.createdAnalysers.at(-1);
+
+    await session.startLiveInputStream("device-1");
+
+    expect(playbackAnalyser.disconnect).toHaveBeenCalledTimes(1);
+    expect(session.readAnalysisSnapshot()).toMatchObject({
+      sourceMode: "live",
+      rms: 0.25,
     });
   });
 
@@ -484,6 +602,75 @@ describe("audio session", () => {
     });
 
     expect(mockTrackApplyConstraints).not.toHaveBeenCalled();
+  });
+
+  it("resolves a session-local loopback device id from the selected device label", async () => {
+    enumerateDevicesMock.mockResolvedValue([
+      {
+        kind: "audioinput",
+        deviceId: "stage-device-1",
+        label: "BlackHole 2ch (Virtual)",
+      },
+    ]);
+    getUserMediaMock.mockResolvedValue({
+      active: true,
+      getAudioTracks: () => [
+        {
+          label: "BlackHole 2ch (Virtual)",
+          stop: mockTrackStop,
+          applyConstraints: mockTrackApplyConstraints,
+        },
+      ],
+    });
+
+    const session = createAttachedSession();
+    await session.startLiveInputStream(
+      "main-window-device-9",
+      "system",
+      "BlackHole 2ch (Virtual)",
+    );
+
+    expect(getUserMediaMock).toHaveBeenLastCalledWith({
+      audio: {
+        deviceId: { exact: "stage-device-1" },
+      },
+    });
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "system",
+      isLiveInputActive: true,
+      selectedLiveInputDeviceId: "stage-device-1",
+      selectedLiveInputDeviceLabel: "BlackHole 2ch (Virtual)",
+    });
+  });
+
+  it("does not block live input startup on a suspended audio context resume", async () => {
+    Object.defineProperty(globalThis, "AudioContext", {
+      configurable: true,
+      value: class extends MockAudioContext {
+        constructor() {
+          super();
+          this.state = "suspended";
+          lastAudioContext = this;
+        }
+
+        resume = vi.fn(() => new Promise(() => {}));
+      },
+    });
+
+    const session = createAttachedSession();
+    const result = await Promise.race([
+      session.startLiveInputStream("device-1", "system").then(() => "started"),
+      new Promise((resolve) => setTimeout(() => resolve("timeout"), 50)),
+    ]);
+
+    expect(result).toBe("started");
+    expect(lastAudioContext.resume).toHaveBeenCalledTimes(1);
+    expect(session.getStatus()).toMatchObject({
+      audioInputMode: "system",
+      isLiveInputActive: true,
+      analysisSource: "file",
+      selectedLiveInputDeviceId: "device-1",
+    });
   });
 
   it("disposes host state deterministically", async () => {

@@ -57,7 +57,7 @@ export default function PerformanceHud({
         border: "1px solid var(--nd-border-visible)",
         color: "var(--nd-text-primary)",
         fontFamily:
-          '"Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+          '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
         fontSize: "10.5px",
         lineHeight: 1.45,
         pointerEvents: "none",

@@ -198,6 +198,7 @@ function toPreparedInputsFrame(frame) {
       liveInputDeviceKind: frame.liveInputDeviceKind ?? frame.liveInputKind,
       liveInputCalibrationVersion: frame.liveInputCalibrationVersion ?? 0,
       liveInputAnalysisClass: frame.liveInputAnalysisClass ?? null,
+      liveInputAcousticIntent: frame.liveInputAcousticIntent ?? null,
     },
     auditSettings: frame.auditSettings,
     beatSettings: frame.beatSettings,

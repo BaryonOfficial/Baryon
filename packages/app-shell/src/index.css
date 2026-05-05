@@ -1,48 +1,64 @@
 @import "tailwindcss";
 
 @font-face {
-  font-family: "Space Grotesk";
-  src: url("/fonts/SpaceGrotesk/SpaceGrotesk-300.ttf") format("truetype");
-  font-weight: 300;
+  font-family: "Aspekta";
+  src: url("/fonts/Aspekta/AspektaVF.ttf") format("truetype");
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Space Grotesk";
-  src: url("/fonts/SpaceGrotesk/SpaceGrotesk-400.ttf") format("truetype");
+  font-family: "Aspekta";
+  src: url("/fonts/Aspekta/Aspekta-400.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Space Grotesk";
-  src: url("/fonts/SpaceGrotesk/SpaceGrotesk-500.ttf") format("truetype");
+  font-family: "Aspekta";
+  src: url("/fonts/Aspekta/Aspekta-500.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Space Grotesk";
-  src: url("/fonts/SpaceGrotesk/SpaceGrotesk-700.ttf") format("truetype");
+  font-family: "Aspekta";
+  src: url("/fonts/Aspekta/Aspekta-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Aspekta";
+  src: url("/fonts/Aspekta/Aspekta-700.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Space Mono";
-  src: url("/fonts/SpaceMono/SpaceMono-400.ttf") format("truetype");
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono/JetBrainsMono-Regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Space Mono";
-  src: url("/fonts/SpaceMono/SpaceMono-700.ttf") format("truetype");
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono/JetBrainsMono-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono/JetBrainsMono-Bold.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
   font-display: swap;
@@ -57,6 +73,22 @@
   src: url("/fonts/Orbitron/Orbitron-VariableFont_wght.ttf") format("truetype");
   font-weight: 400 900;
   font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Newsreader";
+  src: url("/fonts/Newsreader/Newsreader-Italic-300.ttf") format("truetype");
+  font-weight: 300;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Newsreader";
+  src: url("/fonts/Newsreader/Newsreader-Italic-400.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
   font-display: swap;
 }
 
@@ -100,8 +132,10 @@
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
 
-  --font-ubuntu: Ubuntu;
+  --font-aspekta: Aspekta;
+  --font-mono: "JetBrains Mono";
   --font-orbitron: Orbitron;
+  --font-poetic: Newsreader;
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
@@ -155,23 +189,49 @@
     --baryon-compact-dock-min-width: 19rem;
     --baryon-compact-sheet-min-width: 18.5rem;
 
-    --nd-black: #050505;
-    --nd-surface: #111111;
-    --nd-surface-raised: #1a1a1a;
-    --nd-border: #222222;
-    --nd-border-visible: #333333;
-    --nd-text-disabled: #666666;
-    --nd-text-secondary: #999999;
-    --nd-text-primary: #e8e8e8;
-    --nd-text-display: #ffffff;
-    --nd-accent: #ff3b30;
-    --nd-accent-subtle: rgba(255, 59, 48, 0.15);
-    --nd-success: #4a9e5c;
-    --nd-warning: #d4a843;
-    --nd-info: #5b9bf6;
-    --nd-grid: rgba(255, 255, 255, 0.08);
-    --nd-shell-shadow: 0 24px 64px rgba(0, 0, 0, 0.42);
-    --nd-transition: 180ms cubic-bezier(0.25, 0.1, 0.25, 1);
+    --baryon-void: #0d0a07;
+    --baryon-warm: #15100a;
+    --baryon-chamber: #1c1510;
+    --baryon-edge: #2e241a;
+    --baryon-cream: #e8dfd0;
+    --baryon-dusk: #9a8e7e;
+    --baryon-shadow: #5a4e40;
+    --baryon-amber: #f2a05c;
+    --baryon-amber-soft: #2b1c10;
+    --baryon-amber-glow: #181008;
+    --baryon-rust: #c45824;
+    --baryon-rust-dark: #7a2e0a;
+    --baryon-resonance: #5be3f4;
+    --baryon-resonance-soft: #102a2d;
+    --baryon-on-amber: #0d0a07;
+    --baryon-on-resonance: #0d0a07;
+
+    --nd-black: var(--baryon-void);
+    --nd-surface: var(--baryon-warm);
+    --nd-surface-raised: var(--baryon-chamber);
+    --nd-border: var(--baryon-edge);
+    --nd-border-visible: color-mix(
+      in srgb,
+      var(--baryon-edge) 72%,
+      var(--baryon-cream) 10%
+    );
+    --nd-text-disabled: var(--baryon-shadow);
+    --nd-text-secondary: var(--baryon-dusk);
+    --nd-text-primary: var(--baryon-cream);
+    --nd-text-display: var(--baryon-cream);
+    --nd-accent: var(--baryon-amber);
+    --nd-accent-subtle: color-mix(
+      in srgb,
+      var(--baryon-amber) 16%,
+      transparent
+    );
+    --nd-success: var(--baryon-resonance);
+    --nd-warning: var(--baryon-amber);
+    --nd-info: var(--baryon-resonance);
+    --nd-danger: var(--baryon-rust);
+    --nd-grid: color-mix(in srgb, var(--baryon-cream) 7%, transparent);
+    --nd-shell-shadow: 0 24px 64px rgba(13, 10, 7, 0.58);
+    --nd-transition: 180ms cubic-bezier(0.22, 1, 0.36, 1);
 
     --background: 0 0% 100%;
     --foreground: 240 10% 3.9%;
@@ -205,7 +265,7 @@
   }
 
   .dark {
-    --nd-grid: rgba(255, 255, 255, 0.08);
+    --nd-grid: color-mix(in srgb, var(--baryon-cream) 7%, transparent);
     --background: 240 10% 3.9%;
     --foreground: 0 0% 98%;
 
@@ -253,17 +313,17 @@
     background:
       radial-gradient(
         circle at top left,
-        rgba(255, 255, 255, 0.05),
+        color-mix(in srgb, var(--baryon-amber) 12%, transparent),
         transparent 28%
       ),
       radial-gradient(
         circle at bottom right,
-        rgba(255, 59, 48, 0.08),
+        color-mix(in srgb, var(--baryon-resonance) 9%, transparent),
         transparent 20%
       ),
       var(--nd-black);
     color: var(--nd-text-primary);
-    font-family: "Space Grotesk", system-ui, sans-serif;
+    font-family: "Aspekta", system-ui, sans-serif;
   }
 
   #root {

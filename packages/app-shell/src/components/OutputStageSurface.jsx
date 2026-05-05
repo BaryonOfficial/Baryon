@@ -2,12 +2,7 @@ import { Suspense, useEffect, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene.jsx";
 import { RendererErrorBoundary } from "./RendererErrorBoundary.jsx";
-import {
-  CAMERA_VIEW_PRESETS,
-  getCameraConfigForPreset,
-  normalizeCameraViewPreset,
-  resolveCameraDistanceOverride,
-} from "./cameraViewPresets.js";
+import { resolvePresetCameraPose } from "./cameraPosePresets.js";
 import {
   createBaryonRenderer,
   WEBGPU_RENDERER_INIT_ERROR,
@@ -16,6 +11,7 @@ import {
   DEFAULT_PERFORMANCE_PROFILE,
   RENDER_CONTEXTS,
 } from "@baryon/visualizer/render/outputPipeline";
+import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
 
 function StageInvalidateBridge({ registerRenderRequester }) {
   const { invalidate } = useThree();
@@ -42,6 +38,33 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  * }} StageCameraConfig
  */
 
+const defaultStageCameraConfig = (() => {
+  const cameraPose = resolvePresetCameraPose("top-down");
+  return /** @type {StageCameraConfig} */ ({
+    position: /** @type {[number, number, number]} */ ([
+      cameraPose.position.x,
+      cameraPose.position.y,
+      cameraPose.position.z,
+    ]),
+    up: /** @type {[number, number, number]} */ ([
+      cameraPose.up.x,
+      cameraPose.up.y,
+      cameraPose.up.z,
+    ]),
+    fov: cameraPose.fov,
+  });
+})();
+
+const fullscreen2dCameraPose = resolvePresetCameraPose("side");
+
+function resolveStageCameraPose(visualizationMethod, cameraPose) {
+  if (visualizationMethod === VISUALIZATION_METHODS.cymatics2d) {
+    return fullscreen2dCameraPose;
+  }
+
+  return cameraPose;
+}
+
 /**
  * @param {{
  *   controlsRef: import("react").MutableRefObject<Record<string, unknown>>,
@@ -57,8 +80,6 @@ function StageInvalidateBridge({ registerRenderRequester }) {
  *     fov?: number,
  *   } | null,
  *   backgroundColor?: string,
- *   cameraViewPreset?: "top-down" | "side" | null,
- *   cameraDistance?: number | null,
  *   structuralControlVersion?: number,
  *   liveControlSignalRef?: import("react").MutableRefObject<{ version: number }> | null,
  *   enableControlEventSync?: boolean,
@@ -80,8 +101,6 @@ export function OutputStageSurface({
   externalFrameRef = null,
   cameraPose = null,
   backgroundColor: backgroundColorProp = null,
-  cameraViewPreset = null,
-  cameraDistance = null,
   structuralControlVersion = 0,
   liveControlSignalRef = null,
   enableControlEventSync = false,
@@ -94,38 +113,32 @@ export function OutputStageSurface({
   onAuditSnapshotChange = null,
 }) {
   const [rendererError, setRendererError] = useState(null);
-  const resolvedCameraViewPreset = /** @type {"top-down" | "side"} */ (
-    normalizeCameraViewPreset(cameraViewPreset, CAMERA_VIEW_PRESETS.topDown)
-  );
-  const resolvedCameraDistance = resolveCameraDistanceOverride(
-    resolvedCameraViewPreset,
-    cameraDistance,
+  const resolvedCameraPose = resolveStageCameraPose(
+    visualizationMethod,
+    cameraPose,
   );
   const cameraConfig = /** @type {StageCameraConfig} */ (
-    cameraPose == null
-      ? getCameraConfigForPreset(
-          resolvedCameraViewPreset,
-          resolvedCameraDistance,
-        )
+    resolvedCameraPose == null
+      ? defaultStageCameraConfig
       : {
           position: /** @type {[number, number, number]} */ ([
-            cameraPose.position.x,
-            cameraPose.position.y,
-            cameraPose.position.z,
+            resolvedCameraPose.position.x,
+            resolvedCameraPose.position.y,
+            resolvedCameraPose.position.z,
           ]),
           up: /** @type {[number, number, number]} */ ([
-            cameraPose.up.x,
-            cameraPose.up.y,
-            cameraPose.up.z,
+            resolvedCameraPose.up.x,
+            resolvedCameraPose.up.y,
+            resolvedCameraPose.up.z,
           ]),
-          fov: cameraPose.fov,
+          fov: resolvedCameraPose.fov,
         }
   );
   const resolvedBackgroundColor =
     backgroundColorProp ??
     (typeof controlsRef.current?.backgroundColor === "string"
       ? controlsRef.current.backgroundColor
-      : "#000000");
+      : "#0D0A07");
 
   const handleCanvasError = (error) => {
     if (error?.name !== WEBGPU_RENDERER_INIT_ERROR) {
@@ -206,13 +219,11 @@ export function OutputStageSurface({
                 onPerformanceHudSnapshotChange={onPerformanceHudSnapshotChange}
                 onAuditSnapshotChange={onAuditSnapshotChange}
                 externalFrameRef={externalFrameRef}
-                cameraPose={cameraPose}
+                cameraPose={resolvedCameraPose}
                 basePixelRatio={1}
                 onStageRender={onStageRender}
                 onFrameState={onFrameState}
                 cameraControlMode={CAMERA_CONTROL_MODES.externalSynced}
-                cameraViewPreset={resolvedCameraViewPreset}
-                cameraDistance={resolvedCameraDistance}
                 structuralControlVersion={structuralControlVersion}
                 liveControlSignalRef={liveControlSignalRef}
                 enableControlEventSync={enableControlEventSync}

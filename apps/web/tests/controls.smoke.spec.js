@@ -298,7 +298,7 @@ async function readLiveInputAuditState(page) {
       analysisSourceUsed: snapshot.analysisSourceUsed ?? null,
       liveInputCalibrationActive: snapshot.liveInputCalibrationActive ?? false,
       liveInputHardSilenceActive: snapshot.liveInputHardSilenceActive ?? false,
-      liveInputProfile: snapshot.liveInputProfile ?? null,
+      liveInputPolicy: snapshot.liveInputPolicy ?? null,
       fieldState: snapshot.raymarchDebug?.fieldState ?? null,
       idleOverlayVisible: snapshot.raymarchDebug?.idleOverlayVisible ?? false,
     };
@@ -945,7 +945,7 @@ test.describe("Baryon control smoke", () => {
     ).toBe(true);
   });
 
-  test("keeps source settings on the mode pill and the red live state on the CTA", async ({
+  test("keeps source settings on the mode pill and the live state on the CTA", async ({
     page,
     browserName,
   }) => {
@@ -999,8 +999,8 @@ test.describe("Baryon control smoke", () => {
     ]);
 
     expect(Math.abs(afterState[0] - beforeState[0])).toBeLessThan(1);
-    expect(beforeState[1].startsWith("rgba(255, 255, 255")).toBe(true);
-    expect(afterState[1].startsWith("rgba(255, 255, 255")).toBe(true);
+    expect(beforeState[1]).not.toBe("rgba(255, 255, 255, 0.92)");
+    expect(afterState[1]).not.toBe("rgba(255, 255, 255, 0.92)");
   });
 
   test("keeps the live-input popover open with retry guidance when mic permission is denied", async ({
@@ -1081,7 +1081,7 @@ test.describe("Baryon control smoke", () => {
     await expect(page.getByText("Echo Cancel")).toHaveCount(0);
   });
 
-  test("applies the acoustic-mic runtime profile for mic-classified live input", async ({
+  test("applies the acoustic-mic runtime policy for mic-classified live input", async ({
     page,
     browserName,
   }) => {
@@ -1113,7 +1113,7 @@ test.describe("Baryon control smoke", () => {
         audioInputMode: "live",
         analysisSourceUsed: "live",
         liveInputActive: true,
-        liveInputProfile: "acoustic-mic",
+        liveInputPolicy: "ambient",
       });
 
     await page.getByTestId("source-live-button").click();
@@ -1154,8 +1154,8 @@ test.describe("Baryon control smoke", () => {
     });
 
     expect(selectStyles.colorScheme).toBe("dark");
-    expect(selectStyles.backgroundColor).toBe("rgb(18, 22, 29)");
-    expect(selectStyles.optionBackgroundColor).toBe("rgb(18, 22, 29)");
+    expect(selectStyles.backgroundColor).toBe("rgb(28, 21, 16)");
+    expect(selectStyles.optionBackgroundColor).toBe("rgb(28, 21, 16)");
   });
 
   test("restores focus to the trigger when advanced controls close from a focused slider", async ({

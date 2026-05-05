@@ -6,6 +6,7 @@ import {
   SETTINGS_KEY,
 } from "../components/hooks/baryonControlsState.js";
 import { installLocalStorageMock } from "../test/installLocalStorageMock.js";
+import * as localStorageMockModule from "../test/installLocalStorageMock.js";
 import { createControlsStore } from "./controlsStore.js";
 
 function seedStorage({ controls = null, presets = null } = {}) {
@@ -22,6 +23,10 @@ describe("createControlsStore", () => {
   beforeEach(() => {
     installLocalStorageMock();
     window.localStorage.clear();
+  });
+
+  it("installLocalStorageMock keeps raw storage constructors internal", () => {
+    expect("createLocalStorageMock" in localStorageMockModule).toBe(false);
   });
 
   it("hydrates controls and presets from storage", () => {

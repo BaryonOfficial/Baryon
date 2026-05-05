@@ -25,6 +25,7 @@ import {
   usesBalancedPerformanceBaseline,
 } from "@baryon/visualizer/render/outputPipeline";
 import {
+  clearFrameCache,
   createEmptyAnalysisSchedulerState,
   recordRuntimePerfSample,
   shouldReuseIdleFrame,
@@ -353,6 +354,22 @@ function shouldSeedLiveInputWarmupFrame({
   );
 }
 
+function shouldBootstrapActiveFeatureFrame({
+  status,
+  controls,
+  lastLiveFrame,
+  lastActiveFrame,
+}) {
+  const audioActive = Boolean(
+    status?.isPlaying || status?.isLiveInputActive || controls?.injectTestTone,
+  );
+  return (
+    audioActive &&
+    !isNonIdleFeatureFrame(lastLiveFrame) &&
+    !isNonIdleFeatureFrame(lastActiveFrame)
+  );
+}
+
 function shouldCaptureLastLiveFrame({ status, featureFrame }) {
   return (
     status?.isPlaying === true ||
@@ -378,6 +395,19 @@ function storeComposedAnalysisResult(
     lastAnalysisSessionKey: preparedInputs.analysisSessionKey,
     lastAnalysisInputsSignature: preparedInputs.analysisInputsSignature,
   };
+}
+
+function resetInterruptedLiveInputVisualResponse(runtimeState) {
+  if (!runtimeState) {
+    return;
+  }
+
+  runtimeState.responseEnvelope = 0;
+  runtimeState.accentEnvelope = 0;
+  runtimeState.motionSignal = 0;
+  runtimeState.scaleSignal = 0;
+  runtimeState.bloomResponseSignal = 0;
+  runtimeState.beatPulseEnvelope = 0;
 }
 
 export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
@@ -1465,6 +1495,12 @@ export function resolveFeatureFrame(
               status,
               lastLiveFrame: lastLiveFrameRef.current,
               lastActiveFrame: lastActiveFrameRef.current,
+            }) ||
+            shouldBootstrapActiveFeatureFrame({
+              status,
+              controls,
+              lastLiveFrame: lastLiveFrameRef.current,
+              lastActiveFrame: lastActiveFrameRef.current,
             })
           ) {
             const heavyAnalysisStartedAt = getRenderLoopWallTimeMs();
@@ -1604,12 +1640,20 @@ export function resolveFeatureFrame(
     lastActiveFrameRef.current = null;
     lastIdleFrameRef.current = null;
   } else if (clockMode !== "paused-playback") {
-    lastLiveFrameRef.current = null;
-    lastActiveFrameRef.current = null;
-    if (!controls.injectTestTone) {
-      featureEngine?.reset?.("idle");
+    if (status.lastLiveInputInterruption) {
+      clearFrameCache(renderLoopRefs.frameCacheRefs);
+      resetInterruptedLiveInputVisualResponse(runtimeState);
+      if (!controls.injectTestTone) {
+        featureEngine?.reset?.("live-input-interrupted");
+      }
+    } else {
+      lastLiveFrameRef.current = null;
+      lastActiveFrameRef.current = null;
+      if (!controls.injectTestTone) {
+        featureEngine?.reset?.("idle");
+      }
+      resetAnalysisSchedulerState(analysisSchedulerRef);
     }
-    resetAnalysisSchedulerState(analysisSchedulerRef);
   }
 
   const effectiveFrame =

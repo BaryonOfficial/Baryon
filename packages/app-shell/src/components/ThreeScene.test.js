@@ -5,7 +5,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { dispatchCameraControlCommandSpy } = vi.hoisted(() => ({
+const { baryonSceneSpy, dispatchCameraControlCommandSpy } = vi.hoisted(() => ({
+  baryonSceneSpy: vi.fn(),
   dispatchCameraControlCommandSpy: vi.fn(),
 }));
 
@@ -18,7 +19,10 @@ vi.mock("./BaryonScene", () => ({
     previewLocal: "preview-local",
     externalSynced: "external-synced",
   },
-  BaryonScene: () => null,
+  BaryonScene: (props) => {
+    baryonSceneSpy(props);
+    return null;
+  },
 }));
 
 vi.mock("./cameraControlEvents.js", () => ({
@@ -86,7 +90,7 @@ vi.mock("./hooks/useRendererModeState.js", () => ({
     forceWebGLFallbackTest: false,
     activeRendererFallback: false,
     canvasEpoch: 0,
-    showCanvas: false,
+    showCanvas: true,
     setShowCanvas: () => {},
   }),
 }));
@@ -106,11 +110,11 @@ vi.mock("../context/AudioContext", () => ({
 
 import {
   composeAuthoritativePerformanceHudMetrics,
-  resolveActiveCameraControlPreset,
   resolveCameraControlFieldState,
   resolvePreviewOverlayState,
   shouldUseAuthoritativePerformanceHud,
 } from "./threeSceneState.js";
+import { resolvePresetCameraPose } from "./cameraPosePresets.js";
 import { ControlsProvider } from "../controls/ControlsProvider.jsx";
 import { createControlsStore } from "../controls/controlsStore.js";
 import ThreeScene from "./ThreeScene.jsx";
@@ -190,30 +194,18 @@ describe("preview camera control state", () => {
     ).toBe("active");
   });
 
-  it("uses the authoritative rendered camera preset for preview controls", () => {
+  it("keeps preview camera control highlights source-owned even when the authoritative stage is mirrored", () => {
     expect(
-      resolveActiveCameraControlPreset({
+      resolveCameraControlFieldState({
+        frameFieldState: "idle",
         previewState: {
           omitLocalScene: true,
         },
         authoritativeStageStatus: {
-          lastRenderedCameraViewPreset: "top-down",
+          lastRenderedFieldState: "active",
         },
-        fallbackCameraViewPreset: "side",
       }),
-    ).toBe("top-down");
-
-    expect(
-      resolveActiveCameraControlPreset({
-        previewState: {
-          omitLocalScene: true,
-        },
-        authoritativeStageStatus: {
-          lastRenderedCameraViewPreset: "invalid",
-        },
-        fallbackCameraViewPreset: "side",
-      }),
-    ).toBe("side");
+    ).toBe("active");
   });
 });
 
@@ -274,6 +266,7 @@ describe("camera reset control", () => {
   let root = null;
 
   beforeEach(() => {
+    baryonSceneSpy.mockClear();
     dispatchCameraControlCommandSpy.mockClear();
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -323,9 +316,58 @@ describe("camera reset control", () => {
     });
 
     expect(dispatchCameraControlCommandSpy.mock.calls).toStrictEqual([
-      [{ cameraViewPreset: "side" }],
-      [{ cameraViewPreset: "side" }],
+      [{ cameraPose: resolvePresetCameraPose("side") }],
+      [{ cameraPose: resolvePresetCameraPose("side") }],
     ]);
     expect(sideButton.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("keeps live input preview camera top-down when the frame falls back to idle", async () => {
+    const controlsStore = createControlsStore();
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene),
+        ),
+      );
+    });
+
+    const topButton = container.querySelector(
+      '[data-testid="camera-top-view-button"]',
+    );
+    const sideButton = container.querySelector(
+      '[data-testid="camera-side-view-button"]',
+    );
+
+    expect(topButton).toBeInstanceOf(HTMLButtonElement);
+    expect(sideButton).toBeInstanceOf(HTMLButtonElement);
+    expect(topButton.getAttribute("aria-pressed")).toBe("true");
+    expect(sideButton.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("forces the listener-side fullscreen 2d camera to side view", async () => {
+    const controlsStore = createControlsStore();
+    controlsStore.updateControl("visualizationMethod", "cymatics-2d");
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene),
+        ),
+      );
+    });
+
+    expect(
+      container.querySelector('[data-testid="camera-controls"]'),
+    ).toBeNull();
+    expect(baryonSceneSpy).toHaveBeenCalled();
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraPose).toStrictEqual(
+      resolvePresetCameraPose("side"),
+    );
   });
 });

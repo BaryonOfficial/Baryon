@@ -12,7 +12,7 @@
   },
   "scripts": {
     "dev": "turbo dev --filter=@baryon/web",
-    "dev:desktop:packaged": "pnpm --filter @baryon/desktop test:smoke:prepare && pnpm --filter @baryon/desktop run:packaged",
+    "dev:desktop:packaged": "pnpm --filter @baryon/desktop acceptance:prepare && pnpm --filter @baryon/desktop run:packaged",
     "dev:marketing": "turbo dev --filter=@baryon/marketing",
     "dev:desktop:probe": "BARYON_DEV_PERF_PROBE=1 pnpm --filter @baryon/desktop dev",
     "build": "turbo build",
@@ -44,9 +44,12 @@
     "test:app-shell": "pnpm --filter @baryon/app-shell test",
     "test:desktop": "pnpm --filter @baryon/desktop test",
     "test:desktop:platform": "pnpm --filter @baryon/desktop test:platform",
+    "test:desktop:native:verify": "pnpm --filter @baryon/desktop test:native:verify",
     "test:visualizer": "pnpm --filter @baryon/visualizer test",
-    "test:web-smoke": "pnpm --filter @baryon/web test:smoke:prod",
-    "test:web-smoke:dev": "pnpm --filter @baryon/web test:smoke:dev",
+    "acceptance:web": "pnpm --filter @baryon/web acceptance:prod",
+    "acceptance:web:dev": "pnpm --filter @baryon/web acceptance:dev",
+    "acceptance:desktop": "pnpm --filter @baryon/desktop acceptance:shell",
+    "acceptance:desktop:native": "pnpm --filter @baryon/desktop acceptance:native-output",
     "lint": "turbo lint",
     "lint:all": "pnpm -r --filter './apps/*' --filter './packages/*' --if-present lint",
     "lint:deps": "depcruise --config .dependency-cruiser.cjs apps packages",
@@ -59,7 +62,10 @@
     "audit:dead:exports": "node scripts/audit-dead-exports.mjs",
     "typecheck": "pnpm --reporter append-only -r --filter './apps/*' --filter './packages/*' --if-present typecheck",
     "verify": "pnpm version:check && pnpm docs:check && pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm build:marketing && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop && pnpm test:desktop:platform",
-    "verify:full": "pnpm verify && turbo build"
+    "postverify": "node scripts/record-verify-success.mjs",
+    "verify:cache:check": "node scripts/check-verify-cache.mjs",
+    "verify:acceptance": "pnpm verify && pnpm test:desktop:native:verify",
+    "verify:full": "pnpm verify:acceptance && turbo build"
   },
   "lint-staged": {
     "*.{js,jsx}": [
@@ -84,7 +90,7 @@
     "prettier-plugin-astro": "0.14.1",
     "syncpack": "^14.3.0",
     "turbo": "^2.9.3",
-    "typescript": "^6.0.2"
+    "typescript": "^5.9.3"
   },
   "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",
   "pnpm": {

@@ -68,10 +68,17 @@ Common branch prefixes:
 
 ## Before opening a PR
 
-Run the verification gate locally — the same checks CI will run:
+Run the fast verification gate locally — the same default checks CI will run:
 
 ```bash
 pnpm verify
+```
+
+For desktop output/runtime changes or release/pass-boundary work, also run the
+packaged desktop acceptance gate:
+
+```bash
+pnpm verify:acceptance
 ```
 
 Fix any failures before pushing.
