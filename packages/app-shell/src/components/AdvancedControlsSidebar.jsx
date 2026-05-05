@@ -11,6 +11,14 @@ const INFO_LINKS = [
     href: "https://github.com/BaryonOfficial/Baryon/blob/main/LICENSING.md",
     label: "License",
   },
+  {
+    href: "https://x.com/kyledcollins",
+    label: "X",
+  },
+  {
+    href: "https://www.instagram.com/baryon.eth/",
+    label: "Instagram",
+  },
 ];
 
 const COMPACT_SECTION_LABELS = {
@@ -1799,7 +1807,6 @@ export default function AdvancedControlsSidebar({
                     rel="noreferrer"
                   >
                     <span>{link.label}</span>
-                    <span aria-hidden="true">↗</span>
                   </a>
                 ))}
               </div>
