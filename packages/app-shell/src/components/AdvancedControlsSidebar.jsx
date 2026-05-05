@@ -653,6 +653,16 @@ const CSS = `
   object-fit: contain;
 }
 
+.baryon-controls-footer-links a[data-icon-only="true"] {
+  justify-content: center;
+  min-height: 2.18rem;
+}
+
+.baryon-controls-footer-links a[data-icon-only="true"] .baryon-controls-footer-link-icon {
+  width: 1.08rem;
+  height: 1.08rem;
+}
+
 .baryon-controls-footer-links a:hover {
   border-color: var(--nd-text-display);
   color: var(--nd-text-display);
@@ -1824,9 +1834,11 @@ export default function AdvancedControlsSidebar({
                     href={link.href}
                     target="_blank"
                     rel="noreferrer"
+                    aria-label={link.icon ? link.label : undefined}
+                    data-icon-only={link.icon ? "true" : undefined}
                   >
-                    <span className="baryon-controls-footer-link-label">
-                      {link.icon ? (
+                    {link.icon ? (
+                      <span className="baryon-controls-footer-link-label">
                         <img
                           aria-hidden="true"
                           alt=""
@@ -1834,10 +1846,10 @@ export default function AdvancedControlsSidebar({
                           data-social-icon={link.label}
                           src={link.icon}
                         />
-                      ) : null}
+                      </span>
+                    ) : (
                       <span>{link.label}</span>
-                    </span>
-                    <span aria-hidden="true">↗</span>
+                    )}
                   </a>
                 ))}
               </div>

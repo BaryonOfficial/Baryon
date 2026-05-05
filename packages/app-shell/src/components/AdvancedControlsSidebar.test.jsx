@@ -77,16 +77,21 @@ describe("AdvancedControlsSidebar info links", () => {
       container.querySelectorAll(".baryon-controls-footer-links a"),
     );
 
-    expect(
-      links.map((link) => [link.textContent?.replace("↗", ""), link.href]),
-    ).toEqual([
+    expect(links.map((link) => [link.textContent, link.href])).toEqual([
       ["Source", "https://github.com/BaryonOfficial/Baryon"],
       [
         "License",
         "https://github.com/BaryonOfficial/Baryon/blob/main/LICENSING.md",
       ],
-      ["X", "https://x.com/kyledcollins"],
-      ["Instagram", "https://www.instagram.com/baryon.eth/"],
+      ["", "https://x.com/kyledcollins"],
+      ["", "https://www.instagram.com/baryon.eth/"],
+    ]);
+
+    expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
+      null,
+      null,
+      "X",
+      "Instagram",
     ]);
 
     const socialIconLabels = links
