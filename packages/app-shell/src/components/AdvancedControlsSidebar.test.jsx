@@ -74,24 +74,24 @@ describe("AdvancedControlsSidebar info links", () => {
     renderSidebar();
 
     const links = Array.from(
-      container.querySelectorAll(".baryon-controls-footer-links a"),
+      container.querySelectorAll(".baryon-controls-footer a"),
     );
 
     expect(links.map((link) => [link.textContent, link.href])).toEqual([
+      ["", "https://x.com/kyledcollins"],
+      ["", "https://www.instagram.com/baryon.eth/"],
       ["Source", "https://github.com/BaryonOfficial/Baryon"],
       [
         "License",
         "https://github.com/BaryonOfficial/Baryon/blob/main/LICENSING.md",
       ],
-      ["", "https://x.com/kyledcollins"],
-      ["", "https://www.instagram.com/baryon.eth/"],
     ]);
 
     expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
-      null,
-      null,
       "X",
       "Instagram",
+      null,
+      null,
     ]);
 
     const socialIconLabels = links
@@ -107,19 +107,25 @@ describe("AdvancedControlsSidebar info links", () => {
     );
 
     expect(
-      Array.from(socialRow?.querySelectorAll("a") ?? []).map((link) =>
-        link.getAttribute("data-icon-only"),
+      container
+        .querySelector(".baryon-controls-footer-heading")
+        ?.contains(socialRow),
+    ).toBe(true);
+    expect(
+      Array.from(socialRow?.querySelectorAll("a") ?? []).map(
+        (link) => link.className,
       ),
-    ).toEqual(["true", "true"]);
+    ).toEqual([
+      "baryon-controls-footer-social-link",
+      "baryon-controls-footer-social-link",
+    ]);
 
     const styleText = container.querySelector("style")?.textContent ?? "";
 
+    expect(styleText).toContain(".baryon-controls-footer-heading");
     expect(styleText).toContain(".baryon-controls-footer-social-links");
-    expect(styleText).toContain("justify-content: flex-end;");
-    expect(styleText).toContain("margin-top: 0.16rem;");
-    expect(styleText).toContain("padding: 0.28rem 0.44rem 0.06rem;");
-    expect(styleText).toContain("border-color: transparent;");
-    expect(styleText).toContain("background: transparent;");
+    expect(styleText).toContain("justify-content: space-between;");
+    expect(styleText).toContain(".baryon-controls-footer-social-link");
     expect(styleText).toContain("width: 0.82rem;");
     expect(styleText).toContain("height: 0.82rem;");
   });

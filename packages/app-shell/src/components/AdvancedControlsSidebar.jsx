@@ -619,6 +619,29 @@ const CSS = `
   gap: 0.28rem;
 }
 
+.baryon-controls-footer-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.baryon-controls-footer-social-links {
+  display: flex;
+  align-items: center;
+  gap: 0.72rem;
+}
+
+.baryon-controls-footer-social-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.08rem;
+  border-radius: 0.42rem;
+  color: var(--nd-text-primary);
+  text-decoration: none;
+}
+
 .baryon-controls-footer-links a {
   display: flex;
   align-items: center;
@@ -653,26 +676,7 @@ const CSS = `
   object-fit: contain;
 }
 
-.baryon-controls-footer-social-links {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.94rem;
-  margin-top: 0.16rem;
-  padding: 0.28rem 0.44rem 0.06rem;
-}
-
-.baryon-controls-footer-links a[data-icon-only="true"] {
-  width: auto;
-  min-height: auto;
-  padding: 0.08rem;
-  border-color: transparent;
-  border-radius: 0.42rem;
-  background: transparent;
-  justify-content: center;
-}
-
-.baryon-controls-footer-links a[data-icon-only="true"] .baryon-controls-footer-link-icon {
+.baryon-controls-footer-social-link .baryon-controls-footer-link-icon {
   width: 1.08rem;
   height: 1.08rem;
 }
@@ -1840,7 +1844,29 @@ export default function AdvancedControlsSidebar({
             ))}
 
             <section className="baryon-controls-footer">
-              <p className="baryon-controls-section-label">Info</p>
+              <div className="baryon-controls-footer-heading">
+                <p className="baryon-controls-section-label">Info</p>
+                <div className="baryon-controls-footer-social-links">
+                  {INFO_LINKS.filter((link) => link.icon).map((link) => (
+                    <a
+                      key={link.href}
+                      className="baryon-controls-footer-social-link"
+                      href={link.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={link.label}
+                    >
+                      <img
+                        aria-hidden="true"
+                        alt=""
+                        className="baryon-controls-footer-link-icon"
+                        data-social-icon={link.label}
+                        src={link.icon}
+                      />
+                    </a>
+                  ))}
+                </div>
+              </div>
               <div className="baryon-controls-footer-links">
                 {INFO_LINKS.filter((link) => !link.icon).map((link) => (
                   <a
@@ -1852,28 +1878,6 @@ export default function AdvancedControlsSidebar({
                     <span>{link.label}</span>
                   </a>
                 ))}
-                <div className="baryon-controls-footer-social-links">
-                  {INFO_LINKS.filter((link) => link.icon).map((link) => (
-                    <a
-                      key={link.href}
-                      href={link.href}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={link.label}
-                      data-icon-only="true"
-                    >
-                      <span className="baryon-controls-footer-link-label">
-                        <img
-                          aria-hidden="true"
-                          alt=""
-                          className="baryon-controls-footer-link-icon"
-                          data-social-icon={link.label}
-                          src={link.icon}
-                        />
-                      </span>
-                    </a>
-                  ))}
-                </div>
               </div>
             </section>
           </div>
