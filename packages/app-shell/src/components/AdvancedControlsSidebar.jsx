@@ -646,8 +646,8 @@ const CSS = `
 }
 
 .baryon-controls-footer-link-icon {
-  width: 0.78rem;
-  height: 0.78rem;
+  width: 0.82rem;
+  height: 0.82rem;
   flex: 0 0 auto;
   border-radius: 0.18rem;
   object-fit: contain;

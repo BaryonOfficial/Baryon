@@ -91,5 +91,10 @@ describe("AdvancedControlsSidebar info links", () => {
       .filter(Boolean);
 
     expect(socialIconLabels).toEqual(["X", "Instagram"]);
+
+    const styleText = container.querySelector("style")?.textContent ?? "";
+
+    expect(styleText).toContain("width: 0.82rem;");
+    expect(styleText).toContain("height: 0.82rem;");
   });
 });
