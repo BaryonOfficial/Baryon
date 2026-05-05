@@ -5,7 +5,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { dispatchCameraControlCommandSpy } = vi.hoisted(() => ({
+const { baryonSceneSpy, dispatchCameraControlCommandSpy } = vi.hoisted(() => ({
+  baryonSceneSpy: vi.fn(),
   dispatchCameraControlCommandSpy: vi.fn(),
 }));
 
@@ -18,7 +19,10 @@ vi.mock("./BaryonScene", () => ({
     previewLocal: "preview-local",
     externalSynced: "external-synced",
   },
-  BaryonScene: () => null,
+  BaryonScene: (props) => {
+    baryonSceneSpy(props);
+    return null;
+  },
 }));
 
 vi.mock("./cameraControlEvents.js", () => ({
@@ -86,7 +90,7 @@ vi.mock("./hooks/useRendererModeState.js", () => ({
     forceWebGLFallbackTest: false,
     activeRendererFallback: false,
     canvasEpoch: 0,
-    showCanvas: false,
+    showCanvas: true,
     setShowCanvas: () => {},
   }),
 }));
@@ -262,6 +266,7 @@ describe("camera reset control", () => {
   let root = null;
 
   beforeEach(() => {
+    baryonSceneSpy.mockClear();
     dispatchCameraControlCommandSpy.mockClear();
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -341,5 +346,28 @@ describe("camera reset control", () => {
     expect(sideButton).toBeInstanceOf(HTMLButtonElement);
     expect(topButton.getAttribute("aria-pressed")).toBe("true");
     expect(sideButton.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("forces the listener-side fullscreen 2d camera to side view", async () => {
+    const controlsStore = createControlsStore();
+    controlsStore.updateControl("visualizationMethod", "cymatics-2d");
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene),
+        ),
+      );
+    });
+
+    expect(
+      container.querySelector('[data-testid="camera-controls"]'),
+    ).toBeNull();
+    expect(baryonSceneSpy).toHaveBeenCalled();
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraPose).toStrictEqual(
+      resolvePresetCameraPose("side"),
+    );
   });
 });

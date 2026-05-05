@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { Canvas } from "@react-three/fiber";
+import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene";
 import AdvancedControlsDock from "./AdvancedControlsDock.jsx";
 import {
@@ -59,6 +60,21 @@ function resolveDefaultCameraViewPreset({
   return liveInputUiState === "idle"
     ? CAMERA_VIEW_PRESETS.side
     : CAMERA_VIEW_PRESETS.topDown;
+}
+
+function resolveEffectiveCameraViewPreset({
+  visualizationMethod,
+  shouldUseIdleCameraDefault,
+  defaultCameraViewPreset,
+  cameraViewPreset,
+}) {
+  if (visualizationMethod === VISUALIZATION_METHODS.cymatics2d) {
+    return CAMERA_VIEW_PRESETS.side;
+  }
+
+  return shouldUseIdleCameraDefault
+    ? defaultCameraViewPreset
+    : cameraViewPreset;
 }
 
 /**
@@ -180,9 +196,12 @@ const ThreeScene = ({
   });
   const shouldUseIdleCameraDefault =
     liveInputUiState === "idle" && resolvedFrameFieldState === "idle";
-  const effectiveCameraViewPreset = shouldUseIdleCameraDefault
-    ? defaultCameraViewPreset
-    : cameraViewPreset;
+  const effectiveCameraViewPreset = resolveEffectiveCameraViewPreset({
+    visualizationMethod: controlsState.visualizationMethod,
+    shouldUseIdleCameraDefault,
+    defaultCameraViewPreset,
+    cameraViewPreset,
+  });
   const effectiveCameraPose = resolvePresetCameraPose(
     effectiveCameraViewPreset,
   );
@@ -251,7 +270,8 @@ const ThreeScene = ({
     showOverlayUi &&
     (selectedSource === "system" || resolvedLiveInputPanel.forceVisible);
   const showCameraControls =
-    showOverlayUi && controlsState.visualizationMethod !== "cymatics2d";
+    showOverlayUi &&
+    controlsState.visualizationMethod !== VISUALIZATION_METHODS.cymatics2d;
   const isPhoneViewport = viewportWidth <= 640;
   const isTabletPortraitViewport = viewportWidth > 640 && viewportWidth <= 820;
   const isTabletViewport = viewportWidth <= 1024;
