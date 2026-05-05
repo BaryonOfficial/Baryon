@@ -656,8 +656,10 @@ const CSS = `
 .baryon-controls-footer-social-links {
   display: flex;
   align-items: center;
-  gap: 0.86rem;
-  padding: 0.2rem 0.14rem 0.06rem;
+  justify-content: flex-end;
+  gap: 0.94rem;
+  margin-top: 0.16rem;
+  padding: 0.28rem 0.44rem 0.06rem;
 }
 
 .baryon-controls-footer-links a[data-icon-only="true"] {

@@ -115,6 +115,9 @@ describe("AdvancedControlsSidebar info links", () => {
     const styleText = container.querySelector("style")?.textContent ?? "";
 
     expect(styleText).toContain(".baryon-controls-footer-social-links");
+    expect(styleText).toContain("justify-content: flex-end;");
+    expect(styleText).toContain("margin-top: 0.16rem;");
+    expect(styleText).toContain("padding: 0.28rem 0.44rem 0.06rem;");
     expect(styleText).toContain("border-color: transparent;");
     expect(styleText).toContain("background: transparent;");
     expect(styleText).toContain("width: 0.82rem;");
