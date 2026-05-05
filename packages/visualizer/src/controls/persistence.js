@@ -1,5 +1,5 @@
 import { CONTROL_STATUSES } from "./schema.js";
-import { normalizeLiveInputAnalysisClass } from "../core/audio/liveInputAnalysis.js";
+import { normalizeLiveInputAcousticIntent } from "../core/audio/liveInputAnalysis.js";
 import { normalizePerformanceProfile } from "../render/outputProfilePolicy.js";
 
 function clamp(value, min, max) {
@@ -68,10 +68,10 @@ function normalizeLegacyLiveInputAnalysis(raw) {
 
   const next = { ...raw };
   if (
-    !Object.prototype.hasOwnProperty.call(next, "liveInputAnalysisClass") &&
+    !Object.prototype.hasOwnProperty.call(next, "liveInputAcousticIntent") &&
     typeof raw.liveInputProfile === "string"
   ) {
-    next.liveInputAnalysisClass = normalizeLiveInputAnalysisClass(
+    next.liveInputAcousticIntent = normalizeLiveInputAcousticIntent(
       raw.liveInputProfile,
     );
   }

@@ -12,14 +12,9 @@ import { useBaryonPipeline } from "./hooks/useBaryonPipeline";
 import { useBaryonVisualizer } from "./hooks/useBaryonVisualizer";
 import { useDefaultBaryonGeometry } from "./hooks/useDefaultBaryonGeometry";
 import {
-  CAMERA_VIEW_PRESETS,
-  applyCameraViewPreset,
-} from "./cameraViewPresets.js";
-import {
   augmentFrameStateWithCameraSync,
   applyExternalCameraPose,
   CAMERA_CONTROL_MODES,
-  resolveAppliedCameraState,
   shouldMountOrbitControls,
 } from "./baryonSceneCameraSync.js";
 export { CAMERA_CONTROL_MODES } from "./baryonSceneCameraSync.js";
@@ -56,10 +51,6 @@ export function BaryonScene({
   onStageRender = null,
   suppressRender = false,
   enableControlEventSync = true,
-  cameraViewPreset = /** @type {"top-down" | "side"} */ (
-    CAMERA_VIEW_PRESETS.topDown
-  ),
-  cameraDistance = null,
   cameraResetNonce = 0,
   cameraControlMode = /** @type {"preview-local" | "external-synced"} */ (
     CAMERA_CONTROL_MODES.previewLocal
@@ -147,44 +138,25 @@ export function BaryonScene({
 
       onFrameState(
         augmentFrameStateWithCameraSync(frameState, {
-          visualizationMethod,
-          cameraViewPreset,
           orbitControls: orbitControlsRef.current,
           camera,
           cameraControlMode,
         }),
       );
     },
-    [
-      camera,
-      cameraControlMode,
-      cameraViewPreset,
-      onFrameState,
-      visualizationMethod,
-    ],
+    [camera, cameraControlMode, onFrameState],
   );
 
   useEffect(() => {
     if (cameraControlMode === CAMERA_CONTROL_MODES.externalSynced) {
       return;
     }
+    if (!cameraPose) {
+      return;
+    }
 
-    const { preset, distance } = resolveAppliedCameraState({
-      visualizationMethod,
-      cameraControlMode,
-      cameraViewPreset,
-      cameraDistance,
-    });
-
-    applyCameraViewPreset(camera, orbitControlsRef.current, preset, distance);
-  }, [
-    camera,
-    cameraControlMode,
-    cameraDistance,
-    cameraResetNonce,
-    cameraViewPreset,
-    visualizationMethod,
-  ]);
+    applyExternalCameraPose(cameraPose, camera, orbitControlsRef.current);
+  }, [camera, cameraControlMode, cameraPose, cameraResetNonce]);
 
   useLayoutEffect(() => {
     if (cameraControlMode !== CAMERA_CONTROL_MODES.externalSynced) {

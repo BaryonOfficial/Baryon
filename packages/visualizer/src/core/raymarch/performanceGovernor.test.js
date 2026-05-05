@@ -66,6 +66,100 @@ describe("performanceGovernor", () => {
     ]);
   });
 
+  it("preserves amplitude-only selection when chromesthesia context is absent", () => {
+    const slots = new Float32Array([
+      1, 1, 1, 0.5, 2, 2, 2, 0.4, 3, 3, 3, 0.3, 4, 4, 4, 0.09,
+    ]);
+
+    const baseline = analyzeBudgetedModeLayer({
+      slots,
+      capacity: 4,
+      minSlots: 2,
+      energyRetention: 0.72,
+    });
+    const staticMode = analyzeBudgetedModeLayer({
+      slots,
+      colorSlots: new Float32Array([
+        0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, 1, 0, 1,
+      ]),
+      capacity: 4,
+      minSlots: 2,
+      energyRetention: 0.72,
+      chromesthesiaEnabled: false,
+      featureFrame: {
+        transientEnergy: 1,
+        harmonicity: 0.9,
+        textureSpread: 0,
+      },
+    });
+
+    expect(staticMode.selectedIndices).toEqual(baseline.selectedIndices);
+    expect(staticMode.uploadedActiveCount).toBe(baseline.uploadedActiveCount);
+  });
+
+  it("retains a color-salient detail slot when chromesthesia is active", () => {
+    const slots = new Float32Array([
+      1, 1, 1, 0.5, 2, 2, 2, 0.4, 3, 3, 3, 0.3, 4, 4, 4, 0.09,
+    ]);
+    const colorSlots = new Float32Array([
+      0.8, 0.1, 0.1, 0.2, 0.7, 0.2, 0.1, 0.2, 0.6, 0.2, 0.1, 0.2, 0, 1, 0, 1,
+    ]);
+
+    const amplitudeOnly = analyzeBudgetedModeLayer({
+      slots,
+      capacity: 4,
+      minSlots: 2,
+      energyRetention: 0.72,
+    });
+    const chromaAware = analyzeBudgetedModeLayer({
+      slots,
+      colorSlots,
+      capacity: 4,
+      minSlots: 2,
+      energyRetention: 0.72,
+      layerType: "detail",
+      chromesthesiaEnabled: true,
+      featureFrame: {
+        transientEnergy: 0.45,
+        harmonicity: 0.86,
+        textureSpread: 0.1,
+        trebleBroadbandEnergy: 0.08,
+      },
+    });
+
+    expect(amplitudeOnly.selectedIndices).toEqual([0, 1, 2]);
+    expect(chromaAware.selectedIndices).toContain(3);
+    expect(chromaAware.selectedIndices).not.toContain(2);
+    expect(chromaAware.retainedEnergyRatio).toBeGreaterThanOrEqual(0.72);
+  });
+
+  it("does not promote chroma-only detail on broadband noisy frames", () => {
+    const slots = new Float32Array([
+      1, 1, 1, 0.5, 2, 2, 2, 0.4, 3, 3, 3, 0.3, 4, 4, 4, 0.09,
+    ]);
+    const colorSlots = new Float32Array([
+      0.8, 0.1, 0.1, 0.2, 0.7, 0.2, 0.1, 0.2, 0.6, 0.2, 0.1, 0.2, 0, 1, 0, 1,
+    ]);
+
+    const noisy = analyzeBudgetedModeLayer({
+      slots,
+      colorSlots,
+      capacity: 4,
+      minSlots: 2,
+      energyRetention: 0.72,
+      layerType: "detail",
+      chromesthesiaEnabled: true,
+      featureFrame: {
+        transientEnergy: 0.05,
+        harmonicity: 0.08,
+        textureSpread: 0.92,
+        trebleBroadbandEnergy: 0.9,
+      },
+    });
+
+    expect(noisy.selectedIndices).toEqual([0, 1, 2]);
+  });
+
   it("raises complexity when uploaded mode load and excitation increase", () => {
     const low = buildRaymarchPerformanceGovernor({
       backboneSlots: new Float32Array([1, 1, 1, 0.4, 2, 2, 2, 0.3]),

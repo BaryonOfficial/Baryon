@@ -1,28 +1,24 @@
-import {
-  getDefaultCameraDistanceForPreset,
-  normalizeCameraDistanceOverride,
-  normalizeCameraViewPreset,
-} from "./cameraViewPresets.js";
+import { resolvePresetCameraPose } from "./cameraPosePresets.js";
 
 export const CAMERA_CONTROL_COMMAND_EVENT = "__baryon-camera-command";
 
 export function createCameraControlCommand(command = {}) {
-  const cameraViewPreset = normalizeCameraViewPreset(
-    command?.cameraViewPreset,
-    null,
-  );
-  if (!cameraViewPreset) {
-    return null;
+  if (command?.cameraPose && typeof command.cameraPose === "object") {
+    return {
+      cameraPose: command.cameraPose,
+    };
   }
 
-  return {
-    cameraViewPreset,
-    cameraDistance:
-      normalizeCameraDistanceOverride(
-        command?.cameraDistance ??
-          getDefaultCameraDistanceForPreset(cameraViewPreset),
-      ) ?? getDefaultCameraDistanceForPreset(cameraViewPreset),
-  };
+  if (
+    command?.cameraViewPreset === "top-down" ||
+    command?.cameraViewPreset === "side"
+  ) {
+    return {
+      cameraPose: resolvePresetCameraPose(command.cameraViewPreset),
+    };
+  }
+
+  return null;
 }
 
 export function dispatchCameraControlCommand(command = {}) {

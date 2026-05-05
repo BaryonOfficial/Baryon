@@ -68,7 +68,7 @@ module.exports = [
   },
   {
     // Electron main/preload processes run in Node.js.
-    // MAIN_WINDOW_VITE_* are compile-time constants injected by electron-forge.
+    // *_VITE_* are compile-time constants injected by electron-forge.
     files: ["apps/desktop/electron/**/*.js"],
     languageOptions: {
       ecmaVersion: "latest",
@@ -77,6 +77,8 @@ module.exports = [
         ...cleanGlobals(globals.node),
         MAIN_WINDOW_VITE_DEV_SERVER_URL: "readonly",
         MAIN_WINDOW_VITE_NAME: "readonly",
+        OUTPUT_STAGE_VITE_DEV_SERVER_URL: "readonly",
+        OUTPUT_STAGE_VITE_NAME: "readonly",
       },
     },
   },

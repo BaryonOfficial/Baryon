@@ -31,7 +31,7 @@ describe("SourceSelector", () => {
   });
 
   function renderSelector(props) {
-    useAudioMock.mockReturnValue({
+    const audio = {
       platform: "desktop",
       selectedSource: "file",
       handleSourceChange: vi.fn(),
@@ -43,7 +43,8 @@ describe("SourceSelector", () => {
         active: false,
         phase: "idle",
       },
-    });
+    };
+    useAudioMock.mockReturnValue(audio);
 
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -52,6 +53,8 @@ describe("SourceSelector", () => {
     act(() => {
       root.render(<SourceSelector {...props} />);
     });
+
+    return audio;
   }
 
   it("keeps the system source tab visible when the live action button is hidden", () => {
@@ -64,7 +67,7 @@ describe("SourceSelector", () => {
       container.querySelector('[data-testid="live-input-source-tab"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector('[data-testid="source-live-button"]'),
+      container.querySelector('[data-testid="source-selector-live-button"]'),
     ).toBeNull();
   });
 

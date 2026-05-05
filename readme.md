@@ -29,7 +29,7 @@ See [`LICENSING.md`](LICENSING.md) for the summary and [`COMMERCIAL_LICENSE.md`]
 
 - Node.js `24.14.1` via [`.nvmrc`](.nvmrc)
 - `pnpm`
-- Playwright Chromium for browser smoke tests, installed on demand
+- Playwright Chromium for browser acceptance tests, installed on demand
 
 Install from the repo root:
 
@@ -39,8 +39,8 @@ pnpm install
 
 `pnpm install` also runs the repo `prepare` script and installs the committed Husky hooks.
 
-For a faster pre-push loop than `pnpm verify`, you can temporarily opt into the
-cheap checks only:
+To front-load the public and Vercel preflight checks before the normal
+`pnpm verify` push gate, temporarily opt into:
 
 ```bash
 BARYON_PRE_PUSH_PREFLIGHT=1 git push
@@ -76,9 +76,11 @@ pnpm typecheck            # Workspace typecheck where configured
 pnpm test:visualizer      # Visualizer unit tests
 pnpm test:app-shell       # Shared app-shell unit tests
 pnpm test:desktop         # Desktop unit tests
-pnpm test:web-smoke       # Stable production browser smoke
-pnpm verify               # Local pre-push gate
-pnpm verify:full          # Full verification including builds
+pnpm acceptance:web       # Stable production browser acceptance
+pnpm acceptance:desktop   # Packaged desktop shell acceptance
+pnpm verify               # Fast local pre-push gate
+pnpm verify:acceptance    # Fast gate plus packaged desktop output contracts
+pnpm verify:full          # Acceptance verification plus all builds
 pnpm docs:check           # Validate doc links, doc invariants, and repo-map freshness
 ```
 
@@ -87,9 +89,11 @@ Useful package-local commands:
 ```bash
 cd apps/web && pnpm dev:https    # HTTPS dev server for mic testing outside localhost
 cd apps/marketing && pnpm preview
-cd apps/web && pnpm test:smoke:dev
+cd apps/web && pnpm acceptance:dev
 cd apps/desktop && pnpm test:platform
-cd apps/desktop && pnpm test:smoke
+cd apps/desktop && pnpm test:native:verify # Packaged desktop output contracts
+cd apps/desktop && pnpm acceptance:shell
+cd apps/desktop && pnpm acceptance:native-output
 cd apps/desktop && pnpm perf                # Canonical live-source desktop perf probe
 cd apps/desktop && pnpm perf:packaged       # Packaged desktop Syphon / OSR benchmark
 cd packages/visualizer && pnpm typecheck

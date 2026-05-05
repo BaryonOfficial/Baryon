@@ -1,6 +1,8 @@
 import {
+  DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT,
   DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
   DEFAULT_RESOLVED_LIVE_INPUT_ANALYSIS_CLASS,
+  normalizeLiveInputAcousticIntent,
   normalizeLiveInputDeviceKind,
   normalizeLiveInputAnalysisClass,
   normalizeResolvedLiveInputAnalysisClass,
@@ -31,6 +33,7 @@ import {
  *   selectedDeviceId: string | null,
  *   selectedDeviceLabel: string,
  *   requestedAnalysisClass: import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputAnalysisClass,
+ *   acousticIntent: import("@baryon/visualizer/audio/liveInputAnalysis").LiveInputAcousticIntent,
  *   resolvedAnalysisClass: import("@baryon/visualizer/audio/liveInputAnalysis").ResolvedLiveInputAnalysisClass,
  *   calibrationActive: boolean,
  *   gateOpen: boolean,
@@ -135,6 +138,9 @@ export function createLiveInputRuntimeStatus(overrides = {}) {
     signalState: LIVE_INPUT_SIGNAL_STATES.ok,
     errorCode: LIVE_INPUT_ERROR_CODES.none,
     ...overrides,
+    acousticIntent: normalizeLiveInputAcousticIntent(
+      overrides.acousticIntent ?? DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT,
+    ),
     liveInputDeviceKind,
     liveInputKind: liveInputDeviceKind,
   };

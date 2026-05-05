@@ -111,6 +111,12 @@ const DEBUG_METRIC_TOOLTIPS = {
   Density: "Average body density in the raymarched field this frame.",
   Exit: "Estimated early-exit ratio in the raymarch. Higher values usually mean more rays are terminating sooner.",
   Volume: "Whether the volumetric field is currently considered visible.",
+  Rendered:
+    "Backbone/detail modal slots actually uploaded to the renderer after budget selection.",
+  Drop: "Analyzer modal slots dropped by the raymarch render budget this frame.",
+  Retain: "Amplitude energy retained by the uploaded raymarch modal budget.",
+  Chroma:
+    "Maximum chromesthesia color weight uploaded for backbone/detail layers.",
   Flux: "Weighted spectral-flux contribution to Change. Higher values mean more fresh frequency-bin motion.",
   Hit: "Weighted transient-energy contribution to Change. Higher values mean stronger attacks and onsets.",
   "Slot Δ": "Weighted average slot-amplitude delta contribution to Change.",
@@ -396,6 +402,27 @@ export default function ParticleDebugOverlay({
     { label: "Exit", value: formatNumber(debugSnapshot.earlyExitRatio) },
     { label: "Volume", value: String(debugSnapshot.volumeVisible) },
     {
+      label: "Rendered",
+      value: `${debugSnapshot.renderedBackboneModeCount ?? "n/a"}/${
+        debugSnapshot.renderedDetailModeCount ?? "n/a"
+      }`,
+    },
+    {
+      label: "Drop",
+      value: debugSnapshot.renderedDroppedModeCount ?? "n/a",
+    },
+    {
+      label: "Retain",
+      value: formatNumber(debugSnapshot.renderedRetainedEnergyRatio, 2),
+    },
+    {
+      label: "Chroma",
+      value: `${formatNumber(
+        debugSnapshot.renderedBackboneColorWeightMax,
+        2,
+      )}/${formatNumber(debugSnapshot.renderedDetailColorWeightMax, 2)}`,
+    },
+    {
       label: "Cache",
       value: formatFieldCacheState(debugSnapshot),
     },
@@ -575,7 +602,7 @@ export default function ParticleDebugOverlay({
         >
           <div
             style={{
-              color: "#ffffff",
+              color: "#E8DFD0",
               fontSize: "10px",
               fontWeight: 700,
               letterSpacing: "0.08em",

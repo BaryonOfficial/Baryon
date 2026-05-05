@@ -55,7 +55,7 @@ function getModeMatchQuality(magnitudeError) {
 function buildColorComponent({
   frequency,
   strength,
-  stability,
+  harmonicConfidence,
   spectralCentroid = 0,
   families,
 }) {
@@ -67,7 +67,7 @@ function buildColorComponent({
   const color = createChromesthesiaColor({
     frequency: familyFrequency,
     strength,
-    stability,
+    harmonicConfidence,
     spectralCentroid,
   });
 
@@ -209,7 +209,9 @@ export function writeModalSlotsFromFundamental(
       ? buildColorComponent({
           frequency: harmonicFrequency,
           strength: clamp01(support * attenuation),
-          stability: clamp01(i === 0 ? confidence : Math.max(0.5, confidence)),
+          harmonicConfidence: clamp01(
+            i === 0 ? confidence : Math.max(0.5, confidence),
+          ),
           spectralCentroid,
           families: colorFamilies,
         })
@@ -320,7 +322,7 @@ export function writeModalSlotsFromSpectralPeaks(
       ? buildColorComponent({
           frequency: peak.frequency,
           strength: clamp01(peak.amplitude),
-          stability: clamp01(peak.amplitude * 0.8 + 0.2),
+          harmonicConfidence: clamp01(peak.amplitude * 0.8 + 0.2),
           spectralCentroid,
           families: colorFamilies,
         })

@@ -27,6 +27,7 @@ export function createModalExcitationState(capacity = 16) {
     remappedSignalDetailRef: new Float32Array(layerCapacity * 4),
     previousSignalBackboneSlots: new Float32Array(layerCapacity * 4),
     previousSignalDetailSlots: new Float32Array(layerCapacity * 4),
+    previousShouldBuildChromesthesia: false,
     diagnostics: {
       excitedModeCount: 0,
       distributedExcitation: 0,

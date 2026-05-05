@@ -1,17 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
+  LIVE_INPUT_ACOUSTIC_INTENTS,
   LIVE_INPUT_ANALYSIS_CLASSES,
+  normalizeLiveInputAcousticIntent,
   normalizeLiveInputAnalysisClass,
   resolveLiveInputAnalysisClass,
 } from "./liveInputAnalysis.js";
 
 describe("live input analysis classification", () => {
-  it("migrates legacy profiles to the acoustic mic class", () => {
+  it("normalizes first-class acoustic mic intents", () => {
+    expect(normalizeLiveInputAcousticIntent()).toBe(
+      LIVE_INPUT_ACOUSTIC_INTENTS.ambient,
+    );
+    expect(normalizeLiveInputAcousticIntent("vocal")).toBe(
+      LIVE_INPUT_ACOUSTIC_INTENTS.vocal,
+    );
+    expect(normalizeLiveInputAcousticIntent("voice-tone")).toBe(
+      LIVE_INPUT_ACOUSTIC_INTENTS.vocal,
+    );
+  });
+
+  it("keeps legacy acoustic profile names out of analysis classification", () => {
     expect(normalizeLiveInputAnalysisClass("voice-tone")).toBe(
-      LIVE_INPUT_ANALYSIS_CLASSES.acousticMic,
+      LIVE_INPUT_ANALYSIS_CLASSES.auto,
     );
     expect(normalizeLiveInputAnalysisClass("ambient")).toBe(
-      LIVE_INPUT_ANALYSIS_CLASSES.acousticMic,
+      LIVE_INPUT_ANALYSIS_CLASSES.auto,
     );
   });
 

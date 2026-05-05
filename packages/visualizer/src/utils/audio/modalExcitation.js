@@ -8,6 +8,7 @@ import {
   countActiveSlots,
 } from "./modalStack.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
+import { createChromesthesiaColor } from "./chromesthesia.js";
 
 const BACKBONE_MAX_HZ = 3200;
 const BACKBONE_MIN_HZ = 60;
@@ -363,38 +364,6 @@ function computeModeResponse(buffer, sampleRate, frequencyHz) {
   };
 }
 
-function pitchClassHue(frequencyHz) {
-  if (!Number.isFinite(frequencyHz) || frequencyHz <= 0) {
-    return 0;
-  }
-  const midi = 69 + 12 * Math.log2(frequencyHz / 440);
-  const pitchClass = ((Math.round(midi) % 12) + 12) % 12;
-  return pitchClass / 12;
-}
-
-function hueToRgb(hue, saturation = 0.7, lightness = 0.58) {
-  const h = ((hue % 1) + 1) % 1;
-  const q =
-    lightness < 0.5
-      ? lightness * (1 + saturation)
-      : lightness + saturation - lightness * saturation;
-  const p = 2 * lightness - q;
-  const sample = (t) => {
-    let local = t;
-    if (local < 0) local += 1;
-    if (local > 1) local -= 1;
-    if (local < 1 / 6) return p + (q - p) * 6 * local;
-    if (local < 1 / 2) return q;
-    if (local < 2 / 3) return p + (q - p) * (2 / 3 - local) * 6;
-    return p;
-  };
-  return {
-    r: sample(h + 1 / 3),
-    g: sample(h),
-    b: sample(h - 1 / 3),
-  };
-}
-
 function clearLayerBuffers(layerBuffer) {
   layerBuffer.slots.fill(0);
   layerBuffer.referenceSlots.fill(0);
@@ -478,7 +447,67 @@ function remapReferenceToBlendedOrder(
   }
 }
 
-function writeLayerEntry(layerBuffer, index, entry, referenceAmplitude) {
+function createEntryChromesthesiaComponent(entry, colorContext = {}) {
+  const strength = clamp01(
+    (entry.signalAmplitude ?? entry.amplitude ?? 0) * 0.58 +
+      (entry.currentDriveEnergy ?? entry.driveEnergy ?? 0) * 0.28 +
+      (entry.amplitude ?? 0) * 0.14,
+  );
+  const harmonicConfidence = clamp01(
+    (entry.coherence ?? 0) * 0.66 +
+      (colorContext.tonalness ?? 0) * 0.22 +
+      (entry.persistence ?? 0) * 0.12,
+  );
+  const accentEnergy = clamp01(
+    (colorContext.transientEnergy ?? 0) * 0.62 +
+      (colorContext.trebleBroadbandEnergy ?? 0) * 0.24 +
+      (entry.currentDriveEnergy ?? entry.driveEnergy ?? 0) * 0.14,
+  );
+  const chroma = createChromesthesiaColor({
+    frequency: entry.naturalFrequencyHz,
+    strength,
+    harmonicConfidence,
+    accentEnergy,
+    spectralCentroid: colorContext.spectralCentroid ?? 0,
+    trebleBroadbandEnergy: colorContext.trebleBroadbandEnergy ?? 0,
+    keyTonic: colorContext.keyTonic,
+    keyMode: colorContext.keyMode,
+    keyConfidence: colorContext.keyConfidence ?? 0,
+  });
+
+  return {
+    frequency: entry.naturalFrequencyHz,
+    familyFrequency: entry.naturalFrequencyHz,
+    weight: chroma.weight,
+    pitchClass: chroma.pitchClass,
+    octave: chroma.octave,
+    noteName: chroma.noteName,
+    hue: chroma.hue,
+    saturation: chroma.saturation,
+    value: chroma.value,
+    color: chroma.rgb,
+    harmonicConfidence: chroma.harmonicConfidence,
+    accentEnergy: chroma.accentEnergy,
+    keyTonic: chroma.keyTonic,
+    keyMode: chroma.keyMode,
+    keyConfidence: chroma.keyConfidence,
+  };
+}
+
+function clearBlendColorState(layerState) {
+  layerState.colorSlots?.fill(0);
+  layerState.referenceColorSlots?.fill(0);
+  layerState._poolCurrentColorMap?.clear();
+  layerState._poolTargetColorMap?.clear();
+}
+
+function writeLayerEntry(
+  layerBuffer,
+  index,
+  entry,
+  referenceAmplitude,
+  colorContext,
+) {
   const offset = index * 4;
   layerBuffer.slots[offset] = entry.u;
   layerBuffer.slots[offset + 1] = entry.v;
@@ -488,11 +517,11 @@ function writeLayerEntry(layerBuffer, index, entry, referenceAmplitude) {
   layerBuffer.referenceSlots[offset + 1] = entry.v;
   layerBuffer.referenceSlots[offset + 2] = entry.w;
   layerBuffer.referenceSlots[offset + 3] = referenceAmplitude;
-  const color = hueToRgb(pitchClassHue(entry.naturalFrequencyHz));
-  layerBuffer.colorSlots[offset] = color.r;
-  layerBuffer.colorSlots[offset + 1] = color.g;
-  layerBuffer.colorSlots[offset + 2] = color.b;
-  layerBuffer.colorSlots[offset + 3] = clamp01(0.3 + entry.coherence * 0.7);
+  const chroma = createEntryChromesthesiaComponent(entry, colorContext);
+  layerBuffer.colorSlots[offset] = chroma.color.r;
+  layerBuffer.colorSlots[offset + 1] = chroma.color.g;
+  layerBuffer.colorSlots[offset + 2] = chroma.color.b;
+  layerBuffer.colorSlots[offset + 3] = chroma.weight;
 }
 
 function writeShortlistedEntries(
@@ -500,6 +529,7 @@ function writeShortlistedEntries(
   entries,
   capacity,
   selectReference,
+  colorContext,
 ) {
   // The shortlist is already term-based: one shortlisted entry writes one slot,
   // and capacity is enforced in slot units rather than family units.
@@ -510,7 +540,13 @@ function writeShortlistedEntries(
   );
   for (let index = 0; index < slotLimit; index += 1) {
     const entry = entries[index];
-    writeLayerEntry(layerBuffer, index, entry, selectReference(entry));
+    writeLayerEntry(
+      layerBuffer,
+      index,
+      entry,
+      selectReference(entry),
+      colorContext,
+    );
   }
   return slotLimit;
 }
@@ -809,7 +845,13 @@ function buildDisplayShortlist(entries, layer) {
   return survivors;
 }
 
-function createLayerStateSummary(entries, periodicity, tonalness, layer) {
+function createLayerStateSummary(
+  entries,
+  periodicity,
+  tonalness,
+  layer,
+  colorContext,
+) {
   const dominant = entries[0] ?? null;
   const harmonicSupport = buildHarmonicSupport(
     entries,
@@ -834,11 +876,12 @@ function createLayerStateSummary(entries, periodicity, tonalness, layer) {
     rejectionReason: "none",
     latchHoldFrames: 0,
     latchLowSupportFrames: 0,
-    chromesthesiaComponents: entries.slice(0, 6).map((entry) => ({
-      frequency: entry.naturalFrequencyHz,
-      weight: entry.amplitude * Math.max(0.2, entry.coherence),
-      color: hueToRgb(pitchClassHue(entry.naturalFrequencyHz)),
-    })),
+    chromesthesiaComponents: entries.slice(0, 6).map((entry) =>
+      createEntryChromesthesiaComponent(entry, {
+        ...colorContext,
+        tonalness,
+      }),
+    ),
   };
 }
 
@@ -888,6 +931,16 @@ export function buildModalExcitationStructuralState({
   const distributedExcitation = clamp01(
     fastSignalState.trebleBroadbandEnergy * 0.62 + flatness * 0.38,
   );
+  const chromaState = preparedInputs.featureState?.analysis?.chromaState ?? {};
+  const colorContext = {
+    spectralCentroid: fastSignalState.spectralCentroid,
+    transientEnergy: fastSignalState.transientEnergy,
+    trebleBroadbandEnergy: fastSignalState.trebleBroadbandEnergy,
+    tonalness,
+    keyTonic: chromaState.keyTonic,
+    keyMode: chromaState.keyMode,
+    keyConfidence: chromaState.keyConfidence,
+  };
   const deltaMs = Math.max(
     16,
     preparedInputs.currentFrameAtMs -
@@ -1033,6 +1086,7 @@ export function buildModalExcitationStructuralState({
     backboneCapacity,
     (entry) =>
       entry.signalAmplitude ?? entry.currentDriveEnergy ?? entry.driveEnergy,
+    colorContext,
   );
   writeShortlistedEntries(
     state.detail,
@@ -1040,18 +1094,21 @@ export function buildModalExcitationStructuralState({
     detailCapacity,
     (entry) =>
       entry.signalAmplitude ?? entry.currentDriveEnergy ?? entry.driveEnergy,
+    colorContext,
   );
   writeShortlistedEntries(
     state.displayBackbone,
     displayBackboneEntries,
     backboneCapacity,
     (entry) => entry.signalAmplitude ?? 0,
+    colorContext,
   );
   writeShortlistedEntries(
     state.displayDetail,
     displayDetailEntries,
     detailCapacity,
     (entry) => entry.signalAmplitude ?? 0,
+    colorContext,
   );
 
   blendModalStack(
@@ -1093,6 +1150,14 @@ export function buildModalExcitationStructuralState({
     },
   );
 
+  if (
+    preparedInputs.shouldBuildChromesthesia &&
+    !state.previousShouldBuildChromesthesia
+  ) {
+    clearBlendColorState(state.blendBackbone);
+    clearBlendColorState(state.blendDetail);
+  }
+
   if (preparedInputs.shouldBuildChromesthesia) {
     blendColorStack(
       state.blendBackbone,
@@ -1117,6 +1182,9 @@ export function buildModalExcitationStructuralState({
       },
     );
   }
+  state.previousShouldBuildChromesthesia = Boolean(
+    preparedInputs.shouldBuildChromesthesia,
+  );
 
   remapReferenceToBlendedOrder(
     state.blendBackbone.slots,
@@ -1189,12 +1257,14 @@ export function buildModalExcitationStructuralState({
     periodicity,
     tonalness,
     "backbone",
+    colorContext,
   );
   const detailStateSource = createLayerStateSummary(
     detailEntries,
     periodicity,
     tonalness,
     "detail",
+    colorContext,
   );
   const diagnostics = {
     excitedModeCount: excitedEntries.length,

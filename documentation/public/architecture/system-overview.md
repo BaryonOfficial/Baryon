@@ -71,7 +71,7 @@ Important files:
 Owns the browser product shell:
 
 - web app composition
-- browser-specific smoke and unit tests
+- browser-specific acceptance and unit tests
 - web-only UX and conversion-surface behavior
 
 Start here when the issue is web-shell-specific rather than shared-engine behavior.

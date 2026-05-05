@@ -487,7 +487,7 @@ describe("audio feature engine snapshots", () => {
       radius: 3,
       status: createLoopbackLiveStatus(),
       frameTimeMs: 2000,
-      liveInputAnalysisSettings: { profile: "voice-tone" },
+      liveInputAnalysisSettings: { acousticIntent: "vocal" },
     });
     const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
     const structuralState = updateAudioFeatureStructuralState(

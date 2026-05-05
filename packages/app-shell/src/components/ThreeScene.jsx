@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { Canvas } from "@react-three/fiber";
+import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene";
 import AdvancedControlsDock from "./AdvancedControlsDock.jsx";
 import {
@@ -18,9 +19,8 @@ import {
 import FloatingCameraControls from "./FloatingCameraControls.jsx";
 import {
   CAMERA_VIEW_PRESETS,
-  getCameraConfigForPreset,
-  resolveDefaultCameraViewPreset,
-} from "./cameraViewPresets.js";
+  resolvePresetCameraPose,
+} from "./cameraPosePresets.js";
 import { dispatchCameraControlCommand } from "./cameraControlEvents.js";
 import ParticleDebugOverlay from "./ParticleDebugOverlay.jsx";
 import PerformanceHud from "./PerformanceHud.jsx";
@@ -37,7 +37,6 @@ import { useRendererModeState } from "./hooks/useRendererModeState.js";
 import { useAudio, useAudioScene } from "../context/AudioContext";
 import {
   composeAuthoritativePerformanceHudMetrics,
-  resolveActiveCameraControlPreset,
   resolveCameraControlFieldState,
   resolveLiveInputPanelConfig,
   resolvePreviewOverlayState,
@@ -45,6 +44,38 @@ import {
 } from "./threeSceneState.js";
 
 const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
+
+function resolveDefaultCameraViewPreset({
+  liveInputUiState = "idle",
+  fieldState = null,
+} = {}) {
+  if (fieldState === "idle") {
+    return CAMERA_VIEW_PRESETS.side;
+  }
+
+  if (fieldState && fieldState !== "idle") {
+    return CAMERA_VIEW_PRESETS.topDown;
+  }
+
+  return liveInputUiState === "idle"
+    ? CAMERA_VIEW_PRESETS.side
+    : CAMERA_VIEW_PRESETS.topDown;
+}
+
+function resolveEffectiveCameraViewPreset({
+  visualizationMethod,
+  shouldUseIdleCameraDefault,
+  defaultCameraViewPreset,
+  cameraViewPreset,
+}) {
+  if (visualizationMethod === VISUALIZATION_METHODS.cymatics2d) {
+    return CAMERA_VIEW_PRESETS.side;
+  }
+
+  return shouldUseIdleCameraDefault
+    ? defaultCameraViewPreset
+    : cameraViewPreset;
+}
 
 /**
  * @param {{
@@ -88,7 +119,6 @@ const ADVANCED_CONTROLS_DOCK_WIDTH = "min(17.5rem, calc(100vw - 2.4rem))";
  *   } | null,
  *   authoritativeStageStatus?: {
  *     lastRenderedFieldState?: string | null,
- *     lastRenderedCameraViewPreset?: "top-down" | "side" | null,
  *   } | null,
  * }} props
  */
@@ -164,11 +194,32 @@ const ThreeScene = ({
     liveInputUiState,
     fieldState: resolvedFrameFieldState,
   });
-  const effectiveCameraViewPreset =
-    resolvedFrameFieldState === "idle"
-      ? defaultCameraViewPreset
-      : cameraViewPreset;
-  const cameraConfig = getCameraConfigForPreset(effectiveCameraViewPreset);
+  const shouldUseIdleCameraDefault =
+    liveInputUiState === "idle" && resolvedFrameFieldState === "idle";
+  const effectiveCameraViewPreset = resolveEffectiveCameraViewPreset({
+    visualizationMethod: controlsState.visualizationMethod,
+    shouldUseIdleCameraDefault,
+    defaultCameraViewPreset,
+    cameraViewPreset,
+  });
+  const effectiveCameraPose = resolvePresetCameraPose(
+    effectiveCameraViewPreset,
+  );
+  const cameraConfig = /** @type {{
+    position: [number, number, number],
+    up: [number, number, number],
+  }} */ ({
+    position: [
+      effectiveCameraPose.position.x,
+      effectiveCameraPose.position.y,
+      effectiveCameraPose.position.z,
+    ],
+    up: [
+      effectiveCameraPose.up.x,
+      effectiveCameraPose.up.y,
+      effectiveCameraPose.up.z,
+    ],
+  });
 
   const {
     forceWebGLFallbackTest,
@@ -194,11 +245,7 @@ const ThreeScene = ({
   const showOverlayUi = isSupportReady && !isFullscreen;
   const previewOverlayState = resolvePreviewOverlayState(previewState);
   const activeCameraControlPreset = /** @type {"top-down" | "side"} */ (
-    resolveActiveCameraControlPreset({
-      previewState,
-      authoritativeStageStatus,
-      fallbackCameraViewPreset: effectiveCameraViewPreset,
-    })
+    effectiveCameraViewPreset
   );
   const useAuthoritativePerformanceHud = shouldUseAuthoritativePerformanceHud({
     previewState,
@@ -223,7 +270,8 @@ const ThreeScene = ({
     showOverlayUi &&
     (selectedSource === "system" || resolvedLiveInputPanel.forceVisible);
   const showCameraControls =
-    showOverlayUi && controlsState.visualizationMethod !== "cymatics2d";
+    showOverlayUi &&
+    controlsState.visualizationMethod !== VISUALIZATION_METHODS.cymatics2d;
   const isPhoneViewport = viewportWidth <= 640;
   const isTabletPortraitViewport = viewportWidth > 640 && viewportWidth <= 820;
   const isTabletViewport = viewportWidth <= 1024;
@@ -258,10 +306,11 @@ const ThreeScene = ({
   };
 
   const applyCameraPreset = (preset) => {
+    const nextCameraPose = resolvePresetCameraPose(preset);
     setCameraViewPreset(preset);
     setCameraResetNonce((current) => current + 1);
     dispatchCameraControlCommand({
-      cameraViewPreset: preset,
+      cameraPose: nextCameraPose,
     });
   };
 
@@ -334,7 +383,7 @@ const ThreeScene = ({
                   background: "var(--nd-surface)",
                   boxShadow: "var(--nd-shell-shadow)",
                   color: "var(--nd-text-primary)",
-                  fontFamily: '"Space Grotesk", system-ui, sans-serif',
+                  fontFamily: '"Aspekta", system-ui, sans-serif',
                 }}
               >
                 <div
@@ -415,7 +464,7 @@ const ThreeScene = ({
                 onOutputFrame={onOutputFrame}
                 onFrameState={handleFrameState}
                 cameraControlMode={CAMERA_CONTROL_MODES.previewLocal}
-                cameraViewPreset={effectiveCameraViewPreset}
+                cameraPose={effectiveCameraPose}
                 cameraResetNonce={cameraResetNonce}
                 suppressRender={usingPreview}
               />

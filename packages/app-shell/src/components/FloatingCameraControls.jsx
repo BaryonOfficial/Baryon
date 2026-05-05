@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CAMERA_VIEW_PRESETS } from "./cameraViewPresets.js";
+import { CAMERA_VIEW_PRESETS } from "./cameraPosePresets.js";
 import { useDraggableFloatingUi } from "./hooks/useDraggableFloatingUi.js";
 
 function CameraIcon() {
@@ -218,7 +218,7 @@ export default function FloatingCameraControls({
               justifyContent: "center",
               fontFamily: isPhoneViewport
                 ? undefined
-                : '"Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+                : '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
               fontSize: isPhoneViewport ? undefined : "0.62rem",
               letterSpacing: isPhoneViewport ? undefined : "0.12em",
               textTransform: isPhoneViewport ? undefined : "uppercase",
@@ -250,7 +250,7 @@ export default function FloatingCameraControls({
           justifyContent: "center",
           fontFamily: isPhoneViewport
             ? undefined
-            : '"Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+            : '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
           fontSize: isPhoneViewport ? undefined : "0.62rem",
           letterSpacing: isPhoneViewport ? undefined : "0.12em",
           textTransform: isPhoneViewport ? undefined : "uppercase",

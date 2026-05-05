@@ -83,6 +83,7 @@ export function buildAudioFeatureTransportFrame({
   const liveInputDeviceKind =
     status?.liveInputDeviceKind ?? status?.liveInputKind ?? null;
   const liveInputAnalysisClass = status?.liveInputAnalysisClass ?? null;
+  const liveInputAcousticIntent = status?.liveInputAcousticIntent ?? null;
   const fftMagnitudes = cloneArray(analysisSnapshot?.fftMagnitudes);
   const timeData = shouldIncludeTransportTimeData({
     timeData: analysisSnapshot?.timeData,
@@ -105,6 +106,7 @@ export function buildAudioFeatureTransportFrame({
     liveInputDeviceKind,
     liveInputCalibrationVersion: status?.liveInputCalibrationVersion ?? 0,
     liveInputAnalysisClass,
+    liveInputAcousticIntent,
     radius,
     cavityGeometry: normalizeCavityGeometry(cavityGeometry),
     includeChromesthesia: Boolean(includeChromesthesia),

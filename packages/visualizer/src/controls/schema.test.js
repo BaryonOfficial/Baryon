@@ -20,6 +20,7 @@ import { CONTROL_RUNTIME_COVERAGE } from "./runtime.js";
 const EXPECTED_CONTROL_KEYS = [
   // Live Input
   "liveInputAnalysisClass",
+  "liveInputAcousticIntent",
   "echoCancellation",
   "noiseSuppression",
   "autoGainControl",

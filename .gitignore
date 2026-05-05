@@ -22,6 +22,9 @@ plasmic.json
 tmp/
 .venv
 .mcp.json
+.project-workflow/
+apps/marketing/Site Project/
+Baryon Design System.zip
 
 # Editor directories and files
 .vscode/*
@@ -63,3 +66,4 @@ playwright-report/
 # Private/internal notes that should never land in the public repo
 documentation/private/
 apps/desktop/private/
+.project-workflow/local/
