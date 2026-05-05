@@ -1,10 +1,15 @@
 /* @vitest-environment jsdom */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { cwd } from "node:process";
 import React from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AdvancedControlsSidebar from "./AdvancedControlsSidebar.jsx";
+
+const xIconSvg = readFileSync(join(cwd(), "src/assets/social/x.svg"), "utf8");
 
 describe("AdvancedControlsSidebar info links", () => {
   let container = null;
@@ -96,5 +101,10 @@ describe("AdvancedControlsSidebar info links", () => {
 
     expect(styleText).toContain("width: 0.82rem;");
     expect(styleText).toContain("height: 0.82rem;");
+  });
+
+  it("keeps the X icon readable on the dark info footer", () => {
+    expect(xIconSvg).toContain('fill="#f8efe3"');
+    expect(xIconSvg).not.toContain("#051344");
   });
 });
