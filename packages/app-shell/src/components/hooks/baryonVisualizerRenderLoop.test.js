@@ -657,6 +657,66 @@ test("preview custom 120 starts from the intended rung instead of max quality", 
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.84);
 });
 
+test("active playback bootstrap builds a fresh chromesthesia frame when the feature engine has no matching snapshot", () => {
+  const heavyAnalysis = {
+    fieldState: "active",
+    activeModeCount: 2,
+    backboneColorSlots: new Float32Array([0.1, 0.8, 1, 0.9]),
+    detailColorSlots: new Float32Array([1, 0.3, 0.2, 0.7]),
+  };
+  const frameCacheRefs = {
+    lastLiveFrameRef: { current: null },
+    lastActiveFrameRef: { current: null },
+    lastIdleFrameRef: { current: null },
+    analysisSchedulerRef: { current: {} },
+  };
+  const runHeavyFeatureAnalysis = vi.fn(() => heavyAnalysis);
+  const composeFeatureFrame = vi.fn(({ analysisResult }) => ({
+    fieldState: analysisResult.fieldState,
+    activeModeCount: analysisResult.activeModeCount,
+    backboneColorSlots: analysisResult.backboneColorSlots,
+    detailColorSlots: analysisResult.detailColorSlots,
+  }));
+
+  const { effectiveFrame } = resolveFeatureFrame(
+    {
+      ...createResolveFeatureFrameHarness({
+        featureEngine: {
+          enqueueTransportFrame: vi.fn(),
+          readLatestSnapshot: vi.fn(() => ({
+            analysisSessionKey: "previous-session",
+            analysisInputsSignature: "previous-inputs",
+          })),
+          getStatus: vi.fn(() => ({})),
+        },
+        renderLoopRefs: {
+          frameCacheRefs,
+        },
+      }).args,
+      chromesthesiaEnabled: true,
+    },
+    {
+      prepareFeatureFrame: vi.fn(() => ({
+        currentFrameAtMs: 1000,
+        analysisSessionKey: "song-1",
+        analysisInputsSignature: "chromesthesia-on",
+        silentFeatureFrame: null,
+      })),
+      runHeavyFeatureAnalysis,
+      composeFeatureFrame,
+    },
+  );
+
+  expect(effectiveFrame.fieldState).toBe("active");
+  expect(effectiveFrame.backboneColorSlots[3]).toBeGreaterThan(0);
+  expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
+  expect(composeFeatureFrame).toHaveBeenCalledTimes(1);
+  expect(frameCacheRefs.analysisSchedulerRef.current).toMatchObject({
+    lastHeavyAnalysisResult: heavyAnalysis,
+    lastComposedFeatureFrame: effectiveFrame,
+  });
+});
+
 test("clearing adaptive resume state forces the next authoritative session to restart from calibrated base rungs", () => {
   const { args, runtimeState, runtimeDiagnostics } =
     createAdaptiveRaymarchHarness({
@@ -824,6 +884,11 @@ test("resolveFeatureFrame forwards cavity geometry into the worker transport pay
   };
   const { args } = createResolveFeatureFrameHarness({
     featureEngine,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: false,
+      playbackSessionId: null,
+    },
   });
 
   resolveFeatureFrame(args, {

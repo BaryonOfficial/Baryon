@@ -36,6 +36,14 @@ const MIN_SATURATION = 0.42;
 const MAX_SATURATION = 0.98;
 const WEAK_COMPONENT_FLOOR = 0.24;
 const FAMILY_DISTANCE_SEMITONES = 1.15;
+const KEY_CONFIDENCE_GATE = 0.35;
+const KEY_HUE_MODULATION = 0.035;
+const MAJOR_SCALE_DEGREE_HUE_OFFSETS = Object.freeze([
+  0, -0.4, 0.2, -0.2, 0.45, 0.1, -0.5, 0.35, -0.35, 0.25, -0.1, 0.15,
+]);
+const MINOR_SCALE_DEGREE_HUE_OFFSETS = Object.freeze([
+  0, -0.35, 0.2, 0.45, -0.2, 0.1, -0.45, 0.35, 0.25, -0.25, 0.15, -0.1,
+]);
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
@@ -96,6 +104,36 @@ export function pitchClassToHue(pitchClass) {
   return PITCH_CLASS_HUES[mod(pitchClass, 12)];
 }
 
+function keyConfidenceSignal(keyConfidence) {
+  return clamp01(
+    (clamp01(keyConfidence) - KEY_CONFIDENCE_GATE) / (1 - KEY_CONFIDENCE_GATE),
+  );
+}
+
+function resolveKeyRelativeHue({
+  baseHue,
+  pitchClass,
+  keyTonic,
+  keyMode,
+  keyConfidence,
+}) {
+  const confidenceSignal = keyConfidenceSignal(keyConfidence);
+  if (confidenceSignal <= 0 || !Number.isFinite(keyTonic)) {
+    return baseHue;
+  }
+
+  const scaleDegree = mod(pitchClass - Math.round(keyTonic), 12);
+  const offsets =
+    keyMode === "minor"
+      ? MINOR_SCALE_DEGREE_HUE_OFFSETS
+      : MAJOR_SCALE_DEGREE_HUE_OFFSETS;
+  return mod(
+    baseHue +
+      KEY_HUE_MODULATION * confidenceSignal * (offsets[scaleDegree] ?? 0),
+    1,
+  );
+}
+
 function frequencyDistanceInSemitones(left, right) {
   if (
     !Number.isFinite(left) ||
@@ -139,10 +177,13 @@ export function collapseFrequencyToNearestFamily(frequency, weight, families) {
 export function createChromesthesiaColor({
   frequency,
   strength = 0,
-  stability = 0,
+  harmonicConfidence = 0,
+  accentEnergy = 0,
   spectralCentroid = 0,
-  transientEnergy = 0,
   trebleBroadbandEnergy = 0,
+  keyTonic = null,
+  keyMode = "major",
+  keyConfidence = 0,
 }) {
   const pitchClass = getPitchClassForFrequency(frequency);
   const octave = getOctaveForFrequency(frequency);
@@ -156,44 +197,58 @@ export function createChromesthesiaColor({
       pitchClass: null,
       octave: null,
       noteName: null,
+      harmonicConfidence: 0,
+      accentEnergy: 0,
+      keyTonic: null,
+      keyMode,
+      keyConfidence: 0,
     };
   }
 
   const strengthSignal = clamp01(strength);
-  const stabilitySignal = clamp01(stability);
+  const harmonicSignal = clamp01(harmonicConfidence);
   const octaveSignal = clamp01(
     (octave - LOW_OCTAVE) / (HIGH_OCTAVE - LOW_OCTAVE),
   );
   const centroidSignal = clamp01(spectralCentroid);
-  const transientSignal = clamp01(transientEnergy);
+  const accentSignal = clamp01(accentEnergy);
   const trebleSignal = clamp01(trebleBroadbandEnergy);
-  const accentSignal = clamp01(transientSignal * 0.68 + trebleSignal * 0.32);
-  const tonalPurity = clamp01(strengthSignal * 0.58 + stabilitySignal * 0.42);
-  const hue = pitchClassToHue(pitchClass);
+  const combinedAccentSignal = clamp01(
+    accentSignal * 0.76 + trebleSignal * 0.24,
+  );
+  const keySignal = keyConfidenceSignal(keyConfidence);
+  const baseHue = pitchClassToHue(pitchClass);
+  const hue = resolveKeyRelativeHue({
+    baseHue,
+    pitchClass,
+    keyTonic,
+    keyMode,
+    keyConfidence,
+  });
   const saturation = Math.min(
     MAX_SATURATION,
     MIN_SATURATION +
-      strengthSignal * 0.28 +
-      stabilitySignal * 0.2 +
-      tonalPurity * 0.12 +
-      centroidSignal * 0.08 +
-      accentSignal * 0.12,
+      strengthSignal * 0.3 +
+      harmonicSignal * 0.26 +
+      keySignal * 0.1 +
+      combinedAccentSignal * 0.1 +
+      centroidSignal * 0.06,
   );
   const value = Math.min(
     MAX_VALUE,
     MIN_VALUE +
       (MAX_VALUE - MIN_VALUE) *
         (octaveSignal * 0.25 +
-          strengthSignal * 0.42 +
-          stabilitySignal * 0.18 +
-          centroidSignal * 0.07 +
-          accentSignal * 0.18),
+          strengthSignal * 0.38 +
+          harmonicSignal * 0.18 +
+          combinedAccentSignal * 0.16 +
+          centroidSignal * 0.04),
   );
   const weight = clamp01(
     strengthSignal * 0.5 +
-      stabilitySignal * 0.32 +
-      tonalPurity * 0.08 +
-      accentSignal * 0.1,
+      harmonicSignal * 0.34 +
+      keySignal * 0.08 +
+      combinedAccentSignal * 0.08,
   );
 
   return {
@@ -205,5 +260,10 @@ export function createChromesthesiaColor({
     pitchClass,
     octave,
     noteName: NOTE_NAMES[pitchClass],
+    harmonicConfidence: harmonicSignal,
+    accentEnergy: combinedAccentSignal,
+    keyTonic: Number.isFinite(keyTonic) ? Math.round(keyTonic) : null,
+    keyMode,
+    keyConfidence: clamp01(keyConfidence),
   };
 }

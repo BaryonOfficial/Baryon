@@ -289,6 +289,30 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.idleOverlay.visible).toBe(false);
     expect(runtimeState.debugSnapshot.raymarchDebug.backboneModeCount).toBe(2);
     expect(runtimeState.debugSnapshot.raymarchDebug.detailModeCount).toBe(2);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.renderedBackboneModeCount,
+    ).toBe(2);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.renderedDetailModeCount,
+    ).toBe(2);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.renderedBackboneColorWeightMax,
+    ).toBeCloseTo(0.9);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.renderedDetailColorWeightMax,
+    ).toBeCloseTo(0.5);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.renderedBackboneAmplitudeTotal,
+    ).toBeCloseTo(1.4);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.renderedDetailAmplitudeTotal,
+    ).toBeCloseTo(0.95);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.renderedDroppedModeCount,
+    ).toBe(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.renderedRetainedEnergyRatio,
+    ).toBe(1);
     expect(runtimeState.debugSnapshot.raymarchDebug.boundaryMode).toBe(
       "neumann",
     );

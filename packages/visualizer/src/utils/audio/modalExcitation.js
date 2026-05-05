@@ -453,18 +453,26 @@ function createEntryChromesthesiaComponent(entry, colorContext = {}) {
       (entry.currentDriveEnergy ?? entry.driveEnergy ?? 0) * 0.28 +
       (entry.amplitude ?? 0) * 0.14,
   );
-  const stability = clamp01(
-    (entry.coherence ?? 0) * 0.72 +
-      (1 - (entry.persistence ?? 0)) * 0.16 +
-      (colorContext.tonalness ?? 0) * 0.12,
+  const harmonicConfidence = clamp01(
+    (entry.coherence ?? 0) * 0.66 +
+      (colorContext.tonalness ?? 0) * 0.22 +
+      (entry.persistence ?? 0) * 0.12,
+  );
+  const accentEnergy = clamp01(
+    (colorContext.transientEnergy ?? 0) * 0.62 +
+      (colorContext.trebleBroadbandEnergy ?? 0) * 0.24 +
+      (entry.currentDriveEnergy ?? entry.driveEnergy ?? 0) * 0.14,
   );
   const chroma = createChromesthesiaColor({
     frequency: entry.naturalFrequencyHz,
     strength,
-    stability,
+    harmonicConfidence,
+    accentEnergy,
     spectralCentroid: colorContext.spectralCentroid ?? 0,
-    transientEnergy: colorContext.transientEnergy ?? 0,
     trebleBroadbandEnergy: colorContext.trebleBroadbandEnergy ?? 0,
+    keyTonic: colorContext.keyTonic,
+    keyMode: colorContext.keyMode,
+    keyConfidence: colorContext.keyConfidence ?? 0,
   });
 
   return {
@@ -478,7 +486,19 @@ function createEntryChromesthesiaComponent(entry, colorContext = {}) {
     saturation: chroma.saturation,
     value: chroma.value,
     color: chroma.rgb,
+    harmonicConfidence: chroma.harmonicConfidence,
+    accentEnergy: chroma.accentEnergy,
+    keyTonic: chroma.keyTonic,
+    keyMode: chroma.keyMode,
+    keyConfidence: chroma.keyConfidence,
   };
+}
+
+function clearBlendColorState(layerState) {
+  layerState.colorSlots?.fill(0);
+  layerState.referenceColorSlots?.fill(0);
+  layerState._poolCurrentColorMap?.clear();
+  layerState._poolTargetColorMap?.clear();
 }
 
 function writeLayerEntry(
@@ -911,11 +931,15 @@ export function buildModalExcitationStructuralState({
   const distributedExcitation = clamp01(
     fastSignalState.trebleBroadbandEnergy * 0.62 + flatness * 0.38,
   );
+  const chromaState = preparedInputs.featureState?.analysis?.chromaState ?? {};
   const colorContext = {
     spectralCentroid: fastSignalState.spectralCentroid,
     transientEnergy: fastSignalState.transientEnergy,
     trebleBroadbandEnergy: fastSignalState.trebleBroadbandEnergy,
     tonalness,
+    keyTonic: chromaState.keyTonic,
+    keyMode: chromaState.keyMode,
+    keyConfidence: chromaState.keyConfidence,
   };
   const deltaMs = Math.max(
     16,
@@ -1126,6 +1150,14 @@ export function buildModalExcitationStructuralState({
     },
   );
 
+  if (
+    preparedInputs.shouldBuildChromesthesia &&
+    !state.previousShouldBuildChromesthesia
+  ) {
+    clearBlendColorState(state.blendBackbone);
+    clearBlendColorState(state.blendDetail);
+  }
+
   if (preparedInputs.shouldBuildChromesthesia) {
     blendColorStack(
       state.blendBackbone,
@@ -1150,6 +1182,9 @@ export function buildModalExcitationStructuralState({
       },
     );
   }
+  state.previousShouldBuildChromesthesia = Boolean(
+    preparedInputs.shouldBuildChromesthesia,
+  );
 
   remapReferenceToBlendedOrder(
     state.blendBackbone.slots,

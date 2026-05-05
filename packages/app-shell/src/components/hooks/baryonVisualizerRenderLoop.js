@@ -354,6 +354,22 @@ function shouldSeedLiveInputWarmupFrame({
   );
 }
 
+function shouldBootstrapActiveFeatureFrame({
+  status,
+  controls,
+  lastLiveFrame,
+  lastActiveFrame,
+}) {
+  const audioActive = Boolean(
+    status?.isPlaying || status?.isLiveInputActive || controls?.injectTestTone,
+  );
+  return (
+    audioActive &&
+    !isNonIdleFeatureFrame(lastLiveFrame) &&
+    !isNonIdleFeatureFrame(lastActiveFrame)
+  );
+}
+
 function shouldCaptureLastLiveFrame({ status, featureFrame }) {
   return (
     status?.isPlaying === true ||
@@ -1477,6 +1493,12 @@ export function resolveFeatureFrame(
           } else if (
             shouldSeedLiveInputWarmupFrame({
               status,
+              lastLiveFrame: lastLiveFrameRef.current,
+              lastActiveFrame: lastActiveFrameRef.current,
+            }) ||
+            shouldBootstrapActiveFeatureFrame({
+              status,
+              controls,
               lastLiveFrame: lastLiveFrameRef.current,
               lastActiveFrame: lastActiveFrameRef.current,
             })

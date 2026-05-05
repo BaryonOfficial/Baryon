@@ -3593,11 +3593,11 @@ export function buildCurrentAudioFeatureAnalysisResult({
 
 export function runHeavyAudioFeatureAnalysis(preparedInputs) {
   const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
-  const structuralState = updateAudioFeatureStructuralState(
+  const chromaState = updateAudioFeatureChromaState(
     preparedInputs,
     fastSignalState,
   );
-  const chromaState = updateAudioFeatureChromaState(
+  const structuralState = updateAudioFeatureStructuralState(
     preparedInputs,
     fastSignalState,
   );

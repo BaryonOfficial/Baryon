@@ -151,6 +151,46 @@ function maxSlotAmplitude(slots) {
   return max;
 }
 
+function summarizeRenderedLayer(modeSlots, colorSlots, count) {
+  const slotCount = Math.max(0, Math.floor(count ?? 0));
+  let amplitudeTotal = 0;
+  let colorWeightMax = 0;
+  for (let index = 0; index < slotCount; index += 1) {
+    const offset = index * 4;
+    amplitudeTotal += modeSlots?.[offset + 3] ?? 0;
+    colorWeightMax = Math.max(colorWeightMax, colorSlots?.[offset + 3] ?? 0);
+  }
+  return {
+    count: slotCount,
+    amplitudeTotal,
+    colorWeightMax,
+  };
+}
+
+function summarizeRenderedRetention(performanceGovernor) {
+  if (!performanceGovernor) {
+    return {
+      droppedModeCount: 0,
+      retainedEnergyRatio: 1,
+    };
+  }
+
+  const originalModeCount = performanceGovernor.originalModeCount ?? 0;
+  const uploadedModeCount = performanceGovernor.uploadedModeCount ?? 0;
+  const totalAmplitude =
+    (performanceGovernor.backbone?.totalAmplitude ?? 0) +
+    (performanceGovernor.detail?.totalAmplitude ?? 0);
+  const uploadedAmplitude =
+    (performanceGovernor.backbone?.uploadedAmplitude ?? 0) +
+    (performanceGovernor.detail?.uploadedAmplitude ?? 0);
+
+  return {
+    droppedModeCount: Math.max(0, originalModeCount - uploadedModeCount),
+    retainedEnergyRatio:
+      totalAmplitude > 0 ? clamp01(uploadedAmplitude / totalAmplitude) : 1,
+  };
+}
+
 function deriveLightAsymmetry(primaryIntensity, secondaryIntensity) {
   const strongest = Math.max(primaryIntensity, secondaryIntensity, 1e-4);
   return Math.abs(primaryIntensity - secondaryIntensity) / strongest;
@@ -299,6 +339,17 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const fieldCache = runtimeState.fieldCache ?? null;
   const chromaCache = runtimeState.chromaCache ?? null;
   const fieldCacheOverride = getRaymarchFieldCacheOverride();
+  const renderedBackbone = summarizeRenderedLayer(
+    runtimeState.backboneModeBuffer?.value?.array,
+    runtimeState.backboneColorBuffer?.value?.array,
+    runtimeState.uniforms.uBackboneModeCount.value,
+  );
+  const renderedDetail = summarizeRenderedLayer(
+    runtimeState.detailModeBuffer?.value?.array,
+    runtimeState.detailColorBuffer?.value?.array,
+    runtimeState.uniforms.uDetailModeCount.value,
+  );
+  const renderedRetention = summarizeRenderedRetention(performanceGovernor);
 
   return {
     fieldState,
@@ -321,6 +372,14 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     uploadedDetailModeCount:
       performanceGovernor?.detail?.uploadedActiveCount ??
       runtimeState.uniforms.uDetailModeCount.value,
+    renderedBackboneModeCount: renderedBackbone.count,
+    renderedDetailModeCount: renderedDetail.count,
+    renderedBackboneColorWeightMax: renderedBackbone.colorWeightMax,
+    renderedDetailColorWeightMax: renderedDetail.colorWeightMax,
+    renderedBackboneAmplitudeTotal: renderedBackbone.amplitudeTotal,
+    renderedDetailAmplitudeTotal: renderedDetail.amplitudeTotal,
+    renderedDroppedModeCount: renderedRetention.droppedModeCount,
+    renderedRetainedEnergyRatio: renderedRetention.retainedEnergyRatio,
     dominantFrequency:
       featureFrame?.debug?.dominantFrequency ??
       featureFrame?.debug?.fundamentalFrequency ??
@@ -893,6 +952,8 @@ export function tickRaymarchRuntime(
   const performanceGovernor = buildRaymarchPerformanceGovernor({
     backboneSlots: featureFrame?.backboneSlots,
     detailSlots: featureFrame?.detailSlots,
+    backboneColorSlots: featureFrame?.backboneColorSlots,
+    detailColorSlots: featureFrame?.detailColorSlots,
     backboneCapacity,
     detailCapacity,
     featureFrame,
@@ -902,6 +963,7 @@ export function tickRaymarchRuntime(
       runtimeState.requestedRaymarchSteps ??
       volumeMesh.material.steps,
     requestedRenderScale: 1,
+    chromesthesiaEnabled,
   });
   const { backbone: backboneLayer, detail: detailLayer } = performanceGovernor;
   runtimeState.performanceGovernor = performanceGovernor;
