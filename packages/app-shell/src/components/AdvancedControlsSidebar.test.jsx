@@ -83,5 +83,13 @@ describe("AdvancedControlsSidebar info links", () => {
       ["X", "https://x.com/kyledcollins"],
       ["Instagram", "https://www.instagram.com/baryon.eth/"],
     ]);
+
+    const socialIconLabels = links
+      .map((link) =>
+        link.querySelector("img")?.getAttribute("data-social-icon"),
+      )
+      .filter(Boolean);
+
+    expect(socialIconLabels).toEqual(["X", "Instagram"]);
   });
 });

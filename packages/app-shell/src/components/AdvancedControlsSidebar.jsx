@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import instagramIconUrl from "../assets/social/instagram.svg";
+import xIconUrl from "../assets/social/x.svg";
 import { resolveAdvancedControlsHelpPosition } from "./advancedControlsHelpPosition.js";
 
 const CLOSE_HELP_DELAY_MS = 110;
@@ -13,10 +15,12 @@ const INFO_LINKS = [
   },
   {
     href: "https://x.com/kyledcollins",
+    icon: xIconUrl,
     label: "X",
   },
   {
     href: "https://www.instagram.com/baryon.eth/",
+    icon: instagramIconUrl,
     label: "Instagram",
   },
 ];
@@ -632,6 +636,21 @@ const CSS = `
   letter-spacing: 0.12em;
   text-decoration: none;
   text-transform: uppercase;
+}
+
+.baryon-controls-footer-link-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-width: 0;
+}
+
+.baryon-controls-footer-link-icon {
+  width: 0.78rem;
+  height: 0.78rem;
+  flex: 0 0 auto;
+  border-radius: 0.18rem;
+  object-fit: contain;
 }
 
 .baryon-controls-footer-links a:hover {
@@ -1806,7 +1825,18 @@ export default function AdvancedControlsSidebar({
                     target="_blank"
                     rel="noreferrer"
                   >
-                    <span>{link.label}</span>
+                    <span className="baryon-controls-footer-link-label">
+                      {link.icon ? (
+                        <img
+                          aria-hidden="true"
+                          alt=""
+                          className="baryon-controls-footer-link-icon"
+                          data-social-icon={link.label}
+                          src={link.icon}
+                        />
+                      ) : null}
+                      <span>{link.label}</span>
+                    </span>
                     <span aria-hidden="true">↗</span>
                   </a>
                 ))}
