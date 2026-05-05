@@ -1,15 +1,10 @@
 /* @vitest-environment jsdom */
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { cwd } from "node:process";
 import React from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AdvancedControlsSidebar from "./AdvancedControlsSidebar.jsx";
-
-const xIconSvg = readFileSync(join(cwd(), "src/assets/social/x.svg"), "utf8");
 
 describe("AdvancedControlsSidebar info links", () => {
   let container = null;
@@ -74,64 +69,26 @@ describe("AdvancedControlsSidebar info links", () => {
     renderSidebar();
 
     const links = Array.from(
-      container.querySelectorAll(".baryon-controls-footer a"),
+      container.querySelectorAll(".baryon-controls-footer-links a"),
     );
 
     expect(links.map((link) => [link.textContent, link.href])).toEqual([
-      ["", "https://x.com/kyledcollins"],
-      ["", "https://www.instagram.com/baryon.eth/"],
       ["Source", "https://github.com/BaryonOfficial/Baryon"],
       [
         "License",
         "https://github.com/BaryonOfficial/Baryon/blob/main/LICENSING.md",
       ],
+      ["X", "https://x.com/kyledcollins"],
+      ["Instagram", "https://www.instagram.com/baryon.eth/"],
     ]);
 
     expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
-      "X",
-      "Instagram",
+      null,
+      null,
       null,
       null,
     ]);
 
-    const socialIconLabels = links
-      .map((link) =>
-        link.querySelector("img")?.getAttribute("data-social-icon"),
-      )
-      .filter(Boolean);
-
-    expect(socialIconLabels).toEqual(["X", "Instagram"]);
-
-    const socialRow = container.querySelector(
-      ".baryon-controls-footer-social-links",
-    );
-
-    expect(
-      container
-        .querySelector(".baryon-controls-footer-heading")
-        ?.contains(socialRow),
-    ).toBe(true);
-    expect(
-      Array.from(socialRow?.querySelectorAll("a") ?? []).map(
-        (link) => link.className,
-      ),
-    ).toEqual([
-      "baryon-controls-footer-social-link",
-      "baryon-controls-footer-social-link",
-    ]);
-
-    const styleText = container.querySelector("style")?.textContent ?? "";
-
-    expect(styleText).toContain(".baryon-controls-footer-heading");
-    expect(styleText).toContain(".baryon-controls-footer-social-links");
-    expect(styleText).toContain("justify-content: space-between;");
-    expect(styleText).toContain(".baryon-controls-footer-social-link");
-    expect(styleText).toContain("width: 0.82rem;");
-    expect(styleText).toContain("height: 0.82rem;");
-  });
-
-  it("keeps the X icon readable on the dark info footer", () => {
-    expect(xIconSvg).toContain('fill="#f8efe3"');
-    expect(xIconSvg).not.toContain("#051344");
+    expect(container.querySelector(".baryon-controls-footer img")).toBeNull();
   });
 });

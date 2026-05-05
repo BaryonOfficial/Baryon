@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import instagramIconUrl from "../assets/social/instagram.svg";
-import xIconUrl from "../assets/social/x.svg";
 import { resolveAdvancedControlsHelpPosition } from "./advancedControlsHelpPosition.js";
 
 const CLOSE_HELP_DELAY_MS = 110;
@@ -15,12 +13,10 @@ const INFO_LINKS = [
   },
   {
     href: "https://x.com/kyledcollins",
-    icon: xIconUrl,
     label: "X",
   },
   {
     href: "https://www.instagram.com/baryon.eth/",
-    icon: instagramIconUrl,
     label: "Instagram",
   },
 ];
@@ -619,29 +615,6 @@ const CSS = `
   gap: 0.28rem;
 }
 
-.baryon-controls-footer-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.baryon-controls-footer-social-links {
-  display: flex;
-  align-items: center;
-  gap: 0.72rem;
-}
-
-.baryon-controls-footer-social-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.08rem;
-  border-radius: 0.42rem;
-  color: var(--nd-text-primary);
-  text-decoration: none;
-}
-
 .baryon-controls-footer-links a {
   display: flex;
   align-items: center;
@@ -659,26 +632,6 @@ const CSS = `
   letter-spacing: 0.12em;
   text-decoration: none;
   text-transform: uppercase;
-}
-
-.baryon-controls-footer-link-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.38rem;
-  min-width: 0;
-}
-
-.baryon-controls-footer-link-icon {
-  width: 0.82rem;
-  height: 0.82rem;
-  flex: 0 0 auto;
-  border-radius: 0.18rem;
-  object-fit: contain;
-}
-
-.baryon-controls-footer-social-link .baryon-controls-footer-link-icon {
-  width: 1.08rem;
-  height: 1.08rem;
 }
 
 .baryon-controls-footer-links a:hover {
@@ -1844,31 +1797,9 @@ export default function AdvancedControlsSidebar({
             ))}
 
             <section className="baryon-controls-footer">
-              <div className="baryon-controls-footer-heading">
-                <p className="baryon-controls-section-label">Info</p>
-                <div className="baryon-controls-footer-social-links">
-                  {INFO_LINKS.filter((link) => link.icon).map((link) => (
-                    <a
-                      key={link.href}
-                      className="baryon-controls-footer-social-link"
-                      href={link.href}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={link.label}
-                    >
-                      <img
-                        aria-hidden="true"
-                        alt=""
-                        className="baryon-controls-footer-link-icon"
-                        data-social-icon={link.label}
-                        src={link.icon}
-                      />
-                    </a>
-                  ))}
-                </div>
-              </div>
+              <p className="baryon-controls-section-label">Info</p>
               <div className="baryon-controls-footer-links">
-                {INFO_LINKS.filter((link) => !link.icon).map((link) => (
+                {INFO_LINKS.map((link) => (
                   <a
                     key={link.href}
                     href={link.href}
