@@ -2,6 +2,9 @@ const CHROMESTHESIA_INACTIVE_STATIC_COLOR_KEYS = Object.freeze([
   "volumeColor",
   "surfaceColor",
 ]);
+const CHROMESTHESIA_INACTIVE_STATIC_COLOR_KEY_SET = new Set(
+  CHROMESTHESIA_INACTIVE_STATIC_COLOR_KEYS,
+);
 
 export function shouldSkipChromesthesiaStaticColorInvalidation(
   previousControls,
@@ -22,7 +25,7 @@ export function shouldSkipChromesthesiaStaticColorInvalidation(
     }
 
     changedKeyCount += 1;
-    if (!CHROMESTHESIA_INACTIVE_STATIC_COLOR_KEYS.includes(key)) {
+    if (!CHROMESTHESIA_INACTIVE_STATIC_COLOR_KEY_SET.has(key)) {
       return false;
     }
   }

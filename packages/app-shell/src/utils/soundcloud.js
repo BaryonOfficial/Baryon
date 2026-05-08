@@ -101,9 +101,10 @@ function normalizeTrack(track, index) {
 
 function normalizeQueue(resource) {
   if (resource?.kind === "playlist" || Array.isArray(resource?.tracks)) {
-    const queue = (resource.tracks || [])
-      .map((track, index) => normalizeTrack(track, index))
-      .filter(Boolean);
+    const queue = (resource.tracks || []).flatMap((track, index) => {
+      const normalizedTrack = normalizeTrack(track, index);
+      return normalizedTrack ? [normalizedTrack] : [];
+    });
 
     return {
       kind: "playlist",

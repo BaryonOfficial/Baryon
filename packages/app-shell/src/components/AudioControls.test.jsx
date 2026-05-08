@@ -64,7 +64,7 @@ describe("ListenerControls compact dock layout", () => {
     };
   }
 
-  function renderControls(audioOverrides = {}) {
+  function renderControls(audioOverrides = {}, { viewportWidth = 900 } = {}) {
     useDraggableFloatingUiMock.mockReturnValue({
       dragOffset: { x: 0, y: 0 },
       isDragging: false,
@@ -129,7 +129,7 @@ describe("ListenerControls compact dock layout", () => {
     const originalInnerWidth = window.innerWidth;
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
-      value: 900,
+      value: viewportWidth,
     });
 
     act(() => {
@@ -168,6 +168,22 @@ describe("ListenerControls compact dock layout", () => {
 
     expect(trackMeta?.textContent).toBe("Source");
     expect(trackTitle?.textContent).toBe("Upload Audio File");
+  });
+
+  it("uses a semantic button for the full track upload trigger", () => {
+    renderControls(
+      {
+        activeSource: "upload",
+        selectedSource: "file",
+        displayName: "Upload Audio",
+      },
+      { viewportWidth: 1200 },
+    );
+
+    const trackTrigger = container.querySelector(".am-track");
+
+    expect(trackTrigger?.tagName).toBe("BUTTON");
+    expect(trackTrigger?.getAttribute("type")).toBe("button");
   });
 
   it("shows the loaded file name for the file source on compact layouts", () => {

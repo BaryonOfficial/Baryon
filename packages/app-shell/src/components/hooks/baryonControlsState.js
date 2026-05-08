@@ -98,33 +98,33 @@ function createVisibleFolderGroups({
 }) {
   const operatorControlKeySet =
     createOperatorControlKeySet(operatorControlKeys);
-  return getControlFolders(method)
-    .map((title) => {
-      let controls = getControlsForFolder(title, method).filter(
-        (definition) =>
-          devtoolsEnabled ||
-          operatorControlKeySet.has(definition.key) ||
-          definition.status !== CONTROL_STATUSES.debugOnly,
+  return getControlFolders(method).flatMap((title) => {
+    let controls = getControlsForFolder(title, method).filter(
+      (definition) =>
+        devtoolsEnabled ||
+        operatorControlKeySet.has(definition.key) ||
+        definition.status !== CONTROL_STATUSES.debugOnly,
+    );
+
+    if (title === MODE_GROUP) {
+      controls = insertModeControlsAfterBoundary(
+        controls,
+        createPromotedModeControls(method),
       );
+    }
 
-      if (title === MODE_GROUP) {
-        controls = insertModeControlsAfterBoundary(
-          controls,
-          createPromotedModeControls(method),
-        );
-      }
+    if (controls.length === 0) {
+      return [];
+    }
 
-      if (controls.length === 0) {
-        return null;
-      }
-
-      return {
+    return [
+      {
         title,
         expanded: controls[0]?.groupExpanded ?? false,
         controls,
-      };
-    })
-    .filter(Boolean);
+      },
+    ];
+  });
 }
 
 function splitPresentationGroups(folderGroups) {
@@ -135,20 +135,20 @@ function splitPresentationGroups(folderGroups) {
     }
   }
 
-  const presetsAreaControls = PRESETS_AREA_CONTROL_ORDER.map((key) =>
-    controlByKey.get(key),
-  ).filter(Boolean);
+  const presetsAreaControls = PRESETS_AREA_CONTROL_ORDER.flatMap((key) => {
+    const control = controlByKey.get(key);
+    return control ? [control] : [];
+  });
   const presetsAreaControlKeys = new Set(PRESETS_AREA_CONTROL_ORDER);
-  const visibleGroups = folderGroups
-    .map((group) => ({
-      ...group,
-      controls: group.controls.filter(
-        (definition) => !presetsAreaControlKeys.has(definition.key),
-      ),
-    }))
-    .filter(
-      (group) => group.title !== PRESETS_AREA_GROUP && group.controls.length,
+  const visibleGroups = folderGroups.flatMap((group) => {
+    const controls = group.controls.filter(
+      (definition) => !presetsAreaControlKeys.has(definition.key),
     );
+    if (group.title === PRESETS_AREA_GROUP || controls.length === 0) {
+      return [];
+    }
+    return [{ ...group, controls }];
+  });
 
   return {
     folderGroups: visibleGroups,

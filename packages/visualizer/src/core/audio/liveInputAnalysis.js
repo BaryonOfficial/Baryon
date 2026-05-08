@@ -116,19 +116,20 @@ export function normalizeLiveInputAnalysisOverrides(overrides) {
     return {};
   }
 
-  return Object.fromEntries(
-    Object.entries(overrides)
-      .map(([deviceId, analysisClass]) => [
-        deviceId,
-        normalizeLiveInputAnalysisClass(analysisClass),
-      ])
-      .filter(
-        ([deviceId, analysisClass]) =>
-          typeof deviceId === "string" &&
-          deviceId.length > 0 &&
-          analysisClass !== LIVE_INPUT_ANALYSIS_CLASSES.auto,
-      ),
-  );
+  const normalizedOverrides = {};
+  for (const [deviceId, analysisClass] of Object.entries(overrides)) {
+    const normalizedAnalysisClass =
+      normalizeLiveInputAnalysisClass(analysisClass);
+    if (
+      typeof deviceId === "string" &&
+      deviceId.length > 0 &&
+      normalizedAnalysisClass !== LIVE_INPUT_ANALYSIS_CLASSES.auto
+    ) {
+      normalizedOverrides[deviceId] = normalizedAnalysisClass;
+    }
+  }
+
+  return normalizedOverrides;
 }
 
 export function isLikelyLineFeedDeviceLabel(label = "") {

@@ -21,7 +21,7 @@ one-time step — all future PRs from your GitHub account will be auto-approved.
 
 ## Setup
 
-Prerequisites: Node.js `24.14.1` from [`.nvmrc`](../.nvmrc), `pnpm`, and Chrome or Edge for the primary WebGPU path.
+Prerequisites: Node.js `24` from [`.nvmrc`](../.nvmrc), `pnpm`, and Chrome or Edge for the primary WebGPU path.
 
 ```bash
 # Clone the repo (or your fork)

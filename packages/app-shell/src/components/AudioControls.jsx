@@ -388,6 +388,11 @@ const CSS = `
 
 /* ── Track section — Nothing: minimal, typographic ── */
 .am-track {
+  appearance: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   position: relative;
   display: flex;
   align-items: center;
@@ -2318,7 +2323,8 @@ export function ListenerControls({
                   />
                 </div>
 
-                <div
+                <button
+                  type="button"
                   className="am-track"
                   onClick={() => {
                     setShowRecentUploadsPanel(false);
@@ -2353,7 +2359,7 @@ export function ListenerControls({
                     <MusicNoteIcon />
                     <ScrollingText text={displayName} />
                   </span>
-                </div>
+                </button>
 
                 {soundCloudEnabled || hasRecentUploads ? (
                   <div className="am-source-tools">

@@ -166,7 +166,7 @@ export function analyzeBudgetedModeLayer({
   }
 
   const normalizedRetention = clamp01(energyRetention);
-  const ranked = [...candidates].sort((left, right) => {
+  const ranked = candidates.toSorted((left, right) => {
     if (right.renderSalience !== left.renderSalience) {
       return right.renderSalience - left.renderSalience;
     }

@@ -104,16 +104,20 @@ function normalizeLegacyPerformanceProfile(raw) {
  * @returns {Record<string, unknown>}
  */
 export function serializeControls(controls, definitions) {
-  return Object.fromEntries(
-    definitions
-      .filter((d) => d.status === CONTROL_STATUSES.live)
-      .map((d) => [
-        d.key,
-        d.key === "renderQualityPreset"
-          ? normalizePerformanceProfile(controls[d.key])
-          : controls[d.key],
-      ]),
-  );
+  const serialized = {};
+
+  for (const definition of definitions) {
+    if (definition.status !== CONTROL_STATUSES.live) {
+      continue;
+    }
+
+    serialized[definition.key] =
+      definition.key === "renderQualityPreset"
+        ? normalizePerformanceProfile(controls[definition.key])
+        : controls[definition.key];
+  }
+
+  return serialized;
 }
 
 /**
