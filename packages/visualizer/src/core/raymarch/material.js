@@ -107,6 +107,13 @@ export const RAYMARCH_CHROMESTHESIA_TUNING = Object.freeze({
   whiteEmissionLift: 0.24,
 });
 
+export const RAYMARCH_BOUNDARY_TUNING = Object.freeze({
+  dirichletBeamDensity: 0.64,
+  dirichletHotCore: 0.08,
+  dirichletSurfacePull: 0.07,
+  dirichletWhiteEmission: 0.04,
+});
+
 /** @type {{ off: string; direct: string; cached: string; tonalFallback: string }} */
 export const RAYMARCH_CHROMA_EVALUATION_MODES = Object.freeze({
   off: "off",
@@ -460,6 +467,19 @@ function createScatteringNode({
     float(0.0),
     float(1.0),
   );
+  const isDirichletBoundary = String(boundaryMode) === BOUNDARY_MODES.dirichlet;
+  const boundaryBeamDensity = isDirichletBoundary
+    ? float(RAYMARCH_BOUNDARY_TUNING.dirichletBeamDensity)
+    : float(1.0);
+  const boundaryHotCore = isDirichletBoundary
+    ? float(RAYMARCH_BOUNDARY_TUNING.dirichletHotCore)
+    : float(1.0);
+  const boundarySurfacePull = isDirichletBoundary
+    ? float(RAYMARCH_BOUNDARY_TUNING.dirichletSurfacePull)
+    : float(1.0);
+  const boundaryWhiteEmission = isDirichletBoundary
+    ? float(RAYMARCH_BOUNDARY_TUNING.dirichletWhiteEmission)
+    : float(1.0);
   const spectralColorBiasHintOffset = uHarmonicity
     .mul(0.12)
     .sub(uChangeSignal.mul(0.08));
@@ -778,6 +798,7 @@ function createScatteringNode({
         .mul(visibleStructure)
         .mul(compressedShellWeight)
         .mul(transientBoost)
+        .mul(boundaryBeamDensity)
         // Gate beam brightness by audio energy — prevents surface glow persisting
         // at full brightness when field→0 causes contourShape→1 everywhere.
         // Power 1.0 gives linear rolloff, less aggressive than body's pow(1.5).
@@ -858,7 +879,9 @@ function createScatteringNode({
               ),
             )
         ),
-      ).mul(excitationGate);
+      )
+        .mul(excitationGate)
+        .mul(boundaryHotCore);
       const fresnelBase = clamp(
         float(1.0)
           .sub(abs(dot(gradientNormal, viewDirLocal.negate())))
@@ -907,7 +930,7 @@ function createScatteringNode({
       const staticLaserColor = mix(
         staticContourColor,
         uSurfaceColor,
-        hotCoreMix.mul(float(0.72)),
+        hotCoreMix.mul(float(0.72)).mul(boundarySurfacePull),
       );
       const staticHolographicColor = mix(
         staticLaserColor,
@@ -917,7 +940,9 @@ function createScatteringNode({
       const staticHolographicLaserColor = mix(
         staticHolographicColor,
         vec3(1.0),
-        /** @type {any} */ (holographicEmissionLift.mul(float(0.45))),
+        /** @type {any} */ (
+          holographicEmissionLift.mul(float(0.45)).mul(boundaryWhiteEmission)
+        ),
       );
       const detailPresence = smoothstep(float(0.0), float(1.0), detailCount);
       const backbonePresence = smoothstep(
@@ -934,9 +959,8 @@ function createScatteringNode({
         activityAccent,
       );
       const volumeColor = staticVolumeColor.toVar();
-      const neutralBase = mix(vec3(0.72), vec3(1.0), spectralColorBias);
-      const chromesthesiaNeutralColor = mix(
-        neutralBase,
+      const chromesthesiaFallbackColor = mix(
+        spectralColor.mul(float(0.42).add(spectralColorBias.mul(float(0.28)))),
         uKeyTint,
         uKeyTintStrength.mul(
           float(RAYMARCH_CHROMESTHESIA_TUNING.keyTintStrength),
@@ -968,10 +992,10 @@ function createScatteringNode({
             ? tonalFallbackWeight
             : cachedChromesthesiaWeight;
           const chromesthesiaTargetColor = tonalFallbackEnabled
-            ? chromesthesiaNeutralColor
+            ? chromesthesiaFallbackColor
             : spectralColor;
           const chromesthesiaBaseColor = mix(
-            chromesthesiaNeutralColor,
+            chromesthesiaFallbackColor,
             chromesthesiaTargetColor,
             chromesthesiaBlendWeight,
           );
@@ -985,9 +1009,9 @@ function createScatteringNode({
           const chromesthesiaLaserColor = mix(
             chromesthesiaContourColor,
             uSurfaceColor,
-            hotCoreMix.mul(
-              float(RAYMARCH_CHROMESTHESIA_TUNING.hotCoreSurfacePull),
-            ),
+            hotCoreMix
+              .mul(float(RAYMARCH_CHROMESTHESIA_TUNING.hotCoreSurfacePull))
+              .mul(boundarySurfacePull),
           );
           const chromesthesiaHolographicColor = mix(
             chromesthesiaLaserColor,
@@ -998,9 +1022,9 @@ function createScatteringNode({
             chromesthesiaHolographicColor,
             vec3(1.0),
             /** @type {any} */ (
-              holographicEmissionLift.mul(
-                float(RAYMARCH_CHROMESTHESIA_TUNING.whiteEmissionLift),
-              )
+              holographicEmissionLift
+                .mul(float(RAYMARCH_CHROMESTHESIA_TUNING.whiteEmissionLift))
+                .mul(boundaryWhiteEmission)
             ),
           );
           const chromesthesiaVolumeColor = mix(

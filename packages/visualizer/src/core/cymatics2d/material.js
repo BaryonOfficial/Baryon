@@ -233,13 +233,11 @@ function createFieldNode({
       float(0.0),
       float(1.0),
     );
-    const chromesthesiaNeutralColor = mix(
-      vec3(0.7),
-      vec3(1.0),
-      spectralColorBias,
+    const chromesthesiaFallbackColor = spectralColor.mul(
+      float(0.42).add(spectralColorBias.mul(float(0.34))),
     );
     const chromesthesiaBaseColor = mix(
-      chromesthesiaNeutralColor,
+      chromesthesiaFallbackColor,
       spectralColor,
       chromesthesiaWeight,
     );

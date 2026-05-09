@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { AUDIO_DEFAULTS } from "../../defaults.js";
 import {
+  RAYMARCH_BOUNDARY_TUNING,
   RAYMARCH_CHROMA_EVALUATION_MODES,
   RAYMARCH_CHROMESTHESIA_TUNING,
   createRaymarchVolumeMesh,
@@ -32,6 +33,14 @@ describe("raymarch volume material", () => {
     expect(RAYMARCH_CHROMESTHESIA_TUNING.contourShadow).toBeGreaterThan(0.95);
     expect(RAYMARCH_CHROMESTHESIA_TUNING.hotCoreSurfacePull).toBeLessThan(0.55);
     expect(RAYMARCH_CHROMESTHESIA_TUNING.whiteEmissionLift).toBeLessThan(0.3);
+  });
+
+  it("softens Dirichlet beam lighting so nodal planes do not dominate", () => {
+    expect(RAYMARCH_BOUNDARY_TUNING.dirichletBeamDensity).toBeGreaterThan(0.55);
+    expect(RAYMARCH_BOUNDARY_TUNING.dirichletBeamDensity).toBeLessThan(0.75);
+    expect(RAYMARCH_BOUNDARY_TUNING.dirichletHotCore).toBeLessThan(0.15);
+    expect(RAYMARCH_BOUNDARY_TUNING.dirichletSurfacePull).toBeLessThan(0.12);
+    expect(RAYMARCH_BOUNDARY_TUNING.dirichletWhiteEmission).toBeLessThan(0.1);
   });
 
   it("binds volumetric opacity to the material alpha path", () => {
