@@ -177,6 +177,26 @@ function buildTimedFrame({
   });
 }
 
+describe("live input feature-frame state", () => {
+  it("exposes live input activity on silent frames", () => {
+    const featureState = createAudioFeatureState();
+    const frame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        avgAmplitude: 0,
+        fftMagnitudes: new Float32Array(BIN_COUNT),
+        rms: 0,
+      }),
+      featureState,
+      radius: 3,
+      status: makeLiveInputStatus(),
+      frameTimeMs: 0,
+    });
+
+    expect(frame.fieldState).toBe("idle");
+    expect(frame.isLiveInputActive).toBe(true);
+  });
+});
+
 function sumSlotAmplitudes(slots) {
   const slotCount = Math.floor((slots?.length ?? 0) / 4);
   let total = 0;

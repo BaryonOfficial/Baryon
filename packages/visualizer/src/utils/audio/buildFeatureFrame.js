@@ -998,6 +998,7 @@ function buildSilentFeatureFrame({
   inputMode,
   soundActive,
   micActive,
+  isLiveInputActive,
   backboneSlots,
   detailSlots,
   modeSlots,
@@ -1040,6 +1041,7 @@ function buildSilentFeatureFrame({
   return {
     fieldState: FIELD_STATES.idle,
     hasModalField: false,
+    isLiveInputActive,
     soundActive,
     micActive,
     averageAmplitude: 0,
@@ -2633,6 +2635,7 @@ export function prepareAudioFeatureFrameInputs({
         inputMode,
         soundActive,
         micActive,
+        isLiveInputActive: status?.isLiveInputActive === true,
         backboneSlots,
         detailSlots,
         modeSlots,
@@ -3938,6 +3941,7 @@ export function composeAudioFeatureFrame({
   return {
     fieldState,
     hasModalField,
+    isLiveInputActive: preparedInputs.status?.isLiveInputActive === true,
     soundActive: analysisResult.soundActive,
     micActive: analysisResult.micActive,
     averageAmplitude: analysisResult.avgAmplitude,

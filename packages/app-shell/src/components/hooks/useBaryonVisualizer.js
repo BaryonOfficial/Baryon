@@ -34,6 +34,7 @@ import {
   getEffectiveAdaptiveRenderScale,
   publishPerformanceHudSnapshot,
   publishDevtoolsSnapshots,
+  applyLiveInputRenderIntent,
   resolveFeatureFrame,
   syncLiveInputRuntimeStatus,
   updateAdaptiveRaymarchStepBudget,
@@ -514,7 +515,7 @@ export function useBaryonVisualizer({
     ) {
       return;
     }
-    const { featureFrame, effectiveFrame } = externalFrameState?.featureFrame
+    const resolvedFrame = externalFrameState?.featureFrame
       ? {
           featureFrame: externalFrameState.featureFrame,
           effectiveFrame: externalFrameState.featureFrame,
@@ -533,6 +534,22 @@ export function useBaryonVisualizer({
           renderLoopRefs,
           chromesthesiaEnabled,
         });
+    const featureFrame = applyLiveInputRenderIntent(
+      resolvedFrame.featureFrame,
+      {
+        status,
+        liveInputUiState,
+        liveControlSignal: liveControlSignalRef?.current,
+      },
+    );
+    const effectiveFrame = applyLiveInputRenderIntent(
+      resolvedFrame.effectiveFrame,
+      {
+        status,
+        liveInputUiState,
+        liveControlSignal: liveControlSignalRef?.current,
+      },
+    );
 
     if (!featureFrame || !effectiveFrame) {
       return;

@@ -89,6 +89,7 @@ const STAGE_ATTRIBUTION_BUCKET_PERF_KEYS = Object.freeze({
   ]),
   render: Object.freeze(["pipelineRenderMs"]),
 });
+const LIVE_RENDER_INTENT_UI_STATES = new Set(["starting", "active"]);
 
 function readPerfAverageMs(perfBreakdown, key) {
   const averageMs = perfBreakdown?.[key]?.averageMs;
@@ -376,6 +377,54 @@ function shouldCaptureLastLiveFrame({ status, featureFrame }) {
     status?.isLiveInputActive !== true ||
     isNonIdleFeatureFrame(featureFrame)
   );
+}
+
+export function shouldApplyLiveInputRenderIntent(
+  { status, liveInputUiState, liveControlSignal } = {
+    status: null,
+    liveInputUiState: null,
+    liveControlSignal: null,
+  },
+) {
+  if (liveControlSignal?.desiredActive === false) {
+    return false;
+  }
+
+  if (liveControlSignal?.desiredActive === true) {
+    return true;
+  }
+
+  return (
+    status?.isLiveInputActive === true ||
+    LIVE_RENDER_INTENT_UI_STATES.has(liveInputUiState)
+  );
+}
+
+export function applyLiveInputRenderIntent(
+  featureFrame,
+  { status, liveInputUiState, liveControlSignal } = {
+    status: null,
+    liveInputUiState: null,
+    liveControlSignal: null,
+  },
+) {
+  if (!featureFrame) {
+    return featureFrame;
+  }
+
+  const isLiveInputActive = shouldApplyLiveInputRenderIntent({
+    status,
+    liveInputUiState,
+    liveControlSignal,
+  });
+  if (featureFrame.isLiveInputActive === isLiveInputActive) {
+    return featureFrame;
+  }
+
+  return {
+    ...featureFrame,
+    isLiveInputActive,
+  };
 }
 
 function storeComposedAnalysisResult(

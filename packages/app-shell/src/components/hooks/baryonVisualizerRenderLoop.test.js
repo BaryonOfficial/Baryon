@@ -5,6 +5,7 @@ import {
 } from "./baryonVisualizerRuntimeState.js";
 import { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 import {
+  applyLiveInputRenderIntent,
   buildPerformanceHudSnapshot,
   getEffectiveAdaptiveRenderScale,
   publishDevtoolsSnapshots,
@@ -125,6 +126,48 @@ function assertAdaptiveRecoveryBlocked(runtimeDiagnostics, blockedReason) {
     blockedReason,
   );
 }
+
+test("marks idle frames as live while live start is pending", () => {
+  const featureFrame = {
+    fieldState: "idle",
+    isLiveInputActive: false,
+    sourceMode: "silent",
+  };
+
+  const resolvedFrame = applyLiveInputRenderIntent(featureFrame, {
+    status: { isLiveInputActive: false },
+    liveInputUiState: "idle",
+    liveControlSignal: { desiredActive: true },
+  });
+
+  expect(resolvedFrame).not.toBe(featureFrame);
+  expect(resolvedFrame).toMatchObject({
+    fieldState: "idle",
+    isLiveInputActive: true,
+    sourceMode: "silent",
+  });
+});
+
+test("marks frames as not live after live stop intent", () => {
+  const featureFrame = {
+    fieldState: "idle",
+    isLiveInputActive: true,
+    sourceMode: "live",
+  };
+
+  const resolvedFrame = applyLiveInputRenderIntent(featureFrame, {
+    status: { isLiveInputActive: false },
+    liveInputUiState: "idle",
+    liveControlSignal: { desiredActive: false },
+  });
+
+  expect(resolvedFrame).not.toBe(featureFrame);
+  expect(resolvedFrame).toMatchObject({
+    fieldState: "idle",
+    isLiveInputActive: false,
+    sourceMode: "live",
+  });
+});
 
 function createResolveFeatureFrameHarness(overrides = {}) {
   return {

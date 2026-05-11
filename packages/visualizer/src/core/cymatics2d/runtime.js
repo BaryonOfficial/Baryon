@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { REACTIVITY_DEFAULTS } from "../../defaults.js";
 import { getBoundaryModeFromValue } from "../modeFamily.js";
 import { isFieldDrivenState } from "../fieldState.js";
+import { resolveIdleOverlayVisible } from "../idleLogoVisibility.js";
 
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
 const RESPONSE_ATTACK = 7;
@@ -125,6 +126,7 @@ function buildCymatics2dDebugSnapshot(runtimeState, featureFrame, fieldState) {
     sliceVelocity: runtimeState.sliceVelocity ?? 0,
     volumeVisible: runtimeState.volumeMesh.visible,
     idleOverlayVisible: runtimeState.idleOverlay.visible,
+    idleLogoSuppressedForLive: runtimeState.idleLogoSuppressedForLive === true,
   };
 }
 
@@ -327,7 +329,11 @@ export function tickCymatics2dRuntime(
   );
 
   volumeMesh.visible = fieldDriven;
-  idleOverlay.visible = !fieldDriven;
+  idleOverlay.visible = resolveIdleOverlayVisible(
+    runtimeState,
+    featureFrame,
+    fieldDriven,
+  );
 
   const cymatics2dDebug = buildCymatics2dDebugSnapshot(
     runtimeState,

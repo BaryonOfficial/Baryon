@@ -478,6 +478,93 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.modeSlotCount).toBe(0);
   });
 
+  it("suppresses the idle overlay during live input and restores it after stop", () => {
+    const runtimeState = createRuntimeState();
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        isLiveInputActive: true,
+        averageAmplitude: 24,
+        backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+        detailSlots: new Float32Array(32),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array(4),
+        transientEnergy: 0.1,
+        spectralCentroid: 0.2,
+        spectralFlux: 0.1,
+        structureSignal: 0.6,
+        energySignal: 0.5,
+        changeSignal: 0.2,
+        pulseSignal: 0.1,
+      },
+      1,
+      1 / 60,
+    );
+
+    expect(runtimeState.idleOverlay.visible).toBe(false);
+    expect(runtimeState.idleLogoSuppressedForLive).toBe(true);
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "idle",
+        isLiveInputActive: true,
+        averageAmplitude: 0,
+        backboneSlots: new Float32Array(32),
+        detailSlots: new Float32Array(32),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array(4),
+        transientEnergy: 0,
+        spectralCentroid: 0,
+        spectralFlux: 0,
+        structureSignal: 0,
+        energySignal: 0,
+        changeSignal: 0,
+        pulseSignal: 0,
+      },
+      2,
+      1 / 60,
+    );
+
+    expect(runtimeState.volumeMesh.visible).toBe(false);
+    expect(runtimeState.idleOverlay.visible).toBe(false);
+    expect(runtimeState.debugSnapshot.idleOverlayVisible).toBe(false);
+    expect(runtimeState.debugSnapshot.idleLogoSuppressedForLive).toBe(true);
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "idle",
+        isLiveInputActive: false,
+        sourceMode: "live",
+        averageAmplitude: 0,
+        backboneSlots: new Float32Array(32),
+        detailSlots: new Float32Array(32),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array(4),
+        transientEnergy: 0,
+        spectralCentroid: 0,
+        spectralFlux: 0,
+        structureSignal: 0,
+        energySignal: 0,
+        changeSignal: 0,
+        pulseSignal: 0,
+      },
+      3,
+      1 / 60,
+    );
+
+    expect(runtimeState.volumeMesh.visible).toBe(false);
+    expect(runtimeState.idleOverlay.visible).toBe(true);
+    expect(runtimeState.debugSnapshot.idleOverlayVisible).toBe(true);
+    expect(runtimeState.debugSnapshot.idleLogoSuppressedForLive).toBe(false);
+  });
+
   it("switches to cached field evaluation after a compute-backed rebuild settles", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     const renderer = {

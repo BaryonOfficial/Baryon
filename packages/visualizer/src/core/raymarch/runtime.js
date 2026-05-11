@@ -37,6 +37,7 @@ import {
   setRaymarchCavityGeometry,
   setRaymarchFieldEvaluationMode,
 } from "./material.js";
+import { resolveIdleOverlayVisible } from "../idleLogoVisibility.js";
 
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
 const RESPONSE_ATTACK = 7;
@@ -492,6 +493,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     ),
     volumeVisible: runtimeState.volumeMesh.visible,
     idleOverlayVisible: runtimeState.idleOverlay.visible,
+    idleLogoSuppressedForLive: runtimeState.idleLogoSuppressedForLive === true,
   };
 }
 
@@ -943,7 +945,11 @@ export function tickRaymarchRuntime(
     uniforms.uDensityAbsorption.value =
       uniforms.uDensityGain.value * uniforms.uAbsorption.value;
     volumeMesh.visible = false;
-    idleOverlay.visible = true;
+    idleOverlay.visible = resolveIdleOverlayVisible(
+      runtimeState,
+      featureFrame,
+      fieldDriven,
+    );
     publishRaymarchRuntimeAuditSnapshot(runtimeState, featureFrame, fieldState);
     return;
   }
@@ -1115,7 +1121,11 @@ export function tickRaymarchRuntime(
   );
 
   volumeMesh.visible = fieldDriven;
-  idleOverlay.visible = !fieldDriven;
+  idleOverlay.visible = resolveIdleOverlayVisible(
+    runtimeState,
+    featureFrame,
+    fieldDriven,
+  );
   publishRaymarchRuntimeAuditSnapshot(runtimeState, featureFrame, fieldState);
 }
 
