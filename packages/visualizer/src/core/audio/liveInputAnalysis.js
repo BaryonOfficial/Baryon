@@ -113,9 +113,10 @@ export function normalizeResolvedLiveInputAnalysisClass(value) {
  */
 export function normalizeLiveInputAnalysisOverrides(overrides) {
   if (!overrides || typeof overrides !== "object" || Array.isArray(overrides)) {
-    return {};
+    return /** @type {Record<string, ResolvedLiveInputAnalysisClass>} */ ({});
   }
 
+  /** @type {Record<string, ResolvedLiveInputAnalysisClass>} */
   const normalizedOverrides = {};
   for (const [deviceId, analysisClass] of Object.entries(overrides)) {
     const normalizedAnalysisClass =

@@ -104,6 +104,7 @@ function normalizeLegacyPerformanceProfile(raw) {
  * @returns {Record<string, unknown>}
  */
 export function serializeControls(controls, definitions) {
+  /** @type {Record<string, unknown>} */
   const serialized = {};
 
   for (const definition of definitions) {
