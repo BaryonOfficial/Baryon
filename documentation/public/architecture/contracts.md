@@ -34,6 +34,27 @@ When a bug appears near this seam, determine whether the issue is:
 
 Do not skip that diagnosis step.
 
+### Spectral Light Color Contract
+
+Spectral Light color is part of audio interpretation when it is implemented. It
+must be produced before the render/runtime boundary and carried through the
+render-facing modal color slots, not reconstructed from raw FFT bins inside the
+renderer.
+
+The intended shape is:
+
+- modal promotion decides which frequencies become render-facing structure
+- Spectral Light colors only those promoted modes
+- renderers spatially mix modal colors using the same modal fields that define
+  cymatic geometry
+- a color value must not independently promote a mode
+- the main render path must not add a global Spectral Light fallback tint
+
+The current design brief and technical spec live in
+[`documentation/internal/reference/spectral-light-color-mode-brief.md`](../../internal/reference/spectral-light-color-mode-brief.md)
+and
+[`documentation/internal/reference/spectral-light-color-mode-spec.tex`](../../internal/reference/spectral-light-color-mode-spec.tex).
+
 ## Internal Optimization Boundary: Audio Engine Transport Frames
 
 The worker-backed audio feature engine uses a transport frame built by:
