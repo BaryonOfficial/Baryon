@@ -37,7 +37,7 @@ function makeState(amplitudes) {
     fundamentalConfidence: 0,
     analysisEngine: "none",
     uniqueModeCount: 0,
-    chromesthesiaComponents: [],
+    spectralLightComponents: [],
   };
 }
 
@@ -104,7 +104,7 @@ describe("decayModalStack", () => {
     expect(state.fundamentalConfidence).toBe(0);
     expect(state.analysisEngine).toBe("none");
     expect(state.uniqueModeCount).toBe(0);
-    expect(state.chromesthesiaComponents).toEqual([]);
+    expect(state.spectralLightComponents).toEqual([]);
   });
 });
 
@@ -165,7 +165,7 @@ describe("blendModalStack", () => {
       analysisEngine: "none",
       uniqueModeCount: entries.length,
       lastStableAt: 0,
-      chromesthesiaComponents: [],
+      spectralLightComponents: [],
       latchedFundamentalHz: 0,
       latchedFundamentalConfidence: 0,
       latchHoldFrames: 0,

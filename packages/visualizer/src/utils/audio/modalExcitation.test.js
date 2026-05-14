@@ -18,7 +18,6 @@ import {
   createSineToneFixture,
   createVocalLikeFixture,
 } from "./audioFixtures.js";
-import { pitchClassToHue } from "./chromesthesia.js";
 
 const FFT_SIZE = 4096;
 const SAMPLE_RATE = 44100;
@@ -81,7 +80,7 @@ function createPreparedInputs({
   rms = 0.2,
   radius = 3,
   featureState = createAudioFeatureState(),
-  includeChromesthesia = true,
+  includeSpectralLight = true,
 }) {
   return prepareAudioFeatureFrameInputs({
     analysisSnapshot: {
@@ -98,7 +97,7 @@ function createPreparedInputs({
     cavityGeometry,
     status,
     frameTimeMs,
-    includeChromesthesia,
+    includeSpectralLight,
   });
 }
 
@@ -218,7 +217,7 @@ describe("modal excitation structural state", () => {
     expect(secondStructural.structuralMetrics.driveSource).toBe("time-domain");
   });
 
-  it("reports canonical chromesthesia components for modal-excitation color", () => {
+  it("reports canonical Spectral Light components for modal-excitation color", () => {
     const baseState = createModalExcitationState(16);
     const preparedInputs = createPreparedInputs({
       frameTimeMs: 0,
@@ -236,26 +235,26 @@ describe("modal excitation structural state", () => {
     });
 
     const component =
-      structural.backboneStateSource.chromesthesiaComponents[0] ??
-      structural.detailStateSource.chromesthesiaComponents[0];
+      structural.backboneStateSource.spectralLightComponents[0] ??
+      structural.detailStateSource.spectralLightComponents[0];
 
     expect(component).toMatchObject({
       frequency: expect.any(Number),
       familyFrequency: expect.any(Number),
-      noteName: expect.any(String),
-      pitchClass: expect.any(Number),
-      octave: expect.any(Number),
+      phase: expect.any(Number),
+      wavelengthNm: expect.any(Number),
       weight: expect.any(Number),
       color: {
         r: expect.any(Number),
         g: expect.any(Number),
         b: expect.any(Number),
       },
-      saturation: expect.any(Number),
-      value: expect.any(Number),
     });
-    expect(component.saturation).toBeGreaterThanOrEqual(0.55);
-    expect(component.value).toBeGreaterThan(0.5);
+    expect(component.phase).toBeGreaterThanOrEqual(0);
+    expect(component.phase).toBeLessThan(1);
+    expect(component.wavelengthNm).toBeGreaterThanOrEqual(380);
+    expect(component.wavelengthNm).toBeLessThanOrEqual(780);
+    expect(component).not.toHaveProperty("pitchClass");
   });
 
   it("keeps tone and chord fixtures stable in display and color slots", () => {
@@ -298,7 +297,7 @@ describe("modal excitation structural state", () => {
     }
   });
 
-  it("passes key-relative context into modal-excitation chromesthesia components", () => {
+  it("keeps Spectral Light independent from key-relative pitch tint", () => {
     const featureState = createAudioFeatureState();
     featureState.analysis.chromaState.keyTonic = 7;
     featureState.analysis.chromaState.keyMode = "major";
@@ -321,22 +320,22 @@ describe("modal excitation structural state", () => {
     });
 
     const components = [
-      ...structural.backboneStateSource.chromesthesiaComponents,
-      ...structural.detailStateSource.chromesthesiaComponents,
+      ...structural.backboneStateSource.spectralLightComponents,
+      ...structural.detailStateSource.spectralLightComponents,
     ].filter((component) => component.weight > 0);
 
     expect(components.length).toBeGreaterThan(0);
     for (const component of components) {
-      expect(component.keyTonic).toBe(7);
-      expect(component.keyMode).toBe("major");
-      expect(component.keyConfidence).toBe(1);
-      expect(
-        Math.abs(component.hue - pitchClassToHue(component.pitchClass)),
-      ).toBeLessThanOrEqual(0.035);
+      expect(component).not.toHaveProperty("keyTonic");
+      expect(component).not.toHaveProperty("keyMode");
+      expect(component).not.toHaveProperty("keyConfidence");
+      expect(component).not.toHaveProperty("hue");
+      expect(component.phase).toBeGreaterThanOrEqual(0);
+      expect(component.wavelengthNm).toBeGreaterThanOrEqual(380);
     }
   });
 
-  it("clears stale blended colors when chromesthesia turns back on", () => {
+  it("clears stale blended colors when Spectral Light turns back on", () => {
     const state = createModalExcitationState(16);
     state.blendBackbone.slots.set([8, 8, 8, 0.5]);
     state.blendBackbone.colorSlots.set([0, 1, 0, 0.9]);
@@ -346,7 +345,7 @@ describe("modal excitation structural state", () => {
       frameTimeMs: 120,
       fftMagnitudes: fixture.fftMagnitudes,
       timeData: fixture.timeData,
-      includeChromesthesia: true,
+      includeSpectralLight: true,
     });
     preparedInputs.modalExcitationState = state;
     const fastSignal = updateAudioFeatureFastSignalState(preparedInputs);

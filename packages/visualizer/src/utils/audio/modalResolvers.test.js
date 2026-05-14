@@ -78,7 +78,7 @@ describe("modal resolver writers", () => {
       radius: 3,
       capacity: 5,
       spectralCentroid: 0.24,
-      includeChromesthesia: true,
+      includeSpectralLight: true,
     });
     const actual = writeModalSlotsFromFundamental(createModalTargetBuild(5), {
       frequency: 110,
@@ -89,7 +89,7 @@ describe("modal resolver writers", () => {
       radius: 3,
       capacity: 5,
       spectralCentroid: 0.24,
-      includeChromesthesia: true,
+      includeSpectralLight: true,
     });
 
     expectTargetBuildToMatch(actual, expected);
@@ -115,7 +115,7 @@ describe("modal resolver writers", () => {
       capacity: 6,
       slotLimit: 6,
       spectralCentroid: 0.28,
-      includeChromesthesia: true,
+      includeSpectralLight: true,
       peaks,
     });
     const actual = writeModalSlotsFromSpectralPeaks(createModalTargetBuild(6), {
@@ -126,7 +126,7 @@ describe("modal resolver writers", () => {
       capacity: 6,
       slotLimit: 6,
       spectralCentroid: 0.28,
-      includeChromesthesia: true,
+      includeSpectralLight: true,
       peaks,
     });
 
@@ -153,7 +153,7 @@ describe("modal resolver writers", () => {
       capacity: 6,
       slotLimit: 6,
       spectralCentroid: 0.31,
-      includeChromesthesia: true,
+      includeSpectralLight: true,
       peaks,
     });
     const actual = writeModalSlotsFromPeakDrivers(createModalTargetBuild(6), {
@@ -164,7 +164,7 @@ describe("modal resolver writers", () => {
       capacity: 6,
       slotLimit: 6,
       spectralCentroid: 0.31,
-      includeChromesthesia: true,
+      includeSpectralLight: true,
       peaks,
       scratchTarget: createModalTargetBuild(6),
     });
@@ -181,7 +181,7 @@ describe("modal resolver writers", () => {
       capacity: 8,
       slotLimit: 8,
       spectralCentroid: 0.18,
-      includeChromesthesia: true,
+      includeSpectralLight: true,
       peaks: [{ frequency: 120, amplitude: 0.92 }],
       scratchTarget: createModalTargetBuild(8),
     });
@@ -198,7 +198,7 @@ describe("modal resolver writers", () => {
       capacity: 8,
       slotLimit: 8,
       spectralCentroid: 0.18,
-      includeChromesthesia: true,
+      includeSpectralLight: true,
       peaks: [{ frequency: 120, amplitude: 0.92 }],
       scratchTarget: createModalTargetBuild(8),
     });
@@ -221,7 +221,7 @@ describe("modal resolver writers", () => {
       capacity: 8,
       slotLimit: 8,
       spectralCentroid: 0.15,
-      includeChromesthesia: true,
+      includeSpectralLight: true,
       peaks: [{ frequency: 60, amplitude: 0.88 }],
       scratchTarget: createModalTargetBuild(8),
     });
@@ -246,7 +246,7 @@ describe("modal resolver writers", () => {
       capacity: 8,
       slotLimit: 8,
       spectralCentroid: 0.2,
-      includeChromesthesia: true,
+      includeSpectralLight: true,
       peaks: [
         { frequency: 60, amplitude: 0.86 },
         { frequency: 600, amplitude: 0.7 },
@@ -290,7 +290,7 @@ describe("legacy peak-driver mapping regression (water physics compensation)", (
       capacity: 12,
       slotLimit: 12,
       spectralCentroid: 0.3,
-      includeChromesthesia: false,
+      includeSpectralLight: false,
       peaks,
       scratchTarget: createModalTargetBuild(12),
     });
@@ -322,7 +322,7 @@ describe("legacy peak-driver mapping regression (water physics compensation)", (
       capacity: 12,
       slotLimit: 12,
       spectralCentroid: 0.25,
-      includeChromesthesia: false,
+      includeSpectralLight: false,
       peaks,
       scratchTarget: createModalTargetBuild(12),
     });
@@ -340,7 +340,7 @@ describe("legacy peak-driver mapping regression (water physics compensation)", (
       capacity: 6,
       slotLimit: 6,
       spectralCentroid: 0.2,
-      includeChromesthesia: false,
+      includeSpectralLight: false,
       peaks: [{ frequency: 440, amplitude: 0.8 }],
       scratchTarget: createModalTargetBuild(6),
     });
@@ -368,7 +368,7 @@ describe("legacy sub-floor residual regression", () => {
       capacity: 6,
       slotLimit: 6,
       spectralCentroid: 0.2,
-      includeChromesthesia: false,
+      includeSpectralLight: false,
       peaks: [{ frequency: 440, amplitude: 0.8 }],
       scratchTarget: createModalTargetBuild(6),
     });
@@ -388,7 +388,7 @@ describe("legacy sub-floor residual regression", () => {
       capacity: 6,
       slotLimit: 6,
       spectralCentroid: 0.1,
-      includeChromesthesia: false,
+      includeSpectralLight: false,
       peaks: [{ frequency: 60, amplitude: 0.8 }],
       scratchTarget: createModalTargetBuild(6),
     });
@@ -422,7 +422,7 @@ describe("legacy spectral peak mapping regression (water physics compensation)",
         capacity: 12,
         slotLimit: 12,
         spectralCentroid: 0.3,
-        includeChromesthesia: false,
+        includeSpectralLight: false,
         peaks,
       },
     );
@@ -462,7 +462,7 @@ describe("legacy compensation no-op preserve-feel regression", () => {
         capacity: 8,
         slotLimit: 8,
         spectralCentroid: 0.22,
-        includeChromesthesia: false,
+        includeSpectralLight: false,
         peaks,
         scratchTarget: createModalTargetBuild(8),
       },
@@ -477,7 +477,7 @@ describe("legacy compensation no-op preserve-feel regression", () => {
       capacity: 8,
       slotLimit: 8,
       spectralCentroid: 0.22,
-      includeChromesthesia: false,
+      includeSpectralLight: false,
       peaks,
       scratchTarget: createModalTargetBuild(8),
     });

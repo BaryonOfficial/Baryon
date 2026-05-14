@@ -83,7 +83,7 @@ function fieldDescriptorsEqual(left, right) {
   );
 }
 
-function chromaDescriptorsEqual(left, right) {
+function spectralLightDescriptorsEqual(left, right) {
   if (!fieldDescriptorsEqual(left, right)) {
     return false;
   }
@@ -123,7 +123,7 @@ function resolveFieldRebuildReason(previousDescriptor, nextDescriptor) {
   return null;
 }
 
-function resolveChromaRebuildReason(previousDescriptor, nextDescriptor) {
+function resolveSpectralLightRebuildReason(previousDescriptor, nextDescriptor) {
   const fieldReason = resolveFieldRebuildReason(
     previousDescriptor,
     nextDescriptor,
@@ -164,7 +164,7 @@ export function createRaymarchFieldCache({
   });
 }
 
-export function createRaymarchChromaCache({
+export function createRaymarchSpectralLightCache({
   resolution = RAYMARCH_FIELD_CACHE_RESOLUTION,
 } = {}) {
   const normalizedResolution = Math.max(8, Math.round(resolution));
@@ -186,8 +186,8 @@ export function disposeRaymarchFieldCache(fieldCache) {
   }
 }
 
-export function disposeRaymarchChromaCache(chromaCache) {
-  disposeRaymarchFieldCache(chromaCache);
+export function disposeRaymarchSpectralLightCache(spectralLightCache) {
+  disposeRaymarchFieldCache(spectralLightCache);
 }
 
 function createCacheTexture(resolution) {
@@ -242,7 +242,7 @@ export function buildRaymarchFieldCacheDescriptor({
   };
 }
 
-export function buildRaymarchChromaCacheDescriptor({
+export function buildRaymarchSpectralLightCacheDescriptor({
   backboneSlots,
   detailSlots,
   backboneColorSlots,
@@ -484,8 +484,8 @@ function createComputeKernel({
   );
 }
 
-function createChromaComputeKernel({
-  chromaCache,
+function createSpectralLightComputeKernel({
+  spectralLightCache,
   backboneModeBuffer,
   detailModeBuffer,
   backboneColorBuffer,
@@ -496,7 +496,7 @@ function createChromaComputeKernel({
   boundaryMode,
   cavityGeometry,
 }) {
-  const { resolution, texture } = chromaCache;
+  const { resolution, texture } = spectralLightCache;
   const uRadius = uniforms.uRadius;
   const backboneActiveCount = int(uniforms.uBackboneModeCount);
   const detailActiveCount = int(uniforms.uDetailModeCount);
@@ -617,7 +617,7 @@ function createChromaComputeKernel({
       ).toWriteOnly();
     });
   })().compute(
-    chromaCache.dispatchSize,
+    spectralLightCache.dispatchSize,
     Array.from(FIELD_CACHE_COMPUTE_WORKGROUP_SIZE),
   );
 }
@@ -660,8 +660,8 @@ function getOrCreateRaymarchFieldCacheComputeNode(
   return computeNode;
 }
 
-function getOrCreateRaymarchChromaCacheComputeNode(
-  chromaCache,
+function getOrCreateRaymarchSpectralLightCacheComputeNode(
+  spectralLightCache,
   {
     backboneModeBuffer,
     detailModeBuffer,
@@ -674,20 +674,20 @@ function getOrCreateRaymarchChromaCacheComputeNode(
     cavityGeometry,
   },
 ) {
-  if (!chromaCache) {
+  if (!spectralLightCache) {
     return null;
   }
 
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
   const nodeKey = `${normalizedCavityGeometry}:${normalizedBoundaryMode}`;
-  const cachedNode = chromaCache.computeNodesByKey?.[nodeKey];
+  const cachedNode = spectralLightCache.computeNodesByKey?.[nodeKey];
   if (cachedNode) {
     return cachedNode;
   }
 
-  const computeNode = createChromaComputeKernel({
-    chromaCache,
+  const computeNode = createSpectralLightComputeKernel({
+    spectralLightCache,
     backboneModeBuffer,
     detailModeBuffer,
     backboneColorBuffer,
@@ -698,7 +698,7 @@ function getOrCreateRaymarchChromaCacheComputeNode(
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
   });
-  chromaCache.computeNodesByKey[nodeKey] = computeNode;
+  spectralLightCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
 }
 
@@ -783,8 +783,8 @@ export function enqueueRaymarchFieldCacheRebuild(
   };
 }
 
-export function enqueueRaymarchChromaCacheRebuild(
-  chromaCache,
+export function enqueueRaymarchSpectralLightCacheRebuild(
+  spectralLightCache,
   renderer,
   descriptor,
   rebuildReason,
@@ -798,64 +798,67 @@ export function enqueueRaymarchChromaCacheRebuild(
     uniforms,
   },
 ) {
-  if (!chromaCache) {
+  if (!spectralLightCache) {
     return { enqueued: false, reason: "unavailable" };
   }
 
-  if (chromaCache.backend === "unavailable") {
+  if (spectralLightCache.backend === "unavailable") {
     return { enqueued: false, reason: "unavailable" };
   }
 
   if (!renderer || typeof renderer.computeAsync !== "function") {
-    chromaCache.backend = "unavailable";
-    chromaCache.ready = false;
-    chromaCache.rebuildPending = false;
-    chromaCache.lastError = "Renderer computeAsync unavailable";
-    chromaCache.lastRebuildReason = "unavailable";
+    spectralLightCache.backend = "unavailable";
+    spectralLightCache.ready = false;
+    spectralLightCache.rebuildPending = false;
+    spectralLightCache.lastError = "Renderer computeAsync unavailable";
+    spectralLightCache.lastRebuildReason = "unavailable";
     return { enqueued: false, reason: "unavailable" };
   }
 
-  const computeNode = getOrCreateRaymarchChromaCacheComputeNode(chromaCache, {
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneColorBuffer,
-    detailColorBuffer,
-    backboneCapacity,
-    detailCapacity,
-    uniforms,
-    boundaryMode: descriptor.boundaryMode,
-    cavityGeometry: descriptor.cavityGeometry,
-  });
+  const computeNode = getOrCreateRaymarchSpectralLightCacheComputeNode(
+    spectralLightCache,
+    {
+      backboneModeBuffer,
+      detailModeBuffer,
+      backboneColorBuffer,
+      detailColorBuffer,
+      backboneCapacity,
+      detailCapacity,
+      uniforms,
+      boundaryMode: descriptor.boundaryMode,
+      cavityGeometry: descriptor.cavityGeometry,
+    },
+  );
   if (!computeNode) {
     return { enqueued: false, reason: "unavailable" };
   }
 
   const hadReadyCache = Boolean(
-    chromaCache.ready && chromaCache.activeDescriptor,
+    spectralLightCache.ready && spectralLightCache.activeDescriptor,
   );
-  chromaCache.backend = "compute";
-  chromaCache.ready = hadReadyCache;
-  chromaCache.rebuildPending = true;
-  chromaCache.lastError = null;
+  spectralLightCache.backend = "compute";
+  spectralLightCache.ready = hadReadyCache;
+  spectralLightCache.rebuildPending = true;
+  spectralLightCache.lastError = null;
   const submission = Promise.resolve()
     .then(() => renderer.computeAsync(computeNode))
     .then(
       () => {
-        chromaCache.activeDescriptor = descriptor;
-        chromaCache.ready = true;
-        chromaCache.rebuildPending = false;
-        chromaCache.lastError = null;
-        chromaCache.backend = "compute";
-        chromaCache.rebuildCount += 1;
-        chromaCache.lastRebuildReason = rebuildReason;
+        spectralLightCache.activeDescriptor = descriptor;
+        spectralLightCache.ready = true;
+        spectralLightCache.rebuildPending = false;
+        spectralLightCache.lastError = null;
+        spectralLightCache.backend = "compute";
+        spectralLightCache.rebuildCount += 1;
+        spectralLightCache.lastRebuildReason = rebuildReason;
       },
       (error) => {
-        chromaCache.backend = "unavailable";
-        chromaCache.ready = false;
-        chromaCache.rebuildPending = false;
-        chromaCache.lastError =
+        spectralLightCache.backend = "unavailable";
+        spectralLightCache.ready = false;
+        spectralLightCache.rebuildPending = false;
+        spectralLightCache.lastError =
           error instanceof Error ? error.message : String(error);
-        chromaCache.lastRebuildReason = "unavailable";
+        spectralLightCache.lastRebuildReason = "unavailable";
       },
     );
 
@@ -896,17 +899,20 @@ export function isRaymarchFieldCacheReadyForDescriptor(fieldCache, descriptor) {
   );
 }
 
-export function shouldRebuildRaymarchChromaCache(chromaCache, descriptor) {
-  if (!chromaCache) {
+export function shouldRebuildRaymarchSpectralLightCache(
+  spectralLightCache,
+  descriptor,
+) {
+  if (!spectralLightCache) {
     return { needsRebuild: false, reason: "unavailable" };
   }
 
-  if (chromaCache.rebuildPending) {
+  if (spectralLightCache.rebuildPending) {
     return { needsRebuild: false, reason: "pending" };
   }
 
-  const rebuildReason = resolveChromaRebuildReason(
-    chromaCache.activeDescriptor,
+  const rebuildReason = resolveSpectralLightRebuildReason(
+    spectralLightCache.activeDescriptor,
     descriptor,
   );
 
@@ -916,13 +922,16 @@ export function shouldRebuildRaymarchChromaCache(chromaCache, descriptor) {
   };
 }
 
-export function isRaymarchChromaCacheReadyForDescriptor(
-  chromaCache,
+export function isRaymarchSpectralLightCacheReadyForDescriptor(
+  spectralLightCache,
   descriptor,
 ) {
   return Boolean(
-    chromaCache?.ready &&
-    !chromaCache?.rebuildPending &&
-    chromaDescriptorsEqual(chromaCache.activeDescriptor, descriptor),
+    spectralLightCache?.ready &&
+    !spectralLightCache?.rebuildPending &&
+    spectralLightDescriptorsEqual(
+      spectralLightCache.activeDescriptor,
+      descriptor,
+    ),
   );
 }

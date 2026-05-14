@@ -73,7 +73,7 @@ vi.mock("../../devtools/testReady.js", () => ({
 }));
 
 vi.mock("./controlInvalidation.js", () => ({
-  shouldSkipChromesthesiaStaticColorInvalidation: () => false,
+  shouldSkipSpectralStaticColorInvalidation: () => false,
 }));
 
 vi.mock("./baryonVisualizerRuntimeState.js", () => ({

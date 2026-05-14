@@ -67,7 +67,7 @@ function clamp01(value) {
   return clamp(value, 0, 1);
 }
 
-function derivePerceptualChromesthesiaMix(mix) {
+function derivePerceptualSpectralMix(mix) {
   return Math.sqrt(clamp01(mix));
 }
 
@@ -150,7 +150,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "volumeColor",
     "surfaceColor",
     "colorMode",
-    "chromesthesiaMix",
+    "spectralMix",
     "zeroPointPrecision",
     "structureMin",
     "structureMax",
@@ -277,12 +277,11 @@ function applyCommonVisualizationControls(runtimeState, controls) {
   const stepBudget = normalizeStepBudget(
     controls.raymarchSteps ?? STEP_REFERENCE,
   );
-  const colorMode =
-    controls.colorMode === "chromesthesia" ? "chromesthesia" : "static";
-  const chromesthesiaMix =
-    colorMode === "chromesthesia"
-      ? derivePerceptualChromesthesiaMix(
-          controls.chromesthesiaMix ?? RENDER_DEFAULTS.chromesthesiaMix,
+  const colorMode = controls.colorMode === "spectral" ? "spectral" : "static";
+  const spectralMix =
+    colorMode === "spectral"
+      ? derivePerceptualSpectralMix(
+          controls.spectralMix ?? RENDER_DEFAULTS.spectralMix,
         )
       : 0;
   const boundaryMode = normalizeBoundaryMode(controls.boundaryMode);
@@ -295,7 +294,7 @@ function applyCommonVisualizationControls(runtimeState, controls) {
 
   uniforms.uColor.value.set(controls.volumeColor);
   uniforms.uSurfaceColor.value.set(controls.surfaceColor);
-  uniforms.uChromesthesiaMix.value = chromesthesiaMix;
+  uniforms.uSpectralMix.value = spectralMix;
   uniforms.uThreshold.value = controls.zeroPointPrecision;
   uniforms.uStructureMin.value = controls.structureMin;
   uniforms.uStructureMax.value = controls.structureMax;
@@ -335,10 +334,10 @@ function applyCommonVisualizationControls(runtimeState, controls) {
     lowStepBloomGuard: deriveLowStepBloomGuard(stepBudget),
   };
   applyEffectiveRaymarchStepBudget(runtimeState, controls, stepBudget);
-  runtimeState.chromesthesia = {
-    ...(runtimeState.chromesthesia ?? {}),
+  runtimeState.spectralLight = {
+    ...(runtimeState.spectralLight ?? {}),
     colorMode,
-    chromesthesiaMix,
+    spectralMix,
   };
 
   if (runtimeState.idleOverlay) {
@@ -356,7 +355,7 @@ function applyCommonVisualizationControls(runtimeState, controls) {
     idleLogoAlpha,
     stepBudget,
     colorMode,
-    chromesthesiaMix,
+    spectralMix,
     boundaryMode,
     requestedCavityGeometry,
     effectiveCavityGeometry,
@@ -400,7 +399,7 @@ function buildVisualizationControlSnapshot({
   uniforms,
   idleLogoAlpha,
   colorMode,
-  chromesthesiaMix,
+  spectralMix,
   boundaryMode,
   requestedCavityGeometry,
   effectiveCavityGeometry,
@@ -411,7 +410,7 @@ function buildVisualizationControlSnapshot({
       volumeColor: controls.volumeColor,
       surfaceColor: controls.surfaceColor,
       colorMode,
-      chromesthesiaMix,
+      spectralMix,
       boundaryMode,
       requestedCavityGeometry,
       effectiveCavityGeometry,
@@ -441,7 +440,7 @@ export function applyRaymarchControls(runtimeState, controls) {
     uniforms,
     idleLogoAlpha,
     colorMode,
-    chromesthesiaMix,
+    spectralMix,
     boundaryMode,
     requestedCavityGeometry,
     effectiveCavityGeometry,
@@ -460,7 +459,7 @@ export function applyRaymarchControls(runtimeState, controls) {
     uniforms,
     idleLogoAlpha,
     colorMode,
-    chromesthesiaMix,
+    spectralMix,
     boundaryMode,
     requestedCavityGeometry,
     effectiveCavityGeometry,
@@ -481,7 +480,7 @@ export function applyCymatics2dControls(runtimeState, controls) {
     uniforms,
     idleLogoAlpha,
     colorMode,
-    chromesthesiaMix,
+    spectralMix,
     boundaryMode,
     requestedCavityGeometry,
     effectiveCavityGeometry,
@@ -493,7 +492,7 @@ export function applyCymatics2dControls(runtimeState, controls) {
     uniforms,
     idleLogoAlpha,
     colorMode,
-    chromesthesiaMix,
+    spectralMix,
     boundaryMode,
     requestedCavityGeometry,
     effectiveCavityGeometry,

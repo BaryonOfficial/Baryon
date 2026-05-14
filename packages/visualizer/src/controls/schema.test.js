@@ -38,7 +38,7 @@ const EXPECTED_CONTROL_KEYS = [
   "volumeColor",
   "surfaceColor",
   "colorMode",
-  "chromesthesiaMix",
+  "spectralMix",
   "holographicIntensity",
   "holographicShift",
   "holographicFresnelPower",
@@ -96,6 +96,8 @@ describe("control schema", () => {
   it("defaults the raymarch surface to the cyan laser baseline", () => {
     const state = createControlState();
 
+    expect(state.colorMode).toBe("spectral");
+    expect(state.spectralMix).toBe(1);
     expect(state.volumeColor).toBe("#56d7ff");
     expect(state.surfaceColor).toBe("#f7fdff");
     expect(state.zeroPointPrecision).toBe(0.026);
@@ -234,6 +236,26 @@ describe("control schema", () => {
     }
   });
 
+  it("exposes Spectral Light as the live dynamic color mode", () => {
+    const colorMode = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "colorMode",
+    );
+    const spectralMix = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "spectralMix",
+    );
+
+    expect(colorMode?.binding?.options).toEqual({
+      Static: "static",
+      Spectral: "spectral",
+    });
+    expect(colorMode?.runtimePath).toBe("runtime.spectralLight.colorMode");
+    expect(spectralMix).toMatchObject({
+      label: "Color Mix",
+      defaultValue: 1,
+      runtimePath: "runtime.uniforms.uSpectralMix.value",
+    });
+  });
+
   it("defaults current controls to the raymarch method surface", () => {
     const methodControls = getControlsForMethod(DEFAULT_VISUALIZATION_METHOD);
 
@@ -291,7 +313,7 @@ describe("control schema", () => {
     ).toEqual([
       "volumeColor",
       "surfaceColor",
-      "chromesthesiaMix",
+      "spectralMix",
       "holographicIntensity",
       "holographicShift",
       "holographicFresnelPower",
@@ -401,7 +423,7 @@ describe("control schema", () => {
       getControlsForFolder("Color", VISUALIZATION_METHODS.cymatics2d).map(
         (definition) => definition.key,
       ),
-    ).toEqual(["volumeColor", "surfaceColor", "chromesthesiaMix"]);
+    ).toEqual(["volumeColor", "surfaceColor", "spectralMix"]);
     expect(
       getControlsForFolder("Logo", VISUALIZATION_METHODS.cymatics2d).map(
         (definition) => definition.key,

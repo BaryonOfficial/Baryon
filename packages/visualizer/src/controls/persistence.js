@@ -94,6 +94,26 @@ function normalizeLegacyPerformanceProfile(raw) {
   };
 }
 
+function normalizeLegacySpectralLight(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  const next = { ...raw };
+  if (raw.colorMode === "chromesthesia") {
+    next.colorMode = "spectral";
+  }
+
+  if (
+    !Object.prototype.hasOwnProperty.call(next, "spectralMix") &&
+    typeof raw.chromesthesiaMix === "number"
+  ) {
+    next.spectralMix = clamp(raw.chromesthesiaMix, 0, 1);
+  }
+
+  return next;
+}
+
 /**
  * Serialize a control state object to a plain JSON-safe object.
  * Only live (non-debug) controls are included so that audit/dev settings
@@ -136,8 +156,10 @@ export function deserializeControls(raw, definitions) {
   const result = Object.fromEntries(
     definitions.map((d) => [d.key, d.defaultValue]),
   );
-  const normalizedRaw = normalizeLegacyLiveInputAnalysis(
-    normalizeLegacyPerformanceProfile(normalizeLegacyReactivity(raw)),
+  const normalizedRaw = normalizeLegacySpectralLight(
+    normalizeLegacyLiveInputAnalysis(
+      normalizeLegacyPerformanceProfile(normalizeLegacyReactivity(raw)),
+    ),
   );
   if (
     !normalizedRaw ||

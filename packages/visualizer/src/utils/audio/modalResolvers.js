@@ -14,8 +14,8 @@ import {
 } from "./modalStack.js";
 import {
   collapseFrequencyToNearestFamily,
-  createChromesthesiaColor,
-} from "./chromesthesia.js";
+  createSpectralLightColor,
+} from "./spectralLight.js";
 import { SPECTRAL_MODAL_POLICY } from "./policy.js";
 
 export const HARMONIC_ORDERS = SPECTRAL_MODAL_POLICY.harmonicOrders;
@@ -56,7 +56,6 @@ function buildColorComponent({
   frequency,
   strength,
   harmonicConfidence,
-  spectralCentroid = 0,
   families,
 }) {
   const familyFrequency = collapseFrequencyToNearestFamily(
@@ -64,11 +63,10 @@ function buildColorComponent({
     strength,
     families,
   );
-  const color = createChromesthesiaColor({
+  const color = createSpectralLightColor({
     frequency: familyFrequency,
     strength,
     harmonicConfidence,
-    spectralCentroid,
   });
 
   if (color.weight > 0) {
@@ -82,9 +80,8 @@ function buildColorComponent({
     frequency,
     familyFrequency,
     weight: color.weight,
-    pitchClass: color.pitchClass,
-    octave: color.octave,
-    noteName: color.noteName,
+    phase: color.phase,
+    wavelengthNm: color.wavelengthNm,
     rgb: color.rgb,
   };
 }
@@ -127,9 +124,11 @@ export function writeModalSlotsFromFundamental(
     capacity,
     cavityGeometry = "rectangular",
     spectralCentroid = 0,
-    includeChromesthesia = true,
+    includeSpectralLight = true,
   },
 ) {
+  // Kept in the resolver input contract; Spectral Light color is folded per mode.
+  void spectralCentroid;
   resetModalTargetBuild(target);
   const slotLimit = Math.min(
     capacity,
@@ -142,8 +141,8 @@ export function writeModalSlotsFromFundamental(
   const harmonicSupport = target.harmonicSupport;
   const seenModes = new Set();
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
-  const colorFamilies = includeChromesthesia ? [] : null;
-  const components = includeChromesthesia ? [] : null;
+  const colorFamilies = includeSpectralLight ? [] : null;
+  const components = includeSpectralLight ? [] : null;
   let primarySupport = sampleFFTAmplitudeForFrequency(
     frequency,
     fftMagnitudes,
@@ -205,14 +204,13 @@ export function writeModalSlotsFromFundamental(
       radius,
       count: familyLimit * 3,
     });
-    const colorComponent = includeChromesthesia
+    const colorComponent = includeSpectralLight
       ? buildColorComponent({
           frequency: harmonicFrequency,
           strength: clamp01(support * attenuation),
           harmonicConfidence: clamp01(
             i === 0 ? confidence : Math.max(0.5, confidence),
           ),
-          spectralCentroid,
           families: colorFamilies,
         })
       : null;
@@ -250,7 +248,7 @@ export function writeModalSlotsFromFundamental(
   }
 
   target.uniqueModeCount = slotIndex;
-  target.components = includeChromesthesia
+  target.components = includeSpectralLight
     ? limitColorComponents(components)
     : [];
   return target;
@@ -276,11 +274,13 @@ export function writeModalSlotsFromSpectralPeaks(
     slotLimit = null,
     peakFamilyCount = SPECTRAL_PEAK_FAMILY_COUNT,
     spectralCentroid = 0,
-    includeChromesthesia = true,
+    includeSpectralLight = true,
     peaks = null,
     peakOptions = undefined,
   },
 ) {
+  // Kept in the resolver input contract; Spectral Light color is folded per mode.
+  void spectralCentroid;
   const maxSlots =
     slotLimit ??
     Math.min(
@@ -305,8 +305,8 @@ export function writeModalSlotsFromSpectralPeaks(
   const harmonicSupport = target.harmonicSupport;
   const seenModes = new Set();
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
-  const colorFamilies = includeChromesthesia ? [] : null;
-  const components = includeChromesthesia ? [] : null;
+  const colorFamilies = includeSpectralLight ? [] : null;
+  const components = includeSpectralLight ? [] : null;
   const legacyRadius = getLegacyAnalysisRadius(radius);
 
   let slotIndex = 0;
@@ -318,12 +318,11 @@ export function writeModalSlotsFromSpectralPeaks(
       radius: legacyRadius,
       count: familyLimit * 3,
     });
-    const colorComponent = includeChromesthesia
+    const colorComponent = includeSpectralLight
       ? buildColorComponent({
           frequency: peak.frequency,
           strength: clamp01(peak.amplitude),
           harmonicConfidence: clamp01(peak.amplitude * 0.8 + 0.2),
-          spectralCentroid,
           families: colorFamilies,
         })
       : null;
@@ -372,7 +371,7 @@ export function writeModalSlotsFromSpectralPeaks(
   }
 
   target.uniqueModeCount = slotIndex;
-  target.components = includeChromesthesia
+  target.components = includeSpectralLight
     ? limitColorComponents(components)
     : [];
   return target;
@@ -515,7 +514,7 @@ export function writeModalSlotsFromPeakDrivers(
     slotLimit = BACKBONE_STACK_SLOTS,
     minimumConfidence = 0.45,
     spectralCentroid = 0,
-    includeChromesthesia = true,
+    includeSpectralLight = true,
     peaks = null,
     peakOptions = undefined,
     scratchTarget = null,
@@ -591,7 +590,7 @@ export function writeModalSlotsFromPeakDrivers(
         capacity: resolvedCapacity,
         cavityGeometry,
         spectralCentroid,
-        includeChromesthesia,
+        includeSpectralLight,
       });
 
       if (Array.isArray(build.components)) {

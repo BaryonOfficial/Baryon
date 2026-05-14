@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildRaymarchChromaCacheDescriptor,
+  buildRaymarchSpectralLightCacheDescriptor,
   buildRaymarchFieldCacheDescriptor,
-  createRaymarchChromaCache,
+  createRaymarchSpectralLightCache,
   createRaymarchFieldCache,
   evaluateRaymarchFieldCachePoint,
-  isRaymarchChromaCacheReadyForDescriptor,
-  shouldRebuildRaymarchChromaCache,
+  isRaymarchSpectralLightCacheReadyForDescriptor,
+  shouldRebuildRaymarchSpectralLightCache,
   shouldRebuildRaymarchFieldCache,
 } from "./fieldCache.js";
 
@@ -168,9 +168,11 @@ describe("fieldCache", () => {
     expect(second).toEqual(first);
   });
 
-  it("detects chroma rebuilds when color slots change", () => {
-    const chromaCache = createRaymarchChromaCache({ resolution: 8 });
-    const first = buildRaymarchChromaCacheDescriptor({
+  it("detects Spectral Light rebuilds when color slots change", () => {
+    const spectralLightCache = createRaymarchSpectralLightCache({
+      resolution: 8,
+    });
+    const first = buildRaymarchSpectralLightCacheDescriptor({
       backboneSlots: new Float32Array([1, 2, 3, 0.9]),
       detailSlots: new Float32Array([2, 2, 4, 0.2]),
       backboneColorSlots: new Float32Array([1, 0.2, 0.1, 0.9]),
@@ -180,7 +182,7 @@ describe("fieldCache", () => {
       boundaryMode: "neumann",
       radius: 3,
     });
-    const second = buildRaymarchChromaCacheDescriptor({
+    const second = buildRaymarchSpectralLightCacheDescriptor({
       backboneSlots: new Float32Array([1, 2, 3, 0.9]),
       detailSlots: new Float32Array([2, 2, 4, 0.2]),
       backboneColorSlots: new Float32Array([0.8, 0.2, 0.1, 0.9]),
@@ -191,16 +193,21 @@ describe("fieldCache", () => {
       radius: 3,
     });
 
-    chromaCache.activeDescriptor = first;
-    const rebuild = shouldRebuildRaymarchChromaCache(chromaCache, second);
+    spectralLightCache.activeDescriptor = first;
+    const rebuild = shouldRebuildRaymarchSpectralLightCache(
+      spectralLightCache,
+      second,
+    );
 
     expect(rebuild.needsRebuild).toBe(true);
     expect(rebuild.reason).toBe("color-slots");
   });
 
-  it("detects chroma rebuilds when modal geometry changes", () => {
-    const chromaCache = createRaymarchChromaCache({ resolution: 8 });
-    const first = buildRaymarchChromaCacheDescriptor({
+  it("detects Spectral Light rebuilds when modal geometry changes", () => {
+    const spectralLightCache = createRaymarchSpectralLightCache({
+      resolution: 8,
+    });
+    const first = buildRaymarchSpectralLightCacheDescriptor({
       backboneSlots: new Float32Array([1, 2, 3, 0.9]),
       detailSlots: new Float32Array([2, 2, 4, 0.2]),
       backboneColorSlots: new Float32Array([1, 0.2, 0.1, 0.9]),
@@ -210,7 +217,7 @@ describe("fieldCache", () => {
       boundaryMode: "neumann",
       radius: 3,
     });
-    const second = buildRaymarchChromaCacheDescriptor({
+    const second = buildRaymarchSpectralLightCacheDescriptor({
       backboneSlots: new Float32Array([1, 3, 3, 0.9]),
       detailSlots: new Float32Array([2, 2, 4, 0.2]),
       backboneColorSlots: new Float32Array([1, 0.2, 0.1, 0.9]),
@@ -221,16 +228,21 @@ describe("fieldCache", () => {
       radius: 3,
     });
 
-    chromaCache.activeDescriptor = first;
-    const rebuild = shouldRebuildRaymarchChromaCache(chromaCache, second);
+    spectralLightCache.activeDescriptor = first;
+    const rebuild = shouldRebuildRaymarchSpectralLightCache(
+      spectralLightCache,
+      second,
+    );
 
     expect(rebuild.needsRebuild).toBe(true);
     expect(rebuild.reason).toBe("mode-slots");
   });
 
-  it("tracks chroma readiness against the full chroma descriptor", () => {
-    const chromaCache = createRaymarchChromaCache({ resolution: 8 });
-    const descriptor = buildRaymarchChromaCacheDescriptor({
+  it("tracks Spectral Light readiness against the full Spectral Light descriptor", () => {
+    const spectralLightCache = createRaymarchSpectralLightCache({
+      resolution: 8,
+    });
+    const descriptor = buildRaymarchSpectralLightCacheDescriptor({
       backboneSlots: new Float32Array([1, 2, 3, 0.9]),
       detailSlots: new Float32Array([2, 2, 4, 0.2]),
       backboneColorSlots: new Float32Array([1, 0.2, 0.1, 0.9]),
@@ -241,20 +253,25 @@ describe("fieldCache", () => {
       radius: 3,
     });
 
-    chromaCache.ready = true;
-    chromaCache.activeDescriptor = descriptor;
+    spectralLightCache.ready = true;
+    spectralLightCache.activeDescriptor = descriptor;
 
     expect(
-      isRaymarchChromaCacheReadyForDescriptor(chromaCache, descriptor),
+      isRaymarchSpectralLightCacheReadyForDescriptor(
+        spectralLightCache,
+        descriptor,
+      ),
     ).toBe(true);
   });
 
-  it("keeps field and chroma compute-node maps separate", () => {
+  it("keeps field and Spectral Light compute-node maps separate", () => {
     const fieldCache = createRaymarchFieldCache({ resolution: 8 });
-    const chromaCache = createRaymarchChromaCache({ resolution: 8 });
+    const spectralLightCache = createRaymarchSpectralLightCache({
+      resolution: 8,
+    });
 
     expect(fieldCache.computeNodesByKey).not.toBe(
-      chromaCache.computeNodesByKey,
+      spectralLightCache.computeNodesByKey,
     );
   });
 

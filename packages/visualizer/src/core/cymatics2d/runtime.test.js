@@ -39,7 +39,7 @@ function createRuntimeState() {
       uTransientEnergy: { value: 0 },
       uSpectralCentroid: { value: 0 },
       uSpectralFlux: { value: 0 },
-      uChromesthesiaMix: { value: 0.65 },
+      uSpectralMix: { value: 0.65 },
       uBandEnergies: { value: new THREE.Vector4() },
       uDensityGain: { value: 2.1 },
       uOpacityGain: { value: 1.3 },

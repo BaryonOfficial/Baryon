@@ -121,7 +121,7 @@ function buildCymatics2dDebugSnapshot(runtimeState, featureFrame, fieldState) {
     boundaryMode: getBoundaryModeFromValue(
       runtimeState.uniforms.uBoundaryMode?.value ?? 1,
     ),
-    chromesthesiaMix: runtimeState.uniforms.uChromesthesiaMix?.value ?? 0,
+    spectralMix: runtimeState.uniforms.uSpectralMix?.value ?? 0,
     slicePosition: runtimeState.uniforms.uSlicePosition?.value ?? 0,
     sliceVelocity: runtimeState.sliceVelocity ?? 0,
     volumeVisible: runtimeState.volumeMesh.visible,
@@ -275,7 +275,7 @@ export function tickCymatics2dRuntime(
   }
   backboneModeBuffer.value.needsUpdate = true;
 
-  if ((uniforms.uChromesthesiaMix?.value ?? 0) > 0) {
+  if ((uniforms.uSpectralMix?.value ?? 0) > 0) {
     const backboneColorArray = backboneColorBuffer.value.array;
     backboneColorArray.fill(0);
     if (featureFrame?.backboneColorSlots?.length) {
@@ -293,7 +293,7 @@ export function tickCymatics2dRuntime(
   }
   detailModeBuffer.value.needsUpdate = true;
 
-  if ((uniforms.uChromesthesiaMix?.value ?? 0) > 0) {
+  if ((uniforms.uSpectralMix?.value ?? 0) > 0) {
     const detailColorArray = detailColorBuffer.value.array;
     detailColorArray.fill(0);
     if (featureFrame?.detailColorSlots?.length) {

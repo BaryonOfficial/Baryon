@@ -105,14 +105,14 @@ export function analyzeBudgetedModeLayer({
   energyRetention = 1,
   cavityGeometry = "rectangular",
   layerType = "backbone",
-  chromesthesiaEnabled = false,
+  spectralLightEnabled = false,
   featureFrame = null,
 }) {
   const resolvedCapacity = inferLayerCapacity(capacity, slots);
   const candidates = [];
   let totalAmplitude = 0;
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
-  const useRenderSalience = Boolean(chromesthesiaEnabled && colorSlots);
+  const useRenderSalience = Boolean(spectralLightEnabled && colorSlots);
   const transientEnergy = clamp01(featureFrame?.transientEnergy ?? 0);
   const noisePenalty = deriveBroadbandNoisePenalty(featureFrame);
   const detailBonus = layerType === "detail" ? 1 : 0;
@@ -219,7 +219,7 @@ export function analyzeBudgetedModeLayer({
     averagePermutationCost:
       uploadedAmplitude > 0 ? uploadedPermutationLoad / uploadedAmplitude : 0,
     selectedIndices: selected.map((candidate) => candidate.slotIndex),
-    chromesthesiaAware: useRenderSalience,
+    spectralLightAware: useRenderSalience,
     maxColorWeight: selected.reduce(
       (max, candidate) => Math.max(max, candidate.colorWeight ?? 0),
       0,
@@ -234,7 +234,7 @@ export function buildBudgetedModeLayer({
   capacity,
   layerType = "backbone",
   cavityGeometry = "rectangular",
-  chromesthesiaEnabled = false,
+  spectralLightEnabled = false,
   featureFrame = null,
 }) {
   const layerBudget =
@@ -247,7 +247,7 @@ export function buildBudgetedModeLayer({
     energyRetention: layerBudget.energyRetention,
     cavityGeometry,
     layerType,
-    chromesthesiaEnabled,
+    spectralLightEnabled,
     featureFrame,
   });
 }
@@ -366,7 +366,7 @@ export function buildRaymarchPerformanceGovernor({
   requestedStepBudget,
   requestedRenderScale = 1,
   cavityGeometry = "rectangular",
-  chromesthesiaEnabled = false,
+  spectralLightEnabled = false,
 }) {
   const backbone = buildBudgetedModeLayer({
     slots: backboneSlots,
@@ -374,7 +374,7 @@ export function buildRaymarchPerformanceGovernor({
     capacity: backboneCapacity,
     layerType: "backbone",
     cavityGeometry,
-    chromesthesiaEnabled,
+    spectralLightEnabled,
     featureFrame,
   });
   const detail = buildBudgetedModeLayer({
@@ -383,7 +383,7 @@ export function buildRaymarchPerformanceGovernor({
     capacity: detailCapacity,
     layerType: "detail",
     cavityGeometry,
-    chromesthesiaEnabled,
+    spectralLightEnabled,
     featureFrame,
   });
 

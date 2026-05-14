@@ -204,7 +204,7 @@ function toPreparedInputsFrame(frame) {
     beatSettings: frame.beatSettings,
     frameTimeMs: frame.frameTimeMs,
     liveInputAnalysisSettings: frame.liveInputAnalysisSettings,
-    includeChromesthesia: frame.includeChromesthesia,
+    includeSpectralLight: frame.includeSpectralLight,
     analysisHints: frame.analysisHints,
   };
 }

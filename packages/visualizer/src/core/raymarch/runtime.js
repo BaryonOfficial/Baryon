@@ -8,14 +8,14 @@ import { getBoundaryModeFromValue } from "../modeFamily.js";
 import { isFieldDrivenState } from "../fieldState.js";
 import { resolveRaymarchFieldCacheOverride } from "../../visualization/fieldEvaluation.js";
 import {
-  buildRaymarchChromaCacheDescriptor,
+  buildRaymarchSpectralLightCacheDescriptor,
   disposeRaymarchFieldCache,
-  disposeRaymarchChromaCache,
+  disposeRaymarchSpectralLightCache,
   enqueueRaymarchFieldCacheRebuild,
-  enqueueRaymarchChromaCacheRebuild,
-  isRaymarchChromaCacheReadyForDescriptor,
+  enqueueRaymarchSpectralLightCacheRebuild,
+  isRaymarchSpectralLightCacheReadyForDescriptor,
   isRaymarchFieldCacheReadyForDescriptor,
-  shouldRebuildRaymarchChromaCache,
+  shouldRebuildRaymarchSpectralLightCache,
   shouldRebuildRaymarchFieldCache,
   buildRaymarchFieldCacheDescriptor,
   RAYMARCH_FIELD_CACHE_RESOLUTION,
@@ -32,8 +32,8 @@ import {
   inferLayerCapacity,
 } from "./performanceGovernor.js";
 import {
-  RAYMARCH_CHROMA_EVALUATION_MODES,
-  setRaymarchChromaEvaluationMode,
+  RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES,
+  setRaymarchSpectralLightEvaluationMode,
   setRaymarchCavityGeometry,
   setRaymarchFieldEvaluationMode,
 } from "./material.js";
@@ -338,7 +338,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const effectiveCavityGeometry =
     getRuntimeEffectiveCavityGeometry(runtimeState);
   const fieldCache = runtimeState.fieldCache ?? null;
-  const chromaCache = runtimeState.chromaCache ?? null;
+  const spectralLightCache = runtimeState.spectralLightCache ?? null;
   const fieldCacheOverride = getRaymarchFieldCacheOverride();
   const renderedBackbone = summarizeRenderedLayer(
     runtimeState.backboneModeBuffer?.value?.array,
@@ -459,10 +459,10 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
       runtimeState.volumeMesh?.userData?.raymarchFieldEvaluationMode ??
       fieldCache?.mode ??
       "direct",
-    chromesthesiaEvaluationMode:
-      runtimeState.volumeMesh?.userData?.raymarchChromaEvaluationMode ??
-      chromaCache?.mode ??
-      RAYMARCH_CHROMA_EVALUATION_MODES.off,
+    spectralLightEvaluationMode:
+      runtimeState.volumeMesh?.userData?.raymarchSpectralLightEvaluationMode ??
+      spectralLightCache?.mode ??
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     fieldCacheActive: fieldCache?.active ?? false,
     fieldCacheResolution:
       fieldCache?.resolution ?? RAYMARCH_FIELD_CACHE_RESOLUTION,
@@ -475,12 +475,13 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     fieldCacheReady: fieldCache?.ready ?? false,
     fieldCacheRebuildPending: fieldCache?.rebuildPending ?? false,
     fieldCacheLastError: fieldCache?.lastError ?? null,
-    chromesthesiaCacheActive: chromaCache?.active ?? false,
-    chromesthesiaCacheReady: chromaCache?.ready ?? false,
-    chromesthesiaCacheRebuildPending: chromaCache?.rebuildPending ?? false,
-    chromesthesiaCacheRebuildCount: chromaCache?.rebuildCount ?? 0,
-    chromesthesiaCacheLastError: chromaCache?.lastError ?? null,
-    chromesthesiaMix: runtimeState.uniforms.uChromesthesiaMix?.value ?? 0,
+    spectralLightCacheActive: spectralLightCache?.active ?? false,
+    spectralLightCacheReady: spectralLightCache?.ready ?? false,
+    spectralLightCacheRebuildPending:
+      spectralLightCache?.rebuildPending ?? false,
+    spectralLightCacheRebuildCount: spectralLightCache?.rebuildCount ?? 0,
+    spectralLightCacheLastError: spectralLightCache?.lastError ?? null,
+    spectralMix: runtimeState.uniforms.uSpectralMix?.value ?? 0,
     holographicReferenceStrength,
     avgRaySegmentLength,
     missRatio,
@@ -745,55 +746,54 @@ function resolveFieldEvaluationMode(
   return fieldEvaluationMode;
 }
 
-function resolveChromaEvaluationMode(
+function resolveSpectralLightEvaluationMode(
   runtimeState,
   renderer,
   { backboneCapacity, detailCapacity },
   {
-    chromesthesiaEnabled,
+    spectralLightEnabled,
     fieldEvaluationMode,
-    chromaDescriptor,
+    spectralLightDescriptor,
     cachedRequested,
   },
 ) {
-  const chromaCache = runtimeState.chromaCache;
-  if (!chromaCache) {
-    return chromesthesiaEnabled
-      ? RAYMARCH_CHROMA_EVALUATION_MODES.direct
-      : RAYMARCH_CHROMA_EVALUATION_MODES.off;
+  const spectralLightCache = runtimeState.spectralLightCache;
+  if (!spectralLightCache) {
+    return spectralLightEnabled
+      ? RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct
+      : RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
   }
 
-  const chromaCachedRequested =
-    cachedRequested && chromaCache.backend !== "unavailable";
-  chromaCache.active = chromaCachedRequested && chromesthesiaEnabled;
+  const spectralLightCachedRequested =
+    cachedRequested && spectralLightCache.backend !== "unavailable";
+  spectralLightCache.active =
+    spectralLightCachedRequested && spectralLightEnabled;
 
-  if (!chromesthesiaEnabled) {
-    return RAYMARCH_CHROMA_EVALUATION_MODES.off;
+  if (!spectralLightEnabled) {
+    return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
   }
 
-  if (!chromaCachedRequested) {
-    chromaCache.mode = RAYMARCH_CHROMA_EVALUATION_MODES.direct;
-    return RAYMARCH_CHROMA_EVALUATION_MODES.direct;
+  if (!spectralLightCachedRequested) {
+    spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
+    return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
   }
 
-  chromaCache.mode =
-    fieldEvaluationMode === "cached"
-      ? RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback
-      : RAYMARCH_CHROMA_EVALUATION_MODES.direct;
+  spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
 
-  const chromaUploadReady =
-    Boolean(chromaDescriptor) && runtimeState.chromaBuffersUploaded === true;
-  if (chromaUploadReady) {
-    const chromaRebuild = shouldRebuildRaymarchChromaCache(
-      chromaCache,
-      chromaDescriptor,
+  const spectralLightUploadReady =
+    Boolean(spectralLightDescriptor) &&
+    runtimeState.spectralLightBuffersUploaded === true;
+  if (spectralLightUploadReady) {
+    const spectralLightRebuild = shouldRebuildRaymarchSpectralLightCache(
+      spectralLightCache,
+      spectralLightDescriptor,
     );
-    if (chromaRebuild.needsRebuild) {
-      enqueueRaymarchChromaCacheRebuild(
-        chromaCache,
+    if (spectralLightRebuild.needsRebuild) {
+      enqueueRaymarchSpectralLightCacheRebuild(
+        spectralLightCache,
         renderer,
-        chromaDescriptor,
-        chromaRebuild.reason,
+        spectralLightDescriptor,
+        spectralLightRebuild.reason,
         {
           backboneModeBuffer: runtimeState.backboneModeBuffer,
           detailModeBuffer: runtimeState.detailModeBuffer,
@@ -808,31 +808,34 @@ function resolveChromaEvaluationMode(
   }
 
   if (fieldEvaluationMode !== "cached") {
-    return RAYMARCH_CHROMA_EVALUATION_MODES.direct;
+    return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
   }
 
   if (
-    chromaCache.backend !== "unavailable" &&
-    chromaDescriptor &&
-    isRaymarchChromaCacheReadyForDescriptor(chromaCache, chromaDescriptor)
+    spectralLightCache.backend !== "unavailable" &&
+    spectralLightDescriptor &&
+    isRaymarchSpectralLightCacheReadyForDescriptor(
+      spectralLightCache,
+      spectralLightDescriptor,
+    )
   ) {
-    chromaCache.mode = RAYMARCH_CHROMA_EVALUATION_MODES.cached;
-    return RAYMARCH_CHROMA_EVALUATION_MODES.cached;
+    spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
+    return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
   }
 
-  if (chromaCache.ready) {
-    chromaCache.mode = RAYMARCH_CHROMA_EVALUATION_MODES.cached;
-    return RAYMARCH_CHROMA_EVALUATION_MODES.cached;
+  if (spectralLightCache.ready) {
+    spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
+    return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
   }
 
-  return RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback;
+  return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
 }
 
 function updateRaymarchEvaluationModes(
   runtimeState,
   renderer,
   capacities,
-  { chromesthesiaEnabled, fieldDescriptor, chromaDescriptor },
+  { spectralLightEnabled, fieldDescriptor, spectralLightDescriptor },
 ) {
   if (!runtimeState.fieldCache || !runtimeState.volumeMesh) {
     return;
@@ -854,20 +857,20 @@ function updateRaymarchEvaluationModes(
   );
   setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, fieldEvaluationMode);
 
-  const chromaEvaluationMode = resolveChromaEvaluationMode(
+  const spectralLightEvaluationMode = resolveSpectralLightEvaluationMode(
     runtimeState,
     renderer,
     capacities,
     {
-      chromesthesiaEnabled,
+      spectralLightEnabled,
       fieldEvaluationMode,
-      chromaDescriptor,
+      spectralLightDescriptor,
       cachedRequested,
     },
   );
-  setRaymarchChromaEvaluationMode(
+  setRaymarchSpectralLightEvaluationMode(
     runtimeState.volumeMesh,
-    chromaEvaluationMode,
+    spectralLightEvaluationMode,
   );
 }
 
@@ -914,7 +917,7 @@ export function tickRaymarchRuntime(
 
   if (!fieldDriven) {
     runtimeState.performanceGovernor = null;
-    runtimeState.chromaBuffersUploaded = false;
+    runtimeState.spectralLightBuffersUploaded = false;
     setIfChanged(uniforms.uBackboneModeCount, 0);
     setIfChanged(uniforms.uDetailModeCount, 0);
     setIfChanged(uniforms.uActiveModeCount, 0);
@@ -954,7 +957,7 @@ export function tickRaymarchRuntime(
     return;
   }
 
-  const chromesthesiaEnabled = (uniforms.uChromesthesiaMix?.value ?? 0) > 0;
+  const spectralLightEnabled = (uniforms.uSpectralMix?.value ?? 0) > 0;
   const performanceGovernor = buildRaymarchPerformanceGovernor({
     backboneSlots: featureFrame?.backboneSlots,
     detailSlots: featureFrame?.detailSlots,
@@ -969,7 +972,7 @@ export function tickRaymarchRuntime(
       runtimeState.requestedRaymarchSteps ??
       volumeMesh.material.steps,
     requestedRenderScale: 1,
-    chromesthesiaEnabled,
+    spectralLightEnabled,
   });
   const { backbone: backboneLayer, detail: detailLayer } = performanceGovernor;
   runtimeState.performanceGovernor = performanceGovernor;
@@ -981,10 +984,10 @@ export function tickRaymarchRuntime(
     targetSlots: backboneArray,
     targetColorSlots: backboneColorArray,
     layer: backboneLayer,
-    includeColors: chromesthesiaEnabled,
+    includeColors: spectralLightEnabled,
   });
   backboneModeBuffer.value.needsUpdate = true;
-  if (chromesthesiaEnabled) {
+  if (spectralLightEnabled) {
     backboneColorBuffer.value.needsUpdate = true;
   }
 
@@ -996,10 +999,10 @@ export function tickRaymarchRuntime(
     targetSlots: detailArray,
     targetColorSlots: detailColorArray,
     layer: detailLayer,
-    includeColors: chromesthesiaEnabled,
+    includeColors: spectralLightEnabled,
   });
   detailModeBuffer.value.needsUpdate = true;
-  if (chromesthesiaEnabled) {
+  if (spectralLightEnabled) {
     detailColorBuffer.value.needsUpdate = true;
   }
 
@@ -1017,8 +1020,8 @@ export function tickRaymarchRuntime(
     cavityGeometry: getRuntimeEffectiveCavityGeometry(runtimeState),
     radius: runtimeState.uniforms.uRadius?.value ?? 1,
   });
-  const chromaDescriptor = chromesthesiaEnabled
-    ? buildRaymarchChromaCacheDescriptor({
+  const spectralLightDescriptor = spectralLightEnabled
+    ? buildRaymarchSpectralLightCacheDescriptor({
         backboneSlots: runtimeState.backboneModeBuffer?.value?.array,
         detailSlots: runtimeState.detailModeBuffer?.value?.array,
         backboneColorSlots: runtimeState.backboneColorBuffer?.value?.array,
@@ -1030,7 +1033,7 @@ export function tickRaymarchRuntime(
         radius: runtimeState.uniforms.uRadius?.value ?? 1,
       })
     : null;
-  runtimeState.chromaBuffersUploaded = chromesthesiaEnabled;
+  runtimeState.spectralLightBuffersUploaded = spectralLightEnabled;
   setRaymarchCavityGeometry(
     runtimeState.volumeMesh,
     getRuntimeEffectiveCavityGeometry(runtimeState),
@@ -1043,9 +1046,9 @@ export function tickRaymarchRuntime(
       detailCapacity,
     },
     {
-      chromesthesiaEnabled,
+      spectralLightEnabled,
       fieldDescriptor,
-      chromaDescriptor,
+      spectralLightDescriptor,
     },
   );
   setIfChanged(uniforms.uAverageAmplitude, featureFrame?.averageAmplitude ?? 0);
@@ -1131,7 +1134,7 @@ export function tickRaymarchRuntime(
 
 export function disposeRaymarchRuntime(runtimeState) {
   disposeRaymarchFieldCache(runtimeState?.fieldCache);
-  disposeRaymarchChromaCache(runtimeState?.chromaCache);
+  disposeRaymarchSpectralLightCache(runtimeState?.spectralLightCache);
   runtimeState?.points?.traverse?.((child) => {
     child.geometry?.dispose?.();
     const materialCache = child.userData?.raymarchMaterialCache;

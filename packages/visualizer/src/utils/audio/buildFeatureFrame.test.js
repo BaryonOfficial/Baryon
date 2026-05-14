@@ -1656,7 +1656,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
   });
 });
 
-describe("chromesthesia feature frame outputs", () => {
+describe("Spectral Light feature frame outputs", () => {
   it("populates backbone and detail color slots for active analysis", () => {
     const featureState = createAudioFeatureState();
     const frame = buildAudioFeatureFrame({
@@ -1675,8 +1675,8 @@ describe("chromesthesia feature frame outputs", () => {
 
     expect(frame.backboneColorSlots.some((value) => value > 0)).toBe(true);
     expect(frame.detailColorSlots.some((value) => value > 0)).toBe(true);
-    expect(frame.debug.chromesthesiaComponents.length).toBeGreaterThan(0);
-    expect(frame.debug.chromesthesiaComponents[0]).toMatchObject({
+    expect(frame.debug.spectralLightComponents.length).toBeGreaterThan(0);
+    expect(frame.debug.spectralLightComponents[0]).toMatchObject({
       frequency: expect.any(Number),
       weight: expect.any(Number),
       color: {
@@ -1687,7 +1687,7 @@ describe("chromesthesia feature frame outputs", () => {
     });
   });
 
-  it("skips chromesthesia color work when the render path does not need it", () => {
+  it("skips Spectral Light color work when the render path does not need it", () => {
     const featureState = createAudioFeatureState();
     const frame = buildAudioFeatureFrame({
       analysisSnapshot: createSnapshot({
@@ -1701,15 +1701,15 @@ describe("chromesthesia feature frame outputs", () => {
       featureState,
       radius: 3,
       status: makeActiveStatus(),
-      includeChromesthesia: false,
+      includeSpectralLight: false,
     });
 
     expect(frame.backboneColorSlots.some((value) => value > 0)).toBe(false);
     expect(frame.detailColorSlots.some((value) => value > 0)).toBe(false);
-    expect(frame.debug.chromesthesiaComponents.length).toBeGreaterThan(0);
+    expect(frame.debug.spectralLightComponents.length).toBeGreaterThan(0);
   });
 
-  it("freezes chromesthesia color slots alongside frozen modal slots", () => {
+  it("freezes Spectral Light color slots alongside frozen modal slots", () => {
     const featureState = createAudioFeatureState();
     const first = buildAudioFeatureFrame({
       analysisSnapshot: createSnapshot({

@@ -15,7 +15,7 @@ import {
   createIdleOverlay,
 } from "./raymarch/material.js";
 import {
-  createRaymarchChromaCache,
+  createRaymarchSpectralLightCache,
   createRaymarchFieldCache,
 } from "./raymarch/fieldCache.js";
 import { estimateProjectedSphereStats } from "./raymarch/intersection.js";
@@ -76,7 +76,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const backboneColorBuffer = createModeBuffer(backboneCapacity);
   const detailColorBuffer = createModeBuffer(detailCapacity);
   const fieldCache = createRaymarchFieldCache();
-  const chromaCache = createRaymarchChromaCache();
+  const spectralLightCache = createRaymarchSpectralLightCache();
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
     backboneModeBuffer,
@@ -84,7 +84,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     backboneColorBuffer,
     detailColorBuffer,
     fieldCacheTexture: fieldCache.texture,
-    chromaCacheTexture: chromaCache.texture,
+    spectralLightCacheTexture: spectralLightCache.texture,
     backboneCapacity,
     detailCapacity,
     uniforms,
@@ -118,7 +118,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     backboneColorBuffer,
     detailColorBuffer,
     fieldCache,
-    chromaCache,
+    spectralLightCache,
     sharedModeCapacity,
     // Compatibility alias for older runtime call sites that still read `capacity`.
     capacity: sharedModeCapacity,
@@ -153,11 +153,11 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     baseDensityGain: uniforms.uDensityGain.value,
     baseThreshold: uniforms.uThreshold.value,
     baseContourSharpness: uniforms.uContourSharpness.value,
-    chromesthesia: {
+    spectralLight: {
       colorMode: RENDER_DEFAULTS.colorMode,
-      chromesthesiaMix:
-        RENDER_DEFAULTS.colorMode === "chromesthesia"
-          ? RENDER_DEFAULTS.chromesthesiaMix
+      spectralMix:
+        RENDER_DEFAULTS.colorMode === "spectral"
+          ? RENDER_DEFAULTS.spectralMix
           : 0,
     },
     sceneMotion: {

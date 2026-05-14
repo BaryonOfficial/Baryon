@@ -49,7 +49,7 @@ function createModalLayerState(capacity) {
     analysisEngine: "none",
     uniqueModeCount: 0,
     lastStableAt: 0,
-    chromesthesiaComponents: [],
+    spectralLightComponents: [],
     latchedFundamentalHz: 0,
     latchedFundamentalConfidence: 0,
     latchHoldFrames: 0,
@@ -186,7 +186,7 @@ export function clearModalStack(state) {
   state.analysisEngine = "none";
   state.uniqueModeCount = 0;
   state.lastStableAt = 0;
-  state.chromesthesiaComponents = [];
+  state.spectralLightComponents = [];
   if ("latchedFundamentalHz" in state) state.latchedFundamentalHz = 0;
   if ("latchedFundamentalConfidence" in state) {
     state.latchedFundamentalConfidence = 0;
@@ -226,7 +226,7 @@ export function decayModalStack(state) {
   state.fundamentalConfidence = 0;
   state.analysisEngine = "none";
   state.uniqueModeCount = 0;
-  state.chromesthesiaComponents = [];
+  state.spectralLightComponents = [];
   if ("driverFrequency" in state) state.driverFrequency = 0;
   if ("candidateFrequency" in state) state.candidateFrequency = 0;
   if ("candidateConfidence" in state) state.candidateConfidence = 0;

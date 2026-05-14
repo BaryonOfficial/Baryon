@@ -96,11 +96,11 @@ export function setupCymatics2d(baryonGeometry, parameters, audioConfig) {
     baseDensityGain: uniforms.uDensityGain.value,
     baseThreshold: uniforms.uThreshold.value,
     baseContourSharpness: uniforms.uContourSharpness.value,
-    chromesthesia: {
+    spectralLight: {
       colorMode: RENDER_DEFAULTS.colorMode,
-      chromesthesiaMix:
-        RENDER_DEFAULTS.colorMode === "chromesthesia"
-          ? RENDER_DEFAULTS.chromesthesiaMix
+      spectralMix:
+        RENDER_DEFAULTS.colorMode === "spectral"
+          ? RENDER_DEFAULTS.spectralMix
           : 0,
     },
     sceneMotion: {

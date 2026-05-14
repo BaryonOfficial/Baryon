@@ -93,7 +93,7 @@ function createFieldNode({
     uDetailModeCount,
     uColor,
     uSurfaceColor,
-    uChromesthesiaMix,
+    uSpectralMix,
     uDensityGain,
     uOpacityGain,
     uContourSharpness,
@@ -223,32 +223,29 @@ function createFieldNode({
     );
     const staticBaseColor = mix(uColor, uSurfaceColor, spectralColorBias);
     const spectralColor = colorSum.div(max(colorWeight, float(1e-4)));
-    const chromesthesiaPresence = smoothstep(
+    const spectralLightPresence = smoothstep(
       float(0.0),
       float(0.18),
       colorWeight,
     );
-    const chromesthesiaWeight = clamp(
-      uChromesthesiaMix.mul(chromesthesiaPresence),
+    const spectralLightWeight = clamp(
+      uSpectralMix.mul(spectralLightPresence),
       float(0.0),
       float(1.0),
     );
-    const chromesthesiaFallbackColor = spectralColor.mul(
-      float(0.42).add(spectralColorBias.mul(float(0.34))),
-    );
-    const chromesthesiaBaseColor = mix(
-      chromesthesiaFallbackColor,
+    const spectralLightBaseColor = mix(
+      staticBaseColor,
       spectralColor,
-      chromesthesiaWeight,
+      spectralLightWeight,
     );
     const staticColor = mix(
       staticBaseColor.mul(float(0.86)),
       staticBaseColor,
       highlightMask,
     );
-    const chromesthesiaColor = mix(
-      chromesthesiaBaseColor.mul(float(0.9)),
-      chromesthesiaBaseColor,
+    const spectralLightColor = mix(
+      spectralLightBaseColor.mul(float(0.9)),
+      spectralLightBaseColor,
       highlightMask,
     );
     const backbonePresence = smoothstep(
@@ -264,11 +261,7 @@ function createFieldNode({
     const activityAccent = backbonePresence.add(
       detailPresence.mul(float(0.14)),
     );
-    const color = mix(
-      staticColor,
-      chromesthesiaColor,
-      smoothstep(float(0.0), float(1e-4), uChromesthesiaMix),
-    )
+    const color = mix(staticColor, spectralLightColor, spectralLightWeight)
       .mul(float(0.9).add(activityAccent.mul(float(0.08))))
       .mul(visibleDensity);
 

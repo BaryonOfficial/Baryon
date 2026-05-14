@@ -1341,7 +1341,7 @@ export function resolveFeatureFrame(
     time,
     clockMode,
     renderLoopRefs,
-    chromesthesiaEnabled,
+    spectralLightEnabled,
   },
   {
     buildFeatureFrame = buildAudioFeatureFrame,
@@ -1425,7 +1425,7 @@ export function resolveFeatureFrame(
         cavityGeometry: controls.cavityGeometry,
         status,
         frameTimeMs: time * 1000,
-        includeChromesthesia: chromesthesiaEnabled,
+        includeSpectralLight: spectralLightEnabled,
         analysisHints,
       });
     } else {
@@ -1436,7 +1436,7 @@ export function resolveFeatureFrame(
         cavityGeometry: controls.cavityGeometry,
         status,
         frameTimeMs: time * 1000,
-        includeChromesthesia: chromesthesiaEnabled,
+        includeSpectralLight: spectralLightEnabled,
         analysisHints,
       });
 
@@ -1458,7 +1458,7 @@ export function resolveFeatureFrame(
             frameTimeMs: preparedInputs.currentFrameAtMs,
             radius: runtimeState.uniforms.uRadius.value,
             cavityGeometry: controls.cavityGeometry,
-            includeChromesthesia: chromesthesiaEnabled,
+            includeSpectralLight: spectralLightEnabled,
             analysisHints,
             auditSettings: featureState?.audit?.settings ?? null,
           });

@@ -8,7 +8,7 @@ import {
   countActiveSlots,
 } from "./modalStack.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
-import { createChromesthesiaColor } from "./chromesthesia.js";
+import { createSpectralLightColor } from "./spectralLight.js";
 
 const BACKBONE_MAX_HZ = 3200;
 const BACKBONE_MIN_HZ = 60;
@@ -447,7 +447,7 @@ function remapReferenceToBlendedOrder(
   }
 }
 
-function createEntryChromesthesiaComponent(entry, colorContext = {}) {
+function createEntrySpectralLightComponent(entry, colorContext = {}) {
   const strength = clamp01(
     (entry.signalAmplitude ?? entry.amplitude ?? 0) * 0.58 +
       (entry.currentDriveEnergy ?? entry.driveEnergy ?? 0) * 0.28 +
@@ -463,34 +463,22 @@ function createEntryChromesthesiaComponent(entry, colorContext = {}) {
       (colorContext.trebleBroadbandEnergy ?? 0) * 0.24 +
       (entry.currentDriveEnergy ?? entry.driveEnergy ?? 0) * 0.14,
   );
-  const chroma = createChromesthesiaColor({
+  const spectralLight = createSpectralLightColor({
     frequency: entry.naturalFrequencyHz,
     strength,
     harmonicConfidence,
     accentEnergy,
-    spectralCentroid: colorContext.spectralCentroid ?? 0,
-    trebleBroadbandEnergy: colorContext.trebleBroadbandEnergy ?? 0,
-    keyTonic: colorContext.keyTonic,
-    keyMode: colorContext.keyMode,
-    keyConfidence: colorContext.keyConfidence ?? 0,
   });
 
   return {
     frequency: entry.naturalFrequencyHz,
     familyFrequency: entry.naturalFrequencyHz,
-    weight: chroma.weight,
-    pitchClass: chroma.pitchClass,
-    octave: chroma.octave,
-    noteName: chroma.noteName,
-    hue: chroma.hue,
-    saturation: chroma.saturation,
-    value: chroma.value,
-    color: chroma.rgb,
-    harmonicConfidence: chroma.harmonicConfidence,
-    accentEnergy: chroma.accentEnergy,
-    keyTonic: chroma.keyTonic,
-    keyMode: chroma.keyMode,
-    keyConfidence: chroma.keyConfidence,
+    weight: spectralLight.weight,
+    phase: spectralLight.phase,
+    wavelengthNm: spectralLight.wavelengthNm,
+    color: spectralLight.rgb,
+    harmonicConfidence: spectralLight.harmonicConfidence,
+    accentEnergy: spectralLight.accentEnergy,
   };
 }
 
@@ -517,11 +505,11 @@ function writeLayerEntry(
   layerBuffer.referenceSlots[offset + 1] = entry.v;
   layerBuffer.referenceSlots[offset + 2] = entry.w;
   layerBuffer.referenceSlots[offset + 3] = referenceAmplitude;
-  const chroma = createEntryChromesthesiaComponent(entry, colorContext);
-  layerBuffer.colorSlots[offset] = chroma.color.r;
-  layerBuffer.colorSlots[offset + 1] = chroma.color.g;
-  layerBuffer.colorSlots[offset + 2] = chroma.color.b;
-  layerBuffer.colorSlots[offset + 3] = chroma.weight;
+  const spectralLight = createEntrySpectralLightComponent(entry, colorContext);
+  layerBuffer.colorSlots[offset] = spectralLight.color.r;
+  layerBuffer.colorSlots[offset + 1] = spectralLight.color.g;
+  layerBuffer.colorSlots[offset + 2] = spectralLight.color.b;
+  layerBuffer.colorSlots[offset + 3] = spectralLight.weight;
 }
 
 function writeShortlistedEntries(
@@ -876,8 +864,8 @@ function createLayerStateSummary(
     rejectionReason: "none",
     latchHoldFrames: 0,
     latchLowSupportFrames: 0,
-    chromesthesiaComponents: entries.slice(0, 6).map((entry) =>
-      createEntryChromesthesiaComponent(entry, {
+    spectralLightComponents: entries.slice(0, 6).map((entry) =>
+      createEntrySpectralLightComponent(entry, {
         ...colorContext,
         tonalness,
       }),
@@ -1151,14 +1139,14 @@ export function buildModalExcitationStructuralState({
   );
 
   if (
-    preparedInputs.shouldBuildChromesthesia &&
-    !state.previousShouldBuildChromesthesia
+    preparedInputs.shouldBuildSpectralLight &&
+    !state.previousShouldBuildSpectralLight
   ) {
     clearBlendColorState(state.blendBackbone);
     clearBlendColorState(state.blendDetail);
   }
 
-  if (preparedInputs.shouldBuildChromesthesia) {
+  if (preparedInputs.shouldBuildSpectralLight) {
     blendColorStack(
       state.blendBackbone,
       state.displayBackbone.slots,
@@ -1182,8 +1170,8 @@ export function buildModalExcitationStructuralState({
       },
     );
   }
-  state.previousShouldBuildChromesthesia = Boolean(
-    preparedInputs.shouldBuildChromesthesia,
+  state.previousShouldBuildSpectralLight = Boolean(
+    preparedInputs.shouldBuildSpectralLight,
   );
 
   remapReferenceToBlendedOrder(
@@ -1292,10 +1280,10 @@ export function buildModalExcitationStructuralState({
     signalDetailSlotsSource: state.detail.slots,
     signalReferenceBackboneSlotsSource: state.remappedSignalBackboneRef,
     signalReferenceDetailSlotsSource: state.remappedSignalDetailRef,
-    backboneColorSlotsSource: preparedInputs.shouldBuildChromesthesia
+    backboneColorSlotsSource: preparedInputs.shouldBuildSpectralLight
       ? state.blendBackbone.colorSlots
       : null,
-    detailColorSlotsSource: preparedInputs.shouldBuildChromesthesia
+    detailColorSlotsSource: preparedInputs.shouldBuildSpectralLight
       ? state.blendDetail.colorSlots
       : null,
     backboneStateSource,

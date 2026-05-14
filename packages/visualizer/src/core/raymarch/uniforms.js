@@ -28,9 +28,9 @@ export function createRaymarchUniforms(parameters) {
     uIdleLogoSize: uniform(RENDER_DEFAULTS.idleLogoSize),
     uColor: uniform(new THREE.Color(RENDER_DEFAULTS.volumeColor)),
     uSurfaceColor: uniform(new THREE.Color(RENDER_DEFAULTS.surfaceColor)),
-    uChromesthesiaMix: uniform(
-      RENDER_DEFAULTS.colorMode === "chromesthesia"
-        ? RENDER_DEFAULTS.chromesthesiaMix
+    uSpectralMix: uniform(
+      RENDER_DEFAULTS.colorMode === "spectral"
+        ? RENDER_DEFAULTS.spectralMix
         : 0,
     ),
     uDensityGain: uniform(RAYMARCH_DEFAULTS.densityGain),

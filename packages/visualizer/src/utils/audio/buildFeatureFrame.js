@@ -38,7 +38,7 @@ import {
   smoothChromaInPlace,
   detectKeyFromChroma,
 } from "./chromaAnalysis.js";
-import { pitchClassToHue } from "./chromesthesia.js";
+import { pitchClassToHue } from "./pitch.js";
 import {
   DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT,
   DEFAULT_LIVE_INPUT_ANALYSIS_CLASS,
@@ -700,7 +700,7 @@ function cloneAnalysisHintsForSnapshot(analysisHints) {
   return analysisHints ? { ...analysisHints } : null;
 }
 
-function cloneChromesthesiaComponents(components) {
+function cloneSpectralLightComponents(components) {
   if (!Array.isArray(components) || components.length === 0) {
     return [];
   }
@@ -774,7 +774,7 @@ function buildDebugSummary({
   backboneSlots,
   detailSlots,
   modeSlots,
-  chromesthesiaComponents = [],
+  spectralLightComponents = [],
   transientEnergy = 0,
   spectralCentroid = 0,
   spectralFlux = 0,
@@ -915,7 +915,7 @@ function buildDebugSummary({
       normalizedAmplitude: 0,
       normalizedCentroid: 0,
     },
-    chromesthesiaComponents,
+    spectralLightComponents,
   };
 }
 
@@ -957,7 +957,7 @@ function buildZeroDebugSnapshot({
     backboneSlots,
     detailSlots,
     modeSlots,
-    chromesthesiaComponents: [],
+    spectralLightComponents: [],
     beatDetected: false,
     beatPulseId: 0,
     beatStrength: 0,
@@ -2213,7 +2213,7 @@ function finalizeFeatureDebugSnapshot({
   detailColorSlots,
   referenceModeSlots,
   bandEnergies,
-  chromesthesiaComponents = null,
+  spectralLightComponents = null,
   transientEnergy,
   spectralCentroid,
   spectralFlux,
@@ -2275,11 +2275,11 @@ function finalizeFeatureDebugSnapshot({
     backboneSlots,
     detailSlots,
     modeSlots,
-    chromesthesiaComponents:
-      chromesthesiaComponents ??
+    spectralLightComponents:
+      spectralLightComponents ??
       [
-        ...(backboneState?.chromesthesiaComponents ?? []),
-        ...(detailState?.chromesthesiaComponents ?? []),
+        ...(backboneState?.spectralLightComponents ?? []),
+        ...(detailState?.spectralLightComponents ?? []),
       ]
         .sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0))
         .slice(0, 8),
@@ -2376,7 +2376,7 @@ function buildFeatureAnalysisInputsSignature({
   liveInputDeviceKind,
   resolvedLiveInputAnalysisClass,
   calibrationVersion,
-  shouldBuildChromesthesia,
+  shouldBuildSpectralLight,
   resolvedAuditSettings,
   liveInputNoiseGateActive,
   liveInputHardSilenceActive,
@@ -2392,7 +2392,7 @@ function buildFeatureAnalysisInputsSignature({
     liveInputDeviceKind,
     resolvedLiveInputAnalysisClass,
     calibrationVersion,
-    shouldBuildChromesthesia,
+    shouldBuildSpectralLight,
     injectTestTone: Boolean(resolvedAuditSettings?.injectTestTone),
     freezeModeSlots: Boolean(resolvedAuditSettings?.freezeModeSlots),
     liveInputNoiseGateActive,
@@ -2456,7 +2456,7 @@ export function prepareAudioFeatureFrameInputs({
   frameTimeMs = undefined,
   micAnalysisSettings = undefined,
   liveInputAnalysisSettings = undefined,
-  includeChromesthesia = true,
+  includeSpectralLight = true,
   analysisHints = null,
 }) {
   const capacity = featureState?.capacity ?? AUDIO_SLOT_CAPACITY;
@@ -2533,8 +2533,8 @@ export function prepareAudioFeatureFrameInputs({
     liveInputPolicy === LIVE_INPUT_ANALYSIS_CLASSES.lineFeed
       ? DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT
       : normalizeLiveInputAcousticIntent(liveInputPolicy);
-  const shouldBuildChromesthesia = Boolean(
-    includeChromesthesia ||
+  const shouldBuildSpectralLight = Boolean(
+    includeSpectralLight ||
     resolvedAuditSettings.enabled ||
     resolvedAuditSettings.freezeModeSlots,
   );
@@ -2603,7 +2603,7 @@ export function prepareAudioFeatureFrameInputs({
       resolvedMicAnalysisSettings,
       liveInputAcousticIntent,
       liveInputPolicy,
-      shouldBuildChromesthesia,
+      shouldBuildSpectralLight,
       currentFrame,
       sourceMode,
       radius,
@@ -2622,7 +2622,7 @@ export function prepareAudioFeatureFrameInputs({
         liveInputDeviceKind,
         resolvedLiveInputAnalysisClass,
         calibrationVersion,
-        shouldBuildChromesthesia,
+        shouldBuildSpectralLight,
         resolvedAuditSettings,
         liveInputNoiseGateActive: false,
         liveInputHardSilenceActive: false,
@@ -2756,7 +2756,7 @@ export function prepareAudioFeatureFrameInputs({
     resolvedMicAnalysisSettings,
     liveInputAcousticIntent,
     liveInputPolicy,
-    shouldBuildChromesthesia,
+    shouldBuildSpectralLight,
     currentFrame,
     sourceMode,
     snapshot,
@@ -2778,7 +2778,7 @@ export function prepareAudioFeatureFrameInputs({
       liveInputDeviceKind,
       resolvedLiveInputAnalysisClass,
       calibrationVersion,
-      shouldBuildChromesthesia,
+      shouldBuildSpectralLight,
       resolvedAuditSettings,
       liveInputNoiseGateActive,
       liveInputHardSilenceActive,
@@ -2931,7 +2931,7 @@ function hasFrozenStructuralProjection(auditState) {
 function resolveStructuralProjectionSources(preparedInputs, structuralState) {
   const {
     auditState,
-    shouldBuildChromesthesia,
+    shouldBuildSpectralLight,
     capacity,
     resolvedAuditSettings,
   } = preparedInputs;
@@ -2948,13 +2948,13 @@ function resolveStructuralProjectionSources(preparedInputs, structuralState) {
   const detailSlotsSource = hasFrozenProjection
     ? auditState.frozenDetailSlots
     : (structuralState?.detailSlotsSource ?? preparedInputs.detailState.slots);
-  const backboneColorSlotsSource = shouldBuildChromesthesia
+  const backboneColorSlotsSource = shouldBuildSpectralLight
     ? hasFrozenProjection
       ? auditState.frozenBackboneColorSlots
       : (structuralState?.backboneColorSlotsSource ??
         preparedInputs.backboneState.colorSlots)
     : null;
-  const detailColorSlotsSource = shouldBuildChromesthesia
+  const detailColorSlotsSource = shouldBuildSpectralLight
     ? hasFrozenProjection
       ? auditState.frozenDetailColorSlots
       : (structuralState?.detailColorSlotsSource ??
@@ -3406,10 +3406,10 @@ function readCurrentStructuralState(
     detailSlotsSource: preparedInputs.detailState.slots,
     referenceBackboneSlotsSource: preparedInputs.backboneState.referenceSlots,
     referenceDetailSlotsSource: preparedInputs.detailState.referenceSlots,
-    backboneColorSlotsSource: preparedInputs.shouldBuildChromesthesia
+    backboneColorSlotsSource: preparedInputs.shouldBuildSpectralLight
       ? preparedInputs.backboneState.colorSlots
       : null,
-    detailColorSlotsSource: preparedInputs.shouldBuildChromesthesia
+    detailColorSlotsSource: preparedInputs.shouldBuildSpectralLight
       ? preparedInputs.detailState.colorSlots
       : null,
     freezeModeSlots: Boolean(
@@ -3632,10 +3632,10 @@ export function buildAudioFeatureAnalysisSnapshot({
   const detailStateSummary = buildDetailStateSummary(
     analysisResult.detailState,
   );
-  const chromesthesiaComponents = cloneChromesthesiaComponents(
+  const spectralLightComponents = cloneSpectralLightComponents(
     [
-      ...(analysisResult.backboneState?.chromesthesiaComponents ?? []),
-      ...(analysisResult.detailState?.chromesthesiaComponents ?? []),
+      ...(analysisResult.backboneState?.spectralLightComponents ?? []),
+      ...(analysisResult.detailState?.spectralLightComponents ?? []),
     ]
       .sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0))
       .slice(0, 8),
@@ -3732,7 +3732,7 @@ export function buildAudioFeatureAnalysisSnapshot({
       analysisHints: cloneAnalysisHintsForSnapshot(
         analysisResult.analysisHints,
       ),
-      chromesthesiaComponents,
+      spectralLightComponents,
       nonZeroFFTBinCount,
       referencePitchBinAmplitude,
       debug: null,
@@ -3901,7 +3901,7 @@ export function composeAudioFeatureFrame({
       modeSlots: analysisResult.modeSlots,
       referenceModeSlots: analysisResult.referenceModeSlots,
       bandEnergies: analysisResult.bandEnergies,
-      chromesthesiaComponents: analysisResult.chromesthesiaComponents ?? null,
+      spectralLightComponents: analysisResult.spectralLightComponents ?? null,
       transientEnergy: analysisResult.transientEnergy,
       spectralCentroid: analysisResult.spectralCentroid,
       spectralFlux: analysisResult.spectralFlux,

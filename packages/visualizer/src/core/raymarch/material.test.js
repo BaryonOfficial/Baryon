@@ -3,19 +3,19 @@ import * as THREE from "three";
 import { AUDIO_DEFAULTS } from "../../defaults.js";
 import {
   RAYMARCH_BOUNDARY_TUNING,
-  RAYMARCH_CHROMA_EVALUATION_MODES,
-  RAYMARCH_CHROMESTHESIA_TUNING,
+  RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES,
+  RAYMARCH_SPECTRAL_LIGHT_TUNING,
   createRaymarchVolumeMesh,
   getRaymarchMaterialCache,
   setRaymarchBoundaryMode,
   setRaymarchCavityGeometry,
-  setRaymarchChromaEvaluationMode,
+  setRaymarchSpectralLightEvaluationMode,
   setRaymarchFieldEvaluationMode,
 } from "./material.js";
 import { createRaymarchUniforms } from "./uniforms.js";
 import { raymarchOpacityNode } from "./SafeVolumetricLightingModel.js";
 import {
-  createRaymarchChromaCache,
+  createRaymarchSpectralLightCache,
   createRaymarchFieldCache,
 } from "./fieldCache.js";
 
@@ -28,11 +28,25 @@ function makeMeshUniforms(overrides = {}) {
 }
 
 describe("raymarch volume material", () => {
-  it("keeps chromesthesia shader tuning vivid instead of neutralizing color", () => {
-    expect(RAYMARCH_CHROMESTHESIA_TUNING.keyTintStrength).toBeLessThan(0.3);
-    expect(RAYMARCH_CHROMESTHESIA_TUNING.contourShadow).toBeGreaterThan(0.95);
-    expect(RAYMARCH_CHROMESTHESIA_TUNING.hotCoreSurfacePull).toBeLessThan(0.55);
-    expect(RAYMARCH_CHROMESTHESIA_TUNING.whiteEmissionLift).toBeLessThan(0.3);
+  it("keeps Spectral Light shader tuning vivid instead of neutralizing color", () => {
+    expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow).toBeGreaterThan(0.95);
+    expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.hotCoreSurfacePull).toBeLessThan(0.2);
+    expect(
+      RAYMARCH_SPECTRAL_LIGHT_TUNING.holographicAccentMix,
+    ).toBeLessThanOrEqual(0.03);
+    expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.holographicAccentColorPull).toBe(0);
+    expect(
+      RAYMARCH_SPECTRAL_LIGHT_TUNING.whiteEmissionLift,
+    ).toBeLessThanOrEqual(0.015);
+    expect(
+      RAYMARCH_SPECTRAL_LIGHT_TUNING.directPresenceEnd,
+    ).toBeLessThanOrEqual(0.05);
+    expect(
+      RAYMARCH_SPECTRAL_LIGHT_TUNING.cachedPresenceEnd,
+    ).toBeLessThanOrEqual(0.07);
+    expect(
+      RAYMARCH_SPECTRAL_LIGHT_TUNING.uncoloredNeutralLift,
+    ).toBeLessThanOrEqual(0.04);
   });
 
   it("softens Dirichlet beam lighting so nodal planes do not dominate", () => {
@@ -98,7 +112,9 @@ describe("raymarch volume material", () => {
 
   it("caches direct and field-cache material variants per boundary mode", () => {
     const fieldCache = createRaymarchFieldCache({ resolution: 8 });
-    const chromaCache = createRaymarchChromaCache({ resolution: 8 });
+    const spectralLightCache = createRaymarchSpectralLightCache({
+      resolution: 8,
+    });
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
       backboneModeBuffer: {},
@@ -106,7 +122,7 @@ describe("raymarch volume material", () => {
       backboneColorBuffer: {},
       detailColorBuffer: {},
       fieldCacheTexture: fieldCache.texture,
-      chromaCacheTexture: chromaCache.texture,
+      spectralLightCacheTexture: spectralLightCache.texture,
       backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
       detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
       uniforms: makeMeshUniforms(),
@@ -118,15 +134,15 @@ describe("raymarch volume material", () => {
     expect(materialCache.dirichlet.direct.direct.rectangular).toBeTruthy();
     expect(materialCache.dirichlet.cached).toEqual({});
     expect(mesh.userData.raymarchFieldEvaluationMode).toBe("direct");
-    expect(mesh.userData.raymarchChromaEvaluationMode).toBe(
-      RAYMARCH_CHROMA_EVALUATION_MODES.direct,
+    expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct,
     );
     expect(mesh.userData.raymarchCavityGeometry).toBe("rectangular");
 
     setRaymarchFieldEvaluationMode(mesh, "cached");
-    setRaymarchChromaEvaluationMode(
+    setRaymarchSpectralLightEvaluationMode(
       mesh,
-      RAYMARCH_CHROMA_EVALUATION_MODES.cached,
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
     expect(mesh.material).toBe(materialCache.neumann.cached.cached.rectangular);
     expect(materialCache.neumann.cached.cached.rectangular).toBeTruthy();
@@ -142,7 +158,9 @@ describe("raymarch volume material", () => {
 
   it("keeps geometry-aware material switching compatible with boundary and cache mode changes", () => {
     const fieldCache = createRaymarchFieldCache({ resolution: 8 });
-    const chromaCache = createRaymarchChromaCache({ resolution: 8 });
+    const spectralLightCache = createRaymarchSpectralLightCache({
+      resolution: 8,
+    });
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
       backboneModeBuffer: {},
@@ -150,7 +168,7 @@ describe("raymarch volume material", () => {
       backboneColorBuffer: {},
       detailColorBuffer: {},
       fieldCacheTexture: fieldCache.texture,
-      chromaCacheTexture: chromaCache.texture,
+      spectralLightCacheTexture: spectralLightCache.texture,
       backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
       detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
       uniforms: makeMeshUniforms(),
@@ -158,52 +176,21 @@ describe("raymarch volume material", () => {
     const materialCache = getRaymarchMaterialCache(mesh);
 
     setRaymarchFieldEvaluationMode(mesh, "cached");
-    setRaymarchChromaEvaluationMode(
+    setRaymarchSpectralLightEvaluationMode(
       mesh,
-      RAYMARCH_CHROMA_EVALUATION_MODES.cached,
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
     setRaymarchCavityGeometry(mesh, "spherical");
     setRaymarchBoundaryMode(mesh, "dirichlet");
 
     expect(mesh.userData.raymarchCavityGeometry).toBe("spherical");
     expect(mesh.userData.raymarchFieldEvaluationMode).toBe("cached");
-    expect(mesh.userData.raymarchChromaEvaluationMode).toBe(
-      RAYMARCH_CHROMA_EVALUATION_MODES.cached,
+    expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
     expect(mesh.userData.raymarchBoundaryMode).toBe("dirichlet");
     expect(mesh.material).toBe(materialCache.dirichlet.cached.cached.spherical);
     expect(materialCache.neumann.cached.cached.spherical).toBeTruthy();
     expect(materialCache.dirichlet.cached.cached.spherical).toBeTruthy();
-  });
-
-  it("supports distinct cached chroma fallback variants", () => {
-    const fieldCache = createRaymarchFieldCache({ resolution: 8 });
-    const chromaCache = createRaymarchChromaCache({ resolution: 8 });
-    const mesh = createRaymarchVolumeMesh({
-      radius: 3,
-      backboneModeBuffer: {},
-      detailModeBuffer: {},
-      backboneColorBuffer: {},
-      detailColorBuffer: {},
-      fieldCacheTexture: fieldCache.texture,
-      chromaCacheTexture: chromaCache.texture,
-      backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
-      detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
-      uniforms: makeMeshUniforms(),
-    });
-    const materialCache = getRaymarchMaterialCache(mesh);
-
-    setRaymarchFieldEvaluationMode(mesh, "cached");
-    setRaymarchChromaEvaluationMode(
-      mesh,
-      RAYMARCH_CHROMA_EVALUATION_MODES.tonalFallback,
-    );
-
-    expect(mesh.material).toBe(
-      materialCache.neumann.cached["tonal-fallback"].rectangular,
-    );
-    expect(
-      materialCache.neumann.cached["tonal-fallback"].rectangular,
-    ).toBeTruthy();
   });
 });

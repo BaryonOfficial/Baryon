@@ -66,7 +66,7 @@ describe("performanceGovernor", () => {
     ]);
   });
 
-  it("preserves amplitude-only selection when chromesthesia context is absent", () => {
+  it("preserves amplitude-only selection when Spectral Light context is absent", () => {
     const slots = new Float32Array([
       1, 1, 1, 0.5, 2, 2, 2, 0.4, 3, 3, 3, 0.3, 4, 4, 4, 0.09,
     ]);
@@ -85,7 +85,7 @@ describe("performanceGovernor", () => {
       capacity: 4,
       minSlots: 2,
       energyRetention: 0.72,
-      chromesthesiaEnabled: false,
+      spectralLightEnabled: false,
       featureFrame: {
         transientEnergy: 1,
         harmonicity: 0.9,
@@ -97,7 +97,7 @@ describe("performanceGovernor", () => {
     expect(staticMode.uploadedActiveCount).toBe(baseline.uploadedActiveCount);
   });
 
-  it("retains a color-salient detail slot when chromesthesia is active", () => {
+  it("retains a color-salient detail slot when Spectral Light is active", () => {
     const slots = new Float32Array([
       1, 1, 1, 0.5, 2, 2, 2, 0.4, 3, 3, 3, 0.3, 4, 4, 4, 0.09,
     ]);
@@ -111,14 +111,14 @@ describe("performanceGovernor", () => {
       minSlots: 2,
       energyRetention: 0.72,
     });
-    const chromaAware = analyzeBudgetedModeLayer({
+    const spectralLightAware = analyzeBudgetedModeLayer({
       slots,
       colorSlots,
       capacity: 4,
       minSlots: 2,
       energyRetention: 0.72,
       layerType: "detail",
-      chromesthesiaEnabled: true,
+      spectralLightEnabled: true,
       featureFrame: {
         transientEnergy: 0.45,
         harmonicity: 0.86,
@@ -128,12 +128,12 @@ describe("performanceGovernor", () => {
     });
 
     expect(amplitudeOnly.selectedIndices).toEqual([0, 1, 2]);
-    expect(chromaAware.selectedIndices).toContain(3);
-    expect(chromaAware.selectedIndices).not.toContain(2);
-    expect(chromaAware.retainedEnergyRatio).toBeGreaterThanOrEqual(0.72);
+    expect(spectralLightAware.selectedIndices).toContain(3);
+    expect(spectralLightAware.selectedIndices).not.toContain(2);
+    expect(spectralLightAware.retainedEnergyRatio).toBeGreaterThanOrEqual(0.72);
   });
 
-  it("does not promote chroma-only detail on broadband noisy frames", () => {
+  it("does not promote Spectral Light-only detail on broadband noisy frames", () => {
     const slots = new Float32Array([
       1, 1, 1, 0.5, 2, 2, 2, 0.4, 3, 3, 3, 0.3, 4, 4, 4, 0.09,
     ]);
@@ -148,7 +148,7 @@ describe("performanceGovernor", () => {
       minSlots: 2,
       energyRetention: 0.72,
       layerType: "detail",
-      chromesthesiaEnabled: true,
+      spectralLightEnabled: true,
       featureFrame: {
         transientEnergy: 0.05,
         harmonicity: 0.08,

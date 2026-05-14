@@ -35,7 +35,7 @@ function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
     uniforms: {
       uColor: { value: { set: vi.fn() } },
       uSurfaceColor: { value: { set: vi.fn() } },
-      uChromesthesiaMix: { value: 0 },
+      uSpectralMix: { value: 0 },
       uThreshold: { value: 0 },
       uStructureMin: { value: 0 },
       uStructureMax: { value: 0 },
@@ -71,9 +71,9 @@ function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
       effectiveThreshold: 0.44,
     },
     baseDensityGain: 0,
-    chromesthesia: {
+    spectralLight: {
       colorMode: "static",
-      chromesthesiaMix: 0,
+      spectralMix: 0,
     },
     volumeMesh: {
       material: neumannMaterial,
@@ -175,8 +175,8 @@ describe("control runtime sync", () => {
     controls.motionAmount = 1.1;
     controls.structurePersistence = 1.4;
     controls.raymarchSteps = 64;
-    controls.colorMode = "chromesthesia";
-    controls.chromesthesiaMix = 0.6;
+    controls.colorMode = "spectral";
+    controls.spectralMix = 0.6;
 
     const gl = {
       setClearColor: vi.fn(),
@@ -212,12 +212,12 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uHolographicShift.value).toBe(0.41);
     expect(runtimeState.uniforms.uHolographicFresnelPower.value).toBe(4.1);
     expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
-    expect(runtimeState.uniforms.uChromesthesiaMix.value).toBeCloseTo(
+    expect(runtimeState.uniforms.uSpectralMix.value).toBeCloseTo(
       Math.sqrt(0.6),
     );
-    expect(runtimeState.chromesthesia).toEqual({
-      colorMode: "chromesthesia",
-      chromesthesiaMix: Math.sqrt(0.6),
+    expect(runtimeState.spectralLight).toEqual({
+      colorMode: "spectral",
+      spectralMix: Math.sqrt(0.6),
     });
     expect(runtimeState.reactivityTuning).toEqual({
       reactivity: 1.2,
@@ -254,8 +254,8 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.motionAmount).toBe(1.1);
     expect(snapshot.uniforms.structurePersistence).toBe(1.4);
     expect(snapshot.uniforms.raymarchSteps).toBe(64);
-    expect(snapshot.uniforms.colorMode).toBe("chromesthesia");
-    expect(snapshot.uniforms.chromesthesiaMix).toBeCloseTo(Math.sqrt(0.6));
+    expect(snapshot.uniforms.colorMode).toBe("spectral");
+    expect(snapshot.uniforms.spectralMix).toBeCloseTo(Math.sqrt(0.6));
     expect(snapshot.uniforms.boundaryMode).toBe("dirichlet");
     expect(snapshot.uniforms.requestedCavityGeometry).toBe("rectangular");
     expect(snapshot.uniforms.effectiveCavityGeometry).toBe("rectangular");
@@ -389,7 +389,7 @@ describe("control runtime sync", () => {
     controls.motionAmount = 1.3;
     controls.structurePersistence = 0.75;
     controls.colorMode = "static";
-    controls.chromesthesiaMix = 0.88;
+    controls.spectralMix = 0.88;
 
     const runtimeState = createRaymarchHarness();
     const snapshot = applyRaymarchControls(runtimeState, controls);
@@ -413,13 +413,13 @@ describe("control runtime sync", () => {
       deriveStepCompensation(72),
     );
     expect(runtimeState.bloomTuning.lowStepBloomGuard).toBe(0);
-    expect(runtimeState.uniforms.uChromesthesiaMix.value).toBe(0);
+    expect(runtimeState.uniforms.uSpectralMix.value).toBe(0);
     expect(runtimeState.idleOverlay.material.color.set).toHaveBeenCalledWith(
       "#88ccff",
     );
     expect(snapshot.uniforms.surfaceColor).toBe("#88ccff");
     expect(snapshot.uniforms.colorMode).toBe("static");
-    expect(snapshot.uniforms.chromesthesiaMix).toBe(0);
+    expect(snapshot.uniforms.spectralMix).toBe(0);
     expect(snapshot.uniforms.boundaryMode).toBe("neumann");
     expect(snapshot.uniforms.opacityGain).toBe(1.75);
     expect(snapshot.uniforms.holographicIntensity).toBe(0.61);

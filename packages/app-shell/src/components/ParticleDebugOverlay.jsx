@@ -116,7 +116,7 @@ const DEBUG_METRIC_TOOLTIPS = {
   Drop: "Analyzer modal slots dropped by the raymarch render budget this frame.",
   Retain: "Amplitude energy retained by the uploaded raymarch modal budget.",
   Chroma:
-    "Maximum chromesthesia color weight uploaded for backbone/detail layers.",
+    "Maximum Spectral Light color weight uploaded for backbone/detail layers.",
   Flux: "Weighted spectral-flux contribution to Change. Higher values mean more fresh frequency-bin motion.",
   Hit: "Weighted transient-energy contribution to Change. Higher values mean stronger attacks and onsets.",
   "Slot Δ": "Weighted average slot-amplitude delta contribution to Change.",

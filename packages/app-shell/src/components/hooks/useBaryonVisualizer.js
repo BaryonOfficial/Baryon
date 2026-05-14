@@ -15,7 +15,7 @@ import {
   markBaryonTestRuntimeReady,
   resetBaryonTestReady,
 } from "../../devtools/testReady.js";
-import { shouldSkipChromesthesiaStaticColorInvalidation } from "./controlInvalidation.js";
+import { shouldSkipSpectralStaticColorInvalidation } from "./controlInvalidation.js";
 import {
   clearAdaptiveRaymarchResumeState,
   maybePublishRuntimePerfSnapshot,
@@ -334,11 +334,10 @@ export function useBaryonVisualizer({
     (nextControls, { clearPausedFrameCache = false } = {}) => {
       const previousControls =
         cachedControlSnapshotsRef.current.controlsSnapshot;
-      const shouldSkipInvalidation =
-        shouldSkipChromesthesiaStaticColorInvalidation(
-          previousControls,
-          nextControls,
-        );
+      const shouldSkipInvalidation = shouldSkipSpectralStaticColorInvalidation(
+        previousControls,
+        nextControls,
+      );
       cachedControlSnapshotsRef.current.controlsSnapshot = nextControls
         ? { ...nextControls }
         : null;
@@ -477,9 +476,9 @@ export function useBaryonVisualizer({
         Number.NEGATIVE_INFINITY;
       onPerformanceHudSnapshotChange?.(null);
     }
-    const chromesthesiaEnabled =
-      controls.colorMode === "chromesthesia" &&
-      (controls.chromesthesiaMix ?? RENDER_DEFAULTS.chromesthesiaMix) > 0;
+    const spectralLightEnabled =
+      controls.colorMode === "spectral" &&
+      (controls.spectralMix ?? RENDER_DEFAULTS.spectralMix) > 0;
     const applyCachedControlSnapshotsStartedAt = getWallTimeMs();
     const controlSnapshots = applyCachedControlSnapshots({
       controls,
@@ -532,7 +531,7 @@ export function useBaryonVisualizer({
           time,
           clockMode,
           renderLoopRefs,
-          chromesthesiaEnabled,
+          spectralLightEnabled,
         });
     const featureFrame = applyLiveInputRenderIntent(
       resolvedFrame.featureFrame,

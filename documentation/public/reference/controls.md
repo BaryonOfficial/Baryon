@@ -43,6 +43,8 @@ Controls for the scene and particle color palette.
 | **Program Fill**   | Background color used only when Program Output is `Opaque`.                                                                                                                                |
 | **Volume**         | Color of particles inside the resonant volume — these particles fill the interior of the cymatics pattern.                                                                                 |
 | **Surface**        | Color of particles that sit on the nodal surface boundaries of the cymatics structure.                                                                                                     |
+| **Color Mode**     | `Static` uses the Volume and Surface colors. `Spectral` colors promoted cymatic modes from the audio spectrum and mixes those colors through the modal field.                              |
+| **Color Mix**      | Strength of Spectral Light coloring when Color Mode is `Spectral`. At 0 the render uses the static colors; higher values tint only where promoted modal color slots contribute.            |
 
 ---
 

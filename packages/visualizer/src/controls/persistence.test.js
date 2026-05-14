@@ -57,9 +57,12 @@ describe("serializeControls", () => {
     const state = createControlState();
     state.bloomStrength = 1.5;
     state.volumeColor = "#ff0000";
+    state.spectralMix = 0.72;
     const serialized = serializeControls(state, CONTROL_DEFINITIONS);
     expect(serialized.bloomStrength).toBe(1.5);
     expect(serialized.volumeColor).toBe("#ff0000");
+    expect(serialized.spectralMix).toBe(0.72);
+    expect(serialized).not.toHaveProperty("chromesthesiaMix");
   });
 
   it("serializes the canonical max-quality performance profile", () => {
@@ -110,6 +113,17 @@ describe("deserializeControls", () => {
     );
 
     expect(result.renderQualityPreset).toBe("max-quality");
+  });
+
+  it("migrates old chromesthesia settings to Spectral Light at the boundary", () => {
+    const result = deserializeControls(
+      { colorMode: "chromesthesia", chromesthesiaMix: 0.6 },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.colorMode).toBe("spectral");
+    expect(result.spectralMix).toBe(0.6);
+    expect(result).not.toHaveProperty("chromesthesiaMix");
   });
 
   it("falls back to default when the stored type does not match", () => {

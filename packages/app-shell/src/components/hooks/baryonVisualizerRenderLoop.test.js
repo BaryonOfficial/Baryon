@@ -221,7 +221,7 @@ function createResolveFeatureFrameHarness(overrides = {}) {
           analysisSchedulerRef: { current: null },
         },
       },
-      chromesthesiaEnabled: true,
+      spectralLightEnabled: true,
       ...overrides,
     },
   };
@@ -700,7 +700,7 @@ test("preview custom 120 starts from the intended rung instead of max quality", 
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.84);
 });
 
-test("active playback bootstrap builds a fresh chromesthesia frame when the feature engine has no matching snapshot", () => {
+test("active playback bootstrap builds a fresh Spectral Light frame when the feature engine has no matching snapshot", () => {
   const heavyAnalysis = {
     fieldState: "active",
     activeModeCount: 2,
@@ -736,13 +736,13 @@ test("active playback bootstrap builds a fresh chromesthesia frame when the feat
           frameCacheRefs,
         },
       }).args,
-      chromesthesiaEnabled: true,
+      spectralLightEnabled: true,
     },
     {
       prepareFeatureFrame: vi.fn(() => ({
         currentFrameAtMs: 1000,
         analysisSessionKey: "song-1",
-        analysisInputsSignature: "chromesthesia-on",
+        analysisInputsSignature: "spectral-on",
         silentFeatureFrame: null,
       })),
       runHeavyFeatureAnalysis,
