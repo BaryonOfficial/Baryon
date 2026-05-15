@@ -428,8 +428,8 @@ function createScatteringNode({
     uEnergySignal,
     uChangeSignal,
     uBassSalience,
-    uTextureSpread,
-    uNovelty,
+    uTimbreSpread,
+    uSpectralNovelty,
     uBeatPulse,
     uBeatPhase,
     uRhythmicDensity,
@@ -460,10 +460,10 @@ function createScatteringNode({
     .add(uModalVisibilityEnergy.mul(0.12))
     .add(beatPhaseDecay.mul(0.18));
   const dynamicHolographicIntensity = uHolographicIntensity
-    .mul(float(1.0).add(uTextureSpread.mul(0.35)))
+    .mul(float(1.0).add(uTimbreSpread.mul(0.35)))
     .mul(float(1.0).add(beatPhaseDecay.mul(0.22)));
   const dynamicHolographicShift = clamp(
-    uHolographicShift.add(uNovelty.mul(0.2)).sub(uKeyMode.mul(0.12)),
+    uHolographicShift.add(uSpectralNovelty.mul(0.2)).sub(uKeyMode.mul(0.12)),
     float(0.0),
     float(1.0),
   );
@@ -485,8 +485,8 @@ function createScatteringNode({
     .add(uModalVisibilityEnergy.mul(0.08))
     .sub(uChangeSignal.mul(0.08));
   // Excitation gate: 0 when field is under-excited (weak/noisy input), 1 when
-  // fully excited. Coherent modal visibility is authoritative here; ONNX-style
-  // hints remain outside clarity gates. Hoisted as loop-invariant.
+  // fully excited. Coherent modal visibility is authoritative here. Hoisted as
+  // loop-invariant.
   const excitationInput = uAverageAmplitude
     .div(float(255.0))
     .mul(float(0.3))
@@ -645,7 +645,7 @@ function createScatteringNode({
       const activeCount = float(uActiveModeCount);
       const backboneCount = float(uBackboneModeCount);
       const detailCount = float(uDetailModeCount);
-      // Modal structure sharpens nodal lines; ONNX hints do not own clarity.
+      // Modal structure sharpens nodal lines; style descriptors do not own clarity.
       // contourGainBase is pre-computed above the Fn.
       const contourGain = float(1.0)
         .add(uTransientEnergy.mul(0.25))
@@ -904,7 +904,7 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
-      // Rich timbres (high textureSpread) boost iridescence; novelty shifts the hue
+      // Rich timbres boost iridescence; deterministic novelty shifts the hue.
       // dynamicHolographicIntensity and dynamicHolographicShift pre-computed above the Fn
       const holographicFresnel = fresnelBase
         .mul(dynamicHolographicIntensity)

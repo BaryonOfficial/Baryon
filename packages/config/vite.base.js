@@ -18,7 +18,6 @@ export const baryonCommonOptimizeDepsInclude = [
   "@react-three/drei",
   "@react-three/fiber",
   "hls.js",
-  "onnxruntime-web/wasm",
   "scheduler",
   "stats.js",
   "three",

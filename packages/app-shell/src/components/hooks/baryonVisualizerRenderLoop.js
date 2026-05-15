@@ -73,8 +73,6 @@ const STAGE_ATTRIBUTION_TIEBREAK_ORDER = Object.freeze([
 const STAGE_ATTRIBUTION_BUCKET_PERF_KEYS = Object.freeze({
   analysis: Object.freeze([
     "readAnalysisSnapshotMs",
-    "enqueueAnalysisFrameMs",
-    "readAnalysisHintsMs",
     "buildFeatureFrameMs",
     "heavyAnalysisMs",
     "fastComposeMs",
@@ -224,12 +222,7 @@ function serializeReplayArray(values) {
   return values ?? null;
 }
 
-function maybeCaptureReplayFrame({
-  analysisSnapshot,
-  analysisHints,
-  status,
-  frameTimeMs,
-}) {
+function maybeCaptureReplayFrame({ analysisSnapshot, status, frameTimeMs }) {
   if (typeof window === "undefined") {
     return;
   }
@@ -254,11 +247,6 @@ function maybeCaptureReplayFrame({
       fftSize: status?.fftSize ?? null,
       liveInputCalibrationVersion: status?.liveInputCalibrationVersion ?? null,
     },
-    analysisHints: analysisHints
-      ? {
-          ...analysisHints,
-        }
-      : null,
     analysisSnapshot: analysisSnapshot
       ? {
           sourceMode: analysisSnapshot.sourceMode ?? null,
@@ -1332,7 +1320,6 @@ export function resolveFeatureFrame(
   {
     audio,
     featureState,
-    featureAnalyzer,
     featureEngine,
     runtimeDiagnostics = null,
     runtimeState,
@@ -1380,32 +1367,8 @@ export function resolveFeatureFrame(
       getRenderLoopWallTimeMs() - analysisSnapshotStartedAt,
     );
 
-    const enqueueAnalysisFrameStartedAt = getRenderLoopWallTimeMs();
-    featureAnalyzer?.enqueueAnalysisFrame?.({
-      analysisSnapshot,
-      status,
-      frameTimeMs: time * 1000,
-    });
-    recordRuntimePerfSample(
-      runtimeDiagnostics,
-      "enqueueAnalysisFrameMs",
-      getRenderLoopWallTimeMs() - enqueueAnalysisFrameStartedAt,
-    );
-
-    const readHintsStartedAt = getRenderLoopWallTimeMs();
-    const analysisHints = featureAnalyzer?.readHints?.({
-      status,
-      frameTimeMs: time * 1000,
-    });
-    recordRuntimePerfSample(
-      runtimeDiagnostics,
-      "readAnalysisHintsMs",
-      getRenderLoopWallTimeMs() - readHintsStartedAt,
-    );
-
     maybeCaptureReplayFrame({
       analysisSnapshot,
-      analysisHints,
       status,
       frameTimeMs: time * 1000,
     });
@@ -1426,7 +1389,6 @@ export function resolveFeatureFrame(
         status,
         frameTimeMs: time * 1000,
         includeSpectralLight: spectralLightEnabled,
-        analysisHints,
       });
     } else {
       const preparedInputs = prepareFeatureFrame({
@@ -1437,7 +1399,6 @@ export function resolveFeatureFrame(
         status,
         frameTimeMs: time * 1000,
         includeSpectralLight: spectralLightEnabled,
-        analysisHints,
       });
 
       if (preparedInputs.silentFeatureFrame) {
@@ -1459,7 +1420,6 @@ export function resolveFeatureFrame(
             radius: runtimeState.uniforms.uRadius.value,
             cavityGeometry: controls.cavityGeometry,
             includeSpectralLight: spectralLightEnabled,
-            analysisHints,
             auditSettings: featureState?.audit?.settings ?? null,
           });
           featureEngine.enqueueTransportFrame(transportFrame);
@@ -1530,7 +1490,6 @@ export function resolveFeatureFrame(
             featureFrame = composeFeatureFrame({
               preparedInputs,
               analysisResult: engineSnapshot.analysisResult,
-              analysisHints,
               previousFrame: lastLiveFrameRef.current,
               reuseHeavyAnalysis: true,
             });
@@ -1564,7 +1523,6 @@ export function resolveFeatureFrame(
             featureFrame = composeFeatureFrame({
               preparedInputs,
               analysisResult,
-              analysisHints,
               previousFrame: schedulerState.lastComposedFeatureFrame,
               reuseHeavyAnalysis: false,
             });
@@ -1618,7 +1576,6 @@ export function resolveFeatureFrame(
             featureFrame = composeFeatureFrame({
               preparedInputs,
               analysisResult,
-              analysisHints,
               previousFrame: schedulerState.lastComposedFeatureFrame,
               reuseHeavyAnalysis: false,
             });
@@ -1642,7 +1599,6 @@ export function resolveFeatureFrame(
             featureFrame = composeFeatureFrame({
               preparedInputs,
               analysisResult: schedulerState.lastHeavyAnalysisResult,
-              analysisHints,
               previousFrame: schedulerState.lastComposedFeatureFrame,
               reuseHeavyAnalysis: true,
             });

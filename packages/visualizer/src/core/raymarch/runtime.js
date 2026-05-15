@@ -940,10 +940,9 @@ export function tickRaymarchRuntime(
     setIfChanged(uniforms.uEnergySignal, 0);
     setIfChanged(uniforms.uChangeSignal, 0);
     setIfChanged(uniforms.uPulseSignal, 0);
-    setIfChanged(uniforms.uHarmonicity, 0);
     setIfChanged(uniforms.uBassSalience, 0);
-    setIfChanged(uniforms.uTextureSpread, 0);
-    setIfChanged(uniforms.uNovelty, 0);
+    setIfChanged(uniforms.uTimbreSpread, 0);
+    setIfChanged(uniforms.uSpectralNovelty, 0);
     setIfChanged(uniforms.uBeatPulse, 0);
     setIfChanged(uniforms.uBeatPhase, 0);
     setIfChanged(uniforms.uTempoNorm, 0);
@@ -1071,10 +1070,12 @@ export function tickRaymarchRuntime(
   setIfChanged(uniforms.uEnergySignal, featureFrame?.energySignal ?? 0);
   setIfChanged(uniforms.uChangeSignal, featureFrame?.changeSignal ?? 0);
   setIfChanged(uniforms.uPulseSignal, featureFrame?.pulseSignal ?? 0);
-  setIfChanged(uniforms.uHarmonicity, featureFrame?.harmonicity ?? 0);
   setIfChanged(uniforms.uBassSalience, featureFrame?.bassSalience ?? 0);
-  setIfChanged(uniforms.uTextureSpread, featureFrame?.textureSpread ?? 0);
-  setIfChanged(uniforms.uNovelty, featureFrame?.novelty ?? 0);
+  setIfChanged(uniforms.uTimbreSpread, featureFrame?.timbreSpread ?? 0);
+  setIfChanged(
+    uniforms.uSpectralNovelty,
+    featureFrame?.spectralNovelty ?? 0,
+  );
   const beatTarget =
     featureFrame?.beatDetected && (featureFrame?.beatStrength ?? 0) > 0.3
       ? clamp01(

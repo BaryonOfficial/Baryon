@@ -1,5 +1,5 @@
 import { normalizeAudioFeatureEngineSettings } from "./audioFeatureEngineShared.js";
-import { buildAnalysisSessionKey } from "./featureAnalyzer.js";
+import { buildAnalysisSessionKey } from "./analysisSession.js";
 import {
   DEFAULT_REQUESTED_CAVITY_GEOMETRY,
   normalizeCavityGeometry,
@@ -27,16 +27,6 @@ function cloneArray(values) {
     return new Float64Array(values);
   }
   return values ?? null;
-}
-
-function cloneAnalysisHints(analysisHints) {
-  if (!analysisHints) {
-    return null;
-  }
-
-  return {
-    ...analysisHints,
-  };
 }
 
 function shouldIncludeTransportTimeData({ timeData }) {
@@ -73,7 +63,6 @@ export function buildAudioFeatureTransportFrame({
   frameId = null,
   radius,
   includeSpectralLight = true,
-  analysisHints = null,
   auditSettings = null,
   beatSettings = null,
   liveInputAnalysisSettings = null,
@@ -117,7 +106,6 @@ export function buildAudioFeatureTransportFrame({
     spectralFlux: analysisSnapshot?.spectralFlux ?? 0,
     fftMagnitudes,
     timeData,
-    analysisHints: cloneAnalysisHints(analysisHints),
     auditSettings: auditSettings ? { ...auditSettings } : null,
     beatSettings: beatSettings ? { ...beatSettings } : null,
     liveInputAnalysisSettings: liveInputAnalysisSettings

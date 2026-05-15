@@ -123,7 +123,6 @@ const DEBUG_METRIC_TOOLTIPS = {
   Turn: "Weighted slot-turnover contribution to Change. Higher values mean more modes entering, leaving, or crossing the turnover threshold.",
   Timbre:
     "Weighted timbral-redistribution contribution to Change, based on centroid versus band spread.",
-  Hint: "Weighted higher-level hint contribution to Change, combining novelty and transient salience.",
   "Render Mode":
     "Whether the visible preview is still locally rendered or is showing the shared external-output feed.",
   Output: "Current external-output frame size routed to Syphon.",

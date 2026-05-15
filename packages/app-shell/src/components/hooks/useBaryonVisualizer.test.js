@@ -17,7 +17,6 @@ const visualizationLifecycleState = vi.hoisted(() => ({
   runtimeRef: { current: { method: "raymarch", tick: () => {} } },
   runtimeStateRef: { current: {} },
   audioFeatureRef: { current: null },
-  audioFeatureAnalyzerRef: { current: null },
   audioFeatureEngineRef: { current: null },
   runtimeDiagnosticsRef: { current: {} },
   frameCacheRefs: {

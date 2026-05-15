@@ -89,8 +89,7 @@ describe("performanceGovernor", () => {
       spectralLightEnabled: false,
       featureFrame: {
         transientEnergy: 1,
-        harmonicity: 0.9,
-        textureSpread: 0,
+        timbreSpread: 0,
       },
     });
 
@@ -122,8 +121,7 @@ describe("performanceGovernor", () => {
       spectralLightEnabled: true,
       featureFrame: {
         transientEnergy: 0.45,
-        harmonicity: 0.86,
-        textureSpread: 0.1,
+        timbreSpread: 0.1,
         trebleBroadbandEnergy: 0.08,
       },
     });
@@ -152,8 +150,7 @@ describe("performanceGovernor", () => {
       spectralLightEnabled: true,
       featureFrame: {
         transientEnergy: 0.05,
-        harmonicity: 0.08,
-        textureSpread: 0.92,
+        timbreSpread: 0.92,
         trebleBroadbandEnergy: 0.9,
       },
     });
@@ -161,7 +158,7 @@ describe("performanceGovernor", () => {
     expect(noisy.selectedIndices).toEqual([0, 1, 2]);
   });
 
-  it("does not let ML harmonicity change field excitation", () => {
+  it("derives field excitation from modal signals", () => {
     const coreFrame = {
       averageAmplitude: 24,
       structureSignal: 0.18,
@@ -169,15 +166,11 @@ describe("performanceGovernor", () => {
       modalVisibilityEnergy: 0.36,
     };
 
-    expect(
+    expect(deriveFieldExcitation(coreFrame)).toBeGreaterThan(
       deriveFieldExcitation({
         ...coreFrame,
-        harmonicity: 0,
-      }),
-    ).toBeCloseTo(
-      deriveFieldExcitation({
-        ...coreFrame,
-        harmonicity: 1,
+        modeCoherence: 0,
+        modalVisibilityEnergy: 0,
       }),
     );
   });
@@ -191,7 +184,6 @@ describe("performanceGovernor", () => {
       featureFrame: {
         averageAmplitude: 20,
         structureSignal: 0.2,
-        harmonicity: 0.2,
       },
       requestedStepBudget: 64,
       requestedRenderScale: 1,
@@ -210,7 +202,6 @@ describe("performanceGovernor", () => {
       featureFrame: {
         averageAmplitude: 160,
         structureSignal: 0.82,
-        harmonicity: 0.76,
       },
       requestedStepBudget: 64,
       requestedRenderScale: 1,

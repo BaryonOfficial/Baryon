@@ -260,10 +260,6 @@ function ensureTargetBuildField(container, key, capacity) {
   return value;
 }
 
-function getActiveAnalysisHints(analysisHints) {
-  return analysisHints?.active ? analysisHints : null;
-}
-
 function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
   const slotLength = capacity * 4;
   const backboneTargetLength = Math.min(capacity, BACKBONE_STACK_SLOTS) * 4;
@@ -713,10 +709,6 @@ function cloneFloat32Array(values) {
   return values instanceof Float32Array ? new Float32Array(values) : null;
 }
 
-function cloneAnalysisHintsForSnapshot(analysisHints) {
-  return analysisHints ? { ...analysisHints } : null;
-}
-
 function cloneSpectralLightComponents(components) {
   if (!Array.isArray(components) || components.length === 0) {
     return [];
@@ -798,6 +790,8 @@ function buildDebugSummary({
   structureSignal = 0,
   energySignal = 0,
   modalVisibilityEnergy = 0,
+  timbreSpread = 0,
+  spectralNovelty = 0,
   changeSignal = 0,
   changeBreakdown = null,
   pulseSignal = 0,
@@ -810,7 +804,6 @@ function buildDebugSummary({
   beatThreshold = 0,
   sampleRate = 0,
   fftSize = 0,
-  analysisHints = null,
   structuralMetrics = null,
   micFftNormGain = 1,
   preModalFftPeak = 0,
@@ -846,9 +839,9 @@ function buildDebugSummary({
     requestedPitchSource: REQUESTED_PITCH_SOURCE,
     analysisEngine,
     fieldState,
-    workerState: analysisHints?.workerState ?? "none",
-    pitchFrameAge: analysisHints?.ageMs ?? null,
-    workerStatus: analysisHints?.workerStatus ?? null,
+    workerState: "none",
+    pitchFrameAge: null,
+    workerStatus: null,
     fileActive: soundActive,
     micActive,
     liveInputNoiseGateActive,
@@ -896,15 +889,10 @@ function buildDebugSummary({
     beatPulseId,
     beatStrength,
     beatConfidence,
-    hintSource: analysisHints?.hintSource ?? "none",
-    analysisLatencyMs: analysisHints?.analysisLatencyMs ?? 0,
-    novelty: clamp01(analysisHints?.novelty ?? 0),
-    harmonicity: clamp01(analysisHints?.harmonicity ?? 0),
-    transientSalience: clamp01(analysisHints?.transientSalience ?? 0),
-    bassSalience: clamp01(analysisHints?.bassSalience ?? 0),
-    textureSpread: clamp01(analysisHints?.textureSpread ?? 0),
-    voicingProbability: clamp01(analysisHints?.voicingProbability ?? 0),
-    releaseBias: clamp01(analysisHints?.releaseBias ?? 0),
+    hintSource: "none",
+    analysisLatencyMs: 0,
+    timbreSpread: clamp01(timbreSpread),
+    spectralNovelty: clamp01(spectralNovelty),
     beatLowBandEnergy,
     beatOnsetDriver,
     beatThreshold,
@@ -963,7 +951,6 @@ function buildZeroDebugSnapshot({
   backboneColorSlots,
   detailColorSlots,
   auditSettings,
-  analysisHints = null,
   requestedCavityGeometry = /** @type {CavityGeometry} */ (
     DEFAULT_REQUESTED_CAVITY_GEOMETRY
   ),
@@ -999,7 +986,6 @@ function buildZeroDebugSnapshot({
     modalVisibilityEnergy: 0,
     changeSignal: 0,
     pulseSignal: 0,
-    analysisHints,
     requestedCavityGeometry,
     effectiveCavityGeometry,
   });
@@ -1040,7 +1026,6 @@ function buildSilentFeatureFrame({
   detailState,
   fftSize,
   auditSettings,
-  analysisHints = null,
   requestedCavityGeometry = /** @type {CavityGeometry} */ (
     DEFAULT_REQUESTED_CAVITY_GEOMETRY
   ),
@@ -1101,10 +1086,9 @@ function buildSilentFeatureFrame({
     keyMode: "major",
     keyConfidence: 0,
     keyTonicHue: 0,
-    harmonicity: 0,
     bassSalience: 0,
-    textureSpread: 0,
-    novelty: 0,
+    timbreSpread: 0,
+    spectralNovelty: 0,
     modeSlots,
     referenceModeSlots,
     sourceMode: "silent",
@@ -1120,7 +1104,6 @@ function buildSilentFeatureFrame({
       backboneColorSlots,
       detailColorSlots,
       auditSettings,
-      analysisHints,
       requestedCavityGeometry,
       effectiveCavityGeometry,
     }),
@@ -2342,6 +2325,8 @@ function finalizeFeatureDebugSnapshot({
   structureSignal,
   energySignal,
   modalVisibilityEnergy,
+  timbreSpread = 0,
+  spectralNovelty = 0,
   changeSignal,
   changeBreakdown = null,
   pulseSignal,
@@ -2354,7 +2339,6 @@ function finalizeFeatureDebugSnapshot({
   beatThreshold,
   sampleRate,
   fftSize,
-  analysisHints = null,
   structuralMetrics = null,
   micFftNormGain = 1,
   preModalFftPeak = 0,
@@ -2412,6 +2396,8 @@ function finalizeFeatureDebugSnapshot({
     structureSignal,
     energySignal,
     modalVisibilityEnergy,
+    timbreSpread,
+    spectralNovelty,
     changeSignal,
     changeBreakdown,
     pulseSignal,
@@ -2424,7 +2410,6 @@ function finalizeFeatureDebugSnapshot({
     beatThreshold,
     sampleRate,
     fftSize,
-    analysisHints,
     structuralMetrics,
     micFftNormGain,
     preModalFftPeak,
@@ -2544,35 +2529,44 @@ function smoothFeatureSignal(
   return currentValue + (targetValue - currentValue) * alpha;
 }
 
-function buildHintMetrics(analysisHints) {
-  return {
-    active: true,
-    harmonicity: clamp01(analysisHints?.harmonicity ?? 0),
-    bassSalience: clamp01(analysisHints?.bassSalience ?? 0),
-    textureSpread: clamp01(analysisHints?.textureSpread ?? 0),
-    novelty: clamp01(analysisHints?.novelty ?? 0),
-    transientSalience: clamp01(analysisHints?.transientSalience ?? 0),
-  };
-}
-
 function deriveDeterministicBassSalience(bandEnergies) {
   return clamp01(
     (bandEnergies?.[0] ?? 0) * 1.8 + (bandEnergies?.[1] ?? 0) * 0.8,
   );
 }
 
-function resolveComposeAnalysisHints(analysisHints, fallbackAnalysisHints) {
-  const activeHints =
-    getActiveAnalysisHints(analysisHints) ??
-    getActiveAnalysisHints(fallbackAnalysisHints);
-  if (!activeHints) {
-    return null;
-  }
+function deriveDeterministicTimbreSpread({
+  bandEnergies,
+  spectralCentroid = 0,
+  spectralFlux = 0,
+  trebleBroadbandEnergy = 0,
+}) {
+  const [sub = 0, lowMid = 0, highMid = 0, air = 0] = bandEnergies ?? [];
+  return clamp01(
+    highMid * 0.28 +
+      air * 0.42 +
+      trebleBroadbandEnergy * 0.32 +
+      spectralCentroid * 0.18 +
+      spectralFlux * 0.12 -
+      sub * 0.08 -
+      lowMid * 0.03,
+  );
+}
 
-  return {
-    ...activeHints,
-    ...buildHintMetrics(activeHints),
-  };
+function deriveDeterministicSpectralNovelty({
+  spectralFlux = 0,
+  transientEnergy = 0,
+  changeSignal = 0,
+  beatOnsetDriver = 0,
+  beatDetected = false,
+}) {
+  return clamp01(
+    spectralFlux * 0.55 +
+      transientEnergy * 0.2 +
+      changeSignal * 0.18 +
+      beatOnsetDriver * 0.12 +
+      (beatDetected ? 0.06 : 0),
+  );
 }
 
 export function prepareAudioFeatureFrameInputs({
@@ -2587,7 +2581,6 @@ export function prepareAudioFeatureFrameInputs({
   micAnalysisSettings = undefined,
   liveInputAnalysisSettings = undefined,
   includeSpectralLight = true,
-  analysisHints = null,
 }) {
   const capacity = featureState?.capacity ?? AUDIO_SLOT_CAPACITY;
   const analysisMemory = getAnalysisMemory(featureState, capacity);
@@ -2742,7 +2735,6 @@ export function prepareAudioFeatureFrameInputs({
       cavityGeometry: requestedCavityGeometry,
       status,
       beatSettings,
-      analysisHints,
       analysisSessionKey: resolveFeatureAnalysisSessionKey(status, inputMode),
       analysisInputsSignature: buildFeatureAnalysisInputsSignature({
         inputMode,
@@ -2777,7 +2769,6 @@ export function prepareAudioFeatureFrameInputs({
         detailState,
         fftSize,
         auditSettings: resolvedAuditSettings,
-        analysisHints,
         requestedCavityGeometry,
         effectiveCavityGeometry,
       }),
@@ -2844,7 +2835,6 @@ export function prepareAudioFeatureFrameInputs({
     cavityGeometry: requestedCavityGeometry,
     status,
     beatSettings,
-    analysisHints,
     capacity,
     analysisMemory,
     backboneSlots,
@@ -3719,7 +3709,6 @@ export function buildCurrentAudioFeatureAnalysisResult({
       modalResolveMs: resolvedStructural.structuralPerf?.modalResolveMs ?? 0,
       projectionMs: resolvedStructural.structuralPerf?.projectionMs ?? 0,
     },
-    analysisHints: preparedInputs.analysisHints,
     debug: null,
   };
 }
@@ -3859,9 +3848,6 @@ export function buildAudioFeatureAnalysisSnapshot({
       structuralMetrics: analysisResult.structuralMetrics
         ? { ...analysisResult.structuralMetrics }
         : null,
-      analysisHints: cloneAnalysisHintsForSnapshot(
-        analysisResult.analysisHints,
-      ),
       spectralLightComponents,
       nonZeroFFTBinCount,
       referencePitchBinAmplitude,
@@ -3873,7 +3859,6 @@ export function buildAudioFeatureAnalysisSnapshot({
 export function composeAudioFeatureFrame({
   preparedInputs,
   analysisResult,
-  analysisHints = null,
   previousFrame = null,
   reuseHeavyAnalysis = false,
 }) {
@@ -3881,12 +3866,6 @@ export function composeAudioFeatureFrame({
     analysisResult.backboneStateSummary ?? analysisResult.backboneState;
   const detailState =
     analysisResult.detailStateSummary ?? analysisResult.detailState;
-  const effectiveAnalysisHints = resolveComposeAnalysisHints(
-    analysisHints,
-    analysisResult.analysisHints,
-  );
-  const debugAnalysisHints =
-    analysisHints ?? analysisResult.analysisHints ?? effectiveAnalysisHints;
   let {
     structureSignal,
     energySignal,
@@ -3922,7 +3901,6 @@ export function composeAudioFeatureFrame({
     sourceNormalization: analysisResult.sourceNormalization,
     liveInputHardSilenceActive: analysisResult.liveInputHardSilenceActive,
   });
-
   if (reuseHeavyAnalysis && previousFrame) {
     const deltaMs = getFrameDeltaMs(
       preparedInputs.analysisMemory.lastComposedFrameAtMs,
@@ -3974,6 +3952,19 @@ export function composeAudioFeatureFrame({
       },
     );
   }
+  const timbreSpread = deriveDeterministicTimbreSpread({
+    bandEnergies: analysisResult.bandEnergies,
+    spectralCentroid: analysisResult.spectralCentroid,
+    spectralFlux: analysisResult.spectralFlux,
+    trebleBroadbandEnergy: analysisResult.trebleBroadbandEnergy,
+  });
+  const spectralNovelty = deriveDeterministicSpectralNovelty({
+    spectralFlux: analysisResult.spectralFlux,
+    transientEnergy: analysisResult.transientEnergy,
+    changeSignal,
+    beatOnsetDriver: analysisResult.beatOnsetDriver,
+    beatDetected: analysisResult.beatDetected,
+  });
   preparedInputs.analysisMemory.lastComposedFrameAtMs =
     preparedInputs.currentFrameAtMs;
 
@@ -4048,6 +4039,8 @@ export function composeAudioFeatureFrame({
       structureSignal,
       energySignal,
       modalVisibilityEnergy,
+      timbreSpread,
+      spectralNovelty,
       changeSignal,
       changeBreakdown,
       pulseSignal,
@@ -4060,7 +4053,6 @@ export function composeAudioFeatureFrame({
       beatThreshold: analysisResult.beatThreshold,
       sampleRate: preparedInputs.sampleRate,
       fftSize: preparedInputs.fftSize,
-      analysisHints: debugAnalysisHints,
       structuralMetrics: analysisResult.structuralMetrics,
       micFftNormGain: analysisResult.micFftNormGain,
       preModalFftPeak: analysisResult.preModalFftPeak,
@@ -4119,10 +4111,9 @@ export function composeAudioFeatureFrame({
     keyMode: analysisResult.keyMode,
     keyConfidence: analysisResult.keyConfidence,
     keyTonicHue: analysisResult.keyTonicHue,
-    harmonicity: clamp01(effectiveAnalysisHints?.harmonicity ?? 0),
     bassSalience: deriveDeterministicBassSalience(analysisResult.bandEnergies),
-    textureSpread: clamp01(effectiveAnalysisHints?.textureSpread ?? 0),
-    novelty: clamp01(effectiveAnalysisHints?.novelty ?? 0),
+    timbreSpread,
+    spectralNovelty,
     modeSlots: analysisResult.modeSlots,
     referenceModeSlots: analysisResult.referenceModeSlots,
     sourceMode,
@@ -4141,7 +4132,6 @@ export function buildAudioFeatureFrame(args) {
   return composeAudioFeatureFrame({
     preparedInputs,
     analysisResult,
-    analysisHints: preparedInputs.analysisHints,
     reuseHeavyAnalysis: false,
   });
 }

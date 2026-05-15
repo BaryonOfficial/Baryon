@@ -189,12 +189,6 @@ function createResolveFeatureFrameHarness(overrides = {}) {
         capacity: 16,
         audit: { settings: {} },
       },
-      featureAnalyzer: {
-        enqueueAnalysisFrame() {},
-        readHints() {
-          return null;
-        },
-      },
       featureEngine: null,
       runtimeDiagnostics: createRuntimeDiagnostics(),
       runtimeState: {
@@ -361,8 +355,6 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
   runtimeDiagnostics.smoothedFrameTimeMs = 20;
   runtimeDiagnostics.render.targetFps = 60;
   runtimeDiagnostics.perfBreakdown.readAnalysisSnapshotMs.averageMs = 1;
-  runtimeDiagnostics.perfBreakdown.enqueueAnalysisFrameMs.averageMs = 2;
-  runtimeDiagnostics.perfBreakdown.readAnalysisHintsMs.averageMs = 3;
   runtimeDiagnostics.perfBreakdown.buildFeatureFrameMs.averageMs = 4;
   runtimeDiagnostics.perfBreakdown.heavyAnalysisMs.averageMs = 5;
   runtimeDiagnostics.perfBreakdown.fastComposeMs.averageMs = 6;
@@ -387,11 +379,11 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
   expect(snapshot.targetFps).toBe(60);
   expect(snapshot.perfBreakdown.heavyAnalysisMs.averageMs).toBe(5);
   expect(snapshot.perfBreakdown.pipelineRenderMs.lastMs).toBe(99);
-  expect(snapshot.stageAttribution.analysisCpuMs).toBe(21);
+  expect(snapshot.stageAttribution.analysisCpuMs).toBe(16);
   expect(snapshot.stageAttribution.engineCpuMs).toBe(15);
   expect(snapshot.stageAttribution.controlCpuMs).toBe(55);
   expect(snapshot.stageAttribution.renderCpuMs).toBe(14);
-  expect(snapshot.stageAttribution.measuredCpuMs).toBe(105);
+  expect(snapshot.stageAttribution.measuredCpuMs).toBe(100);
   expect(snapshot.stageAttribution.unattributedFrameMs).toBe(0);
   expect(snapshot.stageAttribution.dominantBucket).toBe("control");
   expect(snapshot.engineCounters).toEqual({

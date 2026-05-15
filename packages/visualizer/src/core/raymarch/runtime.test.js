@@ -98,10 +98,9 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uEnergySignal: { value: 0 },
       uChangeSignal: { value: 0 },
       uPulseSignal: { value: 0 },
-      uHarmonicity: { value: 0 },
       uBassSalience: { value: 0 },
-      uTextureSpread: { value: 0 },
-      uNovelty: { value: 0 },
+      uTimbreSpread: { value: 0 },
+      uSpectralNovelty: { value: 0 },
       uBeatPulse: { value: 0 },
       uBeatPhase: { value: 0 },
       uTempoNorm: { value: 0 },
@@ -609,7 +608,8 @@ describe("tickRaymarchRuntime", () => {
       energySignal: 0.82,
       changeSignal: 0.64,
       pulseSignal: 0.34,
-      harmonicity: 0.79,
+      timbreSpread: 0.31,
+      spectralNovelty: 0.24,
     };
 
     try {
@@ -706,7 +706,8 @@ describe("tickRaymarchRuntime", () => {
       energySignal: 0.82,
       changeSignal: 0.64,
       pulseSignal: 0.34,
-      harmonicity: 0.79,
+      timbreSpread: 0.31,
+      spectralNovelty: 0.24,
     };
 
     try {
@@ -789,7 +790,8 @@ describe("tickRaymarchRuntime", () => {
       energySignal: 0.82,
       changeSignal: 0.64,
       pulseSignal: 0.34,
-      harmonicity: 0.79,
+      timbreSpread: 0.31,
+      spectralNovelty: 0.24,
     };
 
     try {
@@ -841,7 +843,8 @@ describe("tickRaymarchRuntime", () => {
       energySignal: 0.82,
       changeSignal: 0.64,
       pulseSignal: 0.34,
-      harmonicity: 0.79,
+      timbreSpread: 0.31,
+      spectralNovelty: 0.24,
     };
 
     try {
@@ -888,7 +891,8 @@ describe("tickRaymarchRuntime", () => {
       energySignal: 0.82,
       changeSignal: 0.64,
       pulseSignal: 0.34,
-      harmonicity: 0.79,
+      timbreSpread: 0.31,
+      spectralNovelty: 0.24,
     };
     const changedFrame = {
       ...denseFrame,

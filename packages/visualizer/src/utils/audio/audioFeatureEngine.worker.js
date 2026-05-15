@@ -205,7 +205,6 @@ function toPreparedInputsFrame(frame) {
     frameTimeMs: frame.frameTimeMs,
     liveInputAnalysisSettings: frame.liveInputAnalysisSettings,
     includeSpectralLight: frame.includeSpectralLight,
-    analysisHints: frame.analysisHints,
   };
 }
 

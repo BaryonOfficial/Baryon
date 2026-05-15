@@ -348,6 +348,40 @@ describe("camera reset control", () => {
     expect(sideButton.getAttribute("aria-pressed")).toBe("false");
   });
 
+  it("keeps camera pose identity stable across unrelated rerenders", async () => {
+    const controlsStore = createControlsStore();
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene, {
+            debugOverlayExtraItems: [{ label: "A", value: 1 }],
+          }),
+        ),
+      );
+    });
+
+    const initialPose = baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraPose;
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene, {
+            debugOverlayExtraItems: [{ label: "A", value: 2 }],
+          }),
+        ),
+      );
+    });
+
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraPose).toBe(
+      initialPose,
+    );
+  });
+
   it("forces the listener-side fullscreen 2d camera to side view", async () => {
     const controlsStore = createControlsStore();
     controlsStore.updateControl("visualizationMethod", "cymatics-2d");

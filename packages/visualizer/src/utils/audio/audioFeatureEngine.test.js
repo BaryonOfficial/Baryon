@@ -104,7 +104,6 @@ describe("audio feature engine transport", () => {
         playbackSessionId: "file-session",
       }),
       frameTimeMs: 1000,
-      analysisHints: { active: true, novelty: 0.6 },
       radius: 3,
     });
 
@@ -114,7 +113,7 @@ describe("audio feature engine transport", () => {
     expect(frame.analysisSnapshot).toBeUndefined();
     expect(frame.fftMagnitudes).toBeInstanceOf(Float32Array);
     expect(frame.timeData).toBeInstanceOf(Float32Array);
-    expect(frame.analysisHints).toEqual({ active: true, novelty: 0.6 });
+    expect(frame).not.toHaveProperty("analysisHints");
   });
 
   it("does not expose structural implementation on transport frames", () => {
@@ -518,15 +517,8 @@ describe("audio feature engine snapshots", () => {
     expect(frame.structureSignal).toBeGreaterThan(0);
   });
 
-  it("stores one canonical analysis hint payload in worker snapshots", () => {
+  it("keeps worker snapshots free of analysis hint payloads", () => {
     const featureState = createAudioFeatureState();
-    const analysisHints = {
-      active: true,
-      novelty: 0.42,
-      transientSalience: 0.31,
-      workerState: "ready",
-      hintSource: "onnx-worker",
-    };
     const preparedInputs = prepareAudioFeatureFrameInputs({
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
@@ -538,7 +530,6 @@ describe("audio feature engine snapshots", () => {
       radius: 3,
       status: createStatus(),
       frameTimeMs: 2000,
-      analysisHints,
     });
     const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
     const snapshot = buildAudioFeatureAnalysisSnapshot({
@@ -547,7 +538,7 @@ describe("audio feature engine snapshots", () => {
       publishCount: 2,
     });
 
-    expect(snapshot.analysisResult.analysisHints).toMatchObject(analysisHints);
+    expect(snapshot.analysisResult).not.toHaveProperty("analysisHints");
     expect(snapshot.analysisResult).not.toHaveProperty("baseAnalysisHints");
     expect(snapshot.analysisResult).not.toHaveProperty("lastAnalysisHints");
   });

@@ -107,7 +107,6 @@ export function useBaryonVisualizer({
     runtimeRef,
     runtimeStateRef,
     audioFeatureRef,
-    audioFeatureAnalyzerRef,
     audioFeatureEngineRef,
     runtimeDiagnosticsRef,
     frameCacheRefs,
@@ -147,7 +146,6 @@ export function useBaryonVisualizer({
     runtimeRef,
     runtimeStateRef,
     audioFeatureRef,
-    audioFeatureAnalyzerRef,
     audioFeatureEngineRef,
     controlsRef,
   };
@@ -522,7 +520,6 @@ export function useBaryonVisualizer({
       : resolveFeatureFrame({
           audio,
           featureState,
-          featureAnalyzer: renderLoopContext.audioFeatureAnalyzerRef.current,
           featureEngine: renderLoopContext.audioFeatureEngineRef.current,
           runtimeDiagnostics,
           runtimeState,

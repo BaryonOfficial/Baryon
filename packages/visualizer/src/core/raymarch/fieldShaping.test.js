@@ -89,13 +89,11 @@ describe("field shaping", () => {
     const weakCoherent = deriveExcitationVisibility({
       excitationGate: 0.04,
       modeCoherence: 0.72,
-      harmonicity: 0.6,
       modalVisibilityEnergy: 0.36,
     });
     const noisyWeak = deriveExcitationVisibility({
       excitationGate: 0.04,
       modeCoherence: 0.08,
-      harmonicity: 0.05,
     });
 
     expect(EXCITATION_VISIBILITY_COHERENCE_WEIGHT).toBeCloseTo(0.42);
@@ -105,23 +103,20 @@ describe("field shaping", () => {
     expect(noisyWeak).toBeCloseTo(0.04);
   });
 
-  it("keeps modal cavity visibility when ML harmonicity is low", () => {
+  it("keeps modal cavity visibility from modal energy", () => {
     const bowlLike = deriveExcitationVisibility({
       excitationGate: 0.04,
       modeCoherence: 0.48,
-      harmonicity: 0,
       modalVisibilityEnergy: 0.36,
     });
     const noModalEnergy = deriveExcitationVisibility({
       excitationGate: 0.04,
       modeCoherence: 0.48,
-      harmonicity: 0,
       modalVisibilityEnergy: 0,
     });
     const noisyWeak = deriveExcitationVisibility({
       excitationGate: 0.04,
       modeCoherence: 0.08,
-      harmonicity: 0,
       modalVisibilityEnergy: 0,
     });
 
@@ -130,59 +125,32 @@ describe("field shaping", () => {
     expect(noisyWeak).toBeCloseTo(0.04);
   });
 
-  it("does not let ML harmonicity change excitation visibility", () => {
-    const lowHint = deriveExcitationVisibility({
+  it("derives excitation visibility without hint inputs", () => {
+    const visibility = deriveExcitationVisibility({
       excitationGate: 0.04,
       modeCoherence: 0.48,
-      harmonicity: 0,
       modalVisibilityEnergy: 0.36,
     });
-    const highHint = deriveExcitationVisibility({
-      excitationGate: 0.04,
-      modeCoherence: 0.48,
-      harmonicity: 1,
-      modalVisibilityEnergy: 0.36,
-    });
-
-    expect(highHint).toBeCloseTo(lowHint);
+    expect(visibility).toBeGreaterThan(0.36);
   });
 
-  it("does not let ML harmonicity change contour gain", () => {
-    const lowHint = deriveContourGainBase({
+  it("derives contour gain without hint inputs", () => {
+    const gain = deriveContourGainBase({
       structureSignal: 0.22,
       modeCoherence: 0.48,
       modalVisibilityEnergy: 0.36,
-      harmonicity: 0,
       beatPhaseDecay: 0.2,
     });
-    const highHint = deriveContourGainBase({
-      structureSignal: 0.22,
-      modeCoherence: 0.48,
-      modalVisibilityEnergy: 0.36,
-      harmonicity: 1,
-      beatPhaseDecay: 0.2,
-    });
-
-    expect(highHint).toBeCloseTo(lowHint);
-    expect(lowHint).toBeGreaterThan(0.14);
+    expect(gain).toBeGreaterThan(0.14);
   });
 
-  it("does not let ML harmonicity change spectral color bias", () => {
-    const lowHint = deriveSpectralColorBiasOffset({
+  it("derives spectral color bias without hint inputs", () => {
+    const bias = deriveSpectralColorBiasOffset({
       modeCoherence: 0.48,
       modalVisibilityEnergy: 0.36,
-      harmonicity: 0,
       changeSignal: 0.08,
     });
-    const highHint = deriveSpectralColorBiasOffset({
-      modeCoherence: 0.48,
-      modalVisibilityEnergy: 0.36,
-      harmonicity: 1,
-      changeSignal: 0.08,
-    });
-
-    expect(highHint).toBeCloseTo(lowHint);
-    expect(lowHint).toBeGreaterThan(0);
+    expect(bias).toBeGreaterThan(0);
   });
 
   it("does not create body density when sparse bass structure is absent", () => {

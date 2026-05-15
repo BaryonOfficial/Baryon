@@ -1808,7 +1808,7 @@ describe("Spectral Light feature frame outputs", () => {
     );
   });
 
-  it("accepts inactive analysis hints without changing the frame contract", () => {
+  it("ignores retired analysis hints without changing the frame contract", () => {
     const featureState = createAudioFeatureState();
     const frame = buildAudioFeatureFrame({
       analysisSnapshot: createSnapshot({
@@ -1821,19 +1821,11 @@ describe("Spectral Light feature frame outputs", () => {
       featureState,
       radius: 3,
       status: makeActiveStatus(),
-      analysisHints: {
-        active: false,
-        workerState: "ready",
-        workerStatus: {
-          state: "ready",
-        },
-        ageMs: 140,
-      },
     });
 
     expect(frame.backboneSlots).toBeInstanceOf(Float32Array);
     expect(frame.detailSlots).toBeInstanceOf(Float32Array);
-    expect(frame.debug.workerState).toBe("ready");
+    expect(frame.debug.workerState).toBe("none");
     expect(frame.debug.hintSource).toBe("none");
   });
 
@@ -1866,17 +1858,6 @@ describe("Spectral Light feature frame outputs", () => {
       radius: 3,
       status: makeActiveStatus(),
       frameTimeMs: 16,
-      analysisHints: {
-        active: true,
-        novelty: 0.82,
-        transientSalience: 0.78,
-        harmonicity: 0.2,
-        bassSalience: 0.18,
-        pitchConfidence: 0.22,
-        textureSpread: 0.55,
-        voicingProbability: 0.12,
-        releaseBias: 0.74,
-      },
     });
 
     let retainedDetailAmplitude = 0;
@@ -1893,7 +1874,7 @@ describe("Spectral Light feature frame outputs", () => {
     );
   });
 
-  it("does not let active analysis hints change core modal signals", () => {
+  it("does not let active analysis hints change visible frame signals", () => {
     const fftMagnitudes = makeFft([
       [220, 0.7],
       [440, 0.38],
@@ -1910,7 +1891,7 @@ describe("Spectral Light feature frame outputs", () => {
       status: makeActiveStatus(),
       frameTimeMs: 0,
     });
-    const hintedFrame = buildAudioFeatureFrame({
+    const comparisonFrame = buildAudioFeatureFrame({
       analysisSnapshot: createSnapshot({
         avgAmplitude: 34,
         fftMagnitudes,
@@ -1920,34 +1901,29 @@ describe("Spectral Light feature frame outputs", () => {
       radius: 3,
       status: makeActiveStatus(),
       frameTimeMs: 0,
-      analysisHints: {
-        active: true,
-        harmonicity: 1,
-        bassSalience: 1,
-        textureSpread: 1,
-        novelty: 1,
-        transientSalience: 1,
-        workerState: "ready",
-        hintSource: "onnx-worker",
-      },
     });
 
-    expect(hintedFrame.structureSignal).toBeCloseTo(
+    expect(comparisonFrame.structureSignal).toBeCloseTo(
       baseFrame.structureSignal,
       6,
     );
-    expect(hintedFrame.energySignal).toBeCloseTo(baseFrame.energySignal, 6);
-    expect(hintedFrame.changeSignal).toBeCloseTo(baseFrame.changeSignal, 6);
-    expect(hintedFrame.pulseSignal).toBeCloseTo(baseFrame.pulseSignal, 6);
-    expect(hintedFrame.modalVisibilityEnergy).toBeCloseTo(
+    expect(comparisonFrame.energySignal).toBeCloseTo(baseFrame.energySignal, 6);
+    expect(comparisonFrame.changeSignal).toBeCloseTo(baseFrame.changeSignal, 6);
+    expect(comparisonFrame.pulseSignal).toBeCloseTo(baseFrame.pulseSignal, 6);
+    expect(comparisonFrame.modalVisibilityEnergy).toBeCloseTo(
       baseFrame.modalVisibilityEnergy,
       6,
     );
-    expect(hintedFrame.bassSalience).toBeCloseTo(baseFrame.bassSalience, 6);
-    expect(hintedFrame.bassSalience).not.toBe(1);
-    expect(hintedFrame.harmonicity).toBe(1);
-    expect(hintedFrame.textureSpread).toBe(1);
-    expect(hintedFrame.novelty).toBe(1);
+    expect(comparisonFrame.bassSalience).toBeCloseTo(baseFrame.bassSalience, 6);
+    expect(comparisonFrame.bassSalience).not.toBe(1);
+    expect(comparisonFrame.timbreSpread).toBeCloseTo(baseFrame.timbreSpread, 6);
+    expect(comparisonFrame.spectralNovelty).toBeCloseTo(
+      baseFrame.spectralNovelty,
+      6,
+    );
+    expect(comparisonFrame).not.toHaveProperty("harmonicity");
+    expect(comparisonFrame).not.toHaveProperty("textureSpread");
+    expect(comparisonFrame).not.toHaveProperty("novelty");
   });
 
   it("anchors structure normalization to the named slot budget instead of backing array capacity", () => {
@@ -2839,7 +2815,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(frame.debug.micFftNormGain).toBe(1);
   });
 
-  it("reuses heavy analysis while refreshing appearance hints only", () => {
+  it("reuses heavy analysis while keeping deterministic appearance descriptors", () => {
     const featureState = createAudioFeatureState();
     const status = createStatus({
       audioInputMode: "file",
@@ -2857,49 +2833,29 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       ]),
       rms: 0.34,
     });
-    const heavyHints = {
-      active: true,
-      harmonicity: 0.55,
-      bassSalience: 0.46,
-      textureSpread: 0.18,
-      novelty: 0.12,
-      transientSalience: 0.14,
-      workerState: "ready",
-      hintSource: "onnx-worker",
-    };
     const prepared = prepareAudioFeatureFrameInputs({
       analysisSnapshot,
       featureState,
       radius: 3,
       status,
       frameTimeMs: 1000,
-      analysisHints: heavyHints,
     });
     const analysisResult = runHeavyAudioFeatureAnalysis(prepared);
     const first = composeAudioFeatureFrame({
       preparedInputs: prepared,
       analysisResult,
-      analysisHints: heavyHints,
     });
 
-    const transientHints = {
-      ...heavyHints,
-      novelty: 0.9,
-      transientSalience: 0.92,
-      bassSalience: 0.78,
-    };
     const preparedReuse = prepareAudioFeatureFrameInputs({
       analysisSnapshot,
       featureState,
       radius: 3,
       status,
       frameTimeMs: 1012,
-      analysisHints: transientHints,
     });
     const reused = composeAudioFeatureFrame({
       preparedInputs: preparedReuse,
       analysisResult,
-      analysisHints: transientHints,
       previousFrame: first,
       reuseHeavyAnalysis: true,
     });
@@ -2909,10 +2865,11 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(reused.keyTonic).toBe(first.keyTonic);
     expect(reused.pulseSignal).toBe(first.pulseSignal);
     expect(reused.changeSignal).toBe(first.changeSignal);
-    expect(reused.novelty).toBeCloseTo(0.9, 4);
+    expect(reused.timbreSpread).toBeCloseTo(first.timbreSpread, 4);
+    expect(reused.spectralNovelty).toBeCloseTo(first.spectralNovelty, 4);
   });
 
-  it("reuses stored analysis hints when compose receives no fresh hint payload", () => {
+  it("stores deterministic descriptors in composed frames", () => {
     const featureState = createAudioFeatureState();
     const status = createStatus({
       audioInputMode: "file",
@@ -2920,16 +2877,6 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       hasAnalysisSource: true,
       playbackSessionId: 42,
     });
-    const heavyHints = {
-      active: true,
-      harmonicity: 0.55,
-      bassSalience: 0.46,
-      textureSpread: 0.18,
-      novelty: 0.12,
-      transientSalience: 0.14,
-      workerState: "ready",
-      hintSource: "onnx-worker",
-    };
     const prepared = prepareAudioFeatureFrameInputs({
       analysisSnapshot: createSnapshot({
         sourceMode: "file",
@@ -2945,7 +2892,6 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       radius: 3,
       status,
       frameTimeMs: 1000,
-      analysisHints: heavyHints,
     });
     const analysisResult = runHeavyAudioFeatureAnalysis(prepared);
     const frame = composeAudioFeatureFrame({
@@ -2953,12 +2899,13 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       analysisResult,
     });
 
-    expect(frame.novelty).toBeCloseTo(heavyHints.novelty, 4);
-    expect(frame.debug.workerState).toBe("ready");
-    expect(frame.debug.hintSource).toBe("onnx-worker");
+    expect(frame.timbreSpread).toBeGreaterThanOrEqual(0);
+    expect(frame.spectralNovelty).toBeGreaterThanOrEqual(0);
+    expect(frame.debug.workerState).toBe("none");
+    expect(frame.debug.hintSource).toBe("none");
   });
 
-  it("reused heavy-analysis frames keep core signals stable when hints calm", () => {
+  it("reused heavy-analysis frames keep core signals stable", () => {
     const featureState = createAudioFeatureState();
     const status = createStatus({
       audioInputMode: "file",
@@ -2975,49 +2922,29 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       ]),
       rms: 0.08,
     });
-    const transientHints = {
-      active: true,
-      harmonicity: 0.58,
-      bassSalience: 0.8,
-      textureSpread: 0.2,
-      novelty: 0.92,
-      transientSalience: 0.95,
-      workerState: "ready",
-      hintSource: "onnx-worker",
-    };
     const prepared = prepareAudioFeatureFrameInputs({
       analysisSnapshot,
       featureState,
       radius: 3,
       status,
       frameTimeMs: 1000,
-      analysisHints: transientHints,
     });
     const analysisResult = runHeavyAudioFeatureAnalysis(prepared);
     const first = composeAudioFeatureFrame({
       preparedInputs: prepared,
       analysisResult,
-      analysisHints: transientHints,
     });
 
-    const calmHints = {
-      ...transientHints,
-      bassSalience: 0.2,
-      novelty: 0,
-      transientSalience: 0,
-    };
     const preparedReuse = prepareAudioFeatureFrameInputs({
       analysisSnapshot,
       featureState,
       radius: 3,
       status,
       frameTimeMs: 1048,
-      analysisHints: calmHints,
     });
     const reused = composeAudioFeatureFrame({
       preparedInputs: preparedReuse,
       analysisResult,
-      analysisHints: calmHints,
       previousFrame: first,
       reuseHeavyAnalysis: true,
     });
@@ -3030,7 +2957,8 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(reused.pulseSignal).toBe(first.pulseSignal);
     expect(reused.structureSignal).toBe(first.structureSignal);
     expect(reused.energySignal).toBe(first.energySignal);
-    expect(reused.novelty).toBe(0);
+    expect(reused.timbreSpread).toBe(first.timbreSpread);
+    expect(reused.spectralNovelty).toBe(first.spectralNovelty);
   });
 });
 

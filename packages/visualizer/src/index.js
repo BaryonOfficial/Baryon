@@ -51,11 +51,8 @@ export * from "./three/loaders/setupLoaders.js";
 export {
   createAudioFeatureState,
   buildAudioFeatureFrame,
-  createAudioFeatureAnalyzer,
   createAudioFeatureEngine,
-  createNoopAudioFeatureAnalyzer,
   createNoopAudioFeatureEngine,
-  DEFAULT_FEATURE_ANALYSIS_SETTINGS,
 } from "./utils/audioFeatures.js";
 export { AudioControlsView } from "./react/AudioControlsView.jsx";
 export { useSharedAudioLogic } from "./react/useSharedAudioLogic.js";

@@ -4,6 +4,7 @@ import {
   isValidElement,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -202,8 +203,9 @@ const ThreeScene = ({
     defaultCameraViewPreset,
     cameraViewPreset,
   });
-  const effectiveCameraPose = resolvePresetCameraPose(
-    effectiveCameraViewPreset,
+  const effectiveCameraPose = useMemo(
+    () => resolvePresetCameraPose(effectiveCameraViewPreset),
+    [effectiveCameraViewPreset],
   );
   const cameraConfig = /** @type {{
     position: [number, number, number],

@@ -66,8 +66,6 @@ export function createEmptyAnalysisSchedulerState() {
 function createRuntimePerfBreakdown() {
   return {
     readAnalysisSnapshotMs: createRuntimePerfEntry(),
-    enqueueAnalysisFrameMs: createRuntimePerfEntry(),
-    readAnalysisHintsMs: createRuntimePerfEntry(),
     engineEnqueueMs: createRuntimePerfEntry(),
     readEngineSnapshotMs: createRuntimePerfEntry(),
     buildFeatureFrameMs: createRuntimePerfEntry(),
