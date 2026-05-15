@@ -96,10 +96,11 @@ describe("field shaping", () => {
       harmonicity: 0.05,
     });
 
-    expect(EXCITATION_VISIBILITY_COHERENCE_WEIGHT).toBeCloseTo(0.22);
-    expect(EXCITATION_VISIBILITY_HARMONICITY_WEIGHT).toBeCloseTo(0.08);
-    expect(EXCITATION_VISIBILITY_MAX_FLOOR).toBeCloseTo(0.3);
-    expect(weakCoherent).toBeGreaterThan(0.1);
+    expect(EXCITATION_VISIBILITY_COHERENCE_WEIGHT).toBeCloseTo(0.42);
+    expect(EXCITATION_VISIBILITY_HARMONICITY_WEIGHT).toBeCloseTo(0.16);
+    expect(EXCITATION_VISIBILITY_MAX_FLOOR).toBeCloseTo(0.52);
+    expect(weakCoherent).toBeGreaterThan(0.38);
+    expect(weakCoherent).toBeLessThan(0.53);
     expect(noisyWeak).toBeCloseTo(0.04);
   });
 

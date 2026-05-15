@@ -447,7 +447,18 @@ function remapReferenceToBlendedOrder(
   }
 }
 
+function resolveEntrySpectralLightFrequency(entry, colorContext = {}) {
+  const auditToneFrequencyHz = colorContext.auditToneFrequencyHz ?? 0;
+  return Number.isFinite(auditToneFrequencyHz) && auditToneFrequencyHz > 0
+    ? auditToneFrequencyHz
+    : entry.naturalFrequencyHz;
+}
+
 function createEntrySpectralLightComponent(entry, colorContext = {}) {
+  const colorFrequencyHz = resolveEntrySpectralLightFrequency(
+    entry,
+    colorContext,
+  );
   const strength = clamp01(
     (entry.signalAmplitude ?? entry.amplitude ?? 0) * 0.58 +
       (entry.currentDriveEnergy ?? entry.driveEnergy ?? 0) * 0.28 +
@@ -464,7 +475,7 @@ function createEntrySpectralLightComponent(entry, colorContext = {}) {
       (entry.currentDriveEnergy ?? entry.driveEnergy ?? 0) * 0.14,
   );
   const spectralLight = createSpectralLightColor({
-    frequency: entry.naturalFrequencyHz,
+    frequency: colorFrequencyHz,
     strength,
     harmonicConfidence,
     accentEnergy,
@@ -472,7 +483,8 @@ function createEntrySpectralLightComponent(entry, colorContext = {}) {
 
   return {
     frequency: entry.naturalFrequencyHz,
-    familyFrequency: entry.naturalFrequencyHz,
+    familyFrequency: colorFrequencyHz,
+    colorFrequency: colorFrequencyHz,
     weight: spectralLight.weight,
     phase: spectralLight.phase,
     wavelengthNm: spectralLight.wavelengthNm,
@@ -925,6 +937,9 @@ export function buildModalExcitationStructuralState({
     transientEnergy: fastSignalState.transientEnergy,
     trebleBroadbandEnergy: fastSignalState.trebleBroadbandEnergy,
     tonalness,
+    auditToneFrequencyHz: preparedInputs.resolvedAuditSettings.injectTestTone
+      ? preparedInputs.resolvedAuditSettings.testToneHz
+      : 0,
     keyTonic: chromaState.keyTonic,
     keyMode: chromaState.keyMode,
     keyConfidence: chromaState.keyConfidence,

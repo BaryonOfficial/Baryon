@@ -143,6 +143,28 @@ function makeSystemStatus(overrides = {}) {
   });
 }
 
+function averageWeightedColorSlots(...slotArrays) {
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let weight = 0;
+
+  for (const slots of slotArrays) {
+    for (let index = 0; index < slots.length; index += 4) {
+      const slotWeight = slots[index + 3] ?? 0;
+      if (slotWeight <= 0) continue;
+      r += (slots[index] ?? 0) * slotWeight;
+      g += (slots[index + 1] ?? 0) * slotWeight;
+      b += (slots[index + 2] ?? 0) * slotWeight;
+      weight += slotWeight;
+    }
+  }
+
+  return weight > 0
+    ? { r: r / weight, g: g / weight, b: b / weight, weight }
+    : { r: 0, g: 0, b: 0, weight: 0 };
+}
+
 function makeLoopbackLiveStatus(overrides = {}) {
   return createStatus({
     audioInputMode: "live",
@@ -1685,6 +1707,38 @@ describe("Spectral Light feature frame outputs", () => {
         b: expect.any(Number),
       },
     });
+  });
+
+  it("keeps injected warm tones red at the modal color-slot boundary", () => {
+    for (const testToneHz of [220, 440]) {
+      const featureState = createAudioFeatureState();
+      let frame = null;
+
+      for (let frameIndex = 0; frameIndex < 8; frameIndex += 1) {
+        frame = buildAudioFeatureFrame({
+          analysisSnapshot: null,
+          featureState,
+          radius: 3,
+          status: createStatus(),
+          auditSettings: createAuditSettings({
+            injectTestTone: true,
+            testToneHz,
+            testToneAmplitude: 0.5,
+          }),
+          frameTimeMs: frameIndex * 33,
+        });
+      }
+
+      const color = averageWeightedColorSlots(
+        frame.backboneColorSlots,
+        frame.detailColorSlots,
+      );
+
+      expect(color.weight).toBeGreaterThan(0.5);
+      expect(color.r).toBeGreaterThan(0.85);
+      expect(color.g).toBeLessThan(0.08);
+      expect(color.b).toBeLessThan(0.15);
+    }
   });
 
   it("skips Spectral Light color work when the render path does not need it", () => {
