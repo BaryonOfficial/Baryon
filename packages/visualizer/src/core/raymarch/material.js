@@ -60,7 +60,7 @@ import {
   EDGE_FADE_END,
   EDGE_FADE_START,
   EXCITATION_VISIBILITY_COHERENCE_WEIGHT,
-  EXCITATION_VISIBILITY_HARMONICITY_WEIGHT,
+  EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT,
   EXCITATION_VISIBILITY_MAX_FLOOR,
   HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
   HOT_CORE_END,
@@ -427,7 +427,6 @@ function createScatteringNode({
     uStructureSignal,
     uEnergySignal,
     uChangeSignal,
-    uHarmonicity,
     uBassSalience,
     uTextureSpread,
     uNovelty,
@@ -457,7 +456,8 @@ function createScatteringNode({
     .add(uRhythmicDensity.mul(0.04));
   const contourGainBase = uStructureSignal
     .mul(0.3)
-    .add(uHarmonicity.mul(0.15))
+    .add(uModeCoherence.mul(0.08))
+    .add(uModalVisibilityEnergy.mul(0.12))
     .add(beatPhaseDecay.mul(0.18));
   const dynamicHolographicIntensity = uHolographicIntensity
     .mul(float(1.0).add(uTextureSpread.mul(0.35)))
@@ -480,18 +480,18 @@ function createScatteringNode({
   const boundaryWhiteEmission = isDirichletBoundary
     ? float(RAYMARCH_BOUNDARY_TUNING.dirichletWhiteEmission)
     : float(1.0);
-  const spectralColorBiasHintOffset = uHarmonicity
-    .mul(0.12)
+  const spectralColorBiasHintOffset = uModeCoherence
+    .mul(0.05)
+    .add(uModalVisibilityEnergy.mul(0.08))
     .sub(uChangeSignal.mul(0.08));
   // Excitation gate: 0 when field is under-excited (weak/noisy input), 1 when
-  // fully excited. Three-input weighted formula prevents noise-floor-elevated
-  // amplitude alone from keeping the gate open — coherent structure and tonal
-  // purity are required. Hoisted as loop-invariant — does not re-evaluate per step.
+  // fully excited. Coherent modal visibility is authoritative here; ONNX-style
+  // hints remain outside clarity gates. Hoisted as loop-invariant.
   const excitationInput = uAverageAmplitude
     .div(float(255.0))
     .mul(float(0.3))
     .add(uStructureSignal.mul(float(0.45)))
-    .add(uHarmonicity.mul(float(0.25)));
+    .add(uModalVisibilityEnergy.mul(float(0.25)));
   const excitationGate = smoothstep(
     float(EXCITATION_GATE_LOW),
     float(EXCITATION_GATE_HIGH),
@@ -502,7 +502,11 @@ function createScatteringNode({
     clamp(
       uModeCoherence
         .mul(float(EXCITATION_VISIBILITY_COHERENCE_WEIGHT))
-        .add(uHarmonicity.mul(float(EXCITATION_VISIBILITY_HARMONICITY_WEIGHT))),
+        .add(
+          uModalVisibilityEnergy.mul(
+            float(EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT),
+          ),
+        ),
       float(0.0),
       float(EXCITATION_VISIBILITY_MAX_FLOOR),
     ),
@@ -641,8 +645,8 @@ function createScatteringNode({
       const activeCount = float(uActiveModeCount);
       const backboneCount = float(uBackboneModeCount);
       const detailCount = float(uDetailModeCount);
-      // Harmonic/complex audio = sharper, crisper nodal lines
-      // contourGainBase (structure + harmonicity terms) is pre-computed above the Fn
+      // Modal structure sharpens nodal lines; ONNX hints do not own clarity.
+      // contourGainBase is pre-computed above the Fn.
       const contourGain = float(1.0)
         .add(uTransientEnergy.mul(0.25))
         .add(contourGainBase);
@@ -741,7 +745,7 @@ function createScatteringNode({
         float(RAYMARCH_BOUNDARY_END),
         radialDistance,
       );
-      // Complex harmonic content opens up the interior — more inner detail visible
+      // Strong structure opens up the interior — more inner detail visible
       const interiorMask = float(1.0).sub(
         smoothstep(
           dynamicInteriorMaskStart,
@@ -852,8 +856,8 @@ function createScatteringNode({
         float(COLOR_BLEND_END),
         contourShape,
       );
-      // Harmonic content warms color; rapid change cools it
-      // spectralColorBiasHintOffset (harmonicity - changeSignal terms) is pre-computed above the Fn
+      // Modal coherence warms color; rapid change cools it.
+      // spectralColorBiasHintOffset is pre-computed above the Fn.
       const spectralColorBias = clamp(
         contourMix
           .add(uSpectralCentroid.mul(0.25))

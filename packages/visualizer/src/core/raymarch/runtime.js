@@ -22,6 +22,7 @@ import {
 } from "./fieldCache.js";
 import {
   DETAIL_LAYER_WEIGHT,
+  deriveVisibleDensity,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
 } from "./fieldShaping.js";
@@ -291,6 +292,11 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     null;
   const pulseSignal = featureFrame?.pulseSignal ?? 0;
   const modalVisibilityEnergy = featureFrame?.modalVisibilityEnergy ?? 0;
+  const modalVisibilityDensityDebug = deriveVisibleDensity({
+    density: 0,
+    modalVisibilityEnergy,
+    modalStructureAnchor: 1,
+  });
   const avgDensity = Math.min(
     1,
     avgAmplitude * densityGain * absorption * (0.75 + transientEnergy * 0.2),
@@ -421,6 +427,9 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
     pulseSignal,
     modalVisibilityEnergy,
+    modalVisibilityDensityLiftMax: modalVisibilityDensityDebug.modalLift,
+    modalVisibilityVisibleDensityMax:
+      modalVisibilityDensityDebug.modalVisibleDensity,
     modeCoherence: featureFrame?.modeCoherence ?? 0,
     trebleTonalEnergy: featureFrame?.trebleTonalEnergy ?? 0,
     trebleBroadbandEnergy: featureFrame?.trebleBroadbandEnergy ?? 0,

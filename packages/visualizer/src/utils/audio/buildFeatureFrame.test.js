@@ -1893,6 +1893,63 @@ describe("Spectral Light feature frame outputs", () => {
     );
   });
 
+  it("does not let active analysis hints change core modal signals", () => {
+    const fftMagnitudes = makeFft([
+      [220, 0.7],
+      [440, 0.38],
+      [660, 0.18],
+    ]);
+    const baseFrame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        avgAmplitude: 34,
+        fftMagnitudes,
+        rms: 0.18,
+      }),
+      featureState: createAudioFeatureState(),
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 0,
+    });
+    const hintedFrame = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        avgAmplitude: 34,
+        fftMagnitudes,
+        rms: 0.18,
+      }),
+      featureState: createAudioFeatureState(),
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 0,
+      analysisHints: {
+        active: true,
+        harmonicity: 1,
+        bassSalience: 1,
+        textureSpread: 1,
+        novelty: 1,
+        transientSalience: 1,
+        workerState: "ready",
+        hintSource: "onnx-worker",
+      },
+    });
+
+    expect(hintedFrame.structureSignal).toBeCloseTo(
+      baseFrame.structureSignal,
+      6,
+    );
+    expect(hintedFrame.energySignal).toBeCloseTo(baseFrame.energySignal, 6);
+    expect(hintedFrame.changeSignal).toBeCloseTo(baseFrame.changeSignal, 6);
+    expect(hintedFrame.pulseSignal).toBeCloseTo(baseFrame.pulseSignal, 6);
+    expect(hintedFrame.modalVisibilityEnergy).toBeCloseTo(
+      baseFrame.modalVisibilityEnergy,
+      6,
+    );
+    expect(hintedFrame.bassSalience).toBeCloseTo(baseFrame.bassSalience, 6);
+    expect(hintedFrame.bassSalience).not.toBe(1);
+    expect(hintedFrame.harmonicity).toBe(1);
+    expect(hintedFrame.textureSpread).toBe(1);
+    expect(hintedFrame.novelty).toBe(1);
+  });
+
   it("anchors structure normalization to the named slot budget instead of backing array capacity", () => {
     const baselineFeatureState = createAudioFeatureState();
     const oversizedFeatureState = createAudioFeatureState(
@@ -2093,6 +2150,11 @@ describe("live input noise gate", () => {
     expect(frame.modeCoherence).toBeGreaterThan(0.4);
     expect(frame.debug.modalPersistence).toBeGreaterThan(0.35);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.12);
+    expect(frame.debug.modalVisibilitySlotEnergy).toBeGreaterThan(0.04);
+    expect(frame.debug.modalVisibilityActiveModeCount).toBeGreaterThan(0);
+    expect(frame.debug.modalVisibilityDriveEnergy).toBe(
+      frame.debug.modalDriveEnergy,
+    );
   });
 
   it("keeps loopback-classified live input structurally active", () => {
@@ -2777,7 +2839,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(frame.debug.micFftNormGain).toBe(1);
   });
 
-  it("reuses heavy analysis while refreshing fast-lane pulse and novelty outputs", () => {
+  it("reuses heavy analysis while refreshing appearance hints only", () => {
     const featureState = createAudioFeatureState();
     const status = createStatus({
       audioInputMode: "file",
@@ -2845,8 +2907,8 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(reused.backboneSlots).toBe(first.backboneSlots);
     expect(reused.modeSlots).toBe(first.modeSlots);
     expect(reused.keyTonic).toBe(first.keyTonic);
-    expect(reused.pulseSignal).toBeGreaterThan(first.pulseSignal);
-    expect(reused.changeSignal).toBeGreaterThan(first.changeSignal);
+    expect(reused.pulseSignal).toBe(first.pulseSignal);
+    expect(reused.changeSignal).toBe(first.changeSignal);
     expect(reused.novelty).toBeCloseTo(0.9, 4);
   });
 
@@ -2896,7 +2958,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(frame.debug.hintSource).toBe("onnx-worker");
   });
 
-  it("reused heavy-analysis frames shed transient-driven signals faster than structural ones", () => {
+  it("reused heavy-analysis frames keep core signals stable when hints calm", () => {
     const featureState = createAudioFeatureState();
     const status = createStatus({
       audioInputMode: "file",
@@ -2964,14 +3026,11 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(reused.modeSlots).toBe(first.modeSlots);
     expect(reused.sourceMode).toBe(first.sourceMode);
     expect(reused.keyTonic).toBe(first.keyTonic);
-    expect(reused.changeSignal / first.changeSignal).toBeLessThan(0.8);
-    expect(reused.pulseSignal / first.pulseSignal).toBeLessThan(0.84);
-    expect(reused.changeSignal / first.changeSignal).toBeLessThan(
-      reused.structureSignal / first.structureSignal,
-    );
-    expect(reused.pulseSignal / first.pulseSignal).toBeLessThan(
-      reused.energySignal / first.energySignal,
-    );
+    expect(reused.changeSignal).toBe(first.changeSignal);
+    expect(reused.pulseSignal).toBe(first.pulseSignal);
+    expect(reused.structureSignal).toBe(first.structureSignal);
+    expect(reused.energySignal).toBe(first.energySignal);
+    expect(reused.novelty).toBe(0);
   });
 });
 

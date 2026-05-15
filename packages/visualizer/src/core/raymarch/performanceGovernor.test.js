@@ -4,6 +4,7 @@ import {
   BACKBONE_ENERGY_RETENTION,
   buildRaymarchPerformanceGovernor,
   copyBudgetedModeLayer,
+  deriveFieldExcitation,
   MIN_BACKBONE_RENDER_SLOTS,
 } from "./performanceGovernor.js";
 
@@ -158,6 +159,27 @@ describe("performanceGovernor", () => {
     });
 
     expect(noisy.selectedIndices).toEqual([0, 1, 2]);
+  });
+
+  it("does not let ML harmonicity change field excitation", () => {
+    const coreFrame = {
+      averageAmplitude: 24,
+      structureSignal: 0.18,
+      modeCoherence: 0.48,
+      modalVisibilityEnergy: 0.36,
+    };
+
+    expect(
+      deriveFieldExcitation({
+        ...coreFrame,
+        harmonicity: 0,
+      }),
+    ).toBeCloseTo(
+      deriveFieldExcitation({
+        ...coreFrame,
+        harmonicity: 1,
+      }),
+    );
   });
 
   it("raises complexity when uploaded mode load and excitation increase", () => {

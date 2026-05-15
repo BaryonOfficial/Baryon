@@ -347,6 +347,12 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.raymarchDebug.modalVisibilityEnergy).toBe(
       0.37,
     );
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.modalVisibilityDensityLiftMax,
+    ).toBeGreaterThan(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.modalVisibilityVisibleDensityMax,
+    ).toBeGreaterThan(0);
     expect(runtimeState.debugSnapshot.raymarchDebug.trebleBroadbandEnergy).toBe(
       0.18,
     );

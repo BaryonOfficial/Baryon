@@ -32,6 +32,9 @@ Current modal visibility semantics:
   density wash, spherical eigenmode switch, or independent mode promoter
 - the current physical model is:
   `audio drive -> rectangular water-cavity modes -> modal pressure field -> spherical render hull`
+- ONNX/audio-hint outputs are appearance hints only. They may affect color,
+  iridescence, and style, but must not drive modal promotion, core structure
+  signals, visibility, density, or performance salience.
 
 High-risk changes:
 

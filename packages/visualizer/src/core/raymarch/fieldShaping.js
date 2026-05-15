@@ -53,7 +53,7 @@ export const LATCHED_FOG_CHANGE_END = 0.08;
 export const LATCHED_FOG_BODY_REDUCTION = 0.18;
 export const LATCHED_FOG_BEAM_REDUCTION = 0.12;
 export const EXCITATION_VISIBILITY_COHERENCE_WEIGHT = 0.42;
-export const EXCITATION_VISIBILITY_HARMONICITY_WEIGHT = 0.16;
+export const EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT = 0.48;
 export const EXCITATION_VISIBILITY_MAX_FLOOR = 0.52;
 export const MODAL_VISIBILITY_DENSITY_LIFT = 0.3;
 export const MODAL_VISIBILITY_DENSITY_FLOOR = 0.22;
@@ -106,17 +106,43 @@ export function deriveLatchedFogMask({
 export function deriveExcitationVisibility({
   excitationGate = 0,
   modeCoherence = 0,
-  harmonicity = 0,
+  modalVisibilityEnergy = 0,
 }) {
   const excitationFloor = Math.min(
     EXCITATION_VISIBILITY_MAX_FLOOR,
     clamp01(
       modeCoherence * EXCITATION_VISIBILITY_COHERENCE_WEIGHT +
-        harmonicity * EXCITATION_VISIBILITY_HARMONICITY_WEIGHT,
+        modalVisibilityEnergy * EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT,
     ),
   );
 
   return Math.max(excitationGate, excitationFloor);
+}
+
+export function deriveContourGainBase({
+  structureSignal = 0,
+  modeCoherence = 0,
+  modalVisibilityEnergy = 0,
+  beatPhaseDecay = 0,
+}) {
+  return (
+    clamp01(structureSignal) * 0.3 +
+    clamp01(modeCoherence) * 0.08 +
+    clamp01(modalVisibilityEnergy) * 0.12 +
+    clamp01(beatPhaseDecay) * 0.18
+  );
+}
+
+export function deriveSpectralColorBiasOffset({
+  modeCoherence = 0,
+  modalVisibilityEnergy = 0,
+  changeSignal = 0,
+}) {
+  return (
+    clamp01(modeCoherence) * 0.05 +
+    clamp01(modalVisibilityEnergy) * 0.08 -
+    clamp01(changeSignal) * 0.08
+  );
 }
 
 export function deriveContourShape({

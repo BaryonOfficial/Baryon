@@ -48,17 +48,17 @@ function copySlot4(source, sourceOffset, target, targetOffset) {
 }
 
 function deriveBroadbandNoisePenalty(featureFrame) {
-  const harmonicity = clamp01(
-    featureFrame?.harmonicity ?? featureFrame?.modeCoherence ?? 0,
+  const modeCoherence = clamp01(featureFrame?.modeCoherence ?? 0);
+  const modalVisibilityEnergy = clamp01(
+    featureFrame?.modalVisibilityEnergy ?? 0,
   );
-  const textureSpread = clamp01(featureFrame?.textureSpread ?? 0);
   const trebleBroadbandEnergy = clamp01(
     featureFrame?.trebleBroadbandEnergy ?? 0,
   );
   const flatnessLike = clamp01(
-    textureSpread * 0.52 +
-      trebleBroadbandEnergy * 0.34 +
-      (1 - harmonicity) * 0.14,
+    trebleBroadbandEnergy * 0.5 +
+      (1 - modeCoherence) * 0.28 +
+      (1 - modalVisibilityEnergy) * 0.22,
   );
   return clamp01((flatnessLike - 0.55) / 0.45);
 }
@@ -82,10 +82,13 @@ function deriveRenderSalience({
 export function deriveFieldExcitation(featureFrame) {
   const avgAmplitude = (featureFrame?.averageAmplitude ?? 0) / 255;
   const structureSignal = featureFrame?.structureSignal ?? 0;
-  const harmonicity = featureFrame?.harmonicity ?? 0;
+  const modalDriver = Math.max(
+    featureFrame?.modalVisibilityEnergy ?? 0,
+    (featureFrame?.modeCoherence ?? 0) * 0.5,
+  );
 
   return clamp01(
-    avgAmplitude * 0.3 + structureSignal * 0.45 + harmonicity * 0.25,
+    avgAmplitude * 0.3 + structureSignal * 0.45 + modalDriver * 0.25,
   );
 }
 

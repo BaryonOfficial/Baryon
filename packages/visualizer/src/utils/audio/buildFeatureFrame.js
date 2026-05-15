@@ -830,6 +830,13 @@ function buildDebugSummary({
   );
   const detailModeCount = countActiveSlots(detailSlots, DETAIL_STACK_SLOTS);
   const modeSlotCount = countActiveSlots(modeSlots, MAX_STACK_SLOTS);
+  const modalVisibilitySlotEnergy = averageActiveSlotAmplitude(
+    modeSlots,
+    MAX_STACK_SLOTS,
+  );
+  const modalVisibilityDriveEnergy = clamp01(
+    structuralMetrics?.modalDriveEnergy ?? 0,
+  );
 
   return {
     audioInputMode: inputMode,
@@ -879,6 +886,9 @@ function buildDebugSummary({
     structureSignal,
     energySignal,
     modalVisibilityEnergy,
+    modalVisibilitySlotEnergy,
+    modalVisibilityActiveModeCount: modeSlotCount,
+    modalVisibilityDriveEnergy,
     changeSignal,
     changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
     pulseSignal,
@@ -1929,12 +1939,10 @@ function deriveCompositeSignals({
   beatOnsetDriver,
   beatThreshold,
   bandState,
-  analysisHints,
   structuralMetrics = null,
   sourceNormalization = undefined,
   liveInputHardSilenceActive = false,
 }) {
-  const hints = getActiveAnalysisHints(analysisHints);
   const activeModeCount = countActiveSlots(modeSlots, modeCapacity);
   const uniqueModeCount =
     (backboneState?.uniqueModeCount ?? 0) + (detailState?.uniqueModeCount ?? 0);
@@ -1980,12 +1988,7 @@ function deriveCompositeSignals({
         energyCoupling +
       harmonicSupport * 0.2 * energyCoupling +
       modalPersistence * 0.06 * energyCoupling +
-      lowBandStructureSupport * 0.08 +
-      clamp01((bandEnergies?.[0] ?? 0) * (hints?.bassSalience ?? 0)) * 0.08 +
-      // Removed: bandDistribution (not energy-sensitive — stays elevated during fades)
-      // Removed: normalizedCentroid (treble centroid ≠ modal structure)
-      (hints?.harmonicity ?? 0) * 0.12 +
-      (hints?.textureSpread ?? 0) * 0.06,
+      lowBandStructureSupport * 0.08,
   );
   // modeCoherence: pure structural quality — NOT energy-coupled. High when
   // modes are stable and harmonic with low churn. Used to distinguish
@@ -2004,8 +2007,7 @@ function deriveCompositeSignals({
       normalizedAmplitude * 0.26 +
       averageArray(bandEnergies) * 0.16 +
       (bandEnergies?.[0] ?? 0) * 0.06 +
-      clamp01(dominantAmplitude) * 0.12 +
-      (hints?.bassSalience ?? 0) * 0.12,
+      clamp01(dominantAmplitude) * 0.12,
   );
   const changeBreakdown = {
     flux: clamp01(spectralFlux * 8) * 0.28,
@@ -2014,7 +2016,7 @@ function deriveCompositeSignals({
     turnover: turnoverRatio * 0.16,
     timbre:
       clamp01(Math.abs(normalizedCentroid - bandDistribution) * 1.2) * 0.1,
-    hint: (hints?.novelty ?? 0) * 0.18 + (hints?.transientSalience ?? 0) * 0.12,
+    hint: 0,
   };
   const changeSignal = clamp01(
     changeBreakdown.flux +
@@ -2027,9 +2029,7 @@ function deriveCompositeSignals({
   const pulseDriver = beatThreshold > 0 ? beatOnsetDriver / beatThreshold : 0;
   const pulseSignal = clamp01(
     (beatDetected ? beatStrength * 0.56 + beatConfidence * 0.24 : 0) +
-      clamp01(pulseDriver * 0.22) +
-      (hints?.transientSalience ?? 0) * 0.12 +
-      (hints?.novelty ?? 0) * 0.06,
+      clamp01(pulseDriver * 0.22),
   );
   const modalVisibilityEnergy = deriveModalVisibilityEnergy({
     modeSlots,
@@ -2553,6 +2553,12 @@ function buildHintMetrics(analysisHints) {
     novelty: clamp01(analysisHints?.novelty ?? 0),
     transientSalience: clamp01(analysisHints?.transientSalience ?? 0),
   };
+}
+
+function deriveDeterministicBassSalience(bandEnergies) {
+  return clamp01(
+    (bandEnergies?.[0] ?? 0) * 1.8 + (bandEnergies?.[1] ?? 0) * 0.8,
+  );
 }
 
 function resolveComposeAnalysisHints(analysisHints, fallbackAnalysisHints) {
@@ -3912,7 +3918,6 @@ export function composeAudioFeatureFrame({
     beatOnsetDriver: analysisResult.beatOnsetDriver,
     beatThreshold: analysisResult.beatThreshold,
     bandState: analysisResult.bandState ?? null,
-    analysisHints: effectiveAnalysisHints,
     structuralMetrics: analysisResult.structuralMetrics,
     sourceNormalization: analysisResult.sourceNormalization,
     liveInputHardSilenceActive: analysisResult.liveInputHardSilenceActive,
@@ -4115,7 +4120,7 @@ export function composeAudioFeatureFrame({
     keyConfidence: analysisResult.keyConfidence,
     keyTonicHue: analysisResult.keyTonicHue,
     harmonicity: clamp01(effectiveAnalysisHints?.harmonicity ?? 0),
-    bassSalience: clamp01(effectiveAnalysisHints?.bassSalience ?? 0),
+    bassSalience: deriveDeterministicBassSalience(analysisResult.bandEnergies),
     textureSpread: clamp01(effectiveAnalysisHints?.textureSpread ?? 0),
     novelty: clamp01(effectiveAnalysisHints?.novelty ?? 0),
     modeSlots: analysisResult.modeSlots,
