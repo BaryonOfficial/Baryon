@@ -112,6 +112,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uTrebleBroadbandEnergy: { value: 0 },
       uModeCoherence: { value: 0 },
       uTotalSlotAmplitude: { value: 0 },
+      uModalVisibilityEnergy: { value: 0 },
     },
     visualRoot: {
       scale: {
@@ -243,6 +244,7 @@ describe("tickRaymarchRuntime", () => {
       },
       pulseSignal: 0.32,
       modeCoherence: 0.58,
+      modalVisibilityEnergy: 0.37,
       trebleBroadbandEnergy: 0.18,
       trebleTonalEnergy: 0.24,
       beatDetected: true,
@@ -273,6 +275,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.bloomResponseSignal).toBeGreaterThan(0);
     expect(runtimeState.visualRoot.scale.x).toBe(1);
     expect(runtimeState.uniforms.uModeCoherence.value).toBeCloseTo(0.58);
+    expect(runtimeState.uniforms.uModalVisibilityEnergy.value).toBeCloseTo(
+      0.37,
+    );
     expect(runtimeState.uniforms.uTrebleBroadbandEnergy.value).toBeCloseTo(
       0.18,
     );
@@ -339,6 +344,9 @@ describe("tickRaymarchRuntime", () => {
     });
     expect(runtimeState.debugSnapshot.raymarchDebug.pulseSignal).toBe(0.32);
     expect(runtimeState.debugSnapshot.raymarchDebug.modeCoherence).toBe(0.58);
+    expect(runtimeState.debugSnapshot.raymarchDebug.modalVisibilityEnergy).toBe(
+      0.37,
+    );
     expect(runtimeState.debugSnapshot.raymarchDebug.trebleBroadbandEnergy).toBe(
       0.18,
     );
@@ -461,6 +469,7 @@ describe("tickRaymarchRuntime", () => {
         energySignal: 0,
         changeSignal: 0,
         pulseSignal: 0,
+        modalVisibilityEnergy: 0.5,
       },
       1,
       1 / 60,
@@ -469,6 +478,7 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.volumeMesh.visible).toBe(false);
     expect(runtimeState.idleOverlay.visible).toBe(true);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uModalVisibilityEnergy.value).toBe(0);
     expect(runtimeState.backboneModeBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.detailModeBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.performanceGovernor).toBeNull();

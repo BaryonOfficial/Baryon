@@ -406,10 +406,15 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     expect(steadyFrame.structureSignal).toBeGreaterThan(0.2);
     expect(steadyFrame.energySignal).toBeGreaterThan(0.1);
+    expect(steadyFrame.modalVisibilityEnergy).toBeGreaterThan(0.12);
+    expect(steadyFrame).not.toHaveProperty("sustainedResonancePresence");
     expect(steadyFrame.changeSignal).toBeGreaterThanOrEqual(0);
     expect(steadyFrame.pulseSignal).toBeGreaterThanOrEqual(0);
     expect(steadyFrame.debug.structureSignal).toBe(steadyFrame.structureSignal);
     expect(steadyFrame.debug.energySignal).toBe(steadyFrame.energySignal);
+    expect(steadyFrame.debug.modalVisibilityEnergy).toBe(
+      steadyFrame.modalVisibilityEnergy,
+    );
     expect(steadyFrame.debug.changeSignal).toBe(steadyFrame.changeSignal);
     expect(steadyFrame.debug.pulseSignal).toBe(steadyFrame.pulseSignal);
 
@@ -2048,6 +2053,48 @@ describe("live input noise gate", () => {
     );
   });
 
+  it("keeps low-level system-routed bowl resonance visible without spikes", () => {
+    const featureState = createAudioFeatureState();
+    const fftMagnitudes = makeFft([
+      [220, 0.24],
+      [440, 0.14],
+      [660, 0.08],
+      [880, 0.04],
+    ]);
+    const timeData = makeTimeData({
+      frequency: 220,
+      amplitude: 0.055,
+      harmonics: [
+        [2, 0.025],
+        [3, 0.012],
+      ],
+    });
+    let frame = null;
+
+    for (let index = 0; index < 8; index += 1) {
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "system",
+          avgAmplitude: 12,
+          fftMagnitudes,
+          timeData,
+          rms: 0.045,
+        }),
+        featureState,
+        radius: 3,
+        status: makeSystemStatus(),
+        frameTimeMs: index * 33,
+      });
+    }
+
+    expect(frame.sourceMode).toBe("system");
+    expect(frame.fieldState).toBe("active");
+    expect(frame.changeSignal).toBeLessThan(0.03);
+    expect(frame.modeCoherence).toBeGreaterThan(0.4);
+    expect(frame.debug.modalPersistence).toBeGreaterThan(0.35);
+    expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.12);
+  });
+
   it("keeps loopback-classified live input structurally active", () => {
     const featureState = createAudioFeatureState();
     const frame = buildAudioFeatureFrame({
@@ -2431,6 +2478,72 @@ describe("test-tone snapshot generation", () => {
     // FFT should still have content in both cases
     expect(lowAmp.fftMagnitudes.some((v) => v > 0)).toBe(true);
     expect(highAmp.fftMagnitudes.some((v) => v > 0)).toBe(true);
+  });
+
+  it("keeps modal visibility energy present for low-transient injected tones", () => {
+    const featureState = createAudioFeatureState();
+    const warmup = buildAudioFeatureFrame({
+      analysisSnapshot: null,
+      featureState,
+      radius: 3,
+      status: createStatus(),
+      frameTimeMs: 0,
+      auditSettings: createAuditSettings({
+        injectTestTone: true,
+        testToneHz: 440,
+        testToneAmplitude: 0.7,
+      }),
+    });
+    const sustained = buildAudioFeatureFrame({
+      analysisSnapshot: null,
+      featureState,
+      radius: 3,
+      status: createStatus(),
+      frameTimeMs: 33,
+      auditSettings: createAuditSettings({
+        injectTestTone: true,
+        testToneHz: 440,
+        testToneAmplitude: 0.7,
+      }),
+    });
+
+    expect(warmup.transientEnergy).toBeGreaterThanOrEqual(0);
+    expect(sustained.transientEnergy).toBeLessThan(0.1);
+    expect(sustained.changeSignal).toBeLessThan(0.12);
+    expect(sustained.modalVisibilityEnergy).toBeGreaterThan(0.24);
+    expect(sustained.debug.modalVisibilityEnergy).toBe(
+      sustained.modalVisibilityEnergy,
+    );
+  });
+
+  it("does not expose modal visibility energy for silence or weak noisy input", () => {
+    const silent = buildAudioFeatureFrame({
+      analysisSnapshot: null,
+      featureState: createAudioFeatureState(),
+      radius: 3,
+      status: createStatus(),
+    });
+    const weakNoisy = buildAudioFeatureFrame({
+      analysisSnapshot: createSnapshot({
+        avgAmplitude: 8,
+        fftMagnitudes: makeFft([
+          [120, 0.04],
+          [380, 0.05],
+          [920, 0.04],
+          [1600, 0.05],
+          [2400, 0.04],
+        ]),
+        rms: 0.015,
+      }),
+      featureState: createAudioFeatureState(),
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 0,
+    });
+
+    expect(silent.modalVisibilityEnergy).toBe(0);
+    expect(weakNoisy.energySignal).toBeLessThan(0.12);
+    expect(weakNoisy.modalVisibilityEnergy).toBe(0);
   });
 });
 

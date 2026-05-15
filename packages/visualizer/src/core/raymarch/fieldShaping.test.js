@@ -300,6 +300,62 @@ describe("field shaping", () => {
     expect(strong.visibleDensity).toBeCloseTo(0.42);
   });
 
+  it("relaxes low-density visibility for modal cavity energy without adding density", () => {
+    const baseline = deriveVisibleDensity({ density: 0.17 });
+    const modal = deriveVisibleDensity({
+      density: 0.17,
+      modalVisibilityEnergy: 0.72,
+      modalStructureAnchor: 0.88,
+    });
+    const noStructure = deriveVisibleDensity({
+      density: 0.17,
+      modalVisibilityEnergy: 0.72,
+      modalStructureAnchor: 0,
+    });
+
+    expect(modal.visibilityGate).toBeGreaterThan(baseline.visibilityGate);
+    expect(modal.visibleDensity).toBeGreaterThan(0.08);
+    expect(modal.physicalVisibleDensity).toBe(baseline.visibleDensity);
+    expect(modal.visibleDensity).toBeLessThanOrEqual(0.17);
+    expect(noStructure.visibleDensity).toBe(baseline.visibleDensity);
+  });
+
+  it("adds only structure-anchored density for near-empty modal cavity energy", () => {
+    const modal = deriveVisibleDensity({
+      density: 0.004,
+      modalVisibilityEnergy: 0.62,
+      modalStructureAnchor: 0.84,
+    });
+    const noStructure = deriveVisibleDensity({
+      density: 0.004,
+      modalVisibilityEnergy: 0.62,
+      modalStructureAnchor: 0,
+    });
+
+    expect(modal.physicalVisibleDensity).toBe(0);
+    expect(modal.modalVisibleDensity).toBeGreaterThan(0.05);
+    expect(modal.visibleDensity).toBeGreaterThan(0.05);
+    expect(noStructure.modalVisibleDensity).toBe(0);
+    expect(noStructure.visibleDensity).toBe(0);
+  });
+
+  it("maps moderate sustained modal energy to inspectable local density", () => {
+    const modal = deriveVisibleDensity({
+      density: 0.004,
+      modalVisibilityEnergy: 0.36,
+      modalStructureAnchor: 0.84,
+    });
+    const noStructure = deriveVisibleDensity({
+      density: 0.004,
+      modalVisibilityEnergy: 0.36,
+      modalStructureAnchor: 0,
+    });
+
+    expect(modal.physicalVisibleDensity).toBe(0);
+    expect(modal.visibleDensity).toBeGreaterThan(0.065);
+    expect(noStructure.visibleDensity).toBe(0);
+  });
+
   it("pushes hot-core highlights from beam energy instead of body fog", () => {
     const subtleCore = deriveHotCoreMix({
       beamMask: 0.38,

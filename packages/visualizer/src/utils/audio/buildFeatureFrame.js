@@ -84,6 +84,15 @@ const TREBLE_FLATNESS_MAX_HZ = 10000;
 const DEFAULT_LIVE_INPUT_POLICY = DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT;
 const LIVE_INPUT_CALIBRATION_WINDOW_MS = 1100;
 const LIVE_INPUT_CALIBRATION_SMOOTHING_MS = 320;
+const MODAL_VISIBILITY_SLOT_ENERGY_START = 0.04;
+const MODAL_VISIBILITY_SLOT_ENERGY_END = 0.18;
+const MODAL_VISIBILITY_DRIVE_START = 0.025;
+const MODAL_VISIBILITY_DRIVE_END = 0.12;
+const MODAL_VISIBILITY_COHERENCE_START = 0.18;
+const MODAL_VISIBILITY_COHERENCE_END = 0.58;
+const MODAL_VISIBILITY_PERSISTENCE_START = 0.03;
+const MODAL_VISIBILITY_PERSISTENCE_END = 0.2;
+const MODAL_VISIBILITY_DISTRIBUTED_REDUCTION = 0.25;
 const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze({
   ambient: Object.freeze({
     absoluteAvgAmplitude: Math.max(2.2, LIVE_INPUT_SILENCE_AVG_AMPLITUDE * 0.3),
@@ -415,6 +424,14 @@ function getFrameTimestamp() {
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
+}
+
+function smoothstep(edge0, edge1, x) {
+  if (edge0 === edge1) {
+    return x < edge0 ? 0 : 1;
+  }
+  const t = clamp01((x - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
 }
 
 function averageArray(values) {
@@ -780,6 +797,7 @@ function buildDebugSummary({
   spectralFlux = 0,
   structureSignal = 0,
   energySignal = 0,
+  modalVisibilityEnergy = 0,
   changeSignal = 0,
   changeBreakdown = null,
   pulseSignal = 0,
@@ -860,6 +878,7 @@ function buildDebugSummary({
     spectralFlux,
     structureSignal,
     energySignal,
+    modalVisibilityEnergy,
     changeSignal,
     changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
     pulseSignal,
@@ -967,6 +986,7 @@ function buildZeroDebugSnapshot({
     beatThreshold: 0,
     structureSignal: 0,
     energySignal: 0,
+    modalVisibilityEnergy: 0,
     changeSignal: 0,
     pulseSignal: 0,
     analysisHints,
@@ -1056,6 +1076,7 @@ function buildSilentFeatureFrame({
     spectralFlux: 0,
     structureSignal: 0,
     energySignal: 0,
+    modalVisibilityEnergy: 0,
     changeSignal: 0,
     pulseSignal: 0,
     beatDetected: false,
@@ -1795,6 +1816,98 @@ function deriveModeDeltaMetrics(modeSlots, referenceModeSlots, capacity) {
   };
 }
 
+function averageActiveSlotAmplitude(modeSlots, capacity) {
+  const slotCount = Math.min(
+    capacity,
+    Math.floor((modeSlots?.length ?? 0) / 4),
+  );
+  if (slotCount <= 0) {
+    return 0;
+  }
+
+  let activeCount = 0;
+  let amplitudeTotal = 0;
+  for (let i = 0; i < slotCount; i += 1) {
+    const amplitude = clamp01(modeSlots[i * 4 + 3] ?? 0);
+    if (amplitude <= 0) {
+      continue;
+    }
+    activeCount += 1;
+    amplitudeTotal += amplitude;
+  }
+
+  return activeCount > 0 ? clamp01(amplitudeTotal / activeCount) : 0;
+}
+
+function deriveModalVisibilityEnergy({
+  modeSlots,
+  modeCapacity,
+  structuralMetrics = null,
+  hardSilent = false,
+}) {
+  if (hardSilent) {
+    return 0;
+  }
+
+  const activeModeCount = countActiveSlots(modeSlots, modeCapacity);
+  if (activeModeCount <= 0) {
+    return 0;
+  }
+
+  const slotEnergy = averageActiveSlotAmplitude(modeSlots, modeCapacity);
+  const modalDriveEnergy = clamp01(structuralMetrics?.modalDriveEnergy ?? 0);
+  const modalPersistence = clamp01(structuralMetrics?.modalPersistence ?? 0);
+  const resonatorCoherence = clamp01(structuralMetrics?.modeCoherence ?? 0);
+  const distributedExcitation = clamp01(
+    structuralMetrics?.distributedExcitation ?? 0,
+  );
+  if (
+    modalPersistence <= MODAL_VISIBILITY_PERSISTENCE_START &&
+    modalDriveEnergy < 0.09
+  ) {
+    return 0;
+  }
+  const slotEnergyGate = smoothstep(
+    MODAL_VISIBILITY_SLOT_ENERGY_START,
+    MODAL_VISIBILITY_SLOT_ENERGY_END,
+    slotEnergy,
+  );
+  const driveGate = smoothstep(
+    MODAL_VISIBILITY_DRIVE_START,
+    MODAL_VISIBILITY_DRIVE_END,
+    Math.max(modalDriveEnergy, slotEnergy * 0.35),
+  );
+  const coherenceGate = smoothstep(
+    MODAL_VISIBILITY_COHERENCE_START,
+    MODAL_VISIBILITY_COHERENCE_END,
+    resonatorCoherence,
+  );
+  const persistenceGate = smoothstep(
+    MODAL_VISIBILITY_PERSISTENCE_START,
+    MODAL_VISIBILITY_PERSISTENCE_END,
+    modalPersistence,
+  );
+  const occupancyGate = smoothstep(
+    0.02,
+    0.12,
+    activeModeCount / Math.max(1, modeCapacity),
+  );
+  const modalQuality = Math.max(coherenceGate, persistenceGate * 0.75);
+  const distributedReduction =
+    1 -
+    distributedExcitation * MODAL_VISIBILITY_DISTRIBUTED_REDUCTION;
+
+  return clamp01(
+    (slotEnergyGate * 0.34 +
+      driveGate * 0.3 +
+      persistenceGate * 0.22 +
+      coherenceGate * 0.14) *
+      modalQuality *
+      (0.55 + occupancyGate * 0.45) *
+      distributedReduction,
+  );
+}
+
 function deriveCompositeSignals({
   inputMode,
   modeCapacity,
@@ -1819,6 +1932,7 @@ function deriveCompositeSignals({
   analysisHints,
   structuralMetrics = null,
   sourceNormalization = undefined,
+  liveInputHardSilenceActive = false,
 }) {
   const hints = getActiveAnalysisHints(analysisHints);
   const activeModeCount = countActiveSlots(modeSlots, modeCapacity);
@@ -1917,6 +2031,12 @@ function deriveCompositeSignals({
       (hints?.transientSalience ?? 0) * 0.12 +
       (hints?.novelty ?? 0) * 0.06,
   );
+  const modalVisibilityEnergy = deriveModalVisibilityEnergy({
+    modeSlots,
+    modeCapacity,
+    structuralMetrics,
+    hardSilent: liveInputHardSilenceActive,
+  });
 
   if (inputMode === "live") {
     return {
@@ -1927,6 +2047,7 @@ function deriveCompositeSignals({
       changeSignal: clamp01(changeSignal * LIVE_INPUT_CHANGE_RESPONSE_SCALE),
       pulseSignal: clamp01(pulseSignal * LIVE_INPUT_PULSE_RESPONSE_SCALE),
       modeCoherence,
+      modalVisibilityEnergy,
       changeBreakdown,
     };
   }
@@ -1937,6 +2058,7 @@ function deriveCompositeSignals({
     changeSignal,
     pulseSignal,
     modeCoherence,
+    modalVisibilityEnergy,
     changeBreakdown,
   };
 }
@@ -2219,6 +2341,7 @@ function finalizeFeatureDebugSnapshot({
   spectralFlux,
   structureSignal,
   energySignal,
+  modalVisibilityEnergy,
   changeSignal,
   changeBreakdown = null,
   pulseSignal,
@@ -2288,6 +2411,7 @@ function finalizeFeatureDebugSnapshot({
     spectralFlux,
     structureSignal,
     energySignal,
+    modalVisibilityEnergy,
     changeSignal,
     changeBreakdown,
     pulseSignal,
@@ -3764,6 +3888,7 @@ export function composeAudioFeatureFrame({
     changeBreakdown,
     pulseSignal,
     modeCoherence,
+    modalVisibilityEnergy,
   } = deriveCompositeSignals({
     inputMode: preparedInputs.analysisInputMode,
     modeCapacity: preparedInputs.capacity,
@@ -3790,6 +3915,7 @@ export function composeAudioFeatureFrame({
     analysisHints: effectiveAnalysisHints,
     structuralMetrics: analysisResult.structuralMetrics,
     sourceNormalization: analysisResult.sourceNormalization,
+    liveInputHardSilenceActive: analysisResult.liveInputHardSilenceActive,
   });
 
   if (reuseHeavyAnalysis && previousFrame) {
@@ -3831,6 +3957,15 @@ export function composeAudioFeatureFrame({
       {
         attackMs: 8,
         releaseMs: 50,
+      },
+    );
+    modalVisibilityEnergy = smoothFeatureSignal(
+      previousFrame.modalVisibilityEnergy ?? 0,
+      modalVisibilityEnergy,
+      deltaMs,
+      {
+        attackMs: 70,
+        releaseMs: 160,
       },
     );
   }
@@ -3907,6 +4042,7 @@ export function composeAudioFeatureFrame({
       spectralFlux: analysisResult.spectralFlux,
       structureSignal,
       energySignal,
+      modalVisibilityEnergy,
       changeSignal,
       changeBreakdown,
       pulseSignal,
@@ -3961,6 +4097,7 @@ export function composeAudioFeatureFrame({
     spectralFlux: analysisResult.spectralFlux,
     structureSignal,
     energySignal,
+    modalVisibilityEnergy,
     changeSignal,
     changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
     pulseSignal,

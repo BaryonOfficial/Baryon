@@ -55,6 +55,8 @@ export const LATCHED_FOG_BEAM_REDUCTION = 0.12;
 export const EXCITATION_VISIBILITY_COHERENCE_WEIGHT = 0.42;
 export const EXCITATION_VISIBILITY_HARMONICITY_WEIGHT = 0.16;
 export const EXCITATION_VISIBILITY_MAX_FLOOR = 0.52;
+export const MODAL_VISIBILITY_DENSITY_LIFT = 0.3;
+export const MODAL_VISIBILITY_DENSITY_FLOOR = 0.22;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -301,16 +303,37 @@ export function deriveEmissionRolloff({ beamDensity, transientEnergy }) {
   };
 }
 
-export function deriveVisibleDensity({ density }) {
-  const visibilityGate = smoothstep(
+export function deriveVisibleDensity({
+  density,
+  modalVisibilityEnergy = 0,
+  modalStructureAnchor = 0,
+}) {
+  const physicalVisibilityGate = smoothstep(
     LOW_DENSITY_FADE_START,
     LOW_DENSITY_FADE_END,
     density,
   );
+  const modalLift =
+    clamp01(modalVisibilityEnergy) *
+    clamp01(modalStructureAnchor) *
+    MODAL_VISIBILITY_DENSITY_LIFT;
+  const visibilityGate = smoothstep(
+    LOW_DENSITY_FADE_START,
+    LOW_DENSITY_FADE_END,
+    density + modalLift,
+  );
+  const modalVisibleDensity =
+    clamp01(modalVisibilityEnergy) *
+    clamp01(modalStructureAnchor) *
+    MODAL_VISIBILITY_DENSITY_FLOOR;
 
   return {
+    physicalVisibilityGate,
+    physicalVisibleDensity: density * physicalVisibilityGate,
+    modalLift,
+    modalVisibleDensity,
     visibilityGate,
-    visibleDensity: density * visibilityGate,
+    visibleDensity: Math.max(density * visibilityGate, modalVisibleDensity),
   };
 }
 

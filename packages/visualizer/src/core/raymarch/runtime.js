@@ -290,6 +290,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     featureFrame?.changeBreakdown ??
     null;
   const pulseSignal = featureFrame?.pulseSignal ?? 0;
+  const modalVisibilityEnergy = featureFrame?.modalVisibilityEnergy ?? 0;
   const avgDensity = Math.min(
     1,
     avgAmplitude * densityGain * absorption * (0.75 + transientEnergy * 0.2),
@@ -419,6 +420,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     changeSignal,
     changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
     pulseSignal,
+    modalVisibilityEnergy,
     modeCoherence: featureFrame?.modeCoherence ?? 0,
     trebleTonalEnergy: featureFrame?.trebleTonalEnergy ?? 0,
     trebleBroadbandEnergy: featureFrame?.trebleBroadbandEnergy ?? 0,
@@ -940,6 +942,7 @@ export function tickRaymarchRuntime(
     setIfChanged(uniforms.uTrebleBroadbandEnergy, 0);
     setIfChanged(uniforms.uModeCoherence, 0);
     setIfChanged(uniforms.uTotalSlotAmplitude, 0);
+    setIfChanged(uniforms.uModalVisibilityEnergy, 0);
     setIfChanged(uniforms.uKeyTintStrength, 0);
     setIfChanged(uniforms.uKeyMode, 0);
     uniforms.uBandEnergies.value.set(0, 0, 0, 0);
@@ -1089,6 +1092,10 @@ export function tickRaymarchRuntime(
   );
   setIfChanged(uniforms.uModeCoherence, featureFrame?.modeCoherence ?? 0);
   setIfChanged(uniforms.uTotalSlotAmplitude, sumLayeredAmplitude(featureFrame));
+  setIfChanged(
+    uniforms.uModalVisibilityEnergy,
+    featureFrame?.modalVisibilityEnergy ?? 0,
+  );
 
   // Key tonic hue — EMA with circular shortest-path wrapping
   const rawKeyHue = featureFrame?.keyTonicHue ?? runtimeState.keyHue;

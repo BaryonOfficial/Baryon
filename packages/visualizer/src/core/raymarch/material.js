@@ -90,6 +90,8 @@ import {
   SHELL_WEIGHT_MAX,
   SHELL_WEIGHT_MIN,
   SHELL_WEIGHT_START,
+  MODAL_VISIBILITY_DENSITY_FLOOR,
+  MODAL_VISIBILITY_DENSITY_LIFT,
 } from "./fieldShaping.js";
 
 // Excitation gate: smoothstep range for uAverageAmplitude / 255.
@@ -436,6 +438,7 @@ function createScatteringNode({
     uTrebleBroadbandEnergy,
     uModeCoherence,
     uTotalSlotAmplitude,
+    uModalVisibilityEnergy,
   } = uniforms;
   // Uniform-only expressions: hoist outside the Fn so they are loop-invariant
   // at the TSL graph level and do not re-evaluate every raymarch step.
@@ -827,11 +830,21 @@ function createScatteringNode({
         float(0.0),
         float(DENSITY_MAX),
       ).mul(float(DENSITY_BOOST));
-      const { visibleDensity } = deriveVisibleDensityNode(density);
+      const modalStructureAnchor = beamCore
+        .mul(visibleStructure)
+        .mul(shellWeight)
+        .mul(edgeFade)
+        .mul(activeMask);
+      const { visibleDensity, physicalVisibleDensity } =
+        deriveVisibleDensityNode(
+          density,
+          uModalVisibilityEnergy,
+          modalStructureAnchor,
+        );
       const highlightMask = smoothstep(
         float(HIGHLIGHT_MASK_START),
         float(HIGHLIGHT_MASK_END),
-        visibleDensity,
+        physicalVisibleDensity,
       );
       const stabilizedDensity = visibleDensity;
       const contourMix = smoothstep(
@@ -1039,16 +1052,44 @@ function createScatteringNode({
   );
 }
 
-function deriveVisibleDensityNode(density) {
-  const visibilityGate = smoothstep(
+function deriveVisibleDensityNode(
+  density,
+  modalVisibilityEnergy,
+  modalStructureAnchor,
+) {
+  const physicalVisibilityGate = smoothstep(
     float(LOW_DENSITY_FADE_START),
     float(LOW_DENSITY_FADE_END),
     density,
   );
+  const modalLift = clamp(
+    modalVisibilityEnergy
+      .mul(modalStructureAnchor)
+      .mul(float(MODAL_VISIBILITY_DENSITY_LIFT)),
+    float(0.0),
+    float(MODAL_VISIBILITY_DENSITY_LIFT),
+  );
+  const visibilityGate = smoothstep(
+    float(LOW_DENSITY_FADE_START),
+    float(LOW_DENSITY_FADE_END),
+    density.add(modalLift),
+  );
+  const physicalVisibleDensity = density.mul(physicalVisibilityGate);
+  const modalVisibleDensity = clamp(
+    modalVisibilityEnergy
+      .mul(modalStructureAnchor)
+      .mul(float(MODAL_VISIBILITY_DENSITY_FLOOR)),
+    float(0.0),
+    float(MODAL_VISIBILITY_DENSITY_FLOOR),
+  );
 
   return {
+    physicalVisibilityGate,
+    physicalVisibleDensity,
+    modalLift,
+    modalVisibleDensity,
     visibilityGate,
-    visibleDensity: density.mul(visibilityGate),
+    visibleDensity: max(density.mul(visibilityGate), modalVisibleDensity),
   };
 }
 

@@ -20,6 +20,19 @@ Safe changes:
 - splitting feature construction into clearer internal stages
 - adding fields that downstream consumers can safely ignore
 
+Current modal visibility semantics:
+
+- `modalVisibilityEnergy` is an audio-owned feature-frame signal derived from
+  rectangular water-cavity modal excitation, persistence, coherence, and active
+  mode amplitudes
+- low transient change must not suppress modal visibility; sustained ringing is
+  valid cavity excitation
+- renderers may use it to preserve local modal pressure-field visibility inside
+  the spherical render hull, but must not use it as a full-frame fallback tint,
+  density wash, spherical eigenmode switch, or independent mode promoter
+- the current physical model is:
+  `audio drive -> rectangular water-cavity modes -> modal pressure field -> spherical render hull`
+
 High-risk changes:
 
 - changing the meaning of existing fields without a coordinated migration
