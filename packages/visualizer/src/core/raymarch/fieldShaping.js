@@ -42,6 +42,8 @@ export const MODAL_CROWDING_BODY_COMPRESSION = 0.55;
 export const HOT_CORE_START = 0.56;
 export const HOT_CORE_END = 0.94;
 export const HOT_CORE_CROWDING_THRESHOLD_LIFT = 0.14;
+export const HOT_CORE_SURFACE_CROWDING_REDUCTION = 0.34;
+export const WHITE_EMISSION_CROWDING_REDUCTION = 0.72;
 export const HIGHLIGHT_MASK_START = 0.38;
 export const HIGHLIGHT_MASK_END = 0.96;
 export const BOUNDARY_CONTOUR_ACCENT_WEIGHT = 0.08;
@@ -480,6 +482,25 @@ export function deriveHotCoreMix({
   const compressedHotCoreSignal = hotCoreSignal / (1 + hotCoreSignal * 0.22);
 
   return smoothstep(hotCoreStart, HOT_CORE_END, compressedHotCoreSignal);
+}
+
+export function deriveCrowdedHighlightMix({
+  hotCoreMix = 0,
+  whiteEmissionMix = 0,
+  hotCoreCrowding = 0,
+}) {
+  const crowding = clamp01(hotCoreCrowding);
+  const hotCoreReduction =
+    1 - crowding * HOT_CORE_SURFACE_CROWDING_REDUCTION;
+  const whiteEmissionReduction =
+    1 - crowding * WHITE_EMISSION_CROWDING_REDUCTION;
+
+  return {
+    hotCoreReduction,
+    whiteEmissionReduction,
+    crowdedHotCoreMix: clamp01(hotCoreMix) * hotCoreReduction,
+    crowdedWhiteEmissionMix: clamp01(whiteEmissionMix) * whiteEmissionReduction,
+  };
 }
 
 export function deriveStableContourAccent({

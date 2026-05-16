@@ -47,12 +47,15 @@ const EXCITATION_BACKBONE_LATENT_TAIL_EMPTY_RELEASE = 0.9;
 const EXCITATION_BACKBONE_LATENT_TAIL_LOW_SIGNAL_RELEASE = 0.82;
 const EXCITATION_BACKBONE_FRESH_CAP = 3;
 const EXCITATION_DETAIL_BLEND_ATTACK = 0.45;
+const EXCITATION_DETAIL_SHIFT_BLEND_ATTACK = 0.85;
 const EXCITATION_DETAIL_BLEND_TRACKING = 0.5;
 const EXCITATION_DETAIL_BLEND_RELEASE = 0.68;
 const EXCITATION_DETAIL_SILENCE_RELEASE = 0.58;
 const EXCITATION_DETAIL_HARD_SILENCE_RELEASE = 0.42;
 const EXCITATION_DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD = 0.06;
 const EXCITATION_DETAIL_LOW_SIGNAL_RELEASE = 0.48;
+const EXCITATION_DETAIL_SIGNAL_COVERAGE_MIN = 0.68;
+const EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_VISIBLE_AMPLITUDE = 0.2;
 const EXCITATION_DETAIL_TAIL_RELEASE = 0.82;
 const EXCITATION_DETAIL_TAIL_EMPTY_RELEASE = 0.82;
 const EXCITATION_DETAIL_TAIL_LOW_SIGNAL_RELEASE = 0.72;
@@ -405,15 +408,11 @@ function estimateDominantSpectralFrequency(fftMagnitudes, sampleRate) {
   );
   for (let index = 1; index < fftMagnitudes.length; index += 1) {
     if ((fftMagnitudes[index] ?? 0) >= significantAmplitude) {
-      return (
-        (index / Math.max(1, fftMagnitudes.length)) * sampleRate * 0.5
-      );
+      return (index / Math.max(1, fftMagnitudes.length)) * sampleRate * 0.5;
     }
   }
 
-  return (
-    (dominantIndex / Math.max(1, fftMagnitudes.length)) * sampleRate * 0.5
-  );
+  return (dominantIndex / Math.max(1, fftMagnitudes.length)) * sampleRate * 0.5;
 }
 
 function computeSpectralPeakInRange(fftMagnitudes, sampleRate, minHz, maxHz) {
@@ -840,11 +839,7 @@ function isRetainedSustainedDetailMode({
   detailTailPresence,
   subtleCoherentDetailSignal,
 }) {
-  if (
-    hardSilentFrame ||
-    atlasEntry?.layer !== "detail" ||
-    !previous
-  ) {
+  if (hardSilentFrame || atlasEntry?.layer !== "detail" || !previous) {
     return false;
   }
   if (
@@ -870,11 +865,7 @@ function isRetainedSustainedBackboneMode({
   hardSilentFrame,
   latentCoherentBackboneSignal,
 }) {
-  if (
-    hardSilentFrame ||
-    atlasEntry?.layer !== "backbone" ||
-    !previous
-  ) {
+  if (hardSilentFrame || atlasEntry?.layer !== "backbone" || !previous) {
     return false;
   }
   if (
@@ -923,9 +914,7 @@ function hasSeededCoherentDetailTail(state) {
   if ((state?.detailTailPresence ?? 0) >= DETAIL_LATENT_TAIL_MIN_PRESENCE) {
     return true;
   }
-  if (
-    (state?.coherentDetailTailMemory ?? 0) >= DETAIL_LATENT_TAIL_MIN_MEMORY
-  ) {
+  if ((state?.coherentDetailTailMemory ?? 0) >= DETAIL_LATENT_TAIL_MIN_MEMORY) {
     return true;
   }
   if (
@@ -953,8 +942,7 @@ function hasSeededCoherentBackboneTail(state) {
     return true;
   }
   if (
-    (state?.coherentBackboneTailMemory ?? 0) >=
-    BACKBONE_LATENT_TAIL_MIN_MEMORY
+    (state?.coherentBackboneTailMemory ?? 0) >= BACKBONE_LATENT_TAIL_MIN_MEMORY
   ) {
     return true;
   }
@@ -1096,9 +1084,7 @@ function getNextDetailMaturity({
       ? DETAIL_MATURITY_ATTACK
       : DETAIL_MATURITY_RELEASE;
 
-  return clamp01(
-    previousMaturity + (targetMaturity - previousMaturity) * rate,
-  );
+  return clamp01(previousMaturity + (targetMaturity - previousMaturity) * rate);
 }
 
 function getCoherentDetailCoupling({
@@ -1401,6 +1387,62 @@ function hasVisibleModeKey(slots, modeKey) {
   return false;
 }
 
+function computeSignalCoverageByVisibleKeys(
+  visibleSlots,
+  signalSlots,
+  capacity,
+) {
+  if (
+    !(visibleSlots instanceof Float32Array) ||
+    !(signalSlots instanceof Float32Array)
+  ) {
+    return 1;
+  }
+
+  const visibleKeys = new Set();
+  const visibleLimit = Math.min(capacity, Math.floor(visibleSlots.length / 4));
+  for (let index = 0; index < visibleLimit; index += 1) {
+    const offset = index * 4;
+    if ((visibleSlots[offset + 3] ?? 0) <= 0) {
+      continue;
+    }
+    visibleKeys.add(
+      buildModeKey(
+        visibleSlots[offset],
+        visibleSlots[offset + 1],
+        visibleSlots[offset + 2],
+      ),
+    );
+  }
+
+  let coveredSignalAmplitude = 0;
+  let totalSignalAmplitude = 0;
+  const signalLimit = Math.min(capacity, Math.floor(signalSlots.length / 4));
+  for (let index = 0; index < signalLimit; index += 1) {
+    const offset = index * 4;
+    const signalAmplitude = signalSlots[offset + 3] ?? 0;
+    if (signalAmplitude <= 0) {
+      continue;
+    }
+    totalSignalAmplitude += signalAmplitude;
+    if (
+      visibleKeys.has(
+        buildModeKey(
+          signalSlots[offset],
+          signalSlots[offset + 1],
+          signalSlots[offset + 2],
+        ),
+      )
+    ) {
+      coveredSignalAmplitude += signalAmplitude;
+    }
+  }
+
+  return totalSignalAmplitude > 0
+    ? clamp01(coveredSignalAmplitude / totalSignalAmplitude)
+    : 1;
+}
+
 function getSustainedDetailTailPresence(slots, activeModes, capacity) {
   if (!(slots instanceof Float32Array) || !(activeModes instanceof Map)) {
     return 0;
@@ -1447,8 +1489,8 @@ function buildDisplayShortlist(entries, layer) {
         layer === "backbone" && entry?.retainedSustainedBackbone
           ? BACKBONE_RETAINED_SIGNAL_BASE * 0.85
           : layer === "detail" && entry?.retainedSubtleSustainedDetail
-          ? DETAIL_RETAINED_SUBTLE_SIGNAL_BASE * 0.85
-          : minSignalAmplitude;
+            ? DETAIL_RETAINED_SUBTLE_SIGNAL_BASE * 0.85
+            : minSignalAmplitude;
       return (entry?.signalAmplitude ?? 0) >= entryMinSignal;
     })
     .map((entry) => ({
@@ -1642,7 +1684,8 @@ export function buildModalExcitationStructuralState({
   let driveEnergyTotal = 0;
   let persistenceTotal = 0;
   let coherenceTotal = 0;
-  const previousDetailCouplingFrequencyHz = state.detailCouplingFrequencyHz ?? 0;
+  const previousDetailCouplingFrequencyHz =
+    state.detailCouplingFrequencyHz ?? 0;
   const detailCouplingFrequencySwitch =
     previousDetailCouplingFrequencyHz > 0 &&
     dominantDriveFrequencyHz > 0 &&
@@ -1684,7 +1727,7 @@ export function buildModalExcitationStructuralState({
   state.detailCouplingFrequencyHz =
     hardSilentFrame || detailCouplingFrequencySwitch
       ? 0
-      : (dominantDriveFrequencyHz || previousDetailCouplingFrequencyHz);
+      : dominantDriveFrequencyHz || previousDetailCouplingFrequencyHz;
 
   for (const atlasEntry of atlas) {
     const response = computeModeResponse(
@@ -1973,7 +2016,7 @@ export function buildModalExcitationStructuralState({
         ? EXCITATION_BACKBONE_HARD_SILENCE_RELEASE
         : latentCoherentBackboneTail
           ? EXCITATION_BACKBONE_LATENT_TAIL_EMPTY_RELEASE
-        : EXCITATION_BACKBONE_SILENCE_RELEASE,
+          : EXCITATION_BACKBONE_SILENCE_RELEASE,
       lowSignalReleaseThreshold:
         EXCITATION_BACKBONE_LOW_SIGNAL_RELEASE_THRESHOLD,
       lowSignalRelease: latentCoherentBackboneTail
@@ -2054,37 +2097,53 @@ export function buildModalExcitationStructuralState({
     state.coherentDetailTailSeeded = false;
     state.coherentDetailTailModes = new Map();
   }
-  const hasSustainedTail =
-    state.detailTailPresence >= DETAIL_TAIL_MIN_PRESENCE;
-  blendModalStack(
-    state.blendDetail,
-    state.displayDetail.slots,
+  const hasSustainedTail = state.detailTailPresence >= DETAIL_TAIL_MIN_PRESENCE;
+  const detailSignalCoverage = computeSignalCoverageByVisibleKeys(
+    state.blendDetail.slots,
+    state.detail.slots,
     detailCapacity,
-    {
-      attack: EXCITATION_DETAIL_BLEND_ATTACK,
-      tracking: EXCITATION_DETAIL_BLEND_TRACKING,
-      release: latentCoherentDetailTail
-        ? EXCITATION_DETAIL_LATENT_TAIL_RELEASE
-        : hasSustainedTail
+  );
+  const detailVisibleAmplitude = sumSlotAmplitudes(state.blendDetail.slots);
+  const detailTargetShifted =
+    detailSignalCoverage < EXCITATION_DETAIL_SIGNAL_COVERAGE_MIN &&
+    detailVisibleAmplitude >=
+      EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_VISIBLE_AMPLITUDE;
+  const detailBlendTargetSlots = detailTargetShifted
+    ? state.detail.slots
+    : state.displayDetail.slots;
+  const detailBlendReferenceSlots = detailTargetShifted
+    ? state.detail.referenceSlots
+    : state.displayDetail.referenceSlots;
+  const detailBlendColorSlots = detailTargetShifted
+    ? state.detail.colorSlots
+    : state.displayDetail.colorSlots;
+  blendModalStack(state.blendDetail, detailBlendTargetSlots, detailCapacity, {
+    attack: detailTargetShifted
+      ? EXCITATION_DETAIL_SHIFT_BLEND_ATTACK
+      : EXCITATION_DETAIL_BLEND_ATTACK,
+    tracking: EXCITATION_DETAIL_BLEND_TRACKING,
+    release: latentCoherentDetailTail
+      ? EXCITATION_DETAIL_LATENT_TAIL_RELEASE
+      : hasSustainedTail
         ? EXCITATION_DETAIL_TAIL_RELEASE
         : EXCITATION_DETAIL_BLEND_RELEASE,
-      emptyTargetRelease: hardSilentFrame
-        ? EXCITATION_DETAIL_HARD_SILENCE_RELEASE
-        : latentCoherentDetailTail
-          ? EXCITATION_DETAIL_LATENT_TAIL_EMPTY_RELEASE
-          : hasSustainedTail
+    emptyTargetRelease: hardSilentFrame
+      ? EXCITATION_DETAIL_HARD_SILENCE_RELEASE
+      : latentCoherentDetailTail
+        ? EXCITATION_DETAIL_LATENT_TAIL_EMPTY_RELEASE
+        : hasSustainedTail
           ? EXCITATION_DETAIL_TAIL_EMPTY_RELEASE
           : EXCITATION_DETAIL_SILENCE_RELEASE,
-      lowSignalReleaseThreshold: EXCITATION_DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD,
-      lowSignalRelease: latentCoherentDetailTail
-        ? EXCITATION_DETAIL_LATENT_TAIL_LOW_SIGNAL_RELEASE
-        : hasSustainedTail
-          ? EXCITATION_DETAIL_TAIL_LOW_SIGNAL_RELEASE
-          : EXCITATION_DETAIL_LOW_SIGNAL_RELEASE,
-      freshCap:
-        EXCITATION_DETAIL_FRESH_CAP + (detailAssistNeedsFreshAdmission ? 1 : 0),
-    },
-  );
+    lowSignalReleaseThreshold: EXCITATION_DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD,
+    lowSignalRelease: latentCoherentDetailTail
+      ? EXCITATION_DETAIL_LATENT_TAIL_LOW_SIGNAL_RELEASE
+      : hasSustainedTail
+        ? EXCITATION_DETAIL_TAIL_LOW_SIGNAL_RELEASE
+        : EXCITATION_DETAIL_LOW_SIGNAL_RELEASE,
+    freshCap: detailTargetShifted
+      ? detailCapacity
+      : EXCITATION_DETAIL_FRESH_CAP + (detailAssistNeedsFreshAdmission ? 1 : 0),
+  });
 
   if (
     preparedInputs.shouldBuildSpectralLight &&
@@ -2108,11 +2167,13 @@ export function buildModalExcitationStructuralState({
     );
     blendColorStack(
       state.blendDetail,
-      state.displayDetail.slots,
-      state.displayDetail.colorSlots,
+      detailBlendTargetSlots,
+      detailBlendColorSlots,
       detailCapacity,
       {
-        attack: EXCITATION_DETAIL_BLEND_ATTACK,
+        attack: detailTargetShifted
+          ? EXCITATION_DETAIL_SHIFT_BLEND_ATTACK
+          : EXCITATION_DETAIL_BLEND_ATTACK,
         tracking: EXCITATION_DETAIL_BLEND_TRACKING,
         release: EXCITATION_DETAIL_BLEND_RELEASE,
       },
@@ -2130,7 +2191,7 @@ export function buildModalExcitationStructuralState({
   );
   remapReferenceToBlendedOrder(
     state.blendDetail.slots,
-    state.displayDetail.referenceSlots,
+    detailBlendReferenceSlots,
     detailCapacity,
     state.remappedDetailRef,
   );

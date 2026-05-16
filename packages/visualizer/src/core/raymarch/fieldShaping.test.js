@@ -13,9 +13,11 @@ import {
   HOT_CORE_END,
   HOT_CORE_START,
   HOT_CORE_CROWDING_THRESHOLD_LIFT,
+  HOT_CORE_SURFACE_CROWDING_REDUCTION,
   LATCHED_FOG_BEAM_REDUCTION,
   LATCHED_FOG_BODY_REDUCTION,
   MODAL_CROWDING_BODY_COMPRESSION,
+  WHITE_EMISSION_CROWDING_REDUCTION,
   SHELL_WEIGHT_MAX,
   SHELL_WEIGHT_MIN,
   deriveBeamMask,
@@ -27,6 +29,7 @@ import {
   deriveLatchedFogMask,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
+  deriveCrowdedHighlightMix,
   deriveHotCoreCrowding,
   deriveHotCoreMix,
   deriveModalCrowdingDensity,
@@ -36,6 +39,17 @@ import {
   deriveVisibleStructure,
   deriveVisibleDensity,
 } from "./fieldShaping.js";
+
+function mixTestColor(left, right, t) {
+  return left.map((channel, index) => channel * (1 - t) + right[index] * t);
+}
+
+function saturationOf(color) {
+  const max = Math.max(...color);
+  if (max <= 1e-6) return 0;
+  const min = Math.min(...color);
+  return (max - min) / max;
+}
 
 describe("field shaping", () => {
   it("uses a flatter shell-weight range than the prior shell-heavy look", () => {
@@ -472,6 +486,70 @@ describe("field shaping", () => {
     );
     expect(transientCrowding.hotCoreStart).toBeLessThan(
       sustainedCrowding.hotCoreStart,
+    );
+  });
+
+  it("reduces crowded white-emission mix before highlights desaturate", () => {
+    const highlight = deriveCrowdedHighlightMix({
+      hotCoreMix: 0.62,
+      whiteEmissionMix: 0.52,
+      hotCoreCrowding: 0.82,
+    });
+
+    expect(WHITE_EMISSION_CROWDING_REDUCTION).toBeCloseTo(0.72);
+    expect(highlight.crowdedWhiteEmissionMix).toBeLessThan(0.52 * 0.55);
+    expect(highlight.crowdedHotCoreMix).toBeLessThan(0.62);
+  });
+
+  it("preserves isolated ridge highlight and white-emission mix", () => {
+    const highlight = deriveCrowdedHighlightMix({
+      hotCoreMix: 0.82,
+      whiteEmissionMix: 0.3,
+      hotCoreCrowding: 0.01,
+    });
+
+    expect(HOT_CORE_SURFACE_CROWDING_REDUCTION).toBeCloseTo(0.34);
+    expect(highlight.crowdedHotCoreMix).toBeGreaterThan(0.82 * 0.98);
+    expect(highlight.crowdedWhiteEmissionMix).toBeGreaterThan(0.3 * 0.98);
+  });
+
+  it("applies less highlight desaturation when transient relief lowers crowding", () => {
+    const sustained = deriveCrowdedHighlightMix({
+      hotCoreMix: 0.7,
+      whiteEmissionMix: 0.42,
+      hotCoreCrowding: 0.76,
+    });
+    const transient = deriveCrowdedHighlightMix({
+      hotCoreMix: 0.7,
+      whiteEmissionMix: 0.42,
+      hotCoreCrowding: 0.34,
+    });
+
+    expect(transient.crowdedHotCoreMix).toBeGreaterThan(
+      sustained.crowdedHotCoreMix,
+    );
+    expect(transient.crowdedWhiteEmissionMix).toBeGreaterThan(
+      sustained.crowdedWhiteEmissionMix,
+    );
+  });
+
+  it("preserves more saturation than direct mix-to-white in crowded color", () => {
+    const baseColor = [0.92, 0.24, 0.7];
+    const white = [1, 1, 1];
+    const directMix = mixTestColor(baseColor, white, 0.44);
+    const highlight = deriveCrowdedHighlightMix({
+      hotCoreMix: 0.64,
+      whiteEmissionMix: 0.44,
+      hotCoreCrowding: 0.84,
+    });
+    const crowdedMix = mixTestColor(
+      baseColor,
+      white,
+      highlight.crowdedWhiteEmissionMix,
+    );
+
+    expect(saturationOf(crowdedMix)).toBeGreaterThan(
+      saturationOf(directMix) * 1.45,
     );
   });
 

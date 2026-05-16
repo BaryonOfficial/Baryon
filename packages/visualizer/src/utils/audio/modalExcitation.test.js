@@ -217,6 +217,21 @@ function sumSharedModeAmplitudes(reference, candidate) {
   return total;
 }
 
+function sumModeAmplitudeMap(amplitudes) {
+  let total = 0;
+  for (const amplitude of amplitudes.values()) {
+    total += amplitude;
+  }
+  return total;
+}
+
+function measureSharedAmplitudeRatio(reference, candidate) {
+  return (
+    sumSharedModeAmplitudes(reference, candidate) /
+    Math.max(sumModeAmplitudeMap(candidate), 1e-9)
+  );
+}
+
 const RESONANT_STRIKE_PARTIALS = Object.freeze([
   [196, 0.9],
   [293, 0.76],
@@ -250,6 +265,7 @@ function scalePartials(partials, scale) {
 
 function runModalFrame({
   state,
+  featureState,
   frame,
   partials,
   avgAmplitude,
@@ -264,6 +280,7 @@ function runModalFrame({
       partials,
       amplitudeScale,
     }),
+    featureState,
     avgAmplitude,
     rms,
   });
@@ -1057,8 +1074,7 @@ describe("modal excitation structural state", () => {
     let structural = null;
 
     for (let frame = 0; frame < 14; frame += 1) {
-      const decay =
-        frame < 2 ? 1 : Math.max(0.42, Math.exp(-(frame - 2) / 18));
+      const decay = frame < 2 ? 1 : Math.max(0.42, Math.exp(-(frame - 2) / 18));
       structural = runModalFrame({
         state,
         frame,
@@ -1078,9 +1094,9 @@ describe("modal excitation structural state", () => {
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.8);
     expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.5);
-    expect(
-      structural.structuralMetrics.highOrderModalEnergy,
-    ).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.highOrderModalEnergy).toBeGreaterThan(
+      0,
+    );
     expect(
       countActiveSlotsLocal(structural.signalDetailSlotsSource),
     ).toBeGreaterThan(0);
@@ -1263,10 +1279,12 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.65);
-    expect(structural.structuralMetrics.modalDriveEnergy).toBeGreaterThan(0.004);
-    expect(
-      structural.structuralMetrics.highOrderModalEnergy,
-    ).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.modalDriveEnergy).toBeGreaterThan(
+      0.004,
+    );
+    expect(structural.structuralMetrics.highOrderModalEnergy).toBeGreaterThan(
+      0,
+    );
     expect(
       countActiveSlotsLocal(structural.signalDetailSlotsSource),
     ).toBeGreaterThan(0);
@@ -1426,10 +1444,7 @@ describe("modal excitation structural state", () => {
       structural = runModalFrame({
         state,
         frame,
-        partials: [
-          ...densePartials.slice(0, 8),
-          [10800, 0.92],
-        ],
+        partials: [...densePartials.slice(0, 8), [10800, 0.92]],
         avgAmplitude: 34,
         rms: 0.22,
         amplitudeScale: 0.44,
@@ -1439,12 +1454,135 @@ describe("modal excitation structural state", () => {
     expect(
       countActiveSlotsLocal(structural.detailSlotsSource),
     ).toBeLessThanOrEqual(8);
-    expect(
-      sumAmplitudes(structural.detailSlotsSource),
-    ).toBeLessThanOrEqual(sumAmplitudes(structural.signalDetailSlotsSource));
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeLessThanOrEqual(
+      sumAmplitudes(structural.signalDetailSlotsSource),
+    );
     expect(
       hasNewModeKey(readModeKeys(structural.detailSlotsSource), sustainedKeys),
     ).toBe(true);
+  });
+
+  it("drops stale visible detail dominance after a busy modal switch", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    const densePartials = [
+      [110, 0.76],
+      [165, 0.58],
+      [220, 0.62],
+      [277, 0.48],
+      [330, 0.42],
+      [440, 0.38],
+      [660, 0.32],
+      [990, 0.24],
+      [3300, 0.22],
+      [5200, 0.18],
+      [7600, 0.16],
+    ];
+
+    for (let frame = 0; frame < 18; frame += 1) {
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: densePartials,
+        avgAmplitude: 32,
+        rms: 0.2,
+        amplitudeScale: 0.42,
+      });
+    }
+    const sustainedSignalAmplitudes = readModeAmplitudeMap(
+      structural.signalDetailSlotsSource,
+    );
+    const sustainedDisplayAmplitudes = readModeAmplitudeMap(
+      structural.detailSlotsSource,
+    );
+
+    for (let frame = 18; frame < 21; frame += 1) {
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: [...densePartials.slice(0, 8), [10800, 0.92]],
+        avgAmplitude: 34,
+        rms: 0.22,
+        amplitudeScale: 0.44,
+      });
+    }
+
+    const switchedSignalAmplitudes = readModeAmplitudeMap(
+      structural.signalDetailSlotsSource,
+    );
+    const switchedDisplayAmplitudes = readModeAmplitudeMap(
+      structural.detailSlotsSource,
+    );
+    const staleSignalRatio = measureSharedAmplitudeRatio(
+      sustainedSignalAmplitudes,
+      switchedSignalAmplitudes,
+    );
+    const staleDisplayRatio = measureSharedAmplitudeRatio(
+      sustainedDisplayAmplitudes,
+      switchedDisplayAmplitudes,
+    );
+
+    expect(staleSignalRatio).toBeLessThan(0.65);
+    expect(staleDisplayRatio).toBeLessThan(0.72);
+    expect(staleDisplayRatio).toBeLessThanOrEqual(staleSignalRatio + 0.18);
+  });
+
+  it("uses signal identity when visible detail under-covers the shifted signal", () => {
+    const featureState = createAudioFeatureState();
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    const densePartials = [
+      [110, 0.76],
+      [165, 0.58],
+      [220, 0.62],
+      [277, 0.48],
+      [330, 0.42],
+      [440, 0.38],
+      [660, 0.32],
+      [990, 0.24],
+      [3300, 0.22],
+      [5200, 0.18],
+      [7600, 0.16],
+    ];
+
+    for (let frame = 0; frame < 12; frame += 1) {
+      structural = runModalFrame({
+        state,
+        featureState,
+        frame,
+        partials: densePartials,
+        avgAmplitude: 32,
+        rms: 0.2,
+        amplitudeScale: 0.42,
+      });
+    }
+    const sustainedDisplayAmplitudes = readModeAmplitudeMap(
+      structural.detailSlotsSource,
+    );
+
+    for (let frame = 12; frame < 15; frame += 1) {
+      structural = runModalFrame({
+        state,
+        featureState,
+        frame,
+        partials: [...densePartials.slice(0, 8), [10800, 0.92]],
+        avgAmplitude: 34,
+        rms: 0.22,
+        amplitudeScale: 0.44,
+      });
+    }
+
+    const switchedDisplayAmplitudes = readModeAmplitudeMap(
+      structural.detailSlotsSource,
+    );
+    const staleDisplayRatio = measureSharedAmplitudeRatio(
+      sustainedDisplayAmplitudes,
+      switchedDisplayAmplitudes,
+    );
+
+    expect(staleDisplayRatio).toBeLessThan(0.72);
   });
 
   it("does not promote weak broadband noise into sustained detail visibility", () => {

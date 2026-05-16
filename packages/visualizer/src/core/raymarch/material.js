@@ -66,6 +66,7 @@ import {
   HOT_CORE_END,
   HOT_CORE_START,
   HOT_CORE_CROWDING_THRESHOLD_LIFT,
+  HOT_CORE_SURFACE_CROWDING_REDUCTION,
   HIGHLIGHT_MASK_END,
   HIGHLIGHT_MASK_START,
   HOLOGRAPHIC_TINT_BLUE,
@@ -92,6 +93,7 @@ import {
   SHELL_WEIGHT_MAX,
   SHELL_WEIGHT_MIN,
   SHELL_WEIGHT_START,
+  WHITE_EMISSION_CROWDING_REDUCTION,
   MODAL_VISIBILITY_DENSITY_FLOOR,
   MODAL_VISIBILITY_DENSITY_LIFT,
 } from "./fieldShaping.js";
@@ -935,6 +937,11 @@ function createScatteringNode({
       )
         .mul(excitationGate)
         .mul(boundaryHotCore);
+      const crowdedHotCoreMix = hotCoreMix.mul(
+        float(1.0).sub(
+          hotCoreCrowding.mul(float(HOT_CORE_SURFACE_CROWDING_REDUCTION)),
+        ),
+      );
       const fresnelBase = clamp(
         float(1.0)
           .sub(abs(dot(gradientNormal, viewDirLocal.negate())))
@@ -975,6 +982,11 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
+      const crowdedWhiteEmissionMix = holographicEmissionLift.mul(
+        float(1.0).sub(
+          hotCoreCrowding.mul(float(WHITE_EMISSION_CROWDING_REDUCTION)),
+        ),
+      );
       const staticContourColor = mix(
         staticBaseColor,
         uSurfaceColor,
@@ -983,7 +995,7 @@ function createScatteringNode({
       const staticLaserColor = mix(
         staticContourColor,
         uSurfaceColor,
-        hotCoreMix.mul(float(0.72)).mul(boundarySurfacePull),
+        crowdedHotCoreMix.mul(float(0.72)).mul(boundarySurfacePull),
       );
       const staticHolographicColor = mix(
         staticLaserColor,
@@ -994,7 +1006,7 @@ function createScatteringNode({
         staticHolographicColor,
         vec3(1.0),
         /** @type {any} */ (
-          holographicEmissionLift.mul(float(0.45)).mul(boundaryWhiteEmission)
+          crowdedWhiteEmissionMix.mul(float(0.45)).mul(boundaryWhiteEmission)
         ),
       );
       const detailPresence = smoothstep(float(0.0), float(1.0), detailCount);
@@ -1047,7 +1059,7 @@ function createScatteringNode({
           const spectralLightLaserColor = mix(
             spectralLightContourColor,
             spectralColor,
-            hotCoreMix
+            crowdedHotCoreMix
               .mul(float(RAYMARCH_SPECTRAL_LIGHT_TUNING.hotCoreSurfacePull))
               .mul(boundarySurfacePull),
           );
@@ -1069,7 +1081,7 @@ function createScatteringNode({
             spectralLightHolographicColor,
             vec3(1.0),
             /** @type {any} */ (
-              holographicEmissionLift
+              crowdedWhiteEmissionMix
                 .mul(float(RAYMARCH_SPECTRAL_LIGHT_TUNING.whiteEmissionLift))
                 .mul(boundaryWhiteEmission)
             ),
