@@ -80,6 +80,13 @@ function createModalFreshnessDiagnostics() {
     backboneSlotChangeCount: 0,
     detailSlotMeanAbsDelta: 0,
     detailSlotChangeCount: 0,
+    detailSignalAuthoritative: false,
+    detailSignalAuthoritativeReason: "none",
+    detailSignalAuthoritativeCoverage: false,
+    detailSignalAuthoritativeFreshSignal: false,
+    detailSignalAuthoritativeFastAssist: false,
+    detailShiftReleaseOverrideCount: 0,
+    detailShiftTrackingOverrideCount: 0,
     responseEnvelope: 0,
     accentEnvelope: 0,
     motionSignal: 0,
@@ -120,6 +127,20 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
     backboneSlotChangeCount: modalFreshness.backboneSlotChangeCount ?? 0,
     detailSlotMeanAbsDelta: modalFreshness.detailSlotMeanAbsDelta ?? 0,
     detailSlotChangeCount: modalFreshness.detailSlotChangeCount ?? 0,
+    detailSignalAuthoritative:
+      modalFreshness.detailSignalAuthoritative ?? false,
+    detailSignalAuthoritativeReason:
+      modalFreshness.detailSignalAuthoritativeReason ?? "none",
+    detailSignalAuthoritativeCoverage:
+      modalFreshness.detailSignalAuthoritativeCoverage ?? false,
+    detailSignalAuthoritativeFreshSignal:
+      modalFreshness.detailSignalAuthoritativeFreshSignal ?? false,
+    detailSignalAuthoritativeFastAssist:
+      modalFreshness.detailSignalAuthoritativeFastAssist ?? false,
+    detailShiftReleaseOverrideCount:
+      modalFreshness.detailShiftReleaseOverrideCount ?? 0,
+    detailShiftTrackingOverrideCount:
+      modalFreshness.detailShiftTrackingOverrideCount ?? 0,
     responseEnvelope: modalFreshness.responseEnvelope ?? 0,
     accentEnvelope: modalFreshness.accentEnvelope ?? 0,
     motionSignal: modalFreshness.motionSignal ?? 0,

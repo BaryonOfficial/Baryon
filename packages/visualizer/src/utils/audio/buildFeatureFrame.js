@@ -970,6 +970,20 @@ function buildDebugSummary({
     modalPersistence: structuralMetrics?.modalPersistence ?? 0,
     modalDriveEnergy: structuralMetrics?.modalDriveEnergy ?? 0,
     driveSource: structuralMetrics?.driveSource ?? "none",
+    detailSignalAuthoritative:
+      structuralMetrics?.detailSignalAuthoritative ?? false,
+    detailSignalAuthoritativeReason:
+      structuralMetrics?.detailSignalAuthoritativeReason ?? "none",
+    detailSignalAuthoritativeCoverage:
+      structuralMetrics?.detailSignalAuthoritativeCoverage ?? false,
+    detailSignalAuthoritativeFreshSignal:
+      structuralMetrics?.detailSignalAuthoritativeFreshSignal ?? false,
+    detailSignalAuthoritativeFastAssist:
+      structuralMetrics?.detailSignalAuthoritativeFastAssist ?? false,
+    detailShiftReleaseOverrideCount:
+      structuralMetrics?.detailShiftReleaseOverrideCount ?? 0,
+    detailShiftTrackingOverrideCount:
+      structuralMetrics?.detailShiftTrackingOverrideCount ?? 0,
     sourceNormalization: sourceNormalization ?? {
       normalizedRms: 0,
       normalizedAmplitude: 0,

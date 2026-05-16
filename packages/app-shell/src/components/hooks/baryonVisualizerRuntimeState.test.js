@@ -42,6 +42,11 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
     runtimeDiagnostics.modalFreshness.structureSignal = 0.62;
     runtimeDiagnostics.modalFreshness.responseEnvelope = 0.47;
     runtimeDiagnostics.modalFreshness.modeSlotChangeCount = 5;
+    runtimeDiagnostics.modalFreshness.detailSignalAuthoritative = true;
+    runtimeDiagnostics.modalFreshness.detailSignalAuthoritativeReason =
+      "fresh-signal";
+    runtimeDiagnostics.modalFreshness.detailShiftReleaseOverrideCount = 2;
+    runtimeDiagnostics.modalFreshness.detailShiftTrackingOverrideCount = 3;
     runtimeDiagnostics.modalFreshness._previousModeSlots = new Float32Array([
       0.1, 0.2,
     ]);
@@ -54,6 +59,10 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
       structureSignal: 0.62,
       responseEnvelope: 0.47,
       modeSlotChangeCount: 5,
+      detailSignalAuthoritative: true,
+      detailSignalAuthoritativeReason: "fresh-signal",
+      detailShiftReleaseOverrideCount: 2,
+      detailShiftTrackingOverrideCount: 3,
     });
     expect(snapshot.modalFreshness).not.toHaveProperty("_previousModeSlots");
     expect(globalThis.window.__baryonPerfMetrics.modalFreshness).toEqual(

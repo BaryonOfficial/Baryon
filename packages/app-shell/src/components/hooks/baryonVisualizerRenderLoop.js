@@ -303,6 +303,26 @@ export function updateModalFreshnessDiagnostics(
     previousField: "_previousDetailSlots",
     nextSlots: featureFrame.detailSlots,
   });
+  modalFreshness.detailSignalAuthoritative = Boolean(
+    featureFrame.debug?.detailSignalAuthoritative,
+  );
+  modalFreshness.detailSignalAuthoritativeReason =
+    featureFrame.debug?.detailSignalAuthoritativeReason ?? "none";
+  modalFreshness.detailSignalAuthoritativeCoverage = Boolean(
+    featureFrame.debug?.detailSignalAuthoritativeCoverage,
+  );
+  modalFreshness.detailSignalAuthoritativeFreshSignal = Boolean(
+    featureFrame.debug?.detailSignalAuthoritativeFreshSignal,
+  );
+  modalFreshness.detailSignalAuthoritativeFastAssist = Boolean(
+    featureFrame.debug?.detailSignalAuthoritativeFastAssist,
+  );
+  modalFreshness.detailShiftReleaseOverrideCount = readFiniteNumber(
+    featureFrame.debug?.detailShiftReleaseOverrideCount,
+  );
+  modalFreshness.detailShiftTrackingOverrideCount = readFiniteNumber(
+    featureFrame.debug?.detailShiftTrackingOverrideCount,
+  );
 
   return snapshotModalFreshnessDiagnostics(modalFreshness);
 }

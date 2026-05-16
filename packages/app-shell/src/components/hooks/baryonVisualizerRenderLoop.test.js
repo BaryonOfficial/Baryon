@@ -469,6 +469,15 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
       activeBackboneModeCount: 4,
       activeDetailModeCount: 5,
       activeModeCount: 9,
+      debug: {
+        detailSignalAuthoritative: true,
+        detailSignalAuthoritativeReason: "fresh-signal",
+        detailSignalAuthoritativeCoverage: false,
+        detailSignalAuthoritativeFreshSignal: true,
+        detailSignalAuthoritativeFastAssist: false,
+        detailShiftReleaseOverrideCount: 2,
+        detailShiftTrackingOverrideCount: 3,
+      },
       modeSlots: new Float32Array([0.1, 0.25, 0.3, 0.7]),
       backboneSlots: new Float32Array([0.2, 0.45]),
       detailSlots: new Float32Array([0.4, 0.5]),
@@ -498,6 +507,11 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
     activeBackboneModeCount: 4,
     activeDetailModeCount: 5,
     activeModeCount: 9,
+    detailSignalAuthoritative: true,
+    detailSignalAuthoritativeReason: "fresh-signal",
+    detailSignalAuthoritativeFreshSignal: true,
+    detailShiftReleaseOverrideCount: 2,
+    detailShiftTrackingOverrideCount: 3,
     modeSlotChangeCount: 2,
     backboneSlotChangeCount: 1,
     detailSlotChangeCount: 0,
@@ -519,6 +533,8 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
   expect(hudSnapshot.modalFreshness).toMatchObject({
     structureSignal: 0.28,
     responseEnvelope: 0.31,
+    detailSignalAuthoritative: true,
+    detailSignalAuthoritativeReason: "fresh-signal",
     modeSlotChangeCount: 2,
   });
   expect(hudSnapshot.modalFreshness).not.toHaveProperty("_previousModeSlots");

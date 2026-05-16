@@ -1229,6 +1229,63 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(frame.detailSlots.some((value) => value !== 0)).toBe(true);
   });
 
+  it("surfaces detail shift diagnostics in the frame debug summary", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        avgAmplitude: 70,
+        fftMagnitudes: makeFft([[330, 0.95]]),
+        rms: 0.3,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+    });
+    const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
+    const backboneSlotsSource = makeSingleModeSlot([1, 1, 1, 1]);
+    const detailSlotsSource = makeSingleModeSlot([9, 9, 9, 0.5]);
+    const structuralState = {
+      backboneSlotsSource,
+      detailSlotsSource,
+      referenceBackboneSlotsSource: backboneSlotsSource,
+      referenceDetailSlotsSource: detailSlotsSource,
+      signalBackboneSlotsSource: backboneSlotsSource,
+      signalDetailSlotsSource: detailSlotsSource,
+      signalReferenceBackboneSlotsSource: backboneSlotsSource,
+      signalReferenceDetailSlotsSource: detailSlotsSource,
+      activeBackboneModeCount: 1,
+      activeDetailModeCount: 1,
+      activeModeCount: 2,
+      dominantFrequency: 330,
+      dominantAmplitude: 0.95,
+      analysisEngine: "modal-excitation",
+      pitchSource: "resonator-bank",
+      spectralCandidates: [],
+      sourceMode: "file",
+      structuralMetrics: {
+        detailSignalAuthoritative: true,
+        detailSignalAuthoritativeReason: "fresh-signal",
+        detailShiftReleaseOverrideCount: 2,
+        detailShiftTrackingOverrideCount: 3,
+      },
+    };
+    const analysisResult = buildCurrentAudioFeatureAnalysisResult({
+      preparedInputs,
+      fastSignalState,
+      structuralState,
+      materializeStructuralProjection: true,
+    });
+    const frame = composeAudioFeatureFrame({
+      preparedInputs,
+      analysisResult,
+    });
+
+    expect(frame.debug.detailSignalAuthoritative).toBe(true);
+    expect(frame.debug.detailSignalAuthoritativeReason).toBe("fresh-signal");
+    expect(frame.debug.detailShiftReleaseOverrideCount).toBe(2);
+    expect(frame.debug.detailShiftTrackingOverrideCount).toBe(3);
+  });
+
   it("uses canonical detail weight for legacy-labeled structural states", () => {
     const featureState = createAudioFeatureState();
     const preparedInputs = prepareAudioFeatureFrameInputs({

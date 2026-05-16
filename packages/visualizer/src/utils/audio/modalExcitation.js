@@ -2274,6 +2274,13 @@ export function buildModalExcitationStructuralState({
       EXCITATION_DETAIL_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE;
   const detailSignalAuthoritative =
     detailTargetShifted || detailFreshSignalShifted || detailFastAssistShifted;
+  const detailSignalAuthoritativeReason = detailTargetShifted
+    ? "coverage"
+    : detailFreshSignalShifted
+      ? "fresh-signal"
+      : detailFastAssistShifted
+        ? "fast-assist"
+        : "none";
   const detailBlendTargetSlots = detailSignalAuthoritative
     ? state.detail.slots
     : state.displayDetail.slots;
@@ -2460,6 +2467,13 @@ export function buildModalExcitationStructuralState({
       ? clamp01(coherenceTotal / excitedEntries.length)
       : 0,
     driveSource,
+    detailSignalAuthoritative,
+    detailSignalAuthoritativeReason,
+    detailSignalAuthoritativeCoverage: detailTargetShifted,
+    detailSignalAuthoritativeFreshSignal: detailFreshSignalShifted,
+    detailSignalAuthoritativeFastAssist: detailFastAssistShifted,
+    detailShiftReleaseOverrideCount: detailShiftReleaseOverrides?.size ?? 0,
+    detailShiftTrackingOverrideCount: detailShiftTrackingOverrides?.size ?? 0,
   };
   state.diagnostics = diagnostics;
 

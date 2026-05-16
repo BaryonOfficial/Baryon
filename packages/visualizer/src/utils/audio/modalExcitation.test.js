@@ -1784,6 +1784,22 @@ describe("modal excitation structural state", () => {
       ...seededVisibleAmplitudes.keys(),
     ])).toBe(true);
     expect(sharedRatio).toBeLessThan(0.42);
+    expect(
+      freshStructural.structuralMetrics.detailSignalAuthoritative,
+    ).toBe(true);
+    expect(
+      freshStructural.structuralMetrics.detailSignalAuthoritativeReason,
+    ).toBe("fresh-signal");
+    expect(
+      freshStructural.structuralMetrics.detailShiftTrackingOverrideCount,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      freshStructural.structuralMetrics.detailShiftReleaseOverrideCount,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      freshStructural.structuralMetrics.detailShiftReleaseOverrideCount +
+        freshStructural.structuralMetrics.detailShiftTrackingOverrideCount,
+    ).toBeGreaterThan(0);
   });
 
   it("keeps visible detail keys as a subset of the raw signal shortlist", () => {
