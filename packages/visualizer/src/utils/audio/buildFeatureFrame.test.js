@@ -126,6 +126,23 @@ const RESONANT_STRIKE_PARTIALS = Object.freeze([
   [5200, 0.24],
 ]);
 
+const INHARMONIC_BOWL_STRIKE_PARTIALS = Object.freeze([
+  [196, 0.9],
+  [282, 0.76],
+  [417, 0.7],
+  [611, 0.58],
+  [899, 0.5],
+  [1327, 0.42],
+  [1890, 0.34],
+  [2780, 0.26],
+  [4100, 0.2],
+]);
+
+const LOUD_BOWL_TONE_PARTIALS = Object.freeze([
+  [196, 0.42],
+  [282, 0.28],
+]);
+
 function scalePartials(partials, scale) {
   return partials.map(([frequency, amplitude]) => [
     frequency,
@@ -2582,6 +2599,59 @@ describe("live input noise gate", () => {
         ...tailFrames.map(({ modalVisibilityEnergy }) => modalVisibilityEnergy),
       ),
     ).toBeGreaterThan(0.08);
+  });
+
+  it("keeps meter-loud inharmonic line-feed bowl sustain visually structured", () => {
+    const featureState = createAudioFeatureState();
+    const status = makeResolvedLineFeedLiveStatus();
+    const samples = new Map();
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < 240; frameIndex += 1) {
+      const isStrike = frameIndex < 2;
+      const partials = isStrike
+        ? INHARMONIC_BOWL_STRIKE_PARTIALS
+        : LOUD_BOWL_TONE_PARTIALS;
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "live",
+          avgAmplitude: isStrike ? 42 : 16,
+          fftMagnitudes: makeFft(isStrike ? partials : []),
+          timeData: makeMixedTimeData({
+            partials,
+            amplitudeScale: isStrike ? 1 : 0.28,
+          }),
+          rms: isStrike ? 0.32 : 0.075,
+        }),
+        featureState,
+        radius: 3,
+        status,
+        frameTimeMs: frameIndex * 33,
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
+      });
+
+      if ([12, 120, 239].includes(frameIndex)) {
+        samples.set(frameIndex, {
+          detailAmplitude: sumSlotAmplitudes(frame.detailSlots),
+          modalVisibilityEnergy: frame.modalVisibilityEnergy,
+          activeDetailModeCount: frame.activeDetailModeCount,
+          structureSignal: frame.structureSignal,
+        });
+      }
+    }
+
+    const open = samples.get(12);
+    const mid = samples.get(120);
+    const late = samples.get(239);
+
+    expect(frame.fieldState).toBe("active");
+    expect(late.activeDetailModeCount).toBeGreaterThanOrEqual(4);
+    expect(late.detailAmplitude).toBeGreaterThan(open.detailAmplitude * 0.35);
+    expect(late.modalVisibilityEnergy).toBeGreaterThan(
+      open.modalVisibilityEnergy * 0.55,
+    );
+    expect(mid.structureSignal).toBeGreaterThan(0);
+    expect(late.structureSignal).toBeGreaterThan(0);
   });
 
   it("keeps line-feed coherent ringing visible below raw meter silence", () => {

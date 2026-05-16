@@ -110,6 +110,17 @@ const DETAIL_LATENT_TAIL_NO_EVIDENCE_RELEASE = 0.42;
 const DETAIL_LATENT_TAIL_MIN_DETAIL_BAND_PEAK = 0.00006;
 const DETAIL_LATENT_TAIL_FULL_DETAIL_BAND_PEAK = 0.0008;
 const DETAIL_LATENT_TAIL_SPECTRAL_DETAIL_BAND_PEAK = 0.00042;
+const DETAIL_SEEDED_RING_MIN_DETAIL_BAND_PEAK = 0.012;
+const DETAIL_SEEDED_RING_FULL_DETAIL_BAND_PEAK = 0.035;
+const DETAIL_SEEDED_RING_MAX_DETAIL_BAND_PEAK = 0.08;
+const DETAIL_AUDIBLE_RING_MIN_AVG_AMPLITUDE = 8;
+const DETAIL_AUDIBLE_RING_FULL_AVG_AMPLITUDE = 16;
+const DETAIL_AUDIBLE_RING_MIN_RMS = 0.025;
+const DETAIL_AUDIBLE_RING_FULL_RMS = 0.075;
+const DETAIL_AUDIBLE_RING_MIN_PERIODICITY = 0.48;
+const DETAIL_AUDIBLE_RING_FULL_PERIODICITY = 0.72;
+const DETAIL_AUDIBLE_RING_MIN_DRIVE_PEAK = 0.08;
+const DETAIL_AUDIBLE_RING_FULL_DRIVE_PEAK = 0.24;
 const DETAIL_LATENT_TAIL_MIN_PERIODICITY = 0.4;
 const DETAIL_LATENT_TAIL_MIN_TONALNESS = 0.68;
 const DETAIL_LATENT_TAIL_SPECTRAL_MIN_TONALNESS = 0.52;
@@ -910,6 +921,89 @@ function getSubtleCoherentDetailSignal({
     DETAIL_SUBTLE_TAIL_MIN_DETAIL_BAND_PEAK,
     DETAIL_SUBTLE_TAIL_FULL_DETAIL_BAND_PEAK,
     detailBandPeak,
+  );
+}
+
+function getSeededCoherentDetailRingSignal({
+  hardSilentFrame,
+  avgAmplitude,
+  analyserRms,
+  frequencyStable,
+  seededTail,
+  latentCoherentDetailEvidence,
+  detailBandPeak,
+}) {
+  if (
+    hardSilentFrame ||
+    !frequencyStable ||
+    !seededTail ||
+    !latentCoherentDetailEvidence
+  ) {
+    return 0;
+  }
+  if (
+    avgAmplitude <= DETAIL_SUBTLE_TAIL_MAX_AVG_AMPLITUDE &&
+    analyserRms <= DETAIL_SUBTLE_TAIL_MAX_RMS
+  ) {
+    return 0;
+  }
+  if (detailBandPeak > DETAIL_SEEDED_RING_MAX_DETAIL_BAND_PEAK) {
+    return 0;
+  }
+
+  return smoothstep(
+    DETAIL_SEEDED_RING_MIN_DETAIL_BAND_PEAK,
+    DETAIL_SEEDED_RING_FULL_DETAIL_BAND_PEAK,
+    detailBandPeak,
+  );
+}
+
+function getAudibleSeededDetailRingSignal({
+  hardSilentFrame,
+  avgAmplitude,
+  analyserRms,
+  drivePeak,
+  periodicity,
+  frequencyStable,
+  seededTail,
+  detailBandPeak,
+}) {
+  if (hardSilentFrame || !frequencyStable || !seededTail) {
+    return 0;
+  }
+  if (detailBandPeak > DETAIL_SEEDED_RING_MIN_DETAIL_BAND_PEAK) {
+    return 0;
+  }
+  if (
+    avgAmplitude < DETAIL_AUDIBLE_RING_MIN_AVG_AMPLITUDE ||
+    analyserRms < DETAIL_AUDIBLE_RING_MIN_RMS ||
+    periodicity < DETAIL_AUDIBLE_RING_MIN_PERIODICITY ||
+    drivePeak < DETAIL_AUDIBLE_RING_MIN_DRIVE_PEAK
+  ) {
+    return 0;
+  }
+
+  return (
+    smoothstep(
+      DETAIL_AUDIBLE_RING_MIN_AVG_AMPLITUDE,
+      DETAIL_AUDIBLE_RING_FULL_AVG_AMPLITUDE,
+      avgAmplitude,
+    ) *
+    smoothstep(
+      DETAIL_AUDIBLE_RING_MIN_RMS,
+      DETAIL_AUDIBLE_RING_FULL_RMS,
+      analyserRms,
+    ) *
+    smoothstep(
+      DETAIL_AUDIBLE_RING_MIN_PERIODICITY,
+      DETAIL_AUDIBLE_RING_FULL_PERIODICITY,
+      periodicity,
+    ) *
+    smoothstep(
+      DETAIL_AUDIBLE_RING_MIN_DRIVE_PEAK,
+      DETAIL_AUDIBLE_RING_FULL_DRIVE_PEAK,
+      drivePeak,
+    )
   );
 }
 
@@ -1919,8 +2013,30 @@ export function buildModalExcitationStructuralState({
     detailBandPeak,
     frequencyStable: !detailCouplingFrequencySwitch,
   });
+  const seededCoherentDetailTail = hasSeededCoherentDetailTail(state);
+  const seededCoherentDetailRingSignal = getSeededCoherentDetailRingSignal({
+    hardSilentFrame,
+    avgAmplitude: preparedInputs.avgAmplitude,
+    analyserRms: preparedInputs.analyserRms,
+    frequencyStable: !detailCouplingFrequencySwitch,
+    seededTail: seededCoherentDetailTail,
+    latentCoherentDetailEvidence,
+    detailBandPeak,
+  });
+  const audibleSeededDetailRingSignal = getAudibleSeededDetailRingSignal({
+    hardSilentFrame,
+    avgAmplitude: preparedInputs.avgAmplitude,
+    analyserRms: preparedInputs.analyserRms,
+    drivePeak,
+    periodicity,
+    frequencyStable: !detailCouplingFrequencySwitch,
+    seededTail: seededCoherentDetailTail,
+    detailBandPeak,
+  });
   const retainedCoherentDetailSignal = Math.max(
     subtleCoherentDetailSignal,
+    seededCoherentDetailRingSignal,
+    audibleSeededDetailRingSignal,
     getLatentCoherentDetailSignal({
       latentCoherentDetailTail,
       detailBandPeak,

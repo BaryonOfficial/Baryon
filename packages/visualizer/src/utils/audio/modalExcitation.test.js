@@ -256,6 +256,23 @@ const RESONANT_SUSTAIN_PARTIALS = Object.freeze([
   [5200, 0.05],
 ]);
 
+const INHARMONIC_BOWL_STRIKE_PARTIALS = Object.freeze([
+  [196, 0.9],
+  [282, 0.76],
+  [417, 0.7],
+  [611, 0.58],
+  [899, 0.5],
+  [1327, 0.42],
+  [1890, 0.34],
+  [2780, 0.26],
+  [4100, 0.2],
+]);
+
+const LOUD_BOWL_TONE_PARTIALS = Object.freeze([
+  [196, 0.42],
+  [282, 0.28],
+]);
+
 function scalePartials(partials, scale) {
   return partials.map(([frequency, amplitude]) => [
     frequency,
@@ -989,6 +1006,52 @@ describe("modal excitation structural state", () => {
       countActiveSlotsLocal(structural.signalDetailSlotsSource),
     ).toBeGreaterThan(0);
     expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0.16);
+    expect(
+      countActiveSlotsLocal(structural.detailSlotsSource),
+    ).toBeGreaterThanOrEqual(4);
+  });
+
+  it("keeps meter-loud inharmonic bowl sustain from losing seeded detail structure", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "live",
+      analysisSource: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "live",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    let structural = null;
+
+    for (let frame = 0; frame < 240; frame += 1) {
+      const isStrike = frame < 2;
+      const partials = isStrike
+        ? INHARMONIC_BOWL_STRIKE_PARTIALS
+        : LOUD_BOWL_TONE_PARTIALS;
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft(isStrike ? partials : []),
+        timeData: makeMixedTimeData({
+          partials,
+          amplitudeScale: isStrike ? 1 : 0.28,
+        }),
+        avgAmplitude: isStrike ? 42 : 16,
+        rms: isStrike ? 0.32 : 0.075,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.35);
+    expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.35);
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0.035);
     expect(
       countActiveSlotsLocal(structural.detailSlotsSource),
     ).toBeGreaterThanOrEqual(4);
