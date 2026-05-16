@@ -21,7 +21,7 @@ export const AUDIO_DEFAULTS = Object.freeze({
 
 export const SIMULATION_DEFAULTS = Object.freeze({
   radius: 3.0,
-  zeroPointPrecision: 0.026,
+  zeroPointPrecision: 0.02,
   structureMin: 0.3,
   structureMax: 0.35,
   boundaryMode: "neumann",
@@ -46,7 +46,7 @@ export const RENDER_DEFAULTS = Object.freeze({
   bloomEnabled: true,
   bloomStrength: 1.07,
   bloomRadius: 0,
-  bloomThreshold: 0.38,
+  bloomThreshold: 0.3,
   bloomResponseBias: 0.52,
   performanceHudEnabled: false,
 });
@@ -68,9 +68,9 @@ export const BEAT_DEFAULTS = Object.freeze({
 });
 
 export const RAYMARCH_DEFAULTS = Object.freeze({
-  raymarchSteps: 72,
-  densityGain: 3.72,
-  absorption: 2.02,
+  raymarchSteps: 88,
+  densityGain: 3.25,
+  absorption: 3.37,
   opacityGain: 3,
   contourSharpness: 8,
   rimBloomBias: 0.34,

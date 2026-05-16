@@ -93,19 +93,19 @@ describe("control schema", () => {
     expect(Object.keys(state)).toEqual(EXPECTED_CONTROL_KEYS);
   });
 
-  it("defaults the raymarch surface to the cyan laser baseline", () => {
+  it("defaults the raymarch surface to the tuned cyan laser baseline", () => {
     const state = createControlState();
 
     expect(state.colorMode).toBe("spectral");
     expect(state.spectralMix).toBe(1);
     expect(state.volumeColor).toBe("#56d7ff");
     expect(state.surfaceColor).toBe("#f7fdff");
-    expect(state.zeroPointPrecision).toBe(0.026);
+    expect(state.zeroPointPrecision).toBe(0.02);
     expect(state.structureMin).toBe(0.3);
     expect(state.structureMax).toBe(0.35);
     expect(state.boundaryMode).toBe("neumann");
     expect(state.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
-    expect(state.densityGain).toBe(3.72);
+    expect(state.densityGain).toBe(3.25);
     expect(state.absorption).toBe(RAYMARCH_DEFAULTS.absorption);
     expect(state.opacityGain).toBe(3);
     expect(state.contourSharpness).toBe(8);
@@ -114,7 +114,7 @@ describe("control schema", () => {
     expect(state.holographicFresnelPower).toBe(3.2);
     expect(state.bloomStrength).toBe(1.07);
     expect(state.bloomRadius).toBe(0);
-    expect(state.bloomThreshold).toBe(0.38);
+    expect(state.bloomThreshold).toBe(0.3);
     expect(state.performanceHudEnabled).toBe(
       RENDER_DEFAULTS.performanceHudEnabled,
     );

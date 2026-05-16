@@ -89,7 +89,7 @@ describe("raymarch volume material", () => {
       uniforms,
     });
 
-    expect(mesh.material.steps).toBe(72);
+    expect(mesh.material.steps).toBe(88);
     expect(mesh.material.radiusNode).toBe(uniforms.uRadius);
     expect(mesh.material.opacityGainNode).toBe(uniforms.uOpacityGain);
   });
@@ -107,7 +107,7 @@ describe("raymarch volume material", () => {
     });
 
     expect(mesh.geometry).toBeInstanceOf(THREE.SphereGeometry);
-    expect(mesh.material.steps).toBe(72);
+    expect(mesh.material.steps).toBe(88);
   });
 
   it("caches direct and field-cache material variants per boundary mode", () => {

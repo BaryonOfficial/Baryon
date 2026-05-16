@@ -50,4 +50,14 @@ describe("defaults compatibility surface", () => {
     expect(DEFAULTS.fieldCacheOverride).toBe(AUDIT_DEFAULTS.fieldCacheOverride);
     expect(DEFAULTS.cavityGeometry).toBe(SIMULATION_DEFAULTS.cavityGeometry);
   });
+
+  it("uses the tuned UI panel settings as the live raymarch defaults", () => {
+    expect(SIMULATION_DEFAULTS.zeroPointPrecision).toBe(0.02);
+    expect(RAYMARCH_DEFAULTS.densityGain).toBe(3.25);
+    expect(RAYMARCH_DEFAULTS.absorption).toBe(3.37);
+    expect(RAYMARCH_DEFAULTS.raymarchSteps).toBe(88);
+    expect(RENDER_DEFAULTS.bloomThreshold).toBe(0.3);
+    expect(RENDER_DEFAULTS.renderQualityPreset).toBe("auto");
+    expect(RENDER_DEFAULTS.performanceHudEnabled).toBe(false);
+  });
 });
