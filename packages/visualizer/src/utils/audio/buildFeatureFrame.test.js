@@ -389,6 +389,59 @@ function readModeAmplitudeMap(slotBuffer) {
   return amplitudes;
 }
 
+function addModalFingerprintLayer(fingerprint, slotBuffer, weight = 1) {
+  for (let index = 0; index < slotBuffer.length; index += 4) {
+    const amplitude = (slotBuffer[index + 3] ?? 0) * weight;
+    if (amplitude <= 0) continue;
+    const key = `${slotBuffer[index]}:${slotBuffer[index + 1]}:${
+      slotBuffer[index + 2]
+    }`;
+    fingerprint.set(key, (fingerprint.get(key) ?? 0) + amplitude);
+  }
+}
+
+function buildModalFingerprint(frame) {
+  const amplitudes = new Map();
+  addModalFingerprintLayer(amplitudes, frame.backboneSlots, 1);
+  addModalFingerprintLayer(amplitudes, frame.detailSlots, 0.45);
+  let totalAmplitude = 0;
+  for (const amplitude of amplitudes.values()) {
+    totalAmplitude += amplitude;
+  }
+
+  return {
+    amplitudes,
+    totalAmplitude,
+  };
+}
+
+function measureStaleModalDominance(sourceFingerprint, nextFingerprint) {
+  if ((nextFingerprint?.totalAmplitude ?? 0) <= 0) {
+    return 0;
+  }
+
+  let staleAmplitude = 0;
+  for (const key of sourceFingerprint?.amplitudes?.keys?.() ?? []) {
+    staleAmplitude += nextFingerprint.amplitudes.get(key) ?? 0;
+  }
+  return staleAmplitude / nextFingerprint.totalAmplitude;
+}
+
+function measureModalFingerprintRetention(sourceFingerprint, nextFingerprint) {
+  if ((sourceFingerprint?.totalAmplitude ?? 0) <= 0) {
+    return 0;
+  }
+
+  let retainedAmplitude = 0;
+  for (const [key, sourceAmplitude] of sourceFingerprint.amplitudes) {
+    retainedAmplitude += Math.min(
+      sourceAmplitude,
+      nextFingerprint?.amplitudes?.get(key) ?? 0,
+    );
+  }
+  return retainedAmplitude / sourceFingerprint.totalAmplitude;
+}
+
 describe("buildAudioFeatureFrame modal contract", () => {
   it("returns idle output for missing analysis input", () => {
     const featureState = createAudioFeatureState();
@@ -2428,6 +2481,8 @@ describe("live input noise gate", () => {
     expect(sumSlotAmplitudes(frame.backboneSlots)).toBeGreaterThan(0.0015);
     expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.0015);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.18);
+    expect(frame.debug.modalVisibilityDistributedEnergy).toBeLessThan(0.28);
+    expect(frame.modalVisibilityEnergy).toBeLessThan(0.28);
     expect(frame.debug.modalVisibilityPeakSlotEnergy).toBeGreaterThan(
       frame.debug.modalVisibilitySlotEnergy,
     );
@@ -2436,6 +2491,7 @@ describe("live input noise gate", () => {
     );
     expect(frame.debug.modalVisibilityDistributedEnergy).toBeGreaterThan(0);
     expect(frame.debug.modalVisibilityDominantEnergy).toBeGreaterThan(0);
+    expect(frame.debug.modalVisibilityDominantEnergy).toBeLessThan(0.24);
     expect(frame.debug.modalVisibilityDominantClusterEnergy).toBeUndefined();
   }, 10000);
 
@@ -3930,5 +3986,132 @@ describe("modal excitation integration", () => {
     expect(
       result.frame.debug.modalVisibilityDominantClusterEnergy,
     ).toBeUndefined();
+  });
+
+  it("measures stale modal dominance dropping after a clear tonal switch", () => {
+    const featureState = createAudioFeatureState();
+    let previousFrame = null;
+    let result = null;
+
+    for (let frameIndex = 0; frameIndex < 10; frameIndex += 1) {
+      result = buildModalExcitationAnalysisFrame({
+        featureState,
+        fftMagnitudes: makeFft([
+          [110, 0.92],
+          [220, 0.7],
+          [330, 0.46],
+          [440, 0.24],
+          [1760, 0.12],
+        ]),
+        timeData: makeTimeData({
+          frequency: 110,
+          amplitude: 0.42,
+          harmonics: [
+            [2, 0.12],
+            [3, 0.06],
+          ],
+        }),
+        avgAmplitude: 96,
+        rms: 0.36,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+    }
+
+    const sourceFingerprint = buildModalFingerprint(result.frame);
+    let switchedResult = null;
+    for (let frameIndex = 10; frameIndex < 16; frameIndex += 1) {
+      switchedResult = buildModalExcitationAnalysisFrame({
+        featureState,
+        fftMagnitudes: makeFft([
+          [277, 0.9],
+          [415, 0.66],
+          [554, 0.52],
+          [831, 0.34],
+          [2216, 0.16],
+        ]),
+        timeData: makeTimeData({
+          frequency: 277,
+          amplitude: 0.42,
+          harmonics: [
+            [1.5, 0.1],
+            [2, 0.08],
+            [3, 0.04],
+          ],
+        }),
+        avgAmplitude: 104,
+        rms: 0.38,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = switchedResult.frame;
+    }
+
+    const switchedFingerprint = buildModalFingerprint(switchedResult.frame);
+    expect(
+      measureStaleModalDominance(sourceFingerprint, switchedFingerprint),
+    ).toBeLessThan(0.35);
+  });
+
+  it("measures modal continuity for stable coherent input and clearance on silence", () => {
+    const featureState = createAudioFeatureState();
+    let previousFrame = null;
+    let sourceFrame = null;
+    let sustainedFrame = null;
+
+    for (let frameIndex = 0; frameIndex < 16; frameIndex += 1) {
+      const result = buildModalExcitationAnalysisFrame({
+        featureState,
+        fftMagnitudes: makeFft([
+          [196, 0.72],
+          [392, 0.48],
+          [588, 0.28],
+          [1176, 0.16],
+        ]),
+        timeData: makeTimeData({
+          frequency: 196,
+          amplitude: 0.34,
+          harmonics: [
+            [2, 0.12],
+            [3, 0.06],
+          ],
+        }),
+        avgAmplitude: 76,
+        rms: 0.28,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+      if (frameIndex === 5) {
+        sourceFrame = result.frame;
+      }
+      sustainedFrame = result.frame;
+    }
+
+    const sourceFingerprint = buildModalFingerprint(sourceFrame);
+    const sustainedFingerprint = buildModalFingerprint(sustainedFrame);
+
+    expect(
+      measureModalFingerprintRetention(sourceFingerprint, sustainedFingerprint),
+    ).toBeGreaterThan(0.62);
+
+    let silentResult = null;
+    for (let frameIndex = 16; frameIndex < 32; frameIndex += 1) {
+      silentResult = buildModalExcitationAnalysisFrame({
+        featureState,
+        fftMagnitudes: makeFft([]),
+        timeData: new Float32Array(FFT_SIZE),
+        avgAmplitude: 0,
+        rms: 0,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = silentResult.frame;
+    }
+
+    expect(
+      buildModalFingerprint(silentResult.frame).totalAmplitude,
+    ).toBeLessThan(sustainedFingerprint.totalAmplitude * 0.18);
   });
 });

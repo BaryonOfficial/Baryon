@@ -1965,6 +1965,12 @@ function deriveModalVisibilityComponents({
   const distributedReduction =
     1 -
     distributedExcitation * MODAL_VISIBILITY_DISTRIBUTED_REDUCTION;
+  const distributedEnergyAnchor = smoothstep(
+    0.015,
+    0.16,
+    Math.max(slotEnergy, modalDriveEnergy * 0.65),
+  );
+  const distributedClarityScale = 0.76 + distributedEnergyAnchor * 0.24;
 
   const distributedModalVisibility = clamp01(
     (slotEnergyGate * 0.34 +
@@ -1973,7 +1979,8 @@ function deriveModalVisibilityComponents({
       coherenceGate * 0.14) *
       modalQuality *
       (0.55 + occupancyGate * 0.45) *
-      distributedReduction,
+      distributedReduction *
+      distributedClarityScale,
   );
   const dominantSlotEnergy =
     slotSummary.upperSlotEnergy * 0.7 + slotSummary.peakSlotEnergy * 0.3;
@@ -1986,7 +1993,7 @@ function deriveModalVisibilityComponents({
       dominantQuality *
       (0.55 + sparseClusterGate * 0.35) *
       distributedReduction *
-      0.42,
+      0.28,
   );
 
   return {
