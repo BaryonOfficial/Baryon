@@ -56,6 +56,7 @@ const EXCITATION_DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD = 0.06;
 const EXCITATION_DETAIL_LOW_SIGNAL_RELEASE = 0.48;
 const EXCITATION_DETAIL_SIGNAL_COVERAGE_MIN = 0.68;
 const EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_VISIBLE_AMPLITUDE = 0.2;
+const EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_STALE_PRESSURE = 0.08;
 const EXCITATION_DETAIL_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE = 0.12;
 const EXCITATION_DETAIL_FAST_SHIFT_MIN_SIGNAL_AMPLITUDE = 0.28;
 const EXCITATION_DETAIL_FAST_SHIFT_SIGNAL_RATIO = 1.6;
@@ -1443,6 +1444,59 @@ function buildStaleDetailReleaseOverrides({
   return overrides;
 }
 
+function computeStaleDetailPressure({
+  visibleSlots,
+  targetSlots,
+  capacity,
+}) {
+  if (
+    !(visibleSlots instanceof Float32Array) ||
+    !(targetSlots instanceof Float32Array)
+  ) {
+    return 0;
+  }
+
+  const targetAmplitudes = new Map();
+  const targetLimit = Math.min(capacity, Math.floor(targetSlots.length / 4));
+  for (let index = 0; index < targetLimit; index += 1) {
+    const offset = index * 4;
+    const amplitude = targetSlots[offset + 3] ?? 0;
+    if (amplitude <= 0) {
+      continue;
+    }
+    targetAmplitudes.set(
+      buildModeKey(
+        targetSlots[offset],
+        targetSlots[offset + 1],
+        targetSlots[offset + 2],
+      ),
+      amplitude,
+    );
+  }
+
+  let pressure = 0;
+  const visibleLimit = Math.min(capacity, Math.floor(visibleSlots.length / 4));
+  for (let index = 0; index < visibleLimit; index += 1) {
+    const offset = index * 4;
+    const amplitude = visibleSlots[offset + 3] ?? 0;
+    if (amplitude <= 0) {
+      continue;
+    }
+    const targetAmplitude = targetAmplitudes.get(
+      buildModeKey(
+        visibleSlots[offset],
+        visibleSlots[offset + 1],
+        visibleSlots[offset + 2],
+      ),
+    );
+    pressure += Number.isFinite(targetAmplitude)
+      ? Math.max(0, amplitude - targetAmplitude)
+      : amplitude;
+  }
+
+  return pressure;
+}
+
 function buildStaleDetailTrackingOverrides({
   visibleSlots,
   targetSlots,
@@ -2256,10 +2310,17 @@ export function buildModalExcitationStructuralState({
     detailCapacity,
   );
   const detailVisibleAmplitude = sumSlotAmplitudes(state.blendDetail.slots);
+  const detailStalePressure = computeStaleDetailPressure({
+    visibleSlots: state.blendDetail.slots,
+    targetSlots: state.detail.slots,
+    capacity: detailCapacity,
+  });
   const detailTargetShifted =
     detailSignalCoverage < EXCITATION_DETAIL_SIGNAL_COVERAGE_MIN &&
     detailVisibleAmplitude >=
-      EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_VISIBLE_AMPLITUDE;
+      EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_VISIBLE_AMPLITUDE &&
+    detailStalePressure >=
+      EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_STALE_PRESSURE;
   const detailFreshSignalShifted =
     detailVisibleAmplitude >=
       EXCITATION_DETAIL_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE &&
@@ -2472,6 +2533,8 @@ export function buildModalExcitationStructuralState({
     detailSignalAuthoritativeCoverage: detailTargetShifted,
     detailSignalAuthoritativeFreshSignal: detailFreshSignalShifted,
     detailSignalAuthoritativeFastAssist: detailFastAssistShifted,
+    detailSignalCoverage,
+    detailShiftStalePressure: detailStalePressure,
     detailShiftReleaseOverrideCount: detailShiftReleaseOverrides?.size ?? 0,
     detailShiftTrackingOverrideCount: detailShiftTrackingOverrides?.size ?? 0,
   };

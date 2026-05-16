@@ -1585,6 +1585,74 @@ describe("modal excitation structural state", () => {
     expect(staleDisplayRatio).toBeLessThan(0.72);
   });
 
+  it("does not use coverage authority when retained detail has no material stale pressure", () => {
+    const partials = [
+      [5200, 0.52],
+      [6400, 0.5],
+      [7600, 0.48],
+      [8800, 0.46],
+      [10000, 0.44],
+      [11200, 0.42],
+    ];
+    const probeState = createModalExcitationState(16);
+    const probeInputs = createPreparedInputs({
+      frameTimeMs: 0,
+      fftMagnitudes: makeFft(partials),
+      timeData: makeMixedTimeData({ partials, amplitudeScale: 0.34 }),
+      avgAmplitude: 30,
+      rms: 0.18,
+    });
+    probeInputs.modalExcitationState = probeState;
+    const probeFastSignal = updateAudioFeatureFastSignalState(probeInputs);
+    const probeStructural = buildModalExcitationStructuralState({
+      preparedInputs: probeInputs,
+      fastSignalState: probeFastSignal,
+      existingState: probeState,
+      performanceNow: () => 0,
+    });
+    const retainedOffset = 0;
+    const retainedAmplitude =
+      probeStructural.signalDetailSlotsSource[retainedOffset + 3];
+
+    expect(retainedAmplitude).toBeGreaterThan(0.2);
+
+    const state = createModalExcitationState(16);
+    state.blendDetail.slots[0] =
+      probeStructural.signalDetailSlotsSource[retainedOffset];
+    state.blendDetail.slots[1] =
+      probeStructural.signalDetailSlotsSource[retainedOffset + 1];
+    state.blendDetail.slots[2] =
+      probeStructural.signalDetailSlotsSource[retainedOffset + 2];
+    state.blendDetail.slots[3] = retainedAmplitude;
+
+    const inputs = createPreparedInputs({
+      frameTimeMs: 33,
+      fftMagnitudes: makeFft(partials),
+      timeData: makeMixedTimeData({ partials, amplitudeScale: 0.34 }),
+      avgAmplitude: 30,
+      rms: 0.18,
+    });
+    inputs.modalExcitationState = state;
+    const fastSignal = updateAudioFeatureFastSignalState(inputs);
+    const structural = buildModalExcitationStructuralState({
+      preparedInputs: inputs,
+      fastSignalState: fastSignal,
+      existingState: state,
+      performanceNow: () => 1,
+    });
+
+    expect(structural.structuralMetrics.detailSignalAuthoritative).toBe(false);
+    expect(
+      structural.structuralMetrics.detailSignalAuthoritativeReason,
+    ).toBe("none");
+    expect(
+      structural.structuralMetrics.detailShiftReleaseOverrideCount,
+    ).toBe(0);
+    expect(
+      structural.structuralMetrics.detailShiftTrackingOverrideCount,
+    ).toBe(0);
+  });
+
   it("does not promote weak broadband noise into sustained detail visibility", () => {
     const state = createModalExcitationState(16);
     const random = createDeterministicRandom(174);
