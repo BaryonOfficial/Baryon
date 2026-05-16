@@ -41,6 +41,7 @@ export const EMISSION_ROLLOFF_MIX = 0.68;
 export const MODAL_CROWDING_BODY_COMPRESSION = 0.55;
 export const HOT_CORE_START = 0.56;
 export const HOT_CORE_END = 0.94;
+export const HOT_CORE_CROWDING_THRESHOLD_LIFT = 0.14;
 export const HIGHLIGHT_MASK_START = 0.38;
 export const HIGHLIGHT_MASK_END = 0.96;
 export const BOUNDARY_CONTOUR_ACCENT_WEIGHT = 0.08;
@@ -443,11 +444,34 @@ export function deriveHolographicColorMix({
   };
 }
 
+export function deriveHotCoreCrowding({
+  ridgeConcentration = 1,
+  bodyCrowding = 0,
+  transientEnergy = 0,
+}) {
+  const bodyCrowdingGate = smoothstep(0.28, 1.1, bodyCrowding);
+  const ridgeRelief = 1 - smoothstep(0.76, 0.94, ridgeConcentration);
+  const transientRelief = 1 - clamp01(transientEnergy) * 0.55;
+  const hotCoreCrowding =
+    bodyCrowdingGate * (0.35 + ridgeRelief * 0.65) * transientRelief;
+  const thresholdLift = hotCoreCrowding * HOT_CORE_CROWDING_THRESHOLD_LIFT;
+
+  return {
+    bodyCrowdingGate,
+    ridgeRelief,
+    transientRelief,
+    hotCoreCrowding,
+    thresholdLift,
+    hotCoreStart: HOT_CORE_START + thresholdLift,
+  };
+}
+
 export function deriveHotCoreMix({
   beamMask,
   highlightMask,
   contourMix,
   transientEnergy,
+  hotCoreStart = HOT_CORE_START,
 }) {
   const hotCoreSignal =
     beamMask * (0.76 + contourMix * 0.14) +
@@ -455,7 +479,7 @@ export function deriveHotCoreMix({
     transientEnergy * 0.08;
   const compressedHotCoreSignal = hotCoreSignal / (1 + hotCoreSignal * 0.22);
 
-  return smoothstep(HOT_CORE_START, HOT_CORE_END, compressedHotCoreSignal);
+  return smoothstep(hotCoreStart, HOT_CORE_END, compressedHotCoreSignal);
 }
 
 export function deriveStableContourAccent({

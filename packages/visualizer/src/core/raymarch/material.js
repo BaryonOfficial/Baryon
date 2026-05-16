@@ -65,6 +65,7 @@ import {
   HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
   HOT_CORE_END,
   HOT_CORE_START,
+  HOT_CORE_CROWDING_THRESHOLD_LIFT,
   HIGHLIGHT_MASK_END,
   HIGHLIGHT_MASK_START,
   HOLOGRAPHIC_TINT_BLUE,
@@ -840,6 +841,27 @@ function createScatteringNode({
         ),
       );
       const adjustedBodyDensity = dampedBodyDensity.mul(bodyCompression);
+      const hotCoreBodyCrowdingGate = smoothstep(
+        float(0.28),
+        float(1.1),
+        /** @type {any} */ (bodyCrowding),
+      );
+      const hotCoreRidgeRelief = float(1.0).sub(
+        smoothstep(
+          float(0.76),
+          float(0.94),
+          /** @type {any} */ (ridgeConcentration),
+        ),
+      );
+      const hotCoreTransientRelief = float(1.0).sub(
+        uTransientEnergy.mul(float(0.55)),
+      );
+      const hotCoreCrowding = hotCoreBodyCrowdingGate
+        .mul(float(0.35).add(hotCoreRidgeRelief.mul(float(0.65))))
+        .mul(hotCoreTransientRelief);
+      const localHotCoreStart = hotCoreStartDynamic.add(
+        hotCoreCrowding.mul(float(HOT_CORE_CROWDING_THRESHOLD_LIFT)),
+      );
       const density = clamp(
         rolledBeamDensity
           .add(adjustedBodyDensity.mul(float(BODY_DENSITY_MIX)))
@@ -893,7 +915,7 @@ function createScatteringNode({
       // hotCoreStartDynamic is pre-computed above the Fn.
       // excitationGate prevents weak tonal fields from triggering the white laser core.
       const hotCoreMix = smoothstep(
-        hotCoreStartDynamic,
+        localHotCoreStart,
         float(HOT_CORE_END),
         /** @type {any} */ (
           rolledBeamDensity

@@ -12,6 +12,7 @@ import {
   HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
   HOT_CORE_END,
   HOT_CORE_START,
+  HOT_CORE_CROWDING_THRESHOLD_LIFT,
   LATCHED_FOG_BEAM_REDUCTION,
   LATCHED_FOG_BODY_REDUCTION,
   MODAL_CROWDING_BODY_COMPRESSION,
@@ -26,6 +27,7 @@ import {
   deriveLatchedFogMask,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
+  deriveHotCoreCrowding,
   deriveHotCoreMix,
   deriveModalCrowdingDensity,
   deriveShellWeight,
@@ -389,6 +391,88 @@ describe("field shaping", () => {
 
     expect(crowded.adjustedBodyDensity).toBeLessThan(1.2);
     expect(crowdedHotCore).toBeCloseTo(baselineHotCore);
+  });
+
+  it("raises the hot-core threshold for locally crowded bright fields", () => {
+    const crowded = deriveModalCrowdingDensity({
+      rolledBeamDensity: 0.82,
+      dampedBodyDensity: 1.24,
+    });
+    const hotCoreCrowding = deriveHotCoreCrowding({
+      ridgeConcentration: crowded.ridgeConcentration,
+      bodyCrowding: crowded.bodyCrowding,
+      transientEnergy: 0.12,
+    });
+    const baselineHotCore = deriveHotCoreMix({
+      beamMask: crowded.rolledBeamDensity,
+      highlightMask: 0.36,
+      contourMix: 0.78,
+      transientEnergy: 0.12,
+    });
+    const crowdedHotCore = deriveHotCoreMix({
+      beamMask: crowded.rolledBeamDensity,
+      highlightMask: 0.36,
+      contourMix: 0.78,
+      transientEnergy: 0.12,
+      hotCoreStart: hotCoreCrowding.hotCoreStart,
+    });
+
+    expect(HOT_CORE_CROWDING_THRESHOLD_LIFT).toBeCloseTo(0.14);
+    expect(hotCoreCrowding.hotCoreCrowding).toBeGreaterThan(0.35);
+    expect(hotCoreCrowding.hotCoreStart).toBeGreaterThan(HOT_CORE_START);
+    expect(crowdedHotCore).toBeLessThan(baselineHotCore * 0.82);
+  });
+
+  it("keeps isolated ridge hot-core response nearly unchanged", () => {
+    const ridge = deriveModalCrowdingDensity({
+      rolledBeamDensity: 1.12,
+      dampedBodyDensity: 0.12,
+    });
+    const hotCoreCrowding = deriveHotCoreCrowding({
+      ridgeConcentration: ridge.ridgeConcentration,
+      bodyCrowding: ridge.bodyCrowding,
+      transientEnergy: 0.1,
+    });
+    const baselineHotCore = deriveHotCoreMix({
+      beamMask: ridge.rolledBeamDensity,
+      highlightMask: 0.22,
+      contourMix: 0.82,
+      transientEnergy: 0.1,
+    });
+    const ridgeHotCore = deriveHotCoreMix({
+      beamMask: ridge.rolledBeamDensity,
+      highlightMask: 0.22,
+      contourMix: 0.82,
+      transientEnergy: 0.1,
+      hotCoreStart: hotCoreCrowding.hotCoreStart,
+    });
+
+    expect(hotCoreCrowding.hotCoreCrowding).toBeLessThan(0.02);
+    expect(ridgeHotCore).toBeGreaterThan(baselineHotCore * 0.98);
+  });
+
+  it("lets strong transients push through the hot-core crowding limiter", () => {
+    const crowded = deriveModalCrowdingDensity({
+      rolledBeamDensity: 0.82,
+      dampedBodyDensity: 1.24,
+    });
+    const sustainedCrowding = deriveHotCoreCrowding({
+      ridgeConcentration: crowded.ridgeConcentration,
+      bodyCrowding: crowded.bodyCrowding,
+      transientEnergy: 0.08,
+    });
+    const transientCrowding = deriveHotCoreCrowding({
+      ridgeConcentration: crowded.ridgeConcentration,
+      bodyCrowding: crowded.bodyCrowding,
+      transientEnergy: 0.86,
+    });
+
+    expect(transientCrowding.hotCoreCrowding).toBeLessThan(
+      sustainedCrowding.hotCoreCrowding,
+    );
+    expect(transientCrowding.hotCoreStart).toBeLessThan(
+      sustainedCrowding.hotCoreStart,
+    );
   });
 
   it("suppresses weak visible density while preserving strong contours", () => {
