@@ -205,8 +205,6 @@ const LIVE_INPUT_STRUCTURE_RESPONSE_SCALE = 0.8;
 const LIVE_INPUT_ENERGY_RESPONSE_SCALE = 0.55;
 const LIVE_INPUT_CHANGE_RESPONSE_SCALE = 0.45;
 const LIVE_INPUT_PULSE_RESPONSE_SCALE = 0.9;
-const LEGACY_PRESERVATION_BACKBONE_WEIGHT = 0.94;
-const LEGACY_PRESERVATION_DETAIL_WEIGHT = 0.4;
 const LIVE_INPUT_RESONANCE_PEAK_COUNT = 4;
 const LIVE_INPUT_AMBIENT_RESONANCE_MIN_PEAK = 0.03;
 const LIVE_INPUT_AMBIENT_RESONANCE_MIN_CLARITY = 0.42;
@@ -3328,7 +3326,6 @@ function buildStructuralFingerprint({
 function materializeAudioFeatureStructuralSnapshot(
   preparedInputs,
   structuralState,
-  legacyCompositionContext = null,
 ) {
   const {
     capacity,
@@ -3357,23 +3354,19 @@ function materializeAudioFeatureStructuralSnapshot(
     referenceDetailSlots,
     projectionSources.referenceDetailSlotsSource,
   );
-  const { backboneWeight, detailWeight } = resolveLegacyCompositionWeights(
-    legacyCompositionContext,
-    projectionSources.activeDetailModeCount,
-  );
   combineModalLayers(
     modeSlots,
     [
-      { slots: backboneSlots, weight: backboneWeight },
-      { slots: detailSlots, weight: detailWeight },
+      { slots: backboneSlots, weight: 1 },
+      { slots: detailSlots, weight: DETAIL_LAYER_WEIGHT },
     ],
     capacity,
   );
   combineModalLayers(
     referenceModeSlots,
     [
-      { slots: referenceBackboneSlots, weight: backboneWeight },
-      { slots: referenceDetailSlots, weight: detailWeight },
+      { slots: referenceBackboneSlots, weight: 1 },
+      { slots: referenceDetailSlots, weight: DETAIL_LAYER_WEIGHT },
     ],
     capacity,
   );
@@ -3443,7 +3436,6 @@ function materializeAudioFeatureStructuralSnapshot(
 function materializeAudioFeatureSignalSnapshot(
   preparedInputs,
   structuralState,
-  legacyCompositionContext = null,
 ) {
   const { capacity, signalModeSlots, signalReferenceModeSlots } =
     preparedInputs;
@@ -3451,25 +3443,16 @@ function materializeAudioFeatureSignalSnapshot(
     preparedInputs,
     structuralState,
   );
-  const signalDetailModeCount = countActiveSlots(
-    signalSources.signalDetailSlotsSource,
-    capacity,
-  );
-  const { backboneWeight, detailWeight } = resolveLegacyCompositionWeights(
-    legacyCompositionContext,
-    signalDetailModeCount,
-  );
-
   combineModalLayers(
     signalModeSlots,
     [
       {
         slots: signalSources.signalBackboneSlotsSource,
-        weight: backboneWeight,
+        weight: 1,
       },
       {
         slots: signalSources.signalDetailSlotsSource,
-        weight: detailWeight,
+        weight: DETAIL_LAYER_WEIGHT,
       },
     ],
     capacity,
@@ -3479,11 +3462,11 @@ function materializeAudioFeatureSignalSnapshot(
     [
       {
         slots: signalSources.signalReferenceBackboneSlotsSource,
-        weight: backboneWeight,
+        weight: 1,
       },
       {
         slots: signalSources.signalReferenceDetailSlotsSource,
-        weight: detailWeight,
+        weight: DETAIL_LAYER_WEIGHT,
       },
     ],
     capacity,
@@ -3492,31 +3475,6 @@ function materializeAudioFeatureSignalSnapshot(
   return {
     signalModeSlots,
     signalReferenceModeSlots,
-  };
-}
-
-function resolveLegacyCompositionWeights(context, activeDetailModeCount) {
-  const isLegacyEngine =
-    context?.analysisEngine === "layered" ||
-    context?.analysisEngine === "spectral-fallback" ||
-    context?.analysisEngine === "vocal";
-  const preservationActive =
-    isLegacyEngine &&
-    (context?.trebleTonalEnergy ?? 0) >= 0.12 &&
-    (context?.beatLowBandEnergy ?? 0) >= 0.08 &&
-    (context?.modeCoherence ?? 0) >= 0.18 &&
-    activeDetailModeCount > 0;
-
-  if (preservationActive) {
-    return {
-      backboneWeight: LEGACY_PRESERVATION_BACKBONE_WEIGHT,
-      detailWeight: LEGACY_PRESERVATION_DETAIL_WEIGHT,
-    };
-  }
-
-  return {
-    backboneWeight: 1,
-    detailWeight: DETAIL_LAYER_WEIGHT,
   };
 }
 
@@ -3714,16 +3672,9 @@ export function buildCurrentAudioFeatureAnalysisResult({
     structuralState,
   );
   let resolvedStructural = currentStructural;
-  const legacyCompositionContext = {
-    analysisEngine: currentStructural.analysisEngine ?? "none",
-    modeCoherence: currentStructural.structuralMetrics?.modeCoherence ?? 0,
-    trebleTonalEnergy: fastSignalState.trebleTonalEnergy ?? 0,
-    beatLowBandEnergy: fastSignalState.beatLowBandEnergy ?? 0,
-  };
   const signalStructural = materializeAudioFeatureSignalSnapshot(
     preparedInputs,
     currentStructural,
-    legacyCompositionContext,
   );
 
   if (materializeStructuralProjection) {
@@ -3731,7 +3682,6 @@ export function buildCurrentAudioFeatureAnalysisResult({
     const projectedStructural = materializeAudioFeatureStructuralSnapshot(
       preparedInputs,
       currentStructural,
-      legacyCompositionContext,
     );
     resolvedStructural = {
       ...currentStructural,

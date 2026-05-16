@@ -4,11 +4,13 @@ import { BACKBONE_STACK_SLOTS, DETAIL_STACK_SLOTS } from "./modalStack.js";
 import {
   applyTestToneToSnapshot,
   buildAudioFeatureFrame as buildAudioFeatureFrameBase,
+  buildCurrentAudioFeatureAnalysisResult,
   composeAudioFeatureFrame,
   createAudioFeatureState,
   detectLiveInputNoiseGate,
   prepareAudioFeatureFrameInputs as prepareAudioFeatureFrameInputsBase,
   runHeavyAudioFeatureAnalysis,
+  updateAudioFeatureFastSignalState,
 } from "./buildFeatureFrame.js";
 
 const FFT_SIZE = 4096;
@@ -268,6 +270,28 @@ function sumSlotAmplitudes(slots) {
     total += slots[index * 4 + 3] ?? 0;
   }
   return total;
+}
+
+function findModeAmplitude(slots, [u, v, w]) {
+  for (let index = 0; index < (slots?.length ?? 0); index += 4) {
+    if (
+      slots[index] === u &&
+      slots[index + 1] === v &&
+      slots[index + 2] === w
+    ) {
+      return slots[index + 3] ?? 0;
+    }
+  }
+  return 0;
+}
+
+function makeSingleModeSlot([u, v, w, amplitude]) {
+  const slots = new Float32Array(AUDIO_SLOT_CAPACITY * 4);
+  slots[0] = u;
+  slots[1] = v;
+  slots[2] = w;
+  slots[3] = amplitude;
+  return slots;
 }
 
 function buildModalExcitationAnalysisFrame({
@@ -1203,6 +1227,67 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(frame.debug.modeSlotCount).toBeGreaterThan(0);
     expect(frame.backboneSlots.some((value) => value !== 0)).toBe(true);
     expect(frame.detailSlots.some((value) => value !== 0)).toBe(true);
+  });
+
+  it("uses canonical detail weight for legacy-labeled structural states", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        avgAmplitude: 70,
+        fftMagnitudes: makeFft([
+          [330, 0.95],
+          [660, 0.72],
+          [990, 0.45],
+        ]),
+        rms: 0.3,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+    });
+    const fastSignalState = {
+      ...updateAudioFeatureFastSignalState(preparedInputs),
+      trebleTonalEnergy: 0.2,
+      beatLowBandEnergy: 0.12,
+    };
+    const backboneSlotsSource = makeSingleModeSlot([1, 1, 1, 1]);
+    const detailSlotsSource = makeSingleModeSlot([9, 9, 9, 1]);
+    const structuralState = {
+      backboneSlotsSource,
+      detailSlotsSource,
+      referenceBackboneSlotsSource: backboneSlotsSource,
+      referenceDetailSlotsSource: detailSlotsSource,
+      signalBackboneSlotsSource: backboneSlotsSource,
+      signalDetailSlotsSource: detailSlotsSource,
+      signalReferenceBackboneSlotsSource: backboneSlotsSource,
+      signalReferenceDetailSlotsSource: detailSlotsSource,
+      activeBackboneModeCount: 1,
+      activeDetailModeCount: 1,
+      activeModeCount: 2,
+      dominantFrequency: 330,
+      dominantAmplitude: 0.95,
+      analysisEngine: "spectral-fallback",
+      pitchSource: "spectral",
+      spectralCandidates: [],
+      sourceMode: "file",
+      structuralMetrics: {
+        modeCoherence: 0.5,
+      },
+    };
+
+    const result = buildCurrentAudioFeatureAnalysisResult({
+      preparedInputs,
+      fastSignalState,
+      structuralState,
+      materializeStructuralProjection: true,
+    });
+
+    expect(findModeAmplitude(result.modeSlots, [1, 1, 1])).toBeCloseTo(1, 6);
+    expect(findModeAmplitude(result.modeSlots, [9, 9, 9])).toBeCloseTo(0.35, 6);
+    expect(findModeAmplitude(result.signalModeSlots, [9, 9, 9])).toBeCloseTo(
+      0.35,
+      6,
+    );
   });
 
   it("updates detail slots immediately while the backbone stays structurally continuous", () => {
