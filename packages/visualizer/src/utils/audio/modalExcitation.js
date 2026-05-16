@@ -62,6 +62,7 @@ const EXCITATION_DETAIL_FAST_SHIFT_SIGNAL_RATIO = 1.6;
 const EXCITATION_DETAIL_TAIL_RELEASE = 0.82;
 const EXCITATION_DETAIL_TAIL_EMPTY_RELEASE = 0.82;
 const EXCITATION_DETAIL_TAIL_LOW_SIGNAL_RELEASE = 0.72;
+const EXCITATION_DETAIL_SHIFT_STALE_TRACKING = 0.86;
 const EXCITATION_DETAIL_SHIFT_STALE_RELEASE = 0.36;
 const EXCITATION_DETAIL_TAIL_PRESENCE_RELEASE = 0.92;
 const EXCITATION_DETAIL_LATENT_TAIL_RELEASE = 0.94;
@@ -1442,6 +1443,60 @@ function buildStaleDetailReleaseOverrides({
   return overrides;
 }
 
+function buildStaleDetailTrackingOverrides({
+  visibleSlots,
+  targetSlots,
+  capacity,
+  tracking,
+}) {
+  const targetAmplitudes = new Map();
+  if (!(targetSlots instanceof Float32Array)) {
+    return targetAmplitudes;
+  }
+
+  const targetLimit = Math.min(capacity, Math.floor(targetSlots.length / 4));
+  for (let index = 0; index < targetLimit; index += 1) {
+    const offset = index * 4;
+    const amplitude = targetSlots[offset + 3] ?? 0;
+    if (amplitude <= 0) {
+      continue;
+    }
+    targetAmplitudes.set(
+      buildModeKey(
+        targetSlots[offset],
+        targetSlots[offset + 1],
+        targetSlots[offset + 2],
+      ),
+      amplitude,
+    );
+  }
+
+  const overrides = new Map();
+  if (!(visibleSlots instanceof Float32Array) || targetAmplitudes.size === 0) {
+    return overrides;
+  }
+
+  const visibleLimit = Math.min(capacity, Math.floor(visibleSlots.length / 4));
+  for (let index = 0; index < visibleLimit; index += 1) {
+    const offset = index * 4;
+    const amplitude = visibleSlots[offset + 3] ?? 0;
+    if (amplitude <= 0) {
+      continue;
+    }
+    const key = buildModeKey(
+      visibleSlots[offset],
+      visibleSlots[offset + 1],
+      visibleSlots[offset + 2],
+    );
+    const targetAmplitude = targetAmplitudes.get(key);
+    if (Number.isFinite(targetAmplitude) && targetAmplitude < amplitude) {
+      overrides.set(key, tracking);
+    }
+  }
+
+  return overrides;
+}
+
 function hasStrongFreshDetailSignal({
   visibleSlots,
   signalSlots,
@@ -2236,6 +2291,14 @@ export function buildModalExcitationStructuralState({
         release: EXCITATION_DETAIL_SHIFT_STALE_RELEASE,
       })
     : null;
+  const detailShiftTrackingOverrides = detailSignalAuthoritative
+    ? buildStaleDetailTrackingOverrides({
+        visibleSlots: state.blendDetail.slots,
+        targetSlots: detailBlendTargetSlots,
+        capacity: detailCapacity,
+        tracking: EXCITATION_DETAIL_SHIFT_STALE_TRACKING,
+      })
+    : null;
   blendModalStack(state.blendDetail, detailBlendTargetSlots, detailCapacity, {
     attack: detailSignalAuthoritative
       ? EXCITATION_DETAIL_SHIFT_BLEND_ATTACK
@@ -2259,6 +2322,7 @@ export function buildModalExcitationStructuralState({
       : hasSustainedTail
         ? EXCITATION_DETAIL_TAIL_LOW_SIGNAL_RELEASE
         : EXCITATION_DETAIL_LOW_SIGNAL_RELEASE,
+    trackingOverrides: detailShiftTrackingOverrides,
     releaseOverrides: detailShiftReleaseOverrides,
     freshCap: detailSignalAuthoritative
       ? detailCapacity

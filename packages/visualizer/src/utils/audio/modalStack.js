@@ -283,6 +283,7 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
   const attack = options.attack ?? BLEND_ATTACK;
   const tracking = options.tracking ?? BLEND_TRACKING;
   const release = options.release ?? BLEND_RELEASE;
+  const trackingOverrides = options.trackingOverrides ?? null;
   const releaseOverrides = options.releaseOverrides ?? null;
   const freshCap = options.freshCap ?? BLEND_MAX_FRESH_PER_FRAME;
   const dropThreshold = options.dropThreshold ?? BLEND_DROP_THRESHOLD;
@@ -340,8 +341,10 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
   for (const key of admittedTargetKeys) {
     const target = targetMap.get(key);
     const current = currentMap.get(key);
+    const trackingFactor = trackingOverrides?.get?.(key) ?? tracking;
     const newAmp = current
-      ? current.amplitude + (target.amplitude - current.amplitude) * tracking
+      ? current.amplitude +
+        (target.amplitude - current.amplitude) * trackingFactor
       : target.amplitude * attack;
     if (newAmp >= dropThreshold) {
       blended.set(key, {

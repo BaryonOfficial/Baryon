@@ -299,6 +299,17 @@ describe("blendModalStack", () => {
     expect(out[0].amplitude).toBeCloseTo(0.5 + (1.0 - 0.5) * 0.9);
   });
 
+  it("trackingOverrides accelerates retained modes toward weaker targets", () => {
+    const state = makeBlendState(4, [{ u: 1, v: 1, w: 1, amplitude: 0.8 }]);
+    const target = makeTargetSlots(4, [{ u: 1, v: 1, w: 1, amplitude: 0.2 }]);
+    blendModalStack(state, target, 4, {
+      tracking: 0.28,
+      trackingOverrides: new Map([["1:1:1", 0.9]]),
+    });
+    const out = readSlots(state, 4);
+    expect(out[0].amplitude).toBeCloseTo(0.8 + (0.2 - 0.8) * 0.9);
+  });
+
   it("attack option: custom attack rate overrides default", () => {
     const state = makeBlendState(4, []);
     const target = makeTargetSlots(4, [{ u: 7, v: 7, w: 7, amplitude: 1.0 }]);
