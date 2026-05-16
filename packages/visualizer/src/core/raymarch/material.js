@@ -62,6 +62,8 @@ import {
   EXCITATION_VISIBILITY_COHERENCE_WEIGHT,
   EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT,
   EXCITATION_VISIBILITY_MAX_FLOOR,
+  EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END,
+  EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START,
   HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
   HOT_CORE_END,
   HOT_CORE_START,
@@ -81,6 +83,8 @@ import {
   LATCHED_FOG_CHANGE_END,
   LATCHED_FOG_STRUCTURE_RANGE,
   LATCHED_FOG_STRUCTURE_START,
+  LATCHED_FOG_TRANSIENT_RELEASE_END,
+  LATCHED_FOG_TRANSIENT_RELEASE_START,
   LOW_DENSITY_FADE_END,
   LOW_DENSITY_FADE_START,
   LOW_MID_BAND_WEIGHT,
@@ -94,6 +98,7 @@ import {
   SHELL_WEIGHT_MIN,
   SHELL_WEIGHT_START,
   WHITE_EMISSION_CROWDING_REDUCTION,
+  WHITE_EMISSION_CROWDING_TRANSIENT_RELIEF,
   MODAL_VISIBILITY_DENSITY_FLOOR,
   MODAL_VISIBILITY_DENSITY_LIFT,
 } from "./fieldShaping.js";
@@ -501,6 +506,11 @@ function createScatteringNode({
     float(EXCITATION_GATE_HIGH),
     excitationInput,
   );
+  const excitationSourceAuthority = smoothstep(
+    float(EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START),
+    float(EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END),
+    uAverageAmplitude.div(float(255.0)),
+  );
   const excitationVisibility = max(
     excitationGate,
     clamp(
@@ -513,7 +523,7 @@ function createScatteringNode({
         ),
       float(0.0),
       float(EXCITATION_VISIBILITY_MAX_FLOOR),
-    ),
+    ).mul(excitationSourceAuthority),
   );
   const latchedFogMask = clamp(
     uStructureSignal
@@ -521,15 +531,25 @@ function createScatteringNode({
       .div(float(LATCHED_FOG_STRUCTURE_RANGE)),
     float(0.0),
     float(1.0),
-  ).mul(
-    clamp(
-      float(LATCHED_FOG_CHANGE_END)
-        .sub(uChangeSignal)
-        .div(float(LATCHED_FOG_CHANGE_END)),
-      float(0.0),
-      float(1.0),
-    ),
-  );
+  )
+    .mul(
+      clamp(
+        float(LATCHED_FOG_CHANGE_END)
+          .sub(uChangeSignal)
+          .div(float(LATCHED_FOG_CHANGE_END)),
+        float(0.0),
+        float(1.0),
+      ),
+    )
+    .mul(
+      float(1.0).sub(
+        smoothstep(
+          float(LATCHED_FOG_TRANSIENT_RELEASE_START),
+          float(LATCHED_FOG_TRANSIENT_RELEASE_END),
+          uTransientEnergy,
+        ),
+      ),
+    );
 
   return Fn(
     /**
@@ -858,9 +878,15 @@ function createScatteringNode({
       const hotCoreTransientRelief = float(1.0).sub(
         uTransientEnergy.mul(float(0.55)),
       );
+      const whiteEmissionTransientRelief = float(1.0).sub(
+        uTransientEnergy.mul(float(WHITE_EMISSION_CROWDING_TRANSIENT_RELIEF)),
+      );
       const hotCoreCrowding = hotCoreBodyCrowdingGate
         .mul(float(0.35).add(hotCoreRidgeRelief.mul(float(0.65))))
         .mul(hotCoreTransientRelief);
+      const whiteEmissionCrowding = hotCoreBodyCrowdingGate
+        .mul(float(0.35).add(hotCoreRidgeRelief.mul(float(0.65))))
+        .mul(whiteEmissionTransientRelief);
       const localHotCoreStart = hotCoreStartDynamic.add(
         hotCoreCrowding.mul(float(HOT_CORE_CROWDING_THRESHOLD_LIFT)),
       );
@@ -984,7 +1010,7 @@ function createScatteringNode({
       );
       const crowdedWhiteEmissionMix = holographicEmissionLift.mul(
         float(1.0).sub(
-          hotCoreCrowding.mul(float(WHITE_EMISSION_CROWDING_REDUCTION)),
+          whiteEmissionCrowding.mul(float(WHITE_EMISSION_CROWDING_REDUCTION)),
         ),
       );
       const staticContourColor = mix(

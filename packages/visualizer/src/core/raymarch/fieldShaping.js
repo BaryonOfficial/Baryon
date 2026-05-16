@@ -44,6 +44,7 @@ export const HOT_CORE_END = 0.94;
 export const HOT_CORE_CROWDING_THRESHOLD_LIFT = 0.14;
 export const HOT_CORE_SURFACE_CROWDING_REDUCTION = 0.34;
 export const WHITE_EMISSION_CROWDING_REDUCTION = 0.72;
+export const WHITE_EMISSION_CROWDING_TRANSIENT_RELIEF = 0.16;
 export const HIGHLIGHT_MASK_START = 0.38;
 export const HIGHLIGHT_MASK_END = 0.96;
 export const BOUNDARY_CONTOUR_ACCENT_WEIGHT = 0.08;
@@ -54,11 +55,15 @@ export const HOLOGRAPHIC_TINT_BLUE = 1.0;
 export const LATCHED_FOG_STRUCTURE_START = 0.55;
 export const LATCHED_FOG_STRUCTURE_RANGE = 0.25;
 export const LATCHED_FOG_CHANGE_END = 0.08;
+export const LATCHED_FOG_TRANSIENT_RELEASE_START = 0.12;
+export const LATCHED_FOG_TRANSIENT_RELEASE_END = 0.42;
 export const LATCHED_FOG_BODY_REDUCTION = 0.18;
 export const LATCHED_FOG_BEAM_REDUCTION = 0.12;
 export const EXCITATION_VISIBILITY_COHERENCE_WEIGHT = 0.42;
 export const EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT = 0.48;
 export const EXCITATION_VISIBILITY_MAX_FLOOR = 0.52;
+export const EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START = 0.04;
+export const EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END = 0.24;
 export const MODAL_VISIBILITY_DENSITY_LIFT = 0.3;
 export const MODAL_VISIBILITY_DENSITY_FLOOR = 0.22;
 
@@ -97,13 +102,20 @@ function deriveInteriorMask(radialDistance) {
 export function deriveLatchedFogMask({
   structureSignal = 0,
   changeSignal = 1,
+  transientEnergy = 0,
 }) {
   return (
     clamp01(
       (structureSignal - LATCHED_FOG_STRUCTURE_START) /
         LATCHED_FOG_STRUCTURE_RANGE,
     ) *
-    clamp01((LATCHED_FOG_CHANGE_END - changeSignal) / LATCHED_FOG_CHANGE_END)
+    clamp01((LATCHED_FOG_CHANGE_END - changeSignal) / LATCHED_FOG_CHANGE_END) *
+    (1 -
+      smoothstep(
+        LATCHED_FOG_TRANSIENT_RELEASE_START,
+        LATCHED_FOG_TRANSIENT_RELEASE_END,
+        transientEnergy,
+      ))
   );
 }
 
@@ -111,14 +123,21 @@ export function deriveExcitationVisibility({
   excitationGate = 0,
   modeCoherence = 0,
   modalVisibilityEnergy = 0,
+  sourceAuthority = 1,
 }) {
-  const excitationFloor = Math.min(
-    EXCITATION_VISIBILITY_MAX_FLOOR,
-    clamp01(
-      modeCoherence * EXCITATION_VISIBILITY_COHERENCE_WEIGHT +
-        modalVisibilityEnergy * EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT,
-    ),
+  const sourceAuthorityGate = smoothstep(
+    EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START,
+    EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END,
+    sourceAuthority,
   );
+  const excitationFloor =
+    Math.min(
+      EXCITATION_VISIBILITY_MAX_FLOOR,
+      clamp01(
+        modeCoherence * EXCITATION_VISIBILITY_COHERENCE_WEIGHT +
+          modalVisibilityEnergy * EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT,
+      ),
+    ) * sourceAuthorityGate;
 
   return Math.max(excitationGate, excitationFloor);
 }
@@ -213,6 +232,7 @@ export function deriveBodyDensity({
   boundaryMask,
   structureSignal = 0,
   changeSignal = 1,
+  transientEnergy = 0,
 }) {
   const broadBand = deriveBroadBand(fieldAbs, threshold);
   const interiorMask = deriveInteriorMask(radialDistance);
@@ -220,6 +240,7 @@ export function deriveBodyDensity({
   const latchedFogMask = deriveLatchedFogMask({
     structureSignal,
     changeSignal,
+    transientEnergy,
   });
   const bodyDensity =
     broadBand *
@@ -296,6 +317,7 @@ export function deriveBeamMask({
   const latchedFogMask = deriveLatchedFogMask({
     structureSignal,
     changeSignal,
+    transientEnergy,
   });
   const beamMask =
     beamCore *
@@ -346,8 +368,7 @@ export function deriveModalCrowdingDensity({
     Number.isFinite(dampedBodyDensity) ? dampedBodyDensity : 0,
   );
   const additiveDensity = beamDensity + bodyDensity * BODY_DENSITY_MIX;
-  const ridgeConcentration =
-    beamDensity / (beamDensity + bodyDensity + 1e-4);
+  const ridgeConcentration = beamDensity / (beamDensity + bodyDensity + 1e-4);
   const bodyCrowding = additiveDensity * (1 - ridgeConcentration);
   const bodyCompression =
     1 / (1 + bodyCrowding * MODAL_CROWDING_BODY_COMPRESSION);
@@ -454,15 +475,23 @@ export function deriveHotCoreCrowding({
   const bodyCrowdingGate = smoothstep(0.28, 1.1, bodyCrowding);
   const ridgeRelief = 1 - smoothstep(0.76, 0.94, ridgeConcentration);
   const transientRelief = 1 - clamp01(transientEnergy) * 0.55;
+  const whiteEmissionTransientRelief =
+    1 - clamp01(transientEnergy) * WHITE_EMISSION_CROWDING_TRANSIENT_RELIEF;
   const hotCoreCrowding =
     bodyCrowdingGate * (0.35 + ridgeRelief * 0.65) * transientRelief;
+  const whiteEmissionCrowding =
+    bodyCrowdingGate *
+    (0.35 + ridgeRelief * 0.65) *
+    whiteEmissionTransientRelief;
   const thresholdLift = hotCoreCrowding * HOT_CORE_CROWDING_THRESHOLD_LIFT;
 
   return {
     bodyCrowdingGate,
     ridgeRelief,
     transientRelief,
+    whiteEmissionTransientRelief,
     hotCoreCrowding,
+    whiteEmissionCrowding,
     thresholdLift,
     hotCoreStart: HOT_CORE_START + thresholdLift,
   };
@@ -488,12 +517,13 @@ export function deriveCrowdedHighlightMix({
   hotCoreMix = 0,
   whiteEmissionMix = 0,
   hotCoreCrowding = 0,
+  whiteEmissionCrowding = hotCoreCrowding,
 }) {
   const crowding = clamp01(hotCoreCrowding);
-  const hotCoreReduction =
-    1 - crowding * HOT_CORE_SURFACE_CROWDING_REDUCTION;
+  const emissionCrowding = clamp01(whiteEmissionCrowding);
+  const hotCoreReduction = 1 - crowding * HOT_CORE_SURFACE_CROWDING_REDUCTION;
   const whiteEmissionReduction =
-    1 - crowding * WHITE_EMISSION_CROWDING_REDUCTION;
+    1 - emissionCrowding * WHITE_EMISSION_CROWDING_REDUCTION;
 
   return {
     hotCoreReduction,

@@ -103,6 +103,21 @@ describe("field shaping", () => {
     expect(weak).toBe(0);
   });
 
+  it("releases the latched-fog mask when current transients are active", () => {
+    const latched = deriveLatchedFogMask({
+      structureSignal: 0.9,
+      changeSignal: 0.01,
+    });
+    const reactive = deriveLatchedFogMask({
+      structureSignal: 0.9,
+      changeSignal: 0.01,
+      transientEnergy: 0.56,
+    });
+
+    expect(latched).toBeGreaterThan(0.6);
+    expect(reactive).toBeLessThan(latched * 0.2);
+  });
+
   it("keeps a bounded visibility floor for weak but coherent excitation", () => {
     const weakCoherent = deriveExcitationVisibility({
       excitationGate: 0.04,
@@ -119,6 +134,24 @@ describe("field shaping", () => {
     expect(weakCoherent).toBeGreaterThan(0.38);
     expect(weakCoherent).toBeLessThan(0.53);
     expect(noisyWeak).toBeCloseTo(0.04);
+  });
+
+  it("prevents the excitation floor from overriding absent current source authority", () => {
+    const staleCoherent = deriveExcitationVisibility({
+      excitationGate: 0.02,
+      modeCoherence: 0.72,
+      modalVisibilityEnergy: 0.36,
+      sourceAuthority: 0,
+    });
+    const currentCoherent = deriveExcitationVisibility({
+      excitationGate: 0.02,
+      modeCoherence: 0.72,
+      modalVisibilityEnergy: 0.36,
+      sourceAuthority: 1,
+    });
+
+    expect(staleCoherent).toBeCloseTo(0.02);
+    expect(currentCoherent).toBeGreaterThan(0.38);
   });
 
   it("keeps modal cavity visibility from modal energy", () => {
@@ -212,6 +245,35 @@ describe("field shaping", () => {
     expect(LATCHED_FOG_BODY_REDUCTION).toBeCloseTo(0.18);
     expect(fogged.latchedFogMask).toBeGreaterThan(0);
     expect(fogged.bodyDensity).toBeLessThan(baseline.bodyDensity);
+  });
+
+  it("lets current transients recover body density from latched fog", () => {
+    const latched = deriveBodyDensity({
+      fieldAbs: 0.02,
+      threshold: 0.15,
+      structure: 0.8,
+      edgeFade: 0.9,
+      activeMask: 1,
+      radialDistance: 0.45,
+      boundaryMask: 0.05,
+      structureSignal: 0.9,
+      changeSignal: 0.01,
+    });
+    const reactive = deriveBodyDensity({
+      fieldAbs: 0.02,
+      threshold: 0.15,
+      structure: 0.8,
+      edgeFade: 0.9,
+      activeMask: 1,
+      radialDistance: 0.45,
+      boundaryMask: 0.05,
+      structureSignal: 0.9,
+      changeSignal: 0.01,
+      transientEnergy: 0.56,
+    });
+
+    expect(reactive.latchedFogMask).toBeLessThan(latched.latchedFogMask * 0.2);
+    expect(reactive.bodyDensity).toBeGreaterThan(latched.bodyDensity);
   });
 
   it("adds a bounded bass visibility floor without replacing real structure", () => {
@@ -336,6 +398,36 @@ describe("field shaping", () => {
     expect(LATCHED_FOG_BEAM_REDUCTION).toBeCloseTo(0.12);
     expect(fogged.latchedFogMask).toBeGreaterThan(0);
     expect(fogged.beamMask).toBeLessThan(baseline.beamMask);
+  });
+
+  it("lets current transients recover beam density from latched fog", () => {
+    const latched = deriveBeamMask({
+      contourShape: 0.82,
+      shellWeight: 0.88,
+      structure: 0.76,
+      transientEnergy: 0.02,
+      spectralFlux: 0.01,
+      radialDistance: 0.72,
+      rimCompression: 0.1,
+      boundaryMask: 0.2,
+      structureSignal: 0.9,
+      changeSignal: 0.01,
+    });
+    const reactive = deriveBeamMask({
+      contourShape: 0.82,
+      shellWeight: 0.88,
+      structure: 0.76,
+      transientEnergy: 0.56,
+      spectralFlux: 0.01,
+      radialDistance: 0.72,
+      rimCompression: 0.1,
+      boundaryMask: 0.2,
+      structureSignal: 0.9,
+      changeSignal: 0.01,
+    });
+
+    expect(reactive.latchedFogMask).toBeLessThan(latched.latchedFogMask * 0.2);
+    expect(reactive.beamMask).toBeGreaterThan(latched.beamMask);
   });
 
   it("applies a soft emission rolloff before beam peaks blow out", () => {
@@ -487,6 +579,30 @@ describe("field shaping", () => {
     expect(transientCrowding.hotCoreStart).toBeLessThan(
       sustainedCrowding.hotCoreStart,
     );
+  });
+
+  it("keeps white emission crowded during dense transients", () => {
+    const crowded = deriveModalCrowdingDensity({
+      rolledBeamDensity: 0.86,
+      dampedBodyDensity: 1.32,
+    });
+    const transientCrowding = deriveHotCoreCrowding({
+      ridgeConcentration: crowded.ridgeConcentration,
+      bodyCrowding: crowded.bodyCrowding,
+      transientEnergy: 0.86,
+    });
+    const highlight = deriveCrowdedHighlightMix({
+      hotCoreMix: 0.7,
+      whiteEmissionMix: 0.52,
+      hotCoreCrowding: transientCrowding.hotCoreCrowding,
+      whiteEmissionCrowding: transientCrowding.whiteEmissionCrowding,
+    });
+
+    expect(transientCrowding.hotCoreCrowding).toBeLessThan(
+      transientCrowding.whiteEmissionCrowding,
+    );
+    expect(highlight.crowdedHotCoreMix).toBeGreaterThan(0.48);
+    expect(highlight.crowdedWhiteEmissionMix).toBeLessThan(0.52 * 0.58);
   });
 
   it("reduces crowded white-emission mix before highlights desaturate", () => {
