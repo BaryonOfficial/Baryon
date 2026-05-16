@@ -28,6 +28,9 @@ export function createModalExcitationState(capacity = 16) {
     previousSignalBackboneSlots: new Float32Array(layerCapacity * 4),
     previousSignalDetailSlots: new Float32Array(layerCapacity * 4),
     previousShouldBuildSpectralLight: false,
+    detailMaturity: new Map(),
+    detailCouplingFrequencyHz: 0,
+    detailTailPresence: 0,
     diagnostics: {
       excitedModeCount: 0,
       distributedExcitation: 0,

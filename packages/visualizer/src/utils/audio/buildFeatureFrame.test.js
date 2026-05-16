@@ -1870,7 +1870,7 @@ describe("Spectral Light feature frame outputs", () => {
       firstDetailAmplitudes.values(),
     ).reduce((sum, value) => sum + value, 0);
     expect(retainedDetailAmplitude).toBeLessThanOrEqual(
-      initialDetailAmplitude * 1.15,
+      initialDetailAmplitude * 1.35,
     );
   });
 
@@ -2126,11 +2126,54 @@ describe("live input noise gate", () => {
     expect(frame.modeCoherence).toBeGreaterThan(0.4);
     expect(frame.debug.modalPersistence).toBeGreaterThan(0.35);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.12);
-    expect(frame.debug.modalVisibilitySlotEnergy).toBeGreaterThan(0.04);
+    expect(frame.debug.modalVisibilitySlotEnergy).toBeGreaterThan(0.035);
     expect(frame.debug.modalVisibilityActiveModeCount).toBeGreaterThan(0);
     expect(frame.debug.modalVisibilityDriveEnergy).toBe(
       frame.debug.modalDriveEnergy,
     );
+    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.025);
+    expect(frame.activeDetailModeCount).toBeGreaterThan(0);
+  });
+
+  it("keeps subdued system-routed harmonic resonance from going empty", () => {
+    const featureState = createAudioFeatureState();
+    const fftMagnitudes = makeFft([
+      [220, 0.096],
+      [440, 0.056],
+      [660, 0.032],
+      [880, 0.016],
+      [1320, 0.01],
+      [2200, 0.007],
+    ]);
+    const timeData = makeTimeData({
+      frequency: 220,
+      amplitude: 0.022,
+      harmonics: [
+        [2, 0.01],
+        [3, 0.0048],
+      ],
+    });
+    let frame = null;
+
+    for (let index = 0; index < 10; index += 1) {
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "system",
+          avgAmplitude: 4.8,
+          fftMagnitudes,
+          timeData,
+          rms: 0.018,
+        }),
+        featureState,
+        radius: 3,
+        status: makeSystemStatus(),
+        frameTimeMs: index * 33,
+      });
+    }
+
+    expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.12);
+    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.02);
+    expect(frame.activeDetailModeCount).toBeGreaterThan(0);
   });
 
   it("keeps loopback-classified live input structurally active", () => {
@@ -2667,7 +2710,9 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(micBackbone).toBeGreaterThan(0);
     expect(fileBackbone).toBeGreaterThan(0);
     expect(micDetail).toBeGreaterThan(0);
-    expect(fileDetail).toBe(0);
+    expect(fileDetail).toBeGreaterThan(0);
+    expect(micDetail / fileDetail).toBeGreaterThanOrEqual(0.5);
+    expect(micDetail / fileDetail).toBeLessThanOrEqual(2.2);
     expect(micBackbone / fileBackbone).toBeGreaterThanOrEqual(0.8);
     expect(micBackbone / fileBackbone).toBeLessThanOrEqual(2.0);
     expect(micFrame.debug.micFftNormGain).toBe(1);

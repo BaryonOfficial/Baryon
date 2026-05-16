@@ -70,6 +70,29 @@ function makeTimeData({
   return timeData;
 }
 
+function makeMixedTimeData({
+  partials,
+  amplitudeScale = 1,
+  sampleRate = SAMPLE_RATE,
+  fftSize = FFT_SIZE,
+}) {
+  const timeData = new Float32Array(fftSize);
+  let normalizer = 0;
+  for (const [, amplitude] of partials) {
+    normalizer += Math.abs(amplitude);
+  }
+  const safeNormalizer = Math.max(normalizer, 1e-6);
+  for (let index = 0; index < fftSize; index += 1) {
+    let sample = 0;
+    for (const [frequency, amplitude] of partials) {
+      sample +=
+        Math.sin((2 * Math.PI * frequency * index) / sampleRate) * amplitude;
+    }
+    timeData[index] = (sample / safeNormalizer) * amplitudeScale;
+  }
+  return timeData;
+}
+
 function createPreparedInputs({
   frameTimeMs,
   fftMagnitudes,
@@ -139,6 +162,17 @@ function countActiveSlotsLocal(slots) {
   return total;
 }
 
+function countSlotsAboveAmplitude(slots, minimumAmplitude) {
+  const slotCount = Math.floor((slots?.length ?? 0) / 4);
+  let total = 0;
+  for (let index = 0; index < slotCount; index += 1) {
+    if ((slots[index * 4 + 3] ?? 0) > minimumAmplitude) {
+      total += 1;
+    }
+  }
+  return total;
+}
+
 function readModeKeys(slots) {
   const keys = [];
   const slotCount = Math.floor((slots?.length ?? 0) / 4);
@@ -155,6 +189,92 @@ function readModeKeys(slots) {
 
 function hasNewModeKey(nextKeys, previousKeys) {
   return nextKeys.some((key) => !previousKeys.includes(key));
+}
+
+function readModeAmplitudeMap(slots) {
+  const amplitudes = new Map();
+  const slotCount = Math.floor((slots?.length ?? 0) / 4);
+  for (let index = 0; index < slotCount; index += 1) {
+    const amplitude = slots[index * 4 + 3] ?? 0;
+    if (amplitude <= 0) {
+      continue;
+    }
+    amplitudes.set(
+      `${slots[index * 4]}:${slots[index * 4 + 1]}:${slots[index * 4 + 2]}`,
+      amplitude,
+    );
+  }
+  return amplitudes;
+}
+
+function sumSharedModeAmplitudes(reference, candidate) {
+  let total = 0;
+  for (const [modeKey, amplitude] of candidate) {
+    if (reference.has(modeKey)) {
+      total += amplitude;
+    }
+  }
+  return total;
+}
+
+const RESONANT_STRIKE_PARTIALS = Object.freeze([
+  [196, 0.9],
+  [293, 0.76],
+  [432, 0.7],
+  [611, 0.58],
+  [832, 0.5],
+  [1180, 0.44],
+  [1860, 0.36],
+  [3100, 0.28],
+  [5200, 0.24],
+]);
+
+const RESONANT_SUSTAIN_PARTIALS = Object.freeze([
+  [196, 0.2],
+  [293, 0.17],
+  [432, 0.15],
+  [611, 0.13],
+  [832, 0.11],
+  [1180, 0.1],
+  [1860, 0.08],
+  [3100, 0.06],
+  [5200, 0.05],
+]);
+
+function scalePartials(partials, scale) {
+  return partials.map(([frequency, amplitude]) => [
+    frequency,
+    amplitude * scale,
+  ]);
+}
+
+function runModalFrame({
+  state,
+  frame,
+  partials,
+  avgAmplitude,
+  rms,
+  amplitudeScale,
+  performanceNow = () => frame,
+}) {
+  const inputs = createPreparedInputs({
+    frameTimeMs: frame * 33,
+    fftMagnitudes: makeFft(partials),
+    timeData: makeMixedTimeData({
+      partials,
+      amplitudeScale,
+    }),
+    avgAmplitude,
+    rms,
+  });
+  inputs.modalExcitationState = state;
+  const fastSignal = updateAudioFeatureFastSignalState(inputs);
+  return buildModalExcitationStructuralState({
+    preparedInputs: inputs,
+    fastSignalState: fastSignal,
+    existingState: state,
+    performanceNow,
+  });
 }
 
 function average(values) {
@@ -825,6 +945,450 @@ describe("modal excitation structural state", () => {
 
     expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBeGreaterThan(
       1,
+    );
+  });
+
+  it("keeps coherent bowl-like detail modes visible through low-transient sustain", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    for (let frame = 0; frame < 28; frame += 1) {
+      const isStrike = frame < 2;
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: isStrike
+          ? RESONANT_STRIKE_PARTIALS
+          : RESONANT_SUSTAIN_PARTIALS,
+        avgAmplitude: isStrike ? 42 : 14,
+        rms: isStrike ? 0.32 : 0.07,
+        amplitudeScale: isStrike ? 1 : 0.22,
+      });
+    }
+
+    expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.5);
+    expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.45);
+    expect(
+      countActiveSlotsLocal(structural.signalDetailSlotsSource),
+    ).toBeGreaterThan(0);
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0.16);
+    expect(
+      countActiveSlotsLocal(structural.detailSlotsSource),
+    ).toBeGreaterThanOrEqual(4);
+  });
+
+  it("matures bowl-like detail structure during the first sustained ring", () => {
+    const state = createModalExcitationState(16);
+    const sustainedRingFrames = [];
+
+    for (let frame = 0; frame < 10; frame += 1) {
+      const isStrike = frame < 2;
+      const structural = runModalFrame({
+        state,
+        frame,
+        partials: isStrike
+          ? RESONANT_STRIKE_PARTIALS
+          : RESONANT_SUSTAIN_PARTIALS,
+        avgAmplitude: isStrike ? 42 : 14,
+        rms: isStrike ? 0.32 : 0.07,
+        amplitudeScale: isStrike ? 1 : 0.22,
+      });
+      if (frame >= 6) {
+        sustainedRingFrames.push({
+          meaningfulDetailCount: countSlotsAboveAmplitude(
+            structural.detailSlotsSource,
+            0.025,
+          ),
+          detailAmplitude: sumAmplitudes(structural.detailSlotsSource),
+        });
+      }
+    }
+
+    expect(
+      sustainedRingFrames.every(
+        ({ meaningfulDetailCount }) => meaningfulDetailCount >= 4,
+      ),
+    ).toBe(true);
+    expect(
+      Math.min(
+        ...sustainedRingFrames.map(({ detailAmplitude }) => detailAmplitude),
+      ),
+    ).toBeGreaterThan(0.16);
+    expect(sustainedRingFrames.at(-1).detailAmplitude).toBeGreaterThan(0.24);
+  });
+
+  it("blooms resonant detail after the strike seeds stable modes", () => {
+    const state = createModalExcitationState(16);
+    const frames = new Map();
+
+    for (let frame = 0; frame < 14; frame += 1) {
+      const isStrike = frame < 2;
+      const structural = runModalFrame({
+        state,
+        frame,
+        partials: isStrike
+          ? RESONANT_STRIKE_PARTIALS
+          : RESONANT_SUSTAIN_PARTIALS,
+        avgAmplitude: isStrike ? 42 : 14,
+        rms: isStrike ? 0.32 : 0.07,
+        amplitudeScale: isStrike ? 1 : 0.22,
+      });
+      if ([2, 7, 12].includes(frame)) {
+        frames.set(frame, {
+          amplitude: sumAmplitudes(structural.detailSlotsSource),
+          meaningfulDetailCount: countSlotsAboveAmplitude(
+            structural.detailSlotsSource,
+            0.025,
+          ),
+        });
+      }
+    }
+
+    const seeded = frames.get(2);
+    const opening = frames.get(7);
+    const mature = frames.get(12);
+    expect(opening.amplitude).toBeGreaterThan(seeded.amplitude);
+    expect(mature.amplitude).toBeGreaterThan(seeded.amplitude * 1.35);
+    expect(mature.meaningfulDetailCount).toBeGreaterThanOrEqual(5);
+  });
+
+  it("admits high-order detail for low-level coherent routed resonance", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    for (let frame = 0; frame < 14; frame += 1) {
+      const decay =
+        frame < 2 ? 1 : Math.max(0.42, Math.exp(-(frame - 2) / 18));
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: [
+          [220, 0.24 * decay],
+          [440, 0.14 * decay],
+          [660, 0.08 * decay],
+          [880, 0.04 * decay],
+          [1320, 0.025 * decay],
+          [2200, 0.018 * decay],
+        ],
+        avgAmplitude: Math.max(2, 12 * decay),
+        rms: Math.max(0.006, 0.045 * decay),
+        amplitudeScale: Math.max(0.04, 0.055 * decay),
+      });
+    }
+
+    expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.8);
+    expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.5);
+    expect(
+      structural.structuralMetrics.highOrderModalEnergy,
+    ).toBeGreaterThan(0);
+    expect(
+      countActiveSlotsLocal(structural.signalDetailSlotsSource),
+    ).toBeGreaterThan(0);
+    expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBeGreaterThan(
+      0,
+    );
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0.035);
+  });
+
+  it("scales retained quiet-ring detail with the fading source", () => {
+    const state = createModalExcitationState(16);
+    const snapshots = [];
+
+    for (let frame = 0; frame < 48; frame += 1) {
+      const scale =
+        frame < 2 ? 1 : Math.max(0.012, Math.exp(-(frame - 2) / 22) * 0.24);
+      const structural = runModalFrame({
+        state,
+        frame,
+        partials: scalePartials(RESONANT_STRIKE_PARTIALS, scale),
+        avgAmplitude: Math.max(1.4, 36 * scale),
+        rms: Math.max(0.005, 0.26 * scale),
+        amplitudeScale: frame < 2 ? 1 : scale,
+      });
+      if ([20, 30, 44].includes(frame)) {
+        snapshots.push({
+          frame,
+          signalDetail: sumAmplitudes(structural.signalDetailSlotsSource),
+          visibleDetail: sumAmplitudes(structural.detailSlotsSource),
+          highOrderModalEnergy:
+            structural.structuralMetrics.highOrderModalEnergy,
+        });
+      }
+    }
+
+    const [earlyTail, midTail, lateTail] = snapshots;
+    expect(earlyTail.signalDetail).toBeGreaterThan(0);
+    expect(midTail.signalDetail).toBeGreaterThan(0);
+    expect(lateTail.signalDetail).toBeGreaterThan(0);
+    expect(midTail.signalDetail).toBeLessThan(earlyTail.signalDetail * 0.9);
+    expect(lateTail.signalDetail).toBeLessThan(midTail.signalDetail * 0.9);
+    expect(lateTail.visibleDetail).toBeLessThan(earlyTail.visibleDetail);
+    expect(lateTail.highOrderModalEnergy).toBeGreaterThan(0);
+  });
+
+  it("deblooms a coherent ring by shrinking the same modal structure", () => {
+    const state = createModalExcitationState(16);
+    const snapshots = new Map();
+
+    for (let frame = 0; frame < 52; frame += 1) {
+      const scale =
+        frame < 2 ? 1 : Math.max(0.012, Math.exp(-(frame - 2) / 22) * 0.24);
+      const structural = runModalFrame({
+        state,
+        frame,
+        partials: scalePartials(RESONANT_STRIKE_PARTIALS, scale),
+        avgAmplitude: Math.max(1.4, 36 * scale),
+        rms: Math.max(0.005, 0.26 * scale),
+        amplitudeScale: frame < 2 ? 1 : scale,
+      });
+      if ([12, 36, 48].includes(frame)) {
+        snapshots.set(frame, {
+          amplitude: sumAmplitudes(structural.detailSlotsSource),
+          modeAmplitudes: readModeAmplitudeMap(structural.detailSlotsSource),
+          highOrderModalEnergy:
+            structural.structuralMetrics.highOrderModalEnergy,
+        });
+      }
+    }
+
+    const open = snapshots.get(12);
+    const late = snapshots.get(36);
+    const tail = snapshots.get(48);
+    const lateSharedAmplitude = sumSharedModeAmplitudes(
+      open.modeAmplitudes,
+      late.modeAmplitudes,
+    );
+    const tailSharedAmplitude = sumSharedModeAmplitudes(
+      open.modeAmplitudes,
+      tail.modeAmplitudes,
+    );
+
+    expect(lateSharedAmplitude).toBeGreaterThan(open.amplitude * 0.28);
+    expect(late.amplitude).toBeLessThan(open.amplitude * 0.74);
+    expect(tailSharedAmplitude).toBeGreaterThan(0);
+    expect(tail.amplitude).toBeLessThan(open.amplitude * 0.45);
+    expect(tail.highOrderModalEnergy).toBeGreaterThan(0);
+  });
+
+  it("fades coherent bowl-like detail tails smoothly before hard silence", () => {
+    const state = createModalExcitationState(16);
+    const fadeFrames = [];
+    let structural = null;
+
+    for (let frame = 0; frame < 40; frame += 1) {
+      const isStrike = frame < 2;
+      const fadeScale = isStrike
+        ? 1
+        : Math.max(0.015, Math.exp(-(frame - 2) / 18) * 0.24);
+      const partials = scalePartials(RESONANT_STRIKE_PARTIALS, fadeScale);
+      const avgAmplitude = Math.max(2, 36 * fadeScale);
+      const rms = Math.max(0.006, 0.26 * fadeScale);
+      structural = runModalFrame({
+        state,
+        frame,
+        partials,
+        avgAmplitude,
+        rms,
+        amplitudeScale: isStrike ? 1 : fadeScale,
+      });
+      fadeFrames.push({
+        avgAmplitude,
+        rms,
+        detailAmplitude: sumAmplitudes(structural.detailSlotsSource),
+      });
+    }
+
+    for (let index = 1; index < fadeFrames.length; index += 1) {
+      const previous = fadeFrames[index - 1];
+      const current = fadeFrames[index];
+      if (
+        previous.detailAmplitude <= 0.04 ||
+        current.avgAmplitude <= 1 ||
+        current.rms <= 0.004
+      ) {
+        continue;
+      }
+      expect(current.detailAmplitude).toBeGreaterThanOrEqual(
+        previous.detailAmplitude * 0.6,
+      );
+    }
+    expect(
+      fadeFrames.slice(16, 21).some((frame) => frame.detailAmplitude > 0),
+    ).toBe(true);
+
+    const preSilenceDetailAmplitude = sumAmplitudes(
+      structural.detailSlotsSource,
+    );
+    const silentFft = new Float32Array(BIN_COUNT);
+    const silentTimeData = new Float32Array(FFT_SIZE);
+
+    for (let frame = 40; frame < 46; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: silentFft,
+        timeData: silentTimeData,
+        avgAmplitude: 0,
+        rms: 0,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeLessThan(
+      Math.max(preSilenceDetailAmplitude * 0.08, 0.001),
+    );
+  });
+
+  it("retains coherent quiet-ring detail modes above hard silence", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    for (let frame = 0; frame < 45; frame += 1) {
+      const scale =
+        frame < 2 ? 1 : Math.max(0.012, Math.exp(-(frame - 2) / 22) * 0.24);
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: scalePartials(RESONANT_STRIKE_PARTIALS, scale),
+        avgAmplitude: Math.max(1.4, 36 * scale),
+        rms: Math.max(0.005, 0.26 * scale),
+        amplitudeScale: frame < 2 ? 1 : scale,
+      });
+    }
+
+    expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.65);
+    expect(structural.structuralMetrics.modalDriveEnergy).toBeGreaterThan(0.004);
+    expect(
+      structural.structuralMetrics.highOrderModalEnergy,
+    ).toBeGreaterThan(0);
+    expect(
+      countActiveSlotsLocal(structural.signalDetailSlotsSource),
+    ).toBeGreaterThan(0);
+    expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("keeps low system hum from becoming retained detail structure", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    for (let frame = 0; frame < 40; frame += 1) {
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: [
+          [60, 0.055],
+          [120, 0.025],
+          [180, 0.012],
+        ],
+        avgAmplitude: 5,
+        rms: 0.012,
+        amplitudeScale: 0.045,
+      });
+    }
+
+    expect(structural.structuralMetrics.highOrderModalEnergy).toBe(0);
+    expect(countActiveSlotsLocal(structural.signalDetailSlotsSource)).toBe(0);
+    expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBe(0);
+  });
+
+  it("keeps dense sustained music bounded while admitting fresh detail", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    const densePartials = [
+      [110, 0.76],
+      [165, 0.58],
+      [220, 0.62],
+      [277, 0.48],
+      [330, 0.42],
+      [440, 0.38],
+      [660, 0.32],
+      [990, 0.24],
+      [3300, 0.22],
+      [5200, 0.18],
+      [7600, 0.16],
+    ];
+
+    for (let frame = 0; frame < 18; frame += 1) {
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: densePartials,
+        avgAmplitude: 32,
+        rms: 0.2,
+        amplitudeScale: 0.42,
+      });
+    }
+    const sustainedKeys = readModeKeys(structural.detailSlotsSource);
+
+    for (let frame = 18; frame < 21; frame += 1) {
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: [
+          ...densePartials.slice(0, 8),
+          [10800, 0.92],
+        ],
+        avgAmplitude: 34,
+        rms: 0.22,
+        amplitudeScale: 0.44,
+      });
+    }
+
+    expect(
+      countActiveSlotsLocal(structural.detailSlotsSource),
+    ).toBeLessThanOrEqual(8);
+    expect(
+      sumAmplitudes(structural.detailSlotsSource),
+    ).toBeLessThanOrEqual(sumAmplitudes(structural.signalDetailSlotsSource));
+    expect(
+      hasNewModeKey(readModeKeys(structural.detailSlotsSource), sustainedKeys),
+    ).toBe(true);
+  });
+
+  it("does not promote weak broadband noise into sustained detail visibility", () => {
+    const state = createModalExcitationState(16);
+    const random = createDeterministicRandom(174);
+    let structural = null;
+
+    for (let frame = 0; frame < 28; frame += 1) {
+      const peaks = Array.from({ length: 18 }, (_, index) => [
+        500 + index * 430,
+        0.04 + random() * 0.03,
+      ]);
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft(peaks),
+        timeData: makeMixedTimeData({
+          partials: peaks,
+          amplitudeScale: 0.08,
+        }),
+        avgAmplitude: 8,
+        rms: 0.025,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeLessThan(0.02);
+    expect(
+      countActiveSlotsLocal(structural.detailSlotsSource),
+    ).toBeLessThanOrEqual(
+      countActiveSlotsLocal(structural.signalDetailSlotsSource),
     );
   });
 
