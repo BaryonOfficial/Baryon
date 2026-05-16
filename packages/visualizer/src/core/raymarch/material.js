@@ -98,6 +98,19 @@ import {
   SHELL_WEIGHT_MAX,
   SHELL_WEIGHT_MIN,
   SHELL_WEIGHT_START,
+  STRUCTURE_AWARE_EMISSION_BODY_SUPPRESSION,
+  STRUCTURE_AWARE_EMISSION_CONTOUR_WEIGHT,
+  STRUCTURE_AWARE_EMISSION_CROWDING_END,
+  STRUCTURE_AWARE_EMISSION_CROWDING_START,
+  STRUCTURE_AWARE_EMISSION_DETAIL_GATE_END,
+  STRUCTURE_AWARE_EMISSION_DETAIL_GATE_START,
+  STRUCTURE_AWARE_EMISSION_HIGHLIGHT_WEIGHT,
+  STRUCTURE_AWARE_EMISSION_MIN_GAIN,
+  STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_END,
+  STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_START,
+  STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_WEIGHT,
+  STRUCTURE_AWARE_EMISSION_RIDGE_WEIGHT,
+  STRUCTURE_AWARE_EMISSION_TRANSIENT_RELIEF,
   WHITE_EMISSION_CROWDING_REDUCTION,
   WHITE_EMISSION_CROWDING_TRANSIENT_RELIEF,
   MODAL_VISIBILITY_DENSITY_FLOOR,
@@ -933,6 +946,60 @@ function createScatteringNode({
         float(COLOR_BLEND_END),
         contourShape,
       );
+      const structureDetailGate = smoothstep(
+        float(STRUCTURE_AWARE_EMISSION_DETAIL_GATE_START),
+        float(STRUCTURE_AWARE_EMISSION_DETAIL_GATE_END),
+        /** @type {any} */ (ridgeConcentration),
+      );
+      const structureRidgeLock = smoothstep(
+        float(STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_START),
+        float(STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_END),
+        /** @type {any} */ (ridgeConcentration),
+      );
+      const structureFilamentEligibility = clamp(
+        ridgeConcentration
+          .mul(float(STRUCTURE_AWARE_EMISSION_RIDGE_WEIGHT))
+          .add(
+            contourMix
+              .mul(float(STRUCTURE_AWARE_EMISSION_CONTOUR_WEIGHT))
+              .mul(structureDetailGate),
+          )
+          .add(
+            highlightMask
+              .mul(float(STRUCTURE_AWARE_EMISSION_HIGHLIGHT_WEIGHT))
+              .mul(structureDetailGate),
+          )
+          .add(
+            structureRidgeLock.mul(
+              float(STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_WEIGHT),
+            ),
+          ),
+        float(0.0),
+        float(1.0),
+      );
+      const structureBodyCrowdingGate = smoothstep(
+        float(STRUCTURE_AWARE_EMISSION_CROWDING_START),
+        float(STRUCTURE_AWARE_EMISSION_CROWDING_END),
+        /** @type {any} */ (bodyCrowding),
+      );
+      const structureTransientRelief = clamp(
+        float(1.0).sub(
+          uTransientEnergy.mul(float(STRUCTURE_AWARE_EMISSION_TRANSIENT_RELIEF)),
+        ),
+        float(0.0),
+        float(1.0),
+      );
+      const structureBodySuppression = structureBodyCrowdingGate
+        .mul(float(1.0).sub(structureFilamentEligibility))
+        .mul(structureTransientRelief);
+      const structureAwareEmissionGain = max(
+        float(STRUCTURE_AWARE_EMISSION_MIN_GAIN),
+        float(1.0).sub(
+          structureBodySuppression.mul(
+            float(STRUCTURE_AWARE_EMISSION_BODY_SUPPRESSION),
+          ),
+        ),
+      );
       // Modal coherence warms color; rapid change cools it.
       // spectralColorBiasHintOffset is pre-computed above the Fn.
       const spectralColorBias = clamp(
@@ -1138,7 +1205,7 @@ function createScatteringNode({
         });
       }
 
-      return volumeColor.mul(stabilizedDensity);
+      return volumeColor.mul(stabilizedDensity).mul(structureAwareEmissionGain);
     },
   );
 }

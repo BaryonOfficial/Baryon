@@ -173,9 +173,15 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
         return snapshot;
       }
 
+      const sourceControls = preset.builtIn
+        ? {
+            ...controlsRef.current,
+            ...preset.controls,
+          }
+        : preset.controls;
       Object.assign(
         controlsRef.current,
-        deserializeControls(preset.controls, CONTROL_DEFINITIONS),
+        deserializeControls(sourceControls, CONTROL_DEFINITIONS),
       );
       state.selectedPresetName = name;
       return syncControls(controlsRef.current, {

@@ -12,6 +12,10 @@ import { getDefaultAudioSession } from "@baryon/visualizer/audio";
 import { RENDER_DEFAULTS } from "@baryon/visualizer/defaults";
 import { DEVTOOLS_ENABLED } from "../../devtools/config.js";
 import {
+  BARYON_UI_INTERACTION_EVENT,
+  UI_INTERACTION_ADAPTIVE_SUPPRESSION_MS,
+} from "../uiInteractionEvents.js";
+import {
   markBaryonTestRuntimeReady,
   resetBaryonTestReady,
 } from "../../devtools/testReady.js";
@@ -152,6 +156,8 @@ export function useBaryonVisualizer({
   const renderProfileRef = useRef(renderProfile);
   renderProfileRef.current = renderProfile;
   const renderProfileKeyRef = useRef(getRenderQualityProfileKey(renderProfile));
+  const uiInteractionUntilMsRef = useRef(0);
+  const latestUiInteractionRef = useRef({ source: null, kind: null });
   const lastObservedLiveControlSignalVersionRef = useRef(
     liveControlSignalRef?.current?.version ?? 0,
   );
@@ -262,6 +268,35 @@ export function useBaryonVisualizer({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [runtimeDiagnosticsRef]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleUiInteraction = (event) => {
+      const nowMs = getWallTimeMs();
+      uiInteractionUntilMsRef.current = Math.max(
+        uiInteractionUntilMsRef.current,
+        nowMs + UI_INTERACTION_ADAPTIVE_SUPPRESSION_MS,
+      );
+      latestUiInteractionRef.current = {
+        source: event?.detail?.source ?? null,
+        kind: event?.detail?.kind ?? null,
+      };
+    };
+
+    window.addEventListener(
+      BARYON_UI_INTERACTION_EVENT,
+      handleUiInteraction,
+    );
+    return () => {
+      window.removeEventListener(
+        BARYON_UI_INTERACTION_EVENT,
+        handleUiInteraction,
+      );
+    };
+  }, []);
 
   useEffect(() => {
     if (!enableControlEventSync) {
@@ -461,6 +496,16 @@ export function useBaryonVisualizer({
         renderScale: currentEffectiveRenderScale,
       },
     );
+    const uiInteractionActive = uiInteractionUntilMsRef.current > getWallTimeMs();
+    if (runtimeDiagnostics.uiInteraction) {
+      runtimeDiagnostics.uiInteraction.active = uiInteractionActive;
+      runtimeDiagnostics.uiInteraction.holdUntilWallTimeMs =
+        uiInteractionUntilMsRef.current;
+      runtimeDiagnostics.uiInteraction.lastSource =
+        latestUiInteractionRef.current.source;
+      runtimeDiagnostics.uiInteraction.lastKind =
+        latestUiInteractionRef.current.kind;
+    }
     if (controls.performanceHudEnabled) {
       publishPerformanceHudSnapshot({
         runtimeDiagnostics,

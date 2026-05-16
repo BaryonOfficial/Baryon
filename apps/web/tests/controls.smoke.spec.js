@@ -1158,6 +1158,158 @@ test.describe("Baryon control smoke", () => {
     expect(selectStyles.optionBackgroundColor).toBe("rgb(28, 21, 16)");
   });
 
+  test("applies advanced edits after loading a built-in visual preset", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await setControl(page, "renderQualityPreset", "max-quality");
+    await page.getByTestId("advanced-controls-trigger").click();
+    await page.getByLabel("Load preset").selectOption("Calibrated Clarity");
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControls?.getState?.().renderQualityPreset,
+        ),
+      )
+      .toBe("max-quality");
+
+    const glowThresholdInput = page.getByLabel("Glow Threshold value");
+    if (!(await glowThresholdInput.isVisible())) {
+      await page.getByRole("button", { name: /Display/ }).click();
+    }
+    await glowThresholdInput.fill("0.41");
+    await glowThresholdInput.blur();
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControls?.getState?.().bloomThreshold ?? null,
+        ),
+      )
+      .toBe(0.41);
+    const expectedEffectiveBloomThreshold = await page.evaluate(() => {
+      const controls = window.__baryonControls?.getState?.() ?? {};
+      const threshold = controls.bloomThreshold ?? 0;
+      const bloomResponseBias = Math.max(0, controls.bloomResponseBias ?? 0);
+      return threshold + bloomResponseBias * 0.1;
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const controls = window.__baryonControls?.getState?.() ?? {};
+          const threshold = controls.bloomThreshold ?? 0;
+          const bloomResponseBias = Math.max(
+            0,
+            controls.bloomResponseBias ?? 0,
+          );
+          return window.__baryonControlState?.bloom?.threshold ===
+            threshold + bloomResponseBias * 0.1
+            ? window.__baryonControlState.bloom.threshold
+            : null;
+        }),
+      )
+      .toBeCloseTo(expectedEffectiveBloomThreshold, 6);
+  });
+
+  test("scrolling advanced controls does not step focused numeric controls", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.getByTestId("advanced-controls-trigger").click();
+    const densityInput = page.getByLabel("Density value");
+    if (!(await densityInput.isVisible())) {
+      await page.getByRole("button", { name: /Shape/ }).click();
+    }
+    await densityInput.scrollIntoViewIfNeeded();
+    await densityInput.focus();
+    await expect(densityInput).toBeFocused();
+
+    const beforeValue = await densityInput.inputValue();
+    const beforeControlValue = await page.evaluate(
+      () => window.__baryonControls?.getState?.().densityGain ?? null,
+    );
+    const box = await densityInput.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 500);
+
+    await expect(densityInput).not.toBeFocused();
+    await expect(densityInput).toHaveValue(beforeValue);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControls?.getState?.().densityGain ?? null,
+        ),
+      )
+      .toBe(beforeControlValue);
+  });
+
+  test("scrolling advanced controls does not cycle the focused preset selector", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.getByTestId("advanced-controls-trigger").click();
+    const loadPresetSelect = page.getByLabel("Load preset");
+    await expect(loadPresetSelect).toBeVisible();
+    await loadPresetSelect.selectOption("Calibrated Clarity");
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControls?.getState?.().densityGain ?? null,
+        ),
+      )
+      .toBe(2.85);
+
+    await loadPresetSelect.focus();
+    await expect(loadPresetSelect).toBeFocused();
+    const beforeValue = await loadPresetSelect.inputValue();
+    const beforeControls = await page.evaluate(() => {
+      const controls = window.__baryonControls?.getState?.() ?? {};
+      return {
+        bloomThreshold: controls.bloomThreshold,
+        densityGain: controls.densityGain,
+        renderQualityPreset: controls.renderQualityPreset,
+      };
+    });
+
+    const box = await loadPresetSelect.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 500);
+
+    await expect(loadPresetSelect).not.toBeFocused();
+    await expect(loadPresetSelect).toHaveValue(beforeValue);
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const controls = window.__baryonControls?.getState?.() ?? {};
+          return {
+            bloomThreshold: controls.bloomThreshold,
+            densityGain: controls.densityGain,
+            renderQualityPreset: controls.renderQualityPreset,
+          };
+        }),
+      )
+      .toEqual(beforeControls);
+  });
+
   test("restores focus to the trigger when advanced controls close from a focused slider", async ({
     page,
     browserName,

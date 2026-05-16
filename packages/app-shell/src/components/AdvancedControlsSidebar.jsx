@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveAdvancedControlsHelpPosition } from "./advancedControlsHelpPosition.js";
+import {
+  UI_INTERACTION_SOURCES,
+  dispatchBaryonUiInteraction,
+} from "./uiInteractionEvents.js";
 
 const CLOSE_HELP_DELAY_MS = 110;
+const OPEN_HELP_DELAY_MS = 180;
 const INFO_LINKS = [
   {
     href: "https://github.com/BaryonOfficial/Baryon",
@@ -109,6 +114,8 @@ const CSS = `
     visibility 220ms ease;
   pointer-events: auto;
   overflow: hidden;
+  contain: layout paint style;
+  transform-style: preserve-3d;
 }
 
 .baryon-controls-shell[data-open="true"] {
@@ -207,6 +214,11 @@ const CSS = `
   flex: 1;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  contain: layout paint style;
+  will-change: scroll-position;
+  transform: translateZ(0);
   display: flex;
   flex-direction: column;
   gap: 0.28rem;
@@ -960,6 +972,42 @@ function HelpIcon() {
   );
 }
 
+function noteAdvancedControlsInteraction(kind = "panel") {
+  dispatchBaryonUiInteraction({
+    source: UI_INTERACTION_SOURCES.advancedControls,
+    kind,
+  });
+}
+
+function usePassiveWheelBlur({ beforeBlur = null } = {}) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) {
+      return undefined;
+    }
+
+    const handleWheel = () => {
+      beforeBlur?.();
+      node.blur();
+    };
+
+    node.addEventListener("wheel", handleWheel, { passive: true });
+    return () => {
+      node.removeEventListener("wheel", handleWheel);
+    };
+  }, [beforeBlur]);
+
+  return ref;
+}
+
+function PassiveWheelBlurSelect(props) {
+  const selectRef = usePassiveWheelBlur();
+
+  return <select ref={selectRef} {...props} />;
+}
+
 function ControlHelpTrigger({
   definition,
   isOpen,
@@ -1011,6 +1059,13 @@ function SliderWithNumberInput({ controlId, definition, value, onChange }) {
 
   // Local draft state lets the user type partial values without interruption
   const [draft, setDraft] = useState(null);
+  const skipBlurCommitRef = useRef(false);
+  const sliderRef = usePassiveWheelBlur();
+  const numberInputRef = usePassiveWheelBlur({
+    beforeBlur: useCallback(() => {
+      skipBlurCommitRef.current = true;
+    }, []),
+  });
 
   // When the slider (or an external update) changes the committed value,
   // discard any stale draft so the field shows the new value
@@ -1029,6 +1084,7 @@ function SliderWithNumberInput({ controlId, definition, value, onChange }) {
   return (
     <span className="baryon-controls-slider-row">
       <input
+        ref={sliderRef}
         aria-label={sliderAriaLabel}
         className="baryon-controls-slider"
         type="range"
@@ -1042,6 +1098,7 @@ function SliderWithNumberInput({ controlId, definition, value, onChange }) {
         }}
       />
       <input
+        ref={numberInputRef}
         id={controlId}
         aria-label={numberInputAriaLabel}
         className="baryon-controls-number-input"
@@ -1057,7 +1114,14 @@ function SliderWithNumberInput({ controlId, definition, value, onChange }) {
             onChange(clampValue(parsed));
           }
         }}
-        onBlur={(event) => commitDraft(event.target.value)}
+        onBlur={(event) => {
+          if (skipBlurCommitRef.current) {
+            skipBlurCommitRef.current = false;
+            setDraft(null);
+            return;
+          }
+          commitDraft(event.target.value);
+        }}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             commitDraft(event.currentTarget.value);
@@ -1187,7 +1251,7 @@ function ControlField({
           </label>
           {helpTrigger}
         </div>
-        <select
+        <PassiveWheelBlurSelect
           id={controlId}
           aria-label={definition.label}
           className="baryon-controls-select"
@@ -1199,7 +1263,7 @@ function ControlField({
               {label}
             </option>
           ))}
-        </select>
+        </PassiveWheelBlurSelect>
       </div>
     );
   }
@@ -1351,6 +1415,7 @@ export default function AdvancedControlsSidebar({
   };
   const helpTriggerRefs = useRef(new Map());
   const helpOverlayRef = useRef(null);
+  const helpOpenTimerRef = useRef(null);
   const helpCloseTimerRef = useRef(null);
   const shellRef = useRef(null);
   const scrollRef = useRef(null);
@@ -1395,6 +1460,13 @@ export default function AdvancedControlsSidebar({
     ? (helpDefinitions.get(activeHelpKey) ?? null)
     : null;
 
+  const clearPendingHelpOpen = useCallback(() => {
+    if (helpOpenTimerRef.current !== null) {
+      window.clearTimeout(helpOpenTimerRef.current);
+      helpOpenTimerRef.current = null;
+    }
+  }, []);
+
   const clearPendingHelpClose = useCallback(() => {
     if (helpCloseTimerRef.current !== null) {
       window.clearTimeout(helpCloseTimerRef.current);
@@ -1403,35 +1475,51 @@ export default function AdvancedControlsSidebar({
   }, []);
 
   const closeHelp = useCallback(() => {
+    clearPendingHelpOpen();
     clearPendingHelpClose();
     setActiveHelpKey("");
     setActiveHelpPosition(null);
-  }, [clearPendingHelpClose]);
+  }, [clearPendingHelpClose, clearPendingHelpOpen]);
 
   const scheduleHelpClose = useCallback(() => {
+    clearPendingHelpOpen();
     clearPendingHelpClose();
     helpCloseTimerRef.current = window.setTimeout(() => {
       helpCloseTimerRef.current = null;
       setActiveHelpKey("");
       setActiveHelpPosition(null);
     }, CLOSE_HELP_DELAY_MS);
-  }, [clearPendingHelpClose]);
+  }, [clearPendingHelpClose, clearPendingHelpOpen]);
 
   const openHelp = useCallback(
     (key) => {
+      clearPendingHelpOpen();
       clearPendingHelpClose();
       setActiveHelpKey((current) => (current === key ? current : key));
     },
-    [clearPendingHelpClose],
+    [clearPendingHelpClose, clearPendingHelpOpen],
+  );
+
+  const scheduleHelpOpen = useCallback(
+    (key) => {
+      clearPendingHelpOpen();
+      clearPendingHelpClose();
+      helpOpenTimerRef.current = window.setTimeout(() => {
+        helpOpenTimerRef.current = null;
+        setActiveHelpKey((current) => (current === key ? current : key));
+      }, OPEN_HELP_DELAY_MS);
+    },
+    [clearPendingHelpClose, clearPendingHelpOpen],
   );
 
   const toggleHelp = useCallback(
     (key) => {
+      clearPendingHelpOpen();
       clearPendingHelpClose();
       setActiveHelpPosition(null);
       setActiveHelpKey((current) => (current === key ? "" : key));
     },
-    [clearPendingHelpClose],
+    [clearPendingHelpClose, clearPendingHelpOpen],
   );
 
   const registerHelpTrigger = useCallback((key, node) => {
@@ -1576,25 +1664,36 @@ export default function AdvancedControlsSidebar({
 
     refreshHelpPosition();
 
-    const handleViewportChange = () => {
-      refreshHelpPosition();
-    };
-
-    window.addEventListener("resize", handleViewportChange);
-    window.addEventListener("scroll", handleViewportChange, true);
+    window.addEventListener("resize", refreshHelpPosition);
 
     return () => {
-      window.removeEventListener("resize", handleViewportChange);
-      window.removeEventListener("scroll", handleViewportChange, true);
+      window.removeEventListener("resize", refreshHelpPosition);
     };
   }, [activeHelpKey, refreshHelpPosition]);
 
   useEffect(
     () => () => {
+      clearPendingHelpOpen();
       clearPendingHelpClose();
     },
-    [clearPendingHelpClose],
+    [clearPendingHelpClose, clearPendingHelpOpen],
   );
+
+  useEffect(() => {
+    const scrollNode = scrollRef.current;
+    if (!isOpen || !scrollNode) {
+      return undefined;
+    }
+
+    const handleWheel = () => {
+      noteAdvancedControlsInteraction("scroll");
+    };
+
+    scrollNode.addEventListener("wheel", handleWheel, { passive: true });
+    return () => {
+      scrollNode.removeEventListener("wheel", handleWheel);
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     const shell = shellRef.current;
@@ -1620,7 +1719,7 @@ export default function AdvancedControlsSidebar({
 
   const helpEventHandlers = {
     onHelpPointerEnter: (key) => {
-      if (hasHoverSupport) openHelp(key);
+      if (hasHoverSupport) scheduleHelpOpen(key);
     },
     onHelpPointerLeave: () => {
       if (hasHoverSupport) scheduleHelpClose();
@@ -1695,7 +1794,18 @@ export default function AdvancedControlsSidebar({
             </div>
           ) : null}
 
-          <div ref={scrollRef} className="baryon-controls-scroll">
+          <div
+            ref={scrollRef}
+            className="baryon-controls-scroll"
+            onPointerEnter={() => noteAdvancedControlsInteraction("hover")}
+            onPointerDownCapture={() =>
+              noteAdvancedControlsInteraction("pointer")
+            }
+            onFocusCapture={() => noteAdvancedControlsInteraction("focus")}
+            onKeyDownCapture={() =>
+              noteAdvancedControlsInteraction("keyboard")
+            }
+          >
             {(!isCompactInspector || activeCompactSection?.includePresets) && (
               <section className="baryon-controls-presets">
                 <p className="baryon-controls-section-label">Presets</p>
@@ -1732,7 +1842,7 @@ export default function AdvancedControlsSidebar({
                   <span className="baryon-controls-card-label">
                     Load preset
                   </span>
-                  <select
+                  <PassiveWheelBlurSelect
                     aria-label="Load preset"
                     className="baryon-controls-select"
                     value={selectedPresetName}
@@ -1744,7 +1854,7 @@ export default function AdvancedControlsSidebar({
                         {preset.name}
                       </option>
                     ))}
-                  </select>
+                  </PassiveWheelBlurSelect>
                 </label>
                 <button
                   type="button"

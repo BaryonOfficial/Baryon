@@ -17,6 +17,8 @@ import {
   LATCHED_FOG_BEAM_REDUCTION,
   LATCHED_FOG_BODY_REDUCTION,
   MODAL_CROWDING_BODY_COMPRESSION,
+  STRUCTURE_AWARE_EMISSION_BODY_SUPPRESSION,
+  STRUCTURE_AWARE_EMISSION_MIN_GAIN,
   WHITE_EMISSION_CROWDING_REDUCTION,
   SHELL_WEIGHT_MAX,
   SHELL_WEIGHT_MIN,
@@ -35,6 +37,7 @@ import {
   deriveModalCrowdingDensity,
   deriveShellWeight,
   deriveStableContourAccent,
+  deriveStructureAwareEmissionGain,
   deriveSpectralColorBiasOffset,
   deriveVisibleStructure,
   deriveVisibleDensity,
@@ -487,6 +490,91 @@ describe("field shaping", () => {
     expect(ridge.bodyCompression).toBeGreaterThan(0.9);
     expect(ridge.localDensity).toBeGreaterThan(additiveDensity * 0.99);
     expect(ridge.rolledBeamDensity).toBeCloseTo(1.1);
+  });
+
+  it("keeps low-threshold emission available to ridges while suppressing broad body fill", () => {
+    const bodyFill = deriveStructureAwareEmissionGain({
+      ridgeConcentration: 0.18,
+      bodyCrowding: 1.05,
+      contourMix: 0.22,
+      highlightMask: 0.12,
+      transientEnergy: 0.08,
+    });
+    const filament = deriveStructureAwareEmissionGain({
+      ridgeConcentration: 0.92,
+      bodyCrowding: 1.05,
+      contourMix: 0.84,
+      highlightMask: 0.42,
+      transientEnergy: 0.08,
+    });
+
+    expect(STRUCTURE_AWARE_EMISSION_BODY_SUPPRESSION).toBeCloseTo(0.72);
+    expect(bodyFill.filamentEligibility).toBeLessThan(0.22);
+    expect(bodyFill.emissionGain).toBeLessThan(0.72);
+    expect(filament.filamentEligibility).toBe(1);
+    expect(filament.emissionGain).toBeGreaterThan(0.98);
+    expect(filament.emissionGain).toBeGreaterThan(
+      bodyFill.emissionGain + 0.28,
+    );
+  });
+
+  it("keeps transient relief bounded so dense body emission cannot fully bypass suppression", () => {
+    const sustained = deriveStructureAwareEmissionGain({
+      ridgeConcentration: 0.24,
+      bodyCrowding: 1.12,
+      contourMix: 0.18,
+      highlightMask: 0.08,
+      transientEnergy: 0.04,
+    });
+    const transient = deriveStructureAwareEmissionGain({
+      ridgeConcentration: 0.24,
+      bodyCrowding: 1.12,
+      contourMix: 0.18,
+      highlightMask: 0.08,
+      transientEnergy: 0.92,
+    });
+
+    expect(STRUCTURE_AWARE_EMISSION_MIN_GAIN).toBeCloseTo(0.34);
+    expect(transient.emissionGain).toBeGreaterThan(sustained.emissionGain);
+    expect(transient.emissionGain).toBeLessThan(0.8);
+    expect(sustained.bodySuppression).toBeGreaterThan(0.75);
+  });
+
+  it("catches moderate body fill before low-threshold bloom treats it like structure", () => {
+    const moderateBodyFill = deriveStructureAwareEmissionGain({
+      ridgeConcentration: 0.12,
+      bodyCrowding: 0.16,
+      contourMix: 0.15,
+      highlightMask: 0.08,
+      transientEnergy: 0.08,
+    });
+
+    expect(moderateBodyFill.bodyCrowdingGate).toBeGreaterThan(0.3);
+    expect(moderateBodyFill.emissionGain).toBeLessThan(0.9);
+    expect(moderateBodyFill.emissionGain).toBeGreaterThan(
+      STRUCTURE_AWARE_EMISSION_MIN_GAIN,
+    );
+  });
+
+  it("does not preserve bright body fill just because it is already highlighted", () => {
+    const highlightedBodyFill = deriveStructureAwareEmissionGain({
+      ridgeConcentration: 0.12,
+      bodyCrowding: 0.16,
+      contourMix: 0.85,
+      highlightMask: 0.95,
+      transientEnergy: 0.25,
+    });
+    const denseHighlightedBodyFill = deriveStructureAwareEmissionGain({
+      ridgeConcentration: 0.18,
+      bodyCrowding: 1.05,
+      contourMix: 0.75,
+      highlightMask: 0.9,
+      transientEnergy: 0.25,
+    });
+
+    expect(highlightedBodyFill.filamentEligibility).toBeLessThan(0.18);
+    expect(highlightedBodyFill.emissionGain).toBeLessThan(0.78);
+    expect(denseHighlightedBodyFill.emissionGain).toBeLessThan(0.42);
   });
 
   it("keeps hot-core authority on beam density rather than crowding compression", () => {

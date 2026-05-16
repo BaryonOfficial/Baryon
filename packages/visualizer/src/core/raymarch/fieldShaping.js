@@ -46,6 +46,19 @@ export const HOT_CORE_CROWDING_THRESHOLD_LIFT = 0.14;
 export const HOT_CORE_SURFACE_CROWDING_REDUCTION = 0.34;
 export const WHITE_EMISSION_CROWDING_REDUCTION = 0.72;
 export const WHITE_EMISSION_CROWDING_TRANSIENT_RELIEF = 0.08;
+export const STRUCTURE_AWARE_EMISSION_CROWDING_START = 0.04;
+export const STRUCTURE_AWARE_EMISSION_CROWDING_END = 0.34;
+export const STRUCTURE_AWARE_EMISSION_RIDGE_WEIGHT = 0.62;
+export const STRUCTURE_AWARE_EMISSION_CONTOUR_WEIGHT = 0.28;
+export const STRUCTURE_AWARE_EMISSION_HIGHLIGHT_WEIGHT = 0.18;
+export const STRUCTURE_AWARE_EMISSION_DETAIL_GATE_START = 0.28;
+export const STRUCTURE_AWARE_EMISSION_DETAIL_GATE_END = 0.76;
+export const STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_START = 0.82;
+export const STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_END = 0.94;
+export const STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_WEIGHT = 0.18;
+export const STRUCTURE_AWARE_EMISSION_BODY_SUPPRESSION = 0.72;
+export const STRUCTURE_AWARE_EMISSION_TRANSIENT_RELIEF = 0.08;
+export const STRUCTURE_AWARE_EMISSION_MIN_GAIN = 0.34;
 export const HIGHLIGHT_MASK_START = 0.38;
 export const HIGHLIGHT_MASK_END = 0.96;
 export const BOUNDARY_CONTOUR_ACCENT_WEIGHT = 0.08;
@@ -541,6 +554,60 @@ export function deriveCrowdedHighlightMix({
     whiteEmissionReduction,
     crowdedHotCoreMix: clamp01(hotCoreMix) * hotCoreReduction,
     crowdedWhiteEmissionMix: clamp01(whiteEmissionMix) * whiteEmissionReduction,
+  };
+}
+
+export function deriveStructureAwareEmissionGain({
+  ridgeConcentration = 1,
+  bodyCrowding = 0,
+  contourMix = 0,
+  highlightMask = 0,
+  transientEnergy = 0,
+}) {
+  const ridge = clamp01(ridgeConcentration);
+  const detailGate = smoothstep(
+    STRUCTURE_AWARE_EMISSION_DETAIL_GATE_START,
+    STRUCTURE_AWARE_EMISSION_DETAIL_GATE_END,
+    ridge,
+  );
+  const ridgeLock = smoothstep(
+    STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_START,
+    STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_END,
+    ridge,
+  );
+  const filamentEligibility = clamp01(
+    ridge * STRUCTURE_AWARE_EMISSION_RIDGE_WEIGHT +
+      clamp01(contourMix) *
+        STRUCTURE_AWARE_EMISSION_CONTOUR_WEIGHT *
+        detailGate +
+      clamp01(highlightMask) *
+        STRUCTURE_AWARE_EMISSION_HIGHLIGHT_WEIGHT *
+        detailGate +
+      ridgeLock * STRUCTURE_AWARE_EMISSION_RIDGE_LOCK_WEIGHT,
+  );
+  const bodyCrowdingGate = smoothstep(
+    STRUCTURE_AWARE_EMISSION_CROWDING_START,
+    STRUCTURE_AWARE_EMISSION_CROWDING_END,
+    bodyCrowding,
+  );
+  const transientRelief =
+    1 -
+    clamp01(transientEnergy) * STRUCTURE_AWARE_EMISSION_TRANSIENT_RELIEF;
+  const bodySuppression =
+    bodyCrowdingGate * (1 - filamentEligibility) * transientRelief;
+  const emissionGain = Math.max(
+    STRUCTURE_AWARE_EMISSION_MIN_GAIN,
+    1 - bodySuppression * STRUCTURE_AWARE_EMISSION_BODY_SUPPRESSION,
+  );
+
+  return {
+    detailGate,
+    ridgeLock,
+    filamentEligibility,
+    bodyCrowdingGate,
+    transientRelief,
+    bodySuppression,
+    emissionGain,
   };
 }
 

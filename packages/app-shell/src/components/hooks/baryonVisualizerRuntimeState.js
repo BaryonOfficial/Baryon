@@ -49,6 +49,16 @@ function createAdaptiveRaymarchDiagnostics() {
   };
 }
 
+function createUiInteractionDiagnostics() {
+  return {
+    active: false,
+    holdUntilWallTimeMs: 0,
+    suppressedAdaptivePressureFrameCount: 0,
+    lastSource: null,
+    lastKind: null,
+  };
+}
+
 function copyRecentLongFrames(recentLongFramesMs) {
   return Array.isArray(recentLongFramesMs) ? [...recentLongFramesMs] : [];
 }
@@ -176,6 +186,7 @@ export function createRuntimeDiagnostics() {
     },
     postProcess: createPostProcessDiagnostics(),
     adaptiveRaymarch: createAdaptiveRaymarchDiagnostics(),
+    uiInteraction: createUiInteractionDiagnostics(),
     perfLastPublishedAtMs: Number.NEGATIVE_INFINITY,
   };
 }
@@ -356,6 +367,9 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
     adaptiveRaymarch: runtimeDiagnostics?.adaptiveRaymarch
       ? { ...runtimeDiagnostics.adaptiveRaymarch }
       : null,
+    uiInteraction: runtimeDiagnostics?.uiInteraction
+      ? { ...runtimeDiagnostics.uiInteraction }
+      : null,
     perfBreakdown: snapshotRuntimePerfBreakdown(
       runtimeDiagnostics?.perfBreakdown,
     ),
@@ -427,6 +441,9 @@ export function snapshotRuntimeDiagnostics(runtimeDiagnostics) {
       : null,
     adaptiveRaymarch: runtimeDiagnostics.adaptiveRaymarch
       ? { ...runtimeDiagnostics.adaptiveRaymarch }
+      : null,
+    uiInteraction: runtimeDiagnostics.uiInteraction
+      ? { ...runtimeDiagnostics.uiInteraction }
       : null,
     perfBreakdown: snapshotRuntimePerfBreakdown(
       runtimeDiagnostics.perfBreakdown,

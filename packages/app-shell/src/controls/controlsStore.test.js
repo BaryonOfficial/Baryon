@@ -132,19 +132,40 @@ describe("createControlsStore", () => {
     store.loadPreset(CALIBRATED_CLARITY_NAME);
 
     expect(store.getSnapshot().selectedPresetName).toBe(CALIBRATED_CLARITY_NAME);
-    expect(store.controlsRef.current.structureMin).toBe(0.32);
-    expect(store.controlsRef.current.structureMax).toBe(0.38);
-    expect(store.controlsRef.current.densityGain).toBe(3.05);
-    expect(store.controlsRef.current.absorption).toBe(3.55);
-    expect(store.controlsRef.current.holographicIntensity).toBe(0.54);
-    expect(store.controlsRef.current.holographicFresnelPower).toBe(3.6);
-    expect(store.controlsRef.current.bloomStrength).toBe(0.95);
-    expect(store.controlsRef.current.bloomThreshold).toBe(0.36);
-    expect(store.controlsRef.current.bloomResponseBias).toBe(0.6);
-    expect(store.controlsRef.current.rimBloomBias).toBe(0.28);
+    expect(store.controlsRef.current.structureMin).toBe(0.36);
+    expect(store.controlsRef.current.structureMax).toBe(0.48);
+    expect(store.controlsRef.current.densityGain).toBe(2.85);
+    expect(store.controlsRef.current.absorption).toBe(3.05);
+    expect(store.controlsRef.current.opacityGain).toBe(2.05);
+    expect(store.controlsRef.current.holographicIntensity).toBe(0.36);
+    expect(store.controlsRef.current.holographicFresnelPower).toBe(5.1);
+    expect(store.controlsRef.current.bloomStrength).toBe(0.94);
+    expect(store.controlsRef.current.bloomThreshold).toBe(0.2);
+    expect(store.controlsRef.current.bloomResponseBias).toBe(0.86);
+    expect(store.controlsRef.current.rimBloomBias).toBe(0.2);
+    expect(store.controlsRef.current.rimCompression).toBe(1.08);
 
     const storedPresets = window.localStorage.getItem(PRESETS_KEY);
     expect(storedPresets).toBeNull();
+  });
+
+  it("preserves non-visual controls when loading a built-in visual preset", () => {
+    const store = createControlsStore();
+
+    store.updateControl("renderQualityPreset", "max-quality", {
+      persistMode: "immediate",
+    });
+    store.updateControl("customPerformanceTargetFps", 72, {
+      persistMode: "immediate",
+    });
+
+    store.loadPreset(CALIBRATED_CLARITY_NAME);
+    store.updateControl("bloomThreshold", 0.41, { persistMode: "immediate" });
+
+    expect(store.controlsRef.current.renderQualityPreset).toBe("max-quality");
+    expect(store.controlsRef.current.customPerformanceTargetFps).toBe(72);
+    expect(store.controlsRef.current.bloomThreshold).toBe(0.41);
+    expect(store.getSnapshot().selectedPresetName).toBe("");
   });
 
   it("exposes the stage containment preset without writing it to storage", () => {

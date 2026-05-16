@@ -1161,71 +1161,83 @@ export function updateAdaptiveRaymarchStepBudget({
   if (
     adaptiveRaymarch.decisionFrameCount >= adaptiveTuning.decisionFrameCount
   ) {
-    const smoothedFrameTimeMs = runtimeDiagnostics.smoothedFrameTimeMs ?? 0;
-    const underPressure =
-      smoothedFrameTimeMs > adaptiveTuning.pressureFrameTimeMs ||
-      adaptiveRaymarch.longFrameCountInWindow >=
-        adaptiveTuning.stepDownLongFrameCount;
-    const scaleUnderPressure =
-      smoothedFrameTimeMs > adaptiveTuning.scalePressureFrameTimeMs ||
-      adaptiveRaymarch.longFrameCountInWindow > 0;
-    const stableWindow =
-      smoothedFrameTimeMs > 0 &&
-      smoothedFrameTimeMs < adaptiveTuning.stableFrameTimeMs &&
-      adaptiveRaymarch.longFrameCountInWindow === 0;
-
-    if (underPressure) {
-      let handledPressure = false;
-
-      if (scaleUnderPressure && adaptiveRaymarch.currentScaleRung > 0) {
-        const nextPressureScaleRung = deriveAdaptivePressureScaleRung({
-          scaleLadder,
-          currentScaleRung: adaptiveRaymarch.currentScaleRung,
-          targetFrameTimeMs: adaptiveTuning.targetFrameTimeMs,
-          smoothedFrameTimeMs,
-        });
-        if (nextPressureScaleRung < adaptiveRaymarch.currentScaleRung) {
-          adaptiveRaymarch.scaleStepDownCount +=
-            adaptiveRaymarch.currentScaleRung - nextPressureScaleRung;
-          adaptiveRaymarch.currentScaleRung = nextPressureScaleRung;
-          handledPressure = true;
-        }
-      }
-
-      if (!handledPressure && adaptiveRaymarch.currentRung > 0) {
-        const nextPressureRung = deriveAdaptivePressureRung({
-          ladder,
-          currentRung: adaptiveRaymarch.currentRung,
-          targetFrameTimeMs: adaptiveTuning.targetFrameTimeMs,
-          smoothedFrameTimeMs,
-        });
-        if (nextPressureRung < adaptiveRaymarch.currentRung) {
-          adaptiveRaymarch.stepDownCount +=
-            adaptiveRaymarch.currentRung - nextPressureRung;
-          adaptiveRaymarch.currentRung = nextPressureRung;
-        }
-      }
+    if (runtimeDiagnostics.uiInteraction?.active === true) {
+      runtimeDiagnostics.uiInteraction.suppressedAdaptivePressureFrameCount =
+        (runtimeDiagnostics.uiInteraction
+          .suppressedAdaptivePressureFrameCount ?? 0) + 1;
+      adaptiveRaymarch.decisionFrameCount = 0;
+      adaptiveRaymarch.longFrameCountInWindow = 0;
       adaptiveRaymarch.stableWindowCount = 0;
-    } else if (stableWindow && recoveryState.recoveryEligible) {
-      adaptiveRaymarch.stableWindowCount += 1;
-      if (
-        adaptiveRaymarch.stableWindowCount >= AUTO_RAYMARCH_RECOVERY_WINDOWS
-      ) {
-        if (adaptiveRaymarch.currentRung < ladder.length - 1) {
-          adaptiveRaymarch.currentRung += 1;
-          adaptiveRaymarch.stepUpCount += 1;
-        } else if (adaptiveRaymarch.currentScaleRung < scaleLadder.length - 1) {
-          adaptiveRaymarch.currentScaleRung += 1;
-          adaptiveRaymarch.scaleStepUpCount += 1;
+    } else {
+      const smoothedFrameTimeMs = runtimeDiagnostics.smoothedFrameTimeMs ?? 0;
+      const underPressure =
+        smoothedFrameTimeMs > adaptiveTuning.pressureFrameTimeMs ||
+        adaptiveRaymarch.longFrameCountInWindow >=
+          adaptiveTuning.stepDownLongFrameCount;
+      const scaleUnderPressure =
+        smoothedFrameTimeMs > adaptiveTuning.scalePressureFrameTimeMs ||
+        adaptiveRaymarch.longFrameCountInWindow > 0;
+      const stableWindow =
+        smoothedFrameTimeMs > 0 &&
+        smoothedFrameTimeMs < adaptiveTuning.stableFrameTimeMs &&
+        adaptiveRaymarch.longFrameCountInWindow === 0;
+
+      if (underPressure) {
+        let handledPressure = false;
+
+        if (scaleUnderPressure && adaptiveRaymarch.currentScaleRung > 0) {
+          const nextPressureScaleRung = deriveAdaptivePressureScaleRung({
+            scaleLadder,
+            currentScaleRung: adaptiveRaymarch.currentScaleRung,
+            targetFrameTimeMs: adaptiveTuning.targetFrameTimeMs,
+            smoothedFrameTimeMs,
+          });
+          if (nextPressureScaleRung < adaptiveRaymarch.currentScaleRung) {
+            adaptiveRaymarch.scaleStepDownCount +=
+              adaptiveRaymarch.currentScaleRung - nextPressureScaleRung;
+            adaptiveRaymarch.currentScaleRung = nextPressureScaleRung;
+            handledPressure = true;
+          }
+        }
+
+        if (!handledPressure && adaptiveRaymarch.currentRung > 0) {
+          const nextPressureRung = deriveAdaptivePressureRung({
+            ladder,
+            currentRung: adaptiveRaymarch.currentRung,
+            targetFrameTimeMs: adaptiveTuning.targetFrameTimeMs,
+            smoothedFrameTimeMs,
+          });
+          if (nextPressureRung < adaptiveRaymarch.currentRung) {
+            adaptiveRaymarch.stepDownCount +=
+              adaptiveRaymarch.currentRung - nextPressureRung;
+            adaptiveRaymarch.currentRung = nextPressureRung;
+          }
         }
         adaptiveRaymarch.stableWindowCount = 0;
+      } else if (stableWindow && recoveryState.recoveryEligible) {
+        adaptiveRaymarch.stableWindowCount += 1;
+        if (
+          adaptiveRaymarch.stableWindowCount >= AUTO_RAYMARCH_RECOVERY_WINDOWS
+        ) {
+          if (adaptiveRaymarch.currentRung < ladder.length - 1) {
+            adaptiveRaymarch.currentRung += 1;
+            adaptiveRaymarch.stepUpCount += 1;
+          } else if (
+            adaptiveRaymarch.currentScaleRung <
+            scaleLadder.length - 1
+          ) {
+            adaptiveRaymarch.currentScaleRung += 1;
+            adaptiveRaymarch.scaleStepUpCount += 1;
+          }
+          adaptiveRaymarch.stableWindowCount = 0;
+        }
+      } else {
+        adaptiveRaymarch.stableWindowCount = 0;
       }
-    } else {
-      adaptiveRaymarch.stableWindowCount = 0;
-    }
 
-    adaptiveRaymarch.decisionFrameCount = 0;
-    adaptiveRaymarch.longFrameCountInWindow = 0;
+      adaptiveRaymarch.decisionFrameCount = 0;
+      adaptiveRaymarch.longFrameCountInWindow = 0;
+    }
   }
 
   const effectiveStepBudget =

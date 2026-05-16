@@ -570,6 +570,28 @@ test("auto raymarch drops render scale before bottoming out step budget", () => 
   ).toBeGreaterThan(0);
 });
 
+test("auto raymarch ignores long frames caused by active UI interaction", () => {
+  const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness();
+  runtimeDiagnostics.lastFrameTimeMs = 200;
+  runtimeDiagnostics.smoothedFrameTimeMs = 200;
+  runtimeDiagnostics.adaptiveRaymarch.decisionFrameCount = 29;
+  runtimeDiagnostics.adaptiveRaymarch.longFrameCountInWindow = 3;
+  runtimeDiagnostics.uiInteraction = {
+    active: true,
+    suppressedAdaptivePressureFrameCount: 0,
+  };
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentRung).toBe(3);
+  expect(runtimeDiagnostics.adaptiveRaymarch.currentScaleRung).toBe(2);
+  expect(runtimeDiagnostics.adaptiveRaymarch.stepDownCount).toBe(0);
+  expect(runtimeDiagnostics.adaptiveRaymarch.scaleStepDownCount).toBe(0);
+  expect(
+    runtimeDiagnostics.uiInteraction.suppressedAdaptivePressureFrameCount,
+  ).toBe(1);
+});
+
 test("performance HUD scale falls back to requested render scale when adaptive mode is idle", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
 
