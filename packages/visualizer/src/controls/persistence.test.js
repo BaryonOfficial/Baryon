@@ -167,7 +167,7 @@ describe("deserializeControls", () => {
 
     expect(result.motionAmount).toBe(1.35);
     expect(result.reactivity).toBeCloseTo(0.11 / 0.055, 6);
-    expect(result.structurePersistence).toBeCloseTo(270 / 180, 6);
+    expect(result).not.toHaveProperty("structurePersistence");
   });
 
   it("preserves legacy rotation when pulse was disabled", () => {

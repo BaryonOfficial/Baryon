@@ -57,7 +57,6 @@ function createRuntimeState() {
     reactivityTuning: {
       reactivity: 1,
       motionAmount: 1,
-      structurePersistence: 1,
     },
     bloomTuning: {},
     baseDensityGain: 2.1,

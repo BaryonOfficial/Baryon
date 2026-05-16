@@ -9,6 +9,33 @@ export const DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS = Object.freeze(
   }),
 );
 
+export const FAST_SIGNAL_PATCH_ANALYSIS_KEYS = Object.freeze([
+  "soundActive",
+  "micActive",
+  "bandEnergies",
+  "transientEnergy",
+  "spectralCentroid",
+  "spectralFlux",
+  "beatDetected",
+  "beatPulseId",
+  "beatStrength",
+  "beatConfidence",
+  "avgAmplitude",
+  "analyserRms",
+  "sourceNormalization",
+  "liveInputNoiseGateActive",
+  "liveInputHardSilenceActive",
+  "liveInputCalibrationInvalid",
+  "liveInputCalibrationInvalidReason",
+  "liveInputCalibrationActive",
+  "beatLowBandEnergy",
+  "beatOnsetDriver",
+  "beatThreshold",
+  "micFftNormGain",
+  "preModalFftPeak",
+  "postNormalizationFftPeak",
+]);
+
 export function normalizeAudioFeatureEngineSettings(settings = {}) {
   return Object.freeze({
     ...DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS,

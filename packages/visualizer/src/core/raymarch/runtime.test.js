@@ -124,7 +124,6 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     reactivityTuning: {
       reactivity: 1,
       motionAmount: 1,
-      structurePersistence: 1,
     },
     bloomTuning: {
       bloomResponseBias: 0.4,

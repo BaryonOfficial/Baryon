@@ -1,4 +1,7 @@
-import { normalizeAudioFeatureEngineSettings } from "./audioFeatureEngineShared.js";
+import {
+  FAST_SIGNAL_PATCH_ANALYSIS_KEYS,
+  normalizeAudioFeatureEngineSettings,
+} from "./audioFeatureEngineShared.js";
 import { buildAnalysisSessionKey } from "./analysisSession.js";
 import {
   DEFAULT_REQUESTED_CAVITY_GEOMETRY,
@@ -123,6 +126,7 @@ function createDefaultEngineStatus(state = "none", reason = null) {
     droppedFrameCount: 0,
     transportDropCount: 0,
     publishSkipCount: 0,
+    fastSignalPatchCount: 0,
     fastSignalUpdateCount: 0,
     structuralUpdateCount: 0,
     chromaUpdateCount: 0,
@@ -138,6 +142,51 @@ function createDefaultEngineStatus(state = "none", reason = null) {
     workerProjectionMs: 0,
     workerChromaMs: 0,
     workerTempoMs: 0,
+  };
+}
+
+function cloneFastSignalPatchValue(value) {
+  if (ArrayBuffer.isView(value)) {
+    return cloneArray(value);
+  }
+  if (value && typeof value === "object") {
+    return { ...value };
+  }
+  return value;
+}
+
+export function mergeFastSignalPatchIntoSnapshot(snapshot, patch) {
+  if (
+    !snapshot ||
+    !patch ||
+    snapshot.analysisSessionKey !== patch.analysisSessionKey ||
+    snapshot.analysisInputsSignature !== patch.analysisInputsSignature
+  ) {
+    return snapshot ?? null;
+  }
+
+  const patchAnalysis = patch.analysisResult ?? {};
+  const analysisResult = {
+    ...(snapshot.analysisResult ?? {}),
+  };
+
+  for (const key of FAST_SIGNAL_PATCH_ANALYSIS_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(patchAnalysis, key)) {
+      continue;
+    }
+    analysisResult[key] = cloneFastSignalPatchValue(patchAnalysis[key]);
+  }
+
+  return {
+    ...snapshot,
+    frameTimeMs: Number.isFinite(patch.frameTimeMs)
+      ? patch.frameTimeMs
+      : snapshot.frameTimeMs,
+    fastSignalPatchCount:
+      patch.fastSignalPatchCount ?? snapshot.fastSignalPatchCount ?? 0,
+    latestFastSignalPatchFrameTimeMs:
+      patch.frameTimeMs ?? snapshot.latestFastSignalPatchFrameTimeMs ?? null,
+    analysisResult,
   };
 }
 
@@ -219,6 +268,29 @@ export function createAudioFeatureEngine(settings = {}, dependencies = {}) {
         latestSnapshotFrameTimeMs: snapshotMetadata.frameTimeMs,
         publishCount:
           snapshotMetadata.publishCount ?? latestStatus.publishCount ?? 0,
+      });
+      return;
+    }
+
+    if (payload.type === "fast-signal-patch") {
+      const nextSnapshot = mergeFastSignalPatchIntoSnapshot(
+        latestSnapshot,
+        payload.patch,
+      );
+      if (nextSnapshot === latestSnapshot) {
+        return;
+      }
+      latestSnapshot = nextSnapshot;
+      updateStatus({
+        state: "ready",
+        reason: "fast-signal-patched",
+        latestSnapshotFrameTimeMs: latestSnapshot?.frameTimeMs ?? null,
+        latestFastSignalPatchFrameTimeMs:
+          latestSnapshot?.latestFastSignalPatchFrameTimeMs ?? null,
+        fastSignalPatchCount:
+          latestSnapshot?.fastSignalPatchCount ??
+          latestStatus.fastSignalPatchCount ??
+          0,
       });
     }
   });

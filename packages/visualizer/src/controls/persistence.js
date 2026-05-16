@@ -41,14 +41,6 @@ function normalizeLegacyReactivity(raw) {
     next.motionAmount = clamp(beatSensitivity / 0.78, 0, 3);
   }
 
-  const pulseDecayMs = raw.pulseDecayMs;
-  if (
-    !Object.prototype.hasOwnProperty.call(next, "structurePersistence") &&
-    typeof pulseDecayMs === "number"
-  ) {
-    next.structurePersistence = clamp(pulseDecayMs / 180, 0.2, 3);
-  }
-
   if (raw.pulseEnabled === false) {
     if (!Object.prototype.hasOwnProperty.call(raw, "reactivity")) {
       next.reactivity = 0;

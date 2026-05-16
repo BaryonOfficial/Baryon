@@ -369,6 +369,7 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
   runtimeDiagnostics.perfBreakdown.pipelineRenderMs.lastMs = 99;
   runtimeDiagnostics.engine.publishCount = 101;
   runtimeDiagnostics.engine.publishSkipCount = 7;
+  runtimeDiagnostics.engine.fastSignalPatchCount = 11;
   runtimeDiagnostics.engine.fastSignalUpdateCount = 17;
   runtimeDiagnostics.engine.structuralUpdateCount = 19;
   runtimeDiagnostics.engine.chromaUpdateCount = 23;
@@ -389,6 +390,7 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
   expect(snapshot.engineCounters).toEqual({
     publishCount: 101,
     publishSkipCount: 7,
+    fastSignalPatchCount: 11,
     fastSignalUpdateCount: 17,
     structuralUpdateCount: 19,
     chromaUpdateCount: 23,

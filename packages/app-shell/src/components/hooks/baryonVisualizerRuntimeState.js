@@ -147,6 +147,7 @@ export function createRuntimeDiagnostics() {
       droppedFrameCount: 0,
       transportDropCount: 0,
       publishSkipCount: 0,
+      fastSignalPatchCount: 0,
       fastSignalUpdateCount: 0,
       structuralUpdateCount: 0,
       chromaUpdateCount: 0,
@@ -306,6 +307,8 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
       droppedFrameCount: runtimeDiagnostics?.engine?.droppedFrameCount ?? 0,
       transportDropCount: runtimeDiagnostics?.engine?.transportDropCount ?? 0,
       publishSkipCount: runtimeDiagnostics?.engine?.publishSkipCount ?? 0,
+      fastSignalPatchCount:
+        runtimeDiagnostics?.engine?.fastSignalPatchCount ?? 0,
       fastSignalUpdateCount:
         runtimeDiagnostics?.engine?.fastSignalUpdateCount ?? 0,
       structuralUpdateCount:

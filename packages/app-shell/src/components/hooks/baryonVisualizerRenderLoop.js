@@ -163,6 +163,7 @@ function buildStageEngineCounters(runtimeDiagnostics) {
   return {
     publishCount: runtimeDiagnostics?.engine?.publishCount ?? 0,
     publishSkipCount: runtimeDiagnostics?.engine?.publishSkipCount ?? 0,
+    fastSignalPatchCount: runtimeDiagnostics?.engine?.fastSignalPatchCount ?? 0,
     fastSignalUpdateCount:
       runtimeDiagnostics?.engine?.fastSignalUpdateCount ?? 0,
     structuralUpdateCount:
@@ -1465,6 +1466,8 @@ export function resolveFeatureFrame(
               0;
             runtimeDiagnostics.engine.publishSkipCount =
               engineStatus?.publishSkipCount ?? 0;
+            runtimeDiagnostics.engine.fastSignalPatchCount =
+              engineStatus?.fastSignalPatchCount ?? 0;
             runtimeDiagnostics.engine.fastSignalUpdateCount =
               engineStatus?.fastSignalUpdateCount ?? 0;
             runtimeDiagnostics.engine.structuralUpdateCount =

@@ -569,23 +569,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     },
     CONTROL_GROUPS.motion,
   ),
-  withControlGroup(
-    {
-      key: "structurePersistence",
-      label: "Structure Persistence",
-      title:
-        "How long the current pattern holds before settling — set to 0 to disable persistence, raise for slower transitions",
-      defaultValue: REACTIVITY_DEFAULTS.structurePersistence,
-      methods: methodsFor("shared"),
-      binding: { min: 0, max: 3, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.object,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.reactivityTuning.structurePersistence",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.motion,
-  ),
-
   // ── Display ────────────────────────────────────────────────────────────────
   withControlGroup(
     {

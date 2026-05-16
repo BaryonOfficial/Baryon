@@ -10,7 +10,9 @@ import {
   updateAudioFeatureFastSignalState,
   updateAudioFeatureStructuralState,
 } from "../audioFeatures.js";
+import * as audioFeatureEngine from "./audioFeatureEngine.js";
 import { buildAudioFeatureTransportFrame } from "./audioFeatureEngine.js";
+import * as audioFeatureWorker from "./audioFeatureEngine.worker.js";
 import {
   buildLaneRunDecisions,
   createEngineState,
@@ -313,6 +315,106 @@ describe("audio feature engine worker lanes", () => {
     ).toBe(true);
   });
 
+  it("allows fast-only patch emission before the full publish cadence after the first structural snapshot", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = createPreparedInputs(2000, { featureState });
+    const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
+    const previousSnapshot = buildAudioFeatureAnalysisSnapshot({
+      preparedInputs,
+      analysisResult,
+      publishCount: 1,
+    });
+    const nextAnalysisResult = {
+      ...analysisResult,
+      bandEnergies: new Float32Array([0.1, 0.8, 0.3, 0.2]),
+      transientEnergy: (analysisResult.transientEnergy ?? 0) + 0.2,
+      beatPulseId: (analysisResult.beatPulseId ?? 0) + 1,
+    };
+    const dirtyState = {
+      fastSignal: true,
+      structural: false,
+      chroma: false,
+      tempo: false,
+    };
+    const engineState = createEngineState({
+      runtime: "worker",
+      structuralCadenceMs: 33,
+      snapshotPublishCadenceMs: 33,
+      chromaCadenceMs: 66,
+      tempoCadenceMs: 120,
+      maxSnapshotAgeMs: 96,
+    });
+    engineState.latestSnapshot = previousSnapshot;
+    engineState.lastPublishedAtMs = 2000;
+
+    expect(
+      shouldPublishDirtySnapshot(engineState, dirtyState, false, 2010),
+    ).toBe(false);
+    expect(typeof audioFeatureWorker.shouldEmitFastSignalPatch).toBe(
+      "function",
+    );
+    expect(
+      audioFeatureWorker.shouldEmitFastSignalPatch({
+        engineState,
+        dirtyState,
+        forced: false,
+      }),
+    ).toBe(true);
+
+    const patch = audioFeatureWorker.buildFastSignalPatch({
+      preparedInputs: {
+        currentFrameAtMs: 2010,
+        analysisSessionKey: previousSnapshot.analysisSessionKey,
+        analysisInputsSignature: previousSnapshot.analysisInputsSignature,
+      },
+      analysisResult: nextAnalysisResult,
+      patchCount: 1,
+    });
+
+    expect(patch).toMatchObject({
+      frameTimeMs: 2010,
+      analysisSessionKey: previousSnapshot.analysisSessionKey,
+      analysisInputsSignature: previousSnapshot.analysisInputsSignature,
+      fastSignalPatchCount: 1,
+    });
+    expect(patch.analysisResult.bandEnergies).toBeInstanceOf(Float32Array);
+    expect(patch.analysisResult.beatPulseId).toBe(
+      nextAnalysisResult.beatPulseId,
+    );
+    expect(patch.analysisResult).not.toHaveProperty("modeSlots");
+    expect(patch.analysisResult).not.toHaveProperty("structuralMetrics");
+  });
+
+  it("does not emit fast-only patches before the first full structural snapshot or during forced refreshes", () => {
+    const engineState = createEngineState();
+    const dirtyState = {
+      fastSignal: true,
+      structural: false,
+      chroma: false,
+      tempo: false,
+    };
+
+    expect(typeof audioFeatureWorker.shouldEmitFastSignalPatch).toBe(
+      "function",
+    );
+    expect(
+      audioFeatureWorker.shouldEmitFastSignalPatch({
+        engineState,
+        dirtyState,
+        forced: false,
+      }),
+    ).toBe(false);
+
+    engineState.latestSnapshot = { analysisResult: {} };
+    expect(
+      audioFeatureWorker.shouldEmitFastSignalPatch({
+        engineState,
+        dirtyState,
+        forced: true,
+      }),
+    ).toBe(false);
+  });
+
   it("marks structural changes from fingerprints even when projected arrays are reused", () => {
     const previousSnapshot = {
       analysisResult: {
@@ -471,6 +573,85 @@ describe("audio feature engine snapshots", () => {
     expect(
       snapshot.analysisResult.referencePitchBinAmplitude,
     ).toBeGreaterThanOrEqual(0);
+  });
+
+  it("merges fast-signal patches without replacing structural arrays", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = createPreparedInputs(2000, { featureState });
+    const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
+    const previousSnapshot = buildAudioFeatureAnalysisSnapshot({
+      preparedInputs,
+      analysisResult,
+      publishCount: 1,
+    });
+    const patch = {
+      frameTimeMs: 2010,
+      analysisSessionKey: previousSnapshot.analysisSessionKey,
+      analysisInputsSignature: previousSnapshot.analysisInputsSignature,
+      fastSignalPatchCount: 1,
+      analysisResult: {
+        avgAmplitude: 48,
+        analyserRms: 0.42,
+        bandEnergies: new Float32Array([0.2, 0.7, 0.4, 0.1]),
+        transientEnergy: 0.91,
+        beatPulseId: (analysisResult.beatPulseId ?? 0) + 1,
+      },
+    };
+
+    expect(typeof audioFeatureEngine.mergeFastSignalPatchIntoSnapshot).toBe(
+      "function",
+    );
+    const merged = audioFeatureEngine.mergeFastSignalPatchIntoSnapshot(
+      previousSnapshot,
+      patch,
+    );
+
+    expect(merged).not.toBe(previousSnapshot);
+    expect(merged.frameTimeMs).toBe(2010);
+    expect(merged.fastSignalPatchCount).toBe(1);
+    expect(merged.analysisResult.avgAmplitude).toBe(48);
+    expect(merged.analysisResult.transientEnergy).toBe(0.91);
+    expect(merged.analysisResult.bandEnergies).toEqual(
+      patch.analysisResult.bandEnergies,
+    );
+    expect(merged.analysisResult.bandEnergies).not.toBe(
+      patch.analysisResult.bandEnergies,
+    );
+    expect(merged.analysisResult.modeSlots).toBe(
+      previousSnapshot.analysisResult.modeSlots,
+    );
+    expect(merged.analysisResult.backboneSlots).toBe(
+      previousSnapshot.analysisResult.backboneSlots,
+    );
+    expect(merged.analysisResult.detailSlots).toBe(
+      previousSnapshot.analysisResult.detailSlots,
+    );
+  });
+
+  it("ignores stale fast-signal patches from a different analysis signature", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = createPreparedInputs(2000, { featureState });
+    const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
+    const previousSnapshot = buildAudioFeatureAnalysisSnapshot({
+      preparedInputs,
+      analysisResult,
+      publishCount: 1,
+    });
+
+    const merged = audioFeatureEngine.mergeFastSignalPatchIntoSnapshot(
+      previousSnapshot,
+      {
+        frameTimeMs: 2010,
+        analysisSessionKey: previousSnapshot.analysisSessionKey,
+        analysisInputsSignature: '"stale"',
+        fastSignalPatchCount: 1,
+        analysisResult: {
+          transientEnergy: 1,
+        },
+      },
+    );
+
+    expect(merged).toBe(previousSnapshot);
   });
 
   it("publishes an active structural snapshot for loopback live input", () => {

@@ -54,7 +54,6 @@ export const RENDER_DEFAULTS = Object.freeze({
 export const REACTIVITY_DEFAULTS = Object.freeze({
   reactivity: 2.5,
   motionAmount: 0.88,
-  structurePersistence: 0,
 });
 
 export const BEAT_DEFAULTS = Object.freeze({

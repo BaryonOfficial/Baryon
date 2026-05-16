@@ -162,7 +162,6 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "opacityGain",
     "contourSharpness",
     "reactivity",
-    "structurePersistence",
     "rimBloomBias",
     "rimCompression",
     "holographicIntensity",
@@ -318,11 +317,8 @@ function applyCommonVisualizationControls(runtimeState, controls) {
   runtimeState.baseThreshold = controls.zeroPointPrecision;
   runtimeState.baseContourSharpness = controls.contourSharpness;
   runtimeState.reactivityTuning = {
-    ...(runtimeState.reactivityTuning ?? {}),
     reactivity: controls.reactivity ?? REACTIVITY_DEFAULTS.reactivity,
     motionAmount: controls.motionAmount ?? REACTIVITY_DEFAULTS.motionAmount,
-    structurePersistence:
-      controls.structurePersistence ?? REACTIVITY_DEFAULTS.structurePersistence,
   };
   runtimeState.requestedRaymarchSteps = stepBudget;
   runtimeState.requestedCavityGeometry = requestedCavityGeometry;
@@ -425,7 +421,6 @@ function buildVisualizationControlSnapshot({
       contourSharpness: uniforms.uContourSharpness.value,
       reactivity: runtimeState.reactivityTuning?.reactivity,
       motionAmount: runtimeState.reactivityTuning?.motionAmount,
-      structurePersistence: runtimeState.reactivityTuning?.structurePersistence,
       ...extraUniforms,
     },
     overlay: {

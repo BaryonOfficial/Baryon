@@ -50,7 +50,6 @@ const EXPECTED_CONTROL_KEYS = [
   "rotationSpeed",
   "reactivity",
   "motionAmount",
-  "structurePersistence",
   // Display
   "bloomEnabled",
   "bloomStrength",
@@ -347,12 +346,7 @@ describe("control schema", () => {
       getControlsForFolder("Motion", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,
       ),
-    ).toEqual([
-      "rotationSpeed",
-      "reactivity",
-      "motionAmount",
-      "structurePersistence",
-    ]);
+    ).toEqual(["rotationSpeed", "reactivity", "motionAmount"]);
   });
 
   it("maps every live control to runtime coverage", () => {
@@ -387,7 +381,7 @@ describe("control schema", () => {
     expect(cymatics2dControls).toContain("bloomThreshold");
     expect(cymatics2dControls).toContain("densityGain");
     expect(cymatics2dControls).toContain("boundaryMode");
-    expect(cymatics2dControls).toContain("structurePersistence");
+    expect(cymatics2dControls).not.toContain("structurePersistence");
     expect(getControlFolders(VISUALIZATION_METHODS.cymatics2d)).toEqual([
       "Mode",
       "Shape",
@@ -454,7 +448,7 @@ describe("control schema", () => {
       getControlsForFolder("Motion", VISUALIZATION_METHODS.cymatics2d).map(
         (definition) => definition.key,
       ),
-    ).toEqual(["reactivity", "motionAmount", "structurePersistence"]);
+    ).toEqual(["reactivity", "motionAmount"]);
   });
 
   it("keeps fine-grained glow controls live while preserving method scope", () => {
@@ -480,7 +474,10 @@ describe("control schema", () => {
     expect(bloomResponseBias).toMatchObject({
       group: "Display",
       status: CONTROL_STATUSES.live,
-      methods: [VISUALIZATION_METHODS.raymarch, VISUALIZATION_METHODS.cymatics2d],
+      methods: [
+        VISUALIZATION_METHODS.raymarch,
+        VISUALIZATION_METHODS.cymatics2d,
+      ],
     });
     expect(rimBloomBias).toMatchObject({
       group: "Display",

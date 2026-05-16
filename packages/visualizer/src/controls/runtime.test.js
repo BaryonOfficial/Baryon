@@ -173,7 +173,6 @@ describe("control runtime sync", () => {
     controls.holographicFresnelPower = 4.1;
     controls.reactivity = 1.2;
     controls.motionAmount = 1.1;
-    controls.structurePersistence = 1.4;
     controls.raymarchSteps = 64;
     controls.colorMode = "spectral";
     controls.spectralMix = 0.6;
@@ -222,8 +221,10 @@ describe("control runtime sync", () => {
     expect(runtimeState.reactivityTuning).toEqual({
       reactivity: 1.2,
       motionAmount: 1.1,
-      structurePersistence: 1.4,
     });
+    expect(runtimeState.reactivityTuning).not.toHaveProperty(
+      "structurePersistence",
+    );
     expect(runtimeState.bloomTuning.stepReference).toBe(STEP_REFERENCE);
     expect(runtimeState.bloomTuning.stepCompensation).toBeCloseTo(
       deriveStepCompensation(64),
@@ -252,7 +253,7 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.holographicFresnelPower).toBe(4.1);
     expect(snapshot.uniforms.reactivity).toBe(1.2);
     expect(snapshot.uniforms.motionAmount).toBe(1.1);
-    expect(snapshot.uniforms.structurePersistence).toBe(1.4);
+    expect(snapshot.uniforms).not.toHaveProperty("structurePersistence");
     expect(snapshot.uniforms.raymarchSteps).toBe(64);
     expect(snapshot.uniforms.colorMode).toBe("spectral");
     expect(snapshot.uniforms.spectralMix).toBeCloseTo(Math.sqrt(0.6));
@@ -347,7 +348,6 @@ describe("control runtime sync", () => {
     controls.surfaceColor = "#ddeeff";
     controls.reactivity = 1.3;
     controls.motionAmount = 0.8;
-    controls.structurePersistence = 1.5;
 
     const runtimeState = createRaymarchHarness(
       VISUALIZATION_METHODS.cymatics2d,
@@ -367,7 +367,7 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uSlicePosition.value).toBe(0);
     expect(snapshot.uniforms.reactivity).toBe(1.3);
     expect(snapshot.uniforms.motionAmount).toBe(0.8);
-    expect(snapshot.uniforms.structurePersistence).toBe(1.5);
+    expect(snapshot.uniforms).not.toHaveProperty("structurePersistence");
     expect(snapshot.uniforms.slicePosition).toBe(0);
   });
 
@@ -387,7 +387,6 @@ describe("control runtime sync", () => {
     controls.holographicFresnelPower = 2.8;
     controls.reactivity = 0.9;
     controls.motionAmount = 1.3;
-    controls.structurePersistence = 0.75;
     controls.colorMode = "static";
     controls.spectralMix = 0.88;
 
@@ -408,7 +407,9 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uHolographicFresnelPower.value).toBe(2.8);
     expect(runtimeState.reactivityTuning.reactivity).toBe(0.9);
     expect(runtimeState.reactivityTuning.motionAmount).toBe(1.3);
-    expect(runtimeState.reactivityTuning.structurePersistence).toBe(0.75);
+    expect(runtimeState.reactivityTuning).not.toHaveProperty(
+      "structurePersistence",
+    );
     expect(runtimeState.bloomTuning.stepCompensation).toBeCloseTo(
       deriveStepCompensation(72),
     );
@@ -427,15 +428,16 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.holographicFresnelPower).toBe(2.8);
   });
 
-  it("allows structurePersistence to be set to zero", () => {
+  it("removes stale structurePersistence from runtime tuning", () => {
     const controls = createControlState();
-    controls.structurePersistence = 0;
 
     const runtimeState = createRaymarchHarness();
     const snapshot = applyRaymarchControls(runtimeState, controls);
 
-    expect(runtimeState.reactivityTuning.structurePersistence).toBe(0);
-    expect(snapshot.uniforms.structurePersistence).toBe(0);
+    expect(runtimeState.reactivityTuning).not.toHaveProperty(
+      "structurePersistence",
+    );
+    expect(snapshot.uniforms).not.toHaveProperty("structurePersistence");
   });
 
   it("applies bloom controls to the pipeline", () => {

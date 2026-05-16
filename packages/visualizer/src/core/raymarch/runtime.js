@@ -524,10 +524,6 @@ function updateReactiveResponse(
   const modalVisibilityEnergy = clamp01(
     featureFrame?.modalVisibilityEnergy ?? 0,
   );
-  const persistence = Math.max(
-    0,
-    rt?.structurePersistence ?? REACTIVITY_DEFAULTS.structurePersistence,
-  );
   const reactivity = Math.max(
     0,
     rt?.reactivity ?? REACTIVITY_DEFAULTS.reactivity,
@@ -549,7 +545,7 @@ function updateReactiveResponse(
   const envelopeTarget = fieldDriven
     ? clamp01(
         gatedStructureSignal *
-          (0.34 + persistence * 0.08) *
+          0.34 *
           (1 - decayReleaseMask * DECAY_RELEASE_TARGET_REDUCTION) +
           gatedEnergySignal * 0.38 +
           gatedChangeSignal * 0.23 +
@@ -562,7 +558,7 @@ function updateReactiveResponse(
     envelopeTarget > (runtimeState.responseEnvelope ?? 0)
       ? RESPONSE_ATTACK
       : fieldDriven
-        ? (RESPONSE_RELEASE + persistence * 0.9) *
+        ? RESPONSE_RELEASE *
           (1 +
             rhythmicDensity * RHYTHMIC_RELEASE_RATE_GAIN +
             decayReleaseMask * DECAY_RELEASE_RATE_GAIN)
@@ -1081,10 +1077,7 @@ export function tickRaymarchRuntime(
   setIfChanged(uniforms.uPulseSignal, featureFrame?.pulseSignal ?? 0);
   setIfChanged(uniforms.uBassSalience, featureFrame?.bassSalience ?? 0);
   setIfChanged(uniforms.uTimbreSpread, featureFrame?.timbreSpread ?? 0);
-  setIfChanged(
-    uniforms.uSpectralNovelty,
-    featureFrame?.spectralNovelty ?? 0,
-  );
+  setIfChanged(uniforms.uSpectralNovelty, featureFrame?.spectralNovelty ?? 0);
   const beatTarget =
     featureFrame?.beatDetected && (featureFrame?.beatStrength ?? 0) > 0.3
       ? clamp01(

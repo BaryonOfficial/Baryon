@@ -10,6 +10,7 @@ import {
 } from "./buildFeatureFrame.js";
 import {
   DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS,
+  FAST_SIGNAL_PATCH_ANALYSIS_KEYS,
   normalizeAudioFeatureEngineSettings,
 } from "./audioFeatureEngineShared.js";
 
@@ -55,6 +56,7 @@ export function createEngineState(
     publishCount: 0,
     droppedFrameCount: 0,
     publishSkipCount: 0,
+    fastSignalPatchCount: 0,
     fastSignalUpdateCount: 0,
     structuralUpdateCount: 0,
     chromaUpdateCount: 0,
@@ -91,6 +93,7 @@ function buildEngineStatus(engineState, overrides = {}) {
     droppedFrameCount: engineState.droppedFrameCount,
     transportDropCount: engineState.droppedFrameCount,
     publishSkipCount: engineState.publishSkipCount,
+    fastSignalPatchCount: engineState.fastSignalPatchCount,
     fastSignalUpdateCount: engineState.fastSignalUpdateCount,
     structuralUpdateCount: engineState.structuralUpdateCount,
     chromaUpdateCount: engineState.chromaUpdateCount,
@@ -447,6 +450,56 @@ export function shouldPublishDirtySnapshot(
   );
 }
 
+export function shouldEmitFastSignalPatch({
+  engineState,
+  dirtyState,
+  forced,
+} = {}) {
+  return Boolean(
+    !forced &&
+    engineState?.latestSnapshot &&
+    dirtyState?.fastSignal &&
+    !dirtyState?.structural &&
+    !dirtyState?.chroma &&
+    !dirtyState?.tempo,
+  );
+}
+
+function cloneFastSignalArray(values) {
+  return values instanceof Float32Array ? new Float32Array(values) : values;
+}
+
+function cloneFastSignalObject(value) {
+  return value && typeof value === "object" && !ArrayBuffer.isView(value)
+    ? { ...value }
+    : value;
+}
+
+export function buildFastSignalPatch({
+  preparedInputs,
+  analysisResult,
+  patchCount,
+}) {
+  const analysisPatch = {};
+  for (const key of FAST_SIGNAL_PATCH_ANALYSIS_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(analysisResult ?? {}, key)) {
+      continue;
+    }
+    const value = analysisResult[key];
+    analysisPatch[key] = ArrayBuffer.isView(value)
+      ? cloneFastSignalArray(value)
+      : cloneFastSignalObject(value);
+  }
+
+  return {
+    analysisSessionKey: preparedInputs?.analysisSessionKey ?? null,
+    analysisInputsSignature: preparedInputs?.analysisInputsSignature ?? null,
+    frameTimeMs: preparedInputs?.currentFrameAtMs ?? null,
+    fastSignalPatchCount: patchCount,
+    analysisResult: analysisPatch,
+  };
+}
+
 function recordLaneDuration(engineState, key, durationMs) {
   if (!Number.isFinite(durationMs)) {
     return;
@@ -592,6 +645,35 @@ function processLatestFrame(engineState) {
     ) {
       engineState.latestAnalysisResult = analysisResult;
       engineState.publishSkipCount += 1;
+      if (
+        shouldEmitFastSignalPatch({
+          engineState,
+          dirtyState,
+          forced: laneDecisions.forced,
+        })
+      ) {
+        engineState.fastSignalPatchCount += 1;
+        const fastSignalPatch = buildFastSignalPatch({
+          preparedInputs,
+          analysisResult,
+          patchCount: engineState.fastSignalPatchCount,
+        });
+        postStatus(
+          buildEngineStatus(engineState, {
+            reason: "fast-signal-patched",
+            latestSnapshotFrameTimeMs: fastSignalPatch.frameTimeMs,
+            latestFastSignalPatchFrameTimeMs: fastSignalPatch.frameTimeMs,
+          }),
+        );
+        /** @type {any} */ (self).postMessage(
+          {
+            type: "fast-signal-patch",
+            patch: fastSignalPatch,
+          },
+          collectTransferables(fastSignalPatch),
+        );
+        return;
+      }
       postStatus(
         buildEngineStatus(engineState, {
           reason: "lane-updated",

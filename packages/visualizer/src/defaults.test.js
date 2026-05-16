@@ -59,5 +59,7 @@ describe("defaults compatibility surface", () => {
     expect(RENDER_DEFAULTS.bloomThreshold).toBe(0.3);
     expect(RENDER_DEFAULTS.renderQualityPreset).toBe("auto");
     expect(RENDER_DEFAULTS.performanceHudEnabled).toBe(false);
+    expect(REACTIVITY_DEFAULTS).not.toHaveProperty("structurePersistence");
+    expect(DEFAULTS).not.toHaveProperty("structurePersistence");
   });
 });

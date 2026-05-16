@@ -77,7 +77,6 @@ export function setupCymatics2d(baryonGeometry, parameters, audioConfig) {
     reactivityTuning: {
       reactivity: REACTIVITY_DEFAULTS.reactivity,
       motionAmount: REACTIVITY_DEFAULTS.motionAmount,
-      structurePersistence: REACTIVITY_DEFAULTS.structurePersistence,
     },
     bloomTuning: {
       bloomResponseBias: RENDER_DEFAULTS.bloomResponseBias,

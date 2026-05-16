@@ -144,7 +144,6 @@ function updateReactiveResponse(
   const energySignal = clamp01(featureFrame?.energySignal ?? 0);
   const changeSignal = clamp01(featureFrame?.changeSignal ?? 0);
   const pulseSignal = clamp01(featureFrame?.pulseSignal ?? 0);
-  const persistence = Math.max(0, tuning.structurePersistence);
   const reactivity = Math.max(0, tuning.reactivity);
   const gatedStructureSignal = clamp01(structureSignal * reactivity);
   const gatedEnergySignal = clamp01(energySignal * reactivity);
@@ -152,7 +151,7 @@ function updateReactiveResponse(
   const gatedPulseSignal = clamp01(pulseSignal * reactivity);
   const envelopeTarget = fieldDriven
     ? clamp01(
-        gatedStructureSignal * (0.34 + persistence * 0.08) +
+        gatedStructureSignal * 0.34 +
           gatedEnergySignal * 0.38 +
           gatedChangeSignal * 0.23,
       )
@@ -163,7 +162,7 @@ function updateReactiveResponse(
     envelopeTarget > (runtimeState.responseEnvelope ?? 0)
       ? RESPONSE_ATTACK
       : fieldDriven
-        ? RESPONSE_RELEASE + persistence * 0.9
+        ? RESPONSE_RELEASE
         : RESPONSE_IDLE_RELEASE,
     deltaTime,
   );
@@ -213,17 +212,9 @@ function updateSliceMotion(runtimeState, fieldDriven, deltaTime) {
   );
   const responseEnvelope = clamp01(runtimeState.responseEnvelope ?? 0);
   const motionSignal = clamp01(runtimeState.motionSignal ?? 0);
-  const persistence = Math.max(
-    0.2,
-    runtimeState.reactivityTuning?.structurePersistence ??
-      REACTIVITY_DEFAULTS.structurePersistence,
-  );
   const targetVelocity = fieldDriven
     ? motionAmount *
-      (0.28 +
-        responseEnvelope * 0.56 +
-        motionSignal * 0.44 +
-        persistence * 0.04)
+      (0.28 + responseEnvelope * 0.56 + motionSignal * 0.44 + 0.008)
     : SLICE_IDLE_DRIFT;
   runtimeState.sliceVelocity = damp(
     runtimeState.sliceVelocity ?? 0,
