@@ -58,9 +58,6 @@ test("builds the advanced controls presentation layout", () => {
   expect(diagnosticsGroup).toBeTruthy();
   expect(diagnosticsGroup.controls.map((control) => control.key)).toStrictEqual(
     [
-      "bloomResponseBias",
-      "rimBloomBias",
-      "rimCompression",
       "auditEnabled",
       "freezeModeSlots",
       "forceWebGLFallbackTest",
@@ -73,6 +70,20 @@ test("builds the advanced controls presentation layout", () => {
       "logEveryFrames",
     ],
   );
+
+  const displayGroup = groupByTitle.get("Display");
+  expect(displayGroup).toBeTruthy();
+  expect(displayGroup.controls.map((control) => control.key)).toStrictEqual([
+    "bloomEnabled",
+    "bloomStrength",
+    "bloomRadius",
+    "bloomThreshold",
+    "backgroundColor",
+    "outputBackgroundColor",
+    "bloomResponseBias",
+    "rimBloomBias",
+    "rimCompression",
+  ]);
 });
 
 test("operator control keys can surface Capture Debug Data without enabling all devtools controls", () => {

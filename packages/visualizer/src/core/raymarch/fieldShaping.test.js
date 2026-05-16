@@ -464,6 +464,18 @@ describe("field shaping", () => {
     expect(crowded.localDensity).toBeLessThan(additiveDensity * 0.82);
   });
 
+  it("compresses dense mixed accumulation before it becomes a broad haze", () => {
+    const additiveDensity = 0.86 + 1.32 * BODY_DENSITY_MIX;
+    const crowded = deriveModalCrowdingDensity({
+      rolledBeamDensity: 0.86,
+      dampedBodyDensity: 1.32,
+    });
+
+    expect(crowded.ridgeConcentration).toBeGreaterThan(0.3);
+    expect(crowded.ridgeConcentration).toBeLessThan(0.55);
+    expect(crowded.localDensity).toBeLessThan(additiveDensity * 0.78);
+  });
+
   it("preserves ridge-dominant density while crowding compression affects body fill", () => {
     const additiveDensity = 1.1 + 0.16 * BODY_DENSITY_MIX;
     const ridge = deriveModalCrowdingDensity({

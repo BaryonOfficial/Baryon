@@ -88,6 +88,7 @@ import {
   LOW_DENSITY_FADE_END,
   LOW_DENSITY_FADE_START,
   LOW_MID_BAND_WEIGHT,
+  MODAL_CROWDING_ACCUMULATION_COMPRESSION,
   MODAL_CROWDING_BODY_COMPRESSION,
   RIM_BLOOM_BIAS_BASE,
   RIM_BLOOM_BIAS_GAIN,
@@ -863,6 +864,16 @@ function createScatteringNode({
         ),
       );
       const adjustedBodyDensity = dampedBodyDensity.mul(bodyCompression);
+      const accumulationCompression = float(1.0).div(
+        float(1.0).add(
+          bodyCrowding
+            .mul(float(MODAL_CROWDING_ACCUMULATION_COMPRESSION))
+            .mul(float(1.0).sub(ridgeConcentration)),
+        ),
+      );
+      const adjustedBodyContribution = adjustedBodyDensity
+        .mul(float(BODY_DENSITY_MIX))
+        .mul(accumulationCompression);
       const hotCoreBodyCrowdingGate = smoothstep(
         float(0.28),
         float(1.1),
@@ -892,7 +903,7 @@ function createScatteringNode({
       );
       const density = clamp(
         rolledBeamDensity
-          .add(adjustedBodyDensity.mul(float(BODY_DENSITY_MIX)))
+          .add(adjustedBodyContribution)
           .mul(edgeFade)
           .mul(uDensityAbsorption)
           .mul(densityMod)

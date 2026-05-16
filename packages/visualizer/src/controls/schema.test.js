@@ -65,10 +65,10 @@ const EXPECTED_CONTROL_KEYS = [
   "performanceHudEnabled",
   // Display (continued)
   "visualizationMethod",
-  // Diagnostics
   "bloomResponseBias",
   "rimBloomBias",
   "rimCompression",
+  // Diagnostics
   "auditEnabled",
   "freezeModeSlots",
   "forceWebGLFallbackTest",
@@ -334,6 +334,9 @@ describe("control schema", () => {
       "bloomThreshold",
       "backgroundColor",
       "outputBackgroundColor",
+      "bloomResponseBias",
+      "rimBloomBias",
+      "rimCompression",
     ]);
     expect(
       getControlsForFolder("PresetsArea", DEFAULT_VISUALIZATION_METHOD).map(
@@ -440,6 +443,7 @@ describe("control schema", () => {
       "bloomThreshold",
       "backgroundColor",
       "outputBackgroundColor",
+      "bloomResponseBias",
     ]);
     expect(
       getControlsForFolder("PresetsArea", VISUALIZATION_METHODS.cymatics2d).map(
@@ -453,7 +457,10 @@ describe("control schema", () => {
     ).toEqual(["reactivity", "motionAmount", "structurePersistence"]);
   });
 
-  it("keeps 3d-only debug controls scoped to the raymarch method", () => {
+  it("keeps fine-grained glow controls live while preserving method scope", () => {
+    const bloomResponseBias = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "bloomResponseBias",
+    );
     const rimBloomBias = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "rimBloomBias",
     );
@@ -470,8 +477,21 @@ describe("control schema", () => {
       (definition) => definition.key === "holographicFresnelPower",
     );
 
-    expect(rimBloomBias?.methods).toEqual([VISUALIZATION_METHODS.raymarch]);
-    expect(rimCompression?.methods).toEqual([VISUALIZATION_METHODS.raymarch]);
+    expect(bloomResponseBias).toMatchObject({
+      group: "Display",
+      status: CONTROL_STATUSES.live,
+      methods: [VISUALIZATION_METHODS.raymarch, VISUALIZATION_METHODS.cymatics2d],
+    });
+    expect(rimBloomBias).toMatchObject({
+      group: "Display",
+      status: CONTROL_STATUSES.live,
+      methods: [VISUALIZATION_METHODS.raymarch],
+    });
+    expect(rimCompression).toMatchObject({
+      group: "Display",
+      status: CONTROL_STATUSES.live,
+      methods: [VISUALIZATION_METHODS.raymarch],
+    });
     expect(holographicIntensity?.methods).toEqual([
       VISUALIZATION_METHODS.raymarch,
     ]);

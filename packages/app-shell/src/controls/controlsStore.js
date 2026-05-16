@@ -3,6 +3,7 @@ import {
   CONTROL_DEFINITIONS,
   createControlState,
 } from "@baryon/visualizer/controls/schema";
+import { BUILT_IN_VISUAL_PRESETS } from "@baryon/visualizer/controls/visualPresets";
 import {
   PRESETS_KEY,
   createControlsPersistScheduler,
@@ -13,6 +14,10 @@ import {
   savePresetCollection,
   writeStoredJson,
 } from "../components/hooks/baryonControlsState.js";
+
+const BUILT_IN_VISUAL_PRESET_NAMES = new Set(
+  BUILT_IN_VISUAL_PRESETS.map((preset) => preset.name),
+);
 
 function getBrowserStorage() {
   if (typeof window === "undefined") {
@@ -30,10 +35,25 @@ function createSnapshot({
 }) {
   return {
     controlsState: { ...controlsRef.current },
-    presets,
+    presets: mergeSelectablePresets(presets),
     presetName,
     selectedPresetName,
   };
+}
+
+function mergeSelectablePresets(userPresets) {
+  const selectableUserPresets = userPresets.filter(
+    (preset) => !BUILT_IN_VISUAL_PRESET_NAMES.has(preset.name),
+  );
+  return [...BUILT_IN_VISUAL_PRESETS, ...selectableUserPresets];
+}
+
+function findPreset(userPresets, name) {
+  return (
+    BUILT_IN_VISUAL_PRESETS.find((preset) => preset.name === name) ??
+    userPresets.find((preset) => preset.name === name) ??
+    null
+  );
 }
 
 export function createControlsStore({ storage = getBrowserStorage() } = {}) {
@@ -127,6 +147,10 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
       return emit();
     },
     savePreset() {
+      if (BUILT_IN_VISUAL_PRESET_NAMES.has(state.presetName.trim())) {
+        return snapshot;
+      }
+
       const nextPresets = savePresetCollection(
         state.presets,
         state.presetName,
@@ -144,7 +168,7 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
       return emit();
     },
     loadPreset(name) {
-      const preset = state.presets.find((entry) => entry.name === name);
+      const preset = findPreset(state.presets, name);
       if (!preset) {
         return snapshot;
       }
@@ -161,6 +185,9 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
     },
     deletePreset(name = state.selectedPresetName) {
       if (!name) {
+        return snapshot;
+      }
+      if (BUILT_IN_VISUAL_PRESET_NAMES.has(name)) {
         return snapshot;
       }
 

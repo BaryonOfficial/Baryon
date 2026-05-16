@@ -42,7 +42,7 @@ describe("AdvancedControlsSidebar info links", () => {
     }
   });
 
-  function renderSidebar() {
+  function renderSidebar(overrides = {}) {
     act(() => {
       root.render(
         <AdvancedControlsSidebar
@@ -60,6 +60,7 @@ describe("AdvancedControlsSidebar info links", () => {
           deletePreset={() => {}}
           onClose={() => {}}
           dockWidth="360px"
+          {...overrides}
         />,
       );
     });
@@ -90,5 +91,29 @@ describe("AdvancedControlsSidebar info links", () => {
     ]);
 
     expect(container.querySelector(".baryon-controls-footer img")).toBeNull();
+  });
+
+  it("does not offer deletion for a built-in visual preset", () => {
+    const deletePreset = vi.fn();
+
+    renderSidebar({
+      presets: [
+        {
+          name: "Calibrated Clarity",
+          builtIn: true,
+          controls: {},
+        },
+      ],
+      selectedPresetName: "Calibrated Clarity",
+      deletePreset,
+    });
+
+    const deleteButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Delete selected",
+    );
+
+    expect(deleteButton?.disabled).toBe(true);
+    deleteButton?.click();
+    expect(deletePreset).not.toHaveBeenCalled();
   });
 });

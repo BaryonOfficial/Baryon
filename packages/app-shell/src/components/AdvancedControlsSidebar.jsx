@@ -1373,6 +1373,11 @@ export default function AdvancedControlsSidebar({
   const [activeCompactSectionId, setActiveCompactSectionId] = useState(
     () => compactSections[0]?.id ?? "mode",
   );
+  const selectedPreset =
+    presets.find((preset) => preset.name === selectedPresetName) ?? null;
+  const canDeleteSelectedPreset = Boolean(
+    selectedPresetName && !selectedPreset?.builtIn,
+  );
 
   const helpDefinitions = new Map();
   for (const group of [
@@ -1744,7 +1749,12 @@ export default function AdvancedControlsSidebar({
                 <button
                   type="button"
                   className="baryon-controls-danger-button"
-                  onClick={() => deletePreset(selectedPresetName)}
+                  disabled={!canDeleteSelectedPreset}
+                  onClick={() => {
+                    if (canDeleteSelectedPreset) {
+                      deletePreset(selectedPresetName);
+                    }
+                  }}
                 >
                   Delete selected
                 </button>

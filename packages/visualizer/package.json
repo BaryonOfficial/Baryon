@@ -19,6 +19,7 @@
     "./controls/persistence": "./src/controls/persistence.js",
     "./controls/runtime": "./src/controls/runtime.js",
     "./controls/schema": "./src/controls/schema.js",
+    "./controls/visualPresets": "./src/controls/visualPresets.js",
     "./core/raymarch/performanceGovernor": "./src/core/raymarch/performanceGovernor.js",
     "./defaults": "./src/defaults.js",
     "./render/outputProfilePolicy": "./src/render/outputProfilePolicy.js",

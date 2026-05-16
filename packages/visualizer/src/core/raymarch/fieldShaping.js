@@ -39,6 +39,7 @@ export const EMISSION_ROLLOFF_BASE = 0.42;
 export const EMISSION_ROLLOFF_TRANSIENT_GAIN = 0.18;
 export const EMISSION_ROLLOFF_MIX = 0.68;
 export const MODAL_CROWDING_BODY_COMPRESSION = 0.55;
+export const MODAL_CROWDING_ACCUMULATION_COMPRESSION = 0.7;
 export const HOT_CORE_START = 0.56;
 export const HOT_CORE_END = 0.94;
 export const HOT_CORE_CROWDING_THRESHOLD_LIFT = 0.14;
@@ -373,6 +374,14 @@ export function deriveModalCrowdingDensity({
   const bodyCompression =
     1 / (1 + bodyCrowding * MODAL_CROWDING_BODY_COMPRESSION);
   const adjustedBodyDensity = bodyDensity * bodyCompression;
+  const accumulationCompression =
+    1 /
+    (1 +
+      bodyCrowding *
+        MODAL_CROWDING_ACCUMULATION_COMPRESSION *
+        (1 - ridgeConcentration));
+  const adjustedBodyContribution =
+    adjustedBodyDensity * BODY_DENSITY_MIX * accumulationCompression;
 
   return {
     rolledBeamDensity: beamDensity,
@@ -382,7 +391,9 @@ export function deriveModalCrowdingDensity({
     bodyCrowding,
     bodyCompression,
     adjustedBodyDensity,
-    localDensity: beamDensity + adjustedBodyDensity * BODY_DENSITY_MIX,
+    accumulationCompression,
+    adjustedBodyContribution,
+    localDensity: beamDensity + adjustedBodyContribution,
   };
 }
 

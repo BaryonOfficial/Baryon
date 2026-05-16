@@ -9,6 +9,9 @@ import { installLocalStorageMock } from "../test/installLocalStorageMock.js";
 import * as localStorageMockModule from "../test/installLocalStorageMock.js";
 import { createControlsStore } from "./controlsStore.js";
 
+const CALIBRATED_CLARITY_NAME = "Calibrated Clarity";
+const STAGE_CONTAINMENT_NAME = "Stage Containment";
+
 function seedStorage({ controls = null, presets = null } = {}) {
   window.localStorage.clear();
   if (controls) {
@@ -52,6 +55,14 @@ describe("createControlsStore", () => {
       "structuralImplementation",
     );
     expect(store.getSnapshot().presets).toStrictEqual([
+      expect.objectContaining({
+        name: CALIBRATED_CLARITY_NAME,
+        builtIn: true,
+      }),
+      expect.objectContaining({
+        name: STAGE_CONTAINMENT_NAME,
+        builtIn: true,
+      }),
       {
         name: "Stage",
         controls: {
@@ -97,11 +108,83 @@ describe("createControlsStore", () => {
     store.savePreset();
 
     expect(store.getSnapshot().selectedPresetName).toBe("Studio");
-    expect(store.getSnapshot().presets).toHaveLength(1);
+    expect(
+      store
+        .getSnapshot()
+        .presets.filter((preset) => preset.name === "Studio"),
+    ).toHaveLength(1);
 
     store.deletePreset();
 
     expect(store.getSnapshot().selectedPresetName).toBe("");
-    expect(store.getSnapshot().presets).toHaveLength(0);
+    expect(
+      store
+        .getSnapshot()
+        .presets.filter((preset) => preset.name === "Studio"),
+    ).toHaveLength(0);
+  });
+
+  it("exposes the calibrated clarity preset without writing it to storage", () => {
+    const store = createControlsStore();
+
+    expect(store.getSnapshot().presets[0]?.name).toBe(CALIBRATED_CLARITY_NAME);
+
+    store.loadPreset(CALIBRATED_CLARITY_NAME);
+
+    expect(store.getSnapshot().selectedPresetName).toBe(CALIBRATED_CLARITY_NAME);
+    expect(store.controlsRef.current.structureMin).toBe(0.32);
+    expect(store.controlsRef.current.structureMax).toBe(0.38);
+    expect(store.controlsRef.current.densityGain).toBe(3.05);
+    expect(store.controlsRef.current.absorption).toBe(3.55);
+    expect(store.controlsRef.current.holographicIntensity).toBe(0.54);
+    expect(store.controlsRef.current.holographicFresnelPower).toBe(3.6);
+    expect(store.controlsRef.current.bloomStrength).toBe(0.95);
+    expect(store.controlsRef.current.bloomThreshold).toBe(0.36);
+    expect(store.controlsRef.current.bloomResponseBias).toBe(0.6);
+    expect(store.controlsRef.current.rimBloomBias).toBe(0.28);
+
+    const storedPresets = window.localStorage.getItem(PRESETS_KEY);
+    expect(storedPresets).toBeNull();
+  });
+
+  it("exposes the stage containment preset without writing it to storage", () => {
+    const store = createControlsStore();
+
+    expect(store.getSnapshot().presets[1]?.name).toBe(STAGE_CONTAINMENT_NAME);
+
+    store.loadPreset(STAGE_CONTAINMENT_NAME);
+
+    expect(store.getSnapshot().selectedPresetName).toBe(STAGE_CONTAINMENT_NAME);
+    expect(store.controlsRef.current.structureMin).toBe(0.36);
+    expect(store.controlsRef.current.structureMax).toBe(0.42);
+    expect(store.controlsRef.current.densityGain).toBe(2.85);
+    expect(store.controlsRef.current.absorption).toBe(3.75);
+    expect(store.controlsRef.current.opacityGain).toBe(2.85);
+    expect(store.controlsRef.current.holographicIntensity).toBe(0.46);
+    expect(store.controlsRef.current.holographicFresnelPower).toBe(4.2);
+    expect(store.controlsRef.current.bloomStrength).toBe(0.82);
+    expect(store.controlsRef.current.bloomThreshold).toBe(0.42);
+    expect(store.controlsRef.current.bloomResponseBias).toBe(0.72);
+    expect(store.controlsRef.current.rimBloomBias).toBe(0.22);
+    expect(store.controlsRef.current.spectralMix).toBe(0.95);
+
+    const storedPresets = window.localStorage.getItem(PRESETS_KEY);
+    expect(storedPresets).toBeNull();
+  });
+
+  it("does not delete built-in visual presets", () => {
+    const store = createControlsStore();
+
+    store.loadPreset(CALIBRATED_CLARITY_NAME);
+    store.deletePreset();
+
+    expect(store.getSnapshot().selectedPresetName).toBe(
+      CALIBRATED_CLARITY_NAME,
+    );
+    expect(
+      store
+        .getSnapshot()
+        .presets.some((preset) => preset.name === CALIBRATED_CLARITY_NAME),
+    ).toBe(true);
   });
 });

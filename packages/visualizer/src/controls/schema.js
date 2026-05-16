@@ -775,27 +775,27 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     CONTROL_GROUPS.mode,
   ),
 
-  // ── Diagnostics (debug-only) ───────────────────────────────────────────────
+  // ── Fine-grained glow shaping ─────────────────────────────────────────────
   withControlGroup(
     {
       key: "bloomResponseBias",
-      label: "Bloom Bias",
+      label: "Glow Response",
       title:
-        "Makes the glow smaller and more stable by trimming how easily bloom reacts.",
+        "Makes the glow smaller and more stable by trimming how easily bloom reacts during crowded frames.",
       defaultValue: RENDER_DEFAULTS.bloomResponseBias,
       methods: ALL_METHODS,
       binding: { min: 0, max: 1, step: 0.01 },
       targetType: CONTROL_TARGET_TYPES.pipeline,
       handler: CONTROL_HANDLERS.bloom,
       runtimePath: "runtime.bloomTuning.bloomResponseBias",
-      status: CONTROL_STATUSES.debugOnly,
+      status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.diagnostics,
+    CONTROL_GROUPS.display,
   ),
   withControlGroup(
     {
       key: "rimBloomBias",
-      label: "Rim Bias",
+      label: "Rim Glow",
       title:
         "Pushes more brightness toward the outer rim before bloom is applied.",
       defaultValue: RAYMARCH_DEFAULTS.rimBloomBias,
@@ -804,9 +804,9 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uRimBloomBias.value",
-      status: CONTROL_STATUSES.debugOnly,
+      status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.diagnostics,
+    CONTROL_GROUPS.display,
   ),
   withControlGroup(
     {
@@ -819,10 +819,12 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
       runtimePath: "runtime.uniforms.uRimCompression.value",
-      status: CONTROL_STATUSES.debugOnly,
+      status: CONTROL_STATUSES.live,
     },
-    CONTROL_GROUPS.diagnostics,
+    CONTROL_GROUPS.display,
   ),
+
+  // ── Diagnostics (debug-only) ───────────────────────────────────────────────
   withControlGroup(
     {
       key: "auditEnabled",
