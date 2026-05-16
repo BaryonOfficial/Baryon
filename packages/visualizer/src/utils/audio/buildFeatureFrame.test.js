@@ -3413,6 +3413,65 @@ describe("live input FFT normalization — slot amplitude lift", () => {
     expect(reused.timbreSpread).toBe(first.timbreSpread);
     expect(reused.spectralNovelty).toBe(first.spectralNovelty);
   });
+
+  it("reused heavy-analysis frames let current silence collapse composite authority", () => {
+    const featureState = createAudioFeatureState();
+    const status = createStatus({
+      audioInputMode: "file",
+      isPlaying: true,
+      hasAnalysisSource: true,
+      playbackSessionId: 7,
+    });
+    const analysisSnapshot = applyTestToneToSnapshot({
+      analysisSnapshot: null,
+      auditSettings: {
+        testToneHz: 440,
+        testToneAmplitude: 0.7,
+      },
+      fftSize: FFT_SIZE,
+      sampleRate: SAMPLE_RATE,
+    });
+    const prepared = prepareAudioFeatureFrameInputs({
+      analysisSnapshot,
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 1000,
+    });
+    const analysisResult = runHeavyAudioFeatureAnalysis(prepared);
+    const first = composeAudioFeatureFrame({
+      preparedInputs: prepared,
+      analysisResult,
+    });
+
+    const preparedSilentReuse = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 0,
+        fftMagnitudes: new Float32Array(BIN_COUNT),
+        rms: 0,
+      }),
+      featureState,
+      radius: 3,
+      status,
+      frameTimeMs: 1000 + 8 * 33,
+    });
+    const reused = composeAudioFeatureFrame({
+      preparedInputs: preparedSilentReuse,
+      analysisResult,
+      previousFrame: first,
+      reuseHeavyAnalysis: true,
+    });
+
+    expect(reused.backboneSlots).toBe(first.backboneSlots);
+    expect(first.modalVisibilityEnergy).toBeGreaterThan(0.05);
+    expect(reused.structureSignal).toBeLessThan(first.structureSignal * 0.5);
+    expect(reused.energySignal).toBeLessThan(first.energySignal * 0.5);
+    expect(reused.modalVisibilityEnergy).toBeLessThan(
+      first.modalVisibilityEnergy * 0.5,
+    );
+    expect(reused.modeCoherence).toBeLessThan(first.modeCoherence * 0.5);
+  });
 });
 
 describe("full-range music handling", () => {

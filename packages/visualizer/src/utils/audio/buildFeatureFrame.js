@@ -482,6 +482,38 @@ function getSourceNormalization({
   };
 }
 
+function deriveSourceEnergyAuthority(sourceNormalization) {
+  return clamp01(
+    Math.max(
+      sourceNormalization?.normalizedRms ?? 0,
+      sourceNormalization?.normalizedAmplitude ?? 0,
+    ),
+  );
+}
+
+function deriveReusedAnalysisSourceAuthorityScale({
+  preparedInputs,
+  analysisResult,
+}) {
+  const reusedAuthority = deriveSourceEnergyAuthority(
+    analysisResult?.sourceNormalization,
+  );
+  if (!(reusedAuthority > 0)) {
+    return 1;
+  }
+
+  const currentNormalization = getSourceNormalization({
+    inputMode: preparedInputs.analysisInputMode,
+    avgAmplitude: preparedInputs.avgAmplitude,
+    analyserRms: preparedInputs.analyserRms,
+    spectralCentroid: analysisResult?.spectralCentroid ?? 0,
+    bandState: preparedInputs.bandState,
+  });
+  const currentAuthority = deriveSourceEnergyAuthority(currentNormalization);
+
+  return clamp01(currentAuthority / reusedAuthority);
+}
+
 function getFrameDeltaMs(previousFrameAtMs, currentFrameAtMs) {
   if (!Number.isFinite(previousFrameAtMs) || previousFrameAtMs <= 0) {
     return DEFAULT_FRAME_TIME_MS;
@@ -3999,6 +4031,12 @@ export function composeAudioFeatureFrame({
     sourceNormalization: analysisResult.sourceNormalization,
     liveInputHardSilenceActive: analysisResult.liveInputHardSilenceActive,
   });
+  const reusedAnalysisSourceAuthorityScale = reuseHeavyAnalysis
+    ? deriveReusedAnalysisSourceAuthorityScale({
+        preparedInputs,
+        analysisResult,
+      })
+    : 1;
   if (reuseHeavyAnalysis && previousFrame) {
     const deltaMs = getFrameDeltaMs(
       preparedInputs.analysisMemory.lastComposedFrameAtMs,
@@ -4049,6 +4087,12 @@ export function composeAudioFeatureFrame({
         releaseMs: 160,
       },
     );
+  }
+  if (reusedAnalysisSourceAuthorityScale < 1) {
+    structureSignal *= reusedAnalysisSourceAuthorityScale;
+    energySignal *= reusedAnalysisSourceAuthorityScale;
+    modalVisibilityEnergy *= reusedAnalysisSourceAuthorityScale;
+    modeCoherence *= reusedAnalysisSourceAuthorityScale;
   }
   const timbreSpread = deriveDeterministicTimbreSpread({
     bandEnergies: analysisResult.bandEnergies,
