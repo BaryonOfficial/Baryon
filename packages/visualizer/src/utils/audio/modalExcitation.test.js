@@ -1720,6 +1720,72 @@ describe("modal excitation structural state", () => {
     expect(hasNewModeKey(freshVisibleKeys, seededVisibleKeys)).toBe(true);
   });
 
+  it("cuts stale detail blend weight on a strong fresh treble switch", () => {
+    const state = createModalExcitationState(16);
+    let seededStructural = null;
+
+    for (let frame = 0; frame < 4; frame += 1) {
+      const seededInputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft([
+          [5200, 0.9],
+          [6200, 0.86],
+          [7200, 0.82],
+          [8400, 0.78],
+          [9600, 0.74],
+        ]),
+        timeData: makeTimeData({ frequency: 6200, amplitude: 0.36 }),
+      });
+      seededInputs.modalExcitationState = state;
+      const seededFastSignal = updateAudioFeatureFastSignalState(seededInputs);
+      seededStructural = buildModalExcitationStructuralState({
+        preparedInputs: seededInputs,
+        fastSignalState: seededFastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    const seededVisibleAmplitudes = readModeAmplitudeMap(
+      seededStructural.detailSlotsSource,
+    );
+
+    const freshInputs = createPreparedInputs({
+      frameTimeMs: 4 * 33,
+      fftMagnitudes: makeFft([
+        [5400, 0.18],
+        [6200, 0.16],
+        [7200, 0.14],
+        [10400, 0.98],
+        [11800, 0.92],
+      ]),
+      timeData: makeTimeData({ frequency: 10800, amplitude: 0.4 }),
+      avgAmplitude: 44,
+      rms: 0.28,
+    });
+    freshInputs.modalExcitationState = state;
+    const freshFastSignal = updateAudioFeatureFastSignalState(freshInputs);
+    const freshStructural = buildModalExcitationStructuralState({
+      preparedInputs: freshInputs,
+      fastSignalState: freshFastSignal,
+      existingState: state,
+      performanceNow: () => 4,
+    });
+
+    const freshVisibleAmplitudes = readModeAmplitudeMap(
+      freshStructural.detailSlotsSource,
+    );
+    const sharedRatio = measureSharedAmplitudeRatio(
+      seededVisibleAmplitudes,
+      freshVisibleAmplitudes,
+    );
+
+    expect(hasNewModeKey(readModeKeys(freshStructural.detailSlotsSource), [
+      ...seededVisibleAmplitudes.keys(),
+    ])).toBe(true);
+    expect(sharedRatio).toBeLessThan(0.42);
+  });
+
   it("keeps visible detail keys as a subset of the raw signal shortlist", () => {
     const state = createModalExcitationState(16);
     const inputs = createPreparedInputs({

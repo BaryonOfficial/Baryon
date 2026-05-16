@@ -56,9 +56,13 @@ const EXCITATION_DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD = 0.06;
 const EXCITATION_DETAIL_LOW_SIGNAL_RELEASE = 0.48;
 const EXCITATION_DETAIL_SIGNAL_COVERAGE_MIN = 0.68;
 const EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_VISIBLE_AMPLITUDE = 0.2;
+const EXCITATION_DETAIL_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE = 0.12;
+const EXCITATION_DETAIL_FAST_SHIFT_MIN_SIGNAL_AMPLITUDE = 0.28;
+const EXCITATION_DETAIL_FAST_SHIFT_SIGNAL_RATIO = 1.6;
 const EXCITATION_DETAIL_TAIL_RELEASE = 0.82;
 const EXCITATION_DETAIL_TAIL_EMPTY_RELEASE = 0.82;
 const EXCITATION_DETAIL_TAIL_LOW_SIGNAL_RELEASE = 0.72;
+const EXCITATION_DETAIL_SHIFT_STALE_RELEASE = 0.36;
 const EXCITATION_DETAIL_TAIL_PRESENCE_RELEASE = 0.92;
 const EXCITATION_DETAIL_LATENT_TAIL_RELEASE = 0.94;
 const EXCITATION_DETAIL_LATENT_TAIL_EMPTY_RELEASE = 0.92;
@@ -1387,6 +1391,99 @@ function hasVisibleModeKey(slots, modeKey) {
   return false;
 }
 
+function buildModeKeySet(slots, capacity) {
+  const keys = new Set();
+  if (!(slots instanceof Float32Array)) {
+    return keys;
+  }
+
+  const slotLimit = Math.min(capacity, Math.floor(slots.length / 4));
+  for (let index = 0; index < slotLimit; index += 1) {
+    const offset = index * 4;
+    if ((slots[offset + 3] ?? 0) <= 0) {
+      continue;
+    }
+    keys.add(
+      buildModeKey(slots[offset], slots[offset + 1], slots[offset + 2]),
+    );
+  }
+
+  return keys;
+}
+
+function buildStaleDetailReleaseOverrides({
+  visibleSlots,
+  targetSlots,
+  capacity,
+  release,
+}) {
+  const targetKeys = buildModeKeySet(targetSlots, capacity);
+  const overrides = new Map();
+  if (!(visibleSlots instanceof Float32Array) || targetKeys.size === 0) {
+    return overrides;
+  }
+
+  const slotLimit = Math.min(capacity, Math.floor(visibleSlots.length / 4));
+  for (let index = 0; index < slotLimit; index += 1) {
+    const offset = index * 4;
+    if ((visibleSlots[offset + 3] ?? 0) <= 0) {
+      continue;
+    }
+    const key = buildModeKey(
+      visibleSlots[offset],
+      visibleSlots[offset + 1],
+      visibleSlots[offset + 2],
+    );
+    if (!targetKeys.has(key)) {
+      overrides.set(key, release);
+    }
+  }
+
+  return overrides;
+}
+
+function hasStrongFreshDetailSignal({
+  visibleSlots,
+  signalSlots,
+  capacity,
+}) {
+  const visibleKeys = buildModeKeySet(visibleSlots, capacity);
+  if (!(signalSlots instanceof Float32Array) || visibleKeys.size === 0) {
+    return false;
+  }
+
+  let strongestFreshSignal = 0;
+  let strongestCoveredSignal = 0;
+  const signalLimit = Math.min(capacity, Math.floor(signalSlots.length / 4));
+  for (let index = 0; index < signalLimit; index += 1) {
+    const offset = index * 4;
+    const signalAmplitude = signalSlots[offset + 3] ?? 0;
+    if (signalAmplitude <= 0) {
+      continue;
+    }
+    const key = buildModeKey(
+      signalSlots[offset],
+      signalSlots[offset + 1],
+      signalSlots[offset + 2],
+    );
+    if (visibleKeys.has(key)) {
+      strongestCoveredSignal = Math.max(
+        strongestCoveredSignal,
+        signalAmplitude,
+      );
+    } else {
+      strongestFreshSignal = Math.max(strongestFreshSignal, signalAmplitude);
+    }
+  }
+
+  return (
+    strongestFreshSignal >=
+      EXCITATION_DETAIL_FAST_SHIFT_MIN_SIGNAL_AMPLITUDE &&
+    strongestFreshSignal >=
+      strongestCoveredSignal * EXCITATION_DETAIL_FAST_SHIFT_SIGNAL_RATIO
+  );
+}
+
 function computeSignalCoverageByVisibleKeys(
   visibleSlots,
   signalSlots,
@@ -2108,17 +2205,39 @@ export function buildModalExcitationStructuralState({
     detailSignalCoverage < EXCITATION_DETAIL_SIGNAL_COVERAGE_MIN &&
     detailVisibleAmplitude >=
       EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_VISIBLE_AMPLITUDE;
-  const detailBlendTargetSlots = detailTargetShifted
+  const detailFreshSignalShifted =
+    detailVisibleAmplitude >=
+      EXCITATION_DETAIL_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE &&
+    hasStrongFreshDetailSignal({
+      visibleSlots: state.blendDetail.slots,
+      signalSlots: state.detail.slots,
+      capacity: detailCapacity,
+    });
+  const detailFastAssistShifted =
+    detailAssistNeedsFreshAdmission &&
+    detailVisibleAmplitude >=
+      EXCITATION_DETAIL_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE;
+  const detailSignalAuthoritative =
+    detailTargetShifted || detailFreshSignalShifted || detailFastAssistShifted;
+  const detailBlendTargetSlots = detailSignalAuthoritative
     ? state.detail.slots
     : state.displayDetail.slots;
-  const detailBlendReferenceSlots = detailTargetShifted
+  const detailBlendReferenceSlots = detailSignalAuthoritative
     ? state.detail.referenceSlots
     : state.displayDetail.referenceSlots;
-  const detailBlendColorSlots = detailTargetShifted
+  const detailBlendColorSlots = detailSignalAuthoritative
     ? state.detail.colorSlots
     : state.displayDetail.colorSlots;
+  const detailShiftReleaseOverrides = detailSignalAuthoritative
+    ? buildStaleDetailReleaseOverrides({
+        visibleSlots: state.blendDetail.slots,
+        targetSlots: detailBlendTargetSlots,
+        capacity: detailCapacity,
+        release: EXCITATION_DETAIL_SHIFT_STALE_RELEASE,
+      })
+    : null;
   blendModalStack(state.blendDetail, detailBlendTargetSlots, detailCapacity, {
-    attack: detailTargetShifted
+    attack: detailSignalAuthoritative
       ? EXCITATION_DETAIL_SHIFT_BLEND_ATTACK
       : EXCITATION_DETAIL_BLEND_ATTACK,
     tracking: EXCITATION_DETAIL_BLEND_TRACKING,
@@ -2140,7 +2259,8 @@ export function buildModalExcitationStructuralState({
       : hasSustainedTail
         ? EXCITATION_DETAIL_TAIL_LOW_SIGNAL_RELEASE
         : EXCITATION_DETAIL_LOW_SIGNAL_RELEASE,
-    freshCap: detailTargetShifted
+    releaseOverrides: detailShiftReleaseOverrides,
+    freshCap: detailSignalAuthoritative
       ? detailCapacity
       : EXCITATION_DETAIL_FRESH_CAP + (detailAssistNeedsFreshAdmission ? 1 : 0),
   });
@@ -2171,7 +2291,7 @@ export function buildModalExcitationStructuralState({
       detailBlendColorSlots,
       detailCapacity,
       {
-        attack: detailTargetShifted
+        attack: detailSignalAuthoritative
           ? EXCITATION_DETAIL_SHIFT_BLEND_ATTACK
           : EXCITATION_DETAIL_BLEND_ATTACK,
         tracking: EXCITATION_DETAIL_BLEND_TRACKING,
