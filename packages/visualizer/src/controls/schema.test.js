@@ -101,7 +101,7 @@ describe("control schema", () => {
     expect(state.surfaceColor).toBe("#f7fdff");
     expect(state.zeroPointPrecision).toBe(0.02);
     expect(state.structureMin).toBe(0.3);
-    expect(state.structureMax).toBe(0.35);
+    expect(state.structureMax).toBe(0.48);
     expect(state.boundaryMode).toBe("neumann");
     expect(state.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
     expect(state.densityGain).toBe(3.25);

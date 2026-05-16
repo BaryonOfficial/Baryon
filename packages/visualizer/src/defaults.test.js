@@ -53,6 +53,7 @@ describe("defaults compatibility surface", () => {
 
   it("uses the tuned UI panel settings as the live raymarch defaults", () => {
     expect(SIMULATION_DEFAULTS.zeroPointPrecision).toBe(0.02);
+    expect(SIMULATION_DEFAULTS.structureMax).toBe(0.48);
     expect(RAYMARCH_DEFAULTS.densityGain).toBe(3.25);
     expect(RAYMARCH_DEFAULTS.absorption).toBe(3.37);
     expect(RAYMARCH_DEFAULTS.raymarchSteps).toBe(88);

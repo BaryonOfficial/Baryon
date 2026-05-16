@@ -23,7 +23,7 @@ export const SIMULATION_DEFAULTS = Object.freeze({
   radius: 3.0,
   zeroPointPrecision: 0.02,
   structureMin: 0.3,
-  structureMax: 0.35,
+  structureMax: 0.48,
   boundaryMode: "neumann",
   cavityGeometry: DEFAULT_REQUESTED_CAVITY_GEOMETRY,
 });
