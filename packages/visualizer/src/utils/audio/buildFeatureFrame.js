@@ -828,10 +828,12 @@ function buildDebugSummary({
   );
   const detailModeCount = countActiveSlots(detailSlots, DETAIL_STACK_SLOTS);
   const modeSlotCount = countActiveSlots(modeSlots, MAX_STACK_SLOTS);
-  const modalVisibilitySlotEnergy = averageActiveSlotAmplitude(
+  const modalVisibilitySummary = deriveModalVisibilityComponents({
     modeSlots,
-    MAX_STACK_SLOTS,
-  );
+    modeCapacity: MAX_STACK_SLOTS,
+    structuralMetrics,
+    hardSilent: liveInputHardSilenceActive,
+  });
   const modalVisibilityDriveEnergy = clamp01(
     structuralMetrics?.modalDriveEnergy ?? 0,
   );
@@ -884,7 +886,13 @@ function buildDebugSummary({
     structureSignal,
     energySignal,
     modalVisibilityEnergy,
-    modalVisibilitySlotEnergy,
+    modalVisibilitySlotEnergy: modalVisibilitySummary.averageSlotEnergy,
+    modalVisibilityPeakSlotEnergy: modalVisibilitySummary.peakSlotEnergy,
+    modalVisibilityUpperSlotEnergy: modalVisibilitySummary.upperSlotEnergy,
+    modalVisibilityDistributedEnergy:
+      modalVisibilitySummary.distributedModalVisibility,
+    modalVisibilityDominantEnergy:
+      modalVisibilitySummary.dominantModalVisibility,
     modalVisibilityActiveModeCount: modeSlotCount,
     modalVisibilityDriveEnergy,
     changeSignal,
@@ -1833,17 +1841,23 @@ function deriveModeDeltaMetrics(modeSlots, referenceModeSlots, capacity) {
   };
 }
 
-function averageActiveSlotAmplitude(modeSlots, capacity) {
+function summarizeActiveSlotAmplitudes(modeSlots, capacity) {
   const slotCount = Math.min(
     capacity,
     Math.floor((modeSlots?.length ?? 0) / 4),
   );
   if (slotCount <= 0) {
-    return 0;
+    return {
+      activeModeCount: 0,
+      averageSlotEnergy: 0,
+      peakSlotEnergy: 0,
+      upperSlotEnergy: 0,
+    };
   }
 
   let activeCount = 0;
   let amplitudeTotal = 0;
+  const amplitudes = [];
   for (let i = 0; i < slotCount; i += 1) {
     const amplitude = clamp01(modeSlots[i * 4 + 3] ?? 0);
     if (amplitude <= 0) {
@@ -1851,27 +1865,60 @@ function averageActiveSlotAmplitude(modeSlots, capacity) {
     }
     activeCount += 1;
     amplitudeTotal += amplitude;
+    amplitudes.push(amplitude);
   }
 
-  return activeCount > 0 ? clamp01(amplitudeTotal / activeCount) : 0;
+  if (activeCount <= 0) {
+    return {
+      activeModeCount: 0,
+      averageSlotEnergy: 0,
+      peakSlotEnergy: 0,
+      upperSlotEnergy: 0,
+    };
+  }
+
+  amplitudes.sort((left, right) => right - left);
+  const upperCount = Math.min(3, Math.max(1, Math.ceil(activeCount * 0.25)));
+  let upperTotal = 0;
+  for (let index = 0; index < upperCount; index += 1) {
+    upperTotal += amplitudes[index] ?? 0;
+  }
+
+  return {
+    activeModeCount: activeCount,
+    averageSlotEnergy: clamp01(amplitudeTotal / activeCount),
+    peakSlotEnergy: amplitudes[0] ?? 0,
+    upperSlotEnergy: clamp01(upperTotal / upperCount),
+  };
 }
 
-function deriveModalVisibilityEnergy({
+function deriveModalVisibilityComponents({
   modeSlots,
   modeCapacity,
   structuralMetrics = null,
   hardSilent = false,
 }) {
+  const emptySummary = {
+    activeModeCount: 0,
+    averageSlotEnergy: 0,
+    peakSlotEnergy: 0,
+    upperSlotEnergy: 0,
+    distributedModalVisibility: 0,
+    dominantModalVisibility: 0,
+    modalVisibilityEnergy: 0,
+  };
+
   if (hardSilent) {
-    return 0;
+    return emptySummary;
   }
 
-  const activeModeCount = countActiveSlots(modeSlots, modeCapacity);
+  const slotSummary = summarizeActiveSlotAmplitudes(modeSlots, modeCapacity);
+  const activeModeCount = slotSummary.activeModeCount;
   if (activeModeCount <= 0) {
-    return 0;
+    return emptySummary;
   }
 
-  const slotEnergy = averageActiveSlotAmplitude(modeSlots, modeCapacity);
+  const slotEnergy = slotSummary.averageSlotEnergy;
   const modalDriveEnergy = clamp01(structuralMetrics?.modalDriveEnergy ?? 0);
   const modalPersistence = clamp01(structuralMetrics?.modalPersistence ?? 0);
   const resonatorCoherence = clamp01(structuralMetrics?.modeCoherence ?? 0);
@@ -1882,7 +1929,12 @@ function deriveModalVisibilityEnergy({
     modalPersistence <= MODAL_VISIBILITY_PERSISTENCE_START &&
     modalDriveEnergy < 0.09
   ) {
-    return 0;
+    return {
+      ...slotSummary,
+      distributedModalVisibility: 0,
+      dominantModalVisibility: 0,
+      modalVisibilityEnergy: 0,
+    };
   }
   const slotEnergyGate = smoothstep(
     MODAL_VISIBILITY_SLOT_ENERGY_START,
@@ -1914,7 +1966,7 @@ function deriveModalVisibilityEnergy({
     1 -
     distributedExcitation * MODAL_VISIBILITY_DISTRIBUTED_REDUCTION;
 
-  return clamp01(
+  const distributedModalVisibility = clamp01(
     (slotEnergyGate * 0.34 +
       driveGate * 0.3 +
       persistenceGate * 0.22 +
@@ -1923,6 +1975,32 @@ function deriveModalVisibilityEnergy({
       (0.55 + occupancyGate * 0.45) *
       distributedReduction,
   );
+  const dominantSlotEnergy =
+    slotSummary.upperSlotEnergy * 0.7 + slotSummary.peakSlotEnergy * 0.3;
+  const dominantSlotGate = smoothstep(0.018, 0.11, dominantSlotEnergy);
+  const sparseClusterGate =
+    1 - smoothstep(0.48, 0.82, activeModeCount / Math.max(1, modeCapacity));
+  const dominantQuality = Math.max(coherenceGate * 0.75, persistenceGate);
+  const dominantModalVisibility = clamp01(
+    dominantSlotGate *
+      dominantQuality *
+      (0.55 + sparseClusterGate * 0.35) *
+      distributedReduction *
+      0.42,
+  );
+
+  return {
+    ...slotSummary,
+    distributedModalVisibility,
+    dominantModalVisibility,
+    modalVisibilityEnergy: clamp01(
+      Math.max(distributedModalVisibility, dominantModalVisibility),
+    ),
+  };
+}
+
+function deriveModalVisibilityEnergy(options) {
+  return deriveModalVisibilityComponents(options).modalVisibilityEnergy;
 }
 
 function deriveCompositeSignals({

@@ -2427,7 +2427,16 @@ describe("live input noise gate", () => {
     expect(frame.fieldState).toBe("active");
     expect(sumSlotAmplitudes(frame.backboneSlots)).toBeGreaterThan(0.0015);
     expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.0015);
-    expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.12);
+    expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.18);
+    expect(frame.debug.modalVisibilityPeakSlotEnergy).toBeGreaterThan(
+      frame.debug.modalVisibilitySlotEnergy,
+    );
+    expect(frame.debug.modalVisibilityUpperSlotEnergy).toBeGreaterThan(
+      frame.debug.modalVisibilitySlotEnergy,
+    );
+    expect(frame.debug.modalVisibilityDistributedEnergy).toBeGreaterThan(0);
+    expect(frame.debug.modalVisibilityDominantEnergy).toBeGreaterThan(0);
+    expect(frame.debug.modalVisibilityDominantClusterEnergy).toBeUndefined();
   }, 10000);
 
   it("keeps subdued system-routed harmonic resonance from going empty", () => {
@@ -2890,6 +2899,15 @@ describe("test-tone snapshot generation", () => {
     expect(sustained.debug.modalVisibilityEnergy).toBe(
       sustained.modalVisibilityEnergy,
     );
+    expect(sustained.debug.modalVisibilityPeakSlotEnergy).toBeGreaterThan(0);
+    expect(sustained.debug.modalVisibilityUpperSlotEnergy).toBeGreaterThan(0);
+    expect(sustained.debug.modalVisibilityDistributedEnergy).toBeGreaterThan(0);
+    expect(
+      sustained.debug.modalVisibilityDominantEnergy,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      sustained.debug.modalVisibilityDominantClusterEnergy,
+    ).toBeUndefined();
   });
 
   it("does not expose modal visibility energy for silence or weak noisy input", () => {
@@ -3902,5 +3920,15 @@ describe("modal excitation integration", () => {
     expect(result.frame.structureSignal).toBeGreaterThan(0);
     expect(result.frame.changeSignal).toBeGreaterThanOrEqual(0);
     expect(result.frame.modeCoherence).toBeGreaterThan(0);
+    expect(result.frame.debug.modalVisibilityActiveModeCount).toBeGreaterThan(
+      4,
+    );
+    expect(result.frame.modalVisibilityEnergy).toBeLessThan(0.75);
+    expect(
+      result.frame.debug.modalVisibilityDominantEnergy,
+    ).toBeLessThan(0.35);
+    expect(
+      result.frame.debug.modalVisibilityDominantClusterEnergy,
+    ).toBeUndefined();
   });
 });
