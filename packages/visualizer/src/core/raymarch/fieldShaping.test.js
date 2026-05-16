@@ -602,7 +602,7 @@ describe("field shaping", () => {
       transientCrowding.whiteEmissionCrowding,
     );
     expect(highlight.crowdedHotCoreMix).toBeGreaterThan(0.48);
-    expect(highlight.crowdedWhiteEmissionMix).toBeLessThan(0.52 * 0.58);
+    expect(highlight.crowdedWhiteEmissionMix).toBeLessThan(0.52 * 0.45);
   });
 
   it("reduces crowded white-emission mix before highlights desaturate", () => {
