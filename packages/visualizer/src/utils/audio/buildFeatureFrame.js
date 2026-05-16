@@ -1310,16 +1310,6 @@ export function detectLiveInputNoiseGate({
     sampleRate,
     fftSize,
   });
-  if (
-    acousticIntent === LIVE_INPUT_ACOUSTIC_INTENTS.vocal &&
-    metrics.avgAmplitude >= 3 &&
-    metrics.avgAmplitude <= 5 &&
-    metrics.rms >= 0.01 &&
-    metrics.rms <= 0.018 &&
-    metrics.peakAmplitude <= 0.2
-  ) {
-    return true;
-  }
   const thresholds = {
     hardSilenceAvg: config.absoluteAvgAmplitude,
     hardSilenceRms: config.absoluteRmsFloor,
@@ -1963,8 +1953,7 @@ function deriveModalVisibilityComponents({
   );
   const modalQuality = Math.max(coherenceGate, persistenceGate * 0.75);
   const distributedReduction =
-    1 -
-    distributedExcitation * MODAL_VISIBILITY_DISTRIBUTED_REDUCTION;
+    1 - distributedExcitation * MODAL_VISIBILITY_DISTRIBUTED_REDUCTION;
   const distributedEnergyAnchor = smoothstep(
     0.015,
     0.16,

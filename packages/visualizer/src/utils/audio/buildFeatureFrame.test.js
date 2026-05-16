@@ -2108,7 +2108,7 @@ describe("live input noise gate", () => {
     ).toBe(false);
   });
 
-  it("keeps vocal mic intent stricter than ambient for modest resonant audio", () => {
+  it("does not use vocal intent as a hard gate for modest resonant audio", () => {
     const resonantInput = {
       injectTestTone: false,
       inputMode: "live",
@@ -2132,7 +2132,45 @@ describe("live input noise gate", () => {
         ...resonantInput,
         liveInputAnalysisSettings: { acousticIntent: "vocal" },
       }),
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it("opens vocal mic input for modest coherent audio after calibration", () => {
+    const featureState = createAudioFeatureState();
+    calibrateLiveInput(featureState, {
+      acousticIntent: "vocal",
+      peaks: [
+        [90, 0.025],
+        [180, 0.018],
+      ],
+      avgAmplitude: 0.8,
+      rms: 0.0016,
+    });
+
+    const frame = buildLiveInputFrame({
+      featureState,
+      acousticIntent: "vocal",
+      peaks: [
+        [120, 0.18],
+        [240, 0.15],
+        [360, 0.12],
+      ],
+      avgAmplitude: 4.5,
+      rms: 0.015,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
+      timeData: makeTimeData({
+        frequency: 120,
+        amplitude: 0.035,
+        harmonics: [
+          [2, 0.018],
+          [3, 0.011],
+        ],
+      }),
+    });
+
+    expect(frame.debug.liveInputHardSilenceActive).toBe(false);
+    expect(frame.debug.liveInputNoiseGateActive).toBe(false);
+    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.01);
   });
 
   it("holds ambient mic resonance through quiet coherent tails", () => {
@@ -2391,17 +2429,15 @@ describe("live input noise gate", () => {
       }
     }
 
-    expect(
-      tailFrames.every(({ fieldState }) => fieldState === "active"),
-    ).toBe(true);
+    expect(tailFrames.every(({ fieldState }) => fieldState === "active")).toBe(
+      true,
+    );
     expect(
       Math.min(...tailFrames.map(({ detailAmplitude }) => detailAmplitude)),
     ).toBeGreaterThan(0.006);
     expect(
       Math.min(
-        ...tailFrames.map(
-          ({ modalVisibilityEnergy }) => modalVisibilityEnergy,
-        ),
+        ...tailFrames.map(({ modalVisibilityEnergy }) => modalVisibilityEnergy),
       ),
     ).toBeGreaterThan(0.08);
   });
@@ -2455,8 +2491,11 @@ describe("live input noise gate", () => {
         Math.exp(-(frameIndex - 2) / 22) * 0.24,
       );
       const longTailScale = 0.00078 + Math.sin(frameIndex * 0.11) * 0.00012;
-      const scale =
-        isStrike ? 1 : frameIndex < 72 ? earlyTailScale : longTailScale;
+      const scale = isStrike
+        ? 1
+        : frameIndex < 72
+          ? earlyTailScale
+          : longTailScale;
       const partials = scalePartials(RESONANT_STRIKE_PARTIALS, scale);
       frame = buildAudioFeatureFrame({
         analysisSnapshot: createSnapshot({
@@ -3980,9 +4019,7 @@ describe("modal excitation integration", () => {
       4,
     );
     expect(result.frame.modalVisibilityEnergy).toBeLessThan(0.75);
-    expect(
-      result.frame.debug.modalVisibilityDominantEnergy,
-    ).toBeLessThan(0.35);
+    expect(result.frame.debug.modalVisibilityDominantEnergy).toBeLessThan(0.35);
     expect(
       result.frame.debug.modalVisibilityDominantClusterEnergy,
     ).toBeUndefined();
