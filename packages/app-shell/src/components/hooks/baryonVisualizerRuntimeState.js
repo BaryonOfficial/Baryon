@@ -59,8 +59,73 @@ function createUiInteractionDiagnostics() {
   };
 }
 
+function createModalFreshnessDiagnostics() {
+  return {
+    frameTimeMs: 0,
+    sourceMode: null,
+    structuralSnapshotAgeMs: 0,
+    lastUpdatedAtWallTimeMs: 0,
+    structureSignal: 0,
+    energySignal: 0,
+    changeSignal: 0,
+    pulseSignal: 0,
+    modalVisibilityEnergy: 0,
+    modeCoherence: 0,
+    activeBackboneModeCount: 0,
+    activeDetailModeCount: 0,
+    activeModeCount: 0,
+    modeSlotMeanAbsDelta: 0,
+    modeSlotChangeCount: 0,
+    backboneSlotMeanAbsDelta: 0,
+    backboneSlotChangeCount: 0,
+    detailSlotMeanAbsDelta: 0,
+    detailSlotChangeCount: 0,
+    responseEnvelope: 0,
+    accentEnvelope: 0,
+    motionSignal: 0,
+    scaleSignal: 0,
+    bloomResponseSignal: 0,
+    _previousModeSlots: null,
+    _previousBackboneSlots: null,
+    _previousDetailSlots: null,
+  };
+}
+
 function copyRecentLongFrames(recentLongFramesMs) {
   return Array.isArray(recentLongFramesMs) ? [...recentLongFramesMs] : [];
+}
+
+export function snapshotModalFreshnessDiagnostics(modalFreshness) {
+  if (!modalFreshness) {
+    return null;
+  }
+
+  return {
+    frameTimeMs: modalFreshness.frameTimeMs ?? 0,
+    sourceMode: modalFreshness.sourceMode ?? null,
+    structuralSnapshotAgeMs: modalFreshness.structuralSnapshotAgeMs ?? 0,
+    lastUpdatedAtWallTimeMs: modalFreshness.lastUpdatedAtWallTimeMs ?? 0,
+    structureSignal: modalFreshness.structureSignal ?? 0,
+    energySignal: modalFreshness.energySignal ?? 0,
+    changeSignal: modalFreshness.changeSignal ?? 0,
+    pulseSignal: modalFreshness.pulseSignal ?? 0,
+    modalVisibilityEnergy: modalFreshness.modalVisibilityEnergy ?? 0,
+    modeCoherence: modalFreshness.modeCoherence ?? 0,
+    activeBackboneModeCount: modalFreshness.activeBackboneModeCount ?? 0,
+    activeDetailModeCount: modalFreshness.activeDetailModeCount ?? 0,
+    activeModeCount: modalFreshness.activeModeCount ?? 0,
+    modeSlotMeanAbsDelta: modalFreshness.modeSlotMeanAbsDelta ?? 0,
+    modeSlotChangeCount: modalFreshness.modeSlotChangeCount ?? 0,
+    backboneSlotMeanAbsDelta: modalFreshness.backboneSlotMeanAbsDelta ?? 0,
+    backboneSlotChangeCount: modalFreshness.backboneSlotChangeCount ?? 0,
+    detailSlotMeanAbsDelta: modalFreshness.detailSlotMeanAbsDelta ?? 0,
+    detailSlotChangeCount: modalFreshness.detailSlotChangeCount ?? 0,
+    responseEnvelope: modalFreshness.responseEnvelope ?? 0,
+    accentEnvelope: modalFreshness.accentEnvelope ?? 0,
+    motionSignal: modalFreshness.motionSignal ?? 0,
+    scaleSignal: modalFreshness.scaleSignal ?? 0,
+    bloomResponseSignal: modalFreshness.bloomResponseSignal ?? 0,
+  };
 }
 
 export function createEmptyAnalysisSchedulerState() {
@@ -185,6 +250,7 @@ export function createRuntimeDiagnostics() {
       activeDetailModeCount: 0,
       activeModeCount: 0,
     },
+    modalFreshness: createModalFreshnessDiagnostics(),
     postProcess: createPostProcessDiagnostics(),
     adaptiveRaymarch: createAdaptiveRaymarchDiagnostics(),
     uiInteraction: createUiInteractionDiagnostics(),
@@ -370,6 +436,9 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
     adaptiveRaymarch: runtimeDiagnostics?.adaptiveRaymarch
       ? { ...runtimeDiagnostics.adaptiveRaymarch }
       : null,
+    modalFreshness: snapshotModalFreshnessDiagnostics(
+      runtimeDiagnostics?.modalFreshness,
+    ),
     uiInteraction: runtimeDiagnostics?.uiInteraction
       ? { ...runtimeDiagnostics.uiInteraction }
       : null,
@@ -439,6 +508,9 @@ export function snapshotRuntimeDiagnostics(runtimeDiagnostics) {
       : null,
     engine: runtimeDiagnostics.engine ? { ...runtimeDiagnostics.engine } : null,
     render: runtimeDiagnostics.render ? { ...runtimeDiagnostics.render } : null,
+    modalFreshness: snapshotModalFreshnessDiagnostics(
+      runtimeDiagnostics.modalFreshness,
+    ),
     postProcess: runtimeDiagnostics.postProcess
       ? { ...runtimeDiagnostics.postProcess }
       : null,

@@ -10,6 +10,8 @@ import {
   getEffectiveAdaptiveRenderScale,
   publishDevtoolsSnapshots,
   resolveFeatureFrame,
+  updateModalEnvelopeDiagnostics,
+  updateModalFreshnessDiagnostics,
   updateRendererDiagnostics,
   updateAdaptiveRaymarchStepBudget,
 } from "./baryonVisualizerRenderLoop.js";
@@ -354,6 +356,12 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
   const runtimeDiagnostics = createRuntimeDiagnostics();
   runtimeDiagnostics.smoothedFrameTimeMs = 20;
   runtimeDiagnostics.render.targetFps = 60;
+  runtimeDiagnostics.modalFreshness.structureSignal = 0.72;
+  runtimeDiagnostics.modalFreshness.responseEnvelope = 0.38;
+  runtimeDiagnostics.modalFreshness.modeSlotChangeCount = 3;
+  runtimeDiagnostics.modalFreshness._previousModeSlots = new Float32Array([
+    0.1, 0.2, 0.3,
+  ]);
   runtimeDiagnostics.perfBreakdown.readAnalysisSnapshotMs.averageMs = 1;
   runtimeDiagnostics.perfBreakdown.buildFeatureFrameMs.averageMs = 4;
   runtimeDiagnostics.perfBreakdown.heavyAnalysisMs.averageMs = 5;
@@ -396,6 +404,12 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
     chromaUpdateCount: 23,
     tempoUpdateCount: 29,
   });
+  expect(snapshot.modalFreshness).toMatchObject({
+    structureSignal: 0.72,
+    responseEnvelope: 0.38,
+    modeSlotChangeCount: 3,
+  });
+  expect(snapshot.modalFreshness).not.toHaveProperty("_previousModeSlots");
 });
 
 test("buildPerformanceHudSnapshot uses deterministic dominant-bucket tie breaks", () => {
@@ -414,6 +428,104 @@ test("buildPerformanceHudSnapshot uses deterministic dominant-bucket tie breaks"
   expect(snapshot.stageAttribution.renderCpuMs).toBe(4);
   expect(snapshot.stageAttribution.unattributedFrameMs).toBe(0);
   expect(snapshot.stageAttribution.dominantBucket).toBe("render");
+});
+
+test("updateModalFreshnessDiagnostics records modal signals and slot turnover without publishing structural arrays", () => {
+  const runtimeDiagnostics = createRuntimeDiagnostics();
+  runtimeDiagnostics.engine.snapshotAgeMs = 41;
+
+  updateModalFreshnessDiagnostics(
+    runtimeDiagnostics,
+    {
+      frameTimeMs: 1000,
+      sourceMode: "live",
+      structureSignal: 0.24,
+      energySignal: 0.36,
+      changeSignal: 0.48,
+      pulseSignal: 0.6,
+      modalVisibilityEnergy: 0.72,
+      modeCoherence: 0.84,
+      activeBackboneModeCount: 4,
+      activeDetailModeCount: 5,
+      activeModeCount: 9,
+      modeSlots: new Float32Array([0.1, 0.2, 0.3, 0.4]),
+      backboneSlots: new Float32Array([0.2, 0.3]),
+      detailSlots: new Float32Array([0.4, 0.5]),
+    },
+    { getWallTimeMs: () => 1234 },
+  );
+
+  updateModalFreshnessDiagnostics(
+    runtimeDiagnostics,
+    {
+      frameTimeMs: 1016,
+      sourceMode: "live",
+      structureSignal: 0.28,
+      energySignal: 0.4,
+      changeSignal: 0.52,
+      pulseSignal: 0.64,
+      modalVisibilityEnergy: 0.76,
+      modeCoherence: 0.88,
+      activeBackboneModeCount: 4,
+      activeDetailModeCount: 5,
+      activeModeCount: 9,
+      modeSlots: new Float32Array([0.1, 0.25, 0.3, 0.7]),
+      backboneSlots: new Float32Array([0.2, 0.45]),
+      detailSlots: new Float32Array([0.4, 0.5]),
+    },
+    { getWallTimeMs: () => 1250 },
+  );
+
+  updateModalEnvelopeDiagnostics(runtimeDiagnostics, {
+    responseEnvelope: 0.31,
+    accentEnvelope: 0.42,
+    motionSignal: 0.53,
+    scaleSignal: 0.64,
+    bloomResponseSignal: 0.75,
+  });
+
+  expect(runtimeDiagnostics.modalFreshness).toMatchObject({
+    frameTimeMs: 1016,
+    sourceMode: "live",
+    structuralSnapshotAgeMs: 41,
+    lastUpdatedAtWallTimeMs: 1250,
+    structureSignal: 0.28,
+    energySignal: 0.4,
+    changeSignal: 0.52,
+    pulseSignal: 0.64,
+    modalVisibilityEnergy: 0.76,
+    modeCoherence: 0.88,
+    activeBackboneModeCount: 4,
+    activeDetailModeCount: 5,
+    activeModeCount: 9,
+    modeSlotChangeCount: 2,
+    backboneSlotChangeCount: 1,
+    detailSlotChangeCount: 0,
+    responseEnvelope: 0.31,
+    accentEnvelope: 0.42,
+    motionSignal: 0.53,
+    scaleSignal: 0.64,
+    bloomResponseSignal: 0.75,
+  });
+  expect(runtimeDiagnostics.modalFreshness.modeSlotMeanAbsDelta).toBeCloseTo(
+    0.0875,
+  );
+  expect(runtimeDiagnostics.modalFreshness.backboneSlotMeanAbsDelta).toBeCloseTo(
+    0.075,
+  );
+  expect(runtimeDiagnostics.modalFreshness.detailSlotMeanAbsDelta).toBe(0);
+
+  const hudSnapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
+  expect(hudSnapshot.modalFreshness).toMatchObject({
+    structureSignal: 0.28,
+    responseEnvelope: 0.31,
+    modeSlotChangeCount: 2,
+  });
+  expect(hudSnapshot.modalFreshness).not.toHaveProperty("_previousModeSlots");
+  expect(hudSnapshot.modalFreshness).not.toHaveProperty(
+    "_previousBackboneSlots",
+  );
+  expect(hudSnapshot.modalFreshness).not.toHaveProperty("_previousDetailSlots");
 });
 
 test("publishes provider transition phases even before live audio becomes active", () => {

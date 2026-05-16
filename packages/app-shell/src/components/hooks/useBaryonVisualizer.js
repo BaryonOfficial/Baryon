@@ -41,6 +41,8 @@ import {
   applyLiveInputRenderIntent,
   resolveFeatureFrame,
   syncLiveInputRuntimeStatus,
+  updateModalEnvelopeDiagnostics,
+  updateModalFreshnessDiagnostics,
   updateAdaptiveRaymarchStepBudget,
   updateRendererDiagnostics,
 } from "./baryonVisualizerRenderLoop.js";
@@ -619,6 +621,8 @@ export function useBaryonVisualizer({
       return;
     }
 
+    updateModalFreshnessDiagnostics(runtimeDiagnostics, effectiveFrame);
+
     const effectiveRaymarchSteps = updateAdaptiveRaymarchStepBudget({
       controls,
       runtime,
@@ -741,6 +745,7 @@ export function useBaryonVisualizer({
       "runtimeTickMs",
       runtimeTickStartedAt,
     );
+    updateModalEnvelopeDiagnostics(runtimeDiagnostics, runtimeState);
 
     const reactiveBloomStartedAt = getWallTimeMs();
     const reactiveBloom = applyReactiveBloomState({

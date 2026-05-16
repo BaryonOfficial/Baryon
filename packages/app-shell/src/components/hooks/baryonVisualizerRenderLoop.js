@@ -29,6 +29,7 @@ import {
   createEmptyAnalysisSchedulerState,
   recordRuntimePerfSample,
   shouldReuseIdleFrame,
+  snapshotModalFreshnessDiagnostics,
   snapshotRuntimePerfBreakdown,
   snapshotRuntimeDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
@@ -171,6 +172,161 @@ function buildStageEngineCounters(runtimeDiagnostics) {
     chromaUpdateCount: runtimeDiagnostics?.engine?.chromaUpdateCount ?? 0,
     tempoUpdateCount: runtimeDiagnostics?.engine?.tempoUpdateCount ?? 0,
   };
+}
+
+function readFiniteNumber(value, fallback = 0) {
+  return Number.isFinite(value) ? Number(value) : fallback;
+}
+
+function copyNumericSlots(values) {
+  if (values instanceof Float32Array) {
+    return new Float32Array(values);
+  }
+  if (Array.isArray(values)) {
+    return Float32Array.from(values, (value) => readFiniteNumber(value));
+  }
+
+  return null;
+}
+
+function measureSlotTurnover(previousSlots, nextSlots, epsilon = 1e-4) {
+  const nextCopy = copyNumericSlots(nextSlots);
+  if (!nextCopy) {
+    return {
+      nextCopy: null,
+      meanAbsDelta: 0,
+      changeCount: 0,
+    };
+  }
+  if (!previousSlots) {
+    return {
+      nextCopy,
+      meanAbsDelta: 0,
+      changeCount: 0,
+    };
+  }
+
+  const previousLength = previousSlots.length;
+  const nextLength = nextCopy.length;
+  const comparedLength = Math.max(previousLength, nextLength);
+  if (comparedLength === 0) {
+    return {
+      nextCopy,
+      meanAbsDelta: 0,
+      changeCount: 0,
+    };
+  }
+
+  let totalAbsDelta = 0;
+  let changeCount = 0;
+  for (let index = 0; index < comparedLength; index += 1) {
+    const previousValue =
+      index < previousLength ? readFiniteNumber(previousSlots[index]) : 0;
+    const nextValue = index < nextLength ? readFiniteNumber(nextCopy[index]) : 0;
+    const delta = Math.abs(nextValue - previousValue);
+    totalAbsDelta += delta;
+    if (delta > epsilon) {
+      changeCount += 1;
+    }
+  }
+
+  return {
+    nextCopy,
+    meanAbsDelta: totalAbsDelta / comparedLength,
+    changeCount,
+  };
+}
+
+function applySlotTurnoverDiagnostics(
+  modalFreshness,
+  {
+    fieldPrefix,
+    previousField,
+    nextSlots,
+  },
+) {
+  const turnover = measureSlotTurnover(modalFreshness[previousField], nextSlots);
+  modalFreshness[`${fieldPrefix}MeanAbsDelta`] = turnover.meanAbsDelta;
+  modalFreshness[`${fieldPrefix}ChangeCount`] = turnover.changeCount;
+  modalFreshness[previousField] = turnover.nextCopy;
+}
+
+export function updateModalFreshnessDiagnostics(
+  runtimeDiagnostics,
+  featureFrame,
+  { getWallTimeMs = getRenderLoopWallTimeMs } = {},
+) {
+  const modalFreshness = runtimeDiagnostics?.modalFreshness;
+  if (!modalFreshness || !featureFrame) {
+    return null;
+  }
+
+  modalFreshness.frameTimeMs = readFiniteNumber(featureFrame.frameTimeMs);
+  modalFreshness.sourceMode = featureFrame.sourceMode ?? null;
+  modalFreshness.structuralSnapshotAgeMs = readFiniteNumber(
+    runtimeDiagnostics?.engine?.snapshotAgeMs,
+  );
+  modalFreshness.lastUpdatedAtWallTimeMs = readFiniteNumber(getWallTimeMs());
+  modalFreshness.structureSignal = readFiniteNumber(
+    featureFrame.structureSignal,
+  );
+  modalFreshness.energySignal = readFiniteNumber(featureFrame.energySignal);
+  modalFreshness.changeSignal = readFiniteNumber(featureFrame.changeSignal);
+  modalFreshness.pulseSignal = readFiniteNumber(featureFrame.pulseSignal);
+  modalFreshness.modalVisibilityEnergy = readFiniteNumber(
+    featureFrame.modalVisibilityEnergy,
+  );
+  modalFreshness.modeCoherence = readFiniteNumber(featureFrame.modeCoherence);
+  modalFreshness.activeBackboneModeCount = readFiniteNumber(
+    featureFrame.activeBackboneModeCount,
+  );
+  modalFreshness.activeDetailModeCount = readFiniteNumber(
+    featureFrame.activeDetailModeCount,
+  );
+  modalFreshness.activeModeCount = readFiniteNumber(
+    featureFrame.activeModeCount,
+    modalFreshness.activeBackboneModeCount +
+      modalFreshness.activeDetailModeCount,
+  );
+  applySlotTurnoverDiagnostics(modalFreshness, {
+    fieldPrefix: "modeSlot",
+    previousField: "_previousModeSlots",
+    nextSlots: featureFrame.modeSlots,
+  });
+  applySlotTurnoverDiagnostics(modalFreshness, {
+    fieldPrefix: "backboneSlot",
+    previousField: "_previousBackboneSlots",
+    nextSlots: featureFrame.backboneSlots,
+  });
+  applySlotTurnoverDiagnostics(modalFreshness, {
+    fieldPrefix: "detailSlot",
+    previousField: "_previousDetailSlots",
+    nextSlots: featureFrame.detailSlots,
+  });
+
+  return snapshotModalFreshnessDiagnostics(modalFreshness);
+}
+
+export function updateModalEnvelopeDiagnostics(
+  runtimeDiagnostics,
+  runtimeState,
+) {
+  const modalFreshness = runtimeDiagnostics?.modalFreshness;
+  if (!modalFreshness || !runtimeState) {
+    return null;
+  }
+
+  modalFreshness.responseEnvelope = readFiniteNumber(
+    runtimeState.responseEnvelope,
+  );
+  modalFreshness.accentEnvelope = readFiniteNumber(runtimeState.accentEnvelope);
+  modalFreshness.motionSignal = readFiniteNumber(runtimeState.motionSignal);
+  modalFreshness.scaleSignal = readFiniteNumber(runtimeState.scaleSignal);
+  modalFreshness.bloomResponseSignal = readFiniteNumber(
+    runtimeState.bloomResponseSignal,
+  );
+
+  return snapshotModalFreshnessDiagnostics(modalFreshness);
 }
 
 function snapshotFeatureFrame(featureFrame) {
@@ -474,6 +630,9 @@ export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
     perfBreakdown,
     stageAttribution: buildStageAttribution(runtimeDiagnostics, perfBreakdown),
     engineCounters: buildStageEngineCounters(runtimeDiagnostics),
+    modalFreshness: snapshotModalFreshnessDiagnostics(
+      runtimeDiagnostics?.modalFreshness,
+    ),
   };
 }
 
