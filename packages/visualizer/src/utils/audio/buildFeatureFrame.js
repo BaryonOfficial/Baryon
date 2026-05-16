@@ -207,6 +207,11 @@ const LIVE_INPUT_CHANGE_RESPONSE_SCALE = 0.45;
 const LIVE_INPUT_PULSE_RESPONSE_SCALE = 0.9;
 const LEGACY_PRESERVATION_BACKBONE_WEIGHT = 0.94;
 const LEGACY_PRESERVATION_DETAIL_WEIGHT = 0.4;
+const LIVE_INPUT_RESONANCE_PEAK_COUNT = 4;
+const LIVE_INPUT_AMBIENT_RESONANCE_MIN_PEAK = 0.03;
+const LIVE_INPUT_AMBIENT_RESONANCE_MIN_CLARITY = 0.42;
+const LIVE_INPUT_AMBIENT_RESONANCE_MIN_AVG = 0.9;
+const LIVE_INPUT_AMBIENT_RESONANCE_MIN_CENTROID = 0.006;
 
 export { createAudioFeatureState };
 
@@ -1234,7 +1239,12 @@ function computeLiveInputMetrics({
   fftSize,
 }) {
   const spectrum = fftMagnitudes ?? new Float32Array(0);
-  const peaks = findSpectralPeakFrequencies(spectrum, sampleRate, fftSize, 3);
+  const peaks = findSpectralPeakFrequencies(
+    spectrum,
+    sampleRate,
+    fftSize,
+    LIVE_INPUT_RESONANCE_PEAK_COUNT,
+  );
   let peakAmplitude = 0;
   for (let i = 0; i < spectrum.length; i++) {
     peakAmplitude = Math.max(peakAmplitude, spectrum[i] ?? 0);
@@ -1432,13 +1442,27 @@ function qualifiesLiveInputHold(metrics, thresholds, acousticIntent) {
     return (
       metrics.rms >= thresholds.closeRms ||
       metrics.peakAmplitude >= thresholds.closePeak ||
-      metrics.lowBandEnergy >= thresholds.openLowBand * 0.8
+      metrics.lowBandEnergy >= thresholds.openLowBand * 0.8 ||
+      hasAmbientResonancePresence(metrics, thresholds)
     );
   }
 
   return (
     metrics.rms >= thresholds.closeRms ||
     metrics.peakAmplitude >= thresholds.closePeak
+  );
+}
+
+function hasAmbientResonancePresence(metrics, thresholds) {
+  return (
+    metrics.avgAmplitude >=
+      Math.max(
+        thresholds.hardSilenceAvg * 1.1,
+        LIVE_INPUT_AMBIENT_RESONANCE_MIN_AVG,
+      ) &&
+    metrics.peakAmplitude >= LIVE_INPUT_AMBIENT_RESONANCE_MIN_PEAK &&
+    metrics.peakClarity >= LIVE_INPUT_AMBIENT_RESONANCE_MIN_CLARITY &&
+    metrics.spectralCentroid >= LIVE_INPUT_AMBIENT_RESONANCE_MIN_CENTROID
   );
 }
 

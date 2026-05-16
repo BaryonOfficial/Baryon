@@ -1275,6 +1275,99 @@ describe("modal excitation structural state", () => {
     );
   });
 
+  it("keeps seeded subtle coherent line-feed resonance visible above hard silence", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    for (let frame = 0; frame < 74; frame += 1) {
+      const isStrike = frame < 2;
+      const tailScale = Math.max(0.0065, Math.exp(-(frame - 2) / 18) * 0.22);
+      const scale = isStrike ? 1 : tailScale;
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: scalePartials(RESONANT_STRIKE_PARTIALS, scale),
+        avgAmplitude: isStrike ? 38 : 1.24,
+        rms: isStrike ? 0.28 : 0.0048,
+        amplitudeScale: isStrike ? 1 : tailScale,
+      });
+    }
+
+    expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.55);
+    expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.5);
+    expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBeGreaterThan(
+      0,
+    );
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0.006);
+  });
+
+  it("does not hard-clear seeded coherent detail when the ringing tail is below meter silence", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    for (let frame = 0; frame < 68; frame += 1) {
+      const isStrike = frame < 2;
+      const tailScale =
+        frame < 44
+          ? Math.max(0.0065, Math.exp(-(frame - 2) / 18) * 0.22)
+          : 0.0027;
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: scalePartials(
+          RESONANT_STRIKE_PARTIALS,
+          isStrike ? 1 : tailScale,
+        ),
+        avgAmplitude: isStrike ? 38 : 0.72,
+        rms: isStrike ? 0.28 : 0.0032,
+        amplitudeScale: isStrike ? 1 : tailScale,
+      });
+    }
+
+    expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.45);
+    expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.35);
+    expect(
+      countActiveSlotsLocal(structural.backboneSlotsSource),
+    ).toBeGreaterThan(0);
+    expect(sumAmplitudes(structural.backboneSlotsSource)).toBeGreaterThan(
+      0.0015,
+    );
+    expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBeGreaterThan(
+      0,
+    );
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0.003);
+  });
+
+  it("keeps long coherent ring-out detail from decaying to an empty render", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    for (let frame = 0; frame < 520; frame += 1) {
+      const isStrike = frame < 2;
+      const earlyTailScale = Math.max(
+        0.0065,
+        Math.exp(-(frame - 2) / 22) * 0.24,
+      );
+      const longTailScale = 0.00125 + Math.sin(frame * 0.11) * 0.00018;
+      const scale = isStrike ? 1 : frame < 72 ? earlyTailScale : longTailScale;
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: scalePartials(RESONANT_STRIKE_PARTIALS, scale),
+        avgAmplitude: isStrike ? 38 : 0.52,
+        rms: isStrike ? 0.28 : 0.0026,
+        amplitudeScale: scale,
+      });
+    }
+
+    expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.45);
+    expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.35);
+    expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBeGreaterThan(
+      0,
+    );
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0.0015);
+  });
+
   it("keeps low system hum from becoming retained detail structure", () => {
     const state = createModalExcitationState(16);
     let structural = null;

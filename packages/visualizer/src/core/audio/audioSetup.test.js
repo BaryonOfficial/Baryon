@@ -440,6 +440,14 @@ describe("audio session", () => {
     const session = createAttachedSession();
     await session.startLiveInputStream("device-1");
 
+    expect(getUserMediaMock).toHaveBeenLastCalledWith({
+      audio: {
+        deviceId: { exact: "device-1" },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    });
     expect(session.getStatus().liveInputCalibrationVersion).toBeGreaterThan(0);
     expect(session.getStatus()).toMatchObject({
       audioInputMode: "live",

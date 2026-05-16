@@ -521,6 +521,9 @@ function updateReactiveResponse(
   const energySignal = clamp01(featureFrame?.energySignal ?? 0);
   const changeSignal = clamp01(featureFrame?.changeSignal ?? 0);
   const pulseSignal = clamp01(featureFrame?.pulseSignal ?? 0);
+  const modalVisibilityEnergy = clamp01(
+    featureFrame?.modalVisibilityEnergy ?? 0,
+  );
   const persistence = Math.max(
     0,
     rt?.structurePersistence ?? REACTIVITY_DEFAULTS.structurePersistence,
@@ -534,6 +537,9 @@ function updateReactiveResponse(
   const gatedEnergySignal = clamp01(energySignal * reactivity);
   const gatedChangeSignal = clamp01(changeSignal * reactivity);
   const gatedPulseSignal = clamp01(pulseSignal * reactivity);
+  const gatedModalVisibilityEnergy = clamp01(
+    modalVisibilityEnergy * reactivity,
+  );
   const decayReleaseMask = deriveDecayReleaseMask({
     fieldState,
     gatedStructureSignal,
@@ -546,7 +552,8 @@ function updateReactiveResponse(
           (0.34 + persistence * 0.08) *
           (1 - decayReleaseMask * DECAY_RELEASE_TARGET_REDUCTION) +
           gatedEnergySignal * 0.38 +
-          gatedChangeSignal * 0.23,
+          gatedChangeSignal * 0.23 +
+          gatedModalVisibilityEnergy * 0.48,
       )
     : 0;
   const responseEnvelope = damp(
@@ -577,7 +584,8 @@ function updateReactiveResponse(
     responseEnvelope * 0.56 +
       gatedEnergySignal * 0.24 +
       accentEnvelope * 0.14 +
-      gatedStructureSignal * 0.06,
+      gatedStructureSignal * 0.06 +
+      gatedModalVisibilityEnergy * 0.08,
   );
   const contourSharpness = runtimeState.uniforms.uContourSharpness?.value ?? 1;
   const contourSignal = clamp01((contourSharpness - 1) / 7);
@@ -585,6 +593,7 @@ function updateReactiveResponse(
     responseEnvelope * 0.44 +
       accentEnvelope * 0.22 +
       gatedStructureSignal * 0.2 +
+      gatedModalVisibilityEnergy * 0.08 +
       contourSignal * 0.14 * reactivity,
   );
 

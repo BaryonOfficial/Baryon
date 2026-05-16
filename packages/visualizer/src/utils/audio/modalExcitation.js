@@ -42,6 +42,9 @@ const EXCITATION_BACKBONE_SILENCE_RELEASE = 0.82;
 const EXCITATION_BACKBONE_HARD_SILENCE_RELEASE = 0.5;
 const EXCITATION_BACKBONE_LOW_SIGNAL_RELEASE_THRESHOLD = 0.08;
 const EXCITATION_BACKBONE_LOW_SIGNAL_RELEASE = 0.62;
+const EXCITATION_BACKBONE_LATENT_TAIL_RELEASE = 0.94;
+const EXCITATION_BACKBONE_LATENT_TAIL_EMPTY_RELEASE = 0.9;
+const EXCITATION_BACKBONE_LATENT_TAIL_LOW_SIGNAL_RELEASE = 0.82;
 const EXCITATION_BACKBONE_FRESH_CAP = 3;
 const EXCITATION_DETAIL_BLEND_ATTACK = 0.45;
 const EXCITATION_DETAIL_BLEND_TRACKING = 0.5;
@@ -54,6 +57,9 @@ const EXCITATION_DETAIL_TAIL_RELEASE = 0.82;
 const EXCITATION_DETAIL_TAIL_EMPTY_RELEASE = 0.82;
 const EXCITATION_DETAIL_TAIL_LOW_SIGNAL_RELEASE = 0.72;
 const EXCITATION_DETAIL_TAIL_PRESENCE_RELEASE = 0.92;
+const EXCITATION_DETAIL_LATENT_TAIL_RELEASE = 0.94;
+const EXCITATION_DETAIL_LATENT_TAIL_EMPTY_RELEASE = 0.92;
+const EXCITATION_DETAIL_LATENT_TAIL_LOW_SIGNAL_RELEASE = 0.86;
 const EXCITATION_DETAIL_FRESH_CAP = 2;
 const BACKBONE_SIGNAL_MIN_DRIVE_ENERGY = 0.045;
 const DETAIL_SIGNAL_MIN_DRIVE_ENERGY = 0.05;
@@ -70,10 +76,40 @@ const DETAIL_SUSTAIN_MIN_PERSISTENCE = 0.2;
 const DETAIL_SUSTAIN_REFERENCE_AMPLITUDE = 0.0045;
 const DETAIL_SUSTAIN_REFERENCE_DRIVE_ENERGY = 0.005;
 const DETAIL_SUSTAIN_SIGNAL_MIN_PRESENCE = 0.02;
+const BACKBONE_RETAINED_MODE_MIN_DRIVE_ENERGY = 0.0002;
+const BACKBONE_LATENT_TAIL_MIN_DISPLAY_AMPLITUDE = 0.001;
+const BACKBONE_LATENT_TAIL_MIN_MEMORY = 0.001;
+const BACKBONE_LATENT_TAIL_MEMORY_RELEASE = 0.998;
+const BACKBONE_LATENT_TAIL_NO_EVIDENCE_RELEASE = 0.42;
+const BACKBONE_RETAINED_SIGNAL_BASE = 0.018;
+const BACKBONE_RETAINED_SIGNAL_PRESENCE_WEIGHT = 0.1;
 const DETAIL_TAIL_MIN_PRESENCE = 0.0015;
 const DETAIL_RETAINED_MODE_MIN_DRIVE_ENERGY = 0.0002;
+const DETAIL_SUBTLE_TAIL_MIN_TONALNESS = 0.68;
+const DETAIL_SUBTLE_TAIL_MIN_PERIODICITY = 0.4;
+const DETAIL_SUBTLE_TAIL_MAX_DISTRIBUTION = 0.14;
+const DETAIL_SUBTLE_TAIL_MIN_DETAIL_BAND_PEAK = 0.0014;
+const DETAIL_SUBTLE_TAIL_FULL_DETAIL_BAND_PEAK = 0.006;
+const DETAIL_SUBTLE_TAIL_MIN_MATURITY = 0.08;
+const DETAIL_SUBTLE_TAIL_MAX_AVG_AMPLITUDE = 4;
+const DETAIL_SUBTLE_TAIL_MAX_RMS = 0.02;
+const DETAIL_LATENT_TAIL_MIN_PRESENCE = 0.0015;
+const DETAIL_LATENT_TAIL_MIN_DISPLAY_AMPLITUDE = 0.001;
+const DETAIL_LATENT_TAIL_MIN_MEMORY = 0.001;
+const DETAIL_LATENT_TAIL_MEMORY_RELEASE = 0.998;
+const DETAIL_LATENT_TAIL_NO_EVIDENCE_RELEASE = 0.42;
+const DETAIL_LATENT_TAIL_MIN_DETAIL_BAND_PEAK = 0.00006;
+const DETAIL_LATENT_TAIL_FULL_DETAIL_BAND_PEAK = 0.0008;
+const DETAIL_LATENT_TAIL_SPECTRAL_DETAIL_BAND_PEAK = 0.00042;
+const DETAIL_LATENT_TAIL_MIN_PERIODICITY = 0.4;
+const DETAIL_LATENT_TAIL_MIN_TONALNESS = 0.68;
+const DETAIL_LATENT_TAIL_SPECTRAL_MIN_TONALNESS = 0.52;
+const DETAIL_LATENT_TAIL_MAX_DISTRIBUTION = 0.14;
+const DETAIL_LATENT_TAIL_SPECTRAL_MAX_DISTRIBUTION = 0.16;
 const DETAIL_RETAINED_SIGNAL_BASE = 0.05;
 const DETAIL_RETAINED_SIGNAL_PRESENCE_WEIGHT = 0.26;
+const DETAIL_RETAINED_SUBTLE_SIGNAL_BASE = 0.012;
+const DETAIL_RETAINED_SUBTLE_SIGNAL_PRESENCE_WEIGHT = 0.08;
 const DETAIL_MATURITY_SEED = 0.14;
 const DETAIL_MATURITY_PRESENCE_GAIN = 4;
 const DETAIL_MATURITY_ATTACK = 0.46;
@@ -802,19 +838,222 @@ function isRetainedSustainedDetailMode({
   driveEnergy,
   hardSilentFrame,
   detailTailPresence,
+  subtleCoherentDetailSignal,
 }) {
   if (
     hardSilentFrame ||
     atlasEntry?.layer !== "detail" ||
-    !previous ||
-    driveEnergy < DETAIL_RETAINED_MODE_MIN_DRIVE_ENERGY
+    !previous
+  ) {
+    return false;
+  }
+  if (
+    driveEnergy < DETAIL_RETAINED_MODE_MIN_DRIVE_ENERGY &&
+    subtleCoherentDetailSignal <= 0
   ) {
     return false;
   }
 
   return (
     getSustainedDetailPresence(previous) >= DETAIL_TAIL_MIN_PRESENCE ||
-    (detailTailPresence ?? 0) >= DETAIL_TAIL_MIN_PRESENCE
+    (detailTailPresence ?? 0) >= DETAIL_TAIL_MIN_PRESENCE ||
+    (subtleCoherentDetailSignal > 0 &&
+      ((previous.detailMaturity ?? 0) >= DETAIL_SUBTLE_TAIL_MIN_MATURITY ||
+        (previous.amplitude ?? 0) >= MIN_SUSTAINED_DETAIL_RESONATOR_AMPLITUDE))
+  );
+}
+
+function isRetainedSustainedBackboneMode({
+  atlasEntry,
+  previous,
+  driveEnergy,
+  hardSilentFrame,
+  latentCoherentBackboneSignal,
+}) {
+  if (
+    hardSilentFrame ||
+    atlasEntry?.layer !== "backbone" ||
+    !previous
+  ) {
+    return false;
+  }
+  if (
+    driveEnergy < BACKBONE_RETAINED_MODE_MIN_DRIVE_ENERGY &&
+    latentCoherentBackboneSignal <= 0
+  ) {
+    return false;
+  }
+
+  return latentCoherentBackboneSignal > 0;
+}
+
+function getSubtleCoherentDetailSignal({
+  hardSilentFrame,
+  avgAmplitude,
+  analyserRms,
+  tonalness,
+  periodicity,
+  distributedExcitation,
+  detailBandPeak,
+  frequencyStable,
+}) {
+  if (
+    hardSilentFrame ||
+    !frequencyStable ||
+    avgAmplitude > DETAIL_SUBTLE_TAIL_MAX_AVG_AMPLITUDE ||
+    analyserRms > DETAIL_SUBTLE_TAIL_MAX_RMS ||
+    tonalness < DETAIL_SUBTLE_TAIL_MIN_TONALNESS ||
+    periodicity < DETAIL_SUBTLE_TAIL_MIN_PERIODICITY ||
+    distributedExcitation > DETAIL_SUBTLE_TAIL_MAX_DISTRIBUTION
+  ) {
+    return 0;
+  }
+
+  return smoothstep(
+    DETAIL_SUBTLE_TAIL_MIN_DETAIL_BAND_PEAK,
+    DETAIL_SUBTLE_TAIL_FULL_DETAIL_BAND_PEAK,
+    detailBandPeak,
+  );
+}
+
+function hasSeededCoherentDetailTail(state) {
+  if (state?.coherentDetailTailSeeded === true) {
+    return true;
+  }
+  if ((state?.detailTailPresence ?? 0) >= DETAIL_LATENT_TAIL_MIN_PRESENCE) {
+    return true;
+  }
+  if (
+    (state?.coherentDetailTailMemory ?? 0) >= DETAIL_LATENT_TAIL_MIN_MEMORY
+  ) {
+    return true;
+  }
+  if (
+    sumSlotAmplitudes(state?.blendDetail?.slots) >=
+    DETAIL_LATENT_TAIL_MIN_DISPLAY_AMPLITUDE
+  ) {
+    return true;
+  }
+
+  for (const entry of state?.activeModes?.values?.() ?? []) {
+    if (
+      entry?.layer === "detail" &&
+      ((entry.detailMaturity ?? 0) >= DETAIL_SUBTLE_TAIL_MIN_MATURITY ||
+        getSustainedDetailPresence(entry) >= DETAIL_LATENT_TAIL_MIN_PRESENCE)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasSeededCoherentBackboneTail(state) {
+  if (state?.coherentBackboneTailSeeded === true) {
+    return true;
+  }
+  if (
+    (state?.coherentBackboneTailMemory ?? 0) >=
+    BACKBONE_LATENT_TAIL_MIN_MEMORY
+  ) {
+    return true;
+  }
+  if (
+    sumSlotAmplitudes(state?.blendBackbone?.slots) >=
+    BACKBONE_LATENT_TAIL_MIN_DISPLAY_AMPLITUDE
+  ) {
+    return true;
+  }
+
+  for (const entry of state?.activeModes?.values?.() ?? []) {
+    if (
+      entry?.layer === "backbone" &&
+      (entry.amplitude ?? 0) >= BACKBONE_LATENT_TAIL_MIN_DISPLAY_AMPLITUDE
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasLatentCoherentDetailEvidence({
+  tonalness,
+  periodicity,
+  distributedExcitation,
+  detailBandPeak,
+}) {
+  const hasTemporalEvidence = periodicity >= DETAIL_LATENT_TAIL_MIN_PERIODICITY;
+  const hasSpectralResonance =
+    detailBandPeak >= DETAIL_LATENT_TAIL_SPECTRAL_DETAIL_BAND_PEAK;
+  const tonalEnough =
+    tonalness >= DETAIL_LATENT_TAIL_MIN_TONALNESS ||
+    (hasSpectralResonance &&
+      tonalness >= DETAIL_LATENT_TAIL_SPECTRAL_MIN_TONALNESS);
+  const distributionEnough =
+    distributedExcitation <= DETAIL_LATENT_TAIL_MAX_DISTRIBUTION ||
+    (hasSpectralResonance &&
+      distributedExcitation <= DETAIL_LATENT_TAIL_SPECTRAL_MAX_DISTRIBUTION);
+  return (
+    tonalEnough &&
+    distributionEnough &&
+    detailBandPeak >= DETAIL_LATENT_TAIL_MIN_DETAIL_BAND_PEAK &&
+    (hasTemporalEvidence || hasSpectralResonance)
+  );
+}
+
+function hasLatentCoherentBackboneTail({
+  strictHardSilentFrame,
+  state,
+  tonalness,
+  periodicity,
+  distributedExcitation,
+  detailBandPeak,
+}) {
+  return (
+    strictHardSilentFrame &&
+    hasSeededCoherentBackboneTail(state) &&
+    hasLatentCoherentDetailEvidence({
+      tonalness,
+      periodicity,
+      distributedExcitation,
+      detailBandPeak,
+    })
+  );
+}
+
+function hasLatentCoherentDetailTail({
+  strictHardSilentFrame,
+  state,
+  tonalness,
+  periodicity,
+  distributedExcitation,
+  detailBandPeak,
+}) {
+  return (
+    strictHardSilentFrame &&
+    hasSeededCoherentDetailTail(state) &&
+    hasLatentCoherentDetailEvidence({
+      tonalness,
+      periodicity,
+      distributedExcitation,
+      detailBandPeak,
+    })
+  );
+}
+
+function getLatentCoherentDetailSignal({
+  latentCoherentDetailTail,
+  detailBandPeak,
+}) {
+  if (!latentCoherentDetailTail) {
+    return 0;
+  }
+
+  return smoothstep(
+    DETAIL_LATENT_TAIL_MIN_DETAIL_BAND_PEAK,
+    DETAIL_LATENT_TAIL_FULL_DETAIL_BAND_PEAK,
+    detailBandPeak,
   );
 }
 
@@ -940,18 +1179,29 @@ function getSignalScore(entry, layer) {
     return entry?.retainedSustainedDetail
       ? Math.max(
           score,
-          DETAIL_RETAINED_SIGNAL_BASE +
-            clamp01(entry.retainedSustainedDetailPresence ?? 0) *
-              DETAIL_RETAINED_SIGNAL_PRESENCE_WEIGHT,
+          entry.retainedSubtleSustainedDetail
+            ? DETAIL_RETAINED_SUBTLE_SIGNAL_BASE +
+                clamp01(entry.retainedSustainedDetailPresence ?? 0) *
+                  DETAIL_RETAINED_SUBTLE_SIGNAL_PRESENCE_WEIGHT
+            : DETAIL_RETAINED_SIGNAL_BASE +
+                clamp01(entry.retainedSustainedDetailPresence ?? 0) *
+                  DETAIL_RETAINED_SIGNAL_PRESENCE_WEIGHT,
         )
       : score;
   }
 
-  return (
+  const backboneScore =
     coherence *
     (driveEnergy * BACKBONE_SIGNAL_SCORE_DRIVE_WEIGHT +
-      amplitude * BACKBONE_SIGNAL_SCORE_AMPLITUDE_WEIGHT)
-  );
+      amplitude * BACKBONE_SIGNAL_SCORE_AMPLITUDE_WEIGHT);
+  return entry?.retainedSustainedBackbone
+    ? Math.max(
+        backboneScore,
+        BACKBONE_RETAINED_SIGNAL_BASE +
+          clamp01(entry.retainedSustainedBackbonePresence ?? 0) *
+            BACKBONE_RETAINED_SIGNAL_PRESENCE_WEIGHT,
+      )
+    : backboneScore;
 }
 
 function buildSignalShortlist(entries, layer, currentFrameAtMs, capacity) {
@@ -979,6 +1229,9 @@ function buildSignalShortlist(entries, layer, currentFrameAtMs, capacity) {
         layer === "detail" &&
         getSustainedDetailPresence(entry) >= DETAIL_SUSTAIN_SIGNAL_MIN_PRESENCE
       ) {
+        return true;
+      }
+      if (layer === "backbone" && entry.retainedSustainedBackbone) {
         return true;
       }
       if (layer === "detail" && entry.retainedSustainedDetail) {
@@ -1189,7 +1442,15 @@ function buildDisplayShortlist(entries, layer) {
       : DETAIL_DISPLAY_MAX_VISIBLE;
 
   const ranked = entries
-    .filter((entry) => (entry?.signalAmplitude ?? 0) >= minSignalAmplitude)
+    .filter((entry) => {
+      const entryMinSignal =
+        layer === "backbone" && entry?.retainedSustainedBackbone
+          ? BACKBONE_RETAINED_SIGNAL_BASE * 0.85
+          : layer === "detail" && entry?.retainedSubtleSustainedDetail
+          ? DETAIL_RETAINED_SUBTLE_SIGNAL_BASE * 0.85
+          : minSignalAmplitude;
+      return (entry?.signalAmplitude ?? 0) >= entryMinSignal;
+    })
     .map((entry) => ({
       ...entry,
       displayAmplitude: getDisplayAmplitude(entry, layer),
@@ -1300,7 +1561,7 @@ export function buildModalExcitationStructuralState({
     peak: drivePeak,
     driveSource,
   } = computeDriveBuffer(preparedInputs, fastSignalState);
-  const hardSilentFrame = isHardSilentFrame(preparedInputs);
+  const strictHardSilentFrame = isHardSilentFrame(preparedInputs);
   const periodicity = computeDrivePeriodicity(
     driveBuffer,
     preparedInputs.sampleRate,
@@ -1325,6 +1586,32 @@ export function buildModalExcitationStructuralState({
     sampleRate: preparedInputs.sampleRate,
     dominantFrequencyHz: dominantDriveFrequencyHz,
   });
+  const latentCoherentDetailEvidence = hasLatentCoherentDetailEvidence({
+    tonalness,
+    periodicity,
+    distributedExcitation,
+    detailBandPeak,
+  });
+  const latentCoherentDetailTail = hasLatentCoherentDetailTail({
+    strictHardSilentFrame,
+    state,
+    tonalness,
+    periodicity,
+    distributedExcitation,
+    detailBandPeak,
+  });
+  const latentCoherentBackboneTail = hasLatentCoherentBackboneTail({
+    strictHardSilentFrame,
+    state,
+    tonalness,
+    periodicity,
+    distributedExcitation,
+    detailBandPeak,
+  });
+  const hardSilentFrame =
+    strictHardSilentFrame &&
+    !latentCoherentDetailTail &&
+    !latentCoherentBackboneTail;
   const chromaState = preparedInputs.featureState?.analysis?.chromaState ?? {};
   const colorContext = {
     spectralCentroid: fastSignalState.spectralCentroid,
@@ -1373,6 +1660,27 @@ export function buildModalExcitationStructuralState({
         harmonicSupport: detailBandHarmonicSupport,
         hardSilentFrame,
       });
+  const subtleCoherentDetailSignal = getSubtleCoherentDetailSignal({
+    hardSilentFrame,
+    avgAmplitude: preparedInputs.avgAmplitude,
+    analyserRms: preparedInputs.analyserRms,
+    tonalness,
+    periodicity,
+    distributedExcitation,
+    detailBandPeak,
+    frequencyStable: !detailCouplingFrequencySwitch,
+  });
+  const retainedCoherentDetailSignal = Math.max(
+    subtleCoherentDetailSignal,
+    getLatentCoherentDetailSignal({
+      latentCoherentDetailTail,
+      detailBandPeak,
+    }),
+  );
+  const retainedCoherentBackboneSignal = getLatentCoherentDetailSignal({
+    latentCoherentDetailTail: latentCoherentBackboneTail,
+    detailBandPeak,
+  });
   state.detailCouplingFrequencyHz =
     hardSilentFrame || detailCouplingFrequencySwitch
       ? 0
@@ -1415,7 +1723,14 @@ export function buildModalExcitationStructuralState({
         atlasEntry.driveWeight * 0.15 -
         distributedExcitation * 0.24,
     );
-    const previous = state.activeModes.get(atlasEntry.modeKey) ?? null;
+    const previous =
+      state.activeModes.get(atlasEntry.modeKey) ??
+      (latentCoherentDetailTail
+        ? (state.coherentDetailTailModes?.get(atlasEntry.modeKey) ?? null)
+        : null) ??
+      (latentCoherentBackboneTail
+        ? (state.coherentBackboneTailModes?.get(atlasEntry.modeKey) ?? null)
+        : null);
     const decay = Math.exp(-deltaMs / atlasEntry.decayTauMs);
     const carriedAmplitude = (previous?.amplitude ?? 0) * decay;
     const injectedAmplitude =
@@ -1432,18 +1747,43 @@ export function buildModalExcitationStructuralState({
       driveEnergy,
       hardSilentFrame,
       detailTailPresence: state.detailTailPresence,
+      subtleCoherentDetailSignal: retainedCoherentDetailSignal,
+    });
+    const retainedSubtleSustainedDetail =
+      retainSustainedDetail &&
+      driveEnergy < DETAIL_RETAINED_MODE_MIN_DRIVE_ENERGY &&
+      retainedCoherentDetailSignal > 0;
+    const retainSustainedBackbone = isRetainedSustainedBackboneMode({
+      atlasEntry,
+      previous,
+      driveEnergy,
+      hardSilentFrame,
+      latentCoherentBackboneSignal: retainedCoherentBackboneSignal,
     });
     const retainedSustainedDetailPresence = retainSustainedDetail
-      ? Math.max(
-          getSustainedDetailPresence(previous),
-          state.detailTailPresence ?? 0,
-        )
+      ? retainedSubtleSustainedDetail
+        ? Math.max(
+            getSustainedDetailPresence(previous),
+            state.detailTailPresence ?? 0,
+            previous?.detailMaturity ?? 0,
+          ) * retainedCoherentDetailSignal
+        : Math.max(
+            getSustainedDetailPresence(previous),
+            state.detailTailPresence ?? 0,
+          )
       : 0;
-    const minimumResonatorAmplitude = retainSustainedDetail
+    const retainedSustainedBackbonePresence = retainSustainedBackbone
+      ? Math.max(
+          previous?.amplitude ?? 0,
+          state.coherentBackboneTailMemory ?? 0,
+        ) * Math.max(0.35, retainedCoherentBackboneSignal)
+      : 0;
+    const retainedMode = retainSustainedDetail || retainSustainedBackbone;
+    const minimumResonatorAmplitude = retainedMode
       ? MIN_SUSTAINED_DETAIL_RESONATOR_AMPLITUDE
       : MIN_RESONATOR_AMPLITUDE;
     const amplitude = clamp01(
-      retainSustainedDetail
+      retainedMode
         ? Math.max(rawAmplitude, MIN_SUSTAINED_DETAIL_RESONATOR_AMPLITUDE)
         : rawAmplitude,
     );
@@ -1494,7 +1834,10 @@ export function buildModalExcitationStructuralState({
       persistence,
       detailMaturity,
       retainedSustainedDetail: retainSustainedDetail,
+      retainedSubtleSustainedDetail,
       retainedSustainedDetailPresence,
+      retainedSustainedBackbone: retainSustainedBackbone,
+      retainedSustainedBackbonePresence,
       lastExcitedAtMs:
         driveEnergy > MIN_RESONATOR_AMPLITUDE
           ? preparedInputs.currentFrameAtMs
@@ -1518,6 +1861,31 @@ export function buildModalExcitationStructuralState({
 
   state.activeModes = nextModes;
   state.detailMaturity = hardSilentFrame ? new Map() : nextDetailMaturity;
+  const nextCoherentDetailTailModes = new Map(
+    state.coherentDetailTailModes ?? [],
+  );
+  const nextCoherentBackboneTailModes = new Map(
+    state.coherentBackboneTailModes ?? [],
+  );
+  for (const entry of excitedEntries) {
+    if (
+      entry.layer === "backbone" &&
+      ((entry.amplitude ?? 0) >= BACKBONE_LATENT_TAIL_MIN_DISPLAY_AMPLITUDE ||
+        entry.retainedSustainedBackbone)
+    ) {
+      nextCoherentBackboneTailModes.set(entry.modeKey, entry);
+    }
+    if (
+      entry.layer === "detail" &&
+      ((entry.detailMaturity ?? 0) >= DETAIL_SUBTLE_TAIL_MIN_MATURITY ||
+        entry.retainedSustainedDetail ||
+        getSustainedDetailPresence(entry) >= DETAIL_LATENT_TAIL_MIN_PRESENCE)
+    ) {
+      nextCoherentDetailTailModes.set(entry.modeKey, entry);
+    }
+  }
+  state.coherentBackboneTailModes = nextCoherentBackboneTailModes;
+  state.coherentDetailTailModes = nextCoherentDetailTailModes;
   excitedEntries.sort(
     (left, right) =>
       right.amplitude * Math.max(0.15, right.coherence) -
@@ -1598,13 +1966,19 @@ export function buildModalExcitationStructuralState({
     {
       attack: EXCITATION_BACKBONE_BLEND_ATTACK,
       tracking: EXCITATION_BACKBONE_BLEND_TRACKING,
-      release: EXCITATION_BACKBONE_BLEND_RELEASE,
+      release: latentCoherentBackboneTail
+        ? EXCITATION_BACKBONE_LATENT_TAIL_RELEASE
+        : EXCITATION_BACKBONE_BLEND_RELEASE,
       emptyTargetRelease: hardSilentFrame
         ? EXCITATION_BACKBONE_HARD_SILENCE_RELEASE
+        : latentCoherentBackboneTail
+          ? EXCITATION_BACKBONE_LATENT_TAIL_EMPTY_RELEASE
         : EXCITATION_BACKBONE_SILENCE_RELEASE,
       lowSignalReleaseThreshold:
         EXCITATION_BACKBONE_LOW_SIGNAL_RELEASE_THRESHOLD,
-      lowSignalRelease: EXCITATION_BACKBONE_LOW_SIGNAL_RELEASE,
+      lowSignalRelease: latentCoherentBackboneTail
+        ? EXCITATION_BACKBONE_LATENT_TAIL_LOW_SIGNAL_RELEASE
+        : EXCITATION_BACKBONE_LOW_SIGNAL_RELEASE,
       freshCap: EXCITATION_BACKBONE_FRESH_CAP,
     },
   );
@@ -1633,6 +2007,53 @@ export function buildModalExcitationStructuralState({
         (state.detailTailPresence ?? 0) *
           EXCITATION_DETAIL_TAIL_PRESENCE_RELEASE,
       );
+  const latentEvidenceSignal = latentCoherentDetailEvidence
+    ? getLatentCoherentDetailSignal({
+        latentCoherentDetailTail: true,
+        detailBandPeak,
+      })
+    : 0;
+  const tailMemoryRelease = latentCoherentDetailEvidence
+    ? DETAIL_LATENT_TAIL_MEMORY_RELEASE
+    : DETAIL_LATENT_TAIL_NO_EVIDENCE_RELEASE;
+  const backboneTailMemoryRelease = latentCoherentDetailEvidence
+    ? BACKBONE_LATENT_TAIL_MEMORY_RELEASE
+    : BACKBONE_LATENT_TAIL_NO_EVIDENCE_RELEASE;
+  state.coherentBackboneTailMemory = Math.max(
+    sumSlotAmplitudes(state.blendBackbone.slots),
+    (state.coherentBackboneTailMemory ?? 0) * backboneTailMemoryRelease,
+    hasSeededCoherentBackboneTail(state) ? latentEvidenceSignal * 0.01 : 0,
+  );
+  state.coherentDetailTailMemory = Math.max(
+    state.detailTailPresence ?? 0,
+    sumSlotAmplitudes(state.blendDetail.slots),
+    (state.coherentDetailTailMemory ?? 0) * tailMemoryRelease,
+    hasSeededCoherentDetailTail(state) ? latentEvidenceSignal * 0.01 : 0,
+  );
+  if (
+    sumSlotAmplitudes(state.blendBackbone.slots) >=
+    BACKBONE_LATENT_TAIL_MIN_DISPLAY_AMPLITUDE
+  ) {
+    state.coherentBackboneTailSeeded = true;
+  }
+  if (
+    state.detailTailPresence >= DETAIL_LATENT_TAIL_MIN_PRESENCE ||
+    sumSlotAmplitudes(state.blendDetail.slots) >=
+      DETAIL_LATENT_TAIL_MIN_DISPLAY_AMPLITUDE
+  ) {
+    state.coherentDetailTailSeeded = true;
+  }
+  if (
+    strictHardSilentFrame &&
+    !latentCoherentDetailEvidence &&
+    detailBandPeak <= 0 &&
+    drivePeak <= 0
+  ) {
+    state.coherentBackboneTailSeeded = false;
+    state.coherentBackboneTailModes = new Map();
+    state.coherentDetailTailSeeded = false;
+    state.coherentDetailTailModes = new Map();
+  }
   const hasSustainedTail =
     state.detailTailPresence >= DETAIL_TAIL_MIN_PRESENCE;
   blendModalStack(
@@ -1642,18 +2063,24 @@ export function buildModalExcitationStructuralState({
     {
       attack: EXCITATION_DETAIL_BLEND_ATTACK,
       tracking: EXCITATION_DETAIL_BLEND_TRACKING,
-      release: hasSustainedTail
+      release: latentCoherentDetailTail
+        ? EXCITATION_DETAIL_LATENT_TAIL_RELEASE
+        : hasSustainedTail
         ? EXCITATION_DETAIL_TAIL_RELEASE
         : EXCITATION_DETAIL_BLEND_RELEASE,
       emptyTargetRelease: hardSilentFrame
         ? EXCITATION_DETAIL_HARD_SILENCE_RELEASE
-        : hasSustainedTail
+        : latentCoherentDetailTail
+          ? EXCITATION_DETAIL_LATENT_TAIL_EMPTY_RELEASE
+          : hasSustainedTail
           ? EXCITATION_DETAIL_TAIL_EMPTY_RELEASE
-        : EXCITATION_DETAIL_SILENCE_RELEASE,
+          : EXCITATION_DETAIL_SILENCE_RELEASE,
       lowSignalReleaseThreshold: EXCITATION_DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD,
-      lowSignalRelease: hasSustainedTail
-        ? EXCITATION_DETAIL_TAIL_LOW_SIGNAL_RELEASE
-        : EXCITATION_DETAIL_LOW_SIGNAL_RELEASE,
+      lowSignalRelease: latentCoherentDetailTail
+        ? EXCITATION_DETAIL_LATENT_TAIL_LOW_SIGNAL_RELEASE
+        : hasSustainedTail
+          ? EXCITATION_DETAIL_TAIL_LOW_SIGNAL_RELEASE
+          : EXCITATION_DETAIL_LOW_SIGNAL_RELEASE,
       freshCap:
         EXCITATION_DETAIL_FRESH_CAP + (detailAssistNeedsFreshAdmission ? 1 : 0),
     },

@@ -1269,6 +1269,46 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
+  it("keeps responseEnvelope active for coherent modal visibility tails", () => {
+    const runtimeState = createRuntimeState();
+    runtimeState.responseEnvelope = 0.36;
+
+    const resonantTailFrame = {
+      fieldState: "active",
+      averageAmplitude: 1.24,
+      backboneSlots: new Float32Array([3, 4, 6, 0.018]),
+      detailSlots: new Float32Array([4, 5, 5, 0.012]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.02, 0.018, 0.014, 0.01]),
+      transientEnergy: 0,
+      spectralCentroid: 0.18,
+      spectralFlux: 0.01,
+      structureSignal: 0.028,
+      energySignal: 0.012,
+      changeSignal: 0,
+      pulseSignal: 0,
+      modeCoherence: 0.8,
+      modalVisibilityEnergy: 0.32,
+      rhythmicDensity: 0,
+      debug: {},
+    };
+
+    for (let frame = 0; frame < 36; frame += 1) {
+      tickRaymarchRuntime(
+        runtimeState,
+        resonantTailFrame,
+        2 + frame / 60,
+        1 / 60,
+      );
+    }
+
+    expect(runtimeState.responseEnvelope).toBeGreaterThan(0.16);
+    expect(runtimeState.debugSnapshot.raymarchDebug.modalVisibilityEnergy).toBe(
+      0.32,
+    );
+  });
+
   it("keeps the outer radius fixed while internal response stays active", () => {
     const runtimeState = createRuntimeState();
 

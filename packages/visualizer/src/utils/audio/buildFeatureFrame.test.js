@@ -89,6 +89,48 @@ function makeTimeData({
   return timeData;
 }
 
+function makeMixedTimeData({
+  partials,
+  amplitudeScale = 1,
+  sampleRate = SAMPLE_RATE,
+  fftSize = FFT_SIZE,
+}) {
+  const timeData = new Float32Array(fftSize);
+  let normalizer = 0;
+  for (const [, amplitude] of partials) {
+    normalizer += Math.abs(amplitude);
+  }
+  const safeNormalizer = Math.max(normalizer, 1e-6);
+  for (let index = 0; index < fftSize; index += 1) {
+    let sample = 0;
+    for (const [frequency, amplitude] of partials) {
+      sample +=
+        Math.sin((2 * Math.PI * frequency * index) / sampleRate) * amplitude;
+    }
+    timeData[index] = (sample / safeNormalizer) * amplitudeScale;
+  }
+  return timeData;
+}
+
+const RESONANT_STRIKE_PARTIALS = Object.freeze([
+  [196, 0.9],
+  [293, 0.76],
+  [432, 0.7],
+  [611, 0.58],
+  [832, 0.5],
+  [1180, 0.44],
+  [1860, 0.36],
+  [3100, 0.28],
+  [5200, 0.24],
+]);
+
+function scalePartials(partials, scale) {
+  return partials.map(([frequency, amplitude]) => [
+    frequency,
+    amplitude * scale,
+  ]);
+}
+
 function makeActiveStatus(overrides = {}) {
   return createStatus({
     audioInputMode: "file",
@@ -2040,6 +2082,127 @@ describe("live input noise gate", () => {
     ).toBe(true);
   });
 
+  it("holds ambient mic resonance through quiet coherent tails", () => {
+    const featureState = createAudioFeatureState();
+    calibrateLiveInput(featureState, {
+      acousticIntent: "ambient",
+      peaks: [
+        [90, 0.025],
+        [180, 0.018],
+      ],
+      avgAmplitude: 0.8,
+      rms: 0.0016,
+    });
+
+    const strikePeaks = [
+      [220, 0.18],
+      [440, 0.11],
+      [660, 0.068],
+      [880, 0.045],
+    ];
+    buildLiveInputFrame({
+      featureState,
+      acousticIntent: "ambient",
+      peaks: strikePeaks,
+      avgAmplitude: 4.8,
+      rms: 0.017,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
+      timeData: makeTimeData({
+        frequency: 220,
+        amplitude: 0.05,
+        harmonics: [
+          [2, 0.024],
+          [3, 0.011],
+        ],
+      }),
+    });
+
+    let frame = null;
+    for (let index = 0; index < 7; index += 1) {
+      const scale = 1 - index * 0.055;
+      frame = buildLiveInputFrame({
+        featureState,
+        acousticIntent: "ambient",
+        peaks: [
+          [220, 0.052 * scale],
+          [440, 0.032 * scale],
+          [660, 0.02 * scale],
+          [880, 0.013 * scale],
+        ],
+        avgAmplitude: 1.05,
+        rms: 0.0008,
+        frameTimeMs: LIVE_INPUT_POST_CALIBRATION_NEXT_MS + index * 33,
+        timeData: makeTimeData({
+          frequency: 220,
+          amplitude: 0.016 * scale,
+          harmonics: [
+            [2, 0.0075 * scale],
+            [3, 0.0035 * scale],
+          ],
+        }),
+      });
+
+      expect(frame.debug.liveInputHardSilenceActive).toBe(false);
+      expect(frame.debug.liveInputNoiseGateActive).toBe(false);
+    }
+
+    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.01);
+
+    const silence = buildLiveInputFrame({
+      featureState,
+      acousticIntent: "ambient",
+      peaks: [],
+      avgAmplitude: 0,
+      rms: 0,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_NEXT_MS + 7 * 33,
+    });
+
+    expect(silence.debug.liveInputNoiseGateActive).toBe(true);
+    expect(silence.debug.liveInputHardSilenceActive).toBe(true);
+  });
+
+  it("keeps weak ambient mic noise and low hum gated", () => {
+    const featureState = createAudioFeatureState();
+    calibrateLiveInput(featureState, {
+      acousticIntent: "ambient",
+      peaks: [
+        [90, 0.025],
+        [180, 0.018],
+      ],
+      avgAmplitude: 0.8,
+      rms: 0.0016,
+    });
+
+    const lowHum = buildLiveInputFrame({
+      featureState,
+      acousticIntent: "ambient",
+      peaks: [[60, 0.052]],
+      avgAmplitude: 1.05,
+      rms: 0.0008,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
+      timeData: makeTimeData({
+        frequency: 60,
+        amplitude: 0.012,
+      }),
+    });
+    const weakBroadband = buildLiveInputFrame({
+      featureState,
+      acousticIntent: "ambient",
+      peaks: [
+        [360, 0.028],
+        [940, 0.025],
+        [1800, 0.023],
+        [3600, 0.02],
+      ],
+      avgAmplitude: 1.05,
+      rms: 0.0008,
+      frameTimeMs: LIVE_INPUT_POST_CALIBRATION_NEXT_MS,
+    });
+
+    expect(lowHum.debug.liveInputNoiseGateActive).toBe(true);
+    expect(weakBroadband.debug.liveInputNoiseGateActive).toBe(true);
+  });
+
   it("matches file analysis for system-classified live input", () => {
     const fileFeatureState = createAudioFeatureState();
     const systemFeatureState = createAudioFeatureState();
@@ -2134,6 +2297,138 @@ describe("live input noise gate", () => {
     expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.025);
     expect(frame.activeDetailModeCount).toBeGreaterThan(0);
   });
+
+  it("keeps line-feed bowl tails visually eligible between repeated strikes", () => {
+    const featureState = createAudioFeatureState();
+    const status = makeResolvedLineFeedLiveStatus();
+    const tailFrames = [];
+
+    for (let frameIndex = 0; frameIndex < 74; frameIndex += 1) {
+      const isStrike = frameIndex < 2;
+      const tailScale = Math.max(
+        0.0065,
+        Math.exp(-(frameIndex - 2) / 18) * 0.22,
+      );
+      const scale = isStrike ? 1 : tailScale;
+      const partials = scalePartials(RESONANT_STRIKE_PARTIALS, scale);
+      const frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "live",
+          avgAmplitude: isStrike ? 38 : 1.24,
+          fftMagnitudes: makeFft(partials),
+          timeData: makeMixedTimeData({
+            partials,
+            amplitudeScale: isStrike ? 1 : tailScale,
+          }),
+          rms: isStrike ? 0.28 : 0.0048,
+        }),
+        featureState,
+        radius: 3,
+        status,
+        frameTimeMs: frameIndex * 33,
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
+      });
+
+      if (frameIndex >= 58) {
+        tailFrames.push({
+          modalVisibilityEnergy: frame.modalVisibilityEnergy,
+          detailAmplitude: sumSlotAmplitudes(frame.detailSlots),
+          fieldState: frame.fieldState,
+        });
+      }
+    }
+
+    expect(
+      tailFrames.every(({ fieldState }) => fieldState === "active"),
+    ).toBe(true);
+    expect(
+      Math.min(...tailFrames.map(({ detailAmplitude }) => detailAmplitude)),
+    ).toBeGreaterThan(0.006);
+    expect(
+      Math.min(
+        ...tailFrames.map(
+          ({ modalVisibilityEnergy }) => modalVisibilityEnergy,
+        ),
+      ),
+    ).toBeGreaterThan(0.08);
+  });
+
+  it("keeps line-feed coherent ringing visible below raw meter silence", () => {
+    const featureState = createAudioFeatureState();
+    const status = makeResolvedLineFeedLiveStatus();
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < 68; frameIndex += 1) {
+      const isStrike = frameIndex < 2;
+      const tailScale =
+        frameIndex < 44
+          ? Math.max(0.0065, Math.exp(-(frameIndex - 2) / 18) * 0.22)
+          : 0.0027;
+      const scale = isStrike ? 1 : tailScale;
+      const partials = scalePartials(RESONANT_STRIKE_PARTIALS, scale);
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "live",
+          avgAmplitude: isStrike ? 38 : 0.72,
+          fftMagnitudes: makeFft(partials),
+          timeData: makeMixedTimeData({
+            partials,
+            amplitudeScale: scale,
+          }),
+          rms: isStrike ? 0.28 : 0.0032,
+        }),
+        featureState,
+        radius: 3,
+        status,
+        frameTimeMs: frameIndex * 33,
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
+      });
+    }
+
+    expect(frame.fieldState).toBe("active");
+    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.003);
+    expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
+  });
+
+  it("keeps line-feed long coherent ring-outs from becoming visually abandoned", () => {
+    const featureState = createAudioFeatureState();
+    const status = makeResolvedLineFeedLiveStatus();
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < 1600; frameIndex += 1) {
+      const isStrike = frameIndex < 2;
+      const earlyTailScale = Math.max(
+        0.0065,
+        Math.exp(-(frameIndex - 2) / 22) * 0.24,
+      );
+      const longTailScale = 0.00078 + Math.sin(frameIndex * 0.11) * 0.00012;
+      const scale =
+        isStrike ? 1 : frameIndex < 72 ? earlyTailScale : longTailScale;
+      const partials = scalePartials(RESONANT_STRIKE_PARTIALS, scale);
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "live",
+          avgAmplitude: isStrike ? 38 : 0.34,
+          fftMagnitudes: makeFft(partials),
+          timeData: makeMixedTimeData({
+            partials,
+            amplitudeScale: scale,
+          }),
+          rms: isStrike ? 0.28 : 0.0017,
+        }),
+        featureState,
+        radius: 3,
+        status,
+        frameTimeMs: frameIndex * 33,
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
+      });
+    }
+
+    expect(frame.fieldState).toBe("active");
+    expect(sumSlotAmplitudes(frame.backboneSlots)).toBeGreaterThan(0.0015);
+    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.0015);
+    expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.12);
+  }, 10000);
 
   it("keeps subdued system-routed harmonic resonance from going empty", () => {
     const featureState = createAudioFeatureState();

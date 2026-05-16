@@ -31,6 +31,12 @@ export function createModalExcitationState(capacity = 16) {
     detailMaturity: new Map(),
     detailCouplingFrequencyHz: 0,
     detailTailPresence: 0,
+    coherentBackboneTailMemory: 0,
+    coherentBackboneTailSeeded: false,
+    coherentBackboneTailModes: new Map(),
+    coherentDetailTailMemory: 0,
+    coherentDetailTailSeeded: false,
+    coherentDetailTailModes: new Map(),
     diagnostics: {
       excitedModeCount: 0,
       distributedExcitation: 0,
