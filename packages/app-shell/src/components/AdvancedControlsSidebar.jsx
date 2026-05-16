@@ -7,6 +7,7 @@ import {
 
 const CLOSE_HELP_DELAY_MS = 110;
 const OPEN_HELP_DELAY_MS = 180;
+const SCROLL_INTERACTION_MARK_INTERVAL_MS = 140;
 const INFO_LINKS = [
   {
     href: "https://github.com/BaryonOfficial/Baryon",
@@ -1419,6 +1420,7 @@ export default function AdvancedControlsSidebar({
   const helpCloseTimerRef = useRef(null);
   const shellRef = useRef(null);
   const scrollRef = useRef(null);
+  const lastScrollInteractionAtRef = useRef(Number.NEGATIVE_INFINITY);
   const wasOpenRef = useRef(isOpen);
   const [hasHoverSupport, setHasHoverSupport] = useState(() =>
     typeof window === "undefined"
@@ -1685,7 +1687,20 @@ export default function AdvancedControlsSidebar({
       return undefined;
     }
 
+    lastScrollInteractionAtRef.current = Number.NEGATIVE_INFINITY;
+
     const handleWheel = () => {
+      const nowMs =
+        typeof globalThis.performance?.now === "function"
+          ? globalThis.performance.now()
+          : Date.now();
+      if (
+        nowMs - lastScrollInteractionAtRef.current <
+        SCROLL_INTERACTION_MARK_INTERVAL_MS
+      ) {
+        return;
+      }
+      lastScrollInteractionAtRef.current = nowMs;
       noteAdvancedControlsInteraction("scroll");
     };
 

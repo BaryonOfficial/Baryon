@@ -1310,6 +1310,60 @@ test.describe("Baryon control smoke", () => {
       .toEqual(beforeControls);
   });
 
+  test("scrolling advanced controls does not stall render progress", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await page.evaluate(() => {
+      window.__baryonControls?.setControl?.("rotationMode", "manual");
+      window.__baryonControls?.setControl?.("rotationSpeed", 2.5);
+    });
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControlState?.scene?.rotationY ?? null,
+        ),
+      )
+      .not.toBeNull();
+
+    await page.getByTestId("advanced-controls-trigger").click();
+    const scrollPanel = page.locator(".baryon-controls-scroll");
+    await expect(scrollPanel).toBeVisible();
+
+    const beforeRotation = await page.evaluate(
+      () => window.__baryonControlState?.scene?.rotationY ?? null,
+    );
+    expect(beforeRotation).not.toBeNull();
+
+    const box = await scrollPanel.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+
+    for (let index = 0; index < 12; index += 1) {
+      await page.mouse.wheel(0, index % 2 === 0 ? 320 : -280);
+      await page.waitForTimeout(25);
+    }
+
+    await expect
+      .poll(() =>
+        page.evaluate((initialRotation) => {
+          const currentRotation =
+            window.__baryonControlState?.scene?.rotationY ?? null;
+          if (currentRotation == null) {
+            return null;
+          }
+          return Math.abs(currentRotation - initialRotation);
+        }, beforeRotation),
+      )
+      .toBeGreaterThan(0.02);
+  });
+
   test("restores focus to the trigger when advanced controls close from a focused slider", async ({
     page,
     browserName,

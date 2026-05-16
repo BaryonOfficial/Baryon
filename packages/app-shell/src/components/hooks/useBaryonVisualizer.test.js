@@ -12,11 +12,19 @@ const { invalidateSpy, clearAdaptiveRaymarchResumeStateSpy } = vi.hoisted(
   }),
 );
 
+const frameState = vi.hoisted(() => ({
+  callbacks: [],
+}));
+
+const renderLoopSpies = vi.hoisted(() => ({
+  applyCachedControlSnapshotsSpy: vi.fn(() => ({})),
+}));
+
 const visualizationLifecycleState = vi.hoisted(() => ({
   points: null,
   runtimeRef: { current: { method: "raymarch", tick: () => {} } },
   runtimeStateRef: { current: {} },
-  audioFeatureRef: { current: null },
+  audioFeatureRef: { current: {} },
   audioFeatureEngineRef: { current: null },
   runtimeDiagnosticsRef: { current: {} },
   frameCacheRefs: {
@@ -38,7 +46,9 @@ vi.mock("@react-three/fiber", () => ({
   useThree: () => ({
     invalidate: invalidateSpy,
   }),
-  useFrame: () => {},
+  useFrame: (callback) => {
+    frameState.callbacks.push(callback);
+  },
 }));
 
 vi.mock("@baryon/visualizer", () => ({
@@ -102,7 +112,8 @@ vi.mock("@baryon/visualizer/render/outputPipeline", async () => {
 });
 
 vi.mock("./baryonVisualizerRenderLoop.js", () => ({
-  applyCachedControlSnapshots: () => ({}),
+  applyCachedControlSnapshots: (...args) =>
+    renderLoopSpies.applyCachedControlSnapshotsSpy(...args),
   applyReactiveBloomState: () => ({}),
   getPlaybackDiagnosticDpr: () => 1,
   getEffectiveAdaptiveRenderScale: () => 1,
@@ -134,7 +145,7 @@ vi.mock("./externalFrameClock.js", () => ({
 
 import { useBaryonVisualizer } from "./useBaryonVisualizer.js";
 
-function HookHarness({ renderProfile }) {
+function HookHarness({ controlsRef = { current: {} }, renderProfile }) {
   useBaryonVisualizer({
     baryonGeometry: null,
     camera: {},
@@ -144,7 +155,7 @@ function HookHarness({ renderProfile }) {
     setLiveInputRuntimeStatus: () => {},
     liveInputUiState: null,
     liveInputErrorCode: null,
-    controlsRef: { current: {} },
+    controlsRef,
     visualizationMethod: "raymarch",
     ensurePipeline: () => null,
     postNodesRef: { current: null },
@@ -161,6 +172,13 @@ describe("useBaryonVisualizer", () => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     invalidateSpy.mockClear();
     clearAdaptiveRaymarchResumeStateSpy.mockClear();
+    renderLoopSpies.applyCachedControlSnapshotsSpy.mockClear();
+    frameState.callbacks.length = 0;
+    visualizationLifecycleState.controlCacheRefs.controlVersionRef.current = 0;
+    visualizationLifecycleState.controlCacheRefs.appliedControlVersionRef.current =
+      0;
+    visualizationLifecycleState.controlCacheRefs.cachedControlSnapshotsRef.current =
+      { controlsSnapshot: null };
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -226,5 +244,61 @@ describe("useBaryonVisualizer", () => {
 
     expect(invalidateSpy).toHaveBeenCalledTimes(1);
     expect(clearAdaptiveRaymarchResumeStateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies control-change commands at the render frame boundary", async () => {
+    const controlsRef = {
+      current: {
+        backgroundColor: "#000000",
+        colorMode: "spectral",
+        performanceHudEnabled: false,
+        spectralMix: 1,
+      },
+    };
+
+    await act(async () => {
+      root.render(React.createElement(HookHarness, { controlsRef }));
+    });
+
+    controlsRef.current.backgroundColor = "#112233";
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("__baryon-controls-change", {
+          detail: { ...controlsRef.current },
+        }),
+      );
+    });
+
+    expect(
+      visualizationLifecycleState.controlCacheRefs.controlVersionRef.current,
+    ).toBe(0);
+    expect(
+      visualizationLifecycleState.controlCacheRefs.cachedControlSnapshotsRef
+        .current.controlsSnapshot,
+    ).toBeNull();
+
+    const frameCallback = frameState.callbacks.at(-1);
+    expect(frameCallback).toBeTypeOf("function");
+
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+
+    expect(
+      visualizationLifecycleState.controlCacheRefs.controlVersionRef.current,
+    ).toBe(1);
+    expect(
+      visualizationLifecycleState.controlCacheRefs.cachedControlSnapshotsRef
+        .current.controlsSnapshot.backgroundColor,
+    ).toBe("#112233");
+    expect(
+      renderLoopSpies.applyCachedControlSnapshotsSpy.mock.calls.at(-1)[0]
+        .controls.backgroundColor,
+    ).toBe("#112233");
   });
 });

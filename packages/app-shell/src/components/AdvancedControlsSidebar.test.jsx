@@ -272,6 +272,55 @@ describe("AdvancedControlsSidebar info links", () => {
     }
   });
 
+  it("coalesces bursty sidebar wheel interaction markers", () => {
+    const interactions = [];
+    const handleInteraction = (event) => {
+      interactions.push(event.detail);
+    };
+    window.addEventListener("__baryon-ui-interaction", handleInteraction);
+    try {
+      renderSidebar({
+        folderGroups: [
+          {
+            title: "Shape",
+            expanded: true,
+            controls: [
+              {
+                key: "densityGain",
+                label: "Density",
+                title: "Density",
+                defaultValue: 3,
+                binding: { min: 0.1, max: 4, step: 0.01 },
+              },
+            ],
+          },
+        ],
+        controlsState: { densityGain: 2.85 },
+      });
+
+      const scrollContainer = container.querySelector(
+        ".baryon-controls-scroll",
+      );
+      expect(scrollContainer).toBeInstanceOf(HTMLDivElement);
+
+      for (const deltaY of [320, -320, 320]) {
+        scrollContainer.dispatchEvent(
+          new WheelEvent("wheel", {
+            bubbles: true,
+            cancelable: true,
+            deltaY,
+          }),
+        );
+      }
+
+      expect(
+        interactions.filter((detail) => detail.kind === "scroll"),
+      ).toHaveLength(1);
+    } finally {
+      window.removeEventListener("__baryon-ui-interaction", handleInteraction);
+    }
+  });
+
   it("does not let sidebar scrolling step focused slider controls", () => {
     const updateControl = vi.fn();
     renderSidebar({

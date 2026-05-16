@@ -46,6 +46,7 @@ import {
 } from "./baryonVisualizerRenderLoop.js";
 import { useVisualizationRuntimeLifecycle } from "./useVisualizationRuntimeLifecycle.js";
 import { getSourceAuthoritativeClock } from "./externalFrameClock.js";
+import { createRenderCommandQueue } from "./renderCommandQueue.js";
 
 function resolveFieldCacheOverrideControls(input, fallbackControls) {
   return input?.detail ?? input ?? fallbackControls;
@@ -99,6 +100,10 @@ export function useBaryonVisualizer({
 }) {
   const { invalidate } = useThree();
   const audioRef = useRef(getDefaultAudioSession());
+  const renderControlsRef = useRef(
+    controlsRef?.current ? { ...controlsRef.current } : {},
+  );
+  const renderCommandQueueRef = useRef(createRenderCommandQueue());
   const outputSessionRef = useRef(null);
   const outputCaptureInFlightRef = useRef(false);
   const lastAppliedExternalFrameSequenceRef = useRef(null);
@@ -122,7 +127,7 @@ export function useBaryonVisualizer({
   } = useVisualizationRuntimeLifecycle({
     audioRef,
     baryonGeometry,
-    controlsRef,
+    controlsRef: renderControlsRef,
     visualizationMethod,
     setIsEngineReady,
     setLiveInputRuntimeStatus,
@@ -151,7 +156,7 @@ export function useBaryonVisualizer({
     runtimeStateRef,
     audioFeatureRef,
     audioFeatureEngineRef,
-    controlsRef,
+    controlsRef: renderControlsRef,
   };
   const renderProfileRef = useRef(renderProfile);
   renderProfileRef.current = renderProfile;
@@ -165,6 +170,7 @@ export function useBaryonVisualizer({
 
   useEffect(() => {
     const audio = audioRef.current;
+    const renderCommandQueue = renderCommandQueueRef.current;
 
     audio.attach(camera);
     gl.setClearColor(new THREE.Color(0x000000), 0);
@@ -183,6 +189,7 @@ export function useBaryonVisualizer({
       };
       lastAudioIssueSignatureRef.current = null;
       clearCachedControlsSnapshot(cachedControlSnapshotsRef);
+      renderCommandQueue.clear();
       onPerformanceHudSnapshotChange?.(null);
       onAuditSnapshotChange?.({
         enabled: false,
@@ -410,10 +417,12 @@ export function useBaryonVisualizer({
       return;
     }
 
-    applyControlInvalidation(controlsRef.current, {
+    renderCommandQueueRef.current.enqueueControlsChanged(controlsRef.current, {
       clearPausedFrameCache: true,
+      source: "structural-version",
     });
-  }, [applyControlInvalidation, structuralControlVersion, controlsRef]);
+    invalidate();
+  }, [structuralControlVersion, controlsRef, invalidate]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -421,9 +430,14 @@ export function useBaryonVisualizer({
     }
 
     const handleControlsChange = (event) => {
-      applyControlInvalidation(event?.detail ?? controlsRef.current, {
-        clearPausedFrameCache: true,
-      });
+      renderCommandQueueRef.current.enqueueControlsChanged(
+        event?.detail ?? controlsRef.current,
+        {
+          clearPausedFrameCache: true,
+          source: "controls-change",
+        },
+      );
+      invalidate();
     };
 
     window.addEventListener("__baryon-controls-change", handleControlsChange);
@@ -433,9 +447,18 @@ export function useBaryonVisualizer({
         handleControlsChange,
       );
     };
-  }, [applyControlInvalidation, controlsRef]);
+  }, [controlsRef, invalidate]);
 
   useFrame((state, rfDelta) => {
+    const pendingControlsCommand =
+      renderCommandQueueRef.current.drainControlsChanged();
+    if (pendingControlsCommand) {
+      renderControlsRef.current = pendingControlsCommand.controls;
+      applyControlInvalidation(renderControlsRef.current, {
+        clearPausedFrameCache: pendingControlsCommand.clearPausedFrameCache,
+      });
+    }
+
     const pipeline = renderLoopContext.ensurePipeline();
     const runtime = renderLoopContext.runtimeRef.current;
     const runtimeState = renderLoopContext.runtimeStateRef.current;
