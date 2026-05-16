@@ -14,6 +14,7 @@ import {
   HOT_CORE_START,
   LATCHED_FOG_BEAM_REDUCTION,
   LATCHED_FOG_BODY_REDUCTION,
+  MODAL_CROWDING_BODY_COMPRESSION,
   SHELL_WEIGHT_MAX,
   SHELL_WEIGHT_MIN,
   deriveBeamMask,
@@ -26,6 +27,7 @@ import {
   deriveHolographicColorMix,
   deriveHolographicFresnel,
   deriveHotCoreMix,
+  deriveModalCrowdingDensity,
   deriveShellWeight,
   deriveStableContourAccent,
   deriveSpectralColorBiasOffset,
@@ -337,6 +339,56 @@ describe("field shaping", () => {
     expect(intense.rolledBeamDensity / 1.6).toBeLessThan(
       subtle.rolledBeamDensity / 0.28,
     );
+  });
+
+  it("compresses body-dominant modal crowding before it becomes haze", () => {
+    expect(MODAL_CROWDING_BODY_COMPRESSION).toBeCloseTo(0.55);
+
+    const additiveDensity = 0.34 + 1.4 * BODY_DENSITY_MIX;
+    const crowded = deriveModalCrowdingDensity({
+      rolledBeamDensity: 0.34,
+      dampedBodyDensity: 1.4,
+    });
+
+    expect(crowded.ridgeConcentration).toBeLessThan(0.25);
+    expect(crowded.bodyCompression).toBeLessThan(0.75);
+    expect(crowded.adjustedBodyDensity).toBeLessThan(1.4);
+    expect(crowded.localDensity).toBeLessThan(additiveDensity * 0.82);
+  });
+
+  it("preserves ridge-dominant density while crowding compression affects body fill", () => {
+    const additiveDensity = 1.1 + 0.16 * BODY_DENSITY_MIX;
+    const ridge = deriveModalCrowdingDensity({
+      rolledBeamDensity: 1.1,
+      dampedBodyDensity: 0.16,
+    });
+
+    expect(ridge.ridgeConcentration).toBeGreaterThan(0.86);
+    expect(ridge.bodyCompression).toBeGreaterThan(0.9);
+    expect(ridge.localDensity).toBeGreaterThan(additiveDensity * 0.99);
+    expect(ridge.rolledBeamDensity).toBeCloseTo(1.1);
+  });
+
+  it("keeps hot-core authority on beam density rather than crowding compression", () => {
+    const crowded = deriveModalCrowdingDensity({
+      rolledBeamDensity: 0.58,
+      dampedBodyDensity: 1.2,
+    });
+    const baselineHotCore = deriveHotCoreMix({
+      beamMask: 0.58,
+      highlightMask: 0.12,
+      contourMix: 0.66,
+      transientEnergy: 0.2,
+    });
+    const crowdedHotCore = deriveHotCoreMix({
+      beamMask: crowded.rolledBeamDensity,
+      highlightMask: 0.12,
+      contourMix: 0.66,
+      transientEnergy: 0.2,
+    });
+
+    expect(crowded.adjustedBodyDensity).toBeLessThan(1.2);
+    expect(crowdedHotCore).toBeCloseTo(baselineHotCore);
   });
 
   it("suppresses weak visible density while preserving strong contours", () => {

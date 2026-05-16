@@ -38,6 +38,7 @@ export const BEAM_SPECTRAL_GAIN = 0.55;
 export const EMISSION_ROLLOFF_BASE = 0.42;
 export const EMISSION_ROLLOFF_TRANSIENT_GAIN = 0.18;
 export const EMISSION_ROLLOFF_MIX = 0.68;
+export const MODAL_CROWDING_BODY_COMPRESSION = 0.55;
 export const HOT_CORE_START = 0.56;
 export const HOT_CORE_END = 0.94;
 export const HIGHLIGHT_MASK_START = 0.38;
@@ -326,6 +327,38 @@ export function deriveEmissionRolloff({ beamDensity, transientEnergy }) {
     rolloffStrength,
     softCappedBeamDensity,
     rolledBeamDensity,
+  };
+}
+
+export function deriveModalCrowdingDensity({
+  rolledBeamDensity,
+  dampedBodyDensity,
+}) {
+  const beamDensity = Math.max(
+    0,
+    Number.isFinite(rolledBeamDensity) ? rolledBeamDensity : 0,
+  );
+  const bodyDensity = Math.max(
+    0,
+    Number.isFinite(dampedBodyDensity) ? dampedBodyDensity : 0,
+  );
+  const additiveDensity = beamDensity + bodyDensity * BODY_DENSITY_MIX;
+  const ridgeConcentration =
+    beamDensity / (beamDensity + bodyDensity + 1e-4);
+  const bodyCrowding = additiveDensity * (1 - ridgeConcentration);
+  const bodyCompression =
+    1 / (1 + bodyCrowding * MODAL_CROWDING_BODY_COMPRESSION);
+  const adjustedBodyDensity = bodyDensity * bodyCompression;
+
+  return {
+    rolledBeamDensity: beamDensity,
+    dampedBodyDensity: bodyDensity,
+    additiveDensity,
+    ridgeConcentration,
+    bodyCrowding,
+    bodyCompression,
+    adjustedBodyDensity,
+    localDensity: beamDensity + adjustedBodyDensity * BODY_DENSITY_MIX,
   };
 }
 
