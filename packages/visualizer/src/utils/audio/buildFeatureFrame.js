@@ -1998,9 +1998,15 @@ function deriveModalVisibilityComponents({
     0.18,
     highQDetailEnergy,
   );
+  const hasRetainedHighQObserverAuthority =
+    highQDetailModeCount >= 2 &&
+    highQDetailEnergy > 0 &&
+    highQRingSupport > 0 &&
+    highQObservedCoherence > 0;
   if (
     modalPersistence <= MODAL_VISIBILITY_PERSISTENCE_START &&
-    modalDriveEnergy < 0.09
+    modalDriveEnergy < 0.09 &&
+    !hasRetainedHighQObserverAuthority
   ) {
     return {
       ...slotSummary,
@@ -2066,7 +2072,7 @@ function deriveModalVisibilityComponents({
       MODAL_VISIBILITY_HIGH_Q_OBSERVER_ENERGY_END,
       highQDetailEnergy,
     ) *
-    smoothstep(3, 8, highQDetailModeCount) *
+    smoothstep(1, 4, highQDetailModeCount) *
     retainedHighQObserverSupport *
     retainedHighQObserverQuality;
   const retainedHighQModalVisibility = clamp01(

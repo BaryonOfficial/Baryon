@@ -116,6 +116,9 @@ const HIGH_Q_OBSERVER_MIN_OBSERVED_DRIVE = 0.0025;
 const HIGH_Q_OBSERVER_NOISE_WINDOW_BINS = 9;
 const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ = 140;
 const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ = 480;
+const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_HZ = 72;
+const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MAX_HZ = 105;
+const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_SUPPORT = 0.002;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_START = 0.00012;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_FULL = 0.0009;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_PERIODICITY = 0.68;
@@ -1001,6 +1004,21 @@ function hasObservedLayerDrive(metrics, layer) {
     : metrics.highQObservedDrive >= profile.minObservedDrive;
 }
 
+function isHighQHarmonicDriverFrequency(
+  frequencyHz,
+  spectralSupport = 1,
+  allowBassDriver = true,
+) {
+  return (
+    (frequencyHz >= HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ &&
+      frequencyHz <= HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ) ||
+    (allowBassDriver &&
+      frequencyHz >= HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_HZ &&
+      frequencyHz <= HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MAX_HZ &&
+      spectralSupport >= HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_SUPPORT)
+  );
+}
+
 function isObservedModeAged(entry, currentFrameAtMs) {
   return (
     !!entry &&
@@ -1069,6 +1087,8 @@ function computeModalObservation({
   tonalness,
   distributedExcitation,
   dominantDriveFrequencyHz,
+  dominantDriveSpectralSupport,
+  allowBassHarmonicDriver,
   avgAmplitude,
   analyserRms,
   driveSource,
@@ -1155,8 +1175,11 @@ function computeModalObservation({
   const matchedTimeDomainDrive = responseGate * peakGate;
   const coherentBackgroundDriveGate =
     atlasEntry?.layer === "detail" &&
-    dominantDriveFrequencyHz >= HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ &&
-    dominantDriveFrequencyHz <= HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ &&
+    isHighQHarmonicDriverFrequency(
+      dominantDriveFrequencyHz,
+      dominantDriveSpectralSupport,
+      allowBassHarmonicDriver,
+    ) &&
     periodicity >= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_PERIODICITY &&
     tonalness >= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_TONALNESS &&
     distributedExcitation <= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MAX_DISTRIBUTION
@@ -1168,8 +1191,11 @@ function computeModalObservation({
       : 0;
   const harmonicGate =
     atlasEntry?.layer === "detail" &&
-    dominantDriveFrequencyHz >= HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ &&
-    dominantDriveFrequencyHz <= HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ
+    isHighQHarmonicDriverFrequency(
+      dominantDriveFrequencyHz,
+      dominantDriveSpectralSupport,
+      allowBassHarmonicDriver,
+    )
       ? getDetailHarmonicCoupling(
           atlasEntry.naturalFrequencyHz,
           dominantDriveFrequencyHz,
@@ -1431,6 +1457,15 @@ function updateObservedModalModes({
     observedHardSilenceAgeMs < MODAL_OBSERVER_HARD_SILENCE_GRACE_MS;
   state.observedHardSilenceGraceActive = observedHardSilenceGraceActive;
   state.observedHardSilenceAgeMs = observedHardSilenceAgeMs;
+  const dominantDriveSpectralSupport =
+    dominantDriveFrequencyHz > 0
+      ? sampleFFTAmplitudeForFrequency(
+          dominantDriveFrequencyHz,
+          fastSignalState.fftMagnitudes,
+          preparedInputs.sampleRate,
+          preparedInputs.fftSize,
+        )
+      : 0;
 
   for (const atlasEntry of atlas) {
     const profile = getModalObserverProfile(atlasEntry.layer);
@@ -1461,6 +1496,9 @@ function updateObservedModalModes({
       tonalness,
       distributedExcitation,
       dominantDriveFrequencyHz,
+      dominantDriveSpectralSupport,
+      allowBassHarmonicDriver:
+        !preparedInputs.bandState?.liveInputCalibrationActive,
       avgAmplitude: preparedInputs.avgAmplitude,
       analyserRms: preparedInputs.analyserRms,
       driveSource,

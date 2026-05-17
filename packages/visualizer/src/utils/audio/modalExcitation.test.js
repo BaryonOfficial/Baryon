@@ -1645,6 +1645,62 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
+  it("observes high-Q detail from an E2-range coherent bowl fundamental", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "live",
+      analysisSource: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "system",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    const e2BowlFundamentalHz = 82.41;
+    const e2BowlTone = [
+      [e2BowlFundamentalHz, 0.8],
+      [e2BowlFundamentalHz * 2, 0.08],
+    ];
+    let structural = null;
+
+    for (let frame = 0; frame < 240; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft(e2BowlTone),
+        timeData: makeMixedTimeData({
+          partials: e2BowlTone,
+          amplitudeScale: 0.08,
+        }),
+        avgAmplitude: 5.2,
+        rms: 0.018,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(structural.structuralMetrics.lowQBackboneModeCount).toBeGreaterThan(
+      0,
+    );
+    expect(structural.structuralMetrics.highQDetailModeCount).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(structural.structuralMetrics.highQDetailEnergy).toBeGreaterThan(
+      0.003,
+    );
+    expect(structural.structuralMetrics.detailSignalAuthoritativeHighQ).toBe(
+      true,
+    );
+    expect(
+      countActiveSlotsLocal(structural.detailSlotsSource),
+    ).toBeGreaterThanOrEqual(2);
+  });
+
   it("lets aged high-Q observation own periodic bowl tails", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
