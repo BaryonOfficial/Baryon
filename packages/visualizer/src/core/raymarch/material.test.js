@@ -15,6 +15,7 @@ import {
 import { createRaymarchUniforms } from "./uniforms.js";
 import { raymarchOpacityNode } from "./SafeVolumetricLightingModel.js";
 import {
+  createRaymarchPhaseOverlayCache,
   createRaymarchSpectralLightCache,
   createRaymarchFieldCache,
 } from "./fieldCache.js";
@@ -96,6 +97,42 @@ describe("raymarch volume material", () => {
     expect(uniforms.uModalVisibilityRetainedHighQEnergy.value).toBe(0);
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
+  });
+
+  it("binds phase overlay texture only on cached material variants", () => {
+    const fieldCache = createRaymarchFieldCache({ resolution: 8 });
+    const phaseOverlayCache = createRaymarchPhaseOverlayCache({
+      resolution: 8,
+    });
+    const uniforms = makeMeshUniforms();
+    const mesh = createRaymarchVolumeMesh({
+      radius: 3,
+      backboneModeBuffer: {},
+      detailModeBuffer: {},
+      backboneColorBuffer: {},
+      detailColorBuffer: {},
+      fieldCacheTexture: fieldCache.texture,
+      phaseOverlayTexture: phaseOverlayCache.texture,
+      backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
+      detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
+      uniforms,
+    });
+
+    expect(mesh.userData.raymarchPhaseOverlayTexture).toBe(
+      phaseOverlayCache.texture,
+    );
+    expect(mesh.material.phaseOverlayTexture).toBeNull();
+    expect(uniforms.uModalPhaseOverlayStrength.value).toBe(0);
+    expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
+    expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
+
+    setRaymarchFieldEvaluationMode(mesh, "cached");
+
+    expect(mesh.material.phaseOverlayTexture).toBe(phaseOverlayCache.texture);
+
+    setRaymarchFieldEvaluationMode(mesh, "direct");
+
+    expect(mesh.material.phaseOverlayTexture).toBeNull();
   });
 
   it("supports separate backbone and detail capacities", () => {

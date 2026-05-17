@@ -95,6 +95,9 @@ import {
   OBSERVER_RIDGE_CONTOUR_ACCENT,
   OBSERVER_RIDGE_DENSITY_FLOOR,
   OBSERVER_RIDGE_DENSITY_LIFT,
+  PHASE_OVERLAY_RIDGE_CONTOUR_ACCENT,
+  PHASE_OVERLAY_RIDGE_DENSITY_FLOOR,
+  PHASE_OVERLAY_RIDGE_DENSITY_LIFT,
   RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT,
   RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
   RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT,
@@ -190,7 +193,8 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   opacityGainNode?: any,
  *   offsetNode?: any | ((args: { startPosLocal: any, rayDirLocal: any, radiusNode: any }) => any),
  *   fieldEvaluationMode?: string,
- *   spectralLightEvaluationMode?: string
+ *   spectralLightEvaluationMode?: string,
+ *   phaseOverlayTexture?: any
  * }} BaryonVolumeMaterial
  */
 
@@ -432,6 +436,7 @@ function createScatteringNode({
   cavityGeometry = "rectangular",
   fieldCacheTexture = null,
   spectralLightCacheTexture = null,
+  phaseOverlayTexture = null,
   spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct,
 }) {
   const {
@@ -473,6 +478,7 @@ function createScatteringNode({
     uModalVisibilityEnergy,
     uModalObserverVisibilityEnergy,
     uModalVisibilityRetainedHighQEnergy,
+    uModalPhaseOverlayStrength,
   } = uniforms;
   // Uniform-only expressions: hoist outside the Fn so they are loop-invariant
   // at the TSL graph level and do not re-evaluate every raymarch step.
@@ -609,6 +615,7 @@ function createScatteringNode({
       const gradZ = float(0.0).toVar();
       const colorSum = vec3(0.0).toVar();
       const colorWeight = float(0.0).toVar();
+      const phaseOverlayEnergy = float(0.0).toVar();
       const spectralLightEnabled = smoothstep(
         float(0.0),
         float(1e-4),
@@ -636,6 +643,14 @@ function createScatteringNode({
         gradX.assign(cachedSample.y);
         gradY.assign(cachedSample.z);
         gradZ.assign(cachedSample.w);
+
+        if (phaseOverlayTexture) {
+          const phaseOverlaySample =
+            texture3D(phaseOverlayTexture).sample(cacheUv);
+          phaseOverlayEnergy.assign(
+            phaseOverlaySample.x.mul(uModalPhaseOverlayStrength),
+          );
+        }
 
         if (cachedSpectralLightEnabled) {
           const cacheUv = clamp(
@@ -968,14 +983,15 @@ function createScatteringNode({
         modalStructureAnchor,
         uModalObserverVisibilityEnergy,
         uModalVisibilityRetainedHighQEnergy,
+        /** @type {any} */ (phaseOverlayEnergy),
         retainedHighQRidgeAnchor,
         retainedHighQRidgeSupportAnchor,
       );
       const { visibleDensity, physicalVisibleDensity } = densityVisibility;
       const retainedHighQContourAccent =
-        densityVisibility.retainedHighQContourAccent.add(
-          densityVisibility.observerContourAccent,
-        );
+        densityVisibility.retainedHighQContourAccent
+          .add(densityVisibility.observerContourAccent)
+          .add(densityVisibility.phaseContourAccent);
       const highlightMask = smoothstep(
         float(HIGHLIGHT_MASK_START),
         float(HIGHLIGHT_MASK_END),
@@ -1025,7 +1041,9 @@ function createScatteringNode({
       );
       const structureTransientRelief = clamp(
         float(1.0).sub(
-          uTransientEnergy.mul(float(STRUCTURE_AWARE_EMISSION_TRANSIENT_RELIEF)),
+          uTransientEnergy.mul(
+            float(STRUCTURE_AWARE_EMISSION_TRANSIENT_RELIEF),
+          ),
         ),
         float(0.0),
         float(1.0),
@@ -1262,6 +1280,7 @@ function deriveVisibleDensityNode(
   modalStructureAnchor,
   modalObserverVisibilityEnergy = float(0.0),
   modalVisibilityRetainedHighQEnergy = float(0.0),
+  modalPhaseOverlayEnergy = float(0.0),
   ridgeAnchor = float(0.0),
   ridgeSupportAnchor = float(0.0),
 ) {
@@ -1289,6 +1308,13 @@ function deriveVisibleDensityNode(
     float(0.0),
     float(1.0),
   );
+  const phaseRidgeAnchor = clamp(
+    modalPhaseOverlayEnergy
+      .mul(modalStructureAnchor)
+      .mul(retainedHighQSpatialAnchor),
+    float(0.0),
+    float(1.0),
+  );
   const physicalVisibilityGate = smoothstep(
     float(LOW_DENSITY_FADE_START),
     float(LOW_DENSITY_FADE_END),
@@ -1311,10 +1337,19 @@ function deriveVisibleDensityNode(
     float(0.0),
     float(OBSERVER_RIDGE_DENSITY_LIFT),
   );
+  const phaseRidgeLift = clamp(
+    phaseRidgeAnchor.mul(float(PHASE_OVERLAY_RIDGE_DENSITY_LIFT)),
+    float(0.0),
+    float(PHASE_OVERLAY_RIDGE_DENSITY_LIFT),
+  );
   const visibilityGate = smoothstep(
     float(LOW_DENSITY_FADE_START),
     float(LOW_DENSITY_FADE_END),
-    density.add(modalLift).add(observerRidgeLift).add(retainedHighQRidgeLift),
+    density
+      .add(modalLift)
+      .add(observerRidgeLift)
+      .add(retainedHighQRidgeLift)
+      .add(phaseRidgeLift),
   );
   const physicalVisibleDensity = density.mul(physicalVisibilityGate);
   const modalVisibleDensity = clamp(
@@ -1334,6 +1369,11 @@ function deriveVisibleDensityNode(
     float(0.0),
     float(OBSERVER_RIDGE_DENSITY_FLOOR),
   );
+  const phaseRidgeVisibleDensity = clamp(
+    phaseRidgeAnchor.mul(float(PHASE_OVERLAY_RIDGE_DENSITY_FLOOR)),
+    float(0.0),
+    float(PHASE_OVERLAY_RIDGE_DENSITY_FLOOR),
+  );
   const retainedHighQContourAccent = clamp(
     retainedHighQRidgeAnchor.mul(float(RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT)),
     float(0.0),
@@ -1343,6 +1383,11 @@ function deriveVisibleDensityNode(
     observerRidgeAnchor.mul(float(OBSERVER_RIDGE_CONTOUR_ACCENT)),
     float(0.0),
     float(OBSERVER_RIDGE_CONTOUR_ACCENT),
+  );
+  const phaseContourAccent = clamp(
+    phaseRidgeAnchor.mul(float(PHASE_OVERLAY_RIDGE_CONTOUR_ACCENT)),
+    float(0.0),
+    float(PHASE_OVERLAY_RIDGE_CONTOUR_ACCENT),
   );
 
   return {
@@ -1354,6 +1399,10 @@ function deriveVisibleDensityNode(
     observerRidgeLift,
     observerRidgeVisibleDensity,
     observerContourAccent,
+    phaseRidgeAnchor,
+    phaseRidgeLift,
+    phaseRidgeVisibleDensity,
+    phaseContourAccent,
     retainedHighQRidgeAnchor,
     retainedHighQStructureAnchor,
     retainedHighQRidgeLift,
@@ -1362,7 +1411,10 @@ function deriveVisibleDensityNode(
     visibilityGate,
     visibleDensity: max(
       max(density.mul(visibilityGate), modalVisibleDensity),
-      max(observerRidgeVisibleDensity, retainedHighQRidgeVisibleDensity),
+      max(
+        max(observerRidgeVisibleDensity, retainedHighQRidgeVisibleDensity),
+        phaseRidgeVisibleDensity,
+      ),
     ),
   };
 }
@@ -1388,6 +1440,7 @@ export function createRaymarchVolumeMesh({
   detailColorBuffer,
   fieldCacheTexture = null,
   spectralLightCacheTexture = null,
+  phaseOverlayTexture = null,
   capacity = null,
   backboneCapacity = capacity ?? 0,
   detailCapacity = capacity ?? 0,
@@ -1436,10 +1489,14 @@ export function createRaymarchVolumeMesh({
         RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached
           ? spectralLightCacheTexture
           : null,
+      phaseOverlayTexture:
+        fieldEvaluationMode === "cached" ? phaseOverlayTexture : null,
       spectralLightEvaluationMode,
     });
     material.fieldEvaluationMode = fieldEvaluationMode;
     material.spectralLightEvaluationMode = spectralLightEvaluationMode;
+    material.phaseOverlayTexture =
+      fieldEvaluationMode === "cached" ? phaseOverlayTexture : null;
     return material;
   };
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
@@ -1483,6 +1540,7 @@ export function createRaymarchVolumeMesh({
   mesh.userData.raymarchFieldEvaluationMode = "direct";
   mesh.userData.raymarchSpectralLightEvaluationMode =
     RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
+  mesh.userData.raymarchPhaseOverlayTexture = phaseOverlayTexture;
   mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
   mesh.frustumCulled = false;
 

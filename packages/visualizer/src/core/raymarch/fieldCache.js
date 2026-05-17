@@ -5,9 +5,11 @@ import {
   If,
   Loop,
   abs,
+  clamp,
   float,
   globalId,
   int,
+  sin,
   textureStore,
   uvec3,
   uint,
@@ -20,6 +22,10 @@ import { RAYMARCH_FIELD_CACHE_OVERRIDE_MODES } from "../../visualization/fieldEv
 import { DETAIL_LAYER_WEIGHT } from "./fieldShaping.js";
 
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
+export const RAYMARCH_PHASE_OVERLAY_RESOLUTION = 32;
+export const RAYMARCH_PHASE_OVERLAY_UPDATE_INTERVAL_MS = 1000 / 15;
+export const RAYMARCH_PHASE_OVERLAY_BACKBONE_LIMIT = 2;
+export const RAYMARCH_PHASE_OVERLAY_DETAIL_LIMIT = 6;
 
 /*
 Dev overrides for manual testing:
@@ -219,6 +225,26 @@ export function createRaymarchSpectralLightCache({
   });
 }
 
+export function createRaymarchPhaseOverlayCache({
+  resolution = RAYMARCH_PHASE_OVERLAY_RESOLUTION,
+} = {}) {
+  const normalizedResolution = Math.max(8, Math.round(resolution));
+  const texture = createCacheTexture(normalizedResolution);
+
+  return {
+    ...createCacheState({
+      resolution: normalizedResolution,
+      texture,
+      mode: "cached",
+    }),
+    maxBackboneModes: RAYMARCH_PHASE_OVERLAY_BACKBONE_LIMIT,
+    maxDetailModes: RAYMARCH_PHASE_OVERLAY_DETAIL_LIMIT,
+    updateIntervalMs: RAYMARCH_PHASE_OVERLAY_UPDATE_INTERVAL_MS,
+    lastUpdateTimeMs: -Infinity,
+    activePhaseModeCount: 0,
+  };
+}
+
 export function disposeRaymarchFieldCache(fieldCache) {
   fieldCache?.texture?.dispose?.();
   if (fieldCache?.computeNodesByKey) {
@@ -230,6 +256,10 @@ export function disposeRaymarchFieldCache(fieldCache) {
 
 export function disposeRaymarchSpectralLightCache(spectralLightCache) {
   disposeRaymarchFieldCache(spectralLightCache);
+}
+
+export function disposeRaymarchPhaseOverlayCache(phaseOverlayCache) {
+  disposeRaymarchFieldCache(phaseOverlayCache);
 }
 
 function createCacheTexture(resolution) {
@@ -697,6 +727,183 @@ function createSpectralLightComputeKernel({
   );
 }
 
+function createPhaseOverlayComputeKernel({
+  phaseOverlayCache,
+  backboneModeBuffer,
+  detailModeBuffer,
+  backbonePhaseBuffer,
+  detailPhaseBuffer,
+  backboneCapacity,
+  detailCapacity,
+  uniforms,
+  boundaryMode,
+  cavityGeometry,
+}) {
+  const { resolution, texture } = phaseOverlayCache;
+  const uRadius = uniforms.uRadius;
+  const uTime = uniforms.uTime;
+  const backboneActiveCount = int(uniforms.uBackboneModeCount);
+  const detailActiveCount = int(uniforms.uDetailModeCount);
+  const geometryBackend = getModalGeometryBackend(cavityGeometry);
+  const resolutionUint = uint(resolution);
+  const resolutionFloat = float(resolution);
+  const half = float(0.5);
+  const two = float(2.0);
+  const zero = float(0.0);
+
+  return Fn(() => {
+    const voxelCoord = uvec3(globalId);
+    const inBounds = voxelCoord.x
+      .lessThan(resolutionUint)
+      .and(voxelCoord.y.lessThan(resolutionUint))
+      .and(voxelCoord.z.lessThan(resolutionUint));
+
+    If(inBounds, () => {
+      const xCoord = float(voxelCoord.x)
+        .add(half)
+        .div(resolutionFloat)
+        .mul(two)
+        .sub(float(1.0))
+        .mul(uRadius)
+        .toVar();
+      const yCoord = float(voxelCoord.y)
+        .add(half)
+        .div(resolutionFloat)
+        .mul(two)
+        .sub(float(1.0))
+        .mul(uRadius)
+        .toVar();
+      const zCoord = float(voxelCoord.z)
+        .add(half)
+        .div(resolutionFloat)
+        .mul(two)
+        .sub(float(1.0))
+        .mul(uRadius)
+        .toVar();
+      const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
+      const combinedInfluence = zero.toVar();
+      const backboneInfluence = zero.toVar();
+      const detailInfluence = zero.toVar();
+      const authoritySum = zero.toVar();
+      const totalWeight = zero.toVar();
+
+      Loop(
+        {
+          start: int(0),
+          end: int(backboneCapacity),
+          type: "int",
+          condition: "<",
+        },
+        ({ i }) => {
+          If(i.greaterThanEqual(backboneActiveCount), () => {}).Else(() => {
+            const slot = backboneModeBuffer.element(i);
+            const phaseSlot = backbonePhaseBuffer.element(i);
+            const amplitude = slot.w.toVar();
+            const authority = clamp(
+              phaseSlot.z.mul(phaseSlot.w),
+              float(0.0),
+              float(1.0),
+            );
+            const family = geometryBackend.evaluateModeNode({
+              u: slot.x,
+              v: slot.y,
+              w: slot.z,
+              xCoord,
+              yCoord,
+              zCoord,
+              scale,
+              boundaryMode,
+            });
+            const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
+            const phaseEnvelope = sin(phase).mul(float(0.5)).add(float(0.5));
+            const localInfluence = amplitude
+              .mul(abs(family.field))
+              .mul(authority)
+              .mul(float(0.72).add(phaseEnvelope.mul(float(0.28))))
+              .toVar();
+            backboneInfluence.addAssign(localInfluence);
+            combinedInfluence.addAssign(localInfluence.mul(float(0.72)));
+            authoritySum.addAssign(authority.mul(amplitude));
+            totalWeight.addAssign(amplitude);
+          });
+        },
+      );
+
+      Loop(
+        {
+          start: int(0),
+          end: int(detailCapacity),
+          type: "int",
+          condition: "<",
+        },
+        ({ i }) => {
+          If(i.greaterThanEqual(detailActiveCount), () => {}).Else(() => {
+            const slot = detailModeBuffer.element(i);
+            const phaseSlot = detailPhaseBuffer.element(i);
+            const amplitude = slot.w.mul(float(DETAIL_LAYER_WEIGHT)).toVar();
+            const authority = clamp(
+              phaseSlot.z.mul(phaseSlot.w),
+              float(0.0),
+              float(1.0),
+            );
+            const family = geometryBackend.evaluateModeNode({
+              u: slot.x,
+              v: slot.y,
+              w: slot.z,
+              xCoord,
+              yCoord,
+              zCoord,
+              scale,
+              boundaryMode,
+            });
+            const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
+            const phaseEnvelope = sin(phase).mul(float(0.5)).add(float(0.5));
+            const localInfluence = amplitude
+              .mul(abs(family.field))
+              .mul(authority)
+              .mul(float(0.58).add(phaseEnvelope.mul(float(0.42))))
+              .toVar();
+            detailInfluence.addAssign(localInfluence);
+            combinedInfluence.addAssign(localInfluence.mul(float(1.18)));
+            authoritySum.addAssign(authority.mul(amplitude));
+            totalWeight.addAssign(amplitude);
+          });
+        },
+      );
+
+      textureStore(
+        texture,
+        uvec3(voxelCoord),
+        vec4(
+          clamp(
+            combinedInfluence.div(totalWeight.max(float(0.01))),
+            float(0.0),
+            float(1.0),
+          ),
+          clamp(
+            backboneInfluence.div(totalWeight.max(float(0.01))),
+            float(0.0),
+            float(1.0),
+          ),
+          clamp(
+            detailInfluence.div(totalWeight.max(float(0.01))),
+            float(0.0),
+            float(1.0),
+          ),
+          clamp(
+            authoritySum.div(totalWeight.max(float(0.01))),
+            float(0.0),
+            float(1.0),
+          ),
+        ),
+      ).toWriteOnly();
+    });
+  })().compute(
+    phaseOverlayCache.dispatchSize,
+    Array.from(FIELD_CACHE_COMPUTE_WORKGROUP_SIZE),
+  );
+}
+
 function getOrCreateRaymarchFieldCacheComputeNode(
   fieldCache,
   {
@@ -774,6 +981,48 @@ function getOrCreateRaymarchSpectralLightCacheComputeNode(
     cavityGeometry: normalizedCavityGeometry,
   });
   spectralLightCache.computeNodesByKey[nodeKey] = computeNode;
+  return computeNode;
+}
+
+function getOrCreateRaymarchPhaseOverlayComputeNode(
+  phaseOverlayCache,
+  {
+    backboneModeBuffer,
+    detailModeBuffer,
+    backbonePhaseBuffer,
+    detailPhaseBuffer,
+    backboneCapacity,
+    detailCapacity,
+    uniforms,
+    boundaryMode,
+    cavityGeometry,
+  },
+) {
+  if (!phaseOverlayCache) {
+    return null;
+  }
+
+  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
+  const nodeKey = `${normalizedCavityGeometry}:${normalizedBoundaryMode}`;
+  const cachedNode = phaseOverlayCache.computeNodesByKey?.[nodeKey];
+  if (cachedNode) {
+    return cachedNode;
+  }
+
+  const computeNode = createPhaseOverlayComputeKernel({
+    phaseOverlayCache,
+    backboneModeBuffer,
+    detailModeBuffer,
+    backbonePhaseBuffer,
+    detailPhaseBuffer,
+    backboneCapacity,
+    detailCapacity,
+    uniforms,
+    boundaryMode: normalizedBoundaryMode,
+    cavityGeometry: normalizedCavityGeometry,
+  });
+  phaseOverlayCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
 }
 
@@ -934,6 +1183,98 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
         spectralLightCache.lastError =
           error instanceof Error ? error.message : String(error);
         spectralLightCache.lastRebuildReason = "unavailable";
+      },
+    );
+
+  void submission;
+
+  return {
+    enqueued: true,
+    reason: rebuildReason,
+    descriptor,
+  };
+}
+
+export function enqueueRaymarchPhaseOverlayRebuild(
+  phaseOverlayCache,
+  renderer,
+  descriptor,
+  rebuildReason,
+  {
+    backboneModeBuffer,
+    detailModeBuffer,
+    backbonePhaseBuffer,
+    detailPhaseBuffer,
+    backboneCapacity,
+    detailCapacity,
+    uniforms,
+  },
+) {
+  if (!phaseOverlayCache) {
+    return { enqueued: false, reason: "unavailable" };
+  }
+
+  if (phaseOverlayCache.backend === "unavailable") {
+    return { enqueued: false, reason: "unavailable" };
+  }
+
+  if (phaseOverlayCache.rebuildPending) {
+    return { enqueued: false, reason: "pending" };
+  }
+
+  if (!renderer || typeof renderer.computeAsync !== "function") {
+    phaseOverlayCache.backend = "unavailable";
+    phaseOverlayCache.ready = false;
+    phaseOverlayCache.rebuildPending = false;
+    phaseOverlayCache.lastError = "Renderer computeAsync unavailable";
+    phaseOverlayCache.lastRebuildReason = "unavailable";
+    return { enqueued: false, reason: "unavailable" };
+  }
+
+  const computeNode = getOrCreateRaymarchPhaseOverlayComputeNode(
+    phaseOverlayCache,
+    {
+      backboneModeBuffer,
+      detailModeBuffer,
+      backbonePhaseBuffer,
+      detailPhaseBuffer,
+      backboneCapacity,
+      detailCapacity,
+      uniforms,
+      boundaryMode: descriptor.boundaryMode,
+      cavityGeometry: descriptor.cavityGeometry,
+    },
+  );
+  if (!computeNode) {
+    return { enqueued: false, reason: "unavailable" };
+  }
+
+  const hadReadyCache = Boolean(
+    phaseOverlayCache.ready && phaseOverlayCache.activeDescriptor,
+  );
+  phaseOverlayCache.backend = "compute";
+  phaseOverlayCache.ready = hadReadyCache;
+  phaseOverlayCache.rebuildPending = true;
+  phaseOverlayCache.lastError = null;
+  const submission = Promise.resolve()
+    .then(() => renderer.computeAsync(computeNode))
+    .then(
+      () => {
+        phaseOverlayCache.activeDescriptor = descriptor;
+        phaseOverlayCache.ready = true;
+        phaseOverlayCache.rebuildPending = false;
+        phaseOverlayCache.lastError = null;
+        phaseOverlayCache.backend = "compute";
+        phaseOverlayCache.rebuildCount += 1;
+        phaseOverlayCache.lastRebuildReason = rebuildReason;
+      },
+      (error) => {
+        phaseOverlayCache.backend = "unavailable";
+        phaseOverlayCache.ready = false;
+        phaseOverlayCache.rebuildPending = false;
+        phaseOverlayCache.lastError =
+          error instanceof Error ? error.message : String(error);
+        phaseOverlayCache.lastRebuildReason = "unavailable";
       },
     );
 

@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { createRaymarchSceneRoot, tickRaymarchRuntime } from "./runtime.js";
 import {
   buildRaymarchFieldCacheDescriptor,
+  createRaymarchPhaseOverlayCache,
   createRaymarchSpectralLightCache,
   createRaymarchFieldCache,
 } from "./fieldCache.js";
@@ -19,6 +20,9 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     : null;
   const spectralLightCache = withFieldCache
     ? createRaymarchSpectralLightCache({ resolution: 8 })
+    : null;
+  const phaseOverlayCache = withFieldCache
+    ? createRaymarchPhaseOverlayCache({ resolution: 8 })
     : null;
   const materialCache = withFieldCache
     ? {
@@ -69,6 +73,18 @@ function createRuntimeState({ withFieldCache = false } = {}) {
         needsUpdate: false,
       },
     },
+    backbonePhaseBuffer: {
+      value: {
+        array: new Float32Array(8),
+        needsUpdate: false,
+      },
+    },
+    detailPhaseBuffer: {
+      value: {
+        array: new Float32Array(24),
+        needsUpdate: false,
+      },
+    },
     uniforms: {
       uTime: { value: 0 },
       uFieldState: { value: 0 },
@@ -114,6 +130,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uModalVisibilityEnergy: { value: 0 },
       uModalObserverVisibilityEnergy: { value: 0 },
       uModalVisibilityRetainedHighQEnergy: { value: 0 },
+      uModalPhaseOverlayStrength: { value: 0 },
     },
     visualRoot: {
       scale: {
@@ -182,6 +199,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     auditEnabled: true,
     fieldCache,
     spectralLightCache,
+    phaseOverlayCache,
     requestedCavityGeometry: "rectangular",
     effectiveCavityGeometry: "rectangular",
     debugSnapshot: null,
@@ -428,16 +446,14 @@ describe("tickRaymarchRuntime", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("keeps phase advisory slots out of cached render uploads and rebuilds", async () => {
+  it("updates a bounded phase overlay cache without rebuilding field or Spectral Light caches", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
-    runtimeState.fieldCache.backend = "unavailable";
-    runtimeState.fieldCache.activeDescriptor = buildRaymarchFieldCacheDescriptor({
-      backboneSlots: new Float32Array([3, 4, 6, 0.8]),
-      detailSlots: new Float32Array([4, 5, 5, 0.55]),
-      backboneCount: 1,
-      detailCount: 1,
-      boundaryMode: "neumann",
-      radius: 3,
+    const renderer = {
+      computeAsync: vi.fn(async () => undefined),
+    };
+    const originalWindow = globalThis.window;
+    globalThis.window = /** @type {any} */ ({
+      __baryonFieldCacheOverride: "cached",
     });
     const featureFrame = {
       fieldState: "active",
@@ -461,25 +477,120 @@ describe("tickRaymarchRuntime", () => {
       changeSignal: 0.08,
       pulseSignal: 0.05,
       modalPhaseAuthority: 0.5,
+      debug: {},
     };
+    try {
+      tickRaymarchRuntime(runtimeState, featureFrame, 3, 1 / 60, renderer);
+      await flushMicrotasks();
+      tickRaymarchRuntime(runtimeState, featureFrame, 3.08, 1 / 60, renderer);
+      await flushMicrotasks();
+      const fieldRebuildCount = runtimeState.fieldCache.rebuildCount;
+      const spectralRebuildCount = runtimeState.spectralLightCache.rebuildCount;
+      const phaseOverlayRebuildCount =
+        runtimeState.phaseOverlayCache.rebuildCount;
+      const fieldDescriptor = runtimeState.fieldCache.activeDescriptor;
+      const spectralDescriptor =
+        runtimeState.spectralLightCache.activeDescriptor;
 
-    tickRaymarchRuntime(runtimeState, featureFrame, 3, 1 / 60);
-    await flushMicrotasks();
-    const rebuildCount = runtimeState.fieldCache.rebuildCount;
-    const descriptor = runtimeState.fieldCache.activeDescriptor;
+      featureFrame.backbonePhaseSlots = new Float32Array([
+        1.2, -0.42, 0.8, 0.6, 0.1, 0.3, 0.2, 0.02,
+      ]);
+      featureFrame.detailPhaseSlots = new Float32Array([
+        0.7, 0.25, 0.9, 0.7, -0.9, 0.1, 0.1, 0.01,
+      ]);
+      tickRaymarchRuntime(runtimeState, featureFrame, 3.1, 1 / 60, renderer);
+      await flushMicrotasks();
 
-    featureFrame.backbonePhaseSlots = new Float32Array([
-      1.2, -0.42, 0.8, 0.6, 0.1, 0.3, 0.2, 0.02,
-    ]);
-    featureFrame.detailPhaseSlots = new Float32Array([
-      0.7, 0.25, 0.9, 0.7, -0.9, 0.1, 0.1, 0.01,
-    ]);
-    tickRaymarchRuntime(runtimeState, featureFrame, 3.1, 1 / 60);
-    await flushMicrotasks();
+      expect(runtimeState.phaseOverlayCache).toBeTruthy();
+      expect(runtimeState.phaseOverlayCache.ready).toBe(true);
+      expect(runtimeState.phaseOverlayCache.rebuildCount).toBe(
+        phaseOverlayRebuildCount,
+      );
+      expect(runtimeState.phaseOverlayUploadCount).toBeGreaterThan(0);
+      expect(runtimeState.uniforms.uModalPhaseOverlayStrength.value).toBe(0.5);
+      expect(runtimeState.fieldCache.activeDescriptor).toEqual(fieldDescriptor);
+      expect(runtimeState.spectralLightCache.activeDescriptor).toEqual(
+        spectralDescriptor,
+      );
+      expect(runtimeState.fieldCache.rebuildCount).toBe(fieldRebuildCount);
+      expect(runtimeState.spectralLightCache.rebuildCount).toBe(
+        spectralRebuildCount,
+      );
+      expect(runtimeState.debugSnapshot.raymarchDebug.phaseOverlayReady).toBe(
+        true,
+      );
+      expect(runtimeState.debugSnapshot.raymarchDebug.phaseOverlayPending).toBe(
+        false,
+      );
+      expect(
+        runtimeState.debugSnapshot.raymarchDebug.phaseOverlayResolution,
+      ).toBe(8);
+      expect(
+        runtimeState.debugSnapshot.raymarchDebug.phaseOverlayModeCount,
+      ).toBeGreaterThan(0);
+    } finally {
+      globalThis.window = originalWindow;
+    }
+  });
 
-    expect(runtimeState.phaseOverlayUploadCount).toBeUndefined();
-    expect(runtimeState.fieldCache.activeDescriptor).toEqual(descriptor);
-    expect(runtimeState.fieldCache.rebuildCount).toBe(rebuildCount);
+  it("fails phase overlay closed when cached compute is unavailable", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    const originalWindow = globalThis.window;
+    globalThis.window = /** @type {any} */ ({
+      __baryonFieldCacheOverride: "cached",
+    });
+    const featureFrame = {
+      fieldState: "active",
+      averageAmplitude: 32,
+      backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+      detailSlots: new Float32Array([4, 5, 5, 0.55]),
+      backbonePhaseSlots: new Float32Array([0.25, 0.14, 0.7, 0.5]),
+      detailPhaseSlots: new Float32Array([-0.4, -0.21, 0.8, 0.64]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array(4),
+      transientEnergy: 0.1,
+      spectralCentroid: 0.2,
+      spectralFlux: 0.1,
+      structureSignal: 0.4,
+      energySignal: 0.3,
+      changeSignal: 0.08,
+      pulseSignal: 0.05,
+      modalPhaseAuthority: 0.5,
+      debug: {},
+    };
+    runtimeState.backboneModeBuffer.value.array.set(featureFrame.backboneSlots);
+    runtimeState.detailModeBuffer.value.array.set(featureFrame.detailSlots);
+    runtimeState.uniforms.uBackboneModeCount.value = 1;
+    runtimeState.uniforms.uDetailModeCount.value = 1;
+    runtimeState.fieldCache.ready = true;
+    runtimeState.fieldCache.activeDescriptor =
+      buildRaymarchFieldCacheDescriptor({
+        backboneSlots: runtimeState.backboneModeBuffer.value.array,
+        detailSlots: runtimeState.detailModeBuffer.value.array,
+        backboneCount: 1,
+        detailCount: 1,
+        boundaryMode: "neumann",
+        radius: 3,
+      });
+
+    try {
+      tickRaymarchRuntime(runtimeState, featureFrame, 3, 1 / 60, null);
+      await flushMicrotasks();
+
+      expect(runtimeState.phaseOverlayCache).toBeTruthy();
+      expect(runtimeState.phaseOverlayCache.backend).toBe("unavailable");
+      expect(runtimeState.phaseOverlayCache.ready).toBe(false);
+      expect(runtimeState.uniforms.uModalPhaseOverlayStrength.value).toBe(0);
+      expect(runtimeState.debugSnapshot.raymarchDebug.phaseOverlayReady).toBe(
+        false,
+      );
+      expect(
+        runtimeState.debugSnapshot.raymarchDebug.phaseOverlayLastError,
+      ).toBe("Renderer computeAsync unavailable");
+    } finally {
+      globalThis.window = originalWindow;
+    }
   });
 
   it("reports requested spherical geometry while keeping the effective backend rectangular", () => {

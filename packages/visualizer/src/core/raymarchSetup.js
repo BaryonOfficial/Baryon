@@ -15,8 +15,11 @@ import {
   createIdleOverlay,
 } from "./raymarch/material.js";
 import {
+  RAYMARCH_PHASE_OVERLAY_BACKBONE_LIMIT,
+  RAYMARCH_PHASE_OVERLAY_DETAIL_LIMIT,
   createRaymarchSpectralLightCache,
   createRaymarchFieldCache,
+  createRaymarchPhaseOverlayCache,
 } from "./raymarch/fieldCache.js";
 import { estimateProjectedSphereStats } from "./raymarch/intersection.js";
 import {
@@ -75,8 +78,15 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const detailModeBuffer = createModeBuffer(detailCapacity);
   const backboneColorBuffer = createModeBuffer(backboneCapacity);
   const detailColorBuffer = createModeBuffer(detailCapacity);
+  const backbonePhaseBuffer = createModeBuffer(
+    RAYMARCH_PHASE_OVERLAY_BACKBONE_LIMIT,
+  );
+  const detailPhaseBuffer = createModeBuffer(
+    RAYMARCH_PHASE_OVERLAY_DETAIL_LIMIT,
+  );
   const fieldCache = createRaymarchFieldCache();
   const spectralLightCache = createRaymarchSpectralLightCache();
+  const phaseOverlayCache = createRaymarchPhaseOverlayCache();
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
     backboneModeBuffer,
@@ -85,6 +95,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     detailColorBuffer,
     fieldCacheTexture: fieldCache.texture,
     spectralLightCacheTexture: spectralLightCache.texture,
+    phaseOverlayTexture: phaseOverlayCache.texture,
     backboneCapacity,
     detailCapacity,
     uniforms,
@@ -117,13 +128,18 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     detailModeBuffer,
     backboneColorBuffer,
     detailColorBuffer,
+    backbonePhaseBuffer,
+    detailPhaseBuffer,
     fieldCache,
     spectralLightCache,
+    phaseOverlayCache,
     sharedModeCapacity,
     // Compatibility alias for older runtime call sites that still read `capacity`.
     capacity: sharedModeCapacity,
     backboneCapacity,
     detailCapacity,
+    backbonePhaseCapacity: RAYMARCH_PHASE_OVERLAY_BACKBONE_LIMIT,
+    detailPhaseCapacity: RAYMARCH_PHASE_OVERLAY_DETAIL_LIMIT,
     requestedCavityGeometry,
     effectiveCavityGeometry,
     fftSize: audioConfig.fftSize,

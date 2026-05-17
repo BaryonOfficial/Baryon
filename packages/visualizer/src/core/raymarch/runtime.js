@@ -9,8 +9,10 @@ import { isFieldDrivenState } from "../fieldState.js";
 import { resolveRaymarchFieldCacheOverride } from "../../visualization/fieldEvaluation.js";
 import {
   buildRaymarchSpectralLightCacheDescriptor,
+  disposeRaymarchPhaseOverlayCache,
   disposeRaymarchFieldCache,
   disposeRaymarchSpectralLightCache,
+  enqueueRaymarchPhaseOverlayRebuild,
   enqueueRaymarchFieldCacheRebuild,
   enqueueRaymarchSpectralLightCacheRebuild,
   isRaymarchSpectralLightCacheReadyForDescriptor,
@@ -19,6 +21,9 @@ import {
   shouldRebuildRaymarchFieldCache,
   buildRaymarchFieldCacheDescriptor,
   RAYMARCH_FIELD_CACHE_RESOLUTION,
+  RAYMARCH_PHASE_OVERLAY_BACKBONE_LIMIT,
+  RAYMARCH_PHASE_OVERLAY_DETAIL_LIMIT,
+  RAYMARCH_PHASE_OVERLAY_RESOLUTION,
 } from "./fieldCache.js";
 import {
   DETAIL_LAYER_WEIGHT,
@@ -114,6 +119,7 @@ function estimateAverageModeAmplitude(modeSlots) {
 }
 
 function setIfChanged(uniformNode, value) {
+  if (!uniformNode) return;
   if (uniformNode.value !== value) uniformNode.value = value;
 }
 
@@ -306,12 +312,13 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     modalStructureAnchor: 1,
     ridgeAnchor: 1,
   });
-  const retainedHighQVisibilityDebug =
-    deriveRetainedHighQVisibilityDiagnostics({
+  const retainedHighQVisibilityDebug = deriveRetainedHighQVisibilityDiagnostics(
+    {
       modalVisibilityEnergy,
       modalObserverVisibilityEnergy,
       modalVisibilityRetainedHighQEnergy,
-    });
+    },
+  );
   const avgDensity = Math.min(
     1,
     avgAmplitude * densityGain * absorption * (0.75 + transientEnergy * 0.2),
@@ -361,6 +368,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     getRuntimeEffectiveCavityGeometry(runtimeState);
   const fieldCache = runtimeState.fieldCache ?? null;
   const spectralLightCache = runtimeState.spectralLightCache ?? null;
+  const phaseOverlayCache = runtimeState.phaseOverlayCache ?? null;
   const fieldCacheOverride = getRaymarchFieldCacheOverride();
   const renderedBackbone = summarizeRenderedLayer(
     runtimeState.backboneModeBuffer?.value?.array,
@@ -515,6 +523,20 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
       spectralLightCache?.rebuildPending ?? false,
     spectralLightCacheRebuildCount: spectralLightCache?.rebuildCount ?? 0,
     spectralLightCacheLastError: spectralLightCache?.lastError ?? null,
+    phaseOverlayActive: phaseOverlayCache?.active ?? false,
+    phaseOverlayReady: phaseOverlayCache?.ready ?? false,
+    phaseOverlayPending: phaseOverlayCache?.rebuildPending ?? false,
+    phaseOverlayBackend: phaseOverlayCache?.backend ?? "compute",
+    phaseOverlayResolution:
+      phaseOverlayCache?.resolution ?? RAYMARCH_PHASE_OVERLAY_RESOLUTION,
+    phaseOverlayRebuildCount: phaseOverlayCache?.rebuildCount ?? 0,
+    phaseOverlayLastError: phaseOverlayCache?.lastError ?? null,
+    phaseOverlayModeCount:
+      phaseOverlayCache?.activePhaseModeCount ??
+      runtimeState.phaseOverlayModeCount ??
+      0,
+    phaseOverlayStrength:
+      runtimeState.uniforms.uModalPhaseOverlayStrength?.value ?? 0,
     spectralMix: runtimeState.uniforms.uSpectralMix?.value ?? 0,
     holographicReferenceStrength,
     avgRaySegmentLength,
@@ -731,6 +753,37 @@ function copyLayerUpload({
   });
 }
 
+function copyLayerPhaseUpload({
+  phaseSlots,
+  targetPhaseSlots,
+  layer,
+  capacity,
+}) {
+  if (!targetPhaseSlots || !layer) {
+    return 0;
+  }
+  copyBudgetedModeLayer({
+    sourceSlots: phaseSlots,
+    sourceColorSlots: null,
+    targetSlots: targetPhaseSlots,
+    targetColorSlots: null,
+    selectedIndices: layer.selectedIndices,
+    capacity,
+    includeColors: false,
+  });
+  let activePhaseCount = 0;
+  const resolvedCapacity = Math.max(0, Math.floor(capacity ?? 0));
+  for (let slotIndex = 0; slotIndex < resolvedCapacity; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const authority =
+      (targetPhaseSlots[offset + 2] ?? 0) * (targetPhaseSlots[offset + 3] ?? 0);
+    if (authority > 1e-4) {
+      activePhaseCount += 1;
+    }
+  }
+  return activePhaseCount;
+}
+
 function resolveFieldEvaluationMode(
   runtimeState,
   renderer,
@@ -870,6 +923,73 @@ function resolveSpectralLightEvaluationMode(
   return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
 }
 
+function updatePhaseOverlayCache(
+  runtimeState,
+  renderer,
+  { backbonePhaseCapacity, detailPhaseCapacity },
+  { fieldDescriptor, fieldEvaluationMode, featureFrame, timeMs },
+) {
+  const phaseOverlayCache = runtimeState.phaseOverlayCache;
+  const phaseStrengthUniform =
+    runtimeState.uniforms.uModalPhaseOverlayStrength ?? null;
+  const phaseAuthority = clamp01(featureFrame?.modalPhaseAuthority ?? 0);
+  const phaseModeCount = runtimeState.phaseOverlayModeCount ?? 0;
+  const cachedFieldActive = fieldEvaluationMode === "cached";
+
+  if (!phaseOverlayCache || !runtimeState.volumeMesh) {
+    setIfChanged(phaseStrengthUniform, 0);
+    return;
+  }
+
+  phaseOverlayCache.active = cachedFieldActive && phaseAuthority > 0;
+  phaseOverlayCache.activePhaseModeCount = phaseModeCount;
+
+  if (
+    !cachedFieldActive ||
+    !(phaseAuthority > 0) ||
+    phaseModeCount <= 0 ||
+    phaseOverlayCache.backend === "unavailable"
+  ) {
+    setIfChanged(phaseStrengthUniform, 0);
+    return;
+  }
+
+  const elapsedMs = timeMs - (phaseOverlayCache.lastUpdateTimeMs ?? -Infinity);
+  const cadenceElapsed =
+    elapsedMs >= (phaseOverlayCache.updateIntervalMs ?? 1000 / 15);
+
+  if (!phaseOverlayCache.rebuildPending && cadenceElapsed) {
+    const result = enqueueRaymarchPhaseOverlayRebuild(
+      phaseOverlayCache,
+      renderer,
+      {
+        ...fieldDescriptor,
+        phaseModeCount,
+        phaseAuthority: Math.round(phaseAuthority * 1000) / 1000,
+      },
+      phaseOverlayCache.ready ? "phase-update" : "initial",
+      {
+        backboneModeBuffer: runtimeState.backboneModeBuffer,
+        detailModeBuffer: runtimeState.detailModeBuffer,
+        backbonePhaseBuffer: runtimeState.backbonePhaseBuffer,
+        detailPhaseBuffer: runtimeState.detailPhaseBuffer,
+        backboneCapacity: backbonePhaseCapacity,
+        detailCapacity: detailPhaseCapacity,
+        uniforms: runtimeState.uniforms,
+      },
+    );
+    if (result.enqueued) {
+      phaseOverlayCache.lastUpdateTimeMs = timeMs;
+      runtimeState.phaseOverlayUploadCount =
+        (runtimeState.phaseOverlayUploadCount ?? 0) + 1;
+    }
+  }
+
+  const phaseOverlayReady =
+    phaseOverlayCache.backend !== "unavailable" && phaseOverlayCache.ready;
+  setIfChanged(phaseStrengthUniform, phaseOverlayReady ? phaseAuthority : 0);
+}
+
 function updateRaymarchEvaluationModes(
   runtimeState,
   renderer,
@@ -937,6 +1057,14 @@ export function tickRaymarchRuntime(
     runtimeState.detailCapacity,
     detailModeBuffer.value.array,
   );
+  const backbonePhaseCapacity = inferLayerCapacity(
+    runtimeState.backbonePhaseCapacity ?? RAYMARCH_PHASE_OVERLAY_BACKBONE_LIMIT,
+    runtimeState.backbonePhaseBuffer?.value?.array,
+  );
+  const detailPhaseCapacity = inferLayerCapacity(
+    runtimeState.detailPhaseCapacity ?? RAYMARCH_PHASE_OVERLAY_DETAIL_LIMIT,
+    runtimeState.detailPhaseBuffer?.value?.array,
+  );
 
   uniforms.uTime.value = time;
   const fieldState = featureFrame?.fieldState ?? "idle";
@@ -957,6 +1085,11 @@ export function tickRaymarchRuntime(
   if (!fieldDriven) {
     runtimeState.performanceGovernor = null;
     runtimeState.spectralLightBuffersUploaded = false;
+    runtimeState.phaseOverlayModeCount = 0;
+    if (runtimeState.phaseOverlayCache) {
+      runtimeState.phaseOverlayCache.active = false;
+      runtimeState.phaseOverlayCache.activePhaseModeCount = 0;
+    }
     setIfChanged(uniforms.uBackboneModeCount, 0);
     setIfChanged(uniforms.uDetailModeCount, 0);
     setIfChanged(uniforms.uActiveModeCount, 0);
@@ -979,6 +1112,7 @@ export function tickRaymarchRuntime(
     setIfChanged(uniforms.uModeCoherence, 0);
     setIfChanged(uniforms.uTotalSlotAmplitude, 0);
     setIfChanged(uniforms.uModalVisibilityEnergy, 0);
+    setIfChanged(uniforms.uModalPhaseOverlayStrength, 0);
     setIfChanged(uniforms.uKeyTintStrength, 0);
     setIfChanged(uniforms.uKeyMode, 0);
     uniforms.uBandEnergies.value.set(0, 0, 0, 0);
@@ -1045,6 +1179,31 @@ export function tickRaymarchRuntime(
     detailColorBuffer.value.needsUpdate = true;
   }
 
+  const backbonePhaseArray =
+    runtimeState.backbonePhaseBuffer?.value?.array ?? null;
+  const detailPhaseArray = runtimeState.detailPhaseBuffer?.value?.array ?? null;
+  const backbonePhaseModeCount = copyLayerPhaseUpload({
+    phaseSlots: featureFrame?.backbonePhaseSlots,
+    targetPhaseSlots: backbonePhaseArray,
+    layer: backboneLayer,
+    capacity: backbonePhaseCapacity,
+  });
+  const detailPhaseModeCount = copyLayerPhaseUpload({
+    phaseSlots: featureFrame?.detailPhaseSlots,
+    targetPhaseSlots: detailPhaseArray,
+    layer: detailLayer,
+    capacity: detailPhaseCapacity,
+  });
+  runtimeState.phaseOverlayModeCount =
+    backbonePhaseModeCount + detailPhaseModeCount;
+  if (runtimeState.backbonePhaseBuffer?.value) {
+    runtimeState.backbonePhaseBuffer.value.needsUpdate =
+      backbonePhaseModeCount > 0;
+  }
+  if (runtimeState.detailPhaseBuffer?.value) {
+    runtimeState.detailPhaseBuffer.value.needsUpdate = detailPhaseModeCount > 0;
+  }
+
   const backboneModeCount = backboneLayer.uploadedActiveCount;
   const detailModeCount = detailLayer.uploadedActiveCount;
   setIfChanged(uniforms.uBackboneModeCount, backboneModeCount);
@@ -1088,6 +1247,22 @@ export function tickRaymarchRuntime(
       spectralLightEnabled,
       fieldDescriptor,
       spectralLightDescriptor,
+    },
+  );
+  updatePhaseOverlayCache(
+    runtimeState,
+    renderer,
+    {
+      backbonePhaseCapacity,
+      detailPhaseCapacity,
+    },
+    {
+      fieldDescriptor,
+      fieldEvaluationMode:
+        runtimeState.volumeMesh?.userData?.raymarchFieldEvaluationMode ??
+        "direct",
+      featureFrame,
+      timeMs: time * 1000,
     },
   );
   setIfChanged(uniforms.uAverageAmplitude, featureFrame?.averageAmplitude ?? 0);
@@ -1185,6 +1360,7 @@ export function tickRaymarchRuntime(
 export function disposeRaymarchRuntime(runtimeState) {
   disposeRaymarchFieldCache(runtimeState?.fieldCache);
   disposeRaymarchSpectralLightCache(runtimeState?.spectralLightCache);
+  disposeRaymarchPhaseOverlayCache(runtimeState?.phaseOverlayCache);
   runtimeState?.points?.traverse?.((child) => {
     child.geometry?.dispose?.();
     const materialCache = child.userData?.raymarchMaterialCache;

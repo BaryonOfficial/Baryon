@@ -90,6 +90,9 @@ export const RETAINED_HIGH_Q_RIDGE_STRUCTURE_FLOOR = 0.34;
 export const OBSERVER_RIDGE_DENSITY_FLOOR = 0.12;
 export const OBSERVER_RIDGE_DENSITY_LIFT = 0.085;
 export const OBSERVER_RIDGE_CONTOUR_ACCENT = 0.035;
+export const PHASE_OVERLAY_RIDGE_DENSITY_FLOOR = 0.08;
+export const PHASE_OVERLAY_RIDGE_DENSITY_LIFT = 0.055;
+export const PHASE_OVERLAY_RIDGE_CONTOUR_ACCENT = 0.025;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -437,6 +440,7 @@ export function deriveVisibleDensity({
   modalVisibilityEnergy = 0,
   modalObserverVisibilityEnergy = 0,
   modalVisibilityRetainedHighQEnergy = 0,
+  modalPhaseOverlayEnergy = 0,
   modalStructureAnchor = 0,
   ridgeAnchor = 0,
   ridgeSupportAnchor = 0,
@@ -457,6 +461,10 @@ export function deriveVisibleDensity({
     clamp01(modalObserverVisibilityEnergy) *
     clamp01(modalStructureAnchor) *
     retainedHighQSpatialAnchor;
+  const phaseRidgeAnchor =
+    clamp01(modalPhaseOverlayEnergy) *
+    clamp01(modalStructureAnchor) *
+    retainedHighQSpatialAnchor;
   const physicalVisibilityGate = smoothstep(
     LOW_DENSITY_FADE_START,
     LOW_DENSITY_FADE_END,
@@ -468,12 +476,16 @@ export function deriveVisibleDensity({
     MODAL_VISIBILITY_DENSITY_LIFT;
   const retainedHighQRidgeLift =
     retainedHighQRidgeAnchor * RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT;
-  const observerRidgeLift =
-    observerRidgeAnchor * OBSERVER_RIDGE_DENSITY_LIFT;
+  const observerRidgeLift = observerRidgeAnchor * OBSERVER_RIDGE_DENSITY_LIFT;
+  const phaseRidgeLift = phaseRidgeAnchor * PHASE_OVERLAY_RIDGE_DENSITY_LIFT;
   const visibilityGate = smoothstep(
     LOW_DENSITY_FADE_START,
     LOW_DENSITY_FADE_END,
-    density + modalLift + observerRidgeLift + retainedHighQRidgeLift,
+    density +
+      modalLift +
+      observerRidgeLift +
+      retainedHighQRidgeLift +
+      phaseRidgeLift,
   );
   const modalVisibleDensity =
     clamp01(modalVisibilityEnergy) *
@@ -487,10 +499,16 @@ export function deriveVisibleDensity({
     OBSERVER_RIDGE_DENSITY_FLOOR,
     observerRidgeAnchor * OBSERVER_RIDGE_DENSITY_FLOOR,
   );
+  const phaseRidgeVisibleDensity = Math.min(
+    PHASE_OVERLAY_RIDGE_DENSITY_FLOOR,
+    phaseRidgeAnchor * PHASE_OVERLAY_RIDGE_DENSITY_FLOOR,
+  );
   const retainedHighQContourAccent =
     retainedHighQRidgeAnchor * RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT;
   const observerContourAccent =
     observerRidgeAnchor * OBSERVER_RIDGE_CONTOUR_ACCENT;
+  const phaseContourAccent =
+    phaseRidgeAnchor * PHASE_OVERLAY_RIDGE_CONTOUR_ACCENT;
 
   return {
     physicalVisibilityGate,
@@ -501,6 +519,10 @@ export function deriveVisibleDensity({
     observerRidgeLift,
     observerRidgeVisibleDensity,
     observerContourAccent,
+    phaseRidgeAnchor,
+    phaseRidgeLift,
+    phaseRidgeVisibleDensity,
+    phaseContourAccent,
     retainedHighQRidgeAnchor,
     retainedHighQStructureAnchor,
     retainedHighQRidgeLift,
@@ -512,6 +534,7 @@ export function deriveVisibleDensity({
       modalVisibleDensity,
       observerRidgeVisibleDensity,
       retainedHighQRidgeVisibleDensity,
+      phaseRidgeVisibleDensity,
     ),
   };
 }
@@ -544,8 +567,7 @@ export function deriveRetainedHighQVisibilityDiagnostics({
     observerRidgeVisibleDensityMax:
       densityVisibility.observerRidgeVisibleDensity,
     observerContourAccentMax: densityVisibility.observerContourAccent,
-    observerPhysicalVisibleDensityMax:
-      densityVisibility.physicalVisibleDensity,
+    observerPhysicalVisibleDensityMax: densityVisibility.physicalVisibleDensity,
     retainedHighQRidgeToRetainedEnergyRatio:
       retainedHighQEnergy > 1e-6
         ? densityVisibility.retainedHighQRidgeVisibleDensity /
@@ -701,8 +723,7 @@ export function deriveStructureAwareEmissionGain({
     bodyCrowding,
   );
   const transientRelief =
-    1 -
-    clamp01(transientEnergy) * STRUCTURE_AWARE_EMISSION_TRANSIENT_RELIEF;
+    1 - clamp01(transientEnergy) * STRUCTURE_AWARE_EMISSION_TRANSIENT_RELIEF;
   const bodySuppression =
     bodyCrowdingGate * (1 - filamentEligibility) * transientRelief;
   const emissionGain = Math.max(

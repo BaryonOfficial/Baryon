@@ -268,31 +268,45 @@ describe("field shaping", () => {
     expect(noAnchor.visibleDensity).toBe(0);
   });
 
-  it("keeps phase advisory data out of density shaping", () => {
-    const withoutPhase = deriveVisibleDensity({
+  it("uses phase overlay only as an anchored ridge visibility lift", () => {
+    const physical = deriveVisibleDensity({
+      density: 0.3,
+      modalVisibilityEnergy: 0,
+      modalObserverVisibilityEnergy: 0,
+      modalPhaseOverlayEnergy: 0.7,
+      modalStructureAnchor: 0.8,
+      ridgeAnchor: 0.75,
+      ridgeSupportAnchor: 0.7,
+    });
+    const anchored = deriveVisibleDensity({
       density: 0,
       modalVisibilityEnergy: 0,
       modalObserverVisibilityEnergy: 0,
+      modalPhaseOverlayEnergy: 0.7,
       modalStructureAnchor: 0.7,
       ridgeAnchor: 0.8,
       ridgeSupportAnchor: 0.7,
     });
-    const withPhase = deriveVisibleDensity({
+    const noAnchor = deriveVisibleDensity({
       density: 0,
       modalVisibilityEnergy: 0,
       modalObserverVisibilityEnergy: 0,
-      modalPhaseAuthority: 0.5,
       modalPhaseOverlayEnergy: 0.62,
-      modalStructureAnchor: 0.7,
-      ridgeAnchor: 0.8,
-      ridgeSupportAnchor: 0.7,
+      modalStructureAnchor: 0,
+      ridgeAnchor: 0,
+      ridgeSupportAnchor: 0,
     });
 
-    expect(withPhase.phaseRidgeVisibleDensity).toBeUndefined();
-    expect(withPhase.phaseRidgeLift).toBeUndefined();
-    expect(withPhase.phaseContourAccent).toBeUndefined();
-    expect(withPhase.visibleDensity).toBe(withoutPhase.visibleDensity);
-    expect(withPhase.physicalVisibleDensity).toBe(0);
+    expect(anchored.phaseRidgeVisibleDensity).toBeGreaterThan(0);
+    expect(anchored.phaseRidgeLift).toBeGreaterThan(0);
+    expect(anchored.phaseContourAccent).toBeGreaterThan(0);
+    expect(anchored.visibleDensity).toBe(anchored.phaseRidgeVisibleDensity);
+    expect(anchored.physicalVisibleDensity).toBe(0);
+    expect(physical.physicalVisibleDensity).toBeGreaterThan(0);
+    expect(noAnchor.phaseRidgeVisibleDensity).toBe(0);
+    expect(noAnchor.phaseRidgeLift).toBe(0);
+    expect(noAnchor.phaseContourAccent).toBe(0);
+    expect(noAnchor.visibleDensity).toBe(0);
   });
 
   it("derives excitation visibility without hint inputs", () => {
@@ -629,9 +643,7 @@ describe("field shaping", () => {
     expect(bodyFill.emissionGain).toBeLessThan(0.72);
     expect(filament.filamentEligibility).toBe(1);
     expect(filament.emissionGain).toBeGreaterThan(0.98);
-    expect(filament.emissionGain).toBeGreaterThan(
-      bodyFill.emissionGain + 0.28,
-    );
+    expect(filament.emissionGain).toBeGreaterThan(bodyFill.emissionGain + 0.28);
   });
 
   it("keeps transient relief bounded so dense body emission cannot fully bypass suppression", () => {

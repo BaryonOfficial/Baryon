@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildRaymarchSpectralLightCacheDescriptor,
   buildRaymarchFieldCacheDescriptor,
+  createRaymarchPhaseOverlayCache,
   createRaymarchSpectralLightCache,
   createRaymarchFieldCache,
+  enqueueRaymarchPhaseOverlayRebuild,
   evaluateRaymarchFieldCachePoint,
   isRaymarchSpectralLightCacheReadyForDescriptor,
   shouldRebuildRaymarchSpectralLightCache,
@@ -227,6 +229,57 @@ describe("fieldCache", () => {
     expect(rebuild.reason).toBe("unchanged");
   });
 
+  it("creates a bounded compute-only phase overlay cache", () => {
+    const phaseOverlayCache = createRaymarchPhaseOverlayCache();
+
+    expect(phaseOverlayCache.texture.isStorageTexture).toBe(true);
+    expect(phaseOverlayCache.texture.is3DTexture).toBe(true);
+    expect(phaseOverlayCache.texture.image.width).toBe(32);
+    expect(phaseOverlayCache.texture.image.height).toBe(32);
+    expect(phaseOverlayCache.texture.image.depth).toBe(32);
+    expect(phaseOverlayCache.ready).toBe(false);
+    expect(phaseOverlayCache.backend).toBe("compute");
+    expect(phaseOverlayCache.maxBackboneModes).toBe(2);
+    expect(phaseOverlayCache.maxDetailModes).toBe(6);
+    expect(phaseOverlayCache.updateIntervalMs).toBeCloseTo(1000 / 15);
+  });
+
+  it("fails closed when phase overlay compute is unavailable", () => {
+    const phaseOverlayCache = createRaymarchPhaseOverlayCache({
+      resolution: 8,
+    });
+
+    const result = enqueueRaymarchPhaseOverlayRebuild(
+      phaseOverlayCache,
+      null,
+      {
+        boundaryMode: "neumann",
+        cavityGeometry: "rectangular",
+        radius: 3,
+        backboneCount: 1,
+        detailCount: 1,
+      },
+      "initial",
+      {
+        backboneModeBuffer: { value: { array: new Float32Array(8) } },
+        detailModeBuffer: { value: { array: new Float32Array(24) } },
+        backbonePhaseBuffer: { value: { array: new Float32Array(8) } },
+        detailPhaseBuffer: { value: { array: new Float32Array(24) } },
+        backboneCapacity: 2,
+        detailCapacity: 6,
+        uniforms: { uRadius: { value: 3 } },
+      },
+    );
+
+    expect(result.enqueued).toBe(false);
+    expect(result.reason).toBe("unavailable");
+    expect(phaseOverlayCache.backend).toBe("unavailable");
+    expect(phaseOverlayCache.ready).toBe(false);
+    expect(phaseOverlayCache.lastError).toBe(
+      "Renderer computeAsync unavailable",
+    );
+  });
+
   it("detects Spectral Light rebuilds when color slots change", () => {
     const spectralLightCache = createRaymarchSpectralLightCache({
       resolution: 8,
@@ -260,6 +313,48 @@ describe("fieldCache", () => {
 
     expect(rebuild.needsRebuild).toBe(true);
     expect(rebuild.reason).toBe("color-slots");
+  });
+
+  it("keeps Spectral Light descriptors unchanged when only phase advisory slots change", () => {
+    const spectralLightCache = createRaymarchSpectralLightCache({
+      resolution: 8,
+    });
+    const phaseA = new Float32Array([0.1, 0.2, 0.7, 0.5]);
+    const phaseB = new Float32Array([1.4, -0.3, 0.8, 0.7]);
+    const first = buildRaymarchSpectralLightCacheDescriptor({
+      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backboneColorSlots: new Float32Array([1, 0.2, 0.1, 0.9]),
+      detailColorSlots: new Float32Array([0.2, 0.6, 1, 0.4]),
+      backbonePhaseSlots: phaseA,
+      detailPhaseSlots: phaseA,
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+    const second = buildRaymarchSpectralLightCacheDescriptor({
+      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backboneColorSlots: new Float32Array([1, 0.2, 0.1, 0.9]),
+      detailColorSlots: new Float32Array([0.2, 0.6, 1, 0.4]),
+      backbonePhaseSlots: phaseB,
+      detailPhaseSlots: phaseB,
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+
+    spectralLightCache.activeDescriptor = first;
+    const rebuild = shouldRebuildRaymarchSpectralLightCache(
+      spectralLightCache,
+      second,
+    );
+
+    expect(second).toEqual(first);
+    expect(rebuild.needsRebuild).toBe(false);
+    expect(rebuild.reason).toBe("unchanged");
   });
 
   it("detects Spectral Light rebuilds when modal geometry changes", () => {
