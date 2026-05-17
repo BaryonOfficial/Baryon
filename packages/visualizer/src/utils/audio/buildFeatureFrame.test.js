@@ -311,6 +311,18 @@ function makeSingleModeSlot([u, v, w, amplitude]) {
   return slots;
 }
 
+function makeModeSlots(entries) {
+  const slots = new Float32Array(AUDIO_SLOT_CAPACITY * 4);
+  entries.forEach(([u, v, w, amplitude], index) => {
+    const offset = index * 4;
+    slots[offset] = u;
+    slots[offset + 1] = v;
+    slots[offset + 2] = w;
+    slots[offset + 3] = amplitude;
+  });
+  return slots;
+}
+
 function buildModalExcitationAnalysisFrame({
   featureState,
   fftMagnitudes,
@@ -2936,6 +2948,86 @@ describe("live input noise gate", () => {
     expect(frame.debug.modalVisibilityDominantEnergy).toBeLessThan(0.24);
     expect(frame.debug.modalVisibilityDominantClusterEnergy).toBeUndefined();
   }, 10000);
+
+  it("keeps retained high-Q topology visible through ring-support dropouts", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 0.34,
+        fftMagnitudes: makeFft([
+          [196, 0.012],
+          [282, 0.008],
+        ]),
+        timeData: makeTimeData({
+          frequency: 196,
+          amplitude: 0.0045,
+          harmonics: [[1.44, 0.0028]],
+        }),
+        rms: 0.0045,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 9000,
+    });
+    const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
+    const backboneSlots = makeModeSlots([]);
+    const detailSlots = makeModeSlots([
+      [2, 1, 3, 0.03],
+      [3, 2, 5, 0.028],
+      [5, 3, 8, 0.026],
+      [7, 4, 11, 0.024],
+      [11, 5, 13, 0.022],
+      [13, 8, 17, 0.02],
+      [17, 11, 19, 0.018],
+      [19, 13, 23, 0.016],
+    ]);
+    const structuralState = {
+      backboneSlotsSource: backboneSlots,
+      detailSlotsSource: detailSlots,
+      referenceBackboneSlotsSource: backboneSlots,
+      referenceDetailSlotsSource: detailSlots,
+      signalBackboneSlotsSource: backboneSlots,
+      signalDetailSlotsSource: detailSlots,
+      signalReferenceBackboneSlotsSource: backboneSlots,
+      signalReferenceDetailSlotsSource: detailSlots,
+      dominantFrequency: 196,
+      dominantAmplitude: 0.34,
+      analysisEngine: "modal-excitation",
+      pitchSource: "resonator-bank",
+      spectralCandidates: [],
+      sourceMode: "file",
+      structuralMetrics: {
+        distributedExcitation: 0.08,
+        highQDetailModeCount: 8,
+        highQDetailEnergy: 0.18,
+        highQRingSupport: 0,
+        modalPersistence: 0.035,
+        modalDriveEnergy: 0.01,
+        modeCoherence: 0.46,
+        detailSignalAuthoritative: false,
+        detailSignalAuthoritativeReason: "none",
+        detailSignalAuthoritativeHighQ: false,
+      },
+    };
+    const analysisResult = buildCurrentAudioFeatureAnalysisResult({
+      preparedInputs,
+      fastSignalState,
+      structuralState,
+      materializeStructuralProjection: true,
+    });
+    const frame = composeAudioFeatureFrame({
+      preparedInputs,
+      analysisResult,
+    });
+
+    expect(frame.fieldState).toBe("active");
+    expect(frame.activeDetailModeCount).toBe(8);
+    expect(frame.debug.highQDetailModeCount).toBe(8);
+    expect(frame.debug.highQRingSupport).toBe(0);
+    expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.16);
+  });
 
   it("keeps subdued system-routed harmonic resonance from going empty", () => {
     const featureState = createAudioFeatureState();

@@ -96,6 +96,11 @@ const MODAL_VISIBILITY_DISTRIBUTED_REDUCTION = 0.25;
 const MODAL_VISIBILITY_HIGH_Q_ENERGY_START = 0.003;
 const MODAL_VISIBILITY_HIGH_Q_ENERGY_END = 0.009;
 const MODAL_VISIBILITY_HIGH_Q_MAX = 0.5;
+const MODAL_VISIBILITY_HIGH_Q_RETAINED_ENERGY_START = 0.045;
+const MODAL_VISIBILITY_HIGH_Q_RETAINED_ENERGY_END = 0.2;
+const MODAL_VISIBILITY_HIGH_Q_RETAINED_SUPPORT_START = 0.04;
+const MODAL_VISIBILITY_HIGH_Q_RETAINED_SUPPORT_END = 0.18;
+const MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX = 0.28;
 const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze({
   ambient: Object.freeze({
     absoluteAvgAmplitude: Math.max(2.2, LIVE_INPUT_SILENCE_AVG_AMPLITUDE * 0.3),
@@ -926,6 +931,8 @@ function buildDebugSummary({
       modalVisibilitySummary.distributedModalVisibility,
     modalVisibilityDominantEnergy:
       modalVisibilitySummary.dominantModalVisibility,
+    modalVisibilityRetainedHighQEnergy:
+      modalVisibilitySummary.retainedHighQModalVisibility,
     modalVisibilityActiveModeCount: modeSlotCount,
     modalVisibilityDriveEnergy,
     changeSignal,
@@ -1948,6 +1955,7 @@ function deriveModalVisibilityComponents({
     distributedModalVisibility: 0,
     dominantModalVisibility: 0,
     modalVisibilityEnergy: 0,
+    retainedHighQModalVisibility: 0,
   };
 
   if (hardSilent) {
@@ -1979,6 +1987,7 @@ function deriveModalVisibilityComponents({
       distributedModalVisibility: 0,
       dominantModalVisibility: 0,
       modalVisibilityEnergy: 0,
+      retainedHighQModalVisibility: 0,
     };
   }
   const slotEnergyGate = smoothstep(
@@ -2017,6 +2026,20 @@ function deriveModalVisibilityComponents({
     ) *
     smoothstep(2, 5, highQDetailModeCount) *
     modalQuality;
+  const retainedHighQVisibility =
+    (1 -
+      smoothstep(
+        MODAL_VISIBILITY_HIGH_Q_RETAINED_SUPPORT_START,
+        MODAL_VISIBILITY_HIGH_Q_RETAINED_SUPPORT_END,
+        highQRingSupport,
+      )) *
+    smoothstep(
+      MODAL_VISIBILITY_HIGH_Q_RETAINED_ENERGY_START,
+      MODAL_VISIBILITY_HIGH_Q_RETAINED_ENERGY_END,
+      highQDetailEnergy,
+    ) *
+    smoothstep(3, 8, highQDetailModeCount) *
+    Math.max(coherenceGate * 0.9, persistenceGate * 0.55);
   const distributedEnergyAnchor = smoothstep(
     0.015,
     0.16,
@@ -2057,7 +2080,11 @@ function deriveModalVisibilityComponents({
         distributedModalVisibility,
         dominantModalVisibility,
         highQVisibilityGate * MODAL_VISIBILITY_HIGH_Q_MAX,
+        retainedHighQVisibility * MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX,
       ),
+    ),
+    retainedHighQModalVisibility: clamp01(
+      retainedHighQVisibility * MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX,
     ),
   };
 }
