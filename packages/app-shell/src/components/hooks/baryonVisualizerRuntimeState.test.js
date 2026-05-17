@@ -45,8 +45,18 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
     runtimeDiagnostics.modalFreshness.detailSignalAuthoritative = true;
     runtimeDiagnostics.modalFreshness.detailSignalAuthoritativeReason =
       "fresh-signal";
+    runtimeDiagnostics.modalFreshness.detailSignalAuthoritativeHighQ = true;
     runtimeDiagnostics.modalFreshness.detailShiftReleaseOverrideCount = 2;
     runtimeDiagnostics.modalFreshness.detailShiftTrackingOverrideCount = 3;
+    runtimeDiagnostics.modalFreshness.fieldState = "active";
+    runtimeDiagnostics.modalFreshness.avgAmplitude = 14.5;
+    runtimeDiagnostics.modalFreshness.analyserRms = 0.048;
+    runtimeDiagnostics.modalFreshness.periodicity = 0.79;
+    runtimeDiagnostics.modalFreshness.highQDetailModeCount = 6;
+    runtimeDiagnostics.modalFreshness.highQDetailEnergy = 0.42;
+    runtimeDiagnostics.modalFreshness.highQRingSupport = 0.68;
+    runtimeDiagnostics.modalFreshness.liveInputNoiseGateActive = false;
+    runtimeDiagnostics.modalFreshness.liveInputHardSilenceActive = false;
     runtimeDiagnostics.modalFreshness._previousModeSlots = new Float32Array([
       0.1, 0.2,
     ]);
@@ -61,8 +71,18 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
       modeSlotChangeCount: 5,
       detailSignalAuthoritative: true,
       detailSignalAuthoritativeReason: "fresh-signal",
+      detailSignalAuthoritativeHighQ: true,
       detailShiftReleaseOverrideCount: 2,
       detailShiftTrackingOverrideCount: 3,
+      fieldState: "active",
+      avgAmplitude: 14.5,
+      analyserRms: 0.048,
+      periodicity: 0.79,
+      highQDetailModeCount: 6,
+      highQDetailEnergy: 0.42,
+      highQRingSupport: 0.68,
+      liveInputNoiseGateActive: false,
+      liveInputHardSilenceActive: false,
     });
     expect(snapshot.modalFreshness).not.toHaveProperty("_previousModeSlots");
     expect(globalThis.window.__baryonPerfMetrics.modalFreshness).toEqual(

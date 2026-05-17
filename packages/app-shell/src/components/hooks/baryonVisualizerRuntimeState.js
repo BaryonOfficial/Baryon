@@ -63,8 +63,14 @@ function createModalFreshnessDiagnostics() {
   return {
     frameTimeMs: 0,
     sourceMode: null,
+    fieldState: "idle",
     structuralSnapshotAgeMs: 0,
     lastUpdatedAtWallTimeMs: 0,
+    avgAmplitude: 0,
+    analyserRms: 0,
+    periodicity: 0,
+    liveInputNoiseGateActive: false,
+    liveInputHardSilenceActive: false,
     structureSignal: 0,
     energySignal: 0,
     changeSignal: 0,
@@ -85,8 +91,12 @@ function createModalFreshnessDiagnostics() {
     detailSignalAuthoritativeCoverage: false,
     detailSignalAuthoritativeFreshSignal: false,
     detailSignalAuthoritativeFastAssist: false,
+    detailSignalAuthoritativeHighQ: false,
     detailShiftReleaseOverrideCount: 0,
     detailShiftTrackingOverrideCount: 0,
+    highQDetailModeCount: 0,
+    highQDetailEnergy: 0,
+    highQRingSupport: 0,
     responseEnvelope: 0,
     accentEnvelope: 0,
     motionSignal: 0,
@@ -110,8 +120,16 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
   return {
     frameTimeMs: modalFreshness.frameTimeMs ?? 0,
     sourceMode: modalFreshness.sourceMode ?? null,
+    fieldState: modalFreshness.fieldState ?? "idle",
     structuralSnapshotAgeMs: modalFreshness.structuralSnapshotAgeMs ?? 0,
     lastUpdatedAtWallTimeMs: modalFreshness.lastUpdatedAtWallTimeMs ?? 0,
+    avgAmplitude: modalFreshness.avgAmplitude ?? 0,
+    analyserRms: modalFreshness.analyserRms ?? 0,
+    periodicity: modalFreshness.periodicity ?? 0,
+    liveInputNoiseGateActive:
+      modalFreshness.liveInputNoiseGateActive ?? false,
+    liveInputHardSilenceActive:
+      modalFreshness.liveInputHardSilenceActive ?? false,
     structureSignal: modalFreshness.structureSignal ?? 0,
     energySignal: modalFreshness.energySignal ?? 0,
     changeSignal: modalFreshness.changeSignal ?? 0,
@@ -137,10 +155,15 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
       modalFreshness.detailSignalAuthoritativeFreshSignal ?? false,
     detailSignalAuthoritativeFastAssist:
       modalFreshness.detailSignalAuthoritativeFastAssist ?? false,
+    detailSignalAuthoritativeHighQ:
+      modalFreshness.detailSignalAuthoritativeHighQ ?? false,
     detailShiftReleaseOverrideCount:
       modalFreshness.detailShiftReleaseOverrideCount ?? 0,
     detailShiftTrackingOverrideCount:
       modalFreshness.detailShiftTrackingOverrideCount ?? 0,
+    highQDetailModeCount: modalFreshness.highQDetailModeCount ?? 0,
+    highQDetailEnergy: modalFreshness.highQDetailEnergy ?? 0,
+    highQRingSupport: modalFreshness.highQRingSupport ?? 0,
     responseEnvelope: modalFreshness.responseEnvelope ?? 0,
     accentEnvelope: modalFreshness.accentEnvelope ?? 0,
     motionSignal: modalFreshness.motionSignal ?? 0,

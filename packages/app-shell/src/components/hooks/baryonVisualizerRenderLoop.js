@@ -263,10 +263,27 @@ export function updateModalFreshnessDiagnostics(
 
   modalFreshness.frameTimeMs = readFiniteNumber(featureFrame.frameTimeMs);
   modalFreshness.sourceMode = featureFrame.sourceMode ?? null;
+  modalFreshness.fieldState =
+    featureFrame.debug?.fieldState ?? featureFrame.fieldState ?? "idle";
   modalFreshness.structuralSnapshotAgeMs = readFiniteNumber(
     runtimeDiagnostics?.engine?.snapshotAgeMs,
   );
   modalFreshness.lastUpdatedAtWallTimeMs = readFiniteNumber(getWallTimeMs());
+  modalFreshness.avgAmplitude = readFiniteNumber(
+    featureFrame.debug?.avgAmplitude ?? featureFrame.averageAmplitude,
+  );
+  modalFreshness.analyserRms = readFiniteNumber(
+    featureFrame.debug?.analyserRms,
+  );
+  modalFreshness.periodicity = readFiniteNumber(
+    featureFrame.debug?.periodicity,
+  );
+  modalFreshness.liveInputNoiseGateActive = Boolean(
+    featureFrame.debug?.liveInputNoiseGateActive,
+  );
+  modalFreshness.liveInputHardSilenceActive = Boolean(
+    featureFrame.debug?.liveInputHardSilenceActive,
+  );
   modalFreshness.structureSignal = readFiniteNumber(
     featureFrame.structureSignal,
   );
@@ -317,11 +334,23 @@ export function updateModalFreshnessDiagnostics(
   modalFreshness.detailSignalAuthoritativeFastAssist = Boolean(
     featureFrame.debug?.detailSignalAuthoritativeFastAssist,
   );
+  modalFreshness.detailSignalAuthoritativeHighQ = Boolean(
+    featureFrame.debug?.detailSignalAuthoritativeHighQ,
+  );
   modalFreshness.detailShiftReleaseOverrideCount = readFiniteNumber(
     featureFrame.debug?.detailShiftReleaseOverrideCount,
   );
   modalFreshness.detailShiftTrackingOverrideCount = readFiniteNumber(
     featureFrame.debug?.detailShiftTrackingOverrideCount,
+  );
+  modalFreshness.highQDetailModeCount = readFiniteNumber(
+    featureFrame.debug?.highQDetailModeCount,
+  );
+  modalFreshness.highQDetailEnergy = readFiniteNumber(
+    featureFrame.debug?.highQDetailEnergy,
+  );
+  modalFreshness.highQRingSupport = readFiniteNumber(
+    featureFrame.debug?.highQRingSupport,
   );
 
   return snapshotModalFreshnessDiagnostics(modalFreshness);
