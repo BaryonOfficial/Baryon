@@ -119,13 +119,24 @@ const HIGH_Q_DETAIL_RING_MIN_PERIODICITY = 0.48;
 const HIGH_Q_DETAIL_RING_FULL_PERIODICITY = 0.72;
 const HIGH_Q_DETAIL_RING_MIN_DRIVE_PEAK = 0.045;
 const HIGH_Q_DETAIL_RING_FULL_DRIVE_PEAK = 0.16;
+const HIGH_Q_DETAIL_TAIL_MIN_AVG_AMPLITUDE = 0.012;
+const HIGH_Q_DETAIL_TAIL_FULL_AVG_AMPLITUDE = 0.4;
+const HIGH_Q_DETAIL_TAIL_MIN_RMS = 0.00006;
+const HIGH_Q_DETAIL_TAIL_FULL_RMS = 0.0025;
+const HIGH_Q_DETAIL_TAIL_MIN_PERIODICITY = 0.86;
+const HIGH_Q_DETAIL_TAIL_FULL_PERIODICITY = 0.985;
+const HIGH_Q_DETAIL_TAIL_MIN_DRIVE_PEAK = 0.00045;
+const HIGH_Q_DETAIL_TAIL_FULL_DRIVE_PEAK = 0.008;
+const HIGH_Q_DETAIL_TAIL_SUPPORT_FLOOR = 0.11;
+const HIGH_Q_DETAIL_TAIL_SUPPORT_SPAN = 0.29;
 const HIGH_Q_DETAIL_MIN_RING_SUPPORT = 0.08;
 const HIGH_Q_DETAIL_RING_RELEASE = 0.998;
 const HIGH_Q_DETAIL_NO_SUPPORT_RELEASE = 0.58;
-const HIGH_Q_DETAIL_MIN_RETAINED_ENERGY = 0.001;
+const HIGH_Q_DETAIL_MIN_RETAINED_ENERGY = 0.00045;
 const HIGH_Q_DETAIL_MIN_MATURITY = 0.34;
 const HIGH_Q_DETAIL_AUTHORITY_MIN_AGE_MS = 180;
 const HIGH_Q_DETAIL_SUPPORTED_FLOOR_MIN = 0.45;
+const HIGH_Q_DETAIL_BLOCKED_ACOUSTIC_INTENT = "vocal";
 const DETAIL_LATENT_TAIL_MIN_PERIODICITY = 0.4;
 const DETAIL_LATENT_TAIL_MIN_TONALNESS = 0.68;
 const DETAIL_LATENT_TAIL_SPECTRAL_MIN_TONALNESS = 0.52;
@@ -929,7 +940,7 @@ function getSubtleCoherentDetailSignal({
   );
 }
 
-function computeHighQDetailRingSupport({
+function computeStrictHighQDetailRingSupport({
   hardSilentFrame,
   avgAmplitude,
   analyserRms,
@@ -974,6 +985,97 @@ function computeHighQDetailRingSupport({
     periodicityGate *
     Math.sqrt(avgGate * driveGate) *
     (0.8 + rmsGate * 0.2)
+  );
+}
+
+function computeHighQDetailTailRingSupport({
+  hardSilentFrame,
+  avgAmplitude,
+  analyserRms,
+  drivePeak,
+  periodicity,
+  frequencyStable,
+  retentionEligible,
+}) {
+  if (
+    hardSilentFrame ||
+    !frequencyStable ||
+    !retentionEligible ||
+    avgAmplitude >= HIGH_Q_DETAIL_RING_MIN_AVG_AMPLITUDE ||
+    periodicity < HIGH_Q_DETAIL_TAIL_MIN_PERIODICITY
+  ) {
+    return 0;
+  }
+
+  const avgGate = smoothstep(
+    HIGH_Q_DETAIL_TAIL_MIN_AVG_AMPLITUDE,
+    HIGH_Q_DETAIL_TAIL_FULL_AVG_AMPLITUDE,
+    avgAmplitude,
+  );
+  const rmsGate = smoothstep(
+    HIGH_Q_DETAIL_TAIL_MIN_RMS,
+    HIGH_Q_DETAIL_TAIL_FULL_RMS,
+    analyserRms,
+  );
+  const driveGate = smoothstep(
+    HIGH_Q_DETAIL_TAIL_MIN_DRIVE_PEAK,
+    HIGH_Q_DETAIL_TAIL_FULL_DRIVE_PEAK,
+    drivePeak,
+  );
+  const signalGate = Math.max(avgGate, rmsGate, driveGate);
+  if (signalGate <= 0) {
+    return 0;
+  }
+
+  const periodicityGate = smoothstep(
+    HIGH_Q_DETAIL_TAIL_MIN_PERIODICITY,
+    HIGH_Q_DETAIL_TAIL_FULL_PERIODICITY,
+    periodicity,
+  );
+
+  return (
+    periodicityGate *
+    (HIGH_Q_DETAIL_TAIL_SUPPORT_FLOOR +
+      HIGH_Q_DETAIL_TAIL_SUPPORT_SPAN * signalGate)
+  );
+}
+
+function computeHighQDetailRingSupport({
+  hardSilentFrame,
+  avgAmplitude,
+  analyserRms,
+  drivePeak,
+  periodicity,
+  frequencyStable,
+  retentionEligible = false,
+}) {
+  const strictSupport = computeStrictHighQDetailRingSupport({
+    hardSilentFrame,
+    avgAmplitude,
+    analyserRms,
+    drivePeak,
+    periodicity,
+    frequencyStable,
+  });
+  if (strictSupport > 0) {
+    return strictSupport;
+  }
+
+  return computeHighQDetailTailRingSupport({
+    hardSilentFrame,
+    avgAmplitude,
+    analyserRms,
+    drivePeak,
+    periodicity,
+    frequencyStable,
+    retentionEligible,
+  });
+}
+
+function allowsHighQDetailSeeding(preparedInputs) {
+  return (
+    preparedInputs?.liveInputAcousticIntent !==
+    HIGH_Q_DETAIL_BLOCKED_ACOUSTIC_INTENT
   );
 }
 
@@ -2132,6 +2234,8 @@ export function buildModalExcitationStructuralState({
   if (hardSilentFrame || detailCouplingFrequencySwitch) {
     state.highQDetailModes = new Map();
   }
+  const highQDetailRetentionEligible =
+    (state.highQDetailModes?.size ?? 0) > 0;
   const highQDetailRingSupport = computeHighQDetailRingSupport({
     hardSilentFrame,
     avgAmplitude: preparedInputs.avgAmplitude,
@@ -2139,6 +2243,7 @@ export function buildModalExcitationStructuralState({
     drivePeak,
     periodicity,
     frequencyStable: !detailCouplingFrequencySwitch,
+    retentionEligible: highQDetailRetentionEligible,
   });
   const subtleCoherentDetailSignal = getSubtleCoherentDetailSignal({
     hardSilentFrame,
@@ -2393,7 +2498,7 @@ export function buildModalExcitationStructuralState({
     canSeedHighQ:
       !hardSilentFrame &&
       !detailCouplingFrequencySwitch &&
-      highQDetailRingSupport >= HIGH_Q_DETAIL_MIN_RING_SUPPORT &&
+      allowsHighQDetailSeeding(preparedInputs) &&
       detailBandPeak >= HIGH_Q_DETAIL_SEED_MIN_DETAIL_BAND_PEAK,
     hardSilentFrame,
     frequencySwitch: detailCouplingFrequencySwitch,
