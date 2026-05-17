@@ -4749,7 +4749,7 @@ describe("modal excitation integration", () => {
     expect(silentResult.frame.changeSignal).toBeGreaterThanOrEqual(0);
   });
 
-  it("clears modal cymatics quickly on true hard silence", () => {
+  it("clears modal cymatics after sustained true hard silence", () => {
     const featureState = createAudioFeatureState();
     const activeFft = makeFft([
       [550, 0.95],
@@ -4783,7 +4783,7 @@ describe("modal excitation integration", () => {
       activeDetailAmplitude = sumSlotAmplitudes(result.frame.detailSlots);
     }
 
-    for (let frameIndex = 10; frameIndex < 16; frameIndex += 1) {
+    for (let frameIndex = 10; frameIndex < 64; frameIndex += 1) {
       silentResult = buildModalExcitationAnalysisFrame({
         featureState,
         fftMagnitudes: silentFft,
@@ -4796,7 +4796,7 @@ describe("modal excitation integration", () => {
       previousFrame = silentResult.frame;
     }
 
-    expect(silentResult.analysisResult.usedDecay).toBe(true);
+    expect(silentResult.analysisResult.usedDecay).toBe(false);
     expect(sumSlotAmplitudes(silentResult.analysisResult.signalModeSlots)).toBe(
       0,
     );

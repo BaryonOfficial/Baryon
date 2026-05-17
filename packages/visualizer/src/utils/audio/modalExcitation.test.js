@@ -949,7 +949,7 @@ describe("modal excitation structural state", () => {
     );
   });
 
-  it("clears the visible tail quickly on true hard silence", () => {
+  it("clears the visible tail after sustained true hard silence", () => {
     const state = createModalExcitationState(16);
     const activeFft = makeFft([
       [550, 0.95],
@@ -977,7 +977,7 @@ describe("modal excitation structural state", () => {
       activeBlendedAmplitude = sumAmplitudes(structural.backboneSlotsSource);
     }
 
-    for (let frame = 10; frame < 16; frame += 1) {
+    for (let frame = 10; frame < 64; frame += 1) {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: silentFft,
@@ -1687,7 +1687,7 @@ describe("modal excitation structural state", () => {
 
     expect(structural.structuralMetrics.highQDetailModeCount).toBeGreaterThan(0);
 
-    for (let frame = 120; frame < 128; frame += 1) {
+    for (let frame = 120; frame < 172; frame += 1) {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: new Float32Array(BIN_COUNT),
@@ -1960,7 +1960,7 @@ describe("modal excitation structural state", () => {
     const silentFft = new Float32Array(BIN_COUNT);
     const silentTimeData = new Float32Array(FFT_SIZE);
 
-    for (let frame = 40; frame < 46; frame += 1) {
+    for (let frame = 40; frame < 94; frame += 1) {
       const inputs = createPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: silentFft,
@@ -2106,6 +2106,150 @@ describe("modal excitation structural state", () => {
       0,
     );
     expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0.0015);
+  });
+
+  it("does not blank high-Q detail when a quiet bowl tail dominant bin jitters", () => {
+    const state = createModalExcitationState(16);
+    const blankDetailFrames = [];
+    const unsupportedObserverFrames = [];
+    let structural = null;
+
+    for (let frame = 0; frame < 420; frame += 1) {
+      const isStrike = frame < 4;
+      const tailFftPeaks =
+        frame % 4 < 2
+          ? [
+              [282, 0.0011],
+              [417, 0.00064],
+            ]
+          : [
+              [417, 0.001],
+              [611, 0.00058],
+            ];
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft(
+          isStrike ? INHARMONIC_BOWL_STRIKE_PARTIALS : tailFftPeaks,
+        ),
+        timeData: makeMixedTimeData({
+          partials: isStrike ? INHARMONIC_BOWL_STRIKE_PARTIALS : LOUD_BOWL_TONE_PARTIALS,
+          amplitudeScale: isStrike ? 1 : 0.0048,
+        }),
+        avgAmplitude: isStrike ? 38 : 0.52,
+        rms: isStrike ? 0.28 : 0.0026,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+
+      if (frame < 96) {
+        continue;
+      }
+      if ((structural.structuralMetrics.highQDetailEnergy ?? 0) > 0) {
+        if ((structural.structuralMetrics.highQRingSupport ?? 0) <= 0) {
+          unsupportedObserverFrames.push(frame);
+        }
+        if (countActiveSlotsLocal(structural.detailSlotsSource) === 0) {
+          blankDetailFrames.push(frame);
+        }
+      }
+    }
+
+    expect(structural.structuralMetrics.highQDetailEnergy).toBeGreaterThan(0);
+    expect(unsupportedObserverFrames).toEqual([]);
+    expect(blankDetailFrames).toEqual([]);
+    expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("bridges brief near-silent live input dropouts during an observed bowl ring", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "live",
+      analysisSource: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "system",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    const blankFrames = [];
+    let structural = null;
+
+    for (let frame = 0; frame < 128; frame += 1) {
+      const isStrike = frame < 4;
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft(
+          isStrike
+            ? INHARMONIC_BOWL_STRIKE_PARTIALS
+            : [
+                [282, 0.0012],
+                [417, 0.0007],
+              ],
+        ),
+        timeData: makeMixedTimeData({
+          partials: isStrike ? INHARMONIC_BOWL_STRIKE_PARTIALS : LOUD_BOWL_TONE_PARTIALS,
+          amplitudeScale: isStrike ? 1 : 0.0048,
+        }),
+        avgAmplitude: isStrike ? 38 : 0.14,
+        rms: isStrike ? 0.28 : 0.00045,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(structural.structuralMetrics.highQDetailEnergy).toBeGreaterThan(0);
+
+    for (let frame = 128; frame < 158; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: new Float32Array(BIN_COUNT),
+        timeData: new Float32Array(FFT_SIZE),
+        avgAmplitude: 0,
+        rms: 0.00001,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+
+      if (countActiveSlotsLocal(structural.detailSlotsSource) === 0) {
+        blankFrames.push({
+          frame,
+          highQDetailEnergy: structural.structuralMetrics.highQDetailEnergy,
+          highQRingSupport: structural.structuralMetrics.highQRingSupport,
+          graceActive:
+            structural.structuralMetrics.observedHardSilenceGraceActive,
+          graceAgeMs: structural.structuralMetrics.observedHardSilenceAgeMs,
+          fieldActiveModeCount: structural.activeModeCount,
+        });
+      }
+    }
+
+    expect(blankFrames).toEqual([]);
+    expect(structural.structuralMetrics.highQDetailEnergy).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0);
+    expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBeGreaterThan(
+      0,
+    );
   });
 
   it("keeps low system hum from becoming retained detail structure", () => {

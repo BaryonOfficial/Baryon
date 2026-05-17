@@ -38,6 +38,7 @@ import {
   deriveHotCoreCrowding,
   deriveHotCoreMix,
   deriveModalCrowdingDensity,
+  deriveRetainedHighQVisibilityDiagnostics,
   deriveShellWeight,
   deriveStableContourAccent,
   deriveStructureAwareEmissionGain,
@@ -885,9 +886,9 @@ describe("field shaping", () => {
       ridgeAnchor: 0.86,
     });
 
-    expect(RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR).toBeCloseTo(0.24);
-    expect(RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT).toBeCloseTo(0.18);
-    expect(RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT).toBeCloseTo(0.08);
+    expect(RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR).toBeCloseTo(0.34);
+    expect(RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT).toBeCloseTo(0.22);
+    expect(RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT).toBeCloseTo(0.11);
     expect(retained.physicalVisibleDensity).toBe(
       baseline.physicalVisibleDensity,
     );
@@ -967,6 +968,21 @@ describe("field shaping", () => {
     expect(retained.retainedHighQContourAccent).toBeGreaterThan(0);
     expect(noRidge.retainedHighQRidgeVisibleDensity).toBe(0);
     expect(noRidge.visibleDensity).toBe(0);
+  });
+
+  it("keeps live-measured retained high-Q ridge density above the inspection floor", () => {
+    const diagnostics = deriveRetainedHighQVisibilityDiagnostics({
+      modalVisibilityEnergy: 0.49,
+      modalVisibilityRetainedHighQEnergy: 0.25,
+    });
+
+    expect(diagnostics.retainedHighQPhysicalVisibleDensityMax).toBe(0);
+    expect(
+      diagnostics.retainedHighQRidgeVisibleDensityMax,
+    ).toBeGreaterThanOrEqual(0.08);
+    expect(
+      diagnostics.retainedHighQRidgeToRetainedEnergyRatio,
+    ).toBeGreaterThanOrEqual(0.32);
   });
 
   it("pushes hot-core highlights from beam energy instead of body fog", () => {

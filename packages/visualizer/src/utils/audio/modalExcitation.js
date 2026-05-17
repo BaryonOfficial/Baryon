@@ -136,6 +136,7 @@ const LOW_Q_OBSERVER_DECAY_TAU_SCALE = 8;
 const LOW_Q_OBSERVER_NO_EVIDENCE_TAU_SCALE = 2.2;
 const LOW_Q_OBSERVER_HARD_SILENCE_RELEASE = 0.24;
 const LOW_Q_OBSERVER_MIN_OBSERVED_DRIVE = 0.002;
+const MODAL_OBSERVER_HARD_SILENCE_GRACE_MS = 1200;
 const MODAL_OBSERVER_PROFILES = Object.freeze({
   backbone: {
     layer: "backbone",
@@ -1377,9 +1378,39 @@ function updateObservedModalModes({
 }) {
   const nextModes = new Map();
   const hadPreviousObservedModes = (state.observedModes?.size ?? 0) > 0;
+  const previousObserverSummary = summarizeObservedModes(state.observedModes);
+  const hadPreviousObservedHighQDetail =
+    previousObserverSummary.highQDetailModeCount > 0 &&
+    previousObserverSummary.highQDetailEnergy >=
+      HIGH_Q_DETAIL_MIN_RETAINED_ENERGY;
   const periodicAliveSignal =
     periodicity >= HIGH_Q_OBSERVER_PERIODICITY_START &&
     drivePeak >= HIGH_Q_OBSERVER_DRIVE_PEAK_START;
+  if (
+    strictHardSilentFrame &&
+    hadPreviousObservedHighQDetail &&
+    !periodicAliveSignal
+  ) {
+    if (!Number.isFinite(state.observedHardSilenceStartedAtMs)) {
+      state.observedHardSilenceStartedAtMs = preparedInputs.currentFrameAtMs;
+    }
+  } else {
+    state.observedHardSilenceStartedAtMs = null;
+  }
+  const observedHardSilenceAgeMs = Number.isFinite(
+    state.observedHardSilenceStartedAtMs,
+  )
+    ? Math.max(
+        0,
+        preparedInputs.currentFrameAtMs - state.observedHardSilenceStartedAtMs,
+      )
+    : 0;
+  const observedHardSilenceGraceActive =
+    strictHardSilentFrame &&
+    hadPreviousObservedHighQDetail &&
+    observedHardSilenceAgeMs < MODAL_OBSERVER_HARD_SILENCE_GRACE_MS;
+  state.observedHardSilenceGraceActive = observedHardSilenceGraceActive;
+  state.observedHardSilenceAgeMs = observedHardSilenceAgeMs;
 
   for (const atlasEntry of atlas) {
     const profile = getModalObserverProfile(atlasEntry.layer);
@@ -1417,18 +1448,22 @@ function updateObservedModalModes({
     });
     const previous = state.observedModes?.get(atlasEntry.modeKey) ?? null;
     const observed = hasObservedModalDrive(observation, profile);
+    const hardSilenceGraceApplies =
+      atlasEntry.layer === "detail" && observedHardSilenceGraceActive;
+    const modeHardSilentFrame =
+      strictHardSilentFrame && !hardSilenceGraceApplies;
     const decayTauMs =
       atlasEntry.decayTauMs *
       (observed ? profile.decayTauScale : profile.noEvidenceTauScale);
     const physicalRelease = Math.exp(-deltaMs / Math.max(decayTauMs, 1));
-    const release = strictHardSilentFrame && !observed && !periodicAliveSignal
+    const release = modeHardSilentFrame && !observed && !periodicAliveSignal
       ? Math.min(physicalRelease, profile.hardSilenceRelease)
       : physicalRelease;
     const decayedEnergy =
       (previous?.retainedEnergy ?? previous?.amplitude ?? 0) * release;
     const previousEnergy = previous?.retainedEnergy ?? 0;
     const attackedEnergy =
-      strictHardSilentFrame && !observed && !periodicAliveSignal
+      modeHardSilentFrame && !observed && !periodicAliveSignal
         ? 0
         : previous
           ? previousEnergy * (1 - profile.attack) +
@@ -1464,6 +1499,11 @@ function updateObservedModalModes({
     (entry) =>
       hasObservedModalDrive(entry, getModalObserverProfile(entry.layer)),
   ).length;
+  if (currentObservationCount > 0 || periodicAliveSignal) {
+    state.observedHardSilenceStartedAtMs = null;
+    state.observedHardSilenceGraceActive = false;
+    state.observedHardSilenceAgeMs = 0;
+  }
   const averageCurrentObservedDrive =
     currentObservationCount > 0
       ? sortedModes.reduce(
@@ -1484,7 +1524,13 @@ function updateObservedModalModes({
         capacities,
       );
 
-  return summarizeObservedModes(state.observedModes);
+  const summary = summarizeObservedModes(state.observedModes);
+  if (summary.observedModalModeCount <= 0) {
+    state.observedHardSilenceStartedAtMs = null;
+    state.observedHardSilenceGraceActive = false;
+    state.observedHardSilenceAgeMs = 0;
+  }
+  return summary;
 }
 
 function mergeExcitedObservedModes({
@@ -2412,7 +2458,8 @@ export function buildModalExcitationStructuralState({
       modalObserverMetrics.highQDetailEnergy >=
         HIGH_Q_DETAIL_MIN_RETAINED_ENERGY &&
       modalObserverMetrics.highQRingSupport > 0 &&
-      hasObservedLayerDrive(modalObserverMetrics, "detail")) ||
+      (hasObservedLayerDrive(modalObserverMetrics, "detail") ||
+        state.observedHardSilenceGraceActive === true)) ||
     (modalObserverMetrics.lowQBackboneModeCount >=
       LOW_Q_OBSERVER_MIN_MODE_COUNT &&
       modalObserverMetrics.lowQBackboneEnergy >=
@@ -3063,6 +3110,9 @@ export function buildModalExcitationStructuralState({
     highQObservedSnr: modalObserverMetrics.highQObservedSnr,
     highQObservedCoherence: modalObserverMetrics.highQObservedCoherence,
     highQObservedNoiseFloor: modalObserverMetrics.highQObservedNoiseFloor,
+    observedHardSilenceGraceActive:
+      state.observedHardSilenceGraceActive === true,
+    observedHardSilenceAgeMs: state.observedHardSilenceAgeMs ?? 0,
     highQDetailTopologySignal,
     modalPersistence: excitedEntries.length
       ? clamp01(persistenceTotal / excitedEntries.length)
