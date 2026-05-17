@@ -116,6 +116,11 @@ const HIGH_Q_OBSERVER_MIN_OBSERVED_DRIVE = 0.0025;
 const HIGH_Q_OBSERVER_NOISE_WINDOW_BINS = 9;
 const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ = 140;
 const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ = 480;
+const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_START = 0.00012;
+const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_FULL = 0.0009;
+const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_PERIODICITY = 0.68;
+const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_TONALNESS = 0.58;
+const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MAX_DISTRIBUTION = 0.18;
 const LOW_Q_OBSERVER_MIN_MODE_COUNT = 1;
 const LOW_Q_OBSERVER_MIN_RETAINED_ENERGY = 0.0008;
 const LOW_Q_OBSERVER_RESPONSE_START = 0.015;
@@ -1148,6 +1153,19 @@ function computeModalObservation({
     profile.sparseEvidenceFloor ?? 0,
   );
   const matchedTimeDomainDrive = responseGate * peakGate;
+  const coherentBackgroundDriveGate =
+    atlasEntry?.layer === "detail" &&
+    dominantDriveFrequencyHz >= HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ &&
+    dominantDriveFrequencyHz <= HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ &&
+    periodicity >= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_PERIODICITY &&
+    tonalness >= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_TONALNESS &&
+    distributedExcitation <= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MAX_DISTRIBUTION
+      ? smoothstep(
+          HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_START,
+          HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_FULL,
+          drivePeak,
+        )
+      : 0;
   const harmonicGate =
     atlasEntry?.layer === "detail" &&
     dominantDriveFrequencyHz >= HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ &&
@@ -1156,7 +1174,7 @@ function computeModalObservation({
           atlasEntry.naturalFrequencyHz,
           dominantDriveFrequencyHz,
         ) *
-        peakGate *
+        Math.max(peakGate, coherentBackgroundDriveGate) *
         periodicityGate
       : 0;
   const observerCoherence = clamp01(

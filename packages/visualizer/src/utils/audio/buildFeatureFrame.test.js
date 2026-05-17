@@ -2911,6 +2911,58 @@ describe("live input noise gate", () => {
     }
   });
 
+  it("observes quiet background bowl hum without waiting for a strike", () => {
+    const scenarios = [
+      {
+        sourceMode: "live",
+        status: makeResolvedLineFeedLiveStatus(),
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
+      },
+      {
+        sourceMode: "file",
+        status: makeActiveStatus(),
+        liveInputAnalysisSettings: undefined,
+      },
+    ];
+    const quietBowlHumPartials = [
+      [196, 0.004],
+      [282, 0.0028],
+      [417, 0.002],
+      [611, 0.0014],
+    ];
+
+    for (const scenario of scenarios) {
+      const featureState = createAudioFeatureState();
+      let frame = null;
+
+      for (let frameIndex = 0; frameIndex < 240; frameIndex += 1) {
+        frame = buildAudioFeatureFrame({
+          analysisSnapshot: createSnapshot({
+            sourceMode: scenario.sourceMode,
+            avgAmplitude: 0.055,
+            fftMagnitudes: makeFft(quietBowlHumPartials),
+            timeData: makeMixedTimeData({
+              partials: quietBowlHumPartials,
+              amplitudeScale: 0.0008,
+            }),
+            rms: 0.0002,
+          }),
+          featureState,
+          radius: 3,
+          status: scenario.status,
+          frameTimeMs: frameIndex * 33,
+          liveInputAnalysisSettings: scenario.liveInputAnalysisSettings,
+        });
+      }
+
+      expect(frame.fieldState).toBe("active");
+      expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(2);
+      expect(frame.debug.highQObservedDrive).toBeGreaterThan(0);
+      expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.003);
+      expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
+    }
+  });
+
   it("seeds low-meter bowl strikes into retained tails for line-feed and file sources", () => {
     const scenarios = [
       {
