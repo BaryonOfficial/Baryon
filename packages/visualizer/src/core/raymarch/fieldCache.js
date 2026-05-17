@@ -37,6 +37,7 @@ window.__baryonAuditSnapshot?.fieldCacheOverride
 
 */
 const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
+const FIELD_CACHE_WEIGHT_QUANTIZATION = 1024;
 
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -62,6 +63,47 @@ function hashSlotLayer(slots, activeCount) {
     hash = hashFloat32(slots?.[offset + 1] ?? 0, hash);
     hash = hashFloat32(slots?.[offset + 2] ?? 0, hash);
     hash = hashFloat32(slots?.[offset + 3] ?? 0, hash);
+  }
+
+  return hash >>> 0;
+}
+
+function sumWeightedSlotAmplitude(slots, activeCount, weight = 1) {
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  let total = 0;
+
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const amplitude = slots?.[offset + 3] ?? 0;
+    if (amplitude > 0) {
+      total += amplitude * weight;
+    }
+  }
+
+  return total;
+}
+
+function hashFieldTopologyLayer({
+  slots,
+  activeCount,
+  weight = 1,
+  totalWeightedAmplitude = 0,
+}) {
+  let hash = FNV_OFFSET_BASIS;
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const safeTotal = Math.max(totalWeightedAmplitude, 1e-6);
+
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const weightedAmplitude = Math.max(0, slots?.[offset + 3] ?? 0) * weight;
+    const normalizedWeight = Math.round(
+      Math.min(1, weightedAmplitude / safeTotal) *
+        FIELD_CACHE_WEIGHT_QUANTIZATION,
+    );
+    hash = hashFloat32(slots?.[offset] ?? 0, hash);
+    hash = hashFloat32(slots?.[offset + 1] ?? 0, hash);
+    hash = hashFloat32(slots?.[offset + 2] ?? 0, hash);
+    hash = hashUint32(normalizedWeight, hash);
   }
 
   return hash >>> 0;
@@ -231,14 +273,34 @@ export function buildRaymarchFieldCacheDescriptor({
   cavityGeometry = "rectangular",
   radius = 1,
 }) {
+  const normalizedBackboneCount = Math.max(0, Math.round(backboneCount || 0));
+  const normalizedDetailCount = Math.max(0, Math.round(detailCount || 0));
+  const totalWeightedAmplitude =
+    sumWeightedSlotAmplitude(backboneSlots, normalizedBackboneCount, 1) +
+    sumWeightedSlotAmplitude(
+      detailSlots,
+      normalizedDetailCount,
+      DETAIL_LAYER_WEIGHT,
+    );
+
   return {
     boundaryMode: normalizeBoundaryMode(boundaryMode),
     cavityGeometry: normalizeCavityGeometry(cavityGeometry),
     radius: Number.isFinite(radius) ? radius : 1,
-    backboneCount: Math.max(0, Math.round(backboneCount || 0)),
-    detailCount: Math.max(0, Math.round(detailCount || 0)),
-    backboneHash: hashSlotLayer(backboneSlots, backboneCount),
-    detailHash: hashSlotLayer(detailSlots, detailCount),
+    backboneCount: normalizedBackboneCount,
+    detailCount: normalizedDetailCount,
+    backboneHash: hashFieldTopologyLayer({
+      slots: backboneSlots,
+      activeCount: normalizedBackboneCount,
+      weight: 1,
+      totalWeightedAmplitude,
+    }),
+    detailHash: hashFieldTopologyLayer({
+      slots: detailSlots,
+      activeCount: normalizedDetailCount,
+      weight: DETAIL_LAYER_WEIGHT,
+      totalWeightedAmplitude,
+    }),
   };
 }
 
@@ -349,12 +411,17 @@ export function evaluateRaymarchFieldCachePoint({
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry,
   });
+  const amplitudeNorm = Math.max(
+    sumWeightedSlotAmplitude(backboneSlots, backboneCount, 1) +
+      sumWeightedSlotAmplitude(detailSlots, detailCount, DETAIL_LAYER_WEIGHT),
+    0.01,
+  );
 
   return {
-    field: backbone.field + detail.field,
-    gradX: backbone.gradX + detail.gradX,
-    gradY: backbone.gradY + detail.gradY,
-    gradZ: backbone.gradZ + detail.gradZ,
+    field: (backbone.field + detail.field) / amplitudeNorm,
+    gradX: (backbone.gradX + detail.gradX) / amplitudeNorm,
+    gradY: (backbone.gradY + detail.gradY) / amplitudeNorm,
+    gradZ: (backbone.gradZ + detail.gradZ) / amplitudeNorm,
   };
 }
 
@@ -413,6 +480,7 @@ function createComputeKernel({
       const gradX = zero.toVar();
       const gradY = zero.toVar();
       const gradZ = zero.toVar();
+      const totalAmplitude = zero.toVar();
 
       Loop(
         {
@@ -435,6 +503,7 @@ function createComputeKernel({
               scale,
               boundaryMode,
             });
+            totalAmplitude.addAssign(amplitude);
             field.addAssign(amplitude.mul(family.field));
             gradX.addAssign(amplitude.mul(family.gradX));
             gradY.addAssign(amplitude.mul(family.gradY));
@@ -464,6 +533,7 @@ function createComputeKernel({
               scale,
               boundaryMode,
             });
+            totalAmplitude.addAssign(amplitude);
             field.addAssign(amplitude.mul(family.field));
             gradX.addAssign(amplitude.mul(family.gradX));
             gradY.addAssign(amplitude.mul(family.gradY));
@@ -475,7 +545,12 @@ function createComputeKernel({
       textureStore(
         texture,
         uvec3(voxelCoord),
-        vec4(field, gradX, gradY, gradZ),
+        vec4(
+          field.div(totalAmplitude.max(float(0.01))),
+          gradX.div(totalAmplitude.max(float(0.01))),
+          gradY.div(totalAmplitude.max(float(0.01))),
+          gradZ.div(totalAmplitude.max(float(0.01))),
+        ),
       ).toWriteOnly();
     });
   })().compute(

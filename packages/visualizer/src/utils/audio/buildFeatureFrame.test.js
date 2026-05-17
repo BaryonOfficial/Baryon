@@ -3016,6 +3016,58 @@ describe("live input noise gate", () => {
     }
   });
 
+  it("keeps E2-range bowl retained detail breathing with the source envelope", () => {
+    const featureState = createAudioFeatureState();
+    const e2BowlFundamentalHz = 82.41;
+    const e2BowlPartials = [
+      [e2BowlFundamentalHz, 0.8],
+      [e2BowlFundamentalHz * 2, 0.08],
+    ];
+    const samples = [];
+
+    for (let frameIndex = 0; frameIndex < 180; frameIndex += 1) {
+      const envelope = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(frameIndex * 0.11));
+      const partials = scalePartials(e2BowlPartials, envelope);
+      const frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "live",
+          avgAmplitude: 5.2 * envelope,
+          fftMagnitudes: makeFft(partials),
+          timeData: makeMixedTimeData({
+            partials,
+            amplitudeScale: 0.08 * envelope,
+          }),
+          rms: 0.018 * envelope,
+        }),
+        featureState,
+        radius: 3,
+        status: makeResolvedLineFeedLiveStatus(),
+        frameTimeMs: frameIndex * 33,
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
+      });
+
+      if (frameIndex >= 120) {
+        samples.push({
+          envelope,
+          detailAmplitude: sumSlotAmplitudes(frame.detailSlots),
+          retainedVisibility: frame.modalVisibilityRetainedHighQEnergy ?? 0,
+          highQDetailEnergy: frame.debug.highQDetailEnergy ?? 0,
+        });
+      }
+    }
+
+    const low = samples.reduce((currentLow, sample) =>
+      sample.envelope < currentLow.envelope ? sample : currentLow,
+    );
+    const high = samples.reduce((currentHigh, sample) =>
+      sample.envelope > currentHigh.envelope ? sample : currentHigh,
+    );
+
+    expect(low.highQDetailEnergy).toBeGreaterThan(0.003);
+    expect(low.retainedVisibility).toBeGreaterThan(0.03);
+    expect(high.detailAmplitude).toBeGreaterThan(low.detailAmplitude * 1.16);
+  });
+
   it("seeds low-meter bowl strikes into retained tails for line-feed and file sources", () => {
     const scenarios = [
       {

@@ -685,13 +685,16 @@ function createScatteringNode({
       const gradient = vec3(gradX, gradY, gradZ).toVar();
       const gradientMagnitude = length(gradient);
       const gradientNormal = gradient.div(max(gradientMagnitude, float(1e-4)));
-      // Keep direct and cached field evaluation semantically identical.
-      // The cache descriptor already hashes slot amplitudes, so the cached field
-      // rebuilds when amplitudes change; both paths can safely use the same
-      // amplitude-normalized shaping terms.
       const amplitudeNorm = max(uTotalSlotAmplitude, float(0.01));
-      const normalizedFieldAbs = fieldAbs.div(amplitudeNorm);
-      const normalizedGradMagnitude = gradientMagnitude.div(amplitudeNorm);
+      // Cached field textures are pre-normalized by their modal amplitude during
+      // compute, so product cached rendering can stay stable across envelope-only
+      // amplitude changes without falling back to direct raymarch evaluation.
+      const normalizedFieldAbs = fieldCacheTexture
+        ? fieldAbs
+        : fieldAbs.div(amplitudeNorm);
+      const normalizedGradMagnitude = fieldCacheTexture
+        ? gradientMagnitude
+        : gradientMagnitude.div(amplitudeNorm);
       const activeCount = float(uActiveModeCount);
       const backboneCount = float(uBackboneModeCount);
       const detailCount = float(uDetailModeCount);

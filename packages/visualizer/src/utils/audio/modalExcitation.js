@@ -49,6 +49,7 @@ const EXCITATION_BACKBONE_FRESH_CAP = 3;
 const EXCITATION_DETAIL_BLEND_ATTACK = 0.45;
 const EXCITATION_DETAIL_SHIFT_BLEND_ATTACK = 0.85;
 const EXCITATION_DETAIL_BLEND_TRACKING = 0.5;
+const EXCITATION_DETAIL_HIGH_Q_ENVELOPE_TRACKING = 0.78;
 const EXCITATION_DETAIL_BLEND_RELEASE = 0.68;
 const EXCITATION_DETAIL_SILENCE_RELEASE = 0.58;
 const EXCITATION_DETAIL_HARD_SILENCE_RELEASE = 0.36;
@@ -119,6 +120,11 @@ const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ = 480;
 const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_HZ = 72;
 const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MAX_HZ = 105;
 const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_SUPPORT = 0.002;
+const HIGH_Q_OBSERVER_SOURCE_ENVELOPE_ATTACK = 0.34;
+const HIGH_Q_OBSERVER_SOURCE_ENVELOPE_RELEASE = 0.24;
+const HIGH_Q_DETAIL_DISPLAY_ENVELOPE_START = 0.006;
+const HIGH_Q_DETAIL_DISPLAY_ENVELOPE_FULL = 0.08;
+const HIGH_Q_DETAIL_DISPLAY_ENVELOPE_FLOOR = 0.62;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_START = 0.00012;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_FULL = 0.0009;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_PERIODICITY = 0.68;
@@ -1004,6 +1010,18 @@ function hasObservedLayerDrive(metrics, layer) {
     : metrics.highQObservedDrive >= profile.minObservedDrive;
 }
 
+function updateObservedSourceAmplitude(previous, drivePeak) {
+  const target = clamp01(drivePeak);
+  const previousAmplitude = Number.isFinite(previous?.sourceAmplitude)
+    ? clamp01(previous.sourceAmplitude)
+    : target;
+  const rate =
+    target >= previousAmplitude
+      ? HIGH_Q_OBSERVER_SOURCE_ENVELOPE_ATTACK
+      : HIGH_Q_OBSERVER_SOURCE_ENVELOPE_RELEASE;
+  return clamp01(previousAmplitude + (target - previousAmplitude) * rate);
+}
+
 function isHighQHarmonicDriverFrequency(
   frequencyHz,
   spectralSupport = 1,
@@ -1269,11 +1287,7 @@ function createObservedModalModeEntry({
     observedEnergy,
     observedSnr,
     localNoiseFloor,
-    sourceAmplitude: Math.max(
-      drivePeak,
-      (previous?.sourceAmplitude ?? 0) * 0.98,
-      energy,
-    ),
+    sourceAmplitude: updateObservedSourceAmplitude(previous, drivePeak),
     firstObservedAtMs,
     lastObservedAtMs,
     retainedSustainedDetail: isDetail,
@@ -1718,6 +1732,25 @@ function getDetailMaturitySignalScale(entry) {
   );
 }
 
+function getRetainedDetailSourceEnvelopeScale(entry) {
+  if (
+    (entry?.layer ?? "detail") !== "detail" ||
+    entry?.retainedSustainedDetail !== true
+  ) {
+    return 1;
+  }
+
+  const sourceEnvelope = smoothstep(
+    HIGH_Q_DETAIL_DISPLAY_ENVELOPE_START,
+    HIGH_Q_DETAIL_DISPLAY_ENVELOPE_FULL,
+    clamp01(entry?.sourceAmplitude ?? entry?.currentDriveEnergy ?? 0),
+  );
+  return (
+    HIGH_Q_DETAIL_DISPLAY_ENVELOPE_FLOOR +
+    sourceEnvelope * (1 - HIGH_Q_DETAIL_DISPLAY_ENVELOPE_FLOOR)
+  );
+}
+
 function getDisplayAmplitude(entry, layer) {
   const signalAmplitude = entry?.signalAmplitude ?? 0;
   if (layer !== "detail") {
@@ -1825,18 +1858,21 @@ function getSignalScore(entry, layer) {
         freshness * DETAIL_SIGNAL_SCORE_FRESHNESS_WEIGHT) *
         clamp01(0.45 + coherence * 0.55) +
       sustainedPresence * DETAIL_SIGNAL_SCORE_SUSTAIN_WEIGHT;
-    return entry?.retainedSustainedDetail
-      ? Math.max(
-          score,
-          entry.retainedSubtleSustainedDetail
-            ? DETAIL_RETAINED_SUBTLE_SIGNAL_BASE +
-                clamp01(entry.retainedSustainedDetailPresence ?? 0) *
-                  DETAIL_RETAINED_SUBTLE_SIGNAL_PRESENCE_WEIGHT
-            : DETAIL_RETAINED_SIGNAL_BASE +
-                clamp01(entry.retainedSustainedDetailPresence ?? 0) *
-                  DETAIL_RETAINED_SIGNAL_PRESENCE_WEIGHT,
-        )
-      : score;
+    if (!entry?.retainedSustainedDetail) {
+      return score;
+    }
+
+    const retainedScore = Math.max(
+      score,
+      entry.retainedSubtleSustainedDetail
+        ? DETAIL_RETAINED_SUBTLE_SIGNAL_BASE +
+            clamp01(entry.retainedSustainedDetailPresence ?? 0) *
+              DETAIL_RETAINED_SUBTLE_SIGNAL_PRESENCE_WEIGHT
+        : DETAIL_RETAINED_SIGNAL_BASE +
+            clamp01(entry.retainedSustainedDetailPresence ?? 0) *
+              DETAIL_RETAINED_SIGNAL_PRESENCE_WEIGHT,
+    );
+    return retainedScore * getRetainedDetailSourceEnvelopeScale(entry);
   }
 
   const backboneScore =
@@ -2771,6 +2807,7 @@ export function buildModalExcitationStructuralState({
         (previous?.driveEnergy ?? driveEnergy) * (1 - DRIVE_BLEND_ALPHA) +
         driveEnergy * DRIVE_BLEND_ALPHA,
       phase: response.phase,
+      sourceAmplitude: updateObservedSourceAmplitude(previous, drivePeak),
       coherence,
       persistence,
       detailMaturity,
@@ -3017,7 +3054,9 @@ export function buildModalExcitationStructuralState({
     attack: detailSignalAuthoritative
       ? EXCITATION_DETAIL_SHIFT_BLEND_ATTACK
       : EXCITATION_DETAIL_BLEND_ATTACK,
-    tracking: EXCITATION_DETAIL_BLEND_TRACKING,
+    tracking: highQDetailSignalAuthoritative
+      ? EXCITATION_DETAIL_HIGH_Q_ENVELOPE_TRACKING
+      : EXCITATION_DETAIL_BLEND_TRACKING,
     release: hasSustainedTail
       ? EXCITATION_DETAIL_TAIL_RELEASE
       : EXCITATION_DETAIL_BLEND_RELEASE,

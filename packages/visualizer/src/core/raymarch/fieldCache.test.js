@@ -100,7 +100,7 @@ describe("fieldCache", () => {
     expect(rebuild.reason).toBe("cavity-geometry");
   });
 
-  it("builds deterministic descriptors from the uploaded slot set", () => {
+  it("builds descriptors from topology and relative modal weights", () => {
     const descriptorA = buildRaymarchFieldCacheDescriptor({
       backboneSlots: new Float32Array([1, 2, 3, 0.9]),
       detailSlots: new Float32Array([2, 2, 4, 0.2]),
@@ -118,11 +118,37 @@ describe("fieldCache", () => {
       radius: 3,
     });
 
-    expect(descriptorA.backboneHash).toBe(descriptorB.backboneHash);
+    expect(descriptorA.backboneHash).not.toBe(descriptorB.backboneHash);
     expect(descriptorA.detailHash).not.toBe(descriptorB.detailHash);
   });
 
-  it("detects rebuilds when slot amplitudes change", () => {
+  it("does not rebuild when only the global modal amplitude scale changes", () => {
+    const fieldCache = createRaymarchFieldCache({ resolution: 8 });
+    const first = buildRaymarchFieldCacheDescriptor({
+      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+    const second = buildRaymarchFieldCacheDescriptor({
+      backboneSlots: new Float32Array([1, 2, 3, 0.45]),
+      detailSlots: new Float32Array([2, 2, 4, 0.1]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+    fieldCache.activeDescriptor = first;
+    const rebuild = shouldRebuildRaymarchFieldCache(fieldCache, second);
+
+    expect(second).toEqual(first);
+    expect(rebuild.needsRebuild).toBe(false);
+    expect(rebuild.reason).toBe("unchanged");
+  });
+
+  it("detects rebuilds when relative modal weights change", () => {
     const fieldCache = createRaymarchFieldCache({ resolution: 8 });
     const first = buildRaymarchFieldCacheDescriptor({
       backboneSlots: new Float32Array([1, 2, 3, 0.9]),
@@ -292,6 +318,36 @@ describe("fieldCache", () => {
     expect(Number.isFinite(sample.gradX)).toBe(true);
     expect(Number.isFinite(sample.gradY)).toBe(true);
     expect(Number.isFinite(sample.gradZ)).toBe(true);
+  });
+
+  it("evaluates cached pointwise fields independent of global amplitude scale", () => {
+    const quiet = evaluateRaymarchFieldCachePoint({
+      backboneSlots: new Float32Array([1, 2, 3, 0.45]),
+      detailSlots: new Float32Array([2, 2, 4, 0.1]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0.25,
+      y: -0.5,
+      z: 1.1,
+    });
+    const loud = evaluateRaymarchFieldCachePoint({
+      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0.25,
+      y: -0.5,
+      z: 1.1,
+    });
+
+    expect(loud.field).toBeCloseTo(quiet.field, 6);
+    expect(loud.gradX).toBeCloseTo(quiet.gradX, 6);
+    expect(loud.gradY).toBeCloseTo(quiet.gradY, 6);
+    expect(loud.gradZ).toBeCloseTo(quiet.gradZ, 6);
   });
 
   it("keeps rectangular parity when spherical is requested but the effective backend stays rectangular", () => {
