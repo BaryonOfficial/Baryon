@@ -293,11 +293,14 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     null;
   const pulseSignal = featureFrame?.pulseSignal ?? 0;
   const modalVisibilityEnergy = featureFrame?.modalVisibilityEnergy ?? 0;
+  const modalObserverVisibilityEnergy =
+    featureFrame?.modalObserverVisibilityEnergy ?? 0;
   const modalVisibilityRetainedHighQEnergy =
     featureFrame?.modalVisibilityRetainedHighQEnergy ?? 0;
   const modalVisibilityDensityDebug = deriveVisibleDensity({
     density: 0,
     modalVisibilityEnergy,
+    modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
     modalStructureAnchor: 1,
     ridgeAnchor: 1,
@@ -305,6 +308,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const retainedHighQVisibilityDebug =
     deriveRetainedHighQVisibilityDiagnostics({
       modalVisibilityEnergy,
+      modalObserverVisibilityEnergy,
       modalVisibilityRetainedHighQEnergy,
     });
   const avgDensity = Math.min(
@@ -437,6 +441,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
     pulseSignal,
     modalVisibilityEnergy,
+    modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
     modalVisibilityDensityLiftMax: modalVisibilityDensityDebug.modalLift,
     modalVisibilityVisibleDensityMax:
@@ -1119,6 +1124,10 @@ export function tickRaymarchRuntime(
   setIfChanged(
     uniforms.uModalVisibilityEnergy,
     featureFrame?.modalVisibilityEnergy ?? 0,
+  );
+  setIfChanged(
+    uniforms.uModalObserverVisibilityEnergy,
+    featureFrame?.modalObserverVisibilityEnergy ?? 0,
   );
   setIfChanged(
     uniforms.uModalVisibilityRetainedHighQEnergy,

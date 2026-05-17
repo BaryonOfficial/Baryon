@@ -92,6 +92,9 @@ import {
   LOW_MID_BAND_WEIGHT,
   MODAL_CROWDING_ACCUMULATION_COMPRESSION,
   MODAL_CROWDING_BODY_COMPRESSION,
+  OBSERVER_RIDGE_CONTOUR_ACCENT,
+  OBSERVER_RIDGE_DENSITY_FLOOR,
+  OBSERVER_RIDGE_DENSITY_LIFT,
   RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT,
   RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
   RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT,
@@ -468,6 +471,7 @@ function createScatteringNode({
     uModeCoherence,
     uTotalSlotAmplitude,
     uModalVisibilityEnergy,
+    uModalObserverVisibilityEnergy,
     uModalVisibilityRetainedHighQEnergy,
   } = uniforms;
   // Uniform-only expressions: hoist outside the Fn so they are loop-invariant
@@ -530,6 +534,7 @@ function createScatteringNode({
   );
   const modalAuthorityEnergy = max(
     uModalVisibilityEnergy,
+    uModalObserverVisibilityEnergy,
     uModalVisibilityRetainedHighQEnergy.mul(
       float(EXCITATION_VISIBILITY_RETAINED_HIGH_Q_WEIGHT),
     ),
@@ -961,13 +966,16 @@ function createScatteringNode({
         density,
         uModalVisibilityEnergy,
         modalStructureAnchor,
+        uModalObserverVisibilityEnergy,
         uModalVisibilityRetainedHighQEnergy,
         retainedHighQRidgeAnchor,
         retainedHighQRidgeSupportAnchor,
       );
       const { visibleDensity, physicalVisibleDensity } = densityVisibility;
       const retainedHighQContourAccent =
-        densityVisibility.retainedHighQContourAccent;
+        densityVisibility.retainedHighQContourAccent.add(
+          densityVisibility.observerContourAccent,
+        );
       const highlightMask = smoothstep(
         float(HIGHLIGHT_MASK_START),
         float(HIGHLIGHT_MASK_END),
@@ -1252,6 +1260,7 @@ function deriveVisibleDensityNode(
   density,
   modalVisibilityEnergy,
   modalStructureAnchor,
+  modalObserverVisibilityEnergy = float(0.0),
   modalVisibilityRetainedHighQEnergy = float(0.0),
   ridgeAnchor = float(0.0),
   ridgeSupportAnchor = float(0.0),
@@ -1273,6 +1282,13 @@ function deriveVisibleDensityNode(
     float(0.0),
     float(1.0),
   );
+  const observerRidgeAnchor = clamp(
+    modalObserverVisibilityEnergy
+      .mul(modalStructureAnchor)
+      .mul(retainedHighQSpatialAnchor),
+    float(0.0),
+    float(1.0),
+  );
   const physicalVisibilityGate = smoothstep(
     float(LOW_DENSITY_FADE_START),
     float(LOW_DENSITY_FADE_END),
@@ -1290,10 +1306,15 @@ function deriveVisibleDensityNode(
     float(0.0),
     float(RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT),
   );
+  const observerRidgeLift = clamp(
+    observerRidgeAnchor.mul(float(OBSERVER_RIDGE_DENSITY_LIFT)),
+    float(0.0),
+    float(OBSERVER_RIDGE_DENSITY_LIFT),
+  );
   const visibilityGate = smoothstep(
     float(LOW_DENSITY_FADE_START),
     float(LOW_DENSITY_FADE_END),
-    density.add(modalLift).add(retainedHighQRidgeLift),
+    density.add(modalLift).add(observerRidgeLift).add(retainedHighQRidgeLift),
   );
   const physicalVisibleDensity = density.mul(physicalVisibilityGate);
   const modalVisibleDensity = clamp(
@@ -1308,10 +1329,20 @@ function deriveVisibleDensityNode(
     float(0.0),
     float(RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR),
   );
+  const observerRidgeVisibleDensity = clamp(
+    observerRidgeAnchor.mul(float(OBSERVER_RIDGE_DENSITY_FLOOR)),
+    float(0.0),
+    float(OBSERVER_RIDGE_DENSITY_FLOOR),
+  );
   const retainedHighQContourAccent = clamp(
     retainedHighQRidgeAnchor.mul(float(RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT)),
     float(0.0),
     float(RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT),
+  );
+  const observerContourAccent = clamp(
+    observerRidgeAnchor.mul(float(OBSERVER_RIDGE_CONTOUR_ACCENT)),
+    float(0.0),
+    float(OBSERVER_RIDGE_CONTOUR_ACCENT),
   );
 
   return {
@@ -1319,6 +1350,10 @@ function deriveVisibleDensityNode(
     physicalVisibleDensity,
     modalLift,
     modalVisibleDensity,
+    observerRidgeAnchor,
+    observerRidgeLift,
+    observerRidgeVisibleDensity,
+    observerContourAccent,
     retainedHighQRidgeAnchor,
     retainedHighQStructureAnchor,
     retainedHighQRidgeLift,
@@ -1327,7 +1362,7 @@ function deriveVisibleDensityNode(
     visibilityGate,
     visibleDensity: max(
       max(density.mul(visibilityGate), modalVisibleDensity),
-      retainedHighQRidgeVisibleDensity,
+      max(observerRidgeVisibleDensity, retainedHighQRidgeVisibleDensity),
     ),
   };
 }

@@ -323,6 +323,47 @@ function makeModeSlots(entries) {
   return slots;
 }
 
+function makeManualStructuralState({
+  backboneSlots = makeModeSlots([]),
+  detailSlots = makeModeSlots([]),
+  dominantFrequency = 196,
+  dominantAmplitude = 0.08,
+  sourceMode = "file",
+  structuralMetrics = {},
+} = {}) {
+  return {
+    backboneSlotsSource: backboneSlots,
+    detailSlotsSource: detailSlots,
+    referenceBackboneSlotsSource: backboneSlots,
+    referenceDetailSlotsSource: detailSlots,
+    signalBackboneSlotsSource: backboneSlots,
+    signalDetailSlotsSource: detailSlots,
+    signalReferenceBackboneSlotsSource: backboneSlots,
+    signalReferenceDetailSlotsSource: detailSlots,
+    dominantFrequency,
+    dominantAmplitude,
+    analysisEngine: "modal-excitation",
+    pitchSource: "resonator-bank",
+    spectralCandidates: [],
+    sourceMode,
+    structuralMetrics,
+  };
+}
+
+function composeManualStructuralFrame({ preparedInputs, structuralState }) {
+  const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
+  const analysisResult = buildCurrentAudioFeatureAnalysisResult({
+    preparedInputs,
+    fastSignalState,
+    structuralState,
+    materializeStructuralProjection: true,
+  });
+  return composeAudioFeatureFrame({
+    preparedInputs,
+    analysisResult,
+  });
+}
+
 function buildModalExcitationAnalysisFrame({
   featureState,
   fftMagnitudes,
@@ -3468,6 +3509,173 @@ describe("live input noise gate", () => {
     expect(frame.debug.modalPersistence).toBeLessThan(0.03);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0.03);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0);
+  });
+
+  it("exposes observer-authorized visibility for coherent high-Q tails below broad modal energy", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 0.44,
+        fftMagnitudes: makeFft([
+          [196, 0.008],
+          [282, 0.006],
+        ]),
+        timeData: makeMixedTimeData({
+          partials: [
+            [196, 0.006],
+            [282, 0.004],
+          ],
+          amplitudeScale: 0.0011,
+        }),
+        rms: 0.0016,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 17000,
+    });
+    const frame = composeManualStructuralFrame({
+      preparedInputs,
+      structuralState: makeManualStructuralState({
+        detailSlots: makeModeSlots([
+          [2, 1, 3, 0.0032],
+          [3, 2, 5, 0.0026],
+          [5, 3, 8, 0.002],
+          [7, 4, 11, 0.0016],
+        ]),
+        dominantAmplitude: 0.08,
+        structuralMetrics: {
+          distributedExcitation: 0.03,
+          observedModalModeCount: 4,
+          highQDetailModeCount: 4,
+          highQDetailEnergy: 0.012,
+          highQRingSupport: 0.22,
+          highQObservedCoherence: 0.78,
+          highQObservedSnr: 0.64,
+          modalPersistence: 0.018,
+          modalDriveEnergy: 0.004,
+          modeCoherence: 0.58,
+          detailSignalAuthoritative: true,
+          detailSignalAuthoritativeReason: "high-q",
+          detailSignalAuthoritativeHighQ: true,
+        },
+      }),
+    });
+
+    expect(frame.fieldState).toBe("active");
+    expect(frame.modalVisibilityEnergy).toBeLessThan(0.18);
+    expect(frame.modalObserverVisibilityEnergy).toBeGreaterThan(0.08);
+    expect(frame.debug.modalObserverVisibilityEnergy).toBe(
+      frame.modalObserverVisibilityEnergy,
+    );
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0);
+  });
+
+  it("raises only existing observed slots enough to preserve cached topology", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 0.5,
+        fftMagnitudes: makeFft([
+          [196, 0.007],
+          [282, 0.005],
+        ]),
+        timeData: makeMixedTimeData({
+          partials: [
+            [196, 0.005],
+            [282, 0.003],
+          ],
+          amplitudeScale: 0.001,
+        }),
+        rms: 0.0015,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 17100,
+    });
+    const frame = composeManualStructuralFrame({
+      preparedInputs,
+      structuralState: makeManualStructuralState({
+        backboneSlots: makeModeSlots([[2, 2, 3, 0.001]]),
+        detailSlots: makeModeSlots([
+          [2, 1, 3, 0.001],
+          [3, 2, 5, 0.0008],
+          [5, 3, 8, 0.0006],
+        ]),
+        dominantAmplitude: 0.06,
+        structuralMetrics: {
+          observedModalModeCount: 4,
+          lowQBackboneModeCount: 1,
+          lowQBackboneEnergy: 0.04,
+          lowQObservedCoherence: 0.6,
+          highQDetailModeCount: 3,
+          highQDetailEnergy: 0.01,
+          highQRingSupport: 0.24,
+          highQObservedCoherence: 0.82,
+          highQObservedSnr: 0.7,
+          modalPersistence: 0.02,
+          modalDriveEnergy: 0.004,
+          modeCoherence: 0.64,
+        },
+      }),
+    });
+
+    expect(findModeAmplitude(frame.detailSlots, [2, 1, 3])).toBeGreaterThan(
+      0.001,
+    );
+    expect(findModeAmplitude(frame.detailSlots, [3, 2, 5])).toBeGreaterThan(
+      0.0008,
+    );
+    expect(findModeAmplitude(frame.detailSlots, [4, 4, 4])).toBe(0);
+    expect(frame.debug.modalObserverTopologyFloor).toBeGreaterThan(0);
+    expect(frame.debug.highQObserverVisibilityEnergy).toBeGreaterThan(0);
+  });
+
+  it("does not authorize observer visibility or create slots from stale silence", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "live",
+        avgAmplitude: 0,
+        fftMagnitudes: new Float32Array(BIN_COUNT),
+        timeData: new Float32Array(FFT_SIZE),
+        rms: 0,
+      }),
+      featureState,
+      radius: 3,
+      status: makeResolvedLineFeedLiveStatus(),
+      frameTimeMs: 18000,
+      liveInputAnalysisSettings: { acousticIntent: "ambient" },
+    });
+    preparedInputs.liveInputHardSilenceActive = true;
+    const emptySlots = new Float32Array(AUDIO_SLOT_CAPACITY * 4);
+    const frame = composeManualStructuralFrame({
+      preparedInputs,
+      structuralState: makeManualStructuralState({
+        backboneSlots: emptySlots,
+        detailSlots: emptySlots,
+        dominantAmplitude: 0,
+        sourceMode: "live",
+        structuralMetrics: {
+          observedModalModeCount: 4,
+          highQDetailModeCount: 4,
+          highQDetailEnergy: 0.04,
+          highQRingSupport: 0.4,
+          highQObservedCoherence: 0.8,
+          modalPersistence: 0.2,
+          modalDriveEnergy: 0.08,
+          modeCoherence: 0.8,
+        },
+      }),
+    });
+
+    expect(frame.modalObserverVisibilityEnergy).toBe(0);
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBe(0);
+    expect(sumSlotAmplitudes(frame.detailSlots)).toBe(0);
+    expect(frame.debug.modalObserverTopologyFloor).toBe(0);
   });
 
   it("keeps subdued system-routed harmonic resonance from going empty", () => {

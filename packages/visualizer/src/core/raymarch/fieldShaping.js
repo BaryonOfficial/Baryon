@@ -87,6 +87,9 @@ export const RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT = 0.22;
 export const RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT = 0.11;
 export const RETAINED_HIGH_Q_RIDGE_SUPPORT_WEIGHT = 0.72;
 export const RETAINED_HIGH_Q_RIDGE_STRUCTURE_FLOOR = 0.34;
+export const OBSERVER_RIDGE_DENSITY_FLOOR = 0.12;
+export const OBSERVER_RIDGE_DENSITY_LIFT = 0.085;
+export const OBSERVER_RIDGE_CONTOUR_ACCENT = 0.035;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -144,11 +147,13 @@ export function deriveExcitationVisibility({
   excitationGate = 0,
   modeCoherence = 0,
   modalVisibilityEnergy = 0,
+  modalObserverVisibilityEnergy = 0,
   modalVisibilityRetainedHighQEnergy = 0,
   sourceAuthority = 1,
 }) {
   const modalAuthorityEnergy = Math.max(
     modalVisibilityEnergy,
+    modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy *
       EXCITATION_VISIBILITY_RETAINED_HIGH_Q_WEIGHT,
   );
@@ -430,6 +435,7 @@ export function deriveModalCrowdingDensity({
 export function deriveVisibleDensity({
   density,
   modalVisibilityEnergy = 0,
+  modalObserverVisibilityEnergy = 0,
   modalVisibilityRetainedHighQEnergy = 0,
   modalStructureAnchor = 0,
   ridgeAnchor = 0,
@@ -447,6 +453,10 @@ export function deriveVisibleDensity({
     clamp01(modalVisibilityRetainedHighQEnergy) *
     retainedHighQStructureAnchor *
     retainedHighQSpatialAnchor;
+  const observerRidgeAnchor =
+    clamp01(modalObserverVisibilityEnergy) *
+    clamp01(modalStructureAnchor) *
+    retainedHighQSpatialAnchor;
   const physicalVisibilityGate = smoothstep(
     LOW_DENSITY_FADE_START,
     LOW_DENSITY_FADE_END,
@@ -458,10 +468,12 @@ export function deriveVisibleDensity({
     MODAL_VISIBILITY_DENSITY_LIFT;
   const retainedHighQRidgeLift =
     retainedHighQRidgeAnchor * RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT;
+  const observerRidgeLift =
+    observerRidgeAnchor * OBSERVER_RIDGE_DENSITY_LIFT;
   const visibilityGate = smoothstep(
     LOW_DENSITY_FADE_START,
     LOW_DENSITY_FADE_END,
-    density + modalLift + retainedHighQRidgeLift,
+    density + modalLift + observerRidgeLift + retainedHighQRidgeLift,
   );
   const modalVisibleDensity =
     clamp01(modalVisibilityEnergy) *
@@ -471,14 +483,24 @@ export function deriveVisibleDensity({
     RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
     retainedHighQRidgeAnchor * RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
   );
+  const observerRidgeVisibleDensity = Math.min(
+    OBSERVER_RIDGE_DENSITY_FLOOR,
+    observerRidgeAnchor * OBSERVER_RIDGE_DENSITY_FLOOR,
+  );
   const retainedHighQContourAccent =
     retainedHighQRidgeAnchor * RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT;
+  const observerContourAccent =
+    observerRidgeAnchor * OBSERVER_RIDGE_CONTOUR_ACCENT;
 
   return {
     physicalVisibilityGate,
     physicalVisibleDensity: density * physicalVisibilityGate,
     modalLift,
     modalVisibleDensity,
+    observerRidgeAnchor,
+    observerRidgeLift,
+    observerRidgeVisibleDensity,
+    observerContourAccent,
     retainedHighQRidgeAnchor,
     retainedHighQStructureAnchor,
     retainedHighQRidgeLift,
@@ -488,6 +510,7 @@ export function deriveVisibleDensity({
     visibleDensity: Math.max(
       density * visibilityGate,
       modalVisibleDensity,
+      observerRidgeVisibleDensity,
       retainedHighQRidgeVisibleDensity,
     ),
   };
@@ -495,11 +518,13 @@ export function deriveVisibleDensity({
 
 export function deriveRetainedHighQVisibilityDiagnostics({
   modalVisibilityEnergy = 0,
+  modalObserverVisibilityEnergy = 0,
   modalVisibilityRetainedHighQEnergy = 0,
 } = {}) {
   const densityVisibility = deriveVisibleDensity({
     density: 0,
     modalVisibilityEnergy,
+    modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
     modalStructureAnchor: 1,
     ridgeAnchor: 1,
@@ -513,6 +538,13 @@ export function deriveRetainedHighQVisibilityDiagnostics({
       densityVisibility.retainedHighQRidgeVisibleDensity,
     retainedHighQContourAccentMax: densityVisibility.retainedHighQContourAccent,
     retainedHighQPhysicalVisibleDensityMax:
+      densityVisibility.physicalVisibleDensity,
+    observerRidgeAnchorMax: densityVisibility.observerRidgeAnchor,
+    observerRidgeLiftMax: densityVisibility.observerRidgeLift,
+    observerRidgeVisibleDensityMax:
+      densityVisibility.observerRidgeVisibleDensity,
+    observerContourAccentMax: densityVisibility.observerContourAccent,
+    observerPhysicalVisibleDensityMax:
       densityVisibility.physicalVisibleDensity,
     retainedHighQRidgeToRetainedEnergyRatio:
       retainedHighQEnergy > 1e-6

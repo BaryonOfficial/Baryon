@@ -200,6 +200,27 @@ describe("field shaping", () => {
     expect(weakNoisy).toBe(0);
   });
 
+  it("lets observer-authorized topology carry source authority without global brightness", () => {
+    const steadyObserved = deriveExcitationVisibility({
+      excitationGate: 0,
+      modeCoherence: 0.58,
+      modalVisibilityEnergy: 0.01,
+      modalObserverVisibilityEnergy: 0.22,
+      sourceAuthority: 0.005,
+    });
+    const staleObserved = deriveExcitationVisibility({
+      excitationGate: 0,
+      modeCoherence: 0.58,
+      modalVisibilityEnergy: 0,
+      modalObserverVisibilityEnergy: 0,
+      sourceAuthority: 0.005,
+    });
+
+    expect(steadyObserved).toBeGreaterThan(0.1);
+    expect(steadyObserved).toBeLessThanOrEqual(EXCITATION_VISIBILITY_MAX_FLOOR);
+    expect(staleObserved).toBe(0);
+  });
+
   it("keeps modal cavity visibility from modal energy", () => {
     const bowlLike = deriveExcitationVisibility({
       excitationGate: 0.04,
@@ -220,6 +241,31 @@ describe("field shaping", () => {
     expect(bowlLike).toBeGreaterThan(0.36);
     expect(bowlLike).toBeGreaterThan(noModalEnergy);
     expect(noisyWeak).toBeCloseTo(0.04);
+  });
+
+  it("lifts observer-authorized ridge density only where modal anchors exist", () => {
+    const anchored = deriveVisibleDensity({
+      density: 0,
+      modalVisibilityEnergy: 0,
+      modalObserverVisibilityEnergy: 0.24,
+      modalStructureAnchor: 0.72,
+      ridgeAnchor: 0.8,
+      ridgeSupportAnchor: 0.7,
+    });
+    const noAnchor = deriveVisibleDensity({
+      density: 0,
+      modalVisibilityEnergy: 0,
+      modalObserverVisibilityEnergy: 0.24,
+      modalStructureAnchor: 0,
+      ridgeAnchor: 0,
+      ridgeSupportAnchor: 0,
+    });
+
+    expect(anchored.observerRidgeVisibleDensity).toBeGreaterThan(0);
+    expect(anchored.visibleDensity).toBe(anchored.observerRidgeVisibleDensity);
+    expect(anchored.physicalVisibleDensity).toBe(0);
+    expect(noAnchor.observerRidgeVisibleDensity).toBe(0);
+    expect(noAnchor.visibleDensity).toBe(0);
   });
 
   it("derives excitation visibility without hint inputs", () => {

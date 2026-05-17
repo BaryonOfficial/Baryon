@@ -102,6 +102,24 @@ const MODAL_VISIBILITY_HIGH_Q_OBSERVER_SUPPORT_START = 0.02;
 const MODAL_VISIBILITY_HIGH_Q_OBSERVER_SUPPORT_END = 0.18;
 const MODAL_VISIBILITY_HIGH_Q_OBSERVER_MIN_SUPPORT_WEIGHT = 0.42;
 const MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX = 0.28;
+const MODAL_OBSERVER_HIGH_Q_ENERGY_START = 0.0015;
+const MODAL_OBSERVER_HIGH_Q_ENERGY_END = 0.018;
+const MODAL_OBSERVER_HIGH_Q_SUPPORT_START = 0.015;
+const MODAL_OBSERVER_HIGH_Q_SUPPORT_END = 0.22;
+const MODAL_OBSERVER_HIGH_Q_MAX = 0.46;
+const MODAL_OBSERVER_LOW_Q_ENERGY_START = 0.01;
+const MODAL_OBSERVER_LOW_Q_ENERGY_END = 0.12;
+const MODAL_OBSERVER_LOW_Q_MAX = 0.22;
+const MODAL_OBSERVER_DETAIL_SLOT_FLOOR_TOTAL_MAX = 0.018;
+const MODAL_OBSERVER_BACKBONE_SLOT_FLOOR_TOTAL_MAX = 0.012;
+const EMPTY_MODAL_OBSERVER_VISIBILITY = Object.freeze({
+  modalObserverVisibilityEnergy: 0,
+  highQObserverVisibilityEnergy: 0,
+  lowQObserverVisibilityEnergy: 0,
+  modalObserverTopologyFloor: 0,
+  detailSlotFloorTotal: 0,
+  backboneSlotFloorTotal: 0,
+});
 const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze({
   ambient: Object.freeze({
     absoluteAvgAmplitude: Math.max(2.2, LIVE_INPUT_SILENCE_AVG_AMPLITUDE * 0.3),
@@ -876,6 +894,8 @@ function buildDebugSummary({
   const modalVisibilityDriveEnergy = clamp01(
     structuralMetrics?.modalDriveEnergy ?? 0,
   );
+  const modalObserverVisibilityEnergy =
+    modalVisibilitySummary.modalObserverVisibilityEnergy ?? 0;
 
   return {
     audioInputMode: inputMode,
@@ -932,6 +952,13 @@ function buildDebugSummary({
       modalVisibilitySummary.distributedModalVisibility,
     modalVisibilityDominantEnergy:
       modalVisibilitySummary.dominantModalVisibility,
+    modalObserverVisibilityEnergy,
+    modalObserverTopologyFloor:
+      modalVisibilitySummary.modalObserverTopologyFloor,
+    highQObserverVisibilityEnergy:
+      modalVisibilitySummary.highQObserverVisibilityEnergy,
+    lowQObserverVisibilityEnergy:
+      modalVisibilitySummary.lowQObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy:
       modalVisibilitySummary.retainedHighQModalVisibility,
     modalVisibilityActiveModeCount: modeSlotCount,
@@ -1953,6 +1980,103 @@ function summarizeActiveSlotAmplitudes(modeSlots, capacity) {
   };
 }
 
+function deriveModalObserverVisibilityComponents({
+  structuralMetrics = null,
+  hardSilent = false,
+} = {}) {
+  if (hardSilent || !structuralMetrics) {
+    return EMPTY_MODAL_OBSERVER_VISIBILITY;
+  }
+
+  const modeCoherence = clamp01(structuralMetrics.modeCoherence ?? 0);
+  const modalPersistence = clamp01(structuralMetrics.modalPersistence ?? 0);
+  const highQDetailModeCount = structuralMetrics.highQDetailModeCount ?? 0;
+  const highQDetailEnergy = clamp01(structuralMetrics.highQDetailEnergy ?? 0);
+  const highQRingSupport = clamp01(structuralMetrics.highQRingSupport ?? 0);
+  const highQObservedCoherence = clamp01(
+    structuralMetrics.highQObservedCoherence ?? modeCoherence,
+  );
+  const highQObservedSnr = clamp01(structuralMetrics.highQObservedSnr ?? 0);
+  const highQSignalSupport = Math.max(
+    highQRingSupport,
+    highQObservedSnr * 0.18,
+    highQObservedCoherence * 0.08,
+  );
+  const highQEnergyGate = smoothstep(
+    MODAL_OBSERVER_HIGH_Q_ENERGY_START,
+    MODAL_OBSERVER_HIGH_Q_ENERGY_END,
+    highQDetailEnergy,
+  );
+  const highQSupportGate = smoothstep(
+    MODAL_OBSERVER_HIGH_Q_SUPPORT_START,
+    MODAL_OBSERVER_HIGH_Q_SUPPORT_END,
+    highQSignalSupport,
+  );
+  const highQCountGate = smoothstep(1, 4, highQDetailModeCount);
+  const highQQuality = Math.max(
+    highQObservedCoherence,
+    modeCoherence * 0.75,
+    modalPersistence * 0.45,
+  );
+  const highQObserverVisibilityEnergy = clamp01(
+    highQEnergyGate *
+      highQSupportGate *
+      highQCountGate *
+      highQQuality *
+      MODAL_OBSERVER_HIGH_Q_MAX,
+  );
+
+  const lowQBackboneModeCount = structuralMetrics.lowQBackboneModeCount ?? 0;
+  const lowQBackboneEnergy = clamp01(structuralMetrics.lowQBackboneEnergy ?? 0);
+  const lowQObservedCoherence = clamp01(
+    structuralMetrics.lowQObservedCoherence ?? modeCoherence,
+  );
+  const lowQObservedSnr = clamp01(structuralMetrics.lowQObservedSnr ?? 0);
+  const lowQSignalSupport = Math.max(0.35, lowQObservedSnr);
+  const lowQEnergyGate = smoothstep(
+    MODAL_OBSERVER_LOW_Q_ENERGY_START,
+    MODAL_OBSERVER_LOW_Q_ENERGY_END,
+    lowQBackboneEnergy,
+  );
+  const lowQCountGate = smoothstep(0, 3, lowQBackboneModeCount);
+  const lowQQuality = Math.max(
+    lowQObservedCoherence,
+    modeCoherence * 0.65,
+    modalPersistence * 0.35,
+  );
+  const lowQObserverVisibilityEnergy = clamp01(
+    lowQEnergyGate *
+      lowQCountGate *
+      lowQSignalSupport *
+      lowQQuality *
+      MODAL_OBSERVER_LOW_Q_MAX,
+  );
+
+  const detailSlotFloorTotal = Math.min(
+    MODAL_OBSERVER_DETAIL_SLOT_FLOOR_TOTAL_MAX,
+    highQObserverVisibilityEnergy * 0.055,
+  );
+  const backboneSlotFloorTotal = Math.min(
+    MODAL_OBSERVER_BACKBONE_SLOT_FLOOR_TOTAL_MAX,
+    lowQObserverVisibilityEnergy * 0.045,
+  );
+  const modalObserverTopologyFloor = Math.max(
+    detailSlotFloorTotal,
+    backboneSlotFloorTotal,
+  );
+
+  return {
+    modalObserverVisibilityEnergy: clamp01(
+      Math.max(highQObserverVisibilityEnergy, lowQObserverVisibilityEnergy),
+    ),
+    highQObserverVisibilityEnergy,
+    lowQObserverVisibilityEnergy,
+    modalObserverTopologyFloor,
+    detailSlotFloorTotal,
+    backboneSlotFloorTotal,
+  };
+}
+
 function deriveModalVisibilityComponents({
   modeSlots,
   modeCapacity,
@@ -1967,6 +2091,10 @@ function deriveModalVisibilityComponents({
     distributedModalVisibility: 0,
     dominantModalVisibility: 0,
     modalVisibilityEnergy: 0,
+    modalObserverVisibilityEnergy: 0,
+    highQObserverVisibilityEnergy: 0,
+    lowQObserverVisibilityEnergy: 0,
+    modalObserverTopologyFloor: 0,
     retainedHighQModalVisibility: 0,
   };
 
@@ -1980,6 +2108,10 @@ function deriveModalVisibilityComponents({
     return emptySummary;
   }
 
+  const observerVisibility = deriveModalObserverVisibilityComponents({
+    structuralMetrics,
+    hardSilent,
+  });
   const slotEnergy = slotSummary.averageSlotEnergy;
   const modalDriveEnergy = clamp01(structuralMetrics?.modalDriveEnergy ?? 0);
   const modalPersistence = clamp01(structuralMetrics?.modalPersistence ?? 0);
@@ -2013,6 +2145,7 @@ function deriveModalVisibilityComponents({
       distributedModalVisibility: 0,
       dominantModalVisibility: 0,
       modalVisibilityEnergy: 0,
+      ...observerVisibility,
       retainedHighQModalVisibility: 0,
     };
   }
@@ -2076,7 +2209,12 @@ function deriveModalVisibilityComponents({
     retainedHighQObserverSupport *
     retainedHighQObserverQuality;
   const retainedHighQModalVisibility = clamp01(
-    retainedHighQObserverAuthority * MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX,
+    Math.max(
+      retainedHighQObserverAuthority * MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX,
+      observerVisibility.highQObserverVisibilityEnergy *
+        MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX *
+        0.68,
+    ),
   );
   const distributedEnergyAnchor = smoothstep(
     0.015,
@@ -2120,6 +2258,13 @@ function deriveModalVisibilityComponents({
         highQVisibilityGate * MODAL_VISIBILITY_HIGH_Q_MAX,
       ),
     ),
+    modalObserverVisibilityEnergy:
+      observerVisibility.modalObserverVisibilityEnergy,
+    highQObserverVisibilityEnergy:
+      observerVisibility.highQObserverVisibilityEnergy,
+    lowQObserverVisibilityEnergy:
+      observerVisibility.lowQObserverVisibilityEnergy,
+    modalObserverTopologyFloor: observerVisibility.modalObserverTopologyFloor,
     retainedHighQModalVisibility,
   };
 }
@@ -2244,6 +2389,8 @@ function deriveCompositeSignals({
     hardSilent: liveInputHardSilenceActive,
   });
   const modalVisibilityEnergy = modalVisibilityComponents.modalVisibilityEnergy;
+  const modalObserverVisibilityEnergy =
+    modalVisibilityComponents.modalObserverVisibilityEnergy ?? 0;
   const modalVisibilityRetainedHighQEnergy =
     modalVisibilityComponents.retainedHighQModalVisibility ?? 0;
 
@@ -2257,6 +2404,7 @@ function deriveCompositeSignals({
       pulseSignal: clamp01(pulseSignal * LIVE_INPUT_PULSE_RESPONSE_SCALE),
       modeCoherence,
       modalVisibilityEnergy,
+      modalObserverVisibilityEnergy,
       modalVisibilityRetainedHighQEnergy,
       changeBreakdown,
     };
@@ -2269,6 +2417,7 @@ function deriveCompositeSignals({
     pulseSignal,
     modeCoherence,
     modalVisibilityEnergy,
+    modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
     changeBreakdown,
   };
@@ -3363,6 +3512,33 @@ function resolveStructuralSignalSources(preparedInputs, structuralState) {
   };
 }
 
+function applyObserverSlotFloor(slots, capacity, floorTotal) {
+  if (!(floorTotal > 0) || !slots?.length) {
+    return 0;
+  }
+
+  const limit = Math.min(capacity, Math.floor(slots.length / 4));
+  let currentTotal = 0;
+  for (let index = 0; index < limit; index += 1) {
+    currentTotal += Math.max(0, slots[index * 4 + 3] ?? 0);
+  }
+
+  if (!(currentTotal > 0) || currentTotal >= floorTotal) {
+    return 0;
+  }
+
+  const scale = floorTotal / currentTotal;
+  for (let index = 0; index < limit; index += 1) {
+    const offset = index * 4 + 3;
+    const amplitude = Math.max(0, slots[offset] ?? 0);
+    if (amplitude > 0) {
+      slots[offset] = Math.min(1, amplitude * scale);
+    }
+  }
+
+  return floorTotal - currentTotal;
+}
+
 function buildStructuralFingerprint({
   preparedInputs,
   structuralState,
@@ -3446,6 +3622,20 @@ function materializeAudioFeatureStructuralSnapshot(
 
   copyFloatArray(backboneSlots, projectionSources.backboneSlotsSource);
   copyFloatArray(detailSlots, projectionSources.detailSlotsSource);
+  const observerVisibility = deriveModalObserverVisibilityComponents({
+    structuralMetrics: structuralState?.structuralMetrics,
+    hardSilent: preparedInputs.liveInputHardSilenceActive,
+  });
+  applyObserverSlotFloor(
+    backboneSlots,
+    Math.min(capacity, BACKBONE_STACK_SLOTS),
+    observerVisibility.backboneSlotFloorTotal,
+  );
+  applyObserverSlotFloor(
+    detailSlots,
+    Math.min(capacity, DETAIL_STACK_SLOTS),
+    observerVisibility.detailSlotFloorTotal,
+  );
   copyFloatArray(
     referenceBackboneSlots,
     projectionSources.referenceBackboneSlotsSource,
@@ -4054,6 +4244,7 @@ export function composeAudioFeatureFrame({
     pulseSignal,
     modeCoherence,
     modalVisibilityEnergy,
+    modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
   } = deriveCompositeSignals({
     inputMode: preparedInputs.analysisInputMode,
@@ -4138,6 +4329,15 @@ export function composeAudioFeatureFrame({
         releaseMs: 160,
       },
     );
+    modalObserverVisibilityEnergy = smoothFeatureSignal(
+      previousFrame.modalObserverVisibilityEnergy ?? 0,
+      modalObserverVisibilityEnergy,
+      deltaMs,
+      {
+        attackMs: 50,
+        releaseMs: 130,
+      },
+    );
     modalVisibilityRetainedHighQEnergy = smoothFeatureSignal(
       previousFrame.modalVisibilityRetainedHighQEnergy ?? 0,
       modalVisibilityRetainedHighQEnergy,
@@ -4152,6 +4352,7 @@ export function composeAudioFeatureFrame({
     structureSignal *= reusedAnalysisSourceAuthorityScale;
     energySignal *= reusedAnalysisSourceAuthorityScale;
     modalVisibilityEnergy *= reusedAnalysisSourceAuthorityScale;
+    modalObserverVisibilityEnergy *= reusedAnalysisSourceAuthorityScale;
     modalVisibilityRetainedHighQEnergy *= reusedAnalysisSourceAuthorityScale;
     modeCoherence *= reusedAnalysisSourceAuthorityScale;
   }
@@ -4298,6 +4499,7 @@ export function composeAudioFeatureFrame({
     structureSignal,
     energySignal,
     modalVisibilityEnergy,
+    modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
     changeSignal,
     changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,

@@ -112,6 +112,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uModeCoherence: { value: 0 },
       uTotalSlotAmplitude: { value: 0 },
       uModalVisibilityEnergy: { value: 0 },
+      uModalObserverVisibilityEnergy: { value: 0 },
       uModalVisibilityRetainedHighQEnergy: { value: 0 },
     },
     visualRoot: {
@@ -1364,6 +1365,62 @@ describe("tickRaymarchRuntime", () => {
       6,
     );
     expect(retainedRuntime.bloomResponseSignal).toBeCloseTo(
+      baselineRuntime.bloomResponseSignal,
+      6,
+    );
+  });
+
+  it("passes observer ridge visibility to the shader without inflating bloom response", () => {
+    const baselineRuntime = createRuntimeState();
+    const observedRuntime = createRuntimeState();
+    const baseFrame = {
+      fieldState: "active",
+      averageAmplitude: 0.8,
+      backboneSlots: new Float32Array([3, 4, 6, 0.018]),
+      detailSlots: new Float32Array([4, 5, 5, 0.012]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.02, 0.018, 0.014, 0.01]),
+      transientEnergy: 0,
+      spectralCentroid: 0.18,
+      spectralFlux: 0.01,
+      structureSignal: 0.018,
+      energySignal: 0.01,
+      changeSignal: 0,
+      pulseSignal: 0,
+      modeCoherence: 0.62,
+      modalVisibilityEnergy: 0.02,
+      rhythmicDensity: 0,
+      debug: {},
+    };
+
+    tickRaymarchRuntime(baselineRuntime, baseFrame, 2, 1 / 60);
+    tickRaymarchRuntime(
+      observedRuntime,
+      {
+        ...baseFrame,
+        modalObserverVisibilityEnergy: 0.24,
+      },
+      2,
+      1 / 60,
+    );
+
+    expect(
+      observedRuntime.uniforms.uModalObserverVisibilityEnergy.value,
+    ).toBeCloseTo(0.24);
+    expect(
+      observedRuntime.debugSnapshot.raymarchDebug
+        .observerRidgeVisibleDensityMax,
+    ).toBeGreaterThan(0);
+    expect(
+      observedRuntime.debugSnapshot.raymarchDebug
+        .observerPhysicalVisibleDensityMax,
+    ).toBe(0);
+    expect(observedRuntime.scaleSignal).toBeCloseTo(
+      baselineRuntime.scaleSignal,
+      6,
+    );
+    expect(observedRuntime.bloomResponseSignal).toBeCloseTo(
       baselineRuntime.bloomResponseSignal,
       6,
     );
