@@ -903,6 +903,41 @@ describe("field shaping", () => {
     expect(noStructure.retainedHighQRidgeVisibleDensity).toBe(0);
   });
 
+  it("keeps retained high-Q ridges readable when the contour-ridge intersection thins out", () => {
+    const baseline = deriveVisibleDensity({
+      density: 0.003,
+      modalVisibilityEnergy: 0.18,
+      modalVisibilityRetainedHighQEnergy: 0.2,
+      modalStructureAnchor: 0.82,
+      ridgeAnchor: 0.025,
+    });
+    const supported = deriveVisibleDensity({
+      density: 0.003,
+      modalVisibilityEnergy: 0.18,
+      modalVisibilityRetainedHighQEnergy: 0.2,
+      modalStructureAnchor: 0.82,
+      ridgeAnchor: 0.025,
+      ridgeSupportAnchor: 0.58,
+    });
+    const noSupport = deriveVisibleDensity({
+      density: 0.003,
+      modalVisibilityEnergy: 0.18,
+      modalVisibilityRetainedHighQEnergy: 0.2,
+      modalStructureAnchor: 0.82,
+      ridgeAnchor: 0,
+      ridgeSupportAnchor: 0,
+    });
+
+    expect(supported.physicalVisibleDensity).toBe(
+      baseline.physicalVisibleDensity,
+    );
+    expect(supported.retainedHighQRidgeAnchor).toBeGreaterThan(
+      baseline.retainedHighQRidgeAnchor * 8,
+    );
+    expect(supported.retainedHighQRidgeVisibleDensity).toBeGreaterThan(0.015);
+    expect(noSupport.retainedHighQRidgeVisibleDensity).toBe(0);
+  });
+
   it("pushes hot-core highlights from beam energy instead of body fog", () => {
     const subtleCore = deriveHotCoreMix({
       beamMask: 0.38,

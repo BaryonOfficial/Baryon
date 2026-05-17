@@ -94,6 +94,7 @@ import {
   RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT,
   RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
   RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT,
+  RETAINED_HIGH_Q_RIDGE_SUPPORT_WEIGHT,
   RIM_BLOOM_BIAS_BASE,
   RIM_BLOOM_BIAS_GAIN,
   RIM_COMPRESSION_BOUNDARY_GAIN,
@@ -945,6 +946,7 @@ function createScatteringNode({
         modalStructureAnchor,
         uModalVisibilityRetainedHighQEnergy,
         contourShape.mul(ridgeConcentration),
+        max(contourShape, ridgeConcentration),
       );
       const { visibleDensity, physicalVisibleDensity } = densityVisibility;
       const retainedHighQContourAccent =
@@ -1235,11 +1237,16 @@ function deriveVisibleDensityNode(
   modalStructureAnchor,
   modalVisibilityRetainedHighQEnergy = float(0.0),
   ridgeAnchor = float(0.0),
+  ridgeSupportAnchor = float(0.0),
 ) {
+  const retainedHighQSpatialAnchor = max(
+    ridgeAnchor,
+    ridgeSupportAnchor.mul(float(RETAINED_HIGH_Q_RIDGE_SUPPORT_WEIGHT)),
+  );
   const retainedHighQRidgeAnchor = clamp(
     modalVisibilityRetainedHighQEnergy
       .mul(modalStructureAnchor)
-      .mul(ridgeAnchor),
+      .mul(retainedHighQSpatialAnchor),
     float(0.0),
     float(1.0),
   );
