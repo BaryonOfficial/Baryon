@@ -42,6 +42,7 @@ export {
   normalizeRaymarchFieldCacheOverride,
   resolveRaymarchFieldCacheOverride,
 } from "./visualization/fieldEvaluation.js";
+export { deriveRetainedHighQVisibilityDiagnostics } from "./core/raymarch/fieldShaping.js";
 export { createVisualizationRuntime } from "./visualization/runtimeFactory.js";
 
 // Three

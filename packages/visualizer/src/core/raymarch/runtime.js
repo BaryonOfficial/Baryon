@@ -22,6 +22,7 @@ import {
 } from "./fieldCache.js";
 import {
   DETAIL_LAYER_WEIGHT,
+  deriveRetainedHighQVisibilityDiagnostics,
   deriveVisibleDensity,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
@@ -301,6 +302,11 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     modalStructureAnchor: 1,
     ridgeAnchor: 1,
   });
+  const retainedHighQVisibilityDebug =
+    deriveRetainedHighQVisibilityDiagnostics({
+      modalVisibilityEnergy,
+      modalVisibilityRetainedHighQEnergy,
+    });
   const avgDensity = Math.min(
     1,
     avgAmplitude * densityGain * absorption * (0.75 + transientEnergy * 0.2),
@@ -435,6 +441,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     modalVisibilityDensityLiftMax: modalVisibilityDensityDebug.modalLift,
     modalVisibilityVisibleDensityMax:
       modalVisibilityDensityDebug.modalVisibleDensity,
+    ...retainedHighQVisibilityDebug,
     modeCoherence: featureFrame?.modeCoherence ?? 0,
     trebleTonalEnergy: featureFrame?.trebleTonalEnergy ?? 0,
     trebleBroadbandEnergy: featureFrame?.trebleBroadbandEnergy ?? 0,

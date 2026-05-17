@@ -1347,6 +1347,18 @@ describe("tickRaymarchRuntime", () => {
     expect(
       retainedRuntime.uniforms.uModalVisibilityRetainedHighQEnergy.value,
     ).toBeCloseTo(0.19);
+    expect(
+      retainedRuntime.debugSnapshot.raymarchDebug
+        .retainedHighQRidgeVisibleDensityMax,
+    ).toBeGreaterThan(0);
+    expect(
+      retainedRuntime.debugSnapshot.raymarchDebug
+        .retainedHighQRidgeToRetainedEnergyRatio,
+    ).toBeGreaterThan(0.1);
+    expect(
+      retainedRuntime.debugSnapshot.raymarchDebug
+        .retainedHighQPhysicalVisibleDensityMax,
+    ).toBe(0);
     expect(retainedRuntime.scaleSignal).toBeCloseTo(
       baselineRuntime.scaleSignal,
       6,

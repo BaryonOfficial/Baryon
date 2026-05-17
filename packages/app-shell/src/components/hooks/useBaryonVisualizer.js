@@ -28,6 +28,7 @@ import {
   recordRuntimePerfSample,
   shouldRenderExternalFrame,
   shouldPreservePausedFrameOnControlsChange,
+  updateRetainedHighQRenderVisibilityDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
 import { createCaptureOutputSession } from "@baryon/visualizer/render/outputPipeline";
@@ -740,6 +741,11 @@ export function useBaryonVisualizer({
       time,
       deltaTime,
     });
+    updateRetainedHighQRenderVisibilityDiagnostics(
+      runtimeDiagnostics,
+      runtimeState?.debugSnapshot,
+      effectiveFrame,
+    );
     recordMeasuredRuntimePerf(
       runtimeDiagnostics,
       "runtimeTickMs",

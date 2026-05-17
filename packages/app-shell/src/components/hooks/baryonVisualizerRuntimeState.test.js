@@ -3,6 +3,7 @@ import {
   createRuntimeDiagnostics,
   maybePublishRuntimePerfSnapshot,
   shouldRenderExternalFrame,
+  updateRetainedHighQRenderVisibilityDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
 
 test("renders duplicate external frames only when controls changed", () => {
@@ -91,4 +92,49 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
   } finally {
     globalThis.window = previousWindow;
   }
+});
+
+test("publishes retained high-Q raymarch visibility diagnostics in render perf snapshots", () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = {};
+
+  try {
+    const runtimeDiagnostics = createRuntimeDiagnostics();
+    updateRetainedHighQRenderVisibilityDiagnostics(runtimeDiagnostics, {
+      raymarchDebug: {
+        retainedHighQRidgeVisibleDensityMax: 0.046,
+        retainedHighQRidgeToRetainedEnergyRatio: 0.24,
+        retainedHighQPhysicalVisibleDensityMax: 0,
+      },
+    });
+
+    const snapshot = maybePublishRuntimePerfSnapshot(runtimeDiagnostics, {
+      force: true,
+    });
+
+    expect(snapshot.render.retainedHighQRidgeVisibleDensityMax).toBe(0.046);
+    expect(snapshot.render.retainedHighQRidgeToRetainedEnergyRatio).toBe(0.24);
+    expect(snapshot.render.retainedHighQPhysicalVisibleDensityMax).toBe(0);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("derives retained high-Q render visibility diagnostics when raymarch audit is disabled", () => {
+  const runtimeDiagnostics = createRuntimeDiagnostics();
+
+  updateRetainedHighQRenderVisibilityDiagnostics(runtimeDiagnostics, null, {
+    modalVisibilityEnergy: 0.32,
+    modalVisibilityRetainedHighQEnergy: 0.19,
+  });
+
+  expect(
+    runtimeDiagnostics.render.retainedHighQRidgeVisibleDensityMax,
+  ).toBeGreaterThan(0);
+  expect(
+    runtimeDiagnostics.render.retainedHighQRidgeToRetainedEnergyRatio,
+  ).toBeGreaterThan(0.1);
+  expect(runtimeDiagnostics.render.retainedHighQPhysicalVisibleDensityMax).toBe(
+    0,
+  );
 });

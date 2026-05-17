@@ -480,6 +480,35 @@ export function deriveVisibleDensity({
   };
 }
 
+export function deriveRetainedHighQVisibilityDiagnostics({
+  modalVisibilityEnergy = 0,
+  modalVisibilityRetainedHighQEnergy = 0,
+} = {}) {
+  const densityVisibility = deriveVisibleDensity({
+    density: 0,
+    modalVisibilityEnergy,
+    modalVisibilityRetainedHighQEnergy,
+    modalStructureAnchor: 1,
+    ridgeAnchor: 1,
+  });
+  const retainedHighQEnergy = clamp01(modalVisibilityRetainedHighQEnergy);
+
+  return {
+    retainedHighQRidgeAnchorMax: densityVisibility.retainedHighQRidgeAnchor,
+    retainedHighQRidgeLiftMax: densityVisibility.retainedHighQRidgeLift,
+    retainedHighQRidgeVisibleDensityMax:
+      densityVisibility.retainedHighQRidgeVisibleDensity,
+    retainedHighQContourAccentMax: densityVisibility.retainedHighQContourAccent,
+    retainedHighQPhysicalVisibleDensityMax:
+      densityVisibility.physicalVisibleDensity,
+    retainedHighQRidgeToRetainedEnergyRatio:
+      retainedHighQEnergy > 1e-6
+        ? densityVisibility.retainedHighQRidgeVisibleDensity /
+          retainedHighQEnergy
+        : 0,
+  };
+}
+
 export function deriveHolographicFresnel({
   normalViewDot,
   holographicIntensity,
