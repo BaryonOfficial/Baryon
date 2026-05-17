@@ -94,6 +94,7 @@ import {
   RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT,
   RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
   RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT,
+  RETAINED_HIGH_Q_RIDGE_STRUCTURE_FLOOR,
   RETAINED_HIGH_Q_RIDGE_SUPPORT_WEIGHT,
   RIM_BLOOM_BIAS_BASE,
   RIM_BLOOM_BIAS_GAIN,
@@ -1249,9 +1250,15 @@ function deriveVisibleDensityNode(
     ridgeAnchor,
     ridgeSupportAnchor.mul(float(RETAINED_HIGH_Q_RIDGE_SUPPORT_WEIGHT)),
   );
+  const retainedHighQStructureAnchor = max(
+    modalStructureAnchor,
+    retainedHighQSpatialAnchor.mul(
+      float(RETAINED_HIGH_Q_RIDGE_STRUCTURE_FLOOR),
+    ),
+  );
   const retainedHighQRidgeAnchor = clamp(
     modalVisibilityRetainedHighQEnergy
-      .mul(modalStructureAnchor)
+      .mul(retainedHighQStructureAnchor)
       .mul(retainedHighQSpatialAnchor),
     float(0.0),
     float(1.0),
@@ -1303,6 +1310,7 @@ function deriveVisibleDensityNode(
     modalLift,
     modalVisibleDensity,
     retainedHighQRidgeAnchor,
+    retainedHighQStructureAnchor,
     retainedHighQRidgeLift,
     retainedHighQRidgeVisibleDensity,
     retainedHighQContourAccent,

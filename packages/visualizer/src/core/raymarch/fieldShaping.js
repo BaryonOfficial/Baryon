@@ -85,6 +85,7 @@ export const RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR = 0.24;
 export const RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT = 0.18;
 export const RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT = 0.08;
 export const RETAINED_HIGH_Q_RIDGE_SUPPORT_WEIGHT = 0.72;
+export const RETAINED_HIGH_Q_RIDGE_STRUCTURE_FLOOR = 0.34;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -431,9 +432,13 @@ export function deriveVisibleDensity({
     clamp01(ridgeAnchor),
     clamp01(ridgeSupportAnchor) * RETAINED_HIGH_Q_RIDGE_SUPPORT_WEIGHT,
   );
+  const retainedHighQStructureAnchor = Math.max(
+    clamp01(modalStructureAnchor),
+    retainedHighQSpatialAnchor * RETAINED_HIGH_Q_RIDGE_STRUCTURE_FLOOR,
+  );
   const retainedHighQRidgeAnchor =
     clamp01(modalVisibilityRetainedHighQEnergy) *
-    clamp01(modalStructureAnchor) *
+    retainedHighQStructureAnchor *
     retainedHighQSpatialAnchor;
   const physicalVisibilityGate = smoothstep(
     LOW_DENSITY_FADE_START,
@@ -468,6 +473,7 @@ export function deriveVisibleDensity({
     modalLift,
     modalVisibleDensity,
     retainedHighQRidgeAnchor,
+    retainedHighQStructureAnchor,
     retainedHighQRidgeLift,
     retainedHighQRidgeVisibleDensity,
     retainedHighQContourAccent,

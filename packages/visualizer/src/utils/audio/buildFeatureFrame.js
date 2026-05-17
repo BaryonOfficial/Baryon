@@ -96,10 +96,11 @@ const MODAL_VISIBILITY_DISTRIBUTED_REDUCTION = 0.25;
 const MODAL_VISIBILITY_HIGH_Q_ENERGY_START = 0.003;
 const MODAL_VISIBILITY_HIGH_Q_ENERGY_END = 0.009;
 const MODAL_VISIBILITY_HIGH_Q_MAX = 0.5;
-const MODAL_VISIBILITY_HIGH_Q_RETAINED_ENERGY_START = 0.045;
-const MODAL_VISIBILITY_HIGH_Q_RETAINED_ENERGY_END = 0.2;
-const MODAL_VISIBILITY_HIGH_Q_RETAINED_SUPPORT_START = 0.04;
-const MODAL_VISIBILITY_HIGH_Q_RETAINED_SUPPORT_END = 0.18;
+const MODAL_VISIBILITY_HIGH_Q_OBSERVER_ENERGY_START = 0.006;
+const MODAL_VISIBILITY_HIGH_Q_OBSERVER_ENERGY_END = 0.04;
+const MODAL_VISIBILITY_HIGH_Q_OBSERVER_SUPPORT_START = 0.02;
+const MODAL_VISIBILITY_HIGH_Q_OBSERVER_SUPPORT_END = 0.18;
+const MODAL_VISIBILITY_HIGH_Q_OBSERVER_MIN_SUPPORT_WEIGHT = 0.42;
 const MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX = 0.28;
 const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze({
   ambient: Object.freeze({
@@ -1989,6 +1990,9 @@ function deriveModalVisibilityComponents({
   const highQDetailModeCount = structuralMetrics?.highQDetailModeCount ?? 0;
   const highQDetailEnergy = clamp01(structuralMetrics?.highQDetailEnergy ?? 0);
   const highQRingSupport = clamp01(structuralMetrics?.highQRingSupport ?? 0);
+  const highQObservedCoherence = clamp01(
+    structuralMetrics?.highQObservedCoherence ?? resonatorCoherence,
+  );
   const highQSustainedVisibilityScale = smoothstep(
     0.06,
     0.18,
@@ -2043,23 +2047,30 @@ function deriveModalVisibilityComponents({
     smoothstep(2, 5, highQDetailModeCount) *
     modalQuality *
     highQSustainedVisibilityScale;
-  const retainedHighQVisibility =
-    (1 -
-      smoothstep(
-        MODAL_VISIBILITY_HIGH_Q_RETAINED_SUPPORT_START,
-        MODAL_VISIBILITY_HIGH_Q_RETAINED_SUPPORT_END,
-        highQRingSupport,
-      )) *
+  const retainedHighQObserverSupport =
+    MODAL_VISIBILITY_HIGH_Q_OBSERVER_MIN_SUPPORT_WEIGHT +
     smoothstep(
-      MODAL_VISIBILITY_HIGH_Q_RETAINED_ENERGY_START,
-      MODAL_VISIBILITY_HIGH_Q_RETAINED_ENERGY_END,
+      MODAL_VISIBILITY_HIGH_Q_OBSERVER_SUPPORT_START,
+      MODAL_VISIBILITY_HIGH_Q_OBSERVER_SUPPORT_END,
+      highQRingSupport,
+    ) *
+      (1 - MODAL_VISIBILITY_HIGH_Q_OBSERVER_MIN_SUPPORT_WEIGHT);
+  const retainedHighQObserverQuality = Math.max(
+    highQObservedCoherence,
+    coherenceGate * 0.9,
+    persistenceGate * 0.55,
+  );
+  const retainedHighQObserverAuthority =
+    smoothstep(
+      MODAL_VISIBILITY_HIGH_Q_OBSERVER_ENERGY_START,
+      MODAL_VISIBILITY_HIGH_Q_OBSERVER_ENERGY_END,
       highQDetailEnergy,
     ) *
     smoothstep(3, 8, highQDetailModeCount) *
-    Math.max(coherenceGate * 0.9, persistenceGate * 0.55);
+    retainedHighQObserverSupport *
+    retainedHighQObserverQuality;
   const retainedHighQModalVisibility = clamp01(
-    Math.max(highQVisibilityGate, retainedHighQVisibility) *
-      MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX,
+    retainedHighQObserverAuthority * MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX,
   );
   const distributedEnergyAnchor = smoothstep(
     0.015,
@@ -2101,7 +2112,6 @@ function deriveModalVisibilityComponents({
         distributedModalVisibility,
         dominantModalVisibility,
         highQVisibilityGate * MODAL_VISIBILITY_HIGH_Q_MAX,
-        retainedHighQModalVisibility,
       ),
     ),
     retainedHighQModalVisibility,

@@ -3135,8 +3135,96 @@ describe("live input noise gate", () => {
     expect(frame.activeDetailModeCount).toBe(8);
     expect(frame.debug.highQDetailModeCount).toBe(8);
     expect(frame.debug.highQRingSupport).toBe(0);
-    expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.16);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0.08);
+    expect(frame.modalVisibilityEnergy).toBeLessThan(
+      frame.modalVisibilityRetainedHighQEnergy,
+    );
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBe(
+      frame.debug.modalVisibilityRetainedHighQEnergy,
+    );
+  });
+
+  it("keeps observer-authoritative high-Q tails visible below the old retained-energy threshold", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 0.52,
+        fftMagnitudes: makeFft([
+          [196, 0.01],
+          [282, 0.007],
+        ]),
+        timeData: makeTimeData({
+          frequency: 196,
+          amplitude: 0.0038,
+          harmonics: [[1.44, 0.0022]],
+        }),
+        rms: 0.0038,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 12000,
+    });
+    const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
+    const backboneSlots = makeModeSlots([]);
+    const detailSlots = makeModeSlots([
+      [2, 1, 3, 0.012],
+      [3, 2, 5, 0.01],
+      [5, 3, 8, 0.009],
+      [7, 4, 11, 0.008],
+      [11, 5, 13, 0.007],
+      [13, 8, 17, 0.006],
+      [17, 11, 19, 0.005],
+      [19, 13, 23, 0.004],
+    ]);
+    const structuralState = {
+      backboneSlotsSource: backboneSlots,
+      detailSlotsSource: detailSlots,
+      referenceBackboneSlotsSource: backboneSlots,
+      referenceDetailSlotsSource: detailSlots,
+      signalBackboneSlotsSource: backboneSlots,
+      signalDetailSlotsSource: detailSlots,
+      signalReferenceBackboneSlotsSource: backboneSlots,
+      signalReferenceDetailSlotsSource: detailSlots,
+      dominantFrequency: 196,
+      dominantAmplitude: 0.12,
+      analysisEngine: "modal-excitation",
+      pitchSource: "resonator-bank",
+      spectralCandidates: [],
+      sourceMode: "file",
+      structuralMetrics: {
+        distributedExcitation: 0.06,
+        observedModalModeCount: 8,
+        highQDetailModeCount: 8,
+        highQDetailEnergy: 0.035,
+        highQRingSupport: 0.4,
+        highQObservedCoherence: 0.76,
+        modalPersistence: 0.16,
+        modalDriveEnergy: 0.012,
+        modeCoherence: 0.68,
+        detailSignalAuthoritative: true,
+        detailSignalAuthoritativeReason: "high-q",
+        detailSignalAuthoritativeHighQ: true,
+      },
+    };
+    const analysisResult = buildCurrentAudioFeatureAnalysisResult({
+      preparedInputs,
+      fastSignalState,
+      structuralState,
+      materializeStructuralProjection: true,
+    });
+    const frame = composeAudioFeatureFrame({
+      preparedInputs,
+      analysisResult,
+    });
+
+    expect(frame.fieldState).toBe("active");
+    expect(frame.debug.highQDetailEnergy).toBe(0.035);
+    expect(frame.debug.highQRingSupport).toBe(0.4);
+    expect(frame.debug.highQObservedCoherence).toBe(0.76);
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0.035);
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBeLessThanOrEqual(0.28);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBe(
       frame.debug.modalVisibilityRetainedHighQEnergy,
     );

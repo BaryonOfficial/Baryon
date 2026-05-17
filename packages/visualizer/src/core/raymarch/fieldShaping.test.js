@@ -900,7 +900,13 @@ describe("field shaping", () => {
     );
     expect(retained.retainedHighQContourAccent).toBeGreaterThan(0.01);
     expect(noRidge.retainedHighQRidgeVisibleDensity).toBe(0);
-    expect(noStructure.retainedHighQRidgeVisibleDensity).toBe(0);
+    expect(noStructure.physicalVisibleDensity).toBe(
+      retained.physicalVisibleDensity,
+    );
+    expect(noStructure.retainedHighQRidgeVisibleDensity).toBeGreaterThan(0);
+    expect(noStructure.retainedHighQRidgeVisibleDensity).toBeLessThan(
+      retained.retainedHighQRidgeVisibleDensity,
+    );
   });
 
   it("keeps retained high-Q ridges readable when the contour-ridge intersection thins out", () => {
@@ -936,6 +942,31 @@ describe("field shaping", () => {
     );
     expect(supported.retainedHighQRidgeVisibleDensity).toBeGreaterThan(0.015);
     expect(noSupport.retainedHighQRidgeVisibleDensity).toBe(0);
+  });
+
+  it("keeps retained high-Q ridges readable when the physical structure anchor collapses", () => {
+    const retained = deriveVisibleDensity({
+      density: 0,
+      modalVisibilityEnergy: 0,
+      modalVisibilityRetainedHighQEnergy: 0.24,
+      modalStructureAnchor: 0,
+      ridgeAnchor: 0.72,
+      ridgeSupportAnchor: 0.64,
+    });
+    const noRidge = deriveVisibleDensity({
+      density: 0,
+      modalVisibilityEnergy: 0,
+      modalVisibilityRetainedHighQEnergy: 0.24,
+      modalStructureAnchor: 0,
+      ridgeAnchor: 0,
+      ridgeSupportAnchor: 0,
+    });
+
+    expect(retained.physicalVisibleDensity).toBe(0);
+    expect(retained.retainedHighQRidgeVisibleDensity).toBeGreaterThan(0.01);
+    expect(retained.retainedHighQContourAccent).toBeGreaterThan(0);
+    expect(noRidge.retainedHighQRidgeVisibleDensity).toBe(0);
+    expect(noRidge.visibleDensity).toBe(0);
   });
 
   it("pushes hot-core highlights from beam energy instead of body fog", () => {
