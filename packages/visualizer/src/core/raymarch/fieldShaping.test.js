@@ -179,6 +179,27 @@ describe("field shaping", () => {
     expect(weakNoisy).toBeCloseTo(0.02);
   });
 
+  it("lets retained high-Q observer authority carry steady harmonic tails", () => {
+    const steadyHighQ = deriveExcitationVisibility({
+      excitationGate: 0,
+      modeCoherence: 0.58,
+      modalVisibilityEnergy: 0.015,
+      modalVisibilityRetainedHighQEnergy: 0.24,
+      sourceAuthority: 0.01,
+    });
+    const weakNoisy = deriveExcitationVisibility({
+      excitationGate: 0,
+      modeCoherence: 0.08,
+      modalVisibilityEnergy: 0,
+      modalVisibilityRetainedHighQEnergy: 0,
+      sourceAuthority: 0.01,
+    });
+
+    expect(steadyHighQ).toBeGreaterThan(0.12);
+    expect(steadyHighQ).toBeLessThanOrEqual(EXCITATION_VISIBILITY_MAX_FLOOR);
+    expect(weakNoisy).toBe(0);
+  });
+
   it("keeps modal cavity visibility from modal energy", () => {
     const bowlLike = deriveExcitationVisibility({
       excitationGate: 0.04,

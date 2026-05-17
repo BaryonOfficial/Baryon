@@ -63,6 +63,7 @@ import {
   EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT,
   EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT,
   EXCITATION_VISIBILITY_MAX_FLOOR,
+  EXCITATION_VISIBILITY_RETAINED_HIGH_Q_WEIGHT,
   EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END,
   EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START,
   HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
@@ -527,12 +528,18 @@ function createScatteringNode({
     float(EXCITATION_GATE_HIGH),
     excitationInput,
   );
+  const modalAuthorityEnergy = max(
+    uModalVisibilityEnergy,
+    uModalVisibilityRetainedHighQEnergy.mul(
+      float(EXCITATION_VISIBILITY_RETAINED_HIGH_Q_WEIGHT),
+    ),
+  );
   const excitationSourceAuthority = smoothstep(
     float(EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START),
     float(EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END),
     max(
       uAverageAmplitude.div(float(255.0)),
-      uModalVisibilityEnergy.mul(
+      modalAuthorityEnergy.mul(
         float(EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT),
       ),
     ),
@@ -543,7 +550,7 @@ function createScatteringNode({
       uModeCoherence
         .mul(float(EXCITATION_VISIBILITY_COHERENCE_WEIGHT))
         .add(
-          uModalVisibilityEnergy.mul(
+          modalAuthorityEnergy.mul(
             float(EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT),
           ),
         ),
