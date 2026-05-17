@@ -93,6 +93,24 @@ function makeMixedTimeData({
   return timeData;
 }
 
+function makeNoisyPeriodicTimeData({
+  frequency,
+  amplitude = 0.006,
+  noiseAmplitude = 0.003,
+  seed = 123,
+  sampleRate = SAMPLE_RATE,
+  fftSize = FFT_SIZE,
+}) {
+  const random = createDeterministicRandom(seed);
+  const timeData = new Float32Array(fftSize);
+  for (let index = 0; index < fftSize; index += 1) {
+    timeData[index] =
+      Math.sin((2 * Math.PI * frequency * index) / sampleRate) * amplitude +
+      (random() * 2 - 1) * noiseAmplitude;
+  }
+  return timeData;
+}
+
 function createPreparedInputs({
   frameTimeMs,
   fftMagnitudes,
@@ -1227,6 +1245,64 @@ describe("modal excitation structural state", () => {
     expect(
       countActiveSlotsLocal(structural.detailSlotsSource),
     ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("lets aged high-Q topology own low-support periodic bowl tails", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "live",
+      analysisSource: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "live",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    let structural = null;
+
+    for (let frame = 0; frame < 36; frame += 1) {
+      const isStrike = frame < 8;
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: isStrike
+          ? makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS)
+          : makeFft([
+              [196, 0.014],
+              [282, 0.009],
+            ]),
+        timeData: isStrike
+          ? makeMixedTimeData({
+              partials: INHARMONIC_BOWL_STRIKE_PARTIALS,
+              amplitudeScale: 1,
+            })
+          : makeNoisyPeriodicTimeData({
+              frequency: 196,
+              amplitude: 0.006,
+              noiseAmplitude: 0.003,
+              seed: 123,
+            }),
+        avgAmplitude: isStrike ? 42 : 0.74,
+        rms: isStrike ? 0.32 : 0.0049,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(structural.structuralMetrics.highQDetailModeCount).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.highQRingSupport).toBeLessThan(0.08);
+    expect(structural.structuralMetrics.detailSignalAuthoritativeHighQ).toBe(
+      true,
+    );
+    expect(
+      structural.structuralMetrics.detailSignalAuthoritativeReason,
+    ).toBe("high-q");
   });
 
   it("clears high-Q detail state on true hard silence after a loud ring", () => {

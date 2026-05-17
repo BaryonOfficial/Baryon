@@ -130,6 +130,7 @@ const HIGH_Q_DETAIL_TAIL_FULL_DRIVE_PEAK = 0.008;
 const HIGH_Q_DETAIL_TAIL_SUPPORT_FLOOR = 0.11;
 const HIGH_Q_DETAIL_TAIL_SUPPORT_SPAN = 0.29;
 const HIGH_Q_DETAIL_MIN_RING_SUPPORT = 0.08;
+const HIGH_Q_DETAIL_TOPOLOGY_SIGNAL_FLOOR = HIGH_Q_DETAIL_MIN_RING_SUPPORT;
 const HIGH_Q_DETAIL_RING_RELEASE = 0.998;
 const HIGH_Q_DETAIL_NO_SUPPORT_RELEASE = 0.58;
 const HIGH_Q_DETAIL_MIN_RETAINED_ENERGY = 0.00045;
@@ -2245,6 +2246,24 @@ export function buildModalExcitationStructuralState({
     frequencyStable: !detailCouplingFrequencySwitch,
     retentionEligible: highQDetailRetentionEligible,
   });
+  const highQDetailPreUpdateMetrics = summarizeHighQDetailModes(
+    state.highQDetailModes,
+  );
+  const highQDetailModesAged = hasAgedHighQDetailModes(
+    state.highQDetailModes,
+    preparedInputs.currentFrameAtMs,
+  );
+  const highQDetailTopologySignal =
+    highQDetailRingSupport > 0 &&
+    highQDetailPreUpdateMetrics.highQDetailModeCount > 0 &&
+    highQDetailPreUpdateMetrics.highQDetailEnergy >=
+      HIGH_Q_DETAIL_MIN_RETAINED_ENERGY &&
+    highQDetailModesAged
+      ? Math.max(
+          highQDetailRingSupport,
+          HIGH_Q_DETAIL_TOPOLOGY_SIGNAL_FLOOR,
+        )
+      : 0;
   const subtleCoherentDetailSignal = getSubtleCoherentDetailSignal({
     hardSilentFrame,
     avgAmplitude: preparedInputs.avgAmplitude,
@@ -2257,8 +2276,9 @@ export function buildModalExcitationStructuralState({
   });
   const highQDetailRetentionSignal =
     (state.highQDetailModes?.size ?? 0) > 0 &&
-    highQDetailRingSupport >= HIGH_Q_DETAIL_MIN_RING_SUPPORT
-      ? highQDetailRingSupport
+    (highQDetailRingSupport >= HIGH_Q_DETAIL_MIN_RING_SUPPORT ||
+      highQDetailTopologySignal > 0)
+      ? Math.max(highQDetailRingSupport, highQDetailTopologySignal)
       : 0;
   const retainedCoherentDetailSignal = Math.max(
     subtleCoherentDetailSignal,
@@ -2695,13 +2715,9 @@ export function buildModalExcitationStructuralState({
     detailVisibleAmplitude >=
       EXCITATION_DETAIL_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE;
   const highQDetailSignalAuthoritative =
-    highQDetailRetentionSignal > 0 &&
+    highQDetailTopologySignal > 0 &&
     highQDetailMetrics.highQDetailModeCount > 0 &&
-    highQDetailMetrics.highQDetailEnergy >= HIGH_Q_DETAIL_MIN_RETAINED_ENERGY &&
-    hasAgedHighQDetailModes(
-      state.highQDetailModes,
-      preparedInputs.currentFrameAtMs,
-    );
+    highQDetailMetrics.highQDetailEnergy >= HIGH_Q_DETAIL_MIN_RETAINED_ENERGY;
   const detailSignalAuthoritative =
     detailTargetShifted ||
     detailFreshSignalShifted ||
@@ -2897,6 +2913,7 @@ export function buildModalExcitationStructuralState({
     highQDetailModeCount: highQDetailMetrics.highQDetailModeCount,
     highQDetailEnergy: highQDetailMetrics.highQDetailEnergy,
     highQRingSupport: highQDetailRingSupport,
+    highQDetailTopologySignal,
     modalPersistence: excitedEntries.length
       ? clamp01(persistenceTotal / excitedEntries.length)
       : 0,
