@@ -2808,6 +2808,109 @@ describe("live input noise gate", () => {
     }
   });
 
+  it("keeps observed bowl tails active from periodic waveform after FFT detail disappears", () => {
+    const scenarios = [
+      {
+        sourceMode: "live",
+        status: makeResolvedLineFeedLiveStatus(),
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
+      },
+      {
+        sourceMode: "file",
+        status: makeActiveStatus(),
+        liveInputAnalysisSettings: undefined,
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const featureState = createAudioFeatureState();
+      let frame = null;
+
+      for (let frameIndex = 0; frameIndex < 420; frameIndex += 1) {
+        const isStrike = frameIndex < 2;
+        frame = buildAudioFeatureFrame({
+          analysisSnapshot: createSnapshot({
+            sourceMode: scenario.sourceMode,
+            avgAmplitude: isStrike ? 42 : 0.18,
+            fftMagnitudes: isStrike
+              ? makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS)
+              : makeFft([]),
+            timeData: makeMixedTimeData({
+              partials: isStrike
+                ? INHARMONIC_BOWL_STRIKE_PARTIALS
+                : LOUD_BOWL_TONE_PARTIALS,
+              amplitudeScale: isStrike ? 1 : 0.006,
+            }),
+            rms: isStrike ? 0.32 : 0.0008,
+          }),
+          featureState,
+          radius: 3,
+          status: scenario.status,
+          frameTimeMs: frameIndex * 33,
+          liveInputAnalysisSettings: scenario.liveInputAnalysisSettings,
+        });
+      }
+
+      expect(frame.fieldState).toBe("active");
+      expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(4);
+      expect(frame.debug.highQRingSupport).toBeGreaterThan(0.08);
+      expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.003);
+      expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
+    }
+  });
+
+  it("observes soft high-Q detail without a loud seed strike for line-feed and file sources", () => {
+    const scenarios = [
+      {
+        sourceMode: "live",
+        status: makeResolvedLineFeedLiveStatus(),
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
+      },
+      {
+        sourceMode: "file",
+        status: makeActiveStatus(),
+        liveInputAnalysisSettings: undefined,
+      },
+    ];
+    const softHighQPartials = [
+      [3206.67, 0.0012],
+      [3805.39, 0.00095],
+      [4528.2, 0.00072],
+    ];
+
+    for (const scenario of scenarios) {
+      const featureState = createAudioFeatureState();
+      let frame = null;
+
+      for (let frameIndex = 0; frameIndex < 240; frameIndex += 1) {
+        frame = buildAudioFeatureFrame({
+          analysisSnapshot: createSnapshot({
+            sourceMode: scenario.sourceMode,
+            avgAmplitude: 0.16,
+            fftMagnitudes: makeFft(softHighQPartials),
+            timeData: makeMixedTimeData({
+              partials: softHighQPartials,
+              amplitudeScale: 0.005,
+            }),
+            rms: 0.00072,
+          }),
+          featureState,
+          radius: 3,
+          status: scenario.status,
+          frameTimeMs: frameIndex * 33,
+          liveInputAnalysisSettings: scenario.liveInputAnalysisSettings,
+        });
+      }
+
+      expect(frame.fieldState).toBe("active");
+      expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(2);
+      expect(frame.debug.highQObservedDrive).toBeGreaterThan(0);
+      expect(frame.debug.highQObservedCoherence).toBeGreaterThan(0);
+      expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.003);
+      expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
+    }
+  });
+
   it("seeds low-meter bowl strikes into retained tails for line-feed and file sources", () => {
     const scenarios = [
       {

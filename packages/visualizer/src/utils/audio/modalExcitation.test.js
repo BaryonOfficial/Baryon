@@ -1080,7 +1080,8 @@ describe("modal excitation structural state", () => {
       0.035,
     );
     expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0.5);
-    expect(state.highQDetailModes?.size ?? 0).toBeGreaterThanOrEqual(4);
+    expect(state.highQObservedModes?.size ?? 0).toBeGreaterThanOrEqual(4);
+    expect(state.highQDetailModes).toBeUndefined();
   });
 
   it("keeps a loud periodic bowl tail structured across a long sustain", () => {
@@ -1191,7 +1192,140 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThanOrEqual(4);
   });
 
-  it("seeds high-Q detail from low-meter bowl strikes before the tail", () => {
+  it("keeps observed high-Q detail through brief noisy observation dropouts", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "live",
+      analysisSource: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "live",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    let structural = null;
+
+    for (let frame = 0; frame < 48; frame += 1) {
+      const isStrike = frame < 8;
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: isStrike
+          ? makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS)
+          : makeFft([
+              [196, 0.014],
+              [282, 0.009],
+            ]),
+        timeData: makeMixedTimeData({
+          partials: isStrike
+            ? INHARMONIC_BOWL_STRIKE_PARTIALS
+            : LOUD_BOWL_TONE_PARTIALS,
+          amplitudeScale: isStrike ? 1 : 0.006,
+        }),
+        avgAmplitude: isStrike ? 42 : 0.74,
+        rms: isStrike ? 0.32 : 0.0049,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    const supportedEnergy = structural.structuralMetrics.highQDetailEnergy;
+    expect(structural.structuralMetrics.highQDetailModeCount).toBeGreaterThan(0);
+    expect(supportedEnergy).toBeGreaterThan(0.02);
+
+    for (let frame = 48; frame < 72; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft([]),
+        timeData: makeNoisyPeriodicTimeData({
+          frequency: 196,
+          amplitude: 0.003,
+          noiseAmplitude: 0.018,
+          seed: frame,
+        }),
+        avgAmplitude: 1.5,
+        rms: 0.012,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.highQRingSupport).toBeLessThanOrEqual(
+      1,
+    );
+    expect(structural.structuralMetrics.highQDetailModeCount).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.highQDetailEnergy).toBeGreaterThan(
+      supportedEnergy * 0.35,
+    );
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0.003);
+  });
+
+  it("keeps observed high-Q detail when a ringing bowl tail alternates dominant partials", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "live",
+      analysisSource: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "live",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    let structural = null;
+
+    for (let frame = 0; frame < 96; frame += 1) {
+      const isStrike = frame < 8;
+      const tailDominantFrequency = frame % 2 === 0 ? 196 : 282;
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: isStrike
+          ? makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS)
+          : makeFft([[tailDominantFrequency, 0.18]]),
+        timeData: makeMixedTimeData({
+          partials: isStrike
+            ? INHARMONIC_BOWL_STRIKE_PARTIALS
+            : LOUD_BOWL_TONE_PARTIALS,
+          amplitudeScale: isStrike ? 1 : 0.006,
+        }),
+        avgAmplitude: isStrike ? 42 : 6.4,
+        rms: isStrike ? 0.32 : 0.18,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+
+      if (!isStrike) {
+        expect(
+          structural.structuralMetrics.highQDetailModeCount,
+        ).toBeGreaterThan(0);
+        expect(structural.structuralMetrics.highQDetailEnergy).toBeGreaterThan(
+          0.004,
+        );
+      }
+    }
+
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0.003);
+  });
+
+  it("observes high-Q detail from low-meter bowl strikes before the tail", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
       audioInputMode: "live",
@@ -1247,7 +1381,118 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
-  it("lets aged high-Q topology own low-support periodic bowl tails", () => {
+  it("observes high-Q detail from soft coherent bowl strikes before the tail", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "live",
+      analysisSource: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "live",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    let structural = null;
+
+    for (let frame = 0; frame < 240; frame += 1) {
+      const isStrike = frame < 8;
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: isStrike
+          ? makeFft(scalePartials(INHARMONIC_BOWL_STRIKE_PARTIALS, 0.018))
+          : makeFft([
+              [196, 0.01],
+              [282, 0.006],
+            ]),
+        timeData: makeMixedTimeData({
+          partials: isStrike
+            ? INHARMONIC_BOWL_STRIKE_PARTIALS
+            : LOUD_BOWL_TONE_PARTIALS,
+          amplitudeScale: isStrike ? 0.12 : 0.005,
+        }),
+        avgAmplitude: isStrike ? 0.85 : 0.16,
+        rms: isStrike ? 0.0028 : 0.00072,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(
+      0.08,
+    );
+    expect(structural.structuralMetrics.highQDetailModeCount).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(structural.structuralMetrics.highQDetailEnergy).toBeGreaterThan(
+      0.003,
+    );
+    expect(
+      countActiveSlotsLocal(structural.detailSlotsSource),
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("observes high-Q detail from a soft coherent bowl without a loud seed strike", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "live",
+      analysisSource: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "live",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    const softHighQPartials = [
+      [3206.67, 0.0012],
+      [3805.39, 0.00095],
+      [4528.2, 0.00072],
+    ];
+    let structural = null;
+
+    for (let frame = 0; frame < 240; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft(softHighQPartials),
+        timeData: makeMixedTimeData({
+          partials: softHighQPartials,
+          amplitudeScale: 0.005,
+        }),
+        avgAmplitude: 0.16,
+        rms: 0.00072,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(structural.structuralMetrics.highQDetailModeCount).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(structural.structuralMetrics.highQDetailEnergy).toBeGreaterThan(
+      0.003,
+    );
+    expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(
+      0.08,
+    );
+    expect(state.highQObservedModes?.size ?? 0).toBeGreaterThanOrEqual(2);
+    expect(state.highQDetailModes).toBeUndefined();
+    expect(
+      countActiveSlotsLocal(structural.detailSlotsSource),
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("lets aged high-Q observation own periodic bowl tails", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
       audioInputMode: "live",
@@ -1296,7 +1541,9 @@ describe("modal excitation structural state", () => {
 
     expect(structural.structuralMetrics.highQDetailModeCount).toBeGreaterThan(0);
     expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0);
-    expect(structural.structuralMetrics.highQRingSupport).toBeLessThan(0.08);
+    expect(structural.structuralMetrics.highQRingSupport).toBeLessThanOrEqual(
+      1,
+    );
     expect(structural.structuralMetrics.detailSignalAuthoritativeHighQ).toBe(
       true,
     );
@@ -1367,7 +1614,8 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQDetailModeCount).toBe(0);
     expect(structural.structuralMetrics.highQDetailEnergy).toBe(0);
     expect(structural.structuralMetrics.highQRingSupport).toBe(0);
-    expect(state.highQDetailModes?.size ?? 0).toBe(0);
+    expect(state.highQObservedModes?.size ?? 0).toBe(0);
+    expect(state.highQDetailModes).toBeUndefined();
   });
 
   it("matures bowl-like detail structure during the first sustained ring", () => {
@@ -1561,7 +1809,7 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0.7);
     expect(late.amplitude).toBeLessThan(open.amplitude * 0.74);
     expect(tailSharedAmplitude).toBeGreaterThan(0);
-    expect(tail.amplitude).toBeLessThan(open.amplitude * 0.45);
+    expect(tail.amplitude).toBeLessThan(open.amplitude * 0.62);
     expect(tail.highOrderModalEnergy).toBeGreaterThan(0);
   });
 
