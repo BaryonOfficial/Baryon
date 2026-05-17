@@ -2042,6 +2042,10 @@ function deriveModalVisibilityComponents({
     ) *
     smoothstep(3, 8, highQDetailModeCount) *
     Math.max(coherenceGate * 0.9, persistenceGate * 0.55);
+  const retainedHighQModalVisibility = clamp01(
+    Math.max(highQVisibilityGate, retainedHighQVisibility) *
+      MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX,
+  );
   const distributedEnergyAnchor = smoothstep(
     0.015,
     0.16,
@@ -2082,12 +2086,10 @@ function deriveModalVisibilityComponents({
         distributedModalVisibility,
         dominantModalVisibility,
         highQVisibilityGate * MODAL_VISIBILITY_HIGH_Q_MAX,
-        retainedHighQVisibility * MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX,
+        retainedHighQModalVisibility,
       ),
     ),
-    retainedHighQModalVisibility: clamp01(
-      retainedHighQVisibility * MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX,
-    ),
+    retainedHighQModalVisibility,
   };
 }
 

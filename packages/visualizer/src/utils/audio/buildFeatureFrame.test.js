@@ -2646,6 +2646,8 @@ describe("live input noise gate", () => {
         samples.set(frameIndex, {
           detailAmplitude: sumSlotAmplitudes(frame.detailSlots),
           modalVisibilityEnergy: frame.modalVisibilityEnergy,
+          modalVisibilityRetainedHighQEnergy:
+            frame.modalVisibilityRetainedHighQEnergy,
           activeDetailModeCount: frame.activeDetailModeCount,
           structureSignal: frame.structureSignal,
           highQDetailModeCount: frame.debug.highQDetailModeCount,
@@ -2666,6 +2668,10 @@ describe("live input noise gate", () => {
     expect(late.highQRingSupport).toBeGreaterThan(0.5);
     expect(late.detailAmplitude).toBeGreaterThan(open.detailAmplitude * 0.35);
     expect(late.modalVisibilityEnergy).toBeGreaterThan(0.3);
+    expect(late.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0.12);
+    expect(late.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(
+      mid.modalVisibilityRetainedHighQEnergy * 0.75,
+    );
     expect(late.modalVisibilityEnergy).toBeGreaterThan(
       open.modalVisibilityEnergy * 0.9,
     );
