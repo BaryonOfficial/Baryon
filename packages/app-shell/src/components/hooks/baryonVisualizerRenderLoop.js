@@ -576,7 +576,7 @@ function shouldCaptureLastLiveFrame({ status, featureFrame }) {
   );
 }
 
-export function shouldApplyLiveInputRenderIntent(
+function shouldApplyLiveInputRenderIntent(
   { status, liveInputUiState, liveControlSignal } = {
     status: null,
     liveInputUiState: null,

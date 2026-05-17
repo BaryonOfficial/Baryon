@@ -940,13 +940,19 @@ function createScatteringNode({
         .mul(shellWeight)
         .mul(edgeFade)
         .mul(activeMask);
+      const retainedHighQRidgeAnchor = /** @type {any} */ (
+        contourShape.mul(ridgeConcentration)
+      );
+      const retainedHighQRidgeSupportAnchor = /** @type {any} */ (
+        max(contourShape, ridgeConcentration)
+      );
       const densityVisibility = deriveVisibleDensityNode(
         density,
         uModalVisibilityEnergy,
         modalStructureAnchor,
         uModalVisibilityRetainedHighQEnergy,
-        contourShape.mul(ridgeConcentration),
-        max(contourShape, ridgeConcentration),
+        retainedHighQRidgeAnchor,
+        retainedHighQRidgeSupportAnchor,
       );
       const { visibleDensity, physicalVisibleDensity } = densityVisibility;
       const retainedHighQContourAccent =
@@ -1115,7 +1121,7 @@ function createScatteringNode({
       const staticContourColor = mix(
         staticBaseColor,
         uSurfaceColor,
-        contourAccent,
+        /** @type {any} */ (contourAccent),
       );
       const staticLaserColor = mix(
         staticContourColor,
@@ -1179,7 +1185,7 @@ function createScatteringNode({
               float(RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow),
             ),
             spectralLightBaseColor,
-            contourAccent,
+            /** @type {any} */ (contourAccent),
           );
           const spectralLightLaserColor = mix(
             spectralLightContourColor,

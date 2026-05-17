@@ -3183,6 +3183,83 @@ describe("live input noise gate", () => {
     expect(frame.activeDetailModeCount).toBeGreaterThan(0);
   });
 
+  it("reports low-Q observer energy without retained high-Q ridge visibility", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 24,
+        fftMagnitudes: makeFft([
+          [550, 0.95],
+          [1100, 0.52],
+        ]),
+        timeData: makeTimeData({ frequency: 550, amplitude: 0.45 }),
+        rms: 0.2,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 96,
+    });
+    const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
+    const backboneSlots = makeModeSlots([
+      [2, 2, 3, 0.18],
+      [3, 2, 4, 0.14],
+    ]);
+    const emptyDetailSlots = new Float32Array(AUDIO_SLOT_CAPACITY * 4);
+    const structuralState = {
+      backboneSlotsSource: backboneSlots,
+      detailSlotsSource: emptyDetailSlots,
+      referenceBackboneSlotsSource: backboneSlots,
+      referenceDetailSlotsSource: emptyDetailSlots,
+      signalBackboneSlotsSource: backboneSlots,
+      signalDetailSlotsSource: emptyDetailSlots,
+      signalReferenceBackboneSlotsSource: backboneSlots,
+      signalReferenceDetailSlotsSource: emptyDetailSlots,
+      dominantFrequency: 550,
+      dominantAmplitude: 0.18,
+      analysisEngine: "modal-excitation",
+      pitchSource: "resonator-bank",
+      spectralCandidates: [],
+      sourceMode: "file",
+      structuralMetrics: {
+        observedModalModeCount: 2,
+        lowQBackboneModeCount: 2,
+        lowQBackboneEnergy: 0.32,
+        lowQObservedDrive: 0.12,
+        lowQObservedSnr: 0.5,
+        lowQObservedCoherence: 0.82,
+        highQDetailModeCount: 0,
+        highQDetailEnergy: 0,
+        highQRingSupport: 0,
+        modalPersistence: 0.3,
+        modalDriveEnergy: 0.12,
+        modeCoherence: 0.82,
+        distributedExcitation: 0.08,
+      },
+    };
+    const analysisResult = buildCurrentAudioFeatureAnalysisResult({
+      preparedInputs,
+      fastSignalState,
+      structuralState,
+      materializeStructuralProjection: true,
+    });
+    const frame = composeAudioFeatureFrame({
+      preparedInputs,
+      analysisResult,
+    });
+
+    expect(frame.fieldState).toBe("active");
+    expect(frame.activeBackboneModeCount).toBeGreaterThan(0);
+    expect(frame.debug.observedModalModeCount).toBe(2);
+    expect(frame.debug.lowQBackboneModeCount).toBe(2);
+    expect(frame.debug.lowQBackboneEnergy).toBe(0.32);
+    expect(frame.debug.lowQObservedCoherence).toBe(0.82);
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBe(0);
+    expect(frame.debug.modalVisibilityRetainedHighQEnergy).toBe(0);
+    expect(frame.debug.highQDetailEnergy).toBe(0);
+  });
+
   it("keeps loopback-classified live input structurally active", () => {
     const featureState = createAudioFeatureState();
     const frame = buildAudioFeatureFrame({

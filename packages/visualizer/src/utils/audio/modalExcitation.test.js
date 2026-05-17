@@ -344,7 +344,31 @@ function createDeterministicRandom(seed = 12345) {
   };
 }
 
+const REMOVED_MODAL_OBSERVER_AUTHORITY_FIELDS = [
+  "highQDetailModes",
+  "highQObservedModes",
+  "coherentBackboneTailMemory",
+  "coherentBackboneTailSeeded",
+  "coherentBackboneTailModes",
+  "coherentDetailTailMemory",
+  "coherentDetailTailSeeded",
+  "coherentDetailTailModes",
+];
+
+function expectLegacyModalObserverAuthoritiesRemoved(state) {
+  for (const field of REMOVED_MODAL_OBSERVER_AUTHORITY_FIELDS) {
+    expect(state[field]).toBeUndefined();
+  }
+}
+
 describe("modal excitation structural state", () => {
+  it("initializes one canonical modal observer state", () => {
+    const state = createModalExcitationState(16);
+
+    expect(state.observedModes).toBeInstanceOf(Map);
+    expectLegacyModalObserverAuthoritiesRemoved(state);
+  });
+
   it("builds persistent backbone structure for stable low-order input", () => {
     const baseState = createModalExcitationState(16);
     const firstInputs = createPreparedInputs({
@@ -387,6 +411,45 @@ describe("modal excitation structural state", () => {
     );
     expect(secondStructural.structuralMetrics.modeCoherence).toBeGreaterThan(0);
     expect(secondStructural.structuralMetrics.driveSource).toBe("time-domain");
+  });
+
+  it("observes low-Q backbone modes as the same retained modal state", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    for (let frame = 0; frame < 96; frame += 1) {
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: [
+          [550, 0.95],
+          [1100, 0.52],
+        ],
+        avgAmplitude: 24,
+        rms: 0.2,
+        amplitudeScale: 0.45,
+      });
+    }
+
+    expect(state.observedModes?.size ?? 0).toBeGreaterThan(0);
+    expect(
+      Array.from(state.observedModes?.values?.() ?? []).some(
+        (entry) => entry.layer === "backbone",
+      ),
+    ).toBe(true);
+    expect(structural.structuralMetrics.observedModalModeCount).toBeGreaterThan(
+      0,
+    );
+    expect(structural.structuralMetrics.lowQBackboneModeCount).toBeGreaterThan(
+      0,
+    );
+    expect(structural.structuralMetrics.lowQBackboneEnergy).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.lowQObservedCoherence).toBeGreaterThan(
+      0,
+    );
+    expect(countActiveSlotsLocal(structural.backboneSlotsSource)).toBeGreaterThan(
+      0,
+    );
   });
 
   it("reports canonical Spectral Light components for modal-excitation color", () => {
@@ -1080,8 +1143,12 @@ describe("modal excitation structural state", () => {
       0.035,
     );
     expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0.5);
-    expect(state.highQObservedModes?.size ?? 0).toBeGreaterThanOrEqual(4);
-    expect(state.highQDetailModes).toBeUndefined();
+    expect(
+      Array.from(state.observedModes?.values?.() ?? []).filter(
+        (entry) => entry.layer === "detail",
+      ).length,
+    ).toBeGreaterThanOrEqual(4);
+    expectLegacyModalObserverAuthoritiesRemoved(state);
   });
 
   it("keeps a loud periodic bowl tail structured across a long sustain", () => {
@@ -1485,8 +1552,15 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(
       0.08,
     );
-    expect(state.highQObservedModes?.size ?? 0).toBeGreaterThanOrEqual(2);
-    expect(state.highQDetailModes).toBeUndefined();
+    expect(
+      Array.from(state.observedModes?.values?.() ?? []).filter(
+        (entry) => entry.layer === "detail",
+      ).length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(structural.structuralMetrics.observedModalModeCount).toBeGreaterThan(
+      0,
+    );
+    expectLegacyModalObserverAuthoritiesRemoved(state);
     expect(
       countActiveSlotsLocal(structural.detailSlotsSource),
     ).toBeGreaterThanOrEqual(2);
@@ -1614,8 +1688,8 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQDetailModeCount).toBe(0);
     expect(structural.structuralMetrics.highQDetailEnergy).toBe(0);
     expect(structural.structuralMetrics.highQRingSupport).toBe(0);
-    expect(state.highQObservedModes?.size ?? 0).toBe(0);
-    expect(state.highQDetailModes).toBeUndefined();
+    expect(state.observedModes?.size ?? 0).toBe(0);
+    expectLegacyModalObserverAuthoritiesRemoved(state);
   });
 
   it("matures bowl-like detail structure during the first sustained ring", () => {
@@ -2038,6 +2112,53 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQRingSupport ?? 0).toBe(0);
     expect(countActiveSlotsLocal(structural.signalDetailSlotsSource)).toBe(0);
     expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBe(0);
+  });
+
+  it("clears observed low-Q backbone state after a clear frequency switch", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    for (let frame = 0; frame < 64; frame += 1) {
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: [
+          [550, 0.95],
+          [1100, 0.52],
+        ],
+        avgAmplitude: 24,
+        rms: 0.2,
+        amplitudeScale: 0.45,
+      });
+    }
+    const firstBackboneKeys = readModeKeys(structural.backboneSlotsSource);
+    expect(firstBackboneKeys.length).toBeGreaterThan(0);
+
+    for (let frame = 64; frame < 88; frame += 1) {
+      structural = runModalFrame({
+        state,
+        frame,
+        partials: [
+          [880, 0.95],
+          [1760, 0.48],
+        ],
+        avgAmplitude: 24,
+        rms: 0.2,
+        amplitudeScale: 0.45,
+      });
+    }
+
+    const switchedBackboneKeys = readModeKeys(structural.backboneSlotsSource);
+    expect(hasNewModeKey(switchedBackboneKeys, firstBackboneKeys)).toBe(true);
+    expect(
+      measureSharedAmplitudeRatio(
+        new Map(firstBackboneKeys.map((key) => [key, 1])),
+        readModeAmplitudeMap(structural.backboneSlotsSource),
+      ),
+    ).toBeLessThan(0.5);
+    expect(structural.structuralMetrics.lowQBackboneModeCount).toBeGreaterThan(
+      0,
+    );
   });
 
   it("keeps dense sustained music bounded while admitting fresh detail", () => {

@@ -450,6 +450,13 @@ export function shouldPublishDirtySnapshot(
   );
 }
 
+/**
+ * @param {{
+ *   engineState?: ReturnType<typeof createEngineState>,
+ *   dirtyState?: ReturnType<typeof deriveDirtyState>,
+ *   forced?: boolean,
+ * }} [options]
+ */
 export function shouldEmitFastSignalPatch({
   engineState,
   dirtyState,

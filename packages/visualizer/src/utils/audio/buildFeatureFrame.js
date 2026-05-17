@@ -977,6 +977,12 @@ function buildDebugSummary({
     distributedExcitation: structuralMetrics?.distributedExcitation ?? 0,
     lowOrderModalEnergy: structuralMetrics?.lowOrderModalEnergy ?? 0,
     highOrderModalEnergy: structuralMetrics?.highOrderModalEnergy ?? 0,
+    observedModalModeCount: structuralMetrics?.observedModalModeCount ?? 0,
+    lowQBackboneModeCount: structuralMetrics?.lowQBackboneModeCount ?? 0,
+    lowQBackboneEnergy: structuralMetrics?.lowQBackboneEnergy ?? 0,
+    lowQObservedDrive: structuralMetrics?.lowQObservedDrive ?? 0,
+    lowQObservedSnr: structuralMetrics?.lowQObservedSnr ?? 0,
+    lowQObservedCoherence: structuralMetrics?.lowQObservedCoherence ?? 0,
     highQDetailModeCount: structuralMetrics?.highQDetailModeCount ?? 0,
     highQDetailEnergy: structuralMetrics?.highQDetailEnergy ?? 0,
     highQRingSupport: structuralMetrics?.highQRingSupport ?? 0,
@@ -1060,7 +1066,6 @@ function buildZeroDebugSnapshot({
     structureSignal: 0,
     energySignal: 0,
     modalVisibilityEnergy: 0,
-    modalVisibilityRetainedHighQEnergy: 0,
     changeSignal: 0,
     pulseSignal: 0,
     requestedCavityGeometry,
@@ -1984,6 +1989,11 @@ function deriveModalVisibilityComponents({
   const highQDetailModeCount = structuralMetrics?.highQDetailModeCount ?? 0;
   const highQDetailEnergy = clamp01(structuralMetrics?.highQDetailEnergy ?? 0);
   const highQRingSupport = clamp01(structuralMetrics?.highQRingSupport ?? 0);
+  const highQSustainedVisibilityScale = smoothstep(
+    0.06,
+    0.18,
+    highQDetailEnergy,
+  );
   if (
     modalPersistence <= MODAL_VISIBILITY_PERSISTENCE_START &&
     modalDriveEnergy < 0.09
@@ -2031,7 +2041,8 @@ function deriveModalVisibilityComponents({
       highQDetailEnergy * highQRingSupport,
     ) *
     smoothstep(2, 5, highQDetailModeCount) *
-    modalQuality;
+    modalQuality *
+    highQSustainedVisibilityScale;
   const retainedHighQVisibility =
     (1 -
       smoothstep(
@@ -2069,7 +2080,7 @@ function deriveModalVisibilityComponents({
   );
   const dominantSlotEnergy =
     slotSummary.upperSlotEnergy * 0.7 + slotSummary.peakSlotEnergy * 0.3;
-  const dominantSlotGate = smoothstep(0.018, 0.11, dominantSlotEnergy);
+  const dominantSlotGate = smoothstep(0.008, 0.11, dominantSlotEnergy);
   const sparseClusterGate =
     1 - smoothstep(0.48, 0.82, activeModeCount / Math.max(1, modeCapacity));
   const dominantQuality = Math.max(coherenceGate * 0.75, persistenceGate);

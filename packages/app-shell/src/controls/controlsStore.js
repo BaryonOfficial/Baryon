@@ -15,6 +15,7 @@ import {
   writeStoredJson,
 } from "../components/hooks/baryonControlsState.js";
 
+/** @type {Set<string>} */
 const BUILT_IN_VISUAL_PRESET_NAMES = new Set(
   BUILT_IN_VISUAL_PRESETS.map((preset) => preset.name),
 );

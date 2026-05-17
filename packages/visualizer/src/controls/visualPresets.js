@@ -1,4 +1,4 @@
-export const CALIBRATED_CLARITY_VISUAL_PRESET = Object.freeze({
+const CALIBRATED_CLARITY_VISUAL_PRESET = Object.freeze({
   name: "Calibrated Clarity",
   builtIn: true,
   controls: Object.freeze({
@@ -25,7 +25,7 @@ export const CALIBRATED_CLARITY_VISUAL_PRESET = Object.freeze({
   }),
 });
 
-export const STAGE_CONTAINMENT_VISUAL_PRESET = Object.freeze({
+const STAGE_CONTAINMENT_VISUAL_PRESET = Object.freeze({
   name: "Stage Containment",
   builtIn: true,
   controls: Object.freeze({
