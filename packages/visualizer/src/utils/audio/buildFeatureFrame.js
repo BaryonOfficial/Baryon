@@ -93,6 +93,9 @@ const MODAL_VISIBILITY_COHERENCE_END = 0.58;
 const MODAL_VISIBILITY_PERSISTENCE_START = 0.03;
 const MODAL_VISIBILITY_PERSISTENCE_END = 0.2;
 const MODAL_VISIBILITY_DISTRIBUTED_REDUCTION = 0.25;
+const MODAL_VISIBILITY_HIGH_Q_ENERGY_START = 0.003;
+const MODAL_VISIBILITY_HIGH_Q_ENERGY_END = 0.009;
+const MODAL_VISIBILITY_HIGH_Q_MAX = 0.5;
 const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze({
   ambient: Object.freeze({
     absoluteAvgAmplitude: Math.max(2.2, LIVE_INPUT_SILENCE_AVG_AMPLITUDE * 0.3),
@@ -967,6 +970,9 @@ function buildDebugSummary({
     distributedExcitation: structuralMetrics?.distributedExcitation ?? 0,
     lowOrderModalEnergy: structuralMetrics?.lowOrderModalEnergy ?? 0,
     highOrderModalEnergy: structuralMetrics?.highOrderModalEnergy ?? 0,
+    highQDetailModeCount: structuralMetrics?.highQDetailModeCount ?? 0,
+    highQDetailEnergy: structuralMetrics?.highQDetailEnergy ?? 0,
+    highQRingSupport: structuralMetrics?.highQRingSupport ?? 0,
     modalPersistence: structuralMetrics?.modalPersistence ?? 0,
     modalDriveEnergy: structuralMetrics?.modalDriveEnergy ?? 0,
     driveSource: structuralMetrics?.driveSource ?? "none",
@@ -980,6 +986,8 @@ function buildDebugSummary({
       structuralMetrics?.detailSignalAuthoritativeFreshSignal ?? false,
     detailSignalAuthoritativeFastAssist:
       structuralMetrics?.detailSignalAuthoritativeFastAssist ?? false,
+    detailSignalAuthoritativeHighQ:
+      structuralMetrics?.detailSignalAuthoritativeHighQ ?? false,
     detailShiftReleaseOverrideCount:
       structuralMetrics?.detailShiftReleaseOverrideCount ?? 0,
     detailShiftTrackingOverrideCount:
@@ -1959,6 +1967,9 @@ function deriveModalVisibilityComponents({
   const distributedExcitation = clamp01(
     structuralMetrics?.distributedExcitation ?? 0,
   );
+  const highQDetailModeCount = structuralMetrics?.highQDetailModeCount ?? 0;
+  const highQDetailEnergy = clamp01(structuralMetrics?.highQDetailEnergy ?? 0);
+  const highQRingSupport = clamp01(structuralMetrics?.highQRingSupport ?? 0);
   if (
     modalPersistence <= MODAL_VISIBILITY_PERSISTENCE_START &&
     modalDriveEnergy < 0.09
@@ -1998,6 +2009,14 @@ function deriveModalVisibilityComponents({
   const modalQuality = Math.max(coherenceGate, persistenceGate * 0.75);
   const distributedReduction =
     1 - distributedExcitation * MODAL_VISIBILITY_DISTRIBUTED_REDUCTION;
+  const highQVisibilityGate =
+    smoothstep(
+      MODAL_VISIBILITY_HIGH_Q_ENERGY_START,
+      MODAL_VISIBILITY_HIGH_Q_ENERGY_END,
+      highQDetailEnergy * highQRingSupport,
+    ) *
+    smoothstep(2, 5, highQDetailModeCount) *
+    modalQuality;
   const distributedEnergyAnchor = smoothstep(
     0.015,
     0.16,
@@ -2034,7 +2053,11 @@ function deriveModalVisibilityComponents({
     distributedModalVisibility,
     dominantModalVisibility,
     modalVisibilityEnergy: clamp01(
-      Math.max(distributedModalVisibility, dominantModalVisibility),
+      Math.max(
+        distributedModalVisibility,
+        dominantModalVisibility,
+        highQVisibilityGate * MODAL_VISIBILITY_HIGH_Q_MAX,
+      ),
     ),
   };
 }

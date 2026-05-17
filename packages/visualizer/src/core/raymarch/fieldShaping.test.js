@@ -143,7 +143,7 @@ describe("field shaping", () => {
     const staleCoherent = deriveExcitationVisibility({
       excitationGate: 0.02,
       modeCoherence: 0.72,
-      modalVisibilityEnergy: 0.36,
+      modalVisibilityEnergy: 0,
       sourceAuthority: 0,
     });
     const currentCoherent = deriveExcitationVisibility({
@@ -155,6 +155,24 @@ describe("field shaping", () => {
 
     expect(staleCoherent).toBeCloseTo(0.02);
     expect(currentCoherent).toBeGreaterThan(0.38);
+  });
+
+  it("lets current modal visibility carry low-meter resonant source authority", () => {
+    const bowlTail = deriveExcitationVisibility({
+      excitationGate: 0.02,
+      modeCoherence: 0.5,
+      modalVisibilityEnergy: 0.18,
+      sourceAuthority: 5.2 / 255,
+    });
+    const weakNoisy = deriveExcitationVisibility({
+      excitationGate: 0.02,
+      modeCoherence: 0.08,
+      modalVisibilityEnergy: 0,
+      sourceAuthority: 5.2 / 255,
+    });
+
+    expect(bowlTail).toBeGreaterThan(0.08);
+    expect(weakNoisy).toBeCloseTo(0.02);
   });
 
   it("keeps modal cavity visibility from modal energy", () => {

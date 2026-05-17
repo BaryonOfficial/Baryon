@@ -78,6 +78,7 @@ export const EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT = 0.48;
 export const EXCITATION_VISIBILITY_MAX_FLOOR = 0.52;
 export const EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START = 0.04;
 export const EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END = 0.24;
+export const EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT = 0.82;
 export const MODAL_VISIBILITY_DENSITY_LIFT = 0.3;
 export const MODAL_VISIBILITY_DENSITY_FLOOR = 0.22;
 
@@ -139,10 +140,14 @@ export function deriveExcitationVisibility({
   modalVisibilityEnergy = 0,
   sourceAuthority = 1,
 }) {
+  const effectiveSourceAuthority = Math.max(
+    sourceAuthority,
+    modalVisibilityEnergy * EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT,
+  );
   const sourceAuthorityGate = smoothstep(
     EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START,
     EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END,
-    sourceAuthority,
+    effectiveSourceAuthority,
   );
   const excitationFloor =
     Math.min(

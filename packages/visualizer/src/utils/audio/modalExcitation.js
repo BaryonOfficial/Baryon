@@ -110,17 +110,22 @@ const DETAIL_LATENT_TAIL_NO_EVIDENCE_RELEASE = 0.42;
 const DETAIL_LATENT_TAIL_MIN_DETAIL_BAND_PEAK = 0.00006;
 const DETAIL_LATENT_TAIL_FULL_DETAIL_BAND_PEAK = 0.0008;
 const DETAIL_LATENT_TAIL_SPECTRAL_DETAIL_BAND_PEAK = 0.00042;
-const DETAIL_SEEDED_RING_MIN_DETAIL_BAND_PEAK = 0.012;
-const DETAIL_SEEDED_RING_FULL_DETAIL_BAND_PEAK = 0.035;
-const DETAIL_SEEDED_RING_MAX_DETAIL_BAND_PEAK = 0.08;
-const DETAIL_AUDIBLE_RING_MIN_AVG_AMPLITUDE = 8;
-const DETAIL_AUDIBLE_RING_FULL_AVG_AMPLITUDE = 16;
-const DETAIL_AUDIBLE_RING_MIN_RMS = 0.025;
-const DETAIL_AUDIBLE_RING_FULL_RMS = 0.075;
-const DETAIL_AUDIBLE_RING_MIN_PERIODICITY = 0.48;
-const DETAIL_AUDIBLE_RING_FULL_PERIODICITY = 0.72;
-const DETAIL_AUDIBLE_RING_MIN_DRIVE_PEAK = 0.08;
-const DETAIL_AUDIBLE_RING_FULL_DRIVE_PEAK = 0.24;
+const HIGH_Q_DETAIL_SEED_MIN_DETAIL_BAND_PEAK = 0.0014;
+const HIGH_Q_DETAIL_RING_MIN_AVG_AMPLITUDE = 4;
+const HIGH_Q_DETAIL_RING_FULL_AVG_AMPLITUDE = 9;
+const HIGH_Q_DETAIL_RING_MIN_RMS = 0.012;
+const HIGH_Q_DETAIL_RING_FULL_RMS = 0.04;
+const HIGH_Q_DETAIL_RING_MIN_PERIODICITY = 0.48;
+const HIGH_Q_DETAIL_RING_FULL_PERIODICITY = 0.72;
+const HIGH_Q_DETAIL_RING_MIN_DRIVE_PEAK = 0.045;
+const HIGH_Q_DETAIL_RING_FULL_DRIVE_PEAK = 0.16;
+const HIGH_Q_DETAIL_MIN_RING_SUPPORT = 0.08;
+const HIGH_Q_DETAIL_RING_RELEASE = 0.998;
+const HIGH_Q_DETAIL_NO_SUPPORT_RELEASE = 0.58;
+const HIGH_Q_DETAIL_MIN_RETAINED_ENERGY = 0.001;
+const HIGH_Q_DETAIL_MIN_MATURITY = 0.34;
+const HIGH_Q_DETAIL_AUTHORITY_MIN_AGE_MS = 180;
+const HIGH_Q_DETAIL_SUPPORTED_FLOOR_MIN = 0.45;
 const DETAIL_LATENT_TAIL_MIN_PERIODICITY = 0.4;
 const DETAIL_LATENT_TAIL_MIN_TONALNESS = 0.68;
 const DETAIL_LATENT_TAIL_SPECTRAL_MIN_TONALNESS = 0.52;
@@ -924,87 +929,208 @@ function getSubtleCoherentDetailSignal({
   );
 }
 
-function getSeededCoherentDetailRingSignal({
-  hardSilentFrame,
-  avgAmplitude,
-  analyserRms,
-  frequencyStable,
-  seededTail,
-  latentCoherentDetailEvidence,
-  detailBandPeak,
-}) {
-  if (
-    hardSilentFrame ||
-    !frequencyStable ||
-    !seededTail ||
-    !latentCoherentDetailEvidence
-  ) {
-    return 0;
-  }
-  if (
-    avgAmplitude <= DETAIL_SUBTLE_TAIL_MAX_AVG_AMPLITUDE &&
-    analyserRms <= DETAIL_SUBTLE_TAIL_MAX_RMS
-  ) {
-    return 0;
-  }
-  if (detailBandPeak > DETAIL_SEEDED_RING_MAX_DETAIL_BAND_PEAK) {
-    return 0;
-  }
-
-  return smoothstep(
-    DETAIL_SEEDED_RING_MIN_DETAIL_BAND_PEAK,
-    DETAIL_SEEDED_RING_FULL_DETAIL_BAND_PEAK,
-    detailBandPeak,
-  );
-}
-
-function getAudibleSeededDetailRingSignal({
+function computeHighQDetailRingSupport({
   hardSilentFrame,
   avgAmplitude,
   analyserRms,
   drivePeak,
   periodicity,
   frequencyStable,
-  seededTail,
-  detailBandPeak,
 }) {
-  if (hardSilentFrame || !frequencyStable || !seededTail) {
-    return 0;
-  }
-  if (detailBandPeak > DETAIL_SEEDED_RING_MIN_DETAIL_BAND_PEAK) {
+  if (hardSilentFrame || !frequencyStable) {
     return 0;
   }
   if (
-    avgAmplitude < DETAIL_AUDIBLE_RING_MIN_AVG_AMPLITUDE ||
-    analyserRms < DETAIL_AUDIBLE_RING_MIN_RMS ||
-    periodicity < DETAIL_AUDIBLE_RING_MIN_PERIODICITY ||
-    drivePeak < DETAIL_AUDIBLE_RING_MIN_DRIVE_PEAK
+    avgAmplitude < HIGH_Q_DETAIL_RING_MIN_AVG_AMPLITUDE ||
+    analyserRms < HIGH_Q_DETAIL_RING_MIN_RMS ||
+    periodicity < HIGH_Q_DETAIL_RING_MIN_PERIODICITY ||
+    drivePeak < HIGH_Q_DETAIL_RING_MIN_DRIVE_PEAK
   ) {
     return 0;
   }
 
-  return (
-    smoothstep(
-      DETAIL_AUDIBLE_RING_MIN_AVG_AMPLITUDE,
-      DETAIL_AUDIBLE_RING_FULL_AVG_AMPLITUDE,
-      avgAmplitude,
-    ) *
-    smoothstep(
-      DETAIL_AUDIBLE_RING_MIN_RMS,
-      DETAIL_AUDIBLE_RING_FULL_RMS,
-      analyserRms,
-    ) *
-    smoothstep(
-      DETAIL_AUDIBLE_RING_MIN_PERIODICITY,
-      DETAIL_AUDIBLE_RING_FULL_PERIODICITY,
-      periodicity,
-    ) *
-    smoothstep(
-      DETAIL_AUDIBLE_RING_MIN_DRIVE_PEAK,
-      DETAIL_AUDIBLE_RING_FULL_DRIVE_PEAK,
-      drivePeak,
-    )
+  const avgGate = smoothstep(
+    HIGH_Q_DETAIL_RING_MIN_AVG_AMPLITUDE,
+    HIGH_Q_DETAIL_RING_FULL_AVG_AMPLITUDE,
+    avgAmplitude,
   );
+  const rmsGate = smoothstep(
+    HIGH_Q_DETAIL_RING_MIN_RMS,
+    HIGH_Q_DETAIL_RING_FULL_RMS,
+    analyserRms,
+  );
+  const periodicityGate = smoothstep(
+    HIGH_Q_DETAIL_RING_MIN_PERIODICITY,
+    HIGH_Q_DETAIL_RING_FULL_PERIODICITY,
+    periodicity,
+  );
+  const driveGate = smoothstep(
+    HIGH_Q_DETAIL_RING_MIN_DRIVE_PEAK,
+    HIGH_Q_DETAIL_RING_FULL_DRIVE_PEAK,
+    drivePeak,
+  );
+
+  return (
+    periodicityGate *
+    Math.sqrt(avgGate * driveGate) *
+    (0.8 + rmsGate * 0.2)
+  );
+}
+
+function isHighQDetailSeedEntry(entry) {
+  const freshDetailStrike =
+    (entry?.currentDriveEnergy ?? 0) >= DETAIL_RETAINED_MODE_MIN_DRIVE_ENERGY &&
+    (entry?.amplitude ?? 0) >= MIN_RESONATOR_AMPLITUDE &&
+    (entry?.coherence ?? 0) >= DETAIL_SUSTAIN_MIN_COHERENCE;
+
+  return (
+    entry?.layer === "detail" &&
+    (freshDetailStrike ||
+      (entry?.detailMaturity ?? 0) >= DETAIL_SUBTLE_TAIL_MIN_MATURITY ||
+      getSustainedDetailPresence(entry) >= DETAIL_LATENT_TAIL_MIN_PRESENCE)
+  );
+}
+
+function createHighQDetailModeEntry(entry, retainedEnergy, currentFrameAtMs) {
+  const energy = clamp01(retainedEnergy);
+  return {
+    ...entry,
+    amplitude: energy,
+    currentDriveEnergy: 0,
+    driveEnergy: Math.max(
+      entry?.driveEnergy ?? 0,
+      DETAIL_RETAINED_MODE_MIN_DRIVE_ENERGY,
+    ),
+    coherence: Math.max(entry?.coherence ?? 0, DETAIL_SUSTAIN_MIN_COHERENCE),
+    persistence: Math.max(entry?.persistence ?? 0, 0.75),
+    detailMaturity: Math.max(
+      entry?.detailMaturity ?? 0,
+      HIGH_Q_DETAIL_MIN_MATURITY,
+    ),
+    retainedEnergy: energy,
+    sourceAmplitude: Math.max(entry?.sourceAmplitude ?? 0, entry?.amplitude ?? 0),
+    seededAtMs: entry?.seededAtMs ?? currentFrameAtMs,
+    lastSupportedAtMs: currentFrameAtMs,
+    retainedSustainedDetail: true,
+    retainedSubtleSustainedDetail: true,
+    retainedSustainedDetailPresence: Math.max(
+      entry?.retainedSustainedDetailPresence ?? 0,
+      energy,
+    ),
+  };
+}
+
+function summarizeHighQDetailModes(modes) {
+  let count = 0;
+  let energy = 0;
+  for (const entry of modes?.values?.() ?? []) {
+    const retainedEnergy = entry?.retainedEnergy ?? entry?.amplitude ?? 0;
+    if (retainedEnergy <= 0) {
+      continue;
+    }
+    count += 1;
+    energy += retainedEnergy;
+  }
+  return {
+    highQDetailModeCount: count,
+    highQDetailEnergy: clamp01(energy),
+  };
+}
+
+function hasAgedHighQDetailModes(modes, currentFrameAtMs) {
+  for (const entry of modes?.values?.() ?? []) {
+    if (
+      currentFrameAtMs - (entry?.seededAtMs ?? currentFrameAtMs) >=
+      HIGH_Q_DETAIL_AUTHORITY_MIN_AGE_MS
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function updateHighQDetailModes({
+  state,
+  excitedEntries,
+  capacity,
+  ringSupport,
+  canSeedHighQ,
+  hardSilentFrame,
+  frequencySwitch,
+  currentFrameAtMs,
+}) {
+  if (hardSilentFrame || frequencySwitch) {
+    state.highQDetailModes = new Map();
+    return summarizeHighQDetailModes(state.highQDetailModes);
+  }
+
+  const nextModes = new Map();
+  const release =
+    ringSupport > 0
+      ? HIGH_Q_DETAIL_RING_RELEASE
+      : HIGH_Q_DETAIL_NO_SUPPORT_RELEASE;
+
+  for (const previous of state.highQDetailModes?.values?.() ?? []) {
+    const decayedEnergy =
+      (previous?.retainedEnergy ?? previous?.amplitude ?? 0) * release;
+    const supportedEnergy =
+      ringSupport > 0
+        ? (previous?.sourceAmplitude ?? previous?.amplitude ?? 0) *
+          ringSupport *
+          (HIGH_Q_DETAIL_SUPPORTED_FLOOR_MIN +
+            (1 - HIGH_Q_DETAIL_SUPPORTED_FLOOR_MIN) * ringSupport)
+        : 0;
+    const retainedEnergy = Math.max(decayedEnergy, supportedEnergy);
+    if (retainedEnergy < HIGH_Q_DETAIL_MIN_RETAINED_ENERGY) {
+      continue;
+    }
+    nextModes.set(
+      previous.modeKey,
+      createHighQDetailModeEntry(
+        previous,
+        retainedEnergy,
+        ringSupport > 0
+          ? currentFrameAtMs
+          : (previous.lastSupportedAtMs ?? currentFrameAtMs),
+      ),
+    );
+  }
+
+  if (canSeedHighQ) {
+    for (const entry of excitedEntries) {
+      if (!isHighQDetailSeedEntry(entry)) {
+        continue;
+      }
+      const existing = nextModes.get(entry.modeKey);
+      const retainedEnergy = Math.max(
+        existing?.retainedEnergy ?? 0,
+        entry.amplitude ?? 0,
+      );
+      nextModes.set(
+        entry.modeKey,
+        createHighQDetailModeEntry(
+          {
+            ...entry,
+            seededAtMs: existing?.seededAtMs ?? entry.seededAtMs,
+          },
+          retainedEnergy,
+          currentFrameAtMs,
+        ),
+      );
+    }
+  }
+
+  state.highQDetailModes = new Map(
+    Array.from(nextModes.values())
+      .sort(
+        (left, right) =>
+          (right.retainedEnergy ?? 0) - (left.retainedEnergy ?? 0),
+      )
+      .slice(0, capacity)
+      .map((entry) => [entry.modeKey, entry]),
+  );
+
+  return summarizeHighQDetailModes(state.highQDetailModes);
 }
 
 function hasSeededCoherentDetailTail(state) {
@@ -2003,6 +2129,17 @@ export function buildModalExcitationStructuralState({
         harmonicSupport: detailBandHarmonicSupport,
         hardSilentFrame,
       });
+  if (hardSilentFrame || detailCouplingFrequencySwitch) {
+    state.highQDetailModes = new Map();
+  }
+  const highQDetailRingSupport = computeHighQDetailRingSupport({
+    hardSilentFrame,
+    avgAmplitude: preparedInputs.avgAmplitude,
+    analyserRms: preparedInputs.analyserRms,
+    drivePeak,
+    periodicity,
+    frequencyStable: !detailCouplingFrequencySwitch,
+  });
   const subtleCoherentDetailSignal = getSubtleCoherentDetailSignal({
     hardSilentFrame,
     avgAmplitude: preparedInputs.avgAmplitude,
@@ -2013,30 +2150,14 @@ export function buildModalExcitationStructuralState({
     detailBandPeak,
     frequencyStable: !detailCouplingFrequencySwitch,
   });
-  const seededCoherentDetailTail = hasSeededCoherentDetailTail(state);
-  const seededCoherentDetailRingSignal = getSeededCoherentDetailRingSignal({
-    hardSilentFrame,
-    avgAmplitude: preparedInputs.avgAmplitude,
-    analyserRms: preparedInputs.analyserRms,
-    frequencyStable: !detailCouplingFrequencySwitch,
-    seededTail: seededCoherentDetailTail,
-    latentCoherentDetailEvidence,
-    detailBandPeak,
-  });
-  const audibleSeededDetailRingSignal = getAudibleSeededDetailRingSignal({
-    hardSilentFrame,
-    avgAmplitude: preparedInputs.avgAmplitude,
-    analyserRms: preparedInputs.analyserRms,
-    drivePeak,
-    periodicity,
-    frequencyStable: !detailCouplingFrequencySwitch,
-    seededTail: seededCoherentDetailTail,
-    detailBandPeak,
-  });
+  const highQDetailRetentionSignal =
+    (state.highQDetailModes?.size ?? 0) > 0 &&
+    highQDetailRingSupport >= HIGH_Q_DETAIL_MIN_RING_SUPPORT
+      ? highQDetailRingSupport
+      : 0;
   const retainedCoherentDetailSignal = Math.max(
     subtleCoherentDetailSignal,
-    seededCoherentDetailRingSignal,
-    audibleSeededDetailRingSignal,
+    highQDetailRetentionSignal,
     getLatentCoherentDetailSignal({
       latentCoherentDetailTail,
       detailBandPeak,
@@ -2090,6 +2211,9 @@ export function buildModalExcitationStructuralState({
     );
     const previous =
       state.activeModes.get(atlasEntry.modeKey) ??
+      (atlasEntry.layer === "detail" && highQDetailRetentionSignal > 0
+        ? (state.highQDetailModes?.get(atlasEntry.modeKey) ?? null)
+        : null) ??
       (latentCoherentDetailTail
         ? (state.coherentDetailTailModes?.get(atlasEntry.modeKey) ?? null)
         : null) ??
@@ -2180,8 +2304,10 @@ export function buildModalExcitationStructuralState({
     const detailMaturity =
       atlasEntry.layer === "detail"
         ? getNextDetailMaturity({
-            previousMaturity:
+            previousMaturity: Math.max(
               previousDetailMaturity?.get(atlasEntry.modeKey) ?? 0,
+              previous?.detailMaturity ?? 0,
+            ),
             sustainedPresence,
             driveEnergy,
             hardSilentFrame,
@@ -2259,6 +2385,20 @@ export function buildModalExcitationStructuralState({
 
   const backboneCapacity = state.backbone.slots.length / 4;
   const detailCapacity = state.detail.slots.length / 4;
+  const highQDetailMetrics = updateHighQDetailModes({
+    state,
+    excitedEntries,
+    capacity: detailCapacity,
+    ringSupport: highQDetailRingSupport,
+    canSeedHighQ:
+      !hardSilentFrame &&
+      !detailCouplingFrequencySwitch &&
+      highQDetailRingSupport >= HIGH_Q_DETAIL_MIN_RING_SUPPORT &&
+      detailBandPeak >= HIGH_Q_DETAIL_SEED_MIN_DETAIL_BAND_PEAK,
+    hardSilentFrame,
+    frequencySwitch: detailCouplingFrequencySwitch,
+    currentFrameAtMs: preparedInputs.currentFrameAtMs,
+  });
   const backboneEntries = buildSignalShortlist(
     excitedEntries,
     "backbone",
@@ -2449,15 +2589,28 @@ export function buildModalExcitationStructuralState({
     detailAssistNeedsFreshAdmission &&
     detailVisibleAmplitude >=
       EXCITATION_DETAIL_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE;
+  const highQDetailSignalAuthoritative =
+    highQDetailRetentionSignal > 0 &&
+    highQDetailMetrics.highQDetailModeCount > 0 &&
+    highQDetailMetrics.highQDetailEnergy >= HIGH_Q_DETAIL_MIN_RETAINED_ENERGY &&
+    hasAgedHighQDetailModes(
+      state.highQDetailModes,
+      preparedInputs.currentFrameAtMs,
+    );
   const detailSignalAuthoritative =
-    detailTargetShifted || detailFreshSignalShifted || detailFastAssistShifted;
+    detailTargetShifted ||
+    detailFreshSignalShifted ||
+    detailFastAssistShifted ||
+    highQDetailSignalAuthoritative;
   const detailSignalAuthoritativeReason = detailTargetShifted
     ? "coverage"
     : detailFreshSignalShifted
       ? "fresh-signal"
       : detailFastAssistShifted
         ? "fast-assist"
-        : "none";
+        : highQDetailSignalAuthoritative
+          ? "high-q"
+          : "none";
   const detailBlendTargetSlots = detailSignalAuthoritative
     ? state.detail.slots
     : state.displayDetail.slots;
@@ -2636,6 +2789,9 @@ export function buildModalExcitationStructuralState({
     distributedExcitation,
     lowOrderModalEnergy,
     highOrderModalEnergy,
+    highQDetailModeCount: highQDetailMetrics.highQDetailModeCount,
+    highQDetailEnergy: highQDetailMetrics.highQDetailEnergy,
+    highQRingSupport: highQDetailRingSupport,
     modalPersistence: excitedEntries.length
       ? clamp01(persistenceTotal / excitedEntries.length)
       : 0,
@@ -2649,6 +2805,7 @@ export function buildModalExcitationStructuralState({
     detailSignalAuthoritativeCoverage: detailTargetShifted,
     detailSignalAuthoritativeFreshSignal: detailFreshSignalShifted,
     detailSignalAuthoritativeFastAssist: detailFastAssistShifted,
+    detailSignalAuthoritativeHighQ: highQDetailSignalAuthoritative,
     detailSignalCoverage,
     detailShiftStalePressure: detailStalePressure,
     detailShiftReleaseOverrideCount: detailShiftReleaseOverrides?.size ?? 0,

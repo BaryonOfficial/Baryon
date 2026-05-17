@@ -2601,13 +2601,13 @@ describe("live input noise gate", () => {
     ).toBeGreaterThan(0.08);
   });
 
-  it("keeps meter-loud inharmonic line-feed bowl sustain visually structured", () => {
+  it("keeps meter-loud inharmonic line-feed bowl sustain visibly structured", () => {
     const featureState = createAudioFeatureState();
     const status = makeResolvedLineFeedLiveStatus();
     const samples = new Map();
     let frame = null;
 
-    for (let frameIndex = 0; frameIndex < 240; frameIndex += 1) {
+    for (let frameIndex = 0; frameIndex < 720; frameIndex += 1) {
       const isStrike = frameIndex < 2;
       const partials = isStrike
         ? INHARMONIC_BOWL_STRIKE_PARTIALS
@@ -2630,28 +2630,109 @@ describe("live input noise gate", () => {
         liveInputAnalysisSettings: { acousticIntent: "ambient" },
       });
 
-      if ([12, 120, 239].includes(frameIndex)) {
+      if ([12, 240, 719].includes(frameIndex)) {
         samples.set(frameIndex, {
           detailAmplitude: sumSlotAmplitudes(frame.detailSlots),
           modalVisibilityEnergy: frame.modalVisibilityEnergy,
           activeDetailModeCount: frame.activeDetailModeCount,
           structureSignal: frame.structureSignal,
+          highQDetailModeCount: frame.debug.highQDetailModeCount,
+          highQDetailEnergy: frame.debug.highQDetailEnergy,
+          highQRingSupport: frame.debug.highQRingSupport,
         });
       }
     }
 
     const open = samples.get(12);
-    const mid = samples.get(120);
-    const late = samples.get(239);
+    const mid = samples.get(240);
+    const late = samples.get(719);
 
     expect(frame.fieldState).toBe("active");
     expect(late.activeDetailModeCount).toBeGreaterThanOrEqual(4);
+    expect(late.highQDetailModeCount).toBeGreaterThanOrEqual(4);
+    expect(late.highQDetailEnergy).toBeGreaterThan(0.035);
+    expect(late.highQRingSupport).toBeGreaterThan(0.5);
     expect(late.detailAmplitude).toBeGreaterThan(open.detailAmplitude * 0.35);
+    expect(late.modalVisibilityEnergy).toBeGreaterThan(0.3);
     expect(late.modalVisibilityEnergy).toBeGreaterThan(
-      open.modalVisibilityEnergy * 0.55,
+      open.modalVisibilityEnergy * 0.9,
     );
     expect(mid.structureSignal).toBeGreaterThan(0);
     expect(late.structureSignal).toBeGreaterThan(0);
+  });
+
+  it("keeps lower-level periodic bowl ring visible after the opening sustain", () => {
+    const featureState = createAudioFeatureState();
+    const status = makeResolvedLineFeedLiveStatus();
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < 360; frameIndex += 1) {
+      const isStrike = frameIndex < 2;
+      const partials = isStrike
+        ? INHARMONIC_BOWL_STRIKE_PARTIALS
+        : LOUD_BOWL_TONE_PARTIALS;
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "live",
+          avgAmplitude: isStrike ? 42 : 5.2,
+          fftMagnitudes: makeFft(isStrike ? partials : []),
+          timeData: makeMixedTimeData({
+            partials,
+            amplitudeScale: isStrike ? 1 : 0.11,
+          }),
+          rms: isStrike ? 0.32 : 0.022,
+        }),
+        featureState,
+        radius: 3,
+        status,
+        frameTimeMs: frameIndex * 33,
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
+      });
+    }
+
+    expect(frame.fieldState).toBe("active");
+    expect(frame.debug.liveInputHardSilenceActive).toBe(false);
+    expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(4);
+    expect(frame.debug.highQRingSupport).toBeGreaterThan(0.15);
+    expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.16);
+    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.02);
+    expect(frame.activeDetailModeCount).toBeGreaterThanOrEqual(4);
+  });
+
+  it("keeps lower-level periodic bowl sound-file ring visible after the opening sustain", () => {
+    const featureState = createAudioFeatureState();
+    const status = makeActiveStatus();
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < 360; frameIndex += 1) {
+      const isStrike = frameIndex < 2;
+      const partials = isStrike
+        ? INHARMONIC_BOWL_STRIKE_PARTIALS
+        : LOUD_BOWL_TONE_PARTIALS;
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "file",
+          avgAmplitude: isStrike ? 42 : 5.2,
+          fftMagnitudes: makeFft(isStrike ? partials : []),
+          timeData: makeMixedTimeData({
+            partials,
+            amplitudeScale: isStrike ? 1 : 0.11,
+          }),
+          rms: isStrike ? 0.32 : 0.022,
+        }),
+        featureState,
+        radius: 3,
+        status,
+        frameTimeMs: frameIndex * 33,
+      });
+    }
+
+    expect(frame.fieldState).toBe("active");
+    expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(4);
+    expect(frame.debug.highQRingSupport).toBeGreaterThan(0.15);
+    expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.16);
+    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.02);
+    expect(frame.activeDetailModeCount).toBeGreaterThanOrEqual(4);
   });
 
   it("keeps line-feed coherent ringing visible below raw meter silence", () => {

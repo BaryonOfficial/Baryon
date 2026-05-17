@@ -61,6 +61,7 @@ import {
   EDGE_FADE_START,
   EXCITATION_VISIBILITY_COHERENCE_WEIGHT,
   EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT,
+  EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT,
   EXCITATION_VISIBILITY_MAX_FLOOR,
   EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END,
   EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START,
@@ -523,7 +524,12 @@ function createScatteringNode({
   const excitationSourceAuthority = smoothstep(
     float(EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START),
     float(EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END),
-    uAverageAmplitude.div(float(255.0)),
+    max(
+      uAverageAmplitude.div(float(255.0)),
+      uModalVisibilityEnergy.mul(
+        float(EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT),
+      ),
+    ),
   );
   const excitationVisibility = max(
     excitationGate,
