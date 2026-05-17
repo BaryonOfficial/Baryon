@@ -95,12 +95,16 @@ function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
       },
     },
     points: {
-      rotation: { y: 0 },
+      rotation: { x: 0, y: 0, z: 0 },
     },
     sceneMotion: {
       yaw: 0,
+      pitch: 0,
+      roll: 0,
       angularVelocity: 0,
       targetAngularVelocity: 0,
+      pitchVelocity: 0,
+      rollVelocity: 0,
       lastMotionSignal: 0,
       lastBeatPulseId: 0,
       idleLogoYaw: 0,
@@ -784,16 +788,47 @@ describe("control runtime sync", () => {
     expect(snapshot.rotationSpeed).toBe(2);
   });
 
+  it("settles pitch and roll attitude while preserving manual yaw control", () => {
+    const controls = createControlState();
+    controls.rotationMode = "manual";
+    controls.rotationSpeed = 2;
+    const runtimeState = createRaymarchHarness();
+    runtimeState.points.rotation.x = 0.05;
+    runtimeState.points.rotation.y = 1;
+    runtimeState.points.rotation.z = -0.04;
+    runtimeState.sceneMotion.yaw = 1;
+    runtimeState.sceneMotion.pitch = 0.05;
+    runtimeState.sceneMotion.roll = -0.04;
+    runtimeState.sceneMotion.pitchVelocity = 0.2;
+    runtimeState.sceneMotion.rollVelocity = -0.15;
+
+    const snapshot = applySceneControls(runtimeState, controls, 0.25);
+
+    expect(runtimeState.points.rotation.y).toBeCloseTo(0.75);
+    expect(Math.abs(runtimeState.points.rotation.x)).toBeLessThan(0.05);
+    expect(Math.abs(runtimeState.points.rotation.z)).toBeLessThan(0.04);
+    expect(snapshot.rotationX).toBe(runtimeState.points.rotation.x);
+    expect(snapshot.rotationZ).toBe(runtimeState.points.rotation.z);
+  });
+
   it("settles rotation back to neutral in off mode", () => {
     const controls = createControlState();
     controls.rotationMode = "off";
     const runtimeState = createRaymarchHarness();
+    runtimeState.points.rotation.x = 0.05;
     runtimeState.points.rotation.y = 1.2;
+    runtimeState.points.rotation.z = -0.04;
     runtimeState.sceneMotion.yaw = 1.2;
+    runtimeState.sceneMotion.pitch = 0.05;
+    runtimeState.sceneMotion.roll = -0.04;
     runtimeState.sceneMotion.angularVelocity = -1.4;
+    runtimeState.sceneMotion.pitchVelocity = 0.2;
+    runtimeState.sceneMotion.rollVelocity = -0.15;
 
     const snapshot = applySceneControls(runtimeState, controls, 0.5);
+    expect(Math.abs(runtimeState.points.rotation.x)).toBeLessThan(0.05);
     expect(Math.abs(runtimeState.points.rotation.y)).toBeLessThan(1.2);
+    expect(Math.abs(runtimeState.points.rotation.z)).toBeLessThan(0.04);
     expect(Math.abs(snapshot.angularVelocity)).toBeLessThan(1.4);
     expect(snapshot.rotationMode).toBe("off");
   });
@@ -812,6 +847,7 @@ describe("control runtime sync", () => {
       structureSignal: 0.55,
       energySignal: 0.72,
       changeSignal: 0.64,
+      transientEnergy: 0.74,
       pulseSignal: 0.3,
     };
     const status = {
@@ -847,6 +883,10 @@ describe("control runtime sync", () => {
     expect(beatSnapshot.angularVelocity).toBeLessThan(
       beatlessSnapshot.angularVelocity,
     );
+    expect(Math.abs(beatRuntimeState.points.rotation.x)).toBeGreaterThan(0);
+    expect(Math.abs(beatRuntimeState.points.rotation.z)).toBeGreaterThan(0);
+    expect(Math.abs(beatSnapshot.rotationX)).toBeGreaterThan(0);
+    expect(Math.abs(beatSnapshot.rotationZ)).toBeGreaterThan(0);
     expect(beatRuntimeState.sceneMotion.lastBeatPulseId).toBe(9);
     expect(beatRuntimeState.points.rotation.y).toBeLessThan(0);
   });
@@ -1003,6 +1043,7 @@ describe("control runtime sync", () => {
         structureSignal: 0.55,
         energySignal: 0.72,
         changeSignal: 0.64,
+        transientEnergy: 0.74,
         pulseSignal: 0.3,
         beatDetected: true,
         beatPulseId: 9,
@@ -1019,8 +1060,53 @@ describe("control runtime sync", () => {
     expect(snapshot.motionAmount).toBe(0);
     expect(Math.abs(snapshot.targetAngularVelocity)).toBe(0);
     expect(Math.abs(snapshot.angularVelocity)).toBe(0);
+    expect(Math.abs(runtimeState.points.rotation.x)).toBe(0);
     expect(Math.abs(runtimeState.points.rotation.y)).toBe(0);
+    expect(Math.abs(runtimeState.points.rotation.z)).toBe(0);
     expect(runtimeState.sceneMotion.lastBeatPulseId).toBe(9);
+  });
+
+  it("resets all scene rotation axes when scene motion is disabled for 2d", () => {
+    const controls = createControlState();
+    const runtimeState = createRaymarchHarness(
+      VISUALIZATION_METHODS.cymatics2d,
+    );
+    runtimeState.points.rotation.x = 0.05;
+    runtimeState.points.rotation.y = 1.2;
+    runtimeState.points.rotation.z = -0.04;
+    runtimeState.sceneMotion.pitch = 0.05;
+    runtimeState.sceneMotion.yaw = 1.2;
+    runtimeState.sceneMotion.roll = -0.04;
+    runtimeState.sceneMotion.pitchVelocity = 0.2;
+    runtimeState.sceneMotion.angularVelocity = -1.4;
+    runtimeState.sceneMotion.rollVelocity = -0.15;
+
+    const snapshot = applySceneControls(
+      runtimeState,
+      controls,
+      1 / 60,
+      {
+        fieldState: "active",
+        structureSignal: 0.55,
+        energySignal: 0.72,
+        changeSignal: 0.64,
+        transientEnergy: 0.74,
+        pulseSignal: 0.3,
+      },
+      {
+        isPlaying: true,
+        isLiveInputActive: false,
+      },
+    );
+
+    expect(runtimeState.points.rotation.x).toBe(0);
+    expect(runtimeState.points.rotation.y).toBe(0);
+    expect(runtimeState.points.rotation.z).toBe(0);
+    expect(runtimeState.sceneMotion.pitch).toBe(0);
+    expect(runtimeState.sceneMotion.roll).toBe(0);
+    expect(snapshot.rotationX).toBe(0);
+    expect(snapshot.rotationY).toBe(0);
+    expect(snapshot.rotationZ).toBe(0);
   });
 
   it("builds a control inspection snapshot", () => {

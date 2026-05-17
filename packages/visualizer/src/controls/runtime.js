@@ -648,7 +648,13 @@ export function applySceneControls(
     sceneMotion.lastMotionSignal,
   );
 
+  sceneMotion.pitch = Number.isFinite(points.rotation.x)
+    ? points.rotation.x
+    : (sceneMotion.pitch ?? 0);
   sceneMotion.yaw = points.rotation.y ?? sceneMotion.yaw ?? 0;
+  sceneMotion.roll = Number.isFinite(points.rotation.z)
+    ? points.rotation.z
+    : (sceneMotion.roll ?? 0);
 
   let effectiveMotionAmount;
   if (rotationMode === "audio" && audioActive && fieldDriven) {
@@ -670,6 +676,8 @@ export function applySceneControls(
       shapedDrive: signals.shapedDrive,
       reactiveSignal: signals.reactiveSignal,
       motionImpulse: signals.motionImpulse,
+      torqueImpulse: signals.torqueImpulse,
+      attitudeImpulse: signals.attitudeImpulse,
       beatPulseId: featureFrame?.beatPulseId ?? 0,
       beatStrength: clamp01(featureFrame?.beatStrength ?? 0),
       beatConfidence: clamp01(featureFrame?.beatConfidence ?? 0),
@@ -681,7 +689,9 @@ export function applySceneControls(
   }
   sceneMotion.lastMotionSignal = signals.motionSignal;
 
+  points.rotation.x = sceneMotion.pitch;
   points.rotation.y = sceneMotion.yaw;
+  points.rotation.z = sceneMotion.roll;
   syncIdleOverlayRotation(runtimeState, sceneMotion, manualVelocity, deltaTime);
   if (runtimeState) {
     runtimeState.sceneMotion = sceneMotion;
@@ -693,7 +703,9 @@ export function applySceneControls(
     motionAmount: effectiveMotionAmount,
     signals,
     sceneMotion,
+    rotationX: points.rotation.x,
     rotationY: points.rotation.y,
+    rotationZ: points.rotation.z,
   });
 }
 
