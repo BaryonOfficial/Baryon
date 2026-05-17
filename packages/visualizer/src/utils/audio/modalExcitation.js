@@ -114,6 +114,8 @@ const HIGH_Q_OBSERVER_NO_EVIDENCE_TAU_SCALE = 220;
 const HIGH_Q_OBSERVER_HARD_SILENCE_RELEASE = 0.22;
 const HIGH_Q_OBSERVER_MIN_OBSERVED_DRIVE = 0.0025;
 const HIGH_Q_OBSERVER_NOISE_WINDOW_BINS = 9;
+const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ = 140;
+const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ = 480;
 const LOW_Q_OBSERVER_MIN_MODE_COUNT = 1;
 const LOW_Q_OBSERVER_MIN_RETAINED_ENERGY = 0.0008;
 const LOW_Q_OBSERVER_RESPONSE_START = 0.015;
@@ -1148,8 +1150,8 @@ function computeModalObservation({
   const matchedTimeDomainDrive = responseGate * peakGate;
   const harmonicGate =
     atlasEntry?.layer === "detail" &&
-    dominantDriveFrequencyHz >= 140 &&
-    dominantDriveFrequencyHz <= 360
+    dominantDriveFrequencyHz >= HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ &&
+    dominantDriveFrequencyHz <= HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ
       ? getDetailHarmonicCoupling(
           atlasEntry.naturalFrequencyHz,
           dominantDriveFrequencyHz,
@@ -1608,9 +1610,17 @@ function mergeExcitedObservedModes({
     }
 
     const previous = nextModes.get(entry.modeKey) ?? null;
+    const mergedObservedDrive = Math.max(
+      observedDrive,
+      previous?.observedDrive ?? 0,
+    );
+    const mergedObservedEnergy = Math.max(
+      observedEnergy,
+      previous?.observedEnergy ?? 0,
+    );
     const retainedEnergy = Math.max(
       previous?.retainedEnergy ?? 0,
-      observedEnergy,
+      mergedObservedEnergy,
     );
     nextModes.set(
       entry.modeKey,
@@ -1618,8 +1628,8 @@ function mergeExcitedObservedModes({
         atlasEntry: entry,
         previous,
         response: { phase: entry.phase ?? previous?.phase ?? 0 },
-        observedDrive,
-        observedEnergy,
+        observedDrive: mergedObservedDrive,
+        observedEnergy: mergedObservedEnergy,
         retainedEnergy,
         localNoiseFloor: previous?.localNoiseFloor ?? 0,
         observedSnr: previous?.observedSnr ?? 0,

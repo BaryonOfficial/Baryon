@@ -1412,6 +1412,65 @@ describe("modal excitation structural state", () => {
     expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0.003);
   });
 
+  it("refreshes high-Q detail from sustained upper bowl harmonics after the strike", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "live",
+      analysisSource: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "live",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    let structural = null;
+
+    for (let frame = 0; frame < 180; frame += 1) {
+      const isStrike = frame < 8;
+      const tailPartials = [
+        [417, 0.075],
+        [611, 0.052],
+      ];
+      const partials = isStrike ? INHARMONIC_BOWL_STRIKE_PARTIALS : tailPartials;
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft(partials),
+        timeData: makeMixedTimeData({
+          partials,
+          amplitudeScale: isStrike ? 1 : 0.018,
+        }),
+        avgAmplitude: isStrike ? 42 : 0.9,
+        rms: isStrike ? 0.32 : 0.0058,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    const currentFrameAtMs = 179 * 33;
+    const freshlyObservedDetailModes = Array.from(
+      state.observedModes?.values?.() ?? [],
+    ).filter(
+      (entry) =>
+        entry.layer === "detail" &&
+        currentFrameAtMs - (entry.lastObservedAtMs ?? 0) <= 66,
+    );
+
+    expect(structural.structuralMetrics.highQObservedDrive).toBeGreaterThan(
+      0.0025,
+    );
+    expect(freshlyObservedDetailModes.length).toBeGreaterThanOrEqual(2);
+    expect(structural.structuralMetrics.detailSignalAuthoritativeHighQ).toBe(
+      true,
+    );
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0.003);
+  });
+
   it("observes high-Q detail from low-meter bowl strikes before the tail", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
