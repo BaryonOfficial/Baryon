@@ -17,6 +17,9 @@ import {
   LATCHED_FOG_BEAM_REDUCTION,
   LATCHED_FOG_BODY_REDUCTION,
   MODAL_CROWDING_BODY_COMPRESSION,
+  RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT,
+  RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
+  RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT,
   STRUCTURE_AWARE_EMISSION_BODY_SUPPRESSION,
   STRUCTURE_AWARE_EMISSION_MIN_GAIN,
   WHITE_EMISSION_CROWDING_REDUCTION,
@@ -851,6 +854,53 @@ describe("field shaping", () => {
     expect(modal.physicalVisibleDensity).toBe(0);
     expect(modal.visibleDensity).toBeGreaterThan(0.065);
     expect(noStructure.visibleDensity).toBe(0);
+  });
+
+  it("keeps retained high-Q ridge density readable without changing physical density", () => {
+    const baseline = deriveVisibleDensity({
+      density: 0.004,
+      modalVisibilityEnergy: 0.16,
+      modalStructureAnchor: 0.84,
+      ridgeAnchor: 0.86,
+    });
+    const retained = deriveVisibleDensity({
+      density: 0.004,
+      modalVisibilityEnergy: 0.16,
+      modalVisibilityRetainedHighQEnergy: 0.22,
+      modalStructureAnchor: 0.84,
+      ridgeAnchor: 0.86,
+    });
+    const noRidge = deriveVisibleDensity({
+      density: 0.004,
+      modalVisibilityEnergy: 0.16,
+      modalVisibilityRetainedHighQEnergy: 0.22,
+      modalStructureAnchor: 0.84,
+      ridgeAnchor: 0,
+    });
+    const noStructure = deriveVisibleDensity({
+      density: 0.004,
+      modalVisibilityEnergy: 0.16,
+      modalVisibilityRetainedHighQEnergy: 0.22,
+      modalStructureAnchor: 0,
+      ridgeAnchor: 0.86,
+    });
+
+    expect(RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR).toBeCloseTo(0.24);
+    expect(RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT).toBeCloseTo(0.18);
+    expect(RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT).toBeCloseTo(0.08);
+    expect(retained.physicalVisibleDensity).toBe(
+      baseline.physicalVisibleDensity,
+    );
+    expect(retained.visibleDensity).toBeGreaterThan(
+      baseline.visibleDensity * 1.25,
+    );
+    expect(retained.retainedHighQRidgeVisibleDensity).toBeGreaterThan(0.03);
+    expect(retained.retainedHighQRidgeVisibleDensity).toBeLessThanOrEqual(
+      RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
+    );
+    expect(retained.retainedHighQContourAccent).toBeGreaterThan(0.01);
+    expect(noRidge.retainedHighQRidgeVisibleDensity).toBe(0);
+    expect(noStructure.retainedHighQRidgeVisibleDensity).toBe(0);
   });
 
   it("pushes hot-core highlights from beam energy instead of body fog", () => {

@@ -465,6 +465,7 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
       changeSignal: 0.52,
       pulseSignal: 0.64,
       modalVisibilityEnergy: 0.76,
+      modalVisibilityRetainedHighQEnergy: 0.33,
       modeCoherence: 0.88,
       activeBackboneModeCount: 4,
       activeDetailModeCount: 5,
@@ -513,6 +514,7 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
     changeSignal: 0.52,
     pulseSignal: 0.64,
     modalVisibilityEnergy: 0.76,
+    modalVisibilityRetainedHighQEnergy: 0.33,
     modeCoherence: 0.88,
     activeBackboneModeCount: 4,
     activeDetailModeCount: 5,
@@ -552,6 +554,7 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
   const hudSnapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
   expect(hudSnapshot.modalFreshness).toMatchObject({
     structureSignal: 0.28,
+    modalVisibilityRetainedHighQEnergy: 0.33,
     responseEnvelope: 0.31,
     highQDetailModeCount: 5,
     highQDetailEnergy: 0.39,

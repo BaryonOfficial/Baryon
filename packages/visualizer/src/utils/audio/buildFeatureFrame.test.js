@@ -3027,6 +3027,10 @@ describe("live input noise gate", () => {
     expect(frame.debug.highQDetailModeCount).toBe(8);
     expect(frame.debug.highQRingSupport).toBe(0);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.16);
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0.08);
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBe(
+      frame.debug.modalVisibilityRetainedHighQEnergy,
+    );
   });
 
   it("keeps subdued system-routed harmonic resonance from going empty", () => {
@@ -3526,8 +3530,10 @@ describe("test-tone snapshot generation", () => {
     });
 
     expect(silent.modalVisibilityEnergy).toBe(0);
+    expect(silent.modalVisibilityRetainedHighQEnergy).toBe(0);
     expect(weakNoisy.energySignal).toBeLessThan(0.12);
     expect(weakNoisy.modalVisibilityEnergy).toBe(0);
+    expect(weakNoisy.modalVisibilityRetainedHighQEnergy ?? 0).toBe(0);
   });
 });
 

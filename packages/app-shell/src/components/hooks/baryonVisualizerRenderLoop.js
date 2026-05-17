@@ -293,6 +293,9 @@ export function updateModalFreshnessDiagnostics(
   modalFreshness.modalVisibilityEnergy = readFiniteNumber(
     featureFrame.modalVisibilityEnergy,
   );
+  modalFreshness.modalVisibilityRetainedHighQEnergy = readFiniteNumber(
+    featureFrame.modalVisibilityRetainedHighQEnergy,
+  );
   modalFreshness.modeCoherence = readFiniteNumber(featureFrame.modeCoherence);
   modalFreshness.activeBackboneModeCount = readFiniteNumber(
     featureFrame.activeBackboneModeCount,

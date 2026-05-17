@@ -112,6 +112,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uModeCoherence: { value: 0 },
       uTotalSlotAmplitude: { value: 0 },
       uModalVisibilityEnergy: { value: 0 },
+      uModalVisibilityRetainedHighQEnergy: { value: 0 },
     },
     visualRoot: {
       scale: {
@@ -1305,6 +1306,54 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.responseEnvelope).toBeGreaterThan(0.16);
     expect(runtimeState.debugSnapshot.raymarchDebug.modalVisibilityEnergy).toBe(
       0.32,
+    );
+  });
+
+  it("passes retained high-Q ridge visibility to the shader without inflating bloom response", () => {
+    const baselineRuntime = createRuntimeState();
+    const retainedRuntime = createRuntimeState();
+    const baseFrame = {
+      fieldState: "active",
+      averageAmplitude: 1.24,
+      backboneSlots: new Float32Array([3, 4, 6, 0.018]),
+      detailSlots: new Float32Array([4, 5, 5, 0.012]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.02, 0.018, 0.014, 0.01]),
+      transientEnergy: 0,
+      spectralCentroid: 0.18,
+      spectralFlux: 0.01,
+      structureSignal: 0.028,
+      energySignal: 0.012,
+      changeSignal: 0,
+      pulseSignal: 0,
+      modeCoherence: 0.8,
+      modalVisibilityEnergy: 0.32,
+      rhythmicDensity: 0,
+      debug: {},
+    };
+
+    tickRaymarchRuntime(baselineRuntime, baseFrame, 2, 1 / 60);
+    tickRaymarchRuntime(
+      retainedRuntime,
+      {
+        ...baseFrame,
+        modalVisibilityRetainedHighQEnergy: 0.19,
+      },
+      2,
+      1 / 60,
+    );
+
+    expect(
+      retainedRuntime.uniforms.uModalVisibilityRetainedHighQEnergy.value,
+    ).toBeCloseTo(0.19);
+    expect(retainedRuntime.scaleSignal).toBeCloseTo(
+      baselineRuntime.scaleSignal,
+      6,
+    );
+    expect(retainedRuntime.bloomResponseSignal).toBeCloseTo(
+      baselineRuntime.bloomResponseSignal,
+      6,
     );
   });
 

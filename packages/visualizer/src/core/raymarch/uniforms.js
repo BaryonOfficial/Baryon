@@ -71,5 +71,6 @@ export function createRaymarchUniforms(parameters) {
     uModeCoherence: uniform(0.0),
     uTotalSlotAmplitude: uniform(0.0),
     uModalVisibilityEnergy: uniform(0.0),
+    uModalVisibilityRetainedHighQEnergy: uniform(0.0),
   };
 }

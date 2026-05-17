@@ -92,6 +92,7 @@ describe("raymarch volume material", () => {
     expect(mesh.material.steps).toBe(88);
     expect(mesh.material.radiusNode).toBe(uniforms.uRadius);
     expect(mesh.material.opacityGainNode).toBe(uniforms.uOpacityGain);
+    expect(uniforms.uModalVisibilityRetainedHighQEnergy.value).toBe(0);
   });
 
   it("supports separate backbone and detail capacities", () => {

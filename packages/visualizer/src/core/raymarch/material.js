@@ -91,6 +91,9 @@ import {
   LOW_MID_BAND_WEIGHT,
   MODAL_CROWDING_ACCUMULATION_COMPRESSION,
   MODAL_CROWDING_BODY_COMPRESSION,
+  RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT,
+  RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
+  RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT,
   RIM_BLOOM_BIAS_BASE,
   RIM_BLOOM_BIAS_GAIN,
   RIM_COMPRESSION_BOUNDARY_GAIN,
@@ -462,6 +465,7 @@ function createScatteringNode({
     uModeCoherence,
     uTotalSlotAmplitude,
     uModalVisibilityEnergy,
+    uModalVisibilityRetainedHighQEnergy,
   } = uniforms;
   // Uniform-only expressions: hoist outside the Fn so they are loop-invariant
   // at the TSL graph level and do not re-evaluate every raymarch step.
@@ -935,12 +939,16 @@ function createScatteringNode({
         .mul(shellWeight)
         .mul(edgeFade)
         .mul(activeMask);
-      const { visibleDensity, physicalVisibleDensity } =
-        deriveVisibleDensityNode(
-          density,
-          uModalVisibilityEnergy,
-          modalStructureAnchor,
-        );
+      const densityVisibility = deriveVisibleDensityNode(
+        density,
+        uModalVisibilityEnergy,
+        modalStructureAnchor,
+        uModalVisibilityRetainedHighQEnergy,
+        contourShape.mul(ridgeConcentration),
+      );
+      const { visibleDensity, physicalVisibleDensity } = densityVisibility;
+      const retainedHighQContourAccent =
+        densityVisibility.retainedHighQContourAccent;
       const highlightMask = smoothstep(
         float(HIGHLIGHT_MASK_START),
         float(HIGHLIGHT_MASK_END),
@@ -1019,10 +1027,15 @@ function createScatteringNode({
       );
       const staticBaseColor = mix(uColor, uSurfaceColor, spectralColorBias);
       const spectralColor = colorSum.div(colorWeight.max(float(1e-4)));
-      const contourAccent = contourMix
-        .mul(float(0.18))
-        .add(boundaryMask.mul(float(BOUNDARY_CONTOUR_ACCENT_WEIGHT)))
-        .add(highlightMask.mul(float(HIGHLIGHT_CONTOUR_ACCENT_WEIGHT)));
+      const contourAccent = clamp(
+        contourMix
+          .mul(float(0.18))
+          .add(boundaryMask.mul(float(BOUNDARY_CONTOUR_ACCENT_WEIGHT)))
+          .add(highlightMask.mul(float(HIGHLIGHT_CONTOUR_ACCENT_WEIGHT)))
+          .add(retainedHighQContourAccent),
+        float(0.0),
+        float(1.0),
+      );
       // Beat pulse briefly expands the bright hot core — "bloom from within" on hits
       // hotCoreStartDynamic is pre-computed above the Fn.
       // excitationGate prevents weak tonal fields from triggering the white laser core.
@@ -1220,7 +1233,16 @@ function deriveVisibleDensityNode(
   density,
   modalVisibilityEnergy,
   modalStructureAnchor,
+  modalVisibilityRetainedHighQEnergy = float(0.0),
+  ridgeAnchor = float(0.0),
 ) {
+  const retainedHighQRidgeAnchor = clamp(
+    modalVisibilityRetainedHighQEnergy
+      .mul(modalStructureAnchor)
+      .mul(ridgeAnchor),
+    float(0.0),
+    float(1.0),
+  );
   const physicalVisibilityGate = smoothstep(
     float(LOW_DENSITY_FADE_START),
     float(LOW_DENSITY_FADE_END),
@@ -1233,10 +1255,15 @@ function deriveVisibleDensityNode(
     float(0.0),
     float(MODAL_VISIBILITY_DENSITY_LIFT),
   );
+  const retainedHighQRidgeLift = clamp(
+    retainedHighQRidgeAnchor.mul(float(RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT)),
+    float(0.0),
+    float(RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT),
+  );
   const visibilityGate = smoothstep(
     float(LOW_DENSITY_FADE_START),
     float(LOW_DENSITY_FADE_END),
-    density.add(modalLift),
+    density.add(modalLift).add(retainedHighQRidgeLift),
   );
   const physicalVisibleDensity = density.mul(physicalVisibilityGate);
   const modalVisibleDensity = clamp(
@@ -1246,14 +1273,31 @@ function deriveVisibleDensityNode(
     float(0.0),
     float(MODAL_VISIBILITY_DENSITY_FLOOR),
   );
+  const retainedHighQRidgeVisibleDensity = clamp(
+    retainedHighQRidgeAnchor.mul(float(RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR)),
+    float(0.0),
+    float(RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR),
+  );
+  const retainedHighQContourAccent = clamp(
+    retainedHighQRidgeAnchor.mul(float(RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT)),
+    float(0.0),
+    float(RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT),
+  );
 
   return {
     physicalVisibilityGate,
     physicalVisibleDensity,
     modalLift,
     modalVisibleDensity,
+    retainedHighQRidgeAnchor,
+    retainedHighQRidgeLift,
+    retainedHighQRidgeVisibleDensity,
+    retainedHighQContourAccent,
     visibilityGate,
-    visibleDensity: max(density.mul(visibilityGate), modalVisibleDensity),
+    visibleDensity: max(
+      max(density.mul(visibilityGate), modalVisibleDensity),
+      retainedHighQRidgeVisibleDensity,
+    ),
   };
 }
 

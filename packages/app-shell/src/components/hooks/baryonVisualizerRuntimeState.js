@@ -76,6 +76,7 @@ function createModalFreshnessDiagnostics() {
     changeSignal: 0,
     pulseSignal: 0,
     modalVisibilityEnergy: 0,
+    modalVisibilityRetainedHighQEnergy: 0,
     modeCoherence: 0,
     activeBackboneModeCount: 0,
     activeDetailModeCount: 0,
@@ -135,6 +136,8 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
     changeSignal: modalFreshness.changeSignal ?? 0,
     pulseSignal: modalFreshness.pulseSignal ?? 0,
     modalVisibilityEnergy: modalFreshness.modalVisibilityEnergy ?? 0,
+    modalVisibilityRetainedHighQEnergy:
+      modalFreshness.modalVisibilityRetainedHighQEnergy ?? 0,
     modeCoherence: modalFreshness.modeCoherence ?? 0,
     activeBackboneModeCount: modalFreshness.activeBackboneModeCount ?? 0,
     activeDetailModeCount: modalFreshness.activeDetailModeCount ?? 0,

@@ -1056,6 +1056,7 @@ function buildZeroDebugSnapshot({
     structureSignal: 0,
     energySignal: 0,
     modalVisibilityEnergy: 0,
+    modalVisibilityRetainedHighQEnergy: 0,
     changeSignal: 0,
     pulseSignal: 0,
     requestedCavityGeometry,
@@ -1144,6 +1145,7 @@ function buildSilentFeatureFrame({
     structureSignal: 0,
     energySignal: 0,
     modalVisibilityEnergy: 0,
+    modalVisibilityRetainedHighQEnergy: 0,
     changeSignal: 0,
     pulseSignal: 0,
     beatDetected: false,
@@ -2089,10 +2091,6 @@ function deriveModalVisibilityComponents({
   };
 }
 
-function deriveModalVisibilityEnergy(options) {
-  return deriveModalVisibilityComponents(options).modalVisibilityEnergy;
-}
-
 function deriveCompositeSignals({
   inputMode,
   modeCapacity,
@@ -2206,12 +2204,15 @@ function deriveCompositeSignals({
     (beatDetected ? beatStrength * 0.56 + beatConfidence * 0.24 : 0) +
       clamp01(pulseDriver * 0.22),
   );
-  const modalVisibilityEnergy = deriveModalVisibilityEnergy({
+  const modalVisibilityComponents = deriveModalVisibilityComponents({
     modeSlots,
     modeCapacity,
     structuralMetrics,
     hardSilent: liveInputHardSilenceActive,
   });
+  const modalVisibilityEnergy = modalVisibilityComponents.modalVisibilityEnergy;
+  const modalVisibilityRetainedHighQEnergy =
+    modalVisibilityComponents.retainedHighQModalVisibility ?? 0;
 
   if (inputMode === "live") {
     return {
@@ -2223,6 +2224,7 @@ function deriveCompositeSignals({
       pulseSignal: clamp01(pulseSignal * LIVE_INPUT_PULSE_RESPONSE_SCALE),
       modeCoherence,
       modalVisibilityEnergy,
+      modalVisibilityRetainedHighQEnergy,
       changeBreakdown,
     };
   }
@@ -2234,6 +2236,7 @@ function deriveCompositeSignals({
     pulseSignal,
     modeCoherence,
     modalVisibilityEnergy,
+    modalVisibilityRetainedHighQEnergy,
     changeBreakdown,
   };
 }
@@ -4018,6 +4021,7 @@ export function composeAudioFeatureFrame({
     pulseSignal,
     modeCoherence,
     modalVisibilityEnergy,
+    modalVisibilityRetainedHighQEnergy,
   } = deriveCompositeSignals({
     inputMode: preparedInputs.analysisInputMode,
     modeCapacity: preparedInputs.capacity,
@@ -4101,11 +4105,21 @@ export function composeAudioFeatureFrame({
         releaseMs: 160,
       },
     );
+    modalVisibilityRetainedHighQEnergy = smoothFeatureSignal(
+      previousFrame.modalVisibilityRetainedHighQEnergy ?? 0,
+      modalVisibilityRetainedHighQEnergy,
+      deltaMs,
+      {
+        attackMs: 70,
+        releaseMs: 160,
+      },
+    );
   }
   if (reusedAnalysisSourceAuthorityScale < 1) {
     structureSignal *= reusedAnalysisSourceAuthorityScale;
     energySignal *= reusedAnalysisSourceAuthorityScale;
     modalVisibilityEnergy *= reusedAnalysisSourceAuthorityScale;
+    modalVisibilityRetainedHighQEnergy *= reusedAnalysisSourceAuthorityScale;
     modeCoherence *= reusedAnalysisSourceAuthorityScale;
   }
   const timbreSpread = deriveDeterministicTimbreSpread({
@@ -4251,6 +4265,7 @@ export function composeAudioFeatureFrame({
     structureSignal,
     energySignal,
     modalVisibilityEnergy,
+    modalVisibilityRetainedHighQEnergy,
     changeSignal,
     changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
     pulseSignal,

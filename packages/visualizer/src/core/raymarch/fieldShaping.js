@@ -81,6 +81,9 @@ export const EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END = 0.24;
 export const EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT = 0.82;
 export const MODAL_VISIBILITY_DENSITY_LIFT = 0.3;
 export const MODAL_VISIBILITY_DENSITY_FLOOR = 0.22;
+export const RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR = 0.24;
+export const RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT = 0.18;
+export const RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT = 0.08;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -418,8 +421,14 @@ export function deriveModalCrowdingDensity({
 export function deriveVisibleDensity({
   density,
   modalVisibilityEnergy = 0,
+  modalVisibilityRetainedHighQEnergy = 0,
   modalStructureAnchor = 0,
+  ridgeAnchor = 0,
 }) {
+  const retainedHighQRidgeAnchor =
+    clamp01(modalVisibilityRetainedHighQEnergy) *
+    clamp01(modalStructureAnchor) *
+    clamp01(ridgeAnchor);
   const physicalVisibilityGate = smoothstep(
     LOW_DENSITY_FADE_START,
     LOW_DENSITY_FADE_END,
@@ -429,23 +438,39 @@ export function deriveVisibleDensity({
     clamp01(modalVisibilityEnergy) *
     clamp01(modalStructureAnchor) *
     MODAL_VISIBILITY_DENSITY_LIFT;
+  const retainedHighQRidgeLift =
+    retainedHighQRidgeAnchor * RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT;
   const visibilityGate = smoothstep(
     LOW_DENSITY_FADE_START,
     LOW_DENSITY_FADE_END,
-    density + modalLift,
+    density + modalLift + retainedHighQRidgeLift,
   );
   const modalVisibleDensity =
     clamp01(modalVisibilityEnergy) *
     clamp01(modalStructureAnchor) *
     MODAL_VISIBILITY_DENSITY_FLOOR;
+  const retainedHighQRidgeVisibleDensity = Math.min(
+    RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
+    retainedHighQRidgeAnchor * RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
+  );
+  const retainedHighQContourAccent =
+    retainedHighQRidgeAnchor * RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT;
 
   return {
     physicalVisibilityGate,
     physicalVisibleDensity: density * physicalVisibilityGate,
     modalLift,
     modalVisibleDensity,
+    retainedHighQRidgeAnchor,
+    retainedHighQRidgeLift,
+    retainedHighQRidgeVisibleDensity,
+    retainedHighQContourAccent,
     visibilityGate,
-    visibleDensity: Math.max(density * visibilityGate, modalVisibleDensity),
+    visibleDensity: Math.max(
+      density * visibilityGate,
+      modalVisibleDensity,
+      retainedHighQRidgeVisibleDensity,
+    ),
   };
 }
 
