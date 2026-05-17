@@ -964,17 +964,40 @@ function isRetainedSustainedBackboneMode({
     return false;
   }
 
-  const retainedEnergy = previous?.retainedEnergy ?? previous?.amplitude ?? 0;
+  const profile = getModalObserverProfile("backbone");
+  const retainedEnergy = getObservedModeRetainedEnergy(previous);
   return (
-    retainedEnergy >= LOW_Q_OBSERVER_MIN_RETAINED_ENERGY &&
-    (previous?.coherence ?? 0) >= 0.32 &&
+    retainedEnergy >= profile.minRetainedEnergy &&
+    (previous?.coherence ?? 0) >= profile.minRetainedCoherence &&
     (driveEnergy >= BACKBONE_RETAINED_MODE_MIN_DRIVE_ENERGY ||
-      (previous?.observedDrive ?? 0) >= LOW_Q_OBSERVER_MIN_OBSERVED_DRIVE)
+      hasObservedModalDrive(previous, profile))
   );
 }
 
 function getModalObserverProfile(layer) {
   return MODAL_OBSERVER_PROFILES[layer] ?? MODAL_OBSERVER_PROFILES.detail;
+}
+
+function getObservedModeRetainedEnergy(entry) {
+  return entry?.retainedEnergy ?? entry?.amplitude ?? 0;
+}
+
+function hasObservedModalDrive(entry, profile) {
+  return (entry?.observedDrive ?? 0) >= profile.minObservedDrive;
+}
+
+function hasObservedLayerDrive(metrics, layer) {
+  const profile = getModalObserverProfile(layer);
+  return layer === "backbone"
+    ? metrics.lowQObservedDrive >= profile.minObservedDrive
+    : metrics.highQObservedDrive >= profile.minObservedDrive;
+}
+
+function isObservedModeAged(entry, currentFrameAtMs) {
+  return (
+    !!entry &&
+    (entry.firstObservedAtMs ?? currentFrameAtMs) < currentFrameAtMs
+  );
 }
 
 function computeModalObserverNoiseFloor({
@@ -1174,11 +1197,11 @@ function createObservedModalModeEntry({
       ? clamp01((previous?.driveEnergy ?? 0) * 0.82 + observedDrive * 0.18)
       : clamp01((previous?.driveEnergy ?? 0) * 0.96);
   const firstObservedAtMs =
-    previous?.firstObservedAtMs ?? previous?.seededAtMs ?? currentFrameAtMs;
+    previous?.firstObservedAtMs ?? currentFrameAtMs;
   const lastObservedAtMs =
-    observedDrive >= profile.minObservedDrive
+    hasObservedModalDrive({ observedDrive }, profile)
       ? currentFrameAtMs
-      : (previous?.lastObservedAtMs ?? previous?.lastSupportedAtMs ?? firstObservedAtMs);
+      : (previous?.lastObservedAtMs ?? firstObservedAtMs);
   const energy = clamp01(retainedEnergy);
   const isDetail = atlasEntry?.layer === "detail";
 
@@ -1205,9 +1228,7 @@ function createObservedModalModeEntry({
       energy,
     ),
     firstObservedAtMs,
-    seededAtMs: firstObservedAtMs,
     lastObservedAtMs,
-    lastSupportedAtMs: lastObservedAtMs,
     retainedSustainedDetail: isDetail,
     retainedSubtleSustainedDetail: isDetail,
     retainedSustainedDetailPresence: isDetail
@@ -1218,7 +1239,6 @@ function createObservedModalModeEntry({
       ? Math.max(previous?.retainedSustainedBackbonePresence ?? 0, energy)
       : 0,
     observedModal: true,
-    highQObserved: isDetail,
   };
 }
 
@@ -1235,7 +1255,7 @@ function summarizeObservedLayerModes(modes, layer) {
     if (entry?.layer !== layer) {
       continue;
     }
-    const retainedEnergy = entry?.retainedEnergy ?? entry?.amplitude ?? 0;
+    const retainedEnergy = getObservedModeRetainedEnergy(entry);
     if (retainedEnergy <= 0) {
       continue;
     }
@@ -1296,12 +1316,17 @@ function summarizeObservedModes(modes) {
   };
 }
 
-function hasAgedObservedDetailModes(modes, currentFrameAtMs) {
+function hasAgedObservedLayerModes({
+  modes,
+  layer,
+  currentFrameAtMs,
+  minAgeMs,
+}) {
   for (const entry of modes?.values?.() ?? []) {
     if (
-      entry?.layer === "detail" &&
+      entry?.layer === layer &&
       currentFrameAtMs - (entry?.firstObservedAtMs ?? currentFrameAtMs) >=
-      HIGH_Q_DETAIL_AUTHORITY_MIN_AGE_MS
+        minAgeMs
     ) {
       return true;
     }
@@ -1391,7 +1416,7 @@ function updateObservedModalModes({
       sourceMode: preparedInputs.sourceMode,
     });
     const previous = state.observedModes?.get(atlasEntry.modeKey) ?? null;
-    const observed = observation.observedDrive >= profile.minObservedDrive;
+    const observed = hasObservedModalDrive(observation, profile);
     const decayTauMs =
       atlasEntry.decayTauMs *
       (observed ? profile.decayTauScale : profile.noEvidenceTauScale);
@@ -1437,8 +1462,7 @@ function updateObservedModalModes({
   );
   const currentObservationCount = sortedModes.filter(
     (entry) =>
-      (entry.observedDrive ?? 0) >=
-      getModalObserverProfile(entry.layer).minObservedDrive,
+      hasObservedModalDrive(entry, getModalObserverProfile(entry.layer)),
   ).length;
   const averageCurrentObservedDrive =
     currentObservationCount > 0
@@ -1520,11 +1544,11 @@ function mergeExcitedObservedModes({
       ),
     );
     const hasObservedModalEvidence =
-      observedDrive >= profile.minObservedDrive ||
+      hasObservedModalDrive({ observedDrive }, profile) ||
       observedEnergy >= profile.minRetainedEnergy;
     const hasSustainedModalEvidence =
       entry.layer === "backbone"
-        ? observedDrive >= profile.minObservedDrive ||
+        ? hasObservedModalDrive({ observedDrive }, profile) ||
           (entry.amplitude ?? 0) >= profile.minRetainedEnergy
         : (entry.detailMaturity ?? 0) >= DETAIL_SUBTLE_TAIL_MIN_MATURITY ||
           getSustainedDetailPresence(entry) >= DETAIL_TAIL_MIN_PRESENCE ||
@@ -2388,14 +2412,12 @@ export function buildModalExcitationStructuralState({
       modalObserverMetrics.highQDetailEnergy >=
         HIGH_Q_DETAIL_MIN_RETAINED_ENERGY &&
       modalObserverMetrics.highQRingSupport > 0 &&
-      modalObserverMetrics.highQObservedDrive >=
-        HIGH_Q_OBSERVER_MIN_OBSERVED_DRIVE) ||
+      hasObservedLayerDrive(modalObserverMetrics, "detail")) ||
     (modalObserverMetrics.lowQBackboneModeCount >=
       LOW_Q_OBSERVER_MIN_MODE_COUNT &&
       modalObserverMetrics.lowQBackboneEnergy >=
         LOW_Q_OBSERVER_MIN_RETAINED_ENERGY &&
-      modalObserverMetrics.lowQObservedDrive >=
-        LOW_Q_OBSERVER_MIN_OBSERVED_DRIVE &&
+      hasObservedLayerDrive(modalObserverMetrics, "backbone") &&
       modalObserverMetrics.lowQObservedCoherence >= 0.32);
   const hardSilentFrame =
     strictHardSilentFrame && !observedTailActivity;
@@ -2451,10 +2473,12 @@ export function buildModalExcitationStructuralState({
         harmonicSupport: detailBandHarmonicSupport,
         hardSilentFrame,
       });
-  const observedDetailModesAged = hasAgedObservedDetailModes(
-    state.observedModes,
-    preparedInputs.currentFrameAtMs,
-  );
+  const observedDetailModesAged = hasAgedObservedLayerModes({
+    modes: state.observedModes,
+    layer: "detail",
+    currentFrameAtMs: preparedInputs.currentFrameAtMs,
+    minAgeMs: HIGH_Q_DETAIL_AUTHORITY_MIN_AGE_MS,
+  });
   const highQDetailTopologySignal =
     modalObserverMetrics.highQRingSupport > 0 &&
     modalObserverMetrics.highQDetailModeCount > 0 &&
@@ -2517,16 +2541,15 @@ export function buildModalExcitationStructuralState({
         distributedExcitation * 0.24,
     );
     const observedPrevious = state.observedModes?.get(atlasEntry.modeKey) ?? null;
-    const profile = getModalObserverProfile(atlasEntry.layer);
-    const observedPreviousAged =
-      observedPrevious &&
-      (observedPrevious.firstObservedAtMs ?? preparedInputs.currentFrameAtMs) <
-        preparedInputs.currentFrameAtMs;
+    const observedPreviousAged = isObservedModeAged(
+      observedPrevious,
+      preparedInputs.currentFrameAtMs,
+    );
     const canUseObservedPrevious =
       observedPreviousAged &&
       !hardSilentFrame &&
       (atlasEntry.layer === "backbone"
-        ? modalObserverMetrics.lowQObservedDrive >= profile.minObservedDrive &&
+        ? hasObservedLayerDrive(modalObserverMetrics, "backbone") &&
           !backboneCouplingFrequencySwitch
         : highQDetailRetentionSignal > 0 && !detailCouplingFrequencySwitch);
     const activePrevious =
@@ -2995,8 +3018,8 @@ export function buildModalExcitationStructuralState({
     displayAmplitudeTotal,
   });
   const observedCurrentSignal =
-    modalObserverMetrics.lowQObservedDrive >= LOW_Q_OBSERVER_MIN_OBSERVED_DRIVE ||
-    modalObserverMetrics.highQObservedDrive >= HIGH_Q_OBSERVER_MIN_OBSERVED_DRIVE;
+    hasObservedLayerDrive(modalObserverMetrics, "backbone") ||
+    hasObservedLayerDrive(modalObserverMetrics, "detail");
 
   state.previousSignalBackboneSlots.fill(0);
   state.previousSignalBackboneSlots.set(

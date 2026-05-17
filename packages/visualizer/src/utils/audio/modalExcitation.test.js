@@ -355,9 +355,28 @@ const REMOVED_MODAL_OBSERVER_AUTHORITY_FIELDS = [
   "coherentDetailTailModes",
 ];
 
+const REMOVED_MODAL_OBSERVER_ENTRY_FIELDS = [
+  "seededAtMs",
+  "lastSupportedAtMs",
+  "highQObserved",
+];
+
 function expectLegacyModalObserverAuthoritiesRemoved(state) {
   for (const field of REMOVED_MODAL_OBSERVER_AUTHORITY_FIELDS) {
     expect(state[field]).toBeUndefined();
+  }
+}
+
+function expectCanonicalObservedModeEntries(state) {
+  for (const entry of state.observedModes?.values?.() ?? []) {
+    expect(entry).toMatchObject({
+      observedModal: true,
+      firstObservedAtMs: expect.any(Number),
+      lastObservedAtMs: expect.any(Number),
+    });
+    for (const field of REMOVED_MODAL_OBSERVER_ENTRY_FIELDS) {
+      expect(entry[field]).toBeUndefined();
+    }
   }
 }
 
@@ -450,6 +469,7 @@ describe("modal excitation structural state", () => {
     expect(countActiveSlotsLocal(structural.backboneSlotsSource)).toBeGreaterThan(
       0,
     );
+    expectCanonicalObservedModeEntries(state);
   });
 
   it("reports canonical Spectral Light components for modal-excitation color", () => {
@@ -1624,6 +1644,7 @@ describe("modal excitation structural state", () => {
     expect(
       structural.structuralMetrics.detailSignalAuthoritativeReason,
     ).toBe("high-q");
+    expectCanonicalObservedModeEntries(state);
   });
 
   it("clears high-Q detail state on true hard silence after a loud ring", () => {
