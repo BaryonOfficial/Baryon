@@ -323,9 +323,45 @@ function makeModeSlots(entries) {
   return slots;
 }
 
+function makePhaseSlots(entries) {
+  const slots = new Float32Array(AUDIO_SLOT_CAPACITY * 4);
+  entries.forEach(([phaseOffset, phaseVelocity, coherence, authority], index) => {
+    const offset = index * 4;
+    slots[offset] = phaseOffset;
+    slots[offset + 1] = phaseVelocity;
+    slots[offset + 2] = coherence;
+    slots[offset + 3] = authority;
+  });
+  return slots;
+}
+
+function countAuthoritativePhaseSlots(slots) {
+  const slotCount = Math.floor((slots?.length ?? 0) / 4);
+  let total = 0;
+  for (let index = 0; index < slotCount; index += 1) {
+    if ((slots[index * 4 + 3] ?? 0) > 0) {
+      total += 1;
+    }
+  }
+  return total;
+}
+
+function countActiveSlots(slots) {
+  const slotCount = Math.floor((slots?.length ?? 0) / 4);
+  let total = 0;
+  for (let index = 0; index < slotCount; index += 1) {
+    if ((slots[index * 4 + 3] ?? 0) > 0) {
+      total += 1;
+    }
+  }
+  return total;
+}
+
 function makeManualStructuralState({
   backboneSlots = makeModeSlots([]),
   detailSlots = makeModeSlots([]),
+  backbonePhaseSlots = makePhaseSlots([]),
+  detailPhaseSlots = makePhaseSlots([]),
   dominantFrequency = 196,
   dominantAmplitude = 0.08,
   sourceMode = "file",
@@ -338,6 +374,8 @@ function makeManualStructuralState({
     referenceDetailSlotsSource: detailSlots,
     signalBackboneSlotsSource: backboneSlots,
     signalDetailSlotsSource: detailSlots,
+    backbonePhaseSlotsSource: backbonePhaseSlots,
+    detailPhaseSlotsSource: detailPhaseSlots,
     signalReferenceBackboneSlotsSource: backboneSlots,
     signalReferenceDetailSlotsSource: detailSlots,
     dominantFrequency,
@@ -3632,6 +3670,69 @@ describe("live input noise gate", () => {
     expect(findModeAmplitude(frame.detailSlots, [4, 4, 4])).toBe(0);
     expect(frame.debug.modalObserverTopologyFloor).toBeGreaterThan(0);
     expect(frame.debug.highQObserverVisibilityEnergy).toBeGreaterThan(0);
+  });
+
+  it("exposes phase slots aligned with existing mode slots without adding modes", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 0.58,
+        fftMagnitudes: makeFft([
+          [196, 0.009],
+          [282, 0.007],
+        ]),
+        timeData: makeMixedTimeData({
+          partials: [
+            [196, 0.007],
+            [282, 0.005],
+          ],
+          amplitudeScale: 0.0012,
+        }),
+        rms: 0.0018,
+      }),
+      featureState,
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 17200,
+    });
+    const detailSlots = makeModeSlots([
+      [2, 1, 3, 0.0032],
+      [3, 2, 5, 0.0026],
+    ]);
+    const frame = composeManualStructuralFrame({
+      preparedInputs,
+      structuralState: makeManualStructuralState({
+        detailSlots,
+        detailPhaseSlots: makePhaseSlots([
+          [0.2, 0.12, 0.8, 0.54],
+          [-0.4, -0.08, 0.72, 0.42],
+        ]),
+        structuralMetrics: {
+          observedModalModeCount: 2,
+          highQDetailModeCount: 2,
+          highQDetailEnergy: 0.012,
+          highQRingSupport: 0.24,
+          highQObservedCoherence: 0.82,
+          highQObservedSnr: 0.7,
+          modalPersistence: 0.04,
+          modalDriveEnergy: 0.004,
+          modeCoherence: 0.66,
+          modalPhaseAuthority: 0.48,
+          highQPhaseAuthority: 0.48,
+          modalPhaseOverlayModeCount: 2,
+        },
+      }),
+    });
+
+    expect(countActiveSlots(frame.detailSlots)).toBe(2);
+    expect(countAuthoritativePhaseSlots(frame.detailPhaseSlots)).toBe(2);
+    expect(frame.detailPhaseSlots[0]).toBeCloseTo(0.2);
+    expect(frame.detailPhaseSlots[3]).toBeCloseTo(0.54);
+    expect(frame.detailPhaseSlots[4]).toBeCloseTo(-0.4);
+    expect(frame.activeDetailModeCount).toBe(2);
+    expect(frame.debug.modalPhaseAuthority).toBeGreaterThan(0);
+    expect(frame.debug.highQPhaseAuthority).toBeGreaterThan(0);
   });
 
   it("does not authorize observer visibility or create slots from stale silence", () => {

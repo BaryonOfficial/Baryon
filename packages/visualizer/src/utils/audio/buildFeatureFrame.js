@@ -304,6 +304,16 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     "detailSlots",
     slotLength,
   );
+  const backbonePhaseSlots = ensureArrayField(
+    analysisMemory,
+    "backbonePhaseSlots",
+    slotLength,
+  );
+  const detailPhaseSlots = ensureArrayField(
+    analysisMemory,
+    "detailPhaseSlots",
+    slotLength,
+  );
   const modeSlots = ensureArrayField(analysisMemory, "modeSlots", slotLength);
   const signalModeSlots = ensureArrayField(
     analysisMemory,
@@ -420,6 +430,8 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
   return {
     backboneSlots,
     detailSlots,
+    backbonePhaseSlots,
+    detailPhaseSlots,
     modeSlots,
     signalModeSlots,
     backboneColorSlots,
@@ -1018,6 +1030,11 @@ function buildDebugSummary({
     highQObservedSnr: structuralMetrics?.highQObservedSnr ?? 0,
     highQObservedCoherence: structuralMetrics?.highQObservedCoherence ?? 0,
     highQObservedNoiseFloor: structuralMetrics?.highQObservedNoiseFloor ?? 0,
+    modalPhaseAuthority: structuralMetrics?.modalPhaseAuthority ?? 0,
+    highQPhaseAuthority: structuralMetrics?.highQPhaseAuthority ?? 0,
+    lowQPhaseAuthority: structuralMetrics?.lowQPhaseAuthority ?? 0,
+    modalPhaseOverlayModeCount:
+      structuralMetrics?.modalPhaseOverlayModeCount ?? 0,
     modalPersistence: structuralMetrics?.modalPersistence ?? 0,
     modalDriveEnergy: structuralMetrics?.modalDriveEnergy ?? 0,
     driveSource: structuralMetrics?.driveSource ?? "none",
@@ -1127,6 +1144,8 @@ function buildSilentFeatureFrame({
   isLiveInputActive,
   backboneSlots,
   detailSlots,
+  backbonePhaseSlots,
+  detailPhaseSlots,
   modeSlots,
   referenceModeSlots,
   backboneColorSlots,
@@ -1145,6 +1164,8 @@ function buildSilentFeatureFrame({
 }) {
   backboneSlots.fill(0);
   detailSlots.fill(0);
+  backbonePhaseSlots.fill(0);
+  detailPhaseSlots.fill(0);
   modeSlots.fill(0);
   referenceModeSlots.fill(0);
   backboneColorSlots.fill(0);
@@ -1173,6 +1194,8 @@ function buildSilentFeatureFrame({
     fftMagnitudes: silentFft,
     backboneSlots,
     detailSlots,
+    backbonePhaseSlots,
+    detailPhaseSlots,
     backboneColorSlots,
     detailColorSlots,
     bandEnergies,
@@ -1182,7 +1205,9 @@ function buildSilentFeatureFrame({
     structureSignal: 0,
     energySignal: 0,
     modalVisibilityEnergy: 0,
+    modalObserverVisibilityEnergy: 0,
     modalVisibilityRetainedHighQEnergy: 0,
+    modalPhaseAuthority: 0,
     changeSignal: 0,
     pulseSignal: 0,
     beatDetected: false,
@@ -2964,6 +2989,8 @@ export function prepareAudioFeatureFrameInputs({
   const {
     backboneSlots,
     detailSlots,
+    backbonePhaseSlots,
+    detailPhaseSlots,
     modeSlots,
     signalModeSlots,
     backboneColorSlots,
@@ -3137,6 +3164,8 @@ export function prepareAudioFeatureFrameInputs({
         isLiveInputActive: status?.isLiveInputActive === true,
         backboneSlots,
         detailSlots,
+        backbonePhaseSlots,
+        detailPhaseSlots,
         modeSlots,
         backboneColorSlots,
         detailColorSlots,
@@ -3216,6 +3245,8 @@ export function prepareAudioFeatureFrameInputs({
     analysisMemory,
     backboneSlots,
     detailSlots,
+    backbonePhaseSlots,
+    detailPhaseSlots,
     modeSlots,
     signalModeSlots,
     backboneColorSlots,
@@ -3445,6 +3476,12 @@ function resolveStructuralProjectionSources(preparedInputs, structuralState) {
   const detailSlotsSource = hasFrozenProjection
     ? auditState.frozenDetailSlots
     : (structuralState?.detailSlotsSource ?? preparedInputs.detailState.slots);
+  const backbonePhaseSlotsSource =
+    structuralState?.backbonePhaseSlotsSource ??
+    preparedInputs.backbonePhaseSlots;
+  const detailPhaseSlotsSource =
+    structuralState?.detailPhaseSlotsSource ??
+    preparedInputs.detailPhaseSlots;
   const backboneColorSlotsSource = shouldBuildSpectralLight
     ? hasFrozenProjection
       ? auditState.frozenBackboneColorSlots
@@ -3481,6 +3518,8 @@ function resolveStructuralProjectionSources(preparedInputs, structuralState) {
     hasFrozenProjection,
     backboneSlotsSource,
     detailSlotsSource,
+    backbonePhaseSlotsSource,
+    detailPhaseSlotsSource,
     referenceBackboneSlotsSource,
     referenceDetailSlotsSource,
     backboneColorSlotsSource,
@@ -3607,6 +3646,8 @@ function materializeAudioFeatureStructuralSnapshot(
     capacity,
     backboneSlots,
     detailSlots,
+    backbonePhaseSlots,
+    detailPhaseSlots,
     modeSlots,
     backboneColorSlots,
     detailColorSlots,
@@ -3622,6 +3663,11 @@ function materializeAudioFeatureStructuralSnapshot(
 
   copyFloatArray(backboneSlots, projectionSources.backboneSlotsSource);
   copyFloatArray(detailSlots, projectionSources.detailSlotsSource);
+  copyFloatArray(
+    backbonePhaseSlots,
+    projectionSources.backbonePhaseSlotsSource,
+  );
+  copyFloatArray(detailPhaseSlots, projectionSources.detailPhaseSlotsSource);
   const observerVisibility = deriveModalObserverVisibilityComponents({
     structuralMetrics: structuralState?.structuralMetrics,
     hardSilent: preparedInputs.liveInputHardSilenceActive,
@@ -3674,6 +3720,8 @@ function materializeAudioFeatureStructuralSnapshot(
 
   let returnedBackboneSlots = backboneSlots;
   let returnedDetailSlots = detailSlots;
+  let returnedBackbonePhaseSlots = backbonePhaseSlots;
+  let returnedDetailPhaseSlots = detailPhaseSlots;
   let returnedModeSlots = modeSlots;
   let returnedBackboneColorSlots = backboneColorSlots;
   let returnedDetailColorSlots = detailColorSlots;
@@ -3688,6 +3736,8 @@ function materializeAudioFeatureStructuralSnapshot(
     }
     returnedBackboneSlots = auditState.frozenBackboneSlots;
     returnedDetailSlots = auditState.frozenDetailSlots;
+    returnedBackbonePhaseSlots = backbonePhaseSlots;
+    returnedDetailPhaseSlots = detailPhaseSlots;
     returnedModeSlots = auditState.frozenModeSlots;
     returnedBackboneColorSlots = auditState.frozenBackboneColorSlots;
     returnedDetailColorSlots = auditState.frozenDetailColorSlots;
@@ -3702,6 +3752,8 @@ function materializeAudioFeatureStructuralSnapshot(
   if (structuralState.suppressedByFog) {
     returnedBackboneSlots.fill(0);
     returnedDetailSlots.fill(0);
+    returnedBackbonePhaseSlots.fill(0);
+    returnedDetailPhaseSlots.fill(0);
     returnedModeSlots.fill(0);
     returnedBackboneColorSlots.fill(0);
     returnedDetailColorSlots.fill(0);
@@ -3713,6 +3765,8 @@ function materializeAudioFeatureStructuralSnapshot(
   return {
     backboneSlots: returnedBackboneSlots,
     detailSlots: returnedDetailSlots,
+    backbonePhaseSlots: returnedBackbonePhaseSlots,
+    detailPhaseSlots: returnedDetailPhaseSlots,
     modeSlots: returnedModeSlots,
     referenceModeSlots,
     backboneColorSlots: returnedBackboneColorSlots,
@@ -3867,6 +3921,12 @@ function readCurrentStructuralState(
         previousAnalysisResult?.backboneSlots ?? preparedInputs.backboneSlots,
       detailSlots:
         previousAnalysisResult?.detailSlots ?? preparedInputs.detailSlots,
+      backbonePhaseSlots:
+        previousAnalysisResult?.backbonePhaseSlots ??
+        preparedInputs.backbonePhaseSlots,
+      detailPhaseSlots:
+        previousAnalysisResult?.detailPhaseSlots ??
+        preparedInputs.detailPhaseSlots,
       modeSlots: previousAnalysisResult?.modeSlots ?? preparedInputs.modeSlots,
       signalModeSlots:
         previousAnalysisResult?.signalModeSlots ??
@@ -3902,6 +3962,8 @@ function readCurrentStructuralState(
   return {
     backboneSlotsSource: preparedInputs.backboneState.slots,
     detailSlotsSource: preparedInputs.detailState.slots,
+    backbonePhaseSlotsSource: preparedInputs.backbonePhaseSlots,
+    detailPhaseSlotsSource: preparedInputs.detailPhaseSlots,
     referenceBackboneSlotsSource: preparedInputs.backboneState.referenceSlots,
     referenceDetailSlotsSource: preparedInputs.detailState.referenceSlots,
     backboneColorSlotsSource: preparedInputs.shouldBuildSpectralLight
@@ -3915,6 +3977,8 @@ function readCurrentStructuralState(
     ),
     backboneSlots: preparedInputs.backboneSlots,
     detailSlots: preparedInputs.detailSlots,
+    backbonePhaseSlots: preparedInputs.backbonePhaseSlots,
+    detailPhaseSlots: preparedInputs.detailPhaseSlots,
     modeSlots: preparedInputs.modeSlots,
     signalModeSlots: preparedInputs.signalModeSlots,
     referenceModeSlots: preparedInputs.referenceModeSlots,
@@ -4014,6 +4078,8 @@ export function buildCurrentAudioFeatureAnalysisResult({
     fftMagnitudes: fastSignalState.fftMagnitudes,
     backboneSlots: resolvedStructural.backboneSlots,
     detailSlots: resolvedStructural.detailSlots,
+    backbonePhaseSlots: resolvedStructural.backbonePhaseSlots,
+    detailPhaseSlots: resolvedStructural.detailPhaseSlots,
     activeBackboneModeCount: resolvedStructural.activeBackboneModeCount,
     activeDetailModeCount: resolvedStructural.activeDetailModeCount,
     backboneColorSlots: resolvedStructural.backboneColorSlots,
@@ -4151,6 +4217,8 @@ export function buildAudioFeatureAnalysisSnapshot({
       micActive: analysisResult.micActive,
       backboneSlots: cloneFloat32Array(analysisResult.backboneSlots),
       detailSlots: cloneFloat32Array(analysisResult.detailSlots),
+      backbonePhaseSlots: cloneFloat32Array(analysisResult.backbonePhaseSlots),
+      detailPhaseSlots: cloneFloat32Array(analysisResult.detailPhaseSlots),
       activeBackboneModeCount: analysisResult.activeBackboneModeCount,
       activeDetailModeCount: analysisResult.activeDetailModeCount,
       backboneColorSlots: cloneFloat32Array(analysisResult.backboneColorSlots),
@@ -4382,6 +4450,9 @@ export function composeAudioFeatureFrame({
     !preparedInputs.resolvedAuditSettings.injectTestTone
       ? "silent"
       : analysisResult.sourceMode;
+  const modalPhaseAuthority = clamp01(
+    analysisResult.structuralMetrics?.modalPhaseAuthority ?? 0,
+  );
 
   let debug = analysisResult.debug;
   if (!debug) {
@@ -4485,6 +4556,8 @@ export function composeAudioFeatureFrame({
     fftMagnitudes: analysisResult.fftMagnitudes,
     backboneSlots: analysisResult.backboneSlots,
     detailSlots: analysisResult.detailSlots,
+    backbonePhaseSlots: analysisResult.backbonePhaseSlots,
+    detailPhaseSlots: analysisResult.detailPhaseSlots,
     activeBackboneModeCount: analysisResult.activeBackboneModeCount,
     activeDetailModeCount: analysisResult.activeDetailModeCount,
     backboneColorSlots: analysisResult.backboneColorSlots,
@@ -4501,6 +4574,7 @@ export function composeAudioFeatureFrame({
     modalVisibilityEnergy,
     modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
+    modalPhaseAuthority,
     changeSignal,
     changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
     pulseSignal,

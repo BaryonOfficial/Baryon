@@ -227,6 +227,12 @@ describe("tickRaymarchRuntime", () => {
         1, 0.1, 0.1, 0.9, 0.8, 0.2, 0.1, 0.7,
       ]),
       detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5, 0.7, 0.2, 1, 0.45]),
+      backbonePhaseSlots: new Float32Array([
+        0.1, 0.2, 0.7, 0.5, -0.2, 0.1, 0.6, 0.4,
+      ]),
+      detailPhaseSlots: new Float32Array([
+        0.4, 0.32, 0.8, 0.7, -0.6, -0.2, 0.74, 0.5,
+      ]),
       bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
       transientEnergy: 0.7,
       spectralCentroid: 0.42,
@@ -245,6 +251,7 @@ describe("tickRaymarchRuntime", () => {
       pulseSignal: 0.32,
       modeCoherence: 0.58,
       modalVisibilityEnergy: 0.37,
+      modalPhaseAuthority: 0.42,
       trebleBroadbandEnergy: 0.18,
       trebleTonalEnergy: 0.24,
       beatDetected: true,
@@ -294,6 +301,10 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.idleOverlay.visible).toBe(false);
     expect(runtimeState.debugSnapshot.raymarchDebug.backboneModeCount).toBe(2);
     expect(runtimeState.debugSnapshot.raymarchDebug.detailModeCount).toBe(2);
+    expect(runtimeState.phaseOverlayUploadCount).toBeUndefined();
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.renderedPhaseOverlayModeCount,
+    ).toBeUndefined();
     expect(
       runtimeState.debugSnapshot.raymarchDebug.renderedBackboneModeCount,
     ).toBe(2);
@@ -415,6 +426,60 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.debugSnapshot.raymarchDebug.holographicReferenceStrength,
     ).toBeGreaterThan(0);
+  });
+
+  it("keeps phase advisory slots out of cached render uploads and rebuilds", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    runtimeState.fieldCache.backend = "unavailable";
+    runtimeState.fieldCache.activeDescriptor = buildRaymarchFieldCacheDescriptor({
+      backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+      detailSlots: new Float32Array([4, 5, 5, 0.55]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+    const featureFrame = {
+      fieldState: "active",
+      averageAmplitude: 32,
+      backboneSlots: new Float32Array([3, 4, 6, 0.8, 1, 3, 7, 0.02]),
+      detailSlots: new Float32Array([4, 5, 5, 0.55, 2, 2, 6, 0.01]),
+      backbonePhaseSlots: new Float32Array([
+        0.25, 0.14, 0.7, 0.5, 1.1, 0.9, 0.2, 0.02,
+      ]),
+      detailPhaseSlots: new Float32Array([
+        -0.4, -0.21, 0.8, 0.64, 0.9, 0.6, 0.1, 0.01,
+      ]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array(4),
+      transientEnergy: 0.1,
+      spectralCentroid: 0.2,
+      spectralFlux: 0.1,
+      structureSignal: 0.4,
+      energySignal: 0.3,
+      changeSignal: 0.08,
+      pulseSignal: 0.05,
+      modalPhaseAuthority: 0.5,
+    };
+
+    tickRaymarchRuntime(runtimeState, featureFrame, 3, 1 / 60);
+    await flushMicrotasks();
+    const rebuildCount = runtimeState.fieldCache.rebuildCount;
+    const descriptor = runtimeState.fieldCache.activeDescriptor;
+
+    featureFrame.backbonePhaseSlots = new Float32Array([
+      1.2, -0.42, 0.8, 0.6, 0.1, 0.3, 0.2, 0.02,
+    ]);
+    featureFrame.detailPhaseSlots = new Float32Array([
+      0.7, 0.25, 0.9, 0.7, -0.9, 0.1, 0.1, 0.01,
+    ]);
+    tickRaymarchRuntime(runtimeState, featureFrame, 3.1, 1 / 60);
+    await flushMicrotasks();
+
+    expect(runtimeState.phaseOverlayUploadCount).toBeUndefined();
+    expect(runtimeState.fieldCache.activeDescriptor).toEqual(descriptor);
+    expect(runtimeState.fieldCache.rebuildCount).toBe(rebuildCount);
   });
 
   it("reports requested spherical geometry while keeping the effective backend rectangular", () => {

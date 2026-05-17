@@ -5,6 +5,7 @@ function createLayerBuffer(slotCount) {
     slots: new Float32Array(slotCount * 4),
     referenceSlots: new Float32Array(slotCount * 4),
     colorSlots: new Float32Array(slotCount * 4),
+    phaseSlots: new Float32Array(slotCount * 4),
   };
 }
 
@@ -50,6 +51,10 @@ export function createModalExcitationState(capacity = 16) {
       highQDetailModeCount: 0,
       highQDetailEnergy: 0,
       highQRingSupport: 0,
+      modalPhaseAuthority: 0,
+      highQPhaseAuthority: 0,
+      lowQPhaseAuthority: 0,
+      modalPhaseOverlayModeCount: 0,
       modalPersistence: 0,
       modalDriveEnergy: 0,
       modeCoherence: 0,

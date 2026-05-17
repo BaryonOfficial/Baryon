@@ -137,6 +137,8 @@ export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
       frameId: 0,
       backboneSlots: new Float32Array(capacity * 4),
       detailSlots: new Float32Array(capacity * 4),
+      backbonePhaseSlots: new Float32Array(capacity * 4),
+      detailPhaseSlots: new Float32Array(capacity * 4),
       modeSlots: new Float32Array(capacity * 4),
       backboneColorSlots: createColorSlotArray(capacity),
       detailColorSlots: createColorSlotArray(capacity),
@@ -180,6 +182,7 @@ export function clearModalStack(state) {
   state.referenceSlots?.fill(0);
   state.colorSlots?.fill(0);
   state.referenceColorSlots?.fill(0);
+  state.phaseSlots?.fill(0);
   state.harmonicSupport?.fill(0);
   state.fundamental = 0;
   state.fundamentalConfidence = 0;
@@ -221,6 +224,7 @@ export function decayModalStack(state) {
   }
   state.referenceSlots?.fill(0);
   state.referenceColorSlots?.fill(0);
+  state.phaseSlots?.fill(0);
   state.harmonicSupport?.fill(0);
   state.fundamental = 0;
   state.fundamentalConfidence = 0;

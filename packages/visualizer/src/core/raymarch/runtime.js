@@ -297,6 +297,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     featureFrame?.modalObserverVisibilityEnergy ?? 0;
   const modalVisibilityRetainedHighQEnergy =
     featureFrame?.modalVisibilityRetainedHighQEnergy ?? 0;
+  const modalPhaseAuthority = featureFrame?.modalPhaseAuthority ?? 0;
   const modalVisibilityDensityDebug = deriveVisibleDensity({
     density: 0,
     modalVisibilityEnergy,
@@ -443,6 +444,11 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     modalVisibilityEnergy,
     modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
+    modalPhaseAuthority,
+    highQPhaseAuthority: featureFrame?.debug?.highQPhaseAuthority ?? 0,
+    lowQPhaseAuthority: featureFrame?.debug?.lowQPhaseAuthority ?? 0,
+    modalPhaseOverlayModeCount:
+      featureFrame?.debug?.modalPhaseOverlayModeCount ?? 0,
     modalVisibilityDensityLiftMax: modalVisibilityDensityDebug.modalLift,
     modalVisibilityVisibleDensityMax:
       modalVisibilityDensityDebug.modalVisibleDensity,

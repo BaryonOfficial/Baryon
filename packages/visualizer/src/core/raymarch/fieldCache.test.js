@@ -194,6 +194,39 @@ describe("fieldCache", () => {
     expect(second).toEqual(first);
   });
 
+  it("keeps field descriptors unchanged when only phase advisory slots change", () => {
+    const fieldCache = createRaymarchFieldCache({ resolution: 8 });
+    const phaseA = new Float32Array([0.1, 0.2, 0.7, 0.5]);
+    const phaseB = new Float32Array([1.4, -0.3, 0.8, 0.7]);
+    const first = buildRaymarchFieldCacheDescriptor({
+      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backbonePhaseSlots: phaseA,
+      detailPhaseSlots: phaseA,
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+    const second = buildRaymarchFieldCacheDescriptor({
+      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backbonePhaseSlots: phaseB,
+      detailPhaseSlots: phaseB,
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+
+    fieldCache.activeDescriptor = first;
+    const rebuild = shouldRebuildRaymarchFieldCache(fieldCache, second);
+
+    expect(second).toEqual(first);
+    expect(rebuild.needsRebuild).toBe(false);
+    expect(rebuild.reason).toBe("unchanged");
+  });
+
   it("detects Spectral Light rebuilds when color slots change", () => {
     const spectralLightCache = createRaymarchSpectralLightCache({
       resolution: 8,

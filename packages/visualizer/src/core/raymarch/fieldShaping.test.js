@@ -268,6 +268,33 @@ describe("field shaping", () => {
     expect(noAnchor.visibleDensity).toBe(0);
   });
 
+  it("keeps phase advisory data out of density shaping", () => {
+    const withoutPhase = deriveVisibleDensity({
+      density: 0,
+      modalVisibilityEnergy: 0,
+      modalObserverVisibilityEnergy: 0,
+      modalStructureAnchor: 0.7,
+      ridgeAnchor: 0.8,
+      ridgeSupportAnchor: 0.7,
+    });
+    const withPhase = deriveVisibleDensity({
+      density: 0,
+      modalVisibilityEnergy: 0,
+      modalObserverVisibilityEnergy: 0,
+      modalPhaseAuthority: 0.5,
+      modalPhaseOverlayEnergy: 0.62,
+      modalStructureAnchor: 0.7,
+      ridgeAnchor: 0.8,
+      ridgeSupportAnchor: 0.7,
+    });
+
+    expect(withPhase.phaseRidgeVisibleDensity).toBeUndefined();
+    expect(withPhase.phaseRidgeLift).toBeUndefined();
+    expect(withPhase.phaseContourAccent).toBeUndefined();
+    expect(withPhase.visibleDensity).toBe(withoutPhase.visibleDensity);
+    expect(withPhase.physicalVisibleDensity).toBe(0);
+  });
+
   it("derives excitation visibility without hint inputs", () => {
     const visibility = deriveExcitationVisibility({
       excitationGate: 0.04,

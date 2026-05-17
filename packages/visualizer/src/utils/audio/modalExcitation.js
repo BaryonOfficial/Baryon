@@ -260,6 +260,15 @@ const EXCITATION_DECAY_SIGNAL_DISPLAY_RATIO = 0.55;
 const EXCITATION_HARD_SILENCE_MAX_AVG_AMPLITUDE = 1;
 const EXCITATION_HARD_SILENCE_MAX_RMS = 0.004;
 const EXCITATION_HARD_SILENCE_MAX_FFT_PEAK = 0.003;
+const DETAIL_PHASE_MAX_VELOCITY_RAD_PER_SEC = Math.PI * 1.25;
+const BACKBONE_PHASE_MAX_VELOCITY_RAD_PER_SEC = Math.PI * 0.65;
+const DETAIL_PHASE_ATTACK = 0.32;
+const DETAIL_PHASE_RELEASE = 0.9;
+const BACKBONE_PHASE_ATTACK = 0.22;
+const BACKBONE_PHASE_RELEASE = 0.84;
+const PHASE_VELOCITY_BLEND = 0.18;
+const PHASE_VELOCITY_RELEASE = 0.92;
+const PHASE_AUTHORITY_MIN = 0.015;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -275,6 +284,34 @@ function smoothstep(edge0, edge1, value) {
   }
   const t = clamp01((value - edge0) / (edge1 - edge0));
   return t * t * (3 - 2 * t);
+}
+
+function normalizePhaseRad(phase) {
+  if (!Number.isFinite(phase)) {
+    return 0;
+  }
+  let normalized = phase;
+  while (normalized > Math.PI) normalized -= Math.PI * 2;
+  while (normalized < -Math.PI) normalized += Math.PI * 2;
+  return normalized;
+}
+
+function unwrapPhaseDeltaRad(previousPhase, nextPhase) {
+  return normalizePhaseRad(nextPhase - previousPhase);
+}
+
+function getPhaseVelocityLimit(layer) {
+  return layer === "detail"
+    ? DETAIL_PHASE_MAX_VELOCITY_RAD_PER_SEC
+    : BACKBONE_PHASE_MAX_VELOCITY_RAD_PER_SEC;
+}
+
+function getPhaseAttack(layer) {
+  return layer === "detail" ? DETAIL_PHASE_ATTACK : BACKBONE_PHASE_ATTACK;
+}
+
+function getPhaseRelease(layer) {
+  return layer === "detail" ? DETAIL_PHASE_RELEASE : BACKBONE_PHASE_RELEASE;
 }
 
 function buildModeKey(u, v, w) {
@@ -696,6 +733,7 @@ function clearLayerBuffers(layerBuffer) {
   layerBuffer.slots.fill(0);
   layerBuffer.referenceSlots.fill(0);
   layerBuffer.colorSlots.fill(0);
+  layerBuffer.phaseSlots?.fill(0);
 }
 
 function sumSlotAmplitudes(slots) {
@@ -877,6 +915,60 @@ function writeShortlistedEntries(
     );
   }
   return slotLimit;
+}
+
+function findModalPhaseEntryForSlot(slots, offset, activeModes, observedModes) {
+  const modeKey = buildModeKey(slots[offset], slots[offset + 1], slots[offset + 2]);
+  return observedModes?.get?.(modeKey) ?? activeModes?.get?.(modeKey) ?? null;
+}
+
+function writePhaseSlotsForVisibleModes({
+  target,
+  visibleSlots,
+  capacity,
+  activeModes,
+  observedModes,
+}) {
+  target?.fill?.(0);
+  if (!target?.length || !visibleSlots?.length) {
+    return 0;
+  }
+
+  const slotLimit = Math.min(
+    capacity,
+    Math.floor(visibleSlots.length / 4),
+    Math.floor(target.length / 4),
+  );
+  let authoritativeCount = 0;
+  for (let index = 0; index < slotLimit; index += 1) {
+    const offset = index * 4;
+    if ((visibleSlots[offset + 3] ?? 0) <= 0) {
+      continue;
+    }
+    const phaseEntry = findModalPhaseEntryForSlot(
+      visibleSlots,
+      offset,
+      activeModes,
+      observedModes,
+    );
+    const authority = clamp01(phaseEntry?.phaseAuthority ?? 0);
+    if (authority <= 0) {
+      continue;
+    }
+    target[offset] = normalizePhaseRad(phaseEntry.phaseOffsetRad ?? 0);
+    target[offset + 1] = Math.max(
+      -getPhaseVelocityLimit(phaseEntry.layer),
+      Math.min(
+        getPhaseVelocityLimit(phaseEntry.layer),
+        phaseEntry.phaseVelocityRadPerSec ?? 0,
+      ),
+    );
+    target[offset + 2] = clamp01(phaseEntry.phaseCoherence ?? 0);
+    target[offset + 3] = authority;
+    authoritativeCount += 1;
+  }
+
+  return authoritativeCount;
 }
 
 function buildHarmonicSupport(entries, dominantFrequencyHz) {
@@ -1238,6 +1330,99 @@ function computeModalObservation({
   };
 }
 
+function deriveObservedModePhaseState({
+  atlasEntry,
+  previous,
+  response,
+  observedDrive,
+  retainedEnergy,
+  observedSnr,
+  observerCoherence,
+  currentFrameAtMs,
+}) {
+  const profile = getModalObserverProfile(atlasEntry?.layer);
+  const layer = atlasEntry?.layer ?? "detail";
+  const phase = normalizePhaseRad(response?.phase ?? previous?.phase ?? 0);
+  const previousPhase = Number.isFinite(previous?.phase)
+    ? previous.phase
+    : phase;
+  const previousVelocity = Number.isFinite(previous?.phaseVelocityRadPerSec)
+    ? previous.phaseVelocityRadPerSec
+    : 0;
+  const previousPhaseAtMs = Number.isFinite(previous?.lastPhaseObservedAtMs)
+    ? previous.lastPhaseObservedAtMs
+    : currentFrameAtMs;
+  const deltaSeconds = Math.max(
+    0,
+    (currentFrameAtMs - previousPhaseAtMs) / 1000,
+  );
+  const velocityLimit = getPhaseVelocityLimit(layer);
+  const rawVelocity =
+    deltaSeconds > 0
+      ? unwrapPhaseDeltaRad(previousPhase, phase) / deltaSeconds
+      : previousVelocity;
+  const boundedVelocity = Math.max(
+    -velocityLimit,
+    Math.min(velocityLimit, rawVelocity),
+  );
+  const energyGate = smoothstep(
+    profile.minRetainedEnergy,
+    profile.minRetainedEnergy * (layer === "detail" ? 10 : 6),
+    retainedEnergy,
+  );
+  const driveGate = smoothstep(
+    profile.minObservedDrive * 0.45,
+    profile.minObservedDrive * (layer === "detail" ? 4 : 3),
+    observedDrive,
+  );
+  const snrGate = smoothstep(
+    profile.snrStart,
+    profile.snrFull,
+    observedSnr,
+  );
+  const coherenceGate = smoothstep(
+    profile.minRetainedCoherence * 0.55,
+    profile.minRetainedCoherence,
+    observerCoherence,
+  );
+  const phaseCoherenceTarget = clamp01(
+    Math.max(snrGate, driveGate * 0.85) * coherenceGate,
+  );
+  const authorityTarget = clamp01(
+    energyGate * driveGate * phaseCoherenceTarget,
+  );
+  const previousAuthority = clamp01(previous?.phaseAuthority ?? 0);
+  const phaseAuthority =
+    authorityTarget >= previousAuthority
+      ? previousAuthority +
+        (authorityTarget - previousAuthority) * getPhaseAttack(layer)
+      : previousAuthority * getPhaseRelease(layer);
+  const previousPhaseCoherence = clamp01(previous?.phaseCoherence ?? 0);
+  const phaseCoherence =
+    phaseCoherenceTarget >= previousPhaseCoherence
+      ? previousPhaseCoherence +
+        (phaseCoherenceTarget - previousPhaseCoherence) * 0.24
+      : previousPhaseCoherence * 0.92;
+  const phaseVelocityRadPerSec =
+    phaseAuthority > PHASE_AUTHORITY_MIN
+      ? previousVelocity +
+        (boundedVelocity - previousVelocity) * PHASE_VELOCITY_BLEND
+      : previousVelocity * PHASE_VELOCITY_RELEASE;
+  const phaseOffsetRad = normalizePhaseRad(
+    phase - phaseVelocityRadPerSec * (currentFrameAtMs / 1000),
+  );
+
+  return {
+    phase,
+    phaseOffsetRad,
+    phaseVelocityRadPerSec,
+    phaseCoherence,
+    phaseAuthority: phaseAuthority > PHASE_AUTHORITY_MIN ? phaseAuthority : 0,
+    lastPhaseObservedAtMs:
+      authorityTarget > 0 ? currentFrameAtMs : previousPhaseAtMs,
+  };
+}
+
 function createObservedModalModeEntry({
   atlasEntry,
   previous,
@@ -1269,6 +1454,16 @@ function createObservedModalModeEntry({
       : (previous?.lastObservedAtMs ?? firstObservedAtMs);
   const energy = clamp01(retainedEnergy);
   const isDetail = atlasEntry?.layer === "detail";
+  const phaseState = deriveObservedModePhaseState({
+    atlasEntry,
+    previous,
+    response,
+    observedDrive,
+    retainedEnergy: energy,
+    observedSnr,
+    observerCoherence,
+    currentFrameAtMs,
+  });
 
   return {
     ...atlasEntry,
@@ -1276,7 +1471,12 @@ function createObservedModalModeEntry({
     signalAmplitude: energy,
     currentDriveEnergy: observedDrive,
     driveEnergy: Math.max(driveEnergy, profile.retainedDriveFloor),
-    phase: response?.phase ?? previous?.phase ?? 0,
+    phase: phaseState.phase,
+    phaseOffsetRad: phaseState.phaseOffsetRad,
+    phaseVelocityRadPerSec: phaseState.phaseVelocityRadPerSec,
+    phaseCoherence: phaseState.phaseCoherence,
+    phaseAuthority: phaseState.phaseAuthority,
+    lastPhaseObservedAtMs: phaseState.lastPhaseObservedAtMs,
     coherence: Math.max(coherence, profile.coherenceFloor),
     persistence: Math.max(previous?.persistence ?? 0, profile.persistenceFloor),
     detailMaturity: isDetail
@@ -1311,6 +1511,9 @@ function summarizeObservedLayerModes(modes, layer) {
   let observedSnr = 0;
   let coherence = 0;
   let noiseFloor = 0;
+  let phaseAuthority = 0;
+  let phaseCoherence = 0;
+  let phaseOverlayModeCount = 0;
 
   for (const entry of modes?.values?.() ?? []) {
     if (entry?.layer !== layer) {
@@ -1326,6 +1529,12 @@ function summarizeObservedLayerModes(modes, layer) {
     observedSnr += Math.min(entry?.observedSnr ?? 0, profile.snrFull);
     coherence += entry?.coherence ?? 0;
     noiseFloor += entry?.localNoiseFloor ?? 0;
+    const entryPhaseAuthority = clamp01(entry?.phaseAuthority ?? 0);
+    if (entryPhaseAuthority > 0) {
+      phaseOverlayModeCount += 1;
+      phaseAuthority += entryPhaseAuthority;
+      phaseCoherence += entry?.phaseCoherence ?? 0;
+    }
   }
 
   const averageObservedDrive = count > 0 ? observedDrive / count : 0;
@@ -1339,6 +1548,12 @@ function summarizeObservedLayerModes(modes, layer) {
     observedSnr: clamp01(averageSnr / profile.snrFull),
     coherence: clamp01(averageCoherence),
     noiseFloor: count > 0 ? clamp01(noiseFloor / count) : 0,
+    phaseAuthority: clamp01(phaseAuthority),
+    phaseCoherence:
+      phaseOverlayModeCount > 0
+        ? clamp01(phaseCoherence / phaseOverlayModeCount)
+        : 0,
+    phaseOverlayModeCount,
   };
 }
 
@@ -1367,6 +1582,7 @@ function summarizeObservedModes(modes) {
     lowQObservedDrive: lowQ.observedDrive,
     lowQObservedSnr: lowQ.observedSnr,
     lowQObservedCoherence: lowQ.coherence,
+    lowQPhaseAuthority: lowQ.phaseAuthority,
     highQDetailModeCount: highQ.count,
     highQDetailEnergy: highQ.energy,
     highQRingSupport,
@@ -1374,6 +1590,12 @@ function summarizeObservedModes(modes) {
     highQObservedSnr: highQ.observedSnr,
     highQObservedCoherence: highQ.coherence,
     highQObservedNoiseFloor: highQ.noiseFloor,
+    highQPhaseAuthority: highQ.phaseAuthority,
+    modalPhaseAuthority: clamp01(
+      highQ.phaseAuthority + lowQ.phaseAuthority * 0.45,
+    ),
+    modalPhaseOverlayModeCount:
+      highQ.phaseOverlayModeCount + lowQ.phaseOverlayModeCount,
   };
 }
 
@@ -3138,6 +3360,20 @@ export function buildModalExcitationStructuralState({
     detailCapacity,
     state.remappedSignalDetailRef,
   );
+  const backbonePhaseModeCount = writePhaseSlotsForVisibleModes({
+    target: state.blendBackbone.phaseSlots,
+    visibleSlots: state.blendBackbone.slots,
+    capacity: backboneCapacity,
+    activeModes: state.activeModes,
+    observedModes: state.observedModes,
+  });
+  const detailPhaseModeCount = writePhaseSlotsForVisibleModes({
+    target: state.blendDetail.phaseSlots,
+    visibleSlots: state.blendDetail.slots,
+    capacity: detailCapacity,
+    activeModes: state.activeModes,
+    observedModes: state.observedModes,
+  });
 
   const blendedBackboneCount = countActiveSlots(
     state.blendBackbone.slots,
@@ -3215,6 +3451,11 @@ export function buildModalExcitationStructuralState({
     highQObservedSnr: modalObserverMetrics.highQObservedSnr,
     highQObservedCoherence: modalObserverMetrics.highQObservedCoherence,
     highQObservedNoiseFloor: modalObserverMetrics.highQObservedNoiseFloor,
+    lowQPhaseAuthority: modalObserverMetrics.lowQPhaseAuthority,
+    highQPhaseAuthority: modalObserverMetrics.highQPhaseAuthority,
+    modalPhaseAuthority: modalObserverMetrics.modalPhaseAuthority,
+    modalPhaseOverlayModeCount:
+      backbonePhaseModeCount + detailPhaseModeCount,
     observedHardSilenceGraceActive:
       state.observedHardSilenceGraceActive === true,
     observedHardSilenceAgeMs: state.observedHardSilenceAgeMs ?? 0,
@@ -3244,6 +3485,8 @@ export function buildModalExcitationStructuralState({
     sourceMode: preparedInputs.sourceMode,
     backboneSlotsSource: state.blendBackbone.slots,
     detailSlotsSource: state.blendDetail.slots,
+    backbonePhaseSlotsSource: state.blendBackbone.phaseSlots,
+    detailPhaseSlotsSource: state.blendDetail.phaseSlots,
     referenceBackboneSlotsSource: state.remappedBackboneRef,
     referenceDetailSlotsSource: state.remappedDetailRef,
     signalBackboneSlotsSource: state.backbone.slots,

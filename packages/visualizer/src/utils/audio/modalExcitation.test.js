@@ -191,6 +191,17 @@ function countSlotsAboveAmplitude(slots, minimumAmplitude) {
   return total;
 }
 
+function countAuthoritativePhaseSlots(slots) {
+  const slotCount = Math.floor((slots?.length ?? 0) / 4);
+  let total = 0;
+  for (let index = 0; index < slotCount; index += 1) {
+    if ((slots[index * 4 + 3] ?? 0) > 0) {
+      total += 1;
+    }
+  }
+  return total;
+}
+
 function readModeKeys(slots) {
   const keys = [];
   const slotCount = Math.floor((slots?.length ?? 0) / 4);
@@ -373,6 +384,10 @@ function expectCanonicalObservedModeEntries(state) {
       observedModal: true,
       firstObservedAtMs: expect.any(Number),
       lastObservedAtMs: expect.any(Number),
+      phaseOffsetRad: expect.any(Number),
+      phaseVelocityRadPerSec: expect.any(Number),
+      phaseCoherence: expect.any(Number),
+      phaseAuthority: expect.any(Number),
     });
     for (const field of REMOVED_MODAL_OBSERVER_ENTRY_FIELDS) {
       expect(entry[field]).toBeUndefined();
@@ -1222,6 +1237,74 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
+  it("retains bounded phase authority for coherent sustained bowl modes", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "live",
+      analysisSource: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "live",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    let structural = null;
+
+    for (let frame = 0; frame < 180; frame += 1) {
+      const isStrike = frame < 4;
+      const partials = isStrike
+        ? INHARMONIC_BOWL_STRIKE_PARTIALS
+        : [
+            [196, 0.14],
+            [282, 0.11],
+            [417, 0.07],
+          ];
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft(partials),
+        timeData: makeMixedTimeData({
+          partials,
+          amplitudeScale: isStrike ? 0.8 : 0.045,
+        }),
+        avgAmplitude: isStrike ? 36 : 5.4,
+        rms: isStrike ? 0.26 : 0.018,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    const detailPhaseEntries = Array.from(
+      state.observedModes?.values?.() ?? [],
+    ).filter((entry) => entry.layer === "detail" && entry.phaseAuthority > 0);
+
+    expect(structural.structuralMetrics.modalPhaseAuthority).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.highQPhaseAuthority).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.lowQPhaseAuthority).toBeGreaterThanOrEqual(
+      0,
+    );
+    expect(structural.structuralMetrics.modalPhaseOverlayModeCount).toBeGreaterThan(
+      0,
+    );
+    expect(detailPhaseEntries.length).toBeGreaterThan(0);
+    for (const entry of detailPhaseEntries) {
+      expect(Math.abs(entry.phaseVelocityRadPerSec)).toBeLessThanOrEqual(
+        Math.PI * 1.25,
+      );
+      expect(entry.phaseCoherence).toBeGreaterThan(0);
+      expect(entry.phaseAuthority).toBeLessThanOrEqual(1);
+    }
+    expect(countAuthoritativePhaseSlots(structural.detailPhaseSlotsSource)).toBeGreaterThan(
+      0,
+    );
+    expectCanonicalObservedModeEntries(state);
+  });
+
   it("retains seeded detail through trace-level periodic bowl tails without fresh detail FFT", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
@@ -1824,6 +1907,8 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQDetailModeCount).toBe(0);
     expect(structural.structuralMetrics.highQDetailEnergy).toBe(0);
     expect(structural.structuralMetrics.highQRingSupport).toBe(0);
+    expect(structural.structuralMetrics.modalPhaseAuthority).toBe(0);
+    expect(structural.structuralMetrics.highQPhaseAuthority).toBe(0);
     expect(state.observedModes?.size ?? 0).toBe(0);
     expectLegacyModalObserverAuthoritiesRemoved(state);
   });
@@ -2390,6 +2475,7 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQDetailModeCount ?? 0).toBe(0);
     expect(structural.structuralMetrics.highQDetailEnergy ?? 0).toBe(0);
     expect(structural.structuralMetrics.highQRingSupport ?? 0).toBe(0);
+    expect(structural.structuralMetrics.highQPhaseAuthority ?? 0).toBe(0);
     expect(countActiveSlotsLocal(structural.signalDetailSlotsSource)).toBe(0);
     expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBe(0);
   });
@@ -2437,6 +2523,9 @@ describe("modal excitation structural state", () => {
       ),
     ).toBeLessThan(0.5);
     expect(structural.structuralMetrics.lowQBackboneModeCount).toBeGreaterThan(
+      0,
+    );
+    expect(structural.structuralMetrics.modalPhaseOverlayModeCount).toBeGreaterThan(
       0,
     );
   });
