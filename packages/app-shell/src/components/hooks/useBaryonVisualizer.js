@@ -19,6 +19,12 @@ import {
   markBaryonTestRuntimeReady,
   resetBaryonTestReady,
 } from "../../devtools/testReady.js";
+import {
+  createTailDiagnosticsRecorder,
+  installTailDiagnosticsWindowApi,
+  isTailDiagnosticsRecorderActive,
+  recordTailDiagnosticsSample,
+} from "./tailDiagnostics.js";
 import { shouldSkipSpectralStaticColorInvalidation } from "./controlInvalidation.js";
 import {
   clearAdaptiveRaymarchResumeState,
@@ -109,6 +115,7 @@ export function useBaryonVisualizer({
   const renderCommandQueueRef = useRef(createRenderCommandQueue());
   const outputSessionRef = useRef(null);
   const outputCaptureInFlightRef = useRef(false);
+  const tailDiagnosticsRef = useRef(createTailDiagnosticsRecorder());
   const lastAppliedExternalFrameSequenceRef = useRef(null);
   const performanceHudStateRef = useRef({
     lastPublishedAtMs: Number.NEGATIVE_INFINITY,
@@ -231,6 +238,13 @@ export function useBaryonVisualizer({
     forcedExternalRenderPendingRef.current = true;
     invalidate();
   }, [adaptiveResetNonce, invalidate, runtimeStateRef]);
+
+  useEffect(() => {
+    return installTailDiagnosticsWindowApi({
+      recorder: tailDiagnosticsRef.current,
+      getNowMs: getWallTimeMs,
+    });
+  }, []);
 
   useEffect(() => {
     const nextRenderProfileKey = getRenderQualityProfileKey(renderProfile);
@@ -747,6 +761,14 @@ export function useBaryonVisualizer({
       effectiveFrame,
       runtimeState,
     );
+    if (isTailDiagnosticsRecorderActive(tailDiagnosticsRef.current)) {
+      recordTailDiagnosticsSample(tailDiagnosticsRef.current, {
+        runtimeDiagnostics,
+        featureFrame: effectiveFrame,
+        runtimeState,
+        nowMs: getWallTimeMs(),
+      });
+    }
     recordMeasuredRuntimePerf(
       runtimeDiagnostics,
       "runtimeTickMs",

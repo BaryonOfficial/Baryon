@@ -15,6 +15,13 @@ declare global {
     };
     __baryonControlState?: Record<string, unknown>;
     __baryonAuditSnapshot?: Record<string, unknown>;
+    __baryonTailDiagnostics?: {
+      start(): Record<string, unknown>;
+      stop(): Record<string, unknown>;
+      reset(): Record<string, unknown>;
+      dump(): Record<string, unknown>;
+      copy(): Promise<Record<string, unknown>>;
+    };
     __baryonExternalOutputDiagnostics?: Record<string, unknown> | null;
     __baryonFieldCacheOverride?: "direct" | "cached";
     __baryonRendererInfo?: {
