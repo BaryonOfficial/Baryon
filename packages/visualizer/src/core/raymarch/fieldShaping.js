@@ -93,6 +93,9 @@ export const OBSERVER_RIDGE_CONTOUR_ACCENT = 0.035;
 export const PHASE_OVERLAY_RIDGE_DENSITY_FLOOR = 0.08;
 export const PHASE_OVERLAY_RIDGE_DENSITY_LIFT = 0.055;
 export const PHASE_OVERLAY_RIDGE_CONTOUR_ACCENT = 0.025;
+export const SIGNED_PHASE_OVERLAY_FIELD_GAIN = 0.28;
+export const SIGNED_PHASE_OVERLAY_FIELD_LIMIT = 0.65;
+export const SIGNED_PHASE_OVERLAY_GRADIENT_GAIN = 0.35;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -536,6 +539,31 @@ export function deriveVisibleDensity({
       retainedHighQRidgeVisibleDensity,
       phaseRidgeVisibleDensity,
     ),
+  };
+}
+
+export function deriveSignedPhaseOverlayField({
+  cachedField = 0,
+  phaseDisplacement = 0,
+  phaseAuthority = 0,
+  overlayStrength = 0,
+}) {
+  const authority = clamp01(phaseAuthority) * clamp01(overlayStrength);
+  const boundedDisplacement = Math.max(
+    -SIGNED_PHASE_OVERLAY_FIELD_LIMIT,
+    Math.min(SIGNED_PHASE_OVERLAY_FIELD_LIMIT, phaseDisplacement),
+  );
+  const phaseContribution =
+    authority > 0
+      ? boundedDisplacement * authority * SIGNED_PHASE_OVERLAY_FIELD_GAIN
+      : 0;
+  const effectiveField = cachedField + phaseContribution;
+
+  return {
+    boundedDisplacement,
+    phaseContribution,
+    effectiveField,
+    effectiveFieldAbs: Math.abs(effectiveField),
   };
 }
 

@@ -41,6 +41,7 @@ import {
   deriveRetainedHighQVisibilityDiagnostics,
   deriveShellWeight,
   deriveStableContourAccent,
+  deriveSignedPhaseOverlayField,
   deriveStructureAwareEmissionGain,
   deriveSpectralColorBiasOffset,
   deriveVisibleStructure,
@@ -307,6 +308,34 @@ describe("field shaping", () => {
     expect(noAnchor.phaseRidgeLift).toBe(0);
     expect(noAnchor.phaseContourAccent).toBe(0);
     expect(noAnchor.visibleDensity).toBe(0);
+  });
+
+  it("applies phase overlay as bounded signed displacement, not positive energy", () => {
+    const reinforcing = deriveSignedPhaseOverlayField({
+      cachedField: 0.1,
+      phaseDisplacement: 0.8,
+      phaseAuthority: 1,
+      overlayStrength: 1,
+    });
+    const cancelling = deriveSignedPhaseOverlayField({
+      cachedField: 0.1,
+      phaseDisplacement: -0.6,
+      phaseAuthority: 1,
+      overlayStrength: 1,
+    });
+    const disabled = deriveSignedPhaseOverlayField({
+      cachedField: 0.1,
+      phaseDisplacement: -0.6,
+      phaseAuthority: 0,
+      overlayStrength: 1,
+    });
+
+    expect(reinforcing.phaseContribution).toBeGreaterThan(0);
+    expect(reinforcing.effectiveFieldAbs).toBeGreaterThan(0.1);
+    expect(cancelling.phaseContribution).toBeLessThan(0);
+    expect(cancelling.effectiveFieldAbs).toBeLessThan(0.1);
+    expect(disabled.phaseContribution).toBe(0);
+    expect(disabled.effectiveField).toBeCloseTo(0.1);
   });
 
   it("derives excitation visibility without hint inputs", () => {

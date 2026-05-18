@@ -7,6 +7,7 @@ import {
   createRaymarchFieldCache,
   enqueueRaymarchPhaseOverlayRebuild,
   evaluateRaymarchFieldCachePoint,
+  evaluateRaymarchPhaseOverlayPoint,
   isRaymarchSpectralLightCacheReadyForDescriptor,
   shouldRebuildRaymarchSpectralLightCache,
   shouldRebuildRaymarchFieldCache,
@@ -446,6 +447,103 @@ describe("fieldCache", () => {
     expect(Number.isFinite(sample.gradX)).toBe(true);
     expect(Number.isFinite(sample.gradY)).toBe(true);
     expect(Number.isFinite(sample.gradZ)).toBe(true);
+  });
+
+  it("keeps the cached modal field signed rather than absolute-valued", () => {
+    const slots = new Float32Array([1, 1, 1, 1]);
+    const positiveLobe = evaluateRaymarchFieldCachePoint({
+      backboneSlots: slots,
+      detailSlots: new Float32Array(0),
+      backboneCount: 1,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    const negativeLobe = evaluateRaymarchFieldCachePoint({
+      backboneSlots: slots,
+      detailSlots: new Float32Array(0),
+      backboneCount: 1,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 3,
+      y: 0,
+      z: 0,
+    });
+
+    expect(positiveLobe.field).toBeGreaterThan(0);
+    expect(negativeLobe.field).toBeLessThan(0);
+  });
+
+  it("evaluates phase overlay as signed modal displacement", () => {
+    const slots = new Float32Array([1, 1, 1, 1]);
+    const inPhase = evaluateRaymarchPhaseOverlayPoint({
+      backboneSlots: slots,
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 1,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0,
+      y: 0,
+      z: 0,
+      time: 0,
+    });
+    const outOfPhase = evaluateRaymarchPhaseOverlayPoint({
+      backboneSlots: slots,
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([Math.PI, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 1,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0,
+      y: 0,
+      z: 0,
+      time: 0,
+    });
+
+    expect(inPhase.signedDisplacement).toBeGreaterThan(0);
+    expect(outOfPhase.signedDisplacement).toBeLessThan(0);
+    expect(inPhase.authority).toBeCloseTo(1, 6);
+    expect(outOfPhase.authority).toBeCloseTo(1, 6);
+  });
+
+  it("lets opposing phase modes cancel in the overlay without erasing support", () => {
+    const sample = evaluateRaymarchPhaseOverlayPoint({
+      backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([
+        0,
+        0,
+        1,
+        1,
+        Math.PI,
+        0,
+        1,
+        1,
+      ]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0,
+      y: 0,
+      z: 0,
+      time: 0,
+    });
+
+    expect(Math.abs(sample.signedDisplacement)).toBeLessThan(0.001);
+    expect(sample.gradientMagnitude).toBeLessThan(0.001);
+    expect(sample.cancellation).toBeGreaterThan(0.95);
+    expect(sample.authority).toBeCloseTo(1, 6);
   });
 
   it("evaluates cached pointwise fields independent of global amplitude scale", () => {

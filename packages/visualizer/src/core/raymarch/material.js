@@ -98,6 +98,8 @@ import {
   PHASE_OVERLAY_RIDGE_CONTOUR_ACCENT,
   PHASE_OVERLAY_RIDGE_DENSITY_FLOOR,
   PHASE_OVERLAY_RIDGE_DENSITY_LIFT,
+  SIGNED_PHASE_OVERLAY_FIELD_GAIN,
+  SIGNED_PHASE_OVERLAY_FIELD_LIMIT,
   RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT,
   RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
   RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT,
@@ -615,7 +617,10 @@ function createScatteringNode({
       const gradZ = float(0.0).toVar();
       const colorSum = vec3(0.0).toVar();
       const colorWeight = float(0.0).toVar();
-      const phaseOverlayEnergy = float(0.0).toVar();
+      const phaseOverlaySignedDisplacement = float(0.0).toVar();
+      const phaseOverlayGradientMagnitude = float(0.0).toVar();
+      const phaseOverlayCancellation = float(0.0).toVar();
+      const phaseOverlayAuthority = float(0.0).toVar();
       const spectralLightEnabled = smoothstep(
         float(0.0),
         float(1e-4),
@@ -647,9 +652,10 @@ function createScatteringNode({
         if (phaseOverlayTexture) {
           const phaseOverlaySample =
             texture3D(phaseOverlayTexture).sample(cacheUv);
-          phaseOverlayEnergy.assign(
-            phaseOverlaySample.x.mul(uModalPhaseOverlayStrength),
-          );
+          phaseOverlaySignedDisplacement.assign(phaseOverlaySample.x);
+          phaseOverlayGradientMagnitude.assign(phaseOverlaySample.y);
+          phaseOverlayCancellation.assign(phaseOverlaySample.z);
+          phaseOverlayAuthority.assign(phaseOverlaySample.w);
         }
 
         if (cachedSpectralLightEnabled) {
@@ -708,7 +714,27 @@ function createScatteringNode({
         });
       }
 
-      const fieldAbs = abs(field);
+      const phaseOverlayStrength = clamp(
+        uModalPhaseOverlayStrength,
+        float(0.0),
+        float(1.0),
+      );
+      const signedPhaseContribution = clamp(
+        phaseOverlaySignedDisplacement,
+        float(-SIGNED_PHASE_OVERLAY_FIELD_LIMIT),
+        float(SIGNED_PHASE_OVERLAY_FIELD_LIMIT),
+      )
+        .mul(phaseOverlayAuthority)
+        .mul(phaseOverlayStrength)
+        .mul(float(SIGNED_PHASE_OVERLAY_FIELD_GAIN));
+      const effectiveField = field.add(signedPhaseContribution);
+      const phaseOverlaySupport = max(
+        phaseOverlayGradientMagnitude,
+        phaseOverlayCancellation,
+      )
+        .mul(phaseOverlayAuthority)
+        .mul(phaseOverlayStrength);
+      const fieldAbs = abs(effectiveField);
       const gradient = vec3(gradX, gradY, gradZ).toVar();
       const gradientMagnitude = length(gradient);
       const gradientNormal = gradient.div(max(gradientMagnitude, float(1e-4)));
@@ -983,7 +1009,7 @@ function createScatteringNode({
         modalStructureAnchor,
         uModalObserverVisibilityEnergy,
         uModalVisibilityRetainedHighQEnergy,
-        /** @type {any} */ (phaseOverlayEnergy),
+        /** @type {any} */ (phaseOverlaySupport),
         retainedHighQRidgeAnchor,
         retainedHighQRidgeSupportAnchor,
       );

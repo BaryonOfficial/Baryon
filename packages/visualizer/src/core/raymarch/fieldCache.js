@@ -6,13 +6,15 @@ import {
   Loop,
   abs,
   clamp,
+  cos,
   float,
   globalId,
   int,
-  sin,
+  length,
   textureStore,
   uvec3,
   uint,
+  vec3,
   vec4,
 } from "three/tsl";
 import { normalizeBoundaryMode } from "../modeFamily.js";
@@ -242,6 +244,7 @@ export function createRaymarchPhaseOverlayCache({
     updateIntervalMs: RAYMARCH_PHASE_OVERLAY_UPDATE_INTERVAL_MS,
     lastUpdateTimeMs: -Infinity,
     activePhaseModeCount: 0,
+    semantic: "signed-displacement",
   };
 }
 
@@ -452,6 +455,153 @@ export function evaluateRaymarchFieldCachePoint({
     gradX: (backbone.gradX + detail.gradX) / amplitudeNorm,
     gradY: (backbone.gradY + detail.gradY) / amplitudeNorm,
     gradZ: (backbone.gradZ + detail.gradZ) / amplitudeNorm,
+  };
+}
+
+function accumulatePhaseOverlayLayerAtPoint({
+  slots,
+  phaseSlots,
+  activeCount,
+  weight,
+  x,
+  y,
+  z,
+  time,
+  scale,
+  boundaryMode,
+  cavityGeometry,
+}) {
+  let signedDisplacement = 0;
+  let gradX = 0;
+  let gradY = 0;
+  let gradZ = 0;
+  let unsignedPotential = 0;
+  let authoritySum = 0;
+  let totalWeight = 0;
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const geometryBackend = getModalGeometryBackend(cavityGeometry);
+
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const amplitude = Math.max(0, slots?.[offset + 3] ?? 0) * weight;
+    if (!(amplitude > 0)) {
+      continue;
+    }
+    const coherence = phaseSlots?.[offset + 2] ?? 0;
+    const authority = Math.min(
+      1,
+      Math.max(0, coherence * (phaseSlots?.[offset + 3] ?? 0)),
+    );
+    totalWeight += amplitude;
+    if (!(authority > 0)) {
+      continue;
+    }
+    const family = geometryBackend.evaluateMode({
+      u: slots[offset] ?? 0,
+      v: slots[offset + 1] ?? 0,
+      w: slots[offset + 2] ?? 0,
+      x,
+      y,
+      z,
+      scale,
+      boundaryMode,
+    });
+    const phase =
+      (phaseSlots?.[offset] ?? 0) + (phaseSlots?.[offset + 1] ?? 0) * time;
+    const oscillator = Math.cos(phase);
+    const weightedAuthority = amplitude * authority;
+    signedDisplacement += weightedAuthority * family.field * oscillator;
+    gradX += weightedAuthority * family.gradX * oscillator;
+    gradY += weightedAuthority * family.gradY * oscillator;
+    gradZ += weightedAuthority * family.gradZ * oscillator;
+    unsignedPotential += weightedAuthority * Math.abs(family.field);
+    authoritySum += weightedAuthority;
+  }
+
+  return {
+    signedDisplacement,
+    gradX,
+    gradY,
+    gradZ,
+    unsignedPotential,
+    authoritySum,
+    totalWeight,
+  };
+}
+
+export function evaluateRaymarchPhaseOverlayPoint({
+  backboneSlots,
+  detailSlots,
+  backbonePhaseSlots,
+  detailPhaseSlots,
+  backboneCount = 0,
+  detailCount = 0,
+  boundaryMode,
+  cavityGeometry = "rectangular",
+  radius = 1,
+  x = 0,
+  y = 0,
+  z = 0,
+  time = 0,
+}) {
+  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
+  const scale = Math.PI / Math.max(radius, 1e-4);
+  const backbone = accumulatePhaseOverlayLayerAtPoint({
+    slots: backboneSlots,
+    phaseSlots: backbonePhaseSlots,
+    activeCount: backboneCount,
+    weight: 1,
+    x,
+    y,
+    z,
+    time,
+    scale,
+    boundaryMode: normalizedBoundaryMode,
+    cavityGeometry: normalizedCavityGeometry,
+  });
+  const detail = accumulatePhaseOverlayLayerAtPoint({
+    slots: detailSlots,
+    phaseSlots: detailPhaseSlots,
+    activeCount: detailCount,
+    weight: DETAIL_LAYER_WEIGHT,
+    x,
+    y,
+    z,
+    time,
+    scale,
+    boundaryMode: normalizedBoundaryMode,
+    cavityGeometry: normalizedCavityGeometry,
+  });
+  const signedDisplacement =
+    backbone.signedDisplacement + detail.signedDisplacement;
+  const gradX = backbone.gradX + detail.gradX;
+  const gradY = backbone.gradY + detail.gradY;
+  const gradZ = backbone.gradZ + detail.gradZ;
+  const unsignedPotential =
+    backbone.unsignedPotential + detail.unsignedPotential;
+  const authoritySum = backbone.authoritySum + detail.authoritySum;
+  const totalWeight = backbone.totalWeight + detail.totalWeight;
+  const safeAuthority = Math.max(authoritySum, 0.01);
+  const normalizedSignedDisplacement = Math.max(
+    -1,
+    Math.min(1, signedDisplacement / safeAuthority),
+  );
+  const gradientMagnitude = Math.min(
+    1,
+    Math.hypot(gradX, gradY, gradZ) / safeAuthority,
+  );
+  const cancellation = Math.min(
+    1,
+    Math.max(0, 1 - Math.abs(signedDisplacement) / Math.max(0.01, unsignedPotential)),
+  );
+  const authority = Math.min(1, Math.max(0, authoritySum / Math.max(0.01, totalWeight)));
+
+  return {
+    signedDisplacement: normalizedSignedDisplacement,
+    gradientMagnitude,
+    cancellation,
+    authority,
   };
 }
 
@@ -781,9 +931,11 @@ function createPhaseOverlayComputeKernel({
         .mul(uRadius)
         .toVar();
       const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
-      const combinedInfluence = zero.toVar();
-      const backboneInfluence = zero.toVar();
-      const detailInfluence = zero.toVar();
+      const signedDisplacement = zero.toVar();
+      const signedGradX = zero.toVar();
+      const signedGradY = zero.toVar();
+      const signedGradZ = zero.toVar();
+      const unsignedPotential = zero.toVar();
       const authoritySum = zero.toVar();
       const totalWeight = zero.toVar();
 
@@ -815,15 +967,22 @@ function createPhaseOverlayComputeKernel({
               boundaryMode,
             });
             const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
-            const phaseEnvelope = sin(phase).mul(float(0.5)).add(float(0.5));
-            const localInfluence = amplitude
-              .mul(abs(family.field))
-              .mul(authority)
-              .mul(float(0.72).add(phaseEnvelope.mul(float(0.28))))
-              .toVar();
-            backboneInfluence.addAssign(localInfluence);
-            combinedInfluence.addAssign(localInfluence.mul(float(0.72)));
-            authoritySum.addAssign(authority.mul(amplitude));
+            const oscillator = cos(phase);
+            const weightedAuthority = amplitude.mul(authority).toVar();
+            signedDisplacement.addAssign(
+              weightedAuthority.mul(family.field).mul(oscillator),
+            );
+            signedGradX.addAssign(
+              weightedAuthority.mul(family.gradX).mul(oscillator),
+            );
+            signedGradY.addAssign(
+              weightedAuthority.mul(family.gradY).mul(oscillator),
+            );
+            signedGradZ.addAssign(
+              weightedAuthority.mul(family.gradZ).mul(oscillator),
+            );
+            unsignedPotential.addAssign(weightedAuthority.mul(abs(family.field)));
+            authoritySum.addAssign(weightedAuthority);
             totalWeight.addAssign(amplitude);
           });
         },
@@ -857,36 +1016,48 @@ function createPhaseOverlayComputeKernel({
               boundaryMode,
             });
             const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
-            const phaseEnvelope = sin(phase).mul(float(0.5)).add(float(0.5));
-            const localInfluence = amplitude
-              .mul(abs(family.field))
-              .mul(authority)
-              .mul(float(0.58).add(phaseEnvelope.mul(float(0.42))))
-              .toVar();
-            detailInfluence.addAssign(localInfluence);
-            combinedInfluence.addAssign(localInfluence.mul(float(1.18)));
-            authoritySum.addAssign(authority.mul(amplitude));
+            const oscillator = cos(phase);
+            const weightedAuthority = amplitude.mul(authority).toVar();
+            signedDisplacement.addAssign(
+              weightedAuthority.mul(family.field).mul(oscillator),
+            );
+            signedGradX.addAssign(
+              weightedAuthority.mul(family.gradX).mul(oscillator),
+            );
+            signedGradY.addAssign(
+              weightedAuthority.mul(family.gradY).mul(oscillator),
+            );
+            signedGradZ.addAssign(
+              weightedAuthority.mul(family.gradZ).mul(oscillator),
+            );
+            unsignedPotential.addAssign(weightedAuthority.mul(abs(family.field)));
+            authoritySum.addAssign(weightedAuthority);
             totalWeight.addAssign(amplitude);
           });
         },
       );
 
+      const safeAuthority = authoritySum.max(float(0.01));
       textureStore(
         texture,
         uvec3(voxelCoord),
         vec4(
           clamp(
-            combinedInfluence.div(totalWeight.max(float(0.01))),
+            signedDisplacement.div(safeAuthority),
+            float(-1.0),
+            float(1.0),
+          ),
+          clamp(
+            length(vec3(signedGradX, signedGradY, signedGradZ)).div(
+              safeAuthority,
+            ),
             float(0.0),
             float(1.0),
           ),
           clamp(
-            backboneInfluence.div(totalWeight.max(float(0.01))),
-            float(0.0),
-            float(1.0),
-          ),
-          clamp(
-            detailInfluence.div(totalWeight.max(float(0.01))),
+            float(1.0).sub(
+              abs(signedDisplacement).div(unsignedPotential.max(float(0.01))),
+            ),
             float(0.0),
             float(1.0),
           ),

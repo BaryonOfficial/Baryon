@@ -551,6 +551,8 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
       phaseOverlayCache?.activePhaseModeCount ??
       runtimeState.phaseOverlayModeCount ??
       0,
+    phaseOverlaySemantic:
+      phaseOverlayCache?.semantic ?? "signed-displacement",
     phaseOverlayStrength:
       runtimeState.uniforms.uModalPhaseOverlayStrength?.value ?? 0,
     spectralMix: runtimeState.uniforms.uSpectralMix?.value ?? 0,
