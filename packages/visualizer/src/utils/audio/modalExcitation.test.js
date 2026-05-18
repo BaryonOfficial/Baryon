@@ -186,6 +186,16 @@ function sumAmplitudes(slots) {
   return total;
 }
 
+function sumSquaredAmplitudes(slots) {
+  const slotCount = Math.floor((slots?.length ?? 0) / 4);
+  let total = 0;
+  for (let index = 0; index < slotCount; index += 1) {
+    const amplitude = slots[index * 4 + 3] ?? 0;
+    total += amplitude * amplitude;
+  }
+  return total;
+}
+
 function countActiveSlotsLocal(slots) {
   const slotCount = Math.floor((slots?.length ?? 0) / 4);
   let total = 0;
@@ -2037,19 +2047,38 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQDenseSpectrumPressure).toBeGreaterThan(
       0.5,
     );
-    expect(structural.structuralMetrics.projectionConservationApplied).toBe(
-      true,
-    );
+    expect(
+      structural.structuralMetrics.projectionConservationApplied,
+    ).toBeUndefined();
+    expect(
+      structural.structuralMetrics.projectionEnergyNormalizationApplied,
+    ).toBe(true);
     expect(
       structural.structuralMetrics.projectionCompetitionReduction,
+    ).toBeGreaterThan(0);
+    expect(
+      structural.structuralMetrics.projectionRawEnergyDetail,
+    ).toBeGreaterThan(
+      structural.structuralMetrics.projectionAllocatedEnergyDetail,
+    );
+    expect(
+      structural.structuralMetrics.projectionEnergyScaleDetail,
+    ).toBeLessThanOrEqual(1);
+    expect(
+      structural.structuralMetrics.projectionOverlapPressureDetail,
     ).toBeGreaterThan(0);
     expect(
       structural.structuralMetrics.projectionEnergyUsedDetail,
     ).toBeLessThanOrEqual(
       structural.structuralMetrics.projectionEnergyBudgetDetail,
     );
-    expect(sumAmplitudes(structural.detailSlotsSource)).toBeLessThanOrEqual(
+    expect(
+      structural.structuralMetrics.projectionAllocatedEnergyDetail,
+    ).toBeLessThanOrEqual(
       structural.structuralMetrics.projectionEnergyBudgetDetail,
+    );
+    expect(sumSquaredAmplitudes(structural.detailSlotsSource)).toBeLessThanOrEqual(
+      structural.structuralMetrics.projectionEnergyBudgetDetail + 1e-6,
     );
   });
 

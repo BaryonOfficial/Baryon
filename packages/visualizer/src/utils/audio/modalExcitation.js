@@ -61,6 +61,7 @@ const EXCITATION_DETAIL_HARD_SILENCE_RELEASE = 0.36;
 const EXCITATION_DETAIL_LOW_SIGNAL_RELEASE_THRESHOLD = 0.06;
 const EXCITATION_DETAIL_LOW_SIGNAL_RELEASE = 0.48;
 const EXCITATION_DETAIL_SIGNAL_COVERAGE_MIN = 0.68;
+const EXCITATION_HIGH_Q_SIGNAL_COVERAGE_MIN = 0.82;
 const EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_VISIBLE_AMPLITUDE = 0.2;
 const EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_STALE_PRESSURE = 0.08;
 const EXCITATION_DETAIL_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE = 0.12;
@@ -265,6 +266,15 @@ const PROJECTION_COMPETITION_SIGMA_BACKBONE = 0.1;
 const PROJECTION_COMPETITION_SIGMA_DETAIL = 0.035;
 const PROJECTION_COMPETITION_LAMBDA_BACKBONE = 0.55;
 const PROJECTION_COMPETITION_LAMBDA_DETAIL = 0.85;
+const PROJECTION_EVIDENCE_COHERENCE_WEIGHT = 0.42;
+const PROJECTION_EVIDENCE_SNR_WEIGHT = 0.24;
+const PROJECTION_EVIDENCE_DRIVE_WEIGHT = 0.22;
+const PROJECTION_EVIDENCE_PHASE_WEIGHT = 0.12;
+const PROJECTION_EVIDENCE_MIN = 0.12;
+const PROJECTION_HIGH_Q_PROTECTION_GAIN = 0.35;
+const PROJECTION_HIGH_Q_RETAINED_AMPLITUDE_SCALE = 0.08;
+const PROJECTION_BACKBONE_INCOHERENT_REDUCTION = 0.16;
+const PROJECTION_DETAIL_INCOHERENT_REDUCTION = 0.28;
 const EXCITATION_DECAY_DRIVE_THRESHOLD = 0.065;
 const EXCITATION_DECAY_SIGNAL_DISPLAY_RATIO = 0.55;
 const EXCITATION_HARD_SILENCE_MAX_AVG_AMPLITUDE = 1;
@@ -2779,16 +2789,24 @@ function buildDisplayShortlist(entries, layer) {
   return survivors;
 }
 
-function createEmptyProjectionConservationMetrics() {
+function createEmptyProjectionNormalizationMetrics() {
   return {
     projectionEnergyBudgetBackbone: 0,
     projectionEnergyBudgetDetail: 0,
     projectionEnergyUsedBackbone: 0,
     projectionEnergyUsedDetail: 0,
+    projectionRawEnergyBackbone: 0,
+    projectionRawEnergyDetail: 0,
+    projectionAllocatedEnergyBackbone: 0,
+    projectionAllocatedEnergyDetail: 0,
+    projectionEnergyScaleBackbone: 0,
+    projectionEnergyScaleDetail: 0,
+    projectionOverlapPressureBackbone: 0,
+    projectionOverlapPressureDetail: 0,
     projectionCompetitionReduction: 0,
     projectionDenseSpectrumPressure: 0,
     projectionHighQProtection: 0,
-    projectionConservationApplied: false,
+    projectionEnergyNormalizationApplied: false,
   };
 }
 
@@ -2800,24 +2818,32 @@ function getProjectionLayerBudget({
 }) {
   if (layer === "backbone") {
     return Math.max(
-      0.48,
-      Math.min(0.92, 0.78 - 0.18 * denseSpectrumPressure + 0.1 * modeCoherence),
+      0.46,
+      Math.min(
+        0.88,
+        0.62 - 0.22 * denseSpectrumPressure + 0.14 * modeCoherence,
+      ),
     );
   }
 
   return Math.max(
-    0.24,
-    Math.min(0.76, 0.58 - 0.3 * denseSpectrumPressure + 0.26 * highQProtection),
+    0.16,
+    Math.min(0.58, 0.34 - 0.32 * denseSpectrumPressure + 0.3 * highQProtection),
   );
 }
 
-function getProjectionHighQProtection(entry, sparseHighQAuthority) {
-  if (
-    entry?.observedModal === true &&
-    getModeQProfile(entry) === "high-q" &&
-    sparseHighQAuthority > 0
-  ) {
-    return sparseHighQAuthority;
+function getProjectionHighQProtection(
+  entry,
+  sparseHighQAuthority,
+  denseSpectrumPressure,
+) {
+  if (getModeQProfile(entry) === "high-q" && sparseHighQAuthority > 0) {
+    if (entry?.observedModal === true) {
+      return sparseHighQAuthority;
+    }
+    const sparseProposalProtection =
+      1 - smoothstep(0.28, 0.5, denseSpectrumPressure);
+    return sparseHighQAuthority * 0.72 * sparseProposalProtection;
   }
   return 0;
 }
@@ -2836,14 +2862,87 @@ function computeProjectionProximity(left, right, layer) {
   return Math.exp(-(distance * distance));
 }
 
-function applyProjectionEnergyConservation({
+function computeProjectionBasisOverlap(left, right) {
+  const leftIndices = [left?.u, left?.v, left?.w].map((value) =>
+    Number.isFinite(value) ? Math.round(value) : null,
+  );
+  const rightIndices = [right?.u, right?.v, right?.w].map((value) =>
+    Number.isFinite(value) ? Math.round(value) : null,
+  );
+  let sharedCount = 0;
+  const unmatchedRight = [...rightIndices];
+
+  for (const leftIndex of leftIndices) {
+    if (leftIndex === null) {
+      continue;
+    }
+    const matchIndex = unmatchedRight.indexOf(leftIndex);
+    if (matchIndex < 0) {
+      continue;
+    }
+    sharedCount += 1;
+    unmatchedRight.splice(matchIndex, 1);
+  }
+
+  return sharedCount / 3;
+}
+
+function computeProjectionOverlap(left, right, layer) {
+  return Math.max(
+    computeProjectionProximity(left, right, layer),
+    computeProjectionBasisOverlap(left, right),
+  );
+}
+
+function getProjectionRawDisplayAmplitude(entry, layer, highQProtection) {
+  const baseAmplitude = clamp01(
+    entry?.displayAmplitude ?? getDisplayAmplitude(entry, layer),
+  );
+  if (layer !== "detail" || highQProtection <= 0) {
+    return baseAmplitude;
+  }
+
+  const retainedEnergy = clamp01(entry?.retainedEnergy ?? entry?.amplitude ?? 0);
+  const retainedAmplitude =
+    Math.sqrt(retainedEnergy) *
+    PROJECTION_HIGH_Q_RETAINED_AMPLITUDE_SCALE *
+    (0.8 + 0.2 * highQProtection);
+  return clamp01(Math.max(baseAmplitude, retainedAmplitude));
+}
+
+function getProjectionEvidenceQuality(entry, layer, highQProtection) {
+  const profile = getModalObserverProfile(layer);
+  const coherence = clamp01(entry?.coherence ?? 0);
+  const observedSnr = Math.max(0, entry?.observedSnr ?? 0);
+  const normalizedSnr = clamp01(observedSnr / Math.max(profile.snrFull, 1e-6));
+  const snrEvidence = Math.max(normalizedSnr, clamp01(highQProtection));
+  const driveEvidence = clamp01(
+    Math.max(
+      entry?.observedDrive ?? 0,
+      entry?.currentDriveEnergy ?? 0,
+      entry?.driveEnergy ?? 0,
+      entry?.sourceAmplitude ?? 0,
+      highQProtection,
+    ),
+  );
+  const phaseAuthority = clamp01(entry?.phaseAuthority ?? 0);
+  const evidenceQuality =
+    PROJECTION_EVIDENCE_COHERENCE_WEIGHT * coherence +
+    PROJECTION_EVIDENCE_SNR_WEIGHT * snrEvidence +
+    PROJECTION_EVIDENCE_DRIVE_WEIGHT * driveEvidence +
+    PROJECTION_EVIDENCE_PHASE_WEIGHT * phaseAuthority;
+
+  return Math.max(PROJECTION_EVIDENCE_MIN, clamp01(evidenceQuality));
+}
+
+function applyProjectionEnergyNormalization({
   entries,
   layer,
   modalObserverMetrics,
   hardSilentFrame,
   highQDetailTopologySignal = 0,
 }) {
-  const emptyMetrics = createEmptyProjectionConservationMetrics();
+  const emptyMetrics = createEmptyProjectionNormalizationMetrics();
   if (hardSilentFrame || entries.length === 0) {
     return { entries: [], metrics: emptyMetrics };
   }
@@ -2869,7 +2968,11 @@ function applyProjectionEnergyConservation({
     ),
   );
   const entryHighQProtection = entries.map((entry) =>
-    getProjectionHighQProtection(entry, sparseHighQAuthority),
+    getProjectionHighQProtection(
+      entry,
+      sparseHighQAuthority,
+      denseSpectrumPressure,
+    ),
   );
   const layerHighQProtection =
     layer === "detail" && (modalObserverMetrics?.highQDetailModeCount ?? 0) > 0
@@ -2885,87 +2988,124 @@ function applyProjectionEnergyConservation({
     layer === "backbone"
       ? PROJECTION_COMPETITION_LAMBDA_BACKBONE
       : PROJECTION_COMPETITION_LAMBDA_DETAIL;
-  const competitionActivation = smoothstep(0.35, 0.75, denseSpectrumPressure);
 
   const projected = entries.map((entry, entryIndex) => {
-    const rawDisplayAmplitude = clamp01(
-      entry?.displayAmplitude ?? getDisplayAmplitude(entry, layer),
+    const highQProtection = entryHighQProtection[entryIndex] ?? 0;
+    const rawDisplayAmplitude = getProjectionRawDisplayAmplitude(
+      entry,
+      layer,
+      highQProtection,
     );
-    let competitorPressure = 0;
-    for (let otherIndex = 0; otherIndex < entries.length; otherIndex += 1) {
-      if (otherIndex === entryIndex) {
-        continue;
-      }
-      const other = entries[otherIndex];
-      const proximity = computeProjectionProximity(entry, other, layer);
-      const otherAmplitude = clamp01(
-        other?.displayAmplitude ?? getDisplayAmplitude(other, layer),
-      );
-      competitorPressure +=
-        proximity *
-        otherAmplitude *
-        (1 - 0.35 * entryHighQProtection[otherIndex]) *
-        (1 - 0.25 * clamp01(other?.coherence ?? 0));
-    }
-    const competitionScale = 1 / (1 + lambda * competitorPressure);
-    const activatedCompetitionScale =
-      1 - competitionActivation * (1 - competitionScale);
-    const phaseAuthority = clamp01(entry?.phaseAuthority ?? 0);
-    const coherence = clamp01(entry?.coherence ?? 0);
-    const interferenceSupport = phaseAuthority > 0
-      ? 0.62 * coherence + 0.38 * phaseAuthority
-      : coherence;
-    const maxIncoherentReduction = layer === "detail" ? 0.22 : 0.14;
-    const interferenceQuality =
-      1 - denseSpectrumPressure * maxIncoherentReduction * (1 - interferenceSupport);
-    const projectedAmplitude =
-      rawDisplayAmplitude * activatedCompetitionScale * interferenceQuality;
+    const evidenceQuality = getProjectionEvidenceQuality(
+      entry,
+      layer,
+      highQProtection,
+    );
+    const rawEnergy = rawDisplayAmplitude * rawDisplayAmplitude * evidenceQuality;
+    const protectedEnergy =
+      rawEnergy *
+      (1 +
+        PROJECTION_HIGH_Q_PROTECTION_GAIN *
+          highQProtection *
+          (1 - denseSpectrumPressure));
     return {
       entry,
       rawDisplayAmplitude,
-      projectedAmplitude,
+      highQProtection,
+      evidenceQuality,
+      rawEnergy,
+      protectedEnergy,
     };
   });
 
-  const rawTotal = projected.reduce(
-    (total, item) => total + item.rawDisplayAmplitude,
+  const competed = projected.map((item, entryIndex) => {
+    let competitorPressure = 0;
+    for (let otherIndex = 0; otherIndex < projected.length; otherIndex += 1) {
+      if (otherIndex === entryIndex) {
+        continue;
+      }
+      const other = projected[otherIndex];
+      const proximity = computeProjectionOverlap(item.entry, other.entry, layer);
+      competitorPressure +=
+        proximity *
+        other.protectedEnergy *
+        (1 - 0.35 * other.highQProtection) *
+        (1 - 0.25 * clamp01(other.entry?.coherence ?? 0));
+    }
+    const competitionScale = 1 / (1 + lambda * competitorPressure);
+    const maxIncoherentReduction =
+      layer === "detail"
+        ? PROJECTION_DETAIL_INCOHERENT_REDUCTION
+        : PROJECTION_BACKBONE_INCOHERENT_REDUCTION;
+    const incoherentQuality =
+      1 -
+      denseSpectrumPressure *
+        maxIncoherentReduction *
+        (1 - item.evidenceQuality);
+    const projectedEnergy =
+      item.protectedEnergy * competitionScale * incoherentQuality;
+    return {
+      ...item,
+      competitorPressure,
+      competitionScale,
+      projectedEnergy,
+    };
+  });
+
+  const rawEnergyTotal = competed.reduce(
+    (total, item) => total + item.rawEnergy,
     0,
   );
-  const projectedTotal = projected.reduce(
-    (total, item) => total + item.projectedAmplitude,
+  const projectedEnergyTotal = competed.reduce(
+    (total, item) => total + item.projectedEnergy,
     0,
   );
-  const budgetScale = projectedTotal > budget ? budget / projectedTotal : 1;
-  const conservedEntries = projected.map((item) => ({
+  const energyScale =
+    projectedEnergyTotal > budget ? budget / Math.max(projectedEnergyTotal, 1e-9) : 1;
+  const conservedEntries = competed.map((item) => ({
     ...item.entry,
-    displayAmplitude: clamp01(item.projectedAmplitude * budgetScale),
+    displayAmplitude: Math.sqrt(Math.max(0, item.projectedEnergy * energyScale)),
   }));
-  const measuredUsed = conservedEntries.reduce(
-    (total, entry) => total + clamp01(entry.displayAmplitude ?? 0),
+  const allocatedEnergy = competed.reduce(
+    (total, item) => total + item.projectedEnergy * energyScale,
     0,
   );
-  const used = Math.min(measuredUsed, budget);
-  const competitionReduction = Math.max(0, rawTotal - used);
+  const used = Math.min(allocatedEnergy, budget);
+  const maxOverlapPressure = competed.reduce(
+    (maxPressure, item) => Math.max(maxPressure, item.competitorPressure),
+    0,
+  );
+  const competitionReduction = Math.max(0, rawEnergyTotal - used);
+  const normalizationApplied =
+    energyScale < 0.999999 || competitionReduction > 1e-6 || maxOverlapPressure > 0;
   const metrics = {
     ...emptyMetrics,
     projectionDenseSpectrumPressure: denseSpectrumPressure,
     projectionHighQProtection: layerHighQProtection,
     projectionCompetitionReduction: competitionReduction,
-    projectionConservationApplied: competitionReduction > 1e-6,
+    projectionEnergyNormalizationApplied: normalizationApplied,
   };
   if (layer === "backbone") {
     metrics.projectionEnergyBudgetBackbone = budget;
     metrics.projectionEnergyUsedBackbone = used;
+    metrics.projectionRawEnergyBackbone = rawEnergyTotal;
+    metrics.projectionAllocatedEnergyBackbone = used;
+    metrics.projectionEnergyScaleBackbone = energyScale;
+    metrics.projectionOverlapPressureBackbone = maxOverlapPressure;
   } else {
     metrics.projectionEnergyBudgetDetail = budget;
     metrics.projectionEnergyUsedDetail = used;
+    metrics.projectionRawEnergyDetail = rawEnergyTotal;
+    metrics.projectionAllocatedEnergyDetail = used;
+    metrics.projectionEnergyScaleDetail = energyScale;
+    metrics.projectionOverlapPressureDetail = maxOverlapPressure;
   }
 
   return { entries: conservedEntries, metrics };
 }
 
-function mergeProjectionConservationMetrics(...metricSets) {
-  const merged = createEmptyProjectionConservationMetrics();
+function mergeProjectionNormalizationMetrics(...metricSets) {
+  const merged = createEmptyProjectionNormalizationMetrics();
   for (const metrics of metricSets) {
     if (!metrics) {
       continue;
@@ -2982,6 +3122,40 @@ function mergeProjectionConservationMetrics(...metricSets) {
       metrics.projectionEnergyUsedBackbone ?? 0;
     merged.projectionEnergyUsedDetail +=
       metrics.projectionEnergyUsedDetail ?? 0;
+    merged.projectionRawEnergyBackbone +=
+      metrics.projectionRawEnergyBackbone ?? 0;
+    merged.projectionRawEnergyDetail +=
+      metrics.projectionRawEnergyDetail ?? 0;
+    merged.projectionAllocatedEnergyBackbone +=
+      metrics.projectionAllocatedEnergyBackbone ?? 0;
+    merged.projectionAllocatedEnergyDetail +=
+      metrics.projectionAllocatedEnergyDetail ?? 0;
+    if ((metrics.projectionEnergyScaleBackbone ?? 0) > 0) {
+      merged.projectionEnergyScaleBackbone =
+        merged.projectionEnergyScaleBackbone > 0
+          ? Math.min(
+              merged.projectionEnergyScaleBackbone,
+              metrics.projectionEnergyScaleBackbone,
+            )
+          : metrics.projectionEnergyScaleBackbone;
+    }
+    if ((metrics.projectionEnergyScaleDetail ?? 0) > 0) {
+      merged.projectionEnergyScaleDetail =
+        merged.projectionEnergyScaleDetail > 0
+          ? Math.min(
+              merged.projectionEnergyScaleDetail,
+              metrics.projectionEnergyScaleDetail,
+            )
+          : metrics.projectionEnergyScaleDetail;
+    }
+    merged.projectionOverlapPressureBackbone = Math.max(
+      merged.projectionOverlapPressureBackbone,
+      metrics.projectionOverlapPressureBackbone ?? 0,
+    );
+    merged.projectionOverlapPressureDetail = Math.max(
+      merged.projectionOverlapPressureDetail,
+      metrics.projectionOverlapPressureDetail ?? 0,
+    );
     merged.projectionCompetitionReduction +=
       metrics.projectionCompetitionReduction ?? 0;
     merged.projectionDenseSpectrumPressure = Math.max(
@@ -2992,9 +3166,9 @@ function mergeProjectionConservationMetrics(...metricSets) {
       merged.projectionHighQProtection,
       metrics.projectionHighQProtection ?? 0,
     );
-    merged.projectionConservationApplied =
-      merged.projectionConservationApplied ||
-      metrics.projectionConservationApplied === true;
+    merged.projectionEnergyNormalizationApplied =
+      merged.projectionEnergyNormalizationApplied ||
+      metrics.projectionEnergyNormalizationApplied === true;
   }
   return merged;
 }
@@ -3060,8 +3234,8 @@ function buildModalProjection({
       );
   const {
     entries: displayBackboneEntries,
-    metrics: backboneProjectionConservationMetrics,
-  } = applyProjectionEnergyConservation({
+    metrics: backboneProjectionNormalizationMetrics,
+  } = applyProjectionEnergyNormalization({
     entries: rawDisplayBackboneEntries,
     layer: "backbone",
     modalObserverMetrics,
@@ -3070,8 +3244,8 @@ function buildModalProjection({
   });
   const {
     entries: displayDetailEntries,
-    metrics: detailProjectionConservationMetrics,
-  } = applyProjectionEnergyConservation({
+    metrics: detailProjectionNormalizationMetrics,
+  } = applyProjectionEnergyNormalization({
     entries: rawDisplayDetailEntries,
     layer: "detail",
     modalObserverMetrics,
@@ -3080,8 +3254,8 @@ function buildModalProjection({
   });
   const {
     entries: signalDetailProjectionEntries,
-    metrics: signalDetailProjectionConservationMetrics,
-  } = applyProjectionEnergyConservation({
+    metrics: signalDetailProjectionNormalizationMetrics,
+  } = applyProjectionEnergyNormalization({
     entries: detailEntries,
     layer: "detail",
     modalObserverMetrics,
@@ -3187,12 +3361,20 @@ function buildModalProjection({
         : highQDetailSignalAuthoritative
           ? "high-q"
           : "none";
-  const highQSignalShifted =
-    highQDetailSignalAuthoritative &&
+  const highQCoverageShifted =
     detailVisibleAmplitude >=
       EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_VISIBLE_AMPLITUDE &&
-    detailStalePressure >=
-      EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_STALE_PRESSURE;
+    detailSignalCoverage >= EXCITATION_DETAIL_SIGNAL_COVERAGE_MIN &&
+    detailSignalCoverage < EXCITATION_HIGH_Q_SIGNAL_COVERAGE_MIN &&
+    (modalObserverMetrics.highQObservedDrive ?? 0) >= 0.075 &&
+    (modalObserverMetrics.highQDenseSpectrumPressure ?? 0) <= 0.2;
+  const highQSignalShifted =
+    highQDetailSignalAuthoritative &&
+    ((detailVisibleAmplitude >=
+      EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_VISIBLE_AMPLITUDE &&
+      detailStalePressure >=
+        EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_STALE_PRESSURE) ||
+      highQCoverageShifted);
   const detailUsesSignalProjection =
     detailTargetShifted ||
     detailFreshSignalShifted ||
@@ -3207,11 +3389,11 @@ function buildModalProjection({
   const detailBlendColorSlots = detailUsesSignalProjection
     ? state.detailProjection.colorSlots
     : state.displayDetail.colorSlots;
-  const projectionConservationMetrics = mergeProjectionConservationMetrics(
-    backboneProjectionConservationMetrics,
+  const projectionNormalizationMetrics = mergeProjectionNormalizationMetrics(
+    backboneProjectionNormalizationMetrics,
     detailUsesSignalProjection
-      ? signalDetailProjectionConservationMetrics
-      : detailProjectionConservationMetrics,
+      ? signalDetailProjectionNormalizationMetrics
+      : detailProjectionNormalizationMetrics,
   );
   const detailShiftReleaseOverrides = detailSignalAuthoritative
     ? buildStaleDetailReleaseOverrides({
@@ -3248,7 +3430,7 @@ function buildModalProjection({
     detailBlendColorSlots,
     detailShiftReleaseOverrides,
     detailShiftTrackingOverrides,
-    projectionConservationMetrics,
+    projectionNormalizationMetrics,
   };
 }
 
@@ -3822,7 +4004,7 @@ export function buildModalExcitationStructuralState({
     detailBlendColorSlots,
     detailShiftReleaseOverrides,
     detailShiftTrackingOverrides,
-    projectionConservationMetrics,
+    projectionNormalizationMetrics,
   } = projection;
 
   const observedBackboneContinuity =
@@ -4076,7 +4258,7 @@ export function buildModalExcitationStructuralState({
     detailShiftStalePressure: detailStalePressure,
     detailShiftReleaseOverrideCount: detailShiftReleaseOverrides?.size ?? 0,
     detailShiftTrackingOverrideCount: detailShiftTrackingOverrides?.size ?? 0,
-    ...projectionConservationMetrics,
+    ...projectionNormalizationMetrics,
   };
   state.diagnostics = diagnostics;
 

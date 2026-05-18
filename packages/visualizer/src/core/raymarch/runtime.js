@@ -467,14 +467,30 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
       featureFrame?.debug?.projectionEnergyUsedBackbone ?? 0,
     projectionEnergyUsedDetail:
       featureFrame?.debug?.projectionEnergyUsedDetail ?? 0,
+    projectionRawEnergyBackbone:
+      featureFrame?.debug?.projectionRawEnergyBackbone ?? 0,
+    projectionRawEnergyDetail:
+      featureFrame?.debug?.projectionRawEnergyDetail ?? 0,
+    projectionAllocatedEnergyBackbone:
+      featureFrame?.debug?.projectionAllocatedEnergyBackbone ?? 0,
+    projectionAllocatedEnergyDetail:
+      featureFrame?.debug?.projectionAllocatedEnergyDetail ?? 0,
+    projectionEnergyScaleBackbone:
+      featureFrame?.debug?.projectionEnergyScaleBackbone ?? 0,
+    projectionEnergyScaleDetail:
+      featureFrame?.debug?.projectionEnergyScaleDetail ?? 0,
+    projectionOverlapPressureBackbone:
+      featureFrame?.debug?.projectionOverlapPressureBackbone ?? 0,
+    projectionOverlapPressureDetail:
+      featureFrame?.debug?.projectionOverlapPressureDetail ?? 0,
     projectionCompetitionReduction:
       featureFrame?.debug?.projectionCompetitionReduction ?? 0,
     projectionDenseSpectrumPressure:
       featureFrame?.debug?.projectionDenseSpectrumPressure ?? 0,
     projectionHighQProtection:
       featureFrame?.debug?.projectionHighQProtection ?? 0,
-    projectionConservationApplied:
-      featureFrame?.debug?.projectionConservationApplied === true,
+    projectionEnergyNormalizationApplied:
+      featureFrame?.debug?.projectionEnergyNormalizationApplied === true,
     highQPhaseAuthority: featureFrame?.debug?.highQPhaseAuthority ?? 0,
     lowQPhaseAuthority: featureFrame?.debug?.lowQPhaseAuthority ?? 0,
     modalPhaseOverlayModeCount:

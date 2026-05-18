@@ -2849,21 +2849,21 @@ describe("live input noise gate", () => {
     expect(frame.activeDetailModeCount).toBeGreaterThanOrEqual(4);
   });
 
-  it("keeps trace-level periodic bowl tails visible for line-feed and file sources", () => {
-    const scenarios = [
-      {
-        sourceMode: "live",
-        status: makeResolvedLineFeedLiveStatus(),
-        liveInputAnalysisSettings: { acousticIntent: "ambient" },
-      },
-      {
-        sourceMode: "file",
-        status: makeActiveStatus(),
-        liveInputAnalysisSettings: undefined,
-      },
-    ];
-
-    for (const scenario of scenarios) {
+  for (const scenario of [
+    {
+      label: "line-feed",
+      sourceMode: "live",
+      status: makeResolvedLineFeedLiveStatus(),
+      liveInputAnalysisSettings: { acousticIntent: "ambient" },
+    },
+    {
+      label: "file",
+      sourceMode: "file",
+      status: makeActiveStatus(),
+      liveInputAnalysisSettings: undefined,
+    },
+  ]) {
+    it(`keeps trace-level periodic bowl tails visible for ${scenario.label} sources`, () => {
       const featureState = createAudioFeatureState();
       let frame = null;
 
@@ -2901,24 +2901,24 @@ describe("live input noise gate", () => {
       expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.003);
       expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
       expect(frame.activeDetailModeCount).toBeGreaterThanOrEqual(4);
-    }
-  });
+    });
+  }
 
-  it("keeps observed bowl tails active from periodic waveform after FFT detail disappears", () => {
-    const scenarios = [
-      {
-        sourceMode: "live",
-        status: makeResolvedLineFeedLiveStatus(),
-        liveInputAnalysisSettings: { acousticIntent: "ambient" },
-      },
-      {
-        sourceMode: "file",
-        status: makeActiveStatus(),
-        liveInputAnalysisSettings: undefined,
-      },
-    ];
-
-    for (const scenario of scenarios) {
+  for (const scenario of [
+    {
+      label: "line-feed",
+      sourceMode: "live",
+      status: makeResolvedLineFeedLiveStatus(),
+      liveInputAnalysisSettings: { acousticIntent: "ambient" },
+    },
+    {
+      label: "file",
+      sourceMode: "file",
+      status: makeActiveStatus(),
+      liveInputAnalysisSettings: undefined,
+    },
+  ]) {
+    it(`keeps observed bowl tails active from periodic waveform after FFT detail disappears for ${scenario.label} sources`, () => {
       const featureState = createAudioFeatureState();
       let frame = null;
 
@@ -2952,8 +2952,8 @@ describe("live input noise gate", () => {
       expect(frame.debug.highQRingSupport).toBeGreaterThan(0.08);
       expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.003);
       expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
-    }
-  });
+    });
+  }
 
   it("observes soft high-Q detail without a loud seed strike for line-feed and file sources", () => {
     const scenarios = [
@@ -5632,7 +5632,18 @@ describe("modal excitation integration", () => {
     expect(result.frame.debug.modalVisibilityActiveModeCount).toBeGreaterThan(
       4,
     );
-    expect(result.frame.debug.projectionConservationApplied).toBe(true);
+    expect(result.frame.debug.projectionConservationApplied).toBeUndefined();
+    expect(result.frame.debug.projectionEnergyNormalizationApplied).toBe(true);
+    expect(result.frame.debug.projectionRawEnergyDetail).toBeGreaterThan(0);
+    expect(result.frame.debug.projectionAllocatedEnergyDetail).toBeLessThanOrEqual(
+      result.frame.debug.projectionEnergyBudgetDetail,
+    );
+    expect(result.frame.debug.projectionEnergyScaleDetail).toBeLessThanOrEqual(
+      1,
+    );
+    expect(result.frame.debug.projectionOverlapPressureDetail).toBeGreaterThan(
+      0,
+    );
     expect(result.frame.debug.projectionCompetitionReduction).toBeGreaterThan(0);
     expect(
       result.frame.debug.projectionEnergyUsedDetail,

@@ -1075,14 +1075,30 @@ function buildDebugSummary({
       structuralMetrics?.projectionEnergyUsedBackbone ?? 0,
     projectionEnergyUsedDetail:
       structuralMetrics?.projectionEnergyUsedDetail ?? 0,
+    projectionRawEnergyBackbone:
+      structuralMetrics?.projectionRawEnergyBackbone ?? 0,
+    projectionRawEnergyDetail:
+      structuralMetrics?.projectionRawEnergyDetail ?? 0,
+    projectionAllocatedEnergyBackbone:
+      structuralMetrics?.projectionAllocatedEnergyBackbone ?? 0,
+    projectionAllocatedEnergyDetail:
+      structuralMetrics?.projectionAllocatedEnergyDetail ?? 0,
+    projectionEnergyScaleBackbone:
+      structuralMetrics?.projectionEnergyScaleBackbone ?? 0,
+    projectionEnergyScaleDetail:
+      structuralMetrics?.projectionEnergyScaleDetail ?? 0,
+    projectionOverlapPressureBackbone:
+      structuralMetrics?.projectionOverlapPressureBackbone ?? 0,
+    projectionOverlapPressureDetail:
+      structuralMetrics?.projectionOverlapPressureDetail ?? 0,
     projectionCompetitionReduction:
       structuralMetrics?.projectionCompetitionReduction ?? 0,
     projectionDenseSpectrumPressure:
       structuralMetrics?.projectionDenseSpectrumPressure ?? 0,
     projectionHighQProtection:
       structuralMetrics?.projectionHighQProtection ?? 0,
-    projectionConservationApplied:
-      structuralMetrics?.projectionConservationApplied === true,
+    projectionEnergyNormalizationApplied:
+      structuralMetrics?.projectionEnergyNormalizationApplied === true,
     sourceNormalization: sourceNormalization ?? {
       normalizedRms: 0,
       normalizedAmplitude: 0,

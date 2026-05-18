@@ -285,7 +285,15 @@ describe("tickRaymarchRuntime", () => {
         projectionCompetitionReduction: 0.18,
         projectionDenseSpectrumPressure: 0.72,
         projectionHighQProtection: 0.09,
-        projectionConservationApplied: true,
+        projectionEnergyNormalizationApplied: true,
+        projectionRawEnergyBackbone: 0.68,
+        projectionRawEnergyDetail: 0.57,
+        projectionAllocatedEnergyBackbone: 0.52,
+        projectionAllocatedEnergyDetail: 0.31,
+        projectionEnergyScaleBackbone: 0.76,
+        projectionEnergyScaleDetail: 0.54,
+        projectionOverlapPressureBackbone: 0.23,
+        projectionOverlapPressureDetail: 0.41,
       },
     };
 
@@ -407,7 +415,35 @@ describe("tickRaymarchRuntime", () => {
     ).toBe(0.09);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.projectionConservationApplied,
+    ).toBeUndefined();
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .projectionEnergyNormalizationApplied,
     ).toBe(true);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionRawEnergyBackbone,
+    ).toBe(0.68);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionRawEnergyDetail,
+    ).toBe(0.57);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionAllocatedEnergyBackbone,
+    ).toBe(0.52);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionAllocatedEnergyDetail,
+    ).toBe(0.31);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyScaleBackbone,
+    ).toBe(0.76);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyScaleDetail,
+    ).toBe(0.54);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionOverlapPressureBackbone,
+    ).toBe(0.23);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionOverlapPressureDetail,
+    ).toBe(0.41);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.modalVisibilityDensityLiftMax,
     ).toBeGreaterThan(0);
