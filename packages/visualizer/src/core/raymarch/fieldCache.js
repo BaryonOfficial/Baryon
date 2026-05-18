@@ -408,6 +408,46 @@ function accumulateLayerAtPoint({
   return { field, gradX, gradY, gradZ };
 }
 
+function accumulateSignedPotentialLayerAtPoint({
+  slots,
+  activeCount,
+  weight,
+  x,
+  y,
+  z,
+  scale,
+  boundaryMode,
+  cavityGeometry,
+}) {
+  let signedPotential = 0;
+  let unsignedPotential = 0;
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const geometryBackend = getModalGeometryBackend(cavityGeometry);
+
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const amplitude = (slots?.[offset + 3] ?? 0) * weight;
+    if (!(amplitude > 0)) {
+      continue;
+    }
+    const family = geometryBackend.evaluateMode({
+      u: slots[offset] ?? 0,
+      v: slots[offset + 1] ?? 0,
+      w: slots[offset + 2] ?? 0,
+      x,
+      y,
+      z,
+      scale,
+      boundaryMode,
+    });
+    const contribution = amplitude * family.field;
+    signedPotential += contribution;
+    unsignedPotential += Math.abs(contribution);
+  }
+
+  return { signedPotential, unsignedPotential };
+}
+
 export function evaluateRaymarchFieldCachePoint({
   backboneSlots,
   detailSlots,
@@ -455,6 +495,60 @@ export function evaluateRaymarchFieldCachePoint({
     gradX: (backbone.gradX + detail.gradX) / amplitudeNorm,
     gradY: (backbone.gradY + detail.gradY) / amplitudeNorm,
     gradZ: (backbone.gradZ + detail.gradZ) / amplitudeNorm,
+  };
+}
+
+export function evaluateRaymarchSignedPotentialAtPoint({
+  backboneSlots,
+  detailSlots,
+  backboneCount = 0,
+  detailCount = 0,
+  boundaryMode,
+  cavityGeometry = "rectangular",
+  radius = 1,
+  x = 0,
+  y = 0,
+  z = 0,
+}) {
+  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
+  const scale = Math.PI / Math.max(radius, 1e-4);
+  const backbone = accumulateSignedPotentialLayerAtPoint({
+    slots: backboneSlots,
+    activeCount: backboneCount,
+    weight: 1,
+    x,
+    y,
+    z,
+    scale,
+    boundaryMode: normalizedBoundaryMode,
+    cavityGeometry: normalizedCavityGeometry,
+  });
+  const detail = accumulateSignedPotentialLayerAtPoint({
+    slots: detailSlots,
+    activeCount: detailCount,
+    weight: DETAIL_LAYER_WEIGHT,
+    x,
+    y,
+    z,
+    scale,
+    boundaryMode: normalizedBoundaryMode,
+    cavityGeometry: normalizedCavityGeometry,
+  });
+  const signedPotential = backbone.signedPotential + detail.signedPotential;
+  const unsignedPotential =
+    backbone.unsignedPotential + detail.unsignedPotential;
+
+  return {
+    signedPotential,
+    unsignedPotential,
+    cancellation: Math.min(
+      1,
+      Math.max(
+        0,
+        1 - Math.abs(signedPotential) / Math.max(0.01, unsignedPotential),
+      ),
+    ),
   };
 }
 

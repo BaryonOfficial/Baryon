@@ -25,6 +25,7 @@ import {
   WHITE_EMISSION_CROWDING_REDUCTION,
   SHELL_WEIGHT_MAX,
   SHELL_WEIGHT_MIN,
+  SIGNED_PHASE_OVERLAY_GRADIENT_GAIN,
   deriveBeamMask,
   deriveBodyDensity,
   deriveContourGainBase,
@@ -336,6 +337,19 @@ describe("field shaping", () => {
     expect(cancelling.effectiveFieldAbs).toBeLessThan(0.1);
     expect(disabled.phaseContribution).toBe(0);
     expect(disabled.effectiveField).toBeCloseTo(0.1);
+  });
+
+  it("uses signed phase gradient as bounded structure support", () => {
+    const supported = deriveSignedPhaseOverlayField({
+      cachedField: 0.1,
+      phaseDisplacement: 0,
+      phaseGradientMagnitude: 0.8,
+      phaseAuthority: 1,
+      overlayStrength: 1,
+    });
+
+    expect(SIGNED_PHASE_OVERLAY_GRADIENT_GAIN).toBeCloseTo(0.35);
+    expect(supported.phaseGradientContribution).toBeCloseTo(0.28);
   });
 
   it("derives excitation visibility without hint inputs", () => {

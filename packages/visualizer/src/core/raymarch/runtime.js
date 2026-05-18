@@ -381,6 +381,12 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     runtimeState.uniforms.uDetailModeCount.value,
   );
   const renderedRetention = summarizeRenderedRetention(performanceGovernor);
+  const phaseOverlayModeCount =
+    phaseOverlayCache?.activePhaseModeCount ??
+    runtimeState.phaseOverlayModeCount ??
+    0;
+  const phaseOverlaySemantic =
+    phaseOverlayCache?.semantic ?? "signed-displacement";
 
   return {
     fieldState,
@@ -547,12 +553,11 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
       phaseOverlayCache?.resolution ?? RAYMARCH_PHASE_OVERLAY_RESOLUTION,
     phaseOverlayRebuildCount: phaseOverlayCache?.rebuildCount ?? 0,
     phaseOverlayLastError: phaseOverlayCache?.lastError ?? null,
-    phaseOverlayModeCount:
-      phaseOverlayCache?.activePhaseModeCount ??
-      runtimeState.phaseOverlayModeCount ??
-      0,
-    phaseOverlaySemantic:
-      phaseOverlayCache?.semantic ?? "signed-displacement",
+    phaseOverlayModeCount,
+    phaseOverlaySemantic,
+    signedPhaseOverlayActive: phaseOverlayCache?.active ?? false,
+    signedPhaseOverlayModeCount: phaseOverlayModeCount,
+    signedPhaseOverlaySemantic: phaseOverlaySemantic,
     phaseOverlayStrength:
       runtimeState.uniforms.uModalPhaseOverlayStrength?.value ?? 0,
     spectralMix: runtimeState.uniforms.uSpectralMix?.value ?? 0,

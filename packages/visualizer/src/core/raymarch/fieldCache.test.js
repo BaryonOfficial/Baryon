@@ -8,6 +8,7 @@ import {
   enqueueRaymarchPhaseOverlayRebuild,
   evaluateRaymarchFieldCachePoint,
   evaluateRaymarchPhaseOverlayPoint,
+  evaluateRaymarchSignedPotentialAtPoint,
   isRaymarchSpectralLightCacheReadyForDescriptor,
   shouldRebuildRaymarchSpectralLightCache,
   shouldRebuildRaymarchFieldCache,
@@ -544,6 +545,24 @@ describe("fieldCache", () => {
     expect(sample.gradientMagnitude).toBeLessThan(0.001);
     expect(sample.cancellation).toBeGreaterThan(0.95);
     expect(sample.authority).toBeCloseTo(1, 6);
+  });
+
+  it("reports destructive interference against unsigned modal potential", () => {
+    const sample = evaluateRaymarchSignedPotentialAtPoint({
+      backboneSlots: new Float32Array([1, 1, 1, 0.5, 2, 2, 2, 0.5]),
+      detailSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 3,
+      y: 0,
+      z: 0,
+    });
+
+    expect(Math.abs(sample.signedPotential)).toBeLessThan(0.001);
+    expect(sample.unsignedPotential).toBeGreaterThan(0.9);
+    expect(sample.cancellation).toBeGreaterThan(0.95);
   });
 
   it("evaluates cached pointwise fields independent of global amplitude scale", () => {

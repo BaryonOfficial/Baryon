@@ -100,6 +100,7 @@ import {
   PHASE_OVERLAY_RIDGE_DENSITY_LIFT,
   SIGNED_PHASE_OVERLAY_FIELD_GAIN,
   SIGNED_PHASE_OVERLAY_FIELD_LIMIT,
+  SIGNED_PHASE_OVERLAY_GRADIENT_GAIN,
   RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT,
   RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
   RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT,
@@ -738,6 +739,13 @@ function createScatteringNode({
       const gradient = vec3(gradX, gradY, gradZ).toVar();
       const gradientMagnitude = length(gradient);
       const gradientNormal = gradient.div(max(gradientMagnitude, float(1e-4)));
+      const phaseGradientContribution = phaseOverlayGradientMagnitude
+        .mul(phaseOverlayAuthority)
+        .mul(phaseOverlayStrength)
+        .mul(float(SIGNED_PHASE_OVERLAY_GRADIENT_GAIN));
+      const effectiveGradientMagnitude = gradientMagnitude.add(
+        phaseGradientContribution,
+      );
       const amplitudeNorm = max(uTotalSlotAmplitude, float(0.01));
       // Cached field textures are pre-normalized by their modal amplitude during
       // compute, so product cached rendering can stay stable across envelope-only
@@ -746,7 +754,7 @@ function createScatteringNode({
         ? fieldAbs
         : fieldAbs.div(amplitudeNorm);
       const normalizedGradMagnitude = fieldCacheTexture
-        ? gradientMagnitude
+        ? effectiveGradientMagnitude
         : gradientMagnitude.div(amplitudeNorm);
       const activeCount = float(uActiveModeCount);
       const backboneCount = float(uBackboneModeCount);

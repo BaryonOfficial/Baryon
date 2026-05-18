@@ -545,6 +545,7 @@ export function deriveVisibleDensity({
 export function deriveSignedPhaseOverlayField({
   cachedField = 0,
   phaseDisplacement = 0,
+  phaseGradientMagnitude = 0,
   phaseAuthority = 0,
   overlayStrength = 0,
 }) {
@@ -557,11 +558,16 @@ export function deriveSignedPhaseOverlayField({
     authority > 0
       ? boundedDisplacement * authority * SIGNED_PHASE_OVERLAY_FIELD_GAIN
       : 0;
+  const phaseGradientContribution =
+    clamp01(phaseGradientMagnitude) *
+    authority *
+    SIGNED_PHASE_OVERLAY_GRADIENT_GAIN;
   const effectiveField = cachedField + phaseContribution;
 
   return {
     boundedDisplacement,
     phaseContribution,
+    phaseGradientContribution,
     effectiveField,
     effectiveFieldAbs: Math.abs(effectiveField),
   };

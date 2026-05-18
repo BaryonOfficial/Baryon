@@ -563,6 +563,15 @@ describe("tickRaymarchRuntime", () => {
       expect(
         runtimeState.debugSnapshot.raymarchDebug.phaseOverlaySemantic,
       ).toBe("signed-displacement");
+      expect(
+        runtimeState.debugSnapshot.raymarchDebug.signedPhaseOverlayActive,
+      ).toBe(true);
+      expect(
+        runtimeState.debugSnapshot.raymarchDebug.signedPhaseOverlayModeCount,
+      ).toBeGreaterThan(0);
+      expect(
+        runtimeState.debugSnapshot.raymarchDebug.signedPhaseOverlaySemantic,
+      ).toBe("signed-displacement");
     } finally {
       globalThis.window = originalWindow;
     }
