@@ -745,6 +745,7 @@ export function useBaryonVisualizer({
       runtimeDiagnostics,
       runtimeState?.debugSnapshot,
       effectiveFrame,
+      runtimeState,
     );
     recordMeasuredRuntimePerf(
       runtimeDiagnostics,

@@ -53,6 +53,11 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
     runtimeDiagnostics.modalFreshness.avgAmplitude = 14.5;
     runtimeDiagnostics.modalFreshness.analyserRms = 0.048;
     runtimeDiagnostics.modalFreshness.periodicity = 0.79;
+    runtimeDiagnostics.modalFreshness.modalObserverVisibilityEnergy = 0.36;
+    runtimeDiagnostics.modalFreshness.modalPhaseAuthority = 0.27;
+    runtimeDiagnostics.modalFreshness.highQPhaseAuthority = 0.41;
+    runtimeDiagnostics.modalFreshness.lowQPhaseAuthority = 0.12;
+    runtimeDiagnostics.modalFreshness.modalPhaseOverlayModeCount = 5;
     runtimeDiagnostics.modalFreshness.highQDetailModeCount = 6;
     runtimeDiagnostics.modalFreshness.highQDetailEnergy = 0.42;
     runtimeDiagnostics.modalFreshness.highQRingSupport = 0.68;
@@ -79,6 +84,11 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
       avgAmplitude: 14.5,
       analyserRms: 0.048,
       periodicity: 0.79,
+      modalObserverVisibilityEnergy: 0.36,
+      modalPhaseAuthority: 0.27,
+      highQPhaseAuthority: 0.41,
+      lowQPhaseAuthority: 0.12,
+      modalPhaseOverlayModeCount: 5,
       highQDetailModeCount: 6,
       highQDetailEnergy: 0.42,
       highQRingSupport: 0.68,
@@ -115,6 +125,91 @@ test("publishes retained high-Q raymarch visibility diagnostics in render perf s
     expect(snapshot.render.retainedHighQRidgeVisibleDensityMax).toBe(0.046);
     expect(snapshot.render.retainedHighQRidgeToRetainedEnergyRatio).toBe(0.24);
     expect(snapshot.render.retainedHighQPhysicalVisibleDensityMax).toBe(0);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("publishes phase overlay diagnostics in render perf snapshots", () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = {};
+
+  try {
+    const runtimeDiagnostics = createRuntimeDiagnostics();
+    updateRetainedHighQRenderVisibilityDiagnostics(runtimeDiagnostics, {
+      raymarchDebug: {
+        phaseOverlayActive: true,
+        phaseOverlayReady: true,
+        phaseOverlayPending: false,
+        phaseOverlayBackend: "compute",
+        phaseOverlayResolution: 32,
+        phaseOverlayRebuildCount: 7,
+        phaseOverlayLastError: null,
+        phaseOverlayModeCount: 6,
+        phaseOverlayStrength: 0.42,
+      },
+    });
+
+    const snapshot = maybePublishRuntimePerfSnapshot(runtimeDiagnostics, {
+      force: true,
+    });
+
+    expect(snapshot.render.phaseOverlayActive).toBe(true);
+    expect(snapshot.render.phaseOverlayReady).toBe(true);
+    expect(snapshot.render.phaseOverlayPending).toBe(false);
+    expect(snapshot.render.phaseOverlayBackend).toBe("compute");
+    expect(snapshot.render.phaseOverlayResolution).toBe(32);
+    expect(snapshot.render.phaseOverlayRebuildCount).toBe(7);
+    expect(snapshot.render.phaseOverlayLastError).toBeNull();
+    expect(snapshot.render.phaseOverlayModeCount).toBe(6);
+    expect(snapshot.render.phaseOverlayStrength).toBe(0.42);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("publishes phase overlay diagnostics from runtime state when audit is disabled", () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = {};
+
+  try {
+    const runtimeDiagnostics = createRuntimeDiagnostics();
+    updateRetainedHighQRenderVisibilityDiagnostics(
+      runtimeDiagnostics,
+      null,
+      null,
+      {
+        phaseOverlayCache: {
+          active: true,
+          ready: true,
+          rebuildPending: false,
+          backend: "compute",
+          resolution: 32,
+          rebuildCount: 9,
+          lastError: null,
+          activePhaseModeCount: 6,
+        },
+        uniforms: {
+          uModalPhaseOverlayStrength: {
+            value: 0.37,
+          },
+        },
+      },
+    );
+
+    const snapshot = maybePublishRuntimePerfSnapshot(runtimeDiagnostics, {
+      force: true,
+    });
+
+    expect(snapshot.render.phaseOverlayActive).toBe(true);
+    expect(snapshot.render.phaseOverlayReady).toBe(true);
+    expect(snapshot.render.phaseOverlayPending).toBe(false);
+    expect(snapshot.render.phaseOverlayBackend).toBe("compute");
+    expect(snapshot.render.phaseOverlayResolution).toBe(32);
+    expect(snapshot.render.phaseOverlayRebuildCount).toBe(9);
+    expect(snapshot.render.phaseOverlayLastError).toBeNull();
+    expect(snapshot.render.phaseOverlayModeCount).toBe(6);
+    expect(snapshot.render.phaseOverlayStrength).toBe(0.37);
   } finally {
     globalThis.window = previousWindow;
   }

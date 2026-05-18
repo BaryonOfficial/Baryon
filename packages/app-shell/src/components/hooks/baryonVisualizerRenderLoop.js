@@ -293,8 +293,24 @@ export function updateModalFreshnessDiagnostics(
   modalFreshness.modalVisibilityEnergy = readFiniteNumber(
     featureFrame.modalVisibilityEnergy,
   );
+  modalFreshness.modalObserverVisibilityEnergy = readFiniteNumber(
+    featureFrame.modalObserverVisibilityEnergy,
+  );
   modalFreshness.modalVisibilityRetainedHighQEnergy = readFiniteNumber(
     featureFrame.modalVisibilityRetainedHighQEnergy,
+  );
+  modalFreshness.modalPhaseAuthority = readFiniteNumber(
+    featureFrame.modalPhaseAuthority,
+  );
+  modalFreshness.highQPhaseAuthority = readFiniteNumber(
+    featureFrame.debug?.highQPhaseAuthority ?? featureFrame.highQPhaseAuthority,
+  );
+  modalFreshness.lowQPhaseAuthority = readFiniteNumber(
+    featureFrame.debug?.lowQPhaseAuthority ?? featureFrame.lowQPhaseAuthority,
+  );
+  modalFreshness.modalPhaseOverlayModeCount = readFiniteNumber(
+    featureFrame.debug?.modalPhaseOverlayModeCount ??
+      featureFrame.modalPhaseOverlayModeCount,
   );
   modalFreshness.modeCoherence = readFiniteNumber(featureFrame.modeCoherence);
   modalFreshness.activeBackboneModeCount = readFiniteNumber(
