@@ -9,6 +9,10 @@ import {
 } from "./modalStack.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
 import { createSpectralLightColor } from "./spectralLight.js";
+import {
+  countNonZeroFftBins,
+  deriveHighQSparseResonatorAuthority,
+} from "./highQSparseResonatorAuthority.js";
 
 const BACKBONE_MAX_HZ = 3200;
 const BACKBONE_MIN_HZ = 60;
@@ -2776,6 +2780,21 @@ export function buildModalExcitationStructuralState({
       detail: detailCapacity,
     },
   });
+  const highQSparseAuthority = deriveHighQSparseResonatorAuthority({
+    highQObservedSnr: modalObserverMetrics.highQObservedSnr,
+    highQObservedCoherence: modalObserverMetrics.highQObservedCoherence,
+    highQObservedDrive: modalObserverMetrics.highQObservedDrive,
+    highQRingSupport: modalObserverMetrics.highQRingSupport,
+    highQDetailEnergy: modalObserverMetrics.highQDetailEnergy,
+    distributedExcitation,
+    periodicity,
+    nonZeroFFTBinCount: countNonZeroFftBins(fastSignalState.fftMagnitudes),
+    modeCoherence: modalObserverMetrics.highQObservedCoherence,
+  });
+  modalObserverMetrics = {
+    ...modalObserverMetrics,
+    ...highQSparseAuthority,
+  };
   const observedTailActivity =
     (modalObserverMetrics.highQDetailModeCount >=
       HIGH_Q_OBSERVER_MIN_MODE_COUNT &&
@@ -2850,16 +2869,20 @@ export function buildModalExcitationStructuralState({
     currentFrameAtMs: preparedInputs.currentFrameAtMs,
     minAgeMs: HIGH_Q_DETAIL_AUTHORITY_MIN_AGE_MS,
   });
+  const highQSparseResonatorAuthority = clamp01(
+    modalObserverMetrics.highQSparseResonatorAuthority ?? 0,
+  );
   const highQDetailTopologySignal =
     modalObserverMetrics.highQRingSupport > 0 &&
     modalObserverMetrics.highQDetailModeCount > 0 &&
     modalObserverMetrics.highQDetailEnergy >=
       HIGH_Q_DETAIL_MIN_RETAINED_ENERGY &&
-    observedDetailModesAged
+    observedDetailModesAged &&
+    highQSparseResonatorAuthority >= 0.08
       ? Math.max(
           modalObserverMetrics.highQRingSupport,
           HIGH_Q_DETAIL_MIN_RING_SUPPORT,
-        )
+        ) * highQSparseResonatorAuthority
       : 0;
   const highQDetailRetentionSignal =
     (state.observedModes?.size ?? 0) > 0 && highQDetailTopologySignal > 0
@@ -3080,6 +3103,20 @@ export function buildModalExcitationStructuralState({
     tonalness,
     distributedExcitation,
   });
+  modalObserverMetrics = {
+    ...modalObserverMetrics,
+    ...deriveHighQSparseResonatorAuthority({
+      highQObservedSnr: modalObserverMetrics.highQObservedSnr,
+      highQObservedCoherence: modalObserverMetrics.highQObservedCoherence,
+      highQObservedDrive: modalObserverMetrics.highQObservedDrive,
+      highQRingSupport: modalObserverMetrics.highQRingSupport,
+      highQDetailEnergy: modalObserverMetrics.highQDetailEnergy,
+      distributedExcitation,
+      periodicity,
+      nonZeroFFTBinCount: countNonZeroFftBins(fastSignalState.fftMagnitudes),
+      modeCoherence: modalObserverMetrics.highQObservedCoherence,
+    }),
+  };
 
   const backboneEntries = buildSignalShortlist(
     excitedEntries,
@@ -3451,6 +3488,12 @@ export function buildModalExcitationStructuralState({
     highQObservedSnr: modalObserverMetrics.highQObservedSnr,
     highQObservedCoherence: modalObserverMetrics.highQObservedCoherence,
     highQObservedNoiseFloor: modalObserverMetrics.highQObservedNoiseFloor,
+    highQSparseResonatorAuthority:
+      modalObserverMetrics.highQSparseResonatorAuthority,
+    highQDenseSpectrumPressure:
+      modalObserverMetrics.highQDenseSpectrumPressure,
+    highQRetainedVisibilityRejected:
+      modalObserverMetrics.highQRetainedVisibilityRejected,
     lowQPhaseAuthority: modalObserverMetrics.lowQPhaseAuthority,
     highQPhaseAuthority: modalObserverMetrics.highQPhaseAuthority,
     modalPhaseAuthority: modalObserverMetrics.modalPhaseAuthority,

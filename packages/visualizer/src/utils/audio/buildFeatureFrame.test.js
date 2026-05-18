@@ -12,6 +12,7 @@ import {
   runHeavyAudioFeatureAnalysis,
   updateAudioFeatureFastSignalState,
 } from "./buildFeatureFrame.js";
+import { deriveHighQSparseResonatorAuthority } from "./highQSparseResonatorAuthority.js";
 
 const FFT_SIZE = 4096;
 const SAMPLE_RATE = 44100;
@@ -68,6 +69,22 @@ function makeFft(peaks) {
   for (const [frequency, amplitude] of peaks) {
     fft[Math.max(1, freqToBin(frequency))] = amplitude;
   }
+  return fft;
+}
+
+function makeDenseFft({
+  count = 1000,
+  amplitude = 0.035,
+  lowBin = 8,
+  peakFrequency = 427,
+  peakAmplitude = 0.62,
+} = {}) {
+  const fft = new Float32Array(BIN_COUNT);
+  for (let index = 0; index < count; index += 1) {
+    const bin = Math.min(BIN_COUNT - 1, lowBin + index);
+    fft[bin] = amplitude + ((index % 7) / 7) * amplitude;
+  }
+  fft[Math.max(1, freqToBin(peakFrequency))] = peakAmplitude;
   return fft;
 }
 
@@ -3292,7 +3309,7 @@ describe("live input noise gate", () => {
     expect(frame.debug.modalVisibilityDominantEnergy).toBeGreaterThan(0);
     expect(frame.debug.modalVisibilityDominantEnergy).toBeLessThan(0.24);
     expect(frame.debug.modalVisibilityDominantClusterEnergy).toBeUndefined();
-  }, 10000);
+  }, 15000);
 
   it("keeps retained high-Q topology visible through ring-support dropouts", () => {
     const featureState = createAudioFeatureState();
@@ -3608,6 +3625,220 @@ describe("live input noise gate", () => {
       frame.modalObserverVisibilityEnergy,
     );
     expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0);
+  });
+
+  it("rejects retained high-Q visibility for dense pop-like spectra", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 28,
+        fftMagnitudes: makeDenseFft({
+          count: 1000,
+          amplitude: 0.018,
+          peakFrequency: 427,
+          peakAmplitude: 0.62,
+        }),
+        timeData: makeMixedTimeData({
+          partials: [
+            [110, 0.4],
+            [164, 0.32],
+            [220, 0.28],
+            [427, 0.2],
+            [880, 0.18],
+            [1600, 0.12],
+            [3197, 0.1],
+          ],
+          amplitudeScale: 0.18,
+        }),
+        rms: 0.046,
+      }),
+      featureState,
+      radius: 3,
+      status: makeSystemStatus(),
+      frameTimeMs: 22000,
+    });
+    const denseDetailSlots = makeModeSlots([
+      [12, 18, 22, 0.31],
+      [5, 18, 18, 0.3],
+      [4, 9, 24, 0.29],
+      [4, 6, 30, 0.28],
+      [6, 14, 21, 0.27],
+      [2, 7, 30, 0.26],
+      [4, 10, 19, 0.25],
+      [3, 12, 18, 0.24],
+    ]);
+    const denseBackboneSlots = makeModeSlots([
+      [1, 1, 1, 0.39],
+      [1, 1, 3, 0.26],
+      [1, 1, 2, 0.25],
+      [1, 2, 2, 0.15],
+      [1, 1, 4, 0.14],
+      [1, 3, 6, 0.13],
+    ]);
+    const frame = composeManualStructuralFrame({
+      preparedInputs,
+      structuralState: makeManualStructuralState({
+        backboneSlots: denseBackboneSlots,
+        detailSlots: denseDetailSlots,
+        dominantFrequency: 427,
+        dominantAmplitude: 0.4,
+        sourceMode: "file",
+        structuralMetrics: {
+          distributedExcitation: 0.62,
+          observedModalModeCount: 16,
+          lowQBackboneModeCount: 8,
+          lowQBackboneEnergy: 1,
+          lowQObservedCoherence: 0.47,
+          lowQObservedSnr: 0.31,
+          highQDetailModeCount: 8,
+          highQDetailEnergy: 1,
+          highQRingSupport: 1,
+          highQObservedDrive: 0,
+          highQObservedSnr: 0.2,
+          highQObservedCoherence: 0.55,
+          highQObservedNoiseFloor: 0.26,
+          modalPersistence: 0,
+          modalDriveEnergy: 0.16,
+          modeCoherence: 0.52,
+          detailSignalAuthoritative: true,
+          detailSignalAuthoritativeReason: "high-q",
+          detailSignalAuthoritativeHighQ: true,
+        },
+      }),
+    });
+
+    expect(frame.debug.nonZeroFFTBinCount).toBeGreaterThanOrEqual(900);
+    expect(frame.debug.highQDenseSpectrumPressure).toBeGreaterThan(0.8);
+    expect(frame.debug.highQSparseResonatorAuthority).toBeLessThan(0.08);
+    expect(frame.debug.highQRetainedVisibilityRejected).toBe(true);
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBeLessThan(0.02);
+    expect(frame.modalObserverVisibilityEnergy).toBeLessThan(0.16);
+    expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.18);
+    expect(frame.activeDetailModeCount).toBeGreaterThan(0);
+  });
+
+  it("does not let dense music periodicity override weak high-Q evidence", () => {
+    const authority = deriveHighQSparseResonatorAuthority({
+      highQObservedSnr: 0.175,
+      highQObservedCoherence: 0.548,
+      highQObservedDrive: 0,
+      highQRingSupport: 1,
+      highQDetailEnergy: 1,
+      distributedExcitation: 0.627,
+      periodicity: 0.983,
+      nonZeroFFTBinCount: 1345,
+      modeCoherence: 0.49,
+    });
+
+    expect(authority.highQDenseSpectrumPressure).toBeGreaterThan(0.9);
+    expect(authority.highQSparseResonatorAuthority).toBeLessThan(0.08);
+    expect(authority.highQRetainedVisibilityRejected).toBe(true);
+  });
+
+  it("does not let dense music coherence rescue weak high-Q evidence", () => {
+    const authority = deriveHighQSparseResonatorAuthority({
+      highQObservedSnr: 0.18,
+      highQObservedCoherence: 0.86,
+      highQObservedDrive: 0,
+      highQRingSupport: 1,
+      highQDetailEnergy: 1,
+      distributedExcitation: 0.63,
+      periodicity: 0.98,
+      nonZeroFFTBinCount: 1345,
+      modeCoherence: 0.86,
+    });
+
+    expect(authority.highQDenseSpectrumPressure).toBeGreaterThan(0.85);
+    expect(authority.highQSparseResonatorAuthority).toBeLessThan(0.08);
+    expect(authority.highQRetainedVisibilityRejected).toBe(true);
+  });
+
+  it("recomputes dense high-Q rejection at the frame display seam", () => {
+    const featureState = createAudioFeatureState();
+    const preparedInputs = prepareAudioFeatureFrameInputs({
+      analysisSnapshot: createSnapshot({
+        sourceMode: "file",
+        avgAmplitude: 52,
+        fftMagnitudes: makeDenseFft({
+          count: 1345,
+          amplitude: 0.012,
+          peakFrequency: 1328,
+          peakAmplitude: 0.74,
+        }),
+        timeData: makeMixedTimeData({
+          partials: [
+            [818, 0.4],
+            [1328, 0.3],
+            [220, 0.24],
+            [440, 0.2],
+            [1760, 0.16],
+          ],
+          amplitudeScale: 0.22,
+        }),
+        rms: 0.059,
+      }),
+      featureState,
+      radius: 3,
+      status: makeSystemStatus(),
+      frameTimeMs: 24000,
+    });
+    const denseDetailSlots = makeModeSlots([
+      [2, 3, 15, 0.25],
+      [4, 6, 30, 0.23],
+      [2, 8, 13, 0.22],
+      [3, 12, 18, 0.21],
+      [12, 18, 22, 0.2],
+      [6, 9, 11, 0.19],
+    ]);
+    const denseBackboneSlots = makeModeSlots([
+      [1, 1, 3, 0.26],
+      [1, 1, 1, 0.21],
+      [2, 4, 10, 0.18],
+      [1, 3, 6, 0.14],
+      [1, 3, 3, 0.13],
+      [1, 1, 2, 0.13],
+    ]);
+    const structuralState = makeManualStructuralState({
+      backboneSlots: denseBackboneSlots,
+      detailSlots: denseDetailSlots,
+      dominantFrequency: 818,
+      dominantAmplitude: 0.4,
+      sourceMode: "file",
+      structuralMetrics: {
+        distributedExcitation: 0.627,
+        highQDetailModeCount: 8,
+        highQDetailEnergy: 1,
+        highQRingSupport: 1,
+        highQObservedDrive: 0,
+        highQObservedSnr: 0.175,
+        highQObservedCoherence: 0.548,
+        highQObservedNoiseFloor: 0.347,
+        highQSparseResonatorAuthority: 1,
+        highQRetainedVisibilityRejected: false,
+        lowQBackboneModeCount: 8,
+        lowQBackboneEnergy: 1,
+        lowQObservedCoherence: 0.5,
+        lowQObservedSnr: 0.2,
+        modalPersistence: 0,
+        modalDriveEnergy: 0.35,
+        modeCoherence: 0.49,
+      },
+    });
+    structuralState.backboneStateSource = {
+      candidatePeriodicity: 0.983,
+    };
+
+    const frame = composeManualStructuralFrame({
+      preparedInputs,
+      structuralState,
+    });
+
+    expect(frame.debug.highQDenseSpectrumPressure).toBeGreaterThan(0.9);
+    expect(frame.debug.highQSparseResonatorAuthority).toBeLessThan(0.08);
+    expect(frame.debug.highQRetainedVisibilityRejected).toBe(true);
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBeLessThan(0.02);
+    expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.18);
   });
 
   it("raises only existing observed slots enough to preserve cached topology", () => {

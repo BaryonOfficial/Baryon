@@ -56,6 +56,23 @@ function makeFft(peaks) {
   return fft;
 }
 
+function makeDenseFft({
+  count = 1000,
+  amplitude = 0.035,
+  lowBin = 8,
+  peakFrequency = 427,
+  peakAmplitude = 0.62,
+} = {}) {
+  const fft = new Float32Array(BIN_COUNT);
+  for (let index = 0; index < count; index += 1) {
+    const bin = Math.min(BIN_COUNT - 1, lowBin + index);
+    fft[bin] = amplitude + ((index % 7) / 7) * amplitude;
+  }
+  fft[Math.max(1, Math.round((peakFrequency / NYQUIST) * (BIN_COUNT - 1)))] =
+    peakAmplitude;
+  return fft;
+}
+
 function makeTimeData({
   frequency,
   amplitude = 0.45,
@@ -1843,6 +1860,65 @@ describe("modal excitation structural state", () => {
       structural.structuralMetrics.detailSignalAuthoritativeReason,
     ).toBe("high-q");
     expectCanonicalObservedModeEntries(state);
+  });
+
+  it("keeps dense sustained music detail active without high-Q authority", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "live",
+      analysisSource: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "system",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    let structural = null;
+
+    for (let frame = 0; frame < 96; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeDenseFft({
+          count: 1000,
+          amplitude: 0.018,
+          peakFrequency: frame % 2 === 0 ? 427 : 3197,
+          peakAmplitude: 0.62,
+        }),
+        timeData: makeMixedTimeData({
+          partials: [
+            [110, 0.42],
+            [164, 0.35],
+            [220, 0.3],
+            [427, 0.22],
+            [880, 0.18],
+            [1600, 0.14],
+            [3197, 0.1],
+          ],
+          amplitudeScale: 0.18,
+        }),
+        avgAmplitude: 28,
+        rms: 0.046,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBeGreaterThan(
+      0,
+    );
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0.1);
+    expect(
+      structural.structuralMetrics.detailSignalAuthoritativeHighQ,
+    ).toBe(false);
+    expect(structural.structuralMetrics.highQDenseSpectrumPressure).toBeGreaterThan(
+      0.5,
+    );
   });
 
   it("clears high-Q detail state on true hard silence after a loud ring", () => {

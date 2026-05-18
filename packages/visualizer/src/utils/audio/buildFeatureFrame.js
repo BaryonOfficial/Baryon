@@ -54,6 +54,10 @@ import {
   isLoopbackLiveInputDeviceKind,
   normalizeLiveInputDeviceKind,
 } from "../../core/audio/inputDeviceSemantics.js";
+import {
+  countNonZeroFftBins,
+  deriveHighQSparseResonatorAuthority,
+} from "./highQSparseResonatorAuthority.js";
 
 /** @typedef {import("../../core/cavityGeometry.js").CavityGeometry} CavityGeometry */
 
@@ -119,6 +123,9 @@ const EMPTY_MODAL_OBSERVER_VISIBILITY = Object.freeze({
   modalObserverTopologyFloor: 0,
   detailSlotFloorTotal: 0,
   backboneSlotFloorTotal: 0,
+  highQSparseResonatorAuthority: 0,
+  highQDenseSpectrumPressure: 0,
+  highQRetainedVisibilityRejected: false,
 });
 const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze({
   ambient: Object.freeze({
@@ -744,16 +751,7 @@ function shouldBuildDetailedDebug(auditSettings) {
 }
 
 function countNonZeroFFTBinCount(fftMagnitudes) {
-  if (!fftMagnitudes?.length) return 0;
-
-  let count = 0;
-  for (let i = 0; i < fftMagnitudes.length; i++) {
-    if ((fftMagnitudes[i] ?? 0) > 0.001) {
-      count += 1;
-    }
-  }
-
-  return count;
+  return countNonZeroFftBins(fftMagnitudes);
 }
 
 function findPeakFftMagnitude(fftMagnitudes) {
@@ -902,6 +900,9 @@ function buildDebugSummary({
     modeCapacity: MAX_STACK_SLOTS,
     structuralMetrics,
     hardSilent: liveInputHardSilenceActive,
+    nonZeroFFTBinCount:
+      nonZeroFFTBinCount ?? countNonZeroFFTBinCount(fftMagnitudes),
+    periodicity: backboneState?.candidatePeriodicity ?? 0,
   });
   const modalVisibilityDriveEnergy = clamp01(
     structuralMetrics?.modalDriveEnergy ?? 0,
@@ -1030,6 +1031,18 @@ function buildDebugSummary({
     highQObservedSnr: structuralMetrics?.highQObservedSnr ?? 0,
     highQObservedCoherence: structuralMetrics?.highQObservedCoherence ?? 0,
     highQObservedNoiseFloor: structuralMetrics?.highQObservedNoiseFloor ?? 0,
+    highQSparseResonatorAuthority:
+      modalVisibilitySummary.highQSparseResonatorAuthority ??
+      structuralMetrics?.highQSparseResonatorAuthority ??
+      0,
+    highQDenseSpectrumPressure:
+      modalVisibilitySummary.highQDenseSpectrumPressure ??
+      structuralMetrics?.highQDenseSpectrumPressure ??
+      0,
+    highQRetainedVisibilityRejected: Boolean(
+      modalVisibilitySummary.highQRetainedVisibilityRejected ??
+        structuralMetrics?.highQRetainedVisibilityRejected,
+    ),
     modalPhaseAuthority: structuralMetrics?.modalPhaseAuthority ?? 0,
     highQPhaseAuthority: structuralMetrics?.highQPhaseAuthority ?? 0,
     lowQPhaseAuthority: structuralMetrics?.lowQPhaseAuthority ?? 0,
@@ -2008,6 +2021,8 @@ function summarizeActiveSlotAmplitudes(modeSlots, capacity) {
 function deriveModalObserverVisibilityComponents({
   structuralMetrics = null,
   hardSilent = false,
+  nonZeroFFTBinCount = 0,
+  periodicity = 0,
 } = {}) {
   if (hardSilent || !structuralMetrics) {
     return EMPTY_MODAL_OBSERVER_VISIBILITY;
@@ -2022,6 +2037,17 @@ function deriveModalObserverVisibilityComponents({
     structuralMetrics.highQObservedCoherence ?? modeCoherence,
   );
   const highQObservedSnr = clamp01(structuralMetrics.highQObservedSnr ?? 0);
+  const highQAuthority = deriveHighQSparseResonatorAuthority({
+    highQObservedSnr,
+    highQObservedCoherence,
+    highQObservedDrive: structuralMetrics.highQObservedDrive ?? 0,
+    highQRingSupport,
+    highQDetailEnergy,
+    distributedExcitation: structuralMetrics.distributedExcitation ?? 0,
+    periodicity,
+    nonZeroFFTBinCount,
+    modeCoherence,
+  });
   const highQSignalSupport = Math.max(
     highQRingSupport,
     highQObservedSnr * 0.18,
@@ -2048,6 +2074,7 @@ function deriveModalObserverVisibilityComponents({
       highQSupportGate *
       highQCountGate *
       highQQuality *
+      highQAuthority.highQSparseResonatorAuthority *
       MODAL_OBSERVER_HIGH_Q_MAX,
   );
 
@@ -2099,6 +2126,7 @@ function deriveModalObserverVisibilityComponents({
     modalObserverTopologyFloor,
     detailSlotFloorTotal,
     backboneSlotFloorTotal,
+    ...highQAuthority,
   };
 }
 
@@ -2107,6 +2135,8 @@ function deriveModalVisibilityComponents({
   modeCapacity,
   structuralMetrics = null,
   hardSilent = false,
+  nonZeroFFTBinCount = 0,
+  periodicity = 0,
 }) {
   const emptySummary = {
     activeModeCount: 0,
@@ -2121,6 +2151,9 @@ function deriveModalVisibilityComponents({
     lowQObserverVisibilityEnergy: 0,
     modalObserverTopologyFloor: 0,
     retainedHighQModalVisibility: 0,
+    highQSparseResonatorAuthority: 0,
+    highQDenseSpectrumPressure: 0,
+    highQRetainedVisibilityRejected: false,
   };
 
   if (hardSilent) {
@@ -2136,6 +2169,8 @@ function deriveModalVisibilityComponents({
   const observerVisibility = deriveModalObserverVisibilityComponents({
     structuralMetrics,
     hardSilent,
+    nonZeroFFTBinCount,
+    periodicity,
   });
   const slotEnergy = slotSummary.averageSlotEnergy;
   const modalDriveEnergy = clamp01(structuralMetrics?.modalDriveEnergy ?? 0);
@@ -2149,6 +2184,9 @@ function deriveModalVisibilityComponents({
   const highQRingSupport = clamp01(structuralMetrics?.highQRingSupport ?? 0);
   const highQObservedCoherence = clamp01(
     structuralMetrics?.highQObservedCoherence ?? resonatorCoherence,
+  );
+  const highQSparseResonatorAuthority = clamp01(
+    observerVisibility.highQSparseResonatorAuthority,
   );
   const highQSustainedVisibilityScale = smoothstep(
     0.06,
@@ -2210,15 +2248,17 @@ function deriveModalVisibilityComponents({
     ) *
     smoothstep(2, 5, highQDetailModeCount) *
     modalQuality *
-    highQSustainedVisibilityScale;
+    highQSustainedVisibilityScale *
+    highQSparseResonatorAuthority;
   const retainedHighQObserverSupport =
     MODAL_VISIBILITY_HIGH_Q_OBSERVER_MIN_SUPPORT_WEIGHT +
+    highQSparseResonatorAuthority * 0.08 +
     smoothstep(
       MODAL_VISIBILITY_HIGH_Q_OBSERVER_SUPPORT_START,
       MODAL_VISIBILITY_HIGH_Q_OBSERVER_SUPPORT_END,
       highQRingSupport,
     ) *
-      (1 - MODAL_VISIBILITY_HIGH_Q_OBSERVER_MIN_SUPPORT_WEIGHT);
+      (1 - MODAL_VISIBILITY_HIGH_Q_OBSERVER_MIN_SUPPORT_WEIGHT - 0.08);
   const retainedHighQObserverQuality = Math.max(
     highQObservedCoherence,
     coherenceGate * 0.9,
@@ -2232,7 +2272,8 @@ function deriveModalVisibilityComponents({
     ) *
     smoothstep(1, 4, highQDetailModeCount) *
     retainedHighQObserverSupport *
-    retainedHighQObserverQuality;
+    retainedHighQObserverQuality *
+    highQSparseResonatorAuthority;
   const retainedHighQModalVisibility = clamp01(
     Math.max(
       retainedHighQObserverAuthority * MODAL_VISIBILITY_HIGH_Q_RETAINED_MAX,
@@ -2291,6 +2332,10 @@ function deriveModalVisibilityComponents({
       observerVisibility.lowQObserverVisibilityEnergy,
     modalObserverTopologyFloor: observerVisibility.modalObserverTopologyFloor,
     retainedHighQModalVisibility,
+    highQSparseResonatorAuthority,
+    highQDenseSpectrumPressure: observerVisibility.highQDenseSpectrumPressure,
+    highQRetainedVisibilityRejected:
+      observerVisibility.highQRetainedVisibilityRejected,
   };
 }
 
@@ -2318,6 +2363,7 @@ function deriveCompositeSignals({
   structuralMetrics = null,
   sourceNormalization = undefined,
   liveInputHardSilenceActive = false,
+  nonZeroFFTBinCount = 0,
 }) {
   const activeModeCount = countActiveSlots(modeSlots, modeCapacity);
   const uniqueModeCount =
@@ -2412,6 +2458,8 @@ function deriveCompositeSignals({
     modeCapacity,
     structuralMetrics,
     hardSilent: liveInputHardSilenceActive,
+    nonZeroFFTBinCount,
+    periodicity: backboneState?.candidatePeriodicity ?? 0,
   });
   const modalVisibilityEnergy = modalVisibilityComponents.modalVisibilityEnergy;
   const modalObserverVisibilityEnergy =
@@ -4076,6 +4124,7 @@ export function buildCurrentAudioFeatureAnalysisResult({
     soundActive: preparedInputs.soundActive,
     micActive: preparedInputs.micActive,
     fftMagnitudes: fastSignalState.fftMagnitudes,
+    nonZeroFFTBinCount: countNonZeroFFTBinCount(fastSignalState.fftMagnitudes),
     backboneSlots: resolvedStructural.backboneSlots,
     detailSlots: resolvedStructural.detailSlots,
     backbonePhaseSlots: resolvedStructural.backbonePhaseSlots,
@@ -4340,6 +4389,9 @@ export function composeAudioFeatureFrame({
     structuralMetrics: analysisResult.structuralMetrics,
     sourceNormalization: analysisResult.sourceNormalization,
     liveInputHardSilenceActive: analysisResult.liveInputHardSilenceActive,
+    nonZeroFFTBinCount:
+      analysisResult.nonZeroFFTBinCount ??
+      countNonZeroFFTBinCount(analysisResult.fftMagnitudes),
   });
   const reusedAnalysisSourceAuthorityScale = reuseHeavyAnalysis
     ? deriveReusedAnalysisSourceAuthorityScale({
