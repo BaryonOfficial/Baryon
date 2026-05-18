@@ -425,6 +425,10 @@ describe("modal excitation structural state", () => {
     const state = createModalExcitationState(16);
 
     expect(state.observedModes).toBeInstanceOf(Map);
+    expect(state.backboneProposal?.slots).toBeInstanceOf(Float32Array);
+    expect(state.detailProposal?.slots).toBeInstanceOf(Float32Array);
+    expect(state.backbone).toBeUndefined();
+    expect(state.detail).toBeUndefined();
     expectLegacyModalObserverAuthoritiesRemoved(state);
   });
 
@@ -836,8 +840,8 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 0,
     });
-    const backboneCapacity = state.backbone.slots.length / 4;
-    const detailCapacity = state.detail.slots.length / 4;
+    const backboneCapacity = state.backboneProposal.slots.length / 4;
+    const detailCapacity = state.detailProposal.slots.length / 4;
 
     expect(structuralState.activeBackboneModeCount).toBeLessThanOrEqual(
       backboneCapacity,
@@ -1020,7 +1024,7 @@ describe("modal excitation structural state", () => {
         performanceNow: () => frame,
       });
       amplitudeGaps.push(
-        sumAmplitudes(state.backbone.slots) -
+        sumAmplitudes(state.backboneProposal.slots) -
           sumAmplitudes(structural.backboneSlotsSource),
       );
     }

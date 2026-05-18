@@ -3141,13 +3141,13 @@ function buildModalProjection({
     DETAIL_DISPLAY_CONTINUITY_MIN_PRESENCE;
   const detailSignalCoverage = computeSignalCoverageByVisibleKeys(
     state.blendDetail.slots,
-    state.detail.slots,
+    state.detailProposal.slots,
     detailCapacity,
   );
   const detailVisibleAmplitude = sumSlotAmplitudes(state.blendDetail.slots);
   const detailStalePressure = computeStaleDetailPressure({
     visibleSlots: state.blendDetail.slots,
-    targetSlots: state.detail.slots,
+    targetSlots: state.detailProposal.slots,
     capacity: detailCapacity,
   });
   const detailTargetShifted =
@@ -3161,7 +3161,7 @@ function buildModalProjection({
       EXCITATION_DETAIL_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE &&
     hasStrongFreshDetailSignal({
       visibleSlots: state.blendDetail.slots,
-      signalSlots: state.detail.slots,
+      signalSlots: state.detailProposal.slots,
       capacity: detailCapacity,
     });
   const detailFastAssistShifted =
@@ -3342,8 +3342,8 @@ export function buildModalExcitationStructuralState({
   state.atlasCacheKey = `${
     preparedInputs.effectiveCavityGeometry
   }:${preparedInputs.radius}`;
-  clearLayerBuffers(state.backbone);
-  clearLayerBuffers(state.detail);
+  clearLayerBuffers(state.backboneProposal);
+  clearLayerBuffers(state.detailProposal);
   clearLayerBuffers(state.displayBackbone);
   clearLayerBuffers(state.displayDetail);
   clearLayerBuffers(state.detailProjection);
@@ -3396,8 +3396,8 @@ export function buildModalExcitationStructuralState({
       (state.lastFrameAtMs ?? preparedInputs.currentFrameAtMs - 16),
   );
   state.lastFrameAtMs = preparedInputs.currentFrameAtMs;
-  const backboneCapacity = state.backbone.slots.length / 4;
-  const detailCapacity = state.detail.slots.length / 4;
+  const backboneCapacity = state.backboneProposal.slots.length / 4;
+  const detailCapacity = state.detailProposal.slots.length / 4;
   let modalObserverMetrics = updateObservedModalModes({
     state,
     atlas,
@@ -3778,7 +3778,7 @@ export function buildModalExcitationStructuralState({
   );
 
   writeShortlistedEntries(
-    state.backbone,
+    state.backboneProposal,
     backboneEntries,
     backboneCapacity,
     (entry) =>
@@ -3786,7 +3786,7 @@ export function buildModalExcitationStructuralState({
     colorContext,
   );
   writeShortlistedEntries(
-    state.detail,
+    state.detailProposal,
     detailEntries,
     detailCapacity,
     (entry) =>
@@ -3930,13 +3930,13 @@ export function buildModalExcitationStructuralState({
     state.remappedDetailRef,
   );
   remapReferenceToBlendedOrder(
-    state.backbone.slots,
+    state.backboneProposal.slots,
     state.previousSignalBackboneSlots,
     backboneCapacity,
     state.remappedSignalBackboneRef,
   );
   remapReferenceToBlendedOrder(
-    state.detail.slots,
+    state.detailProposal.slots,
     state.previousSignalDetailSlots,
     detailCapacity,
     state.remappedSignalDetailRef,
@@ -3965,11 +3965,11 @@ export function buildModalExcitationStructuralState({
     detailCapacity,
   );
   const signalBackboneCount = countActiveSlots(
-    state.backbone.slots,
+    state.backboneProposal.slots,
     backboneCapacity,
   );
   const signalDetailCount = countActiveSlots(
-    state.detail.slots,
+    state.detailProposal.slots,
     detailCapacity,
   );
   const modalDriveEnergy = driveEnergySampleCount
@@ -3979,8 +3979,8 @@ export function buildModalExcitationStructuralState({
     sumSlotAmplitudes(state.blendBackbone.slots) +
     sumSlotAmplitudes(state.blendDetail.slots);
   const signalAmplitudeTotal =
-    sumSlotAmplitudes(state.backbone.slots) +
-    sumSlotAmplitudes(state.detail.slots);
+    sumSlotAmplitudes(state.backboneProposal.slots) +
+    sumSlotAmplitudes(state.detailProposal.slots);
   const weakResidualSignal = isWeakResidualDisplayTail({
     modalDriveEnergy,
     signalAmplitudeTotal,
@@ -3997,11 +3997,17 @@ export function buildModalExcitationStructuralState({
 
   state.previousSignalBackboneSlots.fill(0);
   state.previousSignalBackboneSlots.set(
-    state.backbone.slots.subarray(0, state.previousSignalBackboneSlots.length),
+    state.backboneProposal.slots.subarray(
+      0,
+      state.previousSignalBackboneSlots.length,
+    ),
   );
   state.previousSignalDetailSlots.fill(0);
   state.previousSignalDetailSlots.set(
-    state.detail.slots.subarray(0, state.previousSignalDetailSlots.length),
+    state.detailProposal.slots.subarray(
+      0,
+      state.previousSignalDetailSlots.length,
+    ),
   );
 
   const dominantEntry = excitedEntries[0] ?? null;
@@ -4082,8 +4088,8 @@ export function buildModalExcitationStructuralState({
     detailPhaseSlotsSource: state.blendDetail.phaseSlots,
     referenceBackboneSlotsSource: state.remappedBackboneRef,
     referenceDetailSlotsSource: state.remappedDetailRef,
-    signalBackboneSlotsSource: state.backbone.slots,
-    signalDetailSlotsSource: state.detail.slots,
+    signalBackboneSlotsSource: state.backboneProposal.slots,
+    signalDetailSlotsSource: state.detailProposal.slots,
     signalReferenceBackboneSlotsSource: state.remappedSignalBackboneRef,
     signalReferenceDetailSlotsSource: state.remappedSignalDetailRef,
     backboneColorSlotsSource: preparedInputs.shouldBuildSpectralLight
