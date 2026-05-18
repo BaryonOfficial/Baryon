@@ -1301,6 +1301,14 @@ describe("modal excitation structural state", () => {
       0.035,
     );
     expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0.5);
+    expect(structural.structuralMetrics.projectionHighQProtection).toBeGreaterThan(
+      0,
+    );
+    expect(
+      structural.structuralMetrics.projectionEnergyUsedDetail,
+    ).toBeLessThanOrEqual(
+      structural.structuralMetrics.projectionEnergyBudgetDetail,
+    );
     expect(
       Array.from(state.observedModes?.values?.() ?? []).filter(
         (entry) => entry.layer === "detail",
@@ -2024,6 +2032,20 @@ describe("modal excitation structural state", () => {
     ).toBe(false);
     expect(structural.structuralMetrics.highQDenseSpectrumPressure).toBeGreaterThan(
       0.5,
+    );
+    expect(structural.structuralMetrics.projectionConservationApplied).toBe(
+      true,
+    );
+    expect(
+      structural.structuralMetrics.projectionCompetitionReduction,
+    ).toBeGreaterThan(0);
+    expect(
+      structural.structuralMetrics.projectionEnergyUsedDetail,
+    ).toBeLessThanOrEqual(
+      structural.structuralMetrics.projectionEnergyBudgetDetail,
+    );
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeLessThanOrEqual(
+      structural.structuralMetrics.projectionEnergyBudgetDetail,
     );
   });
 

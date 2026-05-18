@@ -261,6 +261,10 @@ const BACKBONE_DISPLAY_DUPLICATE_WINDOW = 0.09;
 const DETAIL_DISPLAY_DUPLICATE_WINDOW = 0.018;
 const BACKBONE_DISPLAY_MAX_VISIBLE = 6;
 const DETAIL_DISPLAY_MAX_VISIBLE = 5;
+const PROJECTION_COMPETITION_SIGMA_BACKBONE = 0.1;
+const PROJECTION_COMPETITION_SIGMA_DETAIL = 0.035;
+const PROJECTION_COMPETITION_LAMBDA_BACKBONE = 0.55;
+const PROJECTION_COMPETITION_LAMBDA_DETAIL = 0.85;
 const EXCITATION_DECAY_DRIVE_THRESHOLD = 0.065;
 const EXCITATION_DECAY_SIGNAL_DISPLAY_RATIO = 0.55;
 const EXCITATION_HARD_SILENCE_MAX_AVG_AMPLITUDE = 1;
@@ -2775,6 +2779,226 @@ function buildDisplayShortlist(entries, layer) {
   return survivors;
 }
 
+function createEmptyProjectionConservationMetrics() {
+  return {
+    projectionEnergyBudgetBackbone: 0,
+    projectionEnergyBudgetDetail: 0,
+    projectionEnergyUsedBackbone: 0,
+    projectionEnergyUsedDetail: 0,
+    projectionCompetitionReduction: 0,
+    projectionDenseSpectrumPressure: 0,
+    projectionHighQProtection: 0,
+    projectionConservationApplied: false,
+  };
+}
+
+function getProjectionLayerBudget({
+  layer,
+  denseSpectrumPressure,
+  highQProtection,
+  modeCoherence,
+}) {
+  if (layer === "backbone") {
+    return Math.max(
+      0.48,
+      Math.min(0.92, 0.78 - 0.18 * denseSpectrumPressure + 0.1 * modeCoherence),
+    );
+  }
+
+  return Math.max(
+    0.24,
+    Math.min(0.76, 0.58 - 0.3 * denseSpectrumPressure + 0.26 * highQProtection),
+  );
+}
+
+function getProjectionHighQProtection(entry, sparseHighQAuthority) {
+  if (
+    entry?.observedModal === true &&
+    getModeQProfile(entry) === "high-q" &&
+    sparseHighQAuthority > 0
+  ) {
+    return sparseHighQAuthority;
+  }
+  return 0;
+}
+
+function computeProjectionProximity(left, right, layer) {
+  const leftFrequency = left?.naturalFrequencyHz ?? 0;
+  const rightFrequency = right?.naturalFrequencyHz ?? 0;
+  if (leftFrequency <= 0 || rightFrequency <= 0) {
+    return 0;
+  }
+  const sigma =
+    layer === "backbone"
+      ? PROJECTION_COMPETITION_SIGMA_BACKBONE
+      : PROJECTION_COMPETITION_SIGMA_DETAIL;
+  const distance = Math.log(leftFrequency / rightFrequency) / sigma;
+  return Math.exp(-(distance * distance));
+}
+
+function applyProjectionEnergyConservation({
+  entries,
+  layer,
+  modalObserverMetrics,
+  hardSilentFrame,
+  highQDetailTopologySignal = 0,
+}) {
+  const emptyMetrics = createEmptyProjectionConservationMetrics();
+  if (hardSilentFrame || entries.length === 0) {
+    return { entries: [], metrics: emptyMetrics };
+  }
+
+  const denseSpectrumPressure = clamp01(
+    modalObserverMetrics?.highQDenseSpectrumPressure ?? 0,
+  );
+  const ringDerivedHighQProtection =
+    clamp01(modalObserverMetrics?.highQRingSupport ?? 0) *
+    clamp01(modalObserverMetrics?.highQDetailEnergy ?? 0) *
+    (1 - denseSpectrumPressure);
+  const sparseHighQAuthority = clamp01(
+    Math.max(
+      modalObserverMetrics?.highQSparseResonatorAuthority ?? 0,
+      highQDetailTopologySignal,
+      ringDerivedHighQProtection,
+    ),
+  );
+  const modeCoherence = clamp01(
+    Math.max(
+      modalObserverMetrics?.lowQObservedCoherence ?? 0,
+      modalObserverMetrics?.highQObservedCoherence ?? 0,
+    ),
+  );
+  const entryHighQProtection = entries.map((entry) =>
+    getProjectionHighQProtection(entry, sparseHighQAuthority),
+  );
+  const layerHighQProtection =
+    layer === "detail" && (modalObserverMetrics?.highQDetailModeCount ?? 0) > 0
+      ? sparseHighQAuthority
+      : Math.max(0, ...entryHighQProtection);
+  const budget = getProjectionLayerBudget({
+    layer,
+    denseSpectrumPressure,
+    highQProtection: layerHighQProtection,
+    modeCoherence,
+  });
+  const lambda =
+    layer === "backbone"
+      ? PROJECTION_COMPETITION_LAMBDA_BACKBONE
+      : PROJECTION_COMPETITION_LAMBDA_DETAIL;
+  const competitionActivation = smoothstep(0.35, 0.75, denseSpectrumPressure);
+
+  const projected = entries.map((entry, entryIndex) => {
+    const rawDisplayAmplitude = clamp01(
+      entry?.displayAmplitude ?? getDisplayAmplitude(entry, layer),
+    );
+    let competitorPressure = 0;
+    for (let otherIndex = 0; otherIndex < entries.length; otherIndex += 1) {
+      if (otherIndex === entryIndex) {
+        continue;
+      }
+      const other = entries[otherIndex];
+      const proximity = computeProjectionProximity(entry, other, layer);
+      const otherAmplitude = clamp01(
+        other?.displayAmplitude ?? getDisplayAmplitude(other, layer),
+      );
+      competitorPressure +=
+        proximity *
+        otherAmplitude *
+        (1 - 0.35 * entryHighQProtection[otherIndex]) *
+        (1 - 0.25 * clamp01(other?.coherence ?? 0));
+    }
+    const competitionScale = 1 / (1 + lambda * competitorPressure);
+    const activatedCompetitionScale =
+      1 - competitionActivation * (1 - competitionScale);
+    const phaseAuthority = clamp01(entry?.phaseAuthority ?? 0);
+    const coherence = clamp01(entry?.coherence ?? 0);
+    const interferenceSupport = phaseAuthority > 0
+      ? 0.62 * coherence + 0.38 * phaseAuthority
+      : coherence;
+    const maxIncoherentReduction = layer === "detail" ? 0.22 : 0.14;
+    const interferenceQuality =
+      1 - denseSpectrumPressure * maxIncoherentReduction * (1 - interferenceSupport);
+    const projectedAmplitude =
+      rawDisplayAmplitude * activatedCompetitionScale * interferenceQuality;
+    return {
+      entry,
+      rawDisplayAmplitude,
+      projectedAmplitude,
+    };
+  });
+
+  const rawTotal = projected.reduce(
+    (total, item) => total + item.rawDisplayAmplitude,
+    0,
+  );
+  const projectedTotal = projected.reduce(
+    (total, item) => total + item.projectedAmplitude,
+    0,
+  );
+  const budgetScale = projectedTotal > budget ? budget / projectedTotal : 1;
+  const conservedEntries = projected.map((item) => ({
+    ...item.entry,
+    displayAmplitude: clamp01(item.projectedAmplitude * budgetScale),
+  }));
+  const measuredUsed = conservedEntries.reduce(
+    (total, entry) => total + clamp01(entry.displayAmplitude ?? 0),
+    0,
+  );
+  const used = Math.min(measuredUsed, budget);
+  const competitionReduction = Math.max(0, rawTotal - used);
+  const metrics = {
+    ...emptyMetrics,
+    projectionDenseSpectrumPressure: denseSpectrumPressure,
+    projectionHighQProtection: layerHighQProtection,
+    projectionCompetitionReduction: competitionReduction,
+    projectionConservationApplied: competitionReduction > 1e-6,
+  };
+  if (layer === "backbone") {
+    metrics.projectionEnergyBudgetBackbone = budget;
+    metrics.projectionEnergyUsedBackbone = used;
+  } else {
+    metrics.projectionEnergyBudgetDetail = budget;
+    metrics.projectionEnergyUsedDetail = used;
+  }
+
+  return { entries: conservedEntries, metrics };
+}
+
+function mergeProjectionConservationMetrics(...metricSets) {
+  const merged = createEmptyProjectionConservationMetrics();
+  for (const metrics of metricSets) {
+    if (!metrics) {
+      continue;
+    }
+    merged.projectionEnergyBudgetBackbone = Math.max(
+      merged.projectionEnergyBudgetBackbone,
+      metrics.projectionEnergyBudgetBackbone ?? 0,
+    );
+    merged.projectionEnergyBudgetDetail = Math.max(
+      merged.projectionEnergyBudgetDetail,
+      metrics.projectionEnergyBudgetDetail ?? 0,
+    );
+    merged.projectionEnergyUsedBackbone +=
+      metrics.projectionEnergyUsedBackbone ?? 0;
+    merged.projectionEnergyUsedDetail +=
+      metrics.projectionEnergyUsedDetail ?? 0;
+    merged.projectionCompetitionReduction +=
+      metrics.projectionCompetitionReduction ?? 0;
+    merged.projectionDenseSpectrumPressure = Math.max(
+      merged.projectionDenseSpectrumPressure,
+      metrics.projectionDenseSpectrumPressure ?? 0,
+    );
+    merged.projectionHighQProtection = Math.max(
+      merged.projectionHighQProtection,
+      metrics.projectionHighQProtection ?? 0,
+    );
+    merged.projectionConservationApplied =
+      merged.projectionConservationApplied ||
+      metrics.projectionConservationApplied === true;
+  }
+  return merged;
+}
+
 function getEntryModeKey(entry) {
   return buildModeKey(entry?.u, entry?.v, entry?.w);
 }
@@ -2817,11 +3041,11 @@ function buildModalProjection({
         (entry) => !suppressedBackboneKeys.has(getEntryModeKey(entry)),
       )
     : backboneEntries;
-  const displayBackboneEntries = hardSilentFrame
+  const rawDisplayBackboneEntries = hardSilentFrame
     ? []
     : buildDisplayShortlist(projectedBackboneEntries, "backbone");
   const {
-    entries: displayDetailEntries,
+    entries: rawDisplayDetailEntries,
     assistEntry: mergedFastDetailAssist,
     assistNeedsReservedAdmission,
   } = hardSilentFrame
@@ -2834,19 +3058,56 @@ function buildModalProjection({
         buildDisplayShortlist(detailEntries, "detail"),
         fastDetailAssist,
       );
+  const {
+    entries: displayBackboneEntries,
+    metrics: backboneProjectionConservationMetrics,
+  } = applyProjectionEnergyConservation({
+    entries: rawDisplayBackboneEntries,
+    layer: "backbone",
+    modalObserverMetrics,
+    hardSilentFrame,
+    highQDetailTopologySignal,
+  });
+  const {
+    entries: displayDetailEntries,
+    metrics: detailProjectionConservationMetrics,
+  } = applyProjectionEnergyConservation({
+    entries: rawDisplayDetailEntries,
+    layer: "detail",
+    modalObserverMetrics,
+    hardSilentFrame,
+    highQDetailTopologySignal,
+  });
+  const {
+    entries: signalDetailProjectionEntries,
+    metrics: signalDetailProjectionConservationMetrics,
+  } = applyProjectionEnergyConservation({
+    entries: detailEntries,
+    layer: "detail",
+    modalObserverMetrics,
+    hardSilentFrame,
+    highQDetailTopologySignal,
+  });
 
   writeShortlistedEntries(
     state.displayBackbone,
     displayBackboneEntries,
     backboneCapacity,
-    (entry) => getDisplayAmplitude(entry, "backbone"),
+    (entry) => entry.displayAmplitude ?? getDisplayAmplitude(entry, "backbone"),
     colorContext,
   );
   writeShortlistedEntries(
     state.displayDetail,
     displayDetailEntries,
     detailCapacity,
-    (entry) => getDisplayAmplitude(entry, "detail"),
+    (entry) => entry.displayAmplitude ?? getDisplayAmplitude(entry, "detail"),
+    colorContext,
+  );
+  writeShortlistedEntries(
+    state.detailProjection,
+    signalDetailProjectionEntries,
+    detailCapacity,
+    (entry) => entry.displayAmplitude ?? getDisplayAmplitude(entry, "detail"),
     colorContext,
   );
 
@@ -2938,14 +3199,20 @@ function buildModalProjection({
     detailFastAssistShifted ||
     highQSignalShifted;
   const detailBlendTargetSlots = detailUsesSignalProjection
-    ? state.detail.slots
+    ? state.detailProjection.slots
     : state.displayDetail.slots;
   const detailBlendReferenceSlots = detailUsesSignalProjection
-    ? state.detail.referenceSlots
+    ? state.detailProjection.referenceSlots
     : state.displayDetail.referenceSlots;
   const detailBlendColorSlots = detailUsesSignalProjection
-    ? state.detail.colorSlots
+    ? state.detailProjection.colorSlots
     : state.displayDetail.colorSlots;
+  const projectionConservationMetrics = mergeProjectionConservationMetrics(
+    backboneProjectionConservationMetrics,
+    detailUsesSignalProjection
+      ? signalDetailProjectionConservationMetrics
+      : detailProjectionConservationMetrics,
+  );
   const detailShiftReleaseOverrides = detailSignalAuthoritative
     ? buildStaleDetailReleaseOverrides({
         visibleSlots: state.blendDetail.slots,
@@ -2981,6 +3248,7 @@ function buildModalProjection({
     detailBlendColorSlots,
     detailShiftReleaseOverrides,
     detailShiftTrackingOverrides,
+    projectionConservationMetrics,
   };
 }
 
@@ -3078,6 +3346,7 @@ export function buildModalExcitationStructuralState({
   clearLayerBuffers(state.detail);
   clearLayerBuffers(state.displayBackbone);
   clearLayerBuffers(state.displayDetail);
+  clearLayerBuffers(state.detailProjection);
 
   const startedAt = performanceNow();
   const {
@@ -3553,6 +3822,7 @@ export function buildModalExcitationStructuralState({
     detailBlendColorSlots,
     detailShiftReleaseOverrides,
     detailShiftTrackingOverrides,
+    projectionConservationMetrics,
   } = projection;
 
   const observedBackboneContinuity =
@@ -3800,6 +4070,7 @@ export function buildModalExcitationStructuralState({
     detailShiftStalePressure: detailStalePressure,
     detailShiftReleaseOverrideCount: detailShiftReleaseOverrides?.size ?? 0,
     detailShiftTrackingOverrideCount: detailShiftTrackingOverrides?.size ?? 0,
+    ...projectionConservationMetrics,
   };
   state.diagnostics = diagnostics;
 

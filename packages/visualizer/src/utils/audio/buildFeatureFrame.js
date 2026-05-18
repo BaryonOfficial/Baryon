@@ -1067,6 +1067,22 @@ function buildDebugSummary({
       structuralMetrics?.detailShiftReleaseOverrideCount ?? 0,
     detailShiftTrackingOverrideCount:
       structuralMetrics?.detailShiftTrackingOverrideCount ?? 0,
+    projectionEnergyBudgetBackbone:
+      structuralMetrics?.projectionEnergyBudgetBackbone ?? 0,
+    projectionEnergyBudgetDetail:
+      structuralMetrics?.projectionEnergyBudgetDetail ?? 0,
+    projectionEnergyUsedBackbone:
+      structuralMetrics?.projectionEnergyUsedBackbone ?? 0,
+    projectionEnergyUsedDetail:
+      structuralMetrics?.projectionEnergyUsedDetail ?? 0,
+    projectionCompetitionReduction:
+      structuralMetrics?.projectionCompetitionReduction ?? 0,
+    projectionDenseSpectrumPressure:
+      structuralMetrics?.projectionDenseSpectrumPressure ?? 0,
+    projectionHighQProtection:
+      structuralMetrics?.projectionHighQProtection ?? 0,
+    projectionConservationApplied:
+      structuralMetrics?.projectionConservationApplied === true,
     sourceNormalization: sourceNormalization ?? {
       normalizedRms: 0,
       normalizedAmplitude: 0,

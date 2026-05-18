@@ -453,6 +453,22 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
     modalPhaseAuthority,
+    projectionEnergyBudgetBackbone:
+      featureFrame?.debug?.projectionEnergyBudgetBackbone ?? 0,
+    projectionEnergyBudgetDetail:
+      featureFrame?.debug?.projectionEnergyBudgetDetail ?? 0,
+    projectionEnergyUsedBackbone:
+      featureFrame?.debug?.projectionEnergyUsedBackbone ?? 0,
+    projectionEnergyUsedDetail:
+      featureFrame?.debug?.projectionEnergyUsedDetail ?? 0,
+    projectionCompetitionReduction:
+      featureFrame?.debug?.projectionCompetitionReduction ?? 0,
+    projectionDenseSpectrumPressure:
+      featureFrame?.debug?.projectionDenseSpectrumPressure ?? 0,
+    projectionHighQProtection:
+      featureFrame?.debug?.projectionHighQProtection ?? 0,
+    projectionConservationApplied:
+      featureFrame?.debug?.projectionConservationApplied === true,
     highQPhaseAuthority: featureFrame?.debug?.highQPhaseAuthority ?? 0,
     lowQPhaseAuthority: featureFrame?.debug?.lowQPhaseAuthority ?? 0,
     modalPhaseOverlayModeCount:

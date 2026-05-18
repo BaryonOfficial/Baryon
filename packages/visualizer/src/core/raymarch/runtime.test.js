@@ -278,6 +278,14 @@ describe("tickRaymarchRuntime", () => {
       beatConfidence: 0.76,
       debug: {
         dominantFrequency: 440,
+        projectionEnergyBudgetBackbone: 0.74,
+        projectionEnergyBudgetDetail: 0.36,
+        projectionEnergyUsedBackbone: 0.52,
+        projectionEnergyUsedDetail: 0.31,
+        projectionCompetitionReduction: 0.18,
+        projectionDenseSpectrumPressure: 0.72,
+        projectionHighQProtection: 0.09,
+        projectionConservationApplied: true,
       },
     };
 
@@ -376,6 +384,30 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.raymarchDebug.modalVisibilityEnergy).toBe(
       0.37,
     );
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyBudgetBackbone,
+    ).toBe(0.74);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyBudgetDetail,
+    ).toBe(0.36);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyUsedBackbone,
+    ).toBe(0.52);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyUsedDetail,
+    ).toBe(0.31);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionCompetitionReduction,
+    ).toBe(0.18);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionDenseSpectrumPressure,
+    ).toBe(0.72);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionHighQProtection,
+    ).toBe(0.09);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.projectionConservationApplied,
+    ).toBe(true);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.modalVisibilityDensityLiftMax,
     ).toBeGreaterThan(0);

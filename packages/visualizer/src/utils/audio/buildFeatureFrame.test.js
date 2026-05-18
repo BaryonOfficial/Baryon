@@ -5632,6 +5632,13 @@ describe("modal excitation integration", () => {
     expect(result.frame.debug.modalVisibilityActiveModeCount).toBeGreaterThan(
       4,
     );
+    expect(result.frame.debug.projectionConservationApplied).toBe(true);
+    expect(result.frame.debug.projectionCompetitionReduction).toBeGreaterThan(0);
+    expect(
+      result.frame.debug.projectionEnergyUsedDetail,
+    ).toBeLessThanOrEqual(
+      result.frame.debug.projectionEnergyBudgetDetail,
+    );
     expect(result.frame.modalVisibilityEnergy).toBeLessThan(0.75);
     expect(result.frame.debug.modalVisibilityDominantEnergy).toBeLessThan(0.35);
     expect(

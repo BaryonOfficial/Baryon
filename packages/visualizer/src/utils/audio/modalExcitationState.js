@@ -20,6 +20,7 @@ export function createModalExcitationState(capacity = 16) {
     detail: createLayerBuffer(layerCapacity),
     displayBackbone: createLayerBuffer(layerCapacity),
     displayDetail: createLayerBuffer(layerCapacity),
+    detailProjection: createLayerBuffer(layerCapacity),
     blendBackbone: createBlendableLayerState(layerCapacity),
     blendDetail: createBlendableLayerState(layerCapacity),
     remappedBackboneRef: new Float32Array(layerCapacity * 4),
