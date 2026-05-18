@@ -381,12 +381,18 @@ const REMOVED_MODAL_OBSERVER_AUTHORITY_FIELDS = [
   "coherentDetailTailMemory",
   "coherentDetailTailSeeded",
   "coherentDetailTailModes",
+  "detailTailPresence",
 ];
 
 const REMOVED_MODAL_OBSERVER_ENTRY_FIELDS = [
   "seededAtMs",
   "lastSupportedAtMs",
   "highQObserved",
+  "retainedSustainedDetail",
+  "retainedSubtleSustainedDetail",
+  "retainedSustainedDetailPresence",
+  "retainedSustainedBackbone",
+  "retainedSustainedBackbonePresence",
 ];
 
 function expectLegacyModalObserverAuthoritiesRemoved(state) {
@@ -399,6 +405,8 @@ function expectCanonicalObservedModeEntries(state) {
   for (const entry of state.observedModes?.values?.() ?? []) {
     expect(entry).toMatchObject({
       observedModal: true,
+      renderLayer: expect.stringMatching(/^(backbone|detail)$/),
+      qProfile: expect.stringMatching(/^(low-q|high-q)$/),
       firstObservedAtMs: expect.any(Number),
       lastObservedAtMs: expect.any(Number),
       phaseOffsetRad: expect.any(Number),
@@ -499,6 +507,104 @@ describe("modal excitation structural state", () => {
       0,
     );
     expect(countActiveSlotsLocal(structural.backboneSlotsSource)).toBeGreaterThan(
+      0,
+    );
+    expectCanonicalObservedModeEntries(state);
+  });
+
+  it("does not retain topology from activeModes without observer authority", () => {
+    const state = createModalExcitationState(16);
+    state.activeModes.set("1:1:1", {
+      modeKey: "1:1:1",
+      familyId: "family:1:1:1",
+      u: 1,
+      v: 1,
+      w: 1,
+      layer: "backbone",
+      renderLayer: "backbone",
+      qProfile: "low-q",
+      naturalFrequencyHz: 220,
+      order: 3,
+      driveWeight: 1,
+      decayTauMs: 320,
+      amplitude: 0.95,
+      currentDriveEnergy: 0,
+      driveEnergy: 0,
+      coherence: 0.95,
+      persistence: 0.95,
+      phase: 0,
+      lastExcitedAtMs: 0,
+      ageMs: 300,
+    });
+    state.observedModes.clear();
+
+    const inputs = createPreparedInputs({
+      frameTimeMs: 333,
+      fftMagnitudes: makeFft([[880, 0.02]]),
+      timeData: makeTimeData({ frequency: 880, amplitude: 0.012 }),
+      avgAmplitude: 4,
+      rms: 0.012,
+    });
+    inputs.modalExcitationState = state;
+    const fastSignal = updateAudioFeatureFastSignalState(inputs);
+    const structural = buildModalExcitationStructuralState({
+      preparedInputs: inputs,
+      fastSignalState: fastSignal,
+      existingState: state,
+      performanceNow: () => 1,
+    });
+
+    expect(readModeKeys(structural.backboneSlotsSource)).not.toContain(
+      "1:1:1",
+    );
+    expect(readModeKeys(structural.detailSlotsSource)).not.toContain("1:1:1");
+  });
+
+  it("retains low-frequency coherent high-Q modes through observer authority", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    for (let frame = 0; frame < 160; frame += 1) {
+      const strike = frame < 2;
+      const amplitudeScale = strike ? 0.42 : 0.045;
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft([
+          [196, strike ? 0.8 : 0.08],
+          [392, strike ? 0.4 : 0.035],
+          [588, strike ? 0.22 : 0.018],
+        ]),
+        timeData: makeMixedTimeData({
+          partials: [
+            [196, 0.8],
+            [392, 0.26],
+            [588, 0.12],
+          ],
+          amplitudeScale,
+        }),
+        avgAmplitude: strike ? 36 : 1.8,
+        rms: strike ? 0.22 : 0.006,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    const observedHighQBackbone = Array.from(
+      state.observedModes?.values?.() ?? [],
+    ).filter(
+      (entry) => entry.renderLayer === "backbone" && entry.qProfile === "high-q",
+    );
+    expect(observedHighQBackbone.length).toBeGreaterThan(0);
+    expect(sumAmplitudes(structural.backboneSlotsSource)).toBeGreaterThan(
+      0.001,
+    );
+    expect(structural.structuralMetrics.observedModalModeCount).toBeGreaterThan(
       0,
     );
     expectCanonicalObservedModeEntries(state);

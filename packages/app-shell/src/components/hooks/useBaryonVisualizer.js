@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { resolveRaymarchFieldCacheOverride } from "@baryon/visualizer";
-import { getRenderQualityProfileKey } from "@baryon/visualizer/render/outputPipeline";
+import {
+  advanceRenderOutputCameraCut,
+  getRenderQualityProfileKey,
+} from "@baryon/visualizer/render/outputPipeline";
 import {
   applyAudioControls,
   applySceneControls,
@@ -106,6 +109,7 @@ export function useBaryonVisualizer({
   onStageRender = null,
   suppressRender = false,
   enableControlEventSync = true,
+  cameraRenderKey = null,
 }) {
   const { invalidate } = useThree();
   const audioRef = useRef(getDefaultAudioSession());
@@ -238,6 +242,15 @@ export function useBaryonVisualizer({
     forcedExternalRenderPendingRef.current = true;
     invalidate();
   }, [adaptiveResetNonce, invalidate, runtimeStateRef]);
+
+  useEffect(() => {
+    if (cameraRenderKey == null) {
+      return;
+    }
+
+    forcedExternalRenderPendingRef.current = true;
+    invalidate();
+  }, [cameraRenderKey, invalidate]);
 
   useEffect(() => {
     return installTailDiagnosticsWindowApi({
@@ -846,6 +859,7 @@ export function useBaryonVisualizer({
     } else if (pipeline) {
       const pipelineRenderStartedAt = getWallTimeMs();
       pipeline.render();
+      advanceRenderOutputCameraCut(renderLoopContext.postNodesRef.current);
       recordMeasuredRuntimePerf(
         runtimeDiagnostics,
         "pipelineRenderMs",

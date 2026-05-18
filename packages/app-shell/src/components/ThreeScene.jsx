@@ -22,6 +22,11 @@ import {
   CAMERA_VIEW_PRESETS,
   resolvePresetCameraPose,
 } from "./cameraPosePresets.js";
+import {
+  createCameraPresetCommand,
+  createCameraResetCommand,
+  deriveCameraControlState,
+} from "./cameraControlModel.js";
 import { dispatchCameraControlCommand } from "./cameraControlEvents.js";
 import ParticleDebugOverlay from "./ParticleDebugOverlay.jsx";
 import PerformanceHud from "./PerformanceHud.jsx";
@@ -148,7 +153,7 @@ const ThreeScene = ({
     /** @type {any} */ (controlsRef.current).forceWebGLFallbackTest,
   );
   const [performanceHudMetrics, setPerformanceHudMetrics] = useState(null);
-  const [cameraViewPreset, setCameraViewPreset] = useState(
+  const [appliedCameraViewPreset, setAppliedCameraViewPreset] = useState(
     CAMERA_VIEW_PRESETS.topDown,
   );
   const [cameraResetNonce, setCameraResetNonce] = useState(0);
@@ -196,12 +201,13 @@ const ThreeScene = ({
     fieldState: resolvedFrameFieldState,
   });
   const shouldUseIdleCameraDefault =
-    liveInputUiState === "idle" && resolvedFrameFieldState === "idle";
+    liveInputUiState === "idle" &&
+    resolvedFrameFieldState === "idle";
   const effectiveCameraViewPreset = resolveEffectiveCameraViewPreset({
     visualizationMethod: controlsState.visualizationMethod,
     shouldUseIdleCameraDefault,
     defaultCameraViewPreset,
-    cameraViewPreset,
+    cameraViewPreset: appliedCameraViewPreset,
   });
   const effectiveCameraPose = useMemo(
     () => resolvePresetCameraPose(effectiveCameraViewPreset),
@@ -246,9 +252,13 @@ const ThreeScene = ({
   });
   const showOverlayUi = isSupportReady && !isFullscreen;
   const previewOverlayState = resolvePreviewOverlayState(previewState);
-  const activeCameraControlPreset = /** @type {"top-down" | "side"} */ (
-    effectiveCameraViewPreset
-  );
+  const cameraControlState = deriveCameraControlState({
+    available:
+      liveInputUiState === "active" &&
+      controlsState.visualizationMethod !== VISUALIZATION_METHODS.cymatics2d,
+    appliedCameraPose: effectiveCameraPose,
+    fallbackPreset: effectiveCameraViewPreset,
+  });
   const useAuthoritativePerformanceHud = shouldUseAuthoritativePerformanceHud({
     previewState,
     authoritativeStageTelemetry,
@@ -273,7 +283,7 @@ const ThreeScene = ({
     (selectedSource === "system" || resolvedLiveInputPanel.forceVisible);
   const showCameraControls =
     showOverlayUi &&
-    controlsState.visualizationMethod !== VISUALIZATION_METHODS.cymatics2d;
+    cameraControlState.visible;
   const isPhoneViewport = viewportWidth <= 640;
   const isTabletPortraitViewport = viewportWidth > 640 && viewportWidth <= 820;
   const isTabletViewport = viewportWidth <= 1024;
@@ -308,12 +318,19 @@ const ThreeScene = ({
   };
 
   const applyCameraPreset = (preset) => {
-    const nextCameraPose = resolvePresetCameraPose(preset);
-    setCameraViewPreset(preset);
+    const command = createCameraPresetCommand(preset);
+    setAppliedCameraViewPreset(preset);
     setCameraResetNonce((current) => current + 1);
-    dispatchCameraControlCommand({
-      cameraPose: nextCameraPose,
-    });
+    dispatchCameraControlCommand(command);
+  };
+
+  const resetCameraPreset = () => {
+    const command = createCameraResetCommand(
+      effectiveCameraPose,
+      cameraControlState.activePreset ?? effectiveCameraViewPreset,
+    );
+    setCameraResetNonce((current) => current + 1);
+    dispatchCameraControlCommand(command);
   };
 
   const handleFrameState = useCallback(
@@ -477,9 +494,9 @@ const ThreeScene = ({
 
       {showCameraControls ? (
         <FloatingCameraControls
-          activePreset={activeCameraControlPreset}
+          activePreset={cameraControlState.activePreset}
           onPresetSelect={applyCameraPreset}
-          onPresetReset={() => applyCameraPreset(activeCameraControlPreset)}
+          onPresetReset={resetCameraPreset}
           rootTestId="camera-controls"
           topButtonTestId="camera-top-view-button"
           sideButtonTestId="camera-side-view-button"

@@ -2018,6 +2018,18 @@ function summarizeActiveSlotAmplitudes(modeSlots, capacity) {
   };
 }
 
+function sumSlotAmplitudeTotal(modeSlots, capacity) {
+  const slotCount = Math.min(
+    capacity,
+    Math.floor((modeSlots?.length ?? 0) / 4),
+  );
+  let total = 0;
+  for (let index = 0; index < slotCount; index += 1) {
+    total += Math.max(0, modeSlots[index * 4 + 3] ?? 0);
+  }
+  return total;
+}
+
 function deriveModalObserverVisibilityComponents({
   structuralMetrics = null,
   hardSilent = false,
@@ -4118,6 +4130,21 @@ export function buildCurrentAudioFeatureAnalysisResult({
     resolvedStructural.backboneStateSource ?? preparedInputs.backboneState;
   const resolvedDetailState =
     resolvedStructural.detailStateSource ?? preparedInputs.detailState;
+  const modeSlotAmplitudeTotal = sumSlotAmplitudeTotal(
+    resolvedStructural.modeSlots,
+    preparedInputs.capacity,
+  );
+  const signalSlotAmplitudeTotal = sumSlotAmplitudeTotal(
+    resolvedStructural.signalModeSlots,
+    preparedInputs.capacity,
+  );
+  const observerVisibleDecay =
+    preparedInputs.inputMode === "file" &&
+    modeSlotAmplitudeTotal > 0 &&
+    modeSlotAmplitudeTotal >= signalSlotAmplitudeTotal * 1.18 &&
+    (resolvedStructural.structuralMetrics?.modalDriveEnergy ?? 1) < 0.08;
+  const resolvedUsedDecay =
+    resolvedStructural.usedDecay || observerVisibleDecay;
 
   return {
     preparedInputs,
@@ -4167,7 +4194,7 @@ export function buildCurrentAudioFeatureAnalysisResult({
     analysisEngine: resolvedStructural.analysisEngine,
     pitchSource: resolvedStructural.pitchSource,
     spectralCandidates: resolvedStructural.spectralCandidates,
-    usedDecay: resolvedStructural.usedDecay,
+    usedDecay: resolvedUsedDecay,
     sourceNormalization: fastSignalState.sourceNormalization,
     liveInputNoiseGateActive: preparedInputs.liveInputNoiseGateActive,
     liveInputHardSilenceActive: preparedInputs.liveInputHardSilenceActive,
@@ -4492,10 +4519,18 @@ export function composeAudioFeatureFrame({
   preparedInputs.analysisMemory.lastComposedFrameAtMs =
     preparedInputs.currentFrameAtMs;
 
+  const observerAuthorizedActiveField =
+    (analysisResult.activeModeCount ?? 0) > 0 &&
+    !analysisResult.liveInputHardSilenceActive &&
+    (preparedInputs.inputMode === "live" ||
+      modalObserverVisibilityEnergy > 0.02 ||
+      modalVisibilityRetainedHighQEnergy > 0.005);
+  const fieldStateUsesDecay =
+    analysisResult.usedDecay && !observerAuthorizedActiveField;
   const { fieldState, hasModalField } = deriveFieldState({
     injectTestTone: preparedInputs.resolvedAuditSettings.injectTestTone,
     activeModeCount: analysisResult.activeModeCount,
-    usedDecay: analysisResult.usedDecay,
+    usedDecay: fieldStateUsesDecay,
   });
   const sourceMode =
     fieldState === FIELD_STATES.idle &&

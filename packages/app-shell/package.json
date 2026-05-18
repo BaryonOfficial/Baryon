@@ -10,6 +10,7 @@
   },
   "exports": {
     ".": "./src/index.js",
+    "./camera-control-model": "./src/components/cameraControlModel.js",
     "./camera-pose-presets": "./src/components/cameraPosePresets.js",
     "./index.css": "./src/index.css",
     "./live-input-runtime-status": "./src/context/liveInputRuntimeStatus.js",

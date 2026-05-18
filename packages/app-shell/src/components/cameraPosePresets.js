@@ -5,6 +5,9 @@ export const CAMERA_VIEW_PRESETS = Object.freeze({
 
 function normalizeDirection([x, y, z]) {
   const length = Math.hypot(x, y, z);
+  if (!Number.isFinite(length) || length <= 0) {
+    return /** @type {[number, number, number]} */ ([0, 0, 1]);
+  }
   return /** @type {[number, number, number]} */ ([
     x / length,
     y / length,
@@ -59,6 +62,99 @@ export function resolvePresetCameraPose(preset) {
   return preset === CAMERA_VIEW_PRESETS.topDown
     ? createCanonicalCameraPose(CAMERA_VIEW_PRESETS.topDown)
     : createCanonicalCameraPose(CAMERA_VIEW_PRESETS.side);
+}
+
+/**
+ * @param {unknown} preset
+ * @returns {"top-down" | "side"}
+ */
+function normalizePreset(preset) {
+  return preset === CAMERA_VIEW_PRESETS.topDown
+    ? CAMERA_VIEW_PRESETS.topDown
+    : CAMERA_VIEW_PRESETS.side;
+}
+
+function vectorFromPose(value, fallback) {
+  if (
+    !value ||
+    !Number.isFinite(value.x) ||
+    !Number.isFinite(value.y) ||
+    !Number.isFinite(value.z)
+  ) {
+    return fallback;
+  }
+
+  return /** @type {[number, number, number]} */ ([
+    Number(value.x),
+    Number(value.y),
+    Number(value.z),
+  ]);
+}
+
+function dot3(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function scorePoseAgainstPreset(cameraPose, preset) {
+  const canonicalPose = resolvePresetCameraPose(preset);
+  const position = vectorFromPose(cameraPose?.position, [
+    canonicalPose.position.x,
+    canonicalPose.position.y,
+    canonicalPose.position.z,
+  ]);
+  const target = vectorFromPose(cameraPose?.target, [
+    canonicalPose.target.x,
+    canonicalPose.target.y,
+    canonicalPose.target.z,
+  ]);
+  const up = normalizeDirection(
+    vectorFromPose(cameraPose?.up, [
+      canonicalPose.up.x,
+      canonicalPose.up.y,
+      canonicalPose.up.z,
+    ]),
+  );
+  const canonicalDirection = normalizeDirection([
+    canonicalPose.position.x - canonicalPose.target.x,
+    canonicalPose.position.y - canonicalPose.target.y,
+    canonicalPose.position.z - canonicalPose.target.z,
+  ]);
+  const poseDirection = normalizeDirection([
+    position[0] - target[0],
+    position[1] - target[1],
+    position[2] - target[2],
+  ]);
+  const canonicalUp = normalizeDirection([
+    canonicalPose.up.x,
+    canonicalPose.up.y,
+    canonicalPose.up.z,
+  ]);
+
+  return dot3(poseDirection, canonicalDirection) + dot3(up, canonicalUp);
+}
+
+/**
+ * @param {any} cameraPose
+ * @param {"top-down" | "side"} [fallbackPreset]
+ * @returns {"top-down" | "side"}
+ */
+export function resolveCameraPresetFromPose(
+  cameraPose,
+  fallbackPreset = CAMERA_VIEW_PRESETS.side,
+) {
+  if (!cameraPose || typeof cameraPose !== "object") {
+    return normalizePreset(fallbackPreset);
+  }
+
+  const topDownScore = scorePoseAgainstPreset(
+    cameraPose,
+    CAMERA_VIEW_PRESETS.topDown,
+  );
+  const sideScore = scorePoseAgainstPreset(cameraPose, CAMERA_VIEW_PRESETS.side);
+
+  return topDownScore > sideScore
+    ? CAMERA_VIEW_PRESETS.topDown
+    : CAMERA_VIEW_PRESETS.side;
 }
 
 export const DEFAULT_IDLE_PERFORMER_CAMERA_POSE = Object.freeze(

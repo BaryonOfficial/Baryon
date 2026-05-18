@@ -18,6 +18,11 @@ const frameState = vi.hoisted(() => ({
 
 const renderLoopSpies = vi.hoisted(() => ({
   applyCachedControlSnapshotsSpy: vi.fn(() => ({})),
+  resolveFeatureFrameSpy: vi.fn(() => ({
+    featureFrame: null,
+    effectiveFrame: null,
+  })),
+  shouldRenderExternalFrameSpy: vi.fn(() => false),
 }));
 
 const visualizationLifecycleState = vi.hoisted(() => ({
@@ -91,8 +96,10 @@ vi.mock("./baryonVisualizerRuntimeState.js", () => ({
   clearFrameCache: () => {},
   createRuntimeDiagnostics: () => ({}),
   recordRuntimePerfSample: () => {},
-  shouldRenderExternalFrame: () => false,
+  shouldRenderExternalFrame: (...args) =>
+    renderLoopSpies.shouldRenderExternalFrameSpy(...args),
   shouldPreservePausedFrameOnControlsChange: () => false,
+  updateRetainedHighQRenderVisibilityDiagnostics: () => {},
 }));
 
 vi.mock("../../context/liveInputRuntimeStatus.js", () => ({
@@ -119,8 +126,12 @@ vi.mock("./baryonVisualizerRenderLoop.js", () => ({
   getEffectiveAdaptiveRenderScale: () => 1,
   publishPerformanceHudSnapshot: () => {},
   publishDevtoolsSnapshots: () => {},
-  resolveFeatureFrame: () => ({ featureFrame: null, effectiveFrame: null }),
+  applyLiveInputRenderIntent: (frame) => frame,
+  resolveFeatureFrame: (...args) =>
+    renderLoopSpies.resolveFeatureFrameSpy(...args),
   syncLiveInputRuntimeStatus: () => {},
+  updateModalEnvelopeDiagnostics: () => {},
+  updateModalFreshnessDiagnostics: () => {},
   updateAdaptiveRaymarchStepBudget: () => 0,
   updateRendererDiagnostics: () => ({
     lowLoadActive: false,
@@ -145,7 +156,14 @@ vi.mock("./externalFrameClock.js", () => ({
 
 import { useBaryonVisualizer } from "./useBaryonVisualizer.js";
 
-function HookHarness({ controlsRef = { current: {} }, renderProfile }) {
+function HookHarness({
+  controlsRef = { current: {} },
+  renderProfile,
+  ensurePipeline = () => null,
+  postNodesRef = { current: null },
+  externalFrameRef = null,
+  cameraRenderKey = null,
+}) {
   useBaryonVisualizer({
     baryonGeometry: null,
     camera: {},
@@ -157,9 +175,11 @@ function HookHarness({ controlsRef = { current: {} }, renderProfile }) {
     liveInputErrorCode: null,
     controlsRef,
     visualizationMethod: "raymarch",
-    ensurePipeline: () => null,
-    postNodesRef: { current: null },
+    ensurePipeline,
+    postNodesRef,
+    externalFrameRef,
     renderProfile,
+    cameraRenderKey,
   });
   return null;
 }
@@ -173,6 +193,13 @@ describe("useBaryonVisualizer", () => {
     invalidateSpy.mockClear();
     clearAdaptiveRaymarchResumeStateSpy.mockClear();
     renderLoopSpies.applyCachedControlSnapshotsSpy.mockClear();
+    renderLoopSpies.resolveFeatureFrameSpy.mockReset();
+    renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
+      featureFrame: null,
+      effectiveFrame: null,
+    });
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockReset();
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(false);
     frameState.callbacks.length = 0;
     visualizationLifecycleState.controlCacheRefs.controlVersionRef.current = 0;
     visualizationLifecycleState.controlCacheRefs.appliedControlVersionRef.current =
@@ -300,5 +327,106 @@ describe("useBaryonVisualizer", () => {
       renderLoopSpies.applyCachedControlSnapshotsSpy.mock.calls.at(-1)[0]
         .controls.backgroundColor,
     ).toBe("#112233");
+  });
+
+  it("advances output temporal camera cuts after rendering", async () => {
+    const renderSpy = vi.fn();
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);
+    renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
+      featureFrame: {},
+      effectiveFrame: {},
+    });
+    const postNodesRef = {
+      current: {
+        temporalHistoryBlendUniform: { value: 0 },
+        temporalHistoryCutFramesRemaining: 1,
+      },
+    };
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          ensurePipeline: () => ({ render: renderSpy }),
+          postNodesRef,
+        }),
+      );
+    });
+
+    const frameCallback = frameState.callbacks.at(-1);
+    expect(frameCallback).toBeTypeOf("function");
+
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+    expect(postNodesRef.current.temporalHistoryCutFramesRemaining).toBe(0);
+    expect(postNodesRef.current.temporalHistoryBlendUniform.value).toBe(1);
+  });
+
+  it("forces an external-stage render after camera-only pose changes", async () => {
+    const renderSpy = vi.fn();
+    const externalFrameRef = { current: { featureFrame: {} } };
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockImplementation((options) =>
+      Boolean(options?.forceRender),
+    );
+    renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
+      featureFrame: {},
+      effectiveFrame: {},
+    });
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          ensurePipeline: () => ({ render: renderSpy }),
+          externalFrameRef,
+          cameraRenderKey: "side",
+        }),
+      );
+    });
+
+    const initialFrameCallback = frameState.callbacks.at(-1);
+    initialFrameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+    renderSpy.mockClear();
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockClear();
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          ensurePipeline: () => ({ render: renderSpy }),
+          externalFrameRef,
+          cameraRenderKey: "top-down",
+        }),
+      );
+    });
+
+    const frameCallback = frameState.callbacks.at(-1);
+    expect(frameCallback).toBeTypeOf("function");
+
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+
+    expect(renderLoopSpies.shouldRenderExternalFrameSpy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ forceRender: true }),
+    );
+    expect(renderSpy).toHaveBeenCalledTimes(1);
   });
 });

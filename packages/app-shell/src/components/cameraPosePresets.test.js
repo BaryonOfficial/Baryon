@@ -4,6 +4,7 @@ import {
   CAMERA_VIEW_PRESETS,
   DEFAULT_IDLE_PERFORMER_CAMERA_POSE,
   DEFAULT_LIVE_PERFORMER_CAMERA_POSE,
+  resolveCameraPresetFromPose,
   resolvePresetCameraPose,
 } from "./cameraPosePresets.js";
 
@@ -39,4 +40,24 @@ test("performer default poses stay aligned with idle and live presets", () => {
   expect(DEFAULT_LIVE_PERFORMER_CAMERA_POSE).toStrictEqual(
     resolvePresetCameraPose(CAMERA_VIEW_PRESETS.topDown),
   );
+});
+
+test("resolveCameraPresetFromPose derives the nearest preset from the applied pose", () => {
+  expect(
+    resolveCameraPresetFromPose(resolvePresetCameraPose("top-down")),
+  ).toBe("top-down");
+  expect(resolveCameraPresetFromPose(resolvePresetCameraPose("side"))).toBe(
+    "side",
+  );
+  expect(
+    resolveCameraPresetFromPose({
+      ...resolvePresetCameraPose("top-down"),
+      position: {
+        x: 0,
+        y: 12,
+        z: 0.0012,
+      },
+    }),
+  ).toBe("top-down");
+  expect(resolveCameraPresetFromPose(null, "side")).toBe("side");
 });

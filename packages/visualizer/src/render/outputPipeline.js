@@ -4,6 +4,7 @@ import { RenderTarget, NearestFilter } from "three/webgpu";
 import {
   float,
   max,
+  mix,
   mrt,
   output,
   pass,
@@ -23,6 +24,47 @@ import {
 const { RenderPipeline } = /** @type {any} */ (THREEWebGPU);
 
 export * from "./outputProfilePolicy.js";
+
+const DEFAULT_CAMERA_CUT_TEMPORAL_BYPASS_FRAMES = 2;
+
+export function markRenderOutputCameraCut(
+  postNodes,
+  frames = DEFAULT_CAMERA_CUT_TEMPORAL_BYPASS_FRAMES,
+) {
+  const temporalHistoryBlendUniform = postNodes?.temporalHistoryBlendUniform;
+  if (!postNodes?.traaNode || !temporalHistoryBlendUniform) {
+    return false;
+  }
+
+  const nextFrames = Math.max(1, Math.round(frames));
+  temporalHistoryBlendUniform.value = 0;
+  postNodes.temporalHistoryCutFramesRemaining = Math.max(
+    postNodes.temporalHistoryCutFramesRemaining ?? 0,
+    nextFrames,
+  );
+  return true;
+}
+
+export function advanceRenderOutputCameraCut(postNodes) {
+  const temporalHistoryBlendUniform = postNodes?.temporalHistoryBlendUniform;
+  if (!temporalHistoryBlendUniform) {
+    return false;
+  }
+
+  const remaining = postNodes.temporalHistoryCutFramesRemaining ?? 0;
+  if (remaining <= 0) {
+    if (temporalHistoryBlendUniform.value !== 1) {
+      temporalHistoryBlendUniform.value = 1;
+      return true;
+    }
+    return false;
+  }
+
+  const nextRemaining = Math.max(0, remaining - 1);
+  postNodes.temporalHistoryCutFramesRemaining = nextRemaining;
+  temporalHistoryBlendUniform.value = nextRemaining > 0 ? 0 : 1;
+  return true;
+}
 
 /**
  * @typedef {import("./outputProfilePolicy.js").PerformanceProfile} PerformanceProfile
@@ -83,10 +125,12 @@ export function createRenderOutputPipeline(
       new THREE.Color(RENDER_DEFAULTS.outputBackgroundColor),
     ),
   };
+  const temporalHistoryBlendUniform = uniform(1);
   const scenePass = pass(scene, camera);
   let sceneColor = null;
   let traaNode = null;
   let traaColor = null;
+  let outputSceneColor = null;
   let bloomPass = null;
 
   if (resolvedRenderProfile.traaEnabled) {
@@ -115,14 +159,16 @@ export function createRenderOutputPipeline(
     traaNode.edgeDepthDiff = 0.005;
     // @ts-ignore — getTextureNode() exists in TRAANode source but is missing from its .d.ts
     traaColor = traaNode.getTextureNode();
+    outputSceneColor = mix(sceneColor, traaColor, temporalHistoryBlendUniform);
   } else {
     sceneColor = scenePass.getTextureNode("output");
     traaColor = sceneColor;
+    outputSceneColor = sceneColor;
   }
 
   if (resolvedRenderProfile.bloomAllowed) {
     bloomPass = bloom(
-      traaColor,
+      outputSceneColor,
       /** @type {any} */ (bloomUniforms.strength),
       /** @type {any} */ (bloomUniforms.radius),
       /** @type {any} */ (bloomUniforms.threshold),
@@ -134,7 +180,7 @@ export function createRenderOutputPipeline(
     outputMode = RENDER_DEFAULTS.outputMode,
   } = {}) =>
     composeRenderOutputNode({
-      sceneColor: traaColor,
+      sceneColor: outputSceneColor,
       bloomPass,
       bloomEnabled: bloomEnabled && resolvedRenderProfile.bloomAllowed,
       outputMode,
@@ -150,9 +196,12 @@ export function createRenderOutputPipeline(
       sceneColor,
       traaNode,
       traaColor,
+      outputSceneColor,
       bloomPass,
       bloomUniforms,
       outputUniforms,
+      temporalHistoryBlendUniform,
+      temporalHistoryCutFramesRemaining: 0,
       composeOutputNode,
       renderProfile: resolvedRenderProfile,
     },

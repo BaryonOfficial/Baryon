@@ -5,10 +5,14 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { baryonSceneSpy, dispatchCameraControlCommandSpy } = vi.hoisted(() => ({
-  baryonSceneSpy: vi.fn(),
-  dispatchCameraControlCommandSpy: vi.fn(),
-}));
+const { baryonSceneSpy, dispatchCameraControlCommandSpy, audioSceneState } =
+  vi.hoisted(() => ({
+    baryonSceneSpy: vi.fn(),
+    dispatchCameraControlCommandSpy: vi.fn(),
+    audioSceneState: {
+      liveInputUiState: "active",
+    },
+  }));
 
 vi.mock("@react-three/fiber", () => ({
   Canvas: ({ children }) => React.createElement("div", null, children),
@@ -99,7 +103,7 @@ vi.mock("../context/AudioContext", () => ({
   useAudioScene: () => ({
     setIsEngineReady: () => {},
     setLiveInputRuntimeStatus: () => {},
-    liveInputUiState: "active",
+    liveInputUiState: audioSceneState.liveInputUiState,
     liveInputErrorCode: null,
     resetAudioSession: () => {},
   }),
@@ -268,6 +272,7 @@ describe("camera reset control", () => {
   beforeEach(() => {
     baryonSceneSpy.mockClear();
     dispatchCameraControlCommandSpy.mockClear();
+    audioSceneState.liveInputUiState = "active";
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -346,6 +351,29 @@ describe("camera reset control", () => {
     expect(sideButton).toBeInstanceOf(HTMLButtonElement);
     expect(topButton.getAttribute("aria-pressed")).toBe("true");
     expect(sideButton.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("hides camera controls while idle and keeps the idle camera default", async () => {
+    audioSceneState.liveInputUiState = "idle";
+    const controlsStore = createControlsStore();
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ControlsProvider,
+          { store: controlsStore },
+          React.createElement(ThreeScene),
+        ),
+      );
+    });
+
+    expect(
+      container.querySelector('[data-testid="camera-controls"]'),
+    ).toBeNull();
+    expect(dispatchCameraControlCommandSpy).not.toHaveBeenCalled();
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraPose).toStrictEqual(
+      resolvePresetCameraPose("side"),
+    );
   });
 
   it("keeps camera pose identity stable across unrelated rerenders", async () => {
