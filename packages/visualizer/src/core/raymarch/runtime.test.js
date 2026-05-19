@@ -1682,6 +1682,68 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
+  it("surfaces low-Q backbone visibility diagnostics without inflating bloom response", () => {
+    const baselineRuntime = createRuntimeState();
+    const lowQRuntime = createRuntimeState();
+    const baseFrame = {
+      fieldState: "active",
+      averageAmplitude: 0.8,
+      backboneSlots: new Float32Array([1, 1, 1, 0.006, 2, 1, 1, 0.004]),
+      detailSlots: new Float32Array(32),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.12, 0.08, 0.01, 0.004]),
+      transientEnergy: 0,
+      spectralCentroid: 0.08,
+      spectralFlux: 0.01,
+      structureSignal: 0.018,
+      energySignal: 0.012,
+      changeSignal: 0,
+      pulseSignal: 0,
+      modeCoherence: 0.62,
+      modalVisibilityEnergy: 0,
+      rhythmicDensity: 0,
+      debug: {},
+    };
+
+    tickRaymarchRuntime(baselineRuntime, baseFrame, 2, 1 / 60);
+    tickRaymarchRuntime(
+      lowQRuntime,
+      {
+        ...baseFrame,
+        modalObserverVisibilityEnergy: 0.08,
+        lowQBackboneVisibilityAuthority: 0.46,
+        lowQBackboneVisibilityEnergy: 0.083,
+        lowQBackboneTopologyFloor: 0.0064,
+        lowQBackboneSourceSupport: 0.28,
+        lowQBackboneVisibilityRejected: false,
+      },
+      2,
+      1 / 60,
+    );
+
+    expect(
+      lowQRuntime.debugSnapshot.raymarchDebug.lowQBackboneVisibilityAuthority,
+    ).toBeCloseTo(0.46);
+    expect(
+      lowQRuntime.debugSnapshot.raymarchDebug.lowQBackboneVisibilityEnergy,
+    ).toBeCloseTo(0.083);
+    expect(
+      lowQRuntime.debugSnapshot.raymarchDebug.lowQBackboneTopologyFloor,
+    ).toBeCloseTo(0.0064);
+    expect(
+      lowQRuntime.debugSnapshot.raymarchDebug.lowQBackboneSourceSupport,
+    ).toBeCloseTo(0.28);
+    expect(
+      lowQRuntime.debugSnapshot.raymarchDebug.lowQBackboneVisibilityRejected,
+    ).toBe(false);
+    expect(lowQRuntime.scaleSignal).toBeCloseTo(baselineRuntime.scaleSignal, 6);
+    expect(lowQRuntime.bloomResponseSignal).toBeCloseTo(
+      baselineRuntime.bloomResponseSignal,
+      6,
+    );
+  });
+
   it("keeps the outer radius fixed while internal response stays active", () => {
     const runtimeState = createRuntimeState();
 

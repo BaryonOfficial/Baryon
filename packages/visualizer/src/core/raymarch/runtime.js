@@ -303,6 +303,26 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     featureFrame?.modalObserverVisibilityEnergy ?? 0;
   const modalVisibilityRetainedHighQEnergy =
     featureFrame?.modalVisibilityRetainedHighQEnergy ?? 0;
+  const lowQBackboneVisibilityAuthority =
+    featureFrame?.lowQBackboneVisibilityAuthority ??
+    featureFrame?.debug?.lowQBackboneVisibilityAuthority ??
+    0;
+  const lowQBackboneVisibilityEnergy =
+    featureFrame?.lowQBackboneVisibilityEnergy ??
+    featureFrame?.debug?.lowQBackboneVisibilityEnergy ??
+    0;
+  const lowQBackboneTopologyFloor =
+    featureFrame?.lowQBackboneTopologyFloor ??
+    featureFrame?.debug?.lowQBackboneTopologyFloor ??
+    0;
+  const lowQBackboneSourceSupport =
+    featureFrame?.lowQBackboneSourceSupport ??
+    featureFrame?.debug?.lowQBackboneSourceSupport ??
+    0;
+  const lowQBackboneVisibilityRejected = Boolean(
+    featureFrame?.lowQBackboneVisibilityRejected ??
+      featureFrame?.debug?.lowQBackboneVisibilityRejected,
+  );
   const modalPhaseAuthority = featureFrame?.modalPhaseAuthority ?? 0;
   const modalVisibilityDensityDebug = deriveVisibleDensity({
     density: 0,
@@ -458,6 +478,11 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     modalVisibilityEnergy,
     modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
+    lowQBackboneVisibilityAuthority,
+    lowQBackboneVisibilityEnergy,
+    lowQBackboneTopologyFloor,
+    lowQBackboneSourceSupport,
+    lowQBackboneVisibilityRejected,
     modalPhaseAuthority,
     projectionEnergyBudgetBackbone:
       featureFrame?.debug?.projectionEnergyBudgetBackbone ?? 0,

@@ -538,6 +538,76 @@ function readModeAmplitudeMap(slotBuffer) {
   return amplitudes;
 }
 
+function makeLowQBackboneStructuralMetrics(overrides = {}) {
+  return {
+    modeCoherence: 0.48,
+    modalPersistence: 0.01,
+    modalDriveEnergy: 0.008,
+    distributedExcitation: 0.08,
+    lowQBackboneModeCount: 2,
+    lowQBackboneEnergy: 0.055,
+    lowQObservedDrive: 0.34,
+    lowQObservedSnr: 0.26,
+    lowQObservedCoherence: 0.66,
+    highQDetailModeCount: 0,
+    highQDetailEnergy: 0,
+    highQRingSupport: 0,
+    highQObservedDrive: 0,
+    highQObservedSnr: 0,
+    highQObservedCoherence: 0,
+    highQPhaseAuthority: 0,
+    ...overrides,
+  };
+}
+
+function buildManualLowQBackboneFrame({
+  status = makeActiveStatus(),
+  sourceMode = "file",
+  avgAmplitude = 8.2,
+  rms = 0.028,
+  fftMagnitudes = makeFft([
+    [55, 0.28],
+    [110, 0.18],
+  ]),
+  timeData = makeMixedTimeData({
+    partials: [
+      [55, 0.8],
+      [110, 0.24],
+    ],
+    amplitudeScale: 0.09,
+  }),
+  backboneSlots = makeModeSlots([
+    [1, 1, 1, 0.0006],
+    [2, 1, 1, 0.0004],
+  ]),
+  detailSlots = makeModeSlots([]),
+  structuralMetrics = makeLowQBackboneStructuralMetrics(),
+  liveInputAnalysisSettings,
+} = {}) {
+  const preparedInputs = prepareAudioFeatureFrameInputs({
+    analysisSnapshot: createSnapshot({
+      sourceMode,
+      avgAmplitude,
+      fftMagnitudes,
+      timeData,
+      rms,
+    }),
+    featureState: createAudioFeatureState(),
+    radius: 3,
+    status,
+    frameTimeMs: 0,
+    liveInputAnalysisSettings,
+  });
+  const structuralState = makeManualStructuralState({
+    backboneSlots,
+    detailSlots,
+    sourceMode,
+    structuralMetrics,
+  });
+
+  return composeManualStructuralFrame({ preparedInputs, structuralState });
+}
+
 function addModalFingerprintLayer(fingerprint, slotBuffer, weight = 1) {
   for (let index = 0; index < slotBuffer.length; index += 4) {
     const amplitude = (slotBuffer[index + 3] ?? 0) * weight;
@@ -670,6 +740,109 @@ describe("buildAudioFeatureFrame modal contract", () => {
       steadyFrame.changeSignal,
     );
     expect(changingFrame.changeSignal).toBeGreaterThan(0.07);
+  });
+
+  it("keeps coherent low-Q background bass active through backbone authority only", () => {
+    const originalBackboneSlots = makeModeSlots([
+      [1, 1, 1, 0.0006],
+      [2, 1, 1, 0.0004],
+    ]);
+    const frame = buildManualLowQBackboneFrame({
+      backboneSlots: originalBackboneSlots,
+    });
+
+    expect(frame.fieldState).toBe("active");
+    expect(frame.debug.lowQBackboneVisibilityAuthority).toBeGreaterThan(0.3);
+    expect(frame.lowQBackboneVisibilityEnergy).toBeGreaterThan(0.02);
+    expect(frame.debug.lowQBackboneVisibilityEnergy).toBe(
+      frame.lowQBackboneVisibilityEnergy,
+    );
+    expect(frame.debug.lowQBackboneTopologyFloor).toBeGreaterThan(0.004);
+    expect(frame.modalObserverVisibilityEnergy).toBeGreaterThanOrEqual(
+      frame.lowQBackboneVisibilityEnergy,
+    );
+    expect(frame.modalVisibilityEnergy).toBe(0);
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBe(0);
+    expect(frame.debug.modalVisibilityRetainedHighQEnergy).toBe(0);
+    expect(countActiveSlots(frame.detailSlots)).toBe(0);
+    expect(findModeAmplitude(frame.backboneSlots, [1, 1, 1])).toBeGreaterThan(
+      findModeAmplitude(originalBackboneSlots, [1, 1, 1]),
+    );
+  });
+
+  it("rejects low-Q backbone visibility for silence and weak incoherent noise", () => {
+    const silent = buildManualLowQBackboneFrame({
+      avgAmplitude: 0,
+      rms: 0,
+      fftMagnitudes: new Float32Array(BIN_COUNT),
+      timeData: new Float32Array(FFT_SIZE),
+      structuralMetrics: makeLowQBackboneStructuralMetrics({
+        lowQObservedDrive: 0,
+      }),
+    });
+    const weakNoise = buildManualLowQBackboneFrame({
+      avgAmplitude: 7,
+      rms: 0.014,
+      fftMagnitudes: makeFft([
+        [80, 0.035],
+        [260, 0.04],
+        [730, 0.035],
+        [1300, 0.04],
+        [2200, 0.035],
+      ]),
+      timeData: new Float32Array(FFT_SIZE),
+      structuralMetrics: makeLowQBackboneStructuralMetrics({
+        lowQBackboneEnergy: 0.04,
+        lowQObservedDrive: 0.04,
+        lowQObservedSnr: 0.02,
+        lowQObservedCoherence: 0.11,
+        modeCoherence: 0.1,
+        distributedExcitation: 0.74,
+      }),
+    });
+
+    expect(silent.fieldState).toBe("idle");
+    expect(silent.lowQBackboneVisibilityEnergy).toBe(0);
+    expect(silent.lowQBackboneTopologyFloor).toBe(0);
+    expect(silent.debug.lowQBackboneVisibilityRejected).toBe(true);
+    expect(weakNoise.fieldState).toBe("idle");
+    expect(weakNoise.lowQBackboneVisibilityEnergy).toBe(0);
+    expect(weakNoise.lowQBackboneTopologyFloor).toBe(0);
+    expect(weakNoise.debug.lowQBackboneVisibilityRejected).toBe(true);
+    expect(weakNoise.modalVisibilityRetainedHighQEnergy).toBe(0);
+  });
+
+  it("derives matching low-Q backbone authority for file, system, and line-feed inputs", () => {
+    const scenarios = [
+      {
+        sourceMode: "file",
+        status: makeActiveStatus(),
+      },
+      {
+        sourceMode: "live",
+        status: makeSystemStatus(),
+      },
+      {
+        sourceMode: "live",
+        status: makeResolvedLineFeedLiveStatus(),
+        liveInputAnalysisSettings: { acousticIntent: "ambient" },
+      },
+    ];
+    const frames = scenarios.map((scenario) =>
+      buildManualLowQBackboneFrame(scenario),
+    );
+    const authorities = frames.map(
+      (frame) => frame.debug.lowQBackboneVisibilityAuthority,
+    );
+
+    expect(authorities[0]).toBeGreaterThan(0.3);
+    expect(authorities[1]).toBeCloseTo(authorities[0], 6);
+    expect(authorities[2]).toBeCloseTo(authorities[0], 6);
+    for (const frame of frames) {
+      expect(frame.lowQBackboneVisibilityEnergy).toBeGreaterThan(0.02);
+      expect(frame.modalVisibilityRetainedHighQEnergy).toBe(0);
+      expect(countActiveSlots(frame.detailSlots)).toBe(0);
+    }
   });
 
   it("keeps live-input calibration active during startup frames", () => {
