@@ -770,6 +770,50 @@ describe("buildAudioFeatureFrame modal contract", () => {
     );
   });
 
+  it("lets strong low-Q bass lift existing backbone slots", () => {
+    const originalBackboneSlots = makeModeSlots([
+      [1, 1, 1, 0.04],
+      [1, 1, 2, 0.032],
+      [2, 1, 1, 0.02],
+    ]);
+    const originalTotal = sumSlotAmplitudes(originalBackboneSlots);
+    const frame = buildManualLowQBackboneFrame({
+      avgAmplitude: 28,
+      rms: 0.16,
+      fftMagnitudes: makeFft([
+        [55, 0.68],
+        [110, 0.42],
+        [165, 0.25],
+      ]),
+      timeData: makeMixedTimeData({
+        partials: [
+          [55, 0.8],
+          [110, 0.42],
+          [165, 0.2],
+        ],
+        amplitudeScale: 0.18,
+      }),
+      backboneSlots: originalBackboneSlots,
+      structuralMetrics: makeLowQBackboneStructuralMetrics({
+        modeCoherence: 0.82,
+        lowQBackboneModeCount: 4,
+        lowQBackboneEnergy: 0.78,
+        lowQObservedDrive: 0.42,
+        lowQObservedSnr: 0.45,
+        lowQObservedCoherence: 0.9,
+      }),
+    });
+
+    expect(frame.fieldState).toBe("active");
+    expect(frame.debug.lowQBackboneVisibilityAuthority).toBeGreaterThan(0.7);
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBe(0);
+    expect(countActiveSlots(frame.detailSlots)).toBe(0);
+    expect(sumSlotAmplitudes(frame.backboneSlots)).toBeGreaterThan(
+      originalTotal * 1.5,
+    );
+    expect(sumSlotAmplitudes(frame.backboneSlots)).toBeGreaterThan(0.14);
+  });
+
   it("rejects low-Q backbone visibility for silence and weak incoherent noise", () => {
     const silent = buildManualLowQBackboneFrame({
       avgAmplitude: 0,
