@@ -46,6 +46,8 @@ window.__baryonAuditSnapshot?.fieldCacheOverride
 */
 const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
 const FIELD_CACHE_WEIGHT_QUANTIZATION = 1024;
+const PHASE_OVERLAY_CANCELLATION_SUPPORT_EPSILON = 1e-5;
+const PHASE_OVERLAY_CANCELLATION_SUPPORT_FULL = 0.01;
 
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -608,7 +610,8 @@ function accumulatePhaseOverlayLayerAtPoint({
     gradX += weightedAuthority * family.gradX * oscillator;
     gradY += weightedAuthority * family.gradY * oscillator;
     gradZ += weightedAuthority * family.gradZ * oscillator;
-    unsignedPotential += weightedAuthority * Math.abs(family.field);
+    unsignedPotential +=
+      weightedAuthority * Math.abs(family.field) * Math.abs(oscillator);
     authoritySum += weightedAuthority;
   }
 
@@ -685,11 +688,30 @@ export function evaluateRaymarchPhaseOverlayPoint({
     1,
     Math.hypot(gradX, gradY, gradZ) / safeAuthority,
   );
-  const cancellation = Math.min(
+  const cancellationSupport = Math.min(
     1,
-    Math.max(0, 1 - Math.abs(signedDisplacement) / Math.max(0.01, unsignedPotential)),
+    Math.max(
+      0,
+      (unsignedPotential - PHASE_OVERLAY_CANCELLATION_SUPPORT_EPSILON) /
+        (PHASE_OVERLAY_CANCELLATION_SUPPORT_FULL -
+          PHASE_OVERLAY_CANCELLATION_SUPPORT_EPSILON),
+    ),
   );
-  const authority = Math.min(1, Math.max(0, authoritySum / Math.max(0.01, totalWeight)));
+  const cancellation =
+    cancellationSupport *
+    Math.min(
+      1,
+      Math.max(
+        0,
+        1 -
+          Math.abs(signedDisplacement) /
+            Math.max(PHASE_OVERLAY_CANCELLATION_SUPPORT_FULL, unsignedPotential),
+      ),
+    );
+  const authority = Math.min(
+    1,
+    Math.max(0, authoritySum / Math.max(0.01, totalWeight)),
+  );
 
   return {
     signedDisplacement: normalizedSignedDisplacement,
@@ -1075,7 +1097,9 @@ function createPhaseOverlayComputeKernel({
             signedGradZ.addAssign(
               weightedAuthority.mul(family.gradZ).mul(oscillator),
             );
-            unsignedPotential.addAssign(weightedAuthority.mul(abs(family.field)));
+            unsignedPotential.addAssign(
+              weightedAuthority.mul(abs(family.field).mul(abs(oscillator))),
+            );
             authoritySum.addAssign(weightedAuthority);
             totalWeight.addAssign(amplitude);
           });
@@ -1124,7 +1148,9 @@ function createPhaseOverlayComputeKernel({
             signedGradZ.addAssign(
               weightedAuthority.mul(family.gradZ).mul(oscillator),
             );
-            unsignedPotential.addAssign(weightedAuthority.mul(abs(family.field)));
+            unsignedPotential.addAssign(
+              weightedAuthority.mul(abs(family.field).mul(abs(oscillator))),
+            );
             authoritySum.addAssign(weightedAuthority);
             totalWeight.addAssign(amplitude);
           });
@@ -1132,6 +1158,29 @@ function createPhaseOverlayComputeKernel({
       );
 
       const safeAuthority = authoritySum.max(float(0.01));
+      const cancellationSupport = clamp(
+        unsignedPotential
+          .sub(float(PHASE_OVERLAY_CANCELLATION_SUPPORT_EPSILON))
+          .div(
+            float(
+              PHASE_OVERLAY_CANCELLATION_SUPPORT_FULL -
+                PHASE_OVERLAY_CANCELLATION_SUPPORT_EPSILON,
+            ),
+          ),
+        float(0.0),
+        float(1.0),
+      );
+      const cancellation = clamp(
+        float(1.0).sub(
+          abs(signedDisplacement).div(
+            unsignedPotential.max(
+              float(PHASE_OVERLAY_CANCELLATION_SUPPORT_FULL),
+            ),
+          ),
+        ),
+        float(0.0),
+        float(1.0),
+      ).mul(cancellationSupport);
       textureStore(
         texture,
         uvec3(voxelCoord),
@@ -1148,13 +1197,7 @@ function createPhaseOverlayComputeKernel({
             float(0.0),
             float(1.0),
           ),
-          clamp(
-            float(1.0).sub(
-              abs(signedDisplacement).div(unsignedPotential.max(float(0.01))),
-            ),
-            float(0.0),
-            float(1.0),
-          ),
+          cancellation,
           clamp(
             authoritySum.div(totalWeight.max(float(0.01))),
             float(0.0),

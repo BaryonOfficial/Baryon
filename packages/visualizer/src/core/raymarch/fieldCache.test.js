@@ -516,6 +516,28 @@ describe("fieldCache", () => {
     expect(outOfPhase.authority).toBeCloseTo(1, 6);
   });
 
+  it("does not treat a single phase zero-crossing as destructive cancellation", () => {
+    const sample = evaluateRaymarchPhaseOverlayPoint({
+      backboneSlots: new Float32Array([1, 1, 1, 1]),
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([Math.PI / 2, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 1,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0,
+      y: 0,
+      z: 0,
+      time: 0,
+    });
+
+    expect(Math.abs(sample.signedDisplacement)).toBeLessThan(0.001);
+    expect(sample.gradientMagnitude).toBeLessThan(0.001);
+    expect(sample.cancellation).toBe(0);
+    expect(sample.authority).toBeCloseTo(1, 6);
+  });
+
   it("lets opposing phase modes cancel in the overlay without erasing support", () => {
     const sample = evaluateRaymarchPhaseOverlayPoint({
       backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
