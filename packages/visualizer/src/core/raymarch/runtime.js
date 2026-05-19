@@ -1189,8 +1189,6 @@ export function tickRaymarchRuntime(
   const performanceGovernor = buildRaymarchPerformanceGovernor({
     backboneSlots: featureFrame?.backboneSlots,
     detailSlots: featureFrame?.detailSlots,
-    backboneColorSlots: featureFrame?.backboneColorSlots,
-    detailColorSlots: featureFrame?.detailColorSlots,
     backboneCapacity,
     detailCapacity,
     featureFrame,
@@ -1200,7 +1198,6 @@ export function tickRaymarchRuntime(
       runtimeState.requestedRaymarchSteps ??
       volumeMesh.material.steps,
     requestedRenderScale: 1,
-    spectralLightEnabled,
   });
   const { backbone: backboneLayer, detail: detailLayer } = performanceGovernor;
   runtimeState.performanceGovernor = performanceGovernor;

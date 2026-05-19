@@ -18,11 +18,6 @@ export const RAYMARCH_LAYER_BUDGETS = Object.freeze({
 const STEP_COMPLEXITY_START = 0.45;
 const RENDER_SCALE_COMPLEXITY_START = 0.58;
 const BLOOM_GUARD_COMPLEXITY_START = 0.5;
-const SALIENCE_AMPLITUDE_WEIGHT = 0.68;
-const SALIENCE_COLOR_WEIGHT = 0.18;
-const SALIENCE_TRANSIENT_WEIGHT = 0.08;
-const SALIENCE_DETAIL_WEIGHT = 0.06;
-const SALIENCE_NOISE_WEIGHT = 0.1;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -45,38 +40,6 @@ function copySlot4(source, sourceOffset, target, targetOffset) {
   target[targetOffset + 1] = source?.[sourceOffset + 1] ?? 0;
   target[targetOffset + 2] = source?.[sourceOffset + 2] ?? 0;
   target[targetOffset + 3] = source?.[sourceOffset + 3] ?? 0;
-}
-
-function deriveBroadbandNoisePenalty(featureFrame) {
-  const modeCoherence = clamp01(featureFrame?.modeCoherence ?? 0);
-  const modalVisibilityEnergy = clamp01(
-    featureFrame?.modalVisibilityEnergy ?? 0,
-  );
-  const trebleBroadbandEnergy = clamp01(
-    featureFrame?.trebleBroadbandEnergy ?? 0,
-  );
-  const flatnessLike = clamp01(
-    trebleBroadbandEnergy * 0.5 +
-      (1 - modeCoherence) * 0.28 +
-      (1 - modalVisibilityEnergy) * 0.22,
-  );
-  return clamp01((flatnessLike - 0.55) / 0.45);
-}
-
-function deriveRenderSalience({
-  amplitude,
-  colorWeight,
-  transientEnergy,
-  detailBonus,
-  noisePenalty,
-}) {
-  return (
-    amplitude * SALIENCE_AMPLITUDE_WEIGHT +
-    colorWeight * SALIENCE_COLOR_WEIGHT +
-    transientEnergy * SALIENCE_TRANSIENT_WEIGHT +
-    detailBonus * SALIENCE_DETAIL_WEIGHT -
-    noisePenalty * SALIENCE_NOISE_WEIGHT
-  );
 }
 
 export function deriveFieldExcitation(featureFrame) {
@@ -102,23 +65,15 @@ export function inferLayerCapacity(capacity, slots) {
 
 export function analyzeBudgetedModeLayer({
   slots,
-  colorSlots,
   capacity,
   minSlots = 0,
   energyRetention = 1,
   cavityGeometry = "rectangular",
-  layerType = "backbone",
-  spectralLightEnabled = false,
-  featureFrame = null,
 }) {
   const resolvedCapacity = inferLayerCapacity(capacity, slots);
   const candidates = [];
   let totalAmplitude = 0;
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
-  const useRenderSalience = Boolean(spectralLightEnabled && colorSlots);
-  const transientEnergy = clamp01(featureFrame?.transientEnergy ?? 0);
-  const noisePenalty = deriveBroadbandNoisePenalty(featureFrame);
-  const detailBonus = layerType === "detail" ? 1 : 0;
 
   for (let slotIndex = 0; slotIndex < resolvedCapacity; slotIndex += 1) {
     const offset = slotIndex * 4;
@@ -131,25 +86,11 @@ export function analyzeBudgetedModeLayer({
       slots,
       offset,
     );
-    const rawColorWeight = useRenderSalience
-      ? clamp01(colorSlots[offset + 3])
-      : 0;
-    const colorWeight = rawColorWeight * (1 - noisePenalty);
     totalAmplitude += amplitude;
     candidates.push({
       slotIndex,
       amplitude,
       permutationCount,
-      colorWeight,
-      renderSalience: useRenderSalience
-        ? deriveRenderSalience({
-            amplitude,
-            colorWeight,
-            transientEnergy: transientEnergy * (1 - noisePenalty),
-            detailBonus,
-            noisePenalty,
-          })
-        : amplitude,
     });
   }
 
@@ -170,9 +111,6 @@ export function analyzeBudgetedModeLayer({
 
   const normalizedRetention = clamp01(energyRetention);
   const ranked = candidates.slice().sort((left, right) => {
-    if (right.renderSalience !== left.renderSalience) {
-      return right.renderSalience - left.renderSalience;
-    }
     if (right.amplitude !== left.amplitude) {
       return right.amplitude - left.amplitude;
     }
@@ -222,36 +160,23 @@ export function analyzeBudgetedModeLayer({
     averagePermutationCost:
       uploadedAmplitude > 0 ? uploadedPermutationLoad / uploadedAmplitude : 0,
     selectedIndices: selected.map((candidate) => candidate.slotIndex),
-    spectralLightAware: useRenderSalience,
-    maxColorWeight: selected.reduce(
-      (max, candidate) => Math.max(max, candidate.colorWeight ?? 0),
-      0,
-    ),
-    noisePenalty: useRenderSalience ? noisePenalty : 0,
   };
 }
 
 export function buildBudgetedModeLayer({
   slots,
-  colorSlots,
   capacity,
   layerType = "backbone",
   cavityGeometry = "rectangular",
-  spectralLightEnabled = false,
-  featureFrame = null,
 }) {
   const layerBudget =
     RAYMARCH_LAYER_BUDGETS[layerType] ?? RAYMARCH_LAYER_BUDGETS.backbone;
   return analyzeBudgetedModeLayer({
     slots,
-    colorSlots,
     capacity,
     minSlots: layerBudget.minSlots,
     energyRetention: layerBudget.energyRetention,
     cavityGeometry,
-    layerType,
-    spectralLightEnabled,
-    featureFrame,
   });
 }
 
@@ -361,33 +286,24 @@ export function deriveRaymarchComplexityGovernor({
 export function buildRaymarchPerformanceGovernor({
   backboneSlots,
   detailSlots,
-  backboneColorSlots = null,
-  detailColorSlots = null,
   backboneCapacity,
   detailCapacity,
   featureFrame,
   requestedStepBudget,
   requestedRenderScale = 1,
   cavityGeometry = "rectangular",
-  spectralLightEnabled = false,
 }) {
   const backbone = buildBudgetedModeLayer({
     slots: backboneSlots,
-    colorSlots: backboneColorSlots,
     capacity: backboneCapacity,
     layerType: "backbone",
     cavityGeometry,
-    spectralLightEnabled,
-    featureFrame,
   });
   const detail = buildBudgetedModeLayer({
     slots: detailSlots,
-    colorSlots: detailColorSlots,
     capacity: detailCapacity,
     layerType: "detail",
     cavityGeometry,
-    spectralLightEnabled,
-    featureFrame,
   });
 
   return {

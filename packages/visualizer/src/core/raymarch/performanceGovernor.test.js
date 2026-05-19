@@ -67,7 +67,7 @@ describe("performanceGovernor", () => {
     ]);
   });
 
-  it("preserves amplitude-only selection when Spectral Light context is absent", () => {
+  it("ignores color slots when selecting field slots", () => {
     const slots = new Float32Array([
       1, 1, 1, 0.5, 2, 2, 2, 0.4, 3, 3, 3, 0.3, 4, 4, 4, 0.09,
     ]);
@@ -86,18 +86,13 @@ describe("performanceGovernor", () => {
       capacity: 4,
       minSlots: 2,
       energyRetention: 0.72,
-      spectralLightEnabled: false,
-      featureFrame: {
-        transientEnergy: 1,
-        timbreSpread: 0,
-      },
     });
 
     expect(staticMode.selectedIndices).toEqual(baseline.selectedIndices);
     expect(staticMode.uploadedActiveCount).toBe(baseline.uploadedActiveCount);
   });
 
-  it("retains a color-salient detail slot when Spectral Light is active", () => {
+  it("keeps field slot budgeting independent of Spectral Light color support", () => {
     const slots = new Float32Array([
       1, 1, 1, 0.5, 2, 2, 2, 0.4, 3, 3, 3, 0.3, 4, 4, 4, 0.09,
     ]);
@@ -105,57 +100,25 @@ describe("performanceGovernor", () => {
       0.8, 0.1, 0.1, 0.2, 0.7, 0.2, 0.1, 0.2, 0.6, 0.2, 0.1, 0.2, 0, 1, 0, 1,
     ]);
 
-    const amplitudeOnly = analyzeBudgetedModeLayer({
+    const staticBudget = analyzeBudgetedModeLayer({
       slots,
       capacity: 4,
       minSlots: 2,
       energyRetention: 0.72,
     });
-    const spectralLightAware = analyzeBudgetedModeLayer({
-      slots,
-      colorSlots,
-      capacity: 4,
-      minSlots: 2,
-      energyRetention: 0.72,
-      layerType: "detail",
-      spectralLightEnabled: true,
-      featureFrame: {
-        transientEnergy: 0.45,
-        timbreSpread: 0.1,
-        trebleBroadbandEnergy: 0.08,
-      },
-    });
-
-    expect(amplitudeOnly.selectedIndices).toEqual([0, 1, 2]);
-    expect(spectralLightAware.selectedIndices).toContain(3);
-    expect(spectralLightAware.selectedIndices).not.toContain(2);
-    expect(spectralLightAware.retainedEnergyRatio).toBeGreaterThanOrEqual(0.72);
-  });
-
-  it("does not promote Spectral Light-only detail on broadband noisy frames", () => {
-    const slots = new Float32Array([
-      1, 1, 1, 0.5, 2, 2, 2, 0.4, 3, 3, 3, 0.3, 4, 4, 4, 0.09,
-    ]);
-    const colorSlots = new Float32Array([
-      0.8, 0.1, 0.1, 0.2, 0.7, 0.2, 0.1, 0.2, 0.6, 0.2, 0.1, 0.2, 0, 1, 0, 1,
-    ]);
-
-    const noisy = analyzeBudgetedModeLayer({
+    const spectralBudget = analyzeBudgetedModeLayer({
       slots,
       colorSlots,
       capacity: 4,
       minSlots: 2,
       energyRetention: 0.72,
-      layerType: "detail",
-      spectralLightEnabled: true,
-      featureFrame: {
-        transientEnergy: 0.05,
-        timbreSpread: 0.92,
-        trebleBroadbandEnergy: 0.9,
-      },
     });
 
-    expect(noisy.selectedIndices).toEqual([0, 1, 2]);
+    expect(staticBudget.selectedIndices).toEqual([0, 1, 2]);
+    expect(spectralBudget.selectedIndices).toEqual(staticBudget.selectedIndices);
+    expect(spectralBudget.retainedEnergyRatio).toBe(
+      staticBudget.retainedEnergyRatio,
+    );
   });
 
   it("derives field excitation from modal signals", () => {
