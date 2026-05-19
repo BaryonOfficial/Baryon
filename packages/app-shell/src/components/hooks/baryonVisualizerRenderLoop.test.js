@@ -1098,6 +1098,27 @@ test("resolveFeatureFrame passes cavity geometry into prepared inputs", () => {
   expect(preparedArgs.cavityGeometry).toBe("spherical");
 });
 
+test("resolveFeatureFrame forwards Spectral Light as a presentation request", () => {
+  const { args } = createResolveFeatureFrameHarness({
+    spectralLightEnabled: false,
+  });
+  let preparedArgs = null;
+
+  resolveFeatureFrame(args, {
+    prepareFeatureFrame(nextArgs) {
+      preparedArgs = nextArgs;
+      return {
+        currentFrameAtMs: 1000,
+        analysisSessionKey: "file:song-1",
+        analysisInputsSignature: '"sig"',
+        silentFeatureFrame: { fieldState: "idle" },
+      };
+    },
+  });
+
+  expect(preparedArgs.includeSpectralLight).toBe(false);
+});
+
 test("resolveFeatureFrame forwards cavity geometry into the worker transport payload", () => {
   const featureEngine = {
     lastFrame: null,
@@ -1132,6 +1153,43 @@ test("resolveFeatureFrame forwards cavity geometry into the worker transport pay
   });
 
   expect(featureEngine.lastFrame.cavityGeometry).toBe("spherical");
+});
+
+test("resolveFeatureFrame forwards Spectral Light into the worker transport payload", () => {
+  const featureEngine = {
+    lastFrame: null,
+    enqueueTransportFrame(frame) {
+      this.lastFrame = frame;
+    },
+    readLatestSnapshot() {
+      return null;
+    },
+    getStatus() {
+      return null;
+    },
+  };
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+    spectralLightEnabled: false,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: false,
+      playbackSessionId: null,
+    },
+  });
+
+  resolveFeatureFrame(args, {
+    prepareFeatureFrame() {
+      return {
+        currentFrameAtMs: 1000,
+        analysisSessionKey: "file:song-1",
+        analysisInputsSignature: '"sig"',
+        silentFeatureFrame: null,
+      };
+    },
+  });
+
+  expect(featureEngine.lastFrame.includeSpectralLight).toBe(false);
 });
 
 test("resolveFeatureFrame seeds the first live frame locally while worker analysis warms", () => {

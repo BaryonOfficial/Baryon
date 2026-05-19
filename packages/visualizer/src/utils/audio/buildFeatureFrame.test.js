@@ -2404,6 +2404,50 @@ describe("Spectral Light feature frame outputs", () => {
     expect(frame.debug.spectralLightComponents.length).toBeGreaterThan(0);
   });
 
+  it("keeps modal physics invariant when Spectral Light output is disabled", () => {
+    const createFrame = (includeSpectralLight) =>
+      buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          fftMagnitudes: makeFft([
+            [220, 0.95],
+            [440, 0.72],
+            [660, 0.44],
+            [880, 0.28],
+          ]),
+        }),
+        featureState: createAudioFeatureState(),
+        radius: 3,
+        status: makeActiveStatus(),
+        includeSpectralLight,
+      });
+
+    const spectralFrame = createFrame(true);
+    const staticFrame = createFrame(false);
+
+    expect(staticFrame.fieldState).toBe(spectralFrame.fieldState);
+    expect(staticFrame.activeBackboneModeCount).toBe(
+      spectralFrame.activeBackboneModeCount,
+    );
+    expect(staticFrame.activeDetailModeCount).toBe(
+      spectralFrame.activeDetailModeCount,
+    );
+    expect(Array.from(staticFrame.backboneSlots)).toEqual(
+      Array.from(spectralFrame.backboneSlots),
+    );
+    expect(Array.from(staticFrame.detailSlots)).toEqual(
+      Array.from(spectralFrame.detailSlots),
+    );
+    expect(Array.from(staticFrame.modeSlots)).toEqual(
+      Array.from(spectralFrame.modeSlots),
+    );
+    expect(spectralFrame.backboneColorSlots.some((value) => value > 0)).toBe(
+      true,
+    );
+    expect(staticFrame.backboneColorSlots.some((value) => value > 0)).toBe(
+      false,
+    );
+  });
+
   it("freezes Spectral Light color slots alongside frozen modal slots", () => {
     const featureState = createAudioFeatureState();
     const first = buildAudioFeatureFrame({

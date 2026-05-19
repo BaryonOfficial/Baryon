@@ -131,6 +131,62 @@ describe("tickCymatics2dRuntime", () => {
     );
   });
 
+  it("keeps field mode uploads identical between static and Spectral color modes", () => {
+    const createFrame = () => ({
+      fieldState: "active",
+      averageAmplitude: 48,
+      backboneSlots: new Float32Array([3, 4, 6, 0.8, 1, 3, 7, 0.6]),
+      detailSlots: new Float32Array([4, 5, 5, 0.55, 2, 2, 6, 0.4]),
+      backboneColorSlots: new Float32Array([
+        1, 0.1, 0.1, 0.9, 0.8, 0.2, 0.1, 0.7,
+      ]),
+      detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5, 0.7, 0.2, 1, 0.45]),
+      bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+      transientEnergy: 0.7,
+      spectralCentroid: 0.42,
+      spectralFlux: 0.28,
+      structureSignal: 0.74,
+      energySignal: 0.68,
+      changeSignal: 0.61,
+      pulseSignal: 0.32,
+    });
+    const staticRuntimeState = createRuntimeState();
+    staticRuntimeState.uniforms.uSpectralMix.value = 0;
+    const spectralRuntimeState = createRuntimeState();
+    spectralRuntimeState.uniforms.uSpectralMix.value = 0.65;
+
+    tickCymatics2dRuntime(
+      staticRuntimeState,
+      createFrame(),
+      1,
+      1 / 60,
+    );
+    tickCymatics2dRuntime(
+      spectralRuntimeState,
+      createFrame(),
+      1,
+      1 / 60,
+    );
+
+    expect(spectralRuntimeState.uniforms.uActiveModeCount.value).toBe(
+      staticRuntimeState.uniforms.uActiveModeCount.value,
+    );
+    expect(
+      Array.from(spectralRuntimeState.backboneModeBuffer.value.array.slice(0, 8)),
+    ).toEqual(
+      Array.from(staticRuntimeState.backboneModeBuffer.value.array.slice(0, 8)),
+    );
+    expect(
+      Array.from(spectralRuntimeState.detailModeBuffer.value.array.slice(0, 8)),
+    ).toEqual(
+      Array.from(staticRuntimeState.detailModeBuffer.value.array.slice(0, 8)),
+    );
+    expect(
+      spectralRuntimeState.detailColorBuffer.value.needsUpdate,
+    ).toBe(true);
+    expect(staticRuntimeState.detailColorBuffer.value.needsUpdate).toBe(false);
+  });
+
   it("shows the idle overlay and clears visibility in idle state", () => {
     const runtimeState = createRuntimeState();
     tickCymatics2dRuntime(
