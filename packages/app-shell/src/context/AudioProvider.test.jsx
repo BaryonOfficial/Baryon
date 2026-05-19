@@ -66,6 +66,8 @@ describe("AudioProvider source transport gating", () => {
   let originalActEnvironment;
   let originalRequestAnimationFrame;
   let originalCancelAnimationFrame;
+  let originalMediaPause;
+  let originalMediaLoad;
 
   it("audioTransportClock keeps snapshot getters internal", () => {
     expect("getAudioTransportClockSnapshot" in audioTransportClockModule).toBe(
@@ -76,6 +78,10 @@ describe("AudioProvider source transport gating", () => {
   beforeEach(() => {
     originalActEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT;
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    originalMediaPause = window.HTMLMediaElement.prototype.pause;
+    originalMediaLoad = window.HTMLMediaElement.prototype.load;
+    window.HTMLMediaElement.prototype.pause = vi.fn();
+    window.HTMLMediaElement.prototype.load = vi.fn();
   });
 
   afterEach(() => {
@@ -101,6 +107,8 @@ describe("AudioProvider source transport gating", () => {
       window.cancelAnimationFrame = originalCancelAnimationFrame;
       originalCancelAnimationFrame = null;
     }
+    window.HTMLMediaElement.prototype.pause = originalMediaPause;
+    window.HTMLMediaElement.prototype.load = originalMediaLoad;
     if (originalActEnvironment === undefined) {
       delete globalThis.IS_REACT_ACT_ENVIRONMENT;
     } else {
