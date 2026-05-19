@@ -6,7 +6,6 @@ import {
 } from "../visualization/types.js";
 import {
   AUDIO_DEFAULTS,
-  AUDIT_DEFAULTS,
   REACTIVITY_DEFAULTS,
   RENDER_DEFAULTS,
 } from "../defaults.js";
@@ -187,7 +186,6 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "freezeModeSlots",
     "forceWebGLFallbackTest",
     "lowLoadPlaybackDiagnostics",
-    "fieldCacheOverride",
     "injectTestTone",
     "testToneHz",
     "testToneAmplitude",
@@ -588,10 +586,8 @@ export function applyBloomControls(pipelineState, controls) {
 }
 
 export function applyAuditControls(featureState, controls) {
-  const fieldCacheOverride =
-    controls.fieldCacheOverride ?? AUDIT_DEFAULTS.fieldCacheOverride;
   if (!featureState?.audit?.settings) {
-    return { fieldCacheOverride };
+    return {};
   }
 
   Object.assign(featureState.audit.settings, {
@@ -607,7 +603,6 @@ export function applyAuditControls(featureState, controls) {
 
   return {
     ...featureState.audit.settings,
-    fieldCacheOverride,
   };
 }
 

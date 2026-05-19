@@ -122,7 +122,7 @@ describe("raymarch volume material", () => {
     expect(mesh.userData.raymarchPhaseOverlayTexture).toBe(
       phaseOverlayCache.texture,
     );
-    expect(mesh.material.phaseOverlayTexture).toBeNull();
+    expect(mesh.material.phaseOverlayTexture).toBe(phaseOverlayCache.texture);
     expect(uniforms.uModalPhaseOverlayStrength.value).toBe(0);
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
@@ -152,7 +152,7 @@ describe("raymarch volume material", () => {
     expect(mesh.material.steps).toBe(88);
   });
 
-  it("caches direct and field-cache material variants per boundary mode", () => {
+  it("starts cached/off and creates direct variants only on explicit request", () => {
     const fieldCache = createRaymarchFieldCache({ resolution: 8 });
     const spectralLightCache = createRaymarchSpectralLightCache({
       resolution: 8,
@@ -171,23 +171,25 @@ describe("raymarch volume material", () => {
     });
     const materialCache = getRaymarchMaterialCache(mesh);
 
-    expect(materialCache.neumann.direct.direct.rectangular).toBeTruthy();
-    expect(materialCache.neumann.cached).toEqual({});
-    expect(materialCache.dirichlet.direct.direct.rectangular).toBeTruthy();
-    expect(materialCache.dirichlet.cached).toEqual({});
-    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("direct");
+    expect(materialCache.neumann.direct).toEqual({});
+    expect(materialCache.dirichlet.direct).toEqual({});
+    expect(materialCache.neumann.cached.off.rectangular).toBeTruthy();
+    expect(materialCache.dirichlet.cached.off.rectangular).toBeTruthy();
+    expect(materialCache.neumann.cached.cached).toBeUndefined();
+    expect(mesh.material).toBe(materialCache.neumann.cached.off.rectangular);
+    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("cached");
     expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
-      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct,
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     );
     expect(mesh.userData.raymarchCavityGeometry).toBe("rectangular");
 
-    setRaymarchFieldEvaluationMode(mesh, "cached");
     setRaymarchSpectralLightEvaluationMode(
       mesh,
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
     expect(mesh.material).toBe(materialCache.neumann.cached.cached.rectangular);
     expect(materialCache.neumann.cached.cached.rectangular).toBeTruthy();
+    expect(materialCache.neumann.direct).toEqual({});
     expect(mesh.userData.raymarchFieldEvaluationMode).toBe("cached");
 
     setRaymarchBoundaryMode(mesh, "dirichlet");
@@ -195,7 +197,14 @@ describe("raymarch volume material", () => {
       materialCache.dirichlet.cached.cached.rectangular,
     );
     expect(materialCache.dirichlet.cached.cached.rectangular).toBeTruthy();
+    expect(materialCache.dirichlet.direct).toEqual({});
     expect(mesh.userData.raymarchBoundaryMode).toBe("dirichlet");
+
+    setRaymarchFieldEvaluationMode(mesh, "direct");
+    expect(mesh.material).toBe(
+      materialCache.dirichlet.direct.cached.rectangular,
+    );
+    expect(materialCache.dirichlet.direct.cached.rectangular).toBeTruthy();
   });
 
   it("keeps geometry-aware material switching compatible with boundary and cache mode changes", () => {

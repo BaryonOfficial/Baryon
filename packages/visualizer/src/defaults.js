@@ -84,7 +84,6 @@ export const AUDIT_DEFAULTS = Object.freeze({
   freezeModeSlots: false,
   forceWebGLFallbackTest: false,
   lowLoadPlaybackDiagnostics: false,
-  fieldCacheOverride: "cached",
   injectTestTone: false,
   testToneHz: 440,
   testToneAmplitude: 0.5,

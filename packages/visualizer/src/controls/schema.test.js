@@ -72,7 +72,6 @@ const EXPECTED_CONTROL_KEYS = [
   "freezeModeSlots",
   "forceWebGLFallbackTest",
   "lowLoadPlaybackDiagnostics",
-  "fieldCacheOverride",
   "cavityGeometry",
   "injectTestTone",
   "testToneHz",
@@ -172,24 +171,12 @@ describe("control schema", () => {
     expect(outputFillControl?.runtimePath).toBe("program.backgroundColor");
   });
 
-  it("exposes a debug selector for 3d field evaluation mode", () => {
-    const fieldCacheOverrideControl = CONTROL_DEFINITIONS.find(
-      (definition) => definition.key === "fieldCacheOverride",
-    );
-
-    expect(fieldCacheOverrideControl).toMatchObject({
-      label: "3D Field Eval",
-      defaultValue: "cached",
-      targetType: CONTROL_TARGET_TYPES.audit,
-      handler: CONTROL_HANDLERS.audit,
-      runtimePath: "controls.fieldCacheOverride",
-      status: CONTROL_STATUSES.debugOnly,
-      methods: [VISUALIZATION_METHODS.raymarch],
-    });
-    expect(fieldCacheOverrideControl?.binding?.options).toEqual({
-      Direct: "direct",
-      Cached: "cached",
-    });
+  it("does not expose direct field evaluation as a control", () => {
+    expect(
+      CONTROL_DEFINITIONS.some(
+        (definition) => definition.key === "fieldCacheOverride",
+      ),
+    ).toBe(false);
   });
 
   it("exposes cavity geometry as a debug-only requested-state control", () => {

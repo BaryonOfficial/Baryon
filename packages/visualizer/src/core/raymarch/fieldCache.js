@@ -212,7 +212,7 @@ export function createRaymarchFieldCache({
   return createCacheState({
     resolution: normalizedResolution,
     texture,
-    mode: RAYMARCH_FIELD_CACHE_OVERRIDE_MODES.direct,
+    mode: RAYMARCH_FIELD_CACHE_OVERRIDE_MODES.cached,
   });
 }
 
@@ -294,9 +294,78 @@ function createCacheState({ resolution, texture, mode }) {
     activeDescriptor: null,
     rebuildCount: 0,
     lastRebuildReason: "uninitialized",
+    queuedDescriptor: null,
+    queuedRebuildReason: null,
+    queuedRequest: null,
+    pendingDescriptor: null,
     mode,
     computeNodesByKey: Object.create(null),
   };
+}
+
+export function clearQueuedRaymarchCacheRebuild(cache) {
+  if (!cache) {
+    return;
+  }
+
+  cache.queuedDescriptor = null;
+  cache.queuedRebuildReason = null;
+  cache.queuedRequest = null;
+}
+
+function takeQueuedCacheRebuild(cache) {
+  const queued = {
+    descriptor: cache.queuedDescriptor,
+    rebuildReason: cache.queuedRebuildReason,
+    request: cache.queuedRequest,
+  };
+  clearQueuedRaymarchCacheRebuild(cache);
+  return queued;
+}
+
+function markCacheBackendUnavailable(
+  cache,
+  message = "Renderer computeAsync unavailable",
+) {
+  cache.backend = "unavailable";
+  cache.ready = false;
+  cache.rebuildPending = false;
+  cache.pendingDescriptor = null;
+  clearQueuedRaymarchCacheRebuild(cache);
+  cache.lastError = message;
+  cache.lastRebuildReason = "unavailable";
+}
+
+function queueLatestCacheRebuild(
+  cache,
+  descriptor,
+  rebuildReason,
+  request,
+  descriptorsEqual,
+) {
+  if (descriptorsEqual(cache.pendingDescriptor, descriptor)) {
+    clearQueuedRaymarchCacheRebuild(cache);
+  } else {
+    cache.queuedDescriptor = descriptor;
+    cache.queuedRebuildReason = rebuildReason;
+    cache.queuedRequest = request;
+  }
+
+  return {
+    enqueued: false,
+    reason: "pending",
+    descriptor: cache.pendingDescriptor,
+    queuedDescriptor: cache.queuedDescriptor,
+  };
+}
+
+function beginCacheRebuild(cache, descriptor) {
+  const hadReadyCache = Boolean(cache.ready && cache.activeDescriptor);
+  cache.backend = "compute";
+  cache.ready = hadReadyCache;
+  cache.rebuildPending = true;
+  cache.pendingDescriptor = descriptor;
+  cache.lastError = null;
 }
 
 export function buildRaymarchFieldCacheDescriptor({
@@ -1334,19 +1403,61 @@ function getOrCreateRaymarchPhaseOverlayComputeNode(
   return computeNode;
 }
 
+function dispatchQueuedRaymarchFieldCacheRebuild(fieldCache) {
+  const queued = takeQueuedCacheRebuild(fieldCache);
+  if (
+    !queued.descriptor ||
+    !queued.request ||
+    fieldDescriptorsEqual(fieldCache.activeDescriptor, queued.descriptor)
+  ) {
+    return;
+  }
+
+  enqueueRaymarchFieldCacheRebuild(
+    fieldCache,
+    queued.request.renderer,
+    queued.descriptor,
+    queued.rebuildReason ?? "queued",
+    queued.request.options,
+  );
+}
+
+function dispatchQueuedRaymarchSpectralLightCacheRebuild(spectralLightCache) {
+  const queued = takeQueuedCacheRebuild(spectralLightCache);
+  if (
+    !queued.descriptor ||
+    !queued.request ||
+    spectralLightDescriptorsEqual(
+      spectralLightCache.activeDescriptor,
+      queued.descriptor,
+    )
+  ) {
+    return;
+  }
+
+  enqueueRaymarchSpectralLightCacheRebuild(
+    spectralLightCache,
+    queued.request.renderer,
+    queued.descriptor,
+    queued.rebuildReason ?? "queued",
+    queued.request.options,
+  );
+}
+
 export function enqueueRaymarchFieldCacheRebuild(
   fieldCache,
   renderer,
   descriptor,
   rebuildReason,
-  {
+  options,
+) {
+  const {
     backboneModeBuffer,
     detailModeBuffer,
     backboneCapacity,
     detailCapacity,
     uniforms,
-  },
-) {
+  } = options;
   if (!fieldCache) {
     return { enqueued: false, reason: "unavailable" };
   }
@@ -1355,12 +1466,18 @@ export function enqueueRaymarchFieldCacheRebuild(
     return { enqueued: false, reason: "unavailable" };
   }
 
+  if (fieldCache.rebuildPending) {
+    return queueLatestCacheRebuild(
+      fieldCache,
+      descriptor,
+      rebuildReason,
+      { renderer, options },
+      fieldDescriptorsEqual,
+    );
+  }
+
   if (!renderer || typeof renderer.computeAsync !== "function") {
-    fieldCache.backend = "unavailable";
-    fieldCache.ready = false;
-    fieldCache.rebuildPending = false;
-    fieldCache.lastError = "Renderer computeAsync unavailable";
-    fieldCache.lastRebuildReason = "unavailable";
+    markCacheBackendUnavailable(fieldCache);
     return { enqueued: false, reason: "unavailable" };
   }
 
@@ -1377,13 +1494,7 @@ export function enqueueRaymarchFieldCacheRebuild(
     return { enqueued: false, reason: "unavailable" };
   }
 
-  const hadReadyCache = Boolean(
-    fieldCache.ready && fieldCache.activeDescriptor,
-  );
-  fieldCache.backend = "compute";
-  fieldCache.ready = hadReadyCache;
-  fieldCache.rebuildPending = true;
-  fieldCache.lastError = null;
+  beginCacheRebuild(fieldCache, descriptor);
   const submission = Promise.resolve()
     .then(() => renderer.computeAsync(computeNode))
     .then(
@@ -1391,18 +1502,18 @@ export function enqueueRaymarchFieldCacheRebuild(
         fieldCache.activeDescriptor = descriptor;
         fieldCache.ready = true;
         fieldCache.rebuildPending = false;
+        fieldCache.pendingDescriptor = null;
         fieldCache.lastError = null;
         fieldCache.backend = "compute";
         fieldCache.rebuildCount += 1;
         fieldCache.lastRebuildReason = rebuildReason;
+        dispatchQueuedRaymarchFieldCacheRebuild(fieldCache);
       },
       (error) => {
-        fieldCache.backend = "unavailable";
-        fieldCache.ready = false;
-        fieldCache.rebuildPending = false;
-        fieldCache.lastError =
-          error instanceof Error ? error.message : String(error);
-        fieldCache.lastRebuildReason = "unavailable";
+        markCacheBackendUnavailable(
+          fieldCache,
+          error instanceof Error ? error.message : String(error),
+        );
       },
     );
 
@@ -1420,7 +1531,9 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
   renderer,
   descriptor,
   rebuildReason,
-  {
+  options,
+) {
+  const {
     backboneModeBuffer,
     detailModeBuffer,
     backboneColorBuffer,
@@ -1428,8 +1541,7 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
     backboneCapacity,
     detailCapacity,
     uniforms,
-  },
-) {
+  } = options;
   if (!spectralLightCache) {
     return { enqueued: false, reason: "unavailable" };
   }
@@ -1438,12 +1550,18 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
     return { enqueued: false, reason: "unavailable" };
   }
 
+  if (spectralLightCache.rebuildPending) {
+    return queueLatestCacheRebuild(
+      spectralLightCache,
+      descriptor,
+      rebuildReason,
+      { renderer, options },
+      spectralLightDescriptorsEqual,
+    );
+  }
+
   if (!renderer || typeof renderer.computeAsync !== "function") {
-    spectralLightCache.backend = "unavailable";
-    spectralLightCache.ready = false;
-    spectralLightCache.rebuildPending = false;
-    spectralLightCache.lastError = "Renderer computeAsync unavailable";
-    spectralLightCache.lastRebuildReason = "unavailable";
+    markCacheBackendUnavailable(spectralLightCache);
     return { enqueued: false, reason: "unavailable" };
   }
 
@@ -1465,13 +1583,7 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
     return { enqueued: false, reason: "unavailable" };
   }
 
-  const hadReadyCache = Boolean(
-    spectralLightCache.ready && spectralLightCache.activeDescriptor,
-  );
-  spectralLightCache.backend = "compute";
-  spectralLightCache.ready = hadReadyCache;
-  spectralLightCache.rebuildPending = true;
-  spectralLightCache.lastError = null;
+  beginCacheRebuild(spectralLightCache, descriptor);
   const submission = Promise.resolve()
     .then(() => renderer.computeAsync(computeNode))
     .then(
@@ -1479,18 +1591,18 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
         spectralLightCache.activeDescriptor = descriptor;
         spectralLightCache.ready = true;
         spectralLightCache.rebuildPending = false;
+        spectralLightCache.pendingDescriptor = null;
         spectralLightCache.lastError = null;
         spectralLightCache.backend = "compute";
         spectralLightCache.rebuildCount += 1;
         spectralLightCache.lastRebuildReason = rebuildReason;
+        dispatchQueuedRaymarchSpectralLightCacheRebuild(spectralLightCache);
       },
       (error) => {
-        spectralLightCache.backend = "unavailable";
-        spectralLightCache.ready = false;
-        spectralLightCache.rebuildPending = false;
-        spectralLightCache.lastError =
-          error instanceof Error ? error.message : String(error);
-        spectralLightCache.lastRebuildReason = "unavailable";
+        markCacheBackendUnavailable(
+          spectralLightCache,
+          error instanceof Error ? error.message : String(error),
+        );
       },
     );
 
@@ -1601,7 +1713,17 @@ export function shouldRebuildRaymarchFieldCache(fieldCache, descriptor) {
   }
 
   if (fieldCache.rebuildPending) {
-    return { needsRebuild: false, reason: "pending" };
+    const rebuildReason = resolveFieldRebuildReason(
+      fieldCache.queuedDescriptor ??
+        fieldCache.pendingDescriptor ??
+        fieldCache.activeDescriptor,
+      descriptor,
+    );
+
+    return {
+      needsRebuild: Boolean(rebuildReason),
+      reason: rebuildReason ?? "pending",
+    };
   }
 
   const rebuildReason = resolveFieldRebuildReason(
@@ -1632,7 +1754,17 @@ export function shouldRebuildRaymarchSpectralLightCache(
   }
 
   if (spectralLightCache.rebuildPending) {
-    return { needsRebuild: false, reason: "pending" };
+    const rebuildReason = resolveSpectralLightRebuildReason(
+      spectralLightCache.queuedDescriptor ??
+        spectralLightCache.pendingDescriptor ??
+        spectralLightCache.activeDescriptor,
+      descriptor,
+    );
+
+    return {
+      needsRebuild: Boolean(rebuildReason),
+      reason: rebuildReason ?? "pending",
+    };
   }
 
   const rebuildReason = resolveSpectralLightRebuildReason(

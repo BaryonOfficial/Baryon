@@ -215,7 +215,7 @@ test("publishes phase overlay diagnostics from runtime state when audit is disab
   }
 });
 
-test("derives retained high-Q render visibility diagnostics when raymarch audit is disabled", () => {
+test("keeps retained high-Q render diagnostics non-authoritative without audit", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
 
   updateRetainedHighQRenderVisibilityDiagnostics(runtimeDiagnostics, null, {
@@ -223,12 +223,10 @@ test("derives retained high-Q render visibility diagnostics when raymarch audit 
     modalVisibilityRetainedHighQEnergy: 0.19,
   });
 
-  expect(
-    runtimeDiagnostics.render.retainedHighQRidgeVisibleDensityMax,
-  ).toBeGreaterThan(0);
-  expect(
-    runtimeDiagnostics.render.retainedHighQRidgeToRetainedEnergyRatio,
-  ).toBeGreaterThan(0.1);
+  expect(runtimeDiagnostics.render.retainedHighQRidgeVisibleDensityMax).toBe(0);
+  expect(runtimeDiagnostics.render.retainedHighQRidgeToRetainedEnergyRatio).toBe(
+    0,
+  );
   expect(runtimeDiagnostics.render.retainedHighQPhysicalVisibleDensityMax).toBe(
     0,
   );

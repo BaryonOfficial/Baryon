@@ -47,7 +47,7 @@ describe("defaults compatibility surface", () => {
     );
     expect(DEFAULTS.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
     expect(DEFAULTS.echoCancellation).toBe(AUDIO_DEFAULTS.echoCancellation);
-    expect(DEFAULTS.fieldCacheOverride).toBe(AUDIT_DEFAULTS.fieldCacheOverride);
+    expect(DEFAULTS).not.toHaveProperty("fieldCacheOverride");
     expect(DEFAULTS.cavityGeometry).toBe(SIMULATION_DEFAULTS.cavityGeometry);
   });
 

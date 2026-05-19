@@ -735,7 +735,6 @@ describe("control runtime sync", () => {
     controls.freezeModeSlots = true;
     controls.forceWebGLFallbackTest = true;
     controls.lowLoadPlaybackDiagnostics = true;
-    controls.fieldCacheOverride = "cached";
     controls.injectTestTone = true;
     controls.testToneHz = 660;
     controls.testToneAmplitude = 0.75;
@@ -768,7 +767,6 @@ describe("control runtime sync", () => {
     expect(snapshot.enabled).toBe(true);
     expect(snapshot.forceWebGLFallbackTest).toBe(true);
     expect(snapshot.lowLoadPlaybackDiagnostics).toBe(true);
-    expect(snapshot.fieldCacheOverride).toBe("cached");
     expect(snapshot.testToneHz).toBe(660);
     expect(snapshot.testToneAmplitude).toBe(0.75);
     expect(snapshot.logEveryFrames).toBe(12);

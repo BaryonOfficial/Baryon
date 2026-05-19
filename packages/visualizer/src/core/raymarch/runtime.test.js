@@ -27,9 +27,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
   const materialCache = withFieldCache
     ? {
         neumann: {
-          direct: {
-            direct: { rectangular: { steps: 64 } },
-          },
+          direct: {},
           cached: {
             off: { rectangular: { steps: 64 } },
             direct: { rectangular: { steps: 64 } },
@@ -37,9 +35,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
           },
         },
         dirichlet: {
-          direct: {
-            direct: { rectangular: { steps: 64 } },
-          },
+          direct: {},
           cached: {
             off: { rectangular: { steps: 64 } },
             direct: { rectangular: { steps: 64 } },
@@ -168,7 +164,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     volumeMesh: {
       visible: false,
       material: withFieldCache
-        ? materialCache.neumann.direct.direct.rectangular
+        ? materialCache.neumann.cached.off.rectangular
         : {
             steps: 64,
           },
@@ -176,9 +172,9 @@ function createRuntimeState({ withFieldCache = false } = {}) {
         ? {
             raymarchMaterialCache: materialCache,
             raymarchBoundaryMode: "neumann",
-            raymarchFieldEvaluationMode: "direct",
+            raymarchFieldEvaluationMode: "cached",
             raymarchSpectralLightEvaluationMode:
-              RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct,
+              RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
             raymarchCavityGeometry: "rectangular",
           }
         : undefined,
@@ -210,6 +206,19 @@ function createRuntimeState({ withFieldCache = false } = {}) {
 async function flushMicrotasks(count = 3) {
   for (let i = 0; i < count; i += 1) {
     await Promise.resolve();
+  }
+}
+
+function seedRuntimeCacheNodes(runtimeState) {
+  if (runtimeState.fieldCache) {
+    runtimeState.fieldCache.computeNodesByKey["rectangular:neumann"] = {
+      id: "field",
+    };
+  }
+  if (runtimeState.spectralLightCache) {
+    runtimeState.spectralLightCache.computeNodesByKey["rectangular:neumann"] = {
+      id: "spectral",
+    };
   }
 }
 
@@ -1305,6 +1314,294 @@ describe("tickRaymarchRuntime", () => {
     ).toEqual([0, 0, 0, 0]);
     expect(runtimeState.backboneColorBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.detailColorBuffer.value.needsUpdate).toBe(false);
+  });
+
+  it("keeps static color off the Spectral Light cache path", () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    runtimeState.backboneColorBuffer.value.array.set([9, 9, 9, 9]);
+    runtimeState.detailColorBuffer.value.array.set([7, 7, 7, 7]);
+    const renderer = {
+      computeAsync: async () => undefined,
+    };
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        averageAmplitude: 48,
+        backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+        detailSlots: new Float32Array([4, 5, 5, 0.55]),
+        backboneColorSlots: new Float32Array([1, 0.1, 0.1, 0.9]),
+        detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5]),
+        bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+        transientEnergy: 0.7,
+        spectralCentroid: 0.42,
+        spectralFlux: 0.28,
+        structureSignal: 0.74,
+        energySignal: 0.68,
+        changeSignal: 0.61,
+        pulseSignal: 0.32,
+      },
+      1,
+      1 / 60,
+      renderer,
+    );
+
+    expect(runtimeState.spectralLightBuffersUploaded).toBe(false);
+    expect(runtimeState.currentSpectralLightDescriptor).toBeNull();
+    expect(runtimeState.spectralLightCache.active).toBe(false);
+    expect(runtimeState.spectralLightCache.rebuildPending).toBe(false);
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off);
+    expect(runtimeState.debugSnapshot.spectralLightEvaluationMode).toBe(
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
+    );
+    expect(runtimeState.debugSnapshot.spectralLightCacheQueuedDescriptorPending)
+      .toBe(false);
+    expect(runtimeState.backboneColorBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.detailColorBuffer.value.needsUpdate).toBe(false);
+  });
+
+  it("cancels queued Spectral Light rebuilds when color turns static", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0.65;
+    let resolveSpectral;
+    let fieldComputeCalls = 0;
+    let spectralComputeCalls = 0;
+    const renderer = {
+      computeAsync: async (node) => {
+        if (node?.id === "field") {
+          fieldComputeCalls += 1;
+          return undefined;
+        }
+
+        spectralComputeCalls += 1;
+        return new Promise((resolve) => {
+          resolveSpectral = resolve;
+        });
+      },
+    };
+    const makeFrame = (colorWeight) => ({
+      fieldState: "active",
+      averageAmplitude: 48,
+      backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+      detailSlots: new Float32Array([4, 5, 5, 0.55]),
+      backboneColorSlots: new Float32Array([1, 0.1, 0.1, colorWeight]),
+      detailColorSlots: new Float32Array([0.2, 0.5, 1, colorWeight]),
+      bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+      transientEnergy: 0.7,
+      spectralCentroid: 0.42,
+      spectralFlux: 0.28,
+      structureSignal: 0.74,
+      energySignal: 0.68,
+      changeSignal: 0.61,
+      pulseSignal: 0.32,
+    });
+
+    tickRaymarchRuntime(runtimeState, makeFrame(0.5), 1, 1 / 60, renderer);
+    await flushMicrotasks(1);
+    expect(fieldComputeCalls).toBe(1);
+    expect(spectralComputeCalls).toBe(1);
+    expect(runtimeState.spectralLightCache.rebuildPending).toBe(true);
+
+    tickRaymarchRuntime(runtimeState, makeFrame(0.7), 2, 1 / 60, renderer);
+    expect(runtimeState.spectralLightCache.queuedDescriptor).toEqual(
+      runtimeState.currentSpectralLightDescriptor,
+    );
+    expect(
+      runtimeState.debugSnapshot.spectralLightCacheQueuedDescriptorPending,
+    ).toBe(true);
+
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    tickRaymarchRuntime(runtimeState, makeFrame(0.9), 3, 1 / 60, renderer);
+    expect(runtimeState.currentSpectralLightDescriptor).toBeNull();
+    expect(runtimeState.spectralLightCache.active).toBe(false);
+    expect(runtimeState.spectralLightCache.queuedDescriptor).toBeNull();
+    expect(
+      runtimeState.debugSnapshot.spectralLightCacheQueuedDescriptorPending,
+    ).toBe(false);
+
+    resolveSpectral();
+    await flushMicrotasks(5);
+
+    expect(spectralComputeCalls).toBe(1);
+    expect(runtimeState.spectralLightCache.rebuildPending).toBe(false);
+    expect(runtimeState.spectralLightCache.queuedDescriptor).toBeNull();
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off);
+  });
+
+  it("fails closed to cached modes when compute is unavailable", () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    const originalWindow = globalThis.window;
+    globalThis.window = /** @type {any} */ ({
+      __baryonFieldCacheOverride: "cached",
+    });
+
+    try {
+      tickRaymarchRuntime(
+        runtimeState,
+        {
+          fieldState: "active",
+          averageAmplitude: 48,
+          backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+          detailSlots: new Float32Array([4, 5, 5, 0.55]),
+          backboneColorSlots: new Float32Array([1, 0.1, 0.1, 0.9]),
+          detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5]),
+          bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+          transientEnergy: 0.7,
+          spectralCentroid: 0.42,
+          spectralFlux: 0.28,
+          structureSignal: 0.74,
+          energySignal: 0.68,
+          changeSignal: 0.61,
+          pulseSignal: 0.32,
+        },
+        1,
+        1 / 60,
+        null,
+      );
+
+      expect(runtimeState.fieldCache.backend).toBe("unavailable");
+      expect(runtimeState.spectralLightCache.backend).toBe("unavailable");
+      expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
+        "cached",
+      );
+      expect(
+        runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+      ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
+      expect(runtimeState.debugSnapshot.fieldCacheFailedClosed).toBe(true);
+      expect(runtimeState.debugSnapshot.spectralLightCacheFailedClosed).toBe(
+        true,
+      );
+      expect(runtimeState.debugSnapshot.fieldCacheLastError).toBe(
+        "Renderer computeAsync unavailable",
+      );
+      expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("cached");
+      expect(runtimeState.debugSnapshot.spectralLightEvaluationMode).toBe(
+        RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
+      );
+    } finally {
+      globalThis.window = originalWindow;
+    }
+  });
+
+  it("coalesces runtime descriptor changes while a rebuild is pending", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    let resolveFirst;
+    let computeCalls = 0;
+    const renderer = {
+      computeAsync: async () => {
+        computeCalls += 1;
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      },
+    };
+    const makeFrame = (amplitude) => ({
+      fieldState: "active",
+      averageAmplitude: 32,
+      backboneSlots: new Float32Array([3, 4, 6, amplitude]),
+      detailSlots: new Float32Array([4, 5, 5, 0.2]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+      transientEnergy: 0.1,
+      spectralCentroid: 0.2,
+      spectralFlux: 0.1,
+      structureSignal: 0.4,
+      energySignal: 0.3,
+      changeSignal: 0.08,
+      pulseSignal: 0.05,
+    });
+
+    tickRaymarchRuntime(runtimeState, makeFrame(0.5), 1, 1 / 60, renderer);
+    tickRaymarchRuntime(runtimeState, makeFrame(0.55), 2, 1 / 60, renderer);
+    tickRaymarchRuntime(runtimeState, makeFrame(0.6), 3, 1 / 60, renderer);
+    tickRaymarchRuntime(runtimeState, makeFrame(0.65), 4, 1 / 60, renderer);
+
+    const newestDescriptor = runtimeState.currentFieldDescriptor;
+    expect(runtimeState.fieldCache.queuedDescriptor).toEqual(newestDescriptor);
+    expect(runtimeState.debugSnapshot.fieldCacheQueuedDescriptorPending).toBe(
+      true,
+    );
+    await Promise.resolve();
+    expect(computeCalls).toBe(1);
+    resolveFirst();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(runtimeState.fieldCache.pendingDescriptor).toEqual(newestDescriptor);
+    expect(runtimeState.fieldCache.queuedDescriptor).toBeNull();
+    expect(runtimeState.fieldCache.rebuildPending).toBe(true);
+    expect(computeCalls).toBe(2);
+  });
+
+  it("keeps low-amplitude bass rendering on the cached product path", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    const renderer = {
+      computeAsync: async () => undefined,
+    };
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        averageAmplitude: 6,
+        backboneSlots: new Float32Array([1, 1, 2, 0.08]),
+        detailSlots: new Float32Array([2, 1, 3, 0.04]),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array([0.38, 0.08, 0.01, 0]),
+        transientEnergy: 0.02,
+        spectralCentroid: 0.08,
+        spectralFlux: 0.01,
+        structureSignal: 0.18,
+        energySignal: 0.08,
+        changeSignal: 0.02,
+        pulseSignal: 0,
+        bassSalience: 0.38,
+        modeCoherence: 0.44,
+        modalVisibilityEnergy: 0.03,
+        modalObserverVisibilityEnergy: 0.04,
+        lowQBackboneVisibilityEnergy: 0.05,
+        debug: {
+          lowQBackboneVisibilityEnergy: 0.05,
+        },
+      },
+      1,
+      1 / 60,
+      renderer,
+    );
+
+    expect(runtimeState.uniforms.uActiveModeCount.value).toBeGreaterThan(0);
+    expect(runtimeState.uniforms.uTotalSlotAmplitude.value).toBeGreaterThan(0);
+    expect(runtimeState.uniforms.uLowQBackboneVisibilityEnergy.value).toBe(
+      0.05,
+    );
+    expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
+      "cached",
+    );
+    expect(
+      runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off);
+    expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("cached");
+    await flushMicrotasks();
+    expect(runtimeState.fieldCache.activeDescriptor).toEqual(
+      runtimeState.currentFieldDescriptor,
+    );
   });
 
   it("keeps the volume active when only detail slots are populated", () => {

@@ -5,7 +5,9 @@ import {
   createRaymarchPhaseOverlayCache,
   createRaymarchSpectralLightCache,
   createRaymarchFieldCache,
+  enqueueRaymarchFieldCacheRebuild,
   enqueueRaymarchPhaseOverlayRebuild,
+  enqueueRaymarchSpectralLightCacheRebuild,
   evaluateRaymarchFieldCachePoint,
   evaluateRaymarchPhaseOverlayPoint,
   evaluateRaymarchSignedPotentialAtPoint,
@@ -25,6 +27,9 @@ describe("fieldCache", () => {
     expect(fieldCache.texture.image.depth).toBe(8);
     expect(fieldCache.ready).toBe(false);
     expect(fieldCache.backend).toBe("compute");
+    expect(fieldCache.mode).toBe("cached");
+    expect(fieldCache.queuedDescriptor).toBeNull();
+    expect(fieldCache.pendingDescriptor).toBeNull();
   });
 
   it("detects rebuilds only when the uploaded modal field changes", () => {
@@ -71,6 +76,193 @@ describe("fieldCache", () => {
     expect(second.reason).toBe("unchanged");
     expect(third.needsRebuild).toBe(true);
     expect(third.reason).toBe("boundary-mode");
+  });
+
+  it("coalesces field rebuild requests to the newest pending descriptor", async () => {
+    const fieldCache = createRaymarchFieldCache({ resolution: 8 });
+    const baseSlots = new Float32Array([1, 2, 3, 0.5]);
+    const descriptor0 = buildRaymarchFieldCacheDescriptor({
+      backboneSlots: baseSlots,
+      detailSlots: new Float32Array(4),
+      backboneCount: 1,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+    const descriptor1 = { ...descriptor0, radius: 3.1 };
+    const descriptor2 = { ...descriptor0, radius: 3.2 };
+    const descriptor3 = { ...descriptor0, radius: 3.3 };
+    let resolveFirst;
+    let computeCalls = 0;
+    const renderer = {
+      computeAsync: async () => {
+        computeCalls += 1;
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      },
+    };
+    const options = {
+      backboneModeBuffer: { value: { array: new Float32Array(4) } },
+      detailModeBuffer: { value: { array: new Float32Array(4) } },
+      backboneCapacity: 1,
+      detailCapacity: 0,
+      uniforms: {
+        uRadius: { value: 3 },
+        uBackboneModeCount: { value: 1 },
+        uDetailModeCount: { value: 0 },
+      },
+    };
+    fieldCache.computeNodesByKey["rectangular:neumann"] = { id: "field" };
+
+    const first = enqueueRaymarchFieldCacheRebuild(
+      fieldCache,
+      renderer,
+      descriptor0,
+      "initial",
+      options,
+    );
+    enqueueRaymarchFieldCacheRebuild(
+      fieldCache,
+      renderer,
+      descriptor1,
+      "radius",
+      options,
+    );
+    enqueueRaymarchFieldCacheRebuild(
+      fieldCache,
+      renderer,
+      descriptor2,
+      "radius",
+      options,
+    );
+    const pending = enqueueRaymarchFieldCacheRebuild(
+      fieldCache,
+      renderer,
+      descriptor3,
+      "radius",
+      options,
+    );
+
+    expect(first.enqueued).toBe(true);
+    expect(pending.enqueued).toBe(false);
+    expect(pending.reason).toBe("pending");
+    expect(fieldCache.pendingDescriptor).toEqual(descriptor0);
+    expect(fieldCache.queuedDescriptor).toEqual(descriptor3);
+    expect(fieldCache.queuedRebuildReason).toBe("radius");
+
+    await Promise.resolve();
+    expect(computeCalls).toBe(1);
+    resolveFirst();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fieldCache.activeDescriptor).toEqual(descriptor0);
+    expect(fieldCache.pendingDescriptor).toEqual(descriptor3);
+    expect(fieldCache.queuedDescriptor).toBeNull();
+    expect(fieldCache.rebuildPending).toBe(true);
+    expect(computeCalls).toBe(2);
+  });
+
+  it("coalesces Spectral Light rebuild requests to the newest pending descriptor", async () => {
+    const spectralLightCache = createRaymarchSpectralLightCache({
+      resolution: 8,
+    });
+    const baseSlots = new Float32Array([1, 2, 3, 0.5]);
+    const baseColors = new Float32Array([0.1, 0.2, 0.3, 0.4]);
+    const descriptor0 = buildRaymarchSpectralLightCacheDescriptor({
+      backboneSlots: baseSlots,
+      detailSlots: new Float32Array(4),
+      backboneColorSlots: baseColors,
+      detailColorSlots: new Float32Array(4),
+      backboneCount: 1,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+    const descriptor1 = { ...descriptor0, backboneColorHash: 1 };
+    const descriptor2 = { ...descriptor0, backboneColorHash: 2 };
+    const descriptor3 = { ...descriptor0, backboneColorHash: 3 };
+    let resolveFirst;
+    let computeCalls = 0;
+    const renderer = {
+      computeAsync: async () => {
+        computeCalls += 1;
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      },
+    };
+    const options = {
+      backboneModeBuffer: { value: { array: new Float32Array(4) } },
+      detailModeBuffer: { value: { array: new Float32Array(4) } },
+      backboneColorBuffer: { value: { array: new Float32Array(4) } },
+      detailColorBuffer: { value: { array: new Float32Array(4) } },
+      backboneCapacity: 1,
+      detailCapacity: 0,
+      uniforms: {
+        uRadius: { value: 3 },
+        uBackboneModeCount: { value: 1 },
+        uDetailModeCount: { value: 0 },
+      },
+    };
+    spectralLightCache.computeNodesByKey["rectangular:neumann"] = {
+      id: "spectral",
+    };
+
+    const first = enqueueRaymarchSpectralLightCacheRebuild(
+      spectralLightCache,
+      renderer,
+      descriptor0,
+      "initial",
+      options,
+    );
+    enqueueRaymarchSpectralLightCacheRebuild(
+      spectralLightCache,
+      renderer,
+      descriptor1,
+      "color-slots",
+      options,
+    );
+    enqueueRaymarchSpectralLightCacheRebuild(
+      spectralLightCache,
+      renderer,
+      descriptor2,
+      "color-slots",
+      options,
+    );
+    const pending = enqueueRaymarchSpectralLightCacheRebuild(
+      spectralLightCache,
+      renderer,
+      descriptor3,
+      "color-slots",
+      options,
+    );
+
+    expect(first.enqueued).toBe(true);
+    expect(pending.enqueued).toBe(false);
+    expect(pending.reason).toBe("pending");
+    expect(spectralLightCache.pendingDescriptor).toEqual(descriptor0);
+    expect(spectralLightCache.queuedDescriptor).toEqual(descriptor3);
+    expect(spectralLightCache.queuedRebuildReason).toBe("color-slots");
+
+    await Promise.resolve();
+    expect(computeCalls).toBe(1);
+    resolveFirst();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(spectralLightCache.activeDescriptor).toEqual(descriptor0);
+    expect(spectralLightCache.pendingDescriptor).toEqual(descriptor3);
+    expect(spectralLightCache.queuedDescriptor).toBeNull();
+    expect(spectralLightCache.rebuildPending).toBe(true);
+    expect(computeCalls).toBe(2);
   });
 
   it("detects rebuilds when the effective cavity geometry key changes", () => {

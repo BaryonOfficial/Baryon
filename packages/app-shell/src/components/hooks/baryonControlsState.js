@@ -14,7 +14,6 @@ import { DEFAULT_VISUALIZATION_METHOD } from "@baryon/visualizer/visualization/t
 export const SETTINGS_KEY = "baryon:settings";
 export const PRESETS_KEY = "baryon:presets";
 const CONTROLS_PERSIST_DELAY_MS = 500;
-const MODE_GROUP = "Mode";
 const PRESETS_AREA_GROUP = "PresetsArea";
 const PRESETS_AREA_CONTROL_ORDER = Object.freeze([
   "performanceHudEnabled",
@@ -30,66 +29,6 @@ function createOperatorControlKeySet(operatorControlKeys = []) {
   );
 }
 
-function cloneControlDefinition(definition, overrides = {}) {
-  return {
-    ...definition,
-    ...overrides,
-    binding:
-      Object.prototype.hasOwnProperty.call(overrides, "binding") &&
-      overrides.binding !== undefined
-        ? overrides.binding
-        : definition.binding,
-  };
-}
-
-function getControlDefinitionForMethod(key, method) {
-  return (
-    CONTROL_DEFINITIONS.find(
-      (definition) =>
-        definition.key === key && definition.methods.includes(method),
-    ) ?? null
-  );
-}
-
-function createPromotedModeControls(method) {
-  const promotedControls = [];
-  const fieldCacheOverride = getControlDefinitionForMethod(
-    "fieldCacheOverride",
-    method,
-  );
-
-  if (fieldCacheOverride) {
-    promotedControls.push(
-      cloneControlDefinition(fieldCacheOverride, {
-        title:
-          "Cached is faster and usually looks the same. Direct recomputes the field live instead of using the 3D cache, so it costs more.",
-        group: MODE_GROUP,
-        folder: MODE_GROUP,
-      }),
-    );
-  }
-
-  return promotedControls;
-}
-
-function insertModeControlsAfterBoundary(controls, promotedControls) {
-  if (promotedControls.length === 0) {
-    return controls;
-  }
-
-  const boundaryIndex = controls.findIndex(
-    (definition) => definition.key === "boundaryMode",
-  );
-  if (boundaryIndex === -1) {
-    return [...controls, ...promotedControls];
-  }
-
-  return [
-    ...controls.slice(0, boundaryIndex + 1),
-    ...promotedControls,
-    ...controls.slice(boundaryIndex + 1),
-  ];
-}
 
 function createVisibleFolderGroups({
   devtoolsEnabled,
@@ -106,12 +45,7 @@ function createVisibleFolderGroups({
         definition.status !== CONTROL_STATUSES.debugOnly,
     );
 
-    if (title === MODE_GROUP) {
-      controls = insertModeControlsAfterBoundary(
-        controls,
-        createPromotedModeControls(method),
-      );
-    }
+
 
     if (controls.length === 0) {
       return [];

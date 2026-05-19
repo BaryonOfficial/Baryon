@@ -33,19 +33,11 @@ test("builds the advanced controls presentation layout", () => {
   const modeGroup = groupByTitle.get("Mode");
   expect(modeGroup).toBeTruthy();
   expect(
-    modeGroup.controls.map((control) => control.key).slice(0, 4),
-  ).toStrictEqual([
-    "boundaryMode",
-    "fieldCacheOverride",
-    "colorMode",
-    "rotationMode",
-  ]);
+    modeGroup.controls.map((control) => control.key).slice(0, 3),
+  ).toStrictEqual(["boundaryMode", "colorMode", "rotationMode"]);
   expect(
-    modeGroup.controls.find((control) => control.key === "fieldCacheOverride")
-      ?.title,
-  ).toBe(
-    "Cached is faster and usually looks the same. Direct recomputes the field live instead of using the 3D cache, so it costs more.",
-  );
+    modeGroup.controls.some((control) => control.key === "fieldCacheOverride"),
+  ).toBe(false);
   expect(
     !modeGroup.controls.some((control) =>
       ["renderQualityPreset", "customPerformanceTargetFps"].includes(
@@ -62,7 +54,6 @@ test("builds the advanced controls presentation layout", () => {
       "freezeModeSlots",
       "forceWebGLFallbackTest",
       "lowLoadPlaybackDiagnostics",
-      "fieldCacheOverride",
       "cavityGeometry",
       "injectTestTone",
       "testToneHz",

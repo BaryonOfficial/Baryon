@@ -9,12 +9,14 @@ import { isFieldDrivenState } from "../fieldState.js";
 import { resolveRaymarchFieldCacheOverride } from "../../visualization/fieldEvaluation.js";
 import {
   buildRaymarchSpectralLightCacheDescriptor,
+  clearQueuedRaymarchCacheRebuild,
   disposeRaymarchPhaseOverlayCache,
   disposeRaymarchFieldCache,
   disposeRaymarchSpectralLightCache,
   enqueueRaymarchPhaseOverlayRebuild,
   enqueueRaymarchFieldCacheRebuild,
   enqueueRaymarchSpectralLightCacheRebuild,
+  isRaymarchFieldCacheReadyForDescriptor,
   isRaymarchSpectralLightCacheReadyForDescriptor,
   shouldRebuildRaymarchSpectralLightCache,
   shouldRebuildRaymarchFieldCache,
@@ -389,6 +391,18 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const spectralLightCache = runtimeState.spectralLightCache ?? null;
   const phaseOverlayCache = runtimeState.phaseOverlayCache ?? null;
   const fieldCacheOverride = getRaymarchFieldCacheOverride();
+  const fieldDescriptor = runtimeState.currentFieldDescriptor ?? null;
+  const spectralLightDescriptor =
+    runtimeState.currentSpectralLightDescriptor ?? null;
+  const fieldCacheDescriptorFresh = isRaymarchFieldCacheReadyForDescriptor(
+    fieldCache,
+    fieldDescriptor,
+  );
+  const spectralLightCacheDescriptorFresh =
+    isRaymarchSpectralLightCacheReadyForDescriptor(
+      spectralLightCache,
+      spectralLightDescriptor,
+    );
   const renderedBackbone = summarizeRenderedLayer(
     runtimeState.backboneModeBuffer?.value?.array,
     runtimeState.backboneColorBuffer?.value?.array,
@@ -562,7 +576,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     fieldEvaluationMode:
       runtimeState.volumeMesh?.userData?.raymarchFieldEvaluationMode ??
       fieldCache?.mode ??
-      "direct",
+      "cached",
     spectralLightEvaluationMode:
       runtimeState.volumeMesh?.userData?.raymarchSpectralLightEvaluationMode ??
       spectralLightCache?.mode ??
@@ -572,17 +586,26 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
       fieldCache?.resolution ?? RAYMARCH_FIELD_CACHE_RESOLUTION,
     fieldCacheRebuildCount: fieldCache?.rebuildCount ?? 0,
     fieldCacheRebuildReason: fieldCache?.lastRebuildReason ?? "uninitialized",
-    fieldCacheHysteresisState:
-      (fieldCache?.active ?? false) ? "cached" : "direct",
+    fieldCacheHysteresisState: "cached",
     fieldCacheOverride,
+    fieldCacheDescriptorFresh,
+    fieldCacheQueuedDescriptorPending: Boolean(fieldCache?.queuedDescriptor),
     fieldCacheBackend: fieldCache?.backend ?? "compute",
     fieldCacheReady: fieldCache?.ready ?? false,
     fieldCacheRebuildPending: fieldCache?.rebuildPending ?? false,
+    fieldCacheFailedClosed: fieldCache?.backend === "unavailable",
     fieldCacheLastError: fieldCache?.lastError ?? null,
     spectralLightCacheActive: spectralLightCache?.active ?? false,
     spectralLightCacheReady: spectralLightCache?.ready ?? false,
     spectralLightCacheRebuildPending:
       spectralLightCache?.rebuildPending ?? false,
+    spectralLightCacheDescriptorFresh,
+    spectralLightCacheQueuedDescriptorPending: Boolean(
+      spectralLightCache?.queuedDescriptor,
+    ),
+    spectralLightCacheBackend: spectralLightCache?.backend ?? "compute",
+    spectralLightCacheFailedClosed:
+      spectralLightCache?.backend === "unavailable",
     spectralLightCacheRebuildCount: spectralLightCache?.rebuildCount ?? 0,
     spectralLightCacheLastError: spectralLightCache?.lastError ?? null,
     phaseOverlayActive: phaseOverlayCache?.active ?? false,
@@ -851,16 +874,16 @@ function resolveFieldEvaluationMode(
   runtimeState,
   renderer,
   { backboneCapacity, detailCapacity },
-  { requestedMode, cachedRequested, fieldDescriptor },
+  { debugDirectRequested, fieldDescriptor },
 ) {
   const fieldCache = runtimeState.fieldCache;
   if (!fieldCache || !runtimeState.volumeMesh) {
-    return "direct";
+    return debugDirectRequested ? "direct" : "cached";
   }
 
-  fieldCache.active = cachedRequested;
-  fieldCache.mode = requestedMode;
-  if (!cachedRequested) {
+  fieldCache.active = !debugDirectRequested;
+  fieldCache.mode = debugDirectRequested ? "direct" : "cached";
+  if (debugDirectRequested) {
     if (fieldCache.lastRebuildReason === "uninitialized") {
       fieldCache.lastRebuildReason = "inactive";
     }
@@ -888,10 +911,6 @@ function resolveFieldEvaluationMode(
     );
   }
 
-  if (fieldCache.backend === "unavailable") {
-    return "direct";
-  }
-
   return "cached";
 }
 
@@ -901,32 +920,35 @@ function resolveSpectralLightEvaluationMode(
   { backboneCapacity, detailCapacity },
   {
     spectralLightEnabled,
-    fieldEvaluationMode,
     spectralLightDescriptor,
-    cachedRequested,
+    debugDirectRequested,
   },
 ) {
   const spectralLightCache = runtimeState.spectralLightCache;
   if (!spectralLightCache) {
-    return spectralLightEnabled
+    if (!spectralLightEnabled) {
+      return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
+    }
+    return debugDirectRequested
       ? RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct
-      : RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
+      : RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
   }
 
-  const spectralLightCachedRequested =
-    cachedRequested && spectralLightCache.backend !== "unavailable";
-  spectralLightCache.active =
-    spectralLightCachedRequested && spectralLightEnabled;
-
   if (!spectralLightEnabled) {
+    spectralLightCache.active = false;
+    spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
+    clearQueuedRaymarchCacheRebuild(spectralLightCache);
     return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
   }
 
-  if (!spectralLightCachedRequested) {
+  if (debugDirectRequested) {
+    spectralLightCache.active = false;
     spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
+    clearQueuedRaymarchCacheRebuild(spectralLightCache);
     return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
   }
 
+  spectralLightCache.active = true;
   spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
 
   const spectralLightUploadReady =
@@ -954,22 +976,6 @@ function resolveSpectralLightEvaluationMode(
         },
       );
     }
-  }
-
-  if (fieldEvaluationMode !== "cached") {
-    return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
-  }
-
-  if (
-    spectralLightCache.backend !== "unavailable" &&
-    spectralLightDescriptor &&
-    isRaymarchSpectralLightCacheReadyForDescriptor(
-      spectralLightCache,
-      spectralLightDescriptor,
-    )
-  ) {
-    spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
-    return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
   }
 
   return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
@@ -1048,21 +1054,18 @@ function updateRaymarchEvaluationModes(
   capacities,
   { spectralLightEnabled, fieldDescriptor, spectralLightDescriptor },
 ) {
-  if (!runtimeState.fieldCache || !runtimeState.volumeMesh) {
+  if (!runtimeState.volumeMesh) {
     return;
   }
 
   const requestedMode = getRaymarchFieldCacheOverride();
-  const cachedRequested =
-    requestedMode === "cached" &&
-    runtimeState.fieldCache.backend !== "unavailable";
+  const debugDirectRequested = requestedMode === "direct";
   const fieldEvaluationMode = resolveFieldEvaluationMode(
     runtimeState,
     renderer,
     capacities,
     {
-      requestedMode,
-      cachedRequested,
+      debugDirectRequested,
       fieldDescriptor,
     },
   );
@@ -1074,9 +1077,8 @@ function updateRaymarchEvaluationModes(
     capacities,
     {
       spectralLightEnabled,
-      fieldEvaluationMode,
       spectralLightDescriptor,
-      cachedRequested,
+      debugDirectRequested,
     },
   );
   setRaymarchSpectralLightEvaluationMode(
@@ -1284,6 +1286,8 @@ export function tickRaymarchRuntime(
         radius: runtimeState.uniforms.uRadius?.value ?? 1,
       })
     : null;
+  runtimeState.currentFieldDescriptor = fieldDescriptor;
+  runtimeState.currentSpectralLightDescriptor = spectralLightDescriptor;
   runtimeState.spectralLightBuffersUploaded = spectralLightEnabled;
   setRaymarchCavityGeometry(
     runtimeState.volumeMesh,
@@ -1313,7 +1317,7 @@ export function tickRaymarchRuntime(
       fieldDescriptor,
       fieldEvaluationMode:
         runtimeState.volumeMesh?.userData?.raymarchFieldEvaluationMode ??
-        "direct",
+        "cached",
       featureFrame,
       timeMs: time * 1000,
     },

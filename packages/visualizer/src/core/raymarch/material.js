@@ -161,18 +161,18 @@ export const RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES = Object.freeze({
 });
 
 function normalizeFieldEvaluationMode(fieldEvaluationMode) {
-  return fieldEvaluationMode === "cached" ? "cached" : "direct";
+  return fieldEvaluationMode === "direct" ? "direct" : "cached";
 }
 
 function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
   switch (spectralLightEvaluationMode) {
-    case RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off:
-      return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
+    case RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct:
+      return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
     case RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached:
       return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
-    case RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct:
+    case RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off:
     default:
-      return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
+      return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
   }
 }
 
@@ -436,7 +436,7 @@ function createScatteringNode({
   fieldCacheTexture = null,
   spectralLightCacheTexture = null,
   phaseOverlayTexture = null,
-  spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct,
+  spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
 }) {
   const {
     uRadius,
@@ -1511,46 +1511,49 @@ export function createRaymarchVolumeMesh({
     return material;
   };
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
+  const initialFieldEvaluationMode = "cached";
+  const initialSpectralLightEvaluationMode =
+    RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
   const materialCache = {
     [BOUNDARY_MODES.dirichlet]: {
-      direct: {
-        [RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct]: {
+      direct: {},
+      cached: {
+        [initialSpectralLightEvaluationMode]: {
           [normalizedCavityGeometry]: createMaterialForBoundaryMode(
             BOUNDARY_MODES.dirichlet,
-            "direct",
-            RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct,
+            initialFieldEvaluationMode,
+            initialSpectralLightEvaluationMode,
             normalizedCavityGeometry,
           ),
         },
       },
-      cached: {},
     },
     [BOUNDARY_MODES.neumann]: {
-      direct: {
-        [RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct]: {
+      direct: {},
+      cached: {
+        [initialSpectralLightEvaluationMode]: {
           [normalizedCavityGeometry]: createMaterialForBoundaryMode(
             BOUNDARY_MODES.neumann,
-            "direct",
-            RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct,
+            initialFieldEvaluationMode,
+            initialSpectralLightEvaluationMode,
             normalizedCavityGeometry,
           ),
         },
       },
-      cached: {},
     },
   };
   const mesh = new THREE.Mesh(
     geometry,
-    materialCache[BOUNDARY_MODES.neumann].direct.direct[
-      normalizedCavityGeometry
-    ],
+    materialCache[BOUNDARY_MODES.neumann].cached[
+      initialSpectralLightEvaluationMode
+    ][normalizedCavityGeometry],
   );
   mesh.userData.raymarchMaterialCache = materialCache;
   mesh.userData.raymarchCreateMaterialVariant = createMaterialForBoundaryMode;
   mesh.userData.raymarchBoundaryMode = BOUNDARY_MODES.neumann;
-  mesh.userData.raymarchFieldEvaluationMode = "direct";
+  mesh.userData.raymarchFieldEvaluationMode = initialFieldEvaluationMode;
   mesh.userData.raymarchSpectralLightEvaluationMode =
-    RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
+    initialSpectralLightEvaluationMode;
   mesh.userData.raymarchPhaseOverlayTexture = phaseOverlayTexture;
   mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
   mesh.frustumCulled = false;

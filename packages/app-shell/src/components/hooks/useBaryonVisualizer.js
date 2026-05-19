@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { resolveRaymarchFieldCacheOverride } from "@baryon/visualizer";
 import {
   advanceRenderOutputCameraCut,
   getRenderQualityProfileKey,
@@ -60,9 +59,6 @@ import { useVisualizationRuntimeLifecycle } from "./useVisualizationRuntimeLifec
 import { getSourceAuthoritativeClock } from "./externalFrameClock.js";
 import { createRenderCommandQueue } from "./renderCommandQueue.js";
 
-function resolveFieldCacheOverrideControls(input, fallbackControls) {
-  return input?.detail ?? input ?? fallbackControls;
-}
 
 function clearCachedControlsSnapshot(cachedControlSnapshotsRef) {
   cachedControlSnapshotsRef.current.controlsSnapshot = null;
@@ -335,37 +331,6 @@ export function useBaryonVisualizer({
     };
   }, []);
 
-  useEffect(() => {
-    if (!enableControlEventSync) {
-      return undefined;
-    }
-
-    if (typeof window === "undefined") {
-      return undefined;
-    }
-
-    const syncFieldCacheOverride = (input = controlsRef.current) => {
-      const nextControls = resolveFieldCacheOverrideControls(
-        input,
-        controlsRef.current,
-      );
-      window.__baryonFieldCacheOverride = resolveRaymarchFieldCacheOverride(
-        nextControls?.fieldCacheOverride,
-      );
-    };
-
-    syncFieldCacheOverride();
-    window.addEventListener("__baryon-controls-change", syncFieldCacheOverride);
-    return () => {
-      window.removeEventListener(
-        "__baryon-controls-change",
-        syncFieldCacheOverride,
-      );
-      if (DEVTOOLS_ENABLED) {
-        delete window.__baryonFieldCacheOverride;
-      }
-    };
-  }, [controlsRef, enableControlEventSync]);
 
   useEffect(() => {
     if (!enableControlEventSync) {

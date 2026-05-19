@@ -870,27 +870,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
-      key: "fieldCacheOverride",
-      label: "3D Field Eval",
-      title:
-        "Cached is faster and usually looks the same. Direct recomputes the field live instead of using the 3D cache, so it costs more.",
-      defaultValue: AUDIT_DEFAULTS.fieldCacheOverride,
-      methods: methodsFor("raymarchOnly"),
-      binding: {
-        options: {
-          Direct: "direct",
-          Cached: "cached",
-        },
-      },
-      targetType: CONTROL_TARGET_TYPES.audit,
-      handler: CONTROL_HANDLERS.audit,
-      runtimePath: "controls.fieldCacheOverride",
-      status: CONTROL_STATUSES.debugOnly,
-    },
-    CONTROL_GROUPS.diagnostics,
-  ),
-  withControlGroup(
-    {
       key: "cavityGeometry",
       label: "Cavity Geometry",
       title:
