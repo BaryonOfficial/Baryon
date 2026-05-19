@@ -8,7 +8,7 @@
     "url": "git+https://github.com/BaryonOfficial/Baryon.git"
   },
   "engines": {
-    "node": ">=24.14.1 <25"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "turbo dev --filter=@baryon/web",
@@ -45,11 +45,17 @@
     "test:desktop": "pnpm --filter @baryon/desktop test",
     "test:desktop:platform": "pnpm --filter @baryon/desktop test:platform",
     "test:desktop:native:verify": "pnpm --filter @baryon/desktop test:native:verify",
+    "test:lumen": "pnpm --filter @baryon/lumen test",
+    "test:marketing": "pnpm --filter @baryon/marketing test",
+    "test:scripts": "node --test scripts/*.test.mjs",
     "test:visualizer": "pnpm --filter @baryon/visualizer test",
+    "test:web:unit": "pnpm --filter @baryon/web test:unit",
+    "test:deterministic": "pnpm test:scripts && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop && pnpm test:desktop:platform && pnpm test:web:unit && pnpm test:marketing && pnpm test:lumen",
     "acceptance:web": "pnpm --filter @baryon/web acceptance:prod",
     "acceptance:web:dev": "pnpm --filter @baryon/web acceptance:dev",
     "acceptance:desktop": "pnpm --filter @baryon/desktop acceptance:shell",
     "acceptance:desktop:native": "pnpm --filter @baryon/desktop acceptance:native-output",
+    "acceptance:marketing": "pnpm --filter @baryon/marketing acceptance",
     "lint": "turbo lint",
     "lint:all": "pnpm -r --filter './apps/*' --filter './packages/*' --if-present lint",
     "lint:deps": "depcruise --config .dependency-cruiser.cjs apps packages",
@@ -61,10 +67,10 @@
     "audit:dead:deps": "knip --dependencies",
     "audit:dead:exports": "node scripts/audit-dead-exports.mjs",
     "typecheck": "pnpm --reporter append-only -r --filter './apps/*' --filter './packages/*' --if-present typecheck",
-    "verify": "pnpm version:check && pnpm docs:check && pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm build:marketing && pnpm test:visualizer && pnpm test:app-shell && pnpm test:desktop && pnpm test:desktop:platform",
+    "verify": "pnpm version:check && pnpm docs:check && pnpm deps:versions && pnpm lint:deps && pnpm lint:all && pnpm typecheck && pnpm build:marketing && pnpm test:deterministic",
     "postverify": "node scripts/record-verify-success.mjs",
     "verify:cache:check": "node scripts/check-verify-cache.mjs",
-    "verify:acceptance": "pnpm verify && pnpm test:desktop:native:verify",
+    "verify:acceptance": "pnpm verify && pnpm acceptance:web && pnpm acceptance:marketing && pnpm acceptance:desktop && pnpm test:desktop:native:verify",
     "verify:full": "pnpm verify:acceptance && turbo build"
   },
   "lint-staged": {
