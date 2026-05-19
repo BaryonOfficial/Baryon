@@ -1316,6 +1316,62 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.detailColorBuffer.value.needsUpdate).toBe(false);
   });
 
+  it("keeps field mode uploads identical between static and Spectral color modes", () => {
+    const createFrame = () => ({
+      fieldState: "active",
+      averageAmplitude: 48,
+      backboneSlots: new Float32Array([1, 1, 1, 0.3]),
+      detailSlots: new Float32Array([
+        1, 1, 1, 0.5, 2, 2, 2, 0.4, 3, 3, 3, 0.3, 4, 4, 4, 0.09,
+      ]),
+      backboneColorSlots: new Float32Array([1, 0.1, 0.1, 0.2]),
+      detailColorSlots: new Float32Array([
+        0.8, 0.1, 0.1, 0.2, 0.7, 0.2, 0.1, 0.2, 0.6, 0.2, 0.1, 0.2, 0, 1, 0,
+        1,
+      ]),
+      bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+      transientEnergy: 0.45,
+      spectralCentroid: 0.42,
+      spectralFlux: 0.28,
+      structureSignal: 0.74,
+      energySignal: 0.68,
+      changeSignal: 0.61,
+      pulseSignal: 0.32,
+    });
+    const staticRuntimeState = createRuntimeState();
+    staticRuntimeState.uniforms.uSpectralMix.value = 0;
+    const spectralRuntimeState = createRuntimeState();
+    spectralRuntimeState.uniforms.uSpectralMix.value = 0.65;
+
+    tickRaymarchRuntime(
+      staticRuntimeState,
+      createFrame(),
+      1,
+      1 / 60,
+    );
+    tickRaymarchRuntime(
+      spectralRuntimeState,
+      createFrame(),
+      1,
+      1 / 60,
+    );
+
+    expect(spectralRuntimeState.uniforms.uDetailModeCount.value).toBe(
+      staticRuntimeState.uniforms.uDetailModeCount.value,
+    );
+    expect(
+      Array.from(spectralRuntimeState.detailModeBuffer.value.array.slice(0, 12)),
+    ).toEqual(
+      Array.from(staticRuntimeState.detailModeBuffer.value.array.slice(0, 12)),
+    );
+    expect(
+      spectralRuntimeState.performanceGovernor.detail.selectedIndices,
+    ).toEqual(staticRuntimeState.performanceGovernor.detail.selectedIndices);
+    expect(
+      spectralRuntimeState.detailColorBuffer.value.needsUpdate,
+    ).toBe(true);
+  });
+
   it("keeps static color off the Spectral Light cache path", () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
