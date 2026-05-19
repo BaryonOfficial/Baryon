@@ -392,6 +392,8 @@ const REMOVED_MODAL_OBSERVER_AUTHORITY_FIELDS = [
   "coherentDetailTailSeeded",
   "coherentDetailTailModes",
   "detailTailPresence",
+  "observedHardSilenceGraceActive",
+  "observedHardSilenceAgeMs",
 ];
 
 const REMOVED_MODAL_OBSERVER_ENTRY_FIELDS = [
@@ -2144,7 +2146,7 @@ describe("modal excitation structural state", () => {
     );
   });
 
-  it("clears high-Q detail state on true hard silence after a loud ring", () => {
+  it("decays high-Q detail state on true hard silence after a loud ring", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
       audioInputMode: "live",
@@ -2183,6 +2185,11 @@ describe("modal excitation structural state", () => {
     }
 
     expect(structural.structuralMetrics.highQDetailModeCount).toBeGreaterThan(0);
+    const preSilenceDetailAmplitude = sumAmplitudes(
+      structural.detailSlotsSource,
+    );
+    const preSilenceHighQEnergy =
+      structural.structuralMetrics.highQDetailEnergy;
 
     for (let frame = 120; frame < 172; frame += 1) {
       const inputs = createPreparedInputs({
@@ -2203,13 +2210,145 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(structural.structuralMetrics.highQDetailModeCount).toBe(0);
-    expect(structural.structuralMetrics.highQDetailEnergy).toBe(0);
-    expect(structural.structuralMetrics.highQRingSupport).toBe(0);
-    expect(structural.structuralMetrics.modalPhaseAuthority).toBe(0);
-    expect(structural.structuralMetrics.highQPhaseAuthority).toBe(0);
-    expect(state.observedModes?.size ?? 0).toBe(0);
+    expect(structural.structuralMetrics.modalResponseInputEnergy).toBe(0);
+    expect(structural.structuralMetrics.highQDetailModeCount).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.highQDetailEnergy).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.highQDetailEnergy).toBeLessThan(
+      preSilenceHighQEnergy,
+    );
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0);
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeLessThan(
+      preSilenceDetailAmplitude,
+    );
+    expect(sumAmplitudes(structural.signalDetailSlotsSource)).toBe(0);
     expectLegacyModalObserverAuthoritiesRemoved(state);
+  });
+
+  it("keeps zero-input high-Q ring-out through modal response without hard-silence grace", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "live",
+      analysisSource: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "live",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    let structural = null;
+
+    for (let frame = 0; frame < 18; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft(LOUD_BOWL_TONE_PARTIALS),
+        timeData: makeMixedTimeData({
+          partials: LOUD_BOWL_TONE_PARTIALS,
+          amplitudeScale: 0.32,
+        }),
+        avgAmplitude: 18,
+        rms: 0.08,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    const silentInputs = createPreparedInputs({
+      frameTimeMs: 18 * 33,
+      fftMagnitudes: new Float32Array(BIN_COUNT),
+      timeData: new Float32Array(FFT_SIZE),
+      avgAmplitude: 0,
+      rms: 0,
+      status,
+    });
+    silentInputs.modalExcitationState = state;
+    const fastSignal = updateAudioFeatureFastSignalState(silentInputs);
+    structural = buildModalExcitationStructuralState({
+      preparedInputs: silentInputs,
+      fastSignalState: fastSignal,
+      existingState: state,
+      performanceNow: () => 18,
+    });
+
+    expect(structural.structuralMetrics.modalResponseInputEnergy).toBe(0);
+    expect(structural.structuralMetrics.modalResponseDetailEnergy).toBeGreaterThan(
+      0,
+    );
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0);
+    expectLegacyModalObserverAuthoritiesRemoved(structural.structuralMetrics);
+  });
+
+  it("clears signed phase authority on zero-input hard silence while retaining modal ring-out", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "live",
+      analysisSource: "live",
+      isPlaying: false,
+      isLiveInputActive: true,
+      liveInputDeviceKind: "live",
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    let structural = null;
+
+    for (let frame = 0; frame < 18; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: makeFft(LOUD_BOWL_TONE_PARTIALS),
+        timeData: makeMixedTimeData({
+          partials: LOUD_BOWL_TONE_PARTIALS,
+          amplitudeScale: 0.32,
+        }),
+        avgAmplitude: 18,
+        rms: 0.08,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(structural.structuralMetrics.modalPhaseAuthority).toBeGreaterThan(0);
+    expect(
+      countAuthoritativePhaseSlots(structural.detailPhaseSlotsSource),
+    ).toBeGreaterThan(0);
+
+    const silentInputs = createPreparedInputs({
+      frameTimeMs: 18 * 33,
+      fftMagnitudes: new Float32Array(BIN_COUNT),
+      timeData: new Float32Array(FFT_SIZE),
+      avgAmplitude: 0,
+      rms: 0,
+      status,
+    });
+    silentInputs.modalExcitationState = state;
+    const fastSignal = updateAudioFeatureFastSignalState(silentInputs);
+    structural = buildModalExcitationStructuralState({
+      preparedInputs: silentInputs,
+      fastSignalState: fastSignal,
+      existingState: state,
+      performanceNow: () => 18,
+    });
+
+    expect(structural.structuralMetrics.modalResponseInputEnergy).toBe(0);
+    expect(structural.structuralMetrics.modalResponseDetailEnergy).toBeGreaterThan(
+      0,
+    );
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.modalPhaseAuthority).toBe(0);
+    expect(structural.structuralMetrics.modalPhaseOverlayModeCount).toBe(0);
+    expect(countAuthoritativePhaseSlots(structural.detailPhaseSlotsSource)).toBe(
+      0,
+    );
   });
 
   it("matures bowl-like detail structure during the first sustained ring", () => {
@@ -2477,8 +2616,11 @@ describe("modal excitation structural state", () => {
       });
     }
 
+    expect(structural.structuralMetrics.modalResponseInputEnergy).toBe(0);
+    expect(sumAmplitudes(structural.signalDetailSlotsSource)).toBe(0);
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0);
     expect(sumAmplitudes(structural.detailSlotsSource)).toBeLessThan(
-      Math.max(preSilenceDetailAmplitude * 0.08, 0.001),
+      preSilenceDetailAmplitude,
     );
   });
 
@@ -2735,9 +2877,6 @@ describe("modal excitation structural state", () => {
           frame,
           highQDetailEnergy: structural.structuralMetrics.highQDetailEnergy,
           highQRingSupport: structural.structuralMetrics.highQRingSupport,
-          graceActive:
-            structural.structuralMetrics.observedHardSilenceGraceActive,
-          graceAgeMs: structural.structuralMetrics.observedHardSilenceAgeMs,
           fieldActiveModeCount: structural.activeModeCount,
         });
       }

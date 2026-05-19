@@ -344,14 +344,19 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const pulseSignal = featureFrame?.pulseSignal ?? 0;
   const totalSlotAmplitude = sumLayeredAmplitude(featureFrame);
   const modalCoefficientEnergy = clamp01(totalSlotAmplitude);
+  const fieldDriven = isFieldDrivenState(fieldState);
   const modalResponseBackboneEnergy =
-    featureFrame?.modalResponseBackboneEnergy ??
-    featureFrame?.debug?.modalResponseBackboneEnergy ??
-    0;
+    fieldDriven
+      ? (featureFrame?.modalResponseBackboneEnergy ??
+        featureFrame?.debug?.modalResponseBackboneEnergy ??
+        0)
+      : 0;
   const modalResponseDetailEnergy =
-    featureFrame?.modalResponseDetailEnergy ??
-    featureFrame?.debug?.modalResponseDetailEnergy ??
-    0;
+    fieldDriven
+      ? (featureFrame?.modalResponseDetailEnergy ??
+        featureFrame?.debug?.modalResponseDetailEnergy ??
+        0)
+      : 0;
   const modalPhaseAuthority = featureFrame?.modalPhaseAuthority ?? 0;
   const observationHardSilence = Boolean(
     featureFrame?.liveInputHardSilenceActive ??
@@ -369,7 +374,6 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     modalCoefficientEnergy,
     modalResponseBackboneEnergy,
     modalResponseDetailEnergy,
-    hardSilence: observationHardSilence,
     parameters: observationParameters,
   });
   const avgDensity = Math.min(
@@ -706,12 +710,26 @@ function updateReactiveResponse(
     0,
     rt?.reactivity ?? REACTIVITY_DEFAULTS.reactivity,
   );
+  const zeroInputHardSilence =
+    featureFrame?.liveInputHardSilenceActive === true ||
+    featureFrame?.debug?.liveInputHardSilenceActive === true;
+  const presentationSignalScale = zeroInputHardSilence ? 0 : 1;
   const rhythmicDensity = clamp01(featureFrame?.rhythmicDensity ?? 0);
-  const gatedStructureSignal = clamp01(structureSignal * reactivity);
-  const gatedEnergySignal = clamp01(energySignal * reactivity);
-  const gatedChangeSignal = clamp01(changeSignal * reactivity);
-  const gatedPulseSignal = clamp01(pulseSignal * reactivity);
-  const gatedModalResponseEnergy = clamp01(modalResponseEnergy * reactivity);
+  const gatedStructureSignal = clamp01(
+    structureSignal * reactivity * presentationSignalScale,
+  );
+  const gatedEnergySignal = clamp01(
+    energySignal * reactivity * presentationSignalScale,
+  );
+  const gatedChangeSignal = clamp01(
+    changeSignal * reactivity * presentationSignalScale,
+  );
+  const gatedPulseSignal = clamp01(
+    pulseSignal * reactivity * presentationSignalScale,
+  );
+  const gatedModalResponseEnergy = clamp01(
+    modalResponseEnergy * reactivity * presentationSignalScale,
+  );
   const decayReleaseMask = deriveDecayReleaseMask({
     fieldState,
     gatedStructureSignal,
@@ -766,7 +784,7 @@ function updateReactiveResponse(
       accentEnvelope * 0.22 +
       gatedStructureSignal * 0.2 +
       gatedModalResponseEnergy * 0.08 +
-      contourSignal * 0.14 * reactivity,
+      contourSignal * 0.14 * reactivity * presentationSignalScale,
   );
 
   runtimeState.responseEnvelope = responseEnvelope;

@@ -188,9 +188,9 @@ describe("observation transfer", () => {
     );
   });
 
-  it("zeros observation support for hard silence and absent modal energy", () => {
+  it("observes retained modal energy instead of hard-silence flags", () => {
     const hardSilent = deriveObservationTransfer({
-      density: 0.42,
+      density: 0.04,
       fieldGradientMagnitude: 0.9,
       modalStructureAnchor: 0.9,
       ridgeAnchor: 0.9,
@@ -205,10 +205,12 @@ describe("observation transfer", () => {
       ridgeAnchor: 0.9,
     });
 
-    expect(hardSilent.observationEnergy).toBe(0);
-    expect(hardSilent.observationSupport).toBe(0);
-    expect(hardSilent.observedDensityFloor).toBe(0);
-    expect(hardSilent.visibleDensity).toBe(hardSilent.physicalVisibleDensity);
+    expect(hardSilent.observationEnergy).toBeCloseTo(0.3);
+    expect(hardSilent.observationSupport).toBeGreaterThan(0);
+    expect(hardSilent.observedDensityFloor).toBeGreaterThan(0);
+    expect(hardSilent.visibleDensity).toBeGreaterThan(
+      hardSilent.physicalVisibleDensity,
+    );
     expect(noEnergy.observationEnergy).toBe(0);
     expect(noEnergy.visibleDensity).toBe(0);
   });

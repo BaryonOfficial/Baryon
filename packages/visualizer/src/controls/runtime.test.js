@@ -996,6 +996,41 @@ describe("control runtime sync", () => {
     expect(Math.abs(snapshot.angularVelocity)).toBeLessThan(0.2);
   });
 
+  it("does not keep audio rotation driven during hard-silence decay", () => {
+    const controls = createControlState();
+    controls.rotationMode = "audio";
+    controls.motionAmount = 1;
+    const runtimeState = createRaymarchHarness();
+    runtimeState.responseEnvelope = 0.58;
+    runtimeState.points.rotation.y = 0.9;
+    runtimeState.sceneMotion.yaw = 0.9;
+    runtimeState.sceneMotion.angularVelocity = -0.72;
+
+    const snapshot = applySceneControls(
+      runtimeState,
+      controls,
+      1 / 60,
+      {
+        fieldState: "decay",
+        liveInputHardSilenceActive: true,
+        structureSignal: 0.42,
+        energySignal: 0.18,
+        changeSignal: 0.02,
+        pulseSignal: 0,
+      },
+      {
+        isPlaying: false,
+        isLiveInputActive: true,
+      },
+    );
+
+    expect(snapshot.rotationMode).toBe("audio");
+    expect(snapshot.targetAngularVelocity).toBe(0);
+    expect(snapshot.angularVelocity).toBe(0);
+    expect(runtimeState.points.rotation.y).toBe(0.9);
+    expect(snapshot.rotationY).toBe(0.9);
+  });
+
   it("keeps the idle logo synced to manual rotation speed in audio mode", () => {
     const controls = createControlState();
     controls.rotationMode = "audio";

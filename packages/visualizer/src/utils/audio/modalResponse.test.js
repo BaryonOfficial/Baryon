@@ -156,6 +156,41 @@ describe("modal response model", () => {
     );
   });
 
+  it("treats hard silence as zero forcing while retaining modal decay", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const previousEnergies = new Map([["1:1:1", 0.5]]);
+
+    const response = updateModalResponseFrame({
+      modes: [
+        {
+          modeKey: "1:1:1",
+          u: 1,
+          v: 1,
+          w: 1,
+          naturalFrequencyHz: 110,
+          layer: "backbone",
+          qProfile: "low-q",
+        },
+      ],
+      fftMagnitudes: makeFft([[110, 1]]),
+      sampleRate: SAMPLE_RATE,
+      deltaMs: 70,
+      inputRms: 0.25,
+      previousEnergies,
+      hardSilence: true,
+    });
+
+    const retained = response.entries.find(
+      (entry) => entry.modeKey === "1:1:1",
+    );
+    expect(response.modalResponseInputEnergy).toBe(0);
+    expect(retained?.modalResponseDrive).toBe(0);
+    expect(retained?.modalResponseEnergy).toBeCloseTo(
+      0.5 * Math.exp(-70 / 140),
+      5,
+    );
+  });
+
   it("rejects broadband treble as retained high-Q structure", async () => {
     const { updateModalResponseFrame } = await loadModalResponseModule();
     const modes = [

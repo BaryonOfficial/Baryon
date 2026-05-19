@@ -161,7 +161,6 @@ export function deriveObservationTransfer({
   modalCoefficientEnergy = 0,
   modalResponseBackboneEnergy = 0,
   modalResponseDetailEnergy = 0,
-  hardSilence = false,
   parameters = null,
 } = {}) {
   const observationParameters = resolveObservationTransferParameters(parameters);
@@ -180,15 +179,13 @@ export function deriveObservationTransfer({
   const observationAnchor = clamp01(
     clamp01(modalStructureAnchor) * ridgePhysicalAnchor,
   );
-  const observationEnergy = hardSilence
-    ? 0
-    : clamp01(
-        Math.max(
-          modalCoefficientEnergy,
-          modalResponseBackboneEnergy,
-          modalResponseDetailEnergy,
-        ),
-      );
+  const observationEnergy = clamp01(
+    Math.max(
+      modalCoefficientEnergy,
+      modalResponseBackboneEnergy,
+      modalResponseDetailEnergy,
+    ),
+  );
   const observationSupport = clamp01(
     1 -
       Math.exp(

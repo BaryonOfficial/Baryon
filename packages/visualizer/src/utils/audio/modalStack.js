@@ -258,6 +258,7 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
   const emptyTargetRelease = options.emptyTargetRelease;
   const lowSignalReleaseThreshold = options.lowSignalReleaseThreshold ?? 0;
   const lowSignalRelease = options.lowSignalRelease;
+  const retainReleased = options.retainReleased ?? true;
   const slotLimit = Math.min(state.slots.length / 4, capacity);
 
   const currentMap = state._poolCurrentMap ?? new Map();
@@ -326,6 +327,9 @@ export function blendModalStack(state, targetSlots, capacity, options = {}) {
 
   for (const [key, entry] of currentMap.entries()) {
     if (!admittedTargetKeys.has(key)) {
+      if (!retainReleased && targetMap.size === 0) {
+        continue;
+      }
       let releaseFactor = releaseOverrides?.get?.(key) ?? release;
       if (Number.isFinite(emptyTargetRelease) && targetMap.size === 0) {
         releaseFactor = Math.min(releaseFactor, emptyTargetRelease);

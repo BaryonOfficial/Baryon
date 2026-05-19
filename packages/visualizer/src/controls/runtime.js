@@ -44,6 +44,7 @@ import {
   stepAudioSceneMotion,
   stepManualSceneMotion,
   stepSettlingSceneMotion,
+  stopAudioSceneMotion,
   syncIdleOverlayRotation,
 } from "./sceneMotion.js";
 
@@ -635,8 +636,12 @@ export function applySceneControls(
     status?.isPlaying ||
     status?.isLiveInputActive ||
     featureFrame?.fieldState === "test";
+  const zeroInputHardSilence =
+    featureFrame?.liveInputHardSilenceActive === true ||
+    featureFrame?.debug?.liveInputHardSilenceActive === true;
   const fieldDriven =
     featureFrame?.fieldState && featureFrame.fieldState !== "idle";
+  const audioMotionDriven = audioActive && fieldDriven && !zeroInputHardSilence;
   const signals = deriveSceneSignals(
     featureFrame,
     runtimeState?.responseEnvelope ?? 0,
@@ -652,7 +657,7 @@ export function applySceneControls(
     : (sceneMotion.roll ?? 0);
 
   let effectiveMotionAmount;
-  if (rotationMode === "audio" && audioActive && fieldDriven) {
+  if (rotationMode === "audio" && audioMotionDriven) {
     const autoBase = deriveAutoMotionAmount(
       sceneMotion,
       signals.energySignal,
@@ -665,7 +670,7 @@ export function applySceneControls(
 
   if (rotationMode === "manual") {
     stepManualSceneMotion(sceneMotion, manualVelocity, deltaTime);
-  } else if (rotationMode === "audio" && audioActive && fieldDriven) {
+  } else if (rotationMode === "audio" && audioMotionDriven) {
     stepAudioSceneMotion(sceneMotion, {
       motionAmount: effectiveMotionAmount,
       shapedDrive: signals.shapedDrive,
@@ -679,6 +684,8 @@ export function applySceneControls(
       beatDetected: featureFrame?.beatDetected,
       deltaTime,
     });
+  } else if (rotationMode === "audio" && zeroInputHardSilence) {
+    stopAudioSceneMotion(sceneMotion);
   } else {
     stepSettlingSceneMotion(sceneMotion, deltaTime);
   }

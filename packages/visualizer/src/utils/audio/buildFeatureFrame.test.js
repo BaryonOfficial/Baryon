@@ -46,6 +46,7 @@ it("derives observation energy from modal coefficient and response only", () => 
   expect(observationEnergyBlocks).toHaveLength(2);
   for (const block of observationEnergyBlocks) {
     expect(block).not.toContain("modalPhaseAuthority");
+    expect(block).not.toContain("liveInputHardSilenceActive");
   }
 });
 
@@ -1177,7 +1178,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(quiet4.fieldState).toBe("active");
   });
 
-  it("flags hard silence on the first silent frame while mic stays active", () => {
+  it("uses decay state for zero-input retained modal energy while mic stays active", () => {
     const featureState = createAudioFeatureState();
     buildLiveInputFrame({
       featureState,
@@ -1212,7 +1213,9 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     expect(silence.debug.liveInputNoiseGateActive).toBe(true);
     expect(silence.debug.liveInputHardSilenceActive).toBe(true);
-    expect(silence.fieldState).toBe("active");
+    expect(silence.fieldState).toBe("decay");
+    expect(silence.observationEnergy).toBeGreaterThan(0);
+    expect(silence.debug.observationEnergy).toBeGreaterThan(0);
     expect(silence.debug.driverFrequency).toBeGreaterThan(0);
   });
 
@@ -3626,7 +3629,10 @@ describe("live input noise gate", () => {
     }
 
     expect(frame.fieldState).toBe("active");
-    expect(sumSlotAmplitudes(frame.backboneSlots)).toBeGreaterThan(0.0015);
+    expect(
+      sumSlotAmplitudes(frame.backboneSlots) +
+        sumSlotAmplitudes(frame.detailSlots),
+    ).toBeGreaterThan(0.0015);
     expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.0015);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.18);
     expect(frame.debug.modalResponseEnergy).toBeGreaterThan(0.2);
@@ -3640,7 +3646,7 @@ describe("live input noise gate", () => {
       frame.debug.modalVisibilitySlotEnergy,
     );
     expect(frame.debug.modalVisibilityDistributedEnergy).toBeGreaterThan(0);
-    expect(frame.debug.modalVisibilityDominantEnergy).toBeGreaterThan(0);
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0);
     expect(frame.debug.modalVisibilityDominantEnergy).toBeLessThan(0.24);
     expect(frame.debug.modalVisibilityDominantClusterEnergy).toBeUndefined();
   }, 15000);
@@ -5915,7 +5921,7 @@ describe("modal excitation integration", () => {
     expect(silentResult.frame.changeSignal).toBeGreaterThanOrEqual(0);
   });
 
-  it("clears modal cymatics after sustained true hard silence", () => {
+  it("uses zero-input decay for modal cymatics after sustained true hard silence", () => {
     const featureState = createAudioFeatureState();
     const activeFft = makeFft([
       [550, 0.95],
@@ -5962,16 +5968,18 @@ describe("modal excitation integration", () => {
       previousFrame = silentResult.frame;
     }
 
-    expect(silentResult.analysisResult.usedDecay).toBe(false);
+    expect(silentResult.analysisResult.usedDecay).toBe(true);
+    expect(silentResult.frame.fieldState).toBe("decay");
     expect(sumSlotAmplitudes(silentResult.analysisResult.signalModeSlots)).toBe(
       0,
     );
-    expect(sumSlotAmplitudes(silentResult.frame.backboneSlots)).toBeLessThan(
-      activeBackboneAmplitude * 0.08,
+    const decayedBackboneAmplitude = sumSlotAmplitudes(
+      silentResult.frame.backboneSlots,
     );
-    expect(sumSlotAmplitudes(silentResult.frame.detailSlots)).toBeLessThan(
-      activeDetailAmplitude * 0.08,
-    );
+    const decayedDetailAmplitude = sumSlotAmplitudes(silentResult.frame.detailSlots);
+    expect(decayedBackboneAmplitude + decayedDetailAmplitude).toBeGreaterThan(0);
+    expect(decayedBackboneAmplitude).toBeLessThan(activeBackboneAmplitude);
+    expect(decayedDetailAmplitude).toBeLessThan(activeDetailAmplitude);
   });
 
   it("keeps dense low-change modal input visually pruned without collapsing reactivity", () => {

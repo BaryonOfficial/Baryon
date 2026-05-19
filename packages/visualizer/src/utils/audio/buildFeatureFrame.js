@@ -80,6 +80,7 @@ const LIVE_INPUT_INVALID_CURRENT_SATURATED_PEAK = 0.98;
 const LIVE_INPUT_INVALID_CURRENT_WEAK_RMS = 0.012;
 const LIVE_INPUT_INVALID_CURRENT_WEAK_AVG = 10;
 const DETAIL_LAYER_WEIGHT = 0.35;
+const ZERO_MODAL_FORCING_EPSILON = 1e-6;
 const BAND_LIMITS_HZ = [140, 600, 2400, 8000];
 const SPECTRAL_BAND_6_LIMITS_HZ = [140, 400, 1200, 3200, 6400, 12000];
 const SPECTRAL_BAND_6_COUNT = 6;
@@ -845,6 +846,32 @@ function buildDetailStateSummary(detailState) {
   };
 }
 
+function deriveRetainedModalObservationEnergy(
+  modalCoefficientEnergy,
+  modalResponseBackboneEnergy,
+  modalResponseDetailEnergy,
+) {
+  return clamp01(
+    Math.max(
+      modalCoefficientEnergy,
+      modalResponseBackboneEnergy,
+      modalResponseDetailEnergy,
+    ),
+  );
+}
+
+function hasZeroSourceForcing(analysisResult) {
+  if (analysisResult?.liveInputHardSilenceActive) {
+    return true;
+  }
+
+  return (
+    (analysisResult?.avgAmplitude ?? 0) <= 0 &&
+    (analysisResult?.analyserRms ?? 0) <= 0 &&
+    (analysisResult?.preModalFftPeak ?? 0) <= 0
+  );
+}
+
 function buildDebugSummary({
   inputMode,
   analysisInputMode = inputMode,
@@ -942,15 +969,11 @@ function buildDebugSummary({
   const modalResponseDetailEnergy = clamp01(
     structuralMetrics?.modalResponseDetailEnergy ?? 0,
   );
-  const observationEnergy = liveInputHardSilenceActive
-    ? 0
-    : clamp01(
-        Math.max(
-          modalCoefficientEnergy,
-          modalResponseBackboneEnergy,
-          modalResponseDetailEnergy,
-        ),
-      );
+  const observationEnergy = deriveRetainedModalObservationEnergy(
+    modalCoefficientEnergy,
+    modalResponseBackboneEnergy,
+    modalResponseDetailEnergy,
+  );
 
   return {
     audioInputMode: inputMode,
@@ -2605,6 +2628,7 @@ function deriveCompositeSignals({
   modeCapacity,
   signalNormalizationSlots,
   modeSlots,
+  visibilityModeSlots = modeSlots,
   referenceModeSlots,
   backboneState,
   detailState,
@@ -2716,7 +2740,7 @@ function deriveCompositeSignals({
       clamp01(pulseDriver * 0.22),
   );
   const modalVisibilityComponents = deriveModalVisibilityComponents({
-    modeSlots,
+    modeSlots: visibilityModeSlots,
     modeCapacity,
     structuralMetrics,
     hardSilent: liveInputHardSilenceActive,
@@ -4678,6 +4702,7 @@ export function composeAudioFeatureFrame({
     modeCapacity: preparedInputs.capacity,
     signalNormalizationSlots: AUDIO_SLOT_CAPACITY,
     modeSlots: analysisResult.signalModeSlots ?? analysisResult.modeSlots,
+    visibilityModeSlots: analysisResult.modeSlots,
     referenceModeSlots:
       analysisResult.signalReferenceModeSlots ??
       analysisResult.referenceModeSlots,
@@ -4803,15 +4828,11 @@ export function composeAudioFeatureFrame({
   const modalResponseDetailEnergy = clamp01(
     analysisResult.structuralMetrics?.modalResponseDetailEnergy ?? 0,
   );
-  const observationEnergy = analysisResult.liveInputHardSilenceActive
-    ? 0
-    : clamp01(
-        Math.max(
-          modalCoefficientEnergy,
-          modalResponseBackboneEnergy,
-          modalResponseDetailEnergy,
-        ),
-      );
+  const observationEnergy = deriveRetainedModalObservationEnergy(
+    modalCoefficientEnergy,
+    modalResponseBackboneEnergy,
+    modalResponseDetailEnergy,
+  );
   const timbreSpread = deriveDeterministicTimbreSpread({
     bandEnergies: analysisResult.bandEnergies,
     spectralCentroid: analysisResult.spectralCentroid,
@@ -4828,19 +4849,23 @@ export function composeAudioFeatureFrame({
   preparedInputs.analysisMemory.lastComposedFrameAtMs =
     preparedInputs.currentFrameAtMs;
 
+  const zeroInputModalForcing =
+    hasZeroSourceForcing(analysisResult) &&
+    (analysisResult.usedDecay ||
+      modalCoefficientEnergy <= ZERO_MODAL_FORCING_EPSILON);
+  const zeroInputRetainedModalState =
+    zeroInputModalForcing && observationEnergy > 0;
   const observerAuthorizedActiveField =
     (analysisResult.activeModeCount ?? 0) > 0 &&
-    !analysisResult.liveInputHardSilenceActive &&
+    !zeroInputModalForcing &&
     (preparedInputs.inputMode === "live" ||
       (analysisResult.structuralMetrics?.modalResponseEnergy ?? 0) > 0.02 ||
       modalVisibilityEnergy > 0.005);
   const fieldStateUsesDecay =
-    analysisResult.usedDecay && !observerAuthorizedActiveField;
-  const liveInputSurfaceActive =
-    preparedInputs.inputMode === "live" &&
-    preparedInputs.status?.isLiveInputActive === true;
+    zeroInputRetainedModalState ||
+    (analysisResult.usedDecay && !observerAuthorizedActiveField);
   const fieldStateActiveModeCount =
-    liveInputSurfaceActive ||
+    zeroInputRetainedModalState ||
     observerAuthorizedActiveField ||
     modalVisibilityEnergy > 0 ||
     analysisResult.usedDecay

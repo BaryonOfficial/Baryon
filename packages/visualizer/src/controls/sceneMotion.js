@@ -387,6 +387,14 @@ export function stepSettlingSceneMotion(sceneMotion, deltaTime) {
   settleAttitude(sceneMotion, deltaTime);
 }
 
+export function stopAudioSceneMotion(sceneMotion) {
+  ensureAttitudeState(sceneMotion);
+  sceneMotion.targetAngularVelocity = 0;
+  sceneMotion.angularVelocity = 0;
+  sceneMotion.pitchVelocity = 0;
+  sceneMotion.rollVelocity = 0;
+}
+
 export function syncIdleOverlayRotation(
   runtimeState,
   sceneMotion,

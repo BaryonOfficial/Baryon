@@ -239,6 +239,7 @@ function retainSignificantLayerEntries(entries, layer) {
  *   previousEnergies?: Map<string, number>,
  *   deltaMs?: number,
  *   inputRms?: number,
+ *   hardSilence?: boolean,
  *   coherence?: number,
  *   layerBudgets?: {backbone?: number, detail?: number},
  *   minimumEnergy?: number,
@@ -251,14 +252,17 @@ export function updateModalResponseFrame({
   previousEnergies = new Map(),
   deltaMs = 16,
   inputRms = 0,
+  hardSilence = false,
   coherence = 1,
   layerBudgets = DEFAULT_LAYER_BUDGETS,
   minimumEnergy = 0.0001,
 } = {}) {
-  const inputEnergy = getInputEnergy(fftMagnitudes);
-  const hasInput = inputEnergy > EPSILON || inputRms > 0;
+  const sourceHardSilent = hardSilence === true;
+  const inputEnergy = sourceHardSilent ? 0 : getInputEnergy(fftMagnitudes);
+  const effectiveInputRms = sourceHardSilent ? 0 : inputRms;
+  const hasInput = !sourceHardSilent && (inputEnergy > EPSILON || effectiveInputRms > 0);
   const inputExposure = hasInput
-    ? computeInputExposure({ inputEnergy, inputRms })
+    ? computeInputExposure({ inputEnergy, inputRms: effectiveInputRms })
     : 0;
   const entries = [];
 

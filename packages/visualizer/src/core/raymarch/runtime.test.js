@@ -818,6 +818,89 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.modeSlotCount).toBe(0);
   });
 
+  it("reports retained modal observation during hard-silence decay", () => {
+    const runtimeState = createRuntimeState();
+    runtimeState.responseEnvelope = 0.6;
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "decay",
+        liveInputHardSilenceActive: true,
+        isLiveInputActive: true,
+        averageAmplitude: 0,
+        backboneSlots: new Float32Array([3, 4, 6, 0.18]),
+        detailSlots: new Float32Array(32),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array(4),
+        transientEnergy: 0,
+        spectralCentroid: 0,
+        spectralFlux: 0,
+        structureSignal: 0,
+        energySignal: 0,
+        changeSignal: 0,
+        pulseSignal: 0,
+        debug: {
+          liveInputHardSilenceActive: true,
+          modalResponseBackboneEnergy: 0.18,
+          modalResponseDetailEnergy: 0,
+        },
+      },
+      1,
+      1 / 60,
+    );
+
+    expect(runtimeState.volumeMesh.visible).toBe(true);
+    expect(runtimeState.debugSnapshot.raymarchDebug.observationHardSilence).toBe(
+      true,
+    );
+    expect(runtimeState.debugSnapshot.raymarchDebug.observationEnergy).toBeCloseTo(
+      0.18,
+    );
+    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(1);
+  });
+
+  it("does not attack the presentation envelope from retained modal energy during hard silence", () => {
+    const runtimeState = createRuntimeState();
+    runtimeState.responseEnvelope = 0;
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "decay",
+        liveInputHardSilenceActive: true,
+        isLiveInputActive: true,
+        averageAmplitude: 0,
+        backboneSlots: new Float32Array([3, 4, 6, 0.18]),
+        detailSlots: new Float32Array(32),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array(4),
+        transientEnergy: 0,
+        spectralCentroid: 0,
+        spectralFlux: 0,
+        structureSignal: 0,
+        energySignal: 0,
+        changeSignal: 0,
+        pulseSignal: 0,
+        modalResponseBackboneEnergy: 0.48,
+        modalResponseDetailEnergy: 0,
+        debug: {
+          liveInputHardSilenceActive: true,
+          modalResponseBackboneEnergy: 0.48,
+          modalResponseDetailEnergy: 0,
+        },
+      },
+      1,
+      1 / 60,
+    );
+
+    expect(runtimeState.volumeMesh.visible).toBe(true);
+    expect(runtimeState.responseEnvelope).toBe(0);
+    expect(runtimeState.bloomResponseSignal).toBe(0);
+  });
+
   it("suppresses the idle overlay during live input and restores it after stop", () => {
     const runtimeState = createRuntimeState();
 
