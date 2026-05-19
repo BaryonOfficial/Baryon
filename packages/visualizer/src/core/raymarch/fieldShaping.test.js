@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  BASS_STRUCTURE_FLOOR_MAX,
   BEAM_POWER_BASE,
   BOUNDARY_CONTOUR_ACCENT_WEIGHT,
   BODY_DENSITY_MIX,
   BODY_DENSITY_GAIN,
   CONTOUR_BLEND,
   EMISSION_ROLLOFF_MIX,
-  EXCITATION_VISIBILITY_COHERENCE_WEIGHT,
-  EXCITATION_VISIBILITY_MAX_FLOOR,
   HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
   HOT_CORE_END,
   HOT_CORE_START,
@@ -25,10 +22,8 @@ import {
   SIGNED_PHASE_OVERLAY_GRADIENT_GAIN,
   deriveBeamMask,
   deriveBodyDensity,
-  deriveContourGainBase,
   deriveContourShape,
   deriveEmissionRolloff,
-  deriveExcitationVisibility,
   deriveLatchedFogMask,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
@@ -36,14 +31,11 @@ import {
   deriveHotCoreCrowding,
   deriveHotCoreMix,
   deriveModalCrowdingDensity,
-  deriveRetainedHighQVisibilityDiagnostics,
   deriveShellWeight,
   deriveStableContourAccent,
   deriveSignedPhaseOverlayField,
   deriveStructureAwareEmissionGain,
-  deriveSpectralColorBiasOffset,
   deriveVisibleStructure,
-  deriveVisibleDensity,
 } from "./fieldShaping.js";
 
 function mixTestColor(left, right, t) {
@@ -124,210 +116,6 @@ describe("field shaping", () => {
     expect(reactive).toBeLessThan(latched * 0.2);
   });
 
-  it("keeps a bounded visibility floor for weak but coherent excitation", () => {
-    const weakCoherent = deriveExcitationVisibility({
-      excitationGate: 0.04,
-      modeCoherence: 0.72,
-      modalVisibilityEnergy: 0.36,
-    });
-    const noisyWeak = deriveExcitationVisibility({
-      excitationGate: 0.04,
-      modeCoherence: 0.08,
-    });
-
-    expect(EXCITATION_VISIBILITY_COHERENCE_WEIGHT).toBeCloseTo(0.42);
-    expect(EXCITATION_VISIBILITY_MAX_FLOOR).toBeCloseTo(0.52);
-    expect(weakCoherent).toBeGreaterThan(0.38);
-    expect(weakCoherent).toBeLessThan(0.53);
-    expect(noisyWeak).toBeCloseTo(0.04);
-  });
-
-  it("prevents the excitation floor from overriding absent current source authority", () => {
-    const staleCoherent = deriveExcitationVisibility({
-      excitationGate: 0.02,
-      modeCoherence: 0.72,
-      modalVisibilityEnergy: 0,
-      sourceAuthority: 0,
-    });
-    const currentCoherent = deriveExcitationVisibility({
-      excitationGate: 0.02,
-      modeCoherence: 0.72,
-      modalVisibilityEnergy: 0.36,
-      sourceAuthority: 1,
-    });
-
-    expect(staleCoherent).toBeCloseTo(0.02);
-    expect(currentCoherent).toBeGreaterThan(0.38);
-  });
-
-  it("lets current modal visibility carry low-meter resonant source authority", () => {
-    const bowlTail = deriveExcitationVisibility({
-      excitationGate: 0.02,
-      modeCoherence: 0.5,
-      modalVisibilityEnergy: 0.18,
-      sourceAuthority: 5.2 / 255,
-    });
-    const weakNoisy = deriveExcitationVisibility({
-      excitationGate: 0.02,
-      modeCoherence: 0.08,
-      modalVisibilityEnergy: 0,
-      sourceAuthority: 5.2 / 255,
-    });
-
-    expect(bowlTail).toBeGreaterThan(0.08);
-    expect(weakNoisy).toBeCloseTo(0.02);
-  });
-
-  it("lets retained high-Q observer authority carry steady harmonic tails", () => {
-    const steadyHighQ = deriveExcitationVisibility({
-      excitationGate: 0,
-      modeCoherence: 0.58,
-      modalVisibilityEnergy: 0.015,
-      modalVisibilityRetainedHighQEnergy: 0.24,
-      sourceAuthority: 0.01,
-    });
-    const weakNoisy = deriveExcitationVisibility({
-      excitationGate: 0,
-      modeCoherence: 0.08,
-      modalVisibilityEnergy: 0,
-      modalVisibilityRetainedHighQEnergy: 0,
-      sourceAuthority: 0.01,
-    });
-
-    expect(steadyHighQ).toBeGreaterThan(0.12);
-    expect(steadyHighQ).toBeLessThanOrEqual(EXCITATION_VISIBILITY_MAX_FLOOR);
-    expect(weakNoisy).toBe(0);
-  });
-
-  it("lets observer-authorized topology carry source authority without global brightness", () => {
-    const steadyObserved = deriveExcitationVisibility({
-      excitationGate: 0,
-      modeCoherence: 0.58,
-      modalVisibilityEnergy: 0.01,
-      modalObserverVisibilityEnergy: 0.22,
-      sourceAuthority: 0.005,
-    });
-    const staleObserved = deriveExcitationVisibility({
-      excitationGate: 0,
-      modeCoherence: 0.58,
-      modalVisibilityEnergy: 0,
-      modalObserverVisibilityEnergy: 0,
-      sourceAuthority: 0.005,
-    });
-
-    expect(steadyObserved).toBeGreaterThan(0.1);
-    expect(steadyObserved).toBeLessThanOrEqual(EXCITATION_VISIBILITY_MAX_FLOOR);
-    expect(staleObserved).toBe(0);
-  });
-
-  it("keeps modal cavity visibility from modal energy", () => {
-    const bowlLike = deriveExcitationVisibility({
-      excitationGate: 0.04,
-      modeCoherence: 0.48,
-      modalVisibilityEnergy: 0.36,
-    });
-    const noModalEnergy = deriveExcitationVisibility({
-      excitationGate: 0.04,
-      modeCoherence: 0.48,
-      modalVisibilityEnergy: 0,
-    });
-    const noisyWeak = deriveExcitationVisibility({
-      excitationGate: 0.04,
-      modeCoherence: 0.08,
-      modalVisibilityEnergy: 0,
-    });
-
-    expect(bowlLike).toBeGreaterThan(0.36);
-    expect(bowlLike).toBeGreaterThan(noModalEnergy);
-    expect(noisyWeak).toBeCloseTo(0.04);
-  });
-
-  it("lets modal coefficients carry quiet bass visibility without a loudness gate", () => {
-    const quietBass = deriveExcitationVisibility({
-      excitationGate: 0,
-      modeCoherence: 0.5,
-      modalVisibilityEnergy: 0,
-      modalCoefficientEnergy: 0.16,
-      sourceAuthority: 0.01,
-    });
-    const noCoefficients = deriveExcitationVisibility({
-      excitationGate: 0,
-      modeCoherence: 0.5,
-      modalVisibilityEnergy: 0,
-      modalCoefficientEnergy: 0,
-      sourceAuthority: 0.01,
-    });
-
-    expect(quietBass).toBeGreaterThan(0.1);
-    expect(noCoefficients).toBe(0);
-  });
-
-  it("lifts observer-authorized ridge density only where modal anchors exist", () => {
-    const anchored = deriveVisibleDensity({
-      density: 0,
-      modalVisibilityEnergy: 0,
-      modalObserverVisibilityEnergy: 0.24,
-      modalStructureAnchor: 0.72,
-      ridgeAnchor: 0.8,
-      ridgeSupportAnchor: 0.7,
-    });
-    const noAnchor = deriveVisibleDensity({
-      density: 0,
-      modalVisibilityEnergy: 0,
-      modalObserverVisibilityEnergy: 0.24,
-      modalStructureAnchor: 0,
-      ridgeAnchor: 0,
-      ridgeSupportAnchor: 0,
-    });
-
-    expect(anchored.observerRidgeVisibleDensity).toBeGreaterThan(0);
-    expect(anchored.visibleDensity).toBe(anchored.observerRidgeVisibleDensity);
-    expect(anchored.physicalVisibleDensity).toBe(0);
-    expect(noAnchor.observerRidgeVisibleDensity).toBe(0);
-    expect(noAnchor.visibleDensity).toBe(0);
-  });
-
-  it("uses phase overlay only as an anchored ridge visibility lift", () => {
-    const physical = deriveVisibleDensity({
-      density: 0.3,
-      modalVisibilityEnergy: 0,
-      modalObserverVisibilityEnergy: 0,
-      modalPhaseOverlayEnergy: 0.7,
-      modalStructureAnchor: 0.8,
-      ridgeAnchor: 0.75,
-      ridgeSupportAnchor: 0.7,
-    });
-    const anchored = deriveVisibleDensity({
-      density: 0,
-      modalVisibilityEnergy: 0,
-      modalObserverVisibilityEnergy: 0,
-      modalPhaseOverlayEnergy: 0.7,
-      modalStructureAnchor: 0.7,
-      ridgeAnchor: 0.8,
-      ridgeSupportAnchor: 0.7,
-    });
-    const noAnchor = deriveVisibleDensity({
-      density: 0,
-      modalVisibilityEnergy: 0,
-      modalObserverVisibilityEnergy: 0,
-      modalPhaseOverlayEnergy: 0.62,
-      modalStructureAnchor: 0,
-      ridgeAnchor: 0,
-      ridgeSupportAnchor: 0,
-    });
-
-    expect(anchored.phaseRidgeVisibleDensity).toBeGreaterThan(0);
-    expect(anchored.phaseRidgeLift).toBeGreaterThan(0);
-    expect(anchored.phaseContourAccent).toBeGreaterThan(0);
-    expect(anchored.visibleDensity).toBe(anchored.phaseRidgeVisibleDensity);
-    expect(anchored.physicalVisibleDensity).toBe(0);
-    expect(physical.physicalVisibleDensity).toBeGreaterThan(0);
-    expect(noAnchor.phaseRidgeVisibleDensity).toBe(0);
-    expect(noAnchor.phaseRidgeLift).toBe(0);
-    expect(noAnchor.phaseContourAccent).toBe(0);
-    expect(noAnchor.visibleDensity).toBe(0);
-  });
-
   it("applies phase overlay as bounded signed displacement, not positive energy", () => {
     const reinforcing = deriveSignedPhaseOverlayField({
       cachedField: 0.1,
@@ -367,34 +155,6 @@ describe("field shaping", () => {
 
     expect(SIGNED_PHASE_OVERLAY_GRADIENT_GAIN).toBeCloseTo(0.35);
     expect(supported.phaseGradientContribution).toBeCloseTo(0.28);
-  });
-
-  it("derives excitation visibility without hint inputs", () => {
-    const visibility = deriveExcitationVisibility({
-      excitationGate: 0.04,
-      modeCoherence: 0.48,
-      modalVisibilityEnergy: 0.36,
-    });
-    expect(visibility).toBeGreaterThan(0.36);
-  });
-
-  it("derives contour gain without hint inputs", () => {
-    const gain = deriveContourGainBase({
-      structureSignal: 0.22,
-      modeCoherence: 0.48,
-      modalVisibilityEnergy: 0.36,
-      beatPhaseDecay: 0.2,
-    });
-    expect(gain).toBeGreaterThan(0.14);
-  });
-
-  it("derives spectral color bias without hint inputs", () => {
-    const bias = deriveSpectralColorBiasOffset({
-      modeCoherence: 0.48,
-      modalVisibilityEnergy: 0.36,
-      changeSignal: 0.08,
-    });
-    expect(bias).toBeGreaterThan(0);
   });
 
   it("does not create body density when sparse bass structure is absent", () => {
@@ -469,7 +229,7 @@ describe("field shaping", () => {
     expect(reactive.bodyDensity).toBeGreaterThan(latched.bodyDensity);
   });
 
-  it("adds a bounded bass visibility floor without replacing real structure", () => {
+  it("leaves visible structure owned by physical structure, not bass floors", () => {
     const lowOrder = deriveVisibleStructure({
       structure: 0.03,
       nodeBand: 0.92,
@@ -485,11 +245,9 @@ describe("field shaping", () => {
       radialDistance: 0.82,
     });
 
-    expect(lowOrder.bassStructureFloor).toBeGreaterThan(0.03);
-    expect(lowOrder.bassStructureFloor).toBeLessThanOrEqual(
-      BASS_STRUCTURE_FLOOR_MAX,
-    );
-    expect(lowOrder.visibleStructure).toBeGreaterThan(0.03);
+    expect(lowOrder).not.toHaveProperty("bassEnvelope");
+    expect(lowOrder).not.toHaveProperty("bassStructureFloor");
+    expect(lowOrder.visibleStructure).toBeCloseTo(0.03);
     expect(brightTreble.visibleStructure).toBeCloseTo(0.34);
   });
 
@@ -955,124 +713,6 @@ describe("field shaping", () => {
     expect(saturationOf(crowdedMix)).toBeGreaterThan(
       saturationOf(directMix) * 1.45,
     );
-  });
-
-  it("suppresses weak visible density while preserving strong contours", () => {
-    const weak = deriveVisibleDensity({ density: 0.17 });
-    const strong = deriveVisibleDensity({ density: 0.42 });
-
-    expect(weak.visibilityGate).toBeLessThan(0.02);
-    expect(weak.visibleDensity).toBeLessThan(0.005);
-    expect(strong.visibilityGate).toBe(1);
-    expect(strong.visibleDensity).toBeCloseTo(0.42);
-  });
-
-  it("relaxes low-density visibility for modal cavity energy without adding density", () => {
-    const baseline = deriveVisibleDensity({ density: 0.17 });
-    const modal = deriveVisibleDensity({
-      density: 0.17,
-      modalVisibilityEnergy: 0.72,
-      modalStructureAnchor: 0.88,
-    });
-    const noStructure = deriveVisibleDensity({
-      density: 0.17,
-      modalVisibilityEnergy: 0.72,
-      modalStructureAnchor: 0,
-    });
-
-    expect(modal.visibilityGate).toBeGreaterThan(baseline.visibilityGate);
-    expect(modal.visibleDensity).toBeGreaterThan(0.08);
-    expect(modal.physicalVisibleDensity).toBe(baseline.visibleDensity);
-    expect(modal.visibleDensity).toBeLessThanOrEqual(0.17);
-    expect(noStructure.visibleDensity).toBe(baseline.visibleDensity);
-  });
-
-  it("adds only structure-anchored density for near-empty modal cavity energy", () => {
-    const modal = deriveVisibleDensity({
-      density: 0.004,
-      modalVisibilityEnergy: 0.62,
-      modalStructureAnchor: 0.84,
-    });
-    const noStructure = deriveVisibleDensity({
-      density: 0.004,
-      modalVisibilityEnergy: 0.62,
-      modalStructureAnchor: 0,
-    });
-
-    expect(modal.physicalVisibleDensity).toBe(0);
-    expect(modal.modalVisibleDensity).toBeGreaterThan(0.05);
-    expect(modal.visibleDensity).toBeGreaterThan(0.05);
-    expect(noStructure.modalVisibleDensity).toBe(0);
-    expect(noStructure.visibleDensity).toBe(0);
-  });
-
-  it("maps moderate sustained modal energy to inspectable local density", () => {
-    const modal = deriveVisibleDensity({
-      density: 0.004,
-      modalVisibilityEnergy: 0.36,
-      modalStructureAnchor: 0.84,
-    });
-    const noStructure = deriveVisibleDensity({
-      density: 0.004,
-      modalVisibilityEnergy: 0.36,
-      modalStructureAnchor: 0,
-    });
-
-    expect(modal.physicalVisibleDensity).toBe(0);
-    expect(modal.visibleDensity).toBeGreaterThan(0.065);
-    expect(noStructure.visibleDensity).toBe(0);
-  });
-
-  it("reports retained high-Q diagnostics without letting them create density", () => {
-    const diagnostics = deriveRetainedHighQVisibilityDiagnostics({
-      modalVisibilityEnergy: 0.49,
-      modalVisibilityRetainedHighQEnergy: 0.25,
-    });
-
-    expect(diagnostics.retainedHighQPhysicalVisibleDensityMax).toBe(0);
-    expect(diagnostics.retainedHighQRidgeVisibleDensityMax).toBe(0);
-    expect(diagnostics.retainedHighQRidgeToRetainedEnergyRatio).toBe(0);
-  });
-
-  it("keeps low-Q backbone diagnostics from creating density", () => {
-    const density = deriveVisibleDensity({
-      density: 0,
-      modalVisibilityEnergy: 0,
-      modalObserverVisibilityEnergy: 0,
-      modalVisibilityRetainedHighQEnergy: 0,
-      lowQBackboneVisibilityEnergy: 0.052,
-      modalStructureAnchor: 1,
-      ridgeAnchor: 1,
-    });
-
-    expect(density.physicalVisibleDensity).toBe(0);
-    expect(density.lowQBackboneRidgeVisibleDensity).toBe(0);
-    expect(density.visibleDensity).toBe(0);
-  });
-
-  it("keeps old Q-specific diagnostic fields from changing visible density", () => {
-    const baseline = deriveVisibleDensity({
-      density: 0.02,
-      modalVisibilityEnergy: 0.28,
-      modalObserverVisibilityEnergy: 0.18,
-      modalStructureAnchor: 0.74,
-      ridgeAnchor: 0.66,
-      ridgeSupportAnchor: 0.58,
-    });
-    const diagnosticOnly = deriveVisibleDensity({
-      density: 0.02,
-      modalVisibilityEnergy: 0.28,
-      modalObserverVisibilityEnergy: 0.18,
-      modalVisibilityRetainedHighQEnergy: 0.9,
-      lowQBackboneVisibilityEnergy: 0.9,
-      modalStructureAnchor: 0.74,
-      ridgeAnchor: 0.66,
-      ridgeSupportAnchor: 0.58,
-    });
-
-    expect(diagnosticOnly.visibleDensity).toBeCloseTo(baseline.visibleDensity);
-    expect(diagnosticOnly.retainedHighQRidgeVisibleDensity).toBe(0);
-    expect(diagnosticOnly.lowQBackboneRidgeVisibleDensity).toBe(0);
   });
 
   it("pushes hot-core highlights from beam energy instead of body fog", () => {

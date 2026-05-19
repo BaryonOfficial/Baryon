@@ -3,7 +3,7 @@ import {
   createRuntimeDiagnostics,
   maybePublishRuntimePerfSnapshot,
   shouldRenderExternalFrame,
-  updateRetainedHighQRenderVisibilityDiagnostics,
+  updateObservationTransferRenderDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
 
 test("renders duplicate external frames only when controls changed", () => {
@@ -104,17 +104,19 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
   }
 });
 
-test("publishes retained high-Q raymarch visibility diagnostics in render perf snapshots", () => {
+test("publishes observation transfer raymarch diagnostics in render perf snapshots", () => {
   const previousWindow = globalThis.window;
   globalThis.window = {};
 
   try {
     const runtimeDiagnostics = createRuntimeDiagnostics();
-    updateRetainedHighQRenderVisibilityDiagnostics(runtimeDiagnostics, {
+    updateObservationTransferRenderDiagnostics(runtimeDiagnostics, {
       raymarchDebug: {
-        retainedHighQRidgeVisibleDensityMax: 0.046,
-        retainedHighQRidgeToRetainedEnergyRatio: 0.24,
-        retainedHighQPhysicalVisibleDensityMax: 0,
+        observationEnergy: 0.28,
+        observationAnchorMax: 0.64,
+        observationSupportMax: 0.31,
+        observedDensityFloorMax: 0.046,
+        observedContourSupportMax: 0.012,
       },
     });
 
@@ -122,9 +124,11 @@ test("publishes retained high-Q raymarch visibility diagnostics in render perf s
       force: true,
     });
 
-    expect(snapshot.render.retainedHighQRidgeVisibleDensityMax).toBe(0.046);
-    expect(snapshot.render.retainedHighQRidgeToRetainedEnergyRatio).toBe(0.24);
-    expect(snapshot.render.retainedHighQPhysicalVisibleDensityMax).toBe(0);
+    expect(snapshot.render.observationEnergy).toBe(0.28);
+    expect(snapshot.render.observationAnchorMax).toBe(0.64);
+    expect(snapshot.render.observationSupportMax).toBe(0.31);
+    expect(snapshot.render.observedDensityFloorMax).toBe(0.046);
+    expect(snapshot.render.observedContourSupportMax).toBe(0.012);
   } finally {
     globalThis.window = previousWindow;
   }
@@ -136,7 +140,7 @@ test("publishes phase overlay diagnostics in render perf snapshots", () => {
 
   try {
     const runtimeDiagnostics = createRuntimeDiagnostics();
-    updateRetainedHighQRenderVisibilityDiagnostics(runtimeDiagnostics, {
+    updateObservationTransferRenderDiagnostics(runtimeDiagnostics, {
       raymarchDebug: {
         phaseOverlayActive: true,
         phaseOverlayReady: true,
@@ -174,28 +178,23 @@ test("publishes phase overlay diagnostics from runtime state when audit is disab
 
   try {
     const runtimeDiagnostics = createRuntimeDiagnostics();
-    updateRetainedHighQRenderVisibilityDiagnostics(
-      runtimeDiagnostics,
-      null,
-      null,
-      {
-        phaseOverlayCache: {
-          active: true,
-          ready: true,
-          rebuildPending: false,
-          backend: "compute",
-          resolution: 32,
-          rebuildCount: 9,
-          lastError: null,
-          activePhaseModeCount: 6,
-        },
-        uniforms: {
-          uModalPhaseOverlayStrength: {
-            value: 0.37,
-          },
+    updateObservationTransferRenderDiagnostics(runtimeDiagnostics, null, {
+      phaseOverlayCache: {
+        active: true,
+        ready: true,
+        rebuildPending: false,
+        backend: "compute",
+        resolution: 32,
+        rebuildCount: 9,
+        lastError: null,
+        activePhaseModeCount: 6,
+      },
+      uniforms: {
+        uModalPhaseOverlayStrength: {
+          value: 0.37,
         },
       },
-    );
+    });
 
     const snapshot = maybePublishRuntimePerfSnapshot(runtimeDiagnostics, {
       force: true,
@@ -215,19 +214,14 @@ test("publishes phase overlay diagnostics from runtime state when audit is disab
   }
 });
 
-test("keeps retained high-Q render diagnostics non-authoritative without audit", () => {
+test("keeps observation transfer render diagnostics non-authoritative without audit", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
 
-  updateRetainedHighQRenderVisibilityDiagnostics(runtimeDiagnostics, null, {
-    modalVisibilityEnergy: 0.32,
-    modalVisibilityRetainedHighQEnergy: 0.19,
-  });
+  updateObservationTransferRenderDiagnostics(runtimeDiagnostics, null);
 
-  expect(runtimeDiagnostics.render.retainedHighQRidgeVisibleDensityMax).toBe(0);
-  expect(runtimeDiagnostics.render.retainedHighQRidgeToRetainedEnergyRatio).toBe(
-    0,
-  );
-  expect(runtimeDiagnostics.render.retainedHighQPhysicalVisibleDensityMax).toBe(
-    0,
-  );
+  expect(runtimeDiagnostics.render.observationEnergy).toBe(0);
+  expect(runtimeDiagnostics.render.observationAnchorMax).toBe(0);
+  expect(runtimeDiagnostics.render.observationSupportMax).toBe(0);
+  expect(runtimeDiagnostics.render.observedDensityFloorMax).toBe(0);
+  expect(runtimeDiagnostics.render.observedContourSupportMax).toBe(0);
 });

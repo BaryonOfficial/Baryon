@@ -8,8 +8,6 @@ export const COLOR_BLEND_START = 0.42;
 export const COLOR_BLEND_END = 0.94;
 export const DENSITY_BOOST = 4.6;
 export const DENSITY_MAX = 6.0;
-export const LOW_DENSITY_FADE_START = 0.22;
-export const LOW_DENSITY_FADE_END = 0.34;
 export const DETAIL_LAYER_WEIGHT = 0.45;
 export const BROAD_BAND_SCALE = 1.65;
 export const CONTOUR_BLEND = 0.82;
@@ -26,10 +24,6 @@ export const INNER_BAND_WEIGHT = 0.18;
 export const LOW_MID_BAND_WEIGHT = 0.08;
 export const HIGH_MID_BAND_WEIGHT = 0.035;
 export const AIR_BAND_WEIGHT = 0.055;
-export const BASS_STRUCTURE_FLOOR_MAX = 0.24;
-export const BASS_STRUCTURE_FLOOR_BAND_WEIGHT = 0.22;
-export const BASS_STRUCTURE_FLOOR_SALIENCE_WEIGHT = 0.18;
-export const BASS_STRUCTURE_FLOOR_OUTER_REDUCTION = 0.35;
 export const COLOR_BIAS_SCALE = 0.82;
 export const BEAM_POWER_BASE = 1.55;
 export const BEAM_POWER_TRANSIENT_GAIN = 0.35;
@@ -79,16 +73,6 @@ export const EXCITATION_VISIBILITY_MAX_FLOOR = 0.52;
 export const EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START = 0.04;
 export const EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END = 0.24;
 export const EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT = 0.82;
-export const EXCITATION_VISIBILITY_RETAINED_HIGH_Q_WEIGHT = 0.72;
-export const MODAL_VISIBILITY_DENSITY_LIFT = 0.3;
-export const MODAL_VISIBILITY_DENSITY_FLOOR = 0.22;
-export const RIDGE_SUPPORT_WEIGHT = 0.72;
-export const OBSERVER_RIDGE_DENSITY_FLOOR = 0.12;
-export const OBSERVER_RIDGE_DENSITY_LIFT = 0.085;
-export const OBSERVER_RIDGE_CONTOUR_ACCENT = 0.035;
-export const PHASE_OVERLAY_RIDGE_DENSITY_FLOOR = 0.08;
-export const PHASE_OVERLAY_RIDGE_DENSITY_LIFT = 0.055;
-export const PHASE_OVERLAY_RIDGE_CONTOUR_ACCENT = 0.025;
 export const SIGNED_PHASE_OVERLAY_FIELD_GAIN = 0.28;
 export const SIGNED_PHASE_OVERLAY_FIELD_LIMIT = 0.65;
 export const SIGNED_PHASE_OVERLAY_GRADIENT_GAIN = 0.35;
@@ -142,69 +126,6 @@ export function deriveLatchedFogMask({
         LATCHED_FOG_TRANSIENT_RELEASE_END,
         transientEnergy,
       ))
-  );
-}
-
-export function deriveExcitationVisibility({
-  excitationGate = 0,
-  modeCoherence = 0,
-  modalVisibilityEnergy = 0,
-  modalObserverVisibilityEnergy = 0,
-  modalVisibilityRetainedHighQEnergy = 0,
-  modalCoefficientEnergy = 0,
-  sourceAuthority = 1,
-}) {
-  const modalAuthorityEnergy = Math.max(
-    modalVisibilityEnergy,
-    modalObserverVisibilityEnergy,
-    modalVisibilityRetainedHighQEnergy *
-      EXCITATION_VISIBILITY_RETAINED_HIGH_Q_WEIGHT,
-    modalCoefficientEnergy,
-  );
-  const effectiveSourceAuthority = Math.max(
-    sourceAuthority,
-    modalAuthorityEnergy * EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT,
-  );
-  const sourceAuthorityGate = smoothstep(
-    EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START,
-    EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END,
-    effectiveSourceAuthority,
-  );
-  const excitationFloor =
-    Math.min(
-      EXCITATION_VISIBILITY_MAX_FLOOR,
-      clamp01(
-        modeCoherence * EXCITATION_VISIBILITY_COHERENCE_WEIGHT +
-          modalAuthorityEnergy * EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT,
-      ),
-    ) * sourceAuthorityGate;
-
-  return Math.max(excitationGate, excitationFloor);
-}
-
-export function deriveContourGainBase({
-  structureSignal = 0,
-  modeCoherence = 0,
-  modalVisibilityEnergy = 0,
-  beatPhaseDecay = 0,
-}) {
-  return (
-    clamp01(structureSignal) * 0.3 +
-    clamp01(modeCoherence) * 0.08 +
-    clamp01(modalVisibilityEnergy) * 0.12 +
-    clamp01(beatPhaseDecay) * 0.18
-  );
-}
-
-export function deriveSpectralColorBiasOffset({
-  modeCoherence = 0,
-  modalVisibilityEnergy = 0,
-  changeSignal = 0,
-}) {
-  return (
-    clamp01(modeCoherence) * 0.05 +
-    clamp01(modalVisibilityEnergy) * 0.08 -
-    clamp01(changeSignal) * 0.08
   );
 }
 
@@ -300,31 +221,12 @@ export function deriveBodyDensity({
   };
 }
 
-export function deriveVisibleStructure({
-  structure,
-  nodeBand,
-  bassSalience = 0,
-  bandEnergies,
-  radialDistance,
-}) {
-  const [sub = 0, lowMid = 0] = bandEnergies ?? [];
+export function deriveVisibleStructure({ structure, radialDistance = 0 }) {
   const outerShellAccent = smoothstep(0.35, 1.0, radialDistance);
-  const bassEnvelope = clamp01(
-    sub * BASS_STRUCTURE_FLOOR_BAND_WEIGHT +
-      lowMid * LOW_MID_BAND_WEIGHT +
-      bassSalience * BASS_STRUCTURE_FLOOR_SALIENCE_WEIGHT,
-  );
-  const bassStructureFloor =
-    bassEnvelope *
-    nodeBand *
-    (1 - outerShellAccent * BASS_STRUCTURE_FLOOR_OUTER_REDUCTION) *
-    BASS_STRUCTURE_FLOOR_MAX;
 
   return {
     outerShellAccent,
-    bassEnvelope,
-    bassStructureFloor,
-    visibleStructure: Math.max(structure, bassStructureFloor),
+    visibleStructure: structure,
   };
 }
 
@@ -436,93 +338,6 @@ export function deriveModalCrowdingDensity({
   };
 }
 
-export function deriveVisibleDensity({
-  density,
-  modalVisibilityEnergy = 0,
-  modalObserverVisibilityEnergy = 0,
-  modalPhaseOverlayEnergy = 0,
-  modalStructureAnchor = 0,
-  ridgeAnchor = 0,
-  ridgeSupportAnchor = 0,
-}) {
-  const ridgeSpatialAnchor = Math.max(
-    clamp01(ridgeAnchor),
-    clamp01(ridgeSupportAnchor) * RIDGE_SUPPORT_WEIGHT,
-  );
-  const observerRidgeAnchor =
-    clamp01(modalObserverVisibilityEnergy) *
-    clamp01(modalStructureAnchor) *
-    ridgeSpatialAnchor;
-  const phaseRidgeAnchor =
-    clamp01(modalPhaseOverlayEnergy) *
-    clamp01(modalStructureAnchor) *
-    ridgeSpatialAnchor;
-  const physicalVisibilityGate = smoothstep(
-    LOW_DENSITY_FADE_START,
-    LOW_DENSITY_FADE_END,
-    density,
-  );
-  const modalLift =
-    clamp01(modalVisibilityEnergy) *
-    clamp01(modalStructureAnchor) *
-    MODAL_VISIBILITY_DENSITY_LIFT;
-  const observerRidgeLift = observerRidgeAnchor * OBSERVER_RIDGE_DENSITY_LIFT;
-  const phaseRidgeLift = phaseRidgeAnchor * PHASE_OVERLAY_RIDGE_DENSITY_LIFT;
-  const visibilityGate = smoothstep(
-    LOW_DENSITY_FADE_START,
-    LOW_DENSITY_FADE_END,
-    density + modalLift + observerRidgeLift + phaseRidgeLift,
-  );
-  const modalVisibleDensity =
-    clamp01(modalVisibilityEnergy) *
-    clamp01(modalStructureAnchor) *
-    MODAL_VISIBILITY_DENSITY_FLOOR;
-  const observerRidgeVisibleDensity = Math.min(
-    OBSERVER_RIDGE_DENSITY_FLOOR,
-    observerRidgeAnchor * OBSERVER_RIDGE_DENSITY_FLOOR,
-  );
-  const phaseRidgeVisibleDensity = Math.min(
-    PHASE_OVERLAY_RIDGE_DENSITY_FLOOR,
-    phaseRidgeAnchor * PHASE_OVERLAY_RIDGE_DENSITY_FLOOR,
-  );
-  const observerContourAccent =
-    observerRidgeAnchor * OBSERVER_RIDGE_CONTOUR_ACCENT;
-  const phaseContourAccent =
-    phaseRidgeAnchor * PHASE_OVERLAY_RIDGE_CONTOUR_ACCENT;
-
-  return {
-    physicalVisibilityGate,
-    physicalVisibleDensity: density * physicalVisibilityGate,
-    modalLift,
-    modalVisibleDensity,
-    observerRidgeAnchor,
-    observerRidgeLift,
-    observerRidgeVisibleDensity,
-    observerContourAccent,
-    lowQBackboneRidgeAnchor: 0,
-    lowQBackboneStructureAnchor: 0,
-    lowQBackboneRidgeLift: 0,
-    lowQBackboneRidgeVisibleDensity: 0,
-    lowQBackboneContourAccent: 0,
-    phaseRidgeAnchor,
-    phaseRidgeLift,
-    phaseRidgeVisibleDensity,
-    phaseContourAccent,
-    retainedHighQRidgeAnchor: 0,
-    retainedHighQStructureAnchor: 0,
-    retainedHighQRidgeLift: 0,
-    retainedHighQRidgeVisibleDensity: 0,
-    retainedHighQContourAccent: 0,
-    visibilityGate,
-    visibleDensity: Math.max(
-      density * visibilityGate,
-      modalVisibleDensity,
-      observerRidgeVisibleDensity,
-      phaseRidgeVisibleDensity,
-    ),
-  };
-}
-
 export function deriveSignedPhaseOverlayField({
   cachedField = 0,
   phaseDisplacement = 0,
@@ -551,50 +366,6 @@ export function deriveSignedPhaseOverlayField({
     phaseGradientContribution,
     effectiveField,
     effectiveFieldAbs: Math.abs(effectiveField),
-  };
-}
-
-export function deriveRetainedHighQVisibilityDiagnostics({
-  modalVisibilityEnergy = 0,
-  modalObserverVisibilityEnergy = 0,
-  modalVisibilityRetainedHighQEnergy = 0,
-  lowQBackboneVisibilityEnergy = 0,
-} = {}) {
-  void lowQBackboneVisibilityEnergy;
-  const densityVisibility = deriveVisibleDensity({
-    density: 0,
-    modalVisibilityEnergy,
-    modalObserverVisibilityEnergy,
-    modalStructureAnchor: 1,
-    ridgeAnchor: 1,
-  });
-  const retainedHighQEnergy = clamp01(modalVisibilityRetainedHighQEnergy);
-
-  return {
-    retainedHighQRidgeAnchorMax: densityVisibility.retainedHighQRidgeAnchor,
-    retainedHighQRidgeLiftMax: densityVisibility.retainedHighQRidgeLift,
-    retainedHighQRidgeVisibleDensityMax:
-      densityVisibility.retainedHighQRidgeVisibleDensity,
-    retainedHighQContourAccentMax: densityVisibility.retainedHighQContourAccent,
-    retainedHighQPhysicalVisibleDensityMax:
-      densityVisibility.physicalVisibleDensity,
-    observerRidgeAnchorMax: densityVisibility.observerRidgeAnchor,
-    observerRidgeLiftMax: densityVisibility.observerRidgeLift,
-    observerRidgeVisibleDensityMax:
-      densityVisibility.observerRidgeVisibleDensity,
-    observerContourAccentMax: densityVisibility.observerContourAccent,
-    observerPhysicalVisibleDensityMax: densityVisibility.physicalVisibleDensity,
-    lowQBackboneRidgeAnchorMax: densityVisibility.lowQBackboneRidgeAnchor,
-    lowQBackboneRidgeLiftMax: densityVisibility.lowQBackboneRidgeLift,
-    lowQBackboneRidgeVisibleDensityMax:
-      densityVisibility.lowQBackboneRidgeVisibleDensity,
-    lowQBackboneContourAccentMax:
-      densityVisibility.lowQBackboneContourAccent,
-    retainedHighQRidgeToRetainedEnergyRatio:
-      retainedHighQEnergy > 1e-6
-        ? densityVisibility.retainedHighQRidgeVisibleDensity /
-          retainedHighQEnergy
-        : 0,
   };
 }
 

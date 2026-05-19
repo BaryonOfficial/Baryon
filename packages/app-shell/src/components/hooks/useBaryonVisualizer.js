@@ -36,7 +36,7 @@ import {
   recordRuntimePerfSample,
   shouldRenderExternalFrame,
   shouldPreservePausedFrameOnControlsChange,
-  updateRetainedHighQRenderVisibilityDiagnostics,
+  updateObservationTransferRenderDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
 import { createCaptureOutputSession } from "@baryon/visualizer/render/outputPipeline";
@@ -58,7 +58,6 @@ import {
 import { useVisualizationRuntimeLifecycle } from "./useVisualizationRuntimeLifecycle.js";
 import { getSourceAuthoritativeClock } from "./externalFrameClock.js";
 import { createRenderCommandQueue } from "./renderCommandQueue.js";
-
 
 function clearCachedControlsSnapshot(cachedControlSnapshotsRef) {
   cachedControlSnapshotsRef.current.controlsSnapshot = null;
@@ -319,10 +318,7 @@ export function useBaryonVisualizer({
       };
     };
 
-    window.addEventListener(
-      BARYON_UI_INTERACTION_EVENT,
-      handleUiInteraction,
-    );
+    window.addEventListener(BARYON_UI_INTERACTION_EVENT, handleUiInteraction);
     return () => {
       window.removeEventListener(
         BARYON_UI_INTERACTION_EVENT,
@@ -330,7 +326,6 @@ export function useBaryonVisualizer({
       );
     };
   }, []);
-
 
   useEffect(() => {
     if (!enableControlEventSync) {
@@ -514,7 +509,8 @@ export function useBaryonVisualizer({
         renderScale: currentEffectiveRenderScale,
       },
     );
-    const uiInteractionActive = uiInteractionUntilMsRef.current > getWallTimeMs();
+    const uiInteractionActive =
+      uiInteractionUntilMsRef.current > getWallTimeMs();
     if (runtimeDiagnostics.uiInteraction) {
       runtimeDiagnostics.uiInteraction.active = uiInteractionActive;
       runtimeDiagnostics.uiInteraction.holdUntilWallTimeMs =
@@ -733,10 +729,9 @@ export function useBaryonVisualizer({
       time,
       deltaTime,
     });
-    updateRetainedHighQRenderVisibilityDiagnostics(
+    updateObservationTransferRenderDiagnostics(
       runtimeDiagnostics,
       runtimeState?.debugSnapshot,
-      effectiveFrame,
       runtimeState,
     );
     if (isTailDiagnosticsRecorderActive(tailDiagnosticsRef.current)) {

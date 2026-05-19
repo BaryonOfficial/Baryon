@@ -7,8 +7,6 @@ function createRuntimePerfEntry() {
   };
 }
 
-import { deriveRetainedHighQVisibilityDiagnostics } from "@baryon/visualizer";
-
 function createFrameDropCounters() {
   return {
     framesOver16_7Ms: 0,
@@ -80,6 +78,9 @@ function createModalFreshnessDiagnostics() {
     modalVisibilityEnergy: 0,
     modalObserverVisibilityEnergy: 0,
     modalVisibilityRetainedHighQEnergy: 0,
+    observationEnergy: 0,
+    modalResponseBackboneEnergy: 0,
+    modalResponseDetailEnergy: 0,
     modalPhaseAuthority: 0,
     highQPhaseAuthority: 0,
     lowQPhaseAuthority: 0,
@@ -134,8 +135,7 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
     avgAmplitude: modalFreshness.avgAmplitude ?? 0,
     analyserRms: modalFreshness.analyserRms ?? 0,
     periodicity: modalFreshness.periodicity ?? 0,
-    liveInputNoiseGateActive:
-      modalFreshness.liveInputNoiseGateActive ?? false,
+    liveInputNoiseGateActive: modalFreshness.liveInputNoiseGateActive ?? false,
     liveInputHardSilenceActive:
       modalFreshness.liveInputHardSilenceActive ?? false,
     structureSignal: modalFreshness.structureSignal ?? 0,
@@ -147,11 +147,14 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
       modalFreshness.modalObserverVisibilityEnergy ?? 0,
     modalVisibilityRetainedHighQEnergy:
       modalFreshness.modalVisibilityRetainedHighQEnergy ?? 0,
+    observationEnergy: modalFreshness.observationEnergy ?? 0,
+    modalResponseBackboneEnergy:
+      modalFreshness.modalResponseBackboneEnergy ?? 0,
+    modalResponseDetailEnergy: modalFreshness.modalResponseDetailEnergy ?? 0,
     modalPhaseAuthority: modalFreshness.modalPhaseAuthority ?? 0,
     highQPhaseAuthority: modalFreshness.highQPhaseAuthority ?? 0,
     lowQPhaseAuthority: modalFreshness.lowQPhaseAuthority ?? 0,
-    modalPhaseOverlayModeCount:
-      modalFreshness.modalPhaseOverlayModeCount ?? 0,
+    modalPhaseOverlayModeCount: modalFreshness.modalPhaseOverlayModeCount ?? 0,
     modeCoherence: modalFreshness.modeCoherence ?? 0,
     activeBackboneModeCount: modalFreshness.activeBackboneModeCount ?? 0,
     activeDetailModeCount: modalFreshness.activeDetailModeCount ?? 0,
@@ -310,9 +313,11 @@ export function createRuntimeDiagnostics() {
       activeBackboneModeCount: 0,
       activeDetailModeCount: 0,
       activeModeCount: 0,
-      retainedHighQRidgeVisibleDensityMax: 0,
-      retainedHighQRidgeToRetainedEnergyRatio: 0,
-      retainedHighQPhysicalVisibleDensityMax: 0,
+      observationEnergy: 0,
+      observationAnchorMax: 0,
+      observationSupportMax: 0,
+      observedDensityFloorMax: 0,
+      observedContourSupportMax: 0,
       phaseOverlayActive: false,
       phaseOverlayReady: false,
       phaseOverlayPending: false,
@@ -360,10 +365,9 @@ function readFiniteNumber(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
-export function updateRetainedHighQRenderVisibilityDiagnostics(
+export function updateObservationTransferRenderDiagnostics(
   runtimeDiagnostics,
   debugSnapshot,
-  featureFrame = null,
   runtimeState = null,
 ) {
   const renderDiagnostics = runtimeDiagnostics?.render;
@@ -372,25 +376,22 @@ export function updateRetainedHighQRenderVisibilityDiagnostics(
   }
 
   const raymarchDebug = debugSnapshot?.raymarchDebug ?? debugSnapshot ?? {};
-  const fallbackDebug =
-    raymarchDebug.retainedHighQRidgeVisibleDensityMax == null
-      ? deriveRetainedHighQVisibilityDiagnostics({
-          modalVisibilityEnergy: featureFrame?.modalVisibilityEnergy ?? 0,
-          modalVisibilityRetainedHighQEnergy:
-            featureFrame?.modalVisibilityRetainedHighQEnergy ?? 0,
-        })
-      : null;
-  const retainedHighQDebug = fallbackDebug ?? raymarchDebug;
   const phaseOverlayCache = runtimeState?.phaseOverlayCache ?? null;
   const phaseOverlayUniforms = runtimeState?.uniforms ?? {};
-  renderDiagnostics.retainedHighQRidgeVisibleDensityMax = readFiniteNumber(
-    retainedHighQDebug.retainedHighQRidgeVisibleDensityMax,
+  renderDiagnostics.observationEnergy = readFiniteNumber(
+    raymarchDebug.observationEnergy,
   );
-  renderDiagnostics.retainedHighQRidgeToRetainedEnergyRatio = readFiniteNumber(
-    retainedHighQDebug.retainedHighQRidgeToRetainedEnergyRatio,
+  renderDiagnostics.observationAnchorMax = readFiniteNumber(
+    raymarchDebug.observationAnchorMax,
   );
-  renderDiagnostics.retainedHighQPhysicalVisibleDensityMax = readFiniteNumber(
-    retainedHighQDebug.retainedHighQPhysicalVisibleDensityMax,
+  renderDiagnostics.observationSupportMax = readFiniteNumber(
+    raymarchDebug.observationSupportMax,
+  );
+  renderDiagnostics.observedDensityFloorMax = readFiniteNumber(
+    raymarchDebug.observedDensityFloorMax,
+  );
+  renderDiagnostics.observedContourSupportMax = readFiniteNumber(
+    raymarchDebug.observedContourSupportMax,
   );
   renderDiagnostics.phaseOverlayActive = Boolean(
     raymarchDebug.phaseOverlayActive ?? phaseOverlayCache?.active,
@@ -568,13 +569,15 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
       activeDetailModeCount:
         runtimeDiagnostics?.render?.activeDetailModeCount ?? 0,
       activeModeCount: runtimeDiagnostics?.render?.activeModeCount ?? 0,
-      retainedHighQRidgeVisibleDensityMax:
-        runtimeDiagnostics?.render?.retainedHighQRidgeVisibleDensityMax ?? 0,
-      retainedHighQRidgeToRetainedEnergyRatio:
-        runtimeDiagnostics?.render?.retainedHighQRidgeToRetainedEnergyRatio ??
-        0,
-      retainedHighQPhysicalVisibleDensityMax:
-        runtimeDiagnostics?.render?.retainedHighQPhysicalVisibleDensityMax ?? 0,
+      observationEnergy: runtimeDiagnostics?.render?.observationEnergy ?? 0,
+      observationAnchorMax:
+        runtimeDiagnostics?.render?.observationAnchorMax ?? 0,
+      observationSupportMax:
+        runtimeDiagnostics?.render?.observationSupportMax ?? 0,
+      observedDensityFloorMax:
+        runtimeDiagnostics?.render?.observedDensityFloorMax ?? 0,
+      observedContourSupportMax:
+        runtimeDiagnostics?.render?.observedContourSupportMax ?? 0,
       phaseOverlayActive:
         runtimeDiagnostics?.render?.phaseOverlayActive ?? false,
       phaseOverlayReady: runtimeDiagnostics?.render?.phaseOverlayReady ?? false,

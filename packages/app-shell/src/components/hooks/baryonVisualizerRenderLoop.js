@@ -222,7 +222,8 @@ function measureSlotTurnover(previousSlots, nextSlots, epsilon = 1e-4) {
   for (let index = 0; index < comparedLength; index += 1) {
     const previousValue =
       index < previousLength ? readFiniteNumber(previousSlots[index]) : 0;
-    const nextValue = index < nextLength ? readFiniteNumber(nextCopy[index]) : 0;
+    const nextValue =
+      index < nextLength ? readFiniteNumber(nextCopy[index]) : 0;
     const delta = Math.abs(nextValue - previousValue);
     totalAbsDelta += delta;
     if (delta > epsilon) {
@@ -239,13 +240,12 @@ function measureSlotTurnover(previousSlots, nextSlots, epsilon = 1e-4) {
 
 function applySlotTurnoverDiagnostics(
   modalFreshness,
-  {
-    fieldPrefix,
-    previousField,
-    nextSlots,
-  },
+  { fieldPrefix, previousField, nextSlots },
 ) {
-  const turnover = measureSlotTurnover(modalFreshness[previousField], nextSlots);
+  const turnover = measureSlotTurnover(
+    modalFreshness[previousField],
+    nextSlots,
+  );
   modalFreshness[`${fieldPrefix}MeanAbsDelta`] = turnover.meanAbsDelta;
   modalFreshness[`${fieldPrefix}ChangeCount`] = turnover.changeCount;
   modalFreshness[previousField] = turnover.nextCopy;
@@ -298,6 +298,17 @@ export function updateModalFreshnessDiagnostics(
   );
   modalFreshness.modalVisibilityRetainedHighQEnergy = readFiniteNumber(
     featureFrame.modalVisibilityRetainedHighQEnergy,
+  );
+  modalFreshness.observationEnergy = readFiniteNumber(
+    featureFrame.observationEnergy,
+  );
+  modalFreshness.modalResponseBackboneEnergy = readFiniteNumber(
+    featureFrame.modalResponseBackboneEnergy ??
+      featureFrame.debug?.modalResponseBackboneEnergy,
+  );
+  modalFreshness.modalResponseDetailEnergy = readFiniteNumber(
+    featureFrame.modalResponseDetailEnergy ??
+      featureFrame.debug?.modalResponseDetailEnergy,
   );
   modalFreshness.modalPhaseAuthority = readFiniteNumber(
     featureFrame.modalPhaseAuthority,

@@ -123,10 +123,8 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uTrebleBroadbandEnergy: { value: 0 },
       uModeCoherence: { value: 0 },
       uTotalSlotAmplitude: { value: 0 },
-      uModalVisibilityEnergy: { value: 0 },
-      uModalObserverVisibilityEnergy: { value: 0 },
-      uModalVisibilityRetainedHighQEnergy: { value: 0 },
-      uLowQBackboneVisibilityEnergy: { value: 0 },
+      uModalResponseBackboneEnergy: { value: 0 },
+      uModalResponseDetailEnergy: { value: 0 },
       uModalPhaseOverlayStrength: { value: 0 },
     },
     visualRoot: {
@@ -278,7 +276,6 @@ describe("tickRaymarchRuntime", () => {
       },
       pulseSignal: 0.32,
       modeCoherence: 0.58,
-      modalVisibilityEnergy: 0.37,
       modalPhaseAuthority: 0.42,
       trebleBroadbandEnergy: 0.18,
       trebleTonalEnergy: 0.24,
@@ -304,6 +301,8 @@ describe("tickRaymarchRuntime", () => {
         projectionEnergyScaleDetail: 0.54,
         projectionOverlapPressureBackbone: 0.23,
         projectionOverlapPressureDetail: 0.41,
+        modalResponseBackboneEnergy: 0.37,
+        modalResponseDetailEnergy: 0.12,
       },
     };
 
@@ -326,8 +325,11 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.bloomResponseSignal).toBeGreaterThan(0);
     expect(runtimeState.visualRoot.scale.x).toBe(1);
     expect(runtimeState.uniforms.uModeCoherence.value).toBeCloseTo(0.58);
-    expect(runtimeState.uniforms.uModalVisibilityEnergy.value).toBeCloseTo(
-      0.37,
+    expect(
+      runtimeState.uniforms.uModalResponseBackboneEnergy.value,
+    ).toBeCloseTo(0.37);
+    expect(runtimeState.uniforms.uModalResponseDetailEnergy.value).toBeCloseTo(
+      0.12,
     );
     expect(runtimeState.uniforms.uTrebleBroadbandEnergy.value).toBeCloseTo(
       0.18,
@@ -399,9 +401,10 @@ describe("tickRaymarchRuntime", () => {
     });
     expect(runtimeState.debugSnapshot.raymarchDebug.pulseSignal).toBe(0.32);
     expect(runtimeState.debugSnapshot.raymarchDebug.modeCoherence).toBe(0.58);
-    expect(runtimeState.debugSnapshot.raymarchDebug.modalVisibilityEnergy).toBe(
-      0.37,
-    );
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.modalResponseBackboneEnergy,
+    ).toBe(0.37);
+    expect(runtimeState.debugSnapshot.raymarchDebug.observationEnergy).toBe(1);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.projectionEnergyBudgetBackbone,
     ).toBe(0.74);
@@ -437,7 +440,8 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.debugSnapshot.raymarchDebug.projectionRawEnergyDetail,
     ).toBe(0.57);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.projectionAllocatedEnergyBackbone,
+      runtimeState.debugSnapshot.raymarchDebug
+        .projectionAllocatedEnergyBackbone,
     ).toBe(0.52);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.projectionAllocatedEnergyDetail,
@@ -449,16 +453,17 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.debugSnapshot.raymarchDebug.projectionEnergyScaleDetail,
     ).toBe(0.54);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.projectionOverlapPressureBackbone,
+      runtimeState.debugSnapshot.raymarchDebug
+        .projectionOverlapPressureBackbone,
     ).toBe(0.23);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.projectionOverlapPressureDetail,
     ).toBe(0.41);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.modalVisibilityDensityLiftMax,
+      runtimeState.debugSnapshot.raymarchDebug.observedDensityFloorMax,
     ).toBeGreaterThan(0);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.modalVisibilityVisibleDensityMax,
+      runtimeState.debugSnapshot.raymarchDebug.observedContourSupportMax,
     ).toBeGreaterThan(0);
     expect(runtimeState.debugSnapshot.raymarchDebug.trebleBroadbandEnergy).toBe(
       0.18,
@@ -741,7 +746,7 @@ describe("tickRaymarchRuntime", () => {
         energySignal: 0,
         changeSignal: 0,
         pulseSignal: 0,
-        modalVisibilityEnergy: 0.5,
+        debug: { modalResponseBackboneEnergy: 0.5 },
       },
       1,
       1 / 60,
@@ -750,11 +755,18 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.volumeMesh.visible).toBe(false);
     expect(runtimeState.idleOverlay.visible).toBe(true);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
-    expect(runtimeState.uniforms.uModalVisibilityEnergy.value).toBe(0);
+    expect(runtimeState.uniforms.uModalResponseBackboneEnergy.value).toBe(0);
+    expect(runtimeState.uniforms.uModalResponseDetailEnergy.value).toBe(0);
     expect(runtimeState.backboneModeBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.detailModeBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.performanceGovernor).toBeNull();
-    expect(runtimeState.debugSnapshot.raymarchDebug).toBeUndefined();
+    expect(runtimeState.debugSnapshot.raymarchDebug.fieldState).toBe("idle");
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.observationHardSilence,
+    ).toBe(true);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.observedDensityFloorMax,
+    ).toBe(0);
     expect(runtimeState.debugSnapshot.modeSlotCount).toBe(0);
   });
 
@@ -964,7 +976,7 @@ describe("tickRaymarchRuntime", () => {
       changeSignal: 0.02,
       pulseSignal: 0,
       modeCoherence: 0.52,
-      modalVisibilityEnergy: 0,
+      debug: { modalResponseBackboneEnergy: 0, modalResponseDetailEnergy: 0 },
     };
 
     try {
@@ -1326,8 +1338,7 @@ describe("tickRaymarchRuntime", () => {
       ]),
       backboneColorSlots: new Float32Array([1, 0.1, 0.1, 0.2]),
       detailColorSlots: new Float32Array([
-        0.8, 0.1, 0.1, 0.2, 0.7, 0.2, 0.1, 0.2, 0.6, 0.2, 0.1, 0.2, 0, 1, 0,
-        1,
+        0.8, 0.1, 0.1, 0.2, 0.7, 0.2, 0.1, 0.2, 0.6, 0.2, 0.1, 0.2, 0, 1, 0, 1,
       ]),
       bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
       transientEnergy: 0.45,
@@ -1343,33 +1354,23 @@ describe("tickRaymarchRuntime", () => {
     const spectralRuntimeState = createRuntimeState();
     spectralRuntimeState.uniforms.uSpectralMix.value = 0.65;
 
-    tickRaymarchRuntime(
-      staticRuntimeState,
-      createFrame(),
-      1,
-      1 / 60,
-    );
-    tickRaymarchRuntime(
-      spectralRuntimeState,
-      createFrame(),
-      1,
-      1 / 60,
-    );
+    tickRaymarchRuntime(staticRuntimeState, createFrame(), 1, 1 / 60);
+    tickRaymarchRuntime(spectralRuntimeState, createFrame(), 1, 1 / 60);
 
     expect(spectralRuntimeState.uniforms.uDetailModeCount.value).toBe(
       staticRuntimeState.uniforms.uDetailModeCount.value,
     );
     expect(
-      Array.from(spectralRuntimeState.detailModeBuffer.value.array.slice(0, 12)),
+      Array.from(
+        spectralRuntimeState.detailModeBuffer.value.array.slice(0, 12),
+      ),
     ).toEqual(
       Array.from(staticRuntimeState.detailModeBuffer.value.array.slice(0, 12)),
     );
     expect(
       spectralRuntimeState.performanceGovernor.detail.selectedIndices,
     ).toEqual(staticRuntimeState.performanceGovernor.detail.selectedIndices);
-    expect(
-      spectralRuntimeState.detailColorBuffer.value.needsUpdate,
-    ).toBe(true);
+    expect(spectralRuntimeState.detailColorBuffer.value.needsUpdate).toBe(true);
   });
 
   it("keeps static color off the Spectral Light cache path", () => {
@@ -1415,8 +1416,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.spectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     );
-    expect(runtimeState.debugSnapshot.spectralLightCacheQueuedDescriptorPending)
-      .toBe(false);
+    expect(
+      runtimeState.debugSnapshot.spectralLightCacheQueuedDescriptorPending,
+    ).toBe(false);
     expect(runtimeState.backboneColorBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.detailColorBuffer.value.needsUpdate).toBe(false);
   });
@@ -1630,11 +1632,9 @@ describe("tickRaymarchRuntime", () => {
         pulseSignal: 0,
         bassSalience: 0.38,
         modeCoherence: 0.44,
-        modalVisibilityEnergy: 0.03,
-        modalObserverVisibilityEnergy: 0.04,
-        lowQBackboneVisibilityEnergy: 0.05,
         debug: {
-          lowQBackboneVisibilityEnergy: 0.05,
+          modalResponseBackboneEnergy: 0.05,
+          modalResponseDetailEnergy: 0,
         },
       },
       1,
@@ -1644,9 +1644,7 @@ describe("tickRaymarchRuntime", () => {
 
     expect(runtimeState.uniforms.uActiveModeCount.value).toBeGreaterThan(0);
     expect(runtimeState.uniforms.uTotalSlotAmplitude.value).toBeGreaterThan(0);
-    expect(runtimeState.uniforms.uLowQBackboneVisibilityEnergy.value).toBe(
-      0.05,
-    );
+    expect(runtimeState.uniforms.uModalResponseBackboneEnergy.value).toBe(0.05);
     expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
       "cached",
     );
@@ -1968,9 +1966,11 @@ describe("tickRaymarchRuntime", () => {
       changeSignal: 0,
       pulseSignal: 0,
       modeCoherence: 0.8,
-      modalVisibilityEnergy: 0.32,
       rhythmicDensity: 0,
-      debug: {},
+      debug: {
+        modalResponseBackboneEnergy: 0.32,
+        modalResponseDetailEnergy: 0,
+      },
     };
 
     for (let frame = 0; frame < 36; frame += 1) {
@@ -1983,12 +1983,12 @@ describe("tickRaymarchRuntime", () => {
     }
 
     expect(runtimeState.responseEnvelope).toBeGreaterThan(0.16);
-    expect(runtimeState.debugSnapshot.raymarchDebug.modalVisibilityEnergy).toBe(
-      0.32,
-    );
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.modalResponseBackboneEnergy,
+    ).toBe(0.32);
   });
 
-  it("keeps retained high-Q diagnostics from changing shader-visible density", () => {
+  it("passes retained high-Q modal response through canonical observation", () => {
     const baselineRuntime = createRuntimeState();
     const retainedRuntime = createRuntimeState();
     const baseFrame = {
@@ -2007,9 +2007,11 @@ describe("tickRaymarchRuntime", () => {
       changeSignal: 0,
       pulseSignal: 0,
       modeCoherence: 0.8,
-      modalVisibilityEnergy: 0.32,
       rhythmicDensity: 0,
-      debug: {},
+      debug: {
+        modalResponseBackboneEnergy: 0.02,
+        modalResponseDetailEnergy: 0,
+      },
     };
 
     tickRaymarchRuntime(baselineRuntime, baseFrame, 2, 1 / 60);
@@ -2017,38 +2019,70 @@ describe("tickRaymarchRuntime", () => {
       retainedRuntime,
       {
         ...baseFrame,
-        modalVisibilityRetainedHighQEnergy: 0.19,
+        debug: {
+          ...baseFrame.debug,
+          modalResponseDetailEnergy: 0.19,
+        },
       },
       2,
       1 / 60,
     );
 
     expect(
-      retainedRuntime.uniforms.uModalVisibilityRetainedHighQEnergy.value,
+      retainedRuntime.uniforms.uModalResponseDetailEnergy.value,
     ).toBeCloseTo(0.19);
     expect(
-      retainedRuntime.debugSnapshot.raymarchDebug
-        .retainedHighQRidgeVisibleDensityMax,
-    ).toBe(0);
+      retainedRuntime.debugSnapshot.raymarchDebug.observationEnergy,
+    ).toBeCloseTo(0.19);
     expect(
-      retainedRuntime.debugSnapshot.raymarchDebug
-        .retainedHighQRidgeToRetainedEnergyRatio,
-    ).toBe(0);
-    expect(
-      retainedRuntime.debugSnapshot.raymarchDebug
-        .retainedHighQPhysicalVisibleDensityMax,
-    ).toBe(0);
-    expect(retainedRuntime.scaleSignal).toBeCloseTo(
-      baselineRuntime.scaleSignal,
-      6,
+      retainedRuntime.debugSnapshot.raymarchDebug.observedDensityFloorMax,
+    ).toBeGreaterThan(
+      baselineRuntime.debugSnapshot.raymarchDebug.observedDensityFloorMax,
     );
-    expect(retainedRuntime.bloomResponseSignal).toBeCloseTo(
-      baselineRuntime.bloomResponseSignal,
-      6,
+    expect(retainedRuntime.debugSnapshot.raymarchDebug).not.toHaveProperty(
+      "retainedHighQRidgeVisibleDensityMax",
     );
   });
 
-  it("passes observer ridge visibility to the shader without inflating bloom response", () => {
+  it("does not let phase overlay author observation energy", () => {
+    const runtimeState = createRuntimeState();
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        averageAmplitude: 0.2,
+        backboneSlots: new Float32Array(32),
+        detailSlots: new Float32Array(32),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array([0.02, 0.018, 0.014, 0.01]),
+        transientEnergy: 0,
+        spectralCentroid: 0.18,
+        spectralFlux: 0,
+        structureSignal: 0.02,
+        energySignal: 0.01,
+        changeSignal: 0,
+        pulseSignal: 0,
+        modeCoherence: 0.7,
+        modalPhaseAuthority: 1,
+        rhythmicDensity: 0,
+        debug: { modalResponseBackboneEnergy: 0, modalResponseDetailEnergy: 0 },
+      },
+      2,
+      1 / 60,
+    );
+
+    expect(runtimeState.debugSnapshot.raymarchDebug.modalPhaseAuthority).toBe(
+      1,
+    );
+    expect(runtimeState.debugSnapshot.raymarchDebug.observationEnergy).toBe(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.observedDensityFloorMax,
+    ).toBe(0);
+  });
+
+  it("passes backbone modal response to observation without old observer lanes", () => {
     const baselineRuntime = createRuntimeState();
     const observedRuntime = createRuntimeState();
     const baseFrame = {
@@ -2067,9 +2101,8 @@ describe("tickRaymarchRuntime", () => {
       changeSignal: 0,
       pulseSignal: 0,
       modeCoherence: 0.62,
-      modalVisibilityEnergy: 0.02,
       rhythmicDensity: 0,
-      debug: {},
+      debug: { modalResponseBackboneEnergy: 0, modalResponseDetailEnergy: 0 },
     };
 
     tickRaymarchRuntime(baselineRuntime, baseFrame, 2, 1 / 60);
@@ -2077,34 +2110,29 @@ describe("tickRaymarchRuntime", () => {
       observedRuntime,
       {
         ...baseFrame,
-        modalObserverVisibilityEnergy: 0.24,
+        debug: {
+          ...baseFrame.debug,
+          modalResponseBackboneEnergy: 0.24,
+        },
       },
       2,
       1 / 60,
     );
 
     expect(
-      observedRuntime.uniforms.uModalObserverVisibilityEnergy.value,
+      observedRuntime.uniforms.uModalResponseBackboneEnergy.value,
     ).toBeCloseTo(0.24);
     expect(
-      observedRuntime.debugSnapshot.raymarchDebug
-        .observerRidgeVisibleDensityMax,
-    ).toBeGreaterThan(0);
-    expect(
-      observedRuntime.debugSnapshot.raymarchDebug
-        .observerPhysicalVisibleDensityMax,
-    ).toBe(0);
-    expect(observedRuntime.scaleSignal).toBeCloseTo(
-      baselineRuntime.scaleSignal,
-      6,
+      observedRuntime.debugSnapshot.raymarchDebug.observedDensityFloorMax,
+    ).toBeGreaterThan(
+      baselineRuntime.debugSnapshot.raymarchDebug.observedDensityFloorMax,
     );
-    expect(observedRuntime.bloomResponseSignal).toBeCloseTo(
-      baselineRuntime.bloomResponseSignal,
-      6,
+    expect(observedRuntime.debugSnapshot.raymarchDebug).not.toHaveProperty(
+      "observerRidgeVisibleDensityMax",
     );
   });
 
-  it("surfaces low-Q backbone diagnostics without changing shader-visible density", () => {
+  it("surfaces low-Q bass through backbone modal response, not topology floors", () => {
     const baselineRuntime = createRuntimeState();
     const lowQRuntime = createRuntimeState();
     const baseFrame = {
@@ -2123,9 +2151,8 @@ describe("tickRaymarchRuntime", () => {
       changeSignal: 0,
       pulseSignal: 0,
       modeCoherence: 0.62,
-      modalVisibilityEnergy: 0,
       rhythmicDensity: 0,
-      debug: {},
+      debug: { modalResponseBackboneEnergy: 0, modalResponseDetailEnergy: 0 },
     };
 
     tickRaymarchRuntime(baselineRuntime, baseFrame, 2, 1 / 60);
@@ -2133,43 +2160,28 @@ describe("tickRaymarchRuntime", () => {
       lowQRuntime,
       {
         ...baseFrame,
-        modalObserverVisibilityEnergy: 0.08,
-        lowQBackboneVisibilityAuthority: 0.46,
-        lowQBackboneVisibilityEnergy: 0.083,
-        lowQBackboneTopologyFloor: 0.0064,
-        lowQBackboneSourceSupport: 0.28,
-        lowQBackboneVisibilityRejected: false,
+        debug: {
+          ...baseFrame.debug,
+          modalResponseBackboneEnergy: 0.083,
+        },
       },
       2,
       1 / 60,
     );
 
+    expect(lowQRuntime.uniforms.uModalResponseBackboneEnergy.value).toBeCloseTo(
+      0.083,
+    );
     expect(
-      lowQRuntime.debugSnapshot.raymarchDebug.lowQBackboneVisibilityAuthority,
-    ).toBeCloseTo(0.46);
-    expect(
-      lowQRuntime.debugSnapshot.raymarchDebug.lowQBackboneVisibilityEnergy,
-    ).toBeCloseTo(0.083);
-    expect(
-      lowQRuntime.debugSnapshot.raymarchDebug.lowQBackboneTopologyFloor,
-    ).toBeCloseTo(0.0064);
-    expect(
-      lowQRuntime.debugSnapshot.raymarchDebug.lowQBackboneSourceSupport,
-    ).toBeCloseTo(0.28);
-    expect(
-      lowQRuntime.debugSnapshot.raymarchDebug.lowQBackboneVisibilityRejected,
-    ).toBe(false);
-    expect(
-      lowQRuntime.uniforms.uLowQBackboneVisibilityEnergy.value,
-    ).toBeCloseTo(0.083);
-    expect(
-      lowQRuntime.debugSnapshot.raymarchDebug
-        .lowQBackboneRidgeVisibleDensityMax,
-    ).toBe(0);
-    expect(lowQRuntime.scaleSignal).toBeCloseTo(baselineRuntime.scaleSignal, 6);
-    expect(lowQRuntime.bloomResponseSignal).toBeCloseTo(
-      baselineRuntime.bloomResponseSignal,
-      6,
+      lowQRuntime.debugSnapshot.raymarchDebug.observedDensityFloorMax,
+    ).toBeGreaterThan(
+      baselineRuntime.debugSnapshot.raymarchDebug.observedDensityFloorMax,
+    );
+    expect(lowQRuntime.debugSnapshot.raymarchDebug).not.toHaveProperty(
+      "lowQBackboneTopologyFloor",
+    );
+    expect(lowQRuntime.debugSnapshot.raymarchDebug).not.toHaveProperty(
+      "lowQBackboneRidgeVisibleDensityMax",
     );
   });
 
@@ -2360,8 +2372,8 @@ describe("tickRaymarchRuntime", () => {
       {
         fieldState: "active",
         averageAmplitude: 28,
-        backboneSlots: new Float32Array([3, 4, 6, 0.6]),
-        detailSlots: new Float32Array([4, 5, 5, 0.18]),
+        backboneSlots: new Float32Array([3, 4, 6, 0.02]),
+        detailSlots: new Float32Array([4, 5, 5, 0.01]),
         backboneColorSlots: new Float32Array(32),
         detailColorSlots: new Float32Array(32),
         bandEnergies: new Float32Array([0.22, 0.14, 0.08, 0.03]),

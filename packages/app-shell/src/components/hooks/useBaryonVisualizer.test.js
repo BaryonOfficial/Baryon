@@ -99,7 +99,7 @@ vi.mock("./baryonVisualizerRuntimeState.js", () => ({
   shouldRenderExternalFrame: (...args) =>
     renderLoopSpies.shouldRenderExternalFrameSpy(...args),
   shouldPreservePausedFrameOnControlsChange: () => false,
-  updateRetainedHighQRenderVisibilityDiagnostics: () => {},
+  updateObservationTransferRenderDiagnostics: () => {},
 }));
 
 vi.mock("../../context/liveInputRuntimeStatus.js", () => ({
@@ -202,8 +202,7 @@ describe("useBaryonVisualizer", () => {
     renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(false);
     frameState.callbacks.length = 0;
     visualizationLifecycleState.controlCacheRefs.controlVersionRef.current = 0;
-    visualizationLifecycleState.controlCacheRefs.appliedControlVersionRef.current =
-      0;
+    visualizationLifecycleState.controlCacheRefs.appliedControlVersionRef.current = 0;
     visualizationLifecycleState.controlCacheRefs.cachedControlSnapshotsRef.current =
       { controlsSnapshot: null };
     container = document.createElement("div");
@@ -424,9 +423,9 @@ describe("useBaryonVisualizer", () => {
       1 / 60,
     );
 
-    expect(renderLoopSpies.shouldRenderExternalFrameSpy).toHaveBeenLastCalledWith(
-      expect.objectContaining({ forceRender: true }),
-    );
+    expect(
+      renderLoopSpies.shouldRenderExternalFrameSpy,
+    ).toHaveBeenLastCalledWith(expect.objectContaining({ forceRender: true }));
     expect(renderSpy).toHaveBeenCalledTimes(1);
   });
 });

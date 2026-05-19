@@ -16,8 +16,7 @@ function createRuntimeDiagnostics(overrides = {}) {
       periodicity: 0.9,
       liveInputHardSilenceActive: false,
       liveInputNoiseGateActive: false,
-      modalObserverVisibilityEnergy: 0.32,
-      modalVisibilityRetainedHighQEnergy: 0.18,
+      observationEnergy: 0.32,
       highQDetailModeCount: 8,
       highQDetailEnergy: 1,
       highQRingSupport: 1,
@@ -29,7 +28,8 @@ function createRuntimeDiagnostics(overrides = {}) {
       ...overrides.modalFreshness,
     },
     render: {
-      retainedHighQRidgeVisibleDensityMax: 0.07,
+      observedDensityFloorMax: 0.07,
+      observedContourSupportMax: 0.012,
       phaseOverlayReady: true,
       phaseOverlayPending: false,
       phaseOverlayStrength: 1,
@@ -69,8 +69,8 @@ test("tail diagnostics records compact samples on the configured interval", () =
         volumeVisible: true,
         idleOverlayVisible: false,
         raymarchDebug: {
-          observerRidgeVisibleDensityMax: 0.04,
-          modalVisibilityVisibleDensityMax: 0.03,
+          observedDensityFloorMax: 0.04,
+          observedContourSupportMax: 0.03,
         },
       },
     },
@@ -109,13 +109,12 @@ test("tail diagnostics records compact samples on the configured interval", () =
     frame: {
       fieldState: "active",
       activeModeCount: 16,
-      modalObserverVisibilityEnergy: 0.32,
-      modalVisibilityRetainedHighQEnergy: 0.18,
+      observationEnergy: 0.32,
     },
     render: {
       volumeVisible: true,
-      retainedHighQRidgeVisibleDensityMax: 0.07,
-      observerRidgeVisibleDensityMax: 0.04,
+      observedDensityFloorMax: 0.07,
+      observedContourSupportMax: 0.012,
     },
     classification: "unknown",
   });
@@ -153,8 +152,7 @@ test("tail diagnostics classifies black-tail failure seams", () => {
       observer: { highQDetailModeCount: 8, highQDetailEnergy: 1 },
       frame: {
         fieldState: "active",
-        modalObserverVisibilityEnergy: 0,
-        modalVisibilityRetainedHighQEnergy: 0,
+        observationEnergy: 0,
       },
       render: { volumeVisible: true },
     }),
@@ -166,13 +164,12 @@ test("tail diagnostics classifies black-tail failure seams", () => {
       observer: { highQDetailModeCount: 8, highQDetailEnergy: 1 },
       frame: {
         fieldState: "active",
-        modalObserverVisibilityEnergy: 0.3,
-        modalVisibilityRetainedHighQEnergy: 0.2,
+        observationEnergy: 0.3,
       },
       render: {
         volumeVisible: true,
-        retainedHighQRidgeVisibleDensityMax: 0,
-        observerRidgeVisibleDensityMax: 0,
+        observedDensityFloorMax: 0,
+        observedContourSupportMax: 0,
       },
     }),
   ).toBe("shader-density-drop");
@@ -183,12 +180,11 @@ test("tail diagnostics classifies black-tail failure seams", () => {
       observer: { highQDetailModeCount: 8, highQDetailEnergy: 1 },
       frame: {
         fieldState: "active",
-        modalObserverVisibilityEnergy: 0.3,
-        modalVisibilityRetainedHighQEnergy: 0.2,
+        observationEnergy: 0.3,
       },
       render: {
         volumeVisible: false,
-        retainedHighQRidgeVisibleDensityMax: 0.05,
+        observedDensityFloorMax: 0.05,
       },
     }),
   ).toBe("render-hidden");
@@ -225,7 +221,10 @@ test("tail diagnostics window api dumps and copies pasteable JSON", async () => 
 });
 
 test("tail diagnostics copy returns the capture when clipboard permission fails", async () => {
-  const clipboardError = new DOMException("Document is not focused.", "NotAllowedError");
+  const clipboardError = new DOMException(
+    "Document is not focused.",
+    "NotAllowedError",
+  );
   const writeText = vi.fn(async () => {
     throw clipboardError;
   });
@@ -251,7 +250,9 @@ test("tail diagnostics copy returns the capture when clipboard permission fails"
     nowMs: 500,
   });
 
-  await expect(targetWindow.__baryonTailDiagnostics.copy()).resolves.toMatchObject({
+  await expect(
+    targetWindow.__baryonTailDiagnostics.copy(),
+  ).resolves.toMatchObject({
     copied: false,
     copyError: {
       name: "NotAllowedError",

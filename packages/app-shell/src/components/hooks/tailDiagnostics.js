@@ -44,31 +44,28 @@ function hasCurrentInput(input = {}) {
   );
 }
 
-function hasObservedHighQ(observer = {}) {
+function hasObservedModalResponse(observer = {}, frame = {}) {
   return (
-    readFiniteNumber(observer.highQDetailModeCount) > 0 &&
-    readFiniteNumber(observer.highQDetailEnergy) > OBSERVER_MIN_HIGH_Q_ENERGY
+    readFiniteNumber(frame.observationEnergy) >= FRAME_MIN_VISIBILITY_ENERGY ||
+    readFiniteNumber(frame.modalResponseBackboneEnergy) >=
+      FRAME_MIN_VISIBILITY_ENERGY ||
+    readFiniteNumber(frame.modalResponseDetailEnergy) >=
+      FRAME_MIN_VISIBILITY_ENERGY ||
+    (readFiniteNumber(observer.highQDetailModeCount) > 0 &&
+      readFiniteNumber(observer.highQDetailEnergy) > OBSERVER_MIN_HIGH_Q_ENERGY)
   );
 }
 
 function hasFrameVisibility(frame = {}) {
   return (
     frame.fieldState !== "idle" &&
-    (readFiniteNumber(frame.modalObserverVisibilityEnergy) >=
-      FRAME_MIN_VISIBILITY_ENERGY ||
-      readFiniteNumber(frame.modalVisibilityRetainedHighQEnergy) >=
-        FRAME_MIN_VISIBILITY_ENERGY)
+    readFiniteNumber(frame.observationEnergy) >= FRAME_MIN_VISIBILITY_ENERGY
   );
 }
 
 function hasShaderVisibleDensity(render = {}) {
   return (
-    readFiniteNumber(render.retainedHighQRidgeVisibleDensityMax) >=
-      SHADER_MIN_RIDGE_DENSITY ||
-    readFiniteNumber(render.observerRidgeVisibleDensityMax) >=
-      SHADER_MIN_RIDGE_DENSITY ||
-    readFiniteNumber(render.modalVisibilityVisibleDensityMax) >=
-      SHADER_MIN_RIDGE_DENSITY
+    readFiniteNumber(render.observedDensityFloorMax) >= SHADER_MIN_RIDGE_DENSITY
   );
 }
 
@@ -78,7 +75,10 @@ export function classifyTailDiagnosticSample(sample = {}) {
     return "input-drop";
   }
 
-  const observerPresent = hasObservedHighQ(sample.observer);
+  const observerPresent = hasObservedModalResponse(
+    sample.observer,
+    sample.frame,
+  );
   if (!observerPresent) {
     return "observer-drop";
   }
@@ -127,9 +127,7 @@ function buildTailDiagnosticSample({
       highQDetailEnergy: readFiniteNumber(modalFreshness.highQDetailEnergy),
       highQRingSupport: readFiniteNumber(modalFreshness.highQRingSupport),
       modeCoherence: readFiniteNumber(modalFreshness.modeCoherence),
-      modalPhaseAuthority: readFiniteNumber(
-        modalFreshness.modalPhaseAuthority,
-      ),
+      modalPhaseAuthority: readFiniteNumber(modalFreshness.modalPhaseAuthority),
     },
     frame: {
       fieldState:
@@ -144,33 +142,44 @@ function buildTailDiagnosticSample({
       totalSlotAmplitude: readFiniteNumber(
         featureFrame?.debug?.totalSlotAmplitude,
       ),
-      modalObserverVisibilityEnergy: readFiniteNumber(
-        modalFreshness.modalObserverVisibilityEnergy,
+      observationEnergy: readFiniteNumber(
+        modalFreshness.observationEnergy ?? featureFrame?.observationEnergy,
       ),
-      modalVisibilityRetainedHighQEnergy: readFiniteNumber(
-        modalFreshness.modalVisibilityRetainedHighQEnergy,
+      modalResponseBackboneEnergy: readFiniteNumber(
+        modalFreshness.modalResponseBackboneEnergy ??
+          featureFrame?.modalResponseBackboneEnergy ??
+          featureFrame?.debug?.modalResponseBackboneEnergy,
+      ),
+      modalResponseDetailEnergy: readFiniteNumber(
+        modalFreshness.modalResponseDetailEnergy ??
+          featureFrame?.modalResponseDetailEnergy ??
+          featureFrame?.debug?.modalResponseDetailEnergy,
       ),
     },
     render: {
       volumeVisible: readBoolean(debugSnapshot.volumeVisible, true),
       idleOverlayVisible: readBoolean(debugSnapshot.idleOverlayVisible),
-      retainedHighQRidgeVisibleDensityMax: readFiniteNumber(
-        render.retainedHighQRidgeVisibleDensityMax ??
-          raymarchDebug.retainedHighQRidgeVisibleDensityMax,
+      observationEnergy: readFiniteNumber(
+        render.observationEnergy ?? raymarchDebug.observationEnergy,
       ),
-      observerRidgeVisibleDensityMax: readFiniteNumber(
-        raymarchDebug.observerRidgeVisibleDensityMax,
+      observationAnchorMax: readFiniteNumber(
+        render.observationAnchorMax ?? raymarchDebug.observationAnchorMax,
       ),
-      modalVisibilityVisibleDensityMax: readFiniteNumber(
-        raymarchDebug.modalVisibilityVisibleDensityMax,
+      observationSupportMax: readFiniteNumber(
+        render.observationSupportMax ?? raymarchDebug.observationSupportMax,
+      ),
+      observedDensityFloorMax: readFiniteNumber(
+        render.observedDensityFloorMax ?? raymarchDebug.observedDensityFloorMax,
+      ),
+      observedContourSupportMax: readFiniteNumber(
+        render.observedContourSupportMax ??
+          raymarchDebug.observedContourSupportMax,
       ),
       phaseOverlayReady: readBoolean(render.phaseOverlayReady),
       phaseOverlayPending: readBoolean(render.phaseOverlayPending),
       phaseOverlayStrength: readFiniteNumber(render.phaseOverlayStrength),
       bloomEnabled: readBoolean(render.bloomEnabled),
-      bloomResponseSignal: readFiniteNumber(
-        modalFreshness.bloomResponseSignal,
-      ),
+      bloomResponseSignal: readFiniteNumber(modalFreshness.bloomResponseSignal),
       scaleSignal: readFiniteNumber(modalFreshness.scaleSignal),
       renderScale: readFiniteNumber(render.renderScale, 1),
     },

@@ -933,6 +933,24 @@ function buildDebugSummary({
   );
   const modalObserverVisibilityEnergy =
     modalVisibilitySummary.modalObserverVisibilityEnergy ?? 0;
+  const modalCoefficientEnergy = clamp01(
+    sumSlotAmplitudeTotal(modeSlots, MAX_STACK_SLOTS),
+  );
+  const modalResponseBackboneEnergy = clamp01(
+    structuralMetrics?.modalResponseBackboneEnergy ?? 0,
+  );
+  const modalResponseDetailEnergy = clamp01(
+    structuralMetrics?.modalResponseDetailEnergy ?? 0,
+  );
+  const observationEnergy = liveInputHardSilenceActive
+    ? 0
+    : clamp01(
+        Math.max(
+          modalCoefficientEnergy,
+          modalResponseBackboneEnergy,
+          modalResponseDetailEnergy,
+        ),
+      );
 
   return {
     audioInputMode: inputMode,
@@ -981,6 +999,8 @@ function buildDebugSummary({
     spectralFlux,
     structureSignal,
     energySignal,
+    modalCoefficientEnergy,
+    observationEnergy,
     modalVisibilityEnergy,
     modalVisibilitySlotEnergy: modalVisibilitySummary.averageSlotEnergy,
     modalVisibilityPeakSlotEnergy: modalVisibilitySummary.peakSlotEnergy,
@@ -1000,10 +1020,8 @@ function buildDebugSummary({
       modalVisibilitySummary.lowQBackboneVisibilityAuthority,
     lowQBackboneVisibilityEnergy:
       modalVisibilitySummary.lowQBackboneVisibilityEnergy,
-    lowQBackboneTopologyFloor:
-      modalVisibilitySummary.lowQBackboneTopologyFloor,
-    lowQBackboneSourceSupport:
-      modalVisibilitySummary.lowQBackboneSourceSupport,
+    lowQBackboneTopologyFloor: modalVisibilitySummary.lowQBackboneTopologyFloor,
+    lowQBackboneSourceSupport: modalVisibilitySummary.lowQBackboneSourceSupport,
     lowQBackboneVisibilityRejected:
       modalVisibilitySummary.lowQBackboneVisibilityRejected,
     modalVisibilityRetainedHighQEnergy:
@@ -1075,7 +1093,7 @@ function buildDebugSummary({
       0,
     highQRetainedVisibilityRejected: Boolean(
       modalVisibilitySummary.highQRetainedVisibilityRejected ??
-        structuralMetrics?.highQRetainedVisibilityRejected,
+      structuralMetrics?.highQRetainedVisibilityRejected,
     ),
     modalPhaseAuthority: structuralMetrics?.modalPhaseAuthority ?? 0,
     highQPhaseAuthority: structuralMetrics?.highQPhaseAuthority ?? 0,
@@ -1086,9 +1104,8 @@ function buildDebugSummary({
     modalDriveEnergy: structuralMetrics?.modalDriveEnergy ?? 0,
     modalResponseEnergy: structuralMetrics?.modalResponseEnergy ?? 0,
     modalResponseInputEnergy: structuralMetrics?.modalResponseInputEnergy ?? 0,
-    modalResponseBackboneEnergy:
-      structuralMetrics?.modalResponseBackboneEnergy ?? 0,
-    modalResponseDetailEnergy: structuralMetrics?.modalResponseDetailEnergy ?? 0,
+    modalResponseBackboneEnergy,
+    modalResponseDetailEnergy,
     modalResponseModeCount: structuralMetrics?.modalResponseModeCount ?? 0,
     modalResponseBudgetScaleBackbone:
       structuralMetrics?.modalResponseBudgetScaleBackbone ?? 0,
@@ -3797,8 +3814,7 @@ function resolveStructuralProjectionSources(preparedInputs, structuralState) {
     structuralState?.backbonePhaseSlotsSource ??
     preparedInputs.backbonePhaseSlots;
   const detailPhaseSlotsSource =
-    structuralState?.detailPhaseSlotsSource ??
-    preparedInputs.detailPhaseSlots;
+    structuralState?.detailPhaseSlotsSource ?? preparedInputs.detailPhaseSlots;
   const backboneColorSlotsSource = shouldBuildSpectralLight
     ? hasFrozenProjection
       ? auditState.frozenBackboneColorSlots
@@ -4775,6 +4791,27 @@ export function composeAudioFeatureFrame({
     lowQBackboneSourceSupport *= reusedAnalysisSourceAuthorityScale;
     modeCoherence *= reusedAnalysisSourceAuthorityScale;
   }
+  const modalCoefficientEnergy = clamp01(
+    sumSlotAmplitudeTotal(
+      analysisResult.signalModeSlots ?? analysisResult.modeSlots,
+      preparedInputs.capacity,
+    ),
+  );
+  const modalResponseBackboneEnergy = clamp01(
+    analysisResult.structuralMetrics?.modalResponseBackboneEnergy ?? 0,
+  );
+  const modalResponseDetailEnergy = clamp01(
+    analysisResult.structuralMetrics?.modalResponseDetailEnergy ?? 0,
+  );
+  const observationEnergy = analysisResult.liveInputHardSilenceActive
+    ? 0
+    : clamp01(
+        Math.max(
+          modalCoefficientEnergy,
+          modalResponseBackboneEnergy,
+          modalResponseDetailEnergy,
+        ),
+      );
   const timbreSpread = deriveDeterministicTimbreSpread({
     bandEnergies: analysisResult.bandEnergies,
     spectralCentroid: analysisResult.spectralCentroid,
@@ -4940,6 +4977,10 @@ export function composeAudioFeatureFrame({
     spectralFlux: analysisResult.spectralFlux,
     structureSignal,
     energySignal,
+    modalCoefficientEnergy,
+    modalResponseBackboneEnergy,
+    modalResponseDetailEnergy,
+    observationEnergy,
     modalVisibilityEnergy,
     modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,

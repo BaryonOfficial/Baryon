@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { AUDIO_DEFAULTS } from "../../defaults.js";
 import {
@@ -29,6 +30,46 @@ function makeMeshUniforms(overrides = {}) {
 }
 
 describe("raymarch volume material", () => {
+  it("uses observation transfer as the only shader density visibility lane", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const modalStructureAnchorStart = source.indexOf(
+      "const modalStructureAnchor = beamCore",
+    );
+    const ridgeAnchorStart = source.indexOf("const ridgeAnchor =");
+    const observationEnergyStart = source.indexOf(
+      "const observationEnergy = clamp(",
+    );
+    const observationSupportStart = source.indexOf(
+      "const observationSupport = clamp(",
+    );
+    const modalStructureAnchorBlock = source.slice(
+      modalStructureAnchorStart,
+      ridgeAnchorStart,
+    );
+    const observationEnergyBlock = source.slice(
+      observationEnergyStart,
+      observationSupportStart,
+    );
+
+    expect(modalStructureAnchorStart).toBeGreaterThanOrEqual(0);
+    expect(ridgeAnchorStart).toBeGreaterThan(modalStructureAnchorStart);
+    expect(observationEnergyStart).toBeGreaterThanOrEqual(0);
+    expect(observationSupportStart).toBeGreaterThan(observationEnergyStart);
+    expect(source).toContain("deriveObservationTransferNode");
+    expect(source).not.toContain("deriveVisibleDensityNode");
+    expect(source).not.toContain("BASS_STRUCTURE_FLOOR");
+    expect(source).not.toContain("lowQBackboneRidge");
+    expect(source).not.toContain("lowQBackboneContourAccent");
+    expect(source).not.toContain("retainedHighQRidge");
+    expect(source).not.toContain("retainedHighQContourAccent");
+    expect(modalStructureAnchorBlock).not.toContain("visibleStructure");
+    expect(modalStructureAnchorBlock).not.toContain(".mul(structure)");
+    expect(observationEnergyBlock).not.toContain("modalPhaseOverlayEnergy");
+  });
+
   it("keeps Spectral Light shader tuning vivid instead of neutralizing color", () => {
     expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow).toBeGreaterThan(0.95);
     expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.hotCoreSurfacePull).toBeLessThan(0.2);
@@ -93,9 +134,8 @@ describe("raymarch volume material", () => {
     expect(mesh.material.steps).toBe(88);
     expect(mesh.material.radiusNode).toBe(uniforms.uRadius);
     expect(mesh.material.opacityGainNode).toBe(uniforms.uOpacityGain);
-    expect(uniforms.uModalObserverVisibilityEnergy.value).toBe(0);
-    expect(uniforms.uModalVisibilityRetainedHighQEnergy.value).toBe(0);
-    expect(uniforms.uLowQBackboneVisibilityEnergy.value).toBe(0);
+    expect(uniforms.uModalResponseBackboneEnergy.value).toBe(0);
+    expect(uniforms.uModalResponseDetailEnergy.value).toBe(0);
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
   });

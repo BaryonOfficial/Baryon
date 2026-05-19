@@ -42,7 +42,10 @@ export {
   normalizeRaymarchFieldCacheOverride,
   resolveRaymarchFieldCacheOverride,
 } from "./visualization/fieldEvaluation.js";
-export { deriveRetainedHighQVisibilityDiagnostics } from "./core/raymarch/fieldShaping.js";
+export {
+  OBSERVATION_TRANSFER_DEFAULTS,
+  deriveObservationTransfer,
+} from "./core/raymarch/observationTransfer.js";
 export { createVisualizationRuntime } from "./visualization/runtimeFactory.js";
 
 // Three

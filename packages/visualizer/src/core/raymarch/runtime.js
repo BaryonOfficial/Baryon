@@ -28,11 +28,10 @@ import {
 } from "./fieldCache.js";
 import {
   DETAIL_LAYER_WEIGHT,
-  deriveRetainedHighQVisibilityDiagnostics,
-  deriveVisibleDensity,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
 } from "./fieldShaping.js";
+import { deriveObservationTransfer } from "./observationTransfer.js";
 import {
   buildRaymarchPerformanceGovernor,
   copyBudgetedModeLayer,
@@ -299,47 +298,32 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     featureFrame?.changeBreakdown ??
     null;
   const pulseSignal = featureFrame?.pulseSignal ?? 0;
-  const modalVisibilityEnergy = featureFrame?.modalVisibilityEnergy ?? 0;
-  const modalObserverVisibilityEnergy =
-    featureFrame?.modalObserverVisibilityEnergy ?? 0;
-  const modalVisibilityRetainedHighQEnergy =
-    featureFrame?.modalVisibilityRetainedHighQEnergy ?? 0;
-  const lowQBackboneVisibilityAuthority =
-    featureFrame?.lowQBackboneVisibilityAuthority ??
-    featureFrame?.debug?.lowQBackboneVisibilityAuthority ??
+  const totalSlotAmplitude = sumLayeredAmplitude(featureFrame);
+  const modalCoefficientEnergy = clamp01(totalSlotAmplitude);
+  const modalResponseBackboneEnergy =
+    featureFrame?.modalResponseBackboneEnergy ??
+    featureFrame?.debug?.modalResponseBackboneEnergy ??
     0;
-  const lowQBackboneVisibilityEnergy =
-    featureFrame?.lowQBackboneVisibilityEnergy ??
-    featureFrame?.debug?.lowQBackboneVisibilityEnergy ??
+  const modalResponseDetailEnergy =
+    featureFrame?.modalResponseDetailEnergy ??
+    featureFrame?.debug?.modalResponseDetailEnergy ??
     0;
-  const lowQBackboneTopologyFloor =
-    featureFrame?.lowQBackboneTopologyFloor ??
-    featureFrame?.debug?.lowQBackboneTopologyFloor ??
-    0;
-  const lowQBackboneSourceSupport =
-    featureFrame?.lowQBackboneSourceSupport ??
-    featureFrame?.debug?.lowQBackboneSourceSupport ??
-    0;
-  const lowQBackboneVisibilityRejected = Boolean(
-    featureFrame?.lowQBackboneVisibilityRejected ??
-      featureFrame?.debug?.lowQBackboneVisibilityRejected,
-  );
   const modalPhaseAuthority = featureFrame?.modalPhaseAuthority ?? 0;
-  const modalVisibilityDensityDebug = deriveVisibleDensity({
+  const observationHardSilence = Boolean(
+    featureFrame?.liveInputHardSilenceActive ??
+    featureFrame?.debug?.liveInputHardSilenceActive ??
+    (fieldState === "idle" && totalSlotAmplitude <= 0 && avgAmplitude <= 0),
+  );
+  const observationTransferDebug = deriveObservationTransfer({
     density: 0,
-    modalVisibilityEnergy,
-    modalObserverVisibilityEnergy,
+    fieldGradientMagnitude: 1,
     modalStructureAnchor: 1,
     ridgeAnchor: 1,
+    modalCoefficientEnergy,
+    modalResponseBackboneEnergy,
+    modalResponseDetailEnergy,
+    hardSilence: observationHardSilence,
   });
-  const retainedHighQVisibilityDebug = deriveRetainedHighQVisibilityDiagnostics(
-    {
-      modalVisibilityEnergy,
-      modalObserverVisibilityEnergy,
-      modalVisibilityRetainedHighQEnergy,
-      lowQBackboneVisibilityEnergy,
-    },
-  );
   const avgDensity = Math.min(
     1,
     avgAmplitude * densityGain * absorption * (0.75 + transientEnergy * 0.2),
@@ -488,14 +472,15 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     changeSignal,
     changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
     pulseSignal,
-    modalVisibilityEnergy,
-    modalObserverVisibilityEnergy,
-    modalVisibilityRetainedHighQEnergy,
-    lowQBackboneVisibilityAuthority,
-    lowQBackboneVisibilityEnergy,
-    lowQBackboneTopologyFloor,
-    lowQBackboneSourceSupport,
-    lowQBackboneVisibilityRejected,
+    modalCoefficientEnergy,
+    modalResponseBackboneEnergy,
+    modalResponseDetailEnergy,
+    observationEnergy: observationTransferDebug.observationEnergy,
+    observationAnchorMax: observationTransferDebug.observationAnchor,
+    observationSupportMax: observationTransferDebug.observationSupport,
+    observedDensityFloorMax: observationTransferDebug.observedDensityFloor,
+    observedContourSupportMax: observationTransferDebug.observedContourSupport,
+    observationHardSilence,
     modalPhaseAuthority,
     projectionEnergyBudgetBackbone:
       featureFrame?.debug?.projectionEnergyBudgetBackbone ?? 0,
@@ -533,14 +518,10 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     lowQPhaseAuthority: featureFrame?.debug?.lowQPhaseAuthority ?? 0,
     modalPhaseOverlayModeCount:
       featureFrame?.debug?.modalPhaseOverlayModeCount ?? 0,
-    modalVisibilityDensityLiftMax: modalVisibilityDensityDebug.modalLift,
-    modalVisibilityVisibleDensityMax:
-      modalVisibilityDensityDebug.modalVisibleDensity,
-    ...retainedHighQVisibilityDebug,
     modeCoherence: featureFrame?.modeCoherence ?? 0,
     trebleTonalEnergy: featureFrame?.trebleTonalEnergy ?? 0,
     trebleBroadbandEnergy: featureFrame?.trebleBroadbandEnergy ?? 0,
-    totalSlotAmplitude: sumLayeredAmplitude(featureFrame),
+    totalSlotAmplitude,
     spectralBandEnergies: featureFrame?.spectralBandEnergies
       ? Array.from(featureFrame.spectralBandEnergies)
       : null,
@@ -652,8 +633,19 @@ function updateReactiveResponse(
   const energySignal = clamp01(featureFrame?.energySignal ?? 0);
   const changeSignal = clamp01(featureFrame?.changeSignal ?? 0);
   const pulseSignal = clamp01(featureFrame?.pulseSignal ?? 0);
-  const modalVisibilityEnergy = clamp01(
-    featureFrame?.modalVisibilityEnergy ?? 0,
+  const modalResponseEnergy = clamp01(
+    Math.max(
+      featureFrame?.modalResponseEnergy ??
+        featureFrame?.debug?.modalResponseEnergy ??
+        0,
+      featureFrame?.modalResponseBackboneEnergy ??
+        featureFrame?.debug?.modalResponseBackboneEnergy ??
+        0,
+      featureFrame?.modalResponseDetailEnergy ??
+        featureFrame?.debug?.modalResponseDetailEnergy ??
+        0,
+      sumLayeredAmplitude(featureFrame),
+    ),
   );
   const reactivity = Math.max(
     0,
@@ -664,9 +656,7 @@ function updateReactiveResponse(
   const gatedEnergySignal = clamp01(energySignal * reactivity);
   const gatedChangeSignal = clamp01(changeSignal * reactivity);
   const gatedPulseSignal = clamp01(pulseSignal * reactivity);
-  const gatedModalVisibilityEnergy = clamp01(
-    modalVisibilityEnergy * reactivity,
-  );
+  const gatedModalResponseEnergy = clamp01(modalResponseEnergy * reactivity);
   const decayReleaseMask = deriveDecayReleaseMask({
     fieldState,
     gatedStructureSignal,
@@ -680,7 +670,7 @@ function updateReactiveResponse(
           (1 - decayReleaseMask * DECAY_RELEASE_TARGET_REDUCTION) +
           gatedEnergySignal * 0.38 +
           gatedChangeSignal * 0.23 +
-          gatedModalVisibilityEnergy * 0.48,
+          gatedModalResponseEnergy * 0.48,
       )
     : 0;
   const responseEnvelope = damp(
@@ -712,7 +702,7 @@ function updateReactiveResponse(
       gatedEnergySignal * 0.24 +
       accentEnvelope * 0.14 +
       gatedStructureSignal * 0.06 +
-      gatedModalVisibilityEnergy * 0.08,
+      gatedModalResponseEnergy * 0.08,
   );
   const contourSharpness = runtimeState.uniforms.uContourSharpness?.value ?? 1;
   const contourSignal = clamp01((contourSharpness - 1) / 7);
@@ -720,7 +710,7 @@ function updateReactiveResponse(
     responseEnvelope * 0.44 +
       accentEnvelope * 0.22 +
       gatedStructureSignal * 0.2 +
-      gatedModalVisibilityEnergy * 0.08 +
+      gatedModalResponseEnergy * 0.08 +
       contourSignal * 0.14 * reactivity,
   );
 
@@ -918,11 +908,7 @@ function resolveSpectralLightEvaluationMode(
   runtimeState,
   renderer,
   { backboneCapacity, detailCapacity },
-  {
-    spectralLightEnabled,
-    spectralLightDescriptor,
-    debugDirectRequested,
-  },
+  { spectralLightEnabled, spectralLightDescriptor, debugDirectRequested },
 ) {
   const spectralLightCache = runtimeState.spectralLightCache;
   if (!spectralLightCache) {
@@ -1165,8 +1151,8 @@ export function tickRaymarchRuntime(
     setIfChanged(uniforms.uTrebleBroadbandEnergy, 0);
     setIfChanged(uniforms.uModeCoherence, 0);
     setIfChanged(uniforms.uTotalSlotAmplitude, 0);
-    setIfChanged(uniforms.uModalVisibilityEnergy, 0);
-    setIfChanged(uniforms.uLowQBackboneVisibilityEnergy, 0);
+    setIfChanged(uniforms.uModalResponseBackboneEnergy, 0);
+    setIfChanged(uniforms.uModalResponseDetailEnergy, 0);
     setIfChanged(uniforms.uModalPhaseOverlayStrength, 0);
     setIfChanged(uniforms.uKeyTintStrength, 0);
     setIfChanged(uniforms.uKeyMode, 0);
@@ -1357,21 +1343,15 @@ export function tickRaymarchRuntime(
   setIfChanged(uniforms.uModeCoherence, featureFrame?.modeCoherence ?? 0);
   setIfChanged(uniforms.uTotalSlotAmplitude, sumLayeredAmplitude(featureFrame));
   setIfChanged(
-    uniforms.uModalVisibilityEnergy,
-    featureFrame?.modalVisibilityEnergy ?? 0,
+    uniforms.uModalResponseBackboneEnergy,
+    featureFrame?.modalResponseBackboneEnergy ??
+      featureFrame?.debug?.modalResponseBackboneEnergy ??
+      0,
   );
   setIfChanged(
-    uniforms.uModalObserverVisibilityEnergy,
-    featureFrame?.modalObserverVisibilityEnergy ?? 0,
-  );
-  setIfChanged(
-    uniforms.uModalVisibilityRetainedHighQEnergy,
-    featureFrame?.modalVisibilityRetainedHighQEnergy ?? 0,
-  );
-  setIfChanged(
-    uniforms.uLowQBackboneVisibilityEnergy,
-    featureFrame?.lowQBackboneVisibilityEnergy ??
-      featureFrame?.debug?.lowQBackboneVisibilityEnergy ??
+    uniforms.uModalResponseDetailEnergy,
+    featureFrame?.modalResponseDetailEnergy ??
+      featureFrame?.debug?.modalResponseDetailEnergy ??
       0,
   );
 

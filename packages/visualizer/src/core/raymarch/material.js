@@ -8,6 +8,7 @@ import {
   abs,
   clamp,
   dot,
+  exp,
   float,
   fract,
   length,
@@ -32,11 +33,8 @@ import {
   RAYMARCH_BOUNDARY_END,
   RAYMARCH_BOUNDARY_START,
 } from "./intersection.js";
+import { OBSERVATION_TRANSFER_DEFAULTS } from "./observationTransfer.js";
 import {
-  BASS_STRUCTURE_FLOOR_BAND_WEIGHT,
-  BASS_STRUCTURE_FLOOR_MAX,
-  BASS_STRUCTURE_FLOOR_OUTER_REDUCTION,
-  BASS_STRUCTURE_FLOOR_SALIENCE_WEIGHT,
   BOUNDARY_CONTOUR_ACCENT_WEIGHT,
   AIR_BAND_WEIGHT,
   BODY_BOUNDARY_REDUCTION,
@@ -63,7 +61,6 @@ import {
   EXCITATION_VISIBILITY_MODAL_ENERGY_WEIGHT,
   EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT,
   EXCITATION_VISIBILITY_MAX_FLOOR,
-  EXCITATION_VISIBILITY_RETAINED_HIGH_Q_WEIGHT,
   EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END,
   EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START,
   HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
@@ -87,21 +84,12 @@ import {
   LATCHED_FOG_STRUCTURE_START,
   LATCHED_FOG_TRANSIENT_RELEASE_END,
   LATCHED_FOG_TRANSIENT_RELEASE_START,
-  LOW_DENSITY_FADE_END,
-  LOW_DENSITY_FADE_START,
   LOW_MID_BAND_WEIGHT,
   MODAL_CROWDING_ACCUMULATION_COMPRESSION,
   MODAL_CROWDING_BODY_COMPRESSION,
-  OBSERVER_RIDGE_CONTOUR_ACCENT,
-  OBSERVER_RIDGE_DENSITY_FLOOR,
-  OBSERVER_RIDGE_DENSITY_LIFT,
-  PHASE_OVERLAY_RIDGE_CONTOUR_ACCENT,
-  PHASE_OVERLAY_RIDGE_DENSITY_FLOOR,
-  PHASE_OVERLAY_RIDGE_DENSITY_LIFT,
   SIGNED_PHASE_OVERLAY_FIELD_GAIN,
   SIGNED_PHASE_OVERLAY_FIELD_LIMIT,
   SIGNED_PHASE_OVERLAY_GRADIENT_GAIN,
-  RIDGE_SUPPORT_WEIGHT,
   RIM_BLOOM_BIAS_BASE,
   RIM_BLOOM_BIAS_GAIN,
   RIM_COMPRESSION_BOUNDARY_GAIN,
@@ -125,8 +113,6 @@ import {
   STRUCTURE_AWARE_EMISSION_TRANSIENT_RELIEF,
   WHITE_EMISSION_CROWDING_REDUCTION,
   WHITE_EMISSION_CROWDING_TRANSIENT_RELIEF,
-  MODAL_VISIBILITY_DENSITY_FLOOR,
-  MODAL_VISIBILITY_DENSITY_LIFT,
 } from "./fieldShaping.js";
 
 // Excitation gate: smoothstep range for uAverageAmplitude / 255.
@@ -474,9 +460,8 @@ function createScatteringNode({
     uTrebleBroadbandEnergy,
     uModeCoherence,
     uTotalSlotAmplitude,
-    uModalVisibilityEnergy,
-    uModalObserverVisibilityEnergy,
-    uModalVisibilityRetainedHighQEnergy,
+    uModalResponseBackboneEnergy,
+    uModalResponseDetailEnergy,
     uModalPhaseOverlayStrength,
   } = uniforms;
   // Uniform-only expressions: hoist outside the Fn so they are loop-invariant
@@ -497,7 +482,9 @@ function createScatteringNode({
   const contourGainBase = uStructureSignal
     .mul(0.3)
     .add(uModeCoherence.mul(0.08))
-    .add(uModalVisibilityEnergy.mul(0.12))
+    .add(
+      max(uModalResponseBackboneEnergy, uModalResponseDetailEnergy).mul(0.12),
+    )
     .add(beatPhaseDecay.mul(0.18));
   const dynamicHolographicIntensity = uHolographicIntensity
     .mul(float(1.0).add(uTimbreSpread.mul(0.35)))
@@ -522,7 +509,9 @@ function createScatteringNode({
     : float(1.0);
   const spectralColorBiasHintOffset = uModeCoherence
     .mul(0.05)
-    .add(uModalVisibilityEnergy.mul(0.08))
+    .add(
+      max(uModalResponseBackboneEnergy, uModalResponseDetailEnergy).mul(0.08),
+    )
     .sub(uChangeSignal.mul(0.08));
   const modalCoefficientEnergy = clamp(
     uTotalSlotAmplitude,
@@ -536,7 +525,11 @@ function createScatteringNode({
     .div(float(255.0))
     .mul(float(0.3))
     .add(uStructureSignal.mul(float(0.45)))
-    .add(uModalVisibilityEnergy.mul(float(0.25)))
+    .add(
+      max(uModalResponseBackboneEnergy, uModalResponseDetailEnergy).mul(
+        float(0.25),
+      ),
+    )
     .add(modalCoefficientEnergy.mul(float(0.18)));
   const excitationGate = smoothstep(
     float(EXCITATION_GATE_LOW),
@@ -544,13 +537,8 @@ function createScatteringNode({
     excitationInput,
   );
   const modalAuthorityEnergy = max(
-    max(uModalVisibilityEnergy, uModalObserverVisibilityEnergy),
-    max(
-      uModalVisibilityRetainedHighQEnergy.mul(
-        float(EXCITATION_VISIBILITY_RETAINED_HIGH_Q_WEIGHT),
-      ),
-      modalCoefficientEnergy,
-    ),
+    max(uModalResponseBackboneEnergy, uModalResponseDetailEnergy),
+    modalCoefficientEnergy,
   );
   const excitationSourceAuthority = smoothstep(
     float(EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START),
@@ -733,12 +721,6 @@ function createScatteringNode({
         .mul(phaseOverlayStrength)
         .mul(float(SIGNED_PHASE_OVERLAY_FIELD_GAIN));
       const effectiveField = field.add(signedPhaseContribution);
-      const phaseOverlaySupport = max(
-        phaseOverlayGradientMagnitude,
-        phaseOverlayCancellation,
-      )
-        .mul(phaseOverlayAuthority)
-        .mul(phaseOverlayStrength);
       const fieldAbs = abs(effectiveField);
       const gradient = vec3(gradX, gradY, gradZ).toVar();
       const gradientMagnitude = length(gradient);
@@ -832,26 +814,7 @@ function createScatteringNode({
         .mul(float(1.0).add(bassShellBoost));
       const contourCore = nodeBand.pow(uContourSharpness.mul(contourGain));
       const contourShape = mix(broadBand, contourCore, float(CONTOUR_BLEND));
-      // Low-order / bass-heavy modes have weaker gradients than bright treble modes.
-      // Give them a bounded visibility floor at nodal surfaces so the pattern reads
-      // without restoring a sphere-wide density floor.
-      const bassEnvelope = clamp(
-        uBandEnergies.x
-          .mul(float(BASS_STRUCTURE_FLOOR_BAND_WEIGHT))
-          .add(uBandEnergies.y.mul(float(LOW_MID_BAND_WEIGHT)))
-          .add(uBassSalience.mul(float(BASS_STRUCTURE_FLOOR_SALIENCE_WEIGHT))),
-        float(0.0),
-        float(1.0),
-      );
-      const bassStructureFloor = bassEnvelope
-        .mul(nodeBand)
-        .mul(
-          float(1.0).sub(
-            outerShellAccent.mul(float(BASS_STRUCTURE_FLOOR_OUTER_REDUCTION)),
-          ),
-        )
-        .mul(float(BASS_STRUCTURE_FLOOR_MAX));
-      const visibleStructure = max(structure, bassStructureFloor);
+      const visibleStructure = structure;
       const activeMask = smoothstep(float(0.0), float(1.0), activeCount);
       // Beat pulse drives a visible density surge through the volume
       const densityMod = float(1.0)
@@ -1005,7 +968,6 @@ function createScatteringNode({
         float(DENSITY_MAX),
       ).mul(float(DENSITY_BOOST));
       const modalStructureAnchor = beamCore
-        .mul(visibleStructure)
         .mul(shellWeight)
         .mul(edgeFade)
         .mul(activeMask);
@@ -1015,21 +977,18 @@ function createScatteringNode({
       const ridgeSupportAnchor = /** @type {any} */ (
         max(contourShape, ridgeConcentration)
       );
-      const densityVisibility = deriveVisibleDensityNode(
+      const observationTransfer = deriveObservationTransferNode(
         density,
-        uModalVisibilityEnergy,
+        modalCoefficientEnergy,
         modalStructureAnchor,
-        uModalObserverVisibilityEnergy,
-        /** @type {any} */ (phaseOverlaySupport),
+        uModalResponseBackboneEnergy,
+        uModalResponseDetailEnergy,
         ridgeAnchor,
         ridgeSupportAnchor,
+        /** @type {any} */ (effectiveGradientMagnitude),
       );
-      const { visibleDensity, physicalVisibleDensity } = densityVisibility;
-      const retainedHighQContourAccent =
-        densityVisibility.retainedHighQContourAccent
-          .add(densityVisibility.lowQBackboneContourAccent)
-          .add(densityVisibility.observerContourAccent)
-          .add(densityVisibility.phaseContourAccent);
+      const { visibleDensity, physicalVisibleDensity } = observationTransfer;
+      const observedContourSupport = observationTransfer.observedContourSupport;
       const highlightMask = smoothstep(
         float(HIGHLIGHT_MASK_START),
         float(HIGHLIGHT_MASK_END),
@@ -1115,7 +1074,7 @@ function createScatteringNode({
           .mul(float(0.18))
           .add(boundaryMask.mul(float(BOUNDARY_CONTOUR_ACCENT_WEIGHT)))
           .add(highlightMask.mul(float(HIGHLIGHT_CONTOUR_ACCENT_WEIGHT)))
-          .add(retainedHighQContourAccent),
+          .add(observedContourSupport),
         float(0.0),
         float(1.0),
       );
@@ -1312,121 +1271,74 @@ function createScatteringNode({
   );
 }
 
-function deriveVisibleDensityNode(
+function deriveObservationTransferNode(
   density,
-  modalVisibilityEnergy,
+  modalCoefficientEnergy,
   modalStructureAnchor,
-  modalObserverVisibilityEnergy = float(0.0),
-  modalPhaseOverlayEnergy = float(0.0),
+  modalResponseBackboneEnergy = float(0.0),
+  modalResponseDetailEnergy = float(0.0),
   ridgeAnchor = float(0.0),
   ridgeSupportAnchor = float(0.0),
+  fieldGradientMagnitude = float(0.0),
 ) {
-  const ridgeSpatialAnchor = max(
-    ridgeAnchor,
-    ridgeSupportAnchor.mul(float(RIDGE_SUPPORT_WEIGHT)),
-  );
-  const inactiveDensity = float(0.0);
-  const observerRidgeAnchor = clamp(
-    modalObserverVisibilityEnergy
-      .mul(modalStructureAnchor)
-      .mul(ridgeSpatialAnchor),
-    float(0.0),
-    float(1.0),
-  );
-  const phaseRidgeAnchor = clamp(
-    modalPhaseOverlayEnergy
-      .mul(modalStructureAnchor)
-      .mul(ridgeSpatialAnchor),
-    float(0.0),
-    float(1.0),
-  );
   const physicalVisibilityGate = smoothstep(
-    float(LOW_DENSITY_FADE_START),
-    float(LOW_DENSITY_FADE_END),
+    float(OBSERVATION_TRANSFER_DEFAULTS.lowDensityFadeStart),
+    float(OBSERVATION_TRANSFER_DEFAULTS.lowDensityFadeEnd),
     density,
   );
-  const modalLift = clamp(
-    modalVisibilityEnergy
-      .mul(modalStructureAnchor)
-      .mul(float(MODAL_VISIBILITY_DENSITY_LIFT)),
-    float(0.0),
-    float(MODAL_VISIBILITY_DENSITY_LIFT),
-  );
-  const observerRidgeLift = clamp(
-    observerRidgeAnchor.mul(float(OBSERVER_RIDGE_DENSITY_LIFT)),
-    float(0.0),
-    float(OBSERVER_RIDGE_DENSITY_LIFT),
-  );
-  const phaseRidgeLift = clamp(
-    phaseRidgeAnchor.mul(float(PHASE_OVERLAY_RIDGE_DENSITY_LIFT)),
-    float(0.0),
-    float(PHASE_OVERLAY_RIDGE_DENSITY_LIFT),
-  );
-  const visibilityGate = smoothstep(
-    float(LOW_DENSITY_FADE_START),
-    float(LOW_DENSITY_FADE_END),
-    density
-      .add(modalLift)
-      .add(observerRidgeLift)
-      .add(phaseRidgeLift),
-  );
   const physicalVisibleDensity = density.mul(physicalVisibilityGate);
-  const modalVisibleDensity = clamp(
-    modalVisibilityEnergy
-      .mul(modalStructureAnchor)
-      .mul(float(MODAL_VISIBILITY_DENSITY_FLOOR)),
-    float(0.0),
-    float(MODAL_VISIBILITY_DENSITY_FLOOR),
+  const ridgePhysicalAnchor = max(
+    max(ridgeAnchor, ridgeSupportAnchor),
+    fieldGradientMagnitude,
   );
-  const observerRidgeVisibleDensity = clamp(
-    observerRidgeAnchor.mul(float(OBSERVER_RIDGE_DENSITY_FLOOR)),
+  const observationAnchor = clamp(
+    modalStructureAnchor.mul(ridgePhysicalAnchor),
     float(0.0),
-    float(OBSERVER_RIDGE_DENSITY_FLOOR),
+    float(1.0),
   );
-  const phaseRidgeVisibleDensity = clamp(
-    phaseRidgeAnchor.mul(float(PHASE_OVERLAY_RIDGE_DENSITY_FLOOR)),
+  const observationEnergy = clamp(
+    max(
+      max(modalCoefficientEnergy, modalResponseBackboneEnergy),
+      modalResponseDetailEnergy,
+    ),
     float(0.0),
-    float(PHASE_OVERLAY_RIDGE_DENSITY_FLOOR),
+    float(1.0),
   );
-  const observerContourAccent = clamp(
-    observerRidgeAnchor.mul(float(OBSERVER_RIDGE_CONTOUR_ACCENT)),
+  const observationSupport = clamp(
+    float(1.0).sub(
+      exp(
+        observationEnergy
+          .mul(observationAnchor)
+          .mul(float(-OBSERVATION_TRANSFER_DEFAULTS.transferGain)),
+      ),
+    ),
     float(0.0),
-    float(OBSERVER_RIDGE_CONTOUR_ACCENT),
+    float(1.0),
   );
-  const phaseContourAccent = clamp(
-    phaseRidgeAnchor.mul(float(PHASE_OVERLAY_RIDGE_CONTOUR_ACCENT)),
+  const observedDensityFloor = clamp(
+    observationSupport
+      .mul(observationAnchor)
+      .mul(float(OBSERVATION_TRANSFER_DEFAULTS.densityFloor)),
     float(0.0),
-    float(PHASE_OVERLAY_RIDGE_CONTOUR_ACCENT),
+    float(OBSERVATION_TRANSFER_DEFAULTS.densityFloor),
+  );
+  const observedContourSupport = clamp(
+    observationSupport
+      .mul(ridgeAnchor)
+      .mul(float(OBSERVATION_TRANSFER_DEFAULTS.contourSupportScale)),
+    float(0.0),
+    float(OBSERVATION_TRANSFER_DEFAULTS.contourSupportScale),
   );
 
   return {
     physicalVisibilityGate,
     physicalVisibleDensity,
-    modalLift,
-    modalVisibleDensity,
-    observerRidgeAnchor,
-    observerRidgeLift,
-    observerRidgeVisibleDensity,
-    observerContourAccent,
-    lowQBackboneRidgeAnchor: inactiveDensity,
-    lowQBackboneStructureAnchor: inactiveDensity,
-    lowQBackboneRidgeLift: inactiveDensity,
-    lowQBackboneRidgeVisibleDensity: inactiveDensity,
-    lowQBackboneContourAccent: inactiveDensity,
-    phaseRidgeAnchor,
-    phaseRidgeLift,
-    phaseRidgeVisibleDensity,
-    phaseContourAccent,
-    retainedHighQRidgeAnchor: inactiveDensity,
-    retainedHighQStructureAnchor: inactiveDensity,
-    retainedHighQRidgeLift: inactiveDensity,
-    retainedHighQRidgeVisibleDensity: inactiveDensity,
-    retainedHighQContourAccent: inactiveDensity,
-    visibilityGate,
-    visibleDensity: max(
-      max(density.mul(visibilityGate), modalVisibleDensity),
-      max(observerRidgeVisibleDensity, phaseRidgeVisibleDensity),
-    ),
+    observationAnchor,
+    observationEnergy,
+    observationSupport,
+    observedDensityFloor,
+    observedContourSupport,
+    visibleDensity: max(physicalVisibleDensity, observedDensityFloor),
   };
 }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { AUDIO_SLOT_CAPACITY } from "../../defaults.js";
 import { BACKBONE_STACK_SLOTS, DETAIL_STACK_SLOTS } from "./modalStack.js";
 import {
@@ -30,6 +31,23 @@ function prepareAudioFeatureFrameInputs(options) {
 function buildAudioFeatureFrame(options) {
   return buildAudioFeatureFrameBase(options);
 }
+
+it("derives observation energy from modal coefficient and response only", () => {
+  const source = readFileSync(
+    new URL("./buildFeatureFrame.js", import.meta.url),
+    "utf8",
+  );
+  const observationEnergyBlocks = [
+    ...source.matchAll(
+      /const observationEnergy =[\s\S]*?modalResponseDetailEnergy,[\s\S]*?\);/g,
+    ),
+  ].map(([block]) => block);
+
+  expect(observationEnergyBlocks).toHaveLength(2);
+  for (const block of observationEnergyBlocks) {
+    expect(block).not.toContain("modalPhaseAuthority");
+  }
+});
 
 function createStatus(overrides = {}) {
   return {
@@ -342,13 +360,15 @@ function makeModeSlots(entries) {
 
 function makePhaseSlots(entries) {
   const slots = new Float32Array(AUDIO_SLOT_CAPACITY * 4);
-  entries.forEach(([phaseOffset, phaseVelocity, coherence, authority], index) => {
-    const offset = index * 4;
-    slots[offset] = phaseOffset;
-    slots[offset + 1] = phaseVelocity;
-    slots[offset + 2] = coherence;
-    slots[offset + 3] = authority;
-  });
+  entries.forEach(
+    ([phaseOffset, phaseVelocity, coherence, authority], index) => {
+      const offset = index * 4;
+      slots[offset] = phaseOffset;
+      slots[offset + 1] = phaseVelocity;
+      slots[offset + 2] = coherence;
+      slots[offset + 3] = authority;
+    },
+  );
   return slots;
 }
 
@@ -1884,22 +1904,14 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     buildTimedFrame({
       featureState,
-      fftMagnitudes: makeFft([
-        [48, 0.08],
-        [96, 0.045],
-        ...upperBed,
-      ]),
+      fftMagnitudes: makeFft([[48, 0.08], [96, 0.045], ...upperBed]),
       avgAmplitude: 24,
       rms: 0.09,
       frameTimeMs: 0,
     });
     const beat = buildTimedFrame({
       featureState,
-      fftMagnitudes: makeFft([
-        [48, 0.42],
-        [96, 0.22],
-        ...upperBed,
-      ]),
+      fftMagnitudes: makeFft([[48, 0.42], [96, 0.22], ...upperBed]),
       avgAmplitude: 38,
       rms: 0.18,
       frameTimeMs: 260,
@@ -5593,7 +5605,13 @@ describe("modal excitation integration", () => {
     });
 
     expect(frame.beatDetected).toBe(false);
+    expect(frame.modalResponseBackboneEnergy).toBe(
+      frame.debug.modalResponseBackboneEnergy,
+    );
     expect(frame.debug.modalResponseBackboneEnergy).toBeGreaterThan(0.08);
+    expect(frame.observationEnergy).toBeGreaterThanOrEqual(
+      frame.modalResponseBackboneEnergy,
+    );
     expect(frame.debug.modalResponseModeCount).toBeGreaterThan(0);
     expect(sumSlotAmplitudes(frame.backboneSlots)).toBeGreaterThan(0.04);
     expect(frame.fieldState).toBe("active");
@@ -6003,19 +6021,19 @@ describe("modal excitation integration", () => {
     expect(result.frame.debug.projectionConservationApplied).toBeUndefined();
     expect(result.frame.debug.projectionEnergyNormalizationApplied).toBe(true);
     expect(result.frame.debug.projectionRawEnergyDetail).toBeGreaterThan(0);
-    expect(result.frame.debug.projectionAllocatedEnergyDetail).toBeLessThanOrEqual(
-      result.frame.debug.projectionEnergyBudgetDetail,
-    );
+    expect(
+      result.frame.debug.projectionAllocatedEnergyDetail,
+    ).toBeLessThanOrEqual(result.frame.debug.projectionEnergyBudgetDetail);
     expect(result.frame.debug.projectionEnergyScaleDetail).toBeLessThanOrEqual(
       1,
     );
     expect(result.frame.debug.projectionOverlapPressureDetail).toBeGreaterThan(
       0,
     );
-    expect(result.frame.debug.projectionCompetitionReduction).toBeGreaterThan(0);
-    expect(
-      result.frame.debug.projectionEnergyUsedDetail,
-    ).toBeLessThanOrEqual(
+    expect(result.frame.debug.projectionCompetitionReduction).toBeGreaterThan(
+      0,
+    );
+    expect(result.frame.debug.projectionEnergyUsedDetail).toBeLessThanOrEqual(
       result.frame.debug.projectionEnergyBudgetDetail,
     );
     expect(result.frame.modalVisibilityEnergy).toBeLessThan(0.75);
