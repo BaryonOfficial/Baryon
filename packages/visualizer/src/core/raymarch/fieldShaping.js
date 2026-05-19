@@ -87,6 +87,11 @@ export const RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT = 0.22;
 export const RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT = 0.11;
 export const RETAINED_HIGH_Q_RIDGE_SUPPORT_WEIGHT = 0.72;
 export const RETAINED_HIGH_Q_RIDGE_STRUCTURE_FLOOR = 0.34;
+export const LOW_Q_BACKBONE_RIDGE_DENSITY_FLOOR = 0.42;
+export const LOW_Q_BACKBONE_RIDGE_DENSITY_LIFT = 0.14;
+export const LOW_Q_BACKBONE_RIDGE_CONTOUR_ACCENT = 0.05;
+export const LOW_Q_BACKBONE_RIDGE_SUPPORT_WEIGHT = 0.68;
+export const LOW_Q_BACKBONE_RIDGE_STRUCTURE_FLOOR = 0.46;
 export const OBSERVER_RIDGE_DENSITY_FLOOR = 0.12;
 export const OBSERVER_RIDGE_DENSITY_LIFT = 0.085;
 export const OBSERVER_RIDGE_CONTOUR_ACCENT = 0.035;
@@ -443,6 +448,7 @@ export function deriveVisibleDensity({
   modalVisibilityEnergy = 0,
   modalObserverVisibilityEnergy = 0,
   modalVisibilityRetainedHighQEnergy = 0,
+  lowQBackboneVisibilityEnergy = 0,
   modalPhaseOverlayEnergy = 0,
   modalStructureAnchor = 0,
   ridgeAnchor = 0,
@@ -460,6 +466,18 @@ export function deriveVisibleDensity({
     clamp01(modalVisibilityRetainedHighQEnergy) *
     retainedHighQStructureAnchor *
     retainedHighQSpatialAnchor;
+  const lowQBackboneSpatialAnchor = Math.max(
+    clamp01(ridgeAnchor),
+    clamp01(ridgeSupportAnchor) * LOW_Q_BACKBONE_RIDGE_SUPPORT_WEIGHT,
+  );
+  const lowQBackboneStructureAnchor = Math.max(
+    clamp01(modalStructureAnchor),
+    lowQBackboneSpatialAnchor * LOW_Q_BACKBONE_RIDGE_STRUCTURE_FLOOR,
+  );
+  const lowQBackboneRidgeAnchor =
+    clamp01(lowQBackboneVisibilityEnergy) *
+    lowQBackboneStructureAnchor *
+    lowQBackboneSpatialAnchor;
   const observerRidgeAnchor =
     clamp01(modalObserverVisibilityEnergy) *
     clamp01(modalStructureAnchor) *
@@ -479,6 +497,8 @@ export function deriveVisibleDensity({
     MODAL_VISIBILITY_DENSITY_LIFT;
   const retainedHighQRidgeLift =
     retainedHighQRidgeAnchor * RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT;
+  const lowQBackboneRidgeLift =
+    lowQBackboneRidgeAnchor * LOW_Q_BACKBONE_RIDGE_DENSITY_LIFT;
   const observerRidgeLift = observerRidgeAnchor * OBSERVER_RIDGE_DENSITY_LIFT;
   const phaseRidgeLift = phaseRidgeAnchor * PHASE_OVERLAY_RIDGE_DENSITY_LIFT;
   const visibilityGate = smoothstep(
@@ -488,6 +508,7 @@ export function deriveVisibleDensity({
       modalLift +
       observerRidgeLift +
       retainedHighQRidgeLift +
+      lowQBackboneRidgeLift +
       phaseRidgeLift,
   );
   const modalVisibleDensity =
@@ -497,6 +518,10 @@ export function deriveVisibleDensity({
   const retainedHighQRidgeVisibleDensity = Math.min(
     RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
     retainedHighQRidgeAnchor * RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
+  );
+  const lowQBackboneRidgeVisibleDensity = Math.min(
+    LOW_Q_BACKBONE_RIDGE_DENSITY_FLOOR,
+    lowQBackboneRidgeAnchor * LOW_Q_BACKBONE_RIDGE_DENSITY_FLOOR,
   );
   const observerRidgeVisibleDensity = Math.min(
     OBSERVER_RIDGE_DENSITY_FLOOR,
@@ -508,6 +533,8 @@ export function deriveVisibleDensity({
   );
   const retainedHighQContourAccent =
     retainedHighQRidgeAnchor * RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT;
+  const lowQBackboneContourAccent =
+    lowQBackboneRidgeAnchor * LOW_Q_BACKBONE_RIDGE_CONTOUR_ACCENT;
   const observerContourAccent =
     observerRidgeAnchor * OBSERVER_RIDGE_CONTOUR_ACCENT;
   const phaseContourAccent =
@@ -522,6 +549,11 @@ export function deriveVisibleDensity({
     observerRidgeLift,
     observerRidgeVisibleDensity,
     observerContourAccent,
+    lowQBackboneRidgeAnchor,
+    lowQBackboneStructureAnchor,
+    lowQBackboneRidgeLift,
+    lowQBackboneRidgeVisibleDensity,
+    lowQBackboneContourAccent,
     phaseRidgeAnchor,
     phaseRidgeLift,
     phaseRidgeVisibleDensity,
@@ -536,6 +568,7 @@ export function deriveVisibleDensity({
       density * visibilityGate,
       modalVisibleDensity,
       observerRidgeVisibleDensity,
+      lowQBackboneRidgeVisibleDensity,
       retainedHighQRidgeVisibleDensity,
       phaseRidgeVisibleDensity,
     ),
@@ -577,12 +610,14 @@ export function deriveRetainedHighQVisibilityDiagnostics({
   modalVisibilityEnergy = 0,
   modalObserverVisibilityEnergy = 0,
   modalVisibilityRetainedHighQEnergy = 0,
+  lowQBackboneVisibilityEnergy = 0,
 } = {}) {
   const densityVisibility = deriveVisibleDensity({
     density: 0,
     modalVisibilityEnergy,
     modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
+    lowQBackboneVisibilityEnergy,
     modalStructureAnchor: 1,
     ridgeAnchor: 1,
   });
@@ -602,6 +637,12 @@ export function deriveRetainedHighQVisibilityDiagnostics({
       densityVisibility.observerRidgeVisibleDensity,
     observerContourAccentMax: densityVisibility.observerContourAccent,
     observerPhysicalVisibleDensityMax: densityVisibility.physicalVisibleDensity,
+    lowQBackboneRidgeAnchorMax: densityVisibility.lowQBackboneRidgeAnchor,
+    lowQBackboneRidgeLiftMax: densityVisibility.lowQBackboneRidgeLift,
+    lowQBackboneRidgeVisibleDensityMax:
+      densityVisibility.lowQBackboneRidgeVisibleDensity,
+    lowQBackboneContourAccentMax:
+      densityVisibility.lowQBackboneContourAccent,
     retainedHighQRidgeToRetainedEnergyRatio:
       retainedHighQEnergy > 1e-6
         ? densityVisibility.retainedHighQRidgeVisibleDensity /

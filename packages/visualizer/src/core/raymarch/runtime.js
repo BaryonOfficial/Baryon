@@ -329,6 +329,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     modalVisibilityEnergy,
     modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
+    lowQBackboneVisibilityEnergy,
     modalStructureAnchor: 1,
     ridgeAnchor: 1,
   });
@@ -337,6 +338,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
       modalVisibilityEnergy,
       modalObserverVisibilityEnergy,
       modalVisibilityRetainedHighQEnergy,
+      lowQBackboneVisibilityEnergy,
     },
   );
   const avgDensity = Math.min(
@@ -1176,6 +1178,7 @@ export function tickRaymarchRuntime(
     setIfChanged(uniforms.uModeCoherence, 0);
     setIfChanged(uniforms.uTotalSlotAmplitude, 0);
     setIfChanged(uniforms.uModalVisibilityEnergy, 0);
+    setIfChanged(uniforms.uLowQBackboneVisibilityEnergy, 0);
     setIfChanged(uniforms.uModalPhaseOverlayStrength, 0);
     setIfChanged(uniforms.uKeyTintStrength, 0);
     setIfChanged(uniforms.uKeyMode, 0);
@@ -1377,6 +1380,12 @@ export function tickRaymarchRuntime(
   setIfChanged(
     uniforms.uModalVisibilityRetainedHighQEnergy,
     featureFrame?.modalVisibilityRetainedHighQEnergy ?? 0,
+  );
+  setIfChanged(
+    uniforms.uLowQBackboneVisibilityEnergy,
+    featureFrame?.lowQBackboneVisibilityEnergy ??
+      featureFrame?.debug?.lowQBackboneVisibilityEnergy ??
+      0,
   );
 
   // Key tonic hue — EMA with circular shortest-path wrapping

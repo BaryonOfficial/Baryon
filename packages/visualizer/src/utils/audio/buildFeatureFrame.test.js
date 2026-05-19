@@ -1813,6 +1813,46 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(beat.debug.beatDetected).toBe(true);
   });
 
+  it("detects sparse sub-bass pulses under brighter upper partials", () => {
+    const featureState = createAudioFeatureState();
+    const upperBed = [
+      [880, 0.46],
+      [1760, 0.32],
+      [3520, 0.18],
+    ];
+
+    buildTimedFrame({
+      featureState,
+      fftMagnitudes: makeFft([
+        [48, 0.08],
+        [96, 0.045],
+        ...upperBed,
+      ]),
+      avgAmplitude: 24,
+      rms: 0.09,
+      frameTimeMs: 0,
+    });
+    const beat = buildTimedFrame({
+      featureState,
+      fftMagnitudes: makeFft([
+        [48, 0.42],
+        [96, 0.22],
+        ...upperBed,
+      ]),
+      avgAmplitude: 38,
+      rms: 0.18,
+      frameTimeMs: 260,
+    });
+
+    expect(beat.debug.beatLowBandEnergy).toBeGreaterThan(0.05);
+    expect(beat.debug.beatOnsetDriver).toBeGreaterThan(
+      beat.debug.beatThreshold,
+    );
+    expect(beat.beatDetected).toBe(true);
+    expect(beat.beatPulseId).toBe(1);
+    expect(beat.debug.beatDetected).toBe(true);
+  });
+
   it("detects a moderate kick with the tuned default sensitivity", () => {
     const featureState = createAudioFeatureState();
     buildTimedFrame({

@@ -1134,6 +1134,24 @@ describe("field shaping", () => {
     ).toBeGreaterThanOrEqual(0.32);
   });
 
+  it("gives low-Q backbone authority a visible ridge floor without physical density", () => {
+    const density = deriveVisibleDensity({
+      density: 0,
+      modalVisibilityEnergy: 0,
+      modalObserverVisibilityEnergy: 0,
+      modalVisibilityRetainedHighQEnergy: 0,
+      lowQBackboneVisibilityEnergy: 0.052,
+      modalStructureAnchor: 1,
+      ridgeAnchor: 1,
+    });
+
+    expect(density.physicalVisibleDensity).toBe(0);
+    expect(density.lowQBackboneRidgeVisibleDensity).toBeGreaterThan(0.018);
+    expect(density.visibleDensity).toBe(
+      density.lowQBackboneRidgeVisibleDensity,
+    );
+  });
+
   it("pushes hot-core highlights from beam energy instead of body fog", () => {
     const subtleCore = deriveHotCoreMix({
       beamMask: 0.38,

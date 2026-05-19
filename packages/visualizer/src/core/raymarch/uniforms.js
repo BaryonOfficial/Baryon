@@ -73,6 +73,7 @@ export function createRaymarchUniforms(parameters) {
     uModalVisibilityEnergy: uniform(0.0),
     uModalObserverVisibilityEnergy: uniform(0.0),
     uModalVisibilityRetainedHighQEnergy: uniform(0.0),
+    uLowQBackboneVisibilityEnergy: uniform(0.0),
     uModalPhaseOverlayStrength: uniform(0.0),
   };
 }

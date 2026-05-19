@@ -130,6 +130,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uModalVisibilityEnergy: { value: 0 },
       uModalObserverVisibilityEnergy: { value: 0 },
       uModalVisibilityRetainedHighQEnergy: { value: 0 },
+      uLowQBackboneVisibilityEnergy: { value: 0 },
       uModalPhaseOverlayStrength: { value: 0 },
     },
     visualRoot: {
@@ -1737,6 +1738,13 @@ describe("tickRaymarchRuntime", () => {
     expect(
       lowQRuntime.debugSnapshot.raymarchDebug.lowQBackboneVisibilityRejected,
     ).toBe(false);
+    expect(
+      lowQRuntime.uniforms.uLowQBackboneVisibilityEnergy.value,
+    ).toBeCloseTo(0.083);
+    expect(
+      lowQRuntime.debugSnapshot.raymarchDebug
+        .lowQBackboneRidgeVisibleDensityMax,
+    ).toBeGreaterThan(0);
     expect(lowQRuntime.scaleSignal).toBeCloseTo(baselineRuntime.scaleSignal, 6);
     expect(lowQRuntime.bloomResponseSignal).toBeCloseTo(
       baselineRuntime.bloomResponseSignal,

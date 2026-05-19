@@ -1888,6 +1888,8 @@ function computeBandEnergies(fftMagnitudes, sampleRate, fftSize) {
 
   const nyquist = sampleRate * 0.5;
   const sums = new Float32Array(BAND_BUCKET_COUNT);
+  const squareSums = new Float32Array(BAND_BUCKET_COUNT);
+  const peaks = new Float32Array(BAND_BUCKET_COUNT);
   const counts = new Float32Array(BAND_BUCKET_COUNT);
 
   for (let i = 0; i < fftMagnitudes.length; i++) {
@@ -1901,11 +1903,20 @@ function computeBandEnergies(fftMagnitudes, sampleRate, fftSize) {
       }
     }
     sums[bandIndex] += amplitude;
+    squareSums[bandIndex] += amplitude * amplitude;
+    peaks[bandIndex] = Math.max(peaks[bandIndex], amplitude);
     counts[bandIndex] += 1;
   }
 
   for (let i = 0; i < BAND_BUCKET_COUNT; i++) {
-    bands[i] = counts[i] > 0 ? Math.min(1, sums[i] / counts[i]) : 0;
+    if (counts[i] <= 0) {
+      bands[i] = 0;
+      continue;
+    }
+
+    const mean = sums[i] / counts[i];
+    const rms = Math.sqrt(squareSums[i] / counts[i]);
+    bands[i] = Math.min(1, Math.max(mean, rms * 0.55, peaks[i] * 0.18));
   }
 
   return bands;

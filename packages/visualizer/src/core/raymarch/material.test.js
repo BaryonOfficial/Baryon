@@ -95,6 +95,7 @@ describe("raymarch volume material", () => {
     expect(mesh.material.opacityGainNode).toBe(uniforms.uOpacityGain);
     expect(uniforms.uModalObserverVisibilityEnergy.value).toBe(0);
     expect(uniforms.uModalVisibilityRetainedHighQEnergy.value).toBe(0);
+    expect(uniforms.uLowQBackboneVisibilityEnergy.value).toBe(0);
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
   });
