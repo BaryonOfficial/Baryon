@@ -244,4 +244,54 @@ describe("raymarch volume material", () => {
     expect(materialCache.neumann.cached.cached.spherical).toBeTruthy();
     expect(materialCache.dirichlet.cached.cached.spherical).toBeTruthy();
   });
+
+  it("keeps Spectral Light material switching independent from field evaluation", () => {
+    const fieldCache = createRaymarchFieldCache({ resolution: 8 });
+    const spectralLightCache = createRaymarchSpectralLightCache({
+      resolution: 8,
+    });
+    const mesh = createRaymarchVolumeMesh({
+      radius: 3,
+      backboneModeBuffer: {},
+      detailModeBuffer: {},
+      backboneColorBuffer: {},
+      detailColorBuffer: {},
+      fieldCacheTexture: fieldCache.texture,
+      spectralLightCacheTexture: spectralLightCache.texture,
+      backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
+      detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
+      uniforms: makeMeshUniforms(),
+    });
+
+    setRaymarchFieldEvaluationMode(mesh, "cached");
+    const cachedFieldMaterial = mesh.material;
+    setRaymarchSpectralLightEvaluationMode(
+      mesh,
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
+    );
+
+    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("cached");
+    expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
+    );
+    expect(mesh.material).not.toBe(cachedFieldMaterial);
+    expect(mesh.material.fieldEvaluationMode).toBe("cached");
+    expect(mesh.material.spectralLightEvaluationMode).toBe(
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
+    );
+
+    setRaymarchSpectralLightEvaluationMode(
+      mesh,
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
+    );
+
+    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("cached");
+    expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
+    );
+    expect(mesh.material.fieldEvaluationMode).toBe("cached");
+    expect(mesh.material.spectralLightEvaluationMode).toBe(
+      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
+    );
+  });
 });

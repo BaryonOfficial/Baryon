@@ -121,6 +121,36 @@ describe("performanceGovernor", () => {
     );
   });
 
+  it("does not mutate physical modal slots while deriving performance budgets", () => {
+    const backboneSlots = new Float32Array([
+      1, 1, 1, 0.8, 2, 2, 2, 0.4, 3, 3, 3, 0.2,
+    ]);
+    const detailSlots = new Float32Array([
+      4, 4, 4, 0.5, 5, 5, 5, 0.25, 6, 6, 6, 0.1,
+    ]);
+    const originalBackbone = Array.from(backboneSlots);
+    const originalDetail = Array.from(detailSlots);
+
+    const governor = buildRaymarchPerformanceGovernor({
+      backboneSlots,
+      detailSlots,
+      backboneCapacity: 3,
+      detailCapacity: 3,
+      featureFrame: {
+        averageAmplitude: 80,
+        structureSignal: 0.6,
+        modalVisibilityEnergy: 0.4,
+      },
+      requestedStepBudget: 64,
+      requestedRenderScale: 1,
+    });
+
+    expect(Array.from(backboneSlots)).toEqual(originalBackbone);
+    expect(Array.from(detailSlots)).toEqual(originalDetail);
+    expect(governor.originalModeCount).toBe(6);
+    expect(governor.uploadedModeCount).toBeGreaterThan(0);
+  });
+
   it("derives field excitation from modal signals", () => {
     const coreFrame = {
       averageAmplitude: 24,
