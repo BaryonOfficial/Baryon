@@ -3,8 +3,6 @@ export const SPECTRAL_VISIBLE_VIOLET_NM = 380;
 export const SPECTRAL_CIE_STEP_NM = 5;
 export const SPECTRAL_REFERENCE_OCTAVES = 40;
 export const SPECTRAL_PHASE_DEFAULT = 0;
-export const SPECTRAL_WEIGHT_FLOOR = 0.04;
-export const SPECTRAL_WEIGHT_FULL = 0.32;
 export const SPECTRAL_EPSILON = 1e-6;
 
 const SPEED_OF_LIGHT_M_PER_S = 299_792_458;
@@ -107,14 +105,6 @@ function clamp01(value) {
 
 function fract(value) {
   return value - Math.floor(value);
-}
-
-function smoothstep(edge0, edge1, value) {
-  if (edge0 === edge1) {
-    return value >= edge1 ? 1 : 0;
-  }
-  const t = clamp01((value - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
 }
 
 function addXyz(left, right) {
@@ -410,8 +400,9 @@ export function createSpectralLightColor({
   const harmonicSignal = clamp01(harmonicConfidence);
   const transientSignal = clamp01(transientEnergy);
   const weight =
-    smoothstep(SPECTRAL_WEIGHT_FLOOR, SPECTRAL_WEIGHT_FULL, strengthSignal) *
-    clamp01(0.55 + 0.35 * harmonicSignal + 0.1 * transientSignal);
+    strengthSignal > 0
+      ? clamp01(0.55 + 0.35 * harmonicSignal + 0.1 * transientSignal)
+      : 0;
 
   return {
     rgb,

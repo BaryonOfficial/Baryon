@@ -9,6 +9,7 @@ import {
   enqueueRaymarchPhaseOverlayRebuild,
   enqueueRaymarchSpectralLightCacheRebuild,
   evaluateRaymarchFieldCachePoint,
+  evaluateRaymarchSpectralLightCachePoint,
   evaluateRaymarchPhaseOverlayPoint,
   evaluateRaymarchSignedPotentialAtPoint,
   isRaymarchSpectralLightCacheReadyForDescriptor,
@@ -807,6 +808,41 @@ describe("fieldCache", () => {
     expect(loud.gradX).toBeCloseTo(quiet.gradX, 6);
     expect(loud.gradY).toBeCloseTo(quiet.gradY, 6);
     expect(loud.gradZ).toBeCloseTo(quiet.gradZ, 6);
+  });
+
+  it("evaluates cached Spectral Light support independent of global amplitude scale", () => {
+    const quiet = evaluateRaymarchSpectralLightCachePoint({
+      backboneSlots: new Float32Array([1, 2, 3, 0.045]),
+      detailSlots: new Float32Array([2, 2, 4, 0.01]),
+      backboneColorSlots: new Float32Array([0.9, 0.25, 0.1, 0.9]),
+      detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.4]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0.25,
+      y: -0.5,
+      z: 1.1,
+    });
+    const loud = evaluateRaymarchSpectralLightCachePoint({
+      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
+      detailSlots: new Float32Array([2, 2, 4, 0.2]),
+      backboneColorSlots: new Float32Array([0.9, 0.25, 0.1, 0.9]),
+      detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.4]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0.25,
+      y: -0.5,
+      z: 1.1,
+    });
+
+    expect(quiet.colorWeight).toBeGreaterThan(0.06);
+    expect(loud.colorWeight).toBeCloseTo(quiet.colorWeight, 6);
+    expect(loud.r).toBeCloseTo(quiet.r, 6);
+    expect(loud.g).toBeCloseTo(quiet.g, 6);
+    expect(loud.b).toBeCloseTo(quiet.b, 6);
   });
 
   it("keeps rectangular parity when spherical is requested but the effective backend stays rectangular", () => {

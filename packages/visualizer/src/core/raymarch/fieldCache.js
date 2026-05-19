@@ -479,6 +479,55 @@ function accumulateLayerAtPoint({
   return { field, gradX, gradY, gradZ };
 }
 
+function accumulateSpectralLightLayerAtPoint({
+  slots,
+  colorSlots,
+  activeCount,
+  weight,
+  x,
+  y,
+  z,
+  scale,
+  boundaryMode,
+  cavityGeometry,
+}) {
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let colorWeight = 0;
+  let totalAmplitude = 0;
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const geometryBackend = getModalGeometryBackend(cavityGeometry);
+
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const amplitude = (slots?.[offset + 3] ?? 0) * weight;
+    if (!(amplitude > 0)) {
+      continue;
+    }
+
+    totalAmplitude += amplitude;
+    const family = geometryBackend.evaluateMode({
+      u: slots[offset] ?? 0,
+      v: slots[offset + 1] ?? 0,
+      w: slots[offset + 2] ?? 0,
+      x,
+      y,
+      z,
+      scale,
+      boundaryMode,
+    });
+    const localInfluence =
+      amplitude * Math.abs(family.field) * (colorSlots?.[offset + 3] ?? 0);
+    r += localInfluence * (colorSlots?.[offset] ?? 0);
+    g += localInfluence * (colorSlots?.[offset + 1] ?? 0);
+    b += localInfluence * (colorSlots?.[offset + 2] ?? 0);
+    colorWeight += localInfluence;
+  }
+
+  return { r, g, b, colorWeight, totalAmplitude };
+}
+
 function accumulateSignedPotentialLayerAtPoint({
   slots,
   activeCount,
@@ -566,6 +615,61 @@ export function evaluateRaymarchFieldCachePoint({
     gradX: (backbone.gradX + detail.gradX) / amplitudeNorm,
     gradY: (backbone.gradY + detail.gradY) / amplitudeNorm,
     gradZ: (backbone.gradZ + detail.gradZ) / amplitudeNorm,
+  };
+}
+
+export function evaluateRaymarchSpectralLightCachePoint({
+  backboneSlots,
+  detailSlots,
+  backboneColorSlots,
+  detailColorSlots,
+  backboneCount = 0,
+  detailCount = 0,
+  boundaryMode,
+  cavityGeometry = "rectangular",
+  radius = 1,
+  x = 0,
+  y = 0,
+  z = 0,
+}) {
+  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
+  const scale = Math.PI / Math.max(radius, 1e-4);
+  const backbone = accumulateSpectralLightLayerAtPoint({
+    slots: backboneSlots,
+    colorSlots: backboneColorSlots,
+    activeCount: backboneCount,
+    weight: 1,
+    x,
+    y,
+    z,
+    scale,
+    boundaryMode: normalizedBoundaryMode,
+    cavityGeometry: normalizedCavityGeometry,
+  });
+  const detail = accumulateSpectralLightLayerAtPoint({
+    slots: detailSlots,
+    colorSlots: detailColorSlots,
+    activeCount: detailCount,
+    weight: DETAIL_LAYER_WEIGHT,
+    x,
+    y,
+    z,
+    scale,
+    boundaryMode: normalizedBoundaryMode,
+    cavityGeometry: normalizedCavityGeometry,
+  });
+  const amplitudeNorm = Math.max(
+    backbone.totalAmplitude + detail.totalAmplitude,
+    0.01,
+  );
+
+  return {
+    r: (backbone.r + detail.r) / amplitudeNorm,
+    g: (backbone.g + detail.g) / amplitudeNorm,
+    b: (backbone.b + detail.b) / amplitudeNorm,
+    colorWeight:
+      (backbone.colorWeight + detail.colorWeight) / amplitudeNorm,
   };
 }
 
@@ -981,6 +1085,7 @@ function createSpectralLightComputeKernel({
       const colorSumY = zero.toVar();
       const colorSumZ = zero.toVar();
       const colorWeight = zero.toVar();
+      const totalAmplitude = zero.toVar();
 
       Loop(
         {
@@ -1004,6 +1109,7 @@ function createSpectralLightComputeKernel({
               boundaryMode,
             });
             const colorSlot = backboneColorBuffer.element(i);
+            totalAmplitude.addAssign(amplitude);
             const localInfluence = amplitude
               .mul(abs(family.field))
               .mul(colorSlot.w)
@@ -1038,6 +1144,7 @@ function createSpectralLightComputeKernel({
               boundaryMode,
             });
             const colorSlot = detailColorBuffer.element(i);
+            totalAmplitude.addAssign(amplitude);
             const localInfluence = amplitude
               .mul(abs(family.field))
               .mul(colorSlot.w)
@@ -1053,7 +1160,12 @@ function createSpectralLightComputeKernel({
       textureStore(
         texture,
         uvec3(voxelCoord),
-        vec4(colorSumX, colorSumY, colorSumZ, colorWeight),
+        vec4(
+          colorSumX.div(totalAmplitude.max(float(0.01))),
+          colorSumY.div(totalAmplitude.max(float(0.01))),
+          colorSumZ.div(totalAmplitude.max(float(0.01))),
+          colorWeight.div(totalAmplitude.max(float(0.01))),
+        ),
       ).toWriteOnly();
     });
   })().compute(

@@ -113,10 +113,21 @@ describe("Spectral Light color science", () => {
     expect(spread).toBeLessThan(0.08);
   });
 
-  it("returns zero color weight for invalid or subfloor entries", () => {
+  it("keeps spectral color support for quiet valid modal energy", () => {
+    const color = createSpectralLightColor({
+      frequency: 427.239,
+      strength: 0.01,
+      harmonicConfidence: 0.8,
+    });
+
+    expect(color.weight).toBeGreaterThan(0.5);
+    expect(channelDelta(color.rgb, { r: 0, g: 0, b: 0 })).toBeGreaterThan(0.5);
+  });
+
+  it("returns zero color weight for invalid or absent entries", () => {
     expect(createSpectralLightColor({ frequency: 0 }).weight).toBe(0);
     expect(
-      createSpectralLightColor({ frequency: 440, strength: 0.01 }).weight,
+      createSpectralLightColor({ frequency: 440, strength: 0 }).weight,
     ).toBe(0);
   });
 });
