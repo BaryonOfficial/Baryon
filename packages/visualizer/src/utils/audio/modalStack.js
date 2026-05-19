@@ -15,7 +15,6 @@ export const DETAIL_STACK_SLOTS = AUDIO_DEFAULTS.detailStackSlots;
 export const MAX_STACK_SLOTS = AUDIO_SLOT_CAPACITY;
 export const BAND_BUCKET_COUNT = 4;
 const BEAT_HISTORY_SIZE = 8;
-export const DECAY_PER_FRAME = 0.9;
 const HARMONIC_SUPPORT_COUNT = 6;
 const COLOR_SLOT_STRIDE = 4;
 
@@ -196,41 +195,6 @@ export function clearModalStack(state) {
   }
   if ("latchHoldFrames" in state) state.latchHoldFrames = 0;
   if ("latchLowSupportFrames" in state) state.latchLowSupportFrames = 0;
-  if ("driverFrequency" in state) state.driverFrequency = 0;
-  if ("candidateFrequency" in state) state.candidateFrequency = 0;
-  if ("candidateConfidence" in state) state.candidateConfidence = 0;
-  if ("candidateFrames" in state) state.candidateFrames = 0;
-  if ("candidatePeriodicity" in state) state.candidatePeriodicity = 0;
-  if ("candidateHarmonicSupport" in state) {
-    state.candidateHarmonicSupport = 0;
-  }
-  if ("candidateDirectSupport" in state) state.candidateDirectSupport = 0;
-  if ("candidateLowEnergy" in state) state.candidateLowEnergy = false;
-  if ("voicingActive" in state) state.voicingActive = false;
-  if ("highCandidateRejected" in state) state.highCandidateRejected = false;
-  if ("rejectionReason" in state) state.rejectionReason = "none";
-  state.slotAgeFrames?.fill(0);
-  state.slotConfidence?.fill(0);
-  state.slotDisagreementCounts?.fill(0);
-  state.slotLastConfirmedFrames?.fill(0);
-  state._slotMetricMap?.clear?.();
-}
-
-export function decayModalStack(state) {
-  if (!state?.slots) return;
-
-  for (let i = 0; i < state.slots.length; i += 4) {
-    state.slots[i + 3] *= DECAY_PER_FRAME;
-  }
-  state.referenceSlots?.fill(0);
-  state.referenceColorSlots?.fill(0);
-  state.phaseSlots?.fill(0);
-  state.harmonicSupport?.fill(0);
-  state.fundamental = 0;
-  state.fundamentalConfidence = 0;
-  state.analysisEngine = "none";
-  state.uniqueModeCount = 0;
-  state.spectralLightComponents = [];
   if ("driverFrequency" in state) state.driverFrequency = 0;
   if ("candidateFrequency" in state) state.candidateFrequency = 0;
   if ("candidateConfidence" in state) state.candidateConfidence = 0;

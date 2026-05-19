@@ -5,17 +5,15 @@ import {
   BLEND_MAX_FRESH_PER_FRAME,
   BLEND_RELEASE,
   BLEND_TRACKING,
-  DECAY_PER_FRAME,
   blendColorStack,
   blendModalStack,
   clearModalStack,
   countActiveSlots,
-  decayModalStack,
   writeSlot,
 } from "./modalStack.js";
 
 // Slot layout: [u, v, w, amplitude] repeating at stride 4.
-// Only amplitude (index 3 of each group) is touched by decay and active-slot counting.
+// Active-slot counting only reads amplitude (index 3 of each group).
 
 function makeState(amplitudes) {
   const slots = new Float32Array(amplitudes.length * 4);
@@ -40,73 +38,6 @@ function makeState(amplitudes) {
     spectralLightComponents: [],
   };
 }
-
-describe("DECAY_PER_FRAME", () => {
-  it("is 0.9 — changing this affects how long patterns persist after audio stops", () => {
-    expect(DECAY_PER_FRAME).toBe(0.9);
-  });
-});
-
-describe("decayModalStack", () => {
-  it("multiplies each slot amplitude by DECAY_PER_FRAME once per call", () => {
-    const state = makeState([1.0, 0.5]);
-    decayModalStack(state);
-    expect(state.slots[3]).toBeCloseTo(1.0 * DECAY_PER_FRAME);
-    expect(state.slots[7]).toBeCloseTo(0.5 * DECAY_PER_FRAME);
-  });
-
-  it("applies geometric decay — amplitude after N calls equals initial * DECAY_PER_FRAME^N", () => {
-    const initial = 1.0;
-    const N = 10;
-    const state = makeState([initial]);
-    for (let i = 0; i < N; i++) decayModalStack(state);
-    expect(state.slots[3]).toBeCloseTo(initial * Math.pow(DECAY_PER_FRAME, N));
-  });
-
-  it("converges toward zero after many calls", () => {
-    const state = makeState([1.0]);
-    for (let i = 0; i < 200; i++) decayModalStack(state);
-    expect(state.slots[3]).toBeLessThan(1e-8);
-  });
-
-  it("does not touch mode coordinates (u, v, w) — only amplitude", () => {
-    const state = makeState([0.8]);
-    state.slots[0] = 3; // u
-    state.slots[1] = 5; // v
-    state.slots[2] = 7; // w
-    decayModalStack(state);
-    expect(state.slots[0]).toBe(3);
-    expect(state.slots[1]).toBe(5);
-    expect(state.slots[2]).toBe(7);
-    expect(state.slots[3]).toBeCloseTo(0.8 * DECAY_PER_FRAME);
-  });
-
-  it("clears raw target slots while decaying the live stack", () => {
-    const state = makeState([1.0]);
-    state.colorSlots[0] = 0.4;
-    state.referenceColorSlots[0] = 0.6;
-    state.referenceSlots[3] = 0.6;
-    decayModalStack(state);
-    expect(state.referenceSlots.every((value) => value === 0)).toBe(true);
-    expect(state.referenceColorSlots.every((value) => value === 0)).toBe(true);
-  });
-
-  it("clears target metadata while decaying the live stack", () => {
-    const state = makeState([1.0]);
-    state.harmonicSupport = new Float32Array([0.9, 0.3, 0, 0]);
-    state.fundamental = 440;
-    state.fundamentalConfidence = 0.8;
-    state.analysisEngine = "spectral";
-    state.uniqueModeCount = 2;
-    decayModalStack(state);
-    expect(state.harmonicSupport.every((value) => value === 0)).toBe(true);
-    expect(state.fundamental).toBe(0);
-    expect(state.fundamentalConfidence).toBe(0);
-    expect(state.analysisEngine).toBe("none");
-    expect(state.uniqueModeCount).toBe(0);
-    expect(state.spectralLightComponents).toEqual([]);
-  });
-});
 
 describe("countActiveSlots", () => {
   it("counts slots where amplitude is greater than zero", () => {

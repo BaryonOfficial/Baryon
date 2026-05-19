@@ -254,13 +254,6 @@ export function writeModalSlotsFromFundamental(
   return target;
 }
 
-export function buildModalSlotsFromFundamental(options) {
-  return writeModalSlotsFromFundamental(
-    createModalTargetBuild(options.capacity),
-    options,
-  );
-}
-
 export function writeModalSlotsFromSpectralPeaks(
   target,
   {
@@ -375,13 +368,6 @@ export function writeModalSlotsFromSpectralPeaks(
     ? limitColorComponents(components)
     : [];
   return target;
-}
-
-export function buildModalSlotsFromSpectralPeaks(options) {
-  return writeModalSlotsFromSpectralPeaks(
-    createModalTargetBuild(options.capacity),
-    options,
-  );
 }
 
 function mergeDriverBuildIntoScratch(merged, build) {
@@ -630,13 +616,6 @@ export function writeModalSlotsFromPeakDrivers(
     legacyAnalysisFloorHz: legacyFloorHz,
   };
   return target;
-}
-
-export function buildModalSlotsFromPeakDrivers(options) {
-  return writeModalSlotsFromPeakDrivers(
-    createModalTargetBuild(options.capacity),
-    options,
-  );
 }
 
 export function findSpectralPeakFrequencies(
