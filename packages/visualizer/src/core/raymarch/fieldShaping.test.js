@@ -17,9 +17,6 @@ import {
   LATCHED_FOG_BEAM_REDUCTION,
   LATCHED_FOG_BODY_REDUCTION,
   MODAL_CROWDING_BODY_COMPRESSION,
-  RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT,
-  RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
-  RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT,
   STRUCTURE_AWARE_EMISSION_BODY_SUPPRESSION,
   STRUCTURE_AWARE_EMISSION_MIN_GAIN,
   WHITE_EMISSION_CROWDING_REDUCTION,
@@ -243,6 +240,26 @@ describe("field shaping", () => {
     expect(bowlLike).toBeGreaterThan(0.36);
     expect(bowlLike).toBeGreaterThan(noModalEnergy);
     expect(noisyWeak).toBeCloseTo(0.04);
+  });
+
+  it("lets modal coefficients carry quiet bass visibility without a loudness gate", () => {
+    const quietBass = deriveExcitationVisibility({
+      excitationGate: 0,
+      modeCoherence: 0.5,
+      modalVisibilityEnergy: 0,
+      modalCoefficientEnergy: 0.16,
+      sourceAuthority: 0.01,
+    });
+    const noCoefficients = deriveExcitationVisibility({
+      excitationGate: 0,
+      modeCoherence: 0.5,
+      modalVisibilityEnergy: 0,
+      modalCoefficientEnergy: 0,
+      sourceAuthority: 0.01,
+    });
+
+    expect(quietBass).toBeGreaterThan(0.1);
+    expect(noCoefficients).toBe(0);
   });
 
   it("lifts observer-authorized ridge density only where modal anchors exist", () => {
@@ -1006,135 +1023,18 @@ describe("field shaping", () => {
     expect(noStructure.visibleDensity).toBe(0);
   });
 
-  it("keeps retained high-Q ridge density readable without changing physical density", () => {
-    const baseline = deriveVisibleDensity({
-      density: 0.004,
-      modalVisibilityEnergy: 0.16,
-      modalStructureAnchor: 0.84,
-      ridgeAnchor: 0.86,
-    });
-    const retained = deriveVisibleDensity({
-      density: 0.004,
-      modalVisibilityEnergy: 0.16,
-      modalVisibilityRetainedHighQEnergy: 0.22,
-      modalStructureAnchor: 0.84,
-      ridgeAnchor: 0.86,
-    });
-    const noRidge = deriveVisibleDensity({
-      density: 0.004,
-      modalVisibilityEnergy: 0.16,
-      modalVisibilityRetainedHighQEnergy: 0.22,
-      modalStructureAnchor: 0.84,
-      ridgeAnchor: 0,
-    });
-    const noStructure = deriveVisibleDensity({
-      density: 0.004,
-      modalVisibilityEnergy: 0.16,
-      modalVisibilityRetainedHighQEnergy: 0.22,
-      modalStructureAnchor: 0,
-      ridgeAnchor: 0.86,
-    });
-
-    expect(RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR).toBeCloseTo(0.34);
-    expect(RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT).toBeCloseTo(0.22);
-    expect(RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT).toBeCloseTo(0.11);
-    expect(retained.physicalVisibleDensity).toBe(
-      baseline.physicalVisibleDensity,
-    );
-    expect(retained.visibleDensity).toBeGreaterThan(
-      baseline.visibleDensity * 1.25,
-    );
-    expect(retained.retainedHighQRidgeVisibleDensity).toBeGreaterThan(0.03);
-    expect(retained.retainedHighQRidgeVisibleDensity).toBeLessThanOrEqual(
-      RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
-    );
-    expect(retained.retainedHighQContourAccent).toBeGreaterThan(0.01);
-    expect(noRidge.retainedHighQRidgeVisibleDensity).toBe(0);
-    expect(noStructure.physicalVisibleDensity).toBe(
-      retained.physicalVisibleDensity,
-    );
-    expect(noStructure.retainedHighQRidgeVisibleDensity).toBeGreaterThan(0);
-    expect(noStructure.retainedHighQRidgeVisibleDensity).toBeLessThan(
-      retained.retainedHighQRidgeVisibleDensity,
-    );
-  });
-
-  it("keeps retained high-Q ridges readable when the contour-ridge intersection thins out", () => {
-    const baseline = deriveVisibleDensity({
-      density: 0.003,
-      modalVisibilityEnergy: 0.18,
-      modalVisibilityRetainedHighQEnergy: 0.2,
-      modalStructureAnchor: 0.82,
-      ridgeAnchor: 0.025,
-    });
-    const supported = deriveVisibleDensity({
-      density: 0.003,
-      modalVisibilityEnergy: 0.18,
-      modalVisibilityRetainedHighQEnergy: 0.2,
-      modalStructureAnchor: 0.82,
-      ridgeAnchor: 0.025,
-      ridgeSupportAnchor: 0.58,
-    });
-    const noSupport = deriveVisibleDensity({
-      density: 0.003,
-      modalVisibilityEnergy: 0.18,
-      modalVisibilityRetainedHighQEnergy: 0.2,
-      modalStructureAnchor: 0.82,
-      ridgeAnchor: 0,
-      ridgeSupportAnchor: 0,
-    });
-
-    expect(supported.physicalVisibleDensity).toBe(
-      baseline.physicalVisibleDensity,
-    );
-    expect(supported.retainedHighQRidgeAnchor).toBeGreaterThan(
-      baseline.retainedHighQRidgeAnchor * 8,
-    );
-    expect(supported.retainedHighQRidgeVisibleDensity).toBeGreaterThan(0.015);
-    expect(noSupport.retainedHighQRidgeVisibleDensity).toBe(0);
-  });
-
-  it("keeps retained high-Q ridges readable when the physical structure anchor collapses", () => {
-    const retained = deriveVisibleDensity({
-      density: 0,
-      modalVisibilityEnergy: 0,
-      modalVisibilityRetainedHighQEnergy: 0.24,
-      modalStructureAnchor: 0,
-      ridgeAnchor: 0.72,
-      ridgeSupportAnchor: 0.64,
-    });
-    const noRidge = deriveVisibleDensity({
-      density: 0,
-      modalVisibilityEnergy: 0,
-      modalVisibilityRetainedHighQEnergy: 0.24,
-      modalStructureAnchor: 0,
-      ridgeAnchor: 0,
-      ridgeSupportAnchor: 0,
-    });
-
-    expect(retained.physicalVisibleDensity).toBe(0);
-    expect(retained.retainedHighQRidgeVisibleDensity).toBeGreaterThan(0.01);
-    expect(retained.retainedHighQContourAccent).toBeGreaterThan(0);
-    expect(noRidge.retainedHighQRidgeVisibleDensity).toBe(0);
-    expect(noRidge.visibleDensity).toBe(0);
-  });
-
-  it("keeps live-measured retained high-Q ridge density above the inspection floor", () => {
+  it("reports retained high-Q diagnostics without letting them create density", () => {
     const diagnostics = deriveRetainedHighQVisibilityDiagnostics({
       modalVisibilityEnergy: 0.49,
       modalVisibilityRetainedHighQEnergy: 0.25,
     });
 
     expect(diagnostics.retainedHighQPhysicalVisibleDensityMax).toBe(0);
-    expect(
-      diagnostics.retainedHighQRidgeVisibleDensityMax,
-    ).toBeGreaterThanOrEqual(0.08);
-    expect(
-      diagnostics.retainedHighQRidgeToRetainedEnergyRatio,
-    ).toBeGreaterThanOrEqual(0.32);
+    expect(diagnostics.retainedHighQRidgeVisibleDensityMax).toBe(0);
+    expect(diagnostics.retainedHighQRidgeToRetainedEnergyRatio).toBe(0);
   });
 
-  it("gives low-Q backbone authority a visible ridge floor without physical density", () => {
+  it("keeps low-Q backbone diagnostics from creating density", () => {
     const density = deriveVisibleDensity({
       density: 0,
       modalVisibilityEnergy: 0,
@@ -1146,10 +1046,33 @@ describe("field shaping", () => {
     });
 
     expect(density.physicalVisibleDensity).toBe(0);
-    expect(density.lowQBackboneRidgeVisibleDensity).toBeGreaterThan(0.018);
-    expect(density.visibleDensity).toBe(
-      density.lowQBackboneRidgeVisibleDensity,
-    );
+    expect(density.lowQBackboneRidgeVisibleDensity).toBe(0);
+    expect(density.visibleDensity).toBe(0);
+  });
+
+  it("keeps old Q-specific diagnostic fields from changing visible density", () => {
+    const baseline = deriveVisibleDensity({
+      density: 0.02,
+      modalVisibilityEnergy: 0.28,
+      modalObserverVisibilityEnergy: 0.18,
+      modalStructureAnchor: 0.74,
+      ridgeAnchor: 0.66,
+      ridgeSupportAnchor: 0.58,
+    });
+    const diagnosticOnly = deriveVisibleDensity({
+      density: 0.02,
+      modalVisibilityEnergy: 0.28,
+      modalObserverVisibilityEnergy: 0.18,
+      modalVisibilityRetainedHighQEnergy: 0.9,
+      lowQBackboneVisibilityEnergy: 0.9,
+      modalStructureAnchor: 0.74,
+      ridgeAnchor: 0.66,
+      ridgeSupportAnchor: 0.58,
+    });
+
+    expect(diagnosticOnly.visibleDensity).toBeCloseTo(baseline.visibleDensity);
+    expect(diagnosticOnly.retainedHighQRidgeVisibleDensity).toBe(0);
+    expect(diagnosticOnly.lowQBackboneRidgeVisibleDensity).toBe(0);
   });
 
   it("pushes hot-core highlights from beam energy instead of body fog", () => {

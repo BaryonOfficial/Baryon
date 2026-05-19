@@ -16,7 +16,6 @@ import {
   enqueueRaymarchFieldCacheRebuild,
   enqueueRaymarchSpectralLightCacheRebuild,
   isRaymarchSpectralLightCacheReadyForDescriptor,
-  isRaymarchFieldCacheReadyForDescriptor,
   shouldRebuildRaymarchSpectralLightCache,
   shouldRebuildRaymarchFieldCache,
   buildRaymarchFieldCacheDescriptor,
@@ -328,8 +327,6 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     density: 0,
     modalVisibilityEnergy,
     modalObserverVisibilityEnergy,
-    modalVisibilityRetainedHighQEnergy,
-    lowQBackboneVisibilityEnergy,
     modalStructureAnchor: 1,
     ridgeAnchor: 1,
   });
@@ -891,17 +888,11 @@ function resolveFieldEvaluationMode(
     );
   }
 
-  let fieldEvaluationMode = "direct";
-  if (
-    fieldCache.backend !== "unavailable" &&
-    isRaymarchFieldCacheReadyForDescriptor(fieldCache, fieldDescriptor)
-  ) {
-    fieldEvaluationMode = "cached";
-  } else if (cachedRequested && fieldCache.ready) {
-    fieldEvaluationMode = "cached";
+  if (fieldCache.backend === "unavailable") {
+    return "direct";
   }
 
-  return fieldEvaluationMode;
+  return "cached";
 }
 
 function resolveSpectralLightEvaluationMode(
@@ -936,7 +927,7 @@ function resolveSpectralLightEvaluationMode(
     return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
   }
 
-  spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
+  spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
 
   const spectralLightUploadReady =
     Boolean(spectralLightDescriptor) &&
@@ -981,12 +972,7 @@ function resolveSpectralLightEvaluationMode(
     return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
   }
 
-  if (spectralLightCache.ready) {
-    spectralLightCache.mode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
-    return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
-  }
-
-  return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
+  return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
 }
 
 function updatePhaseOverlayCache(

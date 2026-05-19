@@ -73,11 +73,6 @@ import {
   HOT_CORE_SURFACE_CROWDING_REDUCTION,
   HIGHLIGHT_MASK_END,
   HIGHLIGHT_MASK_START,
-  LOW_Q_BACKBONE_RIDGE_CONTOUR_ACCENT,
-  LOW_Q_BACKBONE_RIDGE_DENSITY_FLOOR,
-  LOW_Q_BACKBONE_RIDGE_DENSITY_LIFT,
-  LOW_Q_BACKBONE_RIDGE_STRUCTURE_FLOOR,
-  LOW_Q_BACKBONE_RIDGE_SUPPORT_WEIGHT,
   HOLOGRAPHIC_TINT_BLUE,
   HOLOGRAPHIC_TINT_GREEN,
   HOLOGRAPHIC_TINT_RED,
@@ -106,11 +101,7 @@ import {
   SIGNED_PHASE_OVERLAY_FIELD_GAIN,
   SIGNED_PHASE_OVERLAY_FIELD_LIMIT,
   SIGNED_PHASE_OVERLAY_GRADIENT_GAIN,
-  RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT,
-  RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR,
-  RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT,
-  RETAINED_HIGH_Q_RIDGE_STRUCTURE_FLOOR,
-  RETAINED_HIGH_Q_RIDGE_SUPPORT_WEIGHT,
+  RIDGE_SUPPORT_WEIGHT,
   RIM_BLOOM_BIAS_BASE,
   RIM_BLOOM_BIAS_GAIN,
   RIM_COMPRESSION_BOUNDARY_GAIN,
@@ -486,7 +477,6 @@ function createScatteringNode({
     uModalVisibilityEnergy,
     uModalObserverVisibilityEnergy,
     uModalVisibilityRetainedHighQEnergy,
-    uLowQBackboneVisibilityEnergy,
     uModalPhaseOverlayStrength,
   } = uniforms;
   // Uniform-only expressions: hoist outside the Fn so they are loop-invariant
@@ -508,7 +498,6 @@ function createScatteringNode({
     .mul(0.3)
     .add(uModeCoherence.mul(0.08))
     .add(uModalVisibilityEnergy.mul(0.12))
-    .add(uLowQBackboneVisibilityEnergy.mul(0.1))
     .add(beatPhaseDecay.mul(0.18));
   const dynamicHolographicIntensity = uHolographicIntensity
     .mul(float(1.0).add(uTimbreSpread.mul(0.35)))
@@ -535,15 +524,20 @@ function createScatteringNode({
     .mul(0.05)
     .add(uModalVisibilityEnergy.mul(0.08))
     .sub(uChangeSignal.mul(0.08));
+  const modalCoefficientEnergy = clamp(
+    uTotalSlotAmplitude,
+    float(0.0),
+    float(1.0),
+  );
   // Excitation gate: 0 when field is under-excited (weak/noisy input), 1 when
-  // fully excited. Coherent modal visibility is authoritative here. Hoisted as
-  // loop-invariant.
+  // fully excited. Render-eligible modal coefficients are authoritative here.
+  // Hoisted as loop-invariant.
   const excitationInput = uAverageAmplitude
     .div(float(255.0))
     .mul(float(0.3))
     .add(uStructureSignal.mul(float(0.45)))
     .add(uModalVisibilityEnergy.mul(float(0.25)))
-    .add(uLowQBackboneVisibilityEnergy.mul(float(0.18)));
+    .add(modalCoefficientEnergy.mul(float(0.18)));
   const excitationGate = smoothstep(
     float(EXCITATION_GATE_LOW),
     float(EXCITATION_GATE_HIGH),
@@ -555,7 +549,7 @@ function createScatteringNode({
       uModalVisibilityRetainedHighQEnergy.mul(
         float(EXCITATION_VISIBILITY_RETAINED_HIGH_Q_WEIGHT),
       ),
-      uLowQBackboneVisibilityEnergy,
+      modalCoefficientEnergy,
     ),
   );
   const excitationSourceAuthority = smoothstep(
@@ -845,8 +839,7 @@ function createScatteringNode({
         uBandEnergies.x
           .mul(float(BASS_STRUCTURE_FLOOR_BAND_WEIGHT))
           .add(uBandEnergies.y.mul(float(LOW_MID_BAND_WEIGHT)))
-          .add(uBassSalience.mul(float(BASS_STRUCTURE_FLOOR_SALIENCE_WEIGHT)))
-          .add(uLowQBackboneVisibilityEnergy.mul(float(0.65))),
+          .add(uBassSalience.mul(float(BASS_STRUCTURE_FLOOR_SALIENCE_WEIGHT))),
         float(0.0),
         float(1.0),
       );
@@ -1016,10 +1009,10 @@ function createScatteringNode({
         .mul(shellWeight)
         .mul(edgeFade)
         .mul(activeMask);
-      const retainedHighQRidgeAnchor = /** @type {any} */ (
+      const ridgeAnchor = /** @type {any} */ (
         contourShape.mul(ridgeConcentration)
       );
-      const retainedHighQRidgeSupportAnchor = /** @type {any} */ (
+      const ridgeSupportAnchor = /** @type {any} */ (
         max(contourShape, ridgeConcentration)
       );
       const densityVisibility = deriveVisibleDensityNode(
@@ -1027,11 +1020,9 @@ function createScatteringNode({
         uModalVisibilityEnergy,
         modalStructureAnchor,
         uModalObserverVisibilityEnergy,
-        uModalVisibilityRetainedHighQEnergy,
-        uLowQBackboneVisibilityEnergy,
         /** @type {any} */ (phaseOverlaySupport),
-        retainedHighQRidgeAnchor,
-        retainedHighQRidgeSupportAnchor,
+        ridgeAnchor,
+        ridgeSupportAnchor,
       );
       const { visibleDensity, physicalVisibleDensity } = densityVisibility;
       const retainedHighQContourAccent =
@@ -1326,57 +1317,26 @@ function deriveVisibleDensityNode(
   modalVisibilityEnergy,
   modalStructureAnchor,
   modalObserverVisibilityEnergy = float(0.0),
-  modalVisibilityRetainedHighQEnergy = float(0.0),
-  lowQBackboneVisibilityEnergy = float(0.0),
   modalPhaseOverlayEnergy = float(0.0),
   ridgeAnchor = float(0.0),
   ridgeSupportAnchor = float(0.0),
 ) {
-  const retainedHighQSpatialAnchor = max(
+  const ridgeSpatialAnchor = max(
     ridgeAnchor,
-    ridgeSupportAnchor.mul(float(RETAINED_HIGH_Q_RIDGE_SUPPORT_WEIGHT)),
+    ridgeSupportAnchor.mul(float(RIDGE_SUPPORT_WEIGHT)),
   );
-  const retainedHighQStructureAnchor = max(
-    modalStructureAnchor,
-    retainedHighQSpatialAnchor.mul(
-      float(RETAINED_HIGH_Q_RIDGE_STRUCTURE_FLOOR),
-    ),
-  );
-  const retainedHighQRidgeAnchor = clamp(
-    modalVisibilityRetainedHighQEnergy
-      .mul(retainedHighQStructureAnchor)
-      .mul(retainedHighQSpatialAnchor),
-    float(0.0),
-    float(1.0),
-  );
-  const lowQBackboneSpatialAnchor = max(
-    ridgeAnchor,
-    ridgeSupportAnchor.mul(float(LOW_Q_BACKBONE_RIDGE_SUPPORT_WEIGHT)),
-  );
-  const lowQBackboneStructureAnchor = max(
-    modalStructureAnchor,
-    lowQBackboneSpatialAnchor.mul(
-      float(LOW_Q_BACKBONE_RIDGE_STRUCTURE_FLOOR),
-    ),
-  );
-  const lowQBackboneRidgeAnchor = clamp(
-    lowQBackboneVisibilityEnergy
-      .mul(lowQBackboneStructureAnchor)
-      .mul(lowQBackboneSpatialAnchor),
-    float(0.0),
-    float(1.0),
-  );
+  const inactiveDensity = float(0.0);
   const observerRidgeAnchor = clamp(
     modalObserverVisibilityEnergy
       .mul(modalStructureAnchor)
-      .mul(retainedHighQSpatialAnchor),
+      .mul(ridgeSpatialAnchor),
     float(0.0),
     float(1.0),
   );
   const phaseRidgeAnchor = clamp(
     modalPhaseOverlayEnergy
       .mul(modalStructureAnchor)
-      .mul(retainedHighQSpatialAnchor),
+      .mul(ridgeSpatialAnchor),
     float(0.0),
     float(1.0),
   );
@@ -1391,16 +1351,6 @@ function deriveVisibleDensityNode(
       .mul(float(MODAL_VISIBILITY_DENSITY_LIFT)),
     float(0.0),
     float(MODAL_VISIBILITY_DENSITY_LIFT),
-  );
-  const retainedHighQRidgeLift = clamp(
-    retainedHighQRidgeAnchor.mul(float(RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT)),
-    float(0.0),
-    float(RETAINED_HIGH_Q_RIDGE_DENSITY_LIFT),
-  );
-  const lowQBackboneRidgeLift = clamp(
-    lowQBackboneRidgeAnchor.mul(float(LOW_Q_BACKBONE_RIDGE_DENSITY_LIFT)),
-    float(0.0),
-    float(LOW_Q_BACKBONE_RIDGE_DENSITY_LIFT),
   );
   const observerRidgeLift = clamp(
     observerRidgeAnchor.mul(float(OBSERVER_RIDGE_DENSITY_LIFT)),
@@ -1418,8 +1368,6 @@ function deriveVisibleDensityNode(
     density
       .add(modalLift)
       .add(observerRidgeLift)
-      .add(retainedHighQRidgeLift)
-      .add(lowQBackboneRidgeLift)
       .add(phaseRidgeLift),
   );
   const physicalVisibleDensity = density.mul(physicalVisibilityGate);
@@ -1430,16 +1378,6 @@ function deriveVisibleDensityNode(
     float(0.0),
     float(MODAL_VISIBILITY_DENSITY_FLOOR),
   );
-  const retainedHighQRidgeVisibleDensity = clamp(
-    retainedHighQRidgeAnchor.mul(float(RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR)),
-    float(0.0),
-    float(RETAINED_HIGH_Q_RIDGE_DENSITY_FLOOR),
-  );
-  const lowQBackboneRidgeVisibleDensity = clamp(
-    lowQBackboneRidgeAnchor.mul(float(LOW_Q_BACKBONE_RIDGE_DENSITY_FLOOR)),
-    float(0.0),
-    float(LOW_Q_BACKBONE_RIDGE_DENSITY_FLOOR),
-  );
   const observerRidgeVisibleDensity = clamp(
     observerRidgeAnchor.mul(float(OBSERVER_RIDGE_DENSITY_FLOOR)),
     float(0.0),
@@ -1449,16 +1387,6 @@ function deriveVisibleDensityNode(
     phaseRidgeAnchor.mul(float(PHASE_OVERLAY_RIDGE_DENSITY_FLOOR)),
     float(0.0),
     float(PHASE_OVERLAY_RIDGE_DENSITY_FLOOR),
-  );
-  const retainedHighQContourAccent = clamp(
-    retainedHighQRidgeAnchor.mul(float(RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT)),
-    float(0.0),
-    float(RETAINED_HIGH_Q_RIDGE_CONTOUR_ACCENT),
-  );
-  const lowQBackboneContourAccent = clamp(
-    lowQBackboneRidgeAnchor.mul(float(LOW_Q_BACKBONE_RIDGE_CONTOUR_ACCENT)),
-    float(0.0),
-    float(LOW_Q_BACKBONE_RIDGE_CONTOUR_ACCENT),
   );
   const observerContourAccent = clamp(
     observerRidgeAnchor.mul(float(OBSERVER_RIDGE_CONTOUR_ACCENT)),
@@ -1480,30 +1408,24 @@ function deriveVisibleDensityNode(
     observerRidgeLift,
     observerRidgeVisibleDensity,
     observerContourAccent,
-    lowQBackboneRidgeAnchor,
-    lowQBackboneStructureAnchor,
-    lowQBackboneRidgeLift,
-    lowQBackboneRidgeVisibleDensity,
-    lowQBackboneContourAccent,
+    lowQBackboneRidgeAnchor: inactiveDensity,
+    lowQBackboneStructureAnchor: inactiveDensity,
+    lowQBackboneRidgeLift: inactiveDensity,
+    lowQBackboneRidgeVisibleDensity: inactiveDensity,
+    lowQBackboneContourAccent: inactiveDensity,
     phaseRidgeAnchor,
     phaseRidgeLift,
     phaseRidgeVisibleDensity,
     phaseContourAccent,
-    retainedHighQRidgeAnchor,
-    retainedHighQStructureAnchor,
-    retainedHighQRidgeLift,
-    retainedHighQRidgeVisibleDensity,
-    retainedHighQContourAccent,
+    retainedHighQRidgeAnchor: inactiveDensity,
+    retainedHighQStructureAnchor: inactiveDensity,
+    retainedHighQRidgeLift: inactiveDensity,
+    retainedHighQRidgeVisibleDensity: inactiveDensity,
+    retainedHighQContourAccent: inactiveDensity,
     visibilityGate,
     visibleDensity: max(
       max(density.mul(visibilityGate), modalVisibleDensity),
-      max(
-        max(
-          max(observerRidgeVisibleDensity, retainedHighQRidgeVisibleDensity),
-          lowQBackboneRidgeVisibleDensity,
-        ),
-        phaseRidgeVisibleDensity,
-      ),
+      max(observerRidgeVisibleDensity, phaseRidgeVisibleDensity),
     ),
   };
 }

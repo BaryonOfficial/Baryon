@@ -40,6 +40,8 @@ export function createModalExcitationState(capacity = 16) {
     observedHardSilenceStartedAtMs: null,
     observedHardSilenceGraceActive: false,
     observedHardSilenceAgeMs: 0,
+    modalResponseHardSilenceStartedAtMs: null,
+    modalResponseHardSilenceAgeMs: 0,
     diagnostics: {
       excitedModeCount: 0,
       distributedExcitation: 0,

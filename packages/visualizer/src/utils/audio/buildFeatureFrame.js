@@ -1084,6 +1084,16 @@ function buildDebugSummary({
       structuralMetrics?.modalPhaseOverlayModeCount ?? 0,
     modalPersistence: structuralMetrics?.modalPersistence ?? 0,
     modalDriveEnergy: structuralMetrics?.modalDriveEnergy ?? 0,
+    modalResponseEnergy: structuralMetrics?.modalResponseEnergy ?? 0,
+    modalResponseInputEnergy: structuralMetrics?.modalResponseInputEnergy ?? 0,
+    modalResponseBackboneEnergy:
+      structuralMetrics?.modalResponseBackboneEnergy ?? 0,
+    modalResponseDetailEnergy: structuralMetrics?.modalResponseDetailEnergy ?? 0,
+    modalResponseModeCount: structuralMetrics?.modalResponseModeCount ?? 0,
+    modalResponseBudgetScaleBackbone:
+      structuralMetrics?.modalResponseBudgetScaleBackbone ?? 0,
+    modalResponseBudgetScaleDetail:
+      structuralMetrics?.modalResponseBudgetScaleDetail ?? 0,
     driveSource: structuralMetrics?.driveSource ?? "none",
     detailSignalAuthoritative:
       structuralMetrics?.detailSignalAuthoritative ?? false,
@@ -4785,9 +4795,8 @@ export function composeAudioFeatureFrame({
     (analysisResult.activeModeCount ?? 0) > 0 &&
     !analysisResult.liveInputHardSilenceActive &&
     (preparedInputs.inputMode === "live" ||
-      modalObserverVisibilityEnergy > 0.02 ||
-      lowQBackboneVisibilityEnergy > 0.02 ||
-      modalVisibilityRetainedHighQEnergy > 0.005);
+      (analysisResult.structuralMetrics?.modalResponseEnergy ?? 0) > 0.02 ||
+      modalVisibilityEnergy > 0.005);
   const fieldStateUsesDecay =
     analysisResult.usedDecay && !observerAuthorizedActiveField;
   const liveInputSurfaceActive =

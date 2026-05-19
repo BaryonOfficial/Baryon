@@ -879,12 +879,12 @@ describe("tickRaymarchRuntime", () => {
       expect(runtimeState.fieldCache.rebuildCount).toBe(0);
       expect(renderer.computeAsync).toHaveBeenCalledTimes(0);
       expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
-        "direct",
+        "cached",
       );
       expect(
         runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
-      ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct);
-      expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("direct");
+      ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
+      expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("cached");
       expect(runtimeState.debugSnapshot.fieldCacheReady).toBe(false);
       expect(runtimeState.debugSnapshot.fieldCacheRebuildPending).toBe(true);
       expect(runtimeState.debugSnapshot.spectralLightCacheReady).toBe(false);
@@ -928,10 +928,75 @@ describe("tickRaymarchRuntime", () => {
     }
   });
 
-  it("uses direct Spectral Light evaluation while cached color rebuild is still pending", async () => {
+  it("keeps cached evaluation active while the current modal descriptor rebuilds", () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    const renderer = {
+      computeAsync: vi.fn(async () => undefined),
+    };
+    const originalWindow = globalThis.window;
+    globalThis.window = /** @type {any} */ ({
+      __baryonFieldCacheOverride: "cached",
+    });
+    const cachedBackboneSlots = new Float32Array([1, 1, 1, 0.8]);
+    const cachedDetailSlots = new Float32Array(32);
+    const currentFrame = {
+      fieldState: "active",
+      averageAmplitude: 3.2,
+      backboneSlots: new Float32Array([2, 2, 2, 0.12, 2, 3, 3, 0.08]),
+      detailSlots: new Float32Array(32),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.42, 0.18, 0.02, 0]),
+      transientEnergy: 0.01,
+      spectralCentroid: 0.05,
+      spectralFlux: 0.01,
+      structureSignal: 0.18,
+      energySignal: 0.08,
+      changeSignal: 0.02,
+      pulseSignal: 0,
+      modeCoherence: 0.52,
+      modalVisibilityEnergy: 0,
+    };
+
+    try {
+      runtimeState.backboneModeBuffer.value.array.set(cachedBackboneSlots);
+      runtimeState.detailModeBuffer.value.array.set(cachedDetailSlots);
+      runtimeState.uniforms.uBackboneModeCount.value = 1;
+      runtimeState.uniforms.uDetailModeCount.value = 0;
+      runtimeState.fieldCache.ready = true;
+      runtimeState.fieldCache.activeDescriptor =
+        buildRaymarchFieldCacheDescriptor({
+          backboneSlots: runtimeState.backboneModeBuffer.value.array,
+          detailSlots: runtimeState.detailModeBuffer.value.array,
+          backboneCount: 1,
+          detailCount: 0,
+          boundaryMode: "neumann",
+          cavityGeometry: "rectangular",
+          radius: runtimeState.uniforms.uRadius.value,
+        });
+
+      tickRaymarchRuntime(runtimeState, currentFrame, 1, 1 / 60, renderer);
+
+      expect(runtimeState.fieldCache.ready).toBe(true);
+      expect(runtimeState.fieldCache.rebuildPending).toBe(true);
+      expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
+        "cached",
+      );
+      expect(runtimeState.debugSnapshot.fieldEvaluationMode).toBe("cached");
+      expect(runtimeState.debugSnapshot.fieldCacheReady).toBe(true);
+      expect(runtimeState.debugSnapshot.fieldCacheRebuildPending).toBe(true);
+    } finally {
+      globalThis.window = originalWindow;
+    }
+  });
+
+  it("keeps cached Spectral Light evaluation while cached color rebuild is still pending", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     let spectralLightResolve;
-    const renderer = {
+    const warmRenderer = {
+      computeAsync: vi.fn(async () => undefined),
+    };
+    const pendingRenderer = {
       computeAsync: vi.fn().mockImplementation(
         () =>
           new Promise((resolve) => {
@@ -967,49 +1032,52 @@ describe("tickRaymarchRuntime", () => {
       timbreSpread: 0.31,
       spectralNovelty: 0.24,
     };
+    const colorChangedFrame = {
+      ...denseFrame,
+      backboneColorSlots: new Float32Array([
+        0.9, 0.2, 0.1, 0.95, 0.8, 0.3, 0.1, 0.8,
+      ]),
+    };
 
     try {
-      runtimeState.backboneModeBuffer.value.array.set(denseFrame.backboneSlots);
-      runtimeState.detailModeBuffer.value.array.set(denseFrame.detailSlots);
-      runtimeState.backboneColorBuffer.value.array.set(
-        denseFrame.backboneColorSlots,
-      );
-      runtimeState.detailColorBuffer.value.array.set(
-        denseFrame.detailColorSlots,
-      );
-      runtimeState.uniforms.uBackboneModeCount.value =
-        denseFrame.backboneSlots.length / 4;
-      runtimeState.uniforms.uDetailModeCount.value =
-        denseFrame.detailSlots.length / 4;
-      runtimeState.uniforms.uActiveModeCount.value =
-        runtimeState.uniforms.uBackboneModeCount.value +
-        runtimeState.uniforms.uDetailModeCount.value;
-      runtimeState.fieldCache.ready = true;
-      runtimeState.fieldCache.activeDescriptor =
-        buildRaymarchFieldCacheDescriptor({
-          backboneSlots: runtimeState.backboneModeBuffer.value.array,
-          detailSlots: runtimeState.detailModeBuffer.value.array,
-          backboneCount: runtimeState.uniforms.uBackboneModeCount.value,
-          detailCount: runtimeState.uniforms.uDetailModeCount.value,
-          boundaryMode: "neumann",
-          cavityGeometry: "rectangular",
-          radius: runtimeState.uniforms.uRadius.value,
-        });
-      tickRaymarchRuntime(runtimeState, denseFrame, 1, 1 / 60, renderer);
+      tickRaymarchRuntime(runtimeState, denseFrame, 1, 1 / 60, warmRenderer);
+      await flushMicrotasks();
+      tickRaymarchRuntime(runtimeState, denseFrame, 2, 1 / 60, warmRenderer);
 
       expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
         "cached",
       );
       expect(
         runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
-      ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct);
+      ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
+
+      tickRaymarchRuntime(
+        runtimeState,
+        colorChangedFrame,
+        3,
+        1 / 60,
+        pendingRenderer,
+      );
+
+      expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
+        "cached",
+      );
+      expect(
+        runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
+      ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
       expect(runtimeState.spectralLightCache.rebuildPending).toBe(true);
-      expect(runtimeState.spectralLightCache.ready).toBe(false);
+      expect(runtimeState.spectralLightCache.ready).toBe(true);
 
       await Promise.resolve();
       spectralLightResolve();
       await flushMicrotasks();
-      tickRaymarchRuntime(runtimeState, denseFrame, 2, 1 / 60, renderer);
+      tickRaymarchRuntime(
+        runtimeState,
+        colorChangedFrame,
+        4,
+        1 / 60,
+        pendingRenderer,
+      );
 
       expect(
         runtimeState.volumeMesh.userData.raymarchSpectralLightEvaluationMode,
@@ -1119,7 +1187,7 @@ describe("tickRaymarchRuntime", () => {
     }
   });
 
-  it("keeps forced cached evaluation active while a refreshed cache rebuild is pending", async () => {
+  it("keeps cached evaluation active while a refreshed field cache rebuild is pending", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     const renderer = {
       computeAsync: vi.fn(async () => undefined),
@@ -1567,7 +1635,7 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
-  it("passes retained high-Q ridge visibility to the shader without inflating bloom response", () => {
+  it("keeps retained high-Q diagnostics from changing shader-visible density", () => {
     const baselineRuntime = createRuntimeState();
     const retainedRuntime = createRuntimeState();
     const baseFrame = {
@@ -1608,11 +1676,11 @@ describe("tickRaymarchRuntime", () => {
     expect(
       retainedRuntime.debugSnapshot.raymarchDebug
         .retainedHighQRidgeVisibleDensityMax,
-    ).toBeGreaterThan(0);
+    ).toBe(0);
     expect(
       retainedRuntime.debugSnapshot.raymarchDebug
         .retainedHighQRidgeToRetainedEnergyRatio,
-    ).toBeGreaterThan(0.1);
+    ).toBe(0);
     expect(
       retainedRuntime.debugSnapshot.raymarchDebug
         .retainedHighQPhysicalVisibleDensityMax,
@@ -1683,7 +1751,7 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
-  it("surfaces low-Q backbone visibility diagnostics without inflating bloom response", () => {
+  it("surfaces low-Q backbone diagnostics without changing shader-visible density", () => {
     const baselineRuntime = createRuntimeState();
     const lowQRuntime = createRuntimeState();
     const baseFrame = {
@@ -1744,7 +1812,7 @@ describe("tickRaymarchRuntime", () => {
     expect(
       lowQRuntime.debugSnapshot.raymarchDebug
         .lowQBackboneRidgeVisibleDensityMax,
-    ).toBeGreaterThan(0);
+    ).toBe(0);
     expect(lowQRuntime.scaleSignal).toBeCloseTo(baselineRuntime.scaleSignal, 6);
     expect(lowQRuntime.bloomResponseSignal).toBeCloseTo(
       baselineRuntime.bloomResponseSignal,
