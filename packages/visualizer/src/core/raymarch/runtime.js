@@ -31,7 +31,10 @@ import {
   deriveHolographicColorMix,
   deriveHolographicFresnel,
 } from "./fieldShaping.js";
-import { deriveObservationTransfer } from "./observationTransfer.js";
+import {
+  deriveObservationTransfer,
+  deriveObservationTransferParameters,
+} from "./observationTransfer.js";
 import {
   buildRaymarchPerformanceGovernor,
   copyBudgetedModeLayer,
@@ -121,6 +124,47 @@ function estimateAverageModeAmplitude(modeSlots) {
 function setIfChanged(uniformNode, value) {
   if (!uniformNode) return;
   if (uniformNode.value !== value) uniformNode.value = value;
+}
+
+function readFiniteNumber(value, fallback = 0) {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function readRuntimeFieldNoiseFloor(runtimeState) {
+  const fieldCache = runtimeState?.fieldCache;
+  return readFiniteNumber(
+    fieldCache?.densityNoiseFloor ??
+      fieldCache?.fieldNoiseFloor ??
+      fieldCache?.debug?.fieldNoiseFloor,
+    0,
+  );
+}
+
+function deriveRuntimeObservationTransferParameters(runtimeState) {
+  return deriveObservationTransferParameters({
+    opacityGain: runtimeState?.uniforms?.uOpacityGain?.value,
+    stepCompensation: runtimeState?.bloomTuning?.stepCompensation,
+    contourSharpness: runtimeState?.uniforms?.uContourSharpness?.value,
+    fieldNoiseFloor: readRuntimeFieldNoiseFloor(runtimeState),
+  });
+}
+
+function syncObservationTransferUniforms(runtimeState) {
+  const parameters = deriveRuntimeObservationTransferParameters(runtimeState);
+  const uniforms = runtimeState?.uniforms ?? {};
+  setIfChanged(
+    uniforms.uObservationDensityFadeStart,
+    parameters.densityFadeStart,
+  );
+  setIfChanged(uniforms.uObservationDensityFadeEnd, parameters.densityFadeEnd);
+  setIfChanged(uniforms.uObservationTransferGain, parameters.transferGain);
+  setIfChanged(uniforms.uObservationDensityFloor, parameters.densityFloor);
+  setIfChanged(
+    uniforms.uObservationContourSupportScale,
+    parameters.contourSupportScale,
+  );
+  runtimeState.observationTransferParameters = parameters;
+  return parameters;
 }
 
 // Sum of all slot amplitudes weighted by layer, matching accumulateSpecializedLayer's
@@ -314,6 +358,9 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     featureFrame?.debug?.liveInputHardSilenceActive ??
     (fieldState === "idle" && totalSlotAmplitude <= 0 && avgAmplitude <= 0),
   );
+  const observationParameters =
+    runtimeState.observationTransferParameters ??
+    deriveRuntimeObservationTransferParameters(runtimeState);
   const observationTransferDebug = deriveObservationTransfer({
     density: 0,
     fieldGradientMagnitude: 1,
@@ -323,6 +370,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     modalResponseBackboneEnergy,
     modalResponseDetailEnergy,
     hardSilence: observationHardSilence,
+    parameters: observationParameters,
   });
   const avgDensity = Math.min(
     1,
@@ -480,6 +528,13 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     observationSupportMax: observationTransferDebug.observationSupport,
     observedDensityFloorMax: observationTransferDebug.observedDensityFloor,
     observedContourSupportMax: observationTransferDebug.observedContourSupport,
+    observationDensityFadeStart: observationParameters.densityFadeStart,
+    observationDensityFadeEnd: observationParameters.densityFadeEnd,
+    observationTransferGain: observationParameters.transferGain,
+    observationDensityFloor: observationParameters.densityFloor,
+    observationContourSupportScale: observationParameters.contourSupportScale,
+    observationExposureScale: observationParameters.exposureScale,
+    observationFieldNoiseFloor: observationParameters.fieldNoiseFloor,
     observationHardSilence,
     modalPhaseAuthority,
     projectionEnergyBudgetBackbone:
@@ -1161,6 +1216,7 @@ export function tickRaymarchRuntime(
       runtimeState.baseDensityGain ?? uniforms.uDensityGain.value;
     uniforms.uDensityAbsorption.value =
       uniforms.uDensityGain.value * uniforms.uAbsorption.value;
+    syncObservationTransferUniforms(runtimeState);
     volumeMesh.visible = false;
     idleOverlay.visible = resolveIdleOverlayVisible(
       runtimeState,
@@ -1375,6 +1431,7 @@ export function tickRaymarchRuntime(
   setIfChanged(uniforms.uKeyMode, runtimeState.keyModeSmooth);
 
   updateLaserResponse(runtimeState, featureFrame);
+  syncObservationTransferUniforms(runtimeState);
   uniforms.uDensityGain.value =
     (runtimeState.baseDensityGain ?? uniforms.uDensityGain.value) *
     (1 + (runtimeState.scaleSignal ?? 0) * DENSITY_RESPONSE_AMOUNT);

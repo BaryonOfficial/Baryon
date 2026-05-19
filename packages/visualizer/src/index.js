@@ -43,8 +43,9 @@ export {
   resolveRaymarchFieldCacheOverride,
 } from "./visualization/fieldEvaluation.js";
 export {
-  OBSERVATION_TRANSFER_DEFAULTS,
+  OBSERVATION_TRANSFER_REFERENCE,
   deriveObservationTransfer,
+  deriveObservationTransferParameters,
 } from "./core/raymarch/observationTransfer.js";
 export { createVisualizationRuntime } from "./visualization/runtimeFactory.js";
 

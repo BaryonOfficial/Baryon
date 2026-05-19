@@ -33,7 +33,6 @@ import {
   RAYMARCH_BOUNDARY_END,
   RAYMARCH_BOUNDARY_START,
 } from "./intersection.js";
-import { OBSERVATION_TRANSFER_DEFAULTS } from "./observationTransfer.js";
 import {
   BOUNDARY_CONTOUR_ACCENT_WEIGHT,
   AIR_BAND_WEIGHT,
@@ -462,6 +461,11 @@ function createScatteringNode({
     uTotalSlotAmplitude,
     uModalResponseBackboneEnergy,
     uModalResponseDetailEnergy,
+    uObservationDensityFadeStart,
+    uObservationDensityFadeEnd,
+    uObservationTransferGain,
+    uObservationDensityFloor,
+    uObservationContourSupportScale,
     uModalPhaseOverlayStrength,
   } = uniforms;
   // Uniform-only expressions: hoist outside the Fn so they are loop-invariant
@@ -986,6 +990,11 @@ function createScatteringNode({
         ridgeAnchor,
         ridgeSupportAnchor,
         /** @type {any} */ (effectiveGradientMagnitude),
+        uObservationDensityFadeStart,
+        uObservationDensityFadeEnd,
+        uObservationTransferGain,
+        uObservationDensityFloor,
+        uObservationContourSupportScale,
       );
       const { visibleDensity, physicalVisibleDensity } = observationTransfer;
       const observedContourSupport = observationTransfer.observedContourSupport;
@@ -1280,10 +1289,15 @@ function deriveObservationTransferNode(
   ridgeAnchor = float(0.0),
   ridgeSupportAnchor = float(0.0),
   fieldGradientMagnitude = float(0.0),
+  observationDensityFadeStart = float(0.0),
+  observationDensityFadeEnd = float(0.0),
+  observationTransferGain = float(0.0),
+  observationDensityFloor = float(0.0),
+  observationContourSupportScale = float(0.0),
 ) {
   const physicalVisibilityGate = smoothstep(
-    float(OBSERVATION_TRANSFER_DEFAULTS.lowDensityFadeStart),
-    float(OBSERVATION_TRANSFER_DEFAULTS.lowDensityFadeEnd),
+    observationDensityFadeStart,
+    observationDensityFadeEnd,
     density,
   );
   const physicalVisibleDensity = density.mul(physicalVisibilityGate);
@@ -1309,25 +1323,21 @@ function deriveObservationTransferNode(
       exp(
         observationEnergy
           .mul(observationAnchor)
-          .mul(float(-OBSERVATION_TRANSFER_DEFAULTS.transferGain)),
+          .mul(observationTransferGain.negate()),
       ),
     ),
     float(0.0),
     float(1.0),
   );
   const observedDensityFloor = clamp(
-    observationSupport
-      .mul(observationAnchor)
-      .mul(float(OBSERVATION_TRANSFER_DEFAULTS.densityFloor)),
+    observationSupport.mul(observationAnchor).mul(observationDensityFloor),
     float(0.0),
-    float(OBSERVATION_TRANSFER_DEFAULTS.densityFloor),
+    observationDensityFloor,
   );
   const observedContourSupport = clamp(
-    observationSupport
-      .mul(ridgeAnchor)
-      .mul(float(OBSERVATION_TRANSFER_DEFAULTS.contourSupportScale)),
+    observationSupport.mul(ridgeAnchor).mul(observationContourSupportScale),
     float(0.0),
-    float(OBSERVATION_TRANSFER_DEFAULTS.contourSupportScale),
+    observationContourSupportScale,
   );
 
   return {

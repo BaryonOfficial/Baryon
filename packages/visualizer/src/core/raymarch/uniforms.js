@@ -7,8 +7,11 @@ import {
 } from "../../defaults.js";
 import { FIELD_STATE_VALUES } from "../fieldState.js";
 import { getBoundaryModeValue } from "../modeFamily.js";
+import { deriveObservationTransferParameters } from "./observationTransfer.js";
 
 export function createRaymarchUniforms(parameters) {
+  const observationParameters = deriveObservationTransferParameters();
+
   return {
     uTime: uniform(0.0),
     uAverageAmplitude: uniform(0.0),
@@ -72,6 +75,15 @@ export function createRaymarchUniforms(parameters) {
     uTotalSlotAmplitude: uniform(0.0),
     uModalResponseBackboneEnergy: uniform(0.0),
     uModalResponseDetailEnergy: uniform(0.0),
+    uObservationDensityFadeStart: uniform(
+      observationParameters.densityFadeStart,
+    ),
+    uObservationDensityFadeEnd: uniform(observationParameters.densityFadeEnd),
+    uObservationTransferGain: uniform(observationParameters.transferGain),
+    uObservationDensityFloor: uniform(observationParameters.densityFloor),
+    uObservationContourSupportScale: uniform(
+      observationParameters.contourSupportScale,
+    ),
     uModalPhaseOverlayStrength: uniform(0.0),
   };
 }

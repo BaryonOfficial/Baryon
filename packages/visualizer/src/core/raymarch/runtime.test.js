@@ -8,6 +8,7 @@ import {
   createRaymarchFieldCache,
 } from "./fieldCache.js";
 import { RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES } from "./material.js";
+import { deriveObservationTransferParameters } from "./observationTransfer.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -125,6 +126,11 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uTotalSlotAmplitude: { value: 0 },
       uModalResponseBackboneEnergy: { value: 0 },
       uModalResponseDetailEnergy: { value: 0 },
+      uObservationDensityFadeStart: { value: 0 },
+      uObservationDensityFadeEnd: { value: 0 },
+      uObservationTransferGain: { value: 0 },
+      uObservationDensityFloor: { value: 0 },
+      uObservationContourSupportScale: { value: 0 },
       uModalPhaseOverlayStrength: { value: 0 },
     },
     visualRoot: {
@@ -331,6 +337,26 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.uniforms.uModalResponseDetailEnergy.value).toBeCloseTo(
       0.12,
     );
+    const observationParameters = deriveObservationTransferParameters({
+      opacityGain: runtimeState.uniforms.uOpacityGain.value,
+      stepCompensation: runtimeState.bloomTuning.stepCompensation,
+      contourSharpness: runtimeState.uniforms.uContourSharpness.value,
+    });
+    expect(
+      runtimeState.uniforms.uObservationDensityFadeStart.value,
+    ).toBeCloseTo(observationParameters.densityFadeStart);
+    expect(runtimeState.uniforms.uObservationDensityFadeEnd.value).toBeCloseTo(
+      observationParameters.densityFadeEnd,
+    );
+    expect(runtimeState.uniforms.uObservationTransferGain.value).toBeCloseTo(
+      observationParameters.transferGain,
+    );
+    expect(runtimeState.uniforms.uObservationDensityFloor.value).toBeCloseTo(
+      observationParameters.densityFloor,
+    );
+    expect(
+      runtimeState.uniforms.uObservationContourSupportScale.value,
+    ).toBeCloseTo(observationParameters.contourSupportScale);
     expect(runtimeState.uniforms.uTrebleBroadbandEnergy.value).toBeCloseTo(
       0.18,
     );
@@ -465,6 +491,28 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.debugSnapshot.raymarchDebug.observedContourSupportMax,
     ).toBeGreaterThan(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.observationDensityFadeStart,
+    ).toBeCloseTo(observationParameters.densityFadeStart);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.observationDensityFadeEnd,
+    ).toBeCloseTo(observationParameters.densityFadeEnd);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.observationTransferGain,
+    ).toBeCloseTo(observationParameters.transferGain);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.observationDensityFloor,
+    ).toBeCloseTo(observationParameters.densityFloor);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .observationContourSupportScale,
+    ).toBeCloseTo(observationParameters.contourSupportScale);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.observationExposureScale,
+    ).toBeCloseTo(observationParameters.exposureScale);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.observationFieldNoiseFloor,
+    ).toBe(0);
     expect(runtimeState.debugSnapshot.raymarchDebug.trebleBroadbandEnergy).toBe(
       0.18,
     );

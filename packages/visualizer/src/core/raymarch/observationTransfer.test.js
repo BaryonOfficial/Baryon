@@ -1,10 +1,154 @@
 import { describe, expect, it } from "vitest";
+import { RAYMARCH_DEFAULTS } from "../../defaults.js";
 import {
-  OBSERVATION_TRANSFER_DEFAULTS,
+  OBSERVATION_TRANSFER_REFERENCE,
   deriveObservationTransfer,
+  deriveObservationTransferParameters,
 } from "./observationTransfer.js";
+import { deriveStepCompensation } from "./stepStability.js";
+
+function referenceParameterInputs(overrides = {}) {
+  return {
+    opacityGain: RAYMARCH_DEFAULTS.opacityGain,
+    stepCompensation: deriveStepCompensation(RAYMARCH_DEFAULTS.raymarchSteps),
+    contourSharpness: RAYMARCH_DEFAULTS.contourSharpness,
+    ...overrides,
+  };
+}
+
+function deriveReferenceParameters(overrides = {}) {
+  return deriveObservationTransferParameters(referenceParameterInputs(overrides));
+}
 
 describe("observation transfer", () => {
+  it("derives current reference parameters from default raymarch exposure", () => {
+    const parameters = deriveReferenceParameters({ fieldNoiseFloor: 0 });
+
+    expect(parameters.densityFadeStart).toBeCloseTo(
+      OBSERVATION_TRANSFER_REFERENCE.densityFadeStart,
+    );
+    expect(parameters.densityFadeEnd).toBeCloseTo(
+      OBSERVATION_TRANSFER_REFERENCE.densityFadeEnd,
+    );
+    expect(parameters.transferGain).toBeCloseTo(
+      OBSERVATION_TRANSFER_REFERENCE.transferGain,
+    );
+    expect(parameters.densityFloor).toBeCloseTo(
+      OBSERVATION_TRANSFER_REFERENCE.densityFloor,
+    );
+    expect(parameters.contourSupportScale).toBeCloseTo(
+      OBSERVATION_TRANSFER_REFERENCE.contourSupportScale,
+    );
+    expect(parameters.exposureScale).toBeCloseTo(1);
+    expect(parameters.fieldNoiseFloor).toBe(0);
+  });
+
+  it("derives exposure-sensitive thresholds without changing observation energy", () => {
+    const referenceParameters = deriveReferenceParameters();
+    const brighterParameters = deriveReferenceParameters({
+      opacityGain: RAYMARCH_DEFAULTS.opacityGain * 1.6,
+    });
+    const physicalInputs = {
+      density: 0.08,
+      fieldGradientMagnitude: 0.46,
+      modalStructureAnchor: 0.8,
+      ridgeAnchor: 0.61,
+      modalCoefficientEnergy: 0.13,
+      modalResponseBackboneEnergy: 0.21,
+      modalResponseDetailEnergy: 0.04,
+    };
+    const referenceTransfer = deriveObservationTransfer({
+      ...physicalInputs,
+      parameters: referenceParameters,
+    });
+    const brighterTransfer = deriveObservationTransfer({
+      ...physicalInputs,
+      parameters: brighterParameters,
+    });
+
+    expect(brighterParameters.exposureScale).toBeGreaterThan(
+      referenceParameters.exposureScale,
+    );
+    expect(brighterParameters.densityFadeStart).toBeLessThan(
+      referenceParameters.densityFadeStart,
+    );
+    expect(brighterParameters.densityFloor).toBeLessThan(
+      referenceParameters.densityFloor,
+    );
+    expect(brighterTransfer.observationEnergy).toBe(
+      referenceTransfer.observationEnergy,
+    );
+  });
+
+  it("lifts derived density thresholds above measured field baseline", () => {
+    const referenceParameters = deriveReferenceParameters({
+      fieldNoiseFloor: 0,
+    });
+    const noisyParameters = deriveReferenceParameters({
+      fieldNoiseFloor: 0.2,
+    });
+
+    expect(noisyParameters.fieldNoiseFloor).toBe(0.12);
+    expect(noisyParameters.densityFadeEnd).toBeGreaterThan(
+      referenceParameters.densityFadeEnd,
+    );
+    expect(noisyParameters.densityFloor).toBeGreaterThan(
+      referenceParameters.densityFloor,
+    );
+  });
+
+  it("derives contour support from density floor and contour sharpness", () => {
+    const referenceParameters = deriveReferenceParameters();
+    const sharperParameters = deriveReferenceParameters({
+      contourSharpness: RAYMARCH_DEFAULTS.contourSharpness * 2,
+    });
+    const physicalInputs = {
+      density: 0,
+      fieldGradientMagnitude: 1,
+      modalStructureAnchor: 1,
+      ridgeAnchor: 1,
+      modalCoefficientEnergy: 0.4,
+    };
+
+    expect(sharperParameters.contourSupportScale).toBeLessThan(
+      referenceParameters.contourSupportScale,
+    );
+    expect(
+      deriveObservationTransfer({
+        ...physicalInputs,
+        parameters: sharperParameters,
+      }).visibleDensity,
+    ).toBeCloseTo(
+      deriveObservationTransfer({
+        ...physicalInputs,
+        parameters: referenceParameters,
+      }).visibleDensity,
+    );
+  });
+
+  it("ignores presentation, color, beat, band, and performance fields when deriving parameters", () => {
+    const physicalInputs = referenceParameterInputs({
+      fieldNoiseFloor: 0.03,
+    });
+
+    expect(
+      deriveObservationTransferParameters({
+        ...physicalInputs,
+        colorMode: "spectral",
+        spectralMix: 1,
+        bloomStrength: 1,
+        bloomThreshold: 0,
+        rimBloomBias: 1,
+        beatDetected: true,
+        beatPulse: 1,
+        bandEnergies: [1, 1, 1, 1],
+        bassSalience: 1,
+        renderScale: 0.5,
+        performancePressure: 1,
+      }),
+    ).toEqual(deriveObservationTransferParameters(physicalInputs));
+  });
+
   it("exposes weak modal structure only where local modal anchors exist", () => {
     const anchored = deriveObservationTransfer({
       density: 0.04,
@@ -25,7 +169,7 @@ describe("observation transfer", () => {
       modalResponseDetailEnergy: 0.03,
     });
 
-    expect(OBSERVATION_TRANSFER_DEFAULTS.densityFloor).toBeCloseTo(0.22);
+    expect(OBSERVATION_TRANSFER_REFERENCE.densityFloor).toBeCloseTo(0.22);
     expect(anchored.physicalVisibleDensity).toBeLessThan(0.001);
     expect(anchored.observationAnchor).toBeGreaterThan(0);
     expect(anchored.observationEnergy).toBeCloseTo(0.19);

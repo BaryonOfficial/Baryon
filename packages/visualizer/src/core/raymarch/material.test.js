@@ -59,6 +59,12 @@ describe("raymarch volume material", () => {
     expect(observationEnergyStart).toBeGreaterThanOrEqual(0);
     expect(observationSupportStart).toBeGreaterThan(observationEnergyStart);
     expect(source).toContain("deriveObservationTransferNode");
+    expect(source).toContain("uObservationDensityFadeStart");
+    expect(source).toContain("uObservationDensityFadeEnd");
+    expect(source).toContain("uObservationTransferGain");
+    expect(source).toContain("uObservationDensityFloor");
+    expect(source).toContain("uObservationContourSupportScale");
+    expect(source).not.toContain("OBSERVATION_TRANSFER_DEFAULTS");
     expect(source).not.toContain("deriveVisibleDensityNode");
     expect(source).not.toContain("BASS_STRUCTURE_FLOOR");
     expect(source).not.toContain("lowQBackboneRidge");
@@ -134,6 +140,11 @@ describe("raymarch volume material", () => {
     expect(mesh.material.steps).toBe(88);
     expect(mesh.material.radiusNode).toBe(uniforms.uRadius);
     expect(mesh.material.opacityGainNode).toBe(uniforms.uOpacityGain);
+    expect(uniforms.uObservationDensityFadeStart.value).toBeCloseTo(0.22);
+    expect(uniforms.uObservationDensityFadeEnd.value).toBeCloseTo(0.34);
+    expect(uniforms.uObservationTransferGain.value).toBeCloseTo(2.2);
+    expect(uniforms.uObservationDensityFloor.value).toBeCloseTo(0.22);
+    expect(uniforms.uObservationContourSupportScale.value).toBeCloseTo(0.035);
     expect(uniforms.uModalResponseBackboneEnergy.value).toBe(0);
     expect(uniforms.uModalResponseDetailEnergy.value).toBe(0);
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
