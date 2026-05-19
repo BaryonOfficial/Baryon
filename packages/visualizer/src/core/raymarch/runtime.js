@@ -6,6 +6,10 @@ import {
 } from "../cavityGeometry.js";
 import { getBoundaryModeFromValue } from "../modeFamily.js";
 import { isFieldDrivenState } from "../fieldState.js";
+import {
+  allowsPresentationResponse,
+  isZeroInputHardSilence,
+} from "../hardSilenceContract.js";
 import { resolveRaymarchFieldCacheOverride } from "../../visualization/fieldEvaluation.js";
 import {
   buildRaymarchSpectralLightCacheDescriptor,
@@ -345,24 +349,20 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
   const totalSlotAmplitude = sumLayeredAmplitude(featureFrame);
   const modalCoefficientEnergy = clamp01(totalSlotAmplitude);
   const fieldDriven = isFieldDrivenState(fieldState);
-  const modalResponseBackboneEnergy =
-    fieldDriven
-      ? (featureFrame?.modalResponseBackboneEnergy ??
-        featureFrame?.debug?.modalResponseBackboneEnergy ??
-        0)
-      : 0;
-  const modalResponseDetailEnergy =
-    fieldDriven
-      ? (featureFrame?.modalResponseDetailEnergy ??
-        featureFrame?.debug?.modalResponseDetailEnergy ??
-        0)
-      : 0;
+  const modalResponseBackboneEnergy = fieldDriven
+    ? (featureFrame?.modalResponseBackboneEnergy ??
+      featureFrame?.debug?.modalResponseBackboneEnergy ??
+      0)
+    : 0;
+  const modalResponseDetailEnergy = fieldDriven
+    ? (featureFrame?.modalResponseDetailEnergy ??
+      featureFrame?.debug?.modalResponseDetailEnergy ??
+      0)
+    : 0;
   const modalPhaseAuthority = featureFrame?.modalPhaseAuthority ?? 0;
-  const observationHardSilence = Boolean(
-    featureFrame?.liveInputHardSilenceActive ??
-    featureFrame?.debug?.liveInputHardSilenceActive ??
-    (fieldState === "idle" && totalSlotAmplitude <= 0 && avgAmplitude <= 0),
-  );
+  const observationHardSilence =
+    isZeroInputHardSilence(featureFrame) ||
+    (fieldState === "idle" && totalSlotAmplitude <= 0 && avgAmplitude <= 0);
   const observationParameters =
     runtimeState.observationTransferParameters ??
     deriveRuntimeObservationTransferParameters(runtimeState);
@@ -710,10 +710,9 @@ function updateReactiveResponse(
     0,
     rt?.reactivity ?? REACTIVITY_DEFAULTS.reactivity,
   );
-  const zeroInputHardSilence =
-    featureFrame?.liveInputHardSilenceActive === true ||
-    featureFrame?.debug?.liveInputHardSilenceActive === true;
-  const presentationSignalScale = zeroInputHardSilence ? 0 : 1;
+  const presentationSignalScale = allowsPresentationResponse(featureFrame)
+    ? 1
+    : 0;
   const rhythmicDensity = clamp01(featureFrame?.rhythmicDensity ?? 0);
   const gatedStructureSignal = clamp01(
     structureSignal * reactivity * presentationSignalScale,

@@ -28,6 +28,10 @@ import {
   normalizeBoundaryMode,
 } from "../core/modeFamily.js";
 import {
+  allowsAudioMotion,
+  isZeroInputHardSilence,
+} from "../core/hardSilenceContract.js";
+import {
   setRaymarchCavityGeometry,
   setRaymarchBoundaryMode,
   syncRaymarchMaterialSteps,
@@ -632,16 +636,8 @@ export function applySceneControls(
   const rotationMode = normalizeRotationMode(controls.rotationMode);
   const manualVelocity = getManualVelocity(controls);
   const userScale = getMotionAmount(controls, runtimeState);
-  const audioActive =
-    status?.isPlaying ||
-    status?.isLiveInputActive ||
-    featureFrame?.fieldState === "test";
-  const zeroInputHardSilence =
-    featureFrame?.liveInputHardSilenceActive === true ||
-    featureFrame?.debug?.liveInputHardSilenceActive === true;
-  const fieldDriven =
-    featureFrame?.fieldState && featureFrame.fieldState !== "idle";
-  const audioMotionDriven = audioActive && fieldDriven && !zeroInputHardSilence;
+  const zeroInputHardSilence = isZeroInputHardSilence(featureFrame);
+  const audioMotionDriven = allowsAudioMotion(featureFrame, status);
   const signals = deriveSceneSignals(
     featureFrame,
     runtimeState?.responseEnvelope ?? 0,
