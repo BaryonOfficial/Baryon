@@ -170,12 +170,14 @@ export function deriveHighlightTarget(baseRgb, surfaceRgb, options = {}) {
     options.targetLuminance,
     resolvedOptions.preShoulderMaxLuminance,
   );
+  const surfacePullScale = clamp01(finiteOr(options.surfacePullScale, 1));
   const surfacePull = clamp01(
-    (targetLuminance - baseLuminance) /
+    ((targetLuminance - baseLuminance) /
       Math.max(
         surfaceLuminance - baseLuminance,
         resolvedOptions.displayEpsilon,
-      ),
+      )) *
+      surfacePullScale,
   );
   const targetRgb = mixRgb(base, surface, surfacePull);
   const targetMaxChannel = Math.max(...targetRgb);
@@ -263,7 +265,12 @@ export function compressDisplayRadianceNode(rgb) {
   return luminanceCompressedRgb.mul(channelScale);
 }
 
-export function deriveHighlightTargetNode(baseColor, surfaceColor, whiteMix) {
+export function deriveHighlightTargetNode(
+  baseColor,
+  surfaceColor,
+  whiteMix,
+  surfacePullScale = float(1.0),
+) {
   const epsilon = float(DISPLAY_RADIANCE_DEFAULTS.displayEpsilon);
   const whiteColor = vec3(1.0);
   const directWhiteTarget = baseColor
@@ -275,6 +282,7 @@ export function deriveHighlightTargetNode(baseColor, surfaceColor, whiteMix) {
   const surfacePull = targetLuminance
     .sub(baseLuminance)
     .div(max(surfaceLuminance.sub(baseLuminance), epsilon))
+    .mul(surfacePullScale)
     .clamp();
   const highlightTarget = baseColor
     .mul(float(1.0).sub(surfacePull))

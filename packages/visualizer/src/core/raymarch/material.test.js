@@ -76,6 +76,19 @@ describe("raymarch volume material", () => {
     expect(observationEnergyBlock).not.toContain("modalPhaseOverlayEnergy");
   });
 
+  it("does not feed contour-only support into observation density authority", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("ridgeSupportAnchor");
+    expect(source).not.toContain("max(contourShape, ridgeConcentration)");
+    expect(source).toMatch(
+      /const ridgePhysicalAnchor = max\(\s*ridgeAnchor,\s*fieldGradientMagnitude,?\s*\);/,
+    );
+  });
+
   it("keeps Spectral Light shader tuning vivid instead of neutralizing color", () => {
     expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow).toBeGreaterThan(0.95);
     expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.hotCoreSurfacePull).toBeLessThan(0.2);
@@ -106,14 +119,47 @@ describe("raymarch volume material", () => {
     expect(source).toContain(
       'import { deriveHighlightTargetNode } from "../../render/displayRadiance.js";',
     );
+    expect(source).toContain("STATIC_HIGHLIGHT_SURFACE_PULL_SCALE");
     expect(source).toContain("staticWhiteEmissionMix");
     expect(source).toContain("spectralLightWhiteEmissionMix");
+    expect(source).toContain(`deriveHighlightTargetNode(
+        staticHolographicColor,
+        uSurfaceColor,
+        staticWhiteEmissionMix,
+        float(STATIC_HIGHLIGHT_SURFACE_PULL_SCALE),
+      )`);
+    expect(source).toContain(`deriveHighlightTargetNode(
+            spectralLightHolographicColor,
+            uSurfaceColor,
+            spectralLightWhiteEmissionMix,
+          )`);
     expect(source).not.toContain(`const staticHolographicLaserColor = mix(
         staticHolographicColor,
         vec3(1.0),`);
     expect(source).not.toContain(`const spectralLightHolographicLaserColor = mix(
             spectralLightHolographicColor,
-            vec3(1.0),`);
+        vec3(1.0),`);
+  });
+
+  it("scales broad surface-tint pulls in static color mode", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("STATIC_SURFACE_TINT_SCALE");
+    expect(source).toContain(
+      "spectralColorBias.mul(float(STATIC_SURFACE_TINT_SCALE))",
+    );
+    expect(source).toContain(
+      "contourAccent.mul(float(STATIC_SURFACE_TINT_SCALE))",
+    );
+    expect(source).toContain(
+      "boundarySurfacePull.mul(float(STATIC_SURFACE_TINT_SCALE))",
+    );
+    expect(source).toContain(
+      "holographicColorMix.mul(float(STATIC_SURFACE_TINT_SCALE))",
+    );
   });
 
   it("softens Dirichlet beam lighting so nodal planes do not dominate", () => {

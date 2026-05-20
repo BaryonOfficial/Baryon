@@ -11,6 +11,16 @@ function channelRatio(rgb) {
   return [rgb[1] / rgb[0], rgb[2] / rgb[0]];
 }
 
+function mixRgb(left, right, t) {
+  return left.map((channel, index) => channel * (1 - t) + right[index] * t);
+}
+
+function saturationOf(rgb) {
+  const maxChannel = Math.max(...rgb);
+  if (maxChannel <= 1e-6) return 0;
+  return (maxChannel - Math.min(...rgb)) / maxChannel;
+}
+
 describe("display radiance", () => {
   it("uses linear sRGB relative luminance", () => {
     expect(computeLinearLuminance([1, 1, 1])).toBeCloseTo(1);
@@ -82,5 +92,22 @@ describe("display radiance", () => {
     expect(Math.max(...result.targetRgb)).toBeGreaterThan(0.98);
     expect(result.whiteSparkle).toBe(0);
     expect(result.finalRgb).toEqual(result.targetRgb);
+  });
+
+  it("can preserve saturated static color while only nudging toward the surface tint", () => {
+    const staticColor = [0.92, 0.24, 0.7];
+    const surfaceTint = [0.97, 0.99, 1];
+    const whiteMix = 0.3;
+    const directWhite = mixRgb(staticColor, [1, 1, 1], whiteMix);
+    const result = deriveHighlightTarget(staticColor, surfaceTint, {
+      targetLuminance: computeLinearLuminance(directWhite),
+      whiteMix,
+      surfacePullScale: 0.2,
+    });
+
+    expect(result.surfacePull).toBeGreaterThan(0);
+    expect(saturationOf(result.finalRgb)).toBeGreaterThan(
+      saturationOf(directWhite),
+    );
   });
 });

@@ -120,6 +120,8 @@ import {
 // Above HIGH the gate is fully open and behavior is identical to pre-fix.
 const EXCITATION_GATE_LOW = 0.04;
 const EXCITATION_GATE_HIGH = 0.35;
+const STATIC_SURFACE_TINT_SCALE = 0.18;
+const STATIC_HIGHLIGHT_SURFACE_PULL_SCALE = 0.2;
 
 export const RAYMARCH_SPECTRAL_LIGHT_TUNING = Object.freeze({
   contourShadow: 0.97,
@@ -979,9 +981,6 @@ function createScatteringNode({
       const ridgeAnchor = /** @type {any} */ (
         contourShape.mul(ridgeConcentration)
       );
-      const ridgeSupportAnchor = /** @type {any} */ (
-        max(contourShape, ridgeConcentration)
-      );
       const observationTransfer = deriveObservationTransferNode(
         density,
         modalCoefficientEnergy,
@@ -989,7 +988,6 @@ function createScatteringNode({
         uModalResponseBackboneEnergy,
         uModalResponseDetailEnergy,
         ridgeAnchor,
-        ridgeSupportAnchor,
         /** @type {any} */ (effectiveGradientMagnitude),
         uObservationDensityFadeStart,
         uObservationDensityFadeEnd,
@@ -1077,7 +1075,11 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
-      const staticBaseColor = mix(uColor, uSurfaceColor, spectralColorBias);
+      const staticBaseColor = mix(
+        uColor,
+        uSurfaceColor,
+        spectralColorBias.mul(float(STATIC_SURFACE_TINT_SCALE)),
+      );
       const spectralColor = colorSum.div(colorWeight.max(float(1e-4)));
       const contourAccent = clamp(
         contourMix
@@ -1165,17 +1167,23 @@ function createScatteringNode({
       const staticContourColor = mix(
         staticBaseColor,
         uSurfaceColor,
-        /** @type {any} */ (contourAccent),
+        /** @type {any} */ (
+          contourAccent.mul(float(STATIC_SURFACE_TINT_SCALE))
+        ),
       );
       const staticLaserColor = mix(
         staticContourColor,
         uSurfaceColor,
-        crowdedHotCoreMix.mul(float(0.72)).mul(boundarySurfacePull),
+        crowdedHotCoreMix
+          .mul(float(0.72))
+          .mul(boundarySurfacePull.mul(float(STATIC_SURFACE_TINT_SCALE))),
       );
       const staticHolographicColor = mix(
         staticLaserColor,
         holographicAccentColor,
-        /** @type {any} */ (holographicColorMix),
+        /** @type {any} */ (
+          holographicColorMix.mul(float(STATIC_SURFACE_TINT_SCALE))
+        ),
       );
       const staticWhiteEmissionMix = crowdedWhiteEmissionMix
         .mul(float(0.45))
@@ -1184,6 +1192,7 @@ function createScatteringNode({
         staticHolographicColor,
         uSurfaceColor,
         staticWhiteEmissionMix,
+        float(STATIC_HIGHLIGHT_SURFACE_PULL_SCALE),
       );
       const detailPresence = smoothstep(float(0.0), float(1.0), detailCount);
       const backbonePresence = smoothstep(
@@ -1288,7 +1297,6 @@ function deriveObservationTransferNode(
   modalResponseBackboneEnergy = float(0.0),
   modalResponseDetailEnergy = float(0.0),
   ridgeAnchor = float(0.0),
-  ridgeSupportAnchor = float(0.0),
   fieldGradientMagnitude = float(0.0),
   observationDensityFadeStart = float(0.0),
   observationDensityFadeEnd = float(0.0),
@@ -1302,10 +1310,7 @@ function deriveObservationTransferNode(
     density,
   );
   const physicalVisibleDensity = density.mul(physicalVisibilityGate);
-  const ridgePhysicalAnchor = max(
-    max(ridgeAnchor, ridgeSupportAnchor),
-    fieldGradientMagnitude,
-  );
+  const ridgePhysicalAnchor = max(ridgeAnchor, fieldGradientMagnitude);
   const observationAnchor = clamp(
     modalStructureAnchor.mul(ridgePhysicalAnchor),
     float(0.0),

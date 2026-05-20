@@ -157,7 +157,6 @@ export function deriveObservationTransfer({
   fieldGradientMagnitude = 0,
   modalStructureAnchor = 0,
   ridgeAnchor = 0,
-  ridgeSupportAnchor = 0,
   modalCoefficientEnergy = 0,
   modalResponseBackboneEnergy = 0,
   modalResponseDetailEnergy = 0,
@@ -173,7 +172,6 @@ export function deriveObservationTransfer({
   const physicalVisibleDensity = safeDensity * physicalVisibilityGate;
   const ridgePhysicalAnchor = Math.max(
     clamp01(ridgeAnchor),
-    clamp01(ridgeSupportAnchor),
     clamp01(fieldGradientMagnitude),
   );
   const observationAnchor = clamp01(

@@ -188,6 +188,33 @@ describe("observation transfer", () => {
     );
   });
 
+  it("does not let support-only contours resurrect canceled signed fields", () => {
+    const canceled = deriveObservationTransfer({
+      density: 0,
+      fieldGradientMagnitude: 0,
+      modalStructureAnchor: 1,
+      ridgeAnchor: 0,
+      ridgeSupportAnchor: 1,
+      modalCoefficientEnergy: 1,
+      modalResponseBackboneEnergy: 1,
+      modalResponseDetailEnergy: 1,
+    });
+    const physicalRidge = deriveObservationTransfer({
+      density: 0,
+      fieldGradientMagnitude: 0.8,
+      modalStructureAnchor: 1,
+      ridgeAnchor: 0.8,
+      ridgeSupportAnchor: 1,
+      modalCoefficientEnergy: 1,
+    });
+
+    expect(canceled.observationAnchor).toBe(0);
+    expect(canceled.observedDensityFloor).toBe(0);
+    expect(canceled.visibleDensity).toBe(0);
+    expect(physicalRidge.observationAnchor).toBeGreaterThan(0);
+    expect(physicalRidge.visibleDensity).toBeGreaterThan(0);
+  });
+
   it("observes retained modal energy instead of hard-silence flags", () => {
     const hardSilent = deriveObservationTransfer({
       density: 0.04,
