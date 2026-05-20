@@ -576,7 +576,7 @@ describe("modal excitation structural state", () => {
     expect(readModeKeys(structural.detailSlotsSource)).not.toContain("1:1:1");
   });
 
-  it("uses retained modal response to bridge the first strict hard-silence frame", () => {
+  it("keeps retained modal response diagnostic without render slots on strict hard silence", () => {
     const state = createModalExcitationState(16);
     state.activeModes.set("1:1:1", {
       modeKey: "1:1:1",
@@ -622,7 +622,8 @@ describe("modal excitation structural state", () => {
 
     expect(structural.structuralMetrics.observedModalModeCount).toBe(0);
     expect(structural.structuralMetrics.modalResponseEnergy).toBeGreaterThan(0);
-    expect(sumAmplitudes(structural.backboneSlotsSource)).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
+    expect(sumAmplitudes(structural.backboneSlotsSource)).toBe(0);
   });
 
   it("retains low-frequency coherent high-Q modes through observer authority", () => {
@@ -2216,7 +2217,8 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQDetailEnergy).toBeLessThan(
       preSilenceHighQEnergy,
     );
-    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBe(0);
     expect(sumAmplitudes(structural.detailSlotsSource)).toBeLessThan(
       preSilenceDetailAmplitude,
     );
@@ -2224,7 +2226,7 @@ describe("modal excitation structural state", () => {
     expectLegacyModalObserverAuthoritiesRemoved(state);
   });
 
-  it("keeps zero-input high-Q ring-out through modal response without hard-silence grace", () => {
+  it("keeps zero-input high-Q ring-out diagnostic without render liveness", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
       audioInputMode: "live",
@@ -2279,7 +2281,8 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.modalResponseDetailEnergy).toBeGreaterThan(
       0,
     );
-    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBe(0);
     expectLegacyModalObserverAuthoritiesRemoved(structural.structuralMetrics);
   });
 
@@ -2343,7 +2346,8 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.modalResponseDetailEnergy).toBeGreaterThan(
       0,
     );
-    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBe(0);
     expect(structural.structuralMetrics.modalPhaseAuthority).toBe(0);
     expect(structural.structuralMetrics.modalPhaseOverlayModeCount).toBe(0);
     expect(countAuthoritativePhaseSlots(structural.detailPhaseSlotsSource)).toBe(
@@ -2546,7 +2550,7 @@ describe("modal excitation structural state", () => {
     expect(tail.highOrderModalEnergy).toBeGreaterThan(0);
   });
 
-  it("fades coherent bowl-like detail tails smoothly before hard silence", () => {
+  it("drops coherent bowl-like detail tails from render slots on hard silence", () => {
     const state = createModalExcitationState(16);
     const fadeFrames = [];
     let structural = null;
@@ -2618,7 +2622,8 @@ describe("modal excitation structural state", () => {
 
     expect(structural.structuralMetrics.modalResponseInputEnergy).toBe(0);
     expect(sumAmplitudes(structural.signalDetailSlotsSource)).toBe(0);
-    expect(sumAmplitudes(structural.detailSlotsSource)).toBeGreaterThan(0);
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
+    expect(sumAmplitudes(structural.detailSlotsSource)).toBe(0);
     expect(sumAmplitudes(structural.detailSlotsSource)).toBeLessThan(
       preSilenceDetailAmplitude,
     );

@@ -80,7 +80,7 @@ const LIVE_INPUT_INVALID_CURRENT_SATURATED_PEAK = 0.98;
 const LIVE_INPUT_INVALID_CURRENT_WEAK_RMS = 0.012;
 const LIVE_INPUT_INVALID_CURRENT_WEAK_AVG = 10;
 const DETAIL_LAYER_WEIGHT = 0.35;
-const ZERO_MODAL_FORCING_EPSILON = 1e-6;
+const SOURCE_CUT_MODAL_FORCING_EPSILON = 1e-6;
 const BAND_LIMITS_HZ = [140, 600, 2400, 8000];
 const SPECTRAL_BAND_6_LIMITS_HZ = [140, 400, 1200, 3200, 6400, 12000];
 const SPECTRAL_BAND_6_COUNT = 6;
@@ -89,7 +89,8 @@ const TREBLE_FLATNESS_MAX_HZ = 10000;
 const DEFAULT_LIVE_INPUT_POLICY = DEFAULT_LIVE_INPUT_ACOUSTIC_INTENT;
 const LIVE_INPUT_CALIBRATION_WINDOW_MS = 1100;
 const LIVE_INPUT_CALIBRATION_SMOOTHING_MS = 320;
-const MODAL_VISIBILITY_SLOT_ENERGY_START = 0.04;
+const MODAL_VISIBILITY_SLOT_ENERGY_START =
+  SPECTRAL_MODAL_POLICY.modalRenderLivenessFloor;
 const MODAL_VISIBILITY_SLOT_ENERGY_END = 0.18;
 const MODAL_VISIBILITY_DRIVE_START = 0.025;
 const MODAL_VISIBILITY_DRIVE_END = 0.12;
@@ -846,7 +847,7 @@ function buildDetailStateSummary(detailState) {
   };
 }
 
-function deriveRetainedModalObservationEnergy(
+function deriveModalObservationEnergy(
   modalCoefficientEnergy,
   modalResponseBackboneEnergy,
   modalResponseDetailEnergy,
@@ -860,7 +861,31 @@ function deriveRetainedModalObservationEnergy(
   );
 }
 
-function hasZeroSourceForcing(analysisResult) {
+function readModalResponseRenderEnergy(structuralMetrics, fallbackEnergy = 0) {
+  return clamp01(
+    structuralMetrics?.modalResponseRenderEnergy ?? fallbackEnergy,
+  );
+}
+
+function readModalResponseRenderBackboneEnergy(
+  structuralMetrics,
+  fallbackEnergy = 0,
+) {
+  return clamp01(
+    structuralMetrics?.modalResponseRenderBackboneEnergy ?? fallbackEnergy,
+  );
+}
+
+function readModalResponseRenderDetailEnergy(
+  structuralMetrics,
+  fallbackEnergy = 0,
+) {
+  return clamp01(
+    structuralMetrics?.modalResponseRenderDetailEnergy ?? fallbackEnergy,
+  );
+}
+
+function hasNoRenderSourceForcing(analysisResult) {
   if (analysisResult?.liveInputHardSilenceActive) {
     return true;
   }
@@ -960,16 +985,28 @@ function buildDebugSummary({
   );
   const modalObserverVisibilityEnergy =
     modalVisibilitySummary.modalObserverVisibilityEnergy ?? 0;
-  const modalCoefficientEnergy = clamp01(
+  const retainedModalCoefficientEnergy = clamp01(
     sumSlotAmplitudeTotal(modeSlots, MAX_STACK_SLOTS),
   );
-  const modalResponseBackboneEnergy = clamp01(
+  const retainedModalResponseBackboneEnergy = clamp01(
     structuralMetrics?.modalResponseBackboneEnergy ?? 0,
   );
-  const modalResponseDetailEnergy = clamp01(
+  const retainedModalResponseDetailEnergy = clamp01(
     structuralMetrics?.modalResponseDetailEnergy ?? 0,
   );
-  const observationEnergy = deriveRetainedModalObservationEnergy(
+  const modalCoefficientEnergy = readModalResponseRenderEnergy(
+    structuralMetrics,
+    retainedModalCoefficientEnergy,
+  );
+  const modalResponseBackboneEnergy = readModalResponseRenderBackboneEnergy(
+    structuralMetrics,
+    retainedModalResponseBackboneEnergy,
+  );
+  const modalResponseDetailEnergy = readModalResponseRenderDetailEnergy(
+    structuralMetrics,
+    retainedModalResponseDetailEnergy,
+  );
+  const observationEnergy = deriveModalObservationEnergy(
     modalCoefficientEnergy,
     modalResponseBackboneEnergy,
     modalResponseDetailEnergy,
@@ -1023,6 +1060,7 @@ function buildDebugSummary({
     structureSignal,
     energySignal,
     modalCoefficientEnergy,
+    retainedModalCoefficientEnergy,
     observationEnergy,
     modalVisibilityEnergy,
     modalVisibilitySlotEnergy: modalVisibilitySummary.averageSlotEnergy,
@@ -1126,6 +1164,18 @@ function buildDebugSummary({
     modalPersistence: structuralMetrics?.modalPersistence ?? 0,
     modalDriveEnergy: structuralMetrics?.modalDriveEnergy ?? 0,
     modalResponseEnergy: structuralMetrics?.modalResponseEnergy ?? 0,
+    modalResponseRenderEnergy:
+      structuralMetrics?.modalResponseRenderEnergy ?? modalCoefficientEnergy,
+    modalResponseRenderRawEnergy:
+      structuralMetrics?.modalResponseRenderRawEnergy ?? modalCoefficientEnergy,
+    modalResponseRenderSourceCutSuppressed: Boolean(
+      structuralMetrics?.modalResponseRenderSourceCutSuppressed,
+    ),
+    modalResponseCurrentRenderSourceEvidence: Boolean(
+      structuralMetrics?.modalResponseCurrentRenderSourceEvidence,
+    ),
+    modalResponseRenderAuthorityCutSilenceMs:
+      structuralMetrics?.modalResponseRenderAuthorityCutSilenceMs ?? 0,
     modalResponseInputEnergy: structuralMetrics?.modalResponseInputEnergy ?? 0,
     modalResponseBackboneEnergy,
     modalResponseDetailEnergy,
@@ -2438,6 +2488,17 @@ function deriveModalVisibilityComponents({
   if (activeModeCount <= 0) {
     return emptySummary;
   }
+  const hasRenderAuthoritativeEnergy =
+    structuralMetrics?.modalResponseRenderEnergy != null;
+  const renderAuthoritativeEnergy = hasRenderAuthoritativeEnergy
+    ? clamp01(structuralMetrics.modalResponseRenderEnergy)
+    : null;
+  if (hasRenderAuthoritativeEnergy && renderAuthoritativeEnergy <= 0) {
+    return {
+      ...emptySummary,
+      ...slotSummary,
+    };
+  }
 
   const observerVisibility = deriveModalObserverVisibilityComponents({
     structuralMetrics,
@@ -3272,6 +3333,27 @@ function buildFeatureAnalysisInputsSignature({
   });
 }
 
+function shouldMuteFileTransportSource({ inputMode, status, auditSettings }) {
+  return (
+    inputMode === "file" &&
+    status?.isPlaying !== true &&
+    auditSettings?.injectTestTone !== true
+  );
+}
+
+function buildMutedAnalysisSnapshot(snapshot, fftSize) {
+  const safeFftSize =
+    Number.isFinite(fftSize) && fftSize > 0 ? fftSize : DEFAULT_FFT_SIZE;
+  return {
+    ...(snapshot ?? {}),
+    sourceMode: "silent",
+    avgAmplitude: 0,
+    rms: 0,
+    fftMagnitudes: new Float32Array(safeFftSize / 2),
+    timeData: new Float32Array(safeFftSize),
+  };
+}
+
 function smoothFeatureSignal(
   currentValue,
   targetValue,
@@ -3539,7 +3621,7 @@ export function prepareAudioFeatureFrameInputs({
     };
   }
 
-  const snapshot = resolvedAuditSettings.injectTestTone
+  const rawSnapshot = resolvedAuditSettings.injectTestTone
     ? applyTestToneToSnapshot({
         analysisSnapshot,
         auditSettings: resolvedAuditSettings,
@@ -3547,6 +3629,15 @@ export function prepareAudioFeatureFrameInputs({
         sampleRate,
       })
     : analysisSnapshot;
+  const fileTransportSourceMuted = shouldMuteFileTransportSource({
+    inputMode,
+    status,
+    auditSettings: resolvedAuditSettings,
+  });
+  const snapshot = fileTransportSourceMuted
+    ? buildMutedAnalysisSnapshot(rawSnapshot, fftSize)
+    : rawSnapshot;
+  const resolvedSourceMode = fileTransportSourceMuted ? "silent" : sourceMode;
 
   const avgAmplitude = snapshot?.avgAmplitude ?? 0;
   const analyserRms = snapshot?.rms ?? 0;
@@ -3644,7 +3735,7 @@ export function prepareAudioFeatureFrameInputs({
     liveInputPolicy,
     shouldBuildSpectralLight,
     currentFrame,
-    sourceMode,
+    sourceMode: resolvedSourceMode,
     snapshot,
     avgAmplitude,
     analyserRms,
@@ -3670,7 +3761,7 @@ export function prepareAudioFeatureFrameInputs({
       liveInputHardSilenceActive,
       liveInputCalibrationInvalid,
       liveInputCalibrationInvalidReason,
-      sourceMode,
+      sourceMode: resolvedSourceMode,
     }),
     silentFeatureFrame: null,
   };
@@ -4816,19 +4907,34 @@ export function composeAudioFeatureFrame({
     lowQBackboneSourceSupport *= reusedAnalysisSourceAuthorityScale;
     modeCoherence *= reusedAnalysisSourceAuthorityScale;
   }
-  const modalCoefficientEnergy = clamp01(
+  const retainedModalCoefficientEnergy = clamp01(
+    sumSlotAmplitudeTotal(analysisResult.modeSlots, preparedInputs.capacity),
+  );
+  const sourceModalCoefficientEnergy = clamp01(
     sumSlotAmplitudeTotal(
       analysisResult.signalModeSlots ?? analysisResult.modeSlots,
       preparedInputs.capacity,
     ),
   );
-  const modalResponseBackboneEnergy = clamp01(
+  const retainedModalResponseBackboneEnergy = clamp01(
     analysisResult.structuralMetrics?.modalResponseBackboneEnergy ?? 0,
   );
-  const modalResponseDetailEnergy = clamp01(
+  const retainedModalResponseDetailEnergy = clamp01(
     analysisResult.structuralMetrics?.modalResponseDetailEnergy ?? 0,
   );
-  const observationEnergy = deriveRetainedModalObservationEnergy(
+  const modalCoefficientEnergy = readModalResponseRenderEnergy(
+    analysisResult.structuralMetrics,
+    retainedModalCoefficientEnergy,
+  );
+  const modalResponseBackboneEnergy = readModalResponseRenderBackboneEnergy(
+    analysisResult.structuralMetrics,
+    retainedModalResponseBackboneEnergy,
+  );
+  const modalResponseDetailEnergy = readModalResponseRenderDetailEnergy(
+    analysisResult.structuralMetrics,
+    retainedModalResponseDetailEnergy,
+  );
+  const observationEnergy = deriveModalObservationEnergy(
     modalCoefficientEnergy,
     modalResponseBackboneEnergy,
     modalResponseDetailEnergy,
@@ -4849,26 +4955,29 @@ export function composeAudioFeatureFrame({
   preparedInputs.analysisMemory.lastComposedFrameAtMs =
     preparedInputs.currentFrameAtMs;
 
-  const zeroInputModalForcing =
-    hasZeroSourceForcing(analysisResult) &&
+  const sourceCutModalForcing =
+    hasNoRenderSourceForcing(analysisResult) &&
     (analysisResult.usedDecay ||
-      modalCoefficientEnergy <= ZERO_MODAL_FORCING_EPSILON);
-  const zeroInputRetainedModalState =
-    zeroInputModalForcing && observationEnergy > 0;
+      sourceModalCoefficientEnergy <= SOURCE_CUT_MODAL_FORCING_EPSILON);
+  const sourceCutRetainedModalState =
+    sourceCutModalForcing && observationEnergy > 0;
   const observerAuthorizedActiveField =
     (analysisResult.activeModeCount ?? 0) > 0 &&
-    !zeroInputModalForcing &&
+    !sourceCutModalForcing &&
     (preparedInputs.inputMode === "live" ||
-      (analysisResult.structuralMetrics?.modalResponseEnergy ?? 0) > 0.02 ||
+      modalCoefficientEnergy > 0.02 ||
       modalVisibilityEnergy > 0.005);
   const fieldStateUsesDecay =
-    zeroInputRetainedModalState ||
-    (analysisResult.usedDecay && !observerAuthorizedActiveField);
+    sourceCutRetainedModalState ||
+    (analysisResult.usedDecay &&
+      !observerAuthorizedActiveField &&
+      (!sourceCutModalForcing || modalCoefficientEnergy > 0));
   const fieldStateActiveModeCount =
-    zeroInputRetainedModalState ||
+    sourceCutRetainedModalState ||
     observerAuthorizedActiveField ||
     modalVisibilityEnergy > 0 ||
-    analysisResult.usedDecay
+    (analysisResult.usedDecay &&
+      (!sourceCutModalForcing || modalCoefficientEnergy > 0))
       ? analysisResult.activeModeCount
       : 0;
   const { fieldState, hasModalField } = deriveFieldState({
@@ -5003,8 +5112,22 @@ export function composeAudioFeatureFrame({
     structureSignal,
     energySignal,
     modalCoefficientEnergy,
+    retainedModalCoefficientEnergy,
     modalResponseBackboneEnergy,
     modalResponseDetailEnergy,
+    modalResponseRenderEnergy: modalCoefficientEnergy,
+    modalResponseRenderRawEnergy:
+      analysisResult.structuralMetrics?.modalResponseRenderRawEnergy ??
+      modalCoefficientEnergy,
+    modalResponseRenderSourceCutSuppressed: Boolean(
+      analysisResult.structuralMetrics?.modalResponseRenderSourceCutSuppressed,
+    ),
+    modalResponseCurrentRenderSourceEvidence: Boolean(
+      analysisResult.structuralMetrics?.modalResponseCurrentRenderSourceEvidence,
+    ),
+    modalResponseRenderAuthorityCutSilenceMs:
+      analysisResult.structuralMetrics
+        ?.modalResponseRenderAuthorityCutSilenceMs ?? 0,
     observationEnergy,
     modalVisibilityEnergy,
     modalObserverVisibilityEnergy,

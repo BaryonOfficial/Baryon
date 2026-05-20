@@ -448,6 +448,7 @@ function buildModalExcitationAnalysisFrame({
   rms = 0.2,
   frameTimeMs = 0,
   previousFrame = null,
+  status = makeActiveStatus(),
 }) {
   const preparedInputs = prepareAudioFeatureFrameInputs({
     analysisSnapshot: createSnapshot({
@@ -458,7 +459,7 @@ function buildModalExcitationAnalysisFrame({
     }),
     featureState,
     radius: 3,
-    status: makeActiveStatus(),
+    status,
     frameTimeMs,
   });
   const analysisResult = runHeavyAudioFeatureAnalysis(preparedInputs);
@@ -1178,7 +1179,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(quiet4.fieldState).toBe("active");
   });
 
-  it("uses decay state for zero-input retained modal energy while mic stays active", () => {
+  it("drops zero-input retained modal energy from field liveness while mic stays active", () => {
     const featureState = createAudioFeatureState();
     buildLiveInputFrame({
       featureState,
@@ -1213,10 +1214,11 @@ describe("buildAudioFeatureFrame modal contract", () => {
 
     expect(silence.debug.liveInputNoiseGateActive).toBe(true);
     expect(silence.debug.liveInputHardSilenceActive).toBe(true);
-    expect(silence.fieldState).toBe("decay");
-    expect(silence.observationEnergy).toBeGreaterThan(0);
-    expect(silence.debug.observationEnergy).toBeGreaterThan(0);
-    expect(silence.debug.driverFrequency).toBeGreaterThan(0);
+    expect(silence.fieldState).toBe("idle");
+    expect(silence.observationEnergy).toBe(0);
+    expect(silence.debug.observationEnergy).toBe(0);
+    expect(silence.modalResponseRenderEnergy).toBe(0);
+    expect(silence.debug.modalResponseEnergy).toBeGreaterThan(0);
   });
 
   it("recalibrates when mic mode is restarted", () => {
@@ -3591,7 +3593,7 @@ describe("live input noise gate", () => {
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
   });
 
-  it("keeps line-feed long coherent ring-outs from becoming visually abandoned", () => {
+  it("drops line-feed source-cut residue from render authority", () => {
     const featureState = createAudioFeatureState();
     const status = makeResolvedLineFeedLiveStatus();
     let frame = null;
@@ -3602,13 +3604,16 @@ describe("live input noise gate", () => {
         0.0065,
         Math.exp(-(frameIndex - 2) / 22) * 0.24,
       );
-      const longTailScale = 0.00078 + Math.sin(frameIndex * 0.11) * 0.00012;
+      const longTailScale = 0;
       const scale = isStrike
         ? 1
         : frameIndex < 72
           ? earlyTailScale
           : longTailScale;
-      const partials = scalePartials(RESONANT_STRIKE_PARTIALS, scale);
+      const partials =
+        isStrike || frameIndex < 72
+          ? scalePartials(RESONANT_STRIKE_PARTIALS, scale)
+          : [];
       frame = buildAudioFeatureFrame({
         analysisSnapshot: createSnapshot({
           sourceMode: "live",
@@ -3628,26 +3633,21 @@ describe("live input noise gate", () => {
       });
     }
 
-    expect(frame.fieldState).toBe("active");
+    expect(frame.fieldState).toBe("idle");
     expect(
       sumSlotAmplitudes(frame.backboneSlots) +
         sumSlotAmplitudes(frame.detailSlots),
-    ).toBeGreaterThan(0.0015);
-    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.0015);
-    expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.18);
+    ).toBe(0);
+    expect(sumSlotAmplitudes(frame.detailSlots)).toBe(0);
+    expect(frame.modalVisibilityEnergy).toBe(0);
     expect(frame.debug.modalResponseEnergy).toBeGreaterThan(0.2);
+    expect(frame.debug.modalResponseRenderEnergy).toBe(0);
+    expect(frame.debug.modalResponseRenderSourceCutSuppressed).toBe(true);
+    expect(frame.debug.modalResponseCurrentRenderSourceEvidence).toBe(false);
     expect(frame.debug.modalResponseModeCount).toBeGreaterThan(0);
-    expect(frame.debug.modalVisibilityDistributedEnergy).toBeLessThan(0.28);
-    expect(frame.modalVisibilityEnergy).toBeLessThan(0.55);
-    expect(frame.debug.modalVisibilityPeakSlotEnergy).toBeGreaterThan(
-      frame.debug.modalVisibilitySlotEnergy,
-    );
-    expect(frame.debug.modalVisibilityUpperSlotEnergy).toBeGreaterThan(
-      frame.debug.modalVisibilitySlotEnergy,
-    );
-    expect(frame.debug.modalVisibilityDistributedEnergy).toBeGreaterThan(0);
-    expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0);
-    expect(frame.debug.modalVisibilityDominantEnergy).toBeLessThan(0.24);
+    expect(frame.debug.modalVisibilityDistributedEnergy).toBe(0);
+    expect(frame.modalVisibilityRetainedHighQEnergy).toBe(0);
+    expect(frame.debug.modalVisibilityDominantEnergy).toBe(0);
     expect(frame.debug.modalVisibilityDominantClusterEnergy).toBeUndefined();
   }, 15000);
 
@@ -5921,7 +5921,7 @@ describe("modal excitation integration", () => {
     expect(silentResult.frame.changeSignal).toBeGreaterThanOrEqual(0);
   });
 
-  it("uses zero-input decay for modal cymatics after sustained true hard silence", () => {
+  it("keeps zero-input retained modal response diagnostic but removes field liveness", () => {
     const featureState = createAudioFeatureState();
     const activeFft = makeFft([
       [550, 0.95],
@@ -5968,8 +5968,8 @@ describe("modal excitation integration", () => {
       previousFrame = silentResult.frame;
     }
 
-    expect(silentResult.analysisResult.usedDecay).toBe(true);
-    expect(silentResult.frame.fieldState).toBe("decay");
+    expect(silentResult.analysisResult.usedDecay).toBe(false);
+    expect(silentResult.frame.fieldState).toBe("idle");
     expect(sumSlotAmplitudes(silentResult.analysisResult.signalModeSlots)).toBe(
       0,
     );
@@ -5977,9 +5977,74 @@ describe("modal excitation integration", () => {
       silentResult.frame.backboneSlots,
     );
     const decayedDetailAmplitude = sumSlotAmplitudes(silentResult.frame.detailSlots);
-    expect(decayedBackboneAmplitude + decayedDetailAmplitude).toBeGreaterThan(0);
+    expect(decayedBackboneAmplitude + decayedDetailAmplitude).toBe(0);
+    expect(
+      silentResult.analysisResult.structuralMetrics.modalResponseEnergy,
+    ).toBeGreaterThan(0);
+    expect(
+      silentResult.analysisResult.structuralMetrics.modalResponseRenderEnergy,
+    ).toBe(0);
     expect(decayedBackboneAmplitude).toBeLessThan(activeBackboneAmplitude);
     expect(decayedDetailAmplitude).toBeLessThan(activeDetailAmplitude);
+  });
+
+  it("treats paused file transport as zero forcing even when analyser data is stale", () => {
+    const featureState = createAudioFeatureState();
+    const activeFft = makeFft([
+      [550, 0.95],
+      [1100, 0.52],
+      [6600, 0.38],
+    ]);
+    const activeTimeData = makeTimeData({
+      frequency: 550,
+      amplitude: 0.45,
+      harmonics: [[2, 0.08]],
+    });
+    let previousFrame = null;
+
+    for (let frameIndex = 0; frameIndex < 10; frameIndex += 1) {
+      const result = buildModalExcitationAnalysisFrame({
+        featureState,
+        fftMagnitudes: activeFft,
+        timeData: activeTimeData,
+        avgAmplitude: 120,
+        rms: 0.52,
+        frameTimeMs: frameIndex * 33,
+        previousFrame,
+      });
+      previousFrame = result.frame;
+    }
+
+    const pausedResult = buildModalExcitationAnalysisFrame({
+      featureState,
+      fftMagnitudes: activeFft,
+      timeData: activeTimeData,
+      avgAmplitude: 120,
+      rms: 0.52,
+      frameTimeMs: 10 * 33,
+      previousFrame,
+      status: makeActiveStatus({ isPlaying: false }),
+    });
+
+    expect(
+      pausedResult.analysisResult.structuralMetrics.modalResponseEnergy,
+    ).toBeGreaterThan(0);
+    expect(
+      pausedResult.analysisResult.structuralMetrics.modalResponseRenderEnergy,
+    ).toBe(0);
+    expect(
+      pausedResult.analysisResult.structuralMetrics
+        .modalResponseRenderSourceCutSuppressed,
+    ).toBe(true);
+    expect(pausedResult.analysisResult.avgAmplitude).toBe(0);
+    expect(pausedResult.analysisResult.analyserRms).toBe(0);
+    expect(pausedResult.analysisResult.preModalFftPeak).toBe(0);
+    expect(pausedResult.frame.retainedModalCoefficientEnergy).toBe(0);
+    expect(pausedResult.frame.modalCoefficientEnergy).toBe(0);
+    expect(pausedResult.frame.fieldState).toBe("idle");
+    expect(pausedResult.frame.hasModalField).toBe(false);
+    expect(pausedResult.frame.observationEnergy).toBe(0);
+    expect(pausedResult.frame.modalVisibilityEnergy).toBe(0);
   });
 
   it("keeps dense low-change modal input visually pruned without collapsing reactivity", () => {

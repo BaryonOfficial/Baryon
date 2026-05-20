@@ -27,6 +27,8 @@ const MAX_SYNTH_PARTIALS = 14;
 const SYNTH_BUFFER_SIZE = 1024;
 const MIN_RESONATOR_AMPLITUDE = 0.0025;
 const MIN_DISPLAY_CONTINUITY_RESONATOR_AMPLITUDE = 0.00045;
+const SOURCE_CUT_CURRENT_INPUT_FLOOR = 0.00008;
+const SOURCE_CUT_RELEASE_HOLD_MS = 1180;
 const RESONATOR_MIN_DECAY_MS = 90;
 const RESONATOR_MAX_DECAY_MS = 340;
 const DRIVE_BLEND_ALPHA = 0.18;
@@ -380,6 +382,71 @@ function isHardSilentFrame(preparedInputs) {
     (preparedInputs?.preModalFftPeak ?? 0) <=
       EXCITATION_HARD_SILENCE_MAX_FFT_PEAK
   );
+}
+
+function isLiteralZeroSourceFrame(preparedInputs) {
+  return (
+    (preparedInputs?.avgAmplitude ?? 0) <= 0 &&
+    (preparedInputs?.analyserRms ?? 0) <= 0 &&
+    (preparedInputs?.preModalFftPeak ?? 0) <= 0
+  );
+}
+
+function hasCurrentRenderSourceEvidence({
+  strictHardSilentFrame,
+  drivePeak,
+  driveSource,
+  periodicity,
+  tonalness,
+  distributedExcitation,
+  modalResponseInputEnergy,
+}) {
+  if (!strictHardSilentFrame) {
+    return true;
+  }
+
+  if ((modalResponseInputEnergy ?? 0) >= SOURCE_CUT_CURRENT_INPUT_FLOOR) {
+    return true;
+  }
+
+  if (
+    driveSource === "time-domain" &&
+    drivePeak >= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_START &&
+    periodicity >= HIGH_Q_OBSERVER_PERIODICITY_START
+  ) {
+    return true;
+  }
+
+  return (
+    drivePeak >= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_START &&
+    periodicity >= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_PERIODICITY &&
+    tonalness >= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_TONALNESS &&
+    distributedExcitation <= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MAX_DISTRIBUTION
+  );
+}
+
+function updateRenderAuthorityCutState({
+  state,
+  literalZeroSourceFrame,
+  strictHardSilentFrame,
+  currentRenderSourceEvidence,
+  deltaMs,
+}) {
+  if (literalZeroSourceFrame) {
+    state.renderAuthorityCutSilenceMs = SOURCE_CUT_RELEASE_HOLD_MS;
+    return true;
+  }
+
+  if (strictHardSilentFrame && !currentRenderSourceEvidence) {
+    state.renderAuthorityCutSilenceMs = Math.min(
+      SOURCE_CUT_RELEASE_HOLD_MS,
+      (state.renderAuthorityCutSilenceMs ?? 0) + Math.max(0, deltaMs),
+    );
+  } else {
+    state.renderAuthorityCutSilenceMs = 0;
+  }
+
+  return state.renderAuthorityCutSilenceMs >= SOURCE_CUT_RELEASE_HOLD_MS;
 }
 
 function classifyModeLayer(naturalFrequencyHz, mode) {
@@ -846,6 +913,27 @@ function sumSlotAmplitudes(slots) {
   }
 
   return total;
+}
+
+function deriveModalResponseRenderEnergy({
+  backboneSlots,
+  detailSlots,
+  sourceCut,
+}) {
+  const rawBackboneEnergy = clamp01(sumSlotAmplitudes(backboneSlots));
+  const rawDetailEnergy = clamp01(sumSlotAmplitudes(detailSlots));
+  const rawEnergy = clamp01(rawBackboneEnergy + rawDetailEnergy);
+  const sourceCutSuppressed = sourceCut === true;
+
+  return {
+    modalResponseRenderEnergy: sourceCutSuppressed ? 0 : rawEnergy,
+    modalResponseRenderBackboneEnergy: sourceCutSuppressed
+      ? 0
+      : rawBackboneEnergy,
+    modalResponseRenderDetailEnergy: sourceCutSuppressed ? 0 : rawDetailEnergy,
+    modalResponseRenderRawEnergy: rawEnergy,
+    modalResponseRenderSourceCutSuppressed: sourceCutSuppressed,
+  };
 }
 
 function isWeakResidualDisplayTail({
@@ -2110,7 +2198,7 @@ function getDisplayAmplitude(entry, layer) {
           modalResponseAmplitude,
           clamp01(signalAmplitude * getDetailMaturitySignalScale(entry)),
         );
-  return entry?.zeroInputFrame === true
+  return entry?.hardSilentFrame === true
     ? Math.min(displayAmplitude, clamp01(entry?.amplitude ?? 0))
     : displayAmplitude;
 }
@@ -3645,6 +3733,22 @@ export function buildModalExcitationStructuralState({
     hardSilence: strictHardSilentFrame,
     coherence: Math.max(tonalness, periodicity),
   });
+  const currentRenderSourceEvidence = hasCurrentRenderSourceEvidence({
+    strictHardSilentFrame,
+    drivePeak,
+    driveSource,
+    periodicity,
+    tonalness,
+    distributedExcitation,
+    modalResponseInputEnergy: modalResponse.modalResponseInputEnergy,
+  });
+  const renderAuthorityCut = updateRenderAuthorityCutState({
+    state,
+    literalZeroSourceFrame: isLiteralZeroSourceFrame(preparedInputs),
+    strictHardSilentFrame,
+    currentRenderSourceEvidence,
+    deltaMs,
+  });
   const hardSilentFrame =
     strictHardSilentFrame &&
     !observedTailActivity &&
@@ -3943,7 +4047,7 @@ export function buildModalExcitationStructuralState({
       modalResponseDrive,
       modalResponseEnergy,
       modalResponseDisplayAmplitude,
-      zeroInputFrame: strictHardSilentFrame,
+      hardSilentFrame: strictHardSilentFrame,
       sourceAmplitude: updateObservedSourceAmplitude(previous, drivePeak),
       coherence,
       persistence,
@@ -4243,6 +4347,13 @@ export function buildModalExcitationStructuralState({
   const signalAmplitudeTotal =
     sumSlotAmplitudes(state.backboneProposal.slots) +
     sumSlotAmplitudes(state.detailProposal.slots);
+  const modalResponseRenderEnergy = deriveModalResponseRenderEnergy({
+    backboneSlots: state.blendBackbone.slots,
+    detailSlots: state.blendDetail.slots,
+    sourceCut: renderAuthorityCut,
+  });
+  const renderSuppressedBySourceCut =
+    modalResponseRenderEnergy.modalResponseRenderSourceCutSuppressed === true;
   const weakResidualSignal = isWeakResidualDisplayTail({
     modalDriveEnergy,
     signalAmplitudeTotal,
@@ -4339,6 +4450,10 @@ export function buildModalExcitationStructuralState({
     detailShiftTrackingOverrideCount: detailShiftTrackingOverrides?.size ?? 0,
     modalResponseEnergy: modalResponse.modalResponseEnergy,
     modalResponseInputEnergy: modalResponse.modalResponseInputEnergy,
+    modalResponseCurrentRenderSourceEvidence: currentRenderSourceEvidence,
+    modalResponseRenderAuthorityCutSilenceMs:
+      state.renderAuthorityCutSilenceMs ?? 0,
+    ...modalResponseRenderEnergy,
     modalResponseBackboneEnergy: modalResponse.modalResponseBackboneEnergy,
     modalResponseDetailEnergy: modalResponse.modalResponseDetailEnergy,
     modalResponseModeCount: modalResponse.modalResponseModeCount,
@@ -4350,38 +4465,74 @@ export function buildModalExcitationStructuralState({
   };
   state.diagnostics = diagnostics;
 
+  const renderBackboneSlotsSource = renderSuppressedBySourceCut
+    ? preparedInputs.zeroBackboneTargetSlots
+    : state.blendBackbone.slots;
+  const renderDetailSlotsSource = renderSuppressedBySourceCut
+    ? preparedInputs.zeroDetailTargetSlots
+    : state.blendDetail.slots;
+  const renderBackbonePhaseSlotsSource = renderSuppressedBySourceCut
+    ? preparedInputs.zeroBackboneTargetSlots
+    : state.blendBackbone.phaseSlots;
+  const renderDetailPhaseSlotsSource = renderSuppressedBySourceCut
+    ? preparedInputs.zeroDetailTargetSlots
+    : state.blendDetail.phaseSlots;
+  const renderBackboneReferenceSlotsSource = renderSuppressedBySourceCut
+    ? preparedInputs.zeroBackboneTargetSlots
+    : state.remappedBackboneRef;
+  const renderDetailReferenceSlotsSource = renderSuppressedBySourceCut
+    ? preparedInputs.zeroDetailTargetSlots
+    : state.remappedDetailRef;
+  const renderBackboneColorSlotsSource = renderSuppressedBySourceCut
+    ? preparedInputs.zeroBackboneTargetSlots
+    : state.blendBackbone.colorSlots;
+  const renderDetailColorSlotsSource = renderSuppressedBySourceCut
+    ? preparedInputs.zeroDetailTargetSlots
+    : state.blendDetail.colorSlots;
+  const renderBackboneModeCount = renderSuppressedBySourceCut
+    ? 0
+    : blendedBackboneCount;
+  const renderDetailModeCount = renderSuppressedBySourceCut
+    ? 0
+    : blendedDetailCount;
+
   return {
     sourceMode: preparedInputs.sourceMode,
-    backboneSlotsSource: state.blendBackbone.slots,
-    detailSlotsSource: state.blendDetail.slots,
-    backbonePhaseSlotsSource: state.blendBackbone.phaseSlots,
-    detailPhaseSlotsSource: state.blendDetail.phaseSlots,
-    referenceBackboneSlotsSource: state.remappedBackboneRef,
-    referenceDetailSlotsSource: state.remappedDetailRef,
+    backboneSlotsSource: renderBackboneSlotsSource,
+    detailSlotsSource: renderDetailSlotsSource,
+    backbonePhaseSlotsSource: renderBackbonePhaseSlotsSource,
+    detailPhaseSlotsSource: renderDetailPhaseSlotsSource,
+    referenceBackboneSlotsSource: renderBackboneReferenceSlotsSource,
+    referenceDetailSlotsSource: renderDetailReferenceSlotsSource,
     signalBackboneSlotsSource: state.backboneProposal.slots,
     signalDetailSlotsSource: state.detailProposal.slots,
     signalReferenceBackboneSlotsSource: state.remappedSignalBackboneRef,
     signalReferenceDetailSlotsSource: state.remappedSignalDetailRef,
     backboneColorSlotsSource: preparedInputs.shouldBuildSpectralLight
-      ? state.blendBackbone.colorSlots
+      ? renderBackboneColorSlotsSource
       : null,
     detailColorSlotsSource: preparedInputs.shouldBuildSpectralLight
-      ? state.blendDetail.colorSlots
+      ? renderDetailColorSlotsSource
       : null,
     backboneStateSource,
     detailStateSource,
     freezeModeSlots: Boolean(
       preparedInputs.resolvedAuditSettings.freezeModeSlots,
     ),
-    activeBackboneModeCount: blendedBackboneCount,
-    activeDetailModeCount: blendedDetailCount,
-    activeModeCount: blendedBackboneCount + blendedDetailCount,
-    dominantFrequency: dominantEntry?.naturalFrequencyHz ?? 0,
-    dominantAmplitude: dominantEntry?.amplitude ?? 0,
+    activeBackboneModeCount: renderBackboneModeCount,
+    activeDetailModeCount: renderDetailModeCount,
+    activeModeCount: renderBackboneModeCount + renderDetailModeCount,
+    dominantFrequency: renderSuppressedBySourceCut
+      ? 0
+      : (dominantEntry?.naturalFrequencyHz ?? 0),
+    dominantAmplitude: renderSuppressedBySourceCut
+      ? 0
+      : (dominantEntry?.amplitude ?? 0),
     analysisEngine: "modal-excitation",
     pitchSource: "resonator-bank",
     spectralCandidates: [],
     usedDecay:
+      !renderSuppressedBySourceCut &&
       blendedBackboneCount + blendedDetailCount > 0 &&
       ((!observedCurrentSignal &&
         (signalBackboneCount + signalDetailCount === 0 ||
