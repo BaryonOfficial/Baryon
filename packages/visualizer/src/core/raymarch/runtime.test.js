@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { createRaymarchSceneRoot, tickRaymarchRuntime } from "./runtime.js";
 import {
@@ -227,6 +228,20 @@ function seedRuntimeCacheNodes(runtimeState) {
 }
 
 describe("tickRaymarchRuntime", () => {
+  it("does not own envelope-derived display radiance limiting", () => {
+    const source = readFileSync(
+      new URL("./runtime.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("compressDisplayRadiance");
+    expect(source).not.toContain("deriveBloomRadianceScale");
+    expect(source).not.toContain("DISPLAY_RADIANCE_DEFAULTS");
+    expect(source).not.toMatch(
+      /display(?:Bloom|Highlight|Radiance).*(?:responseEnvelope|accentEnvelope|bloomResponseSignal)/s,
+    );
+  });
+
   it("creates a self-lit scene root with weak symmetric fill lights", () => {
     const volumeMesh = new THREE.Mesh();
     const idleOverlay = new THREE.LineSegments();

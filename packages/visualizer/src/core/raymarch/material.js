@@ -33,6 +33,7 @@ import {
   RAYMARCH_BOUNDARY_END,
   RAYMARCH_BOUNDARY_START,
 } from "./intersection.js";
+import { deriveHighlightTargetNode } from "../../render/displayRadiance.js";
 import {
   BOUNDARY_CONTOUR_ACCENT_WEIGHT,
   AIR_BAND_WEIGHT,
@@ -1176,12 +1177,13 @@ function createScatteringNode({
         holographicAccentColor,
         /** @type {any} */ (holographicColorMix),
       );
-      const staticHolographicLaserColor = mix(
+      const staticWhiteEmissionMix = crowdedWhiteEmissionMix
+        .mul(float(0.45))
+        .mul(boundaryWhiteEmission);
+      const staticHolographicLaserColor = deriveHighlightTargetNode(
         staticHolographicColor,
-        vec3(1.0),
-        /** @type {any} */ (
-          crowdedWhiteEmissionMix.mul(float(0.45)).mul(boundaryWhiteEmission)
-        ),
+        uSurfaceColor,
+        staticWhiteEmissionMix,
       );
       const detailPresence = smoothstep(float(0.0), float(1.0), detailCount);
       const backbonePresence = smoothstep(
@@ -1251,14 +1253,13 @@ function createScatteringNode({
               )
             ),
           );
-          const spectralLightHolographicLaserColor = mix(
+          const spectralLightWhiteEmissionMix = crowdedWhiteEmissionMix
+            .mul(float(RAYMARCH_SPECTRAL_LIGHT_TUNING.whiteEmissionLift))
+            .mul(boundaryWhiteEmission);
+          const spectralLightHolographicLaserColor = deriveHighlightTargetNode(
             spectralLightHolographicColor,
-            vec3(1.0),
-            /** @type {any} */ (
-              crowdedWhiteEmissionMix
-                .mul(float(RAYMARCH_SPECTRAL_LIGHT_TUNING.whiteEmissionLift))
-                .mul(boundaryWhiteEmission)
-            ),
+            uSurfaceColor,
+            spectralLightWhiteEmissionMix,
           );
           const spectralLightVolumeColor = mix(
             spectralLightHolographicLaserColor.mul(float(0.9)),

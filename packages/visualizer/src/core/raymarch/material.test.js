@@ -97,6 +97,25 @@ describe("raymarch volume material", () => {
     ).toBeLessThanOrEqual(0.04);
   });
 
+  it("routes white emission through the adaptive highlight target", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      'import { deriveHighlightTargetNode } from "../../render/displayRadiance.js";',
+    );
+    expect(source).toContain("staticWhiteEmissionMix");
+    expect(source).toContain("spectralLightWhiteEmissionMix");
+    expect(source).not.toContain(`const staticHolographicLaserColor = mix(
+        staticHolographicColor,
+        vec3(1.0),`);
+    expect(source).not.toContain(`const spectralLightHolographicLaserColor = mix(
+            spectralLightHolographicColor,
+            vec3(1.0),`);
+  });
+
   it("softens Dirichlet beam lighting so nodal planes do not dominate", () => {
     expect(RAYMARCH_BOUNDARY_TUNING.dirichletBeamDensity).toBeGreaterThan(0.55);
     expect(RAYMARCH_BOUNDARY_TUNING.dirichletBeamDensity).toBeLessThan(0.75);

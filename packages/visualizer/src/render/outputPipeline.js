@@ -16,6 +16,10 @@ import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
 import { traa } from "three/examples/jsm/tsl/display/TRAANode.js";
 import { RENDER_DEFAULTS } from "../defaults.js";
 import {
+  compressDisplayRadianceNode,
+  deriveBloomRadianceScaleNode,
+} from "./displayRadiance.js";
+import {
   OUTPUT_MODES,
   normalizeOutputMode,
   resolveRenderQualityProfile,
@@ -84,13 +88,19 @@ export function composeRenderOutputNode({
   const sceneRgb = sceneColor.rgb;
   const sceneAlpha = sceneColor.a;
   const bloomActive = bloomEnabled && bloomPass;
+  const effectiveBloomRgb = bloomActive
+    ? bloomPass.rgb.mul(deriveBloomRadianceScaleNode(sceneRgb, bloomPass.rgb))
+    : null;
   const bloomAlpha = bloomActive
-    ? max(max(bloomPass.r, bloomPass.g), bloomPass.b).clamp()
+    ? max(max(effectiveBloomRgb.r, effectiveBloomRgb.g), effectiveBloomRgb.b)
+        .clamp()
     : float(0.0);
   const finalAlpha = bloomActive
     ? max(sceneAlpha, bloomAlpha).clamp()
     : sceneAlpha;
-  const finalRgb = bloomActive ? sceneRgb.add(bloomPass.rgb) : sceneRgb;
+  const finalRgb = compressDisplayRadianceNode(
+    bloomActive ? sceneRgb.add(effectiveBloomRgb) : sceneRgb,
+  );
 
   if (normalizedMode === OUTPUT_MODES.opaque) {
     const opaqueRgb = outputBackgroundNode

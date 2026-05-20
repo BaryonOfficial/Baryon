@@ -1,3 +1,5 @@
+import { deriveHighlightTarget } from "../../render/displayRadiance.js";
+
 export const EDGE_FADE_START = 0.88;
 export const EDGE_FADE_END = 1.0;
 export const SHELL_WEIGHT_MIN = 0.54;
@@ -479,6 +481,24 @@ export function deriveCrowdedHighlightMix({
     whiteEmissionReduction,
     crowdedHotCoreMix: clamp01(hotCoreMix) * hotCoreReduction,
     crowdedWhiteEmissionMix: clamp01(whiteEmissionMix) * whiteEmissionReduction,
+  };
+}
+
+export function deriveHuePreservingHighlightTarget({
+  baseColor,
+  surfaceColor,
+  targetLuminance,
+  whiteEmissionMix = 0,
+}) {
+  const highlight = deriveHighlightTarget(baseColor, surfaceColor, {
+    targetLuminance,
+    whiteMix: whiteEmissionMix,
+  });
+
+  return {
+    ...highlight,
+    targetColor: highlight.targetRgb,
+    finalColor: highlight.finalRgb,
   };
 }
 

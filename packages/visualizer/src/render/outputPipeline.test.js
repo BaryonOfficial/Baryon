@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   OUTPUT_MODES,
   RENDER_CONTEXTS,
@@ -61,5 +62,27 @@ describe("outputPipeline compatibility surface", () => {
 
     expect(postNodes.temporalHistoryBlendUniform.value).toBe(1);
     expect(postNodes.temporalHistoryCutFramesRemaining).toBeUndefined();
+  });
+
+  it("compresses final scene-plus-bloom radiance instead of direct bloom addition", () => {
+    const source = readFileSync(
+      new URL("./outputPipeline.js", import.meta.url),
+      "utf8",
+    );
+    const composeStart = source.indexOf(
+      "export function composeRenderOutputNode",
+    );
+    const pipelineStart = source.indexOf(
+      "export function createRenderOutputPipeline",
+    );
+    const composeSource = source.slice(composeStart, pipelineStart);
+
+    expect(composeStart).toBeGreaterThanOrEqual(0);
+    expect(pipelineStart).toBeGreaterThan(composeStart);
+    expect(source).toContain("compressDisplayRadianceNode");
+    expect(source).toContain("deriveBloomRadianceScaleNode");
+    expect(composeSource).not.toContain(
+      "const finalRgb = bloomActive ? sceneRgb.add(bloomPass.rgb) : sceneRgb;",
+    );
   });
 });
