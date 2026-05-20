@@ -39,7 +39,7 @@ it("derives observation energy from modal coefficient and response only", () => 
   );
   const observationEnergyBlocks = [
     ...source.matchAll(
-      /const observationEnergy =[\s\S]*?modalResponseDetailEnergy,[\s\S]*?\);/g,
+      /(?:const|let) observationEnergy =[\s\S]*?modalResponseDetailEnergy,[\s\S]*?\);/g,
     ),
   ].map(([block]) => block);
 
@@ -1215,10 +1215,21 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(silence.debug.liveInputNoiseGateActive).toBe(true);
     expect(silence.debug.liveInputHardSilenceActive).toBe(true);
     expect(silence.fieldState).toBe("idle");
+    expect(silence.renderAuthorityCut).toBe(true);
+    expect(silence.renderAuthority).toBe(false);
+    expect(silence.hasModalField).toBe(false);
     expect(silence.observationEnergy).toBe(0);
     expect(silence.debug.observationEnergy).toBe(0);
     expect(silence.modalResponseRenderEnergy).toBe(0);
     expect(silence.debug.modalResponseEnergy).toBeGreaterThan(0);
+    expect(silence.activeBackboneModeCount).toBe(0);
+    expect(silence.activeDetailModeCount).toBe(0);
+    expect(silence.activeModeCount).toBe(0);
+    expect(sumSlotAmplitudes(silence.backboneSlots)).toBe(0);
+    expect(sumSlotAmplitudes(silence.detailSlots)).toBe(0);
+    expect(sumSlotAmplitudes(silence.modeSlots)).toBe(0);
+    expect(countAuthoritativePhaseSlots(silence.backbonePhaseSlots)).toBe(0);
+    expect(countAuthoritativePhaseSlots(silence.detailPhaseSlots)).toBe(0);
   });
 
   it("recalibrates when mic mode is restarted", () => {
@@ -2249,6 +2260,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     });
 
     expect(frame.fieldState).toBe("test");
+    expect(frame.renderAuthority).toBe(true);
     expect(frame.debug.analysisEngine).toBe("modal-excitation");
     expect(frame.debug.pitchSource).toBe("resonator-bank");
     expect(frame.debug.backboneModeCount).toBeGreaterThan(0);
@@ -3141,6 +3153,8 @@ describe("live input noise gate", () => {
     }
 
     expect(frame.fieldState).toBe("active");
+    expect(frame.renderAuthorityCut).toBe(false);
+    expect(frame.renderAuthority).toBe(true);
     expect(frame.debug.liveInputHardSilenceActive).toBe(false);
     expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(4);
     expect(frame.debug.highQRingSupport).toBeGreaterThan(0.15);

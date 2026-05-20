@@ -4453,6 +4453,7 @@ export function buildModalExcitationStructuralState({
     modalResponseCurrentRenderSourceEvidence: currentRenderSourceEvidence,
     modalResponseRenderAuthorityCutSilenceMs:
       state.renderAuthorityCutSilenceMs ?? 0,
+    renderAuthorityCut,
     ...modalResponseRenderEnergy,
     modalResponseBackboneEnergy: modalResponse.modalResponseBackboneEnergy,
     modalResponseDetailEnergy: modalResponse.modalResponseDetailEnergy,
@@ -4522,6 +4523,7 @@ export function buildModalExcitationStructuralState({
     activeBackboneModeCount: renderBackboneModeCount,
     activeDetailModeCount: renderDetailModeCount,
     activeModeCount: renderBackboneModeCount + renderDetailModeCount,
+    renderAuthorityCut,
     dominantFrequency: renderSuppressedBySourceCut
       ? 0
       : (dominantEntry?.naturalFrequencyHz ?? 0),

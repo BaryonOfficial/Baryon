@@ -842,6 +842,7 @@ describe("control runtime sync", () => {
 
     const baseFrame = {
       fieldState: "active",
+      renderAuthority: true,
       structureSignal: 0.55,
       energySignal: 0.72,
       changeSignal: 0.64,
@@ -901,6 +902,7 @@ describe("control runtime sync", () => {
 
     const featureFrame = {
       fieldState: "active",
+      renderAuthority: true,
       structureSignal: 0.48,
       energySignal: 0.58,
       changeSignal: 0.46,
@@ -950,6 +952,7 @@ describe("control runtime sync", () => {
       1 / 60,
       {
         fieldState: "active",
+        renderAuthority: true,
         structureSignal: 0.78,
         energySignal: 0.84,
         changeSignal: 0.22,
@@ -996,7 +999,7 @@ describe("control runtime sync", () => {
     expect(Math.abs(snapshot.angularVelocity)).toBeLessThan(0.2);
   });
 
-  it("does not keep audio rotation driven during hard-silence decay", () => {
+  it("stops audio rotation on render-authority cut", () => {
     const controls = createControlState();
     controls.rotationMode = "audio";
     controls.motionAmount = 1;
@@ -1012,7 +1015,8 @@ describe("control runtime sync", () => {
       1 / 60,
       {
         fieldState: "decay",
-        liveInputHardSilenceActive: true,
+        renderAuthorityCut: true,
+        renderAuthority: false,
         structureSignal: 0.42,
         energySignal: 0.18,
         changeSignal: 0.02,
@@ -1073,6 +1077,7 @@ describe("control runtime sync", () => {
       1 / 60,
       {
         fieldState: "active",
+        renderAuthority: true,
         structureSignal: 0.55,
         energySignal: 0.72,
         changeSignal: 0.64,

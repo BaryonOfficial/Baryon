@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { REACTIVITY_DEFAULTS } from "../../defaults.js";
 import { getBoundaryModeFromValue } from "../modeFamily.js";
-import { isFieldDrivenState } from "../fieldState.js";
+import { hasRenderAuthority } from "../renderAuthorityContract.js";
 import { resolveIdleOverlayVisible } from "../idleLogoVisibility.js";
 
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
@@ -250,16 +250,16 @@ export function tickCymatics2dRuntime(
 
   uniforms.uTime.value = time;
   const fieldState = featureFrame?.fieldState ?? "idle";
-  const fieldDriven = isFieldDrivenState(fieldState);
-  updateReactiveResponse(runtimeState, featureFrame, fieldDriven, deltaTime);
-  updateSliceMotion(runtimeState, fieldDriven, deltaTime);
+  const renderAuthority = hasRenderAuthority(featureFrame);
+  updateReactiveResponse(runtimeState, featureFrame, renderAuthority, deltaTime);
+  updateSliceMotion(runtimeState, renderAuthority, deltaTime);
   uniforms.uFieldState.value =
     runtimeState.fieldStateValues[fieldState] ??
     runtimeState.fieldStateValues.idle;
 
   const backboneArray = backboneModeBuffer.value.array;
   backboneArray.fill(0);
-  if (featureFrame?.backboneSlots?.length) {
+  if (renderAuthority && featureFrame?.backboneSlots?.length) {
     backboneArray.set(
       featureFrame.backboneSlots.subarray(0, backboneArray.length),
     );
@@ -269,7 +269,7 @@ export function tickCymatics2dRuntime(
   if ((uniforms.uSpectralMix?.value ?? 0) > 0) {
     const backboneColorArray = backboneColorBuffer.value.array;
     backboneColorArray.fill(0);
-    if (featureFrame?.backboneColorSlots?.length) {
+    if (renderAuthority && featureFrame?.backboneColorSlots?.length) {
       backboneColorArray.set(
         featureFrame.backboneColorSlots.subarray(0, backboneColorArray.length),
       );
@@ -279,7 +279,7 @@ export function tickCymatics2dRuntime(
 
   const detailArray = detailModeBuffer.value.array;
   detailArray.fill(0);
-  if (featureFrame?.detailSlots?.length) {
+  if (renderAuthority && featureFrame?.detailSlots?.length) {
     detailArray.set(featureFrame.detailSlots.subarray(0, detailArray.length));
   }
   detailModeBuffer.value.needsUpdate = true;
@@ -287,7 +287,7 @@ export function tickCymatics2dRuntime(
   if ((uniforms.uSpectralMix?.value ?? 0) > 0) {
     const detailColorArray = detailColorBuffer.value.array;
     detailColorArray.fill(0);
-    if (featureFrame?.detailColorSlots?.length) {
+    if (renderAuthority && featureFrame?.detailColorSlots?.length) {
       detailColorArray.set(
         featureFrame.detailColorSlots.subarray(0, detailColorArray.length),
       );
@@ -295,23 +295,36 @@ export function tickCymatics2dRuntime(
     detailColorBuffer.value.needsUpdate = true;
   }
 
-  const backboneModeCount =
-    featureFrame?.activeBackboneModeCount ??
-    countActiveSlots(featureFrame?.backboneSlots);
-  const detailModeCount =
-    featureFrame?.activeDetailModeCount ??
-    countActiveSlots(featureFrame?.detailSlots);
+  const backboneModeCount = renderAuthority
+    ? (featureFrame?.activeBackboneModeCount ??
+      countActiveSlots(featureFrame?.backboneSlots))
+    : 0;
+  const detailModeCount = renderAuthority
+    ? (featureFrame?.activeDetailModeCount ??
+      countActiveSlots(featureFrame?.detailSlots))
+    : 0;
   uniforms.uBackboneModeCount.value = backboneModeCount;
   uniforms.uDetailModeCount.value = detailModeCount;
   uniforms.uActiveModeCount.value = backboneModeCount + detailModeCount;
-  uniforms.uAverageAmplitude.value = featureFrame?.averageAmplitude ?? 0;
-  uniforms.uTransientEnergy.value = featureFrame?.transientEnergy ?? 0;
-  uniforms.uSpectralCentroid.value = featureFrame?.spectralCentroid ?? 0;
-  uniforms.uSpectralFlux.value = featureFrame?.spectralFlux ?? 0;
+  uniforms.uAverageAmplitude.value = renderAuthority
+    ? (featureFrame?.averageAmplitude ?? 0)
+    : 0;
+  uniforms.uTransientEnergy.value = renderAuthority
+    ? (featureFrame?.transientEnergy ?? 0)
+    : 0;
+  uniforms.uSpectralCentroid.value = renderAuthority
+    ? (featureFrame?.spectralCentroid ?? 0)
+    : 0;
+  uniforms.uSpectralFlux.value = renderAuthority
+    ? (featureFrame?.spectralFlux ?? 0)
+    : 0;
   uniforms.uDensityGain.value =
     (runtimeState.baseDensityGain ?? uniforms.uDensityGain.value) *
     (1 + (runtimeState.scaleSignal ?? 0) * DENSITY_RESPONSE_AMOUNT);
-  const bandEnergies = featureFrame?.bandEnergies ?? EMPTY_BAND_ENERGIES;
+  const bandEnergies =
+    renderAuthority && featureFrame?.bandEnergies
+      ? featureFrame.bandEnergies
+      : EMPTY_BAND_ENERGIES;
   uniforms.uBandEnergies.value.set(
     bandEnergies[0] ?? 0,
     bandEnergies[1] ?? 0,
@@ -319,11 +332,11 @@ export function tickCymatics2dRuntime(
     bandEnergies[3] ?? 0,
   );
 
-  volumeMesh.visible = fieldDriven;
+  volumeMesh.visible = renderAuthority;
   idleOverlay.visible = resolveIdleOverlayVisible(
     runtimeState,
     featureFrame,
-    fieldDriven,
+    renderAuthority,
   );
 
   const cymatics2dDebug = buildCymatics2dDebugSnapshot(

@@ -818,15 +818,18 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.modeSlotCount).toBe(0);
   });
 
-  it("reports retained modal observation during hard-silence decay", () => {
+  it("hides retained modal diagnostics on render-authority cut", () => {
     const runtimeState = createRuntimeState();
     runtimeState.responseEnvelope = 0.6;
+    runtimeState.backboneModeBuffer.value.array[3] = 0.42;
+    runtimeState.uniforms.uBackboneModeCount.value = 1;
 
     tickRaymarchRuntime(
       runtimeState,
       {
         fieldState: "decay",
-        liveInputHardSilenceActive: true,
+        renderAuthorityCut: true,
+        renderAuthority: false,
         isLiveInputActive: true,
         averageAmplitude: 0,
         backboneSlots: new Float32Array([3, 4, 6, 0.18]),
@@ -842,7 +845,6 @@ describe("tickRaymarchRuntime", () => {
         changeSignal: 0,
         pulseSignal: 0,
         debug: {
-          liveInputHardSilenceActive: true,
           modalResponseBackboneEnergy: 0.18,
           modalResponseDetailEnergy: 0,
         },
@@ -851,25 +853,32 @@ describe("tickRaymarchRuntime", () => {
       1 / 60,
     );
 
-    expect(runtimeState.volumeMesh.visible).toBe(true);
+    expect(runtimeState.volumeMesh.visible).toBe(false);
+    expect(runtimeState.debugSnapshot.raymarchDebug.renderAuthority).toBe(false);
     expect(runtimeState.debugSnapshot.raymarchDebug.observationHardSilence).toBe(
       true,
     );
-    expect(runtimeState.debugSnapshot.raymarchDebug.observationEnergy).toBeCloseTo(
-      0.18,
-    );
-    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(1);
+    expect(runtimeState.debugSnapshot.raymarchDebug.observationEnergy).toBe(0);
+    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
+    expect(runtimeState.backboneModeBuffer.value.array[3]).toBe(0);
+    expect(runtimeState.responseEnvelope).toBe(0);
   });
 
-  it("does not attack the presentation envelope from retained modal energy during hard silence", () => {
+  it("hard-clamps presentation response on render-authority cut", () => {
     const runtimeState = createRuntimeState();
-    runtimeState.responseEnvelope = 0;
+    runtimeState.responseEnvelope = 0.5;
+    runtimeState.accentEnvelope = 0.4;
+    runtimeState.motionSignal = 0.3;
+    runtimeState.scaleSignal = 0.2;
+    runtimeState.bloomResponseSignal = 0.6;
 
     tickRaymarchRuntime(
       runtimeState,
       {
         fieldState: "decay",
-        liveInputHardSilenceActive: true,
+        renderAuthorityCut: true,
+        renderAuthority: false,
         isLiveInputActive: true,
         averageAmplitude: 0,
         backboneSlots: new Float32Array([3, 4, 6, 0.18]),
@@ -887,7 +896,6 @@ describe("tickRaymarchRuntime", () => {
         modalResponseBackboneEnergy: 0.48,
         modalResponseDetailEnergy: 0,
         debug: {
-          liveInputHardSilenceActive: true,
           modalResponseBackboneEnergy: 0.48,
           modalResponseDetailEnergy: 0,
         },
@@ -896,9 +904,71 @@ describe("tickRaymarchRuntime", () => {
       1 / 60,
     );
 
-    expect(runtimeState.volumeMesh.visible).toBe(true);
+    expect(runtimeState.volumeMesh.visible).toBe(false);
     expect(runtimeState.responseEnvelope).toBe(0);
+    expect(runtimeState.accentEnvelope).toBe(0);
+    expect(runtimeState.motionSignal).toBe(0);
+    expect(runtimeState.scaleSignal).toBe(0);
     expect(runtimeState.bloomResponseSignal).toBe(0);
+  });
+
+  it("uploads fresh buffers after a render-authority cut", () => {
+    const runtimeState = createRuntimeState();
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "decay",
+        renderAuthorityCut: true,
+        renderAuthority: false,
+        averageAmplitude: 0,
+        backboneSlots: new Float32Array([3, 4, 6, 0.18]),
+        detailSlots: new Float32Array(32),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array(4),
+        transientEnergy: 0,
+        spectralCentroid: 0,
+        spectralFlux: 0,
+        structureSignal: 0,
+        energySignal: 0,
+        changeSignal: 0,
+        pulseSignal: 0,
+      },
+      1,
+      1 / 60,
+    );
+    expect(runtimeState.backboneModeBuffer.value.array[3]).toBe(0);
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        renderAuthority: true,
+        averageAmplitude: 24,
+        backboneSlots: new Float32Array([1, 2, 3, 0.64]),
+        detailSlots: new Float32Array([2, 3, 4, 0.32]),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+        transientEnergy: 0.1,
+        spectralCentroid: 0.2,
+        spectralFlux: 0.1,
+        structureSignal: 0.6,
+        energySignal: 0.5,
+        changeSignal: 0.2,
+        pulseSignal: 0.1,
+      },
+      2,
+      1 / 60,
+    );
+
+    expect(runtimeState.volumeMesh.visible).toBe(true);
+    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(1);
+    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(1);
+    expect(runtimeState.backboneModeBuffer.value.array[0]).toBe(1);
+    expect(runtimeState.backboneModeBuffer.value.array[3]).toBeCloseTo(0.64);
+    expect(runtimeState.detailModeBuffer.value.array[3]).toBeCloseTo(0.32);
   });
 
   it("suppresses the idle overlay during live input and restores it after stop", () => {
@@ -2182,6 +2252,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 0.2,
         backboneSlots: new Float32Array(32),
         detailSlots: new Float32Array(32),

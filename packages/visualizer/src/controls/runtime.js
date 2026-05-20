@@ -29,8 +29,8 @@ import {
 } from "../core/modeFamily.js";
 import {
   allowsAudioMotion,
-  isZeroInputHardSilence,
-} from "../core/hardSilenceContract.js";
+  isRenderAuthorityCut,
+} from "../core/renderAuthorityContract.js";
 import {
   setRaymarchCavityGeometry,
   setRaymarchBoundaryMode,
@@ -616,7 +616,6 @@ export function applySceneControls(
   controls,
   deltaTime,
   featureFrame,
-  status,
 ) {
   const runtimeState = target?.points ? target : null;
   const points = runtimeState?.points ?? target;
@@ -636,8 +635,8 @@ export function applySceneControls(
   const rotationMode = normalizeRotationMode(controls.rotationMode);
   const manualVelocity = getManualVelocity(controls);
   const userScale = getMotionAmount(controls, runtimeState);
-  const zeroInputHardSilence = isZeroInputHardSilence(featureFrame);
-  const audioMotionDriven = allowsAudioMotion(featureFrame, status);
+  const renderAuthorityCut = isRenderAuthorityCut(featureFrame);
+  const audioMotionDriven = allowsAudioMotion(featureFrame);
   const signals = deriveSceneSignals(
     featureFrame,
     runtimeState?.responseEnvelope ?? 0,
@@ -680,7 +679,7 @@ export function applySceneControls(
       beatDetected: featureFrame?.beatDetected,
       deltaTime,
     });
-  } else if (rotationMode === "audio" && zeroInputHardSilence) {
+  } else if (rotationMode === "audio" && renderAuthorityCut) {
     stopAudioSceneMotion(sceneMotion);
   } else {
     stepSettlingSceneMotion(sceneMotion, deltaTime);

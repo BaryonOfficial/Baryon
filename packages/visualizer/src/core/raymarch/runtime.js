@@ -5,11 +5,10 @@ import {
   normalizeCavityGeometry,
 } from "../cavityGeometry.js";
 import { getBoundaryModeFromValue } from "../modeFamily.js";
-import { isFieldDrivenState } from "../fieldState.js";
 import {
-  allowsPresentationResponse,
-  isZeroInputHardSilence,
-} from "../hardSilenceContract.js";
+  hasRenderAuthority,
+  isRenderAuthorityCut,
+} from "../renderAuthorityContract.js";
 import { resolveRaymarchFieldCacheOverride } from "../../visualization/fieldEvaluation.js";
 import {
   buildRaymarchSpectralLightCacheDescriptor,
@@ -132,6 +131,60 @@ function setIfChanged(uniformNode, value) {
 
 function readFiniteNumber(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
+}
+
+function clearBufferNode(bufferNode) {
+  const array = bufferNode?.value?.array;
+  if (!array?.fill) {
+    return;
+  }
+
+  let hasNonZero = false;
+  for (let index = 0; index < array.length; index += 1) {
+    if (array[index] !== 0) {
+      hasNonZero = true;
+      break;
+    }
+  }
+  if (!hasNonZero) {
+    return;
+  }
+
+  array.fill(0);
+  bufferNode.value.needsUpdate = true;
+}
+
+function resetCacheActivity(cache) {
+  if (!cache) {
+    return;
+  }
+
+  cache.active = false;
+  cache.ready = false;
+  cache.rebuildPending = false;
+  cache.activeDescriptor = null;
+  cache.pendingDescriptor = null;
+  clearQueuedRaymarchCacheRebuild(cache);
+}
+
+function resetRenderAuthorityState(runtimeState) {
+  clearBufferNode(runtimeState.backboneModeBuffer);
+  clearBufferNode(runtimeState.detailModeBuffer);
+  clearBufferNode(runtimeState.backboneColorBuffer);
+  clearBufferNode(runtimeState.detailColorBuffer);
+  clearBufferNode(runtimeState.backbonePhaseBuffer);
+  clearBufferNode(runtimeState.detailPhaseBuffer);
+  runtimeState.performanceGovernor = null;
+  runtimeState.spectralLightBuffersUploaded = false;
+  runtimeState.phaseOverlayModeCount = 0;
+  runtimeState.currentFieldDescriptor = null;
+  runtimeState.currentSpectralLightDescriptor = null;
+  resetCacheActivity(runtimeState.fieldCache);
+  resetCacheActivity(runtimeState.spectralLightCache);
+  resetCacheActivity(runtimeState.phaseOverlayCache);
+  if (runtimeState.phaseOverlayCache) {
+    runtimeState.phaseOverlayCache.activePhaseModeCount = 0;
+  }
 }
 
 function readRuntimeFieldNoiseFloor(runtimeState) {
@@ -292,12 +345,14 @@ function publishRaymarchRuntimeAuditSnapshot(
   runtimeState,
   featureFrame,
   fieldState,
+  renderAuthority,
 ) {
   if (runtimeState.auditEnabled) {
     const raymarchDebug = buildRaymarchDebugSnapshot(
       runtimeState,
       featureFrame,
       fieldState,
+      renderAuthority,
     );
     runtimeState.debugSnapshot = featureFrame?.debug
       ? { ...featureFrame.debug, raymarchDebug, ...raymarchDebug }
@@ -309,7 +364,12 @@ function publishRaymarchRuntimeAuditSnapshot(
   }
 }
 
-function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
+function buildRaymarchDebugSnapshot(
+  runtimeState,
+  featureFrame,
+  fieldState,
+  renderAuthority,
+) {
   const avgAmplitude = estimateLayeredAmplitude(featureFrame);
   const maxBackboneAmplitude = maxSlotAmplitude(featureFrame?.backboneSlots);
   const maxDetailAmplitude = maxSlotAmplitude(featureFrame?.detailSlots);
@@ -347,22 +407,25 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
     null;
   const pulseSignal = featureFrame?.pulseSignal ?? 0;
   const totalSlotAmplitude = sumLayeredAmplitude(featureFrame);
-  const modalCoefficientEnergy = clamp01(totalSlotAmplitude);
-  const fieldDriven = isFieldDrivenState(fieldState);
-  const modalResponseBackboneEnergy = fieldDriven
+  const modalCoefficientEnergy = renderAuthority
+    ? clamp01(totalSlotAmplitude)
+    : 0;
+  const modalResponseBackboneEnergy = renderAuthority
     ? (featureFrame?.modalResponseBackboneEnergy ??
       featureFrame?.debug?.modalResponseBackboneEnergy ??
       0)
     : 0;
-  const modalResponseDetailEnergy = fieldDriven
+  const modalResponseDetailEnergy = renderAuthority
     ? (featureFrame?.modalResponseDetailEnergy ??
       featureFrame?.debug?.modalResponseDetailEnergy ??
       0)
     : 0;
-  const modalPhaseAuthority = featureFrame?.modalPhaseAuthority ?? 0;
+  const modalPhaseAuthority = renderAuthority
+    ? (featureFrame?.modalPhaseAuthority ?? 0)
+    : 0;
   const observationHardSilence =
-    isZeroInputHardSilence(featureFrame) ||
-    (fieldState === "idle" && totalSlotAmplitude <= 0 && avgAmplitude <= 0);
+    isRenderAuthorityCut(featureFrame) ||
+    (!renderAuthority && totalSlotAmplitude <= 0 && avgAmplitude <= 0);
   const observationParameters =
     runtimeState.observationTransferParameters ??
     deriveRuntimeObservationTransferParameters(runtimeState);
@@ -459,6 +522,7 @@ function buildRaymarchDebugSnapshot(runtimeState, featureFrame, fieldState) {
 
   return {
     fieldState,
+    renderAuthority,
     modeSlotCount: activeModeCount,
     originalModeSlotCount:
       performanceGovernor?.originalModeCount ?? activeModeCount,
@@ -684,7 +748,7 @@ function updateReactiveResponse(
   runtimeState,
   featureFrame,
   fieldState,
-  fieldDriven,
+  renderAuthority,
   deltaTime,
 ) {
   const rt = runtimeState.reactivityTuning;
@@ -710,9 +774,17 @@ function updateReactiveResponse(
     0,
     rt?.reactivity ?? REACTIVITY_DEFAULTS.reactivity,
   );
-  const presentationSignalScale = allowsPresentationResponse(featureFrame)
-    ? 1
-    : 0;
+  if (!renderAuthority) {
+    runtimeState.responseEnvelope = 0;
+    runtimeState.accentEnvelope = 0;
+    runtimeState.motionSignal = 0;
+    runtimeState.scaleSignal = 0;
+    runtimeState.bloomResponseSignal = 0;
+    runtimeState.visualRoot?.scale?.setScalar?.(1);
+    return;
+  }
+
+  const presentationSignalScale = 1;
   const rhythmicDensity = clamp01(featureFrame?.rhythmicDensity ?? 0);
   const gatedStructureSignal = clamp01(
     structureSignal * reactivity * presentationSignalScale,
@@ -735,7 +807,7 @@ function updateReactiveResponse(
     gatedEnergySignal,
     gatedChangeSignal,
   });
-  const envelopeTarget = fieldDriven
+  const envelopeTarget = renderAuthority
     ? clamp01(
         gatedStructureSignal *
           0.34 *
@@ -750,7 +822,7 @@ function updateReactiveResponse(
     envelopeTarget,
     envelopeTarget > (runtimeState.responseEnvelope ?? 0)
       ? RESPONSE_ATTACK
-      : fieldDriven
+      : renderAuthority
         ? RESPONSE_RELEASE *
           (1 +
             rhythmicDensity * RHYTHMIC_RELEASE_RATE_GAIN +
@@ -758,7 +830,7 @@ function updateReactiveResponse(
         : RESPONSE_IDLE_RELEASE,
     deltaTime,
   );
-  const accentTarget = fieldDriven
+  const accentTarget = renderAuthority
     ? clamp01(gatedChangeSignal * 0.74 + gatedPulseSignal * 0.42)
     : 0;
   const accentEnvelope = damp(
@@ -1180,12 +1252,12 @@ export function tickRaymarchRuntime(
 
   uniforms.uTime.value = time;
   const fieldState = featureFrame?.fieldState ?? "idle";
-  const fieldDriven = isFieldDrivenState(fieldState);
+  const renderAuthority = hasRenderAuthority(featureFrame);
   updateReactiveResponse(
     runtimeState,
     featureFrame,
     fieldState,
-    fieldDriven,
+    renderAuthority,
     deltaTime,
   );
   setIfChanged(
@@ -1194,14 +1266,8 @@ export function tickRaymarchRuntime(
       runtimeState.fieldStateValues.idle,
   );
 
-  if (!fieldDriven) {
-    runtimeState.performanceGovernor = null;
-    runtimeState.spectralLightBuffersUploaded = false;
-    runtimeState.phaseOverlayModeCount = 0;
-    if (runtimeState.phaseOverlayCache) {
-      runtimeState.phaseOverlayCache.active = false;
-      runtimeState.phaseOverlayCache.activePhaseModeCount = 0;
-    }
+  if (!renderAuthority) {
+    resetRenderAuthorityState(runtimeState);
     setIfChanged(uniforms.uBackboneModeCount, 0);
     setIfChanged(uniforms.uDetailModeCount, 0);
     setIfChanged(uniforms.uActiveModeCount, 0);
@@ -1238,9 +1304,14 @@ export function tickRaymarchRuntime(
     idleOverlay.visible = resolveIdleOverlayVisible(
       runtimeState,
       featureFrame,
-      fieldDriven,
+      renderAuthority,
     );
-    publishRaymarchRuntimeAuditSnapshot(runtimeState, featureFrame, fieldState);
+    publishRaymarchRuntimeAuditSnapshot(
+      runtimeState,
+      featureFrame,
+      fieldState,
+      renderAuthority,
+    );
     return;
   }
 
@@ -1462,13 +1533,18 @@ export function tickRaymarchRuntime(
     bandEnergies[3] ?? 0,
   );
 
-  volumeMesh.visible = fieldDriven;
+  volumeMesh.visible = renderAuthority;
   idleOverlay.visible = resolveIdleOverlayVisible(
     runtimeState,
     featureFrame,
-    fieldDriven,
+    renderAuthority,
   );
-  publishRaymarchRuntimeAuditSnapshot(runtimeState, featureFrame, fieldState);
+  publishRaymarchRuntimeAuditSnapshot(
+    runtimeState,
+    featureFrame,
+    fieldState,
+    renderAuthority,
+  );
 }
 
 export function disposeRaymarchRuntime(runtimeState) {
