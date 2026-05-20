@@ -780,6 +780,116 @@ describe("fieldCache", () => {
     expect(sample.cancellation).toBeGreaterThan(0.95);
   });
 
+  it("suppresses cached Spectral Light support when signed modal fields cancel", () => {
+    const slots = new Float32Array([1, 1, 1, 0.5, 2, 2, 2, 0.5]);
+    const colors = new Float32Array([1, 0.15, 0.2, 1, 0.1, 0.35, 1, 1]);
+    const reinforcing = evaluateRaymarchSpectralLightCachePoint({
+      backboneSlots: slots,
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: colors,
+      detailColorSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    const canceling = evaluateRaymarchSpectralLightCachePoint({
+      backboneSlots: slots,
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: colors,
+      detailColorSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 3,
+      y: 0,
+      z: 0,
+    });
+
+    expect(reinforcing.colorWeight).toBeGreaterThan(0.9);
+    expect(canceling.colorWeight).toBeLessThan(
+      reinforcing.colorWeight * 0.1,
+    );
+    expect(canceling.r + canceling.g + canceling.b).toBeLessThan(
+      (reinforcing.r + reinforcing.g + reinforcing.b) * 0.1,
+    );
+  });
+
+  it("keeps partially cancelled Spectral Light support visibly above the floor", () => {
+    const colors = new Float32Array([1, 0.15, 0.2, 1, 0.1, 0.35, 1, 1]);
+    const reinforcing = evaluateRaymarchSpectralLightCachePoint({
+      backboneSlots: new Float32Array([1, 1, 1, 0.5, 2, 2, 2, 0.5]),
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: colors,
+      detailColorSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    const partial = evaluateRaymarchSpectralLightCachePoint({
+      backboneSlots: new Float32Array([1, 1, 1, 0.625, 2, 2, 2, 0.375]),
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: colors,
+      detailColorSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 3,
+      y: 0,
+      z: 0,
+    });
+
+    expect(partial.colorWeight).toBeGreaterThan(
+      reinforcing.colorWeight * 0.75,
+    );
+    expect(partial.r + partial.g + partial.b).toBeGreaterThan(
+      (reinforcing.r + reinforcing.g + reinforcing.b) * 0.75,
+    );
+  });
+
+  it("preserves mild signed residuals so old presets stay visible", () => {
+    const colors = new Float32Array([1, 0.15, 0.2, 1, 0.1, 0.35, 1, 1]);
+    const reinforcing = evaluateRaymarchSpectralLightCachePoint({
+      backboneSlots: new Float32Array([1, 1, 1, 0.5, 2, 2, 2, 0.5]),
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: colors,
+      detailColorSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    const mildResidual = evaluateRaymarchSpectralLightCachePoint({
+      backboneSlots: new Float32Array([1, 1, 1, 0.55, 2, 2, 2, 0.45]),
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: colors,
+      detailColorSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 3,
+      y: 0,
+      z: 0,
+    });
+
+    expect(mildResidual.colorWeight).toBeGreaterThan(
+      reinforcing.colorWeight * 0.7,
+    );
+  });
+
   it("evaluates cached pointwise fields independent of global amplitude scale", () => {
     const quiet = evaluateRaymarchFieldCachePoint({
       backboneSlots: new Float32Array([1, 2, 3, 0.45]),

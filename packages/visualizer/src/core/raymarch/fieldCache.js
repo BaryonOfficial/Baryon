@@ -11,6 +11,7 @@ import {
   globalId,
   int,
   length,
+  smoothstep,
   textureStore,
   uvec3,
   uint,
@@ -48,6 +49,9 @@ const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
 const FIELD_CACHE_WEIGHT_QUANTIZATION = 1024;
 const PHASE_OVERLAY_CANCELLATION_SUPPORT_EPSILON = 1e-5;
 const PHASE_OVERLAY_CANCELLATION_SUPPORT_FULL = 0.01;
+const SIGNED_INTERFERENCE_VISIBILITY_EPSILON = 0.01;
+const SIGNED_INTERFERENCE_VISIBILITY_START = 0.025;
+const SIGNED_INTERFERENCE_VISIBILITY_END = 0.1;
 
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -76,6 +80,30 @@ function hashSlotLayer(slots, activeCount) {
   }
 
   return hash >>> 0;
+}
+
+function clamp01(value) {
+  return Math.min(1, Math.max(0, value));
+}
+
+function smoothstepScalar(edge0, edge1, value) {
+  if (edge0 === edge1) {
+    return value < edge0 ? 0 : 1;
+  }
+  const t = clamp01((value - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
+}
+
+function deriveSignedInterferenceVisibility(signedPotential, unsignedPotential) {
+  if (!(unsignedPotential > 0)) {
+    return 0;
+  }
+  return smoothstepScalar(
+    SIGNED_INTERFERENCE_VISIBILITY_START,
+    SIGNED_INTERFERENCE_VISIBILITY_END,
+    Math.abs(signedPotential) /
+      Math.max(SIGNED_INTERFERENCE_VISIBILITY_EPSILON, unsignedPotential),
+  );
 }
 
 function sumWeightedSlotAmplitude(slots, activeCount, weight = 1) {
@@ -496,6 +524,8 @@ function accumulateSpectralLightLayerAtPoint({
   let b = 0;
   let colorWeight = 0;
   let totalAmplitude = 0;
+  let signedPotential = 0;
+  let unsignedPotential = 0;
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
 
@@ -517,15 +547,26 @@ function accumulateSpectralLightLayerAtPoint({
       scale,
       boundaryMode,
     });
+    const contribution = amplitude * family.field;
+    signedPotential += contribution;
+    unsignedPotential += Math.abs(contribution);
     const localInfluence =
-      amplitude * Math.abs(family.field) * (colorSlots?.[offset + 3] ?? 0);
+      Math.abs(contribution) * (colorSlots?.[offset + 3] ?? 0);
     r += localInfluence * (colorSlots?.[offset] ?? 0);
     g += localInfluence * (colorSlots?.[offset + 1] ?? 0);
     b += localInfluence * (colorSlots?.[offset + 2] ?? 0);
     colorWeight += localInfluence;
   }
 
-  return { r, g, b, colorWeight, totalAmplitude };
+  return {
+    r,
+    g,
+    b,
+    colorWeight,
+    totalAmplitude,
+    signedPotential,
+    unsignedPotential,
+  };
 }
 
 function accumulateSignedPotentialLayerAtPoint({
@@ -663,13 +704,18 @@ export function evaluateRaymarchSpectralLightCachePoint({
     backbone.totalAmplitude + detail.totalAmplitude,
     0.01,
   );
+  const signedVisibility = deriveSignedInterferenceVisibility(
+    backbone.signedPotential + detail.signedPotential,
+    backbone.unsignedPotential + detail.unsignedPotential,
+  );
 
   return {
-    r: (backbone.r + detail.r) / amplitudeNorm,
-    g: (backbone.g + detail.g) / amplitudeNorm,
-    b: (backbone.b + detail.b) / amplitudeNorm,
+    r: ((backbone.r + detail.r) * signedVisibility) / amplitudeNorm,
+    g: ((backbone.g + detail.g) * signedVisibility) / amplitudeNorm,
+    b: ((backbone.b + detail.b) * signedVisibility) / amplitudeNorm,
     colorWeight:
-      (backbone.colorWeight + detail.colorWeight) / amplitudeNorm,
+      ((backbone.colorWeight + detail.colorWeight) * signedVisibility) /
+      amplitudeNorm,
   };
 }
 
@@ -1086,6 +1132,8 @@ function createSpectralLightComputeKernel({
       const colorSumZ = zero.toVar();
       const colorWeight = zero.toVar();
       const totalAmplitude = zero.toVar();
+      const signedPotential = zero.toVar();
+      const unsignedPotential = zero.toVar();
 
       Loop(
         {
@@ -1110,10 +1158,10 @@ function createSpectralLightComputeKernel({
             });
             const colorSlot = backboneColorBuffer.element(i);
             totalAmplitude.addAssign(amplitude);
-            const localInfluence = amplitude
-              .mul(abs(family.field))
-              .mul(colorSlot.w)
-              .toVar();
+            const contribution = amplitude.mul(family.field).toVar();
+            signedPotential.addAssign(contribution);
+            unsignedPotential.addAssign(abs(contribution));
+            const localInfluence = abs(contribution).mul(colorSlot.w).toVar();
             colorSumX.addAssign(localInfluence.mul(colorSlot.x));
             colorSumY.addAssign(localInfluence.mul(colorSlot.y));
             colorSumZ.addAssign(localInfluence.mul(colorSlot.z));
@@ -1145,10 +1193,10 @@ function createSpectralLightComputeKernel({
             });
             const colorSlot = detailColorBuffer.element(i);
             totalAmplitude.addAssign(amplitude);
-            const localInfluence = amplitude
-              .mul(abs(family.field))
-              .mul(colorSlot.w)
-              .toVar();
+            const contribution = amplitude.mul(family.field).toVar();
+            signedPotential.addAssign(contribution);
+            unsignedPotential.addAssign(abs(contribution));
+            const localInfluence = abs(contribution).mul(colorSlot.w).toVar();
             colorSumX.addAssign(localInfluence.mul(colorSlot.x));
             colorSumY.addAssign(localInfluence.mul(colorSlot.y));
             colorSumZ.addAssign(localInfluence.mul(colorSlot.z));
@@ -1157,14 +1205,28 @@ function createSpectralLightComputeKernel({
         },
       );
 
+      const signedVisibility = clamp(
+        smoothstep(
+          float(SIGNED_INTERFERENCE_VISIBILITY_START),
+          float(SIGNED_INTERFERENCE_VISIBILITY_END),
+          abs(signedPotential).div(
+            unsignedPotential.max(
+              float(SIGNED_INTERFERENCE_VISIBILITY_EPSILON),
+            ),
+          ),
+        ),
+        float(0.0),
+        float(1.0),
+      );
+      const normalizedAmplitude = totalAmplitude.max(float(0.01));
       textureStore(
         texture,
         uvec3(voxelCoord),
         vec4(
-          colorSumX.div(totalAmplitude.max(float(0.01))),
-          colorSumY.div(totalAmplitude.max(float(0.01))),
-          colorSumZ.div(totalAmplitude.max(float(0.01))),
-          colorWeight.div(totalAmplitude.max(float(0.01))),
+          colorSumX.mul(signedVisibility).div(normalizedAmplitude),
+          colorSumY.mul(signedVisibility).div(normalizedAmplitude),
+          colorSumZ.mul(signedVisibility).div(normalizedAmplitude),
+          colorWeight.mul(signedVisibility).div(normalizedAmplitude),
         ),
       ).toWriteOnly();
     });

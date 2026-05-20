@@ -236,6 +236,31 @@ describe("raymarch volume material", () => {
     );
   });
 
+  it("keeps broad body authority out of nodal radiance lanes", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const signedBodyStart = expectSourceIndex(
+      source,
+      "const signedBodyAuthority =",
+    );
+    const beamDensityStart = expectSourceIndex(source, "const beamDensity =");
+    const modalStructureAnchorStart = expectSourceIndex(
+      source,
+      "const modalStructureAnchor = beamCore",
+    );
+    const spectralPresenceStart = expectSourceIndex(
+      source,
+      "const spectralLightPresence =",
+    );
+
+    expect(beamDensityStart).toBeGreaterThan(signedBodyStart);
+    expect(modalStructureAnchorStart).toBeGreaterThan(signedBodyStart);
+    expect(spectralPresenceStart).toBeGreaterThan(signedBodyStart);
+    expect(source).not.toContain("signedFieldRadianceAuthority");
+  });
+
   it("softens Dirichlet beam lighting so nodal planes do not dominate", () => {
     expect(RAYMARCH_BOUNDARY_TUNING.dirichletBeamDensity).toBeGreaterThan(0.55);
     expect(RAYMARCH_BOUNDARY_TUNING.dirichletBeamDensity).toBeLessThan(0.75);
