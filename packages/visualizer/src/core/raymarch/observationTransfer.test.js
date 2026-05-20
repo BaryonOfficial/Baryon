@@ -215,6 +215,37 @@ describe("observation transfer", () => {
     expect(physicalRidge.visibleDensity).toBeGreaterThan(0);
   });
 
+  it("gates observation density floors by signed radiance authority", () => {
+    const reinforcing = deriveObservationTransfer({
+      density: 0.03,
+      fieldGradientMagnitude: 0.92,
+      modalStructureAnchor: 0.88,
+      ridgeAnchor: 0.84,
+      modalCoefficientEnergy: 0.46,
+      modalResponseBackboneEnergy: 0.52,
+      signedRadianceAuthority: 1,
+    });
+    const canceling = deriveObservationTransfer({
+      density: 0.03,
+      fieldGradientMagnitude: 0.92,
+      modalStructureAnchor: 0.88,
+      ridgeAnchor: 0.84,
+      modalCoefficientEnergy: 0.46,
+      modalResponseBackboneEnergy: 0.52,
+      signedRadianceAuthority: 0.24,
+    });
+
+    expect(reinforcing.observedDensityFloor).toBeGreaterThan(
+      reinforcing.physicalVisibleDensity,
+    );
+    expect(canceling.observationAnchor).toBeLessThan(
+      reinforcing.observationAnchor * 0.3,
+    );
+    expect(canceling.visibleDensity).toBeLessThan(
+      reinforcing.visibleDensity * 0.35,
+    );
+  });
+
   it("observes retained modal energy instead of hard-silence flags", () => {
     const hardSilent = deriveObservationTransfer({
       density: 0.04,

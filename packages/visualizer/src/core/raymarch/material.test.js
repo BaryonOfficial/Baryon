@@ -29,6 +29,12 @@ function makeMeshUniforms(overrides = {}) {
   return { ...base, ...overrides };
 }
 
+function expectSourceIndex(source, needle) {
+  const index = source.indexOf(needle);
+  expect(index).toBeGreaterThanOrEqual(0);
+  return index;
+}
+
 describe("raymarch volume material", () => {
   it("uses observation transfer as the only shader density visibility lane", () => {
     const source = readFileSync(
@@ -87,6 +93,32 @@ describe("raymarch volume material", () => {
     expect(source).toMatch(
       /const ridgePhysicalAnchor = max\(\s*ridgeAnchor,\s*fieldGradientMagnitude,?\s*\);/,
     );
+  });
+
+  it("gates broad body fill by signed field mass authority before observation", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const signedAuthorityStart = expectSourceIndex(
+      source,
+      "const signedBodyAuthority =",
+    );
+    const bodyDensityStart = expectSourceIndex(source, "const bodyDensity =");
+    const observationTransferStart = expectSourceIndex(
+      source,
+      "const observationTransfer = deriveObservationTransferNode(",
+    );
+
+    expect(bodyDensityStart).toBeGreaterThan(signedAuthorityStart);
+    expect(observationTransferStart).toBeGreaterThan(bodyDensityStart);
+    expect(source).toContain("SIGNED_INTERFERENCE_BODY_AUTHORITY_START");
+    expect(source).toContain("SIGNED_INTERFERENCE_BODY_AUTHORITY_END");
+    expect(source).toContain("SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER");
+    expect(source).toMatch(
+      /const signedBodyAuthority = smoothstep\(\s*float\(SIGNED_INTERFERENCE_BODY_AUTHORITY_START\),\s*float\(SIGNED_INTERFERENCE_BODY_AUTHORITY_END\),\s*normalizedFieldAbs,?\s*\)\.pow\(\s*float\(SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER\),?\s*\);/,
+    );
+    expect(source).toMatch(/\.mul\(\s*signedBodyAuthority\s*\)/);
   });
 
   it("keeps Spectral Light shader tuning vivid instead of neutralizing color", () => {
@@ -159,6 +191,48 @@ describe("raymarch volume material", () => {
     );
     expect(source).toContain(
       "holographicColorMix.mul(float(STATIC_SURFACE_TINT_SCALE))",
+    );
+  });
+
+  it("gates beam, observation, and highlight radiance by signed cancellation authority", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const cancellationStart = expectSourceIndex(
+      source,
+      "const signedCancellationAuthority =",
+    );
+    const radianceStart = expectSourceIndex(
+      source,
+      "const signedRadianceAuthority =",
+    );
+    const beamDensityStart = expectSourceIndex(source, "const beamDensity =");
+    const modalStructureAnchorStart = expectSourceIndex(
+      source,
+      "const modalStructureAnchor = beamCore",
+    );
+    const spectralPresenceStart = expectSourceIndex(
+      source,
+      "const spectralLightPresence =",
+    );
+
+    expect(radianceStart).toBeGreaterThan(cancellationStart);
+    expect(beamDensityStart).toBeGreaterThan(radianceStart);
+    expect(modalStructureAnchorStart).toBeGreaterThan(radianceStart);
+    expect(spectralPresenceStart).toBeGreaterThan(radianceStart);
+    expect(source).toContain("SIGNED_INTERFERENCE_RADIANCE_GATE_MIN");
+    expect(source).toMatch(
+      /const beamDensity =[\s\S]*?\.mul\(signedRadianceAuthority\)/,
+    );
+    expect(source).toMatch(
+      /const modalStructureAnchor = beamCore[\s\S]*?\.mul\(signedRadianceAuthority\)/,
+    );
+    expect(source).toMatch(
+      /const spectralLightPresence = smoothstep\([\s\S]*?\)\.mul\(signedRadianceAuthority\)/,
+    );
+    expect(source).toMatch(
+      /const crowdedWhiteEmissionMix = holographicEmissionLift[\s\S]*?\.mul\(signedRadianceAuthority\)/,
     );
   });
 

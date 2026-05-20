@@ -90,6 +90,11 @@ import {
   SIGNED_PHASE_OVERLAY_FIELD_GAIN,
   SIGNED_PHASE_OVERLAY_FIELD_LIMIT,
   SIGNED_PHASE_OVERLAY_GRADIENT_GAIN,
+  SIGNED_INTERFERENCE_BODY_AUTHORITY_END,
+  SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER,
+  SIGNED_INTERFERENCE_BODY_AUTHORITY_START,
+  SIGNED_INTERFERENCE_RADIANCE_CANCELLATION_POWER,
+  SIGNED_INTERFERENCE_RADIANCE_GATE_MIN,
   RIM_BLOOM_BIAS_BASE,
   RIM_BLOOM_BIAS_GAIN,
   RIM_COMPRESSION_BOUNDARY_GAIN,
@@ -719,6 +724,20 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
+      const signedCancellationAuthority = clamp(
+        phaseOverlayCancellation
+          .mul(phaseOverlayAuthority)
+          .mul(phaseOverlayStrength),
+        float(0.0),
+        float(1.0),
+      );
+      const signedRadianceAuthority = mix(
+        float(1.0),
+        float(SIGNED_INTERFERENCE_RADIANCE_GATE_MIN),
+        signedCancellationAuthority.pow(
+          float(SIGNED_INTERFERENCE_RADIANCE_CANCELLATION_POWER),
+        ),
+      );
       const signedPhaseContribution = clamp(
         phaseOverlaySignedDisplacement,
         float(-SIGNED_PHASE_OVERLAY_FIELD_LIMIT),
@@ -822,6 +841,13 @@ function createScatteringNode({
       const contourCore = nodeBand.pow(uContourSharpness.mul(contourGain));
       const contourShape = mix(broadBand, contourCore, float(CONTOUR_BLEND));
       const visibleStructure = structure;
+      const signedBodyAuthority = smoothstep(
+        float(SIGNED_INTERFERENCE_BODY_AUTHORITY_START),
+        float(SIGNED_INTERFERENCE_BODY_AUTHORITY_END),
+        normalizedFieldAbs,
+      ).pow(
+        float(SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER),
+      );
       const activeMask = smoothstep(float(0.0), float(1.0), activeCount);
       // Beat pulse drives a visible density surge through the volume
       const densityMod = float(1.0)
@@ -856,6 +882,7 @@ function createScatteringNode({
         .mul(interiorMask)
         .mul(float(BODY_DENSITY_GAIN))
         .mul(float(1.0).sub(boundaryMask.mul(float(BODY_BOUNDARY_REDUCTION))))
+        .mul(signedBodyAuthority)
         .mul(incoherentTrebleSuppression)
         // Under-excited fields get much less body fill to avoid diffuse white fog
         .mul(excitationVisibility.pow(float(1.2)));
@@ -892,6 +919,7 @@ function createScatteringNode({
         .mul(compressedShellWeight)
         .mul(transientBoost)
         .mul(boundaryBeamDensity)
+        .mul(signedRadianceAuthority)
         // Gate beam brightness by audio energy — prevents surface glow persisting
         // at full brightness when field→0 causes contourShape→1 everywhere.
         // Power 1.0 gives linear rolloff, less aggressive than body's pow(1.5).
@@ -977,7 +1005,8 @@ function createScatteringNode({
       const modalStructureAnchor = beamCore
         .mul(shellWeight)
         .mul(edgeFade)
-        .mul(activeMask);
+        .mul(activeMask)
+        .mul(signedRadianceAuthority);
       const ridgeAnchor = /** @type {any} */ (
         contourShape.mul(ridgeConcentration)
       );
@@ -1163,7 +1192,7 @@ function createScatteringNode({
         float(1.0).sub(
           whiteEmissionCrowding.mul(float(WHITE_EMISSION_CROWDING_REDUCTION)),
         ),
-      );
+      ).mul(signedRadianceAuthority);
       const staticContourColor = mix(
         staticBaseColor,
         uSurfaceColor,
@@ -1220,7 +1249,7 @@ function createScatteringNode({
             float(0.0),
             spectralLightPresenceEnd,
             colorWeight,
-          );
+          ).mul(signedRadianceAuthority);
           const spectralLightWeight = clamp(
             uSpectralMix.mul(spectralLightPresence),
             float(0.0),

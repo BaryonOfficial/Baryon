@@ -78,6 +78,11 @@ export const EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT = 0.82;
 export const SIGNED_PHASE_OVERLAY_FIELD_GAIN = 0.28;
 export const SIGNED_PHASE_OVERLAY_FIELD_LIMIT = 0.65;
 export const SIGNED_PHASE_OVERLAY_GRADIENT_GAIN = 0.35;
+export const SIGNED_INTERFERENCE_BODY_AUTHORITY_START = 0.015;
+export const SIGNED_INTERFERENCE_BODY_AUTHORITY_END = 0.12;
+export const SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER = 1.2;
+export const SIGNED_INTERFERENCE_RADIANCE_GATE_MIN = 0.24;
+export const SIGNED_INTERFERENCE_RADIANCE_CANCELLATION_POWER = 1.15;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -105,6 +110,17 @@ function deriveNodeBand(fieldAbs, threshold) {
 
 function deriveBroadBand(fieldAbs, threshold) {
   return 1 - smoothstep(0, threshold * BROAD_BAND_SCALE, fieldAbs);
+}
+
+export function deriveSignedInterferenceBodyAuthority(fieldAbs) {
+  return Math.pow(
+    smoothstep(
+      SIGNED_INTERFERENCE_BODY_AUTHORITY_START,
+      SIGNED_INTERFERENCE_BODY_AUTHORITY_END,
+      Math.max(0, Number.isFinite(fieldAbs) ? fieldAbs : 0),
+    ),
+    SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER,
+  );
 }
 
 function deriveInteriorMask(radialDistance) {
@@ -200,6 +216,7 @@ export function deriveBodyDensity({
   const broadBand = deriveBroadBand(fieldAbs, threshold);
   const interiorMask = deriveInteriorMask(radialDistance);
   const bodyBoundaryAttenuation = 1 - boundaryMask * BODY_BOUNDARY_REDUCTION;
+  const signedBodyAuthority = deriveSignedInterferenceBodyAuthority(fieldAbs);
   const latchedFogMask = deriveLatchedFogMask({
     structureSignal,
     changeSignal,
@@ -213,11 +230,13 @@ export function deriveBodyDensity({
     interiorMask *
     BODY_DENSITY_GAIN *
     bodyBoundaryAttenuation *
+    signedBodyAuthority *
     (1 - latchedFogMask * LATCHED_FOG_BODY_REDUCTION);
 
   return {
     broadBand,
     interiorMask,
+    signedBodyAuthority,
     latchedFogMask,
     bodyDensity,
   };
@@ -243,6 +262,7 @@ export function deriveBeamMask({
   boundaryMask,
   structureSignal = 0,
   changeSignal = 1,
+  signedRadianceAuthority = 1,
 }) {
   const outerShellAccent = smoothstep(0.35, 1.0, radialDistance);
   const transientBoost =
@@ -268,6 +288,7 @@ export function deriveBeamMask({
     structure *
     compressedShellWeight *
     transientBoost *
+    clamp01(signedRadianceAuthority) *
     (1 - latchedFogMask * LATCHED_FOG_BEAM_REDUCTION);
 
   return {
@@ -469,9 +490,11 @@ export function deriveCrowdedHighlightMix({
   whiteEmissionMix = 0,
   hotCoreCrowding = 0,
   whiteEmissionCrowding = hotCoreCrowding,
+  signedRadianceAuthority = 1,
 }) {
   const crowding = clamp01(hotCoreCrowding);
   const emissionCrowding = clamp01(whiteEmissionCrowding);
+  const radianceAuthority = clamp01(signedRadianceAuthority);
   const hotCoreReduction = 1 - crowding * HOT_CORE_SURFACE_CROWDING_REDUCTION;
   const whiteEmissionReduction =
     1 - emissionCrowding * WHITE_EMISSION_CROWDING_REDUCTION;
@@ -480,7 +503,30 @@ export function deriveCrowdedHighlightMix({
     hotCoreReduction,
     whiteEmissionReduction,
     crowdedHotCoreMix: clamp01(hotCoreMix) * hotCoreReduction,
-    crowdedWhiteEmissionMix: clamp01(whiteEmissionMix) * whiteEmissionReduction,
+    crowdedWhiteEmissionMix:
+      clamp01(whiteEmissionMix) * whiteEmissionReduction * radianceAuthority,
+  };
+}
+
+export function deriveSignedInterferenceRadianceAuthority({
+  cancellation = 0,
+  authority = 1,
+  strength = 1,
+} = {}) {
+  const signedCancellationAuthority =
+    clamp01(cancellation) * clamp01(authority) * clamp01(strength);
+  const cancellationGate = Math.pow(
+    signedCancellationAuthority,
+    SIGNED_INTERFERENCE_RADIANCE_CANCELLATION_POWER,
+  );
+
+  return {
+    signedCancellationAuthority,
+    signedRadianceAuthority: mix(
+      1,
+      SIGNED_INTERFERENCE_RADIANCE_GATE_MIN,
+      cancellationGate,
+    ),
   };
 }
 

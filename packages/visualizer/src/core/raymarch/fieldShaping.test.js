@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeLinearLuminance,
+  compressDisplayRadiance,
+} from "../../render/displayRadiance.js";
+import {
   BEAM_POWER_BASE,
   BOUNDARY_CONTOUR_ACCENT_WEIGHT,
   BODY_DENSITY_MIX,
@@ -35,9 +39,12 @@ import {
   deriveShellWeight,
   deriveStableContourAccent,
   deriveSignedPhaseOverlayField,
+  deriveSignedInterferenceBodyAuthority,
+  deriveSignedInterferenceRadianceAuthority,
   deriveStructureAwareEmissionGain,
   deriveVisibleStructure,
 } from "./fieldShaping.js";
+import { evaluateRaymarchSignedPotentialAtPoint } from "./fieldCache.js";
 
 function mixTestColor(left, right, t) {
   return left.map((channel, index) => channel * (1 - t) + right[index] * t);
@@ -48,6 +55,38 @@ function saturationOf(color) {
   if (max <= 1e-6) return 0;
   const min = Math.min(...color);
   return (max - min) / max;
+}
+
+function deriveFullCancellationRadianceAuthority() {
+  return deriveSignedInterferenceRadianceAuthority({
+    cancellation: 1,
+    authority: 1,
+    strength: 1,
+  }).signedRadianceAuthority;
+}
+
+function deriveFinalVisibilityProbe(sample) {
+  const fieldAbs = Math.abs(sample.signedPotential) * 0.08;
+  const body = deriveBodyDensity({
+    // Normalize the fixture into the same low-field region where the material
+    // currently turns near-zero field into broad body fill.
+    fieldAbs,
+    threshold: 0.15,
+    structure: 0.82,
+    edgeFade: 0.9,
+    activeMask: 1,
+    radialDistance: 0.45,
+    boundaryMask: 0.05,
+  });
+  const finalRgb = compressDisplayRadiance(
+    [0.72, 0.88, 1].map((channel) => channel * body.bodyDensity),
+  );
+
+  return {
+    signedBodyAuthority: deriveSignedInterferenceBodyAuthority(fieldAbs),
+    bodyDensity: body.bodyDensity,
+    radiance: computeLinearLuminance(finalRgb),
+  };
 }
 
 describe("field shaping", () => {
@@ -170,6 +209,47 @@ describe("field shaping", () => {
     });
 
     expect(body.bodyDensity).toBe(0);
+  });
+
+  it("reduces final body mass and radiance when signed modal energy cancels", () => {
+    const canceling = evaluateRaymarchSignedPotentialAtPoint({
+      backboneSlots: new Float32Array([1, 1, 1, 0.5, 2, 2, 2, 0.5]),
+      detailSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 3,
+      y: 0,
+      z: 0,
+    });
+    const reinforcing = evaluateRaymarchSignedPotentialAtPoint({
+      backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
+      detailSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 3,
+      y: 0,
+      z: 0,
+    });
+    const cancelingOutput = deriveFinalVisibilityProbe(canceling);
+    const reinforcingOutput = deriveFinalVisibilityProbe(reinforcing);
+
+    expect(canceling.unsignedPotential).toBeCloseTo(
+      reinforcing.unsignedPotential,
+    );
+    expect(canceling.cancellation).toBeGreaterThanOrEqual(0.85);
+    expect(reinforcing.cancellation).toBeLessThan(0.1);
+    expect(cancelingOutput.signedBodyAuthority).toBeLessThanOrEqual(0.01);
+    expect(reinforcingOutput.signedBodyAuthority).toBeGreaterThan(0.3);
+    expect(cancelingOutput.bodyDensity).toBeLessThanOrEqual(
+      reinforcingOutput.bodyDensity * 0.45,
+    );
+    expect(cancelingOutput.radiance).toBeLessThanOrEqual(
+      reinforcingOutput.radiance * 0.55,
+    );
   });
 
   it("documents the CPU parity formula for latched-fog body reduction", () => {
@@ -380,6 +460,35 @@ describe("field shaping", () => {
 
     expect(reactive.latchedFogMask).toBeLessThan(latched.latchedFogMask * 0.2);
     expect(reactive.beamMask).toBeGreaterThan(latched.beamMask);
+  });
+
+  it("gates broad beam radiance when signed interference cancels", () => {
+    const canceledRadianceAuthority = deriveFullCancellationRadianceAuthority();
+    const reinforcing = deriveBeamMask({
+      contourShape: 0.86,
+      shellWeight: 0.82,
+      structure: 0.78,
+      transientEnergy: 0.34,
+      spectralFlux: 0.28,
+      radialDistance: 0.58,
+      rimCompression: 0.16,
+      boundaryMask: 0.1,
+      signedRadianceAuthority: 1,
+    });
+    const canceling = deriveBeamMask({
+      contourShape: 0.86,
+      shellWeight: 0.82,
+      structure: 0.78,
+      transientEnergy: 0.34,
+      spectralFlux: 0.28,
+      radialDistance: 0.58,
+      rimCompression: 0.16,
+      boundaryMask: 0.1,
+      signedRadianceAuthority: canceledRadianceAuthority,
+    });
+
+    expect(canceling.beamMask).toBeLessThan(reinforcing.beamMask * 0.32);
+    expect(reinforcing.beamCore).toBeCloseTo(canceling.beamCore);
   });
 
   it("applies a soft emission rolloff before beam peaks blow out", () => {
@@ -662,6 +771,42 @@ describe("field shaping", () => {
     expect(WHITE_EMISSION_CROWDING_REDUCTION).toBeCloseTo(0.72);
     expect(highlight.crowdedWhiteEmissionMix).toBeLessThan(0.52 * 0.55);
     expect(highlight.crowdedHotCoreMix).toBeLessThan(0.62);
+  });
+
+  it("prevents signed cancellation from re-entering as white highlight emission", () => {
+    const canceledRadianceAuthority = deriveFullCancellationRadianceAuthority();
+    const reinforcing = deriveCrowdedHighlightMix({
+      hotCoreMix: 0.68,
+      whiteEmissionMix: 0.48,
+      hotCoreCrowding: 0.42,
+      whiteEmissionCrowding: 0.62,
+      signedRadianceAuthority: 1,
+    });
+    const canceling = deriveCrowdedHighlightMix({
+      hotCoreMix: 0.68,
+      whiteEmissionMix: 0.48,
+      hotCoreCrowding: 0.42,
+      whiteEmissionCrowding: 0.62,
+      signedRadianceAuthority: canceledRadianceAuthority,
+    });
+    const saturatedColor = [0.92, 0.24, 0.7];
+    const reinforcingRgb = compressDisplayRadiance(
+      mixTestColor(
+        saturatedColor,
+        [1, 1, 1],
+        reinforcing.crowdedWhiteEmissionMix,
+      ),
+    );
+    const cancelingRgb = compressDisplayRadiance(
+      mixTestColor(saturatedColor, [1, 1, 1], canceling.crowdedWhiteEmissionMix),
+    );
+
+    expect(canceling.crowdedWhiteEmissionMix).toBeLessThan(
+      reinforcing.crowdedWhiteEmissionMix * 0.35,
+    );
+    expect(saturationOf(cancelingRgb)).toBeGreaterThan(
+      saturationOf(reinforcingRgb),
+    );
   });
 
   it("preserves isolated ridge highlight and white-emission mix", () => {

@@ -157,6 +157,7 @@ export function deriveObservationTransfer({
   fieldGradientMagnitude = 0,
   modalStructureAnchor = 0,
   ridgeAnchor = 0,
+  signedRadianceAuthority = 1,
   modalCoefficientEnergy = 0,
   modalResponseBackboneEnergy = 0,
   modalResponseDetailEnergy = 0,
@@ -175,7 +176,9 @@ export function deriveObservationTransfer({
     clamp01(fieldGradientMagnitude),
   );
   const observationAnchor = clamp01(
-    clamp01(modalStructureAnchor) * ridgePhysicalAnchor,
+    clamp01(modalStructureAnchor) *
+      ridgePhysicalAnchor *
+      clamp01(signedRadianceAuthority),
   );
   const observationEnergy = clamp01(
     Math.max(
