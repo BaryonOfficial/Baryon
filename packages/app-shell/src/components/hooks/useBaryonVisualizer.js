@@ -35,7 +35,6 @@ import {
   createRuntimeDiagnostics,
   recordRuntimePerfSample,
   shouldRenderExternalFrame,
-  shouldPreservePausedFrameOnControlsChange,
   updateObservationTransferRenderDiagnostics,
 } from "./baryonVisualizerRuntimeState.js";
 import { createLiveInputRuntimeStatus } from "../../context/liveInputRuntimeStatus.js";
@@ -379,14 +378,8 @@ export function useBaryonVisualizer({
       controlVersionRef.current += 1;
       appliedControlVersionRef.current = -1;
       if (clearPausedFrameCache) {
-        const preservePausedFrame = shouldPreservePausedFrameOnControlsChange(
-          previousControls,
-          nextControls,
-        );
-        if (!preservePausedFrame) {
-          lastActiveFrameRef.current = null;
-          lastIdleFrameRef.current = null;
-        }
+        lastActiveFrameRef.current = null;
+        lastIdleFrameRef.current = null;
       }
       return true;
     },
@@ -768,7 +761,6 @@ export function useBaryonVisualizer({
       controls,
       deltaTime,
       featureFrame,
-      status,
     );
     recordMeasuredRuntimePerf(
       runtimeDiagnostics,

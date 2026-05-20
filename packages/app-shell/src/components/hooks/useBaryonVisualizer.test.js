@@ -98,7 +98,6 @@ vi.mock("./baryonVisualizerRuntimeState.js", () => ({
   recordRuntimePerfSample: () => {},
   shouldRenderExternalFrame: (...args) =>
     renderLoopSpies.shouldRenderExternalFrameSpy(...args),
-  shouldPreservePausedFrameOnControlsChange: () => false,
   updateObservationTransferRenderDiagnostics: () => {},
 }));
 

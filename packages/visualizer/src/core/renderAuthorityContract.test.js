@@ -32,6 +32,7 @@ describe("render authority contract", () => {
     expect(
       hasRenderAuthority({
         fieldState: "active",
+        renderAuthority: true,
         hasModalField: true,
         activeModeCount: 1,
       }),
@@ -43,5 +44,24 @@ describe("render authority contract", () => {
   it("does not treat decay as authority by itself", () => {
     expect(hasRenderAuthority({ fieldState: "decay" })).toBe(false);
     expect(allowsAudioMotion({ fieldState: "decay" })).toBe(false);
+  });
+
+  it("does not infer authority from stale render-shaped fields", () => {
+    const staleFrame = {
+      fieldState: "active",
+      hasModalField: true,
+      activeModeCount: 3,
+      modalCoefficientEnergy: 0.4,
+      modalResponseRenderEnergy: 0.5,
+      observationEnergy: 0.6,
+      modalVisibilityEnergy: 0.7,
+      modalObserverVisibilityEnergy: 0.8,
+      backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+      detailSlots: new Float32Array([4, 5, 5, 0.4]),
+      modeSlots: new Float32Array([2, 3, 7, 0.5]),
+    };
+
+    expect(hasRenderAuthority(staleFrame)).toBe(false);
+    expect(allowsAudioMotion(staleFrame)).toBe(false);
   });
 });

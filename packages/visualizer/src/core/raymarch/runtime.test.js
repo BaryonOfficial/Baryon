@@ -252,6 +252,7 @@ describe("tickRaymarchRuntime", () => {
     const runtimeState = createRuntimeState();
     const featureFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 48,
       backboneSlots: new Float32Array([3, 4, 6, 0.8, 1, 3, 7, 0.6]),
       detailSlots: new Float32Array([4, 5, 5, 0.55, 2, 2, 6, 0.4]),
@@ -588,6 +589,7 @@ describe("tickRaymarchRuntime", () => {
     });
     const featureFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 32,
       backboneSlots: new Float32Array([3, 4, 6, 0.8, 1, 3, 7, 0.02]),
       detailSlots: new Float32Array([4, 5, 5, 0.55, 2, 2, 6, 0.01]),
@@ -684,6 +686,7 @@ describe("tickRaymarchRuntime", () => {
     });
     const featureFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 32,
       backboneSlots: new Float32Array([3, 4, 6, 0.8]),
       detailSlots: new Float32Array([4, 5, 5, 0.55]),
@@ -744,6 +747,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 22,
         backboneSlots: new Float32Array([3, 4, 6, 0.8]),
         detailSlots: new Float32Array([4, 5, 5, 0.55]),
@@ -978,6 +982,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         isLiveInputActive: true,
         averageAmplitude: 24,
         backboneSlots: new Float32Array([3, 4, 6, 0.8]),
@@ -1069,6 +1074,7 @@ describe("tickRaymarchRuntime", () => {
     });
     const denseFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 180,
       backboneSlots: new Float32Array([
         1, 2, 3, 1.0, 1, 3, 4, 0.95, 2, 3, 4, 0.9, 2, 4, 5, 0.85, 3, 4, 5, 0.8,
@@ -1163,6 +1169,7 @@ describe("tickRaymarchRuntime", () => {
     const cachedDetailSlots = new Float32Array(32);
     const currentFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 3.2,
       backboneSlots: new Float32Array([2, 2, 2, 0.12, 2, 3, 3, 0.08]),
       detailSlots: new Float32Array(32),
@@ -1232,6 +1239,7 @@ describe("tickRaymarchRuntime", () => {
     });
     const denseFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 180,
       backboneSlots: new Float32Array([
         1, 2, 3, 1.0, 1, 3, 4, 0.95, 2, 3, 4, 0.9, 2, 4, 5, 0.85, 3, 4, 5, 0.8,
@@ -1319,6 +1327,7 @@ describe("tickRaymarchRuntime", () => {
     globalThis.window = /** @type {any} */ ({});
     const denseFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 180,
       backboneSlots: new Float32Array([
         1, 2, 3, 1.0, 1, 3, 4, 0.95, 2, 3, 4, 0.9, 2, 4, 5, 0.85, 3, 4, 5, 0.8,
@@ -1372,6 +1381,7 @@ describe("tickRaymarchRuntime", () => {
     });
     const denseFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 180,
       backboneSlots: new Float32Array([
         1, 2, 3, 1.0, 1, 3, 4, 0.95, 2, 3, 4, 0.9, 2, 4, 5, 0.85, 3, 4, 5, 0.8,
@@ -1420,6 +1430,7 @@ describe("tickRaymarchRuntime", () => {
     });
     const denseFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 180,
       backboneSlots: new Float32Array([
         1, 2, 3, 1.0, 1, 3, 4, 0.95, 2, 3, 4, 0.9, 2, 4, 5, 0.85, 3, 4, 5, 0.8,
@@ -1501,6 +1512,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 48,
         backboneSlots: new Float32Array([3, 4, 6, 0.8]),
         detailSlots: new Float32Array([4, 5, 5, 0.55]),
@@ -1532,6 +1544,7 @@ describe("tickRaymarchRuntime", () => {
   it("keeps field mode uploads identical between static and Spectral color modes", () => {
     const createFrame = () => ({
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 48,
       backboneSlots: new Float32Array([1, 1, 1, 0.3]),
       detailSlots: new Float32Array([
@@ -1588,6 +1601,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 48,
         backboneSlots: new Float32Array([3, 4, 6, 0.8]),
         detailSlots: new Float32Array([4, 5, 5, 0.55]),
@@ -1646,6 +1660,7 @@ describe("tickRaymarchRuntime", () => {
     };
     const makeFrame = (colorWeight) => ({
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 48,
       backboneSlots: new Float32Array([3, 4, 6, 0.8]),
       detailSlots: new Float32Array([4, 5, 5, 0.55]),
@@ -1707,6 +1722,7 @@ describe("tickRaymarchRuntime", () => {
         runtimeState,
         {
           fieldState: "active",
+          renderAuthority: true,
           averageAmplitude: 48,
           backboneSlots: new Float32Array([3, 4, 6, 0.8]),
           detailSlots: new Float32Array([4, 5, 5, 0.55]),
@@ -1766,6 +1782,7 @@ describe("tickRaymarchRuntime", () => {
     };
     const makeFrame = (amplitude) => ({
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 32,
       backboneSlots: new Float32Array([3, 4, 6, amplitude]),
       detailSlots: new Float32Array([4, 5, 5, 0.2]),
@@ -1818,6 +1835,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 6,
         backboneSlots: new Float32Array([1, 1, 2, 0.08]),
         detailSlots: new Float32Array([2, 1, 3, 0.04]),
@@ -1865,6 +1883,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 22,
         backboneSlots: new Float32Array(32),
         detailSlots: new Float32Array([4, 5, 5, 0.45, 2, 2, 6, 0.3]),
@@ -1900,6 +1919,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 18,
         backboneSlots: new Float32Array([3, 4, 6, 0.5]),
         detailSlots: new Float32Array(32),
@@ -1940,6 +1960,7 @@ describe("tickRaymarchRuntime", () => {
     const transientRuntimeState = createRuntimeState();
     const steadyFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 32,
       backboneSlots: new Float32Array([3, 4, 6, 0.5]),
       detailSlots: new Float32Array([4, 5, 5, 0.2]),
@@ -1991,6 +2012,7 @@ describe("tickRaymarchRuntime", () => {
     const runtimeState = createRuntimeState();
     const featureFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 18,
       backboneSlots: new Float32Array([3, 4, 6, 0.5]),
       detailSlots: new Float32Array(32),
@@ -2038,6 +2060,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 18,
         backboneSlots: new Float32Array([3, 4, 6, 0.5]),
         detailSlots: new Float32Array(32),
@@ -2076,6 +2099,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 18,
         backboneSlots: new Float32Array([3, 4, 6, 0.5]),
         detailSlots: new Float32Array(32),
@@ -2112,6 +2136,7 @@ describe("tickRaymarchRuntime", () => {
     activeRuntime.responseEnvelope = 0.72;
 
     const weakTailFrame = {
+      renderAuthority: true,
       averageAmplitude: 8,
       backboneSlots: new Float32Array([3, 4, 6, 0.18]),
       detailSlots: new Float32Array(32),
@@ -2153,6 +2178,7 @@ describe("tickRaymarchRuntime", () => {
 
     const resonantTailFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 1.24,
       backboneSlots: new Float32Array([3, 4, 6, 0.018]),
       detailSlots: new Float32Array([4, 5, 5, 0.012]),
@@ -2194,6 +2220,7 @@ describe("tickRaymarchRuntime", () => {
     const retainedRuntime = createRuntimeState();
     const baseFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 1.24,
       backboneSlots: new Float32Array([3, 4, 6, 0.018]),
       detailSlots: new Float32Array([4, 5, 5, 0.012]),
@@ -2289,6 +2316,7 @@ describe("tickRaymarchRuntime", () => {
     const observedRuntime = createRuntimeState();
     const baseFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 0.8,
       backboneSlots: new Float32Array([3, 4, 6, 0.018]),
       detailSlots: new Float32Array([4, 5, 5, 0.012]),
@@ -2339,6 +2367,7 @@ describe("tickRaymarchRuntime", () => {
     const lowQRuntime = createRuntimeState();
     const baseFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 0.8,
       backboneSlots: new Float32Array([1, 1, 1, 0.006, 2, 1, 1, 0.004]),
       detailSlots: new Float32Array(32),
@@ -2394,6 +2423,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 64,
         backboneSlots: new Float32Array([3, 4, 6, 0.7]),
         detailSlots: new Float32Array([4, 5, 5, 0.35]),
@@ -2427,6 +2457,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 24,
         backboneSlots: new Float32Array([3, 4, 6, 0.5]),
         detailSlots: new Float32Array(32),
@@ -2457,6 +2488,7 @@ describe("tickRaymarchRuntime", () => {
         runtimeState,
         {
           fieldState: "active",
+          renderAuthority: true,
           averageAmplitude: 24,
           backboneSlots: new Float32Array([3, 4, 6, 0.5]),
           detailSlots: new Float32Array(32),
@@ -2488,6 +2520,7 @@ describe("tickRaymarchRuntime", () => {
 
     const baseFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 24,
       backboneSlots: new Float32Array([3, 4, 6, 0.5]),
       detailSlots: new Float32Array(32),
@@ -2536,6 +2569,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 48,
         backboneSlots: new Float32Array([3, 4, 6, 0.8]),
         detailSlots: new Float32Array([4, 5, 5, 0.42]),
@@ -2573,6 +2607,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 28,
         backboneSlots: new Float32Array([3, 4, 6, 0.02]),
         detailSlots: new Float32Array([4, 5, 5, 0.01]),

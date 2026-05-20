@@ -88,6 +88,7 @@ describe("tickCymatics2dRuntime", () => {
     const runtimeState = createRuntimeState();
     const featureFrame = {
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 48,
       backboneSlots: new Float32Array([3, 4, 6, 0.8, 1, 3, 7, 0.6]),
       detailSlots: new Float32Array([4, 5, 5, 0.55, 2, 2, 6, 0.4]),
@@ -134,6 +135,7 @@ describe("tickCymatics2dRuntime", () => {
   it("keeps field mode uploads identical between static and Spectral color modes", () => {
     const createFrame = () => ({
       fieldState: "active",
+      renderAuthority: true,
       averageAmplitude: 48,
       backboneSlots: new Float32Array([3, 4, 6, 0.8, 1, 3, 7, 0.6]),
       detailSlots: new Float32Array([4, 5, 5, 0.55, 2, 2, 6, 0.4]),
@@ -216,6 +218,67 @@ describe("tickCymatics2dRuntime", () => {
     expect(runtimeState.debugSnapshot.volumeVisible).toBe(false);
   });
 
+  it("hard-clamps 2D presentation when render authority is cut", () => {
+    const runtimeState = createRuntimeState();
+    runtimeState.responseEnvelope = 0.82;
+    runtimeState.accentEnvelope = 0.74;
+    runtimeState.motionSignal = 0.66;
+    runtimeState.scaleSignal = 0.58;
+    runtimeState.bloomResponseSignal = 0.49;
+    runtimeState.slicePhase = 4.2;
+    runtimeState.sliceVelocity = 0.37;
+    runtimeState.uniforms.uSlicePosition.value = 0.18;
+    runtimeState.visualRoot.scale.x = 1.04;
+    runtimeState.volumeMesh.visible = true;
+
+    tickCymatics2dRuntime(
+      runtimeState,
+      {
+        fieldState: "decay",
+        renderAuthorityCut: true,
+        renderAuthority: false,
+        averageAmplitude: 48,
+        backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+        detailSlots: new Float32Array([4, 5, 5, 0.55]),
+        backboneColorSlots: new Float32Array([1, 0.1, 0.1, 0.9]),
+        detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5]),
+        bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+        transientEnergy: 0.7,
+        spectralCentroid: 0.42,
+        spectralFlux: 0.28,
+        structureSignal: 0.74,
+        energySignal: 0.68,
+        changeSignal: 0.61,
+        pulseSignal: 0.32,
+      },
+      2,
+      1 / 60,
+    );
+
+    expect(runtimeState.volumeMesh.visible).toBe(false);
+    expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uAverageAmplitude.value).toBe(0);
+    expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0);
+    expect(runtimeState.uniforms.uSpectralCentroid.value).toBe(0);
+    expect(runtimeState.uniforms.uSpectralFlux.value).toBe(0);
+    expect(runtimeState.responseEnvelope).toBe(0);
+    expect(runtimeState.accentEnvelope).toBe(0);
+    expect(runtimeState.motionSignal).toBe(0);
+    expect(runtimeState.scaleSignal).toBe(0);
+    expect(runtimeState.bloomResponseSignal).toBe(0);
+    expect(runtimeState.visualRoot.scale.x).toBe(1);
+    expect(runtimeState.sliceVelocity).toBe(0);
+    expect(runtimeState.uniforms.uSlicePosition.value).toBe(0);
+    expect(Array.from(runtimeState.backboneModeBuffer.value.array)).toEqual(
+      Array.from(new Float32Array(32)),
+    );
+    expect(Array.from(runtimeState.detailModeBuffer.value.array)).toEqual(
+      Array.from(new Float32Array(32)),
+    );
+  });
+
   it("suppresses the idle overlay during live input and restores it after stop", () => {
     const runtimeState = createRuntimeState();
 
@@ -223,6 +286,7 @@ describe("tickCymatics2dRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         isLiveInputActive: true,
         averageAmplitude: 24,
         backboneSlots: new Float32Array([3, 4, 6, 0.8]),
@@ -310,6 +374,7 @@ describe("tickCymatics2dRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 36,
         backboneSlots: new Float32Array([3, 4, 6, 0.72]),
         detailSlots: new Float32Array([4, 5, 5, 0.24]),
@@ -336,6 +401,7 @@ describe("tickCymatics2dRuntime", () => {
       runtimeState,
       {
         fieldState: "active",
+        renderAuthority: true,
         averageAmplitude: 32,
         backboneSlots: new Float32Array([3, 4, 6, 0.66]),
         detailSlots: new Float32Array([4, 5, 5, 0.18]),

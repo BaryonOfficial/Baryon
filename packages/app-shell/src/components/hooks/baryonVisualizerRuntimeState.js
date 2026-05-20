@@ -695,18 +695,3 @@ export function snapshotRuntimeDiagnostics(runtimeDiagnostics) {
     ),
   };
 }
-
-export function shouldPreservePausedFrameOnControlsChange(
-  previousControls,
-  nextControls,
-) {
-  if (!previousControls || !nextControls) {
-    return false;
-  }
-
-  return (
-    previousControls.outputMode !== nextControls.outputMode ||
-    previousControls.outputBackgroundColor !==
-      nextControls.outputBackgroundColor
-  );
-}

@@ -946,6 +946,123 @@ test("active playback bootstrap builds a fresh Spectral Light frame when the fea
   });
 });
 
+test("resolveFeatureFrame composes a source-cut frame during paused playback", () => {
+  const cachedActiveFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    renderAuthorityCut: false,
+    stale: true,
+  };
+  const sourceCutFrame = {
+    fieldState: "idle",
+    renderAuthority: false,
+    renderAuthorityCut: true,
+  };
+  const featureEngine = {
+    enqueueTransportFrame: vi.fn(),
+    readLatestSnapshot: vi.fn(() => ({
+      analysisSessionKey: "file:song-1",
+      analysisInputsSignature: '"active-before-pause"',
+      analysisResult: cachedActiveFrame,
+    })),
+    getStatus: vi.fn(() => ({})),
+  };
+  const prepareFeatureFrame = vi.fn(() => ({
+    currentFrameAtMs: 1000,
+    analysisSessionKey: "file:song-1",
+    analysisInputsSignature: '"paused-source-cut"',
+    snapshot: {
+      fftMagnitudes: new Float32Array(4),
+      timeData: new Float32Array(4),
+    },
+    silentFeatureFrame: null,
+  }));
+  const runHeavyFeatureAnalysis = vi.fn(() => ({
+    fieldState: "idle",
+    renderAuthority: false,
+    renderAuthorityCut: true,
+  }));
+  const composeFeatureFrame = vi.fn(() => sourceCutFrame);
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: false,
+      playbackSessionId: "song-1",
+    },
+    clockMode: "paused-playback",
+    renderLoopRefs: {
+      frameCacheRefs: {
+        lastLiveFrameRef: { current: cachedActiveFrame },
+        lastActiveFrameRef: { current: cachedActiveFrame },
+        lastIdleFrameRef: { current: null },
+        analysisSchedulerRef: { current: null },
+      },
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame,
+    runHeavyFeatureAnalysis,
+    composeFeatureFrame,
+  });
+
+  expect(prepareFeatureFrame).toHaveBeenCalled();
+  expect(featureEngine.enqueueTransportFrame).toHaveBeenCalled();
+  expect(runHeavyFeatureAnalysis).toHaveBeenCalled();
+  expect(composeFeatureFrame).toHaveBeenCalled();
+  expect(result.featureFrame).toBe(sourceCutFrame);
+  expect(result.effectiveFrame).toBe(sourceCutFrame);
+  expect(result.effectiveFrame).toMatchObject({
+    fieldState: "idle",
+    renderAuthority: false,
+    renderAuthorityCut: true,
+  });
+  expect(args.renderLoopRefs.frameCacheRefs.lastActiveFrameRef.current).toBeNull();
+  expect(args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current).toBeNull();
+});
+
+test("resolveFeatureFrame does not fall back to cached active frames for inactive sources", () => {
+  const cachedActiveFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    stale: true,
+  };
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine: {
+      enqueueTransportFrame: vi.fn(),
+      readLatestSnapshot: vi.fn(() => null),
+      getStatus: vi.fn(() => ({})),
+    },
+    status: {
+      isPlaying: false,
+      isLiveInputActive: false,
+      playbackSessionId: "song-1",
+    },
+    clockMode: "paused-playback",
+    renderLoopRefs: {
+      frameCacheRefs: {
+        lastLiveFrameRef: { current: cachedActiveFrame },
+        lastActiveFrameRef: { current: cachedActiveFrame },
+        lastIdleFrameRef: { current: null },
+        analysisSchedulerRef: { current: null },
+      },
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame: vi.fn(() => ({
+      currentFrameAtMs: 1000,
+      analysisSessionKey: "file:song-1",
+      analysisInputsSignature: '"paused-source-cut"',
+      silentFeatureFrame: null,
+    })),
+  });
+
+  expect(result.featureFrame).toBeNull();
+  expect(result.effectiveFrame).toBeNull();
+});
+
 test("clearing adaptive resume state forces the next authoritative session to restart from calibrated base rungs", () => {
   const { args, runtimeState, runtimeDiagnostics } =
     createAdaptiveRaymarchHarness({

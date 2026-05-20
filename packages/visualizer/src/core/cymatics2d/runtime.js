@@ -7,14 +7,12 @@ import { resolveIdleOverlayVisible } from "../idleLogoVisibility.js";
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
 const RESPONSE_ATTACK = 7;
 const RESPONSE_RELEASE = 2.6;
-const RESPONSE_IDLE_RELEASE = 5.5;
 const ACCENT_ATTACK = 10;
 const ACCENT_RELEASE = 6.5;
 const SCALE_RESPONSE_AMOUNT = 0.02;
 const DENSITY_RESPONSE_AMOUNT = 0.14;
 const SLICE_VELOCITY_ATTACK = 4.2;
 const SLICE_VELOCITY_RELEASE = 2.4;
-const SLICE_IDLE_DRIFT = 0.22;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -133,9 +131,19 @@ function buildCymatics2dDebugSnapshot(runtimeState, featureFrame, fieldState) {
 function updateReactiveResponse(
   runtimeState,
   featureFrame,
-  fieldDriven,
+  renderAuthority,
   deltaTime,
 ) {
+  if (!renderAuthority) {
+    runtimeState.responseEnvelope = 0;
+    runtimeState.accentEnvelope = 0;
+    runtimeState.motionSignal = 0;
+    runtimeState.scaleSignal = 0;
+    runtimeState.bloomResponseSignal = 0;
+    runtimeState.visualRoot?.scale?.setScalar?.(1);
+    return;
+  }
+
   const tuning = {
     ...REACTIVITY_DEFAULTS,
     ...(runtimeState.reactivityTuning ?? {}),
@@ -149,26 +157,20 @@ function updateReactiveResponse(
   const gatedEnergySignal = clamp01(energySignal * reactivity);
   const gatedChangeSignal = clamp01(changeSignal * reactivity);
   const gatedPulseSignal = clamp01(pulseSignal * reactivity);
-  const envelopeTarget = fieldDriven
-    ? clamp01(
-        gatedStructureSignal * 0.34 +
-          gatedEnergySignal * 0.38 +
-          gatedChangeSignal * 0.23,
-      )
-    : 0;
+  const envelopeTarget = clamp01(
+    gatedStructureSignal * 0.34 +
+      gatedEnergySignal * 0.38 +
+      gatedChangeSignal * 0.23,
+  );
   const responseEnvelope = damp(
     runtimeState.responseEnvelope ?? 0,
     envelopeTarget,
     envelopeTarget > (runtimeState.responseEnvelope ?? 0)
       ? RESPONSE_ATTACK
-      : fieldDriven
-        ? RESPONSE_RELEASE
-        : RESPONSE_IDLE_RELEASE,
+      : RESPONSE_RELEASE,
     deltaTime,
   );
-  const accentTarget = fieldDriven
-    ? clamp01(gatedChangeSignal * 0.74 + gatedPulseSignal * 0.42)
-    : 0;
+  const accentTarget = clamp01(gatedChangeSignal * 0.74 + gatedPulseSignal * 0.42);
   const accentEnvelope = damp(
     runtimeState.accentEnvelope ?? 0,
     accentTarget,
@@ -204,7 +206,13 @@ function updateReactiveResponse(
   );
 }
 
-function updateSliceMotion(runtimeState, fieldDriven, deltaTime) {
+function updateSliceMotion(runtimeState, renderAuthority, deltaTime) {
+  if (!renderAuthority) {
+    runtimeState.sliceVelocity = 0;
+    runtimeState.uniforms.uSlicePosition.value = 0;
+    return;
+  }
+
   const motionAmount = Math.max(
     0,
     runtimeState.reactivityTuning?.motionAmount ??
@@ -212,10 +220,9 @@ function updateSliceMotion(runtimeState, fieldDriven, deltaTime) {
   );
   const responseEnvelope = clamp01(runtimeState.responseEnvelope ?? 0);
   const motionSignal = clamp01(runtimeState.motionSignal ?? 0);
-  const targetVelocity = fieldDriven
-    ? motionAmount *
-      (0.28 + responseEnvelope * 0.56 + motionSignal * 0.44 + 0.008)
-    : SLICE_IDLE_DRIFT;
+  const targetVelocity =
+    motionAmount *
+    (0.28 + responseEnvelope * 0.56 + motionSignal * 0.44 + 0.008);
   runtimeState.sliceVelocity = damp(
     runtimeState.sliceVelocity ?? 0,
     targetVelocity,

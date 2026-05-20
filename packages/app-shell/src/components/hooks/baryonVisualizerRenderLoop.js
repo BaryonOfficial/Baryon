@@ -408,32 +408,6 @@ export function updateModalEnvelopeDiagnostics(
   return snapshotModalFreshnessDiagnostics(modalFreshness);
 }
 
-function snapshotFeatureFrame(featureFrame) {
-  return {
-    ...featureFrame,
-    backboneSlots:
-      featureFrame.backboneSlots instanceof Float32Array
-        ? new Float32Array(featureFrame.backboneSlots)
-        : featureFrame.backboneSlots,
-    detailSlots:
-      featureFrame.detailSlots instanceof Float32Array
-        ? new Float32Array(featureFrame.detailSlots)
-        : featureFrame.detailSlots,
-    bandEnergies:
-      featureFrame.bandEnergies instanceof Float32Array
-        ? new Float32Array(featureFrame.bandEnergies)
-        : featureFrame.bandEnergies,
-    modeSlots:
-      featureFrame.modeSlots instanceof Float32Array
-        ? new Float32Array(featureFrame.modeSlots)
-        : featureFrame.modeSlots,
-    fftMagnitudes:
-      featureFrame.fftMagnitudes instanceof Float32Array
-        ? new Float32Array(featureFrame.fftMagnitudes)
-        : featureFrame.fftMagnitudes,
-  };
-}
-
 export function getPlaybackDiagnosticDpr() {
   if (typeof window === "undefined") {
     return 1;
@@ -585,13 +559,28 @@ function shouldBootstrapActiveFeatureFrame({
   lastLiveFrame,
   lastActiveFrame,
 }) {
-  const audioActive = Boolean(
-    status?.isPlaying || status?.isLiveInputActive || controls?.injectTestTone,
-  );
+  const audioActive = hasAudioSourceRenderIntent({ status, controls });
   return (
     audioActive &&
     !isNonIdleFeatureFrame(lastLiveFrame) &&
     !isNonIdleFeatureFrame(lastActiveFrame)
+  );
+}
+
+function hasAudioSourceRenderIntent({ status, controls }) {
+  return Boolean(
+    status?.isPlaying || status?.isLiveInputActive || controls?.injectTestTone,
+  );
+}
+
+function shouldComposeInactiveSourceFeatureFrame({
+  status,
+  controls,
+  preparedInputs,
+}) {
+  return (
+    preparedInputs?.snapshot != null &&
+    !hasAudioSourceRenderIntent({ status, controls })
   );
 }
 
@@ -1595,20 +1584,11 @@ export function resolveFeatureFrame(
     analysisSchedulerRef,
   } = renderLoopRefs.frameCacheRefs;
 
-  if (clockMode === "paused-playback" && !lastActiveFrameRef.current) {
-    const liveFrame = lastLiveFrameRef.current;
-    if (liveFrame) {
-      lastActiveFrameRef.current = snapshotFeatureFrame(liveFrame);
-    }
-  }
-
-  const shouldReusePausedFrame =
-    clockMode === "paused-playback" && lastActiveFrameRef.current;
   const shouldReuseStaticIdleFrame =
     shouldReuseIdleFrame(status, controls) && lastIdleFrameRef.current;
 
-  let featureFrame = lastActiveFrameRef.current;
-  if (!shouldReusePausedFrame && !shouldReuseStaticIdleFrame) {
+  let featureFrame = null;
+  if (!shouldReuseStaticIdleFrame) {
     const buildFeatureFrameStartedAt = getRenderLoopWallTimeMs();
     const analysisSnapshotStartedAt = getRenderLoopWallTimeMs();
     const analysisSnapshot = audio.readAnalysisSnapshot();
@@ -1752,6 +1732,11 @@ export function resolveFeatureFrame(
               getRenderLoopWallTimeMs() - fastComposeStartedAt,
             );
           } else if (
+            shouldComposeInactiveSourceFeatureFrame({
+              status,
+              controls,
+              preparedInputs,
+            }) ||
             shouldSeedLiveInputWarmupFrame({
               status,
               lastLiveFrame: lastLiveFrameRef.current,
@@ -1795,10 +1780,9 @@ export function resolveFeatureFrame(
               runtimeDiagnostics.analysisScheduler.forcedAnalysisCount += 1;
             }
           } else {
-            featureFrame =
-              lastLiveFrameRef.current ??
-              lastActiveFrameRef.current ??
-              preparedInputs.silentFeatureFrame;
+            featureFrame = hasAudioSourceRenderIntent({ status, controls })
+              ? (lastLiveFrameRef.current ?? preparedInputs.silentFeatureFrame)
+              : preparedInputs.silentFeatureFrame;
           }
         } else {
           const schedulerState =
@@ -1897,7 +1881,7 @@ export function resolveFeatureFrame(
     }
     lastActiveFrameRef.current = null;
     lastIdleFrameRef.current = null;
-  } else if (clockMode !== "paused-playback") {
+  } else {
     if (status.lastLiveInputInterruption) {
       clearFrameCache(renderLoopRefs.frameCacheRefs);
       resetInterruptedLiveInputVisualResponse(runtimeState);
@@ -1907,17 +1891,16 @@ export function resolveFeatureFrame(
     } else {
       lastLiveFrameRef.current = null;
       lastActiveFrameRef.current = null;
-      if (!controls.injectTestTone) {
+      if (!controls.injectTestTone && clockMode !== "paused-playback") {
         featureEngine?.reset?.("idle");
       }
-      resetAnalysisSchedulerState(analysisSchedulerRef);
+      if (clockMode !== "paused-playback") {
+        resetAnalysisSchedulerState(analysisSchedulerRef);
+      }
     }
   }
 
-  const effectiveFrame =
-    clockMode === "paused-playback" && lastActiveFrameRef.current
-      ? lastActiveFrameRef.current
-      : featureFrame;
+  const effectiveFrame = featureFrame;
 
   return {
     featureFrame,
