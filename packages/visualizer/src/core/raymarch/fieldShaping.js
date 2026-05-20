@@ -83,6 +83,15 @@ export const SIGNED_INTERFERENCE_BODY_AUTHORITY_END = 0.12;
 export const SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER = 1.2;
 export const SIGNED_INTERFERENCE_RADIANCE_GATE_MIN = 0.24;
 export const SIGNED_INTERFERENCE_RADIANCE_CANCELLATION_POWER = 1.15;
+export const CAUSTIC_DENSITY_GAIN = 1.15;
+export const CAUSTIC_FOCUS_POWER = 1.15;
+export const CAUSTIC_BODY_MIX_MAX = 0.35;
+export const CAUSTIC_OBSERVATION_ANCHOR_WEIGHT = 0.85;
+export const CAUSTIC_EMISSION_GAIN = 1.2;
+export const CAUSTIC_VISIBILITY_FLOOR = 0.08;
+export const CANCELLATION_LUMINANCE_DROP_MIN = 0.65;
+export const CAUSTIC_BROAD_CONTOUR_LEAK_MAX = 0.015;
+export const CAUSTIC_COLOR_DENSITY_DELTA_MAX = 1e-6;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -166,6 +175,165 @@ export function deriveContourShape({
     broadBand,
     contourCore,
     contourShape,
+  };
+}
+
+export function deriveShellFocus({ shellWeight = SHELL_WEIGHT_MIN } = {}) {
+  const safeShellWeight = Math.max(
+    0,
+    Number.isFinite(shellWeight) ? shellWeight : SHELL_WEIGHT_MIN,
+  );
+
+  return clamp01(
+    (safeShellWeight - SHELL_WEIGHT_MIN) /
+      Math.max(SHELL_WEIGHT_MAX - SHELL_WEIGHT_MIN, 1e-4),
+  );
+}
+
+export function deriveCausticRidgeAuthority({
+  contourCore = 0,
+  gradientStructure = 0,
+  structure = 0,
+  shellFocus = 0,
+  edgeFade = 1,
+  activeMask = 1,
+} = {}) {
+  const safeContourCore = clamp01(contourCore);
+  const safeGradientStructure = clamp01(gradientStructure);
+  const safeStructure = clamp01(structure);
+  const safeShellFocus = clamp01(shellFocus);
+  const causticFocusAuthority = clamp01(
+    Math.max(
+      safeGradientStructure * safeContourCore,
+      safeGradientStructure * safeStructure * safeContourCore,
+      safeShellFocus * safeContourCore,
+    ),
+  );
+  const causticRidgeAuthority =
+    causticFocusAuthority * clamp01(edgeFade) * clamp01(activeMask);
+
+  return {
+    causticFocusAuthority,
+    causticRidgeAuthority,
+  };
+}
+
+export function deriveCausticVisibility({
+  causticRidgeAuthority = 0,
+  signedRadianceAuthority = 1,
+  excitationVisibility = 1,
+} = {}) {
+  return (
+    clamp01(causticRidgeAuthority) *
+    clamp01(signedRadianceAuthority) *
+    clamp01(excitationVisibility)
+  );
+}
+
+export function deriveCausticDensity({
+  causticFocusAuthority = 0,
+  causticVisibility = 0,
+  shellWeight = 1,
+  transientBoost = 1,
+  boundaryDensity = 1,
+  latchedFogMask = 0,
+} = {}) {
+  return (
+    CAUSTIC_DENSITY_GAIN *
+    Math.pow(clamp01(causticFocusAuthority), CAUSTIC_FOCUS_POWER) *
+    clamp01(causticVisibility) *
+    Math.max(0, Number.isFinite(shellWeight) ? shellWeight : 0) *
+    Math.max(0, Number.isFinite(transientBoost) ? transientBoost : 0) *
+    clamp01(boundaryDensity) *
+    (1 - clamp01(latchedFogMask) * LATCHED_FOG_BEAM_REDUCTION)
+  );
+}
+
+export function deriveCausticMaterialTransferProbe({
+  fieldAbs = 0,
+  threshold = 0.02,
+  contourCore = 0,
+  broadBand = null,
+  gradientStructure = 0,
+  structure = 0,
+  shellFocus = 0,
+  edgeFade = 1,
+  activeMask = 1,
+  excitationVisibility = 1,
+  signedRadianceAuthority = 1,
+  colorWeight = 0,
+  transientBoost = 1,
+  shellWeight = 1,
+  boundaryDensity = 1,
+  latchedFogMask = 0,
+} = {}) {
+  const safeFieldAbs = Math.max(0, Number.isFinite(fieldAbs) ? fieldAbs : 0);
+  const safeThreshold = Math.max(
+    1e-4,
+    Number.isFinite(threshold) ? threshold : 0.02,
+  );
+  const { causticFocusAuthority, causticRidgeAuthority } =
+    deriveCausticRidgeAuthority({
+      contourCore,
+      gradientStructure,
+      structure,
+      shellFocus,
+      edgeFade,
+      activeMask,
+    });
+  const causticVisibility = deriveCausticVisibility({
+    causticRidgeAuthority,
+    signedRadianceAuthority,
+    excitationVisibility,
+  });
+  const causticDensity = deriveCausticDensity({
+    causticFocusAuthority,
+    causticVisibility,
+    shellWeight,
+    transientBoost,
+    boundaryDensity,
+    latchedFogMask,
+  });
+  const resolvedBroadBand =
+    broadBand == null
+      ? deriveBroadBand(safeFieldAbs, safeThreshold)
+      : broadBand;
+  const bodyDensity =
+    clamp01(resolvedBroadBand) *
+    clamp01(structure) *
+    clamp01(edgeFade) *
+    clamp01(activeMask) *
+    BODY_DENSITY_GAIN *
+    deriveSignedInterferenceBodyAuthority(safeFieldAbs);
+  const bodyContribution = Math.min(
+    bodyDensity * CAUSTIC_BODY_MIX_MAX,
+    causticDensity * CAUSTIC_BODY_MIX_MAX,
+  );
+  const localDensity = causticDensity + bodyContribution;
+  const ridgeConcentration =
+    causticDensity / (causticDensity + bodyDensity + 1e-4);
+  const observationAnchor =
+    causticRidgeAuthority *
+    CAUSTIC_OBSERVATION_ANCHOR_WEIGHT *
+    clamp01(signedRadianceAuthority);
+  const colorConfidence = clamp01(colorWeight) * causticVisibility;
+  const emissionGain = 1 + causticVisibility * (CAUSTIC_EMISSION_GAIN - 1);
+  const localLuminance =
+    localDensity * emissionGain * (0.72 + colorConfidence * 0.08);
+
+  return {
+    causticFocusAuthority,
+    causticRidgeAuthority,
+    causticVisibility,
+    causticDensity,
+    bodyDensity,
+    bodyContribution,
+    localDensity,
+    ridgeConcentration,
+    observationAnchor,
+    colorConfidence,
+    emissionGain,
+    localLuminance,
   };
 }
 

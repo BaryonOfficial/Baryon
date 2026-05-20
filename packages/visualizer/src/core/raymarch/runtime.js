@@ -431,7 +431,6 @@ function buildRaymarchDebugSnapshot(
     deriveRuntimeObservationTransferParameters(runtimeState);
   const observationTransferDebug = deriveObservationTransfer({
     density: 0,
-    fieldGradientMagnitude: 1,
     modalStructureAnchor: 1,
     ridgeAnchor: 1,
     modalCoefficientEnergy,

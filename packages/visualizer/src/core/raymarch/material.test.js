@@ -42,9 +42,14 @@ describe("raymarch volume material", () => {
       "utf8",
     );
     const modalStructureAnchorStart = source.indexOf(
-      "const modalStructureAnchor = beamCore",
+      "const modalStructureAnchor = causticRidgeAuthority",
     );
     const ridgeAnchorStart = source.indexOf("const ridgeAnchor =");
+    const causticFocusStart = source.indexOf("const causticFocusAuthority =");
+    const causticDensityStart = source.indexOf("const causticDensity =");
+    const ridgeConcentrationStart = source.indexOf(
+      "const ridgeConcentration =",
+    );
     const observationEnergyStart = source.indexOf(
       "const observationEnergy = clamp(",
     );
@@ -60,6 +65,9 @@ describe("raymarch volume material", () => {
       observationSupportStart,
     );
 
+    expect(causticFocusStart).toBeGreaterThanOrEqual(0);
+    expect(causticDensityStart).toBeGreaterThan(causticFocusStart);
+    expect(ridgeConcentrationStart).toBeGreaterThan(causticDensityStart);
     expect(modalStructureAnchorStart).toBeGreaterThanOrEqual(0);
     expect(ridgeAnchorStart).toBeGreaterThan(modalStructureAnchorStart);
     expect(observationEnergyStart).toBeGreaterThanOrEqual(0);
@@ -79,10 +87,11 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("retainedHighQContourAccent");
     expect(modalStructureAnchorBlock).not.toContain("visibleStructure");
     expect(modalStructureAnchorBlock).not.toContain(".mul(structure)");
+    expect(modalStructureAnchorBlock).not.toContain("ridgeConcentration");
     expect(observationEnergyBlock).not.toContain("modalPhaseOverlayEnergy");
   });
 
-  it("does not feed contour-only support into observation density authority", () => {
+  it("does not feed raw gradient or contour-only support into observation density authority", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
@@ -90,9 +99,8 @@ describe("raymarch volume material", () => {
 
     expect(source).not.toContain("ridgeSupportAnchor");
     expect(source).not.toContain("max(contourShape, ridgeConcentration)");
-    expect(source).toMatch(
-      /const ridgePhysicalAnchor = max\(\s*ridgeAnchor,\s*fieldGradientMagnitude,?\s*\);/,
-    );
+    expect(source).not.toContain("max(ridgeAnchor, fieldGradientMagnitude)");
+    expect(source).toMatch(/const ridgePhysicalAnchor = ridgeAnchor;/);
   });
 
   it("gates broad body fill by signed field mass authority before observation", () => {
@@ -168,7 +176,8 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain(`const staticHolographicLaserColor = mix(
         staticHolographicColor,
         vec3(1.0),`);
-    expect(source).not.toContain(`const spectralLightHolographicLaserColor = mix(
+    expect(source).not
+      .toContain(`const spectralLightHolographicLaserColor = mix(
             spectralLightHolographicColor,
         vec3(1.0),`);
   });
@@ -194,7 +203,7 @@ describe("raymarch volume material", () => {
     );
   });
 
-  it("gates beam, observation, and highlight radiance by signed cancellation authority", () => {
+  it("gates caustic, observation, and highlight radiance by signed cancellation authority", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
@@ -207,10 +216,17 @@ describe("raymarch volume material", () => {
       source,
       "const signedRadianceAuthority =",
     );
-    const beamDensityStart = expectSourceIndex(source, "const beamDensity =");
+    const causticVisibilityStart = expectSourceIndex(
+      source,
+      "const causticVisibility = causticRidgeAuthority",
+    );
+    const causticDensityStart = expectSourceIndex(
+      source,
+      "const causticDensity =",
+    );
     const modalStructureAnchorStart = expectSourceIndex(
       source,
-      "const modalStructureAnchor = beamCore",
+      "const modalStructureAnchor = causticRidgeAuthority",
     );
     const spectralPresenceStart = expectSourceIndex(
       source,
@@ -218,15 +234,19 @@ describe("raymarch volume material", () => {
     );
 
     expect(radianceStart).toBeGreaterThan(cancellationStart);
-    expect(beamDensityStart).toBeGreaterThan(radianceStart);
+    expect(causticVisibilityStart).toBeGreaterThan(radianceStart);
+    expect(causticDensityStart).toBeGreaterThan(radianceStart);
     expect(modalStructureAnchorStart).toBeGreaterThan(radianceStart);
     expect(spectralPresenceStart).toBeGreaterThan(radianceStart);
     expect(source).toContain("SIGNED_INTERFERENCE_RADIANCE_GATE_MIN");
     expect(source).toMatch(
-      /const beamDensity =[\s\S]*?\.mul\(signedRadianceAuthority\)/,
+      /const causticVisibility = causticRidgeAuthority[\s\S]*?\.mul\(signedRadianceAuthority\)/,
     );
     expect(source).toMatch(
-      /const modalStructureAnchor = beamCore[\s\S]*?\.mul\(signedRadianceAuthority\)/,
+      /const causticDensity = causticCore[\s\S]*?\.mul\(causticVisibility\)/,
+    );
+    expect(source).toMatch(
+      /const modalStructureAnchor = causticRidgeAuthority[\s\S]*?\.mul\(signedRadianceAuthority\)/,
     );
     expect(source).toMatch(
       /const spectralLightPresence = smoothstep\([\s\S]*?\)\.mul\(signedRadianceAuthority\)/,
@@ -245,17 +265,20 @@ describe("raymarch volume material", () => {
       source,
       "const signedBodyAuthority =",
     );
-    const beamDensityStart = expectSourceIndex(source, "const beamDensity =");
+    const causticDensityStart = expectSourceIndex(
+      source,
+      "const causticDensity =",
+    );
     const modalStructureAnchorStart = expectSourceIndex(
       source,
-      "const modalStructureAnchor = beamCore",
+      "const modalStructureAnchor = causticRidgeAuthority",
     );
     const spectralPresenceStart = expectSourceIndex(
       source,
       "const spectralLightPresence =",
     );
 
-    expect(beamDensityStart).toBeGreaterThan(signedBodyStart);
+    expect(causticDensityStart).toBeGreaterThan(signedBodyStart);
     expect(modalStructureAnchorStart).toBeGreaterThan(signedBodyStart);
     expect(spectralPresenceStart).toBeGreaterThan(signedBodyStart);
     expect(source).not.toContain("signedFieldRadianceAuthority");

@@ -56,6 +56,32 @@ describe("built-in visual presets", () => {
           spectralMix: 0.95,
         },
       },
+      {
+        name: "codex-1",
+        builtIn: true,
+        controls: {
+          raymarchSteps: 104,
+          zeroPointPrecision: 0.018,
+          structureMin: 0.38,
+          structureMax: 0.46,
+          densityGain: 3.08,
+          absorption: 3.62,
+          opacityGain: 2.7,
+          contourSharpness: 8,
+          rimBloomBias: 0.26,
+          rimCompression: 1.02,
+          holographicIntensity: 0.52,
+          holographicShift: 0.42,
+          holographicFresnelPower: 4.8,
+          bloomEnabled: true,
+          bloomStrength: 0.76,
+          bloomRadius: 0,
+          bloomThreshold: 0.46,
+          bloomResponseBias: 0.82,
+          colorMode: "spectral",
+          spectralMix: 0.92,
+        },
+      },
     ]);
   });
 });

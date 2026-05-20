@@ -154,7 +154,6 @@ function resolveObservationTransferParameters(parameters) {
 
 export function deriveObservationTransfer({
   density = 0,
-  fieldGradientMagnitude = 0,
   modalStructureAnchor = 0,
   ridgeAnchor = 0,
   signedRadianceAuthority = 1,
@@ -163,7 +162,8 @@ export function deriveObservationTransfer({
   modalResponseDetailEnergy = 0,
   parameters = null,
 } = {}) {
-  const observationParameters = resolveObservationTransferParameters(parameters);
+  const observationParameters =
+    resolveObservationTransferParameters(parameters);
   const safeDensity = Math.max(0, Number.isFinite(density) ? density : 0);
   const physicalVisibilityGate = smoothstep(
     observationParameters.densityFadeStart,
@@ -171,10 +171,7 @@ export function deriveObservationTransfer({
     safeDensity,
   );
   const physicalVisibleDensity = safeDensity * physicalVisibilityGate;
-  const ridgePhysicalAnchor = Math.max(
-    clamp01(ridgeAnchor),
-    clamp01(fieldGradientMagnitude),
-  );
+  const ridgePhysicalAnchor = clamp01(ridgeAnchor);
   const observationAnchor = clamp01(
     clamp01(modalStructureAnchor) *
       ridgePhysicalAnchor *

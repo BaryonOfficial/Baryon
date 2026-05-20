@@ -11,6 +11,7 @@ import { createControlsStore } from "./controlsStore.js";
 
 const CALIBRATED_CLARITY_NAME = "Calibrated Clarity";
 const STAGE_CONTAINMENT_NAME = "Stage Containment";
+const CODEX_1_NAME = "codex-1";
 
 function seedStorage({ controls = null, presets = null } = {}) {
   window.localStorage.clear();
@@ -63,6 +64,10 @@ describe("createControlsStore", () => {
         name: STAGE_CONTAINMENT_NAME,
         builtIn: true,
       }),
+      expect.objectContaining({
+        name: CODEX_1_NAME,
+        builtIn: true,
+      }),
       {
         name: "Stage",
         controls: {
@@ -109,18 +114,14 @@ describe("createControlsStore", () => {
 
     expect(store.getSnapshot().selectedPresetName).toBe("Studio");
     expect(
-      store
-        .getSnapshot()
-        .presets.filter((preset) => preset.name === "Studio"),
+      store.getSnapshot().presets.filter((preset) => preset.name === "Studio"),
     ).toHaveLength(1);
 
     store.deletePreset();
 
     expect(store.getSnapshot().selectedPresetName).toBe("");
     expect(
-      store
-        .getSnapshot()
-        .presets.filter((preset) => preset.name === "Studio"),
+      store.getSnapshot().presets.filter((preset) => preset.name === "Studio"),
     ).toHaveLength(0);
   });
 
@@ -131,7 +132,9 @@ describe("createControlsStore", () => {
 
     store.loadPreset(CALIBRATED_CLARITY_NAME);
 
-    expect(store.getSnapshot().selectedPresetName).toBe(CALIBRATED_CLARITY_NAME);
+    expect(store.getSnapshot().selectedPresetName).toBe(
+      CALIBRATED_CLARITY_NAME,
+    );
     expect(store.controlsRef.current.structureMin).toBe(0.36);
     expect(store.controlsRef.current.structureMax).toBe(0.48);
     expect(store.controlsRef.current.densityGain).toBe(2.85);
@@ -188,6 +191,35 @@ describe("createControlsStore", () => {
     expect(store.controlsRef.current.bloomResponseBias).toBe(0.72);
     expect(store.controlsRef.current.rimBloomBias).toBe(0.22);
     expect(store.controlsRef.current.spectralMix).toBe(0.95);
+
+    const storedPresets = window.localStorage.getItem(PRESETS_KEY);
+    expect(storedPresets).toBeNull();
+  });
+
+  it("exposes codex-1 as a caustic-clarity preset without writing it to storage", () => {
+    const store = createControlsStore();
+
+    expect(store.getSnapshot().presets[2]?.name).toBe(CODEX_1_NAME);
+
+    store.loadPreset(CODEX_1_NAME);
+
+    expect(store.getSnapshot().selectedPresetName).toBe(CODEX_1_NAME);
+    expect(store.controlsRef.current.raymarchSteps).toBe(104);
+    expect(store.controlsRef.current.zeroPointPrecision).toBe(0.018);
+    expect(store.controlsRef.current.structureMin).toBe(0.38);
+    expect(store.controlsRef.current.structureMax).toBe(0.46);
+    expect(store.controlsRef.current.densityGain).toBe(3.08);
+    expect(store.controlsRef.current.absorption).toBe(3.62);
+    expect(store.controlsRef.current.opacityGain).toBe(2.7);
+    expect(store.controlsRef.current.holographicIntensity).toBe(0.52);
+    expect(store.controlsRef.current.holographicShift).toBe(0.42);
+    expect(store.controlsRef.current.holographicFresnelPower).toBe(4.8);
+    expect(store.controlsRef.current.bloomStrength).toBe(0.76);
+    expect(store.controlsRef.current.bloomThreshold).toBe(0.46);
+    expect(store.controlsRef.current.bloomResponseBias).toBe(0.82);
+    expect(store.controlsRef.current.rimBloomBias).toBe(0.26);
+    expect(store.controlsRef.current.rimCompression).toBe(1.02);
+    expect(store.controlsRef.current.spectralMix).toBe(0.92);
 
     const storedPresets = window.localStorage.getItem(PRESETS_KEY);
     expect(storedPresets).toBeNull();

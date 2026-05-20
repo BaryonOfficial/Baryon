@@ -39,12 +39,12 @@ import {
   AIR_BAND_WEIGHT,
   BODY_BOUNDARY_REDUCTION,
   BODY_DENSITY_GAIN,
-  BODY_DENSITY_MIX,
-  BEAM_POWER_BASE,
-  BEAM_POWER_TRANSIENT_GAIN,
   BEAM_SPECTRAL_GAIN,
   BEAM_TRANSIENT_GAIN,
   BROAD_BAND_SCALE,
+  CAUSTIC_BODY_MIX_MAX,
+  CAUSTIC_DENSITY_GAIN,
+  CAUSTIC_FOCUS_POWER,
   COLOR_BIAS_SCALE,
   COLOR_BLEND_END,
   COLOR_BLEND_START,
@@ -507,7 +507,7 @@ function createScatteringNode({
     float(1.0),
   );
   const isDirichletBoundary = String(boundaryMode) === BOUNDARY_MODES.dirichlet;
-  const boundaryBeamDensity = isDirichletBoundary
+  const boundaryCausticDensity = isDirichletBoundary
     ? float(RAYMARCH_BOUNDARY_TUNING.dirichletBeamDensity)
     : float(1.0);
   const boundaryHotCore = isDirichletBoundary
@@ -840,14 +840,11 @@ function createScatteringNode({
         .mul(float(1.0).add(bassShellBoost));
       const contourCore = nodeBand.pow(uContourSharpness.mul(contourGain));
       const contourShape = mix(broadBand, contourCore, float(CONTOUR_BLEND));
-      const visibleStructure = structure;
       const signedBodyAuthority = smoothstep(
         float(SIGNED_INTERFERENCE_BODY_AUTHORITY_START),
         float(SIGNED_INTERFERENCE_BODY_AUTHORITY_END),
         normalizedFieldAbs,
-      ).pow(
-        float(SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER),
-      );
+      ).pow(float(SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER));
       const activeMask = smoothstep(float(0.0), float(1.0), activeCount);
       // Beat pulse drives a visible density surge through the volume
       const densityMod = float(1.0)
@@ -876,7 +873,7 @@ function createScatteringNode({
           .mul(float(0.45)),
       );
       const bodyDensity = broadBand
-        .mul(visibleStructure)
+        .mul(structure)
         .mul(edgeFade)
         .mul(activeMask)
         .mul(interiorMask)
@@ -889,7 +886,7 @@ function createScatteringNode({
       const dampedBodyDensity = bodyDensity.mul(
         float(1.0).sub(latchedFogMask.mul(float(LATCHED_FOG_BODY_REDUCTION))),
       );
-      // Beat pulse adds an emission flash — each hit brightens the beam layer
+      // Beat pulse adds an emission flash through the caustic layer.
       const transientBoost = float(1.0)
         .add(uTransientEnergy.mul(float(BEAM_TRANSIENT_GAIN)))
         .add(uSpectralFlux.mul(float(BEAM_SPECTRAL_GAIN)))
@@ -909,29 +906,47 @@ function createScatteringNode({
       const compressedShellWeight = shellWeight.mul(
         float(1.0).sub(rimCompressionMix),
       );
-      const beamCore = contourShape.pow(
-        float(BEAM_POWER_BASE).add(
-          uTransientEnergy.mul(float(BEAM_POWER_TRANSIENT_GAIN)),
-        ),
+      const shellFocus = clamp(
+        shellWeight
+          .sub(float(SHELL_WEIGHT_MIN))
+          .div(float(SHELL_WEIGHT_MAX - SHELL_WEIGHT_MIN)),
+        float(0.0),
+        float(1.0),
       );
-      const beamDensity = beamCore
-        .mul(visibleStructure)
+      const causticFocusAuthority = clamp(
+        max(
+          max(
+            structure.mul(contourCore),
+            structure.mul(structure).mul(contourCore),
+          ),
+          shellFocus.mul(contourCore),
+        ),
+        float(0.0),
+        float(1.0),
+      );
+      const causticRidgeAuthority = clamp(
+        causticFocusAuthority.mul(edgeFade).mul(activeMask),
+        float(0.0),
+        float(1.0),
+      );
+      const causticVisibility = causticRidgeAuthority
+        .mul(signedRadianceAuthority)
+        .mul(excitationVisibility);
+      const causticCore = causticFocusAuthority.pow(float(CAUSTIC_FOCUS_POWER));
+      const causticDensity = causticCore
+        .mul(causticVisibility)
         .mul(compressedShellWeight)
         .mul(transientBoost)
-        .mul(boundaryBeamDensity)
-        .mul(signedRadianceAuthority)
-        // Gate beam brightness by audio energy — prevents surface glow persisting
-        // at full brightness when field→0 causes contourShape→1 everywhere.
-        // Power 1.0 gives linear rolloff, less aggressive than body's pow(1.5).
-        .mul(excitationVisibility)
+        .mul(boundaryCausticDensity)
+        .mul(float(CAUSTIC_DENSITY_GAIN))
         .mul(
           float(1.0).sub(latchedFogMask.mul(float(LATCHED_FOG_BEAM_REDUCTION))),
         );
-      const rolledBeamDensity = mix(
-        beamDensity,
-        beamDensity.div(
+      const rolledCausticDensity = mix(
+        causticDensity,
+        causticDensity.div(
           float(1.0).add(
-            beamDensity.mul(
+            causticDensity.mul(
               float(EMISSION_ROLLOFF_BASE).add(
                 uTransientEnergy.mul(float(EMISSION_ROLLOFF_TRANSIENT_GAIN)),
               ),
@@ -940,11 +955,11 @@ function createScatteringNode({
         ),
         float(EMISSION_ROLLOFF_MIX),
       );
-      const additiveLocalDensity = rolledBeamDensity.add(
-        dampedBodyDensity.mul(float(BODY_DENSITY_MIX)),
+      const additiveLocalDensity = rolledCausticDensity.add(
+        dampedBodyDensity.mul(float(CAUSTIC_BODY_MIX_MAX)),
       );
-      const ridgeConcentration = rolledBeamDensity.div(
-        rolledBeamDensity.add(dampedBodyDensity).add(float(1e-4)),
+      const ridgeConcentration = rolledCausticDensity.div(
+        rolledCausticDensity.add(dampedBodyDensity).add(float(1e-4)),
       );
       const bodyCrowding = additiveLocalDensity.mul(
         float(1.0).sub(ridgeConcentration),
@@ -963,7 +978,7 @@ function createScatteringNode({
         ),
       );
       const adjustedBodyContribution = adjustedBodyDensity
-        .mul(float(BODY_DENSITY_MIX))
+        .mul(float(CAUSTIC_BODY_MIX_MAX))
         .mul(accumulationCompression);
       const hotCoreBodyCrowdingGate = smoothstep(
         float(0.28),
@@ -993,7 +1008,7 @@ function createScatteringNode({
         hotCoreCrowding.mul(float(HOT_CORE_CROWDING_THRESHOLD_LIFT)),
       );
       const density = clamp(
-        rolledBeamDensity
+        rolledCausticDensity
           .add(adjustedBodyContribution)
           .mul(edgeFade)
           .mul(uDensityAbsorption)
@@ -1002,14 +1017,10 @@ function createScatteringNode({
         float(0.0),
         float(DENSITY_MAX),
       ).mul(float(DENSITY_BOOST));
-      const modalStructureAnchor = beamCore
-        .mul(shellWeight)
-        .mul(edgeFade)
-        .mul(activeMask)
+      const modalStructureAnchor = causticRidgeAuthority
+        .mul(compressedShellWeight)
         .mul(signedRadianceAuthority);
-      const ridgeAnchor = /** @type {any} */ (
-        contourShape.mul(ridgeConcentration)
-      );
+      const ridgeAnchor = /** @type {any} */ (causticRidgeAuthority);
       const observationTransfer = deriveObservationTransferNode(
         density,
         modalCoefficientEnergy,
@@ -1017,7 +1028,6 @@ function createScatteringNode({
         uModalResponseBackboneEnergy,
         uModalResponseDetailEnergy,
         ridgeAnchor,
-        /** @type {any} */ (effectiveGradientMagnitude),
         uObservationDensityFadeStart,
         uObservationDensityFadeEnd,
         uObservationTransferGain,
@@ -1126,13 +1136,13 @@ function createScatteringNode({
         localHotCoreStart,
         float(HOT_CORE_END),
         /** @type {any} */ (
-          rolledBeamDensity
+          rolledCausticDensity
             .mul(contourMix.mul(float(0.14)).add(float(0.76)))
             .add(highlightMask.mul(float(0.12)))
             .add(uTransientEnergy.mul(float(0.08)))
             .div(
               float(1.0).add(
-                rolledBeamDensity
+                rolledCausticDensity
                   .mul(contourMix.mul(float(0.14)).add(float(0.76)))
                   .add(highlightMask.mul(float(0.12)))
                   .add(uTransientEnergy.mul(float(0.08)))
@@ -1188,11 +1198,13 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
-      const crowdedWhiteEmissionMix = holographicEmissionLift.mul(
-        float(1.0).sub(
-          whiteEmissionCrowding.mul(float(WHITE_EMISSION_CROWDING_REDUCTION)),
-        ),
-      ).mul(signedRadianceAuthority);
+      const crowdedWhiteEmissionMix = holographicEmissionLift
+        .mul(
+          float(1.0).sub(
+            whiteEmissionCrowding.mul(float(WHITE_EMISSION_CROWDING_REDUCTION)),
+          ),
+        )
+        .mul(signedRadianceAuthority);
       const staticContourColor = mix(
         staticBaseColor,
         uSurfaceColor,
@@ -1326,7 +1338,6 @@ function deriveObservationTransferNode(
   modalResponseBackboneEnergy = float(0.0),
   modalResponseDetailEnergy = float(0.0),
   ridgeAnchor = float(0.0),
-  fieldGradientMagnitude = float(0.0),
   observationDensityFadeStart = float(0.0),
   observationDensityFadeEnd = float(0.0),
   observationTransferGain = float(0.0),
@@ -1339,7 +1350,7 @@ function deriveObservationTransferNode(
     density,
   );
   const physicalVisibleDensity = density.mul(physicalVisibilityGate);
-  const ridgePhysicalAnchor = max(ridgeAnchor, fieldGradientMagnitude);
+  const ridgePhysicalAnchor = ridgeAnchor;
   const observationAnchor = clamp(
     modalStructureAnchor.mul(ridgePhysicalAnchor),
     float(0.0),

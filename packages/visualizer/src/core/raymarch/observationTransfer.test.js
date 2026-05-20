@@ -17,7 +17,9 @@ function referenceParameterInputs(overrides = {}) {
 }
 
 function deriveReferenceParameters(overrides = {}) {
-  return deriveObservationTransferParameters(referenceParameterInputs(overrides));
+  return deriveObservationTransferParameters(
+    referenceParameterInputs(overrides),
+  );
 }
 
 describe("observation transfer", () => {
@@ -50,7 +52,6 @@ describe("observation transfer", () => {
     });
     const physicalInputs = {
       density: 0.08,
-      fieldGradientMagnitude: 0.46,
       modalStructureAnchor: 0.8,
       ridgeAnchor: 0.61,
       modalCoefficientEnergy: 0.13,
@@ -104,7 +105,6 @@ describe("observation transfer", () => {
     });
     const physicalInputs = {
       density: 0,
-      fieldGradientMagnitude: 1,
       modalStructureAnchor: 1,
       ridgeAnchor: 1,
       modalCoefficientEnergy: 0.4,
@@ -152,7 +152,6 @@ describe("observation transfer", () => {
   it("exposes weak modal structure only where local modal anchors exist", () => {
     const anchored = deriveObservationTransfer({
       density: 0.04,
-      fieldGradientMagnitude: 0.52,
       modalStructureAnchor: 0.74,
       ridgeAnchor: 0.68,
       modalCoefficientEnergy: 0.11,
@@ -161,7 +160,6 @@ describe("observation transfer", () => {
     });
     const noLocalAnchor = deriveObservationTransfer({
       density: 0.04,
-      fieldGradientMagnitude: 0,
       modalStructureAnchor: 0,
       ridgeAnchor: 0.68,
       modalCoefficientEnergy: 0.11,
@@ -191,7 +189,6 @@ describe("observation transfer", () => {
   it("does not let support-only contours resurrect canceled signed fields", () => {
     const canceled = deriveObservationTransfer({
       density: 0,
-      fieldGradientMagnitude: 0,
       modalStructureAnchor: 1,
       ridgeAnchor: 0,
       ridgeSupportAnchor: 1,
@@ -201,7 +198,6 @@ describe("observation transfer", () => {
     });
     const physicalRidge = deriveObservationTransfer({
       density: 0,
-      fieldGradientMagnitude: 0.8,
       modalStructureAnchor: 1,
       ridgeAnchor: 0.8,
       ridgeSupportAnchor: 1,
@@ -215,10 +211,38 @@ describe("observation transfer", () => {
     expect(physicalRidge.visibleDensity).toBeGreaterThan(0);
   });
 
+  it("does not let raw gradient resurrect support without a caustic anchor", () => {
+    const gradientOnly = deriveObservationTransfer({
+      density: 0,
+      fieldGradientMagnitude: 1,
+      modalStructureAnchor: 1,
+      ridgeAnchor: 0,
+      modalCoefficientEnergy: 1,
+      modalResponseBackboneEnergy: 1,
+      modalResponseDetailEnergy: 1,
+      signedRadianceAuthority: 1,
+    });
+    const causticAnchored = deriveObservationTransfer({
+      density: 0,
+      fieldGradientMagnitude: 1,
+      modalStructureAnchor: 1,
+      ridgeAnchor: 0.72,
+      modalCoefficientEnergy: 1,
+      modalResponseBackboneEnergy: 1,
+      modalResponseDetailEnergy: 1,
+      signedRadianceAuthority: 1,
+    });
+
+    expect(gradientOnly.observationAnchor).toBe(0);
+    expect(gradientOnly.observedDensityFloor).toBe(0);
+    expect(gradientOnly.visibleDensity).toBe(0);
+    expect(causticAnchored.observationAnchor).toBeGreaterThan(0);
+    expect(causticAnchored.visibleDensity).toBeGreaterThan(0);
+  });
+
   it("gates observation density floors by signed radiance authority", () => {
     const reinforcing = deriveObservationTransfer({
       density: 0.03,
-      fieldGradientMagnitude: 0.92,
       modalStructureAnchor: 0.88,
       ridgeAnchor: 0.84,
       modalCoefficientEnergy: 0.46,
@@ -227,7 +251,6 @@ describe("observation transfer", () => {
     });
     const canceling = deriveObservationTransfer({
       density: 0.03,
-      fieldGradientMagnitude: 0.92,
       modalStructureAnchor: 0.88,
       ridgeAnchor: 0.84,
       modalCoefficientEnergy: 0.46,
@@ -249,7 +272,6 @@ describe("observation transfer", () => {
   it("observes retained modal energy instead of hard-silence flags", () => {
     const hardSilent = deriveObservationTransfer({
       density: 0.04,
-      fieldGradientMagnitude: 0.9,
       modalStructureAnchor: 0.9,
       ridgeAnchor: 0.9,
       modalCoefficientEnergy: 0.2,
@@ -258,7 +280,6 @@ describe("observation transfer", () => {
     });
     const noEnergy = deriveObservationTransfer({
       density: 0,
-      fieldGradientMagnitude: 0.9,
       modalStructureAnchor: 0.9,
       ridgeAnchor: 0.9,
     });
@@ -276,14 +297,12 @@ describe("observation transfer", () => {
   it("does not let phase overlay author observation energy", () => {
     const phaseOnly = deriveObservationTransfer({
       density: 0,
-      fieldGradientMagnitude: 1,
       modalStructureAnchor: 1,
       ridgeAnchor: 1,
       modalPhaseOverlayEnergy: 1,
     });
     const withModalResponse = deriveObservationTransfer({
       density: 0,
-      fieldGradientMagnitude: 1,
       modalStructureAnchor: 1,
       ridgeAnchor: 1,
       modalCoefficientEnergy: 0.12,
@@ -305,7 +324,6 @@ describe("observation transfer", () => {
   it("ignores presentation, color, beat, band, and performance fields", () => {
     const physicalInputs = {
       density: 0.08,
-      fieldGradientMagnitude: 0.46,
       modalStructureAnchor: 0.8,
       ridgeAnchor: 0.61,
       modalCoefficientEnergy: 0.13,
@@ -342,7 +360,6 @@ describe("observation transfer", () => {
   it("does not expose old low-Q or retained high-Q visibility lanes", () => {
     const transfer = deriveObservationTransfer({
       density: 0,
-      fieldGradientMagnitude: 1,
       modalStructureAnchor: 1,
       ridgeAnchor: 1,
       modalCoefficientEnergy: 0.4,

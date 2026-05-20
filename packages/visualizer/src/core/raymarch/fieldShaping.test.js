@@ -8,6 +8,11 @@ import {
   BOUNDARY_CONTOUR_ACCENT_WEIGHT,
   BODY_DENSITY_MIX,
   BODY_DENSITY_GAIN,
+  CAUSTIC_BODY_MIX_MAX,
+  CAUSTIC_BROAD_CONTOUR_LEAK_MAX,
+  CAUSTIC_COLOR_DENSITY_DELTA_MAX,
+  CAUSTIC_VISIBILITY_FLOOR,
+  CANCELLATION_LUMINANCE_DROP_MIN,
   CONTOUR_BLEND,
   EMISSION_ROLLOFF_MIX,
   HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
@@ -24,6 +29,7 @@ import {
   SHELL_WEIGHT_MAX,
   SHELL_WEIGHT_MIN,
   SIGNED_PHASE_OVERLAY_GRADIENT_GAIN,
+  deriveCausticMaterialTransferProbe,
   deriveBeamMask,
   deriveBodyDensity,
   deriveContourShape,
@@ -65,6 +71,54 @@ function deriveFullCancellationRadianceAuthority() {
   }).signedRadianceAuthority;
 }
 
+const REINFORCED_CAUSTIC_TONE = Object.freeze({
+  fieldAbs: 0.002,
+  threshold: 0.02,
+  contourCore: 0.82,
+  broadBand: 0.95,
+  gradientStructure: 0.78,
+  structure: 0.72,
+  shellFocus: 0.7,
+  edgeFade: 1,
+  activeMask: 1,
+  excitationVisibility: 0.9,
+  signedRadianceAuthority: 1,
+});
+
+const CANCELED_CAUSTIC_TONE = Object.freeze({
+  ...REINFORCED_CAUSTIC_TONE,
+  signedRadianceAuthority: deriveFullCancellationRadianceAuthority(),
+});
+
+const BROAD_CONTOUR_LEAK = Object.freeze({
+  fieldAbs: 0.002,
+  threshold: 0.02,
+  contourCore: 0.04,
+  broadBand: 0.95,
+  gradientStructure: 0.08,
+  structure: 0.12,
+  shellFocus: 0.7,
+  edgeFade: 1,
+  activeMask: 1,
+  excitationVisibility: 0.9,
+  signedRadianceAuthority: 1,
+});
+
+const DENSE_POLYPHONIC_PROBE = Object.freeze({
+  fieldAbs: 0.006,
+  threshold: 0.02,
+  contourCore: 0.55,
+  broadBand: 0.92,
+  gradientStructure: 0.64,
+  structure: 0.58,
+  shellFocus: 0.62,
+  edgeFade: 1,
+  activeMask: 1,
+  excitationVisibility: 0.82,
+  signedRadianceAuthority: 0.55,
+  colorWeight: 0.9,
+});
+
 function deriveFinalVisibilityProbe(sample) {
   const fieldAbs = Math.abs(sample.signedPotential) * 0.08;
   const body = deriveBodyDensity({
@@ -90,6 +144,71 @@ function deriveFinalVisibilityProbe(sample) {
 }
 
 describe("field shaping", () => {
+  it("promotes reinforced caustic tone structure above body fill", () => {
+    const probe = deriveCausticMaterialTransferProbe(REINFORCED_CAUSTIC_TONE);
+
+    expect(CAUSTIC_VISIBILITY_FLOOR).toBeCloseTo(0.08);
+    expect(probe.causticDensity).toBeGreaterThan(probe.bodyDensity * 4);
+    expect(probe.localDensity).toBeGreaterThanOrEqual(CAUSTIC_VISIBILITY_FLOOR);
+    expect(probe.causticRidgeAuthority).toBeGreaterThan(0);
+  });
+
+  it("keeps exact signed cancellation dark after caustic transfer", () => {
+    const reinforcing = deriveCausticMaterialTransferProbe(
+      REINFORCED_CAUSTIC_TONE,
+    );
+    const canceled = deriveCausticMaterialTransferProbe(CANCELED_CAUSTIC_TONE);
+    const luminanceDrop =
+      (reinforcing.localLuminance - canceled.localLuminance) /
+      reinforcing.localLuminance;
+
+    expect(CANCELLATION_LUMINANCE_DROP_MIN).toBeCloseTo(0.65);
+    expect(luminanceDrop).toBeGreaterThanOrEqual(
+      CANCELLATION_LUMINANCE_DROP_MIN,
+    );
+    expect(canceled.localDensity).toBeLessThan(reinforcing.localDensity * 0.35);
+  });
+
+  it("does not turn broad contour support into caustic mass", () => {
+    const leak = deriveCausticMaterialTransferProbe(BROAD_CONTOUR_LEAK);
+
+    expect(leak.localDensity).toBeLessThanOrEqual(
+      CAUSTIC_BROAD_CONTOUR_LEAK_MAX,
+    );
+    if (leak.localDensity > 0) {
+      expect(leak.bodyContribution / leak.localDensity).toBeLessThan(
+        CAUSTIC_BODY_MIX_MAX,
+      );
+    }
+  });
+
+  it("keeps dense polyphonic material caustic-led instead of body-led", () => {
+    const probe = deriveCausticMaterialTransferProbe(DENSE_POLYPHONIC_PROBE);
+
+    expect(probe.causticVisibility).toBeGreaterThanOrEqual(
+      CAUSTIC_VISIBILITY_FLOOR * 0.55,
+    );
+    expect(probe.bodyContribution / probe.localDensity).toBeLessThan(
+      CAUSTIC_BODY_MIX_MAX,
+    );
+  });
+
+  it("lets Spectral Light change color confidence without changing density", () => {
+    const uncolored = deriveCausticMaterialTransferProbe({
+      ...DENSE_POLYPHONIC_PROBE,
+      colorWeight: 0,
+    });
+    const colored = deriveCausticMaterialTransferProbe({
+      ...DENSE_POLYPHONIC_PROBE,
+      colorWeight: 1,
+    });
+
+    expect(colored.colorConfidence).toBeGreaterThan(uncolored.colorConfidence);
+    expect(
+      Math.abs(colored.localDensity - uncolored.localDensity),
+    ).toBeLessThan(CAUSTIC_COLOR_DENSITY_DELTA_MAX);
+  });
+
   it("uses a flatter shell-weight range than the prior shell-heavy look", () => {
     expect(SHELL_WEIGHT_MAX - SHELL_WEIGHT_MIN).toBeCloseTo(0.16);
     expect(SHELL_WEIGHT_MAX - SHELL_WEIGHT_MIN).toBeLessThan(0.36);
@@ -798,7 +917,11 @@ describe("field shaping", () => {
       ),
     );
     const cancelingRgb = compressDisplayRadiance(
-      mixTestColor(saturatedColor, [1, 1, 1], canceling.crowdedWhiteEmissionMix),
+      mixTestColor(
+        saturatedColor,
+        [1, 1, 1],
+        canceling.crowdedWhiteEmissionMix,
+      ),
     );
 
     expect(canceling.crowdedWhiteEmissionMix).toBeLessThan(
