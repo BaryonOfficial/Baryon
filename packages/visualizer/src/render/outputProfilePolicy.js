@@ -41,7 +41,6 @@ export const RENDER_CONTEXTS = Object.freeze({
 /**
  * @typedef {{
  *   renderScale?: number,
- *   traaEnabled?: boolean,
  *   bloomAllowed?: boolean,
  * }} RenderQualityProfileOverrides
  */
@@ -264,9 +263,6 @@ export function normalizeRenderQualityProfileOverrides(overrides) {
   ) {
     nextOverrides.renderScale = renderScaleCandidate;
   }
-  if (typeof candidate.traaEnabled === "boolean") {
-    nextOverrides.traaEnabled = candidate.traaEnabled;
-  }
   if (typeof candidate.bloomAllowed === "boolean") {
     nextOverrides.bloomAllowed = candidate.bloomAllowed;
   }
@@ -288,9 +284,6 @@ export function applyRenderQualityProfileOverrides(profile, overrides) {
   const nextProfile = { ...profile };
   if (Number.isFinite(normalizedOverrides.renderScale)) {
     nextProfile.renderScale = normalizedOverrides.renderScale;
-  }
-  if (typeof normalizedOverrides.traaEnabled === "boolean") {
-    nextProfile.traaEnabled = normalizedOverrides.traaEnabled;
   }
   if (typeof normalizedOverrides.bloomAllowed === "boolean") {
     nextProfile.bloomAllowed = normalizedOverrides.bloomAllowed;
@@ -317,8 +310,7 @@ export function normalizeResolvedRenderQualityProfile(profile) {
     renderScaleCandidate > 0
       ? renderScaleCandidate
       : null;
-  const traaEnabled = candidate.traaEnabled;
-  if (renderScale == null || typeof traaEnabled !== "boolean") {
+  if (renderScale == null) {
     return null;
   }
 
@@ -326,7 +318,7 @@ export function normalizeResolvedRenderQualityProfile(profile) {
     qualityPreset: normalizePerformanceProfile(candidate.qualityPreset),
     targetFps: normalizePerformanceTargetFps(candidate.targetFps),
     renderScale,
-    traaEnabled,
+    traaEnabled: true,
     bloomAllowed:
       typeof candidate.bloomAllowed === "boolean"
         ? candidate.bloomAllowed
@@ -346,7 +338,6 @@ export function normalizeResolvedRenderQualityProfile(profile) {
  *   outputHeight?: number,
  *   overrides?: RenderQualityProfileOverrides | null,
  *   renderScale?: number,
- *   traaEnabled?: boolean,
  *   bloomAllowed?: boolean,
  *   renderContext?: RenderContext,
  * }=} param0
@@ -359,18 +350,14 @@ export function resolveRenderQualityProfile({
   outputHeight = 0,
   overrides = null,
   renderScale,
-  traaEnabled,
   bloomAllowed,
   renderContext = RENDER_CONTEXTS.preview,
 } = {}) {
   const effectiveOverrides =
     overrides ??
-    (Number.isFinite(renderScale) ||
-    typeof traaEnabled === "boolean" ||
-    typeof bloomAllowed === "boolean"
+    (Number.isFinite(renderScale) || typeof bloomAllowed === "boolean"
       ? {
           renderScale,
-          traaEnabled,
           bloomAllowed,
         }
       : null);
@@ -402,7 +389,7 @@ export function getRenderQualityProfileKey(profile) {
   return [
     normalizePerformanceProfile(profile?.qualityPreset),
     profile?.renderScale ?? 1,
-    profile?.traaEnabled === false ? "no-traa" : "traa",
+    "traa",
     profile?.bloomAllowed === false ? "no-bloom" : "bloom",
   ].join(":");
 }

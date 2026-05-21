@@ -50,7 +50,6 @@ describe("render quality profiles", () => {
       }),
     ).toEqual({
       renderScale: 0.67,
-      traaEnabled: false,
       bloomAllowed: false,
     });
 
@@ -88,6 +87,26 @@ describe("render quality profiles", () => {
         traaEnabled: true,
       }),
     ).toBeNull();
+  });
+
+  it("normalizes legacy resolved profiles with TRAA disabled back to always-on policy", () => {
+    expect(
+      normalizeResolvedRenderQualityProfile({
+        qualityPreset: "custom",
+        targetFps: 120,
+        renderScale: 0.67,
+        traaEnabled: false,
+        bloomAllowed: false,
+        renderContext: "external-output",
+      }),
+    ).toEqual({
+      qualityPreset: "custom",
+      targetFps: 120,
+      renderScale: 0.67,
+      traaEnabled: true,
+      bloomAllowed: false,
+      renderContext: RENDER_CONTEXTS.externalOutput,
+    });
   });
 
   it("keeps full quality for auto at 1080p", () => {
@@ -458,6 +477,37 @@ describe("render quality profiles", () => {
       renderScale: 0.67,
       traaEnabled: true,
       bloomAllowed: false,
+      renderContext: RENDER_CONTEXTS.preview,
+    });
+  });
+
+  it("drops TRAA override attempts before applying profile overrides", () => {
+    expect(
+      normalizeRenderQualityProfileOverrides({
+        traaEnabled: false,
+      }),
+    ).toBeNull();
+
+    expect(
+      applyRenderQualityProfileOverrides(
+        {
+          qualityPreset: "max-quality",
+          targetFps: 60,
+          renderScale: 1,
+          traaEnabled: true,
+          bloomAllowed: true,
+          renderContext: RENDER_CONTEXTS.preview,
+        },
+        {
+          traaEnabled: false,
+        },
+      ),
+    ).toEqual({
+      qualityPreset: "max-quality",
+      targetFps: 60,
+      renderScale: 1,
+      traaEnabled: true,
+      bloomAllowed: true,
       renderContext: RENDER_CONTEXTS.preview,
     });
   });

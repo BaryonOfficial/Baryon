@@ -22,7 +22,6 @@ test("render-profile overrides keep only supported fields", () => {
     }),
   ).toEqual({
     renderScale: 0.5,
-    traaEnabled: false,
     bloomAllowed: false,
   });
 
@@ -35,7 +34,7 @@ test("render-profile overrides keep only supported fields", () => {
   ).toBeNull();
 });
 
-test("authoritative external-output ignores local render-profile command overrides", () => {
+test("authoritative external-output uses the resolved profile directly", () => {
   const profile = resolveSceneRenderQualityProfile({
     performanceProfile: "custom",
     renderContext: RENDER_CONTEXTS.externalOutput,
@@ -46,9 +45,6 @@ test("authoritative external-output ignores local render-profile command overrid
       traaEnabled: true,
       bloomAllowed: true,
       renderContext: RENDER_CONTEXTS.externalOutput,
-    },
-    syncedRenderProfileOverrides: {
-      traaEnabled: false,
     },
     localRenderProfileOverrides: {
       renderScale: 0.92,
@@ -61,6 +57,7 @@ test("authoritative external-output ignores local render-profile command overrid
     targetFps: 120,
     renderScale: 0.67,
     traaEnabled: true,
+    bloomAllowed: true,
     renderContext: RENDER_CONTEXTS.externalOutput,
   });
 });

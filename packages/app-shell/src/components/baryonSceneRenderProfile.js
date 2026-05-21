@@ -1,5 +1,4 @@
 import {
-  applyRenderQualityProfileOverrides,
   normalizePerformanceProfile,
   normalizeRenderQualityProfileOverrides,
   normalizeResolvedRenderQualityProfile,
@@ -9,7 +8,7 @@ import {
 
 /**
  * @param {unknown} overrides
- * @returns {{ renderScale?: number, traaEnabled?: boolean, bloomAllowed?: boolean } | null}
+ * @returns {{ renderScale?: number, bloomAllowed?: boolean } | null}
  */
 export function sanitizeRenderProfileOverrides(overrides) {
   return normalizeRenderQualityProfileOverrides(overrides);
@@ -30,7 +29,6 @@ export function shouldAllowLocalRenderProfileCommands(renderContext) {
  *   outputWidth?: number,
  *   outputHeight?: number,
  *   resolvedRenderProfile?: unknown,
- *   syncedRenderProfileOverrides?: unknown,
  *   localRenderProfileOverrides?: unknown,
  * }} options
  * @returns {import("@baryon/visualizer/render/outputPipeline").RenderQualityProfile}
@@ -41,12 +39,8 @@ export function resolveSceneRenderQualityProfile({
   outputWidth = 0,
   outputHeight = 0,
   resolvedRenderProfile = null,
-  syncedRenderProfileOverrides = null,
   localRenderProfileOverrides = null,
 }) {
-  const sanitizedSyncedOverrides = sanitizeRenderProfileOverrides(
-    syncedRenderProfileOverrides,
-  );
   const sanitizedLocalOverrides = shouldAllowLocalRenderProfileCommands(
     renderContext,
   )
@@ -57,18 +51,14 @@ export function resolveSceneRenderQualityProfile({
     const normalizedResolvedRenderProfile =
       normalizeResolvedRenderQualityProfile(resolvedRenderProfile);
     if (normalizedResolvedRenderProfile) {
-      return applyRenderQualityProfileOverrides(
-        normalizedResolvedRenderProfile,
-        sanitizedSyncedOverrides,
-      );
+      return normalizedResolvedRenderProfile;
     }
   }
 
   const mergedOverrides =
     renderContext === RENDER_CONTEXTS.externalOutput
-      ? sanitizedSyncedOverrides
+      ? null
       : {
-          ...(sanitizedSyncedOverrides ?? {}),
           ...(sanitizedLocalOverrides ?? {}),
         };
 

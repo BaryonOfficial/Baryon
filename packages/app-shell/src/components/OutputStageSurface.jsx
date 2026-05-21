@@ -71,7 +71,6 @@ function resolveStageCameraPose(visualizationMethod, cameraPose) {
  *   visualizationMethod: string,
  *   renderQualityPreset?: string,
  *   resolvedRenderProfile?: import("@baryon/visualizer/render/outputPipeline").RenderQualityProfile | null,
- *   renderProfileOverrides?: { renderScale?: number, traaEnabled?: boolean, bloomAllowed?: boolean } | null,
  *   externalFrameRef?: import("react").MutableRefObject<any>,
  *   cameraPose?: {
  *     position?: { x?: number, y?: number, z?: number },
@@ -97,7 +96,6 @@ export function OutputStageSurface({
   visualizationMethod,
   renderQualityPreset = DEFAULT_PERFORMANCE_PROFILE,
   resolvedRenderProfile = null,
-  renderProfileOverrides = null,
   externalFrameRef = null,
   cameraPose = null,
   backgroundColor: backgroundColorProp = null,
@@ -215,7 +213,6 @@ export function OutputStageSurface({
                 visualizationMethod={visualizationMethod}
                 renderQualityPreset={renderQualityPreset}
                 resolvedRenderProfile={resolvedRenderProfile}
-                renderProfileOverrides={renderProfileOverrides}
                 onPerformanceHudSnapshotChange={onPerformanceHudSnapshotChange}
                 onAuditSnapshotChange={onAuditSnapshotChange}
                 externalFrameRef={externalFrameRef}
