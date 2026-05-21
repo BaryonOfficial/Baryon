@@ -129,16 +129,21 @@ describe("raymarch volume material", () => {
     expect(source).toMatch(/\.mul\(\s*signedBodyAuthority\s*\)/);
   });
 
-  it("keeps Spectral Light shader tuning vivid instead of neutralizing color", () => {
+  it("keeps Spectral Light photographic accents above the blandness floor", () => {
     expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow).toBeGreaterThan(0.95);
-    expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.hotCoreSurfacePull).toBeLessThan(0.2);
-    expect(
-      RAYMARCH_SPECTRAL_LIGHT_TUNING.holographicAccentMix,
-    ).toBeLessThanOrEqual(0.03);
-    expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.holographicAccentColorPull).toBe(0);
-    expect(
-      RAYMARCH_SPECTRAL_LIGHT_TUNING.whiteEmissionLift,
-    ).toBeLessThanOrEqual(0.015);
+
+    const accentRanges = [
+      ["hotCoreSurfacePull", 0.22, 0.4],
+      ["holographicAccentMix", 0.055, 0.09],
+      ["holographicAccentColorPull", 0.3, 0.5],
+      ["whiteEmissionLift", 0.028, 0.045],
+    ];
+
+    for (const [name, min, max] of accentRanges) {
+      expect(RAYMARCH_SPECTRAL_LIGHT_TUNING[name]).toBeGreaterThanOrEqual(min);
+      expect(RAYMARCH_SPECTRAL_LIGHT_TUNING[name]).toBeLessThanOrEqual(max);
+    }
+
     expect(
       RAYMARCH_SPECTRAL_LIGHT_TUNING.directPresenceEnd,
     ).toBeLessThanOrEqual(0.05);

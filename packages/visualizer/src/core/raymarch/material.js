@@ -163,10 +163,10 @@ const STATIC_HIGHLIGHT_SURFACE_PULL_SCALE = 0.2;
 
 export const RAYMARCH_SPECTRAL_LIGHT_TUNING = Object.freeze({
   contourShadow: 0.97,
-  hotCoreSurfacePull: 0.12,
-  holographicAccentMix: 0.025,
-  holographicAccentColorPull: 0,
-  whiteEmissionLift: 0.012,
+  hotCoreSurfacePull: 0.26,
+  holographicAccentMix: 0.065,
+  holographicAccentColorPull: 0.38,
+  whiteEmissionLift: 0.034,
   directPresenceEnd: 0.04,
   cachedPresenceEnd: 0.06,
   uncoloredNeutralLift: 0.025,
