@@ -52,8 +52,8 @@ const STAGE_CONTAINMENT_VISUAL_PRESET = Object.freeze({
   }),
 });
 
-const CODEX_1_VISUAL_PRESET = Object.freeze({
-  name: "codex-1",
+const BARYON_4_VISUAL_PRESET = Object.freeze({
+  name: "baryon-4",
   builtIn: true,
   controls: Object.freeze({
     raymarchSteps: 104,
@@ -82,5 +82,5 @@ const CODEX_1_VISUAL_PRESET = Object.freeze({
 export const BUILT_IN_VISUAL_PRESETS = Object.freeze([
   CALIBRATED_CLARITY_VISUAL_PRESET,
   STAGE_CONTAINMENT_VISUAL_PRESET,
-  CODEX_1_VISUAL_PRESET,
+  BARYON_4_VISUAL_PRESET,
 ]);

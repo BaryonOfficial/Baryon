@@ -23,6 +23,10 @@ import {
   LATCHED_FOG_BEAM_REDUCTION,
   LATCHED_FOG_BODY_REDUCTION,
   MODAL_CROWDING_BODY_COMPRESSION,
+  OPTICAL_COLOR_DENSITY_DELTA_MAX,
+  OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX,
+  OPTICAL_LOW_FOCUS_BODY_RATIO_MAX,
+  OPTICAL_RECTANGULAR_STARTUP_IMPORT_DELTA_MAX,
   STRUCTURE_AWARE_EMISSION_BODY_SUPPRESSION,
   STRUCTURE_AWARE_EMISSION_MIN_GAIN,
   WHITE_EMISSION_CROWDING_REDUCTION,
@@ -30,6 +34,7 @@ import {
   SHELL_WEIGHT_MIN,
   SIGNED_PHASE_OVERLAY_GRADIENT_GAIN,
   deriveCausticMaterialTransferProbe,
+  deriveLaserCymaticOpticalProbe,
   deriveBeamMask,
   deriveBodyDensity,
   deriveContourShape,
@@ -144,6 +149,138 @@ function deriveFinalVisibilityProbe(sample) {
 }
 
 describe("field shaping", () => {
+  it("documents hard optical measurement invariants without freezing tunable gains", () => {
+    expect(OPTICAL_COLOR_DENSITY_DELTA_MAX).toBe(1e-6);
+    expect(OPTICAL_RECTANGULAR_STARTUP_IMPORT_DELTA_MAX).toBe(0);
+    expect(OPTICAL_LOW_FOCUS_BODY_RATIO_MAX).toBeLessThan(
+      OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX,
+    );
+    expect(OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX).toBeLessThanOrEqual(
+      CAUSTIC_BODY_MIX_MAX,
+    );
+  });
+
+  it("boosts focused optical caustic lanes over equal-density fog support", () => {
+    const focused = deriveLaserCymaticOpticalProbe({
+      ...REINFORCED_CAUSTIC_TONE,
+      signedCausticDensity: 0.16,
+      bodyContribution: 0.04,
+      normalDotMeasurement: 0.04,
+      gradientPresence: 0.9,
+      ridgeConcentration: 0.86,
+    });
+    const fog = deriveLaserCymaticOpticalProbe({
+      ...BROAD_CONTOUR_LEAK,
+      signedCausticDensity: 0.16,
+      bodyContribution: 0.04,
+      normalDotMeasurement: 0.96,
+      gradientPresence: 0.08,
+      ridgeConcentration: 0.12,
+    });
+
+    expect(focused.signedCausticDensity).toBeCloseTo(fog.signedCausticDensity);
+    expect(focused.opticalFocusAuthority).toBeGreaterThan(
+      fog.opticalFocusAuthority,
+    );
+    expect(focused.laserCausticRadiance).toBeGreaterThan(
+      fog.laserCausticRadiance * 1.35,
+    );
+  });
+
+  it("prevents zero-gradient shell focus from becoming maximum optical slope", () => {
+    const flatShell = deriveLaserCymaticOpticalProbe({
+      ...REINFORCED_CAUSTIC_TONE,
+      gradientStructure: 0,
+      structure: 0.72,
+      shellFocus: 0.95,
+      signedCausticDensity: 0.14,
+      bodyContribution: 0.02,
+      normalDotMeasurement: 0,
+      gradientPresence: 0,
+      ridgeConcentration: 0.72,
+    });
+    const highGradient = deriveLaserCymaticOpticalProbe({
+      ...REINFORCED_CAUSTIC_TONE,
+      signedCausticDensity: 0.14,
+      bodyContribution: 0.02,
+      normalDotMeasurement: 0,
+      gradientPresence: 0.9,
+      ridgeConcentration: 0.72,
+    });
+
+    expect(flatShell.opticalSlopeAuthority).toBe(0);
+    expect(flatShell.opticalFocusAuthority).toBeLessThan(
+      highGradient.opticalFocusAuthority,
+    );
+    expect(flatShell.laserCausticRadiance).toBeLessThan(
+      highGradient.laserCausticRadiance,
+    );
+  });
+
+  it("caps low-focus body contribution against signed caustic support", () => {
+    const broadSupport = deriveLaserCymaticOpticalProbe({
+      ...BROAD_CONTOUR_LEAK,
+      signedCausticDensity: 0.12,
+      bodyContribution: 0.1,
+      normalDotMeasurement: 0.86,
+      gradientPresence: 0.06,
+      ridgeConcentration: 0.08,
+    });
+
+    expect(broadSupport.opticalNegativeSpaceGate).toBeLessThan(0.1);
+    expect(
+      broadSupport.opticalBodyContribution /
+        Math.max(broadSupport.signedCausticDensity, 1e-4),
+    ).toBeLessThanOrEqual(OPTICAL_LOW_FOCUS_BODY_RATIO_MAX);
+    expect(broadSupport.opticalBodyContribution).toBeLessThan(
+      broadSupport.bodyContribution,
+    );
+  });
+
+  it("preserves signed cancellation in optical radiance without double gating", () => {
+    const reinforcing = deriveLaserCymaticOpticalProbe(REINFORCED_CAUSTIC_TONE);
+    const halfSigned = deriveLaserCymaticOpticalProbe({
+      ...REINFORCED_CAUSTIC_TONE,
+      signedRadianceAuthority: 0.5,
+    });
+    const canceled = deriveLaserCymaticOpticalProbe(CANCELED_CAUSTIC_TONE);
+    const singleGateReference = reinforcing.laserCausticRadiance * 0.5;
+    const doubleGateReference = reinforcing.laserCausticRadiance * 0.25;
+    const cancellationDrop =
+      (reinforcing.localLuminance - canceled.localLuminance) /
+      reinforcing.localLuminance;
+
+    expect(
+      Math.abs(halfSigned.laserCausticRadiance - singleGateReference) /
+        singleGateReference,
+    ).toBeLessThan(0.08);
+    expect(
+      Math.abs(halfSigned.laserCausticRadiance - singleGateReference),
+    ).toBeLessThan(
+      Math.abs(halfSigned.laserCausticRadiance - doubleGateReference),
+    );
+    expect(cancellationDrop).toBeGreaterThanOrEqual(
+      CANCELLATION_LUMINANCE_DROP_MIN,
+    );
+  });
+
+  it("keeps optical color and fringe downstream of physical density", () => {
+    const uncolored = deriveLaserCymaticOpticalProbe({
+      ...DENSE_POLYPHONIC_PROBE,
+      colorWeight: 0,
+    });
+    const colored = deriveLaserCymaticOpticalProbe({
+      ...DENSE_POLYPHONIC_PROBE,
+      colorWeight: 1,
+    });
+
+    expect(colored.colorConfidence).toBeGreaterThan(uncolored.colorConfidence);
+    expect(colored.opticalFringeWeight).toBeGreaterThanOrEqual(0);
+    expect(
+      Math.abs(colored.physicalDensity - uncolored.physicalDensity),
+    ).toBeLessThan(OPTICAL_COLOR_DENSITY_DELTA_MAX);
+  });
+
   it("promotes reinforced caustic tone structure above body fill", () => {
     const probe = deriveCausticMaterialTransferProbe(REINFORCED_CAUSTIC_TONE);
 

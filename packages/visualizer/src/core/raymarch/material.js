@@ -13,6 +13,7 @@ import {
   fract,
   length,
   max,
+  min,
   mix,
   modelWorldMatrixInverse,
   screenCoordinate,
@@ -87,6 +88,17 @@ import {
   LOW_MID_BAND_WEIGHT,
   MODAL_CROWDING_ACCUMULATION_COMPRESSION,
   MODAL_CROWDING_BODY_COMPRESSION,
+  OPTICAL_BODY_SUPPRESSION_MAX,
+  OPTICAL_FOCUS_POWER,
+  OPTICAL_FRINGE_MIX_MAX,
+  OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX,
+  OPTICAL_LASER_GAIN,
+  OPTICAL_LOW_FOCUS_BODY_RATIO_MAX,
+  OPTICAL_RIDGE_GAIN,
+  OPTICAL_SLOPE_GAIN,
+  OPTICAL_SLOPE_POWER,
+  OPTICAL_SPACE_GATE_END,
+  OPTICAL_SPACE_GATE_START,
   SIGNED_PHASE_OVERLAY_FIELD_GAIN,
   SIGNED_PHASE_OVERLAY_FIELD_LIMIT,
   SIGNED_PHASE_OVERLAY_GRADIENT_GAIN,
@@ -980,6 +992,62 @@ function createScatteringNode({
       const adjustedBodyContribution = adjustedBodyDensity
         .mul(float(CAUSTIC_BODY_MIX_MAX))
         .mul(accumulationCompression);
+      const opticalSlopeAuthority = clamp(
+        float(1.0)
+          .sub(abs(dot(gradientNormal, viewDirLocal.negate())))
+          .pow(float(OPTICAL_SLOPE_POWER))
+          .mul(structure),
+        float(0.0),
+        float(1.0),
+      );
+      const opticalFocusAuthority = clamp(
+        causticRidgeAuthority
+          .mul(
+            float(1.0).add(
+              opticalSlopeAuthority.mul(float(OPTICAL_SLOPE_GAIN)),
+            ),
+          )
+          .mul(
+            float(1.0).add(
+              ridgeConcentration.mul(float(OPTICAL_RIDGE_GAIN)),
+            ),
+          )
+          .mul(float(0.65).add(structure.mul(float(0.35)))),
+        float(0.0),
+        float(1.0),
+      );
+      const opticalFocus = /** @type {any} */ (opticalFocusAuthority).pow(
+        float(OPTICAL_FOCUS_POWER),
+      );
+      const opticalNegativeSpaceGate = smoothstep(
+        float(OPTICAL_SPACE_GATE_START),
+        float(OPTICAL_SPACE_GATE_END),
+        /** @type {any} */ (opticalFocus.mul(causticVisibility)),
+      );
+      const opticalBodyAttenuation = float(1.0).sub(
+        float(OPTICAL_BODY_SUPPRESSION_MAX).mul(
+          float(1.0).sub(opticalNegativeSpaceGate),
+        ),
+      );
+      const opticalBodyRatioMax = mix(
+        float(OPTICAL_LOW_FOCUS_BODY_RATIO_MAX),
+        float(OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX),
+        opticalNegativeSpaceGate,
+      );
+      const laserCausticRadiance = rolledCausticDensity.mul(
+        float(1.0).add(opticalFocus.mul(float(OPTICAL_LASER_GAIN))),
+      );
+      const opticalBodyContribution = min(
+        adjustedBodyContribution.mul(opticalBodyAttenuation),
+        rolledCausticDensity.mul(opticalBodyRatioMax),
+      );
+      const opticalFringeWeight = clamp(
+        opticalFocus
+          .mul(opticalSlopeAuthority)
+          .mul(float(OPTICAL_FRINGE_MIX_MAX)),
+        float(0.0),
+        float(1.0),
+      );
       const hotCoreBodyCrowdingGate = smoothstep(
         float(0.28),
         float(1.1),
@@ -1008,8 +1076,8 @@ function createScatteringNode({
         hotCoreCrowding.mul(float(HOT_CORE_CROWDING_THRESHOLD_LIFT)),
       );
       const density = clamp(
-        rolledCausticDensity
-          .add(adjustedBodyContribution)
+        laserCausticRadiance
+          .add(opticalBodyContribution)
           .mul(edgeFade)
           .mul(uDensityAbsorption)
           .mul(densityMod)
@@ -1136,14 +1204,16 @@ function createScatteringNode({
         localHotCoreStart,
         float(HOT_CORE_END),
         /** @type {any} */ (
-          rolledCausticDensity
+          laserCausticRadiance
             .mul(contourMix.mul(float(0.14)).add(float(0.76)))
+            .mul(float(0.72).add(opticalFocus.mul(float(0.28))))
             .add(highlightMask.mul(float(0.12)))
             .add(uTransientEnergy.mul(float(0.08)))
             .div(
               float(1.0).add(
-                rolledCausticDensity
+                laserCausticRadiance
                   .mul(contourMix.mul(float(0.14)).add(float(0.76)))
+                  .mul(float(0.72).add(opticalFocus.mul(float(0.28))))
                   .add(highlightMask.mul(float(0.12)))
                   .add(uTransientEnergy.mul(float(0.08)))
                   .mul(float(0.22)),
@@ -1185,16 +1255,16 @@ function createScatteringNode({
         ),
       );
       const holographicColorMix = clamp(
-        holographicFresnel.mul(
-          float(0.35).add(dynamicHolographicShift.mul(float(0.65))),
-        ),
+        holographicFresnel
+          .mul(float(0.35).add(dynamicHolographicShift.mul(float(0.65))))
+          .add(opticalFringeWeight),
         float(0.0),
         float(1.0),
       );
       const holographicEmissionLift = clamp(
         holographicFresnel.mul(
           float(0.12).add(dynamicHolographicShift.mul(float(0.18))),
-        ),
+        ).mul(float(0.72).add(opticalFocus.mul(float(0.28)))),
         float(0.0),
         float(1.0),
       );

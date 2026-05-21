@@ -92,6 +92,19 @@ export const CAUSTIC_VISIBILITY_FLOOR = 0.08;
 export const CANCELLATION_LUMINANCE_DROP_MIN = 0.65;
 export const CAUSTIC_BROAD_CONTOUR_LEAK_MAX = 0.015;
 export const CAUSTIC_COLOR_DENSITY_DELTA_MAX = 1e-6;
+export const OPTICAL_SLOPE_POWER = 1.35;
+export const OPTICAL_SLOPE_GAIN = 0.42;
+export const OPTICAL_RIDGE_GAIN = 0.36;
+export const OPTICAL_FOCUS_POWER = 1.55;
+export const OPTICAL_SPACE_GATE_START = 0.035;
+export const OPTICAL_SPACE_GATE_END = 0.18;
+export const OPTICAL_BODY_SUPPRESSION_MAX = 0.48;
+export const OPTICAL_LOW_FOCUS_BODY_RATIO_MAX = 0.18;
+export const OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX = 0.35;
+export const OPTICAL_LASER_GAIN = 1.15;
+export const OPTICAL_FRINGE_MIX_MAX = 0.18;
+export const OPTICAL_COLOR_DENSITY_DELTA_MAX = 1e-6;
+export const OPTICAL_RECTANGULAR_STARTUP_IMPORT_DELTA_MAX = 0;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -111,6 +124,10 @@ function smoothstep(edge0, edge1, x) {
   }
   const t = clamp01((x - edge0) / (edge1 - edge0));
   return t * t * (3 - 2 * t);
+}
+
+function safeFinite(value, fallback = 0) {
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function deriveNodeBand(fieldAbs, threshold) {
@@ -333,6 +350,153 @@ export function deriveCausticMaterialTransferProbe({
     observationAnchor,
     colorConfidence,
     emissionGain,
+    localLuminance,
+  };
+}
+
+export function deriveOpticalSlopeAuthority({
+  normalDotMeasurement = 1,
+  gradientPresence = 0,
+  slopePower = OPTICAL_SLOPE_POWER,
+} = {}) {
+  const alignment = clamp01(Math.abs(safeFinite(normalDotMeasurement, 1)));
+  const presence = clamp01(gradientPresence);
+  const power = Math.max(0.01, safeFinite(slopePower, OPTICAL_SLOPE_POWER));
+
+  return presence * Math.pow(1 - alignment, power);
+}
+
+export function deriveOpticalFocusAuthority({
+  causticRidgeAuthority = 0,
+  opticalSlopeAuthority = 0,
+  ridgeConcentration = 0,
+  structure = 0,
+  slopeGain = OPTICAL_SLOPE_GAIN,
+  ridgeGain = OPTICAL_RIDGE_GAIN,
+} = {}) {
+  return clamp01(
+    clamp01(causticRidgeAuthority) *
+      (1 + Math.max(0, safeFinite(slopeGain, OPTICAL_SLOPE_GAIN)) *
+        clamp01(opticalSlopeAuthority)) *
+      (1 + Math.max(0, safeFinite(ridgeGain, OPTICAL_RIDGE_GAIN)) *
+        clamp01(ridgeConcentration)) *
+      (0.65 + 0.35 * clamp01(structure)),
+  );
+}
+
+export function deriveOpticalNegativeSpaceGate({
+  opticalFocus = 0,
+  causticVisibility = 0,
+  gateStart = OPTICAL_SPACE_GATE_START,
+  gateEnd = OPTICAL_SPACE_GATE_END,
+} = {}) {
+  return smoothstep(
+    safeFinite(gateStart, OPTICAL_SPACE_GATE_START),
+    safeFinite(gateEnd, OPTICAL_SPACE_GATE_END),
+    clamp01(opticalFocus) * clamp01(causticVisibility),
+  );
+}
+
+export function deriveLaserCausticRadiance({
+  signedCausticDensity = 0,
+  opticalFocus = 0,
+  laserGain = OPTICAL_LASER_GAIN,
+} = {}) {
+  return (
+    Math.max(0, safeFinite(signedCausticDensity, 0)) *
+    (1 + Math.max(0, safeFinite(laserGain, OPTICAL_LASER_GAIN)) *
+      clamp01(opticalFocus))
+  );
+}
+
+export function deriveLaserCymaticOpticalProbe({
+  normalDotMeasurement = 1,
+  gradientPresence = null,
+  ridgeConcentration: ridgeConcentrationOverride = null,
+  signedCausticDensity: signedCausticDensityOverride = null,
+  bodyContribution: bodyContributionOverride = null,
+  structure = 0,
+  ...causticInputs
+} = {}) {
+  const caustic = deriveCausticMaterialTransferProbe({
+    ...causticInputs,
+    structure,
+  });
+  const signedCausticDensity =
+    signedCausticDensityOverride == null
+      ? caustic.causticDensity
+      : Math.max(0, safeFinite(signedCausticDensityOverride, 0));
+  const bodyContribution =
+    bodyContributionOverride == null
+      ? caustic.bodyContribution
+      : Math.max(0, safeFinite(bodyContributionOverride, 0));
+  const ridgeConcentration =
+    ridgeConcentrationOverride == null
+      ? caustic.ridgeConcentration
+      : clamp01(ridgeConcentrationOverride);
+  const gradientPresenceGate =
+    gradientPresence == null
+      ? clamp01(structure)
+      : clamp01(gradientPresence);
+  const opticalSlopeAuthority = deriveOpticalSlopeAuthority({
+    normalDotMeasurement,
+    gradientPresence: gradientPresenceGate,
+  });
+  const opticalFocusAuthority = deriveOpticalFocusAuthority({
+    causticRidgeAuthority: caustic.causticRidgeAuthority,
+    opticalSlopeAuthority,
+    ridgeConcentration,
+    structure,
+  });
+  const opticalFocus = Math.pow(
+    opticalFocusAuthority,
+    OPTICAL_FOCUS_POWER,
+  );
+  const opticalNegativeSpaceGate = deriveOpticalNegativeSpaceGate({
+    opticalFocus,
+    causticVisibility: caustic.causticVisibility,
+  });
+  const bodyAttenuation =
+    1 - OPTICAL_BODY_SUPPRESSION_MAX * (1 - opticalNegativeSpaceGate);
+  const opticalBodyRatioMax = mix(
+    OPTICAL_LOW_FOCUS_BODY_RATIO_MAX,
+    OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX,
+    opticalNegativeSpaceGate,
+  );
+  const opticalBodyContribution = Math.min(
+    bodyContribution * bodyAttenuation,
+    signedCausticDensity * opticalBodyRatioMax,
+  );
+  const laserCausticRadiance = deriveLaserCausticRadiance({
+    signedCausticDensity,
+    opticalFocus,
+  });
+  const physicalDensity = laserCausticRadiance + opticalBodyContribution;
+  const opticalFringeWeight = clamp01(
+    opticalFocus * opticalSlopeAuthority * OPTICAL_FRINGE_MIX_MAX,
+  );
+  const localLuminance =
+    physicalDensity *
+    caustic.emissionGain *
+    (0.72 + caustic.colorConfidence * 0.08);
+
+  return {
+    ...caustic,
+    baseLocalDensity: caustic.localDensity,
+    baseLocalLuminance: caustic.localLuminance,
+    signedCausticDensity,
+    bodyContribution,
+    ridgeConcentration,
+    opticalSlopeAuthority,
+    opticalFocusAuthority,
+    opticalFocus,
+    opticalNegativeSpaceGate,
+    opticalBodyRatioMax,
+    opticalBodyContribution,
+    laserCausticRadiance,
+    opticalFringeWeight,
+    physicalDensity,
+    localDensity: physicalDensity,
     localLuminance,
   };
 }

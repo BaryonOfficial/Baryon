@@ -2,6 +2,21 @@ import { describe, expect, it } from "vitest";
 import { BUILT_IN_VISUAL_PRESETS } from "./visualPresets.js";
 
 describe("built-in visual presets", () => {
+  it("publishes baryon-4 as the optical measurement acceptance preset", () => {
+    const preset = BUILT_IN_VISUAL_PRESETS.find(
+      (entry) => entry.name === "baryon-4",
+    );
+
+    expect(preset).toBeTruthy();
+    expect(preset?.builtIn).toBe(true);
+    expect(preset?.controls).toMatchObject({
+      colorMode: "spectral",
+      bloomEnabled: true,
+    });
+    expect(preset?.controls.zeroPointPrecision).toBeLessThanOrEqual(0.02);
+    expect(preset?.controls.raymarchSteps).toBeGreaterThanOrEqual(96);
+  });
+
   it("publishes the selectable built-in visual presets in order", () => {
     expect(BUILT_IN_VISUAL_PRESETS).toStrictEqual([
       {
@@ -57,7 +72,7 @@ describe("built-in visual presets", () => {
         },
       },
       {
-        name: "codex-1",
+        name: "baryon-4",
         builtIn: true,
         controls: {
           raymarchSteps: 104,

@@ -256,6 +256,82 @@ describe("raymarch volume material", () => {
     );
   });
 
+  it("routes physical density through the optical laser caustic readout", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const ridgeConcentrationStart = expectSourceIndex(
+      source,
+      "const ridgeConcentration =",
+    );
+    const opticalSlopeStart = expectSourceIndex(
+      source,
+      "const opticalSlopeAuthority =",
+    );
+    const opticalFocusStart = expectSourceIndex(
+      source,
+      "const opticalFocusAuthority =",
+    );
+    const laserRadianceStart = expectSourceIndex(
+      source,
+      "const laserCausticRadiance =",
+    );
+    const opticalBodyStart = expectSourceIndex(
+      source,
+      "const opticalBodyContribution =",
+    );
+    const densityStart = expectSourceIndex(source, "const density = clamp(");
+    const laserRadianceBlock = source.slice(
+      laserRadianceStart,
+      opticalBodyStart,
+    );
+    const densityBlock = source.slice(densityStart, densityStart + 420);
+
+    expect(opticalSlopeStart).toBeGreaterThan(ridgeConcentrationStart);
+    expect(opticalFocusStart).toBeGreaterThan(opticalSlopeStart);
+    expect(laserRadianceStart).toBeGreaterThan(opticalFocusStart);
+    expect(opticalBodyStart).toBeGreaterThan(laserRadianceStart);
+    expect(densityStart).toBeGreaterThan(opticalBodyStart);
+    expect(laserRadianceBlock).not.toContain("signedRadianceAuthority");
+    expect(densityBlock).toContain("laserCausticRadiance");
+    expect(densityBlock).toContain(".add(opticalBodyContribution)");
+    expect(densityBlock).not.toContain(
+      "rolledCausticDensity\n          .add(adjustedBodyContribution)",
+    );
+  });
+
+  it("requires gradient presence before optical slope can brighten a sample", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const opticalSlopeStart = expectSourceIndex(
+      source,
+      "const opticalSlopeAuthority =",
+    );
+    const opticalFocusStart = expectSourceIndex(
+      source,
+      "const opticalFocusAuthority =",
+    );
+    const opticalSlopeBlock = source.slice(opticalSlopeStart, opticalFocusStart);
+
+    expect(opticalSlopeBlock).toContain(".mul(structure)");
+    expect(opticalSlopeBlock).toContain("OPTICAL_SLOPE_POWER");
+    expect(opticalSlopeBlock).toContain("dot(gradientNormal");
+  });
+
+  it("keeps the optical measurement pass off the spherical startup path", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("sphericalCavityModes");
+    expect(source).not.toContain("sphericalModeFamily");
+    expect(source).not.toContain("sphericalModeFamilyNode");
+  });
+
   it("keeps broad body authority out of nodal radiance lanes", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),

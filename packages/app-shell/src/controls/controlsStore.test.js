@@ -11,7 +11,7 @@ import { createControlsStore } from "./controlsStore.js";
 
 const CALIBRATED_CLARITY_NAME = "Calibrated Clarity";
 const STAGE_CONTAINMENT_NAME = "Stage Containment";
-const CODEX_1_NAME = "codex-1";
+const BARYON_4_NAME = "baryon-4";
 
 function seedStorage({ controls = null, presets = null } = {}) {
   window.localStorage.clear();
@@ -65,7 +65,7 @@ describe("createControlsStore", () => {
         builtIn: true,
       }),
       expect.objectContaining({
-        name: CODEX_1_NAME,
+        name: BARYON_4_NAME,
         builtIn: true,
       }),
       {
@@ -196,14 +196,14 @@ describe("createControlsStore", () => {
     expect(storedPresets).toBeNull();
   });
 
-  it("exposes codex-1 as a caustic-clarity preset without writing it to storage", () => {
+  it("exposes baryon-4 as the optical measurement acceptance preset", () => {
     const store = createControlsStore();
 
-    expect(store.getSnapshot().presets[2]?.name).toBe(CODEX_1_NAME);
+    expect(store.getSnapshot().presets[2]?.name).toBe(BARYON_4_NAME);
 
-    store.loadPreset(CODEX_1_NAME);
+    store.loadPreset(BARYON_4_NAME);
 
-    expect(store.getSnapshot().selectedPresetName).toBe(CODEX_1_NAME);
+    expect(store.getSnapshot().selectedPresetName).toBe(BARYON_4_NAME);
     expect(store.controlsRef.current.raymarchSteps).toBe(104);
     expect(store.controlsRef.current.zeroPointPrecision).toBe(0.018);
     expect(store.controlsRef.current.structureMin).toBe(0.38);

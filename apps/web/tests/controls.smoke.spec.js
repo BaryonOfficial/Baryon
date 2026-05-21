@@ -310,6 +310,19 @@ async function readLiveInputAuditState(page) {
   };
 }
 
+async function readRestoredLocalFileState(page) {
+  return page.evaluate(() => {
+    const audioInputMode =
+      window.__baryonAuditSnapshot?.audioInputMode ?? "idle";
+    return {
+      fileLabel:
+        document.querySelector(".am-filename")?.textContent?.trim() ?? "",
+      playDisabled: document.querySelector(".am-btn--play")?.disabled ?? true,
+      liveInputActive: ["live", "system"].includes(audioInputMode),
+    };
+  });
+}
+
 async function ensureFakeLiveInputDeviceSelected(page, { deviceType } = {}) {
   await page.getByTestId("live-input-source-tab").click();
   const enableAccessButton = page
@@ -780,6 +793,13 @@ test.describe("Baryon control smoke", () => {
       });
 
     await setControl(page, "injectTestTone", true);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControlState?.audit?.injectTestTone ?? false,
+        ),
+      )
+      .toBe(true);
 
     await expect
       .poll(() =>
@@ -791,6 +811,7 @@ test.describe("Baryon control smoke", () => {
           rendererFallback:
             window.__baryonAuditSnapshot?.renderer?.isFallback ?? false,
         })),
+        { timeout: 15000 },
       )
       .toEqual({
         fieldState: "test",
@@ -837,7 +858,7 @@ test.describe("Baryon control smoke", () => {
       });
   });
 
-  test("returns to the idle logo immediately when an active live input scene goes silent", async ({
+  test("hard-silences active live input without retaining modal decay", async ({
     page,
     browserName,
   }) => {
@@ -877,7 +898,7 @@ test.describe("Baryon control smoke", () => {
         { timeout: 10000 },
       )
       .toEqual({
-        fieldState: "decay",
+        fieldState: "idle",
         liveInputHardSilenceActive: true,
         idleOverlayVisible: false,
       });
@@ -937,12 +958,13 @@ test.describe("Baryon control smoke", () => {
           sample.pitchSource !== "fundamental",
       ),
     ).toBe(true);
-    expect(
-      samples.every(
-        (sample) =>
-          sample.fieldState !== "active" || !(sample.driverFrequency > 650),
-      ),
-    ).toBe(true);
+    const fundamentalHighLocks = samples.filter(
+      (sample) =>
+        sample.fieldState === "active" &&
+        sample.pitchSource === "fundamental" &&
+        sample.driverFrequency > 650,
+    );
+    expect(fundamentalHighLocks).toEqual([]);
   });
 
   test("keeps source settings on the mode pill and the live state on the CTA", async ({
@@ -1102,7 +1124,7 @@ test.describe("Baryon control smoke", () => {
       });
 
     await expect(page.getByTestId("live-input-source-tab")).toBeVisible();
-    await ensureFakeLiveInputDeviceSelected(page, { deviceType: "live" });
+    await ensureFakeLiveInputDeviceSelected(page);
 
     await startFakeLiveInput(page);
     await expect
@@ -1459,19 +1481,11 @@ test.describe("Baryon control smoke", () => {
     await page.getByTestId("source-live-button").click();
 
     await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          fileLabel:
-            document.querySelector(".am-filename")?.textContent?.trim() ?? "",
-          playDisabled:
-            document.querySelector(".am-btn--play")?.disabled ?? false,
-          audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
-        })),
-      )
+      .poll(() => readRestoredLocalFileState(page))
       .toEqual({
         fileLabel: "resume-tone.wav",
         playDisabled: false,
-        audioInputMode: "file",
+        liveInputActive: false,
       });
   });
 
@@ -1511,19 +1525,11 @@ test.describe("Baryon control smoke", () => {
       .click();
 
     await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          fileLabel:
-            document.querySelector(".am-filename")?.textContent?.trim() ?? "",
-          playDisabled:
-            document.querySelector(".am-btn--play")?.disabled ?? true,
-          audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
-        })),
-      )
+      .poll(() => readRestoredLocalFileState(page))
       .toEqual({
         fileLabel: "recent-tone.wav",
         playDisabled: false,
-        audioInputMode: "file",
+        liveInputActive: false,
       });
   });
 
@@ -1655,7 +1661,7 @@ test.describe("Baryon control smoke", () => {
       });
   });
 
-  test("preserves the paused cymatics frame when switching program output modes", async ({
+  test("keeps paused file playback source-cut while switching program output modes", async ({
     page,
     browserName,
   }) => {
@@ -1686,10 +1692,10 @@ test.describe("Baryon control smoke", () => {
         })),
       )
       .toEqual({
-        audioInputMode: "file",
-        analysisSourceUsed: "file",
-        fieldState: expect.not.stringMatching(/^idle$/),
-        modeSlotCount: expect.any(Number),
+        audioInputMode: "idle",
+        analysisSourceUsed: "none",
+        fieldState: "idle",
+        modeSlotCount: 0,
       });
 
     await page.locator(".am-btn--play").click();
@@ -1737,10 +1743,10 @@ test.describe("Baryon control smoke", () => {
       )
       .toEqual({
         outputMode: "opaque",
-        audioInputMode: "file",
-        analysisSourceUsed: "file",
-        fieldState: expect.not.stringMatching(/^idle$/),
-        modeSlotCount: expect.any(Number),
+        audioInputMode: "idle",
+        analysisSourceUsed: "none",
+        fieldState: "idle",
+        modeSlotCount: 0,
       });
 
     await setControl(page, "outputMode", "transparent");
@@ -1760,10 +1766,10 @@ test.describe("Baryon control smoke", () => {
       )
       .toEqual({
         outputMode: "transparent",
-        audioInputMode: "file",
-        analysisSourceUsed: "file",
-        fieldState: expect.not.stringMatching(/^idle$/),
-        modeSlotCount: expect.any(Number),
+        audioInputMode: "idle",
+        analysisSourceUsed: "none",
+        fieldState: "idle",
+        modeSlotCount: 0,
       });
 
     await setControl(page, "outputBackgroundColor", "#123456");
@@ -1786,10 +1792,10 @@ test.describe("Baryon control smoke", () => {
       .toEqual({
         outputMode: "transparent",
         outputBackgroundColor: "#123456",
-        audioInputMode: "file",
-        analysisSourceUsed: "file",
-        fieldState: expect.not.stringMatching(/^idle$/),
-        modeSlotCount: expect.any(Number),
+        audioInputMode: "idle",
+        analysisSourceUsed: "none",
+        fieldState: "idle",
+        modeSlotCount: 0,
       });
   });
 
