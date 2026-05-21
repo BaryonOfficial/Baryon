@@ -37,6 +37,7 @@ import {
   createBaryonRenderer,
   WEBGPU_RENDERER_INIT_ERROR,
 } from "./rendererDiagnostics.js";
+import { DEVTOOLS_ENABLED } from "../devtools/config.js";
 import { useFullscreen } from "./hooks/useFullScreenToggle.jsx";
 import { useBrowserSupportState } from "./hooks/useBrowserSupportState.js";
 import { useRendererModeState } from "./hooks/useRendererModeState.js";
@@ -156,6 +157,7 @@ const ThreeScene = ({
   const [appliedCameraViewPreset, setAppliedCameraViewPreset] = useState(
     CAMERA_VIEW_PRESETS.topDown,
   );
+  const [cameraPoseOverride, setCameraPoseOverride] = useState(null);
   const [cameraResetNonce, setCameraResetNonce] = useState(0);
   const [frameFieldState, setFrameFieldState] = useState("idle");
   const [viewportWidth, setViewportWidth] = useState(() =>
@@ -210,8 +212,9 @@ const ThreeScene = ({
     cameraViewPreset: appliedCameraViewPreset,
   });
   const effectiveCameraPose = useMemo(
-    () => resolvePresetCameraPose(effectiveCameraViewPreset),
-    [effectiveCameraViewPreset],
+    () =>
+      cameraPoseOverride ?? resolvePresetCameraPose(effectiveCameraViewPreset),
+    [cameraPoseOverride, effectiveCameraViewPreset],
   );
   const cameraConfig = /** @type {{
     position: [number, number, number],
@@ -319,6 +322,7 @@ const ThreeScene = ({
 
   const applyCameraPreset = (preset) => {
     const command = createCameraPresetCommand(preset);
+    setCameraPoseOverride(null);
     setAppliedCameraViewPreset(preset);
     setCameraResetNonce((current) => current + 1);
     dispatchCameraControlCommand(command);
@@ -329,9 +333,30 @@ const ThreeScene = ({
       effectiveCameraPose,
       cameraControlState.activePreset ?? effectiveCameraViewPreset,
     );
+    setCameraPoseOverride(null);
     setCameraResetNonce((current) => current + 1);
     dispatchCameraControlCommand(command);
   };
+
+  useEffect(() => {
+    if (!DEVTOOLS_ENABLED || typeof window === "undefined") {
+      return undefined;
+    }
+
+    window.__baryonCameraControls = {
+      setPreset(preset) {
+        applyCameraPreset(preset);
+      },
+      setPose(cameraPose) {
+        setCameraPoseOverride(cameraPose);
+        setCameraResetNonce((current) => current + 1);
+      },
+    };
+
+    return () => {
+      delete window.__baryonCameraControls;
+    };
+  });
 
   const handleFrameState = useCallback(
     (state) => {

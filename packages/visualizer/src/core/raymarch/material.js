@@ -99,6 +99,27 @@ import {
   OPTICAL_SLOPE_POWER,
   OPTICAL_SPACE_GATE_END,
   OPTICAL_SPACE_GATE_START,
+  PHOTOGRAPHIC_APERTURE_FADE_END,
+  PHOTOGRAPHIC_APERTURE_FADE_START,
+  PHOTOGRAPHIC_BLACKFIELD_GATE_END,
+  PHOTOGRAPHIC_BLACKFIELD_GATE_START,
+  PHOTOGRAPHIC_DARK_BODY_RATIO,
+  PHOTOGRAPHIC_DARK_CAUSTIC_RATIO,
+  PHOTOGRAPHIC_FOCUS_POWER,
+  PHOTOGRAPHIC_HIGH_FOCUS_BODY_RATIO_MAX,
+  PHOTOGRAPHIC_LASER_GAIN,
+  PHOTOGRAPHIC_LOW_FOCUS_BODY_RATIO_MAX,
+  PHOTOGRAPHIC_SHELL_FOCUS_GAIN,
+  PHOTOGRAPHIC_SHELL_INNER_END,
+  PHOTOGRAPHIC_SHELL_INNER_FADE_END,
+  PHOTOGRAPHIC_SHELL_INNER_FADE_START,
+  PHOTOGRAPHIC_SHELL_INNER_START,
+  PHOTOGRAPHIC_SHELL_RIM_END,
+  PHOTOGRAPHIC_SHELL_RIM_FADE_END,
+  PHOTOGRAPHIC_SHELL_RIM_FADE_START,
+  PHOTOGRAPHIC_SHELL_RIM_START,
+  PHOTOGRAPHIC_SHELL_SUPPRESSION_END,
+  PHOTOGRAPHIC_SHELL_SUPPRESSION_START,
   SIGNED_PHASE_OVERLAY_FIELD_GAIN,
   SIGNED_PHASE_OVERLAY_FIELD_LIMIT,
   SIGNED_PHASE_OVERLAY_GRADIENT_GAIN,
@@ -1048,6 +1069,107 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
+      const innerLensAuthority = smoothstep(
+        float(PHOTOGRAPHIC_SHELL_INNER_START),
+        float(PHOTOGRAPHIC_SHELL_INNER_END),
+        radialDistance,
+      )
+        .mul(
+          float(1.0).sub(
+            smoothstep(
+              float(PHOTOGRAPHIC_SHELL_INNER_FADE_START),
+              float(PHOTOGRAPHIC_SHELL_INNER_FADE_END),
+              radialDistance,
+            ),
+          ),
+        )
+        .mul(shellFocus);
+      const rimShellAuthority = smoothstep(
+        float(PHOTOGRAPHIC_SHELL_RIM_START),
+        float(PHOTOGRAPHIC_SHELL_RIM_END),
+        radialDistance,
+      )
+        .mul(
+          float(1.0).sub(
+            smoothstep(
+              float(PHOTOGRAPHIC_SHELL_RIM_FADE_START),
+              float(PHOTOGRAPHIC_SHELL_RIM_FADE_END),
+              radialDistance,
+            ),
+          ),
+        )
+        .mul(max(contourCore, shellFocus.mul(float(0.5))));
+      const apertureAuthority = float(1.0)
+        .sub(
+          smoothstep(
+            float(PHOTOGRAPHIC_APERTURE_FADE_START),
+            float(PHOTOGRAPHIC_APERTURE_FADE_END),
+            radialDistance,
+          ),
+        )
+        .mul(max(contourCore, structure.mul(float(0.45))));
+      const shellSuppression = smoothstep(
+        float(PHOTOGRAPHIC_SHELL_SUPPRESSION_START),
+        float(PHOTOGRAPHIC_SHELL_SUPPRESSION_END),
+        radialDistance,
+      );
+      const photographicShellAuthority = clamp(
+        innerLensAuthority
+          .mul(float(0.46))
+          .add(rimShellAuthority.mul(float(0.36)))
+          .add(apertureAuthority.mul(float(0.24))),
+        float(0.0),
+        float(1.0),
+      )
+        .mul(float(1.0).sub(shellSuppression))
+        .mul(edgeFade)
+        .mul(activeMask);
+      const photographicFocusAuthority = clamp(
+        opticalFocusAuthority.mul(
+          float(1.0).add(
+            photographicShellAuthority.mul(float(PHOTOGRAPHIC_SHELL_FOCUS_GAIN)),
+          ),
+        ),
+        float(0.0),
+        float(1.0),
+      );
+      const photographicFocus = /** @type {any} */ (
+        photographicFocusAuthority
+      ).pow(float(PHOTOGRAPHIC_FOCUS_POWER));
+      const blackfieldGate = smoothstep(
+        float(PHOTOGRAPHIC_BLACKFIELD_GATE_START),
+        float(PHOTOGRAPHIC_BLACKFIELD_GATE_END),
+        /** @type {any} */ (photographicFocus.mul(causticVisibility)),
+      );
+      const photographicBodyAttenuation = mix(
+        float(PHOTOGRAPHIC_DARK_BODY_RATIO),
+        float(1.0),
+        blackfieldGate,
+      );
+      const photographicBodyRatioMax = mix(
+        float(PHOTOGRAPHIC_LOW_FOCUS_BODY_RATIO_MAX),
+        float(PHOTOGRAPHIC_HIGH_FOCUS_BODY_RATIO_MAX),
+        blackfieldGate,
+      );
+      const photographicBodyContribution = min(
+        opticalBodyContribution.mul(photographicBodyAttenuation),
+        rolledCausticDensity.mul(photographicBodyRatioMax),
+      );
+      const photographicRadianceScale = mix(
+        float(PHOTOGRAPHIC_DARK_CAUSTIC_RATIO),
+        float(1.0).add(photographicFocus.mul(float(PHOTOGRAPHIC_LASER_GAIN))),
+        blackfieldGate,
+      );
+      const photographicLaserCausticRadiance = laserCausticRadiance.mul(
+        photographicRadianceScale,
+      );
+      const photographicFringeWeight = clamp(
+        opticalFringeWeight.add(
+          photographicFocus.mul(causticVisibility).mul(float(0.035)),
+        ),
+        float(0.0),
+        float(1.0),
+      );
       const hotCoreBodyCrowdingGate = smoothstep(
         float(0.28),
         float(1.1),
@@ -1076,8 +1198,8 @@ function createScatteringNode({
         hotCoreCrowding.mul(float(HOT_CORE_CROWDING_THRESHOLD_LIFT)),
       );
       const density = clamp(
-        laserCausticRadiance
-          .add(opticalBodyContribution)
+        photographicLaserCausticRadiance
+          .add(photographicBodyContribution)
           .mul(edgeFade)
           .mul(uDensityAbsorption)
           .mul(densityMod)
@@ -1204,16 +1326,16 @@ function createScatteringNode({
         localHotCoreStart,
         float(HOT_CORE_END),
         /** @type {any} */ (
-          laserCausticRadiance
+          photographicLaserCausticRadiance
             .mul(contourMix.mul(float(0.14)).add(float(0.76)))
-            .mul(float(0.72).add(opticalFocus.mul(float(0.28))))
+            .mul(float(0.72).add(photographicFocus.mul(float(0.28))))
             .add(highlightMask.mul(float(0.12)))
             .add(uTransientEnergy.mul(float(0.08)))
             .div(
               float(1.0).add(
-                laserCausticRadiance
+                photographicLaserCausticRadiance
                   .mul(contourMix.mul(float(0.14)).add(float(0.76)))
-                  .mul(float(0.72).add(opticalFocus.mul(float(0.28))))
+                  .mul(float(0.72).add(photographicFocus.mul(float(0.28))))
                   .add(highlightMask.mul(float(0.12)))
                   .add(uTransientEnergy.mul(float(0.08)))
                   .mul(float(0.22)),
@@ -1257,14 +1379,14 @@ function createScatteringNode({
       const holographicColorMix = clamp(
         holographicFresnel
           .mul(float(0.35).add(dynamicHolographicShift.mul(float(0.65))))
-          .add(opticalFringeWeight),
+          .add(photographicFringeWeight),
         float(0.0),
         float(1.0),
       );
       const holographicEmissionLift = clamp(
         holographicFresnel.mul(
           float(0.12).add(dynamicHolographicShift.mul(float(0.18))),
-        ).mul(float(0.72).add(opticalFocus.mul(float(0.28)))),
+        ).mul(float(0.72).add(photographicFocus.mul(float(0.28)))),
         float(0.0),
         float(1.0),
       );

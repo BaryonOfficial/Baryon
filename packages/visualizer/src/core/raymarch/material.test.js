@@ -256,7 +256,7 @@ describe("raymarch volume material", () => {
     );
   });
 
-  it("routes physical density through the optical laser caustic readout", () => {
+  it("routes optical laser caustic readout into the photographic material path", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
@@ -281,10 +281,26 @@ describe("raymarch volume material", () => {
       source,
       "const opticalBodyContribution =",
     );
+    const photographicLaserStart = expectSourceIndex(
+      source,
+      "const photographicLaserCausticRadiance =",
+    );
+    const photographicRadianceScaleStart = expectSourceIndex(
+      source,
+      "const photographicRadianceScale =",
+    );
     const densityStart = expectSourceIndex(source, "const density = clamp(");
     const laserRadianceBlock = source.slice(
       laserRadianceStart,
       opticalBodyStart,
+    );
+    const photographicRadianceScaleBlock = source.slice(
+      photographicRadianceScaleStart,
+      photographicLaserStart,
+    );
+    const photographicLaserBlock = source.slice(
+      photographicLaserStart,
+      densityStart,
     );
     const densityBlock = source.slice(densityStart, densityStart + 420);
 
@@ -292,10 +308,22 @@ describe("raymarch volume material", () => {
     expect(opticalFocusStart).toBeGreaterThan(opticalSlopeStart);
     expect(laserRadianceStart).toBeGreaterThan(opticalFocusStart);
     expect(opticalBodyStart).toBeGreaterThan(laserRadianceStart);
-    expect(densityStart).toBeGreaterThan(opticalBodyStart);
+    expect(photographicLaserStart).toBeGreaterThan(opticalBodyStart);
+    expect(photographicRadianceScaleStart).toBeGreaterThan(opticalBodyStart);
+    expect(photographicLaserStart).toBeGreaterThan(
+      photographicRadianceScaleStart,
+    );
+    expect(densityStart).toBeGreaterThan(photographicLaserStart);
     expect(laserRadianceBlock).not.toContain("signedRadianceAuthority");
-    expect(densityBlock).toContain("laserCausticRadiance");
-    expect(densityBlock).toContain(".add(opticalBodyContribution)");
+    expect(photographicRadianceScaleBlock).toContain(
+      "PHOTOGRAPHIC_DARK_CAUSTIC_RATIO",
+    );
+    expect(photographicRadianceScaleBlock).toContain("blackfieldGate");
+    expect(photographicLaserBlock).toContain("laserCausticRadiance");
+    expect(photographicLaserBlock).toContain("photographicRadianceScale");
+    expect(densityBlock).toContain("photographicLaserCausticRadiance");
+    expect(densityBlock).toContain(".add(photographicBodyContribution)");
+    expect(densityBlock).not.toContain(".add(opticalBodyContribution)");
     expect(densityBlock).not.toContain(
       "rolledCausticDensity\n          .add(adjustedBodyContribution)",
     );
@@ -358,6 +386,100 @@ describe("raymarch volume material", () => {
     expect(modalStructureAnchorStart).toBeGreaterThan(signedBodyStart);
     expect(spectralPresenceStart).toBeGreaterThan(signedBodyStart);
     expect(source).not.toContain("signedFieldRadianceAuthority");
+  });
+
+  it("routes physical density through the photographic blackfield readout", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const shellFocusStart = expectSourceIndex(source, "const shellFocus =");
+    const opticalFocusStart = expectSourceIndex(
+      source,
+      "const opticalFocus =",
+    );
+    const photographicShellStart = expectSourceIndex(
+      source,
+      "const photographicShellAuthority =",
+    );
+    const photographicFocusStart = expectSourceIndex(
+      source,
+      "const photographicFocus =",
+    );
+    const blackfieldGateStart = expectSourceIndex(
+      source,
+      "const blackfieldGate =",
+    );
+    const photographicBodyStart = expectSourceIndex(
+      source,
+      "const photographicBodyContribution =",
+    );
+    const photographicLaserStart = expectSourceIndex(
+      source,
+      "const photographicLaserCausticRadiance =",
+    );
+    const densityStart = expectSourceIndex(source, "const density = clamp(");
+    const densityBlock = source.slice(densityStart, densityStart + 520);
+
+    expect(photographicShellStart).toBeGreaterThan(shellFocusStart);
+    expect(photographicFocusStart).toBeGreaterThan(opticalFocusStart);
+    expect(blackfieldGateStart).toBeGreaterThan(photographicFocusStart);
+    expect(photographicBodyStart).toBeGreaterThan(blackfieldGateStart);
+    expect(photographicLaserStart).toBeGreaterThan(photographicFocusStart);
+    expect(densityStart).toBeGreaterThan(photographicBodyStart);
+    expect(source).toContain("PHOTOGRAPHIC_BLACKFIELD_GATE_START");
+    expect(source).toContain("PHOTOGRAPHIC_DARK_BODY_RATIO");
+    expect(source).toContain("PHOTOGRAPHIC_LOW_FOCUS_BODY_RATIO_MAX");
+    expect(densityBlock).toContain("photographicLaserCausticRadiance");
+    expect(densityBlock).toContain(".add(photographicBodyContribution)");
+    expect(densityBlock).not.toContain(".add(opticalBodyContribution)");
+    expect(densityBlock).not.toContain(
+      "rolledCausticDensity\n          .add(adjustedBodyContribution)",
+    );
+  });
+
+  it("keeps photographic color and white emission downstream of density", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const densityStart = expectSourceIndex(source, "const density = clamp(");
+    const fringeStart = expectSourceIndex(
+      source,
+      "const photographicFringeWeight =",
+    );
+    const hotCoreStart = expectSourceIndex(source, "const hotCoreMix =");
+    const holographicMixStart = expectSourceIndex(
+      source,
+      "const holographicColorMix =",
+    );
+    const whiteEmissionStart = expectSourceIndex(
+      source,
+      "const crowdedWhiteEmissionMix =",
+    );
+    const spectralPresenceStart = expectSourceIndex(
+      source,
+      "const spectralLightPresence =",
+    );
+    const spectralColorStart = expectSourceIndex(
+      source,
+      "const spectralColor =",
+    );
+    const hotCoreBlock = source.slice(hotCoreStart, holographicMixStart);
+    const holographicBlock = source.slice(holographicMixStart, whiteEmissionStart);
+
+    expect(fringeStart).toBeLessThan(densityStart);
+    expect(hotCoreStart).toBeGreaterThan(densityStart);
+    expect(holographicMixStart).toBeGreaterThan(densityStart);
+    expect(whiteEmissionStart).toBeGreaterThan(holographicMixStart);
+    expect(spectralColorStart).toBeGreaterThan(densityStart);
+    expect(spectralPresenceStart).toBeGreaterThan(densityStart);
+    expect(hotCoreBlock).toContain("photographicLaserCausticRadiance");
+    expect(hotCoreBlock).toContain("photographicFocus");
+    expect(holographicBlock).toContain("photographicFringeWeight");
+    expect(holographicBlock).toContain("photographicFocus");
+    expect(source).not.toContain("legacyOpticalBodyContribution");
+    expect(source).not.toContain("oldBodyContribution");
   });
 
   it("softens Dirichlet beam lighting so nodal planes do not dominate", () => {

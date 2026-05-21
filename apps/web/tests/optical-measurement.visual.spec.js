@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 
 const BARYON_4_PRESET = "baryon-4";
@@ -122,7 +123,7 @@ async function loadBuiltInPreset(page, name) {
   await expect(page.getByTestId("advanced-controls-sidebar")).toBeHidden();
 }
 
-async function readCanvasLuminanceMetrics(page) {
+async function readCanvasLuminanceMetrics(page, artifactPath = null) {
   const canvas = page.locator("#root > div canvas").first();
   await expect(canvas).toBeVisible();
   const box = await canvas.boundingBox();
@@ -137,6 +138,9 @@ async function readCanvasLuminanceMetrics(page) {
       height: box.height,
     },
   });
+  if (artifactPath) {
+    await writeFile(artifactPath, screenshot);
+  }
   const dataUrl = `data:image/png;base64,${Buffer.from(screenshot).toString(
     "base64",
   )}`;
@@ -169,8 +173,14 @@ async function readCanvasLuminanceMetrics(page) {
     let negativeSpaceCount = 0;
     let broadWashCount = 0;
     let brightPlateCount = 0;
+    let centralSampleCount = 0;
+    const gridValues = [];
+    const centralNonblack = [];
+    let gridWidth = 0;
+    let gridHeight = 0;
 
     for (let y = 0; y < height; y += sampleStride) {
+      let rowWidth = 0;
       for (let x = 0; x < width; x += sampleStride) {
         const index = (y * width + x) * 4;
         const alpha = data[index + 3] / 255;
@@ -180,8 +190,20 @@ async function readCanvasLuminanceMetrics(page) {
             0.0722 * data[index + 2]) /
             255) *
           alpha;
+        const isCentral =
+          x >= width * 0.15 &&
+          x <= width * 0.85 &&
+          y >= height * 0.15 &&
+          y <= height * 0.85;
+        const isNonblack = value > 0.004;
         luminance.push(value);
-        if (value > 0.004) {
+        gridValues.push(value);
+        centralNonblack.push(isCentral && isNonblack);
+        rowWidth += 1;
+        if (isCentral) {
+          centralSampleCount += 1;
+        }
+        if (isNonblack) {
           nonblackCount += 1;
         }
         if (value < 0.035) {
@@ -194,6 +216,43 @@ async function readCanvasLuminanceMetrics(page) {
           brightPlateCount += 1;
         }
       }
+      gridWidth = Math.max(gridWidth, rowWidth);
+      gridHeight += 1;
+    }
+
+    const visited = new Uint8Array(gridValues.length);
+    let largestCentralComponent = 0;
+    const stack = [];
+    for (let index = 0; index < centralNonblack.length; index += 1) {
+      if (!centralNonblack[index] || visited[index]) {
+        continue;
+      }
+      let componentSize = 0;
+      visited[index] = 1;
+      stack.push(index);
+      while (stack.length > 0) {
+        const current = stack.pop();
+        componentSize += 1;
+        const x = current % gridWidth;
+        const y = Math.floor(current / gridWidth);
+        const neighbors = [
+          x > 0 ? current - 1 : -1,
+          x < gridWidth - 1 ? current + 1 : -1,
+          y > 0 ? current - gridWidth : -1,
+          y < gridHeight - 1 ? current + gridWidth : -1,
+        ];
+        for (const next of neighbors) {
+          if (next < 0 || visited[next] || !centralNonblack[next]) {
+            continue;
+          }
+          visited[next] = 1;
+          stack.push(next);
+        }
+      }
+      largestCentralComponent = Math.max(
+        largestCentralComponent,
+        componentSize,
+      );
     }
 
     luminance.sort((left, right) => left - right);
@@ -219,6 +278,10 @@ async function readCanvasLuminanceMetrics(page) {
       broadWashRatio: broadWashCount / luminance.length,
       brightPlateRatio:
         nonblackCount === 0 ? 0 : brightPlateCount / nonblackCount,
+      centralConnectedNonblackRatio:
+        centralSampleCount === 0
+          ? 0
+          : largestCentralComponent / centralSampleCount,
       brightLaneRatio,
       contrastRatio: p98 / Math.max(p50, 1e-4),
     };
@@ -255,11 +318,49 @@ async function seekPlaybackTimeline(page, ratio) {
   await page.mouse.click(box.x + box.width * ratio, box.y + box.height / 2);
 }
 
+async function captureCanvasMetricArtifact(page, testInfo, name) {
+  const artifactPath = testInfo.outputPath(`${name}.png`);
+  const metrics = await readCanvasLuminanceMetrics(page, artifactPath);
+  await testInfo.attach(name, {
+    path: artifactPath,
+    contentType: "image/png",
+  });
+  return metrics;
+}
+
+async function setCameraPreset(page, preset) {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => typeof window.__baryonCameraControls?.setPreset === "function",
+      ),
+    )
+    .toBe(true);
+  await page.evaluate((nextPreset) => {
+    window.__baryonCameraControls.setPreset(nextPreset);
+  }, preset);
+  await page.waitForTimeout(450);
+}
+
+async function setCameraPose(page, cameraPose) {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => typeof window.__baryonCameraControls?.setPose === "function",
+      ),
+    )
+    .toBe(true);
+  await page.evaluate((nextPose) => {
+    window.__baryonCameraControls.setPose(nextPose);
+  }, cameraPose);
+  await page.waitForTimeout(450);
+}
+
 test.describe("laser cymatic optical measurement visual audit", () => {
   test("baryon-4 528 Hz tone meets optical measurement canvas metrics", async ({
     page,
     browserName,
-  }) => {
+  }, testInfo) => {
     test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
 
     await page.setViewportSize({ width: 1024, height: 768 });
@@ -300,19 +401,27 @@ test.describe("laser cymatic optical measurement visual audit", () => {
         broadWashRatio: expect.any(Number),
       });
 
-    const metrics = await readCanvasLuminanceMetrics(page);
+    const metrics = await readCanvasLuminanceMetrics(
+      page,
+      testInfo.outputPath("photographic-top-down-528.png"),
+    );
+    await testInfo.attach("photographic-top-down-528", {
+      path: testInfo.outputPath("photographic-top-down-528.png"),
+      contentType: "image/png",
+    });
     expect(metrics.nonblankRatio).toBeGreaterThan(0.01);
-    expect(metrics.negativeSpaceRatio).toBeGreaterThanOrEqual(0.52);
-    expect(metrics.brightLaneRatio).toBeGreaterThanOrEqual(0.018);
-    expect(metrics.brightLaneRatio).toBeLessThanOrEqual(0.16);
-    expect(metrics.contrastRatio).toBeGreaterThanOrEqual(4.0);
-    expect(metrics.broadWashRatio).toBeLessThan(0.3);
+    expect(metrics.negativeSpaceRatio).toBeGreaterThanOrEqual(0.55);
+    expect(metrics.brightLaneRatio).toBeGreaterThanOrEqual(0.015);
+    expect(metrics.brightLaneRatio).toBeLessThanOrEqual(0.14);
+    expect(metrics.contrastRatio).toBeGreaterThanOrEqual(5.0);
+    expect(metrics.broadWashRatio).toBeLessThan(0.24);
+    expect(metrics.centralConnectedNonblackRatio).toBeGreaterThan(0.01);
   });
 
   test("baryon-4 dense polyphonic fixture remains structured and temporally stable", async ({
     page,
     browserName,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(90_000);
     test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
 
@@ -356,21 +465,103 @@ test.describe("laser cymatic optical measurement visual audit", () => {
 
     const frames = [];
     for (let index = 0; index < 8; index += 1) {
-      frames.push(await readCanvasLuminanceMetrics(page));
+      frames.push(
+        await readCanvasLuminanceMetrics(
+          page,
+          index === 0
+            ? testInfo.outputPath("photographic-dense-polyphonic.png")
+            : null,
+        ),
+      );
       await page.waitForTimeout(125);
     }
+    await testInfo.attach("photographic-dense-polyphonic", {
+      path: testInfo.outputPath("photographic-dense-polyphonic.png"),
+      contentType: "image/png",
+    });
 
     const firstFrame = frames[0];
     expect(firstFrame.nonblankRatio).toBeGreaterThan(0.01);
     expect(firstFrame.negativeSpaceRatio).toBeGreaterThanOrEqual(0.38);
-    expect(firstFrame.contrastRatio).toBeGreaterThanOrEqual(2.6);
-    expect(firstFrame.broadWashRatio).toBeLessThan(0.42);
-    expect(firstFrame.brightPlateRatio).toBeLessThan(0.45);
+    expect(firstFrame.contrastRatio).toBeGreaterThanOrEqual(3.0);
+    expect(firstFrame.broadWashRatio).toBeLessThan(0.38);
+    expect(firstFrame.brightPlateRatio).toBeLessThan(0.38);
+    expect(firstFrame.centralConnectedNonblackRatio).toBeGreaterThan(0.01);
     expect(coefficientOfVariation(frames.map((frame) => frame.p98))).toBeLessThan(
       0.18,
     );
     expect(
       standardDeviation(frames.map((frame) => frame.negativeSpaceRatio)),
-    ).toBeLessThan(0.04);
+    ).toBeLessThan(0.05);
+  });
+
+  test("baryon-4 528 Hz tone keeps photographic material identity across camera views", async ({
+    page,
+    browserName,
+  }, testInfo) => {
+    test.setTimeout(60_000);
+    test.skip(browserName !== "chromium", "WebGPU smoke is chromium-only");
+
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.goto("/");
+    await waitForControlSurface(page);
+
+    await loadBuiltInPreset(page, BARYON_4_PRESET);
+    await setControl(page, "auditEnabled", true);
+    await setControl(page, "injectTestTone", true);
+    await setControl(page, "testToneHz", 528);
+    await setControl(page, "testToneAmplitude", 0.5);
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          backend: window.__baryonRendererInfo?.backend ?? null,
+          isFallback: window.__baryonRendererInfo?.isFallback ?? null,
+          fieldState:
+            window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
+          volumeVisible:
+            window.__baryonAuditSnapshot?.raymarchDebug?.volumeVisible ?? false,
+        })),
+      )
+      .toEqual({
+        backend: "WebGPUBackend",
+        isFallback: false,
+        fieldState: "test",
+        volumeVisible: true,
+      });
+
+    const topDown = await captureCanvasMetricArtifact(
+      page,
+      testInfo,
+      "photographic-cross-view-top-down",
+    );
+    await setCameraPreset(page, "side");
+    const side = await captureCanvasMetricArtifact(
+      page,
+      testInfo,
+      "photographic-cross-view-side",
+    );
+    await setCameraPreset(page, "top-down");
+    await setCameraPose(page, {
+      position: { x: 0, y: 6.36, z: 6.36 },
+      target: { x: 0, y: 0, z: 0 },
+      up: { x: 0, y: 1, z: 0 },
+      fov: 65,
+    });
+    const oblique = await captureCanvasMetricArtifact(
+      page,
+      testInfo,
+      "photographic-cross-view-oblique",
+    );
+
+    expect(topDown.negativeSpaceRatio).toBeGreaterThanOrEqual(0.55);
+    for (const metrics of [side, oblique]) {
+      expect(metrics.nonblankRatio).toBeGreaterThan(0.01);
+      expect(metrics.brightLaneRatio).toBeGreaterThanOrEqual(0.008);
+      expect(metrics.contrastRatio).toBeGreaterThanOrEqual(3.0);
+      expect(metrics.broadWashRatio).toBeLessThanOrEqual(
+        topDown.broadWashRatio + 0.05,
+      );
+    }
   });
 });

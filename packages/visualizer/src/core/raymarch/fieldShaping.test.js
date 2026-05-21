@@ -3,6 +3,7 @@ import {
   computeLinearLuminance,
   compressDisplayRadiance,
 } from "../../render/displayRadiance.js";
+import * as fieldShaping from "./fieldShaping.js";
 import {
   BEAM_POWER_BASE,
   BOUNDARY_CONTOUR_ACCENT_WEIGHT,
@@ -279,6 +280,194 @@ describe("field shaping", () => {
     expect(
       Math.abs(colored.physicalDensity - uncolored.physicalDensity),
     ).toBeLessThan(OPTICAL_COLOR_DENSITY_DELTA_MAX);
+  });
+
+  it("keeps a high photographic shell dark when caustic evidence is absent", () => {
+    expect(fieldShaping.derivePhotographicCymaticProbe).toBeTypeOf("function");
+
+    const shellOnly = fieldShaping.derivePhotographicCymaticProbe({
+      fieldAbs: 0.002,
+      threshold: 0.02,
+      contourCore: 0,
+      broadBand: 0.95,
+      gradientStructure: 0,
+      structure: 0,
+      shellFocus: 1,
+      shellWeight: 0.92,
+      radialDistance: 0.48,
+      signedCausticDensity: 0,
+      bodyContribution: 0,
+      normalDotMeasurement: 0.02,
+      gradientPresence: 0,
+      ridgeConcentration: 0,
+      edgeFade: 1,
+      activeMask: 1,
+      excitationVisibility: 1,
+      signedRadianceAuthority: 1,
+    });
+
+    expect(shellOnly.photographicShellAuthority).toBeGreaterThan(0.45);
+    expect(shellOnly.causticRidgeAuthority).toBe(0);
+    expect(shellOnly.physicalDensity).toBeLessThan(1e-4);
+    expect(shellOnly.peakWhiteMix).toBeLessThan(0.01);
+  });
+
+  it("makes focused photographic ridges dominate body-heavy low-focus support", () => {
+    expect(fieldShaping.derivePhotographicCymaticProbe).toBeTypeOf("function");
+
+    const focused = fieldShaping.derivePhotographicCymaticProbe({
+      ...REINFORCED_CAUSTIC_TONE,
+      signedCausticDensity: 0.16,
+      bodyContribution: 0.04,
+      radialDistance: 0.48,
+      normalDotMeasurement: 0.04,
+      gradientPresence: 0.9,
+      ridgeConcentration: 0.86,
+      colorWeight: 0.2,
+    });
+    const smoky = fieldShaping.derivePhotographicCymaticProbe({
+      ...BROAD_CONTOUR_LEAK,
+      signedCausticDensity: 0.16,
+      bodyContribution: 0.12,
+      radialDistance: 0.48,
+      normalDotMeasurement: 0.96,
+      gradientPresence: 0.08,
+      ridgeConcentration: 0.12,
+      colorWeight: 0.2,
+    });
+
+    expect(focused.signedCausticDensity).toBeCloseTo(smoky.signedCausticDensity);
+    expect(focused.photographicFocus).toBeGreaterThan(smoky.photographicFocus);
+    expect(focused.photographicLaserCausticRadiance).toBeGreaterThan(
+      smoky.photographicLaserCausticRadiance * 1.4,
+    );
+    expect(focused.photographicLaserCausticRadiance).toBeGreaterThan(
+      focused.photographicBodyContribution,
+    );
+  });
+
+  it("rejects low-focus photographic caustic wash relative to the optical baseline", () => {
+    expect(fieldShaping.derivePhotographicCymaticProbe).toBeTypeOf("function");
+
+    const opticalWash = deriveLaserCymaticOpticalProbe({
+      ...BROAD_CONTOUR_LEAK,
+      signedCausticDensity: 0.16,
+      bodyContribution: 0.12,
+      normalDotMeasurement: 0.96,
+      gradientPresence: 0.08,
+      ridgeConcentration: 0.12,
+    });
+    const photographicWash = fieldShaping.derivePhotographicCymaticProbe({
+      ...BROAD_CONTOUR_LEAK,
+      signedCausticDensity: 0.16,
+      bodyContribution: 0.12,
+      radialDistance: 0.48,
+      normalDotMeasurement: 0.96,
+      gradientPresence: 0.08,
+      ridgeConcentration: 0.12,
+    });
+
+    expect(photographicWash.blackfieldGate).toBeLessThan(0.2);
+    expect(photographicWash.photographicRadianceScale).toBeLessThan(0.5);
+    expect(photographicWash.photographicLaserCausticRadiance).toBeLessThan(
+      opticalWash.laserCausticRadiance * 0.62,
+    );
+    expect(photographicWash.physicalDensity).toBeLessThan(
+      opticalWash.physicalDensity * 0.62,
+    );
+  });
+
+  it("applies a blackfield gate that suppresses low-focus haze", () => {
+    expect(fieldShaping.derivePhotographicCymaticProbe).toBeTypeOf("function");
+    expect(fieldShaping.PHOTOGRAPHIC_BLACKFIELD_BODY_REDUCTION_MIN).toBe(0.6);
+
+    const optical = deriveLaserCymaticOpticalProbe({
+      ...BROAD_CONTOUR_LEAK,
+      signedCausticDensity: 0.12,
+      bodyContribution: 0.1,
+      normalDotMeasurement: 0.86,
+      gradientPresence: 0.06,
+      ridgeConcentration: 0.08,
+    });
+    const photographic = fieldShaping.derivePhotographicCymaticProbe({
+      ...BROAD_CONTOUR_LEAK,
+      signedCausticDensity: 0.12,
+      bodyContribution: 0.1,
+      radialDistance: 0.42,
+      normalDotMeasurement: 0.86,
+      gradientPresence: 0.06,
+      ridgeConcentration: 0.08,
+    });
+    const bodyReduction =
+      1 -
+      photographic.photographicBodyContribution /
+        Math.max(optical.opticalBodyContribution, 1e-6);
+
+    expect(optical.opticalBodyContribution).toBeGreaterThan(0);
+    expect(photographic.blackfieldGate).toBeLessThan(0.2);
+    expect(bodyReduction).toBeGreaterThanOrEqual(
+      fieldShaping.PHOTOGRAPHIC_BLACKFIELD_BODY_REDUCTION_MIN,
+    );
+  });
+
+  it("keeps photographic color downstream of physical density", () => {
+    expect(fieldShaping.derivePhotographicCymaticProbe).toBeTypeOf("function");
+    expect(fieldShaping.PHOTOGRAPHIC_COLOR_DENSITY_DELTA_MAX).toBe(
+      OPTICAL_COLOR_DENSITY_DELTA_MAX,
+    );
+
+    const uncolored = fieldShaping.derivePhotographicCymaticProbe({
+      ...DENSE_POLYPHONIC_PROBE,
+      radialDistance: 0.58,
+      normalDotMeasurement: 0.12,
+      gradientPresence: 0.74,
+      ridgeConcentration: 0.76,
+      colorWeight: 0,
+    });
+    const colored = fieldShaping.derivePhotographicCymaticProbe({
+      ...DENSE_POLYPHONIC_PROBE,
+      radialDistance: 0.58,
+      normalDotMeasurement: 0.12,
+      gradientPresence: 0.74,
+      ridgeConcentration: 0.76,
+      colorWeight: 1,
+    });
+
+    expect(colored.photographicSpectralWeight).toBeGreaterThan(
+      uncolored.photographicSpectralWeight,
+    );
+    expect(
+      Math.abs(colored.physicalDensity - uncolored.physicalDensity),
+    ).toBeLessThan(fieldShaping.PHOTOGRAPHIC_COLOR_DENSITY_DELTA_MAX);
+  });
+
+  it("keeps photographic white peaks local to focused caustic ridges", () => {
+    expect(fieldShaping.derivePhotographicCymaticProbe).toBeTypeOf("function");
+
+    const focused = fieldShaping.derivePhotographicCymaticProbe({
+      ...REINFORCED_CAUSTIC_TONE,
+      signedCausticDensity: 0.18,
+      bodyContribution: 0.04,
+      radialDistance: 0.54,
+      normalDotMeasurement: 0.02,
+      gradientPresence: 0.94,
+      ridgeConcentration: 0.92,
+      colorWeight: 0.7,
+    });
+    const bodyHeavy = fieldShaping.derivePhotographicCymaticProbe({
+      ...BROAD_CONTOUR_LEAK,
+      signedCausticDensity: 0.18,
+      bodyContribution: 0.16,
+      radialDistance: 0.54,
+      normalDotMeasurement: 0.92,
+      gradientPresence: 0.06,
+      ridgeConcentration: 0.1,
+      colorWeight: 0.7,
+    });
+
+    expect(focused.peakWhiteMix).toBeGreaterThan(0.18);
+    expect(bodyHeavy.peakWhiteMix).toBeLessThan(0.08);
+    expect(focused.peakWhiteMix).toBeGreaterThan(bodyHeavy.peakWhiteMix * 3);
   });
 
   it("promotes reinforced caustic tone structure above body fill", () => {

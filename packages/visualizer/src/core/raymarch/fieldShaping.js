@@ -105,6 +105,33 @@ export const OPTICAL_LASER_GAIN = 1.15;
 export const OPTICAL_FRINGE_MIX_MAX = 0.18;
 export const OPTICAL_COLOR_DENSITY_DELTA_MAX = 1e-6;
 export const OPTICAL_RECTANGULAR_STARTUP_IMPORT_DELTA_MAX = 0;
+export const PHOTOGRAPHIC_SHELL_INNER_START = 0.12;
+export const PHOTOGRAPHIC_SHELL_INNER_END = 0.42;
+export const PHOTOGRAPHIC_SHELL_INNER_FADE_START = 0.64;
+export const PHOTOGRAPHIC_SHELL_INNER_FADE_END = 0.92;
+export const PHOTOGRAPHIC_SHELL_RIM_START = 0.38;
+export const PHOTOGRAPHIC_SHELL_RIM_END = 0.86;
+export const PHOTOGRAPHIC_SHELL_RIM_FADE_START = 0.92;
+export const PHOTOGRAPHIC_SHELL_RIM_FADE_END = 1.0;
+export const PHOTOGRAPHIC_APERTURE_FADE_START = 0.08;
+export const PHOTOGRAPHIC_APERTURE_FADE_END = 0.28;
+export const PHOTOGRAPHIC_SHELL_SUPPRESSION_START = 0.94;
+export const PHOTOGRAPHIC_SHELL_SUPPRESSION_END = 1.0;
+export const PHOTOGRAPHIC_SHELL_FOCUS_GAIN = 0.55;
+export const PHOTOGRAPHIC_FOCUS_POWER = 1.35;
+export const PHOTOGRAPHIC_BLACKFIELD_GATE_START = 0.02;
+export const PHOTOGRAPHIC_BLACKFIELD_GATE_END = 0.16;
+export const PHOTOGRAPHIC_DARK_BODY_RATIO = 0.18;
+export const PHOTOGRAPHIC_DARK_CAUSTIC_RATIO = 0.42;
+export const PHOTOGRAPHIC_LOW_FOCUS_BODY_RATIO_MAX = 0.1;
+export const PHOTOGRAPHIC_HIGH_FOCUS_BODY_RATIO_MAX =
+  OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX;
+export const PHOTOGRAPHIC_LASER_GAIN = 0.42;
+export const PHOTOGRAPHIC_PEAK_WHITE_START = 0.28;
+export const PHOTOGRAPHIC_PEAK_WHITE_END = 0.72;
+export const PHOTOGRAPHIC_BLACKFIELD_BODY_REDUCTION_MIN = 0.6;
+export const PHOTOGRAPHIC_COLOR_DENSITY_DELTA_MAX =
+  OPTICAL_COLOR_DENSITY_DELTA_MAX;
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
@@ -495,6 +522,258 @@ export function deriveLaserCymaticOpticalProbe({
     opticalBodyContribution,
     laserCausticRadiance,
     opticalFringeWeight,
+    physicalDensity,
+    localDensity: physicalDensity,
+    localLuminance,
+  };
+}
+
+export function derivePhotographicShellAuthority({
+  radialDistance = 0,
+  shellFocus = 0,
+  shellWeight = SHELL_WEIGHT_MIN,
+  contourCore = 0,
+  structure = 0,
+  edgeFade = 1,
+  activeMask = 1,
+} = {}) {
+  const safeRadialDistance = clamp01(safeFinite(radialDistance, 0));
+  const safeShellFocus =
+    shellFocus == null
+      ? deriveShellFocus({ shellWeight })
+      : clamp01(safeFinite(shellFocus, 0));
+  const safeContourCore = clamp01(safeFinite(contourCore, 0));
+  const safeStructure = clamp01(safeFinite(structure, 0));
+  const shellPresence = Math.max(
+    safeShellFocus,
+    deriveShellFocus({ shellWeight }),
+  );
+  const innerLensAuthority =
+    smoothstep(
+      PHOTOGRAPHIC_SHELL_INNER_START,
+      PHOTOGRAPHIC_SHELL_INNER_END,
+      safeRadialDistance,
+    ) *
+    (1 -
+      smoothstep(
+        PHOTOGRAPHIC_SHELL_INNER_FADE_START,
+        PHOTOGRAPHIC_SHELL_INNER_FADE_END,
+        safeRadialDistance,
+      )) *
+    shellPresence;
+  const rimShellAuthority =
+    smoothstep(
+      PHOTOGRAPHIC_SHELL_RIM_START,
+      PHOTOGRAPHIC_SHELL_RIM_END,
+      safeRadialDistance,
+    ) *
+    (1 -
+      smoothstep(
+        PHOTOGRAPHIC_SHELL_RIM_FADE_START,
+        PHOTOGRAPHIC_SHELL_RIM_FADE_END,
+        safeRadialDistance,
+      )) *
+    Math.max(safeContourCore, shellPresence * 0.5);
+  const apertureAuthority =
+    (1 -
+      smoothstep(
+        PHOTOGRAPHIC_APERTURE_FADE_START,
+        PHOTOGRAPHIC_APERTURE_FADE_END,
+        safeRadialDistance,
+      )) *
+    Math.max(safeContourCore, safeStructure * 0.45);
+  const shellSuppression = smoothstep(
+    PHOTOGRAPHIC_SHELL_SUPPRESSION_START,
+    PHOTOGRAPHIC_SHELL_SUPPRESSION_END,
+    safeRadialDistance,
+  );
+  const photographicShellAuthority =
+    clamp01(
+      innerLensAuthority * 0.46 +
+        rimShellAuthority * 0.36 +
+        apertureAuthority * 0.24,
+    ) *
+    (1 - shellSuppression) *
+    clamp01(edgeFade) *
+    clamp01(activeMask);
+
+  return {
+    innerLensAuthority,
+    rimShellAuthority,
+    apertureAuthority,
+    shellSuppression,
+    photographicShellAuthority,
+  };
+}
+
+export function deriveBlackfieldGate({
+  photographicFocus = 0,
+  causticVisibility = 0,
+  gateStart = PHOTOGRAPHIC_BLACKFIELD_GATE_START,
+  gateEnd = PHOTOGRAPHIC_BLACKFIELD_GATE_END,
+} = {}) {
+  return smoothstep(
+    safeFinite(gateStart, PHOTOGRAPHIC_BLACKFIELD_GATE_START),
+    safeFinite(gateEnd, PHOTOGRAPHIC_BLACKFIELD_GATE_END),
+    clamp01(photographicFocus) * clamp01(causticVisibility),
+  );
+}
+
+export function derivePhotographicBodyContribution({
+  opticalBodyContribution = 0,
+  signedCausticDensity = 0,
+  blackfieldGate = 0,
+} = {}) {
+  const gate = clamp01(blackfieldGate);
+  const bodyAttenuation = mix(PHOTOGRAPHIC_DARK_BODY_RATIO, 1, gate);
+  const photographicBodyRatioMax = mix(
+    PHOTOGRAPHIC_LOW_FOCUS_BODY_RATIO_MAX,
+    PHOTOGRAPHIC_HIGH_FOCUS_BODY_RATIO_MAX,
+    gate,
+  );
+  const photographicBodyContribution = Math.min(
+    Math.max(0, safeFinite(opticalBodyContribution, 0)) * bodyAttenuation,
+    Math.max(0, safeFinite(signedCausticDensity, 0)) *
+      photographicBodyRatioMax,
+  );
+
+  return {
+    bodyAttenuation,
+    photographicBodyRatioMax,
+    photographicBodyContribution,
+  };
+}
+
+export function derivePhotographicRadianceScale({
+  photographicFocus = 0,
+  blackfieldGate = 0,
+} = {}) {
+  const focusedRadianceScale =
+    1 + clamp01(photographicFocus) * PHOTOGRAPHIC_LASER_GAIN;
+
+  return mix(
+    PHOTOGRAPHIC_DARK_CAUSTIC_RATIO,
+    focusedRadianceScale,
+    clamp01(blackfieldGate),
+  );
+}
+
+export function derivePhotographicColorMix({
+  colorWeight = 0,
+  photographicFocus = 0,
+  opticalFringeWeight = 0,
+  signedRadianceAuthority = 1,
+  causticVisibility = 0,
+} = {}) {
+  const focus = clamp01(photographicFocus);
+  const radianceAuthority = clamp01(signedRadianceAuthority);
+  const visibility = clamp01(causticVisibility);
+  const photographicSpectralWeight =
+    clamp01(colorWeight) * focus * radianceAuthority;
+  const photographicFringeWeight = clamp01(
+    opticalFringeWeight + focus * visibility * 0.035,
+  );
+  const peakWhiteSignal = focus * visibility * radianceAuthority;
+  const peakWhiteMix = smoothstep(
+    PHOTOGRAPHIC_PEAK_WHITE_START,
+    PHOTOGRAPHIC_PEAK_WHITE_END,
+    peakWhiteSignal,
+  );
+
+  return {
+    photographicSpectralWeight,
+    photographicFringeWeight,
+    peakWhiteSignal,
+    peakWhiteMix,
+  };
+}
+
+export function derivePhotographicCymaticProbe({
+  radialDistance = 0,
+  shellWeight = SHELL_WEIGHT_MIN,
+  shellFocus = null,
+  contourCore = 0,
+  structure = 0,
+  edgeFade = 1,
+  activeMask = 1,
+  colorWeight = 0,
+  signedRadianceAuthority = 1,
+  ...opticalInputs
+} = {}) {
+  const passthroughInputs = /** @type {any} */ (opticalInputs);
+  const resolvedShellFocus = shellFocus ?? passthroughInputs.shellFocus;
+  const opticalProbeInputs = {
+    ...opticalInputs,
+    contourCore,
+    structure,
+    shellWeight,
+    shellFocus: resolvedShellFocus,
+    edgeFade,
+    activeMask,
+    colorWeight,
+    signedRadianceAuthority,
+  };
+  const optical = deriveLaserCymaticOpticalProbe(
+    /** @type {any} */ (opticalProbeInputs),
+  );
+  const shell = derivePhotographicShellAuthority({
+    radialDistance,
+    shellWeight,
+    shellFocus: resolvedShellFocus,
+    contourCore,
+    structure,
+    edgeFade,
+    activeMask,
+  });
+  const photographicFocusAuthority = clamp01(
+    optical.opticalFocusAuthority *
+      (1 +
+        shell.photographicShellAuthority * PHOTOGRAPHIC_SHELL_FOCUS_GAIN),
+  );
+  const photographicFocus = Math.pow(
+    photographicFocusAuthority,
+    PHOTOGRAPHIC_FOCUS_POWER,
+  );
+  const blackfieldGate = deriveBlackfieldGate({
+    photographicFocus,
+    causticVisibility: optical.causticVisibility,
+  });
+  const body = derivePhotographicBodyContribution({
+    opticalBodyContribution: optical.opticalBodyContribution,
+    signedCausticDensity: optical.signedCausticDensity,
+    blackfieldGate,
+  });
+  const photographicRadianceScale = derivePhotographicRadianceScale({
+    photographicFocus,
+    blackfieldGate,
+  });
+  const photographicLaserCausticRadiance =
+    optical.laserCausticRadiance * photographicRadianceScale;
+  const physicalDensity =
+    photographicLaserCausticRadiance +
+    body.photographicBodyContribution;
+  const color = derivePhotographicColorMix({
+    colorWeight,
+    photographicFocus,
+    opticalFringeWeight: optical.opticalFringeWeight,
+    signedRadianceAuthority,
+    causticVisibility: optical.causticVisibility,
+  });
+  const localLuminance =
+    physicalDensity *
+    optical.emissionGain *
+    (0.72 + color.photographicSpectralWeight * 0.08);
+
+  return {
+    ...optical,
+    ...shell,
+    ...body,
+    ...color,
+    photographicFocusAuthority,
+    photographicFocus,
+    blackfieldGate,
+    photographicRadianceScale,
+    photographicLaserCausticRadiance,
     physicalDensity,
     localDensity: physicalDensity,
     localLuminance,
