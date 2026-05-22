@@ -14,10 +14,10 @@ import {
   buildRaymarchSpectralLightCacheDescriptor,
   advanceRaymarchCacheGeneration,
   clearQueuedRaymarchCacheRebuild,
-  disposeRaymarchPhaseOverlayCache,
+  disposeRaymarchPhaseCoherentFieldCache,
   disposeRaymarchFieldCache,
   disposeRaymarchSpectralLightCache,
-  enqueueRaymarchPhaseOverlayRebuild,
+  enqueueRaymarchPhaseCoherentFieldRebuild,
   enqueueRaymarchFieldCacheRebuild,
   enqueueRaymarchSpectralLightCacheRebuild,
   isRaymarchFieldCacheReadyForDescriptor,
@@ -26,9 +26,9 @@ import {
   shouldRebuildRaymarchFieldCache,
   buildRaymarchFieldCacheDescriptor,
   RAYMARCH_FIELD_CACHE_RESOLUTION,
-  RAYMARCH_PHASE_OVERLAY_BACKBONE_LIMIT,
-  RAYMARCH_PHASE_OVERLAY_DETAIL_LIMIT,
-  RAYMARCH_PHASE_OVERLAY_RESOLUTION,
+  RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT,
+  RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT,
+  RAYMARCH_PHASE_COHERENT_FIELD_RESOLUTION,
 } from "./fieldCache.js";
 import {
   DETAIL_LAYER_WEIGHT,
@@ -206,15 +206,15 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.performanceGovernor = null;
   runtimeState.pendingRaymarchPerformanceGovernor = null;
   runtimeState.spectralLightBuffersUploaded = false;
-  runtimeState.phaseOverlayModeCount = 0;
+  runtimeState.phaseCoherentFieldModeCount = 0;
   runtimeState.currentFieldDescriptor = null;
   runtimeState.currentSpectralLightDescriptor = null;
   resetRaymarchUploadState(runtimeState);
   resetCacheActivity(runtimeState.fieldCache);
   resetCacheActivity(runtimeState.spectralLightCache);
-  resetCacheActivity(runtimeState.phaseOverlayCache);
-  if (runtimeState.phaseOverlayCache) {
-    runtimeState.phaseOverlayCache.activePhaseModeCount = 0;
+  resetCacheActivity(runtimeState.phaseCoherentFieldCache);
+  if (runtimeState.phaseCoherentFieldCache) {
+    runtimeState.phaseCoherentFieldCache.activePhaseCoherentFieldModeCount = 0;
   }
 }
 
@@ -518,7 +518,7 @@ function buildRaymarchDebugSnapshot(
     getRuntimeEffectiveCavityGeometry(runtimeState);
   const fieldCache = runtimeState.fieldCache ?? null;
   const spectralLightCache = runtimeState.spectralLightCache ?? null;
-  const phaseOverlayCache = runtimeState.phaseOverlayCache ?? null;
+  const phaseCoherentFieldCache = runtimeState.phaseCoherentFieldCache ?? null;
   const fieldCacheOverride = getRaymarchFieldCacheOverride();
   const fieldDescriptor = runtimeState.currentFieldDescriptor ?? null;
   const spectralLightDescriptor =
@@ -543,12 +543,12 @@ function buildRaymarchDebugSnapshot(
     runtimeState.uniforms.uDetailModeCount.value,
   );
   const renderedRetention = summarizeRenderedRetention(performanceGovernor);
-  const phaseOverlayModeCount =
-    phaseOverlayCache?.activePhaseModeCount ??
-    runtimeState.phaseOverlayModeCount ??
+  const phaseCoherentFieldModeCount =
+    phaseCoherentFieldCache?.activePhaseCoherentFieldModeCount ??
+    runtimeState.phaseCoherentFieldModeCount ??
     0;
-  const phaseOverlaySemantic =
-    phaseOverlayCache?.semantic ?? "signed-displacement";
+  const phaseCoherentFieldSemantic =
+    phaseCoherentFieldCache?.semantic ?? "phase-coherent-signed-displacement";
 
   return {
     fieldState,
@@ -669,8 +669,8 @@ function buildRaymarchDebugSnapshot(
       featureFrame?.debug?.projectionEnergyNormalizationApplied === true,
     highQPhaseAuthority: featureFrame?.debug?.highQPhaseAuthority ?? 0,
     lowQPhaseAuthority: featureFrame?.debug?.lowQPhaseAuthority ?? 0,
-    modalPhaseOverlayModeCount:
-      featureFrame?.debug?.modalPhaseOverlayModeCount ?? 0,
+    modalPhaseCoherentFieldModeCount:
+      featureFrame?.debug?.modalPhaseCoherentFieldModeCount ?? 0,
     modeCoherence: featureFrame?.modeCoherence ?? 0,
     trebleTonalEnergy: featureFrame?.trebleTonalEnergy ?? 0,
     trebleBroadbandEnergy: featureFrame?.trebleBroadbandEnergy ?? 0,
@@ -742,21 +742,19 @@ function buildRaymarchDebugSnapshot(
       spectralLightCache?.backend === "unavailable",
     spectralLightCacheRebuildCount: spectralLightCache?.rebuildCount ?? 0,
     spectralLightCacheLastError: spectralLightCache?.lastError ?? null,
-    phaseOverlayActive: phaseOverlayCache?.active ?? false,
-    phaseOverlayReady: phaseOverlayCache?.ready ?? false,
-    phaseOverlayPending: phaseOverlayCache?.rebuildPending ?? false,
-    phaseOverlayBackend: phaseOverlayCache?.backend ?? "compute",
-    phaseOverlayResolution:
-      phaseOverlayCache?.resolution ?? RAYMARCH_PHASE_OVERLAY_RESOLUTION,
-    phaseOverlayRebuildCount: phaseOverlayCache?.rebuildCount ?? 0,
-    phaseOverlayLastError: phaseOverlayCache?.lastError ?? null,
-    phaseOverlayModeCount,
-    phaseOverlaySemantic,
-    signedPhaseOverlayActive: phaseOverlayCache?.active ?? false,
-    signedPhaseOverlayModeCount: phaseOverlayModeCount,
-    signedPhaseOverlaySemantic: phaseOverlaySemantic,
-    phaseOverlayStrength:
-      runtimeState.uniforms.uModalPhaseOverlayStrength?.value ?? 0,
+    phaseCoherentFieldActive: phaseCoherentFieldCache?.active ?? false,
+    phaseCoherentFieldReady: phaseCoherentFieldCache?.ready ?? false,
+    phaseCoherentFieldPending: phaseCoherentFieldCache?.rebuildPending ?? false,
+    phaseCoherentFieldBackend: phaseCoherentFieldCache?.backend ?? "compute",
+    phaseCoherentFieldResolution:
+      phaseCoherentFieldCache?.resolution ??
+      RAYMARCH_PHASE_COHERENT_FIELD_RESOLUTION,
+    phaseCoherentFieldRebuildCount: phaseCoherentFieldCache?.rebuildCount ?? 0,
+    phaseCoherentFieldLastError: phaseCoherentFieldCache?.lastError ?? null,
+    phaseCoherentFieldModeCount: phaseCoherentFieldModeCount,
+    phaseCoherentFieldSemantic,
+    phaseCoherentFieldAuthority:
+      runtimeState.uniforms.uPhaseCoherentFieldAuthority?.value ?? 0,
     spectralMix: runtimeState.uniforms.uSpectralMix?.value ?? 0,
     holographicReferenceStrength,
     avgRaySegmentLength,
@@ -1432,51 +1430,52 @@ function resolveSpectralLightEvaluationMode(
   return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
 }
 
-function updatePhaseOverlayCache(
+function updatePhaseCoherentFieldCache(
   runtimeState,
   renderer,
   { backbonePhaseCapacity, detailPhaseCapacity },
   { fieldDescriptor, fieldEvaluationMode, featureFrame, timeMs },
 ) {
-  const phaseOverlayCache = runtimeState.phaseOverlayCache;
+  const phaseCoherentFieldCache = runtimeState.phaseCoherentFieldCache;
   const phaseStrengthUniform =
-    runtimeState.uniforms.uModalPhaseOverlayStrength ?? null;
+    runtimeState.uniforms.uPhaseCoherentFieldAuthority ?? null;
   const phaseAuthority = clamp01(featureFrame?.modalPhaseAuthority ?? 0);
-  const phaseModeCount = runtimeState.phaseOverlayModeCount ?? 0;
+  const phaseModeCount = runtimeState.phaseCoherentFieldModeCount ?? 0;
   const cachedFieldActive = fieldEvaluationMode === "cached";
 
-  if (!phaseOverlayCache || !runtimeState.volumeMesh) {
+  if (!phaseCoherentFieldCache || !runtimeState.volumeMesh) {
     setIfChanged(phaseStrengthUniform, 0);
     return;
   }
 
-  phaseOverlayCache.active = cachedFieldActive && phaseAuthority > 0;
-  phaseOverlayCache.activePhaseModeCount = phaseModeCount;
+  phaseCoherentFieldCache.active = cachedFieldActive && phaseAuthority > 0;
+  phaseCoherentFieldCache.activePhaseCoherentFieldModeCount = phaseModeCount;
 
   if (
     !cachedFieldActive ||
     !(phaseAuthority > 0) ||
     phaseModeCount <= 0 ||
-    phaseOverlayCache.backend === "unavailable"
+    phaseCoherentFieldCache.backend === "unavailable"
   ) {
     setIfChanged(phaseStrengthUniform, 0);
     return;
   }
 
-  const elapsedMs = timeMs - (phaseOverlayCache.lastUpdateTimeMs ?? -Infinity);
+  const elapsedMs =
+    timeMs - (phaseCoherentFieldCache.lastUpdateTimeMs ?? -Infinity);
   const cadenceElapsed =
-    elapsedMs >= (phaseOverlayCache.updateIntervalMs ?? 1000 / 15);
+    elapsedMs >= (phaseCoherentFieldCache.updateIntervalMs ?? 1000 / 15);
 
-  if (!phaseOverlayCache.rebuildPending && cadenceElapsed) {
-    const result = enqueueRaymarchPhaseOverlayRebuild(
-      phaseOverlayCache,
+  if (!phaseCoherentFieldCache.rebuildPending && cadenceElapsed) {
+    const result = enqueueRaymarchPhaseCoherentFieldRebuild(
+      phaseCoherentFieldCache,
       renderer,
       {
         ...fieldDescriptor,
         phaseModeCount,
         phaseAuthority: Math.round(phaseAuthority * 1000) / 1000,
       },
-      phaseOverlayCache.ready ? "phase-update" : "initial",
+      phaseCoherentFieldCache.ready ? "phase-update" : "initial",
       {
         backboneModeBuffer: runtimeState.backboneModeBuffer,
         detailModeBuffer: runtimeState.detailModeBuffer,
@@ -1488,15 +1487,16 @@ function updatePhaseOverlayCache(
       },
     );
     if (result.enqueued) {
-      phaseOverlayCache.lastUpdateTimeMs = timeMs;
-      runtimeState.phaseOverlayUploadCount =
-        (runtimeState.phaseOverlayUploadCount ?? 0) + 1;
+      phaseCoherentFieldCache.lastUpdateTimeMs = timeMs;
+      runtimeState.phaseCoherentFieldUploadCount =
+        (runtimeState.phaseCoherentFieldUploadCount ?? 0) + 1;
     }
   }
 
-  const phaseOverlayReady =
-    phaseOverlayCache.backend !== "unavailable" && phaseOverlayCache.ready;
-  setIfChanged(phaseStrengthUniform, phaseOverlayReady ? phaseAuthority : 0);
+  const phaseCoherentFieldReady =
+    phaseCoherentFieldCache.backend !== "unavailable" &&
+    phaseCoherentFieldCache.ready;
+  setIfChanged(phaseStrengthUniform, phaseCoherentFieldReady ? phaseAuthority : 0);
 }
 
 function updateRaymarchEvaluationModes(
@@ -1563,11 +1563,13 @@ export function tickRaymarchRuntime(
     detailModeBuffer.value.array,
   );
   const backbonePhaseCapacity = inferLayerCapacity(
-    runtimeState.backbonePhaseCapacity ?? RAYMARCH_PHASE_OVERLAY_BACKBONE_LIMIT,
+    runtimeState.backbonePhaseCapacity ??
+      RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT,
     runtimeState.backbonePhaseBuffer?.value?.array,
   );
   const detailPhaseCapacity = inferLayerCapacity(
-    runtimeState.detailPhaseCapacity ?? RAYMARCH_PHASE_OVERLAY_DETAIL_LIMIT,
+    runtimeState.detailPhaseCapacity ??
+      RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT,
     runtimeState.detailPhaseBuffer?.value?.array,
   );
 
@@ -1612,7 +1614,7 @@ export function tickRaymarchRuntime(
     setIfChanged(uniforms.uTotalSlotAmplitude, 0);
     setIfChanged(uniforms.uModalResponseBackboneEnergy, 0);
     setIfChanged(uniforms.uModalResponseDetailEnergy, 0);
-    setIfChanged(uniforms.uModalPhaseOverlayStrength, 0);
+    setIfChanged(uniforms.uPhaseCoherentFieldAuthority, 0);
     setIfChanged(uniforms.uKeyTintStrength, 0);
     setIfChanged(uniforms.uKeyMode, 0);
     uniforms.uBandEnergies.value.set(0, 0, 0, 0);
@@ -1716,7 +1718,7 @@ export function tickRaymarchRuntime(
     layer: detailLayer,
     capacity: detailPhaseCapacity,
   });
-  runtimeState.phaseOverlayModeCount =
+  runtimeState.phaseCoherentFieldModeCount =
     backbonePhaseModeCount + detailPhaseModeCount;
 
   const backboneModeCount = backboneLayer.uploadedActiveCount;
@@ -1807,7 +1809,7 @@ export function tickRaymarchRuntime(
       spectralLightDescriptor,
     },
   );
-  updatePhaseOverlayCache(
+  updatePhaseCoherentFieldCache(
     runtimeState,
     renderer,
     {
@@ -1924,7 +1926,7 @@ export function tickRaymarchRuntime(
 export function disposeRaymarchRuntime(runtimeState) {
   disposeRaymarchFieldCache(runtimeState?.fieldCache);
   disposeRaymarchSpectralLightCache(runtimeState?.spectralLightCache);
-  disposeRaymarchPhaseOverlayCache(runtimeState?.phaseOverlayCache);
+  disposeRaymarchPhaseCoherentFieldCache(runtimeState?.phaseCoherentFieldCache);
   runtimeState?.points?.traverse?.((child) => {
     child.geometry?.dispose?.();
     const materialCache = child.userData?.raymarchMaterialCache;

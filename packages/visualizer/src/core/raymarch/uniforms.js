@@ -84,6 +84,6 @@ export function createRaymarchUniforms(parameters) {
     uObservationContourSupportScale: uniform(
       observationParameters.contourSupportScale,
     ),
-    uModalPhaseOverlayStrength: uniform(0.0),
+    uPhaseCoherentFieldAuthority: uniform(0.0),
   };
 }

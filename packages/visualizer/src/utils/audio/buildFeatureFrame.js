@@ -1194,8 +1194,8 @@ function buildDebugSummary({
     modalPhaseAuthority: structuralMetrics?.modalPhaseAuthority ?? 0,
     highQPhaseAuthority: structuralMetrics?.highQPhaseAuthority ?? 0,
     lowQPhaseAuthority: structuralMetrics?.lowQPhaseAuthority ?? 0,
-    modalPhaseOverlayModeCount:
-      structuralMetrics?.modalPhaseOverlayModeCount ?? 0,
+    modalPhaseCoherentFieldModeCount:
+      structuralMetrics?.modalPhaseCoherentFieldModeCount ?? 0,
     modalPersistence: structuralMetrics?.modalPersistence ?? 0,
     modalDriveEnergy: structuralMetrics?.modalDriveEnergy ?? 0,
     modalResponseEnergy: structuralMetrics?.modalResponseEnergy ?? 0,

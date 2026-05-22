@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   buildRaymarchSpectralLightCacheDescriptor,
   buildRaymarchFieldCacheDescriptor,
-  createRaymarchPhaseOverlayCache,
+  createRaymarchPhaseCoherentFieldCache,
   createRaymarchSpectralLightCache,
   createRaymarchFieldCache,
   enqueueRaymarchFieldCacheRebuild,
-  enqueueRaymarchPhaseOverlayRebuild,
+  enqueueRaymarchPhaseCoherentFieldRebuild,
   enqueueRaymarchSpectralLightCacheRebuild,
   evaluateRaymarchFieldCachePoint,
   evaluateRaymarchSpectralLightCachePoint,
-  evaluateRaymarchPhaseOverlayPoint,
+  evaluateRaymarchPhaseCoherentFieldPoint,
   evaluateRaymarchSignedPotentialAtPoint,
   isRaymarchSpectralLightCacheReadyForDescriptor,
   shouldRebuildRaymarchSpectralLightCache,
@@ -424,28 +424,28 @@ describe("fieldCache", () => {
     expect(rebuild.reason).toBe("unchanged");
   });
 
-  it("creates a bounded compute-only phase overlay cache", () => {
-    const phaseOverlayCache = createRaymarchPhaseOverlayCache();
+  it("creates a bounded compute-only phase-coherent field cache", () => {
+    const phaseCoherentFieldCache = createRaymarchPhaseCoherentFieldCache();
 
-    expect(phaseOverlayCache.texture.isStorageTexture).toBe(true);
-    expect(phaseOverlayCache.texture.is3DTexture).toBe(true);
-    expect(phaseOverlayCache.texture.image.width).toBe(32);
-    expect(phaseOverlayCache.texture.image.height).toBe(32);
-    expect(phaseOverlayCache.texture.image.depth).toBe(32);
-    expect(phaseOverlayCache.ready).toBe(false);
-    expect(phaseOverlayCache.backend).toBe("compute");
-    expect(phaseOverlayCache.maxBackboneModes).toBe(2);
-    expect(phaseOverlayCache.maxDetailModes).toBe(6);
-    expect(phaseOverlayCache.updateIntervalMs).toBeCloseTo(1000 / 15);
+    expect(phaseCoherentFieldCache.texture.isStorageTexture).toBe(true);
+    expect(phaseCoherentFieldCache.texture.is3DTexture).toBe(true);
+    expect(phaseCoherentFieldCache.texture.image.width).toBe(32);
+    expect(phaseCoherentFieldCache.texture.image.height).toBe(32);
+    expect(phaseCoherentFieldCache.texture.image.depth).toBe(32);
+    expect(phaseCoherentFieldCache.ready).toBe(false);
+    expect(phaseCoherentFieldCache.backend).toBe("compute");
+    expect(phaseCoherentFieldCache.maxBackboneModes).toBe(2);
+    expect(phaseCoherentFieldCache.maxDetailModes).toBe(6);
+    expect(phaseCoherentFieldCache.updateIntervalMs).toBeCloseTo(1000 / 15);
   });
 
-  it("fails closed when phase overlay compute is unavailable", () => {
-    const phaseOverlayCache = createRaymarchPhaseOverlayCache({
+  it("fails closed when phase-coherent field compute is unavailable", () => {
+    const phaseCoherentFieldCache = createRaymarchPhaseCoherentFieldCache({
       resolution: 8,
     });
 
-    const result = enqueueRaymarchPhaseOverlayRebuild(
-      phaseOverlayCache,
+    const result = enqueueRaymarchPhaseCoherentFieldRebuild(
+      phaseCoherentFieldCache,
       null,
       {
         boundaryMode: "neumann",
@@ -468,9 +468,9 @@ describe("fieldCache", () => {
 
     expect(result.enqueued).toBe(false);
     expect(result.reason).toBe("unavailable");
-    expect(phaseOverlayCache.backend).toBe("unavailable");
-    expect(phaseOverlayCache.ready).toBe(false);
-    expect(phaseOverlayCache.lastError).toBe(
+    expect(phaseCoherentFieldCache.backend).toBe("unavailable");
+    expect(phaseCoherentFieldCache.ready).toBe(false);
+    expect(phaseCoherentFieldCache.lastError).toBe(
       "Renderer computeAsync unavailable",
     );
   });
@@ -672,9 +672,9 @@ describe("fieldCache", () => {
     expect(negativeLobe.field).toBeLessThan(0);
   });
 
-  it("evaluates phase overlay as signed modal displacement", () => {
+  it("evaluates phase-coherent field as signed modal displacement", () => {
     const slots = new Float32Array([1, 1, 1, 1]);
-    const inPhase = evaluateRaymarchPhaseOverlayPoint({
+    const inPhase = evaluateRaymarchPhaseCoherentFieldPoint({
       backboneSlots: slots,
       detailSlots: new Float32Array(0),
       backbonePhaseSlots: new Float32Array([0, 0, 1, 1]),
@@ -688,7 +688,7 @@ describe("fieldCache", () => {
       z: 0,
       time: 0,
     });
-    const outOfPhase = evaluateRaymarchPhaseOverlayPoint({
+    const outOfPhase = evaluateRaymarchPhaseCoherentFieldPoint({
       backboneSlots: slots,
       detailSlots: new Float32Array(0),
       backbonePhaseSlots: new Float32Array([Math.PI, 0, 1, 1]),
@@ -703,14 +703,16 @@ describe("fieldCache", () => {
       time: 0,
     });
 
-    expect(inPhase.signedDisplacement).toBeGreaterThan(0);
-    expect(outOfPhase.signedDisplacement).toBeLessThan(0);
-    expect(inPhase.authority).toBeCloseTo(1, 6);
-    expect(outOfPhase.authority).toBeCloseTo(1, 6);
+    expect(inPhase.phaseCoherentSignedDisplacement).toBeGreaterThan(0);
+    expect(outOfPhase.phaseCoherentSignedDisplacement).toBeLessThan(0);
+    expect(inPhase.phaseCoherentFieldAuthority).toBeCloseTo(1, 6);
+    expect(outOfPhase.phaseCoherentFieldAuthority).toBeCloseTo(1, 6);
+    expect(inPhase).not.toHaveProperty("signedDisplacement");
+    expect(inPhase).not.toHaveProperty("authority");
   });
 
   it("does not treat a single phase zero-crossing as destructive cancellation", () => {
-    const sample = evaluateRaymarchPhaseOverlayPoint({
+    const sample = evaluateRaymarchPhaseCoherentFieldPoint({
       backboneSlots: new Float32Array([1, 1, 1, 1]),
       detailSlots: new Float32Array(0),
       backbonePhaseSlots: new Float32Array([Math.PI / 2, 0, 1, 1]),
@@ -725,14 +727,20 @@ describe("fieldCache", () => {
       time: 0,
     });
 
-    expect(Math.abs(sample.signedDisplacement)).toBeLessThan(0.001);
-    expect(sample.gradientMagnitude).toBeLessThan(0.001);
-    expect(sample.cancellation).toBe(0);
-    expect(sample.authority).toBeCloseTo(1, 6);
+    expect(Math.abs(sample.phaseCoherentSignedDisplacement)).toBeLessThan(
+      0.001,
+    );
+    expect(sample.phaseCoherentGradientMagnitude).toBeLessThan(0.001);
+    expect(sample.phaseCoherentCancellation).toBe(0);
+    expect(sample.phaseCoherentFieldAuthority).toBeCloseTo(1, 6);
+    expect(sample).not.toHaveProperty("signedDisplacement");
+    expect(sample).not.toHaveProperty("gradientMagnitude");
+    expect(sample).not.toHaveProperty("cancellation");
+    expect(sample).not.toHaveProperty("authority");
   });
 
-  it("lets opposing phase modes cancel in the overlay without erasing support", () => {
-    const sample = evaluateRaymarchPhaseOverlayPoint({
+  it("lets opposing phase modes cancel in the phase-coherent field without erasing support", () => {
+    const sample = evaluateRaymarchPhaseCoherentFieldPoint({
       backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
       detailSlots: new Float32Array(0),
       backbonePhaseSlots: new Float32Array([
@@ -756,10 +764,12 @@ describe("fieldCache", () => {
       time: 0,
     });
 
-    expect(Math.abs(sample.signedDisplacement)).toBeLessThan(0.001);
-    expect(sample.gradientMagnitude).toBeLessThan(0.001);
-    expect(sample.cancellation).toBeGreaterThan(0.95);
-    expect(sample.authority).toBeCloseTo(1, 6);
+    expect(Math.abs(sample.phaseCoherentSignedDisplacement)).toBeLessThan(
+      0.001,
+    );
+    expect(sample.phaseCoherentGradientMagnitude).toBeLessThan(0.001);
+    expect(sample.phaseCoherentCancellation).toBeGreaterThan(0.95);
+    expect(sample.phaseCoherentFieldAuthority).toBeCloseTo(1, 6);
   });
 
   it("reports destructive interference against unsigned modal potential", () => {

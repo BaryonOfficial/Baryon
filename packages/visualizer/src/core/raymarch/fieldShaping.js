@@ -75,9 +75,9 @@ export const EXCITATION_VISIBILITY_MAX_FLOOR = 0.52;
 export const EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START = 0.04;
 export const EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END = 0.24;
 export const EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT = 0.82;
-export const SIGNED_PHASE_OVERLAY_FIELD_GAIN = 0.28;
-export const SIGNED_PHASE_OVERLAY_FIELD_LIMIT = 0.65;
-export const SIGNED_PHASE_OVERLAY_GRADIENT_GAIN = 0.35;
+export const PHASE_COHERENT_FIELD_GAIN = 0.28;
+export const PHASE_COHERENT_FIELD_LIMIT = 0.65;
+export const PHASE_COHERENT_GRADIENT_GAIN = 0.35;
 export const SIGNED_INTERFERENCE_BODY_AUTHORITY_START = 0.015;
 export const SIGNED_INTERFERENCE_BODY_AUTHORITY_END = 0.12;
 export const SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER = 1.2;
@@ -972,32 +972,36 @@ export function deriveModalCrowdingDensity({
   };
 }
 
-export function deriveSignedPhaseOverlayField({
+export function derivePhaseCoherentFieldTransfer({
   cachedField = 0,
-  phaseDisplacement = 0,
-  phaseGradientMagnitude = 0,
-  phaseAuthority = 0,
-  overlayStrength = 0,
+  phaseCoherentSignedDisplacement = 0,
+  phaseCoherentGradientMagnitude = 0,
+  phaseCoherentFieldAuthority = 0,
 }) {
-  const authority = clamp01(phaseAuthority) * clamp01(overlayStrength);
-  const boundedDisplacement = Math.max(
-    -SIGNED_PHASE_OVERLAY_FIELD_LIMIT,
-    Math.min(SIGNED_PHASE_OVERLAY_FIELD_LIMIT, phaseDisplacement),
+  const phaseCoherentFieldAuthorityNormalized = clamp01(
+    phaseCoherentFieldAuthority,
   );
-  const phaseContribution =
-    authority > 0
-      ? boundedDisplacement * authority * SIGNED_PHASE_OVERLAY_FIELD_GAIN
+  const boundedDisplacement = Math.max(
+    -PHASE_COHERENT_FIELD_LIMIT,
+    Math.min(PHASE_COHERENT_FIELD_LIMIT, phaseCoherentSignedDisplacement),
+  );
+  const phaseCoherentFieldContribution =
+    phaseCoherentFieldAuthorityNormalized > 0
+      ? boundedDisplacement *
+        phaseCoherentFieldAuthorityNormalized *
+        PHASE_COHERENT_FIELD_GAIN
       : 0;
-  const phaseGradientContribution =
-    clamp01(phaseGradientMagnitude) *
-    authority *
-    SIGNED_PHASE_OVERLAY_GRADIENT_GAIN;
-  const effectiveField = cachedField + phaseContribution;
+  const phaseCoherentGradientContribution =
+    clamp01(phaseCoherentGradientMagnitude) *
+    phaseCoherentFieldAuthorityNormalized *
+    PHASE_COHERENT_GRADIENT_GAIN;
+  const effectiveField = cachedField + phaseCoherentFieldContribution;
 
   return {
     boundedDisplacement,
-    phaseContribution,
-    phaseGradientContribution,
+    phaseCoherentFieldContribution,
+    phaseCoherentGradientContribution,
+    phaseCoherentFieldAuthority: phaseCoherentFieldAuthorityNormalized,
     effectiveField,
     effectiveFieldAbs: Math.abs(effectiveField),
   };

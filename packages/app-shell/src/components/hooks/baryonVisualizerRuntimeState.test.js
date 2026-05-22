@@ -57,7 +57,7 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
     runtimeDiagnostics.modalFreshness.modalPhaseAuthority = 0.27;
     runtimeDiagnostics.modalFreshness.highQPhaseAuthority = 0.41;
     runtimeDiagnostics.modalFreshness.lowQPhaseAuthority = 0.12;
-    runtimeDiagnostics.modalFreshness.modalPhaseOverlayModeCount = 5;
+    runtimeDiagnostics.modalFreshness.modalPhaseCoherentFieldModeCount = 5;
     runtimeDiagnostics.modalFreshness.highQDetailModeCount = 6;
     runtimeDiagnostics.modalFreshness.highQDetailEnergy = 0.42;
     runtimeDiagnostics.modalFreshness.highQRingSupport = 0.68;
@@ -88,7 +88,7 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
       modalPhaseAuthority: 0.27,
       highQPhaseAuthority: 0.41,
       lowQPhaseAuthority: 0.12,
-      modalPhaseOverlayModeCount: 5,
+      modalPhaseCoherentFieldModeCount: 5,
       highQDetailModeCount: 6,
       highQDetailEnergy: 0.42,
       highQRingSupport: 0.68,
@@ -134,7 +134,7 @@ test("publishes observation transfer raymarch diagnostics in render perf snapsho
   }
 });
 
-test("publishes phase overlay diagnostics in render perf snapshots", () => {
+test("publishes phase-coherent field diagnostics in render perf snapshots", () => {
   const previousWindow = globalThis.window;
   globalThis.window = {};
 
@@ -142,15 +142,15 @@ test("publishes phase overlay diagnostics in render perf snapshots", () => {
     const runtimeDiagnostics = createRuntimeDiagnostics();
     updateObservationTransferRenderDiagnostics(runtimeDiagnostics, {
       raymarchDebug: {
-        phaseOverlayActive: true,
-        phaseOverlayReady: true,
-        phaseOverlayPending: false,
-        phaseOverlayBackend: "compute",
-        phaseOverlayResolution: 32,
-        phaseOverlayRebuildCount: 7,
-        phaseOverlayLastError: null,
-        phaseOverlayModeCount: 6,
-        phaseOverlayStrength: 0.42,
+        phaseCoherentFieldActive: true,
+        phaseCoherentFieldReady: true,
+        phaseCoherentFieldPending: false,
+        phaseCoherentFieldBackend: "compute",
+        phaseCoherentFieldResolution: 32,
+        phaseCoherentFieldRebuildCount: 7,
+        phaseCoherentFieldLastError: null,
+        phaseCoherentFieldModeCount: 6,
+        phaseCoherentFieldAuthority: 0.42,
       },
     });
 
@@ -158,28 +158,28 @@ test("publishes phase overlay diagnostics in render perf snapshots", () => {
       force: true,
     });
 
-    expect(snapshot.render.phaseOverlayActive).toBe(true);
-    expect(snapshot.render.phaseOverlayReady).toBe(true);
-    expect(snapshot.render.phaseOverlayPending).toBe(false);
-    expect(snapshot.render.phaseOverlayBackend).toBe("compute");
-    expect(snapshot.render.phaseOverlayResolution).toBe(32);
-    expect(snapshot.render.phaseOverlayRebuildCount).toBe(7);
-    expect(snapshot.render.phaseOverlayLastError).toBeNull();
-    expect(snapshot.render.phaseOverlayModeCount).toBe(6);
-    expect(snapshot.render.phaseOverlayStrength).toBe(0.42);
+    expect(snapshot.render.phaseCoherentFieldActive).toBe(true);
+    expect(snapshot.render.phaseCoherentFieldReady).toBe(true);
+    expect(snapshot.render.phaseCoherentFieldPending).toBe(false);
+    expect(snapshot.render.phaseCoherentFieldBackend).toBe("compute");
+    expect(snapshot.render.phaseCoherentFieldResolution).toBe(32);
+    expect(snapshot.render.phaseCoherentFieldRebuildCount).toBe(7);
+    expect(snapshot.render.phaseCoherentFieldLastError).toBeNull();
+    expect(snapshot.render.phaseCoherentFieldModeCount).toBe(6);
+    expect(snapshot.render.phaseCoherentFieldAuthority).toBe(0.42);
   } finally {
     globalThis.window = previousWindow;
   }
 });
 
-test("publishes phase overlay diagnostics from runtime state when audit is disabled", () => {
+test("publishes phase-coherent field diagnostics from runtime state when audit is disabled", () => {
   const previousWindow = globalThis.window;
   globalThis.window = {};
 
   try {
     const runtimeDiagnostics = createRuntimeDiagnostics();
     updateObservationTransferRenderDiagnostics(runtimeDiagnostics, null, {
-      phaseOverlayCache: {
+      phaseCoherentFieldCache: {
         active: true,
         ready: true,
         rebuildPending: false,
@@ -187,10 +187,10 @@ test("publishes phase overlay diagnostics from runtime state when audit is disab
         resolution: 32,
         rebuildCount: 9,
         lastError: null,
-        activePhaseModeCount: 6,
+        activePhaseCoherentFieldModeCount: 6,
       },
       uniforms: {
-        uModalPhaseOverlayStrength: {
+        uPhaseCoherentFieldAuthority: {
           value: 0.37,
         },
       },
@@ -200,15 +200,15 @@ test("publishes phase overlay diagnostics from runtime state when audit is disab
       force: true,
     });
 
-    expect(snapshot.render.phaseOverlayActive).toBe(true);
-    expect(snapshot.render.phaseOverlayReady).toBe(true);
-    expect(snapshot.render.phaseOverlayPending).toBe(false);
-    expect(snapshot.render.phaseOverlayBackend).toBe("compute");
-    expect(snapshot.render.phaseOverlayResolution).toBe(32);
-    expect(snapshot.render.phaseOverlayRebuildCount).toBe(9);
-    expect(snapshot.render.phaseOverlayLastError).toBeNull();
-    expect(snapshot.render.phaseOverlayModeCount).toBe(6);
-    expect(snapshot.render.phaseOverlayStrength).toBe(0.37);
+    expect(snapshot.render.phaseCoherentFieldActive).toBe(true);
+    expect(snapshot.render.phaseCoherentFieldReady).toBe(true);
+    expect(snapshot.render.phaseCoherentFieldPending).toBe(false);
+    expect(snapshot.render.phaseCoherentFieldBackend).toBe("compute");
+    expect(snapshot.render.phaseCoherentFieldResolution).toBe(32);
+    expect(snapshot.render.phaseCoherentFieldRebuildCount).toBe(9);
+    expect(snapshot.render.phaseCoherentFieldLastError).toBeNull();
+    expect(snapshot.render.phaseCoherentFieldModeCount).toBe(6);
+    expect(snapshot.render.phaseCoherentFieldAuthority).toBe(0.37);
   } finally {
     globalThis.window = previousWindow;
   }

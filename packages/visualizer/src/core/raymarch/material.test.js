@@ -16,7 +16,7 @@ import {
 import { createRaymarchUniforms } from "./uniforms.js";
 import { raymarchOpacityNode } from "./SafeVolumetricLightingModel.js";
 import {
-  createRaymarchPhaseOverlayCache,
+  createRaymarchPhaseCoherentFieldCache,
   createRaymarchSpectralLightCache,
   createRaymarchFieldCache,
 } from "./fieldCache.js";
@@ -88,7 +88,7 @@ describe("raymarch volume material", () => {
     expect(modalStructureAnchorBlock).not.toContain("visibleStructure");
     expect(modalStructureAnchorBlock).not.toContain(".mul(structure)");
     expect(modalStructureAnchorBlock).not.toContain("ridgeConcentration");
-    expect(observationEnergyBlock).not.toContain("modalPhaseOverlayEnergy");
+    expect(observationEnergyBlock).not.toContain("phaseCoherentFieldEnergy");
   });
 
   it("does not feed raw gradient or contour-only support into observation density authority", () => {
@@ -541,9 +541,9 @@ describe("raymarch volume material", () => {
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
   });
 
-  it("binds phase overlay texture only on cached material variants", () => {
+  it("binds phase-coherent field texture only on cached material variants", () => {
     const fieldCache = createRaymarchFieldCache({ resolution: 8 });
-    const phaseOverlayCache = createRaymarchPhaseOverlayCache({
+    const phaseCoherentFieldCache = createRaymarchPhaseCoherentFieldCache({
       resolution: 8,
     });
     const uniforms = makeMeshUniforms();
@@ -554,27 +554,33 @@ describe("raymarch volume material", () => {
       backboneColorBuffer: {},
       detailColorBuffer: {},
       fieldCacheTexture: fieldCache.texture,
-      phaseOverlayTexture: phaseOverlayCache.texture,
+      phaseCoherentFieldTexture: phaseCoherentFieldCache.texture,
       backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
       detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
       uniforms,
     });
 
-    expect(mesh.userData.raymarchPhaseOverlayTexture).toBe(
-      phaseOverlayCache.texture,
+    expect(mesh.userData.raymarchPhaseCoherentFieldTexture).toBe(
+      phaseCoherentFieldCache.texture,
     );
-    expect(mesh.material.phaseOverlayTexture).toBe(phaseOverlayCache.texture);
-    expect(uniforms.uModalPhaseOverlayStrength.value).toBe(0);
+    expect(mesh.material.phaseCoherentFieldTexture).toBe(
+      phaseCoherentFieldCache.texture,
+    );
+    expect(uniforms.uPhaseCoherentFieldAuthority?.value).toBe(0);
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
+    expect(mesh.userData).not.toHaveProperty("raymarchPhaseOverlayTexture");
+    expect(mesh.material).not.toHaveProperty("phaseOverlayTexture");
 
     setRaymarchFieldEvaluationMode(mesh, "cached");
 
-    expect(mesh.material.phaseOverlayTexture).toBe(phaseOverlayCache.texture);
+    expect(mesh.material.phaseCoherentFieldTexture).toBe(
+      phaseCoherentFieldCache.texture,
+    );
 
     setRaymarchFieldEvaluationMode(mesh, "direct");
 
-    expect(mesh.material.phaseOverlayTexture).toBeNull();
+    expect(mesh.material.phaseCoherentFieldTexture).toBeNull();
   });
 
   it("supports separate backbone and detail capacities", () => {

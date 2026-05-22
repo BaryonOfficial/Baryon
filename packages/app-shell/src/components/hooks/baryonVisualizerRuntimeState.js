@@ -87,7 +87,7 @@ function createModalFreshnessDiagnostics() {
     modalPhaseAuthority: 0,
     highQPhaseAuthority: 0,
     lowQPhaseAuthority: 0,
-    modalPhaseOverlayModeCount: 0,
+    modalPhaseCoherentFieldModeCount: 0,
     modeCoherence: 0,
     activeBackboneModeCount: 0,
     activeDetailModeCount: 0,
@@ -160,7 +160,8 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
     modalPhaseAuthority: modalFreshness.modalPhaseAuthority ?? 0,
     highQPhaseAuthority: modalFreshness.highQPhaseAuthority ?? 0,
     lowQPhaseAuthority: modalFreshness.lowQPhaseAuthority ?? 0,
-    modalPhaseOverlayModeCount: modalFreshness.modalPhaseOverlayModeCount ?? 0,
+    modalPhaseCoherentFieldModeCount:
+      modalFreshness.modalPhaseCoherentFieldModeCount ?? 0,
     modeCoherence: modalFreshness.modeCoherence ?? 0,
     activeBackboneModeCount: modalFreshness.activeBackboneModeCount ?? 0,
     activeDetailModeCount: modalFreshness.activeDetailModeCount ?? 0,
@@ -324,15 +325,15 @@ export function createRuntimeDiagnostics() {
       observationSupportMax: 0,
       observedDensityFloorMax: 0,
       observedContourSupportMax: 0,
-      phaseOverlayActive: false,
-      phaseOverlayReady: false,
-      phaseOverlayPending: false,
-      phaseOverlayBackend: "compute",
-      phaseOverlayResolution: 0,
-      phaseOverlayRebuildCount: 0,
-      phaseOverlayLastError: null,
-      phaseOverlayModeCount: 0,
-      phaseOverlayStrength: 0,
+      phaseCoherentFieldActive: false,
+      phaseCoherentFieldReady: false,
+      phaseCoherentFieldPending: false,
+      phaseCoherentFieldBackend: "compute",
+      phaseCoherentFieldResolution: 0,
+      phaseCoherentFieldRebuildCount: 0,
+      phaseCoherentFieldLastError: null,
+      phaseCoherentFieldModeCount: 0,
+      phaseCoherentFieldAuthority: 0,
     },
     modalFreshness: createModalFreshnessDiagnostics(),
     postProcess: createPostProcessDiagnostics(),
@@ -382,8 +383,8 @@ export function updateObservationTransferRenderDiagnostics(
   }
 
   const raymarchDebug = debugSnapshot?.raymarchDebug ?? debugSnapshot ?? {};
-  const phaseOverlayCache = runtimeState?.phaseOverlayCache ?? null;
-  const phaseOverlayUniforms = runtimeState?.uniforms ?? {};
+  const phaseCoherentFieldCache = runtimeState?.phaseCoherentFieldCache ?? null;
+  const phaseCoherentFieldUniforms = runtimeState?.uniforms ?? {};
   renderDiagnostics.observationEnergy = readFiniteNumber(
     raymarchDebug.observationEnergy,
   );
@@ -399,35 +400,40 @@ export function updateObservationTransferRenderDiagnostics(
   renderDiagnostics.observedContourSupportMax = readFiniteNumber(
     raymarchDebug.observedContourSupportMax,
   );
-  renderDiagnostics.phaseOverlayActive = Boolean(
-    raymarchDebug.phaseOverlayActive ?? phaseOverlayCache?.active,
+  renderDiagnostics.phaseCoherentFieldActive = Boolean(
+    raymarchDebug.phaseCoherentFieldActive ?? phaseCoherentFieldCache?.active,
   );
-  renderDiagnostics.phaseOverlayReady = Boolean(
-    raymarchDebug.phaseOverlayReady ?? phaseOverlayCache?.ready,
+  renderDiagnostics.phaseCoherentFieldReady = Boolean(
+    raymarchDebug.phaseCoherentFieldReady ?? phaseCoherentFieldCache?.ready,
   );
-  renderDiagnostics.phaseOverlayPending = Boolean(
-    raymarchDebug.phaseOverlayPending ?? phaseOverlayCache?.rebuildPending,
+  renderDiagnostics.phaseCoherentFieldPending = Boolean(
+    raymarchDebug.phaseCoherentFieldPending ??
+      phaseCoherentFieldCache?.rebuildPending,
   );
-  renderDiagnostics.phaseOverlayBackend =
-    raymarchDebug.phaseOverlayBackend ??
-    phaseOverlayCache?.backend ??
+  renderDiagnostics.phaseCoherentFieldBackend =
+    raymarchDebug.phaseCoherentFieldBackend ??
+    phaseCoherentFieldCache?.backend ??
     "compute";
-  renderDiagnostics.phaseOverlayResolution = readFiniteNumber(
-    raymarchDebug.phaseOverlayResolution ?? phaseOverlayCache?.resolution,
+  renderDiagnostics.phaseCoherentFieldResolution = readFiniteNumber(
+    raymarchDebug.phaseCoherentFieldResolution ??
+      phaseCoherentFieldCache?.resolution,
   );
-  renderDiagnostics.phaseOverlayRebuildCount = readFiniteNumber(
-    raymarchDebug.phaseOverlayRebuildCount ?? phaseOverlayCache?.rebuildCount,
+  renderDiagnostics.phaseCoherentFieldRebuildCount = readFiniteNumber(
+    raymarchDebug.phaseCoherentFieldRebuildCount ??
+      phaseCoherentFieldCache?.rebuildCount,
   );
-  renderDiagnostics.phaseOverlayLastError =
-    raymarchDebug.phaseOverlayLastError ?? phaseOverlayCache?.lastError ?? null;
-  renderDiagnostics.phaseOverlayModeCount = readFiniteNumber(
-    raymarchDebug.phaseOverlayModeCount ??
-      phaseOverlayCache?.activePhaseModeCount ??
-      runtimeState?.phaseOverlayModeCount,
+  renderDiagnostics.phaseCoherentFieldLastError =
+    raymarchDebug.phaseCoherentFieldLastError ??
+    phaseCoherentFieldCache?.lastError ??
+    null;
+  renderDiagnostics.phaseCoherentFieldModeCount = readFiniteNumber(
+    raymarchDebug.phaseCoherentFieldModeCount ??
+      phaseCoherentFieldCache?.activePhaseCoherentFieldModeCount ??
+      runtimeState?.phaseCoherentFieldModeCount,
   );
-  renderDiagnostics.phaseOverlayStrength = readFiniteNumber(
-    raymarchDebug.phaseOverlayStrength ??
-      phaseOverlayUniforms.uModalPhaseOverlayStrength?.value,
+  renderDiagnostics.phaseCoherentFieldAuthority = readFiniteNumber(
+    raymarchDebug.phaseCoherentFieldAuthority ??
+      phaseCoherentFieldUniforms.uPhaseCoherentFieldAuthority?.value,
   );
 
   return runtimeDiagnostics;
@@ -584,23 +590,24 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
         runtimeDiagnostics?.render?.observedDensityFloorMax ?? 0,
       observedContourSupportMax:
         runtimeDiagnostics?.render?.observedContourSupportMax ?? 0,
-      phaseOverlayActive:
-        runtimeDiagnostics?.render?.phaseOverlayActive ?? false,
-      phaseOverlayReady: runtimeDiagnostics?.render?.phaseOverlayReady ?? false,
-      phaseOverlayPending:
-        runtimeDiagnostics?.render?.phaseOverlayPending ?? false,
-      phaseOverlayBackend:
-        runtimeDiagnostics?.render?.phaseOverlayBackend ?? "compute",
-      phaseOverlayResolution:
-        runtimeDiagnostics?.render?.phaseOverlayResolution ?? 0,
-      phaseOverlayRebuildCount:
-        runtimeDiagnostics?.render?.phaseOverlayRebuildCount ?? 0,
-      phaseOverlayLastError:
-        runtimeDiagnostics?.render?.phaseOverlayLastError ?? null,
-      phaseOverlayModeCount:
-        runtimeDiagnostics?.render?.phaseOverlayModeCount ?? 0,
-      phaseOverlayStrength:
-        runtimeDiagnostics?.render?.phaseOverlayStrength ?? 0,
+      phaseCoherentFieldActive:
+        runtimeDiagnostics?.render?.phaseCoherentFieldActive ?? false,
+      phaseCoherentFieldReady:
+        runtimeDiagnostics?.render?.phaseCoherentFieldReady ?? false,
+      phaseCoherentFieldPending:
+        runtimeDiagnostics?.render?.phaseCoherentFieldPending ?? false,
+      phaseCoherentFieldBackend:
+        runtimeDiagnostics?.render?.phaseCoherentFieldBackend ?? "compute",
+      phaseCoherentFieldResolution:
+        runtimeDiagnostics?.render?.phaseCoherentFieldResolution ?? 0,
+      phaseCoherentFieldRebuildCount:
+        runtimeDiagnostics?.render?.phaseCoherentFieldRebuildCount ?? 0,
+      phaseCoherentFieldLastError:
+        runtimeDiagnostics?.render?.phaseCoherentFieldLastError ?? null,
+      phaseCoherentFieldModeCount:
+        runtimeDiagnostics?.render?.phaseCoherentFieldModeCount ?? 0,
+      phaseCoherentFieldAuthority:
+        runtimeDiagnostics?.render?.phaseCoherentFieldAuthority ?? 0,
     },
     postProcess: {
       traaNodeActive: runtimeDiagnostics?.postProcess?.traaNodeActive ?? false,

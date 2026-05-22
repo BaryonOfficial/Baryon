@@ -120,9 +120,9 @@ import {
   PHOTOGRAPHIC_SHELL_RIM_START,
   PHOTOGRAPHIC_SHELL_SUPPRESSION_END,
   PHOTOGRAPHIC_SHELL_SUPPRESSION_START,
-  SIGNED_PHASE_OVERLAY_FIELD_GAIN,
-  SIGNED_PHASE_OVERLAY_FIELD_LIMIT,
-  SIGNED_PHASE_OVERLAY_GRADIENT_GAIN,
+  PHASE_COHERENT_FIELD_GAIN,
+  PHASE_COHERENT_FIELD_LIMIT,
+  PHASE_COHERENT_GRADIENT_GAIN,
   SIGNED_INTERFERENCE_BODY_AUTHORITY_END,
   SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER,
   SIGNED_INTERFERENCE_BODY_AUTHORITY_START,
@@ -219,7 +219,7 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   offsetNode?: any | ((args: { startPosLocal: any, rayDirLocal: any, radiusNode: any }) => any),
  *   fieldEvaluationMode?: string,
  *   spectralLightEvaluationMode?: string,
- *   phaseOverlayTexture?: any
+ *   phaseCoherentFieldTexture?: any
  * }} BaryonVolumeMaterial
  */
 
@@ -461,7 +461,7 @@ function createScatteringNode({
   cavityGeometry = "rectangular",
   fieldCacheTexture = null,
   spectralLightCacheTexture = null,
-  phaseOverlayTexture = null,
+  phaseCoherentFieldTexture = null,
   spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
 }) {
   const {
@@ -507,7 +507,7 @@ function createScatteringNode({
     uObservationTransferGain,
     uObservationDensityFloor,
     uObservationContourSupportScale,
-    uModalPhaseOverlayStrength,
+    uPhaseCoherentFieldAuthority,
   } = uniforms;
   // Uniform-only expressions: hoist outside the Fn so they are loop-invariant
   // at the TSL graph level and do not re-evaluate every raymarch step.
@@ -655,10 +655,10 @@ function createScatteringNode({
       const gradZ = float(0.0).toVar();
       const colorSum = vec3(0.0).toVar();
       const colorWeight = float(0.0).toVar();
-      const phaseOverlaySignedDisplacement = float(0.0).toVar();
-      const phaseOverlayGradientMagnitude = float(0.0).toVar();
-      const phaseOverlayCancellation = float(0.0).toVar();
-      const phaseOverlayAuthority = float(0.0).toVar();
+      const phaseCoherentSignedDisplacement = float(0.0).toVar();
+      const phaseCoherentGradientMagnitude = float(0.0).toVar();
+      const phaseCoherentCancellation = float(0.0).toVar();
+      const phaseCoherentFieldAuthority = float(0.0).toVar();
       const spectralLightEnabled = smoothstep(
         float(0.0),
         float(1e-4),
@@ -687,13 +687,13 @@ function createScatteringNode({
         gradY.assign(cachedSample.z);
         gradZ.assign(cachedSample.w);
 
-        if (phaseOverlayTexture) {
-          const phaseOverlaySample =
-            texture3D(phaseOverlayTexture).sample(cacheUv);
-          phaseOverlaySignedDisplacement.assign(phaseOverlaySample.x);
-          phaseOverlayGradientMagnitude.assign(phaseOverlaySample.y);
-          phaseOverlayCancellation.assign(phaseOverlaySample.z);
-          phaseOverlayAuthority.assign(phaseOverlaySample.w);
+        if (phaseCoherentFieldTexture) {
+          const phaseCoherentFieldSample =
+            texture3D(phaseCoherentFieldTexture).sample(cacheUv);
+          phaseCoherentSignedDisplacement.assign(phaseCoherentFieldSample.x);
+          phaseCoherentGradientMagnitude.assign(phaseCoherentFieldSample.y);
+          phaseCoherentCancellation.assign(phaseCoherentFieldSample.z);
+          phaseCoherentFieldAuthority.assign(phaseCoherentFieldSample.w);
         }
 
         if (cachedSpectralLightEnabled) {
@@ -752,15 +752,15 @@ function createScatteringNode({
         });
       }
 
-      const phaseOverlayStrength = clamp(
-        uModalPhaseOverlayStrength,
+      const phaseCoherentFieldAuthorityUniform = clamp(
+        uPhaseCoherentFieldAuthority,
         float(0.0),
         float(1.0),
       );
       const signedCancellationAuthority = clamp(
-        phaseOverlayCancellation
-          .mul(phaseOverlayAuthority)
-          .mul(phaseOverlayStrength),
+        phaseCoherentCancellation
+          .mul(phaseCoherentFieldAuthority)
+          .mul(phaseCoherentFieldAuthorityUniform),
         float(0.0),
         float(1.0),
       );
@@ -772,22 +772,22 @@ function createScatteringNode({
         ),
       );
       const signedPhaseContribution = clamp(
-        phaseOverlaySignedDisplacement,
-        float(-SIGNED_PHASE_OVERLAY_FIELD_LIMIT),
-        float(SIGNED_PHASE_OVERLAY_FIELD_LIMIT),
+        phaseCoherentSignedDisplacement,
+        float(-PHASE_COHERENT_FIELD_LIMIT),
+        float(PHASE_COHERENT_FIELD_LIMIT),
       )
-        .mul(phaseOverlayAuthority)
-        .mul(phaseOverlayStrength)
-        .mul(float(SIGNED_PHASE_OVERLAY_FIELD_GAIN));
+        .mul(phaseCoherentFieldAuthority)
+        .mul(phaseCoherentFieldAuthorityUniform)
+        .mul(float(PHASE_COHERENT_FIELD_GAIN));
       const effectiveField = field.add(signedPhaseContribution);
       const fieldAbs = abs(effectiveField);
       const gradient = vec3(gradX, gradY, gradZ).toVar();
       const gradientMagnitude = length(gradient);
       const gradientNormal = gradient.div(max(gradientMagnitude, float(1e-4)));
-      const phaseGradientContribution = phaseOverlayGradientMagnitude
-        .mul(phaseOverlayAuthority)
-        .mul(phaseOverlayStrength)
-        .mul(float(SIGNED_PHASE_OVERLAY_GRADIENT_GAIN));
+      const phaseGradientContribution = phaseCoherentGradientMagnitude
+        .mul(phaseCoherentFieldAuthority)
+        .mul(phaseCoherentFieldAuthorityUniform)
+        .mul(float(PHASE_COHERENT_GRADIENT_GAIN));
       const effectiveGradientMagnitude = gradientMagnitude.add(
         phaseGradientContribution,
       );
@@ -1611,7 +1611,7 @@ export function createRaymarchVolumeMesh({
   detailColorBuffer,
   fieldCacheTexture = null,
   spectralLightCacheTexture = null,
-  phaseOverlayTexture = null,
+  phaseCoherentFieldTexture = null,
   capacity = null,
   backboneCapacity = capacity ?? 0,
   detailCapacity = capacity ?? 0,
@@ -1660,14 +1660,14 @@ export function createRaymarchVolumeMesh({
         RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached
           ? spectralLightCacheTexture
           : null,
-      phaseOverlayTexture:
-        fieldEvaluationMode === "cached" ? phaseOverlayTexture : null,
+      phaseCoherentFieldTexture:
+        fieldEvaluationMode === "cached" ? phaseCoherentFieldTexture : null,
       spectralLightEvaluationMode,
     });
     material.fieldEvaluationMode = fieldEvaluationMode;
     material.spectralLightEvaluationMode = spectralLightEvaluationMode;
-    material.phaseOverlayTexture =
-      fieldEvaluationMode === "cached" ? phaseOverlayTexture : null;
+    material.phaseCoherentFieldTexture =
+      fieldEvaluationMode === "cached" ? phaseCoherentFieldTexture : null;
     return material;
   };
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
@@ -1714,7 +1714,7 @@ export function createRaymarchVolumeMesh({
   mesh.userData.raymarchFieldEvaluationMode = initialFieldEvaluationMode;
   mesh.userData.raymarchSpectralLightEvaluationMode =
     initialSpectralLightEvaluationMode;
-  mesh.userData.raymarchPhaseOverlayTexture = phaseOverlayTexture;
+  mesh.userData.raymarchPhaseCoherentFieldTexture = phaseCoherentFieldTexture;
   mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
   mesh.frustumCulled = false;
 

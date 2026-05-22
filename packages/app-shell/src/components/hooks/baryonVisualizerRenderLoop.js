@@ -326,9 +326,9 @@ export function updateModalFreshnessDiagnostics(
   modalFreshness.lowQPhaseAuthority = readFiniteNumber(
     featureFrame.debug?.lowQPhaseAuthority ?? featureFrame.lowQPhaseAuthority,
   );
-  modalFreshness.modalPhaseOverlayModeCount = readFiniteNumber(
-    featureFrame.debug?.modalPhaseOverlayModeCount ??
-      featureFrame.modalPhaseOverlayModeCount,
+  modalFreshness.modalPhaseCoherentFieldModeCount = readFiniteNumber(
+    featureFrame.debug?.modalPhaseCoherentFieldModeCount ??
+      featureFrame.modalPhaseCoherentFieldModeCount,
   );
   modalFreshness.modeCoherence = readFiniteNumber(featureFrame.modeCoherence);
   modalFreshness.activeBackboneModeCount = readFiniteNumber(

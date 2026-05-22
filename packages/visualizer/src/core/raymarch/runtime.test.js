@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { createRaymarchSceneRoot, tickRaymarchRuntime } from "./runtime.js";
 import {
   buildRaymarchFieldCacheDescriptor,
-  createRaymarchPhaseOverlayCache,
+  createRaymarchPhaseCoherentFieldCache,
   createRaymarchSpectralLightCache,
   createRaymarchFieldCache,
 } from "./fieldCache.js";
@@ -23,8 +23,8 @@ function createRuntimeState({ withFieldCache = false } = {}) {
   const spectralLightCache = withFieldCache
     ? createRaymarchSpectralLightCache({ resolution: 8 })
     : null;
-  const phaseOverlayCache = withFieldCache
-    ? createRaymarchPhaseOverlayCache({ resolution: 8 })
+  const phaseCoherentFieldCache = withFieldCache
+    ? createRaymarchPhaseCoherentFieldCache({ resolution: 8 })
     : null;
   const materialCache = withFieldCache
     ? {
@@ -132,7 +132,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uObservationTransferGain: { value: 0 },
       uObservationDensityFloor: { value: 0 },
       uObservationContourSupportScale: { value: 0 },
-      uModalPhaseOverlayStrength: { value: 0 },
+      uPhaseCoherentFieldAuthority: { value: 0 },
     },
     visualRoot: {
       scale: {
@@ -201,7 +201,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
     auditEnabled: true,
     fieldCache,
     spectralLightCache,
-    phaseOverlayCache,
+    phaseCoherentFieldCache,
     requestedCavityGeometry: "rectangular",
     effectiveCavityGeometry: "rectangular",
     debugSnapshot: null,
@@ -412,9 +412,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.idleOverlay.visible).toBe(false);
     expect(runtimeState.debugSnapshot.raymarchDebug.backboneModeCount).toBe(2);
     expect(runtimeState.debugSnapshot.raymarchDebug.detailModeCount).toBe(2);
-    expect(runtimeState.phaseOverlayUploadCount).toBeUndefined();
+    expect(runtimeState.phaseCoherentFieldUploadCount).toBeUndefined();
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.renderedPhaseOverlayModeCount,
+      runtimeState.debugSnapshot.raymarchDebug.renderedPhaseCoherentModeCount,
     ).toBeUndefined();
     expect(
       runtimeState.debugSnapshot.raymarchDebug.renderedBackboneModeCount,
@@ -615,7 +615,7 @@ describe("tickRaymarchRuntime", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("updates a bounded phase overlay cache without rebuilding field or Spectral Light caches", async () => {
+  it("updates a bounded phase-coherent field cache without rebuilding field or Spectral Light caches", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     const renderer = {
       computeAsync: vi.fn(async () => undefined),
@@ -656,8 +656,8 @@ describe("tickRaymarchRuntime", () => {
       await flushMicrotasks();
       const fieldRebuildCount = runtimeState.fieldCache.rebuildCount;
       const spectralRebuildCount = runtimeState.spectralLightCache.rebuildCount;
-      const phaseOverlayRebuildCount =
-        runtimeState.phaseOverlayCache.rebuildCount;
+      const phaseCoherentFieldRebuildCount =
+        runtimeState.phaseCoherentFieldCache.rebuildCount;
       const fieldDescriptor = runtimeState.fieldCache.activeDescriptor;
       const spectralDescriptor =
         runtimeState.spectralLightCache.activeDescriptor;
@@ -671,13 +671,15 @@ describe("tickRaymarchRuntime", () => {
       tickRaymarchRuntime(runtimeState, featureFrame, 3.1, 1 / 60, renderer);
       await flushMicrotasks();
 
-      expect(runtimeState.phaseOverlayCache).toBeTruthy();
-      expect(runtimeState.phaseOverlayCache.ready).toBe(true);
-      expect(runtimeState.phaseOverlayCache.rebuildCount).toBe(
-        phaseOverlayRebuildCount,
+      expect(runtimeState.phaseCoherentFieldCache).toBeTruthy();
+      expect(runtimeState.phaseCoherentFieldCache.ready).toBe(true);
+      expect(runtimeState.phaseCoherentFieldCache.rebuildCount).toBe(
+        phaseCoherentFieldRebuildCount,
       );
-      expect(runtimeState.phaseOverlayUploadCount).toBeGreaterThan(0);
-      expect(runtimeState.uniforms.uModalPhaseOverlayStrength.value).toBe(0.5);
+      expect(runtimeState.phaseCoherentFieldUploadCount).toBeGreaterThan(0);
+      expect(runtimeState.uniforms.uPhaseCoherentFieldAuthority.value).toBe(
+        0.5,
+      );
       expect(runtimeState.fieldCache.activeDescriptor).toEqual(fieldDescriptor);
       expect(runtimeState.spectralLightCache.activeDescriptor).toEqual(
         spectralDescriptor,
@@ -686,36 +688,36 @@ describe("tickRaymarchRuntime", () => {
       expect(runtimeState.spectralLightCache.rebuildCount).toBe(
         spectralRebuildCount,
       );
-      expect(runtimeState.debugSnapshot.raymarchDebug.phaseOverlayReady).toBe(
-        true,
-      );
-      expect(runtimeState.debugSnapshot.raymarchDebug.phaseOverlayPending).toBe(
-        false,
-      );
       expect(
-        runtimeState.debugSnapshot.raymarchDebug.phaseOverlayResolution,
-      ).toBe(8);
-      expect(
-        runtimeState.debugSnapshot.raymarchDebug.phaseOverlayModeCount,
-      ).toBeGreaterThan(0);
-      expect(
-        runtimeState.debugSnapshot.raymarchDebug.phaseOverlaySemantic,
-      ).toBe("signed-displacement");
-      expect(
-        runtimeState.debugSnapshot.raymarchDebug.signedPhaseOverlayActive,
+        runtimeState.debugSnapshot.raymarchDebug.phaseCoherentFieldReady,
       ).toBe(true);
       expect(
-        runtimeState.debugSnapshot.raymarchDebug.signedPhaseOverlayModeCount,
+        runtimeState.debugSnapshot.raymarchDebug.phaseCoherentFieldPending,
+      ).toBe(false);
+      expect(
+        runtimeState.debugSnapshot.raymarchDebug.phaseCoherentFieldResolution,
+      ).toBe(8);
+      expect(
+        runtimeState.debugSnapshot.raymarchDebug.phaseCoherentFieldModeCount,
       ).toBeGreaterThan(0);
       expect(
-        runtimeState.debugSnapshot.raymarchDebug.signedPhaseOverlaySemantic,
-      ).toBe("signed-displacement");
+        runtimeState.debugSnapshot.raymarchDebug.phaseCoherentFieldSemantic,
+      ).toBe("phase-coherent-signed-displacement");
+      expect(
+        runtimeState.debugSnapshot.raymarchDebug.phaseCoherentFieldActive,
+      ).toBe(true);
+      expect(runtimeState.debugSnapshot.raymarchDebug).not.toHaveProperty(
+        "phaseOverlaySemantic",
+      );
+      expect(runtimeState.debugSnapshot.raymarchDebug).not.toHaveProperty(
+        "signedPhaseOverlaySemantic",
+      );
     } finally {
       globalThis.window = originalWindow;
     }
   });
 
-  it("fails phase overlay closed when cached compute is unavailable", async () => {
+  it("fails phase-coherent field closed when cached compute is unavailable", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     const originalWindow = globalThis.window;
     globalThis.window = /** @type {any} */ ({
@@ -761,15 +763,15 @@ describe("tickRaymarchRuntime", () => {
       tickRaymarchRuntime(runtimeState, featureFrame, 3, 1 / 60, null);
       await flushMicrotasks();
 
-      expect(runtimeState.phaseOverlayCache).toBeTruthy();
-      expect(runtimeState.phaseOverlayCache.backend).toBe("unavailable");
-      expect(runtimeState.phaseOverlayCache.ready).toBe(false);
-      expect(runtimeState.uniforms.uModalPhaseOverlayStrength.value).toBe(0);
-      expect(runtimeState.debugSnapshot.raymarchDebug.phaseOverlayReady).toBe(
-        false,
-      );
+      expect(runtimeState.phaseCoherentFieldCache).toBeTruthy();
+      expect(runtimeState.phaseCoherentFieldCache.backend).toBe("unavailable");
+      expect(runtimeState.phaseCoherentFieldCache.ready).toBe(false);
+      expect(runtimeState.uniforms.uPhaseCoherentFieldAuthority.value).toBe(0);
       expect(
-        runtimeState.debugSnapshot.raymarchDebug.phaseOverlayLastError,
+        runtimeState.debugSnapshot.raymarchDebug.phaseCoherentFieldReady,
+      ).toBe(false);
+      expect(
+        runtimeState.debugSnapshot.raymarchDebug.phaseCoherentFieldLastError,
       ).toBe("Renderer computeAsync unavailable");
     } finally {
       globalThis.window = originalWindow;
@@ -1298,10 +1300,10 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.spectralLightCache.lastError).toBeNull();
   });
 
-  it("ignores stale phase overlay completions after render-authority reset", async () => {
+  it("ignores stale phase-coherent field completions after render-authority reset", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
-    runtimeState.phaseOverlayCache.computeNodesByKey["rectangular:neumann"] = {
+    runtimeState.phaseCoherentFieldCache.computeNodesByKey["rectangular:neumann"] = {
       id: "phase",
     };
     let resolvePhase;
@@ -1325,7 +1327,7 @@ describe("tickRaymarchRuntime", () => {
     );
     await flushMicrotasks(2);
 
-    expect(runtimeState.phaseOverlayCache.rebuildPending).toBe(true);
+    expect(runtimeState.phaseCoherentFieldCache.rebuildPending).toBe(true);
     expect(resolvePhase).toBeTypeOf("function");
 
     tickRaymarchRuntime(
@@ -1344,10 +1346,10 @@ describe("tickRaymarchRuntime", () => {
     resolvePhase();
     await flushMicrotasks(5);
 
-    expect(runtimeState.phaseOverlayCache.ready).toBe(false);
-    expect(runtimeState.phaseOverlayCache.rebuildPending).toBe(false);
-    expect(runtimeState.phaseOverlayCache.activeDescriptor).toBeNull();
-    expect(runtimeState.phaseOverlayCache.rebuildCount).toBe(0);
+    expect(runtimeState.phaseCoherentFieldCache.ready).toBe(false);
+    expect(runtimeState.phaseCoherentFieldCache.rebuildPending).toBe(false);
+    expect(runtimeState.phaseCoherentFieldCache.activeDescriptor).toBeNull();
+    expect(runtimeState.phaseCoherentFieldCache.rebuildCount).toBe(0);
   });
 
   it("keeps cached evaluation active while the current modal descriptor rebuilds", () => {
@@ -2672,7 +2674,7 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
-  it("does not let phase overlay author observation energy", () => {
+  it("does not let phase-coherent field author observation energy", () => {
     const runtimeState = createRuntimeState();
 
     tickRaymarchRuntime(

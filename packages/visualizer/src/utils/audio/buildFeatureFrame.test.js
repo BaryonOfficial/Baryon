@@ -4305,7 +4305,7 @@ describe("live input noise gate", () => {
           modeCoherence: 0.66,
           modalPhaseAuthority: 0.48,
           highQPhaseAuthority: 0.48,
-          modalPhaseOverlayModeCount: 2,
+          modalPhaseCoherentFieldModeCount: 2,
         },
       }),
     });

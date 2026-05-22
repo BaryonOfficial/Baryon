@@ -294,12 +294,12 @@ describe("observation transfer", () => {
     expect(noEnergy.visibleDensity).toBe(0);
   });
 
-  it("does not let phase overlay author observation energy", () => {
+  it("does not let phase-coherent field author observation energy", () => {
     const phaseOnly = deriveObservationTransfer({
       density: 0,
       modalStructureAnchor: 1,
       ridgeAnchor: 1,
-      modalPhaseOverlayEnergy: 1,
+      phaseCoherentFieldEnergy: 1,
     });
     const withModalResponse = deriveObservationTransfer({
       density: 0,
@@ -308,7 +308,7 @@ describe("observation transfer", () => {
       modalCoefficientEnergy: 0.12,
       modalResponseBackboneEnergy: 0.28,
       modalResponseDetailEnergy: 0.04,
-      modalPhaseOverlayEnergy: 1,
+      phaseCoherentFieldEnergy: 1,
     });
 
     expect(phaseOnly.observationEnergy).toBe(0);
@@ -329,7 +329,7 @@ describe("observation transfer", () => {
       modalCoefficientEnergy: 0.13,
       modalResponseBackboneEnergy: 0.21,
       modalResponseDetailEnergy: 0.04,
-      modalPhaseOverlayEnergy: 0.2,
+      phaseCoherentFieldEnergy: 0.2,
     };
 
     const baseline = deriveObservationTransfer(physicalInputs);

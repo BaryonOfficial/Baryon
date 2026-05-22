@@ -25,10 +25,10 @@ import { RAYMARCH_FIELD_CACHE_OVERRIDE_MODES } from "../../visualization/fieldEv
 import { DETAIL_LAYER_WEIGHT } from "./fieldShaping.js";
 
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
-export const RAYMARCH_PHASE_OVERLAY_RESOLUTION = 32;
-export const RAYMARCH_PHASE_OVERLAY_UPDATE_INTERVAL_MS = 1000 / 15;
-export const RAYMARCH_PHASE_OVERLAY_BACKBONE_LIMIT = 2;
-export const RAYMARCH_PHASE_OVERLAY_DETAIL_LIMIT = 6;
+export const RAYMARCH_PHASE_COHERENT_FIELD_RESOLUTION = 32;
+export const RAYMARCH_PHASE_COHERENT_FIELD_UPDATE_INTERVAL_MS = 1000 / 15;
+export const RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT = 2;
+export const RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT = 6;
 
 /*
 Dev overrides for manual testing:
@@ -47,8 +47,8 @@ window.__baryonAuditSnapshot?.fieldCacheOverride
 */
 const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
 const FIELD_CACHE_WEIGHT_QUANTIZATION = 1024;
-const PHASE_OVERLAY_CANCELLATION_SUPPORT_EPSILON = 1e-5;
-const PHASE_OVERLAY_CANCELLATION_SUPPORT_FULL = 0.01;
+const PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_EPSILON = 1e-5;
+const PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_FULL = 0.01;
 const SIGNED_INTERFERENCE_VISIBILITY_EPSILON = 0.01;
 const SIGNED_INTERFERENCE_VISIBILITY_START = 0.025;
 const SIGNED_INTERFERENCE_VISIBILITY_END = 0.1;
@@ -260,8 +260,8 @@ export function createRaymarchSpectralLightCache({
   });
 }
 
-export function createRaymarchPhaseOverlayCache({
-  resolution = RAYMARCH_PHASE_OVERLAY_RESOLUTION,
+export function createRaymarchPhaseCoherentFieldCache({
+  resolution = RAYMARCH_PHASE_COHERENT_FIELD_RESOLUTION,
 } = {}) {
   const normalizedResolution = Math.max(8, Math.round(resolution));
   const texture = createCacheTexture(normalizedResolution);
@@ -272,12 +272,12 @@ export function createRaymarchPhaseOverlayCache({
       texture,
       mode: "cached",
     }),
-    maxBackboneModes: RAYMARCH_PHASE_OVERLAY_BACKBONE_LIMIT,
-    maxDetailModes: RAYMARCH_PHASE_OVERLAY_DETAIL_LIMIT,
-    updateIntervalMs: RAYMARCH_PHASE_OVERLAY_UPDATE_INTERVAL_MS,
+    maxBackboneModes: RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT,
+    maxDetailModes: RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT,
+    updateIntervalMs: RAYMARCH_PHASE_COHERENT_FIELD_UPDATE_INTERVAL_MS,
     lastUpdateTimeMs: -Infinity,
-    activePhaseModeCount: 0,
-    semantic: "signed-displacement",
+    activePhaseCoherentFieldModeCount: 0,
+    semantic: "phase-coherent-signed-displacement",
   };
 }
 
@@ -294,8 +294,8 @@ export function disposeRaymarchSpectralLightCache(spectralLightCache) {
   disposeRaymarchFieldCache(spectralLightCache);
 }
 
-export function disposeRaymarchPhaseOverlayCache(phaseOverlayCache) {
-  disposeRaymarchFieldCache(phaseOverlayCache);
+export function disposeRaymarchPhaseCoherentFieldCache(phaseCoherentFieldCache) {
+  disposeRaymarchFieldCache(phaseCoherentFieldCache);
 }
 
 function createCacheTexture(resolution) {
@@ -793,7 +793,7 @@ export function evaluateRaymarchSignedPotentialAtPoint({
   };
 }
 
-function accumulatePhaseOverlayLayerAtPoint({
+function accumulatePhaseCoherentFieldLayerAtPoint({
   slots,
   phaseSlots,
   activeCount,
@@ -865,7 +865,7 @@ function accumulatePhaseOverlayLayerAtPoint({
   };
 }
 
-export function evaluateRaymarchPhaseOverlayPoint({
+export function evaluateRaymarchPhaseCoherentFieldPoint({
   backboneSlots,
   detailSlots,
   backbonePhaseSlots,
@@ -883,7 +883,7 @@ export function evaluateRaymarchPhaseOverlayPoint({
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
   const scale = Math.PI / Math.max(radius, 1e-4);
-  const backbone = accumulatePhaseOverlayLayerAtPoint({
+  const backbone = accumulatePhaseCoherentFieldLayerAtPoint({
     slots: backboneSlots,
     phaseSlots: backbonePhaseSlots,
     activeCount: backboneCount,
@@ -896,7 +896,7 @@ export function evaluateRaymarchPhaseOverlayPoint({
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
   });
-  const detail = accumulatePhaseOverlayLayerAtPoint({
+  const detail = accumulatePhaseCoherentFieldLayerAtPoint({
     slots: detailSlots,
     phaseSlots: detailPhaseSlots,
     activeCount: detailCount,
@@ -931,9 +931,9 @@ export function evaluateRaymarchPhaseOverlayPoint({
     1,
     Math.max(
       0,
-      (unsignedPotential - PHASE_OVERLAY_CANCELLATION_SUPPORT_EPSILON) /
-        (PHASE_OVERLAY_CANCELLATION_SUPPORT_FULL -
-          PHASE_OVERLAY_CANCELLATION_SUPPORT_EPSILON),
+      (unsignedPotential - PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_EPSILON) /
+        (PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_FULL -
+          PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_EPSILON),
     ),
   );
   const cancellation =
@@ -945,7 +945,7 @@ export function evaluateRaymarchPhaseOverlayPoint({
         1 -
           Math.abs(signedDisplacement) /
             Math.max(
-              PHASE_OVERLAY_CANCELLATION_SUPPORT_FULL,
+              PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_FULL,
               unsignedPotential,
             ),
       ),
@@ -956,10 +956,10 @@ export function evaluateRaymarchPhaseOverlayPoint({
   );
 
   return {
-    signedDisplacement: normalizedSignedDisplacement,
-    gradientMagnitude,
-    cancellation,
-    authority,
+    phaseCoherentSignedDisplacement: normalizedSignedDisplacement,
+    phaseCoherentGradientMagnitude: gradientMagnitude,
+    phaseCoherentCancellation: cancellation,
+    phaseCoherentFieldAuthority: authority,
   };
 }
 
@@ -1259,8 +1259,8 @@ function createSpectralLightComputeKernel({
   );
 }
 
-function createPhaseOverlayComputeKernel({
-  phaseOverlayCache,
+function createPhaseCoherentFieldComputeKernel({
+  phaseCoherentFieldCache,
   backboneModeBuffer,
   detailModeBuffer,
   backbonePhaseBuffer,
@@ -1271,7 +1271,7 @@ function createPhaseOverlayComputeKernel({
   boundaryMode,
   cavityGeometry,
 }) {
-  const { resolution, texture } = phaseOverlayCache;
+  const { resolution, texture } = phaseCoherentFieldCache;
   const uRadius = uniforms.uRadius;
   const uTime = uniforms.uTime;
   const backboneActiveCount = int(uniforms.uBackboneModeCount);
@@ -1426,11 +1426,11 @@ function createPhaseOverlayComputeKernel({
       const safeAuthority = authoritySum.max(float(0.01));
       const cancellationSupport = clamp(
         unsignedPotential
-          .sub(float(PHASE_OVERLAY_CANCELLATION_SUPPORT_EPSILON))
+          .sub(float(PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_EPSILON))
           .div(
             float(
-              PHASE_OVERLAY_CANCELLATION_SUPPORT_FULL -
-                PHASE_OVERLAY_CANCELLATION_SUPPORT_EPSILON,
+              PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_FULL -
+                PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_EPSILON,
             ),
           ),
         float(0.0),
@@ -1440,7 +1440,7 @@ function createPhaseOverlayComputeKernel({
         float(1.0).sub(
           abs(signedDisplacement).div(
             unsignedPotential.max(
-              float(PHASE_OVERLAY_CANCELLATION_SUPPORT_FULL),
+              float(PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_FULL),
             ),
           ),
         ),
@@ -1469,7 +1469,7 @@ function createPhaseOverlayComputeKernel({
       ).toWriteOnly();
     });
   })().compute(
-    phaseOverlayCache.dispatchSize,
+    phaseCoherentFieldCache.dispatchSize,
     Array.from(FIELD_CACHE_COMPUTE_WORKGROUP_SIZE),
   );
 }
@@ -1554,8 +1554,8 @@ function getOrCreateRaymarchSpectralLightCacheComputeNode(
   return computeNode;
 }
 
-function getOrCreateRaymarchPhaseOverlayComputeNode(
-  phaseOverlayCache,
+function getOrCreateRaymarchPhaseCoherentFieldComputeNode(
+  phaseCoherentFieldCache,
   {
     backboneModeBuffer,
     detailModeBuffer,
@@ -1568,20 +1568,20 @@ function getOrCreateRaymarchPhaseOverlayComputeNode(
     cavityGeometry,
   },
 ) {
-  if (!phaseOverlayCache) {
+  if (!phaseCoherentFieldCache) {
     return null;
   }
 
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
   const nodeKey = `${normalizedCavityGeometry}:${normalizedBoundaryMode}`;
-  const cachedNode = phaseOverlayCache.computeNodesByKey?.[nodeKey];
+  const cachedNode = phaseCoherentFieldCache.computeNodesByKey?.[nodeKey];
   if (cachedNode) {
     return cachedNode;
   }
 
-  const computeNode = createPhaseOverlayComputeKernel({
-    phaseOverlayCache,
+  const computeNode = createPhaseCoherentFieldComputeKernel({
+    phaseCoherentFieldCache,
     backboneModeBuffer,
     detailModeBuffer,
     backbonePhaseBuffer,
@@ -1592,7 +1592,7 @@ function getOrCreateRaymarchPhaseOverlayComputeNode(
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
   });
-  phaseOverlayCache.computeNodesByKey[nodeKey] = computeNode;
+  phaseCoherentFieldCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
 }
 
@@ -1830,8 +1830,8 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
   };
 }
 
-export function enqueueRaymarchPhaseOverlayRebuild(
-  phaseOverlayCache,
+export function enqueueRaymarchPhaseCoherentFieldRebuild(
+  phaseCoherentFieldCache,
   renderer,
   descriptor,
   rebuildReason,
@@ -1845,29 +1845,29 @@ export function enqueueRaymarchPhaseOverlayRebuild(
     uniforms,
   },
 ) {
-  if (!phaseOverlayCache) {
+  if (!phaseCoherentFieldCache) {
     return { enqueued: false, reason: "unavailable" };
   }
 
-  if (phaseOverlayCache.backend === "unavailable") {
+  if (phaseCoherentFieldCache.backend === "unavailable") {
     return { enqueued: false, reason: "unavailable" };
   }
 
-  if (phaseOverlayCache.rebuildPending) {
+  if (phaseCoherentFieldCache.rebuildPending) {
     return { enqueued: false, reason: "pending" };
   }
 
   if (!renderer || typeof renderer.computeAsync !== "function") {
-    phaseOverlayCache.backend = "unavailable";
-    phaseOverlayCache.ready = false;
-    phaseOverlayCache.rebuildPending = false;
-    phaseOverlayCache.lastError = "Renderer computeAsync unavailable";
-    phaseOverlayCache.lastRebuildReason = "unavailable";
+    phaseCoherentFieldCache.backend = "unavailable";
+    phaseCoherentFieldCache.ready = false;
+    phaseCoherentFieldCache.rebuildPending = false;
+    phaseCoherentFieldCache.lastError = "Renderer computeAsync unavailable";
+    phaseCoherentFieldCache.lastRebuildReason = "unavailable";
     return { enqueued: false, reason: "unavailable" };
   }
 
-  const computeNode = getOrCreateRaymarchPhaseOverlayComputeNode(
-    phaseOverlayCache,
+  const computeNode = getOrCreateRaymarchPhaseCoherentFieldComputeNode(
+    phaseCoherentFieldCache,
     {
       backboneModeBuffer,
       detailModeBuffer,
@@ -1884,45 +1884,48 @@ export function enqueueRaymarchPhaseOverlayRebuild(
     return { enqueued: false, reason: "unavailable" };
   }
 
-  const rebuildGeneration = beginCacheRebuild(phaseOverlayCache, descriptor);
+  const rebuildGeneration = beginCacheRebuild(
+    phaseCoherentFieldCache,
+    descriptor,
+  );
   const submission = Promise.resolve()
     .then(() => renderer.computeAsync(computeNode))
     .then(
       () => {
         if (
           !isCurrentRaymarchCacheGeneration(
-            phaseOverlayCache,
+            phaseCoherentFieldCache,
             rebuildGeneration,
           )
         ) {
           return;
         }
-        phaseOverlayCache.activeDescriptor = descriptor;
-        phaseOverlayCache.ready = true;
-        phaseOverlayCache.rebuildPending = false;
-        phaseOverlayCache.pendingDescriptor = null;
-        phaseOverlayCache.lastError = null;
-        phaseOverlayCache.backend = "compute";
-        phaseOverlayCache.rebuildCount += 1;
-        phaseOverlayCache.lastRebuildReason = rebuildReason;
+        phaseCoherentFieldCache.activeDescriptor = descriptor;
+        phaseCoherentFieldCache.ready = true;
+        phaseCoherentFieldCache.rebuildPending = false;
+        phaseCoherentFieldCache.pendingDescriptor = null;
+        phaseCoherentFieldCache.lastError = null;
+        phaseCoherentFieldCache.backend = "compute";
+        phaseCoherentFieldCache.rebuildCount += 1;
+        phaseCoherentFieldCache.lastRebuildReason = rebuildReason;
       },
       (error) => {
         if (
           !isCurrentRaymarchCacheGeneration(
-            phaseOverlayCache,
+            phaseCoherentFieldCache,
             rebuildGeneration,
           )
         ) {
           return;
         }
-        advanceRaymarchCacheGeneration(phaseOverlayCache);
-        phaseOverlayCache.backend = "unavailable";
-        phaseOverlayCache.ready = false;
-        phaseOverlayCache.rebuildPending = false;
-        phaseOverlayCache.pendingDescriptor = null;
-        phaseOverlayCache.lastError =
+        advanceRaymarchCacheGeneration(phaseCoherentFieldCache);
+        phaseCoherentFieldCache.backend = "unavailable";
+        phaseCoherentFieldCache.ready = false;
+        phaseCoherentFieldCache.rebuildPending = false;
+        phaseCoherentFieldCache.pendingDescriptor = null;
+        phaseCoherentFieldCache.lastError =
           error instanceof Error ? error.message : String(error);
-        phaseOverlayCache.lastRebuildReason = "unavailable";
+        phaseCoherentFieldCache.lastRebuildReason = "unavailable";
       },
     );
 

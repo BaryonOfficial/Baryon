@@ -1400,7 +1400,7 @@ function summarizeObservedLayerModes(modes, layer) {
   let noiseFloor = 0;
   let phaseAuthority = 0;
   let phaseCoherence = 0;
-  let phaseOverlayModeCount = 0;
+  let phaseCoherentFieldModeCount = 0;
 
   for (const entry of modes?.values?.() ?? []) {
     const renderLayer = getModeRenderLayer(entry);
@@ -1424,7 +1424,7 @@ function summarizeObservedLayerModes(modes, layer) {
     noiseFloor += entry?.localNoiseFloor ?? 0;
     const entryPhaseAuthority = clamp01(entry?.phaseAuthority ?? 0);
     if (entryPhaseAuthority > 0) {
-      phaseOverlayModeCount += 1;
+      phaseCoherentFieldModeCount += 1;
       phaseAuthority += entryPhaseAuthority;
       phaseCoherence += entry?.phaseCoherence ?? 0;
     }
@@ -1443,10 +1443,10 @@ function summarizeObservedLayerModes(modes, layer) {
     noiseFloor: count > 0 ? clamp01(noiseFloor / count) : 0,
     phaseAuthority: clamp01(phaseAuthority),
     phaseCoherence:
-      phaseOverlayModeCount > 0
-        ? clamp01(phaseCoherence / phaseOverlayModeCount)
+      phaseCoherentFieldModeCount > 0
+        ? clamp01(phaseCoherence / phaseCoherentFieldModeCount)
         : 0,
-    phaseOverlayModeCount,
+    phaseCoherentFieldModeCount,
   };
 }
 
@@ -1487,8 +1487,8 @@ function summarizeObservedModes(modes) {
     modalPhaseAuthority: clamp01(
       highQ.phaseAuthority + lowQ.phaseAuthority * 0.45,
     ),
-    modalPhaseOverlayModeCount:
-      highQ.phaseOverlayModeCount + lowQ.phaseOverlayModeCount,
+    modalPhaseCoherentFieldModeCount:
+      highQ.phaseCoherentFieldModeCount + lowQ.phaseCoherentFieldModeCount,
   };
 }
 
@@ -3565,7 +3565,8 @@ export function buildModalExcitationStructuralState({
     lowQPhaseAuthority: modalObserverMetrics.lowQPhaseAuthority,
     highQPhaseAuthority: modalObserverMetrics.highQPhaseAuthority,
     modalPhaseAuthority: modalObserverMetrics.modalPhaseAuthority,
-    modalPhaseOverlayModeCount: backbonePhaseModeCount + detailPhaseModeCount,
+    modalPhaseCoherentFieldModeCount:
+      backbonePhaseModeCount + detailPhaseModeCount,
     highQDetailTopologySignal,
     modalPersistence: excitedEntries.length
       ? clamp01(persistenceTotal / excitedEntries.length)

@@ -1552,7 +1552,7 @@ describe("modal excitation structural state", () => {
       structural.structuralMetrics.lowQPhaseAuthority,
     ).toBeGreaterThanOrEqual(0);
     expect(
-      structural.structuralMetrics.modalPhaseOverlayModeCount,
+      structural.structuralMetrics.modalPhaseCoherentFieldModeCount,
     ).toBeGreaterThan(0);
     expect(detailPhaseEntries.length).toBeGreaterThan(0);
     for (const entry of detailPhaseEntries) {
@@ -2417,7 +2417,7 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
     expect(sumAmplitudes(structural.detailSlotsSource)).toBe(0);
     expect(structural.structuralMetrics.modalPhaseAuthority).toBe(0);
-    expect(structural.structuralMetrics.modalPhaseOverlayModeCount).toBe(0);
+    expect(structural.structuralMetrics.modalPhaseCoherentFieldModeCount).toBe(0);
     expect(
       countAuthoritativePhaseSlots(structural.detailPhaseSlotsSource),
     ).toBe(0);
@@ -3041,7 +3041,7 @@ describe("modal excitation structural state", () => {
       0,
     );
     expect(
-      structural.structuralMetrics.modalPhaseOverlayModeCount,
+      structural.structuralMetrics.modalPhaseCoherentFieldModeCount,
     ).toBeGreaterThan(0);
   });
 
