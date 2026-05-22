@@ -227,6 +227,29 @@ function seedRuntimeCacheNodes(runtimeState) {
   }
 }
 
+function createActiveFeatureFrame(overrides = {}) {
+  return {
+    fieldState: "active",
+    renderAuthority: true,
+    averageAmplitude: 48,
+    backboneSlots: new Float32Array([3, 4, 6, 0.8]),
+    detailSlots: new Float32Array([4, 5, 5, 0.55]),
+    backboneColorSlots: new Float32Array([1, 0.1, 0.1, 0.9]),
+    detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5]),
+    backbonePhaseSlots: new Float32Array([0.1, 0.2, 0.8, 0.9]),
+    detailPhaseSlots: new Float32Array([0.3, 0.4, 0.8, 0.7]),
+    bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+    transientEnergy: 0.7,
+    spectralCentroid: 0.42,
+    spectralFlux: 0.28,
+    structureSignal: 0.74,
+    energySignal: 0.68,
+    changeSignal: 0.61,
+    pulseSignal: 0.32,
+    ...overrides,
+  };
+}
+
 describe("tickRaymarchRuntime", () => {
   it("does not own envelope-derived display radiance limiting", () => {
     const source = readFileSync(
@@ -520,8 +543,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.debugSnapshot.raymarchDebug.observationDensityFloor,
     ).toBeCloseTo(observationParameters.densityFloor);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug
-        .observationContourSupportScale,
+      runtimeState.debugSnapshot.raymarchDebug.observationContourSupportScale,
     ).toBeCloseTo(observationParameters.contourSupportScale);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.observationExposureScale,
@@ -873,10 +895,12 @@ describe("tickRaymarchRuntime", () => {
     );
 
     expect(runtimeState.volumeMesh.visible).toBe(false);
-    expect(runtimeState.debugSnapshot.raymarchDebug.renderAuthority).toBe(false);
-    expect(runtimeState.debugSnapshot.raymarchDebug.observationHardSilence).toBe(
-      true,
+    expect(runtimeState.debugSnapshot.raymarchDebug.renderAuthority).toBe(
+      false,
     );
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.observationHardSilence,
+    ).toBe(true);
     expect(runtimeState.debugSnapshot.raymarchDebug.observationEnergy).toBe(0);
     expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(0);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
@@ -1556,6 +1580,137 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.detailColorBuffer.value.needsUpdate).toBe(false);
   });
 
+  it("skips repeated modal, color, and phase uploads without freezing uniforms", () => {
+    const runtimeState = createRuntimeState();
+    tickRaymarchRuntime(runtimeState, createActiveFeatureFrame(), 1, 1 / 60);
+
+    runtimeState.backboneModeBuffer.value.needsUpdate = false;
+    runtimeState.detailModeBuffer.value.needsUpdate = false;
+    runtimeState.backboneColorBuffer.value.needsUpdate = false;
+    runtimeState.detailColorBuffer.value.needsUpdate = false;
+    runtimeState.backbonePhaseBuffer.value.needsUpdate = false;
+    runtimeState.detailPhaseBuffer.value.needsUpdate = false;
+
+    tickRaymarchRuntime(
+      runtimeState,
+      createActiveFeatureFrame({
+        averageAmplitude: 96,
+        transientEnergy: 0.91,
+        spectralFlux: 0.52,
+      }),
+      2,
+      1 / 60,
+    );
+
+    expect(runtimeState.backboneModeBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.detailModeBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.backboneColorBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.detailColorBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.backbonePhaseBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.detailPhaseBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.uniforms.uTime.value).toBe(2);
+    expect(runtimeState.uniforms.uAverageAmplitude.value).toBe(96);
+    expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.91);
+    expect(runtimeState.uniforms.uSpectralFlux.value).toBe(0.52);
+  });
+
+  it("uploads again when a reused source slot array changes values", () => {
+    const runtimeState = createRuntimeState();
+    const featureFrame = createActiveFeatureFrame();
+    tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
+    const firstDescriptor = runtimeState.currentFieldDescriptor;
+
+    runtimeState.backboneModeBuffer.value.needsUpdate = false;
+    runtimeState.detailModeBuffer.value.needsUpdate = false;
+    runtimeState.backboneColorBuffer.value.needsUpdate = false;
+    runtimeState.detailColorBuffer.value.needsUpdate = false;
+    featureFrame.backboneSlots[0] = 7;
+
+    tickRaymarchRuntime(runtimeState, featureFrame, 2, 1 / 60);
+
+    expect(runtimeState.backboneModeBuffer.value.needsUpdate).toBe(true);
+    expect(runtimeState.detailModeBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.backboneColorBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.currentFieldDescriptor).not.toBe(firstDescriptor);
+  });
+
+  it("clears upload signatures on render-authority cuts", () => {
+    const runtimeState = createRuntimeState();
+    const featureFrame = createActiveFeatureFrame();
+    tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
+
+    tickRaymarchRuntime(
+      runtimeState,
+      createActiveFeatureFrame({
+        fieldState: "idle",
+        renderAuthority: false,
+        renderAuthorityCut: true,
+      }),
+      2,
+      1 / 60,
+    );
+
+    runtimeState.backboneModeBuffer.value.needsUpdate = false;
+    runtimeState.detailModeBuffer.value.needsUpdate = false;
+    tickRaymarchRuntime(runtimeState, featureFrame, 3, 1 / 60);
+
+    expect(runtimeState.backboneModeBuffer.value.needsUpdate).toBe(true);
+    expect(runtimeState.detailModeBuffer.value.needsUpdate).toBe(true);
+  });
+
+  it("rebuilds raymarch caches only when descriptor inputs change", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    let fieldComputeCalls = 0;
+    let spectralComputeCalls = 0;
+    const renderer = {
+      computeAsync: async (node) => {
+        if (node?.id === "field") {
+          fieldComputeCalls += 1;
+        } else if (node?.id === "spectral") {
+          spectralComputeCalls += 1;
+        }
+      },
+    };
+
+    tickRaymarchRuntime(
+      runtimeState,
+      createActiveFeatureFrame(),
+      1,
+      1 / 60,
+      renderer,
+    );
+    await flushMicrotasks();
+    expect(fieldComputeCalls).toBe(1);
+    expect(spectralComputeCalls).toBe(1);
+
+    tickRaymarchRuntime(
+      runtimeState,
+      createActiveFeatureFrame({ averageAmplitude: 96 }),
+      2,
+      1 / 60,
+      renderer,
+    );
+    await flushMicrotasks();
+    expect(fieldComputeCalls).toBe(1);
+    expect(spectralComputeCalls).toBe(1);
+
+    const topologyFrame = createActiveFeatureFrame();
+    topologyFrame.backboneSlots[0] = 8;
+    tickRaymarchRuntime(runtimeState, topologyFrame, 3, 1 / 60, renderer);
+    await flushMicrotasks();
+    expect(fieldComputeCalls).toBe(2);
+    expect(spectralComputeCalls).toBe(2);
+
+    const colorFrame = createActiveFeatureFrame();
+    colorFrame.backboneSlots[0] = 8;
+    colorFrame.backboneColorSlots[0] = 0.4;
+    tickRaymarchRuntime(runtimeState, colorFrame, 4, 1 / 60, renderer);
+    await flushMicrotasks();
+    expect(fieldComputeCalls).toBe(2);
+    expect(spectralComputeCalls).toBe(3);
+  });
+
   it("keeps field mode uploads identical between static and Spectral color modes", () => {
     const createFrame = () => ({
       fieldState: "active",
@@ -1608,9 +1763,7 @@ describe("tickRaymarchRuntime", () => {
       fieldState: "active",
       renderAuthority: true,
       averageAmplitude: 48,
-      backboneSlots: new Float32Array([
-        1, 2, 3, 0.8, 8, 9, 10, 0.9,
-      ]),
+      backboneSlots: new Float32Array([1, 2, 3, 0.8, 8, 9, 10, 0.9]),
       detailSlots: new Float32Array([4, 5, 6, 0.5]),
       backboneColorSlots: new Float32Array(32),
       detailColorSlots: new Float32Array(32),

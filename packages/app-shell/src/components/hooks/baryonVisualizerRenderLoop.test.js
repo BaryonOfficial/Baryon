@@ -382,12 +382,29 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
   runtimeDiagnostics.engine.structuralUpdateCount = 19;
   runtimeDiagnostics.engine.chromaUpdateCount = 23;
   runtimeDiagnostics.engine.tempoUpdateCount = 29;
+  runtimeDiagnostics.engine.workerFastSignalMs = 1.25;
+  runtimeDiagnostics.engine.workerStructuralMs = 2.5;
+  runtimeDiagnostics.engine.workerPeakScanMs = 0.75;
+  runtimeDiagnostics.engine.workerModalResolveMs = 1.5;
+  runtimeDiagnostics.engine.workerProjectionMs = 3.5;
+  runtimeDiagnostics.engine.workerChromaMs = 0.5;
+  runtimeDiagnostics.engine.workerTempoMs = 0.25;
+  runtimeDiagnostics.frameDrops.framesOver16_7Ms = 13;
+  runtimeDiagnostics.frameDrops.framesOver25Ms = 8;
+  runtimeDiagnostics.frameDrops.framesOver33_3Ms = 5;
+  runtimeDiagnostics.frameDrops.framesOver50Ms = 2;
 
   const snapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
 
   expect(snapshot.targetFps).toBe(60);
   expect(snapshot.perfBreakdown.heavyAnalysisMs.averageMs).toBe(5);
   expect(snapshot.perfBreakdown.pipelineRenderMs.lastMs).toBe(99);
+  expect(snapshot.frameDrops).toEqual({
+    framesOver16_7Ms: 13,
+    framesOver25Ms: 8,
+    framesOver33_3Ms: 5,
+    framesOver50Ms: 2,
+  });
   expect(snapshot.stageAttribution.analysisCpuMs).toBe(16);
   expect(snapshot.stageAttribution.engineCpuMs).toBe(15);
   expect(snapshot.stageAttribution.controlCpuMs).toBe(55);
@@ -403,6 +420,13 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
     structuralUpdateCount: 19,
     chromaUpdateCount: 23,
     tempoUpdateCount: 29,
+    workerFastSignalMs: 1.25,
+    workerStructuralMs: 2.5,
+    workerPeakScanMs: 0.75,
+    workerModalResolveMs: 1.5,
+    workerProjectionMs: 3.5,
+    workerChromaMs: 0.5,
+    workerTempoMs: 0.25,
   });
   expect(snapshot.modalFreshness).toMatchObject({
     structureSignal: 0.72,
@@ -556,9 +580,9 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
   expect(runtimeDiagnostics.modalFreshness.modeSlotMeanAbsDelta).toBeCloseTo(
     0.0875,
   );
-  expect(runtimeDiagnostics.modalFreshness.backboneSlotMeanAbsDelta).toBeCloseTo(
-    0.075,
-  );
+  expect(
+    runtimeDiagnostics.modalFreshness.backboneSlotMeanAbsDelta,
+  ).toBeCloseTo(0.075);
   expect(runtimeDiagnostics.modalFreshness.detailSlotMeanAbsDelta).toBe(0);
 
   const hudSnapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
@@ -826,9 +850,7 @@ test("adaptive raymarch prepares the current frame governor for runtime reuse", 
   const { args, runtimeState } = createAdaptiveRaymarchHarness({
     effectiveFrame: {
       activeModeCount: 3,
-      backboneSlots: new Float32Array([
-        1, 1, 1, 0.8, 2, 2, 2, 0.6,
-      ]),
+      backboneSlots: new Float32Array([1, 1, 1, 0.8, 2, 2, 2, 0.6]),
       detailSlots: new Float32Array([3, 3, 3, 0.4]),
       averageAmplitude: 90,
       structureSignal: 0.55,
@@ -1053,8 +1075,12 @@ test("resolveFeatureFrame composes a source-cut frame during paused playback", (
     renderAuthority: false,
     renderAuthorityCut: true,
   });
-  expect(args.renderLoopRefs.frameCacheRefs.lastActiveFrameRef.current).toBeNull();
-  expect(args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current).toBeNull();
+  expect(
+    args.renderLoopRefs.frameCacheRefs.lastActiveFrameRef.current,
+  ).toBeNull();
+  expect(
+    args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current,
+  ).toBeNull();
 });
 
 test("resolveFeatureFrame does not fall back to cached active frames for inactive sources", () => {

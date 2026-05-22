@@ -71,6 +71,10 @@ const BLOOM_STRENGTH_RESPONSE_GAIN = 0.18;
 const BLOOM_RADIUS_RESPONSE_GAIN = 0.16;
 const BLOOM_THRESHOLD_RESPONSE_GAIN = 0.08;
 const EARLY_EXIT_TRANSMITTANCE_EPSILON = 5e-3;
+const FNV_OFFSET_BASIS = 2166136261;
+const FNV_PRIME = 16777619;
+const HASH_FLOAT_VIEW = new Float32Array(1);
+const HASH_UINT_VIEW = new Uint32Array(HASH_FLOAT_VIEW.buffer);
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -133,6 +137,29 @@ function readFiniteNumber(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function hashUint32(value, hash) {
+  return Math.imul(hash ^ (value >>> 0), FNV_PRIME) >>> 0;
+}
+
+function hashFloat32(value, hash) {
+  HASH_FLOAT_VIEW[0] = Math.fround(Number.isFinite(value) ? value : 0);
+  return hashUint32(HASH_UINT_VIEW[0], hash);
+}
+
+function hashSlot4(values, offset, hash) {
+  let nextHash = hash;
+  nextHash = hashFloat32(values?.[offset] ?? 0, nextHash);
+  nextHash = hashFloat32(values?.[offset + 1] ?? 0, nextHash);
+  nextHash = hashFloat32(values?.[offset + 2] ?? 0, nextHash);
+  return hashFloat32(values?.[offset + 3] ?? 0, nextHash);
+}
+
+function resetRaymarchUploadState(runtimeState) {
+  if (runtimeState) {
+    runtimeState.raymarchUploadState = null;
+  }
+}
+
 function clearBufferNode(bufferNode) {
   const array = bufferNode?.value?.array;
   if (!array?.fill) {
@@ -180,6 +207,7 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.phaseOverlayModeCount = 0;
   runtimeState.currentFieldDescriptor = null;
   runtimeState.currentSpectralLightDescriptor = null;
+  resetRaymarchUploadState(runtimeState);
   resetCacheActivity(runtimeState.fieldCache);
   resetCacheActivity(runtimeState.spectralLightCache);
   resetCacheActivity(runtimeState.phaseOverlayCache);
@@ -954,6 +982,261 @@ function updateLaserResponse(runtimeState, featureFrame) {
   bt.bloomAllowed = bloomAllowed;
 }
 
+function getRaymarchUploadState(runtimeState) {
+  if (!runtimeState.raymarchUploadState) {
+    runtimeState.raymarchUploadState = {
+      backbone: null,
+      detail: null,
+      backbonePhase: null,
+      detailPhase: null,
+      fieldDescriptorSignature: null,
+      spectralLightDescriptorSignature: null,
+    };
+  }
+
+  return runtimeState.raymarchUploadState;
+}
+
+function getSelectedIndices(layer) {
+  return Array.isArray(layer?.selectedIndices) ? layer.selectedIndices : [];
+}
+
+function buildLayerUploadSignature({
+  slots,
+  colorSlots,
+  layer,
+  includeColors,
+}) {
+  const selectedIndices = getSelectedIndices(layer);
+  const capacity = Math.max(0, Math.floor(layer?.capacity ?? 0));
+  const selectedCount = Math.min(selectedIndices.length, capacity);
+  let slotHash = FNV_OFFSET_BASIS;
+  let colorHash = includeColors ? FNV_OFFSET_BASIS : 0;
+
+  for (let index = 0; index < selectedCount; index += 1) {
+    const sourceSlotIndex = Math.max(
+      0,
+      Math.floor(selectedIndices[index] ?? 0),
+    );
+    const sourceOffset = sourceSlotIndex * 4;
+    slotHash = hashUint32(sourceSlotIndex, slotHash);
+    slotHash = hashSlot4(slots, sourceOffset, slotHash);
+    if (includeColors) {
+      colorHash = hashUint32(sourceSlotIndex, colorHash);
+      colorHash = hashSlot4(colorSlots, sourceOffset, colorHash);
+    }
+  }
+
+  return {
+    capacity,
+    selectedCount,
+    uploadedActiveCount: Math.max(
+      0,
+      Math.round(layer?.uploadedActiveCount ?? selectedCount),
+    ),
+    includeColors: Boolean(includeColors),
+    slotHash: slotHash >>> 0,
+    colorHash: colorHash >>> 0,
+  };
+}
+
+function layerModeUploadSignatureChanged(previous, next) {
+  return (
+    !previous ||
+    previous.capacity !== next.capacity ||
+    previous.selectedCount !== next.selectedCount ||
+    previous.uploadedActiveCount !== next.uploadedActiveCount ||
+    previous.slotHash !== next.slotHash
+  );
+}
+
+function layerColorUploadSignatureChanged(previous, next) {
+  return (
+    !previous ||
+    previous.capacity !== next.capacity ||
+    previous.selectedCount !== next.selectedCount ||
+    previous.includeColors !== next.includeColors ||
+    previous.colorHash !== next.colorHash
+  );
+}
+
+function applyLayerUploadIfChanged({
+  uploadState,
+  key,
+  slots,
+  colorSlots,
+  targetSlots,
+  targetColorSlots,
+  modeBufferNode,
+  colorBufferNode,
+  layer,
+  includeColors,
+}) {
+  const signature = buildLayerUploadSignature({
+    slots,
+    colorSlots,
+    layer,
+    includeColors,
+  });
+  const previous = uploadState[key]?.signature ?? null;
+  const modeChanged = layerModeUploadSignatureChanged(previous, signature);
+  const colorChanged = layerColorUploadSignatureChanged(previous, signature);
+
+  if (modeChanged || colorChanged) {
+    copyLayerUpload({
+      slots,
+      colorSlots,
+      targetSlots,
+      targetColorSlots,
+      layer,
+      includeColors,
+    });
+    if (modeChanged) {
+      modeBufferNode.value.needsUpdate = true;
+    }
+    if (includeColors && colorChanged && colorBufferNode?.value) {
+      colorBufferNode.value.needsUpdate = true;
+    }
+    uploadState[key] = { signature };
+  }
+
+  return signature;
+}
+
+function buildPhaseUploadSignature({ phaseSlots, layer, capacity }) {
+  const selectedIndices = getSelectedIndices(layer);
+  const resolvedCapacity = Math.max(0, Math.floor(capacity ?? 0));
+  const selectedCount = Math.min(selectedIndices.length, resolvedCapacity);
+  let slotHash = FNV_OFFSET_BASIS;
+  let activeCount = 0;
+
+  for (let index = 0; index < selectedCount; index += 1) {
+    const sourceSlotIndex = Math.max(
+      0,
+      Math.floor(selectedIndices[index] ?? 0),
+    );
+    const sourceOffset = sourceSlotIndex * 4;
+    slotHash = hashUint32(sourceSlotIndex, slotHash);
+    slotHash = hashSlot4(phaseSlots, sourceOffset, slotHash);
+    const authority =
+      (phaseSlots?.[sourceOffset + 2] ?? 0) *
+      (phaseSlots?.[sourceOffset + 3] ?? 0);
+    if (authority > 1e-4) {
+      activeCount += 1;
+    }
+  }
+
+  return {
+    capacity: resolvedCapacity,
+    selectedCount,
+    activeCount,
+    slotHash: slotHash >>> 0,
+  };
+}
+
+function phaseUploadSignatureEquals(previous, next) {
+  return Boolean(
+    previous &&
+    previous.capacity === next.capacity &&
+    previous.selectedCount === next.selectedCount &&
+    previous.activeCount === next.activeCount &&
+    previous.slotHash === next.slotHash,
+  );
+}
+
+function applyLayerPhaseUploadIfChanged({
+  uploadState,
+  key,
+  phaseSlots,
+  targetPhaseSlots,
+  phaseBufferNode,
+  layer,
+  capacity,
+}) {
+  if (!targetPhaseSlots || !layer) {
+    uploadState[key] = null;
+    return 0;
+  }
+
+  const signature = buildPhaseUploadSignature({
+    phaseSlots,
+    layer,
+    capacity,
+  });
+  const previous = uploadState[key]?.signature ?? null;
+  if (phaseUploadSignatureEquals(previous, signature)) {
+    return uploadState[key]?.activeCount ?? 0;
+  }
+
+  const activeCount = copyLayerPhaseUpload({
+    phaseSlots,
+    targetPhaseSlots,
+    layer,
+    capacity,
+  });
+  if (phaseBufferNode?.value) {
+    phaseBufferNode.value.needsUpdate = activeCount > 0;
+  }
+  uploadState[key] = {
+    signature,
+    activeCount,
+  };
+  return activeCount;
+}
+
+function buildFieldDescriptorSignature({
+  backboneSignature,
+  detailSignature,
+  backboneCount,
+  detailCount,
+  boundaryMode,
+  cavityGeometry,
+  radius,
+}) {
+  return {
+    backboneCount,
+    detailCount,
+    boundaryMode,
+    cavityGeometry,
+    radius: Number.isFinite(radius) ? radius : 1,
+    backboneHash: backboneSignature?.slotHash ?? 0,
+    detailHash: detailSignature?.slotHash ?? 0,
+  };
+}
+
+function fieldDescriptorSignatureEquals(previous, next) {
+  return Boolean(
+    previous &&
+    previous.backboneCount === next.backboneCount &&
+    previous.detailCount === next.detailCount &&
+    previous.boundaryMode === next.boundaryMode &&
+    previous.cavityGeometry === next.cavityGeometry &&
+    previous.radius === next.radius &&
+    previous.backboneHash === next.backboneHash &&
+    previous.detailHash === next.detailHash,
+  );
+}
+
+function buildSpectralLightDescriptorSignature({
+  fieldSignature,
+  backboneSignature,
+  detailSignature,
+}) {
+  return {
+    ...fieldSignature,
+    backboneColorHash: backboneSignature?.colorHash ?? 0,
+    detailColorHash: detailSignature?.colorHash ?? 0,
+  };
+}
+
+function spectralLightDescriptorSignatureEquals(previous, next) {
+  return Boolean(
+    fieldDescriptorSignatureEquals(previous, next) &&
+    previous.backboneColorHash === next.backboneColorHash &&
+    previous.detailColorHash === next.detailColorHash,
+  );
+}
+
 function copyLayerUpload({
   slots,
   colorSlots,
@@ -1352,9 +1635,8 @@ export function tickRaymarchRuntime(
   }
 
   const spectralLightEnabled = (uniforms.uSpectralMix?.value ?? 0) > 0;
-  const effectiveCavityGeometry = getRuntimeEffectiveCavityGeometry(
-    runtimeState,
-  );
+  const effectiveCavityGeometry =
+    getRuntimeEffectiveCavityGeometry(runtimeState);
   const requestedStepBudget = resolveRequestedRaymarchStepBudget(
     runtimeState,
     volumeMesh,
@@ -1380,95 +1662,136 @@ export function tickRaymarchRuntime(
     });
   const { backbone: backboneLayer, detail: detailLayer } = performanceGovernor;
   runtimeState.performanceGovernor = performanceGovernor;
+  const uploadState = getRaymarchUploadState(runtimeState);
   const backboneArray = backboneModeBuffer.value.array;
   const backboneColorArray = backboneColorBuffer.value.array;
-  copyLayerUpload({
+  const backboneSignature = applyLayerUploadIfChanged({
+    uploadState,
+    key: "backbone",
     slots: featureFrame?.backboneSlots,
     colorSlots: featureFrame?.backboneColorSlots,
     targetSlots: backboneArray,
     targetColorSlots: backboneColorArray,
+    modeBufferNode: backboneModeBuffer,
+    colorBufferNode: backboneColorBuffer,
     layer: backboneLayer,
     includeColors: spectralLightEnabled,
   });
-  backboneModeBuffer.value.needsUpdate = true;
-  if (spectralLightEnabled) {
-    backboneColorBuffer.value.needsUpdate = true;
-  }
 
   const detailArray = detailModeBuffer.value.array;
   const detailColorArray = detailColorBuffer.value.array;
-  copyLayerUpload({
+  const detailSignature = applyLayerUploadIfChanged({
+    uploadState,
+    key: "detail",
     slots: featureFrame?.detailSlots,
     colorSlots: featureFrame?.detailColorSlots,
     targetSlots: detailArray,
     targetColorSlots: detailColorArray,
+    modeBufferNode: detailModeBuffer,
+    colorBufferNode: detailColorBuffer,
     layer: detailLayer,
     includeColors: spectralLightEnabled,
   });
-  detailModeBuffer.value.needsUpdate = true;
-  if (spectralLightEnabled) {
-    detailColorBuffer.value.needsUpdate = true;
-  }
 
   const backbonePhaseArray =
     runtimeState.backbonePhaseBuffer?.value?.array ?? null;
   const detailPhaseArray = runtimeState.detailPhaseBuffer?.value?.array ?? null;
-  const backbonePhaseModeCount = copyLayerPhaseUpload({
+  const backbonePhaseModeCount = applyLayerPhaseUploadIfChanged({
+    uploadState,
+    key: "backbonePhase",
     phaseSlots: featureFrame?.backbonePhaseSlots,
     targetPhaseSlots: backbonePhaseArray,
+    phaseBufferNode: runtimeState.backbonePhaseBuffer,
     layer: backboneLayer,
     capacity: backbonePhaseCapacity,
   });
-  const detailPhaseModeCount = copyLayerPhaseUpload({
+  const detailPhaseModeCount = applyLayerPhaseUploadIfChanged({
+    uploadState,
+    key: "detailPhase",
     phaseSlots: featureFrame?.detailPhaseSlots,
     targetPhaseSlots: detailPhaseArray,
+    phaseBufferNode: runtimeState.detailPhaseBuffer,
     layer: detailLayer,
     capacity: detailPhaseCapacity,
   });
   runtimeState.phaseOverlayModeCount =
     backbonePhaseModeCount + detailPhaseModeCount;
-  if (runtimeState.backbonePhaseBuffer?.value) {
-    runtimeState.backbonePhaseBuffer.value.needsUpdate =
-      backbonePhaseModeCount > 0;
-  }
-  if (runtimeState.detailPhaseBuffer?.value) {
-    runtimeState.detailPhaseBuffer.value.needsUpdate = detailPhaseModeCount > 0;
-  }
 
   const backboneModeCount = backboneLayer.uploadedActiveCount;
   const detailModeCount = detailLayer.uploadedActiveCount;
   setIfChanged(uniforms.uBackboneModeCount, backboneModeCount);
   setIfChanged(uniforms.uDetailModeCount, detailModeCount);
   setIfChanged(uniforms.uActiveModeCount, backboneModeCount + detailModeCount);
-  const fieldDescriptor = buildRaymarchFieldCacheDescriptor({
-    backboneSlots: runtimeState.backboneModeBuffer?.value?.array,
-    detailSlots: runtimeState.detailModeBuffer?.value?.array,
+
+  const boundaryMode = getRuntimeBoundaryMode(runtimeState);
+  const descriptorRadius = runtimeState.uniforms.uRadius?.value ?? 1;
+  const fieldDescriptorSignature = buildFieldDescriptorSignature({
+    backboneSignature,
+    detailSignature,
     backboneCount: backboneModeCount,
     detailCount: detailModeCount,
-    boundaryMode: getRuntimeBoundaryMode(runtimeState),
+    boundaryMode,
     cavityGeometry: effectiveCavityGeometry,
-    radius: runtimeState.uniforms.uRadius?.value ?? 1,
+    radius: descriptorRadius,
   });
-  const spectralLightDescriptor = spectralLightEnabled
-    ? buildRaymarchSpectralLightCacheDescriptor({
+  let fieldDescriptor = runtimeState.currentFieldDescriptor;
+  if (
+    !fieldDescriptor ||
+    !fieldDescriptorSignatureEquals(
+      uploadState.fieldDescriptorSignature,
+      fieldDescriptorSignature,
+    )
+  ) {
+    fieldDescriptor = buildRaymarchFieldCacheDescriptor({
+      backboneSlots: runtimeState.backboneModeBuffer?.value?.array,
+      detailSlots: runtimeState.detailModeBuffer?.value?.array,
+      backboneCount: backboneModeCount,
+      detailCount: detailModeCount,
+      boundaryMode,
+      cavityGeometry: effectiveCavityGeometry,
+      radius: descriptorRadius,
+    });
+    uploadState.fieldDescriptorSignature = fieldDescriptorSignature;
+  }
+
+  let spectralLightDescriptor = null;
+  if (spectralLightEnabled) {
+    const spectralLightDescriptorSignature =
+      buildSpectralLightDescriptorSignature({
+        fieldSignature: fieldDescriptorSignature,
+        backboneSignature,
+        detailSignature,
+      });
+    spectralLightDescriptor = runtimeState.currentSpectralLightDescriptor;
+    if (
+      !spectralLightDescriptor ||
+      !spectralLightDescriptorSignatureEquals(
+        uploadState.spectralLightDescriptorSignature,
+        spectralLightDescriptorSignature,
+      )
+    ) {
+      spectralLightDescriptor = buildRaymarchSpectralLightCacheDescriptor({
         backboneSlots: runtimeState.backboneModeBuffer?.value?.array,
         detailSlots: runtimeState.detailModeBuffer?.value?.array,
         backboneColorSlots: runtimeState.backboneColorBuffer?.value?.array,
         detailColorSlots: runtimeState.detailColorBuffer?.value?.array,
         backboneCount: backboneModeCount,
         detailCount: detailModeCount,
-        boundaryMode: getRuntimeBoundaryMode(runtimeState),
+        boundaryMode,
         cavityGeometry: effectiveCavityGeometry,
-        radius: runtimeState.uniforms.uRadius?.value ?? 1,
-      })
-    : null;
+        radius: descriptorRadius,
+      });
+      uploadState.spectralLightDescriptorSignature =
+        spectralLightDescriptorSignature;
+    }
+  } else {
+    uploadState.spectralLightDescriptorSignature = null;
+  }
+
   runtimeState.currentFieldDescriptor = fieldDescriptor;
   runtimeState.currentSpectralLightDescriptor = spectralLightDescriptor;
   runtimeState.spectralLightBuffersUploaded = spectralLightEnabled;
-  setRaymarchCavityGeometry(
-    runtimeState.volumeMesh,
-    effectiveCavityGeometry,
-  );
+  setRaymarchCavityGeometry(runtimeState.volumeMesh, effectiveCavityGeometry);
   updateRaymarchEvaluationModes(
     runtimeState,
     renderer,

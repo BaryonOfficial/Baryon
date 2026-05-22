@@ -171,6 +171,13 @@ function buildStageEngineCounters(runtimeDiagnostics) {
       runtimeDiagnostics?.engine?.structuralUpdateCount ?? 0,
     chromaUpdateCount: runtimeDiagnostics?.engine?.chromaUpdateCount ?? 0,
     tempoUpdateCount: runtimeDiagnostics?.engine?.tempoUpdateCount ?? 0,
+    workerFastSignalMs: runtimeDiagnostics?.engine?.workerFastSignalMs ?? 0,
+    workerStructuralMs: runtimeDiagnostics?.engine?.workerStructuralMs ?? 0,
+    workerPeakScanMs: runtimeDiagnostics?.engine?.workerPeakScanMs ?? 0,
+    workerModalResolveMs: runtimeDiagnostics?.engine?.workerModalResolveMs ?? 0,
+    workerProjectionMs: runtimeDiagnostics?.engine?.workerProjectionMs ?? 0,
+    workerChromaMs: runtimeDiagnostics?.engine?.workerChromaMs ?? 0,
+    workerTempoMs: runtimeDiagnostics?.engine?.workerTempoMs ?? 0,
   };
 }
 
@@ -695,6 +702,12 @@ export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
     requestedRaymarchSteps: render?.requestedRaymarchSteps ?? 0,
     effectiveRaymarchSteps: render?.effectiveRaymarchSteps ?? 0,
     adaptiveRaymarchActive: render?.adaptiveRaymarchActive ?? false,
+    frameDrops: {
+      framesOver16_7Ms: runtimeDiagnostics?.frameDrops?.framesOver16_7Ms ?? 0,
+      framesOver25Ms: runtimeDiagnostics?.frameDrops?.framesOver25Ms ?? 0,
+      framesOver33_3Ms: runtimeDiagnostics?.frameDrops?.framesOver33_3Ms ?? 0,
+      framesOver50Ms: runtimeDiagnostics?.frameDrops?.framesOver50Ms ?? 0,
+    },
     perfBreakdown,
     stageAttribution: buildStageAttribution(runtimeDiagnostics, perfBreakdown),
     engineCounters: buildStageEngineCounters(runtimeDiagnostics),
@@ -1238,15 +1251,14 @@ function preparePendingRaymarchPerformanceGovernor(runtimeState, inputs) {
     return null;
   }
 
-  const governor = raymarchPerformanceGovernor.deriveRaymarchPerformanceGovernor(
-    {
+  const governor =
+    raymarchPerformanceGovernor.deriveRaymarchPerformanceGovernor({
       backbone: inputs.baseGovernor.backbone,
       detail: inputs.baseGovernor.detail,
       featureFrame: inputs.featureFrame,
       requestedStepBudget: inputs.requestedStepBudget,
       requestedRenderScale: inputs.requestedRenderScale,
-    },
-  );
+    });
 
   runtimeState.pendingRaymarchPerformanceGovernor = {
     featureFrame: inputs.featureFrame,
