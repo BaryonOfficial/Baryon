@@ -4522,6 +4522,7 @@ export function buildCurrentAudioFeatureAnalysisResult({
   chromaState = null,
   tempoState = null,
   materializeStructuralProjection = true,
+  materializeSignalProjection = true,
 }) {
   const currentStructural = readCurrentStructuralState(
     preparedInputs,
@@ -4529,10 +4530,11 @@ export function buildCurrentAudioFeatureAnalysisResult({
     structuralState,
   );
   let resolvedStructural = currentStructural;
-  const signalStructural = materializeAudioFeatureSignalSnapshot(
-    preparedInputs,
-    currentStructural,
-  );
+  const shouldMaterializeSignalProjection =
+    materializeStructuralProjection || materializeSignalProjection;
+  const signalStructural = shouldMaterializeSignalProjection
+    ? materializeAudioFeatureSignalSnapshot(preparedInputs, currentStructural)
+    : null;
 
   if (materializeStructuralProjection) {
     const projectionStartedAt = getAudioPerfNow();
@@ -4544,7 +4546,7 @@ export function buildCurrentAudioFeatureAnalysisResult({
     resolvedStructural = {
       ...currentStructural,
       ...projectedStructural,
-      ...signalStructural,
+      ...(signalStructural ?? {}),
       structuralPerf: {
         peakScanMs: currentStructural.structuralPerf?.peakScanMs ?? 0,
         modalResolveMs: currentStructural.structuralPerf?.modalResolveMs ?? 0,
@@ -4552,10 +4554,12 @@ export function buildCurrentAudioFeatureAnalysisResult({
       },
     };
   } else {
-    resolvedStructural = {
-      ...currentStructural,
-      ...signalStructural,
-    };
+    resolvedStructural = signalStructural
+      ? {
+          ...currentStructural,
+          ...signalStructural,
+        }
+      : currentStructural;
   }
   const currentChroma = chromaState ?? {
     keyTonic: preparedInputs.featureState.analysis.chromaState.keyTonic,

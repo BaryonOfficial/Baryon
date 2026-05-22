@@ -536,6 +536,54 @@ describe("audio feature engine snapshots", () => {
     );
   });
 
+  it("skips signal projections only for lean dirty-check analysis results", () => {
+    const featureState = createAudioFeatureState();
+    const firstPreparedInputs = createPreparedInputs(2000, { featureState });
+    const firstAnalysisResult =
+      runHeavyAudioFeatureAnalysis(firstPreparedInputs);
+    const previousSignalModeSlots = firstAnalysisResult.signalModeSlots.slice();
+    const previousSignalReferenceModeSlots =
+      firstAnalysisResult.signalReferenceModeSlots.slice();
+    const previousAnalysisResult = {
+      ...firstAnalysisResult,
+      signalModeSlots: previousSignalModeSlots,
+      signalReferenceModeSlots: previousSignalReferenceModeSlots,
+    };
+    const nextPreparedInputs = createPreparedInputs(2040, {
+      featureState,
+      analysisSnapshot: {
+        fftMagnitudes: new Float32Array([0, 0.25, 0.95, 0.4]),
+        spectralFlux: 0.2,
+      },
+    });
+    nextPreparedInputs.signalModeSlots.fill(123);
+    nextPreparedInputs.signalReferenceModeSlots.fill(456);
+    const nextFastSignalState =
+      updateAudioFeatureFastSignalState(nextPreparedInputs);
+    const nextStructuralState = updateAudioFeatureStructuralState(
+      nextPreparedInputs,
+      nextFastSignalState,
+    );
+    const leanAnalysisResult = buildCurrentAudioFeatureAnalysisResult({
+      preparedInputs: nextPreparedInputs,
+      previousAnalysisResult,
+      fastSignalState: nextFastSignalState,
+      structuralState: nextStructuralState,
+      materializeStructuralProjection: false,
+      materializeSignalProjection: false,
+    });
+
+    expect(leanAnalysisResult.signalModeSlots).toBe(previousSignalModeSlots);
+    expect(leanAnalysisResult.signalReferenceModeSlots).toBe(
+      previousSignalReferenceModeSlots,
+    );
+    expect(nextPreparedInputs.signalModeSlots[0]).toBe(123);
+    expect(nextPreparedInputs.signalReferenceModeSlots[0]).toBe(456);
+    expect(leanAnalysisResult.structuralFingerprint).toEqual(
+      nextStructuralState.structuralFingerprint,
+    );
+  });
+
   it("builds a lean structural snapshot without heavy debug payloads", () => {
     const featureState = createAudioFeatureState();
     const preparedInputs = prepareAudioFeatureFrameInputs({

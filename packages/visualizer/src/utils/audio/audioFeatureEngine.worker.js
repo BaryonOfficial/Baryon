@@ -632,6 +632,7 @@ function processLatestFrame(engineState) {
       chromaState,
       tempoState,
       materializeStructuralProjection: false,
+      materializeSignalProjection: false,
     });
     const dirtyState = deriveDirtyState(
       engineState.latestSnapshot,
