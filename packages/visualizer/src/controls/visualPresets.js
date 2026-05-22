@@ -79,8 +79,38 @@ const BARYON_4_VISUAL_PRESET = Object.freeze({
   }),
 });
 
+const BARYON_7_VISUAL_PRESET = Object.freeze({
+  name: "baryon-7",
+  builtIn: true,
+  controls: Object.freeze({
+    raymarchSteps: 80,
+    zeroPointPrecision: 0.064,
+    structureMin: 0.59,
+    structureMax: 0.83,
+    densityGain: 2.5,
+    absorption: 1.45,
+    opacityGain: 2.3,
+    contourSharpness: 8,
+    rimBloomBias: 0.39,
+    rimCompression: 1.2,
+    holographicIntensity: 0.52,
+    holographicShift: 0.42,
+    holographicFresnelPower: 4.8,
+    rotationMode: "off",
+    bloomEnabled: true,
+    bloomStrength: 0.8,
+    bloomRadius: 0,
+    bloomThreshold: 0.24,
+    bloomResponseBias: 1,
+    colorMode: "spectral",
+    spectralMix: 0.96,
+    renderQualityPreset: "max-quality",
+  }),
+});
+
 export const BUILT_IN_VISUAL_PRESETS = Object.freeze([
   CALIBRATED_CLARITY_VISUAL_PRESET,
   STAGE_CONTAINMENT_VISUAL_PRESET,
   BARYON_4_VISUAL_PRESET,
+  BARYON_7_VISUAL_PRESET,
 ]);

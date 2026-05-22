@@ -12,6 +12,7 @@ import {
   RENDER_DEFAULTS,
   SIMULATION_DEFAULTS,
 } from "./defaults.js";
+import { BUILT_IN_VISUAL_PRESETS } from "./controls/visualPresets.js";
 
 describe("defaults compatibility surface", () => {
   const domainDefaults = [
@@ -51,17 +52,18 @@ describe("defaults compatibility surface", () => {
     expect(DEFAULTS).not.toHaveProperty("structurePersistence");
   });
 
-  it("keeps promoted live raymarch defaults on the tuned UI panel values", () => {
+  it("keeps promoted live raymarch defaults aligned with baryon-7", () => {
+    const baryon7Preset = BUILT_IN_VISUAL_PRESETS.find(
+      (preset) => preset.name === "baryon-7",
+    );
+
+    expect(baryon7Preset).toBeTruthy();
+    for (const [key, value] of Object.entries(baryon7Preset?.controls ?? {})) {
+      expect(DEFAULTS[key]).toBe(value);
+    }
     expect(SIMULATION_DEFAULTS.structureMin).toBeLessThan(
       SIMULATION_DEFAULTS.structureMax,
     );
-    expect(SIMULATION_DEFAULTS.zeroPointPrecision).toBe(0.02);
-    expect(SIMULATION_DEFAULTS.structureMax).toBe(0.48);
-    expect(RAYMARCH_DEFAULTS.raymarchSteps).toBe(88);
-    expect(RAYMARCH_DEFAULTS.densityGain).toBe(3.25);
-    expect(RAYMARCH_DEFAULTS.absorption).toBe(3.37);
-    expect(RENDER_DEFAULTS.bloomThreshold).toBe(0.3);
-    expect(RENDER_DEFAULTS.renderQualityPreset).toBe("auto");
     expect(RENDER_DEFAULTS.performanceHudEnabled).toBe(false);
     expect(DEFAULTS.cavityGeometry).toBe(SIMULATION_DEFAULTS.cavityGeometry);
   });

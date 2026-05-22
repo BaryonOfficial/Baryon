@@ -12,6 +12,7 @@ import { createControlsStore } from "./controlsStore.js";
 const CALIBRATED_CLARITY_NAME = "Calibrated Clarity";
 const STAGE_CONTAINMENT_NAME = "Stage Containment";
 const BARYON_4_NAME = "baryon-4";
+const BARYON_7_NAME = "baryon-7";
 
 function seedStorage({ controls = null, presets = null } = {}) {
   window.localStorage.clear();
@@ -66,6 +67,10 @@ describe("createControlsStore", () => {
       }),
       expect.objectContaining({
         name: BARYON_4_NAME,
+        builtIn: true,
+      }),
+      expect.objectContaining({
+        name: BARYON_7_NAME,
         builtIn: true,
       }),
       {
@@ -220,6 +225,37 @@ describe("createControlsStore", () => {
     expect(store.controlsRef.current.rimBloomBias).toBe(0.26);
     expect(store.controlsRef.current.rimCompression).toBe(1.02);
     expect(store.controlsRef.current.spectralMix).toBe(0.92);
+
+    const storedPresets = window.localStorage.getItem(PRESETS_KEY);
+    expect(storedPresets).toBeNull();
+  });
+
+  it("exposes baryon-7 as the default visual preset", () => {
+    const store = createControlsStore();
+
+    expect(store.getSnapshot().presets[3]?.name).toBe(BARYON_7_NAME);
+
+    store.loadPreset(BARYON_7_NAME);
+
+    expect(store.getSnapshot().selectedPresetName).toBe(BARYON_7_NAME);
+    expect(store.controlsRef.current.raymarchSteps).toBe(80);
+    expect(store.controlsRef.current.zeroPointPrecision).toBe(0.064);
+    expect(store.controlsRef.current.structureMin).toBe(0.59);
+    expect(store.controlsRef.current.structureMax).toBe(0.83);
+    expect(store.controlsRef.current.densityGain).toBe(2.5);
+    expect(store.controlsRef.current.absorption).toBe(1.45);
+    expect(store.controlsRef.current.opacityGain).toBe(2.3);
+    expect(store.controlsRef.current.holographicIntensity).toBe(0.52);
+    expect(store.controlsRef.current.holographicShift).toBe(0.42);
+    expect(store.controlsRef.current.holographicFresnelPower).toBe(4.8);
+    expect(store.controlsRef.current.rotationMode).toBe("off");
+    expect(store.controlsRef.current.bloomStrength).toBe(0.8);
+    expect(store.controlsRef.current.bloomThreshold).toBe(0.24);
+    expect(store.controlsRef.current.bloomResponseBias).toBe(1);
+    expect(store.controlsRef.current.rimBloomBias).toBe(0.39);
+    expect(store.controlsRef.current.rimCompression).toBe(1.2);
+    expect(store.controlsRef.current.spectralMix).toBe(0.96);
+    expect(store.controlsRef.current.renderQualityPreset).toBe("max-quality");
 
     const storedPresets = window.localStorage.getItem(PRESETS_KEY);
     expect(storedPresets).toBeNull();

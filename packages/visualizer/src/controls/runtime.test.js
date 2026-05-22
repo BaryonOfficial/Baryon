@@ -25,7 +25,11 @@ import {
   deriveStepCompensation,
   STEP_REFERENCE,
 } from "../core/raymarch/stepStability.js";
-import { AUDIO_DEFAULTS, AUDIO_SLOT_CAPACITY } from "../defaults.js";
+import {
+  AUDIO_DEFAULTS,
+  AUDIO_SLOT_CAPACITY,
+  RENDER_DEFAULTS,
+} from "../defaults.js";
 
 function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
   const dirichletMaterial = { steps: 0 };
@@ -334,7 +338,9 @@ describe("control runtime sync", () => {
     );
     expect(sharedSnapshot.backgroundColor).toBe("#123456");
     expect(sharedSnapshot.clearAlpha).toBe(0);
-    expect(sharedSnapshot.renderQualityPreset).toBe("auto");
+    expect(sharedSnapshot.renderQualityPreset).toBe(
+      RENDER_DEFAULTS.renderQualityPreset,
+    );
     expect(sharedSnapshot.customPerformanceTargetFps).toBe(60);
     expect(sharedSnapshot.visualizationMethod).toBe(
       DEFAULT_VISUALIZATION_METHOD,

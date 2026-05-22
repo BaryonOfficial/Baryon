@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
-import { AUDIO_DEFAULTS } from "../../defaults.js";
+import { AUDIO_DEFAULTS, RAYMARCH_DEFAULTS } from "../../defaults.js";
 import {
   RAYMARCH_BOUNDARY_TUNING,
   RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES,
@@ -527,7 +527,7 @@ describe("raymarch volume material", () => {
       uniforms,
     });
 
-    expect(mesh.material.steps).toBe(88);
+    expect(mesh.material.steps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
     expect(mesh.material.radiusNode).toBe(uniforms.uRadius);
     expect(mesh.material.opacityGainNode).toBe(uniforms.uOpacityGain);
     expect(uniforms.uObservationDensityFadeStart.value).toBeCloseTo(0.22);
@@ -590,7 +590,7 @@ describe("raymarch volume material", () => {
     });
 
     expect(mesh.geometry).toBeInstanceOf(THREE.SphereGeometry);
-    expect(mesh.material.steps).toBe(88);
+    expect(mesh.material.steps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
   });
 
   it("starts cached/off and creates direct variants only on explicit request", () => {

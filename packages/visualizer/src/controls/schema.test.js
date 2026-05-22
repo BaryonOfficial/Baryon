@@ -91,28 +91,28 @@ describe("control schema", () => {
     expect(Object.keys(state)).toEqual(EXPECTED_CONTROL_KEYS);
   });
 
-  it("defaults the raymarch surface to the tuned cyan laser baseline", () => {
+  it("defaults the raymarch surface to the baryon-7 baseline", () => {
     const state = createControlState();
 
     expect(state.colorMode).toBe("spectral");
-    expect(state.spectralMix).toBe(1);
+    expect(state.spectralMix).toBe(0.96);
     expect(state.volumeColor).toBe("#56d7ff");
     expect(state.surfaceColor).toBe("#f7fdff");
-    expect(state.zeroPointPrecision).toBe(0.02);
-    expect(state.structureMin).toBe(0.3);
-    expect(state.structureMax).toBe(0.48);
+    expect(state.zeroPointPrecision).toBe(0.064);
+    expect(state.structureMin).toBe(0.59);
+    expect(state.structureMax).toBe(0.83);
     expect(state.boundaryMode).toBe("neumann");
     expect(state.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
-    expect(state.densityGain).toBe(3.25);
+    expect(state.densityGain).toBe(2.5);
     expect(state.absorption).toBe(RAYMARCH_DEFAULTS.absorption);
-    expect(state.opacityGain).toBe(3);
+    expect(state.opacityGain).toBe(2.3);
     expect(state.contourSharpness).toBe(8);
-    expect(state.holographicIntensity).toBe(0.61);
-    expect(state.holographicShift).toBe(0.35);
-    expect(state.holographicFresnelPower).toBe(3.2);
-    expect(state.bloomStrength).toBe(1.07);
+    expect(state.holographicIntensity).toBe(0.52);
+    expect(state.holographicShift).toBe(0.42);
+    expect(state.holographicFresnelPower).toBe(4.8);
+    expect(state.bloomStrength).toBe(0.8);
     expect(state.bloomRadius).toBe(0);
-    expect(state.bloomThreshold).toBe(0.3);
+    expect(state.bloomThreshold).toBe(0.24);
     expect(state.performanceHudEnabled).toBe(
       RENDER_DEFAULTS.performanceHudEnabled,
     );
@@ -120,7 +120,7 @@ describe("control schema", () => {
     expect(state.customPerformanceTargetFps).toBe(
       RENDER_DEFAULTS.customPerformanceTargetFps,
     );
-    expect(state.bloomResponseBias).toBe(0.52);
+    expect(state.bloomResponseBias).toBe(1);
   });
 
   it("keeps the node-threshold slider wide enough for cymatic tuning", () => {
@@ -237,7 +237,7 @@ describe("control schema", () => {
     expect(colorMode?.runtimePath).toBe("runtime.spectralLight.colorMode");
     expect(spectralMix).toMatchObject({
       label: "Color Mix",
-      defaultValue: 1,
+      defaultValue: 0.96,
       runtimePath: "runtime.uniforms.uSpectralMix.value",
     });
   });
