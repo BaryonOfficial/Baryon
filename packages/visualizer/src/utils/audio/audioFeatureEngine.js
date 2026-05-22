@@ -216,6 +216,9 @@ export function createNoopAudioFeatureEngine(settings = {}) {
       return createDefaultEngineStatus("none", "disabled");
     },
     reset() {},
+    resetMetrics(reason = "manual-reset-metrics") {
+      void reason;
+    },
     dispose() {},
   };
 }
@@ -349,6 +352,16 @@ export function createAudioFeatureEngine(settings = {}, dependencies = {}) {
       return {
         ...latestStatus,
       };
+    },
+    resetMetrics(reason = "manual-reset-metrics") {
+      latestStatus = {
+        ...createDefaultEngineStatus(latestStatus.state ?? "ready", reason),
+        latestSnapshotFrameTimeMs: latestSnapshot?.frameTimeMs ?? null,
+      };
+      worker?.postMessage({
+        type: "reset-metrics",
+        reason,
+      });
     },
     reset(reason = "manual-reset") {
       latestSnapshot = null;

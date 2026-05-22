@@ -12,6 +12,7 @@ import {
 import { resolveRaymarchFieldCacheOverride } from "../../visualization/fieldEvaluation.js";
 import {
   buildRaymarchSpectralLightCacheDescriptor,
+  advanceRaymarchCacheGeneration,
   clearQueuedRaymarchCacheRebuild,
   disposeRaymarchPhaseOverlayCache,
   disposeRaymarchFieldCache,
@@ -191,6 +192,7 @@ function resetCacheActivity(cache) {
   cache.rebuildPending = false;
   cache.activeDescriptor = null;
   cache.pendingDescriptor = null;
+  advanceRaymarchCacheGeneration(cache);
   clearQueuedRaymarchCacheRebuild(cache);
 }
 

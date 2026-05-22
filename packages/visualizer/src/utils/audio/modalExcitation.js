@@ -13,7 +13,33 @@ import {
   countNonZeroFftBins,
   deriveHighQSparseResonatorAuthority,
 } from "./highQSparseResonatorAuthority.js";
+import {
+  getPhaseAttack,
+  getPhaseRelease,
+  getPhaseVelocityLimit,
+  normalizePhaseRad,
+  PHASE_AUTHORITY_MIN,
+  PHASE_VELOCITY_BLEND,
+  PHASE_VELOCITY_RELEASE,
+  unwrapPhaseDeltaRad,
+  writePhaseSlotsForVisibleModes,
+} from "./modalPhaseSlots.js";
+import {
+  classifyObservedModeQProfile,
+  computeModalObservation,
+  computeModalObserverNoiseFloor,
+  getDetailHarmonicCoupling,
+} from "./modalObservedScoring.js";
+import {
+  applyProjectionEnergyNormalization,
+  mergeProjectionNormalizationMetrics,
+} from "./modalProjectionNormalization.js";
 import { updateModalResponseFrame } from "./modalResponse.js";
+import {
+  buildStaleDetailReleaseOverrides,
+  buildStaleDetailTrackingOverrides,
+  computeStaleDetailPressure,
+} from "./modalStaleDetail.js";
 
 const BACKBONE_MAX_HZ = 3200;
 const BACKBONE_MIN_HZ = 60;
@@ -122,18 +148,12 @@ const HIGH_Q_OBSERVER_DECAY_TAU_SCALE = 32;
 const HIGH_Q_OBSERVER_NO_EVIDENCE_TAU_SCALE = 220;
 const HIGH_Q_OBSERVER_MIN_OBSERVED_DRIVE = 0.0025;
 const HIGH_Q_OBSERVER_NOISE_WINDOW_BINS = 9;
-const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ = 140;
-const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ = 480;
-const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_HZ = 72;
-const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MAX_HZ = 105;
-const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_SUPPORT = 0.002;
 const HIGH_Q_OBSERVER_SOURCE_ENVELOPE_ATTACK = 0.34;
 const HIGH_Q_OBSERVER_SOURCE_ENVELOPE_RELEASE = 0.24;
 const HIGH_Q_DETAIL_DISPLAY_ENVELOPE_START = 0.006;
 const HIGH_Q_DETAIL_DISPLAY_ENVELOPE_FULL = 0.08;
 const HIGH_Q_DETAIL_DISPLAY_ENVELOPE_FLOOR = 0.62;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_START = 0.00012;
-const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_FULL = 0.0009;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_PERIODICITY = 0.68;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_TONALNESS = 0.58;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MAX_DISTRIBUTION = 0.18;
@@ -243,7 +263,6 @@ const DETAIL_COUPLING_DRIVE = 0.064;
 const DETAIL_COUPLING_MIN_HARMONIC = 2;
 const DETAIL_COUPLING_MAX_HARMONIC = 64;
 const DETAIL_COUPLING_HARMONIC_TOLERANCE = 0.045;
-const DETAIL_COUPLING_MODE_HARMONIC_TOLERANCE = 0.22;
 const BACKBONE_DISPLAY_SCORE_DRIVE_WEIGHT = 0.42;
 const BACKBONE_DISPLAY_SCORE_COHERENCE_WEIGHT = 0.33;
 const BACKBONE_DISPLAY_SCORE_AMPLITUDE_WEIGHT = 0.17;
@@ -258,34 +277,11 @@ const BACKBONE_DISPLAY_DUPLICATE_WINDOW = 0.09;
 const DETAIL_DISPLAY_DUPLICATE_WINDOW = 0.018;
 const BACKBONE_DISPLAY_MAX_VISIBLE = 6;
 const DETAIL_DISPLAY_MAX_VISIBLE = 5;
-const PROJECTION_COMPETITION_SIGMA_BACKBONE = 0.1;
-const PROJECTION_COMPETITION_SIGMA_DETAIL = 0.035;
-const PROJECTION_COMPETITION_LAMBDA_BACKBONE = 0.55;
-const PROJECTION_COMPETITION_LAMBDA_DETAIL = 0.85;
-const PROJECTION_EVIDENCE_COHERENCE_WEIGHT = 0.42;
-const PROJECTION_EVIDENCE_SNR_WEIGHT = 0.24;
-const PROJECTION_EVIDENCE_DRIVE_WEIGHT = 0.22;
-const PROJECTION_EVIDENCE_PHASE_WEIGHT = 0.12;
-const PROJECTION_EVIDENCE_MIN = 0.12;
-const PROJECTION_HIGH_Q_PROTECTION_GAIN = 0.35;
-const PROJECTION_HIGH_Q_RETAINED_AMPLITUDE_SCALE = 0.08;
-const PROJECTION_BACKBONE_INCOHERENT_REDUCTION = 0.16;
-const PROJECTION_DETAIL_INCOHERENT_REDUCTION = 0.28;
 const EXCITATION_DECAY_DRIVE_THRESHOLD = 0.065;
 const EXCITATION_DECAY_SIGNAL_DISPLAY_RATIO = 0.55;
 const EXCITATION_HARD_SILENCE_MAX_AVG_AMPLITUDE = 1;
 const EXCITATION_HARD_SILENCE_MAX_RMS = 0.004;
 const EXCITATION_HARD_SILENCE_MAX_FFT_PEAK = 0.003;
-const DETAIL_PHASE_MAX_VELOCITY_RAD_PER_SEC = Math.PI * 1.25;
-const BACKBONE_PHASE_MAX_VELOCITY_RAD_PER_SEC = Math.PI * 0.65;
-const DETAIL_PHASE_ATTACK = 0.32;
-const DETAIL_PHASE_RELEASE = 0.9;
-const BACKBONE_PHASE_ATTACK = 0.22;
-const BACKBONE_PHASE_RELEASE = 0.84;
-const PHASE_VELOCITY_BLEND = 0.18;
-const PHASE_VELOCITY_RELEASE = 0.92;
-const PHASE_AUTHORITY_MIN = 0.015;
-
 function clamp01(value) {
   if (!Number.isFinite(value)) {
     return 0;
@@ -300,34 +296,6 @@ function smoothstep(edge0, edge1, value) {
   }
   const t = clamp01((value - edge0) / (edge1 - edge0));
   return t * t * (3 - 2 * t);
-}
-
-function normalizePhaseRad(phase) {
-  if (!Number.isFinite(phase)) {
-    return 0;
-  }
-  let normalized = phase;
-  while (normalized > Math.PI) normalized -= Math.PI * 2;
-  while (normalized < -Math.PI) normalized += Math.PI * 2;
-  return normalized;
-}
-
-function unwrapPhaseDeltaRad(previousPhase, nextPhase) {
-  return normalizePhaseRad(nextPhase - previousPhase);
-}
-
-function getPhaseVelocityLimit(layer) {
-  return layer === "detail"
-    ? DETAIL_PHASE_MAX_VELOCITY_RAD_PER_SEC
-    : BACKBONE_PHASE_MAX_VELOCITY_RAD_PER_SEC;
-}
-
-function getPhaseAttack(layer) {
-  return layer === "detail" ? DETAIL_PHASE_ATTACK : BACKBONE_PHASE_ATTACK;
-}
-
-function getPhaseRelease(layer) {
-  return layer === "detail" ? DETAIL_PHASE_RELEASE : BACKBONE_PHASE_RELEASE;
 }
 
 function buildModeKey(u, v, w) {
@@ -421,7 +389,8 @@ function hasCurrentRenderSourceEvidence({
     drivePeak >= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_START &&
     periodicity >= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_PERIODICITY &&
     tonalness >= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_TONALNESS &&
-    distributedExcitation <= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MAX_DISTRIBUTION
+    distributedExcitation <=
+      HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MAX_DISTRIBUTION
   );
 }
 
@@ -472,7 +441,8 @@ function buildPreviousModalResponseEnergies(state) {
   const energies = new Map();
 
   const mergeEntry = (entry) => {
-    const modeKey = entry?.modeKey ?? buildModeKey(entry?.u, entry?.v, entry?.w);
+    const modeKey =
+      entry?.modeKey ?? buildModeKey(entry?.u, entry?.v, entry?.w);
     if (!modeKey) {
       return;
     }
@@ -502,42 +472,6 @@ function mapModalResponseEntries(modalResponse) {
   return new Map(
     (modalResponse?.entries ?? []).map((entry) => [entry.modeKey, entry]),
   );
-}
-
-function classifyObservedModeQProfile({
-  atlasEntry,
-  observedSnr,
-  observerCoherence,
-  retainedEnergy,
-  observedDrive,
-  dominantDriveFrequencyHz,
-  dominantDriveSpectralSupport,
-  allowBassHarmonicDriver,
-}) {
-  if (getModeRenderLayer(atlasEntry) === "detail") {
-    return "high-q";
-  }
-
-  const retained = clamp01(retainedEnergy);
-  const drive = clamp01(observedDrive);
-  const coherence = clamp01(observerCoherence);
-  const snr = Math.max(0, observedSnr ?? 0);
-  const highQDriver = isHighQHarmonicDriverFrequency(
-    dominantDriveFrequencyHz,
-    dominantDriveSpectralSupport,
-    allowBassHarmonicDriver,
-  );
-  const highQEvidence =
-    highQDriver &&
-    (atlasEntry?.naturalFrequencyHz ?? 0) >= 160 &&
-    (atlasEntry?.naturalFrequencyHz ?? Infinity) <=
-      HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ &&
-    retained >= HIGH_Q_DETAIL_MIN_RETAINED_ENERGY &&
-    coherence >= 0.52 &&
-    (snr >= LOW_Q_OBSERVER_SNR_START ||
-      drive >= LOW_Q_OBSERVER_MIN_OBSERVED_DRIVE);
-
-  return highQEvidence ? "high-q" : "low-q";
 }
 
 function buildModeAtlas(radius, cavityGeometry = "rectangular") {
@@ -1104,60 +1038,6 @@ function writeShortlistedEntries(
   return slotLimit;
 }
 
-function findModalPhaseEntryForSlot(slots, offset, activeModes, observedModes) {
-  const modeKey = buildModeKey(slots[offset], slots[offset + 1], slots[offset + 2]);
-  return observedModes?.get?.(modeKey) ?? activeModes?.get?.(modeKey) ?? null;
-}
-
-function writePhaseSlotsForVisibleModes({
-  target,
-  visibleSlots,
-  capacity,
-  activeModes,
-  observedModes,
-}) {
-  target?.fill?.(0);
-  if (!target?.length || !visibleSlots?.length) {
-    return 0;
-  }
-
-  const slotLimit = Math.min(
-    capacity,
-    Math.floor(visibleSlots.length / 4),
-    Math.floor(target.length / 4),
-  );
-  let authoritativeCount = 0;
-  for (let index = 0; index < slotLimit; index += 1) {
-    const offset = index * 4;
-    if ((visibleSlots[offset + 3] ?? 0) <= 0) {
-      continue;
-    }
-    const phaseEntry = findModalPhaseEntryForSlot(
-      visibleSlots,
-      offset,
-      activeModes,
-      observedModes,
-    );
-    const authority = clamp01(phaseEntry?.phaseAuthority ?? 0);
-    if (authority <= 0) {
-      continue;
-    }
-    target[offset] = normalizePhaseRad(phaseEntry.phaseOffsetRad ?? 0);
-    target[offset + 1] = Math.max(
-      -getPhaseVelocityLimit(phaseEntry.layer),
-      Math.min(
-        getPhaseVelocityLimit(phaseEntry.layer),
-        phaseEntry.phaseVelocityRadPerSec ?? 0,
-      ),
-    );
-    target[offset + 2] = clamp01(phaseEntry.phaseCoherence ?? 0);
-    target[offset + 3] = authority;
-    authoritativeCount += 1;
-  }
-
-  return authoritativeCount;
-}
-
 function buildHarmonicSupport(entries, dominantFrequencyHz) {
   const support = new Float32Array(6);
   if (!dominantFrequencyHz || entries.length === 0) {
@@ -1305,220 +1185,10 @@ function updateObservedSourceAmplitude(previous, drivePeak) {
   return clamp01(previousAmplitude + (target - previousAmplitude) * rate);
 }
 
-function isHighQHarmonicDriverFrequency(
-  frequencyHz,
-  spectralSupport = 1,
-  allowBassDriver = true,
-) {
-  return (
-    (frequencyHz >= HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ &&
-      frequencyHz <= HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ) ||
-    (allowBassDriver &&
-      frequencyHz >= HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_HZ &&
-      frequencyHz <= HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MAX_HZ &&
-      spectralSupport >= HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_SUPPORT)
-  );
-}
-
 function isObservedModeAged(entry, currentFrameAtMs) {
   return (
-    !!entry &&
-    (entry.firstObservedAtMs ?? currentFrameAtMs) < currentFrameAtMs
+    !!entry && (entry.firstObservedAtMs ?? currentFrameAtMs) < currentFrameAtMs
   );
-}
-
-function computeModalObserverNoiseFloor({
-  fftMagnitudes,
-  sampleRate,
-  frequencyHz,
-  profile = MODAL_OBSERVER_PROFILES.detail,
-}) {
-  if (
-    !(fftMagnitudes instanceof Float32Array) ||
-    fftMagnitudes.length === 0 ||
-    frequencyHz <= 0
-  ) {
-    return 0;
-  }
-
-  const nyquist = sampleRate * 0.5;
-  const centerBin = Math.max(
-    1,
-    Math.min(
-      fftMagnitudes.length - 1,
-      Math.round((frequencyHz / nyquist) * fftMagnitudes.length),
-    ),
-  );
-  const noiseWindowBins =
-    profile?.noiseWindowBins ?? HIGH_Q_OBSERVER_NOISE_WINDOW_BINS;
-  const startBin = Math.max(
-    1,
-    centerBin - noiseWindowBins,
-  );
-  const endBin = Math.min(
-    fftMagnitudes.length - 1,
-    centerBin + noiseWindowBins,
-  );
-  const samples = [];
-
-  for (let index = startBin; index <= endBin; index += 1) {
-    if (Math.abs(index - centerBin) <= 1) {
-      continue;
-    }
-    samples.push(fftMagnitudes[index] ?? 0);
-  }
-
-  if (samples.length === 0) {
-    return 0;
-  }
-
-  samples.sort((left, right) => left - right);
-  const median = samples[Math.floor(samples.length * 0.5)] ?? 0;
-  const upperQuartile = samples[Math.floor(samples.length * 0.75)] ?? median;
-  return clamp01((median + upperQuartile) * 0.5);
-}
-
-function computeModalObservation({
-  atlasEntry,
-  response,
-  spectralSupport,
-  localNoiseFloor,
-  drivePeak,
-  periodicity,
-  tonalness,
-  distributedExcitation,
-  dominantDriveFrequencyHz,
-  dominantDriveSpectralSupport,
-  allowBassHarmonicDriver,
-  avgAmplitude,
-  analyserRms,
-  driveSource,
-  sourceMode,
-}) {
-  const profile = getModalObserverProfile(atlasEntry?.layer);
-  if (
-    atlasEntry?.layer === "backbone" &&
-    sourceMode !== "live" &&
-    driveSource === "spectral-fallback" &&
-    avgAmplitude < 10 &&
-    analyserRms < 0.025
-  ) {
-    return {
-      observedDrive: 0,
-      observedEnergy: 0,
-      observedSnr: 0,
-      observerCoherence: 0,
-    };
-  }
-  if (
-    atlasEntry?.layer === "backbone" &&
-    distributedExcitation > 0.5 &&
-    tonalness < 0.58
-  ) {
-    return {
-      observedDrive: 0,
-      observedEnergy: 0,
-      observedSnr: 0,
-      observerCoherence: 0,
-    };
-  }
-  const spectralExcess = Math.max(0, spectralSupport - localNoiseFloor);
-  const observedSnr =
-    spectralSupport > 0
-      ? spectralSupport / Math.max(localNoiseFloor, 0.0005)
-      : 0;
-  const responseGate = smoothstep(
-    profile.responseStart,
-    profile.responseFull,
-    response?.magnitude ?? 0,
-  );
-  const peakGate = smoothstep(
-    profile.drivePeakStart,
-    profile.drivePeakFull,
-    drivePeak,
-  );
-  const spectralGate =
-    smoothstep(
-      profile.spectralExcessStart,
-      profile.spectralExcessFull,
-      spectralExcess,
-    ) *
-    smoothstep(
-      profile.snrStart,
-      profile.snrFull,
-      observedSnr,
-    );
-  const periodicityGate = smoothstep(
-    profile.periodicityStart,
-    profile.periodicityFull,
-    periodicity,
-  );
-  const tonalGate = smoothstep(
-    profile.tonalnessStart,
-    profile.tonalnessFull,
-    tonalness,
-  );
-  const timeDomainOnlyGate =
-    spectralSupport <= 0 && localNoiseFloor <= 0 ? periodicityGate : 0;
-  const sparseGate =
-    1 -
-    smoothstep(
-      profile.distributionStart,
-      profile.distributionFull,
-      distributedExcitation,
-    );
-  const tonalEvidence = Math.max(tonalGate, timeDomainOnlyGate * 0.85);
-  const sparseEvidence = Math.max(
-    sparseGate,
-    timeDomainOnlyGate * 0.8,
-    profile.sparseEvidenceFloor ?? 0,
-  );
-  const matchedTimeDomainDrive = responseGate * peakGate;
-  const coherentBackgroundDriveGate =
-    atlasEntry?.layer === "detail" &&
-    isHighQHarmonicDriverFrequency(
-      dominantDriveFrequencyHz,
-      dominantDriveSpectralSupport,
-      allowBassHarmonicDriver,
-    ) &&
-    periodicity >= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_PERIODICITY &&
-    tonalness >= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_TONALNESS &&
-    distributedExcitation <= HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MAX_DISTRIBUTION
-      ? smoothstep(
-          HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_START,
-          HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_FULL,
-          drivePeak,
-        )
-      : 0;
-  const harmonicGate =
-    atlasEntry?.layer === "detail" &&
-    isHighQHarmonicDriverFrequency(
-      dominantDriveFrequencyHz,
-      dominantDriveSpectralSupport,
-      allowBassHarmonicDriver,
-    )
-      ? getDetailHarmonicCoupling(
-          atlasEntry.naturalFrequencyHz,
-          dominantDriveFrequencyHz,
-        ) *
-        Math.max(peakGate, coherentBackgroundDriveGate) *
-        periodicityGate
-      : 0;
-  const observerCoherence = clamp01(
-    periodicityGate * tonalEvidence * sparseEvidence,
-  );
-  const observedDrive = clamp01(
-    Math.max(matchedTimeDomainDrive, spectralGate, harmonicGate * 0.46) *
-      observerCoherence *
-      (0.45 + (atlasEntry?.driveWeight ?? 0) * 0.55),
-  );
-
-  return {
-    observedDrive,
-    observedEnergy: clamp01(observedDrive * profile.energyGain),
-    observedSnr,
-    observerCoherence,
-  };
 }
 
 function deriveObservedModePhaseState({
@@ -1567,11 +1237,7 @@ function deriveObservedModePhaseState({
     profile.minObservedDrive * (layer === "detail" ? 4 : 3),
     observedDrive,
   );
-  const snrGate = smoothstep(
-    profile.snrStart,
-    profile.snrFull,
-    observedSnr,
-  );
+  const snrGate = smoothstep(profile.snrStart, profile.snrFull, observedSnr);
   const coherenceGate = smoothstep(
     profile.minRetainedCoherence * 0.55,
     profile.minRetainedCoherence,
@@ -1652,12 +1318,10 @@ function createObservedModalModeEntry({
     observedDrive > 0
       ? clamp01((previous?.driveEnergy ?? 0) * 0.82 + observedDrive * 0.18)
       : clamp01((previous?.driveEnergy ?? 0) * 0.96);
-  const firstObservedAtMs =
-    previous?.firstObservedAtMs ?? currentFrameAtMs;
-  const lastObservedAtMs =
-    hasObservedModalDrive({ observedDrive }, profile)
-      ? currentFrameAtMs
-      : (previous?.lastObservedAtMs ?? firstObservedAtMs);
+  const firstObservedAtMs = previous?.firstObservedAtMs ?? currentFrameAtMs;
+  const lastObservedAtMs = hasObservedModalDrive({ observedDrive }, profile)
+    ? currentFrameAtMs
+    : (previous?.lastObservedAtMs ?? firstObservedAtMs);
   const energy = clamp01(retainedEnergy);
   const isDetail = atlasEntry?.layer === "detail";
   const renderLayer = getModeRenderLayer(atlasEntry);
@@ -1670,6 +1334,9 @@ function createObservedModalModeEntry({
     dominantDriveFrequencyHz,
     dominantDriveSpectralSupport,
     allowBassHarmonicDriver,
+    highQDetailMinRetainedEnergy: HIGH_Q_DETAIL_MIN_RETAINED_ENERGY,
+    lowQObserverSnrStart: LOW_Q_OBSERVER_SNR_START,
+    lowQObserverMinObservedDrive: LOW_Q_OBSERVER_MIN_OBSERVED_DRIVE,
   });
   const phaseState = deriveObservedModePhaseState({
     atlasEntry,
@@ -1955,6 +1622,7 @@ function updateObservedModalModes({
       analyserRms: preparedInputs.analyserRms,
       driveSource,
       sourceMode: preparedInputs.sourceMode,
+      profile,
     });
     const previous = state.observedModes?.get(atlasEntry.modeKey) ?? null;
     const observed = hasObservedModalDrive(observation, profile);
@@ -2001,12 +1669,10 @@ function updateObservedModalModes({
   }
 
   const sortedModes = Array.from(nextModes.values()).sort(
-    (left, right) =>
-      (right.retainedEnergy ?? 0) - (left.retainedEnergy ?? 0),
+    (left, right) => (right.retainedEnergy ?? 0) - (left.retainedEnergy ?? 0),
   );
-  const currentObservationCount = sortedModes.filter(
-    (entry) =>
-      hasObservedModalDrive(entry, getModalObserverProfile(entry.layer)),
+  const currentObservationCount = sortedModes.filter((entry) =>
+    hasObservedModalDrive(entry, getModalObserverProfile(entry.layer)),
   ).length;
   const averageCurrentObservedDrive =
     currentObservationCount > 0
@@ -2150,7 +1816,9 @@ function mergeExcitedObservedModes({
   }
 
   state.observedModes = pruneObservedModesByLayer(
-    new Map(Array.from(nextModes.values()).map((entry) => [entry.modeKey, entry])),
+    new Map(
+      Array.from(nextModes.values()).map((entry) => [entry.modeKey, entry]),
+    ),
     capacities,
   );
 
@@ -2285,24 +1953,6 @@ function getCoherentDetailCoupling({
   );
 }
 
-function getDetailHarmonicCoupling(naturalFrequencyHz, dominantFrequencyHz) {
-  if (naturalFrequencyHz <= 0 || dominantFrequencyHz <= 0) {
-    return 0;
-  }
-
-  const harmonic = naturalFrequencyHz / dominantFrequencyHz;
-  const nearestHarmonic = Math.round(harmonic);
-  if (
-    nearestHarmonic < DETAIL_COUPLING_MIN_HARMONIC ||
-    nearestHarmonic > DETAIL_COUPLING_MAX_HARMONIC
-  ) {
-    return 0;
-  }
-
-  const relativeError = Math.abs(harmonic - nearestHarmonic) / nearestHarmonic;
-  return clamp01(1 - relativeError / DETAIL_COUPLING_MODE_HARMONIC_TOLERANCE);
-}
-
 function getSignalScore(entry, layer) {
   const coherence = clamp01(entry?.coherence ?? 0);
   const driveEnergy = entry?.currentDriveEnergy ?? entry?.driveEnergy ?? 0;
@@ -2320,7 +1970,8 @@ function getSignalScore(entry, layer) {
         freshness * DETAIL_SIGNAL_SCORE_FRESHNESS_WEIGHT) *
         clamp01(0.45 + coherence * 0.55) +
       sustainedPresence * DETAIL_SIGNAL_SCORE_SUSTAIN_WEIGHT;
-    const responseScore = modalResponseAmplitude * clamp01(0.5 + coherence * 0.5);
+    const responseScore =
+      modalResponseAmplitude * clamp01(0.5 + coherence * 0.5);
     if (!entry?.detailDisplayContinuity) {
       return Math.max(score, responseScore);
     }
@@ -2569,157 +2220,13 @@ function buildModeKeySet(slots, capacity) {
     if ((slots[offset + 3] ?? 0) <= 0) {
       continue;
     }
-    keys.add(
-      buildModeKey(slots[offset], slots[offset + 1], slots[offset + 2]),
-    );
+    keys.add(buildModeKey(slots[offset], slots[offset + 1], slots[offset + 2]));
   }
 
   return keys;
 }
 
-function buildStaleDetailReleaseOverrides({
-  visibleSlots,
-  targetSlots,
-  capacity,
-  release,
-}) {
-  const targetKeys = buildModeKeySet(targetSlots, capacity);
-  const overrides = new Map();
-  if (!(visibleSlots instanceof Float32Array) || targetKeys.size === 0) {
-    return overrides;
-  }
-
-  const slotLimit = Math.min(capacity, Math.floor(visibleSlots.length / 4));
-  for (let index = 0; index < slotLimit; index += 1) {
-    const offset = index * 4;
-    if ((visibleSlots[offset + 3] ?? 0) <= 0) {
-      continue;
-    }
-    const key = buildModeKey(
-      visibleSlots[offset],
-      visibleSlots[offset + 1],
-      visibleSlots[offset + 2],
-    );
-    if (!targetKeys.has(key)) {
-      overrides.set(key, release);
-    }
-  }
-
-  return overrides;
-}
-
-function computeStaleDetailPressure({
-  visibleSlots,
-  targetSlots,
-  capacity,
-}) {
-  if (
-    !(visibleSlots instanceof Float32Array) ||
-    !(targetSlots instanceof Float32Array)
-  ) {
-    return 0;
-  }
-
-  const targetAmplitudes = new Map();
-  const targetLimit = Math.min(capacity, Math.floor(targetSlots.length / 4));
-  for (let index = 0; index < targetLimit; index += 1) {
-    const offset = index * 4;
-    const amplitude = targetSlots[offset + 3] ?? 0;
-    if (amplitude <= 0) {
-      continue;
-    }
-    targetAmplitudes.set(
-      buildModeKey(
-        targetSlots[offset],
-        targetSlots[offset + 1],
-        targetSlots[offset + 2],
-      ),
-      amplitude,
-    );
-  }
-
-  let pressure = 0;
-  const visibleLimit = Math.min(capacity, Math.floor(visibleSlots.length / 4));
-  for (let index = 0; index < visibleLimit; index += 1) {
-    const offset = index * 4;
-    const amplitude = visibleSlots[offset + 3] ?? 0;
-    if (amplitude <= 0) {
-      continue;
-    }
-    const targetAmplitude = targetAmplitudes.get(
-      buildModeKey(
-        visibleSlots[offset],
-        visibleSlots[offset + 1],
-        visibleSlots[offset + 2],
-      ),
-    );
-    pressure += Number.isFinite(targetAmplitude)
-      ? Math.max(0, amplitude - targetAmplitude)
-      : amplitude;
-  }
-
-  return pressure;
-}
-
-function buildStaleDetailTrackingOverrides({
-  visibleSlots,
-  targetSlots,
-  capacity,
-  tracking,
-}) {
-  const targetAmplitudes = new Map();
-  if (!(targetSlots instanceof Float32Array)) {
-    return targetAmplitudes;
-  }
-
-  const targetLimit = Math.min(capacity, Math.floor(targetSlots.length / 4));
-  for (let index = 0; index < targetLimit; index += 1) {
-    const offset = index * 4;
-    const amplitude = targetSlots[offset + 3] ?? 0;
-    if (amplitude <= 0) {
-      continue;
-    }
-    targetAmplitudes.set(
-      buildModeKey(
-        targetSlots[offset],
-        targetSlots[offset + 1],
-        targetSlots[offset + 2],
-      ),
-      amplitude,
-    );
-  }
-
-  const overrides = new Map();
-  if (!(visibleSlots instanceof Float32Array) || targetAmplitudes.size === 0) {
-    return overrides;
-  }
-
-  const visibleLimit = Math.min(capacity, Math.floor(visibleSlots.length / 4));
-  for (let index = 0; index < visibleLimit; index += 1) {
-    const offset = index * 4;
-    const amplitude = visibleSlots[offset + 3] ?? 0;
-    if (amplitude <= 0) {
-      continue;
-    }
-    const key = buildModeKey(
-      visibleSlots[offset],
-      visibleSlots[offset + 1],
-      visibleSlots[offset + 2],
-    );
-    const targetAmplitude = targetAmplitudes.get(key);
-    if (Number.isFinite(targetAmplitude) && targetAmplitude < amplitude) {
-      overrides.set(key, tracking);
-    }
-  }
-
-  return overrides;
-}
-
-function hasStrongFreshDetailSignal({
-  visibleSlots,
-  signalSlots,
-  capacity,
-}) {
+function hasStrongFreshDetailSignal({ visibleSlots, signalSlots, capacity }) {
   const visibleKeys = buildModeKeySet(visibleSlots, capacity);
   if (!(signalSlots instanceof Float32Array) || visibleKeys.size === 0) {
     return false;
@@ -2750,8 +2257,7 @@ function hasStrongFreshDetailSignal({
   }
 
   return (
-    strongestFreshSignal >=
-      EXCITATION_DETAIL_FAST_SHIFT_MIN_SIGNAL_AMPLITUDE &&
+    strongestFreshSignal >= EXCITATION_DETAIL_FAST_SHIFT_MIN_SIGNAL_AMPLITUDE &&
     strongestFreshSignal >=
       strongestCoveredSignal * EXCITATION_DETAIL_FAST_SHIFT_SIGNAL_RATIO
   );
@@ -2897,382 +2403,6 @@ function buildDisplayShortlist(entries, layer) {
   return survivors;
 }
 
-function createEmptyProjectionNormalizationMetrics() {
-  return {
-    projectionEnergyBudgetBackbone: 0,
-    projectionEnergyBudgetDetail: 0,
-    projectionEnergyUsedBackbone: 0,
-    projectionEnergyUsedDetail: 0,
-    projectionRawEnergyBackbone: 0,
-    projectionRawEnergyDetail: 0,
-    projectionAllocatedEnergyBackbone: 0,
-    projectionAllocatedEnergyDetail: 0,
-    projectionEnergyScaleBackbone: 0,
-    projectionEnergyScaleDetail: 0,
-    projectionOverlapPressureBackbone: 0,
-    projectionOverlapPressureDetail: 0,
-    projectionCompetitionReduction: 0,
-    projectionDenseSpectrumPressure: 0,
-    projectionHighQProtection: 0,
-    projectionEnergyNormalizationApplied: false,
-  };
-}
-
-function getProjectionLayerBudget({
-  layer,
-  denseSpectrumPressure,
-  highQProtection,
-  modeCoherence,
-}) {
-  if (layer === "backbone") {
-    return Math.max(
-      0.46,
-      Math.min(
-        0.88,
-        0.62 - 0.22 * denseSpectrumPressure + 0.14 * modeCoherence,
-      ),
-    );
-  }
-
-  return Math.max(
-    0.16,
-    Math.min(0.58, 0.34 - 0.32 * denseSpectrumPressure + 0.3 * highQProtection),
-  );
-}
-
-function getProjectionHighQProtection(
-  entry,
-  sparseHighQAuthority,
-  denseSpectrumPressure,
-) {
-  void entry;
-  void sparseHighQAuthority;
-  void denseSpectrumPressure;
-  return 0;
-}
-
-function computeProjectionProximity(left, right, layer) {
-  const leftFrequency = left?.naturalFrequencyHz ?? 0;
-  const rightFrequency = right?.naturalFrequencyHz ?? 0;
-  if (leftFrequency <= 0 || rightFrequency <= 0) {
-    return 0;
-  }
-  const sigma =
-    layer === "backbone"
-      ? PROJECTION_COMPETITION_SIGMA_BACKBONE
-      : PROJECTION_COMPETITION_SIGMA_DETAIL;
-  const distance = Math.log(leftFrequency / rightFrequency) / sigma;
-  return Math.exp(-(distance * distance));
-}
-
-function computeProjectionBasisOverlap(left, right) {
-  const leftIndices = [left?.u, left?.v, left?.w].map((value) =>
-    Number.isFinite(value) ? Math.round(value) : null,
-  );
-  const rightIndices = [right?.u, right?.v, right?.w].map((value) =>
-    Number.isFinite(value) ? Math.round(value) : null,
-  );
-  let sharedCount = 0;
-  const unmatchedRight = [...rightIndices];
-
-  for (const leftIndex of leftIndices) {
-    if (leftIndex === null) {
-      continue;
-    }
-    const matchIndex = unmatchedRight.indexOf(leftIndex);
-    if (matchIndex < 0) {
-      continue;
-    }
-    sharedCount += 1;
-    unmatchedRight.splice(matchIndex, 1);
-  }
-
-  return sharedCount / 3;
-}
-
-function computeProjectionOverlap(left, right, layer) {
-  return Math.max(
-    computeProjectionProximity(left, right, layer),
-    computeProjectionBasisOverlap(left, right),
-  );
-}
-
-function getProjectionRawDisplayAmplitude(entry, layer, highQProtection) {
-  const baseAmplitude = clamp01(
-    entry?.displayAmplitude ?? getDisplayAmplitude(entry, layer),
-  );
-  if (layer !== "detail" || highQProtection <= 0) {
-    return baseAmplitude;
-  }
-
-  const retainedEnergy = clamp01(entry?.retainedEnergy ?? entry?.amplitude ?? 0);
-  const retainedAmplitude =
-    Math.sqrt(retainedEnergy) *
-    PROJECTION_HIGH_Q_RETAINED_AMPLITUDE_SCALE *
-    (0.8 + 0.2 * highQProtection);
-  return clamp01(Math.max(baseAmplitude, retainedAmplitude));
-}
-
-function getProjectionEvidenceQuality(entry, layer, highQProtection) {
-  const profile = getModalObserverProfile(layer);
-  const coherence = clamp01(entry?.coherence ?? 0);
-  const observedSnr = Math.max(0, entry?.observedSnr ?? 0);
-  const normalizedSnr = clamp01(observedSnr / Math.max(profile.snrFull, 1e-6));
-  const snrEvidence = Math.max(normalizedSnr, clamp01(highQProtection));
-  const driveEvidence = clamp01(
-    Math.max(
-      entry?.observedDrive ?? 0,
-      entry?.currentDriveEnergy ?? 0,
-      entry?.driveEnergy ?? 0,
-      entry?.sourceAmplitude ?? 0,
-      highQProtection,
-    ),
-  );
-  const phaseAuthority = clamp01(entry?.phaseAuthority ?? 0);
-  const evidenceQuality =
-    PROJECTION_EVIDENCE_COHERENCE_WEIGHT * coherence +
-    PROJECTION_EVIDENCE_SNR_WEIGHT * snrEvidence +
-    PROJECTION_EVIDENCE_DRIVE_WEIGHT * driveEvidence +
-    PROJECTION_EVIDENCE_PHASE_WEIGHT * phaseAuthority;
-
-  return Math.max(PROJECTION_EVIDENCE_MIN, clamp01(evidenceQuality));
-}
-
-function applyProjectionEnergyNormalization({
-  entries,
-  layer,
-  modalObserverMetrics,
-  hardSilentFrame,
-  highQDetailTopologySignal = 0,
-}) {
-  const emptyMetrics = createEmptyProjectionNormalizationMetrics();
-  if (hardSilentFrame || entries.length === 0) {
-    return { entries: [], metrics: emptyMetrics };
-  }
-
-  const denseSpectrumPressure = clamp01(
-    modalObserverMetrics?.highQDenseSpectrumPressure ?? 0,
-  );
-  const ringDerivedHighQProtection =
-    clamp01(modalObserverMetrics?.highQRingSupport ?? 0) *
-    clamp01(modalObserverMetrics?.highQDetailEnergy ?? 0) *
-    (1 - denseSpectrumPressure);
-  const sparseHighQAuthority = clamp01(
-    Math.max(
-      modalObserverMetrics?.highQSparseResonatorAuthority ?? 0,
-      highQDetailTopologySignal,
-      ringDerivedHighQProtection,
-    ),
-  );
-  const modeCoherence = clamp01(
-    Math.max(
-      modalObserverMetrics?.lowQObservedCoherence ?? 0,
-      modalObserverMetrics?.highQObservedCoherence ?? 0,
-    ),
-  );
-  const entryHighQProtection = entries.map((entry) =>
-    getProjectionHighQProtection(
-      entry,
-      sparseHighQAuthority,
-      denseSpectrumPressure,
-    ),
-  );
-  const layerHighQProtection = Math.max(0, ...entryHighQProtection);
-  const budget = getProjectionLayerBudget({
-    layer,
-    denseSpectrumPressure,
-    highQProtection: layerHighQProtection,
-    modeCoherence,
-  });
-  const lambda =
-    layer === "backbone"
-      ? PROJECTION_COMPETITION_LAMBDA_BACKBONE
-      : PROJECTION_COMPETITION_LAMBDA_DETAIL;
-
-  const projected = entries.map((entry, entryIndex) => {
-    const highQProtection = entryHighQProtection[entryIndex] ?? 0;
-    const rawDisplayAmplitude = getProjectionRawDisplayAmplitude(
-      entry,
-      layer,
-      highQProtection,
-    );
-    const evidenceQuality = getProjectionEvidenceQuality(
-      entry,
-      layer,
-      highQProtection,
-    );
-    const rawEnergy = rawDisplayAmplitude * rawDisplayAmplitude * evidenceQuality;
-    const protectedEnergy =
-      rawEnergy *
-      (1 +
-        PROJECTION_HIGH_Q_PROTECTION_GAIN *
-          highQProtection *
-          (1 - denseSpectrumPressure));
-    return {
-      entry,
-      rawDisplayAmplitude,
-      highQProtection,
-      evidenceQuality,
-      rawEnergy,
-      protectedEnergy,
-    };
-  });
-
-  const competed = projected.map((item, entryIndex) => {
-    let competitorPressure = 0;
-    for (let otherIndex = 0; otherIndex < projected.length; otherIndex += 1) {
-      if (otherIndex === entryIndex) {
-        continue;
-      }
-      const other = projected[otherIndex];
-      const proximity = computeProjectionOverlap(item.entry, other.entry, layer);
-      competitorPressure +=
-        proximity *
-        other.protectedEnergy *
-        (1 - 0.35 * other.highQProtection) *
-        (1 - 0.25 * clamp01(other.entry?.coherence ?? 0));
-    }
-    const competitionScale = 1 / (1 + lambda * competitorPressure);
-    const maxIncoherentReduction =
-      layer === "detail"
-        ? PROJECTION_DETAIL_INCOHERENT_REDUCTION
-        : PROJECTION_BACKBONE_INCOHERENT_REDUCTION;
-    const incoherentQuality =
-      1 -
-      denseSpectrumPressure *
-        maxIncoherentReduction *
-        (1 - item.evidenceQuality);
-    const projectedEnergy =
-      item.protectedEnergy * competitionScale * incoherentQuality;
-    return {
-      ...item,
-      competitorPressure,
-      competitionScale,
-      projectedEnergy,
-    };
-  });
-
-  const rawEnergyTotal = competed.reduce(
-    (total, item) => total + item.rawEnergy,
-    0,
-  );
-  const projectedEnergyTotal = competed.reduce(
-    (total, item) => total + item.projectedEnergy,
-    0,
-  );
-  const energyScale =
-    projectedEnergyTotal > budget ? budget / Math.max(projectedEnergyTotal, 1e-9) : 1;
-  const conservedEntries = competed.map((item) => ({
-    ...item.entry,
-    displayAmplitude: Math.sqrt(Math.max(0, item.projectedEnergy * energyScale)),
-  }));
-  const allocatedEnergy = competed.reduce(
-    (total, item) => total + item.projectedEnergy * energyScale,
-    0,
-  );
-  const used = Math.min(allocatedEnergy, budget);
-  const maxOverlapPressure = competed.reduce(
-    (maxPressure, item) => Math.max(maxPressure, item.competitorPressure),
-    0,
-  );
-  const competitionReduction = Math.max(0, rawEnergyTotal - used);
-  const normalizationApplied =
-    energyScale < 0.999999 || competitionReduction > 1e-6 || maxOverlapPressure > 0;
-  const metrics = {
-    ...emptyMetrics,
-    projectionDenseSpectrumPressure: denseSpectrumPressure,
-    projectionHighQProtection: layerHighQProtection,
-    projectionCompetitionReduction: competitionReduction,
-    projectionEnergyNormalizationApplied: normalizationApplied,
-  };
-  if (layer === "backbone") {
-    metrics.projectionEnergyBudgetBackbone = budget;
-    metrics.projectionEnergyUsedBackbone = used;
-    metrics.projectionRawEnergyBackbone = rawEnergyTotal;
-    metrics.projectionAllocatedEnergyBackbone = used;
-    metrics.projectionEnergyScaleBackbone = energyScale;
-    metrics.projectionOverlapPressureBackbone = maxOverlapPressure;
-  } else {
-    metrics.projectionEnergyBudgetDetail = budget;
-    metrics.projectionEnergyUsedDetail = used;
-    metrics.projectionRawEnergyDetail = rawEnergyTotal;
-    metrics.projectionAllocatedEnergyDetail = used;
-    metrics.projectionEnergyScaleDetail = energyScale;
-    metrics.projectionOverlapPressureDetail = maxOverlapPressure;
-  }
-
-  return { entries: conservedEntries, metrics };
-}
-
-function mergeProjectionNormalizationMetrics(...metricSets) {
-  const merged = createEmptyProjectionNormalizationMetrics();
-  for (const metrics of metricSets) {
-    if (!metrics) {
-      continue;
-    }
-    merged.projectionEnergyBudgetBackbone = Math.max(
-      merged.projectionEnergyBudgetBackbone,
-      metrics.projectionEnergyBudgetBackbone ?? 0,
-    );
-    merged.projectionEnergyBudgetDetail = Math.max(
-      merged.projectionEnergyBudgetDetail,
-      metrics.projectionEnergyBudgetDetail ?? 0,
-    );
-    merged.projectionEnergyUsedBackbone +=
-      metrics.projectionEnergyUsedBackbone ?? 0;
-    merged.projectionEnergyUsedDetail +=
-      metrics.projectionEnergyUsedDetail ?? 0;
-    merged.projectionRawEnergyBackbone +=
-      metrics.projectionRawEnergyBackbone ?? 0;
-    merged.projectionRawEnergyDetail +=
-      metrics.projectionRawEnergyDetail ?? 0;
-    merged.projectionAllocatedEnergyBackbone +=
-      metrics.projectionAllocatedEnergyBackbone ?? 0;
-    merged.projectionAllocatedEnergyDetail +=
-      metrics.projectionAllocatedEnergyDetail ?? 0;
-    if ((metrics.projectionEnergyScaleBackbone ?? 0) > 0) {
-      merged.projectionEnergyScaleBackbone =
-        merged.projectionEnergyScaleBackbone > 0
-          ? Math.min(
-              merged.projectionEnergyScaleBackbone,
-              metrics.projectionEnergyScaleBackbone,
-            )
-          : metrics.projectionEnergyScaleBackbone;
-    }
-    if ((metrics.projectionEnergyScaleDetail ?? 0) > 0) {
-      merged.projectionEnergyScaleDetail =
-        merged.projectionEnergyScaleDetail > 0
-          ? Math.min(
-              merged.projectionEnergyScaleDetail,
-              metrics.projectionEnergyScaleDetail,
-            )
-          : metrics.projectionEnergyScaleDetail;
-    }
-    merged.projectionOverlapPressureBackbone = Math.max(
-      merged.projectionOverlapPressureBackbone,
-      metrics.projectionOverlapPressureBackbone ?? 0,
-    );
-    merged.projectionOverlapPressureDetail = Math.max(
-      merged.projectionOverlapPressureDetail,
-      metrics.projectionOverlapPressureDetail ?? 0,
-    );
-    merged.projectionCompetitionReduction +=
-      metrics.projectionCompetitionReduction ?? 0;
-    merged.projectionDenseSpectrumPressure = Math.max(
-      merged.projectionDenseSpectrumPressure,
-      metrics.projectionDenseSpectrumPressure ?? 0,
-    );
-    merged.projectionHighQProtection = Math.max(
-      merged.projectionHighQProtection,
-      metrics.projectionHighQProtection ?? 0,
-    );
-    merged.projectionEnergyNormalizationApplied =
-      merged.projectionEnergyNormalizationApplied ||
-      metrics.projectionEnergyNormalizationApplied === true;
-  }
-  return merged;
-}
-
 function getEntryModeKey(entry) {
   return buildModeKey(entry?.u, entry?.v, entry?.w);
 }
@@ -3342,6 +2472,8 @@ function buildModalProjection({
     modalObserverMetrics,
     hardSilentFrame,
     highQDetailTopologySignal,
+    resolveDisplayAmplitude: getDisplayAmplitude,
+    getModalObserverProfile,
   });
   const {
     entries: displayDetailEntries,
@@ -3352,6 +2484,8 @@ function buildModalProjection({
     modalObserverMetrics,
     hardSilentFrame,
     highQDetailTopologySignal,
+    resolveDisplayAmplitude: getDisplayAmplitude,
+    getModalObserverProfile,
   });
   const {
     entries: signalDetailProjectionEntries,
@@ -3362,6 +2496,8 @@ function buildModalProjection({
     modalObserverMetrics,
     hardSilentFrame,
     highQDetailTopologySignal,
+    resolveDisplayAmplitude: getDisplayAmplitude,
+    getModalObserverProfile,
   });
 
   writeShortlistedEntries(
@@ -3902,12 +3038,14 @@ export function buildModalExcitationStructuralState({
         distributedExcitation * 0.24 +
         modalResponseDrive * 0.12,
     );
-    const observedPrevious = state.observedModes?.get(atlasEntry.modeKey) ?? null;
+    const observedPrevious =
+      state.observedModes?.get(atlasEntry.modeKey) ?? null;
     const observedPreviousAged = isObservedModeAged(
       observedPrevious,
       preparedInputs.currentFrameAtMs,
     );
-    const observedPreviousHighQ = getModeQProfile(observedPrevious) === "high-q";
+    const observedPreviousHighQ =
+      getModeQProfile(observedPrevious) === "high-q";
     const canUseObservedPrevious =
       observedPreviousAged &&
       !hardSilentFrame &&
@@ -3984,10 +3122,8 @@ export function buildModalExcitationStructuralState({
           )
       : 0;
     const backboneDisplayContinuityPresence = backboneDisplayContinuity
-      ? Math.max(
-          previous?.amplitude ?? 0,
-          previous?.retainedEnergy ?? 0,
-        ) * Math.max(0.35, previous?.coherence ?? 0)
+      ? Math.max(previous?.amplitude ?? 0, previous?.retainedEnergy ?? 0) *
+        Math.max(0.35, previous?.coherence ?? 0)
       : 0;
     const displayContinuityMode =
       detailDisplayContinuity || backboneDisplayContinuity;
@@ -4195,8 +3331,10 @@ export function buildModalExcitationStructuralState({
   const observedBackboneContinuity =
     !hardSilentFrame &&
     !backboneCouplingFrequencySwitch &&
-    modalObserverMetrics.lowQBackboneModeCount >= LOW_Q_OBSERVER_MIN_MODE_COUNT &&
-    modalObserverMetrics.lowQBackboneEnergy >= LOW_Q_OBSERVER_MIN_RETAINED_ENERGY;
+    modalObserverMetrics.lowQBackboneModeCount >=
+      LOW_Q_OBSERVER_MIN_MODE_COUNT &&
+    modalObserverMetrics.lowQBackboneEnergy >=
+      LOW_Q_OBSERVER_MIN_RETAINED_ENERGY;
   blendModalStack(
     state.blendBackbone,
     state.displayBackbone.slots,
@@ -4220,9 +3358,10 @@ export function buildModalExcitationStructuralState({
     },
   );
   blendModalStack(state.blendDetail, detailBlendTargetSlots, detailCapacity, {
-    attack: detailSignalAuthoritative || modalResponseDetailSignalAuthoritative
-      ? EXCITATION_DETAIL_SHIFT_BLEND_ATTACK
-      : EXCITATION_DETAIL_BLEND_ATTACK,
+    attack:
+      detailSignalAuthoritative || modalResponseDetailSignalAuthoritative
+        ? EXCITATION_DETAIL_SHIFT_BLEND_ATTACK
+        : EXCITATION_DETAIL_BLEND_ATTACK,
     tracking:
       modalResponseDetailSignalAuthoritative || highQDetailSignalAuthoritative
         ? EXCITATION_DETAIL_RESPONSE_ENVELOPE_TRACKING
@@ -4240,9 +3379,11 @@ export function buildModalExcitationStructuralState({
     trackingOverrides: detailShiftTrackingOverrides,
     releaseOverrides: detailShiftReleaseOverrides,
     retainReleased: !hardSilentFrame,
-    freshCap: detailSignalAuthoritative || modalResponseDetailSignalAuthoritative
-      ? detailCapacity
-      : EXCITATION_DETAIL_FRESH_CAP + (detailAssistNeedsFreshAdmission ? 1 : 0),
+    freshCap:
+      detailSignalAuthoritative || modalResponseDetailSignalAuthoritative
+        ? detailCapacity
+        : EXCITATION_DETAIL_FRESH_CAP +
+          (detailAssistNeedsFreshAdmission ? 1 : 0),
   });
 
   if (
@@ -4418,15 +3559,13 @@ export function buildModalExcitationStructuralState({
     highQObservedNoiseFloor: modalObserverMetrics.highQObservedNoiseFloor,
     highQSparseResonatorAuthority:
       modalObserverMetrics.highQSparseResonatorAuthority,
-    highQDenseSpectrumPressure:
-      modalObserverMetrics.highQDenseSpectrumPressure,
+    highQDenseSpectrumPressure: modalObserverMetrics.highQDenseSpectrumPressure,
     highQRetainedVisibilityRejected:
       modalObserverMetrics.highQRetainedVisibilityRejected,
     lowQPhaseAuthority: modalObserverMetrics.lowQPhaseAuthority,
     highQPhaseAuthority: modalObserverMetrics.highQPhaseAuthority,
     modalPhaseAuthority: modalObserverMetrics.modalPhaseAuthority,
-    modalPhaseOverlayModeCount:
-      backbonePhaseModeCount + detailPhaseModeCount,
+    modalPhaseOverlayModeCount: backbonePhaseModeCount + detailPhaseModeCount,
     highQDetailTopologySignal,
     modalPersistence: excitedEntries.length
       ? clamp01(persistenceTotal / excitedEntries.length)

@@ -492,6 +492,35 @@ function snapshotMatchesPreparedInputs(engineSnapshot, preparedInputs) {
   return hasMatchingAnalysisContext(engineSnapshot, preparedInputs);
 }
 
+function classifyFrameSemanticSource(source) {
+  switch (source) {
+    case "worker-snapshot":
+    case "local-heavy-analysis":
+    case "live-warmup":
+    case "bootstrap-fallback":
+    case "legacy-build":
+      return { fresh: true, reused: false };
+    case "scheduled-reuse":
+    case "last-live-cache":
+    case "static-idle-cache":
+      return { fresh: false, reused: true };
+    default:
+      return { fresh: false, reused: false };
+  }
+}
+
+function recordFrameSemanticSource(runtimeDiagnostics, source) {
+  const modalFreshness = runtimeDiagnostics?.modalFreshness;
+  if (!modalFreshness) {
+    return;
+  }
+
+  const { fresh, reused } = classifyFrameSemanticSource(source);
+  modalFreshness.frameSemanticSource = source ?? null;
+  modalFreshness.frameSemanticFresh = fresh;
+  modalFreshness.frameSemanticReused = reused;
+}
+
 function hasMatchingAnalysisContext(previousAnalysis, preparedInputs) {
   return Boolean(
     previousAnalysis &&
@@ -1651,6 +1680,9 @@ export function resolveFeatureFrame(
     shouldReuseIdleFrame(status, controls) && lastIdleFrameRef.current;
 
   let featureFrame = null;
+  let frameSemanticSource = shouldReuseStaticIdleFrame
+    ? "static-idle-cache"
+    : null;
   if (!shouldReuseStaticIdleFrame) {
     const buildFeatureFrameStartedAt = getRenderLoopWallTimeMs();
     const analysisSnapshotStartedAt = getRenderLoopWallTimeMs();
@@ -1684,6 +1716,7 @@ export function resolveFeatureFrame(
         frameTimeMs: time * 1000,
         includeSpectralLight: spectralLightEnabled,
       });
+      frameSemanticSource = "legacy-build";
     } else {
       const preparedInputs = prepareFeatureFrame({
         analysisSnapshot,
@@ -1697,6 +1730,7 @@ export function resolveFeatureFrame(
 
       if (preparedInputs.silentFeatureFrame) {
         featureFrame = preparedInputs.silentFeatureFrame;
+        frameSemanticSource = "silent-frame";
         featureEngine?.reset?.("silent-frame");
         resetAnalysisSchedulerState(analysisSchedulerRef);
       } else {
@@ -1789,63 +1823,85 @@ export function resolveFeatureFrame(
               previousFrame: lastLiveFrameRef.current,
               reuseHeavyAnalysis: true,
             });
+            frameSemanticSource = "worker-snapshot";
             recordRuntimePerfSample(
               runtimeDiagnostics,
               "fastComposeMs",
               getRenderLoopWallTimeMs() - fastComposeStartedAt,
             );
-          } else if (
-            shouldComposeInactiveSourceFeatureFrame({
-              status,
-              controls,
-              preparedInputs,
-            }) ||
-            shouldSeedLiveInputWarmupFrame({
-              status,
-              lastLiveFrame: lastLiveFrameRef.current,
-              lastActiveFrame: lastActiveFrameRef.current,
-            }) ||
-            shouldBootstrapActiveFeatureFrame({
-              status,
-              controls,
-              lastLiveFrame: lastLiveFrameRef.current,
-              lastActiveFrame: lastActiveFrameRef.current,
-            })
-          ) {
-            const heavyAnalysisStartedAt = getRenderLoopWallTimeMs();
-            const analysisResult = runHeavyFeatureAnalysis(preparedInputs);
-            recordRuntimePerfSample(
-              runtimeDiagnostics,
-              "heavyAnalysisMs",
-              getRenderLoopWallTimeMs() - heavyAnalysisStartedAt,
-            );
-
-            const fastComposeStartedAt = getRenderLoopWallTimeMs();
-            featureFrame = composeFeatureFrame({
-              preparedInputs,
-              analysisResult,
-              previousFrame: schedulerState.lastComposedFeatureFrame,
-              reuseHeavyAnalysis: false,
-            });
-            recordRuntimePerfSample(
-              runtimeDiagnostics,
-              "fastComposeMs",
-              getRenderLoopWallTimeMs() - fastComposeStartedAt,
-            );
-
-            storeComposedAnalysisResult(
-              analysisSchedulerRef,
-              preparedInputs,
-              analysisResult,
-              featureFrame,
-            );
-            if (runtimeDiagnostics?.analysisScheduler) {
-              runtimeDiagnostics.analysisScheduler.forcedAnalysisCount += 1;
-            }
           } else {
-            featureFrame = hasAudioSourceRenderIntent({ status, controls })
-              ? (lastLiveFrameRef.current ?? preparedInputs.silentFeatureFrame)
-              : preparedInputs.silentFeatureFrame;
+            const shouldComposeInactiveSource =
+              shouldComposeInactiveSourceFeatureFrame({
+                status,
+                controls,
+                preparedInputs,
+              });
+            const shouldSeedLiveWarmup = shouldSeedLiveInputWarmupFrame({
+              status,
+              lastLiveFrame: lastLiveFrameRef.current,
+              lastActiveFrame: lastActiveFrameRef.current,
+            });
+            const shouldBootstrapActive = shouldBootstrapActiveFeatureFrame({
+              status,
+              controls,
+              lastLiveFrame: lastLiveFrameRef.current,
+              lastActiveFrame: lastActiveFrameRef.current,
+            });
+
+            if (
+              shouldComposeInactiveSource ||
+              shouldSeedLiveWarmup ||
+              shouldBootstrapActive
+            ) {
+              const heavyAnalysisStartedAt = getRenderLoopWallTimeMs();
+              const analysisResult = runHeavyFeatureAnalysis(preparedInputs);
+              recordRuntimePerfSample(
+                runtimeDiagnostics,
+                "heavyAnalysisMs",
+                getRenderLoopWallTimeMs() - heavyAnalysisStartedAt,
+              );
+
+              const fastComposeStartedAt = getRenderLoopWallTimeMs();
+              featureFrame = composeFeatureFrame({
+                preparedInputs,
+                analysisResult,
+                previousFrame: schedulerState.lastComposedFeatureFrame,
+                reuseHeavyAnalysis: false,
+              });
+              frameSemanticSource = shouldSeedLiveWarmup
+                ? "live-warmup"
+                : shouldBootstrapActive
+                  ? "bootstrap-fallback"
+                  : "local-heavy-analysis";
+              recordRuntimePerfSample(
+                runtimeDiagnostics,
+                "fastComposeMs",
+                getRenderLoopWallTimeMs() - fastComposeStartedAt,
+              );
+
+              storeComposedAnalysisResult(
+                analysisSchedulerRef,
+                preparedInputs,
+                analysisResult,
+                featureFrame,
+              );
+              if (runtimeDiagnostics?.analysisScheduler) {
+                runtimeDiagnostics.analysisScheduler.forcedAnalysisCount += 1;
+              }
+            } else {
+              const hasSourceIntent = hasAudioSourceRenderIntent({
+                status,
+                controls,
+              });
+              featureFrame = hasSourceIntent
+                ? (lastLiveFrameRef.current ??
+                  preparedInputs.silentFeatureFrame)
+                : preparedInputs.silentFeatureFrame;
+              frameSemanticSource =
+                hasSourceIntent && lastLiveFrameRef.current
+                  ? "last-live-cache"
+                  : "silent-frame";
+            }
           }
         } else {
           const schedulerState =
@@ -1879,6 +1935,7 @@ export function resolveFeatureFrame(
               previousFrame: schedulerState.lastComposedFeatureFrame,
               reuseHeavyAnalysis: false,
             });
+            frameSemanticSource = "local-heavy-analysis";
             recordRuntimePerfSample(
               runtimeDiagnostics,
               "fastComposeMs",
@@ -1902,6 +1959,7 @@ export function resolveFeatureFrame(
               previousFrame: schedulerState.lastComposedFeatureFrame,
               reuseHeavyAnalysis: true,
             });
+            frameSemanticSource = "scheduled-reuse";
             recordRuntimePerfSample(
               runtimeDiagnostics,
               "fastComposeMs",
@@ -1937,6 +1995,8 @@ export function resolveFeatureFrame(
   } else if (shouldReuseStaticIdleFrame) {
     featureFrame = lastIdleFrameRef.current;
   }
+
+  recordFrameSemanticSource(runtimeDiagnostics, frameSemanticSource);
 
   if (status.isPlaying || status.isLiveInputActive) {
     if (shouldCaptureLastLiveFrame({ status, featureFrame })) {

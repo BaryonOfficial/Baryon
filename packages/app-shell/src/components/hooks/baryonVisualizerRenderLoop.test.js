@@ -963,22 +963,23 @@ test("active playback bootstrap builds a fresh Spectral Light frame when the fea
     backboneColorSlots: analysisResult.backboneColorSlots,
     detailColorSlots: analysisResult.detailColorSlots,
   }));
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine: {
+      enqueueTransportFrame: vi.fn(),
+      readLatestSnapshot: vi.fn(() => ({
+        analysisSessionKey: "previous-session",
+        analysisInputsSignature: "previous-inputs",
+      })),
+      getStatus: vi.fn(() => ({})),
+    },
+    renderLoopRefs: {
+      frameCacheRefs,
+    },
+  });
 
   const { effectiveFrame } = resolveFeatureFrame(
     {
-      ...createResolveFeatureFrameHarness({
-        featureEngine: {
-          enqueueTransportFrame: vi.fn(),
-          readLatestSnapshot: vi.fn(() => ({
-            analysisSessionKey: "previous-session",
-            analysisInputsSignature: "previous-inputs",
-          })),
-          getStatus: vi.fn(() => ({})),
-        },
-        renderLoopRefs: {
-          frameCacheRefs,
-        },
-      }).args,
+      ...args,
       spectralLightEnabled: true,
     },
     {
@@ -1001,6 +1002,102 @@ test("active playback bootstrap builds a fresh Spectral Light frame when the fea
     lastHeavyAnalysisResult: heavyAnalysis,
     lastComposedFeatureFrame: effectiveFrame,
   });
+  expect(
+    frameCacheRefs.analysisSchedulerRef.current.lastComposedFeatureFrame,
+  ).toBe(effectiveFrame);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "bootstrap-fallback",
+  );
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(
+    false,
+  );
+});
+
+test("resolveFeatureFrame records matching worker snapshots as fresh semantic frames", () => {
+  const workerAnalysis = {
+    fieldState: "active",
+    activeModeCount: 4,
+  };
+  const featureEngine = {
+    enqueueTransportFrame: vi.fn(),
+    readLatestSnapshot: vi.fn(() => ({
+      analysisSessionKey: "song-1",
+      analysisInputsSignature: '"worker-sig"',
+      analysisResult: workerAnalysis,
+    })),
+    getStatus: vi.fn(() => ({})),
+  };
+  const composeFeatureFrame = vi.fn(({ analysisResult }) => ({
+    fieldState: analysisResult.fieldState,
+    activeModeCount: analysisResult.activeModeCount,
+  }));
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame: vi.fn(() => ({
+      currentFrameAtMs: 1000,
+      analysisSessionKey: "song-1",
+      analysisInputsSignature: '"worker-sig"',
+      silentFeatureFrame: null,
+    })),
+    composeFeatureFrame,
+  });
+
+  expect(result.effectiveFrame.activeModeCount).toBe(4);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "worker-snapshot",
+  );
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(
+    false,
+  );
+  expect(
+    buildPerformanceHudSnapshot(args.runtimeDiagnostics).modalFreshness
+      .frameSemanticSource,
+  ).toBe("worker-snapshot");
+});
+
+test("resolveFeatureFrame records scheduled analysis reuse as reused semantics", () => {
+  const reusedAnalysis = { fieldState: "active", reusedAnalysis: true };
+  const reusedFrame = { fieldState: "active", reusedFrame: true };
+  const { args } = createResolveFeatureFrameHarness({
+    renderLoopRefs: {
+      frameCacheRefs: {
+        lastLiveFrameRef: { current: null },
+        lastActiveFrameRef: { current: null },
+        lastIdleFrameRef: { current: null },
+        analysisSchedulerRef: {
+          current: {
+            lastHeavyAnalysisAtMs: 1000,
+            lastAnalysisSessionKey: "song-1",
+            lastAnalysisInputsSignature: '"same"',
+            lastHeavyAnalysisResult: reusedAnalysis,
+            lastComposedFeatureFrame: reusedFrame,
+          },
+        },
+      },
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame: vi.fn(() => ({
+      currentFrameAtMs: 1010,
+      analysisSessionKey: "song-1",
+      analysisInputsSignature: '"same"',
+      silentFeatureFrame: null,
+    })),
+    composeFeatureFrame: vi.fn(() => reusedFrame),
+  });
+
+  expect(result.effectiveFrame).toBe(reusedFrame);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "scheduled-reuse",
+  );
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(false);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(true);
 });
 
 test("resolveFeatureFrame composes a source-cut frame during paused playback", () => {
@@ -1075,6 +1172,13 @@ test("resolveFeatureFrame composes a source-cut frame during paused playback", (
     renderAuthority: false,
     renderAuthorityCut: true,
   });
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "local-heavy-analysis",
+  );
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(
+    false,
+  );
   expect(
     args.renderLoopRefs.frameCacheRefs.lastActiveFrameRef.current,
   ).toBeNull();
@@ -1432,6 +1536,13 @@ test("resolveFeatureFrame seeds the first live frame locally while worker analys
     fieldState: "active",
     seededFromAnalysis: "live:device-1",
   });
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "live-warmup",
+  );
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(
+    false,
+  );
 });
 
 test("resolveFeatureFrame preserves the last active live frame during worker warmup", () => {
@@ -1480,6 +1591,11 @@ test("resolveFeatureFrame preserves the last active live frame during worker war
   expect(args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current).toBe(
     lastLiveFrame,
   );
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "last-live-cache",
+  );
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(false);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(true);
 });
 
 test("resolveFeatureFrame clears cached live frames and reactive response after live input interruption", () => {

@@ -15,9 +15,11 @@ import { buildAudioFeatureTransportFrame } from "./audioFeatureEngine.js";
 import * as audioFeatureWorker from "./audioFeatureEngine.worker.js";
 import {
   buildLaneRunDecisions,
+  buildEngineStatus,
   createEngineState,
   deriveDirtyState,
   shouldPublishDirtySnapshot,
+  recordWorkerPerfSample,
 } from "./audioFeatureEngine.worker.js";
 
 const FFT_SIZE = 4096;
@@ -93,6 +95,28 @@ function createSystemStatus(overrides = {}) {
     liveInputAnalysisClass: "line-feed",
     ...overrides,
   });
+}
+
+function createFakeWorker() {
+  const listeners = new Map();
+  const worker = {
+    messages: [],
+    addEventListener(type, listener) {
+      const typedListeners = listeners.get(type) ?? [];
+      typedListeners.push(listener);
+      listeners.set(type, typedListeners);
+    },
+    postMessage(message) {
+      worker.messages.push(message);
+    },
+    terminate() {},
+    emit(type, data) {
+      for (const listener of listeners.get(type) ?? []) {
+        listener({ data });
+      }
+    },
+  };
+  return worker;
 }
 
 describe("audio feature engine transport", () => {
@@ -187,6 +211,62 @@ describe("audio feature engine transport", () => {
 });
 
 describe("audio feature engine worker lanes", () => {
+  it("reports averaged worker lane timings instead of the last sample", () => {
+    const engineState = createEngineState();
+    recordWorkerPerfSample(engineState, "structuralMs", 10);
+    recordWorkerPerfSample(engineState, "structuralMs", 20);
+    recordWorkerPerfSample(engineState, "projectionMs", 0.5);
+
+    const status = buildEngineStatus(engineState);
+
+    expect(status.workerStructuralMs).toBe(15);
+    expect(status.workerProjectionMs).toBe(0.5);
+  });
+
+  it("resets wrapper and worker metrics without clearing the latest snapshot", () => {
+    const worker = createFakeWorker();
+    const engine = audioFeatureEngine.createAudioFeatureEngine(
+      { runtime: "worker" },
+      { createWorker: () => worker },
+    );
+    worker.emit("message", {
+      type: "status",
+      status: {
+        state: "ready",
+        reason: "published",
+        publishCount: 5,
+        droppedFrameCount: 2,
+        workerStructuralMs: 7,
+      },
+    });
+    const latestSnapshot = {
+      frameTimeMs: 2000,
+      publishCount: 5,
+      analysisSessionKey: "file:test",
+      analysisInputsSignature: "baseline",
+      analysisResult: {},
+    };
+    worker.emit("message", {
+      type: "snapshot",
+      snapshot: latestSnapshot,
+    });
+    engine.resetMetrics("probe-reset");
+
+    expect(worker.messages.at(-1)).toEqual({
+      type: "reset-metrics",
+      reason: "probe-reset",
+    });
+    expect(engine.getStatus()).toMatchObject({
+      state: "ready",
+      reason: "probe-reset",
+      publishCount: 0,
+      droppedFrameCount: 0,
+      workerStructuralMs: 0,
+    });
+    expect(engine.readLatestSnapshot()).toBe(latestSnapshot);
+    engine.dispose();
+  });
+
   it("runs structural, chroma, and tempo lanes at separate cadences", () => {
     const engineState = createEngineState({
       runtime: "worker",

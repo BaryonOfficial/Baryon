@@ -44,6 +44,42 @@ function postStatus(status = {}) {
   });
 }
 
+export function createWorkerPerfEntry() {
+  return {
+    averageMs: 0,
+    lastMs: 0,
+    maxMs: 0,
+    sampleCount: 0,
+  };
+}
+
+function createWorkerPerfState() {
+  return {
+    fastSignalMs: createWorkerPerfEntry(),
+    structuralMs: createWorkerPerfEntry(),
+    peakScanMs: createWorkerPerfEntry(),
+    modalResolveMs: createWorkerPerfEntry(),
+    projectionMs: createWorkerPerfEntry(),
+    chromaMs: createWorkerPerfEntry(),
+    tempoMs: createWorkerPerfEntry(),
+  };
+}
+
+export function readWorkerPerfAverageMs(entry) {
+  return Number.isFinite(entry?.averageMs) ? entry.averageMs : 0;
+}
+
+function resetWorkerPerfEntry(entry) {
+  if (!entry) {
+    return;
+  }
+
+  entry.averageMs = 0;
+  entry.lastMs = 0;
+  entry.maxMs = 0;
+  entry.sampleCount = 0;
+}
+
 export function createEngineState(
   settings = DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS,
 ) {
@@ -72,19 +108,11 @@ export function createEngineState(
     lastChromaUpdateAtMs: Number.NEGATIVE_INFINITY,
     lastTempoUpdateAtMs: Number.NEGATIVE_INFINITY,
     lastPublishedAtMs: Number.NEGATIVE_INFINITY,
-    workerPerf: {
-      fastSignalMs: 0,
-      structuralMs: 0,
-      peakScanMs: 0,
-      modalResolveMs: 0,
-      projectionMs: 0,
-      chromaMs: 0,
-      tempoMs: 0,
-    },
+    workerPerf: createWorkerPerfState(),
   };
 }
 
-function buildEngineStatus(engineState, overrides = {}) {
+export function buildEngineStatus(engineState, overrides = {}) {
   return {
     state: "ready",
     reason: null,
@@ -101,13 +129,23 @@ function buildEngineStatus(engineState, overrides = {}) {
     latestProcessedFrameId: engineState.latestProcessedFrameId,
     latestPublishedFrameId: engineState.latestPublishedFrameId,
     latestSnapshotFrameTimeMs: engineState.latestSnapshot?.frameTimeMs ?? null,
-    workerFastSignalMs: engineState.workerPerf.fastSignalMs,
-    workerStructuralMs: engineState.workerPerf.structuralMs,
-    workerPeakScanMs: engineState.workerPerf.peakScanMs,
-    workerModalResolveMs: engineState.workerPerf.modalResolveMs,
-    workerProjectionMs: engineState.workerPerf.projectionMs,
-    workerChromaMs: engineState.workerPerf.chromaMs,
-    workerTempoMs: engineState.workerPerf.tempoMs,
+    workerFastSignalMs: readWorkerPerfAverageMs(
+      engineState.workerPerf.fastSignalMs,
+    ),
+    workerStructuralMs: readWorkerPerfAverageMs(
+      engineState.workerPerf.structuralMs,
+    ),
+    workerPeakScanMs: readWorkerPerfAverageMs(
+      engineState.workerPerf.peakScanMs,
+    ),
+    workerModalResolveMs: readWorkerPerfAverageMs(
+      engineState.workerPerf.modalResolveMs,
+    ),
+    workerProjectionMs: readWorkerPerfAverageMs(
+      engineState.workerPerf.projectionMs,
+    ),
+    workerChromaMs: readWorkerPerfAverageMs(engineState.workerPerf.chromaMs),
+    workerTempoMs: readWorkerPerfAverageMs(engineState.workerPerf.tempoMs),
     ...overrides,
   };
 }
@@ -123,9 +161,24 @@ function ensureFeatureState(engineState, capacity) {
   return engineState.featureState;
 }
 
+export function clearEngineMetrics(engineState) {
+  engineState.publishCount = 0;
+  engineState.droppedFrameCount = 0;
+  engineState.publishSkipCount = 0;
+  engineState.fastSignalPatchCount = 0;
+  engineState.fastSignalUpdateCount = 0;
+  engineState.structuralUpdateCount = 0;
+  engineState.chromaUpdateCount = 0;
+  engineState.tempoUpdateCount = 0;
+  Object.values(engineState.workerPerf).forEach((entry) => {
+    resetWorkerPerfEntry(entry);
+  });
+}
+
 function clearEngineState(engineState, reason = "reset") {
   engineState.latestFrame = null;
   engineState.queueDepth = 0;
+  clearEngineMetrics(engineState);
   engineState.latestSnapshot = null;
   engineState.latestAnalysisResult = null;
   engineState.latestStructuralState = null;
@@ -137,9 +190,6 @@ function clearEngineState(engineState, reason = "reset") {
   engineState.lastChromaUpdateAtMs = Number.NEGATIVE_INFINITY;
   engineState.lastTempoUpdateAtMs = Number.NEGATIVE_INFINITY;
   engineState.lastPublishedAtMs = Number.NEGATIVE_INFINITY;
-  engineState.workerPerf.peakScanMs = 0;
-  engineState.workerPerf.modalResolveMs = 0;
-  engineState.workerPerf.projectionMs = 0;
   if (engineState.featureState?.analysis) {
     engineState.featureState.analysis.lastComposedFrameAtMs = 0;
   }
@@ -507,11 +557,25 @@ export function buildFastSignalPatch({
   };
 }
 
-function recordLaneDuration(engineState, key, durationMs) {
+export function recordWorkerPerfSample(engineState, key, durationMs) {
   if (!Number.isFinite(durationMs)) {
     return;
   }
-  engineState.workerPerf[key] = Math.max(0, durationMs);
+
+  const entry = engineState.workerPerf[key];
+  if (!entry) {
+    return;
+  }
+
+  const nextDurationMs = Math.max(0, durationMs);
+  entry.lastMs = nextDurationMs;
+  entry.maxMs = Math.max(entry.maxMs, nextDurationMs);
+  entry.sampleCount += 1;
+  entry.averageMs =
+    entry.sampleCount > 1
+      ? entry.averageMs +
+        (nextDurationMs - entry.averageMs) / entry.sampleCount
+      : nextDurationMs;
 }
 
 function getWorkerNow() {
@@ -556,7 +620,7 @@ function processLatestFrame(engineState) {
     const fastSignalStartedAt = getWorkerNow();
     const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
     engineState.fastSignalUpdateCount += 1;
-    recordLaneDuration(
+    recordWorkerPerfSample(
       engineState,
       "fastSignalMs",
       getWorkerNow() - fastSignalStartedAt,
@@ -572,22 +636,21 @@ function processLatestFrame(engineState) {
       engineState.latestStructuralState = structuralState;
       engineState.structuralUpdateCount += 1;
       engineState.lastStructuralUpdateAtMs = preparedInputs.currentFrameAtMs;
-      recordLaneDuration(
+      recordWorkerPerfSample(
         engineState,
         "structuralMs",
         getWorkerNow() - structuralStartedAt,
       );
-      recordLaneDuration(
+      recordWorkerPerfSample(
         engineState,
         "peakScanMs",
         structuralState.structuralPerf?.peakScanMs ?? 0,
       );
-      recordLaneDuration(
+      recordWorkerPerfSample(
         engineState,
         "modalResolveMs",
         structuralState.structuralPerf?.modalResolveMs ?? 0,
       );
-      recordLaneDuration(engineState, "projectionMs", 0);
     }
 
     let chromaState = null;
@@ -599,7 +662,7 @@ function processLatestFrame(engineState) {
       );
       engineState.chromaUpdateCount += 1;
       engineState.lastChromaUpdateAtMs = preparedInputs.currentFrameAtMs;
-      recordLaneDuration(
+      recordWorkerPerfSample(
         engineState,
         "chromaMs",
         getWorkerNow() - chromaStartedAt,
@@ -617,7 +680,7 @@ function processLatestFrame(engineState) {
       });
       engineState.tempoUpdateCount += 1;
       engineState.lastTempoUpdateAtMs = preparedInputs.currentFrameAtMs;
-      recordLaneDuration(
+      recordWorkerPerfSample(
         engineState,
         "tempoMs",
         getWorkerNow() - tempoStartedAt,
@@ -699,7 +762,7 @@ function processLatestFrame(engineState) {
       tempoState,
       materializeStructuralProjection: true,
     });
-    recordLaneDuration(
+    recordWorkerPerfSample(
       engineState,
       "projectionMs",
       publishedAnalysisResult.structuralPerf?.projectionMs ?? 0,
@@ -762,6 +825,17 @@ if (
 
     if (payload.type === "reset") {
       clearEngineState(engineState, payload.reason ?? "reset");
+      return;
+    }
+
+    if (payload.type === "reset-metrics") {
+      clearEngineMetrics(engineState);
+      postStatus(
+        buildEngineStatus(engineState, {
+          reason: payload.reason ?? "metrics-reset",
+          latestSnapshotAgeMs: null,
+        }),
+      );
       return;
     }
 

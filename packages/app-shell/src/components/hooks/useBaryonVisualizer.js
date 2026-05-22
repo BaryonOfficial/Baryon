@@ -254,6 +254,44 @@ export function useBaryonVisualizer({
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handlePerfMetricsReset = () => {
+      runtimeDiagnosticsRef.current = createRuntimeDiagnostics();
+      performanceHudStateRef.current = {
+        lastPublishedAtMs: Number.NEGATIVE_INFINITY,
+        wasVisible: false,
+      };
+      lastAudioIssueSignatureRef.current = null;
+      uiInteractionUntilMsRef.current = 0;
+      latestUiInteractionRef.current = { source: null, kind: null };
+      clearFrameCache(frameCacheRefs);
+      audioFeatureEngineRef.current?.resetMetrics?.("dev-perf-probe-reset");
+      delete window.__baryonPerfMetrics;
+      onPerformanceHudSnapshotChange?.(null);
+    };
+
+    window.addEventListener(
+      "__baryon-reset-perf-metrics",
+      handlePerfMetricsReset,
+    );
+    return () => {
+      window.removeEventListener(
+        "__baryon-reset-perf-metrics",
+        handlePerfMetricsReset,
+      );
+    };
+  }, [
+    audioFeatureEngineRef,
+    frameCacheRefs,
+    lastAudioIssueSignatureRef,
+    onPerformanceHudSnapshotChange,
+    runtimeDiagnosticsRef,
+  ]);
+
+  useEffect(() => {
     const nextRenderProfileKey = getRenderQualityProfileKey(renderProfile);
     if (renderProfileKeyRef.current === nextRenderProfileKey) {
       return;

@@ -94,7 +94,10 @@ function smoothstepScalar(edge0, edge1, value) {
   return t * t * (3 - 2 * t);
 }
 
-function deriveSignedInterferenceVisibility(signedPotential, unsignedPotential) {
+function deriveSignedInterferenceVisibility(
+  signedPotential,
+  unsignedPotential,
+) {
   if (!(unsignedPotential > 0)) {
     return 0;
   }
@@ -314,6 +317,7 @@ function createCacheState({ resolution, texture, mode }) {
     resolution,
     dispatchSize: resolveDispatchSize(resolution),
     texture,
+    generation: 0,
     active: false,
     ready: false,
     rebuildPending: false,
@@ -329,6 +333,19 @@ function createCacheState({ resolution, texture, mode }) {
     mode,
     computeNodesByKey: Object.create(null),
   };
+}
+
+export function advanceRaymarchCacheGeneration(cache) {
+  if (!cache) {
+    return 0;
+  }
+
+  cache.generation = (Math.floor(cache.generation ?? 0) + 1) >>> 0;
+  return cache.generation;
+}
+
+function isCurrentRaymarchCacheGeneration(cache, generation) {
+  return Boolean(cache && (cache.generation ?? 0) === generation);
 }
 
 export function clearQueuedRaymarchCacheRebuild(cache) {
@@ -355,6 +372,7 @@ function markCacheBackendUnavailable(
   cache,
   message = "Renderer computeAsync unavailable",
 ) {
+  advanceRaymarchCacheGeneration(cache);
   cache.backend = "unavailable";
   cache.ready = false;
   cache.rebuildPending = false;
@@ -389,11 +407,13 @@ function queueLatestCacheRebuild(
 
 function beginCacheRebuild(cache, descriptor) {
   const hadReadyCache = Boolean(cache.ready && cache.activeDescriptor);
+  const generation = cache.generation ?? 0;
   cache.backend = "compute";
   cache.ready = hadReadyCache;
   cache.rebuildPending = true;
   cache.pendingDescriptor = descriptor;
   cache.lastError = null;
+  return generation;
 }
 
 export function buildRaymarchFieldCacheDescriptor({
@@ -924,7 +944,10 @@ export function evaluateRaymarchPhaseOverlayPoint({
         0,
         1 -
           Math.abs(signedDisplacement) /
-            Math.max(PHASE_OVERLAY_CANCELLATION_SUPPORT_FULL, unsignedPotential),
+            Math.max(
+              PHASE_OVERLAY_CANCELLATION_SUPPORT_FULL,
+              unsignedPotential,
+            ),
       ),
     );
   const authority = Math.min(
@@ -1428,11 +1451,7 @@ function createPhaseOverlayComputeKernel({
         texture,
         uvec3(voxelCoord),
         vec4(
-          clamp(
-            signedDisplacement.div(safeAuthority),
-            float(-1.0),
-            float(1.0),
-          ),
+          clamp(signedDisplacement.div(safeAuthority), float(-1.0), float(1.0)),
           clamp(
             length(vec3(signedGradX, signedGradY, signedGradZ)).div(
               safeAuthority,
@@ -1668,11 +1687,14 @@ export function enqueueRaymarchFieldCacheRebuild(
     return { enqueued: false, reason: "unavailable" };
   }
 
-  beginCacheRebuild(fieldCache, descriptor);
+  const rebuildGeneration = beginCacheRebuild(fieldCache, descriptor);
   const submission = Promise.resolve()
     .then(() => renderer.computeAsync(computeNode))
     .then(
       () => {
+        if (!isCurrentRaymarchCacheGeneration(fieldCache, rebuildGeneration)) {
+          return;
+        }
         fieldCache.activeDescriptor = descriptor;
         fieldCache.ready = true;
         fieldCache.rebuildPending = false;
@@ -1684,6 +1706,9 @@ export function enqueueRaymarchFieldCacheRebuild(
         dispatchQueuedRaymarchFieldCacheRebuild(fieldCache);
       },
       (error) => {
+        if (!isCurrentRaymarchCacheGeneration(fieldCache, rebuildGeneration)) {
+          return;
+        }
         markCacheBackendUnavailable(
           fieldCache,
           error instanceof Error ? error.message : String(error),
@@ -1757,11 +1782,19 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
     return { enqueued: false, reason: "unavailable" };
   }
 
-  beginCacheRebuild(spectralLightCache, descriptor);
+  const rebuildGeneration = beginCacheRebuild(spectralLightCache, descriptor);
   const submission = Promise.resolve()
     .then(() => renderer.computeAsync(computeNode))
     .then(
       () => {
+        if (
+          !isCurrentRaymarchCacheGeneration(
+            spectralLightCache,
+            rebuildGeneration,
+          )
+        ) {
+          return;
+        }
         spectralLightCache.activeDescriptor = descriptor;
         spectralLightCache.ready = true;
         spectralLightCache.rebuildPending = false;
@@ -1773,6 +1806,14 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
         dispatchQueuedRaymarchSpectralLightCacheRebuild(spectralLightCache);
       },
       (error) => {
+        if (
+          !isCurrentRaymarchCacheGeneration(
+            spectralLightCache,
+            rebuildGeneration,
+          )
+        ) {
+          return;
+        }
         markCacheBackendUnavailable(
           spectralLightCache,
           error instanceof Error ? error.message : String(error),
@@ -1843,29 +1884,42 @@ export function enqueueRaymarchPhaseOverlayRebuild(
     return { enqueued: false, reason: "unavailable" };
   }
 
-  const hadReadyCache = Boolean(
-    phaseOverlayCache.ready && phaseOverlayCache.activeDescriptor,
-  );
-  phaseOverlayCache.backend = "compute";
-  phaseOverlayCache.ready = hadReadyCache;
-  phaseOverlayCache.rebuildPending = true;
-  phaseOverlayCache.lastError = null;
+  const rebuildGeneration = beginCacheRebuild(phaseOverlayCache, descriptor);
   const submission = Promise.resolve()
     .then(() => renderer.computeAsync(computeNode))
     .then(
       () => {
+        if (
+          !isCurrentRaymarchCacheGeneration(
+            phaseOverlayCache,
+            rebuildGeneration,
+          )
+        ) {
+          return;
+        }
         phaseOverlayCache.activeDescriptor = descriptor;
         phaseOverlayCache.ready = true;
         phaseOverlayCache.rebuildPending = false;
+        phaseOverlayCache.pendingDescriptor = null;
         phaseOverlayCache.lastError = null;
         phaseOverlayCache.backend = "compute";
         phaseOverlayCache.rebuildCount += 1;
         phaseOverlayCache.lastRebuildReason = rebuildReason;
       },
       (error) => {
+        if (
+          !isCurrentRaymarchCacheGeneration(
+            phaseOverlayCache,
+            rebuildGeneration,
+          )
+        ) {
+          return;
+        }
+        advanceRaymarchCacheGeneration(phaseOverlayCache);
         phaseOverlayCache.backend = "unavailable";
         phaseOverlayCache.ready = false;
         phaseOverlayCache.rebuildPending = false;
+        phaseOverlayCache.pendingDescriptor = null;
         phaseOverlayCache.lastError =
           error instanceof Error ? error.message : String(error);
         phaseOverlayCache.lastRebuildReason = "unavailable";

@@ -1195,6 +1195,161 @@ describe("tickRaymarchRuntime", () => {
     }
   });
 
+  it("ignores stale field and Spectral Light completions after render-authority reset", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    const completions = [];
+    const renderer = {
+      computeAsync: async (node) =>
+        new Promise((resolve) => {
+          completions.push({ id: node?.id, resolve });
+        }),
+    };
+
+    tickRaymarchRuntime(
+      runtimeState,
+      createActiveFeatureFrame(),
+      1,
+      1 / 60,
+      renderer,
+    );
+    await flushMicrotasks(2);
+
+    expect(completions.map(({ id }) => id).sort()).toEqual([
+      "field",
+      "spectral",
+    ]);
+    expect(runtimeState.fieldCache.rebuildPending).toBe(true);
+    expect(runtimeState.spectralLightCache.rebuildPending).toBe(true);
+
+    tickRaymarchRuntime(
+      runtimeState,
+      createActiveFeatureFrame({
+        fieldState: "idle",
+        renderAuthority: false,
+        renderAuthorityCut: true,
+      }),
+      2,
+      1 / 60,
+      renderer,
+    );
+
+    completions.forEach(({ resolve }) => resolve());
+    await flushMicrotasks(5);
+
+    expect(runtimeState.fieldCache.ready).toBe(false);
+    expect(runtimeState.fieldCache.rebuildPending).toBe(false);
+    expect(runtimeState.fieldCache.activeDescriptor).toBeNull();
+    expect(runtimeState.fieldCache.pendingDescriptor).toBeNull();
+    expect(runtimeState.fieldCache.rebuildCount).toBe(0);
+    expect(runtimeState.spectralLightCache.ready).toBe(false);
+    expect(runtimeState.spectralLightCache.rebuildPending).toBe(false);
+    expect(runtimeState.spectralLightCache.activeDescriptor).toBeNull();
+    expect(runtimeState.spectralLightCache.pendingDescriptor).toBeNull();
+    expect(runtimeState.spectralLightCache.rebuildCount).toBe(0);
+  });
+
+  it("ignores stale field and Spectral Light failures after render-authority reset", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    const failures = [];
+    const renderer = {
+      computeAsync: async (node) =>
+        new Promise((resolve, reject) => {
+          failures.push({ id: node?.id, reject, resolve });
+        }),
+    };
+
+    tickRaymarchRuntime(
+      runtimeState,
+      createActiveFeatureFrame(),
+      1,
+      1 / 60,
+      renderer,
+    );
+    await flushMicrotasks(2);
+
+    expect(failures.map(({ id }) => id).sort()).toEqual(["field", "spectral"]);
+
+    tickRaymarchRuntime(
+      runtimeState,
+      createActiveFeatureFrame({
+        fieldState: "idle",
+        renderAuthority: false,
+        renderAuthorityCut: true,
+      }),
+      2,
+      1 / 60,
+      renderer,
+    );
+
+    failures.forEach(({ reject }) => reject(new Error("late stale rebuild")));
+    await flushMicrotasks(5);
+
+    expect(runtimeState.fieldCache.backend).toBe("compute");
+    expect(runtimeState.fieldCache.ready).toBe(false);
+    expect(runtimeState.fieldCache.rebuildPending).toBe(false);
+    expect(runtimeState.fieldCache.activeDescriptor).toBeNull();
+    expect(runtimeState.fieldCache.lastError).toBeNull();
+    expect(runtimeState.spectralLightCache.backend).toBe("compute");
+    expect(runtimeState.spectralLightCache.ready).toBe(false);
+    expect(runtimeState.spectralLightCache.rebuildPending).toBe(false);
+    expect(runtimeState.spectralLightCache.activeDescriptor).toBeNull();
+    expect(runtimeState.spectralLightCache.lastError).toBeNull();
+  });
+
+  it("ignores stale phase overlay completions after render-authority reset", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.phaseOverlayCache.computeNodesByKey["rectangular:neumann"] = {
+      id: "phase",
+    };
+    let resolvePhase;
+    const renderer = {
+      computeAsync: async (node) => {
+        if (node?.id === "phase") {
+          return new Promise((resolve) => {
+            resolvePhase = resolve;
+          });
+        }
+        return undefined;
+      },
+    };
+
+    tickRaymarchRuntime(
+      runtimeState,
+      createActiveFeatureFrame({ modalPhaseAuthority: 0.5 }),
+      3,
+      1 / 60,
+      renderer,
+    );
+    await flushMicrotasks(2);
+
+    expect(runtimeState.phaseOverlayCache.rebuildPending).toBe(true);
+    expect(resolvePhase).toBeTypeOf("function");
+
+    tickRaymarchRuntime(
+      runtimeState,
+      createActiveFeatureFrame({
+        fieldState: "idle",
+        renderAuthority: false,
+        renderAuthorityCut: true,
+        modalPhaseAuthority: 0,
+      }),
+      4,
+      1 / 60,
+      renderer,
+    );
+
+    resolvePhase();
+    await flushMicrotasks(5);
+
+    expect(runtimeState.phaseOverlayCache.ready).toBe(false);
+    expect(runtimeState.phaseOverlayCache.rebuildPending).toBe(false);
+    expect(runtimeState.phaseOverlayCache.activeDescriptor).toBeNull();
+    expect(runtimeState.phaseOverlayCache.rebuildCount).toBe(0);
+  });
+
   it("keeps cached evaluation active while the current modal descriptor rebuilds", () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     const renderer = {

@@ -25,6 +25,17 @@ const renderLoopSpies = vi.hoisted(() => ({
   shouldRenderExternalFrameSpy: vi.fn(() => false),
 }));
 
+const runtimeStateSpies = vi.hoisted(() => {
+  let diagnosticsId = 0;
+  return {
+    clearFrameCacheSpy: vi.fn(),
+    createRuntimeDiagnosticsSpy: vi.fn(() => {
+      diagnosticsId += 1;
+      return { diagnosticsId };
+    }),
+  };
+});
+
 const visualizationLifecycleState = vi.hoisted(() => ({
   points: null,
   runtimeRef: { current: { method: "raymarch", tick: () => {} } },
@@ -93,8 +104,9 @@ vi.mock("./controlInvalidation.js", () => ({
 vi.mock("./baryonVisualizerRuntimeState.js", () => ({
   clearAdaptiveRaymarchResumeState: clearAdaptiveRaymarchResumeStateSpy,
   maybePublishRuntimePerfSnapshot: () => {},
-  clearFrameCache: () => {},
-  createRuntimeDiagnostics: () => ({}),
+  clearFrameCache: (...args) => runtimeStateSpies.clearFrameCacheSpy(...args),
+  createRuntimeDiagnostics: (...args) =>
+    runtimeStateSpies.createRuntimeDiagnosticsSpy(...args),
   recordRuntimePerfSample: () => {},
   shouldRenderExternalFrame: (...args) =>
     renderLoopSpies.shouldRenderExternalFrameSpy(...args),
@@ -162,6 +174,7 @@ function HookHarness({
   postNodesRef = { current: null },
   externalFrameRef = null,
   cameraRenderKey = null,
+  onPerformanceHudSnapshotChange,
 }) {
   useBaryonVisualizer({
     baryonGeometry: null,
@@ -179,6 +192,7 @@ function HookHarness({
     externalFrameRef,
     renderProfile,
     cameraRenderKey,
+    onPerformanceHudSnapshotChange,
   });
   return null;
 }
@@ -191,6 +205,8 @@ describe("useBaryonVisualizer", () => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     invalidateSpy.mockClear();
     clearAdaptiveRaymarchResumeStateSpy.mockClear();
+    runtimeStateSpies.clearFrameCacheSpy.mockClear();
+    runtimeStateSpies.createRuntimeDiagnosticsSpy.mockClear();
     renderLoopSpies.applyCachedControlSnapshotsSpy.mockClear();
     renderLoopSpies.resolveFeatureFrameSpy.mockReset();
     renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
@@ -204,6 +220,11 @@ describe("useBaryonVisualizer", () => {
     visualizationLifecycleState.controlCacheRefs.appliedControlVersionRef.current = 0;
     visualizationLifecycleState.controlCacheRefs.cachedControlSnapshotsRef.current =
       { controlsSnapshot: null };
+    visualizationLifecycleState.runtimeDiagnosticsRef.current = {
+      diagnosticsId: "initial",
+    };
+    visualizationLifecycleState.audioFeatureEngineRef.current = null;
+    visualizationLifecycleState.lastAudioIssueSignatureRef.current = null;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -219,6 +240,44 @@ describe("useBaryonVisualizer", () => {
     root = null;
     container = null;
     delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+    delete window.__baryonPerfMetrics;
+  });
+
+  it("resets probe performance metrics through the hook", async () => {
+    const resetMetrics = vi.fn();
+    const onPerformanceHudSnapshotChange = vi.fn();
+    visualizationLifecycleState.audioFeatureEngineRef.current = {
+      resetMetrics,
+    };
+    visualizationLifecycleState.lastAudioIssueSignatureRef.current = "audio-issue";
+    window.__baryonPerfMetrics = { fps: 12 };
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          onPerformanceHudSnapshotChange,
+        }),
+      );
+    });
+
+    const previousDiagnostics =
+      visualizationLifecycleState.runtimeDiagnosticsRef.current;
+    await act(async () => {
+      window.dispatchEvent(new Event("__baryon-reset-perf-metrics"));
+    });
+
+    expect(
+      visualizationLifecycleState.runtimeDiagnosticsRef.current,
+    ).not.toBe(previousDiagnostics);
+    expect(
+      visualizationLifecycleState.lastAudioIssueSignatureRef.current,
+    ).toBeNull();
+    expect(runtimeStateSpies.clearFrameCacheSpy).toHaveBeenCalledWith(
+      visualizationLifecycleState.frameCacheRefs,
+    );
+    expect(resetMetrics).toHaveBeenCalledWith("dev-perf-probe-reset");
+    expect(onPerformanceHudSnapshotChange).toHaveBeenCalledWith(null);
+    expect(window.__baryonPerfMetrics).toBeUndefined();
   });
 
   it("forces a redraw when the render profile key changes", async () => {
