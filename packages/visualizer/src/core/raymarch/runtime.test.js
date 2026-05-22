@@ -1602,6 +1602,83 @@ describe("tickRaymarchRuntime", () => {
     expect(spectralRuntimeState.detailColorBuffer.value.needsUpdate).toBe(true);
   });
 
+  it("reuses a prepared performance governor for the matching runtime tick", () => {
+    const runtimeState = createRuntimeState();
+    const featureFrame = {
+      fieldState: "active",
+      renderAuthority: true,
+      averageAmplitude: 48,
+      backboneSlots: new Float32Array([
+        1, 2, 3, 0.8, 8, 9, 10, 0.9,
+      ]),
+      detailSlots: new Float32Array([4, 5, 6, 0.5]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+      transientEnergy: 0.2,
+      spectralCentroid: 0.3,
+      spectralFlux: 0.1,
+      structureSignal: 0.4,
+      energySignal: 0.3,
+      changeSignal: 0.2,
+      pulseSignal: 0.1,
+    };
+    const preparedGovernor = {
+      complexityScore: 0.25,
+      excitation: 0.2,
+      originalModeCount: 3,
+      uploadedModeCount: 1,
+      countLoad: 0.1,
+      weightedPermutationLoad: 0.1,
+      proactiveStepBudget: 64,
+      proactiveRenderScale: 1,
+      bloomStrengthScale: 1,
+      bloomThresholdOffset: 0,
+      bloomAllowed: true,
+      backbone: {
+        capacity: 8,
+        originalActiveCount: 2,
+        uploadedActiveCount: 1,
+        totalAmplitude: 1.7,
+        uploadedAmplitude: 0.9,
+        retainedEnergyRatio: 0.53,
+        weightedPermutationLoad: 0,
+        averagePermutationCost: 0,
+        selectedIndices: [1],
+      },
+      detail: {
+        capacity: 8,
+        originalActiveCount: 1,
+        uploadedActiveCount: 0,
+        totalAmplitude: 0.5,
+        uploadedAmplitude: 0,
+        retainedEnergyRatio: 0,
+        weightedPermutationLoad: 0,
+        averagePermutationCost: 0,
+        selectedIndices: [],
+      },
+    };
+    runtimeState.pendingRaymarchPerformanceGovernor = {
+      featureFrame,
+      backboneCapacity: 8,
+      detailCapacity: 8,
+      cavityGeometry: "rectangular",
+      requestedStepBudget: 64,
+      requestedRenderScale: 1,
+      governor: preparedGovernor,
+    };
+
+    tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
+
+    expect(runtimeState.performanceGovernor).toBe(preparedGovernor);
+    expect(runtimeState.pendingRaymarchPerformanceGovernor).toBeNull();
+    expect(
+      Array.from(runtimeState.backboneModeBuffer.value.array.slice(0, 4)),
+    ).toEqual([8, 9, 10, expect.closeTo(0.9, 5)]);
+    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(1);
+    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(0);
+  });
+
   it("keeps static color off the Spectral Light cache path", () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);

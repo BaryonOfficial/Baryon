@@ -573,7 +573,7 @@ test.describe("Baryon control smoke", () => {
     await setControl(page, "injectTestTone", false);
   });
 
-  test("defaults rotation to audio mode and supports manual and off overrides", async ({
+  test("defaults rotation off and supports audio, manual, and off overrides", async ({
     page,
     browserName,
   }) => {
@@ -592,9 +592,18 @@ test.describe("Baryon control smoke", () => {
         })),
       )
       .toEqual({
-        rotationMode: "audio",
+        rotationMode: "off",
         motionAmount: 0.88,
       });
+
+    await setControl(page, "rotationMode", "audio");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__baryonControlState?.scene?.rotationMode ?? null,
+        ),
+      )
+      .toBe("audio");
 
     await setControl(page, "rotationMode", "manual");
     await setControl(page, "rotationSpeed", 2);

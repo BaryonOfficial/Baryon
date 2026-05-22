@@ -306,6 +306,22 @@ export function buildRaymarchPerformanceGovernor({
     cavityGeometry,
   });
 
+  return deriveRaymarchPerformanceGovernor({
+    backbone,
+    detail,
+    featureFrame,
+    requestedStepBudget,
+    requestedRenderScale,
+  });
+}
+
+export function deriveRaymarchPerformanceGovernor({
+  backbone,
+  detail,
+  featureFrame,
+  requestedStepBudget,
+  requestedRenderScale = 1,
+}) {
   return {
     ...deriveRaymarchComplexityGovernor({
       backbone,

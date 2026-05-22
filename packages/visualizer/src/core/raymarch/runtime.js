@@ -175,6 +175,7 @@ function resetRenderAuthorityState(runtimeState) {
   clearBufferNode(runtimeState.backbonePhaseBuffer);
   clearBufferNode(runtimeState.detailPhaseBuffer);
   runtimeState.performanceGovernor = null;
+  runtimeState.pendingRaymarchPerformanceGovernor = null;
   runtimeState.spectralLightBuffersUploaded = false;
   runtimeState.phaseOverlayModeCount = 0;
   runtimeState.currentFieldDescriptor = null;
@@ -1003,6 +1004,42 @@ function copyLayerPhaseUpload({
   return activePhaseCount;
 }
 
+function resolveRequestedRaymarchStepBudget(runtimeState, volumeMesh) {
+  return (
+    runtimeState.effectiveRaymarchSteps ??
+    runtimeState.requestedRaymarchSteps ??
+    volumeMesh.material.steps
+  );
+}
+
+function takePendingRaymarchPerformanceGovernor(
+  runtimeState,
+  featureFrame,
+  {
+    backboneCapacity,
+    detailCapacity,
+    cavityGeometry,
+    requestedStepBudget,
+    requestedRenderScale,
+  },
+) {
+  const pending = runtimeState.pendingRaymarchPerformanceGovernor ?? null;
+  if (!pending) {
+    return null;
+  }
+
+  runtimeState.pendingRaymarchPerformanceGovernor = null;
+  const matches =
+    pending.featureFrame === featureFrame &&
+    pending.backboneCapacity === backboneCapacity &&
+    pending.detailCapacity === detailCapacity &&
+    pending.cavityGeometry === cavityGeometry &&
+    pending.requestedStepBudget === requestedStepBudget &&
+    pending.requestedRenderScale === requestedRenderScale;
+
+  return matches ? (pending.governor ?? null) : null;
+}
+
 function resolveFieldEvaluationMode(
   runtimeState,
   renderer,
@@ -1315,19 +1352,32 @@ export function tickRaymarchRuntime(
   }
 
   const spectralLightEnabled = (uniforms.uSpectralMix?.value ?? 0) > 0;
-  const performanceGovernor = buildRaymarchPerformanceGovernor({
-    backboneSlots: featureFrame?.backboneSlots,
-    detailSlots: featureFrame?.detailSlots,
-    backboneCapacity,
-    detailCapacity,
-    featureFrame,
-    cavityGeometry: getRuntimeEffectiveCavityGeometry(runtimeState),
-    requestedStepBudget:
-      runtimeState.effectiveRaymarchSteps ??
-      runtimeState.requestedRaymarchSteps ??
-      volumeMesh.material.steps,
-    requestedRenderScale: 1,
-  });
+  const effectiveCavityGeometry = getRuntimeEffectiveCavityGeometry(
+    runtimeState,
+  );
+  const requestedStepBudget = resolveRequestedRaymarchStepBudget(
+    runtimeState,
+    volumeMesh,
+  );
+  const requestedRenderScale = 1;
+  const performanceGovernor =
+    takePendingRaymarchPerformanceGovernor(runtimeState, featureFrame, {
+      backboneCapacity,
+      detailCapacity,
+      cavityGeometry: effectiveCavityGeometry,
+      requestedStepBudget,
+      requestedRenderScale,
+    }) ??
+    buildRaymarchPerformanceGovernor({
+      backboneSlots: featureFrame?.backboneSlots,
+      detailSlots: featureFrame?.detailSlots,
+      backboneCapacity,
+      detailCapacity,
+      featureFrame,
+      cavityGeometry: effectiveCavityGeometry,
+      requestedStepBudget,
+      requestedRenderScale,
+    });
   const { backbone: backboneLayer, detail: detailLayer } = performanceGovernor;
   runtimeState.performanceGovernor = performanceGovernor;
   const backboneArray = backboneModeBuffer.value.array;
@@ -1396,7 +1446,7 @@ export function tickRaymarchRuntime(
     backboneCount: backboneModeCount,
     detailCount: detailModeCount,
     boundaryMode: getRuntimeBoundaryMode(runtimeState),
-    cavityGeometry: getRuntimeEffectiveCavityGeometry(runtimeState),
+    cavityGeometry: effectiveCavityGeometry,
     radius: runtimeState.uniforms.uRadius?.value ?? 1,
   });
   const spectralLightDescriptor = spectralLightEnabled
@@ -1408,7 +1458,7 @@ export function tickRaymarchRuntime(
         backboneCount: backboneModeCount,
         detailCount: detailModeCount,
         boundaryMode: getRuntimeBoundaryMode(runtimeState),
-        cavityGeometry: getRuntimeEffectiveCavityGeometry(runtimeState),
+        cavityGeometry: effectiveCavityGeometry,
         radius: runtimeState.uniforms.uRadius?.value ?? 1,
       })
     : null;
@@ -1417,7 +1467,7 @@ export function tickRaymarchRuntime(
   runtimeState.spectralLightBuffersUploaded = spectralLightEnabled;
   setRaymarchCavityGeometry(
     runtimeState.volumeMesh,
-    getRuntimeEffectiveCavityGeometry(runtimeState),
+    effectiveCavityGeometry,
   );
   updateRaymarchEvaluationModes(
     runtimeState,

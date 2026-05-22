@@ -1233,6 +1233,34 @@ function deriveAdaptiveRecoveryState({
   };
 }
 
+function preparePendingRaymarchPerformanceGovernor(runtimeState, inputs) {
+  if (!runtimeState || !inputs?.featureFrame || !inputs?.baseGovernor) {
+    return null;
+  }
+
+  const governor = raymarchPerformanceGovernor.deriveRaymarchPerformanceGovernor(
+    {
+      backbone: inputs.baseGovernor.backbone,
+      detail: inputs.baseGovernor.detail,
+      featureFrame: inputs.featureFrame,
+      requestedStepBudget: inputs.requestedStepBudget,
+      requestedRenderScale: inputs.requestedRenderScale,
+    },
+  );
+
+  runtimeState.pendingRaymarchPerformanceGovernor = {
+    featureFrame: inputs.featureFrame,
+    backboneCapacity: inputs.backboneCapacity,
+    detailCapacity: inputs.detailCapacity,
+    cavityGeometry: inputs.cavityGeometry,
+    requestedStepBudget: inputs.requestedStepBudget,
+    requestedRenderScale: inputs.requestedRenderScale,
+    governor,
+  };
+
+  return governor;
+}
+
 export function updateAdaptiveRaymarchStepBudget({
   controls,
   runtime,
@@ -1261,6 +1289,10 @@ export function updateAdaptiveRaymarchStepBudget({
     runtimeState?.detailCapacity,
     runtimeState?.detailModeBuffer?.value?.array,
   );
+  const cavityGeometry =
+    runtimeState?.effectiveCavityGeometry ??
+    runtimeState?.volumeMesh?.userData?.raymarchCavityGeometry ??
+    "rectangular";
   const performanceGovernor =
     raymarchPerformanceGovernor.buildRaymarchPerformanceGovernor({
       backboneSlots: effectiveFrame?.backboneSlots,
@@ -1270,6 +1302,7 @@ export function updateAdaptiveRaymarchStepBudget({
       featureFrame: effectiveFrame,
       requestedStepBudget,
       requestedRenderScale,
+      cavityGeometry,
     });
   runtimeState.performanceGovernor = {
     ...runtimeState.performanceGovernor,
@@ -1348,6 +1381,15 @@ export function updateAdaptiveRaymarchStepBudget({
       controls,
       effectiveStepBudget,
     );
+    preparePendingRaymarchPerformanceGovernor(runtimeState, {
+      featureFrame: effectiveFrame,
+      backboneCapacity,
+      detailCapacity,
+      cavityGeometry,
+      requestedStepBudget: effectiveStepBudget,
+      requestedRenderScale: 1,
+      baseGovernor: performanceGovernor,
+    });
     return effectiveStepBudget;
   }
 
@@ -1491,6 +1533,15 @@ export function updateAdaptiveRaymarchStepBudget({
     effectiveStepBudget,
   };
   applyEffectiveRaymarchStepBudget(runtimeState, controls, effectiveStepBudget);
+  preparePendingRaymarchPerformanceGovernor(runtimeState, {
+    featureFrame: effectiveFrame,
+    backboneCapacity,
+    detailCapacity,
+    cavityGeometry,
+    requestedStepBudget: effectiveStepBudget,
+    requestedRenderScale: 1,
+    baseGovernor: performanceGovernor,
+  });
   return effectiveStepBudget;
 }
 
