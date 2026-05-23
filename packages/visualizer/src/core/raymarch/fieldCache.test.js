@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AUDIO_DEFAULTS } from "../../defaults.js";
 import {
   buildRaymarchSpectralLightCacheDescriptor,
   buildRaymarchFieldCacheDescriptor,
@@ -434,8 +435,12 @@ describe("fieldCache", () => {
     expect(phaseCoherentFieldCache.texture.image.depth).toBe(32);
     expect(phaseCoherentFieldCache.ready).toBe(false);
     expect(phaseCoherentFieldCache.backend).toBe("compute");
-    expect(phaseCoherentFieldCache.maxBackboneModes).toBe(2);
-    expect(phaseCoherentFieldCache.maxDetailModes).toBe(6);
+    expect(phaseCoherentFieldCache.maxBackboneModes).toBe(
+      AUDIO_DEFAULTS.backboneStackSlots,
+    );
+    expect(phaseCoherentFieldCache.maxDetailModes).toBe(
+      AUDIO_DEFAULTS.detailStackSlots,
+    );
     expect(phaseCoherentFieldCache.updateIntervalMs).toBeCloseTo(1000 / 15);
   });
 

@@ -964,8 +964,8 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 0,
     });
-    const backboneCapacity = state.backboneProposal.slots.length / 4;
-    const detailCapacity = state.detailProposal.slots.length / 4;
+    const backboneCapacity = structuralState.backboneSlotsSource.length / 4;
+    const detailCapacity = structuralState.detailSlotsSource.length / 4;
 
     expect(structuralState.activeBackboneModeCount).toBeLessThanOrEqual(
       backboneCapacity,

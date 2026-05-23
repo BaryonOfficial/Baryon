@@ -275,8 +275,6 @@ const BACKBONE_DISPLAY_MIN_SIGNAL_AMPLITUDE = 0.08;
 const DETAIL_DISPLAY_MIN_SIGNAL_AMPLITUDE = 0.05;
 const BACKBONE_DISPLAY_DUPLICATE_WINDOW = 0.09;
 const DETAIL_DISPLAY_DUPLICATE_WINDOW = 0.018;
-const BACKBONE_DISPLAY_MAX_VISIBLE = 6;
-const DETAIL_DISPLAY_MAX_VISIBLE = 5;
 const EXCITATION_DECAY_DRIVE_THRESHOLD = 0.065;
 const EXCITATION_DECAY_SIGNAL_DISPLAY_RATIO = 0.55;
 const EXCITATION_HARD_SILENCE_MAX_AVG_AMPLITUDE = 1;
@@ -2136,8 +2134,12 @@ function selectFastDetailAssist(entries, currentFrameAtMs) {
   );
 }
 
-function mergeFastDetailAssist(displayEntries, assistEntry) {
-  const visibleEntries = displayEntries.slice(0, DETAIL_DISPLAY_MAX_VISIBLE);
+function mergeFastDetailAssist(displayEntries, assistEntry, visibleCap) {
+  const resolvedVisibleCap = Math.max(
+    0,
+    Math.floor(visibleCap ?? displayEntries.length),
+  );
+  const visibleEntries = displayEntries.slice(0, resolvedVisibleCap);
   if (!assistEntry) {
     return {
       entries: visibleEntries,
@@ -2162,7 +2164,7 @@ function mergeFastDetailAssist(displayEntries, assistEntry) {
         ...mergedEntries.filter(
           (entry) => entry.modeKey !== assistEntry.modeKey,
         ),
-      ].slice(0, DETAIL_DISPLAY_MAX_VISIBLE),
+      ].slice(0, resolvedVisibleCap),
       assistEntry,
       assistNeedsReservedAdmission: true,
     };
@@ -2182,7 +2184,7 @@ function mergeFastDetailAssist(displayEntries, assistEntry) {
     entries: [
       assistEntry,
       ...mergedEntries.filter((entry) => entry.modeKey !== assistEntry.modeKey),
-    ].slice(0, DETAIL_DISPLAY_MAX_VISIBLE),
+    ].slice(0, resolvedVisibleCap),
     assistEntry,
     assistNeedsReservedAdmission:
       duplicateEntry?.modeKey !== assistEntry.modeKey,
@@ -2345,7 +2347,7 @@ function getDetailDisplayContinuityPresence(slots, modalModes, capacity) {
   return continuityPresence;
 }
 
-function buildDisplayShortlist(entries, layer) {
+function buildDisplayShortlist(entries, layer, capacity = entries.length) {
   const minSignalAmplitude =
     layer === "backbone"
       ? BACKBONE_DISPLAY_MIN_SIGNAL_AMPLITUDE
@@ -2354,10 +2356,7 @@ function buildDisplayShortlist(entries, layer) {
     layer === "backbone"
       ? BACKBONE_DISPLAY_DUPLICATE_WINDOW
       : DETAIL_DISPLAY_DUPLICATE_WINDOW;
-  const visibleCap =
-    layer === "backbone"
-      ? BACKBONE_DISPLAY_MAX_VISIBLE
-      : DETAIL_DISPLAY_MAX_VISIBLE;
+  const visibleCap = Math.max(0, Math.floor(capacity ?? entries.length));
 
   const ranked = entries
     .filter((entry) => {
@@ -2448,7 +2447,11 @@ function buildModalProjection({
     : backboneEntries;
   const rawDisplayBackboneEntries = hardSilentFrame
     ? []
-    : buildDisplayShortlist(projectedBackboneEntries, "backbone");
+    : buildDisplayShortlist(
+        projectedBackboneEntries,
+        "backbone",
+        backboneCapacity,
+      );
   const {
     entries: rawDisplayDetailEntries,
     assistEntry: mergedFastDetailAssist,
@@ -2460,8 +2463,9 @@ function buildModalProjection({
         assistNeedsReservedAdmission: false,
       }
     : mergeFastDetailAssist(
-        buildDisplayShortlist(detailEntries, "detail"),
+        buildDisplayShortlist(detailEntries, "detail", detailCapacity),
         fastDetailAssist,
+        detailCapacity,
       );
   const {
     entries: displayBackboneEntries,

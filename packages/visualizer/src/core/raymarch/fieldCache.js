@@ -23,12 +23,15 @@ import { normalizeCavityGeometry } from "../cavityGeometry.js";
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 import { RAYMARCH_FIELD_CACHE_OVERRIDE_MODES } from "../../visualization/fieldEvaluation.js";
 import { DETAIL_LAYER_WEIGHT } from "./fieldShaping.js";
+import { AUDIO_DEFAULTS } from "../../defaults.js";
 
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 export const RAYMARCH_PHASE_COHERENT_FIELD_RESOLUTION = 32;
 export const RAYMARCH_PHASE_COHERENT_FIELD_UPDATE_INTERVAL_MS = 1000 / 15;
-export const RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT = 2;
-export const RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT = 6;
+export const RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT =
+  AUDIO_DEFAULTS.backboneStackSlots;
+export const RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT =
+  AUDIO_DEFAULTS.detailStackSlots;
 
 /*
 Dev overrides for manual testing:
@@ -262,6 +265,8 @@ export function createRaymarchSpectralLightCache({
 
 export function createRaymarchPhaseCoherentFieldCache({
   resolution = RAYMARCH_PHASE_COHERENT_FIELD_RESOLUTION,
+  maxBackboneModes = RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT,
+  maxDetailModes = RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT,
 } = {}) {
   const normalizedResolution = Math.max(8, Math.round(resolution));
   const texture = createCacheTexture(normalizedResolution);
@@ -272,8 +277,8 @@ export function createRaymarchPhaseCoherentFieldCache({
       texture,
       mode: "cached",
     }),
-    maxBackboneModes: RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT,
-    maxDetailModes: RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT,
+    maxBackboneModes,
+    maxDetailModes,
     updateIntervalMs: RAYMARCH_PHASE_COHERENT_FIELD_UPDATE_INTERVAL_MS,
     lastUpdateTimeMs: -Infinity,
     activePhaseCoherentFieldModeCount: 0,

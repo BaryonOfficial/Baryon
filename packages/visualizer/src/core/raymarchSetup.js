@@ -15,8 +15,6 @@ import {
   createIdleOverlay,
 } from "./raymarch/material.js";
 import {
-  RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT,
-  RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT,
   createRaymarchSpectralLightCache,
   createRaymarchFieldCache,
   createRaymarchPhaseCoherentFieldCache,
@@ -78,15 +76,14 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const detailModeBuffer = createModeBuffer(detailCapacity);
   const backboneColorBuffer = createModeBuffer(backboneCapacity);
   const detailColorBuffer = createModeBuffer(detailCapacity);
-  const backbonePhaseBuffer = createModeBuffer(
-    RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT,
-  );
-  const detailPhaseBuffer = createModeBuffer(
-    RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT,
-  );
+  const backbonePhaseBuffer = createModeBuffer(backboneCapacity);
+  const detailPhaseBuffer = createModeBuffer(detailCapacity);
   const fieldCache = createRaymarchFieldCache();
   const spectralLightCache = createRaymarchSpectralLightCache();
-  const phaseCoherentFieldCache = createRaymarchPhaseCoherentFieldCache();
+  const phaseCoherentFieldCache = createRaymarchPhaseCoherentFieldCache({
+    maxBackboneModes: backboneCapacity,
+    maxDetailModes: detailCapacity,
+  });
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
     backboneModeBuffer,
@@ -138,8 +135,8 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     capacity: sharedModeCapacity,
     backboneCapacity,
     detailCapacity,
-    backbonePhaseCapacity: RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT,
-    detailPhaseCapacity: RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT,
+    backbonePhaseCapacity: backboneCapacity,
+    detailPhaseCapacity: detailCapacity,
     requestedCavityGeometry,
     effectiveCavityGeometry,
     fftSize: audioConfig.fftSize,
