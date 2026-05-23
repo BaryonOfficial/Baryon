@@ -845,6 +845,74 @@ describe("fieldCache", () => {
     expect(invertedPhase.effectiveFieldAuthority).toBe(1);
   });
 
+  it("reports effective field bandwidth rejection separately from descriptor overflow", () => {
+    const descriptor = raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor(
+      {
+        backboneSlots: new Float32Array([1, 1, 1, 0.5, 8, 8, 8, 0.25]),
+        detailSlots: new Float32Array(0),
+        backbonePhaseSlots: new Float32Array([0, 0, 0, 1, Math.PI, 0, 1, 1]),
+        detailPhaseSlots: new Float32Array(0),
+        backboneCount: 2,
+        detailCount: 0,
+        boundaryMode: "neumann",
+        radius: 3,
+        phaseModeCount: 2,
+        phaseAuthority: 1,
+        descriptorOverflow: false,
+        resolution: 8,
+      },
+    );
+
+    expect(descriptor.descriptorOverflow).toBe(false);
+    expect(descriptor.bandwidthRejectedModeCount).toBe(1);
+    expect(descriptor.bandwidthRejectedModalEnergy).toBeCloseTo(0.25, 6);
+    expect(descriptor.contributingEffectiveFieldModeCount).toBe(1);
+    expect(descriptor.contributingModalEnergy).toBeCloseTo(0.5, 6);
+    expect(descriptor.effectiveFieldGradientEnvelope).toBeGreaterThan(0);
+  });
+
+  it("normalizes effective field values from the representable contributing set", () => {
+    const lowModeSlots = new Float32Array([1, 1, 1, 1]);
+    const mixedSlots = new Float32Array([1, 1, 1, 1, 8, 8, 8, 1]);
+    const lowOnly = raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint({
+      backboneSlots: lowModeSlots,
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 0, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 1,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0,
+      y: 0,
+      z: 0,
+      time: 0,
+      resolution: 8,
+    });
+    const mixed = raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint({
+      backboneSlots: mixedSlots,
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 0, 1, Math.PI, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0,
+      y: 0,
+      z: 0,
+      time: 0,
+      resolution: 8,
+    });
+
+    expect(mixed.field).toBeCloseTo(lowOnly.field, 6);
+    expect(mixed.gradX).toBeCloseTo(lowOnly.gradX, 6);
+    expect(mixed.gradY).toBeCloseTo(lowOnly.gradY, 6);
+    expect(mixed.gradZ).toBeCloseTo(lowOnly.gradZ, 6);
+    expect(mixed.bandwidthRejectedModeCount).toBe(1);
+    expect(mixed.bandwidthRejectedModalEnergy).toBeCloseTo(1, 6);
+  });
+
   it("keeps the cached modal field signed rather than absolute-valued", () => {
     const slots = new Float32Array([1, 1, 1, 1]);
     const positiveLobe = evaluateRaymarchFieldCachePoint({

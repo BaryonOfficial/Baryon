@@ -29,6 +29,7 @@ const FIELD_CACHE_WEIGHT_QUANTIZATION = 1024;
 const SIGNED_INTERFERENCE_VISIBILITY_EPSILON = 0.01;
 const SIGNED_INTERFERENCE_VISIBILITY_START = 0.025;
 const SIGNED_INTERFERENCE_VISIBILITY_END = 0.1;
+const EFFECTIVE_FIELD_ENERGY_EPSILON = 0.01;
 
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -99,6 +100,114 @@ function sumWeightedSlotAmplitude(slots, activeCount, weight = 1) {
   }
 
   return total;
+}
+
+function normalizeEffectiveFieldResolution(resolution) {
+  const candidate = Number.isFinite(resolution)
+    ? resolution
+    : RAYMARCH_EFFECTIVE_FIELD_RESOLUTION;
+  return Math.max(8, Math.round(candidate));
+}
+
+function getEffectiveFieldMaxRepresentableModeIndex(resolution) {
+  return Math.max(
+    1,
+    Math.floor(normalizeEffectiveFieldResolution(resolution) / 2),
+  );
+}
+
+function getSlotMaxModeIndex(slots, offset) {
+  return Math.max(
+    Math.abs(slots?.[offset] ?? 0),
+    Math.abs(slots?.[offset + 1] ?? 0),
+    Math.abs(slots?.[offset + 2] ?? 0),
+  );
+}
+
+function isEffectiveFieldSlotRepresentable({ slots, offset, resolution }) {
+  return (
+    getSlotMaxModeIndex(slots, offset) <=
+    getEffectiveFieldMaxRepresentableModeIndex(resolution)
+  );
+}
+
+function getEffectiveFieldScale(radius) {
+  return Math.PI / Math.max(radius, 1e-4);
+}
+
+function getEffectiveFieldSlotGradientBound({ slots, offset, scale }) {
+  return (
+    Math.hypot(
+      Math.abs(slots?.[offset] ?? 0),
+      Math.abs(slots?.[offset + 1] ?? 0),
+      Math.abs(slots?.[offset + 2] ?? 0),
+    ) * scale
+  );
+}
+
+function summarizeEffectiveFieldLayerDiagnostics({
+  slots,
+  activeCount,
+  weight,
+  resolution,
+  scale,
+}) {
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  let contributingEffectiveFieldModeCount = 0;
+  let bandwidthRejectedModeCount = 0;
+  let contributingModalEnergy = 0;
+  let bandwidthRejectedModalEnergy = 0;
+  let gradientEnvelopeNumerator = 0;
+
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const modalEnergy = Math.max(0, slots?.[offset + 3] ?? 0) * weight;
+    if (!(modalEnergy > 0)) {
+      continue;
+    }
+
+    if (!isEffectiveFieldSlotRepresentable({ slots, offset, resolution })) {
+      bandwidthRejectedModeCount += 1;
+      bandwidthRejectedModalEnergy += modalEnergy;
+      continue;
+    }
+
+    contributingEffectiveFieldModeCount += 1;
+    contributingModalEnergy += modalEnergy;
+    gradientEnvelopeNumerator +=
+      modalEnergy *
+      getEffectiveFieldSlotGradientBound({ slots, offset, scale });
+  }
+
+  return {
+    contributingEffectiveFieldModeCount,
+    bandwidthRejectedModeCount,
+    contributingModalEnergy,
+    bandwidthRejectedModalEnergy,
+    gradientEnvelopeNumerator,
+  };
+}
+
+function mergeEffectiveFieldDiagnostics(backbone, detail, resolution) {
+  const contributingModalEnergy =
+    backbone.contributingModalEnergy + detail.contributingModalEnergy;
+
+  return {
+    effectiveFieldMaxRepresentableModeIndex:
+      getEffectiveFieldMaxRepresentableModeIndex(resolution),
+    contributingEffectiveFieldModeCount:
+      backbone.contributingEffectiveFieldModeCount +
+      detail.contributingEffectiveFieldModeCount,
+    bandwidthRejectedModeCount:
+      backbone.bandwidthRejectedModeCount + detail.bandwidthRejectedModeCount,
+    contributingModalEnergy,
+    bandwidthRejectedModalEnergy:
+      backbone.bandwidthRejectedModalEnergy +
+      detail.bandwidthRejectedModalEnergy,
+    effectiveFieldGradientEnvelope:
+      (backbone.gradientEnvelopeNumerator + detail.gradientEnvelopeNumerator) /
+      Math.max(EFFECTIVE_FIELD_ENERGY_EPSILON, contributingModalEnergy),
+  };
 }
 
 function hashFieldTopologyLayer({
@@ -279,7 +388,7 @@ export function createRaymarchFieldCache({
 export function createRaymarchEffectiveFieldCache({
   resolution = RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
 } = {}) {
-  const normalizedResolution = Math.max(8, Math.round(resolution));
+  const normalizedResolution = normalizeEffectiveFieldResolution(resolution);
   const texture = createCacheTexture(normalizedResolution);
 
   return {
@@ -292,6 +401,13 @@ export function createRaymarchEffectiveFieldCache({
     activeEffectiveFieldModeCount: 0,
     effectiveFieldAuthority: 0,
     modeIdentityRetentionRatio: 1,
+    effectiveFieldMaxRepresentableModeIndex:
+      getEffectiveFieldMaxRepresentableModeIndex(normalizedResolution),
+    contributingEffectiveFieldModeCount: 0,
+    contributingModalEnergy: 0,
+    bandwidthRejectedModeCount: 0,
+    bandwidthRejectedModalEnergy: 0,
+    effectiveFieldGradientEnvelope: 0,
   };
 }
 
@@ -499,6 +615,9 @@ export function buildRaymarchEffectiveFieldDescriptor({
   modeIdentityRetentionRatio = 1,
   resolution = RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
 }) {
+  const normalizedResolution = normalizeEffectiveFieldResolution(resolution);
+  const normalizedRadius = Number.isFinite(radius) ? radius : 1;
+  const effectiveFieldScale = getEffectiveFieldScale(normalizedRadius);
   const fieldDescriptor = buildRaymarchFieldCacheDescriptor({
     backboneSlots,
     detailSlots,
@@ -506,8 +625,27 @@ export function buildRaymarchEffectiveFieldDescriptor({
     detailCount,
     boundaryMode,
     cavityGeometry,
-    radius,
+    radius: normalizedRadius,
   });
+  const backboneDiagnostics = summarizeEffectiveFieldLayerDiagnostics({
+    slots: backboneSlots,
+    activeCount: backboneCount,
+    weight: 1,
+    resolution: normalizedResolution,
+    scale: effectiveFieldScale,
+  });
+  const detailDiagnostics = summarizeEffectiveFieldLayerDiagnostics({
+    slots: detailSlots,
+    activeCount: detailCount,
+    weight: DETAIL_LAYER_WEIGHT,
+    resolution: normalizedResolution,
+    scale: effectiveFieldScale,
+  });
+  const effectiveDiagnostics = mergeEffectiveFieldDiagnostics(
+    backboneDiagnostics,
+    detailDiagnostics,
+    normalizedResolution,
+  );
 
   return {
     ...fieldDescriptor,
@@ -517,7 +655,8 @@ export function buildRaymarchEffectiveFieldDescriptor({
     phaseAuthority: Math.round(clamp01(phaseAuthority) * 1000) / 1000,
     descriptorOverflow: descriptorOverflow === true,
     modeIdentityRetentionRatio: clamp01(modeIdentityRetentionRatio),
-    resolution: Math.max(8, Math.round(resolution || 0)),
+    resolution: normalizedResolution,
+    ...effectiveDiagnostics,
   };
 }
 
@@ -753,6 +892,7 @@ function accumulateEffectiveFieldLayerAtPoint({
   y,
   z,
   time,
+  resolution,
   scale,
   boundaryMode,
   cavityGeometry,
@@ -763,6 +903,10 @@ function accumulateEffectiveFieldLayerAtPoint({
   let gradZ = 0;
   let authoritySum = 0;
   let totalWeight = 0;
+  let contributingEffectiveFieldModeCount = 0;
+  let bandwidthRejectedModeCount = 0;
+  let bandwidthRejectedModalEnergy = 0;
+  let gradientEnvelopeNumerator = 0;
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
 
@@ -772,7 +916,20 @@ function accumulateEffectiveFieldLayerAtPoint({
     if (!(amplitude > 0)) {
       continue;
     }
+    if (!isEffectiveFieldSlotRepresentable({ slots, offset, resolution })) {
+      bandwidthRejectedModeCount += 1;
+      bandwidthRejectedModalEnergy += amplitude;
+      continue;
+    }
     totalWeight += amplitude;
+    contributingEffectiveFieldModeCount += 1;
+    gradientEnvelopeNumerator +=
+      amplitude *
+      getEffectiveFieldSlotGradientBound({
+        slots,
+        offset,
+        scale,
+      });
     const beta = Math.min(
       1,
       Math.max(
@@ -800,7 +957,18 @@ function accumulateEffectiveFieldLayerAtPoint({
     gradZ += coefficient * family.gradZ;
   }
 
-  return { field, gradX, gradY, gradZ, authoritySum, totalWeight };
+  return {
+    field,
+    gradX,
+    gradY,
+    gradZ,
+    authoritySum,
+    totalWeight,
+    contributingEffectiveFieldModeCount,
+    bandwidthRejectedModeCount,
+    bandwidthRejectedModalEnergy,
+    gradientEnvelopeNumerator,
+  };
 }
 
 export function evaluateRaymarchEffectiveFieldPoint({
@@ -817,10 +985,12 @@ export function evaluateRaymarchEffectiveFieldPoint({
   y = 0,
   z = 0,
   time = 0,
+  resolution = RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
 }) {
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
-  const scale = Math.PI / Math.max(radius, 1e-4);
+  const normalizedResolution = normalizeEffectiveFieldResolution(resolution);
+  const scale = getEffectiveFieldScale(radius);
   const backbone = accumulateEffectiveFieldLayerAtPoint({
     slots: backboneSlots,
     phaseSlots: backbonePhaseSlots,
@@ -830,6 +1000,7 @@ export function evaluateRaymarchEffectiveFieldPoint({
     y,
     z,
     time,
+    resolution: normalizedResolution,
     scale,
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
@@ -843,12 +1014,17 @@ export function evaluateRaymarchEffectiveFieldPoint({
     y,
     z,
     time,
+    resolution: normalizedResolution,
     scale,
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
   });
   const totalWeight = backbone.totalWeight + detail.totalWeight;
-  const amplitudeNorm = Math.max(totalWeight, 0.01);
+  const amplitudeNorm = Math.max(totalWeight, EFFECTIVE_FIELD_ENERGY_EPSILON);
+  const bandwidthRejectedModeCount =
+    backbone.bandwidthRejectedModeCount + detail.bandwidthRejectedModeCount;
+  const bandwidthRejectedModalEnergy =
+    backbone.bandwidthRejectedModalEnergy + detail.bandwidthRejectedModalEnergy;
 
   return {
     field: (backbone.field + detail.field) / amplitudeNorm,
@@ -860,9 +1036,20 @@ export function evaluateRaymarchEffectiveFieldPoint({
       Math.max(
         0,
         (backbone.authoritySum + detail.authoritySum) /
-          Math.max(0.01, totalWeight),
+          Math.max(EFFECTIVE_FIELD_ENERGY_EPSILON, totalWeight),
       ),
     ),
+    effectiveFieldMaxRepresentableModeIndex:
+      getEffectiveFieldMaxRepresentableModeIndex(normalizedResolution),
+    contributingEffectiveFieldModeCount:
+      backbone.contributingEffectiveFieldModeCount +
+      detail.contributingEffectiveFieldModeCount,
+    contributingModalEnergy: totalWeight,
+    bandwidthRejectedModeCount,
+    bandwidthRejectedModalEnergy,
+    effectiveFieldGradientEnvelope:
+      (backbone.gradientEnvelopeNumerator + detail.gradientEnvelopeNumerator) /
+      amplitudeNorm,
   };
 }
 
@@ -1276,6 +1463,75 @@ function createSpectralLightComputeKernel({
   );
 }
 
+function accumulateEffectiveFieldComputeLayer({
+  modeBuffer,
+  phaseBuffer,
+  capacity,
+  activeCount,
+  weight,
+  maxRepresentableModeIndex,
+  xCoord,
+  yCoord,
+  zCoord,
+  scale,
+  boundaryMode,
+  geometryBackend,
+  uTime,
+  totalAmplitude,
+  field,
+  gradX,
+  gradY,
+  gradZ,
+}) {
+  Loop(
+    {
+      start: int(0),
+      end: int(capacity),
+      type: "int",
+      condition: "<",
+    },
+    ({ i }) => {
+      If(i.greaterThanEqual(activeCount), () => {}).Else(() => {
+        const slot = modeBuffer.element(i);
+        const phaseSlot = phaseBuffer.element(i);
+        const amplitude = slot.w.mul(weight).toVar();
+        const representable = abs(slot.x)
+          .lessThanEqual(maxRepresentableModeIndex)
+          .and(abs(slot.y).lessThanEqual(maxRepresentableModeIndex))
+          .and(abs(slot.z).lessThanEqual(maxRepresentableModeIndex));
+        If(representable, () => {
+          const beta = clamp(
+            phaseSlot.z.mul(phaseSlot.w),
+            float(0.0),
+            float(1.0),
+          );
+          const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
+          const phaseScale = float(1.0)
+            .sub(beta)
+            .add(beta.mul(cos(phase)))
+            .toVar();
+          const coefficient = amplitude.mul(phaseScale).toVar();
+          const family = geometryBackend.evaluateModeNode({
+            u: slot.x,
+            v: slot.y,
+            w: slot.z,
+            xCoord,
+            yCoord,
+            zCoord,
+            scale,
+            boundaryMode,
+          });
+          totalAmplitude.addAssign(amplitude);
+          field.addAssign(coefficient.mul(family.field));
+          gradX.addAssign(coefficient.mul(family.gradX));
+          gradY.addAssign(coefficient.mul(family.gradY));
+          gradZ.addAssign(coefficient.mul(family.gradZ));
+        });
+      });
+    },
+  );
+}
+
 function createEffectiveFieldComputeKernel({
   effectiveFieldCache,
   backboneModeBuffer,
@@ -1294,6 +1550,9 @@ function createEffectiveFieldComputeKernel({
   const backboneActiveCount = int(uniforms.uBackboneModeCount);
   const detailActiveCount = int(uniforms.uDetailModeCount);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
+  const maxRepresentableModeIndex = float(
+    getEffectiveFieldMaxRepresentableModeIndex(resolution),
+  );
   const resolutionUint = uint(resolution);
   const resolutionFloat = float(resolution);
   const half = float(0.5);
@@ -1336,91 +1595,50 @@ function createEffectiveFieldComputeKernel({
       const gradZ = zero.toVar();
       const totalAmplitude = zero.toVar();
 
-      Loop(
-        {
-          start: int(0),
-          end: int(backboneCapacity),
-          type: "int",
-          condition: "<",
-        },
-        ({ i }) => {
-          If(i.greaterThanEqual(backboneActiveCount), () => {}).Else(() => {
-            const slot = backboneModeBuffer.element(i);
-            const phaseSlot = backbonePhaseBuffer.element(i);
-            const amplitude = slot.w.toVar();
-            const beta = clamp(
-              phaseSlot.z.mul(phaseSlot.w),
-              float(0.0),
-              float(1.0),
-            );
-            const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
-            const phaseScale = float(1.0)
-              .sub(beta)
-              .add(beta.mul(cos(phase)))
-              .toVar();
-            const coefficient = amplitude.mul(phaseScale).toVar();
-            const family = geometryBackend.evaluateModeNode({
-              u: slot.x,
-              v: slot.y,
-              w: slot.z,
-              xCoord,
-              yCoord,
-              zCoord,
-              scale,
-              boundaryMode,
-            });
-            totalAmplitude.addAssign(amplitude);
-            field.addAssign(coefficient.mul(family.field));
-            gradX.addAssign(coefficient.mul(family.gradX));
-            gradY.addAssign(coefficient.mul(family.gradY));
-            gradZ.addAssign(coefficient.mul(family.gradZ));
-          });
-        },
-      );
+      accumulateEffectiveFieldComputeLayer({
+        modeBuffer: backboneModeBuffer,
+        phaseBuffer: backbonePhaseBuffer,
+        capacity: backboneCapacity,
+        activeCount: backboneActiveCount,
+        weight: float(1.0),
+        maxRepresentableModeIndex,
+        xCoord,
+        yCoord,
+        zCoord,
+        scale,
+        boundaryMode,
+        geometryBackend,
+        uTime,
+        totalAmplitude,
+        field,
+        gradX,
+        gradY,
+        gradZ,
+      });
+      accumulateEffectiveFieldComputeLayer({
+        modeBuffer: detailModeBuffer,
+        phaseBuffer: detailPhaseBuffer,
+        capacity: detailCapacity,
+        activeCount: detailActiveCount,
+        weight: float(DETAIL_LAYER_WEIGHT),
+        maxRepresentableModeIndex,
+        xCoord,
+        yCoord,
+        zCoord,
+        scale,
+        boundaryMode,
+        geometryBackend,
+        uTime,
+        totalAmplitude,
+        field,
+        gradX,
+        gradY,
+        gradZ,
+      });
 
-      Loop(
-        {
-          start: int(0),
-          end: int(detailCapacity),
-          type: "int",
-          condition: "<",
-        },
-        ({ i }) => {
-          If(i.greaterThanEqual(detailActiveCount), () => {}).Else(() => {
-            const slot = detailModeBuffer.element(i);
-            const phaseSlot = detailPhaseBuffer.element(i);
-            const amplitude = slot.w.mul(float(DETAIL_LAYER_WEIGHT)).toVar();
-            const beta = clamp(
-              phaseSlot.z.mul(phaseSlot.w),
-              float(0.0),
-              float(1.0),
-            );
-            const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
-            const phaseScale = float(1.0)
-              .sub(beta)
-              .add(beta.mul(cos(phase)))
-              .toVar();
-            const coefficient = amplitude.mul(phaseScale).toVar();
-            const family = geometryBackend.evaluateModeNode({
-              u: slot.x,
-              v: slot.y,
-              w: slot.z,
-              xCoord,
-              yCoord,
-              zCoord,
-              scale,
-              boundaryMode,
-            });
-            totalAmplitude.addAssign(amplitude);
-            field.addAssign(coefficient.mul(family.field));
-            gradX.addAssign(coefficient.mul(family.gradX));
-            gradY.addAssign(coefficient.mul(family.gradY));
-            gradZ.addAssign(coefficient.mul(family.gradZ));
-          });
-        },
+      const normalizedAmplitude = totalAmplitude.max(
+        float(EFFECTIVE_FIELD_ENERGY_EPSILON),
       );
-
-      const normalizedAmplitude = totalAmplitude.max(float(0.01));
       textureStore(
         texture,
         uvec3(voxelCoord),
@@ -1901,6 +2119,21 @@ export function enqueueRaymarchEffectiveFieldRebuild(
           descriptor.phaseAuthority ?? 0;
         effectiveFieldCache.modeIdentityRetentionRatio =
           descriptor.modeIdentityRetentionRatio ?? 1;
+        effectiveFieldCache.effectiveFieldMaxRepresentableModeIndex =
+          descriptor.effectiveFieldMaxRepresentableModeIndex ??
+          getEffectiveFieldMaxRepresentableModeIndex(
+            effectiveFieldCache.resolution,
+          );
+        effectiveFieldCache.contributingEffectiveFieldModeCount =
+          descriptor.contributingEffectiveFieldModeCount ?? 0;
+        effectiveFieldCache.contributingModalEnergy =
+          descriptor.contributingModalEnergy ?? 0;
+        effectiveFieldCache.bandwidthRejectedModeCount =
+          descriptor.bandwidthRejectedModeCount ?? 0;
+        effectiveFieldCache.bandwidthRejectedModalEnergy =
+          descriptor.bandwidthRejectedModalEnergy ?? 0;
+        effectiveFieldCache.effectiveFieldGradientEnvelope =
+          descriptor.effectiveFieldGradientEnvelope ?? 0;
         dispatchQueuedRaymarchEffectiveFieldCacheRebuild(effectiveFieldCache);
       },
       (error) => {

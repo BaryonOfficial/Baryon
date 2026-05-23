@@ -191,6 +191,20 @@ function resetCacheActivity(cache) {
   clearQueuedRaymarchCacheRebuild(cache);
 }
 
+function resetEffectiveFieldRuntimeDiagnostics(effectiveFieldCache) {
+  if (!effectiveFieldCache) {
+    return;
+  }
+
+  effectiveFieldCache.activeEffectiveFieldModeCount = 0;
+  effectiveFieldCache.effectiveFieldAuthority = 0;
+  effectiveFieldCache.contributingEffectiveFieldModeCount = 0;
+  effectiveFieldCache.contributingModalEnergy = 0;
+  effectiveFieldCache.bandwidthRejectedModeCount = 0;
+  effectiveFieldCache.bandwidthRejectedModalEnergy = 0;
+  effectiveFieldCache.effectiveFieldGradientEnvelope = 0;
+}
+
 function resetRenderAuthorityState(runtimeState) {
   clearBufferNode(runtimeState.backboneModeBuffer);
   clearBufferNode(runtimeState.detailModeBuffer);
@@ -208,10 +222,7 @@ function resetRenderAuthorityState(runtimeState) {
   resetRaymarchUploadState(runtimeState);
   resetCacheActivity(runtimeState.effectiveFieldCache);
   resetCacheActivity(runtimeState.spectralLightCache);
-  if (runtimeState.effectiveFieldCache) {
-    runtimeState.effectiveFieldCache.activeEffectiveFieldModeCount = 0;
-    runtimeState.effectiveFieldCache.effectiveFieldAuthority = 0;
-  }
+  resetEffectiveFieldRuntimeDiagnostics(runtimeState.effectiveFieldCache);
 }
 
 function readRuntimeFieldNoiseFloor(runtimeState) {
@@ -394,10 +405,7 @@ function blockOverflowedModalDescriptor(
   resetRaymarchUploadState(runtimeState);
   resetCacheActivity(runtimeState.effectiveFieldCache);
   resetCacheActivity(runtimeState.spectralLightCache);
-  if (runtimeState.effectiveFieldCache) {
-    runtimeState.effectiveFieldCache.activeEffectiveFieldModeCount = 0;
-    runtimeState.effectiveFieldCache.effectiveFieldAuthority = 0;
-  }
+  resetEffectiveFieldRuntimeDiagnostics(runtimeState.effectiveFieldCache);
   setIfChanged(runtimeState.uniforms.uBackboneModeCount, 0);
   setIfChanged(runtimeState.uniforms.uDetailModeCount, 0);
   setIfChanged(runtimeState.uniforms.uActiveModeCount, 0);
@@ -596,6 +604,36 @@ function buildRaymarchDebugSnapshot(
   const effectiveFieldAuthority = readFiniteNumber(
     effectiveFieldCache?.effectiveFieldAuthority ??
       effectiveFieldDescriptor?.phaseAuthority,
+    0,
+  );
+  const effectiveFieldMaxRepresentableModeIndex = readFiniteNumber(
+    effectiveFieldDescriptor?.effectiveFieldMaxRepresentableModeIndex ??
+      effectiveFieldCache?.effectiveFieldMaxRepresentableModeIndex,
+    0,
+  );
+  const effectiveFieldContributingModeCount = readFiniteNumber(
+    effectiveFieldDescriptor?.contributingEffectiveFieldModeCount ??
+      effectiveFieldCache?.contributingEffectiveFieldModeCount,
+    0,
+  );
+  const effectiveFieldContributingModalEnergy = readFiniteNumber(
+    effectiveFieldDescriptor?.contributingModalEnergy ??
+      effectiveFieldCache?.contributingModalEnergy,
+    0,
+  );
+  const effectiveFieldBandwidthRejectedModeCount = readFiniteNumber(
+    effectiveFieldDescriptor?.bandwidthRejectedModeCount ??
+      effectiveFieldCache?.bandwidthRejectedModeCount,
+    0,
+  );
+  const effectiveFieldBandwidthRejectedModalEnergy = readFiniteNumber(
+    effectiveFieldDescriptor?.bandwidthRejectedModalEnergy ??
+      effectiveFieldCache?.bandwidthRejectedModalEnergy,
+    0,
+  );
+  const effectiveFieldGradientEnvelope = readFiniteNumber(
+    effectiveFieldDescriptor?.effectiveFieldGradientEnvelope ??
+      effectiveFieldCache?.effectiveFieldGradientEnvelope,
     0,
   );
   const spectralLightCacheDescriptorFresh =
@@ -826,6 +864,12 @@ function buildRaymarchDebugSnapshot(
       effectiveFieldCache?.modeIdentityRetentionRatio ??
       effectiveFieldDescriptor?.modeIdentityRetentionRatio ??
       1,
+    effectiveFieldMaxRepresentableModeIndex,
+    effectiveFieldContributingModeCount,
+    effectiveFieldContributingModalEnergy,
+    effectiveFieldBandwidthRejectedModeCount,
+    effectiveFieldBandwidthRejectedModalEnergy,
+    effectiveFieldGradientEnvelope,
     spectralLightCacheActive: spectralLightCache?.active ?? false,
     spectralLightCacheReady: spectralLightCache?.ready ?? false,
     spectralLightCacheRebuildPending:

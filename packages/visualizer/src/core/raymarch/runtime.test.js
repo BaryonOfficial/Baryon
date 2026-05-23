@@ -353,7 +353,7 @@ describe("tickRaymarchRuntime", () => {
   });
 
   it("blocks complete field authority when descriptor capacity overflows", () => {
-    const runtimeState = createRuntimeState();
+    const runtimeState = createRuntimeState({ withFieldCache: true });
     runtimeState.backboneCapacity = 2;
     runtimeState.detailCapacity = 2;
     runtimeState.backbonePhaseCapacity = 2;
@@ -362,6 +362,11 @@ describe("tickRaymarchRuntime", () => {
     runtimeState.detailModeBuffer.value.array = new Float32Array(8);
     runtimeState.backbonePhaseBuffer.value.array = new Float32Array(8);
     runtimeState.detailPhaseBuffer.value.array = new Float32Array(8);
+    runtimeState.effectiveFieldCache.contributingEffectiveFieldModeCount = 2;
+    runtimeState.effectiveFieldCache.contributingModalEnergy = 0.8;
+    runtimeState.effectiveFieldCache.bandwidthRejectedModeCount = 1;
+    runtimeState.effectiveFieldCache.bandwidthRejectedModalEnergy = 0.4;
+    runtimeState.effectiveFieldCache.effectiveFieldGradientEnvelope = 3.1;
     const featureFrame = createActiveFeatureFrame({
       backboneSlots: makeModeSlots(3, () => 0.4),
       detailSlots: makeModeSlots(3, () => 0.35),
@@ -388,6 +393,16 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(0);
     expect(runtimeState.uniforms.uDetailModeCount.value).toBe(0);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
+    expect(
+      runtimeState.debugSnapshot.effectiveFieldBandwidthRejectedModeCount,
+    ).toBe(0);
+    expect(
+      runtimeState.debugSnapshot.effectiveFieldBandwidthRejectedModalEnergy,
+    ).toBe(0);
+    expect(
+      runtimeState.debugSnapshot.effectiveFieldContributingModalEnergy,
+    ).toBe(0);
+    expect(runtimeState.debugSnapshot.effectiveFieldGradientEnvelope).toBe(0);
   });
 
   it("creates a self-lit scene root with weak symmetric fill lights", () => {
@@ -905,6 +920,55 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.debugSnapshot.raymarchDebug.effectiveFieldLastError,
     ).toBe("Renderer computeAsync unavailable");
+  });
+
+  it("exposes effective field bandwidth diagnostics without reporting descriptor overflow", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    const renderer = {
+      computeAsync: vi.fn(async () => undefined),
+    };
+    const featureFrame = createActiveFeatureFrame({
+      averageAmplitude: 48,
+      backboneSlots: new Float32Array([1, 1, 1, 1, 8, 8, 8, 0.25]),
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 0, 1, Math.PI, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneColorSlots: new Float32Array(8),
+      detailColorSlots: new Float32Array(0),
+      modalPhaseAuthority: 1,
+      debug: {},
+    });
+
+    tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    tickRaymarchRuntime(runtimeState, featureFrame, 1.1, 1 / 60, renderer);
+
+    expect(
+      runtimeState.currentEffectiveFieldDescriptor.descriptorOverflow,
+    ).toBe(false);
+    expect(
+      runtimeState.currentEffectiveFieldDescriptor.bandwidthRejectedModeCount,
+    ).toBe(1);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .effectiveFieldBandwidthRejectedModeCount,
+    ).toBe(1);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .effectiveFieldBandwidthRejectedModalEnergy,
+    ).toBeCloseTo(0.25, 6);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .effectiveFieldContributingModalEnergy,
+    ).toBeCloseTo(1, 6);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.effectiveFieldGradientEnvelope,
+    ).toBeGreaterThan(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.modalDescriptorOverflow,
+    ).toBe(false);
   });
 
   it("reports requested spherical geometry while keeping the effective backend rectangular", () => {
