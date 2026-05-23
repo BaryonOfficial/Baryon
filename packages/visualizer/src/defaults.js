@@ -1,8 +1,8 @@
 import { DEFAULT_REQUESTED_CAVITY_GEOMETRY } from "./core/cavityGeometry.js";
 
 const DEFAULT_BACKBONE_STACK_SLOTS = 8;
-const DEFAULT_DETAIL_STACK_SLOTS = 5;
-export const DEFAULT_FFT_SIZE = 8192;
+const DEFAULT_DETAIL_STACK_SLOTS = 8;
+export const DEFAULT_FFT_SIZE = 4096;
 export const DEFAULT_SAMPLE_RATE = 44100;
 
 export const AUDIO_SLOT_CAPACITY =
