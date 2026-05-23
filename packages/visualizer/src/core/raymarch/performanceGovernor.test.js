@@ -1,35 +1,88 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
-  analyzeBudgetedModeLayer,
-  BACKBONE_ENERGY_RETENTION,
+  analyzeFullModeLayer,
   buildRaymarchPerformanceGovernor,
-  copyBudgetedModeLayer,
+  copyFullModeLayer,
   deriveFieldExcitation,
-  MIN_BACKBONE_RENDER_SLOTS,
 } from "./performanceGovernor.js";
 
+const PERFORMANCE_GOVERNOR_SOURCE_URL = new URL(
+  "./performanceGovernor.js",
+  import.meta.url,
+);
+
+function readPerformanceGovernorSource() {
+  return readFileSync(PERFORMANCE_GOVERNOR_SOURCE_URL, {
+    encoding: "utf8",
+  });
+}
+
 describe("performanceGovernor", () => {
-  it("retains dominant slots while respecting the minimum floor", () => {
+  it("preserves every active descriptor mode without modal-retention selectors", () => {
+    const backboneSlots = new Float32Array([
+      1, 1, 1, 1.0, 1, 2, 3, 0.1, 2, 2, 3, 0.1, 4, 4, 4, 0.1, 5, 5, 6, 0.1, 6,
+      6, 6, 0.1,
+    ]);
+    const detailSlots = new Float32Array([
+      2, 1, 1, 0.9, 2, 2, 3, 0.08, 3, 2, 3, 0.08, 4, 5, 4, 0.08, 5, 5, 6, 0.08,
+      6, 7, 6, 0.08,
+    ]);
+
+    const governor = buildRaymarchPerformanceGovernor({
+      backboneSlots,
+      detailSlots,
+      backboneCapacity: 6,
+      detailCapacity: 6,
+      featureFrame: {
+        averageAmplitude: 96,
+        structureSignal: 0.64,
+        modalVisibilityEnergy: 0.42,
+      },
+      requestedStepBudget: 64,
+      requestedRenderScale: 1,
+    });
+
+    expect(governor.originalModeCount).toBe(12);
+    expect(governor.uploadedModeCount).toBe(12);
+    expect(governor.backbone.originalActiveCount).toBe(6);
+    expect(governor.backbone.uploadedActiveCount).toBe(6);
+    expect(governor.detail.originalActiveCount).toBe(6);
+    expect(governor.detail.uploadedActiveCount).toBe(6);
+    expect(governor.backbone.selectedIndices).toBeUndefined();
+    expect(governor.detail.selectedIndices).toBeUndefined();
+    expect(governor.backbone.retainedEnergyRatio).toBeUndefined();
+    expect(governor.detail.retainedEnergyRatio).toBeUndefined();
+  });
+
+  it("keeps modal retention selector artifacts out of the product owner", () => {
+    const source = readPerformanceGovernorSource();
+
+    expect(source).not.toContain("selectedIndices");
+    expect(source).not.toContain("retainedEnergyRatio");
+    expect(source).not.toContain("energyRetention");
+    expect(source).not.toContain("analyzeBudgetedModeLayer");
+    expect(source).not.toContain("copyBudgetedModeLayer");
+  });
+
+  it("counts every active slot in a descriptor layer", () => {
     const slots = new Float32Array([
       1, 1, 1, 1.0, 1, 2, 3, 0.8, 2, 2, 3, 0.4, 4, 4, 4, 0.2, 5, 5, 6, 0.1, 6,
       6, 6, 0.05,
     ]);
 
-    const layer = analyzeBudgetedModeLayer({
+    const layer = analyzeFullModeLayer({
       slots,
       capacity: 6,
-      minSlots: MIN_BACKBONE_RENDER_SLOTS,
-      energyRetention: BACKBONE_ENERGY_RETENTION,
     });
 
     expect(layer.originalActiveCount).toBe(6);
-    expect(layer.uploadedActiveCount).toBeGreaterThanOrEqual(4);
-    expect(layer.retainedEnergyRatio).toBeGreaterThanOrEqual(
-      BACKBONE_ENERGY_RETENTION,
-    );
+    expect(layer.uploadedActiveCount).toBe(6);
+    expect(layer.totalAmplitude).toBeCloseTo(2.55, 5);
+    expect(layer.uploadedAmplitude).toBeCloseTo(layer.totalAmplitude, 5);
   });
 
-  it("copies only the budgeted slots into the upload buffer", () => {
+  it("copies the full descriptor layer into the upload buffer", () => {
     const sourceSlots = new Float32Array([
       1, 1, 1, 0.9, 2, 2, 2, 0.7, 3, 3, 3, 0.2, 4, 4, 4, 0,
     ]);
@@ -39,89 +92,60 @@ describe("performanceGovernor", () => {
     const targetSlots = new Float32Array(16);
     const targetColors = new Float32Array(16);
 
-    copyBudgetedModeLayer({
+    copyFullModeLayer({
       sourceSlots,
       sourceColorSlots: sourceColors,
       targetSlots,
       targetColorSlots: targetColors,
-      selectedIndices: [0, 2],
       capacity: 4,
       includeColors: true,
     });
 
-    expect(Array.from(targetSlots.slice(0, 8))).toEqual([
+    expect(Array.from(targetSlots)).toEqual([
       1,
       1,
       1,
       expect.closeTo(0.9, 5),
+      2,
+      2,
+      2,
+      expect.closeTo(0.7, 5),
       3,
       3,
       3,
       expect.closeTo(0.2, 5),
+      4,
+      4,
+      4,
+      0,
     ]);
-    expect(Array.from(targetColors.slice(0, 8))).toEqual([
-      1, 0, 0, 1, 0, 0, 1, 1,
-    ]);
-    expect(Array.from(targetSlots.slice(8, 16))).toEqual([
-      0, 0, 0, 0, 0, 0, 0, 0,
+    expect(Array.from(targetColors.slice(0, 12))).toEqual([
+      1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1,
     ]);
   });
 
-  it("ignores color slots when selecting field slots", () => {
+  it("ignores color slots when analyzing field complexity", () => {
     const slots = new Float32Array([
       1, 1, 1, 0.5, 2, 2, 2, 0.4, 3, 3, 3, 0.3, 4, 4, 4, 0.09,
     ]);
 
-    const baseline = analyzeBudgetedModeLayer({
+    const baseline = analyzeFullModeLayer({
       slots,
       capacity: 4,
-      minSlots: 2,
-      energyRetention: 0.72,
     });
-    const staticMode = analyzeBudgetedModeLayer({
+    const staticMode = analyzeFullModeLayer({
       slots,
       colorSlots: new Float32Array([
         0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, 1, 0, 1,
       ]),
       capacity: 4,
-      minSlots: 2,
-      energyRetention: 0.72,
     });
 
-    expect(staticMode.selectedIndices).toEqual(baseline.selectedIndices);
     expect(staticMode.uploadedActiveCount).toBe(baseline.uploadedActiveCount);
+    expect(staticMode.totalAmplitude).toBe(baseline.totalAmplitude);
   });
 
-  it("keeps field slot budgeting independent of Spectral Light color support", () => {
-    const slots = new Float32Array([
-      1, 1, 1, 0.5, 2, 2, 2, 0.4, 3, 3, 3, 0.3, 4, 4, 4, 0.09,
-    ]);
-    const colorSlots = new Float32Array([
-      0.8, 0.1, 0.1, 0.2, 0.7, 0.2, 0.1, 0.2, 0.6, 0.2, 0.1, 0.2, 0, 1, 0, 1,
-    ]);
-
-    const staticBudget = analyzeBudgetedModeLayer({
-      slots,
-      capacity: 4,
-      minSlots: 2,
-      energyRetention: 0.72,
-    });
-    const spectralBudget = analyzeBudgetedModeLayer({
-      slots,
-      colorSlots,
-      capacity: 4,
-      minSlots: 2,
-      energyRetention: 0.72,
-    });
-
-    expect(staticBudget.selectedIndices).toEqual([0, 1, 2]);
-    expect(spectralBudget.selectedIndices).toEqual(staticBudget.selectedIndices);
-    expect(spectralBudget.retainedEnergyRatio).toBe(
-      staticBudget.retainedEnergyRatio,
-    );
-  });
-
-  it("does not mutate physical modal slots while deriving performance budgets", () => {
+  it("does not mutate physical modal slots while deriving performance controls", () => {
     const backboneSlots = new Float32Array([
       1, 1, 1, 0.8, 2, 2, 2, 0.4, 3, 3, 3, 0.2,
     ]);
@@ -148,7 +172,7 @@ describe("performanceGovernor", () => {
     expect(Array.from(backboneSlots)).toEqual(originalBackbone);
     expect(Array.from(detailSlots)).toEqual(originalDetail);
     expect(governor.originalModeCount).toBe(6);
-    expect(governor.uploadedModeCount).toBeGreaterThan(0);
+    expect(governor.uploadedModeCount).toBe(6);
   });
 
   it("derives field excitation from modal signals", () => {
@@ -168,7 +192,7 @@ describe("performanceGovernor", () => {
     );
   });
 
-  it("raises complexity when uploaded mode load and excitation increase", () => {
+  it("raises complexity when mode load and excitation increase", () => {
     const low = buildRaymarchPerformanceGovernor({
       backboneSlots: new Float32Array([1, 1, 1, 0.4, 2, 2, 2, 0.3]),
       detailSlots: new Float32Array([1, 1, 2, 0.1]),
@@ -203,7 +227,7 @@ describe("performanceGovernor", () => {
     expect(high.complexityScore).toBeGreaterThan(low.complexityScore);
     expect(high.proactiveStepBudget).toBeLessThanOrEqual(64);
     expect(high.proactiveRenderScale).toBeLessThanOrEqual(1);
-    expect(high.backbone.uploadedActiveCount).toBeGreaterThan(0);
-    expect(high.detail.uploadedActiveCount).toBeGreaterThan(0);
+    expect(high.backbone.uploadedActiveCount).toBe(8);
+    expect(high.detail.uploadedActiveCount).toBe(8);
   });
 });

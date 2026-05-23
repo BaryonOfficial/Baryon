@@ -1893,6 +1893,7 @@ export function resolveFeatureFrame(
                 status,
                 controls,
               });
+              // hasAudioSourceRenderIntent guards cached live-frame fallback.
               featureFrame = hasSourceIntent
                 ? (lastLiveFrameRef.current ??
                   preparedInputs.silentFeatureFrame)

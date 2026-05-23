@@ -1,5 +1,6 @@
 import {
   AUDIT_DEFAULTS,
+  AUDIO_DEFAULTS,
   AUDIO_SLOT_CAPACITY,
   BEAT_DEFAULTS,
   DEFAULT_FFT_SIZE,
@@ -54,6 +55,7 @@ import {
   isLoopbackLiveInputDeviceKind,
   normalizeLiveInputDeviceKind,
 } from "../../core/audio/inputDeviceSemantics.js";
+import { buildCanonicalFullModalDescriptor } from "../../core/modalDescriptor.js";
 import {
   countNonZeroFftBins,
   deriveHighQSparseResonatorAuthority,
@@ -900,8 +902,8 @@ function hasNoRenderSourceForcing(analysisResult) {
 function isAnalysisRenderAuthorityCut(analysisResult) {
   return Boolean(
     analysisResult?.renderAuthorityCut ||
-      analysisResult?.structuralMetrics?.renderAuthorityCut ||
-      analysisResult?.structuralMetrics?.modalResponseRenderSourceCutSuppressed,
+    analysisResult?.structuralMetrics?.renderAuthorityCut ||
+    analysisResult?.structuralMetrics?.modalResponseRenderSourceCutSuppressed,
   );
 }
 
@@ -4848,7 +4850,7 @@ export function composeAudioFeatureFrame({
   } = deriveCompositeSignals({
     inputMode: preparedInputs.analysisInputMode,
     modeCapacity: preparedInputs.capacity,
-    signalNormalizationSlots: AUDIO_SLOT_CAPACITY,
+    signalNormalizationSlots: AUDIO_DEFAULTS.signalNormalizationSlots,
     modeSlots: analysisResult.signalModeSlots ?? analysisResult.modeSlots,
     visibilityModeSlots: analysisResult.modeSlots,
     referenceModeSlots:
@@ -5119,6 +5121,28 @@ export function composeAudioFeatureFrame({
     activeModeCount = 0;
   }
 
+  const modalDescriptor = buildCanonicalFullModalDescriptor({
+    generation: preparedInputs.auditState?.frame ?? 0,
+    maxBackboneModes: Math.min(preparedInputs.capacity, BACKBONE_STACK_SLOTS),
+    maxDetailModes: Math.min(preparedInputs.capacity, DETAIL_STACK_SLOTS),
+    backboneSlots: renderBackboneSlots,
+    detailSlots: renderDetailSlots,
+    backbonePhaseSlots: renderBackbonePhaseSlots,
+    detailPhaseSlots: renderDetailPhaseSlots,
+    backboneColorSlots: renderBackboneColorSlots,
+    detailColorSlots: renderDetailColorSlots,
+    activeBackboneModeCount,
+    activeDetailModeCount,
+    observerCandidateModeCount:
+      analysisResult.structuralMetrics?.excitedModeCount,
+    observedModalModeCount:
+      analysisResult.structuralMetrics?.observedModalModeCount,
+    phaseAuthorityModeCount:
+      analysisResult.structuralMetrics?.modalPhaseCoherentFieldModeCount,
+    modeIdentityRetentionRatio:
+      analysisResult.structuralMetrics?.modalPersistence,
+  });
+
   let debug = analysisResult.debug;
   if (!debug) {
     debug = finalizeFeatureDebugSnapshot({
@@ -5245,6 +5269,7 @@ export function composeAudioFeatureFrame({
     activeBackboneModeCount,
     activeDetailModeCount,
     activeModeCount,
+    modalDescriptor,
     backboneColorSlots: renderBackboneColorSlots,
     detailColorSlots: renderDetailColorSlots,
     bandEnergies: renderBandEnergies,
@@ -5269,7 +5294,8 @@ export function composeAudioFeatureFrame({
       analysisResult.structuralMetrics?.modalResponseRenderSourceCutSuppressed,
     ),
     modalResponseCurrentRenderSourceEvidence: Boolean(
-      analysisResult.structuralMetrics?.modalResponseCurrentRenderSourceEvidence,
+      analysisResult.structuralMetrics
+        ?.modalResponseCurrentRenderSourceEvidence,
     ),
     modalResponseRenderAuthorityCutSilenceMs:
       analysisResult.structuralMetrics

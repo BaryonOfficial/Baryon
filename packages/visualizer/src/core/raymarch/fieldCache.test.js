@@ -436,10 +436,10 @@ describe("fieldCache", () => {
     expect(phaseCoherentFieldCache.ready).toBe(false);
     expect(phaseCoherentFieldCache.backend).toBe("compute");
     expect(phaseCoherentFieldCache.maxBackboneModes).toBe(
-      AUDIO_DEFAULTS.backboneStackSlots,
+      AUDIO_DEFAULTS.maxBackboneDescriptorModes,
     );
     expect(phaseCoherentFieldCache.maxDetailModes).toBe(
-      AUDIO_DEFAULTS.detailStackSlots,
+      AUDIO_DEFAULTS.maxDetailDescriptorModes,
     );
     expect(phaseCoherentFieldCache.updateIntervalMs).toBeCloseTo(1000 / 15);
   });
@@ -748,16 +748,7 @@ describe("fieldCache", () => {
     const sample = evaluateRaymarchPhaseCoherentFieldPoint({
       backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
       detailSlots: new Float32Array(0),
-      backbonePhaseSlots: new Float32Array([
-        0,
-        0,
-        1,
-        1,
-        Math.PI,
-        0,
-        1,
-        1,
-      ]),
+      backbonePhaseSlots: new Float32Array([0, 0, 1, 1, Math.PI, 0, 1, 1]),
       detailPhaseSlots: new Float32Array(0),
       backboneCount: 2,
       detailCount: 0,
@@ -826,9 +817,7 @@ describe("fieldCache", () => {
     });
 
     expect(reinforcing.colorWeight).toBeGreaterThan(0.9);
-    expect(canceling.colorWeight).toBeLessThan(
-      reinforcing.colorWeight * 0.1,
-    );
+    expect(canceling.colorWeight).toBeLessThan(reinforcing.colorWeight * 0.1);
     expect(canceling.r + canceling.g + canceling.b).toBeLessThan(
       (reinforcing.r + reinforcing.g + reinforcing.b) * 0.1,
     );
@@ -863,9 +852,7 @@ describe("fieldCache", () => {
       z: 0,
     });
 
-    expect(partial.colorWeight).toBeGreaterThan(
-      reinforcing.colorWeight * 0.75,
-    );
+    expect(partial.colorWeight).toBeGreaterThan(reinforcing.colorWeight * 0.75);
     expect(partial.r + partial.g + partial.b).toBeGreaterThan(
       (reinforcing.r + reinforcing.g + reinforcing.b) * 0.75,
     );

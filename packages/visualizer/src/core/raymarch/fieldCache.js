@@ -29,9 +29,9 @@ export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 export const RAYMARCH_PHASE_COHERENT_FIELD_RESOLUTION = 32;
 export const RAYMARCH_PHASE_COHERENT_FIELD_UPDATE_INTERVAL_MS = 1000 / 15;
 export const RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT =
-  AUDIO_DEFAULTS.backboneStackSlots;
+  AUDIO_DEFAULTS.maxBackboneDescriptorModes;
 export const RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT =
-  AUDIO_DEFAULTS.detailStackSlots;
+  AUDIO_DEFAULTS.maxDetailDescriptorModes;
 
 /*
 Dev overrides for manual testing:
@@ -263,6 +263,13 @@ export function createRaymarchSpectralLightCache({
   });
 }
 
+/**
+ * @param {{
+ *   resolution?: number,
+ *   maxBackboneModes?: number,
+ *   maxDetailModes?: number,
+ * }} [options]
+ */
 export function createRaymarchPhaseCoherentFieldCache({
   resolution = RAYMARCH_PHASE_COHERENT_FIELD_RESOLUTION,
   maxBackboneModes = RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT,
@@ -299,7 +306,9 @@ export function disposeRaymarchSpectralLightCache(spectralLightCache) {
   disposeRaymarchFieldCache(spectralLightCache);
 }
 
-export function disposeRaymarchPhaseCoherentFieldCache(phaseCoherentFieldCache) {
+export function disposeRaymarchPhaseCoherentFieldCache(
+  phaseCoherentFieldCache,
+) {
   disposeRaymarchFieldCache(phaseCoherentFieldCache);
 }
 

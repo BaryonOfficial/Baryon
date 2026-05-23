@@ -31,6 +31,7 @@ declare global {
       dump(): Record<string, unknown>;
       copy(): Promise<Record<string, unknown>>;
     };
+    __baryonPerfMetrics?: Record<string, unknown> | null;
     __baryonExternalOutputDiagnostics?: Record<string, unknown> | null;
     __baryonFieldCacheOverride?: "direct" | "cached";
     __baryonRendererInfo?: {

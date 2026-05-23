@@ -5990,7 +5990,9 @@ describe("modal excitation integration", () => {
     const decayedBackboneAmplitude = sumSlotAmplitudes(
       silentResult.frame.backboneSlots,
     );
-    const decayedDetailAmplitude = sumSlotAmplitudes(silentResult.frame.detailSlots);
+    const decayedDetailAmplitude = sumSlotAmplitudes(
+      silentResult.frame.detailSlots,
+    );
     expect(decayedBackboneAmplitude + decayedDetailAmplitude).toBe(0);
     expect(
       silentResult.analysisResult.structuralMetrics.modalResponseEnergy,
@@ -6167,14 +6169,14 @@ describe("modal excitation integration", () => {
       switchedResult = buildModalExcitationAnalysisFrame({
         featureState,
         fftMagnitudes: makeFft([
-          [277, 0.9],
-          [415, 0.66],
-          [554, 0.52],
-          [831, 0.34],
-          [2216, 0.16],
+          [831, 0.9],
+          [1246, 0.66],
+          [1662, 0.52],
+          [2493, 0.34],
+          [3324, 0.16],
         ]),
         timeData: makeTimeData({
-          frequency: 277,
+          frequency: 831,
           amplitude: 0.42,
           harmonics: [
             [1.5, 0.1],

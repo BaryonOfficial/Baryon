@@ -200,7 +200,7 @@ function createPreparedInputs({
   avgAmplitude = 24,
   rms = 0.2,
   radius = 3,
-  featureState = createAudioFeatureState(),
+  featureState = createAudioFeatureState(status.capacity),
   includeSpectralLight = true,
 }) {
   return prepareAudioFeatureFrameInputs({
@@ -2417,7 +2417,9 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
     expect(sumAmplitudes(structural.detailSlotsSource)).toBe(0);
     expect(structural.structuralMetrics.modalPhaseAuthority).toBe(0);
-    expect(structural.structuralMetrics.modalPhaseCoherentFieldModeCount).toBe(0);
+    expect(structural.structuralMetrics.modalPhaseCoherentFieldModeCount).toBe(
+      0,
+    );
     expect(
       countAuthoritativePhaseSlots(structural.detailPhaseSlotsSource),
     ).toBe(0);

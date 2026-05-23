@@ -65,12 +65,12 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const backboneCapacity = resolveLayerCapacity(
     audioConfig?.backboneCapacity,
     sharedModeCapacity,
-    AUDIO_DEFAULTS.backboneStackSlots,
+    AUDIO_DEFAULTS.maxBackboneDescriptorModes,
   );
   const detailCapacity = resolveLayerCapacity(
     audioConfig?.detailCapacity,
     sharedModeCapacity,
-    AUDIO_DEFAULTS.detailStackSlots,
+    AUDIO_DEFAULTS.maxDetailDescriptorModes,
   );
   const backboneModeBuffer = createModeBuffer(backboneCapacity);
   const detailModeBuffer = createModeBuffer(detailCapacity);

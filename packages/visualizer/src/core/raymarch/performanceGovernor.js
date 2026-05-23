@@ -1,20 +1,7 @@
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 
-export const MIN_BACKBONE_RENDER_SLOTS = 4;
-export const MIN_DETAIL_RENDER_SLOTS = 2;
-export const BACKBONE_ENERGY_RETENTION = 0.86;
-export const DETAIL_ENERGY_RETENTION = 0.72;
 export const MIN_COMPLEXITY_RENDER_SCALE = 0.84;
-export const RAYMARCH_LAYER_BUDGETS = Object.freeze({
-  backbone: Object.freeze({
-    minSlots: MIN_BACKBONE_RENDER_SLOTS,
-    energyRetention: BACKBONE_ENERGY_RETENTION,
-  }),
-  detail: Object.freeze({
-    minSlots: MIN_DETAIL_RENDER_SLOTS,
-    energyRetention: DETAIL_ENERGY_RETENTION,
-  }),
-});
+
 const STEP_COMPLEXITY_START = 0.45;
 const RENDER_SCALE_COMPLEXITY_START = 0.58;
 const BLOOM_GUARD_COMPLEXITY_START = 0.5;
@@ -63,17 +50,16 @@ export function inferLayerCapacity(capacity, slots) {
   return Math.max(1, Math.floor((slots?.length ?? 0) / 4));
 }
 
-export function analyzeBudgetedModeLayer({
+export function analyzeFullModeLayer({
   slots,
   capacity,
-  minSlots = 0,
-  energyRetention = 1,
   cavityGeometry = "rectangular",
 }) {
   const resolvedCapacity = inferLayerCapacity(capacity, slots);
-  const candidates = [];
-  let totalAmplitude = 0;
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
+  let activeCount = 0;
+  let totalAmplitude = 0;
+  let weightedPermutationLoad = 0;
 
   for (let slotIndex = 0; slotIndex < resolvedCapacity; slotIndex += 1) {
     const offset = slotIndex * 4;
@@ -86,106 +72,28 @@ export function analyzeBudgetedModeLayer({
       slots,
       offset,
     );
+    activeCount += 1;
     totalAmplitude += amplitude;
-    candidates.push({
-      slotIndex,
-      amplitude,
-      permutationCount,
-    });
+    weightedPermutationLoad += amplitude * (permutationCount / 6);
   }
-
-  const originalActiveCount = candidates.length;
-  if (originalActiveCount === 0) {
-    return {
-      capacity: resolvedCapacity,
-      originalActiveCount,
-      uploadedActiveCount: 0,
-      totalAmplitude: 0,
-      uploadedAmplitude: 0,
-      retainedEnergyRatio: 0,
-      weightedPermutationLoad: 0,
-      averagePermutationCost: 0,
-      selectedIndices: [],
-    };
-  }
-
-  const normalizedRetention = clamp01(energyRetention);
-  const ranked = candidates.slice().sort((left, right) => {
-    if (right.amplitude !== left.amplitude) {
-      return right.amplitude - left.amplitude;
-    }
-    return left.slotIndex - right.slotIndex;
-  });
-  const requiredCount = Math.min(
-    originalActiveCount,
-    Math.max(0, Math.round(minSlots)),
-  );
-  const selected = [];
-  let uploadedAmplitude = 0;
-
-  for (let index = 0; index < ranked.length; index += 1) {
-    const candidate = ranked[index];
-    const shouldRetain =
-      index < requiredCount ||
-      uploadedAmplitude / Math.max(totalAmplitude, 1e-4) < normalizedRetention;
-    if (!shouldRetain) {
-      continue;
-    }
-    uploadedAmplitude += candidate.amplitude;
-    selected.push(candidate);
-  }
-
-  if (selected.length === 0) {
-    selected.push(ranked[0]);
-    uploadedAmplitude = ranked[0].amplitude;
-  }
-
-  selected.sort((left, right) => left.slotIndex - right.slotIndex);
-  const uploadedPermutationLoad = selected.reduce(
-    (sum, candidate) =>
-      sum + candidate.amplitude * (candidate.permutationCount / 6),
-    0,
-  );
 
   return {
     capacity: resolvedCapacity,
-    originalActiveCount,
-    uploadedActiveCount: selected.length,
+    originalActiveCount: activeCount,
+    uploadedActiveCount: activeCount,
     totalAmplitude,
-    uploadedAmplitude,
-    retainedEnergyRatio: clamp01(
-      uploadedAmplitude / Math.max(totalAmplitude, 1e-4),
-    ),
-    weightedPermutationLoad: uploadedPermutationLoad,
+    uploadedAmplitude: totalAmplitude,
+    weightedPermutationLoad,
     averagePermutationCost:
-      uploadedAmplitude > 0 ? uploadedPermutationLoad / uploadedAmplitude : 0,
-    selectedIndices: selected.map((candidate) => candidate.slotIndex),
+      totalAmplitude > 0 ? weightedPermutationLoad / totalAmplitude : 0,
   };
 }
 
-export function buildBudgetedModeLayer({
-  slots,
-  capacity,
-  layerType = "backbone",
-  cavityGeometry = "rectangular",
-}) {
-  const layerBudget =
-    RAYMARCH_LAYER_BUDGETS[layerType] ?? RAYMARCH_LAYER_BUDGETS.backbone;
-  return analyzeBudgetedModeLayer({
-    slots,
-    capacity,
-    minSlots: layerBudget.minSlots,
-    energyRetention: layerBudget.energyRetention,
-    cavityGeometry,
-  });
-}
-
-export function copyBudgetedModeLayer({
+export function copyFullModeLayer({
   sourceSlots,
   sourceColorSlots,
   targetSlots,
   targetColorSlots,
-  selectedIndices,
   capacity,
   includeColors = true,
 }) {
@@ -196,21 +104,12 @@ export function copyBudgetedModeLayer({
     targetColorSlots.fill(0, 0, targetLength);
   }
 
-  for (
-    let selectedIndex = 0;
-    selectedIndex < selectedIndices.length && selectedIndex < resolvedCapacity;
-    selectedIndex += 1
-  ) {
-    const sourceSlotIndex = selectedIndices[selectedIndex] * 4;
-    const targetSlotIndex = selectedIndex * 4;
-    copySlot4(sourceSlots, sourceSlotIndex, targetSlots, targetSlotIndex);
+  for (let slotIndex = 0; slotIndex < resolvedCapacity; slotIndex += 1) {
+    const sourceOffset = slotIndex * 4;
+    const targetOffset = slotIndex * 4;
+    copySlot4(sourceSlots, sourceOffset, targetSlots, targetOffset);
     if (includeColors && targetColorSlots) {
-      copySlot4(
-        sourceColorSlots,
-        sourceSlotIndex,
-        targetColorSlots,
-        targetSlotIndex,
-      );
+      copySlot4(sourceColorSlots, sourceOffset, targetColorSlots, targetOffset);
     }
   }
 }
@@ -293,16 +192,14 @@ export function buildRaymarchPerformanceGovernor({
   requestedRenderScale = 1,
   cavityGeometry = "rectangular",
 }) {
-  const backbone = buildBudgetedModeLayer({
+  const backbone = analyzeFullModeLayer({
     slots: backboneSlots,
     capacity: backboneCapacity,
-    layerType: "backbone",
     cavityGeometry,
   });
-  const detail = buildBudgetedModeLayer({
+  const detail = analyzeFullModeLayer({
     slots: detailSlots,
     capacity: detailCapacity,
-    layerType: "detail",
     cavityGeometry,
   });
 

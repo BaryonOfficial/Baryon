@@ -112,9 +112,10 @@ const DEBUG_METRIC_TOOLTIPS = {
   Exit: "Estimated early-exit ratio in the raymarch. Higher values usually mean more rays are terminating sooner.",
   Volume: "Whether the volumetric field is currently considered visible.",
   Rendered:
-    "Backbone/detail modal slots actually uploaded to the renderer after budget selection.",
-  Drop: "Analyzer modal slots dropped by the raymarch render budget this frame.",
-  Retain: "Amplitude energy retained by the uploaded raymarch modal budget.",
+    "Backbone/detail modal slots uploaded from the canonical descriptor.",
+  Desc: "Current canonical descriptor field authority.",
+  Overflow:
+    "Whether the observer produced more valid modes than descriptor capacity.",
   Chroma:
     "Maximum Spectral Light color weight uploaded for backbone/detail layers.",
   Flux: "Weighted spectral-flux contribution to Change. Higher values mean more fresh frequency-bin motion.",
@@ -407,12 +408,12 @@ export default function ParticleDebugOverlay({
       }`,
     },
     {
-      label: "Drop",
-      value: debugSnapshot.renderedDroppedModeCount ?? "n/a",
+      label: "Desc",
+      value: debugSnapshot.modalDescriptorFieldAuthority ?? "n/a",
     },
     {
-      label: "Retain",
-      value: formatNumber(debugSnapshot.renderedRetainedEnergyRatio, 2),
+      label: "Overflow",
+      value: debugSnapshot.modalDescriptorOverflow ? "yes" : "no",
     },
     {
       label: "Chroma",

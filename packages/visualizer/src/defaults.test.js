@@ -33,12 +33,24 @@ describe("defaults compatibility surface", () => {
   });
 
   it("keeps scalar audio constants aligned with slot-domain defaults", () => {
-    expect(DEFAULT_FFT_SIZE).toBe(4096);
+    expect(DEFAULT_FFT_SIZE).toBe(8192);
     expect(DEFAULT_SAMPLE_RATE).toBe(44100);
     expect(AUDIO_SLOT_CAPACITY).toBe(
       AUDIO_DEFAULTS.backboneStackSlots + AUDIO_DEFAULTS.detailStackSlots,
     );
-    expect(AUDIO_DEFAULTS.signalNormalizationSlots).toBe(AUDIO_SLOT_CAPACITY);
+    expect(AUDIO_DEFAULTS.maxBackboneDescriptorModes).toBe(
+      AUDIO_DEFAULTS.backboneStackSlots,
+    );
+    expect(AUDIO_DEFAULTS.maxDetailDescriptorModes).toBe(
+      AUDIO_DEFAULTS.detailStackSlots,
+    );
+    expect(AUDIO_DEFAULTS.maxTotalDescriptorModes).toBe(AUDIO_SLOT_CAPACITY);
+    expect(AUDIO_DEFAULTS.signalNormalizationSlots).toBe(
+      Math.max(
+        AUDIO_DEFAULTS.maxBackboneDescriptorModes,
+        AUDIO_DEFAULTS.maxDetailDescriptorModes,
+      ),
+    );
   });
 
   it("keeps DEFAULTS exactly aligned with the merged domain defaults", () => {

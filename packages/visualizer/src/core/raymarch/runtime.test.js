@@ -250,6 +250,42 @@ function createActiveFeatureFrame(overrides = {}) {
   };
 }
 
+function makeModeSlots(count, amplitudeAt = () => 0.25) {
+  const slots = new Float32Array(count * 4);
+  for (let index = 0; index < count; index += 1) {
+    const offset = index * 4;
+    slots[offset] = (index % 5) + 1;
+    slots[offset + 1] = ((index + 1) % 7) + 1;
+    slots[offset + 2] = ((index + 2) % 9) + 1;
+    slots[offset + 3] = amplitudeAt(index);
+  }
+  return slots;
+}
+
+function makeColorSlots(count) {
+  const slots = new Float32Array(count * 4);
+  for (let index = 0; index < count; index += 1) {
+    const offset = index * 4;
+    slots[offset] = 0.2 + index * 0.01;
+    slots[offset + 1] = 0.4;
+    slots[offset + 2] = 0.7;
+    slots[offset + 3] = 0.8;
+  }
+  return slots;
+}
+
+function makePhaseSlots(count) {
+  const slots = new Float32Array(count * 4);
+  for (let index = 0; index < count; index += 1) {
+    const offset = index * 4;
+    slots[offset] = index * 0.05;
+    slots[offset + 1] = 0.2 + index * 0.01;
+    slots[offset + 2] = 0.9;
+    slots[offset + 3] = 0.8;
+  }
+  return slots;
+}
+
 describe("tickRaymarchRuntime", () => {
   it("does not own envelope-derived display radiance limiting", () => {
     const source = readFileSync(
@@ -263,6 +299,100 @@ describe("tickRaymarchRuntime", () => {
     expect(source).not.toMatch(
       /display(?:Bloom|Highlight|Radiance).*(?:responseEnvelope|accentEnvelope|bloomResponseSignal)/s,
     );
+  });
+
+  it("uploads every descriptor mode and phase entry up to descriptor capacity", () => {
+    const runtimeState = createRuntimeState();
+    runtimeState.backboneCapacity = 10;
+    runtimeState.detailCapacity = 10;
+    runtimeState.backbonePhaseCapacity = 10;
+    runtimeState.detailPhaseCapacity = 10;
+    runtimeState.backboneModeBuffer.value.array = new Float32Array(40);
+    runtimeState.detailModeBuffer.value.array = new Float32Array(40);
+    runtimeState.backboneColorBuffer.value.array = new Float32Array(40);
+    runtimeState.detailColorBuffer.value.array = new Float32Array(40);
+    runtimeState.backbonePhaseBuffer.value.array = new Float32Array(40);
+    runtimeState.detailPhaseBuffer.value.array = new Float32Array(40);
+    const featureFrame = createActiveFeatureFrame({
+      backboneSlots: makeModeSlots(10, (index) => (index === 0 ? 1 : 0.08)),
+      detailSlots: makeModeSlots(10, (index) => (index === 0 ? 0.9 : 0.06)),
+      backboneColorSlots: makeColorSlots(10),
+      detailColorSlots: makeColorSlots(10),
+      backbonePhaseSlots: makePhaseSlots(10),
+      detailPhaseSlots: makePhaseSlots(10),
+      activeBackboneModeCount: 10,
+      activeDetailModeCount: 10,
+      activeModeCount: 20,
+      modalPhaseAuthority: 1,
+    });
+
+    tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
+
+    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(10);
+    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(10);
+    expect(runtimeState.uniforms.uActiveModeCount.value).toBe(20);
+    expect(runtimeState.phaseCoherentFieldModeCount).toBe(20);
+    expect(runtimeState.currentModalDescriptor).toMatchObject({
+      capacity: {
+        maxBackboneModes: 10,
+        maxDetailModes: 10,
+        maxTotalModes: 20,
+      },
+      counts: {
+        validBackboneModeCount: 10,
+        validDetailModeCount: 10,
+        validModeCount: 20,
+        overflowBackboneModeCount: 0,
+        overflowDetailModeCount: 0,
+      },
+      diagnostics: {
+        descriptorOverflow: false,
+      },
+    });
+    expect(
+      runtimeState.performanceGovernor.backbone.selectedIndices,
+    ).toBeUndefined();
+    expect(
+      runtimeState.performanceGovernor.detail.selectedIndices,
+    ).toBeUndefined();
+  });
+
+  it("blocks complete field authority when descriptor capacity overflows", () => {
+    const runtimeState = createRuntimeState();
+    runtimeState.backboneCapacity = 2;
+    runtimeState.detailCapacity = 2;
+    runtimeState.backbonePhaseCapacity = 2;
+    runtimeState.detailPhaseCapacity = 2;
+    runtimeState.backboneModeBuffer.value.array = new Float32Array(8);
+    runtimeState.detailModeBuffer.value.array = new Float32Array(8);
+    runtimeState.backbonePhaseBuffer.value.array = new Float32Array(8);
+    runtimeState.detailPhaseBuffer.value.array = new Float32Array(8);
+    const featureFrame = createActiveFeatureFrame({
+      backboneSlots: makeModeSlots(3, () => 0.4),
+      detailSlots: makeModeSlots(3, () => 0.35),
+      backboneColorSlots: makeColorSlots(3),
+      detailColorSlots: makeColorSlots(3),
+      backbonePhaseSlots: makePhaseSlots(3),
+      detailPhaseSlots: makePhaseSlots(3),
+      activeBackboneModeCount: 3,
+      activeDetailModeCount: 3,
+      activeModeCount: 6,
+      modalPhaseAuthority: 1,
+    });
+
+    tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
+
+    expect(
+      runtimeState.currentModalDescriptor.diagnostics.descriptorOverflow,
+    ).toBe(true);
+    expect(runtimeState.currentModalDescriptor.fieldAuthority).toBe("blocked");
+    expect(runtimeState.debugSnapshot.modalDescriptorOverflow).toBe(true);
+    expect(runtimeState.debugSnapshot.modalDescriptorFieldAuthority).toBe(
+      "blocked",
+    );
+    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
   });
 
   it("creates a self-lit scene root with weak symmetric fill lights", () => {
@@ -435,11 +565,19 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.debugSnapshot.raymarchDebug.renderedDetailAmplitudeTotal,
     ).toBeCloseTo(0.95);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.renderedDroppedModeCount,
-    ).toBe(0);
+      runtimeState.debugSnapshot.raymarchDebug.modalDescriptorOverflow,
+    ).toBe(false);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.renderedRetainedEnergyRatio,
-    ).toBe(1);
+      runtimeState.debugSnapshot.raymarchDebug.modalDescriptorFieldAuthority,
+    ).toBe("complete");
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .modalDescriptorValidBackboneModeCount,
+    ).toBe(2);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .modalDescriptorValidDetailModeCount,
+    ).toBe(2);
     expect(runtimeState.debugSnapshot.raymarchDebug.boundaryMode).toBe(
       "neumann",
     );
@@ -1303,7 +1441,9 @@ describe("tickRaymarchRuntime", () => {
   it("ignores stale phase-coherent field completions after render-authority reset", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
-    runtimeState.phaseCoherentFieldCache.computeNodesByKey["rectangular:neumann"] = {
+    runtimeState.phaseCoherentFieldCache.computeNodesByKey[
+      "rectangular:neumann"
+    ] = {
       id: "phase",
     };
     let resolvePhase;
@@ -1909,8 +2049,8 @@ describe("tickRaymarchRuntime", () => {
       Array.from(staticRuntimeState.detailModeBuffer.value.array.slice(0, 12)),
     );
     expect(
-      spectralRuntimeState.performanceGovernor.detail.selectedIndices,
-    ).toEqual(staticRuntimeState.performanceGovernor.detail.selectedIndices);
+      spectralRuntimeState.performanceGovernor.detail.uploadedActiveCount,
+    ).toBe(staticRuntimeState.performanceGovernor.detail.uploadedActiveCount);
     expect(spectralRuntimeState.detailColorBuffer.value.needsUpdate).toBe(true);
   });
 
@@ -1937,7 +2077,7 @@ describe("tickRaymarchRuntime", () => {
       complexityScore: 0.25,
       excitation: 0.2,
       originalModeCount: 3,
-      uploadedModeCount: 1,
+      uploadedModeCount: 3,
       countLoad: 0.1,
       weightedPermutationLoad: 0.1,
       proactiveStepBudget: 64,
@@ -1948,24 +2088,20 @@ describe("tickRaymarchRuntime", () => {
       backbone: {
         capacity: 8,
         originalActiveCount: 2,
-        uploadedActiveCount: 1,
+        uploadedActiveCount: 2,
         totalAmplitude: 1.7,
-        uploadedAmplitude: 0.9,
-        retainedEnergyRatio: 0.53,
+        uploadedAmplitude: 1.7,
         weightedPermutationLoad: 0,
         averagePermutationCost: 0,
-        selectedIndices: [1],
       },
       detail: {
         capacity: 8,
         originalActiveCount: 1,
-        uploadedActiveCount: 0,
+        uploadedActiveCount: 1,
         totalAmplitude: 0.5,
-        uploadedAmplitude: 0,
-        retainedEnergyRatio: 0,
+        uploadedAmplitude: 0.5,
         weightedPermutationLoad: 0,
         averagePermutationCost: 0,
-        selectedIndices: [],
       },
     };
     runtimeState.pendingRaymarchPerformanceGovernor = {
@@ -1984,9 +2120,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.pendingRaymarchPerformanceGovernor).toBeNull();
     expect(
       Array.from(runtimeState.backboneModeBuffer.value.array.slice(0, 4)),
-    ).toEqual([8, 9, 10, expect.closeTo(0.9, 5)]);
-    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(1);
-    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(0);
+    ).toEqual([1, 2, 3, expect.closeTo(0.8, 5)]);
+    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(2);
+    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(1);
   });
 
   it("keeps static color off the Spectral Light cache path", () => {

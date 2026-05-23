@@ -871,12 +871,12 @@ test("adaptive raymarch prepares the current frame governor for runtime reuse", 
   });
   expect(
     runtimeState.pendingRaymarchPerformanceGovernor.governor.backbone
-      .selectedIndices,
-  ).toEqual([0, 1]);
+      .uploadedActiveCount,
+  ).toBe(2);
   expect(
     runtimeState.pendingRaymarchPerformanceGovernor.governor.detail
-      .selectedIndices,
-  ).toEqual([0]);
+      .uploadedActiveCount,
+  ).toBe(1);
 });
 
 test("external-output custom 120 starts from the calibrated base rung and scale", () => {
