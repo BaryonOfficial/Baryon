@@ -254,6 +254,28 @@ export function shouldReuseIdleFrame(status, controls) {
   );
 }
 
+const EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS = Object.freeze({
+  effectiveFieldActive: false,
+  effectiveFieldReady: false,
+  effectiveFieldRebuildPending: false,
+  effectiveFieldBackend: "compute",
+  effectiveFieldResolution: 0,
+  effectiveFieldRebuildCount: 0,
+  effectiveFieldRebuildReason: "uninitialized",
+  effectiveFieldDescriptorFresh: false,
+  effectiveFieldQueuedDescriptorPending: false,
+  effectiveFieldLastError: null,
+  effectiveFieldModeCount: 0,
+  effectiveFieldAuthority: 0,
+  effectiveFieldModeIdentityRetentionRatio: 1,
+  effectiveFieldMaxRepresentableModeIndex: 0,
+  effectiveFieldContributingModeCount: 0,
+  effectiveFieldContributingModalEnergy: 0,
+  effectiveFieldBandwidthRejectedModeCount: 0,
+  effectiveFieldBandwidthRejectedModalEnergy: 0,
+  effectiveFieldGradientEnvelope: 0,
+});
+
 export function createRuntimeDiagnostics() {
   return {
     activeFrameCount: 0,
@@ -325,15 +347,7 @@ export function createRuntimeDiagnostics() {
       observationSupportMax: 0,
       observedDensityFloorMax: 0,
       observedContourSupportMax: 0,
-      effectiveFieldActive: false,
-      effectiveFieldReady: false,
-      effectiveFieldRebuildPending: false,
-      effectiveFieldBackend: "compute",
-      effectiveFieldResolution: 0,
-      effectiveFieldRebuildCount: 0,
-      effectiveFieldLastError: null,
-      effectiveFieldModeCount: 0,
-      effectiveFieldAuthority: 0,
+      ...EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS,
     },
     modalFreshness: createModalFreshnessDiagnostics(),
     postProcess: createPostProcessDiagnostics(),
@@ -372,6 +386,14 @@ function readFiniteNumber(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function snapshotEffectiveFieldRenderDiagnostics(renderDiagnostics = null) {
+  return Object.fromEntries(
+    Object.entries(EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS).map(
+      ([key, fallback]) => [key, renderDiagnostics?.[key] ?? fallback],
+    ),
+  );
+}
+
 export function updateObservationTransferRenderDiagnostics(
   runtimeDiagnostics,
   debugSnapshot,
@@ -384,6 +406,8 @@ export function updateObservationTransferRenderDiagnostics(
 
   const raymarchDebug = debugSnapshot?.raymarchDebug ?? debugSnapshot ?? {};
   const effectiveFieldCache = runtimeState?.effectiveFieldCache ?? null;
+  const effectiveFieldDescriptor =
+    runtimeState?.currentEffectiveFieldDescriptor ?? null;
   renderDiagnostics.observationEnergy = readFiniteNumber(
     raymarchDebug.observationEnergy,
   );
@@ -412,7 +436,7 @@ export function updateObservationTransferRenderDiagnostics(
   renderDiagnostics.effectiveFieldBackend =
     raymarchDebug.effectiveFieldBackend ??
     effectiveFieldCache?.backend ??
-    "compute";
+    EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS.effectiveFieldBackend;
   renderDiagnostics.effectiveFieldResolution = readFiniteNumber(
     raymarchDebug.effectiveFieldResolution ?? effectiveFieldCache?.resolution,
   );
@@ -420,10 +444,21 @@ export function updateObservationTransferRenderDiagnostics(
     raymarchDebug.effectiveFieldRebuildCount ??
       effectiveFieldCache?.rebuildCount,
   );
+  renderDiagnostics.effectiveFieldRebuildReason =
+    raymarchDebug.effectiveFieldRebuildReason ??
+    effectiveFieldCache?.lastRebuildReason ??
+    EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS.effectiveFieldRebuildReason;
+  renderDiagnostics.effectiveFieldDescriptorFresh = Boolean(
+    raymarchDebug.effectiveFieldDescriptorFresh,
+  );
+  renderDiagnostics.effectiveFieldQueuedDescriptorPending = Boolean(
+    raymarchDebug.effectiveFieldQueuedDescriptorPending ??
+    effectiveFieldCache?.queuedDescriptor,
+  );
   renderDiagnostics.effectiveFieldLastError =
     raymarchDebug.effectiveFieldLastError ??
     effectiveFieldCache?.lastError ??
-    null;
+    EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS.effectiveFieldLastError;
   renderDiagnostics.effectiveFieldModeCount = readFiniteNumber(
     raymarchDebug.effectiveFieldModeCount ??
       effectiveFieldCache?.activeEffectiveFieldModeCount ??
@@ -432,7 +467,44 @@ export function updateObservationTransferRenderDiagnostics(
   renderDiagnostics.effectiveFieldAuthority = readFiniteNumber(
     raymarchDebug.effectiveFieldAuthority ??
       effectiveFieldCache?.effectiveFieldAuthority ??
-      runtimeState?.currentEffectiveFieldDescriptor?.phaseAuthority,
+      effectiveFieldDescriptor?.phaseAuthority,
+  );
+  renderDiagnostics.effectiveFieldModeIdentityRetentionRatio = readFiniteNumber(
+    raymarchDebug.effectiveFieldModeIdentityRetentionRatio ??
+      effectiveFieldCache?.modeIdentityRetentionRatio ??
+      effectiveFieldDescriptor?.modeIdentityRetentionRatio,
+    EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS.effectiveFieldModeIdentityRetentionRatio,
+  );
+  renderDiagnostics.effectiveFieldMaxRepresentableModeIndex = readFiniteNumber(
+    raymarchDebug.effectiveFieldMaxRepresentableModeIndex ??
+      effectiveFieldCache?.effectiveFieldMaxRepresentableModeIndex ??
+      effectiveFieldDescriptor?.effectiveFieldMaxRepresentableModeIndex,
+  );
+  renderDiagnostics.effectiveFieldContributingModeCount = readFiniteNumber(
+    raymarchDebug.effectiveFieldContributingModeCount ??
+      effectiveFieldCache?.contributingEffectiveFieldModeCount ??
+      effectiveFieldDescriptor?.contributingEffectiveFieldModeCount,
+  );
+  renderDiagnostics.effectiveFieldContributingModalEnergy = readFiniteNumber(
+    raymarchDebug.effectiveFieldContributingModalEnergy ??
+      effectiveFieldCache?.contributingModalEnergy ??
+      effectiveFieldDescriptor?.contributingModalEnergy,
+  );
+  renderDiagnostics.effectiveFieldBandwidthRejectedModeCount = readFiniteNumber(
+    raymarchDebug.effectiveFieldBandwidthRejectedModeCount ??
+      effectiveFieldCache?.bandwidthRejectedModeCount ??
+      effectiveFieldDescriptor?.bandwidthRejectedModeCount,
+  );
+  renderDiagnostics.effectiveFieldBandwidthRejectedModalEnergy =
+    readFiniteNumber(
+      raymarchDebug.effectiveFieldBandwidthRejectedModalEnergy ??
+        effectiveFieldCache?.bandwidthRejectedModalEnergy ??
+        effectiveFieldDescriptor?.bandwidthRejectedModalEnergy,
+    );
+  renderDiagnostics.effectiveFieldGradientEnvelope = readFiniteNumber(
+    raymarchDebug.effectiveFieldGradientEnvelope ??
+      effectiveFieldCache?.effectiveFieldGradientEnvelope ??
+      effectiveFieldDescriptor?.effectiveFieldGradientEnvelope,
   );
 
   return runtimeDiagnostics;
@@ -589,24 +661,7 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
         runtimeDiagnostics?.render?.observedDensityFloorMax ?? 0,
       observedContourSupportMax:
         runtimeDiagnostics?.render?.observedContourSupportMax ?? 0,
-      effectiveFieldActive:
-        runtimeDiagnostics?.render?.effectiveFieldActive ?? false,
-      effectiveFieldReady:
-        runtimeDiagnostics?.render?.effectiveFieldReady ?? false,
-      effectiveFieldRebuildPending:
-        runtimeDiagnostics?.render?.effectiveFieldRebuildPending ?? false,
-      effectiveFieldBackend:
-        runtimeDiagnostics?.render?.effectiveFieldBackend ?? "compute",
-      effectiveFieldResolution:
-        runtimeDiagnostics?.render?.effectiveFieldResolution ?? 0,
-      effectiveFieldRebuildCount:
-        runtimeDiagnostics?.render?.effectiveFieldRebuildCount ?? 0,
-      effectiveFieldLastError:
-        runtimeDiagnostics?.render?.effectiveFieldLastError ?? null,
-      effectiveFieldModeCount:
-        runtimeDiagnostics?.render?.effectiveFieldModeCount ?? 0,
-      effectiveFieldAuthority:
-        runtimeDiagnostics?.render?.effectiveFieldAuthority ?? 0,
+      ...snapshotEffectiveFieldRenderDiagnostics(runtimeDiagnostics?.render),
     },
     postProcess: {
       traaNodeActive: runtimeDiagnostics?.postProcess?.traaNodeActive ?? false,

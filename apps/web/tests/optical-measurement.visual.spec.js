@@ -173,6 +173,8 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
     let negativeSpaceCount = 0;
     let broadWashCount = 0;
     let brightPlateCount = 0;
+    let nearWhiteCount = 0;
+    let brightLowSaturationCount = 0;
     let centralSampleCount = 0;
     const gridValues = [];
     const centralNonblack = [];
@@ -190,6 +192,19 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
             0.0722 * data[index + 2]) /
             255) *
           alpha;
+        const maxChannel = Math.max(
+          data[index],
+          data[index + 1],
+          data[index + 2],
+        );
+        const minChannel = Math.min(
+          data[index],
+          data[index + 1],
+          data[index + 2],
+        );
+        const brightness = (maxChannel / 255) * alpha;
+        const saturation =
+          maxChannel > 0 ? (maxChannel - minChannel) / maxChannel : 0;
         const isCentral =
           x >= width * 0.15 &&
           x <= width * 0.85 &&
@@ -214,6 +229,12 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
         }
         if (value > 0.42) {
           brightPlateCount += 1;
+        }
+        if (brightness >= 0.78 && saturation < 0.22) {
+          nearWhiteCount += 1;
+        }
+        if (brightness >= 0.72 && saturation < 0.32) {
+          brightLowSaturationCount += 1;
         }
       }
       gridWidth = Math.max(gridWidth, rowWidth);
@@ -278,6 +299,9 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
       broadWashRatio: broadWashCount / luminance.length,
       brightPlateRatio:
         nonblackCount === 0 ? 0 : brightPlateCount / nonblackCount,
+      nearWhitePixelRatio: nearWhiteCount / luminance.length,
+      brightLowSaturationPixelRatio:
+        brightLowSaturationCount / luminance.length,
       centralConnectedNonblackRatio:
         centralSampleCount === 0
           ? 0
@@ -486,6 +510,8 @@ test.describe("laser cymatic optical measurement visual audit", () => {
     expect(firstFrame.contrastRatio).toBeGreaterThanOrEqual(3.0);
     expect(firstFrame.broadWashRatio).toBeLessThan(0.38);
     expect(firstFrame.brightPlateRatio).toBeLessThan(0.38);
+    expect(firstFrame.nearWhitePixelRatio).toBeLessThan(0.24);
+    expect(firstFrame.brightLowSaturationPixelRatio).toBeLessThan(0.34);
     expect(firstFrame.centralConnectedNonblackRatio).toBeGreaterThan(0.01);
     expect(coefficientOfVariation(frames.map((frame) => frame.p98))).toBeLessThan(
       0.18,

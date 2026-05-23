@@ -5,6 +5,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installLocalStorageMock } from "../test/installLocalStorageMock.js";
+import { SETTINGS_KEY } from "../components/hooks/baryonControlsState.js";
 import { createControlsStore } from "./controlsStore.js";
 
 const markBaryonTestControlsReady = vi.fn();
@@ -95,6 +96,30 @@ describe("ControlsProvider bridges", () => {
     });
 
     expect(store.getSnapshot().controlsState.backgroundColor).toBe("#556677");
+
+    await act(async () => {
+      view.root.unmount();
+    });
+  });
+
+  it("applies non-persistent external controls without saving settings", async () => {
+    const store = createControlsStore();
+    const view = await renderProvider(store);
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("__baryon-controls-command", {
+          detail: {
+            key: "backgroundColor",
+            value: "#778899",
+            persistMode: "none",
+          },
+        }),
+      );
+    });
+
+    expect(store.getSnapshot().controlsState.backgroundColor).toBe("#778899");
+    expect(window.localStorage.getItem(SETTINGS_KEY)).toBeNull();
 
     await act(async () => {
       view.root.unmount();

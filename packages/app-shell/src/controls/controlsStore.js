@@ -100,6 +100,9 @@ export function createControlsStore({ storage = getBrowserStorage() } = {}) {
     if (clearPresetSelection) {
       state.selectedPresetName = "";
     }
+    if (persistMode === "none") {
+      return emit();
+    }
     if (persistMode === "immediate") {
       persistScheduler.flush(nextControls);
     } else {

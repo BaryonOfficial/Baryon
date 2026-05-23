@@ -148,9 +148,19 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
         effectiveFieldBackend: "compute",
         effectiveFieldResolution: 32,
         effectiveFieldRebuildCount: 7,
+        effectiveFieldRebuildReason: "descriptor-change",
+        effectiveFieldDescriptorFresh: true,
+        effectiveFieldQueuedDescriptorPending: false,
         effectiveFieldLastError: null,
         effectiveFieldModeCount: 6,
         effectiveFieldAuthority: 0.42,
+        effectiveFieldModeIdentityRetentionRatio: 0.73,
+        effectiveFieldMaxRepresentableModeIndex: 27,
+        effectiveFieldContributingModeCount: 5,
+        effectiveFieldContributingModalEnergy: 0.64,
+        effectiveFieldBandwidthRejectedModeCount: 2,
+        effectiveFieldBandwidthRejectedModalEnergy: 0.19,
+        effectiveFieldGradientEnvelope: 0.38,
       },
     });
 
@@ -164,9 +174,23 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
     expect(snapshot.render.effectiveFieldBackend).toBe("compute");
     expect(snapshot.render.effectiveFieldResolution).toBe(32);
     expect(snapshot.render.effectiveFieldRebuildCount).toBe(7);
+    expect(snapshot.render.effectiveFieldRebuildReason).toBe(
+      "descriptor-change",
+    );
+    expect(snapshot.render.effectiveFieldDescriptorFresh).toBe(true);
+    expect(snapshot.render.effectiveFieldQueuedDescriptorPending).toBe(false);
     expect(snapshot.render.effectiveFieldLastError).toBeNull();
     expect(snapshot.render.effectiveFieldModeCount).toBe(6);
     expect(snapshot.render.effectiveFieldAuthority).toBe(0.42);
+    expect(snapshot.render.effectiveFieldModeIdentityRetentionRatio).toBe(0.73);
+    expect(snapshot.render.effectiveFieldMaxRepresentableModeIndex).toBe(27);
+    expect(snapshot.render.effectiveFieldContributingModeCount).toBe(5);
+    expect(snapshot.render.effectiveFieldContributingModalEnergy).toBe(0.64);
+    expect(snapshot.render.effectiveFieldBandwidthRejectedModeCount).toBe(2);
+    expect(snapshot.render.effectiveFieldBandwidthRejectedModalEnergy).toBe(
+      0.19,
+    );
+    expect(snapshot.render.effectiveFieldGradientEnvelope).toBe(0.38);
   } finally {
     globalThis.window = previousWindow;
   }
@@ -186,9 +210,17 @@ test("publishes effective field diagnostics from runtime state when audit is dis
         backend: "compute",
         resolution: 32,
         rebuildCount: 9,
+        lastRebuildReason: "modal-descriptor",
         lastError: null,
         activeEffectiveFieldModeCount: 6,
         effectiveFieldAuthority: 0.37,
+        modeIdentityRetentionRatio: 0.61,
+        effectiveFieldMaxRepresentableModeIndex: 31,
+        contributingEffectiveFieldModeCount: 4,
+        contributingModalEnergy: 0.72,
+        bandwidthRejectedModeCount: 3,
+        bandwidthRejectedModalEnergy: 0.22,
+        effectiveFieldGradientEnvelope: 0.45,
       },
     });
 
@@ -202,9 +234,21 @@ test("publishes effective field diagnostics from runtime state when audit is dis
     expect(snapshot.render.effectiveFieldBackend).toBe("compute");
     expect(snapshot.render.effectiveFieldResolution).toBe(32);
     expect(snapshot.render.effectiveFieldRebuildCount).toBe(9);
+    expect(snapshot.render.effectiveFieldRebuildReason).toBe(
+      "modal-descriptor",
+    );
     expect(snapshot.render.effectiveFieldLastError).toBeNull();
     expect(snapshot.render.effectiveFieldModeCount).toBe(6);
     expect(snapshot.render.effectiveFieldAuthority).toBe(0.37);
+    expect(snapshot.render.effectiveFieldModeIdentityRetentionRatio).toBe(0.61);
+    expect(snapshot.render.effectiveFieldMaxRepresentableModeIndex).toBe(31);
+    expect(snapshot.render.effectiveFieldContributingModeCount).toBe(4);
+    expect(snapshot.render.effectiveFieldContributingModalEnergy).toBe(0.72);
+    expect(snapshot.render.effectiveFieldBandwidthRejectedModeCount).toBe(3);
+    expect(snapshot.render.effectiveFieldBandwidthRejectedModalEnergy).toBe(
+      0.22,
+    );
+    expect(snapshot.render.effectiveFieldGradientEnvelope).toBe(0.45);
   } finally {
     globalThis.window = previousWindow;
   }
