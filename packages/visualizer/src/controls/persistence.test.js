@@ -44,15 +44,6 @@ describe("serializeControls", () => {
     expect(serialized).not.toHaveProperty("cavityGeometry");
   });
 
-  it("keeps field cache override out of preset serialization while it is debug-only", () => {
-    const state = createControlState();
-    state.fieldCacheOverride = "direct";
-
-    const serialized = serializeControls(state, CONTROL_DEFINITIONS);
-
-    expect(serialized).not.toHaveProperty("fieldCacheOverride");
-  });
-
   it("preserves the values from the control state", () => {
     const state = createControlState();
     state.bloomStrength = 1.5;

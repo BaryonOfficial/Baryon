@@ -325,15 +325,15 @@ export function createRuntimeDiagnostics() {
       observationSupportMax: 0,
       observedDensityFloorMax: 0,
       observedContourSupportMax: 0,
-      phaseCoherentFieldActive: false,
-      phaseCoherentFieldReady: false,
-      phaseCoherentFieldPending: false,
-      phaseCoherentFieldBackend: "compute",
-      phaseCoherentFieldResolution: 0,
-      phaseCoherentFieldRebuildCount: 0,
-      phaseCoherentFieldLastError: null,
-      phaseCoherentFieldModeCount: 0,
-      phaseCoherentFieldAuthority: 0,
+      effectiveFieldActive: false,
+      effectiveFieldReady: false,
+      effectiveFieldRebuildPending: false,
+      effectiveFieldBackend: "compute",
+      effectiveFieldResolution: 0,
+      effectiveFieldRebuildCount: 0,
+      effectiveFieldLastError: null,
+      effectiveFieldModeCount: 0,
+      effectiveFieldAuthority: 0,
     },
     modalFreshness: createModalFreshnessDiagnostics(),
     postProcess: createPostProcessDiagnostics(),
@@ -383,8 +383,7 @@ export function updateObservationTransferRenderDiagnostics(
   }
 
   const raymarchDebug = debugSnapshot?.raymarchDebug ?? debugSnapshot ?? {};
-  const phaseCoherentFieldCache = runtimeState?.phaseCoherentFieldCache ?? null;
-  const phaseCoherentFieldUniforms = runtimeState?.uniforms ?? {};
+  const effectiveFieldCache = runtimeState?.effectiveFieldCache ?? null;
   renderDiagnostics.observationEnergy = readFiniteNumber(
     raymarchDebug.observationEnergy,
   );
@@ -400,40 +399,40 @@ export function updateObservationTransferRenderDiagnostics(
   renderDiagnostics.observedContourSupportMax = readFiniteNumber(
     raymarchDebug.observedContourSupportMax,
   );
-  renderDiagnostics.phaseCoherentFieldActive = Boolean(
-    raymarchDebug.phaseCoherentFieldActive ?? phaseCoherentFieldCache?.active,
+  renderDiagnostics.effectiveFieldActive = Boolean(
+    raymarchDebug.effectiveFieldActive ?? effectiveFieldCache?.active,
   );
-  renderDiagnostics.phaseCoherentFieldReady = Boolean(
-    raymarchDebug.phaseCoherentFieldReady ?? phaseCoherentFieldCache?.ready,
+  renderDiagnostics.effectiveFieldReady = Boolean(
+    raymarchDebug.effectiveFieldReady ?? effectiveFieldCache?.ready,
   );
-  renderDiagnostics.phaseCoherentFieldPending = Boolean(
-    raymarchDebug.phaseCoherentFieldPending ??
-      phaseCoherentFieldCache?.rebuildPending,
+  renderDiagnostics.effectiveFieldRebuildPending = Boolean(
+    raymarchDebug.effectiveFieldRebuildPending ??
+    effectiveFieldCache?.rebuildPending,
   );
-  renderDiagnostics.phaseCoherentFieldBackend =
-    raymarchDebug.phaseCoherentFieldBackend ??
-    phaseCoherentFieldCache?.backend ??
+  renderDiagnostics.effectiveFieldBackend =
+    raymarchDebug.effectiveFieldBackend ??
+    effectiveFieldCache?.backend ??
     "compute";
-  renderDiagnostics.phaseCoherentFieldResolution = readFiniteNumber(
-    raymarchDebug.phaseCoherentFieldResolution ??
-      phaseCoherentFieldCache?.resolution,
+  renderDiagnostics.effectiveFieldResolution = readFiniteNumber(
+    raymarchDebug.effectiveFieldResolution ?? effectiveFieldCache?.resolution,
   );
-  renderDiagnostics.phaseCoherentFieldRebuildCount = readFiniteNumber(
-    raymarchDebug.phaseCoherentFieldRebuildCount ??
-      phaseCoherentFieldCache?.rebuildCount,
+  renderDiagnostics.effectiveFieldRebuildCount = readFiniteNumber(
+    raymarchDebug.effectiveFieldRebuildCount ??
+      effectiveFieldCache?.rebuildCount,
   );
-  renderDiagnostics.phaseCoherentFieldLastError =
-    raymarchDebug.phaseCoherentFieldLastError ??
-    phaseCoherentFieldCache?.lastError ??
+  renderDiagnostics.effectiveFieldLastError =
+    raymarchDebug.effectiveFieldLastError ??
+    effectiveFieldCache?.lastError ??
     null;
-  renderDiagnostics.phaseCoherentFieldModeCount = readFiniteNumber(
-    raymarchDebug.phaseCoherentFieldModeCount ??
-      phaseCoherentFieldCache?.activePhaseCoherentFieldModeCount ??
-      runtimeState?.phaseCoherentFieldModeCount,
+  renderDiagnostics.effectiveFieldModeCount = readFiniteNumber(
+    raymarchDebug.effectiveFieldModeCount ??
+      effectiveFieldCache?.activeEffectiveFieldModeCount ??
+      runtimeState?.effectiveFieldModeCount,
   );
-  renderDiagnostics.phaseCoherentFieldAuthority = readFiniteNumber(
-    raymarchDebug.phaseCoherentFieldAuthority ??
-      phaseCoherentFieldUniforms.uPhaseCoherentFieldAuthority?.value,
+  renderDiagnostics.effectiveFieldAuthority = readFiniteNumber(
+    raymarchDebug.effectiveFieldAuthority ??
+      effectiveFieldCache?.effectiveFieldAuthority ??
+      runtimeState?.currentEffectiveFieldDescriptor?.phaseAuthority,
   );
 
   return runtimeDiagnostics;
@@ -590,24 +589,24 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
         runtimeDiagnostics?.render?.observedDensityFloorMax ?? 0,
       observedContourSupportMax:
         runtimeDiagnostics?.render?.observedContourSupportMax ?? 0,
-      phaseCoherentFieldActive:
-        runtimeDiagnostics?.render?.phaseCoherentFieldActive ?? false,
-      phaseCoherentFieldReady:
-        runtimeDiagnostics?.render?.phaseCoherentFieldReady ?? false,
-      phaseCoherentFieldPending:
-        runtimeDiagnostics?.render?.phaseCoherentFieldPending ?? false,
-      phaseCoherentFieldBackend:
-        runtimeDiagnostics?.render?.phaseCoherentFieldBackend ?? "compute",
-      phaseCoherentFieldResolution:
-        runtimeDiagnostics?.render?.phaseCoherentFieldResolution ?? 0,
-      phaseCoherentFieldRebuildCount:
-        runtimeDiagnostics?.render?.phaseCoherentFieldRebuildCount ?? 0,
-      phaseCoherentFieldLastError:
-        runtimeDiagnostics?.render?.phaseCoherentFieldLastError ?? null,
-      phaseCoherentFieldModeCount:
-        runtimeDiagnostics?.render?.phaseCoherentFieldModeCount ?? 0,
-      phaseCoherentFieldAuthority:
-        runtimeDiagnostics?.render?.phaseCoherentFieldAuthority ?? 0,
+      effectiveFieldActive:
+        runtimeDiagnostics?.render?.effectiveFieldActive ?? false,
+      effectiveFieldReady:
+        runtimeDiagnostics?.render?.effectiveFieldReady ?? false,
+      effectiveFieldRebuildPending:
+        runtimeDiagnostics?.render?.effectiveFieldRebuildPending ?? false,
+      effectiveFieldBackend:
+        runtimeDiagnostics?.render?.effectiveFieldBackend ?? "compute",
+      effectiveFieldResolution:
+        runtimeDiagnostics?.render?.effectiveFieldResolution ?? 0,
+      effectiveFieldRebuildCount:
+        runtimeDiagnostics?.render?.effectiveFieldRebuildCount ?? 0,
+      effectiveFieldLastError:
+        runtimeDiagnostics?.render?.effectiveFieldLastError ?? null,
+      effectiveFieldModeCount:
+        runtimeDiagnostics?.render?.effectiveFieldModeCount ?? 0,
+      effectiveFieldAuthority:
+        runtimeDiagnostics?.render?.effectiveFieldAuthority ?? 0,
     },
     postProcess: {
       traaNodeActive: runtimeDiagnostics?.postProcess?.traaNodeActive ?? false,

@@ -67,10 +67,6 @@ vi.mock("@react-three/fiber", () => ({
   },
 }));
 
-vi.mock("@baryon/visualizer", () => ({
-  resolveRaymarchFieldCacheOverride: () => null,
-}));
-
 vi.mock("@baryon/visualizer/controls/runtime", () => ({
   applyAudioControls: () => Promise.resolve(),
   applySceneControls: () => ({}),
@@ -249,7 +245,8 @@ describe("useBaryonVisualizer", () => {
     visualizationLifecycleState.audioFeatureEngineRef.current = {
       resetMetrics,
     };
-    visualizationLifecycleState.lastAudioIssueSignatureRef.current = "audio-issue";
+    visualizationLifecycleState.lastAudioIssueSignatureRef.current =
+      "audio-issue";
     window.__baryonPerfMetrics = { fps: 12 };
 
     await act(async () => {
@@ -266,9 +263,9 @@ describe("useBaryonVisualizer", () => {
       window.dispatchEvent(new Event("__baryon-reset-perf-metrics"));
     });
 
-    expect(
-      visualizationLifecycleState.runtimeDiagnosticsRef.current,
-    ).not.toBe(previousDiagnostics);
+    expect(visualizationLifecycleState.runtimeDiagnosticsRef.current).not.toBe(
+      previousDiagnostics,
+    );
     expect(
       visualizationLifecycleState.lastAudioIssueSignatureRef.current,
     ).toBeNull();

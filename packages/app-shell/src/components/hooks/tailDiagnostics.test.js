@@ -30,9 +30,9 @@ function createRuntimeDiagnostics(overrides = {}) {
     render: {
       observedDensityFloorMax: 0.07,
       observedContourSupportMax: 0.012,
-      phaseCoherentFieldReady: true,
-      phaseCoherentFieldPending: false,
-      phaseCoherentFieldAuthority: 1,
+      effectiveFieldReady: true,
+      effectiveFieldRebuildPending: false,
+      effectiveFieldAuthority: 1,
       bloomEnabled: false,
       renderScale: 1,
       ...overrides.render,

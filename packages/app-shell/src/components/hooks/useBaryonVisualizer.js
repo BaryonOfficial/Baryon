@@ -211,7 +211,6 @@ export function useBaryonVisualizer({
       if (DEVTOOLS_ENABLED && typeof window !== "undefined") {
         delete window.__baryonAuditSnapshot;
         delete window.__baryonControlState;
-        delete window.__baryonFieldCacheOverride;
       }
       resetBaryonTestReady();
     };

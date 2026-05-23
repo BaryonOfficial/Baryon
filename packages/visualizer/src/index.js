@@ -38,11 +38,6 @@ export {
   VISUALIZATION_METHODS,
 } from "./visualization/types.js";
 export {
-  RAYMARCH_FIELD_CACHE_OVERRIDE_MODES,
-  normalizeRaymarchFieldCacheOverride,
-  resolveRaymarchFieldCacheOverride,
-} from "./visualization/fieldEvaluation.js";
-export {
   OBSERVATION_TRANSFER_REFERENCE,
   deriveObservationTransfer,
   deriveObservationTransferParameters,

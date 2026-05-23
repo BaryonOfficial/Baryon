@@ -33,7 +33,6 @@ import {
   WHITE_EMISSION_CROWDING_REDUCTION,
   SHELL_WEIGHT_MAX,
   SHELL_WEIGHT_MIN,
-  PHASE_COHERENT_GRADIENT_GAIN,
   deriveCausticMaterialTransferProbe,
   deriveLaserCymaticOpticalProbe,
   deriveBeamMask,
@@ -335,7 +334,9 @@ describe("field shaping", () => {
       colorWeight: 0.2,
     });
 
-    expect(focused.signedCausticDensity).toBeCloseTo(smoky.signedCausticDensity);
+    expect(focused.signedCausticDensity).toBeCloseTo(
+      smoky.signedCausticDensity,
+    );
     expect(focused.photographicFocus).toBeGreaterThan(smoky.photographicFocus);
     expect(focused.photographicLaserCausticRadiance).toBeGreaterThan(
       smoky.photographicLaserCausticRadiance * 1.4,
@@ -598,47 +599,6 @@ describe("field shaping", () => {
 
     expect(latched).toBeGreaterThan(0.6);
     expect(reactive).toBeLessThan(latched * 0.2);
-  });
-
-  it("applies phase-coherent field as bounded signed displacement, not positive energy", () => {
-    expect(fieldShaping.derivePhaseCoherentFieldTransfer).toBeTypeOf(
-      "function",
-    );
-
-    const reinforcing = fieldShaping.derivePhaseCoherentFieldTransfer({
-      cachedField: 0.1,
-      phaseCoherentSignedDisplacement: 0.8,
-      phaseCoherentFieldAuthority: 1,
-    });
-    const cancelling = fieldShaping.derivePhaseCoherentFieldTransfer({
-      cachedField: 0.1,
-      phaseCoherentSignedDisplacement: -0.6,
-      phaseCoherentFieldAuthority: 1,
-    });
-    const disabled = fieldShaping.derivePhaseCoherentFieldTransfer({
-      cachedField: 0.1,
-      phaseCoherentSignedDisplacement: -0.6,
-      phaseCoherentFieldAuthority: 0,
-    });
-
-    expect(reinforcing.phaseCoherentFieldContribution).toBeGreaterThan(0);
-    expect(reinforcing.effectiveFieldAbs).toBeGreaterThan(0.1);
-    expect(cancelling.phaseCoherentFieldContribution).toBeLessThan(0);
-    expect(cancelling.effectiveFieldAbs).toBeLessThan(0.1);
-    expect(disabled.phaseCoherentFieldContribution).toBe(0);
-    expect(disabled.effectiveField).toBeCloseTo(0.1);
-  });
-
-  it("uses signed phase gradient as bounded structure support", () => {
-    const supported = fieldShaping.derivePhaseCoherentFieldTransfer({
-      cachedField: 0.1,
-      phaseCoherentSignedDisplacement: 0,
-      phaseCoherentGradientMagnitude: 0.8,
-      phaseCoherentFieldAuthority: 1,
-    });
-
-    expect(PHASE_COHERENT_GRADIENT_GAIN).toBeCloseTo(0.35);
-    expect(supported.phaseCoherentGradientContribution).toBeCloseTo(0.28);
   });
 
   it("does not create body density when sparse bass structure is absent", () => {

@@ -120,14 +120,9 @@ import {
   PHOTOGRAPHIC_SHELL_RIM_START,
   PHOTOGRAPHIC_SHELL_SUPPRESSION_END,
   PHOTOGRAPHIC_SHELL_SUPPRESSION_START,
-  PHASE_COHERENT_FIELD_GAIN,
-  PHASE_COHERENT_FIELD_LIMIT,
-  PHASE_COHERENT_GRADIENT_GAIN,
   SIGNED_INTERFERENCE_BODY_AUTHORITY_END,
   SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER,
   SIGNED_INTERFERENCE_BODY_AUTHORITY_START,
-  SIGNED_INTERFERENCE_RADIANCE_CANCELLATION_POWER,
-  SIGNED_INTERFERENCE_RADIANCE_GATE_MIN,
   RIM_BLOOM_BIAS_BASE,
   RIM_BLOOM_BIAS_GAIN,
   RIM_COMPRESSION_BOUNDARY_GAIN,
@@ -187,7 +182,13 @@ export const RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES = Object.freeze({
 });
 
 function normalizeFieldEvaluationMode(fieldEvaluationMode) {
-  return fieldEvaluationMode === "direct" ? "direct" : "cached";
+  if (fieldEvaluationMode === "direct") {
+    return "direct";
+  }
+  if (fieldEvaluationMode === "unavailable") {
+    return "unavailable";
+  }
+  return "effective-cached";
 }
 
 function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
@@ -219,7 +220,7 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   offsetNode?: any | ((args: { startPosLocal: any, rayDirLocal: any, radiusNode: any }) => any),
  *   fieldEvaluationMode?: string,
  *   spectralLightEvaluationMode?: string,
- *   phaseCoherentFieldTexture?: any
+ *   effectiveFieldTexture?: any
  * }} BaryonVolumeMaterial
  */
 
@@ -459,9 +460,9 @@ function createScatteringNode({
   uniforms,
   boundaryMode = BOUNDARY_MODES.neumann,
   cavityGeometry = "rectangular",
-  fieldCacheTexture = null,
+  fieldEvaluationMode = "effective-cached",
+  effectiveFieldTexture = null,
   spectralLightCacheTexture = null,
-  phaseCoherentFieldTexture = null,
   spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
 }) {
   const {
@@ -507,7 +508,6 @@ function createScatteringNode({
     uObservationTransferGain,
     uObservationDensityFloor,
     uObservationContourSupportScale,
-    uPhaseCoherentFieldAuthority,
   } = uniforms;
   // Uniform-only expressions: hoist outside the Fn so they are loop-invariant
   // at the TSL graph level and do not re-evaluate every raymarch step.
@@ -655,10 +655,6 @@ function createScatteringNode({
       const gradZ = float(0.0).toVar();
       const colorSum = vec3(0.0).toVar();
       const colorWeight = float(0.0).toVar();
-      const phaseCoherentSignedDisplacement = float(0.0).toVar();
-      const phaseCoherentGradientMagnitude = float(0.0).toVar();
-      const phaseCoherentCancellation = float(0.0).toVar();
-      const phaseCoherentFieldAuthority = float(0.0).toVar();
       const spectralLightEnabled = smoothstep(
         float(0.0),
         float(1e-4),
@@ -673,28 +669,20 @@ function createScatteringNode({
         Boolean(spectralLightCacheTexture);
       const spectralLightModeEnabled =
         directSpectralLightEnabled || cachedSpectralLightEnabled;
+      const directFieldEvaluationEnabled = fieldEvaluationMode === "direct";
       const backboneActiveCount = int(uBackboneModeCount);
       const detailActiveCount = int(uDetailModeCount);
-      if (fieldCacheTexture) {
+      if (effectiveFieldTexture) {
         const cacheUv = clamp(
           normalizedPosition.mul(float(0.5)).add(vec3(0.5)),
           vec3(0.0),
           vec3(1.0),
         );
-        const cachedSample = texture3D(fieldCacheTexture).sample(cacheUv);
+        const cachedSample = texture3D(effectiveFieldTexture).sample(cacheUv);
         field.assign(cachedSample.x);
         gradX.assign(cachedSample.y);
         gradY.assign(cachedSample.z);
         gradZ.assign(cachedSample.w);
-
-        if (phaseCoherentFieldTexture) {
-          const phaseCoherentFieldSample =
-            texture3D(phaseCoherentFieldTexture).sample(cacheUv);
-          phaseCoherentSignedDisplacement.assign(phaseCoherentFieldSample.x);
-          phaseCoherentGradientMagnitude.assign(phaseCoherentFieldSample.y);
-          phaseCoherentCancellation.assign(phaseCoherentFieldSample.z);
-          phaseCoherentFieldAuthority.assign(phaseCoherentFieldSample.w);
-        }
 
         if (cachedSpectralLightEnabled) {
           const cacheUv = clamp(
@@ -726,7 +714,7 @@ function createScatteringNode({
             colorWeight,
           });
         }
-      } else {
+      } else if (directFieldEvaluationEnabled) {
         accumulateFieldLayers({
           backboneModeBuffer,
           detailModeBuffer,
@@ -752,53 +740,21 @@ function createScatteringNode({
         });
       }
 
-      const phaseCoherentFieldAuthorityUniform = clamp(
-        uPhaseCoherentFieldAuthority,
-        float(0.0),
-        float(1.0),
-      );
-      const signedCancellationAuthority = clamp(
-        phaseCoherentCancellation
-          .mul(phaseCoherentFieldAuthority)
-          .mul(phaseCoherentFieldAuthorityUniform),
-        float(0.0),
-        float(1.0),
-      );
-      const signedRadianceAuthority = mix(
-        float(1.0),
-        float(SIGNED_INTERFERENCE_RADIANCE_GATE_MIN),
-        signedCancellationAuthority.pow(
-          float(SIGNED_INTERFERENCE_RADIANCE_CANCELLATION_POWER),
-        ),
-      );
-      const signedPhaseContribution = clamp(
-        phaseCoherentSignedDisplacement,
-        float(-PHASE_COHERENT_FIELD_LIMIT),
-        float(PHASE_COHERENT_FIELD_LIMIT),
-      )
-        .mul(phaseCoherentFieldAuthority)
-        .mul(phaseCoherentFieldAuthorityUniform)
-        .mul(float(PHASE_COHERENT_FIELD_GAIN));
-      const effectiveField = field.add(signedPhaseContribution);
+      const effectiveField = field;
       const fieldAbs = abs(effectiveField);
       const gradient = vec3(gradX, gradY, gradZ).toVar();
       const gradientMagnitude = length(gradient);
       const gradientNormal = gradient.div(max(gradientMagnitude, float(1e-4)));
-      const phaseGradientContribution = phaseCoherentGradientMagnitude
-        .mul(phaseCoherentFieldAuthority)
-        .mul(phaseCoherentFieldAuthorityUniform)
-        .mul(float(PHASE_COHERENT_GRADIENT_GAIN));
-      const effectiveGradientMagnitude = gradientMagnitude.add(
-        phaseGradientContribution,
-      );
+      const effectiveGradientMagnitude = gradientMagnitude;
       const amplitudeNorm = max(uTotalSlotAmplitude, float(0.01));
-      // Cached field textures are pre-normalized by their modal amplitude during
-      // compute, so product cached rendering can stay stable across envelope-only
-      // amplitude changes without falling back to direct raymarch evaluation.
-      const normalizedFieldAbs = fieldCacheTexture
+      // Effective field textures are pre-normalized by their modal amplitude
+      // during compute, so product cached rendering can stay stable across
+      // envelope-only amplitude changes without falling back to direct raymarch
+      // evaluation.
+      const normalizedFieldAbs = effectiveFieldTexture
         ? fieldAbs
         : fieldAbs.div(amplitudeNorm);
-      const normalizedGradMagnitude = fieldCacheTexture
+      const normalizedGradMagnitude = effectiveFieldTexture
         ? effectiveGradientMagnitude
         : gradientMagnitude.div(amplitudeNorm);
       const activeCount = float(uActiveModeCount);
@@ -962,9 +918,8 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
-      const causticVisibility = causticRidgeAuthority
-        .mul(signedRadianceAuthority)
-        .mul(excitationVisibility);
+      const causticVisibility =
+        causticRidgeAuthority.mul(excitationVisibility);
       const causticCore = causticFocusAuthority.pow(float(CAUSTIC_FOCUS_POWER));
       const causticDensity = causticCore
         .mul(causticVisibility)
@@ -1029,9 +984,7 @@ function createScatteringNode({
             ),
           )
           .mul(
-            float(1.0).add(
-              ridgeConcentration.mul(float(OPTICAL_RIDGE_GAIN)),
-            ),
+            float(1.0).add(ridgeConcentration.mul(float(OPTICAL_RIDGE_GAIN))),
           )
           .mul(float(0.65).add(structure.mul(float(0.35)))),
         float(0.0),
@@ -1127,7 +1080,9 @@ function createScatteringNode({
       const photographicFocusAuthority = clamp(
         opticalFocusAuthority.mul(
           float(1.0).add(
-            photographicShellAuthority.mul(float(PHOTOGRAPHIC_SHELL_FOCUS_GAIN)),
+            photographicShellAuthority.mul(
+              float(PHOTOGRAPHIC_SHELL_FOCUS_GAIN),
+            ),
           ),
         ),
         float(0.0),
@@ -1207,9 +1162,9 @@ function createScatteringNode({
         float(0.0),
         float(DENSITY_MAX),
       ).mul(float(DENSITY_BOOST));
-      const modalStructureAnchor = causticRidgeAuthority
-        .mul(compressedShellWeight)
-        .mul(signedRadianceAuthority);
+      const modalStructureAnchor = causticRidgeAuthority.mul(
+        compressedShellWeight,
+      );
       const ridgeAnchor = /** @type {any} */ (causticRidgeAuthority);
       const observationTransfer = deriveObservationTransferNode(
         density,
@@ -1384,9 +1339,9 @@ function createScatteringNode({
         float(1.0),
       );
       const holographicEmissionLift = clamp(
-        holographicFresnel.mul(
-          float(0.12).add(dynamicHolographicShift.mul(float(0.18))),
-        ).mul(float(0.72).add(photographicFocus.mul(float(0.28)))),
+        holographicFresnel
+          .mul(float(0.12).add(dynamicHolographicShift.mul(float(0.18))))
+          .mul(float(0.72).add(photographicFocus.mul(float(0.28)))),
         float(0.0),
         float(1.0),
       );
@@ -1395,8 +1350,7 @@ function createScatteringNode({
           float(1.0).sub(
             whiteEmissionCrowding.mul(float(WHITE_EMISSION_CROWDING_REDUCTION)),
           ),
-        )
-        .mul(signedRadianceAuthority);
+        );
       const staticContourColor = mix(
         staticBaseColor,
         uSurfaceColor,
@@ -1453,7 +1407,7 @@ function createScatteringNode({
             float(0.0),
             spectralLightPresenceEnd,
             colorWeight,
-          ).mul(signedRadianceAuthority);
+          );
           const spectralLightWeight = clamp(
             uSpectralMix.mul(spectralLightPresence),
             float(0.0),
@@ -1609,9 +1563,8 @@ export function createRaymarchVolumeMesh({
   detailModeBuffer,
   backboneColorBuffer,
   detailColorBuffer,
-  fieldCacheTexture = null,
+  effectiveFieldTexture = null,
   spectralLightCacheTexture = null,
-  phaseCoherentFieldTexture = null,
   capacity = null,
   backboneCapacity = capacity ?? 0,
   detailCapacity = capacity ?? 0,
@@ -1653,31 +1606,32 @@ export function createRaymarchVolumeMesh({
       uniforms,
       boundaryMode,
       cavityGeometry: materialCavityGeometry,
-      fieldCacheTexture:
-        fieldEvaluationMode === "cached" ? fieldCacheTexture : null,
+      fieldEvaluationMode,
+      effectiveFieldTexture:
+        fieldEvaluationMode === "effective-cached"
+          ? effectiveFieldTexture
+          : null,
       spectralLightCacheTexture:
         spectralLightEvaluationMode ===
         RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached
           ? spectralLightCacheTexture
           : null,
-      phaseCoherentFieldTexture:
-        fieldEvaluationMode === "cached" ? phaseCoherentFieldTexture : null,
       spectralLightEvaluationMode,
     });
     material.fieldEvaluationMode = fieldEvaluationMode;
     material.spectralLightEvaluationMode = spectralLightEvaluationMode;
-    material.phaseCoherentFieldTexture =
-      fieldEvaluationMode === "cached" ? phaseCoherentFieldTexture : null;
+    material.effectiveFieldTexture =
+      fieldEvaluationMode === "effective-cached" ? effectiveFieldTexture : null;
     return material;
   };
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
-  const initialFieldEvaluationMode = "cached";
+  const initialFieldEvaluationMode = "effective-cached";
   const initialSpectralLightEvaluationMode =
     RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
   const materialCache = {
     [BOUNDARY_MODES.dirichlet]: {
       direct: {},
-      cached: {
+      "effective-cached": {
         [initialSpectralLightEvaluationMode]: {
           [normalizedCavityGeometry]: createMaterialForBoundaryMode(
             BOUNDARY_MODES.dirichlet,
@@ -1690,7 +1644,7 @@ export function createRaymarchVolumeMesh({
     },
     [BOUNDARY_MODES.neumann]: {
       direct: {},
-      cached: {
+      "effective-cached": {
         [initialSpectralLightEvaluationMode]: {
           [normalizedCavityGeometry]: createMaterialForBoundaryMode(
             BOUNDARY_MODES.neumann,
@@ -1704,7 +1658,7 @@ export function createRaymarchVolumeMesh({
   };
   const mesh = new THREE.Mesh(
     geometry,
-    materialCache[BOUNDARY_MODES.neumann].cached[
+    materialCache[BOUNDARY_MODES.neumann]["effective-cached"][
       initialSpectralLightEvaluationMode
     ][normalizedCavityGeometry],
   );
@@ -1714,7 +1668,7 @@ export function createRaymarchVolumeMesh({
   mesh.userData.raymarchFieldEvaluationMode = initialFieldEvaluationMode;
   mesh.userData.raymarchSpectralLightEvaluationMode =
     initialSpectralLightEvaluationMode;
-  mesh.userData.raymarchPhaseCoherentFieldTexture = phaseCoherentFieldTexture;
+  mesh.userData.raymarchEffectiveFieldTexture = effectiveFieldTexture;
   mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
   mesh.frustumCulled = false;
 

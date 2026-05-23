@@ -36,9 +36,6 @@ test("builds the advanced controls presentation layout", () => {
     modeGroup.controls.map((control) => control.key).slice(0, 3),
   ).toStrictEqual(["boundaryMode", "colorMode", "rotationMode"]);
   expect(
-    modeGroup.controls.some((control) => control.key === "fieldCacheOverride"),
-  ).toBe(false);
-  expect(
     !modeGroup.controls.some((control) =>
       ["renderQualityPreset", "customPerformanceTargetFps"].includes(
         control.key,

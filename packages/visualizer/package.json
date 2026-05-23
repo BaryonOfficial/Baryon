@@ -26,7 +26,6 @@
     "./render/outputPipeline": "./src/render/outputPipeline.js",
     "./react/useSharedAudioLogic": "./src/react/useSharedAudioLogic.js",
     "./three/loaders": "./src/three/loaders/setupLoaders.js",
-    "./visualization/fieldEvaluation": "./src/visualization/fieldEvaluation.js",
     "./visualization/runtime": "./src/visualization/runtimeFactory.js",
     "./visualization/types": "./src/visualization/types.js",
     "./styles.css": "./src/styles.css"

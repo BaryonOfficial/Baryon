@@ -33,7 +33,6 @@ declare global {
     };
     __baryonPerfMetrics?: Record<string, unknown> | null;
     __baryonExternalOutputDiagnostics?: Record<string, unknown> | null;
-    __baryonFieldCacheOverride?: "direct" | "cached";
     __baryonRendererInfo?: {
       forceWebGLFallbackTest: boolean;
       backendType: "webgl" | "webgpu" | null;

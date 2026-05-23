@@ -60,7 +60,6 @@ describe("defaults compatibility surface", () => {
     expect(Object.keys(DEFAULTS).sort()).toEqual(
       Object.keys(mergedDefaults).sort(),
     );
-    expect(DEFAULTS).not.toHaveProperty("fieldCacheOverride");
     expect(DEFAULTS).not.toHaveProperty("structurePersistence");
   });
 

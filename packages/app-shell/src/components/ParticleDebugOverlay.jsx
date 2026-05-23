@@ -29,46 +29,51 @@ function formatAnalysisPath(mode, path) {
 
 function formatFieldEvalMode({
   fieldEvaluationMode,
-  fieldCacheReady,
-  fieldCacheRebuildPending,
-  fieldCacheBackend,
+  effectiveFieldReady,
+  effectiveFieldRebuildPending,
+  effectiveFieldBackend,
 }) {
-  if (fieldEvaluationMode === "cached") {
-    if (fieldCacheRebuildPending) {
-      return fieldCacheReady ? "cached (rebuilding)" : "cached (warming)";
+  if (fieldEvaluationMode === "effective-cached") {
+    if (effectiveFieldRebuildPending) {
+      return effectiveFieldReady
+        ? "effective (rebuilding)"
+        : "effective (warming)";
     }
-    return "cached";
+    return "effective";
   }
 
-  if (fieldCacheBackend === "unavailable") {
-    return "direct (cache unavailable)";
-  }
-
-  if (fieldCacheRebuildPending) {
-    return "direct (cache pending)";
-  }
-
-  if (fieldCacheReady) {
-    return "direct (cache ready)";
-  }
-
-  return "direct";
-}
-
-function formatFieldCacheState({
-  fieldCacheBackend,
-  fieldCacheReady,
-  fieldCacheRebuildPending,
-}) {
-  if (fieldCacheBackend === "unavailable") {
+  if (
+    fieldEvaluationMode === "unavailable" ||
+    effectiveFieldBackend === "unavailable"
+  ) {
     return "unavailable";
   }
 
-  if (fieldCacheRebuildPending) {
+  if (effectiveFieldRebuildPending) {
+    return "effective pending";
+  }
+
+  if (effectiveFieldReady) {
+    return "effective ready";
+  }
+
+  return humanizeDebugToken(fieldEvaluationMode);
+}
+
+function formatEffectiveFieldState({
+  effectiveFieldBackend,
+  effectiveFieldReady,
+  effectiveFieldRebuildPending,
+}) {
+  if (effectiveFieldBackend === "unavailable") {
+    return "unavailable";
+  }
+
+  if (effectiveFieldRebuildPending) {
     return "building";
   }
 
-  if (fieldCacheReady) {
+  if (effectiveFieldReady) {
     return "ready";
   }
 
@@ -92,8 +97,8 @@ const DEBUG_METRIC_TOOLTIPS = {
   Modes:
     "How many display-visible modal slots are active in the current frame.",
   Eval: "Which 3D field-evaluation path is actually active right now. This reflects the renderer’s live material path, not just the selector setting.",
-  Cache:
-    "Current field-cache lifecycle state. Building means compute work has been enqueued, Ready means the cache can be sampled, Unavailable means the renderer fell back to direct evaluation.",
+  Effective:
+    "Current effective-field lifecycle state. Building means compute work has been enqueued, Ready means the canonical field texture can be sampled, Unavailable means field compute failed closed.",
   Structure:
     "Overall structural confidence. Higher values mean the analyzer sees a stronger organized modal field.",
   Change:
@@ -423,8 +428,8 @@ export default function ParticleDebugOverlay({
       )}/${formatNumber(debugSnapshot.renderedDetailColorWeightMax, 2)}`,
     },
     {
-      label: "Cache",
-      value: formatFieldCacheState(debugSnapshot),
+      label: "Effective",
+      value: formatEffectiveFieldState(debugSnapshot),
     },
   ];
   const externalOutputItems = normalizeDebugOverlayItems(

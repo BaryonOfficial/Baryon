@@ -171,14 +171,6 @@ describe("control schema", () => {
     expect(outputFillControl?.runtimePath).toBe("program.backgroundColor");
   });
 
-  it("does not expose direct field evaluation as a control", () => {
-    expect(
-      CONTROL_DEFINITIONS.some(
-        (definition) => definition.key === "fieldCacheOverride",
-      ),
-    ).toBe(false);
-  });
-
   it("exposes cavity geometry as a debug-only requested-state control", () => {
     const cavityGeometryControl = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "cavityGeometry",

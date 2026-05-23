@@ -134,7 +134,7 @@ test("publishes observation transfer raymarch diagnostics in render perf snapsho
   }
 });
 
-test("publishes phase-coherent field diagnostics in render perf snapshots", () => {
+test("publishes effective field diagnostics in render perf snapshots", () => {
   const previousWindow = globalThis.window;
   globalThis.window = {};
 
@@ -142,15 +142,15 @@ test("publishes phase-coherent field diagnostics in render perf snapshots", () =
     const runtimeDiagnostics = createRuntimeDiagnostics();
     updateObservationTransferRenderDiagnostics(runtimeDiagnostics, {
       raymarchDebug: {
-        phaseCoherentFieldActive: true,
-        phaseCoherentFieldReady: true,
-        phaseCoherentFieldPending: false,
-        phaseCoherentFieldBackend: "compute",
-        phaseCoherentFieldResolution: 32,
-        phaseCoherentFieldRebuildCount: 7,
-        phaseCoherentFieldLastError: null,
-        phaseCoherentFieldModeCount: 6,
-        phaseCoherentFieldAuthority: 0.42,
+        effectiveFieldActive: true,
+        effectiveFieldReady: true,
+        effectiveFieldRebuildPending: false,
+        effectiveFieldBackend: "compute",
+        effectiveFieldResolution: 32,
+        effectiveFieldRebuildCount: 7,
+        effectiveFieldLastError: null,
+        effectiveFieldModeCount: 6,
+        effectiveFieldAuthority: 0.42,
       },
     });
 
@@ -158,28 +158,28 @@ test("publishes phase-coherent field diagnostics in render perf snapshots", () =
       force: true,
     });
 
-    expect(snapshot.render.phaseCoherentFieldActive).toBe(true);
-    expect(snapshot.render.phaseCoherentFieldReady).toBe(true);
-    expect(snapshot.render.phaseCoherentFieldPending).toBe(false);
-    expect(snapshot.render.phaseCoherentFieldBackend).toBe("compute");
-    expect(snapshot.render.phaseCoherentFieldResolution).toBe(32);
-    expect(snapshot.render.phaseCoherentFieldRebuildCount).toBe(7);
-    expect(snapshot.render.phaseCoherentFieldLastError).toBeNull();
-    expect(snapshot.render.phaseCoherentFieldModeCount).toBe(6);
-    expect(snapshot.render.phaseCoherentFieldAuthority).toBe(0.42);
+    expect(snapshot.render.effectiveFieldActive).toBe(true);
+    expect(snapshot.render.effectiveFieldReady).toBe(true);
+    expect(snapshot.render.effectiveFieldRebuildPending).toBe(false);
+    expect(snapshot.render.effectiveFieldBackend).toBe("compute");
+    expect(snapshot.render.effectiveFieldResolution).toBe(32);
+    expect(snapshot.render.effectiveFieldRebuildCount).toBe(7);
+    expect(snapshot.render.effectiveFieldLastError).toBeNull();
+    expect(snapshot.render.effectiveFieldModeCount).toBe(6);
+    expect(snapshot.render.effectiveFieldAuthority).toBe(0.42);
   } finally {
     globalThis.window = previousWindow;
   }
 });
 
-test("publishes phase-coherent field diagnostics from runtime state when audit is disabled", () => {
+test("publishes effective field diagnostics from runtime state when audit is disabled", () => {
   const previousWindow = globalThis.window;
   globalThis.window = {};
 
   try {
     const runtimeDiagnostics = createRuntimeDiagnostics();
     updateObservationTransferRenderDiagnostics(runtimeDiagnostics, null, {
-      phaseCoherentFieldCache: {
+      effectiveFieldCache: {
         active: true,
         ready: true,
         rebuildPending: false,
@@ -187,12 +187,8 @@ test("publishes phase-coherent field diagnostics from runtime state when audit i
         resolution: 32,
         rebuildCount: 9,
         lastError: null,
-        activePhaseCoherentFieldModeCount: 6,
-      },
-      uniforms: {
-        uPhaseCoherentFieldAuthority: {
-          value: 0.37,
-        },
+        activeEffectiveFieldModeCount: 6,
+        effectiveFieldAuthority: 0.37,
       },
     });
 
@@ -200,15 +196,15 @@ test("publishes phase-coherent field diagnostics from runtime state when audit i
       force: true,
     });
 
-    expect(snapshot.render.phaseCoherentFieldActive).toBe(true);
-    expect(snapshot.render.phaseCoherentFieldReady).toBe(true);
-    expect(snapshot.render.phaseCoherentFieldPending).toBe(false);
-    expect(snapshot.render.phaseCoherentFieldBackend).toBe("compute");
-    expect(snapshot.render.phaseCoherentFieldResolution).toBe(32);
-    expect(snapshot.render.phaseCoherentFieldRebuildCount).toBe(9);
-    expect(snapshot.render.phaseCoherentFieldLastError).toBeNull();
-    expect(snapshot.render.phaseCoherentFieldModeCount).toBe(6);
-    expect(snapshot.render.phaseCoherentFieldAuthority).toBe(0.37);
+    expect(snapshot.render.effectiveFieldActive).toBe(true);
+    expect(snapshot.render.effectiveFieldReady).toBe(true);
+    expect(snapshot.render.effectiveFieldRebuildPending).toBe(false);
+    expect(snapshot.render.effectiveFieldBackend).toBe("compute");
+    expect(snapshot.render.effectiveFieldResolution).toBe(32);
+    expect(snapshot.render.effectiveFieldRebuildCount).toBe(9);
+    expect(snapshot.render.effectiveFieldLastError).toBeNull();
+    expect(snapshot.render.effectiveFieldModeCount).toBe(6);
+    expect(snapshot.render.effectiveFieldAuthority).toBe(0.37);
   } finally {
     globalThis.window = previousWindow;
   }

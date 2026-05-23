@@ -16,8 +16,7 @@ import {
 } from "./raymarch/material.js";
 import {
   createRaymarchSpectralLightCache,
-  createRaymarchFieldCache,
-  createRaymarchPhaseCoherentFieldCache,
+  createRaymarchEffectiveFieldCache,
 } from "./raymarch/fieldCache.js";
 import { estimateProjectedSphereStats } from "./raymarch/intersection.js";
 import {
@@ -78,21 +77,16 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const detailColorBuffer = createModeBuffer(detailCapacity);
   const backbonePhaseBuffer = createModeBuffer(backboneCapacity);
   const detailPhaseBuffer = createModeBuffer(detailCapacity);
-  const fieldCache = createRaymarchFieldCache();
+  const effectiveFieldCache = createRaymarchEffectiveFieldCache();
   const spectralLightCache = createRaymarchSpectralLightCache();
-  const phaseCoherentFieldCache = createRaymarchPhaseCoherentFieldCache({
-    maxBackboneModes: backboneCapacity,
-    maxDetailModes: detailCapacity,
-  });
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
     backboneModeBuffer,
     detailModeBuffer,
     backboneColorBuffer,
     detailColorBuffer,
-    fieldCacheTexture: fieldCache.texture,
+    effectiveFieldTexture: effectiveFieldCache.texture,
     spectralLightCacheTexture: spectralLightCache.texture,
-    phaseCoherentFieldTexture: phaseCoherentFieldCache.texture,
     backboneCapacity,
     detailCapacity,
     uniforms,
@@ -127,9 +121,8 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     detailColorBuffer,
     backbonePhaseBuffer,
     detailPhaseBuffer,
-    fieldCache,
+    effectiveFieldCache,
     spectralLightCache,
-    phaseCoherentFieldCache,
     sharedModeCapacity,
     // Compatibility alias for older runtime call sites that still read `capacity`.
     capacity: sharedModeCapacity,

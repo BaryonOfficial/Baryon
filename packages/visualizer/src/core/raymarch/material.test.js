@@ -16,9 +16,8 @@ import {
 import { createRaymarchUniforms } from "./uniforms.js";
 import { raymarchOpacityNode } from "./SafeVolumetricLightingModel.js";
 import {
-  createRaymarchPhaseCoherentFieldCache,
+  createRaymarchEffectiveFieldCache,
   createRaymarchSpectralLightCache,
-  createRaymarchFieldCache,
 } from "./fieldCache.js";
 
 function makeMeshUniforms(overrides = {}) {
@@ -129,6 +128,19 @@ describe("raymarch volume material", () => {
     expect(source).toMatch(/\.mul\(\s*signedBodyAuthority\s*\)/);
   });
 
+  it("samples only the canonical effective field texture for field ownership", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("effectiveFieldTexture");
+    expect(source).not.toContain("fieldCacheTexture");
+    expect(source).not.toContain("phaseCoherentFieldTexture");
+    expect(source).not.toContain("signedPhaseContribution");
+    expect(source).not.toContain("phaseCoherentSignedDisplacement");
+  });
+
   it("keeps Spectral Light photographic accents above the blandness floor", () => {
     expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow).toBeGreaterThan(0.95);
 
@@ -208,59 +220,6 @@ describe("raymarch volume material", () => {
     );
   });
 
-  it("gates caustic, observation, and highlight radiance by signed cancellation authority", () => {
-    const source = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
-    );
-    const cancellationStart = expectSourceIndex(
-      source,
-      "const signedCancellationAuthority =",
-    );
-    const radianceStart = expectSourceIndex(
-      source,
-      "const signedRadianceAuthority =",
-    );
-    const causticVisibilityStart = expectSourceIndex(
-      source,
-      "const causticVisibility = causticRidgeAuthority",
-    );
-    const causticDensityStart = expectSourceIndex(
-      source,
-      "const causticDensity =",
-    );
-    const modalStructureAnchorStart = expectSourceIndex(
-      source,
-      "const modalStructureAnchor = causticRidgeAuthority",
-    );
-    const spectralPresenceStart = expectSourceIndex(
-      source,
-      "const spectralLightPresence =",
-    );
-
-    expect(radianceStart).toBeGreaterThan(cancellationStart);
-    expect(causticVisibilityStart).toBeGreaterThan(radianceStart);
-    expect(causticDensityStart).toBeGreaterThan(radianceStart);
-    expect(modalStructureAnchorStart).toBeGreaterThan(radianceStart);
-    expect(spectralPresenceStart).toBeGreaterThan(radianceStart);
-    expect(source).toContain("SIGNED_INTERFERENCE_RADIANCE_GATE_MIN");
-    expect(source).toMatch(
-      /const causticVisibility = causticRidgeAuthority[\s\S]*?\.mul\(signedRadianceAuthority\)/,
-    );
-    expect(source).toMatch(
-      /const causticDensity = causticCore[\s\S]*?\.mul\(causticVisibility\)/,
-    );
-    expect(source).toMatch(
-      /const modalStructureAnchor = causticRidgeAuthority[\s\S]*?\.mul\(signedRadianceAuthority\)/,
-    );
-    expect(source).toMatch(
-      /const spectralLightPresence = smoothstep\([\s\S]*?\)\.mul\(signedRadianceAuthority\)/,
-    );
-    expect(source).toMatch(
-      /const crowdedWhiteEmissionMix = holographicEmissionLift[\s\S]*?\.mul\(signedRadianceAuthority\)/,
-    );
-  });
-
   it("routes optical laser caustic readout into the photographic material path", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
@@ -295,10 +254,6 @@ describe("raymarch volume material", () => {
       "const photographicRadianceScale =",
     );
     const densityStart = expectSourceIndex(source, "const density = clamp(");
-    const laserRadianceBlock = source.slice(
-      laserRadianceStart,
-      opticalBodyStart,
-    );
     const photographicRadianceScaleBlock = source.slice(
       photographicRadianceScaleStart,
       photographicLaserStart,
@@ -319,7 +274,6 @@ describe("raymarch volume material", () => {
       photographicRadianceScaleStart,
     );
     expect(densityStart).toBeGreaterThan(photographicLaserStart);
-    expect(laserRadianceBlock).not.toContain("signedRadianceAuthority");
     expect(photographicRadianceScaleBlock).toContain(
       "PHOTOGRAPHIC_DARK_CAUSTIC_RATIO",
     );
@@ -347,7 +301,10 @@ describe("raymarch volume material", () => {
       source,
       "const opticalFocusAuthority =",
     );
-    const opticalSlopeBlock = source.slice(opticalSlopeStart, opticalFocusStart);
+    const opticalSlopeBlock = source.slice(
+      opticalSlopeStart,
+      opticalFocusStart,
+    );
 
     expect(opticalSlopeBlock).toContain(".mul(structure)");
     expect(opticalSlopeBlock).toContain("OPTICAL_SLOPE_POWER");
@@ -399,10 +356,7 @@ describe("raymarch volume material", () => {
       "utf8",
     );
     const shellFocusStart = expectSourceIndex(source, "const shellFocus =");
-    const opticalFocusStart = expectSourceIndex(
-      source,
-      "const opticalFocus =",
-    );
+    const opticalFocusStart = expectSourceIndex(source, "const opticalFocus =");
     const photographicShellStart = expectSourceIndex(
       source,
       "const photographicShellAuthority =",
@@ -471,7 +425,10 @@ describe("raymarch volume material", () => {
       "const spectralColor =",
     );
     const hotCoreBlock = source.slice(hotCoreStart, holographicMixStart);
-    const holographicBlock = source.slice(holographicMixStart, whiteEmissionStart);
+    const holographicBlock = source.slice(
+      holographicMixStart,
+      whiteEmissionStart,
+    );
 
     expect(fringeStart).toBeLessThan(densityStart);
     expect(hotCoreStart).toBeGreaterThan(densityStart);
@@ -541,9 +498,8 @@ describe("raymarch volume material", () => {
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
   });
 
-  it("binds phase-coherent field texture only on cached material variants", () => {
-    const fieldCache = createRaymarchFieldCache({ resolution: 8 });
-    const phaseCoherentFieldCache = createRaymarchPhaseCoherentFieldCache({
+  it("binds the canonical effective field texture only on effective cached variants", () => {
+    const effectiveFieldCache = createRaymarchEffectiveFieldCache({
       resolution: 8,
     });
     const uniforms = makeMeshUniforms();
@@ -553,34 +509,30 @@ describe("raymarch volume material", () => {
       detailModeBuffer: {},
       backboneColorBuffer: {},
       detailColorBuffer: {},
-      fieldCacheTexture: fieldCache.texture,
-      phaseCoherentFieldTexture: phaseCoherentFieldCache.texture,
+      effectiveFieldTexture: effectiveFieldCache.texture,
       backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
       detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
       uniforms,
     });
 
-    expect(mesh.userData.raymarchPhaseCoherentFieldTexture).toBe(
-      phaseCoherentFieldCache.texture,
+    expect(mesh.userData.raymarchEffectiveFieldTexture).toBe(
+      effectiveFieldCache.texture,
     );
-    expect(mesh.material.phaseCoherentFieldTexture).toBe(
-      phaseCoherentFieldCache.texture,
+    expect(mesh.material.effectiveFieldTexture).toBe(
+      effectiveFieldCache.texture,
     );
-    expect(uniforms.uPhaseCoherentFieldAuthority?.value).toBe(0);
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
-    expect(mesh.userData).not.toHaveProperty("raymarchPhaseOverlayTexture");
-    expect(mesh.material).not.toHaveProperty("phaseOverlayTexture");
 
-    setRaymarchFieldEvaluationMode(mesh, "cached");
+    setRaymarchFieldEvaluationMode(mesh, "effective-cached");
 
-    expect(mesh.material.phaseCoherentFieldTexture).toBe(
-      phaseCoherentFieldCache.texture,
+    expect(mesh.material.effectiveFieldTexture).toBe(
+      effectiveFieldCache.texture,
     );
 
     setRaymarchFieldEvaluationMode(mesh, "direct");
 
-    expect(mesh.material.phaseCoherentFieldTexture).toBeNull();
+    expect(mesh.material.effectiveFieldTexture).toBeNull();
   });
 
   it("supports separate backbone and detail capacities", () => {
@@ -599,8 +551,10 @@ describe("raymarch volume material", () => {
     expect(mesh.material.steps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
   });
 
-  it("starts cached/off and creates direct variants only on explicit request", () => {
-    const fieldCache = createRaymarchFieldCache({ resolution: 8 });
+  it("starts effective cached/off and creates direct variants only on explicit request", () => {
+    const effectiveFieldCache = createRaymarchEffectiveFieldCache({
+      resolution: 8,
+    });
     const spectralLightCache = createRaymarchSpectralLightCache({
       resolution: 8,
     });
@@ -610,7 +564,7 @@ describe("raymarch volume material", () => {
       detailModeBuffer: {},
       backboneColorBuffer: {},
       detailColorBuffer: {},
-      fieldCacheTexture: fieldCache.texture,
+      effectiveFieldTexture: effectiveFieldCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
       backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
       detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
@@ -620,11 +574,17 @@ describe("raymarch volume material", () => {
 
     expect(materialCache.neumann.direct).toEqual({});
     expect(materialCache.dirichlet.direct).toEqual({});
-    expect(materialCache.neumann.cached.off.rectangular).toBeTruthy();
-    expect(materialCache.dirichlet.cached.off.rectangular).toBeTruthy();
-    expect(materialCache.neumann.cached.cached).toBeUndefined();
-    expect(mesh.material).toBe(materialCache.neumann.cached.off.rectangular);
-    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("cached");
+    expect(
+      materialCache.neumann["effective-cached"].off.rectangular,
+    ).toBeTruthy();
+    expect(
+      materialCache.dirichlet["effective-cached"].off.rectangular,
+    ).toBeTruthy();
+    expect(materialCache.neumann["effective-cached"].cached).toBeUndefined();
+    expect(mesh.material).toBe(
+      materialCache.neumann["effective-cached"].off.rectangular,
+    );
+    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("effective-cached");
     expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     );
@@ -634,16 +594,22 @@ describe("raymarch volume material", () => {
       mesh,
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
-    expect(mesh.material).toBe(materialCache.neumann.cached.cached.rectangular);
-    expect(materialCache.neumann.cached.cached.rectangular).toBeTruthy();
+    expect(mesh.material).toBe(
+      materialCache.neumann["effective-cached"].cached.rectangular,
+    );
+    expect(
+      materialCache.neumann["effective-cached"].cached.rectangular,
+    ).toBeTruthy();
     expect(materialCache.neumann.direct).toEqual({});
-    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("cached");
+    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("effective-cached");
 
     setRaymarchBoundaryMode(mesh, "dirichlet");
     expect(mesh.material).toBe(
-      materialCache.dirichlet.cached.cached.rectangular,
+      materialCache.dirichlet["effective-cached"].cached.rectangular,
     );
-    expect(materialCache.dirichlet.cached.cached.rectangular).toBeTruthy();
+    expect(
+      materialCache.dirichlet["effective-cached"].cached.rectangular,
+    ).toBeTruthy();
     expect(materialCache.dirichlet.direct).toEqual({});
     expect(mesh.userData.raymarchBoundaryMode).toBe("dirichlet");
 
@@ -655,7 +621,9 @@ describe("raymarch volume material", () => {
   });
 
   it("keeps geometry-aware material switching compatible with boundary and cache mode changes", () => {
-    const fieldCache = createRaymarchFieldCache({ resolution: 8 });
+    const effectiveFieldCache = createRaymarchEffectiveFieldCache({
+      resolution: 8,
+    });
     const spectralLightCache = createRaymarchSpectralLightCache({
       resolution: 8,
     });
@@ -665,7 +633,7 @@ describe("raymarch volume material", () => {
       detailModeBuffer: {},
       backboneColorBuffer: {},
       detailColorBuffer: {},
-      fieldCacheTexture: fieldCache.texture,
+      effectiveFieldTexture: effectiveFieldCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
       backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
       detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
@@ -673,7 +641,7 @@ describe("raymarch volume material", () => {
     });
     const materialCache = getRaymarchMaterialCache(mesh);
 
-    setRaymarchFieldEvaluationMode(mesh, "cached");
+    setRaymarchFieldEvaluationMode(mesh, "effective-cached");
     setRaymarchSpectralLightEvaluationMode(
       mesh,
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
@@ -682,18 +650,26 @@ describe("raymarch volume material", () => {
     setRaymarchBoundaryMode(mesh, "dirichlet");
 
     expect(mesh.userData.raymarchCavityGeometry).toBe("spherical");
-    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("cached");
+    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("effective-cached");
     expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
     expect(mesh.userData.raymarchBoundaryMode).toBe("dirichlet");
-    expect(mesh.material).toBe(materialCache.dirichlet.cached.cached.spherical);
-    expect(materialCache.neumann.cached.cached.spherical).toBeTruthy();
-    expect(materialCache.dirichlet.cached.cached.spherical).toBeTruthy();
+    expect(mesh.material).toBe(
+      materialCache.dirichlet["effective-cached"].cached.spherical,
+    );
+    expect(
+      materialCache.neumann["effective-cached"].cached.spherical,
+    ).toBeTruthy();
+    expect(
+      materialCache.dirichlet["effective-cached"].cached.spherical,
+    ).toBeTruthy();
   });
 
   it("keeps Spectral Light material switching independent from field evaluation", () => {
-    const fieldCache = createRaymarchFieldCache({ resolution: 8 });
+    const effectiveFieldCache = createRaymarchEffectiveFieldCache({
+      resolution: 8,
+    });
     const spectralLightCache = createRaymarchSpectralLightCache({
       resolution: 8,
     });
@@ -703,26 +679,26 @@ describe("raymarch volume material", () => {
       detailModeBuffer: {},
       backboneColorBuffer: {},
       detailColorBuffer: {},
-      fieldCacheTexture: fieldCache.texture,
+      effectiveFieldTexture: effectiveFieldCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
       backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
       detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
       uniforms: makeMeshUniforms(),
     });
 
-    setRaymarchFieldEvaluationMode(mesh, "cached");
+    setRaymarchFieldEvaluationMode(mesh, "effective-cached");
     const cachedFieldMaterial = mesh.material;
     setRaymarchSpectralLightEvaluationMode(
       mesh,
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
 
-    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("cached");
+    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("effective-cached");
     expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
     expect(mesh.material).not.toBe(cachedFieldMaterial);
-    expect(mesh.material.fieldEvaluationMode).toBe("cached");
+    expect(mesh.material.fieldEvaluationMode).toBe("effective-cached");
     expect(mesh.material.spectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
@@ -732,11 +708,11 @@ describe("raymarch volume material", () => {
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     );
 
-    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("cached");
+    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("effective-cached");
     expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     );
-    expect(mesh.material.fieldEvaluationMode).toBe("cached");
+    expect(mesh.material.fieldEvaluationMode).toBe("effective-cached");
     expect(mesh.material.spectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     );

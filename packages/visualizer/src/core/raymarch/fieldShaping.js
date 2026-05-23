@@ -75,9 +75,6 @@ export const EXCITATION_VISIBILITY_MAX_FLOOR = 0.52;
 export const EXCITATION_VISIBILITY_SOURCE_AUTHORITY_START = 0.04;
 export const EXCITATION_VISIBILITY_SOURCE_AUTHORITY_END = 0.24;
 export const EXCITATION_VISIBILITY_MODAL_SOURCE_AUTHORITY_WEIGHT = 0.82;
-export const PHASE_COHERENT_FIELD_GAIN = 0.28;
-export const PHASE_COHERENT_FIELD_LIMIT = 0.65;
-export const PHASE_COHERENT_GRADIENT_GAIN = 0.35;
 export const SIGNED_INTERFERENCE_BODY_AUTHORITY_START = 0.015;
 export const SIGNED_INTERFERENCE_BODY_AUTHORITY_END = 0.12;
 export const SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER = 1.2;
@@ -403,10 +400,12 @@ export function deriveOpticalFocusAuthority({
 } = {}) {
   return clamp01(
     clamp01(causticRidgeAuthority) *
-      (1 + Math.max(0, safeFinite(slopeGain, OPTICAL_SLOPE_GAIN)) *
-        clamp01(opticalSlopeAuthority)) *
-      (1 + Math.max(0, safeFinite(ridgeGain, OPTICAL_RIDGE_GAIN)) *
-        clamp01(ridgeConcentration)) *
+      (1 +
+        Math.max(0, safeFinite(slopeGain, OPTICAL_SLOPE_GAIN)) *
+          clamp01(opticalSlopeAuthority)) *
+      (1 +
+        Math.max(0, safeFinite(ridgeGain, OPTICAL_RIDGE_GAIN)) *
+          clamp01(ridgeConcentration)) *
       (0.65 + 0.35 * clamp01(structure)),
   );
 }
@@ -431,8 +430,9 @@ export function deriveLaserCausticRadiance({
 } = {}) {
   return (
     Math.max(0, safeFinite(signedCausticDensity, 0)) *
-    (1 + Math.max(0, safeFinite(laserGain, OPTICAL_LASER_GAIN)) *
-      clamp01(opticalFocus))
+    (1 +
+      Math.max(0, safeFinite(laserGain, OPTICAL_LASER_GAIN)) *
+        clamp01(opticalFocus))
   );
 }
 
@@ -462,9 +462,7 @@ export function deriveLaserCymaticOpticalProbe({
       ? caustic.ridgeConcentration
       : clamp01(ridgeConcentrationOverride);
   const gradientPresenceGate =
-    gradientPresence == null
-      ? clamp01(structure)
-      : clamp01(gradientPresence);
+    gradientPresence == null ? clamp01(structure) : clamp01(gradientPresence);
   const opticalSlopeAuthority = deriveOpticalSlopeAuthority({
     normalDotMeasurement,
     gradientPresence: gradientPresenceGate,
@@ -475,10 +473,7 @@ export function deriveLaserCymaticOpticalProbe({
     ridgeConcentration,
     structure,
   });
-  const opticalFocus = Math.pow(
-    opticalFocusAuthority,
-    OPTICAL_FOCUS_POWER,
-  );
+  const opticalFocus = Math.pow(opticalFocusAuthority, OPTICAL_FOCUS_POWER);
   const opticalNegativeSpaceGate = deriveOpticalNegativeSpaceGate({
     opticalFocus,
     causticVisibility: caustic.causticVisibility,
@@ -633,8 +628,7 @@ export function derivePhotographicBodyContribution({
   );
   const photographicBodyContribution = Math.min(
     Math.max(0, safeFinite(opticalBodyContribution, 0)) * bodyAttenuation,
-    Math.max(0, safeFinite(signedCausticDensity, 0)) *
-      photographicBodyRatioMax,
+    Math.max(0, safeFinite(signedCausticDensity, 0)) * photographicBodyRatioMax,
   );
 
   return {
@@ -727,8 +721,7 @@ export function derivePhotographicCymaticProbe({
   });
   const photographicFocusAuthority = clamp01(
     optical.opticalFocusAuthority *
-      (1 +
-        shell.photographicShellAuthority * PHOTOGRAPHIC_SHELL_FOCUS_GAIN),
+      (1 + shell.photographicShellAuthority * PHOTOGRAPHIC_SHELL_FOCUS_GAIN),
   );
   const photographicFocus = Math.pow(
     photographicFocusAuthority,
@@ -750,8 +743,7 @@ export function derivePhotographicCymaticProbe({
   const photographicLaserCausticRadiance =
     optical.laserCausticRadiance * photographicRadianceScale;
   const physicalDensity =
-    photographicLaserCausticRadiance +
-    body.photographicBodyContribution;
+    photographicLaserCausticRadiance + body.photographicBodyContribution;
   const color = derivePhotographicColorMix({
     colorWeight,
     photographicFocus,
@@ -969,41 +961,6 @@ export function deriveModalCrowdingDensity({
     accumulationCompression,
     adjustedBodyContribution,
     localDensity: beamDensity + adjustedBodyContribution,
-  };
-}
-
-export function derivePhaseCoherentFieldTransfer({
-  cachedField = 0,
-  phaseCoherentSignedDisplacement = 0,
-  phaseCoherentGradientMagnitude = 0,
-  phaseCoherentFieldAuthority = 0,
-}) {
-  const phaseCoherentFieldAuthorityNormalized = clamp01(
-    phaseCoherentFieldAuthority,
-  );
-  const boundedDisplacement = Math.max(
-    -PHASE_COHERENT_FIELD_LIMIT,
-    Math.min(PHASE_COHERENT_FIELD_LIMIT, phaseCoherentSignedDisplacement),
-  );
-  const phaseCoherentFieldContribution =
-    phaseCoherentFieldAuthorityNormalized > 0
-      ? boundedDisplacement *
-        phaseCoherentFieldAuthorityNormalized *
-        PHASE_COHERENT_FIELD_GAIN
-      : 0;
-  const phaseCoherentGradientContribution =
-    clamp01(phaseCoherentGradientMagnitude) *
-    phaseCoherentFieldAuthorityNormalized *
-    PHASE_COHERENT_GRADIENT_GAIN;
-  const effectiveField = cachedField + phaseCoherentFieldContribution;
-
-  return {
-    boundedDisplacement,
-    phaseCoherentFieldContribution,
-    phaseCoherentGradientContribution,
-    phaseCoherentFieldAuthority: phaseCoherentFieldAuthorityNormalized,
-    effectiveField,
-    effectiveFieldAbs: Math.abs(effectiveField),
   };
 }
 

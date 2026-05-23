@@ -10,48 +10,22 @@ import {
   float,
   globalId,
   int,
-  length,
   smoothstep,
   textureStore,
   uvec3,
   uint,
-  vec3,
   vec4,
 } from "three/tsl";
 import { normalizeBoundaryMode } from "../modeFamily.js";
 import { normalizeCavityGeometry } from "../cavityGeometry.js";
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
-import { RAYMARCH_FIELD_CACHE_OVERRIDE_MODES } from "../../visualization/fieldEvaluation.js";
 import { DETAIL_LAYER_WEIGHT } from "./fieldShaping.js";
-import { AUDIO_DEFAULTS } from "../../defaults.js";
 
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
-export const RAYMARCH_PHASE_COHERENT_FIELD_RESOLUTION = 32;
-export const RAYMARCH_PHASE_COHERENT_FIELD_UPDATE_INTERVAL_MS = 1000 / 15;
-export const RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT =
-  AUDIO_DEFAULTS.maxBackboneDescriptorModes;
-export const RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT =
-  AUDIO_DEFAULTS.maxDetailDescriptorModes;
-
-/*
-Dev overrides for manual testing:
-
-window.__baryonFieldCacheOverride = "direct";
-window.__baryonFieldCacheOverride = "cached";
-
-Legacy note: "analytic" is no longer recognized here and now falls back to
-"cached".
-
-You can confirm the active mode in window.__baryonAuditSnapshot:
-
-window.__baryonAuditSnapshot?.fieldEvaluationMode
-window.__baryonAuditSnapshot?.fieldCacheOverride
-
-*/
+export const RAYMARCH_EFFECTIVE_FIELD_RESOLUTION =
+  RAYMARCH_FIELD_CACHE_RESOLUTION;
 const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
 const FIELD_CACHE_WEIGHT_QUANTIZATION = 1024;
-const PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_EPSILON = 1e-5;
-const PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_FULL = 0.01;
 const SIGNED_INTERFERENCE_VISIBILITY_EPSILON = 0.01;
 const SIGNED_INTERFERENCE_VISIBILITY_START = 0.025;
 const SIGNED_INTERFERENCE_VISIBILITY_END = 0.1;
@@ -180,6 +154,21 @@ function spectralLightDescriptorsEqual(left, right) {
   );
 }
 
+function effectiveFieldDescriptorsEqual(left, right) {
+  if (!fieldDescriptorsEqual(left, right)) {
+    return false;
+  }
+
+  return (
+    left.backbonePhaseHash === right.backbonePhaseHash &&
+    left.detailPhaseHash === right.detailPhaseHash &&
+    left.phaseModeCount === right.phaseModeCount &&
+    left.phaseAuthority === right.phaseAuthority &&
+    left.descriptorOverflow === right.descriptorOverflow &&
+    left.resolution === right.resolution
+  );
+}
+
 function resolveFieldRebuildReason(previousDescriptor, nextDescriptor) {
   if (!previousDescriptor) {
     return "initial";
@@ -227,6 +216,43 @@ function resolveSpectralLightRebuildReason(previousDescriptor, nextDescriptor) {
   return null;
 }
 
+function resolveEffectiveFieldRebuildReason(
+  previousDescriptor,
+  nextDescriptor,
+) {
+  const fieldReason = resolveFieldRebuildReason(
+    previousDescriptor,
+    nextDescriptor,
+  );
+  if (fieldReason) {
+    return fieldReason;
+  }
+  if (
+    previousDescriptor.backbonePhaseHash !== nextDescriptor.backbonePhaseHash
+  ) {
+    return "phase-slots";
+  }
+  if (previousDescriptor.detailPhaseHash !== nextDescriptor.detailPhaseHash) {
+    return "phase-slots";
+  }
+  if (previousDescriptor.phaseModeCount !== nextDescriptor.phaseModeCount) {
+    return "phase-mode-count";
+  }
+  if (previousDescriptor.phaseAuthority !== nextDescriptor.phaseAuthority) {
+    return "phase-authority";
+  }
+  if (
+    previousDescriptor.descriptorOverflow !== nextDescriptor.descriptorOverflow
+  ) {
+    return "descriptor-overflow";
+  }
+  if (previousDescriptor.resolution !== nextDescriptor.resolution) {
+    return "resolution";
+  }
+
+  return null;
+}
+
 function resolveDispatchSize(resolution) {
   const [xGroupSize, yGroupSize, zGroupSize] =
     FIELD_CACHE_COMPUTE_WORKGROUP_SIZE;
@@ -246,8 +272,27 @@ export function createRaymarchFieldCache({
   return createCacheState({
     resolution: normalizedResolution,
     texture,
-    mode: RAYMARCH_FIELD_CACHE_OVERRIDE_MODES.cached,
+    mode: "cached",
   });
+}
+
+export function createRaymarchEffectiveFieldCache({
+  resolution = RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
+} = {}) {
+  const normalizedResolution = Math.max(8, Math.round(resolution));
+  const texture = createCacheTexture(normalizedResolution);
+
+  return {
+    ...createCacheState({
+      resolution: normalizedResolution,
+      texture,
+      mode: "effective-cached",
+    }),
+    semantic: "canonical-effective-field",
+    activeEffectiveFieldModeCount: 0,
+    effectiveFieldAuthority: 0,
+    modeIdentityRetentionRatio: 1,
+  };
 }
 
 export function createRaymarchSpectralLightCache({
@@ -263,36 +308,6 @@ export function createRaymarchSpectralLightCache({
   });
 }
 
-/**
- * @param {{
- *   resolution?: number,
- *   maxBackboneModes?: number,
- *   maxDetailModes?: number,
- * }} [options]
- */
-export function createRaymarchPhaseCoherentFieldCache({
-  resolution = RAYMARCH_PHASE_COHERENT_FIELD_RESOLUTION,
-  maxBackboneModes = RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT,
-  maxDetailModes = RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT,
-} = {}) {
-  const normalizedResolution = Math.max(8, Math.round(resolution));
-  const texture = createCacheTexture(normalizedResolution);
-
-  return {
-    ...createCacheState({
-      resolution: normalizedResolution,
-      texture,
-      mode: "cached",
-    }),
-    maxBackboneModes,
-    maxDetailModes,
-    updateIntervalMs: RAYMARCH_PHASE_COHERENT_FIELD_UPDATE_INTERVAL_MS,
-    lastUpdateTimeMs: -Infinity,
-    activePhaseCoherentFieldModeCount: 0,
-    semantic: "phase-coherent-signed-displacement",
-  };
-}
-
 export function disposeRaymarchFieldCache(fieldCache) {
   fieldCache?.texture?.dispose?.();
   if (fieldCache?.computeNodesByKey) {
@@ -302,14 +317,12 @@ export function disposeRaymarchFieldCache(fieldCache) {
   }
 }
 
-export function disposeRaymarchSpectralLightCache(spectralLightCache) {
-  disposeRaymarchFieldCache(spectralLightCache);
+export function disposeRaymarchEffectiveFieldCache(effectiveFieldCache) {
+  disposeRaymarchFieldCache(effectiveFieldCache);
 }
 
-export function disposeRaymarchPhaseCoherentFieldCache(
-  phaseCoherentFieldCache,
-) {
-  disposeRaymarchFieldCache(phaseCoherentFieldCache);
+export function disposeRaymarchSpectralLightCache(spectralLightCache) {
+  disposeRaymarchFieldCache(spectralLightCache);
 }
 
 function createCacheTexture(resolution) {
@@ -467,6 +480,44 @@ export function buildRaymarchFieldCacheDescriptor({
       weight: DETAIL_LAYER_WEIGHT,
       totalWeightedAmplitude,
     }),
+  };
+}
+
+export function buildRaymarchEffectiveFieldDescriptor({
+  backboneSlots,
+  detailSlots,
+  backbonePhaseSlots,
+  detailPhaseSlots,
+  backboneCount = 0,
+  detailCount = 0,
+  boundaryMode,
+  cavityGeometry = "rectangular",
+  radius = 1,
+  phaseModeCount = 0,
+  phaseAuthority = 0,
+  descriptorOverflow = false,
+  modeIdentityRetentionRatio = 1,
+  resolution = RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
+}) {
+  const fieldDescriptor = buildRaymarchFieldCacheDescriptor({
+    backboneSlots,
+    detailSlots,
+    backboneCount,
+    detailCount,
+    boundaryMode,
+    cavityGeometry,
+    radius,
+  });
+
+  return {
+    ...fieldDescriptor,
+    backbonePhaseHash: hashSlotLayer(backbonePhaseSlots, backboneCount),
+    detailPhaseHash: hashSlotLayer(detailPhaseSlots, detailCount),
+    phaseModeCount: Math.max(0, Math.round(phaseModeCount || 0)),
+    phaseAuthority: Math.round(clamp01(phaseAuthority) * 1000) / 1000,
+    descriptorOverflow: descriptorOverflow === true,
+    modeIdentityRetentionRatio: clamp01(modeIdentityRetentionRatio),
+    resolution: Math.max(8, Math.round(resolution || 0)),
   };
 }
 
@@ -693,6 +744,128 @@ export function evaluateRaymarchFieldCachePoint({
   };
 }
 
+function accumulateEffectiveFieldLayerAtPoint({
+  slots,
+  phaseSlots,
+  activeCount,
+  weight,
+  x,
+  y,
+  z,
+  time,
+  scale,
+  boundaryMode,
+  cavityGeometry,
+}) {
+  let field = 0;
+  let gradX = 0;
+  let gradY = 0;
+  let gradZ = 0;
+  let authoritySum = 0;
+  let totalWeight = 0;
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const geometryBackend = getModalGeometryBackend(cavityGeometry);
+
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const amplitude = Math.max(0, slots?.[offset + 3] ?? 0) * weight;
+    if (!(amplitude > 0)) {
+      continue;
+    }
+    totalWeight += amplitude;
+    const beta = Math.min(
+      1,
+      Math.max(
+        0,
+        (phaseSlots?.[offset + 2] ?? 0) * (phaseSlots?.[offset + 3] ?? 0),
+      ),
+    );
+    authoritySum += amplitude * beta;
+    const phase =
+      (phaseSlots?.[offset] ?? 0) + (phaseSlots?.[offset + 1] ?? 0) * time;
+    const coefficient = amplitude * (1 - beta + beta * Math.cos(phase));
+    const family = geometryBackend.evaluateMode({
+      u: slots[offset] ?? 0,
+      v: slots[offset + 1] ?? 0,
+      w: slots[offset + 2] ?? 0,
+      x,
+      y,
+      z,
+      scale,
+      boundaryMode,
+    });
+    field += coefficient * family.field;
+    gradX += coefficient * family.gradX;
+    gradY += coefficient * family.gradY;
+    gradZ += coefficient * family.gradZ;
+  }
+
+  return { field, gradX, gradY, gradZ, authoritySum, totalWeight };
+}
+
+export function evaluateRaymarchEffectiveFieldPoint({
+  backboneSlots,
+  detailSlots,
+  backbonePhaseSlots,
+  detailPhaseSlots,
+  backboneCount = 0,
+  detailCount = 0,
+  boundaryMode,
+  cavityGeometry = "rectangular",
+  radius = 1,
+  x = 0,
+  y = 0,
+  z = 0,
+  time = 0,
+}) {
+  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
+  const scale = Math.PI / Math.max(radius, 1e-4);
+  const backbone = accumulateEffectiveFieldLayerAtPoint({
+    slots: backboneSlots,
+    phaseSlots: backbonePhaseSlots,
+    activeCount: backboneCount,
+    weight: 1,
+    x,
+    y,
+    z,
+    time,
+    scale,
+    boundaryMode: normalizedBoundaryMode,
+    cavityGeometry: normalizedCavityGeometry,
+  });
+  const detail = accumulateEffectiveFieldLayerAtPoint({
+    slots: detailSlots,
+    phaseSlots: detailPhaseSlots,
+    activeCount: detailCount,
+    weight: DETAIL_LAYER_WEIGHT,
+    x,
+    y,
+    z,
+    time,
+    scale,
+    boundaryMode: normalizedBoundaryMode,
+    cavityGeometry: normalizedCavityGeometry,
+  });
+  const totalWeight = backbone.totalWeight + detail.totalWeight;
+  const amplitudeNorm = Math.max(totalWeight, 0.01);
+
+  return {
+    field: (backbone.field + detail.field) / amplitudeNorm,
+    gradX: (backbone.gradX + detail.gradX) / amplitudeNorm,
+    gradY: (backbone.gradY + detail.gradY) / amplitudeNorm,
+    gradZ: (backbone.gradZ + detail.gradZ) / amplitudeNorm,
+    effectiveFieldAuthority: Math.min(
+      1,
+      Math.max(
+        0,
+        (backbone.authoritySum + detail.authoritySum) /
+          Math.max(0.01, totalWeight),
+      ),
+    ),
+  };
+}
+
 export function evaluateRaymarchSpectralLightCachePoint({
   backboneSlots,
   detailSlots,
@@ -804,176 +977,6 @@ export function evaluateRaymarchSignedPotentialAtPoint({
         1 - Math.abs(signedPotential) / Math.max(0.01, unsignedPotential),
       ),
     ),
-  };
-}
-
-function accumulatePhaseCoherentFieldLayerAtPoint({
-  slots,
-  phaseSlots,
-  activeCount,
-  weight,
-  x,
-  y,
-  z,
-  time,
-  scale,
-  boundaryMode,
-  cavityGeometry,
-}) {
-  let signedDisplacement = 0;
-  let gradX = 0;
-  let gradY = 0;
-  let gradZ = 0;
-  let unsignedPotential = 0;
-  let authoritySum = 0;
-  let totalWeight = 0;
-  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
-  const geometryBackend = getModalGeometryBackend(cavityGeometry);
-
-  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
-    const offset = slotIndex * 4;
-    const amplitude = Math.max(0, slots?.[offset + 3] ?? 0) * weight;
-    if (!(amplitude > 0)) {
-      continue;
-    }
-    const coherence = phaseSlots?.[offset + 2] ?? 0;
-    const authority = Math.min(
-      1,
-      Math.max(0, coherence * (phaseSlots?.[offset + 3] ?? 0)),
-    );
-    totalWeight += amplitude;
-    if (!(authority > 0)) {
-      continue;
-    }
-    const family = geometryBackend.evaluateMode({
-      u: slots[offset] ?? 0,
-      v: slots[offset + 1] ?? 0,
-      w: slots[offset + 2] ?? 0,
-      x,
-      y,
-      z,
-      scale,
-      boundaryMode,
-    });
-    const phase =
-      (phaseSlots?.[offset] ?? 0) + (phaseSlots?.[offset + 1] ?? 0) * time;
-    const oscillator = Math.cos(phase);
-    const weightedAuthority = amplitude * authority;
-    signedDisplacement += weightedAuthority * family.field * oscillator;
-    gradX += weightedAuthority * family.gradX * oscillator;
-    gradY += weightedAuthority * family.gradY * oscillator;
-    gradZ += weightedAuthority * family.gradZ * oscillator;
-    unsignedPotential +=
-      weightedAuthority * Math.abs(family.field) * Math.abs(oscillator);
-    authoritySum += weightedAuthority;
-  }
-
-  return {
-    signedDisplacement,
-    gradX,
-    gradY,
-    gradZ,
-    unsignedPotential,
-    authoritySum,
-    totalWeight,
-  };
-}
-
-export function evaluateRaymarchPhaseCoherentFieldPoint({
-  backboneSlots,
-  detailSlots,
-  backbonePhaseSlots,
-  detailPhaseSlots,
-  backboneCount = 0,
-  detailCount = 0,
-  boundaryMode,
-  cavityGeometry = "rectangular",
-  radius = 1,
-  x = 0,
-  y = 0,
-  z = 0,
-  time = 0,
-}) {
-  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
-  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
-  const scale = Math.PI / Math.max(radius, 1e-4);
-  const backbone = accumulatePhaseCoherentFieldLayerAtPoint({
-    slots: backboneSlots,
-    phaseSlots: backbonePhaseSlots,
-    activeCount: backboneCount,
-    weight: 1,
-    x,
-    y,
-    z,
-    time,
-    scale,
-    boundaryMode: normalizedBoundaryMode,
-    cavityGeometry: normalizedCavityGeometry,
-  });
-  const detail = accumulatePhaseCoherentFieldLayerAtPoint({
-    slots: detailSlots,
-    phaseSlots: detailPhaseSlots,
-    activeCount: detailCount,
-    weight: DETAIL_LAYER_WEIGHT,
-    x,
-    y,
-    z,
-    time,
-    scale,
-    boundaryMode: normalizedBoundaryMode,
-    cavityGeometry: normalizedCavityGeometry,
-  });
-  const signedDisplacement =
-    backbone.signedDisplacement + detail.signedDisplacement;
-  const gradX = backbone.gradX + detail.gradX;
-  const gradY = backbone.gradY + detail.gradY;
-  const gradZ = backbone.gradZ + detail.gradZ;
-  const unsignedPotential =
-    backbone.unsignedPotential + detail.unsignedPotential;
-  const authoritySum = backbone.authoritySum + detail.authoritySum;
-  const totalWeight = backbone.totalWeight + detail.totalWeight;
-  const safeAuthority = Math.max(authoritySum, 0.01);
-  const normalizedSignedDisplacement = Math.max(
-    -1,
-    Math.min(1, signedDisplacement / safeAuthority),
-  );
-  const gradientMagnitude = Math.min(
-    1,
-    Math.hypot(gradX, gradY, gradZ) / safeAuthority,
-  );
-  const cancellationSupport = Math.min(
-    1,
-    Math.max(
-      0,
-      (unsignedPotential - PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_EPSILON) /
-        (PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_FULL -
-          PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_EPSILON),
-    ),
-  );
-  const cancellation =
-    cancellationSupport *
-    Math.min(
-      1,
-      Math.max(
-        0,
-        1 -
-          Math.abs(signedDisplacement) /
-            Math.max(
-              PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_FULL,
-              unsignedPotential,
-            ),
-      ),
-    );
-  const authority = Math.min(
-    1,
-    Math.max(0, authoritySum / Math.max(0.01, totalWeight)),
-  );
-
-  return {
-    phaseCoherentSignedDisplacement: normalizedSignedDisplacement,
-    phaseCoherentGradientMagnitude: gradientMagnitude,
-    phaseCoherentCancellation: cancellation,
-    phaseCoherentFieldAuthority: authority,
   };
 }
 
@@ -1273,8 +1276,8 @@ function createSpectralLightComputeKernel({
   );
 }
 
-function createPhaseCoherentFieldComputeKernel({
-  phaseCoherentFieldCache,
+function createEffectiveFieldComputeKernel({
+  effectiveFieldCache,
   backboneModeBuffer,
   detailModeBuffer,
   backbonePhaseBuffer,
@@ -1285,7 +1288,7 @@ function createPhaseCoherentFieldComputeKernel({
   boundaryMode,
   cavityGeometry,
 }) {
-  const { resolution, texture } = phaseCoherentFieldCache;
+  const { resolution, texture } = effectiveFieldCache;
   const uRadius = uniforms.uRadius;
   const uTime = uniforms.uTime;
   const backboneActiveCount = int(uniforms.uBackboneModeCount);
@@ -1327,13 +1330,11 @@ function createPhaseCoherentFieldComputeKernel({
         .mul(uRadius)
         .toVar();
       const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
-      const signedDisplacement = zero.toVar();
-      const signedGradX = zero.toVar();
-      const signedGradY = zero.toVar();
-      const signedGradZ = zero.toVar();
-      const unsignedPotential = zero.toVar();
-      const authoritySum = zero.toVar();
-      const totalWeight = zero.toVar();
+      const field = zero.toVar();
+      const gradX = zero.toVar();
+      const gradY = zero.toVar();
+      const gradZ = zero.toVar();
+      const totalAmplitude = zero.toVar();
 
       Loop(
         {
@@ -1347,11 +1348,17 @@ function createPhaseCoherentFieldComputeKernel({
             const slot = backboneModeBuffer.element(i);
             const phaseSlot = backbonePhaseBuffer.element(i);
             const amplitude = slot.w.toVar();
-            const authority = clamp(
+            const beta = clamp(
               phaseSlot.z.mul(phaseSlot.w),
               float(0.0),
               float(1.0),
             );
+            const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
+            const phaseScale = float(1.0)
+              .sub(beta)
+              .add(beta.mul(cos(phase)))
+              .toVar();
+            const coefficient = amplitude.mul(phaseScale).toVar();
             const family = geometryBackend.evaluateModeNode({
               u: slot.x,
               v: slot.y,
@@ -1362,26 +1369,11 @@ function createPhaseCoherentFieldComputeKernel({
               scale,
               boundaryMode,
             });
-            const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
-            const oscillator = cos(phase);
-            const weightedAuthority = amplitude.mul(authority).toVar();
-            signedDisplacement.addAssign(
-              weightedAuthority.mul(family.field).mul(oscillator),
-            );
-            signedGradX.addAssign(
-              weightedAuthority.mul(family.gradX).mul(oscillator),
-            );
-            signedGradY.addAssign(
-              weightedAuthority.mul(family.gradY).mul(oscillator),
-            );
-            signedGradZ.addAssign(
-              weightedAuthority.mul(family.gradZ).mul(oscillator),
-            );
-            unsignedPotential.addAssign(
-              weightedAuthority.mul(abs(family.field).mul(abs(oscillator))),
-            );
-            authoritySum.addAssign(weightedAuthority);
-            totalWeight.addAssign(amplitude);
+            totalAmplitude.addAssign(amplitude);
+            field.addAssign(coefficient.mul(family.field));
+            gradX.addAssign(coefficient.mul(family.gradX));
+            gradY.addAssign(coefficient.mul(family.gradY));
+            gradZ.addAssign(coefficient.mul(family.gradZ));
           });
         },
       );
@@ -1398,11 +1390,17 @@ function createPhaseCoherentFieldComputeKernel({
             const slot = detailModeBuffer.element(i);
             const phaseSlot = detailPhaseBuffer.element(i);
             const amplitude = slot.w.mul(float(DETAIL_LAYER_WEIGHT)).toVar();
-            const authority = clamp(
+            const beta = clamp(
               phaseSlot.z.mul(phaseSlot.w),
               float(0.0),
               float(1.0),
             );
+            const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
+            const phaseScale = float(1.0)
+              .sub(beta)
+              .add(beta.mul(cos(phase)))
+              .toVar();
+            const coefficient = amplitude.mul(phaseScale).toVar();
             const family = geometryBackend.evaluateModeNode({
               u: slot.x,
               v: slot.y,
@@ -1413,77 +1411,29 @@ function createPhaseCoherentFieldComputeKernel({
               scale,
               boundaryMode,
             });
-            const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
-            const oscillator = cos(phase);
-            const weightedAuthority = amplitude.mul(authority).toVar();
-            signedDisplacement.addAssign(
-              weightedAuthority.mul(family.field).mul(oscillator),
-            );
-            signedGradX.addAssign(
-              weightedAuthority.mul(family.gradX).mul(oscillator),
-            );
-            signedGradY.addAssign(
-              weightedAuthority.mul(family.gradY).mul(oscillator),
-            );
-            signedGradZ.addAssign(
-              weightedAuthority.mul(family.gradZ).mul(oscillator),
-            );
-            unsignedPotential.addAssign(
-              weightedAuthority.mul(abs(family.field).mul(abs(oscillator))),
-            );
-            authoritySum.addAssign(weightedAuthority);
-            totalWeight.addAssign(amplitude);
+            totalAmplitude.addAssign(amplitude);
+            field.addAssign(coefficient.mul(family.field));
+            gradX.addAssign(coefficient.mul(family.gradX));
+            gradY.addAssign(coefficient.mul(family.gradY));
+            gradZ.addAssign(coefficient.mul(family.gradZ));
           });
         },
       );
 
-      const safeAuthority = authoritySum.max(float(0.01));
-      const cancellationSupport = clamp(
-        unsignedPotential
-          .sub(float(PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_EPSILON))
-          .div(
-            float(
-              PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_FULL -
-                PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_EPSILON,
-            ),
-          ),
-        float(0.0),
-        float(1.0),
-      );
-      const cancellation = clamp(
-        float(1.0).sub(
-          abs(signedDisplacement).div(
-            unsignedPotential.max(
-              float(PHASE_COHERENT_FIELD_CANCELLATION_SUPPORT_FULL),
-            ),
-          ),
-        ),
-        float(0.0),
-        float(1.0),
-      ).mul(cancellationSupport);
+      const normalizedAmplitude = totalAmplitude.max(float(0.01));
       textureStore(
         texture,
         uvec3(voxelCoord),
         vec4(
-          clamp(signedDisplacement.div(safeAuthority), float(-1.0), float(1.0)),
-          clamp(
-            length(vec3(signedGradX, signedGradY, signedGradZ)).div(
-              safeAuthority,
-            ),
-            float(0.0),
-            float(1.0),
-          ),
-          cancellation,
-          clamp(
-            authoritySum.div(totalWeight.max(float(0.01))),
-            float(0.0),
-            float(1.0),
-          ),
+          field.div(normalizedAmplitude),
+          gradX.div(normalizedAmplitude),
+          gradY.div(normalizedAmplitude),
+          gradZ.div(normalizedAmplitude),
         ),
       ).toWriteOnly();
     });
   })().compute(
-    phaseCoherentFieldCache.dispatchSize,
+    effectiveFieldCache.dispatchSize,
     Array.from(FIELD_CACHE_COMPUTE_WORKGROUP_SIZE),
   );
 }
@@ -1568,8 +1518,8 @@ function getOrCreateRaymarchSpectralLightCacheComputeNode(
   return computeNode;
 }
 
-function getOrCreateRaymarchPhaseCoherentFieldComputeNode(
-  phaseCoherentFieldCache,
+function getOrCreateRaymarchEffectiveFieldComputeNode(
+  effectiveFieldCache,
   {
     backboneModeBuffer,
     detailModeBuffer,
@@ -1582,20 +1532,20 @@ function getOrCreateRaymarchPhaseCoherentFieldComputeNode(
     cavityGeometry,
   },
 ) {
-  if (!phaseCoherentFieldCache) {
+  if (!effectiveFieldCache) {
     return null;
   }
 
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
   const nodeKey = `${normalizedCavityGeometry}:${normalizedBoundaryMode}`;
-  const cachedNode = phaseCoherentFieldCache.computeNodesByKey?.[nodeKey];
+  const cachedNode = effectiveFieldCache.computeNodesByKey?.[nodeKey];
   if (cachedNode) {
     return cachedNode;
   }
 
-  const computeNode = createPhaseCoherentFieldComputeKernel({
-    phaseCoherentFieldCache,
+  const computeNode = createEffectiveFieldComputeKernel({
+    effectiveFieldCache,
     backboneModeBuffer,
     detailModeBuffer,
     backbonePhaseBuffer,
@@ -1606,7 +1556,7 @@ function getOrCreateRaymarchPhaseCoherentFieldComputeNode(
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
   });
-  phaseCoherentFieldCache.computeNodesByKey[nodeKey] = computeNode;
+  effectiveFieldCache.computeNodesByKey[nodeKey] = computeNode;
   return computeNode;
 }
 
@@ -1644,6 +1594,28 @@ function dispatchQueuedRaymarchSpectralLightCacheRebuild(spectralLightCache) {
 
   enqueueRaymarchSpectralLightCacheRebuild(
     spectralLightCache,
+    queued.request.renderer,
+    queued.descriptor,
+    queued.rebuildReason ?? "queued",
+    queued.request.options,
+  );
+}
+
+function dispatchQueuedRaymarchEffectiveFieldCacheRebuild(effectiveFieldCache) {
+  const queued = takeQueuedCacheRebuild(effectiveFieldCache);
+  if (
+    !queued.descriptor ||
+    !queued.request ||
+    effectiveFieldDescriptorsEqual(
+      effectiveFieldCache.activeDescriptor,
+      queued.descriptor,
+    )
+  ) {
+    return;
+  }
+
+  enqueueRaymarchEffectiveFieldRebuild(
+    effectiveFieldCache,
     queued.request.renderer,
     queued.descriptor,
     queued.rebuildReason ?? "queued",
@@ -1844,12 +1816,14 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
   };
 }
 
-export function enqueueRaymarchPhaseCoherentFieldRebuild(
-  phaseCoherentFieldCache,
+export function enqueueRaymarchEffectiveFieldRebuild(
+  effectiveFieldCache,
   renderer,
   descriptor,
   rebuildReason,
-  {
+  options,
+) {
+  const {
     backboneModeBuffer,
     detailModeBuffer,
     backbonePhaseBuffer,
@@ -1857,31 +1831,32 @@ export function enqueueRaymarchPhaseCoherentFieldRebuild(
     backboneCapacity,
     detailCapacity,
     uniforms,
-  },
-) {
-  if (!phaseCoherentFieldCache) {
+  } = options;
+  if (!effectiveFieldCache) {
     return { enqueued: false, reason: "unavailable" };
   }
 
-  if (phaseCoherentFieldCache.backend === "unavailable") {
+  if (effectiveFieldCache.backend === "unavailable") {
     return { enqueued: false, reason: "unavailable" };
   }
 
-  if (phaseCoherentFieldCache.rebuildPending) {
-    return { enqueued: false, reason: "pending" };
+  if (effectiveFieldCache.rebuildPending) {
+    return queueLatestCacheRebuild(
+      effectiveFieldCache,
+      descriptor,
+      rebuildReason,
+      { renderer, options },
+      effectiveFieldDescriptorsEqual,
+    );
   }
 
   if (!renderer || typeof renderer.computeAsync !== "function") {
-    phaseCoherentFieldCache.backend = "unavailable";
-    phaseCoherentFieldCache.ready = false;
-    phaseCoherentFieldCache.rebuildPending = false;
-    phaseCoherentFieldCache.lastError = "Renderer computeAsync unavailable";
-    phaseCoherentFieldCache.lastRebuildReason = "unavailable";
+    markCacheBackendUnavailable(effectiveFieldCache);
     return { enqueued: false, reason: "unavailable" };
   }
 
-  const computeNode = getOrCreateRaymarchPhaseCoherentFieldComputeNode(
-    phaseCoherentFieldCache,
+  const computeNode = getOrCreateRaymarchEffectiveFieldComputeNode(
+    effectiveFieldCache,
     {
       backboneModeBuffer,
       detailModeBuffer,
@@ -1895,51 +1870,52 @@ export function enqueueRaymarchPhaseCoherentFieldRebuild(
     },
   );
   if (!computeNode) {
+    markCacheBackendUnavailable(effectiveFieldCache);
     return { enqueued: false, reason: "unavailable" };
   }
 
-  const rebuildGeneration = beginCacheRebuild(
-    phaseCoherentFieldCache,
-    descriptor,
-  );
+  const rebuildGeneration = beginCacheRebuild(effectiveFieldCache, descriptor);
   const submission = Promise.resolve()
     .then(() => renderer.computeAsync(computeNode))
     .then(
       () => {
         if (
           !isCurrentRaymarchCacheGeneration(
-            phaseCoherentFieldCache,
+            effectiveFieldCache,
             rebuildGeneration,
           )
         ) {
           return;
         }
-        phaseCoherentFieldCache.activeDescriptor = descriptor;
-        phaseCoherentFieldCache.ready = true;
-        phaseCoherentFieldCache.rebuildPending = false;
-        phaseCoherentFieldCache.pendingDescriptor = null;
-        phaseCoherentFieldCache.lastError = null;
-        phaseCoherentFieldCache.backend = "compute";
-        phaseCoherentFieldCache.rebuildCount += 1;
-        phaseCoherentFieldCache.lastRebuildReason = rebuildReason;
+        effectiveFieldCache.activeDescriptor = descriptor;
+        effectiveFieldCache.ready = true;
+        effectiveFieldCache.rebuildPending = false;
+        effectiveFieldCache.pendingDescriptor = null;
+        effectiveFieldCache.lastError = null;
+        effectiveFieldCache.backend = "compute";
+        effectiveFieldCache.rebuildCount += 1;
+        effectiveFieldCache.lastRebuildReason = rebuildReason;
+        effectiveFieldCache.activeEffectiveFieldModeCount =
+          descriptor.phaseModeCount ?? 0;
+        effectiveFieldCache.effectiveFieldAuthority =
+          descriptor.phaseAuthority ?? 0;
+        effectiveFieldCache.modeIdentityRetentionRatio =
+          descriptor.modeIdentityRetentionRatio ?? 1;
+        dispatchQueuedRaymarchEffectiveFieldCacheRebuild(effectiveFieldCache);
       },
       (error) => {
         if (
           !isCurrentRaymarchCacheGeneration(
-            phaseCoherentFieldCache,
+            effectiveFieldCache,
             rebuildGeneration,
           )
         ) {
           return;
         }
-        advanceRaymarchCacheGeneration(phaseCoherentFieldCache);
-        phaseCoherentFieldCache.backend = "unavailable";
-        phaseCoherentFieldCache.ready = false;
-        phaseCoherentFieldCache.rebuildPending = false;
-        phaseCoherentFieldCache.pendingDescriptor = null;
-        phaseCoherentFieldCache.lastError =
-          error instanceof Error ? error.message : String(error);
-        phaseCoherentFieldCache.lastRebuildReason = "unavailable";
+        markCacheBackendUnavailable(
+          effectiveFieldCache,
+          error instanceof Error ? error.message : String(error),
+        );
       },
     );
 
@@ -1987,6 +1963,53 @@ export function isRaymarchFieldCacheReadyForDescriptor(fieldCache, descriptor) {
     fieldCache?.ready &&
     !fieldCache?.rebuildPending &&
     fieldDescriptorsEqual(fieldCache.activeDescriptor, descriptor),
+  );
+}
+
+export function shouldRebuildRaymarchEffectiveFieldCache(
+  effectiveFieldCache,
+  descriptor,
+) {
+  if (!effectiveFieldCache) {
+    return { needsRebuild: false, reason: "unavailable" };
+  }
+
+  if (effectiveFieldCache.rebuildPending) {
+    const rebuildReason = resolveEffectiveFieldRebuildReason(
+      effectiveFieldCache.queuedDescriptor ??
+        effectiveFieldCache.pendingDescriptor ??
+        effectiveFieldCache.activeDescriptor,
+      descriptor,
+    );
+
+    return {
+      needsRebuild: Boolean(rebuildReason),
+      reason: rebuildReason ?? "pending",
+    };
+  }
+
+  const rebuildReason = resolveEffectiveFieldRebuildReason(
+    effectiveFieldCache.activeDescriptor,
+    descriptor,
+  );
+
+  return {
+    needsRebuild: Boolean(rebuildReason),
+    reason: rebuildReason ?? "unchanged",
+  };
+}
+
+export function isRaymarchEffectiveFieldCacheReadyForDescriptor(
+  effectiveFieldCache,
+  descriptor,
+) {
+  return Boolean(
+    effectiveFieldCache?.ready &&
+    !effectiveFieldCache?.rebuildPending &&
+    effectiveFieldDescriptorsEqual(
+      effectiveFieldCache.activeDescriptor,
+      descriptor,
+    ),
   );
 }
 

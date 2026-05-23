@@ -10,26 +10,20 @@ import {
   hasRenderAuthority,
   isRenderAuthorityCut,
 } from "../renderAuthorityContract.js";
-import { resolveRaymarchFieldCacheOverride } from "../../visualization/fieldEvaluation.js";
 import {
+  buildRaymarchEffectiveFieldDescriptor,
   buildRaymarchSpectralLightCacheDescriptor,
   advanceRaymarchCacheGeneration,
   clearQueuedRaymarchCacheRebuild,
-  disposeRaymarchPhaseCoherentFieldCache,
-  disposeRaymarchFieldCache,
+  disposeRaymarchEffectiveFieldCache,
   disposeRaymarchSpectralLightCache,
-  enqueueRaymarchPhaseCoherentFieldRebuild,
-  enqueueRaymarchFieldCacheRebuild,
+  enqueueRaymarchEffectiveFieldRebuild,
   enqueueRaymarchSpectralLightCacheRebuild,
-  isRaymarchFieldCacheReadyForDescriptor,
+  isRaymarchEffectiveFieldCacheReadyForDescriptor,
   isRaymarchSpectralLightCacheReadyForDescriptor,
   shouldRebuildRaymarchSpectralLightCache,
-  shouldRebuildRaymarchFieldCache,
-  buildRaymarchFieldCacheDescriptor,
-  RAYMARCH_FIELD_CACHE_RESOLUTION,
-  RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT,
-  RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT,
-  RAYMARCH_PHASE_COHERENT_FIELD_RESOLUTION,
+  shouldRebuildRaymarchEffectiveFieldCache,
+  RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
 } from "./fieldCache.js";
 import {
   DETAIL_LAYER_WEIGHT,
@@ -207,25 +201,25 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.performanceGovernor = null;
   runtimeState.pendingRaymarchPerformanceGovernor = null;
   runtimeState.spectralLightBuffersUploaded = false;
-  runtimeState.phaseCoherentFieldModeCount = 0;
+  runtimeState.effectiveFieldModeCount = 0;
   runtimeState.currentModalDescriptor = null;
-  runtimeState.currentFieldDescriptor = null;
+  runtimeState.currentEffectiveFieldDescriptor = null;
   runtimeState.currentSpectralLightDescriptor = null;
   resetRaymarchUploadState(runtimeState);
-  resetCacheActivity(runtimeState.fieldCache);
+  resetCacheActivity(runtimeState.effectiveFieldCache);
   resetCacheActivity(runtimeState.spectralLightCache);
-  resetCacheActivity(runtimeState.phaseCoherentFieldCache);
-  if (runtimeState.phaseCoherentFieldCache) {
-    runtimeState.phaseCoherentFieldCache.activePhaseCoherentFieldModeCount = 0;
+  if (runtimeState.effectiveFieldCache) {
+    runtimeState.effectiveFieldCache.activeEffectiveFieldModeCount = 0;
+    runtimeState.effectiveFieldCache.effectiveFieldAuthority = 0;
   }
 }
 
 function readRuntimeFieldNoiseFloor(runtimeState) {
-  const fieldCache = runtimeState?.fieldCache;
+  const effectiveFieldCache = runtimeState?.effectiveFieldCache;
   return readFiniteNumber(
-    fieldCache?.densityNoiseFloor ??
-      fieldCache?.fieldNoiseFloor ??
-      fieldCache?.debug?.fieldNoiseFloor,
+    effectiveFieldCache?.densityNoiseFloor ??
+      effectiveFieldCache?.fieldNoiseFloor ??
+      effectiveFieldCache?.debug?.fieldNoiseFloor,
     0,
   );
 }
@@ -394,20 +388,19 @@ function blockOverflowedModalDescriptor(
   runtimeState.performanceGovernor = null;
   runtimeState.pendingRaymarchPerformanceGovernor = null;
   runtimeState.spectralLightBuffersUploaded = false;
-  runtimeState.phaseCoherentFieldModeCount = 0;
-  runtimeState.currentFieldDescriptor = null;
+  runtimeState.effectiveFieldModeCount = 0;
+  runtimeState.currentEffectiveFieldDescriptor = null;
   runtimeState.currentSpectralLightDescriptor = null;
   resetRaymarchUploadState(runtimeState);
-  resetCacheActivity(runtimeState.fieldCache);
+  resetCacheActivity(runtimeState.effectiveFieldCache);
   resetCacheActivity(runtimeState.spectralLightCache);
-  resetCacheActivity(runtimeState.phaseCoherentFieldCache);
-  if (runtimeState.phaseCoherentFieldCache) {
-    runtimeState.phaseCoherentFieldCache.activePhaseCoherentFieldModeCount = 0;
+  if (runtimeState.effectiveFieldCache) {
+    runtimeState.effectiveFieldCache.activeEffectiveFieldModeCount = 0;
+    runtimeState.effectiveFieldCache.effectiveFieldAuthority = 0;
   }
   setIfChanged(runtimeState.uniforms.uBackboneModeCount, 0);
   setIfChanged(runtimeState.uniforms.uDetailModeCount, 0);
   setIfChanged(runtimeState.uniforms.uActiveModeCount, 0);
-  setIfChanged(runtimeState.uniforms.uPhaseCoherentFieldAuthority, 0);
   runtimeState.volumeMesh.visible = false;
   runtimeState.idleOverlay.visible = resolveIdleOverlayVisible(
     runtimeState,
@@ -419,14 +412,6 @@ function blockOverflowedModalDescriptor(
     featureFrame,
     fieldState,
     renderAuthority,
-  );
-}
-
-function getRaymarchFieldCacheOverride() {
-  return resolveRaymarchFieldCacheOverride(
-    typeof window === "undefined"
-      ? undefined
-      : /** @type {any} */ (window).__baryonFieldCacheOverride,
   );
 }
 
@@ -591,16 +576,27 @@ function buildRaymarchDebugSnapshot(
   );
   const effectiveCavityGeometry =
     getRuntimeEffectiveCavityGeometry(runtimeState);
-  const fieldCache = runtimeState.fieldCache ?? null;
+  const effectiveFieldCache = runtimeState.effectiveFieldCache ?? null;
   const spectralLightCache = runtimeState.spectralLightCache ?? null;
-  const phaseCoherentFieldCache = runtimeState.phaseCoherentFieldCache ?? null;
-  const fieldCacheOverride = getRaymarchFieldCacheOverride();
-  const fieldDescriptor = runtimeState.currentFieldDescriptor ?? null;
+  const effectiveFieldDescriptor =
+    runtimeState.currentEffectiveFieldDescriptor ?? null;
   const spectralLightDescriptor =
     runtimeState.currentSpectralLightDescriptor ?? null;
-  const fieldCacheDescriptorFresh = isRaymarchFieldCacheReadyForDescriptor(
-    fieldCache,
-    fieldDescriptor,
+  const effectiveFieldDescriptorFresh =
+    isRaymarchEffectiveFieldCacheReadyForDescriptor(
+      effectiveFieldCache,
+      effectiveFieldDescriptor,
+    );
+  const effectiveFieldModeCount =
+    effectiveFieldCache?.activeEffectiveFieldModeCount ??
+    runtimeState.effectiveFieldModeCount ??
+    0;
+  const effectiveFieldSemantic =
+    effectiveFieldCache?.semantic ?? "canonical-effective-field";
+  const effectiveFieldAuthority = readFiniteNumber(
+    effectiveFieldCache?.effectiveFieldAuthority ??
+      effectiveFieldDescriptor?.phaseAuthority,
+    0,
   );
   const spectralLightCacheDescriptorFresh =
     isRaymarchSpectralLightCacheReadyForDescriptor(
@@ -617,12 +613,6 @@ function buildRaymarchDebugSnapshot(
     runtimeState.detailColorBuffer?.value?.array,
     runtimeState.uniforms.uDetailModeCount.value,
   );
-  const phaseCoherentFieldModeCount =
-    phaseCoherentFieldCache?.activePhaseCoherentFieldModeCount ??
-    runtimeState.phaseCoherentFieldModeCount ??
-    0;
-  const phaseCoherentFieldSemantic =
-    phaseCoherentFieldCache?.semantic ?? "phase-coherent-signed-displacement";
 
   return {
     fieldState,
@@ -678,7 +668,7 @@ function buildRaymarchDebugSnapshot(
       modalDescriptor?.counts?.overflowDetailModeCount ?? 0,
     modalDescriptorPhaseAuthorityModeCount:
       modalDescriptor?.diagnostics?.phaseAuthorityModeCount ??
-      phaseCoherentFieldModeCount,
+      effectiveFieldModeCount,
     dominantFrequency:
       featureFrame?.debug?.dominantFrequency ??
       featureFrame?.debug?.fundamentalFrequency ??
@@ -808,26 +798,34 @@ function buildRaymarchDebugSnapshot(
       effectiveCavityGeometry,
     fieldEvaluationMode:
       runtimeState.volumeMesh?.userData?.raymarchFieldEvaluationMode ??
-      fieldCache?.mode ??
-      "cached",
+      effectiveFieldCache?.mode ??
+      "effective-cached",
     spectralLightEvaluationMode:
       runtimeState.volumeMesh?.userData?.raymarchSpectralLightEvaluationMode ??
       spectralLightCache?.mode ??
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
-    fieldCacheActive: fieldCache?.active ?? false,
-    fieldCacheResolution:
-      fieldCache?.resolution ?? RAYMARCH_FIELD_CACHE_RESOLUTION,
-    fieldCacheRebuildCount: fieldCache?.rebuildCount ?? 0,
-    fieldCacheRebuildReason: fieldCache?.lastRebuildReason ?? "uninitialized",
-    fieldCacheHysteresisState: "cached",
-    fieldCacheOverride,
-    fieldCacheDescriptorFresh,
-    fieldCacheQueuedDescriptorPending: Boolean(fieldCache?.queuedDescriptor),
-    fieldCacheBackend: fieldCache?.backend ?? "compute",
-    fieldCacheReady: fieldCache?.ready ?? false,
-    fieldCacheRebuildPending: fieldCache?.rebuildPending ?? false,
-    fieldCacheFailedClosed: fieldCache?.backend === "unavailable",
-    fieldCacheLastError: fieldCache?.lastError ?? null,
+    effectiveFieldActive: effectiveFieldCache?.active ?? false,
+    effectiveFieldResolution:
+      effectiveFieldCache?.resolution ?? RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
+    effectiveFieldRebuildCount: effectiveFieldCache?.rebuildCount ?? 0,
+    effectiveFieldRebuildReason:
+      effectiveFieldCache?.lastRebuildReason ?? "uninitialized",
+    effectiveFieldDescriptorFresh,
+    effectiveFieldQueuedDescriptorPending: Boolean(
+      effectiveFieldCache?.queuedDescriptor,
+    ),
+    effectiveFieldBackend: effectiveFieldCache?.backend ?? "compute",
+    effectiveFieldReady: effectiveFieldCache?.ready ?? false,
+    effectiveFieldRebuildPending: effectiveFieldCache?.rebuildPending ?? false,
+    effectiveFieldFailedClosed: effectiveFieldCache?.backend === "unavailable",
+    effectiveFieldLastError: effectiveFieldCache?.lastError ?? null,
+    effectiveFieldModeCount,
+    effectiveFieldSemantic,
+    effectiveFieldAuthority,
+    effectiveFieldModeIdentityRetentionRatio:
+      effectiveFieldCache?.modeIdentityRetentionRatio ??
+      effectiveFieldDescriptor?.modeIdentityRetentionRatio ??
+      1,
     spectralLightCacheActive: spectralLightCache?.active ?? false,
     spectralLightCacheReady: spectralLightCache?.ready ?? false,
     spectralLightCacheRebuildPending:
@@ -841,19 +839,6 @@ function buildRaymarchDebugSnapshot(
       spectralLightCache?.backend === "unavailable",
     spectralLightCacheRebuildCount: spectralLightCache?.rebuildCount ?? 0,
     spectralLightCacheLastError: spectralLightCache?.lastError ?? null,
-    phaseCoherentFieldActive: phaseCoherentFieldCache?.active ?? false,
-    phaseCoherentFieldReady: phaseCoherentFieldCache?.ready ?? false,
-    phaseCoherentFieldPending: phaseCoherentFieldCache?.rebuildPending ?? false,
-    phaseCoherentFieldBackend: phaseCoherentFieldCache?.backend ?? "compute",
-    phaseCoherentFieldResolution:
-      phaseCoherentFieldCache?.resolution ??
-      RAYMARCH_PHASE_COHERENT_FIELD_RESOLUTION,
-    phaseCoherentFieldRebuildCount: phaseCoherentFieldCache?.rebuildCount ?? 0,
-    phaseCoherentFieldLastError: phaseCoherentFieldCache?.lastError ?? null,
-    phaseCoherentFieldModeCount: phaseCoherentFieldModeCount,
-    phaseCoherentFieldSemantic,
-    phaseCoherentFieldAuthority:
-      runtimeState.uniforms.uPhaseCoherentFieldAuthority?.value ?? 0,
     spectralMix: runtimeState.uniforms.uSpectralMix?.value ?? 0,
     holographicReferenceStrength,
     avgRaySegmentLength,
@@ -1088,7 +1073,6 @@ function getRaymarchUploadState(runtimeState) {
       detail: null,
       backbonePhase: null,
       detailPhase: null,
-      fieldDescriptorSignature: null,
       spectralLightDescriptorSignature: null,
     };
   }
@@ -1407,40 +1391,42 @@ function takePendingRaymarchPerformanceGovernor(
   return matches ? (pending.governor ?? null) : null;
 }
 
-function resolveFieldEvaluationMode(
+function updateEffectiveFieldCache(
   runtimeState,
   renderer,
   { backboneCapacity, detailCapacity },
-  { debugDirectRequested, fieldDescriptor },
+  { effectiveFieldDescriptor },
 ) {
-  const fieldCache = runtimeState.fieldCache;
-  if (!fieldCache || !runtimeState.volumeMesh) {
-    return debugDirectRequested ? "direct" : "cached";
+  const effectiveFieldCache = runtimeState.effectiveFieldCache;
+  if (!effectiveFieldCache || !runtimeState.volumeMesh) {
+    return "unavailable";
   }
 
-  fieldCache.active = !debugDirectRequested;
-  fieldCache.mode = debugDirectRequested ? "direct" : "cached";
-  if (debugDirectRequested) {
-    if (fieldCache.lastRebuildReason === "uninitialized") {
-      fieldCache.lastRebuildReason = "inactive";
-    }
-    return "direct";
-  }
+  effectiveFieldCache.active = true;
+  effectiveFieldCache.mode = "effective-cached";
+  effectiveFieldCache.activeEffectiveFieldModeCount =
+    effectiveFieldDescriptor?.phaseModeCount ?? 0;
+  effectiveFieldCache.effectiveFieldAuthority =
+    effectiveFieldDescriptor?.phaseAuthority ?? 0;
+  effectiveFieldCache.modeIdentityRetentionRatio =
+    effectiveFieldDescriptor?.modeIdentityRetentionRatio ?? 1;
 
-  const { needsRebuild, reason } = shouldRebuildRaymarchFieldCache(
-    fieldCache,
-    fieldDescriptor,
+  const { needsRebuild, reason } = shouldRebuildRaymarchEffectiveFieldCache(
+    effectiveFieldCache,
+    effectiveFieldDescriptor,
   );
 
   if (needsRebuild) {
-    enqueueRaymarchFieldCacheRebuild(
-      fieldCache,
+    enqueueRaymarchEffectiveFieldRebuild(
+      effectiveFieldCache,
       renderer,
-      fieldDescriptor,
+      effectiveFieldDescriptor,
       reason,
       {
         backboneModeBuffer: runtimeState.backboneModeBuffer,
         detailModeBuffer: runtimeState.detailModeBuffer,
+        backbonePhaseBuffer: runtimeState.backbonePhaseBuffer,
+        detailPhaseBuffer: runtimeState.detailPhaseBuffer,
         backboneCapacity,
         detailCapacity,
         uniforms: runtimeState.uniforms,
@@ -1448,7 +1434,9 @@ function resolveFieldEvaluationMode(
     );
   }
 
-  return "cached";
+  return effectiveFieldCache.backend === "unavailable"
+    ? "unavailable"
+    : "effective-cached";
 }
 
 function resolveSpectralLightEvaluationMode(
@@ -1514,97 +1502,22 @@ function resolveSpectralLightEvaluationMode(
   return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
 }
 
-function updatePhaseCoherentFieldCache(
-  runtimeState,
-  renderer,
-  { backbonePhaseCapacity, detailPhaseCapacity },
-  { fieldDescriptor, fieldEvaluationMode, featureFrame, timeMs },
-) {
-  const phaseCoherentFieldCache = runtimeState.phaseCoherentFieldCache;
-  const phaseStrengthUniform =
-    runtimeState.uniforms.uPhaseCoherentFieldAuthority ?? null;
-  const phaseAuthority = clamp01(featureFrame?.modalPhaseAuthority ?? 0);
-  const phaseModeCount = runtimeState.phaseCoherentFieldModeCount ?? 0;
-  const cachedFieldActive = fieldEvaluationMode === "cached";
-
-  if (!phaseCoherentFieldCache || !runtimeState.volumeMesh) {
-    setIfChanged(phaseStrengthUniform, 0);
-    return;
-  }
-
-  phaseCoherentFieldCache.active = cachedFieldActive && phaseAuthority > 0;
-  phaseCoherentFieldCache.activePhaseCoherentFieldModeCount = phaseModeCount;
-
-  if (
-    !cachedFieldActive ||
-    !(phaseAuthority > 0) ||
-    phaseModeCount <= 0 ||
-    phaseCoherentFieldCache.backend === "unavailable"
-  ) {
-    setIfChanged(phaseStrengthUniform, 0);
-    return;
-  }
-
-  const elapsedMs =
-    timeMs - (phaseCoherentFieldCache.lastUpdateTimeMs ?? -Infinity);
-  const cadenceElapsed =
-    elapsedMs >= (phaseCoherentFieldCache.updateIntervalMs ?? 1000 / 15);
-
-  if (!phaseCoherentFieldCache.rebuildPending && cadenceElapsed) {
-    const result = enqueueRaymarchPhaseCoherentFieldRebuild(
-      phaseCoherentFieldCache,
-      renderer,
-      {
-        ...fieldDescriptor,
-        phaseModeCount,
-        phaseAuthority: Math.round(phaseAuthority * 1000) / 1000,
-      },
-      phaseCoherentFieldCache.ready ? "phase-update" : "initial",
-      {
-        backboneModeBuffer: runtimeState.backboneModeBuffer,
-        detailModeBuffer: runtimeState.detailModeBuffer,
-        backbonePhaseBuffer: runtimeState.backbonePhaseBuffer,
-        detailPhaseBuffer: runtimeState.detailPhaseBuffer,
-        backboneCapacity: backbonePhaseCapacity,
-        detailCapacity: detailPhaseCapacity,
-        uniforms: runtimeState.uniforms,
-      },
-    );
-    if (result.enqueued) {
-      phaseCoherentFieldCache.lastUpdateTimeMs = timeMs;
-      runtimeState.phaseCoherentFieldUploadCount =
-        (runtimeState.phaseCoherentFieldUploadCount ?? 0) + 1;
-    }
-  }
-
-  const phaseCoherentFieldReady =
-    phaseCoherentFieldCache.backend !== "unavailable" &&
-    phaseCoherentFieldCache.ready;
-  setIfChanged(
-    phaseStrengthUniform,
-    phaseCoherentFieldReady ? phaseAuthority : 0,
-  );
-}
-
 function updateRaymarchEvaluationModes(
   runtimeState,
   renderer,
   capacities,
-  { spectralLightEnabled, fieldDescriptor, spectralLightDescriptor },
+  { spectralLightEnabled, effectiveFieldDescriptor, spectralLightDescriptor },
 ) {
   if (!runtimeState.volumeMesh) {
     return;
   }
 
-  const requestedMode = getRaymarchFieldCacheOverride();
-  const debugDirectRequested = requestedMode === "direct";
-  const fieldEvaluationMode = resolveFieldEvaluationMode(
+  const fieldEvaluationMode = updateEffectiveFieldCache(
     runtimeState,
     renderer,
     capacities,
     {
-      debugDirectRequested,
-      fieldDescriptor,
+      effectiveFieldDescriptor,
     },
   );
   setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, fieldEvaluationMode);
@@ -1616,7 +1529,7 @@ function updateRaymarchEvaluationModes(
     {
       spectralLightEnabled,
       spectralLightDescriptor,
-      debugDirectRequested,
+      debugDirectRequested: false,
     },
   );
   setRaymarchSpectralLightEvaluationMode(
@@ -1650,13 +1563,11 @@ export function tickRaymarchRuntime(
     detailModeBuffer.value.array,
   );
   const backbonePhaseCapacity = inferLayerCapacity(
-    runtimeState.backbonePhaseCapacity ??
-      RAYMARCH_PHASE_COHERENT_FIELD_BACKBONE_LIMIT,
+    runtimeState.backbonePhaseCapacity ?? runtimeState.backboneCapacity,
     runtimeState.backbonePhaseBuffer?.value?.array,
   );
   const detailPhaseCapacity = inferLayerCapacity(
-    runtimeState.detailPhaseCapacity ??
-      RAYMARCH_PHASE_COHERENT_FIELD_DETAIL_LIMIT,
+    runtimeState.detailPhaseCapacity ?? runtimeState.detailCapacity,
     runtimeState.detailPhaseBuffer?.value?.array,
   );
 
@@ -1701,7 +1612,6 @@ export function tickRaymarchRuntime(
     setIfChanged(uniforms.uTotalSlotAmplitude, 0);
     setIfChanged(uniforms.uModalResponseBackboneEnergy, 0);
     setIfChanged(uniforms.uModalResponseDetailEnergy, 0);
-    setIfChanged(uniforms.uPhaseCoherentFieldAuthority, 0);
     setIfChanged(uniforms.uKeyTintStrength, 0);
     setIfChanged(uniforms.uKeyMode, 0);
     uniforms.uBandEnergies.value.set(0, 0, 0, 0);
@@ -1825,7 +1735,7 @@ export function tickRaymarchRuntime(
     layer: detailLayer,
     capacity: detailPhaseCapacity,
   });
-  runtimeState.phaseCoherentFieldModeCount =
+  runtimeState.effectiveFieldModeCount =
     backbonePhaseModeCount + detailPhaseModeCount;
 
   const backboneModeCount = backboneLayer.uploadedActiveCount;
@@ -1845,25 +1755,25 @@ export function tickRaymarchRuntime(
     cavityGeometry: effectiveCavityGeometry,
     radius: descriptorRadius,
   });
-  let fieldDescriptor = runtimeState.currentFieldDescriptor;
-  if (
-    !fieldDescriptor ||
-    !fieldDescriptorSignatureEquals(
-      uploadState.fieldDescriptorSignature,
-      fieldDescriptorSignature,
-    )
-  ) {
-    fieldDescriptor = buildRaymarchFieldCacheDescriptor({
-      backboneSlots: runtimeState.backboneModeBuffer?.value?.array,
-      detailSlots: runtimeState.detailModeBuffer?.value?.array,
-      backboneCount: backboneModeCount,
-      detailCount: detailModeCount,
-      boundaryMode,
-      cavityGeometry: effectiveCavityGeometry,
-      radius: descriptorRadius,
-    });
-    uploadState.fieldDescriptorSignature = fieldDescriptorSignature;
-  }
+  const effectiveFieldDescriptor = buildRaymarchEffectiveFieldDescriptor({
+    backboneSlots: runtimeState.backboneModeBuffer?.value?.array,
+    detailSlots: runtimeState.detailModeBuffer?.value?.array,
+    backbonePhaseSlots: runtimeState.backbonePhaseBuffer?.value?.array,
+    detailPhaseSlots: runtimeState.detailPhaseBuffer?.value?.array,
+    backboneCount: backboneModeCount,
+    detailCount: detailModeCount,
+    boundaryMode,
+    cavityGeometry: effectiveCavityGeometry,
+    radius: descriptorRadius,
+    phaseModeCount: runtimeState.effectiveFieldModeCount,
+    phaseAuthority: featureFrame?.modalPhaseAuthority ?? 0,
+    descriptorOverflow: modalDescriptor.diagnostics.descriptorOverflow,
+    modeIdentityRetentionRatio:
+      modalDescriptor.diagnostics.modeIdentityRetentionRatio,
+    resolution:
+      runtimeState.effectiveFieldCache?.resolution ??
+      RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
+  });
 
   let spectralLightDescriptor = null;
   if (spectralLightEnabled) {
@@ -1899,7 +1809,7 @@ export function tickRaymarchRuntime(
     uploadState.spectralLightDescriptorSignature = null;
   }
 
-  runtimeState.currentFieldDescriptor = fieldDescriptor;
+  runtimeState.currentEffectiveFieldDescriptor = effectiveFieldDescriptor;
   runtimeState.currentSpectralLightDescriptor = spectralLightDescriptor;
   runtimeState.spectralLightBuffersUploaded = spectralLightEnabled;
   setRaymarchCavityGeometry(runtimeState.volumeMesh, effectiveCavityGeometry);
@@ -1912,24 +1822,8 @@ export function tickRaymarchRuntime(
     },
     {
       spectralLightEnabled,
-      fieldDescriptor,
+      effectiveFieldDescriptor,
       spectralLightDescriptor,
-    },
-  );
-  updatePhaseCoherentFieldCache(
-    runtimeState,
-    renderer,
-    {
-      backbonePhaseCapacity,
-      detailPhaseCapacity,
-    },
-    {
-      fieldDescriptor,
-      fieldEvaluationMode:
-        runtimeState.volumeMesh?.userData?.raymarchFieldEvaluationMode ??
-        "cached",
-      featureFrame,
-      timeMs: time * 1000,
     },
   );
   setIfChanged(uniforms.uAverageAmplitude, featureFrame?.averageAmplitude ?? 0);
@@ -2031,9 +1925,8 @@ export function tickRaymarchRuntime(
 }
 
 export function disposeRaymarchRuntime(runtimeState) {
-  disposeRaymarchFieldCache(runtimeState?.fieldCache);
+  disposeRaymarchEffectiveFieldCache(runtimeState?.effectiveFieldCache);
   disposeRaymarchSpectralLightCache(runtimeState?.spectralLightCache);
-  disposeRaymarchPhaseCoherentFieldCache(runtimeState?.phaseCoherentFieldCache);
   runtimeState?.points?.traverse?.((child) => {
     child.geometry?.dispose?.();
     const materialCache = child.userData?.raymarchMaterialCache;

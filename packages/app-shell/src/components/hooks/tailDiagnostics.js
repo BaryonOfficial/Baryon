@@ -175,11 +175,11 @@ function buildTailDiagnosticSample({
         render.observedContourSupportMax ??
           raymarchDebug.observedContourSupportMax,
       ),
-      phaseCoherentFieldReady: readBoolean(render.phaseCoherentFieldReady),
-      phaseCoherentFieldPending: readBoolean(render.phaseCoherentFieldPending),
-      phaseCoherentFieldAuthority: readFiniteNumber(
-        render.phaseCoherentFieldAuthority,
+      effectiveFieldReady: readBoolean(render.effectiveFieldReady),
+      effectiveFieldRebuildPending: readBoolean(
+        render.effectiveFieldRebuildPending,
       ),
+      effectiveFieldAuthority: readFiniteNumber(render.effectiveFieldAuthority),
       bloomEnabled: readBoolean(render.bloomEnabled),
       bloomResponseSignal: readFiniteNumber(modalFreshness.bloomResponseSignal),
       scaleSignal: readFiniteNumber(modalFreshness.scaleSignal),
