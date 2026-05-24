@@ -19,14 +19,13 @@ import {
 import { normalizeBoundaryMode } from "../modeFamily.js";
 import { normalizeCavityGeometry } from "../cavityGeometry.js";
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
-import { DETAIL_LAYER_WEIGHT } from "./fieldShaping.js";
 import { buildRaymarchPhaseSlotSignature } from "./phaseSlotSemantics.js";
 
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 export const RAYMARCH_EFFECTIVE_FIELD_RESOLUTION =
   RAYMARCH_FIELD_CACHE_RESOLUTION;
 const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
-const FIELD_CACHE_WEIGHT_QUANTIZATION = 1024;
+const FIELD_CACHE_COLOR_QUANTIZATION = 32;
 const SIGNED_INTERFERENCE_VISIBILITY_EPSILON = 0.01;
 const SIGNED_INTERFERENCE_VISIBILITY_START = 0.025;
 const SIGNED_INTERFERENCE_VISIBILITY_END = 0.1;
@@ -58,7 +57,7 @@ function hashFloat32(value, hash) {
   return hashUint32(uintView[0], hash);
 }
 
-function hashSlotLayer(slots, activeCount) {
+function hashModalFieldTopology(slots, activeCount) {
   let hash = FNV_OFFSET_BASIS;
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
 
@@ -67,7 +66,45 @@ function hashSlotLayer(slots, activeCount) {
     hash = hashFloat32(slots?.[offset] ?? 0, hash);
     hash = hashFloat32(slots?.[offset + 1] ?? 0, hash);
     hash = hashFloat32(slots?.[offset + 2] ?? 0, hash);
-    hash = hashFloat32(slots?.[offset + 3] ?? 0, hash);
+  }
+
+  return hash >>> 0;
+}
+
+function hashSpectralLightColorTopology(colorSlots, activeCount) {
+  let hash = FNV_OFFSET_BASIS;
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    hash = hashUint32(slotIndex, hash);
+    hash = hashUint32(
+      Math.round(
+        clamp01(colorSlots?.[offset] ?? 0) * FIELD_CACHE_COLOR_QUANTIZATION,
+      ),
+      hash,
+    );
+    hash = hashUint32(
+      Math.round(
+        clamp01(colorSlots?.[offset + 1] ?? 0) *
+          FIELD_CACHE_COLOR_QUANTIZATION,
+      ),
+      hash,
+    );
+    hash = hashUint32(
+      Math.round(
+        clamp01(colorSlots?.[offset + 2] ?? 0) *
+          FIELD_CACHE_COLOR_QUANTIZATION,
+      ),
+      hash,
+    );
+    hash = hashUint32(
+      Math.round(
+        clamp01(colorSlots?.[offset + 3] ?? 0) *
+          FIELD_CACHE_COLOR_QUANTIZATION,
+      ),
+      hash,
+    );
   }
 
   return hash >>> 0;
@@ -100,7 +137,7 @@ function deriveSignedInterferenceVisibility(
   );
 }
 
-function sumWeightedSlotAmplitude(slots, activeCount, weight = 1) {
+function sumSlotAmplitude(slots, activeCount) {
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   let total = 0;
 
@@ -108,7 +145,7 @@ function sumWeightedSlotAmplitude(slots, activeCount, weight = 1) {
     const offset = slotIndex * 4;
     const amplitude = slots?.[offset + 3] ?? 0;
     if (amplitude > 0) {
-      total += amplitude * weight;
+      total += amplitude;
     }
   }
 
@@ -158,10 +195,9 @@ function getEffectiveFieldSlotGradientBound({ slots, offset, scale }) {
   );
 }
 
-function summarizeEffectiveFieldLayerDiagnostics({
+function summarizeEffectiveFieldDiagnostics({
   slots,
   activeCount,
-  weight,
   resolution,
   scale,
 }) {
@@ -175,7 +211,7 @@ function summarizeEffectiveFieldLayerDiagnostics({
 
   for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
     const offset = slotIndex * 4;
-    const modalEnergy = Math.max(0, slots?.[offset + 3] ?? 0) * weight;
+    const modalEnergy = Math.max(0, slots?.[offset + 3] ?? 0);
     if (!(modalEnergy > 0)) {
       zeroAmplitudeSkippedModeCount += 1;
       continue;
@@ -194,35 +230,15 @@ function summarizeEffectiveFieldLayerDiagnostics({
       getEffectiveFieldSlotGradientBound({ slots, offset, scale });
   }
 
-  return {
-    contributingEffectiveFieldModeCount,
-    zeroAmplitudeSkippedModeCount,
-    bandwidthRejectedModeCount,
-    contributingModalEnergy,
-    bandwidthRejectedModalEnergy,
-    gradientEnvelopeNumerator,
-  };
-}
-
-function mergeEffectiveFieldDiagnostics(backbone, detail, resolution) {
-  const contributingModalEnergy =
-    backbone.contributingModalEnergy + detail.contributingModalEnergy;
-  const bandwidthRejectedModalEnergy =
-    backbone.bandwidthRejectedModalEnergy + detail.bandwidthRejectedModalEnergy;
   const totalRepresentedModalEnergy =
     contributingModalEnergy + bandwidthRejectedModalEnergy;
 
   return {
     effectiveFieldMaxRepresentableModeIndex:
       getEffectiveFieldMaxRepresentableModeIndex(resolution),
-    contributingEffectiveFieldModeCount:
-      backbone.contributingEffectiveFieldModeCount +
-      detail.contributingEffectiveFieldModeCount,
-    zeroAmplitudeSkippedModeCount:
-      backbone.zeroAmplitudeSkippedModeCount +
-      detail.zeroAmplitudeSkippedModeCount,
-    bandwidthRejectedModeCount:
-      backbone.bandwidthRejectedModeCount + detail.bandwidthRejectedModeCount,
+    contributingEffectiveFieldModeCount,
+    zeroAmplitudeSkippedModeCount,
+    bandwidthRejectedModeCount,
     contributingModalEnergy,
     bandwidthRejectedModalEnergy,
     effectiveFieldResolvedModalEnergyRatio:
@@ -230,18 +246,15 @@ function mergeEffectiveFieldDiagnostics(backbone, detail, resolution) {
         ? contributingModalEnergy / totalRepresentedModalEnergy
         : 1,
     effectiveFieldGradientEnvelope:
-      (backbone.gradientEnvelopeNumerator + detail.gradientEnvelopeNumerator) /
+      gradientEnvelopeNumerator /
       Math.max(EFFECTIVE_FIELD_ENERGY_EPSILON, contributingModalEnergy),
   };
 }
 
 function summarizeEffectiveFieldSupportDiagnostics({
-  backboneSlots,
-  detailSlots,
-  backbonePhaseSlots,
-  detailPhaseSlots,
-  backboneCount,
-  detailCount,
+  modalFieldSlots,
+  modalFieldPhaseSlots,
+  modalFieldCount,
   boundaryMode,
   cavityGeometry,
   radius,
@@ -255,12 +268,9 @@ function summarizeEffectiveFieldSupportDiagnostics({
 
   for (const [x, y, z] of EFFECTIVE_FIELD_SUPPORT_DIAGNOSTIC_SAMPLE_POINTS) {
     const sample = evaluateRaymarchEffectiveFieldPoint({
-      backboneSlots,
-      detailSlots,
-      backbonePhaseSlots,
-      detailPhaseSlots,
-      backboneCount,
-      detailCount,
+      modalFieldSlots,
+      modalFieldPhaseSlots,
+      modalFieldCount,
       boundaryMode,
       cavityGeometry,
       radius,
@@ -296,32 +306,6 @@ function summarizeEffectiveFieldSupportDiagnostics({
   };
 }
 
-function hashFieldTopologyLayer({
-  slots,
-  activeCount,
-  weight = 1,
-  totalWeightedAmplitude = 0,
-}) {
-  let hash = FNV_OFFSET_BASIS;
-  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
-  const safeTotal = Math.max(totalWeightedAmplitude, 1e-6);
-
-  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
-    const offset = slotIndex * 4;
-    const weightedAmplitude = Math.max(0, slots?.[offset + 3] ?? 0) * weight;
-    const normalizedWeight = Math.round(
-      Math.min(1, weightedAmplitude / safeTotal) *
-        FIELD_CACHE_WEIGHT_QUANTIZATION,
-    );
-    hash = hashFloat32(slots?.[offset] ?? 0, hash);
-    hash = hashFloat32(slots?.[offset + 1] ?? 0, hash);
-    hash = hashFloat32(slots?.[offset + 2] ?? 0, hash);
-    hash = hashUint32(normalizedWeight, hash);
-  }
-
-  return hash >>> 0;
-}
-
 function fieldDescriptorsEqual(left, right) {
   if (!left || !right) {
     return false;
@@ -331,10 +315,8 @@ function fieldDescriptorsEqual(left, right) {
     left.boundaryMode === right.boundaryMode &&
     left.cavityGeometry === right.cavityGeometry &&
     left.radius === right.radius &&
-    left.backboneCount === right.backboneCount &&
-    left.detailCount === right.detailCount &&
-    left.backboneHash === right.backboneHash &&
-    left.detailHash === right.detailHash
+    left.modalFieldCount === right.modalFieldCount &&
+    left.modalFieldHash === right.modalFieldHash
   );
 }
 
@@ -343,10 +325,7 @@ function spectralLightDescriptorsEqual(left, right) {
     return false;
   }
 
-  return (
-    left.backboneColorHash === right.backboneColorHash &&
-    left.detailColorHash === right.detailColorHash
-  );
+  return left.modalFieldColorHash === right.modalFieldColorHash;
 }
 
 function effectiveFieldDescriptorsEqual(left, right) {
@@ -355,10 +334,8 @@ function effectiveFieldDescriptorsEqual(left, right) {
   }
 
   return (
-    left.backbonePhaseHash === right.backbonePhaseHash &&
-    left.detailPhaseHash === right.detailPhaseHash &&
+    left.modalFieldPhaseHash === right.modalFieldPhaseHash &&
     left.phaseModeCount === right.phaseModeCount &&
-    left.phaseAuthority === right.phaseAuthority &&
     left.descriptorOverflow === right.descriptorOverflow &&
     left.resolution === right.resolution
   );
@@ -380,16 +357,10 @@ function resolveFieldRebuildReason(previousDescriptor, nextDescriptor) {
   if (previousDescriptor.radius !== nextDescriptor.radius) {
     return "radius";
   }
-  if (
-    previousDescriptor.backboneCount !== nextDescriptor.backboneCount ||
-    previousDescriptor.detailCount !== nextDescriptor.detailCount
-  ) {
+  if (previousDescriptor.modalFieldCount !== nextDescriptor.modalFieldCount) {
     return "mode-count";
   }
-  if (
-    previousDescriptor.backboneHash !== nextDescriptor.backboneHash ||
-    previousDescriptor.detailHash !== nextDescriptor.detailHash
-  ) {
+  if (previousDescriptor.modalFieldHash !== nextDescriptor.modalFieldHash) {
     return "mode-slots";
   }
 
@@ -405,8 +376,8 @@ function resolveSpectralLightRebuildReason(previousDescriptor, nextDescriptor) {
     return fieldReason;
   }
   if (
-    previousDescriptor.backboneColorHash !== nextDescriptor.backboneColorHash ||
-    previousDescriptor.detailColorHash !== nextDescriptor.detailColorHash
+    previousDescriptor.modalFieldColorHash !==
+    nextDescriptor.modalFieldColorHash
   ) {
     return "color-slots";
   }
@@ -426,18 +397,13 @@ function resolveEffectiveFieldRebuildReason(
     return fieldReason;
   }
   if (
-    previousDescriptor.backbonePhaseHash !== nextDescriptor.backbonePhaseHash
+    previousDescriptor.modalFieldPhaseHash !==
+    nextDescriptor.modalFieldPhaseHash
   ) {
-    return "phase-slots";
-  }
-  if (previousDescriptor.detailPhaseHash !== nextDescriptor.detailPhaseHash) {
     return "phase-slots";
   }
   if (previousDescriptor.phaseModeCount !== nextDescriptor.phaseModeCount) {
     return "phase-mode-count";
-  }
-  if (previousDescriptor.phaseAuthority !== nextDescriptor.phaseAuthority) {
-    return "phase-authority";
   }
   if (
     previousDescriptor.descriptorOverflow !== nextDescriptor.descriptorOverflow
@@ -686,52 +652,32 @@ function beginCacheRebuild(cache, descriptor) {
 }
 
 export function buildRaymarchFieldCacheDescriptor({
-  backboneSlots,
-  detailSlots,
-  backboneCount = 0,
-  detailCount = 0,
+  modalFieldSlots,
+  modalFieldCount,
   boundaryMode,
   cavityGeometry = "rectangular",
   radius = 1,
 }) {
-  const normalizedBackboneCount = Math.max(0, Math.round(backboneCount || 0));
-  const normalizedDetailCount = Math.max(0, Math.round(detailCount || 0));
-  const totalWeightedAmplitude =
-    sumWeightedSlotAmplitude(backboneSlots, normalizedBackboneCount, 1) +
-    sumWeightedSlotAmplitude(
-      detailSlots,
-      normalizedDetailCount,
-      DETAIL_LAYER_WEIGHT,
-    );
-
+  const normalizedModalFieldCount = Math.max(
+    0,
+    Math.round(modalFieldCount || 0),
+  );
   return {
     boundaryMode: normalizeBoundaryMode(boundaryMode),
     cavityGeometry: normalizeCavityGeometry(cavityGeometry),
     radius: Number.isFinite(radius) ? radius : 1,
-    backboneCount: normalizedBackboneCount,
-    detailCount: normalizedDetailCount,
-    backboneHash: hashFieldTopologyLayer({
-      slots: backboneSlots,
-      activeCount: normalizedBackboneCount,
-      weight: 1,
-      totalWeightedAmplitude,
-    }),
-    detailHash: hashFieldTopologyLayer({
-      slots: detailSlots,
-      activeCount: normalizedDetailCount,
-      weight: DETAIL_LAYER_WEIGHT,
-      totalWeightedAmplitude,
-    }),
+    modalFieldCount: normalizedModalFieldCount,
+    modalFieldHash: hashModalFieldTopology(
+      modalFieldSlots,
+      normalizedModalFieldCount,
+    ),
   };
 }
 
 export function buildRaymarchEffectiveFieldDescriptor({
-  backboneSlots,
-  detailSlots,
-  backbonePhaseSlots,
-  detailPhaseSlots,
-  backboneCount = 0,
-  detailCount = 0,
+  modalFieldSlots,
+  modalFieldPhaseSlots,
+  modalFieldCount,
   boundaryMode,
   cavityGeometry = "rectangular",
   radius = 1,
@@ -745,41 +691,23 @@ export function buildRaymarchEffectiveFieldDescriptor({
   const normalizedRadius = Number.isFinite(radius) ? radius : 1;
   const effectiveFieldScale = getEffectiveFieldScale(normalizedRadius);
   const fieldDescriptor = buildRaymarchFieldCacheDescriptor({
-    backboneSlots,
-    detailSlots,
-    backboneCount,
-    detailCount,
+    modalFieldSlots,
+    modalFieldCount,
     boundaryMode,
     cavityGeometry,
     radius: normalizedRadius,
   });
-  const backboneDiagnostics = summarizeEffectiveFieldLayerDiagnostics({
-    slots: backboneSlots,
-    activeCount: backboneCount,
-    weight: 1,
+  const effectiveDiagnostics = summarizeEffectiveFieldDiagnostics({
+    slots: modalFieldSlots,
+    activeCount: modalFieldCount,
     resolution: normalizedResolution,
     scale: effectiveFieldScale,
   });
-  const detailDiagnostics = summarizeEffectiveFieldLayerDiagnostics({
-    slots: detailSlots,
-    activeCount: detailCount,
-    weight: DETAIL_LAYER_WEIGHT,
-    resolution: normalizedResolution,
-    scale: effectiveFieldScale,
-  });
-  const effectiveDiagnostics = mergeEffectiveFieldDiagnostics(
-    backboneDiagnostics,
-    detailDiagnostics,
-    normalizedResolution,
-  );
   const effectiveSupportDiagnostics = summarizeEffectiveFieldSupportDiagnostics(
     {
-      backboneSlots,
-      detailSlots,
-      backbonePhaseSlots,
-      detailPhaseSlots,
-      backboneCount,
-      detailCount,
+      modalFieldSlots,
+      modalFieldPhaseSlots,
+      modalFieldCount,
       boundaryMode,
       cavityGeometry,
       radius: normalizedRadius,
@@ -789,13 +717,9 @@ export function buildRaymarchEffectiveFieldDescriptor({
 
   return {
     ...fieldDescriptor,
-    backbonePhaseHash: buildRaymarchPhaseSlotSignature({
-      phaseSlots: backbonePhaseSlots,
-      activeCount: backboneCount,
-    }).slotHash,
-    detailPhaseHash: buildRaymarchPhaseSlotSignature({
-      phaseSlots: detailPhaseSlots,
-      activeCount: detailCount,
+    modalFieldPhaseHash: buildRaymarchPhaseSlotSignature({
+      phaseSlots: modalFieldPhaseSlots,
+      activeCount: modalFieldCount,
     }).slotHash,
     phaseModeCount: Math.max(0, Math.round(phaseModeCount || 0)),
     phaseAuthority: Math.round(clamp01(phaseAuthority) * 1000) / 1000,
@@ -808,21 +732,16 @@ export function buildRaymarchEffectiveFieldDescriptor({
 }
 
 export function buildRaymarchSpectralLightCacheDescriptor({
-  backboneSlots,
-  detailSlots,
-  backboneColorSlots,
-  detailColorSlots,
-  backboneCount = 0,
-  detailCount = 0,
+  modalFieldSlots,
+  modalFieldColorSlots,
+  modalFieldCount,
   boundaryMode,
   cavityGeometry = "rectangular",
   radius = 1,
 }) {
   const fieldDescriptor = buildRaymarchFieldCacheDescriptor({
-    backboneSlots,
-    detailSlots,
-    backboneCount,
-    detailCount,
+    modalFieldSlots,
+    modalFieldCount,
     boundaryMode,
     cavityGeometry,
     radius,
@@ -830,8 +749,10 @@ export function buildRaymarchSpectralLightCacheDescriptor({
 
   return {
     ...fieldDescriptor,
-    backboneColorHash: hashSlotLayer(backboneColorSlots, backboneCount),
-    detailColorHash: hashSlotLayer(detailColorSlots, detailCount),
+    modalFieldColorHash: hashSpectralLightColorTopology(
+      modalFieldColorSlots,
+      modalFieldCount,
+    ),
   };
 }
 
@@ -985,10 +906,8 @@ function accumulateSignedPotentialLayerAtPoint({
 }
 
 export function evaluateRaymarchFieldCachePoint({
-  backboneSlots,
-  detailSlots,
-  backboneCount = 0,
-  detailCount = 0,
+  modalFieldSlots,
+  modalFieldCount,
   boundaryMode,
   cavityGeometry = "rectangular",
   radius = 1,
@@ -998,9 +917,9 @@ export function evaluateRaymarchFieldCachePoint({
 }) {
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
   const scale = Math.PI / Math.max(radius, 1e-4);
-  const backbone = accumulateLayerAtPoint({
-    slots: backboneSlots,
-    activeCount: backboneCount,
+  const modalField = accumulateLayerAtPoint({
+    slots: modalFieldSlots,
+    activeCount: modalFieldCount,
     weight: 1,
     x,
     y,
@@ -1009,28 +928,16 @@ export function evaluateRaymarchFieldCachePoint({
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry,
   });
-  const detail = accumulateLayerAtPoint({
-    slots: detailSlots,
-    activeCount: detailCount,
-    weight: DETAIL_LAYER_WEIGHT,
-    x,
-    y,
-    z,
-    scale,
-    boundaryMode: normalizedBoundaryMode,
-    cavityGeometry,
-  });
   const amplitudeNorm = Math.max(
-    sumWeightedSlotAmplitude(backboneSlots, backboneCount, 1) +
-      sumWeightedSlotAmplitude(detailSlots, detailCount, DETAIL_LAYER_WEIGHT),
+    sumSlotAmplitude(modalFieldSlots, modalFieldCount),
     0.01,
   );
 
   return {
-    field: (backbone.field + detail.field) / amplitudeNorm,
-    gradX: (backbone.gradX + detail.gradX) / amplitudeNorm,
-    gradY: (backbone.gradY + detail.gradY) / amplitudeNorm,
-    gradZ: (backbone.gradZ + detail.gradZ) / amplitudeNorm,
+    field: modalField.field / amplitudeNorm,
+    gradX: modalField.gradX / amplitudeNorm,
+    gradY: modalField.gradY / amplitudeNorm,
+    gradZ: modalField.gradZ / amplitudeNorm,
   };
 }
 
@@ -1038,7 +945,6 @@ function accumulateEffectiveFieldLayerAtPoint({
   slots,
   phaseSlots,
   activeCount,
-  weight,
   x,
   y,
   z,
@@ -1065,7 +971,7 @@ function accumulateEffectiveFieldLayerAtPoint({
 
   for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
     const offset = slotIndex * 4;
-    const amplitude = Math.max(0, slots?.[offset + 3] ?? 0) * weight;
+    const amplitude = Math.max(0, slots?.[offset + 3] ?? 0);
     if (!(amplitude > 0)) {
       zeroAmplitudeSkippedModeCount += 1;
       continue;
@@ -1129,12 +1035,9 @@ function accumulateEffectiveFieldLayerAtPoint({
 }
 
 export function evaluateRaymarchEffectiveFieldPoint({
-  backboneSlots,
-  detailSlots,
-  backbonePhaseSlots,
-  detailPhaseSlots,
-  backboneCount = 0,
-  detailCount = 0,
+  modalFieldSlots,
+  modalFieldPhaseSlots,
+  modalFieldCount,
   boundaryMode,
   cavityGeometry = "rectangular",
   radius = 1,
@@ -1148,11 +1051,10 @@ export function evaluateRaymarchEffectiveFieldPoint({
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
   const normalizedResolution = normalizeEffectiveFieldResolution(resolution);
   const scale = getEffectiveFieldScale(radius);
-  const backbone = accumulateEffectiveFieldLayerAtPoint({
-    slots: backboneSlots,
-    phaseSlots: backbonePhaseSlots,
-    activeCount: backboneCount,
-    weight: 1,
+  const modalField = accumulateEffectiveFieldLayerAtPoint({
+    slots: modalFieldSlots,
+    phaseSlots: modalFieldPhaseSlots,
+    activeCount: modalFieldCount,
     x,
     y,
     z,
@@ -1162,31 +1064,14 @@ export function evaluateRaymarchEffectiveFieldPoint({
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
   });
-  const detail = accumulateEffectiveFieldLayerAtPoint({
-    slots: detailSlots,
-    phaseSlots: detailPhaseSlots,
-    activeCount: detailCount,
-    weight: DETAIL_LAYER_WEIGHT,
-    x,
-    y,
-    z,
-    time,
-    resolution: normalizedResolution,
-    scale,
-    boundaryMode: normalizedBoundaryMode,
-    cavityGeometry: normalizedCavityGeometry,
-  });
-  const totalWeight = backbone.totalWeight + detail.totalWeight;
-  const amplitudeNorm = Math.max(totalWeight, EFFECTIVE_FIELD_ENERGY_EPSILON);
-  const bandwidthRejectedModeCount =
-    backbone.bandwidthRejectedModeCount + detail.bandwidthRejectedModeCount;
-  const bandwidthRejectedModalEnergy =
-    backbone.bandwidthRejectedModalEnergy + detail.bandwidthRejectedModalEnergy;
+  const amplitudeNorm = Math.max(
+    modalField.totalWeight,
+    EFFECTIVE_FIELD_ENERGY_EPSILON,
+  );
   const totalRepresentedModalEnergy =
-    totalWeight + bandwidthRejectedModalEnergy;
-  const field = (backbone.field + detail.field) / amplitudeNorm;
-  const unsignedSupport =
-    (backbone.unsignedSupport + detail.unsignedSupport) / amplitudeNorm;
+    modalField.totalWeight + modalField.bandwidthRejectedModalEnergy;
+  const field = modalField.field / amplitudeNorm;
+  const unsignedSupport = modalField.unsignedSupport / amplitudeNorm;
   const cancellationRatio =
     unsignedSupport > 0
       ? Math.min(
@@ -1202,47 +1087,40 @@ export function evaluateRaymarchEffectiveFieldPoint({
 
   return {
     field,
-    gradX: (backbone.gradX + detail.gradX) / amplitudeNorm,
-    gradY: (backbone.gradY + detail.gradY) / amplitudeNorm,
-    gradZ: (backbone.gradZ + detail.gradZ) / amplitudeNorm,
+    gradX: modalField.gradX / amplitudeNorm,
+    gradY: modalField.gradY / amplitudeNorm,
+    gradZ: modalField.gradZ / amplitudeNorm,
     unsignedSupport,
     cancellationRatio,
     effectiveFieldAuthority: Math.min(
       1,
       Math.max(
         0,
-        (backbone.authoritySum + detail.authoritySum) /
-          Math.max(EFFECTIVE_FIELD_ENERGY_EPSILON, totalWeight),
+        modalField.authoritySum /
+          Math.max(EFFECTIVE_FIELD_ENERGY_EPSILON, modalField.totalWeight),
       ),
     ),
     effectiveFieldMaxRepresentableModeIndex:
       getEffectiveFieldMaxRepresentableModeIndex(normalizedResolution),
     contributingEffectiveFieldModeCount:
-      backbone.contributingEffectiveFieldModeCount +
-      detail.contributingEffectiveFieldModeCount,
-    zeroAmplitudeSkippedModeCount:
-      backbone.zeroAmplitudeSkippedModeCount +
-      detail.zeroAmplitudeSkippedModeCount,
-    contributingModalEnergy: totalWeight,
-    bandwidthRejectedModeCount,
-    bandwidthRejectedModalEnergy,
+      modalField.contributingEffectiveFieldModeCount,
+    zeroAmplitudeSkippedModeCount: modalField.zeroAmplitudeSkippedModeCount,
+    contributingModalEnergy: modalField.totalWeight,
+    bandwidthRejectedModeCount: modalField.bandwidthRejectedModeCount,
+    bandwidthRejectedModalEnergy: modalField.bandwidthRejectedModalEnergy,
     effectiveFieldResolvedModalEnergyRatio:
       totalRepresentedModalEnergy > EFFECTIVE_FIELD_ENERGY_EPSILON
-        ? totalWeight / totalRepresentedModalEnergy
+        ? modalField.totalWeight / totalRepresentedModalEnergy
         : 1,
     effectiveFieldGradientEnvelope:
-      (backbone.gradientEnvelopeNumerator + detail.gradientEnvelopeNumerator) /
-      amplitudeNorm,
+      modalField.gradientEnvelopeNumerator / amplitudeNorm,
   };
 }
 
 export function evaluateRaymarchSpectralLightCachePoint({
-  backboneSlots,
-  detailSlots,
-  backboneColorSlots,
-  detailColorSlots,
-  backboneCount = 0,
-  detailCount = 0,
+  modalFieldSlots,
+  modalFieldColorSlots,
+  modalFieldCount,
   boundaryMode,
   cavityGeometry = "rectangular",
   radius = 1,
@@ -1253,10 +1131,10 @@ export function evaluateRaymarchSpectralLightCachePoint({
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
   const scale = Math.PI / Math.max(radius, 1e-4);
-  const backbone = accumulateSpectralLightLayerAtPoint({
-    slots: backboneSlots,
-    colorSlots: backboneColorSlots,
-    activeCount: backboneCount,
+  const modalField = accumulateSpectralLightLayerAtPoint({
+    slots: modalFieldSlots,
+    colorSlots: modalFieldColorSlots,
+    activeCount: modalFieldCount,
     weight: 1,
     x,
     y,
@@ -1265,52 +1143,29 @@ export function evaluateRaymarchSpectralLightCachePoint({
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
   });
-  const detail = accumulateSpectralLightLayerAtPoint({
-    slots: detailSlots,
-    colorSlots: detailColorSlots,
-    activeCount: detailCount,
-    weight: DETAIL_LAYER_WEIGHT,
-    x,
-    y,
-    z,
-    scale,
-    boundaryMode: normalizedBoundaryMode,
-    cavityGeometry: normalizedCavityGeometry,
-  });
-  const amplitudeNorm = Math.max(
-    backbone.totalAmplitude + detail.totalAmplitude,
-    0.01,
-  );
+  const amplitudeNorm = Math.max(modalField.totalAmplitude, 0.01);
   const signedVisibility = deriveSignedInterferenceVisibility(
-    backbone.signedPotential + detail.signedPotential,
-    backbone.unsignedPotential + detail.unsignedPotential,
+    modalField.signedPotential,
+    modalField.unsignedPotential,
   );
   const colorWeight =
-    ((backbone.colorWeight + detail.colorWeight) * signedVisibility) /
-    amplitudeNorm;
-  const chromaWeight = backbone.chromaWeight + detail.chromaWeight;
+    (modalField.colorWeight * signedVisibility) / amplitudeNorm;
   const chromaScale =
-    chromaWeight > SPECTRAL_LIGHT_CHROMA_EPSILON ? 1 / chromaWeight : 0;
-  const spectralR =
-    (backbone.chromaR + detail.chromaR) * chromaScale * colorWeight;
-  const spectralG =
-    (backbone.chromaG + detail.chromaG) * chromaScale * colorWeight;
-  const spectralB =
-    (backbone.chromaB + detail.chromaB) * chromaScale * colorWeight;
+    modalField.chromaWeight > SPECTRAL_LIGHT_CHROMA_EPSILON
+      ? 1 / modalField.chromaWeight
+      : 0;
 
   return {
-    r: spectralR,
-    g: spectralG,
-    b: spectralB,
+    r: modalField.chromaR * chromaScale * colorWeight,
+    g: modalField.chromaG * chromaScale * colorWeight,
+    b: modalField.chromaB * chromaScale * colorWeight,
     colorWeight,
   };
 }
 
 export function evaluateRaymarchSignedPotentialAtPoint({
-  backboneSlots,
-  detailSlots,
-  backboneCount = 0,
-  detailCount = 0,
+  modalFieldSlots,
+  modalFieldCount,
   boundaryMode,
   cavityGeometry = "rectangular",
   radius = 1,
@@ -1321,9 +1176,9 @@ export function evaluateRaymarchSignedPotentialAtPoint({
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
   const scale = Math.PI / Math.max(radius, 1e-4);
-  const backbone = accumulateSignedPotentialLayerAtPoint({
-    slots: backboneSlots,
-    activeCount: backboneCount,
+  const modalField = accumulateSignedPotentialLayerAtPoint({
+    slots: modalFieldSlots,
+    activeCount: modalFieldCount,
     weight: 1,
     x,
     y,
@@ -1332,29 +1187,17 @@ export function evaluateRaymarchSignedPotentialAtPoint({
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
   });
-  const detail = accumulateSignedPotentialLayerAtPoint({
-    slots: detailSlots,
-    activeCount: detailCount,
-    weight: DETAIL_LAYER_WEIGHT,
-    x,
-    y,
-    z,
-    scale,
-    boundaryMode: normalizedBoundaryMode,
-    cavityGeometry: normalizedCavityGeometry,
-  });
-  const signedPotential = backbone.signedPotential + detail.signedPotential;
-  const unsignedPotential =
-    backbone.unsignedPotential + detail.unsignedPotential;
 
   return {
-    signedPotential,
-    unsignedPotential,
+    signedPotential: modalField.signedPotential,
+    unsignedPotential: modalField.unsignedPotential,
     cancellation: Math.min(
       1,
       Math.max(
         0,
-        1 - Math.abs(signedPotential) / Math.max(0.01, unsignedPotential),
+        1 -
+          Math.abs(modalField.signedPotential) /
+            Math.max(0.01, modalField.unsignedPotential),
       ),
     ),
   };
@@ -1362,18 +1205,15 @@ export function evaluateRaymarchSignedPotentialAtPoint({
 
 function createComputeKernel({
   fieldCache,
-  backboneModeBuffer,
-  detailModeBuffer,
-  backboneCapacity,
-  detailCapacity,
+  modalFieldModeBuffer,
+  modalFieldCapacity,
   uniforms,
   boundaryMode,
   cavityGeometry,
 }) {
   const { resolution, texture } = fieldCache;
   const uRadius = uniforms.uRadius;
-  const backboneActiveCount = int(uniforms.uBackboneModeCount);
-  const detailActiveCount = int(uniforms.uDetailModeCount);
+  const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
   const resolutionUint = uint(resolution);
   const resolutionFloat = float(resolution);
@@ -1420,44 +1260,14 @@ function createComputeKernel({
       Loop(
         {
           start: int(0),
-          end: int(backboneCapacity),
+          end: int(modalFieldCapacity),
           type: "int",
           condition: "<",
         },
         ({ i }) => {
-          If(i.greaterThanEqual(backboneActiveCount), () => {}).Else(() => {
-            const slot = backboneModeBuffer.element(i);
+          If(i.greaterThanEqual(modalFieldActiveCount), () => {}).Else(() => {
+            const slot = modalFieldModeBuffer.element(i);
             const amplitude = slot.w.toVar();
-            const family = geometryBackend.evaluateModeNode({
-              u: slot.x,
-              v: slot.y,
-              w: slot.z,
-              xCoord,
-              yCoord,
-              zCoord,
-              scale,
-              boundaryMode,
-            });
-            totalAmplitude.addAssign(amplitude);
-            field.addAssign(amplitude.mul(family.field));
-            gradX.addAssign(amplitude.mul(family.gradX));
-            gradY.addAssign(amplitude.mul(family.gradY));
-            gradZ.addAssign(amplitude.mul(family.gradZ));
-          });
-        },
-      );
-
-      Loop(
-        {
-          start: int(0),
-          end: int(detailCapacity),
-          type: "int",
-          condition: "<",
-        },
-        ({ i }) => {
-          If(i.greaterThanEqual(detailActiveCount), () => {}).Else(() => {
-            const slot = detailModeBuffer.element(i);
-            const amplitude = slot.w.mul(float(DETAIL_LAYER_WEIGHT)).toVar();
             const family = geometryBackend.evaluateModeNode({
               u: slot.x,
               v: slot.y,
@@ -1496,20 +1306,16 @@ function createComputeKernel({
 
 function createSpectralLightComputeKernel({
   spectralLightCache,
-  backboneModeBuffer,
-  detailModeBuffer,
-  backboneColorBuffer,
-  detailColorBuffer,
-  backboneCapacity,
-  detailCapacity,
+  modalFieldModeBuffer,
+  modalFieldColorBuffer,
+  modalFieldCapacity,
   uniforms,
   boundaryMode,
   cavityGeometry,
 }) {
   const { resolution, texture } = spectralLightCache;
   const uRadius = uniforms.uRadius;
-  const backboneActiveCount = int(uniforms.uBackboneModeCount);
-  const detailActiveCount = int(uniforms.uDetailModeCount);
+  const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
   const resolutionUint = uint(resolution);
   const resolutionFloat = float(resolution);
@@ -1562,13 +1368,13 @@ function createSpectralLightComputeKernel({
       Loop(
         {
           start: int(0),
-          end: int(backboneCapacity),
+          end: int(modalFieldCapacity),
           type: "int",
           condition: "<",
         },
         ({ i }) => {
-          If(i.greaterThanEqual(backboneActiveCount), () => {}).Else(() => {
-            const slot = backboneModeBuffer.element(i);
+          If(i.greaterThanEqual(modalFieldActiveCount), () => {}).Else(() => {
+            const slot = modalFieldModeBuffer.element(i);
             const amplitude = slot.w.toVar();
             const family = geometryBackend.evaluateModeNode({
               u: slot.x,
@@ -1580,49 +1386,7 @@ function createSpectralLightComputeKernel({
               scale,
               boundaryMode,
             });
-            const colorSlot = backboneColorBuffer.element(i);
-            totalAmplitude.addAssign(amplitude);
-            const contribution = amplitude.mul(family.field).toVar();
-            signedPotential.addAssign(contribution);
-            unsignedPotential.addAssign(abs(contribution));
-            const localInfluence = abs(contribution).mul(colorSlot.w).toVar();
-            const localChromaInfluence = localInfluence
-              .mul(localInfluence)
-              .toVar();
-            colorSumX.addAssign(localInfluence.mul(colorSlot.x));
-            colorSumY.addAssign(localInfluence.mul(colorSlot.y));
-            colorSumZ.addAssign(localInfluence.mul(colorSlot.z));
-            colorWeight.addAssign(localInfluence);
-            chromaSumX.addAssign(localChromaInfluence.mul(colorSlot.x));
-            chromaSumY.addAssign(localChromaInfluence.mul(colorSlot.y));
-            chromaSumZ.addAssign(localChromaInfluence.mul(colorSlot.z));
-            chromaWeight.addAssign(localChromaInfluence);
-          });
-        },
-      );
-
-      Loop(
-        {
-          start: int(0),
-          end: int(detailCapacity),
-          type: "int",
-          condition: "<",
-        },
-        ({ i }) => {
-          If(i.greaterThanEqual(detailActiveCount), () => {}).Else(() => {
-            const slot = detailModeBuffer.element(i);
-            const amplitude = slot.w.mul(float(DETAIL_LAYER_WEIGHT)).toVar();
-            const family = geometryBackend.evaluateModeNode({
-              u: slot.x,
-              v: slot.y,
-              w: slot.z,
-              xCoord,
-              yCoord,
-              zCoord,
-              scale,
-              boundaryMode,
-            });
-            const colorSlot = detailColorBuffer.element(i);
+            const colorSlot = modalFieldColorBuffer.element(i);
             totalAmplitude.addAssign(amplitude);
             const contribution = amplitude.mul(family.field).toVar();
             signedPotential.addAssign(contribution);
@@ -1755,12 +1519,9 @@ function accumulateEffectiveFieldComputeLayer({
 
 function createEffectiveFieldComputeKernel({
   effectiveFieldCache,
-  backboneModeBuffer,
-  detailModeBuffer,
-  backbonePhaseBuffer,
-  detailPhaseBuffer,
-  backboneCapacity,
-  detailCapacity,
+  modalFieldModeBuffer,
+  modalFieldPhaseBuffer,
+  modalFieldCapacity,
   uniforms,
   boundaryMode,
   cavityGeometry,
@@ -1768,8 +1529,7 @@ function createEffectiveFieldComputeKernel({
   const { resolution, texture, supportTexture } = effectiveFieldCache;
   const uRadius = uniforms.uRadius;
   const uTime = uniforms.uTime;
-  const backboneActiveCount = int(uniforms.uBackboneModeCount);
-  const detailActiveCount = int(uniforms.uDetailModeCount);
+  const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
   const maxRepresentableModeIndex = float(
     getEffectiveFieldMaxRepresentableModeIndex(resolution),
@@ -1818,32 +1578,11 @@ function createEffectiveFieldComputeKernel({
       const totalAmplitude = zero.toVar();
 
       accumulateEffectiveFieldComputeLayer({
-        modeBuffer: backboneModeBuffer,
-        phaseBuffer: backbonePhaseBuffer,
-        capacity: backboneCapacity,
-        activeCount: backboneActiveCount,
+        modeBuffer: modalFieldModeBuffer,
+        phaseBuffer: modalFieldPhaseBuffer,
+        capacity: modalFieldCapacity,
+        activeCount: modalFieldActiveCount,
         weight: float(1.0),
-        maxRepresentableModeIndex,
-        xCoord,
-        yCoord,
-        zCoord,
-        scale,
-        boundaryMode,
-        geometryBackend,
-        uTime,
-        totalAmplitude,
-        field,
-        gradX,
-        gradY,
-        gradZ,
-        unsignedSupport,
-      });
-      accumulateEffectiveFieldComputeLayer({
-        modeBuffer: detailModeBuffer,
-        phaseBuffer: detailPhaseBuffer,
-        capacity: detailCapacity,
-        activeCount: detailActiveCount,
-        weight: float(DETAIL_LAYER_WEIGHT),
         maxRepresentableModeIndex,
         xCoord,
         yCoord,
@@ -1903,10 +1642,8 @@ function createEffectiveFieldComputeKernel({
 function getOrCreateRaymarchFieldCacheComputeNode(
   fieldCache,
   {
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneCapacity,
-    detailCapacity,
+    modalFieldModeBuffer,
+    modalFieldCapacity,
     uniforms,
     boundaryMode,
     cavityGeometry,
@@ -1926,10 +1663,8 @@ function getOrCreateRaymarchFieldCacheComputeNode(
 
   const computeNode = createComputeKernel({
     fieldCache,
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneCapacity,
-    detailCapacity,
+    modalFieldModeBuffer,
+    modalFieldCapacity,
     uniforms,
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
@@ -1941,12 +1676,9 @@ function getOrCreateRaymarchFieldCacheComputeNode(
 function getOrCreateRaymarchSpectralLightCacheComputeNode(
   spectralLightCache,
   {
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneColorBuffer,
-    detailColorBuffer,
-    backboneCapacity,
-    detailCapacity,
+    modalFieldModeBuffer,
+    modalFieldColorBuffer,
+    modalFieldCapacity,
     uniforms,
     boundaryMode,
     cavityGeometry,
@@ -1966,12 +1698,9 @@ function getOrCreateRaymarchSpectralLightCacheComputeNode(
 
   const computeNode = createSpectralLightComputeKernel({
     spectralLightCache,
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneColorBuffer,
-    detailColorBuffer,
-    backboneCapacity,
-    detailCapacity,
+    modalFieldModeBuffer,
+    modalFieldColorBuffer,
+    modalFieldCapacity,
     uniforms,
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
@@ -1983,12 +1712,9 @@ function getOrCreateRaymarchSpectralLightCacheComputeNode(
 function getOrCreateRaymarchEffectiveFieldComputeNode(
   effectiveFieldCache,
   {
-    backboneModeBuffer,
-    detailModeBuffer,
-    backbonePhaseBuffer,
-    detailPhaseBuffer,
-    backboneCapacity,
-    detailCapacity,
+    modalFieldModeBuffer,
+    modalFieldPhaseBuffer,
+    modalFieldCapacity,
     uniforms,
     boundaryMode,
     cavityGeometry,
@@ -2008,12 +1734,9 @@ function getOrCreateRaymarchEffectiveFieldComputeNode(
 
   const computeNode = createEffectiveFieldComputeKernel({
     effectiveFieldCache,
-    backboneModeBuffer,
-    detailModeBuffer,
-    backbonePhaseBuffer,
-    detailPhaseBuffer,
-    backboneCapacity,
-    detailCapacity,
+    modalFieldModeBuffer,
+    modalFieldPhaseBuffer,
+    modalFieldCapacity,
     uniforms,
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
@@ -2093,10 +1816,8 @@ export function enqueueRaymarchFieldCacheRebuild(
   options,
 ) {
   const {
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneCapacity,
-    detailCapacity,
+    modalFieldModeBuffer,
+    modalFieldCapacity,
     uniforms,
   } = options;
   if (!fieldCache) {
@@ -2123,10 +1844,8 @@ export function enqueueRaymarchFieldCacheRebuild(
   }
 
   const computeNode = getOrCreateRaymarchFieldCacheComputeNode(fieldCache, {
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneCapacity,
-    detailCapacity,
+    modalFieldModeBuffer,
+    modalFieldCapacity,
     uniforms,
     boundaryMode: descriptor.boundaryMode,
     cavityGeometry: descriptor.cavityGeometry,
@@ -2181,12 +1900,9 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
   options,
 ) {
   const {
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneColorBuffer,
-    detailColorBuffer,
-    backboneCapacity,
-    detailCapacity,
+    modalFieldModeBuffer,
+    modalFieldColorBuffer,
+    modalFieldCapacity,
     uniforms,
   } = options;
   if (!spectralLightCache) {
@@ -2215,12 +1931,9 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
   const computeNode = getOrCreateRaymarchSpectralLightCacheComputeNode(
     spectralLightCache,
     {
-      backboneModeBuffer,
-      detailModeBuffer,
-      backboneColorBuffer,
-      detailColorBuffer,
-      backboneCapacity,
-      detailCapacity,
+      modalFieldModeBuffer,
+      modalFieldColorBuffer,
+      modalFieldCapacity,
       uniforms,
       boundaryMode: descriptor.boundaryMode,
       cavityGeometry: descriptor.cavityGeometry,
@@ -2286,12 +1999,9 @@ export function enqueueRaymarchEffectiveFieldRebuild(
   options,
 ) {
   const {
-    backboneModeBuffer,
-    detailModeBuffer,
-    backbonePhaseBuffer,
-    detailPhaseBuffer,
-    backboneCapacity,
-    detailCapacity,
+    modalFieldModeBuffer,
+    modalFieldPhaseBuffer,
+    modalFieldCapacity,
     uniforms,
   } = options;
   if (!effectiveFieldCache) {
@@ -2320,12 +2030,9 @@ export function enqueueRaymarchEffectiveFieldRebuild(
   const computeNode = getOrCreateRaymarchEffectiveFieldComputeNode(
     effectiveFieldCache,
     {
-      backboneModeBuffer,
-      detailModeBuffer,
-      backbonePhaseBuffer,
-      detailPhaseBuffer,
-      backboneCapacity,
-      detailCapacity,
+      modalFieldModeBuffer,
+      modalFieldPhaseBuffer,
+      modalFieldCapacity,
       uniforms,
       boundaryMode: descriptor.boundaryMode,
       cavityGeometry: descriptor.cavityGeometry,

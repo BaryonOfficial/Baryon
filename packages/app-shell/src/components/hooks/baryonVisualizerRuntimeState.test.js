@@ -299,12 +299,9 @@ test("explains effective field descriptor staleness from runtime state when audi
     boundaryMode: "finite",
     cavityGeometry: "sphere",
     radius: 1,
-    backboneCount: 2,
-    detailCount: 1,
-    backboneHash: 101,
-    detailHash: 202,
-    backbonePhaseHash: 303,
-    detailPhaseHash: 404,
+    modalFieldCount: 3,
+    modalFieldHash: 101,
+    modalFieldPhaseHash: 303,
     phaseModeCount: 3,
     phaseAuthority: 0.75,
     descriptorOverflow: false,
@@ -312,7 +309,7 @@ test("explains effective field descriptor staleness from runtime state when audi
   };
   const currentDescriptor = {
     ...activeDescriptor,
-    detailPhaseHash: 405,
+    modalFieldPhaseHash: 405,
   };
 
   try {

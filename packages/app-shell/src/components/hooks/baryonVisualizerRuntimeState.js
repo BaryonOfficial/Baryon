@@ -87,8 +87,13 @@ function createModalFreshnessDiagnostics() {
     modalObserverVisibilityEnergy: 0,
     modalVisibilityRetainedHighQEnergy: 0,
     observationEnergy: 0,
-    modalResponseBackboneEnergy: 0,
-    modalResponseDetailEnergy: 0,
+    modalResponseEnergy: 0,
+    modalResponseBudgetScale: 0,
+    modalResponseRawEnergy: 0,
+    modalResponseAverageDampingEnvelope: 0,
+    modalResponseAverageCouplingStrength: 0,
+    modalResponseAveragePhaseConfidence: 0,
+    modalResponseAveragePersistence: 0,
     modalPhaseAuthority: 0,
     highQPhaseAuthority: 0,
     lowQPhaseAuthority: 0,
@@ -97,6 +102,7 @@ function createModalFreshnessDiagnostics() {
     activeBackboneModeCount: 0,
     activeDetailModeCount: 0,
     activeModeCount: 0,
+    activeModalFieldModeCount: 0,
     modeSlotMeanAbsDelta: 0,
     modeSlotChangeCount: 0,
     backboneSlotMeanAbsDelta: 0,
@@ -159,9 +165,17 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
     modalVisibilityRetainedHighQEnergy:
       modalFreshness.modalVisibilityRetainedHighQEnergy ?? 0,
     observationEnergy: modalFreshness.observationEnergy ?? 0,
-    modalResponseBackboneEnergy:
-      modalFreshness.modalResponseBackboneEnergy ?? 0,
-    modalResponseDetailEnergy: modalFreshness.modalResponseDetailEnergy ?? 0,
+    modalResponseEnergy: modalFreshness.modalResponseEnergy ?? 0,
+    modalResponseBudgetScale: modalFreshness.modalResponseBudgetScale ?? 0,
+    modalResponseRawEnergy: modalFreshness.modalResponseRawEnergy ?? 0,
+    modalResponseAverageDampingEnvelope:
+      modalFreshness.modalResponseAverageDampingEnvelope ?? 0,
+    modalResponseAverageCouplingStrength:
+      modalFreshness.modalResponseAverageCouplingStrength ?? 0,
+    modalResponseAveragePhaseConfidence:
+      modalFreshness.modalResponseAveragePhaseConfidence ?? 0,
+    modalResponseAveragePersistence:
+      modalFreshness.modalResponseAveragePersistence ?? 0,
     modalPhaseAuthority: modalFreshness.modalPhaseAuthority ?? 0,
     highQPhaseAuthority: modalFreshness.highQPhaseAuthority ?? 0,
     lowQPhaseAuthority: modalFreshness.lowQPhaseAuthority ?? 0,
@@ -171,6 +185,10 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
     activeBackboneModeCount: modalFreshness.activeBackboneModeCount ?? 0,
     activeDetailModeCount: modalFreshness.activeDetailModeCount ?? 0,
     activeModeCount: modalFreshness.activeModeCount ?? 0,
+    activeModalFieldModeCount:
+      modalFreshness.activeModalFieldModeCount ??
+      modalFreshness.activeModeCount ??
+      0,
     modeSlotMeanAbsDelta: modalFreshness.modeSlotMeanAbsDelta ?? 0,
     modeSlotChangeCount: modalFreshness.modeSlotChangeCount ?? 0,
     backboneSlotMeanAbsDelta: modalFreshness.backboneSlotMeanAbsDelta ?? 0,

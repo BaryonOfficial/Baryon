@@ -310,13 +310,34 @@ export function updateModalFreshnessDiagnostics(
   modalFreshness.observationEnergy = readFiniteNumber(
     featureFrame.observationEnergy,
   );
-  modalFreshness.modalResponseBackboneEnergy = readFiniteNumber(
-    featureFrame.modalResponseBackboneEnergy ??
-      featureFrame.debug?.modalResponseBackboneEnergy,
+  modalFreshness.modalResponseEnergy = readFiniteNumber(
+    featureFrame.modalResponseEnergy ??
+      featureFrame.modalResponseRenderEnergy ??
+      featureFrame.debug?.modalResponseEnergy,
   );
-  modalFreshness.modalResponseDetailEnergy = readFiniteNumber(
-    featureFrame.modalResponseDetailEnergy ??
-      featureFrame.debug?.modalResponseDetailEnergy,
+  modalFreshness.modalResponseBudgetScale = readFiniteNumber(
+    featureFrame.modalResponseBudgetScale ??
+      featureFrame.debug?.modalResponseBudgetScale,
+  );
+  modalFreshness.modalResponseRawEnergy = readFiniteNumber(
+    featureFrame.modalResponseRawEnergy ??
+      featureFrame.debug?.modalResponseRawEnergy,
+  );
+  modalFreshness.modalResponseAverageDampingEnvelope = readFiniteNumber(
+    featureFrame.modalResponseAverageDampingEnvelope ??
+      featureFrame.debug?.modalResponseAverageDampingEnvelope,
+  );
+  modalFreshness.modalResponseAverageCouplingStrength = readFiniteNumber(
+    featureFrame.modalResponseAverageCouplingStrength ??
+      featureFrame.debug?.modalResponseAverageCouplingStrength,
+  );
+  modalFreshness.modalResponseAveragePhaseConfidence = readFiniteNumber(
+    featureFrame.modalResponseAveragePhaseConfidence ??
+      featureFrame.debug?.modalResponseAveragePhaseConfidence,
+  );
+  modalFreshness.modalResponseAveragePersistence = readFiniteNumber(
+    featureFrame.modalResponseAveragePersistence ??
+      featureFrame.debug?.modalResponseAveragePersistence,
   );
   modalFreshness.modalPhaseAuthority = readFiniteNumber(
     featureFrame.modalPhaseAuthority,
@@ -342,6 +363,12 @@ export function updateModalFreshnessDiagnostics(
     featureFrame.activeModeCount,
     modalFreshness.activeBackboneModeCount +
       modalFreshness.activeDetailModeCount,
+  );
+  modalFreshness.activeModalFieldModeCount = readFiniteNumber(
+    featureFrame.activeModalFieldModeCount ??
+      featureFrame.modalDescriptor?.counts?.modalFieldModeCount ??
+      featureFrame.modalDescriptor?.slotViews?.modalFieldModeCount,
+    modalFreshness.activeModeCount,
   );
   applySlotTurnoverDiagnostics(modalFreshness, {
     fieldPrefix: "modeSlot",
@@ -1283,8 +1310,7 @@ function preparePendingRaymarchPerformanceGovernor(runtimeState, inputs) {
 
   const governor =
     raymarchPerformanceGovernor.deriveRaymarchPerformanceGovernor({
-      backbone: inputs.baseGovernor.backbone,
-      detail: inputs.baseGovernor.detail,
+      modalField: inputs.baseGovernor.modalField,
       featureFrame: inputs.featureFrame,
       requestedStepBudget: inputs.requestedStepBudget,
       requestedRenderScale: inputs.requestedRenderScale,
@@ -1292,8 +1318,7 @@ function preparePendingRaymarchPerformanceGovernor(runtimeState, inputs) {
 
   runtimeState.pendingRaymarchPerformanceGovernor = {
     featureFrame: inputs.featureFrame,
-    backboneCapacity: inputs.backboneCapacity,
-    detailCapacity: inputs.detailCapacity,
+    modalFieldCapacity: inputs.modalFieldCapacity,
     cavityGeometry: inputs.cavityGeometry,
     requestedStepBudget: inputs.requestedStepBudget,
     requestedRenderScale: inputs.requestedRenderScale,
@@ -1323,13 +1348,9 @@ export function updateAdaptiveRaymarchStepBudget({
   const requestedRenderScale = normalizeAdaptiveRenderScale(
     renderProfile?.renderScale ?? 1,
   );
-  const backboneCapacity = raymarchPerformanceGovernor.inferLayerCapacity(
-    runtimeState?.backboneCapacity,
-    runtimeState?.backboneModeBuffer?.value?.array,
-  );
-  const detailCapacity = raymarchPerformanceGovernor.inferLayerCapacity(
-    runtimeState?.detailCapacity,
-    runtimeState?.detailModeBuffer?.value?.array,
+  const modalFieldCapacity = raymarchPerformanceGovernor.inferModalFieldCapacity(
+    runtimeState?.modalFieldCapacity,
+    runtimeState?.modalFieldModeBuffer?.value?.array,
   );
   const cavityGeometry =
     runtimeState?.effectiveCavityGeometry ??
@@ -1337,10 +1358,11 @@ export function updateAdaptiveRaymarchStepBudget({
     "rectangular";
   const performanceGovernor =
     raymarchPerformanceGovernor.buildRaymarchPerformanceGovernor({
-      backboneSlots: effectiveFrame?.backboneSlots,
-      detailSlots: effectiveFrame?.detailSlots,
-      backboneCapacity,
-      detailCapacity,
+      modalFieldSlots:
+        effectiveFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
+        effectiveFrame?.modalFieldSlots ??
+        effectiveFrame?.modeSlots,
+      modalFieldCapacity,
       featureFrame: effectiveFrame,
       requestedStepBudget,
       requestedRenderScale,
@@ -1425,8 +1447,7 @@ export function updateAdaptiveRaymarchStepBudget({
     );
     preparePendingRaymarchPerformanceGovernor(runtimeState, {
       featureFrame: effectiveFrame,
-      backboneCapacity,
-      detailCapacity,
+      modalFieldCapacity,
       cavityGeometry,
       requestedStepBudget: effectiveStepBudget,
       requestedRenderScale: 1,
@@ -1577,8 +1598,7 @@ export function updateAdaptiveRaymarchStepBudget({
   applyEffectiveRaymarchStepBudget(runtimeState, controls, effectiveStepBudget);
   preparePendingRaymarchPerformanceGovernor(runtimeState, {
     featureFrame: effectiveFrame,
-    backboneCapacity,
-    detailCapacity,
+    modalFieldCapacity,
     cavityGeometry,
     requestedStepBudget: effectiveStepBudget,
     requestedRenderScale: 1,

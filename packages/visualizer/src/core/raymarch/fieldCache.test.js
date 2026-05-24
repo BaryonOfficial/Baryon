@@ -2,19 +2,190 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import * as raymarchFieldCache from "./fieldCache.js";
 import {
-  buildRaymarchSpectralLightCacheDescriptor,
-  buildRaymarchFieldCacheDescriptor,
+  buildRaymarchSpectralLightCacheDescriptor as buildUnifiedRaymarchSpectralLightCacheDescriptor,
+  buildRaymarchFieldCacheDescriptor as buildUnifiedRaymarchFieldCacheDescriptor,
   createRaymarchSpectralLightCache,
   createRaymarchFieldCache,
-  enqueueRaymarchFieldCacheRebuild,
-  enqueueRaymarchSpectralLightCacheRebuild,
-  evaluateRaymarchFieldCachePoint,
-  evaluateRaymarchSpectralLightCachePoint,
-  evaluateRaymarchSignedPotentialAtPoint,
+  enqueueRaymarchFieldCacheRebuild as enqueueUnifiedRaymarchFieldCacheRebuild,
+  enqueueRaymarchSpectralLightCacheRebuild as enqueueUnifiedRaymarchSpectralLightCacheRebuild,
+  evaluateRaymarchFieldCachePoint as evaluateUnifiedRaymarchFieldCachePoint,
+  evaluateRaymarchSpectralLightCachePoint as evaluateUnifiedRaymarchSpectralLightCachePoint,
+  evaluateRaymarchSignedPotentialAtPoint as evaluateUnifiedRaymarchSignedPotentialAtPoint,
   isRaymarchSpectralLightCacheReadyForDescriptor,
   shouldRebuildRaymarchSpectralLightCache,
   shouldRebuildRaymarchFieldCache,
 } from "./fieldCache.js";
+
+function copySlotPrefix(slots, count) {
+  const slotCount = Math.max(0, Math.round(count || 0));
+  return Array.from(slots ?? new Float32Array(0)).slice(0, slotCount * 4);
+}
+
+function resolveModalFieldSlots(options) {
+  if (options.modalFieldSlots) {
+    return {
+      modalFieldSlots: options.modalFieldSlots,
+      modalFieldCount: options.modalFieldCount,
+    };
+  }
+
+  return {
+    modalFieldSlots: new Float32Array([
+      ...copySlotPrefix(options.backboneSlots, options.backboneCount),
+      ...copySlotPrefix(options.detailSlots, options.detailCount),
+    ]),
+    modalFieldCount:
+      Math.max(0, Math.round(options.backboneCount || 0)) +
+      Math.max(0, Math.round(options.detailCount || 0)),
+  };
+}
+
+function resolveModalFieldPhaseSlots(options) {
+  if (options.modalFieldPhaseSlots) {
+    return options.modalFieldPhaseSlots;
+  }
+
+  return new Float32Array([
+    ...copySlotPrefix(options.backbonePhaseSlots, options.backboneCount),
+    ...copySlotPrefix(options.detailPhaseSlots, options.detailCount),
+  ]);
+}
+
+function resolveModalFieldColorSlots(options) {
+  if (options.modalFieldColorSlots) {
+    return options.modalFieldColorSlots;
+  }
+
+  return new Float32Array([
+    ...copySlotPrefix(options.backboneColorSlots, options.backboneCount),
+    ...copySlotPrefix(options.detailColorSlots, options.detailCount),
+  ]);
+}
+
+function buildRaymarchFieldCacheDescriptor(options) {
+  return buildUnifiedRaymarchFieldCacheDescriptor({
+    ...options,
+    ...resolveModalFieldSlots(options),
+  });
+}
+
+function buildRaymarchSpectralLightCacheDescriptor(options) {
+  return buildUnifiedRaymarchSpectralLightCacheDescriptor({
+    ...options,
+    ...resolveModalFieldSlots(options),
+    modalFieldColorSlots: resolveModalFieldColorSlots(options),
+  });
+}
+
+function evaluateRaymarchFieldCachePoint(options) {
+  return evaluateUnifiedRaymarchFieldCachePoint({
+    ...options,
+    ...resolveModalFieldSlots(options),
+  });
+}
+
+function evaluateRaymarchSpectralLightCachePoint(options) {
+  return evaluateUnifiedRaymarchSpectralLightCachePoint({
+    ...options,
+    ...resolveModalFieldSlots(options),
+    modalFieldColorSlots: resolveModalFieldColorSlots(options),
+  });
+}
+
+function evaluateRaymarchSignedPotentialAtPoint(options) {
+  return evaluateUnifiedRaymarchSignedPotentialAtPoint({
+    ...options,
+    ...resolveModalFieldSlots(options),
+  });
+}
+
+function buildRaymarchEffectiveFieldDescriptor(options) {
+  return raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor({
+    ...options,
+    ...resolveModalFieldSlots(options),
+    modalFieldPhaseSlots: resolveModalFieldPhaseSlots(options),
+  });
+}
+
+function evaluateRaymarchEffectiveFieldPoint(options) {
+  return raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint({
+    ...options,
+    ...resolveModalFieldSlots(options),
+    modalFieldPhaseSlots: resolveModalFieldPhaseSlots(options),
+  });
+}
+
+function resolveModalFieldRebuildOptions(options) {
+  const modeBuffer =
+    options.modalFieldModeBuffer ?? options.backboneModeBuffer ?? null;
+  return {
+    ...options,
+    modalFieldModeBuffer: modeBuffer,
+    modalFieldColorBuffer:
+      options.modalFieldColorBuffer ?? options.backboneColorBuffer ?? null,
+    modalFieldPhaseBuffer:
+      options.modalFieldPhaseBuffer ?? options.backbonePhaseBuffer ?? null,
+    modalFieldCapacity:
+      options.modalFieldCapacity ??
+      Math.max(0, Math.round(options.backboneCapacity || 0)) +
+        Math.max(0, Math.round(options.detailCapacity || 0)),
+    uniforms: {
+      ...options.uniforms,
+      uModalFieldModeCount:
+        options.uniforms?.uModalFieldModeCount ??
+        options.uniforms?.uBackboneModeCount ??
+        { value: 0 },
+    },
+  };
+}
+
+function enqueueRaymarchFieldCacheRebuild(
+  fieldCache,
+  renderer,
+  descriptor,
+  rebuildReason,
+  options,
+) {
+  return enqueueUnifiedRaymarchFieldCacheRebuild(
+    fieldCache,
+    renderer,
+    descriptor,
+    rebuildReason,
+    resolveModalFieldRebuildOptions(options),
+  );
+}
+
+function enqueueRaymarchSpectralLightCacheRebuild(
+  spectralLightCache,
+  renderer,
+  descriptor,
+  rebuildReason,
+  options,
+) {
+  return enqueueUnifiedRaymarchSpectralLightCacheRebuild(
+    spectralLightCache,
+    renderer,
+    descriptor,
+    rebuildReason,
+    resolveModalFieldRebuildOptions(options),
+  );
+}
+
+function enqueueRaymarchEffectiveFieldRebuild(
+  effectiveFieldCache,
+  renderer,
+  descriptor,
+  rebuildReason,
+  options,
+) {
+  return raymarchFieldCache.enqueueRaymarchEffectiveFieldRebuild(
+    effectiveFieldCache,
+    renderer,
+    descriptor,
+    rebuildReason,
+    resolveModalFieldRebuildOptions(options),
+  );
+}
 
 describe("fieldCache", () => {
   it("creates a compute-writable 3d storage texture", () => {
@@ -86,7 +257,7 @@ describe("fieldCache", () => {
   });
 
   it("ignores carrier phase offsets but rebuilds on stable phase parameter changes", () => {
-    expect(raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor).toBeTypeOf(
+    expect(buildRaymarchEffectiveFieldDescriptor).toBeTypeOf(
       "function",
     );
     expect(
@@ -96,7 +267,7 @@ describe("fieldCache", () => {
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const slots = new Float32Array([1, 2, 3, 0.9]);
     const initialDescriptor =
-      raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor({
+      buildRaymarchEffectiveFieldDescriptor({
         backboneSlots: slots,
         detailSlots: new Float32Array(0),
         backbonePhaseSlots: new Float32Array([0.1, 0.2, 0.5, 0.6]),
@@ -109,7 +280,7 @@ describe("fieldCache", () => {
         phaseAuthority: 0.3,
       });
     const carrierAdvancedDescriptor =
-      raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor({
+      buildRaymarchEffectiveFieldDescriptor({
         backboneSlots: slots,
         detailSlots: new Float32Array(0),
         backbonePhaseSlots: new Float32Array([0.7, 0.2, 0.5, 0.6]),
@@ -122,7 +293,7 @@ describe("fieldCache", () => {
         phaseAuthority: 0.3,
       });
     const phaseParameterChangedDescriptor =
-      raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor({
+      buildRaymarchEffectiveFieldDescriptor({
         backboneSlots: slots,
         detailSlots: new Float32Array(0),
         backbonePhaseSlots: new Float32Array([0.7, 0.32, 0.5, 0.6]),
@@ -182,6 +353,77 @@ describe("fieldCache", () => {
         nextDescriptor: phaseParameterChangedDescriptor,
       }),
     ).toBe("queued-descriptor");
+  });
+
+  it("does not rebuild effective field caches for coefficient-only modal updates", () => {
+    const effectiveFieldCache =
+      raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
+    const first = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.2]),
+      modalFieldPhaseSlots: new Float32Array([
+        0.1, 0.2, 0.5, 0.6, 0.3, 0.1, 0.4, 0.5,
+      ]),
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 2,
+      phaseAuthority: 0.7,
+    });
+    const coefficientJitter = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.3, 2, 2, 4, 0.8]),
+      modalFieldPhaseSlots: new Float32Array([
+        0.8, 0.2, 0.5, 0.6, 0.9, 0.1, 0.4, 0.5,
+      ]),
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 2,
+      phaseAuthority: 0.7,
+    });
+
+    effectiveFieldCache.activeDescriptor = first;
+    const rebuild =
+      raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
+        effectiveFieldCache,
+        coefficientJitter,
+      );
+
+    expect(rebuild.needsRebuild).toBe(false);
+    expect(rebuild.reason).toBe("unchanged");
+  });
+
+  it("does not rebuild effective field caches for aggregate phase authority changes", () => {
+    const effectiveFieldCache =
+      raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
+    const slots = new Float32Array([1, 2, 3, 0.5]);
+    const first = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: slots,
+      modalFieldPhaseSlots: new Float32Array([0.1, 0.2, 0.5, 0.6]),
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 1,
+      phaseAuthority: 0.2,
+    });
+    const second = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: slots,
+      modalFieldPhaseSlots: new Float32Array([0.7, 0.2, 0.5, 0.6]),
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 1,
+      phaseAuthority: 0.8,
+    });
+
+    effectiveFieldCache.activeDescriptor = first;
+    const rebuild =
+      raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
+        effectiveFieldCache,
+        second,
+      );
+
+    expect(rebuild.needsRebuild).toBe(false);
+    expect(rebuild.reason).toBe("unchanged");
   });
 
   it("detects rebuilds only when the uploaded modal field changes", () => {
@@ -335,9 +577,9 @@ describe("fieldCache", () => {
       boundaryMode: "neumann",
       radius: 3,
     });
-    const descriptor1 = { ...descriptor0, backboneColorHash: 1 };
-    const descriptor2 = { ...descriptor0, backboneColorHash: 2 };
-    const descriptor3 = { ...descriptor0, backboneColorHash: 3 };
+    const descriptor1 = { ...descriptor0, modalFieldColorHash: 1 };
+    const descriptor2 = { ...descriptor0, modalFieldColorHash: 2 };
+    const descriptor3 = { ...descriptor0, modalFieldColorHash: 3 };
     let resolveFirst;
     let computeCalls = 0;
     const renderer = {
@@ -418,28 +660,26 @@ describe("fieldCache", () => {
   });
 
   it("coalesces effective field rebuild requests to the newest pending descriptor", async () => {
-    expect(raymarchFieldCache.enqueueRaymarchEffectiveFieldRebuild).toBeTypeOf(
+    expect(enqueueRaymarchEffectiveFieldRebuild).toBeTypeOf(
       "function",
     );
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const slots = new Float32Array([1, 2, 3, 0.5]);
-    const descriptor0 =
-      raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor({
-        backboneSlots: slots,
-        detailSlots: new Float32Array(4),
-        backbonePhaseSlots: new Float32Array([0, 0.1, 0.6, 0.7]),
-        detailPhaseSlots: new Float32Array(4),
-        backboneCount: 1,
-        detailCount: 0,
+    const buildDescriptor = (phaseVelocity) =>
+      buildRaymarchEffectiveFieldDescriptor({
+        modalFieldSlots: slots,
+        modalFieldPhaseSlots: new Float32Array([0, phaseVelocity, 0.6, 0.7]),
+        modalFieldCount: 1,
         boundaryMode: "neumann",
         radius: 3,
         phaseModeCount: 1,
         phaseAuthority: 0.42,
       });
-    const descriptor1 = { ...descriptor0, phaseAuthority: 0.43 };
-    const descriptor2 = { ...descriptor0, phaseAuthority: 0.44 };
-    const descriptor3 = { ...descriptor0, phaseAuthority: 0.45 };
+    const descriptor0 = buildDescriptor(0.1);
+    const descriptor1 = buildDescriptor(0.2);
+    const descriptor2 = buildDescriptor(0.3);
+    const descriptor3 = buildDescriptor(0.4);
     let resolveFirst;
     let computeCalls = 0;
     const renderer = {
@@ -451,49 +691,45 @@ describe("fieldCache", () => {
       },
     };
     const options = {
-      backboneModeBuffer: { value: { array: new Float32Array(4) } },
-      detailModeBuffer: { value: { array: new Float32Array(4) } },
-      backbonePhaseBuffer: { value: { array: new Float32Array(4) } },
-      detailPhaseBuffer: { value: { array: new Float32Array(4) } },
-      backboneCapacity: 1,
-      detailCapacity: 0,
+      modalFieldModeBuffer: { value: { array: new Float32Array(4) } },
+      modalFieldPhaseBuffer: { value: { array: new Float32Array(4) } },
+      modalFieldCapacity: 1,
       uniforms: {
         uTime: { value: 1 },
         uRadius: { value: 3 },
-        uBackboneModeCount: { value: 1 },
-        uDetailModeCount: { value: 0 },
+        uModalFieldModeCount: { value: 1 },
       },
     };
     effectiveFieldCache.computeNodesByKey["rectangular:neumann"] = {
       id: "effective",
     };
 
-    const first = raymarchFieldCache.enqueueRaymarchEffectiveFieldRebuild(
+    const first = enqueueRaymarchEffectiveFieldRebuild(
       effectiveFieldCache,
       renderer,
       descriptor0,
       "initial",
       options,
     );
-    raymarchFieldCache.enqueueRaymarchEffectiveFieldRebuild(
+    enqueueRaymarchEffectiveFieldRebuild(
       effectiveFieldCache,
       renderer,
       descriptor1,
-      "phase-authority",
+      "phase-slots",
       options,
     );
-    raymarchFieldCache.enqueueRaymarchEffectiveFieldRebuild(
+    enqueueRaymarchEffectiveFieldRebuild(
       effectiveFieldCache,
       renderer,
       descriptor2,
-      "phase-authority",
+      "phase-slots",
       options,
     );
-    const pending = raymarchFieldCache.enqueueRaymarchEffectiveFieldRebuild(
+    const pending = enqueueRaymarchEffectiveFieldRebuild(
       effectiveFieldCache,
       renderer,
       descriptor3,
-      "phase-authority",
+      "phase-slots",
       options,
     );
 
@@ -502,7 +738,7 @@ describe("fieldCache", () => {
     expect(pending.reason).toBe("pending");
     expect(effectiveFieldCache.pendingDescriptor).toEqual(descriptor0);
     expect(effectiveFieldCache.queuedDescriptor).toEqual(descriptor3);
-    expect(effectiveFieldCache.queuedRebuildReason).toBe("phase-authority");
+    expect(effectiveFieldCache.queuedRebuildReason).toBe("phase-slots");
 
     await Promise.resolve();
     expect(computeCalls).toBe(1);
@@ -551,43 +787,78 @@ describe("fieldCache", () => {
     expect(rebuild.reason).toBe("cavity-geometry");
   });
 
-  it("builds descriptors from topology and relative modal weights", () => {
+  it("builds descriptors from topology independent of modal coefficient envelopes", () => {
     const descriptorA = buildRaymarchFieldCacheDescriptor({
-      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
-      detailSlots: new Float32Array([2, 2, 4, 0.2]),
-      backboneCount: 1,
-      detailCount: 1,
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.2]),
+      modalFieldCount: 2,
       boundaryMode: "neumann",
       radius: 3,
     });
     const descriptorB = buildRaymarchFieldCacheDescriptor({
-      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
-      detailSlots: new Float32Array([2, 2, 4, 0.25]),
-      backboneCount: 1,
-      detailCount: 1,
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.25]),
+      modalFieldCount: 2,
       boundaryMode: "neumann",
       radius: 3,
     });
 
-    expect(descriptorA.backboneHash).not.toBe(descriptorB.backboneHash);
-    expect(descriptorA.detailHash).not.toBe(descriptorB.detailHash);
+    expect(descriptorA.modalFieldHash).toBe(descriptorB.modalFieldHash);
+  });
+
+  it("builds unified modal field descriptors without role-layer hashes", () => {
+    const descriptor = buildRaymarchFieldCacheDescriptor({
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.2]),
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+
+    expect(descriptor.modalFieldCount).toBe(2);
+    expect(descriptor.modalFieldHash).toBeTypeOf("number");
+    expect(descriptor).not.toHaveProperty("backboneHash");
+    expect(descriptor).not.toHaveProperty("detailHash");
+    expect(descriptor).not.toHaveProperty("backboneCount");
+    expect(descriptor).not.toHaveProperty("detailCount");
+  });
+
+  it("evaluates unified modal field points independent of role placement", () => {
+    const unified = evaluateRaymarchFieldCachePoint({
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.5, 2, 2, 4, 0.5]),
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0.2,
+      y: -0.1,
+      z: 0.4,
+    });
+    const legacySplit = evaluateRaymarchFieldCachePoint({
+      backboneSlots: new Float32Array([1, 2, 3, 0.5, 2, 2, 4, 0.5]),
+      detailSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0.2,
+      y: -0.1,
+      z: 0.4,
+    });
+
+    expect(unified.field).toBeCloseTo(legacySplit.field, 6);
+    expect(unified.gradX).toBeCloseTo(legacySplit.gradX, 6);
+    expect(unified.gradY).toBeCloseTo(legacySplit.gradY, 6);
+    expect(unified.gradZ).toBeCloseTo(legacySplit.gradZ, 6);
   });
 
   it("does not rebuild when only the global modal amplitude scale changes", () => {
     const fieldCache = createRaymarchFieldCache({ resolution: 8 });
     const first = buildRaymarchFieldCacheDescriptor({
-      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
-      detailSlots: new Float32Array([2, 2, 4, 0.2]),
-      backboneCount: 1,
-      detailCount: 1,
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.2]),
+      modalFieldCount: 2,
       boundaryMode: "neumann",
       radius: 3,
     });
     const second = buildRaymarchFieldCacheDescriptor({
-      backboneSlots: new Float32Array([1, 2, 3, 0.45]),
-      detailSlots: new Float32Array([2, 2, 4, 0.1]),
-      backboneCount: 1,
-      detailCount: 1,
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.45, 2, 2, 4, 0.1]),
+      modalFieldCount: 2,
       boundaryMode: "neumann",
       radius: 3,
     });
@@ -599,21 +870,39 @@ describe("fieldCache", () => {
     expect(rebuild.reason).toBe("unchanged");
   });
 
-  it("detects rebuilds when relative modal weights change", () => {
+  it("does not rebuild when only relative modal coefficient envelopes change", () => {
     const fieldCache = createRaymarchFieldCache({ resolution: 8 });
     const first = buildRaymarchFieldCacheDescriptor({
-      backboneSlots: new Float32Array([1, 2, 3, 0.9]),
-      detailSlots: new Float32Array([2, 2, 4, 0.2]),
-      backboneCount: 1,
-      detailCount: 1,
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.2]),
+      modalFieldCount: 2,
       boundaryMode: "neumann",
       radius: 3,
     });
     const second = buildRaymarchFieldCacheDescriptor({
-      backboneSlots: new Float32Array([1, 2, 3, 0.6]),
-      detailSlots: new Float32Array([2, 2, 4, 0.2]),
-      backboneCount: 1,
-      detailCount: 1,
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.6, 2, 2, 4, 0.2]),
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+    fieldCache.activeDescriptor = first;
+    const rebuild = shouldRebuildRaymarchFieldCache(fieldCache, second);
+
+    expect(second).toEqual(first);
+    expect(rebuild.needsRebuild).toBe(false);
+    expect(rebuild.reason).toBe("unchanged");
+  });
+
+  it("detects rebuilds when modal geometry changes", () => {
+    const fieldCache = createRaymarchFieldCache({ resolution: 8 });
+    const first = buildRaymarchFieldCacheDescriptor({
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.2]),
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+    const second = buildRaymarchFieldCacheDescriptor({
+      modalFieldSlots: new Float32Array([1, 3, 3, 0.9, 2, 2, 4, 0.2]),
+      modalFieldCount: 2,
       boundaryMode: "neumann",
       radius: 3,
     });
@@ -711,6 +1000,39 @@ describe("fieldCache", () => {
 
     expect(rebuild.needsRebuild).toBe(true);
     expect(rebuild.reason).toBe("color-slots");
+  });
+
+  it("does not rebuild Spectral Light caches for small color coefficient jitter", () => {
+    const spectralLightCache = createRaymarchSpectralLightCache({
+      resolution: 8,
+    });
+    const first = buildRaymarchSpectralLightCacheDescriptor({
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.2]),
+      modalFieldColorSlots: new Float32Array([
+        1, 0.2, 0.1, 0.9, 0.2, 0.6, 1, 0.4,
+      ]),
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+    const second = buildRaymarchSpectralLightCacheDescriptor({
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.6, 2, 2, 4, 0.4]),
+      modalFieldColorSlots: new Float32Array([
+        0.985, 0.201, 0.105, 0.895, 0.201, 0.599, 0.985, 0.401,
+      ]),
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+    });
+
+    spectralLightCache.activeDescriptor = first;
+    const rebuild = shouldRebuildRaymarchSpectralLightCache(
+      spectralLightCache,
+      second,
+    );
+
+    expect(rebuild.needsRebuild).toBe(false);
+    expect(rebuild.reason).toBe("unchanged");
   });
 
   it("keeps Spectral Light descriptors unchanged when only phase advisory slots change", () => {
@@ -847,7 +1169,7 @@ describe("fieldCache", () => {
   });
 
   it("evaluates zero-phase effective field as the static field", () => {
-    expect(raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint).toBeTypeOf(
+    expect(evaluateRaymarchEffectiveFieldPoint).toBeTypeOf(
       "function",
     );
     const backboneSlots = new Float32Array([1, 2, 3, 0.9]);
@@ -864,7 +1186,7 @@ describe("fieldCache", () => {
       z: 1.1,
     });
     const effectiveSample =
-      raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint({
+      evaluateRaymarchEffectiveFieldPoint({
         backboneSlots,
         detailSlots,
         backbonePhaseSlots: new Float32Array([0, 0, 0, 1]),
@@ -887,11 +1209,11 @@ describe("fieldCache", () => {
   });
 
   it("applies one effective phase coefficient to scalar and gradient", () => {
-    expect(raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint).toBeTypeOf(
+    expect(evaluateRaymarchEffectiveFieldPoint).toBeTypeOf(
       "function",
     );
     const slots = new Float32Array([1, 1, 1, 1]);
-    const zeroPhase = raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint({
+    const zeroPhase = evaluateRaymarchEffectiveFieldPoint({
       backboneSlots: slots,
       detailSlots: new Float32Array(0),
       backbonePhaseSlots: new Float32Array([0, 0, 1, 1]),
@@ -906,7 +1228,7 @@ describe("fieldCache", () => {
       time: 0,
     });
     const invertedPhase =
-      raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint({
+      evaluateRaymarchEffectiveFieldPoint({
         backboneSlots: slots,
         detailSlots: new Float32Array(0),
         backbonePhaseSlots: new Float32Array([Math.PI, 0, 1, 1]),
@@ -929,7 +1251,7 @@ describe("fieldCache", () => {
   });
 
   it("reports effective field bandwidth rejection separately from descriptor overflow", () => {
-    const descriptor = raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor(
+    const descriptor = buildRaymarchEffectiveFieldDescriptor(
       {
         backboneSlots: new Float32Array([1, 1, 1, 0.5, 8, 8, 8, 0.25]),
         detailSlots: new Float32Array(0),
@@ -961,7 +1283,7 @@ describe("fieldCache", () => {
   it("normalizes effective field values from the representable contributing set", () => {
     const lowModeSlots = new Float32Array([1, 1, 1, 1]);
     const mixedSlots = new Float32Array([1, 1, 1, 1, 8, 8, 8, 1]);
-    const lowOnly = raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint({
+    const lowOnly = evaluateRaymarchEffectiveFieldPoint({
       backboneSlots: lowModeSlots,
       detailSlots: new Float32Array(0),
       backbonePhaseSlots: new Float32Array([0, 0, 0, 1]),
@@ -976,7 +1298,7 @@ describe("fieldCache", () => {
       time: 0,
       resolution: 8,
     });
-    const mixed = raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint({
+    const mixed = evaluateRaymarchEffectiveFieldPoint({
       backboneSlots: mixedSlots,
       detailSlots: new Float32Array(0),
       backbonePhaseSlots: new Float32Array([0, 0, 0, 1, Math.PI, 0, 1, 1]),
@@ -1001,7 +1323,7 @@ describe("fieldCache", () => {
   });
 
   it("reports effective-field unsigned support when signed modes cancel", () => {
-    const sample = raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint({
+    const sample = evaluateRaymarchEffectiveFieldPoint({
       backboneSlots: new Float32Array([1, 1, 1, 0.5, 2, 2, 2, 0.5]),
       detailSlots: new Float32Array(0),
       backbonePhaseSlots: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1]),
@@ -1023,7 +1345,7 @@ describe("fieldCache", () => {
   });
 
   it("summarizes effective-field support and cancellation diagnostics", () => {
-    const descriptor = raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor(
+    const descriptor = buildRaymarchEffectiveFieldDescriptor(
       {
         backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
         detailSlots: new Float32Array(0),
@@ -1047,7 +1369,7 @@ describe("fieldCache", () => {
   });
 
   it("reports zero-amplitude effective-field slots skipped before representability", () => {
-    const descriptor = raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor(
+    const descriptor = buildRaymarchEffectiveFieldDescriptor(
       {
         backboneSlots: new Float32Array([
           1, 1, 1, 0.5, 2, 2, 2, 0, 3, 3, 3, 0.25,

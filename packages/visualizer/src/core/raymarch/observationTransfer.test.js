@@ -55,8 +55,7 @@ describe("observation transfer", () => {
       modalStructureAnchor: 0.8,
       ridgeAnchor: 0.61,
       modalCoefficientEnergy: 0.13,
-      modalResponseBackboneEnergy: 0.21,
-      modalResponseDetailEnergy: 0.04,
+      modalResponseEnergy: 0.21,
     };
     const referenceTransfer = deriveObservationTransfer({
       ...physicalInputs,
@@ -155,16 +154,14 @@ describe("observation transfer", () => {
       modalStructureAnchor: 0.74,
       ridgeAnchor: 0.68,
       modalCoefficientEnergy: 0.11,
-      modalResponseBackboneEnergy: 0.19,
-      modalResponseDetailEnergy: 0.03,
+      modalResponseEnergy: 0.19,
     });
     const noLocalAnchor = deriveObservationTransfer({
       density: 0.04,
       modalStructureAnchor: 0,
       ridgeAnchor: 0.68,
       modalCoefficientEnergy: 0.11,
-      modalResponseBackboneEnergy: 0.19,
-      modalResponseDetailEnergy: 0.03,
+      modalResponseEnergy: 0.19,
     });
 
     expect(OBSERVATION_TRANSFER_REFERENCE.densityFloor).toBeCloseTo(0.22);
@@ -193,8 +190,7 @@ describe("observation transfer", () => {
       ridgeAnchor: 0,
       ridgeSupportAnchor: 1,
       modalCoefficientEnergy: 1,
-      modalResponseBackboneEnergy: 1,
-      modalResponseDetailEnergy: 1,
+      modalResponseEnergy: 1,
     });
     const physicalRidge = deriveObservationTransfer({
       density: 0,
@@ -218,8 +214,7 @@ describe("observation transfer", () => {
       modalStructureAnchor: 1,
       ridgeAnchor: 0,
       modalCoefficientEnergy: 1,
-      modalResponseBackboneEnergy: 1,
-      modalResponseDetailEnergy: 1,
+      modalResponseEnergy: 1,
       signedRadianceAuthority: 1,
     });
     const causticAnchored = deriveObservationTransfer({
@@ -228,8 +223,7 @@ describe("observation transfer", () => {
       modalStructureAnchor: 1,
       ridgeAnchor: 0.72,
       modalCoefficientEnergy: 1,
-      modalResponseBackboneEnergy: 1,
-      modalResponseDetailEnergy: 1,
+      modalResponseEnergy: 1,
       signedRadianceAuthority: 1,
     });
 
@@ -246,7 +240,7 @@ describe("observation transfer", () => {
       modalStructureAnchor: 0.88,
       ridgeAnchor: 0.84,
       modalCoefficientEnergy: 0.46,
-      modalResponseBackboneEnergy: 0.52,
+      modalResponseEnergy: 0.52,
       signedRadianceAuthority: 1,
     });
     const canceling = deriveObservationTransfer({
@@ -254,7 +248,7 @@ describe("observation transfer", () => {
       modalStructureAnchor: 0.88,
       ridgeAnchor: 0.84,
       modalCoefficientEnergy: 0.46,
-      modalResponseBackboneEnergy: 0.52,
+      modalResponseEnergy: 0.52,
       signedRadianceAuthority: 0.24,
     });
 
@@ -275,7 +269,7 @@ describe("observation transfer", () => {
       modalStructureAnchor: 0.9,
       ridgeAnchor: 0.9,
       modalCoefficientEnergy: 0.2,
-      modalResponseBackboneEnergy: 0.3,
+      modalResponseEnergy: 0.3,
       hardSilence: true,
     });
     const noEnergy = deriveObservationTransfer({
@@ -306,8 +300,7 @@ describe("observation transfer", () => {
       modalStructureAnchor: 1,
       ridgeAnchor: 1,
       modalCoefficientEnergy: 0.12,
-      modalResponseBackboneEnergy: 0.28,
-      modalResponseDetailEnergy: 0.04,
+      modalResponseEnergy: 0.28,
       phaseCoherentFieldEnergy: 1,
     });
 
@@ -327,8 +320,7 @@ describe("observation transfer", () => {
       modalStructureAnchor: 0.8,
       ridgeAnchor: 0.61,
       modalCoefficientEnergy: 0.13,
-      modalResponseBackboneEnergy: 0.21,
-      modalResponseDetailEnergy: 0.04,
+      modalResponseEnergy: 0.21,
       phaseCoherentFieldEnergy: 0.2,
     };
 

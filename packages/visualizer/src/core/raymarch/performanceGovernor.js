@@ -42,7 +42,7 @@ export function deriveFieldExcitation(featureFrame) {
   );
 }
 
-export function inferLayerCapacity(capacity, slots) {
+export function inferModalFieldCapacity(capacity, slots) {
   if (Number.isFinite(capacity) && capacity > 0) {
     return Math.max(1, Math.round(capacity));
   }
@@ -50,12 +50,12 @@ export function inferLayerCapacity(capacity, slots) {
   return Math.max(1, Math.floor((slots?.length ?? 0) / 4));
 }
 
-export function analyzeFullModeLayer({
+export function analyzeModalField({
   slots,
   capacity,
   cavityGeometry = "rectangular",
 }) {
-  const resolvedCapacity = inferLayerCapacity(capacity, slots);
+  const resolvedCapacity = inferModalFieldCapacity(capacity, slots);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
   let activeCount = 0;
   let totalAmplitude = 0;
@@ -89,15 +89,15 @@ export function analyzeFullModeLayer({
   };
 }
 
-export function copyFullModeLayer({
+export function copyModalField({
   sourceSlots,
-  sourceColorSlots,
+  sourceColorSlots = null,
   targetSlots,
-  targetColorSlots,
+  targetColorSlots = null,
   capacity,
   includeColors = true,
 }) {
-  const resolvedCapacity = inferLayerCapacity(capacity, targetSlots);
+  const resolvedCapacity = inferModalFieldCapacity(capacity, targetSlots);
   const targetLength = resolvedCapacity * 4;
   targetSlots.fill(0, 0, targetLength);
   if (targetColorSlots) {
@@ -115,25 +115,17 @@ export function copyFullModeLayer({
 }
 
 export function deriveRaymarchComplexityGovernor({
-  backbone,
-  detail,
+  modalField,
   featureFrame,
   requestedStepBudget,
   requestedRenderScale = 1,
 }) {
-  const totalCapacity = Math.max(
-    1,
-    (backbone?.capacity ?? 0) + (detail?.capacity ?? 0),
-  );
-  const uploadedModeCount =
-    (backbone?.uploadedActiveCount ?? 0) + (detail?.uploadedActiveCount ?? 0);
-  const originalModeCount =
-    (backbone?.originalActiveCount ?? 0) + (detail?.originalActiveCount ?? 0);
+  const totalCapacity = Math.max(1, modalField?.capacity ?? 0);
+  const uploadedModeCount = modalField?.uploadedActiveCount ?? 0;
+  const originalModeCount = modalField?.originalActiveCount ?? 0;
   const countLoad = clamp01(uploadedModeCount / totalCapacity);
   const weightedPermutationLoad = clamp01(
-    ((backbone?.weightedPermutationLoad ?? 0) +
-      (detail?.weightedPermutationLoad ?? 0) * 0.85) /
-      Math.max(1, (backbone?.capacity ?? 0) + (detail?.capacity ?? 0) * 0.85),
+    (modalField?.weightedPermutationLoad ?? 0) / totalCapacity,
   );
   const excitation = deriveFieldExcitation(featureFrame);
   const complexityScore = clamp01(
@@ -183,29 +175,21 @@ export function deriveRaymarchComplexityGovernor({
 }
 
 export function buildRaymarchPerformanceGovernor({
-  backboneSlots,
-  detailSlots,
-  backboneCapacity,
-  detailCapacity,
+  modalFieldSlots,
+  modalFieldCapacity,
   featureFrame,
   requestedStepBudget,
   requestedRenderScale = 1,
   cavityGeometry = "rectangular",
 }) {
-  const backbone = analyzeFullModeLayer({
-    slots: backboneSlots,
-    capacity: backboneCapacity,
-    cavityGeometry,
-  });
-  const detail = analyzeFullModeLayer({
-    slots: detailSlots,
-    capacity: detailCapacity,
+  const modalField = analyzeModalField({
+    slots: modalFieldSlots,
+    capacity: modalFieldCapacity,
     cavityGeometry,
   });
 
   return deriveRaymarchPerformanceGovernor({
-    backbone,
-    detail,
+    modalField,
     featureFrame,
     requestedStepBudget,
     requestedRenderScale,
@@ -213,21 +197,18 @@ export function buildRaymarchPerformanceGovernor({
 }
 
 export function deriveRaymarchPerformanceGovernor({
-  backbone,
-  detail,
+  modalField,
   featureFrame,
   requestedStepBudget,
   requestedRenderScale = 1,
 }) {
   return {
     ...deriveRaymarchComplexityGovernor({
-      backbone,
-      detail,
+      modalField,
       featureFrame,
       requestedStepBudget,
       requestedRenderScale,
     }),
-    backbone,
-    detail,
+    modalField,
   };
 }

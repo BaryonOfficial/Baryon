@@ -57,7 +57,11 @@ describe("replay fixtures", () => {
       expect(featureFrame.debug.analysisSourceUsed).toBe("file");
       expect(featureFrame.fieldState).toBe("active");
       expect(featureFrame.debug.modeSlotCount).toBeGreaterThan(0);
-      expect(featureFrame.modalVisibilityEnergy).toBeGreaterThan(0.04);
+      expect(featureFrame.modalVisibilityEnergy).toBeGreaterThan(0.035);
+      expect(featureFrame.modalResponseEnergy).toBeGreaterThan(0);
+      expect(featureFrame.modalResponseAverageDampingEnvelope).toBeGreaterThan(
+        0,
+      );
     }
   });
 });

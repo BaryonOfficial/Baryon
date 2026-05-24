@@ -31,7 +31,6 @@ import {
   copyCanonicalRaymarchPhaseSlots,
 } from "./phaseSlotSemantics.js";
 import {
-  DETAIL_LAYER_WEIGHT,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
 } from "./fieldShaping.js";
@@ -41,9 +40,9 @@ import {
 } from "./observationTransfer.js";
 import {
   buildRaymarchPerformanceGovernor,
-  copyFullModeLayer,
+  copyModalField,
   deriveFieldExcitation,
-  inferLayerCapacity,
+  inferModalFieldCapacity,
 } from "./performanceGovernor.js";
 import {
   RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES,
@@ -217,12 +216,10 @@ function resetEffectiveFieldRuntimeDiagnostics(effectiveFieldCache) {
 }
 
 function resetRenderAuthorityState(runtimeState) {
-  clearBufferNode(runtimeState.backboneModeBuffer);
-  clearBufferNode(runtimeState.detailModeBuffer);
-  clearBufferNode(runtimeState.backboneColorBuffer);
-  clearBufferNode(runtimeState.detailColorBuffer);
-  clearBufferNode(runtimeState.backbonePhaseBuffer);
-  clearBufferNode(runtimeState.detailPhaseBuffer);
+  clearBufferNode(runtimeState.modalFieldModeBuffer);
+  clearBufferNode(runtimeState.modalFieldColorBuffer);
+  clearBufferNode(runtimeState.modalFieldPhaseBuffer);
+  clearBufferNode(runtimeState.modalFieldRoleBuffer);
   runtimeState.performanceGovernor = null;
   runtimeState.pendingRaymarchPerformanceGovernor = null;
   runtimeState.spectralLightBuffersUploaded = false;
@@ -273,41 +270,22 @@ function syncObservationTransferUniforms(runtimeState) {
   return parameters;
 }
 
-// Sum of all slot amplitudes weighted by layer, matching accumulateSpecializedLayer's
-// weight assignment (backbone × 1.0, detail × DETAIL_LAYER_WEIGHT). Used to
-// normalize the Chladni field in the shader so structural pattern is amplitude-invariant.
-function sumLayeredAmplitude(featureFrame) {
+function sumModalFieldAmplitude(featureFrame) {
   let total = 0;
-  const backbone = featureFrame?.backboneSlots;
-  const detail = featureFrame?.detailSlots;
-  if (backbone) {
-    for (let i = 3; i < backbone.length; i += 4) total += backbone[i] ?? 0;
-  }
-  if (detail) {
-    for (let i = 3; i < detail.length; i += 4)
-      total += (detail[i] ?? 0) * DETAIL_LAYER_WEIGHT;
+  const slots =
+    featureFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
+    featureFrame?.modalFieldSlots;
+  if (slots) {
+    for (let i = 3; i < slots.length; i += 4) total += slots[i] ?? 0;
   }
   return total;
 }
 
-function estimateLayeredAmplitude(featureFrame) {
-  const backboneAmplitude = estimateAverageModeAmplitude(
-    featureFrame?.backboneSlots,
+function estimateModalFieldAmplitude(featureFrame) {
+  return estimateAverageModeAmplitude(
+    featureFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
+      featureFrame?.modalFieldSlots,
   );
-  const detailAmplitude = estimateAverageModeAmplitude(
-    featureFrame?.detailSlots,
-  );
-  return backboneAmplitude + detailAmplitude * 0.35;
-}
-
-function maxSlotAmplitude(slots) {
-  if (!slots?.length) return 0;
-  let max = 0;
-  for (let i = 0; i < slots.length; i += 4) {
-    const amp = slots[i + 3] ?? 0;
-    if (amp > max) max = amp;
-  }
-  return max;
 }
 
 function summarizeRenderedLayer(modeSlots, colorSlots, count) {
@@ -324,6 +302,24 @@ function summarizeRenderedLayer(modeSlots, colorSlots, count) {
     amplitudeTotal,
     colorWeightMax,
   };
+}
+
+function maxRoleAmplitude(modalDescriptor, roleBit) {
+  const slots = modalDescriptor?.slotViews?.modalFieldSlots;
+  const roleSlots = modalDescriptor?.slotViews?.modalFieldRoleSlots;
+  const count = Math.min(
+    modalDescriptor?.counts?.modalFieldModeCount ?? 0,
+    Math.floor((slots?.length ?? 0) / 4),
+  );
+  let max = 0;
+  for (let index = 0; index < count; index += 1) {
+    const offset = index * 4;
+    if (roleSlots?.length && !((roleSlots[offset] ?? 0) & roleBit)) {
+      continue;
+    }
+    max = Math.max(max, slots?.[offset + 3] ?? 0);
+  }
+  return max;
 }
 
 function deriveLightAsymmetry(primaryIntensity, secondaryIntensity) {
@@ -348,34 +344,27 @@ function getRuntimeEffectiveCavityGeometry(runtimeState) {
 function buildRuntimeModalDescriptor(
   runtimeState,
   featureFrame,
-  { backboneCapacity, detailCapacity },
+  { modalFieldCapacity },
 ) {
   const sourceDescriptor = featureFrame?.modalDescriptor ?? null;
   const slotViews = sourceDescriptor?.slotViews ?? {};
+  if (slotViews.modalFieldSlots) {
+    return sourceDescriptor;
+  }
 
   return buildCanonicalFullModalDescriptor({
     generation:
       sourceDescriptor?.generation ??
       runtimeState.modalDescriptorGeneration ??
       0,
-    maxBackboneModes: backboneCapacity,
-    maxDetailModes: detailCapacity,
-    backboneSlots: slotViews.backboneSlots ?? featureFrame?.backboneSlots,
-    detailSlots: slotViews.detailSlots ?? featureFrame?.detailSlots,
-    backbonePhaseSlots:
-      slotViews.backbonePhaseSlots ?? featureFrame?.backbonePhaseSlots,
-    detailPhaseSlots:
-      slotViews.detailPhaseSlots ?? featureFrame?.detailPhaseSlots,
-    backboneColorSlots:
-      slotViews.backboneColorSlots ?? featureFrame?.backboneColorSlots,
-    detailColorSlots:
-      slotViews.detailColorSlots ?? featureFrame?.detailColorSlots,
-    activeBackboneModeCount:
-      sourceDescriptor?.counts?.validBackboneModeCount ??
-      featureFrame?.activeBackboneModeCount,
-    activeDetailModeCount:
-      sourceDescriptor?.counts?.validDetailModeCount ??
-      featureFrame?.activeDetailModeCount,
+    maxTotalModes: modalFieldCapacity,
+    modalFieldSlots: featureFrame?.modalFieldSlots ?? featureFrame?.modeSlots,
+    modalFieldPhaseSlots: featureFrame?.modalFieldPhaseSlots,
+    modalFieldColorSlots: featureFrame?.modalFieldColorSlots,
+    modalFieldRoleSlots: featureFrame?.modalFieldRoleSlots,
+    activeModalFieldModeCount:
+      sourceDescriptor?.counts?.validModeCount ?? featureFrame?.activeModeCount,
+    roleHistogram: sourceDescriptor?.diagnostics?.roleHistogram,
     observerCandidateModeCount:
       sourceDescriptor?.diagnostics?.observerCandidateModeCount ??
       featureFrame?.debug?.excitedModeCount ??
@@ -401,12 +390,10 @@ function blockOverflowedModalDescriptor(
   fieldState,
   renderAuthority,
 ) {
-  clearBufferNode(runtimeState.backboneModeBuffer);
-  clearBufferNode(runtimeState.detailModeBuffer);
-  clearBufferNode(runtimeState.backboneColorBuffer);
-  clearBufferNode(runtimeState.detailColorBuffer);
-  clearBufferNode(runtimeState.backbonePhaseBuffer);
-  clearBufferNode(runtimeState.detailPhaseBuffer);
+  clearBufferNode(runtimeState.modalFieldModeBuffer);
+  clearBufferNode(runtimeState.modalFieldColorBuffer);
+  clearBufferNode(runtimeState.modalFieldPhaseBuffer);
+  clearBufferNode(runtimeState.modalFieldRoleBuffer);
   runtimeState.performanceGovernor = null;
   runtimeState.pendingRaymarchPerformanceGovernor = null;
   runtimeState.spectralLightBuffersUploaded = false;
@@ -417,8 +404,7 @@ function blockOverflowedModalDescriptor(
   resetCacheActivity(runtimeState.effectiveFieldCache);
   resetCacheActivity(runtimeState.spectralLightCache);
   resetEffectiveFieldRuntimeDiagnostics(runtimeState.effectiveFieldCache);
-  setIfChanged(runtimeState.uniforms.uBackboneModeCount, 0);
-  setIfChanged(runtimeState.uniforms.uDetailModeCount, 0);
+  setIfChanged(runtimeState.uniforms.uModalFieldModeCount, 0);
   setIfChanged(runtimeState.uniforms.uActiveModeCount, 0);
   runtimeState.volumeMesh.visible = false;
   runtimeState.idleOverlay.visible = resolveIdleOverlayVisible(
@@ -476,16 +462,19 @@ function buildRaymarchDebugSnapshot(
   fieldState,
   renderAuthority,
 ) {
-  const avgAmplitude = estimateLayeredAmplitude(featureFrame);
-  const maxBackboneAmplitude = maxSlotAmplitude(featureFrame?.backboneSlots);
-  const maxDetailAmplitude = maxSlotAmplitude(featureFrame?.detailSlots);
-  const activeModeCount = runtimeState.uniforms.uActiveModeCount.value;
-  const fieldExcitation = deriveFieldExcitation(featureFrame);
-  const performanceGovernor = runtimeState.performanceGovernor ?? null;
   const modalDescriptor =
     runtimeState.currentModalDescriptor ??
     featureFrame?.modalDescriptor ??
     null;
+  const avgAmplitude = estimateModalFieldAmplitude(featureFrame);
+  const maxBackboneAmplitude = maxRoleAmplitude(modalDescriptor, 1);
+  const maxDetailAmplitude = maxRoleAmplitude(modalDescriptor, 2);
+  const activeModeCount =
+    runtimeState.uniforms.uModalFieldModeCount?.value ??
+    runtimeState.uniforms.uActiveModeCount?.value ??
+    0;
+  const fieldExcitation = deriveFieldExcitation(featureFrame);
+  const performanceGovernor = runtimeState.performanceGovernor ?? null;
   const densityGain = runtimeState.uniforms.uDensityGain.value;
   const absorption = runtimeState.uniforms.uAbsorption.value;
   const opacityGain = runtimeState.uniforms.uOpacityGain?.value ?? 1;
@@ -516,19 +505,17 @@ function buildRaymarchDebugSnapshot(
     featureFrame?.changeBreakdown ??
     null;
   const pulseSignal = featureFrame?.pulseSignal ?? 0;
-  const totalSlotAmplitude = sumLayeredAmplitude(featureFrame);
+  const totalSlotAmplitude = sumModalFieldAmplitude({ modalDescriptor });
   const modalCoefficientEnergy = renderAuthority
     ? clamp01(totalSlotAmplitude)
     : 0;
-  const modalResponseBackboneEnergy = renderAuthority
-    ? (featureFrame?.modalResponseBackboneEnergy ??
-      featureFrame?.debug?.modalResponseBackboneEnergy ??
-      0)
-    : 0;
-  const modalResponseDetailEnergy = renderAuthority
-    ? (featureFrame?.modalResponseDetailEnergy ??
-      featureFrame?.debug?.modalResponseDetailEnergy ??
-      0)
+  const modalResponseEnergy = renderAuthority
+    ? clamp01(
+        featureFrame?.modalResponseEnergy ??
+          featureFrame?.modalResponseRenderEnergy ??
+          featureFrame?.debug?.modalResponseEnergy ??
+          0,
+      )
     : 0;
   const modalPhaseAuthority = renderAuthority
     ? (featureFrame?.modalPhaseAuthority ?? 0)
@@ -544,8 +531,7 @@ function buildRaymarchDebugSnapshot(
     modalStructureAnchor: 1,
     ridgeAnchor: 1,
     modalCoefficientEnergy,
-    modalResponseBackboneEnergy,
-    modalResponseDetailEnergy,
+    modalResponseEnergy,
     parameters: observationParameters,
   });
   const avgDensity = Math.min(
@@ -695,15 +681,11 @@ function buildRaymarchDebugSnapshot(
       spectralLightCache,
       spectralLightDescriptor,
     );
-  const renderedBackbone = summarizeRenderedLayer(
-    runtimeState.backboneModeBuffer?.value?.array,
-    runtimeState.backboneColorBuffer?.value?.array,
-    runtimeState.uniforms.uBackboneModeCount.value,
-  );
-  const renderedDetail = summarizeRenderedLayer(
-    runtimeState.detailModeBuffer?.value?.array,
-    runtimeState.detailColorBuffer?.value?.array,
-    runtimeState.uniforms.uDetailModeCount.value,
+  const roleHistogram = modalDescriptor?.diagnostics?.roleHistogram ?? {};
+  const renderedModalField = summarizeRenderedLayer(
+    runtimeState.modalFieldModeBuffer?.value?.array,
+    runtimeState.modalFieldColorBuffer?.value?.array,
+    activeModeCount,
   );
 
   return {
@@ -714,44 +696,30 @@ function buildRaymarchDebugSnapshot(
       performanceGovernor?.originalModeCount ?? activeModeCount,
     uploadedModeSlotCount:
       performanceGovernor?.uploadedModeCount ?? activeModeCount,
-    backboneModeCount: runtimeState.uniforms.uBackboneModeCount.value,
-    detailModeCount: runtimeState.uniforms.uDetailModeCount.value,
-    originalBackboneModeCount:
-      performanceGovernor?.backbone?.originalActiveCount ??
-      runtimeState.uniforms.uBackboneModeCount.value,
-    originalDetailModeCount:
-      performanceGovernor?.detail?.originalActiveCount ??
-      runtimeState.uniforms.uDetailModeCount.value,
-    uploadedBackboneModeCount:
-      performanceGovernor?.backbone?.uploadedActiveCount ??
-      runtimeState.uniforms.uBackboneModeCount.value,
-    uploadedDetailModeCount:
-      performanceGovernor?.detail?.uploadedActiveCount ??
-      runtimeState.uniforms.uDetailModeCount.value,
-    renderedBackboneModeCount: renderedBackbone.count,
-    renderedDetailModeCount: renderedDetail.count,
-    renderedBackboneColorWeightMax: renderedBackbone.colorWeightMax,
-    renderedDetailColorWeightMax: renderedDetail.colorWeightMax,
-    renderedBackboneAmplitudeTotal: renderedBackbone.amplitudeTotal,
-    renderedDetailAmplitudeTotal: renderedDetail.amplitudeTotal,
+    modalFieldModeCount: activeModeCount,
+    backboneModeCount: roleHistogram.backbone ?? 0,
+    detailModeCount: roleHistogram.detail ?? 0,
+    originalBackboneModeCount: roleHistogram.backbone ?? 0,
+    originalDetailModeCount: roleHistogram.detail ?? 0,
+    uploadedBackboneModeCount: roleHistogram.backbone ?? 0,
+    uploadedDetailModeCount: roleHistogram.detail ?? 0,
+    renderedModalFieldModeCount: renderedModalField.count,
+    renderedModalFieldColorWeightMax: renderedModalField.colorWeightMax,
+    renderedModalFieldAmplitudeTotal: renderedModalField.amplitudeTotal,
     modalDescriptorFieldAuthority:
       modalDescriptor?.fieldAuthority ?? "unavailable",
     modalDescriptorOverflow:
       modalDescriptor?.diagnostics?.descriptorOverflow === true,
-    modalDescriptorMaxBackboneModes:
-      modalDescriptor?.capacity?.maxBackboneModes ??
-      runtimeState.backboneCapacity ??
-      0,
-    modalDescriptorMaxDetailModes:
-      modalDescriptor?.capacity?.maxDetailModes ??
-      runtimeState.detailCapacity ??
-      0,
+    modalDescriptorMaxTotalModes:
+      modalDescriptor?.capacity?.maxTotalModes ?? activeModeCount,
     modalDescriptorValidBackboneModeCount:
       modalDescriptor?.counts?.validBackboneModeCount ??
-      runtimeState.uniforms.uBackboneModeCount.value,
+      roleHistogram.backbone ??
+      0,
     modalDescriptorValidDetailModeCount:
       modalDescriptor?.counts?.validDetailModeCount ??
-      runtimeState.uniforms.uDetailModeCount.value,
+      roleHistogram.detail ??
+      0,
     modalDescriptorValidModeCount:
       modalDescriptor?.counts?.validModeCount ?? activeModeCount,
     modalDescriptorOverflowBackboneModeCount:
@@ -800,8 +768,7 @@ function buildRaymarchDebugSnapshot(
     changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
     pulseSignal,
     modalCoefficientEnergy,
-    modalResponseBackboneEnergy,
-    modalResponseDetailEnergy,
+    modalResponseEnergy,
     observationEnergy: observationTransferDebug.observationEnergy,
     observationAnchorMax: observationTransferDebug.observationAnchor,
     observationSupportMax: observationTransferDebug.observationSupport,
@@ -978,15 +945,10 @@ function updateReactiveResponse(
   const modalResponseEnergy = clamp01(
     Math.max(
       featureFrame?.modalResponseEnergy ??
+        featureFrame?.modalResponseRenderEnergy ??
         featureFrame?.debug?.modalResponseEnergy ??
         0,
-      featureFrame?.modalResponseBackboneEnergy ??
-        featureFrame?.debug?.modalResponseBackboneEnergy ??
-        0,
-      featureFrame?.modalResponseDetailEnergy ??
-        featureFrame?.debug?.modalResponseDetailEnergy ??
-        0,
-      sumLayeredAmplitude(featureFrame),
+      sumModalFieldAmplitude(featureFrame),
     ),
   );
   const reactivity = Math.max(
@@ -1176,10 +1138,9 @@ function updateLaserResponse(runtimeState, featureFrame) {
 function getRaymarchUploadState(runtimeState) {
   if (!runtimeState.raymarchUploadState) {
     runtimeState.raymarchUploadState = {
-      backbone: null,
-      detail: null,
-      backbonePhase: null,
-      detailPhase: null,
+      modalField: null,
+      modalFieldPhase: null,
+      modalFieldRole: null,
       spectralLightDescriptorSignature: null,
     };
   }
@@ -1353,55 +1314,46 @@ function applyLayerPhaseUploadIfChanged({
 }
 
 function buildFieldDescriptorSignature({
-  backboneSignature,
-  detailSignature,
-  backboneCount,
-  detailCount,
+  modalFieldSignature,
+  modalFieldCount,
   boundaryMode,
   cavityGeometry,
   radius,
 }) {
   return {
-    backboneCount,
-    detailCount,
+    modalFieldCount,
     boundaryMode,
     cavityGeometry,
     radius: Number.isFinite(radius) ? radius : 1,
-    backboneHash: backboneSignature?.slotHash ?? 0,
-    detailHash: detailSignature?.slotHash ?? 0,
+    modalFieldHash: modalFieldSignature?.slotHash ?? 0,
   };
 }
 
 function fieldDescriptorSignatureEquals(previous, next) {
   return Boolean(
     previous &&
-    previous.backboneCount === next.backboneCount &&
-    previous.detailCount === next.detailCount &&
+    previous.modalFieldCount === next.modalFieldCount &&
     previous.boundaryMode === next.boundaryMode &&
     previous.cavityGeometry === next.cavityGeometry &&
     previous.radius === next.radius &&
-    previous.backboneHash === next.backboneHash &&
-    previous.detailHash === next.detailHash,
+    previous.modalFieldHash === next.modalFieldHash,
   );
 }
 
 function buildSpectralLightDescriptorSignature({
   fieldSignature,
-  backboneSignature,
-  detailSignature,
+  modalFieldSignature,
 }) {
   return {
     ...fieldSignature,
-    backboneColorHash: backboneSignature?.colorHash ?? 0,
-    detailColorHash: detailSignature?.colorHash ?? 0,
+    modalFieldColorHash: modalFieldSignature?.colorHash ?? 0,
   };
 }
 
 function spectralLightDescriptorSignatureEquals(previous, next) {
   return Boolean(
     fieldDescriptorSignatureEquals(previous, next) &&
-    previous.backboneColorHash === next.backboneColorHash &&
-    previous.detailColorHash === next.detailColorHash,
+    previous.modalFieldColorHash === next.modalFieldColorHash,
   );
 }
 
@@ -1413,7 +1365,7 @@ function copyLayerUpload({
   layer,
   includeColors,
 }) {
-  copyFullModeLayer({
+  copyModalField({
     sourceSlots: slots,
     sourceColorSlots: colorSlots,
     targetSlots,
@@ -1451,8 +1403,7 @@ function takePendingRaymarchPerformanceGovernor(
   runtimeState,
   featureFrame,
   {
-    backboneCapacity,
-    detailCapacity,
+    modalFieldCapacity,
     cavityGeometry,
     requestedStepBudget,
     requestedRenderScale,
@@ -1466,8 +1417,7 @@ function takePendingRaymarchPerformanceGovernor(
   runtimeState.pendingRaymarchPerformanceGovernor = null;
   const matches =
     pending.featureFrame === featureFrame &&
-    pending.backboneCapacity === backboneCapacity &&
-    pending.detailCapacity === detailCapacity &&
+    pending.modalFieldCapacity === modalFieldCapacity &&
     pending.cavityGeometry === cavityGeometry &&
     pending.requestedStepBudget === requestedStepBudget &&
     pending.requestedRenderScale === requestedRenderScale;
@@ -1478,7 +1428,7 @@ function takePendingRaymarchPerformanceGovernor(
 function updateEffectiveFieldCache(
   runtimeState,
   renderer,
-  { backboneCapacity, detailCapacity },
+  { modalFieldCapacity },
   { effectiveFieldDescriptor },
 ) {
   const effectiveFieldCache = runtimeState.effectiveFieldCache;
@@ -1507,12 +1457,9 @@ function updateEffectiveFieldCache(
       effectiveFieldDescriptor,
       reason,
       {
-        backboneModeBuffer: runtimeState.backboneModeBuffer,
-        detailModeBuffer: runtimeState.detailModeBuffer,
-        backbonePhaseBuffer: runtimeState.backbonePhaseBuffer,
-        detailPhaseBuffer: runtimeState.detailPhaseBuffer,
-        backboneCapacity,
-        detailCapacity,
+        modalFieldModeBuffer: runtimeState.modalFieldModeBuffer,
+        modalFieldPhaseBuffer: runtimeState.modalFieldPhaseBuffer,
+        modalFieldCapacity,
         uniforms: runtimeState.uniforms,
       },
     );
@@ -1526,7 +1473,7 @@ function updateEffectiveFieldCache(
 function resolveSpectralLightEvaluationMode(
   runtimeState,
   renderer,
-  { backboneCapacity, detailCapacity },
+  { modalFieldCapacity },
   { spectralLightEnabled, spectralLightDescriptor, debugDirectRequested },
 ) {
   const spectralLightCache = runtimeState.spectralLightCache;
@@ -1571,12 +1518,9 @@ function resolveSpectralLightEvaluationMode(
         spectralLightDescriptor,
         spectralLightRebuild.reason,
         {
-          backboneModeBuffer: runtimeState.backboneModeBuffer,
-          detailModeBuffer: runtimeState.detailModeBuffer,
-          backboneColorBuffer: runtimeState.backboneColorBuffer,
-          detailColorBuffer: runtimeState.detailColorBuffer,
-          backboneCapacity,
-          detailCapacity,
+          modalFieldModeBuffer: runtimeState.modalFieldModeBuffer,
+          modalFieldColorBuffer: runtimeState.modalFieldColorBuffer,
+          modalFieldCapacity,
           uniforms: runtimeState.uniforms,
         },
       );
@@ -1630,29 +1574,21 @@ export function tickRaymarchRuntime(
   renderer = null,
 ) {
   const {
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneColorBuffer,
-    detailColorBuffer,
     uniforms,
     volumeMesh,
     idleOverlay,
   } = runtimeState;
-  const backboneCapacity = inferLayerCapacity(
-    runtimeState.backboneCapacity,
-    backboneModeBuffer.value.array,
+  const modalFieldModeBuffer = runtimeState.modalFieldModeBuffer;
+  const modalFieldColorBuffer = runtimeState.modalFieldColorBuffer;
+  const modalFieldPhaseBuffer = runtimeState.modalFieldPhaseBuffer;
+  const modalFieldRoleBuffer = runtimeState.modalFieldRoleBuffer;
+  const modalFieldCapacity = inferModalFieldCapacity(
+    runtimeState.modalFieldCapacity,
+    modalFieldModeBuffer.value.array,
   );
-  const detailCapacity = inferLayerCapacity(
-    runtimeState.detailCapacity,
-    detailModeBuffer.value.array,
-  );
-  const backbonePhaseCapacity = inferLayerCapacity(
-    runtimeState.backbonePhaseCapacity ?? runtimeState.backboneCapacity,
-    runtimeState.backbonePhaseBuffer?.value?.array,
-  );
-  const detailPhaseCapacity = inferLayerCapacity(
-    runtimeState.detailPhaseCapacity ?? runtimeState.detailCapacity,
-    runtimeState.detailPhaseBuffer?.value?.array,
+  const modalFieldPhaseCapacity = inferModalFieldCapacity(
+    runtimeState.modalFieldPhaseCapacity ?? runtimeState.modalFieldCapacity,
+    modalFieldPhaseBuffer?.value?.array,
   );
 
   uniforms.uTime.value = time;
@@ -1673,8 +1609,7 @@ export function tickRaymarchRuntime(
 
   if (!renderAuthority) {
     resetRenderAuthorityState(runtimeState);
-    setIfChanged(uniforms.uBackboneModeCount, 0);
-    setIfChanged(uniforms.uDetailModeCount, 0);
+    setIfChanged(uniforms.uModalFieldModeCount, 0);
     setIfChanged(uniforms.uActiveModeCount, 0);
     setIfChanged(uniforms.uAverageAmplitude, 0);
     setIfChanged(uniforms.uTransientEnergy, 0);
@@ -1694,8 +1629,7 @@ export function tickRaymarchRuntime(
     setIfChanged(uniforms.uTrebleBroadbandEnergy, 0);
     setIfChanged(uniforms.uModeCoherence, 0);
     setIfChanged(uniforms.uTotalSlotAmplitude, 0);
-    setIfChanged(uniforms.uModalResponseBackboneEnergy, 0);
-    setIfChanged(uniforms.uModalResponseDetailEnergy, 0);
+    setIfChanged(uniforms.uModalResponseEnergy, 0);
     setIfChanged(uniforms.uKeyTintStrength, 0);
     setIfChanged(uniforms.uKeyMode, 0);
     uniforms.uBandEnergies.value.set(0, 0, 0, 0);
@@ -1726,8 +1660,7 @@ export function tickRaymarchRuntime(
     runtimeState,
     featureFrame,
     {
-      backboneCapacity,
-      detailCapacity,
+      modalFieldCapacity,
     },
   );
   runtimeState.currentModalDescriptor = modalDescriptor;
@@ -1749,103 +1682,75 @@ export function tickRaymarchRuntime(
   const requestedRenderScale = 1;
   const performanceGovernor =
     takePendingRaymarchPerformanceGovernor(runtimeState, featureFrame, {
-      backboneCapacity,
-      detailCapacity,
+      modalFieldCapacity,
       cavityGeometry: effectiveCavityGeometry,
       requestedStepBudget,
       requestedRenderScale,
     }) ??
     buildRaymarchPerformanceGovernor({
-      backboneSlots: descriptorSlots.backboneSlots,
-      detailSlots: descriptorSlots.detailSlots,
-      backboneCapacity,
-      detailCapacity,
+      modalFieldSlots: descriptorSlots.modalFieldSlots,
+      modalFieldCapacity,
       featureFrame,
       cavityGeometry: effectiveCavityGeometry,
       requestedStepBudget,
       requestedRenderScale,
     });
-  const { backbone: backboneLayer, detail: detailLayer } = performanceGovernor;
+  const modalFieldLayer = performanceGovernor.modalField;
   runtimeState.performanceGovernor = performanceGovernor;
   const uploadState = getRaymarchUploadState(runtimeState);
-  const backboneArray = backboneModeBuffer.value.array;
-  const backboneColorArray = backboneColorBuffer.value.array;
-  const backboneSignature = applyLayerUploadIfChanged({
+  const modalFieldArray = modalFieldModeBuffer.value.array;
+  const modalFieldColorArray = modalFieldColorBuffer.value.array;
+  const modalFieldSignature = applyLayerUploadIfChanged({
     uploadState,
-    key: "backbone",
-    slots: descriptorSlots.backboneSlots,
-    colorSlots: descriptorSlots.backboneColorSlots,
-    targetSlots: backboneArray,
-    targetColorSlots: backboneColorArray,
-    modeBufferNode: backboneModeBuffer,
-    colorBufferNode: backboneColorBuffer,
-    layer: backboneLayer,
+    key: "modalField",
+    slots: descriptorSlots.modalFieldSlots,
+    colorSlots: descriptorSlots.modalFieldColorSlots,
+    targetSlots: modalFieldArray,
+    targetColorSlots: modalFieldColorArray,
+    modeBufferNode: modalFieldModeBuffer,
+    colorBufferNode: modalFieldColorBuffer,
+    layer: modalFieldLayer,
     includeColors: spectralLightEnabled,
   });
 
-  const detailArray = detailModeBuffer.value.array;
-  const detailColorArray = detailColorBuffer.value.array;
-  const detailSignature = applyLayerUploadIfChanged({
+  const modalFieldPhaseArray = modalFieldPhaseBuffer?.value?.array ?? null;
+  const modalFieldPhaseModeCount = applyLayerPhaseUploadIfChanged({
     uploadState,
-    key: "detail",
-    slots: descriptorSlots.detailSlots,
-    colorSlots: descriptorSlots.detailColorSlots,
-    targetSlots: detailArray,
-    targetColorSlots: detailColorArray,
-    modeBufferNode: detailModeBuffer,
-    colorBufferNode: detailColorBuffer,
-    layer: detailLayer,
-    includeColors: spectralLightEnabled,
+    key: "modalFieldPhase",
+    phaseSlots: descriptorSlots.modalFieldPhaseSlots,
+    targetPhaseSlots: modalFieldPhaseArray,
+    phaseBufferNode: modalFieldPhaseBuffer,
+    layer: modalFieldLayer,
+    capacity: modalFieldPhaseCapacity,
   });
+  if (modalFieldRoleBuffer?.value?.array) {
+    copyModalField({
+      sourceSlots: descriptorSlots.modalFieldRoleSlots,
+      targetSlots: modalFieldRoleBuffer.value.array,
+      capacity: modalFieldLayer.capacity,
+      includeColors: false,
+    });
+    modalFieldRoleBuffer.value.needsUpdate = true;
+  }
+  runtimeState.effectiveFieldModeCount = modalFieldPhaseModeCount;
 
-  const backbonePhaseArray =
-    runtimeState.backbonePhaseBuffer?.value?.array ?? null;
-  const detailPhaseArray = runtimeState.detailPhaseBuffer?.value?.array ?? null;
-  const backbonePhaseModeCount = applyLayerPhaseUploadIfChanged({
-    uploadState,
-    key: "backbonePhase",
-    phaseSlots: descriptorSlots.backbonePhaseSlots,
-    targetPhaseSlots: backbonePhaseArray,
-    phaseBufferNode: runtimeState.backbonePhaseBuffer,
-    layer: backboneLayer,
-    capacity: backbonePhaseCapacity,
-  });
-  const detailPhaseModeCount = applyLayerPhaseUploadIfChanged({
-    uploadState,
-    key: "detailPhase",
-    phaseSlots: descriptorSlots.detailPhaseSlots,
-    targetPhaseSlots: detailPhaseArray,
-    phaseBufferNode: runtimeState.detailPhaseBuffer,
-    layer: detailLayer,
-    capacity: detailPhaseCapacity,
-  });
-  runtimeState.effectiveFieldModeCount =
-    backbonePhaseModeCount + detailPhaseModeCount;
-
-  const backboneModeCount = backboneLayer.uploadedActiveCount;
-  const detailModeCount = detailLayer.uploadedActiveCount;
-  setIfChanged(uniforms.uBackboneModeCount, backboneModeCount);
-  setIfChanged(uniforms.uDetailModeCount, detailModeCount);
-  setIfChanged(uniforms.uActiveModeCount, backboneModeCount + detailModeCount);
+  const modalFieldModeCount = modalFieldLayer.uploadedActiveCount;
+  setIfChanged(uniforms.uModalFieldModeCount, modalFieldModeCount);
+  setIfChanged(uniforms.uActiveModeCount, modalFieldModeCount);
 
   const boundaryMode = getRuntimeBoundaryMode(runtimeState);
   const descriptorRadius = runtimeState.uniforms.uRadius?.value ?? 1;
   const fieldDescriptorSignature = buildFieldDescriptorSignature({
-    backboneSignature,
-    detailSignature,
-    backboneCount: backboneModeCount,
-    detailCount: detailModeCount,
+    modalFieldSignature,
+    modalFieldCount: modalFieldModeCount,
     boundaryMode,
     cavityGeometry: effectiveCavityGeometry,
     radius: descriptorRadius,
   });
   const effectiveFieldDescriptor = buildRaymarchEffectiveFieldDescriptor({
-    backboneSlots: runtimeState.backboneModeBuffer?.value?.array,
-    detailSlots: runtimeState.detailModeBuffer?.value?.array,
-    backbonePhaseSlots: runtimeState.backbonePhaseBuffer?.value?.array,
-    detailPhaseSlots: runtimeState.detailPhaseBuffer?.value?.array,
-    backboneCount: backboneModeCount,
-    detailCount: detailModeCount,
+    modalFieldSlots: modalFieldModeBuffer?.value?.array,
+    modalFieldPhaseSlots: modalFieldPhaseBuffer?.value?.array,
+    modalFieldCount: modalFieldModeCount,
     boundaryMode,
     cavityGeometry: effectiveCavityGeometry,
     radius: descriptorRadius,
@@ -1864,8 +1769,7 @@ export function tickRaymarchRuntime(
     const spectralLightDescriptorSignature =
       buildSpectralLightDescriptorSignature({
         fieldSignature: fieldDescriptorSignature,
-        backboneSignature,
-        detailSignature,
+        modalFieldSignature,
       });
     spectralLightDescriptor = runtimeState.currentSpectralLightDescriptor;
     if (
@@ -1876,12 +1780,9 @@ export function tickRaymarchRuntime(
       )
     ) {
       spectralLightDescriptor = buildRaymarchSpectralLightCacheDescriptor({
-        backboneSlots: runtimeState.backboneModeBuffer?.value?.array,
-        detailSlots: runtimeState.detailModeBuffer?.value?.array,
-        backboneColorSlots: runtimeState.backboneColorBuffer?.value?.array,
-        detailColorSlots: runtimeState.detailColorBuffer?.value?.array,
-        backboneCount: backboneModeCount,
-        detailCount: detailModeCount,
+        modalFieldSlots: modalFieldModeBuffer?.value?.array,
+        modalFieldColorSlots: modalFieldColorBuffer?.value?.array,
+        modalFieldCount: modalFieldModeCount,
         boundaryMode,
         cavityGeometry: effectiveCavityGeometry,
         radius: descriptorRadius,
@@ -1901,8 +1802,7 @@ export function tickRaymarchRuntime(
     runtimeState,
     renderer,
     {
-      backboneCapacity,
-      detailCapacity,
+      modalFieldCapacity,
     },
     {
       spectralLightEnabled,
@@ -1946,17 +1846,15 @@ export function tickRaymarchRuntime(
     featureFrame?.trebleBroadbandEnergy ?? 0,
   );
   setIfChanged(uniforms.uModeCoherence, featureFrame?.modeCoherence ?? 0);
-  setIfChanged(uniforms.uTotalSlotAmplitude, sumLayeredAmplitude(featureFrame));
   setIfChanged(
-    uniforms.uModalResponseBackboneEnergy,
-    featureFrame?.modalResponseBackboneEnergy ??
-      featureFrame?.debug?.modalResponseBackboneEnergy ??
-      0,
+    uniforms.uTotalSlotAmplitude,
+    sumModalFieldAmplitude({ modalDescriptor }),
   );
   setIfChanged(
-    uniforms.uModalResponseDetailEnergy,
-    featureFrame?.modalResponseDetailEnergy ??
-      featureFrame?.debug?.modalResponseDetailEnergy ??
+    uniforms.uModalResponseEnergy,
+    featureFrame?.modalResponseEnergy ??
+      featureFrame?.modalResponseRenderEnergy ??
+      featureFrame?.debug?.modalResponseEnergy ??
       0,
   );
 

@@ -4,25 +4,13 @@ import { tickCymatics2dRuntime } from "./runtime.js";
 
 function createRuntimeState() {
   return {
-    backboneModeBuffer: {
+    modalFieldModeBuffer: {
       value: {
         array: new Float32Array(32),
         needsUpdate: false,
       },
     },
-    detailModeBuffer: {
-      value: {
-        array: new Float32Array(32),
-        needsUpdate: false,
-      },
-    },
-    backboneColorBuffer: {
-      value: {
-        array: new Float32Array(32),
-        needsUpdate: false,
-      },
-    },
-    detailColorBuffer: {
+    modalFieldColorBuffer: {
       value: {
         array: new Float32Array(32),
         needsUpdate: false,
@@ -32,8 +20,7 @@ function createRuntimeState() {
       uTime: { value: 0 },
       uFieldState: { value: 0 },
       uActiveModeCount: { value: 0 },
-      uBackboneModeCount: { value: 0 },
-      uDetailModeCount: { value: 0 },
+      uModalFieldModeCount: { value: 0 },
       uBoundaryMode: { value: 1 },
       uAverageAmplitude: { value: 0 },
       uTransientEnergy: { value: 0 },
@@ -90,12 +77,13 @@ describe("tickCymatics2dRuntime", () => {
       fieldState: "active",
       renderAuthority: true,
       averageAmplitude: 48,
-      backboneSlots: new Float32Array([3, 4, 6, 0.8, 1, 3, 7, 0.6]),
-      detailSlots: new Float32Array([4, 5, 5, 0.55, 2, 2, 6, 0.4]),
-      backboneColorSlots: new Float32Array([
-        1, 0.1, 0.1, 0.9, 0.8, 0.2, 0.1, 0.7,
+      modalFieldSlots: new Float32Array([
+        3, 4, 6, 0.8, 1, 3, 7, 0.6, 4, 5, 5, 0.55, 2, 2, 6, 0.4,
       ]),
-      detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5, 0.7, 0.2, 1, 0.45]),
+      modalFieldColorSlots: new Float32Array([
+        1, 0.1, 0.1, 0.9, 0.8, 0.2, 0.1, 0.7, 0.2, 0.5, 1, 0.5, 0.7, 0.2,
+        1, 0.45,
+      ]),
       bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
       transientEnergy: 0.7,
       spectralCentroid: 0.42,
@@ -115,8 +103,8 @@ describe("tickCymatics2dRuntime", () => {
 
     tickCymatics2dRuntime(runtimeState, featureFrame, 12.5, 1 / 60);
 
-    expect(runtimeState.backboneModeBuffer.value.array[0]).toBe(3);
-    expect(runtimeState.detailModeBuffer.value.array[0]).toBe(4);
+    expect(runtimeState.modalFieldModeBuffer.value.array[0]).toBe(3);
+    expect(runtimeState.modalFieldModeBuffer.value.array[8]).toBe(4);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(4);
     expect(runtimeState.uniforms.uSlicePosition.value).not.toBe(0);
     expect(runtimeState.sliceVelocity).toBeGreaterThan(0);
@@ -137,12 +125,13 @@ describe("tickCymatics2dRuntime", () => {
       fieldState: "active",
       renderAuthority: true,
       averageAmplitude: 48,
-      backboneSlots: new Float32Array([3, 4, 6, 0.8, 1, 3, 7, 0.6]),
-      detailSlots: new Float32Array([4, 5, 5, 0.55, 2, 2, 6, 0.4]),
-      backboneColorSlots: new Float32Array([
-        1, 0.1, 0.1, 0.9, 0.8, 0.2, 0.1, 0.7,
+      modalFieldSlots: new Float32Array([
+        3, 4, 6, 0.8, 1, 3, 7, 0.6, 4, 5, 5, 0.55, 2, 2, 6, 0.4,
       ]),
-      detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5, 0.7, 0.2, 1, 0.45]),
+      modalFieldColorSlots: new Float32Array([
+        1, 0.1, 0.1, 0.9, 0.8, 0.2, 0.1, 0.7, 0.2, 0.5, 1, 0.5, 0.7, 0.2,
+        1, 0.45,
+      ]),
       bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
       transientEnergy: 0.7,
       spectralCentroid: 0.42,
@@ -174,19 +163,14 @@ describe("tickCymatics2dRuntime", () => {
       staticRuntimeState.uniforms.uActiveModeCount.value,
     );
     expect(
-      Array.from(spectralRuntimeState.backboneModeBuffer.value.array.slice(0, 8)),
+      Array.from(spectralRuntimeState.modalFieldModeBuffer.value.array.slice(0, 16)),
     ).toEqual(
-      Array.from(staticRuntimeState.backboneModeBuffer.value.array.slice(0, 8)),
+      Array.from(staticRuntimeState.modalFieldModeBuffer.value.array.slice(0, 16)),
     );
     expect(
-      Array.from(spectralRuntimeState.detailModeBuffer.value.array.slice(0, 8)),
-    ).toEqual(
-      Array.from(staticRuntimeState.detailModeBuffer.value.array.slice(0, 8)),
-    );
-    expect(
-      spectralRuntimeState.detailColorBuffer.value.needsUpdate,
+      spectralRuntimeState.modalFieldColorBuffer.value.needsUpdate,
     ).toBe(true);
-    expect(staticRuntimeState.detailColorBuffer.value.needsUpdate).toBe(false);
+    expect(staticRuntimeState.modalFieldColorBuffer.value.needsUpdate).toBe(false);
   });
 
   it("shows the idle overlay and clears visibility in idle state", () => {
@@ -196,10 +180,8 @@ describe("tickCymatics2dRuntime", () => {
       {
         fieldState: "idle",
         averageAmplitude: 0,
-        backboneSlots: new Float32Array(32),
-        detailSlots: new Float32Array(32),
-        backboneColorSlots: new Float32Array(32),
-        detailColorSlots: new Float32Array(32),
+        modalFieldSlots: new Float32Array(32),
+        modalFieldColorSlots: new Float32Array(32),
         bandEnergies: new Float32Array(4),
         transientEnergy: 0,
         spectralCentroid: 0,
@@ -238,10 +220,10 @@ describe("tickCymatics2dRuntime", () => {
         renderAuthorityCut: true,
         renderAuthority: false,
         averageAmplitude: 48,
-        backboneSlots: new Float32Array([3, 4, 6, 0.8]),
-        detailSlots: new Float32Array([4, 5, 5, 0.55]),
-        backboneColorSlots: new Float32Array([1, 0.1, 0.1, 0.9]),
-        detailColorSlots: new Float32Array([0.2, 0.5, 1, 0.5]),
+        modalFieldSlots: new Float32Array([3, 4, 6, 0.8, 4, 5, 5, 0.55]),
+        modalFieldColorSlots: new Float32Array([
+          1, 0.1, 0.1, 0.9, 0.2, 0.5, 1, 0.5,
+        ]),
         bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
         transientEnergy: 0.7,
         spectralCentroid: 0.42,
@@ -257,8 +239,7 @@ describe("tickCymatics2dRuntime", () => {
 
     expect(runtimeState.volumeMesh.visible).toBe(false);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
-    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(0);
-    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(0);
     expect(runtimeState.uniforms.uAverageAmplitude.value).toBe(0);
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0);
     expect(runtimeState.uniforms.uSpectralCentroid.value).toBe(0);
@@ -271,10 +252,7 @@ describe("tickCymatics2dRuntime", () => {
     expect(runtimeState.visualRoot.scale.x).toBe(1);
     expect(runtimeState.sliceVelocity).toBe(0);
     expect(runtimeState.uniforms.uSlicePosition.value).toBe(0);
-    expect(Array.from(runtimeState.backboneModeBuffer.value.array)).toEqual(
-      Array.from(new Float32Array(32)),
-    );
-    expect(Array.from(runtimeState.detailModeBuffer.value.array)).toEqual(
+    expect(Array.from(runtimeState.modalFieldModeBuffer.value.array)).toEqual(
       Array.from(new Float32Array(32)),
     );
   });
@@ -289,10 +267,8 @@ describe("tickCymatics2dRuntime", () => {
         renderAuthority: true,
         isLiveInputActive: true,
         averageAmplitude: 24,
-        backboneSlots: new Float32Array([3, 4, 6, 0.8]),
-        detailSlots: new Float32Array(32),
-        backboneColorSlots: new Float32Array(32),
-        detailColorSlots: new Float32Array(32),
+        modalFieldSlots: new Float32Array([3, 4, 6, 0.8]),
+        modalFieldColorSlots: new Float32Array(32),
         bandEnergies: new Float32Array(4),
         transientEnergy: 0.1,
         spectralCentroid: 0.2,
@@ -315,10 +291,8 @@ describe("tickCymatics2dRuntime", () => {
         fieldState: "idle",
         isLiveInputActive: true,
         averageAmplitude: 0,
-        backboneSlots: new Float32Array(32),
-        detailSlots: new Float32Array(32),
-        backboneColorSlots: new Float32Array(32),
-        detailColorSlots: new Float32Array(32),
+        modalFieldSlots: new Float32Array(32),
+        modalFieldColorSlots: new Float32Array(32),
         bandEnergies: new Float32Array(4),
         transientEnergy: 0,
         spectralCentroid: 0,
@@ -344,10 +318,8 @@ describe("tickCymatics2dRuntime", () => {
         isLiveInputActive: false,
         sourceMode: "live",
         averageAmplitude: 0,
-        backboneSlots: new Float32Array(32),
-        detailSlots: new Float32Array(32),
-        backboneColorSlots: new Float32Array(32),
-        detailColorSlots: new Float32Array(32),
+        modalFieldSlots: new Float32Array(32),
+        modalFieldColorSlots: new Float32Array(32),
         bandEnergies: new Float32Array(4),
         transientEnergy: 0,
         spectralCentroid: 0,
@@ -376,10 +348,8 @@ describe("tickCymatics2dRuntime", () => {
         fieldState: "active",
         renderAuthority: true,
         averageAmplitude: 36,
-        backboneSlots: new Float32Array([3, 4, 6, 0.72]),
-        detailSlots: new Float32Array([4, 5, 5, 0.24]),
-        backboneColorSlots: new Float32Array(32),
-        detailColorSlots: new Float32Array(32),
+        modalFieldSlots: new Float32Array([3, 4, 6, 0.72, 4, 5, 5, 0.24]),
+        modalFieldColorSlots: new Float32Array(32),
         bandEnergies: new Float32Array([0.28, 0.22, 0.16, 0.08]),
         transientEnergy: 0.08,
         spectralCentroid: 0.24,
@@ -403,10 +373,8 @@ describe("tickCymatics2dRuntime", () => {
         fieldState: "active",
         renderAuthority: true,
         averageAmplitude: 32,
-        backboneSlots: new Float32Array([3, 4, 6, 0.66]),
-        detailSlots: new Float32Array([4, 5, 5, 0.18]),
-        backboneColorSlots: new Float32Array(32),
-        detailColorSlots: new Float32Array(32),
+        modalFieldSlots: new Float32Array([3, 4, 6, 0.66, 4, 5, 5, 0.18]),
+        modalFieldColorSlots: new Float32Array(32),
         bandEnergies: new Float32Array([0.24, 0.18, 0.14, 0.06]),
         transientEnergy: 0.03,
         spectralCentroid: 0.22,

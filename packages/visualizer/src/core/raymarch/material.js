@@ -52,7 +52,6 @@ import {
   CONTOUR_BLEND,
   DENSITY_BOOST,
   DENSITY_MAX,
-  DETAIL_LAYER_WEIGHT,
   EMISSION_ROLLOFF_BASE,
   EMISSION_ROLLOFF_MIX,
   EMISSION_ROLLOFF_TRANSIENT_GAIN,
@@ -232,12 +231,11 @@ class BaryonVolumeNodeMaterial extends VolumeNodeMaterial {
   }
 }
 
-function accumulateSpecializedLayer({
+function accumulateModalField({
   buffer,
   colorBuffer,
   capacity,
   activeCount,
-  weight,
   localPosition,
   uRadius,
   boundaryMode,
@@ -261,7 +259,7 @@ function accumulateSpecializedLayer({
         Break();
       });
       const slot = buffer.element(i);
-      const amplitude = slot.w.mul(weight);
+      const amplitude = slot.w;
       const u = slot.x;
       const v = slot.y;
       const w = slot.z;
@@ -301,12 +299,11 @@ function accumulateSpecializedLayer({
   );
 }
 
-function accumulateSpecializedLayerColorOnly({
+function accumulateModalFieldColorOnly({
   buffer,
   colorBuffer,
   capacity,
   activeCount,
-  weight,
   localPosition,
   uRadius,
   boundaryMode,
@@ -325,7 +322,7 @@ function accumulateSpecializedLayerColorOnly({
         Break();
       });
       const slot = buffer.element(i);
-      const amplitude = slot.w.mul(weight);
+      const amplitude = slot.w;
       const family = geometryBackend.evaluateModeNode({
         u: slot.x,
         v: slot.y,
@@ -352,15 +349,11 @@ function accumulateSpecializedLayerColorOnly({
   );
 }
 
-function accumulateFieldLayers({
-  backboneModeBuffer,
-  detailModeBuffer,
-  backboneColorBuffer,
-  detailColorBuffer,
-  backboneCapacity,
-  detailCapacity,
-  backboneActiveCount,
-  detailActiveCount,
+function accumulateDirectModalField({
+  modalFieldModeBuffer,
+  modalFieldColorBuffer,
+  modalFieldCapacity,
+  modalFieldActiveCount,
   localPosition,
   uRadius,
   boundaryMode,
@@ -375,35 +368,12 @@ function accumulateFieldLayers({
   colorChromaSum,
   colorChromaWeight,
 }) {
-  If(backboneActiveCount.greaterThan(0), () => {
-    accumulateSpecializedLayer({
-      buffer: backboneModeBuffer,
-      colorBuffer: backboneColorBuffer,
-      capacity: backboneCapacity,
-      activeCount: backboneActiveCount,
-      weight: float(1.0),
-      localPosition,
-      uRadius,
-      boundaryMode,
-      cavityGeometry,
-      enableColorAccumulation: spectralLightEnabled,
-      field,
-      gradX,
-      gradY,
-      gradZ,
-      colorSum,
-      colorWeight,
-      colorChromaSum,
-      colorChromaWeight,
-    });
-  });
-  If(detailActiveCount.greaterThan(0), () => {
-    accumulateSpecializedLayer({
-      buffer: detailModeBuffer,
-      colorBuffer: detailColorBuffer,
-      capacity: detailCapacity,
-      activeCount: detailActiveCount,
-      weight: float(DETAIL_LAYER_WEIGHT),
+  If(modalFieldActiveCount.greaterThan(0), () => {
+    accumulateModalField({
+      buffer: modalFieldModeBuffer,
+      colorBuffer: modalFieldColorBuffer,
+      capacity: modalFieldCapacity,
+      activeCount: modalFieldActiveCount,
       localPosition,
       uRadius,
       boundaryMode,
@@ -421,15 +391,11 @@ function accumulateFieldLayers({
   });
 }
 
-function accumulateColorLayers({
-  backboneModeBuffer,
-  detailModeBuffer,
-  backboneColorBuffer,
-  detailColorBuffer,
-  backboneCapacity,
-  detailCapacity,
-  backboneActiveCount,
-  detailActiveCount,
+function accumulateDirectModalFieldColorOnly({
+  modalFieldModeBuffer,
+  modalFieldColorBuffer,
+  modalFieldCapacity,
+  modalFieldActiveCount,
   localPosition,
   uRadius,
   boundaryMode,
@@ -441,30 +407,12 @@ function accumulateColorLayers({
   colorChromaWeight,
 }) {
   If(spectralLightEnabled.greaterThan(0.5), () => {
-    If(backboneActiveCount.greaterThan(0), () => {
-      accumulateSpecializedLayerColorOnly({
-        buffer: backboneModeBuffer,
-        colorBuffer: backboneColorBuffer,
-        capacity: backboneCapacity,
-        activeCount: backboneActiveCount,
-        weight: float(1.0),
-        localPosition,
-        uRadius,
-        boundaryMode,
-        cavityGeometry,
-        colorSum,
-        colorWeight,
-        colorChromaSum,
-        colorChromaWeight,
-      });
-    });
-    If(detailActiveCount.greaterThan(0), () => {
-      accumulateSpecializedLayerColorOnly({
-        buffer: detailModeBuffer,
-        colorBuffer: detailColorBuffer,
-        capacity: detailCapacity,
-        activeCount: detailActiveCount,
-        weight: float(DETAIL_LAYER_WEIGHT),
+    If(modalFieldActiveCount.greaterThan(0), () => {
+      accumulateModalFieldColorOnly({
+        buffer: modalFieldModeBuffer,
+        colorBuffer: modalFieldColorBuffer,
+        capacity: modalFieldCapacity,
+        activeCount: modalFieldActiveCount,
         localPosition,
         uRadius,
         boundaryMode,
@@ -479,12 +427,9 @@ function accumulateColorLayers({
 }
 
 function createScatteringNode({
-  backboneModeBuffer,
-  detailModeBuffer,
-  backboneColorBuffer,
-  detailColorBuffer,
-  backboneCapacity,
-  detailCapacity,
+  modalFieldModeBuffer,
+  modalFieldColorBuffer,
+  modalFieldCapacity,
   uniforms,
   boundaryMode = BOUNDARY_MODES.neumann,
   cavityGeometry = "rectangular",
@@ -500,9 +445,7 @@ function createScatteringNode({
     uStructureMin,
     uStructureMax,
     uAverageAmplitude,
-    uActiveModeCount,
-    uBackboneModeCount,
-    uDetailModeCount,
+    uModalFieldModeCount,
     uColor,
     uSurfaceColor,
     uSpectralMix,
@@ -530,8 +473,7 @@ function createScatteringNode({
     uTrebleBroadbandEnergy,
     uModeCoherence,
     uTotalSlotAmplitude,
-    uModalResponseBackboneEnergy,
-    uModalResponseDetailEnergy,
+    uModalResponseEnergy,
     uObservationDensityFadeStart,
     uObservationDensityFadeEnd,
     uObservationTransferGain,
@@ -556,9 +498,7 @@ function createScatteringNode({
   const contourGainBase = uStructureSignal
     .mul(0.3)
     .add(uModeCoherence.mul(0.08))
-    .add(
-      max(uModalResponseBackboneEnergy, uModalResponseDetailEnergy).mul(0.12),
-    )
+    .add(uModalResponseEnergy.mul(0.12))
     .add(beatPhaseDecay.mul(0.18));
   const dynamicHolographicIntensity = uHolographicIntensity
     .mul(float(1.0).add(uTimbreSpread.mul(0.35)))
@@ -583,9 +523,7 @@ function createScatteringNode({
     : float(1.0);
   const spectralColorBiasHintOffset = uModeCoherence
     .mul(0.05)
-    .add(
-      max(uModalResponseBackboneEnergy, uModalResponseDetailEnergy).mul(0.08),
-    )
+    .add(uModalResponseEnergy.mul(0.08))
     .sub(uChangeSignal.mul(0.08));
   const modalCoefficientEnergy = clamp(
     uTotalSlotAmplitude,
@@ -599,11 +537,7 @@ function createScatteringNode({
     .div(float(255.0))
     .mul(float(0.3))
     .add(uStructureSignal.mul(float(0.45)))
-    .add(
-      max(uModalResponseBackboneEnergy, uModalResponseDetailEnergy).mul(
-        float(0.25),
-      ),
-    )
+    .add(uModalResponseEnergy.mul(float(0.25)))
     .add(modalCoefficientEnergy.mul(float(0.18)));
   const excitationGate = smoothstep(
     float(EXCITATION_GATE_LOW),
@@ -611,7 +545,7 @@ function createScatteringNode({
     excitationInput,
   );
   const modalAuthorityEnergy = max(
-    max(uModalResponseBackboneEnergy, uModalResponseDetailEnergy),
+    uModalResponseEnergy,
     modalCoefficientEnergy,
   );
   const excitationSourceAuthority = smoothstep(
@@ -703,8 +637,7 @@ function createScatteringNode({
       const spectralLightModeEnabled =
         directSpectralLightEnabled || cachedSpectralLightEnabled;
       const directFieldEvaluationEnabled = fieldEvaluationMode === "direct";
-      const backboneActiveCount = int(uBackboneModeCount);
-      const detailActiveCount = int(uDetailModeCount);
+      const modalFieldActiveCount = int(uModalFieldModeCount);
       if (effectiveFieldTexture) {
         const cacheUv = clamp(
           normalizedPosition.mul(float(0.5)).add(vec3(0.5)),
@@ -736,15 +669,11 @@ function createScatteringNode({
           colorSum.assign(cachedSpectralLightSample.xyz);
           colorWeight.assign(cachedSpectralLightSample.w);
         } else if (directSpectralLightEnabled) {
-          accumulateColorLayers({
-            backboneModeBuffer,
-            detailModeBuffer,
-            backboneColorBuffer,
-            detailColorBuffer,
-            backboneCapacity,
-            detailCapacity,
-            backboneActiveCount,
-            detailActiveCount,
+          accumulateDirectModalFieldColorOnly({
+            modalFieldModeBuffer,
+            modalFieldColorBuffer,
+            modalFieldCapacity,
+            modalFieldActiveCount,
             localPosition,
             uRadius,
             boundaryMode,
@@ -757,15 +686,11 @@ function createScatteringNode({
           });
         }
       } else if (directFieldEvaluationEnabled) {
-        accumulateFieldLayers({
-          backboneModeBuffer,
-          detailModeBuffer,
-          backboneColorBuffer,
-          detailColorBuffer,
-          backboneCapacity,
-          detailCapacity,
-          backboneActiveCount,
-          detailActiveCount,
+        accumulateDirectModalField({
+          modalFieldModeBuffer,
+          modalFieldColorBuffer,
+          modalFieldCapacity,
+          modalFieldActiveCount,
           localPosition,
           uRadius,
           boundaryMode,
@@ -811,9 +736,7 @@ function createScatteringNode({
       const normalizedGradMagnitude = effectiveFieldTexture
         ? effectiveGradientMagnitude
         : gradientMagnitude.div(amplitudeNorm);
-      const activeCount = float(uActiveModeCount);
-      const backboneCount = float(uBackboneModeCount);
-      const detailCount = float(uDetailModeCount);
+      const modalFieldCount = float(uModalFieldModeCount);
       // Modal structure sharpens nodal lines; style descriptors do not own clarity.
       // contourGainBase is pre-computed above the Fn.
       const contourGain = float(1.0)
@@ -899,7 +822,7 @@ function createScatteringNode({
           )
           .mul(float(0.85)),
       );
-      const activeMask = smoothstep(float(0.0), float(1.0), activeCount);
+      const activeMask = smoothstep(float(0.0), float(1.0), modalFieldCount);
       // Beat pulse drives a visible density surge through the volume
       const densityMod = float(1.0)
         .add(uTransientEnergy.mul(0.3))
@@ -1239,8 +1162,7 @@ function createScatteringNode({
         density,
         modalCoefficientEnergy,
         modalStructureAnchor,
-        uModalResponseBackboneEnergy,
-        uModalResponseDetailEnergy,
+        uModalResponseEnergy,
         ridgeAnchor,
         uObservationDensityFadeStart,
         uObservationDensityFadeEnd,
@@ -1450,15 +1372,7 @@ function createScatteringNode({
         staticWhiteEmissionMix,
         float(STATIC_HIGHLIGHT_SURFACE_PULL_SCALE),
       );
-      const detailPresence = smoothstep(float(0.0), float(1.0), detailCount);
-      const backbonePresence = smoothstep(
-        float(0.0),
-        float(1.0),
-        backboneCount,
-      );
-      const activityAccent = backbonePresence.add(
-        detailPresence.mul(float(0.15)),
-      );
+      const activityAccent = smoothstep(float(0.0), float(1.0), modalFieldCount);
       const staticVolumeColor = mix(
         staticHolographicLaserColor.mul(float(0.9)),
         staticHolographicLaserColor,
@@ -1550,8 +1464,7 @@ function deriveObservationTransferNode(
   density,
   modalCoefficientEnergy,
   modalStructureAnchor,
-  modalResponseBackboneEnergy = float(0.0),
-  modalResponseDetailEnergy = float(0.0),
+  modalResponseEnergy = float(0.0),
   ridgeAnchor = float(0.0),
   observationDensityFadeStart = float(0.0),
   observationDensityFadeEnd = float(0.0),
@@ -1572,10 +1485,7 @@ function deriveObservationTransferNode(
     float(1.0),
   );
   const observationEnergy = clamp(
-    max(
-      max(modalCoefficientEnergy, modalResponseBackboneEnergy),
-      modalResponseDetailEnergy,
-    ),
+    max(modalCoefficientEnergy, modalResponseEnergy),
     float(0.0),
     float(1.0),
   );
@@ -1628,16 +1538,13 @@ function createRaymarchOffsetNode() {
 
 export function createRaymarchVolumeMesh({
   radius,
-  backboneModeBuffer,
-  detailModeBuffer,
-  backboneColorBuffer,
-  detailColorBuffer,
+  modalFieldModeBuffer,
+  modalFieldColorBuffer,
   effectiveFieldTexture = null,
   effectiveFieldSupportTexture = null,
   spectralLightCacheTexture = null,
   capacity = null,
-  backboneCapacity = capacity ?? 0,
-  detailCapacity = capacity ?? 0,
+  modalFieldCapacity = capacity ?? 0,
   uniforms,
   cavityGeometry = "rectangular",
 }) {
@@ -1667,12 +1574,9 @@ export function createRaymarchVolumeMesh({
     material.opacityGainNode = uniforms.uOpacityGain;
     material.offsetNode = sharedOffsetNode;
     material.scatteringNode = createScatteringNode({
-      backboneModeBuffer,
-      detailModeBuffer,
-      backboneColorBuffer,
-      detailColorBuffer,
-      backboneCapacity,
-      detailCapacity,
+      modalFieldModeBuffer,
+      modalFieldColorBuffer,
+      modalFieldCapacity,
       uniforms,
       boundaryMode,
       cavityGeometry: materialCavityGeometry,

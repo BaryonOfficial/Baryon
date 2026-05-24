@@ -127,9 +127,6 @@ function createChromaState() {
 }
 
 export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
-  const backboneCapacity = Math.min(capacity, BACKBONE_STACK_SLOTS);
-  const detailCapacity = Math.min(capacity, DETAIL_STACK_SLOTS);
-
   return {
     capacity,
     analysis: {
@@ -151,13 +148,13 @@ export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
       bandState: createBandState(),
       chromaState: createChromaState(),
       previousSpectrum: new Float32Array(0),
-      zeroBackboneTargetSlots: createZeroTargetArray(backboneCapacity),
-      zeroDetailTargetSlots: createZeroTargetArray(detailCapacity),
-      nonAcousticBackboneTarget: createModalTargetBuild(backboneCapacity),
-      nonAcousticDetailTarget: createModalTargetBuild(detailCapacity),
-      nonAcousticPeakDriverScratch: createModalTargetBuild(backboneCapacity),
-      acousticBackboneTarget: createModalTargetBuild(backboneCapacity),
-      acousticDetailTarget: createModalTargetBuild(detailCapacity),
+      zeroBackboneTargetSlots: createZeroTargetArray(capacity),
+      zeroDetailTargetSlots: createZeroTargetArray(capacity),
+      nonAcousticBackboneTarget: createModalTargetBuild(capacity),
+      nonAcousticDetailTarget: createModalTargetBuild(capacity),
+      nonAcousticPeakDriverScratch: createModalTargetBuild(capacity),
+      acousticBackboneTarget: createModalTargetBuild(capacity),
+      acousticDetailTarget: createModalTargetBuild(capacity),
       modalExcitationState: createModalExcitationState(capacity),
     },
     audit: {

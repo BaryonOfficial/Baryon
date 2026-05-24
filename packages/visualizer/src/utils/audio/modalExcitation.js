@@ -1950,13 +1950,36 @@ function getDisplayAmplitude(entry, layer) {
   const modalResponseAmplitude = clamp01(
     entry?.modalResponseDisplayAmplitude ?? entry?.displayAmplitude ?? 0,
   );
+  if (layer === "detail") {
+    const unconstrainedDetailAmplitude = Math.max(
+      modalResponseAmplitude,
+      clamp01(signalAmplitude * getDetailMaturitySignalScale(entry)),
+    );
+    const responseBudgetConstrained =
+      (entry?.modalResponseBudgetScale ?? 1) < 0.999 &&
+      (entry?.modalResponseInputEnergy ?? 0) > 0.75;
+    const currentResponseSupport = responseBudgetConstrained
+      ? smoothstep(
+          0.006,
+          0.08,
+          Math.max(
+            entry?.modalResponseDrive ?? 0,
+            entry?.currentDriveEnergy ?? 0,
+          ),
+        )
+      : 1;
+    const responseCeiling =
+      modalResponseAmplitude * Math.max(0.12, currentResponseSupport);
+    const detailAmplitude = responseBudgetConstrained
+      ? Math.min(unconstrainedDetailAmplitude, responseCeiling)
+      : unconstrainedDetailAmplitude;
+    return entry?.hardSilentFrame === true
+      ? Math.min(detailAmplitude, clamp01(entry?.amplitude ?? 0))
+      : detailAmplitude;
+  }
+
   const displayAmplitude =
-    layer !== "detail"
-      ? Math.max(signalAmplitude, modalResponseAmplitude)
-      : Math.max(
-          modalResponseAmplitude,
-          clamp01(signalAmplitude * getDetailMaturitySignalScale(entry)),
-        );
+    Math.max(signalAmplitude, modalResponseAmplitude);
   return entry?.hardSilentFrame === true
     ? Math.min(displayAmplitude, clamp01(entry?.amplitude ?? 0))
     : displayAmplitude;
@@ -2046,11 +2069,16 @@ function getCoherentDetailCoupling({
 
 function getSignalScore(entry, layer) {
   const coherence = clamp01(entry?.coherence ?? 0);
-  const driveEnergy = entry?.currentDriveEnergy ?? entry?.driveEnergy ?? 0;
+  const currentDriveEnergy = entry?.currentDriveEnergy ?? 0;
+  const driveEnergy = currentDriveEnergy || (entry?.driveEnergy ?? 0);
   const amplitude = entry?.amplitude ?? 0;
-  const modalResponseAmplitude = clamp01(
-    entry?.modalResponseDisplayAmplitude ?? 0,
-  );
+  const modalResponseAmplitude =
+    currentDriveEnergy >=
+    (layer === "backbone"
+      ? BACKBONE_SIGNAL_MIN_DRIVE_ENERGY
+      : DETAIL_SIGNAL_MIN_DRIVE_ENERGY)
+      ? clamp01(entry?.modalResponseDisplayAmplitude ?? 0)
+      : 0;
   const freshness = getFreshness(entry);
 
   if (layer === "detail") {
@@ -2704,7 +2732,7 @@ function buildModalProjection({
       EXCITATION_DETAIL_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE;
   const highQDetailSignalAuthoritative = false;
   const modalResponseDetailSignalAuthoritative =
-    (modalResponseMetrics?.modalResponseDetailEnergy ?? 0) > 0.08 &&
+    (modalResponseMetrics?.modalResponseEnergy ?? 0) > 0.08 &&
     rawDisplayDetailEntries.length > 0 &&
     modalObserverMetrics.highQDenseSpectrumPressure < 0.72;
   const detailSignalAuthoritative =
@@ -3164,10 +3192,27 @@ export function buildModalExcitationStructuralState({
       weakFileDetailNoise && modalResponseDrive < 0.2;
     const effectiveModalResponseDisplayAmplitude =
       weakFileDetailModalResponseNoise ? 0 : modalResponseDisplayAmplitude;
+    const switchedAwayFromBackboneMode =
+      atlasEntry.layer === "backbone" &&
+      backboneCouplingFrequencySwitch &&
+      previousBackboneCouplingFrequencyHz > 0 &&
+      dominantDriveFrequencyHz > 0 &&
+      getRelativeFrequencyDistance(
+        atlasEntry.naturalFrequencyHz,
+        previousBackboneCouplingFrequencyHz,
+      ) < 0.18 &&
+      getRelativeFrequencyDistance(
+        atlasEntry.naturalFrequencyHz,
+        dominantDriveFrequencyHz,
+      ) > 0.18;
+    const sourceRetuneDriveScale = switchedAwayFromBackboneMode ? 0.42 : 1;
     const directDriveEnergy = clamp01(
       weakFileSpectralFallbackNoise || weakFileDetailNoise
         ? 0
-        : Math.max(modalResponseCurrentDrive, noiseSuppressedTimeDomainDrive),
+        : Math.max(
+            modalResponseCurrentDrive,
+            noiseSuppressedTimeDomainDrive * sourceRetuneDriveScale,
+          ),
     );
     const coupledDetailDriveEnergy =
       atlasEntry.layer === "detail"
@@ -3245,7 +3290,7 @@ export function buildModalExcitationStructuralState({
       detailDisplayContinuityPresence: state.detailDisplayContinuityPresence,
       detailObserverContinuitySignal: Math.max(
         retainedDetailObserverSignal,
-        modalResponse.modalResponseDetailEnergy,
+        modalResponse.modalResponseEnergy,
       ),
     });
     const subtleDetailDisplayContinuity =
@@ -3355,6 +3400,11 @@ export function buildModalExcitationStructuralState({
       modalResponseDrive,
       modalResponseEnergy,
       modalResponseDisplayAmplitude: effectiveModalResponseDisplayAmplitude,
+      modalResponseBudgetScale:
+        modalResponseEntry?.modalResponseBudgetScale ??
+        modalResponse.modalResponseBudgetScale ??
+        1,
+      modalResponseInputEnergy: modalResponse.modalResponseInputEnergy,
       weakDetailNoise: weakFileDetailModalResponseNoise,
       oscillatorPhaseRad: modalResponseEntry?.oscillatorPhaseRad,
       oscillatorAngularVelocityRadPerSec:
@@ -3565,11 +3615,11 @@ export function buildModalExcitationStructuralState({
     trackingOverrides: detailShiftTrackingOverrides,
     releaseOverrides: detailShiftReleaseOverrides,
     retainReleased: !hardSilentFrame,
-    freshCap:
-      detailSignalAuthoritative || modalResponseDetailSignalAuthoritative
-        ? detailCapacity
-        : EXCITATION_DETAIL_FRESH_CAP +
-          (detailAssistNeedsFreshAdmission ? 1 : 0),
+    freshCap: Math.min(
+      detailCapacity,
+      EXCITATION_DETAIL_FRESH_CAP +
+        (detailAssistNeedsFreshAdmission ? 1 : 0),
+    ),
   });
 
   if (
@@ -3751,8 +3801,9 @@ export function buildModalExcitationStructuralState({
     lowQPhaseAuthority: modalObserverMetrics.lowQPhaseAuthority,
     highQPhaseAuthority: modalObserverMetrics.highQPhaseAuthority,
     modalPhaseAuthority: modalObserverMetrics.modalPhaseAuthority,
-    modalPhaseCoherentFieldModeCount:
-      backbonePhaseModeCount + detailPhaseModeCount,
+    modalPhaseCoherentFieldModeCount: renderSuppressedBySourceCut
+      ? 0
+      : backbonePhaseModeCount + detailPhaseModeCount,
     highQDetailTopologySignal,
     modalPersistence: excitedEntries.length
       ? clamp01(persistenceTotal / excitedEntries.length)
@@ -3784,6 +3835,16 @@ export function buildModalExcitationStructuralState({
     modalResponseBackboneEnergy: modalResponse.modalResponseBackboneEnergy,
     modalResponseDetailEnergy: modalResponse.modalResponseDetailEnergy,
     modalResponseModeCount: modalResponse.modalResponseModeCount,
+    modalResponseBudgetScale: modalResponse.modalResponseBudgetScale,
+    modalResponseRawEnergy: modalResponse.modalResponseRawEnergy,
+    modalResponseAverageDampingEnvelope:
+      modalResponse.modalResponseAverageDampingEnvelope,
+    modalResponseAverageCouplingStrength:
+      modalResponse.modalResponseAverageCouplingStrength,
+    modalResponseAveragePhaseConfidence:
+      modalResponse.modalResponseAveragePhaseConfidence,
+    modalResponseAveragePersistence:
+      modalResponse.modalResponseAveragePersistence,
     modalResponseBudgetScaleBackbone:
       modalResponse.modalResponseBudgetScaleBackbone,
     modalResponseBudgetScaleDetail:

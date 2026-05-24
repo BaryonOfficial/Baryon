@@ -51,9 +51,7 @@ function hasCurrentInput(input = {}) {
 function hasObservedModalResponse(observer = {}, frame = {}) {
   return (
     readFiniteNumber(frame.observationEnergy) >= FRAME_MIN_VISIBILITY_ENERGY ||
-    readFiniteNumber(frame.modalResponseBackboneEnergy) >=
-      FRAME_MIN_VISIBILITY_ENERGY ||
-    readFiniteNumber(frame.modalResponseDetailEnergy) >=
+    readFiniteNumber(frame.modalResponseEnergy) >=
       FRAME_MIN_VISIBILITY_ENERGY ||
     (readFiniteNumber(observer.highQDetailModeCount) > 0 &&
       readFiniteNumber(observer.highQDetailEnergy) > OBSERVER_MIN_HIGH_Q_ENERGY)
@@ -143,21 +141,51 @@ function buildTailDiagnosticSample({
         modalFreshness.activeDetailModeCount,
       ),
       activeModeCount: readFiniteNumber(modalFreshness.activeModeCount),
+      activeModalFieldModeCount: readFiniteNumber(
+        modalFreshness.activeModalFieldModeCount ??
+          modalFreshness.activeModeCount,
+      ),
       totalSlotAmplitude: readFiniteNumber(
         featureFrame?.debug?.totalSlotAmplitude,
       ),
       observationEnergy: readFiniteNumber(
         modalFreshness.observationEnergy ?? featureFrame?.observationEnergy,
       ),
-      modalResponseBackboneEnergy: readFiniteNumber(
-        modalFreshness.modalResponseBackboneEnergy ??
-          featureFrame?.modalResponseBackboneEnergy ??
-          featureFrame?.debug?.modalResponseBackboneEnergy,
+      modalResponseEnergy: readFiniteNumber(
+        modalFreshness.modalResponseEnergy ??
+          featureFrame?.modalResponseEnergy ??
+          featureFrame?.modalResponseRenderEnergy ??
+          featureFrame?.debug?.modalResponseEnergy,
       ),
-      modalResponseDetailEnergy: readFiniteNumber(
-        modalFreshness.modalResponseDetailEnergy ??
-          featureFrame?.modalResponseDetailEnergy ??
-          featureFrame?.debug?.modalResponseDetailEnergy,
+      modalResponseBudgetScale: readFiniteNumber(
+        modalFreshness.modalResponseBudgetScale ??
+          featureFrame?.modalResponseBudgetScale ??
+          featureFrame?.debug?.modalResponseBudgetScale,
+      ),
+      modalResponseRawEnergy: readFiniteNumber(
+        modalFreshness.modalResponseRawEnergy ??
+          featureFrame?.modalResponseRawEnergy ??
+          featureFrame?.debug?.modalResponseRawEnergy,
+      ),
+      modalResponseAverageDampingEnvelope: readFiniteNumber(
+        modalFreshness.modalResponseAverageDampingEnvelope ??
+          featureFrame?.modalResponseAverageDampingEnvelope ??
+          featureFrame?.debug?.modalResponseAverageDampingEnvelope,
+      ),
+      modalResponseAverageCouplingStrength: readFiniteNumber(
+        modalFreshness.modalResponseAverageCouplingStrength ??
+          featureFrame?.modalResponseAverageCouplingStrength ??
+          featureFrame?.debug?.modalResponseAverageCouplingStrength,
+      ),
+      modalResponseAveragePhaseConfidence: readFiniteNumber(
+        modalFreshness.modalResponseAveragePhaseConfidence ??
+          featureFrame?.modalResponseAveragePhaseConfidence ??
+          featureFrame?.debug?.modalResponseAveragePhaseConfidence,
+      ),
+      modalResponseAveragePersistence: readFiniteNumber(
+        modalFreshness.modalResponseAveragePersistence ??
+          featureFrame?.modalResponseAveragePersistence ??
+          featureFrame?.debug?.modalResponseAveragePersistence,
       ),
     },
     render: {

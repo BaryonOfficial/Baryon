@@ -852,33 +852,29 @@ test("adaptive raymarch prepares the current frame governor for runtime reuse", 
   const { args, runtimeState } = createAdaptiveRaymarchHarness({
     effectiveFrame: {
       activeModeCount: 3,
-      backboneSlots: new Float32Array([1, 1, 1, 0.8, 2, 2, 2, 0.6]),
-      detailSlots: new Float32Array([3, 3, 3, 0.4]),
+      modeSlots: new Float32Array([
+        1, 1, 1, 0.8, 2, 2, 2, 0.6, 3, 3, 3, 0.4,
+      ]),
       averageAmplitude: 90,
       structureSignal: 0.55,
     },
   });
-  runtimeState.backboneModeBuffer = { value: { array: new Float32Array(8) } };
-  runtimeState.detailModeBuffer = { value: { array: new Float32Array(4) } };
+  runtimeState.modalFieldCapacity = 3;
+  runtimeState.modalFieldModeBuffer = { value: { array: new Float32Array(12) } };
 
   updateAdaptiveRaymarchStepBudget(args);
 
   expect(runtimeState.pendingRaymarchPerformanceGovernor).toMatchObject({
     featureFrame: args.effectiveFrame,
-    backboneCapacity: 2,
-    detailCapacity: 1,
+    modalFieldCapacity: 3,
     cavityGeometry: "rectangular",
     requestedStepBudget: runtimeState.effectiveRaymarchSteps,
     requestedRenderScale: 1,
   });
   expect(
-    runtimeState.pendingRaymarchPerformanceGovernor.governor.backbone
+    runtimeState.pendingRaymarchPerformanceGovernor.governor.modalField
       .uploadedActiveCount,
-  ).toBe(2);
-  expect(
-    runtimeState.pendingRaymarchPerformanceGovernor.governor.detail
-      .uploadedActiveCount,
-  ).toBe(1);
+  ).toBe(3);
 });
 
 test("external-output custom 120 starts from the calibrated base rung and scale", () => {

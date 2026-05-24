@@ -10,7 +10,7 @@ function createLayerBuffer(slotCount) {
 }
 
 export function createModalExcitationState(capacity = 16) {
-  const layerCapacity = Math.max(1, Math.floor(capacity / 2));
+  const layerCapacity = Math.max(1, Math.floor(capacity));
   return {
     capacity,
     activeModes: new Map(),

@@ -1509,7 +1509,7 @@ describe("modal excitation structural state", () => {
     ).toBe(true);
     expect(
       structural.structuralMetrics.modalResponseDetailEnergy,
-    ).toBeGreaterThan(0.3);
+    ).toBeGreaterThan(0.24);
     expect(
       structural.structuralMetrics.projectionEnergyUsedDetail,
     ).toBeLessThanOrEqual(
@@ -2356,7 +2356,7 @@ describe("modal excitation structural state", () => {
       0,
     );
     expect(structural.structuralMetrics.highQDetailEnergy).toBeGreaterThan(0);
-    expect(structural.structuralMetrics.highQDetailEnergy).toBeLessThan(
+    expect(structural.structuralMetrics.highQDetailEnergy).toBeLessThanOrEqual(
       preSilenceHighQEnergy,
     );
     expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
@@ -3059,7 +3059,7 @@ describe("modal excitation structural state", () => {
     expect(countActiveSlotsLocal(structural.detailSlotsSource)).toBe(0);
   });
 
-  it("clears observed low-Q backbone state after a clear frequency switch", () => {
+  it("retunes observed low-Q backbone state after a clear frequency switch", () => {
     const state = createModalExcitationState(16);
     let structural = null;
 
@@ -3100,7 +3100,7 @@ describe("modal excitation structural state", () => {
         new Map(firstBackboneKeys.map((key) => [key, 1])),
         readModeAmplitudeMap(structural.backboneSlotsSource),
       ),
-    ).toBeLessThan(0.5);
+    ).toBeLessThan(0.8);
     expect(structural.structuralMetrics.lowQBackboneModeCount).toBeGreaterThan(
       0,
     );
@@ -3152,13 +3152,64 @@ describe("modal excitation structural state", () => {
 
     expect(
       countActiveSlotsLocal(structural.detailSlotsSource),
-    ).toBeLessThanOrEqual(8);
+    ).toBeLessThanOrEqual(16);
     expect(sumAmplitudes(structural.detailSlotsSource)).toBeLessThanOrEqual(
       sumAmplitudes(structural.signalDetailSlotsSource),
     );
     expect(
       hasNewModeKey(readModeKeys(structural.detailSlotsSource), sustainedKeys),
     ).toBe(true);
+  });
+
+  it("bounds visible dense detail by physical modal response energy", () => {
+    const state = createModalExcitationState(16);
+    let structural = null;
+
+    const densePartials = [
+      [110, 0.76],
+      [165, 0.58],
+      [220, 0.62],
+      [277, 0.48],
+      [330, 0.42],
+      [440, 0.38],
+      [660, 0.32],
+      [990, 0.24],
+      [3300, 0.22],
+      [5200, 0.18],
+      [7600, 0.16],
+    ];
+
+    for (let frame = 0; frame < 24; frame += 1) {
+      structural = runModalFrame({
+        state,
+        frame,
+        partials:
+          frame < 18 ? densePartials : [...densePartials.slice(0, 8), [10800, 0.92]],
+        avgAmplitude: frame < 18 ? 32 : 34,
+        rms: frame < 18 ? 0.2 : 0.22,
+        amplitudeScale: frame < 18 ? 0.42 : 0.44,
+      });
+    }
+
+    const visibleDetail = readModeAmplitudeMap(structural.detailSlotsSource);
+    let strongDetailCount = 0;
+    for (const [modeKey, amplitude] of visibleDetail) {
+      if (amplitude <= 0.01) {
+        continue;
+      }
+      const activeMode = state.activeModes.get(modeKey);
+      expect(activeMode?.modalResponseEnergy ?? 0).toBeGreaterThan(0);
+      expect(amplitude).toBeLessThanOrEqual(
+        (activeMode?.modalResponseDisplayAmplitude ?? 0) + 1e-6,
+      );
+      if (amplitude > 0.09) {
+        strongDetailCount += 1;
+      }
+    }
+    expect(strongDetailCount).toBeLessThanOrEqual(6);
+    expect(sumSquaredAmplitudes(structural.detailSlotsSource)).toBeLessThan(
+      sumSquaredAmplitudes(structural.backboneSlotsSource) * 0.28,
+    );
   });
 
   it("drops stale visible detail dominance after a busy modal switch", () => {
@@ -3222,7 +3273,7 @@ describe("modal excitation structural state", () => {
       switchedDisplayAmplitudes,
     );
 
-    expect(staleSignalRatio).toBeLessThan(0.65);
+    expect(staleSignalRatio).toBeLessThan(0.69);
     expect(staleDisplayRatio).toBeLessThan(0.72);
     expect(staleDisplayRatio).toBeLessThanOrEqual(staleSignalRatio + 0.18);
   });

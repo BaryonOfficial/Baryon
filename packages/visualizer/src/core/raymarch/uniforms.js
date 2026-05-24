@@ -23,9 +23,8 @@ export function createRaymarchUniforms(parameters) {
     uBoundaryMode: uniform(
       getBoundaryModeValue(SIMULATION_DEFAULTS.boundaryMode),
     ),
+    uModalFieldModeCount: uniform(0),
     uActiveModeCount: uniform(0),
-    uBackboneModeCount: uniform(0),
-    uDetailModeCount: uniform(0),
     uIdleLogoIntensity: uniform(RENDER_DEFAULTS.idleLogoIntensity),
     uIdleLogoAlpha: uniform(RENDER_DEFAULTS.idleLogoAlpha),
     uIdleLogoSize: uniform(RENDER_DEFAULTS.idleLogoSize),
@@ -73,8 +72,7 @@ export function createRaymarchUniforms(parameters) {
     uTrebleBroadbandEnergy: uniform(0.0),
     uModeCoherence: uniform(0.0),
     uTotalSlotAmplitude: uniform(0.0),
-    uModalResponseBackboneEnergy: uniform(0.0),
-    uModalResponseDetailEnergy: uniform(0.0),
+    uModalResponseEnergy: uniform(0.0),
     uObservationDensityFadeStart: uniform(
       observationParameters.densityFadeStart,
     ),

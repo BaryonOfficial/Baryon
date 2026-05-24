@@ -227,7 +227,87 @@ describe("modal response model", () => {
     expect(broadband.entries[0]?.displayAmplitude ?? 0).toBeLessThan(0.12);
   });
 
-  it("gates zero input and conserves dense modal energy by layer budget", async () => {
+  it("keeps modal energy role-invariant for equal physical metadata", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const baseMode = {
+      modeKey: "same-physics",
+      u: 3,
+      v: 4,
+      w: 5,
+      naturalFrequencyHz: 880,
+      qProfile: "mid-q",
+      driveWeight: 0.72,
+      phaseConfidence: 0.84,
+      persistence: 0.91,
+    };
+
+    const asBackbone = updateModalResponseFrame({
+      modes: [{ ...baseMode, layer: "backbone" }],
+      fftMagnitudes: makeFft([[880, 1]]),
+      sampleRate: SAMPLE_RATE,
+      deltaMs: 33,
+      inputRms: 0.12,
+      previousEnergies: new Map(),
+    });
+    const asDetail = updateModalResponseFrame({
+      modes: [{ ...baseMode, layer: "detail" }],
+      fftMagnitudes: makeFft([[880, 1]]),
+      sampleRate: SAMPLE_RATE,
+      deltaMs: 33,
+      inputRms: 0.12,
+      previousEnergies: new Map(),
+    });
+
+    expect(asBackbone.entries[0]?.modalResponseEnergy).toBeCloseTo(
+      asDetail.entries[0]?.modalResponseEnergy ?? 0,
+      6,
+    );
+    expect(asBackbone.entries[0]?.displayAmplitude).toBeCloseTo(
+      asDetail.entries[0]?.displayAmplitude ?? 0,
+      6,
+    );
+  });
+
+  it("damps high-frequency high-order modes under equal drive", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const response = updateModalResponseFrame({
+      modes: [
+        {
+          modeKey: "low",
+          u: 1,
+          v: 1,
+          w: 2,
+          naturalFrequencyHz: 220,
+          qProfile: "low-q",
+        },
+        {
+          modeKey: "high",
+          u: 20,
+          v: 21,
+          w: 22,
+          naturalFrequencyHz: 6600,
+          qProfile: "high-q",
+        },
+      ],
+      fftMagnitudes: makeFft([
+        [220, 1],
+        [6600, 1],
+      ]),
+      sampleRate: SAMPLE_RATE,
+      deltaMs: 33,
+      inputRms: 0.2,
+      previousEnergies: new Map(),
+    });
+
+    const low = response.entries.find((entry) => entry.modeKey === "low");
+    const high = response.entries.find((entry) => entry.modeKey === "high");
+    expect(high?.dampingEnvelope).toBeLessThan(low?.dampingEnvelope ?? 0);
+    expect(high?.modalResponseEnergy).toBeLessThan(
+      (low?.modalResponseEnergy ?? 0) * 0.5,
+    );
+  });
+
+  it("gates zero input and conserves dense modal energy by unified budget", async () => {
     const { updateModalResponseFrame } = await loadModalResponseModule();
     const denseModes = Array.from({ length: 12 }, (_, index) => ({
       modeKey: `mode:${index}`,
@@ -258,12 +338,25 @@ describe("modal response model", () => {
       deltaMs: 33,
       inputRms: 0.3,
       previousEnergies: new Map(),
-      layerBudgets: { backbone: 0.5, detail: 0.3 },
+      responseBudget: 0.5,
     });
 
     expect(silent.entries).toHaveLength(0);
+    expect(dense.modalResponseEnergy).toBeLessThanOrEqual(0.5);
+    const summedEnergy = dense.entries.reduce(
+      (total, entry) => total + entry.modalResponseEnergy,
+      0,
+    );
+    expect(summedEnergy).toBeCloseTo(dense.modalResponseEnergy, 6);
     expect(dense.modalResponseBackboneEnergy).toBeLessThanOrEqual(0.5);
-    expect(dense.modalResponseBudgetScaleBackbone).toBeLessThan(1);
+    expect(dense.modalResponseBudgetScale).toBeLessThan(1);
+    expect(dense.modalResponseRawEnergy).toBeGreaterThan(
+      dense.modalResponseEnergy,
+    );
+    expect(dense.modalResponseAverageDampingEnvelope).toBeGreaterThan(0);
+    expect(dense.modalResponseAverageCouplingStrength).toBeGreaterThan(0);
+    expect(dense.modalResponseAveragePhaseConfidence).toBeGreaterThan(0);
+    expect(dense.modalResponseAveragePersistence).toBeGreaterThan(0);
   });
 
   it("does not spend high-Q display budget on weak off-resonant modes", async () => {
@@ -296,7 +389,7 @@ describe("modal response model", () => {
       deltaMs: 33,
       inputRms: 0.18,
       previousEnergies: new Map(),
-      layerBudgets: { backbone: 0.5, detail: 0.32 },
+      responseBudget: 0.32,
     });
 
     expect(response.entries.map((entry) => entry.modeKey)).toContain("peak");
@@ -340,7 +433,7 @@ describe("modal response model", () => {
     expect(response.modalResponseModeCount).toBe(response.entries.length);
   });
 
-  it("seeds fresh resonant energy on the first audio frame", async () => {
+  it("seeds fresh resonant energy with physical high-order damping", async () => {
     const { updateModalResponseFrame } = await loadModalResponseModule();
     const response = updateModalResponseFrame({
       modes: [
@@ -361,7 +454,8 @@ describe("modal response model", () => {
       previousEnergies: new Map(),
     });
 
-    expect(response.entries[0]?.modalResponseEnergy).toBeGreaterThan(0.75);
+    expect(response.entries[0]?.modalResponseEnergy).toBeGreaterThan(0.2);
+    expect(response.entries[0]?.dampingEnvelope).toBeLessThan(0.35);
     expect(response.entries[0]?.displayAmplitude).toBeGreaterThan(0.5);
   });
 

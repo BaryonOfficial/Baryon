@@ -60,36 +60,25 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const effectiveCavityGeometry = resolveEffectiveCavityGeometry(
     requestedCavityGeometry,
   );
-  const sharedModeCapacity = audioConfig?.capacity;
-  const backboneCapacity = resolveLayerCapacity(
-    audioConfig?.backboneCapacity,
-    sharedModeCapacity,
-    AUDIO_DEFAULTS.maxBackboneDescriptorModes,
+  const modalFieldCapacity = resolveLayerCapacity(
+    audioConfig?.modalFieldCapacity ?? audioConfig?.capacity,
+    AUDIO_DEFAULTS.maxTotalDescriptorModes,
+    AUDIO_DEFAULTS.maxTotalDescriptorModes,
   );
-  const detailCapacity = resolveLayerCapacity(
-    audioConfig?.detailCapacity,
-    sharedModeCapacity,
-    AUDIO_DEFAULTS.maxDetailDescriptorModes,
-  );
-  const backboneModeBuffer = createModeBuffer(backboneCapacity);
-  const detailModeBuffer = createModeBuffer(detailCapacity);
-  const backboneColorBuffer = createModeBuffer(backboneCapacity);
-  const detailColorBuffer = createModeBuffer(detailCapacity);
-  const backbonePhaseBuffer = createModeBuffer(backboneCapacity);
-  const detailPhaseBuffer = createModeBuffer(detailCapacity);
+  const modalFieldModeBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldColorBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldPhaseBuffer = createModeBuffer(modalFieldCapacity);
+  const modalFieldRoleBuffer = createModeBuffer(modalFieldCapacity);
   const effectiveFieldCache = createRaymarchEffectiveFieldCache();
   const spectralLightCache = createRaymarchSpectralLightCache();
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneColorBuffer,
-    detailColorBuffer,
+    modalFieldModeBuffer,
+    modalFieldColorBuffer,
     effectiveFieldTexture: effectiveFieldCache.texture,
     effectiveFieldSupportTexture: effectiveFieldCache.supportTexture,
     spectralLightCacheTexture: spectralLightCache.texture,
-    backboneCapacity,
-    detailCapacity,
+    modalFieldCapacity,
     uniforms,
     cavityGeometry: effectiveCavityGeometry,
   });
@@ -116,21 +105,13 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     volumeMesh,
     idleOverlay,
     uniforms,
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneColorBuffer,
-    detailColorBuffer,
-    backbonePhaseBuffer,
-    detailPhaseBuffer,
+    modalFieldModeBuffer,
+    modalFieldColorBuffer,
+    modalFieldPhaseBuffer,
+    modalFieldRoleBuffer,
     effectiveFieldCache,
     spectralLightCache,
-    sharedModeCapacity,
-    // Compatibility alias for older runtime call sites that still read `capacity`.
-    capacity: sharedModeCapacity,
-    backboneCapacity,
-    detailCapacity,
-    backbonePhaseCapacity: backboneCapacity,
-    detailPhaseCapacity: detailCapacity,
+    modalFieldCapacity,
     requestedCavityGeometry,
     effectiveCavityGeometry,
     fftSize: audioConfig.fftSize,

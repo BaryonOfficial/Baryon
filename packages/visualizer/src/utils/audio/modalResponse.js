@@ -6,32 +6,24 @@ export const DEFAULT_MODAL_RESPONSE_PROFILES = Object.freeze({
     qualityFactor: 4,
     attackMs: 48,
     releaseMs: 140,
-    displayWeight: 1,
   }),
   "mid-q": Object.freeze({
     qualityFactor: 10,
     attackMs: 64,
     releaseMs: 320,
-    displayWeight: 0.92,
   }),
   "high-q": Object.freeze({
     qualityFactor: 32,
     attackMs: 92,
     releaseMs: 940,
-    displayWeight: 0.84,
   }),
 });
 
-const DEFAULT_LAYER_BUDGETS = Object.freeze({
-  backbone: 0.7,
-  detail: 0.56,
-});
-
-const MIN_RELATIVE_DISPLAY_AMPLITUDE_BY_LAYER = Object.freeze({
-  backbone: 0.04,
-  detail: 0.18,
-});
+const DEFAULT_MODAL_RESPONSE_BUDGET = 1;
+const MIN_RELATIVE_PHYSICAL_MODAL_ENERGY = 0.035;
 const FRESH_RESPONSE_SEED_THRESHOLD = 0.02;
+const FREQUENCY_DAMPING_REFERENCE_HZ = 4800;
+const ORDER_DAMPING_REFERENCE = 42;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -88,6 +80,47 @@ function readPreviousModalResponseState(previous) {
   };
 }
 
+function computeModeOrder(mode) {
+  if (Number.isFinite(mode?.order)) {
+    return Math.max(0, mode.order);
+  }
+
+  const u = Number.isFinite(mode?.u) ? mode.u : 0;
+  const v = Number.isFinite(mode?.v) ? mode.v : 0;
+  const w = Number.isFinite(mode?.w) ? mode.w : 0;
+  return Math.sqrt(u * u + v * v + w * w);
+}
+
+function resolveModeQProfile(mode) {
+  if (
+    mode?.qProfile === "low-q" ||
+    mode?.qProfile === "mid-q" ||
+    mode?.qProfile === "high-q"
+  ) {
+    return mode.qProfile;
+  }
+
+  if (Number.isFinite(mode?.qualityFactor)) {
+    if (mode.qualityFactor >= 18) return "high-q";
+    if (mode.qualityFactor >= 7) return "mid-q";
+    return "low-q";
+  }
+
+  const frequencyHz = mode?.naturalFrequencyHz ?? mode?.frequencyHz ?? 0;
+  const order = computeModeOrder(mode);
+  if (frequencyHz >= 1800 || order >= 26) {
+    return "high-q";
+  }
+  if (frequencyHz >= 520 || order >= 13) {
+    return "mid-q";
+  }
+  return "low-q";
+}
+
+function resolveDiagnosticLayer(mode, qProfile) {
+  return mode?.layer ?? (qProfile === "high-q" ? "detail" : "backbone");
+}
+
 function updateModalOscillatorState({
   modeFrequencyHz,
   retainedEnergy,
@@ -122,34 +155,94 @@ function updateModalOscillatorState({
 }
 
 function getModeProfile(mode) {
+  const qProfile = resolveModeQProfile(mode);
   if (mode?.modalResponseProfile) {
     return {
-      ...DEFAULT_MODAL_RESPONSE_PROFILES[
-        mode.qProfile ?? (mode.layer === "detail" ? "high-q" : "low-q")
-      ],
+      ...DEFAULT_MODAL_RESPONSE_PROFILES[qProfile],
       ...mode.modalResponseProfile,
     };
   }
 
   if (mode?.qualityFactor || mode?.attackMs || mode?.releaseMs) {
     const baseProfile =
-      DEFAULT_MODAL_RESPONSE_PROFILES[
-        mode.qProfile ?? (mode.layer === "detail" ? "high-q" : "low-q")
-      ] ?? DEFAULT_MODAL_RESPONSE_PROFILES["mid-q"];
+      DEFAULT_MODAL_RESPONSE_PROFILES[qProfile] ??
+      DEFAULT_MODAL_RESPONSE_PROFILES["mid-q"];
     return {
       ...baseProfile,
       qualityFactor: mode.qualityFactor ?? baseProfile.qualityFactor,
       attackMs: mode.attackMs ?? baseProfile.attackMs,
       releaseMs: mode.releaseMs ?? baseProfile.releaseMs,
-      displayWeight: mode.displayWeight ?? baseProfile.displayWeight,
     };
   }
 
   return (
-    DEFAULT_MODAL_RESPONSE_PROFILES[
-      mode?.qProfile ?? (mode?.layer === "detail" ? "high-q" : "low-q")
-    ] ?? DEFAULT_MODAL_RESPONSE_PROFILES["mid-q"]
+    DEFAULT_MODAL_RESPONSE_PROFILES[qProfile] ??
+    DEFAULT_MODAL_RESPONSE_PROFILES["mid-q"]
   );
+}
+
+function computePhysicalModalTransfer({
+  mode,
+  modeFrequencyHz,
+  qualityFactor,
+  coherence,
+  previousEnergy,
+}) {
+  const order = computeModeOrder(mode);
+  const couplingStrength = clamp01(
+    mode?.couplingStrength ??
+      mode?.modalCoupling ??
+      mode?.driveWeight ??
+      mode?.sourceSupport ??
+      1,
+  );
+  const phaseConfidence = clamp01(
+    mode?.phaseConfidence ??
+      mode?.phaseAuthority ??
+      mode?.phaseCoherence ??
+      mode?.coherence ??
+      coherence ??
+      1,
+  );
+  const persistence = clamp01(
+    mode?.persistence ??
+      mode?.modalPersistence ??
+      (previousEnergy > 0 ? 0.72 : 1),
+  );
+  const frequencyDamping =
+    modeFrequencyHz > 0
+      ? 1 /
+        (1 +
+          Math.pow(
+            modeFrequencyHz / FREQUENCY_DAMPING_REFERENCE_HZ,
+            1.35,
+          ))
+      : 1;
+  const orderDamping =
+    order > 0
+      ? 1 /
+        (1 + Math.pow(order / ORDER_DAMPING_REFERENCE, 1.55))
+      : 1;
+  const qDamping =
+    qualityFactor > 12
+      ? 1 / (1 + Math.pow((qualityFactor - 12) / 72, 1.2))
+      : 1;
+  const dampingEnvelope = clamp01(frequencyDamping * orderDamping * qDamping);
+  const persistenceEnvelope = clamp01(0.35 + persistence * 0.65);
+
+  return {
+    modalOrder: order,
+    couplingStrength,
+    phaseConfidence,
+    persistence,
+    dampingEnvelope,
+    physicalTransfer: clamp01(
+      couplingStrength *
+        phaseConfidence *
+        dampingEnvelope *
+        persistenceEnvelope,
+    ),
+  };
 }
 
 function getBinFrequencyHz(index, binCount, sampleRate) {
@@ -288,10 +381,9 @@ function updateRetainedEnergy({
   return clamp01(previous + (target - previous) * alpha);
 }
 
-function normalizeLayerBudget(entries, layer, budget) {
-  const layerEntries = entries.filter((entry) => entry.layer === layer);
-  const rawEnergy = layerEntries.reduce(
-    (total, entry) => total + entry.displayAmplitude,
+function normalizeModalResponseBudget(entries, budget) {
+  const rawEnergy = entries.reduce(
+    (total, entry) => total + entry.modalResponseEnergy,
     0,
   );
   if (rawEnergy <= 0) {
@@ -302,33 +394,55 @@ function normalizeLayerBudget(entries, layer, budget) {
   }
 
   const scale = rawEnergy > budget ? budget / Math.max(EPSILON, rawEnergy) : 1;
-  for (const entry of layerEntries) {
-    entry.displayAmplitude = clamp01(entry.displayAmplitude * scale);
+  for (const entry of entries) {
+    entry.modalResponseRawEnergy = entry.modalResponseEnergy;
+    entry.modalResponseBudgetScale = scale;
+    entry.modalResponseEnergy = clamp01(entry.modalResponseEnergy * scale);
+    entry.displayAmplitude = Math.sqrt(entry.modalResponseEnergy);
+    entry.signedModalCoefficient *= Math.sqrt(scale);
   }
   return {
-    energy: Math.min(rawEnergy, budget),
+    energy: entries.reduce(
+      (total, entry) => total + entry.modalResponseEnergy,
+      0,
+    ),
     scale,
+    rawEnergy,
   };
 }
 
-function retainSignificantLayerEntries(entries, layer) {
-  const layerEntries = entries.filter((entry) => entry.layer === layer);
-  if (layerEntries.length === 0) {
+function sumModalEnergyByLayer(entries, layer) {
+  return entries.reduce(
+    (total, entry) =>
+      entry.layer === layer ? total + (entry.modalResponseEnergy ?? 0) : total,
+    0,
+  );
+}
+
+function retainSignificantPhysicalEntries(entries) {
+  if (entries.length === 0) {
     return entries;
   }
 
-  const peakAmplitude = layerEntries.reduce(
-    (peak, entry) => Math.max(peak, entry.displayAmplitude),
+  const peakEnergy = entries.reduce(
+    (peak, entry) => Math.max(peak, entry.modalResponseEnergy),
     0,
   );
-  const relativeFloor =
-    (MIN_RELATIVE_DISPLAY_AMPLITUDE_BY_LAYER[layer] ?? 0) * peakAmplitude;
+  const relativeFloor = MIN_RELATIVE_PHYSICAL_MODAL_ENERGY * peakEnergy;
   if (relativeFloor <= 0) {
     return entries;
   }
 
-  return entries.filter(
-    (entry) => entry.layer !== layer || entry.displayAmplitude >= relativeFloor,
+  return entries.filter((entry) => entry.modalResponseEnergy >= relativeFloor);
+}
+
+function averageEntryMetric(entries, key) {
+  if (entries.length === 0) {
+    return 0;
+  }
+  return (
+    entries.reduce((total, entry) => total + clamp01(entry?.[key] ?? 0), 0) /
+    entries.length
   );
 }
 
@@ -342,7 +456,7 @@ function retainSignificantLayerEntries(entries, layer) {
  *   inputRms?: number,
  *   hardSilence?: boolean,
  *   coherence?: number,
- *   layerBudgets?: {backbone?: number, detail?: number},
+ *   responseBudget?: number,
  *   minimumEnergy?: number,
  * }} [options]
  */
@@ -355,7 +469,7 @@ export function updateModalResponseFrame({
   inputRms = 0,
   hardSilence = false,
   coherence = 1,
-  layerBudgets = DEFAULT_LAYER_BUDGETS,
+  responseBudget = DEFAULT_MODAL_RESPONSE_BUDGET,
   minimumEnergy = 0.0001,
 } = {}) {
   const sourceHardSilent = hardSilence === true;
@@ -378,6 +492,7 @@ export function updateModalResponseFrame({
     const modeKey =
       mode?.modeKey ?? `${mode?.u ?? 0}:${mode?.v ?? 0}:${mode?.w ?? 0}`;
     const profile = getModeProfile(mode);
+    const qProfile = resolveModeQProfile(mode);
     const modeFrequencyHz = mode?.naturalFrequencyHz ?? mode?.frequencyHz ?? 0;
     const previousState = readPreviousModalResponseState(
       previousEnergies?.get?.(modeKey) ?? mode,
@@ -393,8 +508,15 @@ export function updateModalResponseFrame({
           spectralBins: spectralDriveContext.bins,
         })
       : 0;
-    const coherenceScale = 0.85 + 0.15 * clamp01(coherence);
-    const targetEnergy = spectralDrive * coherenceScale * inputExposure;
+    const physicalTransfer = computePhysicalModalTransfer({
+      mode,
+      modeFrequencyHz,
+      qualityFactor: profile.qualityFactor,
+      coherence,
+      previousEnergy,
+    });
+    const targetEnergy =
+      spectralDrive * inputExposure * physicalTransfer.physicalTransfer;
     const retainedEnergy = updateRetainedEnergy({
       targetEnergy,
       previousEnergy,
@@ -414,55 +536,66 @@ export function updateModalResponseFrame({
       continue;
     }
 
-    const layer = mode?.layer ?? (mode?.qProfile === "high-q" ? "detail" : "backbone");
+    const layer = resolveDiagnosticLayer(mode, qProfile);
     entries.push({
       ...mode,
       modeKey,
       layer,
-      qProfile:
-        mode?.qProfile ?? (layer === "detail" ? "high-q" : "low-q"),
+      qProfile,
       qualityFactor: profile.qualityFactor,
       modalResponseDrive: spectralDrive,
       modalResponseEnergy: retainedEnergy,
+      ...physicalTransfer,
       ...oscillator,
-      displayAmplitude: clamp01(
-        Math.sqrt(retainedEnergy) * (mode?.displayWeight ?? profile.displayWeight),
-      ),
+      displayAmplitude: Math.sqrt(retainedEnergy),
     });
   }
 
-  const significantEntries = retainSignificantLayerEntries(
-    retainSignificantLayerEntries(entries, "backbone"),
-    "detail",
-  );
+  const significantEntries = retainSignificantPhysicalEntries(entries);
 
-  const backboneBudget = Number.isFinite(layerBudgets.backbone)
-    ? Math.max(0, layerBudgets.backbone)
-    : DEFAULT_LAYER_BUDGETS.backbone;
-  const detailBudget = Number.isFinite(layerBudgets.detail)
-    ? Math.max(0, layerBudgets.detail)
-    : DEFAULT_LAYER_BUDGETS.detail;
-  const backboneBudgetResult = normalizeLayerBudget(
+  const modalBudget = Number.isFinite(responseBudget)
+    ? Math.max(0, responseBudget)
+    : DEFAULT_MODAL_RESPONSE_BUDGET;
+  const budgetResult = normalizeModalResponseBudget(
+    significantEntries,
+    modalBudget,
+  );
+  const modalResponseEnergy = budgetResult.energy;
+  const modalResponseBackboneEnergy = sumModalEnergyByLayer(
     significantEntries,
     "backbone",
-    backboneBudget,
   );
-  const detailBudgetResult = normalizeLayerBudget(
+  const modalResponseDetailEnergy = sumModalEnergyByLayer(
     significantEntries,
     "detail",
-    detailBudget,
   );
-  const modalResponseEnergy =
-    backboneBudgetResult.energy + detailBudgetResult.energy;
 
   return {
     entries: significantEntries,
     modalResponseInputEnergy: inputEnergy,
     modalResponseEnergy,
-    modalResponseBackboneEnergy: backboneBudgetResult.energy,
-    modalResponseDetailEnergy: detailBudgetResult.energy,
+    modalResponseBackboneEnergy,
+    modalResponseDetailEnergy,
     modalResponseModeCount: significantEntries.length,
-    modalResponseBudgetScaleBackbone: backboneBudgetResult.scale,
-    modalResponseBudgetScaleDetail: detailBudgetResult.scale,
+    modalResponseBudgetScale: budgetResult.scale,
+    modalResponseBudgetScaleBackbone: budgetResult.scale,
+    modalResponseBudgetScaleDetail: budgetResult.scale,
+    modalResponseRawEnergy: budgetResult.rawEnergy ?? modalResponseEnergy,
+    modalResponseAverageDampingEnvelope: averageEntryMetric(
+      significantEntries,
+      "dampingEnvelope",
+    ),
+    modalResponseAverageCouplingStrength: averageEntryMetric(
+      significantEntries,
+      "couplingStrength",
+    ),
+    modalResponseAveragePhaseConfidence: averageEntryMetric(
+      significantEntries,
+      "phaseConfidence",
+    ),
+    modalResponseAveragePersistence: averageEntryMetric(
+      significantEntries,
+      "persistence",
+    ),
   };
 }

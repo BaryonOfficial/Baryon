@@ -10,7 +10,6 @@ export const COLOR_BLEND_START = 0.42;
 export const COLOR_BLEND_END = 0.94;
 export const DENSITY_BOOST = 4.6;
 export const DENSITY_MAX = 6.0;
-export const DETAIL_LAYER_WEIGHT = 0.45;
 export const BROAD_BAND_SCALE = 1.65;
 export const CONTOUR_BLEND = 0.82;
 export const INTERIOR_MASK_START = 0.52;

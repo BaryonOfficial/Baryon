@@ -59,18 +59,29 @@ function countActiveSlots(slots) {
   return count;
 }
 
-function estimateLayeredAmplitude(featureFrame) {
-  const backboneAmplitude = estimateAverageModeAmplitude(
-    featureFrame?.backboneSlots,
+function getFrameModalFieldSlots(featureFrame) {
+  return (
+    featureFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
+    featureFrame?.modalFieldSlots ??
+    featureFrame?.modeSlots ??
+    null
   );
-  const detailAmplitude = estimateAverageModeAmplitude(
-    featureFrame?.detailSlots,
+}
+
+function getFrameModalFieldColorSlots(featureFrame) {
+  return (
+    featureFrame?.modalDescriptor?.slotViews?.modalFieldColorSlots ??
+    featureFrame?.modalFieldColorSlots ??
+    null
   );
-  return backboneAmplitude + detailAmplitude * 0.35;
+}
+
+function estimateModalFieldAmplitude(featureFrame) {
+  return estimateAverageModeAmplitude(getFrameModalFieldSlots(featureFrame));
 }
 
 function buildCymatics2dDebugSnapshot(runtimeState, featureFrame, fieldState) {
-  const avgAmplitude = estimateLayeredAmplitude(featureFrame);
+  const avgAmplitude = estimateModalFieldAmplitude(featureFrame);
   const densityGain = runtimeState.uniforms.uDensityGain.value;
   const opacityGain = runtimeState.uniforms.uOpacityGain?.value ?? 1;
   const transientEnergy = featureFrame?.transientEnergy ?? 0;
@@ -91,8 +102,7 @@ function buildCymatics2dDebugSnapshot(runtimeState, featureFrame, fieldState) {
   return {
     fieldState,
     modeSlotCount: runtimeState.uniforms.uActiveModeCount.value,
-    backboneModeCount: runtimeState.uniforms.uBackboneModeCount.value,
-    detailModeCount: runtimeState.uniforms.uDetailModeCount.value,
+    modalFieldModeCount: runtimeState.uniforms.uModalFieldModeCount.value,
     dominantFrequency:
       featureFrame?.debug?.dominantFrequency ??
       featureFrame?.debug?.fundamentalFrequency ??
@@ -246,10 +256,8 @@ export function tickCymatics2dRuntime(
   deltaTime,
 ) {
   const {
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneColorBuffer,
-    detailColorBuffer,
+    modalFieldModeBuffer,
+    modalFieldColorBuffer,
     uniforms,
     volumeMesh,
     idleOverlay,
@@ -264,55 +272,33 @@ export function tickCymatics2dRuntime(
     runtimeState.fieldStateValues[fieldState] ??
     runtimeState.fieldStateValues.idle;
 
-  const backboneArray = backboneModeBuffer.value.array;
-  backboneArray.fill(0);
-  if (renderAuthority && featureFrame?.backboneSlots?.length) {
-    backboneArray.set(
-      featureFrame.backboneSlots.subarray(0, backboneArray.length),
-    );
+  const modalFieldArray = modalFieldModeBuffer.value.array;
+  modalFieldArray.fill(0);
+  const modalFieldSlots = getFrameModalFieldSlots(featureFrame);
+  if (renderAuthority && modalFieldSlots?.length) {
+    modalFieldArray.set(modalFieldSlots.subarray(0, modalFieldArray.length));
   }
-  backboneModeBuffer.value.needsUpdate = true;
+  modalFieldModeBuffer.value.needsUpdate = true;
 
   if ((uniforms.uSpectralMix?.value ?? 0) > 0) {
-    const backboneColorArray = backboneColorBuffer.value.array;
-    backboneColorArray.fill(0);
-    if (renderAuthority && featureFrame?.backboneColorSlots?.length) {
-      backboneColorArray.set(
-        featureFrame.backboneColorSlots.subarray(0, backboneColorArray.length),
+    const modalFieldColorArray = modalFieldColorBuffer.value.array;
+    modalFieldColorArray.fill(0);
+    const modalFieldColorSlots = getFrameModalFieldColorSlots(featureFrame);
+    if (renderAuthority && modalFieldColorSlots?.length) {
+      modalFieldColorArray.set(
+        modalFieldColorSlots.subarray(0, modalFieldColorArray.length),
       );
     }
-    backboneColorBuffer.value.needsUpdate = true;
+    modalFieldColorBuffer.value.needsUpdate = true;
   }
 
-  const detailArray = detailModeBuffer.value.array;
-  detailArray.fill(0);
-  if (renderAuthority && featureFrame?.detailSlots?.length) {
-    detailArray.set(featureFrame.detailSlots.subarray(0, detailArray.length));
-  }
-  detailModeBuffer.value.needsUpdate = true;
-
-  if ((uniforms.uSpectralMix?.value ?? 0) > 0) {
-    const detailColorArray = detailColorBuffer.value.array;
-    detailColorArray.fill(0);
-    if (renderAuthority && featureFrame?.detailColorSlots?.length) {
-      detailColorArray.set(
-        featureFrame.detailColorSlots.subarray(0, detailColorArray.length),
-      );
-    }
-    detailColorBuffer.value.needsUpdate = true;
-  }
-
-  const backboneModeCount = renderAuthority
-    ? (featureFrame?.activeBackboneModeCount ??
-      countActiveSlots(featureFrame?.backboneSlots))
+  const modalFieldModeCount = renderAuthority
+    ? (featureFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
+      featureFrame?.activeModeCount ??
+      countActiveSlots(modalFieldSlots))
     : 0;
-  const detailModeCount = renderAuthority
-    ? (featureFrame?.activeDetailModeCount ??
-      countActiveSlots(featureFrame?.detailSlots))
-    : 0;
-  uniforms.uBackboneModeCount.value = backboneModeCount;
-  uniforms.uDetailModeCount.value = detailModeCount;
-  uniforms.uActiveModeCount.value = backboneModeCount + detailModeCount;
+  uniforms.uModalFieldModeCount.value = modalFieldModeCount;
+  uniforms.uActiveModeCount.value = modalFieldModeCount;
   uniforms.uAverageAmplitude.value = renderAuthority
     ? (featureFrame?.averageAmplitude ?? 0)
     : 0;

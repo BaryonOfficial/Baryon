@@ -18,7 +18,6 @@ import {
 import { evaluatePermutationFamilyNode } from "../modeFamilyNode.js";
 
 const CYMATICS_2D_TUNING = Object.freeze({
-  detailLayerWeight: 0.35,
   fieldBandScale: 1.85,
   contourBlend: 0.74,
   densityMax: 1.5,
@@ -29,7 +28,7 @@ const CYMATICS_2D_TUNING = Object.freeze({
   colorBlendEnd: 0.9,
 });
 
-function accumulateLayer({
+function accumulateModalField({
   buffer,
   colorBuffer,
   capacity,
@@ -76,11 +75,9 @@ function accumulateLayer({
 }
 
 function createFieldNode({
-  backboneModeBuffer,
-  detailModeBuffer,
-  backboneColorBuffer,
-  detailColorBuffer,
-  capacity,
+  modalFieldModeBuffer,
+  modalFieldColorBuffer,
+  modalFieldCapacity,
   uniforms,
 }) {
   const {
@@ -89,8 +86,7 @@ function createFieldNode({
     uStructureMax,
     uBoundaryMode,
     uActiveModeCount,
-    uBackboneModeCount,
-    uDetailModeCount,
+    uModalFieldModeCount,
     uColor,
     uSurfaceColor,
     uSpectralMix,
@@ -121,10 +117,10 @@ function createFieldNode({
     const colorSum = vec3(0.0).toVar();
     const colorWeight = float(0.0).toVar();
 
-    accumulateLayer({
-      buffer: backboneModeBuffer,
-      colorBuffer: backboneColorBuffer,
-      capacity,
+    accumulateModalField({
+      buffer: modalFieldModeBuffer,
+      colorBuffer: modalFieldColorBuffer,
+      capacity: modalFieldCapacity,
       weight: float(1.0),
       pi,
       x: centered.x,
@@ -137,23 +133,6 @@ function createFieldNode({
       colorSum,
       colorWeight,
     });
-    accumulateLayer({
-      buffer: detailModeBuffer,
-      colorBuffer: detailColorBuffer,
-      capacity,
-      weight: float(CYMATICS_2D_TUNING.detailLayerWeight),
-      pi,
-      x: centered.x,
-      y: centered.y,
-      slice: uSlicePosition,
-      boundaryMode: uBoundaryMode,
-      field,
-      gradX,
-      gradY,
-      colorSum,
-      colorWeight,
-    });
-
     const fieldAbs = abs(field);
     const gradientMagnitude = length(vec2(gradX, gradY)).mul(float(0.16));
     const activeCount = float(uActiveModeCount);
@@ -248,21 +227,13 @@ function createFieldNode({
       spectralLightBaseColor,
       highlightMask,
     );
-    const backbonePresence = smoothstep(
+    const modalFieldPresence = smoothstep(
       float(0.0),
       float(1.0),
-      float(uBackboneModeCount),
-    );
-    const detailPresence = smoothstep(
-      float(0.0),
-      float(1.0),
-      float(uDetailModeCount),
-    );
-    const activityAccent = backbonePresence.add(
-      detailPresence.mul(float(0.14)),
+      float(uModalFieldModeCount),
     );
     const color = mix(staticColor, spectralLightColor, spectralLightWeight)
-      .mul(float(0.9).add(activityAccent.mul(float(0.08))))
+      .mul(float(0.9).add(modalFieldPresence.mul(float(0.08))))
       .mul(visibleDensity);
 
     return vec4(
@@ -275,11 +246,9 @@ function createFieldNode({
 }
 
 export function createFullscreenFieldMesh({
-  backboneModeBuffer,
-  detailModeBuffer,
-  backboneColorBuffer,
-  detailColorBuffer,
-  capacity,
+  modalFieldModeBuffer,
+  modalFieldColorBuffer,
+  modalFieldCapacity,
   uniforms,
 }) {
   const geometry = new THREE.PlaneGeometry(100, 100, 1, 1);
@@ -289,11 +258,9 @@ export function createFullscreenFieldMesh({
   material.depthTest = false;
   material.fog = false;
   material.outputNode = createFieldNode({
-    backboneModeBuffer,
-    detailModeBuffer,
-    backboneColorBuffer,
-    detailColorBuffer,
-    capacity,
+    modalFieldModeBuffer,
+    modalFieldColorBuffer,
+    modalFieldCapacity,
     uniforms,
   });
 

@@ -217,6 +217,24 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("phaseCoherentSignedDisplacement");
   });
 
+  it("accumulates the direct raymarch field through one modal field path", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("modalFieldModeBuffer");
+    expect(source).toContain("modalFieldColorBuffer");
+    expect(source).toContain("uModalFieldModeCount");
+    expect(source).toContain("function accumulateModalField");
+    expect(source).toContain("function accumulateModalFieldColorOnly");
+    expect(source).not.toContain("function accumulateFieldLayers");
+    expect(source).not.toContain("function accumulateColorLayers");
+    expect(source).not.toContain("DETAIL_LAYER_WEIGHT");
+    expect(source).not.toContain("uBackboneModeCount");
+    expect(source).not.toContain("uDetailModeCount");
+  });
+
   it("keeps Spectral Light photographic accents above the blandness floor", () => {
     expect(RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow).toBeGreaterThan(0.95);
 
@@ -595,8 +613,7 @@ describe("raymarch volume material", () => {
     expect(uniforms.uObservationTransferGain.value).toBeCloseTo(2.2);
     expect(uniforms.uObservationDensityFloor.value).toBeCloseTo(0.22);
     expect(uniforms.uObservationContourSupportScale.value).toBeCloseTo(0.035);
-    expect(uniforms.uModalResponseBackboneEnergy.value).toBe(0);
-    expect(uniforms.uModalResponseDetailEnergy.value).toBe(0);
+    expect(uniforms.uModalResponseEnergy.value).toBe(0);
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
   });

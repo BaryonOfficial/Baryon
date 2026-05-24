@@ -26,7 +26,6 @@ import {
   STEP_REFERENCE,
 } from "../core/raymarch/stepStability.js";
 import {
-  AUDIO_DEFAULTS,
   AUDIO_SLOT_CAPACITY,
   RENDER_DEFAULTS,
 } from "../defaults.js";
@@ -1248,23 +1247,15 @@ describe("control runtime sync", () => {
     expect(runtimeState.sceneLighting.secondary.position.z).toBeCloseTo(
       3 * 1.8,
     );
-    expect(runtimeState.sharedModeCapacity).toBe(AUDIO_SLOT_CAPACITY);
-    expect(runtimeState.capacity).toBe(runtimeState.sharedModeCapacity);
-    expect(runtimeState.backboneCapacity).toBe(
-      AUDIO_DEFAULTS.backboneStackSlots,
+    expect(runtimeState.modalFieldCapacity).toBe(AUDIO_SLOT_CAPACITY);
+    expect(runtimeState).not.toHaveProperty("capacity");
+    expect(runtimeState).not.toHaveProperty("backboneCapacity");
+    expect(runtimeState).not.toHaveProperty("detailCapacity");
+    expect(runtimeState.modalFieldModeBuffer.value.array).toHaveLength(
+      runtimeState.modalFieldCapacity * 4,
     );
-    expect(runtimeState.detailCapacity).toBe(AUDIO_DEFAULTS.detailStackSlots);
-    expect(runtimeState.backboneModeBuffer.value.array).toHaveLength(
-      runtimeState.backboneCapacity * 4,
-    );
-    expect(runtimeState.detailModeBuffer.value.array).toHaveLength(
-      runtimeState.detailCapacity * 4,
-    );
-    expect(runtimeState.backboneColorBuffer.value.array).toHaveLength(
-      runtimeState.backboneCapacity * 4,
-    );
-    expect(runtimeState.detailColorBuffer.value.array).toHaveLength(
-      runtimeState.detailCapacity * 4,
+    expect(runtimeState.modalFieldColorBuffer.value.array).toHaveLength(
+      runtimeState.modalFieldCapacity * 4,
     );
 
     expect(() => runtime.dispose(runtimeState)).not.toThrow();
@@ -1292,13 +1283,13 @@ describe("control runtime sync", () => {
     expect(runtimeState.visualRoot.children).toContain(
       runtimeState.idleOverlay,
     );
-    expect(runtimeState.sharedModeCapacity).toBe(AUDIO_SLOT_CAPACITY);
-    expect(runtimeState.capacity).toBe(runtimeState.sharedModeCapacity);
-    expect(runtimeState.backboneModeBuffer.value.array).toHaveLength(
-      runtimeState.sharedModeCapacity * 4,
+    expect(runtimeState.modalFieldCapacity).toBe(AUDIO_SLOT_CAPACITY);
+    expect(runtimeState).not.toHaveProperty("capacity");
+    expect(runtimeState.modalFieldModeBuffer.value.array).toHaveLength(
+      runtimeState.modalFieldCapacity * 4,
     );
-    expect(runtimeState.detailModeBuffer.value.array).toHaveLength(
-      runtimeState.sharedModeCapacity * 4,
+    expect(runtimeState.modalFieldColorBuffer.value.array).toHaveLength(
+      runtimeState.modalFieldCapacity * 4,
     );
 
     expect(() => runtime.dispose(runtimeState)).not.toThrow();

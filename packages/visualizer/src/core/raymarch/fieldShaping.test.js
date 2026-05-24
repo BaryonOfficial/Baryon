@@ -617,10 +617,8 @@ describe("field shaping", () => {
 
   it("reduces final body mass and radiance when signed modal energy cancels", () => {
     const canceling = evaluateRaymarchSignedPotentialAtPoint({
-      backboneSlots: new Float32Array([1, 1, 1, 0.5, 2, 2, 2, 0.5]),
-      detailSlots: new Float32Array(0),
-      backboneCount: 2,
-      detailCount: 0,
+      modalFieldSlots: new Float32Array([1, 1, 1, 0.5, 2, 2, 2, 0.5]),
+      modalFieldCount: 2,
       boundaryMode: "neumann",
       radius: 3,
       x: 3,
@@ -628,10 +626,8 @@ describe("field shaping", () => {
       z: 0,
     });
     const reinforcing = evaluateRaymarchSignedPotentialAtPoint({
-      backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
-      detailSlots: new Float32Array(0),
-      backboneCount: 2,
-      detailCount: 0,
+      modalFieldSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
+      modalFieldCount: 2,
       boundaryMode: "neumann",
       radius: 3,
       x: 3,

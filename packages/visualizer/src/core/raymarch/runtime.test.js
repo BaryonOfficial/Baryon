@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
-import { createRaymarchSceneRoot, tickRaymarchRuntime } from "./runtime.js";
+import {
+  createRaymarchSceneRoot,
+  tickRaymarchRuntime as tickRaymarchRuntimeBase,
+} from "./runtime.js";
 import {
   buildRaymarchEffectiveFieldDescriptor,
   createRaymarchEffectiveFieldCache,
@@ -43,6 +46,30 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       }
     : null;
   return {
+    modalFieldModeBuffer: {
+      value: {
+        array: new Float32Array(64),
+        needsUpdate: false,
+      },
+    },
+    modalFieldColorBuffer: {
+      value: {
+        array: new Float32Array(64),
+        needsUpdate: false,
+      },
+    },
+    modalFieldPhaseBuffer: {
+      value: {
+        array: new Float32Array(64),
+        needsUpdate: false,
+      },
+    },
+    modalFieldRoleBuffer: {
+      value: {
+        array: new Float32Array(64),
+        needsUpdate: false,
+      },
+    },
     backboneModeBuffer: {
       value: {
         array: new Float32Array(32),
@@ -83,6 +110,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uTime: { value: 0 },
       uFieldState: { value: 0 },
       uRadius: { value: 3 },
+      uModalFieldModeCount: { value: 0 },
       uActiveModeCount: { value: 0 },
       uBackboneModeCount: { value: 0 },
       uDetailModeCount: { value: 0 },
@@ -121,8 +149,7 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uTrebleBroadbandEnergy: { value: 0 },
       uModeCoherence: { value: 0 },
       uTotalSlotAmplitude: { value: 0 },
-      uModalResponseBackboneEnergy: { value: 0 },
-      uModalResponseDetailEnergy: { value: 0 },
+      uModalResponseEnergy: { value: 0 },
       uObservationDensityFadeStart: { value: 0 },
       uObservationDensityFadeEnd: { value: 0 },
       uObservationTransferGain: { value: 0 },
@@ -222,8 +249,120 @@ function seedRuntimeCacheNodes(runtimeState) {
   }
 }
 
+function countActiveSlots(slots) {
+  let count = 0;
+  for (let offset = 3; offset < (slots?.length ?? 0); offset += 4) {
+    if ((slots[offset] ?? 0) > 0) count += 1;
+  }
+  return count;
+}
+
+function appendRoleSlots({
+  targetSlots,
+  targetPhaseSlots,
+  targetColorSlots,
+  targetRoleSlots,
+  sourceSlots,
+  sourcePhaseSlots,
+  sourceColorSlots,
+  writeIndex,
+  roleMask,
+  backboneRoleWeight,
+  detailRoleWeight,
+}) {
+  let written = writeIndex;
+  for (let offset = 0; offset < (sourceSlots?.length ?? 0); offset += 4) {
+    if (!((sourceSlots[offset + 3] ?? 0) > 0)) continue;
+    const targetOffset = written * 4;
+    targetSlots.set(sourceSlots.slice(offset, offset + 4), targetOffset);
+    targetPhaseSlots.set(
+      sourcePhaseSlots?.slice(offset, offset + 4) ?? new Float32Array(4),
+      targetOffset,
+    );
+    targetColorSlots.set(
+      sourceColorSlots?.slice(offset, offset + 4) ?? new Float32Array(4),
+      targetOffset,
+    );
+    targetRoleSlots[targetOffset] = roleMask;
+    targetRoleSlots[targetOffset + 1] = backboneRoleWeight;
+    targetRoleSlots[targetOffset + 2] = detailRoleWeight;
+    targetRoleSlots[targetOffset + 3] = 1;
+    written += 1;
+  }
+  return written;
+}
+
+function withUnifiedModalFields(frame) {
+  if (!frame) return frame;
+  if (frame.modalFieldSlots && !frame.backboneSlots && !frame.detailSlots) {
+    return frame;
+  }
+  const activeBackboneModeCount =
+    frame.activeBackboneModeCount ?? countActiveSlots(frame.backboneSlots);
+  const activeDetailModeCount =
+    frame.activeDetailModeCount ?? countActiveSlots(frame.detailSlots);
+  const candidateCount = activeBackboneModeCount + activeDetailModeCount;
+  const modalFieldSlots = new Float32Array(candidateCount * 4);
+  const modalFieldPhaseSlots = new Float32Array(candidateCount * 4);
+  const modalFieldColorSlots = new Float32Array(candidateCount * 4);
+  const modalFieldRoleSlots = new Float32Array(candidateCount * 4);
+  let writeIndex = appendRoleSlots({
+    targetSlots: modalFieldSlots,
+    targetPhaseSlots: modalFieldPhaseSlots,
+    targetColorSlots: modalFieldColorSlots,
+    targetRoleSlots: modalFieldRoleSlots,
+    sourceSlots: frame.backboneSlots,
+    sourcePhaseSlots: frame.backbonePhaseSlots,
+    sourceColorSlots: frame.backboneColorSlots,
+    writeIndex: 0,
+    roleMask: 1,
+    backboneRoleWeight: 1,
+    detailRoleWeight: 0,
+  });
+  writeIndex = appendRoleSlots({
+    targetSlots: modalFieldSlots,
+    targetPhaseSlots: modalFieldPhaseSlots,
+    targetColorSlots: modalFieldColorSlots,
+    targetRoleSlots: modalFieldRoleSlots,
+    sourceSlots: frame.detailSlots,
+    sourcePhaseSlots: frame.detailPhaseSlots,
+    sourceColorSlots: frame.detailColorSlots,
+    writeIndex,
+    roleMask: 2,
+    backboneRoleWeight: 0,
+    detailRoleWeight: 1,
+  });
+  frame.activeBackboneModeCount = activeBackboneModeCount;
+  frame.activeDetailModeCount = activeDetailModeCount;
+  frame.activeModeCount = frame.activeModeCount ?? writeIndex;
+  frame.modalResponseEnergy = Math.max(
+    frame.modalResponseEnergy ?? 0,
+    frame.modalResponseRenderEnergy ?? 0,
+    frame.debug?.modalResponseEnergy ?? 0,
+    frame.modalResponseBackboneEnergy ??
+      frame.debug?.modalResponseBackboneEnergy ??
+      0,
+    frame.modalResponseDetailEnergy ??
+      frame.debug?.modalResponseDetailEnergy ??
+      0,
+  );
+  frame.modalFieldSlots = modalFieldSlots;
+  frame.modalFieldPhaseSlots = modalFieldPhaseSlots;
+  frame.modalFieldColorSlots = modalFieldColorSlots;
+  frame.modalFieldRoleSlots = modalFieldRoleSlots;
+  return frame;
+}
+
+function tickRaymarchRuntime(runtimeState, featureFrame, ...args) {
+  return tickRaymarchRuntimeBase(
+    runtimeState,
+    withUnifiedModalFields(featureFrame),
+    ...args,
+  );
+}
+
 function createActiveFeatureFrame(overrides = {}) {
-  return {
+  return withUnifiedModalFields({
     fieldState: "active",
     renderAuthority: true,
     averageAmplitude: 48,
@@ -242,14 +381,14 @@ function createActiveFeatureFrame(overrides = {}) {
     changeSignal: 0.61,
     pulseSignal: 0.32,
     ...overrides,
-  };
+  });
 }
 
-function makeModeSlots(count, amplitudeAt = () => 0.25) {
+function makeModeSlots(count, amplitudeAt = () => 0.25, uOffset = 0) {
   const slots = new Float32Array(count * 4);
   for (let index = 0; index < count; index += 1) {
     const offset = index * 4;
-    slots[offset] = (index % 5) + 1;
+    slots[offset] = (index % 5) + 1 + uOffset;
     slots[offset + 1] = ((index + 1) % 7) + 1;
     slots[offset + 2] = ((index + 2) % 9) + 1;
     slots[offset + 3] = amplitudeAt(index);
@@ -296,21 +435,41 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
+  it("builds runtime uploads and cache descriptors from one modal field signature", () => {
+    const source = readFileSync(
+      new URL("./runtime.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("modalFieldModeBuffer");
+    expect(source).toContain("modalFieldColorBuffer");
+    expect(source).toContain("modalFieldPhaseBuffer");
+    expect(source).toContain("modalFieldSignature");
+    expect(source).toContain("uModalFieldModeCount");
+    expect(source).not.toContain("backboneSignature");
+    expect(source).not.toContain("detailSignature");
+    expect(source).not.toContain("uBackboneModeCount");
+    expect(source).not.toContain("uDetailModeCount");
+    expect(source).not.toContain("DETAIL_LAYER_WEIGHT");
+  });
+
   it("uploads every descriptor mode and phase entry up to descriptor capacity", () => {
     const runtimeState = createRuntimeState();
     runtimeState.backboneCapacity = 10;
     runtimeState.detailCapacity = 10;
-    runtimeState.backbonePhaseCapacity = 10;
-    runtimeState.detailPhaseCapacity = 10;
-    runtimeState.backboneModeBuffer.value.array = new Float32Array(40);
-    runtimeState.detailModeBuffer.value.array = new Float32Array(40);
-    runtimeState.backboneColorBuffer.value.array = new Float32Array(40);
-    runtimeState.detailColorBuffer.value.array = new Float32Array(40);
-    runtimeState.backbonePhaseBuffer.value.array = new Float32Array(40);
-    runtimeState.detailPhaseBuffer.value.array = new Float32Array(40);
+    runtimeState.modalFieldCapacity = 20;
+    runtimeState.modalFieldPhaseCapacity = 20;
+    runtimeState.modalFieldModeBuffer.value.array = new Float32Array(80);
+    runtimeState.modalFieldColorBuffer.value.array = new Float32Array(80);
+    runtimeState.modalFieldPhaseBuffer.value.array = new Float32Array(80);
+    runtimeState.modalFieldRoleBuffer.value.array = new Float32Array(80);
     const featureFrame = createActiveFeatureFrame({
       backboneSlots: makeModeSlots(10, (index) => (index === 0 ? 1 : 0.08)),
-      detailSlots: makeModeSlots(10, (index) => (index === 0 ? 0.9 : 0.06)),
+      detailSlots: makeModeSlots(
+        10,
+        (index) => (index === 0 ? 0.9 : 0.06),
+        10,
+      ),
       backboneColorSlots: makeColorSlots(10),
       detailColorSlots: makeColorSlots(10),
       backbonePhaseSlots: makePhaseSlots(10),
@@ -323,32 +482,23 @@ describe("tickRaymarchRuntime", () => {
 
     tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
 
-    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(10);
-    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(10);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(20);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(20);
     expect(runtimeState.effectiveFieldModeCount).toBe(20);
     expect(runtimeState.currentModalDescriptor).toMatchObject({
       capacity: {
-        maxBackboneModes: 10,
-        maxDetailModes: 10,
         maxTotalModes: 20,
       },
       counts: {
-        validBackboneModeCount: 10,
-        validDetailModeCount: 10,
         validModeCount: 20,
-        overflowBackboneModeCount: 0,
-        overflowDetailModeCount: 0,
+        modalFieldModeCount: 20,
       },
       diagnostics: {
         descriptorOverflow: false,
       },
     });
     expect(
-      runtimeState.performanceGovernor.backbone.selectedIndices,
-    ).toBeUndefined();
-    expect(
-      runtimeState.performanceGovernor.detail.selectedIndices,
+      runtimeState.performanceGovernor.modalField.selectedIndices,
     ).toBeUndefined();
   });
 
@@ -356,12 +506,12 @@ describe("tickRaymarchRuntime", () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     runtimeState.backboneCapacity = 2;
     runtimeState.detailCapacity = 2;
-    runtimeState.backbonePhaseCapacity = 2;
-    runtimeState.detailPhaseCapacity = 2;
-    runtimeState.backboneModeBuffer.value.array = new Float32Array(8);
-    runtimeState.detailModeBuffer.value.array = new Float32Array(8);
-    runtimeState.backbonePhaseBuffer.value.array = new Float32Array(8);
-    runtimeState.detailPhaseBuffer.value.array = new Float32Array(8);
+    runtimeState.modalFieldCapacity = 4;
+    runtimeState.modalFieldPhaseCapacity = 4;
+    runtimeState.modalFieldModeBuffer.value.array = new Float32Array(16);
+    runtimeState.modalFieldColorBuffer.value.array = new Float32Array(16);
+    runtimeState.modalFieldPhaseBuffer.value.array = new Float32Array(16);
+    runtimeState.modalFieldRoleBuffer.value.array = new Float32Array(16);
     runtimeState.effectiveFieldCache.contributingEffectiveFieldModeCount = 2;
     runtimeState.effectiveFieldCache.contributingModalEnergy = 0.8;
     runtimeState.effectiveFieldCache.bandwidthRejectedModeCount = 1;
@@ -369,7 +519,7 @@ describe("tickRaymarchRuntime", () => {
     runtimeState.effectiveFieldCache.effectiveFieldGradientEnvelope = 3.1;
     const featureFrame = createActiveFeatureFrame({
       backboneSlots: makeModeSlots(3, () => 0.4),
-      detailSlots: makeModeSlots(3, () => 0.35),
+      detailSlots: makeModeSlots(3, () => 0.35, 10),
       backboneColorSlots: makeColorSlots(3),
       detailColorSlots: makeColorSlots(3),
       backbonePhaseSlots: makePhaseSlots(3),
@@ -390,8 +540,7 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.modalDescriptorFieldAuthority).toBe(
       "blocked",
     );
-    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(0);
-    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(0);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
     expect(
       runtimeState.debugSnapshot.effectiveFieldBandwidthRejectedModeCount,
@@ -426,7 +575,7 @@ describe("tickRaymarchRuntime", () => {
     expect(sceneLighting.secondary.position.z).toBeCloseTo(3 * 1.8);
   });
 
-  it("writes backbone/detail slots and modulation metrics into the runtime", () => {
+  it("writes unified modal field slots and modulation metrics into the runtime", () => {
     const runtimeState = createRuntimeState();
     const featureFrame = {
       fieldState: "active",
@@ -493,12 +642,15 @@ describe("tickRaymarchRuntime", () => {
 
     tickRaymarchRuntime(runtimeState, featureFrame, 12.5, 1 / 60);
 
-    expect(runtimeState.backboneModeBuffer.value.array[0]).toBe(3);
-    expect(runtimeState.detailModeBuffer.value.array[0]).toBe(4);
-    expect(runtimeState.backboneColorBuffer.value.array[0]).toBe(1);
-    expect(runtimeState.detailColorBuffer.value.array[2]).toBe(1);
-    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(2);
-    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(2);
+    expect(
+      Array.from(runtimeState.modalFieldModeBuffer.value.array.slice(0, 16)).map(
+        (value) => Number(value.toFixed(6)),
+      ),
+    ).toEqual([
+      1, 3, 7, 0.6, 2, 2, 6, 0.4, 3, 4, 6, 0.8, 4, 5, 5, 0.55,
+    ]);
+    expect(runtimeState.modalFieldColorBuffer.value.array[10]).toBeCloseTo(0.1);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(4);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(4);
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.7);
     expect(runtimeState.uniforms.uSpectralCentroid.value).toBe(0.42);
@@ -510,12 +662,7 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.bloomResponseSignal).toBeGreaterThan(0);
     expect(runtimeState.visualRoot.scale.x).toBe(1);
     expect(runtimeState.uniforms.uModeCoherence.value).toBeCloseTo(0.58);
-    expect(
-      runtimeState.uniforms.uModalResponseBackboneEnergy.value,
-    ).toBeCloseTo(0.37);
-    expect(runtimeState.uniforms.uModalResponseDetailEnergy.value).toBeCloseTo(
-      0.12,
-    );
+    expect(runtimeState.uniforms.uModalResponseEnergy.value).toBeCloseTo(0.37);
     const observationParameters = deriveObservationTransferParameters({
       opacityGain: runtimeState.uniforms.uOpacityGain.value,
       stepCompensation: runtimeState.bloomTuning.stepCompensation,
@@ -540,7 +687,7 @@ describe("tickRaymarchRuntime", () => {
       0.18,
     );
     expect(runtimeState.uniforms.uTotalSlotAmplitude.value).toBeCloseTo(
-      0.8 + 0.6 + (0.55 + 0.4) * 0.45,
+      0.8 + 0.6 + 0.55 + 0.4,
     );
     const [sub, lowMid, highMid, air] =
       runtimeState.uniforms.uBandEnergies.value.toArray();
@@ -553,23 +700,14 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.raymarchDebug.backboneModeCount).toBe(2);
     expect(runtimeState.debugSnapshot.raymarchDebug.detailModeCount).toBe(2);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.renderedBackboneModeCount,
-    ).toBe(2);
+      runtimeState.debugSnapshot.raymarchDebug.renderedModalFieldModeCount,
+    ).toBe(4);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.renderedDetailModeCount,
-    ).toBe(2);
-    expect(
-      runtimeState.debugSnapshot.raymarchDebug.renderedBackboneColorWeightMax,
+      runtimeState.debugSnapshot.raymarchDebug.renderedModalFieldColorWeightMax,
     ).toBeCloseTo(0.9);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.renderedDetailColorWeightMax,
-    ).toBeCloseTo(0.5);
-    expect(
-      runtimeState.debugSnapshot.raymarchDebug.renderedBackboneAmplitudeTotal,
-    ).toBeCloseTo(1.4);
-    expect(
-      runtimeState.debugSnapshot.raymarchDebug.renderedDetailAmplitudeTotal,
-    ).toBeCloseTo(0.95);
+      runtimeState.debugSnapshot.raymarchDebug.renderedModalFieldAmplitudeTotal,
+    ).toBeCloseTo(2.35);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.modalDescriptorOverflow,
     ).toBe(false);
@@ -611,7 +749,7 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.raymarchDebug.pulseSignal).toBe(0.32);
     expect(runtimeState.debugSnapshot.raymarchDebug.modeCoherence).toBe(0.58);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.modalResponseBackboneEnergy,
+      runtimeState.debugSnapshot.raymarchDebug.modalResponseEnergy,
     ).toBe(0.37);
     expect(runtimeState.debugSnapshot.raymarchDebug.observationEnergy).toBe(1);
     expect(
@@ -1124,8 +1262,7 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.volumeMesh.visible).toBe(false);
     expect(runtimeState.idleOverlay.visible).toBe(true);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
-    expect(runtimeState.uniforms.uModalResponseBackboneEnergy.value).toBe(0);
-    expect(runtimeState.uniforms.uModalResponseDetailEnergy.value).toBe(0);
+    expect(runtimeState.uniforms.uModalResponseEnergy.value).toBe(0);
     expect(runtimeState.backboneModeBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.detailModeBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.performanceGovernor).toBeNull();
@@ -1142,8 +1279,8 @@ describe("tickRaymarchRuntime", () => {
   it("hides retained modal diagnostics on render-authority cut", () => {
     const runtimeState = createRuntimeState();
     runtimeState.responseEnvelope = 0.6;
-    runtimeState.backboneModeBuffer.value.array[3] = 0.42;
-    runtimeState.uniforms.uBackboneModeCount.value = 1;
+    runtimeState.modalFieldModeBuffer.value.array[3] = 0.42;
+    runtimeState.uniforms.uModalFieldModeCount.value = 1;
 
     tickRaymarchRuntime(
       runtimeState,
@@ -1182,9 +1319,9 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.debugSnapshot.raymarchDebug.observationHardSilence,
     ).toBe(true);
     expect(runtimeState.debugSnapshot.raymarchDebug.observationEnergy).toBe(0);
-    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(0);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
-    expect(runtimeState.backboneModeBuffer.value.array[3]).toBe(0);
+    expect(runtimeState.modalFieldModeBuffer.value.array[3]).toBe(0);
     expect(runtimeState.responseEnvelope).toBe(0);
   });
 
@@ -1261,7 +1398,7 @@ describe("tickRaymarchRuntime", () => {
       1,
       1 / 60,
     );
-    expect(runtimeState.backboneModeBuffer.value.array[3]).toBe(0);
+    expect(runtimeState.modalFieldModeBuffer.value.array[3]).toBe(0);
 
     tickRaymarchRuntime(
       runtimeState,
@@ -1287,11 +1424,10 @@ describe("tickRaymarchRuntime", () => {
     );
 
     expect(runtimeState.volumeMesh.visible).toBe(true);
-    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(1);
-    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(1);
-    expect(runtimeState.backboneModeBuffer.value.array[0]).toBe(1);
-    expect(runtimeState.backboneModeBuffer.value.array[3]).toBeCloseTo(0.64);
-    expect(runtimeState.detailModeBuffer.value.array[3]).toBeCloseTo(0.32);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(2);
+    expect(runtimeState.modalFieldModeBuffer.value.array[0]).toBe(1);
+    expect(runtimeState.modalFieldModeBuffer.value.array[3]).toBeCloseTo(0.64);
+    expect(runtimeState.modalFieldModeBuffer.value.array[7]).toBeCloseTo(0.32);
   });
 
   it("suppresses the idle overlay during live input and restores it after stop", () => {
@@ -1945,8 +2081,7 @@ describe("tickRaymarchRuntime", () => {
   it("skips color buffer uploads when Spectral Light mixing is disabled", () => {
     const runtimeState = createRuntimeState();
     runtimeState.uniforms.uSpectralMix.value = 0;
-    runtimeState.backboneColorBuffer.value.array.set([9, 9, 9, 9]);
-    runtimeState.detailColorBuffer.value.array.set([7, 7, 7, 7]);
+    runtimeState.modalFieldColorBuffer.value.array.set([9, 9, 9, 9]);
 
     tickRaymarchRuntime(
       runtimeState,
@@ -1972,13 +2107,9 @@ describe("tickRaymarchRuntime", () => {
     );
 
     expect(
-      Array.from(runtimeState.backboneColorBuffer.value.array.slice(0, 4)),
+      Array.from(runtimeState.modalFieldColorBuffer.value.array.slice(0, 4)),
     ).toEqual([0, 0, 0, 0]);
-    expect(
-      Array.from(runtimeState.detailColorBuffer.value.array.slice(0, 4)),
-    ).toEqual([0, 0, 0, 0]);
-    expect(runtimeState.backboneColorBuffer.value.needsUpdate).toBe(false);
-    expect(runtimeState.detailColorBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.modalFieldColorBuffer.value.needsUpdate).toBe(false);
   });
 
   it("skips repeated modal, color, and phase uploads without freezing uniforms", () => {
@@ -2021,17 +2152,14 @@ describe("tickRaymarchRuntime", () => {
     tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
     const firstDescriptor = runtimeState.currentEffectiveFieldDescriptor;
 
-    runtimeState.backboneModeBuffer.value.needsUpdate = false;
-    runtimeState.detailModeBuffer.value.needsUpdate = false;
-    runtimeState.backboneColorBuffer.value.needsUpdate = false;
-    runtimeState.detailColorBuffer.value.needsUpdate = false;
+    runtimeState.modalFieldModeBuffer.value.needsUpdate = false;
+    runtimeState.modalFieldColorBuffer.value.needsUpdate = false;
     featureFrame.backboneSlots[0] = 7;
 
     tickRaymarchRuntime(runtimeState, featureFrame, 2, 1 / 60);
 
-    expect(runtimeState.backboneModeBuffer.value.needsUpdate).toBe(true);
-    expect(runtimeState.detailModeBuffer.value.needsUpdate).toBe(false);
-    expect(runtimeState.backboneColorBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.modalFieldModeBuffer.value.needsUpdate).toBe(true);
+    expect(runtimeState.modalFieldColorBuffer.value.needsUpdate).toBe(true);
     expect(runtimeState.currentEffectiveFieldDescriptor).not.toBe(
       firstDescriptor,
     );
@@ -2053,12 +2181,10 @@ describe("tickRaymarchRuntime", () => {
       1 / 60,
     );
 
-    runtimeState.backboneModeBuffer.value.needsUpdate = false;
-    runtimeState.detailModeBuffer.value.needsUpdate = false;
+    runtimeState.modalFieldModeBuffer.value.needsUpdate = false;
     tickRaymarchRuntime(runtimeState, featureFrame, 3, 1 / 60);
 
-    expect(runtimeState.backboneModeBuffer.value.needsUpdate).toBe(true);
-    expect(runtimeState.detailModeBuffer.value.needsUpdate).toBe(true);
+    expect(runtimeState.modalFieldModeBuffer.value.needsUpdate).toBe(true);
   });
 
   it("rebuilds raymarch caches only when descriptor inputs change", async () => {
@@ -2144,20 +2270,24 @@ describe("tickRaymarchRuntime", () => {
     tickRaymarchRuntime(staticRuntimeState, createFrame(), 1, 1 / 60);
     tickRaymarchRuntime(spectralRuntimeState, createFrame(), 1, 1 / 60);
 
-    expect(spectralRuntimeState.uniforms.uDetailModeCount.value).toBe(
-      staticRuntimeState.uniforms.uDetailModeCount.value,
+    expect(spectralRuntimeState.uniforms.uModalFieldModeCount.value).toBe(
+      staticRuntimeState.uniforms.uModalFieldModeCount.value,
     );
     expect(
       Array.from(
-        spectralRuntimeState.detailModeBuffer.value.array.slice(0, 12),
+        spectralRuntimeState.modalFieldModeBuffer.value.array.slice(0, 12),
       ),
     ).toEqual(
-      Array.from(staticRuntimeState.detailModeBuffer.value.array.slice(0, 12)),
+      Array.from(
+        staticRuntimeState.modalFieldModeBuffer.value.array.slice(0, 12),
+      ),
     );
     expect(
-      spectralRuntimeState.performanceGovernor.detail.uploadedActiveCount,
-    ).toBe(staticRuntimeState.performanceGovernor.detail.uploadedActiveCount);
-    expect(spectralRuntimeState.detailColorBuffer.value.needsUpdate).toBe(true);
+      spectralRuntimeState.performanceGovernor.uploadedModeCount,
+    ).toBe(staticRuntimeState.performanceGovernor.uploadedModeCount);
+    expect(spectralRuntimeState.modalFieldColorBuffer.value.needsUpdate).toBe(
+      true,
+    );
   });
 
   it("reuses a prepared performance governor for the matching runtime tick", () => {
@@ -2191,29 +2321,19 @@ describe("tickRaymarchRuntime", () => {
       bloomStrengthScale: 1,
       bloomThresholdOffset: 0,
       bloomAllowed: true,
-      backbone: {
-        capacity: 8,
-        originalActiveCount: 2,
-        uploadedActiveCount: 2,
-        totalAmplitude: 1.7,
-        uploadedAmplitude: 1.7,
-        weightedPermutationLoad: 0,
-        averagePermutationCost: 0,
-      },
-      detail: {
-        capacity: 8,
-        originalActiveCount: 1,
-        uploadedActiveCount: 1,
-        totalAmplitude: 0.5,
-        uploadedAmplitude: 0.5,
+      modalField: {
+        capacity: 16,
+        originalActiveCount: 3,
+        uploadedActiveCount: 3,
+        totalAmplitude: 2.2,
+        uploadedAmplitude: 2.2,
         weightedPermutationLoad: 0,
         averagePermutationCost: 0,
       },
     };
     runtimeState.pendingRaymarchPerformanceGovernor = {
       featureFrame,
-      backboneCapacity: 8,
-      detailCapacity: 8,
+      modalFieldCapacity: 16,
       cavityGeometry: "rectangular",
       requestedStepBudget: 64,
       requestedRenderScale: 1,
@@ -2225,10 +2345,9 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.performanceGovernor).toBe(preparedGovernor);
     expect(runtimeState.pendingRaymarchPerformanceGovernor).toBeNull();
     expect(
-      Array.from(runtimeState.backboneModeBuffer.value.array.slice(0, 4)),
+      Array.from(runtimeState.modalFieldModeBuffer.value.array.slice(0, 4)),
     ).toEqual([1, 2, 3, expect.closeTo(0.8, 5)]);
-    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(2);
-    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(1);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(3);
   });
 
   it("keeps static color off the Spectral Light cache path", () => {
@@ -2410,7 +2529,7 @@ describe("tickRaymarchRuntime", () => {
     }
   });
 
-  it("coalesces runtime descriptor changes while a rebuild is pending", async () => {
+  it("coalesces runtime topology descriptor changes while a rebuild is pending", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
     runtimeState.uniforms.uSpectralMix.value = 0;
@@ -2424,11 +2543,11 @@ describe("tickRaymarchRuntime", () => {
         });
       },
     };
-    const makeFrame = (amplitude) => ({
+    const makeFrame = (modeU, amplitude) => ({
       fieldState: "active",
       renderAuthority: true,
       averageAmplitude: 32,
-      backboneSlots: new Float32Array([3, 4, 6, amplitude]),
+      backboneSlots: new Float32Array([modeU, 4, 6, amplitude]),
       detailSlots: new Float32Array([4, 5, 5, 0.2]),
       backboneColorSlots: new Float32Array(32),
       detailColorSlots: new Float32Array(32),
@@ -2442,10 +2561,28 @@ describe("tickRaymarchRuntime", () => {
       pulseSignal: 0.05,
     });
 
-    tickRaymarchRuntime(runtimeState, makeFrame(0.5), 1, 1 / 60, renderer);
-    tickRaymarchRuntime(runtimeState, makeFrame(0.55), 2, 1 / 60, renderer);
-    tickRaymarchRuntime(runtimeState, makeFrame(0.6), 3, 1 / 60, renderer);
-    tickRaymarchRuntime(runtimeState, makeFrame(0.65), 4, 1 / 60, renderer);
+    tickRaymarchRuntime(runtimeState, makeFrame(3, 0.5), 1, 1 / 60, renderer);
+    tickRaymarchRuntime(
+      runtimeState,
+      makeFrame(5, 0.55),
+      2,
+      1 / 60,
+      renderer,
+    );
+    tickRaymarchRuntime(
+      runtimeState,
+      makeFrame(6, 0.6),
+      3,
+      1 / 60,
+      renderer,
+    );
+    tickRaymarchRuntime(
+      runtimeState,
+      makeFrame(7, 0.65),
+      4,
+      1 / 60,
+      renderer,
+    );
 
     const newestDescriptor = runtimeState.currentEffectiveFieldDescriptor;
     expect(runtimeState.effectiveFieldCache.queuedDescriptor).toEqual(
@@ -2469,6 +2606,82 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.effectiveFieldCache.queuedDescriptor).toBeNull();
     expect(runtimeState.effectiveFieldCache.rebuildPending).toBe(true);
     expect(computeCalls).toBe(2);
+  });
+
+  it("does not queue runtime rebuilds for coefficient-only modal updates", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    let resolveFirst;
+    let computeCalls = 0;
+    const renderer = {
+      computeAsync: async () => {
+        computeCalls += 1;
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      },
+    };
+    const makeFrame = (amplitude, modalPhaseAuthority) => ({
+      fieldState: "active",
+      renderAuthority: true,
+      averageAmplitude: 32,
+      backboneSlots: new Float32Array([3, 4, 6, amplitude]),
+      detailSlots: new Float32Array([4, 5, 5, 0.2]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      bandEnergies: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+      transientEnergy: 0.1,
+      spectralCentroid: 0.2,
+      spectralFlux: 0.1,
+      structureSignal: 0.4,
+      energySignal: 0.3,
+      changeSignal: 0.08,
+      pulseSignal: 0.05,
+      modalPhaseAuthority,
+    });
+
+    tickRaymarchRuntime(runtimeState, makeFrame(0.5, 0.2), 1, 1 / 60, renderer);
+    tickRaymarchRuntime(
+      runtimeState,
+      makeFrame(0.55, 0.3),
+      2,
+      1 / 60,
+      renderer,
+    );
+    tickRaymarchRuntime(
+      runtimeState,
+      makeFrame(0.6, 0.4),
+      3,
+      1 / 60,
+      renderer,
+    );
+    tickRaymarchRuntime(
+      runtimeState,
+      makeFrame(0.65, 0.5),
+      4,
+      1 / 60,
+      renderer,
+    );
+
+    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toBeNull();
+    expect(runtimeState.effectiveFieldCache.effectiveFieldAuthority).toBe(0.5);
+    expect(
+      runtimeState.debugSnapshot.effectiveFieldQueuedDescriptorPending,
+    ).toBe(false);
+    await Promise.resolve();
+    expect(computeCalls).toBe(1);
+    resolveFirst();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toBeNull();
+    expect(runtimeState.effectiveFieldCache.rebuildPending).toBe(false);
+    expect(runtimeState.effectiveFieldCache.ready).toBe(true);
+    expect(computeCalls).toBe(1);
   });
 
   it("keeps low-amplitude bass rendering on the cached product path", async () => {
@@ -2511,7 +2724,7 @@ describe("tickRaymarchRuntime", () => {
 
     expect(runtimeState.uniforms.uActiveModeCount.value).toBeGreaterThan(0);
     expect(runtimeState.uniforms.uTotalSlotAmplitude.value).toBeGreaterThan(0);
-    expect(runtimeState.uniforms.uModalResponseBackboneEnergy.value).toBe(0.05);
+    expect(runtimeState.uniforms.uModalResponseEnergy.value).toBe(0.05);
     expect(runtimeState.volumeMesh.userData.raymarchFieldEvaluationMode).toBe(
       "effective-cached",
     );
@@ -2557,8 +2770,7 @@ describe("tickRaymarchRuntime", () => {
 
     expect(runtimeState.volumeMesh.visible).toBe(true);
     expect(runtimeState.idleOverlay.visible).toBe(false);
-    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(0);
-    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(2);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(2);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(2);
     expect(runtimeState.debugSnapshot.raymarchDebug.modeSlotCount).toBe(2);
   });
@@ -2589,8 +2801,7 @@ describe("tickRaymarchRuntime", () => {
       1 / 60,
     );
 
-    expect(runtimeState.uniforms.uBackboneModeCount.value).toBe(1);
-    expect(runtimeState.uniforms.uDetailModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(1);
     expect(runtimeState.uniforms.uActiveModeCount.value).toBe(1);
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.85);
     expect(runtimeState.uniforms.uSpectralCentroid.value).toBe(0.33);
@@ -2861,7 +3072,7 @@ describe("tickRaymarchRuntime", () => {
 
     expect(runtimeState.responseEnvelope).toBeGreaterThan(0.16);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.modalResponseBackboneEnergy,
+      runtimeState.debugSnapshot.raymarchDebug.modalResponseEnergy,
     ).toBe(0.32);
   });
 
@@ -2907,7 +3118,7 @@ describe("tickRaymarchRuntime", () => {
     );
 
     expect(
-      retainedRuntime.uniforms.uModalResponseDetailEnergy.value,
+      retainedRuntime.uniforms.uModalResponseEnergy.value,
     ).toBeCloseTo(0.19);
     expect(
       retainedRuntime.debugSnapshot.raymarchDebug.observationEnergy,
@@ -3000,7 +3211,7 @@ describe("tickRaymarchRuntime", () => {
     );
 
     expect(
-      observedRuntime.uniforms.uModalResponseBackboneEnergy.value,
+      observedRuntime.uniforms.uModalResponseEnergy.value,
     ).toBeCloseTo(0.24);
     expect(
       observedRuntime.debugSnapshot.raymarchDebug.observedDensityFloorMax,
@@ -3050,7 +3261,7 @@ describe("tickRaymarchRuntime", () => {
       1 / 60,
     );
 
-    expect(lowQRuntime.uniforms.uModalResponseBackboneEnergy.value).toBeCloseTo(
+    expect(lowQRuntime.uniforms.uModalResponseEnergy.value).toBeCloseTo(
       0.083,
     );
     expect(

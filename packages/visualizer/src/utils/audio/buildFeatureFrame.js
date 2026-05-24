@@ -16,8 +16,6 @@ import {
 } from "../../core/cavityGeometry.js";
 import { sampleFFTAmplitudeForFrequency } from "../cavityModes.js";
 import {
-  BACKBONE_STACK_SLOTS,
-  DETAIL_STACK_SLOTS,
   MAX_STACK_SLOTS,
   BAND_BUCKET_COUNT,
   clearModalStack,
@@ -83,7 +81,6 @@ const LIVE_INPUT_INVALID_COMPRESSED_BASELINE_RMS = 0.0085;
 const LIVE_INPUT_INVALID_CURRENT_SATURATED_PEAK = 0.98;
 const LIVE_INPUT_INVALID_CURRENT_WEAK_RMS = 0.012;
 const LIVE_INPUT_INVALID_CURRENT_WEAK_AVG = 10;
-const DETAIL_LAYER_WEIGHT = 0.35;
 const SOURCE_CUT_MODAL_FORCING_EPSILON = 1e-6;
 const BAND_LIMITS_HZ = [140, 600, 2400, 8000];
 const SPECTRAL_BAND_6_LIMITS_HZ = [140, 400, 1200, 3200, 6400, 12000];
@@ -325,8 +322,6 @@ function ensureTargetBuildField(container, key, capacity) {
 
 function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
   const slotLength = capacity * 4;
-  const backboneTargetLength = Math.min(capacity, BACKBONE_STACK_SLOTS) * 4;
-  const detailTargetLength = Math.min(capacity, DETAIL_STACK_SLOTS) * 4;
   const backboneSlots = ensureArrayField(
     analysisMemory,
     "backboneSlots",
@@ -391,37 +386,37 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
   const zeroBackboneTargetSlots = ensureArrayField(
     analysisMemory,
     "zeroBackboneTargetSlots",
-    backboneTargetLength,
+    slotLength,
   );
   const zeroDetailTargetSlots = ensureArrayField(
     analysisMemory,
     "zeroDetailTargetSlots",
-    detailTargetLength,
+    slotLength,
   );
   const nonAcousticBackboneTarget = ensureTargetBuildField(
     analysisMemory,
     "nonAcousticBackboneTarget",
-    Math.min(capacity, BACKBONE_STACK_SLOTS),
+    capacity,
   );
   const nonAcousticDetailTarget = ensureTargetBuildField(
     analysisMemory,
     "nonAcousticDetailTarget",
-    Math.min(capacity, DETAIL_STACK_SLOTS),
+    capacity,
   );
   const nonAcousticPeakDriverScratch = ensureTargetBuildField(
     analysisMemory,
     "nonAcousticPeakDriverScratch",
-    Math.min(capacity, BACKBONE_STACK_SLOTS),
+    capacity,
   );
   const acousticBackboneTarget = ensureTargetBuildField(
     analysisMemory,
     "acousticBackboneTarget",
-    Math.min(capacity, BACKBONE_STACK_SLOTS),
+    capacity,
   );
   const acousticDetailTarget = ensureTargetBuildField(
     analysisMemory,
     "acousticDetailTarget",
-    Math.min(capacity, DETAIL_STACK_SLOTS),
+    capacity,
   );
   if (!analysisMemory.backboneState || !analysisMemory.detailState) {
     const replacement = createAudioFeatureState(capacity).analysis;
@@ -853,16 +848,9 @@ function buildDetailStateSummary(detailState) {
 
 function deriveModalObservationEnergy(
   modalCoefficientEnergy,
-  modalResponseBackboneEnergy,
-  modalResponseDetailEnergy,
+  modalResponseEnergy,
 ) {
-  return clamp01(
-    Math.max(
-      modalCoefficientEnergy,
-      modalResponseBackboneEnergy,
-      modalResponseDetailEnergy,
-    ),
-  );
+  return clamp01(Math.max(modalCoefficientEnergy, modalResponseEnergy));
 }
 
 function readModalResponseRenderEnergy(structuralMetrics, fallbackEnergy = 0) {
@@ -999,11 +987,8 @@ function buildDebugSummary({
     DEFAULT_EFFECTIVE_CAVITY_GEOMETRY
   ),
 }) {
-  const backboneModeCount = countActiveSlots(
-    backboneSlots,
-    BACKBONE_STACK_SLOTS,
-  );
-  const detailModeCount = countActiveSlots(detailSlots, DETAIL_STACK_SLOTS);
+  const backboneModeCount = countActiveSlots(backboneSlots, MAX_STACK_SLOTS);
+  const detailModeCount = countActiveSlots(detailSlots, MAX_STACK_SLOTS);
   const modeSlotCount = countActiveSlots(modeSlots, MAX_STACK_SLOTS);
   const modalVisibilitySummary = deriveModalVisibilityComponents({
     modeSlots,
@@ -1043,10 +1028,10 @@ function buildDebugSummary({
     structuralMetrics,
     retainedModalResponseDetailEnergy,
   );
+  const modalResponseEnergy = modalCoefficientEnergy;
   const observationEnergy = deriveModalObservationEnergy(
     modalCoefficientEnergy,
-    modalResponseBackboneEnergy,
-    modalResponseDetailEnergy,
+    modalResponseEnergy,
   );
 
   return {
@@ -1219,6 +1204,17 @@ function buildDebugSummary({
     modalResponseBackboneEnergy,
     modalResponseDetailEnergy,
     modalResponseModeCount: structuralMetrics?.modalResponseModeCount ?? 0,
+    modalResponseBudgetScale:
+      structuralMetrics?.modalResponseBudgetScale ?? 0,
+    modalResponseRawEnergy: structuralMetrics?.modalResponseRawEnergy ?? 0,
+    modalResponseAverageDampingEnvelope:
+      structuralMetrics?.modalResponseAverageDampingEnvelope ?? 0,
+    modalResponseAverageCouplingStrength:
+      structuralMetrics?.modalResponseAverageCouplingStrength ?? 0,
+    modalResponseAveragePhaseConfidence:
+      structuralMetrics?.modalResponseAveragePhaseConfidence ?? 0,
+    modalResponseAveragePersistence:
+      structuralMetrics?.modalResponseAveragePersistence ?? 0,
     modalResponseBudgetScaleBackbone:
       structuralMetrics?.modalResponseBudgetScaleBackbone ?? 0,
     modalResponseBudgetScaleDetail:
@@ -2261,6 +2257,131 @@ function sumSlotAmplitudeTotal(modeSlots, capacity) {
     total += Math.max(0, modeSlots[index * 4 + 3] ?? 0);
   }
   return total;
+}
+
+function writeModalFieldCandidates({
+  targetSlots,
+  targetPhaseSlots,
+  targetColorSlots,
+  targetRoleSlots,
+  writeIndex,
+  sourceSlots,
+  sourcePhaseSlots,
+  sourceColorSlots,
+  validCount,
+  roleMask,
+  backboneRoleWeight,
+  detailRoleWeight,
+}) {
+  const slotCount = Math.floor((sourceSlots?.length ?? 0) / 4);
+  const targetCount = Math.floor((targetSlots?.length ?? 0) / 4);
+  const validLimit = Math.max(0, Math.floor(validCount ?? 0));
+  let written = writeIndex;
+  let seen = 0;
+
+  for (
+    let sourceIndex = 0;
+    sourceIndex < slotCount && seen < validLimit && written < targetCount;
+    sourceIndex += 1
+  ) {
+    const sourceOffset = sourceIndex * 4;
+    const coefficient = sourceSlots?.[sourceOffset + 3] ?? 0;
+    if (!(coefficient > 0)) {
+      continue;
+    }
+    seen += 1;
+    const targetOffset = written * 4;
+    targetSlots[targetOffset] = sourceSlots?.[sourceOffset] ?? 0;
+    targetSlots[targetOffset + 1] = sourceSlots?.[sourceOffset + 1] ?? 0;
+    targetSlots[targetOffset + 2] = sourceSlots?.[sourceOffset + 2] ?? 0;
+    targetSlots[targetOffset + 3] = coefficient;
+
+    targetPhaseSlots[targetOffset] = sourcePhaseSlots?.[sourceOffset] ?? 0;
+    targetPhaseSlots[targetOffset + 1] =
+      sourcePhaseSlots?.[sourceOffset + 1] ?? 0;
+    targetPhaseSlots[targetOffset + 2] =
+      sourcePhaseSlots?.[sourceOffset + 2] ?? 0;
+    targetPhaseSlots[targetOffset + 3] =
+      sourcePhaseSlots?.[sourceOffset + 3] ?? 0;
+
+    targetColorSlots[targetOffset] = sourceColorSlots?.[sourceOffset] ?? 0;
+    targetColorSlots[targetOffset + 1] =
+      sourceColorSlots?.[sourceOffset + 1] ?? 0;
+    targetColorSlots[targetOffset + 2] =
+      sourceColorSlots?.[sourceOffset + 2] ?? 0;
+    targetColorSlots[targetOffset + 3] =
+      sourceColorSlots?.[sourceOffset + 3] ?? 0;
+
+    targetRoleSlots[targetOffset] = roleMask;
+    targetRoleSlots[targetOffset + 1] = backboneRoleWeight;
+    targetRoleSlots[targetOffset + 2] = detailRoleWeight;
+    targetRoleSlots[targetOffset + 3] = 1;
+    written += 1;
+  }
+
+  return written;
+}
+
+function buildModalFieldDescriptorSource({
+  backboneSlots,
+  detailSlots,
+  backbonePhaseSlots,
+  detailPhaseSlots,
+  backboneColorSlots,
+  detailColorSlots,
+  activeBackboneModeCount,
+  activeDetailModeCount,
+}) {
+  const candidateCount =
+    Math.max(0, Math.floor(activeBackboneModeCount ?? 0)) +
+    Math.max(0, Math.floor(activeDetailModeCount ?? 0));
+  const slotLength = candidateCount * 4;
+  const modalFieldSlots = new Float32Array(slotLength);
+  const modalFieldPhaseSlots = new Float32Array(slotLength);
+  const modalFieldColorSlots = new Float32Array(slotLength);
+  const modalFieldRoleSlots = new Float32Array(slotLength);
+  let activeModalFieldModeCount = 0;
+
+  activeModalFieldModeCount = writeModalFieldCandidates({
+    targetSlots: modalFieldSlots,
+    targetPhaseSlots: modalFieldPhaseSlots,
+    targetColorSlots: modalFieldColorSlots,
+    targetRoleSlots: modalFieldRoleSlots,
+    writeIndex: activeModalFieldModeCount,
+    sourceSlots: backboneSlots,
+    sourcePhaseSlots: backbonePhaseSlots,
+    sourceColorSlots: backboneColorSlots,
+    validCount: activeBackboneModeCount,
+    roleMask: 1,
+    backboneRoleWeight: 1,
+    detailRoleWeight: 0,
+  });
+  activeModalFieldModeCount = writeModalFieldCandidates({
+    targetSlots: modalFieldSlots,
+    targetPhaseSlots: modalFieldPhaseSlots,
+    targetColorSlots: modalFieldColorSlots,
+    targetRoleSlots: modalFieldRoleSlots,
+    writeIndex: activeModalFieldModeCount,
+    sourceSlots: detailSlots,
+    sourcePhaseSlots: detailPhaseSlots,
+    sourceColorSlots: detailColorSlots,
+    validCount: activeDetailModeCount,
+    roleMask: 2,
+    backboneRoleWeight: 0,
+    detailRoleWeight: 1,
+  });
+
+  return {
+    modalFieldSlots,
+    modalFieldPhaseSlots,
+    modalFieldColorSlots,
+    modalFieldRoleSlots,
+    activeModalFieldModeCount,
+    roleHistogram: {
+      backbone: Math.max(0, Math.floor(activeBackboneModeCount ?? 0)),
+      detail: Math.max(0, Math.floor(activeDetailModeCount ?? 0)),
+    },
+  };
 }
 
 function emptyLowQBackboneVisibility({ rejected = false } = {}) {
@@ -4011,16 +4132,10 @@ function resolveStructuralProjectionSources(preparedInputs, structuralState) {
     preparedInputs.detailState.referenceSlots;
   const activeBackboneModeCount = structuralState?.suppressedByFog
     ? 0
-    : countActiveSlots(
-        backboneSlotsSource,
-        Math.min(capacity, BACKBONE_STACK_SLOTS),
-      );
+    : countActiveSlots(backboneSlotsSource, capacity);
   const activeDetailModeCount = structuralState?.suppressedByFog
     ? 0
-    : countActiveSlots(
-        detailSlotsSource,
-        Math.min(capacity, DETAIL_STACK_SLOTS),
-      );
+    : countActiveSlots(detailSlotsSource, capacity);
 
   return {
     freezeModeSlots,
@@ -4114,35 +4229,35 @@ function buildStructuralFingerprint({
       ? 0
       : computeSlotSignature(
           projectionSources.backboneSlotsSource,
-          Math.min(preparedInputs.capacity, BACKBONE_STACK_SLOTS),
+          preparedInputs.capacity,
         ),
     detailSignature: fogSuppressed
       ? 0
       : computeSlotSignature(
           projectionSources.detailSlotsSource,
-          Math.min(preparedInputs.capacity, DETAIL_STACK_SLOTS),
+          preparedInputs.capacity,
         ),
     referenceBackboneSignature: computeSlotSignature(
       projectionSources.referenceBackboneSlotsSource,
-      Math.min(preparedInputs.capacity, BACKBONE_STACK_SLOTS),
+      preparedInputs.capacity,
     ),
     referenceDetailSignature: computeSlotSignature(
       projectionSources.referenceDetailSlotsSource,
-      Math.min(preparedInputs.capacity, DETAIL_STACK_SLOTS),
+      preparedInputs.capacity,
     ),
     backboneColorSignature:
       fogSuppressed || !projectionSources.backboneColorSlotsSource
         ? 0
         : computeColorSignature(
             projectionSources.backboneColorSlotsSource,
-            Math.min(preparedInputs.capacity, BACKBONE_STACK_SLOTS),
+            preparedInputs.capacity,
           ),
     detailColorSignature:
       fogSuppressed || !projectionSources.detailColorSlotsSource
         ? 0
         : computeColorSignature(
             projectionSources.detailColorSlotsSource,
-            Math.min(preparedInputs.capacity, DETAIL_STACK_SLOTS),
+            preparedInputs.capacity,
           ),
   };
 }
@@ -4187,12 +4302,12 @@ function materializeAudioFeatureStructuralSnapshot(
   });
   applyObserverSlotFloor(
     backboneSlots,
-    Math.min(capacity, BACKBONE_STACK_SLOTS),
+    capacity,
     observerVisibility.backboneSlotFloorTotal,
   );
   applyObserverSlotFloor(
     detailSlots,
-    Math.min(capacity, DETAIL_STACK_SLOTS),
+    capacity,
     observerVisibility.detailSlotFloorTotal,
   );
   copyFloatArray(
@@ -4207,7 +4322,7 @@ function materializeAudioFeatureStructuralSnapshot(
     modeSlots,
     [
       { slots: backboneSlots, weight: 1 },
-      { slots: detailSlots, weight: DETAIL_LAYER_WEIGHT },
+      { slots: detailSlots, weight: 1 },
     ],
     capacity,
   );
@@ -4215,7 +4330,7 @@ function materializeAudioFeatureStructuralSnapshot(
     referenceModeSlots,
     [
       { slots: referenceBackboneSlots, weight: 1 },
-      { slots: referenceDetailSlots, weight: DETAIL_LAYER_WEIGHT },
+      { slots: referenceDetailSlots, weight: 1 },
     ],
     capacity,
   );
@@ -4309,7 +4424,7 @@ function materializeAudioFeatureSignalSnapshot(
       },
       {
         slots: signalSources.signalDetailSlotsSource,
-        weight: DETAIL_LAYER_WEIGHT,
+        weight: 1,
       },
     ],
     capacity,
@@ -4323,7 +4438,7 @@ function materializeAudioFeatureSignalSnapshot(
       },
       {
         slots: signalSources.signalReferenceDetailSlotsSource,
-        weight: DETAIL_LAYER_WEIGHT,
+        weight: 1,
       },
     ],
     capacity,
@@ -5002,10 +5117,16 @@ export function composeAudioFeatureFrame({
     analysisResult.structuralMetrics,
     retainedModalResponseDetailEnergy,
   );
+  let modalResponseEnergy = clamp01(
+    Math.max(
+      analysisResult.structuralMetrics?.modalResponseEnergy ?? 0,
+      modalResponseBackboneEnergy,
+      modalResponseDetailEnergy,
+    ),
+  );
   let observationEnergy = deriveModalObservationEnergy(
     modalCoefficientEnergy,
-    modalResponseBackboneEnergy,
-    modalResponseDetailEnergy,
+    modalResponseEnergy,
   );
   let timbreSpread = deriveDeterministicTimbreSpread({
     bandEnergies: analysisResult.bandEnergies,
@@ -5039,6 +5160,7 @@ export function composeAudioFeatureFrame({
     modalCoefficientEnergy = 0;
     modalResponseBackboneEnergy = 0;
     modalResponseDetailEnergy = 0;
+    modalResponseEnergy = 0;
     observationEnergy = 0;
     timbreSpread = 0;
     spectralNovelty = 0;
@@ -5129,10 +5251,7 @@ export function composeAudioFeatureFrame({
     activeModeCount = 0;
   }
 
-  const modalDescriptor = buildCanonicalFullModalDescriptor({
-    generation: preparedInputs.auditState?.frame ?? 0,
-    maxBackboneModes: Math.min(preparedInputs.capacity, BACKBONE_STACK_SLOTS),
-    maxDetailModes: Math.min(preparedInputs.capacity, DETAIL_STACK_SLOTS),
+  const modalFieldDescriptorSource = buildModalFieldDescriptorSource({
     backboneSlots: renderBackboneSlots,
     detailSlots: renderDetailSlots,
     backbonePhaseSlots: renderBackbonePhaseSlots,
@@ -5141,6 +5260,20 @@ export function composeAudioFeatureFrame({
     detailColorSlots: renderDetailColorSlots,
     activeBackboneModeCount,
     activeDetailModeCount,
+  });
+  const modalDescriptor = buildCanonicalFullModalDescriptor({
+    generation: preparedInputs.auditState?.frame ?? 0,
+    maxTotalModes: Math.min(
+      preparedInputs.capacity,
+      AUDIO_DEFAULTS.maxTotalDescriptorModes,
+    ),
+    modalFieldSlots: modalFieldDescriptorSource.modalFieldSlots,
+    modalFieldPhaseSlots: modalFieldDescriptorSource.modalFieldPhaseSlots,
+    modalFieldColorSlots: modalFieldDescriptorSource.modalFieldColorSlots,
+    modalFieldRoleSlots: modalFieldDescriptorSource.modalFieldRoleSlots,
+    activeModalFieldModeCount:
+      modalFieldDescriptorSource.activeModalFieldModeCount,
+    roleHistogram: modalFieldDescriptorSource.roleHistogram,
     observerCandidateModeCount:
       analysisResult.structuralMetrics?.excitedModeCount,
     observedModalModeCount:
@@ -5277,7 +5410,12 @@ export function composeAudioFeatureFrame({
     activeBackboneModeCount,
     activeDetailModeCount,
     activeModeCount,
+    activeModalFieldModeCount: modalDescriptor.counts.modalFieldModeCount,
     modalDescriptor,
+    modalFieldSlots: modalDescriptor.slotViews.modalFieldSlots,
+    modalFieldPhaseSlots: modalDescriptor.slotViews.modalFieldPhaseSlots,
+    modalFieldColorSlots: modalDescriptor.slotViews.modalFieldColorSlots,
+    modalFieldRoleSlots: modalDescriptor.slotViews.modalFieldRoleSlots,
     backboneColorSlots: renderBackboneColorSlots,
     detailColorSlots: renderDetailColorSlots,
     bandEnergies: renderBandEnergies,
@@ -5291,8 +5429,24 @@ export function composeAudioFeatureFrame({
     energySignal,
     modalCoefficientEnergy,
     retainedModalCoefficientEnergy,
+    modalResponseEnergy,
     modalResponseBackboneEnergy,
     modalResponseDetailEnergy,
+    modalResponseBudgetScale:
+      analysisResult.structuralMetrics?.modalResponseBudgetScale ?? 0,
+    modalResponseRawEnergy:
+      analysisResult.structuralMetrics?.modalResponseRawEnergy ?? 0,
+    modalResponseAverageDampingEnvelope:
+      analysisResult.structuralMetrics?.modalResponseAverageDampingEnvelope ??
+      0,
+    modalResponseAverageCouplingStrength:
+      analysisResult.structuralMetrics?.modalResponseAverageCouplingStrength ??
+      0,
+    modalResponseAveragePhaseConfidence:
+      analysisResult.structuralMetrics?.modalResponseAveragePhaseConfidence ??
+      0,
+    modalResponseAveragePersistence:
+      analysisResult.structuralMetrics?.modalResponseAveragePersistence ?? 0,
     modalResponseRenderEnergy: modalCoefficientEnergy,
     modalResponseRenderRawEnergy: renderAuthority
       ? (analysisResult.structuralMetrics?.modalResponseRenderRawEnergy ??

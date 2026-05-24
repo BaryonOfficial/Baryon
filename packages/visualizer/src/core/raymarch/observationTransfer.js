@@ -158,8 +158,7 @@ export function deriveObservationTransfer({
   ridgeAnchor = 0,
   signedRadianceAuthority = 1,
   modalCoefficientEnergy = 0,
-  modalResponseBackboneEnergy = 0,
-  modalResponseDetailEnergy = 0,
+  modalResponseEnergy = 0,
   parameters = null,
 } = {}) {
   const observationParameters =
@@ -178,11 +177,7 @@ export function deriveObservationTransfer({
       clamp01(signedRadianceAuthority),
   );
   const observationEnergy = clamp01(
-    Math.max(
-      modalCoefficientEnergy,
-      modalResponseBackboneEnergy,
-      modalResponseDetailEnergy,
-    ),
+    Math.max(modalCoefficientEnergy, modalResponseEnergy),
   );
   const observationSupport = clamp01(
     1 -
