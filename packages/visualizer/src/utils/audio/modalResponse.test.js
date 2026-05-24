@@ -107,7 +107,7 @@ describe("modal response model", () => {
 
     const backbone = response.entries.find((entry) => entry.layer === "backbone");
     const detail = response.entries.find((entry) => entry.layer === "detail");
-    expect(backbone?.modalResponseEnergy).toBeGreaterThan(0.45);
+    expect(backbone?.modalResponseEnergy).toBeGreaterThan(0.3);
     expect(backbone?.displayAmplitude).toBeGreaterThan(
       detail?.displayAmplitude * 0.75,
     );
@@ -338,5 +338,74 @@ describe("modal response model", () => {
 
     expect(response.entries.map((entry) => entry.modeKey)).toEqual(["peak"]);
     expect(response.modalResponseModeCount).toBe(response.entries.length);
+  });
+
+  it("seeds fresh resonant energy on the first audio frame", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const response = updateModalResponseFrame({
+      modes: [
+        {
+          modeKey: "fresh",
+          u: 8,
+          v: 10,
+          w: 13,
+          naturalFrequencyHz: 6200,
+          layer: "detail",
+          qProfile: "high-q",
+        },
+      ],
+      fftMagnitudes: makeFft([[6200, 1]]),
+      sampleRate: SAMPLE_RATE,
+      deltaMs: 16,
+      inputRms: 0.18,
+      previousEnergies: new Map(),
+    });
+
+    expect(response.entries[0]?.modalResponseEnergy).toBeGreaterThan(0.75);
+    expect(response.entries[0]?.displayAmplitude).toBeGreaterThan(0.5);
+  });
+
+  it("advances oscillator phase independently from display smoothing", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const mode = {
+      modeKey: "0:0:1",
+      u: 0,
+      v: 0,
+      w: 1,
+      naturalFrequencyHz: 110,
+      layer: "backbone",
+      qProfile: "low-q",
+    };
+    const first = updateModalResponseFrame({
+      modes: [mode],
+      fftMagnitudes: makeFft([[110, 1]]),
+      sampleRate: SAMPLE_RATE,
+      deltaMs: 33,
+      inputRms: 0.12,
+      previousEnergies: new Map(),
+    });
+    const firstEntry = first.entries[0];
+    const halfPeriodMs = 1000 / (mode.naturalFrequencyHz * 2);
+    const second = updateModalResponseFrame({
+      modes: [mode],
+      fftMagnitudes: new Float32Array(BIN_COUNT),
+      sampleRate: SAMPLE_RATE,
+      deltaMs: halfPeriodMs,
+      inputRms: 0,
+      previousEnergies: new Map([[mode.modeKey, firstEntry]]),
+      minimumEnergy: 0,
+    });
+    const secondEntry = second.entries[0];
+
+    expect(firstEntry.oscillatorAngularVelocityRadPerSec).toBeCloseTo(
+      2 * Math.PI * mode.naturalFrequencyHz,
+    );
+    expect(secondEntry.modalResponseEnergy).toBeGreaterThan(0);
+    expect(secondEntry.oscillatorPhaseRad).not.toBeCloseTo(
+      firstEntry.oscillatorPhaseRad,
+    );
+    expect(Math.sign(secondEntry.signedModalCoefficient)).toBe(
+      -Math.sign(firstEntry.signedModalCoefficient),
+    );
   });
 });

@@ -7,6 +7,10 @@ import {
   DEFAULT_REQUESTED_CAVITY_GEOMETRY,
   normalizeCavityGeometry,
 } from "../../core/cavityGeometry.js";
+import {
+  CAVITY_ACOUSTIC_DEFAULTS,
+  SIMULATION_DEFAULTS,
+} from "../../defaults.js";
 
 export {
   DEFAULT_AUDIO_FEATURE_ENGINE_SETTINGS,
@@ -69,6 +73,8 @@ export function buildAudioFeatureTransportFrame({
   auditSettings = null,
   beatSettings = null,
   liveInputAnalysisSettings = null,
+  cavityAcousticScale = CAVITY_ACOUSTIC_DEFAULTS,
+  boundaryMode = SIMULATION_DEFAULTS.boundaryMode,
   cavityGeometry = DEFAULT_REQUESTED_CAVITY_GEOMETRY,
 }) {
   const audioInputMode = status?.audioInputMode ?? "idle";
@@ -100,6 +106,10 @@ export function buildAudioFeatureTransportFrame({
     liveInputAnalysisClass,
     liveInputAcousticIntent,
     radius,
+    cavityAcousticScale: cavityAcousticScale
+      ? { ...cavityAcousticScale }
+      : CAVITY_ACOUSTIC_DEFAULTS,
+    boundaryMode,
     cavityGeometry: normalizeCavityGeometry(cavityGeometry),
     includeSpectralLight: Boolean(includeSpectralLight),
     sourceMode: analysisSnapshot?.sourceMode ?? null,

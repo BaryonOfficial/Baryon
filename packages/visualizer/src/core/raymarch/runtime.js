@@ -27,6 +27,10 @@ import {
   RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
 } from "./fieldCache.js";
 import {
+  buildRaymarchPhaseSlotSignature,
+  copyCanonicalRaymarchPhaseSlots,
+} from "./phaseSlotSemantics.js";
+import {
   DETAIL_LAYER_WEIGHT,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
@@ -204,6 +208,7 @@ function resetEffectiveFieldRuntimeDiagnostics(effectiveFieldCache) {
   effectiveFieldCache.contributingModalEnergy = 0;
   effectiveFieldCache.bandwidthRejectedModeCount = 0;
   effectiveFieldCache.bandwidthRejectedModalEnergy = 0;
+  effectiveFieldCache.effectiveFieldResolvedModalEnergyRatio = 1;
   effectiveFieldCache.effectiveFieldGradientEnvelope = 0;
   effectiveFieldCache.effectiveFieldUnsignedSupportMean = 0;
   effectiveFieldCache.effectiveFieldCancellationRatioMean = 0;
@@ -655,6 +660,11 @@ function buildRaymarchDebugSnapshot(
       effectiveFieldCache?.bandwidthRejectedModalEnergy,
     0,
   );
+  const effectiveFieldResolvedModalEnergyRatio = readFiniteNumber(
+    effectiveFieldDescriptor?.effectiveFieldResolvedModalEnergyRatio ??
+      effectiveFieldCache?.effectiveFieldResolvedModalEnergyRatio,
+    1,
+  );
   const effectiveFieldGradientEnvelope = readFiniteNumber(
     effectiveFieldDescriptor?.effectiveFieldGradientEnvelope ??
       effectiveFieldCache?.effectiveFieldGradientEnvelope,
@@ -917,6 +927,7 @@ function buildRaymarchDebugSnapshot(
     effectiveFieldContributingModalEnergy,
     effectiveFieldBandwidthRejectedModeCount,
     effectiveFieldBandwidthRejectedModalEnergy,
+    effectiveFieldResolvedModalEnergyRatio,
     effectiveFieldGradientEnvelope,
     effectiveFieldUnsignedSupportMean,
     effectiveFieldCancellationRatioMean,
@@ -1277,26 +1288,17 @@ function buildPhaseUploadSignature({ phaseSlots, layer, capacity }) {
     Math.max(0, Math.floor(layer?.uploadedActiveCount ?? 0)),
     resolvedCapacity,
   );
-  let slotHash = FNV_OFFSET_BASIS;
-  let activePhaseCount = 0;
-
-  for (let slotIndex = 0; slotIndex < activeCount; slotIndex += 1) {
-    const sourceOffset = slotIndex * 4;
-    slotHash = hashUint32(slotIndex, slotHash);
-    slotHash = hashSlot4(phaseSlots, sourceOffset, slotHash);
-    const authority =
-      (phaseSlots?.[sourceOffset + 2] ?? 0) *
-      (phaseSlots?.[sourceOffset + 3] ?? 0);
-    if (authority > 1e-4) {
-      activePhaseCount += 1;
-    }
-  }
+  const phaseSignature = buildRaymarchPhaseSlotSignature({
+    phaseSlots,
+    activeCount,
+    includeSlotIndex: true,
+  });
 
   return {
     capacity: resolvedCapacity,
     activeCount,
-    activePhaseCount,
-    slotHash: slotHash >>> 0,
+    activePhaseCount: phaseSignature.activePhaseCount,
+    slotHash: phaseSignature.slotHash,
   };
 }
 
@@ -1430,25 +1432,11 @@ function copyLayerPhaseUpload({
   if (!targetPhaseSlots || !layer) {
     return 0;
   }
-  copyFullModeLayer({
+  return copyCanonicalRaymarchPhaseSlots({
     sourceSlots: phaseSlots,
-    sourceColorSlots: null,
     targetSlots: targetPhaseSlots,
-    targetColorSlots: null,
     capacity,
-    includeColors: false,
   });
-  let activePhaseCount = 0;
-  const resolvedCapacity = Math.max(0, Math.floor(capacity ?? 0));
-  for (let slotIndex = 0; slotIndex < resolvedCapacity; slotIndex += 1) {
-    const offset = slotIndex * 4;
-    const authority =
-      (targetPhaseSlots[offset + 2] ?? 0) * (targetPhaseSlots[offset + 3] ?? 0);
-    if (authority > 1e-4) {
-      activePhaseCount += 1;
-    }
-  }
-  return activePhaseCount;
 }
 
 function resolveRequestedRaymarchStepBudget(runtimeState, volumeMesh) {

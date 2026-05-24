@@ -286,6 +286,7 @@ const EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS = Object.freeze({
   effectiveFieldContributingModalEnergy: 0,
   effectiveFieldBandwidthRejectedModeCount: 0,
   effectiveFieldBandwidthRejectedModalEnergy: 0,
+  effectiveFieldResolvedModalEnergyRatio: 1,
   effectiveFieldGradientEnvelope: 0,
 });
 
@@ -575,6 +576,12 @@ export function updateObservationTransferRenderDiagnostics(
         effectiveFieldCache?.bandwidthRejectedModalEnergy ??
         effectiveFieldDescriptor?.bandwidthRejectedModalEnergy,
     );
+  renderDiagnostics.effectiveFieldResolvedModalEnergyRatio = readFiniteNumber(
+    raymarchDebug.effectiveFieldResolvedModalEnergyRatio ??
+      effectiveFieldCache?.effectiveFieldResolvedModalEnergyRatio ??
+      effectiveFieldDescriptor?.effectiveFieldResolvedModalEnergyRatio,
+    EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS.effectiveFieldResolvedModalEnergyRatio,
+  );
   renderDiagnostics.effectiveFieldGradientEnvelope = readFiniteNumber(
     raymarchDebug.effectiveFieldGradientEnvelope ??
       effectiveFieldCache?.effectiveFieldGradientEnvelope ??

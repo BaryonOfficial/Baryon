@@ -886,6 +886,65 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
+  it("does not rebuild the effective field for carrier phase advance only", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    runtimeState.effectiveFieldCache.computeNodesByKey["rectangular:neumann"] =
+      {
+        id: "effective",
+      };
+    const renderer = {
+      computeAsync: vi.fn(async () => undefined),
+    };
+    const baseFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([3, 4, 6, 0.8, 1, 3, 7, 0.4]),
+      detailSlots: new Float32Array([4, 5, 5, 0.55, 2, 2, 6, 0.3]),
+      backbonePhaseSlots: new Float32Array([
+        0.25, 1233.6, 0.8, 0.7, -0.4, 1744.6, 0.75, 0.6,
+      ]),
+      detailPhaseSlots: new Float32Array([
+        0.6, 6928.9, 0.82, 0.64, -1.2, 7106.3, 0.78, 0.52,
+      ]),
+      backboneColorSlots: new Float32Array(32),
+      detailColorSlots: new Float32Array(32),
+      modalPhaseAuthority: 1,
+    });
+    const advancedCarrierFrame = {
+      ...baseFrame,
+      backbonePhaseSlots: new Float32Array([
+        1.9, 1233.6, 0.8, 0.7, 2.1, 1744.6, 0.75, 0.6,
+      ]),
+      detailPhaseSlots: new Float32Array([
+        -2.2, 6928.9, 0.82, 0.64, 1.4, 7106.3, 0.78, 0.52,
+      ]),
+    };
+
+    tickRaymarchRuntime(runtimeState, baseFrame, 3, 1 / 60, renderer);
+    await flushMicrotasks();
+    const rebuildCount = runtimeState.effectiveFieldCache.rebuildCount;
+    const activeDescriptor = runtimeState.effectiveFieldCache.activeDescriptor;
+
+    tickRaymarchRuntime(
+      runtimeState,
+      advancedCarrierFrame,
+      3.033,
+      1 / 60,
+      renderer,
+    );
+    await flushMicrotasks();
+
+    expect(runtimeState.effectiveFieldCache.rebuildCount).toBe(rebuildCount);
+    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toBeNull();
+    expect(runtimeState.effectiveFieldCache.pendingDescriptor).toBeNull();
+    expect(runtimeState.effectiveFieldCache.activeDescriptor).toEqual(
+      activeDescriptor,
+    );
+    expect(runtimeState.currentEffectiveFieldDescriptor).toEqual(
+      activeDescriptor,
+    );
+  });
+
   it("fails the effective field closed when compute is unavailable", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     const featureFrame = {

@@ -169,6 +169,41 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("effectiveSupportDensity");
   });
 
+  it("keeps final radiance downstream of cancellation-suppressed density", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const cancellationSuppressionStart = expectSourceIndex(
+      source,
+      "const cancellationSuppression =",
+    );
+    const densityStart = expectSourceIndex(source, "const density =");
+    const observationTransferStart = expectSourceIndex(
+      source,
+      "const observationTransfer = deriveObservationTransferNode(",
+    );
+    const stabilizedDensityStart = expectSourceIndex(
+      source,
+      "const stabilizedDensity = visibleDensity;",
+    );
+    const finalRadianceStart = expectSourceIndex(
+      source,
+      "return volumeColor.mul(stabilizedDensity).mul(structureAwareEmissionGain);",
+    );
+    const finalRadianceBlock = source.slice(
+      stabilizedDensityStart,
+      finalRadianceStart,
+    );
+
+    expect(densityStart).toBeGreaterThan(cancellationSuppressionStart);
+    expect(observationTransferStart).toBeGreaterThan(densityStart);
+    expect(stabilizedDensityStart).toBeGreaterThan(observationTransferStart);
+    expect(finalRadianceStart).toBeGreaterThan(stabilizedDensityStart);
+    expect(finalRadianceBlock).not.toContain("effectiveUnsignedSupport");
+    expect(finalRadianceBlock).not.toContain("effectiveCancellationRatio");
+  });
+
   it("samples only the canonical effective field texture for field ownership", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
@@ -206,6 +241,33 @@ describe("raymarch volume material", () => {
     expect(
       RAYMARCH_SPECTRAL_LIGHT_TUNING.uncoloredNeutralLift,
     ).toBeLessThanOrEqual(0.04);
+  });
+
+  it("keeps direct Spectral Light chroma projection separate from presence weight", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const chromaStateStart = expectSourceIndex(
+      source,
+      "const colorChromaSum = vec3(0.0).toVar();",
+    );
+    const chromaInfluenceStart = expectSourceIndex(
+      source,
+      "const chromaInfluence = weightedInfluence.mul(weightedInfluence);",
+    );
+    const chromaProjectionStart = expectSourceIndex(
+      source,
+      "colorSum.assign(\n            colorChromaSum",
+    );
+    const spectralColorStart = expectSourceIndex(
+      source,
+      "const spectralColor = colorSum.div(colorWeight.max(float(1e-4)));",
+    );
+
+    expect(chromaInfluenceStart).toBeGreaterThan(0);
+    expect(chromaStateStart).toBeLessThan(chromaProjectionStart);
+    expect(chromaProjectionStart).toBeLessThan(spectralColorStart);
   });
 
   it("routes white emission through the adaptive highlight target", () => {

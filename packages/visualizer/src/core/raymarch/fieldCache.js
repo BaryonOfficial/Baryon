@@ -20,6 +20,7 @@ import { normalizeBoundaryMode } from "../modeFamily.js";
 import { normalizeCavityGeometry } from "../cavityGeometry.js";
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 import { DETAIL_LAYER_WEIGHT } from "./fieldShaping.js";
+import { buildRaymarchPhaseSlotSignature } from "./phaseSlotSemantics.js";
 
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 export const RAYMARCH_EFFECTIVE_FIELD_RESOLUTION =
@@ -30,6 +31,7 @@ const SIGNED_INTERFERENCE_VISIBILITY_EPSILON = 0.01;
 const SIGNED_INTERFERENCE_VISIBILITY_START = 0.025;
 const SIGNED_INTERFERENCE_VISIBILITY_END = 0.1;
 const EFFECTIVE_FIELD_ENERGY_EPSILON = 0.01;
+const SPECTRAL_LIGHT_CHROMA_EPSILON = 1e-6;
 const EFFECTIVE_FIELD_SUPPORT_DIAGNOSTIC_SAMPLE_POINTS = Object.freeze([
   [0, 0, 0],
   [1, 0, 0],
@@ -205,6 +207,10 @@ function summarizeEffectiveFieldLayerDiagnostics({
 function mergeEffectiveFieldDiagnostics(backbone, detail, resolution) {
   const contributingModalEnergy =
     backbone.contributingModalEnergy + detail.contributingModalEnergy;
+  const bandwidthRejectedModalEnergy =
+    backbone.bandwidthRejectedModalEnergy + detail.bandwidthRejectedModalEnergy;
+  const totalRepresentedModalEnergy =
+    contributingModalEnergy + bandwidthRejectedModalEnergy;
 
   return {
     effectiveFieldMaxRepresentableModeIndex:
@@ -218,9 +224,11 @@ function mergeEffectiveFieldDiagnostics(backbone, detail, resolution) {
     bandwidthRejectedModeCount:
       backbone.bandwidthRejectedModeCount + detail.bandwidthRejectedModeCount,
     contributingModalEnergy,
-    bandwidthRejectedModalEnergy:
-      backbone.bandwidthRejectedModalEnergy +
-      detail.bandwidthRejectedModalEnergy,
+    bandwidthRejectedModalEnergy,
+    effectiveFieldResolvedModalEnergyRatio:
+      totalRepresentedModalEnergy > EFFECTIVE_FIELD_ENERGY_EPSILON
+        ? contributingModalEnergy / totalRepresentedModalEnergy
+        : 1,
     effectiveFieldGradientEnvelope:
       (backbone.gradientEnvelopeNumerator + detail.gradientEnvelopeNumerator) /
       Math.max(EFFECTIVE_FIELD_ENERGY_EPSILON, contributingModalEnergy),
@@ -519,6 +527,7 @@ export function createRaymarchEffectiveFieldCache({
     contributingModalEnergy: 0,
     bandwidthRejectedModeCount: 0,
     bandwidthRejectedModalEnergy: 0,
+    effectiveFieldResolvedModalEnergyRatio: 1,
     effectiveFieldGradientEnvelope: 0,
     effectiveFieldUnsignedSupportMean: 0,
     effectiveFieldCancellationRatioMean: 0,
@@ -780,8 +789,14 @@ export function buildRaymarchEffectiveFieldDescriptor({
 
   return {
     ...fieldDescriptor,
-    backbonePhaseHash: hashSlotLayer(backbonePhaseSlots, backboneCount),
-    detailPhaseHash: hashSlotLayer(detailPhaseSlots, detailCount),
+    backbonePhaseHash: buildRaymarchPhaseSlotSignature({
+      phaseSlots: backbonePhaseSlots,
+      activeCount: backboneCount,
+    }).slotHash,
+    detailPhaseHash: buildRaymarchPhaseSlotSignature({
+      phaseSlots: detailPhaseSlots,
+      activeCount: detailCount,
+    }).slotHash,
     phaseModeCount: Math.max(0, Math.round(phaseModeCount || 0)),
     phaseAuthority: Math.round(clamp01(phaseAuthority) * 1000) / 1000,
     descriptorOverflow: descriptorOverflow === true,
@@ -875,10 +890,11 @@ function accumulateSpectralLightLayerAtPoint({
   boundaryMode,
   cavityGeometry,
 }) {
-  let r = 0;
-  let g = 0;
-  let b = 0;
   let colorWeight = 0;
+  let chromaR = 0;
+  let chromaG = 0;
+  let chromaB = 0;
+  let chromaWeight = 0;
   let totalAmplitude = 0;
   let signedPotential = 0;
   let unsignedPotential = 0;
@@ -908,17 +924,20 @@ function accumulateSpectralLightLayerAtPoint({
     unsignedPotential += Math.abs(contribution);
     const localInfluence =
       Math.abs(contribution) * (colorSlots?.[offset + 3] ?? 0);
-    r += localInfluence * (colorSlots?.[offset] ?? 0);
-    g += localInfluence * (colorSlots?.[offset + 1] ?? 0);
-    b += localInfluence * (colorSlots?.[offset + 2] ?? 0);
+    const localChromaInfluence = localInfluence * localInfluence;
     colorWeight += localInfluence;
+    chromaR += localChromaInfluence * (colorSlots?.[offset] ?? 0);
+    chromaG += localChromaInfluence * (colorSlots?.[offset + 1] ?? 0);
+    chromaB += localChromaInfluence * (colorSlots?.[offset + 2] ?? 0);
+    chromaWeight += localChromaInfluence;
   }
 
   return {
-    r,
-    g,
-    b,
     colorWeight,
+    chromaR,
+    chromaG,
+    chromaB,
+    chromaWeight,
     totalAmplitude,
     signedPotential,
     unsignedPotential,
@@ -1163,6 +1182,8 @@ export function evaluateRaymarchEffectiveFieldPoint({
     backbone.bandwidthRejectedModeCount + detail.bandwidthRejectedModeCount;
   const bandwidthRejectedModalEnergy =
     backbone.bandwidthRejectedModalEnergy + detail.bandwidthRejectedModalEnergy;
+  const totalRepresentedModalEnergy =
+    totalWeight + bandwidthRejectedModalEnergy;
   const field = (backbone.field + detail.field) / amplitudeNorm;
   const unsignedSupport =
     (backbone.unsignedSupport + detail.unsignedSupport) / amplitudeNorm;
@@ -1205,6 +1226,10 @@ export function evaluateRaymarchEffectiveFieldPoint({
     contributingModalEnergy: totalWeight,
     bandwidthRejectedModeCount,
     bandwidthRejectedModalEnergy,
+    effectiveFieldResolvedModalEnergyRatio:
+      totalRepresentedModalEnergy > EFFECTIVE_FIELD_ENERGY_EPSILON
+        ? totalWeight / totalRepresentedModalEnergy
+        : 1,
     effectiveFieldGradientEnvelope:
       (backbone.gradientEnvelopeNumerator + detail.gradientEnvelopeNumerator) /
       amplitudeNorm,
@@ -1260,14 +1285,24 @@ export function evaluateRaymarchSpectralLightCachePoint({
     backbone.signedPotential + detail.signedPotential,
     backbone.unsignedPotential + detail.unsignedPotential,
   );
+  const colorWeight =
+    ((backbone.colorWeight + detail.colorWeight) * signedVisibility) /
+    amplitudeNorm;
+  const chromaWeight = backbone.chromaWeight + detail.chromaWeight;
+  const chromaScale =
+    chromaWeight > SPECTRAL_LIGHT_CHROMA_EPSILON ? 1 / chromaWeight : 0;
+  const spectralR =
+    (backbone.chromaR + detail.chromaR) * chromaScale * colorWeight;
+  const spectralG =
+    (backbone.chromaG + detail.chromaG) * chromaScale * colorWeight;
+  const spectralB =
+    (backbone.chromaB + detail.chromaB) * chromaScale * colorWeight;
 
   return {
-    r: ((backbone.r + detail.r) * signedVisibility) / amplitudeNorm,
-    g: ((backbone.g + detail.g) * signedVisibility) / amplitudeNorm,
-    b: ((backbone.b + detail.b) * signedVisibility) / amplitudeNorm,
-    colorWeight:
-      ((backbone.colorWeight + detail.colorWeight) * signedVisibility) /
-      amplitudeNorm,
+    r: spectralR,
+    g: spectralG,
+    b: spectralB,
+    colorWeight,
   };
 }
 
@@ -1516,6 +1551,10 @@ function createSpectralLightComputeKernel({
       const colorSumY = zero.toVar();
       const colorSumZ = zero.toVar();
       const colorWeight = zero.toVar();
+      const chromaSumX = zero.toVar();
+      const chromaSumY = zero.toVar();
+      const chromaSumZ = zero.toVar();
+      const chromaWeight = zero.toVar();
       const totalAmplitude = zero.toVar();
       const signedPotential = zero.toVar();
       const unsignedPotential = zero.toVar();
@@ -1547,10 +1586,17 @@ function createSpectralLightComputeKernel({
             signedPotential.addAssign(contribution);
             unsignedPotential.addAssign(abs(contribution));
             const localInfluence = abs(contribution).mul(colorSlot.w).toVar();
+            const localChromaInfluence = localInfluence
+              .mul(localInfluence)
+              .toVar();
             colorSumX.addAssign(localInfluence.mul(colorSlot.x));
             colorSumY.addAssign(localInfluence.mul(colorSlot.y));
             colorSumZ.addAssign(localInfluence.mul(colorSlot.z));
             colorWeight.addAssign(localInfluence);
+            chromaSumX.addAssign(localChromaInfluence.mul(colorSlot.x));
+            chromaSumY.addAssign(localChromaInfluence.mul(colorSlot.y));
+            chromaSumZ.addAssign(localChromaInfluence.mul(colorSlot.z));
+            chromaWeight.addAssign(localChromaInfluence);
           });
         },
       );
@@ -1582,10 +1628,17 @@ function createSpectralLightComputeKernel({
             signedPotential.addAssign(contribution);
             unsignedPotential.addAssign(abs(contribution));
             const localInfluence = abs(contribution).mul(colorSlot.w).toVar();
+            const localChromaInfluence = localInfluence
+              .mul(localInfluence)
+              .toVar();
             colorSumX.addAssign(localInfluence.mul(colorSlot.x));
             colorSumY.addAssign(localInfluence.mul(colorSlot.y));
             colorSumZ.addAssign(localInfluence.mul(colorSlot.z));
             colorWeight.addAssign(localInfluence);
+            chromaSumX.addAssign(localChromaInfluence.mul(colorSlot.x));
+            chromaSumY.addAssign(localChromaInfluence.mul(colorSlot.y));
+            chromaSumZ.addAssign(localChromaInfluence.mul(colorSlot.z));
+            chromaWeight.addAssign(localChromaInfluence);
           });
         },
       );
@@ -1604,14 +1657,21 @@ function createSpectralLightComputeKernel({
         float(1.0),
       );
       const normalizedAmplitude = totalAmplitude.max(float(0.01));
+      const normalizedColorWeight = colorWeight
+        .mul(signedVisibility)
+        .div(normalizedAmplitude)
+        .toVar();
+      const chromaNormalizer = chromaWeight.max(
+        float(SPECTRAL_LIGHT_CHROMA_EPSILON),
+      );
       textureStore(
         texture,
         uvec3(voxelCoord),
         vec4(
-          colorSumX.mul(signedVisibility).div(normalizedAmplitude),
-          colorSumY.mul(signedVisibility).div(normalizedAmplitude),
-          colorSumZ.mul(signedVisibility).div(normalizedAmplitude),
-          colorWeight.mul(signedVisibility).div(normalizedAmplitude),
+          chromaSumX.div(chromaNormalizer).mul(normalizedColorWeight),
+          chromaSumY.div(chromaNormalizer).mul(normalizedColorWeight),
+          chromaSumZ.div(chromaNormalizer).mul(normalizedColorWeight),
+          normalizedColorWeight,
         ),
       ).toWriteOnly();
     });
@@ -2318,6 +2378,8 @@ export function enqueueRaymarchEffectiveFieldRebuild(
           descriptor.bandwidthRejectedModeCount ?? 0;
         effectiveFieldCache.bandwidthRejectedModalEnergy =
           descriptor.bandwidthRejectedModalEnergy ?? 0;
+        effectiveFieldCache.effectiveFieldResolvedModalEnergyRatio =
+          descriptor.effectiveFieldResolvedModalEnergyRatio ?? 1;
         effectiveFieldCache.effectiveFieldGradientEnvelope =
           descriptor.effectiveFieldGradientEnvelope ?? 0;
         effectiveFieldCache.effectiveFieldUnsignedSupportMean =

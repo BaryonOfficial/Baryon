@@ -165,6 +165,7 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
         effectiveFieldContributingModeCount: 5,
         effectiveFieldZeroAmplitudeSkippedModeCount: 1,
         effectiveFieldContributingModalEnergy: 0.64,
+        effectiveFieldResolvedModalEnergyRatio: 0.77,
         effectiveFieldBandwidthRejectedModeCount: 2,
         effectiveFieldBandwidthRejectedModalEnergy: 0.19,
         effectiveFieldGradientEnvelope: 0.38,
@@ -202,6 +203,7 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
     expect(snapshot.render.effectiveFieldContributingModeCount).toBe(5);
     expect(snapshot.render.effectiveFieldZeroAmplitudeSkippedModeCount).toBe(1);
     expect(snapshot.render.effectiveFieldContributingModalEnergy).toBe(0.64);
+    expect(snapshot.render.effectiveFieldResolvedModalEnergyRatio).toBe(0.77);
     expect(snapshot.render.effectiveFieldBandwidthRejectedModeCount).toBe(2);
     expect(snapshot.render.effectiveFieldBandwidthRejectedModalEnergy).toBe(
       0.19,
@@ -241,6 +243,7 @@ test("publishes effective field diagnostics from runtime state when audit is dis
         contributingEffectiveFieldModeCount: 4,
         zeroAmplitudeSkippedModeCount: 2,
         contributingModalEnergy: 0.72,
+        effectiveFieldResolvedModalEnergyRatio: 0.68,
         bandwidthRejectedModeCount: 3,
         bandwidthRejectedModalEnergy: 0.22,
         effectiveFieldGradientEnvelope: 0.45,
@@ -278,6 +281,7 @@ test("publishes effective field diagnostics from runtime state when audit is dis
     expect(snapshot.render.effectiveFieldContributingModeCount).toBe(4);
     expect(snapshot.render.effectiveFieldZeroAmplitudeSkippedModeCount).toBe(2);
     expect(snapshot.render.effectiveFieldContributingModalEnergy).toBe(0.72);
+    expect(snapshot.render.effectiveFieldResolvedModalEnergyRatio).toBe(0.68);
     expect(snapshot.render.effectiveFieldBandwidthRejectedModeCount).toBe(3);
     expect(snapshot.render.effectiveFieldBandwidthRejectedModalEnergy).toBe(
       0.22,

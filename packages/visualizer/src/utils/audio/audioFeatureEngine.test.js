@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUDIO_SLOT_CAPACITY } from "../../defaults.js";
+import { AUDIO_SLOT_CAPACITY, CAVITY_ACOUSTIC_DEFAULTS } from "../../defaults.js";
 import {
   buildAudioFeatureAnalysisSnapshot,
   buildCurrentAudioFeatureAnalysisResult,
@@ -118,6 +118,21 @@ function createFakeWorker() {
   };
   return worker;
 }
+
+it("carries acoustic cavity scale and boundary mode in worker transport frames", () => {
+  const frame = buildAudioFeatureTransportFrame({
+    analysisSnapshot: createSnapshot(),
+    status: createStatus(),
+    frameTimeMs: 16,
+    radius: 3,
+    cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
+    boundaryMode: "neumann",
+  });
+
+  expect(frame.radius).toBe(3);
+  expect(frame.cavityAcousticScale).toEqual(CAVITY_ACOUSTIC_DEFAULTS);
+  expect(frame.boundaryMode).toBe("neumann");
+});
 
 describe("audio feature engine transport", () => {
   it("always includes time data for file transport because modal excitation owns structural analysis", () => {

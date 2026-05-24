@@ -1,4 +1,5 @@
 const EPSILON = 1e-9;
+const TWO_PI = Math.PI * 2;
 
 export const DEFAULT_MODAL_RESPONSE_PROFILES = Object.freeze({
   "low-q": Object.freeze({
@@ -30,6 +31,7 @@ const MIN_RELATIVE_DISPLAY_AMPLITUDE_BY_LAYER = Object.freeze({
   backbone: 0.04,
   detail: 0.18,
 });
+const FRESH_RESPONSE_SEED_THRESHOLD = 0.02;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -38,12 +40,85 @@ function clamp01(value) {
   return Math.min(1, Math.max(0, value));
 }
 
+function normalizePhaseRad(phase) {
+  if (!Number.isFinite(phase)) {
+    return 0;
+  }
+  let normalized = phase;
+  while (normalized > Math.PI) normalized -= TWO_PI;
+  while (normalized < -Math.PI) normalized += TWO_PI;
+  return normalized;
+}
+
 function smoothstep(edge0, edge1, value) {
   if (edge0 === edge1) {
     return value < edge0 ? 0 : 1;
   }
   const t = clamp01((value - edge0) / (edge1 - edge0));
   return t * t * (3 - 2 * t);
+}
+
+function readPreviousModalResponseState(previous) {
+  if (typeof previous === "number") {
+    return {
+      energy: clamp01(previous),
+      phaseRad: 0,
+    };
+  }
+  if (!previous || typeof previous !== "object") {
+    return {
+      energy: 0,
+      phaseRad: 0,
+    };
+  }
+  return {
+    energy: clamp01(
+      previous.modalResponseEnergy ??
+        previous.retainedEnergy ??
+        previous.energy ??
+        previous.amplitude ??
+        0,
+    ),
+    phaseRad: normalizePhaseRad(
+      previous.oscillatorPhaseRad ??
+        previous.modalOscillatorPhaseRad ??
+        previous.phase ??
+        0,
+    ),
+  };
+}
+
+function updateModalOscillatorState({
+  modeFrequencyHz,
+  retainedEnergy,
+  spectralDrive,
+  previousState,
+  deltaMs,
+}) {
+  const frequencyHz = Number.isFinite(modeFrequencyHz)
+    ? Math.max(0, modeFrequencyHz)
+    : 0;
+  const angularVelocityRadPerSec = TWO_PI * frequencyHz;
+  const deltaSeconds = Math.max(0, deltaMs) / 1000;
+  const phaseRad = normalizePhaseRad(
+    (previousState?.phaseRad ?? 0) + angularVelocityRadPerSec * deltaSeconds,
+  );
+  const amplitude = Math.sqrt(clamp01(retainedEnergy));
+  const phaseAuthority = clamp01(
+    Math.max(spectralDrive, retainedEnergy) * (frequencyHz > 0 ? 1 : 0),
+  );
+  const phaseCoherence = clamp01(
+    smoothstep(0.0005, 0.04, retainedEnergy) *
+      smoothstep(0.0005, 0.08, Math.max(spectralDrive, retainedEnergy)),
+  );
+
+  return {
+    oscillatorPhaseRad: phaseRad,
+    oscillatorAngularVelocityRadPerSec: angularVelocityRadPerSec,
+    oscillatorPhaseAuthority: phaseAuthority,
+    oscillatorPhaseCoherence: phaseCoherence,
+    signedModalCoefficient: amplitude * Math.cos(phaseRad),
+  };
 }
 
 function getModeProfile(mode) {
@@ -94,6 +169,36 @@ function getInputEnergy(fftMagnitudes) {
   return total;
 }
 
+function buildSpectralDriveContext(fftMagnitudes, sampleRate) {
+  if (!(fftMagnitudes instanceof Float32Array) || fftMagnitudes.length === 0) {
+    return {
+      bins: [],
+      inputEnergy: 0,
+    };
+  }
+
+  const bins = [];
+  let inputEnergy = 0;
+  for (let index = 1; index < fftMagnitudes.length; index += 1) {
+    const amplitude = Math.max(0, fftMagnitudes[index] ?? 0);
+    if (amplitude <= 0) {
+      continue;
+    }
+
+    const binEnergy = amplitude * amplitude;
+    inputEnergy += binEnergy;
+    bins.push({
+      binEnergy,
+      frequencyHz: getBinFrequencyHz(index, fftMagnitudes.length, sampleRate),
+    });
+  }
+
+  return {
+    bins,
+    inputEnergy,
+  };
+}
+
 function computeInputExposure({ inputEnergy, inputRms }) {
   const rmsExposure = smoothstep(0.0007, 0.008, inputRms);
   const spectralExposure = smoothstep(0.0008, 0.018, Math.sqrt(inputEnergy));
@@ -123,10 +228,9 @@ export function computeModalSpectralDrive({
   modeFrequencyHz,
   qualityFactor,
   inputEnergy = getInputEnergy(fftMagnitudes),
+  spectralBins = null,
 }) {
   if (
-    !(fftMagnitudes instanceof Float32Array) ||
-    fftMagnitudes.length === 0 ||
     sampleRate <= 0 ||
     modeFrequencyHz <= 0 ||
     inputEnergy <= EPSILON
@@ -134,23 +238,20 @@ export function computeModalSpectralDrive({
     return 0;
   }
 
+  const bins = Array.isArray(spectralBins)
+    ? spectralBins
+    : buildSpectralDriveContext(fftMagnitudes, sampleRate).bins;
+  if (bins.length === 0) {
+    return 0;
+  }
+
   let weightedEnergy = 0;
   let peakWeightedEnergy = 0;
-  for (let index = 1; index < fftMagnitudes.length; index += 1) {
-    const amplitude = Math.max(0, fftMagnitudes[index] ?? 0);
-    if (amplitude <= 0) {
-      continue;
-    }
-    const binEnergy = amplitude * amplitude;
-    const binFrequencyHz = getBinFrequencyHz(
-      index,
-      fftMagnitudes.length,
-      sampleRate,
-    );
+  for (const bin of bins) {
     const weightedBinEnergy =
-      binEnergy *
+      bin.binEnergy *
       computeModalFrequencyResponse({
-        binFrequencyHz,
+        binFrequencyHz: bin.frequencyHz,
         modeFrequencyHz,
         qualityFactor,
       });
@@ -177,7 +278,7 @@ function updateRetainedEnergy({
 }) {
   const target = clamp01(targetEnergy);
   const previous = clamp01(previousEnergy);
-  if (previous <= 0 && target > 0) {
+  if (previous <= 0 && target >= FRESH_RESPONSE_SEED_THRESHOLD) {
     return target;
   }
 
@@ -258,9 +359,16 @@ export function updateModalResponseFrame({
   minimumEnergy = 0.0001,
 } = {}) {
   const sourceHardSilent = hardSilence === true;
-  const inputEnergy = sourceHardSilent ? 0 : getInputEnergy(fftMagnitudes);
+  const spectralDriveContext = sourceHardSilent
+    ? {
+        bins: [],
+        inputEnergy: 0,
+      }
+    : buildSpectralDriveContext(fftMagnitudes, sampleRate);
+  const inputEnergy = spectralDriveContext.inputEnergy;
   const effectiveInputRms = sourceHardSilent ? 0 : inputRms;
-  const hasInput = !sourceHardSilent && (inputEnergy > EPSILON || effectiveInputRms > 0);
+  const hasInput =
+    !sourceHardSilent && (inputEnergy > EPSILON || effectiveInputRms > 0);
   const inputExposure = hasInput
     ? computeInputExposure({ inputEnergy, inputRms: effectiveInputRms })
     : 0;
@@ -270,16 +378,19 @@ export function updateModalResponseFrame({
     const modeKey =
       mode?.modeKey ?? `${mode?.u ?? 0}:${mode?.v ?? 0}:${mode?.w ?? 0}`;
     const profile = getModeProfile(mode);
-    const previousEnergy = clamp01(
-      previousEnergies?.get?.(modeKey) ?? mode?.modalResponseEnergy ?? 0,
+    const modeFrequencyHz = mode?.naturalFrequencyHz ?? mode?.frequencyHz ?? 0;
+    const previousState = readPreviousModalResponseState(
+      previousEnergies?.get?.(modeKey) ?? mode,
     );
+    const previousEnergy = previousState.energy;
     const spectralDrive = hasInput
       ? computeModalSpectralDrive({
           fftMagnitudes,
           sampleRate,
-          modeFrequencyHz: mode?.naturalFrequencyHz ?? mode?.frequencyHz ?? 0,
+          modeFrequencyHz,
           qualityFactor: profile.qualityFactor,
           inputEnergy,
+          spectralBins: spectralDriveContext.bins,
         })
       : 0;
     const coherenceScale = 0.85 + 0.15 * clamp01(coherence);
@@ -289,6 +400,13 @@ export function updateModalResponseFrame({
       previousEnergy,
       attackMs: profile.attackMs,
       releaseMs: profile.releaseMs,
+      deltaMs,
+    });
+    const oscillator = updateModalOscillatorState({
+      modeFrequencyHz,
+      retainedEnergy,
+      spectralDrive,
+      previousState,
       deltaMs,
     });
 
@@ -306,6 +424,7 @@ export function updateModalResponseFrame({
       qualityFactor: profile.qualityFactor,
       modalResponseDrive: spectralDrive,
       modalResponseEnergy: retainedEnergy,
+      ...oscillator,
       displayAmplitude: clamp01(
         Math.sqrt(retainedEnergy) * (mode?.displayWeight ?? profile.displayWeight),
       ),

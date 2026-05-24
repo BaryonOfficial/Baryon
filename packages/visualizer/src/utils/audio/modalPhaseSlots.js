@@ -50,6 +50,29 @@ function findModalPhaseEntryForSlot(slots, offset, activeModes, observedModes) {
   return observedModes?.get?.(modeKey) ?? activeModes?.get?.(modeKey) ?? null;
 }
 
+function resolvePhaseUpload(entry) {
+  const hasOscillatorPhase =
+    Number.isFinite(entry?.modalOscillatorPhaseOffsetRad) &&
+    Number.isFinite(entry?.modalOscillatorAngularVelocityRadPerSec);
+  if (hasOscillatorPhase) {
+    return {
+      phaseOffsetRad: entry.modalOscillatorPhaseOffsetRad,
+      phaseVelocityRadPerSec: entry.modalOscillatorAngularVelocityRadPerSec,
+      phaseCoherence: entry.modalOscillatorPhaseCoherence,
+      phaseAuthority: entry.modalOscillatorPhaseAuthority,
+      clampVelocity: false,
+    };
+  }
+
+  return {
+    phaseOffsetRad: entry?.phaseOffsetRad,
+    phaseVelocityRadPerSec: entry?.phaseVelocityRadPerSec,
+    phaseCoherence: entry?.phaseCoherence,
+    phaseAuthority: entry?.phaseAuthority,
+    clampVelocity: true,
+  };
+}
+
 export function writePhaseSlotsForVisibleModes({
   target,
   visibleSlots,
@@ -79,19 +102,20 @@ export function writePhaseSlotsForVisibleModes({
       activeModes,
       observedModes,
     );
-    const authority = clamp01(phaseEntry?.phaseAuthority ?? 0);
+    const phaseUpload = resolvePhaseUpload(phaseEntry);
+    const authority = clamp01(phaseUpload.phaseAuthority ?? 0);
     if (authority <= 0) {
       continue;
     }
-    target[offset] = normalizePhaseRad(phaseEntry.phaseOffsetRad ?? 0);
-    target[offset + 1] = Math.max(
-      -getPhaseVelocityLimit(phaseEntry.layer),
-      Math.min(
-        getPhaseVelocityLimit(phaseEntry.layer),
-        phaseEntry.phaseVelocityRadPerSec ?? 0,
-      ),
-    );
-    target[offset + 2] = clamp01(phaseEntry.phaseCoherence ?? 0);
+    target[offset] = normalizePhaseRad(phaseUpload.phaseOffsetRad ?? 0);
+    const phaseVelocity = phaseUpload.phaseVelocityRadPerSec ?? 0;
+    target[offset + 1] = phaseUpload.clampVelocity
+      ? Math.max(
+          -getPhaseVelocityLimit(phaseEntry.layer),
+          Math.min(getPhaseVelocityLimit(phaseEntry.layer), phaseVelocity),
+        )
+      : phaseVelocity;
+    target[offset + 2] = clamp01(phaseUpload.phaseCoherence ?? 0);
     target[offset + 3] = authority;
     authoritativeCount += 1;
   }

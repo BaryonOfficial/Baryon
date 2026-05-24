@@ -11,6 +11,7 @@ import {
   REACTIVITY_DEFAULTS,
   RENDER_DEFAULTS,
   SIMULATION_DEFAULTS,
+  CAVITY_ACOUSTIC_DEFAULTS,
 } from "./defaults.js";
 import { BUILT_IN_VISUAL_PRESETS } from "./controls/visualPresets.js";
 
@@ -77,5 +78,20 @@ describe("defaults compatibility surface", () => {
     );
     expect(RENDER_DEFAULTS.performanceHudEnabled).toBe(false);
     expect(DEFAULTS.cavityGeometry).toBe(SIMULATION_DEFAULTS.cavityGeometry);
+  });
+
+  it("keeps acoustic cavity scale explicit and separate from visual radius", () => {
+    expect(Object.isFrozen(CAVITY_ACOUSTIC_DEFAULTS)).toBe(true);
+    expect(SIMULATION_DEFAULTS.cavityAcousticScale).toBe(
+      CAVITY_ACOUSTIC_DEFAULTS,
+    );
+    expect(SIMULATION_DEFAULTS.cavityAcousticScale).toMatchObject({
+      radiusMeters: expect.any(Number),
+      soundSpeedMetersPerSecond: 1480,
+      subfloorPolicy: "project-low-q",
+    });
+    expect(SIMULATION_DEFAULTS.cavityAcousticScale.radiusMeters).toBeGreaterThan(
+      SIMULATION_DEFAULTS.radius,
+    );
   });
 });

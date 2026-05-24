@@ -68,6 +68,8 @@ const CANONICAL_DRIVE_POINT = Object.freeze({
 });
 const MODE_ATLAS_CACHE = new Map();
 const MODE_ATLAS_CACHE_MAX_SIZE = 8;
+const MODE_RESPONSE_BASIS_CACHE = new Map();
+const MODE_RESPONSE_BASIS_CACHE_MAX_SIZE = 512;
 const EXCITATION_BACKBONE_BLEND_ATTACK = 0.28;
 const EXCITATION_BACKBONE_BLEND_TRACKING = 0.32;
 const EXCITATION_BACKBONE_BLEND_RELEASE = 0.9;
@@ -274,7 +276,7 @@ const DETAIL_DISPLAY_SCORE_FRESHNESS_WEIGHT = 0.2;
 const BACKBONE_DISPLAY_MIN_SIGNAL_AMPLITUDE = 0.08;
 const DETAIL_DISPLAY_MIN_SIGNAL_AMPLITUDE = 0.05;
 const BACKBONE_DISPLAY_DUPLICATE_WINDOW = 0.09;
-const DETAIL_DISPLAY_DUPLICATE_WINDOW = 0.018;
+const DETAIL_DISPLAY_SAME_FREQUENCY_WINDOW = 1e-9;
 const EXCITATION_DECAY_DRIVE_THRESHOLD = 0.065;
 const EXCITATION_DECAY_SIGNAL_DISPLAY_RATIO = 0.55;
 const EXCITATION_HARD_SILENCE_MAX_AVG_AMPLITUDE = 1;
@@ -435,10 +437,21 @@ function getModeQProfile(entry) {
   return getModeRenderLayer(entry) === "detail" ? "high-q" : "low-q";
 }
 
-function buildPreviousModalResponseEnergies(state) {
+function buildPreviousModalResponseEnergies(
+  state,
+  { resetBackbone = false, resetDetail = false } = {},
+) {
   const energies = new Map();
 
   const mergeEntry = (entry) => {
+    const layer =
+      entry?.layer ?? (entry?.qProfile === "high-q" ? "detail" : "backbone");
+    if (
+      (layer === "backbone" && resetBackbone) ||
+      (layer === "detail" && resetDetail)
+    ) {
+      return;
+    }
     const modeKey =
       entry?.modeKey ?? buildModeKey(entry?.u, entry?.v, entry?.w);
     if (!modeKey) {
@@ -453,7 +466,22 @@ function buildPreviousModalResponseEnergies(state) {
     if (energy <= 0) {
       return;
     }
-    energies.set(modeKey, Math.max(energies.get(modeKey) ?? 0, energy));
+    const previous = energies.get(modeKey);
+    if ((previous?.modalResponseEnergy ?? 0) > energy) {
+      return;
+    }
+    energies.set(modeKey, {
+      modalResponseEnergy: energy,
+      oscillatorPhaseRad:
+        entry?.oscillatorPhaseRad ??
+        entry?.modalOscillatorPhaseRad ??
+        entry?.phase,
+      modalOscillatorPhaseRad:
+        entry?.modalOscillatorPhaseRad ??
+        entry?.oscillatorPhaseRad ??
+        entry?.phase,
+      amplitude: energy,
+    });
   };
 
   for (const entry of state?.activeModes?.values?.() ?? []) {
@@ -472,15 +500,38 @@ function mapModalResponseEntries(modalResponse) {
   );
 }
 
-function buildModeAtlas(radius, cavityGeometry = "rectangular") {
+function buildModeAtlas({
+  radius,
+  cavityGeometry = "rectangular",
+  cavityAcousticScale = null,
+  boundaryMode = null,
+}) {
   const safeRadius = Math.max(0.1, Math.round(radius * 1000) / 1000);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
-  const cacheKey = `${geometryBackend.cavityGeometry}:${safeRadius.toFixed(3)}`;
+  const acousticRadius = Number.isFinite(cavityAcousticScale?.radiusMeters)
+    ? Math.round(cavityAcousticScale.radiusMeters * 1000) / 1000
+    : safeRadius;
+  const acousticSoundSpeed = Number.isFinite(
+    cavityAcousticScale?.soundSpeedMetersPerSecond,
+  )
+    ? Math.round(cavityAcousticScale.soundSpeedMetersPerSecond * 1000) / 1000
+    : 1480;
+  const acousticSubfloorPolicy =
+    cavityAcousticScale?.subfloorPolicy ?? "project-low-q";
+  const cacheKey = [
+    geometryBackend.cavityGeometry,
+    boundaryMode ?? "legacy",
+    acousticRadius.toFixed(3),
+    acousticSoundSpeed.toFixed(3),
+    acousticSubfloorPolicy,
+  ].join(":");
   if (MODE_ATLAS_CACHE.has(cacheKey)) {
     return MODE_ATLAS_CACHE.get(cacheKey);
   }
   const atlas = geometryBackend.buildAtlas({
     radius: safeRadius,
+    acousticScale: cavityAcousticScale,
+    boundaryMode,
     frequencyCenters: [
       ...buildFrequencyCenters(
         BACKBONE_MIN_HZ,
@@ -787,7 +838,9 @@ function computeDrivePeriodicity(buffer, sampleRate) {
   }
 
   let best = 0;
-  for (let lag = minLag; lag <= maxLag; lag += 1) {
+  let bestLag = minLag;
+  const lagStep = maxLag - minLag > 192 ? 3 : 1;
+  const scanLag = (lag) => {
     let correlation = 0;
     const overlapLength = buffer.length - lag;
     for (let index = 0; index < overlapLength; index += 1) {
@@ -795,11 +848,51 @@ function computeDrivePeriodicity(buffer, sampleRate) {
     }
     const overlapEnergy = prefixSumSq[overlapLength];
     if (overlapEnergy > 1e-6) {
-      best = Math.max(best, correlation / overlapEnergy);
+      const score = correlation / overlapEnergy;
+      if (score > best) {
+        best = score;
+        bestLag = lag;
+      }
+    }
+  };
+
+  for (let lag = minLag; lag <= maxLag; lag += lagStep) {
+    scanLag(lag);
+  }
+
+  if (lagStep > 1) {
+    const refineStart = Math.max(minLag, bestLag - lagStep + 1);
+    const refineEnd = Math.min(maxLag, bestLag + lagStep - 1);
+    for (let lag = refineStart; lag <= refineEnd; lag += 1) {
+      scanLag(lag);
     }
   }
 
   return clamp01(best);
+}
+
+function getModeResponseBasis(sampleRate, length, frequencyHz) {
+  const key = `${sampleRate}:${length}:${frequencyHz.toFixed(3)}`;
+  const cached = MODE_RESPONSE_BASIS_CACHE.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const cos = new Float32Array(length);
+  const sin = new Float32Array(length);
+  for (let index = 0; index < length; index += 1) {
+    const theta = (2 * Math.PI * frequencyHz * index) / sampleRate;
+    cos[index] = Math.cos(theta);
+    sin[index] = Math.sin(theta);
+  }
+
+  const basis = { cos, sin };
+  MODE_RESPONSE_BASIS_CACHE.set(key, basis);
+  if (MODE_RESPONSE_BASIS_CACHE.size > MODE_RESPONSE_BASIS_CACHE_MAX_SIZE) {
+    const oldestKey = MODE_RESPONSE_BASIS_CACHE.keys().next().value;
+    MODE_RESPONSE_BASIS_CACHE.delete(oldestKey);
+  }
+  return basis;
 }
 
 function computeModeResponse(buffer, sampleRate, frequencyHz) {
@@ -811,13 +904,13 @@ function computeModeResponse(buffer, sampleRate, frequencyHz) {
     return { magnitude: 0, phase: 0 };
   }
 
+  const basis = getModeResponseBasis(sampleRate, buffer.length, frequencyHz);
   let real = 0;
   let imag = 0;
   for (let index = 0; index < buffer.length; index += 1) {
-    const theta = (2 * Math.PI * frequencyHz * index) / sampleRate;
     const sample = buffer[index] ?? 0;
-    real += sample * Math.cos(theta);
-    imag -= sample * Math.sin(theta);
+    real += sample * basis.cos[index];
+    imag -= sample * basis.sin[index];
   }
 
   const magnitude = Math.hypot(real, imag) / Math.max(1, buffer.length);
@@ -2020,6 +2113,9 @@ function buildSignalShortlist(entries, layer, currentFrameAtMs, capacity) {
       if (entry.layer !== layer || entry.coherence < coherenceThreshold) {
         return false;
       }
+      if (layer === "detail" && entry.weakDetailNoise === true) {
+        return false;
+      }
       if (
         (entry.currentDriveEnergy ?? entry.driveEnergy ?? 0) >= driveThreshold
       ) {
@@ -2154,7 +2250,7 @@ function mergeFastDetailAssist(displayEntries, assistEntry, visibleCap) {
       getRelativeFrequencyDistance(
         entry.naturalFrequencyHz,
         assistEntry.naturalFrequencyHz,
-      ) <= DETAIL_DISPLAY_DUPLICATE_WINDOW,
+      ) <= DETAIL_DISPLAY_SAME_FREQUENCY_WINDOW,
   );
 
   if (duplicateIndex === -1) {
@@ -2355,11 +2451,14 @@ function buildDisplayShortlist(entries, layer, capacity = entries.length) {
   const duplicateWindow =
     layer === "backbone"
       ? BACKBONE_DISPLAY_DUPLICATE_WINDOW
-      : DETAIL_DISPLAY_DUPLICATE_WINDOW;
+      : DETAIL_DISPLAY_SAME_FREQUENCY_WINDOW;
   const visibleCap = Math.max(0, Math.floor(capacity ?? entries.length));
 
   const ranked = entries
     .filter((entry) => {
+      if (layer === "detail" && entry.weakDetailNoise === true) {
+        return false;
+      }
       const entryMinSignal =
         layer === "backbone" && entry?.backboneDisplayContinuity
           ? BACKBONE_DISPLAY_CONTINUITY_SIGNAL_BASE * 0.85
@@ -2377,19 +2476,34 @@ function buildDisplayShortlist(entries, layer, capacity = entries.length) {
       if (right.displayScore !== left.displayScore) {
         return right.displayScore - left.displayScore;
       }
-      return (right.signalAmplitude ?? 0) - (left.signalAmplitude ?? 0);
+      const signalDelta =
+        (right.signalAmplitude ?? 0) - (left.signalAmplitude ?? 0);
+      if (Math.abs(signalDelta) > 1e-9) {
+        return signalDelta;
+      }
+      const frequencyDelta =
+        (left.naturalFrequencyHz ?? 0) - (right.naturalFrequencyHz ?? 0);
+      if (Math.abs(frequencyDelta) > 1e-9) {
+        return frequencyDelta;
+      }
+      return getEntryModeKey(left).localeCompare(getEntryModeKey(right));
     });
 
   const survivors = [];
   for (const entry of ranked) {
     if (
-      survivors.some(
-        (survivor) =>
+      survivors.some((survivor) => {
+        if (getEntryModeKey(survivor) === getEntryModeKey(entry)) {
+          return true;
+        }
+        return (
+          duplicateWindow > 0 &&
           getRelativeFrequencyDistance(
             survivor.naturalFrequencyHz,
             entry.naturalFrequencyHz,
-          ) <= duplicateWindow,
-      )
+          ) <= duplicateWindow
+        );
+      })
     ) {
       continue;
     }
@@ -2413,6 +2527,7 @@ function buildModalProjection({
   fastDetailAssist,
   hardSilentFrame,
   backboneProjectionSwitch,
+  detailProjectionSwitch = false,
   backboneCapacity,
   detailCapacity,
   colorContext,
@@ -2572,13 +2687,17 @@ function buildModalProjection({
     detailStalePressure >=
       EXCITATION_DETAIL_SIGNAL_AUTHORITY_MIN_STALE_PRESSURE;
   const detailFreshSignalShifted =
-    detailVisibleAmplitude >=
+    (detailVisibleAmplitude >=
       EXCITATION_DETAIL_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE &&
-    hasStrongFreshDetailSignal({
-      visibleSlots: state.blendDetail.slots,
-      signalSlots: state.detailProposal.slots,
-      capacity: detailCapacity,
-    });
+      hasStrongFreshDetailSignal({
+        visibleSlots: state.blendDetail.slots,
+        signalSlots: state.detailProposal.slots,
+        capacity: detailCapacity,
+      })) ||
+    (detailProjectionSwitch &&
+      rawDisplayDetailEntries.length > 0 &&
+      detailVisibleAmplitude >=
+        EXCITATION_DETAIL_FAST_SHIFT_MIN_VISIBLE_AMPLITUDE);
   const detailFastAssistShifted =
     detailAssistNeedsFreshAdmission &&
     detailVisibleAmplitude >=
@@ -2758,14 +2877,29 @@ export function buildModalExcitationStructuralState({
     existingState && existingState.capacity === preparedInputs.capacity
       ? existingState
       : createModalExcitationState(preparedInputs.capacity);
-  const atlas = buildModeAtlas(
-    preparedInputs.radius,
-    preparedInputs.effectiveCavityGeometry,
-  );
+  const atlas = buildModeAtlas({
+    radius: preparedInputs.radius,
+    cavityGeometry: preparedInputs.effectiveCavityGeometry,
+    cavityAcousticScale: preparedInputs.cavityAcousticScale,
+    boundaryMode: preparedInputs.boundaryMode,
+  });
   state.atlasEntries = atlas;
-  state.atlasCacheKey = `${
-    preparedInputs.effectiveCavityGeometry
-  }:${preparedInputs.radius}`;
+  const stateAcousticRadius = Number.isFinite(
+    preparedInputs.cavityAcousticScale?.radiusMeters,
+  )
+    ? preparedInputs.cavityAcousticScale.radiusMeters
+    : preparedInputs.radius;
+  state.atlasCacheKey = [
+    preparedInputs.effectiveCavityGeometry,
+    preparedInputs.boundaryMode ?? "legacy",
+    Number.isFinite(stateAcousticRadius)
+      ? stateAcousticRadius.toFixed(3)
+      : "unknown",
+    Number.isFinite(preparedInputs.cavityAcousticScale?.soundSpeedMetersPerSecond)
+      ? preparedInputs.cavityAcousticScale.soundSpeedMetersPerSecond.toFixed(3)
+      : "1480.000",
+    preparedInputs.cavityAcousticScale?.subfloorPolicy ?? "project-low-q",
+  ].join(":");
   clearLayerBuffers(state.backboneProposal);
   clearLayerBuffers(state.detailProposal);
   clearLayerBuffers(state.displayBackbone);
@@ -2861,8 +2995,31 @@ export function buildModalExcitationStructuralState({
         LOW_Q_OBSERVER_MIN_RETAINED_ENERGY &&
       hasObservedLayerDrive(modalObserverMetrics, "backbone") &&
       modalObserverMetrics.lowQObservedCoherence >= 0.32);
-  const previousModalResponseEnergies =
-    buildPreviousModalResponseEnergies(state);
+  const previousBackboneCouplingFrequencyHz =
+    state.backboneCouplingFrequencyHz ?? 0;
+  const backboneCouplingFrequencySwitch =
+    previousBackboneCouplingFrequencyHz > 0 &&
+    dominantDriveFrequencyHz > 0 &&
+    getRelativeFrequencyDistance(
+      previousBackboneCouplingFrequencyHz,
+      dominantDriveFrequencyHz,
+    ) > 0.12;
+  const previousDetailCouplingFrequencyHz =
+    state.detailCouplingFrequencyHz ?? 0;
+  const detailCouplingFrequencySwitch =
+    previousDetailCouplingFrequencyHz > 0 &&
+    dominantDriveFrequencyHz > 0 &&
+    getRelativeFrequencyDistance(
+      previousDetailCouplingFrequencyHz,
+      dominantDriveFrequencyHz,
+    ) > 0.08;
+  const previousModalResponseEnergies = buildPreviousModalResponseEnergies(
+    state,
+    {
+      resetBackbone: backboneCouplingFrequencySwitch,
+      resetDetail: detailCouplingFrequencySwitch,
+    },
+  );
   const modalResponse = updateModalResponseFrame({
     modes: atlas,
     fftMagnitudes: fastSignalState.fftMagnitudes,
@@ -2917,24 +3074,6 @@ export function buildModalExcitationStructuralState({
   let driveEnergySampleCount = 0;
   let persistenceTotal = 0;
   let coherenceTotal = 0;
-  const previousBackboneCouplingFrequencyHz =
-    state.backboneCouplingFrequencyHz ?? 0;
-  const backboneCouplingFrequencySwitch =
-    previousBackboneCouplingFrequencyHz > 0 &&
-    dominantDriveFrequencyHz > 0 &&
-    getRelativeFrequencyDistance(
-      previousBackboneCouplingFrequencyHz,
-      dominantDriveFrequencyHz,
-    ) > 0.12;
-  const previousDetailCouplingFrequencyHz =
-    state.detailCouplingFrequencyHz ?? 0;
-  const detailCouplingFrequencySwitch =
-    previousDetailCouplingFrequencyHz > 0 &&
-    dominantDriveFrequencyHz > 0 &&
-    getRelativeFrequencyDistance(
-      previousDetailCouplingFrequencyHz,
-      dominantDriveFrequencyHz,
-    ) > 0.08;
   const coherentDetailCoupling = detailCouplingFrequencySwitch
     ? 0
     : getCoherentDetailCoupling({
@@ -3016,9 +3155,15 @@ export function buildModalExcitationStructuralState({
     const weakFileDetailNoise =
       atlasEntry.layer === "detail" &&
       preparedInputs.sourceMode === "file" &&
+      preparedInputs.avgAmplitude >= 5 &&
       preparedInputs.avgAmplitude < 10 &&
       preparedInputs.analyserRms < 0.03 &&
+      dominantDriveFrequencyHz >= 400 &&
       modalResponseDrive < 0.16;
+    const weakFileDetailModalResponseNoise =
+      weakFileDetailNoise && modalResponseDrive < 0.2;
+    const effectiveModalResponseDisplayAmplitude =
+      weakFileDetailModalResponseNoise ? 0 : modalResponseDisplayAmplitude;
     const directDriveEnergy = clamp01(
       weakFileSpectralFallbackNoise || weakFileDetailNoise
         ? 0
@@ -3176,6 +3321,29 @@ export function buildModalExcitationStructuralState({
             hardSilentFrame,
           })
         : 1;
+    const modalOscillatorAngularVelocityRadPerSec =
+      modalResponseEntry?.oscillatorAngularVelocityRadPerSec;
+    const modalOscillatorPhaseRad = Number.isFinite(
+      modalResponseEntry?.oscillatorPhaseRad,
+    )
+      ? modalResponseEntry.oscillatorPhaseRad
+      : response.phase;
+    const modalOscillatorPhaseOffsetRad = Number.isFinite(
+      modalOscillatorAngularVelocityRadPerSec,
+    )
+      ? normalizePhaseRad(
+          modalOscillatorPhaseRad -
+            modalOscillatorAngularVelocityRadPerSec *
+              (preparedInputs.currentFrameAtMs / 1000),
+        )
+      : undefined;
+    const modalOscillatorPhaseAuthority = clamp01(
+      modalResponseEntry?.oscillatorPhaseAuthority ?? modalResponseEnergy,
+    );
+    const modalOscillatorPhaseCoherence = clamp01(
+      modalResponseEntry?.oscillatorPhaseCoherence ??
+        Math.max(coherence, modalResponseDrive),
+    );
     const entry = {
       ...atlasEntry,
       amplitude,
@@ -3183,10 +3351,20 @@ export function buildModalExcitationStructuralState({
       driveEnergy:
         (previous?.driveEnergy ?? driveEnergy) * (1 - DRIVE_BLEND_ALPHA) +
         driveEnergy * DRIVE_BLEND_ALPHA,
-      phase: response.phase,
+      phase: modalOscillatorPhaseRad,
       modalResponseDrive,
       modalResponseEnergy,
-      modalResponseDisplayAmplitude,
+      modalResponseDisplayAmplitude: effectiveModalResponseDisplayAmplitude,
+      weakDetailNoise: weakFileDetailModalResponseNoise,
+      oscillatorPhaseRad: modalResponseEntry?.oscillatorPhaseRad,
+      oscillatorAngularVelocityRadPerSec:
+        modalResponseEntry?.oscillatorAngularVelocityRadPerSec,
+      signedModalCoefficient: modalResponseEntry?.signedModalCoefficient,
+      modalOscillatorPhaseRad,
+      modalOscillatorPhaseOffsetRad,
+      modalOscillatorAngularVelocityRadPerSec,
+      modalOscillatorPhaseAuthority,
+      modalOscillatorPhaseCoherence,
       hardSilentFrame: strictHardSilentFrame,
       sourceAmplitude: updateObservedSourceAmplitude(previous, drivePeak),
       coherence,
@@ -3305,6 +3483,7 @@ export function buildModalExcitationStructuralState({
     fastDetailAssist,
     hardSilentFrame,
     backboneProjectionSwitch: backboneCouplingFrequencySwitch,
+    detailProjectionSwitch: detailCouplingFrequencySwitch,
     backboneCapacity,
     detailCapacity,
     colorContext,
@@ -3361,6 +3540,9 @@ export function buildModalExcitationStructuralState({
       freshCap: EXCITATION_BACKBONE_FRESH_CAP,
     },
   );
+  if (detailCouplingFrequencySwitch && detailSignalAuthoritative) {
+    clearLayerBuffers(state.blendDetail);
+  }
   blendModalStack(state.blendDetail, detailBlendTargetSlots, detailCapacity, {
     attack:
       detailSignalAuthoritative || modalResponseDetailSignalAuthoritative

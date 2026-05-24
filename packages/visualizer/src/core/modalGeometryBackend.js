@@ -1,29 +1,42 @@
 import { float } from "three/tsl";
 import {
   getCavityModeFrequency,
+  resolveCavityModeFamilyForPitch,
   sampleFFTAmplitudeForFrequency,
-  solveCavityModeFamilyForPitch,
 } from "../utils/cavityModes.js";
 import {
   evaluatePermutationFamilyMode,
   getUniquePermutationCount,
+  normalizeBoundaryMode,
 } from "./modeFamily.js";
 import { evaluatePermutationFamilyNodeForBoundary } from "./modeFamilyNode.js";
 import { resolveEffectiveCavityGeometry } from "./cavityGeometry.js";
 
 const RECTANGULAR_MODE_BACKEND = Object.freeze({
   cavityGeometry: "rectangular",
-  buildAtlas({ radius, frequencyCenters, buildModeKey, createAtlasEntry }) {
+  buildAtlas({
+    radius,
+    acousticScale = null,
+    boundaryMode = null,
+    frequencyCenters,
+    buildModeKey,
+    createAtlasEntry,
+  }) {
     const entriesByKey = new Map();
+    const modeOptions = resolveModalSolveOptions({
+      radius,
+      acousticScale,
+      boundaryMode,
+    });
 
     for (const entry of frequencyCenters) {
       const centerHz =
         typeof entry === "number" ? entry : Number(entry?.centerHz ?? 0);
       const familyWidth =
         typeof entry === "number" ? 1 : Number(entry?.familyWidth ?? 1);
-      const family = solveCavityModeFamilyForPitch(
+      const family = resolveCavityModeFamilyForPitch(
         centerHz,
-        radius,
+        modeOptions,
         familyWidth,
       );
       for (const candidate of family) {
@@ -36,7 +49,7 @@ const RECTANGULAR_MODE_BACKEND = Object.freeze({
           candidate.u,
           candidate.v,
           candidate.w,
-          radius,
+          modeOptions,
         );
         entriesByKey.set(
           modeKey,
@@ -53,8 +66,12 @@ const RECTANGULAR_MODE_BACKEND = Object.freeze({
       (left, right) => left.naturalFrequencyHz - right.naturalFrequencyHz,
     );
   },
-  solveTermsForPitch({ pitch, radius, count }) {
-    return solveCavityModeFamilyForPitch(pitch, radius, count);
+  solveTermsForPitch({ pitch, radius, acousticScale = null, boundaryMode, count }) {
+    return resolveCavityModeFamilyForPitch(
+      pitch,
+      resolveModalSolveOptions({ radius, acousticScale, boundaryMode }),
+      count,
+    );
   },
   evaluateMode({ u, v, w, x, y, z, scale, boundaryMode }) {
     return evaluatePermutationFamilyMode({
@@ -98,6 +115,26 @@ const RECTANGULAR_MODE_BACKEND = Object.freeze({
     );
   },
 });
+
+function resolveModalSolveOptions({ radius, acousticScale, boundaryMode }) {
+  const normalizedBoundaryMode =
+    boundaryMode == null ? null : normalizeBoundaryMode(boundaryMode);
+  if (acousticScale) {
+    return {
+      acousticScale,
+      boundaryMode: normalizedBoundaryMode ?? "neumann",
+    };
+  }
+  if (normalizedBoundaryMode) {
+    return {
+      acousticScale: {
+        radiusMeters: radius,
+      },
+      boundaryMode: normalizedBoundaryMode,
+    };
+  }
+  return radius;
+}
 
 export function getModalGeometryBackend(requestedGeometry) {
   const effectiveGeometry = resolveEffectiveCavityGeometry(requestedGeometry);

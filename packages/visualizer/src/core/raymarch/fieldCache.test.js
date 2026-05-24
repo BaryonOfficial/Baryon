@@ -85,7 +85,7 @@ describe("fieldCache", () => {
     expect(supportTextureStoreStart).toBeGreaterThan(computeContributionStart);
   });
 
-  it("rebuilds the effective field when phase slots change", () => {
+  it("ignores carrier phase offsets but rebuilds on stable phase parameter changes", () => {
     expect(raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor).toBeTypeOf(
       "function",
     );
@@ -108,11 +108,24 @@ describe("fieldCache", () => {
         phaseModeCount: 1,
         phaseAuthority: 0.3,
       });
-    const phaseChangedDescriptor =
+    const carrierAdvancedDescriptor =
       raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor({
         backboneSlots: slots,
         detailSlots: new Float32Array(0),
         backbonePhaseSlots: new Float32Array([0.7, 0.2, 0.5, 0.6]),
+        detailPhaseSlots: new Float32Array(0),
+        backboneCount: 1,
+        detailCount: 0,
+        boundaryMode: "neumann",
+        radius: 3,
+        phaseModeCount: 1,
+        phaseAuthority: 0.3,
+      });
+    const phaseParameterChangedDescriptor =
+      raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor({
+        backboneSlots: slots,
+        detailSlots: new Float32Array(0),
+        backbonePhaseSlots: new Float32Array([0.7, 0.32, 0.5, 0.6]),
         detailPhaseSlots: new Float32Array(0),
         backboneCount: 1,
         detailCount: 0,
@@ -133,34 +146,40 @@ describe("fieldCache", () => {
     expect(
       raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
         effectiveFieldCache,
-        phaseChangedDescriptor,
+        carrierAdvancedDescriptor,
+      ),
+    ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
+    expect(
+      raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
+        effectiveFieldCache,
+        phaseParameterChangedDescriptor,
       ),
     ).toMatchObject({ needsRebuild: true, reason: "phase-slots" });
     expect(
       raymarchFieldCache.getRaymarchEffectiveFieldDescriptorStaleReason({
         activeDescriptor: initialDescriptor,
-        nextDescriptor: phaseChangedDescriptor,
+        nextDescriptor: phaseParameterChangedDescriptor,
       }),
     ).toBe("phase-slots");
     expect(
       raymarchFieldCache.getRaymarchEffectiveFieldDescriptorStaleReason({
         descriptorFresh: true,
-        activeDescriptor: phaseChangedDescriptor,
-        nextDescriptor: phaseChangedDescriptor,
+        activeDescriptor: phaseParameterChangedDescriptor,
+        nextDescriptor: phaseParameterChangedDescriptor,
       }),
     ).toBeNull();
     expect(
       raymarchFieldCache.getRaymarchEffectiveFieldDescriptorStaleReason({
         rebuildPending: true,
         activeDescriptor: initialDescriptor,
-        nextDescriptor: phaseChangedDescriptor,
+        nextDescriptor: phaseParameterChangedDescriptor,
       }),
     ).toBe("rebuild-pending");
     expect(
       raymarchFieldCache.getRaymarchEffectiveFieldDescriptorStaleReason({
-        queuedDescriptor: phaseChangedDescriptor,
+        queuedDescriptor: phaseParameterChangedDescriptor,
         activeDescriptor: initialDescriptor,
-        nextDescriptor: phaseChangedDescriptor,
+        nextDescriptor: phaseParameterChangedDescriptor,
       }),
     ).toBe("queued-descriptor");
   });
@@ -932,6 +951,10 @@ describe("fieldCache", () => {
     expect(descriptor.bandwidthRejectedModalEnergy).toBeCloseTo(0.25, 6);
     expect(descriptor.contributingEffectiveFieldModeCount).toBe(1);
     expect(descriptor.contributingModalEnergy).toBeCloseTo(0.5, 6);
+    expect(descriptor.effectiveFieldResolvedModalEnergyRatio).toBeCloseTo(
+      0.5 / 0.75,
+      6,
+    );
     expect(descriptor.effectiveFieldGradientEnvelope).toBeGreaterThan(0);
   });
 
@@ -1129,6 +1152,41 @@ describe("fieldCache", () => {
     expect(canceling.r + canceling.g + canceling.b).toBeLessThan(
       (reinforcing.r + reinforcing.g + reinforcing.b) * 0.1,
     );
+  });
+
+  it("keeps dense Spectral Light cache color keyed to the dominant local mode", () => {
+    const sample = evaluateRaymarchSpectralLightCachePoint({
+      backboneSlots: new Float32Array([
+        1, 1, 1, 0.45,
+        2, 2, 2, 0.35,
+        3, 3, 3, 0.32,
+      ]),
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: new Float32Array([
+        1, 0, 0, 1,
+        0, 1, 0, 1,
+        0, 0, 1, 1,
+      ]),
+      detailColorSlots: new Float32Array(0),
+      backboneCount: 3,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    const spectralColor = {
+      r: sample.r / sample.colorWeight,
+      g: sample.g / sample.colorWeight,
+      b: sample.b / sample.colorWeight,
+    };
+
+    expect(sample.colorWeight).toBeGreaterThan(0.9);
+    expect(spectralColor.r).toBeGreaterThan(0.45);
+    expect(
+      spectralColor.r - Math.max(spectralColor.g, spectralColor.b),
+    ).toBeGreaterThan(0.16);
   });
 
   it("keeps partially cancelled Spectral Light support visibly above the floor", () => {

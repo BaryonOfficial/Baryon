@@ -14,6 +14,7 @@ import {
   prepareAudioFeatureFrameInputs,
   runHeavyAudioFeatureAnalysis,
 } from "@baryon/visualizer/audio-features";
+import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/visualizer/defaults";
 import * as raymarchPerformanceGovernor from "@baryon/visualizer/core/raymarch/performanceGovernor";
 import {
   CUSTOM_TARGET_FPS_BANDS,
@@ -1711,6 +1712,8 @@ export function resolveFeatureFrame(
         analysisSnapshot,
         featureState,
         radius: runtimeState.uniforms.uRadius.value,
+        cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
+        boundaryMode: controls.boundaryMode,
         cavityGeometry: controls.cavityGeometry,
         status,
         frameTimeMs: time * 1000,
@@ -1722,6 +1725,8 @@ export function resolveFeatureFrame(
         analysisSnapshot,
         featureState,
         radius: runtimeState.uniforms.uRadius.value,
+        cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
+        boundaryMode: controls.boundaryMode,
         cavityGeometry: controls.cavityGeometry,
         status,
         frameTimeMs: time * 1000,
@@ -1746,6 +1751,8 @@ export function resolveFeatureFrame(
             },
             frameTimeMs: preparedInputs.currentFrameAtMs,
             radius: runtimeState.uniforms.uRadius.value,
+            cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
+            boundaryMode: controls.boundaryMode,
             cavityGeometry: controls.cavityGeometry,
             includeSpectralLight: spectralLightEnabled,
             auditSettings: featureState?.audit?.settings ?? null,

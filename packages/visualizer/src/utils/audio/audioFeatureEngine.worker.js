@@ -238,6 +238,8 @@ function toPreparedInputsFrame(frame) {
         : null,
     featureState: null,
     radius: frame.radius,
+    cavityAcousticScale: frame.cavityAcousticScale,
+    boundaryMode: frame.boundaryMode,
     cavityGeometry: frame.cavityGeometry,
     status: {
       audioInputMode: frame.audioInputMode ?? "idle",

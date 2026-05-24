@@ -16,6 +16,7 @@ import {
   updateAdaptiveRaymarchStepBudget,
 } from "./baryonVisualizerRenderLoop.js";
 import { RENDER_CONTEXTS } from "@baryon/visualizer/render/outputPipeline";
+import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/visualizer/defaults";
 import {
   LIVE_INPUT_ERROR_CODES,
   LIVE_INPUT_PHASES,
@@ -200,6 +201,7 @@ function createResolveFeatureFrameHarness(overrides = {}) {
       },
       controls: {
         cavityGeometry: "spherical",
+        boundaryMode: "dirichlet",
         injectTestTone: false,
       },
       status: {
@@ -1378,6 +1380,8 @@ test("resolveFeatureFrame passes cavity geometry into prepared inputs", () => {
   });
 
   expect(preparedArgs.cavityGeometry).toBe("spherical");
+  expect(preparedArgs.boundaryMode).toBe("dirichlet");
+  expect(preparedArgs.cavityAcousticScale).toEqual(CAVITY_ACOUSTIC_DEFAULTS);
 });
 
 test("resolveFeatureFrame forwards Spectral Light as a presentation request", () => {
@@ -1435,6 +1439,10 @@ test("resolveFeatureFrame forwards cavity geometry into the worker transport pay
   });
 
   expect(featureEngine.lastFrame.cavityGeometry).toBe("spherical");
+  expect(featureEngine.lastFrame.boundaryMode).toBe("dirichlet");
+  expect(featureEngine.lastFrame.cavityAcousticScale).toEqual(
+    CAVITY_ACOUSTIC_DEFAULTS,
+  );
 });
 
 test("resolveFeatureFrame forwards Spectral Light into the worker transport payload", () => {

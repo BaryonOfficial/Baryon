@@ -155,6 +155,7 @@ const EXCITATION_GATE_LOW = 0.04;
 const EXCITATION_GATE_HIGH = 0.35;
 const STATIC_SURFACE_TINT_SCALE = 0.18;
 const STATIC_HIGHLIGHT_SURFACE_PULL_SCALE = 0.2;
+const SPECTRAL_LIGHT_CHROMA_EPSILON = 1e-6;
 
 export const RAYMARCH_SPECTRAL_LIGHT_TUNING = Object.freeze({
   contourShadow: 0.97,
@@ -248,6 +249,8 @@ function accumulateSpecializedLayer({
   gradZ,
   colorSum,
   colorWeight,
+  colorChromaSum,
+  colorChromaWeight,
 }) {
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
   const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
@@ -280,12 +283,18 @@ function accumulateSpecializedLayer({
         If(enableColorAccumulation.greaterThan(0.5), () => {
           const colorSlot = colorBuffer.element(i);
           const localInfluence = amplitude.mul(abs(family.field));
+          const weightedInfluence = localInfluence.mul(colorSlot.w);
+          const chromaInfluence = weightedInfluence.mul(weightedInfluence);
           colorSum.addAssign(
             vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(
-              localInfluence.mul(colorSlot.w),
+              weightedInfluence,
             ),
           );
-          colorWeight.addAssign(localInfluence.mul(colorSlot.w));
+          colorWeight.addAssign(weightedInfluence);
+          colorChromaSum.addAssign(
+            vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(chromaInfluence),
+          );
+          colorChromaWeight.addAssign(chromaInfluence);
         });
       }
     },
@@ -304,6 +313,8 @@ function accumulateSpecializedLayerColorOnly({
   cavityGeometry,
   colorSum,
   colorWeight,
+  colorChromaSum,
+  colorChromaWeight,
 }) {
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
   const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
@@ -327,12 +338,16 @@ function accumulateSpecializedLayerColorOnly({
       });
       const colorSlot = colorBuffer.element(i);
       const localInfluence = amplitude.mul(abs(family.field));
+      const weightedInfluence = localInfluence.mul(colorSlot.w);
+      const chromaInfluence = weightedInfluence.mul(weightedInfluence);
       colorSum.addAssign(
-        vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(
-          localInfluence.mul(colorSlot.w),
-        ),
+        vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(weightedInfluence),
       );
-      colorWeight.addAssign(localInfluence.mul(colorSlot.w));
+      colorWeight.addAssign(weightedInfluence);
+      colorChromaSum.addAssign(
+        vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(chromaInfluence),
+      );
+      colorChromaWeight.addAssign(chromaInfluence);
     },
   );
 }
@@ -357,6 +372,8 @@ function accumulateFieldLayers({
   gradZ,
   colorSum,
   colorWeight,
+  colorChromaSum,
+  colorChromaWeight,
 }) {
   If(backboneActiveCount.greaterThan(0), () => {
     accumulateSpecializedLayer({
@@ -376,6 +393,8 @@ function accumulateFieldLayers({
       gradZ,
       colorSum,
       colorWeight,
+      colorChromaSum,
+      colorChromaWeight,
     });
   });
   If(detailActiveCount.greaterThan(0), () => {
@@ -396,6 +415,8 @@ function accumulateFieldLayers({
       gradZ,
       colorSum,
       colorWeight,
+      colorChromaSum,
+      colorChromaWeight,
     });
   });
 }
@@ -416,6 +437,8 @@ function accumulateColorLayers({
   spectralLightEnabled,
   colorSum,
   colorWeight,
+  colorChromaSum,
+  colorChromaWeight,
 }) {
   If(spectralLightEnabled.greaterThan(0.5), () => {
     If(backboneActiveCount.greaterThan(0), () => {
@@ -431,6 +454,8 @@ function accumulateColorLayers({
         cavityGeometry,
         colorSum,
         colorWeight,
+        colorChromaSum,
+        colorChromaWeight,
       });
     });
     If(detailActiveCount.greaterThan(0), () => {
@@ -446,6 +471,8 @@ function accumulateColorLayers({
         cavityGeometry,
         colorSum,
         colorWeight,
+        colorChromaSum,
+        colorChromaWeight,
       });
     });
   });
@@ -659,6 +686,8 @@ function createScatteringNode({
       const effectiveCancellationRatio = float(0.0).toVar();
       const colorSum = vec3(0.0).toVar();
       const colorWeight = float(0.0).toVar();
+      const colorChromaSum = vec3(0.0).toVar();
+      const colorChromaWeight = float(0.0).toVar();
       const spectralLightEnabled = smoothstep(
         float(0.0),
         float(1e-4),
@@ -723,6 +752,8 @@ function createScatteringNode({
             spectralLightEnabled,
             colorSum,
             colorWeight,
+            colorChromaSum,
+            colorChromaWeight,
           });
         }
       } else if (directFieldEvaluationEnabled) {
@@ -748,8 +779,20 @@ function createScatteringNode({
           gradZ,
           colorSum,
           colorWeight,
+          colorChromaSum,
+          colorChromaWeight,
         });
       }
+      If(
+        colorChromaWeight.greaterThan(float(SPECTRAL_LIGHT_CHROMA_EPSILON)),
+        () => {
+          colorSum.assign(
+            colorChromaSum
+              .div(colorChromaWeight.max(float(SPECTRAL_LIGHT_CHROMA_EPSILON)))
+              .mul(colorWeight),
+          );
+        },
+      );
 
       const effectiveField = field;
       const fieldAbs = abs(effectiveField);

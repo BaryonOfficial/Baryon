@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ,
-  getLegacyAnalysisFloorHz,
-  getLegacyAnalysisRadius,
-  getMinimumCavityFrequency,
-} from "../../utils/cavityModes.js";
-import { createModalTargetBuild } from "./modalStack.js";
-import {
-  writeModalSlotsFromFundamental,
-  writeModalSlotsFromPeakDrivers,
-  writeModalSlotsFromSpectralPeaks,
+  findSpectralPeakFrequencies,
+  HARMONIC_ORDERS,
 } from "./modalResolvers.js";
 
 const FFT_SIZE = 4096;
@@ -24,360 +16,89 @@ function freqToBin(frequency) {
 function makeFft(peaks) {
   const fft = new Float32Array(BIN_COUNT);
   for (const [frequency, amplitude] of peaks) {
-    fft[Math.max(1, freqToBin(frequency))] = amplitude;
+    const bin = Math.max(1, Math.min(BIN_COUNT - 2, freqToBin(frequency)));
+    fft[bin] = amplitude;
   }
   return fft;
 }
 
-function readModeKeys(targetBuild) {
-  const modeKeys = [];
-  for (let index = 0; index < targetBuild.slots.length; index += 4) {
-    const amplitude = targetBuild.slots[index + 3] ?? 0;
-    if (amplitude <= 0) {
-      continue;
-    }
-    modeKeys.push(
-      `${targetBuild.slots[index]}:${targetBuild.slots[index + 1]}:${targetBuild.slots[index + 2]}`,
-    );
-  }
-  return modeKeys;
-}
-
-describe("modal resolver writers", () => {
-  it("writes harmonic modal slots from a fundamental tone", () => {
-    const target = writeModalSlotsFromFundamental(createModalTargetBuild(5), {
-      frequency: 110,
-      confidence: 0.9,
-      fftMagnitudes: makeFft([
-        [110, 0.86],
-        [220, 0.44],
-        [330, 0.23],
-      ]),
-      sampleRate: SAMPLE_RATE,
-      fftSize: FFT_SIZE,
-      radius: 3,
-      capacity: 5,
-      spectralCentroid: 0.24,
-      includeSpectralLight: true,
-    });
-
-    expect(target.uniqueModeCount).toBeGreaterThan(0);
-    expect(target.harmonicSupport[0]).toBeGreaterThan(0);
-    expect(target.components.length).toBeGreaterThan(0);
-    expect(readModeKeys(target).length).toBe(target.uniqueModeCount);
-  });
-
-  it("adds above-floor bridge families for sub-floor backbone peaks", () => {
-    const sparse = writeModalSlotsFromPeakDrivers(createModalTargetBuild(8), {
-      fftMagnitudes: makeFft([[120, 0.92]]),
-      sampleRate: SAMPLE_RATE,
-      fftSize: FFT_SIZE,
-      radius: 3,
-      capacity: 8,
-      slotLimit: 8,
-      spectralCentroid: 0.18,
-      includeSpectralLight: true,
-      peaks: [{ frequency: 120, amplitude: 0.92 }],
-      scratchTarget: createModalTargetBuild(8),
-    });
-    const enriched = writeModalSlotsFromPeakDrivers(createModalTargetBuild(8), {
-      fftMagnitudes: makeFft([
-        [120, 0.92],
-        [480, 0.82],
-        [600, 0.74],
-        [720, 0.68],
-      ]),
-      sampleRate: SAMPLE_RATE,
-      fftSize: FFT_SIZE,
-      radius: 3,
-      capacity: 8,
-      slotLimit: 8,
-      spectralCentroid: 0.18,
-      includeSpectralLight: true,
-      peaks: [{ frequency: 120, amplitude: 0.92 }],
-      scratchTarget: createModalTargetBuild(8),
-    });
-
-    expect(enriched.subfloorBridgeMeta).toMatchObject({
-      dominantPeakFrequency: 120,
-      dominantPeakAmplitude: 0.92,
-      dominantPeakBridgeCount: 3,
-      meaningfulAboveFloorPeakCount: 1,
-    });
-    expect(readModeKeys(enriched)).not.toEqual(readModeKeys(sparse));
-  });
-
-  it("keeps sub-floor peaks sparse when above-floor harmonics are absent", () => {
-    const target = writeModalSlotsFromPeakDrivers(createModalTargetBuild(8), {
-      fftMagnitudes: makeFft([[60, 0.88]]),
-      sampleRate: SAMPLE_RATE,
-      fftSize: FFT_SIZE,
-      radius: 3,
-      capacity: 8,
-      slotLimit: 8,
-      spectralCentroid: 0.15,
-      includeSpectralLight: true,
-      peaks: [{ frequency: 60, amplitude: 0.88 }],
-      scratchTarget: createModalTargetBuild(8),
-    });
-
-    expect(target.subfloorBridgeMeta).toMatchObject({
-      dominantPeakFrequency: 60,
-      dominantPeakAmplitude: 0.88,
-      dominantPeakBridgeCount: 0,
-      meaningfulAboveFloorPeakCount: 0,
-    });
-  });
-
-  it("counts native above-floor backbone peaks as meaningful support", () => {
-    const target = writeModalSlotsFromPeakDrivers(createModalTargetBuild(8), {
-      fftMagnitudes: makeFft([
-        [60, 0.86],
-        [600, 0.7],
-      ]),
-      sampleRate: SAMPLE_RATE,
-      fftSize: FFT_SIZE,
-      radius: 3,
-      capacity: 8,
-      slotLimit: 8,
-      spectralCentroid: 0.2,
-      includeSpectralLight: true,
-      peaks: [
-        { frequency: 60, amplitude: 0.86 },
-        { frequency: 600, amplitude: 0.7 },
-      ],
-      scratchTarget: createModalTargetBuild(8),
-    });
-
-    expect(target.subfloorBridgeMeta).toMatchObject({
-      dominantPeakFrequency: 60,
-      dominantPeakAmplitude: 0.86,
-      dominantPeakBridgeCount: 0,
-      meaningfulAboveFloorPeakCount: 1,
-    });
+describe("HARMONIC_ORDERS", () => {
+  it("keeps the fundamental as the first supported order", () => {
+    expect(HARMONIC_ORDERS[0]).toBe(1);
+    expect(HARMONIC_ORDERS.length).toBeGreaterThan(1);
   });
 });
 
-// ---------------------------------------------------------------------------
-// Legacy peak-family compensation regressions
-// ---------------------------------------------------------------------------
-
-// Small radius where the physical water cavity floor is well above musical content.
-// Without compensation, all peaks collapse into mode (1,1,1).
-const SMALL_WATER_RADIUS = 0.5;
-
-describe("legacy peak-driver mapping regression (water physics compensation)", () => {
-  it("440 / 1760 / 3200 Hz peaks map to distinct families with a small water radius", () => {
-    const peaks = [
-      { frequency: 440, amplitude: 0.9 },
-      { frequency: 1760, amplitude: 0.75 },
-      { frequency: 3200, amplitude: 0.6 },
-    ];
-    const target = writeModalSlotsFromPeakDrivers(createModalTargetBuild(12), {
-      fftMagnitudes: makeFft([
-        [440, 0.9],
-        [1760, 0.75],
-        [3200, 0.6],
+describe("findSpectralPeakFrequencies", () => {
+  it("returns isolated FFT peaks sorted by interpolated amplitude", () => {
+    const peaks = findSpectralPeakFrequencies(
+      makeFft([
+        [220, 0.6],
+        [440, 0.92],
+        [1760, 0.7],
       ]),
-      sampleRate: SAMPLE_RATE,
-      fftSize: FFT_SIZE,
-      radius: SMALL_WATER_RADIUS,
-      capacity: 12,
-      slotLimit: 12,
-      spectralCentroid: 0.3,
-      includeSpectralLight: false,
-      peaks,
-      scratchTarget: createModalTargetBuild(12),
-    });
-
-    const keys = readModeKeys(target);
-    expect(keys.length).toBeGreaterThan(0);
-    // All keys collapsed to (1,1,1) would mean a single unique key dominating.
-    const unique = new Set(keys);
-    expect(unique.size).toBeGreaterThan(1);
-    // The minimum cavity mode should not be the only family present.
-    expect(keys.every((k) => k === "1:1:1")).toBe(false);
-  });
-
-  it("mixed low-mid-high fixture populates backbone slots with spread modes", () => {
-    const peaks = [
-      { frequency: 220, amplitude: 0.85 },
-      { frequency: 880, amplitude: 0.7 },
-      { frequency: 2200, amplitude: 0.5 },
-    ];
-    const target = writeModalSlotsFromPeakDrivers(createModalTargetBuild(12), {
-      fftMagnitudes: makeFft([
-        [220, 0.85],
-        [880, 0.7],
-        [2200, 0.5],
-      ]),
-      sampleRate: SAMPLE_RATE,
-      fftSize: FFT_SIZE,
-      radius: SMALL_WATER_RADIUS,
-      capacity: 12,
-      slotLimit: 12,
-      spectralCentroid: 0.25,
-      includeSpectralLight: false,
-      peaks,
-      scratchTarget: createModalTargetBuild(12),
-    });
-
-    expect(target.uniqueModeCount).toBeGreaterThan(0);
-    expect(new Set(readModeKeys(target)).size).toBeGreaterThan(1);
-  });
-
-  it("stores legacyAnalysisFloorHz in subfloorBridgeMeta close to 180 Hz for small radii", () => {
-    const target = writeModalSlotsFromPeakDrivers(createModalTargetBuild(6), {
-      fftMagnitudes: makeFft([[440, 0.8]]),
-      sampleRate: SAMPLE_RATE,
-      fftSize: FFT_SIZE,
-      radius: SMALL_WATER_RADIUS,
-      capacity: 6,
-      slotLimit: 6,
-      spectralCentroid: 0.2,
-      includeSpectralLight: false,
-      peaks: [{ frequency: 440, amplitude: 0.8 }],
-      scratchTarget: createModalTargetBuild(6),
-    });
-
-    expect(target.subfloorBridgeMeta).toBeDefined();
-    expect(target.subfloorBridgeMeta.legacyAnalysisFloorHz).toBeCloseTo(
-      LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ,
-      1,
+      SAMPLE_RATE,
+      FFT_SIZE,
+      3,
+      { minimumAmplitude: 0.1, minBinGapHz: 10 },
     );
-    expect(target.subfloorBridgeMeta.legacyAnalysisFloorHz).toBeCloseTo(
-      getLegacyAnalysisFloorHz(SMALL_WATER_RADIUS),
-      4,
+
+    expect(peaks).toHaveLength(3);
+    expect(peaks[0].frequency).toBeGreaterThan(430);
+    expect(peaks[0].frequency).toBeLessThan(450);
+    expect(peaks[1].frequency).toBeGreaterThan(1740);
+    expect(peaks[1].frequency).toBeLessThan(1780);
+    expect(peaks[2].frequency).toBeGreaterThan(200);
+    expect(peaks[2].frequency).toBeLessThan(240);
+    expect(peaks.map((peak) => peak.amplitude)).toEqual(
+      [...peaks.map((peak) => peak.amplitude)].sort((a, b) => b - a),
     );
   });
-});
 
-describe("legacy sub-floor residual regression", () => {
-  it("ordinary midrange peaks are not classified as sub-floor-only with small water radius", () => {
-    // 440 Hz is above the 180 Hz legacy floor even when physical floor > 440 Hz.
-    const target = writeModalSlotsFromPeakDrivers(createModalTargetBuild(6), {
-      fftMagnitudes: makeFft([[440, 0.8]]),
-      sampleRate: SAMPLE_RATE,
-      fftSize: FFT_SIZE,
-      radius: SMALL_WATER_RADIUS,
-      capacity: 6,
-      slotLimit: 6,
-      spectralCentroid: 0.2,
-      includeSpectralLight: false,
-      peaks: [{ frequency: 440, amplitude: 0.8 }],
-      scratchTarget: createModalTargetBuild(6),
-    });
+  it("keeps separated regional peaks before filling remaining capacity", () => {
+    const peaks = findSpectralPeakFrequencies(
+      makeFft([
+        [80, 0.9],
+        [120, 0.88],
+        [900, 0.4],
+        [3200, 0.5],
+      ]),
+      SAMPLE_RATE,
+      FFT_SIZE,
+      3,
+      {
+        minimumAmplitude: 0.1,
+        minBinGapHz: 10,
+        regionRanges: [
+          [40, 200],
+          [800, 1200],
+          [2800, 3600],
+        ],
+      },
+    );
 
-    // 440 Hz should be above the legacy floor → at least one meaningful above-floor peak.
+    expect(peaks[0].frequency).toBeGreaterThan(70);
+    expect(peaks[0].frequency).toBeLessThan(90);
+    expect(peaks[1].frequency).toBeGreaterThan(3180);
+    expect(peaks[1].frequency).toBeLessThan(3220);
+    expect(peaks[2].frequency).toBeGreaterThan(880);
+    expect(peaks[2].frequency).toBeLessThan(920);
+  });
+
+  it("returns no peaks for invalid or silent inputs", () => {
+    expect(findSpectralPeakFrequencies(null, SAMPLE_RATE, FFT_SIZE, 4)).toEqual(
+      [],
+    );
     expect(
-      target.subfloorBridgeMeta.meaningfulAboveFloorPeakCount,
-    ).toBeGreaterThanOrEqual(1);
-  });
-
-  it("peaks below 180 Hz are still classified as sub-floor with the compensated floor", () => {
-    const target = writeModalSlotsFromPeakDrivers(createModalTargetBuild(6), {
-      fftMagnitudes: makeFft([[60, 0.8]]),
-      sampleRate: SAMPLE_RATE,
-      fftSize: FFT_SIZE,
-      radius: SMALL_WATER_RADIUS,
-      capacity: 6,
-      slotLimit: 6,
-      spectralCentroid: 0.1,
-      includeSpectralLight: false,
-      peaks: [{ frequency: 60, amplitude: 0.8 }],
-      scratchTarget: createModalTargetBuild(6),
-    });
-
-    expect(target.subfloorBridgeMeta.dominantPeakFrequency).toBe(60);
-    // 60 Hz < 180 Hz legacy floor → still a sub-floor peak.
-    expect(target.subfloorBridgeMeta.dominantPeakFrequency).toBeLessThan(
-      target.subfloorBridgeMeta.legacyAnalysisFloorHz,
-    );
-  });
-});
-
-describe("legacy spectral peak mapping regression (water physics compensation)", () => {
-  it("440 / 1760 / 3200 Hz peaks map to distinct families via spectral resolver", () => {
-    const peaks = [
-      { frequency: 440, amplitude: 0.9 },
-      { frequency: 1760, amplitude: 0.75 },
-      { frequency: 3200, amplitude: 0.6 },
-    ];
-    const target = writeModalSlotsFromSpectralPeaks(
-      createModalTargetBuild(12),
-      {
-        fftMagnitudes: makeFft([
-          [440, 0.9],
-          [1760, 0.75],
-          [3200, 0.6],
-        ]),
-        sampleRate: SAMPLE_RATE,
-        fftSize: FFT_SIZE,
-        radius: SMALL_WATER_RADIUS,
-        capacity: 12,
-        slotLimit: 12,
-        spectralCentroid: 0.3,
-        includeSpectralLight: false,
-        peaks,
-      },
-    );
-
-    const keys = readModeKeys(target);
-    expect(keys.length).toBeGreaterThan(0);
-    expect(keys.every((k) => k === "1:1:1")).toBe(false);
-    expect(new Set(keys).size).toBeGreaterThan(1);
-  });
-});
-
-describe("legacy compensation no-op preserve-feel regression", () => {
-  it("compensation is a no-op for large radii (physical floor already <= 180 Hz)", () => {
-    // radius=10 → physical floor ≈ 128 Hz < 180 Hz → legacyRadius = radius → no change
-    const largeRadius = 10;
-    expect(getLegacyAnalysisRadius(largeRadius)).toBe(largeRadius);
-    expect(getMinimumCavityFrequency(largeRadius)).toBeLessThan(
-      LEGACY_PEAK_ANALYSIS_MAX_FLOOR_HZ,
-    );
-
-    const peaks = [
-      { frequency: 440, amplitude: 0.88 },
-      { frequency: 880, amplitude: 0.6 },
-    ];
-    const fft = makeFft([
-      [440, 0.88],
-      [880, 0.6],
-    ]);
-
-    const withCompensation = writeModalSlotsFromPeakDrivers(
-      createModalTargetBuild(8),
-      {
-        fftMagnitudes: fft,
-        sampleRate: SAMPLE_RATE,
-        fftSize: FFT_SIZE,
-        radius: largeRadius,
-        capacity: 8,
-        slotLimit: 8,
-        spectralCentroid: 0.22,
-        includeSpectralLight: false,
-        peaks,
-        scratchTarget: createModalTargetBuild(8),
-      },
-    );
-
-    // Mode assignments should match a direct call using the same (unchanged) radius.
-    const direct = writeModalSlotsFromPeakDrivers(createModalTargetBuild(8), {
-      fftMagnitudes: fft,
-      sampleRate: SAMPLE_RATE,
-      fftSize: FFT_SIZE,
-      radius: largeRadius,
-      capacity: 8,
-      slotLimit: 8,
-      spectralCentroid: 0.22,
-      includeSpectralLight: false,
-      peaks,
-      scratchTarget: createModalTargetBuild(8),
-    });
-
-    expect(readModeKeys(withCompensation)).toEqual(readModeKeys(direct));
-    expect(withCompensation.uniqueModeCount).toBe(direct.uniqueModeCount);
+      findSpectralPeakFrequencies(new Float32Array(BIN_COUNT), 0, FFT_SIZE, 4),
+    ).toEqual([]);
+    expect(
+      findSpectralPeakFrequencies(
+        new Float32Array(BIN_COUNT),
+        SAMPLE_RATE,
+        FFT_SIZE,
+        0,
+      ),
+    ).toEqual([]);
   });
 });

@@ -29,8 +29,15 @@ export const AUDIO_DEFAULTS = Object.freeze({
   liveInputAcousticIntent: "ambient",
 });
 
+export const CAVITY_ACOUSTIC_DEFAULTS = Object.freeze({
+  radiusMeters: 12.5,
+  soundSpeedMetersPerSecond: 1480,
+  subfloorPolicy: "project-low-q",
+});
+
 export const SIMULATION_DEFAULTS = Object.freeze({
   radius: 3.0,
+  cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
   zeroPointPrecision: 0.064,
   structureMin: 0.59,
   structureMax: 0.83,
