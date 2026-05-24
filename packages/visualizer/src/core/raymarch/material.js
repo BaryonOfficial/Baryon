@@ -220,7 +220,8 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   offsetNode?: any | ((args: { startPosLocal: any, rayDirLocal: any, radiusNode: any }) => any),
  *   fieldEvaluationMode?: string,
  *   spectralLightEvaluationMode?: string,
- *   effectiveFieldTexture?: any
+ *   effectiveFieldTexture?: any,
+ *   effectiveFieldSupportTexture?: any
  * }} BaryonVolumeMaterial
  */
 
@@ -462,6 +463,7 @@ function createScatteringNode({
   cavityGeometry = "rectangular",
   fieldEvaluationMode = "effective-cached",
   effectiveFieldTexture = null,
+  effectiveFieldSupportTexture = null,
   spectralLightCacheTexture = null,
   spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
 }) {
@@ -653,6 +655,8 @@ function createScatteringNode({
       const gradX = float(0.0).toVar();
       const gradY = float(0.0).toVar();
       const gradZ = float(0.0).toVar();
+      const effectiveUnsignedSupport = float(0.0).toVar();
+      const effectiveCancellationRatio = float(0.0).toVar();
       const colorSum = vec3(0.0).toVar();
       const colorWeight = float(0.0).toVar();
       const spectralLightEnabled = smoothstep(
@@ -683,6 +687,13 @@ function createScatteringNode({
         gradX.assign(cachedSample.y);
         gradY.assign(cachedSample.z);
         gradZ.assign(cachedSample.w);
+        if (effectiveFieldSupportTexture) {
+          const effectiveFieldSupportSample = texture3D(
+            effectiveFieldSupportTexture,
+          ).sample(cacheUv);
+          effectiveUnsignedSupport.assign(effectiveFieldSupportSample.x);
+          effectiveCancellationRatio.assign(effectiveFieldSupportSample.y);
+        }
 
         if (cachedSpectralLightEnabled) {
           const cacheUv = clamp(
@@ -834,6 +845,17 @@ function createScatteringNode({
         float(SIGNED_INTERFERENCE_BODY_AUTHORITY_END),
         normalizedFieldAbs,
       ).pow(float(SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER));
+      const cancellationSuppression = float(1.0).sub(
+        effectiveCancellationRatio
+          .mul(
+            smoothstep(
+              float(0.01),
+              float(0.12),
+              effectiveUnsignedSupport,
+            ),
+          )
+          .mul(float(0.85)),
+      );
       const activeMask = smoothstep(float(0.0), float(1.0), activeCount);
       // Beat pulse drives a visible density surge through the volume
       const densityMod = float(1.0)
@@ -869,6 +891,7 @@ function createScatteringNode({
         .mul(float(BODY_DENSITY_GAIN))
         .mul(float(1.0).sub(boundaryMask.mul(float(BODY_BOUNDARY_REDUCTION))))
         .mul(signedBodyAuthority)
+        .mul(cancellationSuppression)
         .mul(incoherentTrebleSuppression)
         // Under-excited fields get much less body fill to avoid diffuse white fog
         .mul(excitationVisibility.pow(float(1.2)));
@@ -914,7 +937,10 @@ function createScatteringNode({
         float(1.0),
       );
       const causticRidgeAuthority = clamp(
-        causticFocusAuthority.mul(edgeFade).mul(activeMask),
+        causticFocusAuthority
+          .mul(edgeFade)
+          .mul(activeMask)
+          .mul(cancellationSuppression),
         float(0.0),
         float(1.0),
       );
@@ -1564,6 +1590,7 @@ export function createRaymarchVolumeMesh({
   backboneColorBuffer,
   detailColorBuffer,
   effectiveFieldTexture = null,
+  effectiveFieldSupportTexture = null,
   spectralLightCacheTexture = null,
   capacity = null,
   backboneCapacity = capacity ?? 0,
@@ -1611,6 +1638,10 @@ export function createRaymarchVolumeMesh({
         fieldEvaluationMode === "effective-cached"
           ? effectiveFieldTexture
           : null,
+      effectiveFieldSupportTexture:
+        fieldEvaluationMode === "effective-cached"
+          ? effectiveFieldSupportTexture
+          : null,
       spectralLightCacheTexture:
         spectralLightEvaluationMode ===
         RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached
@@ -1622,6 +1653,10 @@ export function createRaymarchVolumeMesh({
     material.spectralLightEvaluationMode = spectralLightEvaluationMode;
     material.effectiveFieldTexture =
       fieldEvaluationMode === "effective-cached" ? effectiveFieldTexture : null;
+    material.effectiveFieldSupportTexture =
+      fieldEvaluationMode === "effective-cached"
+        ? effectiveFieldSupportTexture
+        : null;
     return material;
   };
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
@@ -1669,6 +1704,8 @@ export function createRaymarchVolumeMesh({
   mesh.userData.raymarchSpectralLightEvaluationMode =
     initialSpectralLightEvaluationMode;
   mesh.userData.raymarchEffectiveFieldTexture = effectiveFieldTexture;
+  mesh.userData.raymarchEffectiveFieldSupportTexture =
+    effectiveFieldSupportTexture;
   mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
   mesh.frustumCulled = false;
 

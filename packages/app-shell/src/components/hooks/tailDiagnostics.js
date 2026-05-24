@@ -34,6 +34,10 @@ function readBoolean(value, fallback = false) {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function readString(value, fallback = null) {
+  return typeof value === "string" ? value : fallback;
+}
+
 function hasCurrentInput(input = {}) {
   return (
     input.sourceMode !== "silent" &&
@@ -176,6 +180,35 @@ function buildTailDiagnosticSample({
           raymarchDebug.observedContourSupportMax,
       ),
       effectiveFieldReady: readBoolean(render.effectiveFieldReady),
+      effectiveFieldSupportReady: readBoolean(
+        render.effectiveFieldSupportReady ??
+          raymarchDebug.effectiveFieldSupportReady,
+      ),
+      effectiveFieldSupportSemantic: readString(
+        render.effectiveFieldSupportSemantic ??
+          raymarchDebug.effectiveFieldSupportSemantic,
+        "effective-field-support",
+      ),
+      effectiveFieldUnsignedSupportMean: readFiniteNumber(
+        render.effectiveFieldUnsignedSupportMean ??
+          raymarchDebug.effectiveFieldUnsignedSupportMean,
+      ),
+      effectiveFieldCancellationRatioMean: readFiniteNumber(
+        render.effectiveFieldCancellationRatioMean ??
+          raymarchDebug.effectiveFieldCancellationRatioMean,
+      ),
+      effectiveFieldCancellationRatioMax: readFiniteNumber(
+        render.effectiveFieldCancellationRatioMax ??
+          raymarchDebug.effectiveFieldCancellationRatioMax,
+      ),
+      effectiveFieldZeroAmplitudeSkippedModeCount: readFiniteNumber(
+        render.effectiveFieldZeroAmplitudeSkippedModeCount ??
+          raymarchDebug.effectiveFieldZeroAmplitudeSkippedModeCount,
+      ),
+      effectiveFieldDescriptorStaleReason: readString(
+        render.effectiveFieldDescriptorStaleReason ??
+          raymarchDebug.effectiveFieldDescriptorStaleReason,
+      ),
       effectiveFieldRebuildPending: readBoolean(
         render.effectiveFieldRebuildPending,
       ),

@@ -1,3 +1,8 @@
+import {
+  getRaymarchEffectiveFieldDescriptorStaleReason,
+  isRaymarchEffectiveFieldCacheReadyForDescriptor,
+} from "@baryon/visualizer/core/raymarch/fieldCache";
+
 function createRuntimePerfEntry() {
   return {
     averageMs: 0,
@@ -257,12 +262,19 @@ export function shouldReuseIdleFrame(status, controls) {
 const EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS = Object.freeze({
   effectiveFieldActive: false,
   effectiveFieldReady: false,
+  effectiveFieldSupportReady: false,
+  effectiveFieldSupportSemantic: "effective-field-support",
+  effectiveFieldUnsignedSupportMean: 0,
+  effectiveFieldCancellationRatioMean: 0,
+  effectiveFieldCancellationRatioMax: 0,
+  effectiveFieldSupportDiagnosticSampleCount: 0,
   effectiveFieldRebuildPending: false,
   effectiveFieldBackend: "compute",
   effectiveFieldResolution: 0,
   effectiveFieldRebuildCount: 0,
   effectiveFieldRebuildReason: "uninitialized",
   effectiveFieldDescriptorFresh: false,
+  effectiveFieldDescriptorStaleReason: null,
   effectiveFieldQueuedDescriptorPending: false,
   effectiveFieldLastError: null,
   effectiveFieldModeCount: 0,
@@ -270,6 +282,7 @@ const EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS = Object.freeze({
   effectiveFieldModeIdentityRetentionRatio: 1,
   effectiveFieldMaxRepresentableModeIndex: 0,
   effectiveFieldContributingModeCount: 0,
+  effectiveFieldZeroAmplitudeSkippedModeCount: 0,
   effectiveFieldContributingModalEnergy: 0,
   effectiveFieldBandwidthRejectedModeCount: 0,
   effectiveFieldBandwidthRejectedModalEnergy: 0,
@@ -429,6 +442,36 @@ export function updateObservationTransferRenderDiagnostics(
   renderDiagnostics.effectiveFieldReady = Boolean(
     raymarchDebug.effectiveFieldReady ?? effectiveFieldCache?.ready,
   );
+  renderDiagnostics.effectiveFieldSupportReady = Boolean(
+    raymarchDebug.effectiveFieldSupportReady ??
+    (effectiveFieldCache?.ready === true &&
+      Boolean(effectiveFieldCache?.supportTexture)),
+  );
+  renderDiagnostics.effectiveFieldSupportSemantic =
+    raymarchDebug.effectiveFieldSupportSemantic ??
+    effectiveFieldCache?.supportSemantic ??
+    EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS.effectiveFieldSupportSemantic;
+  renderDiagnostics.effectiveFieldUnsignedSupportMean = readFiniteNumber(
+    raymarchDebug.effectiveFieldUnsignedSupportMean ??
+      effectiveFieldCache?.effectiveFieldUnsignedSupportMean ??
+      effectiveFieldDescriptor?.effectiveFieldUnsignedSupportMean,
+  );
+  renderDiagnostics.effectiveFieldCancellationRatioMean = readFiniteNumber(
+    raymarchDebug.effectiveFieldCancellationRatioMean ??
+      effectiveFieldCache?.effectiveFieldCancellationRatioMean ??
+      effectiveFieldDescriptor?.effectiveFieldCancellationRatioMean,
+  );
+  renderDiagnostics.effectiveFieldCancellationRatioMax = readFiniteNumber(
+    raymarchDebug.effectiveFieldCancellationRatioMax ??
+      effectiveFieldCache?.effectiveFieldCancellationRatioMax ??
+      effectiveFieldDescriptor?.effectiveFieldCancellationRatioMax,
+  );
+  renderDiagnostics.effectiveFieldSupportDiagnosticSampleCount =
+    readFiniteNumber(
+      raymarchDebug.effectiveFieldSupportDiagnosticSampleCount ??
+        effectiveFieldCache?.effectiveFieldSupportDiagnosticSampleCount ??
+        effectiveFieldDescriptor?.effectiveFieldSupportDiagnosticSampleCount,
+    );
   renderDiagnostics.effectiveFieldRebuildPending = Boolean(
     raymarchDebug.effectiveFieldRebuildPending ??
     effectiveFieldCache?.rebuildPending,
@@ -448,9 +491,34 @@ export function updateObservationTransferRenderDiagnostics(
     raymarchDebug.effectiveFieldRebuildReason ??
     effectiveFieldCache?.lastRebuildReason ??
     EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS.effectiveFieldRebuildReason;
-  renderDiagnostics.effectiveFieldDescriptorFresh = Boolean(
-    raymarchDebug.effectiveFieldDescriptorFresh,
-  );
+  const effectiveFieldDescriptorFresh =
+    typeof raymarchDebug.effectiveFieldDescriptorFresh === "boolean"
+      ? raymarchDebug.effectiveFieldDescriptorFresh
+      : isRaymarchEffectiveFieldCacheReadyForDescriptor(
+          effectiveFieldCache,
+          effectiveFieldDescriptor,
+        );
+  renderDiagnostics.effectiveFieldDescriptorFresh =
+    effectiveFieldDescriptorFresh;
+  const effectiveFieldDescriptorStaleReason =
+    getRaymarchEffectiveFieldDescriptorStaleReason({
+      descriptorFresh: effectiveFieldDescriptorFresh,
+      reportedReason:
+        raymarchDebug.effectiveFieldDescriptorStaleReason ??
+        effectiveFieldCache?.descriptorStaleReason,
+      rebuildPending: effectiveFieldCache?.rebuildPending,
+      queuedDescriptor: effectiveFieldCache?.queuedDescriptor,
+      activeDescriptor: effectiveFieldCache?.activeDescriptor,
+      nextDescriptor: effectiveFieldDescriptor,
+      hasDescriptorState: Boolean(
+        effectiveFieldCache || effectiveFieldDescriptor,
+      ),
+    }) ??
+    EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS.effectiveFieldDescriptorStaleReason;
+  renderDiagnostics.effectiveFieldDescriptorStaleReason =
+    typeof effectiveFieldDescriptorStaleReason === "string"
+      ? effectiveFieldDescriptorStaleReason
+      : null;
   renderDiagnostics.effectiveFieldQueuedDescriptorPending = Boolean(
     raymarchDebug.effectiveFieldQueuedDescriptorPending ??
     effectiveFieldCache?.queuedDescriptor,
@@ -485,6 +553,12 @@ export function updateObservationTransferRenderDiagnostics(
       effectiveFieldCache?.contributingEffectiveFieldModeCount ??
       effectiveFieldDescriptor?.contributingEffectiveFieldModeCount,
   );
+  renderDiagnostics.effectiveFieldZeroAmplitudeSkippedModeCount =
+    readFiniteNumber(
+      raymarchDebug.effectiveFieldZeroAmplitudeSkippedModeCount ??
+        effectiveFieldCache?.zeroAmplitudeSkippedModeCount ??
+        effectiveFieldDescriptor?.zeroAmplitudeSkippedModeCount,
+    );
   renderDiagnostics.effectiveFieldContributingModalEnergy = readFiniteNumber(
     raymarchDebug.effectiveFieldContributingModalEnergy ??
       effectiveFieldCache?.contributingModalEnergy ??

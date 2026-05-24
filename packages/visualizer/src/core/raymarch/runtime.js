@@ -19,6 +19,7 @@ import {
   disposeRaymarchSpectralLightCache,
   enqueueRaymarchEffectiveFieldRebuild,
   enqueueRaymarchSpectralLightCacheRebuild,
+  getRaymarchEffectiveFieldDescriptorStaleReason,
   isRaymarchEffectiveFieldCacheReadyForDescriptor,
   isRaymarchSpectralLightCacheReadyForDescriptor,
   shouldRebuildRaymarchSpectralLightCache,
@@ -199,10 +200,15 @@ function resetEffectiveFieldRuntimeDiagnostics(effectiveFieldCache) {
   effectiveFieldCache.activeEffectiveFieldModeCount = 0;
   effectiveFieldCache.effectiveFieldAuthority = 0;
   effectiveFieldCache.contributingEffectiveFieldModeCount = 0;
+  effectiveFieldCache.zeroAmplitudeSkippedModeCount = 0;
   effectiveFieldCache.contributingModalEnergy = 0;
   effectiveFieldCache.bandwidthRejectedModeCount = 0;
   effectiveFieldCache.bandwidthRejectedModalEnergy = 0;
   effectiveFieldCache.effectiveFieldGradientEnvelope = 0;
+  effectiveFieldCache.effectiveFieldUnsignedSupportMean = 0;
+  effectiveFieldCache.effectiveFieldCancellationRatioMean = 0;
+  effectiveFieldCache.effectiveFieldCancellationRatioMax = 0;
+  effectiveFieldCache.effectiveFieldSupportDiagnosticSampleCount = 0;
 }
 
 function resetRenderAuthorityState(runtimeState) {
@@ -595,12 +601,25 @@ function buildRaymarchDebugSnapshot(
       effectiveFieldCache,
       effectiveFieldDescriptor,
     );
+  const effectiveFieldDescriptorStaleReason =
+    getRaymarchEffectiveFieldDescriptorStaleReason({
+      descriptorFresh: effectiveFieldDescriptorFresh,
+      rebuildPending: effectiveFieldCache?.rebuildPending,
+      queuedDescriptor: effectiveFieldCache?.queuedDescriptor,
+      activeDescriptor: effectiveFieldCache?.activeDescriptor,
+      nextDescriptor: effectiveFieldDescriptor,
+    });
   const effectiveFieldModeCount =
     effectiveFieldCache?.activeEffectiveFieldModeCount ??
     runtimeState.effectiveFieldModeCount ??
     0;
   const effectiveFieldSemantic =
     effectiveFieldCache?.semantic ?? "canonical-effective-field";
+  const effectiveFieldSupportSemantic =
+    effectiveFieldCache?.supportSemantic ?? "effective-field-support";
+  const effectiveFieldSupportReady = Boolean(
+    effectiveFieldCache?.ready && effectiveFieldCache?.supportTexture,
+  );
   const effectiveFieldAuthority = readFiniteNumber(
     effectiveFieldCache?.effectiveFieldAuthority ??
       effectiveFieldDescriptor?.phaseAuthority,
@@ -614,6 +633,11 @@ function buildRaymarchDebugSnapshot(
   const effectiveFieldContributingModeCount = readFiniteNumber(
     effectiveFieldDescriptor?.contributingEffectiveFieldModeCount ??
       effectiveFieldCache?.contributingEffectiveFieldModeCount,
+    0,
+  );
+  const effectiveFieldZeroAmplitudeSkippedModeCount = readFiniteNumber(
+    effectiveFieldDescriptor?.zeroAmplitudeSkippedModeCount ??
+      effectiveFieldCache?.zeroAmplitudeSkippedModeCount,
     0,
   );
   const effectiveFieldContributingModalEnergy = readFiniteNumber(
@@ -634,6 +658,26 @@ function buildRaymarchDebugSnapshot(
   const effectiveFieldGradientEnvelope = readFiniteNumber(
     effectiveFieldDescriptor?.effectiveFieldGradientEnvelope ??
       effectiveFieldCache?.effectiveFieldGradientEnvelope,
+    0,
+  );
+  const effectiveFieldUnsignedSupportMean = readFiniteNumber(
+    effectiveFieldDescriptor?.effectiveFieldUnsignedSupportMean ??
+      effectiveFieldCache?.effectiveFieldUnsignedSupportMean,
+    0,
+  );
+  const effectiveFieldCancellationRatioMean = readFiniteNumber(
+    effectiveFieldDescriptor?.effectiveFieldCancellationRatioMean ??
+      effectiveFieldCache?.effectiveFieldCancellationRatioMean,
+    0,
+  );
+  const effectiveFieldCancellationRatioMax = readFiniteNumber(
+    effectiveFieldDescriptor?.effectiveFieldCancellationRatioMax ??
+      effectiveFieldCache?.effectiveFieldCancellationRatioMax,
+    0,
+  );
+  const effectiveFieldSupportDiagnosticSampleCount = readFiniteNumber(
+    effectiveFieldDescriptor?.effectiveFieldSupportDiagnosticSampleCount ??
+      effectiveFieldCache?.effectiveFieldSupportDiagnosticSampleCount,
     0,
   );
   const spectralLightCacheDescriptorFresh =
@@ -849,6 +893,7 @@ function buildRaymarchDebugSnapshot(
     effectiveFieldRebuildReason:
       effectiveFieldCache?.lastRebuildReason ?? "uninitialized",
     effectiveFieldDescriptorFresh,
+    effectiveFieldDescriptorStaleReason,
     effectiveFieldQueuedDescriptorPending: Boolean(
       effectiveFieldCache?.queuedDescriptor,
     ),
@@ -859,6 +904,8 @@ function buildRaymarchDebugSnapshot(
     effectiveFieldLastError: effectiveFieldCache?.lastError ?? null,
     effectiveFieldModeCount,
     effectiveFieldSemantic,
+    effectiveFieldSupportReady,
+    effectiveFieldSupportSemantic,
     effectiveFieldAuthority,
     effectiveFieldModeIdentityRetentionRatio:
       effectiveFieldCache?.modeIdentityRetentionRatio ??
@@ -866,10 +913,15 @@ function buildRaymarchDebugSnapshot(
       1,
     effectiveFieldMaxRepresentableModeIndex,
     effectiveFieldContributingModeCount,
+    effectiveFieldZeroAmplitudeSkippedModeCount,
     effectiveFieldContributingModalEnergy,
     effectiveFieldBandwidthRejectedModeCount,
     effectiveFieldBandwidthRejectedModalEnergy,
     effectiveFieldGradientEnvelope,
+    effectiveFieldUnsignedSupportMean,
+    effectiveFieldCancellationRatioMean,
+    effectiveFieldCancellationRatioMax,
+    effectiveFieldSupportDiagnosticSampleCount,
     spectralLightCacheActive: spectralLightCache?.active ?? false,
     spectralLightCacheReady: spectralLightCache?.ready ?? false,
     spectralLightCacheRebuildPending:

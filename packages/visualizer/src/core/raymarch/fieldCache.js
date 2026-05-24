@@ -30,6 +30,17 @@ const SIGNED_INTERFERENCE_VISIBILITY_EPSILON = 0.01;
 const SIGNED_INTERFERENCE_VISIBILITY_START = 0.025;
 const SIGNED_INTERFERENCE_VISIBILITY_END = 0.1;
 const EFFECTIVE_FIELD_ENERGY_EPSILON = 0.01;
+const EFFECTIVE_FIELD_SUPPORT_DIAGNOSTIC_SAMPLE_POINTS = Object.freeze([
+  [0, 0, 0],
+  [1, 0, 0],
+  [-1, 0, 0],
+  [0, 1, 0],
+  [0, -1, 0],
+  [0, 0, 1],
+  [0, 0, -1],
+  [0.5, 0.5, 0.5],
+  [-0.5, 0.5, -0.5],
+]);
 
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -154,6 +165,7 @@ function summarizeEffectiveFieldLayerDiagnostics({
 }) {
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   let contributingEffectiveFieldModeCount = 0;
+  let zeroAmplitudeSkippedModeCount = 0;
   let bandwidthRejectedModeCount = 0;
   let contributingModalEnergy = 0;
   let bandwidthRejectedModalEnergy = 0;
@@ -163,6 +175,7 @@ function summarizeEffectiveFieldLayerDiagnostics({
     const offset = slotIndex * 4;
     const modalEnergy = Math.max(0, slots?.[offset + 3] ?? 0) * weight;
     if (!(modalEnergy > 0)) {
+      zeroAmplitudeSkippedModeCount += 1;
       continue;
     }
 
@@ -181,6 +194,7 @@ function summarizeEffectiveFieldLayerDiagnostics({
 
   return {
     contributingEffectiveFieldModeCount,
+    zeroAmplitudeSkippedModeCount,
     bandwidthRejectedModeCount,
     contributingModalEnergy,
     bandwidthRejectedModalEnergy,
@@ -198,6 +212,9 @@ function mergeEffectiveFieldDiagnostics(backbone, detail, resolution) {
     contributingEffectiveFieldModeCount:
       backbone.contributingEffectiveFieldModeCount +
       detail.contributingEffectiveFieldModeCount,
+    zeroAmplitudeSkippedModeCount:
+      backbone.zeroAmplitudeSkippedModeCount +
+      detail.zeroAmplitudeSkippedModeCount,
     bandwidthRejectedModeCount:
       backbone.bandwidthRejectedModeCount + detail.bandwidthRejectedModeCount,
     contributingModalEnergy,
@@ -207,6 +224,67 @@ function mergeEffectiveFieldDiagnostics(backbone, detail, resolution) {
     effectiveFieldGradientEnvelope:
       (backbone.gradientEnvelopeNumerator + detail.gradientEnvelopeNumerator) /
       Math.max(EFFECTIVE_FIELD_ENERGY_EPSILON, contributingModalEnergy),
+  };
+}
+
+function summarizeEffectiveFieldSupportDiagnostics({
+  backboneSlots,
+  detailSlots,
+  backbonePhaseSlots,
+  detailPhaseSlots,
+  backboneCount,
+  detailCount,
+  boundaryMode,
+  cavityGeometry,
+  radius,
+  resolution,
+}) {
+  const sampleRadius = Math.max(Math.abs(radius), 1e-4);
+  let unsignedSupportSum = 0;
+  let cancellationRatioSum = 0;
+  let cancellationRatioMax = 0;
+  let supportedSampleCount = 0;
+
+  for (const [x, y, z] of EFFECTIVE_FIELD_SUPPORT_DIAGNOSTIC_SAMPLE_POINTS) {
+    const sample = evaluateRaymarchEffectiveFieldPoint({
+      backboneSlots,
+      detailSlots,
+      backbonePhaseSlots,
+      detailPhaseSlots,
+      backboneCount,
+      detailCount,
+      boundaryMode,
+      cavityGeometry,
+      radius,
+      x: x * sampleRadius,
+      y: y * sampleRadius,
+      z: z * sampleRadius,
+      time: 0,
+      resolution,
+    });
+
+    if (!(sample.unsignedSupport > EFFECTIVE_FIELD_ENERGY_EPSILON)) {
+      continue;
+    }
+
+    supportedSampleCount += 1;
+    unsignedSupportSum += sample.unsignedSupport;
+    cancellationRatioSum += sample.cancellationRatio;
+    cancellationRatioMax = Math.max(
+      cancellationRatioMax,
+      sample.cancellationRatio,
+    );
+  }
+
+  return {
+    effectiveFieldUnsignedSupportMean:
+      supportedSampleCount > 0 ? unsignedSupportSum / supportedSampleCount : 0,
+    effectiveFieldCancellationRatioMean:
+      supportedSampleCount > 0
+        ? cancellationRatioSum / supportedSampleCount
+        : 0,
+    effectiveFieldCancellationRatioMax: cancellationRatioMax,
+    effectiveFieldSupportDiagnosticSampleCount: supportedSampleCount,
   };
 }
 
@@ -279,6 +357,9 @@ function effectiveFieldDescriptorsEqual(left, right) {
 }
 
 function resolveFieldRebuildReason(previousDescriptor, nextDescriptor) {
+  if (!nextDescriptor) {
+    return "missing-descriptor";
+  }
   if (!previousDescriptor) {
     return "initial";
   }
@@ -362,6 +443,33 @@ function resolveEffectiveFieldRebuildReason(
   return null;
 }
 
+export function getRaymarchEffectiveFieldDescriptorStaleReason({
+  descriptorFresh = false,
+  reportedReason = null,
+  rebuildPending = false,
+  queuedDescriptor = null,
+  activeDescriptor = null,
+  nextDescriptor = null,
+  hasDescriptorState = true,
+} = {}) {
+  if (descriptorFresh === true) {
+    return null;
+  }
+  if (typeof reportedReason === "string" && reportedReason.length > 0) {
+    return reportedReason;
+  }
+  if (rebuildPending === true) {
+    return "rebuild-pending";
+  }
+  if (queuedDescriptor) {
+    return "queued-descriptor";
+  }
+  if (hasDescriptorState !== true && !activeDescriptor && !nextDescriptor) {
+    return null;
+  }
+  return resolveEffectiveFieldRebuildReason(activeDescriptor, nextDescriptor);
+}
+
 function resolveDispatchSize(resolution) {
   const [xGroupSize, yGroupSize, zGroupSize] =
     FIELD_CACHE_COMPUTE_WORKGROUP_SIZE;
@@ -390,6 +498,7 @@ export function createRaymarchEffectiveFieldCache({
 } = {}) {
   const normalizedResolution = normalizeEffectiveFieldResolution(resolution);
   const texture = createCacheTexture(normalizedResolution);
+  const supportTexture = createCacheTexture(normalizedResolution);
 
   return {
     ...createCacheState({
@@ -398,16 +507,23 @@ export function createRaymarchEffectiveFieldCache({
       mode: "effective-cached",
     }),
     semantic: "canonical-effective-field",
+    supportTexture,
+    supportSemantic: "effective-field-support",
     activeEffectiveFieldModeCount: 0,
     effectiveFieldAuthority: 0,
     modeIdentityRetentionRatio: 1,
     effectiveFieldMaxRepresentableModeIndex:
       getEffectiveFieldMaxRepresentableModeIndex(normalizedResolution),
     contributingEffectiveFieldModeCount: 0,
+    zeroAmplitudeSkippedModeCount: 0,
     contributingModalEnergy: 0,
     bandwidthRejectedModeCount: 0,
     bandwidthRejectedModalEnergy: 0,
     effectiveFieldGradientEnvelope: 0,
+    effectiveFieldUnsignedSupportMean: 0,
+    effectiveFieldCancellationRatioMean: 0,
+    effectiveFieldCancellationRatioMax: 0,
+    effectiveFieldSupportDiagnosticSampleCount: 0,
   };
 }
 
@@ -435,6 +551,7 @@ export function disposeRaymarchFieldCache(fieldCache) {
 
 export function disposeRaymarchEffectiveFieldCache(effectiveFieldCache) {
   disposeRaymarchFieldCache(effectiveFieldCache);
+  effectiveFieldCache?.supportTexture?.dispose?.();
 }
 
 export function disposeRaymarchSpectralLightCache(spectralLightCache) {
@@ -646,6 +763,20 @@ export function buildRaymarchEffectiveFieldDescriptor({
     detailDiagnostics,
     normalizedResolution,
   );
+  const effectiveSupportDiagnostics = summarizeEffectiveFieldSupportDiagnostics(
+    {
+      backboneSlots,
+      detailSlots,
+      backbonePhaseSlots,
+      detailPhaseSlots,
+      backboneCount,
+      detailCount,
+      boundaryMode,
+      cavityGeometry,
+      radius: normalizedRadius,
+      resolution: normalizedResolution,
+    },
+  );
 
   return {
     ...fieldDescriptor,
@@ -657,6 +788,7 @@ export function buildRaymarchEffectiveFieldDescriptor({
     modeIdentityRetentionRatio: clamp01(modeIdentityRetentionRatio),
     resolution: normalizedResolution,
     ...effectiveDiagnostics,
+    ...effectiveSupportDiagnostics,
   };
 }
 
@@ -901,9 +1033,11 @@ function accumulateEffectiveFieldLayerAtPoint({
   let gradX = 0;
   let gradY = 0;
   let gradZ = 0;
+  let unsignedSupport = 0;
   let authoritySum = 0;
   let totalWeight = 0;
   let contributingEffectiveFieldModeCount = 0;
+  let zeroAmplitudeSkippedModeCount = 0;
   let bandwidthRejectedModeCount = 0;
   let bandwidthRejectedModalEnergy = 0;
   let gradientEnvelopeNumerator = 0;
@@ -914,6 +1048,7 @@ function accumulateEffectiveFieldLayerAtPoint({
     const offset = slotIndex * 4;
     const amplitude = Math.max(0, slots?.[offset + 3] ?? 0) * weight;
     if (!(amplitude > 0)) {
+      zeroAmplitudeSkippedModeCount += 1;
       continue;
     }
     if (!isEffectiveFieldSlotRepresentable({ slots, offset, resolution })) {
@@ -955,6 +1090,7 @@ function accumulateEffectiveFieldLayerAtPoint({
     gradX += coefficient * family.gradX;
     gradY += coefficient * family.gradY;
     gradZ += coefficient * family.gradZ;
+    unsignedSupport += Math.abs(coefficient * family.field);
   }
 
   return {
@@ -962,9 +1098,11 @@ function accumulateEffectiveFieldLayerAtPoint({
     gradX,
     gradY,
     gradZ,
+    unsignedSupport,
     authoritySum,
     totalWeight,
     contributingEffectiveFieldModeCount,
+    zeroAmplitudeSkippedModeCount,
     bandwidthRejectedModeCount,
     bandwidthRejectedModalEnergy,
     gradientEnvelopeNumerator,
@@ -1025,12 +1163,29 @@ export function evaluateRaymarchEffectiveFieldPoint({
     backbone.bandwidthRejectedModeCount + detail.bandwidthRejectedModeCount;
   const bandwidthRejectedModalEnergy =
     backbone.bandwidthRejectedModalEnergy + detail.bandwidthRejectedModalEnergy;
+  const field = (backbone.field + detail.field) / amplitudeNorm;
+  const unsignedSupport =
+    (backbone.unsignedSupport + detail.unsignedSupport) / amplitudeNorm;
+  const cancellationRatio =
+    unsignedSupport > 0
+      ? Math.min(
+          1,
+          Math.max(
+            0,
+            1 -
+              Math.abs(field) /
+                Math.max(EFFECTIVE_FIELD_ENERGY_EPSILON, unsignedSupport),
+          ),
+        )
+      : 0;
 
   return {
-    field: (backbone.field + detail.field) / amplitudeNorm,
+    field,
     gradX: (backbone.gradX + detail.gradX) / amplitudeNorm,
     gradY: (backbone.gradY + detail.gradY) / amplitudeNorm,
     gradZ: (backbone.gradZ + detail.gradZ) / amplitudeNorm,
+    unsignedSupport,
+    cancellationRatio,
     effectiveFieldAuthority: Math.min(
       1,
       Math.max(
@@ -1044,6 +1199,9 @@ export function evaluateRaymarchEffectiveFieldPoint({
     contributingEffectiveFieldModeCount:
       backbone.contributingEffectiveFieldModeCount +
       detail.contributingEffectiveFieldModeCount,
+    zeroAmplitudeSkippedModeCount:
+      backbone.zeroAmplitudeSkippedModeCount +
+      detail.zeroAmplitudeSkippedModeCount,
     contributingModalEnergy: totalWeight,
     bandwidthRejectedModeCount,
     bandwidthRejectedModalEnergy,
@@ -1482,6 +1640,7 @@ function accumulateEffectiveFieldComputeLayer({
   gradX,
   gradY,
   gradZ,
+  unsignedSupport,
 }) {
   Loop(
     {
@@ -1522,10 +1681,12 @@ function accumulateEffectiveFieldComputeLayer({
             boundaryMode,
           });
           totalAmplitude.addAssign(amplitude);
-          field.addAssign(coefficient.mul(family.field));
+          const contribution = coefficient.mul(family.field).toVar();
+          field.addAssign(contribution);
           gradX.addAssign(coefficient.mul(family.gradX));
           gradY.addAssign(coefficient.mul(family.gradY));
           gradZ.addAssign(coefficient.mul(family.gradZ));
+          unsignedSupport.addAssign(abs(contribution));
         });
       });
     },
@@ -1544,7 +1705,7 @@ function createEffectiveFieldComputeKernel({
   boundaryMode,
   cavityGeometry,
 }) {
-  const { resolution, texture } = effectiveFieldCache;
+  const { resolution, texture, supportTexture } = effectiveFieldCache;
   const uRadius = uniforms.uRadius;
   const uTime = uniforms.uTime;
   const backboneActiveCount = int(uniforms.uBackboneModeCount);
@@ -1593,6 +1754,7 @@ function createEffectiveFieldComputeKernel({
       const gradX = zero.toVar();
       const gradY = zero.toVar();
       const gradZ = zero.toVar();
+      const unsignedSupport = zero.toVar();
       const totalAmplitude = zero.toVar();
 
       accumulateEffectiveFieldComputeLayer({
@@ -1614,6 +1776,7 @@ function createEffectiveFieldComputeKernel({
         gradX,
         gradY,
         gradZ,
+        unsignedSupport,
       });
       accumulateEffectiveFieldComputeLayer({
         modeBuffer: detailModeBuffer,
@@ -1634,20 +1797,41 @@ function createEffectiveFieldComputeKernel({
         gradX,
         gradY,
         gradZ,
+        unsignedSupport,
       });
 
       const normalizedAmplitude = totalAmplitude.max(
         float(EFFECTIVE_FIELD_ENERGY_EPSILON),
       );
+      const normalizedField = field.div(normalizedAmplitude).toVar();
+      const normalizedUnsignedSupport = unsignedSupport
+        .div(normalizedAmplitude)
+        .toVar();
+      const cancellationRatio = clamp(
+        float(1.0).sub(
+          abs(normalizedField).div(
+            normalizedUnsignedSupport.max(
+              float(EFFECTIVE_FIELD_ENERGY_EPSILON),
+            ),
+          ),
+        ),
+        float(0.0),
+        float(1.0),
+      );
       textureStore(
         texture,
         uvec3(voxelCoord),
         vec4(
-          field.div(normalizedAmplitude),
+          normalizedField,
           gradX.div(normalizedAmplitude),
           gradY.div(normalizedAmplitude),
           gradZ.div(normalizedAmplitude),
         ),
+      ).toWriteOnly();
+      textureStore(
+        supportTexture,
+        uvec3(voxelCoord),
+        vec4(normalizedUnsignedSupport, cancellationRatio, zero, zero),
       ).toWriteOnly();
     });
   })().compute(
@@ -2126,6 +2310,8 @@ export function enqueueRaymarchEffectiveFieldRebuild(
           );
         effectiveFieldCache.contributingEffectiveFieldModeCount =
           descriptor.contributingEffectiveFieldModeCount ?? 0;
+        effectiveFieldCache.zeroAmplitudeSkippedModeCount =
+          descriptor.zeroAmplitudeSkippedModeCount ?? 0;
         effectiveFieldCache.contributingModalEnergy =
           descriptor.contributingModalEnergy ?? 0;
         effectiveFieldCache.bandwidthRejectedModeCount =
@@ -2134,6 +2320,14 @@ export function enqueueRaymarchEffectiveFieldRebuild(
           descriptor.bandwidthRejectedModalEnergy ?? 0;
         effectiveFieldCache.effectiveFieldGradientEnvelope =
           descriptor.effectiveFieldGradientEnvelope ?? 0;
+        effectiveFieldCache.effectiveFieldUnsignedSupportMean =
+          descriptor.effectiveFieldUnsignedSupportMean ?? 0;
+        effectiveFieldCache.effectiveFieldCancellationRatioMean =
+          descriptor.effectiveFieldCancellationRatioMean ?? 0;
+        effectiveFieldCache.effectiveFieldCancellationRatioMax =
+          descriptor.effectiveFieldCancellationRatioMax ?? 0;
+        effectiveFieldCache.effectiveFieldSupportDiagnosticSampleCount =
+          descriptor.effectiveFieldSupportDiagnosticSampleCount ?? 0;
         dispatchQueuedRaymarchEffectiveFieldCacheRebuild(effectiveFieldCache);
       },
       (error) => {

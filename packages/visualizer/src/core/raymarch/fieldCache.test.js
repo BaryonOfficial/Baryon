@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import * as raymarchFieldCache from "./fieldCache.js";
 import {
@@ -46,6 +47,42 @@ describe("fieldCache", () => {
     expect(effectiveFieldCache.mode).toBe("effective-cached");
     expect(effectiveFieldCache.semantic).toBe("canonical-effective-field");
     expect(effectiveFieldCache).not.toHaveProperty("updateIntervalMs");
+  });
+
+  it("creates companion effective-field support metadata without a second field authority", () => {
+    const effectiveFieldCache =
+      raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
+
+    expect(effectiveFieldCache.supportTexture.isStorageTexture).toBe(true);
+    expect(effectiveFieldCache.supportTexture.is3DTexture).toBe(true);
+    expect(effectiveFieldCache.supportTexture.image.width).toBe(8);
+    expect(effectiveFieldCache.supportTexture).not.toBe(
+      effectiveFieldCache.texture,
+    );
+    expect(effectiveFieldCache.semantic).toBe("canonical-effective-field");
+    expect(effectiveFieldCache.supportSemantic).toBe("effective-field-support");
+  });
+
+  it("keeps compute support and cancellation semantics paired with the CPU helper", () => {
+    const source = readFileSync(
+      new URL("./fieldCache.js", import.meta.url),
+      "utf8",
+    );
+    const cpuSupportStart = source.indexOf(
+      "unsignedSupport += Math.abs(coefficient * family.field);",
+    );
+    const computeContributionStart = source.indexOf(
+      "const contribution = coefficient.mul(family.field).toVar();",
+    );
+    const supportTextureStoreStart = source.indexOf(
+      "textureStore(\n        supportTexture",
+    );
+
+    expect(cpuSupportStart).toBeGreaterThan(-1);
+    expect(computeContributionStart).toBeGreaterThan(-1);
+    expect(source).toContain("unsignedSupport.addAssign(abs(contribution))");
+    expect(source).toContain("const cancellationRatio = clamp(");
+    expect(supportTextureStoreStart).toBeGreaterThan(computeContributionStart);
   });
 
   it("rebuilds the effective field when phase slots change", () => {
@@ -99,6 +136,33 @@ describe("fieldCache", () => {
         phaseChangedDescriptor,
       ),
     ).toMatchObject({ needsRebuild: true, reason: "phase-slots" });
+    expect(
+      raymarchFieldCache.getRaymarchEffectiveFieldDescriptorStaleReason({
+        activeDescriptor: initialDescriptor,
+        nextDescriptor: phaseChangedDescriptor,
+      }),
+    ).toBe("phase-slots");
+    expect(
+      raymarchFieldCache.getRaymarchEffectiveFieldDescriptorStaleReason({
+        descriptorFresh: true,
+        activeDescriptor: phaseChangedDescriptor,
+        nextDescriptor: phaseChangedDescriptor,
+      }),
+    ).toBeNull();
+    expect(
+      raymarchFieldCache.getRaymarchEffectiveFieldDescriptorStaleReason({
+        rebuildPending: true,
+        activeDescriptor: initialDescriptor,
+        nextDescriptor: phaseChangedDescriptor,
+      }),
+    ).toBe("rebuild-pending");
+    expect(
+      raymarchFieldCache.getRaymarchEffectiveFieldDescriptorStaleReason({
+        queuedDescriptor: phaseChangedDescriptor,
+        activeDescriptor: initialDescriptor,
+        nextDescriptor: phaseChangedDescriptor,
+      }),
+    ).toBe("queued-descriptor");
   });
 
   it("detects rebuilds only when the uploaded modal field changes", () => {
@@ -911,6 +975,76 @@ describe("fieldCache", () => {
     expect(mixed.gradZ).toBeCloseTo(lowOnly.gradZ, 6);
     expect(mixed.bandwidthRejectedModeCount).toBe(1);
     expect(mixed.bandwidthRejectedModalEnergy).toBeCloseTo(1, 6);
+  });
+
+  it("reports effective-field unsigned support when signed modes cancel", () => {
+    const sample = raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint({
+      backboneSlots: new Float32Array([1, 1, 1, 0.5, 2, 2, 2, 0.5]),
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 3,
+      y: 0,
+      z: 0,
+      time: 0,
+      resolution: 8,
+    });
+
+    expect(Math.abs(sample.field)).toBeLessThan(0.001);
+    expect(sample.unsignedSupport).toBeGreaterThan(0.9);
+    expect(sample.cancellationRatio).toBeGreaterThan(0.95);
+  });
+
+  it("summarizes effective-field support and cancellation diagnostics", () => {
+    const descriptor = raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor(
+      {
+        backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
+        detailSlots: new Float32Array(0),
+        backbonePhaseSlots: new Float32Array([0, 0, 1, 1, Math.PI, 0, 1, 1]),
+        detailPhaseSlots: new Float32Array(0),
+        backboneCount: 2,
+        detailCount: 0,
+        boundaryMode: "neumann",
+        radius: 3,
+        phaseModeCount: 2,
+        phaseAuthority: 1,
+        resolution: 8,
+      },
+    );
+
+    expect(descriptor.effectiveFieldUnsignedSupportMean).toBeGreaterThan(0.1);
+    expect(descriptor.effectiveFieldCancellationRatioMean).toBeGreaterThan(
+      0.95,
+    );
+    expect(descriptor.effectiveFieldCancellationRatioMax).toBeGreaterThan(0.95);
+  });
+
+  it("reports zero-amplitude effective-field slots skipped before representability", () => {
+    const descriptor = raymarchFieldCache.buildRaymarchEffectiveFieldDescriptor(
+      {
+        backboneSlots: new Float32Array([
+          1, 1, 1, 0.5, 2, 2, 2, 0, 3, 3, 3, 0.25,
+        ]),
+        detailSlots: new Float32Array([4, 4, 4, 0, 5, 5, 5, 0.1]),
+        backbonePhaseSlots: new Float32Array(12),
+        detailPhaseSlots: new Float32Array(8),
+        backboneCount: 3,
+        detailCount: 2,
+        boundaryMode: "neumann",
+        radius: 3,
+        phaseModeCount: 3,
+        phaseAuthority: 1,
+        resolution: 16,
+      },
+    );
+
+    expect(descriptor.zeroAmplitudeSkippedModeCount).toBe(2);
+    expect(descriptor.contributingEffectiveFieldModeCount).toBe(3);
+    expect(descriptor.bandwidthRejectedModeCount).toBe(0);
   });
 
   it("keeps the cached modal field signed rather than absolute-valued", () => {

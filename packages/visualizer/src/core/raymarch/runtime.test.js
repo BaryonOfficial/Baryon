@@ -846,6 +846,32 @@ describe("tickRaymarchRuntime", () => {
     expect(
       runtimeState.debugSnapshot.raymarchDebug.effectiveFieldAuthority,
     ).toBe(0.5);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.effectiveFieldSupportReady,
+    ).toBe(true);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.effectiveFieldSupportSemantic,
+    ).toBe("effective-field-support");
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .effectiveFieldUnsignedSupportMean,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .effectiveFieldCancellationRatioMean,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .effectiveFieldCancellationRatioMax,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .effectiveFieldZeroAmplitudeSkippedModeCount,
+    ).toBe(0);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug
+        .effectiveFieldDescriptorStaleReason,
+    ).toBeNull();
     expect(runtimeState.debugSnapshot.raymarchDebug.effectiveFieldActive).toBe(
       true,
     );
@@ -1612,6 +1638,10 @@ describe("tickRaymarchRuntime", () => {
       expect(runtimeState.debugSnapshot.effectiveFieldRebuildPending).toBe(
         true,
       );
+      expect(
+        runtimeState.debugSnapshot.raymarchDebug
+          .effectiveFieldDescriptorStaleReason,
+      ).toBe("rebuild-pending");
     } finally {
       globalThis.window = originalWindow;
     }

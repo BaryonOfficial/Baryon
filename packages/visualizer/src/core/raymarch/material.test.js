@@ -128,6 +128,47 @@ describe("raymarch volume material", () => {
     expect(source).toMatch(/\.mul\(\s*signedBodyAuthority\s*\)/);
   });
 
+  it("uses effective-field support metadata only to suppress cancelled field transfer", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const supportSampleStart = expectSourceIndex(
+      source,
+      "const effectiveFieldSupportSample =",
+    );
+    const cancellationSuppressionStart = expectSourceIndex(
+      source,
+      "const cancellationSuppression =",
+    );
+    const bodyDensityStart = expectSourceIndex(source, "const bodyDensity =");
+    const causticRidgeAuthorityStart = expectSourceIndex(
+      source,
+      "const causticRidgeAuthority =",
+    );
+    const causticVisibilityStart = expectSourceIndex(
+      source,
+      "const causticVisibility =",
+    );
+    const observationTransferStart = expectSourceIndex(
+      source,
+      "const observationTransfer = deriveObservationTransferNode(",
+    );
+
+    expect(source).toContain("effectiveFieldSupportTexture");
+    expect(cancellationSuppressionStart).toBeGreaterThan(supportSampleStart);
+    expect(bodyDensityStart).toBeGreaterThan(cancellationSuppressionStart);
+    expect(causticRidgeAuthorityStart).toBeGreaterThan(
+      cancellationSuppressionStart,
+    );
+    expect(observationTransferStart).toBeGreaterThan(bodyDensityStart);
+    expect(source).toMatch(/\.mul\(\s*cancellationSuppression\s*\)/);
+    expect(
+      source.slice(causticRidgeAuthorityStart, causticVisibilityStart),
+    ).toMatch(/\.mul\(\s*cancellationSuppression\s*\)/);
+    expect(source).not.toContain("effectiveSupportDensity");
+  });
+
   it("samples only the canonical effective field texture for field ownership", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
@@ -510,6 +551,7 @@ describe("raymarch volume material", () => {
       backboneColorBuffer: {},
       detailColorBuffer: {},
       effectiveFieldTexture: effectiveFieldCache.texture,
+      effectiveFieldSupportTexture: effectiveFieldCache.supportTexture,
       backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
       detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
       uniforms,
@@ -521,6 +563,12 @@ describe("raymarch volume material", () => {
     expect(mesh.material.effectiveFieldTexture).toBe(
       effectiveFieldCache.texture,
     );
+    expect(mesh.userData.raymarchEffectiveFieldSupportTexture).toBe(
+      effectiveFieldCache.supportTexture,
+    );
+    expect(mesh.material.effectiveFieldSupportTexture).toBe(
+      effectiveFieldCache.supportTexture,
+    );
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
 
@@ -529,10 +577,14 @@ describe("raymarch volume material", () => {
     expect(mesh.material.effectiveFieldTexture).toBe(
       effectiveFieldCache.texture,
     );
+    expect(mesh.material.effectiveFieldSupportTexture).toBe(
+      effectiveFieldCache.supportTexture,
+    );
 
     setRaymarchFieldEvaluationMode(mesh, "direct");
 
     expect(mesh.material.effectiveFieldTexture).toBeNull();
+    expect(mesh.material.effectiveFieldSupportTexture).toBeNull();
   });
 
   it("supports separate backbone and detail capacities", () => {

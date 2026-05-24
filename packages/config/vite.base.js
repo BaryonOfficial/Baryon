@@ -74,6 +74,10 @@ export function createBaryonWorkspaceAliases({ workspaceRoot }) {
       replacement: path.join(visualizerRoot, "controls/schema.js"),
     },
     {
+      find: /^@baryon\/visualizer\/core\/raymarch\/fieldCache$/,
+      replacement: path.join(visualizerRoot, "core/raymarch/fieldCache.js"),
+    },
+    {
       find: /^@baryon\/visualizer\/defaults$/,
       replacement: path.join(visualizerRoot, "defaults.js"),
     },
