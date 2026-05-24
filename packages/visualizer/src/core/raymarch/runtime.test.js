@@ -64,12 +64,6 @@ function createRuntimeState({ withFieldCache = false } = {}) {
         needsUpdate: false,
       },
     },
-    modalFieldRoleBuffer: {
-      value: {
-        array: new Float32Array(64),
-        needsUpdate: false,
-      },
-    },
     backboneModeBuffer: {
       value: {
         array: new Float32Array(32),
@@ -257,18 +251,15 @@ function countActiveSlots(slots) {
   return count;
 }
 
-function appendRoleSlots({
+function appendMetadataSlots({
   targetSlots,
   targetPhaseSlots,
   targetColorSlots,
-  targetRoleSlots,
+  targetMetadataSlots,
   sourceSlots,
   sourcePhaseSlots,
   sourceColorSlots,
   writeIndex,
-  roleMask,
-  backboneRoleWeight,
-  detailRoleWeight,
 }) {
   let written = writeIndex;
   for (let offset = 0; offset < (sourceSlots?.length ?? 0); offset += 4) {
@@ -283,10 +274,15 @@ function appendRoleSlots({
       sourceColorSlots?.slice(offset, offset + 4) ?? new Float32Array(4),
       targetOffset,
     );
-    targetRoleSlots[targetOffset] = roleMask;
-    targetRoleSlots[targetOffset + 1] = backboneRoleWeight;
-    targetRoleSlots[targetOffset + 2] = detailRoleWeight;
-    targetRoleSlots[targetOffset + 3] = 1;
+    const u = sourceSlots[offset] ?? 0;
+    const v = sourceSlots[offset + 1] ?? 0;
+    const w = sourceSlots[offset + 2] ?? 0;
+    const coefficient = sourceSlots[offset + 3] ?? 0;
+    const qualityFactor = 4 + Math.hypot(u, v, w) * 0.2;
+    targetMetadataSlots[targetOffset] = (u + v + w) * 32;
+    targetMetadataSlots[targetOffset + 1] = qualityFactor;
+    targetMetadataSlots[targetOffset + 2] = 1 / (2 * qualityFactor);
+    targetMetadataSlots[targetOffset + 3] = coefficient;
     written += 1;
   }
   return written;
@@ -305,32 +301,26 @@ function withUnifiedModalFields(frame) {
   const modalFieldSlots = new Float32Array(candidateCount * 4);
   const modalFieldPhaseSlots = new Float32Array(candidateCount * 4);
   const modalFieldColorSlots = new Float32Array(candidateCount * 4);
-  const modalFieldRoleSlots = new Float32Array(candidateCount * 4);
-  let writeIndex = appendRoleSlots({
+  const modalFieldMetadataSlots = new Float32Array(candidateCount * 4);
+  let writeIndex = appendMetadataSlots({
     targetSlots: modalFieldSlots,
     targetPhaseSlots: modalFieldPhaseSlots,
     targetColorSlots: modalFieldColorSlots,
-    targetRoleSlots: modalFieldRoleSlots,
+    targetMetadataSlots: modalFieldMetadataSlots,
     sourceSlots: frame.backboneSlots,
     sourcePhaseSlots: frame.backbonePhaseSlots,
     sourceColorSlots: frame.backboneColorSlots,
     writeIndex: 0,
-    roleMask: 1,
-    backboneRoleWeight: 1,
-    detailRoleWeight: 0,
   });
-  writeIndex = appendRoleSlots({
+  writeIndex = appendMetadataSlots({
     targetSlots: modalFieldSlots,
     targetPhaseSlots: modalFieldPhaseSlots,
     targetColorSlots: modalFieldColorSlots,
-    targetRoleSlots: modalFieldRoleSlots,
+    targetMetadataSlots: modalFieldMetadataSlots,
     sourceSlots: frame.detailSlots,
     sourcePhaseSlots: frame.detailPhaseSlots,
     sourceColorSlots: frame.detailColorSlots,
     writeIndex,
-    roleMask: 2,
-    backboneRoleWeight: 0,
-    detailRoleWeight: 1,
   });
   frame.activeBackboneModeCount = activeBackboneModeCount;
   frame.activeDetailModeCount = activeDetailModeCount;
@@ -349,7 +339,7 @@ function withUnifiedModalFields(frame) {
   frame.modalFieldSlots = modalFieldSlots;
   frame.modalFieldPhaseSlots = modalFieldPhaseSlots;
   frame.modalFieldColorSlots = modalFieldColorSlots;
-  frame.modalFieldRoleSlots = modalFieldRoleSlots;
+  frame.modalFieldMetadataSlots = modalFieldMetadataSlots;
   return frame;
 }
 
@@ -460,7 +450,6 @@ describe("tickRaymarchRuntime", () => {
     runtimeState.modalFieldModeBuffer.value.array = new Float32Array(80);
     runtimeState.modalFieldColorBuffer.value.array = new Float32Array(80);
     runtimeState.modalFieldPhaseBuffer.value.array = new Float32Array(80);
-    runtimeState.modalFieldRoleBuffer.value.array = new Float32Array(80);
     const featureFrame = createActiveFeatureFrame({
       backboneSlots: makeModeSlots(10, (index) => (index === 0 ? 1 : 0.08)),
       detailSlots: makeModeSlots(
@@ -507,7 +496,6 @@ describe("tickRaymarchRuntime", () => {
     runtimeState.modalFieldModeBuffer.value.array = new Float32Array(16);
     runtimeState.modalFieldColorBuffer.value.array = new Float32Array(16);
     runtimeState.modalFieldPhaseBuffer.value.array = new Float32Array(16);
-    runtimeState.modalFieldRoleBuffer.value.array = new Float32Array(16);
     runtimeState.effectiveFieldCache.contributingEffectiveFieldModeCount = 2;
     runtimeState.effectiveFieldCache.contributingModalEnergy = 0.8;
     runtimeState.effectiveFieldCache.bandwidthRejectedModeCount = 1;
@@ -615,22 +603,22 @@ describe("tickRaymarchRuntime", () => {
       beatConfidence: 0.76,
       debug: {
         dominantFrequency: 440,
-        projectionEnergyBudgetBackbone: 0.74,
-        projectionEnergyBudgetDetail: 0.36,
-        projectionEnergyUsedBackbone: 0.52,
-        projectionEnergyUsedDetail: 0.31,
+        projectionEnergyBudgetSourceCoupled: 0.74,
+        projectionEnergyBudgetResonant: 0.36,
+        projectionEnergyUsedSourceCoupled: 0.52,
+        projectionEnergyUsedResonant: 0.31,
         projectionCompetitionReduction: 0.18,
         projectionDenseSpectrumPressure: 0.72,
         projectionHighQProtection: 0.09,
         projectionEnergyNormalizationApplied: true,
-        projectionRawEnergyBackbone: 0.68,
-        projectionRawEnergyDetail: 0.57,
-        projectionAllocatedEnergyBackbone: 0.52,
-        projectionAllocatedEnergyDetail: 0.31,
-        projectionEnergyScaleBackbone: 0.76,
-        projectionEnergyScaleDetail: 0.54,
-        projectionOverlapPressureBackbone: 0.23,
-        projectionOverlapPressureDetail: 0.41,
+        projectionRawEnergySourceCoupled: 0.68,
+        projectionRawEnergyResonant: 0.57,
+        projectionAllocatedEnergySourceCoupled: 0.52,
+        projectionAllocatedEnergyResonant: 0.31,
+        projectionEnergyScaleSourceCoupled: 0.76,
+        projectionEnergyScaleResonant: 0.54,
+        projectionOverlapPressureSourceCoupled: 0.23,
+        projectionOverlapPressureResonant: 0.41,
         modalResponseBackboneEnergy: 0.37,
         modalResponseDetailEnergy: 0.12,
       },
@@ -693,8 +681,15 @@ describe("tickRaymarchRuntime", () => {
     expect(air).toBeCloseTo(0.1);
     expect(runtimeState.volumeMesh.visible).toBe(true);
     expect(runtimeState.idleOverlay.visible).toBe(false);
-    expect(runtimeState.debugSnapshot.raymarchDebug.backboneModeCount).toBe(2);
-    expect(runtimeState.debugSnapshot.raymarchDebug.detailModeCount).toBe(2);
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.backboneModeCount,
+    ).toBeUndefined();
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.detailModeCount,
+    ).toBeUndefined();
+    expect(
+      runtimeState.debugSnapshot.raymarchDebug.modalFieldModeCount,
+    ).toBe(4);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.renderedModalFieldModeCount,
     ).toBe(4);
@@ -711,13 +706,8 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.debugSnapshot.raymarchDebug.modalDescriptorFieldAuthority,
     ).toBe("complete");
     expect(
-      runtimeState.debugSnapshot.raymarchDebug
-        .modalDescriptorValidBackboneModeCount,
-    ).toBe(2);
-    expect(
-      runtimeState.debugSnapshot.raymarchDebug
-        .modalDescriptorValidDetailModeCount,
-    ).toBe(2);
+      runtimeState.debugSnapshot.raymarchDebug.modalDescriptorValidModeCount,
+    ).toBe(4);
     expect(runtimeState.debugSnapshot.raymarchDebug.boundaryMode).toBe(
       "neumann",
     );
@@ -749,16 +739,16 @@ describe("tickRaymarchRuntime", () => {
     ).toBe(0.37);
     expect(runtimeState.debugSnapshot.raymarchDebug.observationEnergy).toBe(1);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyBudgetBackbone,
+      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyBudgetSourceCoupled,
     ).toBe(0.74);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyBudgetDetail,
+      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyBudgetResonant,
     ).toBe(0.36);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyUsedBackbone,
+      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyUsedSourceCoupled,
     ).toBe(0.52);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyUsedDetail,
+      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyUsedResonant,
     ).toBe(0.31);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.projectionCompetitionReduction,
@@ -777,30 +767,30 @@ describe("tickRaymarchRuntime", () => {
         .projectionEnergyNormalizationApplied,
     ).toBe(true);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.projectionRawEnergyBackbone,
+      runtimeState.debugSnapshot.raymarchDebug.projectionRawEnergySourceCoupled,
     ).toBe(0.68);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.projectionRawEnergyDetail,
+      runtimeState.debugSnapshot.raymarchDebug.projectionRawEnergyResonant,
     ).toBe(0.57);
     expect(
       runtimeState.debugSnapshot.raymarchDebug
-        .projectionAllocatedEnergyBackbone,
+        .projectionAllocatedEnergySourceCoupled,
     ).toBe(0.52);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.projectionAllocatedEnergyDetail,
+      runtimeState.debugSnapshot.raymarchDebug.projectionAllocatedEnergyResonant,
     ).toBe(0.31);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyScaleBackbone,
+      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyScaleSourceCoupled,
     ).toBe(0.76);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyScaleDetail,
+      runtimeState.debugSnapshot.raymarchDebug.projectionEnergyScaleResonant,
     ).toBe(0.54);
     expect(
       runtimeState.debugSnapshot.raymarchDebug
-        .projectionOverlapPressureBackbone,
+        .projectionOverlapPressureSourceCoupled,
     ).toBe(0.23);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.projectionOverlapPressureDetail,
+      runtimeState.debugSnapshot.raymarchDebug.projectionOverlapPressureResonant,
     ).toBe(0.41);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.observedDensityFloorMax,

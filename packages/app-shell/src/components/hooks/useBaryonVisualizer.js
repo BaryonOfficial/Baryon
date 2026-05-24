@@ -695,14 +695,11 @@ export function useBaryonVisualizer({
         runtimeDiagnostics.adaptiveRaymarch?.targetFps ?? 60;
       runtimeDiagnostics.render.targetFrameTimeMs =
         runtimeDiagnostics.adaptiveRaymarch?.targetFrameTimeMs ?? 1000 / 60;
-      runtimeDiagnostics.render.activeBackboneModeCount =
-        effectiveFrame?.activeBackboneModeCount ?? 0;
-      runtimeDiagnostics.render.activeDetailModeCount =
-        effectiveFrame?.activeDetailModeCount ?? 0;
       runtimeDiagnostics.render.activeModeCount =
         effectiveFrame?.activeModeCount ??
-        (effectiveFrame?.activeBackboneModeCount ?? 0) +
-          (effectiveFrame?.activeDetailModeCount ?? 0);
+        effectiveFrame?.activeModalFieldModeCount ??
+        effectiveFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
+        0;
       runtimeDiagnostics.render.complexityScore =
         runtimeState?.performanceGovernor?.complexityScore ?? 0;
       runtimeDiagnostics.render.uploadedModeCount =

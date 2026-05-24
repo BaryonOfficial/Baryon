@@ -68,7 +68,6 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const modalFieldModeBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldColorBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldPhaseBuffer = createModeBuffer(modalFieldCapacity);
-  const modalFieldRoleBuffer = createModeBuffer(modalFieldCapacity);
   const effectiveFieldCache = createRaymarchEffectiveFieldCache();
   const spectralLightCache = createRaymarchSpectralLightCache();
   const volumeMesh = createRaymarchVolumeMesh({
@@ -108,7 +107,6 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     modalFieldModeBuffer,
     modalFieldColorBuffer,
     modalFieldPhaseBuffer,
-    modalFieldRoleBuffer,
     effectiveFieldCache,
     spectralLightCache,
     modalFieldCapacity,

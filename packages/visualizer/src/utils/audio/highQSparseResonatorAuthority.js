@@ -27,7 +27,7 @@ export function deriveHighQSparseResonatorAuthority({
   highQObservedCoherence = 0,
   highQObservedDrive = 0,
   highQRingSupport = 0,
-  highQDetailEnergy = 0,
+  highQResonantEnergy = 0,
   distributedExcitation = 0,
   periodicity = 0,
   nonZeroFFTBinCount = 0,
@@ -37,7 +37,7 @@ export function deriveHighQSparseResonatorAuthority({
   const observedCoherence = clamp01(highQObservedCoherence);
   const observedDrive = clamp01(highQObservedDrive);
   const ringSupport = clamp01(highQRingSupport);
-  const retainedEnergy = clamp01(highQDetailEnergy);
+  const retainedEnergy = clamp01(highQResonantEnergy);
   const distribution = clamp01(distributedExcitation);
   const periodic = clamp01(periodicity);
   const coherence = clamp01(Math.max(modeCoherence, observedCoherence));

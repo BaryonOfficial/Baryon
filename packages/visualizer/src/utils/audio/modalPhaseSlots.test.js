@@ -10,7 +10,7 @@ describe("modal phase slots", () => {
         "0:0:1",
         {
           modeKey: "0:0:1",
-          layer: "backbone",
+          layer: "source-coupled",
           modalOscillatorPhaseOffsetRad: 0.25,
           modalOscillatorAngularVelocityRadPerSec: 2 * Math.PI * 440,
           modalOscillatorPhaseCoherence: 0.8,

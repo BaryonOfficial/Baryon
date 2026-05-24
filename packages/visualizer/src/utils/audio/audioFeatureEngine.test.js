@@ -513,8 +513,8 @@ describe("audio feature engine worker lanes", () => {
   it("marks structural changes from fingerprints even when projected arrays are reused", () => {
     const previousSnapshot = {
       analysisResult: {
-        activeBackboneModeCount: 1,
-        activeDetailModeCount: 0,
+        activeSourceCoupledModeCount: 1,
+        activeResonantModeCount: 0,
         activeModeCount: 1,
         dominantFrequency: 220,
         dominantAmplitude: 0.4,
@@ -523,8 +523,8 @@ describe("audio feature engine worker lanes", () => {
         usedDecay: false,
         sourceMode: "file",
         structuralFingerprint: {
-          activeBackboneModeCount: 1,
-          activeDetailModeCount: 0,
+          activeSourceCoupledModeCount: 1,
+          activeResonantModeCount: 0,
           activeModeCount: 1,
           dominantFrequency: 220,
           dominantAmplitude: 0.4,
@@ -532,12 +532,12 @@ describe("audio feature engine worker lanes", () => {
           pitchSource: "fft",
           usedDecay: false,
           sourceMode: "file",
-          backboneSignature: 1.2,
-          detailSignature: 0,
-          referenceBackboneSignature: 1.2,
-          referenceDetailSignature: 0,
-          backboneColorSignature: 0.8,
-          detailColorSignature: 0,
+          sourceCoupledSignature: 1.2,
+          resonantSignature: 0,
+          referenceSourceCoupledSignature: 1.2,
+          referenceResonantSignature: 0,
+          sourceCoupledColorSignature: 0.8,
+          resonantColorSignature: 0,
         },
       },
     };
@@ -546,7 +546,7 @@ describe("audio feature engine worker lanes", () => {
       structuralFingerprint: {
         ...previousSnapshot.analysisResult.structuralFingerprint,
         dominantFrequency: 330,
-        backboneSignature: 2.4,
+        sourceCoupledSignature: 2.4,
       },
     };
 
@@ -610,24 +610,24 @@ describe("audio feature engine snapshots", () => {
       materializeStructuralProjection: false,
     });
 
-    expect(leanAnalysisResult.backboneSlots).toBe(
-      firstAnalysisResult.backboneSlots,
+    expect(leanAnalysisResult.sourceCoupledSlots).toBe(
+      firstAnalysisResult.sourceCoupledSlots,
     );
-    expect(leanAnalysisResult.detailSlots).toBe(
-      firstAnalysisResult.detailSlots,
+    expect(leanAnalysisResult.resonantSlots).toBe(
+      firstAnalysisResult.resonantSlots,
     );
     expect(leanAnalysisResult.modeSlots).toBe(firstAnalysisResult.modeSlots);
     expect(leanAnalysisResult.referenceModeSlots).toBe(
       firstAnalysisResult.referenceModeSlots,
     );
-    expect(leanAnalysisResult.backboneColorSlots).toBe(
-      firstAnalysisResult.backboneColorSlots,
+    expect(leanAnalysisResult.sourceCoupledColorSlots).toBe(
+      firstAnalysisResult.sourceCoupledColorSlots,
     );
-    expect(leanAnalysisResult.detailColorSlots).toBe(
-      firstAnalysisResult.detailColorSlots,
+    expect(leanAnalysisResult.resonantColorSlots).toBe(
+      firstAnalysisResult.resonantColorSlots,
     );
-    expect(leanAnalysisResult.structuralState.backboneSlotsSource).toBe(
-      nextStructuralState.backboneSlotsSource,
+    expect(leanAnalysisResult.structuralState.sourceCoupledSlotsSource).toBe(
+      nextStructuralState.sourceCoupledSlotsSource,
     );
   });
 
@@ -699,15 +699,15 @@ describe("audio feature engine snapshots", () => {
 
     expect(snapshot.publishCount).toBe(3);
     expect(snapshot.analysisResult.modeSlots).toBeInstanceOf(Float32Array);
-    expect(snapshot.analysisResult.backboneSlots).toBeInstanceOf(Float32Array);
+    expect(snapshot.analysisResult.sourceCoupledSlots).toBeInstanceOf(Float32Array);
     expect(snapshot.analysisResult.bandEnergies).toBeInstanceOf(Float32Array);
     expect(snapshot.analysisResult.fftMagnitudes).toBeUndefined();
     expect(snapshot.analysisResult.spectralCandidates).toBeUndefined();
     expect(snapshot.analysisResult.bandState).toBeUndefined();
-    expect(snapshot.analysisResult.backboneStateSummary).toMatchObject({
+    expect(snapshot.analysisResult.sourceCoupledStateSummary).toMatchObject({
       uniqueModeCount: expect.any(Number),
     });
-    expect(snapshot.analysisResult.detailStateSummary).toMatchObject({
+    expect(snapshot.analysisResult.resonantStateSummary).toMatchObject({
       uniqueModeCount: expect.any(Number),
     });
     expect(snapshot.analysisResult.nonZeroFFTBinCount).toBeGreaterThanOrEqual(
@@ -763,11 +763,11 @@ describe("audio feature engine snapshots", () => {
     expect(merged.analysisResult.modeSlots).toBe(
       previousSnapshot.analysisResult.modeSlots,
     );
-    expect(merged.analysisResult.backboneSlots).toBe(
-      previousSnapshot.analysisResult.backboneSlots,
+    expect(merged.analysisResult.sourceCoupledSlots).toBe(
+      previousSnapshot.analysisResult.sourceCoupledSlots,
     );
-    expect(merged.analysisResult.detailSlots).toBe(
-      previousSnapshot.analysisResult.detailSlots,
+    expect(merged.analysisResult.resonantSlots).toBe(
+      previousSnapshot.analysisResult.resonantSlots,
     );
   });
 

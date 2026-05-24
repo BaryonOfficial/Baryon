@@ -108,21 +108,21 @@ const DEBUG_METRIC_TOOLTIPS = {
   Steps: "Current raymarch step budget used for this frame.",
   Excite:
     "Field excitation strength reaching the renderer after analysis and gating.",
-  "BB Amp":
-    "Peak backbone-layer amplitude. Backbone modes are the heavier, more stable modal features.",
-  "Det/BB":
-    "Detail-to-backbone ratio. Higher values mean more fine detail relative to the backbone layer.",
+  Peak:
+    "Peak modal-field amplitude uploaded from the canonical descriptor.",
+  Support:
+    "How strongly the current modal field is supported by renderer-side field authority.",
   Opacity: "Average opacity contributed by the rendered volume this frame.",
   Density: "Average body density in the raymarched field this frame.",
   Exit: "Estimated early-exit ratio in the raymarch. Higher values usually mean more rays are terminating sooner.",
   Volume: "Whether the volumetric field is currently considered visible.",
   Rendered:
-    "Backbone/detail modal slots uploaded from the canonical descriptor.",
+    "Canonical modal-field slots uploaded from the descriptor.",
   Desc: "Current canonical descriptor field authority.",
   Overflow:
     "Whether the observer produced more valid modes than descriptor capacity.",
   Chroma:
-    "Maximum Spectral Light color weight uploaded for backbone/detail layers.",
+    "Maximum Spectral Light color weight uploaded for the modal field.",
   Flux: "Weighted spectral-flux contribution to Change. Higher values mean more fresh frequency-bin motion.",
   Hit: "Weighted transient-energy contribution to Change. Higher values mean stronger attacks and onsets.",
   "Slot Δ": "Weighted average slot-amplitude delta contribution to Change.",
@@ -395,12 +395,12 @@ export default function ParticleDebugOverlay({
     { label: "Steps", value: debugSnapshot.stepBudget ?? "n/a" },
     { label: "Excite", value: formatNumber(debugSnapshot.fieldExcitation) },
     {
-      label: "BB Amp",
-      value: formatNumber(debugSnapshot.maxBackboneAmplitude),
+      label: "Peak",
+      value: formatNumber(debugSnapshot.peakModalFieldAmplitude),
     },
     {
-      label: "Det/BB",
-      value: formatNumber(debugSnapshot.detailBackboneRatio, 2),
+      label: "Support",
+      value: formatNumber(debugSnapshot.observationSupportMax, 2),
     },
     { label: "Opacity", value: formatNumber(debugSnapshot.avgOpacity) },
     { label: "Density", value: formatNumber(debugSnapshot.avgDensity) },
@@ -408,9 +408,7 @@ export default function ParticleDebugOverlay({
     { label: "Volume", value: String(debugSnapshot.volumeVisible) },
     {
       label: "Rendered",
-      value: `${debugSnapshot.renderedBackboneModeCount ?? "n/a"}/${
-        debugSnapshot.renderedDetailModeCount ?? "n/a"
-      }`,
+      value: debugSnapshot.renderedModalFieldModeCount ?? "n/a",
     },
     {
       label: "Desc",
@@ -422,10 +420,7 @@ export default function ParticleDebugOverlay({
     },
     {
       label: "Chroma",
-      value: `${formatNumber(
-        debugSnapshot.renderedBackboneColorWeightMax,
-        2,
-      )}/${formatNumber(debugSnapshot.renderedDetailColorWeightMax, 2)}`,
+      value: formatNumber(debugSnapshot.renderedModalFieldColorWeightMax, 2),
     },
     {
       label: "Effective",

@@ -14,7 +14,10 @@ import {
   normalizeCavityGeometry,
   resolveEffectiveCavityGeometry,
 } from "../../core/cavityGeometry.js";
-import { sampleFFTAmplitudeForFrequency } from "../cavityModes.js";
+import {
+  getCavityModeFrequency,
+  sampleFFTAmplitudeForFrequency,
+} from "../cavityModes.js";
 import {
   MAX_STACK_SLOTS,
   BAND_BUCKET_COUNT,
@@ -117,35 +120,41 @@ const MODAL_OBSERVER_HIGH_Q_MAX = 0.46;
 const MODAL_OBSERVER_LOW_Q_ENERGY_START = 0.01;
 const MODAL_OBSERVER_LOW_Q_ENERGY_END = 0.12;
 const MODAL_OBSERVER_LOW_Q_MAX = 0.22;
-const MODAL_OBSERVER_DETAIL_SLOT_FLOOR_TOTAL_MAX = 0.018;
-const MODAL_OBSERVER_BACKBONE_SLOT_FLOOR_TOTAL_MAX = 0.012;
-const LOW_Q_BACKBONE_VISIBILITY_ENERGY_START = 0.006;
-const LOW_Q_BACKBONE_VISIBILITY_ENERGY_END = 0.075;
-const LOW_Q_BACKBONE_VISIBILITY_COHERENCE_START = 0.22;
-const LOW_Q_BACKBONE_VISIBILITY_COHERENCE_END = 0.58;
-const LOW_Q_BACKBONE_VISIBILITY_SNR_START = 0.08;
-const LOW_Q_BACKBONE_VISIBILITY_SNR_END = 0.45;
-const LOW_Q_BACKBONE_VISIBILITY_SOURCE_START = 0.018;
-const LOW_Q_BACKBONE_VISIBILITY_SOURCE_END = 0.12;
-const LOW_Q_BACKBONE_VISIBILITY_SNR_FLOOR = 0.32;
-const LOW_Q_BACKBONE_VISIBILITY_DENSE_REDUCTION = 0.35;
-const LOW_Q_BACKBONE_VISIBILITY_ENERGY_MAX = 0.18;
-const LOW_Q_BACKBONE_TOPOLOGY_FLOOR_MAX = 0.18;
-const EMPTY_LOW_Q_BACKBONE_VISIBILITY = Object.freeze({
-  lowQBackboneVisibilityAuthority: 0,
-  lowQBackboneVisibilityEnergy: 0,
-  lowQBackboneTopologyFloor: 0,
-  lowQBackboneSourceSupport: 0,
-  lowQBackboneVisibilityRejected: false,
+const MODAL_OBSERVER_RESONANT_SLOT_FLOOR_TOTAL_MAX = 0.018;
+const MODAL_FIELD_Q_FALLBACK_BASE = 4;
+const MODAL_FIELD_Q_FALLBACK_GAIN = 28;
+const MODAL_FIELD_Q_FREQUENCY_REFERENCE_HZ = 1800;
+const MODAL_FIELD_Q_ORDER_REFERENCE = 26;
+const MODAL_FIELD_Q_MIN = 0.1;
+const MODAL_FIELD_Q_MAX = 128;
+const MODAL_OBSERVER_SOURCE_COUPLED_SLOT_FLOOR_TOTAL_MAX = 0.012;
+const LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_START = 0.006;
+const LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_END = 0.075;
+const LOW_Q_SOURCE_COUPLED_VISIBILITY_COHERENCE_START = 0.22;
+const LOW_Q_SOURCE_COUPLED_VISIBILITY_COHERENCE_END = 0.58;
+const LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_START = 0.08;
+const LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_END = 0.45;
+const LOW_Q_SOURCE_COUPLED_VISIBILITY_SOURCE_START = 0.018;
+const LOW_Q_SOURCE_COUPLED_VISIBILITY_SOURCE_END = 0.12;
+const LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_FLOOR = 0.32;
+const LOW_Q_SOURCE_COUPLED_VISIBILITY_DENSE_REDUCTION = 0.35;
+const LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_MAX = 0.18;
+const LOW_Q_SOURCE_COUPLED_TOPOLOGY_FLOOR_MAX = 0.18;
+const EMPTY_LOW_Q_SOURCE_COUPLED_VISIBILITY = Object.freeze({
+  lowQSourceCoupledVisibilityAuthority: 0,
+  lowQSourceCoupledVisibilityEnergy: 0,
+  lowQSourceCoupledTopologyFloor: 0,
+  lowQSourceCoupledSourceSupport: 0,
+  lowQSourceCoupledVisibilityRejected: false,
 });
 const EMPTY_MODAL_OBSERVER_VISIBILITY = Object.freeze({
   modalObserverVisibilityEnergy: 0,
   highQObserverVisibilityEnergy: 0,
   lowQObserverVisibilityEnergy: 0,
   modalObserverTopologyFloor: 0,
-  detailSlotFloorTotal: 0,
-  backboneSlotFloorTotal: 0,
-  ...EMPTY_LOW_Q_BACKBONE_VISIBILITY,
+  resonantSlotFloorTotal: 0,
+  sourceCoupledSlotFloorTotal: 0,
+  ...EMPTY_LOW_Q_SOURCE_COUPLED_VISIBILITY,
   highQSparseResonatorAuthority: 0,
   highQDenseSpectrumPressure: 0,
   highQRetainedVisibilityRejected: false,
@@ -249,7 +258,7 @@ const BEAT_HISTORY_SIZE_LOCAL = 8;
 const ONSET_DENSITY_WINDOW_MS = 4000;
 const ONSET_DENSITY_MAX_BEATS = 8; // matches BEAT_HISTORY_SIZE_LOCAL; 8 beats in 4s = 2 BPS
 const ONSET_DENSITY_SMOOTHING_MS = 8000;
-// Minimum harmonic salience for a peak to drive the ambient backbone.
+// Minimum harmonic salience for a peak to drive the ambient source-coupled field.
 // Prevents isolated noise peaks (fricatives, room noise, broadband bursts)
 const MIN_TEMPO_BPM = 40;
 const MAX_TEMPO_BPM = 240;
@@ -322,24 +331,24 @@ function ensureTargetBuildField(container, key, capacity) {
 
 function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
   const slotLength = capacity * 4;
-  const backboneSlots = ensureArrayField(
+  const sourceCoupledSlots = ensureArrayField(
     analysisMemory,
-    "backboneSlots",
+    "sourceCoupledSlots",
     slotLength,
   );
-  const detailSlots = ensureArrayField(
+  const resonantSlots = ensureArrayField(
     analysisMemory,
-    "detailSlots",
+    "resonantSlots",
     slotLength,
   );
-  const backbonePhaseSlots = ensureArrayField(
+  const sourceCoupledPhaseSlots = ensureArrayField(
     analysisMemory,
-    "backbonePhaseSlots",
+    "sourceCoupledPhaseSlots",
     slotLength,
   );
-  const detailPhaseSlots = ensureArrayField(
+  const resonantPhaseSlots = ensureArrayField(
     analysisMemory,
-    "detailPhaseSlots",
+    "resonantPhaseSlots",
     slotLength,
   );
   const modeSlots = ensureArrayField(analysisMemory, "modeSlots", slotLength);
@@ -348,24 +357,24 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     "signalModeSlots",
     slotLength,
   );
-  const backboneColorSlots = ensureArrayField(
+  const sourceCoupledColorSlots = ensureArrayField(
     analysisMemory,
-    "backboneColorSlots",
+    "sourceCoupledColorSlots",
     slotLength,
   );
-  const detailColorSlots = ensureArrayField(
+  const resonantColorSlots = ensureArrayField(
     analysisMemory,
-    "detailColorSlots",
+    "resonantColorSlots",
     slotLength,
   );
-  const referenceBackboneSlots = ensureArrayField(
+  const referenceSourceCoupledSlots = ensureArrayField(
     analysisMemory,
-    "referenceBackboneSlots",
+    "referenceSourceCoupledSlots",
     slotLength,
   );
-  const referenceDetailSlots = ensureArrayField(
+  const referenceResonantSlots = ensureArrayField(
     analysisMemory,
-    "referenceDetailSlots",
+    "referenceResonantSlots",
     slotLength,
   );
   const referenceModeSlots = ensureArrayField(
@@ -383,24 +392,24 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     "bandEnergies",
     BAND_BUCKET_COUNT,
   );
-  const zeroBackboneTargetSlots = ensureArrayField(
+  const zeroSourceCoupledTargetSlots = ensureArrayField(
     analysisMemory,
-    "zeroBackboneTargetSlots",
+    "zeroSourceCoupledTargetSlots",
     slotLength,
   );
-  const zeroDetailTargetSlots = ensureArrayField(
+  const zeroResonantTargetSlots = ensureArrayField(
     analysisMemory,
-    "zeroDetailTargetSlots",
+    "zeroResonantTargetSlots",
     slotLength,
   );
-  const nonAcousticBackboneTarget = ensureTargetBuildField(
+  const nonAcousticSourceCoupledTarget = ensureTargetBuildField(
     analysisMemory,
-    "nonAcousticBackboneTarget",
+    "nonAcousticSourceCoupledTarget",
     capacity,
   );
-  const nonAcousticDetailTarget = ensureTargetBuildField(
+  const nonAcousticResonantTarget = ensureTargetBuildField(
     analysisMemory,
-    "nonAcousticDetailTarget",
+    "nonAcousticResonantTarget",
     capacity,
   );
   const nonAcousticPeakDriverScratch = ensureTargetBuildField(
@@ -408,20 +417,20 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
     "nonAcousticPeakDriverScratch",
     capacity,
   );
-  const acousticBackboneTarget = ensureTargetBuildField(
+  const acousticSourceCoupledTarget = ensureTargetBuildField(
     analysisMemory,
-    "acousticBackboneTarget",
+    "acousticSourceCoupledTarget",
     capacity,
   );
-  const acousticDetailTarget = ensureTargetBuildField(
+  const acousticResonantTarget = ensureTargetBuildField(
     analysisMemory,
-    "acousticDetailTarget",
+    "acousticResonantTarget",
     capacity,
   );
-  if (!analysisMemory.backboneState || !analysisMemory.detailState) {
+  if (!analysisMemory.sourceCoupledState || !analysisMemory.resonantState) {
     const replacement = createAudioFeatureState(capacity).analysis;
-    analysisMemory.backboneState = replacement.backboneState;
-    analysisMemory.detailState = replacement.detailState;
+    analysisMemory.sourceCoupledState = replacement.sourceCoupledState;
+    analysisMemory.resonantState = replacement.resonantState;
     analysisMemory.bandState = replacement.bandState;
     analysisMemory.previousSpectrum = replacement.previousSpectrum;
   }
@@ -456,29 +465,29 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
   }
 
   return {
-    backboneSlots,
-    detailSlots,
-    backbonePhaseSlots,
-    detailPhaseSlots,
+    sourceCoupledSlots,
+    resonantSlots,
+    sourceCoupledPhaseSlots,
+    resonantPhaseSlots,
     modeSlots,
     signalModeSlots,
-    backboneColorSlots,
-    detailColorSlots,
-    referenceBackboneSlots,
-    referenceDetailSlots,
+    sourceCoupledColorSlots,
+    resonantColorSlots,
+    referenceSourceCoupledSlots,
+    referenceResonantSlots,
     referenceModeSlots,
     signalReferenceModeSlots,
     bandEnergies,
-    zeroBackboneTargetSlots,
-    zeroDetailTargetSlots,
-    nonAcousticBackboneTarget,
-    nonAcousticDetailTarget,
+    zeroSourceCoupledTargetSlots,
+    zeroResonantTargetSlots,
+    nonAcousticSourceCoupledTarget,
+    nonAcousticResonantTarget,
     nonAcousticPeakDriverScratch,
-    acousticBackboneTarget,
-    acousticDetailTarget,
+    acousticSourceCoupledTarget,
+    acousticResonantTarget,
     modalExcitationState: analysisMemory.modalExcitationState,
-    backboneState: analysisMemory.backboneState,
-    detailState: analysisMemory.detailState,
+    sourceCoupledState: analysisMemory.sourceCoupledState,
+    resonantState: analysisMemory.resonantState,
     bandState: analysisMemory.bandState,
     previousSpectrum: analysisMemory.previousSpectrum,
   };
@@ -488,8 +497,12 @@ function getFrameTimestamp() {
   return performance.now();
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function clamp01(value) {
-  return Math.max(0, Math.min(1, value));
+  return clamp(value, 0, 1);
 }
 
 function smoothstep(edge0, edge1, x) {
@@ -760,14 +773,14 @@ function resetBeatTrackingState(analysisMemory) {
 }
 
 function emptyFrozenLayers(auditState) {
-  auditState.frozenBackboneSlots.fill(0);
-  auditState.frozenDetailSlots.fill(0);
+  auditState.frozenSourceCoupledSlots.fill(0);
+  auditState.frozenResonantSlots.fill(0);
   auditState.frozenModeSlots.fill(0);
-  auditState.frozenBackboneColorSlots.fill(0);
-  auditState.frozenDetailColorSlots.fill(0);
+  auditState.frozenSourceCoupledColorSlots.fill(0);
+  auditState.frozenResonantColorSlots.fill(0);
 }
 
-function shouldBuildDetailedDebug(auditSettings) {
+function shouldBuildResonantedDebug(auditSettings) {
   return Boolean(auditSettings?.enabled);
 }
 
@@ -810,39 +823,39 @@ function cloneSpectralLightComponents(components) {
   return components.map((component) => ({ ...component }));
 }
 
-function buildBackboneStateSummary(backboneState) {
-  if (!backboneState) {
+function buildSourceCoupledStateSummary(sourceCoupledState) {
+  if (!sourceCoupledState) {
     return null;
   }
 
   return {
-    uniqueModeCount: backboneState.uniqueModeCount ?? 0,
-    harmonicSupport: cloneFloat32Array(backboneState.harmonicSupport),
-    fundamental: backboneState.fundamental ?? 0,
-    fundamentalConfidence: backboneState.fundamentalConfidence ?? 0,
-    driverFrequency: backboneState.driverFrequency ?? 0,
-    candidateFrequency: backboneState.candidateFrequency ?? 0,
-    candidateConfidence: backboneState.candidateConfidence ?? 0,
-    candidateFrames: backboneState.candidateFrames ?? 0,
-    candidatePeriodicity: backboneState.candidatePeriodicity ?? 0,
-    candidateHarmonicSupport: backboneState.candidateHarmonicSupport ?? 0,
-    candidateDirectSupport: backboneState.candidateDirectSupport ?? 0,
-    candidateLowEnergy: backboneState.candidateLowEnergy ?? false,
-    voicingActive: backboneState.voicingActive ?? false,
-    highCandidateRejected: backboneState.highCandidateRejected ?? false,
-    rejectionReason: backboneState.rejectionReason ?? "none",
-    latchHoldFrames: backboneState.latchHoldFrames ?? 0,
-    latchLowSupportFrames: backboneState.latchLowSupportFrames ?? 0,
+    uniqueModeCount: sourceCoupledState.uniqueModeCount ?? 0,
+    harmonicSupport: cloneFloat32Array(sourceCoupledState.harmonicSupport),
+    fundamental: sourceCoupledState.fundamental ?? 0,
+    fundamentalConfidence: sourceCoupledState.fundamentalConfidence ?? 0,
+    driverFrequency: sourceCoupledState.driverFrequency ?? 0,
+    candidateFrequency: sourceCoupledState.candidateFrequency ?? 0,
+    candidateConfidence: sourceCoupledState.candidateConfidence ?? 0,
+    candidateFrames: sourceCoupledState.candidateFrames ?? 0,
+    candidatePeriodicity: sourceCoupledState.candidatePeriodicity ?? 0,
+    candidateHarmonicSupport: sourceCoupledState.candidateHarmonicSupport ?? 0,
+    candidateDirectSupport: sourceCoupledState.candidateDirectSupport ?? 0,
+    candidateLowEnergy: sourceCoupledState.candidateLowEnergy ?? false,
+    voicingActive: sourceCoupledState.voicingActive ?? false,
+    highCandidateRejected: sourceCoupledState.highCandidateRejected ?? false,
+    rejectionReason: sourceCoupledState.rejectionReason ?? "none",
+    latchHoldFrames: sourceCoupledState.latchHoldFrames ?? 0,
+    latchLowSupportFrames: sourceCoupledState.latchLowSupportFrames ?? 0,
   };
 }
 
-function buildDetailStateSummary(detailState) {
-  if (!detailState) {
+function buildResonantStateSummary(resonantState) {
+  if (!resonantState) {
     return null;
   }
 
   return {
-    uniqueModeCount: detailState.uniqueModeCount ?? 0,
+    uniqueModeCount: resonantState.uniqueModeCount ?? 0,
   };
 }
 
@@ -859,21 +872,21 @@ function readModalResponseRenderEnergy(structuralMetrics, fallbackEnergy = 0) {
   );
 }
 
-function readModalResponseRenderBackboneEnergy(
+function readModalResponseRenderSourceCoupledEnergy(
   structuralMetrics,
   fallbackEnergy = 0,
 ) {
   return clamp01(
-    structuralMetrics?.modalResponseRenderBackboneEnergy ?? fallbackEnergy,
+    structuralMetrics?.modalResponseRenderSourceCoupledEnergy ?? fallbackEnergy,
   );
 }
 
-function readModalResponseRenderDetailEnergy(
+function readModalResponseRenderResonantEnergy(
   structuralMetrics,
   fallbackEnergy = 0,
 ) {
   return clamp01(
-    structuralMetrics?.modalResponseRenderDetailEnergy ?? fallbackEnergy,
+    structuralMetrics?.modalResponseRenderResonantEnergy ?? fallbackEnergy,
   );
 }
 
@@ -941,16 +954,16 @@ function buildDebugSummary({
   liveInputPolicy = DEFAULT_LIVE_INPUT_POLICY,
   liveInputBaselineRms = 0,
   liveInputBaselinePeak = 0,
-  backboneState,
-  detailState,
+  sourceCoupledState,
+  resonantState,
   dominantFrequency = 0,
   dominantAmplitude = 0,
   avgAmplitude = 0,
   analyserRms = 0,
   fftMagnitudes,
   nonZeroFFTBinCount = null,
-  backboneSlots,
-  detailSlots,
+  sourceCoupledSlots,
+  resonantSlots,
   modeSlots,
   bandEnergies = null,
   spectralLightComponents = [],
@@ -987,8 +1000,8 @@ function buildDebugSummary({
     DEFAULT_EFFECTIVE_CAVITY_GEOMETRY
   ),
 }) {
-  const backboneModeCount = countActiveSlots(backboneSlots, MAX_STACK_SLOTS);
-  const detailModeCount = countActiveSlots(detailSlots, MAX_STACK_SLOTS);
+  const sourceCoupledModeCount = countActiveSlots(sourceCoupledSlots, MAX_STACK_SLOTS);
+  const resonantModeCount = countActiveSlots(resonantSlots, MAX_STACK_SLOTS);
   const modeSlotCount = countActiveSlots(modeSlots, MAX_STACK_SLOTS);
   const modalVisibilitySummary = deriveModalVisibilityComponents({
     modeSlots,
@@ -997,10 +1010,10 @@ function buildDebugSummary({
     hardSilent: liveInputHardSilenceActive,
     sourceNormalization,
     bandEnergies,
-    activeBackboneModeCount: backboneModeCount,
+    activeSourceCoupledModeCount: sourceCoupledModeCount,
     nonZeroFFTBinCount:
       nonZeroFFTBinCount ?? countNonZeroFFTBinCount(fftMagnitudes),
-    periodicity: backboneState?.candidatePeriodicity ?? 0,
+    periodicity: sourceCoupledState?.candidatePeriodicity ?? 0,
   });
   const modalVisibilityDriveEnergy = clamp01(
     structuralMetrics?.modalDriveEnergy ?? 0,
@@ -1010,23 +1023,23 @@ function buildDebugSummary({
   const retainedModalCoefficientEnergy = clamp01(
     sumSlotAmplitudeTotal(modeSlots, MAX_STACK_SLOTS),
   );
-  const retainedModalResponseBackboneEnergy = clamp01(
-    structuralMetrics?.modalResponseBackboneEnergy ?? 0,
+  const retainedModalResponseSourceCoupledEnergy = clamp01(
+    structuralMetrics?.modalResponseSourceCoupledEnergy ?? 0,
   );
-  const retainedModalResponseDetailEnergy = clamp01(
-    structuralMetrics?.modalResponseDetailEnergy ?? 0,
+  const retainedModalResponseResonantEnergy = clamp01(
+    structuralMetrics?.modalResponseResonantEnergy ?? 0,
   );
   const modalCoefficientEnergy = readModalResponseRenderEnergy(
     structuralMetrics,
     retainedModalCoefficientEnergy,
   );
-  const modalResponseBackboneEnergy = readModalResponseRenderBackboneEnergy(
+  const modalResponseSourceCoupledEnergy = readModalResponseRenderSourceCoupledEnergy(
     structuralMetrics,
-    retainedModalResponseBackboneEnergy,
+    retainedModalResponseSourceCoupledEnergy,
   );
-  const modalResponseDetailEnergy = readModalResponseRenderDetailEnergy(
+  const modalResponseResonantEnergy = readModalResponseRenderResonantEnergy(
     structuralMetrics,
-    retainedModalResponseDetailEnergy,
+    retainedModalResponseResonantEnergy,
   );
   const modalResponseEnergy = modalCoefficientEnergy;
   const observationEnergy = deriveModalObservationEnergy(
@@ -1061,23 +1074,23 @@ function buildDebugSummary({
     liveInputBaselineRms,
     liveInputBaselinePeak,
     analysisSourceUsed: inputMode === "idle" ? "none" : analysisInputMode,
-    fundamentalFrequency: backboneState?.fundamental ?? 0,
-    fundamentalConfidence: backboneState?.fundamentalConfidence ?? 0,
+    fundamentalFrequency: sourceCoupledState?.fundamental ?? 0,
+    fundamentalConfidence: sourceCoupledState?.fundamentalConfidence ?? 0,
     dominantFrequency,
     dominantAmplitude,
     avgAmplitude,
     analyserRms,
     uniqueModeCount:
-      (backboneState?.uniqueModeCount ?? 0) +
-      (detailState?.uniqueModeCount ?? 0),
+      (sourceCoupledState?.uniqueModeCount ?? 0) +
+      (resonantState?.uniqueModeCount ?? 0),
     nonZeroFFTBinCount:
       nonZeroFFTBinCount ?? countNonZeroFFTBinCount(fftMagnitudes),
     micFftNormGain,
     preModalFftPeak,
     postNormalizationFftPeak,
     modeSlotCount,
-    backboneModeCount,
-    detailModeCount,
+    sourceCoupledModeCount,
+    resonantModeCount,
     transientEnergy,
     spectralCentroid,
     spectralFlux,
@@ -1101,14 +1114,14 @@ function buildDebugSummary({
       modalVisibilitySummary.highQObserverVisibilityEnergy,
     lowQObserverVisibilityEnergy:
       modalVisibilitySummary.lowQObserverVisibilityEnergy,
-    lowQBackboneVisibilityAuthority:
-      modalVisibilitySummary.lowQBackboneVisibilityAuthority,
-    lowQBackboneVisibilityEnergy:
-      modalVisibilitySummary.lowQBackboneVisibilityEnergy,
-    lowQBackboneTopologyFloor: modalVisibilitySummary.lowQBackboneTopologyFloor,
-    lowQBackboneSourceSupport: modalVisibilitySummary.lowQBackboneSourceSupport,
-    lowQBackboneVisibilityRejected:
-      modalVisibilitySummary.lowQBackboneVisibilityRejected,
+    lowQSourceCoupledVisibilityAuthority:
+      modalVisibilitySummary.lowQSourceCoupledVisibilityAuthority,
+    lowQSourceCoupledVisibilityEnergy:
+      modalVisibilitySummary.lowQSourceCoupledVisibilityEnergy,
+    lowQSourceCoupledTopologyFloor: modalVisibilitySummary.lowQSourceCoupledTopologyFloor,
+    lowQSourceCoupledSourceSupport: modalVisibilitySummary.lowQSourceCoupledSourceSupport,
+    lowQSourceCoupledVisibilityRejected:
+      modalVisibilitySummary.lowQSourceCoupledVisibilityRejected,
     modalVisibilityRetainedHighQEnergy:
       modalVisibilitySummary.retainedHighQModalVisibility,
     modalVisibilityActiveModeCount: modeSlotCount,
@@ -1137,32 +1150,32 @@ function buildDebugSummary({
             fftSize,
           )
         : 0),
-    driverFrequency: backboneState?.driverFrequency ?? dominantFrequency,
-    driverLocked: backboneModeCount > 0,
-    candidateFrequency: backboneState?.candidateFrequency ?? 0,
-    candidateConfidence: backboneState?.candidateConfidence ?? 0,
-    candidateFrames: backboneState?.candidateFrames ?? 0,
-    periodicity: backboneState?.candidatePeriodicity ?? 0,
-    candidateHarmonicSupport: backboneState?.candidateHarmonicSupport ?? 0,
-    candidateDirectSupport: backboneState?.candidateDirectSupport ?? 0,
-    candidateLowEnergy: backboneState?.candidateLowEnergy ?? false,
-    voicingActive: backboneState?.voicingActive ?? false,
-    highCandidateRejected: backboneState?.highCandidateRejected ?? false,
-    rejectionReason: backboneState?.rejectionReason ?? "none",
-    latchHoldFrames: backboneState?.latchHoldFrames ?? 0,
-    latchLowSupportFrames: backboneState?.latchLowSupportFrames ?? 0,
+    driverFrequency: sourceCoupledState?.driverFrequency ?? dominantFrequency,
+    driverLocked: sourceCoupledModeCount > 0,
+    candidateFrequency: sourceCoupledState?.candidateFrequency ?? 0,
+    candidateConfidence: sourceCoupledState?.candidateConfidence ?? 0,
+    candidateFrames: sourceCoupledState?.candidateFrames ?? 0,
+    periodicity: sourceCoupledState?.candidatePeriodicity ?? 0,
+    candidateHarmonicSupport: sourceCoupledState?.candidateHarmonicSupport ?? 0,
+    candidateDirectSupport: sourceCoupledState?.candidateDirectSupport ?? 0,
+    candidateLowEnergy: sourceCoupledState?.candidateLowEnergy ?? false,
+    voicingActive: sourceCoupledState?.voicingActive ?? false,
+    highCandidateRejected: sourceCoupledState?.highCandidateRejected ?? false,
+    rejectionReason: sourceCoupledState?.rejectionReason ?? "none",
+    latchHoldFrames: sourceCoupledState?.latchHoldFrames ?? 0,
+    latchLowSupportFrames: sourceCoupledState?.latchLowSupportFrames ?? 0,
     excitedModeCount: structuralMetrics?.excitedModeCount ?? 0,
     distributedExcitation: structuralMetrics?.distributedExcitation ?? 0,
     lowOrderModalEnergy: structuralMetrics?.lowOrderModalEnergy ?? 0,
     highOrderModalEnergy: structuralMetrics?.highOrderModalEnergy ?? 0,
     observedModalModeCount: structuralMetrics?.observedModalModeCount ?? 0,
-    lowQBackboneModeCount: structuralMetrics?.lowQBackboneModeCount ?? 0,
-    lowQBackboneEnergy: structuralMetrics?.lowQBackboneEnergy ?? 0,
+    lowQSourceCoupledModeCount: structuralMetrics?.lowQSourceCoupledModeCount ?? 0,
+    lowQSourceCoupledEnergy: structuralMetrics?.lowQSourceCoupledEnergy ?? 0,
     lowQObservedDrive: structuralMetrics?.lowQObservedDrive ?? 0,
     lowQObservedSnr: structuralMetrics?.lowQObservedSnr ?? 0,
     lowQObservedCoherence: structuralMetrics?.lowQObservedCoherence ?? 0,
-    highQDetailModeCount: structuralMetrics?.highQDetailModeCount ?? 0,
-    highQDetailEnergy: structuralMetrics?.highQDetailEnergy ?? 0,
+    highQResonantModeCount: structuralMetrics?.highQResonantModeCount ?? 0,
+    highQResonantEnergy: structuralMetrics?.highQResonantEnergy ?? 0,
     highQRingSupport: structuralMetrics?.highQRingSupport ?? 0,
     highQObservedDrive: structuralMetrics?.highQObservedDrive ?? 0,
     highQObservedSnr: structuralMetrics?.highQObservedSnr ?? 0,
@@ -1201,8 +1214,8 @@ function buildDebugSummary({
     modalResponseRenderAuthorityCutSilenceMs:
       structuralMetrics?.modalResponseRenderAuthorityCutSilenceMs ?? 0,
     modalResponseInputEnergy: structuralMetrics?.modalResponseInputEnergy ?? 0,
-    modalResponseBackboneEnergy,
-    modalResponseDetailEnergy,
+    modalResponseSourceCoupledEnergy,
+    modalResponseResonantEnergy,
     modalResponseModeCount: structuralMetrics?.modalResponseModeCount ?? 0,
     modalResponseBudgetScale:
       structuralMetrics?.modalResponseBudgetScale ?? 0,
@@ -1215,51 +1228,51 @@ function buildDebugSummary({
       structuralMetrics?.modalResponseAveragePhaseConfidence ?? 0,
     modalResponseAveragePersistence:
       structuralMetrics?.modalResponseAveragePersistence ?? 0,
-    modalResponseBudgetScaleBackbone:
-      structuralMetrics?.modalResponseBudgetScaleBackbone ?? 0,
-    modalResponseBudgetScaleDetail:
-      structuralMetrics?.modalResponseBudgetScaleDetail ?? 0,
+    modalResponseBudgetScaleSourceCoupled:
+      structuralMetrics?.modalResponseBudgetScaleSourceCoupled ?? 0,
+    modalResponseBudgetScaleResonant:
+      structuralMetrics?.modalResponseBudgetScaleResonant ?? 0,
     driveSource: structuralMetrics?.driveSource ?? "none",
-    detailSignalAuthoritative:
-      structuralMetrics?.detailSignalAuthoritative ?? false,
-    detailSignalAuthoritativeReason:
-      structuralMetrics?.detailSignalAuthoritativeReason ?? "none",
-    detailSignalAuthoritativeCoverage:
-      structuralMetrics?.detailSignalAuthoritativeCoverage ?? false,
-    detailSignalAuthoritativeFreshSignal:
-      structuralMetrics?.detailSignalAuthoritativeFreshSignal ?? false,
-    detailSignalAuthoritativeFastAssist:
-      structuralMetrics?.detailSignalAuthoritativeFastAssist ?? false,
-    detailSignalAuthoritativeHighQ:
-      structuralMetrics?.detailSignalAuthoritativeHighQ ?? false,
-    detailShiftReleaseOverrideCount:
-      structuralMetrics?.detailShiftReleaseOverrideCount ?? 0,
-    detailShiftTrackingOverrideCount:
-      structuralMetrics?.detailShiftTrackingOverrideCount ?? 0,
-    projectionEnergyBudgetBackbone:
-      structuralMetrics?.projectionEnergyBudgetBackbone ?? 0,
-    projectionEnergyBudgetDetail:
-      structuralMetrics?.projectionEnergyBudgetDetail ?? 0,
-    projectionEnergyUsedBackbone:
-      structuralMetrics?.projectionEnergyUsedBackbone ?? 0,
-    projectionEnergyUsedDetail:
-      structuralMetrics?.projectionEnergyUsedDetail ?? 0,
-    projectionRawEnergyBackbone:
-      structuralMetrics?.projectionRawEnergyBackbone ?? 0,
-    projectionRawEnergyDetail:
-      structuralMetrics?.projectionRawEnergyDetail ?? 0,
-    projectionAllocatedEnergyBackbone:
-      structuralMetrics?.projectionAllocatedEnergyBackbone ?? 0,
-    projectionAllocatedEnergyDetail:
-      structuralMetrics?.projectionAllocatedEnergyDetail ?? 0,
-    projectionEnergyScaleBackbone:
-      structuralMetrics?.projectionEnergyScaleBackbone ?? 0,
-    projectionEnergyScaleDetail:
-      structuralMetrics?.projectionEnergyScaleDetail ?? 0,
-    projectionOverlapPressureBackbone:
-      structuralMetrics?.projectionOverlapPressureBackbone ?? 0,
-    projectionOverlapPressureDetail:
-      structuralMetrics?.projectionOverlapPressureDetail ?? 0,
+    resonantSignalAuthoritative:
+      structuralMetrics?.resonantSignalAuthoritative ?? false,
+    resonantSignalAuthoritativeReason:
+      structuralMetrics?.resonantSignalAuthoritativeReason ?? "none",
+    resonantSignalAuthoritativeCoverage:
+      structuralMetrics?.resonantSignalAuthoritativeCoverage ?? false,
+    resonantSignalAuthoritativeFreshSignal:
+      structuralMetrics?.resonantSignalAuthoritativeFreshSignal ?? false,
+    resonantSignalAuthoritativeFastAssist:
+      structuralMetrics?.resonantSignalAuthoritativeFastAssist ?? false,
+    resonantSignalAuthoritativeHighQ:
+      structuralMetrics?.resonantSignalAuthoritativeHighQ ?? false,
+    resonantShiftReleaseOverrideCount:
+      structuralMetrics?.resonantShiftReleaseOverrideCount ?? 0,
+    resonantShiftTrackingOverrideCount:
+      structuralMetrics?.resonantShiftTrackingOverrideCount ?? 0,
+    projectionEnergyBudgetSourceCoupled:
+      structuralMetrics?.projectionEnergyBudgetSourceCoupled ?? 0,
+    projectionEnergyBudgetResonant:
+      structuralMetrics?.projectionEnergyBudgetResonant ?? 0,
+    projectionEnergyUsedSourceCoupled:
+      structuralMetrics?.projectionEnergyUsedSourceCoupled ?? 0,
+    projectionEnergyUsedResonant:
+      structuralMetrics?.projectionEnergyUsedResonant ?? 0,
+    projectionRawEnergySourceCoupled:
+      structuralMetrics?.projectionRawEnergySourceCoupled ?? 0,
+    projectionRawEnergyResonant:
+      structuralMetrics?.projectionRawEnergyResonant ?? 0,
+    projectionAllocatedEnergySourceCoupled:
+      structuralMetrics?.projectionAllocatedEnergySourceCoupled ?? 0,
+    projectionAllocatedEnergyResonant:
+      structuralMetrics?.projectionAllocatedEnergyResonant ?? 0,
+    projectionEnergyScaleSourceCoupled:
+      structuralMetrics?.projectionEnergyScaleSourceCoupled ?? 0,
+    projectionEnergyScaleResonant:
+      structuralMetrics?.projectionEnergyScaleResonant ?? 0,
+    projectionOverlapPressureSourceCoupled:
+      structuralMetrics?.projectionOverlapPressureSourceCoupled ?? 0,
+    projectionOverlapPressureResonant:
+      structuralMetrics?.projectionOverlapPressureResonant ?? 0,
     projectionCompetitionReduction:
       structuralMetrics?.projectionCompetitionReduction ?? 0,
     projectionDenseSpectrumPressure:
@@ -1286,11 +1299,11 @@ function buildZeroDebugSnapshot({
   fieldState = FIELD_STATES.idle,
   referenceModeSlots,
   bandEnergies,
-  backboneSlots,
-  detailSlots,
+  sourceCoupledSlots,
+  resonantSlots,
   modeSlots,
-  backboneColorSlots,
-  detailColorSlots,
+  sourceCoupledColorSlots,
+  resonantColorSlots,
   auditSettings,
   requestedCavityGeometry = /** @type {CavityGeometry} */ (
     DEFAULT_REQUESTED_CAVITY_GEOMETRY
@@ -1308,11 +1321,11 @@ function buildZeroDebugSnapshot({
     fieldState,
     liveInputNoiseGateActive: false,
     liveInputHardSilenceActive: false,
-    backboneState: null,
-    detailState: null,
+    sourceCoupledState: null,
+    resonantState: null,
     fftMagnitudes: null,
-    backboneSlots,
-    detailSlots,
+    sourceCoupledSlots,
+    resonantSlots,
     modeSlots,
     spectralLightComponents: [],
     beatDetected: false,
@@ -1331,7 +1344,7 @@ function buildZeroDebugSnapshot({
     effectiveCavityGeometry,
   });
 
-  if (!shouldBuildDetailedDebug(auditSettings)) {
+  if (!shouldBuildResonantedDebug(auditSettings)) {
     return debug;
   }
 
@@ -1341,13 +1354,46 @@ function buildZeroDebugSnapshot({
     spectralCandidates: [],
     currentModeSlots: Array.from(modeSlots),
     referenceModeSlots: Array.from(referenceModeSlots),
-    backboneSlots: Array.from(backboneSlots),
-    detailSlots: Array.from(detailSlots),
-    backboneColorSlots: Array.from(backboneColorSlots),
-    detailColorSlots: Array.from(detailColorSlots),
+    modalFieldSlots: Array.from(modeSlots),
+    modalFieldColorSlots: Array.from(sourceCoupledColorSlots),
+    sourceCoupledSlots: Array.from(sourceCoupledSlots),
+    resonantSlots: Array.from(resonantSlots),
+    sourceCoupledColorSlots: Array.from(sourceCoupledColorSlots),
+    resonantColorSlots: Array.from(resonantColorSlots),
     bandEnergies: Array.from(bandEnergies),
     slotAmplitudeDeltas: Array.from(new Float32Array(MAX_STACK_SLOTS)),
   };
+}
+
+function buildEmptyModalFieldDescriptor({
+  generation = 0,
+  maxTotalModes = AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
+  modalFieldSlots,
+  modalFieldPhaseSlots,
+  modalFieldColorSlots,
+  modalFieldMetadataSlots,
+} = {}) {
+  const slotLength = Math.max(
+    modalFieldSlots?.length ?? 0,
+    modalFieldPhaseSlots?.length ?? 0,
+    modalFieldColorSlots?.length ?? 0,
+    modalFieldMetadataSlots?.length ?? 0,
+  );
+  const emptySlots = new Float32Array(slotLength);
+
+  return buildCanonicalFullModalDescriptor({
+    generation,
+    maxTotalModes,
+    modalFieldSlots: modalFieldSlots ?? emptySlots,
+    modalFieldPhaseSlots: modalFieldPhaseSlots ?? emptySlots,
+    modalFieldColorSlots: modalFieldColorSlots ?? emptySlots,
+    modalFieldMetadataSlots: modalFieldMetadataSlots ?? emptySlots,
+    activeModalFieldModeCount: 0,
+    observerCandidateModeCount: 0,
+    observedModalModeCount: 0,
+    phaseAuthorityModeCount: 0,
+    modeIdentityRetentionRatio: 0,
+  });
 }
 
 function buildSilentFeatureFrame({
@@ -1356,17 +1402,17 @@ function buildSilentFeatureFrame({
   soundActive,
   micActive,
   isLiveInputActive,
-  backboneSlots,
-  detailSlots,
-  backbonePhaseSlots,
-  detailPhaseSlots,
+  sourceCoupledSlots,
+  resonantSlots,
+  sourceCoupledPhaseSlots,
+  resonantPhaseSlots,
   modeSlots,
   referenceModeSlots,
-  backboneColorSlots,
-  detailColorSlots,
+  sourceCoupledColorSlots,
+  resonantColorSlots,
   bandEnergies,
-  backboneState,
-  detailState,
+  sourceCoupledState,
+  resonantState,
   fftSize,
   auditSettings,
   requestedCavityGeometry = /** @type {CavityGeometry} */ (
@@ -1376,17 +1422,17 @@ function buildSilentFeatureFrame({
     DEFAULT_EFFECTIVE_CAVITY_GEOMETRY
   ),
 }) {
-  backboneSlots.fill(0);
-  detailSlots.fill(0);
-  backbonePhaseSlots.fill(0);
-  detailPhaseSlots.fill(0);
+  sourceCoupledSlots.fill(0);
+  resonantSlots.fill(0);
+  sourceCoupledPhaseSlots.fill(0);
+  resonantPhaseSlots.fill(0);
   modeSlots.fill(0);
   referenceModeSlots.fill(0);
-  backboneColorSlots.fill(0);
-  detailColorSlots.fill(0);
+  sourceCoupledColorSlots.fill(0);
+  resonantColorSlots.fill(0);
   bandEnergies.fill(0);
-  clearModalStack(backboneState);
-  clearModalStack(detailState);
+  clearModalStack(sourceCoupledState);
+  clearModalStack(resonantState);
 
   let silentFft = featureState?.analysis?.fftMagnitudes;
   if (!silentFft?.length) {
@@ -1398,6 +1444,18 @@ function buildSilentFeatureFrame({
     featureState.analysis.fftMagnitudes = silentFft;
   }
 
+  const modalDescriptor = buildEmptyModalFieldDescriptor({
+    generation: featureState?.audit?.frame ?? 0,
+    maxTotalModes: Math.min(
+      MAX_STACK_SLOTS,
+      AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
+    ),
+    modalFieldSlots: modeSlots,
+    modalFieldPhaseSlots: sourceCoupledPhaseSlots,
+    modalFieldColorSlots: sourceCoupledColorSlots,
+    modalFieldMetadataSlots: new Float32Array(modeSlots.length),
+  });
+
   return {
     fieldState: FIELD_STATES.idle,
     hasModalField: false,
@@ -1408,12 +1466,13 @@ function buildSilentFeatureFrame({
     micActive,
     averageAmplitude: 0,
     fftMagnitudes: silentFft,
-    backboneSlots,
-    detailSlots,
-    backbonePhaseSlots,
-    detailPhaseSlots,
-    backboneColorSlots,
-    detailColorSlots,
+    activeModeCount: 0,
+    activeModalFieldModeCount: 0,
+    modalDescriptor,
+    modalFieldSlots: modalDescriptor.slotViews.modalFieldSlots,
+    modalFieldPhaseSlots: modalDescriptor.slotViews.modalFieldPhaseSlots,
+    modalFieldColorSlots: modalDescriptor.slotViews.modalFieldColorSlots,
+    modalFieldMetadataSlots: modalDescriptor.slotViews.modalFieldMetadataSlots,
     bandEnergies,
     transientEnergy: 0,
     spectralCentroid: 0,
@@ -1422,8 +1481,7 @@ function buildSilentFeatureFrame({
     energySignal: 0,
     modalCoefficientEnergy: 0,
     retainedModalCoefficientEnergy: 0,
-    modalResponseBackboneEnergy: 0,
-    modalResponseDetailEnergy: 0,
+    modalResponseEnergy: 0,
     modalResponseRenderEnergy: 0,
     modalResponseRenderRawEnergy: 0,
     modalResponseRenderSourceCutSuppressed: false,
@@ -1433,11 +1491,6 @@ function buildSilentFeatureFrame({
     modalVisibilityEnergy: 0,
     modalObserverVisibilityEnergy: 0,
     modalVisibilityRetainedHighQEnergy: 0,
-    lowQBackboneVisibilityAuthority: 0,
-    lowQBackboneVisibilityEnergy: 0,
-    lowQBackboneTopologyFloor: 0,
-    lowQBackboneSourceSupport: 0,
-    lowQBackboneVisibilityRejected: false,
     modalPhaseAuthority: 0,
     changeSignal: 0,
     pulseSignal: 0,
@@ -1456,7 +1509,6 @@ function buildSilentFeatureFrame({
     bassSalience: 0,
     timbreSpread: 0,
     spectralNovelty: 0,
-    modeSlots,
     referenceModeSlots,
     sourceMode: "silent",
     debug: buildZeroDebugSnapshot({
@@ -1465,11 +1517,11 @@ function buildSilentFeatureFrame({
       micActive,
       referenceModeSlots,
       bandEnergies,
-      backboneSlots,
-      detailSlots,
+      sourceCoupledSlots,
+      resonantSlots,
       modeSlots,
-      backboneColorSlots,
-      detailColorSlots,
+      sourceCoupledColorSlots,
+      resonantColorSlots,
       auditSettings,
       requestedCavityGeometry,
       effectiveCavityGeometry,
@@ -2259,19 +2311,95 @@ function sumSlotAmplitudeTotal(modeSlots, capacity) {
   return total;
 }
 
+function buildModalFieldFrequencyOptions({
+  radius,
+  cavityAcousticScale,
+  boundaryMode,
+}) {
+  return {
+    acousticScale:
+      cavityAcousticScale && typeof cavityAcousticScale === "object"
+        ? cavityAcousticScale
+        : { radiusMeters: radius },
+    radiusMeters: radius,
+    boundaryMode,
+  };
+}
+
+function inferContinuousQualityFactor({ naturalFrequencyHz, u, v, w }) {
+  const frequencyRatio =
+    naturalFrequencyHz > 0
+      ? naturalFrequencyHz / MODAL_FIELD_Q_FREQUENCY_REFERENCE_HZ
+      : 0;
+  const orderRatio = Math.hypot(u, v, w) / MODAL_FIELD_Q_ORDER_REFERENCE;
+  const x = Math.max(0, frequencyRatio, orderRatio);
+  const qualityFactor =
+    MODAL_FIELD_Q_FALLBACK_BASE +
+    (MODAL_FIELD_Q_FALLBACK_GAIN * x) / (1 + x);
+  return clamp(
+    Number.isFinite(qualityFactor) ? qualityFactor : MODAL_FIELD_Q_FALLBACK_BASE,
+    MODAL_FIELD_Q_MIN,
+    MODAL_FIELD_Q_MAX,
+  );
+}
+
+function buildModalFieldMetadataSlot({
+  sourceSlots,
+  sourcePhaseSlots,
+  sourceMetadataSlots,
+  sourceOffset,
+  frequencyOptions,
+}) {
+  const u = sourceSlots?.[sourceOffset] ?? 0;
+  const v = sourceSlots?.[sourceOffset + 1] ?? 0;
+  const w = sourceSlots?.[sourceOffset + 2] ?? 0;
+  const coefficient = clamp01(sourceSlots?.[sourceOffset + 3] ?? 0);
+  const explicitFrequency = sourceMetadataSlots?.[sourceOffset];
+  const naturalFrequencyHz =
+    Number.isFinite(explicitFrequency) && explicitFrequency > 0
+      ? explicitFrequency
+      : getCavityModeFrequency(u, v, w, frequencyOptions);
+  const explicitQualityFactor = sourceMetadataSlots?.[sourceOffset + 1];
+  const qualityFactor =
+    Number.isFinite(explicitQualityFactor) && explicitQualityFactor > 0
+      ? clamp(explicitQualityFactor, MODAL_FIELD_Q_MIN, MODAL_FIELD_Q_MAX)
+      : inferContinuousQualityFactor({ naturalFrequencyHz, u, v, w });
+  const explicitDampingRatio = sourceMetadataSlots?.[sourceOffset + 2];
+  const dampingRatio =
+    Number.isFinite(explicitDampingRatio) && explicitDampingRatio > 0
+      ? explicitDampingRatio
+      : 1 / (2 * qualityFactor);
+  const phaseEvidence = clamp01(sourcePhaseSlots?.[sourceOffset + 2] ?? 0) *
+    clamp01(sourcePhaseSlots?.[sourceOffset + 3] ?? 0);
+  const explicitObservedSupport = sourceMetadataSlots?.[sourceOffset + 3];
+  const observedSupport = clamp01(
+    Math.max(
+      coefficient,
+      phaseEvidence,
+      Number.isFinite(explicitObservedSupport) ? explicitObservedSupport : 0,
+    ),
+  );
+
+  return {
+    naturalFrequencyHz,
+    qualityFactor,
+    dampingRatio,
+    observedSupport,
+  };
+}
+
 function writeModalFieldCandidates({
   targetSlots,
   targetPhaseSlots,
   targetColorSlots,
-  targetRoleSlots,
+  targetMetadataSlots,
   writeIndex,
   sourceSlots,
   sourcePhaseSlots,
   sourceColorSlots,
+  sourceMetadataSlots,
   validCount,
-  roleMask,
-  backboneRoleWeight,
-  detailRoleWeight,
+  frequencyOptions,
 }) {
   const slotCount = Math.floor((sourceSlots?.length ?? 0) / 4);
   const targetCount = Math.floor((targetSlots?.length ?? 0) / 4);
@@ -2312,10 +2440,17 @@ function writeModalFieldCandidates({
     targetColorSlots[targetOffset + 3] =
       sourceColorSlots?.[sourceOffset + 3] ?? 0;
 
-    targetRoleSlots[targetOffset] = roleMask;
-    targetRoleSlots[targetOffset + 1] = backboneRoleWeight;
-    targetRoleSlots[targetOffset + 2] = detailRoleWeight;
-    targetRoleSlots[targetOffset + 3] = 1;
+    const metadata = buildModalFieldMetadataSlot({
+      sourceSlots,
+      sourcePhaseSlots,
+      sourceMetadataSlots,
+      sourceOffset,
+      frequencyOptions,
+    });
+    targetMetadataSlots[targetOffset] = metadata.naturalFrequencyHz;
+    targetMetadataSlots[targetOffset + 1] = metadata.qualityFactor;
+    targetMetadataSlots[targetOffset + 2] = metadata.dampingRatio;
+    targetMetadataSlots[targetOffset + 3] = metadata.observedSupport;
     written += 1;
   }
 
@@ -2323,95 +2458,99 @@ function writeModalFieldCandidates({
 }
 
 function buildModalFieldDescriptorSource({
-  backboneSlots,
-  detailSlots,
-  backbonePhaseSlots,
-  detailPhaseSlots,
-  backboneColorSlots,
-  detailColorSlots,
-  activeBackboneModeCount,
-  activeDetailModeCount,
+  sourceCoupledSlots,
+  resonantSlots,
+  sourceCoupledPhaseSlots,
+  resonantPhaseSlots,
+  sourceCoupledColorSlots,
+  resonantColorSlots,
+  sourceCoupledMetadataSlots = null,
+  resonantMetadataSlots = null,
+  activeSourceCoupledModeCount,
+  activeResonantModeCount,
+  radius,
+  cavityAcousticScale,
+  boundaryMode,
 }) {
   const candidateCount =
-    Math.max(0, Math.floor(activeBackboneModeCount ?? 0)) +
-    Math.max(0, Math.floor(activeDetailModeCount ?? 0));
+    Math.max(0, Math.floor(activeSourceCoupledModeCount ?? 0)) +
+    Math.max(0, Math.floor(activeResonantModeCount ?? 0));
   const slotLength = candidateCount * 4;
   const modalFieldSlots = new Float32Array(slotLength);
   const modalFieldPhaseSlots = new Float32Array(slotLength);
   const modalFieldColorSlots = new Float32Array(slotLength);
-  const modalFieldRoleSlots = new Float32Array(slotLength);
+  const modalFieldMetadataSlots = new Float32Array(slotLength);
+  const frequencyOptions = buildModalFieldFrequencyOptions({
+    radius,
+    cavityAcousticScale,
+    boundaryMode,
+  });
   let activeModalFieldModeCount = 0;
 
   activeModalFieldModeCount = writeModalFieldCandidates({
     targetSlots: modalFieldSlots,
     targetPhaseSlots: modalFieldPhaseSlots,
     targetColorSlots: modalFieldColorSlots,
-    targetRoleSlots: modalFieldRoleSlots,
+    targetMetadataSlots: modalFieldMetadataSlots,
     writeIndex: activeModalFieldModeCount,
-    sourceSlots: backboneSlots,
-    sourcePhaseSlots: backbonePhaseSlots,
-    sourceColorSlots: backboneColorSlots,
-    validCount: activeBackboneModeCount,
-    roleMask: 1,
-    backboneRoleWeight: 1,
-    detailRoleWeight: 0,
+    sourceSlots: sourceCoupledSlots,
+    sourcePhaseSlots: sourceCoupledPhaseSlots,
+    sourceColorSlots: sourceCoupledColorSlots,
+    sourceMetadataSlots: sourceCoupledMetadataSlots,
+    validCount: activeSourceCoupledModeCount,
+    frequencyOptions,
   });
   activeModalFieldModeCount = writeModalFieldCandidates({
     targetSlots: modalFieldSlots,
     targetPhaseSlots: modalFieldPhaseSlots,
     targetColorSlots: modalFieldColorSlots,
-    targetRoleSlots: modalFieldRoleSlots,
+    targetMetadataSlots: modalFieldMetadataSlots,
     writeIndex: activeModalFieldModeCount,
-    sourceSlots: detailSlots,
-    sourcePhaseSlots: detailPhaseSlots,
-    sourceColorSlots: detailColorSlots,
-    validCount: activeDetailModeCount,
-    roleMask: 2,
-    backboneRoleWeight: 0,
-    detailRoleWeight: 1,
+    sourceSlots: resonantSlots,
+    sourcePhaseSlots: resonantPhaseSlots,
+    sourceColorSlots: resonantColorSlots,
+    sourceMetadataSlots: resonantMetadataSlots,
+    validCount: activeResonantModeCount,
+    frequencyOptions,
   });
 
   return {
     modalFieldSlots,
     modalFieldPhaseSlots,
     modalFieldColorSlots,
-    modalFieldRoleSlots,
+    modalFieldMetadataSlots,
     activeModalFieldModeCount,
-    roleHistogram: {
-      backbone: Math.max(0, Math.floor(activeBackboneModeCount ?? 0)),
-      detail: Math.max(0, Math.floor(activeDetailModeCount ?? 0)),
-    },
   };
 }
 
-function emptyLowQBackboneVisibility({ rejected = false } = {}) {
+function emptyLowQSourceCoupledVisibility({ rejected = false } = {}) {
   return rejected
     ? {
-        ...EMPTY_LOW_Q_BACKBONE_VISIBILITY,
-        lowQBackboneVisibilityRejected: true,
+        ...EMPTY_LOW_Q_SOURCE_COUPLED_VISIBILITY,
+        lowQSourceCoupledVisibilityRejected: true,
       }
-    : EMPTY_LOW_Q_BACKBONE_VISIBILITY;
+    : EMPTY_LOW_Q_SOURCE_COUPLED_VISIBILITY;
 }
 
-function deriveLowQBackboneVisibilityAuthority({
+function deriveLowQSourceCoupledVisibilityAuthority({
   structuralMetrics = null,
   hardSilent = false,
   sourceNormalization = undefined,
   bandEnergies = null,
-  activeBackboneModeCount = 0,
+  activeSourceCoupledModeCount = 0,
 } = {}) {
-  const lowQBackboneModeCount = structuralMetrics?.lowQBackboneModeCount ?? 0;
-  const lowQBackboneEnergy = clamp01(
-    structuralMetrics?.lowQBackboneEnergy ?? 0,
+  const lowQSourceCoupledModeCount = structuralMetrics?.lowQSourceCoupledModeCount ?? 0;
+  const lowQSourceCoupledEnergy = clamp01(
+    structuralMetrics?.lowQSourceCoupledEnergy ?? 0,
   );
-  const hasLowQBackboneCandidate =
-    lowQBackboneModeCount > 0 ||
-    lowQBackboneEnergy > 0 ||
-    activeBackboneModeCount > 0;
+  const hasLowQSourceCoupledCandidate =
+    lowQSourceCoupledModeCount > 0 ||
+    lowQSourceCoupledEnergy > 0 ||
+    activeSourceCoupledModeCount > 0;
 
   if (hardSilent || !structuralMetrics) {
-    return emptyLowQBackboneVisibility({
-      rejected: hasLowQBackboneCandidate,
+    return emptyLowQSourceCoupledVisibility({
+      rejected: hasLowQSourceCoupledCandidate,
     });
   }
 
@@ -2436,19 +2575,19 @@ function deriveLowQBackboneVisibilityAuthority({
     0.8 * lowQObservedDrive,
   );
   const admittedLowQObservedMode =
-    lowQBackboneModeCount > 0 && lowQBackboneEnergy > 0;
+    lowQSourceCoupledModeCount > 0 && lowQSourceCoupledEnergy > 0;
   const snrGate = admittedLowQObservedMode
     ? Math.max(
-        LOW_Q_BACKBONE_VISIBILITY_SNR_FLOOR,
+        LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_FLOOR,
         smoothstep(
-          LOW_Q_BACKBONE_VISIBILITY_SNR_START,
-          LOW_Q_BACKBONE_VISIBILITY_SNR_END,
+          LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_START,
+          LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_END,
           lowQObservedSnr,
         ),
       )
     : smoothstep(
-        LOW_Q_BACKBONE_VISIBILITY_SNR_START,
-        LOW_Q_BACKBONE_VISIBILITY_SNR_END,
+        LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_START,
+        LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_END,
         lowQObservedSnr,
       );
   const denseSpectrumPressure = clamp01(
@@ -2459,33 +2598,33 @@ function deriveLowQBackboneVisibilityAuthority({
   );
   const authority = clamp01(
     smoothstep(
-      LOW_Q_BACKBONE_VISIBILITY_ENERGY_START,
-      LOW_Q_BACKBONE_VISIBILITY_ENERGY_END,
-      lowQBackboneEnergy,
+      LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_START,
+      LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_END,
+      lowQSourceCoupledEnergy,
     ) *
       smoothstep(
-        LOW_Q_BACKBONE_VISIBILITY_COHERENCE_START,
-        LOW_Q_BACKBONE_VISIBILITY_COHERENCE_END,
+        LOW_Q_SOURCE_COUPLED_VISIBILITY_COHERENCE_START,
+        LOW_Q_SOURCE_COUPLED_VISIBILITY_COHERENCE_END,
         lowQCoherence,
       ) *
       snrGate *
       smoothstep(
-        LOW_Q_BACKBONE_VISIBILITY_SOURCE_START,
-        LOW_Q_BACKBONE_VISIBILITY_SOURCE_END,
+        LOW_Q_SOURCE_COUPLED_VISIBILITY_SOURCE_START,
+        LOW_Q_SOURCE_COUPLED_VISIBILITY_SOURCE_END,
         sourceSupport,
       ) *
-      smoothstep(0, 2, activeBackboneModeCount) *
-      (1 - LOW_Q_BACKBONE_VISIBILITY_DENSE_REDUCTION * denseSpectrumPressure),
+      smoothstep(0, 2, activeSourceCoupledModeCount) *
+      (1 - LOW_Q_SOURCE_COUPLED_VISIBILITY_DENSE_REDUCTION * denseSpectrumPressure),
   );
 
   return {
-    lowQBackboneVisibilityAuthority: authority,
-    lowQBackboneVisibilityEnergy:
-      LOW_Q_BACKBONE_VISIBILITY_ENERGY_MAX * authority,
-    lowQBackboneTopologyFloor: LOW_Q_BACKBONE_TOPOLOGY_FLOOR_MAX * authority,
-    lowQBackboneSourceSupport: sourceSupport,
-    lowQBackboneVisibilityRejected: Boolean(
-      hasLowQBackboneCandidate && authority <= 0,
+    lowQSourceCoupledVisibilityAuthority: authority,
+    lowQSourceCoupledVisibilityEnergy:
+      LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_MAX * authority,
+    lowQSourceCoupledTopologyFloor: LOW_Q_SOURCE_COUPLED_TOPOLOGY_FLOOR_MAX * authority,
+    lowQSourceCoupledSourceSupport: sourceSupport,
+    lowQSourceCoupledVisibilityRejected: Boolean(
+      hasLowQSourceCoupledCandidate && authority <= 0,
     ),
   };
 }
@@ -2495,7 +2634,7 @@ function deriveModalObserverVisibilityComponents({
   hardSilent = false,
   sourceNormalization = undefined,
   bandEnergies = null,
-  activeBackboneModeCount = 0,
+  activeSourceCoupledModeCount = 0,
   nonZeroFFTBinCount = 0,
   periodicity = 0,
 } = {}) {
@@ -2505,8 +2644,8 @@ function deriveModalObserverVisibilityComponents({
 
   const modeCoherence = clamp01(structuralMetrics.modeCoherence ?? 0);
   const modalPersistence = clamp01(structuralMetrics.modalPersistence ?? 0);
-  const highQDetailModeCount = structuralMetrics.highQDetailModeCount ?? 0;
-  const highQDetailEnergy = clamp01(structuralMetrics.highQDetailEnergy ?? 0);
+  const highQResonantModeCount = structuralMetrics.highQResonantModeCount ?? 0;
+  const highQResonantEnergy = clamp01(structuralMetrics.highQResonantEnergy ?? 0);
   const highQRingSupport = clamp01(structuralMetrics.highQRingSupport ?? 0);
   const highQObservedCoherence = clamp01(
     structuralMetrics.highQObservedCoherence ?? modeCoherence,
@@ -2517,7 +2656,7 @@ function deriveModalObserverVisibilityComponents({
     highQObservedCoherence,
     highQObservedDrive: structuralMetrics.highQObservedDrive ?? 0,
     highQRingSupport,
-    highQDetailEnergy,
+    highQResonantEnergy,
     distributedExcitation: structuralMetrics.distributedExcitation ?? 0,
     periodicity,
     nonZeroFFTBinCount,
@@ -2531,14 +2670,14 @@ function deriveModalObserverVisibilityComponents({
   const highQEnergyGate = smoothstep(
     MODAL_OBSERVER_HIGH_Q_ENERGY_START,
     MODAL_OBSERVER_HIGH_Q_ENERGY_END,
-    highQDetailEnergy,
+    highQResonantEnergy,
   );
   const highQSupportGate = smoothstep(
     MODAL_OBSERVER_HIGH_Q_SUPPORT_START,
     MODAL_OBSERVER_HIGH_Q_SUPPORT_END,
     highQSignalSupport,
   );
-  const highQCountGate = smoothstep(1, 4, highQDetailModeCount);
+  const highQCountGate = smoothstep(1, 4, highQResonantModeCount);
   const highQQuality = Math.max(
     highQObservedCoherence,
     modeCoherence * 0.75,
@@ -2553,8 +2692,8 @@ function deriveModalObserverVisibilityComponents({
       MODAL_OBSERVER_HIGH_Q_MAX,
   );
 
-  const lowQBackboneModeCount = structuralMetrics.lowQBackboneModeCount ?? 0;
-  const lowQBackboneEnergy = clamp01(structuralMetrics.lowQBackboneEnergy ?? 0);
+  const lowQSourceCoupledModeCount = structuralMetrics.lowQSourceCoupledModeCount ?? 0;
+  const lowQSourceCoupledEnergy = clamp01(structuralMetrics.lowQSourceCoupledEnergy ?? 0);
   const lowQObservedCoherence = clamp01(
     structuralMetrics.lowQObservedCoherence ?? modeCoherence,
   );
@@ -2563,9 +2702,9 @@ function deriveModalObserverVisibilityComponents({
   const lowQEnergyGate = smoothstep(
     MODAL_OBSERVER_LOW_Q_ENERGY_START,
     MODAL_OBSERVER_LOW_Q_ENERGY_END,
-    lowQBackboneEnergy,
+    lowQSourceCoupledEnergy,
   );
-  const lowQCountGate = smoothstep(0, 3, lowQBackboneModeCount);
+  const lowQCountGate = smoothstep(0, 3, lowQSourceCoupledModeCount);
   const lowQQuality = Math.max(
     lowQObservedCoherence,
     modeCoherence * 0.65,
@@ -2578,29 +2717,29 @@ function deriveModalObserverVisibilityComponents({
       lowQQuality *
       MODAL_OBSERVER_LOW_Q_MAX,
   );
-  const lowQBackboneVisibility = deriveLowQBackboneVisibilityAuthority({
+  const lowQSourceCoupledVisibility = deriveLowQSourceCoupledVisibilityAuthority({
     structuralMetrics,
     hardSilent,
     sourceNormalization,
     bandEnergies,
-    activeBackboneModeCount,
+    activeSourceCoupledModeCount,
   });
 
-  const detailSlotFloorTotal = Math.min(
-    MODAL_OBSERVER_DETAIL_SLOT_FLOOR_TOTAL_MAX,
+  const resonantSlotFloorTotal = Math.min(
+    MODAL_OBSERVER_RESONANT_SLOT_FLOOR_TOTAL_MAX,
     highQObserverVisibilityEnergy * 0.055,
   );
-  const lowQObserverBackboneSlotFloorTotal = Math.min(
-    MODAL_OBSERVER_BACKBONE_SLOT_FLOOR_TOTAL_MAX,
+  const lowQObserverSourceCoupledSlotFloorTotal = Math.min(
+    MODAL_OBSERVER_SOURCE_COUPLED_SLOT_FLOOR_TOTAL_MAX,
     lowQObserverVisibilityEnergy * 0.045,
   );
-  const backboneSlotFloorTotal = Math.max(
-    lowQObserverBackboneSlotFloorTotal,
-    lowQBackboneVisibility.lowQBackboneTopologyFloor,
+  const sourceCoupledSlotFloorTotal = Math.max(
+    lowQObserverSourceCoupledSlotFloorTotal,
+    lowQSourceCoupledVisibility.lowQSourceCoupledTopologyFloor,
   );
   const modalObserverTopologyFloor = Math.max(
-    detailSlotFloorTotal,
-    backboneSlotFloorTotal,
+    resonantSlotFloorTotal,
+    sourceCoupledSlotFloorTotal,
   );
 
   return {
@@ -2608,15 +2747,15 @@ function deriveModalObserverVisibilityComponents({
       Math.max(
         highQObserverVisibilityEnergy,
         lowQObserverVisibilityEnergy,
-        lowQBackboneVisibility.lowQBackboneVisibilityEnergy,
+        lowQSourceCoupledVisibility.lowQSourceCoupledVisibilityEnergy,
       ),
     ),
     highQObserverVisibilityEnergy,
     lowQObserverVisibilityEnergy,
     modalObserverTopologyFloor,
-    detailSlotFloorTotal,
-    backboneSlotFloorTotal,
-    ...lowQBackboneVisibility,
+    resonantSlotFloorTotal,
+    sourceCoupledSlotFloorTotal,
+    ...lowQSourceCoupledVisibility,
     ...highQAuthority,
   };
 }
@@ -2628,7 +2767,7 @@ function deriveModalVisibilityComponents({
   hardSilent = false,
   sourceNormalization = undefined,
   bandEnergies = null,
-  activeBackboneModeCount = 0,
+  activeSourceCoupledModeCount = 0,
   nonZeroFFTBinCount = 0,
   periodicity = 0,
 }) {
@@ -2644,7 +2783,7 @@ function deriveModalVisibilityComponents({
     highQObserverVisibilityEnergy: 0,
     lowQObserverVisibilityEnergy: 0,
     modalObserverTopologyFloor: 0,
-    ...EMPTY_LOW_Q_BACKBONE_VISIBILITY,
+    ...EMPTY_LOW_Q_SOURCE_COUPLED_VISIBILITY,
     retainedHighQModalVisibility: 0,
     highQSparseResonatorAuthority: 0,
     highQDenseSpectrumPressure: 0,
@@ -2677,7 +2816,7 @@ function deriveModalVisibilityComponents({
     hardSilent,
     sourceNormalization,
     bandEnergies,
-    activeBackboneModeCount,
+    activeSourceCoupledModeCount,
     nonZeroFFTBinCount,
     periodicity,
   });
@@ -2688,8 +2827,8 @@ function deriveModalVisibilityComponents({
   const distributedExcitation = clamp01(
     structuralMetrics?.distributedExcitation ?? 0,
   );
-  const highQDetailModeCount = structuralMetrics?.highQDetailModeCount ?? 0;
-  const highQDetailEnergy = clamp01(structuralMetrics?.highQDetailEnergy ?? 0);
+  const highQResonantModeCount = structuralMetrics?.highQResonantModeCount ?? 0;
+  const highQResonantEnergy = clamp01(structuralMetrics?.highQResonantEnergy ?? 0);
   const highQRingSupport = clamp01(structuralMetrics?.highQRingSupport ?? 0);
   const highQObservedCoherence = clamp01(
     structuralMetrics?.highQObservedCoherence ?? resonatorCoherence,
@@ -2700,11 +2839,11 @@ function deriveModalVisibilityComponents({
   const highQSustainedVisibilityScale = smoothstep(
     0.06,
     0.18,
-    highQDetailEnergy,
+    highQResonantEnergy,
   );
   const hasRetainedHighQObserverAuthority =
-    highQDetailModeCount >= 2 &&
-    highQDetailEnergy > 0 &&
+    highQResonantModeCount >= 2 &&
+    highQResonantEnergy > 0 &&
     highQRingSupport > 0 &&
     highQObservedCoherence > 0;
   if (
@@ -2753,9 +2892,9 @@ function deriveModalVisibilityComponents({
     smoothstep(
       MODAL_VISIBILITY_HIGH_Q_ENERGY_START,
       MODAL_VISIBILITY_HIGH_Q_ENERGY_END,
-      highQDetailEnergy * highQRingSupport,
+      highQResonantEnergy * highQRingSupport,
     ) *
-    smoothstep(2, 5, highQDetailModeCount) *
+    smoothstep(2, 5, highQResonantModeCount) *
     modalQuality *
     highQSustainedVisibilityScale *
     highQSparseResonatorAuthority;
@@ -2777,9 +2916,9 @@ function deriveModalVisibilityComponents({
     smoothstep(
       MODAL_VISIBILITY_HIGH_Q_OBSERVER_ENERGY_START,
       MODAL_VISIBILITY_HIGH_Q_OBSERVER_ENERGY_END,
-      highQDetailEnergy,
+      highQResonantEnergy,
     ) *
-    smoothstep(1, 4, highQDetailModeCount) *
+    smoothstep(1, 4, highQResonantModeCount) *
     retainedHighQObserverSupport *
     retainedHighQObserverQuality *
     highQSparseResonatorAuthority;
@@ -2840,14 +2979,14 @@ function deriveModalVisibilityComponents({
     lowQObserverVisibilityEnergy:
       observerVisibility.lowQObserverVisibilityEnergy,
     modalObserverTopologyFloor: observerVisibility.modalObserverTopologyFloor,
-    lowQBackboneVisibilityAuthority:
-      observerVisibility.lowQBackboneVisibilityAuthority,
-    lowQBackboneVisibilityEnergy:
-      observerVisibility.lowQBackboneVisibilityEnergy,
-    lowQBackboneTopologyFloor: observerVisibility.lowQBackboneTopologyFloor,
-    lowQBackboneSourceSupport: observerVisibility.lowQBackboneSourceSupport,
-    lowQBackboneVisibilityRejected:
-      observerVisibility.lowQBackboneVisibilityRejected,
+    lowQSourceCoupledVisibilityAuthority:
+      observerVisibility.lowQSourceCoupledVisibilityAuthority,
+    lowQSourceCoupledVisibilityEnergy:
+      observerVisibility.lowQSourceCoupledVisibilityEnergy,
+    lowQSourceCoupledTopologyFloor: observerVisibility.lowQSourceCoupledTopologyFloor,
+    lowQSourceCoupledSourceSupport: observerVisibility.lowQSourceCoupledSourceSupport,
+    lowQSourceCoupledVisibilityRejected:
+      observerVisibility.lowQSourceCoupledVisibilityRejected,
     retainedHighQModalVisibility,
     highQSparseResonatorAuthority,
     highQDenseSpectrumPressure: observerVisibility.highQDenseSpectrumPressure,
@@ -2863,8 +3002,8 @@ function deriveCompositeSignals({
   modeSlots,
   visibilityModeSlots = modeSlots,
   referenceModeSlots,
-  backboneState,
-  detailState,
+  sourceCoupledState,
+  resonantState,
   bandEnergies,
   analyserRms,
   avgAmplitude,
@@ -2881,13 +3020,13 @@ function deriveCompositeSignals({
   structuralMetrics = null,
   sourceNormalization = undefined,
   liveInputHardSilenceActive = false,
-  activeBackboneModeCount = 0,
+  activeSourceCoupledModeCount = 0,
   nonZeroFFTBinCount = 0,
 }) {
   const activeModeCount = countActiveSlots(modeSlots, modeCapacity);
   const uniqueModeCount =
-    (backboneState?.uniqueModeCount ?? 0) + (detailState?.uniqueModeCount ?? 0);
-  const harmonicSupport = averageArray(backboneState?.harmonicSupport);
+    (sourceCoupledState?.uniqueModeCount ?? 0) + (resonantState?.uniqueModeCount ?? 0);
+  const harmonicSupport = averageArray(sourceCoupledState?.harmonicSupport);
   const bandDistribution =
     (bandEnergies?.reduce(
       (count, energy) => count + ((energy ?? 0) > 0.04 ? 1 : 0),
@@ -2910,7 +3049,7 @@ function deriveCompositeSignals({
 
   // energyCoupling: scale mode-count terms with RMS so the gate deflates
   // during genuine fades rather than being propped open by slowly-releasing
-  // backbone modes. Floor of 0.12 keeps some readout at moderate volumes.
+  // source-coupled modes. Floor of 0.12 keeps some readout at moderate volumes.
   const energyCoupling = Math.sqrt(Math.max(normalizedRms, 0.12));
   const modalPersistence = clamp01(structuralMetrics?.modalPersistence ?? 0);
   const distributedExcitation = clamp01(
@@ -2979,25 +3118,25 @@ function deriveCompositeSignals({
     hardSilent: liveInputHardSilenceActive,
     sourceNormalization,
     bandEnergies,
-    activeBackboneModeCount,
+    activeSourceCoupledModeCount,
     nonZeroFFTBinCount,
-    periodicity: backboneState?.candidatePeriodicity ?? 0,
+    periodicity: sourceCoupledState?.candidatePeriodicity ?? 0,
   });
   const modalVisibilityEnergy = modalVisibilityComponents.modalVisibilityEnergy;
   const modalObserverVisibilityEnergy =
     modalVisibilityComponents.modalObserverVisibilityEnergy ?? 0;
   const modalVisibilityRetainedHighQEnergy =
     modalVisibilityComponents.retainedHighQModalVisibility ?? 0;
-  const lowQBackboneVisibilityAuthority =
-    modalVisibilityComponents.lowQBackboneVisibilityAuthority ?? 0;
-  const lowQBackboneVisibilityEnergy =
-    modalVisibilityComponents.lowQBackboneVisibilityEnergy ?? 0;
-  const lowQBackboneTopologyFloor =
-    modalVisibilityComponents.lowQBackboneTopologyFloor ?? 0;
-  const lowQBackboneSourceSupport =
-    modalVisibilityComponents.lowQBackboneSourceSupport ?? 0;
-  const lowQBackboneVisibilityRejected = Boolean(
-    modalVisibilityComponents.lowQBackboneVisibilityRejected,
+  const lowQSourceCoupledVisibilityAuthority =
+    modalVisibilityComponents.lowQSourceCoupledVisibilityAuthority ?? 0;
+  const lowQSourceCoupledVisibilityEnergy =
+    modalVisibilityComponents.lowQSourceCoupledVisibilityEnergy ?? 0;
+  const lowQSourceCoupledTopologyFloor =
+    modalVisibilityComponents.lowQSourceCoupledTopologyFloor ?? 0;
+  const lowQSourceCoupledSourceSupport =
+    modalVisibilityComponents.lowQSourceCoupledSourceSupport ?? 0;
+  const lowQSourceCoupledVisibilityRejected = Boolean(
+    modalVisibilityComponents.lowQSourceCoupledVisibilityRejected,
   );
 
   if (inputMode === "live") {
@@ -3012,11 +3151,11 @@ function deriveCompositeSignals({
       modalVisibilityEnergy,
       modalObserverVisibilityEnergy,
       modalVisibilityRetainedHighQEnergy,
-      lowQBackboneVisibilityAuthority,
-      lowQBackboneVisibilityEnergy,
-      lowQBackboneTopologyFloor,
-      lowQBackboneSourceSupport,
-      lowQBackboneVisibilityRejected,
+      lowQSourceCoupledVisibilityAuthority,
+      lowQSourceCoupledVisibilityEnergy,
+      lowQSourceCoupledTopologyFloor,
+      lowQSourceCoupledSourceSupport,
+      lowQSourceCoupledVisibilityRejected,
       changeBreakdown,
     };
   }
@@ -3030,11 +3169,11 @@ function deriveCompositeSignals({
     modalVisibilityEnergy,
     modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
-    lowQBackboneVisibilityAuthority,
-    lowQBackboneVisibilityEnergy,
-    lowQBackboneTopologyFloor,
-    lowQBackboneSourceSupport,
-    lowQBackboneVisibilityRejected,
+    lowQSourceCoupledVisibilityAuthority,
+    lowQSourceCoupledVisibilityEnergy,
+    lowQSourceCoupledTopologyFloor,
+    lowQSourceCoupledSourceSupport,
+    lowQSourceCoupledVisibilityRejected,
     changeBreakdown,
   };
 }
@@ -3297,8 +3436,8 @@ function finalizeFeatureDebugSnapshot({
   liveInputPolicy,
   liveInputBaselineRms,
   liveInputBaselinePeak,
-  backboneState,
-  detailState,
+  sourceCoupledState,
+  resonantState,
   dominantFrequency,
   dominantAmplitude,
   avgAmplitude,
@@ -3306,11 +3445,11 @@ function finalizeFeatureDebugSnapshot({
   spectralCandidates,
   fftMagnitudes,
   nonZeroFFTBinCount = null,
-  backboneSlots,
-  detailSlots,
+  sourceCoupledSlots,
+  resonantSlots,
   modeSlots,
-  backboneColorSlots,
-  detailColorSlots,
+  sourceCoupledColorSlots,
+  resonantColorSlots,
   referenceModeSlots,
   bandEnergies,
   spectralLightComponents = null,
@@ -3368,22 +3507,22 @@ function finalizeFeatureDebugSnapshot({
     liveInputPolicy,
     liveInputBaselineRms,
     liveInputBaselinePeak,
-    backboneState,
-    detailState,
+    sourceCoupledState,
+    resonantState,
     dominantFrequency,
     dominantAmplitude,
     avgAmplitude,
     analyserRms,
     fftMagnitudes,
     nonZeroFFTBinCount,
-    backboneSlots,
-    detailSlots,
+    sourceCoupledSlots,
+    resonantSlots,
     modeSlots,
     spectralLightComponents:
       spectralLightComponents ??
       [
-        ...(backboneState?.spectralLightComponents ?? []),
-        ...(detailState?.spectralLightComponents ?? []),
+        ...(sourceCoupledState?.spectralLightComponents ?? []),
+        ...(resonantState?.spectralLightComponents ?? []),
       ]
         .sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0))
         .slice(0, 8),
@@ -3417,7 +3556,7 @@ function finalizeFeatureDebugSnapshot({
     effectiveCavityGeometry,
   });
 
-  if (!shouldBuildDetailedDebug(auditSettings)) {
+  if (!shouldBuildResonantedDebug(auditSettings)) {
     return debug;
   }
 
@@ -3436,17 +3575,19 @@ function finalizeFeatureDebugSnapshot({
 
   return {
     ...debug,
-    harmonicSupport: Array.from(backboneState.harmonicSupport),
+    harmonicSupport: Array.from(sourceCoupledState.harmonicSupport),
     spectralCandidates: spectralCandidates.map((peak) => ({
       frequency: peak.frequency,
       amplitude: peak.amplitude,
     })),
     currentModeSlots: Array.from(modeSlots),
     referenceModeSlots: Array.from(referenceModeSlots),
-    backboneSlots: Array.from(backboneSlots),
-    detailSlots: Array.from(detailSlots),
-    backboneColorSlots: Array.from(backboneColorSlots),
-    detailColorSlots: Array.from(detailColorSlots),
+    modalFieldSlots: Array.from(modeSlots),
+    modalFieldColorSlots: Array.from(sourceCoupledColorSlots),
+    sourceCoupledSlots: Array.from(sourceCoupledSlots),
+    resonantSlots: Array.from(resonantSlots),
+    sourceCoupledColorSlots: Array.from(sourceCoupledColorSlots),
+    resonantColorSlots: Array.from(resonantColorSlots),
     bandEnergies: Array.from(bandEnergies),
     slotAmplitudeDeltas: Array.from(slotAmplitudeDeltas),
   };
@@ -3605,29 +3746,29 @@ export function prepareAudioFeatureFrameInputs({
   const capacity = featureState?.capacity ?? AUDIO_SLOT_CAPACITY;
   const analysisMemory = getAnalysisMemory(featureState, capacity);
   const {
-    backboneSlots,
-    detailSlots,
-    backbonePhaseSlots,
-    detailPhaseSlots,
+    sourceCoupledSlots,
+    resonantSlots,
+    sourceCoupledPhaseSlots,
+    resonantPhaseSlots,
     modeSlots,
     signalModeSlots,
-    backboneColorSlots,
-    detailColorSlots,
-    referenceBackboneSlots,
-    referenceDetailSlots,
+    sourceCoupledColorSlots,
+    resonantColorSlots,
+    referenceSourceCoupledSlots,
+    referenceResonantSlots,
     referenceModeSlots,
     signalReferenceModeSlots,
     bandEnergies,
-    zeroBackboneTargetSlots,
-    zeroDetailTargetSlots,
-    nonAcousticBackboneTarget,
-    nonAcousticDetailTarget,
+    zeroSourceCoupledTargetSlots,
+    zeroResonantTargetSlots,
+    nonAcousticSourceCoupledTarget,
+    nonAcousticResonantTarget,
     nonAcousticPeakDriverScratch,
-    acousticBackboneTarget,
-    acousticDetailTarget,
+    acousticSourceCoupledTarget,
+    acousticResonantTarget,
     modalExcitationState,
-    backboneState,
-    detailState,
+    sourceCoupledState,
+    resonantState,
     bandState,
   } = ensureAnalysisMemoryShape(featureState, analysisMemory, capacity);
   const auditState = featureState?.audit;
@@ -3715,21 +3856,21 @@ export function prepareAudioFeatureFrameInputs({
     return {
       capacity,
       analysisMemory,
-      backboneSlots,
-      detailSlots,
+      sourceCoupledSlots,
+      resonantSlots,
       modeSlots,
       signalModeSlots,
-      backboneColorSlots,
-      detailColorSlots,
-      referenceBackboneSlots,
-      referenceDetailSlots,
+      sourceCoupledColorSlots,
+      resonantColorSlots,
+      referenceSourceCoupledSlots,
+      referenceResonantSlots,
       referenceModeSlots,
       signalReferenceModeSlots,
       bandEnergies,
-      zeroBackboneTargetSlots,
-      zeroDetailTargetSlots,
-      backboneState,
-      detailState,
+      zeroSourceCoupledTargetSlots,
+      zeroResonantTargetSlots,
+      sourceCoupledState,
+      resonantState,
       bandState,
       auditState,
       resolvedAuditSettings,
@@ -3782,17 +3923,17 @@ export function prepareAudioFeatureFrameInputs({
         soundActive,
         micActive,
         isLiveInputActive: status?.isLiveInputActive === true,
-        backboneSlots,
-        detailSlots,
-        backbonePhaseSlots,
-        detailPhaseSlots,
+        sourceCoupledSlots,
+        resonantSlots,
+        sourceCoupledPhaseSlots,
+        resonantPhaseSlots,
         modeSlots,
-        backboneColorSlots,
-        detailColorSlots,
+        sourceCoupledColorSlots,
+        resonantColorSlots,
         referenceModeSlots,
         bandEnergies,
-        backboneState,
-        detailState,
+        sourceCoupledState,
+        resonantState,
         fftSize,
         auditSettings: resolvedAuditSettings,
         requestedCavityGeometry,
@@ -3874,29 +4015,29 @@ export function prepareAudioFeatureFrameInputs({
     beatSettings,
     capacity,
     analysisMemory,
-    backboneSlots,
-    detailSlots,
-    backbonePhaseSlots,
-    detailPhaseSlots,
+    sourceCoupledSlots,
+    resonantSlots,
+    sourceCoupledPhaseSlots,
+    resonantPhaseSlots,
     modeSlots,
     signalModeSlots,
-    backboneColorSlots,
-    detailColorSlots,
-    referenceBackboneSlots,
-    referenceDetailSlots,
+    sourceCoupledColorSlots,
+    resonantColorSlots,
+    referenceSourceCoupledSlots,
+    referenceResonantSlots,
     referenceModeSlots,
     signalReferenceModeSlots,
     bandEnergies,
-    zeroBackboneTargetSlots,
-    zeroDetailTargetSlots,
-    nonAcousticBackboneTarget,
-    nonAcousticDetailTarget,
+    zeroSourceCoupledTargetSlots,
+    zeroResonantTargetSlots,
+    nonAcousticSourceCoupledTarget,
+    nonAcousticResonantTarget,
     nonAcousticPeakDriverScratch,
-    acousticBackboneTarget,
-    acousticDetailTarget,
+    acousticSourceCoupledTarget,
+    acousticResonantTarget,
     modalExcitationState,
-    backboneState,
-    detailState,
+    sourceCoupledState,
+    resonantState,
     bandState,
     auditState,
     resolvedAuditSettings,
@@ -4082,8 +4223,8 @@ function computeColorSignature(colorSlots, capacity) {
 function hasFrozenStructuralProjection(auditState) {
   return Boolean(
     auditState &&
-    (auditState.frozenBackboneSlots.some((value) => value !== 0) ||
-      auditState.frozenDetailSlots.some((value) => value !== 0)),
+    (auditState.frozenSourceCoupledSlots.some((value) => value !== 0) ||
+      auditState.frozenResonantSlots.some((value) => value !== 0)),
   );
 }
 
@@ -4100,78 +4241,78 @@ function resolveStructuralProjectionSources(preparedInputs, structuralState) {
   const hasFrozenProjection =
     freezeModeSlots && hasFrozenStructuralProjection(auditState);
 
-  const backboneSlotsSource = hasFrozenProjection
-    ? auditState.frozenBackboneSlots
-    : (structuralState?.backboneSlotsSource ??
-      preparedInputs.backboneState.slots);
-  const detailSlotsSource = hasFrozenProjection
-    ? auditState.frozenDetailSlots
-    : (structuralState?.detailSlotsSource ?? preparedInputs.detailState.slots);
-  const backbonePhaseSlotsSource =
-    structuralState?.backbonePhaseSlotsSource ??
-    preparedInputs.backbonePhaseSlots;
-  const detailPhaseSlotsSource =
-    structuralState?.detailPhaseSlotsSource ?? preparedInputs.detailPhaseSlots;
-  const backboneColorSlotsSource = shouldBuildSpectralLight
+  const sourceCoupledSlotsSource = hasFrozenProjection
+    ? auditState.frozenSourceCoupledSlots
+    : (structuralState?.sourceCoupledSlotsSource ??
+      preparedInputs.sourceCoupledState.slots);
+  const resonantSlotsSource = hasFrozenProjection
+    ? auditState.frozenResonantSlots
+    : (structuralState?.resonantSlotsSource ?? preparedInputs.resonantState.slots);
+  const sourceCoupledPhaseSlotsSource =
+    structuralState?.sourceCoupledPhaseSlotsSource ??
+    preparedInputs.sourceCoupledPhaseSlots;
+  const resonantPhaseSlotsSource =
+    structuralState?.resonantPhaseSlotsSource ?? preparedInputs.resonantPhaseSlots;
+  const sourceCoupledColorSlotsSource = shouldBuildSpectralLight
     ? hasFrozenProjection
-      ? auditState.frozenBackboneColorSlots
-      : (structuralState?.backboneColorSlotsSource ??
-        preparedInputs.backboneState.colorSlots)
+      ? auditState.frozenSourceCoupledColorSlots
+      : (structuralState?.sourceCoupledColorSlotsSource ??
+        preparedInputs.sourceCoupledState.colorSlots)
     : null;
-  const detailColorSlotsSource = shouldBuildSpectralLight
+  const resonantColorSlotsSource = shouldBuildSpectralLight
     ? hasFrozenProjection
-      ? auditState.frozenDetailColorSlots
-      : (structuralState?.detailColorSlotsSource ??
-        preparedInputs.detailState.colorSlots)
+      ? auditState.frozenResonantColorSlots
+      : (structuralState?.resonantColorSlotsSource ??
+        preparedInputs.resonantState.colorSlots)
     : null;
-  const referenceBackboneSlotsSource =
-    structuralState?.referenceBackboneSlotsSource ??
-    preparedInputs.backboneState.referenceSlots;
-  const referenceDetailSlotsSource =
-    structuralState?.referenceDetailSlotsSource ??
-    preparedInputs.detailState.referenceSlots;
-  const activeBackboneModeCount = structuralState?.suppressedByFog
+  const referenceSourceCoupledSlotsSource =
+    structuralState?.referenceSourceCoupledSlotsSource ??
+    preparedInputs.sourceCoupledState.referenceSlots;
+  const referenceResonantSlotsSource =
+    structuralState?.referenceResonantSlotsSource ??
+    preparedInputs.resonantState.referenceSlots;
+  const activeSourceCoupledModeCount = structuralState?.suppressedByFog
     ? 0
-    : countActiveSlots(backboneSlotsSource, capacity);
-  const activeDetailModeCount = structuralState?.suppressedByFog
+    : countActiveSlots(sourceCoupledSlotsSource, capacity);
+  const activeResonantModeCount = structuralState?.suppressedByFog
     ? 0
-    : countActiveSlots(detailSlotsSource, capacity);
+    : countActiveSlots(resonantSlotsSource, capacity);
 
   return {
     freezeModeSlots,
     hasFrozenProjection,
-    backboneSlotsSource,
-    detailSlotsSource,
-    backbonePhaseSlotsSource,
-    detailPhaseSlotsSource,
-    referenceBackboneSlotsSource,
-    referenceDetailSlotsSource,
-    backboneColorSlotsSource,
-    detailColorSlotsSource,
-    activeBackboneModeCount,
-    activeDetailModeCount,
-    activeModeCount: activeBackboneModeCount + activeDetailModeCount,
+    sourceCoupledSlotsSource,
+    resonantSlotsSource,
+    sourceCoupledPhaseSlotsSource,
+    resonantPhaseSlotsSource,
+    referenceSourceCoupledSlotsSource,
+    referenceResonantSlotsSource,
+    sourceCoupledColorSlotsSource,
+    resonantColorSlotsSource,
+    activeSourceCoupledModeCount,
+    activeResonantModeCount,
+    activeModeCount: activeSourceCoupledModeCount + activeResonantModeCount,
   };
 }
 
 function resolveStructuralSignalSources(preparedInputs, structuralState) {
   return {
-    signalBackboneSlotsSource:
-      structuralState?.signalBackboneSlotsSource ??
-      structuralState?.backboneSlotsSource ??
-      preparedInputs.backboneState.slots,
-    signalDetailSlotsSource:
-      structuralState?.signalDetailSlotsSource ??
-      structuralState?.detailSlotsSource ??
-      preparedInputs.detailState.slots,
-    signalReferenceBackboneSlotsSource:
-      structuralState?.signalReferenceBackboneSlotsSource ??
-      structuralState?.referenceBackboneSlotsSource ??
-      preparedInputs.backboneState.referenceSlots,
-    signalReferenceDetailSlotsSource:
-      structuralState?.signalReferenceDetailSlotsSource ??
-      structuralState?.referenceDetailSlotsSource ??
-      preparedInputs.detailState.referenceSlots,
+    signalSourceCoupledSlotsSource:
+      structuralState?.signalSourceCoupledSlotsSource ??
+      structuralState?.sourceCoupledSlotsSource ??
+      preparedInputs.sourceCoupledState.slots,
+    signalResonantSlotsSource:
+      structuralState?.signalResonantSlotsSource ??
+      structuralState?.resonantSlotsSource ??
+      preparedInputs.resonantState.slots,
+    signalReferenceSourceCoupledSlotsSource:
+      structuralState?.signalReferenceSourceCoupledSlotsSource ??
+      structuralState?.referenceSourceCoupledSlotsSource ??
+      preparedInputs.sourceCoupledState.referenceSlots,
+    signalReferenceResonantSlotsSource:
+      structuralState?.signalReferenceResonantSlotsSource ??
+      structuralState?.referenceResonantSlotsSource ??
+      preparedInputs.resonantState.referenceSlots,
   };
 }
 
@@ -4205,8 +4346,8 @@ function applyObserverSlotFloor(slots, capacity, floorTotal) {
 function buildStructuralFingerprint({
   preparedInputs,
   structuralState,
-  activeBackboneModeCount,
-  activeDetailModeCount,
+  activeSourceCoupledModeCount,
+  activeResonantModeCount,
   activeModeCount,
 }) {
   const projectionSources = resolveStructuralProjectionSources(
@@ -4216,8 +4357,8 @@ function buildStructuralFingerprint({
   const fogSuppressed = Boolean(structuralState?.suppressedByFog);
 
   return {
-    activeBackboneModeCount,
-    activeDetailModeCount,
+    activeSourceCoupledModeCount,
+    activeResonantModeCount,
     activeModeCount,
     dominantFrequency: structuralState?.dominantFrequency ?? 0,
     dominantAmplitude: structuralState?.dominantAmplitude ?? 0,
@@ -4225,38 +4366,38 @@ function buildStructuralFingerprint({
     pitchSource: structuralState?.pitchSource ?? "none",
     usedDecay: Boolean(structuralState?.usedDecay),
     sourceMode: structuralState?.sourceMode ?? preparedInputs.sourceMode,
-    backboneSignature: fogSuppressed
+    sourceCoupledSignature: fogSuppressed
       ? 0
       : computeSlotSignature(
-          projectionSources.backboneSlotsSource,
+          projectionSources.sourceCoupledSlotsSource,
           preparedInputs.capacity,
         ),
-    detailSignature: fogSuppressed
+    resonantSignature: fogSuppressed
       ? 0
       : computeSlotSignature(
-          projectionSources.detailSlotsSource,
+          projectionSources.resonantSlotsSource,
           preparedInputs.capacity,
         ),
-    referenceBackboneSignature: computeSlotSignature(
-      projectionSources.referenceBackboneSlotsSource,
+    referenceSourceCoupledSignature: computeSlotSignature(
+      projectionSources.referenceSourceCoupledSlotsSource,
       preparedInputs.capacity,
     ),
-    referenceDetailSignature: computeSlotSignature(
-      projectionSources.referenceDetailSlotsSource,
+    referenceResonantSignature: computeSlotSignature(
+      projectionSources.referenceResonantSlotsSource,
       preparedInputs.capacity,
     ),
-    backboneColorSignature:
-      fogSuppressed || !projectionSources.backboneColorSlotsSource
+    sourceCoupledColorSignature:
+      fogSuppressed || !projectionSources.sourceCoupledColorSlotsSource
         ? 0
         : computeColorSignature(
-            projectionSources.backboneColorSlotsSource,
+            projectionSources.sourceCoupledColorSlotsSource,
             preparedInputs.capacity,
           ),
-    detailColorSignature:
-      fogSuppressed || !projectionSources.detailColorSlotsSource
+    resonantColorSignature:
+      fogSuppressed || !projectionSources.resonantColorSlotsSource
         ? 0
         : computeColorSignature(
-            projectionSources.detailColorSlotsSource,
+            projectionSources.resonantColorSlotsSource,
             preparedInputs.capacity,
           ),
   };
@@ -4269,15 +4410,15 @@ function materializeAudioFeatureStructuralSnapshot(
 ) {
   const {
     capacity,
-    backboneSlots,
-    detailSlots,
-    backbonePhaseSlots,
-    detailPhaseSlots,
+    sourceCoupledSlots,
+    resonantSlots,
+    sourceCoupledPhaseSlots,
+    resonantPhaseSlots,
     modeSlots,
-    backboneColorSlots,
-    detailColorSlots,
-    referenceBackboneSlots,
-    referenceDetailSlots,
+    sourceCoupledColorSlots,
+    resonantColorSlots,
+    referenceSourceCoupledSlots,
+    referenceResonantSlots,
     referenceModeSlots,
     auditState,
   } = preparedInputs;
@@ -4286,121 +4427,121 @@ function materializeAudioFeatureStructuralSnapshot(
     structuralState,
   );
 
-  copyFloatArray(backboneSlots, projectionSources.backboneSlotsSource);
-  copyFloatArray(detailSlots, projectionSources.detailSlotsSource);
+  copyFloatArray(sourceCoupledSlots, projectionSources.sourceCoupledSlotsSource);
+  copyFloatArray(resonantSlots, projectionSources.resonantSlotsSource);
   copyFloatArray(
-    backbonePhaseSlots,
-    projectionSources.backbonePhaseSlotsSource,
+    sourceCoupledPhaseSlots,
+    projectionSources.sourceCoupledPhaseSlotsSource,
   );
-  copyFloatArray(detailPhaseSlots, projectionSources.detailPhaseSlotsSource);
+  copyFloatArray(resonantPhaseSlots, projectionSources.resonantPhaseSlotsSource);
   const observerVisibility = deriveModalObserverVisibilityComponents({
     structuralMetrics: structuralState?.structuralMetrics,
     hardSilent: preparedInputs.liveInputHardSilenceActive,
     sourceNormalization: fastSignalState?.sourceNormalization,
     bandEnergies: fastSignalState?.bandEnergies,
-    activeBackboneModeCount: projectionSources.activeBackboneModeCount,
+    activeSourceCoupledModeCount: projectionSources.activeSourceCoupledModeCount,
   });
   applyObserverSlotFloor(
-    backboneSlots,
+    sourceCoupledSlots,
     capacity,
-    observerVisibility.backboneSlotFloorTotal,
+    observerVisibility.sourceCoupledSlotFloorTotal,
   );
   applyObserverSlotFloor(
-    detailSlots,
+    resonantSlots,
     capacity,
-    observerVisibility.detailSlotFloorTotal,
+    observerVisibility.resonantSlotFloorTotal,
   );
   copyFloatArray(
-    referenceBackboneSlots,
-    projectionSources.referenceBackboneSlotsSource,
+    referenceSourceCoupledSlots,
+    projectionSources.referenceSourceCoupledSlotsSource,
   );
   copyFloatArray(
-    referenceDetailSlots,
-    projectionSources.referenceDetailSlotsSource,
+    referenceResonantSlots,
+    projectionSources.referenceResonantSlotsSource,
   );
   combineModalLayers(
     modeSlots,
     [
-      { slots: backboneSlots, weight: 1 },
-      { slots: detailSlots, weight: 1 },
+      { slots: sourceCoupledSlots, weight: 1 },
+      { slots: resonantSlots, weight: 1 },
     ],
     capacity,
   );
   combineModalLayers(
     referenceModeSlots,
     [
-      { slots: referenceBackboneSlots, weight: 1 },
-      { slots: referenceDetailSlots, weight: 1 },
+      { slots: referenceSourceCoupledSlots, weight: 1 },
+      { slots: referenceResonantSlots, weight: 1 },
     ],
     capacity,
   );
 
-  if (projectionSources.backboneColorSlotsSource) {
+  if (projectionSources.sourceCoupledColorSlotsSource) {
     copyFloatArray(
-      backboneColorSlots,
-      projectionSources.backboneColorSlotsSource,
+      sourceCoupledColorSlots,
+      projectionSources.sourceCoupledColorSlotsSource,
     );
-    copyFloatArray(detailColorSlots, projectionSources.detailColorSlotsSource);
+    copyFloatArray(resonantColorSlots, projectionSources.resonantColorSlotsSource);
   } else {
-    backboneColorSlots.fill(0);
-    detailColorSlots.fill(0);
+    sourceCoupledColorSlots.fill(0);
+    resonantColorSlots.fill(0);
   }
 
-  let returnedBackboneSlots = backboneSlots;
-  let returnedDetailSlots = detailSlots;
-  let returnedBackbonePhaseSlots = backbonePhaseSlots;
-  let returnedDetailPhaseSlots = detailPhaseSlots;
+  let returnedSourceCoupledSlots = sourceCoupledSlots;
+  let returnedResonantSlots = resonantSlots;
+  let returnedSourceCoupledPhaseSlots = sourceCoupledPhaseSlots;
+  let returnedResonantPhaseSlots = resonantPhaseSlots;
   let returnedModeSlots = modeSlots;
-  let returnedBackboneColorSlots = backboneColorSlots;
-  let returnedDetailColorSlots = detailColorSlots;
+  let returnedSourceCoupledColorSlots = sourceCoupledColorSlots;
+  let returnedResonantColorSlots = resonantColorSlots;
 
   if (projectionSources.freezeModeSlots && auditState) {
     if (!projectionSources.hasFrozenProjection) {
-      auditState.frozenBackboneSlots.set(backboneSlots);
-      auditState.frozenDetailSlots.set(detailSlots);
+      auditState.frozenSourceCoupledSlots.set(sourceCoupledSlots);
+      auditState.frozenResonantSlots.set(resonantSlots);
       auditState.frozenModeSlots.set(modeSlots);
-      auditState.frozenBackboneColorSlots.set(backboneColorSlots);
-      auditState.frozenDetailColorSlots.set(detailColorSlots);
+      auditState.frozenSourceCoupledColorSlots.set(sourceCoupledColorSlots);
+      auditState.frozenResonantColorSlots.set(resonantColorSlots);
     }
-    returnedBackboneSlots = auditState.frozenBackboneSlots;
-    returnedDetailSlots = auditState.frozenDetailSlots;
-    returnedBackbonePhaseSlots = backbonePhaseSlots;
-    returnedDetailPhaseSlots = detailPhaseSlots;
+    returnedSourceCoupledSlots = auditState.frozenSourceCoupledSlots;
+    returnedResonantSlots = auditState.frozenResonantSlots;
+    returnedSourceCoupledPhaseSlots = sourceCoupledPhaseSlots;
+    returnedResonantPhaseSlots = resonantPhaseSlots;
     returnedModeSlots = auditState.frozenModeSlots;
-    returnedBackboneColorSlots = auditState.frozenBackboneColorSlots;
-    returnedDetailColorSlots = auditState.frozenDetailColorSlots;
+    returnedSourceCoupledColorSlots = auditState.frozenSourceCoupledColorSlots;
+    returnedResonantColorSlots = auditState.frozenResonantColorSlots;
   } else if (auditState) {
     emptyFrozenLayers(auditState);
   }
 
-  let activeBackboneModeCount = projectionSources.activeBackboneModeCount;
-  let activeDetailModeCount = projectionSources.activeDetailModeCount;
+  let activeSourceCoupledModeCount = projectionSources.activeSourceCoupledModeCount;
+  let activeResonantModeCount = projectionSources.activeResonantModeCount;
   let activeModeCount = projectionSources.activeModeCount;
 
   if (structuralState.suppressedByFog) {
-    returnedBackboneSlots.fill(0);
-    returnedDetailSlots.fill(0);
-    returnedBackbonePhaseSlots.fill(0);
-    returnedDetailPhaseSlots.fill(0);
+    returnedSourceCoupledSlots.fill(0);
+    returnedResonantSlots.fill(0);
+    returnedSourceCoupledPhaseSlots.fill(0);
+    returnedResonantPhaseSlots.fill(0);
     returnedModeSlots.fill(0);
-    returnedBackboneColorSlots.fill(0);
-    returnedDetailColorSlots.fill(0);
-    activeBackboneModeCount = 0;
-    activeDetailModeCount = 0;
+    returnedSourceCoupledColorSlots.fill(0);
+    returnedResonantColorSlots.fill(0);
+    activeSourceCoupledModeCount = 0;
+    activeResonantModeCount = 0;
     activeModeCount = 0;
   }
 
   return {
-    backboneSlots: returnedBackboneSlots,
-    detailSlots: returnedDetailSlots,
-    backbonePhaseSlots: returnedBackbonePhaseSlots,
-    detailPhaseSlots: returnedDetailPhaseSlots,
+    sourceCoupledSlots: returnedSourceCoupledSlots,
+    resonantSlots: returnedResonantSlots,
+    sourceCoupledPhaseSlots: returnedSourceCoupledPhaseSlots,
+    resonantPhaseSlots: returnedResonantPhaseSlots,
     modeSlots: returnedModeSlots,
     referenceModeSlots,
-    backboneColorSlots: returnedBackboneColorSlots,
-    detailColorSlots: returnedDetailColorSlots,
-    activeBackboneModeCount,
-    activeDetailModeCount,
+    sourceCoupledColorSlots: returnedSourceCoupledColorSlots,
+    resonantColorSlots: returnedResonantColorSlots,
+    activeSourceCoupledModeCount,
+    activeResonantModeCount,
     activeModeCount,
   };
 }
@@ -4419,11 +4560,11 @@ function materializeAudioFeatureSignalSnapshot(
     signalModeSlots,
     [
       {
-        slots: signalSources.signalBackboneSlotsSource,
+        slots: signalSources.signalSourceCoupledSlotsSource,
         weight: 1,
       },
       {
-        slots: signalSources.signalDetailSlotsSource,
+        slots: signalSources.signalResonantSlotsSource,
         weight: 1,
       },
     ],
@@ -4433,11 +4574,11 @@ function materializeAudioFeatureSignalSnapshot(
     signalReferenceModeSlots,
     [
       {
-        slots: signalSources.signalReferenceBackboneSlotsSource,
+        slots: signalSources.signalReferenceSourceCoupledSlotsSource,
         weight: 1,
       },
       {
-        slots: signalSources.signalReferenceDetailSlotsSource,
+        slots: signalSources.signalReferenceResonantSlotsSource,
         weight: 1,
       },
     ],
@@ -4505,8 +4646,8 @@ export function updateAudioFeatureStructuralState(
   structuralState.structuralFingerprint = buildStructuralFingerprint({
     preparedInputs,
     structuralState,
-    activeBackboneModeCount: structuralState.activeBackboneModeCount,
-    activeDetailModeCount: structuralState.activeDetailModeCount,
+    activeSourceCoupledModeCount: structuralState.activeSourceCoupledModeCount,
+    activeResonantModeCount: structuralState.activeResonantModeCount,
     activeModeCount: structuralState.activeModeCount,
   });
   return structuralState;
@@ -4545,16 +4686,16 @@ function readCurrentStructuralState(
   if (previousStructuralState) {
     return {
       ...previousStructuralState,
-      backboneSlots:
-        previousAnalysisResult?.backboneSlots ?? preparedInputs.backboneSlots,
-      detailSlots:
-        previousAnalysisResult?.detailSlots ?? preparedInputs.detailSlots,
-      backbonePhaseSlots:
-        previousAnalysisResult?.backbonePhaseSlots ??
-        preparedInputs.backbonePhaseSlots,
-      detailPhaseSlots:
-        previousAnalysisResult?.detailPhaseSlots ??
-        preparedInputs.detailPhaseSlots,
+      sourceCoupledSlots:
+        previousAnalysisResult?.sourceCoupledSlots ?? preparedInputs.sourceCoupledSlots,
+      resonantSlots:
+        previousAnalysisResult?.resonantSlots ?? preparedInputs.resonantSlots,
+      sourceCoupledPhaseSlots:
+        previousAnalysisResult?.sourceCoupledPhaseSlots ??
+        preparedInputs.sourceCoupledPhaseSlots,
+      resonantPhaseSlots:
+        previousAnalysisResult?.resonantPhaseSlots ??
+        preparedInputs.resonantPhaseSlots,
       modeSlots: previousAnalysisResult?.modeSlots ?? preparedInputs.modeSlots,
       signalModeSlots:
         previousAnalysisResult?.signalModeSlots ??
@@ -4567,12 +4708,12 @@ function readCurrentStructuralState(
         previousAnalysisResult?.signalReferenceModeSlots ??
         previousAnalysisResult?.referenceModeSlots ??
         preparedInputs.signalReferenceModeSlots,
-      backboneColorSlots:
-        previousAnalysisResult?.backboneColorSlots ??
-        preparedInputs.backboneColorSlots,
-      detailColorSlots:
-        previousAnalysisResult?.detailColorSlots ??
-        preparedInputs.detailColorSlots,
+      sourceCoupledColorSlots:
+        previousAnalysisResult?.sourceCoupledColorSlots ??
+        preparedInputs.sourceCoupledColorSlots,
+      resonantColorSlots:
+        previousAnalysisResult?.resonantColorSlots ??
+        preparedInputs.resonantColorSlots,
       structuralFingerprint:
         previousStructuralState.structuralFingerprint ??
         previousAnalysisResult?.structuralFingerprint ??
@@ -4588,47 +4729,47 @@ function readCurrentStructuralState(
   }
 
   return {
-    backboneSlotsSource: preparedInputs.backboneState.slots,
-    detailSlotsSource: preparedInputs.detailState.slots,
-    backbonePhaseSlotsSource: preparedInputs.backbonePhaseSlots,
-    detailPhaseSlotsSource: preparedInputs.detailPhaseSlots,
-    referenceBackboneSlotsSource: preparedInputs.backboneState.referenceSlots,
-    referenceDetailSlotsSource: preparedInputs.detailState.referenceSlots,
-    backboneColorSlotsSource: preparedInputs.shouldBuildSpectralLight
-      ? preparedInputs.backboneState.colorSlots
+    sourceCoupledSlotsSource: preparedInputs.sourceCoupledState.slots,
+    resonantSlotsSource: preparedInputs.resonantState.slots,
+    sourceCoupledPhaseSlotsSource: preparedInputs.sourceCoupledPhaseSlots,
+    resonantPhaseSlotsSource: preparedInputs.resonantPhaseSlots,
+    referenceSourceCoupledSlotsSource: preparedInputs.sourceCoupledState.referenceSlots,
+    referenceResonantSlotsSource: preparedInputs.resonantState.referenceSlots,
+    sourceCoupledColorSlotsSource: preparedInputs.shouldBuildSpectralLight
+      ? preparedInputs.sourceCoupledState.colorSlots
       : null,
-    detailColorSlotsSource: preparedInputs.shouldBuildSpectralLight
-      ? preparedInputs.detailState.colorSlots
+    resonantColorSlotsSource: preparedInputs.shouldBuildSpectralLight
+      ? preparedInputs.resonantState.colorSlots
       : null,
     freezeModeSlots: Boolean(
       preparedInputs.resolvedAuditSettings.freezeModeSlots,
     ),
-    backboneSlots: preparedInputs.backboneSlots,
-    detailSlots: preparedInputs.detailSlots,
-    backbonePhaseSlots: preparedInputs.backbonePhaseSlots,
-    detailPhaseSlots: preparedInputs.detailPhaseSlots,
+    sourceCoupledSlots: preparedInputs.sourceCoupledSlots,
+    resonantSlots: preparedInputs.resonantSlots,
+    sourceCoupledPhaseSlots: preparedInputs.sourceCoupledPhaseSlots,
+    resonantPhaseSlots: preparedInputs.resonantPhaseSlots,
     modeSlots: preparedInputs.modeSlots,
     signalModeSlots: preparedInputs.signalModeSlots,
     referenceModeSlots: preparedInputs.referenceModeSlots,
     signalReferenceModeSlots: preparedInputs.signalReferenceModeSlots,
-    backboneColorSlots: preparedInputs.backboneColorSlots,
-    detailColorSlots: preparedInputs.detailColorSlots,
-    activeBackboneModeCount: 0,
-    activeDetailModeCount: 0,
+    sourceCoupledColorSlots: preparedInputs.sourceCoupledColorSlots,
+    resonantColorSlots: preparedInputs.resonantColorSlots,
+    activeSourceCoupledModeCount: 0,
+    activeResonantModeCount: 0,
     activeModeCount: 0,
     dominantFrequency: 0,
     dominantAmplitude: 0,
     analysisEngine:
-      preparedInputs.backboneState.analysisEngine !== "none"
-        ? preparedInputs.backboneState.analysisEngine
-        : preparedInputs.detailState.analysisEngine,
+      preparedInputs.sourceCoupledState.analysisEngine !== "none"
+        ? preparedInputs.sourceCoupledState.analysisEngine
+        : preparedInputs.resonantState.analysisEngine,
     pitchSource: "none",
     spectralCandidates: [],
     usedDecay: false,
     sourceMode: preparedInputs.sourceMode,
     suppressedByFog: false,
-    backboneStateSource: preparedInputs.backboneState,
-    detailStateSource: preparedInputs.detailState,
+    sourceCoupledStateSource: preparedInputs.sourceCoupledState,
+    resonantStateSource: preparedInputs.resonantState,
     structuralFingerprint: null,
     structuralPerf: {
       peakScanMs: 0,
@@ -4699,10 +4840,10 @@ export function buildCurrentAudioFeatureAnalysisResult({
     beatPhase: preparedInputs.bandState.beatPhase,
     rhythmicDensity: preparedInputs.bandState.onsetDensityEma,
   };
-  const resolvedBackboneState =
-    resolvedStructural.backboneStateSource ?? preparedInputs.backboneState;
-  const resolvedDetailState =
-    resolvedStructural.detailStateSource ?? preparedInputs.detailState;
+  const resolvedSourceCoupledState =
+    resolvedStructural.sourceCoupledStateSource ?? preparedInputs.sourceCoupledState;
+  const resolvedResonantState =
+    resolvedStructural.resonantStateSource ?? preparedInputs.resonantState;
   const modeSlotAmplitudeTotal = sumSlotAmplitudeTotal(
     resolvedStructural.modeSlots,
     preparedInputs.capacity,
@@ -4725,14 +4866,14 @@ export function buildCurrentAudioFeatureAnalysisResult({
     micActive: preparedInputs.micActive,
     fftMagnitudes: fastSignalState.fftMagnitudes,
     nonZeroFFTBinCount: countNonZeroFFTBinCount(fastSignalState.fftMagnitudes),
-    backboneSlots: resolvedStructural.backboneSlots,
-    detailSlots: resolvedStructural.detailSlots,
-    backbonePhaseSlots: resolvedStructural.backbonePhaseSlots,
-    detailPhaseSlots: resolvedStructural.detailPhaseSlots,
-    activeBackboneModeCount: resolvedStructural.activeBackboneModeCount,
-    activeDetailModeCount: resolvedStructural.activeDetailModeCount,
-    backboneColorSlots: resolvedStructural.backboneColorSlots,
-    detailColorSlots: resolvedStructural.detailColorSlots,
+    sourceCoupledSlots: resolvedStructural.sourceCoupledSlots,
+    resonantSlots: resolvedStructural.resonantSlots,
+    sourceCoupledPhaseSlots: resolvedStructural.sourceCoupledPhaseSlots,
+    resonantPhaseSlots: resolvedStructural.resonantPhaseSlots,
+    activeSourceCoupledModeCount: resolvedStructural.activeSourceCoupledModeCount,
+    activeResonantModeCount: resolvedStructural.activeResonantModeCount,
+    sourceCoupledColorSlots: resolvedStructural.sourceCoupledColorSlots,
+    resonantColorSlots: resolvedStructural.resonantColorSlots,
     bandEnergies: fastSignalState.bandEnergies,
     spectralBandEnergies: fastSignalState.spectralBandEnergies,
     trebleBroadbandEnergy: fastSignalState.trebleBroadbandEnergy,
@@ -4757,8 +4898,8 @@ export function buildCurrentAudioFeatureAnalysisResult({
     referenceModeSlots: resolvedStructural.referenceModeSlots,
     signalReferenceModeSlots: resolvedStructural.signalReferenceModeSlots,
     sourceMode: resolvedStructural.sourceMode,
-    backboneState: resolvedBackboneState,
-    detailState: resolvedDetailState,
+    sourceCoupledState: resolvedSourceCoupledState,
+    resonantState: resolvedResonantState,
     bandState: preparedInputs.bandState,
     avgAmplitude: preparedInputs.avgAmplitude,
     analyserRms: preparedInputs.analyserRms,
@@ -4831,16 +4972,16 @@ export function buildAudioFeatureAnalysisSnapshot({
   analysisResult,
   publishCount = 0,
 }) {
-  const backboneStateSummary = buildBackboneStateSummary(
-    analysisResult.backboneState,
+  const sourceCoupledStateSummary = buildSourceCoupledStateSummary(
+    analysisResult.sourceCoupledState,
   );
-  const detailStateSummary = buildDetailStateSummary(
-    analysisResult.detailState,
+  const resonantStateSummary = buildResonantStateSummary(
+    analysisResult.resonantState,
   );
   const spectralLightComponents = cloneSpectralLightComponents(
     [
-      ...(analysisResult.backboneState?.spectralLightComponents ?? []),
-      ...(analysisResult.detailState?.spectralLightComponents ?? []),
+      ...(analysisResult.sourceCoupledState?.spectralLightComponents ?? []),
+      ...(analysisResult.resonantState?.spectralLightComponents ?? []),
     ]
       .sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0))
       .slice(0, 8),
@@ -4865,14 +5006,14 @@ export function buildAudioFeatureAnalysisSnapshot({
     analysisResult: {
       soundActive: analysisResult.soundActive,
       micActive: analysisResult.micActive,
-      backboneSlots: cloneFloat32Array(analysisResult.backboneSlots),
-      detailSlots: cloneFloat32Array(analysisResult.detailSlots),
-      backbonePhaseSlots: cloneFloat32Array(analysisResult.backbonePhaseSlots),
-      detailPhaseSlots: cloneFloat32Array(analysisResult.detailPhaseSlots),
-      activeBackboneModeCount: analysisResult.activeBackboneModeCount,
-      activeDetailModeCount: analysisResult.activeDetailModeCount,
-      backboneColorSlots: cloneFloat32Array(analysisResult.backboneColorSlots),
-      detailColorSlots: cloneFloat32Array(analysisResult.detailColorSlots),
+      sourceCoupledSlots: cloneFloat32Array(analysisResult.sourceCoupledSlots),
+      resonantSlots: cloneFloat32Array(analysisResult.resonantSlots),
+      sourceCoupledPhaseSlots: cloneFloat32Array(analysisResult.sourceCoupledPhaseSlots),
+      resonantPhaseSlots: cloneFloat32Array(analysisResult.resonantPhaseSlots),
+      activeSourceCoupledModeCount: analysisResult.activeSourceCoupledModeCount,
+      activeResonantModeCount: analysisResult.activeResonantModeCount,
+      sourceCoupledColorSlots: cloneFloat32Array(analysisResult.sourceCoupledColorSlots),
+      resonantColorSlots: cloneFloat32Array(analysisResult.resonantColorSlots),
       bandEnergies: cloneFloat32Array(analysisResult.bandEnergies),
       transientEnergy: analysisResult.transientEnergy,
       spectralCentroid: analysisResult.spectralCentroid,
@@ -4896,8 +5037,8 @@ export function buildAudioFeatureAnalysisSnapshot({
         analysisResult.signalReferenceModeSlots,
       ),
       sourceMode: analysisResult.sourceMode,
-      backboneStateSummary,
-      detailStateSummary,
+      sourceCoupledStateSummary,
+      resonantStateSummary,
       avgAmplitude: analysisResult.avgAmplitude,
       analyserRms: analysisResult.analyserRms,
       dominantFrequency: analysisResult.dominantFrequency,
@@ -4951,10 +5092,10 @@ export function composeAudioFeatureFrame({
   previousFrame = null,
   reuseHeavyAnalysis = false,
 }) {
-  const backboneState =
-    analysisResult.backboneStateSummary ?? analysisResult.backboneState;
-  const detailState =
-    analysisResult.detailStateSummary ?? analysisResult.detailState;
+  const sourceCoupledState =
+    analysisResult.sourceCoupledStateSummary ?? analysisResult.sourceCoupledState;
+  const resonantState =
+    analysisResult.resonantStateSummary ?? analysisResult.resonantState;
   let {
     structureSignal,
     energySignal,
@@ -4965,11 +5106,11 @@ export function composeAudioFeatureFrame({
     modalVisibilityEnergy,
     modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
-    lowQBackboneVisibilityAuthority,
-    lowQBackboneVisibilityEnergy,
-    lowQBackboneTopologyFloor,
-    lowQBackboneSourceSupport,
-    lowQBackboneVisibilityRejected,
+    lowQSourceCoupledVisibilityAuthority,
+    lowQSourceCoupledVisibilityEnergy,
+    lowQSourceCoupledTopologyFloor,
+    lowQSourceCoupledSourceSupport,
+    lowQSourceCoupledVisibilityRejected,
   } = deriveCompositeSignals({
     inputMode: preparedInputs.analysisInputMode,
     modeCapacity: preparedInputs.capacity,
@@ -4979,8 +5120,8 @@ export function composeAudioFeatureFrame({
     referenceModeSlots:
       analysisResult.signalReferenceModeSlots ??
       analysisResult.referenceModeSlots,
-    backboneState,
-    detailState,
+    sourceCoupledState,
+    resonantState,
     bandEnergies: analysisResult.bandEnergies,
     analyserRms: analysisResult.analyserRms,
     avgAmplitude: analysisResult.avgAmplitude,
@@ -4997,7 +5138,7 @@ export function composeAudioFeatureFrame({
     structuralMetrics: analysisResult.structuralMetrics,
     sourceNormalization: analysisResult.sourceNormalization,
     liveInputHardSilenceActive: analysisResult.liveInputHardSilenceActive,
-    activeBackboneModeCount: analysisResult.activeBackboneModeCount,
+    activeSourceCoupledModeCount: analysisResult.activeSourceCoupledModeCount,
     nonZeroFFTBinCount:
       analysisResult.nonZeroFFTBinCount ??
       countNonZeroFFTBinCount(analysisResult.fftMagnitudes),
@@ -5083,10 +5224,10 @@ export function composeAudioFeatureFrame({
     modalVisibilityEnergy *= reusedAnalysisSourceAuthorityScale;
     modalObserverVisibilityEnergy *= reusedAnalysisSourceAuthorityScale;
     modalVisibilityRetainedHighQEnergy *= reusedAnalysisSourceAuthorityScale;
-    lowQBackboneVisibilityAuthority *= reusedAnalysisSourceAuthorityScale;
-    lowQBackboneVisibilityEnergy *= reusedAnalysisSourceAuthorityScale;
-    lowQBackboneTopologyFloor *= reusedAnalysisSourceAuthorityScale;
-    lowQBackboneSourceSupport *= reusedAnalysisSourceAuthorityScale;
+    lowQSourceCoupledVisibilityAuthority *= reusedAnalysisSourceAuthorityScale;
+    lowQSourceCoupledVisibilityEnergy *= reusedAnalysisSourceAuthorityScale;
+    lowQSourceCoupledTopologyFloor *= reusedAnalysisSourceAuthorityScale;
+    lowQSourceCoupledSourceSupport *= reusedAnalysisSourceAuthorityScale;
     modeCoherence *= reusedAnalysisSourceAuthorityScale;
   }
   const renderAuthorityCut = isAnalysisRenderAuthorityCut(analysisResult);
@@ -5099,29 +5240,29 @@ export function composeAudioFeatureFrame({
       preparedInputs.capacity,
     ),
   );
-  const retainedModalResponseBackboneEnergy = clamp01(
-    analysisResult.structuralMetrics?.modalResponseBackboneEnergy ?? 0,
+  const retainedModalResponseSourceCoupledEnergy = clamp01(
+    analysisResult.structuralMetrics?.modalResponseSourceCoupledEnergy ?? 0,
   );
-  const retainedModalResponseDetailEnergy = clamp01(
-    analysisResult.structuralMetrics?.modalResponseDetailEnergy ?? 0,
+  const retainedModalResponseResonantEnergy = clamp01(
+    analysisResult.structuralMetrics?.modalResponseResonantEnergy ?? 0,
   );
   let modalCoefficientEnergy = readModalResponseRenderEnergy(
     analysisResult.structuralMetrics,
     retainedModalCoefficientEnergy,
   );
-  let modalResponseBackboneEnergy = readModalResponseRenderBackboneEnergy(
+  let modalResponseSourceCoupledEnergy = readModalResponseRenderSourceCoupledEnergy(
     analysisResult.structuralMetrics,
-    retainedModalResponseBackboneEnergy,
+    retainedModalResponseSourceCoupledEnergy,
   );
-  let modalResponseDetailEnergy = readModalResponseRenderDetailEnergy(
+  let modalResponseResonantEnergy = readModalResponseRenderResonantEnergy(
     analysisResult.structuralMetrics,
-    retainedModalResponseDetailEnergy,
+    retainedModalResponseResonantEnergy,
   );
   let modalResponseEnergy = clamp01(
     Math.max(
       analysisResult.structuralMetrics?.modalResponseEnergy ?? 0,
-      modalResponseBackboneEnergy,
-      modalResponseDetailEnergy,
+      modalResponseSourceCoupledEnergy,
+      modalResponseResonantEnergy,
     ),
   );
   let observationEnergy = deriveModalObservationEnergy(
@@ -5152,14 +5293,14 @@ export function composeAudioFeatureFrame({
     modalVisibilityEnergy = 0;
     modalObserverVisibilityEnergy = 0;
     modalVisibilityRetainedHighQEnergy = 0;
-    lowQBackboneVisibilityAuthority = 0;
-    lowQBackboneVisibilityEnergy = 0;
-    lowQBackboneTopologyFloor = 0;
-    lowQBackboneSourceSupport = 0;
+    lowQSourceCoupledVisibilityAuthority = 0;
+    lowQSourceCoupledVisibilityEnergy = 0;
+    lowQSourceCoupledTopologyFloor = 0;
+    lowQSourceCoupledSourceSupport = 0;
     modeCoherence = 0;
     modalCoefficientEnergy = 0;
-    modalResponseBackboneEnergy = 0;
-    modalResponseDetailEnergy = 0;
+    modalResponseSourceCoupledEnergy = 0;
+    modalResponseResonantEnergy = 0;
     modalResponseEnergy = 0;
     observationEnergy = 0;
     timbreSpread = 0;
@@ -5218,48 +5359,51 @@ export function composeAudioFeatureFrame({
   const modalPhaseAuthority = renderAuthority
     ? clamp01(analysisResult.structuralMetrics?.modalPhaseAuthority ?? 0)
     : 0;
-  let renderBackboneSlots = analysisResult.backboneSlots;
-  let renderDetailSlots = analysisResult.detailSlots;
-  let renderBackbonePhaseSlots = analysisResult.backbonePhaseSlots;
-  let renderDetailPhaseSlots = analysisResult.detailPhaseSlots;
+  let renderSourceCoupledSlots = analysisResult.sourceCoupledSlots;
+  let renderResonantSlots = analysisResult.resonantSlots;
+  let renderSourceCoupledPhaseSlots = analysisResult.sourceCoupledPhaseSlots;
+  let renderResonantPhaseSlots = analysisResult.resonantPhaseSlots;
   let renderModeSlots = analysisResult.modeSlots;
   let renderReferenceModeSlots = analysisResult.referenceModeSlots;
-  let renderBackboneColorSlots = analysisResult.backboneColorSlots;
-  let renderDetailColorSlots = analysisResult.detailColorSlots;
+  let renderSourceCoupledColorSlots = analysisResult.sourceCoupledColorSlots;
+  let renderResonantColorSlots = analysisResult.resonantColorSlots;
   let renderBandEnergies = analysisResult.bandEnergies;
-  let activeBackboneModeCount = analysisResult.activeBackboneModeCount;
-  let activeDetailModeCount = analysisResult.activeDetailModeCount;
+  let activeSourceCoupledModeCount = analysisResult.activeSourceCoupledModeCount;
+  let activeResonantModeCount = analysisResult.activeResonantModeCount;
   let activeModeCount = analysisResult.activeModeCount;
 
   if (!renderAuthority) {
     preparedInputs.modeSlots.fill(0);
     preparedInputs.referenceModeSlots.fill(0);
-    preparedInputs.backboneColorSlots.fill(0);
-    preparedInputs.detailColorSlots.fill(0);
+    preparedInputs.sourceCoupledColorSlots.fill(0);
+    preparedInputs.resonantColorSlots.fill(0);
     preparedInputs.bandEnergies.fill(0);
-    renderBackboneSlots = preparedInputs.zeroBackboneTargetSlots;
-    renderDetailSlots = preparedInputs.zeroDetailTargetSlots;
-    renderBackbonePhaseSlots = preparedInputs.zeroBackboneTargetSlots;
-    renderDetailPhaseSlots = preparedInputs.zeroDetailTargetSlots;
+    renderSourceCoupledSlots = preparedInputs.zeroSourceCoupledTargetSlots;
+    renderResonantSlots = preparedInputs.zeroResonantTargetSlots;
+    renderSourceCoupledPhaseSlots = preparedInputs.zeroSourceCoupledTargetSlots;
+    renderResonantPhaseSlots = preparedInputs.zeroResonantTargetSlots;
     renderModeSlots = preparedInputs.modeSlots;
     renderReferenceModeSlots = preparedInputs.referenceModeSlots;
-    renderBackboneColorSlots = preparedInputs.zeroBackboneTargetSlots;
-    renderDetailColorSlots = preparedInputs.zeroDetailTargetSlots;
+    renderSourceCoupledColorSlots = preparedInputs.zeroSourceCoupledTargetSlots;
+    renderResonantColorSlots = preparedInputs.zeroResonantTargetSlots;
     renderBandEnergies = preparedInputs.bandEnergies;
-    activeBackboneModeCount = 0;
-    activeDetailModeCount = 0;
+    activeSourceCoupledModeCount = 0;
+    activeResonantModeCount = 0;
     activeModeCount = 0;
   }
 
   const modalFieldDescriptorSource = buildModalFieldDescriptorSource({
-    backboneSlots: renderBackboneSlots,
-    detailSlots: renderDetailSlots,
-    backbonePhaseSlots: renderBackbonePhaseSlots,
-    detailPhaseSlots: renderDetailPhaseSlots,
-    backboneColorSlots: renderBackboneColorSlots,
-    detailColorSlots: renderDetailColorSlots,
-    activeBackboneModeCount,
-    activeDetailModeCount,
+    sourceCoupledSlots: renderSourceCoupledSlots,
+    resonantSlots: renderResonantSlots,
+    sourceCoupledPhaseSlots: renderSourceCoupledPhaseSlots,
+    resonantPhaseSlots: renderResonantPhaseSlots,
+    sourceCoupledColorSlots: renderSourceCoupledColorSlots,
+    resonantColorSlots: renderResonantColorSlots,
+    activeSourceCoupledModeCount,
+    activeResonantModeCount,
+    radius: preparedInputs.radius,
+    cavityAcousticScale: preparedInputs.cavityAcousticScale,
+    boundaryMode: preparedInputs.boundaryMode,
   });
   const modalDescriptor = buildCanonicalFullModalDescriptor({
     generation: preparedInputs.auditState?.frame ?? 0,
@@ -5270,10 +5414,10 @@ export function composeAudioFeatureFrame({
     modalFieldSlots: modalFieldDescriptorSource.modalFieldSlots,
     modalFieldPhaseSlots: modalFieldDescriptorSource.modalFieldPhaseSlots,
     modalFieldColorSlots: modalFieldDescriptorSource.modalFieldColorSlots,
-    modalFieldRoleSlots: modalFieldDescriptorSource.modalFieldRoleSlots,
+    modalFieldMetadataSlots:
+      modalFieldDescriptorSource.modalFieldMetadataSlots,
     activeModalFieldModeCount:
       modalFieldDescriptorSource.activeModalFieldModeCount,
-    roleHistogram: modalFieldDescriptorSource.roleHistogram,
     observerCandidateModeCount:
       analysisResult.structuralMetrics?.excitedModeCount,
     observedModalModeCount:
@@ -5323,8 +5467,8 @@ export function composeAudioFeatureFrame({
         analysisResult.liveInputBaselinePeak ??
         analysisResult.bandState?.liveInputBaselinePeak ??
         0,
-      backboneState,
-      detailState,
+      sourceCoupledState,
+      resonantState,
       dominantFrequency: analysisResult.dominantFrequency,
       dominantAmplitude: analysisResult.dominantAmplitude,
       avgAmplitude: analysisResult.avgAmplitude,
@@ -5332,10 +5476,10 @@ export function composeAudioFeatureFrame({
       spectralCandidates: analysisResult.spectralCandidates ?? [],
       fftMagnitudes: analysisResult.fftMagnitudes ?? null,
       nonZeroFFTBinCount: analysisResult.nonZeroFFTBinCount ?? null,
-      backboneSlots: renderBackboneSlots,
-      detailSlots: renderDetailSlots,
-      backboneColorSlots: renderBackboneColorSlots,
-      detailColorSlots: renderDetailColorSlots,
+      sourceCoupledSlots: renderSourceCoupledSlots,
+      resonantSlots: renderResonantSlots,
+      sourceCoupledColorSlots: renderSourceCoupledColorSlots,
+      resonantColorSlots: renderResonantColorSlots,
       modeSlots: renderModeSlots,
       referenceModeSlots: renderReferenceModeSlots,
       bandEnergies: renderBandEnergies,
@@ -5376,14 +5520,14 @@ export function composeAudioFeatureFrame({
     debug.fieldState !== fieldState ||
     debug.renderAuthorityCut !== renderAuthorityCut ||
     debug.renderAuthority !== renderAuthority ||
-    debug.lowQBackboneVisibilityRejected !== lowQBackboneVisibilityRejected
+    debug.lowQSourceCoupledVisibilityRejected !== lowQSourceCoupledVisibilityRejected
   ) {
     debug = {
       ...debug,
       fieldState,
       renderAuthorityCut,
       renderAuthority,
-      lowQBackboneVisibilityRejected,
+      lowQSourceCoupledVisibilityRejected,
     };
     analysisResult.debug = debug;
   }
@@ -5403,21 +5547,13 @@ export function composeAudioFeatureFrame({
     micActive: analysisResult.micActive,
     averageAmplitude: analysisResult.avgAmplitude,
     fftMagnitudes: analysisResult.fftMagnitudes,
-    backboneSlots: renderBackboneSlots,
-    detailSlots: renderDetailSlots,
-    backbonePhaseSlots: renderBackbonePhaseSlots,
-    detailPhaseSlots: renderDetailPhaseSlots,
-    activeBackboneModeCount,
-    activeDetailModeCount,
     activeModeCount,
     activeModalFieldModeCount: modalDescriptor.counts.modalFieldModeCount,
     modalDescriptor,
     modalFieldSlots: modalDescriptor.slotViews.modalFieldSlots,
     modalFieldPhaseSlots: modalDescriptor.slotViews.modalFieldPhaseSlots,
     modalFieldColorSlots: modalDescriptor.slotViews.modalFieldColorSlots,
-    modalFieldRoleSlots: modalDescriptor.slotViews.modalFieldRoleSlots,
-    backboneColorSlots: renderBackboneColorSlots,
-    detailColorSlots: renderDetailColorSlots,
+    modalFieldMetadataSlots: modalDescriptor.slotViews.modalFieldMetadataSlots,
     bandEnergies: renderBandEnergies,
     spectralBandEnergies: analysisResult.spectralBandEnergies,
     trebleBroadbandEnergy: analysisResult.trebleBroadbandEnergy,
@@ -5430,8 +5566,6 @@ export function composeAudioFeatureFrame({
     modalCoefficientEnergy,
     retainedModalCoefficientEnergy,
     modalResponseEnergy,
-    modalResponseBackboneEnergy,
-    modalResponseDetailEnergy,
     modalResponseBudgetScale:
       analysisResult.structuralMetrics?.modalResponseBudgetScale ?? 0,
     modalResponseRawEnergy:
@@ -5466,11 +5600,6 @@ export function composeAudioFeatureFrame({
     modalVisibilityEnergy,
     modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
-    lowQBackboneVisibilityAuthority,
-    lowQBackboneVisibilityEnergy,
-    lowQBackboneTopologyFloor,
-    lowQBackboneSourceSupport,
-    lowQBackboneVisibilityRejected,
     modalPhaseAuthority,
     changeSignal,
     changeBreakdown: changeBreakdown ? { ...changeBreakdown } : null,
@@ -5491,7 +5620,6 @@ export function composeAudioFeatureFrame({
     bassSalience: deriveDeterministicBassSalience(renderBandEnergies),
     timbreSpread,
     spectralNovelty,
-    modeSlots: renderModeSlots,
     referenceModeSlots: renderReferenceModeSlots,
     sourceMode,
     debug,

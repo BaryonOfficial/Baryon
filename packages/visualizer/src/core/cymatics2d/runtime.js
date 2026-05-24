@@ -63,7 +63,6 @@ function getFrameModalFieldSlots(featureFrame) {
   return (
     featureFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
     featureFrame?.modalFieldSlots ??
-    featureFrame?.modeSlots ??
     null
   );
 }

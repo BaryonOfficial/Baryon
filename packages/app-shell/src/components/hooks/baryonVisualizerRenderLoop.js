@@ -354,16 +354,10 @@ export function updateModalFreshnessDiagnostics(
       featureFrame.modalPhaseCoherentFieldModeCount,
   );
   modalFreshness.modeCoherence = readFiniteNumber(featureFrame.modeCoherence);
-  modalFreshness.activeBackboneModeCount = readFiniteNumber(
-    featureFrame.activeBackboneModeCount,
-  );
-  modalFreshness.activeDetailModeCount = readFiniteNumber(
-    featureFrame.activeDetailModeCount,
-  );
   modalFreshness.activeModeCount = readFiniteNumber(
     featureFrame.activeModeCount,
-    modalFreshness.activeBackboneModeCount +
-      modalFreshness.activeDetailModeCount,
+    featureFrame.activeModalFieldModeCount ??
+      featureFrame.modalDescriptor?.counts?.modalFieldModeCount,
   );
   modalFreshness.activeModalFieldModeCount = readFiniteNumber(
     featureFrame.activeModalFieldModeCount ??
@@ -372,48 +366,38 @@ export function updateModalFreshnessDiagnostics(
     modalFreshness.activeModeCount,
   );
   applySlotTurnoverDiagnostics(modalFreshness, {
-    fieldPrefix: "modeSlot",
-    previousField: "_previousModeSlots",
-    nextSlots: featureFrame.modeSlots,
+    fieldPrefix: "modalFieldSlot",
+    previousField: "_previousModalFieldSlots",
+    nextSlots: featureFrame.modalFieldSlots,
   });
-  applySlotTurnoverDiagnostics(modalFreshness, {
-    fieldPrefix: "backboneSlot",
-    previousField: "_previousBackboneSlots",
-    nextSlots: featureFrame.backboneSlots,
-  });
-  applySlotTurnoverDiagnostics(modalFreshness, {
-    fieldPrefix: "detailSlot",
-    previousField: "_previousDetailSlots",
-    nextSlots: featureFrame.detailSlots,
-  });
-  modalFreshness.detailSignalAuthoritative = Boolean(
-    featureFrame.debug?.detailSignalAuthoritative,
+  modalFreshness.resonantSignalAuthoritative = Boolean(
+    featureFrame.debug?.resonantSignalAuthoritative,
   );
-  modalFreshness.detailSignalAuthoritativeReason =
-    featureFrame.debug?.detailSignalAuthoritativeReason ?? "none";
-  modalFreshness.detailSignalAuthoritativeCoverage = Boolean(
-    featureFrame.debug?.detailSignalAuthoritativeCoverage,
+  modalFreshness.resonantSignalAuthoritativeReason =
+    featureFrame.debug?.resonantSignalAuthoritativeReason ?? "none";
+  modalFreshness.resonantSignalAuthoritativeCoverage = Boolean(
+    featureFrame.debug?.resonantSignalAuthoritativeCoverage,
   );
-  modalFreshness.detailSignalAuthoritativeFreshSignal = Boolean(
-    featureFrame.debug?.detailSignalAuthoritativeFreshSignal,
+  modalFreshness.resonantSignalAuthoritativeFreshSignal = Boolean(
+    featureFrame.debug?.resonantSignalAuthoritativeFreshSignal,
   );
-  modalFreshness.detailSignalAuthoritativeFastAssist = Boolean(
-    featureFrame.debug?.detailSignalAuthoritativeFastAssist,
+  modalFreshness.resonantSignalAuthoritativeFastAssist = Boolean(
+    featureFrame.debug?.resonantSignalAuthoritativeFastAssist,
   );
-  modalFreshness.detailSignalAuthoritativeHighQ = Boolean(
-    featureFrame.debug?.detailSignalAuthoritativeHighQ,
+  modalFreshness.resonantSignalAuthoritativeHighQ = Boolean(
+    featureFrame.debug?.resonantSignalAuthoritativeHighQ,
   );
-  modalFreshness.detailShiftReleaseOverrideCount = readFiniteNumber(
-    featureFrame.debug?.detailShiftReleaseOverrideCount,
+  modalFreshness.resonantShiftReleaseOverrideCount = readFiniteNumber(
+    featureFrame.debug?.resonantShiftReleaseOverrideCount,
   );
-  modalFreshness.detailShiftTrackingOverrideCount = readFiniteNumber(
-    featureFrame.debug?.detailShiftTrackingOverrideCount,
+  modalFreshness.resonantShiftTrackingOverrideCount = readFiniteNumber(
+    featureFrame.debug?.resonantShiftTrackingOverrideCount,
   );
-  modalFreshness.highQDetailModeCount = readFiniteNumber(
-    featureFrame.debug?.highQDetailModeCount,
+  modalFreshness.observedResonanceModeCount = readFiniteNumber(
+    featureFrame.debug?.highQResonantModeCount,
   );
-  modalFreshness.highQDetailEnergy = readFiniteNumber(
-    featureFrame.debug?.highQDetailEnergy,
+  modalFreshness.observedResonanceEnergy = readFiniteNumber(
+    featureFrame.debug?.highQResonantEnergy,
   );
   modalFreshness.highQRingSupport = readFiniteNumber(
     featureFrame.debug?.highQRingSupport,
@@ -1380,8 +1364,7 @@ export function updateAdaptiveRaymarchStepBudget({
     raymarchPerformanceGovernor.buildRaymarchPerformanceGovernor({
       modalFieldSlots:
         effectiveFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
-        effectiveFrame?.modalFieldSlots ??
-        effectiveFrame?.modeSlots,
+        effectiveFrame?.modalFieldSlots,
       modalFieldCapacity,
       featureFrame: effectiveFrame,
       requestedStepBudget,
@@ -1406,8 +1389,9 @@ export function updateAdaptiveRaymarchStepBudget({
   const adaptiveRaymarch = runtimeDiagnostics.adaptiveRaymarch;
   const activeModeCount =
     effectiveFrame?.activeModeCount ??
-    (effectiveFrame?.activeBackboneModeCount ?? 0) +
-      (effectiveFrame?.activeDetailModeCount ?? 0);
+    effectiveFrame?.activeModalFieldModeCount ??
+    effectiveFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
+    0;
   adaptiveRaymarch.targetFps = adaptiveTuning.targetFps;
   adaptiveRaymarch.targetFrameTimeMs = adaptiveTuning.targetFrameTimeMs;
 

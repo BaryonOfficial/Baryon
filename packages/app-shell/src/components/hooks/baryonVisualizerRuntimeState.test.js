@@ -43,12 +43,12 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
     runtimeDiagnostics.modalFreshness.structureSignal = 0.62;
     runtimeDiagnostics.modalFreshness.responseEnvelope = 0.47;
     runtimeDiagnostics.modalFreshness.modeSlotChangeCount = 5;
-    runtimeDiagnostics.modalFreshness.detailSignalAuthoritative = true;
-    runtimeDiagnostics.modalFreshness.detailSignalAuthoritativeReason =
+    runtimeDiagnostics.modalFreshness.resonantSignalAuthoritative = true;
+    runtimeDiagnostics.modalFreshness.resonantSignalAuthoritativeReason =
       "fresh-signal";
-    runtimeDiagnostics.modalFreshness.detailSignalAuthoritativeHighQ = true;
-    runtimeDiagnostics.modalFreshness.detailShiftReleaseOverrideCount = 2;
-    runtimeDiagnostics.modalFreshness.detailShiftTrackingOverrideCount = 3;
+    runtimeDiagnostics.modalFreshness.resonantSignalAuthoritativeHighQ = true;
+    runtimeDiagnostics.modalFreshness.resonantShiftReleaseOverrideCount = 2;
+    runtimeDiagnostics.modalFreshness.resonantShiftTrackingOverrideCount = 3;
     runtimeDiagnostics.modalFreshness.fieldState = "active";
     runtimeDiagnostics.modalFreshness.avgAmplitude = 14.5;
     runtimeDiagnostics.modalFreshness.analyserRms = 0.048;
@@ -58,8 +58,8 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
     runtimeDiagnostics.modalFreshness.highQPhaseAuthority = 0.41;
     runtimeDiagnostics.modalFreshness.lowQPhaseAuthority = 0.12;
     runtimeDiagnostics.modalFreshness.modalPhaseCoherentFieldModeCount = 5;
-    runtimeDiagnostics.modalFreshness.highQDetailModeCount = 6;
-    runtimeDiagnostics.modalFreshness.highQDetailEnergy = 0.42;
+    runtimeDiagnostics.modalFreshness.observedResonanceModeCount = 6;
+    runtimeDiagnostics.modalFreshness.observedResonanceEnergy = 0.42;
     runtimeDiagnostics.modalFreshness.highQRingSupport = 0.68;
     runtimeDiagnostics.modalFreshness.liveInputNoiseGateActive = false;
     runtimeDiagnostics.modalFreshness.liveInputHardSilenceActive = false;
@@ -75,11 +75,11 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
       structureSignal: 0.62,
       responseEnvelope: 0.47,
       modeSlotChangeCount: 5,
-      detailSignalAuthoritative: true,
-      detailSignalAuthoritativeReason: "fresh-signal",
-      detailSignalAuthoritativeHighQ: true,
-      detailShiftReleaseOverrideCount: 2,
-      detailShiftTrackingOverrideCount: 3,
+      resonantSignalAuthoritative: true,
+      resonantSignalAuthoritativeReason: "fresh-signal",
+      resonantSignalAuthoritativeHighQ: true,
+      resonantShiftReleaseOverrideCount: 2,
+      resonantShiftTrackingOverrideCount: 3,
       fieldState: "active",
       avgAmplitude: 14.5,
       analyserRms: 0.048,
@@ -89,8 +89,8 @@ test("publishes sanitized modal freshness diagnostics in runtime perf snapshots"
       highQPhaseAuthority: 0.41,
       lowQPhaseAuthority: 0.12,
       modalPhaseCoherentFieldModeCount: 5,
-      highQDetailModeCount: 6,
-      highQDetailEnergy: 0.42,
+      observedResonanceModeCount: 6,
+      observedResonanceEnergy: 0.42,
       highQRingSupport: 0.68,
       liveInputNoiseGateActive: false,
       liveInputHardSilenceActive: false,

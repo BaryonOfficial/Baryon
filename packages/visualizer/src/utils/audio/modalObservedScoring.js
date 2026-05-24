@@ -9,9 +9,9 @@ const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_DRIVE_FULL = 0.0009;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_PERIODICITY = 0.68;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MIN_TONALNESS = 0.58;
 const HIGH_Q_OBSERVER_COHERENT_BACKGROUND_MAX_DISTRIBUTION = 0.18;
-const DETAIL_COUPLING_MIN_HARMONIC = 2;
-const DETAIL_COUPLING_MAX_HARMONIC = 64;
-const DETAIL_COUPLING_MODE_HARMONIC_TOLERANCE = 0.22;
+const RESONANT_COUPLING_MIN_HARMONIC = 2;
+const RESONANT_COUPLING_MAX_HARMONIC = 64;
+const RESONANT_COUPLING_MODE_HARMONIC_TOLERANCE = 0.22;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -53,11 +53,11 @@ export function classifyObservedModeQProfile({
   dominantDriveFrequencyHz,
   dominantDriveSpectralSupport,
   allowBassHarmonicDriver,
-  highQDetailMinRetainedEnergy,
+  highQResonantMinRetainedEnergy,
   lowQObserverSnrStart,
   lowQObserverMinObservedDrive,
 }) {
-  if ((atlasEntry?.renderLayer ?? atlasEntry?.layer ?? "detail") === "detail") {
+  if ((atlasEntry?.renderLayer ?? atlasEntry?.layer ?? "resonant") === "resonant") {
     return "high-q";
   }
 
@@ -75,7 +75,7 @@ export function classifyObservedModeQProfile({
     (atlasEntry?.naturalFrequencyHz ?? 0) >= 160 &&
     (atlasEntry?.naturalFrequencyHz ?? Infinity) <=
       HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ &&
-    retained >= highQDetailMinRetainedEnergy &&
+    retained >= highQResonantMinRetainedEnergy &&
     coherence >= 0.52 &&
     (snr >= lowQObserverSnrStart || drive >= lowQObserverMinObservedDrive);
 
@@ -149,7 +149,7 @@ export function computeModalObservation({
   profile,
 }) {
   if (
-    atlasEntry?.layer === "backbone" &&
+    atlasEntry?.layer === "source-coupled" &&
     sourceMode !== "live" &&
     driveSource === "spectral-fallback" &&
     avgAmplitude < 10 &&
@@ -163,7 +163,7 @@ export function computeModalObservation({
     };
   }
   if (
-    atlasEntry?.layer === "backbone" &&
+    atlasEntry?.layer === "source-coupled" &&
     distributedExcitation > 0.5 &&
     tonalness < 0.58
   ) {
@@ -222,7 +222,7 @@ export function computeModalObservation({
   );
   const matchedTimeDomainDrive = responseGate * peakGate;
   const coherentBackgroundDriveGate =
-    atlasEntry?.layer === "detail" &&
+    atlasEntry?.layer === "resonant" &&
     isHighQHarmonicDriverFrequency(
       dominantDriveFrequencyHz,
       dominantDriveSpectralSupport,
@@ -239,13 +239,13 @@ export function computeModalObservation({
         )
       : 0;
   const harmonicGate =
-    atlasEntry?.layer === "detail" &&
+    atlasEntry?.layer === "resonant" &&
     isHighQHarmonicDriverFrequency(
       dominantDriveFrequencyHz,
       dominantDriveSpectralSupport,
       allowBassHarmonicDriver,
     )
-      ? getDetailHarmonicCoupling(
+      ? getResonantHarmonicCoupling(
           atlasEntry.naturalFrequencyHz,
           dominantDriveFrequencyHz,
         ) *
@@ -269,7 +269,7 @@ export function computeModalObservation({
   };
 }
 
-export function getDetailHarmonicCoupling(
+export function getResonantHarmonicCoupling(
   naturalFrequencyHz,
   dominantFrequencyHz,
 ) {
@@ -280,12 +280,12 @@ export function getDetailHarmonicCoupling(
   const harmonic = naturalFrequencyHz / dominantFrequencyHz;
   const nearestHarmonic = Math.round(harmonic);
   if (
-    nearestHarmonic < DETAIL_COUPLING_MIN_HARMONIC ||
-    nearestHarmonic > DETAIL_COUPLING_MAX_HARMONIC
+    nearestHarmonic < RESONANT_COUPLING_MIN_HARMONIC ||
+    nearestHarmonic > RESONANT_COUPLING_MAX_HARMONIC
   ) {
     return 0;
   }
 
   const relativeError = Math.abs(harmonic - nearestHarmonic) / nearestHarmonic;
-  return clamp01(1 - relativeError / DETAIL_COUPLING_MODE_HARMONIC_TOLERANCE);
+  return clamp01(1 - relativeError / RESONANT_COUPLING_MODE_HARMONIC_TOLERANCE);
 }

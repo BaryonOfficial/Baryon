@@ -471,12 +471,9 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
       pulseSignal: 0.6,
       modalVisibilityEnergy: 0.72,
       modeCoherence: 0.84,
-      activeBackboneModeCount: 4,
-      activeDetailModeCount: 5,
       activeModeCount: 9,
-      modeSlots: new Float32Array([0.1, 0.2, 0.3, 0.4]),
-      backboneSlots: new Float32Array([0.2, 0.3]),
-      detailSlots: new Float32Array([0.4, 0.5]),
+      activeModalFieldModeCount: 9,
+      modalFieldSlots: new Float32Array([0.2, 0.3, 0.4, 0.5]),
     },
     { getWallTimeMs: () => 1234 },
   );
@@ -498,31 +495,28 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
       lowQPhaseAuthority: 0.08,
       modalPhaseCoherentFieldModeCount: 4,
       modeCoherence: 0.88,
-      activeBackboneModeCount: 4,
-      activeDetailModeCount: 5,
       activeModeCount: 9,
+      activeModalFieldModeCount: 9,
       debug: {
         fieldState: "active",
         avgAmplitude: 13.25,
         analyserRms: 0.044,
         periodicity: 0.73,
-        highQDetailModeCount: 5,
-        highQDetailEnergy: 0.39,
+        highQResonantModeCount: 5,
+        highQResonantEnergy: 0.39,
         highQRingSupport: 0.66,
         liveInputNoiseGateActive: false,
         liveInputHardSilenceActive: false,
-        detailSignalAuthoritative: true,
-        detailSignalAuthoritativeReason: "fresh-signal",
-        detailSignalAuthoritativeCoverage: false,
-        detailSignalAuthoritativeFreshSignal: true,
-        detailSignalAuthoritativeFastAssist: false,
-        detailSignalAuthoritativeHighQ: true,
-        detailShiftReleaseOverrideCount: 2,
-        detailShiftTrackingOverrideCount: 3,
+        resonantSignalAuthoritative: true,
+        resonantSignalAuthoritativeReason: "fresh-signal",
+        resonantSignalAuthoritativeCoverage: false,
+        resonantSignalAuthoritativeFreshSignal: true,
+        resonantSignalAuthoritativeFastAssist: false,
+        resonantSignalAuthoritativeHighQ: true,
+        resonantShiftReleaseOverrideCount: 2,
+        resonantShiftTrackingOverrideCount: 3,
       },
-      modeSlots: new Float32Array([0.1, 0.25, 0.3, 0.7]),
-      backboneSlots: new Float32Array([0.2, 0.45]),
-      detailSlots: new Float32Array([0.4, 0.5]),
+      modalFieldSlots: new Float32Array([0.2, 0.45, 0.4, 0.5]),
     },
     { getWallTimeMs: () => 1250 },
   );
@@ -552,27 +546,25 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
     lowQPhaseAuthority: 0.08,
     modalPhaseCoherentFieldModeCount: 4,
     modeCoherence: 0.88,
-    activeBackboneModeCount: 4,
-    activeDetailModeCount: 5,
     activeModeCount: 9,
+    activeModalFieldModeCount: 9,
     fieldState: "active",
     avgAmplitude: 13.25,
     analyserRms: 0.044,
     periodicity: 0.73,
-    highQDetailModeCount: 5,
-    highQDetailEnergy: 0.39,
+    observedResonanceModeCount: 5,
+    observedResonanceEnergy: 0.39,
     highQRingSupport: 0.66,
     liveInputNoiseGateActive: false,
     liveInputHardSilenceActive: false,
-    detailSignalAuthoritative: true,
-    detailSignalAuthoritativeReason: "fresh-signal",
-    detailSignalAuthoritativeHighQ: true,
-    detailSignalAuthoritativeFreshSignal: true,
-    detailShiftReleaseOverrideCount: 2,
-    detailShiftTrackingOverrideCount: 3,
-    modeSlotChangeCount: 2,
-    backboneSlotChangeCount: 1,
-    detailSlotChangeCount: 0,
+    resonantSignalAuthoritative: true,
+    resonantSignalAuthoritativeReason: "fresh-signal",
+    resonantSignalAuthoritativeHighQ: true,
+    resonantSignalAuthoritativeFreshSignal: true,
+    resonantShiftReleaseOverrideCount: 2,
+    resonantShiftTrackingOverrideCount: 3,
+    modeSlotChangeCount: 0,
+    modalFieldSlotChangeCount: 1,
     responseEnvelope: 0.31,
     accentEnvelope: 0.42,
     motionSignal: 0.53,
@@ -580,12 +572,11 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
     bloomResponseSignal: 0.75,
   });
   expect(runtimeDiagnostics.modalFreshness.modeSlotMeanAbsDelta).toBeCloseTo(
-    0.0875,
+    0,
   );
   expect(
-    runtimeDiagnostics.modalFreshness.backboneSlotMeanAbsDelta,
-  ).toBeCloseTo(0.075);
-  expect(runtimeDiagnostics.modalFreshness.detailSlotMeanAbsDelta).toBe(0);
+    runtimeDiagnostics.modalFreshness.modalFieldSlotMeanAbsDelta,
+  ).toBeCloseTo(0.0375);
 
   const hudSnapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
   expect(hudSnapshot.modalFreshness).toMatchObject({
@@ -597,19 +588,18 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
     lowQPhaseAuthority: 0.08,
     modalPhaseCoherentFieldModeCount: 4,
     responseEnvelope: 0.31,
-    highQDetailModeCount: 5,
-    highQDetailEnergy: 0.39,
+    observedResonanceModeCount: 5,
+    observedResonanceEnergy: 0.39,
     highQRingSupport: 0.66,
-    detailSignalAuthoritative: true,
-    detailSignalAuthoritativeReason: "fresh-signal",
-    detailSignalAuthoritativeHighQ: true,
-    modeSlotChangeCount: 2,
+    resonantSignalAuthoritative: true,
+    resonantSignalAuthoritativeReason: "fresh-signal",
+    resonantSignalAuthoritativeHighQ: true,
+    modeSlotChangeCount: 0,
   });
   expect(hudSnapshot.modalFreshness).not.toHaveProperty("_previousModeSlots");
   expect(hudSnapshot.modalFreshness).not.toHaveProperty(
-    "_previousBackboneSlots",
+    "_previousModalFieldSlots",
   );
-  expect(hudSnapshot.modalFreshness).not.toHaveProperty("_previousDetailSlots");
 });
 
 test("publishes provider transition phases even before live audio becomes active", () => {
@@ -874,7 +864,7 @@ test("adaptive raymarch prepares the current frame governor for runtime reuse", 
   const { args, runtimeState } = createAdaptiveRaymarchHarness({
     effectiveFrame: {
       activeModeCount: 3,
-      modeSlots: new Float32Array([
+      modalFieldSlots: new Float32Array([
         1, 1, 1, 0.8, 2, 2, 2, 0.6, 3, 3, 3, 0.4,
       ]),
       averageAmplitude: 90,
@@ -967,8 +957,8 @@ test("active playback bootstrap builds a fresh Spectral Light frame when the fea
   const heavyAnalysis = {
     fieldState: "active",
     activeModeCount: 2,
-    backboneColorSlots: new Float32Array([0.1, 0.8, 1, 0.9]),
-    detailColorSlots: new Float32Array([1, 0.3, 0.2, 0.7]),
+    sourceCoupledColorSlots: new Float32Array([0.1, 0.8, 1, 0.9]),
+    resonantColorSlots: new Float32Array([1, 0.3, 0.2, 0.7]),
   };
   const frameCacheRefs = {
     lastLiveFrameRef: { current: null },
@@ -980,8 +970,8 @@ test("active playback bootstrap builds a fresh Spectral Light frame when the fea
   const composeFeatureFrame = vi.fn(({ analysisResult }) => ({
     fieldState: analysisResult.fieldState,
     activeModeCount: analysisResult.activeModeCount,
-    backboneColorSlots: analysisResult.backboneColorSlots,
-    detailColorSlots: analysisResult.detailColorSlots,
+    sourceCoupledColorSlots: analysisResult.sourceCoupledColorSlots,
+    resonantColorSlots: analysisResult.resonantColorSlots,
   }));
   const { args } = createResolveFeatureFrameHarness({
     featureEngine: {
@@ -1015,7 +1005,7 @@ test("active playback bootstrap builds a fresh Spectral Light frame when the fea
   );
 
   expect(effectiveFrame.fieldState).toBe("active");
-  expect(effectiveFrame.backboneColorSlots[3]).toBeGreaterThan(0);
+  expect(effectiveFrame.sourceCoupledColorSlots[3]).toBeGreaterThan(0);
   expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
   expect(composeFeatureFrame).toHaveBeenCalledTimes(1);
   expect(frameCacheRefs.analysisSchedulerRef.current).toMatchObject({

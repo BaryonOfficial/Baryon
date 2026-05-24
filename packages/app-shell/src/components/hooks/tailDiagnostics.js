@@ -2,7 +2,7 @@ const DEFAULT_SAMPLE_INTERVAL_MS = 250;
 const DEFAULT_MAX_DURATION_MS = 60_000;
 const INPUT_MIN_AVG_AMPLITUDE = 1e-4;
 const INPUT_MIN_RMS = 1e-5;
-const OBSERVER_MIN_HIGH_Q_ENERGY = 1e-4;
+const OBSERVER_MIN_RESONANCE_ENERGY = 1e-4;
 const FRAME_MIN_VISIBILITY_ENERGY = 0.02;
 const SHADER_MIN_RIDGE_DENSITY = 0.005;
 
@@ -53,8 +53,9 @@ function hasObservedModalResponse(observer = {}, frame = {}) {
     readFiniteNumber(frame.observationEnergy) >= FRAME_MIN_VISIBILITY_ENERGY ||
     readFiniteNumber(frame.modalResponseEnergy) >=
       FRAME_MIN_VISIBILITY_ENERGY ||
-    (readFiniteNumber(observer.highQDetailModeCount) > 0 &&
-      readFiniteNumber(observer.highQDetailEnergy) > OBSERVER_MIN_HIGH_Q_ENERGY)
+    (readFiniteNumber(observer.observedResonanceModeCount) > 0 &&
+      readFiniteNumber(observer.observedResonanceEnergy) >
+        OBSERVER_MIN_RESONANCE_ENERGY)
   );
 }
 
@@ -123,10 +124,12 @@ function buildTailDiagnosticSample({
       sourceMode: modalFreshness.sourceMode ?? featureFrame?.sourceMode ?? null,
     },
     observer: {
-      highQDetailModeCount: readFiniteNumber(
-        modalFreshness.highQDetailModeCount,
+      observedResonanceModeCount: readFiniteNumber(
+        modalFreshness.observedResonanceModeCount,
       ),
-      highQDetailEnergy: readFiniteNumber(modalFreshness.highQDetailEnergy),
+      observedResonanceEnergy: readFiniteNumber(
+        modalFreshness.observedResonanceEnergy,
+      ),
       highQRingSupport: readFiniteNumber(modalFreshness.highQRingSupport),
       modeCoherence: readFiniteNumber(modalFreshness.modeCoherence),
       modalPhaseAuthority: readFiniteNumber(modalFreshness.modalPhaseAuthority),
@@ -134,12 +137,6 @@ function buildTailDiagnosticSample({
     frame: {
       fieldState:
         modalFreshness.fieldState ?? featureFrame?.fieldState ?? "idle",
-      activeBackboneModeCount: readFiniteNumber(
-        modalFreshness.activeBackboneModeCount,
-      ),
-      activeDetailModeCount: readFiniteNumber(
-        modalFreshness.activeDetailModeCount,
-      ),
       activeModeCount: readFiniteNumber(modalFreshness.activeModeCount),
       activeModalFieldModeCount: readFiniteNumber(
         modalFreshness.activeModalFieldModeCount ??

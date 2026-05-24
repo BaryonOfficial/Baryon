@@ -17,14 +17,13 @@ function createRuntimeDiagnostics(overrides = {}) {
       liveInputHardSilenceActive: false,
       liveInputNoiseGateActive: false,
       observationEnergy: 0.32,
-      highQDetailModeCount: 8,
-      highQDetailEnergy: 1,
+      observedResonanceModeCount: 8,
+      observedResonanceEnergy: 1,
       highQRingSupport: 1,
       modeCoherence: 0.7,
       modalPhaseAuthority: 1,
-      activeBackboneModeCount: 8,
-      activeDetailModeCount: 8,
       activeModeCount: 16,
+      activeModalFieldModeCount: 16,
       ...overrides.modalFreshness,
     },
     render: {
@@ -109,8 +108,8 @@ test("tail diagnostics records compact samples on the configured interval", () =
       sourceMode: "system",
     },
     observer: {
-      highQDetailModeCount: 8,
-      highQDetailEnergy: 1,
+      observedResonanceModeCount: 8,
+      observedResonanceEnergy: 1,
       highQRingSupport: 1,
     },
     frame: {
@@ -145,7 +144,7 @@ test("tail diagnostics classifies black-tail failure seams", () => {
         noiseGate: false,
         sourceMode: "silent",
       },
-      observer: { highQDetailModeCount: 0, highQDetailEnergy: 0 },
+      observer: { observedResonanceModeCount: 0, observedResonanceEnergy: 0 },
       frame: { fieldState: "idle" },
       render: { volumeVisible: false },
     }),
@@ -154,7 +153,7 @@ test("tail diagnostics classifies black-tail failure seams", () => {
   expect(
     classifyTailDiagnosticSample({
       input: { avgAmplitude: 0.3, analyserRms: 0.004, sourceMode: "system" },
-      observer: { highQDetailModeCount: 0, highQDetailEnergy: 0 },
+      observer: { observedResonanceModeCount: 0, observedResonanceEnergy: 0 },
       frame: { fieldState: "active" },
       render: { volumeVisible: true },
     }),
@@ -163,7 +162,7 @@ test("tail diagnostics classifies black-tail failure seams", () => {
   expect(
     classifyTailDiagnosticSample({
       input: { avgAmplitude: 0.3, analyserRms: 0.004, sourceMode: "system" },
-      observer: { highQDetailModeCount: 8, highQDetailEnergy: 1 },
+      observer: { observedResonanceModeCount: 8, observedResonanceEnergy: 1 },
       frame: {
         fieldState: "active",
         observationEnergy: 0,
@@ -175,7 +174,7 @@ test("tail diagnostics classifies black-tail failure seams", () => {
   expect(
     classifyTailDiagnosticSample({
       input: { avgAmplitude: 0.3, analyserRms: 0.004, sourceMode: "system" },
-      observer: { highQDetailModeCount: 8, highQDetailEnergy: 1 },
+      observer: { observedResonanceModeCount: 8, observedResonanceEnergy: 1 },
       frame: {
         fieldState: "active",
         observationEnergy: 0.3,
@@ -191,7 +190,7 @@ test("tail diagnostics classifies black-tail failure seams", () => {
   expect(
     classifyTailDiagnosticSample({
       input: { avgAmplitude: 0.3, analyserRms: 0.004, sourceMode: "system" },
-      observer: { highQDetailModeCount: 8, highQDetailEnergy: 1 },
+      observer: { observedResonanceModeCount: 8, observedResonanceEnergy: 1 },
       frame: {
         fieldState: "active",
         observationEnergy: 0.3,

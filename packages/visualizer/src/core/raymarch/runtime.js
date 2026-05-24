@@ -297,7 +297,6 @@ function resetRenderAuthorityState(runtimeState) {
   clearBufferNode(runtimeState.modalFieldModeBuffer);
   clearBufferNode(runtimeState.modalFieldColorBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
-  clearBufferNode(runtimeState.modalFieldRoleBuffer);
   runtimeState.performanceGovernor = null;
   runtimeState.pendingRaymarchPerformanceGovernor = null;
   runtimeState.spectralLightBuffersUploaded = false;
@@ -383,9 +382,8 @@ function summarizeRenderedLayer(modeSlots, colorSlots, count) {
   };
 }
 
-function maxRoleAmplitude(modalDescriptor, roleBit) {
+function maxModalFieldAmplitude(modalDescriptor) {
   const slots = modalDescriptor?.slotViews?.modalFieldSlots;
-  const roleSlots = modalDescriptor?.slotViews?.modalFieldRoleSlots;
   const count = Math.min(
     modalDescriptor?.counts?.modalFieldModeCount ?? 0,
     Math.floor((slots?.length ?? 0) / 4),
@@ -393,9 +391,6 @@ function maxRoleAmplitude(modalDescriptor, roleBit) {
   let max = 0;
   for (let index = 0; index < count; index += 1) {
     const offset = index * 4;
-    if (roleSlots?.length && !((roleSlots[offset] ?? 0) & roleBit)) {
-      continue;
-    }
     max = Math.max(max, slots?.[offset + 3] ?? 0);
   }
   return max;
@@ -437,13 +432,12 @@ function buildRuntimeModalDescriptor(
       runtimeState.modalDescriptorGeneration ??
       0,
     maxTotalModes: modalFieldCapacity,
-    modalFieldSlots: featureFrame?.modalFieldSlots ?? featureFrame?.modeSlots,
+    modalFieldSlots: featureFrame?.modalFieldSlots,
     modalFieldPhaseSlots: featureFrame?.modalFieldPhaseSlots,
     modalFieldColorSlots: featureFrame?.modalFieldColorSlots,
-    modalFieldRoleSlots: featureFrame?.modalFieldRoleSlots,
+    modalFieldMetadataSlots: featureFrame?.modalFieldMetadataSlots,
     activeModalFieldModeCount:
       sourceDescriptor?.counts?.validModeCount ?? featureFrame?.activeModeCount,
-    roleHistogram: sourceDescriptor?.diagnostics?.roleHistogram,
     observerCandidateModeCount:
       sourceDescriptor?.diagnostics?.observerCandidateModeCount ??
       featureFrame?.debug?.excitedModeCount ??
@@ -472,7 +466,6 @@ function blockOverflowedModalDescriptor(
   clearBufferNode(runtimeState.modalFieldModeBuffer);
   clearBufferNode(runtimeState.modalFieldColorBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
-  clearBufferNode(runtimeState.modalFieldRoleBuffer);
   runtimeState.performanceGovernor = null;
   runtimeState.pendingRaymarchPerformanceGovernor = null;
   runtimeState.spectralLightBuffersUploaded = false;
@@ -546,8 +539,7 @@ function buildRaymarchDebugSnapshot(
     featureFrame?.modalDescriptor ??
     null;
   const avgAmplitude = estimateModalFieldAmplitude(featureFrame);
-  const maxBackboneAmplitude = maxRoleAmplitude(modalDescriptor, 1);
-  const maxDetailAmplitude = maxRoleAmplitude(modalDescriptor, 2);
+  const peakModalFieldAmplitude = maxModalFieldAmplitude(modalDescriptor);
   const activeModeCount =
     runtimeState.uniforms.uModalFieldModeCount?.value ??
     runtimeState.uniforms.uActiveModeCount?.value ??
@@ -766,7 +758,6 @@ function buildRaymarchDebugSnapshot(
       spectralLightCache,
       spectralLightDescriptor,
     );
-  const roleHistogram = modalDescriptor?.diagnostics?.roleHistogram ?? {};
   const renderedModalField = summarizeRenderedLayer(
     runtimeState.modalFieldModeBuffer?.value?.array,
     runtimeState.modalFieldColorBuffer?.value?.array,
@@ -782,12 +773,6 @@ function buildRaymarchDebugSnapshot(
     uploadedModeSlotCount:
       performanceGovernor?.uploadedModeCount ?? activeModeCount,
     modalFieldModeCount: activeModeCount,
-    backboneModeCount: roleHistogram.backbone ?? 0,
-    detailModeCount: roleHistogram.detail ?? 0,
-    originalBackboneModeCount: roleHistogram.backbone ?? 0,
-    originalDetailModeCount: roleHistogram.detail ?? 0,
-    uploadedBackboneModeCount: roleHistogram.backbone ?? 0,
-    uploadedDetailModeCount: roleHistogram.detail ?? 0,
     renderedModalFieldModeCount: renderedModalField.count,
     renderedModalFieldColorWeightMax: renderedModalField.colorWeightMax,
     renderedModalFieldAmplitudeTotal: renderedModalField.amplitudeTotal,
@@ -797,20 +782,10 @@ function buildRaymarchDebugSnapshot(
       modalDescriptor?.diagnostics?.descriptorOverflow === true,
     modalDescriptorMaxTotalModes:
       modalDescriptor?.capacity?.maxTotalModes ?? activeModeCount,
-    modalDescriptorValidBackboneModeCount:
-      modalDescriptor?.counts?.validBackboneModeCount ??
-      roleHistogram.backbone ??
-      0,
-    modalDescriptorValidDetailModeCount:
-      modalDescriptor?.counts?.validDetailModeCount ??
-      roleHistogram.detail ??
-      0,
     modalDescriptorValidModeCount:
       modalDescriptor?.counts?.validModeCount ?? activeModeCount,
-    modalDescriptorOverflowBackboneModeCount:
-      modalDescriptor?.counts?.overflowBackboneModeCount ?? 0,
-    modalDescriptorOverflowDetailModeCount:
-      modalDescriptor?.counts?.overflowDetailModeCount ?? 0,
+    modalDescriptorOverflowModeCount:
+      modalDescriptor?.counts?.overflowModeCount ?? 0,
     modalDescriptorPhaseAuthorityModeCount:
       modalDescriptor?.diagnostics?.phaseAuthorityModeCount ??
       effectiveFieldModeCount,
@@ -829,10 +804,7 @@ function buildRaymarchDebugSnapshot(
     bloomStrengthGuard: performanceGovernor?.bloomStrengthScale ?? 1,
     bloomThresholdGuard: performanceGovernor?.bloomThresholdOffset ?? 0,
     bloomGuardAllowed: performanceGovernor?.bloomAllowed ?? true,
-    maxBackboneAmplitude,
-    maxDetailAmplitude,
-    detailBackboneRatio:
-      maxDetailAmplitude / Math.max(maxBackboneAmplitude, 1e-4),
+    peakModalFieldAmplitude,
     avgOpacity,
     avgDensity,
     opacityGain,
@@ -868,30 +840,30 @@ function buildRaymarchDebugSnapshot(
     observationFieldNoiseFloor: observationParameters.fieldNoiseFloor,
     observationHardSilence,
     modalPhaseAuthority,
-    projectionEnergyBudgetBackbone:
-      featureFrame?.debug?.projectionEnergyBudgetBackbone ?? 0,
-    projectionEnergyBudgetDetail:
-      featureFrame?.debug?.projectionEnergyBudgetDetail ?? 0,
-    projectionEnergyUsedBackbone:
-      featureFrame?.debug?.projectionEnergyUsedBackbone ?? 0,
-    projectionEnergyUsedDetail:
-      featureFrame?.debug?.projectionEnergyUsedDetail ?? 0,
-    projectionRawEnergyBackbone:
-      featureFrame?.debug?.projectionRawEnergyBackbone ?? 0,
-    projectionRawEnergyDetail:
-      featureFrame?.debug?.projectionRawEnergyDetail ?? 0,
-    projectionAllocatedEnergyBackbone:
-      featureFrame?.debug?.projectionAllocatedEnergyBackbone ?? 0,
-    projectionAllocatedEnergyDetail:
-      featureFrame?.debug?.projectionAllocatedEnergyDetail ?? 0,
-    projectionEnergyScaleBackbone:
-      featureFrame?.debug?.projectionEnergyScaleBackbone ?? 0,
-    projectionEnergyScaleDetail:
-      featureFrame?.debug?.projectionEnergyScaleDetail ?? 0,
-    projectionOverlapPressureBackbone:
-      featureFrame?.debug?.projectionOverlapPressureBackbone ?? 0,
-    projectionOverlapPressureDetail:
-      featureFrame?.debug?.projectionOverlapPressureDetail ?? 0,
+    projectionEnergyBudgetSourceCoupled:
+      featureFrame?.debug?.projectionEnergyBudgetSourceCoupled ?? 0,
+    projectionEnergyBudgetResonant:
+      featureFrame?.debug?.projectionEnergyBudgetResonant ?? 0,
+    projectionEnergyUsedSourceCoupled:
+      featureFrame?.debug?.projectionEnergyUsedSourceCoupled ?? 0,
+    projectionEnergyUsedResonant:
+      featureFrame?.debug?.projectionEnergyUsedResonant ?? 0,
+    projectionRawEnergySourceCoupled:
+      featureFrame?.debug?.projectionRawEnergySourceCoupled ?? 0,
+    projectionRawEnergyResonant:
+      featureFrame?.debug?.projectionRawEnergyResonant ?? 0,
+    projectionAllocatedEnergySourceCoupled:
+      featureFrame?.debug?.projectionAllocatedEnergySourceCoupled ?? 0,
+    projectionAllocatedEnergyResonant:
+      featureFrame?.debug?.projectionAllocatedEnergyResonant ?? 0,
+    projectionEnergyScaleSourceCoupled:
+      featureFrame?.debug?.projectionEnergyScaleSourceCoupled ?? 0,
+    projectionEnergyScaleResonant:
+      featureFrame?.debug?.projectionEnergyScaleResonant ?? 0,
+    projectionOverlapPressureSourceCoupled:
+      featureFrame?.debug?.projectionOverlapPressureSourceCoupled ?? 0,
+    projectionOverlapPressureResonant:
+      featureFrame?.debug?.projectionOverlapPressureResonant ?? 0,
     projectionCompetitionReduction:
       featureFrame?.debug?.projectionCompetitionReduction ?? 0,
     projectionDenseSpectrumPressure:
@@ -1709,7 +1681,6 @@ export function tickRaymarchRuntime(
   const modalFieldModeBuffer = runtimeState.modalFieldModeBuffer;
   const modalFieldColorBuffer = runtimeState.modalFieldColorBuffer;
   const modalFieldPhaseBuffer = runtimeState.modalFieldPhaseBuffer;
-  const modalFieldRoleBuffer = runtimeState.modalFieldRoleBuffer;
   const modalFieldCapacity = inferModalFieldCapacity(
     runtimeState.modalFieldCapacity,
     modalFieldModeBuffer.value.array,
@@ -1851,15 +1822,6 @@ export function tickRaymarchRuntime(
     layer: modalFieldLayer,
     capacity: modalFieldPhaseCapacity,
   });
-  if (modalFieldRoleBuffer?.value?.array) {
-    copyModalField({
-      sourceSlots: descriptorSlots.modalFieldRoleSlots,
-      targetSlots: modalFieldRoleBuffer.value.array,
-      capacity: modalFieldLayer.capacity,
-      includeColors: false,
-    });
-    modalFieldRoleBuffer.value.needsUpdate = true;
-  }
   runtimeState.effectiveFieldModeCount = modalFieldPhaseModeCount;
 
   const modalFieldModeCount = modalFieldLayer.uploadedActiveCount;

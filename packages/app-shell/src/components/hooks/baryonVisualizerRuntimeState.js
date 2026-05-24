@@ -99,26 +99,22 @@ function createModalFreshnessDiagnostics() {
     lowQPhaseAuthority: 0,
     modalPhaseCoherentFieldModeCount: 0,
     modeCoherence: 0,
-    activeBackboneModeCount: 0,
-    activeDetailModeCount: 0,
     activeModeCount: 0,
     activeModalFieldModeCount: 0,
     modeSlotMeanAbsDelta: 0,
     modeSlotChangeCount: 0,
-    backboneSlotMeanAbsDelta: 0,
-    backboneSlotChangeCount: 0,
-    detailSlotMeanAbsDelta: 0,
-    detailSlotChangeCount: 0,
-    detailSignalAuthoritative: false,
-    detailSignalAuthoritativeReason: "none",
-    detailSignalAuthoritativeCoverage: false,
-    detailSignalAuthoritativeFreshSignal: false,
-    detailSignalAuthoritativeFastAssist: false,
-    detailSignalAuthoritativeHighQ: false,
-    detailShiftReleaseOverrideCount: 0,
-    detailShiftTrackingOverrideCount: 0,
-    highQDetailModeCount: 0,
-    highQDetailEnergy: 0,
+    modalFieldSlotMeanAbsDelta: 0,
+    modalFieldSlotChangeCount: 0,
+    resonantSignalAuthoritative: false,
+    resonantSignalAuthoritativeReason: "none",
+    resonantSignalAuthoritativeCoverage: false,
+    resonantSignalAuthoritativeFreshSignal: false,
+    resonantSignalAuthoritativeFastAssist: false,
+    resonantSignalAuthoritativeHighQ: false,
+    resonantShiftReleaseOverrideCount: 0,
+    resonantShiftTrackingOverrideCount: 0,
+    observedResonanceModeCount: 0,
+    observedResonanceEnergy: 0,
     highQRingSupport: 0,
     responseEnvelope: 0,
     accentEnvelope: 0,
@@ -126,8 +122,7 @@ function createModalFreshnessDiagnostics() {
     scaleSignal: 0,
     bloomResponseSignal: 0,
     _previousModeSlots: null,
-    _previousBackboneSlots: null,
-    _previousDetailSlots: null,
+    _previousModalFieldSlots: null,
   };
 }
 
@@ -182,8 +177,6 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
     modalPhaseCoherentFieldModeCount:
       modalFreshness.modalPhaseCoherentFieldModeCount ?? 0,
     modeCoherence: modalFreshness.modeCoherence ?? 0,
-    activeBackboneModeCount: modalFreshness.activeBackboneModeCount ?? 0,
-    activeDetailModeCount: modalFreshness.activeDetailModeCount ?? 0,
     activeModeCount: modalFreshness.activeModeCount ?? 0,
     activeModalFieldModeCount:
       modalFreshness.activeModalFieldModeCount ??
@@ -191,28 +184,28 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
       0,
     modeSlotMeanAbsDelta: modalFreshness.modeSlotMeanAbsDelta ?? 0,
     modeSlotChangeCount: modalFreshness.modeSlotChangeCount ?? 0,
-    backboneSlotMeanAbsDelta: modalFreshness.backboneSlotMeanAbsDelta ?? 0,
-    backboneSlotChangeCount: modalFreshness.backboneSlotChangeCount ?? 0,
-    detailSlotMeanAbsDelta: modalFreshness.detailSlotMeanAbsDelta ?? 0,
-    detailSlotChangeCount: modalFreshness.detailSlotChangeCount ?? 0,
-    detailSignalAuthoritative:
-      modalFreshness.detailSignalAuthoritative ?? false,
-    detailSignalAuthoritativeReason:
-      modalFreshness.detailSignalAuthoritativeReason ?? "none",
-    detailSignalAuthoritativeCoverage:
-      modalFreshness.detailSignalAuthoritativeCoverage ?? false,
-    detailSignalAuthoritativeFreshSignal:
-      modalFreshness.detailSignalAuthoritativeFreshSignal ?? false,
-    detailSignalAuthoritativeFastAssist:
-      modalFreshness.detailSignalAuthoritativeFastAssist ?? false,
-    detailSignalAuthoritativeHighQ:
-      modalFreshness.detailSignalAuthoritativeHighQ ?? false,
-    detailShiftReleaseOverrideCount:
-      modalFreshness.detailShiftReleaseOverrideCount ?? 0,
-    detailShiftTrackingOverrideCount:
-      modalFreshness.detailShiftTrackingOverrideCount ?? 0,
-    highQDetailModeCount: modalFreshness.highQDetailModeCount ?? 0,
-    highQDetailEnergy: modalFreshness.highQDetailEnergy ?? 0,
+    modalFieldSlotMeanAbsDelta:
+      modalFreshness.modalFieldSlotMeanAbsDelta ?? 0,
+    modalFieldSlotChangeCount: modalFreshness.modalFieldSlotChangeCount ?? 0,
+    resonantSignalAuthoritative:
+      modalFreshness.resonantSignalAuthoritative ?? false,
+    resonantSignalAuthoritativeReason:
+      modalFreshness.resonantSignalAuthoritativeReason ?? "none",
+    resonantSignalAuthoritativeCoverage:
+      modalFreshness.resonantSignalAuthoritativeCoverage ?? false,
+    resonantSignalAuthoritativeFreshSignal:
+      modalFreshness.resonantSignalAuthoritativeFreshSignal ?? false,
+    resonantSignalAuthoritativeFastAssist:
+      modalFreshness.resonantSignalAuthoritativeFastAssist ?? false,
+    resonantSignalAuthoritativeHighQ:
+      modalFreshness.resonantSignalAuthoritativeHighQ ?? false,
+    resonantShiftReleaseOverrideCount:
+      modalFreshness.resonantShiftReleaseOverrideCount ?? 0,
+    resonantShiftTrackingOverrideCount:
+      modalFreshness.resonantShiftTrackingOverrideCount ?? 0,
+    observedResonanceModeCount:
+      modalFreshness.observedResonanceModeCount ?? 0,
+    observedResonanceEnergy: modalFreshness.observedResonanceEnergy ?? 0,
     highQRingSupport: modalFreshness.highQRingSupport ?? 0,
     responseEnvelope: modalFreshness.responseEnvelope ?? 0,
     accentEnvelope: modalFreshness.accentEnvelope ?? 0,
@@ -371,8 +364,6 @@ export function createRuntimeDiagnostics() {
       adaptiveStepUpCount: 0,
       targetFps: 60,
       targetFrameTimeMs: 1000 / 60,
-      activeBackboneModeCount: 0,
-      activeDetailModeCount: 0,
       activeModeCount: 0,
       observationEnergy: 0,
       observationAnchorMax: 0,
@@ -746,10 +737,6 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
       targetFps: runtimeDiagnostics?.render?.targetFps ?? 60,
       targetFrameTimeMs:
         runtimeDiagnostics?.render?.targetFrameTimeMs ?? 1000 / 60,
-      activeBackboneModeCount:
-        runtimeDiagnostics?.render?.activeBackboneModeCount ?? 0,
-      activeDetailModeCount:
-        runtimeDiagnostics?.render?.activeDetailModeCount ?? 0,
       activeModeCount: runtimeDiagnostics?.render?.activeModeCount ?? 0,
       observationEnergy: runtimeDiagnostics?.render?.observationEnergy ?? 0,
       observationAnchorMax:

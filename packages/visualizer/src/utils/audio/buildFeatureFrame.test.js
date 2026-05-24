@@ -420,26 +420,26 @@ function countActiveSlots(slots) {
 }
 
 function makeManualStructuralState({
-  backboneSlots = makeModeSlots([]),
-  detailSlots = makeModeSlots([]),
-  backbonePhaseSlots = makePhaseSlots([]),
-  detailPhaseSlots = makePhaseSlots([]),
+  sourceCoupledSlots = makeModeSlots([]),
+  resonantSlots = makeModeSlots([]),
+  sourceCoupledPhaseSlots = makePhaseSlots([]),
+  resonantPhaseSlots = makePhaseSlots([]),
   dominantFrequency = 196,
   dominantAmplitude = 0.08,
   sourceMode = "file",
   structuralMetrics = {},
 } = {}) {
   return {
-    backboneSlotsSource: backboneSlots,
-    detailSlotsSource: detailSlots,
-    referenceBackboneSlotsSource: backboneSlots,
-    referenceDetailSlotsSource: detailSlots,
-    signalBackboneSlotsSource: backboneSlots,
-    signalDetailSlotsSource: detailSlots,
-    backbonePhaseSlotsSource: backbonePhaseSlots,
-    detailPhaseSlotsSource: detailPhaseSlots,
-    signalReferenceBackboneSlotsSource: backboneSlots,
-    signalReferenceDetailSlotsSource: detailSlots,
+    sourceCoupledSlotsSource: sourceCoupledSlots,
+    resonantSlotsSource: resonantSlots,
+    referenceSourceCoupledSlotsSource: sourceCoupledSlots,
+    referenceResonantSlotsSource: resonantSlots,
+    signalSourceCoupledSlotsSource: sourceCoupledSlots,
+    signalResonantSlotsSource: resonantSlots,
+    sourceCoupledPhaseSlotsSource: sourceCoupledPhaseSlots,
+    resonantPhaseSlotsSource: resonantPhaseSlots,
+    signalReferenceSourceCoupledSlotsSource: sourceCoupledSlots,
+    signalReferenceResonantSlotsSource: resonantSlots,
     dominantFrequency,
     dominantAmplitude,
     analysisEngine: "modal-excitation",
@@ -584,26 +584,26 @@ function readModeAmplitudeMap(slotBuffer) {
   return amplitudes;
 }
 
-function makeLowQBackboneStructuralMetrics(overrides = {}) {
+function makeLowQSourceCoupledStructuralMetrics(overrides = {}) {
   return {
     modeCoherence: 0.48,
     modalPersistence: 0.01,
     modalDriveEnergy: 0.008,
     modalResponseEnergy: 0.055,
     modalResponseInputEnergy: 0.12,
-    modalResponseBackboneEnergy: 0.055,
-    modalResponseDetailEnergy: 0,
+    modalResponseSourceCoupledEnergy: 0.055,
+    modalResponseResonantEnergy: 0,
     modalResponseModeCount: 2,
-    modalResponseBudgetScaleBackbone: 1,
-    modalResponseBudgetScaleDetail: 1,
+    modalResponseBudgetScaleSourceCoupled: 1,
+    modalResponseBudgetScaleResonant: 1,
     distributedExcitation: 0.08,
-    lowQBackboneModeCount: 2,
-    lowQBackboneEnergy: 0.055,
+    lowQSourceCoupledModeCount: 2,
+    lowQSourceCoupledEnergy: 0.055,
     lowQObservedDrive: 0.34,
     lowQObservedSnr: 0.26,
     lowQObservedCoherence: 0.66,
-    highQDetailModeCount: 0,
-    highQDetailEnergy: 0,
+    highQResonantModeCount: 0,
+    highQResonantEnergy: 0,
     highQRingSupport: 0,
     highQObservedDrive: 0,
     highQObservedSnr: 0,
@@ -613,7 +613,7 @@ function makeLowQBackboneStructuralMetrics(overrides = {}) {
   };
 }
 
-function buildManualLowQBackboneFrame({
+function buildManualLowQSourceCoupledFrame({
   status = makeActiveStatus(),
   sourceMode = "file",
   avgAmplitude = 8.2,
@@ -629,12 +629,12 @@ function buildManualLowQBackboneFrame({
     ],
     amplitudeScale: 0.09,
   }),
-  backboneSlots = makeModeSlots([
+  sourceCoupledSlots = makeModeSlots([
     [1, 1, 1, 0.0006],
     [2, 1, 1, 0.0004],
   ]),
-  detailSlots = makeModeSlots([]),
-  structuralMetrics = makeLowQBackboneStructuralMetrics(),
+  resonantSlots = makeModeSlots([]),
+  structuralMetrics = makeLowQSourceCoupledStructuralMetrics(),
   liveInputAnalysisSettings,
 } = {}) {
   const preparedInputs = prepareAudioFeatureFrameInputs({
@@ -652,8 +652,8 @@ function buildManualLowQBackboneFrame({
     liveInputAnalysisSettings,
   });
   const structuralState = makeManualStructuralState({
-    backboneSlots,
-    detailSlots,
+    sourceCoupledSlots,
+    resonantSlots,
     sourceMode,
     structuralMetrics,
   });
@@ -674,8 +674,8 @@ function addModalFingerprintLayer(fingerprint, slotBuffer, weight = 1) {
 
 function buildModalFingerprint(frame) {
   const amplitudes = new Map();
-  addModalFingerprintLayer(amplitudes, frame.backboneSlots, 1);
-  addModalFingerprintLayer(amplitudes, frame.detailSlots, 0.45);
+  addModalFingerprintLayer(amplitudes, frame.modalFieldSlots, 1);
+  addModalFingerprintLayer(amplitudes, frame.modalFieldSlots, 0.45);
   let totalAmplitude = 0;
   for (const amplitude of amplitudes.values()) {
     totalAmplitude += amplitude;
@@ -727,8 +727,8 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(frame.fieldState).toBe("idle");
     expect(frame.hasModalField).toBe(false);
     expect(frame.averageAmplitude).toBe(0);
-    expect(frame.backboneSlots.every((value) => value === 0)).toBe(true);
-    expect(frame.detailSlots.every((value) => value === 0)).toBe(true);
+    expect(frame.modalFieldSlots.every((value) => value === 0)).toBe(true);
+    expect(frame.modalFieldSlots.every((value) => value === 0)).toBe(true);
     expect(frame.bandEnergies.every((value) => value === 0)).toBe(true);
     expect(frame.transientEnergy).toBe(0);
     expect(frame.spectralFlux).toBe(0);
@@ -800,41 +800,41 @@ describe("buildAudioFeatureFrame modal contract", () => {
   });
 
   it("keeps coherent low-Q background bass active through backbone authority only", () => {
-    const originalBackboneSlots = makeModeSlots([
+    const originalSourceCoupledSlots = makeModeSlots([
       [1, 1, 1, 0.0006],
       [2, 1, 1, 0.0004],
     ]);
-    const frame = buildManualLowQBackboneFrame({
-      backboneSlots: originalBackboneSlots,
+    const frame = buildManualLowQSourceCoupledFrame({
+      sourceCoupledSlots: originalSourceCoupledSlots,
     });
 
     expect(frame.fieldState).toBe("active");
-    expect(frame.debug.lowQBackboneVisibilityAuthority).toBeGreaterThan(0.3);
-    expect(frame.lowQBackboneVisibilityEnergy).toBeGreaterThan(0.02);
-    expect(frame.debug.lowQBackboneVisibilityEnergy).toBe(
-      frame.lowQBackboneVisibilityEnergy,
+    expect(frame.debug.lowQSourceCoupledVisibilityAuthority).toBeGreaterThan(0.3);
+    expect(frame.modalObserverVisibilityEnergy).toBeGreaterThan(0.02);
+    expect(frame.debug.modalObserverVisibilityEnergy).toBe(
+      frame.modalObserverVisibilityEnergy,
     );
-    expect(frame.debug.lowQBackboneTopologyFloor).toBeGreaterThan(0.004);
+    expect(frame.debug.modalObserverTopologyFloor).toBeGreaterThan(0.004);
     expect(frame.modalObserverVisibilityEnergy).toBeGreaterThanOrEqual(
-      frame.lowQBackboneVisibilityEnergy,
+      frame.modalObserverVisibilityEnergy,
     );
     expect(frame.modalVisibilityEnergy).toBe(0);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBe(0);
     expect(frame.debug.modalVisibilityRetainedHighQEnergy).toBe(0);
-    expect(countActiveSlots(frame.detailSlots)).toBe(0);
-    expect(findModeAmplitude(frame.backboneSlots, [1, 1, 1])).toBeGreaterThan(
-      findModeAmplitude(originalBackboneSlots, [1, 1, 1]),
+    expect(countActiveSlots(frame.modalFieldSlots)).toBeGreaterThan(0);
+    expect(findModeAmplitude(frame.modalFieldSlots, [1, 1, 1])).toBeGreaterThan(
+      findModeAmplitude(originalSourceCoupledSlots, [1, 1, 1]),
     );
   });
 
   it("lets strong low-Q bass lift existing backbone slots", () => {
-    const originalBackboneSlots = makeModeSlots([
+    const originalSourceCoupledSlots = makeModeSlots([
       [1, 1, 1, 0.04],
       [1, 1, 2, 0.032],
       [2, 1, 1, 0.02],
     ]);
-    const originalTotal = sumSlotAmplitudes(originalBackboneSlots);
-    const frame = buildManualLowQBackboneFrame({
+    const originalTotal = sumSlotAmplitudes(originalSourceCoupledSlots);
+    const frame = buildManualLowQSourceCoupledFrame({
       avgAmplitude: 28,
       rms: 0.16,
       fftMagnitudes: makeFft([
@@ -850,11 +850,11 @@ describe("buildAudioFeatureFrame modal contract", () => {
         ],
         amplitudeScale: 0.18,
       }),
-      backboneSlots: originalBackboneSlots,
-      structuralMetrics: makeLowQBackboneStructuralMetrics({
+      sourceCoupledSlots: originalSourceCoupledSlots,
+      structuralMetrics: makeLowQSourceCoupledStructuralMetrics({
         modeCoherence: 0.82,
-        lowQBackboneModeCount: 4,
-        lowQBackboneEnergy: 0.78,
+        lowQSourceCoupledModeCount: 4,
+        lowQSourceCoupledEnergy: 0.78,
         lowQObservedDrive: 0.42,
         lowQObservedSnr: 0.45,
         lowQObservedCoherence: 0.9,
@@ -862,29 +862,29 @@ describe("buildAudioFeatureFrame modal contract", () => {
     });
 
     expect(frame.fieldState).toBe("active");
-    expect(frame.debug.lowQBackboneVisibilityAuthority).toBeGreaterThan(0.7);
+    expect(frame.debug.lowQSourceCoupledVisibilityAuthority).toBeGreaterThan(0.7);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBe(0);
-    expect(countActiveSlots(frame.detailSlots)).toBe(0);
-    expect(sumSlotAmplitudes(frame.backboneSlots)).toBeGreaterThan(
+    expect(countActiveSlots(frame.modalFieldSlots)).toBeGreaterThan(0);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(
       originalTotal * 1.5,
     );
-    expect(sumSlotAmplitudes(frame.backboneSlots)).toBeGreaterThan(0.14);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.14);
   });
 
   it("rejects low-Q backbone visibility for silence and weak incoherent noise", () => {
-    const silent = buildManualLowQBackboneFrame({
+    const silent = buildManualLowQSourceCoupledFrame({
       avgAmplitude: 0,
       rms: 0,
       fftMagnitudes: new Float32Array(BIN_COUNT),
       timeData: new Float32Array(FFT_SIZE),
-      structuralMetrics: makeLowQBackboneStructuralMetrics({
+      structuralMetrics: makeLowQSourceCoupledStructuralMetrics({
         modalResponseEnergy: 0,
-        modalResponseBackboneEnergy: 0,
+        modalResponseSourceCoupledEnergy: 0,
         modalResponseModeCount: 0,
         lowQObservedDrive: 0,
       }),
     });
-    const weakNoise = buildManualLowQBackboneFrame({
+    const weakNoise = buildManualLowQSourceCoupledFrame({
       avgAmplitude: 7,
       rms: 0.014,
       fftMagnitudes: makeFft([
@@ -895,11 +895,11 @@ describe("buildAudioFeatureFrame modal contract", () => {
         [2200, 0.035],
       ]),
       timeData: new Float32Array(FFT_SIZE),
-      structuralMetrics: makeLowQBackboneStructuralMetrics({
+      structuralMetrics: makeLowQSourceCoupledStructuralMetrics({
         modalResponseEnergy: 0,
-        modalResponseBackboneEnergy: 0,
+        modalResponseSourceCoupledEnergy: 0,
         modalResponseModeCount: 0,
-        lowQBackboneEnergy: 0.04,
+        lowQSourceCoupledEnergy: 0.04,
         lowQObservedDrive: 0.04,
         lowQObservedSnr: 0.02,
         lowQObservedCoherence: 0.11,
@@ -909,13 +909,13 @@ describe("buildAudioFeatureFrame modal contract", () => {
     });
 
     expect(silent.fieldState).toBe("idle");
-    expect(silent.lowQBackboneVisibilityEnergy).toBe(0);
-    expect(silent.lowQBackboneTopologyFloor).toBe(0);
-    expect(silent.debug.lowQBackboneVisibilityRejected).toBe(true);
+    expect(countActiveSlots(silent.modalFieldSlots)).toBe(0);
+    expect(silent.renderAuthority).toBe(false);
+    expect(silent.debug.lowQSourceCoupledVisibilityRejected).toBe(true);
     expect(weakNoise.fieldState).toBe("idle");
-    expect(weakNoise.lowQBackboneVisibilityEnergy).toBe(0);
-    expect(weakNoise.lowQBackboneTopologyFloor).toBe(0);
-    expect(weakNoise.debug.lowQBackboneVisibilityRejected).toBe(true);
+    expect(countActiveSlots(weakNoise.modalFieldSlots)).toBe(0);
+    expect(weakNoise.renderAuthority).toBe(false);
+    expect(weakNoise.debug.lowQSourceCoupledVisibilityRejected).toBe(true);
     expect(weakNoise.modalVisibilityRetainedHighQEnergy).toBe(0);
   });
 
@@ -936,19 +936,19 @@ describe("buildAudioFeatureFrame modal contract", () => {
       },
     ];
     const frames = scenarios.map((scenario) =>
-      buildManualLowQBackboneFrame(scenario),
+      buildManualLowQSourceCoupledFrame(scenario),
     );
     const authorities = frames.map(
-      (frame) => frame.debug.lowQBackboneVisibilityAuthority,
+      (frame) => frame.debug.lowQSourceCoupledVisibilityAuthority,
     );
 
     expect(authorities[0]).toBeGreaterThan(0.3);
     expect(authorities[1]).toBeCloseTo(authorities[0], 6);
     expect(authorities[2]).toBeCloseTo(authorities[0], 6);
     for (const frame of frames) {
-      expect(frame.lowQBackboneVisibilityEnergy).toBeGreaterThan(0.02);
+      expect(frame.modalObserverVisibilityEnergy).toBeGreaterThan(0.02);
       expect(frame.modalVisibilityRetainedHighQEnergy).toBe(0);
-      expect(countActiveSlots(frame.detailSlots)).toBe(0);
+      expect(countActiveSlots(frame.modalFieldSlots)).toBeGreaterThan(0);
     }
   });
 
@@ -1246,14 +1246,14 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(silence.debug.observationEnergy).toBe(0);
     expect(silence.modalResponseRenderEnergy).toBe(0);
     expect(silence.debug.modalResponseEnergy).toBeGreaterThan(0);
-    expect(silence.activeBackboneModeCount).toBe(0);
-    expect(silence.activeDetailModeCount).toBe(0);
+    expect(silence.activeModalFieldModeCount).toBe(0);
+    expect(silence.activeModalFieldModeCount).toBe(0);
     expect(silence.activeModeCount).toBe(0);
-    expect(sumSlotAmplitudes(silence.backboneSlots)).toBe(0);
-    expect(sumSlotAmplitudes(silence.detailSlots)).toBe(0);
-    expect(sumSlotAmplitudes(silence.modeSlots)).toBe(0);
-    expect(countAuthoritativePhaseSlots(silence.backbonePhaseSlots)).toBe(0);
-    expect(countAuthoritativePhaseSlots(silence.detailPhaseSlots)).toBe(0);
+    expect(sumSlotAmplitudes(silence.modalFieldSlots)).toBe(0);
+    expect(sumSlotAmplitudes(silence.modalFieldSlots)).toBe(0);
+    expect(sumSlotAmplitudes(silence.modalFieldSlots)).toBe(0);
+    expect(countAuthoritativePhaseSlots(silence.modalFieldPhaseSlots)).toBe(0);
+    expect(countAuthoritativePhaseSlots(silence.modalFieldPhaseSlots)).toBe(0);
   });
 
   it("recalibrates when mic mode is restarted", () => {
@@ -1641,11 +1641,11 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(frame.fieldState).toBe("active");
     expect(frame.hasModalField).toBe(true);
     expect(frame.debug.analysisEngine).toBe("modal-excitation");
-    expect(frame.debug.backboneModeCount).toBeGreaterThan(0);
-    expect(frame.debug.detailModeCount).toBeGreaterThan(0);
+    expect(frame.debug.sourceCoupledModeCount).toBeGreaterThan(0);
+    expect(frame.debug.resonantModeCount).toBeGreaterThan(0);
     expect(frame.debug.modeSlotCount).toBeGreaterThan(0);
-    expect(frame.backboneSlots.some((value) => value !== 0)).toBe(true);
-    expect(frame.detailSlots.some((value) => value !== 0)).toBe(true);
+    expect(frame.modalFieldSlots.some((value) => value !== 0)).toBe(true);
+    expect(frame.modalFieldSlots.some((value) => value !== 0)).toBe(true);
   });
 
   it("surfaces detail shift diagnostics in the frame debug summary", () => {
@@ -1661,19 +1661,19 @@ describe("buildAudioFeatureFrame modal contract", () => {
       status: makeActiveStatus(),
     });
     const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
-    const backboneSlotsSource = makeSingleModeSlot([1, 1, 1, 1]);
-    const detailSlotsSource = makeSingleModeSlot([9, 9, 9, 0.5]);
+    const sourceCoupledSlotsSource = makeSingleModeSlot([1, 1, 1, 1]);
+    const resonantSlotsSource = makeSingleModeSlot([9, 9, 9, 0.5]);
     const structuralState = {
-      backboneSlotsSource,
-      detailSlotsSource,
-      referenceBackboneSlotsSource: backboneSlotsSource,
-      referenceDetailSlotsSource: detailSlotsSource,
-      signalBackboneSlotsSource: backboneSlotsSource,
-      signalDetailSlotsSource: detailSlotsSource,
-      signalReferenceBackboneSlotsSource: backboneSlotsSource,
-      signalReferenceDetailSlotsSource: detailSlotsSource,
-      activeBackboneModeCount: 1,
-      activeDetailModeCount: 1,
+      sourceCoupledSlotsSource,
+      resonantSlotsSource,
+      referenceSourceCoupledSlotsSource: sourceCoupledSlotsSource,
+      referenceResonantSlotsSource: resonantSlotsSource,
+      signalSourceCoupledSlotsSource: sourceCoupledSlotsSource,
+      signalResonantSlotsSource: resonantSlotsSource,
+      signalReferenceSourceCoupledSlotsSource: sourceCoupledSlotsSource,
+      signalReferenceResonantSlotsSource: resonantSlotsSource,
+      activeSourceCoupledModeCount: 1,
+      activeResonantModeCount: 1,
       activeModeCount: 2,
       dominantFrequency: 330,
       dominantAmplitude: 0.95,
@@ -1682,10 +1682,10 @@ describe("buildAudioFeatureFrame modal contract", () => {
       spectralCandidates: [],
       sourceMode: "file",
       structuralMetrics: {
-        detailSignalAuthoritative: true,
-        detailSignalAuthoritativeReason: "fresh-signal",
-        detailShiftReleaseOverrideCount: 2,
-        detailShiftTrackingOverrideCount: 3,
+        resonantSignalAuthoritative: true,
+        resonantSignalAuthoritativeReason: "fresh-signal",
+        resonantShiftReleaseOverrideCount: 2,
+        resonantShiftTrackingOverrideCount: 3,
       },
     };
     const analysisResult = buildCurrentAudioFeatureAnalysisResult({
@@ -1699,10 +1699,10 @@ describe("buildAudioFeatureFrame modal contract", () => {
       analysisResult,
     });
 
-    expect(frame.debug.detailSignalAuthoritative).toBe(true);
-    expect(frame.debug.detailSignalAuthoritativeReason).toBe("fresh-signal");
-    expect(frame.debug.detailShiftReleaseOverrideCount).toBe(2);
-    expect(frame.debug.detailShiftTrackingOverrideCount).toBe(3);
+    expect(frame.debug.resonantSignalAuthoritative).toBe(true);
+    expect(frame.debug.resonantSignalAuthoritativeReason).toBe("fresh-signal");
+    expect(frame.debug.resonantShiftReleaseOverrideCount).toBe(2);
+    expect(frame.debug.resonantShiftTrackingOverrideCount).toBe(3);
   });
 
   it("does not apply a second detail-layer weight after admission", () => {
@@ -1726,19 +1726,19 @@ describe("buildAudioFeatureFrame modal contract", () => {
       trebleTonalEnergy: 0.2,
       beatLowBandEnergy: 0.12,
     };
-    const backboneSlotsSource = makeSingleModeSlot([1, 1, 1, 1]);
-    const detailSlotsSource = makeSingleModeSlot([9, 9, 9, 1]);
+    const sourceCoupledSlotsSource = makeSingleModeSlot([1, 1, 1, 1]);
+    const resonantSlotsSource = makeSingleModeSlot([9, 9, 9, 1]);
     const structuralState = {
-      backboneSlotsSource,
-      detailSlotsSource,
-      referenceBackboneSlotsSource: backboneSlotsSource,
-      referenceDetailSlotsSource: detailSlotsSource,
-      signalBackboneSlotsSource: backboneSlotsSource,
-      signalDetailSlotsSource: detailSlotsSource,
-      signalReferenceBackboneSlotsSource: backboneSlotsSource,
-      signalReferenceDetailSlotsSource: detailSlotsSource,
-      activeBackboneModeCount: 1,
-      activeDetailModeCount: 1,
+      sourceCoupledSlotsSource,
+      resonantSlotsSource,
+      referenceSourceCoupledSlotsSource: sourceCoupledSlotsSource,
+      referenceResonantSlotsSource: resonantSlotsSource,
+      signalSourceCoupledSlotsSource: sourceCoupledSlotsSource,
+      signalResonantSlotsSource: resonantSlotsSource,
+      signalReferenceSourceCoupledSlotsSource: sourceCoupledSlotsSource,
+      signalReferenceResonantSlotsSource: resonantSlotsSource,
+      activeSourceCoupledModeCount: 1,
+      activeResonantModeCount: 1,
       activeModeCount: 2,
       dominantFrequency: 330,
       dominantAmplitude: 0.95,
@@ -1759,16 +1759,16 @@ describe("buildAudioFeatureFrame modal contract", () => {
     });
 
     expect(findModeAmplitude(result.modeSlots, [1, 1, 1])).toBeCloseTo(1, 6);
-    const admittedDetailCoefficient = findModeAmplitude(
-      result.detailSlots,
+    const admittedResonantCoefficient = findModeAmplitude(
+      result.resonantSlots,
       [9, 9, 9],
     );
     expect(findModeAmplitude(result.modeSlots, [9, 9, 9])).toBeCloseTo(
-      admittedDetailCoefficient,
+      admittedResonantCoefficient,
       6,
     );
     expect(findModeAmplitude(result.signalModeSlots, [9, 9, 9])).toBeCloseTo(
-      admittedDetailCoefficient,
+      admittedResonantCoefficient,
       6,
     );
   });
@@ -1804,13 +1804,13 @@ describe("buildAudioFeatureFrame modal contract", () => {
       auditSettings: createAuditSettings(),
     });
 
-    const firstBackbone = readModeKeys(first.backboneSlots);
-    const secondBackbone = readModeKeys(second.backboneSlots);
+    const firstSourceCoupled = readModeKeys(first.modalFieldSlots);
+    const secondSourceCoupled = readModeKeys(second.modalFieldSlots);
     expect(second.debug.spectralCandidates[0]?.frequency).not.toBeCloseTo(
       first.debug.spectralCandidates[0]?.frequency ?? 0,
     );
-    expect(second.debug.detailModeCount).toBeGreaterThan(0);
-    expect(secondBackbone.some((key) => firstBackbone.includes(key))).toBe(
+    expect(second.debug.resonantModeCount).toBeGreaterThan(0);
+    expect(secondSourceCoupled.some((key) => firstSourceCoupled.includes(key))).toBe(
       true,
     );
   });
@@ -1854,13 +1854,13 @@ describe("buildAudioFeatureFrame modal contract", () => {
       auditSettings: createAuditSettings(),
     });
 
-    expect(frame.backboneSlots).toHaveLength(AUDIO_SLOT_CAPACITY * 4);
-    expect(frame.detailSlots).toHaveLength(AUDIO_SLOT_CAPACITY * 4);
-    expect(frame.modeSlots).toHaveLength(AUDIO_SLOT_CAPACITY * 4);
-    expect(frame.debug.backboneModeCount).toBeLessThanOrEqual(
+    expect(frame.modalFieldSlots).toHaveLength(AUDIO_SLOT_CAPACITY * 4);
+    expect(frame.modalFieldSlots).toHaveLength(AUDIO_SLOT_CAPACITY * 4);
+    expect(frame.modalFieldSlots).toHaveLength(AUDIO_SLOT_CAPACITY * 4);
+    expect(frame.debug.sourceCoupledModeCount).toBeLessThanOrEqual(
       AUDIO_SLOT_CAPACITY,
     );
-    expect(frame.debug.detailModeCount).toBeLessThanOrEqual(
+    expect(frame.debug.resonantModeCount).toBeLessThanOrEqual(
       AUDIO_SLOT_CAPACITY,
     );
     expect(frame.debug.modeSlotCount).toBeLessThanOrEqual(AUDIO_SLOT_CAPACITY);
@@ -2261,8 +2261,8 @@ describe("buildAudioFeatureFrame modal contract", () => {
       status,
       auditSettings: createAuditSettings({ freezeModeSlots: true }),
     });
-    const capturedBackbone = Array.from(frozen.backboneSlots);
-    const capturedDetail = Array.from(frozen.detailSlots);
+    const capturedSourceCoupled = Array.from(frozen.modalFieldSlots);
+    const capturedResonant = Array.from(frozen.modalFieldSlots);
 
     const held = buildAudioFeatureFrame({
       analysisSnapshot: createSnapshot({
@@ -2274,8 +2274,8 @@ describe("buildAudioFeatureFrame modal contract", () => {
       auditSettings: createAuditSettings({ freezeModeSlots: true }),
     });
 
-    expect(Array.from(held.backboneSlots)).toEqual(capturedBackbone);
-    expect(Array.from(held.detailSlots)).toEqual(capturedDetail);
+    expect(Array.from(held.modalFieldSlots)).toEqual(capturedSourceCoupled);
+    expect(Array.from(held.modalFieldSlots)).toEqual(capturedResonant);
   });
 
   it("injects deterministic test-tone analysis through the modal path", () => {
@@ -2296,7 +2296,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(frame.renderAuthority).toBe(true);
     expect(frame.debug.analysisEngine).toBe("modal-excitation");
     expect(frame.debug.pitchSource).toBe("resonator-bank");
-    expect(frame.debug.backboneModeCount).toBeGreaterThan(0);
+    expect(frame.debug.sourceCoupledModeCount).toBeGreaterThan(0);
     expect(frame.debug.modeSlotCount).toBeGreaterThan(0);
     // avgAmplitude is now RMS-derived: amplitude / sqrt(2) * 255
     expect(frame.averageAmplitude).toBeCloseTo((0.75 / Math.SQRT2) * 255, 1);
@@ -2321,13 +2321,13 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(frame.debug.analysisEngine).toBe("modal-excitation");
     expect(frame.debug.modeSlotCount).toBeGreaterThan(1);
     expect(
-      frame.backboneSlots.some(
-        (_, index) => index % 4 === 3 && frame.backboneSlots[index] > 0,
+      frame.modalFieldSlots.some(
+        (_, index) => index % 4 === 3 && frame.modalFieldSlots[index] > 0,
       ),
     ).toBe(true);
     expect(
-      frame.detailSlots.some(
-        (_, index) => index % 4 === 3 && frame.detailSlots[index] > 0,
+      frame.modalFieldSlots.some(
+        (_, index) => index % 4 === 3 && frame.modalFieldSlots[index] > 0,
       ),
     ).toBe(true);
   });
@@ -2349,9 +2349,9 @@ describe("buildAudioFeatureFrame modal contract", () => {
     });
 
     expect(frame.debug.analysisEngine).toBe("modal-excitation");
-    expect(frame.debug.backboneModeCount).toBeGreaterThan(0);
+    expect(frame.debug.sourceCoupledModeCount).toBeGreaterThan(0);
     expect(frame.debug.currentModeSlots).toBeUndefined();
-    expect(frame.debug.backboneSlots).toBeUndefined();
+    expect(frame.debug.modalFieldSlots).toBeUndefined();
     expect(frame.debug.spectralCandidates).toBeUndefined();
     expect(frame.debug.slotAmplitudeDeltas).toBeUndefined();
   });
@@ -2374,7 +2374,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     });
 
     expect(frame.debug.currentModeSlots).toBeInstanceOf(Array);
-    expect(frame.debug.backboneSlots).toBeInstanceOf(Array);
+    expect(frame.debug.modalFieldSlots).toBeInstanceOf(Array);
     expect(frame.debug.bandEnergies).toBeInstanceOf(Array);
     expect(frame.debug.slotAmplitudeDeltas).toBeInstanceOf(Array);
     expect(frame.debug.spectralCandidates).toBeInstanceOf(Array);
@@ -2398,8 +2398,8 @@ describe("Spectral Light feature frame outputs", () => {
       status: makeActiveStatus(),
     });
 
-    expect(frame.backboneColorSlots.some((value) => value > 0)).toBe(true);
-    expect(frame.detailColorSlots.some((value) => value > 0)).toBe(true);
+    expect(frame.modalFieldColorSlots.some((value) => value > 0)).toBe(true);
+    expect(frame.modalFieldColorSlots.some((value) => value > 0)).toBe(true);
     expect(frame.debug.spectralLightComponents.length).toBeGreaterThan(0);
     expect(frame.debug.spectralLightComponents[0]).toMatchObject({
       frequency: expect.any(Number),
@@ -2433,8 +2433,8 @@ describe("Spectral Light feature frame outputs", () => {
       }
 
       const color = averageWeightedColorSlots(
-        frame.backboneColorSlots,
-        frame.detailColorSlots,
+        frame.modalFieldColorSlots,
+        frame.modalFieldColorSlots,
       );
 
       expect(color.weight).toBeGreaterThan(0.5);
@@ -2461,8 +2461,8 @@ describe("Spectral Light feature frame outputs", () => {
       includeSpectralLight: false,
     });
 
-    expect(frame.backboneColorSlots.some((value) => value > 0)).toBe(false);
-    expect(frame.detailColorSlots.some((value) => value > 0)).toBe(false);
+    expect(frame.modalFieldColorSlots.some((value) => value > 0)).toBe(false);
+    expect(frame.modalFieldColorSlots.some((value) => value > 0)).toBe(false);
     expect(frame.debug.spectralLightComponents.length).toBeGreaterThan(0);
   });
 
@@ -2487,25 +2487,25 @@ describe("Spectral Light feature frame outputs", () => {
     const staticFrame = createFrame(false);
 
     expect(staticFrame.fieldState).toBe(spectralFrame.fieldState);
-    expect(staticFrame.activeBackboneModeCount).toBe(
-      spectralFrame.activeBackboneModeCount,
+    expect(staticFrame.activeModalFieldModeCount).toBe(
+      spectralFrame.activeModalFieldModeCount,
     );
-    expect(staticFrame.activeDetailModeCount).toBe(
-      spectralFrame.activeDetailModeCount,
+    expect(staticFrame.activeModalFieldModeCount).toBe(
+      spectralFrame.activeModalFieldModeCount,
     );
-    expect(Array.from(staticFrame.backboneSlots)).toEqual(
-      Array.from(spectralFrame.backboneSlots),
+    expect(Array.from(staticFrame.modalFieldSlots)).toEqual(
+      Array.from(spectralFrame.modalFieldSlots),
     );
-    expect(Array.from(staticFrame.detailSlots)).toEqual(
-      Array.from(spectralFrame.detailSlots),
+    expect(Array.from(staticFrame.modalFieldSlots)).toEqual(
+      Array.from(spectralFrame.modalFieldSlots),
     );
-    expect(Array.from(staticFrame.modeSlots)).toEqual(
-      Array.from(spectralFrame.modeSlots),
+    expect(Array.from(staticFrame.modalFieldSlots)).toEqual(
+      Array.from(spectralFrame.modalFieldSlots),
     );
-    expect(spectralFrame.backboneColorSlots.some((value) => value > 0)).toBe(
+    expect(spectralFrame.modalFieldColorSlots.some((value) => value > 0)).toBe(
       true,
     );
-    expect(staticFrame.backboneColorSlots.some((value) => value > 0)).toBe(
+    expect(staticFrame.modalFieldColorSlots.some((value) => value > 0)).toBe(
       false,
     );
   });
@@ -2539,14 +2539,14 @@ describe("Spectral Light feature frame outputs", () => {
       auditSettings: createAuditSettings({ freezeModeSlots: true }),
     });
 
-    expect(Array.from(second.backboneSlots)).toEqual(
-      Array.from(first.backboneSlots),
+    expect(Array.from(second.modalFieldSlots)).toEqual(
+      Array.from(first.modalFieldSlots),
     );
-    expect(Array.from(second.backboneColorSlots)).toEqual(
-      Array.from(first.backboneColorSlots),
+    expect(Array.from(second.modalFieldColorSlots)).toEqual(
+      Array.from(first.modalFieldColorSlots),
     );
-    expect(Array.from(second.detailColorSlots)).toEqual(
-      Array.from(first.detailColorSlots),
+    expect(Array.from(second.modalFieldColorSlots)).toEqual(
+      Array.from(first.modalFieldColorSlots),
     );
   });
 
@@ -2565,8 +2565,8 @@ describe("Spectral Light feature frame outputs", () => {
       status: makeActiveStatus(),
     });
 
-    expect(frame.backboneSlots).toBeInstanceOf(Float32Array);
-    expect(frame.detailSlots).toBeInstanceOf(Float32Array);
+    expect(frame.modalFieldSlots).toBeInstanceOf(Float32Array);
+    expect(frame.modalFieldSlots).toBeInstanceOf(Float32Array);
     expect(frame.debug.workerState).toBe("none");
     expect(frame.debug.hintSource).toBe("none");
   });
@@ -2584,7 +2584,7 @@ describe("Spectral Light feature frame outputs", () => {
       rms: 0.16,
       frameTimeMs: 0,
     });
-    const firstDetailAmplitudes = readModeAmplitudeMap(first.detailSlots);
+    const firstResonantAmplitudes = readModeAmplitudeMap(first.modalFieldSlots);
 
     const second = buildAudioFeatureFrame({
       analysisSnapshot: createSnapshot({
@@ -2602,19 +2602,19 @@ describe("Spectral Light feature frame outputs", () => {
       frameTimeMs: 16,
     });
 
-    let retainedDetailAmplitude = 0;
-    const secondDetailAmplitudes = readModeAmplitudeMap(second.detailSlots);
-    for (const [key] of firstDetailAmplitudes.entries()) {
-      retainedDetailAmplitude += secondDetailAmplitudes.get(key) ?? 0;
+    let retainedResonantAmplitude = 0;
+    const secondResonantAmplitudes = readModeAmplitudeMap(second.modalFieldSlots);
+    for (const [key] of firstResonantAmplitudes.entries()) {
+      retainedResonantAmplitude += secondResonantAmplitudes.get(key) ?? 0;
     }
 
-    const initialDetailAmplitude = Array.from(
-      firstDetailAmplitudes.values(),
+    const initialResonantAmplitude = Array.from(
+      firstResonantAmplitudes.values(),
     ).reduce((sum, value) => sum + value, 0);
-    expect(retainedDetailAmplitude).toBeLessThanOrEqual(
-      initialDetailAmplitude * 3,
+    expect(retainedResonantAmplitude).toBeLessThanOrEqual(
+      initialResonantAmplitude * 3,
     );
-    expect(second.debug.detailSignalAuthoritative).toBe(true);
+    expect(second.debug.resonantSignalAuthoritative).toBe(true);
   });
 
   it("does not let active analysis hints change visible frame signals", () => {
@@ -2818,7 +2818,7 @@ describe("live input noise gate", () => {
 
     expect(frame.debug.liveInputHardSilenceActive).toBe(false);
     expect(frame.debug.liveInputNoiseGateActive).toBe(false);
-    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.01);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.01);
   });
 
   it("holds ambient mic resonance through quiet coherent tails", () => {
@@ -2885,7 +2885,7 @@ describe("live input noise gate", () => {
       expect(frame.debug.liveInputNoiseGateActive).toBe(false);
     }
 
-    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.01);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.01);
 
     const silence = buildLiveInputFrame({
       featureState,
@@ -2977,14 +2977,14 @@ describe("live input noise gate", () => {
     expect(systemFrame.sourceMode).toBe("system");
     expect(systemFrame.debug.analysisSourceUsed).toBe("system");
     expect(systemFrame.debug.micActive).toBe(false);
-    expect(Array.from(systemFrame.backboneSlots)).toEqual(
-      Array.from(fileFrame.backboneSlots),
+    expect(Array.from(systemFrame.modalFieldSlots)).toEqual(
+      Array.from(fileFrame.modalFieldSlots),
     );
-    expect(Array.from(systemFrame.detailSlots)).toEqual(
-      Array.from(fileFrame.detailSlots),
+    expect(Array.from(systemFrame.modalFieldSlots)).toEqual(
+      Array.from(fileFrame.modalFieldSlots),
     );
-    expect(Array.from(systemFrame.modeSlots)).toEqual(
-      Array.from(fileFrame.modeSlots),
+    expect(Array.from(systemFrame.modalFieldSlots)).toEqual(
+      Array.from(fileFrame.modalFieldSlots),
     );
   });
 
@@ -3033,8 +3033,8 @@ describe("live input noise gate", () => {
     expect(frame.debug.modalVisibilityDriveEnergy).toBe(
       frame.debug.modalDriveEnergy,
     );
-    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.025);
-    expect(frame.activeDetailModeCount).toBeGreaterThan(0);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.025);
+    expect(frame.activeModalFieldModeCount).toBeGreaterThan(0);
   });
 
   it("keeps line-feed bowl tails visually eligible between repeated strikes", () => {
@@ -3071,7 +3071,7 @@ describe("live input noise gate", () => {
       if (frameIndex >= 58) {
         tailFrames.push({
           modalVisibilityEnergy: frame.modalVisibilityEnergy,
-          detailAmplitude: sumSlotAmplitudes(frame.detailSlots),
+          resonantAmplitude: sumSlotAmplitudes(frame.modalFieldSlots),
           fieldState: frame.fieldState,
         });
       }
@@ -3081,7 +3081,7 @@ describe("live input noise gate", () => {
       true,
     );
     expect(
-      Math.min(...tailFrames.map(({ detailAmplitude }) => detailAmplitude)),
+      Math.min(...tailFrames.map(({ resonantAmplitude }) => resonantAmplitude)),
     ).toBeGreaterThan(0.006);
     expect(
       Math.min(
@@ -3121,14 +3121,14 @@ describe("live input noise gate", () => {
 
       if ([12, 120, 239].includes(frameIndex)) {
         samples.set(frameIndex, {
-          detailAmplitude: sumSlotAmplitudes(frame.detailSlots),
+          resonantAmplitude: sumSlotAmplitudes(frame.modalFieldSlots),
           modalVisibilityEnergy: frame.modalVisibilityEnergy,
           modalVisibilityRetainedHighQEnergy:
             frame.modalVisibilityRetainedHighQEnergy,
-          activeDetailModeCount: frame.activeDetailModeCount,
+          activeModalFieldModeCount: frame.activeModalFieldModeCount,
           structureSignal: frame.structureSignal,
-          highQDetailModeCount: frame.debug.highQDetailModeCount,
-          highQDetailEnergy: frame.debug.highQDetailEnergy,
+          highQResonantModeCount: frame.debug.highQResonantModeCount,
+          highQResonantEnergy: frame.debug.highQResonantEnergy,
           highQRingSupport: frame.debug.highQRingSupport,
         });
       }
@@ -3139,11 +3139,11 @@ describe("live input noise gate", () => {
     const late = samples.get(239);
 
     expect(frame.fieldState).toBe("active");
-    expect(late.activeDetailModeCount).toBeGreaterThanOrEqual(4);
-    expect(late.highQDetailModeCount).toBeGreaterThanOrEqual(4);
-    expect(late.highQDetailEnergy).toBeGreaterThan(0.035);
+    expect(late.activeModalFieldModeCount).toBeGreaterThanOrEqual(4);
+    expect(late.highQResonantModeCount).toBeGreaterThanOrEqual(4);
+    expect(late.highQResonantEnergy).toBeGreaterThan(0.035);
     expect(late.highQRingSupport).toBeGreaterThan(0.5);
-    expect(late.detailAmplitude).toBeGreaterThan(open.detailAmplitude * 0.35);
+    expect(late.resonantAmplitude).toBeGreaterThan(open.resonantAmplitude * 0.35);
     expect(late.modalVisibilityEnergy).toBeGreaterThan(0.3);
     expect(late.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0.12);
     expect(late.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(
@@ -3189,11 +3189,11 @@ describe("live input noise gate", () => {
     expect(frame.renderAuthorityCut).toBe(false);
     expect(frame.renderAuthority).toBe(true);
     expect(frame.debug.liveInputHardSilenceActive).toBe(false);
-    expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(4);
+    expect(frame.debug.highQResonantModeCount).toBeGreaterThanOrEqual(4);
     expect(frame.debug.highQRingSupport).toBeGreaterThan(0.15);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.16);
-    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.02);
-    expect(frame.activeDetailModeCount).toBeGreaterThanOrEqual(4);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.02);
+    expect(frame.activeModalFieldModeCount).toBeGreaterThanOrEqual(4);
   });
 
   it("keeps lower-level periodic bowl sound-file ring visible after the opening sustain", () => {
@@ -3225,11 +3225,11 @@ describe("live input noise gate", () => {
     }
 
     expect(frame.fieldState).toBe("active");
-    expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(4);
+    expect(frame.debug.highQResonantModeCount).toBeGreaterThanOrEqual(4);
     expect(frame.debug.highQRingSupport).toBeGreaterThan(0.15);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.16);
-    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.02);
-    expect(frame.activeDetailModeCount).toBeGreaterThanOrEqual(4);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.02);
+    expect(frame.activeModalFieldModeCount).toBeGreaterThanOrEqual(4);
   });
 
   for (const scenario of [
@@ -3279,11 +3279,11 @@ describe("live input noise gate", () => {
       }
 
       expect(frame.fieldState).toBe("active");
-      expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(4);
+      expect(frame.debug.highQResonantModeCount).toBeGreaterThanOrEqual(4);
       expect(frame.debug.highQRingSupport).toBeGreaterThan(0.08);
-      expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.003);
+      expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.003);
       expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
-      expect(frame.activeDetailModeCount).toBeGreaterThanOrEqual(4);
+      expect(frame.activeModalFieldModeCount).toBeGreaterThanOrEqual(4);
     });
   }
 
@@ -3331,9 +3331,9 @@ describe("live input noise gate", () => {
       }
 
       expect(frame.fieldState).toBe("active");
-      expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(4);
+      expect(frame.debug.highQResonantModeCount).toBeGreaterThanOrEqual(4);
       expect(frame.debug.highQRingSupport).toBeGreaterThan(0.08);
-      expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.003);
+      expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.003);
       expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
     });
   }
@@ -3382,10 +3382,10 @@ describe("live input noise gate", () => {
       }
 
       expect(frame.fieldState).toBe("active");
-      expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(2);
+      expect(frame.debug.highQResonantModeCount).toBeGreaterThanOrEqual(2);
       expect(frame.debug.highQObservedDrive).toBeGreaterThan(0);
       expect(frame.debug.highQObservedCoherence).toBeGreaterThan(0);
-      expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.003);
+      expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.003);
       expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
     }
   });
@@ -3435,9 +3435,9 @@ describe("live input noise gate", () => {
       }
 
       expect(frame.fieldState).toBe("active");
-      expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(2);
+      expect(frame.debug.highQResonantModeCount).toBeGreaterThanOrEqual(2);
       expect(frame.debug.highQObservedDrive).toBeGreaterThan(0);
-      expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.003);
+      expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.003);
       expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
     }
   });
@@ -3486,12 +3486,12 @@ describe("live input noise gate", () => {
       }
 
       expect(frame.fieldState).toBe("active");
-      expect(frame.debug.lowQBackboneModeCount).toBeGreaterThan(0);
-      expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(2);
-      expect(frame.debug.highQDetailEnergy).toBeGreaterThan(0.003);
-      expect(frame.debug.detailSignalAuthoritativeHighQ).toBe(false);
-      expect(frame.debug.modalResponseDetailEnergy).toBeGreaterThan(0);
-      expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.003);
+      expect(frame.debug.lowQSourceCoupledModeCount).toBeGreaterThan(0);
+      expect(frame.debug.highQResonantModeCount).toBeGreaterThanOrEqual(2);
+      expect(frame.debug.highQResonantEnergy).toBeGreaterThan(0.003);
+      expect(frame.debug.resonantSignalAuthoritativeHighQ).toBe(false);
+      expect(frame.debug.modalResponseEnergy).toBeGreaterThan(0);
+      expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.003);
       expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0.03);
     }
   });
@@ -3529,9 +3529,9 @@ describe("live input noise gate", () => {
       if (frameIndex >= 120) {
         samples.push({
           envelope,
-          detailAmplitude: sumSlotAmplitudes(frame.detailSlots),
+          resonantAmplitude: sumSlotAmplitudes(frame.modalFieldSlots),
           retainedVisibility: frame.modalVisibilityRetainedHighQEnergy ?? 0,
-          highQDetailEnergy: frame.debug.highQDetailEnergy ?? 0,
+          highQResonantEnergy: frame.debug.highQResonantEnergy ?? 0,
         });
       }
     }
@@ -3543,9 +3543,9 @@ describe("live input noise gate", () => {
       sample.envelope > currentHigh.envelope ? sample : currentHigh,
     );
 
-    expect(low.highQDetailEnergy).toBeGreaterThan(0.003);
+    expect(low.highQResonantEnergy).toBeGreaterThan(0.003);
     expect(low.retainedVisibility).toBeGreaterThan(0.03);
-    expect(high.detailAmplitude).toBeGreaterThan(low.detailAmplitude * 1.04);
+    expect(high.resonantAmplitude).toBeGreaterThan(low.resonantAmplitude * 1.02);
   });
 
   it("seeds low-meter bowl strikes into retained tails for line-feed and file sources", () => {
@@ -3595,11 +3595,11 @@ describe("live input noise gate", () => {
       }
 
       expect(frame.fieldState).toBe("active");
-      expect(frame.debug.highQDetailModeCount).toBeGreaterThanOrEqual(2);
+      expect(frame.debug.highQResonantModeCount).toBeGreaterThanOrEqual(2);
       expect(frame.debug.highQRingSupport).toBeGreaterThan(0.08);
-      expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.003);
+      expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.003);
       expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
-      expect(frame.activeDetailModeCount).toBeGreaterThanOrEqual(2);
+      expect(frame.activeModalFieldModeCount).toBeGreaterThanOrEqual(2);
     }
   });
 
@@ -3636,7 +3636,7 @@ describe("live input noise gate", () => {
     }
 
     expect(frame.fieldState).toBe("active");
-    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.003);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.003);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.04);
   });
 
@@ -3682,10 +3682,10 @@ describe("live input noise gate", () => {
 
     expect(frame.fieldState).toBe("idle");
     expect(
-      sumSlotAmplitudes(frame.backboneSlots) +
-        sumSlotAmplitudes(frame.detailSlots),
+      sumSlotAmplitudes(frame.modalFieldSlots) +
+        sumSlotAmplitudes(frame.modalFieldSlots),
     ).toBe(0);
-    expect(sumSlotAmplitudes(frame.detailSlots)).toBe(0);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBe(0);
     expect(frame.modalVisibilityEnergy).toBe(0);
     expect(frame.debug.modalResponseEnergy).toBeGreaterThan(0.2);
     expect(frame.debug.modalResponseRenderEnergy).toBe(0);
@@ -3721,8 +3721,8 @@ describe("live input noise gate", () => {
       frameTimeMs: 9000,
     });
     const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
-    const backboneSlots = makeModeSlots([]);
-    const detailSlots = makeModeSlots([
+    const sourceCoupledSlots = makeModeSlots([]);
+    const resonantSlots = makeModeSlots([
       [2, 1, 3, 0.03],
       [3, 2, 5, 0.028],
       [5, 3, 8, 0.026],
@@ -3733,14 +3733,14 @@ describe("live input noise gate", () => {
       [19, 13, 23, 0.016],
     ]);
     const structuralState = {
-      backboneSlotsSource: backboneSlots,
-      detailSlotsSource: detailSlots,
-      referenceBackboneSlotsSource: backboneSlots,
-      referenceDetailSlotsSource: detailSlots,
-      signalBackboneSlotsSource: backboneSlots,
-      signalDetailSlotsSource: detailSlots,
-      signalReferenceBackboneSlotsSource: backboneSlots,
-      signalReferenceDetailSlotsSource: detailSlots,
+      sourceCoupledSlotsSource: sourceCoupledSlots,
+      resonantSlotsSource: resonantSlots,
+      referenceSourceCoupledSlotsSource: sourceCoupledSlots,
+      referenceResonantSlotsSource: resonantSlots,
+      signalSourceCoupledSlotsSource: sourceCoupledSlots,
+      signalResonantSlotsSource: resonantSlots,
+      signalReferenceSourceCoupledSlotsSource: sourceCoupledSlots,
+      signalReferenceResonantSlotsSource: resonantSlots,
       dominantFrequency: 196,
       dominantAmplitude: 0.34,
       analysisEngine: "modal-excitation",
@@ -3749,15 +3749,15 @@ describe("live input noise gate", () => {
       sourceMode: "file",
       structuralMetrics: {
         distributedExcitation: 0.08,
-        highQDetailModeCount: 8,
-        highQDetailEnergy: 0.18,
+        highQResonantModeCount: 8,
+        highQResonantEnergy: 0.18,
         highQRingSupport: 0,
         modalPersistence: 0.035,
         modalDriveEnergy: 0.01,
         modeCoherence: 0.46,
-        detailSignalAuthoritative: false,
-        detailSignalAuthoritativeReason: "none",
-        detailSignalAuthoritativeHighQ: false,
+        resonantSignalAuthoritative: false,
+        resonantSignalAuthoritativeReason: "none",
+        resonantSignalAuthoritativeHighQ: false,
       },
     };
     const analysisResult = buildCurrentAudioFeatureAnalysisResult({
@@ -3772,8 +3772,8 @@ describe("live input noise gate", () => {
     });
 
     expect(frame.fieldState).toBe("active");
-    expect(frame.activeDetailModeCount).toBe(8);
-    expect(frame.debug.highQDetailModeCount).toBe(8);
+    expect(frame.activeModalFieldModeCount).toBe(8);
+    expect(frame.debug.highQResonantModeCount).toBe(8);
     expect(frame.debug.highQRingSupport).toBe(0);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0.08);
     expect(frame.modalVisibilityEnergy).toBeLessThan(
@@ -3807,8 +3807,8 @@ describe("live input noise gate", () => {
       frameTimeMs: 12000,
     });
     const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
-    const backboneSlots = makeModeSlots([]);
-    const detailSlots = makeModeSlots([
+    const sourceCoupledSlots = makeModeSlots([]);
+    const resonantSlots = makeModeSlots([
       [2, 1, 3, 0.012],
       [3, 2, 5, 0.01],
       [5, 3, 8, 0.009],
@@ -3819,14 +3819,14 @@ describe("live input noise gate", () => {
       [19, 13, 23, 0.004],
     ]);
     const structuralState = {
-      backboneSlotsSource: backboneSlots,
-      detailSlotsSource: detailSlots,
-      referenceBackboneSlotsSource: backboneSlots,
-      referenceDetailSlotsSource: detailSlots,
-      signalBackboneSlotsSource: backboneSlots,
-      signalDetailSlotsSource: detailSlots,
-      signalReferenceBackboneSlotsSource: backboneSlots,
-      signalReferenceDetailSlotsSource: detailSlots,
+      sourceCoupledSlotsSource: sourceCoupledSlots,
+      resonantSlotsSource: resonantSlots,
+      referenceSourceCoupledSlotsSource: sourceCoupledSlots,
+      referenceResonantSlotsSource: resonantSlots,
+      signalSourceCoupledSlotsSource: sourceCoupledSlots,
+      signalResonantSlotsSource: resonantSlots,
+      signalReferenceSourceCoupledSlotsSource: sourceCoupledSlots,
+      signalReferenceResonantSlotsSource: resonantSlots,
       dominantFrequency: 196,
       dominantAmplitude: 0.12,
       analysisEngine: "modal-excitation",
@@ -3836,16 +3836,16 @@ describe("live input noise gate", () => {
       structuralMetrics: {
         distributedExcitation: 0.06,
         observedModalModeCount: 8,
-        highQDetailModeCount: 8,
-        highQDetailEnergy: 0.035,
+        highQResonantModeCount: 8,
+        highQResonantEnergy: 0.035,
         highQRingSupport: 0.4,
         highQObservedCoherence: 0.76,
         modalPersistence: 0.16,
         modalDriveEnergy: 0.012,
         modeCoherence: 0.68,
-        detailSignalAuthoritative: true,
-        detailSignalAuthoritativeReason: "high-q",
-        detailSignalAuthoritativeHighQ: true,
+        resonantSignalAuthoritative: true,
+        resonantSignalAuthoritativeReason: "high-q",
+        resonantSignalAuthoritativeHighQ: true,
       },
     };
     const analysisResult = buildCurrentAudioFeatureAnalysisResult({
@@ -3860,7 +3860,7 @@ describe("live input noise gate", () => {
     });
 
     expect(frame.fieldState).toBe("active");
-    expect(frame.debug.highQDetailEnergy).toBe(0.035);
+    expect(frame.debug.highQResonantEnergy).toBe(0.035);
     expect(frame.debug.highQRingSupport).toBe(0.4);
     expect(frame.debug.highQObservedCoherence).toBe(0.76);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0.035);
@@ -3897,22 +3897,22 @@ describe("live input noise gate", () => {
       frameTimeMs: 16000,
     });
     const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
-    const backboneSlots = makeModeSlots([]);
-    const detailSlots = makeModeSlots([
+    const sourceCoupledSlots = makeModeSlots([]);
+    const resonantSlots = makeModeSlots([
       [2, 1, 3, 0.012],
       [3, 2, 5, 0.01],
       [5, 3, 8, 0.008],
       [7, 4, 11, 0.006],
     ]);
     const structuralState = {
-      backboneSlotsSource: backboneSlots,
-      detailSlotsSource: detailSlots,
-      referenceBackboneSlotsSource: backboneSlots,
-      referenceDetailSlotsSource: detailSlots,
-      signalBackboneSlotsSource: backboneSlots,
-      signalDetailSlotsSource: detailSlots,
-      signalReferenceBackboneSlotsSource: backboneSlots,
-      signalReferenceDetailSlotsSource: detailSlots,
+      sourceCoupledSlotsSource: sourceCoupledSlots,
+      resonantSlotsSource: resonantSlots,
+      referenceSourceCoupledSlotsSource: sourceCoupledSlots,
+      referenceResonantSlotsSource: resonantSlots,
+      signalSourceCoupledSlotsSource: sourceCoupledSlots,
+      signalResonantSlotsSource: resonantSlots,
+      signalReferenceSourceCoupledSlotsSource: sourceCoupledSlots,
+      signalReferenceResonantSlotsSource: resonantSlots,
       dominantFrequency: 196,
       dominantAmplitude: 0.08,
       analysisEngine: "modal-excitation",
@@ -3922,16 +3922,16 @@ describe("live input noise gate", () => {
       structuralMetrics: {
         distributedExcitation: 0.05,
         observedModalModeCount: 4,
-        highQDetailModeCount: 4,
-        highQDetailEnergy: 0.028,
+        highQResonantModeCount: 4,
+        highQResonantEnergy: 0.028,
         highQRingSupport: 0.32,
         highQObservedCoherence: 0.74,
         modalPersistence: 0.024,
         modalDriveEnergy: 0.006,
         modeCoherence: 0.62,
-        detailSignalAuthoritative: true,
-        detailSignalAuthoritativeReason: "high-q",
-        detailSignalAuthoritativeHighQ: true,
+        resonantSignalAuthoritative: true,
+        resonantSignalAuthoritativeReason: "high-q",
+        resonantSignalAuthoritativeHighQ: true,
       },
     };
     const analysisResult = buildCurrentAudioFeatureAnalysisResult({
@@ -3946,7 +3946,7 @@ describe("live input noise gate", () => {
     });
 
     expect(frame.fieldState).toBe("active");
-    expect(frame.debug.highQDetailEnergy).toBe(0.028);
+    expect(frame.debug.highQResonantEnergy).toBe(0.028);
     expect(frame.debug.highQRingSupport).toBe(0.32);
     expect(frame.debug.modalPersistence).toBeLessThan(0.03);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBeGreaterThan(0.03);
@@ -3980,7 +3980,7 @@ describe("live input noise gate", () => {
     const frame = composeManualStructuralFrame({
       preparedInputs,
       structuralState: makeManualStructuralState({
-        detailSlots: makeModeSlots([
+        resonantSlots: makeModeSlots([
           [2, 1, 3, 0.0032],
           [3, 2, 5, 0.0026],
           [5, 3, 8, 0.002],
@@ -3990,17 +3990,17 @@ describe("live input noise gate", () => {
         structuralMetrics: {
           distributedExcitation: 0.03,
           observedModalModeCount: 4,
-          highQDetailModeCount: 4,
-          highQDetailEnergy: 0.012,
+          highQResonantModeCount: 4,
+          highQResonantEnergy: 0.012,
           highQRingSupport: 0.22,
           highQObservedCoherence: 0.78,
           highQObservedSnr: 0.64,
           modalPersistence: 0.018,
           modalDriveEnergy: 0.004,
           modeCoherence: 0.58,
-          detailSignalAuthoritative: true,
-          detailSignalAuthoritativeReason: "high-q",
-          detailSignalAuthoritativeHighQ: true,
+          resonantSignalAuthoritative: true,
+          resonantSignalAuthoritativeReason: "high-q",
+          resonantSignalAuthoritativeHighQ: true,
         },
       }),
     });
@@ -4045,7 +4045,7 @@ describe("live input noise gate", () => {
       status: makeSystemStatus(),
       frameTimeMs: 22000,
     });
-    const denseDetailSlots = makeModeSlots([
+    const denseResonantSlots = makeModeSlots([
       [12, 18, 22, 0.31],
       [5, 18, 18, 0.3],
       [4, 9, 24, 0.29],
@@ -4055,7 +4055,7 @@ describe("live input noise gate", () => {
       [4, 10, 19, 0.25],
       [3, 12, 18, 0.24],
     ]);
-    const denseBackboneSlots = makeModeSlots([
+    const denseSourceCoupledSlots = makeModeSlots([
       [1, 1, 1, 0.39],
       [1, 1, 3, 0.26],
       [1, 1, 2, 0.25],
@@ -4066,20 +4066,20 @@ describe("live input noise gate", () => {
     const frame = composeManualStructuralFrame({
       preparedInputs,
       structuralState: makeManualStructuralState({
-        backboneSlots: denseBackboneSlots,
-        detailSlots: denseDetailSlots,
+        sourceCoupledSlots: denseSourceCoupledSlots,
+        resonantSlots: denseResonantSlots,
         dominantFrequency: 427,
         dominantAmplitude: 0.4,
         sourceMode: "file",
         structuralMetrics: {
           distributedExcitation: 0.62,
           observedModalModeCount: 16,
-          lowQBackboneModeCount: 8,
-          lowQBackboneEnergy: 1,
+          lowQSourceCoupledModeCount: 8,
+          lowQSourceCoupledEnergy: 1,
           lowQObservedCoherence: 0.47,
           lowQObservedSnr: 0.31,
-          highQDetailModeCount: 8,
-          highQDetailEnergy: 1,
+          highQResonantModeCount: 8,
+          highQResonantEnergy: 1,
           highQRingSupport: 1,
           highQObservedDrive: 0,
           highQObservedSnr: 0.2,
@@ -4088,9 +4088,9 @@ describe("live input noise gate", () => {
           modalPersistence: 0,
           modalDriveEnergy: 0.16,
           modeCoherence: 0.52,
-          detailSignalAuthoritative: true,
-          detailSignalAuthoritativeReason: "high-q",
-          detailSignalAuthoritativeHighQ: true,
+          resonantSignalAuthoritative: true,
+          resonantSignalAuthoritativeReason: "high-q",
+          resonantSignalAuthoritativeHighQ: true,
         },
       }),
     });
@@ -4102,7 +4102,7 @@ describe("live input noise gate", () => {
     expect(frame.modalVisibilityRetainedHighQEnergy).toBeLessThan(0.02);
     expect(frame.modalObserverVisibilityEnergy).toBeLessThan(0.16);
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.18);
-    expect(frame.activeDetailModeCount).toBeGreaterThan(0);
+    expect(frame.activeModalFieldModeCount).toBeGreaterThan(0);
   });
 
   it("does not let dense music periodicity override weak high-Q evidence", () => {
@@ -4111,7 +4111,7 @@ describe("live input noise gate", () => {
       highQObservedCoherence: 0.548,
       highQObservedDrive: 0,
       highQRingSupport: 1,
-      highQDetailEnergy: 1,
+      highQResonantEnergy: 1,
       distributedExcitation: 0.627,
       periodicity: 0.983,
       nonZeroFFTBinCount: 1345,
@@ -4129,7 +4129,7 @@ describe("live input noise gate", () => {
       highQObservedCoherence: 0.86,
       highQObservedDrive: 0,
       highQRingSupport: 1,
-      highQDetailEnergy: 1,
+      highQResonantEnergy: 1,
       distributedExcitation: 0.63,
       periodicity: 0.98,
       nonZeroFFTBinCount: 1345,
@@ -4170,7 +4170,7 @@ describe("live input noise gate", () => {
       status: makeSystemStatus(),
       frameTimeMs: 24000,
     });
-    const denseDetailSlots = makeModeSlots([
+    const denseResonantSlots = makeModeSlots([
       [2, 3, 15, 0.25],
       [4, 6, 30, 0.23],
       [2, 8, 13, 0.22],
@@ -4178,7 +4178,7 @@ describe("live input noise gate", () => {
       [12, 18, 22, 0.2],
       [6, 9, 11, 0.19],
     ]);
-    const denseBackboneSlots = makeModeSlots([
+    const denseSourceCoupledSlots = makeModeSlots([
       [1, 1, 3, 0.26],
       [1, 1, 1, 0.21],
       [2, 4, 10, 0.18],
@@ -4187,15 +4187,15 @@ describe("live input noise gate", () => {
       [1, 1, 2, 0.13],
     ]);
     const structuralState = makeManualStructuralState({
-      backboneSlots: denseBackboneSlots,
-      detailSlots: denseDetailSlots,
+      sourceCoupledSlots: denseSourceCoupledSlots,
+      resonantSlots: denseResonantSlots,
       dominantFrequency: 818,
       dominantAmplitude: 0.4,
       sourceMode: "file",
       structuralMetrics: {
         distributedExcitation: 0.627,
-        highQDetailModeCount: 8,
-        highQDetailEnergy: 1,
+        highQResonantModeCount: 8,
+        highQResonantEnergy: 1,
         highQRingSupport: 1,
         highQObservedDrive: 0,
         highQObservedSnr: 0.175,
@@ -4203,8 +4203,8 @@ describe("live input noise gate", () => {
         highQObservedNoiseFloor: 0.347,
         highQSparseResonatorAuthority: 1,
         highQRetainedVisibilityRejected: false,
-        lowQBackboneModeCount: 8,
-        lowQBackboneEnergy: 1,
+        lowQSourceCoupledModeCount: 8,
+        lowQSourceCoupledEnergy: 1,
         lowQObservedCoherence: 0.5,
         lowQObservedSnr: 0.2,
         modalPersistence: 0,
@@ -4212,7 +4212,7 @@ describe("live input noise gate", () => {
         modeCoherence: 0.49,
       },
     });
-    structuralState.backboneStateSource = {
+    structuralState.sourceCoupledStateSource = {
       candidatePeriodicity: 0.983,
     };
 
@@ -4255,8 +4255,8 @@ describe("live input noise gate", () => {
     const frame = composeManualStructuralFrame({
       preparedInputs,
       structuralState: makeManualStructuralState({
-        backboneSlots: makeModeSlots([[2, 2, 3, 0.001]]),
-        detailSlots: makeModeSlots([
+        sourceCoupledSlots: makeModeSlots([[2, 2, 3, 0.001]]),
+        resonantSlots: makeModeSlots([
           [2, 1, 3, 0.001],
           [3, 2, 5, 0.0008],
           [5, 3, 8, 0.0006],
@@ -4264,11 +4264,11 @@ describe("live input noise gate", () => {
         dominantAmplitude: 0.06,
         structuralMetrics: {
           observedModalModeCount: 4,
-          lowQBackboneModeCount: 1,
-          lowQBackboneEnergy: 0.04,
+          lowQSourceCoupledModeCount: 1,
+          lowQSourceCoupledEnergy: 0.04,
           lowQObservedCoherence: 0.6,
-          highQDetailModeCount: 3,
-          highQDetailEnergy: 0.01,
+          highQResonantModeCount: 3,
+          highQResonantEnergy: 0.01,
           highQRingSupport: 0.24,
           highQObservedCoherence: 0.82,
           highQObservedSnr: 0.7,
@@ -4279,13 +4279,13 @@ describe("live input noise gate", () => {
       }),
     });
 
-    expect(findModeAmplitude(frame.detailSlots, [2, 1, 3])).toBeGreaterThan(
+    expect(findModeAmplitude(frame.modalFieldSlots, [2, 1, 3])).toBeGreaterThan(
       0.001,
     );
-    expect(findModeAmplitude(frame.detailSlots, [3, 2, 5])).toBeGreaterThan(
+    expect(findModeAmplitude(frame.modalFieldSlots, [3, 2, 5])).toBeGreaterThan(
       0.0008,
     );
-    expect(findModeAmplitude(frame.detailSlots, [4, 4, 4])).toBe(0);
+    expect(findModeAmplitude(frame.modalFieldSlots, [4, 4, 4])).toBe(0);
     expect(frame.debug.modalObserverTopologyFloor).toBeGreaterThan(0);
     expect(frame.debug.highQObserverVisibilityEnergy).toBeGreaterThan(0);
   });
@@ -4314,22 +4314,22 @@ describe("live input noise gate", () => {
       status: makeActiveStatus(),
       frameTimeMs: 17200,
     });
-    const detailSlots = makeModeSlots([
+    const resonantSlots = makeModeSlots([
       [2, 1, 3, 0.0032],
       [3, 2, 5, 0.0026],
     ]);
     const frame = composeManualStructuralFrame({
       preparedInputs,
       structuralState: makeManualStructuralState({
-        detailSlots,
-        detailPhaseSlots: makePhaseSlots([
+        resonantSlots,
+        resonantPhaseSlots: makePhaseSlots([
           [0.2, 0.12, 0.8, 0.54],
           [-0.4, -0.08, 0.72, 0.42],
         ]),
         structuralMetrics: {
           observedModalModeCount: 2,
-          highQDetailModeCount: 2,
-          highQDetailEnergy: 0.012,
+          highQResonantModeCount: 2,
+          highQResonantEnergy: 0.012,
           highQRingSupport: 0.24,
           highQObservedCoherence: 0.82,
           highQObservedSnr: 0.7,
@@ -4343,12 +4343,12 @@ describe("live input noise gate", () => {
       }),
     });
 
-    expect(countActiveSlots(frame.detailSlots)).toBe(2);
-    expect(countAuthoritativePhaseSlots(frame.detailPhaseSlots)).toBe(2);
-    expect(frame.detailPhaseSlots[0]).toBeCloseTo(0.2);
-    expect(frame.detailPhaseSlots[3]).toBeCloseTo(0.54);
-    expect(frame.detailPhaseSlots[4]).toBeCloseTo(-0.4);
-    expect(frame.activeDetailModeCount).toBe(2);
+    expect(countActiveSlots(frame.modalFieldSlots)).toBe(2);
+    expect(countAuthoritativePhaseSlots(frame.modalFieldPhaseSlots)).toBe(2);
+    expect(frame.modalFieldPhaseSlots[0]).toBeCloseTo(0.2);
+    expect(frame.modalFieldPhaseSlots[3]).toBeCloseTo(0.54);
+    expect(frame.modalFieldPhaseSlots[4]).toBeCloseTo(-0.4);
+    expect(frame.activeModalFieldModeCount).toBe(2);
     expect(frame.debug.modalPhaseAuthority).toBeGreaterThan(0);
     expect(frame.debug.highQPhaseAuthority).toBeGreaterThan(0);
   });
@@ -4374,14 +4374,14 @@ describe("live input noise gate", () => {
     const frame = composeManualStructuralFrame({
       preparedInputs,
       structuralState: makeManualStructuralState({
-        backboneSlots: emptySlots,
-        detailSlots: emptySlots,
+        sourceCoupledSlots: emptySlots,
+        resonantSlots: emptySlots,
         dominantAmplitude: 0,
         sourceMode: "live",
         structuralMetrics: {
           observedModalModeCount: 4,
-          highQDetailModeCount: 4,
-          highQDetailEnergy: 0.04,
+          highQResonantModeCount: 4,
+          highQResonantEnergy: 0.04,
           highQRingSupport: 0.4,
           highQObservedCoherence: 0.8,
           modalPersistence: 0.2,
@@ -4393,7 +4393,7 @@ describe("live input noise gate", () => {
 
     expect(frame.modalObserverVisibilityEnergy).toBe(0);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBe(0);
-    expect(sumSlotAmplitudes(frame.detailSlots)).toBe(0);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBe(0);
     expect(frame.debug.modalObserverTopologyFloor).toBe(0);
   });
 
@@ -4434,8 +4434,8 @@ describe("live input noise gate", () => {
     }
 
     expect(frame.modalVisibilityEnergy).toBeGreaterThan(0.12);
-    expect(sumSlotAmplitudes(frame.detailSlots)).toBeGreaterThan(0.02);
-    expect(frame.activeDetailModeCount).toBeGreaterThan(0);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.02);
+    expect(frame.activeModalFieldModeCount).toBeGreaterThan(0);
   });
 
   it("reports low-Q observer energy without retained high-Q ridge visibility", () => {
@@ -4457,20 +4457,20 @@ describe("live input noise gate", () => {
       frameTimeMs: 96,
     });
     const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
-    const backboneSlots = makeModeSlots([
+    const sourceCoupledSlots = makeModeSlots([
       [2, 2, 3, 0.18],
       [3, 2, 4, 0.14],
     ]);
-    const emptyDetailSlots = new Float32Array(AUDIO_SLOT_CAPACITY * 4);
+    const emptyResonantSlots = new Float32Array(AUDIO_SLOT_CAPACITY * 4);
     const structuralState = {
-      backboneSlotsSource: backboneSlots,
-      detailSlotsSource: emptyDetailSlots,
-      referenceBackboneSlotsSource: backboneSlots,
-      referenceDetailSlotsSource: emptyDetailSlots,
-      signalBackboneSlotsSource: backboneSlots,
-      signalDetailSlotsSource: emptyDetailSlots,
-      signalReferenceBackboneSlotsSource: backboneSlots,
-      signalReferenceDetailSlotsSource: emptyDetailSlots,
+      sourceCoupledSlotsSource: sourceCoupledSlots,
+      resonantSlotsSource: emptyResonantSlots,
+      referenceSourceCoupledSlotsSource: sourceCoupledSlots,
+      referenceResonantSlotsSource: emptyResonantSlots,
+      signalSourceCoupledSlotsSource: sourceCoupledSlots,
+      signalResonantSlotsSource: emptyResonantSlots,
+      signalReferenceSourceCoupledSlotsSource: sourceCoupledSlots,
+      signalReferenceResonantSlotsSource: emptyResonantSlots,
       dominantFrequency: 550,
       dominantAmplitude: 0.18,
       analysisEngine: "modal-excitation",
@@ -4479,13 +4479,13 @@ describe("live input noise gate", () => {
       sourceMode: "file",
       structuralMetrics: {
         observedModalModeCount: 2,
-        lowQBackboneModeCount: 2,
-        lowQBackboneEnergy: 0.32,
+        lowQSourceCoupledModeCount: 2,
+        lowQSourceCoupledEnergy: 0.32,
         lowQObservedDrive: 0.12,
         lowQObservedSnr: 0.5,
         lowQObservedCoherence: 0.82,
-        highQDetailModeCount: 0,
-        highQDetailEnergy: 0,
+        highQResonantModeCount: 0,
+        highQResonantEnergy: 0,
         highQRingSupport: 0,
         modalPersistence: 0.3,
         modalDriveEnergy: 0.12,
@@ -4505,14 +4505,14 @@ describe("live input noise gate", () => {
     });
 
     expect(frame.fieldState).toBe("active");
-    expect(frame.activeBackboneModeCount).toBeGreaterThan(0);
+    expect(frame.activeModalFieldModeCount).toBeGreaterThan(0);
     expect(frame.debug.observedModalModeCount).toBe(2);
-    expect(frame.debug.lowQBackboneModeCount).toBe(2);
-    expect(frame.debug.lowQBackboneEnergy).toBe(0.32);
+    expect(frame.debug.lowQSourceCoupledModeCount).toBe(2);
+    expect(frame.debug.lowQSourceCoupledEnergy).toBe(0.32);
     expect(frame.debug.lowQObservedCoherence).toBe(0.82);
     expect(frame.modalVisibilityRetainedHighQEnergy).toBe(0);
     expect(frame.debug.modalVisibilityRetainedHighQEnergy).toBe(0);
-    expect(frame.debug.highQDetailEnergy).toBe(0);
+    expect(frame.debug.highQResonantEnergy).toBe(0);
   });
 
   it("keeps loopback-classified live input structurally active", () => {
@@ -4542,7 +4542,7 @@ describe("live input noise gate", () => {
     expect(frame.debug.liveInputPolicy).toBe("line-feed");
     expect(frame.debug.analysisEngine).not.toBe("vocal");
     expect(
-      frame.activeBackboneModeCount + frame.activeDetailModeCount,
+      frame.activeModalFieldModeCount + frame.activeModalFieldModeCount,
     ).toBeGreaterThan(0);
     expect(frame.debug.dominantFrequency).toBeGreaterThan(0);
     expect(frame.structureSignal).toBeGreaterThan(0);
@@ -4565,8 +4565,8 @@ describe("live input noise gate", () => {
       status,
       frameTimeMs: 16,
     });
-    const firstBackboneTargets = featureState.analysis.zeroBackboneTargetSlots;
-    const firstDetailTargets = featureState.analysis.zeroDetailTargetSlots;
+    const firstSourceCoupledTargets = featureState.analysis.zeroSourceCoupledTargetSlots;
+    const firstResonantTargets = featureState.analysis.zeroResonantTargetSlots;
 
     prepareAudioFeatureFrameInputs({
       analysisSnapshot,
@@ -4576,11 +4576,11 @@ describe("live input noise gate", () => {
       frameTimeMs: 32,
     });
 
-    expect(featureState.analysis.zeroBackboneTargetSlots).toBe(
-      firstBackboneTargets,
+    expect(featureState.analysis.zeroSourceCoupledTargetSlots).toBe(
+      firstSourceCoupledTargets,
     );
-    expect(featureState.analysis.zeroDetailTargetSlots).toBe(
-      firstDetailTargets,
+    expect(featureState.analysis.zeroResonantTargetSlots).toBe(
+      firstResonantTargets,
     );
 
     featureState.capacity = 2;
@@ -4592,16 +4592,16 @@ describe("live input noise gate", () => {
       frameTimeMs: 48,
     });
 
-    expect(featureState.analysis.zeroBackboneTargetSlots).not.toBe(
-      firstBackboneTargets,
+    expect(featureState.analysis.zeroSourceCoupledTargetSlots).not.toBe(
+      firstSourceCoupledTargets,
     );
-    expect(featureState.analysis.zeroDetailTargetSlots).not.toBe(
-      firstDetailTargets,
+    expect(featureState.analysis.zeroResonantTargetSlots).not.toBe(
+      firstResonantTargets,
     );
-    expect(featureState.analysis.zeroBackboneTargetSlots.length).toBe(
+    expect(featureState.analysis.zeroSourceCoupledTargetSlots.length).toBe(
       Math.min(2, AUDIO_SLOT_CAPACITY) * 4,
     );
-    expect(featureState.analysis.zeroDetailTargetSlots.length).toBe(
+    expect(featureState.analysis.zeroResonantTargetSlots.length).toBe(
       Math.min(2, AUDIO_SLOT_CAPACITY) * 4,
     );
   });
@@ -4624,10 +4624,10 @@ describe("live input noise gate", () => {
       status,
       frameTimeMs: 16,
     });
-    const firstBackboneTargetSlots =
-      featureState.analysis.nonAcousticBackboneTarget.slots;
-    const firstDetailTargetSlots =
-      featureState.analysis.nonAcousticDetailTarget.slots;
+    const firstSourceCoupledTargetSlots =
+      featureState.analysis.nonAcousticSourceCoupledTarget.slots;
+    const firstResonantTargetSlots =
+      featureState.analysis.nonAcousticResonantTarget.slots;
     const firstPeakDriverScratchSlots =
       featureState.analysis.nonAcousticPeakDriverScratch.slots;
 
@@ -4639,11 +4639,11 @@ describe("live input noise gate", () => {
       frameTimeMs: 32,
     });
 
-    expect(featureState.analysis.nonAcousticBackboneTarget.slots).toBe(
-      firstBackboneTargetSlots,
+    expect(featureState.analysis.nonAcousticSourceCoupledTarget.slots).toBe(
+      firstSourceCoupledTargetSlots,
     );
-    expect(featureState.analysis.nonAcousticDetailTarget.slots).toBe(
-      firstDetailTargetSlots,
+    expect(featureState.analysis.nonAcousticResonantTarget.slots).toBe(
+      firstResonantTargetSlots,
     );
     expect(featureState.analysis.nonAcousticPeakDriverScratch.slots).toBe(
       firstPeakDriverScratchSlots,
@@ -4658,19 +4658,19 @@ describe("live input noise gate", () => {
       frameTimeMs: 48,
     });
 
-    expect(featureState.analysis.nonAcousticBackboneTarget.slots).not.toBe(
-      firstBackboneTargetSlots,
+    expect(featureState.analysis.nonAcousticSourceCoupledTarget.slots).not.toBe(
+      firstSourceCoupledTargetSlots,
     );
-    expect(featureState.analysis.nonAcousticDetailTarget.slots).not.toBe(
-      firstDetailTargetSlots,
+    expect(featureState.analysis.nonAcousticResonantTarget.slots).not.toBe(
+      firstResonantTargetSlots,
     );
     expect(featureState.analysis.nonAcousticPeakDriverScratch.slots).not.toBe(
       firstPeakDriverScratchSlots,
     );
-    expect(featureState.analysis.nonAcousticBackboneTarget.slots.length).toBe(
+    expect(featureState.analysis.nonAcousticSourceCoupledTarget.slots.length).toBe(
       Math.min(2, AUDIO_SLOT_CAPACITY) * 4,
     );
-    expect(featureState.analysis.nonAcousticDetailTarget.slots.length).toBe(
+    expect(featureState.analysis.nonAcousticResonantTarget.slots.length).toBe(
       Math.min(2, AUDIO_SLOT_CAPACITY) * 4,
     );
     expect(
@@ -4702,10 +4702,10 @@ describe("live input noise gate", () => {
       status,
       frameTimeMs: 16,
     });
-    const firstBackboneTargetSlots =
-      featureState.analysis.acousticBackboneTarget.slots;
-    const firstDetailTargetSlots =
-      featureState.analysis.acousticDetailTarget.slots;
+    const firstSourceCoupledTargetSlots =
+      featureState.analysis.acousticSourceCoupledTarget.slots;
+    const firstResonantTargetSlots =
+      featureState.analysis.acousticResonantTarget.slots;
 
     prepareAudioFeatureFrameInputs({
       analysisSnapshot,
@@ -4715,11 +4715,11 @@ describe("live input noise gate", () => {
       frameTimeMs: 32,
     });
 
-    expect(featureState.analysis.acousticBackboneTarget.slots).toBe(
-      firstBackboneTargetSlots,
+    expect(featureState.analysis.acousticSourceCoupledTarget.slots).toBe(
+      firstSourceCoupledTargetSlots,
     );
-    expect(featureState.analysis.acousticDetailTarget.slots).toBe(
-      firstDetailTargetSlots,
+    expect(featureState.analysis.acousticResonantTarget.slots).toBe(
+      firstResonantTargetSlots,
     );
 
     featureState.capacity = 2;
@@ -4731,16 +4731,16 @@ describe("live input noise gate", () => {
       frameTimeMs: 48,
     });
 
-    expect(featureState.analysis.acousticBackboneTarget.slots).not.toBe(
-      firstBackboneTargetSlots,
+    expect(featureState.analysis.acousticSourceCoupledTarget.slots).not.toBe(
+      firstSourceCoupledTargetSlots,
     );
-    expect(featureState.analysis.acousticDetailTarget.slots).not.toBe(
-      firstDetailTargetSlots,
+    expect(featureState.analysis.acousticResonantTarget.slots).not.toBe(
+      firstResonantTargetSlots,
     );
-    expect(featureState.analysis.acousticBackboneTarget.slots.length).toBe(
+    expect(featureState.analysis.acousticSourceCoupledTarget.slots.length).toBe(
       Math.min(2, AUDIO_SLOT_CAPACITY) * 4,
     );
-    expect(featureState.analysis.acousticDetailTarget.slots.length).toBe(
+    expect(featureState.analysis.acousticResonantTarget.slots.length).toBe(
       Math.min(2, AUDIO_SLOT_CAPACITY) * 4,
     );
   });
@@ -5001,7 +5001,7 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       status: makeActiveStatus(),
     });
 
-    expect(maxSlotAmplitude(frame.backboneSlots)).toBeLessThan(0.1);
+    expect(maxSlotAmplitude(frame.modalFieldSlots)).toBeLessThan(0.1);
     expect(frame.debug.micFftNormGain).toBe(1);
     expect(frame.debug.preModalFftPeak).toBeCloseTo(0.05, 6);
   });
@@ -5052,19 +5052,19 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       frameTimeMs: 1260,
     });
 
-    const micBackbone = maxSlotAmplitude(micFrame.backboneSlots);
-    const fileBackbone = maxSlotAmplitude(fileFrame.backboneSlots);
-    const micDetail = maxSlotAmplitude(micFrame.detailSlots);
-    const fileDetail = maxSlotAmplitude(fileFrame.detailSlots);
+    const micSourceCoupled = maxSlotAmplitude(micFrame.modalFieldSlots);
+    const fileSourceCoupled = maxSlotAmplitude(fileFrame.modalFieldSlots);
+    const micResonant = maxSlotAmplitude(micFrame.modalFieldSlots);
+    const fileResonant = maxSlotAmplitude(fileFrame.modalFieldSlots);
 
-    expect(micBackbone).toBeGreaterThan(0);
-    expect(fileBackbone).toBeGreaterThan(0);
-    expect(micDetail).toBeGreaterThan(0);
-    expect(fileDetail).toBeGreaterThan(0);
-    expect(micDetail / fileDetail).toBeGreaterThanOrEqual(0.5);
-    expect(micDetail / fileDetail).toBeLessThanOrEqual(2.6);
-    expect(micBackbone / fileBackbone).toBeGreaterThanOrEqual(0.8);
-    expect(micBackbone / fileBackbone).toBeLessThanOrEqual(2.7);
+    expect(micSourceCoupled).toBeGreaterThan(0);
+    expect(fileSourceCoupled).toBeGreaterThan(0);
+    expect(micResonant).toBeGreaterThan(0);
+    expect(fileResonant).toBeGreaterThan(0);
+    expect(micResonant / fileResonant).toBeGreaterThanOrEqual(0.5);
+    expect(micResonant / fileResonant).toBeLessThanOrEqual(2.6);
+    expect(micSourceCoupled / fileSourceCoupled).toBeGreaterThanOrEqual(0.8);
+    expect(micSourceCoupled / fileSourceCoupled).toBeLessThanOrEqual(2.7);
     expect(micFrame.debug.micFftNormGain).toBe(1);
     expect(fileFrame.debug.micFftNormGain).toBe(1);
     expect(micFrame.debug.preModalFftPeak).toBeCloseTo(0.24, 6);
@@ -5255,8 +5255,9 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       reuseHeavyAnalysis: true,
     });
 
-    expect(reused.backboneSlots).toBe(first.backboneSlots);
-    expect(reused.modeSlots).toBe(first.modeSlots);
+    expect(Array.from(reused.modalFieldSlots)).toEqual(
+      Array.from(first.modalFieldSlots),
+    );
     expect(reused.keyTonic).toBe(first.keyTonic);
     expect(reused.pulseSignal).toBe(first.pulseSignal);
     expect(reused.changeSignal).toBe(first.changeSignal);
@@ -5344,8 +5345,9 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       reuseHeavyAnalysis: true,
     });
 
-    expect(reused.backboneSlots).toBe(first.backboneSlots);
-    expect(reused.modeSlots).toBe(first.modeSlots);
+    expect(Array.from(reused.modalFieldSlots)).toEqual(
+      Array.from(first.modalFieldSlots),
+    );
     expect(reused.sourceMode).toBe(first.sourceMode);
     expect(reused.keyTonic).toBe(first.keyTonic);
     expect(reused.changeSignal).toBe(first.changeSignal);
@@ -5405,7 +5407,9 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       reuseHeavyAnalysis: true,
     });
 
-    expect(reused.backboneSlots).toBe(first.backboneSlots);
+    expect(Array.from(reused.modalFieldSlots)).toEqual(
+      Array.from(first.modalFieldSlots),
+    );
     expect(first.modalVisibilityEnergy).toBeGreaterThan(0.05);
     expect(reused.structureSignal).toBeLessThan(first.structureSignal * 0.5);
     expect(reused.energySignal).toBeLessThan(first.energySignal * 0.5);
@@ -5428,14 +5432,14 @@ describe("full-range music handling", () => {
     });
 
     // At least one detail slot must have non-zero amplitude
-    let hasDetailActivity = false;
-    for (let i = 3; i < frame.detailSlots.length; i += 4) {
-      if ((frame.detailSlots[i] ?? 0) > 0) {
-        hasDetailActivity = true;
+    let hasResonantActivity = false;
+    for (let i = 3; i < frame.modalFieldSlots.length; i += 4) {
+      if ((frame.modalFieldSlots[i] ?? 0) > 0) {
+        hasResonantActivity = true;
         break;
       }
     }
-    expect(hasDetailActivity).toBe(true);
+    expect(hasResonantActivity).toBe(true);
   });
 
   it("fade-out: structureSignal collapses proportionally with energy", () => {
@@ -5570,8 +5574,8 @@ describe("full-range music handling", () => {
     });
 
     expect(
-      frame.backboneSlots.some(
-        (_, index) => index % 4 === 3 && frame.backboneSlots[index] > 0,
+      frame.modalFieldSlots.some(
+        (_, index) => index % 4 === 3 && frame.modalFieldSlots[index] > 0,
       ),
     ).toBe(true);
     expect(frame.trebleBroadbandEnergy).toBeGreaterThan(0.05);
@@ -5607,9 +5611,9 @@ describe("modal excitation integration", () => {
       frameTimeMs: 33,
     });
 
-    expect(frame.backboneSlots).toBeInstanceOf(Float32Array);
-    expect(frame.detailSlots).toBeInstanceOf(Float32Array);
-    expect(frame.modeSlots).toBeInstanceOf(Float32Array);
+    expect(frame.modalFieldSlots).toBeInstanceOf(Float32Array);
+    expect(frame.modalFieldSlots).toBeInstanceOf(Float32Array);
+    expect(frame.modalFieldMetadataSlots).toBeInstanceOf(Float32Array);
     expect(frame.referenceModeSlots).toBeInstanceOf(Float32Array);
     expect(frame.structureSignal).toBeGreaterThan(0);
     expect(frame.modeCoherence).toBeGreaterThan(0);
@@ -5658,15 +5662,15 @@ describe("modal excitation integration", () => {
     });
 
     expect(frame.beatDetected).toBe(false);
-    expect(frame.modalResponseBackboneEnergy).toBe(
-      frame.debug.modalResponseBackboneEnergy,
+    expect(frame.modalResponseEnergy).toBe(
+      frame.debug.modalResponseEnergy,
     );
-    expect(frame.debug.modalResponseBackboneEnergy).toBeGreaterThan(0.08);
+    expect(frame.debug.modalResponseEnergy).toBeGreaterThan(0.08);
     expect(frame.observationEnergy).toBeGreaterThanOrEqual(
-      frame.modalResponseBackboneEnergy,
+      frame.modalResponseEnergy,
     );
     expect(frame.debug.modalResponseModeCount).toBeGreaterThan(0);
-    expect(sumSlotAmplitudes(frame.backboneSlots)).toBeGreaterThan(0.04);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0.04);
     expect(frame.fieldState).toBe("active");
   });
 
@@ -5690,7 +5694,7 @@ describe("modal excitation integration", () => {
       status: makeActiveStatus(),
       frameTimeMs: 0,
     });
-    const firstFrameDetailKeys = readModeKeys(firstFrame.detailSlots);
+    const firstFrameResonantKeys = readModeKeys(firstFrame.modalFieldSlots);
     let frame = null;
 
     for (let frameIndex = 1; frameIndex <= 2; frameIndex += 1) {
@@ -5715,8 +5719,8 @@ describe("modal excitation integration", () => {
     }
 
     expect(frame.debug.analysisEngine).toBe("modal-excitation");
-    const switchedDetailKeys = readModeKeys(frame.detailSlots);
-    expect(hasNewModeKey(switchedDetailKeys, firstFrameDetailKeys)).toBe(true);
+    const switchedResonantKeys = readModeKeys(frame.modalFieldSlots);
+    expect(hasNewModeKey(switchedResonantKeys, firstFrameResonantKeys)).toBe(true);
   });
 
   it("surfaces a newly visible composed detail key for calibrated line-feed modal excitation", () => {
@@ -5756,7 +5760,7 @@ describe("modal excitation integration", () => {
       frameTimeMs: LIVE_INPUT_POST_CALIBRATION_MS,
       liveInputAnalysisSettings: { acousticIntent: "ambient" },
     });
-    const firstFrameDetailKeys = readModeKeys(firstFrame.detailSlots);
+    const firstFrameResonantKeys = readModeKeys(firstFrame.modalFieldSlots);
     let frame = null;
 
     for (const frameTimeMs of [
@@ -5788,8 +5792,8 @@ describe("modal excitation integration", () => {
     expect(frame.debug.analysisEngine).toBe("modal-excitation");
     expect(frame.sourceMode).toBe("line-feed");
     expect(frame.debug.liveInputPolicy).toBe("line-feed");
-    const switchedDetailKeys = readModeKeys(frame.detailSlots);
-    expect(hasNewModeKey(switchedDetailKeys, firstFrameDetailKeys)).toBe(true);
+    const switchedResonantKeys = readModeKeys(frame.modalFieldSlots);
+    expect(hasNewModeKey(switchedResonantKeys, firstFrameResonantKeys)).toBe(true);
   });
 
   it("modal path still collapses structure through fade-out after shared persistence gating", () => {
@@ -5891,14 +5895,14 @@ describe("modal excitation integration", () => {
       frameTimeMs: 33,
     });
 
-    expect(Array.from(sphericalRequestedFrame.backboneSlots)).toEqual(
-      Array.from(rectangularFrame.backboneSlots),
+    expect(Array.from(sphericalRequestedFrame.modalFieldSlots)).toEqual(
+      Array.from(rectangularFrame.modalFieldSlots),
     );
-    expect(Array.from(sphericalRequestedFrame.detailSlots)).toEqual(
-      Array.from(rectangularFrame.detailSlots),
+    expect(Array.from(sphericalRequestedFrame.modalFieldSlots)).toEqual(
+      Array.from(rectangularFrame.modalFieldSlots),
     );
-    expect(Array.from(sphericalRequestedFrame.modeSlots)).toEqual(
-      Array.from(rectangularFrame.modeSlots),
+    expect(Array.from(sphericalRequestedFrame.modalFieldSlots)).toEqual(
+      Array.from(rectangularFrame.modalFieldSlots),
     );
     expect(sphericalRequestedFrame.debug.requestedCavityGeometry).toBe(
       "spherical",
@@ -5962,7 +5966,7 @@ describe("modal excitation integration", () => {
     expect(
       silentResult.analysisResult.structuralMetrics.modalResponseRenderEnergy,
     ).toBeGreaterThan(0);
-    expect(sumSlotAmplitudes(silentResult.frame.backboneSlots)).toBeGreaterThan(
+    expect(sumSlotAmplitudes(silentResult.frame.modalFieldSlots)).toBeGreaterThan(
       0,
     );
     expect(silentResult.frame.structureSignal).toBeLessThan(
@@ -5987,8 +5991,8 @@ describe("modal excitation integration", () => {
     const silentTimeData = new Float32Array(FFT_SIZE);
     let previousFrame = null;
     let silentResult = null;
-    let activeBackboneAmplitude = 0;
-    let activeDetailAmplitude = 0;
+    let activeSourceCoupledAmplitude = 0;
+    let activeResonantAmplitude = 0;
 
     for (let frameIndex = 0; frameIndex < 10; frameIndex += 1) {
       const result = buildModalExcitationAnalysisFrame({
@@ -6001,8 +6005,8 @@ describe("modal excitation integration", () => {
         previousFrame,
       });
       previousFrame = result.frame;
-      activeBackboneAmplitude = sumSlotAmplitudes(result.frame.backboneSlots);
-      activeDetailAmplitude = sumSlotAmplitudes(result.frame.detailSlots);
+      activeSourceCoupledAmplitude = sumSlotAmplitudes(result.frame.modalFieldSlots);
+      activeResonantAmplitude = sumSlotAmplitudes(result.frame.modalFieldSlots);
     }
 
     for (let frameIndex = 10; frameIndex < 64; frameIndex += 1) {
@@ -6023,21 +6027,21 @@ describe("modal excitation integration", () => {
     expect(sumSlotAmplitudes(silentResult.analysisResult.signalModeSlots)).toBe(
       0,
     );
-    const decayedBackboneAmplitude = sumSlotAmplitudes(
-      silentResult.frame.backboneSlots,
+    const decayedSourceCoupledAmplitude = sumSlotAmplitudes(
+      silentResult.frame.modalFieldSlots,
     );
-    const decayedDetailAmplitude = sumSlotAmplitudes(
-      silentResult.frame.detailSlots,
+    const decayedResonantAmplitude = sumSlotAmplitudes(
+      silentResult.frame.modalFieldSlots,
     );
-    expect(decayedBackboneAmplitude + decayedDetailAmplitude).toBe(0);
+    expect(decayedSourceCoupledAmplitude + decayedResonantAmplitude).toBe(0);
     expect(
       silentResult.analysisResult.structuralMetrics.modalResponseEnergy,
     ).toBeGreaterThan(0);
     expect(
       silentResult.analysisResult.structuralMetrics.modalResponseRenderEnergy,
     ).toBe(0);
-    expect(decayedBackboneAmplitude).toBeLessThan(activeBackboneAmplitude);
-    expect(decayedDetailAmplitude).toBeLessThan(activeDetailAmplitude);
+    expect(decayedSourceCoupledAmplitude).toBeLessThan(activeSourceCoupledAmplitude);
+    expect(decayedResonantAmplitude).toBeLessThan(activeResonantAmplitude);
   });
 
   it("treats paused file transport as zero forcing even when analyser data is stale", () => {
@@ -6145,21 +6149,21 @@ describe("modal excitation integration", () => {
     );
     expect(result.frame.debug.projectionConservationApplied).toBeUndefined();
     expect(result.frame.debug.projectionEnergyNormalizationApplied).toBe(true);
-    expect(result.frame.debug.projectionRawEnergyDetail).toBeGreaterThan(0);
+    expect(result.frame.debug.projectionRawEnergyResonant).toBeGreaterThan(0);
     expect(
-      result.frame.debug.projectionAllocatedEnergyDetail,
-    ).toBeLessThanOrEqual(result.frame.debug.projectionEnergyBudgetDetail);
-    expect(result.frame.debug.projectionEnergyScaleDetail).toBeLessThanOrEqual(
+      result.frame.debug.projectionAllocatedEnergyResonant,
+    ).toBeLessThanOrEqual(result.frame.debug.projectionEnergyBudgetResonant);
+    expect(result.frame.debug.projectionEnergyScaleResonant).toBeLessThanOrEqual(
       1,
     );
-    expect(result.frame.debug.projectionOverlapPressureDetail).toBeGreaterThan(
+    expect(result.frame.debug.projectionOverlapPressureResonant).toBeGreaterThan(
       0,
     );
     expect(result.frame.debug.projectionCompetitionReduction).toBeGreaterThan(
       0,
     );
-    expect(result.frame.debug.projectionEnergyUsedDetail).toBeLessThanOrEqual(
-      result.frame.debug.projectionEnergyBudgetDetail,
+    expect(result.frame.debug.projectionEnergyUsedResonant).toBeLessThanOrEqual(
+      result.frame.debug.projectionEnergyBudgetResonant,
     );
     expect(result.frame.modalVisibilityEnergy).toBeLessThan(0.9);
     expect(result.frame.debug.modalVisibilityDominantEnergy).toBeLessThan(0.35);

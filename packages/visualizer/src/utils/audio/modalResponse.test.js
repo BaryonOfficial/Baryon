@@ -79,7 +79,7 @@ describe("modal response model", () => {
         v: 1,
         w: 1,
         naturalFrequencyHz: 110,
-        layer: "backbone",
+        layer: "source-coupled",
         qProfile: "low-q",
       },
       {
@@ -88,7 +88,7 @@ describe("modal response model", () => {
         v: 5,
         w: 36,
         naturalFrequencyHz: 427,
-        layer: "detail",
+        layer: "resonant",
         qProfile: "high-q",
       },
     ];
@@ -105,13 +105,13 @@ describe("modal response model", () => {
       previousEnergies: new Map(),
     });
 
-    const backbone = response.entries.find((entry) => entry.layer === "backbone");
-    const detail = response.entries.find((entry) => entry.layer === "detail");
+    const backbone = response.entries.find((entry) => entry.layer === "source-coupled");
+    const detail = response.entries.find((entry) => entry.layer === "resonant");
     expect(backbone?.modalResponseEnergy).toBeGreaterThan(0.3);
     expect(backbone?.displayAmplitude).toBeGreaterThan(
       detail?.displayAmplitude * 0.75,
     );
-    expect(response.modalResponseBackboneEnergy).toBeGreaterThan(0);
+    expect(response.modalResponseSourceCoupledEnergy).toBeGreaterThan(0);
   });
 
   it("lets high-Q tails decay slower than low-Q backbone energy", async () => {
@@ -129,7 +129,7 @@ describe("modal response model", () => {
           v: 1,
           w: 1,
           naturalFrequencyHz: 110,
-          layer: "backbone",
+          layer: "source-coupled",
           qProfile: "low-q",
         },
         {
@@ -138,7 +138,7 @@ describe("modal response model", () => {
           v: 5,
           w: 36,
           naturalFrequencyHz: 427,
-          layer: "detail",
+          layer: "resonant",
           qProfile: "high-q",
         },
       ],
@@ -149,8 +149,8 @@ describe("modal response model", () => {
       previousEnergies,
     });
 
-    const backbone = response.entries.find((entry) => entry.layer === "backbone");
-    const detail = response.entries.find((entry) => entry.layer === "detail");
+    const backbone = response.entries.find((entry) => entry.layer === "source-coupled");
+    const detail = response.entries.find((entry) => entry.layer === "resonant");
     expect(detail?.modalResponseEnergy).toBeGreaterThan(
       backbone?.modalResponseEnergy * 2.5,
     );
@@ -168,7 +168,7 @@ describe("modal response model", () => {
           v: 1,
           w: 1,
           naturalFrequencyHz: 110,
-          layer: "backbone",
+          layer: "source-coupled",
           qProfile: "low-q",
         },
       ],
@@ -200,7 +200,7 @@ describe("modal response model", () => {
         v: 10,
         w: 11,
         naturalFrequencyHz: 4270,
-        layer: "detail",
+        layer: "resonant",
         qProfile: "high-q",
       },
     ];
@@ -221,8 +221,8 @@ describe("modal response model", () => {
       previousEnergies: new Map(),
     });
 
-    expect(tonal.modalResponseDetailEnergy).toBeGreaterThan(
-      broadband.modalResponseDetailEnergy * 4,
+    expect(tonal.modalResponseResonantEnergy).toBeGreaterThan(
+      broadband.modalResponseResonantEnergy * 4,
     );
     expect(broadband.entries[0]?.displayAmplitude ?? 0).toBeLessThan(0.12);
   });
@@ -241,16 +241,16 @@ describe("modal response model", () => {
       persistence: 0.91,
     };
 
-    const asBackbone = updateModalResponseFrame({
-      modes: [{ ...baseMode, layer: "backbone" }],
+    const asSourceCoupled = updateModalResponseFrame({
+      modes: [{ ...baseMode, layer: "source-coupled" }],
       fftMagnitudes: makeFft([[880, 1]]),
       sampleRate: SAMPLE_RATE,
       deltaMs: 33,
       inputRms: 0.12,
       previousEnergies: new Map(),
     });
-    const asDetail = updateModalResponseFrame({
-      modes: [{ ...baseMode, layer: "detail" }],
+    const asResonant = updateModalResponseFrame({
+      modes: [{ ...baseMode, layer: "resonant" }],
       fftMagnitudes: makeFft([[880, 1]]),
       sampleRate: SAMPLE_RATE,
       deltaMs: 33,
@@ -258,12 +258,12 @@ describe("modal response model", () => {
       previousEnergies: new Map(),
     });
 
-    expect(asBackbone.entries[0]?.modalResponseEnergy).toBeCloseTo(
-      asDetail.entries[0]?.modalResponseEnergy ?? 0,
+    expect(asSourceCoupled.entries[0]?.modalResponseEnergy).toBeCloseTo(
+      asResonant.entries[0]?.modalResponseEnergy ?? 0,
       6,
     );
-    expect(asBackbone.entries[0]?.displayAmplitude).toBeCloseTo(
-      asDetail.entries[0]?.displayAmplitude ?? 0,
+    expect(asSourceCoupled.entries[0]?.displayAmplitude).toBeCloseTo(
+      asResonant.entries[0]?.displayAmplitude ?? 0,
       6,
     );
   });
@@ -315,7 +315,7 @@ describe("modal response model", () => {
       v: index + 2,
       w: index + 3,
       naturalFrequencyHz: 180 + index * 18,
-      layer: "backbone",
+      layer: "source-coupled",
       qProfile: "low-q",
     }));
 
@@ -348,7 +348,7 @@ describe("modal response model", () => {
       0,
     );
     expect(summedEnergy).toBeCloseTo(dense.modalResponseEnergy, 6);
-    expect(dense.modalResponseBackboneEnergy).toBeLessThanOrEqual(0.5);
+    expect(dense.modalResponseSourceCoupledEnergy).toBeLessThanOrEqual(0.5);
     expect(dense.modalResponseBudgetScale).toBeLessThan(1);
     expect(dense.modalResponseRawEnergy).toBeGreaterThan(
       dense.modalResponseEnergy,
@@ -368,7 +368,7 @@ describe("modal response model", () => {
         v: 5,
         w: 36,
         naturalFrequencyHz: 4270,
-        layer: "detail",
+        layer: "resonant",
         qProfile: "high-q",
       },
       ...Array.from({ length: 8 }, (_, index) => ({
@@ -377,7 +377,7 @@ describe("modal response model", () => {
         v: 8 + index,
         w: 9 + index,
         naturalFrequencyHz: 5200 + index * 420,
-        layer: "detail",
+        layer: "resonant",
         qProfile: "high-q",
       })),
     ];
@@ -396,7 +396,7 @@ describe("modal response model", () => {
     expect(response.entries.some((entry) => entry.modeKey.startsWith("weak:"))).toBe(
       false,
     );
-    expect(response.modalResponseDetailEnergy).toBeLessThanOrEqual(0.32);
+    expect(response.modalResponseResonantEnergy).toBeLessThanOrEqual(0.32);
   });
 
   it("reports the filtered render-eligible response mode count", async () => {
@@ -409,7 +409,7 @@ describe("modal response model", () => {
           v: 5,
           w: 36,
           naturalFrequencyHz: 4270,
-          layer: "detail",
+          layer: "resonant",
           qProfile: "high-q",
         },
         {
@@ -418,7 +418,7 @@ describe("modal response model", () => {
           v: 13,
           w: 14,
           naturalFrequencyHz: 9400,
-          layer: "detail",
+          layer: "resonant",
           qProfile: "high-q",
         },
       ],
@@ -443,7 +443,7 @@ describe("modal response model", () => {
           v: 10,
           w: 13,
           naturalFrequencyHz: 6200,
-          layer: "detail",
+          layer: "resonant",
           qProfile: "high-q",
         },
       ],
@@ -467,7 +467,7 @@ describe("modal response model", () => {
       v: 0,
       w: 1,
       naturalFrequencyHz: 110,
-      layer: "backbone",
+      layer: "source-coupled",
       qProfile: "low-q",
     };
     const first = updateModalResponseFrame({

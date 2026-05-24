@@ -20,7 +20,7 @@ function buildModeKeySet(slots, capacity) {
   return keys;
 }
 
-export function buildStaleDetailReleaseOverrides({
+export function buildStaleResonantReleaseOverrides({
   visibleSlots,
   targetSlots,
   capacity,
@@ -51,7 +51,7 @@ export function buildStaleDetailReleaseOverrides({
   return overrides;
 }
 
-export function computeStaleDetailPressure({
+export function computeStaleResonantPressure({
   visibleSlots,
   targetSlots,
   capacity,
@@ -104,7 +104,7 @@ export function computeStaleDetailPressure({
   return pressure;
 }
 
-export function buildStaleDetailTrackingOverrides({
+export function buildStaleResonantTrackingOverrides({
   visibleSlots,
   targetSlots,
   capacity,

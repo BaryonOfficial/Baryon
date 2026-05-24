@@ -2,6 +2,10 @@ function clamp01(value) {
   return Math.min(1, Math.max(0, value));
 }
 
+function readFiniteNonNegative(value, fallback = 0) {
+  return Number.isFinite(value) ? Math.max(0, value) : fallback;
+}
+
 function resolveCapacity(value, slots) {
   if (Number.isFinite(value) && value >= 0) {
     return Math.max(0, Math.floor(value));
@@ -61,7 +65,7 @@ function buildAdmissionEntries({
   slots,
   phaseSlots,
   colorSlots,
-  roleSlots,
+  metadataSlots,
   validCount,
 }) {
   const slotCount = Math.floor((slots?.length ?? 0) / 4);
@@ -77,17 +81,11 @@ function buildAdmissionEntries({
     const u = slots?.[offset] ?? 0;
     const v = slots?.[offset + 1] ?? 0;
     const w = slots?.[offset + 2] ?? 0;
-    const roleMask = Math.max(0, Math.floor(roleSlots?.[offset] ?? 0));
-    const backboneRoleWeight = roleSlots?.[offset + 1] ?? 0;
-    const detailRoleWeight = roleSlots?.[offset + 2] ?? 0;
     entries.push({
       modeKey: `${u}:${v}:${w}`,
       u,
       v,
       w,
-      roleMask,
-      backboneRoleWeight,
-      detailRoleWeight,
       coefficient,
       phaseOffsetRad: phaseSlots?.[offset] ?? 0,
       phaseVelocityRadPerSec: phaseSlots?.[offset + 1] ?? 0,
@@ -97,6 +95,10 @@ function buildAdmissionEntries({
       colorG: colorSlots?.[offset + 1] ?? 0,
       colorB: colorSlots?.[offset + 2] ?? 0,
       colorWeight: colorSlots?.[offset + 3] ?? 0,
+      naturalFrequencyHz: readFiniteNonNegative(metadataSlots?.[offset]),
+      qualityFactor: readFiniteNonNegative(metadataSlots?.[offset + 1]),
+      dampingRatio: readFiniteNonNegative(metadataSlots?.[offset + 2]),
+      observedSupport: clamp01(metadataSlots?.[offset + 3] ?? 0),
     });
   }
 
@@ -108,28 +110,22 @@ function mergeAdmissionEntries(entries) {
 
   for (const entry of entries) {
     const existing = merged.get(entry.modeKey);
-    const roleMask =
-      entry.roleMask ||
-      ((entry.backboneRoleWeight > 0 ? 1 : 0) |
-        (entry.detailRoleWeight > 0 ? 2 : 0));
     if (!existing) {
       merged.set(entry.modeKey, {
         ...entry,
-        roleMask,
-        backboneRoleWeight: entry.backboneRoleWeight > 0 ? 1 : 0,
-        detailRoleWeight: entry.detailRoleWeight > 0 ? 1 : 0,
         coefficient: entry.coefficient,
         colorWeightNumerator: entry.colorWeight * entry.coefficient,
         colorRNumerator: entry.colorR * entry.colorWeight * entry.coefficient,
         colorGNumerator: entry.colorG * entry.colorWeight * entry.coefficient,
         colorBNumerator: entry.colorB * entry.colorWeight * entry.coefficient,
+        naturalFrequencyNumerator:
+          entry.naturalFrequencyHz * entry.coefficient,
+        qualityFactorNumerator: entry.qualityFactor * entry.coefficient,
+        dampingRatioNumerator: entry.dampingRatio * entry.coefficient,
       });
       continue;
     }
 
-    existing.roleMask |= roleMask;
-    existing.backboneRoleWeight += entry.backboneRoleWeight > 0 ? 1 : 0;
-    existing.detailRoleWeight += entry.detailRoleWeight > 0 ? 1 : 0;
     existing.coefficient += entry.coefficient;
     if (entry.phaseAuthority >= existing.phaseAuthority) {
       existing.phaseAuthority = entry.phaseAuthority;
@@ -141,10 +137,19 @@ function mergeAdmissionEntries(entries) {
     existing.colorRNumerator += entry.colorR * entry.colorWeight * entry.coefficient;
     existing.colorGNumerator += entry.colorG * entry.colorWeight * entry.coefficient;
     existing.colorBNumerator += entry.colorB * entry.colorWeight * entry.coefficient;
+    existing.naturalFrequencyNumerator +=
+      entry.naturalFrequencyHz * entry.coefficient;
+    existing.qualityFactorNumerator += entry.qualityFactor * entry.coefficient;
+    existing.dampingRatioNumerator += entry.dampingRatio * entry.coefficient;
+    existing.observedSupport = Math.max(
+      existing.observedSupport,
+      entry.observedSupport,
+    );
   }
 
   return Array.from(merged.values()).map((entry) => {
-    const colorWeight = entry.colorWeightNumerator / Math.max(entry.coefficient, 1e-9);
+    const coefficientDenom = Math.max(entry.coefficient, 1e-9);
+    const colorWeight = entry.colorWeightNumerator / coefficientDenom;
     const colorDenom = Math.max(entry.colorWeightNumerator, 1e-9);
     return {
       ...entry,
@@ -152,6 +157,9 @@ function mergeAdmissionEntries(entries) {
       colorG: entry.colorGNumerator / colorDenom,
       colorB: entry.colorBNumerator / colorDenom,
       colorWeight,
+      naturalFrequencyHz: entry.naturalFrequencyNumerator / coefficientDenom,
+      qualityFactor: entry.qualityFactorNumerator / coefficientDenom,
+      dampingRatio: entry.dampingRatioNumerator / coefficientDenom,
     };
   });
 }
@@ -160,7 +168,7 @@ function writeUnifiedModalSlotViews(entries, capacity) {
   const slots = new Float32Array(capacity * 4);
   const phaseSlots = new Float32Array(capacity * 4);
   const colorSlots = new Float32Array(capacity * 4);
-  const roleSlots = new Float32Array(capacity * 4);
+  const metadataSlots = new Float32Array(capacity * 4);
 
   entries.slice(0, capacity).forEach((entry, index) => {
     const offset = index * 4;
@@ -179,17 +187,17 @@ function writeUnifiedModalSlotViews(entries, capacity) {
     colorSlots[offset + 2] = entry.colorB;
     colorSlots[offset + 3] = entry.colorWeight;
 
-    roleSlots[offset] = entry.roleMask;
-    roleSlots[offset + 1] = entry.backboneRoleWeight > 0 ? 1 : 0;
-    roleSlots[offset + 2] = entry.detailRoleWeight > 0 ? 1 : 0;
-    roleSlots[offset + 3] = 1;
+    metadataSlots[offset] = entry.naturalFrequencyHz;
+    metadataSlots[offset + 1] = entry.qualityFactor;
+    metadataSlots[offset + 2] = entry.dampingRatio;
+    metadataSlots[offset + 3] = entry.observedSupport;
   });
 
   return {
     modalFieldSlots: slots,
     modalFieldPhaseSlots: phaseSlots,
     modalFieldColorSlots: colorSlots,
-    modalFieldRoleSlots: roleSlots,
+    modalFieldMetadataSlots: metadataSlots,
   };
 }
 
@@ -200,9 +208,8 @@ function writeUnifiedModalSlotViews(entries, capacity) {
  *   modalFieldSlots?: Float32Array | number[],
  *   modalFieldPhaseSlots?: Float32Array | number[],
  *   modalFieldColorSlots?: Float32Array | number[] | null,
- *   modalFieldRoleSlots?: Float32Array | number[] | null,
+ *   modalFieldMetadataSlots?: Float32Array | number[] | null,
  *   activeModalFieldModeCount?: number,
- *   roleHistogram?: {backbone?: number, detail?: number},
  *   observerCandidateModeCount?: number,
  *   observedModalModeCount?: number,
  *   phaseAuthorityModeCount?: number,
@@ -215,9 +222,8 @@ export function buildCanonicalFullModalDescriptor({
   modalFieldSlots,
   modalFieldPhaseSlots,
   modalFieldColorSlots = null,
-  modalFieldRoleSlots = null,
+  modalFieldMetadataSlots = null,
   activeModalFieldModeCount,
-  roleHistogram: providedRoleHistogram = null,
   observerCandidateModeCount,
   observedModalModeCount,
   phaseAuthorityModeCount,
@@ -236,21 +242,9 @@ export function buildCanonicalFullModalDescriptor({
     slots: modalFieldSlots,
     phaseSlots: modalFieldPhaseSlots,
     colorSlots: modalFieldColorSlots,
-    roleSlots: modalFieldRoleSlots,
+    metadataSlots: modalFieldMetadataSlots,
     validCount: validModeCount,
   });
-  const roleHistogram = providedRoleHistogram ?? admissionEntries.reduce(
-    (histogram, entry) => {
-      if ((entry.roleMask & 1) || entry.backboneRoleWeight > 0) {
-        histogram.backbone += 1;
-      }
-      if ((entry.roleMask & 2) || entry.detailRoleWeight > 0) {
-        histogram.detail += 1;
-      }
-      return histogram;
-    },
-    { backbone: 0, detail: 0 },
-  );
   const mergedEntries = mergeAdmissionEntries(admissionEntries);
   const entriesByAdmissionPriority = [...mergedEntries].sort((left, right) => {
     if (right.coefficient !== left.coefficient) {
@@ -298,10 +292,10 @@ export function buildCanonicalFullModalDescriptor({
         phaseAuthority: entry.phaseAuthority,
         coherence: entry.phaseCoherence,
         persistence: entry.phaseAuthority,
-        roleMask: entry.roleMask,
-        backboneRoleWeight: entry.backboneRoleWeight,
-        detailRoleWeight: entry.detailRoleWeight,
-        naturalFrequencyHz: 0,
+        naturalFrequencyHz: entry.naturalFrequencyHz,
+        qualityFactor: entry.qualityFactor,
+        dampingRatio: entry.dampingRatio,
+        observedSupport: entry.observedSupport,
       })),
     },
     counts: {
@@ -319,7 +313,6 @@ export function buildCanonicalFullModalDescriptor({
       phaseAuthorityModeCount: resolvedPhaseAuthorityModeCount,
       modeIdentityRetentionRatio: clamp01(modeIdentityRetentionRatio ?? 1),
       descriptorOverflow,
-      roleHistogram,
       structuralCoverageSatisfied: true,
       rejectedModalEnergy,
       rejectionReasons:

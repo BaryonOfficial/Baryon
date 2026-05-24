@@ -1,7 +1,7 @@
-const PROJECTION_COMPETITION_SIGMA_BACKBONE = 0.1;
-const PROJECTION_COMPETITION_SIGMA_DETAIL = 0.035;
-const PROJECTION_COMPETITION_LAMBDA_BACKBONE = 0.55;
-const PROJECTION_COMPETITION_LAMBDA_DETAIL = 0.85;
+const PROJECTION_COMPETITION_SIGMA_SOURCE_COUPLED = 0.1;
+const PROJECTION_COMPETITION_SIGMA_RESONANT = 0.035;
+const PROJECTION_COMPETITION_LAMBDA_SOURCE_COUPLED = 0.55;
+const PROJECTION_COMPETITION_LAMBDA_RESONANT = 0.85;
 const PROJECTION_EVIDENCE_COHERENCE_WEIGHT = 0.42;
 const PROJECTION_EVIDENCE_SNR_WEIGHT = 0.24;
 const PROJECTION_EVIDENCE_DRIVE_WEIGHT = 0.22;
@@ -9,8 +9,8 @@ const PROJECTION_EVIDENCE_PHASE_WEIGHT = 0.12;
 const PROJECTION_EVIDENCE_MIN = 0.12;
 const PROJECTION_HIGH_Q_PROTECTION_GAIN = 0.35;
 const PROJECTION_HIGH_Q_RETAINED_AMPLITUDE_SCALE = 0.08;
-const PROJECTION_BACKBONE_INCOHERENT_REDUCTION = 0.16;
-const PROJECTION_DETAIL_INCOHERENT_REDUCTION = 0.28;
+const PROJECTION_SOURCE_COUPLED_INCOHERENT_REDUCTION = 0.16;
+const PROJECTION_RESONANT_INCOHERENT_REDUCTION = 0.28;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -22,18 +22,18 @@ function clamp01(value) {
 
 export function createEmptyProjectionNormalizationMetrics() {
   return {
-    projectionEnergyBudgetBackbone: 0,
-    projectionEnergyBudgetDetail: 0,
-    projectionEnergyUsedBackbone: 0,
-    projectionEnergyUsedDetail: 0,
-    projectionRawEnergyBackbone: 0,
-    projectionRawEnergyDetail: 0,
-    projectionAllocatedEnergyBackbone: 0,
-    projectionAllocatedEnergyDetail: 0,
-    projectionEnergyScaleBackbone: 0,
-    projectionEnergyScaleDetail: 0,
-    projectionOverlapPressureBackbone: 0,
-    projectionOverlapPressureDetail: 0,
+    projectionEnergyBudgetSourceCoupled: 0,
+    projectionEnergyBudgetResonant: 0,
+    projectionEnergyUsedSourceCoupled: 0,
+    projectionEnergyUsedResonant: 0,
+    projectionRawEnergySourceCoupled: 0,
+    projectionRawEnergyResonant: 0,
+    projectionAllocatedEnergySourceCoupled: 0,
+    projectionAllocatedEnergyResonant: 0,
+    projectionEnergyScaleSourceCoupled: 0,
+    projectionEnergyScaleResonant: 0,
+    projectionOverlapPressureSourceCoupled: 0,
+    projectionOverlapPressureResonant: 0,
     projectionCompetitionReduction: 0,
     projectionDenseSpectrumPressure: 0,
     projectionHighQProtection: 0,
@@ -47,7 +47,7 @@ function getProjectionLayerBudget({
   highQProtection,
   modeCoherence,
 }) {
-  if (layer === "backbone") {
+  if (layer === "source-coupled") {
     return Math.max(
       0.46,
       Math.min(
@@ -81,9 +81,9 @@ function computeProjectionProximity(left, right, layer) {
     return 0;
   }
   const sigma =
-    layer === "backbone"
-      ? PROJECTION_COMPETITION_SIGMA_BACKBONE
-      : PROJECTION_COMPETITION_SIGMA_DETAIL;
+    layer === "source-coupled"
+      ? PROJECTION_COMPETITION_SIGMA_SOURCE_COUPLED
+      : PROJECTION_COMPETITION_SIGMA_RESONANT;
   const distance = Math.log(leftFrequency / rightFrequency) / sigma;
   return Math.exp(-(distance * distance));
 }
@@ -129,7 +129,7 @@ function getProjectionRawDisplayAmplitude(
   const baseAmplitude = clamp01(
     entry?.displayAmplitude ?? resolveDisplayAmplitude?.(entry, layer) ?? 0,
   );
-  if (layer !== "detail" || highQProtection <= 0) {
+  if (layer !== "resonant" || highQProtection <= 0) {
     return baseAmplitude;
   }
 
@@ -178,7 +178,7 @@ export function applyProjectionEnergyNormalization({
   layer,
   modalObserverMetrics,
   hardSilentFrame,
-  highQDetailTopologySignal = 0,
+  highQResonantTopologySignal = 0,
   resolveDisplayAmplitude,
   getModalObserverProfile,
 }) {
@@ -192,12 +192,12 @@ export function applyProjectionEnergyNormalization({
   );
   const ringDerivedHighQProtection =
     clamp01(modalObserverMetrics?.highQRingSupport ?? 0) *
-    clamp01(modalObserverMetrics?.highQDetailEnergy ?? 0) *
+    clamp01(modalObserverMetrics?.highQResonantEnergy ?? 0) *
     (1 - denseSpectrumPressure);
   const sparseHighQAuthority = clamp01(
     Math.max(
       modalObserverMetrics?.highQSparseResonatorAuthority ?? 0,
-      highQDetailTopologySignal,
+      highQResonantTopologySignal,
       ringDerivedHighQProtection,
     ),
   );
@@ -222,9 +222,9 @@ export function applyProjectionEnergyNormalization({
     modeCoherence,
   });
   const lambda =
-    layer === "backbone"
-      ? PROJECTION_COMPETITION_LAMBDA_BACKBONE
-      : PROJECTION_COMPETITION_LAMBDA_DETAIL;
+    layer === "source-coupled"
+      ? PROJECTION_COMPETITION_LAMBDA_SOURCE_COUPLED
+      : PROJECTION_COMPETITION_LAMBDA_RESONANT;
 
   const projected = entries.map((entry, entryIndex) => {
     const highQProtection = entryHighQProtection[entryIndex] ?? 0;
@@ -278,9 +278,9 @@ export function applyProjectionEnergyNormalization({
     }
     const competitionScale = 1 / (1 + lambda * competitorPressure);
     const maxIncoherentReduction =
-      layer === "detail"
-        ? PROJECTION_DETAIL_INCOHERENT_REDUCTION
-        : PROJECTION_BACKBONE_INCOHERENT_REDUCTION;
+      layer === "resonant"
+        ? PROJECTION_RESONANT_INCOHERENT_REDUCTION
+        : PROJECTION_SOURCE_COUPLED_INCOHERENT_REDUCTION;
     const incoherentQuality =
       1 -
       denseSpectrumPressure *
@@ -335,20 +335,20 @@ export function applyProjectionEnergyNormalization({
     projectionCompetitionReduction: competitionReduction,
     projectionEnergyNormalizationApplied: normalizationApplied,
   };
-  if (layer === "backbone") {
-    metrics.projectionEnergyBudgetBackbone = budget;
-    metrics.projectionEnergyUsedBackbone = used;
-    metrics.projectionRawEnergyBackbone = rawEnergyTotal;
-    metrics.projectionAllocatedEnergyBackbone = used;
-    metrics.projectionEnergyScaleBackbone = energyScale;
-    metrics.projectionOverlapPressureBackbone = maxOverlapPressure;
+  if (layer === "source-coupled") {
+    metrics.projectionEnergyBudgetSourceCoupled = budget;
+    metrics.projectionEnergyUsedSourceCoupled = used;
+    metrics.projectionRawEnergySourceCoupled = rawEnergyTotal;
+    metrics.projectionAllocatedEnergySourceCoupled = used;
+    metrics.projectionEnergyScaleSourceCoupled = energyScale;
+    metrics.projectionOverlapPressureSourceCoupled = maxOverlapPressure;
   } else {
-    metrics.projectionEnergyBudgetDetail = budget;
-    metrics.projectionEnergyUsedDetail = used;
-    metrics.projectionRawEnergyDetail = rawEnergyTotal;
-    metrics.projectionAllocatedEnergyDetail = used;
-    metrics.projectionEnergyScaleDetail = energyScale;
-    metrics.projectionOverlapPressureDetail = maxOverlapPressure;
+    metrics.projectionEnergyBudgetResonant = budget;
+    metrics.projectionEnergyUsedResonant = used;
+    metrics.projectionRawEnergyResonant = rawEnergyTotal;
+    metrics.projectionAllocatedEnergyResonant = used;
+    metrics.projectionEnergyScaleResonant = energyScale;
+    metrics.projectionOverlapPressureResonant = maxOverlapPressure;
   }
 
   return { entries: conservedEntries, metrics };
@@ -360,50 +360,50 @@ export function mergeProjectionNormalizationMetrics(...metricSets) {
     if (!metrics) {
       continue;
     }
-    merged.projectionEnergyBudgetBackbone = Math.max(
-      merged.projectionEnergyBudgetBackbone,
-      metrics.projectionEnergyBudgetBackbone ?? 0,
+    merged.projectionEnergyBudgetSourceCoupled = Math.max(
+      merged.projectionEnergyBudgetSourceCoupled,
+      metrics.projectionEnergyBudgetSourceCoupled ?? 0,
     );
-    merged.projectionEnergyBudgetDetail = Math.max(
-      merged.projectionEnergyBudgetDetail,
-      metrics.projectionEnergyBudgetDetail ?? 0,
+    merged.projectionEnergyBudgetResonant = Math.max(
+      merged.projectionEnergyBudgetResonant,
+      metrics.projectionEnergyBudgetResonant ?? 0,
     );
-    merged.projectionEnergyUsedBackbone +=
-      metrics.projectionEnergyUsedBackbone ?? 0;
-    merged.projectionEnergyUsedDetail +=
-      metrics.projectionEnergyUsedDetail ?? 0;
-    merged.projectionRawEnergyBackbone +=
-      metrics.projectionRawEnergyBackbone ?? 0;
-    merged.projectionRawEnergyDetail += metrics.projectionRawEnergyDetail ?? 0;
-    merged.projectionAllocatedEnergyBackbone +=
-      metrics.projectionAllocatedEnergyBackbone ?? 0;
-    merged.projectionAllocatedEnergyDetail +=
-      metrics.projectionAllocatedEnergyDetail ?? 0;
-    if ((metrics.projectionEnergyScaleBackbone ?? 0) > 0) {
-      merged.projectionEnergyScaleBackbone =
-        merged.projectionEnergyScaleBackbone > 0
+    merged.projectionEnergyUsedSourceCoupled +=
+      metrics.projectionEnergyUsedSourceCoupled ?? 0;
+    merged.projectionEnergyUsedResonant +=
+      metrics.projectionEnergyUsedResonant ?? 0;
+    merged.projectionRawEnergySourceCoupled +=
+      metrics.projectionRawEnergySourceCoupled ?? 0;
+    merged.projectionRawEnergyResonant += metrics.projectionRawEnergyResonant ?? 0;
+    merged.projectionAllocatedEnergySourceCoupled +=
+      metrics.projectionAllocatedEnergySourceCoupled ?? 0;
+    merged.projectionAllocatedEnergyResonant +=
+      metrics.projectionAllocatedEnergyResonant ?? 0;
+    if ((metrics.projectionEnergyScaleSourceCoupled ?? 0) > 0) {
+      merged.projectionEnergyScaleSourceCoupled =
+        merged.projectionEnergyScaleSourceCoupled > 0
           ? Math.min(
-              merged.projectionEnergyScaleBackbone,
-              metrics.projectionEnergyScaleBackbone,
+              merged.projectionEnergyScaleSourceCoupled,
+              metrics.projectionEnergyScaleSourceCoupled,
             )
-          : metrics.projectionEnergyScaleBackbone;
+          : metrics.projectionEnergyScaleSourceCoupled;
     }
-    if ((metrics.projectionEnergyScaleDetail ?? 0) > 0) {
-      merged.projectionEnergyScaleDetail =
-        merged.projectionEnergyScaleDetail > 0
+    if ((metrics.projectionEnergyScaleResonant ?? 0) > 0) {
+      merged.projectionEnergyScaleResonant =
+        merged.projectionEnergyScaleResonant > 0
           ? Math.min(
-              merged.projectionEnergyScaleDetail,
-              metrics.projectionEnergyScaleDetail,
+              merged.projectionEnergyScaleResonant,
+              metrics.projectionEnergyScaleResonant,
             )
-          : metrics.projectionEnergyScaleDetail;
+          : metrics.projectionEnergyScaleResonant;
     }
-    merged.projectionOverlapPressureBackbone = Math.max(
-      merged.projectionOverlapPressureBackbone,
-      metrics.projectionOverlapPressureBackbone ?? 0,
+    merged.projectionOverlapPressureSourceCoupled = Math.max(
+      merged.projectionOverlapPressureSourceCoupled,
+      metrics.projectionOverlapPressureSourceCoupled ?? 0,
     );
-    merged.projectionOverlapPressureDetail = Math.max(
-      merged.projectionOverlapPressureDetail,
-      metrics.projectionOverlapPressureDetail ?? 0,
+    merged.projectionOverlapPressureResonant = Math.max(
+      merged.projectionOverlapPressureResonant,
+      metrics.projectionOverlapPressureResonant ?? 0,
     );
     merged.projectionCompetitionReduction +=
       metrics.projectionCompetitionReduction ?? 0;

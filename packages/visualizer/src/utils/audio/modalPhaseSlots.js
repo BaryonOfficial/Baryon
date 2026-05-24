@@ -1,9 +1,9 @@
-const DETAIL_PHASE_MAX_VELOCITY_RAD_PER_SEC = Math.PI * 1.25;
-const BACKBONE_PHASE_MAX_VELOCITY_RAD_PER_SEC = Math.PI * 0.65;
-const DETAIL_PHASE_ATTACK = 0.32;
-const DETAIL_PHASE_RELEASE = 0.9;
-const BACKBONE_PHASE_ATTACK = 0.22;
-const BACKBONE_PHASE_RELEASE = 0.84;
+const RESONANT_PHASE_MAX_VELOCITY_RAD_PER_SEC = Math.PI * 1.25;
+const SOURCE_COUPLED_PHASE_MAX_VELOCITY_RAD_PER_SEC = Math.PI * 0.65;
+const RESONANT_PHASE_ATTACK = 0.32;
+const RESONANT_PHASE_RELEASE = 0.9;
+const SOURCE_COUPLED_PHASE_ATTACK = 0.22;
+const SOURCE_COUPLED_PHASE_RELEASE = 0.84;
 
 export const PHASE_VELOCITY_BLEND = 0.18;
 export const PHASE_VELOCITY_RELEASE = 0.92;
@@ -32,17 +32,17 @@ export function unwrapPhaseDeltaRad(previousPhase, nextPhase) {
 }
 
 export function getPhaseVelocityLimit(layer) {
-  return layer === "detail"
-    ? DETAIL_PHASE_MAX_VELOCITY_RAD_PER_SEC
-    : BACKBONE_PHASE_MAX_VELOCITY_RAD_PER_SEC;
+  return layer === "resonant"
+    ? RESONANT_PHASE_MAX_VELOCITY_RAD_PER_SEC
+    : SOURCE_COUPLED_PHASE_MAX_VELOCITY_RAD_PER_SEC;
 }
 
 export function getPhaseAttack(layer) {
-  return layer === "detail" ? DETAIL_PHASE_ATTACK : BACKBONE_PHASE_ATTACK;
+  return layer === "resonant" ? RESONANT_PHASE_ATTACK : SOURCE_COUPLED_PHASE_ATTACK;
 }
 
 export function getPhaseRelease(layer) {
-  return layer === "detail" ? DETAIL_PHASE_RELEASE : BACKBONE_PHASE_RELEASE;
+  return layer === "resonant" ? RESONANT_PHASE_RELEASE : SOURCE_COUPLED_PHASE_RELEASE;
 }
 
 function findModalPhaseEntryForSlot(slots, offset, activeModes, observedModes) {

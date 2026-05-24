@@ -118,7 +118,7 @@ function resolveModeQProfile(mode) {
 }
 
 function resolveDiagnosticLayer(mode, qProfile) {
-  return mode?.layer ?? (qProfile === "high-q" ? "detail" : "backbone");
+  return mode?.layer ?? (qProfile === "high-q" ? "resonant" : "source-coupled");
 }
 
 function updateModalOscillatorState({
@@ -561,25 +561,25 @@ export function updateModalResponseFrame({
     modalBudget,
   );
   const modalResponseEnergy = budgetResult.energy;
-  const modalResponseBackboneEnergy = sumModalEnergyByLayer(
+  const modalResponseSourceCoupledEnergy = sumModalEnergyByLayer(
     significantEntries,
-    "backbone",
+    "source-coupled",
   );
-  const modalResponseDetailEnergy = sumModalEnergyByLayer(
+  const modalResponseResonantEnergy = sumModalEnergyByLayer(
     significantEntries,
-    "detail",
+    "resonant",
   );
 
   return {
     entries: significantEntries,
     modalResponseInputEnergy: inputEnergy,
     modalResponseEnergy,
-    modalResponseBackboneEnergy,
-    modalResponseDetailEnergy,
+    modalResponseSourceCoupledEnergy,
+    modalResponseResonantEnergy,
     modalResponseModeCount: significantEntries.length,
     modalResponseBudgetScale: budgetResult.scale,
-    modalResponseBudgetScaleBackbone: budgetResult.scale,
-    modalResponseBudgetScaleDetail: budgetResult.scale,
+    modalResponseBudgetScaleSourceCoupled: budgetResult.scale,
+    modalResponseBudgetScaleResonant: budgetResult.scale,
     modalResponseRawEnergy: budgetResult.rawEnergy ?? modalResponseEnergy,
     modalResponseAverageDampingEnvelope: averageEntryMetric(
       significantEntries,

@@ -20,8 +20,8 @@ const TEMPO_EPSILON = 0.5;
 const PHASE_EPSILON = 0.03;
 const CONFIDENCE_EPSILON = 0.04;
 const STRUCTURAL_FINGERPRINT_KEYS = [
-  "activeBackboneModeCount",
-  "activeDetailModeCount",
+  "activeSourceCoupledModeCount",
+  "activeResonantModeCount",
   "activeModeCount",
   "dominantFrequency",
   "dominantAmplitude",
@@ -29,12 +29,12 @@ const STRUCTURAL_FINGERPRINT_KEYS = [
   "pitchSource",
   "usedDecay",
   "sourceMode",
-  "backboneSignature",
-  "detailSignature",
-  "referenceBackboneSignature",
-  "referenceDetailSignature",
-  "backboneColorSignature",
-  "detailColorSignature",
+  "sourceCoupledSignature",
+  "resonantSignature",
+  "referenceSourceCoupledSignature",
+  "referenceResonantSignature",
+  "sourceCoupledColorSignature",
+  "resonantColorSignature",
 ];
 
 function postStatus(status = {}) {
