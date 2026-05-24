@@ -1799,7 +1799,7 @@ export function ListenerControls({
 } = {}) {
   const {
     soundCloudEnabled,
-    activeSource,
+    playbackSource,
     selectedSource,
     displayName,
     liveReturnLocalFile,
@@ -1908,7 +1908,7 @@ export function ListenerControls({
   const sourceSummary =
     selectedSource === "system"
       ? "System"
-      : activeSource === "soundcloud"
+      : playbackSource === "soundcloud"
         ? "SoundCloud"
         : displayName === "Upload Audio"
           ? "Upload Audio File"
@@ -2226,7 +2226,7 @@ export function ListenerControls({
                     {soundCloudEnabled ? (
                       <button
                         className={`am-btn am-compact-utility${
-                          showSoundCloudPanel || activeSource === "soundcloud"
+                          showSoundCloudPanel || playbackSource === "soundcloud"
                             ? " am-compact-utility--active"
                             : ""
                         }`}
@@ -2384,7 +2384,7 @@ export function ListenerControls({
                     {soundCloudEnabled ? (
                       <button
                         className={`am-btn am-btn--soundcloud${
-                          showSoundCloudPanel || activeSource === "soundcloud"
+                          showSoundCloudPanel || playbackSource === "soundcloud"
                             ? " am-btn--soundcloud-active"
                             : ""
                         }`}

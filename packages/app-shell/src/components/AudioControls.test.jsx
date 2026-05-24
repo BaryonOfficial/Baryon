@@ -75,7 +75,7 @@ describe("ListenerControls compact dock layout", () => {
 
     useAudioMock.mockReturnValue({
       soundCloudEnabled: false,
-      activeSource: "upload",
+      playbackSource: "local-file",
       selectedSource: "file",
       displayName: "Upload Audio",
       liveReturnLocalFile: null,
@@ -144,7 +144,7 @@ describe("ListenerControls compact dock layout", () => {
 
   it("shows source and system when the system source is selected", () => {
     renderControls({
-      activeSource: "upload",
+      playbackSource: "local-file",
       selectedSource: "system",
       liveInputDeviceKind: "live",
     });
@@ -158,7 +158,7 @@ describe("ListenerControls compact dock layout", () => {
 
   it("shows upload-audio placeholder copy for the file source before a file is loaded", () => {
     renderControls({
-      activeSource: "upload",
+      playbackSource: "local-file",
       selectedSource: "file",
       displayName: "Upload Audio",
     });
@@ -173,7 +173,7 @@ describe("ListenerControls compact dock layout", () => {
   it("uses a semantic button for the full track upload trigger", () => {
     renderControls(
       {
-        activeSource: "upload",
+        playbackSource: "local-file",
         selectedSource: "file",
         displayName: "Upload Audio",
       },
@@ -188,7 +188,7 @@ describe("ListenerControls compact dock layout", () => {
 
   it("shows the loaded file name for the file source on compact layouts", () => {
     renderControls({
-      activeSource: "upload",
+      playbackSource: "local-file",
       selectedSource: "file",
       displayName: "set-break-live.wav",
       isAudioLoaded: true,

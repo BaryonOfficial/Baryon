@@ -375,7 +375,7 @@ export function AudioProvider({ children, platform = "web" }) {
   );
   const [showDeviceMenu, setShowDeviceMenu] = useState(false);
   const [isEngineReady, setIsEngineReady] = useState(false);
-  const [activeSource, setActiveSource] = useState("upload");
+  const [playbackSource, setPlaybackSource] = useState("local-file");
   const [selectedSource, setSelectedSource] = useState("file");
   const [selectedSystemDevice, setSelectedSystemDevice] = useState(null);
   const [liveInputPermissionState, setLiveInputPermissionState] = useState(
@@ -436,7 +436,7 @@ export function AudioProvider({ children, platform = "web" }) {
   const soundCloudTokenRef = useRef(0);
   const soundCloudQueueRef = useRef([]);
   const soundCloudCurrentIndexRef = useRef(-1);
-  const activeSourceRef = useRef("upload");
+  const playbackSourceRef = useRef("local-file");
   const lastNonZeroVolumeRef = useRef(1);
   const transportFrameRef = useRef(0);
   const resumeAfterScrubRef = useRef(false);
@@ -515,8 +515,8 @@ export function AudioProvider({ children, platform = "web" }) {
   }, [soundCloudCurrentIndex]);
 
   useEffect(() => {
-    activeSourceRef.current = activeSource;
-  }, [activeSource]);
+    playbackSourceRef.current = playbackSource;
+  }, [playbackSource]);
 
   const clearScrubState = useCallback(() => {
     isScrubbingRef.current = false;
@@ -545,7 +545,7 @@ export function AudioProvider({ children, platform = "web" }) {
     if (
       isLiveInputActive ||
       !isAudioLoaded ||
-      activeSource === "soundcloud" ||
+      playbackSource === "soundcloud" ||
       !currentLoadedLocalFile?.file
     ) {
       return null;
@@ -555,7 +555,7 @@ export function AudioProvider({ children, platform = "web" }) {
       currentLoadedLocalFile.file,
       getDefaultAudioSession().getTransportState().currentTimeSeconds,
     );
-  }, [activeSource, currentLoadedLocalFile, isAudioLoaded, isLiveInputActive]);
+  }, [playbackSource, currentLoadedLocalFile, isAudioLoaded, isLiveInputActive]);
 
   const syncTransportState = useCallback((options = {}) => {
     const { includeSeekState = true } = options;
@@ -1015,7 +1015,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
       setIsSoundCloudLoading(true);
       setShowDeviceMenu(false);
-      setActiveSource("soundcloud");
+      setPlaybackSource("soundcloud");
       setSoundCloudError("");
       setSoundCloudTrackTitle(track.title);
       setSoundCloudCurrentIndex(nextIndex);
@@ -1130,13 +1130,13 @@ export function AudioProvider({ children, platform = "web" }) {
     soundCloudAudioRef.current = audioElement;
 
     const handlePlaybackStateChange = () => {
-      if (activeSourceRef.current === "soundcloud") {
+      if (playbackSourceRef.current === "soundcloud") {
         syncSessionStatus();
       }
     };
 
     const handleEnded = () => {
-      if (activeSourceRef.current !== "soundcloud") {
+      if (playbackSourceRef.current !== "soundcloud") {
         return;
       }
 
@@ -1161,7 +1161,7 @@ export function AudioProvider({ children, platform = "web" }) {
     };
 
     const handleError = () => {
-      if (activeSourceRef.current !== "soundcloud") {
+      if (playbackSourceRef.current !== "soundcloud") {
         return;
       }
       setSoundCloudError("SoundCloud playback failed for this stream.");
@@ -1197,7 +1197,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
     setIsSoundCloudLoading(true);
     setShowDeviceMenu(false);
-    setActiveSource("soundcloud");
+    setPlaybackSource("soundcloud");
     setCurrentLoadedLocalFile(null);
     clearLiveLocalFileState();
     setSoundCloudError("");
@@ -1256,7 +1256,7 @@ export function AudioProvider({ children, platform = "web" }) {
       }
 
       setCurrentLoadedLocalFile(createLocalFileEntry(file));
-      setActiveSource("upload");
+      setPlaybackSource("local-file");
       setSelectedSource("file");
       setShowDeviceMenu(false);
       setShowSoundCloudPanel(false);
@@ -1268,6 +1268,95 @@ export function AudioProvider({ children, platform = "web" }) {
     },
     [handleLocalRecentFileSelect, syncSessionStatus, syncTransportState],
   );
+
+  const loadProbeAudioFile = useCallback(
+    async (source) => {
+      if (!source) {
+        return {
+          ok: false,
+          error: "Probe audio file is required.",
+        };
+      }
+
+      clearScrubState();
+      resetSoundCloudTransport();
+      const sourceUrl =
+        typeof source?.fileUrl === "string" && source.fileUrl
+          ? source.fileUrl
+          : null;
+      const sourceName =
+        typeof source?.name === "string" && source.name
+          ? source.name
+          : "probe-audio.mp3";
+      let loaded = false;
+      if (sourceUrl) {
+        try {
+          const audioSession = getDefaultAudioSession();
+          if (isLiveInputActive) {
+            audioSession.stopLiveInputStream();
+          }
+          setFileName(sourceName);
+          await audioSession.loadAudio(sourceUrl);
+          setCurrentLoadedLocalFile(null);
+          setPlaybackSource("local-file");
+          setSelectedSource("file");
+          setShowDeviceMenu(false);
+          setShowSoundCloudPanel(false);
+          setLiveReturnLocalFile(null);
+          setQueuedNextLocalFile(null);
+          syncSessionStatus();
+          syncTransportState();
+          loaded = true;
+        } catch (error) {
+          console.error("Error loading probe audio:", error);
+          setIsAudioLoaded(false);
+        }
+      } else {
+        loaded = await loadImmediateLocalFile(source);
+      }
+
+      if (!loaded) {
+        return {
+          ok: false,
+          error: "Probe audio file failed to load.",
+        };
+      }
+
+      const audioSession = getDefaultAudioSession();
+      if (!audioSession.getStatus().isPlaying) {
+        await audioSession.playPauseAudio();
+      }
+      const status = syncSessionStatus();
+      syncTransportState();
+      return {
+        ok: true,
+        fileName: sourceName,
+        isAudioLoaded: status.isAudioLoaded,
+        isPlaying: status.isPlaying,
+      };
+    },
+    [
+      clearScrubState,
+      isLiveInputActive,
+      loadImmediateLocalFile,
+      resetSoundCloudTransport,
+      setIsAudioLoaded,
+      syncSessionStatus,
+      syncTransportState,
+    ],
+  );
+
+  const stopProbeAudio = useCallback(() => {
+    clearScrubState();
+    getDefaultAudioSession().stopAudio();
+    const status = syncSessionStatus();
+    syncTransportState();
+    return {
+      ok: true,
+      isAudioLoaded: status.isAudioLoaded,
+      isPlaying: status.isPlaying,
+    };
+  }, [clearScrubState, syncSessionStatus, syncTransportState]);
 
   const restoreAfterLiveStop = useCallback(async () => {
     if (liveReturnLocalFile?.file) {
@@ -1289,7 +1378,7 @@ export function AudioProvider({ children, platform = "web" }) {
   useEffect(() => {
     const audioSession = getDefaultAudioSession();
     audioSession.setAudioEndedCallback(async () => {
-      if (activeSourceRef.current === "soundcloud") {
+      if (playbackSourceRef.current === "soundcloud") {
         return;
       }
 
@@ -1318,7 +1407,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
       clearScrubState();
       resetSoundCloudTransport();
-      setActiveSource("upload");
+      setPlaybackSource("local-file");
       setShowDeviceMenu(false);
       setShowSoundCloudPanel(false);
       if (isLiveInputActive) {
@@ -1354,7 +1443,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
       clearScrubState();
       resetSoundCloudTransport();
-      setActiveSource("upload");
+      setPlaybackSource("local-file");
       setShowDeviceMenu(false);
       setShowSoundCloudPanel(false);
       if (isLiveInputActive) {
@@ -1385,7 +1474,7 @@ export function AudioProvider({ children, platform = "web" }) {
       return;
     }
 
-    if (activeSource === "soundcloud") {
+    if (playbackSource === "soundcloud") {
       if (!soundCloudQueueRef.current.length) {
         return;
       }
@@ -1411,7 +1500,7 @@ export function AudioProvider({ children, platform = "web" }) {
     await handleLocalPlayPause();
     syncTransportState();
   }, [
-    activeSource,
+    playbackSource,
     handleLocalPlayPause,
     selectedSource,
     syncSessionStatus,
@@ -1424,7 +1513,7 @@ export function AudioProvider({ children, platform = "web" }) {
     }
 
     clearScrubState();
-    if (activeSource === "soundcloud") {
+    if (playbackSource === "soundcloud") {
       getDefaultAudioSession().stopAudio();
       syncSessionStatus();
 
@@ -1446,7 +1535,7 @@ export function AudioProvider({ children, platform = "web" }) {
     handleLocalStop();
     syncTransportState();
   }, [
-    activeSource,
+    playbackSource,
     clearScrubState,
     handleLocalStop,
     selectedSource,
@@ -1504,7 +1593,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
       if (next === "system") {
         clearScrubState();
-        if (activeSource === "soundcloud") {
+        if (playbackSource === "soundcloud") {
           getDefaultAudioSession().stopAudio();
           syncSessionStatus();
         } else if (isAudioLoaded) {
@@ -1530,7 +1619,7 @@ export function AudioProvider({ children, platform = "web" }) {
       }
     },
     [
-      activeSource,
+      playbackSource,
       applyLiveInputUiState,
       clearScrubState,
       handleLocalStop,
@@ -1564,7 +1653,7 @@ export function AudioProvider({ children, platform = "web" }) {
           liveInputKind: selectedLiveInputDeviceKind,
         });
         if (started) {
-          setActiveSource("upload");
+          setPlaybackSource("local-file");
           setFileName(DEFAULT_FILE_NAME);
         }
       }
@@ -1714,7 +1803,7 @@ export function AudioProvider({ children, platform = "web" }) {
   );
 
   const handleMuteToggle = useCallback(() => {
-    if (activeSource === "soundcloud") {
+    if (playbackSource === "soundcloud") {
       const nextVolume =
         isMuted || volume <= 0.001
           ? Math.max(lastNonZeroVolumeRef.current, 0.35)
@@ -1725,7 +1814,7 @@ export function AudioProvider({ children, platform = "web" }) {
 
     handleLocalMuteToggle();
   }, [
-    activeSource,
+    playbackSource,
     handleLocalMuteToggle,
     handleVolumeChange,
     isMuted,
@@ -1733,7 +1822,7 @@ export function AudioProvider({ children, platform = "web" }) {
   ]);
 
   const displayName =
-    activeSource === "soundcloud" ? soundCloudTrackTitle : fileName;
+    playbackSource === "soundcloud" ? soundCloudTrackTitle : fileName;
   const hasQueuedNextLocalFile = Boolean(queuedNextLocalFile?.file);
   const soundCloudCurrentTrack =
     soundCloudQueue[soundCloudCurrentIndex] ?? soundCloudQueue[0] ?? null;
@@ -1866,7 +1955,7 @@ export function AudioProvider({ children, platform = "web" }) {
     setLiveInputRuntimeStatus(createLiveInputRuntimeStatus());
     setShowDeviceMenu(false);
     setIsEngineReady(false);
-    setActiveSource("upload");
+    setPlaybackSource("local-file");
     setSelectedSource("file");
     setSelectedSystemDevice(null);
     setLiveInputPermissionState(
@@ -1923,7 +2012,7 @@ export function AudioProvider({ children, platform = "web" }) {
     () => ({
       soundCloudEnabled: SOUNDCLOUD_ENABLED,
       platform: audioPlatform,
-      activeSource,
+      playbackSource,
       liveInputDeviceKind,
       liveInputKind,
       liveInputPermissionState,
@@ -1995,6 +2084,8 @@ export function AudioProvider({ children, platform = "web" }) {
       handleSourceChange,
       handleVolumeChange,
       handleMuteToggle,
+      loadProbeAudioFile,
+      stopProbeAudio,
       loadSoundCloudTrack,
       beginScrub,
       previewScrub,
@@ -2002,7 +2093,7 @@ export function AudioProvider({ children, platform = "web" }) {
       cancelScrub,
     }),
     [
-      activeSource,
+      playbackSource,
       audioDevices,
       audioPlatform,
       beginScrub,
@@ -2041,6 +2132,7 @@ export function AudioProvider({ children, platform = "web" }) {
       liveInputRuntimeStatus,
       liveInputUiState,
       liveReturnLocalFile,
+      loadProbeAudioFile,
       loadSoundCloudTrack,
       previewScrub,
       queuedNextLocalFile,
@@ -2078,6 +2170,7 @@ export function AudioProvider({ children, platform = "web" }) {
       soundCloudInfo,
       soundCloudInput,
       soundCloudQueue,
+      stopProbeAudio,
       volume,
     ],
   );
