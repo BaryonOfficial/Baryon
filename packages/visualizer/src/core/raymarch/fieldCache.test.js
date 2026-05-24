@@ -1280,6 +1280,26 @@ describe("fieldCache", () => {
     expect(descriptor.effectiveFieldGradientEnvelope).toBeGreaterThan(0);
   });
 
+  it("uses the shifted Dirichlet half-domain gradient scale in diagnostics", () => {
+    const radius = 3;
+    const descriptor = buildRaymarchEffectiveFieldDescriptor({
+      backboneSlots: new Float32Array([1, 1, 1, 1]),
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 0, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 1,
+      detailCount: 0,
+      boundaryMode: "dirichlet",
+      radius,
+      resolution: 8,
+    });
+
+    expect(descriptor.effectiveFieldGradientEnvelope).toBeCloseTo(
+      (Math.hypot(1, 1, 1) * Math.PI) / (2 * radius),
+      6,
+    );
+  });
+
   it("normalizes effective field values from the representable contributing set", () => {
     const lowModeSlots = new Float32Array([1, 1, 1, 1]);
     const mixedSlots = new Float32Array([1, 1, 1, 1, 8, 8, 8, 1]);

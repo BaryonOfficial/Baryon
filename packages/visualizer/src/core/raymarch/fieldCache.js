@@ -16,7 +16,7 @@ import {
   uint,
   vec4,
 } from "three/tsl";
-import { normalizeBoundaryMode } from "../modeFamily.js";
+import { BOUNDARY_MODES, normalizeBoundaryMode } from "../modeFamily.js";
 import { normalizeCavityGeometry } from "../cavityGeometry.js";
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 import { buildRaymarchPhaseSlotSignature } from "./phaseSlotSemantics.js";
@@ -185,13 +185,19 @@ function getEffectiveFieldScale(radius) {
   return Math.PI / Math.max(radius, 1e-4);
 }
 
-function getEffectiveFieldSlotGradientBound({ slots, offset, scale }) {
+function getEffectiveFieldGradientBasisScale(scale, boundaryMode) {
+  return normalizeBoundaryMode(boundaryMode) === BOUNDARY_MODES.dirichlet
+    ? scale * 0.5
+    : scale;
+}
+
+function getEffectiveFieldSlotGradientBound({ slots, offset, basisScale }) {
   return (
     Math.hypot(
       Math.abs(slots?.[offset] ?? 0),
       Math.abs(slots?.[offset + 1] ?? 0),
       Math.abs(slots?.[offset + 2] ?? 0),
-    ) * scale
+    ) * basisScale
   );
 }
 
@@ -200,8 +206,10 @@ function summarizeEffectiveFieldDiagnostics({
   activeCount,
   resolution,
   scale,
+  boundaryMode,
 }) {
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const basisScale = getEffectiveFieldGradientBasisScale(scale, boundaryMode);
   let contributingEffectiveFieldModeCount = 0;
   let zeroAmplitudeSkippedModeCount = 0;
   let bandwidthRejectedModeCount = 0;
@@ -227,7 +235,11 @@ function summarizeEffectiveFieldDiagnostics({
     contributingModalEnergy += modalEnergy;
     gradientEnvelopeNumerator +=
       modalEnergy *
-      getEffectiveFieldSlotGradientBound({ slots, offset, scale });
+      getEffectiveFieldSlotGradientBound({
+        slots,
+        offset,
+        basisScale,
+      });
   }
 
   const totalRepresentedModalEnergy =
@@ -702,6 +714,7 @@ export function buildRaymarchEffectiveFieldDescriptor({
     activeCount: modalFieldCount,
     resolution: normalizedResolution,
     scale: effectiveFieldScale,
+    boundaryMode,
   });
   const effectiveSupportDiagnostics = summarizeEffectiveFieldSupportDiagnostics(
     {
@@ -967,6 +980,7 @@ function accumulateEffectiveFieldLayerAtPoint({
   let bandwidthRejectedModalEnergy = 0;
   let gradientEnvelopeNumerator = 0;
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const basisScale = getEffectiveFieldGradientBasisScale(scale, boundaryMode);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
 
   for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
@@ -988,7 +1002,7 @@ function accumulateEffectiveFieldLayerAtPoint({
       getEffectiveFieldSlotGradientBound({
         slots,
         offset,
-        scale,
+        basisScale,
       });
     const beta = Math.min(
       1,

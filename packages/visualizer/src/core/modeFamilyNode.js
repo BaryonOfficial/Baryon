@@ -7,20 +7,47 @@ import {
 
 const FAMILY_EPSILON = 1e-4;
 
-function createBoundaryBasisNode(index, coordinate, scale, boundaryBlend) {
+function createCenteredDirichletArgumentNode(index, coordinate, scale) {
+  return index.mul(coordinate.mul(scale).add(float(Math.PI)).mul(float(0.5)));
+}
+
+function createDirichletBasisNode(index, coordinate, scale) {
   const angularScale = index.mul(scale);
-  const argument = angularScale.mul(coordinate);
-  const sine = sin(argument);
-  const cosine = cos(argument);
+  const centeredAngularScale = angularScale.mul(float(0.5));
+  const centeredArgument = createCenteredDirichletArgumentNode(
+    index,
+    coordinate,
+    scale,
+  );
 
   return {
-    value: sine
-      .mul(float(1.0).sub(boundaryBlend))
-      .add(cosine.mul(boundaryBlend)),
-    derivative: cosine
-      .mul(angularScale)
-      .mul(float(1.0).sub(boundaryBlend))
-      .sub(sine.mul(angularScale).mul(boundaryBlend)),
+    value: sin(centeredArgument),
+    derivative: cos(centeredArgument).mul(centeredAngularScale),
+  };
+}
+
+function createNeumannBasisNode(index, coordinate, scale) {
+  const angularScale = index.mul(scale);
+  const argument = angularScale.mul(coordinate);
+
+  return {
+    value: cos(argument),
+    derivative: sin(argument).mul(angularScale).negate(),
+  };
+}
+
+function createBoundaryBasisNode(index, coordinate, scale, boundaryBlend) {
+  const boundaryComplement = float(1.0).sub(boundaryBlend);
+  const dirichletBasis = createDirichletBasisNode(index, coordinate, scale);
+  const neumannBasis = createNeumannBasisNode(index, coordinate, scale);
+
+  return {
+    value: dirichletBasis.value
+      .mul(boundaryComplement)
+      .add(neumannBasis.value.mul(boundaryBlend)),
+    derivative: dirichletBasis.derivative
+      .mul(boundaryComplement)
+      .add(neumannBasis.derivative.mul(boundaryBlend)),
   };
 }
 
@@ -30,20 +57,12 @@ function createFixedBoundaryBasisNode(
   scale,
   boundaryMode = BOUNDARY_MODES.neumann,
 ) {
-  const angularScale = index.mul(scale);
-  const argument = angularScale.mul(coordinate);
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
   if (normalizedBoundaryMode === BOUNDARY_MODES.dirichlet) {
-    return {
-      value: sin(argument),
-      derivative: cos(argument).mul(angularScale),
-    };
+    return createDirichletBasisNode(index, coordinate, scale);
   }
 
-  return {
-    value: cos(argument),
-    derivative: sin(argument).mul(angularScale).negate(),
-  };
+  return createNeumannBasisNode(index, coordinate, scale);
 }
 
 function createPermutationTermNode({ basisX, basisY, basisZ }) {

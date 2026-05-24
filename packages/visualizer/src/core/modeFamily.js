@@ -68,24 +68,35 @@ export function getPermutationFamily(u, v, w) {
   ]);
 }
 
+function evaluateCenteredDirichletBasis(index, coordinate, scale) {
+  const angularScale = index * scale;
+  const centeredAngularScale = angularScale * 0.5;
+  const centeredArgument = index * (coordinate * scale + Math.PI) * 0.5;
+  return {
+    value: Math.sin(centeredArgument),
+    derivative: Math.cos(centeredArgument) * centeredAngularScale,
+  };
+}
+
+function evaluateNeumannBasis(index, coordinate, scale) {
+  const angularScale = index * scale;
+  const argument = angularScale * coordinate;
+  return {
+    value: Math.cos(argument),
+    derivative: -Math.sin(argument) * angularScale,
+  };
+}
+
 function evaluateBoundaryBasis(
   index,
   coordinate,
   scale,
   normalizedBoundaryMode,
 ) {
-  const angularScale = index * scale;
-  const argument = angularScale * coordinate;
   if (normalizedBoundaryMode === BOUNDARY_MODES.dirichlet) {
-    return {
-      value: Math.sin(argument),
-      derivative: Math.cos(argument) * angularScale,
-    };
+    return evaluateCenteredDirichletBasis(index, coordinate, scale);
   }
-  return {
-    value: Math.cos(argument),
-    derivative: -Math.sin(argument) * angularScale,
-  };
+  return evaluateNeumannBasis(index, coordinate, scale);
 }
 
 export function evaluateSinglePermutationMode({

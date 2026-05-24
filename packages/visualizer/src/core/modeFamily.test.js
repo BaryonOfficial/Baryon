@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   BOUNDARY_MODES,
@@ -63,6 +64,52 @@ describe("mode family helpers", () => {
     expect(dirichlet.gradX).not.toBeCloseTo(neumann.gradX, 6);
     expect(Number.isFinite(dirichlet.gradY)).toBe(true);
     expect(Number.isFinite(neumann.gradZ)).toBe(true);
+  });
+
+  it("centers the Dirichlet basis on the rendered [-R, R] domain", () => {
+    const radius = 3;
+    const args = {
+      u: 1,
+      v: 1,
+      w: 1,
+      scale: Math.PI / radius,
+      boundaryMode: BOUNDARY_MODES.dirichlet,
+    };
+
+    const center = evaluateSinglePermutationMode({
+      ...args,
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    const negativeFace = evaluateSinglePermutationMode({
+      ...args,
+      x: -radius,
+      y: 0,
+      z: 0,
+    });
+    const positiveFace = evaluateSinglePermutationMode({
+      ...args,
+      x: radius,
+      y: 0,
+      z: 0,
+    });
+
+    expect(center.field).toBeCloseTo(1, 6);
+    expect(negativeFace.field).toBeCloseTo(0, 6);
+    expect(positiveFace.field).toBeCloseTo(0, 6);
+  });
+
+  it("keeps the TSL Dirichlet basis shifted with the CPU basis", () => {
+    const source = readFileSync(
+      new URL("./modeFamilyNode.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("createCenteredDirichletArgumentNode");
+    expect(source).toContain(
+      "coordinate.mul(scale).add(float(Math.PI)).mul(float(0.5))",
+    );
   });
 
   it("normalizes family energy relative to the old single-term kernel", () => {
