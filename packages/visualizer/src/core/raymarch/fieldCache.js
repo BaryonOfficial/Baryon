@@ -30,7 +30,6 @@ const SIGNED_INTERFERENCE_VISIBILITY_EPSILON = 0.01;
 const SIGNED_INTERFERENCE_VISIBILITY_START = 0.025;
 const SIGNED_INTERFERENCE_VISIBILITY_END = 0.1;
 const EFFECTIVE_FIELD_ENERGY_EPSILON = 0.01;
-const EFFECTIVE_FIELD_PHASE_REBUILD_MIN_INTERVAL_SEC = 0.12;
 const SPECTRAL_LIGHT_CHROMA_EPSILON = 1e-6;
 const EFFECTIVE_FIELD_SUPPORT_DIAGNOSTIC_SAMPLE_POINTS = Object.freeze([
   [0, 0, 0],
@@ -622,46 +621,155 @@ function isPhaseOnlyEffectiveFieldRebuildReason(rebuildReason) {
   );
 }
 
+export const RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES = Object.freeze({
+  absent: "field-cache-absent",
+  building: "field-cache-building",
+  readyCurrent: "field-cache-ready-current",
+  readyPhaseStale: "field-cache-ready-phase-stale",
+  readyStale: "field-cache-ready-stale",
+  blocked: "field-cache-blocked",
+});
+
+export function resolveRaymarchEffectiveFieldDescriptorBlockedReason(
+  descriptor,
+) {
+  if (!descriptor) {
+    return "missing-descriptor";
+  }
+  if (descriptor.descriptorOverflow === true) {
+    return "descriptor-overflow";
+  }
+  if (!(Math.max(0, Math.round(descriptor.modalFieldCount || 0)) > 0)) {
+    return "empty-descriptor";
+  }
+  if (
+    !(
+      Math.max(
+        0,
+        Math.round(descriptor.contributingEffectiveFieldModeCount || 0),
+      ) > 0
+    )
+  ) {
+    return "no-contributing-effective-field-modes";
+  }
+  return null;
+}
+
+function makeEffectiveFieldDrawableAuthority({
+  drawable = false,
+  state,
+  blockedReason = null,
+  staleReason = null,
+  phaseStalenessSec = 0,
+}) {
+  return {
+    drawable,
+    state,
+    blockedReason,
+    staleReason,
+    phaseStalenessSec: Number.isFinite(phaseStalenessSec)
+      ? Math.max(0, phaseStalenessSec)
+      : 0,
+  };
+}
+
+export function resolveRaymarchEffectiveFieldDrawableAuthority(
+  effectiveFieldCache,
+  descriptor,
+  { schedulerTimeSec = null } = {},
+) {
+  const descriptorBlockedReason =
+    resolveRaymarchEffectiveFieldDescriptorBlockedReason(descriptor);
+  if (descriptorBlockedReason) {
+    return makeEffectiveFieldDrawableAuthority({
+      state: RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES.blocked,
+      blockedReason: descriptorBlockedReason,
+    });
+  }
+
+  if (!effectiveFieldCache) {
+    return makeEffectiveFieldDrawableAuthority({
+      state: RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES.absent,
+      blockedReason: "cache-unavailable",
+    });
+  }
+
+  if (effectiveFieldCache.backend === "unavailable") {
+    return makeEffectiveFieldDrawableAuthority({
+      state: RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES.blocked,
+      blockedReason: "backend-unavailable",
+    });
+  }
+
+  const activeDescriptor = effectiveFieldCache.activeDescriptor;
+  const activeDescriptorBlockedReason =
+    resolveRaymarchEffectiveFieldDescriptorBlockedReason(activeDescriptor);
+  const hasDrawableActiveDescriptor = Boolean(
+    effectiveFieldCache.ready &&
+      activeDescriptor &&
+      !activeDescriptorBlockedReason,
+  );
+
+  if (
+    hasDrawableActiveDescriptor &&
+    effectiveFieldDescriptorsEqual(activeDescriptor, descriptor)
+  ) {
+    return makeEffectiveFieldDrawableAuthority({
+      drawable: true,
+      state: RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES.readyCurrent,
+    });
+  }
+
+  const staleReason = hasDrawableActiveDescriptor
+    ? resolveEffectiveFieldRebuildReason(activeDescriptor, descriptor)
+    : null;
+  if (isPhaseOnlyEffectiveFieldRebuildReason(staleReason)) {
+    const lastSubmittedAtSec =
+      effectiveFieldCache.lastRebuildSubmittedAtSec ?? null;
+    const phaseStalenessSec =
+      Number.isFinite(schedulerTimeSec) && Number.isFinite(lastSubmittedAtSec)
+        ? schedulerTimeSec - lastSubmittedAtSec
+        : 0;
+    return makeEffectiveFieldDrawableAuthority({
+      drawable: true,
+      state: RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES.readyPhaseStale,
+      staleReason,
+      phaseStalenessSec,
+    });
+  }
+
+  if (hasDrawableActiveDescriptor && effectiveFieldCache.rebuildPending) {
+    return makeEffectiveFieldDrawableAuthority({
+      drawable: true,
+      state: RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES.readyStale,
+      staleReason,
+    });
+  }
+
+  if (effectiveFieldCache.rebuildPending) {
+    return makeEffectiveFieldDrawableAuthority({
+      state: RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES.building,
+      blockedReason: "cache-rebuild-pending",
+    });
+  }
+
+  if (!effectiveFieldCache.ready) {
+    return makeEffectiveFieldDrawableAuthority({
+      state: RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES.building,
+      blockedReason: "cache-not-ready",
+    });
+  }
+
+  return makeEffectiveFieldDrawableAuthority({
+    state: RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES.blocked,
+    blockedReason: activeDescriptorBlockedReason ?? "descriptor-mismatch",
+  });
+}
+
 function getCacheSchedulerTimeSec(options) {
   return Number.isFinite(options?.schedulerTimeSec)
     ? options.schedulerTimeSec
     : null;
-}
-
-function getEffectiveFieldPhaseRebuildMinIntervalSec(options) {
-  const minIntervalSec = options?.phaseRebuildMinIntervalSec;
-  return Number.isFinite(minIntervalSec) && minIntervalSec >= 0
-    ? minIntervalSec
-    : EFFECTIVE_FIELD_PHASE_REBUILD_MIN_INTERVAL_SEC;
-}
-
-function shouldDeferRaymarchEffectiveFieldRebuild(
-  effectiveFieldCache,
-  rebuildReason,
-  schedulerTimeSec,
-  minIntervalSec = EFFECTIVE_FIELD_PHASE_REBUILD_MIN_INTERVAL_SEC,
-) {
-  if (
-    !isPhaseOnlyEffectiveFieldRebuildReason(rebuildReason) ||
-    !effectiveFieldCache?.ready ||
-    !effectiveFieldCache?.activeDescriptor
-  ) {
-    return false;
-  }
-
-  const lastSubmittedAtSec =
-    effectiveFieldCache.lastRebuildSubmittedAtSec ?? Number.NEGATIVE_INFINITY;
-  if (
-    !Number.isFinite(lastSubmittedAtSec) ||
-    !Number.isFinite(schedulerTimeSec)
-  ) {
-    return false;
-  }
-  if (schedulerTimeSec < lastSubmittedAtSec) {
-    return false;
-  }
-
-  return schedulerTimeSec - lastSubmittedAtSec < minIntervalSec;
 }
 
 function setQueuedCacheRebuild(cache, descriptor, rebuildReason, request) {
@@ -785,7 +893,7 @@ export function buildRaymarchEffectiveFieldDescriptor({
     },
   );
 
-  return {
+  const descriptor = {
     ...fieldDescriptor,
     modalFieldPhaseHash: buildRaymarchPhaseSlotSignature({
       phaseSlots: modalFieldPhaseSlots,
@@ -798,6 +906,13 @@ export function buildRaymarchEffectiveFieldDescriptor({
     resolution: normalizedResolution,
     ...effectiveDiagnostics,
     ...effectiveSupportDiagnostics,
+  };
+  const effectiveFieldBlockedReason =
+    resolveRaymarchEffectiveFieldDescriptorBlockedReason(descriptor);
+  return {
+    ...descriptor,
+    effectiveFieldDrawable: effectiveFieldBlockedReason == null,
+    effectiveFieldBlockedReason,
   };
 }
 
@@ -1870,23 +1985,6 @@ function dispatchQueuedRaymarchEffectiveFieldCacheRebuild(effectiveFieldCache) {
     return;
   }
 
-  if (
-    shouldDeferRaymarchEffectiveFieldRebuild(
-      effectiveFieldCache,
-      queued.rebuildReason,
-      getCacheSchedulerTimeSec(queued.request.options),
-      getEffectiveFieldPhaseRebuildMinIntervalSec(queued.request.options),
-    )
-  ) {
-    setQueuedCacheRebuild(
-      effectiveFieldCache,
-      queued.descriptor,
-      queued.rebuildReason,
-      queued.request,
-    );
-    return;
-  }
-
   enqueueRaymarchEffectiveFieldRebuild(
     effectiveFieldCache,
     queued.request.renderer,
@@ -2110,31 +2208,6 @@ export function enqueueRaymarchEffectiveFieldRebuild(
     );
   }
 
-  const schedulerTimeSec = getCacheSchedulerTimeSec(options);
-  const phaseRebuildMinIntervalSec =
-    getEffectiveFieldPhaseRebuildMinIntervalSec(options);
-  if (
-    shouldDeferRaymarchEffectiveFieldRebuild(
-      effectiveFieldCache,
-      rebuildReason,
-      schedulerTimeSec,
-      phaseRebuildMinIntervalSec,
-    )
-  ) {
-    setQueuedCacheRebuild(
-      effectiveFieldCache,
-      descriptor,
-      rebuildReason,
-      { renderer, options },
-    );
-    return {
-      enqueued: false,
-      reason: "deferred",
-      descriptor: effectiveFieldCache.activeDescriptor,
-      queuedDescriptor: effectiveFieldCache.queuedDescriptor,
-    };
-  }
-
   if (!renderer || typeof renderer.computeAsync !== "function") {
     markCacheBackendUnavailable(effectiveFieldCache);
     return { enqueued: false, reason: "unavailable" };
@@ -2159,7 +2232,7 @@ export function enqueueRaymarchEffectiveFieldRebuild(
   const rebuildGeneration = beginCacheRebuild(
     effectiveFieldCache,
     descriptor,
-    schedulerTimeSec,
+    getCacheSchedulerTimeSec(options),
   );
   const submission = Promise.resolve()
     .then(() => renderer.computeAsync(computeNode))

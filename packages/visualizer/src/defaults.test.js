@@ -36,22 +36,18 @@ describe("defaults compatibility surface", () => {
   it("keeps scalar audio constants aligned with slot-domain defaults", () => {
     expect(DEFAULT_FFT_SIZE).toBe(8192);
     expect(DEFAULT_SAMPLE_RATE).toBe(44100);
-    expect(AUDIO_SLOT_CAPACITY).toBe(
-      AUDIO_DEFAULTS.backboneStackSlots + AUDIO_DEFAULTS.detailStackSlots,
+    expect(AUDIO_SLOT_CAPACITY).toBe(AUDIO_DEFAULTS.modalFieldCapacity);
+    expect(AUDIO_DEFAULTS.maxModalFieldDescriptorModes).toBe(
+      AUDIO_DEFAULTS.modalFieldCapacity,
     );
-    expect(AUDIO_DEFAULTS.maxBackboneDescriptorModes).toBe(
-      AUDIO_DEFAULTS.backboneStackSlots,
-    );
-    expect(AUDIO_DEFAULTS.maxDetailDescriptorModes).toBe(
-      AUDIO_DEFAULTS.detailStackSlots,
-    );
-    expect(AUDIO_DEFAULTS.maxTotalDescriptorModes).toBe(AUDIO_SLOT_CAPACITY);
     expect(AUDIO_DEFAULTS.signalNormalizationSlots).toBe(
-      Math.max(
-        AUDIO_DEFAULTS.maxBackboneDescriptorModes,
-        AUDIO_DEFAULTS.maxDetailDescriptorModes,
-      ),
+      AUDIO_DEFAULTS.modalFieldCapacity,
     );
+    expect(AUDIO_DEFAULTS).not.toHaveProperty("backboneStackSlots");
+    expect(AUDIO_DEFAULTS).not.toHaveProperty("detailStackSlots");
+    expect(AUDIO_DEFAULTS).not.toHaveProperty("maxBackboneDescriptorModes");
+    expect(AUDIO_DEFAULTS).not.toHaveProperty("maxDetailDescriptorModes");
+    expect(AUDIO_DEFAULTS).not.toHaveProperty("maxTotalDescriptorModes");
   });
 
   it("keeps DEFAULTS exactly aligned with the merged domain defaults", () => {

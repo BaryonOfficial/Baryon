@@ -62,8 +62,8 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   );
   const modalFieldCapacity = resolveLayerCapacity(
     audioConfig?.modalFieldCapacity ?? audioConfig?.capacity,
-    AUDIO_DEFAULTS.maxTotalDescriptorModes,
-    AUDIO_DEFAULTS.maxTotalDescriptorModes,
+    AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
+    AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
   );
   const modalFieldModeBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldColorBuffer = createModeBuffer(modalFieldCapacity);

@@ -813,14 +813,13 @@ function createScatteringNode({
       ).pow(float(SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER));
       const cancellationSuppression = float(1.0).sub(
         effectiveCancellationRatio
-          .mul(
-            smoothstep(
-              float(0.01),
-              float(0.12),
-              effectiveUnsignedSupport,
-            ),
-          )
+          .mul(clamp(effectiveUnsignedSupport, float(0.0), float(1.0)))
           .mul(float(0.85)),
+      );
+      const localFieldSupportAuthority = clamp(
+        effectiveUnsignedSupport,
+        float(0.0),
+        float(1.0),
       );
       const activeMask = smoothstep(float(0.0), float(1.0), modalFieldCount);
       // Beat pulse drives a visible density surge through the volume
@@ -891,13 +890,16 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
+      const shellFieldAuthority = localFieldSupportAuthority.mul(
+        max(structure, signedBodyAuthority),
+      );
       const causticFocusAuthority = clamp(
         max(
           max(
             structure.mul(contourCore),
             structure.mul(structure).mul(contourCore),
           ),
-          shellFocus.mul(contourCore),
+          shellFocus.mul(contourCore).mul(shellFieldAuthority),
         ),
         float(0.0),
         float(1.0),

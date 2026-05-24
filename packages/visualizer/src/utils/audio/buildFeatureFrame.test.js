@@ -4,7 +4,6 @@ import {
   AUDIO_SLOT_CAPACITY,
   CAVITY_ACOUSTIC_DEFAULTS,
 } from "../../defaults.js";
-import { BACKBONE_STACK_SLOTS, DETAIL_STACK_SLOTS } from "./modalStack.js";
 import {
   applyTestToneToSnapshot,
   buildAudioFeatureFrame as buildAudioFeatureFrameBase,
@@ -1836,9 +1835,9 @@ describe("buildAudioFeatureFrame modal contract", () => {
       fftMagnitudes: richFft,
       rms: 0.36,
     });
-    // Run several warmup frames so backbone can admit modes up to its per-layer
-    // limit (freshCap admits 2 new backbone modes per frame).
-    for (let i = 0; i < BACKBONE_STACK_SLOTS / 2; i += 1) {
+    // Run several warmup frames so the backbone role can admit modes up to the
+    // canonical modal-field capacity (freshCap admits 2 new modes per frame).
+    for (let i = 0; i < AUDIO_SLOT_CAPACITY / 2; i += 1) {
       buildAudioFeatureFrame({
         analysisSnapshot: snapshot,
         featureState,
@@ -1859,9 +1858,11 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(frame.detailSlots).toHaveLength(AUDIO_SLOT_CAPACITY * 4);
     expect(frame.modeSlots).toHaveLength(AUDIO_SLOT_CAPACITY * 4);
     expect(frame.debug.backboneModeCount).toBeLessThanOrEqual(
-      BACKBONE_STACK_SLOTS,
+      AUDIO_SLOT_CAPACITY,
     );
-    expect(frame.debug.detailModeCount).toBeLessThanOrEqual(DETAIL_STACK_SLOTS);
+    expect(frame.debug.detailModeCount).toBeLessThanOrEqual(
+      AUDIO_SLOT_CAPACITY,
+    );
     expect(frame.debug.modeSlotCount).toBeLessThanOrEqual(AUDIO_SLOT_CAPACITY);
     expect(frame.debug.modeSlotCount).toBeGreaterThan(0);
   });
@@ -4598,10 +4599,10 @@ describe("live input noise gate", () => {
       firstDetailTargets,
     );
     expect(featureState.analysis.zeroBackboneTargetSlots.length).toBe(
-      Math.min(2, BACKBONE_STACK_SLOTS) * 4,
+      Math.min(2, AUDIO_SLOT_CAPACITY) * 4,
     );
     expect(featureState.analysis.zeroDetailTargetSlots.length).toBe(
-      Math.min(2, DETAIL_STACK_SLOTS) * 4,
+      Math.min(2, AUDIO_SLOT_CAPACITY) * 4,
     );
   });
 
@@ -4667,14 +4668,14 @@ describe("live input noise gate", () => {
       firstPeakDriverScratchSlots,
     );
     expect(featureState.analysis.nonAcousticBackboneTarget.slots.length).toBe(
-      Math.min(2, BACKBONE_STACK_SLOTS) * 4,
+      Math.min(2, AUDIO_SLOT_CAPACITY) * 4,
     );
     expect(featureState.analysis.nonAcousticDetailTarget.slots.length).toBe(
-      Math.min(2, DETAIL_STACK_SLOTS) * 4,
+      Math.min(2, AUDIO_SLOT_CAPACITY) * 4,
     );
     expect(
       featureState.analysis.nonAcousticPeakDriverScratch.slots.length,
-    ).toBe(Math.min(2, BACKBONE_STACK_SLOTS) * 4);
+    ).toBe(Math.min(2, AUDIO_SLOT_CAPACITY) * 4);
   });
 
   it("reuses acoustic target buffers and rebuilds them when capacity changes", () => {
@@ -4737,10 +4738,10 @@ describe("live input noise gate", () => {
       firstDetailTargetSlots,
     );
     expect(featureState.analysis.acousticBackboneTarget.slots.length).toBe(
-      Math.min(2, BACKBONE_STACK_SLOTS) * 4,
+      Math.min(2, AUDIO_SLOT_CAPACITY) * 4,
     );
     expect(featureState.analysis.acousticDetailTarget.slots.length).toBe(
-      Math.min(2, DETAIL_STACK_SLOTS) * 4,
+      Math.min(2, AUDIO_SLOT_CAPACITY) * 4,
     );
   });
 });

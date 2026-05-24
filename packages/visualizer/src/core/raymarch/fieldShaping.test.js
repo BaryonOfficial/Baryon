@@ -216,6 +216,54 @@ describe("field shaping", () => {
     );
   });
 
+  it("does not let unsupported zero-field shell focus authorize caustics", () => {
+    const unsupportedShell = fieldShaping.deriveCausticRidgeAuthority({
+      contourCore: 1,
+      gradientStructure: 0,
+      structure: 0,
+      shellFocus: 1,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 0,
+      signedRadianceAuthority: 0,
+    });
+
+    expect(unsupportedShell.causticFocusAuthority).toBe(0);
+    expect(unsupportedShell.causticRidgeAuthority).toBe(0);
+  });
+
+  it("preserves supported nodal caustics when field structure exists", () => {
+    const supportedNode = fieldShaping.deriveCausticRidgeAuthority({
+      contourCore: 1,
+      gradientStructure: 0.62,
+      structure: 0.58,
+      shellFocus: 0.9,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 0.2,
+      signedRadianceAuthority: 1,
+    });
+
+    expect(supportedNode.causticFocusAuthority).toBeGreaterThan(0);
+    expect(supportedNode.causticRidgeAuthority).toBeGreaterThan(0);
+  });
+
+  it("does not let support-only shell focus become caustic authority", () => {
+    const supportOnlyShell = fieldShaping.deriveCausticRidgeAuthority({
+      contourCore: 1,
+      gradientStructure: 0,
+      structure: 0,
+      shellFocus: 1,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 0.2,
+      signedRadianceAuthority: 0,
+    });
+
+    expect(supportOnlyShell.causticFocusAuthority).toBe(0);
+    expect(supportOnlyShell.causticRidgeAuthority).toBe(0);
+  });
+
   it("caps low-focus body contribution against signed caustic support", () => {
     const broadSupport = deriveLaserCymaticOpticalProbe({
       ...BROAD_CONTOUR_LEAK,

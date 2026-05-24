@@ -1,16 +1,11 @@
 import {
   AUDIT_DEFAULTS,
-  AUDIO_DEFAULTS,
   AUDIO_SLOT_CAPACITY,
   BEAT_DEFAULTS,
 } from "../../defaults.js";
 import { createBlendableLayerState } from "./blendState.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
 
-/** @type {number} */
-export const BACKBONE_STACK_SLOTS = AUDIO_DEFAULTS.backboneStackSlots;
-/** @type {number} */
-export const DETAIL_STACK_SLOTS = AUDIO_DEFAULTS.detailStackSlots;
 /** @type {number} */
 export const MAX_STACK_SLOTS = AUDIO_SLOT_CAPACITY;
 export const BAND_BUCKET_COUNT = 4;

@@ -230,6 +230,12 @@ export function deriveShellFocus({ shellWeight = SHELL_WEIGHT_MIN } = {}) {
   );
 }
 
+export function deriveLocalFieldSupportAuthority({
+  effectiveUnsignedSupport = 1,
+} = {}) {
+  return clamp01(safeFinite(effectiveUnsignedSupport, 0));
+}
+
 export function deriveCausticRidgeAuthority({
   contourCore = 0,
   gradientStructure = 0,
@@ -237,16 +243,24 @@ export function deriveCausticRidgeAuthority({
   shellFocus = 0,
   edgeFade = 1,
   activeMask = 1,
+  effectiveUnsignedSupport = 1,
+  signedRadianceAuthority = 1,
 } = {}) {
   const safeContourCore = clamp01(contourCore);
   const safeGradientStructure = clamp01(gradientStructure);
   const safeStructure = clamp01(structure);
   const safeShellFocus = clamp01(shellFocus);
+  const localFieldSupportAuthority = deriveLocalFieldSupportAuthority({
+    effectiveUnsignedSupport,
+  });
+  const shellFieldAuthority =
+    localFieldSupportAuthority *
+    Math.max(safeGradientStructure, clamp01(signedRadianceAuthority));
   const causticFocusAuthority = clamp01(
     Math.max(
       safeGradientStructure * safeContourCore,
       safeGradientStructure * safeStructure * safeContourCore,
-      safeShellFocus * safeContourCore,
+      safeShellFocus * safeContourCore * shellFieldAuthority,
     ),
   );
   const causticRidgeAuthority =

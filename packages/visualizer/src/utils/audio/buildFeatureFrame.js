@@ -5265,7 +5265,7 @@ export function composeAudioFeatureFrame({
     generation: preparedInputs.auditState?.frame ?? 0,
     maxTotalModes: Math.min(
       preparedInputs.capacity,
-      AUDIO_DEFAULTS.maxTotalDescriptorModes,
+      AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
     ),
     modalFieldSlots: modalFieldDescriptorSource.modalFieldSlots,
     modalFieldPhaseSlots: modalFieldDescriptorSource.modalFieldPhaseSlots,

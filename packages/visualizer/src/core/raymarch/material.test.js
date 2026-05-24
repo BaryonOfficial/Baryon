@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
-import { AUDIO_DEFAULTS, RAYMARCH_DEFAULTS } from "../../defaults.js";
+import { AUDIO_SLOT_CAPACITY, RAYMARCH_DEFAULTS } from "../../defaults.js";
 import {
   RAYMARCH_BOUNDARY_TUNING,
   RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES,
@@ -128,7 +128,7 @@ describe("raymarch volume material", () => {
     expect(source).toMatch(/\.mul\(\s*signedBodyAuthority\s*\)/);
   });
 
-  it("uses effective-field support metadata only to suppress cancelled field transfer", () => {
+  it("uses effective-field support metadata to gate empty-field transfer", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
@@ -140,6 +140,10 @@ describe("raymarch volume material", () => {
     const cancellationSuppressionStart = expectSourceIndex(
       source,
       "const cancellationSuppression =",
+    );
+    const localFieldSupportAuthorityStart = expectSourceIndex(
+      source,
+      "const localFieldSupportAuthority =",
     );
     const bodyDensityStart = expectSourceIndex(source, "const bodyDensity =");
     const causticRidgeAuthorityStart = expectSourceIndex(
@@ -157,6 +161,9 @@ describe("raymarch volume material", () => {
 
     expect(source).toContain("effectiveFieldSupportTexture");
     expect(cancellationSuppressionStart).toBeGreaterThan(supportSampleStart);
+    expect(localFieldSupportAuthorityStart).toBeGreaterThan(
+      cancellationSuppressionStart,
+    );
     expect(bodyDensityStart).toBeGreaterThan(cancellationSuppressionStart);
     expect(causticRidgeAuthorityStart).toBeGreaterThan(
       cancellationSuppressionStart,
@@ -166,6 +173,12 @@ describe("raymarch volume material", () => {
     expect(
       source.slice(causticRidgeAuthorityStart, causticVisibilityStart),
     ).toMatch(/\.mul\(\s*cancellationSuppression\s*\)/);
+    expect(
+      source.slice(localFieldSupportAuthorityStart, causticVisibilityStart),
+    ).toContain("localFieldSupportAuthority");
+    expect(
+      source.slice(localFieldSupportAuthorityStart, causticVisibilityStart),
+    ).toContain("max(structure, signedBodyAuthority)");
     expect(source).not.toContain("effectiveSupportDensity");
   });
 
@@ -576,12 +589,9 @@ describe("raymarch volume material", () => {
   it("binds volumetric opacity to the material alpha path", () => {
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      backboneModeBuffer: {},
-      detailModeBuffer: {},
-      backboneColorBuffer: {},
-      detailColorBuffer: {},
-      backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
-      detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
+      modalFieldModeBuffer: {},
+      modalFieldColorBuffer: {},
+      modalFieldCapacity: AUDIO_SLOT_CAPACITY,
       uniforms: makeMeshUniforms(),
     });
 
@@ -596,12 +606,9 @@ describe("raymarch volume material", () => {
     const uniforms = makeMeshUniforms();
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      backboneModeBuffer: {},
-      detailModeBuffer: {},
-      backboneColorBuffer: {},
-      detailColorBuffer: {},
-      backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
-      detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
+      modalFieldModeBuffer: {},
+      modalFieldColorBuffer: {},
+      modalFieldCapacity: AUDIO_SLOT_CAPACITY,
       uniforms,
     });
 
@@ -625,14 +632,11 @@ describe("raymarch volume material", () => {
     const uniforms = makeMeshUniforms();
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      backboneModeBuffer: {},
-      detailModeBuffer: {},
-      backboneColorBuffer: {},
-      detailColorBuffer: {},
+      modalFieldModeBuffer: {},
+      modalFieldColorBuffer: {},
       effectiveFieldTexture: effectiveFieldCache.texture,
       effectiveFieldSupportTexture: effectiveFieldCache.supportTexture,
-      backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
-      detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
+      modalFieldCapacity: AUDIO_SLOT_CAPACITY,
       uniforms,
     });
 
@@ -666,15 +670,12 @@ describe("raymarch volume material", () => {
     expect(mesh.material.effectiveFieldSupportTexture).toBeNull();
   });
 
-  it("supports separate backbone and detail capacities", () => {
+  it("binds the canonical modal field capacity", () => {
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      backboneModeBuffer: {},
-      detailModeBuffer: {},
-      backboneColorBuffer: {},
-      detailColorBuffer: {},
-      backboneCapacity: 8,
-      detailCapacity: 4,
+      modalFieldModeBuffer: {},
+      modalFieldColorBuffer: {},
+      modalFieldCapacity: 12,
       uniforms: makeMeshUniforms(),
     });
 
@@ -691,14 +692,11 @@ describe("raymarch volume material", () => {
     });
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      backboneModeBuffer: {},
-      detailModeBuffer: {},
-      backboneColorBuffer: {},
-      detailColorBuffer: {},
+      modalFieldModeBuffer: {},
+      modalFieldColorBuffer: {},
       effectiveFieldTexture: effectiveFieldCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
-      backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
-      detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
+      modalFieldCapacity: AUDIO_SLOT_CAPACITY,
       uniforms: makeMeshUniforms(),
     });
     const materialCache = getRaymarchMaterialCache(mesh);
@@ -760,14 +758,11 @@ describe("raymarch volume material", () => {
     });
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      backboneModeBuffer: {},
-      detailModeBuffer: {},
-      backboneColorBuffer: {},
-      detailColorBuffer: {},
+      modalFieldModeBuffer: {},
+      modalFieldColorBuffer: {},
       effectiveFieldTexture: effectiveFieldCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
-      backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
-      detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
+      modalFieldCapacity: AUDIO_SLOT_CAPACITY,
       uniforms: makeMeshUniforms(),
     });
     const materialCache = getRaymarchMaterialCache(mesh);
@@ -806,14 +801,11 @@ describe("raymarch volume material", () => {
     });
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      backboneModeBuffer: {},
-      detailModeBuffer: {},
-      backboneColorBuffer: {},
-      detailColorBuffer: {},
+      modalFieldModeBuffer: {},
+      modalFieldColorBuffer: {},
       effectiveFieldTexture: effectiveFieldCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
-      backboneCapacity: AUDIO_DEFAULTS.backboneStackSlots,
-      detailCapacity: AUDIO_DEFAULTS.detailStackSlots,
+      modalFieldCapacity: AUDIO_SLOT_CAPACITY,
       uniforms: makeMeshUniforms(),
     });
 

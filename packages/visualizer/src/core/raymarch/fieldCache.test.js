@@ -125,10 +125,7 @@ function resolveModalFieldRebuildOptions(options) {
       options.modalFieldColorBuffer ?? options.backboneColorBuffer ?? null,
     modalFieldPhaseBuffer:
       options.modalFieldPhaseBuffer ?? options.backbonePhaseBuffer ?? null,
-    modalFieldCapacity:
-      options.modalFieldCapacity ??
-      Math.max(0, Math.round(options.backboneCapacity || 0)) +
-        Math.max(0, Math.round(options.detailCapacity || 0)),
+    modalFieldCapacity: options.modalFieldCapacity ?? 0,
     uniforms: {
       ...options.uniforms,
       uModalFieldModeCount:
@@ -232,6 +229,153 @@ describe("fieldCache", () => {
     );
     expect(effectiveFieldCache.semantic).toBe("canonical-effective-field");
     expect(effectiveFieldCache.supportSemantic).toBe("effective-field-support");
+  });
+
+  it("marks all-rejected effective field descriptors as non-drawable", () => {
+    const descriptor = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: new Float32Array([99, 99, 99, 1]),
+      modalFieldPhaseSlots: new Float32Array([0, 0, 1, 1]),
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      resolution: 8,
+    });
+
+    expect(descriptor.modalFieldCount).toBe(1);
+    expect(descriptor.contributingEffectiveFieldModeCount).toBe(0);
+    expect(descriptor.bandwidthRejectedModeCount).toBe(1);
+    expect(descriptor.effectiveFieldDrawable).toBe(false);
+    expect(descriptor.effectiveFieldBlockedReason).toBe(
+      "no-contributing-effective-field-modes",
+    );
+  });
+
+  it("marks representable effective field descriptors as drawable candidates", () => {
+    const descriptor = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: new Float32Array([1, 1, 1, 1]),
+      modalFieldPhaseSlots: new Float32Array([0, 0, 1, 1]),
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      resolution: 8,
+    });
+
+    expect(descriptor.contributingEffectiveFieldModeCount).toBe(1);
+    expect(descriptor.effectiveFieldDrawable).toBe(true);
+    expect(descriptor.effectiveFieldBlockedReason).toBeNull();
+  });
+
+  it("resolves effective field drawable authority states", () => {
+    const cache = raymarchFieldCache.createRaymarchEffectiveFieldCache({
+      resolution: 8,
+    });
+    const descriptor = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: new Float32Array([1, 1, 1, 1]),
+      modalFieldPhaseSlots: new Float32Array([0, 0.2, 1, 1]),
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      resolution: 8,
+    });
+    const phaseDescriptor = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: new Float32Array([1, 1, 1, 1]),
+      modalFieldPhaseSlots: new Float32Array([0, 0.4, 1, 1]),
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      resolution: 8,
+    });
+    const structuralDescriptor = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: new Float32Array([1, 1, 2, 1]),
+      modalFieldPhaseSlots: new Float32Array([0, 0.4, 1, 1]),
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      resolution: 8,
+    });
+    const blockedDescriptor = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: new Float32Array([99, 99, 99, 1]),
+      modalFieldPhaseSlots: new Float32Array([0, 0, 1, 1]),
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      resolution: 8,
+    });
+
+    expect(
+      raymarchFieldCache.resolveRaymarchEffectiveFieldDrawableAuthority(
+        null,
+        descriptor,
+      ),
+    ).toMatchObject({
+      drawable: false,
+      state: "field-cache-absent",
+      blockedReason: "cache-unavailable",
+    });
+
+    cache.rebuildPending = true;
+    expect(
+      raymarchFieldCache.resolveRaymarchEffectiveFieldDrawableAuthority(
+        cache,
+        descriptor,
+      ),
+    ).toMatchObject({
+      drawable: false,
+      state: "field-cache-building",
+      blockedReason: "cache-rebuild-pending",
+    });
+
+    cache.ready = true;
+    cache.rebuildPending = false;
+    cache.activeDescriptor = descriptor;
+    expect(
+      raymarchFieldCache.resolveRaymarchEffectiveFieldDrawableAuthority(
+        cache,
+        descriptor,
+      ),
+    ).toMatchObject({
+      drawable: true,
+      state: "field-cache-ready-current",
+      blockedReason: null,
+    });
+
+    cache.lastRebuildSubmittedAtSec = 1;
+    const phaseStaleAuthority =
+      raymarchFieldCache.resolveRaymarchEffectiveFieldDrawableAuthority(
+        cache,
+        phaseDescriptor,
+        { schedulerTimeSec: 1.05 },
+      );
+    expect(phaseStaleAuthority).toMatchObject({
+      drawable: true,
+      state: "field-cache-ready-phase-stale",
+      blockedReason: null,
+    });
+    expect(phaseStaleAuthority.phaseStalenessSec).toBeCloseTo(0.05, 6);
+
+    cache.rebuildPending = true;
+    expect(
+      raymarchFieldCache.resolveRaymarchEffectiveFieldDrawableAuthority(
+        cache,
+        structuralDescriptor,
+      ),
+    ).toMatchObject({
+      drawable: true,
+      state: "field-cache-ready-stale",
+      blockedReason: null,
+      staleReason: "mode-slots",
+    });
+
+    expect(
+      raymarchFieldCache.resolveRaymarchEffectiveFieldDrawableAuthority(
+        cache,
+        blockedDescriptor,
+      ),
+    ).toMatchObject({
+      drawable: false,
+      state: "field-cache-blocked",
+      blockedReason: "no-contributing-effective-field-modes",
+    });
   });
 
   it("keeps compute support and cancellation semantics paired with the CPU helper", () => {
@@ -497,14 +641,11 @@ describe("fieldCache", () => {
       },
     };
     const options = {
-      backboneModeBuffer: { value: { array: new Float32Array(4) } },
-      detailModeBuffer: { value: { array: new Float32Array(4) } },
-      backboneCapacity: 1,
-      detailCapacity: 0,
+      modalFieldModeBuffer: { value: { array: new Float32Array(4) } },
+      modalFieldCapacity: 1,
       uniforms: {
         uRadius: { value: 3 },
-        uBackboneModeCount: { value: 1 },
-        uDetailModeCount: { value: 0 },
+        uModalFieldModeCount: { value: 1 },
       },
     };
     fieldCache.computeNodesByKey["rectangular:neumann"] = { id: "field" };
@@ -591,16 +732,12 @@ describe("fieldCache", () => {
       },
     };
     const options = {
-      backboneModeBuffer: { value: { array: new Float32Array(4) } },
-      detailModeBuffer: { value: { array: new Float32Array(4) } },
-      backboneColorBuffer: { value: { array: new Float32Array(4) } },
-      detailColorBuffer: { value: { array: new Float32Array(4) } },
-      backboneCapacity: 1,
-      detailCapacity: 0,
+      modalFieldModeBuffer: { value: { array: new Float32Array(4) } },
+      modalFieldColorBuffer: { value: { array: new Float32Array(4) } },
+      modalFieldCapacity: 1,
       uniforms: {
         uRadius: { value: 3 },
-        uBackboneModeCount: { value: 1 },
-        uDetailModeCount: { value: 0 },
+        uModalFieldModeCount: { value: 1 },
       },
     };
     spectralLightCache.computeNodesByKey["rectangular:neumann"] = {

@@ -22,6 +22,8 @@ import {
   getRaymarchEffectiveFieldDescriptorStaleReason,
   isRaymarchEffectiveFieldCacheReadyForDescriptor,
   isRaymarchSpectralLightCacheReadyForDescriptor,
+  resolveRaymarchEffectiveFieldDescriptorBlockedReason,
+  resolveRaymarchEffectiveFieldDrawableAuthority,
   shouldRebuildRaymarchSpectralLightCache,
   shouldRebuildRaymarchEffectiveFieldCache,
   RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
@@ -215,6 +217,82 @@ function resetEffectiveFieldRuntimeDiagnostics(effectiveFieldCache) {
   effectiveFieldCache.effectiveFieldSupportDiagnosticSampleCount = 0;
 }
 
+function syncEffectiveFieldRuntimeDiagnostics(effectiveFieldCache, descriptor) {
+  if (!effectiveFieldCache || !descriptor) {
+    return;
+  }
+
+  effectiveFieldCache.activeEffectiveFieldModeCount =
+    descriptor.phaseModeCount ?? 0;
+  effectiveFieldCache.effectiveFieldAuthority = descriptor.phaseAuthority ?? 0;
+  effectiveFieldCache.modeIdentityRetentionRatio =
+    descriptor.modeIdentityRetentionRatio ?? 1;
+  effectiveFieldCache.effectiveFieldMaxRepresentableModeIndex =
+    descriptor.effectiveFieldMaxRepresentableModeIndex ??
+    effectiveFieldCache.effectiveFieldMaxRepresentableModeIndex ??
+    0;
+  effectiveFieldCache.contributingEffectiveFieldModeCount =
+    descriptor.contributingEffectiveFieldModeCount ?? 0;
+  effectiveFieldCache.zeroAmplitudeSkippedModeCount =
+    descriptor.zeroAmplitudeSkippedModeCount ?? 0;
+  effectiveFieldCache.contributingModalEnergy =
+    descriptor.contributingModalEnergy ?? 0;
+  effectiveFieldCache.bandwidthRejectedModeCount =
+    descriptor.bandwidthRejectedModeCount ?? 0;
+  effectiveFieldCache.bandwidthRejectedModalEnergy =
+    descriptor.bandwidthRejectedModalEnergy ?? 0;
+  effectiveFieldCache.effectiveFieldResolvedModalEnergyRatio =
+    descriptor.effectiveFieldResolvedModalEnergyRatio ?? 1;
+  effectiveFieldCache.effectiveFieldGradientEnvelope =
+    descriptor.effectiveFieldGradientEnvelope ?? 0;
+  effectiveFieldCache.effectiveFieldUnsignedSupportMean =
+    descriptor.effectiveFieldUnsignedSupportMean ?? 0;
+  effectiveFieldCache.effectiveFieldCancellationRatioMean =
+    descriptor.effectiveFieldCancellationRatioMean ?? 0;
+  effectiveFieldCache.effectiveFieldCancellationRatioMax =
+    descriptor.effectiveFieldCancellationRatioMax ?? 0;
+  effectiveFieldCache.effectiveFieldSupportDiagnosticSampleCount =
+    descriptor.effectiveFieldSupportDiagnosticSampleCount ?? 0;
+}
+
+function setEffectiveFieldDrawableAuthority(runtimeState, authority) {
+  const normalizedAuthority = authority ?? {
+    drawable: false,
+    state: "field-cache-absent",
+    blockedReason: "cache-unavailable",
+    staleReason: null,
+    phaseStalenessSec: 0,
+  };
+  runtimeState.effectiveFieldDrawableAuthority = normalizedAuthority;
+  const cache = runtimeState.effectiveFieldCache;
+  if (cache) {
+    cache.effectiveFieldDrawable = normalizedAuthority.drawable === true;
+    cache.effectiveFieldDrawableState = normalizedAuthority.state;
+    cache.effectiveFieldDrawableBlockedReason =
+      normalizedAuthority.blockedReason ?? null;
+    cache.effectiveFieldDrawableStaleReason =
+      normalizedAuthority.staleReason ?? null;
+    cache.effectiveFieldPhaseStalenessSec =
+      normalizedAuthority.phaseStalenessSec ?? 0;
+  }
+  return normalizedAuthority;
+}
+
+function blockEffectiveFieldCacheForDescriptor(effectiveFieldCache, reason) {
+  if (!effectiveFieldCache) {
+    return;
+  }
+
+  advanceRaymarchCacheGeneration(effectiveFieldCache);
+  effectiveFieldCache.ready = false;
+  effectiveFieldCache.rebuildPending = false;
+  effectiveFieldCache.activeDescriptor = null;
+  effectiveFieldCache.pendingDescriptor = null;
+  clearQueuedRaymarchCacheRebuild(effectiveFieldCache);
+  effectiveFieldCache.lastError = null;
+  effectiveFieldCache.lastRebuildReason = reason ?? "blocked";
+}
+
 function resetRenderAuthorityState(runtimeState) {
   clearBufferNode(runtimeState.modalFieldModeBuffer);
   clearBufferNode(runtimeState.modalFieldColorBuffer);
@@ -227,6 +305,7 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.currentModalDescriptor = null;
   runtimeState.currentEffectiveFieldDescriptor = null;
   runtimeState.currentSpectralLightDescriptor = null;
+  runtimeState.effectiveFieldDrawableAuthority = null;
   resetRaymarchUploadState(runtimeState);
   resetCacheActivity(runtimeState.effectiveFieldCache);
   resetCacheActivity(runtimeState.spectralLightCache);
@@ -676,6 +755,12 @@ function buildRaymarchDebugSnapshot(
       effectiveFieldCache?.effectiveFieldSupportDiagnosticSampleCount,
     0,
   );
+  const effectiveFieldDrawableAuthority =
+    runtimeState.effectiveFieldDrawableAuthority ??
+    resolveRaymarchEffectiveFieldDrawableAuthority(
+      effectiveFieldCache,
+      effectiveFieldDescriptor,
+    );
   const spectralLightCacheDescriptorFresh =
     isRaymarchSpectralLightCacheReadyForDescriptor(
       spectralLightCache,
@@ -879,6 +964,15 @@ function buildRaymarchDebugSnapshot(
     effectiveFieldRebuildPending: effectiveFieldCache?.rebuildPending ?? false,
     effectiveFieldFailedClosed: effectiveFieldCache?.backend === "unavailable",
     effectiveFieldLastError: effectiveFieldCache?.lastError ?? null,
+    effectiveFieldDrawable: effectiveFieldDrawableAuthority.drawable === true,
+    effectiveFieldDrawableState:
+      effectiveFieldDrawableAuthority.state ?? "field-cache-absent",
+    effectiveFieldDrawableBlockedReason:
+      effectiveFieldDrawableAuthority.blockedReason ?? null,
+    effectiveFieldDrawableStaleReason:
+      effectiveFieldDrawableAuthority.staleReason ?? null,
+    effectiveFieldPhaseStalenessSec:
+      effectiveFieldDrawableAuthority.phaseStalenessSec ?? 0,
     effectiveFieldModeCount,
     effectiveFieldSemantic,
     effectiveFieldSupportReady,
@@ -1433,17 +1527,43 @@ function updateEffectiveFieldCache(
 ) {
   const effectiveFieldCache = runtimeState.effectiveFieldCache;
   if (!effectiveFieldCache || !runtimeState.volumeMesh) {
+    setEffectiveFieldDrawableAuthority(
+      runtimeState,
+      resolveRaymarchEffectiveFieldDrawableAuthority(
+        effectiveFieldCache,
+        effectiveFieldDescriptor,
+        { schedulerTimeSec },
+      ),
+    );
     return "unavailable";
   }
 
   effectiveFieldCache.active = true;
   effectiveFieldCache.mode = "effective-cached";
-  effectiveFieldCache.activeEffectiveFieldModeCount =
-    effectiveFieldDescriptor?.phaseModeCount ?? 0;
-  effectiveFieldCache.effectiveFieldAuthority =
-    effectiveFieldDescriptor?.phaseAuthority ?? 0;
-  effectiveFieldCache.modeIdentityRetentionRatio =
-    effectiveFieldDescriptor?.modeIdentityRetentionRatio ?? 1;
+  syncEffectiveFieldRuntimeDiagnostics(
+    effectiveFieldCache,
+    effectiveFieldDescriptor,
+  );
+
+  const descriptorBlockedReason =
+    resolveRaymarchEffectiveFieldDescriptorBlockedReason(
+      effectiveFieldDescriptor,
+    );
+  if (descriptorBlockedReason) {
+    blockEffectiveFieldCacheForDescriptor(
+      effectiveFieldCache,
+      descriptorBlockedReason,
+    );
+    const authority = setEffectiveFieldDrawableAuthority(
+      runtimeState,
+      resolveRaymarchEffectiveFieldDrawableAuthority(
+        effectiveFieldCache,
+        effectiveFieldDescriptor,
+        { schedulerTimeSec },
+      ),
+    );
+    return authority.drawable ? "effective-cached" : "unavailable";
+  }
 
   const { needsRebuild, reason } = shouldRebuildRaymarchEffectiveFieldCache(
     effectiveFieldCache,
@@ -1462,15 +1582,20 @@ function updateEffectiveFieldCache(
         modalFieldCapacity,
         uniforms: runtimeState.uniforms,
         schedulerTimeSec,
-        phaseRebuildMinIntervalSec:
-          runtimeState.effectiveFieldPhaseRebuildMinIntervalSec,
       },
     );
   }
 
-  return effectiveFieldCache.backend === "unavailable"
-    ? "unavailable"
-    : "effective-cached";
+  const authority = setEffectiveFieldDrawableAuthority(
+    runtimeState,
+    resolveRaymarchEffectiveFieldDrawableAuthority(
+      effectiveFieldCache,
+      effectiveFieldDescriptor,
+      { schedulerTimeSec },
+    ),
+  );
+
+  return authority.drawable ? "effective-cached" : "unavailable";
 }
 
 function resolveSpectralLightEvaluationMode(
@@ -1896,7 +2021,10 @@ export function tickRaymarchRuntime(
     bandEnergies[3] ?? 0,
   );
 
-  volumeMesh.visible = renderAuthority;
+  const effectiveFieldDrawable =
+    !runtimeState.effectiveFieldCache ||
+    runtimeState.effectiveFieldDrawableAuthority?.drawable === true;
+  volumeMesh.visible = renderAuthority && effectiveFieldDrawable;
   idleOverlay.visible = resolveIdleOverlayVisible(
     runtimeState,
     featureFrame,
