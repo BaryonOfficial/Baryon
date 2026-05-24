@@ -945,9 +945,9 @@ describe("tickRaymarchRuntime", () => {
     featureFrame.detailPhaseSlots = new Float32Array([
       0.7, 0.25, 0.9, 0.7, -0.9, 0.1, 0.1, 0.01,
     ]);
-    tickRaymarchRuntime(runtimeState, featureFrame, 3.1, 1 / 60, renderer);
+    tickRaymarchRuntime(runtimeState, featureFrame, 3.22, 1 / 60, renderer);
     await flushMicrotasks();
-    tickRaymarchRuntime(runtimeState, featureFrame, 3.12, 1 / 60, renderer);
+    tickRaymarchRuntime(runtimeState, featureFrame, 3.24, 1 / 60, renderer);
 
     expect(runtimeState.effectiveFieldCache).toBeTruthy();
     expect(runtimeState.effectiveFieldCache.ready).toBe(true);
@@ -2682,6 +2682,94 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.effectiveFieldCache.rebuildPending).toBe(false);
     expect(runtimeState.effectiveFieldCache.ready).toBe(true);
     expect(computeCalls).toBe(1);
+  });
+
+  it("paces phase-only effective field rebuilds during live-frame cadence", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    let computeCalls = 0;
+    const renderer = {
+      computeAsync: async () => {
+        computeCalls += 1;
+      },
+    };
+    const makeFrame = (phaseVelocity) =>
+      createActiveFeatureFrame({
+        backbonePhaseSlots: new Float32Array([0.1, phaseVelocity, 0.8, 0.9]),
+        detailPhaseSlots: new Float32Array([0.3, 0.4, 0.8, 0.7]),
+        modalPhaseAuthority: 0.8,
+      });
+
+    tickRaymarchRuntime(runtimeState, makeFrame(0.2), 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    expect(computeCalls).toBe(1);
+
+    tickRaymarchRuntime(
+      runtimeState,
+      makeFrame(0.4),
+      1 + 1 / 60,
+      1 / 60,
+      renderer,
+    );
+    await flushMicrotasks();
+
+    expect(computeCalls).toBe(1);
+    expect(runtimeState.effectiveFieldCache.rebuildPending).toBe(false);
+    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toEqual(
+      runtimeState.currentEffectiveFieldDescriptor,
+    );
+    expect(
+      runtimeState.debugSnapshot.effectiveFieldQueuedDescriptorPending,
+    ).toBe(true);
+
+    tickRaymarchRuntime(runtimeState, makeFrame(0.6), 1.25, 1 / 60, renderer);
+    await flushMicrotasks();
+
+    expect(computeCalls).toBe(2);
+    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toBeNull();
+  });
+
+  it("extends phase-only effective field pacing when render pressure asks for it", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    runtimeState.effectiveFieldPhaseRebuildMinIntervalSec = 0.5;
+    let computeCalls = 0;
+    const renderer = {
+      computeAsync: async () => {
+        computeCalls += 1;
+      },
+    };
+    const makeFrame = (phaseVelocity) =>
+      createActiveFeatureFrame({
+        backbonePhaseSlots: new Float32Array([0.1, phaseVelocity, 0.8, 0.9]),
+        detailPhaseSlots: new Float32Array([0.3, 0.4, 0.8, 0.7]),
+        modalPhaseAuthority: 0.8,
+      });
+
+    tickRaymarchRuntime(runtimeState, makeFrame(0.2), 1, 1 / 60, renderer);
+    await flushMicrotasks();
+    expect(computeCalls).toBe(1);
+
+    tickRaymarchRuntime(runtimeState, makeFrame(0.4), 1.25, 1 / 60, renderer);
+    await flushMicrotasks();
+    expect(computeCalls).toBe(1);
+    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toEqual(
+      runtimeState.currentEffectiveFieldDescriptor,
+    );
+
+    tickRaymarchRuntime(runtimeState, makeFrame(0.6), 1.4, 1 / 60, renderer);
+    await flushMicrotasks();
+    expect(computeCalls).toBe(1);
+    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toEqual(
+      runtimeState.currentEffectiveFieldDescriptor,
+    );
+
+    tickRaymarchRuntime(runtimeState, makeFrame(0.8), 1.55, 1 / 60, renderer);
+    await flushMicrotasks();
+    expect(computeCalls).toBe(2);
+    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toBeNull();
   });
 
   it("keeps low-amplitude bass rendering on the cached product path", async () => {

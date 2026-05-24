@@ -1428,7 +1428,7 @@ function takePendingRaymarchPerformanceGovernor(
 function updateEffectiveFieldCache(
   runtimeState,
   renderer,
-  { modalFieldCapacity },
+  { modalFieldCapacity, schedulerTimeSec = null },
   { effectiveFieldDescriptor },
 ) {
   const effectiveFieldCache = runtimeState.effectiveFieldCache;
@@ -1461,6 +1461,9 @@ function updateEffectiveFieldCache(
         modalFieldPhaseBuffer: runtimeState.modalFieldPhaseBuffer,
         modalFieldCapacity,
         uniforms: runtimeState.uniforms,
+        schedulerTimeSec,
+        phaseRebuildMinIntervalSec:
+          runtimeState.effectiveFieldPhaseRebuildMinIntervalSec,
       },
     );
   }
@@ -1803,6 +1806,7 @@ export function tickRaymarchRuntime(
     renderer,
     {
       modalFieldCapacity,
+      schedulerTimeSec: time,
     },
     {
       spectralLightEnabled,

@@ -790,6 +790,28 @@ test("auto raymarch ignores long frames caused by active UI interaction", () => 
   ).toBe(1);
 });
 
+test("auto raymarch extends effective-field phase rebuild cadence under frame pressure", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness();
+  runtimeDiagnostics.lastFrameTimeMs = 80;
+  runtimeDiagnostics.smoothedFrameTimeMs = 32;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeState.effectiveFieldPhaseRebuildMinIntervalSec).toBeCloseTo(
+    0.45,
+    6,
+  );
+});
+
+test("auto raymarch leaves effective-field phase rebuild cadence at default when stable", () => {
+  const { args, runtimeState } = createAdaptiveRaymarchHarness();
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeState.effectiveFieldPhaseRebuildMinIntervalSec).toBeNull();
+});
+
 test("performance HUD scale falls back to requested render scale when adaptive mode is idle", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
 
