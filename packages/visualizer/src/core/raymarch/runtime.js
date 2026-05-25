@@ -309,6 +309,7 @@ function resetRenderAuthorityState(runtimeState) {
   resetCacheActivity(runtimeState.effectiveFieldCache);
   resetCacheActivity(runtimeState.spectralLightCache);
   resetEffectiveFieldRuntimeDiagnostics(runtimeState.effectiveFieldCache);
+  runtimeState.renderAuthorityResetApplied = true;
 }
 
 function readRuntimeFieldNoiseFloor(runtimeState) {
@@ -866,8 +867,8 @@ function buildRaymarchDebugSnapshot(
       featureFrame?.debug?.projectionOverlapPressureResonant ?? 0,
     projectionCompetitionReduction:
       featureFrame?.debug?.projectionCompetitionReduction ?? 0,
-    projectionDenseSpectrumPressure:
-      featureFrame?.debug?.projectionDenseSpectrumPressure ?? 0,
+    projectionLoad:
+      featureFrame?.debug?.projectionLoad ?? 0,
     projectionHighQProtection:
       featureFrame?.debug?.projectionHighQProtection ?? 0,
     projectionEnergyNormalizationApplied:
@@ -1707,7 +1708,9 @@ export function tickRaymarchRuntime(
   );
 
   if (!renderAuthority) {
-    resetRenderAuthorityState(runtimeState);
+    if (runtimeState.renderAuthorityResetApplied !== true) {
+      resetRenderAuthorityState(runtimeState);
+    }
     setIfChanged(uniforms.uModalFieldModeCount, 0);
     setIfChanged(uniforms.uActiveModeCount, 0);
     setIfChanged(uniforms.uAverageAmplitude, 0);
@@ -1751,6 +1754,7 @@ export function tickRaymarchRuntime(
     );
     return;
   }
+  runtimeState.renderAuthorityResetApplied = false;
 
   const spectralLightEnabled = (uniforms.uSpectralMix?.value ?? 0) > 0;
   const effectiveCavityGeometry =

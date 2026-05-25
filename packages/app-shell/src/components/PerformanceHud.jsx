@@ -30,6 +30,9 @@ export default function PerformanceHud({
   const resolvedTargetFps = splitAuthoritativeMetrics
     ? (metrics.outputTargetFps ?? metrics.targetFps)
     : metrics.targetFps;
+  const targetFpsLabel = splitAuthoritativeMetrics
+    ? "Output Target FPS"
+    : "Frame Budget FPS";
 
   const showRaymarchSteps =
     metrics.visualizationMethod === "raymarch" &&
@@ -109,7 +112,9 @@ export default function PerformanceHud({
         </div>
       ) : null}
       {typeof resolvedTargetFps === "number" ? (
-        <div>Target FPS: {Math.round(resolvedTargetFps)}</div>
+        <div>
+          {targetFpsLabel}: {Math.round(resolvedTargetFps)}
+        </div>
       ) : null}
       {raymarchStepsLabel ? <div>Steps: {raymarchStepsLabel}</div> : null}
     </aside>

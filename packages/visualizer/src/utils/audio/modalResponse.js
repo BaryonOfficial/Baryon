@@ -1,22 +1,8 @@
 const EPSILON = 1e-9;
 const TWO_PI = Math.PI * 2;
 
-export const DEFAULT_MODAL_RESPONSE_PROFILES = Object.freeze({
-  "low-q": Object.freeze({
-    qualityFactor: 4,
-    attackMs: 48,
-    releaseMs: 140,
-  }),
-  "mid-q": Object.freeze({
-    qualityFactor: 10,
-    attackMs: 64,
-    releaseMs: 320,
-  }),
-  "high-q": Object.freeze({
-    qualityFactor: 32,
-    attackMs: 92,
-    releaseMs: 940,
-  }),
+export const DEFAULT_MODAL_RESPONSE_REFERENCE = Object.freeze({
+  qualityFactor: 10,
 });
 
 const DEFAULT_MODAL_RESPONSE_BUDGET = 1;
@@ -24,6 +10,9 @@ const MIN_RELATIVE_PHYSICAL_MODAL_ENERGY = 0.035;
 const FRESH_RESPONSE_SEED_THRESHOLD = 0.02;
 const FREQUENCY_DAMPING_REFERENCE_HZ = 4800;
 const ORDER_DAMPING_REFERENCE = 42;
+const MIN_MODAL_QUALITY_FACTOR = 0.5;
+const MAX_MODAL_QUALITY_FACTOR = 50000;
+const DEFAULT_STORED_ENERGY_TAU_MS = 320;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -91,34 +80,29 @@ function computeModeOrder(mode) {
   return Math.sqrt(u * u + v * v + w * w);
 }
 
-function resolveModeQProfile(mode) {
-  if (
-    mode?.qProfile === "low-q" ||
-    mode?.qProfile === "mid-q" ||
-    mode?.qProfile === "high-q"
-  ) {
-    return mode.qProfile;
-  }
-
+function resolveModeQualityFactor(mode) {
   if (Number.isFinite(mode?.qualityFactor)) {
-    if (mode.qualityFactor >= 18) return "high-q";
-    if (mode.qualityFactor >= 7) return "mid-q";
-    return "low-q";
+    return Math.min(
+      MAX_MODAL_QUALITY_FACTOR,
+      Math.max(MIN_MODAL_QUALITY_FACTOR, mode.qualityFactor),
+    );
   }
-
+  if (Number.isFinite(mode?.modalResponseProfile?.qualityFactor)) {
+    return Math.min(
+      MAX_MODAL_QUALITY_FACTOR,
+      Math.max(MIN_MODAL_QUALITY_FACTOR, mode.modalResponseProfile.qualityFactor),
+    );
+  }
   const frequencyHz = mode?.naturalFrequencyHz ?? mode?.frequencyHz ?? 0;
   const order = computeModeOrder(mode);
-  if (frequencyHz >= 1800 || order >= 26) {
-    return "high-q";
-  }
-  if (frequencyHz >= 520 || order >= 13) {
-    return "mid-q";
-  }
-  return "low-q";
+  const frequencyShape = smoothstep(120, 1800, frequencyHz);
+  const orderShape = smoothstep(3, 26, order);
+  const retainedShape = Math.max(frequencyShape, orderShape);
+  return 4 + retainedShape * 28;
 }
 
-function resolveDiagnosticLayer(mode, qProfile) {
-  return mode?.layer ?? (qProfile === "high-q" ? "resonant" : "source-coupled");
+function resolveDiagnosticLayer(mode, qualityFactor) {
+  return mode?.layer ?? (qualityFactor >= 18 ? "resonant" : "source-coupled");
 }
 
 function updateModalOscillatorState({
@@ -155,30 +139,24 @@ function updateModalOscillatorState({
 }
 
 function getModeProfile(mode) {
-  const qProfile = resolveModeQProfile(mode);
-  if (mode?.modalResponseProfile) {
-    return {
-      ...DEFAULT_MODAL_RESPONSE_PROFILES[qProfile],
-      ...mode.modalResponseProfile,
-    };
-  }
-
-  if (mode?.qualityFactor || mode?.attackMs || mode?.releaseMs) {
-    const baseProfile =
-      DEFAULT_MODAL_RESPONSE_PROFILES[qProfile] ??
-      DEFAULT_MODAL_RESPONSE_PROFILES["mid-q"];
-    return {
-      ...baseProfile,
-      qualityFactor: mode.qualityFactor ?? baseProfile.qualityFactor,
-      attackMs: mode.attackMs ?? baseProfile.attackMs,
-      releaseMs: mode.releaseMs ?? baseProfile.releaseMs,
-    };
-  }
-
-  return (
-    DEFAULT_MODAL_RESPONSE_PROFILES[qProfile] ??
-    DEFAULT_MODAL_RESPONSE_PROFILES["mid-q"]
-  );
+  const qualityFactor = resolveModeQualityFactor(mode);
+  const modeFrequencyHz = mode?.naturalFrequencyHz ?? mode?.frequencyHz ?? 0;
+  const storedEnergyTauMs = computeStoredEnergyTimeConstantMs({
+    modeFrequencyHz,
+    qualityFactor,
+  });
+  return {
+    ...DEFAULT_MODAL_RESPONSE_REFERENCE,
+    ...mode?.modalResponseProfile,
+    qualityFactor,
+    dampingRatio: 1 / (2 * qualityFactor),
+    storedEnergyTauMs,
+    attackTauMs: computeEnergyAttackTimeConstantMs({
+      modeFrequencyHz,
+      qualityFactor,
+      storedEnergyTauMs,
+    }),
+  };
 }
 
 function computePhysicalModalTransfer({
@@ -223,11 +201,7 @@ function computePhysicalModalTransfer({
       ? 1 /
         (1 + Math.pow(order / ORDER_DAMPING_REFERENCE, 1.55))
       : 1;
-  const qDamping =
-    qualityFactor > 12
-      ? 1 / (1 + Math.pow((qualityFactor - 12) / 72, 1.2))
-      : 1;
-  const dampingEnvelope = clamp01(frequencyDamping * orderDamping * qDamping);
+  const dampingEnvelope = clamp01(frequencyDamping * orderDamping);
   const persistenceEnvelope = clamp01(0.35 + persistence * 0.65);
 
   return {
@@ -362,11 +336,38 @@ export function computeModalSpectralDrive({
   return clamp01(baseDrive * coherentPeakGate);
 }
 
+function computeStoredEnergyTimeConstantMs({
+  modeFrequencyHz,
+  qualityFactor,
+}) {
+  const frequencyHz = Number.isFinite(modeFrequencyHz)
+    ? Math.max(0, modeFrequencyHz)
+    : 0;
+  const q = Number.isFinite(qualityFactor)
+    ? Math.max(MIN_MODAL_QUALITY_FACTOR, qualityFactor)
+    : DEFAULT_MODAL_RESPONSE_REFERENCE.qualityFactor;
+  if (frequencyHz <= 0) {
+    return DEFAULT_STORED_ENERGY_TAU_MS;
+  }
+  return Math.max(1, (q / (TWO_PI * frequencyHz)) * 1000);
+}
+
+function computeEnergyAttackTimeConstantMs({
+  qualityFactor,
+  storedEnergyTauMs,
+}) {
+  const q = Number.isFinite(qualityFactor)
+    ? Math.max(MIN_MODAL_QUALITY_FACTOR, qualityFactor)
+    : DEFAULT_MODAL_RESPONSE_REFERENCE.qualityFactor;
+  const qNormalized = clamp01((q - MIN_MODAL_QUALITY_FACTOR) / 32);
+  return Math.max(1, storedEnergyTauMs * (0.28 + qNormalized * 0.24));
+}
+
 function updateRetainedEnergy({
   targetEnergy,
   previousEnergy,
-  attackMs,
-  releaseMs,
+  attackTauMs,
+  storedEnergyTauMs,
   deltaMs,
 }) {
   const target = clamp01(targetEnergy);
@@ -376,7 +377,9 @@ function updateRetainedEnergy({
   }
 
   const timeConstantMs =
-    target >= previous ? Math.max(1, attackMs) : Math.max(1, releaseMs);
+    target >= previous
+      ? Math.max(1, attackTauMs)
+      : Math.max(1, storedEnergyTauMs);
   const alpha = 1 - Math.exp(-Math.max(0, deltaMs) / timeConstantMs);
   return clamp01(previous + (target - previous) * alpha);
 }
@@ -492,7 +495,6 @@ export function updateModalResponseFrame({
     const modeKey =
       mode?.modeKey ?? `${mode?.u ?? 0}:${mode?.v ?? 0}:${mode?.w ?? 0}`;
     const profile = getModeProfile(mode);
-    const qProfile = resolveModeQProfile(mode);
     const modeFrequencyHz = mode?.naturalFrequencyHz ?? mode?.frequencyHz ?? 0;
     const previousState = readPreviousModalResponseState(
       previousEnergies?.get?.(modeKey) ?? mode,
@@ -520,8 +522,8 @@ export function updateModalResponseFrame({
     const retainedEnergy = updateRetainedEnergy({
       targetEnergy,
       previousEnergy,
-      attackMs: profile.attackMs,
-      releaseMs: profile.releaseMs,
+      attackTauMs: profile.attackTauMs,
+      storedEnergyTauMs: profile.storedEnergyTauMs,
       deltaMs,
     });
     const oscillator = updateModalOscillatorState({
@@ -536,13 +538,15 @@ export function updateModalResponseFrame({
       continue;
     }
 
-    const layer = resolveDiagnosticLayer(mode, qProfile);
+    const layer = resolveDiagnosticLayer(mode, profile.qualityFactor);
     entries.push({
       ...mode,
       modeKey,
       layer,
-      qProfile,
       qualityFactor: profile.qualityFactor,
+      dampingRatio: profile.dampingRatio,
+      modalResponseStoredEnergyTauMs: profile.storedEnergyTauMs,
+      modalResponseAttackTauMs: profile.attackTauMs,
       modalResponseDrive: spectralDrive,
       modalResponseEnergy: retainedEnergy,
       ...physicalTransfer,

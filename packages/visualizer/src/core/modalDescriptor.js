@@ -170,7 +170,9 @@ function writeUnifiedModalSlotViews(entries, capacity) {
   const colorSlots = new Float32Array(capacity * 4);
   const metadataSlots = new Float32Array(capacity * 4);
 
-  entries.slice(0, capacity).forEach((entry, index) => {
+  const limit = Math.min(entries.length, capacity);
+  for (let index = 0; index < limit; index += 1) {
+    const entry = entries[index];
     const offset = index * 4;
     slots[offset] = entry.u;
     slots[offset + 1] = entry.v;
@@ -191,7 +193,7 @@ function writeUnifiedModalSlotViews(entries, capacity) {
     metadataSlots[offset + 1] = entry.qualityFactor;
     metadataSlots[offset + 2] = entry.dampingRatio;
     metadataSlots[offset + 3] = entry.observedSupport;
-  });
+  }
 
   return {
     modalFieldSlots: slots,
@@ -246,16 +248,23 @@ export function buildCanonicalFullModalDescriptor({
     validCount: validModeCount,
   });
   const mergedEntries = mergeAdmissionEntries(admissionEntries);
-  const entriesByAdmissionPriority = [...mergedEntries].sort((left, right) => {
-    if (right.coefficient !== left.coefficient) {
-      return right.coefficient - left.coefficient;
-    }
-    return compareModeTuple(left, right);
-  });
-  const acceptedEntries = entriesByAdmissionPriority
-    .slice(0, totalCapacity)
-    .sort(compareModeTuple);
-  const rejectedEntries = entriesByAdmissionPriority.slice(totalCapacity);
+  let acceptedEntries;
+  let rejectedEntries;
+  if (mergedEntries.length <= totalCapacity) {
+    acceptedEntries = mergedEntries.sort(compareModeTuple);
+    rejectedEntries = [];
+  } else {
+    const entriesByAdmissionPriority = [...mergedEntries].sort((left, right) => {
+      if (right.coefficient !== left.coefficient) {
+        return right.coefficient - left.coefficient;
+      }
+      return compareModeTuple(left, right);
+    });
+    acceptedEntries = entriesByAdmissionPriority
+      .slice(0, totalCapacity)
+      .sort(compareModeTuple);
+    rejectedEntries = entriesByAdmissionPriority.slice(totalCapacity);
+  }
   const overflowModeCount = rejectedEntries.length;
   const rejectedModalEnergy = rejectedEntries.reduce(
     (total, entry) => total + Math.max(0, entry.coefficient) ** 2,

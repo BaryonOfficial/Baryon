@@ -9,8 +9,6 @@ const PROJECTION_EVIDENCE_PHASE_WEIGHT = 0.12;
 const PROJECTION_EVIDENCE_MIN = 0.12;
 const PROJECTION_HIGH_Q_PROTECTION_GAIN = 0.35;
 const PROJECTION_HIGH_Q_RETAINED_AMPLITUDE_SCALE = 0.08;
-const PROJECTION_SOURCE_COUPLED_INCOHERENT_REDUCTION = 0.16;
-const PROJECTION_RESONANT_INCOHERENT_REDUCTION = 0.28;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -35,7 +33,7 @@ export function createEmptyProjectionNormalizationMetrics() {
     projectionOverlapPressureSourceCoupled: 0,
     projectionOverlapPressureResonant: 0,
     projectionCompetitionReduction: 0,
-    projectionDenseSpectrumPressure: 0,
+    projectionLoad: 0,
     projectionHighQProtection: 0,
     projectionEnergyNormalizationApplied: false,
   };
@@ -43,34 +41,30 @@ export function createEmptyProjectionNormalizationMetrics() {
 
 function getProjectionLayerBudget({
   layer,
-  denseSpectrumPressure,
   highQProtection,
   modeCoherence,
 }) {
   if (layer === "source-coupled") {
     return Math.max(
       0.46,
-      Math.min(
-        0.88,
-        0.62 - 0.22 * denseSpectrumPressure + 0.14 * modeCoherence,
-      ),
+      Math.min(0.88, 0.62 + 0.14 * modeCoherence),
     );
   }
 
   return Math.max(
     0.16,
-    Math.min(0.58, 0.34 - 0.32 * denseSpectrumPressure + 0.3 * highQProtection),
+    Math.min(0.58, 0.34 + 0.3 * highQProtection),
   );
 }
 
 function getProjectionHighQProtection(
   entry,
   sparseHighQAuthority,
-  denseSpectrumPressure,
+  projectionLoad,
 ) {
   void entry;
   void sparseHighQAuthority;
-  void denseSpectrumPressure;
+  void projectionLoad;
   return 0;
 }
 
@@ -187,13 +181,12 @@ export function applyProjectionEnergyNormalization({
     return { entries: [], metrics: emptyMetrics };
   }
 
-  const denseSpectrumPressure = clamp01(
-    modalObserverMetrics?.highQDenseSpectrumPressure ?? 0,
+  const projectionLoad = clamp01(
+    modalObserverMetrics?.highQProjectionLoad ?? 0,
   );
   const ringDerivedHighQProtection =
     clamp01(modalObserverMetrics?.highQRingSupport ?? 0) *
-    clamp01(modalObserverMetrics?.highQResonantEnergy ?? 0) *
-    (1 - denseSpectrumPressure);
+    clamp01(modalObserverMetrics?.highQResonantEnergy ?? 0);
   const sparseHighQAuthority = clamp01(
     Math.max(
       modalObserverMetrics?.highQSparseResonatorAuthority ?? 0,
@@ -211,13 +204,12 @@ export function applyProjectionEnergyNormalization({
     getProjectionHighQProtection(
       entry,
       sparseHighQAuthority,
-      denseSpectrumPressure,
+      projectionLoad,
     ),
   );
   const layerHighQProtection = Math.max(0, ...entryHighQProtection);
   const budget = getProjectionLayerBudget({
     layer,
-    denseSpectrumPressure,
     highQProtection: layerHighQProtection,
     modeCoherence,
   });
@@ -244,10 +236,7 @@ export function applyProjectionEnergyNormalization({
       rawDisplayAmplitude * rawDisplayAmplitude * evidenceQuality;
     const protectedEnergy =
       rawEnergy *
-      (1 +
-        PROJECTION_HIGH_Q_PROTECTION_GAIN *
-          highQProtection *
-          (1 - denseSpectrumPressure));
+      (1 + PROJECTION_HIGH_Q_PROTECTION_GAIN * highQProtection);
     return {
       entry,
       rawDisplayAmplitude,
@@ -277,17 +266,7 @@ export function applyProjectionEnergyNormalization({
         (1 - 0.25 * clamp01(other.entry?.coherence ?? 0));
     }
     const competitionScale = 1 / (1 + lambda * competitorPressure);
-    const maxIncoherentReduction =
-      layer === "resonant"
-        ? PROJECTION_RESONANT_INCOHERENT_REDUCTION
-        : PROJECTION_SOURCE_COUPLED_INCOHERENT_REDUCTION;
-    const incoherentQuality =
-      1 -
-      denseSpectrumPressure *
-        maxIncoherentReduction *
-        (1 - item.evidenceQuality);
-    const projectedEnergy =
-      item.protectedEnergy * competitionScale * incoherentQuality;
+    const projectedEnergy = item.protectedEnergy * competitionScale;
     return {
       ...item,
       competitorPressure,
@@ -330,7 +309,7 @@ export function applyProjectionEnergyNormalization({
     maxOverlapPressure > 0;
   const metrics = {
     ...emptyMetrics,
-    projectionDenseSpectrumPressure: denseSpectrumPressure,
+    projectionLoad: projectionLoad,
     projectionHighQProtection: layerHighQProtection,
     projectionCompetitionReduction: competitionReduction,
     projectionEnergyNormalizationApplied: normalizationApplied,
@@ -407,9 +386,9 @@ export function mergeProjectionNormalizationMetrics(...metricSets) {
     );
     merged.projectionCompetitionReduction +=
       metrics.projectionCompetitionReduction ?? 0;
-    merged.projectionDenseSpectrumPressure = Math.max(
-      merged.projectionDenseSpectrumPressure,
-      metrics.projectionDenseSpectrumPressure ?? 0,
+    merged.projectionLoad = Math.max(
+      merged.projectionLoad,
+      metrics.projectionLoad ?? 0,
     );
     merged.projectionHighQProtection = Math.max(
       merged.projectionHighQProtection,

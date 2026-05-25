@@ -56,6 +56,19 @@ function createSnapshot(overrides = {}) {
   };
 }
 
+function makeToneFft(peaks, length = FFT_SIZE / 2) {
+  const fft = new Float32Array(length);
+  const nyquist = SAMPLE_RATE / 2;
+  for (const [frequencyHz, amplitude] of peaks) {
+    const bin = Math.max(
+      1,
+      Math.min(length - 1, Math.round((frequencyHz / nyquist) * (length - 1))),
+    );
+    fft[bin] = amplitude;
+  }
+  return fft;
+}
+
 function createPreparedInputs(frameTimeMs, overrides = {}) {
   return prepareAudioFeatureFrameInputs({
     analysisSnapshot: createSnapshot({
@@ -610,11 +623,11 @@ describe("audio feature engine snapshots", () => {
       materializeStructuralProjection: false,
     });
 
-    expect(leanAnalysisResult.sourceCoupledSlots).toBe(
-      firstAnalysisResult.sourceCoupledSlots,
+    expect(leanAnalysisResult.candidateForcingSlots).toBe(
+      firstAnalysisResult.candidateForcingSlots,
     );
-    expect(leanAnalysisResult.resonantSlots).toBe(
-      firstAnalysisResult.resonantSlots,
+    expect(leanAnalysisResult.candidateResponseSlots).toBe(
+      firstAnalysisResult.candidateResponseSlots,
     );
     expect(leanAnalysisResult.modeSlots).toBe(firstAnalysisResult.modeSlots);
     expect(leanAnalysisResult.referenceModeSlots).toBe(
@@ -626,8 +639,8 @@ describe("audio feature engine snapshots", () => {
     expect(leanAnalysisResult.resonantColorSlots).toBe(
       firstAnalysisResult.resonantColorSlots,
     );
-    expect(leanAnalysisResult.structuralState.sourceCoupledSlotsSource).toBe(
-      nextStructuralState.sourceCoupledSlotsSource,
+    expect(leanAnalysisResult.structuralState.candidateForcingSlotsSource).toBe(
+      nextStructuralState.candidateForcingSlotsSource,
     );
   });
 
@@ -699,7 +712,7 @@ describe("audio feature engine snapshots", () => {
 
     expect(snapshot.publishCount).toBe(3);
     expect(snapshot.analysisResult.modeSlots).toBeInstanceOf(Float32Array);
-    expect(snapshot.analysisResult.sourceCoupledSlots).toBeInstanceOf(Float32Array);
+    expect(snapshot.analysisResult.candidateForcingSlots).toBeInstanceOf(Float32Array);
     expect(snapshot.analysisResult.bandEnergies).toBeInstanceOf(Float32Array);
     expect(snapshot.analysisResult.fftMagnitudes).toBeUndefined();
     expect(snapshot.analysisResult.spectralCandidates).toBeUndefined();
@@ -763,11 +776,11 @@ describe("audio feature engine snapshots", () => {
     expect(merged.analysisResult.modeSlots).toBe(
       previousSnapshot.analysisResult.modeSlots,
     );
-    expect(merged.analysisResult.sourceCoupledSlots).toBe(
-      previousSnapshot.analysisResult.sourceCoupledSlots,
+    expect(merged.analysisResult.candidateForcingSlots).toBe(
+      previousSnapshot.analysisResult.candidateForcingSlots,
     );
-    expect(merged.analysisResult.resonantSlots).toBe(
-      previousSnapshot.analysisResult.resonantSlots,
+    expect(merged.analysisResult.candidateResponseSlots).toBe(
+      previousSnapshot.analysisResult.candidateResponseSlots,
     );
   });
 
@@ -804,7 +817,12 @@ describe("audio feature engine snapshots", () => {
         sourceMode: "live",
         avgAmplitude: 36,
         rms: 0.27,
-        fftMagnitudes: new Float32Array([0, 0.82, 0.41, 0.22, 0.17]),
+        fftMagnitudes: makeToneFft([
+          [220, 0.82],
+          [440, 0.41],
+          [660, 0.22],
+          [880, 0.17],
+        ]),
       }),
       featureState,
       radius: 3,

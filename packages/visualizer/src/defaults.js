@@ -20,7 +20,7 @@ export const AUDIO_DEFAULTS = Object.freeze({
 export const CAVITY_ACOUSTIC_DEFAULTS = Object.freeze({
   radiusMeters: 12.5,
   soundSpeedMetersPerSecond: 1480,
-  subfloorPolicy: "project-low-q",
+  subfloorPolicy: "project-subfundamental",
 });
 
 export const SIMULATION_DEFAULTS = Object.freeze({

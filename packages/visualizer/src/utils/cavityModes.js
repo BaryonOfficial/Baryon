@@ -5,12 +5,13 @@ const MIN_NEUMANN_MAGNITUDE = 1;
 const INITIAL_SHELL_HALF_WIDTH = 0.5;
 const SHELL_HALF_WIDTH_STEP = 0.5;
 const MAX_SHELL_EXPANSIONS = 32;
-const DEFAULT_SUBFLOOR_POLICY = "project-low-q";
+const DEFAULT_SUBFLOOR_POLICY = "project-subfundamental";
+const LEGACY_SUBFLOOR_POLICY = "project-low-q";
 
 export const CAVITY_SUBFLOOR_POLICIES = Object.freeze({
-  projectLowQ: DEFAULT_SUBFLOOR_POLICY,
-  diagnoseOnly: "diagnose-only",
-  reject: "reject",
+  projectSubfundamental: DEFAULT_SUBFLOOR_POLICY,
+  diagnoseSubfloor: "diagnose-subfloor",
+  rejectSubfloor: "reject-subfloor",
 });
 
 function isOptionsObject(value) {
@@ -22,6 +23,26 @@ function normalizeBoundaryMode(value, legacyNumericRadius) {
     return value;
   }
   return legacyNumericRadius ? "dirichlet" : "neumann";
+}
+
+function normalizeSubfloorPolicy(value) {
+  if (value === LEGACY_SUBFLOOR_POLICY) {
+    return DEFAULT_SUBFLOOR_POLICY;
+  }
+  if (value === "diagnose-only") {
+    return CAVITY_SUBFLOOR_POLICIES.diagnoseSubfloor;
+  }
+  if (value === "reject") {
+    return CAVITY_SUBFLOOR_POLICIES.rejectSubfloor;
+  }
+  if (
+    value === CAVITY_SUBFLOOR_POLICIES.projectSubfundamental ||
+    value === CAVITY_SUBFLOOR_POLICIES.diagnoseSubfloor ||
+    value === CAVITY_SUBFLOOR_POLICIES.rejectSubfloor
+  ) {
+    return value;
+  }
+  return DEFAULT_SUBFLOOR_POLICY;
 }
 
 function normalizeCavityOptions(radiusOrOptions) {
@@ -44,10 +65,11 @@ function normalizeCavityOptions(radiusOrOptions) {
     radiusOrOptions?.boundaryMode,
     legacyNumericRadius,
   );
-  const subfloorPolicy =
+  const subfloorPolicy = normalizeSubfloorPolicy(
     acousticScale?.subfloorPolicy ??
-    radiusOrOptions?.subfloorPolicy ??
-    DEFAULT_SUBFLOOR_POLICY;
+      radiusOrOptions?.subfloorPolicy ??
+      DEFAULT_SUBFLOOR_POLICY,
+  );
 
   return {
     radiusMeters,
@@ -208,7 +230,7 @@ function resolveNearestCavityModes(pitch, radiusOrOptions, count) {
   const subfloorProjectionActive = targetFrequency < subfloorFrequencyHz;
   if (
     subfloorProjectionActive &&
-    options.subfloorPolicy === CAVITY_SUBFLOOR_POLICIES.reject
+    options.subfloorPolicy === CAVITY_SUBFLOOR_POLICIES.rejectSubfloor
   ) {
     return [];
   }

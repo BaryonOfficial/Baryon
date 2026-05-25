@@ -59,7 +59,7 @@ describe("replay fixtures", () => {
       expect(featureFrame.debug.modeSlotCount).toBeGreaterThan(0);
       expect(featureFrame.modalVisibilityEnergy).toBeGreaterThan(0.035);
       expect(featureFrame.modalResponseEnergy).toBeGreaterThan(0);
-      expect(featureFrame.modalResponseAverageDampingEnvelope).toBeGreaterThan(
+      expect(featureFrame.debug.modalResponseSourceCoupledEnergy).toBeGreaterThan(
         0,
       );
     }

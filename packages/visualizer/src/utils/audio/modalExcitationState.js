@@ -14,6 +14,8 @@ export function createModalExcitationState(capacity = 16) {
   return {
     capacity,
     activeModes: new Map(),
+    modalCandidates: [],
+    modalCandidateState: new Map(),
     atlasCacheKey: null,
     atlasEntries: [],
     sourceCoupledProposal: createLayerBuffer(layerCapacity),

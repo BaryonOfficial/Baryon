@@ -80,7 +80,7 @@ describe("modal response model", () => {
         w: 1,
         naturalFrequencyHz: 110,
         layer: "source-coupled",
-        qProfile: "low-q",
+        qualityFactor: 4,
       },
       {
         modeKey: "5:5:36",
@@ -89,7 +89,7 @@ describe("modal response model", () => {
         w: 36,
         naturalFrequencyHz: 427,
         layer: "resonant",
-        qProfile: "high-q",
+        qualityFactor: 32,
       },
     ];
 
@@ -114,7 +114,7 @@ describe("modal response model", () => {
     expect(response.modalResponseSourceCoupledEnergy).toBeGreaterThan(0);
   });
 
-  it("lets high-Q tails decay slower than low-Q backbone energy", async () => {
+  it("lets higher-Q tails decay slower under equal modal frequency", async () => {
     const { updateModalResponseFrame } = await loadModalResponseModule();
     const previousEnergies = new Map([
       ["1:1:1", 0.42],
@@ -130,23 +130,24 @@ describe("modal response model", () => {
           w: 1,
           naturalFrequencyHz: 110,
           layer: "source-coupled",
-          qProfile: "low-q",
+          qualityFactor: 4,
         },
         {
           modeKey: "5:5:36",
           u: 5,
           v: 5,
           w: 36,
-          naturalFrequencyHz: 427,
+          naturalFrequencyHz: 110,
           layer: "resonant",
-          qProfile: "high-q",
+          qualityFactor: 40,
         },
       ],
       fftMagnitudes: new Float32Array(BIN_COUNT),
       sampleRate: SAMPLE_RATE,
-      deltaMs: 240,
+      deltaMs: 20,
       inputRms: 0.02,
       previousEnergies,
+      minimumEnergy: 0,
     });
 
     const backbone = response.entries.find((entry) => entry.layer === "source-coupled");
@@ -154,6 +155,69 @@ describe("modal response model", () => {
     expect(detail?.modalResponseEnergy).toBeGreaterThan(
       backbone?.modalResponseEnergy * 2.5,
     );
+  });
+
+  it("decays stored modal energy with the energy time constant", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const qualityFactor = 12;
+    const naturalFrequencyHz = 120;
+    const energyTauMs =
+      (qualityFactor / (2 * Math.PI * naturalFrequencyHz)) * 1000;
+    const previousEnergy = 0.5;
+
+    const response = updateModalResponseFrame({
+      modes: [
+        {
+          modeKey: "energy-decay",
+          u: 1,
+          v: 2,
+          w: 3,
+          naturalFrequencyHz,
+          qualityFactor,
+        },
+      ],
+      fftMagnitudes: new Float32Array(BIN_COUNT),
+      sampleRate: SAMPLE_RATE,
+      deltaMs: energyTauMs,
+      inputRms: 0,
+      previousEnergies: new Map([["energy-decay", previousEnergy]]),
+      minimumEnergy: 0,
+    });
+
+    expect(response.entries[0]?.modalResponseEnergy).toBeCloseTo(
+      previousEnergy / Math.E,
+      5,
+    );
+  });
+
+  it("changes retained energy continuously across old Q threshold values", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const retainedEnergyForQ = (qualityFactor) =>
+      updateModalResponseFrame({
+        modes: [
+          {
+            modeKey: `q:${qualityFactor}`,
+            u: 2,
+            v: 3,
+            w: 5,
+            naturalFrequencyHz: 440,
+            qualityFactor,
+          },
+        ],
+        fftMagnitudes: new Float32Array(BIN_COUNT),
+        sampleRate: SAMPLE_RATE,
+        deltaMs: 80,
+        inputRms: 0,
+        previousEnergies: new Map([[`q:${qualityFactor}`, 0.5]]),
+        minimumEnergy: 0,
+      }).entries[0]?.modalResponseEnergy ?? 0;
+
+    expect(
+      Math.abs(retainedEnergyForQ(7) - retainedEnergyForQ(6.9)),
+    ).toBeLessThan(0.02);
+    expect(
+      Math.abs(retainedEnergyForQ(18) - retainedEnergyForQ(17.9)),
+    ).toBeLessThan(0.02);
   });
 
   it("treats hard silence as zero forcing while retaining modal decay", async () => {
@@ -169,7 +233,7 @@ describe("modal response model", () => {
           w: 1,
           naturalFrequencyHz: 110,
           layer: "source-coupled",
-          qProfile: "low-q",
+          qualityFactor: 32,
         },
       ],
       fftMagnitudes: makeFft([[110, 1]]),
@@ -178,15 +242,17 @@ describe("modal response model", () => {
       inputRms: 0.25,
       previousEnergies,
       hardSilence: true,
+      minimumEnergy: 0,
     });
 
+    const energyTauMs = (32 / (2 * Math.PI * 110)) * 1000;
     const retained = response.entries.find(
       (entry) => entry.modeKey === "1:1:1",
     );
     expect(response.modalResponseInputEnergy).toBe(0);
     expect(retained?.modalResponseDrive).toBe(0);
     expect(retained?.modalResponseEnergy).toBeCloseTo(
-      0.5 * Math.exp(-70 / 140),
+      0.5 * Math.exp(-70 / energyTauMs),
       5,
     );
   });
@@ -201,7 +267,7 @@ describe("modal response model", () => {
         w: 11,
         naturalFrequencyHz: 4270,
         layer: "resonant",
-        qProfile: "high-q",
+        qualityFactor: 32,
       },
     ];
     const tonal = updateModalResponseFrame({
@@ -235,7 +301,7 @@ describe("modal response model", () => {
       v: 4,
       w: 5,
       naturalFrequencyHz: 880,
-      qProfile: "mid-q",
+      qualityFactor: 10,
       driveWeight: 0.72,
       phaseConfidence: 0.84,
       persistence: 0.91,
@@ -278,7 +344,7 @@ describe("modal response model", () => {
           v: 1,
           w: 2,
           naturalFrequencyHz: 220,
-          qProfile: "low-q",
+          qualityFactor: 4,
         },
         {
           modeKey: "high",
@@ -286,7 +352,7 @@ describe("modal response model", () => {
           v: 21,
           w: 22,
           naturalFrequencyHz: 6600,
-          qProfile: "high-q",
+          qualityFactor: 32,
         },
       ],
       fftMagnitudes: makeFft([
@@ -316,7 +382,7 @@ describe("modal response model", () => {
       w: index + 3,
       naturalFrequencyHz: 180 + index * 18,
       layer: "source-coupled",
-      qProfile: "low-q",
+      qualityFactor: 4,
     }));
 
     const silent = updateModalResponseFrame({
@@ -369,7 +435,7 @@ describe("modal response model", () => {
         w: 36,
         naturalFrequencyHz: 4270,
         layer: "resonant",
-        qProfile: "high-q",
+        qualityFactor: 32,
       },
       ...Array.from({ length: 8 }, (_, index) => ({
         modeKey: `weak:${index}`,
@@ -378,7 +444,7 @@ describe("modal response model", () => {
         w: 9 + index,
         naturalFrequencyHz: 5200 + index * 420,
         layer: "resonant",
-        qProfile: "high-q",
+        qualityFactor: 32,
       })),
     ];
 
@@ -410,7 +476,7 @@ describe("modal response model", () => {
           w: 36,
           naturalFrequencyHz: 4270,
           layer: "resonant",
-          qProfile: "high-q",
+          qualityFactor: 32,
         },
         {
           modeKey: "weak",
@@ -419,7 +485,7 @@ describe("modal response model", () => {
           w: 14,
           naturalFrequencyHz: 9400,
           layer: "resonant",
-          qProfile: "high-q",
+          qualityFactor: 32,
         },
       ],
       fftMagnitudes: makeFft([[4270, 1]]),
@@ -444,7 +510,7 @@ describe("modal response model", () => {
           w: 13,
           naturalFrequencyHz: 6200,
           layer: "resonant",
-          qProfile: "high-q",
+          qualityFactor: 32,
         },
       ],
       fftMagnitudes: makeFft([[6200, 1]]),
@@ -468,7 +534,7 @@ describe("modal response model", () => {
       w: 1,
       naturalFrequencyHz: 110,
       layer: "source-coupled",
-      qProfile: "low-q",
+      qualityFactor: 4,
     };
     const first = updateModalResponseFrame({
       modes: [mode],

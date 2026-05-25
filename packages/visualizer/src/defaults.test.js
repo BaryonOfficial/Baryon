@@ -84,7 +84,7 @@ describe("defaults compatibility surface", () => {
     expect(SIMULATION_DEFAULTS.cavityAcousticScale).toMatchObject({
       radiusMeters: expect.any(Number),
       soundSpeedMetersPerSecond: 1480,
-      subfloorPolicy: "project-low-q",
+      subfloorPolicy: "project-subfundamental",
     });
     expect(SIMULATION_DEFAULTS.cavityAcousticScale.radiusMeters).toBeGreaterThan(
       SIMULATION_DEFAULTS.radius,

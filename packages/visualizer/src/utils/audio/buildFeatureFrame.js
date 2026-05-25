@@ -137,7 +137,6 @@ const LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_END = 0.45;
 const LOW_Q_SOURCE_COUPLED_VISIBILITY_SOURCE_START = 0.018;
 const LOW_Q_SOURCE_COUPLED_VISIBILITY_SOURCE_END = 0.12;
 const LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_FLOOR = 0.32;
-const LOW_Q_SOURCE_COUPLED_VISIBILITY_DENSE_REDUCTION = 0.35;
 const LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_MAX = 0.18;
 const LOW_Q_SOURCE_COUPLED_TOPOLOGY_FLOOR_MAX = 0.18;
 const EMPTY_LOW_Q_SOURCE_COUPLED_VISIBILITY = Object.freeze({
@@ -156,7 +155,7 @@ const EMPTY_MODAL_OBSERVER_VISIBILITY = Object.freeze({
   sourceCoupledSlotFloorTotal: 0,
   ...EMPTY_LOW_Q_SOURCE_COUPLED_VISIBILITY,
   highQSparseResonatorAuthority: 0,
-  highQDenseSpectrumPressure: 0,
+  highQProjectionLoad: 0,
   highQRetainedVisibilityRejected: false,
 });
 const LIVE_INPUT_ACOUSTIC_INTENT_CONFIGS = Object.freeze({
@@ -331,14 +330,14 @@ function ensureTargetBuildField(container, key, capacity) {
 
 function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
   const slotLength = capacity * 4;
-  const sourceCoupledSlots = ensureArrayField(
+  const candidateForcingSlots = ensureArrayField(
     analysisMemory,
-    "sourceCoupledSlots",
+    "candidateForcingSlots",
     slotLength,
   );
-  const resonantSlots = ensureArrayField(
+  const candidateResponseSlots = ensureArrayField(
     analysisMemory,
-    "resonantSlots",
+    "candidateResponseSlots",
     slotLength,
   );
   const sourceCoupledPhaseSlots = ensureArrayField(
@@ -465,8 +464,8 @@ function ensureAnalysisMemoryShape(featureState, analysisMemory, capacity) {
   }
 
   return {
-    sourceCoupledSlots,
-    resonantSlots,
+    candidateForcingSlots,
+    candidateResponseSlots,
     sourceCoupledPhaseSlots,
     resonantPhaseSlots,
     modeSlots,
@@ -962,8 +961,8 @@ function buildDebugSummary({
   analyserRms = 0,
   fftMagnitudes,
   nonZeroFFTBinCount = null,
-  sourceCoupledSlots,
-  resonantSlots,
+  candidateForcingSlots,
+  candidateResponseSlots,
   modeSlots,
   bandEnergies = null,
   spectralLightComponents = [],
@@ -1000,8 +999,8 @@ function buildDebugSummary({
     DEFAULT_EFFECTIVE_CAVITY_GEOMETRY
   ),
 }) {
-  const sourceCoupledModeCount = countActiveSlots(sourceCoupledSlots, MAX_STACK_SLOTS);
-  const resonantModeCount = countActiveSlots(resonantSlots, MAX_STACK_SLOTS);
+  const sourceCoupledModeCount = countActiveSlots(candidateForcingSlots, MAX_STACK_SLOTS);
+  const resonantModeCount = countActiveSlots(candidateResponseSlots, MAX_STACK_SLOTS);
   const modeSlotCount = countActiveSlots(modeSlots, MAX_STACK_SLOTS);
   const modalVisibilitySummary = deriveModalVisibilityComponents({
     modeSlots,
@@ -1185,9 +1184,9 @@ function buildDebugSummary({
       modalVisibilitySummary.highQSparseResonatorAuthority ??
       structuralMetrics?.highQSparseResonatorAuthority ??
       0,
-    highQDenseSpectrumPressure:
-      modalVisibilitySummary.highQDenseSpectrumPressure ??
-      structuralMetrics?.highQDenseSpectrumPressure ??
+    highQProjectionLoad:
+      modalVisibilitySummary.highQProjectionLoad ??
+      structuralMetrics?.highQProjectionLoad ??
       0,
     highQRetainedVisibilityRejected: Boolean(
       modalVisibilitySummary.highQRetainedVisibilityRejected ??
@@ -1275,8 +1274,8 @@ function buildDebugSummary({
       structuralMetrics?.projectionOverlapPressureResonant ?? 0,
     projectionCompetitionReduction:
       structuralMetrics?.projectionCompetitionReduction ?? 0,
-    projectionDenseSpectrumPressure:
-      structuralMetrics?.projectionDenseSpectrumPressure ?? 0,
+    projectionLoad:
+      structuralMetrics?.projectionLoad ?? 0,
     projectionHighQProtection:
       structuralMetrics?.projectionHighQProtection ?? 0,
     projectionEnergyNormalizationApplied:
@@ -1299,8 +1298,8 @@ function buildZeroDebugSnapshot({
   fieldState = FIELD_STATES.idle,
   referenceModeSlots,
   bandEnergies,
-  sourceCoupledSlots,
-  resonantSlots,
+  candidateForcingSlots,
+  candidateResponseSlots,
   modeSlots,
   sourceCoupledColorSlots,
   resonantColorSlots,
@@ -1324,8 +1323,8 @@ function buildZeroDebugSnapshot({
     sourceCoupledState: null,
     resonantState: null,
     fftMagnitudes: null,
-    sourceCoupledSlots,
-    resonantSlots,
+    candidateForcingSlots,
+    candidateResponseSlots,
     modeSlots,
     spectralLightComponents: [],
     beatDetected: false,
@@ -1356,8 +1355,8 @@ function buildZeroDebugSnapshot({
     referenceModeSlots: Array.from(referenceModeSlots),
     modalFieldSlots: Array.from(modeSlots),
     modalFieldColorSlots: Array.from(sourceCoupledColorSlots),
-    sourceCoupledSlots: Array.from(sourceCoupledSlots),
-    resonantSlots: Array.from(resonantSlots),
+    candidateForcingSlots: Array.from(candidateForcingSlots),
+    candidateResponseSlots: Array.from(candidateResponseSlots),
     sourceCoupledColorSlots: Array.from(sourceCoupledColorSlots),
     resonantColorSlots: Array.from(resonantColorSlots),
     bandEnergies: Array.from(bandEnergies),
@@ -1402,8 +1401,8 @@ function buildSilentFeatureFrame({
   soundActive,
   micActive,
   isLiveInputActive,
-  sourceCoupledSlots,
-  resonantSlots,
+  candidateForcingSlots,
+  candidateResponseSlots,
   sourceCoupledPhaseSlots,
   resonantPhaseSlots,
   modeSlots,
@@ -1422,8 +1421,8 @@ function buildSilentFeatureFrame({
     DEFAULT_EFFECTIVE_CAVITY_GEOMETRY
   ),
 }) {
-  sourceCoupledSlots.fill(0);
-  resonantSlots.fill(0);
+  candidateForcingSlots.fill(0);
+  candidateResponseSlots.fill(0);
   sourceCoupledPhaseSlots.fill(0);
   resonantPhaseSlots.fill(0);
   modeSlots.fill(0);
@@ -1517,8 +1516,8 @@ function buildSilentFeatureFrame({
       micActive,
       referenceModeSlots,
       bandEnergies,
-      sourceCoupledSlots,
-      resonantSlots,
+      candidateForcingSlots,
+      candidateResponseSlots,
       modeSlots,
       sourceCoupledColorSlots,
       resonantColorSlots,
@@ -2458,8 +2457,8 @@ function writeModalFieldCandidates({
 }
 
 function buildModalFieldDescriptorSource({
-  sourceCoupledSlots,
-  resonantSlots,
+  candidateForcingSlots,
+  candidateResponseSlots,
   sourceCoupledPhaseSlots,
   resonantPhaseSlots,
   sourceCoupledColorSlots,
@@ -2493,7 +2492,7 @@ function buildModalFieldDescriptorSource({
     targetColorSlots: modalFieldColorSlots,
     targetMetadataSlots: modalFieldMetadataSlots,
     writeIndex: activeModalFieldModeCount,
-    sourceSlots: sourceCoupledSlots,
+    sourceSlots: candidateForcingSlots,
     sourcePhaseSlots: sourceCoupledPhaseSlots,
     sourceColorSlots: sourceCoupledColorSlots,
     sourceMetadataSlots: sourceCoupledMetadataSlots,
@@ -2506,7 +2505,7 @@ function buildModalFieldDescriptorSource({
     targetColorSlots: modalFieldColorSlots,
     targetMetadataSlots: modalFieldMetadataSlots,
     writeIndex: activeModalFieldModeCount,
-    sourceSlots: resonantSlots,
+    sourceSlots: candidateResponseSlots,
     sourcePhaseSlots: resonantPhaseSlots,
     sourceColorSlots: resonantColorSlots,
     sourceMetadataSlots: resonantMetadataSlots,
@@ -2590,12 +2589,6 @@ function deriveLowQSourceCoupledVisibilityAuthority({
         LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_END,
         lowQObservedSnr,
       );
-  const denseSpectrumPressure = clamp01(
-    structuralMetrics.projectionDenseSpectrumPressure ??
-      structuralMetrics.denseSpectrumPressure ??
-      structuralMetrics.distributedExcitation ??
-      0,
-  );
   const authority = clamp01(
     smoothstep(
       LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_START,
@@ -2613,8 +2606,7 @@ function deriveLowQSourceCoupledVisibilityAuthority({
         LOW_Q_SOURCE_COUPLED_VISIBILITY_SOURCE_END,
         sourceSupport,
       ) *
-      smoothstep(0, 2, activeSourceCoupledModeCount) *
-      (1 - LOW_Q_SOURCE_COUPLED_VISIBILITY_DENSE_REDUCTION * denseSpectrumPressure),
+      smoothstep(0, 2, activeSourceCoupledModeCount),
   );
 
   return {
@@ -2786,7 +2778,7 @@ function deriveModalVisibilityComponents({
     ...EMPTY_LOW_Q_SOURCE_COUPLED_VISIBILITY,
     retainedHighQModalVisibility: 0,
     highQSparseResonatorAuthority: 0,
-    highQDenseSpectrumPressure: 0,
+    highQProjectionLoad: 0,
     highQRetainedVisibilityRejected: false,
   };
 
@@ -2989,7 +2981,7 @@ function deriveModalVisibilityComponents({
       observerVisibility.lowQSourceCoupledVisibilityRejected,
     retainedHighQModalVisibility,
     highQSparseResonatorAuthority,
-    highQDenseSpectrumPressure: observerVisibility.highQDenseSpectrumPressure,
+    highQProjectionLoad: observerVisibility.highQProjectionLoad,
     highQRetainedVisibilityRejected:
       observerVisibility.highQRetainedVisibilityRejected,
   };
@@ -3445,8 +3437,8 @@ function finalizeFeatureDebugSnapshot({
   spectralCandidates,
   fftMagnitudes,
   nonZeroFFTBinCount = null,
-  sourceCoupledSlots,
-  resonantSlots,
+  candidateForcingSlots,
+  candidateResponseSlots,
   modeSlots,
   sourceCoupledColorSlots,
   resonantColorSlots,
@@ -3515,8 +3507,8 @@ function finalizeFeatureDebugSnapshot({
     analyserRms,
     fftMagnitudes,
     nonZeroFFTBinCount,
-    sourceCoupledSlots,
-    resonantSlots,
+    candidateForcingSlots,
+    candidateResponseSlots,
     modeSlots,
     spectralLightComponents:
       spectralLightComponents ??
@@ -3584,8 +3576,8 @@ function finalizeFeatureDebugSnapshot({
     referenceModeSlots: Array.from(referenceModeSlots),
     modalFieldSlots: Array.from(modeSlots),
     modalFieldColorSlots: Array.from(sourceCoupledColorSlots),
-    sourceCoupledSlots: Array.from(sourceCoupledSlots),
-    resonantSlots: Array.from(resonantSlots),
+    candidateForcingSlots: Array.from(candidateForcingSlots),
+    candidateResponseSlots: Array.from(candidateResponseSlots),
     sourceCoupledColorSlots: Array.from(sourceCoupledColorSlots),
     resonantColorSlots: Array.from(resonantColorSlots),
     bandEnergies: Array.from(bandEnergies),
@@ -3746,8 +3738,8 @@ export function prepareAudioFeatureFrameInputs({
   const capacity = featureState?.capacity ?? AUDIO_SLOT_CAPACITY;
   const analysisMemory = getAnalysisMemory(featureState, capacity);
   const {
-    sourceCoupledSlots,
-    resonantSlots,
+    candidateForcingSlots,
+    candidateResponseSlots,
     sourceCoupledPhaseSlots,
     resonantPhaseSlots,
     modeSlots,
@@ -3856,8 +3848,8 @@ export function prepareAudioFeatureFrameInputs({
     return {
       capacity,
       analysisMemory,
-      sourceCoupledSlots,
-      resonantSlots,
+      candidateForcingSlots,
+      candidateResponseSlots,
       modeSlots,
       signalModeSlots,
       sourceCoupledColorSlots,
@@ -3923,8 +3915,8 @@ export function prepareAudioFeatureFrameInputs({
         soundActive,
         micActive,
         isLiveInputActive: status?.isLiveInputActive === true,
-        sourceCoupledSlots,
-        resonantSlots,
+        candidateForcingSlots,
+        candidateResponseSlots,
         sourceCoupledPhaseSlots,
         resonantPhaseSlots,
         modeSlots,
@@ -4015,8 +4007,8 @@ export function prepareAudioFeatureFrameInputs({
     beatSettings,
     capacity,
     analysisMemory,
-    sourceCoupledSlots,
-    resonantSlots,
+    candidateForcingSlots,
+    candidateResponseSlots,
     sourceCoupledPhaseSlots,
     resonantPhaseSlots,
     modeSlots,
@@ -4241,13 +4233,13 @@ function resolveStructuralProjectionSources(preparedInputs, structuralState) {
   const hasFrozenProjection =
     freezeModeSlots && hasFrozenStructuralProjection(auditState);
 
-  const sourceCoupledSlotsSource = hasFrozenProjection
+  const candidateForcingSlotsSource = hasFrozenProjection
     ? auditState.frozenSourceCoupledSlots
-    : (structuralState?.sourceCoupledSlotsSource ??
+    : (structuralState?.candidateForcingSlotsSource ??
       preparedInputs.sourceCoupledState.slots);
-  const resonantSlotsSource = hasFrozenProjection
+  const candidateResponseSlotsSource = hasFrozenProjection
     ? auditState.frozenResonantSlots
-    : (structuralState?.resonantSlotsSource ?? preparedInputs.resonantState.slots);
+    : (structuralState?.candidateResponseSlotsSource ?? preparedInputs.resonantState.slots);
   const sourceCoupledPhaseSlotsSource =
     structuralState?.sourceCoupledPhaseSlotsSource ??
     preparedInputs.sourceCoupledPhaseSlots;
@@ -4273,16 +4265,16 @@ function resolveStructuralProjectionSources(preparedInputs, structuralState) {
     preparedInputs.resonantState.referenceSlots;
   const activeSourceCoupledModeCount = structuralState?.suppressedByFog
     ? 0
-    : countActiveSlots(sourceCoupledSlotsSource, capacity);
+    : countActiveSlots(candidateForcingSlotsSource, capacity);
   const activeResonantModeCount = structuralState?.suppressedByFog
     ? 0
-    : countActiveSlots(resonantSlotsSource, capacity);
+    : countActiveSlots(candidateResponseSlotsSource, capacity);
 
   return {
     freezeModeSlots,
     hasFrozenProjection,
-    sourceCoupledSlotsSource,
-    resonantSlotsSource,
+    candidateForcingSlotsSource,
+    candidateResponseSlotsSource,
     sourceCoupledPhaseSlotsSource,
     resonantPhaseSlotsSource,
     referenceSourceCoupledSlotsSource,
@@ -4299,11 +4291,11 @@ function resolveStructuralSignalSources(preparedInputs, structuralState) {
   return {
     signalSourceCoupledSlotsSource:
       structuralState?.signalSourceCoupledSlotsSource ??
-      structuralState?.sourceCoupledSlotsSource ??
+      structuralState?.candidateForcingSlotsSource ??
       preparedInputs.sourceCoupledState.slots,
     signalResonantSlotsSource:
       structuralState?.signalResonantSlotsSource ??
-      structuralState?.resonantSlotsSource ??
+      structuralState?.candidateResponseSlotsSource ??
       preparedInputs.resonantState.slots,
     signalReferenceSourceCoupledSlotsSource:
       structuralState?.signalReferenceSourceCoupledSlotsSource ??
@@ -4314,33 +4306,6 @@ function resolveStructuralSignalSources(preparedInputs, structuralState) {
       structuralState?.referenceResonantSlotsSource ??
       preparedInputs.resonantState.referenceSlots,
   };
-}
-
-function applyObserverSlotFloor(slots, capacity, floorTotal) {
-  if (!(floorTotal > 0) || !slots?.length) {
-    return 0;
-  }
-
-  const limit = Math.min(capacity, Math.floor(slots.length / 4));
-  let currentTotal = 0;
-  for (let index = 0; index < limit; index += 1) {
-    currentTotal += Math.max(0, slots[index * 4 + 3] ?? 0);
-  }
-
-  if (!(currentTotal > 0) || currentTotal >= floorTotal) {
-    return 0;
-  }
-
-  const scale = floorTotal / currentTotal;
-  for (let index = 0; index < limit; index += 1) {
-    const offset = index * 4 + 3;
-    const amplitude = Math.max(0, slots[offset] ?? 0);
-    if (amplitude > 0) {
-      slots[offset] = Math.min(1, amplitude * scale);
-    }
-  }
-
-  return floorTotal - currentTotal;
 }
 
 function buildStructuralFingerprint({
@@ -4369,13 +4334,13 @@ function buildStructuralFingerprint({
     sourceCoupledSignature: fogSuppressed
       ? 0
       : computeSlotSignature(
-          projectionSources.sourceCoupledSlotsSource,
+          projectionSources.candidateForcingSlotsSource,
           preparedInputs.capacity,
         ),
     resonantSignature: fogSuppressed
       ? 0
       : computeSlotSignature(
-          projectionSources.resonantSlotsSource,
+          projectionSources.candidateResponseSlotsSource,
           preparedInputs.capacity,
         ),
     referenceSourceCoupledSignature: computeSlotSignature(
@@ -4410,8 +4375,8 @@ function materializeAudioFeatureStructuralSnapshot(
 ) {
   const {
     capacity,
-    sourceCoupledSlots,
-    resonantSlots,
+    candidateForcingSlots,
+    candidateResponseSlots,
     sourceCoupledPhaseSlots,
     resonantPhaseSlots,
     modeSlots,
@@ -4427,30 +4392,13 @@ function materializeAudioFeatureStructuralSnapshot(
     structuralState,
   );
 
-  copyFloatArray(sourceCoupledSlots, projectionSources.sourceCoupledSlotsSource);
-  copyFloatArray(resonantSlots, projectionSources.resonantSlotsSource);
+  copyFloatArray(candidateForcingSlots, projectionSources.candidateForcingSlotsSource);
+  copyFloatArray(candidateResponseSlots, projectionSources.candidateResponseSlotsSource);
   copyFloatArray(
     sourceCoupledPhaseSlots,
     projectionSources.sourceCoupledPhaseSlotsSource,
   );
   copyFloatArray(resonantPhaseSlots, projectionSources.resonantPhaseSlotsSource);
-  const observerVisibility = deriveModalObserverVisibilityComponents({
-    structuralMetrics: structuralState?.structuralMetrics,
-    hardSilent: preparedInputs.liveInputHardSilenceActive,
-    sourceNormalization: fastSignalState?.sourceNormalization,
-    bandEnergies: fastSignalState?.bandEnergies,
-    activeSourceCoupledModeCount: projectionSources.activeSourceCoupledModeCount,
-  });
-  applyObserverSlotFloor(
-    sourceCoupledSlots,
-    capacity,
-    observerVisibility.sourceCoupledSlotFloorTotal,
-  );
-  applyObserverSlotFloor(
-    resonantSlots,
-    capacity,
-    observerVisibility.resonantSlotFloorTotal,
-  );
   copyFloatArray(
     referenceSourceCoupledSlots,
     projectionSources.referenceSourceCoupledSlotsSource,
@@ -4462,8 +4410,8 @@ function materializeAudioFeatureStructuralSnapshot(
   combineModalLayers(
     modeSlots,
     [
-      { slots: sourceCoupledSlots, weight: 1 },
-      { slots: resonantSlots, weight: 1 },
+      { slots: candidateForcingSlots, weight: 1 },
+      { slots: candidateResponseSlots, weight: 1 },
     ],
     capacity,
   );
@@ -4487,8 +4435,8 @@ function materializeAudioFeatureStructuralSnapshot(
     resonantColorSlots.fill(0);
   }
 
-  let returnedSourceCoupledSlots = sourceCoupledSlots;
-  let returnedResonantSlots = resonantSlots;
+  let returnedSourceCoupledSlots = candidateForcingSlots;
+  let returnedResonantSlots = candidateResponseSlots;
   let returnedSourceCoupledPhaseSlots = sourceCoupledPhaseSlots;
   let returnedResonantPhaseSlots = resonantPhaseSlots;
   let returnedModeSlots = modeSlots;
@@ -4497,8 +4445,8 @@ function materializeAudioFeatureStructuralSnapshot(
 
   if (projectionSources.freezeModeSlots && auditState) {
     if (!projectionSources.hasFrozenProjection) {
-      auditState.frozenSourceCoupledSlots.set(sourceCoupledSlots);
-      auditState.frozenResonantSlots.set(resonantSlots);
+      auditState.frozenSourceCoupledSlots.set(candidateForcingSlots);
+      auditState.frozenResonantSlots.set(candidateResponseSlots);
       auditState.frozenModeSlots.set(modeSlots);
       auditState.frozenSourceCoupledColorSlots.set(sourceCoupledColorSlots);
       auditState.frozenResonantColorSlots.set(resonantColorSlots);
@@ -4532,8 +4480,8 @@ function materializeAudioFeatureStructuralSnapshot(
   }
 
   return {
-    sourceCoupledSlots: returnedSourceCoupledSlots,
-    resonantSlots: returnedResonantSlots,
+    candidateForcingSlots: returnedSourceCoupledSlots,
+    candidateResponseSlots: returnedResonantSlots,
     sourceCoupledPhaseSlots: returnedSourceCoupledPhaseSlots,
     resonantPhaseSlots: returnedResonantPhaseSlots,
     modeSlots: returnedModeSlots,
@@ -4686,10 +4634,10 @@ function readCurrentStructuralState(
   if (previousStructuralState) {
     return {
       ...previousStructuralState,
-      sourceCoupledSlots:
-        previousAnalysisResult?.sourceCoupledSlots ?? preparedInputs.sourceCoupledSlots,
-      resonantSlots:
-        previousAnalysisResult?.resonantSlots ?? preparedInputs.resonantSlots,
+      candidateForcingSlots:
+        previousAnalysisResult?.candidateForcingSlots ?? preparedInputs.candidateForcingSlots,
+      candidateResponseSlots:
+        previousAnalysisResult?.candidateResponseSlots ?? preparedInputs.candidateResponseSlots,
       sourceCoupledPhaseSlots:
         previousAnalysisResult?.sourceCoupledPhaseSlots ??
         preparedInputs.sourceCoupledPhaseSlots,
@@ -4729,8 +4677,8 @@ function readCurrentStructuralState(
   }
 
   return {
-    sourceCoupledSlotsSource: preparedInputs.sourceCoupledState.slots,
-    resonantSlotsSource: preparedInputs.resonantState.slots,
+    candidateForcingSlotsSource: preparedInputs.sourceCoupledState.slots,
+    candidateResponseSlotsSource: preparedInputs.resonantState.slots,
     sourceCoupledPhaseSlotsSource: preparedInputs.sourceCoupledPhaseSlots,
     resonantPhaseSlotsSource: preparedInputs.resonantPhaseSlots,
     referenceSourceCoupledSlotsSource: preparedInputs.sourceCoupledState.referenceSlots,
@@ -4744,8 +4692,8 @@ function readCurrentStructuralState(
     freezeModeSlots: Boolean(
       preparedInputs.resolvedAuditSettings.freezeModeSlots,
     ),
-    sourceCoupledSlots: preparedInputs.sourceCoupledSlots,
-    resonantSlots: preparedInputs.resonantSlots,
+    candidateForcingSlots: preparedInputs.candidateForcingSlots,
+    candidateResponseSlots: preparedInputs.candidateResponseSlots,
     sourceCoupledPhaseSlots: preparedInputs.sourceCoupledPhaseSlots,
     resonantPhaseSlots: preparedInputs.resonantPhaseSlots,
     modeSlots: preparedInputs.modeSlots,
@@ -4866,8 +4814,8 @@ export function buildCurrentAudioFeatureAnalysisResult({
     micActive: preparedInputs.micActive,
     fftMagnitudes: fastSignalState.fftMagnitudes,
     nonZeroFFTBinCount: countNonZeroFFTBinCount(fastSignalState.fftMagnitudes),
-    sourceCoupledSlots: resolvedStructural.sourceCoupledSlots,
-    resonantSlots: resolvedStructural.resonantSlots,
+    candidateForcingSlots: resolvedStructural.candidateForcingSlots,
+    candidateResponseSlots: resolvedStructural.candidateResponseSlots,
     sourceCoupledPhaseSlots: resolvedStructural.sourceCoupledPhaseSlots,
     resonantPhaseSlots: resolvedStructural.resonantPhaseSlots,
     activeSourceCoupledModeCount: resolvedStructural.activeSourceCoupledModeCount,
@@ -5006,8 +4954,8 @@ export function buildAudioFeatureAnalysisSnapshot({
     analysisResult: {
       soundActive: analysisResult.soundActive,
       micActive: analysisResult.micActive,
-      sourceCoupledSlots: cloneFloat32Array(analysisResult.sourceCoupledSlots),
-      resonantSlots: cloneFloat32Array(analysisResult.resonantSlots),
+      candidateForcingSlots: cloneFloat32Array(analysisResult.candidateForcingSlots),
+      candidateResponseSlots: cloneFloat32Array(analysisResult.candidateResponseSlots),
       sourceCoupledPhaseSlots: cloneFloat32Array(analysisResult.sourceCoupledPhaseSlots),
       resonantPhaseSlots: cloneFloat32Array(analysisResult.resonantPhaseSlots),
       activeSourceCoupledModeCount: analysisResult.activeSourceCoupledModeCount,
@@ -5359,8 +5307,8 @@ export function composeAudioFeatureFrame({
   const modalPhaseAuthority = renderAuthority
     ? clamp01(analysisResult.structuralMetrics?.modalPhaseAuthority ?? 0)
     : 0;
-  let renderSourceCoupledSlots = analysisResult.sourceCoupledSlots;
-  let renderResonantSlots = analysisResult.resonantSlots;
+  let renderSourceCoupledSlots = analysisResult.candidateForcingSlots;
+  let renderResonantSlots = analysisResult.candidateResponseSlots;
   let renderSourceCoupledPhaseSlots = analysisResult.sourceCoupledPhaseSlots;
   let renderResonantPhaseSlots = analysisResult.resonantPhaseSlots;
   let renderModeSlots = analysisResult.modeSlots;
@@ -5393,8 +5341,8 @@ export function composeAudioFeatureFrame({
   }
 
   const modalFieldDescriptorSource = buildModalFieldDescriptorSource({
-    sourceCoupledSlots: renderSourceCoupledSlots,
-    resonantSlots: renderResonantSlots,
+    candidateForcingSlots: renderSourceCoupledSlots,
+    candidateResponseSlots: renderResonantSlots,
     sourceCoupledPhaseSlots: renderSourceCoupledPhaseSlots,
     resonantPhaseSlots: renderResonantPhaseSlots,
     sourceCoupledColorSlots: renderSourceCoupledColorSlots,
@@ -5476,8 +5424,8 @@ export function composeAudioFeatureFrame({
       spectralCandidates: analysisResult.spectralCandidates ?? [],
       fftMagnitudes: analysisResult.fftMagnitudes ?? null,
       nonZeroFFTBinCount: analysisResult.nonZeroFFTBinCount ?? null,
-      sourceCoupledSlots: renderSourceCoupledSlots,
-      resonantSlots: renderResonantSlots,
+      candidateForcingSlots: renderSourceCoupledSlots,
+      candidateResponseSlots: renderResonantSlots,
       sourceCoupledColorSlots: renderSourceCoupledColorSlots,
       resonantColorSlots: renderResonantColorSlots,
       modeSlots: renderModeSlots,

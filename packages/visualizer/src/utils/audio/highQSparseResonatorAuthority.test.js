@@ -31,8 +31,8 @@ test("current high-Q heuristic clamps invalid inputs without producing NaN", () 
   });
 
   expect(result.highQSparseResonatorAuthority).toBe(0);
-  expect(result.highQDenseSpectrumPressure).toBeGreaterThanOrEqual(0);
-  expect(result.highQDenseSpectrumPressure).toBeLessThanOrEqual(1);
+  expect(result.highQProjectionLoad).toBeGreaterThanOrEqual(0);
+  expect(result.highQProjectionLoad).toBeLessThanOrEqual(1);
   expect(result.highQRetainedVisibilityRejected).toBe(false);
 });
 
@@ -50,7 +50,7 @@ test("current high-Q heuristic gives sparse resonator evidence visible authority
   });
 
   expect(result.highQSparseResonatorAuthority).toBeGreaterThan(0.75);
-  expect(result.highQDenseSpectrumPressure).toBeLessThan(0.2);
+  expect(result.highQProjectionLoad).toBeLessThan(0.2);
   expect(result.highQRetainedVisibilityRejected).toBe(false);
 });
 
@@ -71,7 +71,7 @@ test("current high-Q heuristic suppresses evidence below the retained-energy gat
   expect(result.highQRetainedVisibilityRejected).toBe(false);
 });
 
-test("current high-Q heuristic caps and rejects dense weak evidence", () => {
+test("reports dense projection load without capping supported retained evidence", () => {
   const result = deriveHighQSparseResonatorAuthority({
     highQObservedSnr: 0.18,
     highQObservedCoherence: 0.86,
@@ -84,9 +84,9 @@ test("current high-Q heuristic caps and rejects dense weak evidence", () => {
     modeCoherence: 0.86,
   });
 
-  expect(result.highQSparseResonatorAuthority).toBeLessThanOrEqual(0.035);
-  expect(result.highQDenseSpectrumPressure).toBeGreaterThanOrEqual(0.72);
-  expect(result.highQRetainedVisibilityRejected).toBe(true);
+  expect(result.highQSparseResonatorAuthority).toBeGreaterThan(0.12);
+  expect(result.highQProjectionLoad).toBeGreaterThanOrEqual(0.72);
+  expect(result.highQRetainedVisibilityRejected).toBe(false);
 });
 
 test("current high-Q heuristic does not reject dense spectra with strong evidence", () => {

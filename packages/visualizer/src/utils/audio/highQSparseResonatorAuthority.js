@@ -43,7 +43,7 @@ export function deriveHighQSparseResonatorAuthority({
   const coherence = clamp01(Math.max(modeCoherence, observedCoherence));
   const binCount = Math.max(0, nonZeroFFTBinCount ?? 0);
 
-  const denseSpectrumPressure = clamp01(
+  const projectionLoad = clamp01(
     smoothstep(640, 900, binCount) * 0.38 +
       smoothstep(0.38, 0.58, distribution) * 0.32 +
       (1 - smoothstep(0.26, 0.48, observedSnr)) * 0.14 +
@@ -79,25 +79,11 @@ export function deriveHighQSparseResonatorAuthority({
     ringEvidence,
   );
   const energyGate = smoothstep(0.001, 0.014, retainedEnergy);
-  const denseAttenuation = 1 - denseSpectrumPressure * (1 - rawAuthority) * 0.96;
-  const denseWeakHighQEvidence =
-    binCount >= 800 &&
-    distribution >= 0.45 &&
-    observedSnr <= 0.28 &&
-    observedDrive <= 0.01;
-  const uncappedAuthority = clamp01(
-    rawAuthority * energyGate * denseAttenuation,
-  );
-  const highQSparseResonatorAuthority = denseWeakHighQEvidence
-    ? Math.min(uncappedAuthority, 0.035)
-    : uncappedAuthority;
+  const highQSparseResonatorAuthority = clamp01(rawAuthority * energyGate);
 
   return {
     highQSparseResonatorAuthority,
-    highQDenseSpectrumPressure: denseSpectrumPressure,
-    highQRetainedVisibilityRejected:
-      retainedEnergy > 0 &&
-      denseSpectrumPressure >= 0.72 &&
-      highQSparseResonatorAuthority < 0.12,
+    highQProjectionLoad: projectionLoad,
+    highQRetainedVisibilityRejected: false,
   };
 }

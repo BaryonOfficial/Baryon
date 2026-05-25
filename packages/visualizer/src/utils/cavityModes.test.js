@@ -120,7 +120,7 @@ describe("acoustic cavity scale", () => {
       acousticScale: {
         radiusMeters: 3,
         soundSpeedMetersPerSecond: 1480,
-        subfloorPolicy: "project-low-q",
+        subfloorPolicy: "project-subfundamental",
       },
       boundaryMode: "neumann",
     };
@@ -141,7 +141,7 @@ describe("acoustic cavity scale", () => {
       acousticScale: {
         radiusMeters: 3,
         soundSpeedMetersPerSecond: 1480,
-        subfloorPolicy: "project-low-q",
+        subfloorPolicy: "project-subfundamental",
       },
       boundaryMode: "dirichlet",
     };
@@ -153,9 +153,26 @@ describe("acoustic cavity scale", () => {
       v: 1,
       w: 1,
       subfloorProjectionActive: true,
-      subfloorPolicy: "project-low-q",
+      subfloorPolicy: "project-subfundamental",
     });
     expect(mode.subfloorFrequencyHz).toBeCloseTo(getCavityAcousticFloorHz(options));
+  });
+
+  it("translates the retired subfloor policy name only at the cavity boundary", () => {
+    const options = {
+      acousticScale: {
+        radiusMeters: 3,
+        soundSpeedMetersPerSecond: 1480,
+        subfloorPolicy: "project-low-q",
+      },
+      boundaryMode: "dirichlet",
+    };
+    const [mode] = resolveCavityModeFamilyForPitch(60, options, 1);
+
+    expect(mode).toMatchObject({
+      subfloorProjectionActive: true,
+      subfloorPolicy: "project-subfundamental",
+    });
   });
 });
 

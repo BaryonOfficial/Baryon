@@ -126,8 +126,8 @@ export function createAudioFeatureState(capacity = AUDIO_SLOT_CAPACITY) {
     capacity,
     analysis: {
       frameId: 0,
-      sourceCoupledSlots: new Float32Array(capacity * 4),
-      resonantSlots: new Float32Array(capacity * 4),
+      candidateForcingSlots: new Float32Array(capacity * 4),
+      candidateResponseSlots: new Float32Array(capacity * 4),
       sourceCoupledPhaseSlots: new Float32Array(capacity * 4),
       resonantPhaseSlots: new Float32Array(capacity * 4),
       modeSlots: new Float32Array(capacity * 4),

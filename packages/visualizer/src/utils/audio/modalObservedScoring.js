@@ -44,7 +44,7 @@ function isHighQHarmonicDriverFrequency(
   );
 }
 
-export function classifyObservedModeQProfile({
+export function classifyObservedModeRenderLayer({
   atlasEntry,
   observedSnr,
   observerCoherence,
@@ -58,20 +58,20 @@ export function classifyObservedModeQProfile({
   lowQObserverMinObservedDrive,
 }) {
   if ((atlasEntry?.renderLayer ?? atlasEntry?.layer ?? "resonant") === "resonant") {
-    return "high-q";
+    return "resonant";
   }
 
   const retained = clamp01(retainedEnergy);
   const drive = clamp01(observedDrive);
   const coherence = clamp01(observerCoherence);
   const snr = Math.max(0, observedSnr ?? 0);
-  const highQDriver = isHighQHarmonicDriverFrequency(
+  const harmonicDriver = isHighQHarmonicDriverFrequency(
     dominantDriveFrequencyHz,
     dominantDriveSpectralSupport,
     allowBassHarmonicDriver,
   );
-  const highQEvidence =
-    highQDriver &&
+  const retainedResonatorEvidence =
+    harmonicDriver &&
     (atlasEntry?.naturalFrequencyHz ?? 0) >= 160 &&
     (atlasEntry?.naturalFrequencyHz ?? Infinity) <=
       HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ &&
@@ -79,7 +79,7 @@ export function classifyObservedModeQProfile({
     coherence >= 0.52 &&
     (snr >= lowQObserverSnrStart || drive >= lowQObserverMinObservedDrive);
 
-  return highQEvidence ? "high-q" : "low-q";
+  return retainedResonatorEvidence ? "resonant" : "source-coupled";
 }
 
 export function computeModalObserverNoiseFloor({

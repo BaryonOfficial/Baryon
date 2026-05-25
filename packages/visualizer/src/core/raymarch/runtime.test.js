@@ -608,7 +608,7 @@ describe("tickRaymarchRuntime", () => {
         projectionEnergyUsedSourceCoupled: 0.52,
         projectionEnergyUsedResonant: 0.31,
         projectionCompetitionReduction: 0.18,
-        projectionDenseSpectrumPressure: 0.72,
+        projectionLoad: 0.72,
         projectionHighQProtection: 0.09,
         projectionEnergyNormalizationApplied: true,
         projectionRawEnergySourceCoupled: 0.68,
@@ -754,7 +754,7 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.debugSnapshot.raymarchDebug.projectionCompetitionReduction,
     ).toBe(0.18);
     expect(
-      runtimeState.debugSnapshot.raymarchDebug.projectionDenseSpectrumPressure,
+      runtimeState.debugSnapshot.raymarchDebug.projectionLoad,
     ).toBe(0.72);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.projectionHighQProtection,
@@ -1260,6 +1260,66 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.debugSnapshot.raymarchDebug.observedDensityFloorMax,
     ).toBe(0);
     expect(runtimeState.debugSnapshot.modeSlotCount).toBe(0);
+  });
+
+  it("applies render-authority reset once across repeated idle ticks", () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    runtimeState.modalFieldModeBuffer.value.array[3] = 0.5;
+    runtimeState.modalFieldColorBuffer.value.array[0] = 0.25;
+    runtimeState.modalFieldPhaseBuffer.value.array[0] = 0.75;
+    runtimeState.effectiveFieldCache.active = true;
+    runtimeState.effectiveFieldCache.ready = true;
+    runtimeState.spectralLightCache.active = true;
+    runtimeState.spectralLightCache.ready = true;
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "idle",
+        renderAuthority: false,
+        averageAmplitude: 0,
+        bandEnergies: new Float32Array(4),
+        debug: {},
+      },
+      1,
+      1 / 60,
+    );
+
+    const effectiveGenerationAfterReset =
+      runtimeState.effectiveFieldCache.generation;
+    const spectralGenerationAfterReset =
+      runtimeState.spectralLightCache.generation;
+    expect(effectiveGenerationAfterReset).toBeGreaterThan(0);
+    expect(spectralGenerationAfterReset).toBeGreaterThan(0);
+    expect(runtimeState.modalFieldModeBuffer.value.array[3]).toBe(0);
+    expect(runtimeState.renderAuthorityResetApplied).toBe(true);
+
+    runtimeState.modalFieldModeBuffer.value.needsUpdate = false;
+    runtimeState.modalFieldColorBuffer.value.needsUpdate = false;
+    runtimeState.modalFieldPhaseBuffer.value.needsUpdate = false;
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "idle",
+        renderAuthority: false,
+        averageAmplitude: 0,
+        bandEnergies: new Float32Array(4),
+        debug: {},
+      },
+      2,
+      1 / 60,
+    );
+
+    expect(runtimeState.effectiveFieldCache.generation).toBe(
+      effectiveGenerationAfterReset,
+    );
+    expect(runtimeState.spectralLightCache.generation).toBe(
+      spectralGenerationAfterReset,
+    );
+    expect(runtimeState.modalFieldModeBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.modalFieldColorBuffer.value.needsUpdate).toBe(false);
+    expect(runtimeState.modalFieldPhaseBuffer.value.needsUpdate).toBe(false);
   });
 
   it("hides retained modal diagnostics on render-authority cut", () => {

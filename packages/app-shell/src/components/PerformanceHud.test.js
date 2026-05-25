@@ -4,6 +4,30 @@ import { renderToStaticMarkup } from "react-dom/server";
 import PerformanceHud from "./PerformanceHud.jsx";
 
 describe("PerformanceHud", () => {
+  it("labels local target fps as a frame budget instead of a render cap", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(PerformanceHud, {
+        metrics: {
+          fps: 69.9,
+          smoothedFrameTimeMs: 14.31,
+          currentPixelRatio: 2,
+          basePixelRatio: 2,
+          renderScale: 1,
+          requestedRenderScale: 1,
+          qualityPreset: "max-quality",
+          targetFps: 60,
+          visualizationMethod: "raymarch",
+          requestedRaymarchSteps: 80,
+          effectiveRaymarchSteps: 80,
+        },
+      }),
+    );
+
+    expect(markup).toContain("FPS: 69.9");
+    expect(markup).toContain("Frame Budget FPS: 60");
+    expect(markup).not.toContain("Target FPS:");
+  });
+
   it("shows the effective render scale without a duplicate governor target", () => {
     const markup = renderToStaticMarkup(
       React.createElement(PerformanceHud, {
