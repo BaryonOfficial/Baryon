@@ -24,7 +24,7 @@ import {
   disposeRaymarchRuntime,
   tickRaymarchRuntime,
 } from "./raymarch/runtime.js";
-import { createRaymarchUniforms } from "./raymarch/uniforms.js";
+import { createVisualizationUniforms } from "./visualizationUniforms.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -54,7 +54,7 @@ function resolveLayerCapacity(
 }
 
 export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
-  const uniforms = createRaymarchUniforms(parameters);
+  const uniforms = createVisualizationUniforms(parameters);
   const requestedCavityGeometry =
     parameters.cavityGeometry ?? DEFAULT_REQUESTED_CAVITY_GEOMETRY;
   const effectiveCavityGeometry = resolveEffectiveCavityGeometry(
@@ -72,13 +72,9 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const spectralLightCache = createRaymarchSpectralLightCache();
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
-    modalFieldModeBuffer,
-    modalFieldColorBuffer,
-    modalFieldPhaseBuffer,
     effectiveFieldTexture: effectiveFieldCache.texture,
     effectiveFieldSupportTexture: effectiveFieldCache.supportTexture,
     spectralLightCacheTexture: spectralLightCache.texture,
-    modalFieldCapacity,
     uniforms,
     cavityGeometry: effectiveCavityGeometry,
   });

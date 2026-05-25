@@ -41,7 +41,7 @@ function createRuntimeDiagnostics(overrides = {}) {
       effectiveFieldSupportDiagnosticSupportedSampleCount: 5,
       effectiveFieldSupportDiagnosticCoverage: 5 / 9,
       effectiveFieldZeroAmplitudeSkippedModeCount: 1,
-      effectiveFieldDescriptorStaleReason: "mode-count",
+      effectiveFieldDescriptorStaleReason: "modal-identity",
       effectiveFieldRebuildPending: false,
       effectiveFieldAuthority: 1,
       bloomEnabled: false,
@@ -139,7 +139,7 @@ test("tail diagnostics records compact samples on the configured interval", () =
       effectiveFieldSupportDiagnosticSupportedSampleCount: 5,
       effectiveFieldSupportDiagnosticCoverage: 5 / 9,
       effectiveFieldZeroAmplitudeSkippedModeCount: 1,
-      effectiveFieldDescriptorStaleReason: "mode-count",
+      effectiveFieldDescriptorStaleReason: "modal-identity",
     },
     classification: "unknown",
   });

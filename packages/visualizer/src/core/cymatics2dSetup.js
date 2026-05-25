@@ -12,7 +12,7 @@ import {
   tickCymatics2dRuntime,
 } from "./cymatics2d/runtime.js";
 import { createFullscreenFieldMesh } from "./cymatics2d/material.js";
-import { createRaymarchUniforms } from "./raymarch/uniforms.js";
+import { createVisualizationUniforms } from "./visualizationUniforms.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -28,7 +28,7 @@ function createModeBuffer(capacity) {
 }
 
 export function setupCymatics2d(baryonGeometry, parameters, audioConfig) {
-  const uniforms = createRaymarchUniforms(parameters);
+  const uniforms = createVisualizationUniforms(parameters);
   const modalFieldCapacity = audioConfig.modalFieldCapacity ?? audioConfig.capacity;
   const modalFieldModeBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldColorBuffer = createModeBuffer(modalFieldCapacity);

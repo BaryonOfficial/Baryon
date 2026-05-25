@@ -120,7 +120,7 @@ describe("tickCymatics2dRuntime", () => {
     );
   });
 
-  it("keeps field mode uploads identical between static and Spectral color modes", () => {
+  it("keeps modal field uploads identical between static and Spectral color modes", () => {
     const createFrame = () => ({
       fieldState: "active",
       renderAuthority: true,

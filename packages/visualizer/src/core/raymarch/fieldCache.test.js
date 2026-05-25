@@ -266,7 +266,7 @@ describe("fieldCache", () => {
     expect(descriptor.bandwidthRejectedModeCount).toBe(1);
     expect(descriptor.effectiveFieldDrawable).toBe(false);
     expect(descriptor.effectiveFieldBlockedReason).toBe(
-      "no-contributing-effective-field-modes",
+      "no-contributing-effective-field-terms",
     );
   });
 
@@ -394,7 +394,7 @@ describe("fieldCache", () => {
     ).toMatchObject({
       drawable: false,
       state: "field-cache-blocked",
-      blockedReason: "no-contributing-effective-field-modes",
+      blockedReason: "no-contributing-effective-field-terms",
     });
   });
 
@@ -2498,7 +2498,7 @@ describe("fieldCache", () => {
         fieldCache,
         contributingTopologyChangedDescriptor,
       ),
-    ).toMatchObject({ needsRebuild: true, reason: "mode-slots" });
+    ).toMatchObject({ needsRebuild: true, reason: "modal-identity" });
   });
 
   it("canonicalizes trailing zero-amplitude slots out of modal count freshness", () => {
@@ -2560,7 +2560,7 @@ describe("fieldCache", () => {
     expect(trailingPositiveDescriptor.modalFieldCount).toBe(2);
     expect(
       shouldRebuildRaymarchFieldCache(fieldCache, trailingPositiveDescriptor),
-    ).toMatchObject({ needsRebuild: true, reason: "mode-count" });
+    ).toMatchObject({ needsRebuild: true, reason: "modal-identity" });
   });
 
   it("canonicalizes interior zero-amplitude modal gaps out of field freshness", () => {
@@ -2630,7 +2630,7 @@ describe("fieldCache", () => {
     expect(positiveGapDescriptor.modalFieldCount).toBe(3);
     expect(
       shouldRebuildRaymarchFieldCache(fieldCache, positiveGapDescriptor),
-    ).toMatchObject({ needsRebuild: true, reason: "mode-count" });
+    ).toMatchObject({ needsRebuild: true, reason: "modal-identity" });
   });
 
   it("builds unified modal field descriptors without role-layer hashes", () => {
@@ -2734,7 +2734,7 @@ describe("fieldCache", () => {
     expect(changedSample.field).not.toBeCloseTo(sample.field, 6);
     expect(
       shouldRebuildRaymarchFieldCache(fieldCache, changedDescriptor),
-    ).toMatchObject({ needsRebuild: true, reason: "mode-slots" });
+    ).toMatchObject({ needsRebuild: true, reason: "modal-identity" });
   });
 
   it("canonicalizes duplicate modal tuples before resolving field freshness", () => {
@@ -2804,7 +2804,7 @@ describe("fieldCache", () => {
     expect(distinctDescriptor.modalFieldCount).toBe(3);
     expect(
       shouldRebuildRaymarchFieldCache(fieldCache, distinctDescriptor),
-    ).toMatchObject({ needsRebuild: true, reason: "mode-count" });
+    ).toMatchObject({ needsRebuild: true, reason: "modal-identity" });
   });
 
   it("does not rebuild when only the global modal amplitude scale changes", () => {
@@ -2868,7 +2868,7 @@ describe("fieldCache", () => {
 
     expect(changedSample.field).not.toBeCloseTo(firstSample.field, 6);
     expect(rebuild.needsRebuild).toBe(true);
-    expect(rebuild.reason).toBe("mode-slots");
+    expect(rebuild.reason).toBe("modal-identity");
   });
 
   it("rebuilds for visible relative modal coefficient changes", () => {
@@ -2914,7 +2914,7 @@ describe("fieldCache", () => {
       0.01,
     );
     expect(rebuild.needsRebuild).toBe(true);
-    expect(rebuild.reason).toBe("mode-slots");
+    expect(rebuild.reason).toBe("modal-identity");
   });
 
   it("detects rebuilds when modal geometry changes", () => {
@@ -2935,7 +2935,7 @@ describe("fieldCache", () => {
     const rebuild = shouldRebuildRaymarchFieldCache(fieldCache, second);
 
     expect(rebuild.needsRebuild).toBe(true);
-    expect(rebuild.reason).toBe("mode-slots");
+    expect(rebuild.reason).toBe("modal-identity");
   });
 
   it("keeps field descriptors unchanged when only color slots change", () => {
@@ -3472,7 +3472,7 @@ describe("fieldCache", () => {
         spectralLightCache,
         activeTopologyChangedDescriptor,
       ),
-    ).toMatchObject({ needsRebuild: true, reason: "mode-slots" });
+    ).toMatchObject({ needsRebuild: true, reason: "modal-identity" });
   });
 
   it("keeps Spectral Light descriptors unchanged when only phase advisory slots change", () => {
@@ -3549,7 +3549,7 @@ describe("fieldCache", () => {
     );
 
     expect(rebuild.needsRebuild).toBe(true);
-    expect(rebuild.reason).toBe("mode-slots");
+    expect(rebuild.reason).toBe("modal-identity");
   });
 
   it("tracks Spectral Light readiness against the full Spectral Light descriptor", () => {

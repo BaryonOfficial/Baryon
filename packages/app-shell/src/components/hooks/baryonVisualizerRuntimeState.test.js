@@ -271,7 +271,7 @@ test("publishes effective field diagnostics from runtime state when audit is dis
         resolution: 32,
         rebuildCount: 9,
         lastRebuildReason: "modal-descriptor",
-        descriptorStaleReason: "mode-count",
+        descriptorStaleReason: "modal-identity",
         lastError: null,
         activeEffectiveFieldModeCount: 6,
         effectiveFieldAuthority: 0.37,
@@ -317,7 +317,7 @@ test("publishes effective field diagnostics from runtime state when audit is dis
       "modal-descriptor",
     );
     expect(snapshot.render.effectiveFieldDescriptorStaleReason).toBe(
-      "mode-count",
+      "modal-identity",
     );
     expect(snapshot.render.effectiveFieldLastError).toBeNull();
     expect(snapshot.render.effectiveFieldModeCount).toBe(6);
@@ -350,7 +350,7 @@ test("publishes effective field diagnostics from runtime state when audit is dis
   }
 });
 
-test("explains effective field descriptor staleness from runtime state when audit is disabled", () => {
+test("keeps phase-only effective field descriptor changes fresh when audit is disabled", () => {
   const previousWindow = globalThis.window;
   globalThis.window = {};
   const activeDescriptor = {
@@ -388,10 +388,8 @@ test("explains effective field descriptor staleness from runtime state when audi
       force: true,
     });
 
-    expect(snapshot.render.effectiveFieldDescriptorFresh).toBe(false);
-    expect(snapshot.render.effectiveFieldDescriptorStaleReason).toBe(
-      "phase-slots",
-    );
+    expect(snapshot.render.effectiveFieldDescriptorFresh).toBe(true);
+    expect(snapshot.render.effectiveFieldDescriptorStaleReason).toBeNull();
   } finally {
     globalThis.window = previousWindow;
   }

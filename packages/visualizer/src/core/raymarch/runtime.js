@@ -53,7 +53,6 @@ import {
   RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES,
   setRaymarchSpectralLightEvaluationMode,
   setRaymarchCavityGeometry,
-  setRaymarchFieldEvaluationMode,
 } from "./material.js";
 import { resolveIdleOverlayVisible } from "../idleLogoVisibility.js";
 
@@ -703,20 +702,17 @@ function buildRaymarchDebugSnapshot(
   );
   const effectiveFieldBandwidthRejectedPhaseCurrentModalEnergy =
     readFiniteNumber(
-      effectiveFieldDiagnosticDescriptor
-        ?.bandwidthRejectedPhaseCurrentModalEnergy ??
+      effectiveFieldDiagnosticDescriptor?.bandwidthRejectedPhaseCurrentModalEnergy ??
         effectiveFieldCache?.bandwidthRejectedPhaseCurrentModalEnergy,
       0,
     );
   const effectiveFieldResolvedRawModalEnergyRatio = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor
-      ?.effectiveFieldResolvedRawModalEnergyRatio ??
+    effectiveFieldDiagnosticDescriptor?.effectiveFieldResolvedRawModalEnergyRatio ??
       effectiveFieldCache?.effectiveFieldResolvedRawModalEnergyRatio,
     1,
   );
   const effectiveFieldResolvedPhaseCurrentModalEnergyRatio = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor
-      ?.effectiveFieldResolvedPhaseCurrentModalEnergyRatio ??
+    effectiveFieldDiagnosticDescriptor?.effectiveFieldResolvedPhaseCurrentModalEnergyRatio ??
       effectiveFieldCache?.effectiveFieldResolvedPhaseCurrentModalEnergyRatio,
     1,
   );
@@ -726,8 +722,7 @@ function buildRaymarchDebugSnapshot(
     0,
   );
   const effectiveFieldPhaseCurrentGradientEnvelope = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor
-      ?.effectiveFieldPhaseCurrentGradientEnvelope ??
+    effectiveFieldDiagnosticDescriptor?.effectiveFieldPhaseCurrentGradientEnvelope ??
       effectiveFieldCache?.effectiveFieldPhaseCurrentGradientEnvelope,
     0,
   );
@@ -754,8 +749,7 @@ function buildRaymarchDebugSnapshot(
   const effectiveFieldCacheSupportedSampleCount =
     effectiveFieldCache?.effectiveFieldSupportDiagnosticSupportedSampleCount;
   const effectiveFieldDescriptorSupportedSampleCount =
-    effectiveFieldDiagnosticDescriptor
-      ?.effectiveFieldSupportDiagnosticSupportedSampleCount;
+    effectiveFieldDiagnosticDescriptor?.effectiveFieldSupportDiagnosticSupportedSampleCount;
   const effectiveFieldSupportDiagnosticSupportedSampleCount = readFiniteNumber(
     effectiveFieldDescriptorSupportedSampleCount ??
       effectiveFieldCacheSupportedSampleCount,
@@ -830,6 +824,8 @@ function buildRaymarchDebugSnapshot(
       effectiveFieldCache,
       effectiveFieldDescriptor,
     );
+  const effectiveFieldDrawable =
+    effectiveFieldDrawableAuthority.drawable === true;
   const spectralLightCacheDescriptorFresh =
     isRaymarchSpectralLightCacheReadyForDescriptor(
       spectralLightCache,
@@ -906,11 +902,14 @@ function buildRaymarchDebugSnapshot(
     observationEnergy: observationTransferDebug.observationEnergy,
     observationReferenceAnchor: observationTransferDebug.observationAnchor,
     observationReferenceSupport: observationTransferDebug.observationSupport,
-    observationReferenceDensityFloor: observationTransferDebug.observedDensityFloor,
-    observationReferenceContourSupport: observationTransferDebug.observedContourSupport,
+    observationReferenceDensityFloor:
+      observationTransferDebug.observedDensityFloor,
+    observationReferenceContourSupport:
+      observationTransferDebug.observedContourSupport,
     observationSampledAnchor: sampledObservationTransferDebug.observationAnchor,
     observationSampledSignedAuthority: sampledObservationSignedAuthority,
-    observationSampledSupport: sampledObservationTransferDebug.observationSupport,
+    observationSampledSupport:
+      sampledObservationTransferDebug.observationSupport,
     observationSampledDensityFloor:
       sampledObservationTransferDebug.observedDensityFloor,
     observationSampledContourSupport:
@@ -950,8 +949,7 @@ function buildRaymarchDebugSnapshot(
       featureFrame?.debug?.projectionOverlapPressureResonant ?? 0,
     projectionCompetitionReduction:
       featureFrame?.debug?.projectionCompetitionReduction ?? 0,
-    projectionLoad:
-      featureFrame?.debug?.projectionLoad ?? 0,
+    projectionLoad: featureFrame?.debug?.projectionLoad ?? 0,
     projectionHighQProtection:
       featureFrame?.debug?.projectionHighQProtection ?? 0,
     projectionEnergyNormalizationApplied:
@@ -996,10 +994,6 @@ function buildRaymarchDebugSnapshot(
     materialCavityGeometry:
       runtimeState.volumeMesh?.userData?.raymarchCavityGeometry ??
       effectiveCavityGeometry,
-    fieldEvaluationMode:
-      runtimeState.volumeMesh?.userData?.raymarchFieldEvaluationMode ??
-      effectiveFieldCache?.mode ??
-      "effective-cached",
     spectralLightEvaluationMode:
       runtimeState.volumeMesh?.userData?.raymarchSpectralLightEvaluationMode ??
       spectralLightCache?.mode ??
@@ -1019,12 +1013,9 @@ function buildRaymarchDebugSnapshot(
     effectiveFieldBackend: effectiveFieldCache?.backend ?? "compute",
     effectiveFieldReady: effectiveFieldCache?.ready ?? false,
     effectiveFieldRebuildPending: effectiveFieldCache?.rebuildPending ?? false,
-    effectiveFieldFailedClosed:
-      (runtimeState.volumeMesh?.userData?.raymarchFieldEvaluationMode ??
-        effectiveFieldCache?.mode ??
-        "effective-cached") === "unavailable",
+    effectiveFieldFailedClosed: !effectiveFieldDrawable,
     effectiveFieldLastError: effectiveFieldCache?.lastError ?? null,
-    effectiveFieldDrawable: effectiveFieldDrawableAuthority.drawable === true,
+    effectiveFieldDrawable,
     effectiveFieldDrawableState:
       effectiveFieldDrawableAuthority.state ?? "field-cache-absent",
     effectiveFieldDrawableBlockedReason:
@@ -1646,27 +1637,15 @@ function resolveSpectralLightEvaluationMode(
   runtimeState,
   renderer,
   { modalFieldCapacity },
-  { spectralLightEnabled, spectralLightDescriptor, debugDirectRequested },
+  { spectralLightEnabled, spectralLightDescriptor },
 ) {
   const spectralLightCache = runtimeState.spectralLightCache;
   if (!spectralLightCache) {
-    if (!spectralLightEnabled) {
-      return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
-    }
-    return debugDirectRequested
-      ? RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct
-      : RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
+    return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
   }
 
   if (!spectralLightEnabled) {
     return deactivateSpectralLightCacheEvaluation(spectralLightCache);
-  }
-
-  if (debugDirectRequested) {
-    return deactivateSpectralLightCacheEvaluation(
-      spectralLightCache,
-      RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct,
-    );
   }
 
   if (spectralLightCache.backend === "unavailable") {
@@ -1715,15 +1694,9 @@ function updateRaymarchEvaluationModes(
     return;
   }
 
-  const fieldEvaluationMode = updateEffectiveFieldCache(
-    runtimeState,
-    renderer,
-    capacities,
-    {
-      effectiveFieldDescriptor,
-    },
-  );
-  setRaymarchFieldEvaluationMode(runtimeState.volumeMesh, fieldEvaluationMode);
+  updateEffectiveFieldCache(runtimeState, renderer, capacities, {
+    effectiveFieldDescriptor,
+  });
 
   const spectralLightEvaluationMode = resolveSpectralLightEvaluationMode(
     runtimeState,
@@ -1732,7 +1705,6 @@ function updateRaymarchEvaluationModes(
     {
       spectralLightEnabled,
       spectralLightDescriptor,
-      debugDirectRequested: false,
     },
   );
   setRaymarchSpectralLightEvaluationMode(
@@ -1876,11 +1848,7 @@ export function tickRaymarchRuntime(
   deltaTime,
   renderer = null,
 ) {
-  const {
-    uniforms,
-    volumeMesh,
-    idleOverlay,
-  } = runtimeState;
+  const { uniforms, volumeMesh, idleOverlay } = runtimeState;
   const modalFieldModeBuffer = runtimeState.modalFieldModeBuffer;
   const modalFieldColorBuffer = runtimeState.modalFieldColorBuffer;
   const modalFieldPhaseBuffer = runtimeState.modalFieldPhaseBuffer;
@@ -1922,7 +1890,6 @@ export function tickRaymarchRuntime(
     setIfChanged(uniforms.uStructureSignal, 0);
     setIfChanged(uniforms.uEnergySignal, 0);
     setIfChanged(uniforms.uChangeSignal, 0);
-    setIfChanged(uniforms.uPulseSignal, 0);
     setIfChanged(uniforms.uBassSalience, 0);
     setIfChanged(uniforms.uTimbreSpread, 0);
     setIfChanged(uniforms.uSpectralNovelty, 0);
@@ -2001,7 +1968,6 @@ export function tickRaymarchRuntime(
   setIfChanged(uniforms.uStructureSignal, featureFrame?.structureSignal ?? 0);
   setIfChanged(uniforms.uEnergySignal, featureFrame?.energySignal ?? 0);
   setIfChanged(uniforms.uChangeSignal, featureFrame?.changeSignal ?? 0);
-  setIfChanged(uniforms.uPulseSignal, featureFrame?.pulseSignal ?? 0);
   setIfChanged(uniforms.uBassSalience, featureFrame?.bassSalience ?? 0);
   setIfChanged(uniforms.uTimbreSpread, featureFrame?.timbreSpread ?? 0);
   setIfChanged(uniforms.uSpectralNovelty, featureFrame?.spectralNovelty ?? 0);
@@ -2076,15 +2042,9 @@ export function tickRaymarchRuntime(
     bandEnergies[3] ?? 0,
   );
 
-  const fieldEvaluationMode =
-    volumeMesh.userData?.raymarchFieldEvaluationMode ?? "effective-cached";
   const effectiveFieldDrawable =
-    !runtimeState.effectiveFieldCache ||
     runtimeState.effectiveFieldDrawableAuthority?.drawable === true;
-  volumeMesh.visible =
-    renderAuthority &&
-    fieldEvaluationMode !== "unavailable" &&
-    effectiveFieldDrawable;
+  volumeMesh.visible = renderAuthority && effectiveFieldDrawable;
   idleOverlay.visible = resolveIdleOverlayVisible(
     runtimeState,
     featureFrame,
@@ -2105,8 +2065,10 @@ export function disposeRaymarchRuntime(runtimeState) {
     child.geometry?.dispose?.();
     const materialCache = child.userData?.raymarchMaterialCache;
     if (materialCache) {
-      Object.values(materialCache).forEach((material) => {
-        material?.dispose?.();
+      Object.values(materialCache).forEach((boundaryMaterials) => {
+        Object.values(boundaryMaterials).forEach((material) => {
+          material?.dispose?.();
+        });
       });
     } else {
       child.material?.dispose?.();

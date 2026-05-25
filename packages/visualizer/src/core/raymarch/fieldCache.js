@@ -1133,10 +1133,10 @@ function resolveFieldRebuildReason(previousDescriptor, nextDescriptor) {
     return baseReason;
   }
   if (previousDescriptor.modalFieldCount !== nextDescriptor.modalFieldCount) {
-    return "mode-count";
+    return "modal-identity";
   }
   if (previousDescriptor.modalFieldHash !== nextDescriptor.modalFieldHash) {
-    return "mode-slots";
+    return "modal-identity";
   }
 
   return null;
@@ -1159,7 +1159,7 @@ function resolveSpectralLightRebuildReason(previousDescriptor, nextDescriptor) {
     const modalFieldShapeUnchanged =
       previousDescriptor.modalFieldCount === nextDescriptor.modalFieldCount &&
       previousDescriptor.modalFieldHash === nextDescriptor.modalFieldHash;
-    return modalFieldShapeUnchanged ? "color-slots" : "mode-slots";
+    return modalFieldShapeUnchanged ? "color-slots" : "modal-identity";
   }
   if (
     previousDescriptor.modalFieldColorHash !==
@@ -1434,7 +1434,7 @@ export function resolveRaymarchEffectiveFieldDescriptorBlockedReason(
       ) > 0
     )
   ) {
-    return "no-contributing-effective-field-modes";
+    return "no-contributing-effective-field-terms";
   }
   return null;
 }

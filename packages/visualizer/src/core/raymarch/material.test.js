@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
-import { AUDIO_SLOT_CAPACITY, RAYMARCH_DEFAULTS } from "../../defaults.js";
+import { RAYMARCH_DEFAULTS } from "../../defaults.js";
 import {
-  RAYMARCH_LIVE_RESIDUAL_MAX_MODES,
   RAYMARCH_BOUNDARY_TUNING,
   RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES,
   RAYMARCH_SPECTRAL_LIGHT_TUNING,
@@ -12,9 +11,8 @@ import {
   setRaymarchBoundaryMode,
   setRaymarchCavityGeometry,
   setRaymarchSpectralLightEvaluationMode,
-  setRaymarchFieldEvaluationMode,
 } from "./material.js";
-import { createRaymarchUniforms } from "./uniforms.js";
+import { createVisualizationUniforms } from "../visualizationUniforms.js";
 import {
   raymarchOpacityNode,
 } from "./SafeVolumetricLightingModel.js";
@@ -24,9 +22,9 @@ import {
 } from "./fieldCache.js";
 
 function makeMeshUniforms(overrides = {}) {
-  const base = createRaymarchUniforms({
+  const base = createVisualizationUniforms({
     radius: 3,
-    steps: 64,
+    threshold: 0.02,
   });
   return { ...base, ...overrides };
 }
@@ -520,18 +518,10 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("phaseCoherentSignedDisplacement");
   });
 
-  it("adds a cheap field-only live residual on the cached effective field path", () => {
+  it("keeps cached effective field ownership texture-only", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
-    );
-    const residualStart = expectSourceIndex(
-      source,
-      "function accumulateCachedLiveResidual({",
-    );
-    const directStart = expectSourceIndex(
-      source,
-      "function accumulateDirectModalField({",
     );
     const amplitudeNormStart = expectSourceIndex(
       source,
@@ -541,129 +531,49 @@ describe("raymarch volume material", () => {
       "if (effectiveFieldTexture) {",
       amplitudeNormStart,
     );
-    const directBranchStart = source.indexOf(
-      "} else if (directFieldEvaluationEnabled) {",
+    const effectiveFieldStart = source.indexOf(
+      "const effectiveField = field;",
       cachedBranchStart,
     );
-    const residualBlock = source.slice(residualStart, directStart);
-    const cachedBranchBlock = source.slice(cachedBranchStart, directBranchStart);
+    const cachedBranchBlock = source.slice(
+      cachedBranchStart,
+      effectiveFieldStart,
+    );
 
-    expect(RAYMARCH_LIVE_RESIDUAL_MAX_MODES).toBe(2);
     expect(cachedBranchStart).toBeGreaterThanOrEqual(0);
-    expect(directBranchStart).toBeGreaterThan(cachedBranchStart);
-    expect(cachedBranchBlock).toContain("accumulateCachedLiveResidual({");
-    expect(residualBlock).toContain("RAYMARCH_LIVE_RESIDUAL_MAX_MODES");
-    expect(residualBlock).toContain("modalFieldPhaseBuffer.element(i)");
-    expect(residualBlock).toContain("evaluateFieldNode({");
-    expect(residualBlock).toContain("uTransientEnergy");
-    expect(residualBlock).toContain("uPulseSignal");
-    expect(residualBlock).toContain("uModalResponseEnergy");
-    expect(residualBlock).not.toContain("effectiveUnsignedSupport.assign");
-    expect(residualBlock).not.toContain("effectiveCancellationRatio");
-    expect(residualBlock).not.toContain("evaluateModeNode({");
-    expect(residualBlock).not.toContain("gradX.addAssign");
-    expect(residualBlock).not.toContain("gradY.addAssign");
-    expect(residualBlock).not.toContain("gradZ.addAssign");
-    expect(residualBlock).not.toContain("end: int(modalFieldCapacity)");
+    expect(effectiveFieldStart).toBeGreaterThan(cachedBranchStart);
+    expect(source).not.toContain("function accumulateCachedLiveResidual({");
+    expect(source).not.toContain("directFieldEvaluationEnabled");
+    expect(source).not.toContain("function accumulateDirectModalField");
+    expect(source).not.toContain("function accumulateModalField");
+    expect(source).not.toContain("setRaymarchFieldEvaluationMode");
+    expect(source).not.toContain("fieldEvaluationMode");
+    expect(cachedBranchBlock).not.toContain("accumulateCachedLiveResidual({");
+    expect(cachedBranchBlock).not.toContain("evaluateFieldNode({");
+    expect(cachedBranchBlock).not.toContain("modalFieldPhaseBuffer.element(i)");
+    expect(cachedBranchBlock).not.toContain("end: int(modalFieldCapacity)");
   });
 
-  it("accumulates the direct raymarch field through one modal field path", () => {
+  it("keeps direct modal field evaluation out of the material shader", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
     );
 
-    expect(source).toContain("modalFieldModeBuffer");
-    expect(source).toContain("modalFieldColorBuffer");
+    expect(source).not.toContain("modalFieldModeBuffer");
+    expect(source).not.toContain("modalFieldColorBuffer");
+    expect(source).not.toContain("modalFieldPhaseBuffer");
+    expect(source).not.toContain("modalFieldCapacity");
+    expect(source).not.toContain("evaluateModeNode({");
+    expect(source).not.toContain("cos(phase)");
+    expect(source).not.toContain("phaseCurrentCoefficient");
+    expect(source).not.toContain("unsignedSupport.addAssign");
     expect(source).toContain("uModalFieldModeCount");
-    expect(source).toContain("function accumulateModalField");
-    expect(source).toContain("function accumulateModalFieldColorOnly");
     expect(source).not.toContain("function accumulateFieldLayers");
     expect(source).not.toContain("function accumulateColorLayers");
     expect(source).not.toContain("DETAIL_LAYER_WEIGHT");
     expect(source).not.toContain("uBackboneModeCount");
     expect(source).not.toContain("uDetailModeCount");
-  });
-
-  it("keeps direct raymarch field semantics phase-current with phase-current support", () => {
-    const source = readFileSync(
-      new URL("./material.js", import.meta.url),
-      "utf8",
-    );
-    const setupSource = readFileSync(
-      new URL("../raymarchSetup.js", import.meta.url),
-      "utf8",
-    );
-    const accumulatorStart = expectSourceIndex(
-      source,
-      "function accumulateModalField({",
-    );
-    const colorOnlyStart = expectSourceIndex(
-      source,
-      "function accumulateModalFieldColorOnly({",
-    );
-    const directBranchStart = expectSourceIndex(
-      source,
-      "} else if (directFieldEvaluationEnabled) {",
-    );
-    const effectiveFieldStart = expectSourceIndex(
-      source,
-      "const effectiveField = field;",
-    );
-    const opticalSampleStart = expectSourceIndex(
-      source,
-      "function sampleFieldGradientNormalNode({",
-    );
-    const opticalConvergenceStart = expectSourceIndex(
-      source,
-      "function deriveOpticalConvergenceAuthorityNode({",
-    );
-    const accumulatorBlock = source.slice(accumulatorStart, colorOnlyStart);
-    const directBranchBlock = source.slice(
-      directBranchStart,
-      effectiveFieldStart,
-    );
-    const opticalSampleBlock = source.slice(
-      opticalSampleStart,
-      opticalConvergenceStart,
-    );
-
-    expect(accumulatorBlock).toContain("phaseBuffer = null");
-    expect(accumulatorBlock).toContain("const phaseCurrentCoefficient =");
-    expect(accumulatorBlock).toContain("cos(phase)");
-    expect(accumulatorBlock).toContain(
-      "field.addAssign(phaseCurrentContribution)",
-    );
-    expect(accumulatorBlock).toContain(
-      "const phaseCurrentContribution = phaseCurrentCoefficient",
-    );
-    expect(accumulatorBlock).toContain(
-      "unsignedSupport.addAssign(abs(phaseCurrentContribution))",
-    );
-    expect(accumulatorBlock).not.toContain("rawSupportContribution");
-    expect(directBranchBlock).toContain("modalFieldPhaseBuffer");
-    expect(directBranchBlock).toContain("uTime");
-    expect(directBranchBlock).toContain(
-      "unsignedSupport: effectiveUnsignedSupport",
-    );
-    expect(directBranchBlock).toContain("if (cachedSpectralLightEnabled) {");
-    expect(directBranchBlock).toContain("texture3D(\n            spectralLightCacheTexture");
-    expect(directBranchBlock).toContain(
-      "colorSum.assign(cachedSpectralLightSample.xyz)",
-    );
-    expect(directBranchBlock).toContain(
-      "colorWeight.assign(cachedSpectralLightSample.w)",
-    );
-    expect(directBranchBlock).toContain("const normalizedDirectSupport =");
-    expect(directBranchBlock).toContain("effectiveCancellationRatio.assign(");
-    expect(opticalSampleBlock).toContain(
-      "phaseBuffer: modalFieldPhaseBuffer",
-    );
-    expect(opticalSampleBlock).toContain("uTime");
-    expect(setupSource).toContain(
-      "const modalFieldPhaseBuffer = createModeBuffer(modalFieldCapacity);",
-    );
-    expect(setupSource).toContain("modalFieldPhaseBuffer,");
   });
 
   it("keeps Spectral Light photographic accents above the blandness floor", () => {
@@ -682,9 +592,6 @@ describe("raymarch volume material", () => {
       expect(RAYMARCH_SPECTRAL_LIGHT_TUNING[name]).toBeLessThanOrEqual(max);
     }
 
-    expect(
-      RAYMARCH_SPECTRAL_LIGHT_TUNING.directPresenceEnd,
-    ).toBeLessThanOrEqual(0.05);
     expect(
       RAYMARCH_SPECTRAL_LIGHT_TUNING.cachedPresenceEnd,
     ).toBeLessThanOrEqual(0.07);
@@ -812,27 +719,30 @@ describe("raymarch volume material", () => {
 
   it("uses whitepaper linear modal-local Spectral Light mixing", () => {
     const source = readFileSync(
-      new URL("./material.js", import.meta.url),
+      new URL("./fieldCache.js", import.meta.url),
       "utf8",
     );
     const influenceStart = expectSourceIndex(
       source,
-      "const weightedInfluence = localInfluence.mul(colorSlot.w);",
+      "const localInfluence = abs(contribution).mul(colorSlot.w).toVar();",
     );
-    const colorSumStart = expectSourceIndex(source, "colorSum.addAssign(");
     const colorWeightStart = expectSourceIndex(
       source,
-      "colorWeight.addAssign(weightedInfluence);",
+      "colorWeight.addAssign(localInfluence);",
     );
-    const spectralColorStart = expectSourceIndex(
+    const colorSumStart = expectSourceIndex(
       source,
-      "const spectralColor = colorSum.div(colorWeight.max(float(1e-4)));",
+      "colorSumX.addAssign(localInfluence.mul(colorSlot.x));",
+    );
+    const textureStoreStart = expectSourceIndex(
+      source,
+      "vec4(colorSumX, colorSumY, colorSumZ, colorWeight)",
     );
 
     expect(influenceStart).toBeGreaterThan(0);
-    expect(colorSumStart).toBeGreaterThan(influenceStart);
-    expect(colorWeightStart).toBeGreaterThan(colorSumStart);
-    expect(colorWeightStart).toBeLessThan(spectralColorStart);
+    expect(colorWeightStart).toBeGreaterThan(influenceStart);
+    expect(colorSumStart).toBeGreaterThan(colorWeightStart);
+    expect(colorSumStart).toBeLessThan(textureStoreStart);
     expect(source).not.toContain("colorChromaSum");
     expect(source).not.toContain("colorChromaWeight");
     expect(source).not.toContain("chromaInfluence");
@@ -1232,9 +1142,6 @@ describe("raymarch volume material", () => {
   it("binds volumetric opacity to the material alpha path", () => {
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      modalFieldModeBuffer: {},
-      modalFieldColorBuffer: {},
-      modalFieldCapacity: AUDIO_SLOT_CAPACITY,
       uniforms: makeMeshUniforms(),
     });
 
@@ -1249,9 +1156,6 @@ describe("raymarch volume material", () => {
     const uniforms = makeMeshUniforms();
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      modalFieldModeBuffer: {},
-      modalFieldColorBuffer: {},
-      modalFieldCapacity: AUDIO_SLOT_CAPACITY,
       uniforms,
     });
 
@@ -1268,18 +1172,15 @@ describe("raymarch volume material", () => {
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
   });
 
-  it("binds the canonical effective field texture only on effective cached variants", () => {
+  it("binds the canonical effective field texture on the cache-only material", () => {
     const effectiveFieldCache = createRaymarchEffectiveFieldCache({
       resolution: 8,
     });
     const uniforms = makeMeshUniforms();
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      modalFieldModeBuffer: {},
-      modalFieldColorBuffer: {},
       effectiveFieldTexture: effectiveFieldCache.texture,
       effectiveFieldSupportTexture: effectiveFieldCache.supportTexture,
-      modalFieldCapacity: AUDIO_SLOT_CAPACITY,
       uniforms,
     });
 
@@ -1297,28 +1198,13 @@ describe("raymarch volume material", () => {
     );
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
-
-    setRaymarchFieldEvaluationMode(mesh, "effective-cached");
-
-    expect(mesh.material.effectiveFieldTexture).toBe(
-      effectiveFieldCache.texture,
-    );
-    expect(mesh.material.effectiveFieldSupportTexture).toBe(
-      effectiveFieldCache.supportTexture,
-    );
-
-    setRaymarchFieldEvaluationMode(mesh, "direct");
-
-    expect(mesh.material.effectiveFieldTexture).toBeNull();
-    expect(mesh.material.effectiveFieldSupportTexture).toBeNull();
+    expect(mesh.userData).not.toHaveProperty("raymarchFieldEvaluationMode");
+    expect(mesh.material).not.toHaveProperty("fieldEvaluationMode");
   });
 
-  it("binds the canonical modal field capacity", () => {
+  it("constructs the material without modal buffers", () => {
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      modalFieldModeBuffer: {},
-      modalFieldColorBuffer: {},
-      modalFieldCapacity: 12,
       uniforms: makeMeshUniforms(),
     });
 
@@ -1326,7 +1212,7 @@ describe("raymarch volume material", () => {
     expect(mesh.material.steps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
   });
 
-  it("starts effective cached/off and creates direct variants only on explicit request", () => {
+  it("starts cache-only/off and creates no material field-evaluation variants", () => {
     const effectiveFieldCache = createRaymarchEffectiveFieldCache({
       resolution: 8,
     });
@@ -1335,28 +1221,21 @@ describe("raymarch volume material", () => {
     });
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      modalFieldModeBuffer: {},
-      modalFieldColorBuffer: {},
       effectiveFieldTexture: effectiveFieldCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
-      modalFieldCapacity: AUDIO_SLOT_CAPACITY,
       uniforms: makeMeshUniforms(),
     });
     const materialCache = getRaymarchMaterialCache(mesh);
 
-    expect(materialCache.neumann.direct).toEqual({});
-    expect(materialCache.dirichlet.direct).toEqual({});
-    expect(
-      materialCache.neumann["effective-cached"].off.rectangular,
-    ).toBeTruthy();
-    expect(
-      materialCache.dirichlet["effective-cached"].off.rectangular,
-    ).toBeTruthy();
-    expect(materialCache.neumann["effective-cached"].cached).toBeUndefined();
-    expect(mesh.material).toBe(
-      materialCache.neumann["effective-cached"].off.rectangular,
-    );
-    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("effective-cached");
+    expect(materialCache.neumann.direct).toBeUndefined();
+    expect(materialCache.dirichlet.direct).toBeUndefined();
+    expect(materialCache.neumann["effective-cached"]).toBeUndefined();
+    expect(materialCache.dirichlet["effective-cached"]).toBeUndefined();
+    expect(materialCache.neumann.off).toBeTruthy();
+    expect(materialCache.dirichlet.off).toBeTruthy();
+    expect(materialCache.neumann.cached).toBeUndefined();
+    expect(mesh.material).toBe(materialCache.neumann.off);
+    expect(mesh.userData).not.toHaveProperty("raymarchFieldEvaluationMode");
     expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     );
@@ -1366,33 +1245,19 @@ describe("raymarch volume material", () => {
       mesh,
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
-    expect(mesh.material).toBe(
-      materialCache.neumann["effective-cached"].cached.rectangular,
-    );
-    expect(
-      materialCache.neumann["effective-cached"].cached.rectangular,
-    ).toBeTruthy();
-    expect(materialCache.neumann.direct).toEqual({});
-    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("effective-cached");
+    expect(mesh.material).toBe(materialCache.neumann.cached);
+    expect(materialCache.neumann.cached).toBeTruthy();
+    expect(materialCache.neumann.direct).toBeUndefined();
+    expect(mesh.userData).not.toHaveProperty("raymarchFieldEvaluationMode");
 
     setRaymarchBoundaryMode(mesh, "dirichlet");
-    expect(mesh.material).toBe(
-      materialCache.dirichlet["effective-cached"].cached.rectangular,
-    );
-    expect(
-      materialCache.dirichlet["effective-cached"].cached.rectangular,
-    ).toBeTruthy();
-    expect(materialCache.dirichlet.direct).toEqual({});
+    expect(mesh.material).toBe(materialCache.dirichlet.cached);
+    expect(materialCache.dirichlet.cached).toBeTruthy();
+    expect(materialCache.dirichlet.direct).toBeUndefined();
     expect(mesh.userData.raymarchBoundaryMode).toBe("dirichlet");
-
-    setRaymarchFieldEvaluationMode(mesh, "direct");
-    expect(mesh.material).toBe(
-      materialCache.dirichlet.direct.cached.rectangular,
-    );
-    expect(materialCache.dirichlet.direct.cached.rectangular).toBeTruthy();
   });
 
-  it("keeps geometry-aware material switching compatible with boundary and cache mode changes", () => {
+  it("keeps cavity geometry as cache descriptor state, not a material variant", () => {
     const effectiveFieldCache = createRaymarchEffectiveFieldCache({
       resolution: 8,
     });
@@ -1401,41 +1266,35 @@ describe("raymarch volume material", () => {
     });
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      modalFieldModeBuffer: {},
-      modalFieldColorBuffer: {},
       effectiveFieldTexture: effectiveFieldCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
-      modalFieldCapacity: AUDIO_SLOT_CAPACITY,
       uniforms: makeMeshUniforms(),
     });
     const materialCache = getRaymarchMaterialCache(mesh);
 
-    setRaymarchFieldEvaluationMode(mesh, "effective-cached");
     setRaymarchSpectralLightEvaluationMode(
       mesh,
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
+    const neumannCachedMaterial = mesh.material;
     setRaymarchCavityGeometry(mesh, "spherical");
+    expect(mesh.material).toBe(neumannCachedMaterial);
+
     setRaymarchBoundaryMode(mesh, "dirichlet");
 
     expect(mesh.userData.raymarchCavityGeometry).toBe("spherical");
-    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("effective-cached");
+    expect(mesh.userData).not.toHaveProperty("raymarchFieldEvaluationMode");
     expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
     expect(mesh.userData.raymarchBoundaryMode).toBe("dirichlet");
-    expect(mesh.material).toBe(
-      materialCache.dirichlet["effective-cached"].cached.spherical,
-    );
-    expect(
-      materialCache.neumann["effective-cached"].cached.spherical,
-    ).toBeTruthy();
-    expect(
-      materialCache.dirichlet["effective-cached"].cached.spherical,
-    ).toBeTruthy();
+    expect(mesh.material).toBe(materialCache.dirichlet.cached);
+    expect(materialCache.neumann.cached).toBe(neumannCachedMaterial);
+    expect(materialCache.neumann.cached.spherical).toBeUndefined();
+    expect(materialCache.dirichlet.cached.spherical).toBeUndefined();
   });
 
-  it("keeps Spectral Light material switching independent from field evaluation", () => {
+  it("keeps Spectral Light material switching on the cache-only field material", () => {
     const effectiveFieldCache = createRaymarchEffectiveFieldCache({
       resolution: 8,
     });
@@ -1444,27 +1303,26 @@ describe("raymarch volume material", () => {
     });
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      modalFieldModeBuffer: {},
-      modalFieldColorBuffer: {},
       effectiveFieldTexture: effectiveFieldCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
-      modalFieldCapacity: AUDIO_SLOT_CAPACITY,
       uniforms: makeMeshUniforms(),
     });
 
-    setRaymarchFieldEvaluationMode(mesh, "effective-cached");
-    const cachedFieldMaterial = mesh.material;
+    const offMaterial = mesh.material;
     setRaymarchSpectralLightEvaluationMode(
       mesh,
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
 
-    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("effective-cached");
+    expect(mesh.userData).not.toHaveProperty("raymarchFieldEvaluationMode");
     expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
-    expect(mesh.material).not.toBe(cachedFieldMaterial);
-    expect(mesh.material.fieldEvaluationMode).toBe("effective-cached");
+    expect(mesh.material).not.toBe(offMaterial);
+    expect(mesh.material).not.toHaveProperty("fieldEvaluationMode");
+    expect(mesh.material.effectiveFieldTexture).toBe(
+      effectiveFieldCache.texture,
+    );
     expect(mesh.material.spectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
@@ -1474,11 +1332,14 @@ describe("raymarch volume material", () => {
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     );
 
-    expect(mesh.userData.raymarchFieldEvaluationMode).toBe("effective-cached");
+    expect(mesh.userData).not.toHaveProperty("raymarchFieldEvaluationMode");
     expect(mesh.userData.raymarchSpectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     );
-    expect(mesh.material.fieldEvaluationMode).toBe("effective-cached");
+    expect(mesh.material).not.toHaveProperty("fieldEvaluationMode");
+    expect(mesh.material.effectiveFieldTexture).toBe(
+      effectiveFieldCache.texture,
+    );
     expect(mesh.material.spectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     );

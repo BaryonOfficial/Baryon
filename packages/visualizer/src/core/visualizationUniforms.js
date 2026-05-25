@@ -4,12 +4,12 @@ import {
   RAYMARCH_DEFAULTS,
   RENDER_DEFAULTS,
   SIMULATION_DEFAULTS,
-} from "../../defaults.js";
-import { FIELD_STATE_VALUES } from "../fieldState.js";
-import { getBoundaryModeValue } from "../modeFamily.js";
-import { deriveObservationTransferParameters } from "./observationTransfer.js";
+} from "../defaults.js";
+import { FIELD_STATE_VALUES } from "./fieldState.js";
+import { getBoundaryModeValue } from "./modeFamily.js";
+import { deriveObservationTransferParameters } from "./raymarch/observationTransfer.js";
 
-export function createRaymarchUniforms(parameters) {
+export function createVisualizationUniforms(parameters) {
   const observationParameters = deriveObservationTransferParameters();
 
   return {
@@ -56,7 +56,6 @@ export function createRaymarchUniforms(parameters) {
     uStructureSignal: uniform(0.0),
     uEnergySignal: uniform(0.0),
     uChangeSignal: uniform(0.0),
-    uPulseSignal: uniform(0.0),
     uBassSalience: uniform(0.0),
     uTimbreSpread: uniform(0.0),
     uSpectralNovelty: uniform(0.0),

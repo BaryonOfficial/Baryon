@@ -1,13 +1,10 @@
 import * as THREE from "three";
 import { VolumeNodeMaterial } from "three/webgpu";
 import {
-  Break,
   Fn,
   If,
-  Loop,
   abs,
   clamp,
-  cos,
   cross,
   dot,
   exp,
@@ -20,7 +17,6 @@ import {
   screenCoordinate,
   smoothstep,
   texture3D,
-  int,
   vec3,
   vec4,
 } from "three/tsl";
@@ -29,7 +25,6 @@ import SafeVolumetricLightingModel, {
   raymarchOpacityNode,
 } from "./SafeVolumetricLightingModel.js";
 import { normalizeCavityGeometry } from "../cavityGeometry.js";
-import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 import { BOUNDARY_MODES, normalizeBoundaryMode } from "../modeFamily.js";
 import {
   RAYMARCH_BOUNDARY_END,
@@ -152,9 +147,6 @@ const EXCITATION_GATE_LOW = 0.04;
 const EXCITATION_GATE_HIGH = 0.35;
 const STATIC_SURFACE_TINT_SCALE = 0.18;
 const STATIC_HIGHLIGHT_SURFACE_PULL_SCALE = 0.2;
-const RAYMARCH_LIVE_RESIDUAL_GAIN = 0.18;
-
-export const RAYMARCH_LIVE_RESIDUAL_MAX_MODES = 2;
 
 export const RAYMARCH_SPECTRAL_LIGHT_TUNING = Object.freeze({
   baseRadianceLift: 0.42,
@@ -163,7 +155,6 @@ export const RAYMARCH_SPECTRAL_LIGHT_TUNING = Object.freeze({
   holographicAccentMix: 0.065,
   holographicAccentColorPull: 0.38,
   whiteEmissionLift: 0.034,
-  directPresenceEnd: 0.04,
   cachedPresenceEnd: 0.06,
   uncoloredNeutralLift: 0.025,
 });
@@ -175,27 +166,14 @@ export const RAYMARCH_BOUNDARY_TUNING = Object.freeze({
   dirichletWhiteEmission: 0.04,
 });
 
-/** @type {{ off: string; direct: string; cached: string }} */
+/** @type {{ off: string; cached: string }} */
 export const RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES = Object.freeze({
   off: "off",
-  direct: "direct",
   cached: "cached",
 });
 
-function normalizeFieldEvaluationMode(fieldEvaluationMode) {
-  if (fieldEvaluationMode === "direct") {
-    return "direct";
-  }
-  if (fieldEvaluationMode === "unavailable") {
-    return "unavailable";
-  }
-  return "effective-cached";
-}
-
 function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
   switch (spectralLightEvaluationMode) {
-    case RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct:
-      return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
     case RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached:
       return RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached;
     case RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off:
@@ -219,7 +197,6 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   scatteringNode?: any,
  *   opacityGainNode?: any,
  *   offsetNode?: any | ((args: { startPosLocal: any, rayDirLocal: any, radiusNode: any }) => any),
- *   fieldEvaluationMode?: string,
  *   spectralLightEvaluationMode?: string,
  *   effectiveFieldTexture?: any,
  *   effectiveFieldSupportTexture?: any
@@ -232,295 +209,10 @@ class BaryonVolumeNodeMaterial extends VolumeNodeMaterial {
   }
 }
 
-function accumulateModalField({
-  buffer,
-  colorBuffer,
-  capacity,
-  activeCount,
-  localPosition,
-  uRadius,
-  boundaryMode,
-  cavityGeometry,
-  enableColorAccumulation = null,
-  field,
-  gradX,
-  gradY,
-  gradZ,
-  colorSum,
-  colorWeight,
-  phaseBuffer = null,
-  uTime = null,
-  unsignedSupport = null,
-}) {
-  const geometryBackend = getModalGeometryBackend(cavityGeometry);
-  const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
-  Loop(
-    { start: int(0), end: int(capacity), type: "int", condition: "<" },
-    ({ i }) => {
-      If(i.greaterThanEqual(activeCount), () => {
-        Break();
-      });
-      const slot = buffer.element(i);
-      const amplitude = slot.w;
-      const phaseCurrentCoefficient =
-        phaseBuffer && uTime
-          ? (() => {
-              const phaseSlot = phaseBuffer.element(i);
-              const beta = clamp(
-                phaseSlot.z.mul(phaseSlot.w),
-                float(0.0),
-                float(1.0),
-              );
-              const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
-              const phaseScale = float(1.0)
-                .sub(beta)
-                .add(beta.mul(cos(phase)))
-                .toVar();
-              return amplitude.mul(phaseScale).toVar();
-            })()
-          : amplitude;
-      const u = slot.x;
-      const v = slot.y;
-      const w = slot.z;
-      const family = geometryBackend.evaluateModeNode({
-        u,
-        v,
-        w,
-        xCoord: localPosition.x,
-        yCoord: localPosition.y,
-        zCoord: localPosition.z,
-        scale,
-        boundaryMode,
-      });
-      const phaseCurrentContribution = phaseCurrentCoefficient
-        .mul(family.field)
-        .toVar();
-      field.addAssign(phaseCurrentContribution);
-      gradX.addAssign(phaseCurrentCoefficient.mul(family.gradX));
-      gradY.addAssign(phaseCurrentCoefficient.mul(family.gradY));
-      gradZ.addAssign(phaseCurrentCoefficient.mul(family.gradZ));
-      if (unsignedSupport) {
-        unsignedSupport.addAssign(abs(phaseCurrentContribution));
-      }
-      if (colorBuffer && colorSum && colorWeight && enableColorAccumulation) {
-        If(enableColorAccumulation.greaterThan(0.5), () => {
-          const colorSlot = colorBuffer.element(i);
-          const localInfluence = amplitude.mul(abs(family.field));
-          const weightedInfluence = localInfluence.mul(colorSlot.w);
-          colorSum.addAssign(
-            vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(
-              weightedInfluence,
-            ),
-          );
-          colorWeight.addAssign(weightedInfluence);
-        });
-      }
-    },
-  );
-}
-
-function accumulateModalFieldColorOnly({
-  buffer,
-  colorBuffer,
-  capacity,
-  activeCount,
-  localPosition,
-  uRadius,
-  boundaryMode,
-  cavityGeometry,
-  colorSum,
-  colorWeight,
-}) {
-  const geometryBackend = getModalGeometryBackend(cavityGeometry);
-  const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
-  Loop(
-    { start: int(0), end: int(capacity), type: "int", condition: "<" },
-    ({ i }) => {
-      If(i.greaterThanEqual(activeCount), () => {
-        Break();
-      });
-      const slot = buffer.element(i);
-      const amplitude = slot.w;
-      const family = geometryBackend.evaluateModeNode({
-        u: slot.x,
-        v: slot.y,
-        w: slot.z,
-        xCoord: localPosition.x,
-        yCoord: localPosition.y,
-        zCoord: localPosition.z,
-        scale,
-        boundaryMode,
-      });
-      const colorSlot = colorBuffer.element(i);
-      const localInfluence = amplitude.mul(abs(family.field));
-      const weightedInfluence = localInfluence.mul(colorSlot.w);
-      colorSum.addAssign(
-        vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(weightedInfluence),
-      );
-      colorWeight.addAssign(weightedInfluence);
-    },
-  );
-}
-
-function accumulateCachedLiveResidual({
-  modalFieldModeBuffer,
-  modalFieldPhaseBuffer,
-  modalFieldCapacity,
-  modalFieldActiveCount,
-  localPosition,
-  uRadius,
-  boundaryMode,
-  cavityGeometry,
-  field,
-  uTime,
-  effectiveUnsignedSupport,
-  uTransientEnergy,
-  uPulseSignal,
-  uModalResponseEnergy,
-}) {
-  const geometryBackend = getModalGeometryBackend(cavityGeometry);
-  const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
-  const residualField = float(0.0).toVar();
-  const residualCapacity = Math.min(
-    Math.max(0, Math.floor(modalFieldCapacity ?? 0)),
-    RAYMARCH_LIVE_RESIDUAL_MAX_MODES,
-  );
-
-  If(modalFieldActiveCount.greaterThan(0), () => {
-    Loop(
-      { start: int(0), end: int(residualCapacity), type: "int", condition: "<" },
-      ({ i }) => {
-        If(i.greaterThanEqual(modalFieldActiveCount), () => {
-          Break();
-        });
-        const slot = modalFieldModeBuffer.element(i);
-        const phaseSlot = modalFieldPhaseBuffer.element(i);
-        const beta = clamp(phaseSlot.z.mul(phaseSlot.w), float(0.0), float(1.0));
-        const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
-        const phaseScale = float(1.0)
-          .sub(beta)
-          .add(beta.mul(cos(phase)))
-          .toVar();
-        const family = geometryBackend.evaluateFieldNode({
-          u: slot.x,
-          v: slot.y,
-          w: slot.z,
-          xCoord: localPosition.x,
-          yCoord: localPosition.y,
-          zCoord: localPosition.z,
-          scale,
-          boundaryMode,
-        });
-
-        residualField.addAssign(slot.w.mul(phaseScale).mul(family.field));
-      },
-    );
-  });
-
-  const liveEnergyGate = clamp(
-    uTransientEnergy.add(uPulseSignal).add(uModalResponseEnergy),
-    float(0.0),
-    float(1.0),
-  );
-  const residualAuthority = clamp(
-    effectiveUnsignedSupport,
-    float(0.0),
-    float(1.0),
-  )
-    .mul(liveEnergyGate)
-    .mul(float(RAYMARCH_LIVE_RESIDUAL_GAIN));
-
-  field.addAssign(residualField.mul(residualAuthority));
-}
-
-function accumulateDirectModalField({
-  modalFieldModeBuffer,
-  modalFieldColorBuffer,
-  modalFieldPhaseBuffer,
-  modalFieldCapacity,
-  modalFieldActiveCount,
-  localPosition,
-  uRadius,
-  boundaryMode,
-  cavityGeometry,
-  spectralLightEnabled,
-  field,
-  gradX,
-  gradY,
-  gradZ,
-  colorSum,
-  colorWeight,
-  uTime,
-  unsignedSupport,
-}) {
-  If(modalFieldActiveCount.greaterThan(0), () => {
-    accumulateModalField({
-      buffer: modalFieldModeBuffer,
-      colorBuffer: modalFieldColorBuffer,
-      capacity: modalFieldCapacity,
-      activeCount: modalFieldActiveCount,
-      localPosition,
-      uRadius,
-      boundaryMode,
-      cavityGeometry,
-      enableColorAccumulation: spectralLightEnabled,
-      field,
-      gradX,
-      gradY,
-      gradZ,
-      colorSum,
-      colorWeight,
-      phaseBuffer: modalFieldPhaseBuffer,
-      uTime,
-      unsignedSupport,
-    });
-  });
-}
-
-function accumulateDirectModalFieldColorOnly({
-  modalFieldModeBuffer,
-  modalFieldColorBuffer,
-  modalFieldCapacity,
-  modalFieldActiveCount,
-  localPosition,
-  uRadius,
-  boundaryMode,
-  cavityGeometry,
-  spectralLightEnabled,
-  colorSum,
-  colorWeight,
-}) {
-  If(spectralLightEnabled.greaterThan(0.5), () => {
-    If(modalFieldActiveCount.greaterThan(0), () => {
-      accumulateModalFieldColorOnly({
-        buffer: modalFieldModeBuffer,
-        colorBuffer: modalFieldColorBuffer,
-        capacity: modalFieldCapacity,
-        activeCount: modalFieldActiveCount,
-        localPosition,
-        uRadius,
-        boundaryMode,
-        cavityGeometry,
-        colorSum,
-        colorWeight,
-      });
-    });
-  });
-}
-
 function sampleFieldGradientNormalNode({
   localPosition,
-  modalFieldModeBuffer,
-  modalFieldColorBuffer,
-  modalFieldPhaseBuffer,
-  modalFieldCapacity,
-  modalFieldActiveCount,
   uRadius,
-  boundaryMode,
-  cavityGeometry,
   effectiveFieldTexture,
-  directFieldEvaluationEnabled,
-  uTime,
 }) {
   const sampleGradient = vec3(0.0).toVar();
 
@@ -533,31 +225,6 @@ function sampleFieldGradientNormalNode({
     );
     const cachedSample = texture3D(effectiveFieldTexture).sample(cacheUv);
     sampleGradient.assign(vec3(cachedSample.y, cachedSample.z, cachedSample.w));
-  } else if (directFieldEvaluationEnabled) {
-    const sampleField = float(0.0).toVar();
-    const sampleGradX = float(0.0).toVar();
-    const sampleGradY = float(0.0).toVar();
-    const sampleGradZ = float(0.0).toVar();
-    accumulateModalField({
-      buffer: modalFieldModeBuffer,
-      colorBuffer: modalFieldColorBuffer,
-      capacity: modalFieldCapacity,
-      activeCount: modalFieldActiveCount,
-      localPosition,
-      uRadius,
-      boundaryMode,
-      cavityGeometry,
-      enableColorAccumulation: null,
-      field: sampleField,
-      gradX: sampleGradX,
-      gradY: sampleGradY,
-      gradZ: sampleGradZ,
-      colorSum: null,
-      colorWeight: null,
-      phaseBuffer: modalFieldPhaseBuffer,
-      uTime,
-    });
-    sampleGradient.assign(vec3(sampleGradX, sampleGradY, sampleGradZ));
   }
 
   return sampleGradient.div(max(length(sampleGradient), float(1e-4)));
@@ -568,73 +235,28 @@ function deriveOpticalConvergenceAuthorityNode({
   tangent1,
   tangent2,
   sampleStep,
-  modalFieldModeBuffer,
-  modalFieldColorBuffer,
-  modalFieldPhaseBuffer,
-  modalFieldCapacity,
-  modalFieldActiveCount,
   uRadius,
-  boundaryMode,
-  cavityGeometry,
   effectiveFieldTexture,
-  directFieldEvaluationEnabled,
-  uTime,
 }) {
   const normalPositiveT1 = sampleFieldGradientNormalNode({
     localPosition: localPosition.add(tangent1.mul(sampleStep)),
-    modalFieldModeBuffer,
-    modalFieldColorBuffer,
-    modalFieldPhaseBuffer,
-    modalFieldCapacity,
-    modalFieldActiveCount,
     uRadius,
-    boundaryMode,
-    cavityGeometry,
     effectiveFieldTexture,
-    directFieldEvaluationEnabled,
-    uTime,
   });
   const normalNegativeT1 = sampleFieldGradientNormalNode({
     localPosition: localPosition.sub(tangent1.mul(sampleStep)),
-    modalFieldModeBuffer,
-    modalFieldColorBuffer,
-    modalFieldPhaseBuffer,
-    modalFieldCapacity,
-    modalFieldActiveCount,
     uRadius,
-    boundaryMode,
-    cavityGeometry,
     effectiveFieldTexture,
-    directFieldEvaluationEnabled,
-    uTime,
   });
   const normalPositiveT2 = sampleFieldGradientNormalNode({
     localPosition: localPosition.add(tangent2.mul(sampleStep)),
-    modalFieldModeBuffer,
-    modalFieldColorBuffer,
-    modalFieldPhaseBuffer,
-    modalFieldCapacity,
-    modalFieldActiveCount,
     uRadius,
-    boundaryMode,
-    cavityGeometry,
     effectiveFieldTexture,
-    directFieldEvaluationEnabled,
-    uTime,
   });
   const normalNegativeT2 = sampleFieldGradientNormalNode({
     localPosition: localPosition.sub(tangent2.mul(sampleStep)),
-    modalFieldModeBuffer,
-    modalFieldColorBuffer,
-    modalFieldPhaseBuffer,
-    modalFieldCapacity,
-    modalFieldActiveCount,
     uRadius,
-    boundaryMode,
-    cavityGeometry,
     effectiveFieldTexture,
-    directFieldEvaluationEnabled,
-    uTime,
   });
   const viewPlaneNormalConvergence = dot(
     normalPositiveT1.sub(normalNegativeT1),
@@ -651,14 +273,8 @@ function deriveOpticalConvergenceAuthorityNode({
 }
 
 function createScatteringNode({
-  modalFieldModeBuffer,
-  modalFieldColorBuffer,
-  modalFieldPhaseBuffer = null,
-  modalFieldCapacity,
   uniforms,
   boundaryMode = BOUNDARY_MODES.neumann,
-  cavityGeometry = "rectangular",
-  fieldEvaluationMode = "effective-cached",
   effectiveFieldTexture = null,
   effectiveFieldSupportTexture = null,
   spectralLightCacheTexture = null,
@@ -666,7 +282,6 @@ function createScatteringNode({
 }) {
   const {
     uRadius,
-    uTime,
     uThreshold,
     uAverageAmplitude,
     uRaymarchSteps,
@@ -688,7 +303,6 @@ function createScatteringNode({
     uStructureSignal,
     uEnergySignal,
     uChangeSignal,
-    uPulseSignal,
     uBassSalience,
     uTimbreSpread,
     uSpectralNovelty,
@@ -853,17 +467,10 @@ function createScatteringNode({
         float(1e-4),
         uSpectralMix,
       );
-      const directSpectralLightEnabled =
-        spectralLightEvaluationMode ===
-        RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.direct;
       const cachedSpectralLightEnabled =
         spectralLightEvaluationMode ===
           RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached &&
         Boolean(spectralLightCacheTexture);
-      const spectralLightModeEnabled =
-        directSpectralLightEnabled || cachedSpectralLightEnabled;
-      const directFieldEvaluationEnabled = fieldEvaluationMode === "direct";
-      const modalFieldActiveCount = int(uModalFieldModeCount);
       const amplitudeNorm = max(uTotalSlotAmplitude, float(0.01));
       const cacheUv = clamp(
         normalizedPosition.mul(float(0.5)).add(vec3(0.5)),
@@ -884,67 +491,6 @@ function createScatteringNode({
           effectiveCancellationRatio.assign(effectiveFieldSupportSample.y);
         }
 
-        accumulateCachedLiveResidual({
-          modalFieldModeBuffer,
-          modalFieldPhaseBuffer,
-          modalFieldCapacity,
-          modalFieldActiveCount,
-          localPosition,
-          uRadius,
-          boundaryMode,
-          cavityGeometry,
-          field,
-          uTime,
-          effectiveUnsignedSupport,
-          uTransientEnergy,
-          uPulseSignal,
-          uModalResponseEnergy,
-        });
-
-        if (cachedSpectralLightEnabled) {
-          const cachedSpectralLightSample = texture3D(
-            spectralLightCacheTexture,
-          ).sample(cacheUv);
-          colorSum.assign(cachedSpectralLightSample.xyz);
-          colorWeight.assign(cachedSpectralLightSample.w);
-        } else if (directSpectralLightEnabled) {
-          accumulateDirectModalFieldColorOnly({
-            modalFieldModeBuffer,
-            modalFieldColorBuffer,
-            modalFieldCapacity,
-            modalFieldActiveCount,
-            localPosition,
-            uRadius,
-            boundaryMode,
-            cavityGeometry,
-            spectralLightEnabled,
-            colorSum,
-            colorWeight,
-          });
-        }
-      } else if (directFieldEvaluationEnabled) {
-        accumulateDirectModalField({
-          modalFieldModeBuffer,
-          modalFieldColorBuffer,
-          modalFieldPhaseBuffer,
-          modalFieldCapacity,
-          modalFieldActiveCount,
-          localPosition,
-          uRadius,
-          boundaryMode,
-          cavityGeometry,
-          spectralLightEnabled: directSpectralLightEnabled
-            ? spectralLightEnabled
-            : float(0.0),
-          field,
-          gradX,
-          gradY,
-          gradZ,
-          colorSum,
-          colorWeight,
-          uTime,
-          unsignedSupport: effectiveUnsignedSupport,
-        });
         if (cachedSpectralLightEnabled) {
           const cachedSpectralLightSample = texture3D(
             spectralLightCacheTexture,
@@ -952,22 +498,6 @@ function createScatteringNode({
           colorSum.assign(cachedSpectralLightSample.xyz);
           colorWeight.assign(cachedSpectralLightSample.w);
         }
-        const normalizedDirectSupport = effectiveUnsignedSupport
-          .div(amplitudeNorm)
-          .toVar();
-        effectiveUnsignedSupport.assign(normalizedDirectSupport);
-        const normalizedDirectFieldAbs = abs(field.div(amplitudeNorm));
-        effectiveCancellationRatio.assign(
-          clamp(
-            float(1.0).sub(
-              normalizedDirectFieldAbs.div(
-                max(normalizedDirectSupport, float(0.01)),
-              ),
-            ),
-            float(0.0),
-            float(1.0),
-          ),
-        );
       }
 
       const effectiveField = field;
@@ -978,8 +508,7 @@ function createScatteringNode({
       const effectiveGradientMagnitude = gradientMagnitude;
       // Effective field textures are pre-normalized by their modal amplitude
       // during compute, so product cached rendering can stay stable across
-      // envelope-only amplitude changes without falling back to direct raymarch
-      // evaluation.
+      // envelope-only amplitude changes without shader-side field reconstruction.
       const normalizedFieldAbs = effectiveFieldTexture
         ? fieldAbs
         : fieldAbs.div(amplitudeNorm);
@@ -1245,17 +774,8 @@ function createScatteringNode({
           tangent1,
           tangent2,
           sampleStep: convergenceSampleStep,
-          modalFieldModeBuffer,
-          modalFieldColorBuffer,
-          modalFieldPhaseBuffer,
-          modalFieldCapacity,
-          modalFieldActiveCount,
           uRadius,
-          boundaryMode,
-          cavityGeometry,
           effectiveFieldTexture,
-          directFieldEvaluationEnabled,
-          uTime,
         },
       );
       const opticalFocusAuthority = clamp(
@@ -1665,12 +1185,10 @@ function createScatteringNode({
         activityAccent,
       );
       const volumeColor = staticVolumeColor.toVar();
-      if (spectralLightModeEnabled) {
+      if (cachedSpectralLightEnabled) {
         If(spectralLightEnabled.greaterThan(0.5), () => {
           const spectralLightPresenceEnd = float(
-            cachedSpectralLightEnabled
-              ? RAYMARCH_SPECTRAL_LIGHT_TUNING.cachedPresenceEnd
-              : RAYMARCH_SPECTRAL_LIGHT_TUNING.directPresenceEnd,
+            RAYMARCH_SPECTRAL_LIGHT_TUNING.cachedPresenceEnd,
           );
           const spectralLightPresence = smoothstep(
             float(0.0),
@@ -1833,14 +1351,9 @@ function createRaymarchOffsetNode() {
 
 export function createRaymarchVolumeMesh({
   radius,
-  modalFieldModeBuffer,
-  modalFieldColorBuffer,
-  modalFieldPhaseBuffer = null,
   effectiveFieldTexture = null,
   effectiveFieldSupportTexture = null,
   spectralLightCacheTexture = null,
-  capacity = null,
-  modalFieldCapacity = capacity ?? 0,
   uniforms,
   cavityGeometry = "rectangular",
 }) {
@@ -1855,9 +1368,7 @@ export function createRaymarchVolumeMesh({
   const sharedOffsetNode = createRaymarchOffsetNode();
   const createMaterialForBoundaryMode = (
     boundaryMode,
-    fieldEvaluationMode,
     spectralLightEvaluationMode,
-    materialCavityGeometry,
   ) => {
     const material = /** @type {BaryonVolumeMaterial} */ (
       new BaryonVolumeNodeMaterial()
@@ -1870,22 +1381,10 @@ export function createRaymarchVolumeMesh({
     material.opacityGainNode = uniforms.uOpacityGain;
     material.offsetNode = sharedOffsetNode;
     material.scatteringNode = createScatteringNode({
-      modalFieldModeBuffer,
-      modalFieldColorBuffer,
-      modalFieldPhaseBuffer,
-      modalFieldCapacity,
       uniforms,
       boundaryMode,
-      cavityGeometry: materialCavityGeometry,
-      fieldEvaluationMode,
-      effectiveFieldTexture:
-        fieldEvaluationMode === "effective-cached"
-          ? effectiveFieldTexture
-          : null,
-      effectiveFieldSupportTexture:
-        fieldEvaluationMode === "effective-cached"
-          ? effectiveFieldSupportTexture
-          : null,
+      effectiveFieldTexture,
+      effectiveFieldSupportTexture,
       spectralLightCacheTexture:
         spectralLightEvaluationMode ===
         RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached
@@ -1893,58 +1392,35 @@ export function createRaymarchVolumeMesh({
           : null,
       spectralLightEvaluationMode,
     });
-    material.fieldEvaluationMode = fieldEvaluationMode;
     material.spectralLightEvaluationMode = spectralLightEvaluationMode;
-    material.effectiveFieldTexture =
-      fieldEvaluationMode === "effective-cached" ? effectiveFieldTexture : null;
-    material.effectiveFieldSupportTexture =
-      fieldEvaluationMode === "effective-cached"
-        ? effectiveFieldSupportTexture
-        : null;
+    material.effectiveFieldTexture = effectiveFieldTexture;
+    material.effectiveFieldSupportTexture = effectiveFieldSupportTexture;
     return material;
   };
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
-  const initialFieldEvaluationMode = "effective-cached";
   const initialSpectralLightEvaluationMode =
     RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off;
   const materialCache = {
     [BOUNDARY_MODES.dirichlet]: {
-      direct: {},
-      "effective-cached": {
-        [initialSpectralLightEvaluationMode]: {
-          [normalizedCavityGeometry]: createMaterialForBoundaryMode(
-            BOUNDARY_MODES.dirichlet,
-            initialFieldEvaluationMode,
-            initialSpectralLightEvaluationMode,
-            normalizedCavityGeometry,
-          ),
-        },
-      },
+      [initialSpectralLightEvaluationMode]: createMaterialForBoundaryMode(
+        BOUNDARY_MODES.dirichlet,
+        initialSpectralLightEvaluationMode,
+      ),
     },
     [BOUNDARY_MODES.neumann]: {
-      direct: {},
-      "effective-cached": {
-        [initialSpectralLightEvaluationMode]: {
-          [normalizedCavityGeometry]: createMaterialForBoundaryMode(
-            BOUNDARY_MODES.neumann,
-            initialFieldEvaluationMode,
-            initialSpectralLightEvaluationMode,
-            normalizedCavityGeometry,
-          ),
-        },
-      },
+      [initialSpectralLightEvaluationMode]: createMaterialForBoundaryMode(
+        BOUNDARY_MODES.neumann,
+        initialSpectralLightEvaluationMode,
+      ),
     },
   };
   const mesh = new THREE.Mesh(
     geometry,
-    materialCache[BOUNDARY_MODES.neumann]["effective-cached"][
-      initialSpectralLightEvaluationMode
-    ][normalizedCavityGeometry],
+    materialCache[BOUNDARY_MODES.neumann][initialSpectralLightEvaluationMode],
   );
   mesh.userData.raymarchMaterialCache = materialCache;
   mesh.userData.raymarchCreateMaterialVariant = createMaterialForBoundaryMode;
   mesh.userData.raymarchBoundaryMode = BOUNDARY_MODES.neumann;
-  mesh.userData.raymarchFieldEvaluationMode = initialFieldEvaluationMode;
   mesh.userData.raymarchSpectralLightEvaluationMode =
     initialSpectralLightEvaluationMode;
   mesh.userData.raymarchEffectiveFieldTexture = effectiveFieldTexture;
@@ -1963,9 +1439,7 @@ export function getRaymarchMaterialCache(mesh) {
 function getOrCreateRaymarchMaterial(
   mesh,
   boundaryMode,
-  fieldEvaluationMode,
   spectralLightEvaluationMode,
-  cavityGeometry,
 ) {
   const materialCache = getRaymarchMaterialCache(mesh);
   if (!materialCache) {
@@ -1977,19 +1451,10 @@ function getOrCreateRaymarchMaterial(
     return null;
   }
 
-  const normalizedFieldEvaluationMode =
-    normalizeFieldEvaluationMode(fieldEvaluationMode);
   const normalizedSpectralLightEvaluationMode =
     normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode);
-  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
-  const spectralLightMaterials =
-    boundaryMaterials[normalizedFieldEvaluationMode] ??
-    (boundaryMaterials[normalizedFieldEvaluationMode] = {});
-  const geometryMaterials =
-    spectralLightMaterials[normalizedSpectralLightEvaluationMode] ??
-    (spectralLightMaterials[normalizedSpectralLightEvaluationMode] = {});
-  if (geometryMaterials[normalizedCavityGeometry]) {
-    return geometryMaterials[normalizedCavityGeometry];
+  if (boundaryMaterials[normalizedSpectralLightEvaluationMode]) {
+    return boundaryMaterials[normalizedSpectralLightEvaluationMode];
   }
 
   const createMaterialVariant = mesh?.userData?.raymarchCreateMaterialVariant;
@@ -1999,11 +1464,9 @@ function getOrCreateRaymarchMaterial(
 
   const material = createMaterialVariant(
     boundaryMode,
-    normalizedFieldEvaluationMode,
     normalizedSpectralLightEvaluationMode,
-    normalizedCavityGeometry,
   );
-  geometryMaterials[normalizedCavityGeometry] = material;
+  boundaryMaterials[normalizedSpectralLightEvaluationMode] = material;
   return material;
 }
 
@@ -2014,21 +1477,13 @@ export function setRaymarchBoundaryMode(mesh, boundaryMode) {
   }
 
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
-  const normalizedCavityGeometry = normalizeCavityGeometry(
-    mesh?.userData?.raymarchCavityGeometry,
-  );
-  const fieldEvaluationMode = normalizeFieldEvaluationMode(
-    mesh?.userData?.raymarchFieldEvaluationMode,
-  );
   const spectralLightEvaluationMode = normalizeSpectralLightEvaluationMode(
     mesh?.userData?.raymarchSpectralLightEvaluationMode,
   );
   const nextMaterial = getOrCreateRaymarchMaterial(
     mesh,
     normalizedBoundaryMode,
-    fieldEvaluationMode,
     spectralLightEvaluationMode,
-    normalizedCavityGeometry,
   );
   if (!nextMaterial || mesh.material === nextMaterial) {
     mesh.userData.raymarchBoundaryMode = normalizedBoundaryMode;
@@ -2039,42 +1494,6 @@ export function setRaymarchBoundaryMode(mesh, boundaryMode) {
   nextMaterial.steps = currentMaterial?.steps ?? nextMaterial.steps;
   mesh.material = nextMaterial;
   mesh.userData.raymarchBoundaryMode = normalizedBoundaryMode;
-}
-
-export function setRaymarchFieldEvaluationMode(mesh, fieldEvaluationMode) {
-  const materialCache = getRaymarchMaterialCache(mesh);
-  if (!materialCache) {
-    return;
-  }
-
-  const normalizedFieldEvaluationMode =
-    normalizeFieldEvaluationMode(fieldEvaluationMode);
-  const normalizedBoundaryMode = normalizeBoundaryMode(
-    mesh?.userData?.raymarchBoundaryMode,
-  );
-  const normalizedCavityGeometry = normalizeCavityGeometry(
-    mesh?.userData?.raymarchCavityGeometry,
-  );
-  const normalizedSpectralLightEvaluationMode =
-    normalizeSpectralLightEvaluationMode(
-      mesh?.userData?.raymarchSpectralLightEvaluationMode,
-    );
-  const nextMaterial = getOrCreateRaymarchMaterial(
-    mesh,
-    normalizedBoundaryMode,
-    normalizedFieldEvaluationMode,
-    normalizedSpectralLightEvaluationMode,
-    normalizedCavityGeometry,
-  );
-  if (!nextMaterial || mesh.material === nextMaterial) {
-    mesh.userData.raymarchFieldEvaluationMode = normalizedFieldEvaluationMode;
-    return;
-  }
-
-  const currentMaterial = mesh.material;
-  nextMaterial.steps = currentMaterial?.steps ?? nextMaterial.steps;
-  mesh.material = nextMaterial;
-  mesh.userData.raymarchFieldEvaluationMode = normalizedFieldEvaluationMode;
 }
 
 export function setRaymarchSpectralLightEvaluationMode(
@@ -2091,18 +1510,10 @@ export function setRaymarchSpectralLightEvaluationMode(
   const normalizedBoundaryMode = normalizeBoundaryMode(
     mesh?.userData?.raymarchBoundaryMode,
   );
-  const normalizedFieldEvaluationMode = normalizeFieldEvaluationMode(
-    mesh?.userData?.raymarchFieldEvaluationMode,
-  );
-  const normalizedCavityGeometry = normalizeCavityGeometry(
-    mesh?.userData?.raymarchCavityGeometry,
-  );
   const nextMaterial = getOrCreateRaymarchMaterial(
     mesh,
     normalizedBoundaryMode,
-    normalizedFieldEvaluationMode,
     normalizedSpectralLightEvaluationMode,
-    normalizedCavityGeometry,
   );
   if (!nextMaterial || mesh.material === nextMaterial) {
     mesh.userData.raymarchSpectralLightEvaluationMode =
@@ -2118,38 +1529,10 @@ export function setRaymarchSpectralLightEvaluationMode(
 }
 
 export function setRaymarchCavityGeometry(mesh, cavityGeometry) {
-  const materialCache = getRaymarchMaterialCache(mesh);
-  if (!materialCache) {
-    return;
+  if (mesh?.userData) {
+    mesh.userData.raymarchCavityGeometry =
+      normalizeCavityGeometry(cavityGeometry);
   }
-
-  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
-  const normalizedBoundaryMode = normalizeBoundaryMode(
-    mesh?.userData?.raymarchBoundaryMode,
-  );
-  const normalizedFieldEvaluationMode = normalizeFieldEvaluationMode(
-    mesh?.userData?.raymarchFieldEvaluationMode,
-  );
-  const normalizedSpectralLightEvaluationMode =
-    normalizeSpectralLightEvaluationMode(
-      mesh?.userData?.raymarchSpectralLightEvaluationMode,
-    );
-  const nextMaterial = getOrCreateRaymarchMaterial(
-    mesh,
-    normalizedBoundaryMode,
-    normalizedFieldEvaluationMode,
-    normalizedSpectralLightEvaluationMode,
-    normalizedCavityGeometry,
-  );
-  if (!nextMaterial || mesh.material === nextMaterial) {
-    mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
-    return;
-  }
-
-  const currentMaterial = mesh.material;
-  nextMaterial.steps = currentMaterial?.steps ?? nextMaterial.steps;
-  mesh.material = nextMaterial;
-  mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
 }
 
 export function syncRaymarchMaterialSteps(mesh, steps) {
@@ -2162,23 +1545,10 @@ export function syncRaymarchMaterialSteps(mesh, steps) {
   }
 
   Object.values(materialCache).forEach((boundaryMaterials) => {
-    Object.values(boundaryMaterials).forEach((spectralLightMaterials) => {
-      if (
-        !spectralLightMaterials ||
-        typeof spectralLightMaterials !== "object"
-      ) {
-        return;
+    Object.values(boundaryMaterials).forEach((material) => {
+      if (material) {
+        material.steps = steps;
       }
-      Object.values(spectralLightMaterials).forEach((geometryMaterials) => {
-        if (!geometryMaterials || typeof geometryMaterials !== "object") {
-          return;
-        }
-        Object.values(geometryMaterials).forEach((material) => {
-          if (material) {
-            material.steps = steps;
-          }
-        });
-      });
     });
   });
 }
