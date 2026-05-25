@@ -9,6 +9,7 @@ import {
 } from "@baryon/visualizer/controls/runtime";
 import {
   buildAudioFeatureTransportFrame,
+  buildFastSignalPatchedAudioFeatureAnalysisResult,
   buildAudioFeatureFrame,
   composeAudioFeatureFrame,
   prepareAudioFeatureFrameInputs,
@@ -507,6 +508,7 @@ function snapshotMatchesPreparedInputs(engineSnapshot, preparedInputs) {
 function classifyFrameSemanticSource(source) {
   switch (source) {
     case "worker-snapshot":
+    case "worker-fast-signal":
     case "local-heavy-analysis":
     case "live-warmup":
     case "bootstrap-fallback":
@@ -1674,6 +1676,7 @@ export function resolveFeatureFrame(
     buildFeatureFrame = buildAudioFeatureFrame,
     prepareFeatureFrame = prepareAudioFeatureFrameInputs,
     runHeavyFeatureAnalysis = runHeavyAudioFeatureAnalysis,
+    buildFastSignalAnalysisResult = buildFastSignalPatchedAudioFeatureAnalysisResult,
     composeFeatureFrame = composeAudioFeatureFrame,
   } = {},
 ) {
@@ -1831,13 +1834,26 @@ export function resolveFeatureFrame(
 
           if (snapshotMatchesPreparedInputs(engineSnapshot, preparedInputs)) {
             const fastComposeStartedAt = getRenderLoopWallTimeMs();
+            const snapshotFrameTimeMs = engineSnapshot?.frameTimeMs;
+            const shouldPatchCurrentFastSignals =
+              Number.isFinite(snapshotFrameTimeMs) &&
+              Number.isFinite(preparedInputs.currentFrameAtMs) &&
+              snapshotFrameTimeMs < preparedInputs.currentFrameAtMs;
+            const analysisResult = shouldPatchCurrentFastSignals
+              ? buildFastSignalAnalysisResult({
+                  preparedInputs,
+                  previousAnalysisResult: engineSnapshot.analysisResult,
+                })
+              : engineSnapshot.analysisResult;
             featureFrame = composeFeatureFrame({
               preparedInputs,
-              analysisResult: engineSnapshot.analysisResult,
+              analysisResult,
               previousFrame: lastLiveFrameRef.current,
               reuseHeavyAnalysis: true,
             });
-            frameSemanticSource = "worker-snapshot";
+            frameSemanticSource = shouldPatchCurrentFastSignals
+              ? "worker-fast-signal"
+              : "worker-snapshot";
             recordRuntimePerfSample(
               runtimeDiagnostics,
               "fastComposeMs",

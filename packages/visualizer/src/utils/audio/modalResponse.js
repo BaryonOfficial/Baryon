@@ -153,7 +153,6 @@ function getModeProfile(mode) {
     dampingRatio: 1 / (2 * qualityFactor),
     storedEnergyTauMs,
     attackTauMs: computeEnergyAttackTimeConstantMs({
-      modeFrequencyHz,
       qualityFactor,
       storedEnergyTauMs,
     }),

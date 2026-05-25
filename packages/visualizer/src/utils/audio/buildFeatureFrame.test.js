@@ -8,6 +8,7 @@ import {
   applyTestToneToSnapshot,
   buildAudioFeatureFrame as buildAudioFeatureFrameBase,
   buildCurrentAudioFeatureAnalysisResult,
+  buildFastSignalPatchedAudioFeatureAnalysisResult,
   composeAudioFeatureFrame,
   createAudioFeatureState,
   detectLiveInputNoiseGate,
@@ -66,6 +67,63 @@ it("keeps source and resonant slot reservoirs out of production owners", () => {
     expect(source).not.toMatch(/\bsourceCoupledSlots\b/);
     expect(source).not.toMatch(/\bresonantSlots\b/);
   }
+});
+
+it("patches current fast audio signals without replacing structural modal fields", () => {
+  const featureState = createAudioFeatureState();
+  const status = createStatus({
+    audioInputMode: "file",
+    isPlaying: true,
+    playbackSessionId: "song-1",
+  });
+  const previousInputs = prepareAudioFeatureFrameInputs({
+    analysisSnapshot: createSnapshot({
+      avgAmplitude: 24,
+      rms: 0.2,
+      fftMagnitudes: makeFft([
+        [220, 0.9],
+        [440, 0.4],
+      ]),
+    }),
+    featureState,
+    radius: 3,
+    status,
+    frameTimeMs: 1000,
+  });
+  const previousAnalysis = runHeavyAudioFeatureAnalysis(previousInputs);
+  const currentInputs = prepareAudioFeatureFrameInputs({
+    analysisSnapshot: createSnapshot({
+      avgAmplitude: 96,
+      rms: 0.8,
+      fftMagnitudes: makeFft([
+        [220, 0.1],
+        [880, 0.95],
+      ]),
+    }),
+    featureState,
+    radius: 3,
+    status,
+    frameTimeMs: 1016,
+  });
+
+  const patchedAnalysis = buildFastSignalPatchedAudioFeatureAnalysisResult({
+    preparedInputs: currentInputs,
+    previousAnalysisResult: previousAnalysis,
+  });
+
+  expect(patchedAnalysis.avgAmplitude).toBe(96);
+  expect(patchedAnalysis.analyserRms).toBe(0.8);
+  expect(patchedAnalysis.transientEnergy).toBeGreaterThan(
+    previousAnalysis.transientEnergy,
+  );
+  expect(patchedAnalysis.bandEnergies).toBe(currentInputs.bandEnergies);
+  expect(patchedAnalysis.modeSlots).toBe(previousAnalysis.modeSlots);
+  expect(patchedAnalysis.candidateForcingSlots).toBe(
+    previousAnalysis.candidateForcingSlots,
+  );
+  expect(patchedAnalysis.candidateResponseSlots).toBe(
+    previousAnalysis.candidateResponseSlots,
+  );
 });
 
 function createStatus(overrides = {}) {

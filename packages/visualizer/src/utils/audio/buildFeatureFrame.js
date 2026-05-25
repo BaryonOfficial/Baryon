@@ -1389,6 +1389,16 @@ function buildZeroDebugSnapshot({
   };
 }
 
+/**
+ * @param {{
+ *   generation?: number,
+ *   maxTotalModes?: number,
+ *   modalFieldSlots?: Float32Array | number[],
+ *   modalFieldPhaseSlots?: Float32Array | number[],
+ *   modalFieldColorSlots?: Float32Array | number[],
+ *   modalFieldMetadataSlots?: Float32Array | number[],
+ * }} [options]
+ */
 function buildEmptyModalFieldDescriptor({
   generation = 0,
   maxTotalModes = AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
@@ -3076,6 +3086,9 @@ function deriveCompositeSignals({
       analyserRms,
       spectralCentroid,
       bandState,
+      resolvedLiveInputAnalysisClass:
+        DEFAULT_RESOLVED_LIVE_INPUT_ANALYSIS_CLASS,
+      liveInputPolicy: bandState?.liveInputPolicy ?? DEFAULT_LIVE_INPUT_POLICY,
     });
 
   // energyCoupling: scale mode-count terms with RMS so the gate deflates
@@ -4925,6 +4938,52 @@ export function buildCurrentAudioFeatureAnalysisResult({
       modalResolveMs: resolvedStructural.structuralPerf?.modalResolveMs ?? 0,
       projectionMs: resolvedStructural.structuralPerf?.projectionMs ?? 0,
     },
+    debug: null,
+  };
+}
+
+export function buildFastSignalPatchedAudioFeatureAnalysisResult({
+  preparedInputs,
+  previousAnalysisResult,
+}) {
+  const fastSignalState = updateAudioFeatureFastSignalState(preparedInputs);
+
+  return {
+    ...previousAnalysisResult,
+    preparedInputs,
+    soundActive: preparedInputs.soundActive,
+    micActive: preparedInputs.micActive,
+    fftMagnitudes: fastSignalState.fftMagnitudes,
+    nonZeroFFTBinCount: countNonZeroFFTBinCount(fastSignalState.fftMagnitudes),
+    bandEnergies: fastSignalState.bandEnergies,
+    spectralBandEnergies: fastSignalState.spectralBandEnergies,
+    trebleBroadbandEnergy: fastSignalState.trebleBroadbandEnergy,
+    trebleTonalEnergy: fastSignalState.trebleTonalEnergy,
+    transientEnergy: fastSignalState.transientEnergy,
+    spectralCentroid: fastSignalState.spectralCentroid,
+    spectralFlux: fastSignalState.spectralFlux,
+    beatDetected: fastSignalState.beatDetected,
+    beatPulseId: fastSignalState.beatPulseId,
+    beatStrength: fastSignalState.beatStrength,
+    beatConfidence: fastSignalState.beatConfidence,
+    avgAmplitude: preparedInputs.avgAmplitude,
+    analyserRms: preparedInputs.analyserRms,
+    sourceNormalization: fastSignalState.sourceNormalization,
+    liveInputNoiseGateActive: preparedInputs.liveInputNoiseGateActive,
+    liveInputHardSilenceActive: preparedInputs.liveInputHardSilenceActive,
+    liveInputCalibrationInvalid: preparedInputs.liveInputCalibrationInvalid,
+    liveInputCalibrationInvalidReason:
+      preparedInputs.liveInputCalibrationInvalidReason,
+    liveInputCalibrationActive: Boolean(
+      preparedInputs.bandState.liveInputCalibrationActive,
+    ),
+    beatLowBandEnergy: fastSignalState.beatLowBandEnergy,
+    beatOnsetDriver: fastSignalState.beatOnsetDriver,
+    beatThreshold: fastSignalState.beatThreshold,
+    micFftNormGain: fastSignalState.micFftNormGain,
+    preModalFftPeak: preparedInputs.preModalFftPeak,
+    postNormalizationFftPeak: fastSignalState.postNormalizationFftPeak,
+    bandState: preparedInputs.bandState,
     debug: null,
   };
 }

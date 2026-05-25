@@ -3,6 +3,7 @@ export {
   buildAudioFeatureFrame,
   buildAudioFeatureAnalysisSnapshot,
   buildCurrentAudioFeatureAnalysisResult,
+  buildFastSignalPatchedAudioFeatureAnalysisResult,
   composeAudioFeatureFrame,
   prepareAudioFeatureFrameInputs,
   runHeavyAudioFeatureAnalysis,

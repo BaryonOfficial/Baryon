@@ -1117,6 +1117,70 @@ test("resolveFeatureFrame records matching worker snapshots as fresh semantic fr
   ).toBe("worker-snapshot");
 });
 
+test("resolveFeatureFrame patches current fast audio signals onto stale worker snapshots", () => {
+  const workerAnalysis = {
+    fieldState: "active",
+    activeModeCount: 4,
+    avgAmplitude: 12,
+    transientEnergy: 0.1,
+  };
+  const currentAnalysis = {
+    ...workerAnalysis,
+    avgAmplitude: 72,
+    transientEnergy: 0.9,
+  };
+  const featureEngine = {
+    enqueueTransportFrame: vi.fn(),
+    readLatestSnapshot: vi.fn(() => ({
+      frameTimeMs: 1000,
+      analysisSessionKey: "song-1",
+      analysisInputsSignature: '"worker-sig"',
+      analysisResult: workerAnalysis,
+    })),
+    getStatus: vi.fn(() => ({})),
+  };
+  const composeFeatureFrame = vi.fn(({ analysisResult }) => ({
+    fieldState: analysisResult.fieldState,
+    activeModeCount: analysisResult.activeModeCount,
+    averageAmplitude: analysisResult.avgAmplitude,
+    transientEnergy: analysisResult.transientEnergy,
+  }));
+  const buildFastSignalAnalysisResult = vi.fn(() => currentAnalysis);
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame: vi.fn(() => ({
+      currentFrameAtMs: 1033,
+      analysisSessionKey: "song-1",
+      analysisInputsSignature: '"worker-sig"',
+      silentFeatureFrame: null,
+    })),
+    composeFeatureFrame,
+    buildFastSignalAnalysisResult,
+  });
+
+  expect(buildFastSignalAnalysisResult).toHaveBeenCalledWith({
+    preparedInputs: expect.objectContaining({
+      currentFrameAtMs: 1033,
+    }),
+    previousAnalysisResult: workerAnalysis,
+  });
+  expect(result.effectiveFrame).toMatchObject({
+    activeModeCount: 4,
+    averageAmplitude: 72,
+    transientEnergy: 0.9,
+  });
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "worker-fast-signal",
+  );
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(
+    false,
+  );
+});
+
 test("resolveFeatureFrame records scheduled analysis reuse as reused semantics", () => {
   const reusedAnalysis = { fieldState: "active", reusedAnalysis: true };
   const reusedFrame = { fieldState: "active", reusedFrame: true };

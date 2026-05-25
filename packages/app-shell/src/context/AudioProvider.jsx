@@ -1367,16 +1367,27 @@ export function AudioProvider({ children, platform = "web" }) {
 
       clearScrubState();
       resetSoundCloudTransport();
+      const selectedProbeFile =
+        source?.useSelectedFile === true ? currentLoadedLocalFile?.file : null;
       const sourceUrl =
         typeof source?.fileUrl === "string" && source.fileUrl
           ? source.fileUrl
           : null;
       const sourceName =
-        typeof source?.name === "string" && source.name
+        selectedProbeFile?.name ||
+        (typeof source?.name === "string" && source.name
           ? source.name
-          : "probe-audio.mp3";
+          : "probe-audio.mp3");
       let loaded = false;
-      if (sourceUrl) {
+      if (source?.useSelectedFile === true) {
+        if (!selectedProbeFile) {
+          return {
+            ok: false,
+            error: "No selected local probe audio file is loaded.",
+          };
+        }
+        loaded = await loadImmediateLocalFile(selectedProbeFile);
+      } else if (sourceUrl) {
         try {
           const audioSession = getDefaultAudioSession();
           if (isLiveInputActive) {
@@ -1424,6 +1435,7 @@ export function AudioProvider({ children, platform = "web" }) {
     },
     [
       clearScrubState,
+      currentLoadedLocalFile,
       isLiveInputActive,
       loadImmediateLocalFile,
       resetSoundCloudTransport,

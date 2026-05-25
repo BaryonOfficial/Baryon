@@ -391,7 +391,6 @@ export function deriveCausticDensity({
 export function deriveCausticMaterialTransferProbe({
   fieldAbs = 0,
   threshold = 0.02,
-  contourCore = 0,
   modalStructureSupport = null,
   broadBand = null,
   localGradientEvidence = 0,
@@ -423,7 +422,6 @@ export function deriveCausticMaterialTransferProbe({
     deriveSignedInterferenceBodyAuthority(safeFieldAbs);
   const { causticFocusAuthority, causticRidgeAuthority } =
     deriveCausticRidgeAuthority({
-      contourCore,
       modalStructureSupport: resolvedModalStructureSupport,
       localGradientEvidence,
       shellFocus,
@@ -444,7 +442,6 @@ export function deriveCausticMaterialTransferProbe({
   const causticVisibility = deriveCausticVisibility({
     causticRidgeAuthority,
     signedRadianceAuthority: resolvedSignedRadianceAuthority,
-    excitationVisibility,
   });
   const causticDensity = deriveCausticDensity({
     causticFocusAuthority,

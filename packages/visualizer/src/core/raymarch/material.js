@@ -1341,7 +1341,7 @@ function createScatteringNode({
         float(0.0),
         float(DENSITY_MAX),
       ).mul(float(DENSITY_BOOST));
-      const modalStructureAnchor = causticRidgeAuthority;
+      const modalStructureAnchor = /** @type {any} */ (causticRidgeAuthority);
       const ridgeAnchor = /** @type {any} */ (causticRidgeAuthority);
       const observationTransfer = deriveObservationTransferNode(
         density,
@@ -1349,7 +1349,7 @@ function createScatteringNode({
         modalStructureAnchor,
         uModalResponseEnergy,
         ridgeAnchor,
-        cancellationSuppression,
+        /** @type {any} */ (cancellationSuppression),
         uObservationDensityFadeStart,
         uObservationDensityFadeEnd,
         uObservationTransferGain,
