@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { useAudio } from "../context/AudioContext.jsx";
-import { getDeviceKindOverride } from "./controls/deviceClassification.js";
 import {
   createLiveInputRuntimeStatus,
   LIVE_INPUT_PHASES,
@@ -148,9 +147,10 @@ export default function LiveInputStatusPanel({
     liveInputRuntimeStatus,
     liveInputPermissionState,
     audioDevices,
-    selectedDevice,
     selectedSystemDevice,
+    selectedLiveDeviceId,
     selectedLiveInputDeviceKind,
+    selectedLiveInputDeviceKindOverride,
     setSelectedSystemDevice,
     handleSourceChange,
     handleSystemToggle,
@@ -173,17 +173,12 @@ export default function LiveInputStatusPanel({
 
   const runtimeSelectedLiveDeviceId = status.selectedDeviceId ?? "";
   const runtimeSelectedLiveDeviceLabel = status.selectedDeviceLabel ?? "";
-  const selectedLiveDeviceId =
-    selectedSystemDevice ?? selectedDevice ?? runtimeSelectedLiveDeviceId;
-  const deviceKindOverride = getDeviceKindOverride(
-    selectedLiveDeviceId || null,
-  );
-  const deviceTypeValue = deviceKindOverride ?? "auto";
-  const deviceTypeIsManual = deviceKindOverride != null;
+  const deviceTypeValue = selectedLiveInputDeviceKindOverride ?? "auto";
+  const deviceTypeIsManual = selectedLiveInputDeviceKindOverride != null;
 
   const selectedLiveDevice =
     audioDevices.find((d) => d.deviceId === selectedLiveDeviceId) ??
-    (selectedLiveDeviceId
+    (selectedLiveDeviceId && selectedLiveDeviceId === runtimeSelectedLiveDeviceId
       ? {
           deviceId: selectedLiveDeviceId,
           label: runtimeSelectedLiveDeviceLabel,
@@ -280,9 +275,9 @@ export default function LiveInputStatusPanel({
     if (
       !isLiveInputActive &&
       !selectedSystemDevice &&
-      runtimeSelectedLiveDeviceId
+      selectedLiveDeviceId
     ) {
-      await setSelectedSystemDevice(runtimeSelectedLiveDeviceId);
+      await setSelectedSystemDevice(selectedLiveDeviceId);
     }
     await handleSystemToggle();
   };

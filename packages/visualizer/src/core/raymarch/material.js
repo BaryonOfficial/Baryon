@@ -7,6 +7,7 @@ import {
   Loop,
   abs,
   clamp,
+  cos,
   cross,
   dot,
   exp,
@@ -14,7 +15,6 @@ import {
   fract,
   length,
   max,
-  min,
   mix,
   modelWorldMatrixInverse,
   screenCoordinate,
@@ -56,6 +56,7 @@ import {
   EMISSION_ROLLOFF_BASE,
   EMISSION_ROLLOFF_MIX,
   EMISSION_ROLLOFF_TRANSIENT_GAIN,
+  EFFECTIVE_FIELD_CANCELLATION_SUPPRESSION_SCALE,
   EDGE_FADE_END,
   EDGE_FADE_START,
   EXCITATION_VISIBILITY_COHERENCE_WEIGHT,
@@ -75,6 +76,7 @@ import {
   HOLOGRAPHIC_TINT_GREEN,
   HOLOGRAPHIC_TINT_RED,
   HIGH_MID_BAND_WEIGHT,
+  INCOHERENT_TREBLE_BODY_SUPPRESSION_MAX,
   INNER_BAND_WEIGHT,
   INTERIOR_MASK_END,
   INTERIOR_MASK_START,
@@ -91,9 +93,7 @@ import {
   OPTICAL_BODY_SUPPRESSION_MAX,
   OPTICAL_FOCUS_POWER,
   OPTICAL_FRINGE_MIX_MAX,
-  OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX,
   OPTICAL_LASER_GAIN,
-  OPTICAL_LOW_FOCUS_BODY_RATIO_MAX,
   OPTICAL_SLOPE_POWER,
   OPTICAL_SPACE_GATE_END,
   OPTICAL_SPACE_GATE_START,
@@ -104,9 +104,7 @@ import {
   PHOTOGRAPHIC_DARK_BODY_RATIO,
   PHOTOGRAPHIC_DARK_CAUSTIC_RATIO,
   PHOTOGRAPHIC_FOCUS_POWER,
-  PHOTOGRAPHIC_HIGH_FOCUS_BODY_RATIO_MAX,
   PHOTOGRAPHIC_LASER_GAIN,
-  PHOTOGRAPHIC_LOW_FOCUS_BODY_RATIO_MAX,
   PHOTOGRAPHIC_SHELL_FOCUS_GAIN,
   PHOTOGRAPHIC_SHELL_INNER_END,
   PHOTOGRAPHIC_SHELL_INNER_FADE_END,
@@ -154,9 +152,9 @@ const EXCITATION_GATE_LOW = 0.04;
 const EXCITATION_GATE_HIGH = 0.35;
 const STATIC_SURFACE_TINT_SCALE = 0.18;
 const STATIC_HIGHLIGHT_SURFACE_PULL_SCALE = 0.2;
-const SPECTRAL_LIGHT_CHROMA_EPSILON = 1e-6;
 
 export const RAYMARCH_SPECTRAL_LIGHT_TUNING = Object.freeze({
+  baseRadianceLift: 0.42,
   contourShadow: 0.97,
   hotCoreSurfacePull: 0.26,
   holographicAccentMix: 0.065,
@@ -247,8 +245,9 @@ function accumulateModalField({
   gradZ,
   colorSum,
   colorWeight,
-  colorChromaSum,
-  colorChromaWeight,
+  phaseBuffer = null,
+  uTime = null,
+  unsignedSupport = null,
 }) {
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
   const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
@@ -260,6 +259,23 @@ function accumulateModalField({
       });
       const slot = buffer.element(i);
       const amplitude = slot.w;
+      const phaseCurrentCoefficient =
+        phaseBuffer && uTime
+          ? (() => {
+              const phaseSlot = phaseBuffer.element(i);
+              const beta = clamp(
+                phaseSlot.z.mul(phaseSlot.w),
+                float(0.0),
+                float(1.0),
+              );
+              const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
+              const phaseScale = float(1.0)
+                .sub(beta)
+                .add(beta.mul(cos(phase)))
+                .toVar();
+              return amplitude.mul(phaseScale).toVar();
+            })()
+          : amplitude;
       const u = slot.x;
       const v = slot.y;
       const w = slot.z;
@@ -273,26 +289,27 @@ function accumulateModalField({
         scale,
         boundaryMode,
       });
-      field.addAssign(amplitude.mul(family.field));
-      gradX.addAssign(amplitude.mul(family.gradX));
-      gradY.addAssign(amplitude.mul(family.gradY));
-      gradZ.addAssign(amplitude.mul(family.gradZ));
+      const phaseCurrentContribution = phaseCurrentCoefficient
+        .mul(family.field)
+        .toVar();
+      field.addAssign(phaseCurrentContribution);
+      gradX.addAssign(phaseCurrentCoefficient.mul(family.gradX));
+      gradY.addAssign(phaseCurrentCoefficient.mul(family.gradY));
+      gradZ.addAssign(phaseCurrentCoefficient.mul(family.gradZ));
+      if (unsignedSupport) {
+        unsignedSupport.addAssign(abs(phaseCurrentContribution));
+      }
       if (colorBuffer && colorSum && colorWeight && enableColorAccumulation) {
         If(enableColorAccumulation.greaterThan(0.5), () => {
           const colorSlot = colorBuffer.element(i);
           const localInfluence = amplitude.mul(abs(family.field));
           const weightedInfluence = localInfluence.mul(colorSlot.w);
-          const chromaInfluence = weightedInfluence.mul(weightedInfluence);
           colorSum.addAssign(
             vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(
               weightedInfluence,
             ),
           );
           colorWeight.addAssign(weightedInfluence);
-          colorChromaSum.addAssign(
-            vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(chromaInfluence),
-          );
-          colorChromaWeight.addAssign(chromaInfluence);
         });
       }
     },
@@ -310,8 +327,6 @@ function accumulateModalFieldColorOnly({
   cavityGeometry,
   colorSum,
   colorWeight,
-  colorChromaSum,
-  colorChromaWeight,
 }) {
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
   const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
@@ -336,15 +351,10 @@ function accumulateModalFieldColorOnly({
       const colorSlot = colorBuffer.element(i);
       const localInfluence = amplitude.mul(abs(family.field));
       const weightedInfluence = localInfluence.mul(colorSlot.w);
-      const chromaInfluence = weightedInfluence.mul(weightedInfluence);
       colorSum.addAssign(
         vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(weightedInfluence),
       );
       colorWeight.addAssign(weightedInfluence);
-      colorChromaSum.addAssign(
-        vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(chromaInfluence),
-      );
-      colorChromaWeight.addAssign(chromaInfluence);
     },
   );
 }
@@ -352,6 +362,7 @@ function accumulateModalFieldColorOnly({
 function accumulateDirectModalField({
   modalFieldModeBuffer,
   modalFieldColorBuffer,
+  modalFieldPhaseBuffer,
   modalFieldCapacity,
   modalFieldActiveCount,
   localPosition,
@@ -365,8 +376,8 @@ function accumulateDirectModalField({
   gradZ,
   colorSum,
   colorWeight,
-  colorChromaSum,
-  colorChromaWeight,
+  uTime,
+  unsignedSupport,
 }) {
   If(modalFieldActiveCount.greaterThan(0), () => {
     accumulateModalField({
@@ -385,8 +396,9 @@ function accumulateDirectModalField({
       gradZ,
       colorSum,
       colorWeight,
-      colorChromaSum,
-      colorChromaWeight,
+      phaseBuffer: modalFieldPhaseBuffer,
+      uTime,
+      unsignedSupport,
     });
   });
 }
@@ -403,8 +415,6 @@ function accumulateDirectModalFieldColorOnly({
   spectralLightEnabled,
   colorSum,
   colorWeight,
-  colorChromaSum,
-  colorChromaWeight,
 }) {
   If(spectralLightEnabled.greaterThan(0.5), () => {
     If(modalFieldActiveCount.greaterThan(0), () => {
@@ -419,8 +429,6 @@ function accumulateDirectModalFieldColorOnly({
         cavityGeometry,
         colorSum,
         colorWeight,
-        colorChromaSum,
-        colorChromaWeight,
       });
     });
   });
@@ -430,6 +438,7 @@ function sampleFieldGradientNormalNode({
   localPosition,
   modalFieldModeBuffer,
   modalFieldColorBuffer,
+  modalFieldPhaseBuffer,
   modalFieldCapacity,
   modalFieldActiveCount,
   uRadius,
@@ -437,6 +446,7 @@ function sampleFieldGradientNormalNode({
   cavityGeometry,
   effectiveFieldTexture,
   directFieldEvaluationEnabled,
+  uTime,
 }) {
   const sampleGradient = vec3(0.0).toVar();
 
@@ -470,8 +480,8 @@ function sampleFieldGradientNormalNode({
       gradZ: sampleGradZ,
       colorSum: null,
       colorWeight: null,
-      colorChromaSum: null,
-      colorChromaWeight: null,
+      phaseBuffer: modalFieldPhaseBuffer,
+      uTime,
     });
     sampleGradient.assign(vec3(sampleGradX, sampleGradY, sampleGradZ));
   }
@@ -486,6 +496,7 @@ function deriveOpticalConvergenceAuthorityNode({
   sampleStep,
   modalFieldModeBuffer,
   modalFieldColorBuffer,
+  modalFieldPhaseBuffer,
   modalFieldCapacity,
   modalFieldActiveCount,
   uRadius,
@@ -493,11 +504,13 @@ function deriveOpticalConvergenceAuthorityNode({
   cavityGeometry,
   effectiveFieldTexture,
   directFieldEvaluationEnabled,
+  uTime,
 }) {
   const normalPositiveT1 = sampleFieldGradientNormalNode({
     localPosition: localPosition.add(tangent1.mul(sampleStep)),
     modalFieldModeBuffer,
     modalFieldColorBuffer,
+    modalFieldPhaseBuffer,
     modalFieldCapacity,
     modalFieldActiveCount,
     uRadius,
@@ -505,11 +518,13 @@ function deriveOpticalConvergenceAuthorityNode({
     cavityGeometry,
     effectiveFieldTexture,
     directFieldEvaluationEnabled,
+    uTime,
   });
   const normalNegativeT1 = sampleFieldGradientNormalNode({
     localPosition: localPosition.sub(tangent1.mul(sampleStep)),
     modalFieldModeBuffer,
     modalFieldColorBuffer,
+    modalFieldPhaseBuffer,
     modalFieldCapacity,
     modalFieldActiveCount,
     uRadius,
@@ -517,11 +532,13 @@ function deriveOpticalConvergenceAuthorityNode({
     cavityGeometry,
     effectiveFieldTexture,
     directFieldEvaluationEnabled,
+    uTime,
   });
   const normalPositiveT2 = sampleFieldGradientNormalNode({
     localPosition: localPosition.add(tangent2.mul(sampleStep)),
     modalFieldModeBuffer,
     modalFieldColorBuffer,
+    modalFieldPhaseBuffer,
     modalFieldCapacity,
     modalFieldActiveCount,
     uRadius,
@@ -529,11 +546,13 @@ function deriveOpticalConvergenceAuthorityNode({
     cavityGeometry,
     effectiveFieldTexture,
     directFieldEvaluationEnabled,
+    uTime,
   });
   const normalNegativeT2 = sampleFieldGradientNormalNode({
     localPosition: localPosition.sub(tangent2.mul(sampleStep)),
     modalFieldModeBuffer,
     modalFieldColorBuffer,
+    modalFieldPhaseBuffer,
     modalFieldCapacity,
     modalFieldActiveCount,
     uRadius,
@@ -541,6 +560,7 @@ function deriveOpticalConvergenceAuthorityNode({
     cavityGeometry,
     effectiveFieldTexture,
     directFieldEvaluationEnabled,
+    uTime,
   });
   const viewPlaneNormalConvergence = dot(
     normalPositiveT1.sub(normalNegativeT1),
@@ -559,6 +579,7 @@ function deriveOpticalConvergenceAuthorityNode({
 function createScatteringNode({
   modalFieldModeBuffer,
   modalFieldColorBuffer,
+  modalFieldPhaseBuffer = null,
   modalFieldCapacity,
   uniforms,
   boundaryMode = BOUNDARY_MODES.neumann,
@@ -571,6 +592,7 @@ function createScatteringNode({
 }) {
   const {
     uRadius,
+    uTime,
     uThreshold,
     uAverageAmplitude,
     uRaymarchSteps,
@@ -751,8 +773,6 @@ function createScatteringNode({
       const effectiveCancellationRatio = float(0.0).toVar();
       const colorSum = vec3(0.0).toVar();
       const colorWeight = float(0.0).toVar();
-      const colorChromaSum = vec3(0.0).toVar();
-      const colorChromaWeight = float(0.0).toVar();
       const spectralLightEnabled = smoothstep(
         float(0.0),
         float(1e-4),
@@ -769,12 +789,13 @@ function createScatteringNode({
         directSpectralLightEnabled || cachedSpectralLightEnabled;
       const directFieldEvaluationEnabled = fieldEvaluationMode === "direct";
       const modalFieldActiveCount = int(uModalFieldModeCount);
+      const amplitudeNorm = max(uTotalSlotAmplitude, float(0.01));
+      const cacheUv = clamp(
+        normalizedPosition.mul(float(0.5)).add(vec3(0.5)),
+        vec3(0.0),
+        vec3(1.0),
+      );
       if (effectiveFieldTexture) {
-        const cacheUv = clamp(
-          normalizedPosition.mul(float(0.5)).add(vec3(0.5)),
-          vec3(0.0),
-          vec3(1.0),
-        );
         const cachedSample = texture3D(effectiveFieldTexture).sample(cacheUv);
         field.assign(cachedSample.x);
         gradX.assign(cachedSample.y);
@@ -789,11 +810,6 @@ function createScatteringNode({
         }
 
         if (cachedSpectralLightEnabled) {
-          const cacheUv = clamp(
-            normalizedPosition.mul(float(0.5)).add(vec3(0.5)),
-            vec3(0.0),
-            vec3(1.0),
-          );
           const cachedSpectralLightSample = texture3D(
             spectralLightCacheTexture,
           ).sample(cacheUv);
@@ -812,14 +828,13 @@ function createScatteringNode({
             spectralLightEnabled,
             colorSum,
             colorWeight,
-            colorChromaSum,
-            colorChromaWeight,
           });
         }
       } else if (directFieldEvaluationEnabled) {
         accumulateDirectModalField({
           modalFieldModeBuffer,
           modalFieldColorBuffer,
+          modalFieldPhaseBuffer,
           modalFieldCapacity,
           modalFieldActiveCount,
           localPosition,
@@ -835,20 +850,33 @@ function createScatteringNode({
           gradZ,
           colorSum,
           colorWeight,
-          colorChromaSum,
-          colorChromaWeight,
+          uTime,
+          unsignedSupport: effectiveUnsignedSupport,
         });
+        if (cachedSpectralLightEnabled) {
+          const cachedSpectralLightSample = texture3D(
+            spectralLightCacheTexture,
+          ).sample(cacheUv);
+          colorSum.assign(cachedSpectralLightSample.xyz);
+          colorWeight.assign(cachedSpectralLightSample.w);
+        }
+        const normalizedDirectSupport = effectiveUnsignedSupport
+          .div(amplitudeNorm)
+          .toVar();
+        effectiveUnsignedSupport.assign(normalizedDirectSupport);
+        const normalizedDirectFieldAbs = abs(field.div(amplitudeNorm));
+        effectiveCancellationRatio.assign(
+          clamp(
+            float(1.0).sub(
+              normalizedDirectFieldAbs.div(
+                max(normalizedDirectSupport, float(0.01)),
+              ),
+            ),
+            float(0.0),
+            float(1.0),
+          ),
+        );
       }
-      If(
-        colorChromaWeight.greaterThan(float(SPECTRAL_LIGHT_CHROMA_EPSILON)),
-        () => {
-          colorSum.assign(
-            colorChromaSum
-              .div(colorChromaWeight.max(float(SPECTRAL_LIGHT_CHROMA_EPSILON)))
-              .mul(colorWeight),
-          );
-        },
-      );
 
       const effectiveField = field;
       const fieldAbs = abs(effectiveField);
@@ -856,7 +884,6 @@ function createScatteringNode({
       const gradientMagnitude = length(gradient);
       const gradientNormal = gradient.div(max(gradientMagnitude, float(1e-4)));
       const effectiveGradientMagnitude = gradientMagnitude;
-      const amplitudeNorm = max(uTotalSlotAmplitude, float(0.01));
       // Effective field textures are pre-normalized by their modal amplitude
       // during compute, so product cached rendering can stay stable across
       // envelope-only amplitude changes without falling back to direct raymarch
@@ -937,6 +964,7 @@ function createScatteringNode({
         .mul(float(1.0).add(bassShellBoost));
       const contourCore = nodeBand.pow(uContourSharpness.mul(contourGain));
       const contourShape = mix(broadBand, contourCore, float(CONTOUR_BLEND));
+      const modalStructureSupport = nodeBand;
       const signedBodyAuthority = smoothstep(
         float(SIGNED_INTERFERENCE_BODY_AUTHORITY_START),
         float(SIGNED_INTERFERENCE_BODY_AUTHORITY_END),
@@ -945,7 +973,7 @@ function createScatteringNode({
       const cancellationSuppression = float(1.0).sub(
         effectiveCancellationRatio
           .mul(clamp(effectiveUnsignedSupport, float(0.0), float(1.0)))
-          .mul(float(0.85)),
+          .mul(float(EFFECTIVE_FIELD_CANCELLATION_SUPPRESSION_SCALE)),
       );
       const localFieldSupportAuthority = clamp(
         effectiveUnsignedSupport,
@@ -977,7 +1005,7 @@ function createScatteringNode({
       const incoherentTrebleSuppression = float(1.0).sub(
         uTrebleBroadbandEnergy
           .mul(float(1.0).sub(uModeCoherence))
-          .mul(float(0.45)),
+          .mul(float(INCOHERENT_TREBLE_BODY_SUPPRESSION_MAX)),
       );
       const bodyDensity = broadBand
         .mul(edgeFade)
@@ -1023,10 +1051,18 @@ function createScatteringNode({
       const shellFieldAuthority = localFieldSupportAuthority.mul(
         max(localGradientEvidence, signedBodyAuthority),
       );
+      const gradientFieldAuthority = localGradientEvidence.mul(
+        localFieldSupportAuthority,
+      );
+      const supportStructureAuthority =
+        localFieldSupportAuthority.mul(modalStructureSupport);
       const causticFocusAuthority = clamp(
         max(
-          localGradientEvidence.mul(contourCore),
-          shellFocus.mul(contourCore).mul(shellFieldAuthority),
+          max(
+            gradientFieldAuthority.mul(modalStructureSupport),
+            shellFocus.mul(modalStructureSupport).mul(shellFieldAuthority),
+          ),
+          shellFocus.mul(supportStructureAuthority),
         ),
         float(0.0),
         float(1.0),
@@ -1034,13 +1070,12 @@ function createScatteringNode({
       const causticRidgeAuthority = clamp(
         causticFocusAuthority
           .mul(edgeFade)
-          .mul(activeMask)
-          .mul(cancellationSuppression),
+          .mul(activeMask),
         float(0.0),
         float(1.0),
       );
       const causticVisibility =
-        causticRidgeAuthority.mul(excitationVisibility);
+        causticRidgeAuthority.mul(cancellationSuppression);
       const causticCore = causticFocusAuthority.pow(float(CAUSTIC_FOCUS_POWER));
       const causticDensity = causticCore
         .mul(causticVisibility)
@@ -1120,6 +1155,7 @@ function createScatteringNode({
           sampleStep: convergenceSampleStep,
           modalFieldModeBuffer,
           modalFieldColorBuffer,
+          modalFieldPhaseBuffer,
           modalFieldCapacity,
           modalFieldActiveCount,
           uRadius,
@@ -1127,6 +1163,7 @@ function createScatteringNode({
           cavityGeometry,
           effectiveFieldTexture,
           directFieldEvaluationEnabled,
+          uTime,
         },
       );
       const opticalFocusAuthority = clamp(
@@ -1150,24 +1187,18 @@ function createScatteringNode({
       const opticalNegativeSpaceGate = smoothstep(
         float(OPTICAL_SPACE_GATE_START),
         float(OPTICAL_SPACE_GATE_END),
-        /** @type {any} */ (opticalFocus.mul(causticVisibility)),
+        /** @type {any} */ (opticalFocus.mul(causticRidgeAuthority)),
       );
       const opticalBodyAttenuation = float(1.0).sub(
         float(OPTICAL_BODY_SUPPRESSION_MAX).mul(
           float(1.0).sub(opticalNegativeSpaceGate),
         ),
       );
-      const opticalBodyRatioMax = mix(
-        float(OPTICAL_LOW_FOCUS_BODY_RATIO_MAX),
-        float(OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX),
-        opticalNegativeSpaceGate,
-      );
       const laserCausticRadiance = rolledCausticDensity.mul(
         float(1.0).add(opticalFocus.mul(float(OPTICAL_LASER_GAIN))),
       );
-      const opticalBodyContribution = min(
-        adjustedBodyContribution.mul(opticalBodyAttenuation),
-        rolledCausticDensity.mul(opticalBodyRatioMax),
+      const opticalBodyContribution = adjustedBodyContribution.mul(
+        opticalBodyAttenuation,
       );
       const opticalFringeWeight = clamp(
         opticalFocus
@@ -1214,7 +1245,7 @@ function createScatteringNode({
             radialDistance,
           ),
         )
-        .mul(max(contourCore, localGradientEvidence.mul(float(0.45))));
+        .mul(contourCore);
       const shellSuppression = smoothstep(
         float(PHOTOGRAPHIC_SHELL_SUPPRESSION_START),
         float(PHOTOGRAPHIC_SHELL_SUPPRESSION_END),
@@ -1248,21 +1279,15 @@ function createScatteringNode({
       const blackfieldGate = smoothstep(
         float(PHOTOGRAPHIC_BLACKFIELD_GATE_START),
         float(PHOTOGRAPHIC_BLACKFIELD_GATE_END),
-        /** @type {any} */ (photographicFocus.mul(causticVisibility)),
+        /** @type {any} */ (photographicFocus.mul(causticRidgeAuthority)),
       );
       const photographicBodyAttenuation = mix(
         float(PHOTOGRAPHIC_DARK_BODY_RATIO),
         float(1.0),
         blackfieldGate,
       );
-      const photographicBodyRatioMax = mix(
-        float(PHOTOGRAPHIC_LOW_FOCUS_BODY_RATIO_MAX),
-        float(PHOTOGRAPHIC_HIGH_FOCUS_BODY_RATIO_MAX),
-        blackfieldGate,
-      );
-      const photographicBodyContribution = min(
-        opticalBodyContribution.mul(photographicBodyAttenuation),
-        rolledCausticDensity.mul(photographicBodyRatioMax),
+      const photographicBodyContribution = opticalBodyContribution.mul(
+        photographicBodyAttenuation,
       );
       const photographicRadianceScale = mix(
         float(PHOTOGRAPHIC_DARK_CAUSTIC_RATIO),
@@ -1274,7 +1299,7 @@ function createScatteringNode({
       );
       const photographicFringeWeight = clamp(
         opticalFringeWeight.add(
-          photographicFocus.mul(causticVisibility).mul(float(0.035)),
+          photographicFocus.mul(causticRidgeAuthority).mul(float(0.035)),
         ),
         float(0.0),
         float(1.0),
@@ -1316,9 +1341,7 @@ function createScatteringNode({
         float(0.0),
         float(DENSITY_MAX),
       ).mul(float(DENSITY_BOOST));
-      const modalStructureAnchor = causticRidgeAuthority.mul(
-        compressedShellWeight,
-      );
+      const modalStructureAnchor = causticRidgeAuthority;
       const ridgeAnchor = /** @type {any} */ (causticRidgeAuthority);
       const observationTransfer = deriveObservationTransferNode(
         density,
@@ -1326,18 +1349,19 @@ function createScatteringNode({
         modalStructureAnchor,
         uModalResponseEnergy,
         ridgeAnchor,
+        cancellationSuppression,
         uObservationDensityFadeStart,
         uObservationDensityFadeEnd,
         uObservationTransferGain,
         uObservationDensityFloor,
         uObservationContourSupportScale,
       );
-      const { visibleDensity, physicalVisibleDensity } = observationTransfer;
+      const { visibleDensity } = observationTransfer;
       const observedContourSupport = observationTransfer.observedContourSupport;
       const highlightMask = smoothstep(
         float(HIGHLIGHT_MASK_START),
         float(HIGHLIGHT_MASK_END),
-        physicalVisibleDensity,
+        visibleDensity,
       );
       const stabilizedDensity = visibleDensity;
       const contourMix = smoothstep(
@@ -1409,6 +1433,14 @@ function createScatteringNode({
           .add(uTransientEnergy.mul(0.1))
           .add(spectralColorBiasHintOffset)
           .mul(float(COLOR_BIAS_SCALE)),
+        float(0.0),
+        float(1.0),
+      );
+      const spectralLightColorGate = clamp(
+        max(
+          localFieldSupportAuthority.mul(cancellationSuppression),
+          causticVisibility,
+        ),
         float(0.0),
         float(1.0),
       );
@@ -1554,23 +1586,20 @@ function createScatteringNode({
             colorWeight,
           );
           const spectralLightWeight = clamp(
-            uSpectralMix.mul(spectralLightPresence),
+            uSpectralMix
+              .mul(spectralLightPresence)
+              .mul(spectralLightColorGate),
             float(0.0),
             float(1.0),
           );
           const spectralLightUncoloredColor = vec3(
             float(RAYMARCH_SPECTRAL_LIGHT_TUNING.uncoloredNeutralLift),
           );
-          const spectralLightBaseColor = mix(
-            spectralLightUncoloredColor,
-            spectralColor,
-            spectralLightWeight,
-          );
           const spectralLightContourColor = mix(
-            spectralLightBaseColor.mul(
+            spectralColor.mul(
               float(RAYMARCH_SPECTRAL_LIGHT_TUNING.contourShadow),
             ),
-            spectralLightBaseColor,
+            spectralColor,
             /** @type {any} */ (contourAccent),
           );
           const spectralLightLaserColor = mix(
@@ -1607,12 +1636,16 @@ function createScatteringNode({
             spectralLightHolographicLaserColor,
             activityAccent,
           );
+          const spectralLightTintedRadiance = mix(
+            spectralLightUncoloredColor,
+            spectralLightVolumeColor,
+            spectralLightWeight,
+          );
+          const spectralLightBaseRadiance = uColor.mul(
+            float(RAYMARCH_SPECTRAL_LIGHT_TUNING.baseRadianceLift),
+          );
           volumeColor.assign(
-            mix(
-              spectralLightUncoloredColor,
-              spectralLightVolumeColor,
-              spectralLightWeight,
-            ),
+            spectralLightTintedRadiance.add(spectralLightBaseRadiance),
           );
         });
       }
@@ -1628,6 +1661,7 @@ function deriveObservationTransferNode(
   modalStructureAnchor,
   modalResponseEnergy = float(0.0),
   ridgeAnchor = float(0.0),
+  signedRadianceAuthority = float(1.0),
   observationDensityFadeStart = float(0.0),
   observationDensityFadeEnd = float(0.0),
   observationTransferGain = float(0.0),
@@ -1640,9 +1674,9 @@ function deriveObservationTransferNode(
     density,
   );
   const physicalVisibleDensity = density.mul(physicalVisibilityGate);
-  const ridgePhysicalAnchor = ridgeAnchor;
+  const contourRidgeAnchor = clamp(ridgeAnchor, float(0.0), float(1.0));
   const observationAnchor = clamp(
-    modalStructureAnchor.mul(ridgePhysicalAnchor),
+    modalStructureAnchor.mul(signedRadianceAuthority),
     float(0.0),
     float(1.0),
   );
@@ -1651,10 +1685,13 @@ function deriveObservationTransferNode(
     float(0.0),
     float(1.0),
   );
+  const observationResponse = /** @type {any} */ (observationEnergy).pow(
+    float(0.5),
+  );
   const observationSupport = clamp(
     float(1.0).sub(
       exp(
-        observationEnergy
+        observationResponse
           .mul(observationAnchor)
           .mul(observationTransferGain.negate()),
       ),
@@ -1668,7 +1705,10 @@ function deriveObservationTransferNode(
     observationDensityFloor,
   );
   const observedContourSupport = clamp(
-    observationSupport.mul(ridgeAnchor).mul(observationContourSupportScale),
+    observationSupport
+      .mul(observationAnchor)
+      .mul(contourRidgeAnchor)
+      .mul(observationContourSupportScale),
     float(0.0),
     observationContourSupportScale,
   );
@@ -1678,6 +1718,7 @@ function deriveObservationTransferNode(
     physicalVisibleDensity,
     observationAnchor,
     observationEnergy,
+    observationResponse,
     observationSupport,
     observedDensityFloor,
     observedContourSupport,
@@ -1702,6 +1743,7 @@ export function createRaymarchVolumeMesh({
   radius,
   modalFieldModeBuffer,
   modalFieldColorBuffer,
+  modalFieldPhaseBuffer = null,
   effectiveFieldTexture = null,
   effectiveFieldSupportTexture = null,
   spectralLightCacheTexture = null,
@@ -1738,6 +1780,7 @@ export function createRaymarchVolumeMesh({
     material.scatteringNode = createScatteringNode({
       modalFieldModeBuffer,
       modalFieldColorBuffer,
+      modalFieldPhaseBuffer,
       modalFieldCapacity,
       uniforms,
       boundaryMode,

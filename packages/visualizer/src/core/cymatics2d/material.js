@@ -1,11 +1,14 @@
 import * as THREE from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import {
+  Break,
   Fn,
+  If,
   Loop,
   abs,
   clamp,
   float,
+  int,
   length,
   max,
   mix,
@@ -16,6 +19,11 @@ import {
   vec4,
 } from "three/tsl";
 import { evaluatePermutationFamilyNode } from "../modeFamilyNode.js";
+import {
+  SIGNED_INTERFERENCE_BODY_AUTHORITY_END,
+  SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER,
+  SIGNED_INTERFERENCE_BODY_AUTHORITY_START,
+} from "../raymarch/fieldShaping.js";
 
 const CYMATICS_2D_TUNING = Object.freeze({
   fieldBandScale: 1.85,
@@ -32,6 +40,7 @@ function accumulateModalField({
   buffer,
   colorBuffer,
   capacity,
+  activeCount,
   weight,
   pi,
   x,
@@ -44,34 +53,41 @@ function accumulateModalField({
   colorSum,
   colorWeight,
 }) {
-  Loop(capacity, ({ i }) => {
-    const slot = buffer.element(i);
-    const amplitude = slot.w.mul(weight);
-    const family = evaluatePermutationFamilyNode({
-      u: slot.x,
-      v: slot.y,
-      w: slot.z,
-      xCoord: x,
-      yCoord: y,
-      zCoord: slice,
-      scale: pi,
-      boundaryMode,
-    });
-    field.addAssign(amplitude.mul(family.field));
-    gradX.addAssign(amplitude.mul(family.gradX));
-    gradY.addAssign(amplitude.mul(family.gradY));
+  Loop(
+    { start: int(0), end: int(capacity), type: "int", condition: "<" },
+    ({ i }) => {
+      If(i.greaterThanEqual(activeCount), () => {
+        Break();
+      });
 
-    if (colorBuffer && colorSum && colorWeight) {
-      const colorSlot = colorBuffer.element(i);
-      const localInfluence = amplitude.mul(abs(family.field));
-      colorSum.addAssign(
-        vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(
-          localInfluence.mul(colorSlot.w),
-        ),
-      );
-      colorWeight.addAssign(localInfluence.mul(colorSlot.w));
-    }
-  });
+      const slot = buffer.element(i);
+      const amplitude = slot.w.mul(weight);
+      const family = evaluatePermutationFamilyNode({
+        u: slot.x,
+        v: slot.y,
+        w: slot.z,
+        xCoord: x,
+        yCoord: y,
+        zCoord: slice,
+        scale: pi,
+        boundaryMode,
+      });
+      field.addAssign(amplitude.mul(family.field));
+      gradX.addAssign(amplitude.mul(family.gradX));
+      gradY.addAssign(amplitude.mul(family.gradY));
+
+      if (colorBuffer && colorSum && colorWeight) {
+        const colorSlot = colorBuffer.element(i);
+        const localInfluence = amplitude.mul(abs(family.field));
+        colorSum.addAssign(
+          vec3(colorSlot.x, colorSlot.y, colorSlot.z).mul(
+            localInfluence.mul(colorSlot.w),
+          ),
+        );
+        colorWeight.addAssign(localInfluence.mul(colorSlot.w));
+      }
+    },
+  );
 }
 
 function createFieldNode({
@@ -119,6 +135,7 @@ function createFieldNode({
       buffer: modalFieldModeBuffer,
       colorBuffer: modalFieldColorBuffer,
       capacity: modalFieldCapacity,
+      activeCount: int(uModalFieldModeCount),
       weight: float(1.0),
       pi,
       x: centered.x,
@@ -153,6 +170,22 @@ function createFieldNode({
     const contourCore = nodeBand.pow(
       uContourSharpness.mul(float(1.0).add(uTransientEnergy.mul(0.25))),
     );
+    const signedFieldSupportAuthority = smoothstep(
+      float(SIGNED_INTERFERENCE_BODY_AUTHORITY_START),
+      float(SIGNED_INTERFERENCE_BODY_AUTHORITY_END),
+      fieldAbs,
+    ).pow(float(SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER));
+    const cymaticRidgeAuthority = clamp(
+      localGradientEvidence.mul(contourCore).mul(activeMask),
+      float(0.0),
+      float(1.0),
+    );
+    const modalVisibilityAuthority = clamp(
+      max(signedFieldSupportAuthority.mul(activeMask), cymaticRidgeAuthority),
+      float(0.0),
+      float(1.0),
+    );
+    const spectralLightColorGate = modalVisibilityAuthority;
     const contourShape = mix(
       broadBand,
       contourCore,
@@ -160,7 +193,12 @@ function createFieldNode({
     );
     const density = clamp(
       contourShape
-        .mul(localGradientEvidence.add(float(0.12)))
+        .mul(
+          localGradientEvidence.add(
+            modalVisibilityAuthority.mul(float(0.12)),
+          ),
+        )
+        .mul(modalVisibilityAuthority)
         .mul(activeMask)
         .mul(uDensityGain)
         .mul(
@@ -206,14 +244,9 @@ function createFieldNode({
       colorWeight,
     );
     const spectralLightWeight = clamp(
-      uSpectralMix.mul(spectralLightPresence),
+      uSpectralMix.mul(spectralLightPresence).mul(spectralLightColorGate),
       float(0.0),
       float(1.0),
-    );
-    const spectralLightBaseColor = mix(
-      staticBaseColor,
-      spectralColor,
-      spectralLightWeight,
     );
     const staticColor = mix(
       staticBaseColor.mul(float(0.86)),
@@ -221,8 +254,8 @@ function createFieldNode({
       highlightMask,
     );
     const spectralLightColor = mix(
-      spectralLightBaseColor.mul(float(0.9)),
-      spectralLightBaseColor,
+      spectralColor.mul(float(0.9)),
+      spectralColor,
       highlightMask,
     );
     const modalFieldPresence = smoothstep(

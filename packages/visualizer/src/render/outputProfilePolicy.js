@@ -7,7 +7,7 @@ export const PERFORMANCE_PROFILES = Object.freeze({
   custom: "custom",
   maxQuality: "max-quality",
 });
-export const DEFAULT_PERFORMANCE_PROFILE = PERFORMANCE_PROFILES.auto;
+export const DEFAULT_PERFORMANCE_PROFILE = PERFORMANCE_PROFILES.maxQuality;
 export const CUSTOM_TARGET_FPS_BANDS = Object.freeze({
   low: "24-48",
   balanced: "49-72",
@@ -50,6 +50,9 @@ export const RENDER_CONTEXTS = Object.freeze({
  * @returns {PerformanceProfile}
  */
 export function normalizePerformanceProfile(value) {
+  if (value === PERFORMANCE_PROFILES.auto) {
+    return PERFORMANCE_PROFILES.auto;
+  }
   if (value === PERFORMANCE_PROFILES.custom) {
     return PERFORMANCE_PROFILES.custom;
   }

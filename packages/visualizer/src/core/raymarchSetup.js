@@ -74,6 +74,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     radius: parameters.radius,
     modalFieldModeBuffer,
     modalFieldColorBuffer,
+    modalFieldPhaseBuffer,
     effectiveFieldTexture: effectiveFieldCache.texture,
     effectiveFieldSupportTexture: effectiveFieldCache.supportTexture,
     spectralLightCacheTexture: spectralLightCache.texture,

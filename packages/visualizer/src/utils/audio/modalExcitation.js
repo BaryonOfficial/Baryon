@@ -2,6 +2,7 @@ import {
   sampleFFTAmplitudeForFrequency,
   getModalGeometryBackend,
 } from "../../core/modalGeometryBackend.js";
+import { LIVE_INPUT_ANALYSIS_CLASSES } from "../../core/audio/liveInputAnalysis.js";
 import {
   blendColorStack,
   blendModalStack,
@@ -281,6 +282,7 @@ const EXCITATION_DECAY_DRIVE_THRESHOLD = 0.065;
 const EXCITATION_DECAY_SIGNAL_DISPLAY_RATIO = 0.55;
 const EXCITATION_HARD_SILENCE_MAX_AVG_AMPLITUDE = 1;
 const EXCITATION_HARD_SILENCE_MAX_RMS = 0.004;
+const EXCITATION_LINE_FEED_ZERO_SPECTRUM_HARD_SILENCE_MAX_RMS = 0.0065;
 const EXCITATION_HARD_SILENCE_MAX_FFT_PEAK = 0.003;
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -343,10 +345,22 @@ function computeDecayTauMs(mode) {
 }
 
 function isHardSilentFrame(preparedInputs) {
+  const lineFeedZeroSpectrum =
+    (preparedInputs?.inputMode === "system" ||
+      preparedInputs?.resolvedLiveInputAnalysisClass ===
+        LIVE_INPUT_ANALYSIS_CLASSES.lineFeed ||
+      preparedInputs?.liveInputPolicy === LIVE_INPUT_ANALYSIS_CLASSES.lineFeed) &&
+    countNonZeroFftBins(preparedInputs?.fftMagnitudesSource) === 0 &&
+    (preparedInputs?.preModalFftPeak ?? 0) <=
+      EXCITATION_HARD_SILENCE_MAX_FFT_PEAK;
+  const maxRms = lineFeedZeroSpectrum
+    ? EXCITATION_LINE_FEED_ZERO_SPECTRUM_HARD_SILENCE_MAX_RMS
+    : EXCITATION_HARD_SILENCE_MAX_RMS;
+
   return (
     (preparedInputs?.avgAmplitude ?? 0) <=
       EXCITATION_HARD_SILENCE_MAX_AVG_AMPLITUDE &&
-    (preparedInputs?.analyserRms ?? 0) <= EXCITATION_HARD_SILENCE_MAX_RMS &&
+    (preparedInputs?.analyserRms ?? 0) <= maxRms &&
     (preparedInputs?.preModalFftPeak ?? 0) <=
       EXCITATION_HARD_SILENCE_MAX_FFT_PEAK
   );
@@ -3475,6 +3489,8 @@ export function buildModalExcitationStructuralState({
       modalOscillatorPhaseRad,
       modalOscillatorPhaseOffsetRad,
       modalOscillatorAngularVelocityRadPerSec,
+      modalOscillatorPhaseObservedAtSec:
+        preparedInputs.currentFrameAtMs / 1000,
       modalOscillatorPhaseAuthority,
       modalOscillatorPhaseCoherence,
       hardSilentFrame: strictHardSilentFrame,

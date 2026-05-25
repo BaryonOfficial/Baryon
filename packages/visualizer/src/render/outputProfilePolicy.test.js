@@ -13,7 +13,8 @@ import {
 } from "./outputProfilePolicy.js";
 
 describe("render quality profiles", () => {
-  it("normalizes quality presets and defaults to auto", () => {
+  it("normalizes quality presets and defaults to max quality", () => {
+    expect(normalizePerformanceProfile("auto")).toBe("auto");
     expect(normalizePerformanceProfile("custom")).toBe("custom");
     expect(normalizePerformanceProfile("none")).toBe("max-quality");
     expect(normalizePerformanceProfile("max-quality")).toBe("max-quality");
@@ -37,7 +38,7 @@ describe("render quality profiles", () => {
     expect(formatPerformanceProfileLabel("max-quality")).toBe("Max Quality");
     expect(formatPerformanceProfileLabel("custom")).toBe("Custom");
     expect(formatPerformanceProfileLabel("custom", 48)).toBe("Custom 48 FPS");
-    expect(formatPerformanceProfileLabel("unexpected")).toBe("Auto");
+    expect(formatPerformanceProfileLabel("unexpected")).toBe("Max Quality");
   });
 
   it("normalizes render profile overrides into the supported override shape", () => {

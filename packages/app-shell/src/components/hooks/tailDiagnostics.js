@@ -4,7 +4,7 @@ const INPUT_MIN_AVG_AMPLITUDE = 1e-4;
 const INPUT_MIN_RMS = 1e-5;
 const OBSERVER_MIN_RESONANCE_ENERGY = 1e-4;
 const FRAME_MIN_VISIBILITY_ENERGY = 0.02;
-const SHADER_MIN_RIDGE_DENSITY = 0.005;
+const OBSERVATION_SAMPLED_MIN_DENSITY = 0.005;
 
 /**
  * @typedef {{
@@ -66,9 +66,10 @@ function hasFrameVisibility(frame = {}) {
   );
 }
 
-function hasShaderVisibleDensity(render = {}) {
+function hasObservationSampledDensity(render = {}) {
   return (
-    readFiniteNumber(render.observedDensityFloorMax) >= SHADER_MIN_RIDGE_DENSITY
+    readFiniteNumber(render.observationSampledDensityFloor) >=
+    OBSERVATION_SAMPLED_MIN_DENSITY
   );
 }
 
@@ -95,8 +96,8 @@ export function classifyTailDiagnosticSample(sample = {}) {
     return "render-hidden";
   }
 
-  if (!hasShaderVisibleDensity(sample.render)) {
-    return "shader-density-drop";
+  if (!hasObservationSampledDensity(sample.render)) {
+    return "observation-transfer-drop";
   }
 
   return "unknown";
@@ -191,18 +192,40 @@ function buildTailDiagnosticSample({
       observationEnergy: readFiniteNumber(
         render.observationEnergy ?? raymarchDebug.observationEnergy,
       ),
-      observationAnchorMax: readFiniteNumber(
-        render.observationAnchorMax ?? raymarchDebug.observationAnchorMax,
+      observationReferenceAnchor: readFiniteNumber(
+        render.observationReferenceAnchor ??
+          raymarchDebug.observationReferenceAnchor,
       ),
-      observationSupportMax: readFiniteNumber(
-        render.observationSupportMax ?? raymarchDebug.observationSupportMax,
+      observationReferenceSupport: readFiniteNumber(
+        render.observationReferenceSupport ??
+          raymarchDebug.observationReferenceSupport,
       ),
-      observedDensityFloorMax: readFiniteNumber(
-        render.observedDensityFloorMax ?? raymarchDebug.observedDensityFloorMax,
+      observationReferenceDensityFloor: readFiniteNumber(
+        render.observationReferenceDensityFloor ??
+          raymarchDebug.observationReferenceDensityFloor,
       ),
-      observedContourSupportMax: readFiniteNumber(
-        render.observedContourSupportMax ??
-          raymarchDebug.observedContourSupportMax,
+      observationReferenceContourSupport: readFiniteNumber(
+        render.observationReferenceContourSupport ??
+          raymarchDebug.observationReferenceContourSupport,
+      ),
+      observationSampledAnchor: readFiniteNumber(
+        render.observationSampledAnchor ?? raymarchDebug.observationSampledAnchor,
+      ),
+      observationSampledSignedAuthority: readFiniteNumber(
+        render.observationSampledSignedAuthority ??
+          raymarchDebug.observationSampledSignedAuthority,
+      ),
+      observationSampledSupport: readFiniteNumber(
+        render.observationSampledSupport ??
+          raymarchDebug.observationSampledSupport,
+      ),
+      observationSampledDensityFloor: readFiniteNumber(
+        render.observationSampledDensityFloor ??
+          raymarchDebug.observationSampledDensityFloor,
+      ),
+      observationSampledContourSupport: readFiniteNumber(
+        render.observationSampledContourSupport ??
+          raymarchDebug.observationSampledContourSupport,
       ),
       effectiveFieldReady: readBoolean(render.effectiveFieldReady),
       effectiveFieldSupportReady: readBoolean(
@@ -225,6 +248,18 @@ function buildTailDiagnosticSample({
       effectiveFieldCancellationRatioMax: readFiniteNumber(
         render.effectiveFieldCancellationRatioMax ??
           raymarchDebug.effectiveFieldCancellationRatioMax,
+      ),
+      effectiveFieldSupportDiagnosticSampleCount: readFiniteNumber(
+        render.effectiveFieldSupportDiagnosticSampleCount ??
+          raymarchDebug.effectiveFieldSupportDiagnosticSampleCount,
+      ),
+      effectiveFieldSupportDiagnosticSupportedSampleCount: readFiniteNumber(
+        render.effectiveFieldSupportDiagnosticSupportedSampleCount ??
+          raymarchDebug.effectiveFieldSupportDiagnosticSupportedSampleCount,
+      ),
+      effectiveFieldSupportDiagnosticCoverage: readFiniteNumber(
+        render.effectiveFieldSupportDiagnosticCoverage ??
+          raymarchDebug.effectiveFieldSupportDiagnosticCoverage,
       ),
       effectiveFieldZeroAmplitudeSkippedModeCount: readFiniteNumber(
         render.effectiveFieldZeroAmplitudeSkippedModeCount ??

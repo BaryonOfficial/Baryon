@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   computeRms,
+  createNodeAnalyser,
   createAnalyserReader,
   sampleAnalyser,
 } from "./analyserSampler.js";
@@ -56,6 +57,32 @@ describe("analyser sampler", () => {
     expect(snapshot.avgAmplitude).toBeCloseTo((0 + 64 + 128 + 255) / 4);
     expect(snapshot.fftMagnitudes[1]).toBeCloseTo(64 / 255);
     expect(snapshot.rms).toBeCloseTo(0.25);
+  });
+
+  it("disables native analyser smoothing so decay stays owned by the visualizer", () => {
+    const analyserNode = {
+      fftSize: 0,
+      frequencyBinCount: 4,
+      smoothingTimeConstant: 0.8,
+      getFloatFrequencyData(data) {
+        data.fill(-100);
+      },
+      getFloatTimeDomainData(data) {
+        data.fill(0);
+      },
+    };
+    const audioCtx = {
+      createAnalyser: vi.fn(() => analyserNode),
+    };
+    const sourceNode = {
+      connect: vi.fn(),
+    };
+
+    createNodeAnalyser(audioCtx, sourceNode, 8);
+
+    expect(analyserNode.fftSize).toBe(8);
+    expect(analyserNode.smoothingTimeConstant).toBe(0);
+    expect(sourceNode.connect).toHaveBeenCalledWith(analyserNode);
   });
 
   it("reads frequency data once per sample when using a reusable analyser reader", () => {

@@ -145,6 +145,7 @@ function normalizeDecibelMagnitude(value, minDecibels, maxDecibels) {
 export function createNodeAnalyser(audioCtx, sourceNode, fftSize) {
   const analyserNode = audioCtx.createAnalyser();
   analyserNode.fftSize = fftSize;
+  analyserNode.smoothingTimeConstant = 0;
   sourceNode.connect(analyserNode);
 
   const supportsFloatFrequencyData =

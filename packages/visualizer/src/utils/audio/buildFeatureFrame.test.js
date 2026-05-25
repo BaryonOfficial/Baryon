@@ -3704,6 +3704,59 @@ describe("live input noise gate", () => {
     expect(frame.debug.modalVisibilityDominantClusterEnergy).toBeUndefined();
   });
 
+  it("cuts near-silent system line-feed residue without waiting for retained modal buffers", () => {
+    const featureState = createAudioFeatureState();
+    const status = makeSystemStatus();
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < 12; frameIndex += 1) {
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "system",
+          avgAmplitude: 42,
+          fftMagnitudes: makeFft(RESONANT_STRIKE_PARTIALS),
+          timeData: makeMixedTimeData({
+            partials: RESONANT_STRIKE_PARTIALS,
+            amplitudeScale: 1,
+          }),
+          rms: 0.28,
+        }),
+        featureState,
+        radius: 3,
+        status,
+        frameTimeMs: frameIndex * 33,
+      });
+    }
+
+    expect(frame.fieldState).toBe("active");
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeGreaterThan(0);
+
+    for (let frameIndex = 12; frameIndex < 52; frameIndex += 1) {
+      frame = buildAudioFeatureFrame({
+        analysisSnapshot: createSnapshot({
+          sourceMode: "system",
+          avgAmplitude: 0.18,
+          fftMagnitudes: new Float32Array(BIN_COUNT),
+          timeData: new Float32Array(FFT_SIZE),
+          rms: 0.005,
+        }),
+        featureState,
+        radius: 3,
+        status,
+        frameTimeMs: frameIndex * 33,
+      });
+    }
+
+    expect(frame.fieldState).toBe("idle");
+    expect(frame.hasModalField).toBe(false);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBe(0);
+    expect(frame.modalVisibilityEnergy).toBe(0);
+    expect(frame.debug.modalResponseEnergy).toBeGreaterThan(0);
+    expect(frame.debug.modalResponseRenderEnergy).toBe(0);
+    expect(frame.debug.modalResponseRenderSourceCutSuppressed).toBe(true);
+    expect(frame.debug.modalResponseCurrentRenderSourceEvidence).toBe(false);
+  });
+
   it("keeps retained high-Q topology visible through ring-support dropouts", () => {
     const featureState = createAudioFeatureState();
     const preparedInputs = prepareAudioFeatureFrameInputs({
@@ -4656,6 +4709,145 @@ describe("live input noise gate", () => {
     ).toBeGreaterThan(0);
     expect(frame.debug.dominantFrequency).toBeGreaterThan(0);
     expect(frame.structureSignal).toBeGreaterThan(0);
+  });
+
+  it("normalizes quiet system line-feed RMS as direct source authority", () => {
+    const snapshot = createSnapshot({
+      sourceMode: "live",
+      avgAmplitude: 0.1844,
+      rms: 0.005,
+      fftMagnitudes: makeFft([
+        [196, 0.018],
+        [282, 0.012],
+      ]),
+      timeData: makeMixedTimeData({
+        partials: [
+          [196, 0.018],
+          [282, 0.012],
+        ],
+        amplitudeScale: 0.005,
+      }),
+    });
+    const lineFeedFrame = buildAudioFeatureFrame({
+      analysisSnapshot: snapshot,
+      featureState: createAudioFeatureState(),
+      radius: 3,
+      status: makeSystemStatus(),
+      frameTimeMs: 32,
+    });
+    const fileFrame = buildAudioFeatureFrame({
+      analysisSnapshot: { ...snapshot, sourceMode: "file" },
+      featureState: createAudioFeatureState(),
+      radius: 3,
+      status: makeActiveStatus(),
+      frameTimeMs: 32,
+    });
+
+    expect(lineFeedFrame.debug.resolvedLiveInputAnalysisClass).toBe("line-feed");
+    expect(lineFeedFrame.debug.liveInputPolicy).toBe("line-feed");
+    expect(fileFrame.debug.sourceNormalization.normalizedRms).toBeCloseTo(
+      0.005 * 2.8,
+      6,
+    );
+    expect(lineFeedFrame.debug.sourceNormalization.normalizedRms).toBeGreaterThan(
+      0.08,
+    );
+    expect(lineFeedFrame.debug.sourceNormalization.normalizedRms).toBeGreaterThan(
+      fileFrame.debug.sourceNormalization.normalizedRms * 6,
+    );
+  });
+
+  it("lets coherent line-feed source-coupled visibility exceed the observer SNR floor", () => {
+    const frame = buildManualLowQSourceCoupledFrame({
+      sourceMode: "live",
+      status: makeSystemStatus(),
+      avgAmplitude: 0.1844,
+      rms: 0.005,
+      fftMagnitudes: makeFft([
+        [196, 0.018],
+        [282, 0.012],
+        [798, 0.6],
+      ]),
+      timeData: makeMixedTimeData({
+        partials: [
+          [196, 0.018],
+          [282, 0.012],
+          [798, 0.06],
+        ],
+        amplitudeScale: 0.005,
+      }),
+      candidateForcingSlots: makeModeSlots([
+        [2, 3, 13, 0.427],
+        [1, 5, 8, 0.121],
+        [1, 1, 16, 0.074],
+        [1, 2, 4, 0.071],
+      ]),
+      structuralMetrics: makeLowQSourceCoupledStructuralMetrics({
+        modeCoherence: 0.64,
+        modalDriveEnergy: 0.066,
+        modalResponseSourceCoupledEnergy: 1,
+        modalResponseEnergy: 1,
+        lowQSourceCoupledModeCount: 56,
+        lowQSourceCoupledEnergy: 1,
+        lowQObservedDrive: 0.1508,
+        lowQObservedSnr: 0.107,
+        lowQObservedCoherence: 0.97,
+        distributedExcitation: 0.224,
+      }),
+    });
+
+    expect(frame.debug.resolvedLiveInputAnalysisClass).toBe("line-feed");
+    expect(frame.debug.lowQSourceCoupledSourceSupport).toBeGreaterThan(0.12);
+    expect(frame.debug.lowQSourceCoupledVisibilityAuthority).toBeGreaterThan(
+      0.7,
+    );
+    expect(frame.debug.lowQSourceCoupledVisibilityEnergy).toBeGreaterThan(0.12);
+    expect(frame.debug.lowQSourceCoupledTopologyFloor).toBeGreaterThan(0.12);
+  });
+
+  it("keeps coherent system source-coupled modes active from low-Q visibility energy", () => {
+    const frame = buildManualLowQSourceCoupledFrame({
+      sourceMode: "live",
+      status: makeSystemStatus(),
+      avgAmplitude: 0.1844,
+      rms: 0.005,
+      fftMagnitudes: makeFft([
+        [196, 0.018],
+        [282, 0.012],
+        [798, 0.6],
+      ]),
+      timeData: makeMixedTimeData({
+        partials: [
+          [196, 0.018],
+          [282, 0.012],
+          [798, 0.06],
+        ],
+        amplitudeScale: 0.005,
+      }),
+      candidateForcingSlots: makeModeSlots([
+        [2, 3, 13, 0.006],
+        [1, 5, 8, 0.004],
+      ]),
+      structuralMetrics: makeLowQSourceCoupledStructuralMetrics({
+        modeCoherence: 0.64,
+        modalDriveEnergy: 0.066,
+        modalResponseSourceCoupledEnergy: 1,
+        modalResponseEnergy: 1,
+        lowQSourceCoupledModeCount: 56,
+        lowQSourceCoupledEnergy: 1,
+        lowQObservedDrive: 0.1508,
+        lowQObservedSnr: 0.107,
+        lowQObservedCoherence: 0.97,
+        distributedExcitation: 0.224,
+      }),
+    });
+
+    expect(frame.debug.lowQSourceCoupledVisibilityEnergy).toBeGreaterThan(0.12);
+    expect(frame.modalVisibilityEnergy).toBe(0);
+    expect(frame.fieldState).toBe("active");
+    expect(frame.renderAuthority).toBe(true);
+    expect(countActiveSlots(frame.modalFieldSlots)).toBe(2);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBeCloseTo(0.01, 6);
   });
 
   it("reuses zero-target buffers and rebuilds them when capacity changes", () => {

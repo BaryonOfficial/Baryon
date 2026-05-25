@@ -758,6 +758,62 @@ test("auto raymarch drops render scale before bottoming out step budget", () => 
   ).toBeGreaterThan(0);
 });
 
+test("max-quality keeps the requested raymarch budget under modal complexity", () => {
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      renderProfile: {
+        qualityPreset: "max-quality",
+        renderScale: 1,
+      },
+      effectiveFrame: {
+        activeModeCount: 16,
+        averageAmplitude: 255,
+        structureSignal: 1,
+        modalVisibilityEnergy: 1,
+        modalFieldSlots: new Float32Array([
+          1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5,
+          0.75, 3, 5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6, 2, 2, 3, 0.7,
+          2, 3, 3, 0.65, 3, 3, 4, 0.6, 3, 4, 4, 0.55, 4, 4, 5, 0.5, 4, 5,
+          5, 0.45, 5, 5, 6, 0.4, 5, 6, 6, 0.35,
+        ]),
+      },
+    });
+  runtimeState.modalFieldCapacity = 16;
+  runtimeState.modalFieldModeBuffer = {
+    value: { array: new Float32Array(16 * 4) },
+  };
+  runtimeDiagnostics.adaptiveRaymarch.requestedRaymarchSteps = 0;
+  runtimeDiagnostics.adaptiveRaymarch.requestedRenderScale = 0;
+
+  updateAdaptiveRaymarchStepBudget(args);
+
+  expect(runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive).toBe(
+    false,
+  );
+  expect(runtimeState.performanceGovernor.qualityAdaptationActive).toBe(false);
+  expect(runtimeState.performanceGovernor.complexityScore).toBeGreaterThan(
+    0.8,
+  );
+  expect(runtimeState.performanceGovernor.proactiveStepBudget).toBe(64);
+  expect(runtimeState.performanceGovernor.proactiveRenderScale).toBe(1);
+  expect(runtimeState.performanceGovernor.bloomStrengthScale).toBe(1);
+  expect(runtimeState.performanceGovernor.bloomThresholdOffset).toBe(0);
+  expect(runtimeState.performanceGovernor.bloomAllowed).toBe(true);
+  expect(runtimeState.effectiveRaymarchSteps).toBe(64);
+  expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
+  expect(runtimeState.volumeMesh.material.steps).toBe(64);
+  expect(runtimeState.pendingRaymarchPerformanceGovernor.governor).toMatchObject(
+    {
+      qualityAdaptationActive: false,
+      proactiveStepBudget: 64,
+      proactiveRenderScale: 1,
+      bloomStrengthScale: 1,
+      bloomThresholdOffset: 0,
+      bloomAllowed: true,
+    },
+  );
+});
+
 test("auto raymarch ignores long frames caused by active UI interaction", () => {
   const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness();
   runtimeDiagnostics.lastFrameTimeMs = 200;
@@ -780,7 +836,7 @@ test("auto raymarch ignores long frames caused by active UI interaction", () => 
   ).toBe(1);
 });
 
-test("auto raymarch extends effective-field phase rebuild cadence under frame pressure", () => {
+test("auto raymarch does not publish a phase rebuild cadence under frame pressure", () => {
   const { args, runtimeState, runtimeDiagnostics } =
     createAdaptiveRaymarchHarness();
   runtimeDiagnostics.lastFrameTimeMs = 80;
@@ -788,18 +844,9 @@ test("auto raymarch extends effective-field phase rebuild cadence under frame pr
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeState.effectiveFieldPhaseRebuildMinIntervalSec).toBeCloseTo(
-    0.45,
-    6,
+  expect(runtimeState).not.toHaveProperty(
+    "effectiveFieldPhaseRebuildMinIntervalSec",
   );
-});
-
-test("auto raymarch leaves effective-field phase rebuild cadence at default when stable", () => {
-  const { args, runtimeState } = createAdaptiveRaymarchHarness();
-
-  updateAdaptiveRaymarchStepBudget(args);
-
-  expect(runtimeState.effectiveFieldPhaseRebuildMinIntervalSec).toBeNull();
 });
 
 test("performance HUD scale falls back to requested render scale when adaptive mode is idle", () => {

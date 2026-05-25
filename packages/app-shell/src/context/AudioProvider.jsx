@@ -12,6 +12,7 @@ import {
   LIVE_INPUT_ANALYSIS_CLASSES,
   normalizeLiveInputAcousticIntent,
   normalizeLiveInputAnalysisClass,
+  normalizeLiveInputDeviceKind,
   normalizeResolvedLiveInputAnalysisClass,
   normalizeLiveInputAnalysisOverrides,
   resolveLiveInputAnalysisClass,
@@ -26,7 +27,9 @@ import {
 } from "./liveInputRuntimeStatus.js";
 import { useAudioLogic } from "../components/hooks/useAudioLogic";
 import {
+  getLiveInputDeviceKind,
   getLiveInputDeviceKindById,
+  getDeviceKindOverride,
   saveLiveInputDeviceKindOverride,
   clearDeviceOverride,
 } from "../components/controls/deviceClassification.js";
@@ -192,15 +195,46 @@ function isLiveInputPermissionUnsupported(error) {
   );
 }
 
-function getPreferredAudioInputDeviceId(audioInputs, preferredDeviceId) {
-  if (
-    preferredDeviceId &&
-    audioInputs.some((device) => device.deviceId === preferredDeviceId)
-  ) {
-    return preferredDeviceId;
+function normalizeAudioInputDeviceLabel(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function getPreferredAudioInputDevice(
+  audioInputs,
+  { preferredDeviceId = null, preferredDeviceLabel = "" } = {},
+) {
+  if (preferredDeviceId) {
+    const matchingId = audioInputs.find(
+      (device) => device.deviceId === preferredDeviceId,
+    );
+    if (matchingId) {
+      return matchingId;
+    }
   }
 
-  return audioInputs[0]?.deviceId ?? null;
+  const preferredLabelKey =
+    normalizeAudioInputDeviceLabel(preferredDeviceLabel);
+  if (preferredLabelKey) {
+    const matchingLabel = audioInputs.find(
+      (device) =>
+        normalizeAudioInputDeviceLabel(device?.label) === preferredLabelKey,
+    );
+    if (matchingLabel) {
+      return matchingLabel;
+    }
+  }
+
+  return audioInputs[0] ?? null;
+}
+
+function getAudioInputDeviceLabelById(audioInputs, deviceId) {
+  if (!deviceId) {
+    return "";
+  }
+  return (
+    audioInputs.find((device) => device.deviceId === deviceId)?.label?.trim?.() ??
+    ""
+  );
 }
 
 let hlsModulePromise = null;
@@ -652,14 +686,46 @@ export function AudioProvider({ children, platform = "web" }) {
     return status;
   }, [clearScrubState]);
 
-  const selectedLiveDeviceId = selectedSystemDevice ?? selectedDevice ?? null;
-  const selectedLiveInputDeviceKind = getLiveInputDeviceKindById(
-    audioDevices,
-    selectedLiveDeviceId,
-  );
-  const selectedLiveDevice =
+  const selectedLocalLiveDeviceId = selectedSystemDevice ?? selectedDevice ?? null;
+  const runtimeSelectedLiveDeviceId =
+    liveInputRuntimeStatus.selectedDeviceId ?? null;
+  const runtimeSelectedLiveDeviceLabel =
+    liveInputRuntimeStatus.selectedDeviceLabel ?? "";
+  const runtimeSelectedLiveInputDeviceKind =
+    liveInputRuntimeStatus.liveInputDeviceKind != null ||
+    liveInputRuntimeStatus.liveInputKind != null
+      ? normalizeLiveInputDeviceKind(
+          liveInputRuntimeStatus.liveInputDeviceKind ??
+            liveInputRuntimeStatus.liveInputKind,
+        )
+      : null;
+  const selectedLiveDeviceId =
+    selectedLocalLiveDeviceId ?? runtimeSelectedLiveDeviceId ?? null;
+  const selectedLocalLiveDevice =
     audioDevices.find((device) => device.deviceId === selectedLiveDeviceId) ??
     null;
+  const selectedRuntimeLiveDevice =
+    selectedLiveDeviceId != null &&
+    selectedLiveDeviceId === runtimeSelectedLiveDeviceId
+      ? {
+          deviceId: selectedLiveDeviceId,
+          label: runtimeSelectedLiveDeviceLabel,
+        }
+      : null;
+  const selectedLiveDevice =
+    selectedLocalLiveDevice ?? selectedRuntimeLiveDevice ?? null;
+  const selectedLiveInputDeviceKindOverride =
+    selectedLiveDeviceId != null
+      ? getDeviceKindOverride(selectedLiveDeviceId)
+      : null;
+  const selectedLiveInputDeviceKind =
+    selectedLiveInputDeviceKindOverride ??
+    (selectedLocalLiveDevice
+      ? getLiveInputDeviceKind(selectedLocalLiveDevice)
+      : runtimeSelectedLiveInputDeviceKind ??
+        (selectedRuntimeLiveDevice
+          ? getLiveInputDeviceKind(selectedRuntimeLiveDevice)
+          : getLiveInputDeviceKindById(audioDevices, selectedLiveDeviceId)));
   const selectedLiveInputAnalysisOverride =
     selectedLiveDeviceId != null
       ? normalizeLiveInputAnalysisClass(
@@ -675,16 +741,23 @@ export function AudioProvider({ children, platform = "web" }) {
   });
 
   const refreshPreferredLiveInputDeviceId = useCallback(
-    async (preferredDeviceId = selectedSystemDevice ?? selectedDevice) => {
-      const audioInputs = await refreshAudioInputs();
-      const nextDeviceId = getPreferredAudioInputDeviceId(
-        audioInputs,
+    async ({
+      preferredDeviceId = selectedSystemDevice ?? selectedDevice,
+      preferredDeviceLabel = getAudioInputDeviceLabelById(
+        audioDevices,
         preferredDeviceId,
-      );
+      ),
+    } = {}) => {
+      const audioInputs = await refreshAudioInputs();
+      const nextDevice = getPreferredAudioInputDevice(audioInputs, {
+        preferredDeviceId,
+        preferredDeviceLabel,
+      });
+      const nextDeviceId = nextDevice?.deviceId ?? null;
       setSelectedSystemDevice(nextDeviceId);
       return nextDeviceId;
     },
-    [refreshAudioInputs, selectedDevice, selectedSystemDevice],
+    [audioDevices, refreshAudioInputs, selectedDevice, selectedSystemDevice],
   );
 
   const requestLiveInputPermission = useCallback(async () => {
@@ -708,7 +781,9 @@ export function AudioProvider({ children, platform = "web" }) {
       const stream = await mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
 
-      await refreshPreferredLiveInputDeviceId(selectedSystemDevice);
+      await refreshPreferredLiveInputDeviceId({
+        preferredDeviceId: selectedSystemDevice,
+      });
 
       setLiveInputPermissionState(LIVE_INPUT_PERMISSION_STATES.granted);
       return true;
@@ -726,7 +801,9 @@ export function AudioProvider({ children, platform = "web" }) {
         return false;
       }
 
-      await refreshPreferredLiveInputDeviceId(selectedSystemDevice);
+      await refreshPreferredLiveInputDeviceId({
+        preferredDeviceId: selectedSystemDevice,
+      });
       setLiveInputPermissionState(LIVE_INPUT_PERMISSION_STATES.granted);
       return true;
     }
@@ -735,6 +812,7 @@ export function AudioProvider({ children, platform = "web" }) {
   const startLiveInputSession = useCallback(
     async ({
       deviceId = selectedLiveDeviceId,
+      deviceLabel = getAudioInputDeviceLabelById(audioDevices, deviceId),
       liveInputKind: nextLiveInputDeviceKind = selectedLiveInputDeviceKind,
     } = {}) => {
       const audioSession = getDefaultAudioSession();
@@ -755,7 +833,10 @@ export function AudioProvider({ children, platform = "web" }) {
         // Re-enumerate immediately before start so hardware interfaces use the
         // browser's post-permission device list instead of any stale preflight
         // entry the user may have selected earlier.
-        resolvedDeviceId = await refreshPreferredLiveInputDeviceId(deviceId);
+        resolvedDeviceId = await refreshPreferredLiveInputDeviceId({
+          preferredDeviceId: deviceId,
+          preferredDeviceLabel: deviceLabel,
+        });
       }
 
       if (!resolvedDeviceId) {
@@ -771,6 +852,7 @@ export function AudioProvider({ children, platform = "web" }) {
         await audioSession.startLiveInputStream(
           resolvedDeviceId,
           nextLiveInputDeviceKind,
+          deviceLabel,
         );
         if (isWebPlatform) {
           setLiveInputPermissionState(LIVE_INPUT_PERMISSION_STATES.granted);
@@ -804,6 +886,7 @@ export function AudioProvider({ children, platform = "web" }) {
     },
     [
       applyLiveInputUiState,
+      audioDevices,
       isWebPlatform,
       liveInputPermissionState,
       refreshPreferredLiveInputDeviceId,
@@ -867,6 +950,10 @@ export function AudioProvider({ children, platform = "web" }) {
       stopLiveInputSession();
       await startLiveInputSession({
         deviceId: normalizedDeviceId,
+        deviceLabel: getAudioInputDeviceLabelById(
+          audioDevices,
+          normalizedDeviceId,
+        ),
         liveInputKind: getLiveInputDeviceKindById(
           audioDevices,
           normalizedDeviceId,
@@ -1650,6 +1737,7 @@ export function AudioProvider({ children, platform = "web" }) {
         resetSoundCloudTransport();
         const started = await startLiveInputSession({
           deviceId: selectedLiveDeviceId,
+          deviceLabel: selectedLiveDevice?.label ?? "",
           liveInputKind: selectedLiveInputDeviceKind,
         });
         if (started) {
@@ -1681,6 +1769,7 @@ export function AudioProvider({ children, platform = "web" }) {
     resetSoundCloudTransport,
     restoreAfterLiveStop,
     selectedLiveDeviceId,
+    selectedLiveDevice,
     selectedLiveInputDeviceKind,
     startLiveInputSession,
     stopLiveInputSession,
@@ -2020,6 +2109,7 @@ export function AudioProvider({ children, platform = "web" }) {
       selectedSystemDevice,
       selectedLiveDeviceId,
       selectedLiveInputDeviceKind,
+      selectedLiveInputDeviceKindOverride,
       selectedLiveInputKind: selectedLiveInputDeviceKind,
       liveInputAnalysisClass,
       liveInputAcousticIntent,
@@ -2145,6 +2235,7 @@ export function AudioProvider({ children, platform = "web" }) {
       selectedLiveDeviceId,
       selectedLiveInputAnalysisOverride,
       selectedLiveInputDeviceKind,
+      selectedLiveInputDeviceKindOverride,
       selectedResolvedLiveInputAnalysisClass,
       selectedSource,
       selectedSystemDevice,

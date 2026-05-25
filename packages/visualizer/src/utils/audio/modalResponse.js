@@ -6,6 +6,7 @@ export const DEFAULT_MODAL_RESPONSE_REFERENCE = Object.freeze({
 });
 
 const DEFAULT_MODAL_RESPONSE_BUDGET = 1;
+const SOURCE_COUPLED_RESPONSE_BUDGET_SHARE = 0.82;
 const MIN_RELATIVE_PHYSICAL_MODAL_ENERGY = 0.035;
 const FRESH_RESPONSE_SEED_THRESHOLD = 0.02;
 const FREQUENCY_DAMPING_REFERENCE_HZ = 4800;
@@ -392,6 +393,7 @@ function normalizeModalResponseBudget(entries, budget) {
     return {
       energy: 0,
       scale: 1,
+      rawEnergy: 0,
     };
   }
 
@@ -419,6 +421,68 @@ function sumModalEnergyByLayer(entries, layer) {
       entry.layer === layer ? total + (entry.modalResponseEnergy ?? 0) : total,
     0,
   );
+}
+
+function allocateModalResponseLayerBudgets({
+  sourceCoupledRawEnergy,
+  resonantRawEnergy,
+  budget,
+}) {
+  const modalBudget = Math.max(0, Number.isFinite(budget) ? budget : 0);
+  const sourceRaw = Math.max(
+    0,
+    Number.isFinite(sourceCoupledRawEnergy) ? sourceCoupledRawEnergy : 0,
+  );
+  const resonantRaw = Math.max(
+    0,
+    Number.isFinite(resonantRawEnergy) ? resonantRawEnergy : 0,
+  );
+  if (modalBudget <= 0) {
+    return {
+      sourceCoupledBudget: 0,
+      resonantBudget: 0,
+    };
+  }
+  if (sourceRaw <= 0 && resonantRaw <= 0) {
+    return {
+      sourceCoupledBudget: 0,
+      resonantBudget: 0,
+    };
+  }
+  if (sourceRaw <= 0) {
+    return {
+      sourceCoupledBudget: 0,
+      resonantBudget: modalBudget,
+    };
+  }
+  if (resonantRaw <= 0) {
+    return {
+      sourceCoupledBudget: modalBudget,
+      resonantBudget: 0,
+    };
+  }
+
+  const sourceReserve = modalBudget * SOURCE_COUPLED_RESPONSE_BUDGET_SHARE;
+  const resonantReserve = modalBudget - sourceReserve;
+  let sourceCoupledBudget = Math.min(sourceRaw, sourceReserve);
+  let resonantBudget = Math.min(resonantRaw, resonantReserve);
+  const unusedBudget = Math.max(
+    0,
+    modalBudget - sourceCoupledBudget - resonantBudget,
+  );
+  const sourceExcess = Math.max(0, sourceRaw - sourceCoupledBudget);
+  const resonantExcess = Math.max(0, resonantRaw - resonantBudget);
+  const totalExcess = sourceExcess + resonantExcess;
+
+  if (unusedBudget > 0 && totalExcess > 0) {
+    sourceCoupledBudget += unusedBudget * (sourceExcess / totalExcess);
+    resonantBudget += unusedBudget * (resonantExcess / totalExcess);
+  }
+
+  return {
+    sourceCoupledBudget,
+    resonantBudget,
+  };
 }
 
 function retainSignificantPhysicalEntries(entries) {
@@ -558,11 +622,36 @@ export function updateModalResponseFrame({
   const modalBudget = Number.isFinite(responseBudget)
     ? Math.max(0, responseBudget)
     : DEFAULT_MODAL_RESPONSE_BUDGET;
-  const budgetResult = normalizeModalResponseBudget(
-    significantEntries,
-    modalBudget,
+  const sourceCoupledEntries = significantEntries.filter(
+    (entry) => entry.layer === "source-coupled",
   );
-  const modalResponseEnergy = budgetResult.energy;
+  const resonantEntries = significantEntries.filter(
+    (entry) => entry.layer === "resonant",
+  );
+  const rawSourceCoupledEnergy = sumModalEnergyByLayer(
+    significantEntries,
+    "source-coupled",
+  );
+  const rawResonantEnergy = sumModalEnergyByLayer(
+    significantEntries,
+    "resonant",
+  );
+  const { sourceCoupledBudget, resonantBudget } =
+    allocateModalResponseLayerBudgets({
+      sourceCoupledRawEnergy: rawSourceCoupledEnergy,
+      resonantRawEnergy: rawResonantEnergy,
+      budget: modalBudget,
+    });
+  const sourceCoupledBudgetResult = normalizeModalResponseBudget(
+    sourceCoupledEntries,
+    sourceCoupledBudget,
+  );
+  const resonantBudgetResult = normalizeModalResponseBudget(
+    resonantEntries,
+    resonantBudget,
+  );
+  const modalResponseEnergy =
+    sourceCoupledBudgetResult.energy + resonantBudgetResult.energy;
   const modalResponseSourceCoupledEnergy = sumModalEnergyByLayer(
     significantEntries,
     "source-coupled",
@@ -571,6 +660,12 @@ export function updateModalResponseFrame({
     significantEntries,
     "resonant",
   );
+  const modalResponseBudgetScale = Math.min(
+    sourceCoupledBudgetResult.scale,
+    resonantBudgetResult.scale,
+  );
+  const modalResponseRawEnergy =
+    sourceCoupledBudgetResult.rawEnergy + resonantBudgetResult.rawEnergy;
 
   return {
     entries: significantEntries,
@@ -579,10 +674,10 @@ export function updateModalResponseFrame({
     modalResponseSourceCoupledEnergy,
     modalResponseResonantEnergy,
     modalResponseModeCount: significantEntries.length,
-    modalResponseBudgetScale: budgetResult.scale,
-    modalResponseBudgetScaleSourceCoupled: budgetResult.scale,
-    modalResponseBudgetScaleResonant: budgetResult.scale,
-    modalResponseRawEnergy: budgetResult.rawEnergy ?? modalResponseEnergy,
+    modalResponseBudgetScale,
+    modalResponseBudgetScaleSourceCoupled: sourceCoupledBudgetResult.scale,
+    modalResponseBudgetScaleResonant: resonantBudgetResult.scale,
+    modalResponseRawEnergy,
     modalResponseAverageDampingEnvelope: averageEntryMetric(
       significantEntries,
       "dampingEnvelope",

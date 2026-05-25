@@ -171,11 +171,18 @@ function HookHarness({
   externalFrameRef = null,
   cameraRenderKey = null,
   onPerformanceHudSnapshotChange,
+  gl = {
+    setClearColor: () => {},
+    setPixelRatio: () => {},
+    setRenderTarget: () => {},
+    setMRT: () => {},
+    render: () => {},
+  },
 }) {
   useBaryonVisualizer({
     baryonGeometry: null,
     camera: {},
-    gl: { setClearColor: () => {}, setPixelRatio: () => {} },
+    gl,
     scene: {},
     setIsEngineReady: () => {},
     setLiveInputRuntimeStatus: () => {},
@@ -385,6 +392,8 @@ describe("useBaryonVisualizer", () => {
 
   it("advances output temporal camera cuts after rendering", async () => {
     const renderSpy = vi.fn();
+    const setRenderTargetSpy = vi.fn();
+    const setMRTSpy = vi.fn();
     renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);
     renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
       featureFrame: {},
@@ -402,6 +411,13 @@ describe("useBaryonVisualizer", () => {
         React.createElement(HookHarness, {
           ensurePipeline: () => ({ render: renderSpy }),
           postNodesRef,
+          gl: {
+            setClearColor: () => {},
+            setPixelRatio: () => {},
+            setRenderTarget: setRenderTargetSpy,
+            setMRT: setMRTSpy,
+            render: () => {},
+          },
         }),
       );
     });
@@ -418,6 +434,14 @@ describe("useBaryonVisualizer", () => {
       1 / 60,
     );
 
+    expect(setRenderTargetSpy).toHaveBeenCalledWith(null);
+    expect(setMRTSpy).toHaveBeenCalledWith(null);
+    expect(setRenderTargetSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      renderSpy.mock.invocationCallOrder[0],
+    );
+    expect(setMRTSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      renderSpy.mock.invocationCallOrder[0],
+    );
     expect(renderSpy).toHaveBeenCalledTimes(1);
     expect(postNodesRef.current.temporalHistoryCutFramesRemaining).toBe(0);
     expect(postNodesRef.current.temporalHistoryBlendUniform.value).toBe(1);

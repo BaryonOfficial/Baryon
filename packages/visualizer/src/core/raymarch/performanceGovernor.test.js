@@ -225,4 +225,47 @@ describe("performanceGovernor", () => {
     expect(high.proactiveRenderScale).toBeLessThanOrEqual(1);
     expect(high.modalField.uploadedActiveCount).toBe(16);
   });
+
+  it("keeps quality controls neutral when adaptive quality is disabled", () => {
+    const modalFieldSlots = new Float32Array([
+      1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5, 0.75,
+      3, 5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6,
+      2, 2, 3, 0.7, 2, 3, 3, 0.65, 3, 3, 4, 0.6, 3, 4, 4, 0.55, 4, 4, 5, 0.5,
+      4, 5, 5, 0.45, 5, 5, 6, 0.4, 5, 6, 6, 0.35,
+    ]);
+    const featureFrame = {
+      averageAmplitude: 255,
+      structureSignal: 1,
+      modalVisibilityEnergy: 1,
+    };
+
+    const adaptive = buildRaymarchPerformanceGovernor({
+      modalFieldSlots,
+      modalFieldCapacity: 16,
+      featureFrame,
+      requestedStepBudget: 80,
+      requestedRenderScale: 0.92,
+    });
+    const fixedQuality = buildRaymarchPerformanceGovernor({
+      modalFieldSlots,
+      modalFieldCapacity: 16,
+      featureFrame,
+      requestedStepBudget: 80,
+      requestedRenderScale: 0.92,
+      qualityAdaptationEnabled: false,
+    });
+
+    expect(fixedQuality.complexityScore).toBeCloseTo(
+      adaptive.complexityScore,
+      5,
+    );
+    expect(adaptive.proactiveStepBudget).toBeLessThan(80);
+    expect(adaptive.proactiveRenderScale).toBeLessThan(0.92);
+    expect(fixedQuality.qualityAdaptationActive).toBe(false);
+    expect(fixedQuality.proactiveStepBudget).toBe(80);
+    expect(fixedQuality.proactiveRenderScale).toBe(0.92);
+    expect(fixedQuality.bloomStrengthScale).toBe(1);
+    expect(fixedQuality.bloomThresholdOffset).toBe(0);
+    expect(fixedQuality.bloomAllowed).toBe(true);
+  });
 });

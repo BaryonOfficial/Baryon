@@ -121,6 +121,23 @@ describe("control schema", () => {
     expect(state.bloomResponseBias).toBe(1);
   });
 
+  it("keeps contour sharpness fixed as an internal presentation exponent", () => {
+    const contourSharpness = CONTROL_DEFINITIONS.find(
+      (definition) => definition.key === "contourSharpness",
+    );
+
+    expect(contourSharpness).toMatchObject({
+      label: "Contour Exponent",
+      defaultValue: RAYMARCH_DEFAULTS.contourSharpness,
+      status: CONTROL_STATUSES.debugOnly,
+      sidebarHidden: true,
+    });
+    expect(contourSharpness?.binding).toMatchObject({
+      min: 1,
+      max: RAYMARCH_DEFAULTS.contourSharpness,
+    });
+  });
+
   it("keeps the node-threshold slider wide enough for cymatic tuning", () => {
     const nodeThreshold = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "zeroPointPrecision",
@@ -277,7 +294,6 @@ describe("control schema", () => {
       "densityGain",
       "absorption",
       "opacityGain",
-      "contourSharpness",
       "raymarchSteps",
     ]);
     expect(
@@ -375,7 +391,6 @@ describe("control schema", () => {
       "zeroPointPrecision",
       "densityGain",
       "opacityGain",
-      "contourSharpness",
     ]);
     expect(
       getControlsForFolder("Mode", VISUALIZATION_METHODS.cymatics2d).map(

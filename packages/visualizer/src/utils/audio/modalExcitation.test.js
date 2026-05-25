@@ -19,6 +19,7 @@ import {
   createSineToneFixture,
   createVocalLikeFixture,
 } from "./audioFixtures.js";
+import { getPhaseVelocityLimit } from "./modalPhaseSlots.js";
 
 const FFT_SIZE = 4096;
 const SAMPLE_RATE = 44100;
@@ -256,7 +257,7 @@ it("builds the modal excitation atlas from acoustic scale, not visual radius", (
   expect(state.atlasCacheKey).toContain("12.500");
 });
 
-it("uploads physical modal oscillator velocities into phase slots", () => {
+it("bounds modal oscillator velocities before phase-slot upload", () => {
   const state = createModalExcitationState(16);
   const preparedInputs = createPreparedInputs({
     frameTimeMs: 33,
@@ -276,8 +277,23 @@ it("uploads physical modal oscillator velocities into phase slots", () => {
     ...readPhaseSlotVelocities(structural.sourceCoupledPhaseSlotsSource),
     ...readPhaseSlotVelocities(structural.resonantPhaseSlotsSource),
   ];
+  const oscillatorEntries = Array.from(
+    state.activeModes?.values?.() ?? [],
+  ).filter((entry) => Number.isFinite(entry.modalOscillatorPhaseRad));
+  const renderPhaseLimit = Math.max(
+    getPhaseVelocityLimit("source-coupled"),
+    getPhaseVelocityLimit("resonant"),
+  );
 
-  expect(velocities.some((velocity) => Math.abs(velocity) > 100)).toBe(true);
+  expect(velocities.length).toBeGreaterThan(0);
+  expect(
+    velocities.every((velocity) => Math.abs(velocity) <= renderPhaseLimit),
+  ).toBe(true);
+  expect(velocities.some((velocity) => Math.abs(velocity) > 100)).toBe(false);
+  expect(oscillatorEntries.length).toBeGreaterThan(0);
+  for (const entry of oscillatorEntries) {
+    expect(entry.modalOscillatorPhaseObservedAtSec).toBeCloseTo(0.033);
+  }
 });
 
 function cloneSlots(slots) {

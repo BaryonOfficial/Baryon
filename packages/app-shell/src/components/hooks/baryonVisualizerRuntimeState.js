@@ -279,6 +279,8 @@ const EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS = Object.freeze({
   effectiveFieldCancellationRatioMean: 0,
   effectiveFieldCancellationRatioMax: 0,
   effectiveFieldSupportDiagnosticSampleCount: 0,
+  effectiveFieldSupportDiagnosticSupportedSampleCount: 0,
+  effectiveFieldSupportDiagnosticCoverage: 0,
   effectiveFieldRebuildPending: false,
   effectiveFieldBackend: "compute",
   effectiveFieldResolution: 0,
@@ -294,11 +296,15 @@ const EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS = Object.freeze({
   effectiveFieldMaxRepresentableModeIndex: 0,
   effectiveFieldContributingModeCount: 0,
   effectiveFieldZeroAmplitudeSkippedModeCount: 0,
-  effectiveFieldContributingModalEnergy: 0,
+  effectiveFieldContributingRawModalEnergy: 0,
   effectiveFieldBandwidthRejectedModeCount: 0,
-  effectiveFieldBandwidthRejectedModalEnergy: 0,
-  effectiveFieldResolvedModalEnergyRatio: 1,
-  effectiveFieldGradientEnvelope: 0,
+  effectiveFieldBandwidthRejectedRawModalEnergy: 0,
+  effectiveFieldContributingPhaseCurrentModalEnergy: 0,
+  effectiveFieldBandwidthRejectedPhaseCurrentModalEnergy: 0,
+  effectiveFieldResolvedRawModalEnergyRatio: 1,
+  effectiveFieldResolvedPhaseCurrentModalEnergyRatio: 1,
+  effectiveFieldRawGradientEnvelope: 0,
+  effectiveFieldPhaseCurrentGradientEnvelope: 0,
 });
 
 export function createRuntimeDiagnostics() {
@@ -366,10 +372,15 @@ export function createRuntimeDiagnostics() {
       targetFrameTimeMs: 1000 / 60,
       activeModeCount: 0,
       observationEnergy: 0,
-      observationAnchorMax: 0,
-      observationSupportMax: 0,
-      observedDensityFloorMax: 0,
-      observedContourSupportMax: 0,
+      observationReferenceAnchor: 0,
+      observationReferenceSupport: 0,
+      observationReferenceDensityFloor: 0,
+      observationReferenceContourSupport: 0,
+      observationSampledAnchor: 0,
+      observationSampledSignedAuthority: 0,
+      observationSampledSupport: 0,
+      observationSampledDensityFloor: 0,
+      observationSampledContourSupport: 0,
       ...EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS,
     },
     modalFreshness: createModalFreshnessDiagnostics(),
@@ -434,17 +445,32 @@ export function updateObservationTransferRenderDiagnostics(
   renderDiagnostics.observationEnergy = readFiniteNumber(
     raymarchDebug.observationEnergy,
   );
-  renderDiagnostics.observationAnchorMax = readFiniteNumber(
-    raymarchDebug.observationAnchorMax,
+  renderDiagnostics.observationReferenceAnchor = readFiniteNumber(
+    raymarchDebug.observationReferenceAnchor,
   );
-  renderDiagnostics.observationSupportMax = readFiniteNumber(
-    raymarchDebug.observationSupportMax,
+  renderDiagnostics.observationReferenceSupport = readFiniteNumber(
+    raymarchDebug.observationReferenceSupport,
   );
-  renderDiagnostics.observedDensityFloorMax = readFiniteNumber(
-    raymarchDebug.observedDensityFloorMax,
+  renderDiagnostics.observationReferenceDensityFloor = readFiniteNumber(
+    raymarchDebug.observationReferenceDensityFloor,
   );
-  renderDiagnostics.observedContourSupportMax = readFiniteNumber(
-    raymarchDebug.observedContourSupportMax,
+  renderDiagnostics.observationReferenceContourSupport = readFiniteNumber(
+    raymarchDebug.observationReferenceContourSupport,
+  );
+  renderDiagnostics.observationSampledAnchor = readFiniteNumber(
+    raymarchDebug.observationSampledAnchor,
+  );
+  renderDiagnostics.observationSampledSignedAuthority = readFiniteNumber(
+    raymarchDebug.observationSampledSignedAuthority,
+  );
+  renderDiagnostics.observationSampledSupport = readFiniteNumber(
+    raymarchDebug.observationSampledSupport,
+  );
+  renderDiagnostics.observationSampledDensityFloor = readFiniteNumber(
+    raymarchDebug.observationSampledDensityFloor,
+  );
+  renderDiagnostics.observationSampledContourSupport = readFiniteNumber(
+    raymarchDebug.observationSampledContourSupport,
   );
   renderDiagnostics.effectiveFieldActive = Boolean(
     raymarchDebug.effectiveFieldActive ?? effectiveFieldCache?.active,
@@ -482,6 +508,19 @@ export function updateObservationTransferRenderDiagnostics(
         effectiveFieldCache?.effectiveFieldSupportDiagnosticSampleCount ??
         effectiveFieldDescriptor?.effectiveFieldSupportDiagnosticSampleCount,
     );
+  renderDiagnostics.effectiveFieldSupportDiagnosticSupportedSampleCount =
+    readFiniteNumber(
+      raymarchDebug.effectiveFieldSupportDiagnosticSupportedSampleCount ??
+        effectiveFieldCache
+          ?.effectiveFieldSupportDiagnosticSupportedSampleCount ??
+        effectiveFieldDescriptor
+          ?.effectiveFieldSupportDiagnosticSupportedSampleCount,
+    );
+  renderDiagnostics.effectiveFieldSupportDiagnosticCoverage = readFiniteNumber(
+    raymarchDebug.effectiveFieldSupportDiagnosticCoverage ??
+      effectiveFieldCache?.effectiveFieldSupportDiagnosticCoverage ??
+      effectiveFieldDescriptor?.effectiveFieldSupportDiagnosticCoverage,
+  );
   renderDiagnostics.effectiveFieldRebuildPending = Boolean(
     raymarchDebug.effectiveFieldRebuildPending ??
     effectiveFieldCache?.rebuildPending,
@@ -540,7 +579,8 @@ export function updateObservationTransferRenderDiagnostics(
   renderDiagnostics.effectiveFieldModeCount = readFiniteNumber(
     raymarchDebug.effectiveFieldModeCount ??
       effectiveFieldCache?.activeEffectiveFieldModeCount ??
-      runtimeState?.effectiveFieldModeCount,
+      effectiveFieldCache?.contributingEffectiveFieldModeCount ??
+      effectiveFieldDescriptor?.contributingEffectiveFieldModeCount,
   );
   renderDiagnostics.effectiveFieldAuthority = readFiniteNumber(
     raymarchDebug.effectiveFieldAuthority ??
@@ -569,33 +609,62 @@ export function updateObservationTransferRenderDiagnostics(
         effectiveFieldCache?.zeroAmplitudeSkippedModeCount ??
         effectiveFieldDescriptor?.zeroAmplitudeSkippedModeCount,
     );
-  renderDiagnostics.effectiveFieldContributingModalEnergy = readFiniteNumber(
-    raymarchDebug.effectiveFieldContributingModalEnergy ??
-      effectiveFieldCache?.contributingModalEnergy ??
-      effectiveFieldDescriptor?.contributingModalEnergy,
+  renderDiagnostics.effectiveFieldContributingRawModalEnergy = readFiniteNumber(
+    raymarchDebug.effectiveFieldContributingRawModalEnergy ??
+      effectiveFieldCache?.contributingRawModalEnergy ??
+      effectiveFieldDescriptor?.contributingRawModalEnergy,
   );
   renderDiagnostics.effectiveFieldBandwidthRejectedModeCount = readFiniteNumber(
     raymarchDebug.effectiveFieldBandwidthRejectedModeCount ??
       effectiveFieldCache?.bandwidthRejectedModeCount ??
       effectiveFieldDescriptor?.bandwidthRejectedModeCount,
   );
-  renderDiagnostics.effectiveFieldBandwidthRejectedModalEnergy =
+  renderDiagnostics.effectiveFieldBandwidthRejectedRawModalEnergy =
     readFiniteNumber(
-      raymarchDebug.effectiveFieldBandwidthRejectedModalEnergy ??
-        effectiveFieldCache?.bandwidthRejectedModalEnergy ??
-        effectiveFieldDescriptor?.bandwidthRejectedModalEnergy,
+      raymarchDebug.effectiveFieldBandwidthRejectedRawModalEnergy ??
+        effectiveFieldCache?.bandwidthRejectedRawModalEnergy ??
+        effectiveFieldDescriptor?.bandwidthRejectedRawModalEnergy,
     );
-  renderDiagnostics.effectiveFieldResolvedModalEnergyRatio = readFiniteNumber(
-    raymarchDebug.effectiveFieldResolvedModalEnergyRatio ??
-      effectiveFieldCache?.effectiveFieldResolvedModalEnergyRatio ??
-      effectiveFieldDescriptor?.effectiveFieldResolvedModalEnergyRatio,
-    EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS.effectiveFieldResolvedModalEnergyRatio,
+  renderDiagnostics.effectiveFieldContributingPhaseCurrentModalEnergy =
+    readFiniteNumber(
+      raymarchDebug.effectiveFieldContributingPhaseCurrentModalEnergy ??
+        effectiveFieldCache?.contributingPhaseCurrentModalEnergy ??
+        effectiveFieldDescriptor?.contributingPhaseCurrentModalEnergy,
+    );
+  renderDiagnostics.effectiveFieldBandwidthRejectedPhaseCurrentModalEnergy =
+    readFiniteNumber(
+      raymarchDebug.effectiveFieldBandwidthRejectedPhaseCurrentModalEnergy ??
+        effectiveFieldCache?.bandwidthRejectedPhaseCurrentModalEnergy ??
+        effectiveFieldDescriptor?.bandwidthRejectedPhaseCurrentModalEnergy,
+    );
+  renderDiagnostics.effectiveFieldResolvedRawModalEnergyRatio = readFiniteNumber(
+    raymarchDebug.effectiveFieldResolvedRawModalEnergyRatio ??
+      effectiveFieldCache?.effectiveFieldResolvedRawModalEnergyRatio ??
+      effectiveFieldDescriptor?.effectiveFieldResolvedRawModalEnergyRatio,
+    EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS
+      .effectiveFieldResolvedRawModalEnergyRatio,
   );
-  renderDiagnostics.effectiveFieldGradientEnvelope = readFiniteNumber(
-    raymarchDebug.effectiveFieldGradientEnvelope ??
-      effectiveFieldCache?.effectiveFieldGradientEnvelope ??
-      effectiveFieldDescriptor?.effectiveFieldGradientEnvelope,
+  renderDiagnostics.effectiveFieldResolvedPhaseCurrentModalEnergyRatio =
+    readFiniteNumber(
+      raymarchDebug.effectiveFieldResolvedPhaseCurrentModalEnergyRatio ??
+        effectiveFieldCache
+          ?.effectiveFieldResolvedPhaseCurrentModalEnergyRatio ??
+        effectiveFieldDescriptor
+          ?.effectiveFieldResolvedPhaseCurrentModalEnergyRatio,
+      EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS
+        .effectiveFieldResolvedPhaseCurrentModalEnergyRatio,
+    );
+  renderDiagnostics.effectiveFieldRawGradientEnvelope = readFiniteNumber(
+    raymarchDebug.effectiveFieldRawGradientEnvelope ??
+      effectiveFieldCache?.effectiveFieldRawGradientEnvelope ??
+      effectiveFieldDescriptor?.effectiveFieldRawGradientEnvelope,
   );
+  renderDiagnostics.effectiveFieldPhaseCurrentGradientEnvelope =
+    readFiniteNumber(
+      raymarchDebug.effectiveFieldPhaseCurrentGradientEnvelope ??
+        effectiveFieldCache?.effectiveFieldPhaseCurrentGradientEnvelope ??
+        effectiveFieldDescriptor?.effectiveFieldPhaseCurrentGradientEnvelope,
+    );
 
   return runtimeDiagnostics;
 }
@@ -739,14 +808,24 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
         runtimeDiagnostics?.render?.targetFrameTimeMs ?? 1000 / 60,
       activeModeCount: runtimeDiagnostics?.render?.activeModeCount ?? 0,
       observationEnergy: runtimeDiagnostics?.render?.observationEnergy ?? 0,
-      observationAnchorMax:
-        runtimeDiagnostics?.render?.observationAnchorMax ?? 0,
-      observationSupportMax:
-        runtimeDiagnostics?.render?.observationSupportMax ?? 0,
-      observedDensityFloorMax:
-        runtimeDiagnostics?.render?.observedDensityFloorMax ?? 0,
-      observedContourSupportMax:
-        runtimeDiagnostics?.render?.observedContourSupportMax ?? 0,
+      observationReferenceAnchor:
+        runtimeDiagnostics?.render?.observationReferenceAnchor ?? 0,
+      observationReferenceSupport:
+        runtimeDiagnostics?.render?.observationReferenceSupport ?? 0,
+      observationReferenceDensityFloor:
+        runtimeDiagnostics?.render?.observationReferenceDensityFloor ?? 0,
+      observationReferenceContourSupport:
+        runtimeDiagnostics?.render?.observationReferenceContourSupport ?? 0,
+      observationSampledAnchor:
+        runtimeDiagnostics?.render?.observationSampledAnchor ?? 0,
+      observationSampledSignedAuthority:
+        runtimeDiagnostics?.render?.observationSampledSignedAuthority ?? 0,
+      observationSampledSupport:
+        runtimeDiagnostics?.render?.observationSampledSupport ?? 0,
+      observationSampledDensityFloor:
+        runtimeDiagnostics?.render?.observationSampledDensityFloor ?? 0,
+      observationSampledContourSupport:
+        runtimeDiagnostics?.render?.observationSampledContourSupport ?? 0,
       ...snapshotEffectiveFieldRenderDiagnostics(runtimeDiagnostics?.render),
     },
     postProcess: {

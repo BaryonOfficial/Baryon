@@ -119,8 +119,17 @@ export function deriveRaymarchComplexityGovernor({
   featureFrame,
   requestedStepBudget,
   requestedRenderScale = 1,
+  qualityAdaptationEnabled = true,
 }) {
   const totalCapacity = Math.max(1, modalField?.capacity ?? 0);
+  const normalizedRequestedStepBudget = Math.max(
+    16,
+    Math.round(Number.isFinite(requestedStepBudget) ? requestedStepBudget : 16),
+  );
+  const normalizedRequestedRenderScale =
+    Number.isFinite(requestedRenderScale) && requestedRenderScale > 0
+      ? requestedRenderScale
+      : 1;
   const uploadedModeCount = modalField?.uploadedActiveCount ?? 0;
   const originalModeCount = modalField?.originalActiveCount ?? 0;
   const countLoad = clamp01(uploadedModeCount / totalCapacity);
@@ -142,25 +151,37 @@ export function deriveRaymarchComplexityGovernor({
     1,
     complexityScore,
   );
-  const proactiveStepBudget = Math.max(
-    16,
-    Math.round(requestedStepBudget * (1 - stepPressure * 0.28)),
-  );
-  const proactiveRenderScale = clamp(
-    requestedRenderScale * (1 - renderScalePressure * 0.16),
-    Math.min(requestedRenderScale, MIN_COMPLEXITY_RENDER_SCALE),
-    requestedRenderScale,
-  );
-  const bloomStrengthScale = 1 - bloomPressure * 0.22;
-  const bloomThresholdOffset = bloomPressure * 0.08;
-  const bloomAllowed = !(
-    complexityScore > 0.95 &&
-    proactiveStepBudget <= 32 &&
-    proactiveRenderScale <= 0.84
-  );
+  const qualityAdaptationActive = qualityAdaptationEnabled !== false;
+  const proactiveStepBudget = qualityAdaptationActive
+    ? Math.max(
+        16,
+        Math.round(normalizedRequestedStepBudget * (1 - stepPressure * 0.28)),
+      )
+    : normalizedRequestedStepBudget;
+  const proactiveRenderScale = qualityAdaptationActive
+    ? clamp(
+        normalizedRequestedRenderScale * (1 - renderScalePressure * 0.16),
+        Math.min(normalizedRequestedRenderScale, MIN_COMPLEXITY_RENDER_SCALE),
+        normalizedRequestedRenderScale,
+      )
+    : normalizedRequestedRenderScale;
+  const bloomStrengthScale = qualityAdaptationActive
+    ? 1 - bloomPressure * 0.22
+    : 1;
+  const bloomThresholdOffset = qualityAdaptationActive
+    ? bloomPressure * 0.08
+    : 0;
+  const bloomAllowed =
+    !qualityAdaptationActive ||
+    !(
+      complexityScore > 0.95 &&
+      proactiveStepBudget <= 32 &&
+      proactiveRenderScale <= 0.84
+    );
 
   return {
     complexityScore,
+    qualityAdaptationActive,
     excitation,
     originalModeCount,
     uploadedModeCount,
@@ -180,6 +201,7 @@ export function buildRaymarchPerformanceGovernor({
   featureFrame,
   requestedStepBudget,
   requestedRenderScale = 1,
+  qualityAdaptationEnabled = true,
   cavityGeometry = "rectangular",
 }) {
   const modalField = analyzeModalField({
@@ -193,6 +215,7 @@ export function buildRaymarchPerformanceGovernor({
     featureFrame,
     requestedStepBudget,
     requestedRenderScale,
+    qualityAdaptationEnabled,
   });
 }
 
@@ -201,6 +224,7 @@ export function deriveRaymarchPerformanceGovernor({
   featureFrame,
   requestedStepBudget,
   requestedRenderScale = 1,
+  qualityAdaptationEnabled = true,
 }) {
   return {
     ...deriveRaymarchComplexityGovernor({
@@ -208,6 +232,7 @@ export function deriveRaymarchPerformanceGovernor({
       featureFrame,
       requestedStepBudget,
       requestedRenderScale,
+      qualityAdaptationEnabled,
     }),
     modalField,
   };

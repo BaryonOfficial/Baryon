@@ -170,20 +170,20 @@ export function deriveObservationTransfer({
     safeDensity,
   );
   const physicalVisibleDensity = safeDensity * physicalVisibilityGate;
-  const ridgePhysicalAnchor = clamp01(ridgeAnchor);
+  const contourRidgeAnchor = clamp01(ridgeAnchor);
   const observationAnchor = clamp01(
-    clamp01(modalStructureAnchor) *
-      ridgePhysicalAnchor *
-      clamp01(signedRadianceAuthority),
+    clamp01(modalStructureAnchor) * clamp01(signedRadianceAuthority),
   );
   const observationEnergy = clamp01(
     Math.max(modalCoefficientEnergy, modalResponseEnergy),
   );
+  const observationResponse =
+    observationEnergy > 0 ? Math.sqrt(observationEnergy) : 0;
   const observationSupport = clamp01(
     1 -
       Math.exp(
         -observationParameters.transferGain *
-          observationEnergy *
+          observationResponse *
           observationAnchor,
       ),
   );
@@ -192,13 +192,15 @@ export function deriveObservationTransfer({
   const observedContourSupport =
     observationParameters.contourSupportScale *
     observationSupport *
-    clamp01(ridgeAnchor);
+    observationAnchor *
+    contourRidgeAnchor;
 
   return {
     physicalVisibilityGate,
     physicalVisibleDensity,
     observationAnchor,
     observationEnergy,
+    observationResponse,
     observationSupport,
     observedDensityFloor,
     observedContourSupport,

@@ -78,6 +78,8 @@ const LIVE_INPUT_NORMALIZATION_TARGET = 0.65;
 const LIVE_INPUT_NORMALIZATION_MAX_GAIN = 6.0;
 const LIVE_INPUT_NORMALIZATION_MIN_SIGNAL = 0.03;
 const LIVE_INPUT_NORMALIZATION_MAX_RAW_PEAK = 0.16;
+const LINE_FEED_RMS_REFERENCE = 0.055;
+const LINE_FEED_AVG_AMPLITUDE_REFERENCE = 48;
 const LIVE_INPUT_INVALID_BASELINE_PEAK = 0.94;
 const LIVE_INPUT_INVALID_COMPRESSED_BASELINE_PEAK = 0.82;
 const LIVE_INPUT_INVALID_COMPRESSED_BASELINE_RMS = 0.0085;
@@ -137,6 +139,10 @@ const LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_END = 0.45;
 const LOW_Q_SOURCE_COUPLED_VISIBILITY_SOURCE_START = 0.018;
 const LOW_Q_SOURCE_COUPLED_VISIBILITY_SOURCE_END = 0.12;
 const LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_FLOOR = 0.32;
+const LOW_Q_SOURCE_COUPLED_DIRECT_SNR_ENERGY_START = 0.18;
+const LOW_Q_SOURCE_COUPLED_DIRECT_SNR_ENERGY_END = 0.42;
+const LOW_Q_SOURCE_COUPLED_DIRECT_SNR_COHERENCE_START = 0.58;
+const LOW_Q_SOURCE_COUPLED_DIRECT_SNR_COHERENCE_END = 0.82;
 const LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_MAX = 0.18;
 const LOW_Q_SOURCE_COUPLED_TOPOLOGY_FLOOR_MAX = 0.18;
 const EMPTY_LOW_Q_SOURCE_COUPLED_VISIBILITY = Object.freeze({
@@ -529,7 +535,13 @@ function getSourceNormalization({
   analyserRms,
   spectralCentroid,
   bandState,
+  resolvedLiveInputAnalysisClass,
+  liveInputPolicy,
 }) {
+  const isLineFeedSource =
+    resolvedLiveInputAnalysisClass === LIVE_INPUT_ANALYSIS_CLASSES.lineFeed ||
+    liveInputPolicy === LIVE_INPUT_ANALYSIS_CLASSES.lineFeed;
+
   if (inputMode === "live") {
     const baselineRms = Math.max(0, bandState?.liveInputBaselineRms ?? 0);
     const baselineCentroid = Math.max(
@@ -549,6 +561,16 @@ function getSourceNormalization({
           ? spectralCentroid / Math.max(0.02, baselineCentroid * 1.8)
           : spectralCentroid / 0.25,
       ),
+    };
+  }
+
+  if (isLineFeedSource) {
+    return {
+      normalizedRms: clamp01(analyserRms / LINE_FEED_RMS_REFERENCE),
+      normalizedAmplitude: clamp01(
+        avgAmplitude / LINE_FEED_AVG_AMPLITUDE_REFERENCE,
+      ),
+      normalizedCentroid: clamp01(spectralCentroid * 1.25),
     };
   }
 
@@ -585,6 +607,9 @@ function deriveReusedAnalysisSourceAuthorityScale({
     analyserRms: preparedInputs.analyserRms,
     spectralCentroid: analysisResult?.spectralCentroid ?? 0,
     bandState: preparedInputs.bandState,
+    resolvedLiveInputAnalysisClass:
+      preparedInputs.resolvedLiveInputAnalysisClass,
+    liveInputPolicy: preparedInputs.liveInputPolicy,
   });
   const currentAuthority = deriveSourceEnergyAuthority(currentNormalization);
 
@@ -2575,37 +2600,51 @@ function deriveLowQSourceCoupledVisibilityAuthority({
   );
   const admittedLowQObservedMode =
     lowQSourceCoupledModeCount > 0 && lowQSourceCoupledEnergy > 0;
+  const observedSnrGate = smoothstep(
+    LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_START,
+    LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_END,
+    lowQObservedSnr,
+  );
+  const lowQEnergyGate = smoothstep(
+    LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_START,
+    LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_END,
+    lowQSourceCoupledEnergy,
+  );
+  const lowQCoherenceGate = smoothstep(
+    LOW_Q_SOURCE_COUPLED_VISIBILITY_COHERENCE_START,
+    LOW_Q_SOURCE_COUPLED_VISIBILITY_COHERENCE_END,
+    lowQCoherence,
+  );
+  const sourceSupportGate = smoothstep(
+    LOW_Q_SOURCE_COUPLED_VISIBILITY_SOURCE_START,
+    LOW_Q_SOURCE_COUPLED_VISIBILITY_SOURCE_END,
+    sourceSupport,
+  );
+  const directSourceSnrGate = admittedLowQObservedMode
+    ? sourceSupportGate *
+      smoothstep(
+        LOW_Q_SOURCE_COUPLED_DIRECT_SNR_ENERGY_START,
+        LOW_Q_SOURCE_COUPLED_DIRECT_SNR_ENERGY_END,
+        lowQSourceCoupledEnergy,
+      ) *
+      smoothstep(
+        LOW_Q_SOURCE_COUPLED_DIRECT_SNR_COHERENCE_START,
+        LOW_Q_SOURCE_COUPLED_DIRECT_SNR_COHERENCE_END,
+        lowQCoherence,
+      )
+    : 0;
   const snrGate = admittedLowQObservedMode
     ? Math.max(
         LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_FLOOR,
-        smoothstep(
-          LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_START,
-          LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_END,
-          lowQObservedSnr,
-        ),
+        observedSnrGate,
+        directSourceSnrGate,
       )
-    : smoothstep(
-        LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_START,
-        LOW_Q_SOURCE_COUPLED_VISIBILITY_SNR_END,
-        lowQObservedSnr,
-      );
+    : observedSnrGate;
   const authority = clamp01(
-    smoothstep(
-      LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_START,
-      LOW_Q_SOURCE_COUPLED_VISIBILITY_ENERGY_END,
-      lowQSourceCoupledEnergy,
-    ) *
-      smoothstep(
-        LOW_Q_SOURCE_COUPLED_VISIBILITY_COHERENCE_START,
-        LOW_Q_SOURCE_COUPLED_VISIBILITY_COHERENCE_END,
-        lowQCoherence,
-      ) *
+    lowQEnergyGate *
+      lowQCoherenceGate *
       snrGate *
-      smoothstep(
-        LOW_Q_SOURCE_COUPLED_VISIBILITY_SOURCE_START,
-        LOW_Q_SOURCE_COUPLED_VISIBILITY_SOURCE_END,
-        sourceSupport,
-      ) *
+      sourceSupportGate *
       smoothstep(0, 2, activeSourceCoupledModeCount),
   );
 
@@ -4549,6 +4588,8 @@ export function updateAudioFeatureFastSignalState(preparedInputs) {
     analysisInputMode,
     avgAmplitude,
     bandState,
+    resolvedLiveInputAnalysisClass,
+    liveInputPolicy,
   } = preparedInputs;
   const effectiveFftState = resolveEffectiveFftState(preparedInputs);
   const fftMagnitudes = ensureAnalysisFftBuffer(
@@ -4570,6 +4611,8 @@ export function updateAudioFeatureFastSignalState(preparedInputs) {
     analyserRms,
     spectralCentroid: bandMetrics.spectralCentroid,
     bandState,
+    resolvedLiveInputAnalysisClass,
+    liveInputPolicy,
   });
 
   return {
@@ -5052,6 +5095,7 @@ export function composeAudioFeatureFrame({
     modalVisibilityEnergy,
     modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
+    lowQSourceCoupledVisibilityEnergy,
     lowQSourceCoupledVisibilityRejected,
   } = deriveCompositeSignals({
     inputMode: preparedInputs.analysisInputMode,
@@ -5246,12 +5290,18 @@ export function composeAudioFeatureFrame({
     (hasNoRenderSourceForcing(analysisResult) &&
       (analysisResult.usedDecay ||
         sourceModalCoefficientEnergy <= SOURCE_CUT_MODAL_FORCING_EPSILON));
+  const lineFeedSourceVisibility =
+    preparedInputs.resolvedLiveInputAnalysisClass ===
+      LIVE_INPUT_ANALYSIS_CLASSES.lineFeed ||
+    preparedInputs.liveInputPolicy === LIVE_INPUT_ANALYSIS_CLASSES.lineFeed;
   const observerAuthorizedActiveField =
     (analysisResult.activeModeCount ?? 0) > 0 &&
     !sourceCutModalForcing &&
     (preparedInputs.inputMode === "live" ||
       modalCoefficientEnergy > 0.02 ||
-      modalVisibilityEnergy > 0.005);
+      modalVisibilityEnergy > 0.005 ||
+      (lineFeedSourceVisibility &&
+        lowQSourceCoupledVisibilityEnergy > SOURCE_CUT_MODAL_FORCING_EPSILON));
   const fieldStateUsesDecay =
     analysisResult.usedDecay &&
     !observerAuthorizedActiveField &&

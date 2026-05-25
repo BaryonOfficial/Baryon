@@ -126,41 +126,16 @@ async function loadBuiltInPreset(page, name) {
 async function readCanvasLuminanceMetrics(page, artifactPath = null) {
   const canvas = page.locator("#root > div canvas").first();
   await expect(canvas).toBeVisible();
-  const box = await canvas.boundingBox();
-  if (!box) {
-    throw new Error("Visualizer canvas did not render a bounding box.");
-  }
-  const screenshot = await page.screenshot({
-    clip: {
-      x: box.x,
-      y: box.y,
-      width: box.width,
-      height: box.height,
-    },
-  });
-  if (artifactPath) {
-    await writeFile(artifactPath, screenshot);
-  }
-  const dataUrl = `data:image/png;base64,${Buffer.from(screenshot).toString(
-    "base64",
-  )}`;
-
-  return page.evaluate(async (src) => {
-    const image = new Image();
-    await new Promise((resolve, reject) => {
-      image.onload = resolve;
-      image.onerror = reject;
-      image.src = src;
-    });
+  const { dataUrl, metrics } = await canvas.evaluate((sourceCanvas) => {
     const scratch = document.createElement("canvas");
-    scratch.width = image.naturalWidth;
-    scratch.height = image.naturalHeight;
+    scratch.width = sourceCanvas.width;
+    scratch.height = sourceCanvas.height;
     const context = scratch.getContext("2d", { willReadFrequently: true });
     if (!context) {
       throw new Error("2D sampling context unavailable");
     }
 
-    context.drawImage(image, 0, 0);
+    context.drawImage(sourceCanvas, 0, 0);
     const { data, width, height } = context.getImageData(
       0,
       0,
@@ -291,7 +266,7 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
       luminance.filter((value) => value >= brightThreshold && value > 0.004)
         .length / luminance.length;
 
-    return {
+    const metrics = {
       p50,
       p98,
       nonblankRatio: nonblackCount / luminance.length,
@@ -309,7 +284,21 @@ async function readCanvasLuminanceMetrics(page, artifactPath = null) {
       brightLaneRatio,
       contrastRatio: p98 / Math.max(p50, 1e-4),
     };
-  }, dataUrl);
+
+    return {
+      dataUrl: scratch.toDataURL("image/png"),
+      metrics,
+    };
+  });
+
+  if (artifactPath) {
+    await writeFile(
+      artifactPath,
+      Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ""), "base64"),
+    );
+  }
+
+  return metrics;
 }
 
 function coefficientOfVariation(values) {

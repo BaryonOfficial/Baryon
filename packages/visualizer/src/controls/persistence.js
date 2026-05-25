@@ -106,6 +106,16 @@ function normalizeLegacySpectralLight(raw) {
   return next;
 }
 
+function normalizeLegacyRaymarchPresentation(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  const next = { ...raw };
+  delete next.contourSharpness;
+  return next;
+}
+
 /**
  * Serialize a control state object to a plain JSON-safe object.
  * Only live (non-debug) controls are included so that audit/dev settings
@@ -149,8 +159,10 @@ export function deserializeControls(raw, definitions) {
     definitions.map((d) => [d.key, d.defaultValue]),
   );
   const normalizedRaw = normalizeLegacySpectralLight(
-    normalizeLegacyLiveInputAnalysis(
-      normalizeLegacyPerformanceProfile(normalizeLegacyReactivity(raw)),
+    normalizeLegacyRaymarchPresentation(
+      normalizeLegacyLiveInputAnalysis(
+        normalizeLegacyPerformanceProfile(normalizeLegacyReactivity(raw)),
+      ),
     ),
   );
   if (

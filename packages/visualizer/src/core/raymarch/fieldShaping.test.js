@@ -10,24 +10,24 @@ import {
   BOUNDARY_CONTOUR_ACCENT_WEIGHT,
   BODY_DENSITY_MIX,
   BODY_DENSITY_GAIN,
+  BODY_EXCITATION_VISIBILITY_POWER,
   CAUSTIC_BODY_MIX_MAX,
   CAUSTIC_BROAD_CONTOUR_LEAK_MAX,
   CAUSTIC_COLOR_DENSITY_DELTA_MAX,
-  CAUSTIC_VISIBILITY_FLOOR,
   CANCELLATION_LUMINANCE_DROP_MIN,
   CONTOUR_BLEND,
+  EFFECTIVE_FIELD_CANCELLATION_SUPPRESSION_SCALE,
   EMISSION_ROLLOFF_MIX,
   HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
   HOT_CORE_END,
   HOT_CORE_START,
   HOT_CORE_CROWDING_THRESHOLD_LIFT,
   HOT_CORE_SURFACE_CROWDING_REDUCTION,
+  INCOHERENT_TREBLE_BODY_SUPPRESSION_MAX,
   LATCHED_FOG_BEAM_REDUCTION,
   LATCHED_FOG_BODY_REDUCTION,
   MODAL_CROWDING_BODY_COMPRESSION,
   OPTICAL_COLOR_DENSITY_DELTA_MAX,
-  OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX,
-  OPTICAL_LOW_FOCUS_BODY_RATIO_MAX,
   OPTICAL_RECTANGULAR_STARTUP_IMPORT_DELTA_MAX,
   STRUCTURE_AWARE_EMISSION_BODY_SUPPRESSION,
   STRUCTURE_AWARE_EMISSION_MIN_GAIN,
@@ -44,14 +44,18 @@ import {
   deriveHolographicColorMix,
   deriveHolographicFresnel,
   deriveCrowdedHighlightMix,
+  deriveEffectiveFieldCancellationSuppression,
   deriveHotCoreCrowding,
   deriveHotCoreMix,
+  derivePhotographicCymaticProbe,
   deriveHuePreservingHighlightTarget,
   deriveModalCrowdingDensity,
   deriveShellWeight,
   deriveStableContourAccent,
   deriveSignedInterferenceBodyAuthority,
   deriveSignedInterferenceRadianceAuthority,
+  deriveSpectralLightColorGate,
+  deriveSpectralLightProjectionWeight,
   deriveStructureAwareEmissionGain,
 } from "./fieldShaping.js";
 import { evaluateRaymarchSignedPotentialAtPoint } from "./fieldCache.js";
@@ -150,11 +154,9 @@ describe("field shaping", () => {
   it("documents hard optical measurement invariants without freezing tunable gains", () => {
     expect(OPTICAL_COLOR_DENSITY_DELTA_MAX).toBe(1e-6);
     expect(OPTICAL_RECTANGULAR_STARTUP_IMPORT_DELTA_MAX).toBe(0);
-    expect(OPTICAL_LOW_FOCUS_BODY_RATIO_MAX).toBeLessThan(
-      OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX,
-    );
-    expect(OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX).toBeLessThanOrEqual(
-      CAUSTIC_BODY_MIX_MAX,
+    expect(fieldShaping.OPTICAL_BODY_SUPPRESSION_MAX).toBeLessThan(1);
+    expect(fieldShaping.PHOTOGRAPHIC_DARK_BODY_RATIO).toBeLessThanOrEqual(
+      1 - fieldShaping.PHOTOGRAPHIC_BLACKFIELD_BODY_REDUCTION_MIN,
     );
   });
 
@@ -333,16 +335,178 @@ describe("field shaping", () => {
   it("does not let unsupported zero-field shell focus authorize caustics", () => {
     const unsupportedShell = fieldShaping.deriveCausticRidgeAuthority({
       contourCore: 1,
+      modalStructureSupport: 1,
       localGradientEvidence: 0,
       shellFocus: 1,
       edgeFade: 1,
       activeMask: 1,
       effectiveUnsignedSupport: 0,
-      signedRadianceAuthority: 0,
+      signedBodyAuthority: 0,
     });
 
     expect(unsupportedShell.causticFocusAuthority).toBe(0);
     expect(unsupportedShell.causticRidgeAuthority).toBe(0);
+  });
+
+  it("does not use presentation contour core as physical caustic support", () => {
+    const unsupportedContour = fieldShaping.deriveCausticRidgeAuthority({
+      contourCore: 1,
+      localGradientEvidence: 1,
+      shellFocus: 1,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 1,
+      signedBodyAuthority: 1,
+    });
+
+    expect(unsupportedContour.causticFocusAuthority).toBe(0);
+    expect(unsupportedContour.causticRidgeAuthority).toBe(0);
+  });
+
+  it("derives support-gated effective-field cancellation suppression", () => {
+    const fullCancellation = deriveEffectiveFieldCancellationSuppression({
+      effectiveCancellationRatio: 1,
+      effectiveUnsignedSupport: 1,
+    });
+    const noSupportCancellation = deriveEffectiveFieldCancellationSuppression({
+      effectiveCancellationRatio: 1,
+      effectiveUnsignedSupport: 0,
+    });
+    const partialCancellation = deriveEffectiveFieldCancellationSuppression({
+      effectiveCancellationRatio: 0.5,
+      effectiveUnsignedSupport: 0.4,
+    });
+
+    expect(EFFECTIVE_FIELD_CANCELLATION_SUPPRESSION_SCALE).toBeCloseTo(0.85);
+    expect(fullCancellation).toBeCloseTo(0.15, 6);
+    expect(noSupportCancellation).toBe(1);
+    expect(partialCancellation).toBeCloseTo(1 - 0.5 * 0.4 * 0.85, 6);
+  });
+
+  it("uses effective-field cancellation metadata as caustic radiance authority", () => {
+    const reinforcing = deriveCausticMaterialTransferProbe({
+      ...REINFORCED_CAUSTIC_TONE,
+      effectiveUnsignedSupport: 1,
+      effectiveCancellationRatio: 0,
+    });
+    const canceled = deriveCausticMaterialTransferProbe({
+      ...REINFORCED_CAUSTIC_TONE,
+      effectiveUnsignedSupport: 1,
+      effectiveCancellationRatio: 1,
+    });
+    const unsupportedCancellation = deriveCausticMaterialTransferProbe({
+      ...REINFORCED_CAUSTIC_TONE,
+      effectiveUnsignedSupport: 0,
+      effectiveCancellationRatio: 1,
+    });
+
+    expect(canceled.cancellationSuppression).toBeCloseTo(0.15, 6);
+    expect(canceled.signedRadianceAuthority).toBeCloseTo(
+      canceled.cancellationSuppression,
+      6,
+    );
+    expect(canceled.causticVisibility).toBeLessThan(
+      reinforcing.causticVisibility * 0.2,
+    );
+    expect(canceled.observationAnchor).toBeLessThan(
+      reinforcing.observationAnchor * 0.2,
+    );
+    expect(unsupportedCancellation.cancellationSuppression).toBe(1);
+  });
+
+  it("gates Spectral Light projection by signed support or caustic visibility", () => {
+    const unsupportedColorGate = deriveSpectralLightColorGate({
+      localFieldSupportAuthority: 0,
+      signedRadianceAuthority: 1,
+      causticVisibility: 0,
+    });
+    const signedSupportColorGate = deriveSpectralLightColorGate({
+      localFieldSupportAuthority: 0.6,
+      signedRadianceAuthority: 0.5,
+      causticVisibility: 0.1,
+    });
+    const causticColorGate = deriveSpectralLightColorGate({
+      localFieldSupportAuthority: 0.1,
+      signedRadianceAuthority: 0.25,
+      causticVisibility: 0.42,
+    });
+
+    expect(unsupportedColorGate).toBe(0);
+    expect(signedSupportColorGate).toBeCloseTo(0.3);
+    expect(causticColorGate).toBeCloseTo(0.42);
+    expect(
+      deriveSpectralLightProjectionWeight({
+        spectralMix: 1,
+        spectralLightPresence: 1,
+        colorGate: unsupportedColorGate,
+      }),
+    ).toBe(0);
+    expect(
+      deriveSpectralLightProjectionWeight({
+        spectralMix: 0.8,
+        spectralLightPresence: 0.75,
+        colorGate: causticColorGate,
+      }),
+    ).toBeCloseTo(0.8 * 0.75 * causticColorGate);
+  });
+
+  it("does not let uncanceled radiance masquerade as shell field support", () => {
+    const radianceOnlyShell = fieldShaping.deriveCausticRidgeAuthority({
+      contourCore: 1,
+      modalStructureSupport: 1,
+      localGradientEvidence: 0,
+      shellFocus: 1,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 1,
+      signedRadianceAuthority: 1,
+      signedBodyAuthority: 0,
+    });
+    const bodySupportedShell = fieldShaping.deriveCausticRidgeAuthority({
+      contourCore: 1,
+      modalStructureSupport: 1,
+      localGradientEvidence: 0,
+      shellFocus: 1,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 1,
+      signedRadianceAuthority: 0,
+      signedBodyAuthority: 0.35,
+    });
+
+    expect(radianceOnlyShell.causticFocusAuthority).toBe(0);
+    expect(radianceOnlyShell.causticRidgeAuthority).toBe(0);
+    expect(bodySupportedShell.causticFocusAuthority).toBeGreaterThan(0);
+    expect(bodySupportedShell.causticRidgeAuthority).toBeGreaterThan(0);
+  });
+
+  it("does not let unsupported gradient contours authorize caustics", () => {
+    const unsupportedGradientContour =
+      fieldShaping.deriveCausticRidgeAuthority({
+        contourCore: 1,
+        modalStructureSupport: 1,
+        localGradientEvidence: 1,
+        shellFocus: 0,
+        edgeFade: 1,
+        activeMask: 1,
+        effectiveUnsignedSupport: 0,
+        signedBodyAuthority: 1,
+      });
+    const supportedGradientContour = fieldShaping.deriveCausticRidgeAuthority({
+      contourCore: 1,
+      modalStructureSupport: 1,
+      localGradientEvidence: 1,
+      shellFocus: 0,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 0.2,
+      signedBodyAuthority: 1,
+    });
+
+    expect(unsupportedGradientContour.causticFocusAuthority).toBe(0);
+    expect(unsupportedGradientContour.causticRidgeAuthority).toBe(0);
+    expect(supportedGradientContour.causticFocusAuthority).toBeGreaterThan(0);
+    expect(supportedGradientContour.causticRidgeAuthority).toBeGreaterThan(0);
   });
 
   it("derives local gradient evidence from direct and cached field representations", () => {
@@ -376,12 +540,13 @@ describe("field shaping", () => {
   it("preserves supported nodal caustics when field structure exists", () => {
     const supportedNode = fieldShaping.deriveCausticRidgeAuthority({
       contourCore: 1,
+      modalStructureSupport: 1,
       localGradientEvidence: 0.62,
       shellFocus: 0.9,
       edgeFade: 1,
       activeMask: 1,
       effectiveUnsignedSupport: 0.2,
-      signedRadianceAuthority: 1,
+      signedBodyAuthority: 1,
     });
 
     expect(supportedNode.causticFocusAuthority).toBeGreaterThan(0);
@@ -391,11 +556,12 @@ describe("field shaping", () => {
   it("does not recreate old structure-window discontinuities around legacy thresholds", () => {
     const common = {
       contourCore: 1,
-      shellFocus: 0.9,
+      modalStructureSupport: 1,
+      shellFocus: 0.2,
       edgeFade: 1,
       activeMask: 1,
       effectiveUnsignedSupport: 0.4,
-      signedRadianceAuthority: 1,
+      signedBodyAuthority: 1,
     };
     const belowOldMin = fieldShaping.deriveCausticRidgeAuthority({
       ...common,
@@ -424,22 +590,23 @@ describe("field shaping", () => {
   it("does not let support-only shell focus become caustic authority", () => {
     const supportOnlyShell = fieldShaping.deriveCausticRidgeAuthority({
       contourCore: 1,
+      modalStructureSupport: 1,
       localGradientEvidence: 0,
       shellFocus: 1,
       edgeFade: 1,
       activeMask: 1,
       effectiveUnsignedSupport: 0.2,
-      signedRadianceAuthority: 0,
+      signedBodyAuthority: 0,
     });
 
     expect(supportOnlyShell.causticFocusAuthority).toBe(0);
     expect(supportOnlyShell.causticRidgeAuthority).toBe(0);
   });
 
-  it("caps low-focus body contribution against signed caustic support", () => {
+  it("attenuates low-focus body contribution without caustic-density ownership", () => {
     const broadSupport = deriveLaserCymaticOpticalProbe({
       ...BROAD_CONTOUR_LEAK,
-      signedCausticDensity: 0.12,
+      signedCausticDensity: 0,
       bodyContribution: 0.1,
       normalDotMeasurement: 0.86,
       gradientPresence: 0.06,
@@ -447,13 +614,75 @@ describe("field shaping", () => {
     });
 
     expect(broadSupport.opticalNegativeSpaceGate).toBeLessThan(0.1);
-    expect(
-      broadSupport.opticalBodyContribution /
-        Math.max(broadSupport.signedCausticDensity, 1e-4),
-    ).toBeLessThanOrEqual(OPTICAL_LOW_FOCUS_BODY_RATIO_MAX);
+    expect(broadSupport.signedCausticDensity).toBe(0);
+    expect(broadSupport.opticalBodyContribution).toBeGreaterThan(0);
     expect(broadSupport.opticalBodyContribution).toBeLessThan(
       broadSupport.bodyContribution,
     );
+  });
+
+  it("does not let signed cancellation own the optical negative-space aperture", () => {
+    const common = {
+      fieldAbs: 0.08,
+      threshold: 0.15,
+      contourCore: 0.65,
+      modalStructureSupport: 0.65,
+      broadBand: 1,
+      localGradientEvidence: 0.65,
+      shellFocus: 0.65,
+      shellWeight: 0.62,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 1,
+      excitationVisibility: 1,
+      normalDotMeasurement: 0.15,
+      gradientPresence: 0.65,
+      ridgeConcentration: 0.65,
+      colorWeight: 0.4,
+    };
+    const reinforcing = deriveLaserCymaticOpticalProbe({
+      ...common,
+      signedRadianceAuthority: 1,
+    });
+    const halfSigned = deriveLaserCymaticOpticalProbe({
+      ...common,
+      signedRadianceAuthority: 0.5,
+    });
+    const canceled = deriveLaserCymaticOpticalProbe({
+      ...common,
+      signedRadianceAuthority: 0.18,
+    });
+    const reinforcingAttenuation =
+      reinforcing.opticalBodyContribution / reinforcing.bodyContribution;
+    const halfSignedAttenuation =
+      halfSigned.opticalBodyContribution / halfSigned.bodyContribution;
+    const canceledAttenuation =
+      canceled.opticalBodyContribution / canceled.bodyContribution;
+
+    expect(reinforcing.opticalNegativeSpaceGate).toBeGreaterThan(0.45);
+    expect(reinforcing.opticalNegativeSpaceGate).toBeLessThan(0.7);
+    expect(halfSigned.causticRidgeAuthority).toBeCloseTo(
+      reinforcing.causticRidgeAuthority,
+    );
+    expect(canceled.causticRidgeAuthority).toBeCloseTo(
+      reinforcing.causticRidgeAuthority,
+    );
+    expect(halfSigned.opticalNegativeSpaceGate).toBeCloseTo(
+      reinforcing.opticalNegativeSpaceGate,
+    );
+    expect(canceled.opticalNegativeSpaceGate).toBeCloseTo(
+      reinforcing.opticalNegativeSpaceGate,
+    );
+    expect(halfSignedAttenuation).toBeCloseTo(reinforcingAttenuation);
+    expect(canceledAttenuation).toBeCloseTo(reinforcingAttenuation);
+    expect(
+      halfSigned.opticalBodyContribution /
+        reinforcing.opticalBodyContribution,
+    ).toBeCloseTo(0.5, 6);
+    expect(
+      canceled.opticalBodyContribution /
+        reinforcing.opticalBodyContribution,
+    ).toBeCloseTo(0.18, 6);
   });
 
   it("preserves signed cancellation in optical radiance without double gating", () => {
@@ -529,6 +758,32 @@ describe("field shaping", () => {
     expect(shellOnly.peakWhiteMix).toBeLessThan(0.01);
   });
 
+  it("does not let gradient confidence author photographic aperture support", () => {
+    const gradientOnlyAperture = fieldShaping.derivePhotographicShellAuthority({
+      radialDistance: 0.02,
+      shellFocus: 0,
+      shellWeight: 0,
+      contourCore: 0,
+      localGradientEvidence: 1,
+      edgeFade: 1,
+      activeMask: 1,
+    });
+    const contourAperture = fieldShaping.derivePhotographicShellAuthority({
+      radialDistance: 0.02,
+      shellFocus: 0,
+      shellWeight: 0,
+      contourCore: 0.6,
+      localGradientEvidence: 0,
+      edgeFade: 1,
+      activeMask: 1,
+    });
+
+    expect(gradientOnlyAperture.apertureAuthority).toBe(0);
+    expect(gradientOnlyAperture.photographicShellAuthority).toBe(0);
+    expect(contourAperture.apertureAuthority).toBeGreaterThan(0);
+    expect(contourAperture.photographicShellAuthority).toBeGreaterThan(0);
+  });
+
   it("makes focused photographic ridges dominate body-heavy low-focus support", () => {
     expect(fieldShaping.derivePhotographicCymaticProbe).toBeTypeOf("function");
 
@@ -596,6 +851,67 @@ describe("field shaping", () => {
     );
   });
 
+  it("does not let signed cancellation own the photographic blackfield aperture", () => {
+    expect(fieldShaping.derivePhotographicCymaticProbe).toBeTypeOf("function");
+
+    const common = {
+      fieldAbs: 0.08,
+      threshold: 0.15,
+      contourCore: 0.55,
+      modalStructureSupport: 0.55,
+      broadBand: 1,
+      localGradientEvidence: 0.55,
+      shellFocus: 0.55,
+      shellWeight: 0.62,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 1,
+      excitationVisibility: 1,
+      radialDistance: 0.54,
+      normalDotMeasurement: 0.15,
+      gradientPresence: 0.55,
+      ridgeConcentration: 0.55,
+      colorWeight: 0.4,
+    };
+    const reinforcing = fieldShaping.derivePhotographicCymaticProbe({
+      ...common,
+      signedRadianceAuthority: 1,
+    });
+    const halfSigned = fieldShaping.derivePhotographicCymaticProbe({
+      ...common,
+      signedRadianceAuthority: 0.5,
+    });
+    const canceled = fieldShaping.derivePhotographicCymaticProbe({
+      ...common,
+      signedRadianceAuthority: 0.18,
+    });
+
+    expect(reinforcing.blackfieldGate).toBeGreaterThan(0.2);
+    expect(reinforcing.blackfieldGate).toBeLessThan(0.5);
+    expect(halfSigned.causticRidgeAuthority).toBeCloseTo(
+      reinforcing.causticRidgeAuthority,
+    );
+    expect(canceled.causticRidgeAuthority).toBeCloseTo(
+      reinforcing.causticRidgeAuthority,
+    );
+    expect(halfSigned.blackfieldGate).toBeCloseTo(reinforcing.blackfieldGate);
+    expect(canceled.blackfieldGate).toBeCloseTo(reinforcing.blackfieldGate);
+    expect(halfSigned.photographicRadianceScale).toBeCloseTo(
+      reinforcing.photographicRadianceScale,
+    );
+    expect(canceled.photographicRadianceScale).toBeCloseTo(
+      reinforcing.photographicRadianceScale,
+    );
+    expect(
+      halfSigned.photographicLaserCausticRadiance /
+        reinforcing.photographicLaserCausticRadiance,
+    ).toBeCloseTo(0.5, 6);
+    expect(
+      canceled.photographicLaserCausticRadiance /
+        reinforcing.photographicLaserCausticRadiance,
+    ).toBeCloseTo(0.18, 6);
+  });
+
   it("applies a blackfield gate that suppresses low-focus haze", () => {
     expect(fieldShaping.derivePhotographicCymaticProbe).toBeTypeOf("function");
     expect(fieldShaping.PHOTOGRAPHIC_BLACKFIELD_BODY_REDUCTION_MIN).toBe(0.6);
@@ -660,6 +976,107 @@ describe("field shaping", () => {
     ).toBeLessThan(fieldShaping.PHOTOGRAPHIC_COLOR_DENSITY_DELTA_MAX);
   });
 
+  it("uses resolved signed authority once for photographic color and white peaks", () => {
+    expect(fieldShaping.derivePhotographicCymaticProbe).toBeTypeOf("function");
+
+    const common = {
+      fieldAbs: 0.08,
+      threshold: 0.15,
+      contourCore: 0.75,
+      broadBand: 1,
+      localGradientEvidence: 0.75,
+      shellFocus: 0.75,
+      shellWeight: 0.7,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 1,
+      excitationVisibility: 1,
+      radialDistance: 0.54,
+      normalDotMeasurement: 0.02,
+      gradientPresence: 0.94,
+      ridgeConcentration: 0.92,
+      colorWeight: 1,
+      signedRadianceAuthority: 1,
+    };
+    const reinforcing = fieldShaping.derivePhotographicCymaticProbe({
+      ...common,
+      effectiveCancellationRatio: 0,
+    });
+    const canceled = fieldShaping.derivePhotographicCymaticProbe({
+      ...common,
+      effectiveCancellationRatio: 1,
+    });
+
+    expect(canceled.signedRadianceAuthority).toBeCloseTo(
+      1 - EFFECTIVE_FIELD_CANCELLATION_SUPPRESSION_SCALE,
+    );
+    expect(canceled.photographicFocus).toBeCloseTo(
+      reinforcing.photographicFocus,
+    );
+    expect(canceled.photographicSpectralWeight).toBeCloseTo(
+      reinforcing.photographicSpectralWeight *
+        canceled.signedRadianceAuthority,
+      6,
+    );
+    expect(canceled.peakWhiteSignal).toBeCloseTo(
+      reinforcing.peakWhiteSignal * canceled.signedRadianceAuthority,
+      6,
+    );
+    expect(canceled.peakWhiteSignal).toBeGreaterThan(
+      reinforcing.peakWhiteSignal *
+        canceled.signedRadianceAuthority *
+        canceled.signedRadianceAuthority,
+    );
+  });
+
+  it("keeps photographic fringe tied to ridge aperture instead of signed damping", () => {
+    expect(fieldShaping.derivePhotographicCymaticProbe).toBeTypeOf("function");
+
+    const common = {
+      fieldAbs: 0.08,
+      threshold: 0.15,
+      contourCore: 0.75,
+      broadBand: 1,
+      localGradientEvidence: 0.75,
+      shellFocus: 0.75,
+      shellWeight: 0.7,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 1,
+      excitationVisibility: 1,
+      radialDistance: 0.54,
+      normalDotMeasurement: 0.02,
+      gradientPresence: 0.94,
+      ridgeConcentration: 0.92,
+      colorWeight: 1,
+    };
+    const reinforcing = fieldShaping.derivePhotographicCymaticProbe({
+      ...common,
+      signedRadianceAuthority: 1,
+    });
+    const canceled = fieldShaping.derivePhotographicCymaticProbe({
+      ...common,
+      signedRadianceAuthority: 0.18,
+    });
+
+    expect(canceled.causticRidgeAuthority).toBeCloseTo(
+      reinforcing.causticRidgeAuthority,
+    );
+    expect(canceled.causticVisibility).toBeCloseTo(
+      reinforcing.causticVisibility * canceled.signedRadianceAuthority,
+    );
+    expect(canceled.physicalDensity / reinforcing.physicalDensity).toBeCloseTo(
+      canceled.signedRadianceAuthority,
+      6,
+    );
+    expect(reinforcing.photographicFringeWeight).toBeGreaterThan(
+      reinforcing.opticalFringeWeight,
+    );
+    expect(canceled.photographicFringeWeight).toBeCloseTo(
+      reinforcing.photographicFringeWeight,
+    );
+  });
+
   it("keeps photographic white peaks local to focused caustic ridges", () => {
     expect(fieldShaping.derivePhotographicCymaticProbe).toBeTypeOf("function");
 
@@ -692,9 +1109,8 @@ describe("field shaping", () => {
   it("promotes reinforced caustic tone structure above body fill", () => {
     const probe = deriveCausticMaterialTransferProbe(REINFORCED_CAUSTIC_TONE);
 
-    expect(CAUSTIC_VISIBILITY_FLOOR).toBeCloseTo(0.08);
     expect(probe.causticDensity).toBeGreaterThan(probe.bodyDensity * 4);
-    expect(probe.localDensity).toBeGreaterThanOrEqual(CAUSTIC_VISIBILITY_FLOOR);
+    expect(probe.localDensity).toBeGreaterThan(0);
     expect(probe.causticRidgeAuthority).toBeGreaterThan(0);
   });
 
@@ -714,6 +1130,171 @@ describe("field shaping", () => {
     expect(canceled.localDensity).toBeLessThan(reinforcing.localDensity * 0.35);
   });
 
+  it("gates broad body mass by signed visible authority", () => {
+    const common = {
+      fieldAbs: 0.08,
+      threshold: 0.15,
+      contourCore: 1,
+      modalStructureSupport: 1,
+      broadBand: 1,
+      localGradientEvidence: 1,
+      shellFocus: 0,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 1,
+      excitationVisibility: 1,
+      shellWeight: 1,
+    };
+    const reinforcing = deriveCausticMaterialTransferProbe({
+      ...common,
+      signedRadianceAuthority: 1,
+    });
+    const canceling = deriveCausticMaterialTransferProbe({
+      ...common,
+      signedRadianceAuthority: 0.18,
+    });
+
+    expect(reinforcing.bodyDensity).toBeGreaterThan(0);
+    expect(canceling.causticRidgeAuthority).toBeCloseTo(
+      reinforcing.causticRidgeAuthority,
+    );
+    expect(canceling.bodyDensity).toBeLessThan(
+      reinforcing.bodyDensity * 0.25,
+    );
+    expect(canceling.localDensity).toBeLessThan(
+      reinforcing.localDensity * 0.35,
+    );
+  });
+
+  it("keeps caustic ridge visibility independent from source excitation", () => {
+    const common = {
+      fieldAbs: 0.08,
+      threshold: 0.15,
+      contourCore: 1,
+      modalStructureSupport: 1,
+      broadBand: 1,
+      localGradientEvidence: 1,
+      shellFocus: 0,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 1,
+      signedRadianceAuthority: 1,
+      shellWeight: 1,
+    };
+    const excited = deriveCausticMaterialTransferProbe({
+      ...common,
+      excitationVisibility: 1,
+    });
+    const underExcited = deriveCausticMaterialTransferProbe({
+      ...common,
+      excitationVisibility: 0.12,
+    });
+    const excitedBodyRgb = compressDisplayRadiance(
+      [0.72, 0.88, 1].map((channel) => channel * excited.bodyDensity),
+    );
+    const underExcitedBodyRgb = compressDisplayRadiance(
+      [0.72, 0.88, 1].map((channel) => channel * underExcited.bodyDensity),
+    );
+
+    expect(underExcited.causticRidgeAuthority).toBeCloseTo(
+      excited.causticRidgeAuthority,
+    );
+    expect(underExcited.causticVisibility).toBeCloseTo(
+      excited.causticVisibility,
+    );
+    expect(underExcited.causticDensity).toBeCloseTo(excited.causticDensity);
+    expect(underExcited.bodyDensity).toBeLessThan(excited.bodyDensity * 0.15);
+    expect(computeLinearLuminance(underExcitedBodyRgb)).toBeLessThan(
+      computeLinearLuminance(excitedBodyRgb) * 0.18,
+    );
+  });
+
+  it("preserves coherent caustic ridge visibility when excitation is low", () => {
+    const excited = deriveCausticMaterialTransferProbe({
+      fieldAbs: 0.08,
+      threshold: 0.15,
+      contourCore: 1,
+      modalStructureSupport: 1,
+      broadBand: 1,
+      localGradientEvidence: 1,
+      shellFocus: 0,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 1,
+      signedRadianceAuthority: 1,
+      shellWeight: 1,
+      excitationVisibility: 1,
+    });
+    const quietCoherent = deriveCausticMaterialTransferProbe({
+      fieldAbs: 0.08,
+      threshold: 0.15,
+      contourCore: 1,
+      modalStructureSupport: 1,
+      broadBand: 1,
+      localGradientEvidence: 1,
+      shellFocus: 0,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 1,
+      signedRadianceAuthority: 1,
+      shellWeight: 1,
+      excitationVisibility: 0,
+    });
+
+    expect(quietCoherent.causticRidgeAuthority).toBeGreaterThan(0.9);
+    expect(quietCoherent.causticVisibility).toBeCloseTo(
+      excited.causticVisibility,
+    );
+    expect(quietCoherent.bodyDensity).toBe(0);
+    expect(quietCoherent.causticDensity).toBeCloseTo(excited.causticDensity);
+  });
+
+  it("reduces caustic body mass for incoherent treble noise", () => {
+    const common = {
+      fieldAbs: 0.08,
+      threshold: 0.15,
+      contourCore: 1,
+      broadBand: 1,
+      localGradientEvidence: 1,
+      shellFocus: 0,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 1,
+      signedRadianceAuthority: 1,
+      excitationVisibility: 1,
+      shellWeight: 1,
+      trebleBroadbandEnergy: 1,
+    };
+    const tonalTreble = deriveCausticMaterialTransferProbe({
+      ...common,
+      modeCoherence: 1,
+    });
+    const incoherentTreble = deriveCausticMaterialTransferProbe({
+      ...common,
+      modeCoherence: 0,
+    });
+    const tonalBodyRgb = compressDisplayRadiance(
+      [0.72, 0.88, 1].map((channel) => channel * tonalTreble.bodyDensity),
+    );
+    const incoherentBodyRgb = compressDisplayRadiance(
+      [0.72, 0.88, 1].map((channel) => channel * incoherentTreble.bodyDensity),
+    );
+
+    expect(INCOHERENT_TREBLE_BODY_SUPPRESSION_MAX).toBeCloseTo(0.45);
+    expect(incoherentTreble.causticRidgeAuthority).toBeCloseTo(
+      tonalTreble.causticRidgeAuthority,
+    );
+    expect(incoherentTreble.causticVisibility).toBeCloseTo(
+      tonalTreble.causticVisibility,
+    );
+    expect(incoherentTreble.bodyDensity).toBeLessThan(
+      tonalTreble.bodyDensity * 0.6,
+    );
+    expect(computeLinearLuminance(incoherentBodyRgb)).toBeLessThan(
+      computeLinearLuminance(tonalBodyRgb) * 0.65,
+    );
+  });
+
   it("does not turn broad contour support into caustic mass", () => {
     const leak = deriveCausticMaterialTransferProbe(BROAD_CONTOUR_LEAK);
 
@@ -727,12 +1308,59 @@ describe("field shaping", () => {
     }
   });
 
+  it("keeps physical node support independent of presentation sharpness", () => {
+    const common = {
+      fieldAbs: 0.05,
+      threshold: 0.1,
+      broadBand: 0.72,
+      localGradientEvidence: 0.64,
+      opticalConvergenceAuthority: 0.42,
+      shellFocus: 0.7,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 0.58,
+      effectiveCancellationRatio: 0.5,
+      excitationVisibility: 1,
+      shellWeight: 0.72,
+      signedRadianceAuthority: 1,
+    };
+    const softContour = deriveContourShape({
+      fieldAbs: common.fieldAbs,
+      threshold: common.threshold,
+      contourSharpness: 2,
+      transientEnergy: 0,
+    });
+    const sharpContour = deriveContourShape({
+      fieldAbs: common.fieldAbs,
+      threshold: common.threshold,
+      contourSharpness: 8,
+      transientEnergy: 0,
+    });
+    const soft = derivePhotographicCymaticProbe({
+      ...common,
+      contourCore: softContour.contourCore,
+      modalStructureSupport: softContour.nodeBand,
+    });
+    const sharp = derivePhotographicCymaticProbe({
+      ...common,
+      contourCore: sharpContour.contourCore,
+      modalStructureSupport: sharpContour.nodeBand,
+    });
+
+    expect(sharpContour.contourCore).toBeLessThan(
+      softContour.contourCore * 0.03,
+    );
+    expect(sharp.causticRidgeAuthority).toBeGreaterThan(
+      soft.causticRidgeAuthority * 0.9,
+    );
+    expect(sharp.visibleDensity ?? sharp.localDensity).toBeGreaterThan(0);
+    expect(sharp.localDensity).toBeGreaterThan(soft.localDensity * 0.7);
+  });
+
   it("keeps dense polyphonic material caustic-led instead of body-led", () => {
     const probe = deriveCausticMaterialTransferProbe(DENSE_POLYPHONIC_PROBE);
 
-    expect(probe.causticVisibility).toBeGreaterThanOrEqual(
-      CAUSTIC_VISIBILITY_FLOOR * 0.55,
-    );
+    expect(probe.causticVisibility).toBeGreaterThan(0);
     expect(probe.bodyContribution / probe.localDensity).toBeLessThan(
       CAUSTIC_BODY_MIX_MAX,
     );
@@ -830,6 +1458,120 @@ describe("field shaping", () => {
     });
 
     expect(body.bodyDensity).toBe(0);
+  });
+
+  it("gates body density by signed visible authority", () => {
+    const common = {
+      fieldAbs: 0.08,
+      threshold: 0.15,
+      edgeFade: 0.9,
+      activeMask: 1,
+      radialDistance: 0.45,
+      boundaryMask: 0.05,
+    };
+    const reinforcing = deriveBodyDensity({
+      ...common,
+      signedRadianceAuthority: 1,
+    });
+    const canceling = deriveBodyDensity({
+      ...common,
+      signedRadianceAuthority: 0.18,
+    });
+    const reinforcingRgb = compressDisplayRadiance(
+      [0.72, 0.88, 1].map((channel) => channel * reinforcing.bodyDensity),
+    );
+    const cancelingRgb = compressDisplayRadiance(
+      [0.72, 0.88, 1].map((channel) => channel * canceling.bodyDensity),
+    );
+
+    expect(reinforcing.signedBodyAuthority).toBeCloseTo(
+      canceling.signedBodyAuthority,
+    );
+    expect(canceling.bodyDensity).toBeLessThan(
+      reinforcing.bodyDensity * 0.25,
+    );
+    expect(computeLinearLuminance(cancelingRgb)).toBeLessThan(
+      computeLinearLuminance(reinforcingRgb) * 0.3,
+    );
+  });
+
+  it("gates standalone body density by source excitation visibility", () => {
+    const common = {
+      fieldAbs: 0.08,
+      threshold: 0.15,
+      edgeFade: 0.9,
+      activeMask: 1,
+      radialDistance: 0.45,
+      boundaryMask: 0.05,
+      signedRadianceAuthority: 1,
+    };
+    const excited = deriveBodyDensity({
+      ...common,
+      excitationVisibility: 1,
+    });
+    const underExcited = deriveBodyDensity({
+      ...common,
+      excitationVisibility: 0.12,
+    });
+    const excitedRgb = compressDisplayRadiance(
+      [0.72, 0.88, 1].map((channel) => channel * excited.bodyDensity),
+    );
+    const underExcitedRgb = compressDisplayRadiance(
+      [0.72, 0.88, 1].map((channel) => channel * underExcited.bodyDensity),
+    );
+
+    expect(BODY_EXCITATION_VISIBILITY_POWER).toBeCloseTo(1.2);
+    expect(underExcited.signedBodyAuthority).toBeCloseTo(
+      excited.signedBodyAuthority,
+    );
+    expect(underExcited.signedRadianceAuthority).toBeCloseTo(
+      excited.signedRadianceAuthority,
+    );
+    expect(underExcited.bodyDensity).toBeLessThan(excited.bodyDensity * 0.15);
+    expect(computeLinearLuminance(underExcitedRgb)).toBeLessThan(
+      computeLinearLuminance(excitedRgb) * 0.18,
+    );
+  });
+
+  it("reduces standalone body density for incoherent treble noise", () => {
+    const common = {
+      fieldAbs: 0.08,
+      threshold: 0.15,
+      edgeFade: 0.9,
+      activeMask: 1,
+      radialDistance: 0.45,
+      boundaryMask: 0.05,
+      signedRadianceAuthority: 1,
+      excitationVisibility: 1,
+      trebleBroadbandEnergy: 1,
+    };
+    const tonalTreble = deriveBodyDensity({
+      ...common,
+      modeCoherence: 1,
+    });
+    const incoherentTreble = deriveBodyDensity({
+      ...common,
+      modeCoherence: 0,
+    });
+    const tonalRgb = compressDisplayRadiance(
+      [0.72, 0.88, 1].map((channel) => channel * tonalTreble.bodyDensity),
+    );
+    const incoherentRgb = compressDisplayRadiance(
+      [0.72, 0.88, 1].map((channel) => channel * incoherentTreble.bodyDensity),
+    );
+
+    expect(incoherentTreble.signedBodyAuthority).toBeCloseTo(
+      tonalTreble.signedBodyAuthority,
+    );
+    expect(incoherentTreble.excitationVisibility).toBeCloseTo(
+      tonalTreble.excitationVisibility,
+    );
+    expect(incoherentTreble.bodyDensity).toBeLessThan(
+      tonalTreble.bodyDensity * 0.6,
+    );
+    expect(computeLinearLuminance(incoherentRgb)).toBeLessThan(
+      computeLinearLuminance(tonalRgb) * 0.65,
+    );
   });
 
   it("reduces final body mass and radiance when signed modal energy cancels", () => {

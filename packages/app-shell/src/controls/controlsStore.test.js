@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it } from "vitest";
+import { DEFAULT_PERFORMANCE_PROFILE } from "@baryon/visualizer/render/outputPipeline";
 import {
   PRESETS_KEY,
   SETTINGS_KEY,
@@ -272,7 +273,9 @@ describe("createControlsStore", () => {
     expect(store.controlsRef.current.rimBloomBias).toBe(0.39);
     expect(store.controlsRef.current.rimCompression).toBe(1.2);
     expect(store.controlsRef.current.spectralMix).toBe(0.96);
-    expect(store.controlsRef.current.renderQualityPreset).toBe("max-quality");
+    expect(store.controlsRef.current.renderQualityPreset).toBe(
+      DEFAULT_PERFORMANCE_PROFILE,
+    );
 
     const storedPresets = window.localStorage.getItem(PRESETS_KEY);
     expect(storedPresets).toBeNull();

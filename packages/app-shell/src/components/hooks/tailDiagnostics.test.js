@@ -27,14 +27,19 @@ function createRuntimeDiagnostics(overrides = {}) {
       ...overrides.modalFreshness,
     },
     render: {
-      observedDensityFloorMax: 0.07,
-      observedContourSupportMax: 0.012,
+      observationReferenceDensityFloor: 0.07,
+      observationReferenceContourSupport: 0.012,
+      observationSampledDensityFloor: 0.045,
+      observationSampledContourSupport: 0.008,
       effectiveFieldReady: true,
       effectiveFieldSupportReady: true,
       effectiveFieldSupportSemantic: "effective-field-support",
       effectiveFieldUnsignedSupportMean: 0.52,
       effectiveFieldCancellationRatioMean: 0.33,
       effectiveFieldCancellationRatioMax: 0.88,
+      effectiveFieldSupportDiagnosticSampleCount: 9,
+      effectiveFieldSupportDiagnosticSupportedSampleCount: 5,
+      effectiveFieldSupportDiagnosticCoverage: 5 / 9,
       effectiveFieldZeroAmplitudeSkippedModeCount: 1,
       effectiveFieldDescriptorStaleReason: "mode-count",
       effectiveFieldRebuildPending: false,
@@ -75,8 +80,10 @@ test("tail diagnostics records compact samples on the configured interval", () =
         volumeVisible: true,
         idleOverlayVisible: false,
         raymarchDebug: {
-          observedDensityFloorMax: 0.04,
-          observedContourSupportMax: 0.03,
+          observationReferenceDensityFloor: 0.04,
+          observationReferenceContourSupport: 0.03,
+          observationSampledDensityFloor: 0.025,
+          observationSampledContourSupport: 0.012,
         },
       },
     },
@@ -119,13 +126,18 @@ test("tail diagnostics records compact samples on the configured interval", () =
     },
     render: {
       volumeVisible: true,
-      observedDensityFloorMax: 0.07,
-      observedContourSupportMax: 0.012,
+      observationReferenceDensityFloor: 0.07,
+      observationReferenceContourSupport: 0.012,
+      observationSampledDensityFloor: 0.045,
+      observationSampledContourSupport: 0.008,
       effectiveFieldSupportReady: true,
       effectiveFieldSupportSemantic: "effective-field-support",
       effectiveFieldUnsignedSupportMean: 0.52,
       effectiveFieldCancellationRatioMean: 0.33,
       effectiveFieldCancellationRatioMax: 0.88,
+      effectiveFieldSupportDiagnosticSampleCount: 9,
+      effectiveFieldSupportDiagnosticSupportedSampleCount: 5,
+      effectiveFieldSupportDiagnosticCoverage: 5 / 9,
       effectiveFieldZeroAmplitudeSkippedModeCount: 1,
       effectiveFieldDescriptorStaleReason: "mode-count",
     },
@@ -181,11 +193,13 @@ test("tail diagnostics classifies black-tail failure seams", () => {
       },
       render: {
         volumeVisible: true,
-        observedDensityFloorMax: 0,
-        observedContourSupportMax: 0,
+        observationReferenceDensityFloor: 0.05,
+        observationReferenceContourSupport: 0.02,
+        observationSampledDensityFloor: 0,
+        observationSampledContourSupport: 0,
       },
     }),
-  ).toBe("shader-density-drop");
+  ).toBe("observation-transfer-drop");
 
   expect(
     classifyTailDiagnosticSample({
@@ -197,7 +211,8 @@ test("tail diagnostics classifies black-tail failure seams", () => {
       },
       render: {
         volumeVisible: false,
-        observedDensityFloorMax: 0.05,
+        observationReferenceDensityFloor: 0.05,
+        observationSampledDensityFloor: 0.05,
       },
     }),
   ).toBe("render-hidden");

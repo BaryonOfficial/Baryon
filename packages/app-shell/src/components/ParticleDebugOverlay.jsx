@@ -399,8 +399,8 @@ export default function ParticleDebugOverlay({
       value: formatNumber(debugSnapshot.peakModalFieldAmplitude),
     },
     {
-      label: "Support",
-      value: formatNumber(debugSnapshot.observationSupportMax, 2),
+      label: "Obs Smp",
+      value: formatNumber(debugSnapshot.observationSampledSupport, 2),
     },
     { label: "Opacity", value: formatNumber(debugSnapshot.avgOpacity) },
     { label: "Density", value: formatNumber(debugSnapshot.avgDensity) },

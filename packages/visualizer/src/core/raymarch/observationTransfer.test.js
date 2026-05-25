@@ -183,21 +183,46 @@ describe("observation transfer", () => {
     );
   });
 
+  it("compresses quiet coherent modal response into a visible observation floor", () => {
+    const quietCoherent = deriveObservationTransfer({
+      density: 0.02,
+      modalStructureAnchor: 0.8,
+      ridgeAnchor: 0.8,
+      modalCoefficientEnergy: 0.05,
+      modalResponseEnergy: 0,
+    });
+    const noEnergy = deriveObservationTransfer({
+      density: 0.02,
+      modalStructureAnchor: 0.8,
+      ridgeAnchor: 0.8,
+      modalCoefficientEnergy: 0,
+      modalResponseEnergy: 0,
+    });
+
+    expect(quietCoherent.observationEnergy).toBeCloseTo(0.05);
+    expect(quietCoherent.observationResponse).toBeGreaterThan(
+      quietCoherent.observationEnergy,
+    );
+    expect(quietCoherent.visibleDensity).toBeGreaterThan(0.03);
+    expect(noEnergy.observationResponse).toBe(0);
+    expect(noEnergy.visibleDensity).toBe(0);
+  });
+
   it("does not let support-only contours resurrect canceled signed fields", () => {
     const canceled = deriveObservationTransfer({
       density: 0,
       modalStructureAnchor: 1,
-      ridgeAnchor: 0,
-      ridgeSupportAnchor: 1,
+      ridgeAnchor: 0.8,
       modalCoefficientEnergy: 1,
       modalResponseEnergy: 1,
+      signedRadianceAuthority: 0,
     });
     const physicalRidge = deriveObservationTransfer({
       density: 0,
       modalStructureAnchor: 1,
       ridgeAnchor: 0.8,
-      ridgeSupportAnchor: 1,
       modalCoefficientEnergy: 1,
+      signedRadianceAuthority: 1,
     });
 
     expect(canceled.observationAnchor).toBe(0);
@@ -207,12 +232,12 @@ describe("observation transfer", () => {
     expect(physicalRidge.visibleDensity).toBeGreaterThan(0);
   });
 
-  it("does not let raw gradient resurrect support without a caustic anchor", () => {
+  it("does not let raw gradient resurrect support without a modal structure anchor", () => {
     const gradientOnly = deriveObservationTransfer({
       density: 0,
       fieldGradientMagnitude: 1,
-      modalStructureAnchor: 1,
-      ridgeAnchor: 0,
+      modalStructureAnchor: 0,
+      ridgeAnchor: 0.72,
       modalCoefficientEnergy: 1,
       modalResponseEnergy: 1,
       signedRadianceAuthority: 1,
@@ -232,6 +257,37 @@ describe("observation transfer", () => {
     expect(gradientOnly.visibleDensity).toBe(0);
     expect(causticAnchored.observationAnchor).toBeGreaterThan(0);
     expect(causticAnchored.visibleDensity).toBeGreaterThan(0);
+  });
+
+  it("keeps ridge contour authority out of observation density identity", () => {
+    const lowRidge = deriveObservationTransfer({
+      density: 0.02,
+      modalStructureAnchor: 0.62,
+      ridgeAnchor: 0.18,
+      modalCoefficientEnergy: 0.22,
+      modalResponseEnergy: 0.31,
+      signedRadianceAuthority: 0.9,
+    });
+    const highRidge = deriveObservationTransfer({
+      density: 0.02,
+      modalStructureAnchor: 0.62,
+      ridgeAnchor: 0.94,
+      modalCoefficientEnergy: 0.22,
+      modalResponseEnergy: 0.31,
+      signedRadianceAuthority: 0.9,
+    });
+
+    expect(lowRidge.observationAnchor).toBeCloseTo(
+      highRidge.observationAnchor,
+      6,
+    );
+    expect(lowRidge.observedDensityFloor).toBeCloseTo(
+      highRidge.observedDensityFloor,
+      6,
+    );
+    expect(lowRidge.observedContourSupport).toBeLessThan(
+      highRidge.observedContourSupport,
+    );
   });
 
   it("gates observation density floors by signed radiance authority", () => {
@@ -261,6 +317,44 @@ describe("observation transfer", () => {
     expect(canceling.visibleDensity).toBeLessThan(
       reinforcing.visibleDensity * 0.35,
     );
+    expect(canceling.observedContourSupport).toBeLessThan(
+      reinforcing.observedContourSupport * 0.12,
+    );
+  });
+
+  it("gates observation contour support by the full modal-signed product", () => {
+    const strongAnchor = deriveObservationTransfer({
+      density: 0.01,
+      modalStructureAnchor: 0.9,
+      ridgeAnchor: 0.86,
+      modalCoefficientEnergy: 0.4,
+      modalResponseEnergy: 0.5,
+      signedRadianceAuthority: 1,
+    });
+    const weakSignedAnchor = deriveObservationTransfer({
+      density: 0.01,
+      modalStructureAnchor: 0.9,
+      ridgeAnchor: 0.86,
+      modalCoefficientEnergy: 0.4,
+      modalResponseEnergy: 0.5,
+      signedRadianceAuthority: 0.25,
+    });
+    const supportOnlyRidge = deriveObservationTransfer({
+      density: 0.01,
+      modalStructureAnchor: 0,
+      ridgeAnchor: 0.86,
+      modalCoefficientEnergy: 0.4,
+      modalResponseEnergy: 0.5,
+      signedRadianceAuthority: 1,
+    });
+
+    expect(weakSignedAnchor.observationSupport).toBeGreaterThan(
+      strongAnchor.observationSupport * 0.35,
+    );
+    expect(weakSignedAnchor.observedContourSupport).toBeLessThan(
+      strongAnchor.observedContourSupport * 0.12,
+    );
+    expect(supportOnlyRidge.observedContourSupport).toBe(0);
   });
 
   it("observes retained modal energy instead of hard-silence flags", () => {

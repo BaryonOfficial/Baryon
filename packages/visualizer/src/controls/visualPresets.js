@@ -1,3 +1,5 @@
+import { DEFAULT_PERFORMANCE_PROFILE } from "../render/outputProfilePolicy.js";
+
 const CALIBRATED_CLARITY_VISUAL_PRESET = Object.freeze({
   name: "Calibrated Clarity",
   builtIn: true,
@@ -96,7 +98,7 @@ const BARYON_7_VISUAL_PRESET = Object.freeze({
     bloomResponseBias: 1,
     colorMode: "spectral",
     spectralMix: 0.96,
-    renderQualityPreset: "max-quality",
+    renderQualityPreset: DEFAULT_PERFORMANCE_PROFILE,
   }),
 });
 

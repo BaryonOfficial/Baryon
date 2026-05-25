@@ -1,4 +1,5 @@
 import { DEFAULT_REQUESTED_CAVITY_GEOMETRY } from "./core/cavityGeometry.js";
+import { DEFAULT_PERFORMANCE_PROFILE } from "./render/outputProfilePolicy.js";
 
 const DEFAULT_MODAL_FIELD_CAPACITY = 160;
 export const DEFAULT_FFT_SIZE = 8192;
@@ -38,7 +39,7 @@ export const RENDER_DEFAULTS = Object.freeze({
   idleLogoAlpha: 0.08,
   idleLogoSize: 1.0,
   backgroundColor: "#000000",
-  renderQualityPreset: "max-quality",
+  renderQualityPreset: DEFAULT_PERFORMANCE_PROFILE,
   customPerformanceTargetFps: 60,
   volumeColor: "#56d7ff",
   surfaceColor: "#f7fdff",

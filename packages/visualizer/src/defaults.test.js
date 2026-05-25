@@ -14,6 +14,7 @@ import {
   CAVITY_ACOUSTIC_DEFAULTS,
 } from "./defaults.js";
 import { BUILT_IN_VISUAL_PRESETS } from "./controls/visualPresets.js";
+import { DEFAULT_PERFORMANCE_PROFILE } from "./render/outputProfilePolicy.js";
 
 describe("defaults compatibility surface", () => {
   const domainDefaults = [
@@ -62,6 +63,13 @@ describe("defaults compatibility surface", () => {
     expect(DEFAULTS).not.toHaveProperty("structureMin");
     expect(DEFAULTS).not.toHaveProperty("structureMax");
     expect(DEFAULTS).not.toHaveProperty("structurePersistence");
+  });
+
+  it("uses the canonical max-quality render profile for live defaults", () => {
+    expect(RENDER_DEFAULTS.renderQualityPreset).toBe(
+      DEFAULT_PERFORMANCE_PROFILE,
+    );
+    expect(DEFAULTS.renderQualityPreset).toBe(DEFAULT_PERFORMANCE_PROFILE);
   });
 
   it("keeps promoted live raymarch defaults aligned with baryon-7", () => {

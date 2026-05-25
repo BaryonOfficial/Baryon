@@ -22,14 +22,24 @@ vi.mock("@baryon/visualizer/audio", () => ({
 }));
 
 vi.mock("../components/hooks/useAudioLogic", () => ({
-  useAudioLogic: vi.fn(() => ({
+  useAudioLogic: vi.fn((options = {}) => ({
     handleFileChange: () => {},
     handleRecentFileSelect: () => {},
     handlePlayPause: handleLocalPlayPauseMock,
     handleStop: handleLocalStopMock,
     handleVolumeChange: () => {},
     handleMuteToggle: () => {},
-    refreshAudioInputs: refreshAudioInputsMock,
+    refreshAudioInputs: async () => {
+      const audioInputs = await refreshAudioInputsMock();
+      options.setAudioDevices?.(audioInputs);
+      if (
+        audioInputs.length > 0 &&
+        !audioInputs.some((device) => device.deviceId === options.selectedDevice)
+      ) {
+        options.setSelectedDevice?.(audioInputs[0].deviceId);
+      }
+      return audioInputs;
+    },
   })),
 }));
 
@@ -68,6 +78,8 @@ describe("AudioProvider source transport gating", () => {
   let originalCancelAnimationFrame;
   let originalMediaPause;
   let originalMediaLoad;
+  let originalIsSecureContextDescriptor;
+  let originalMediaDevicesDescriptor;
 
   it("audioTransportClock keeps snapshot getters internal", () => {
     expect("getAudioTransportClockSnapshot" in audioTransportClockModule).toBe(
@@ -78,6 +90,14 @@ describe("AudioProvider source transport gating", () => {
   beforeEach(() => {
     originalActEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT;
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    originalIsSecureContextDescriptor = Object.getOwnPropertyDescriptor(
+      window,
+      "isSecureContext",
+    );
+    originalMediaDevicesDescriptor = Object.getOwnPropertyDescriptor(
+      navigator,
+      "mediaDevices",
+    );
     originalMediaPause = window.HTMLMediaElement.prototype.pause;
     originalMediaLoad = window.HTMLMediaElement.prototype.load;
     window.HTMLMediaElement.prototype.pause = vi.fn();
@@ -96,6 +116,7 @@ describe("AudioProvider source transport gating", () => {
     handleLocalStopMock.mockReset();
     refreshAudioInputsMock.mockClear();
     getDefaultAudioSessionMock.mockReset();
+    window.localStorage?.clear?.();
     session = null;
     animationFrameCallbacks = [];
     nextAnimationFrameId = 1;
@@ -109,6 +130,24 @@ describe("AudioProvider source transport gating", () => {
     }
     window.HTMLMediaElement.prototype.pause = originalMediaPause;
     window.HTMLMediaElement.prototype.load = originalMediaLoad;
+    if (originalIsSecureContextDescriptor) {
+      Object.defineProperty(
+        window,
+        "isSecureContext",
+        originalIsSecureContextDescriptor,
+      );
+    } else {
+      delete window.isSecureContext;
+    }
+    if (originalMediaDevicesDescriptor) {
+      Object.defineProperty(
+        navigator,
+        "mediaDevices",
+        originalMediaDevicesDescriptor,
+      );
+    } else {
+      delete navigator.mediaDevices;
+    }
     if (originalActEnvironment === undefined) {
       delete globalThis.IS_REACT_ACT_ENVIRONMENT;
     } else {
@@ -116,7 +155,7 @@ describe("AudioProvider source transport gating", () => {
     }
   });
 
-  function renderProvider(onValue) {
+  function renderProvider(onValue, { platform = "desktop" } = {}) {
     let sessionAcousticIntent = "ambient";
     session = {
       getStatus: () => ({
@@ -156,7 +195,7 @@ describe("AudioProvider source transport gating", () => {
 
     act(() => {
       root.render(
-        <AudioProvider platform="desktop">
+        <AudioProvider platform={platform}>
           <AudioHarness onValue={onValue} />
         </AudioProvider>,
       );
@@ -181,6 +220,200 @@ describe("AudioProvider source transport gating", () => {
     });
     expect(session.stopLiveInputStream).not.toHaveBeenCalled();
     expect(session.startLiveInputStream).not.toHaveBeenCalled();
+  });
+
+  it("passes the selected live input label to the audio runtime", async () => {
+    Object.defineProperty(window, "isSecureContext", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+        enumerateDevices: vi.fn(async () => []),
+      },
+    });
+    refreshAudioInputsMock.mockResolvedValue([
+      {
+        kind: "audioinput",
+        deviceId: "main-window-device-9",
+        label: "BlackHole 2ch (Virtual)",
+      },
+    ]);
+    const onValue = vi.fn();
+    renderProvider(onValue, { platform: "web" });
+
+    let audio = onValue.mock.lastCall[0];
+    await act(async () => {
+      await audio.requestLiveInputPermission();
+    });
+
+    audio = onValue.mock.lastCall[0];
+
+    expect(audio.selectedLiveDeviceId).toBe("main-window-device-9");
+    expect(audio.selectedLiveInputDeviceKind).toBe("system");
+
+    await act(async () => {
+      await audio.handleSystemToggle();
+    });
+
+    expect(session.startLiveInputStream).toHaveBeenCalledWith(
+      "main-window-device-9",
+      "system",
+      "BlackHole 2ch (Virtual)",
+    );
+  });
+
+  it("keeps a selected live endpoint by label when the browser device id changes", async () => {
+    Object.defineProperty(window, "isSecureContext", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+        enumerateDevices: vi.fn(async () => []),
+      },
+    });
+    refreshAudioInputsMock
+      .mockResolvedValueOnce([
+        {
+          kind: "audioinput",
+          deviceId: "stale-blackhole-id",
+          label: "BlackHole 2ch (Virtual)",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          kind: "audioinput",
+          deviceId: "macbook-mic",
+          label: "Default - MacBook Pro Microphone (Built-in)",
+        },
+        {
+          kind: "audioinput",
+          deviceId: "current-blackhole-id",
+          label: "BlackHole 2ch (Virtual)",
+        },
+      ]);
+    const onValue = vi.fn();
+    renderProvider(onValue, { platform: "web" });
+
+    let audio = onValue.mock.lastCall[0];
+    await act(async () => {
+      await audio.requestLiveInputPermission();
+    });
+
+    audio = onValue.mock.lastCall[0];
+    expect(audio.selectedLiveDeviceId).toBe("stale-blackhole-id");
+    expect(audio.selectedLiveInputDeviceKind).toBe("system");
+
+    await act(async () => {
+      await audio.handleSystemToggle();
+    });
+
+    expect(session.startLiveInputStream).toHaveBeenCalledWith(
+      "current-blackhole-id",
+      "system",
+      "BlackHole 2ch (Virtual)",
+    );
+    expect(session.startLiveInputStream).not.toHaveBeenCalledWith(
+      "macbook-mic",
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("uses runtime-selected live endpoint semantics when local devices are unavailable", async () => {
+    const onValue = vi.fn();
+    renderProvider(onValue);
+
+    let audio = onValue.mock.lastCall[0];
+    expect(audio.selectedLiveDeviceId).toBeNull();
+
+    await act(async () => {
+      audio.setLiveInputRuntimeStatus({
+        active: true,
+        phase: "listening",
+        liveInputDeviceKind: "system",
+        liveInputKind: "system",
+        selectedDeviceId: "runtime-blackhole-id",
+        selectedDeviceLabel: "BlackHole 2ch (Virtual)",
+        requestedAnalysisClass: "auto",
+        acousticIntent: "ambient",
+        resolvedAnalysisClass: "line-feed",
+        calibrationActive: false,
+        gateOpen: true,
+        hardSilence: false,
+        calibrationInvalid: false,
+        calibrationInvalidReason: "none",
+        signalState: "ok",
+        errorCode: "none",
+      });
+    });
+
+    audio = onValue.mock.lastCall[0];
+    expect(audio.selectedLiveDeviceId).toBe("runtime-blackhole-id");
+    expect(audio.selectedLiveInputDeviceKind).toBe("system");
+    expect(audio.selectedLiveInputKind).toBe("system");
+    expect(audio.selectedResolvedLiveInputAnalysisClass).toBe("line-feed");
+
+    await act(async () => {
+      await audio.handleSystemToggle();
+    });
+
+    expect(session.startLiveInputStream).toHaveBeenCalledWith(
+      "runtime-blackhole-id",
+      "system",
+      "BlackHole 2ch (Virtual)",
+    );
+  });
+
+  it("owns selected device-kind override in the audio context", async () => {
+    Object.defineProperty(window, "isSecureContext", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+        enumerateDevices: vi.fn(async () => []),
+      },
+    });
+    refreshAudioInputsMock.mockResolvedValue([
+      {
+        kind: "audioinput",
+        deviceId: "blackhole-1",
+        label: "BlackHole 2ch (Virtual)",
+      },
+    ]);
+    const onValue = vi.fn();
+    renderProvider(onValue, { platform: "web" });
+
+    let audio = onValue.mock.lastCall[0];
+    await act(async () => {
+      await audio.requestLiveInputPermission();
+    });
+
+    audio = onValue.mock.lastCall[0];
+    expect(audio.selectedLiveInputDeviceKind).toBe("system");
+    expect(audio.selectedLiveInputDeviceKindOverride).toBeNull();
+
+    await act(async () => {
+      audio.saveDeviceKindOverride("blackhole-1", "live");
+    });
+
+    audio = onValue.mock.lastCall[0];
+    expect(audio.selectedLiveInputDeviceKind).toBe("live");
+    expect(audio.selectedLiveInputDeviceKindOverride).toBe("live");
   });
 
   function installAnimationFrameHarness() {

@@ -116,6 +116,22 @@ describe("deserializeControls", () => {
     expect(result).not.toHaveProperty("structureMax");
   });
 
+  it("does not restore saved contour sharpness as a visibility tuning owner", () => {
+    const result = deserializeControls(
+      {
+        contourSharpness: 1,
+        densityGain: 3.4,
+      },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.contourSharpness).toBe(
+      CONTROL_DEFINITIONS.find((definition) => definition.key === "contourSharpness")
+        ?.defaultValue,
+    );
+    expect(result.densityGain).toBe(3.4);
+  });
+
   it("migrates legacy live input profile settings to acoustic intent", () => {
     const raw = { liveInputProfile: "voice-tone", bloomStrength: 0.75 };
     const result = deserializeControls(raw, CONTROL_DEFINITIONS);

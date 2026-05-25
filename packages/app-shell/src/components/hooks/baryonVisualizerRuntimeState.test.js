@@ -113,10 +113,15 @@ test("publishes observation transfer raymarch diagnostics in render perf snapsho
     updateObservationTransferRenderDiagnostics(runtimeDiagnostics, {
       raymarchDebug: {
         observationEnergy: 0.28,
-        observationAnchorMax: 0.64,
-        observationSupportMax: 0.31,
-        observedDensityFloorMax: 0.046,
-        observedContourSupportMax: 0.012,
+        observationReferenceAnchor: 0.64,
+        observationReferenceSupport: 0.31,
+        observationReferenceDensityFloor: 0.046,
+        observationReferenceContourSupport: 0.012,
+        observationSampledAnchor: 0.24,
+        observationSampledSignedAuthority: 0.91,
+        observationSampledSupport: 0.18,
+        observationSampledDensityFloor: 0.011,
+        observationSampledContourSupport: 0.003,
       },
     });
 
@@ -125,10 +130,15 @@ test("publishes observation transfer raymarch diagnostics in render perf snapsho
     });
 
     expect(snapshot.render.observationEnergy).toBe(0.28);
-    expect(snapshot.render.observationAnchorMax).toBe(0.64);
-    expect(snapshot.render.observationSupportMax).toBe(0.31);
-    expect(snapshot.render.observedDensityFloorMax).toBe(0.046);
-    expect(snapshot.render.observedContourSupportMax).toBe(0.012);
+    expect(snapshot.render.observationReferenceAnchor).toBe(0.64);
+    expect(snapshot.render.observationReferenceSupport).toBe(0.31);
+    expect(snapshot.render.observationReferenceDensityFloor).toBe(0.046);
+    expect(snapshot.render.observationReferenceContourSupport).toBe(0.012);
+    expect(snapshot.render.observationSampledAnchor).toBe(0.24);
+    expect(snapshot.render.observationSampledSignedAuthority).toBe(0.91);
+    expect(snapshot.render.observationSampledSupport).toBe(0.18);
+    expect(snapshot.render.observationSampledDensityFloor).toBe(0.011);
+    expect(snapshot.render.observationSampledContourSupport).toBe(0.003);
   } finally {
     globalThis.window = previousWindow;
   }
@@ -149,6 +159,9 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
         effectiveFieldUnsignedSupportMean: 0.57,
         effectiveFieldCancellationRatioMean: 0.36,
         effectiveFieldCancellationRatioMax: 0.91,
+        effectiveFieldSupportDiagnosticSampleCount: 9,
+        effectiveFieldSupportDiagnosticSupportedSampleCount: 5,
+        effectiveFieldSupportDiagnosticCoverage: 5 / 9,
         effectiveFieldRebuildPending: false,
         effectiveFieldBackend: "compute",
         effectiveFieldResolution: 32,
@@ -164,11 +177,15 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
         effectiveFieldMaxRepresentableModeIndex: 27,
         effectiveFieldContributingModeCount: 5,
         effectiveFieldZeroAmplitudeSkippedModeCount: 1,
-        effectiveFieldContributingModalEnergy: 0.64,
-        effectiveFieldResolvedModalEnergyRatio: 0.77,
+        effectiveFieldContributingRawModalEnergy: 0.64,
+        effectiveFieldContributingPhaseCurrentModalEnergy: 0.52,
+        effectiveFieldResolvedRawModalEnergyRatio: 0.77,
+        effectiveFieldResolvedPhaseCurrentModalEnergyRatio: 0.8,
         effectiveFieldBandwidthRejectedModeCount: 2,
-        effectiveFieldBandwidthRejectedModalEnergy: 0.19,
-        effectiveFieldGradientEnvelope: 0.38,
+        effectiveFieldBandwidthRejectedRawModalEnergy: 0.19,
+        effectiveFieldBandwidthRejectedPhaseCurrentModalEnergy: 0.13,
+        effectiveFieldRawGradientEnvelope: 0.38,
+        effectiveFieldPhaseCurrentGradientEnvelope: 0.24,
       },
     });
 
@@ -185,6 +202,11 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
     expect(snapshot.render.effectiveFieldUnsignedSupportMean).toBe(0.57);
     expect(snapshot.render.effectiveFieldCancellationRatioMean).toBe(0.36);
     expect(snapshot.render.effectiveFieldCancellationRatioMax).toBe(0.91);
+    expect(snapshot.render.effectiveFieldSupportDiagnosticSampleCount).toBe(9);
+    expect(
+      snapshot.render.effectiveFieldSupportDiagnosticSupportedSampleCount,
+    ).toBe(5);
+    expect(snapshot.render.effectiveFieldSupportDiagnosticCoverage).toBe(5 / 9);
     expect(snapshot.render.effectiveFieldRebuildPending).toBe(false);
     expect(snapshot.render.effectiveFieldBackend).toBe("compute");
     expect(snapshot.render.effectiveFieldResolution).toBe(32);
@@ -202,13 +224,25 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
     expect(snapshot.render.effectiveFieldMaxRepresentableModeIndex).toBe(27);
     expect(snapshot.render.effectiveFieldContributingModeCount).toBe(5);
     expect(snapshot.render.effectiveFieldZeroAmplitudeSkippedModeCount).toBe(1);
-    expect(snapshot.render.effectiveFieldContributingModalEnergy).toBe(0.64);
-    expect(snapshot.render.effectiveFieldResolvedModalEnergyRatio).toBe(0.77);
+    expect(snapshot.render.effectiveFieldContributingRawModalEnergy).toBe(0.64);
+    expect(
+      snapshot.render.effectiveFieldContributingPhaseCurrentModalEnergy,
+    ).toBe(0.52);
+    expect(snapshot.render.effectiveFieldResolvedRawModalEnergyRatio).toBe(0.77);
+    expect(
+      snapshot.render.effectiveFieldResolvedPhaseCurrentModalEnergyRatio,
+    ).toBe(0.8);
     expect(snapshot.render.effectiveFieldBandwidthRejectedModeCount).toBe(2);
-    expect(snapshot.render.effectiveFieldBandwidthRejectedModalEnergy).toBe(
+    expect(snapshot.render.effectiveFieldBandwidthRejectedRawModalEnergy).toBe(
       0.19,
     );
-    expect(snapshot.render.effectiveFieldGradientEnvelope).toBe(0.38);
+    expect(
+      snapshot.render.effectiveFieldBandwidthRejectedPhaseCurrentModalEnergy,
+    ).toBe(0.13);
+    expect(snapshot.render.effectiveFieldRawGradientEnvelope).toBe(0.38);
+    expect(snapshot.render.effectiveFieldPhaseCurrentGradientEnvelope).toBe(
+      0.24,
+    );
   } finally {
     globalThis.window = previousWindow;
   }
@@ -229,6 +263,9 @@ test("publishes effective field diagnostics from runtime state when audit is dis
         effectiveFieldUnsignedSupportMean: 0.48,
         effectiveFieldCancellationRatioMean: 0.27,
         effectiveFieldCancellationRatioMax: 0.86,
+        effectiveFieldSupportDiagnosticSampleCount: 9,
+        effectiveFieldSupportDiagnosticSupportedSampleCount: 4,
+        effectiveFieldSupportDiagnosticCoverage: 4 / 9,
         rebuildPending: false,
         backend: "compute",
         resolution: 32,
@@ -242,11 +279,15 @@ test("publishes effective field diagnostics from runtime state when audit is dis
         effectiveFieldMaxRepresentableModeIndex: 31,
         contributingEffectiveFieldModeCount: 4,
         zeroAmplitudeSkippedModeCount: 2,
-        contributingModalEnergy: 0.72,
-        effectiveFieldResolvedModalEnergyRatio: 0.68,
+        contributingRawModalEnergy: 0.72,
+        contributingPhaseCurrentModalEnergy: 0.51,
+        effectiveFieldResolvedRawModalEnergyRatio: 0.68,
+        effectiveFieldResolvedPhaseCurrentModalEnergyRatio: 0.74,
         bandwidthRejectedModeCount: 3,
-        bandwidthRejectedModalEnergy: 0.22,
-        effectiveFieldGradientEnvelope: 0.45,
+        bandwidthRejectedRawModalEnergy: 0.22,
+        bandwidthRejectedPhaseCurrentModalEnergy: 0.18,
+        effectiveFieldRawGradientEnvelope: 0.45,
+        effectiveFieldPhaseCurrentGradientEnvelope: 0.31,
       },
     });
 
@@ -263,6 +304,11 @@ test("publishes effective field diagnostics from runtime state when audit is dis
     expect(snapshot.render.effectiveFieldUnsignedSupportMean).toBe(0.48);
     expect(snapshot.render.effectiveFieldCancellationRatioMean).toBe(0.27);
     expect(snapshot.render.effectiveFieldCancellationRatioMax).toBe(0.86);
+    expect(snapshot.render.effectiveFieldSupportDiagnosticSampleCount).toBe(9);
+    expect(
+      snapshot.render.effectiveFieldSupportDiagnosticSupportedSampleCount,
+    ).toBe(4);
+    expect(snapshot.render.effectiveFieldSupportDiagnosticCoverage).toBe(4 / 9);
     expect(snapshot.render.effectiveFieldRebuildPending).toBe(false);
     expect(snapshot.render.effectiveFieldBackend).toBe("compute");
     expect(snapshot.render.effectiveFieldResolution).toBe(32);
@@ -280,13 +326,25 @@ test("publishes effective field diagnostics from runtime state when audit is dis
     expect(snapshot.render.effectiveFieldMaxRepresentableModeIndex).toBe(31);
     expect(snapshot.render.effectiveFieldContributingModeCount).toBe(4);
     expect(snapshot.render.effectiveFieldZeroAmplitudeSkippedModeCount).toBe(2);
-    expect(snapshot.render.effectiveFieldContributingModalEnergy).toBe(0.72);
-    expect(snapshot.render.effectiveFieldResolvedModalEnergyRatio).toBe(0.68);
+    expect(snapshot.render.effectiveFieldContributingRawModalEnergy).toBe(0.72);
+    expect(
+      snapshot.render.effectiveFieldContributingPhaseCurrentModalEnergy,
+    ).toBe(0.51);
+    expect(snapshot.render.effectiveFieldResolvedRawModalEnergyRatio).toBe(0.68);
+    expect(
+      snapshot.render.effectiveFieldResolvedPhaseCurrentModalEnergyRatio,
+    ).toBe(0.74);
     expect(snapshot.render.effectiveFieldBandwidthRejectedModeCount).toBe(3);
-    expect(snapshot.render.effectiveFieldBandwidthRejectedModalEnergy).toBe(
+    expect(snapshot.render.effectiveFieldBandwidthRejectedRawModalEnergy).toBe(
       0.22,
     );
-    expect(snapshot.render.effectiveFieldGradientEnvelope).toBe(0.45);
+    expect(
+      snapshot.render.effectiveFieldBandwidthRejectedPhaseCurrentModalEnergy,
+    ).toBe(0.18);
+    expect(snapshot.render.effectiveFieldRawGradientEnvelope).toBe(0.45);
+    expect(snapshot.render.effectiveFieldPhaseCurrentGradientEnvelope).toBe(
+      0.31,
+    );
   } finally {
     globalThis.window = previousWindow;
   }
@@ -339,16 +397,55 @@ test("explains effective field descriptor staleness from runtime state when audi
   }
 });
 
+test("does not let legacy phase counts own effective field mode diagnostics", () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = {};
+
+  try {
+    const runtimeDiagnostics = createRuntimeDiagnostics();
+    updateObservationTransferRenderDiagnostics(runtimeDiagnostics, null, {
+      effectiveFieldModeCount: 1,
+      currentEffectiveFieldDescriptor: {
+        contributingEffectiveFieldModeCount: 3,
+        phaseModeCount: 0,
+      },
+    });
+
+    const snapshot = maybePublishRuntimePerfSnapshot(runtimeDiagnostics, {
+      force: true,
+    });
+
+    expect(snapshot.render.effectiveFieldModeCount).toBe(3);
+    expect(snapshot.render.effectiveFieldContributingModeCount).toBe(3);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
 test("keeps observation transfer render diagnostics non-authoritative without audit", () => {
   const runtimeDiagnostics = createRuntimeDiagnostics();
 
   updateObservationTransferRenderDiagnostics(runtimeDiagnostics, null);
 
   expect(runtimeDiagnostics.render.observationEnergy).toBe(0);
-  expect(runtimeDiagnostics.render.observationAnchorMax).toBe(0);
-  expect(runtimeDiagnostics.render.observationSupportMax).toBe(0);
-  expect(runtimeDiagnostics.render.observedDensityFloorMax).toBe(0);
-  expect(runtimeDiagnostics.render.observedContourSupportMax).toBe(0);
+  expect(runtimeDiagnostics.render.observationReferenceAnchor).toBe(0);
+  expect(runtimeDiagnostics.render.observationReferenceSupport).toBe(0);
+  expect(runtimeDiagnostics.render.observationReferenceDensityFloor).toBe(0);
+  expect(runtimeDiagnostics.render.observationReferenceContourSupport).toBe(0);
+  expect(runtimeDiagnostics.render.observationSampledAnchor).toBe(0);
+  expect(runtimeDiagnostics.render.observationSampledSignedAuthority).toBe(0);
+  expect(runtimeDiagnostics.render.observationSampledSupport).toBe(0);
+  expect(runtimeDiagnostics.render.observationSampledDensityFloor).toBe(0);
+  expect(runtimeDiagnostics.render.observationSampledContourSupport).toBe(0);
+  expect(runtimeDiagnostics.render.effectiveFieldSupportDiagnosticSampleCount).toBe(
+    0,
+  );
+  expect(
+    runtimeDiagnostics.render.effectiveFieldSupportDiagnosticSupportedSampleCount,
+  ).toBe(0);
+  expect(runtimeDiagnostics.render.effectiveFieldSupportDiagnosticCoverage).toBe(
+    0,
+  );
   expect(runtimeDiagnostics.render.effectiveFieldDescriptorStaleReason).toBe(
     null,
   );

@@ -4,6 +4,7 @@ const PHASE_AUTHORITY_EPSILON = 1e-4;
 const PHASE_VELOCITY_GROUP_SCALE = 10;
 const PHASE_UNIT_INTERVAL_HASH_SCALE = 1000;
 const PHASE_OFFSET_HASH_SCALE = 1024;
+const EFFECTIVE_PHASE_CONTRIBUTION_HASH_SCALE = 256;
 
 function hashUint32(value, hash) {
   return Math.imul(hash ^ (value >>> 0), FNV_PRIME) >>> 0;
@@ -21,6 +22,10 @@ function normalizePhaseRad(phase) {
 
 function getPhaseSlotAuthority(phaseSlots, offset) {
   return (phaseSlots?.[offset + 2] ?? 0) * (phaseSlots?.[offset + 3] ?? 0);
+}
+
+function hasPhaseSlotAuthority(phaseSlots, offset) {
+  return getPhaseSlotAuthority(phaseSlots, offset) > PHASE_AUTHORITY_EPSILON;
 }
 
 function getPhaseVelocityGroupKey(phaseVelocityRadPerSec) {
@@ -43,47 +48,31 @@ function getPhaseOffsetHashKey(phaseOffsetRad) {
   );
 }
 
-function buildPhaseVelocityGroups(phaseSlots, activeCount) {
-  const groups = new Map();
-  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
-  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
-    const offset = slotIndex * 4;
-    if (getPhaseSlotAuthority(phaseSlots, offset) <= PHASE_AUTHORITY_EPSILON) {
-      continue;
-    }
-    const key = getPhaseVelocityGroupKey(phaseSlots?.[offset + 1] ?? 0);
-    const group = groups.get(key);
-    if (group) {
-      group.count += 1;
-      continue;
-    }
-    groups.set(key, {
-      count: 1,
-      referencePhaseRad: normalizePhaseRad(phaseSlots?.[offset] ?? 0),
-    });
-  }
-  return groups;
-}
-
-function getCanonicalPhaseOffsetRad(phaseSlots, offset, groups) {
-  if (getPhaseSlotAuthority(phaseSlots, offset) <= PHASE_AUTHORITY_EPSILON) {
-    return 0;
-  }
-  const key = getPhaseVelocityGroupKey(phaseSlots?.[offset + 1] ?? 0);
-  const group = groups.get(key);
-  if (!group || group.count <= 1) {
-    return 0;
-  }
-  return normalizePhaseRad(
-    (phaseSlots?.[offset] ?? 0) - group.referencePhaseRad,
+function getEffectivePhaseContributionHashKey(contribution) {
+  const finiteContribution = Number.isFinite(contribution) ? contribution : 1;
+  return Math.round(
+    Math.min(1, Math.max(-1, finiteContribution)) *
+      EFFECTIVE_PHASE_CONTRIBUTION_HASH_SCALE,
   );
 }
 
-function hashCanonicalPhaseSlot(phaseSlots, offset, groups, hash) {
+function getOwnedPhaseOffsetRad(phaseSlots, offset) {
+  if (!hasPhaseSlotAuthority(phaseSlots, offset)) {
+    return 0;
+  }
+  return normalizePhaseRad(phaseSlots?.[offset] ?? 0);
+}
+
+function hashOwnedPhaseSlot(phaseSlots, offset, hash) {
+  if (!hasPhaseSlotAuthority(phaseSlots, offset)) {
+    let nextHash = hashUint32(getPhaseOffsetHashKey(0), hash);
+    nextHash = hashUint32(getPhaseVelocityGroupKey(0), nextHash);
+    nextHash = hashUint32(getUnitIntervalHashKey(0), nextHash);
+    return hashUint32(getUnitIntervalHashKey(0), nextHash);
+  }
+
   let nextHash = hashUint32(
-    getPhaseOffsetHashKey(
-      getCanonicalPhaseOffsetRad(phaseSlots, offset, groups),
-    ),
+    getPhaseOffsetHashKey(getOwnedPhaseOffsetRad(phaseSlots, offset)),
     hash,
   );
   nextHash = hashUint32(
@@ -106,10 +95,6 @@ export function buildRaymarchPhaseSlotSignature({
   includeSlotIndex = false,
 }) {
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
-  const phaseVelocityGroups = buildPhaseVelocityGroups(
-    phaseSlots,
-    clampedActiveCount,
-  );
   let slotHash = FNV_OFFSET_BASIS;
   let activePhaseCount = 0;
 
@@ -118,19 +103,141 @@ export function buildRaymarchPhaseSlotSignature({
     if (includeSlotIndex) {
       slotHash = hashUint32(slotIndex, slotHash);
     }
-    slotHash = hashCanonicalPhaseSlot(
-      phaseSlots,
-      offset,
-      phaseVelocityGroups,
-      slotHash,
-    );
-    if (getPhaseSlotAuthority(phaseSlots, offset) > PHASE_AUTHORITY_EPSILON) {
+    slotHash = hashOwnedPhaseSlot(phaseSlots, offset, slotHash);
+    if (hasPhaseSlotAuthority(phaseSlots, offset)) {
       activePhaseCount += 1;
     }
   }
 
   return {
     activePhaseCount,
+    slotHash: slotHash >>> 0,
+  };
+}
+
+function getEffectiveFieldPhaseWeight(modalFieldSlots, offset) {
+  if (!modalFieldSlots) {
+    return 1;
+  }
+  return Math.max(0, modalFieldSlots?.[offset + 3] ?? 0);
+}
+
+function getEffectiveFieldPhaseCurrentCoefficient(phaseSlots, offset, time = 0) {
+  if (!hasPhaseSlotAuthority(phaseSlots, offset)) {
+    return 1;
+  }
+
+  const beta = Math.min(
+    1,
+    Math.max(
+      0,
+      (phaseSlots?.[offset + 2] ?? 0) * (phaseSlots?.[offset + 3] ?? 0),
+    ),
+  );
+  const phase =
+    getOwnedPhaseOffsetRad(phaseSlots, offset) +
+    (phaseSlots?.[offset + 1] ?? 0) * (Number.isFinite(time) ? time : 0);
+  return 1 - beta + beta * Math.cos(phase);
+}
+
+function getAggregatePhaseContributionHashKey(entry, totalContributionWeight) {
+  return getEffectivePhaseContributionHashKey(
+    entry.phaseCurrentContributionNumerator /
+      Math.max(Number.EPSILON, totalContributionWeight),
+  );
+}
+
+export function buildRaymarchEffectiveFieldPhaseSignature({
+  phaseSlots,
+  modalFieldSlots,
+  activeCount,
+  time = 0,
+  isSlotContributing = null,
+  getSlotIdentityKey = null,
+}) {
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const entriesByIdentity = new Map();
+
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    if (
+      typeof isSlotContributing === "function" &&
+      !isSlotContributing({ slots: modalFieldSlots, offset })
+    ) {
+      continue;
+    }
+    const contributionWeight = getEffectiveFieldPhaseWeight(
+      modalFieldSlots,
+      offset,
+    );
+    if (!(contributionWeight > 0)) {
+      continue;
+    }
+    const identityKey =
+      typeof getSlotIdentityKey === "function"
+        ? getSlotIdentityKey({ slots: modalFieldSlots, offset })
+        : [slotIndex];
+    const normalizedIdentityKey = Array.isArray(identityKey)
+      ? identityKey
+      : [identityKey];
+    const aggregateKey = normalizedIdentityKey.join(":");
+    const identityEntry = entriesByIdentity.get(aggregateKey) ?? {
+      identityKey: normalizedIdentityKey,
+      contributionWeight: 0,
+      phaseCurrentContributionNumerator: 0,
+      hasPhaseAuthority: false,
+    };
+    identityEntry.contributionWeight += contributionWeight;
+    identityEntry.phaseCurrentContributionNumerator +=
+      contributionWeight *
+      getEffectiveFieldPhaseCurrentCoefficient(phaseSlots, offset, time);
+    identityEntry.hasPhaseAuthority =
+      identityEntry.hasPhaseAuthority ||
+      hasPhaseSlotAuthority(phaseSlots, offset);
+    if (!entriesByIdentity.has(aggregateKey)) {
+      entriesByIdentity.set(aggregateKey, identityEntry);
+    }
+  }
+
+  const entries = [];
+  let totalContributionWeight = 0;
+  for (const identityEntry of entriesByIdentity.values()) {
+    totalContributionWeight += identityEntry.contributionWeight;
+  }
+
+  for (const identityEntry of entriesByIdentity.values()) {
+    entries.push([
+      ...identityEntry.identityKey,
+      getAggregatePhaseContributionHashKey(
+        identityEntry,
+        totalContributionWeight,
+      ),
+    ]);
+  }
+
+  entries.sort((left, right) => {
+    const entryLength = Math.max(left.length, right.length);
+    for (let index = 0; index < entryLength; index += 1) {
+      const leftValue = left[index] ?? 0;
+      const rightValue = right[index] ?? 0;
+      if (leftValue !== rightValue) {
+        return leftValue - rightValue;
+      }
+    }
+    return 0;
+  });
+
+  let slotHash = FNV_OFFSET_BASIS;
+  for (const entry of entries) {
+    for (const value of entry) {
+      slotHash = hashUint32(value, slotHash);
+    }
+  }
+
+  return {
+    activePhaseCount: Array.from(entriesByIdentity.values()).filter(
+      (entry) => entry.hasPhaseAuthority,
+    ).length,
     slotHash: slotHash >>> 0,
   };
 }
@@ -149,21 +256,16 @@ export function copyCanonicalRaymarchPhaseSlots({
   const resolvedCapacity = Math.max(0, Math.floor(capacity ?? 0));
   const sourceSlotCount = Math.floor((sourceSlots?.length ?? 0) / 4);
   const slotLimit = Math.min(resolvedCapacity, sourceSlotCount);
-  const phaseVelocityGroups = buildPhaseVelocityGroups(sourceSlots, slotLimit);
 
   for (let slotIndex = 0; slotIndex < resolvedCapacity; slotIndex += 1) {
     const offset = slotIndex * 4;
     if (slotIndex < slotLimit) {
-      targetSlots[offset] = getCanonicalPhaseOffsetRad(
-        sourceSlots,
-        offset,
-        phaseVelocityGroups,
-      );
+      targetSlots[offset] = getOwnedPhaseOffsetRad(sourceSlots, offset);
       targetSlots[offset + 1] = sourceSlots?.[offset + 1] ?? 0;
       targetSlots[offset + 2] = sourceSlots?.[offset + 2] ?? 0;
       targetSlots[offset + 3] = sourceSlots?.[offset + 3] ?? 0;
     }
-    if (getPhaseSlotAuthority(targetSlots, offset) > PHASE_AUTHORITY_EPSILON) {
+    if (hasPhaseSlotAuthority(targetSlots, offset)) {
       activePhaseCount += 1;
     }
   }

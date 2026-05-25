@@ -844,6 +844,8 @@ export function useBaryonVisualizer({
       outputCaptureInFlightRef.current = false;
     } else if (pipeline) {
       const pipelineRenderStartedAt = getWallTimeMs();
+      renderLoopContext.gl.setRenderTarget?.(null);
+      renderLoopContext.gl.setMRT?.(null);
       pipeline.render();
       advanceRenderOutputCameraCut(renderLoopContext.postNodesRef.current);
       recordMeasuredRuntimePerf(
@@ -899,6 +901,8 @@ export function useBaryonVisualizer({
       outputSessionRef.current = null;
       outputCaptureInFlightRef.current = false;
       const pipelineRenderStartedAt = getWallTimeMs();
+      renderLoopContext.gl.setRenderTarget?.(null);
+      renderLoopContext.gl.setMRT?.(null);
       renderLoopContext.gl.render(state.scene, state.camera);
       recordMeasuredRuntimePerf(
         runtimeDiagnostics,

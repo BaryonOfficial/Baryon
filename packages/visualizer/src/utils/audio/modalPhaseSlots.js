@@ -45,6 +45,10 @@ export function getPhaseRelease(layer) {
   return layer === "resonant" ? RESONANT_PHASE_RELEASE : SOURCE_COUPLED_PHASE_RELEASE;
 }
 
+function getRenderPhaseLayer(entry) {
+  return entry?.renderLayer ?? entry?.layer;
+}
+
 function findModalPhaseEntryForSlot(slots, offset, activeModes, observedModes) {
   const modeKey = `${slots[offset]}:${slots[offset + 1]}:${slots[offset + 2]}`;
   return observedModes?.get?.(modeKey) ?? activeModes?.get?.(modeKey) ?? null;
@@ -52,15 +56,28 @@ function findModalPhaseEntryForSlot(slots, offset, activeModes, observedModes) {
 
 function resolvePhaseUpload(entry) {
   const hasOscillatorPhase =
+    Number.isFinite(entry?.modalOscillatorPhaseRad) &&
     Number.isFinite(entry?.modalOscillatorPhaseOffsetRad) &&
     Number.isFinite(entry?.modalOscillatorAngularVelocityRadPerSec);
   if (hasOscillatorPhase) {
+    const phaseVelocityRadPerSec = clampPhaseVelocity(
+      entry.modalOscillatorAngularVelocityRadPerSec,
+      entry,
+    );
+    const phaseOffsetRad = Number.isFinite(
+      entry?.modalOscillatorPhaseObservedAtSec,
+    )
+      ? normalizePhaseRad(
+          entry.modalOscillatorPhaseRad -
+            phaseVelocityRadPerSec *
+              entry.modalOscillatorPhaseObservedAtSec,
+        )
+      : entry.modalOscillatorPhaseOffsetRad;
     return {
-      phaseOffsetRad: entry.modalOscillatorPhaseOffsetRad,
-      phaseVelocityRadPerSec: entry.modalOscillatorAngularVelocityRadPerSec,
+      phaseOffsetRad,
+      phaseVelocityRadPerSec,
       phaseCoherence: entry.modalOscillatorPhaseCoherence,
       phaseAuthority: entry.modalOscillatorPhaseAuthority,
-      clampVelocity: false,
     };
   }
 
@@ -69,8 +86,18 @@ function resolvePhaseUpload(entry) {
     phaseVelocityRadPerSec: entry?.phaseVelocityRadPerSec,
     phaseCoherence: entry?.phaseCoherence,
     phaseAuthority: entry?.phaseAuthority,
-    clampVelocity: true,
   };
+}
+
+function clampPhaseVelocity(phaseVelocityRadPerSec, entry) {
+  const phaseVelocity = Number.isFinite(phaseVelocityRadPerSec)
+    ? phaseVelocityRadPerSec
+    : 0;
+  const phaseVelocityLimit = getPhaseVelocityLimit(getRenderPhaseLayer(entry));
+  return Math.max(
+    -phaseVelocityLimit,
+    Math.min(phaseVelocityLimit, phaseVelocity),
+  );
 }
 
 export function writePhaseSlotsForVisibleModes({
@@ -108,13 +135,10 @@ export function writePhaseSlotsForVisibleModes({
       continue;
     }
     target[offset] = normalizePhaseRad(phaseUpload.phaseOffsetRad ?? 0);
-    const phaseVelocity = phaseUpload.phaseVelocityRadPerSec ?? 0;
-    target[offset + 1] = phaseUpload.clampVelocity
-      ? Math.max(
-          -getPhaseVelocityLimit(phaseEntry.layer),
-          Math.min(getPhaseVelocityLimit(phaseEntry.layer), phaseVelocity),
-        )
-      : phaseVelocity;
+    target[offset + 1] = clampPhaseVelocity(
+      phaseUpload.phaseVelocityRadPerSec,
+      phaseEntry,
+    );
     target[offset + 2] = clamp01(phaseUpload.phaseCoherence ?? 0);
     target[offset + 3] = authority;
     authoritativeCount += 1;

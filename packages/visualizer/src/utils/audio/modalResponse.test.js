@@ -425,6 +425,67 @@ describe("modal response model", () => {
     expect(dense.modalResponseAveragePersistence).toBeGreaterThan(0);
   });
 
+  it("does not let source-coupled budget pressure attenuate resonant response", async () => {
+    const { updateModalResponseFrame } = await loadModalResponseModule();
+    const sourceModes = Array.from({ length: 8 }, (_, index) => ({
+      modeKey: `source:${index}`,
+      u: index + 1,
+      v: index + 1,
+      w: index + 2,
+      naturalFrequencyHz: 120 + index * 24,
+      layer: "source-coupled",
+      qualityFactor: 4,
+    }));
+    const resonantMode = {
+      modeKey: "resonant:ring",
+      u: 8,
+      v: 13,
+      w: 21,
+      naturalFrequencyHz: 880,
+      layer: "resonant",
+      qualityFactor: 40,
+    };
+    const previousEnergies = new Map([
+      ...sourceModes.map((mode) => [mode.modeKey, 0.35]),
+      [resonantMode.modeKey, 0.16],
+    ]);
+    const commonOptions = {
+      fftMagnitudes: new Float32Array(BIN_COUNT),
+      sampleRate: SAMPLE_RATE,
+      deltaMs: 1,
+      inputRms: 0,
+      responseBudget: 1,
+      minimumEnergy: 0,
+    };
+    const mixed = updateModalResponseFrame({
+      ...commonOptions,
+      modes: [...sourceModes, resonantMode],
+      previousEnergies,
+    });
+    const resonantOnly = updateModalResponseFrame({
+      ...commonOptions,
+      modes: [resonantMode],
+      previousEnergies: new Map([[resonantMode.modeKey, 0.16]]),
+    });
+    const mixedResonant = mixed.entries.find(
+      (entry) => entry.modeKey === resonantMode.modeKey,
+    );
+    const isolatedResonant = resonantOnly.entries[0];
+
+    expect(mixed.modalResponseBudgetScaleSourceCoupled).toBeLessThan(1);
+    expect(mixed.modalResponseBudgetScaleResonant).toBe(1);
+    expect(mixed.modalResponseEnergy).toBeLessThanOrEqual(1);
+    expect(mixed.modalResponseResonantEnergy).toBeGreaterThan(0);
+    expect(mixedResonant?.modalResponseEnergy).toBeCloseTo(
+      isolatedResonant?.modalResponseEnergy ?? 0,
+      6,
+    );
+    expect(mixedResonant?.displayAmplitude).toBeCloseTo(
+      isolatedResonant?.displayAmplitude ?? 0,
+      6,
+    );
+  });
+
   it("does not spend high-Q display budget on weak off-resonant modes", async () => {
     const { updateModalResponseFrame } = await loadModalResponseModule();
     const modes = [
