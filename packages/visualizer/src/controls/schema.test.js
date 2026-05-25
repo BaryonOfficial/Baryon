@@ -66,6 +66,7 @@ const EXPECTED_CONTROL_KEYS = [
   "rimBloomBias",
   "rimCompression",
   // Diagnostics
+  "traaEnabled",
   "auditEnabled",
   "freezeModeSlots",
   "forceWebGLFallbackTest",
@@ -118,6 +119,7 @@ describe("control schema", () => {
     expect(state.customPerformanceTargetFps).toBe(
       RENDER_DEFAULTS.customPerformanceTargetFps,
     );
+    expect(state.traaEnabled).toBe(RENDER_DEFAULTS.traaEnabled);
     expect(state.bloomResponseBias).toBe(1);
   });
 
@@ -333,6 +335,22 @@ describe("control schema", () => {
         (definition) => definition.key,
       ),
     ).toEqual(["performanceHudEnabled"]);
+    expect(
+      getControlsForFolder("Diagnostics", DEFAULT_VISUALIZATION_METHOD).map(
+        (definition) => definition.key,
+      ),
+    ).toEqual([
+      "traaEnabled",
+      "auditEnabled",
+      "freezeModeSlots",
+      "forceWebGLFallbackTest",
+      "lowLoadPlaybackDiagnostics",
+      "cavityGeometry",
+      "injectTestTone",
+      "testToneHz",
+      "testToneAmplitude",
+      "logEveryFrames",
+    ]);
     expect(
       getControlsForFolder("Motion", DEFAULT_VISUALIZATION_METHOD).map(
         (definition) => definition.key,

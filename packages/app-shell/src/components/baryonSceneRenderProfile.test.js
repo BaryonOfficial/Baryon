@@ -22,6 +22,7 @@ test("render-profile overrides keep only supported fields", () => {
     }),
   ).toEqual({
     renderScale: 0.5,
+    traaEnabled: false,
     bloomAllowed: false,
   });
 
@@ -34,7 +35,7 @@ test("render-profile overrides keep only supported fields", () => {
   ).toBeNull();
 });
 
-test("authoritative external-output uses the resolved profile directly", () => {
+test("authoritative external-output uses the resolved profile with diagnostics TRAA override", () => {
   const profile = resolveSceneRenderQualityProfile({
     performanceProfile: "custom",
     renderContext: RENDER_CONTEXTS.externalOutput,
@@ -48,15 +49,15 @@ test("authoritative external-output uses the resolved profile directly", () => {
     },
     localRenderProfileOverrides: {
       renderScale: 0.92,
-      traaEnabled: true,
     },
+    traaEnabled: false,
   });
 
   expect(profile).toMatchObject({
     qualityPreset: "custom",
     targetFps: 120,
     renderScale: 0.67,
-    traaEnabled: true,
+    traaEnabled: false,
     bloomAllowed: true,
     renderContext: RENDER_CONTEXTS.externalOutput,
   });
@@ -70,14 +71,14 @@ test("preview scenes still honor local render-profile command overrides", () => 
     outputHeight: 1080,
     localRenderProfileOverrides: {
       renderScale: 0.5,
-      traaEnabled: false,
     },
+    traaEnabled: false,
   });
 
   expect(profile).toMatchObject({
     qualityPreset: "auto",
     renderScale: 0.5,
-    traaEnabled: true,
+    traaEnabled: false,
     renderContext: RENDER_CONTEXTS.preview,
   });
 });

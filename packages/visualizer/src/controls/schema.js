@@ -779,6 +779,21 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   // ── Diagnostics (debug-only) ───────────────────────────────────────────────
   withControlGroup(
     {
+      key: "traaEnabled",
+      label: "TRAA",
+      title:
+        "Toggle temporal anti-aliasing for diagnostics. Disable only when isolating render latency, shimmer, or post-process cost.",
+      defaultValue: RENDER_DEFAULTS.traaEnabled,
+      methods: ALL_METHODS,
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.shared,
+      runtimePath: "ui.traaEnabled",
+      status: CONTROL_STATUSES.debugOnly,
+    },
+    CONTROL_GROUPS.diagnostics,
+  ),
+  withControlGroup(
+    {
       key: "auditEnabled",
       label: "Capture Debug Data",
       title:

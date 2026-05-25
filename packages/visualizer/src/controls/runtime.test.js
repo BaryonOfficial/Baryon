@@ -339,6 +339,7 @@ describe("control runtime sync", () => {
       RENDER_DEFAULTS.renderQualityPreset,
     );
     expect(sharedSnapshot.customPerformanceTargetFps).toBe(60);
+    expect(sharedSnapshot.traaEnabled).toBe(true);
     expect(sharedSnapshot.visualizationMethod).toBe(
       DEFAULT_VISUALIZATION_METHOD,
     );

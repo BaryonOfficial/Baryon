@@ -47,6 +47,7 @@ test("builds the advanced controls presentation layout", () => {
   expect(diagnosticsGroup).toBeTruthy();
   expect(diagnosticsGroup.controls.map((control) => control.key)).toStrictEqual(
     [
+      "traaEnabled",
       "auditEnabled",
       "freezeModeSlots",
       "forceWebGLFallbackTest",

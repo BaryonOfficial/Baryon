@@ -137,6 +137,7 @@ export function OutputStageSurface({
     (typeof controlsRef.current?.backgroundColor === "string"
       ? controlsRef.current.backgroundColor
       : "#0D0A07");
+  const traaEnabled = controlsRef.current?.traaEnabled !== false;
 
   const handleCanvasError = (error) => {
     if (error?.name !== WEBGPU_RENDERER_INIT_ERROR) {
@@ -212,6 +213,7 @@ export function OutputStageSurface({
                 controlsRef={controlsRef}
                 visualizationMethod={visualizationMethod}
                 renderQualityPreset={renderQualityPreset}
+                traaEnabled={traaEnabled}
                 resolvedRenderProfile={resolvedRenderProfile}
                 onPerformanceHudSnapshotChange={onPerformanceHudSnapshotChange}
                 onAuditSnapshotChange={onAuditSnapshotChange}

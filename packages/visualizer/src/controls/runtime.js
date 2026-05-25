@@ -144,6 +144,7 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "performanceHudEnabled",
     "renderQualityPreset",
     "customPerformanceTargetFps",
+    "traaEnabled",
     "visualizationMethod",
   ]),
   [CONTROL_HANDLERS.output]: Object.freeze([
@@ -238,6 +239,7 @@ export function applySharedControls(gl, controls) {
     customPerformanceTargetFps:
       controls.customPerformanceTargetFps ??
       RENDER_DEFAULTS.customPerformanceTargetFps,
+    traaEnabled: controls.traaEnabled !== false,
     clearAlpha: 0,
     visualizationMethod: controls.visualizationMethod,
   };

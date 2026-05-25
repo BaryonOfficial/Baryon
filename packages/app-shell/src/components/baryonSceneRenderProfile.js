@@ -8,7 +8,7 @@ import {
 
 /**
  * @param {unknown} overrides
- * @returns {{ renderScale?: number, bloomAllowed?: boolean } | null}
+ * @returns {{ renderScale?: number, bloomAllowed?: boolean, traaEnabled?: boolean } | null}
  */
 export function sanitizeRenderProfileOverrides(overrides) {
   return normalizeRenderQualityProfileOverrides(overrides);
@@ -30,6 +30,7 @@ export function shouldAllowLocalRenderProfileCommands(renderContext) {
  *   outputHeight?: number,
  *   resolvedRenderProfile?: unknown,
  *   localRenderProfileOverrides?: unknown,
+ *   traaEnabled?: boolean,
  * }} options
  * @returns {import("@baryon/visualizer/render/outputPipeline").RenderQualityProfile}
  */
@@ -40,7 +41,9 @@ export function resolveSceneRenderQualityProfile({
   outputHeight = 0,
   resolvedRenderProfile = null,
   localRenderProfileOverrides = null,
+  traaEnabled = true,
 }) {
+  const traaOverride = traaEnabled === false ? { traaEnabled: false } : null;
   const sanitizedLocalOverrides = shouldAllowLocalRenderProfileCommands(
     renderContext,
   )
@@ -51,7 +54,10 @@ export function resolveSceneRenderQualityProfile({
     const normalizedResolvedRenderProfile =
       normalizeResolvedRenderQualityProfile(resolvedRenderProfile);
     if (normalizedResolvedRenderProfile) {
-      return normalizedResolvedRenderProfile;
+      return applyRenderProfileDiagnosticsOverrides(
+        normalizedResolvedRenderProfile,
+        traaOverride,
+      );
     }
   }
 
@@ -60,6 +66,7 @@ export function resolveSceneRenderQualityProfile({
       ? null
       : {
           ...(sanitizedLocalOverrides ?? {}),
+          ...(traaOverride ?? {}),
         };
 
   return resolveRenderQualityProfile({
@@ -75,4 +82,14 @@ export function resolveSceneRenderQualityProfile({
         ? RENDER_CONTEXTS.externalOutput
         : RENDER_CONTEXTS.preview,
   });
+}
+
+function applyRenderProfileDiagnosticsOverrides(profile, overrides) {
+  if (!overrides) {
+    return profile;
+  }
+  return {
+    ...profile,
+    ...overrides,
+  };
 }

@@ -503,6 +503,7 @@ const ThreeScene = ({
                 controlsRef={controlsRef}
                 visualizationMethod={controlsState.visualizationMethod}
                 renderQualityPreset={controlsState.renderQualityPreset}
+                traaEnabled={controlsState.traaEnabled !== false}
                 onPerformanceHudSnapshotChange={setPerformanceHudMetrics}
                 outputFrameConfig={outputFrameConfig}
                 onOutputFrame={onOutputFrame}

@@ -58,6 +58,7 @@ export function BaryonScene({
   controlsRef,
   visualizationMethod,
   renderQualityPreset: performanceProfile,
+  traaEnabled = true,
   resolvedRenderProfile = null,
   onPerformanceHudSnapshotChange,
   onAuditSnapshotChange = null,
@@ -94,6 +95,7 @@ export function BaryonScene({
         outputHeight: size.height,
         resolvedRenderProfile,
         localRenderProfileOverrides: renderProfileOverrides,
+        traaEnabled,
       }),
     [
       performanceProfile,
@@ -102,6 +104,7 @@ export function BaryonScene({
       resolvedRenderProfile,
       size.height,
       size.width,
+      traaEnabled,
     ],
   );
   const { ensurePipeline, postNodesRef, disposePipeline } = useBaryonPipeline(
