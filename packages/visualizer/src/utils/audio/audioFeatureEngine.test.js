@@ -248,7 +248,11 @@ describe("audio feature engine worker lanes", () => {
     const status = buildEngineStatus(engineState);
 
     expect(status.workerStructuralMs).toBe(15);
+    expect(status.workerStructuralLastMs).toBe(20);
+    expect(status.workerStructuralMaxMs).toBe(20);
     expect(status.workerProjectionMs).toBe(0.5);
+    expect(status.workerProjectionLastMs).toBe(0.5);
+    expect(status.workerProjectionMaxMs).toBe(0.5);
   });
 
   it("resets wrapper and worker metrics without clearing the latest snapshot", () => {
@@ -290,6 +294,8 @@ describe("audio feature engine worker lanes", () => {
       publishCount: 0,
       droppedFrameCount: 0,
       workerStructuralMs: 0,
+      workerStructuralLastMs: 0,
+      workerStructuralMaxMs: 0,
     });
     expect(engine.readLatestSnapshot()).toBe(latestSnapshot);
     engine.dispose();

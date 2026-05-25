@@ -44,12 +44,6 @@ const EFFECTIVE_FIELD_SUPPORT_DIAGNOSTIC_SAMPLE_POINTS = Object.freeze([
 ]);
 const EFFECTIVE_FIELD_SUPPORT_DIAGNOSTIC_ADAPTIVE_SAMPLE_LIMIT = 8;
 const EFFECTIVE_FIELD_SUPPORT_DIAGNOSTIC_SAMPLE_KEY_SCALE = 1e6;
-export const RAYMARCH_EFFECTIVE_FIELD_DYNAMIC_REBUILD_MIN_INTERVAL_SEC = 0.2;
-const DYNAMIC_EFFECTIVE_FIELD_REBUILD_REASONS = new Set([
-  "mode-count",
-  "mode-slots",
-  "phase-slots",
-]);
 
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -138,6 +132,12 @@ function buildCanonicalShapeEntries(terms, supportTotal) {
   return entries;
 }
 
+function buildCanonicalIdentityEntries(terms) {
+  const entries = terms.map(({ u, v, w }) => [u, v, w]);
+  entries.sort(compareCanonicalShapeEntries);
+  return entries;
+}
+
 function buildCanonicalModalFieldShape(slots, activeCount) {
   const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
   const terms = collectCanonicalModalFieldTerms(slots, clampedActiveCount);
@@ -145,6 +145,12 @@ function buildCanonicalModalFieldShape(slots, activeCount) {
     terms,
     sumSlotAmplitude(slots, clampedActiveCount),
   );
+}
+
+function buildCanonicalModalFieldTopology(slots, activeCount) {
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const terms = collectCanonicalModalFieldTerms(slots, clampedActiveCount);
+  return buildCanonicalIdentityEntries(terms);
 }
 
 function buildCanonicalEffectiveFieldShape(slots, activeCount, resolution) {
@@ -166,6 +172,22 @@ function buildCanonicalEffectiveFieldShape(slots, activeCount, resolution) {
   );
 }
 
+function buildCanonicalEffectiveFieldTopology(slots, activeCount, resolution) {
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const maxRepresentableModeIndex =
+    getEffectiveFieldMaxRepresentableModeIndex(resolution);
+  const terms = collectCanonicalModalFieldTerms(
+    slots,
+    clampedActiveCount,
+  ).filter(
+    ({ u, v, w }) =>
+      Math.max(Math.abs(u), Math.abs(v), Math.abs(w)) <=
+      maxRepresentableModeIndex,
+  );
+
+  return buildCanonicalIdentityEntries(terms);
+}
+
 function hashCanonicalModalFieldShape(entries) {
   let hash = FNV_OFFSET_BASIS;
   for (const [u, v, w, supportKey] of entries) {
@@ -173,6 +195,17 @@ function hashCanonicalModalFieldShape(entries) {
     hash = hashFloat32(v, hash);
     hash = hashFloat32(w, hash);
     hash = hashUint32(supportKey, hash);
+  }
+
+  return hash >>> 0;
+}
+
+function hashCanonicalModalFieldTopology(entries) {
+  let hash = FNV_OFFSET_BASIS;
+  for (const [u, v, w] of entries) {
+    hash = hashFloat32(u, hash);
+    hash = hashFloat32(v, hash);
+    hash = hashFloat32(w, hash);
   }
 
   return hash >>> 0;
@@ -1053,10 +1086,19 @@ function effectiveFieldDescriptorsEqual(left, right) {
     left.contributingEffectiveFieldModeCount ===
       right.contributingEffectiveFieldModeCount &&
     left.effectiveFieldHash === right.effectiveFieldHash &&
-    left.modalFieldPhaseHash === right.modalFieldPhaseHash &&
     left.descriptorOverflow === right.descriptorOverflow &&
     left.resolution === right.resolution
   );
+}
+
+function normalizeEffectiveFieldBaseRebuildReason(reason) {
+  if (reason === "boundary-mode") {
+    return "boundary";
+  }
+  if (reason === "cavity-geometry") {
+    return "geometry";
+  }
+  return reason;
 }
 
 function resolveFieldDescriptorBaseRebuildReason(
@@ -1133,37 +1175,26 @@ function resolveEffectiveFieldRebuildReason(
   previousDescriptor,
   nextDescriptor,
 ) {
-  const baseReason = resolveFieldDescriptorBaseRebuildReason(
-    previousDescriptor,
-    nextDescriptor,
+  const baseReason = normalizeEffectiveFieldBaseRebuildReason(
+    resolveFieldDescriptorBaseRebuildReason(previousDescriptor, nextDescriptor),
   );
   if (baseReason) {
     return baseReason;
   }
-  if (
-    previousDescriptor.contributingEffectiveFieldModeCount !==
-    nextDescriptor.contributingEffectiveFieldModeCount
-  ) {
-    return "mode-count";
-  }
-  if (
-    previousDescriptor.effectiveFieldHash !== nextDescriptor.effectiveFieldHash
-  ) {
-    return "mode-slots";
-  }
-  if (
-    previousDescriptor.modalFieldPhaseHash !==
-    nextDescriptor.modalFieldPhaseHash
-  ) {
-    return "phase-slots";
+  if (previousDescriptor.resolution !== nextDescriptor.resolution) {
+    return "resolution";
   }
   if (
     previousDescriptor.descriptorOverflow !== nextDescriptor.descriptorOverflow
   ) {
     return "descriptor-overflow";
   }
-  if (previousDescriptor.resolution !== nextDescriptor.resolution) {
-    return "resolution";
+  if (
+    previousDescriptor.contributingEffectiveFieldModeCount !==
+      nextDescriptor.contributingEffectiveFieldModeCount ||
+    previousDescriptor.effectiveFieldHash !== nextDescriptor.effectiveFieldHash
+  ) {
+    return "modal-identity";
   }
 
   return null;
@@ -1361,6 +1392,7 @@ export function clearQueuedRaymarchCacheRebuild(cache) {
 
   cache.queuedDescriptor = null;
   cache.queuedRebuildReason = null;
+  cache.queuedDescriptorAtSec = null;
   cache.queuedRequest = null;
 }
 
@@ -1374,19 +1406,10 @@ function takeQueuedCacheRebuild(cache) {
   return queued;
 }
 
-function isPhaseOnlyEffectiveFieldRebuildReason(rebuildReason) {
-  return rebuildReason === "phase-slots";
-}
-
-function isDynamicEffectiveFieldRebuildReason(rebuildReason) {
-  return DYNAMIC_EFFECTIVE_FIELD_REBUILD_REASONS.has(rebuildReason);
-}
-
 export const RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES = Object.freeze({
   absent: "field-cache-absent",
   building: "field-cache-building",
   readyCurrent: "field-cache-ready-current",
-  readyPhaseStale: "field-cache-ready-phase-stale",
   readyStale: "field-cache-ready-stale",
   blocked: "field-cache-blocked",
 });
@@ -1421,23 +1444,18 @@ function makeEffectiveFieldDrawableAuthority({
   state,
   blockedReason = null,
   staleReason = null,
-  phaseStalenessSec = 0,
 }) {
   return {
     drawable,
     state,
     blockedReason,
     staleReason,
-    phaseStalenessSec: Number.isFinite(phaseStalenessSec)
-      ? Math.max(0, phaseStalenessSec)
-      : 0,
   };
 }
 
 export function resolveRaymarchEffectiveFieldDrawableAuthority(
   effectiveFieldCache,
   descriptor,
-  { schedulerTimeSec = null } = {},
 ) {
   const descriptorBlockedReason =
     resolveRaymarchEffectiveFieldDescriptorBlockedReason(descriptor);
@@ -1484,26 +1502,6 @@ export function resolveRaymarchEffectiveFieldDrawableAuthority(
   const staleReason = hasDrawableActiveDescriptor
     ? resolveEffectiveFieldRebuildReason(activeDescriptor, descriptor)
     : null;
-  if (isPhaseOnlyEffectiveFieldRebuildReason(staleReason)) {
-    const activePhaseSampleTimeSec =
-      effectiveFieldCache.activePhaseSampleTimeSec ?? null;
-    const lastSubmittedAtSec =
-      effectiveFieldCache.lastRebuildSubmittedAtSec ?? null;
-    const phaseStalenessSec =
-      Number.isFinite(schedulerTimeSec) &&
-      Number.isFinite(activePhaseSampleTimeSec)
-        ? schedulerTimeSec - activePhaseSampleTimeSec
-        : Number.isFinite(schedulerTimeSec) &&
-            Number.isFinite(lastSubmittedAtSec)
-          ? schedulerTimeSec - lastSubmittedAtSec
-          : 0;
-    return makeEffectiveFieldDrawableAuthority({
-      drawable: true,
-      state: RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES.readyPhaseStale,
-      staleReason,
-      phaseStalenessSec,
-    });
-  }
 
   if (hasDrawableActiveDescriptor && effectiveFieldCache.rebuildPending) {
     return makeEffectiveFieldDrawableAuthority({
@@ -1574,6 +1572,7 @@ function buildRaymarchComputeNodeCacheKey({
 function setQueuedCacheRebuild(cache, descriptor, rebuildReason, request) {
   cache.queuedDescriptor = descriptor;
   cache.queuedRebuildReason = rebuildReason;
+  cache.queuedDescriptorAtSec = getCacheSchedulerTimeSec(request?.options);
   cache.queuedRequest = request;
 }
 
@@ -1629,64 +1628,6 @@ function beginCacheRebuild(cache, descriptor, schedulerTimeSec = null) {
   return generation;
 }
 
-function shouldDeferDynamicEffectiveFieldRebuild(
-  effectiveFieldCache,
-  rebuildReason,
-  schedulerTimeSec,
-  minIntervalSec =
-    RAYMARCH_EFFECTIVE_FIELD_DYNAMIC_REBUILD_MIN_INTERVAL_SEC,
-) {
-  if (
-    !effectiveFieldCache?.ready ||
-    !effectiveFieldCache?.activeDescriptor ||
-    !isDynamicEffectiveFieldRebuildReason(rebuildReason) ||
-    !Number.isFinite(schedulerTimeSec) ||
-    !Number.isFinite(effectiveFieldCache.lastRebuildSubmittedAtSec)
-  ) {
-    return false;
-  }
-
-  const elapsedSec =
-    schedulerTimeSec - effectiveFieldCache.lastRebuildSubmittedAtSec;
-  return (
-    elapsedSec >= 0 &&
-    elapsedSec < Math.max(0, minIntervalSec) &&
-    (effectiveFieldCache.dynamicRebuildBurstCount ?? 0) >= 1
-  );
-}
-
-function recordDynamicEffectiveFieldRebuildSubmission(
-  effectiveFieldCache,
-  rebuildReason,
-  schedulerTimeSec,
-  minIntervalSec =
-    RAYMARCH_EFFECTIVE_FIELD_DYNAMIC_REBUILD_MIN_INTERVAL_SEC,
-) {
-  if (
-    !effectiveFieldCache ||
-    !isDynamicEffectiveFieldRebuildReason(rebuildReason) ||
-    !Number.isFinite(schedulerTimeSec)
-  ) {
-    if (effectiveFieldCache) {
-      effectiveFieldCache.dynamicRebuildBurstCount = 0;
-    }
-    return;
-  }
-
-  const previousSubmittedAtSec =
-    effectiveFieldCache.lastRebuildSubmittedAtSec ?? null;
-  const elapsedSec = Number.isFinite(previousSubmittedAtSec)
-    ? schedulerTimeSec - previousSubmittedAtSec
-    : null;
-
-  effectiveFieldCache.dynamicRebuildBurstCount =
-    Number.isFinite(elapsedSec) &&
-    elapsedSec >= 0 &&
-    elapsedSec < Math.max(0, minIntervalSec)
-      ? (effectiveFieldCache.dynamicRebuildBurstCount ?? 0) + 1
-      : 0;
-}
-
 export function buildRaymarchFieldCacheDescriptor({
   modalFieldSlots,
   modalFieldCount,
@@ -1739,7 +1680,16 @@ export function buildRaymarchEffectiveFieldDescriptor({
     cavityGeometry,
     radius: normalizedRadius,
   });
+  const modalFieldTopology = buildCanonicalModalFieldTopology(
+    modalFieldSlots,
+    normalizedUploadedModalFieldCount,
+  );
   const effectiveFieldShape = buildCanonicalEffectiveFieldShape(
+    modalFieldSlots,
+    normalizedUploadedModalFieldCount,
+    normalizedResolution,
+  );
+  const effectiveFieldTopology = buildCanonicalEffectiveFieldTopology(
     modalFieldSlots,
     normalizedUploadedModalFieldCount,
     normalizedResolution,
@@ -1768,7 +1718,14 @@ export function buildRaymarchEffectiveFieldDescriptor({
 
   const descriptor = {
     ...fieldDescriptor,
-    effectiveFieldHash: hashCanonicalModalFieldShape(effectiveFieldShape),
+    modalFieldTopologyCount: modalFieldTopology.length,
+    modalFieldTopologyHash:
+      hashCanonicalModalFieldTopology(modalFieldTopology),
+    effectiveFieldSupportHash:
+      hashCanonicalModalFieldShape(effectiveFieldShape),
+    effectiveFieldTopologyHash:
+      hashCanonicalModalFieldTopology(effectiveFieldTopology),
+    effectiveFieldHash: hashCanonicalModalFieldTopology(effectiveFieldTopology),
     modalFieldPhaseHash: buildRaymarchEffectiveFieldPhaseSignature({
       phaseSlots: modalFieldPhaseSlots,
       modalFieldSlots,
@@ -3155,35 +3112,6 @@ export function enqueueRaymarchEffectiveFieldRebuild(
     return { enqueued: false, reason: "unavailable" };
   }
 
-  const requestSnapshot = {
-    renderer,
-    options: snapshotRaymarchCacheRebuildOptions(options, {
-      includePhase: true,
-    }),
-  };
-
-  if (
-    shouldDeferDynamicEffectiveFieldRebuild(
-      effectiveFieldCache,
-      rebuildReason,
-      phaseSampleTimeSec,
-      options?.dynamicRebuildMinIntervalSec,
-    )
-  ) {
-    setQueuedCacheRebuild(
-      effectiveFieldCache,
-      descriptor,
-      rebuildReason,
-      requestSnapshot,
-    );
-    return {
-      enqueued: false,
-      reason: "deferred",
-      descriptor: effectiveFieldCache.pendingDescriptor,
-      queuedDescriptor: effectiveFieldCache.queuedDescriptor,
-    };
-  }
-
   const computeNode = getOrCreateRaymarchEffectiveFieldComputeNode(
     effectiveFieldCache,
     {
@@ -3200,12 +3128,6 @@ export function enqueueRaymarchEffectiveFieldRebuild(
     return { enqueued: false, reason: "unavailable" };
   }
 
-  recordDynamicEffectiveFieldRebuildSubmission(
-    effectiveFieldCache,
-    rebuildReason,
-    phaseSampleTimeSec,
-    options?.dynamicRebuildMinIntervalSec,
-  );
   const rebuildGeneration = beginCacheRebuild(
     effectiveFieldCache,
     descriptor,

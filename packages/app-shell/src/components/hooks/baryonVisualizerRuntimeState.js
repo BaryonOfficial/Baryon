@@ -3,6 +3,30 @@ import {
   isRaymarchEffectiveFieldCacheReadyForDescriptor,
 } from "@baryon/visualizer/core/raymarch/fieldCache";
 
+const WORKER_PERF_COUNTER_BASES = Object.freeze([
+  "FastSignal",
+  "Structural",
+  "PeakScan",
+  "ModalResolve",
+  "Projection",
+  "Chroma",
+  "Tempo",
+]);
+const WORKER_PERF_COUNTER_SUFFIXES = Object.freeze(["Ms", "LastMs", "MaxMs"]);
+export const WORKER_PERF_COUNTER_KEYS = Object.freeze(
+  WORKER_PERF_COUNTER_BASES.flatMap((base) =>
+    WORKER_PERF_COUNTER_SUFFIXES.map((suffix) => `worker${base}${suffix}`),
+  ),
+);
+
+export function snapshotWorkerPerfCounters(source) {
+  const counters = {};
+  for (const key of WORKER_PERF_COUNTER_KEYS) {
+    counters[key] = source?.[key] ?? 0;
+  }
+  return counters;
+}
+
 function createRuntimePerfEntry() {
   return {
     averageMs: 0,
@@ -73,6 +97,8 @@ function createModalFreshnessDiagnostics() {
     frameSemanticFresh: false,
     frameSemanticReused: false,
     structuralSnapshotAgeMs: 0,
+    featureFrameAgeAtRenderMs: 0,
+    renderSubmittedAtMs: 0,
     lastUpdatedAtWallTimeMs: 0,
     avgAmplitude: 0,
     analyserRms: 0,
@@ -143,6 +169,9 @@ export function snapshotModalFreshnessDiagnostics(modalFreshness) {
     frameSemanticFresh: modalFreshness.frameSemanticFresh ?? false,
     frameSemanticReused: modalFreshness.frameSemanticReused ?? false,
     structuralSnapshotAgeMs: modalFreshness.structuralSnapshotAgeMs ?? 0,
+    featureFrameAgeAtRenderMs:
+      modalFreshness.featureFrameAgeAtRenderMs ?? 0,
+    renderSubmittedAtMs: modalFreshness.renderSubmittedAtMs ?? 0,
     lastUpdatedAtWallTimeMs: modalFreshness.lastUpdatedAtWallTimeMs ?? 0,
     avgAmplitude: modalFreshness.avgAmplitude ?? 0,
     analyserRms: modalFreshness.analyserRms ?? 0,
@@ -343,13 +372,7 @@ export function createRuntimeDiagnostics() {
       tempoUpdateCount: 0,
       latestProcessedFrameId: 0,
       latestPublishedFrameId: 0,
-      workerFastSignalMs: 0,
-      workerStructuralMs: 0,
-      workerPeakScanMs: 0,
-      workerModalResolveMs: 0,
-      workerProjectionMs: 0,
-      workerChromaMs: 0,
-      workerTempoMs: 0,
+      ...snapshotWorkerPerfCounters(null),
       queueDepth: 0,
       state: "none",
       reason: null,
@@ -771,14 +794,7 @@ function buildRuntimePerfSnapshot(runtimeDiagnostics) {
         runtimeDiagnostics?.engine?.latestProcessedFrameId ?? 0,
       latestPublishedFrameId:
         runtimeDiagnostics?.engine?.latestPublishedFrameId ?? 0,
-      workerFastSignalMs: runtimeDiagnostics?.engine?.workerFastSignalMs ?? 0,
-      workerStructuralMs: runtimeDiagnostics?.engine?.workerStructuralMs ?? 0,
-      workerPeakScanMs: runtimeDiagnostics?.engine?.workerPeakScanMs ?? 0,
-      workerModalResolveMs:
-        runtimeDiagnostics?.engine?.workerModalResolveMs ?? 0,
-      workerProjectionMs: runtimeDiagnostics?.engine?.workerProjectionMs ?? 0,
-      workerChromaMs: runtimeDiagnostics?.engine?.workerChromaMs ?? 0,
-      workerTempoMs: runtimeDiagnostics?.engine?.workerTempoMs ?? 0,
+      ...snapshotWorkerPerfCounters(runtimeDiagnostics?.engine),
       queueDepth: runtimeDiagnostics?.engine?.queueDepth ?? 0,
       state: runtimeDiagnostics?.engine?.state ?? "none",
       reason: runtimeDiagnostics?.engine?.reason ?? null,

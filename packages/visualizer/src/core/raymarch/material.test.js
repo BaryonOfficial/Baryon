@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { AUDIO_SLOT_CAPACITY, RAYMARCH_DEFAULTS } from "../../defaults.js";
 import {
+  RAYMARCH_LIVE_RESIDUAL_MAX_MODES,
   RAYMARCH_BOUNDARY_TUNING,
   RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES,
   RAYMARCH_SPECTRAL_LIGHT_TUNING,
@@ -68,7 +69,7 @@ describe("raymarch volume material", () => {
       "utf8",
     );
     const modalStructureAnchorStart = source.indexOf(
-      "const modalStructureAnchor = causticRidgeAuthority",
+      "const modalStructureAnchor =",
     );
     const ridgeAnchorStart = source.indexOf("const ridgeAnchor =");
     const causticFocusStart = source.indexOf("const causticFocusAuthority =");
@@ -517,6 +518,53 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("phaseCoherentFieldTexture");
     expect(source).not.toContain("signedPhaseContribution");
     expect(source).not.toContain("phaseCoherentSignedDisplacement");
+  });
+
+  it("adds a cheap field-only live residual on the cached effective field path", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const residualStart = expectSourceIndex(
+      source,
+      "function accumulateCachedLiveResidual({",
+    );
+    const directStart = expectSourceIndex(
+      source,
+      "function accumulateDirectModalField({",
+    );
+    const amplitudeNormStart = expectSourceIndex(
+      source,
+      "const amplitudeNorm =",
+    );
+    const cachedBranchStart = source.indexOf(
+      "if (effectiveFieldTexture) {",
+      amplitudeNormStart,
+    );
+    const directBranchStart = source.indexOf(
+      "} else if (directFieldEvaluationEnabled) {",
+      cachedBranchStart,
+    );
+    const residualBlock = source.slice(residualStart, directStart);
+    const cachedBranchBlock = source.slice(cachedBranchStart, directBranchStart);
+
+    expect(RAYMARCH_LIVE_RESIDUAL_MAX_MODES).toBe(2);
+    expect(cachedBranchStart).toBeGreaterThanOrEqual(0);
+    expect(directBranchStart).toBeGreaterThan(cachedBranchStart);
+    expect(cachedBranchBlock).toContain("accumulateCachedLiveResidual({");
+    expect(residualBlock).toContain("RAYMARCH_LIVE_RESIDUAL_MAX_MODES");
+    expect(residualBlock).toContain("modalFieldPhaseBuffer.element(i)");
+    expect(residualBlock).toContain("evaluateFieldNode({");
+    expect(residualBlock).toContain("uTransientEnergy");
+    expect(residualBlock).toContain("uPulseSignal");
+    expect(residualBlock).toContain("uModalResponseEnergy");
+    expect(residualBlock).not.toContain("effectiveUnsignedSupport.assign");
+    expect(residualBlock).not.toContain("effectiveCancellationRatio");
+    expect(residualBlock).not.toContain("evaluateModeNode({");
+    expect(residualBlock).not.toContain("gradX.addAssign");
+    expect(residualBlock).not.toContain("gradY.addAssign");
+    expect(residualBlock).not.toContain("gradZ.addAssign");
+    expect(residualBlock).not.toContain("end: int(modalFieldCapacity)");
   });
 
   it("accumulates the direct raymarch field through one modal field path", () => {
@@ -1027,7 +1075,7 @@ describe("raymarch volume material", () => {
     );
     const modalStructureAnchorStart = expectSourceIndex(
       source,
-      "const modalStructureAnchor = causticRidgeAuthority",
+      "const modalStructureAnchor =",
     );
     const spectralPresenceStart = expectSourceIndex(
       source,

@@ -11,6 +11,10 @@ function createCenteredDirichletArgumentNode(index, coordinate, scale) {
   return index.mul(coordinate.mul(scale).add(float(Math.PI)).mul(float(0.5)));
 }
 
+function createDirichletBasisValueNode(index, coordinate, scale) {
+  return sin(createCenteredDirichletArgumentNode(index, coordinate, scale));
+}
+
 function createDirichletBasisNode(index, coordinate, scale) {
   const angularScale = index.mul(scale);
   const centeredAngularScale = angularScale.mul(float(0.5));
@@ -24,6 +28,10 @@ function createDirichletBasisNode(index, coordinate, scale) {
     value: sin(centeredArgument),
     derivative: cos(centeredArgument).mul(centeredAngularScale),
   };
+}
+
+function createNeumannBasisValueNode(index, coordinate, scale) {
+  return cos(index.mul(scale).mul(coordinate));
 }
 
 function createNeumannBasisNode(index, coordinate, scale) {
@@ -65,6 +73,20 @@ function createFixedBoundaryBasisNode(
   return createNeumannBasisNode(index, coordinate, scale);
 }
 
+function createFixedBoundaryBasisValueNode(
+  index,
+  coordinate,
+  scale,
+  boundaryMode = BOUNDARY_MODES.neumann,
+) {
+  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+  if (normalizedBoundaryMode === BOUNDARY_MODES.dirichlet) {
+    return createDirichletBasisValueNode(index, coordinate, scale);
+  }
+
+  return createNeumannBasisValueNode(index, coordinate, scale);
+}
+
 function createPermutationTermNode({ basisX, basisY, basisZ }) {
   return {
     field: basisX.value.mul(basisY.value).mul(basisZ.value),
@@ -74,16 +96,11 @@ function createPermutationTermNode({ basisX, basisY, basisZ }) {
   };
 }
 
-function createPermutationFamilyTerms({
-  u,
-  v,
-  w,
-  xCoord,
-  yCoord,
-  zCoord,
-  scale,
-  createBasisNode,
-}) {
+function createPermutationFieldTermNode({ basisX, basisY, basisZ }) {
+  return basisX.mul(basisY).mul(basisZ);
+}
+
+function createPermutationFamilySignature({ u, v, w }) {
   const zero = float(0.0);
   const one = float(1.0);
   const neqUV = smoothstep(zero, float(FAMILY_EPSILON), abs(u.sub(v)));
@@ -110,23 +127,85 @@ function createPermutationFamilyTerms({
     termWeights,
     uniquePermutationCount,
     normalization,
-    basisGrid: [
-      [
-        createBasisNode(u, xCoord, scale),
-        createBasisNode(v, xCoord, scale),
-        createBasisNode(w, xCoord, scale),
-      ],
-      [
-        createBasisNode(u, yCoord, scale),
-        createBasisNode(v, yCoord, scale),
-        createBasisNode(w, yCoord, scale),
-      ],
-      [
-        createBasisNode(u, zCoord, scale),
-        createBasisNode(v, zCoord, scale),
-        createBasisNode(w, zCoord, scale),
-      ],
+  };
+}
+
+function createPermutationBasisGrid({
+  u,
+  v,
+  w,
+  xCoord,
+  yCoord,
+  zCoord,
+  scale,
+  createBasis,
+}) {
+  return [
+    [
+      createBasis(u, xCoord, scale),
+      createBasis(v, xCoord, scale),
+      createBasis(w, xCoord, scale),
     ],
+    [
+      createBasis(u, yCoord, scale),
+      createBasis(v, yCoord, scale),
+      createBasis(w, yCoord, scale),
+    ],
+    [
+      createBasis(u, zCoord, scale),
+      createBasis(v, zCoord, scale),
+      createBasis(w, zCoord, scale),
+    ],
+  ];
+}
+
+function createPermutationFamilyTerms({
+  u,
+  v,
+  w,
+  xCoord,
+  yCoord,
+  zCoord,
+  scale,
+  createBasisNode,
+}) {
+  return {
+    ...createPermutationFamilySignature({ u, v, w }),
+    basisGrid: createPermutationBasisGrid({
+      u,
+      v,
+      w,
+      xCoord,
+      yCoord,
+      zCoord,
+      scale,
+      createBasis: createBasisNode,
+    }),
+  };
+}
+
+function createPermutationFamilyValueTerms({
+  u,
+  v,
+  w,
+  xCoord,
+  yCoord,
+  zCoord,
+  scale,
+  createBasisValueNode,
+}) {
+  return {
+    ...createPermutationFamilySignature({ u, v, w }),
+    basisGrid: createPermutationBasisGrid({
+      u,
+      v,
+      w,
+      xCoord,
+      yCoord,
+      zCoord,
+      scale,
+      createBasis: createBasisValueNode,
+    }),
   };
 }
 
@@ -136,20 +215,18 @@ function evaluatePermutationFamilyFromBasisGrid({
   normalization,
   uniquePermutationCount,
 }) {
-  const terms = PERMUTATION_ORDERS.distinct.map(([xIndex, yIndex, zIndex]) =>
-    createPermutationTermNode({
-      basisX: basisGrid[0][xIndex],
-      basisY: basisGrid[1][yIndex],
-      basisZ: basisGrid[2][zIndex],
-    }),
-  );
   const fieldSum = float(0.0).toVar();
   const gradXSum = float(0.0).toVar();
   const gradYSum = float(0.0).toVar();
   const gradZSum = float(0.0).toVar();
 
-  for (let i = 0; i < terms.length; i += 1) {
-    const term = terms[i];
+  for (let i = 0; i < PERMUTATION_ORDERS.distinct.length; i += 1) {
+    const [xIndex, yIndex, zIndex] = PERMUTATION_ORDERS.distinct[i];
+    const term = createPermutationTermNode({
+      basisX: basisGrid[0][xIndex],
+      basisY: basisGrid[1][yIndex],
+      basisZ: basisGrid[2][zIndex],
+    });
     const weight = termWeights[i];
     fieldSum.addAssign(term.field.mul(weight));
     gradXSum.addAssign(term.gradX.mul(weight));
@@ -162,6 +239,30 @@ function evaluatePermutationFamilyFromBasisGrid({
     gradX: gradXSum.mul(normalization),
     gradY: gradYSum.mul(normalization),
     gradZ: gradZSum.mul(normalization),
+    permutationCount: uniquePermutationCount,
+  };
+}
+
+function evaluatePermutationFamilyFieldFromBasisGrid({
+  basisGrid,
+  termWeights,
+  normalization,
+  uniquePermutationCount,
+}) {
+  const fieldSum = float(0.0).toVar();
+
+  for (let i = 0; i < PERMUTATION_ORDERS.distinct.length; i += 1) {
+    const [xIndex, yIndex, zIndex] = PERMUTATION_ORDERS.distinct[i];
+    const term = createPermutationFieldTermNode({
+      basisX: basisGrid[0][xIndex],
+      basisY: basisGrid[1][yIndex],
+      basisZ: basisGrid[2][zIndex],
+    });
+    fieldSum.addAssign(term.mul(termWeights[i]));
+  }
+
+  return {
+    field: fieldSum.mul(normalization),
     permutationCount: uniquePermutationCount,
   };
 }
@@ -215,4 +316,34 @@ export function evaluatePermutationFamilyNodeForBoundary({
   });
 
   return evaluatePermutationFamilyFromBasisGrid(family);
+}
+
+export function evaluatePermutationFamilyFieldNodeForBoundary({
+  u,
+  v,
+  w,
+  xCoord,
+  yCoord,
+  zCoord,
+  scale,
+  boundaryMode = BOUNDARY_MODES.neumann,
+}) {
+  const family = createPermutationFamilyValueTerms({
+    u,
+    v,
+    w,
+    xCoord,
+    yCoord,
+    zCoord,
+    scale,
+    createBasisValueNode: (index, coordinate, basisScale) =>
+      createFixedBoundaryBasisValueNode(
+        index,
+        coordinate,
+        basisScale,
+        boundaryMode,
+      ),
+  });
+
+  return evaluatePermutationFamilyFieldFromBasisGrid(family);
 }

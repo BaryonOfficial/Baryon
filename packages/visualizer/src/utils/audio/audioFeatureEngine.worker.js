@@ -36,6 +36,15 @@ const STRUCTURAL_FINGERPRINT_KEYS = [
   "sourceCoupledColorSignature",
   "resonantColorSignature",
 ];
+const WORKER_PERF_STATUS_LANES = Object.freeze([
+  ["FastSignal", "fastSignalMs"],
+  ["Structural", "structuralMs"],
+  ["PeakScan", "peakScanMs"],
+  ["ModalResolve", "modalResolveMs"],
+  ["Projection", "projectionMs"],
+  ["Chroma", "chromaMs"],
+  ["Tempo", "tempoMs"],
+]);
 
 function postStatus(status = {}) {
   self.postMessage({
@@ -67,6 +76,25 @@ function createWorkerPerfState() {
 
 export function readWorkerPerfAverageMs(entry) {
   return Number.isFinite(entry?.averageMs) ? entry.averageMs : 0;
+}
+
+export function readWorkerPerfLastMs(entry) {
+  return Number.isFinite(entry?.lastMs) ? entry.lastMs : 0;
+}
+
+export function readWorkerPerfMaxMs(entry) {
+  return Number.isFinite(entry?.maxMs) ? entry.maxMs : 0;
+}
+
+function buildWorkerPerfStatus(workerPerf) {
+  const status = {};
+  for (const [statusName, entryKey] of WORKER_PERF_STATUS_LANES) {
+    const entry = workerPerf?.[entryKey];
+    status[`worker${statusName}Ms`] = readWorkerPerfAverageMs(entry);
+    status[`worker${statusName}LastMs`] = readWorkerPerfLastMs(entry);
+    status[`worker${statusName}MaxMs`] = readWorkerPerfMaxMs(entry);
+  }
+  return status;
 }
 
 function resetWorkerPerfEntry(entry) {
@@ -129,23 +157,7 @@ export function buildEngineStatus(engineState, overrides = {}) {
     latestProcessedFrameId: engineState.latestProcessedFrameId,
     latestPublishedFrameId: engineState.latestPublishedFrameId,
     latestSnapshotFrameTimeMs: engineState.latestSnapshot?.frameTimeMs ?? null,
-    workerFastSignalMs: readWorkerPerfAverageMs(
-      engineState.workerPerf.fastSignalMs,
-    ),
-    workerStructuralMs: readWorkerPerfAverageMs(
-      engineState.workerPerf.structuralMs,
-    ),
-    workerPeakScanMs: readWorkerPerfAverageMs(
-      engineState.workerPerf.peakScanMs,
-    ),
-    workerModalResolveMs: readWorkerPerfAverageMs(
-      engineState.workerPerf.modalResolveMs,
-    ),
-    workerProjectionMs: readWorkerPerfAverageMs(
-      engineState.workerPerf.projectionMs,
-    ),
-    workerChromaMs: readWorkerPerfAverageMs(engineState.workerPerf.chromaMs),
-    workerTempoMs: readWorkerPerfAverageMs(engineState.workerPerf.tempoMs),
+    ...buildWorkerPerfStatus(engineState.workerPerf),
     ...overrides,
   };
 }

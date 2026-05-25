@@ -234,7 +234,6 @@ function setEffectiveFieldDrawableAuthority(runtimeState, authority) {
     state: "field-cache-absent",
     blockedReason: "cache-unavailable",
     staleReason: null,
-    phaseStalenessSec: 0,
   };
   runtimeState.effectiveFieldDrawableAuthority = normalizedAuthority;
   const cache = runtimeState.effectiveFieldCache;
@@ -245,8 +244,6 @@ function setEffectiveFieldDrawableAuthority(runtimeState, authority) {
       normalizedAuthority.blockedReason ?? null;
     cache.effectiveFieldDrawableStaleReason =
       normalizedAuthority.staleReason ?? null;
-    cache.effectiveFieldPhaseStalenessSec =
-      normalizedAuthority.phaseStalenessSec ?? 0;
   }
   return normalizedAuthority;
 }
@@ -637,6 +634,16 @@ function buildRaymarchDebugSnapshot(
       activeDescriptor: effectiveFieldCache?.activeDescriptor,
       nextDescriptor: effectiveFieldDescriptor,
     });
+  const effectiveFieldQueuedDescriptorAgeMs =
+    effectiveFieldCache?.queuedDescriptor &&
+    Number.isFinite(effectiveFieldCache?.queuedDescriptorAtSec)
+      ? Math.max(
+          0,
+          ((runtimeState.uniforms.uTime?.value ?? 0) -
+            effectiveFieldCache.queuedDescriptorAtSec) *
+            1000,
+        )
+      : null;
   const effectiveFieldModeCount = readFiniteNumber(
     effectiveFieldDiagnosticDescriptor?.contributingEffectiveFieldModeCount ??
       effectiveFieldCache?.activeEffectiveFieldModeCount,
@@ -1008,6 +1015,7 @@ function buildRaymarchDebugSnapshot(
     effectiveFieldQueuedDescriptorPending: Boolean(
       effectiveFieldCache?.queuedDescriptor,
     ),
+    effectiveFieldQueuedDescriptorAgeMs,
     effectiveFieldBackend: effectiveFieldCache?.backend ?? "compute",
     effectiveFieldReady: effectiveFieldCache?.ready ?? false,
     effectiveFieldRebuildPending: effectiveFieldCache?.rebuildPending ?? false,
@@ -1023,8 +1031,6 @@ function buildRaymarchDebugSnapshot(
       effectiveFieldDrawableAuthority.blockedReason ?? null,
     effectiveFieldDrawableStaleReason:
       effectiveFieldDrawableAuthority.staleReason ?? null,
-    effectiveFieldPhaseStalenessSec:
-      effectiveFieldDrawableAuthority.phaseStalenessSec ?? 0,
     effectiveFieldModeCount,
     effectiveFieldSemantic,
     effectiveFieldSupportReady,
@@ -1545,7 +1551,6 @@ function updateEffectiveFieldCache(
       resolveRaymarchEffectiveFieldDrawableAuthority(
         effectiveFieldCache,
         effectiveFieldDescriptor,
-        { schedulerTimeSec },
       ),
     );
     return "unavailable";
@@ -1557,7 +1562,6 @@ function updateEffectiveFieldCache(
       resolveRaymarchEffectiveFieldDrawableAuthority(
         effectiveFieldCache,
         effectiveFieldDescriptor,
-        { schedulerTimeSec },
       ),
     );
     return "unavailable";
@@ -1580,7 +1584,6 @@ function updateEffectiveFieldCache(
       resolveRaymarchEffectiveFieldDrawableAuthority(
         effectiveFieldCache,
         effectiveFieldDescriptor,
-        { schedulerTimeSec },
       ),
     );
     return authority.drawable ? "effective-cached" : "unavailable";
@@ -1612,7 +1615,6 @@ function updateEffectiveFieldCache(
     resolveRaymarchEffectiveFieldDrawableAuthority(
       effectiveFieldCache,
       effectiveFieldDescriptor,
-      { schedulerTimeSec },
     ),
   );
 
@@ -1739,6 +1741,134 @@ function updateRaymarchEvaluationModes(
   );
 }
 
+function applyRaymarchRuntimeUploadAuthority({
+  runtimeState,
+  featureFrame,
+  renderer,
+  time,
+  uniforms,
+  volumeMesh,
+  modalDescriptor,
+  modalFieldCapacity,
+  modalFieldPhaseCapacity,
+  modalFieldModeBuffer,
+  modalFieldColorBuffer,
+  modalFieldPhaseBuffer,
+  spectralLightEnabled,
+  effectiveCavityGeometry,
+}) {
+  const descriptorSlots = modalDescriptor.slotViews;
+  const requestedStepBudget = resolveRequestedRaymarchStepBudget(
+    runtimeState,
+    volumeMesh,
+  );
+  const requestedRenderScale = 1;
+  const performanceGovernor =
+    takePendingRaymarchPerformanceGovernor(runtimeState, featureFrame, {
+      modalFieldCapacity,
+      cavityGeometry: effectiveCavityGeometry,
+      requestedStepBudget,
+      requestedRenderScale,
+    }) ??
+    buildRaymarchPerformanceGovernor({
+      modalFieldSlots: descriptorSlots.modalFieldSlots,
+      modalFieldCapacity,
+      featureFrame,
+      cavityGeometry: effectiveCavityGeometry,
+      requestedStepBudget,
+      requestedRenderScale,
+    });
+  const modalFieldLayer = performanceGovernor.modalField;
+  runtimeState.performanceGovernor = performanceGovernor;
+
+  const uploadState = getRaymarchUploadState(runtimeState);
+  applyLayerUploadIfChanged({
+    uploadState,
+    key: "modalField",
+    slots: descriptorSlots.modalFieldSlots,
+    colorSlots: descriptorSlots.modalFieldColorSlots,
+    targetSlots: modalFieldModeBuffer.value.array,
+    targetColorSlots: modalFieldColorBuffer.value.array,
+    modeBufferNode: modalFieldModeBuffer,
+    colorBufferNode: modalFieldColorBuffer,
+    layer: modalFieldLayer,
+    includeColors: spectralLightEnabled,
+  });
+
+  const modalFieldPhaseAuthorityModeCount = applyLayerPhaseUploadIfChanged({
+    uploadState,
+    key: "modalFieldPhase",
+    phaseSlots: descriptorSlots.modalFieldPhaseSlots,
+    targetPhaseSlots: modalFieldPhaseBuffer?.value?.array ?? null,
+    phaseBufferNode: modalFieldPhaseBuffer,
+    layer: modalFieldLayer,
+    capacity: modalFieldPhaseCapacity,
+  });
+  runtimeState.effectiveFieldPhaseAuthorityModeCount =
+    modalFieldPhaseAuthorityModeCount;
+
+  const modalFieldModeCount = modalFieldLayer.uploadedActiveCount;
+  setIfChanged(uniforms.uModalFieldModeCount, modalFieldModeCount);
+  setIfChanged(uniforms.uActiveModeCount, modalFieldModeCount);
+
+  const boundaryMode = getRuntimeBoundaryMode(runtimeState);
+  const descriptorRadius = runtimeState.uniforms.uRadius?.value ?? 1;
+  const effectiveFieldDescriptor = buildRaymarchEffectiveFieldDescriptor({
+    modalFieldSlots: modalFieldModeBuffer?.value?.array,
+    modalFieldPhaseSlots: modalFieldPhaseBuffer?.value?.array,
+    modalFieldCount: modalFieldModeCount,
+    boundaryMode,
+    cavityGeometry: effectiveCavityGeometry,
+    radius: descriptorRadius,
+    time,
+    phaseModeCount: runtimeState.effectiveFieldPhaseAuthorityModeCount,
+    phaseAuthority: featureFrame?.modalPhaseAuthority ?? 0,
+    descriptorOverflow: modalDescriptor.diagnostics.descriptorOverflow,
+    modeIdentityRetentionRatio:
+      modalDescriptor.diagnostics.modeIdentityRetentionRatio,
+    resolution:
+      runtimeState.effectiveFieldCache?.resolution ??
+      RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
+  });
+
+  let spectralLightDescriptor = null;
+  if (spectralLightEnabled) {
+    const nextSpectralLightDescriptor =
+      buildRaymarchSpectralLightCacheDescriptor({
+        modalFieldSlots: modalFieldModeBuffer?.value?.array,
+        modalFieldColorSlots: modalFieldColorBuffer?.value?.array,
+        modalFieldCount: modalFieldModeCount,
+        boundaryMode,
+        cavityGeometry: effectiveCavityGeometry,
+        radius: descriptorRadius,
+      });
+    spectralLightDescriptor = spectralLightDescriptorsEqual(
+      runtimeState.currentSpectralLightDescriptor,
+      nextSpectralLightDescriptor,
+    )
+      ? runtimeState.currentSpectralLightDescriptor
+      : nextSpectralLightDescriptor;
+  }
+
+  runtimeState.currentEffectiveFieldDescriptor = effectiveFieldDescriptor;
+  runtimeState.currentSpectralLightDescriptor = spectralLightDescriptor;
+  runtimeState.spectralLightBuffersUploaded = spectralLightEnabled;
+  setRaymarchCavityGeometry(runtimeState.volumeMesh, effectiveCavityGeometry);
+  updateRaymarchEvaluationModes(
+    runtimeState,
+    renderer,
+    {
+      modalFieldCapacity,
+      schedulerTimeSec: time,
+    },
+    {
+      spectralLightEnabled,
+      effectiveFieldDescriptor,
+      spectralLightDescriptor,
+    },
+  );
+}
+
 export function tickRaymarchRuntime(
   runtimeState,
   featureFrame,
@@ -1848,119 +1978,22 @@ export function tickRaymarchRuntime(
     );
     return;
   }
-  const descriptorSlots = modalDescriptor.slotViews;
-
-  const requestedStepBudget = resolveRequestedRaymarchStepBudget(
+  applyRaymarchRuntimeUploadAuthority({
     runtimeState,
-    volumeMesh,
-  );
-  const requestedRenderScale = 1;
-  const performanceGovernor =
-    takePendingRaymarchPerformanceGovernor(runtimeState, featureFrame, {
-      modalFieldCapacity,
-      cavityGeometry: effectiveCavityGeometry,
-      requestedStepBudget,
-      requestedRenderScale,
-    }) ??
-    buildRaymarchPerformanceGovernor({
-      modalFieldSlots: descriptorSlots.modalFieldSlots,
-      modalFieldCapacity,
-      featureFrame,
-      cavityGeometry: effectiveCavityGeometry,
-      requestedStepBudget,
-      requestedRenderScale,
-    });
-  const modalFieldLayer = performanceGovernor.modalField;
-  runtimeState.performanceGovernor = performanceGovernor;
-  const uploadState = getRaymarchUploadState(runtimeState);
-  const modalFieldArray = modalFieldModeBuffer.value.array;
-  const modalFieldColorArray = modalFieldColorBuffer.value.array;
-  applyLayerUploadIfChanged({
-    uploadState,
-    key: "modalField",
-    slots: descriptorSlots.modalFieldSlots,
-    colorSlots: descriptorSlots.modalFieldColorSlots,
-    targetSlots: modalFieldArray,
-    targetColorSlots: modalFieldColorArray,
-    modeBufferNode: modalFieldModeBuffer,
-    colorBufferNode: modalFieldColorBuffer,
-    layer: modalFieldLayer,
-    includeColors: spectralLightEnabled,
-  });
-
-  const modalFieldPhaseArray = modalFieldPhaseBuffer?.value?.array ?? null;
-  const modalFieldPhaseAuthorityModeCount = applyLayerPhaseUploadIfChanged({
-    uploadState,
-    key: "modalFieldPhase",
-    phaseSlots: descriptorSlots.modalFieldPhaseSlots,
-    targetPhaseSlots: modalFieldPhaseArray,
-    phaseBufferNode: modalFieldPhaseBuffer,
-    layer: modalFieldLayer,
-    capacity: modalFieldPhaseCapacity,
-  });
-  runtimeState.effectiveFieldPhaseAuthorityModeCount =
-    modalFieldPhaseAuthorityModeCount;
-
-  const modalFieldModeCount = modalFieldLayer.uploadedActiveCount;
-  setIfChanged(uniforms.uModalFieldModeCount, modalFieldModeCount);
-  setIfChanged(uniforms.uActiveModeCount, modalFieldModeCount);
-
-  const boundaryMode = getRuntimeBoundaryMode(runtimeState);
-  const descriptorRadius = runtimeState.uniforms.uRadius?.value ?? 1;
-  const effectiveFieldDescriptor = buildRaymarchEffectiveFieldDescriptor({
-    modalFieldSlots: modalFieldModeBuffer?.value?.array,
-    modalFieldPhaseSlots: modalFieldPhaseBuffer?.value?.array,
-    modalFieldCount: modalFieldModeCount,
-    boundaryMode,
-    cavityGeometry: effectiveCavityGeometry,
-    radius: descriptorRadius,
-    time,
-    phaseModeCount: runtimeState.effectiveFieldPhaseAuthorityModeCount,
-    phaseAuthority: featureFrame?.modalPhaseAuthority ?? 0,
-    descriptorOverflow: modalDescriptor.diagnostics.descriptorOverflow,
-    modeIdentityRetentionRatio:
-      modalDescriptor.diagnostics.modeIdentityRetentionRatio,
-    resolution:
-      runtimeState.effectiveFieldCache?.resolution ??
-      RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
-  });
-
-  let spectralLightDescriptor = null;
-  if (spectralLightEnabled) {
-    const nextSpectralLightDescriptor =
-      buildRaymarchSpectralLightCacheDescriptor({
-        modalFieldSlots: modalFieldModeBuffer?.value?.array,
-        modalFieldColorSlots: modalFieldColorBuffer?.value?.array,
-        modalFieldCount: modalFieldModeCount,
-        boundaryMode,
-        cavityGeometry: effectiveCavityGeometry,
-        radius: descriptorRadius,
-      });
-    spectralLightDescriptor = spectralLightDescriptorsEqual(
-      runtimeState.currentSpectralLightDescriptor,
-      nextSpectralLightDescriptor,
-    )
-      ? runtimeState.currentSpectralLightDescriptor
-      : nextSpectralLightDescriptor;
-  }
-
-  runtimeState.currentEffectiveFieldDescriptor = effectiveFieldDescriptor;
-  runtimeState.currentSpectralLightDescriptor = spectralLightDescriptor;
-  runtimeState.spectralLightBuffersUploaded = spectralLightEnabled;
-  setRaymarchCavityGeometry(runtimeState.volumeMesh, effectiveCavityGeometry);
-  updateRaymarchEvaluationModes(
-    runtimeState,
+    featureFrame,
     renderer,
-    {
-      modalFieldCapacity,
-      schedulerTimeSec: time,
-    },
-    {
-      spectralLightEnabled,
-      effectiveFieldDescriptor,
-      spectralLightDescriptor,
-    },
-  );
+    time,
+    uniforms,
+    volumeMesh,
+    modalDescriptor,
+    modalFieldCapacity,
+    modalFieldPhaseCapacity,
+    modalFieldModeBuffer,
+    modalFieldColorBuffer,
+    modalFieldPhaseBuffer,
+    spectralLightEnabled,
+    effectiveCavityGeometry,
+  });
   setIfChanged(uniforms.uAverageAmplitude, featureFrame?.averageAmplitude ?? 0);
   setIfChanged(uniforms.uTransientEnergy, featureFrame?.transientEnergy ?? 0);
   setIfChanged(uniforms.uSpectralCentroid, featureFrame?.spectralCentroid ?? 0);

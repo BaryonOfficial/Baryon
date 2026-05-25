@@ -362,18 +362,16 @@ describe("fieldCache", () => {
 
     cache.lastRebuildSubmittedAtSec = 1;
     cache.activePhaseSampleTimeSec = 0.4;
-    const phaseStaleAuthority =
+    const phaseCurrentAuthority =
       raymarchFieldCache.resolveRaymarchEffectiveFieldDrawableAuthority(
         cache,
         phaseDescriptor,
-        { schedulerTimeSec: 1.05 },
       );
-    expect(phaseStaleAuthority).toMatchObject({
+    expect(phaseCurrentAuthority).toMatchObject({
       drawable: true,
-      state: "field-cache-ready-phase-stale",
+      state: "field-cache-ready-current",
       blockedReason: null,
     });
-    expect(phaseStaleAuthority.phaseStalenessSec).toBeCloseTo(0.65, 6);
 
     cache.rebuildPending = true;
     expect(
@@ -385,7 +383,7 @@ describe("fieldCache", () => {
       drawable: true,
       state: "field-cache-ready-stale",
       blockedReason: null,
-      staleReason: "mode-slots",
+      staleReason: "modal-identity",
     });
 
     expect(
@@ -549,19 +547,19 @@ describe("fieldCache", () => {
         effectiveFieldCache,
         carrierAdvancedDescriptor,
       ),
-    ).toMatchObject({ needsRebuild: true, reason: "phase-slots" });
+    ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
     expect(
       raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
         effectiveFieldCache,
         phaseParameterChangedDescriptor,
       ),
-    ).toMatchObject({ needsRebuild: true, reason: "phase-slots" });
+    ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
     expect(
       raymarchFieldCache.getRaymarchEffectiveFieldDescriptorStaleReason({
         activeDescriptor: initialDescriptor,
         nextDescriptor: carrierAdvancedDescriptor,
       }),
-    ).toBe("phase-slots");
+    ).toBeNull();
     expect(
       raymarchFieldCache.getRaymarchEffectiveFieldDescriptorStaleReason({
         descriptorFresh: true,
@@ -649,7 +647,7 @@ describe("fieldCache", () => {
         effectiveFieldCache,
         timeAdvancedDescriptor,
       ),
-    ).toMatchObject({ needsRebuild: true, reason: "phase-slots" });
+    ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
   });
 
   it("ignores inactive phase metadata when resolving effective-field freshness", () => {
@@ -871,7 +869,7 @@ describe("fieldCache", () => {
         effectiveFieldCache,
         reassignedDescriptor,
       ),
-    ).toMatchObject({ needsRebuild: true, reason: "phase-slots" });
+    ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
   });
 
   it("canonicalizes duplicate modal tuples before resolving phase freshness", () => {
@@ -972,7 +970,7 @@ describe("fieldCache", () => {
         effectiveFieldCache,
         splitChangedDescriptor,
       ),
-    ).toMatchObject({ needsRebuild: true, reason: "phase-slots" });
+    ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
   });
 
   it("hashes aggregate phase-current coefficients for duplicate modal tuples", () => {
@@ -1103,7 +1101,7 @@ describe("fieldCache", () => {
         effectiveFieldCache,
         splitChangedDescriptor,
       ),
-    ).toMatchObject({ needsRebuild: true, reason: "phase-slots" });
+    ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
   });
 
   it("ignores zero-amplitude modal slots when resolving phase freshness", () => {
@@ -1196,7 +1194,7 @@ describe("fieldCache", () => {
         effectiveFieldCache,
         contributingPhaseChangedDescriptor,
       ),
-    ).toMatchObject({ needsRebuild: true, reason: "phase-slots" });
+    ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
   });
 
   it("keeps effective-field phase freshness at finite coefficient precision", () => {
@@ -1279,7 +1277,7 @@ describe("fieldCache", () => {
         effectiveFieldCache,
         visibleDescriptor,
       ),
-    ).toMatchObject({ needsRebuild: true, reason: "phase-slots" });
+    ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
   });
 
   it("weights effective-field phase freshness by normalized modal contribution", () => {
@@ -1382,7 +1380,7 @@ describe("fieldCache", () => {
         effectiveFieldCache,
         visibleFlippedDescriptor,
       ),
-    ).toMatchObject({ needsRebuild: true, reason: "phase-slots" });
+    ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
   });
 
   it("does not rebuild for sine-equivalent phase carriers", () => {
@@ -1508,7 +1506,7 @@ describe("fieldCache", () => {
     ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
   });
 
-  it("rebuilds effective field caches for relative coefficient envelope changes", () => {
+  it("keeps effective field cache freshness independent of coefficient envelope changes", () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const firstSlots = new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.2]);
@@ -1565,11 +1563,12 @@ describe("fieldCache", () => {
       );
 
     expect(changedSample.field).not.toBe(firstSample.field);
-    expect(rebuild.needsRebuild).toBe(true);
-    expect(rebuild.reason).toBe("mode-slots");
+    expect(first.effectiveFieldHash).toBe(changed.effectiveFieldHash);
+    expect(rebuild.needsRebuild).toBe(false);
+    expect(rebuild.reason).toBe("unchanged");
   });
 
-  it("rebuilds effective field caches for major relative coefficient redistribution", () => {
+  it("keeps effective field cache freshness independent of coefficient redistribution", () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const firstSlots = new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.2]);
@@ -1603,8 +1602,9 @@ describe("fieldCache", () => {
         changed,
       );
 
-    expect(rebuild.needsRebuild).toBe(true);
-    expect(rebuild.reason).toBe("mode-slots");
+    expect(first.effectiveFieldHash).toBe(changed.effectiveFieldHash);
+    expect(rebuild.needsRebuild).toBe(false);
+    expect(rebuild.reason).toBe("unchanged");
   });
 
   it("does not rebuild effective field caches for aggregate phase authority changes", () => {
@@ -1867,110 +1867,6 @@ describe("fieldCache", () => {
     expect(computeCalls).toBe(2);
   });
 
-  it("coalesces volatile phase samples behind a drawable pending effective field", async () => {
-    expect(enqueueRaymarchEffectiveFieldRebuild).toBeTypeOf(
-      "function",
-    );
-    const effectiveFieldCache =
-      raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
-    const slots = new Float32Array([1, 2, 3, 0.5]);
-    const buildDescriptor = (phaseOffset) =>
-      buildRaymarchEffectiveFieldDescriptor({
-        modalFieldSlots: slots,
-        modalFieldPhaseSlots: new Float32Array([phaseOffset, 0.1, 0.6, 0.7]),
-        modalFieldCount: 1,
-        boundaryMode: "neumann",
-        radius: 3,
-        phaseModeCount: 1,
-        phaseAuthority: 0.42,
-      });
-    const activeDescriptor = buildDescriptor(0.1);
-    const pendingDescriptor = buildDescriptor(0.2);
-    const staleDescriptor = buildDescriptor(0.3);
-    const newestDescriptor = buildDescriptor(0.4);
-    const computeResolves = [];
-    let computeCalls = 0;
-    const renderer = {
-      computeAsync: async () => {
-        computeCalls += 1;
-        return new Promise((resolve) => {
-          computeResolves.push(resolve);
-        });
-      },
-    };
-    const options = {
-      modalFieldModeBuffer: { value: { array: new Float32Array(4) } },
-      modalFieldPhaseBuffer: { value: { array: new Float32Array(4) } },
-      modalFieldCapacity: 1,
-      uniforms: {
-        uTime: { value: 1 },
-        uRadius: { value: 3 },
-        uModalFieldModeCount: { value: 1 },
-      },
-    };
-    effectiveFieldCache.computeNodesByKey[getTestComputeNodeKey(1)] = {
-      id: "effective",
-    };
-    effectiveFieldCache.ready = true;
-    effectiveFieldCache.activeDescriptor = activeDescriptor;
-
-    const first = enqueueRaymarchEffectiveFieldRebuild(
-      effectiveFieldCache,
-      renderer,
-      pendingDescriptor,
-      "phase-slots",
-      options,
-    );
-    enqueueRaymarchEffectiveFieldRebuild(
-      effectiveFieldCache,
-      renderer,
-      staleDescriptor,
-      "phase-slots",
-      options,
-    );
-    const pending = enqueueRaymarchEffectiveFieldRebuild(
-      effectiveFieldCache,
-      renderer,
-      newestDescriptor,
-      "phase-slots",
-      options,
-    );
-
-    expect(first.enqueued).toBe(true);
-    expect(pending.enqueued).toBe(false);
-    expect(pending.reason).toBe("pending");
-    expect(effectiveFieldCache.pendingDescriptor).toEqual(pendingDescriptor);
-    expect(effectiveFieldCache.queuedDescriptor).toEqual(newestDescriptor);
-    expect(effectiveFieldCache.queuedRebuildReason).toBe("phase-slots");
-
-    await Promise.resolve();
-    expect(computeCalls).toBe(1);
-    computeResolves[0]();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(effectiveFieldCache.activeDescriptor).toEqual(pendingDescriptor);
-    expect(effectiveFieldCache.pendingDescriptor).toEqual(newestDescriptor);
-    expect(effectiveFieldCache.queuedDescriptor).toBeNull();
-    expect(effectiveFieldCache.rebuildPending).toBe(true);
-    expect(computeCalls).toBe(2);
-
-    computeResolves[1]();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(effectiveFieldCache.activeDescriptor).toEqual(newestDescriptor);
-    expect(effectiveFieldCache.pendingDescriptor).toBeNull();
-    expect(effectiveFieldCache.rebuildPending).toBe(false);
-    expect(computeCalls).toBe(2);
-  });
-
   it("submits effective field compute before live uniforms can advance", async () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
@@ -2007,7 +1903,7 @@ describe("fieldCache", () => {
       effectiveFieldCache,
       renderer,
       descriptor,
-      "phase-slots",
+      "modal-identity",
       options,
     );
     options.uniforms.uTime.value = 2;
@@ -2021,7 +1917,7 @@ describe("fieldCache", () => {
     expect(effectiveFieldCache.activePhaseSampleTimeSec).toBe(1);
   });
 
-  it("paces dynamic effective-field rebuilds while keeping the stale cache drawable", async () => {
+  it("submits semantic topology rebuilds immediately during rebuild bursts", async () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const activeDescriptor = buildRaymarchEffectiveFieldDescriptor({
@@ -2036,7 +1932,7 @@ describe("fieldCache", () => {
       phaseAuthority: 0.42,
     });
     const changedDescriptor = buildRaymarchEffectiveFieldDescriptor({
-      modalFieldSlots: new Float32Array([1, 2, 3, 0.8, 2, 2, 3, 0.2]),
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.5, 3, 2, 3, 0.5]),
       modalFieldPhaseSlots: new Float32Array([
         0.1, 0.1, 0.6, 0.7, 0.2, 0.1, 0.6, 0.7,
       ]),
@@ -2047,7 +1943,7 @@ describe("fieldCache", () => {
       phaseAuthority: 0.42,
     });
     const newestDescriptor = buildRaymarchEffectiveFieldDescriptor({
-      modalFieldSlots: new Float32Array([1, 2, 3, 0.2, 2, 2, 3, 0.8]),
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.5, 4, 2, 3, 0.5]),
       modalFieldPhaseSlots: new Float32Array([
         0.1, 0.1, 0.6, 0.7, 0.2, 0.1, 0.6, 0.7,
       ]),
@@ -2067,7 +1963,6 @@ describe("fieldCache", () => {
         uModalFieldModeCount: { value: 2 },
       },
       schedulerTimeSec: 10.05,
-      dynamicRebuildMinIntervalSec: 0.1,
     };
     let computeCalls = 0;
     const renderer = {
@@ -2086,18 +1981,18 @@ describe("fieldCache", () => {
       effectiveFieldCache,
       renderer,
       changedDescriptor,
-      "mode-slots",
+      "modal-identity",
       options,
     );
     expect(burst.enqueued).toBe(true);
     expect(computeCalls).toBe(1);
     await flushCacheMicrotasks();
 
-    const deferred = enqueueRaymarchEffectiveFieldRebuild(
+    const secondSubmission = enqueueRaymarchEffectiveFieldRebuild(
       effectiveFieldCache,
       renderer,
       newestDescriptor,
-      "mode-slots",
+      "modal-identity",
       {
         ...options,
         schedulerTimeSec: 10.06,
@@ -2107,32 +2002,32 @@ describe("fieldCache", () => {
       raymarchFieldCache.resolveRaymarchEffectiveFieldDrawableAuthority(
         effectiveFieldCache,
         newestDescriptor,
-        { schedulerTimeSec: 10.06 },
       );
 
-    expect(deferred.enqueued).toBe(false);
-    expect(deferred.reason).toBe("deferred");
-    expect(computeCalls).toBe(1);
-    expect(effectiveFieldCache.rebuildPending).toBe(false);
-    expect(effectiveFieldCache.queuedDescriptor).toEqual(newestDescriptor);
+    expect(secondSubmission.enqueued).toBe(true);
+    expect(secondSubmission.reason).toBe("modal-identity");
+    expect(computeCalls).toBe(2);
+    expect(effectiveFieldCache.rebuildPending).toBe(true);
+    expect(effectiveFieldCache.queuedDescriptor).toBeNull();
     expect(authority).toMatchObject({
       drawable: true,
       state: "field-cache-ready-stale",
-      staleReason: "mode-slots",
+      staleReason: "modal-identity",
     });
 
     const submitted = enqueueRaymarchEffectiveFieldRebuild(
       effectiveFieldCache,
       renderer,
       newestDescriptor,
-      "mode-slots",
+      "modal-identity",
       {
         ...options,
         schedulerTimeSec: 10.16,
       },
     );
 
-    expect(submitted.enqueued).toBe(true);
+    expect(submitted.enqueued).toBe(false);
+    expect(submitted.reason).toBe("pending");
     expect(effectiveFieldCache.queuedDescriptor).toBeNull();
     expect(effectiveFieldCache.rebuildPending).toBe(true);
     expect(computeCalls).toBe(2);
@@ -2333,7 +2228,7 @@ describe("fieldCache", () => {
       effectiveFieldCache,
       renderer,
       queuedDescriptor,
-      "phase-slots",
+      "modal-identity",
       {
         modalFieldModeBuffer: { value: { array: queuedModeArray } },
         modalFieldPhaseBuffer: { value: { array: queuedPhaseArray } },
@@ -2350,6 +2245,7 @@ describe("fieldCache", () => {
     expect(queuedResult.enqueued).toBe(false);
     expect(queuedResult.reason).toBe("pending");
     expect(effectiveFieldCache.queuedDescriptor).toEqual(queuedDescriptor);
+    expect(effectiveFieldCache.queuedDescriptorAtSec).toBe(4);
 
     resolveInitialCompute();
     await flushCacheMicrotasks();
@@ -2436,7 +2332,7 @@ describe("fieldCache", () => {
       effectiveFieldCache,
       renderer,
       descriptor2,
-      "mode-count",
+      "modal-identity",
       {
         modalFieldModeBuffer: { value: { array: new Float32Array(8) } },
         modalFieldPhaseBuffer: { value: { array: new Float32Array(8) } },
@@ -3944,7 +3840,7 @@ describe("fieldCache", () => {
         effectiveFieldCache,
         representableChangedDescriptor,
       ),
-    ).toMatchObject({ needsRebuild: true, reason: "mode-slots" });
+    ).toMatchObject({ needsRebuild: true, reason: "modal-identity" });
   });
 
   it("separates raw modal energy from phase-current effective energy", () => {

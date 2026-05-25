@@ -152,6 +152,9 @@ const EXCITATION_GATE_LOW = 0.04;
 const EXCITATION_GATE_HIGH = 0.35;
 const STATIC_SURFACE_TINT_SCALE = 0.18;
 const STATIC_HIGHLIGHT_SURFACE_PULL_SCALE = 0.2;
+const RAYMARCH_LIVE_RESIDUAL_GAIN = 0.18;
+
+export const RAYMARCH_LIVE_RESIDUAL_MAX_MODES = 2;
 
 export const RAYMARCH_SPECTRAL_LIGHT_TUNING = Object.freeze({
   baseRadianceLift: 0.42,
@@ -357,6 +360,77 @@ function accumulateModalFieldColorOnly({
       colorWeight.addAssign(weightedInfluence);
     },
   );
+}
+
+function accumulateCachedLiveResidual({
+  modalFieldModeBuffer,
+  modalFieldPhaseBuffer,
+  modalFieldCapacity,
+  modalFieldActiveCount,
+  localPosition,
+  uRadius,
+  boundaryMode,
+  cavityGeometry,
+  field,
+  uTime,
+  effectiveUnsignedSupport,
+  uTransientEnergy,
+  uPulseSignal,
+  uModalResponseEnergy,
+}) {
+  const geometryBackend = getModalGeometryBackend(cavityGeometry);
+  const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
+  const residualField = float(0.0).toVar();
+  const residualCapacity = Math.min(
+    Math.max(0, Math.floor(modalFieldCapacity ?? 0)),
+    RAYMARCH_LIVE_RESIDUAL_MAX_MODES,
+  );
+
+  If(modalFieldActiveCount.greaterThan(0), () => {
+    Loop(
+      { start: int(0), end: int(residualCapacity), type: "int", condition: "<" },
+      ({ i }) => {
+        If(i.greaterThanEqual(modalFieldActiveCount), () => {
+          Break();
+        });
+        const slot = modalFieldModeBuffer.element(i);
+        const phaseSlot = modalFieldPhaseBuffer.element(i);
+        const beta = clamp(phaseSlot.z.mul(phaseSlot.w), float(0.0), float(1.0));
+        const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
+        const phaseScale = float(1.0)
+          .sub(beta)
+          .add(beta.mul(cos(phase)))
+          .toVar();
+        const family = geometryBackend.evaluateFieldNode({
+          u: slot.x,
+          v: slot.y,
+          w: slot.z,
+          xCoord: localPosition.x,
+          yCoord: localPosition.y,
+          zCoord: localPosition.z,
+          scale,
+          boundaryMode,
+        });
+
+        residualField.addAssign(slot.w.mul(phaseScale).mul(family.field));
+      },
+    );
+  });
+
+  const liveEnergyGate = clamp(
+    uTransientEnergy.add(uPulseSignal).add(uModalResponseEnergy),
+    float(0.0),
+    float(1.0),
+  );
+  const residualAuthority = clamp(
+    effectiveUnsignedSupport,
+    float(0.0),
+    float(1.0),
+  )
+    .mul(liveEnergyGate)
+    .mul(float(RAYMARCH_LIVE_RESIDUAL_GAIN));
+
+  field.addAssign(residualField.mul(residualAuthority));
 }
 
 function accumulateDirectModalField({
@@ -614,6 +688,7 @@ function createScatteringNode({
     uStructureSignal,
     uEnergySignal,
     uChangeSignal,
+    uPulseSignal,
     uBassSalience,
     uTimbreSpread,
     uSpectralNovelty,
@@ -808,6 +883,23 @@ function createScatteringNode({
           effectiveUnsignedSupport.assign(effectiveFieldSupportSample.x);
           effectiveCancellationRatio.assign(effectiveFieldSupportSample.y);
         }
+
+        accumulateCachedLiveResidual({
+          modalFieldModeBuffer,
+          modalFieldPhaseBuffer,
+          modalFieldCapacity,
+          modalFieldActiveCount,
+          localPosition,
+          uRadius,
+          boundaryMode,
+          cavityGeometry,
+          field,
+          uTime,
+          effectiveUnsignedSupport,
+          uTransientEnergy,
+          uPulseSignal,
+          uModalResponseEnergy,
+        });
 
         if (cachedSpectralLightEnabled) {
           const cachedSpectralLightSample = texture3D(

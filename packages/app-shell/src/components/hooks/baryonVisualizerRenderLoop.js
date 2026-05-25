@@ -34,6 +34,7 @@ import {
   snapshotModalFreshnessDiagnostics,
   snapshotRuntimePerfBreakdown,
   snapshotRuntimeDiagnostics,
+  snapshotWorkerPerfCounters,
 } from "./baryonVisualizerRuntimeState.js";
 export { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 
@@ -173,13 +174,7 @@ function buildStageEngineCounters(runtimeDiagnostics) {
       runtimeDiagnostics?.engine?.structuralUpdateCount ?? 0,
     chromaUpdateCount: runtimeDiagnostics?.engine?.chromaUpdateCount ?? 0,
     tempoUpdateCount: runtimeDiagnostics?.engine?.tempoUpdateCount ?? 0,
-    workerFastSignalMs: runtimeDiagnostics?.engine?.workerFastSignalMs ?? 0,
-    workerStructuralMs: runtimeDiagnostics?.engine?.workerStructuralMs ?? 0,
-    workerPeakScanMs: runtimeDiagnostics?.engine?.workerPeakScanMs ?? 0,
-    workerModalResolveMs: runtimeDiagnostics?.engine?.workerModalResolveMs ?? 0,
-    workerProjectionMs: runtimeDiagnostics?.engine?.workerProjectionMs ?? 0,
-    workerChromaMs: runtimeDiagnostics?.engine?.workerChromaMs ?? 0,
-    workerTempoMs: runtimeDiagnostics?.engine?.workerTempoMs ?? 0,
+    ...snapshotWorkerPerfCounters(runtimeDiagnostics?.engine),
   };
 }
 
@@ -270,14 +265,21 @@ export function updateModalFreshnessDiagnostics(
     return null;
   }
 
-  modalFreshness.frameTimeMs = readFiniteNumber(featureFrame.frameTimeMs);
+  const renderSubmittedAtMs = readFiniteNumber(getWallTimeMs());
+  const frameTimeMs = readFiniteNumber(featureFrame.frameTimeMs);
+  modalFreshness.frameTimeMs = frameTimeMs;
   modalFreshness.sourceMode = featureFrame.sourceMode ?? null;
   modalFreshness.fieldState =
     featureFrame.debug?.fieldState ?? featureFrame.fieldState ?? "idle";
   modalFreshness.structuralSnapshotAgeMs = readFiniteNumber(
     runtimeDiagnostics?.engine?.snapshotAgeMs,
   );
-  modalFreshness.lastUpdatedAtWallTimeMs = readFiniteNumber(getWallTimeMs());
+  modalFreshness.featureFrameAgeAtRenderMs = Math.max(
+    0,
+    renderSubmittedAtMs - frameTimeMs,
+  );
+  modalFreshness.renderSubmittedAtMs = renderSubmittedAtMs;
+  modalFreshness.lastUpdatedAtWallTimeMs = renderSubmittedAtMs;
   modalFreshness.avgAmplitude = readFiniteNumber(
     featureFrame.debug?.avgAmplitude ?? featureFrame.averageAmplitude,
   );
@@ -1812,20 +1814,10 @@ export function resolveFeatureFrame(
               engineStatus?.latestProcessedFrameId ?? 0;
             runtimeDiagnostics.engine.latestPublishedFrameId =
               engineStatus?.latestPublishedFrameId ?? 0;
-            runtimeDiagnostics.engine.workerFastSignalMs =
-              engineStatus?.workerFastSignalMs ?? 0;
-            runtimeDiagnostics.engine.workerStructuralMs =
-              engineStatus?.workerStructuralMs ?? 0;
-            runtimeDiagnostics.engine.workerPeakScanMs =
-              engineStatus?.workerPeakScanMs ?? 0;
-            runtimeDiagnostics.engine.workerModalResolveMs =
-              engineStatus?.workerModalResolveMs ?? 0;
-            runtimeDiagnostics.engine.workerProjectionMs =
-              engineStatus?.workerProjectionMs ?? 0;
-            runtimeDiagnostics.engine.workerChromaMs =
-              engineStatus?.workerChromaMs ?? 0;
-            runtimeDiagnostics.engine.workerTempoMs =
-              engineStatus?.workerTempoMs ?? 0;
+            Object.assign(
+              runtimeDiagnostics.engine,
+              snapshotWorkerPerfCounters(engineStatus),
+            );
             runtimeDiagnostics.engine.queueDepth =
               engineStatus?.queueDepth ?? 0;
             runtimeDiagnostics.engine.state = engineStatus?.state ?? "none";

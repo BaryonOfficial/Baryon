@@ -17,6 +17,27 @@ export {
   normalizeAudioFeatureEngineSettings,
 } from "./audioFeatureEngineShared.js";
 
+const WORKER_PERF_STATUS_BASES = Object.freeze([
+  "FastSignal",
+  "Structural",
+  "PeakScan",
+  "ModalResolve",
+  "Projection",
+  "Chroma",
+  "Tempo",
+]);
+const WORKER_PERF_STATUS_SUFFIXES = Object.freeze(["Ms", "LastMs", "MaxMs"]);
+
+function createDefaultWorkerPerfStatus() {
+  const status = {};
+  for (const base of WORKER_PERF_STATUS_BASES) {
+    for (const suffix of WORKER_PERF_STATUS_SUFFIXES) {
+      status[`worker${base}${suffix}`] = 0;
+    }
+  }
+  return status;
+}
+
 function cloneArray(values) {
   if (values instanceof Float32Array) {
     return new Float32Array(values);
@@ -145,13 +166,7 @@ function createDefaultEngineStatus(state = "none", reason = null) {
     latestPublishedFrameId: 0,
     latestSnapshotFrameTimeMs: null,
     latestSnapshotAgeMs: null,
-    workerFastSignalMs: 0,
-    workerStructuralMs: 0,
-    workerPeakScanMs: 0,
-    workerModalResolveMs: 0,
-    workerProjectionMs: 0,
-    workerChromaMs: 0,
-    workerTempoMs: 0,
+    ...createDefaultWorkerPerfStatus(),
   };
 }
 

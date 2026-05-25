@@ -9,7 +9,10 @@ import {
   getUniquePermutationCount,
   normalizeBoundaryMode,
 } from "./modeFamily.js";
-import { evaluatePermutationFamilyNodeForBoundary } from "./modeFamilyNode.js";
+import {
+  evaluatePermutationFamilyFieldNodeForBoundary,
+  evaluatePermutationFamilyNodeForBoundary,
+} from "./modeFamilyNode.js";
 import { resolveEffectiveCavityGeometry } from "./cavityGeometry.js";
 
 const RECTANGULAR_MODE_BACKEND = Object.freeze({
@@ -97,6 +100,28 @@ const RECTANGULAR_MODE_BACKEND = Object.freeze({
     boundaryMode,
   }) {
     return evaluatePermutationFamilyNodeForBoundary({
+      u,
+      v,
+      w,
+      xCoord,
+      yCoord,
+      zCoord,
+      scale: scale ?? float(Math.PI).div(uRadius.max(float(1e-4))),
+      boundaryMode,
+    });
+  },
+  evaluateFieldNode({
+    u,
+    v,
+    w,
+    xCoord,
+    yCoord,
+    zCoord,
+    scale = null,
+    uRadius = null,
+    boundaryMode,
+  }) {
+    return evaluatePermutationFamilyFieldNodeForBoundary({
       u,
       v,
       w,

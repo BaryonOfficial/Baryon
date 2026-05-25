@@ -385,12 +385,26 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
   runtimeDiagnostics.engine.chromaUpdateCount = 23;
   runtimeDiagnostics.engine.tempoUpdateCount = 29;
   runtimeDiagnostics.engine.workerFastSignalMs = 1.25;
+  runtimeDiagnostics.engine.workerFastSignalLastMs = 1.5;
+  runtimeDiagnostics.engine.workerFastSignalMaxMs = 2.25;
   runtimeDiagnostics.engine.workerStructuralMs = 2.5;
+  runtimeDiagnostics.engine.workerStructuralLastMs = 3.25;
+  runtimeDiagnostics.engine.workerStructuralMaxMs = 4.5;
   runtimeDiagnostics.engine.workerPeakScanMs = 0.75;
+  runtimeDiagnostics.engine.workerPeakScanLastMs = 0.9;
+  runtimeDiagnostics.engine.workerPeakScanMaxMs = 1.1;
   runtimeDiagnostics.engine.workerModalResolveMs = 1.5;
+  runtimeDiagnostics.engine.workerModalResolveLastMs = 1.8;
+  runtimeDiagnostics.engine.workerModalResolveMaxMs = 2.2;
   runtimeDiagnostics.engine.workerProjectionMs = 3.5;
+  runtimeDiagnostics.engine.workerProjectionLastMs = 4.25;
+  runtimeDiagnostics.engine.workerProjectionMaxMs = 5.5;
   runtimeDiagnostics.engine.workerChromaMs = 0.5;
+  runtimeDiagnostics.engine.workerChromaLastMs = 0.6;
+  runtimeDiagnostics.engine.workerChromaMaxMs = 0.9;
   runtimeDiagnostics.engine.workerTempoMs = 0.25;
+  runtimeDiagnostics.engine.workerTempoLastMs = 0.3;
+  runtimeDiagnostics.engine.workerTempoMaxMs = 0.45;
   runtimeDiagnostics.frameDrops.framesOver16_7Ms = 13;
   runtimeDiagnostics.frameDrops.framesOver25Ms = 8;
   runtimeDiagnostics.frameDrops.framesOver33_3Ms = 5;
@@ -423,12 +437,26 @@ test("buildPerformanceHudSnapshot exports stage attribution, engine counters, an
     chromaUpdateCount: 23,
     tempoUpdateCount: 29,
     workerFastSignalMs: 1.25,
+    workerFastSignalLastMs: 1.5,
+    workerFastSignalMaxMs: 2.25,
     workerStructuralMs: 2.5,
+    workerStructuralLastMs: 3.25,
+    workerStructuralMaxMs: 4.5,
     workerPeakScanMs: 0.75,
+    workerPeakScanLastMs: 0.9,
+    workerPeakScanMaxMs: 1.1,
     workerModalResolveMs: 1.5,
+    workerModalResolveLastMs: 1.8,
+    workerModalResolveMaxMs: 2.2,
     workerProjectionMs: 3.5,
+    workerProjectionLastMs: 4.25,
+    workerProjectionMaxMs: 5.5,
     workerChromaMs: 0.5,
+    workerChromaLastMs: 0.6,
+    workerChromaMaxMs: 0.9,
     workerTempoMs: 0.25,
+    workerTempoLastMs: 0.3,
+    workerTempoMaxMs: 0.45,
   });
   expect(snapshot.modalFreshness).toMatchObject({
     structureSignal: 0.72,
@@ -533,6 +561,8 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
     frameTimeMs: 1016,
     sourceMode: "live",
     structuralSnapshotAgeMs: 41,
+    featureFrameAgeAtRenderMs: 234,
+    renderSubmittedAtMs: 1250,
     lastUpdatedAtWallTimeMs: 1250,
     structureSignal: 0.28,
     energySignal: 0.4,
@@ -587,6 +617,8 @@ test("updateModalFreshnessDiagnostics records modal signals and slot turnover wi
     highQPhaseAuthority: 0.31,
     lowQPhaseAuthority: 0.08,
     modalPhaseCoherentFieldModeCount: 4,
+    featureFrameAgeAtRenderMs: 234,
+    renderSubmittedAtMs: 1250,
     responseEnvelope: 0.31,
     observedResonanceModeCount: 5,
     observedResonanceEnergy: 0.39,
