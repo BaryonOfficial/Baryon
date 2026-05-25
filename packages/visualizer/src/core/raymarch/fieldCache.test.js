@@ -2021,6 +2021,123 @@ describe("fieldCache", () => {
     expect(effectiveFieldCache.activePhaseSampleTimeSec).toBe(1);
   });
 
+  it("paces dynamic effective-field rebuilds while keeping the stale cache drawable", async () => {
+    const effectiveFieldCache =
+      raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
+    const activeDescriptor = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.5, 2, 2, 3, 0.5]),
+      modalFieldPhaseSlots: new Float32Array([
+        0.1, 0.1, 0.6, 0.7, 0.2, 0.1, 0.6, 0.7,
+      ]),
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 2,
+      phaseAuthority: 0.42,
+    });
+    const changedDescriptor = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.8, 2, 2, 3, 0.2]),
+      modalFieldPhaseSlots: new Float32Array([
+        0.1, 0.1, 0.6, 0.7, 0.2, 0.1, 0.6, 0.7,
+      ]),
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 2,
+      phaseAuthority: 0.42,
+    });
+    const newestDescriptor = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.2, 2, 2, 3, 0.8]),
+      modalFieldPhaseSlots: new Float32Array([
+        0.1, 0.1, 0.6, 0.7, 0.2, 0.1, 0.6, 0.7,
+      ]),
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 2,
+      phaseAuthority: 0.42,
+    });
+    const options = {
+      modalFieldModeBuffer: { value: { array: new Float32Array(8) } },
+      modalFieldPhaseBuffer: { value: { array: new Float32Array(8) } },
+      modalFieldCapacity: 2,
+      uniforms: {
+        uTime: { value: 1 },
+        uRadius: { value: 3 },
+        uModalFieldModeCount: { value: 2 },
+      },
+      schedulerTimeSec: 10.05,
+      dynamicRebuildMinIntervalSec: 0.1,
+    };
+    let computeCalls = 0;
+    const renderer = {
+      computeAsync: async () => {
+        computeCalls += 1;
+      },
+    };
+    effectiveFieldCache.computeNodesByKey[getTestComputeNodeKey(2)] = {
+      id: "effective",
+    };
+    effectiveFieldCache.ready = true;
+    effectiveFieldCache.activeDescriptor = activeDescriptor;
+    effectiveFieldCache.lastRebuildSubmittedAtSec = 10;
+
+    const burst = enqueueRaymarchEffectiveFieldRebuild(
+      effectiveFieldCache,
+      renderer,
+      changedDescriptor,
+      "mode-slots",
+      options,
+    );
+    expect(burst.enqueued).toBe(true);
+    expect(computeCalls).toBe(1);
+    await flushCacheMicrotasks();
+
+    const deferred = enqueueRaymarchEffectiveFieldRebuild(
+      effectiveFieldCache,
+      renderer,
+      newestDescriptor,
+      "mode-slots",
+      {
+        ...options,
+        schedulerTimeSec: 10.06,
+      },
+    );
+    const authority =
+      raymarchFieldCache.resolveRaymarchEffectiveFieldDrawableAuthority(
+        effectiveFieldCache,
+        newestDescriptor,
+        { schedulerTimeSec: 10.06 },
+      );
+
+    expect(deferred.enqueued).toBe(false);
+    expect(deferred.reason).toBe("deferred");
+    expect(computeCalls).toBe(1);
+    expect(effectiveFieldCache.rebuildPending).toBe(false);
+    expect(effectiveFieldCache.queuedDescriptor).toEqual(newestDescriptor);
+    expect(authority).toMatchObject({
+      drawable: true,
+      state: "field-cache-ready-stale",
+      staleReason: "mode-slots",
+    });
+
+    const submitted = enqueueRaymarchEffectiveFieldRebuild(
+      effectiveFieldCache,
+      renderer,
+      newestDescriptor,
+      "mode-slots",
+      {
+        ...options,
+        schedulerTimeSec: 10.16,
+      },
+    );
+
+    expect(submitted.enqueued).toBe(true);
+    expect(effectiveFieldCache.queuedDescriptor).toBeNull();
+    expect(effectiveFieldCache.rebuildPending).toBe(true);
+    expect(computeCalls).toBe(2);
+  });
+
   it("mirrors active effective-field mode count from contributing modal terms", async () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });

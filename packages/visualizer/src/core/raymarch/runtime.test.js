@@ -9,6 +9,7 @@ import {
   buildRaymarchEffectiveFieldDescriptor,
   createRaymarchEffectiveFieldCache,
   createRaymarchSpectralLightCache,
+  RAYMARCH_EFFECTIVE_FIELD_DYNAMIC_REBUILD_MIN_INTERVAL_SEC,
 } from "./fieldCache.js";
 import { RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES } from "./material.js";
 import { deriveObservationTransferParameters } from "./observationTransfer.js";
@@ -3158,7 +3159,7 @@ describe("tickRaymarchRuntime", () => {
     expect(computeCalls).toBe(2);
   });
 
-  it("rebuilds phase-only effective fields without cadence pacing", async () => {
+  it("paces dynamic effective-field rebuilds while keeping the previous cache drawable", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
     runtimeState.uniforms.uSpectralMix.value = 0;
@@ -3182,10 +3183,11 @@ describe("tickRaymarchRuntime", () => {
     await flushMicrotasks();
     expect(computeCalls).toBe(1);
 
+    const burstTime = 1 + 1 / 60;
     tickRaymarchRuntime(
       runtimeState,
       makeFrame(0.4),
-      1 + 1 / 60,
+      burstTime,
       1 / 60,
       renderer,
     );
@@ -3198,17 +3200,24 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.currentEffectiveFieldDescriptor,
     );
 
+    const deferredTime = 1 + 2 / 60;
     tickRaymarchRuntime(
       runtimeState,
-      makeFrame(0.4),
-      1 + 1 / 60,
+      makeFrame(0.6),
+      deferredTime,
       1 / 60,
       renderer,
     );
+    await flushMicrotasks();
 
+    expect(computeCalls).toBe(2);
+    expect(runtimeState.effectiveFieldCache.rebuildPending).toBe(false);
+    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toEqual(
+      runtimeState.currentEffectiveFieldDescriptor,
+    );
     expect(runtimeState.debugSnapshot.effectiveFieldDrawable).toBe(true);
     expect(runtimeState.debugSnapshot.effectiveFieldDrawableState).toBe(
-      "field-cache-ready-current",
+      "field-cache-ready-phase-stale",
     );
     expect(
       runtimeState.debugSnapshot.effectiveFieldDrawableBlockedReason,
@@ -3217,6 +3226,36 @@ describe("tickRaymarchRuntime", () => {
       "effective-cached",
     );
     expect(runtimeState.volumeMesh.visible).toBe(true);
+
+    const submittedTime =
+      burstTime +
+      RAYMARCH_EFFECTIVE_FIELD_DYNAMIC_REBUILD_MIN_INTERVAL_SEC +
+      0.01;
+    tickRaymarchRuntime(
+      runtimeState,
+      makeFrame(0.6),
+      submittedTime,
+      submittedTime - deferredTime,
+      renderer,
+    );
+    await flushMicrotasks();
+
+    expect(computeCalls).toBe(3);
+    expect(runtimeState.effectiveFieldCache.rebuildPending).toBe(false);
+    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toBeNull();
+    expect(runtimeState.effectiveFieldCache.activeDescriptor).toEqual(
+      runtimeState.currentEffectiveFieldDescriptor,
+    );
+    tickRaymarchRuntime(
+      runtimeState,
+      makeFrame(0.6),
+      submittedTime,
+      1 / 60,
+      renderer,
+    );
+    expect(runtimeState.debugSnapshot.effectiveFieldDrawableState).toBe(
+      "field-cache-ready-current",
+    );
   });
 
   it("keeps the previous drawable field visible while a phase-only rebuild is pending", async () => {
@@ -3280,7 +3319,10 @@ describe("tickRaymarchRuntime", () => {
     tickRaymarchRuntime(
       runtimeState,
       makeFrame(2.8),
-      1 + 3 / 60,
+      1 +
+        1 / 60 +
+        RAYMARCH_EFFECTIVE_FIELD_DYNAMIC_REBUILD_MIN_INTERVAL_SEC +
+        0.01,
       1 / 60,
       renderer,
     );
@@ -3298,10 +3340,14 @@ describe("tickRaymarchRuntime", () => {
     await flushMicrotasks(5);
     expect(runtimeState.effectiveFieldCache.rebuildPending).toBe(false);
     expect(computeCalls).toBe(3);
+    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toBeNull();
     tickRaymarchRuntime(
       runtimeState,
       makeFrame(2.8),
-      1 + 3 / 60,
+      1 +
+        1 / 60 +
+        RAYMARCH_EFFECTIVE_FIELD_DYNAMIC_REBUILD_MIN_INTERVAL_SEC +
+        0.01,
       1 / 60,
       renderer,
     );
@@ -3309,7 +3355,10 @@ describe("tickRaymarchRuntime", () => {
     tickRaymarchRuntime(
       runtimeState,
       makeFrame(2.8),
-      1 + 3 / 60,
+      1 +
+        1 / 60 +
+        RAYMARCH_EFFECTIVE_FIELD_DYNAMIC_REBUILD_MIN_INTERVAL_SEC +
+        0.01,
       1 / 60,
       renderer,
     );

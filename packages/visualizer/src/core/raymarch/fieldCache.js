@@ -44,6 +44,12 @@ const EFFECTIVE_FIELD_SUPPORT_DIAGNOSTIC_SAMPLE_POINTS = Object.freeze([
 ]);
 const EFFECTIVE_FIELD_SUPPORT_DIAGNOSTIC_ADAPTIVE_SAMPLE_LIMIT = 8;
 const EFFECTIVE_FIELD_SUPPORT_DIAGNOSTIC_SAMPLE_KEY_SCALE = 1e6;
+export const RAYMARCH_EFFECTIVE_FIELD_DYNAMIC_REBUILD_MIN_INTERVAL_SEC = 0.2;
+const DYNAMIC_EFFECTIVE_FIELD_REBUILD_REASONS = new Set([
+  "mode-count",
+  "mode-slots",
+  "phase-slots",
+]);
 
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -1372,6 +1378,10 @@ function isPhaseOnlyEffectiveFieldRebuildReason(rebuildReason) {
   return rebuildReason === "phase-slots";
 }
 
+function isDynamicEffectiveFieldRebuildReason(rebuildReason) {
+  return DYNAMIC_EFFECTIVE_FIELD_REBUILD_REASONS.has(rebuildReason);
+}
+
 export const RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES = Object.freeze({
   absent: "field-cache-absent",
   building: "field-cache-building",
@@ -1503,6 +1513,17 @@ export function resolveRaymarchEffectiveFieldDrawableAuthority(
     });
   }
 
+  if (hasDrawableActiveDescriptor && effectiveFieldCache.queuedDescriptor) {
+    return makeEffectiveFieldDrawableAuthority({
+      drawable: true,
+      state: RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES.readyStale,
+      staleReason:
+        effectiveFieldCache.queuedRebuildReason ??
+        staleReason ??
+        "queued-descriptor",
+    });
+  }
+
   if (effectiveFieldCache.rebuildPending) {
     return makeEffectiveFieldDrawableAuthority({
       state: RAYMARCH_EFFECTIVE_FIELD_DRAWABLE_STATES.building,
@@ -1606,6 +1627,64 @@ function beginCacheRebuild(cache, descriptor, schedulerTimeSec = null) {
   }
   clearQueuedRaymarchCacheRebuild(cache);
   return generation;
+}
+
+function shouldDeferDynamicEffectiveFieldRebuild(
+  effectiveFieldCache,
+  rebuildReason,
+  schedulerTimeSec,
+  minIntervalSec =
+    RAYMARCH_EFFECTIVE_FIELD_DYNAMIC_REBUILD_MIN_INTERVAL_SEC,
+) {
+  if (
+    !effectiveFieldCache?.ready ||
+    !effectiveFieldCache?.activeDescriptor ||
+    !isDynamicEffectiveFieldRebuildReason(rebuildReason) ||
+    !Number.isFinite(schedulerTimeSec) ||
+    !Number.isFinite(effectiveFieldCache.lastRebuildSubmittedAtSec)
+  ) {
+    return false;
+  }
+
+  const elapsedSec =
+    schedulerTimeSec - effectiveFieldCache.lastRebuildSubmittedAtSec;
+  return (
+    elapsedSec >= 0 &&
+    elapsedSec < Math.max(0, minIntervalSec) &&
+    (effectiveFieldCache.dynamicRebuildBurstCount ?? 0) >= 1
+  );
+}
+
+function recordDynamicEffectiveFieldRebuildSubmission(
+  effectiveFieldCache,
+  rebuildReason,
+  schedulerTimeSec,
+  minIntervalSec =
+    RAYMARCH_EFFECTIVE_FIELD_DYNAMIC_REBUILD_MIN_INTERVAL_SEC,
+) {
+  if (
+    !effectiveFieldCache ||
+    !isDynamicEffectiveFieldRebuildReason(rebuildReason) ||
+    !Number.isFinite(schedulerTimeSec)
+  ) {
+    if (effectiveFieldCache) {
+      effectiveFieldCache.dynamicRebuildBurstCount = 0;
+    }
+    return;
+  }
+
+  const previousSubmittedAtSec =
+    effectiveFieldCache.lastRebuildSubmittedAtSec ?? null;
+  const elapsedSec = Number.isFinite(previousSubmittedAtSec)
+    ? schedulerTimeSec - previousSubmittedAtSec
+    : null;
+
+  effectiveFieldCache.dynamicRebuildBurstCount =
+    Number.isFinite(elapsedSec) &&
+    elapsedSec >= 0 &&
+    elapsedSec < Math.max(0, minIntervalSec)
+      ? (effectiveFieldCache.dynamicRebuildBurstCount ?? 0) + 1
+      : 0;
 }
 
 export function buildRaymarchFieldCacheDescriptor({
@@ -3076,6 +3155,35 @@ export function enqueueRaymarchEffectiveFieldRebuild(
     return { enqueued: false, reason: "unavailable" };
   }
 
+  const requestSnapshot = {
+    renderer,
+    options: snapshotRaymarchCacheRebuildOptions(options, {
+      includePhase: true,
+    }),
+  };
+
+  if (
+    shouldDeferDynamicEffectiveFieldRebuild(
+      effectiveFieldCache,
+      rebuildReason,
+      phaseSampleTimeSec,
+      options?.dynamicRebuildMinIntervalSec,
+    )
+  ) {
+    setQueuedCacheRebuild(
+      effectiveFieldCache,
+      descriptor,
+      rebuildReason,
+      requestSnapshot,
+    );
+    return {
+      enqueued: false,
+      reason: "deferred",
+      descriptor: effectiveFieldCache.pendingDescriptor,
+      queuedDescriptor: effectiveFieldCache.queuedDescriptor,
+    };
+  }
+
   const computeNode = getOrCreateRaymarchEffectiveFieldComputeNode(
     effectiveFieldCache,
     {
@@ -3092,6 +3200,12 @@ export function enqueueRaymarchEffectiveFieldRebuild(
     return { enqueued: false, reason: "unavailable" };
   }
 
+  recordDynamicEffectiveFieldRebuildSubmission(
+    effectiveFieldCache,
+    rebuildReason,
+    phaseSampleTimeSec,
+    options?.dynamicRebuildMinIntervalSec,
+  );
   const rebuildGeneration = beginCacheRebuild(
     effectiveFieldCache,
     descriptor,
