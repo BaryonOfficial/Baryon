@@ -56,6 +56,19 @@ describe("serializeControls", () => {
     expect(serialized).not.toHaveProperty("chromesthesiaMix");
   });
 
+  it("does not serialize removed structure-window controls", () => {
+    const state = {
+      ...createControlState(),
+      structureMin: 0.12,
+      structureMax: 0.48,
+    };
+
+    const serialized = serializeControls(state, CONTROL_DEFINITIONS);
+
+    expect(serialized).not.toHaveProperty("structureMin");
+    expect(serialized).not.toHaveProperty("structureMax");
+  });
+
   it("serializes the canonical max-quality performance profile", () => {
     const state = createControlState();
     state.renderQualityPreset = "none";
@@ -86,6 +99,21 @@ describe("deserializeControls", () => {
     const result = deserializeControls(raw, CONTROL_DEFINITIONS);
     expect(result).not.toHaveProperty("unknownFutureProp");
     expect(result).not.toHaveProperty("anotherStaleKey");
+  });
+
+  it("strips legacy structure-window fields at the boundary", () => {
+    const result = deserializeControls(
+      {
+        structureMin: 0.12,
+        structureMax: 0.48,
+        bloomStrength: 0.75,
+      },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.bloomStrength).toBe(0.75);
+    expect(result).not.toHaveProperty("structureMin");
+    expect(result).not.toHaveProperty("structureMax");
   });
 
   it("migrates legacy live input profile settings to acoustic intent", () => {
@@ -210,6 +238,8 @@ describe("createPreset", () => {
     for (const key of liveKeys) {
       expect(preset.controls).toHaveProperty(key);
     }
+    expect(preset.controls).not.toHaveProperty("structureMin");
+    expect(preset.controls).not.toHaveProperty("structureMax");
   });
 
   it("round-trips through deserializeControls cleanly", () => {

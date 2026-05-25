@@ -20,6 +20,7 @@ import { BOUNDARY_MODES, normalizeBoundaryMode } from "../modeFamily.js";
 import { normalizeCavityGeometry } from "../cavityGeometry.js";
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 import { buildRaymarchPhaseSlotSignature } from "./phaseSlotSemantics.js";
+import { deriveOpticalConvergenceAuthority } from "./fieldShaping.js";
 
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 export const RAYMARCH_EFFECTIVE_FIELD_RESOLUTION =
@@ -112,6 +113,89 @@ function hashSpectralLightColorTopology(colorSlots, activeCount) {
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * @param {unknown} value
+ * @param {[number, number, number]} fallback
+ * @returns {[number, number, number]}
+ */
+function readVector3(value, fallback) {
+  const source = Array.isArray(value) || ArrayBuffer.isView(value) ? value : [];
+  return [
+    Number.isFinite(source[0]) ? source[0] : fallback[0],
+    Number.isFinite(source[1]) ? source[1] : fallback[1],
+    Number.isFinite(source[2]) ? source[2] : fallback[2],
+  ];
+}
+
+/**
+ * @param {unknown} value
+ * @param {[number, number, number]} fallback
+ * @returns {[number, number, number]}
+ */
+function normalizeVector3(value, fallback = [0, 0, 0]) {
+  const vector = readVector3(value, fallback);
+  const magnitude = Math.hypot(vector[0], vector[1], vector[2]);
+  if (!(magnitude > 1e-6)) {
+    return [...fallback];
+  }
+  return [
+    vector[0] / magnitude,
+    vector[1] / magnitude,
+    vector[2] / magnitude,
+  ];
+}
+
+/**
+ * @param {[number, number, number]} left
+ * @param {[number, number, number]} right
+ * @returns {[number, number, number]}
+ */
+function crossVector3(left, right) {
+  return [
+    left[1] * right[2] - left[2] * right[1],
+    left[2] * right[0] - left[0] * right[2],
+    left[0] * right[1] - left[1] * right[0],
+  ];
+}
+
+/**
+ * @param {unknown} viewDirection
+ * @returns {{ tangent1: [number, number, number], tangent2: [number, number, number] }}
+ */
+function deriveViewPlaneBasis(viewDirection) {
+  const view = normalizeVector3(viewDirection, [0, 0, -1]);
+  const seed = /** @type {[number, number, number]} */ (
+    Math.abs(view[1]) > Math.abs(view[0]) &&
+    Math.abs(view[1]) > Math.abs(view[2])
+      ? [1, 0, 0]
+      : [0, 1, 0]
+  );
+  const tangent1 = normalizeVector3(crossVector3(view, seed), [1, 0, 0]);
+  const tangent2 = normalizeVector3(crossVector3(view, tangent1), [0, 1, 0]);
+
+  return { tangent1, tangent2 };
+}
+
+/**
+ * @param {{ gradX?: number, gradY?: number, gradZ?: number } | null | undefined} sample
+ * @returns {[number, number, number]}
+ */
+function readGradientNormal(sample) {
+  return normalizeVector3(
+    [sample?.gradX ?? 0, sample?.gradY ?? 0, sample?.gradZ ?? 0],
+    [0, 0, 0],
+  );
+}
+
+/**
+ * @param {[number, number, number]} vector
+ * @param {number} scale
+ * @returns {[number, number, number]}
+ */
+function scaleVector3(vector, scale) {
+  return [vector[0] * scale, vector[1] * scale, vector[2] * scale];
 }
 
 function smoothstepScalar(edge0, edge1, value) {
@@ -1301,6 +1385,53 @@ export function evaluateRaymarchEffectiveFieldPoint({
     effectiveFieldGradientEnvelope:
       modalField.gradientEnvelopeNumerator / amplitudeNorm,
   };
+}
+
+export function evaluateRaymarchNormalConvergencePoint(options = {}) {
+  const {
+    evaluateFieldPoint: evaluateFieldPointOption,
+    viewDirection = [0, 0, -1],
+    sampleStep = null,
+    radius = 1,
+    resolution = RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
+    x = 0,
+    y = 0,
+    z = 0,
+    ...fieldPointInputs
+  } = options;
+  const evaluateFieldPoint = /** @type {(inputs: any) => any} */ (
+    evaluateFieldPointOption ?? evaluateRaymarchEffectiveFieldPoint
+  );
+  const safeRadius = Math.max(1e-4, Number.isFinite(radius) ? radius : 1);
+  const defaultStep =
+    (2 * safeRadius) /
+    Math.max(1, normalizeEffectiveFieldResolution(resolution));
+  const h =
+    Number.isFinite(sampleStep) && sampleStep > 0 ? sampleStep : defaultStep;
+  const { tangent1, tangent2 } = deriveViewPlaneBasis(viewDirection);
+  /**
+   * @param {[number, number, number]} offset
+   */
+  const sampleNormalAtOffset = ([dx, dy, dz]) =>
+    readGradientNormal(
+      evaluateFieldPoint({
+        ...fieldPointInputs,
+        radius: safeRadius,
+        resolution,
+        x: x + dx,
+        y: y + dy,
+        z: z + dz,
+      }),
+    );
+
+  return deriveOpticalConvergenceAuthority({
+    tangent1,
+    tangent2,
+    normalPositiveT1: sampleNormalAtOffset(scaleVector3(tangent1, h)),
+    normalNegativeT1: sampleNormalAtOffset(scaleVector3(tangent1, -h)),
+    normalPositiveT2: sampleNormalAtOffset(scaleVector3(tangent2, h)),
+    normalNegativeT2: sampleNormalAtOffset(scaleVector3(tangent2, -h)),
+  });
 }
 
 export function evaluateRaymarchSpectralLightCachePoint({

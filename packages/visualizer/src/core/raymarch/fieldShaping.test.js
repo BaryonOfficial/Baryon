@@ -3,6 +3,7 @@ import {
   computeLinearLuminance,
   compressDisplayRadiance,
 } from "../../render/displayRadiance.js";
+import { deriveObservationTransfer } from "./observationTransfer.js";
 import * as fieldShaping from "./fieldShaping.js";
 import {
   BEAM_POWER_BASE,
@@ -52,7 +53,6 @@ import {
   deriveSignedInterferenceBodyAuthority,
   deriveSignedInterferenceRadianceAuthority,
   deriveStructureAwareEmissionGain,
-  deriveVisibleStructure,
 } from "./fieldShaping.js";
 import { evaluateRaymarchSignedPotentialAtPoint } from "./fieldCache.js";
 
@@ -80,8 +80,8 @@ const REINFORCED_CAUSTIC_TONE = Object.freeze({
   threshold: 0.02,
   contourCore: 0.82,
   broadBand: 0.95,
-  gradientStructure: 0.78,
-  structure: 0.72,
+  localGradientEvidence: 0.78,
+  opticalConvergenceAuthority: 0.74,
   shellFocus: 0.7,
   edgeFade: 1,
   activeMask: 1,
@@ -99,8 +99,8 @@ const BROAD_CONTOUR_LEAK = Object.freeze({
   threshold: 0.02,
   contourCore: 0.04,
   broadBand: 0.95,
-  gradientStructure: 0.08,
-  structure: 0.12,
+  localGradientEvidence: 0.08,
+  opticalConvergenceAuthority: 0.05,
   shellFocus: 0.7,
   edgeFade: 1,
   activeMask: 1,
@@ -113,8 +113,8 @@ const DENSE_POLYPHONIC_PROBE = Object.freeze({
   threshold: 0.02,
   contourCore: 0.55,
   broadBand: 0.92,
-  gradientStructure: 0.64,
-  structure: 0.58,
+  localGradientEvidence: 0.64,
+  opticalConvergenceAuthority: 0.52,
   shellFocus: 0.62,
   edgeFade: 1,
   activeMask: 1,
@@ -130,7 +130,6 @@ function deriveFinalVisibilityProbe(sample) {
     // currently turns near-zero field into broad body fill.
     fieldAbs,
     threshold: 0.15,
-    structure: 0.82,
     edgeFade: 0.9,
     activeMask: 1,
     radialDistance: 0.45,
@@ -186,11 +185,125 @@ describe("field shaping", () => {
     );
   });
 
+  it("derives optical convergence from signed view-plane normal flow", () => {
+    expect(fieldShaping.deriveOpticalConvergenceAuthority).toBeTypeOf(
+      "function",
+    );
+
+    const converging = fieldShaping.deriveOpticalConvergenceAuthority({
+      tangent1: [1, 0, 0],
+      tangent2: [0, 1, 0],
+      normalPositiveT1: [-1, 0, 0],
+      normalNegativeT1: [1, 0, 0],
+      normalPositiveT2: [0, -1, 0],
+      normalNegativeT2: [0, 1, 0],
+    });
+    const diverging = fieldShaping.deriveOpticalConvergenceAuthority({
+      tangent1: [1, 0, 0],
+      tangent2: [0, 1, 0],
+      normalPositiveT1: [1, 0, 0],
+      normalNegativeT1: [-1, 0, 0],
+      normalPositiveT2: [0, 1, 0],
+      normalNegativeT2: [0, -1, 0],
+    });
+    const flat = fieldShaping.deriveOpticalConvergenceAuthority({
+      tangent1: [1, 0, 0],
+      tangent2: [0, 1, 0],
+      normalPositiveT1: [0, 0, 1],
+      normalNegativeT1: [0, 0, 1],
+      normalPositiveT2: [0, 0, 1],
+      normalNegativeT2: [0, 0, 1],
+    });
+
+    expect(converging.viewPlaneNormalConvergence).toBeGreaterThan(0);
+    expect(converging.opticalConvergenceAuthority).toBe(1);
+    expect(diverging.viewPlaneNormalConvergence).toBeLessThan(0);
+    expect(diverging.opticalConvergenceAuthority).toBe(0);
+    expect(flat.viewPlaneNormalConvergence).toBeCloseTo(0);
+    expect(flat.opticalConvergenceAuthority).toBe(0);
+  });
+
+  it("does not let flat high-gradient samples promote optical focus", () => {
+    const flatHighGradient = deriveLaserCymaticOpticalProbe({
+      ...REINFORCED_CAUSTIC_TONE,
+      localGradientEvidence: 1,
+      opticalConvergenceAuthority: 0,
+      shellFocus: 0.95,
+      signedCausticDensity: 0.14,
+      bodyContribution: 0,
+      normalDotMeasurement: 0,
+      gradientPresence: 1,
+      ridgeConcentration: 0.92,
+    });
+
+    expect(flatHighGradient.opticalSlopeAuthority).toBeGreaterThan(0);
+    expect(flatHighGradient.opticalFocusAuthority).toBeCloseTo(
+      flatHighGradient.causticRidgeAuthority,
+    );
+  });
+
+  it("promotes curved ridges through convergence rather than gradient magnitude", () => {
+    const common = {
+      ...REINFORCED_CAUSTIC_TONE,
+      localGradientEvidence: 0.72,
+      shellFocus: 0.84,
+      signedCausticDensity: 0.14,
+      bodyContribution: 0.02,
+      normalDotMeasurement: 0.08,
+      gradientPresence: 0.72,
+      ridgeConcentration: 0.76,
+    };
+    const flat = deriveLaserCymaticOpticalProbe({
+      ...common,
+      opticalConvergenceAuthority: 0,
+    });
+    const curved = deriveLaserCymaticOpticalProbe({
+      ...common,
+      opticalConvergenceAuthority: 0.7,
+    });
+
+    expect(flat.opticalFocusAuthority).toBeCloseTo(flat.causticRidgeAuthority);
+    expect(curved.opticalFocusAuthority).toBeGreaterThan(
+      flat.opticalFocusAuthority,
+    );
+    expect(curved.laserCausticRadiance).toBeGreaterThan(
+      flat.laserCausticRadiance,
+    );
+  });
+
+  it("keeps weak valid ridge visibility in observation transfer", () => {
+    const weakRidge = deriveLaserCymaticOpticalProbe({
+      ...REINFORCED_CAUSTIC_TONE,
+      localGradientEvidence: 0.18,
+      opticalConvergenceAuthority: 0,
+      signedCausticDensity: 0.03,
+      bodyContribution: 0,
+      normalDotMeasurement: 0.1,
+      gradientPresence: 0.18,
+      ridgeConcentration: 0.4,
+    });
+    const observed = deriveObservationTransfer({
+      density: weakRidge.physicalDensity,
+      modalStructureAnchor: weakRidge.causticRidgeAuthority,
+      ridgeAnchor: weakRidge.causticRidgeAuthority,
+      modalCoefficientEnergy: 0.8,
+      modalResponseEnergy: 0.5,
+    });
+
+    expect(weakRidge.opticalFocusAuthority).toBeCloseTo(
+      weakRidge.causticRidgeAuthority,
+    );
+    expect(observed.observedDensityFloor).toBeGreaterThan(
+      observed.physicalVisibleDensity,
+    );
+    expect(observed.visibleDensity).toBe(observed.observedDensityFloor);
+  });
+
   it("prevents zero-gradient shell focus from becoming maximum optical slope", () => {
     const flatShell = deriveLaserCymaticOpticalProbe({
       ...REINFORCED_CAUSTIC_TONE,
-      gradientStructure: 0,
-      structure: 0.72,
+      localGradientEvidence: 0,
+      opticalConvergenceAuthority: 0,
       shellFocus: 0.95,
       signedCausticDensity: 0.14,
       bodyContribution: 0.02,
@@ -200,6 +313,7 @@ describe("field shaping", () => {
     });
     const highGradient = deriveLaserCymaticOpticalProbe({
       ...REINFORCED_CAUSTIC_TONE,
+      opticalConvergenceAuthority: 0.72,
       signedCausticDensity: 0.14,
       bodyContribution: 0.02,
       normalDotMeasurement: 0,
@@ -219,8 +333,7 @@ describe("field shaping", () => {
   it("does not let unsupported zero-field shell focus authorize caustics", () => {
     const unsupportedShell = fieldShaping.deriveCausticRidgeAuthority({
       contourCore: 1,
-      gradientStructure: 0,
-      structure: 0,
+      localGradientEvidence: 0,
       shellFocus: 1,
       edgeFade: 1,
       activeMask: 1,
@@ -232,11 +345,38 @@ describe("field shaping", () => {
     expect(unsupportedShell.causticRidgeAuthority).toBe(0);
   });
 
+  it("derives local gradient evidence from direct and cached field representations", () => {
+    expect(fieldShaping.deriveLocalGradientEvidence).toBeTypeOf("function");
+
+    const direct = fieldShaping.deriveLocalGradientEvidence({
+      gradientMagnitude: 0.3,
+      amplitudeNorm: 0.6,
+      effectiveFieldCacheActive: false,
+      cachedGradientMagnitude: 0.9,
+    });
+    const cached = fieldShaping.deriveLocalGradientEvidence({
+      gradientMagnitude: 0.3,
+      amplitudeNorm: 0.6,
+      effectiveFieldCacheActive: true,
+      cachedGradientMagnitude: 0.9,
+    });
+    const saturated = fieldShaping.deriveLocalGradientEvidence({
+      gradientMagnitude: 4,
+      amplitudeNorm: 0.2,
+      effectiveFieldCacheActive: false,
+    });
+
+    expect(direct.localGradientEvidence).toBeCloseTo(0.5);
+    expect(cached.localGradientEvidence).toBeCloseTo(0.9);
+    expect(saturated.localGradientEvidence).toBe(1);
+    expect(direct).not.toHaveProperty("structureMin");
+    expect(direct).not.toHaveProperty("structureMax");
+  });
+
   it("preserves supported nodal caustics when field structure exists", () => {
     const supportedNode = fieldShaping.deriveCausticRidgeAuthority({
       contourCore: 1,
-      gradientStructure: 0.62,
-      structure: 0.58,
+      localGradientEvidence: 0.62,
       shellFocus: 0.9,
       edgeFade: 1,
       activeMask: 1,
@@ -248,11 +388,43 @@ describe("field shaping", () => {
     expect(supportedNode.causticRidgeAuthority).toBeGreaterThan(0);
   });
 
+  it("does not recreate old structure-window discontinuities around legacy thresholds", () => {
+    const common = {
+      contourCore: 1,
+      shellFocus: 0.9,
+      edgeFade: 1,
+      activeMask: 1,
+      effectiveUnsignedSupport: 0.4,
+      signedRadianceAuthority: 1,
+    };
+    const belowOldMin = fieldShaping.deriveCausticRidgeAuthority({
+      ...common,
+      localGradientEvidence: 0.58,
+    });
+    const atOldMin = fieldShaping.deriveCausticRidgeAuthority({
+      ...common,
+      localGradientEvidence: 0.59,
+    });
+    const atOldMax = fieldShaping.deriveCausticRidgeAuthority({
+      ...common,
+      localGradientEvidence: 0.83,
+    });
+
+    expect(belowOldMin.causticRidgeAuthority).toBeGreaterThan(0);
+    expect(
+      Math.abs(
+        atOldMin.causticRidgeAuthority - belowOldMin.causticRidgeAuthority,
+      ),
+    ).toBeLessThan(0.04);
+    expect(atOldMax.causticRidgeAuthority).toBeGreaterThan(
+      atOldMin.causticRidgeAuthority,
+    );
+  });
+
   it("does not let support-only shell focus become caustic authority", () => {
     const supportOnlyShell = fieldShaping.deriveCausticRidgeAuthority({
       contourCore: 1,
-      gradientStructure: 0,
-      structure: 0,
+      localGradientEvidence: 0,
       shellFocus: 1,
       edgeFade: 1,
       activeMask: 1,
@@ -336,8 +508,7 @@ describe("field shaping", () => {
       threshold: 0.02,
       contourCore: 0,
       broadBand: 0.95,
-      gradientStructure: 0,
-      structure: 0,
+      localGradientEvidence: 0,
       shellFocus: 1,
       shellWeight: 0.92,
       radialDistance: 0.48,
@@ -603,7 +774,6 @@ describe("field shaping", () => {
     const body = deriveBodyDensity({
       fieldAbs: 0.02,
       threshold: 0.15,
-      structure: 0.8,
       edgeFade: 0.9,
       activeMask: 1,
       radialDistance: 0.45,
@@ -649,11 +819,10 @@ describe("field shaping", () => {
     expect(reactive).toBeLessThan(latched * 0.2);
   });
 
-  it("does not create body density when sparse bass structure is absent", () => {
+  it("does not create body density when broad field support is absent", () => {
     const body = deriveBodyDensity({
       fieldAbs: 0.28,
       threshold: 0.15,
-      structure: 0,
       edgeFade: 0.9,
       activeMask: 1,
       radialDistance: 0.45,
@@ -704,7 +873,6 @@ describe("field shaping", () => {
     const baseline = deriveBodyDensity({
       fieldAbs: 0.02,
       threshold: 0.15,
-      structure: 0.8,
       edgeFade: 0.9,
       activeMask: 1,
       radialDistance: 0.45,
@@ -715,7 +883,6 @@ describe("field shaping", () => {
     const fogged = deriveBodyDensity({
       fieldAbs: 0.02,
       threshold: 0.15,
-      structure: 0.8,
       edgeFade: 0.9,
       activeMask: 1,
       radialDistance: 0.45,
@@ -733,7 +900,6 @@ describe("field shaping", () => {
     const latched = deriveBodyDensity({
       fieldAbs: 0.02,
       threshold: 0.15,
-      structure: 0.8,
       edgeFade: 0.9,
       activeMask: 1,
       radialDistance: 0.45,
@@ -744,7 +910,6 @@ describe("field shaping", () => {
     const reactive = deriveBodyDensity({
       fieldAbs: 0.02,
       threshold: 0.15,
-      structure: 0.8,
       edgeFade: 0.9,
       activeMask: 1,
       radialDistance: 0.45,
@@ -758,28 +923,6 @@ describe("field shaping", () => {
     expect(reactive.bodyDensity).toBeGreaterThan(latched.bodyDensity);
   });
 
-  it("leaves visible structure owned by physical structure, not bass floors", () => {
-    const lowOrder = deriveVisibleStructure({
-      structure: 0.03,
-      nodeBand: 0.92,
-      bassSalience: 0.7,
-      bandEnergies: [0.7, 0.3, 0.05, 0.02],
-      radialDistance: 0.38,
-    });
-    const brightTreble = deriveVisibleStructure({
-      structure: 0.34,
-      nodeBand: 0.4,
-      bassSalience: 0.05,
-      bandEnergies: [0.05, 0.08, 0.35, 0.45],
-      radialDistance: 0.82,
-    });
-
-    expect(lowOrder).not.toHaveProperty("bassEnvelope");
-    expect(lowOrder).not.toHaveProperty("bassStructureFloor");
-    expect(lowOrder.visibleStructure).toBeCloseTo(0.03);
-    expect(brightTreble.visibleStructure).toBeCloseTo(0.34);
-  });
-
   it("keeps contour shaping dominant while cutting the old fog-heavy fill", () => {
     const contour = deriveContourShape({
       fieldAbs: 0.02,
@@ -790,7 +933,6 @@ describe("field shaping", () => {
     const body = deriveBodyDensity({
       fieldAbs: 0.02,
       threshold: 0.15,
-      structure: 0.7,
       edgeFade: 0.92,
       activeMask: 1,
       radialDistance: 0.42,
@@ -804,7 +946,7 @@ describe("field shaping", () => {
     const beam = deriveBeamMask({
       contourShape: contour.contourShape,
       shellWeight: shell.shellWeight,
-      structure: 0.7,
+      localGradientEvidence: 0.7,
       transientEnergy: 0.5,
       spectralFlux: 0.35,
       radialDistance: 0.42,
@@ -824,7 +966,7 @@ describe("field shaping", () => {
     const uncompressed = deriveBeamMask({
       contourShape: 0.82,
       shellWeight: 0.88,
-      structure: 0.76,
+      localGradientEvidence: 0.76,
       transientEnergy: 0.55,
       spectralFlux: 0.4,
       radialDistance: 0.91,
@@ -834,7 +976,7 @@ describe("field shaping", () => {
     const compressed = deriveBeamMask({
       contourShape: 0.82,
       shellWeight: 0.88,
-      structure: 0.76,
+      localGradientEvidence: 0.76,
       transientEnergy: 0.55,
       spectralFlux: 0.4,
       radialDistance: 0.91,
@@ -853,7 +995,7 @@ describe("field shaping", () => {
     const baseline = deriveBeamMask({
       contourShape: 0.82,
       shellWeight: 0.88,
-      structure: 0.76,
+      localGradientEvidence: 0.76,
       transientEnergy: 0.2,
       spectralFlux: 0.08,
       radialDistance: 0.72,
@@ -865,7 +1007,7 @@ describe("field shaping", () => {
     const fogged = deriveBeamMask({
       contourShape: 0.82,
       shellWeight: 0.88,
-      structure: 0.76,
+      localGradientEvidence: 0.76,
       transientEnergy: 0.2,
       spectralFlux: 0.08,
       radialDistance: 0.72,
@@ -884,7 +1026,7 @@ describe("field shaping", () => {
     const latched = deriveBeamMask({
       contourShape: 0.82,
       shellWeight: 0.88,
-      structure: 0.76,
+      localGradientEvidence: 0.76,
       transientEnergy: 0.02,
       spectralFlux: 0.01,
       radialDistance: 0.72,
@@ -896,7 +1038,7 @@ describe("field shaping", () => {
     const reactive = deriveBeamMask({
       contourShape: 0.82,
       shellWeight: 0.88,
-      structure: 0.76,
+      localGradientEvidence: 0.76,
       transientEnergy: 0.56,
       spectralFlux: 0.01,
       radialDistance: 0.72,
@@ -915,7 +1057,7 @@ describe("field shaping", () => {
     const reinforcing = deriveBeamMask({
       contourShape: 0.86,
       shellWeight: 0.82,
-      structure: 0.78,
+      localGradientEvidence: 0.78,
       transientEnergy: 0.34,
       spectralFlux: 0.28,
       radialDistance: 0.58,
@@ -926,7 +1068,7 @@ describe("field shaping", () => {
     const canceling = deriveBeamMask({
       contourShape: 0.86,
       shellWeight: 0.82,
-      structure: 0.78,
+      localGradientEvidence: 0.78,
       transientEnergy: 0.34,
       spectralFlux: 0.28,
       radialDistance: 0.58,

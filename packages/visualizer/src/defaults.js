@@ -27,8 +27,6 @@ export const SIMULATION_DEFAULTS = Object.freeze({
   radius: 3.0,
   cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
   zeroPointPrecision: 0.064,
-  structureMin: 0.59,
-  structureMax: 0.83,
   boundaryMode: "neumann",
   cavityGeometry: DEFAULT_REQUESTED_CAVITY_GEOMETRY,
 });

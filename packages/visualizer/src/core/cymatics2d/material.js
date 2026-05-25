@@ -82,8 +82,6 @@ function createFieldNode({
 }) {
   const {
     uThreshold,
-    uStructureMin,
-    uStructureMax,
     uBoundaryMode,
     uActiveModeCount,
     uModalFieldModeCount,
@@ -135,6 +133,11 @@ function createFieldNode({
     });
     const fieldAbs = abs(field);
     const gradientMagnitude = length(vec2(gradX, gradY)).mul(float(0.16));
+    const localGradientEvidence = clamp(
+      gradientMagnitude,
+      float(0.0),
+      float(1.0),
+    );
     const activeCount = float(uActiveModeCount);
     const activeMask = smoothstep(float(0.0), float(1.0), activeCount);
     const nodeBand = float(1.0).sub(
@@ -155,14 +158,9 @@ function createFieldNode({
       contourCore,
       float(CYMATICS_2D_TUNING.contourBlend),
     );
-    const structure = smoothstep(
-      uStructureMin,
-      uStructureMax,
-      gradientMagnitude,
-    );
     const density = clamp(
       contourShape
-        .mul(structure.add(float(0.12)))
+        .mul(localGradientEvidence.add(float(0.12)))
         .mul(activeMask)
         .mul(uDensityGain)
         .mul(

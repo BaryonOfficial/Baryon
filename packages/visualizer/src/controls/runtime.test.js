@@ -40,8 +40,6 @@ function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
       uSurfaceColor: { value: { set: vi.fn() } },
       uSpectralMix: { value: 0 },
       uThreshold: { value: 0 },
-      uStructureMin: { value: 0 },
-      uStructureMax: { value: 0 },
       uBoundaryMode: { value: 1 },
       uIdleLogoIntensity: { value: 0 },
       uIdleLogoAlpha: { value: 0 },
@@ -166,8 +164,6 @@ describe("control runtime sync", () => {
     controls.idleLogoIntensity = 0.42;
     controls.zeroPointPrecision = 0.033;
     controls.idleLogoSize = 1.4;
-    controls.structureMin = 0.12;
-    controls.structureMax = 0.48;
     controls.boundaryMode = "dirichlet";
     controls.densityGain = 1.75;
     controls.absorption = 1.35;
@@ -196,8 +192,8 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uIdleLogoIntensity.value).toBe(0.42);
     expect(runtimeState.uniforms.uIdleLogoAlpha.value).toBe(0.84);
     expect(runtimeState.uniforms.uIdleLogoSize.value).toBe(1.4);
-    expect(runtimeState.uniforms.uStructureMin.value).toBe(0.12);
-    expect(runtimeState.uniforms.uStructureMax.value).toBe(0.48);
+    expect(runtimeState.uniforms).not.toHaveProperty("uStructureMin");
+    expect(runtimeState.uniforms).not.toHaveProperty("uStructureMax");
     expect(runtimeState.uniforms.uBoundaryMode.value).toBe(0);
     expect(runtimeState.volumeMesh.userData.raymarchBoundaryMode).toBe(
       "dirichlet",
@@ -250,6 +246,8 @@ describe("control runtime sync", () => {
     expect(runtimeState.idleOverlay.material.opacity).toBe(0.84);
     expect(snapshot.uniforms.idleLogoIntensity).toBe(0.42);
     expect(snapshot.uniforms.idleLogoAlpha).toBe(0.84);
+    expect(snapshot.uniforms).not.toHaveProperty("structureMin");
+    expect(snapshot.uniforms).not.toHaveProperty("structureMax");
     expect(snapshot.uniforms.densityGain).toBe(1.75);
     expect(snapshot.uniforms.absorption).toBe(1.35);
     expect(snapshot.uniforms.opacityGain).toBe(1.4);

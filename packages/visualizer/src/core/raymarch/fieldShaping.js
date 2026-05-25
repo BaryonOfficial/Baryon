@@ -89,8 +89,6 @@ export const CANCELLATION_LUMINANCE_DROP_MIN = 0.65;
 export const CAUSTIC_BROAD_CONTOUR_LEAK_MAX = 0.015;
 export const CAUSTIC_COLOR_DENSITY_DELTA_MAX = 1e-6;
 export const OPTICAL_SLOPE_POWER = 1.35;
-export const OPTICAL_SLOPE_GAIN = 0.42;
-export const OPTICAL_RIDGE_GAIN = 0.36;
 export const OPTICAL_FOCUS_POWER = 1.55;
 export const OPTICAL_SPACE_GATE_START = 0.035;
 export const OPTICAL_SPACE_GATE_END = 0.18;
@@ -151,6 +149,28 @@ function smoothstep(edge0, edge1, x) {
 
 function safeFinite(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
+}
+
+function readVector3(value, fallback) {
+  const source = Array.isArray(value) || ArrayBuffer.isView(value) ? value : [];
+  return [
+    safeFinite(source[0], fallback[0]),
+    safeFinite(source[1], fallback[1]),
+    safeFinite(source[2], fallback[2]),
+  ];
+}
+
+function dotVector3(left, right) {
+  return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
+}
+
+function normalizeVector3(value, fallback) {
+  const vector = readVector3(value, fallback);
+  const magnitude = Math.hypot(vector[0], vector[1], vector[2]);
+  if (!(magnitude > 1e-6)) {
+    return [...fallback];
+  }
+  return vector.map((component) => component / magnitude);
 }
 
 function deriveNodeBand(fieldAbs, threshold) {
@@ -236,10 +256,28 @@ export function deriveLocalFieldSupportAuthority({
   return clamp01(safeFinite(effectiveUnsignedSupport, 0));
 }
 
+export function deriveLocalGradientEvidence({
+  gradientMagnitude = 0,
+  amplitudeNorm = 1,
+  effectiveFieldCacheActive = false,
+  cachedGradientMagnitude = 0,
+} = {}) {
+  const safeGradientMagnitude = Math.max(0, safeFinite(gradientMagnitude, 0));
+  const safeCachedGradientMagnitude = Math.max(
+    0,
+    safeFinite(cachedGradientMagnitude, 0),
+  );
+  const safeAmplitudeNorm = Math.max(1e-4, safeFinite(amplitudeNorm, 1));
+  const localGradientEvidence = effectiveFieldCacheActive
+    ? clamp01(safeCachedGradientMagnitude)
+    : clamp01(safeGradientMagnitude / safeAmplitudeNorm);
+
+  return { localGradientEvidence };
+}
+
 export function deriveCausticRidgeAuthority({
   contourCore = 0,
-  gradientStructure = 0,
-  structure = 0,
+  localGradientEvidence = 0,
   shellFocus = 0,
   edgeFade = 1,
   activeMask = 1,
@@ -247,19 +285,17 @@ export function deriveCausticRidgeAuthority({
   signedRadianceAuthority = 1,
 } = {}) {
   const safeContourCore = clamp01(contourCore);
-  const safeGradientStructure = clamp01(gradientStructure);
-  const safeStructure = clamp01(structure);
+  const safeLocalGradientEvidence = clamp01(localGradientEvidence);
   const safeShellFocus = clamp01(shellFocus);
   const localFieldSupportAuthority = deriveLocalFieldSupportAuthority({
     effectiveUnsignedSupport,
   });
   const shellFieldAuthority =
     localFieldSupportAuthority *
-    Math.max(safeGradientStructure, clamp01(signedRadianceAuthority));
+    Math.max(safeLocalGradientEvidence, clamp01(signedRadianceAuthority));
   const causticFocusAuthority = clamp01(
     Math.max(
-      safeGradientStructure * safeContourCore,
-      safeGradientStructure * safeStructure * safeContourCore,
+      safeLocalGradientEvidence * safeContourCore,
       safeShellFocus * safeContourCore * shellFieldAuthority,
     ),
   );
@@ -308,11 +344,11 @@ export function deriveCausticMaterialTransferProbe({
   threshold = 0.02,
   contourCore = 0,
   broadBand = null,
-  gradientStructure = 0,
-  structure = 0,
+  localGradientEvidence = 0,
   shellFocus = 0,
   edgeFade = 1,
   activeMask = 1,
+  effectiveUnsignedSupport = 1,
   excitationVisibility = 1,
   signedRadianceAuthority = 1,
   colorWeight = 0,
@@ -329,11 +365,12 @@ export function deriveCausticMaterialTransferProbe({
   const { causticFocusAuthority, causticRidgeAuthority } =
     deriveCausticRidgeAuthority({
       contourCore,
-      gradientStructure,
-      structure,
+      localGradientEvidence,
       shellFocus,
       edgeFade,
       activeMask,
+      effectiveUnsignedSupport,
+      signedRadianceAuthority,
     });
   const causticVisibility = deriveCausticVisibility({
     causticRidgeAuthority,
@@ -354,7 +391,6 @@ export function deriveCausticMaterialTransferProbe({
       : broadBand;
   const bodyDensity =
     clamp01(resolvedBroadBand) *
-    clamp01(structure) *
     clamp01(edgeFade) *
     clamp01(activeMask) *
     BODY_DENSITY_GAIN *
@@ -403,23 +439,59 @@ export function deriveOpticalSlopeAuthority({
   return presence * Math.pow(1 - alignment, power);
 }
 
+export function deriveOpticalConvergenceAuthority({
+  tangent1 = [1, 0, 0],
+  tangent2 = [0, 1, 0],
+  normalPositiveT1 = [0, 0, 0],
+  normalNegativeT1 = [0, 0, 0],
+  normalPositiveT2 = [0, 0, 0],
+  normalNegativeT2 = [0, 0, 0],
+} = {}) {
+  const t1 = normalizeVector3(tangent1, [1, 0, 0]);
+  const t2 = normalizeVector3(tangent2, [0, 1, 0]);
+  const nPositiveT1 = normalizeVector3(normalPositiveT1, [0, 0, 0]);
+  const nNegativeT1 = normalizeVector3(normalNegativeT1, [0, 0, 0]);
+  const nPositiveT2 = normalizeVector3(normalPositiveT2, [0, 0, 0]);
+  const nNegativeT2 = normalizeVector3(normalNegativeT2, [0, 0, 0]);
+  const viewPlaneNormalConvergence =
+    -0.5 *
+    (dotVector3(
+      [
+        nPositiveT1[0] - nNegativeT1[0],
+        nPositiveT1[1] - nNegativeT1[1],
+        nPositiveT1[2] - nNegativeT1[2],
+      ],
+      t1,
+    ) +
+      dotVector3(
+        [
+          nPositiveT2[0] - nNegativeT2[0],
+          nPositiveT2[1] - nNegativeT2[1],
+          nPositiveT2[2] - nNegativeT2[2],
+        ],
+        t2,
+      ));
+
+  return {
+    viewPlaneNormalConvergence,
+    opticalConvergenceAuthority: clamp01(
+      Math.max(0, viewPlaneNormalConvergence),
+    ),
+  };
+}
+
 export function deriveOpticalFocusAuthority({
   causticRidgeAuthority = 0,
   opticalSlopeAuthority = 0,
   ridgeConcentration = 0,
-  structure = 0,
-  slopeGain = OPTICAL_SLOPE_GAIN,
-  ridgeGain = OPTICAL_RIDGE_GAIN,
+  opticalConvergenceAuthority = 0,
 } = {}) {
+  const convergence = clamp01(opticalConvergenceAuthority);
+
   return clamp01(
     clamp01(causticRidgeAuthority) *
-      (1 +
-        Math.max(0, safeFinite(slopeGain, OPTICAL_SLOPE_GAIN)) *
-          clamp01(opticalSlopeAuthority)) *
-      (1 +
-        Math.max(0, safeFinite(ridgeGain, OPTICAL_RIDGE_GAIN)) *
-          clamp01(ridgeConcentration)) *
-      (0.65 + 0.35 * clamp01(structure)),
+      (1 + clamp01(opticalSlopeAuthority) * convergence) *
+      (1 + clamp01(ridgeConcentration) * convergence),
   );
 }
 
@@ -455,12 +527,13 @@ export function deriveLaserCymaticOpticalProbe({
   ridgeConcentration: ridgeConcentrationOverride = null,
   signedCausticDensity: signedCausticDensityOverride = null,
   bodyContribution: bodyContributionOverride = null,
-  structure = 0,
+  localGradientEvidence = 0,
+  opticalConvergenceAuthority = 0,
   ...causticInputs
 } = {}) {
   const caustic = deriveCausticMaterialTransferProbe({
     ...causticInputs,
-    structure,
+    localGradientEvidence,
   });
   const signedCausticDensity =
     signedCausticDensityOverride == null
@@ -475,7 +548,9 @@ export function deriveLaserCymaticOpticalProbe({
       ? caustic.ridgeConcentration
       : clamp01(ridgeConcentrationOverride);
   const gradientPresenceGate =
-    gradientPresence == null ? clamp01(structure) : clamp01(gradientPresence);
+    gradientPresence == null
+      ? clamp01(localGradientEvidence)
+      : clamp01(gradientPresence);
   const opticalSlopeAuthority = deriveOpticalSlopeAuthority({
     normalDotMeasurement,
     gradientPresence: gradientPresenceGate,
@@ -484,7 +559,7 @@ export function deriveLaserCymaticOpticalProbe({
     causticRidgeAuthority: caustic.causticRidgeAuthority,
     opticalSlopeAuthority,
     ridgeConcentration,
-    structure,
+    opticalConvergenceAuthority,
   });
   const opticalFocus = Math.pow(opticalFocusAuthority, OPTICAL_FOCUS_POWER);
   const opticalNegativeSpaceGate = deriveOpticalNegativeSpaceGate({
@@ -523,6 +598,7 @@ export function deriveLaserCymaticOpticalProbe({
     bodyContribution,
     ridgeConcentration,
     opticalSlopeAuthority,
+    opticalConvergenceAuthority: clamp01(opticalConvergenceAuthority),
     opticalFocusAuthority,
     opticalFocus,
     opticalNegativeSpaceGate,
@@ -541,7 +617,7 @@ export function derivePhotographicShellAuthority({
   shellFocus = 0,
   shellWeight = SHELL_WEIGHT_MIN,
   contourCore = 0,
-  structure = 0,
+  localGradientEvidence = 0,
   edgeFade = 1,
   activeMask = 1,
 } = {}) {
@@ -551,7 +627,9 @@ export function derivePhotographicShellAuthority({
       ? deriveShellFocus({ shellWeight })
       : clamp01(safeFinite(shellFocus, 0));
   const safeContourCore = clamp01(safeFinite(contourCore, 0));
-  const safeStructure = clamp01(safeFinite(structure, 0));
+  const safeLocalGradientEvidence = clamp01(
+    safeFinite(localGradientEvidence, 0),
+  );
   const shellPresence = Math.max(
     safeShellFocus,
     deriveShellFocus({ shellWeight }),
@@ -589,7 +667,7 @@ export function derivePhotographicShellAuthority({
         PHOTOGRAPHIC_APERTURE_FADE_END,
         safeRadialDistance,
       )) *
-    Math.max(safeContourCore, safeStructure * 0.45);
+    Math.max(safeContourCore, safeLocalGradientEvidence * 0.45);
   const shellSuppression = smoothstep(
     PHOTOGRAPHIC_SHELL_SUPPRESSION_START,
     PHOTOGRAPHIC_SHELL_SUPPRESSION_END,
@@ -700,7 +778,7 @@ export function derivePhotographicCymaticProbe({
   shellWeight = SHELL_WEIGHT_MIN,
   shellFocus = null,
   contourCore = 0,
-  structure = 0,
+  localGradientEvidence = 0,
   edgeFade = 1,
   activeMask = 1,
   colorWeight = 0,
@@ -712,7 +790,7 @@ export function derivePhotographicCymaticProbe({
   const opticalProbeInputs = {
     ...opticalInputs,
     contourCore,
-    structure,
+    localGradientEvidence,
     shellWeight,
     shellFocus: resolvedShellFocus,
     edgeFade,
@@ -728,7 +806,7 @@ export function derivePhotographicCymaticProbe({
     shellWeight,
     shellFocus: resolvedShellFocus,
     contourCore,
-    structure,
+    localGradientEvidence,
     edgeFade,
     activeMask,
   });
@@ -820,7 +898,6 @@ export function deriveShellWeight({
 export function deriveBodyDensity({
   fieldAbs,
   threshold,
-  structure,
   edgeFade,
   activeMask,
   radialDistance,
@@ -840,7 +917,6 @@ export function deriveBodyDensity({
   });
   const bodyDensity =
     broadBand *
-    structure *
     edgeFade *
     activeMask *
     interiorMask *
@@ -858,19 +934,10 @@ export function deriveBodyDensity({
   };
 }
 
-export function deriveVisibleStructure({ structure, radialDistance = 0 }) {
-  const outerShellAccent = smoothstep(0.35, 1.0, radialDistance);
-
-  return {
-    outerShellAccent,
-    visibleStructure: structure,
-  };
-}
-
 export function deriveBeamMask({
   contourShape,
   shellWeight,
-  structure,
+  localGradientEvidence,
   transientEnergy,
   spectralFlux,
   radialDistance,
@@ -901,7 +968,7 @@ export function deriveBeamMask({
   });
   const beamMask =
     beamCore *
-    structure *
+    clamp01(localGradientEvidence) *
     compressedShellWeight *
     transientBoost *
     clamp01(signedRadianceAuthority) *

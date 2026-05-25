@@ -35,6 +35,31 @@ function expectSourceIndex(source, needle) {
 }
 
 describe("raymarch volume material", () => {
+  it("does not expose a product-controlled structure gradient window", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const forbiddenIdentifiers = [
+      "uStructureMin",
+      "uStructureMax",
+      "structureMin",
+      "structureMax",
+      "gradientMin",
+      "gradientMax",
+      "structureFloor",
+      "structureCeiling",
+    ];
+
+    for (const identifier of forbiddenIdentifiers) {
+      expect(source).not.toContain(identifier);
+    }
+    expect(source).not.toMatch(/const\s+structure\s*=/);
+    expect(source).not.toMatch(
+      /smoothstep\(\s*[^,\n]+(?:Min|Floor)[^,]*,\s*[^,\n]+(?:Max|Ceiling)[^,]*,\s*normalizedGradMagnitude/s,
+    );
+  });
+
   it("uses observation transfer as the only shader density visibility lane", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
@@ -178,7 +203,7 @@ describe("raymarch volume material", () => {
     ).toContain("localFieldSupportAuthority");
     expect(
       source.slice(localFieldSupportAuthorityStart, causticVisibilityStart),
-    ).toContain("max(structure, signedBodyAuthority)");
+    ).toContain("max(localGradientEvidence, signedBodyAuthority)");
     expect(source).not.toContain("effectiveSupportDensity");
   });
 
@@ -367,6 +392,10 @@ describe("raymarch volume material", () => {
       source,
       "const opticalSlopeAuthority =",
     );
+    const opticalConvergenceStart = expectSourceIndex(
+      source,
+      "const opticalConvergenceAuthority =",
+    );
     const opticalFocusStart = expectSourceIndex(
       source,
       "const opticalFocusAuthority =",
@@ -399,7 +428,8 @@ describe("raymarch volume material", () => {
     const densityBlock = source.slice(densityStart, densityStart + 420);
 
     expect(opticalSlopeStart).toBeGreaterThan(ridgeConcentrationStart);
-    expect(opticalFocusStart).toBeGreaterThan(opticalSlopeStart);
+    expect(opticalConvergenceStart).toBeGreaterThan(opticalSlopeStart);
+    expect(opticalFocusStart).toBeGreaterThan(opticalConvergenceStart);
     expect(laserRadianceStart).toBeGreaterThan(opticalFocusStart);
     expect(opticalBodyStart).toBeGreaterThan(laserRadianceStart);
     expect(photographicLaserStart).toBeGreaterThan(opticalBodyStart);
@@ -440,9 +470,56 @@ describe("raymarch volume material", () => {
       opticalFocusStart,
     );
 
-    expect(opticalSlopeBlock).toContain(".mul(structure)");
+    expect(opticalSlopeBlock).toContain(".mul(localGradientEvidence)");
     expect(opticalSlopeBlock).toContain("OPTICAL_SLOPE_POWER");
     expect(opticalSlopeBlock).toContain("dot(gradientNormal");
+  });
+
+  it("uses normal convergence as the optical focus owner", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const convergenceHelperStart = expectSourceIndex(
+      source,
+      "function deriveOpticalConvergenceAuthorityNode",
+    );
+    const opticalConvergenceStart = expectSourceIndex(
+      source,
+      "const opticalConvergenceAuthority =",
+    );
+    const opticalFocusStart = expectSourceIndex(
+      source,
+      "const opticalFocusAuthority =",
+    );
+    const laserRadianceStart = expectSourceIndex(
+      source,
+      "const laserCausticRadiance =",
+    );
+    const opticalFocusBlock = source.slice(opticalFocusStart, laserRadianceStart);
+
+    expect(opticalConvergenceStart).toBeGreaterThan(convergenceHelperStart);
+    expect(opticalFocusStart).toBeGreaterThan(opticalConvergenceStart);
+    expect(source).toContain("sampleFieldGradientNormalNode");
+    expect(source).toContain("normalPositiveT1");
+    expect(source).toContain("normalNegativeT1");
+    expect(source).toContain("normalPositiveT2");
+    expect(source).toContain("normalNegativeT2");
+    const deletedGradientFocusLiteral =
+      "float(0.65).add(" + "localGradientEvidence.mul(float(0." + "35)))";
+
+    expect(source).not.toContain(deletedGradientFocusLiteral);
+    expect(source).not.toContain("OPTICAL_CONVERGENCE_GAIN");
+    expect(opticalFocusBlock).toContain("opticalConvergenceAuthority");
+    expect(opticalFocusBlock).toContain(
+      "opticalSlopeAuthority.mul(opticalConvergenceAuthority)",
+    );
+    expect(opticalFocusBlock).toContain(
+      "ridgeConcentration.mul(opticalConvergenceAuthority)",
+    );
+    expect(opticalFocusBlock).not.toContain("localGradientEvidence");
+    expect(opticalFocusBlock).not.toContain("OPTICAL_" + "SLOPE_GAIN");
+    expect(opticalFocusBlock).not.toContain("OPTICAL_" + "RIDGE_GAIN");
   });
 
   it("keeps the optical measurement pass off the spherical startup path", () => {

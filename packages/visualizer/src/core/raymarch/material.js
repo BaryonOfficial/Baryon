@@ -7,6 +7,7 @@ import {
   Loop,
   abs,
   clamp,
+  cross,
   dot,
   exp,
   float,
@@ -93,8 +94,6 @@ import {
   OPTICAL_HIGH_FOCUS_BODY_RATIO_MAX,
   OPTICAL_LASER_GAIN,
   OPTICAL_LOW_FOCUS_BODY_RATIO_MAX,
-  OPTICAL_RIDGE_GAIN,
-  OPTICAL_SLOPE_GAIN,
   OPTICAL_SLOPE_POWER,
   OPTICAL_SPACE_GATE_END,
   OPTICAL_SPACE_GATE_START,
@@ -146,6 +145,7 @@ import {
   WHITE_EMISSION_CROWDING_REDUCTION,
   WHITE_EMISSION_CROWDING_TRANSIENT_RELIEF,
 } from "./fieldShaping.js";
+import { RAYMARCH_EFFECTIVE_FIELD_RESOLUTION } from "./fieldCache.js";
 
 // Excitation gate: smoothstep range for uAverageAmplitude / 255.
 // Below LOW the field is under-excited; gating reduces body fill and hot-core.
@@ -426,6 +426,136 @@ function accumulateDirectModalFieldColorOnly({
   });
 }
 
+function sampleFieldGradientNormalNode({
+  localPosition,
+  modalFieldModeBuffer,
+  modalFieldColorBuffer,
+  modalFieldCapacity,
+  modalFieldActiveCount,
+  uRadius,
+  boundaryMode,
+  cavityGeometry,
+  effectiveFieldTexture,
+  directFieldEvaluationEnabled,
+}) {
+  const sampleGradient = vec3(0.0).toVar();
+
+  if (effectiveFieldTexture) {
+    const normalizedSamplePosition = localPosition.div(uRadius);
+    const cacheUv = clamp(
+      normalizedSamplePosition.mul(float(0.5)).add(vec3(0.5)),
+      vec3(0.0),
+      vec3(1.0),
+    );
+    const cachedSample = texture3D(effectiveFieldTexture).sample(cacheUv);
+    sampleGradient.assign(vec3(cachedSample.y, cachedSample.z, cachedSample.w));
+  } else if (directFieldEvaluationEnabled) {
+    const sampleField = float(0.0).toVar();
+    const sampleGradX = float(0.0).toVar();
+    const sampleGradY = float(0.0).toVar();
+    const sampleGradZ = float(0.0).toVar();
+    accumulateModalField({
+      buffer: modalFieldModeBuffer,
+      colorBuffer: modalFieldColorBuffer,
+      capacity: modalFieldCapacity,
+      activeCount: modalFieldActiveCount,
+      localPosition,
+      uRadius,
+      boundaryMode,
+      cavityGeometry,
+      enableColorAccumulation: null,
+      field: sampleField,
+      gradX: sampleGradX,
+      gradY: sampleGradY,
+      gradZ: sampleGradZ,
+      colorSum: null,
+      colorWeight: null,
+      colorChromaSum: null,
+      colorChromaWeight: null,
+    });
+    sampleGradient.assign(vec3(sampleGradX, sampleGradY, sampleGradZ));
+  }
+
+  return sampleGradient.div(max(length(sampleGradient), float(1e-4)));
+}
+
+function deriveOpticalConvergenceAuthorityNode({
+  localPosition,
+  tangent1,
+  tangent2,
+  sampleStep,
+  modalFieldModeBuffer,
+  modalFieldColorBuffer,
+  modalFieldCapacity,
+  modalFieldActiveCount,
+  uRadius,
+  boundaryMode,
+  cavityGeometry,
+  effectiveFieldTexture,
+  directFieldEvaluationEnabled,
+}) {
+  const normalPositiveT1 = sampleFieldGradientNormalNode({
+    localPosition: localPosition.add(tangent1.mul(sampleStep)),
+    modalFieldModeBuffer,
+    modalFieldColorBuffer,
+    modalFieldCapacity,
+    modalFieldActiveCount,
+    uRadius,
+    boundaryMode,
+    cavityGeometry,
+    effectiveFieldTexture,
+    directFieldEvaluationEnabled,
+  });
+  const normalNegativeT1 = sampleFieldGradientNormalNode({
+    localPosition: localPosition.sub(tangent1.mul(sampleStep)),
+    modalFieldModeBuffer,
+    modalFieldColorBuffer,
+    modalFieldCapacity,
+    modalFieldActiveCount,
+    uRadius,
+    boundaryMode,
+    cavityGeometry,
+    effectiveFieldTexture,
+    directFieldEvaluationEnabled,
+  });
+  const normalPositiveT2 = sampleFieldGradientNormalNode({
+    localPosition: localPosition.add(tangent2.mul(sampleStep)),
+    modalFieldModeBuffer,
+    modalFieldColorBuffer,
+    modalFieldCapacity,
+    modalFieldActiveCount,
+    uRadius,
+    boundaryMode,
+    cavityGeometry,
+    effectiveFieldTexture,
+    directFieldEvaluationEnabled,
+  });
+  const normalNegativeT2 = sampleFieldGradientNormalNode({
+    localPosition: localPosition.sub(tangent2.mul(sampleStep)),
+    modalFieldModeBuffer,
+    modalFieldColorBuffer,
+    modalFieldCapacity,
+    modalFieldActiveCount,
+    uRadius,
+    boundaryMode,
+    cavityGeometry,
+    effectiveFieldTexture,
+    directFieldEvaluationEnabled,
+  });
+  const viewPlaneNormalConvergence = dot(
+    normalPositiveT1.sub(normalNegativeT1),
+    tangent1,
+  )
+    .add(dot(normalPositiveT2.sub(normalNegativeT2), tangent2))
+    .mul(float(-0.5));
+
+  return clamp(
+    max(float(0.0), viewPlaneNormalConvergence),
+    float(0.0),
+    float(1.0),
+  );
+}
+
 function createScatteringNode({
   modalFieldModeBuffer,
   modalFieldColorBuffer,
@@ -442,9 +572,8 @@ function createScatteringNode({
   const {
     uRadius,
     uThreshold,
-    uStructureMin,
-    uStructureMax,
     uAverageAmplitude,
+    uRaymarchSteps,
     uModalFieldModeCount,
     uColor,
     uSurfaceColor,
@@ -521,6 +650,8 @@ function createScatteringNode({
   const boundaryWhiteEmission = isDirichletBoundary
     ? float(RAYMARCH_BOUNDARY_TUNING.dirichletWhiteEmission)
     : float(1.0);
+  const effectiveFieldSampleResolution =
+    effectiveFieldTexture?.image?.width ?? RAYMARCH_EFFECTIVE_FIELD_RESOLUTION;
   const spectralColorBiasHintOffset = uModeCoherence
     .mul(0.05)
     .add(uModalResponseEnergy.mul(0.08))
@@ -736,8 +867,13 @@ function createScatteringNode({
       const normalizedGradMagnitude = effectiveFieldTexture
         ? effectiveGradientMagnitude
         : gradientMagnitude.div(amplitudeNorm);
+      const localGradientEvidence = clamp(
+        normalizedGradMagnitude,
+        float(0.0),
+        float(1.0),
+      );
       const modalFieldCount = float(uModalFieldModeCount);
-      // Modal structure sharpens nodal lines; style descriptors do not own clarity.
+      // Local field evidence sharpens nodal lines; style descriptors do not own clarity.
       // contourGainBase is pre-computed above the Fn.
       const contourGain = float(1.0)
         .add(uTransientEnergy.mul(0.25))
@@ -751,11 +887,6 @@ function createScatteringNode({
           uThreshold.mul(float(BROAD_BAND_SCALE)),
           normalizedFieldAbs,
         ),
-      );
-      const structure = smoothstep(
-        uStructureMin,
-        uStructureMax,
-        normalizedGradMagnitude,
       );
       const innerShellAccent = smoothstep(
         float(0.0),
@@ -832,7 +963,7 @@ function createScatteringNode({
         float(RAYMARCH_BOUNDARY_END),
         radialDistance,
       );
-      // Strong structure opens up the interior — more inner detail visible
+      // Strong local field evidence opens up the interior — more inner detail visible
       const interiorMask = float(1.0).sub(
         smoothstep(
           dynamicInteriorMaskStart,
@@ -849,7 +980,6 @@ function createScatteringNode({
           .mul(float(0.45)),
       );
       const bodyDensity = broadBand
-        .mul(structure)
         .mul(edgeFade)
         .mul(activeMask)
         .mul(interiorMask)
@@ -891,14 +1021,11 @@ function createScatteringNode({
         float(1.0),
       );
       const shellFieldAuthority = localFieldSupportAuthority.mul(
-        max(structure, signedBodyAuthority),
+        max(localGradientEvidence, signedBodyAuthority),
       );
       const causticFocusAuthority = clamp(
         max(
-          max(
-            structure.mul(contourCore),
-            structure.mul(structure).mul(contourCore),
-          ),
+          localGradientEvidence.mul(contourCore),
           shellFocus.mul(contourCore).mul(shellFieldAuthority),
         ),
         float(0.0),
@@ -966,21 +1093,54 @@ function createScatteringNode({
         float(1.0)
           .sub(abs(dot(gradientNormal, viewDirLocal.negate())))
           .pow(float(OPTICAL_SLOPE_POWER))
-          .mul(structure),
+          .mul(localGradientEvidence),
         float(0.0),
         float(1.0),
+      );
+      const viewDirection = viewDirLocal.normalize().toVar();
+      const tangentSeed = vec3(0.0, 1.0, 0.0).toVar();
+      If(
+        abs(viewDirection.y).greaterThan(
+          max(abs(viewDirection.x), abs(viewDirection.z)),
+        ),
+        () => {
+          tangentSeed.assign(vec3(1.0, 0.0, 0.0));
+        },
+      );
+      const tangent1 = cross(viewDirection, tangentSeed).normalize();
+      const tangent2 = cross(viewDirection, tangent1).normalize();
+      const convergenceSampleStep = effectiveFieldTexture
+        ? uRadius.mul(float(2.0)).div(float(effectiveFieldSampleResolution))
+        : uRadius.mul(float(2.0)).div(max(uRaymarchSteps, float(1.0)));
+      const opticalConvergenceAuthority = deriveOpticalConvergenceAuthorityNode(
+        {
+          localPosition,
+          tangent1,
+          tangent2,
+          sampleStep: convergenceSampleStep,
+          modalFieldModeBuffer,
+          modalFieldColorBuffer,
+          modalFieldCapacity,
+          modalFieldActiveCount,
+          uRadius,
+          boundaryMode,
+          cavityGeometry,
+          effectiveFieldTexture,
+          directFieldEvaluationEnabled,
+        },
       );
       const opticalFocusAuthority = clamp(
         causticRidgeAuthority
           .mul(
             float(1.0).add(
-              opticalSlopeAuthority.mul(float(OPTICAL_SLOPE_GAIN)),
+              opticalSlopeAuthority.mul(opticalConvergenceAuthority),
             ),
           )
           .mul(
-            float(1.0).add(ridgeConcentration.mul(float(OPTICAL_RIDGE_GAIN))),
-          )
-          .mul(float(0.65).add(structure.mul(float(0.35)))),
+            float(1.0).add(
+              ridgeConcentration.mul(opticalConvergenceAuthority),
+            ),
+          ),
         float(0.0),
         float(1.0),
       );
@@ -1054,7 +1214,7 @@ function createScatteringNode({
             radialDistance,
           ),
         )
-        .mul(max(contourCore, structure.mul(float(0.45))));
+        .mul(max(contourCore, localGradientEvidence.mul(float(0.45))));
       const shellSuppression = smoothstep(
         float(PHOTOGRAPHIC_SHELL_SUPPRESSION_START),
         float(PHOTOGRAPHIC_SHELL_SUPPRESSION_END),
@@ -1309,7 +1469,7 @@ function createScatteringNode({
       // dynamicHolographicIntensity and dynamicHolographicShift pre-computed above the Fn
       const holographicFresnel = fresnelBase
         .mul(dynamicHolographicIntensity)
-        .mul(structure)
+        .mul(localGradientEvidence)
         .mul(edgeFade);
       const holographicAccentColor = mix(
         uSurfaceColor,

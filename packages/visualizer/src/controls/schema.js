@@ -221,38 +221,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
-      key: "structureMin",
-      label: "Structure Min",
-      title:
-        "Fades out the faintest, noisiest areas of the field — raise to clean up thin wisps and noise",
-      defaultValue: SIMULATION_DEFAULTS.structureMin,
-      methods: ALL_METHODS,
-      binding: { min: 0, max: 1, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uStructureMin.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.shape,
-  ),
-  withControlGroup(
-    {
-      key: "structureMax",
-      label: "Structure Max",
-      title:
-        "Trims the densest inner regions — raise if the center looks too solid or foggy",
-      defaultValue: SIMULATION_DEFAULTS.structureMax,
-      methods: ALL_METHODS,
-      binding: { min: 0, max: 1, step: 0.01 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uStructureMax.value",
-      status: CONTROL_STATUSES.live,
-    },
-    CONTROL_GROUPS.shape,
-  ),
-  withControlGroup(
-    {
       key: "boundaryMode",
       label: "Boundary",
       title:

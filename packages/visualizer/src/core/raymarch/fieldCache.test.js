@@ -1345,6 +1345,47 @@ describe("fieldCache", () => {
     expect(effectiveSample.effectiveFieldAuthority).toBe(0);
   });
 
+  it("evaluates direct and effective normal convergence from the same normalized gradient representation", () => {
+    expect(raymarchFieldCache.evaluateRaymarchNormalConvergencePoint).toBeTypeOf(
+      "function",
+    );
+
+    const modalFieldSlots = new Float32Array([1, 1, 1, 1, 2, 1, 1, 0.35]);
+    const common = {
+      modalFieldSlots,
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0.42,
+      y: -0.31,
+      z: 0.27,
+      viewDirection: [0.25, -0.15, -1],
+      sampleStep: (2 * 3) / 16,
+    };
+    const direct = raymarchFieldCache.evaluateRaymarchNormalConvergencePoint({
+      ...common,
+      evaluateFieldPoint: raymarchFieldCache.evaluateRaymarchFieldCachePoint,
+    });
+    const effective = raymarchFieldCache.evaluateRaymarchNormalConvergencePoint({
+      ...common,
+      modalFieldPhaseSlots: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1]),
+      resolution: 16,
+      time: 0,
+      evaluateFieldPoint: raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint,
+    });
+
+    expect(Number.isFinite(direct.viewPlaneNormalConvergence)).toBe(true);
+    expect(direct.opticalConvergenceAuthority).toBeGreaterThanOrEqual(0);
+    expect(effective.viewPlaneNormalConvergence).toBeCloseTo(
+      direct.viewPlaneNormalConvergence,
+      6,
+    );
+    expect(effective.opticalConvergenceAuthority).toBeCloseTo(
+      direct.opticalConvergenceAuthority,
+      6,
+    );
+  });
+
   it("applies one effective phase coefficient to scalar and gradient", () => {
     expect(evaluateRaymarchEffectiveFieldPoint).toBeTypeOf(
       "function",

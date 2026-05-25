@@ -162,7 +162,6 @@ function getModeProfile(mode) {
 function computePhysicalModalTransfer({
   mode,
   modeFrequencyHz,
-  qualityFactor,
   coherence,
   previousEnergy,
 }) {
@@ -513,7 +512,6 @@ export function updateModalResponseFrame({
     const physicalTransfer = computePhysicalModalTransfer({
       mode,
       modeFrequencyHz,
-      qualityFactor: profile.qualityFactor,
       coherence,
       previousEnergy,
     });

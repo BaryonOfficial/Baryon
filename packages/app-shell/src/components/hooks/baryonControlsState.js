@@ -29,7 +29,6 @@ function createOperatorControlKeySet(operatorControlKeys = []) {
   );
 }
 
-
 function createVisibleFolderGroups({
   devtoolsEnabled,
   method = DEFAULT_VISUALIZATION_METHOD,
@@ -38,14 +37,12 @@ function createVisibleFolderGroups({
   const operatorControlKeySet =
     createOperatorControlKeySet(operatorControlKeys);
   return getControlFolders(method).flatMap((title) => {
-    let controls = getControlsForFolder(title, method).filter(
+    const controls = getControlsForFolder(title, method).filter(
       (definition) =>
         devtoolsEnabled ||
         operatorControlKeySet.has(definition.key) ||
         definition.status !== CONTROL_STATUSES.debugOnly,
     );
-
-
 
     if (controls.length === 0) {
       return [];
@@ -130,9 +127,48 @@ export function createInitialControlState(storage) {
   return controls;
 }
 
+function sanitizeStoredPreset(preset) {
+  if (!preset || typeof preset !== "object" || Array.isArray(preset)) {
+    return null;
+  }
+
+  const record = /** @type {Record<string, unknown>} */ (preset);
+  if (typeof record.name !== "string" || record.name.trim() === "") {
+    return null;
+  }
+
+  const controls = serializeControls(
+    deserializeControls(record.controls, CONTROL_DEFINITIONS),
+    CONTROL_DEFINITIONS,
+  );
+
+  if (
+    typeof record.createdAt === "number" &&
+    Number.isFinite(record.createdAt)
+  ) {
+    return {
+      name: record.name,
+      createdAt: record.createdAt,
+      controls,
+    };
+  }
+
+  return {
+    name: record.name,
+    controls,
+  };
+}
+
 export function loadStoredPresets(storage) {
   const presets = readStoredJson(storage, PRESETS_KEY);
-  return Array.isArray(presets) ? presets : [];
+  if (!Array.isArray(presets)) {
+    return [];
+  }
+
+  return presets.flatMap((preset) => {
+    const sanitized = sanitizeStoredPreset(preset);
+    return sanitized ? [sanitized] : [];
+  });
 }
 
 export function getVisibleControlLayout({

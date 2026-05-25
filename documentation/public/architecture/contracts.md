@@ -66,10 +66,10 @@ The intended shape is:
 - a color value must not independently promote a mode
 - the main render path must not add a global Spectral Light fallback tint
 
-The current design brief and technical spec live in
-[`documentation/internal/reference/spectral-light-color-mode-brief.md`](../../internal/reference/spectral-light-color-mode-brief.md)
-and
-[`documentation/internal/reference/spectral-light-color-mode-spec.tex`](../../internal/reference/spectral-light-color-mode-spec.tex).
+The current design brief lives in
+[`documentation/internal/reference/spectral-light-color-mode-brief.md`](../../internal/reference/spectral-light-color-mode-brief.md).
+The current engine-level contract is consolidated in
+[`documentation/internal/reference/baryon-engine-whitepaper.tex`](../../internal/reference/baryon-engine-whitepaper.tex).
 
 ## Internal Optimization Boundary: Audio Engine Transport Frames
 

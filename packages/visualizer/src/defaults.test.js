@@ -57,6 +57,10 @@ describe("defaults compatibility surface", () => {
     expect(Object.keys(DEFAULTS).sort()).toEqual(
       Object.keys(mergedDefaults).sort(),
     );
+    expect(SIMULATION_DEFAULTS).not.toHaveProperty("structureMin");
+    expect(SIMULATION_DEFAULTS).not.toHaveProperty("structureMax");
+    expect(DEFAULTS).not.toHaveProperty("structureMin");
+    expect(DEFAULTS).not.toHaveProperty("structureMax");
     expect(DEFAULTS).not.toHaveProperty("structurePersistence");
   });
 
@@ -69,9 +73,6 @@ describe("defaults compatibility surface", () => {
     for (const [key, value] of Object.entries(baryon7Preset?.controls ?? {})) {
       expect(DEFAULTS[key]).toBe(value);
     }
-    expect(SIMULATION_DEFAULTS.structureMin).toBeLessThan(
-      SIMULATION_DEFAULTS.structureMax,
-    );
     expect(RENDER_DEFAULTS.performanceHudEnabled).toBe(false);
     expect(DEFAULTS.cavityGeometry).toBe(SIMULATION_DEFAULTS.cavityGeometry);
   });

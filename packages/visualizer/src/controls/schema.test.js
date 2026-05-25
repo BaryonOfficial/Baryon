@@ -26,8 +26,6 @@ const EXPECTED_CONTROL_KEYS = [
   "autoGainControl",
   // Shape
   "zeroPointPrecision",
-  "structureMin",
-  "structureMax",
   "boundaryMode",
   "densityGain",
   "absorption",
@@ -99,8 +97,8 @@ describe("control schema", () => {
     expect(state.volumeColor).toBe("#56d7ff");
     expect(state.surfaceColor).toBe("#f7fdff");
     expect(state.zeroPointPrecision).toBe(0.064);
-    expect(state.structureMin).toBe(0.59);
-    expect(state.structureMax).toBe(0.83);
+    expect(state).not.toHaveProperty("structureMin");
+    expect(state).not.toHaveProperty("structureMax");
     expect(state.boundaryMode).toBe("neumann");
     expect(state.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
     expect(state.densityGain).toBe(2.5);
@@ -276,8 +274,6 @@ describe("control schema", () => {
       ),
     ).toEqual([
       "zeroPointPrecision",
-      "structureMin",
-      "structureMax",
       "densityGain",
       "absorption",
       "opacityGain",
@@ -377,8 +373,6 @@ describe("control schema", () => {
       ),
     ).toEqual([
       "zeroPointPrecision",
-      "structureMin",
-      "structureMax",
       "densityGain",
       "opacityGain",
       "contourSharpness",

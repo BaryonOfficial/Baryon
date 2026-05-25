@@ -39,12 +39,19 @@ describe("createControlsStore", () => {
       controls: {
         backgroundColor: "#102030",
         structuralImplementation: "legacy-peak",
+        structureMin: 0.12,
+        structureMax: 0.48,
       },
       presets: [
         {
           name: "Stage",
+          builtIn: true,
+          createdAt: 42,
+          staleMetadata: "legacy",
           controls: {
             backgroundColor: "#0f0f0f",
+            structureMin: 0.2,
+            structureMax: 0.4,
           },
         },
       ],
@@ -56,7 +63,9 @@ describe("createControlsStore", () => {
     expect(store.controlsRef.current).not.toHaveProperty(
       "structuralImplementation",
     );
-    expect(store.getSnapshot().presets).toStrictEqual([
+    expect(store.controlsRef.current).not.toHaveProperty("structureMin");
+    expect(store.controlsRef.current).not.toHaveProperty("structureMax");
+    expect(store.getSnapshot().presets).toEqual([
       expect.objectContaining({
         name: CALIBRATED_CLARITY_NAME,
         builtIn: true,
@@ -73,13 +82,21 @@ describe("createControlsStore", () => {
         name: BARYON_7_NAME,
         builtIn: true,
       }),
-      {
+      expect.objectContaining({
         name: "Stage",
-        controls: {
+        controls: expect.objectContaining({
           backgroundColor: "#0f0f0f",
-        },
-      },
+        }),
+      }),
     ]);
+    const userPreset = store
+      .getSnapshot()
+      .presets.find((preset) => preset.name === "Stage");
+    expect(userPreset?.createdAt).toBe(42);
+    expect(userPreset).not.toHaveProperty("builtIn");
+    expect(userPreset).not.toHaveProperty("staleMetadata");
+    expect(userPreset?.controls).not.toHaveProperty("structureMin");
+    expect(userPreset?.controls).not.toHaveProperty("structureMax");
   });
 
   it("keeps controlsRef stable while publishing immutable snapshots", () => {
@@ -140,8 +157,8 @@ describe("createControlsStore", () => {
     expect(store.getSnapshot().selectedPresetName).toBe(
       CALIBRATED_CLARITY_NAME,
     );
-    expect(store.controlsRef.current.structureMin).toBe(0.36);
-    expect(store.controlsRef.current.structureMax).toBe(0.48);
+    expect(store.controlsRef.current).not.toHaveProperty("structureMin");
+    expect(store.controlsRef.current).not.toHaveProperty("structureMax");
     expect(store.controlsRef.current.densityGain).toBe(2.85);
     expect(store.controlsRef.current.absorption).toBe(3.05);
     expect(store.controlsRef.current.opacityGain).toBe(2.05);
@@ -184,8 +201,8 @@ describe("createControlsStore", () => {
     store.loadPreset(STAGE_CONTAINMENT_NAME);
 
     expect(store.getSnapshot().selectedPresetName).toBe(STAGE_CONTAINMENT_NAME);
-    expect(store.controlsRef.current.structureMin).toBe(0.36);
-    expect(store.controlsRef.current.structureMax).toBe(0.42);
+    expect(store.controlsRef.current).not.toHaveProperty("structureMin");
+    expect(store.controlsRef.current).not.toHaveProperty("structureMax");
     expect(store.controlsRef.current.densityGain).toBe(2.85);
     expect(store.controlsRef.current.absorption).toBe(3.75);
     expect(store.controlsRef.current.opacityGain).toBe(2.85);
@@ -211,8 +228,8 @@ describe("createControlsStore", () => {
     expect(store.getSnapshot().selectedPresetName).toBe(BARYON_4_NAME);
     expect(store.controlsRef.current.raymarchSteps).toBe(104);
     expect(store.controlsRef.current.zeroPointPrecision).toBe(0.018);
-    expect(store.controlsRef.current.structureMin).toBe(0.38);
-    expect(store.controlsRef.current.structureMax).toBe(0.46);
+    expect(store.controlsRef.current).not.toHaveProperty("structureMin");
+    expect(store.controlsRef.current).not.toHaveProperty("structureMax");
     expect(store.controlsRef.current.densityGain).toBe(3.08);
     expect(store.controlsRef.current.absorption).toBe(3.62);
     expect(store.controlsRef.current.opacityGain).toBe(2.7);
@@ -240,8 +257,8 @@ describe("createControlsStore", () => {
     expect(store.getSnapshot().selectedPresetName).toBe(BARYON_7_NAME);
     expect(store.controlsRef.current.raymarchSteps).toBe(80);
     expect(store.controlsRef.current.zeroPointPrecision).toBe(0.064);
-    expect(store.controlsRef.current.structureMin).toBe(0.59);
-    expect(store.controlsRef.current.structureMax).toBe(0.83);
+    expect(store.controlsRef.current).not.toHaveProperty("structureMin");
+    expect(store.controlsRef.current).not.toHaveProperty("structureMax");
     expect(store.controlsRef.current.densityGain).toBe(2.5);
     expect(store.controlsRef.current.absorption).toBe(1.45);
     expect(store.controlsRef.current.opacityGain).toBe(2.3);
@@ -275,5 +292,35 @@ describe("createControlsStore", () => {
         .getSnapshot()
         .presets.some((preset) => preset.name === CALIBRATED_CLARITY_NAME),
     ).toBe(true);
+  });
+
+  it("drops legacy structure-window fields from user presets and saved presets", () => {
+    seedStorage({
+      presets: [
+        {
+          name: "Legacy Stage",
+          controls: {
+            backgroundColor: "#010203",
+            structureMin: 0.12,
+            structureMax: 0.48,
+          },
+        },
+      ],
+    });
+    const store = createControlsStore();
+
+    store.loadPreset("Legacy Stage");
+
+    expect(store.controlsRef.current.backgroundColor).toBe("#010203");
+    expect(store.controlsRef.current).not.toHaveProperty("structureMin");
+    expect(store.controlsRef.current).not.toHaveProperty("structureMax");
+
+    store.setPresetName("Round Trip");
+    store.savePreset();
+
+    const savedPresets = JSON.parse(window.localStorage.getItem(PRESETS_KEY));
+    expect(savedPresets[0].name).toBe("Round Trip");
+    expect(savedPresets[0].controls).not.toHaveProperty("structureMin");
+    expect(savedPresets[0].controls).not.toHaveProperty("structureMax");
   });
 });

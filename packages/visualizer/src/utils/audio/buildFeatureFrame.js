@@ -4371,7 +4371,6 @@ function buildStructuralFingerprint({
 function materializeAudioFeatureStructuralSnapshot(
   preparedInputs,
   structuralState,
-  fastSignalState = null,
 ) {
   const {
     capacity,
@@ -4755,7 +4754,6 @@ export function buildCurrentAudioFeatureAnalysisResult({
     const projectedStructural = materializeAudioFeatureStructuralSnapshot(
       preparedInputs,
       currentStructural,
-      fastSignalState,
     );
     resolvedStructural = {
       ...currentStructural,
@@ -5054,10 +5052,6 @@ export function composeAudioFeatureFrame({
     modalVisibilityEnergy,
     modalObserverVisibilityEnergy,
     modalVisibilityRetainedHighQEnergy,
-    lowQSourceCoupledVisibilityAuthority,
-    lowQSourceCoupledVisibilityEnergy,
-    lowQSourceCoupledTopologyFloor,
-    lowQSourceCoupledSourceSupport,
     lowQSourceCoupledVisibilityRejected,
   } = deriveCompositeSignals({
     inputMode: preparedInputs.analysisInputMode,
@@ -5172,10 +5166,6 @@ export function composeAudioFeatureFrame({
     modalVisibilityEnergy *= reusedAnalysisSourceAuthorityScale;
     modalObserverVisibilityEnergy *= reusedAnalysisSourceAuthorityScale;
     modalVisibilityRetainedHighQEnergy *= reusedAnalysisSourceAuthorityScale;
-    lowQSourceCoupledVisibilityAuthority *= reusedAnalysisSourceAuthorityScale;
-    lowQSourceCoupledVisibilityEnergy *= reusedAnalysisSourceAuthorityScale;
-    lowQSourceCoupledTopologyFloor *= reusedAnalysisSourceAuthorityScale;
-    lowQSourceCoupledSourceSupport *= reusedAnalysisSourceAuthorityScale;
     modeCoherence *= reusedAnalysisSourceAuthorityScale;
   }
   const renderAuthorityCut = isAnalysisRenderAuthorityCut(analysisResult);
@@ -5241,10 +5231,6 @@ export function composeAudioFeatureFrame({
     modalVisibilityEnergy = 0;
     modalObserverVisibilityEnergy = 0;
     modalVisibilityRetainedHighQEnergy = 0;
-    lowQSourceCoupledVisibilityAuthority = 0;
-    lowQSourceCoupledVisibilityEnergy = 0;
-    lowQSourceCoupledTopologyFloor = 0;
-    lowQSourceCoupledSourceSupport = 0;
     modeCoherence = 0;
     modalCoefficientEnergy = 0;
     modalResponseSourceCoupledEnergy = 0;

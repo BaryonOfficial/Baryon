@@ -18,8 +18,6 @@ export function createRaymarchUniforms(parameters) {
     uFieldState: uniform(FIELD_STATE_VALUES.idle),
     uRadius: uniform(parameters.radius),
     uThreshold: uniform(parameters.threshold),
-    uStructureMin: uniform(SIMULATION_DEFAULTS.structureMin),
-    uStructureMax: uniform(SIMULATION_DEFAULTS.structureMax),
     uBoundaryMode: uniform(
       getBoundaryModeValue(SIMULATION_DEFAULTS.boundaryMode),
     ),

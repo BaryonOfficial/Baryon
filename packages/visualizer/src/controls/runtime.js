@@ -156,8 +156,6 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "colorMode",
     "spectralMix",
     "zeroPointPrecision",
-    "structureMin",
-    "structureMax",
     "boundaryMode",
     "cavityGeometry",
     "raymarchSteps",
@@ -298,8 +296,6 @@ function applyCommonVisualizationControls(runtimeState, controls) {
   uniforms.uSurfaceColor.value.set(controls.surfaceColor);
   uniforms.uSpectralMix.value = spectralMix;
   uniforms.uThreshold.value = controls.zeroPointPrecision;
-  uniforms.uStructureMin.value = controls.structureMin;
-  uniforms.uStructureMax.value = controls.structureMax;
   if (uniforms.uBoundaryMode) {
     uniforms.uBoundaryMode.value = getBoundaryModeValue(boundaryMode);
   }
@@ -414,8 +410,6 @@ function buildVisualizationControlSnapshot({
       requestedCavityGeometry,
       effectiveCavityGeometry,
       threshold: uniforms.uThreshold.value,
-      structureMin: uniforms.uStructureMin.value,
-      structureMax: uniforms.uStructureMax.value,
       idleLogoIntensity: uniforms.uIdleLogoIntensity.value,
       idleLogoAlpha,
       idleLogoSize: uniforms.uIdleLogoSize.value,

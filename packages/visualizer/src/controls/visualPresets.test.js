@@ -18,6 +18,11 @@ describe("built-in visual presets", () => {
   });
 
   it("publishes the selectable built-in visual presets in order", () => {
+    for (const preset of BUILT_IN_VISUAL_PRESETS) {
+      expect(preset.controls).not.toHaveProperty("structureMin");
+      expect(preset.controls).not.toHaveProperty("structureMax");
+    }
+
     expect(BUILT_IN_VISUAL_PRESETS).toStrictEqual([
       {
         name: "Calibrated Clarity",
@@ -25,8 +30,6 @@ describe("built-in visual presets", () => {
         controls: {
           raymarchSteps: 88,
           zeroPointPrecision: 0.018,
-          structureMin: 0.36,
-          structureMax: 0.48,
           densityGain: 2.85,
           absorption: 3.05,
           opacityGain: 2.05,
@@ -51,8 +54,6 @@ describe("built-in visual presets", () => {
         controls: {
           raymarchSteps: 88,
           zeroPointPrecision: 0.02,
-          structureMin: 0.36,
-          structureMax: 0.42,
           densityGain: 2.85,
           absorption: 3.75,
           opacityGain: 2.85,
@@ -77,8 +78,6 @@ describe("built-in visual presets", () => {
         controls: {
           raymarchSteps: 104,
           zeroPointPrecision: 0.018,
-          structureMin: 0.38,
-          structureMax: 0.46,
           densityGain: 3.08,
           absorption: 3.62,
           opacityGain: 2.7,
@@ -103,8 +102,6 @@ describe("built-in visual presets", () => {
         controls: {
           raymarchSteps: 80,
           zeroPointPrecision: 0.064,
-          structureMin: 0.59,
-          structureMax: 0.83,
           densityGain: 2.5,
           absorption: 1.45,
           opacityGain: 2.3,

@@ -96,6 +96,8 @@ test("persistControls rewrites settings to the current schema and drops removed 
       JSON.stringify({
         backgroundColor: "#010203",
         structuralImplementation: "legacy-peak",
+        structureMin: 0.12,
+        structureMax: 0.48,
       }),
     ],
   ]);
@@ -121,5 +123,11 @@ test("persistControls rewrites settings to the current schema and drops removed 
   });
   expect(JSON.parse(storage.get(SETTINGS_KEY))).not.toHaveProperty(
     "structuralImplementation",
+  );
+  expect(JSON.parse(storage.get(SETTINGS_KEY))).not.toHaveProperty(
+    "structureMin",
+  );
+  expect(JSON.parse(storage.get(SETTINGS_KEY))).not.toHaveProperty(
+    "structureMax",
   );
 });
