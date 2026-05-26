@@ -223,10 +223,17 @@ describe("fieldCache", () => {
     expect(effectiveFieldCache.texture.isStorageTexture).toBe(true);
     expect(effectiveFieldCache.texture.is3DTexture).toBe(true);
     expect(effectiveFieldCache.texture.image.width).toBe(8);
+    expect(effectiveFieldCache.texture.image.depth).toBe(
+      8 * raymarchFieldCache.RAYMARCH_MODAL_BASIS_CACHE_CAPACITY,
+    );
     expect(effectiveFieldCache.ready).toBe(false);
     expect(effectiveFieldCache.backend).toBe("compute");
     expect(effectiveFieldCache.mode).toBe("effective-cached");
-    expect(effectiveFieldCache.semantic).toBe("canonical-effective-field");
+    expect(effectiveFieldCache.semantic).toBe("modal-basis-cache");
+    expect(effectiveFieldCache.basisPacking).toBe("z-slice-pages-v1");
+    expect(effectiveFieldCache.liveSynthesisModeCount).toBe(
+      raymarchFieldCache.RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
+    );
     expect(effectiveFieldCache.effectiveFieldSupportDiagnosticSampleCount).toBe(
       0,
     );
@@ -244,11 +251,16 @@ describe("fieldCache", () => {
     expect(effectiveFieldCache.supportTexture.isStorageTexture).toBe(true);
     expect(effectiveFieldCache.supportTexture.is3DTexture).toBe(true);
     expect(effectiveFieldCache.supportTexture.image.width).toBe(8);
+    expect(effectiveFieldCache.supportTexture.image.depth).toBe(
+      effectiveFieldCache.texture.image.depth,
+    );
     expect(effectiveFieldCache.supportTexture).not.toBe(
       effectiveFieldCache.texture,
     );
-    expect(effectiveFieldCache.semantic).toBe("canonical-effective-field");
-    expect(effectiveFieldCache.supportSemantic).toBe("effective-field-support");
+    expect(effectiveFieldCache.semantic).toBe("modal-basis-cache");
+    expect(effectiveFieldCache.supportSemantic).toBe(
+      "coefficient-invariant-basis-support",
+    );
   });
 
   it("marks all-rejected effective field descriptors as non-drawable", () => {
@@ -398,29 +410,37 @@ describe("fieldCache", () => {
     });
   });
 
-  it("keeps compute support phase-current with the signed field", () => {
+  it("builds effective-field compute as a coefficient-invariant basis atlas", () => {
     const source = readFileSync(
       new URL("./fieldCache.js", import.meta.url),
       "utf8",
     );
-    const cpuSupportStart = source.indexOf(
-      "unsignedSupport += Math.abs(phaseCurrentContribution);",
+    const computeStart = source.indexOf(
+      "function createEffectiveFieldComputeKernel",
     );
-    const computeContributionStart = source.indexOf(
-      "const phaseCurrentContribution = coefficient",
+    const computeEnd = source.indexOf(
+      "function getOrCreateRaymarchFieldCacheComputeNode",
+      computeStart,
     );
-    const supportTextureStoreStart = source.indexOf(
-      "textureStore(\n        supportTexture",
-    );
+    const computeSource = source.slice(computeStart, computeEnd);
+    const supportTextureStoreStart = computeSource.indexOf("supportTexture");
 
-    expect(cpuSupportStart).toBeGreaterThan(-1);
-    expect(computeContributionStart).toBeGreaterThan(-1);
-    expect(source).toContain(
-      "unsignedSupport.addAssign(abs(phaseCurrentContribution))",
+    expect(computeStart).toBeGreaterThan(-1);
+    expect(computeEnd).toBeGreaterThan(computeStart);
+    expect(computeSource).toContain("const pageIndex = voxelCoord.z.div");
+    expect(computeSource).toContain("const localZ = voxelCoord.z.mod");
+    expect(computeSource).toContain(
+      "const slot = modalFieldModeBuffer.element(pageIndexInt);",
     );
-    expect(source).not.toContain("rawSupportContribution");
-    expect(source).toContain("const cancellationRatio = clamp(");
-    expect(supportTextureStoreStart).toBeGreaterThan(computeContributionStart);
+    expect(computeSource).toContain("basisField.addAssign(family.field);");
+    expect(computeSource).toContain(
+      "vec4(basisField, basisGradX, basisGradY, basisGradZ)",
+    );
+    expect(computeSource).toContain("vec4(abs(basisField), float(1.0)");
+    expect(computeSource).not.toContain("modalFieldPhaseBuffer");
+    expect(computeSource).not.toContain("phaseCurrentContribution");
+    expect(computeSource).not.toContain("totalAmplitude");
+    expect(supportTextureStoreStart).toBeGreaterThan(-1);
   });
 
   it("keeps Spectral Light cache compute as raw color metadata", () => {
@@ -432,7 +452,7 @@ describe("fieldCache", () => {
       "function createSpectralLightComputeKernel",
     );
     const spectralComputeEnd = source.indexOf(
-      "function accumulateEffectiveFieldComputeLayer",
+      "function createEffectiveFieldComputeKernel",
       spectralComputeStart,
     );
     const spectralComputeSource = source.slice(
@@ -639,8 +659,8 @@ describe("fieldCache", () => {
       initialSample.field,
       6,
     );
-    expect(timeAdvancedDescriptor.modalFieldPhaseHash).not.toBe(
-      initialDescriptor.modalFieldPhaseHash,
+    expect(timeAdvancedDescriptor.liveModalPhaseHash).not.toBe(
+      initialDescriptor.liveModalPhaseHash,
     );
     expect(
       raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
@@ -769,8 +789,8 @@ describe("fieldCache", () => {
     effectiveFieldCache.activeDescriptor = initialDescriptor;
 
     expect(sameCurrentPhaseSample.field).toBeCloseTo(initialSample.field, 6);
-    expect(sameCurrentPhaseDescriptor.modalFieldPhaseHash).toBe(
-      initialDescriptor.modalFieldPhaseHash,
+    expect(sameCurrentPhaseDescriptor.liveModalPhaseHash).toBe(
+      initialDescriptor.liveModalPhaseHash,
     );
     expect(
       raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
@@ -854,8 +874,8 @@ describe("fieldCache", () => {
     expect(reorderedSample.gradX).toBeCloseTo(sample.gradX, 6);
     expect(reorderedSample.gradY).toBeCloseTo(sample.gradY, 6);
     expect(reorderedSample.gradZ).toBeCloseTo(sample.gradZ, 6);
-    expect(reorderedDescriptor.modalFieldPhaseHash).toBe(
-      descriptor.modalFieldPhaseHash,
+    expect(reorderedDescriptor.liveModalPhaseHash).toBe(
+      descriptor.liveModalPhaseHash,
     );
     expect(
       raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
@@ -955,8 +975,8 @@ describe("fieldCache", () => {
     expect(splitEquivalentSample.gradX).toBeCloseTo(compactSample.gradX, 6);
     expect(splitEquivalentSample.gradY).toBeCloseTo(compactSample.gradY, 6);
     expect(splitEquivalentSample.gradZ).toBeCloseTo(compactSample.gradZ, 6);
-    expect(splitEquivalentDescriptor.modalFieldPhaseHash).toBe(
-      compactDescriptor.modalFieldPhaseHash,
+    expect(splitEquivalentDescriptor.liveModalPhaseHash).toBe(
+      compactDescriptor.liveModalPhaseHash,
     );
     expect(
       raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
@@ -1086,8 +1106,8 @@ describe("fieldCache", () => {
       compactSample.gradZ,
       6,
     );
-    expect(splitAggregateEquivalentDescriptor.modalFieldPhaseHash).toBe(
-      compactDescriptor.modalFieldPhaseHash,
+    expect(splitAggregateEquivalentDescriptor.liveModalPhaseHash).toBe(
+      compactDescriptor.liveModalPhaseHash,
     );
     expect(
       raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
@@ -1506,7 +1526,7 @@ describe("fieldCache", () => {
     ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
   });
 
-  it("rebuilds effective field caches for relative coefficient envelope changes", () => {
+  it("does not rebuild basis caches for relative coefficient envelope changes", () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const firstSlots = new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.2]);
@@ -1567,14 +1587,14 @@ describe("fieldCache", () => {
     expect(first.effectiveFieldTopologyHash).toBe(
       changed.effectiveFieldTopologyHash,
     );
-    expect(first.effectiveFieldSupportHash).not.toBe(
-      changed.effectiveFieldSupportHash,
+    expect(first.effectiveFieldSupportDiagnosticHash).not.toBe(
+      changed.effectiveFieldSupportDiagnosticHash,
     );
-    expect(rebuild.needsRebuild).toBe(true);
-    expect(rebuild.reason).toBe("modal-coefficients");
+    expect(rebuild.needsRebuild).toBe(false);
+    expect(rebuild.reason).toBe("unchanged");
   });
 
-  it("rebuilds effective field caches for coefficient redistribution", () => {
+  it("does not rebuild basis caches for coefficient redistribution", () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const firstSlots = new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.2]);
@@ -1634,11 +1654,11 @@ describe("fieldCache", () => {
     expect(first.effectiveFieldTopologyHash).toBe(
       changed.effectiveFieldTopologyHash,
     );
-    expect(first.effectiveFieldSupportHash).not.toBe(
-      changed.effectiveFieldSupportHash,
+    expect(first.effectiveFieldSupportDiagnosticHash).not.toBe(
+      changed.effectiveFieldSupportDiagnosticHash,
     );
-    expect(rebuild.needsRebuild).toBe(true);
-    expect(rebuild.reason).toBe("modal-coefficients");
+    expect(rebuild.needsRebuild).toBe(false);
+    expect(rebuild.reason).toBe("unchanged");
   });
 
   it("does not rebuild effective field caches for aggregate phase authority changes", () => {
@@ -1912,6 +1932,7 @@ describe("fieldCache", () => {
       radius: 3,
       phaseModeCount: 1,
       phaseAuthority: 0.42,
+      basisCapacity: 1,
     });
     const options = {
       modalFieldModeBuffer: { value: { array: new Float32Array(4) } },
@@ -2128,6 +2149,7 @@ describe("fieldCache", () => {
       radius: 3,
       phaseModeCount: 1,
       phaseAuthority: 0.42,
+      basisCapacity: 1,
     });
     const options = {
       modalFieldModeBuffer: { value: { array: modeArray } },
@@ -2173,13 +2195,7 @@ describe("fieldCache", () => {
         inputSnapshot.modalFieldModeBuffer.value.array.slice(0, 4),
       ),
     ).toEqual([1, 2, 3, 0.5]);
-    const phaseSnapshot = Array.from(
-      inputSnapshot.modalFieldPhaseBuffer.value.array.slice(0, 4),
-    );
-    expect(phaseSnapshot[0]).toBeCloseTo(0.1, 6);
-    expect(phaseSnapshot[1]).toBeCloseTo(0.2, 6);
-    expect(phaseSnapshot[2]).toBeCloseTo(0.6, 6);
-    expect(phaseSnapshot[3]).toBeCloseTo(0.7, 6);
+    expect(inputSnapshot.modalFieldPhaseBuffer).toBeNull();
     expect(inputSnapshot.uniforms.uTime.value).toBe(1);
     expect(inputSnapshot.uniforms.uRadius.value).toBe(3);
     expect(inputSnapshot.uniforms.uModalFieldModeCount.value).toBe(1);
@@ -2201,6 +2217,7 @@ describe("fieldCache", () => {
       radius: 3,
       phaseModeCount: 1,
       phaseAuthority: 0.4,
+      basisCapacity: 1,
     });
     const queuedModeArray = new Float32Array([4, 5, 6, 0.7]);
     const queuedPhaseArray = new Float32Array([0.2, 0.3, 0.8, 0.9]);
@@ -2218,6 +2235,7 @@ describe("fieldCache", () => {
       time: 4,
       phaseModeCount: 1,
       phaseAuthority: 0.6,
+      basisCapacity: 1,
     });
     const computeNodeKey = getTestComputeNodeKey(1);
     effectiveFieldCache.computeNodesByKey[computeNodeKey] = {
@@ -2295,19 +2313,13 @@ describe("fieldCache", () => {
     expect(modeSnapshot[1]).toBe(5);
     expect(modeSnapshot[2]).toBe(6);
     expect(modeSnapshot[3]).toBeCloseTo(0.7, 6);
-    const phaseSnapshot = Array.from(
-      inputSnapshot.modalFieldPhaseBuffer.value.array.slice(0, 4),
-    );
-    expect(phaseSnapshot[0]).toBeCloseTo(0.2, 6);
-    expect(phaseSnapshot[1]).toBeCloseTo(0.3, 6);
-    expect(phaseSnapshot[2]).toBeCloseTo(0.8, 6);
-    expect(phaseSnapshot[3]).toBeCloseTo(0.9, 6);
+    expect(inputSnapshot.modalFieldPhaseBuffer).toBeNull();
     expect(inputSnapshot.uniforms.uTime.value).toBe(4);
     expect(inputSnapshot.uniforms.uRadius.value).toBe(5);
     expect(inputSnapshot.uniforms.uModalFieldModeCount.value).toBe(1);
   });
 
-  it("uses modal capacity as effective field compute-kernel identity", async () => {
+  it("uses basis capacity as effective field compute-kernel identity", async () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const descriptor1 = buildRaymarchEffectiveFieldDescriptor({
@@ -2318,6 +2330,7 @@ describe("fieldCache", () => {
       radius: 3,
       phaseModeCount: 1,
       phaseAuthority: 0.42,
+      basisCapacity: 1,
     });
     const descriptor2 = buildRaymarchEffectiveFieldDescriptor({
       modalFieldSlots: new Float32Array([1, 2, 3, 0.5, 2, 3, 4, 0.35]),
@@ -2329,6 +2342,7 @@ describe("fieldCache", () => {
       radius: 3,
       phaseModeCount: 2,
       phaseAuthority: 0.49,
+      basisCapacity: 2,
     });
     const dispatchedNodeIds = [];
     const renderer = {
@@ -3848,8 +3862,8 @@ describe("fieldCache", () => {
 
     effectiveFieldCache.activeDescriptor = baseDescriptor;
 
-    expect(baseDescriptor.modalFieldHash).not.toBe(
-      rejectedChangedDescriptor.modalFieldHash,
+    expect(baseDescriptor.effectiveFieldSupportDiagnosticHash).toBe(
+      rejectedChangedDescriptor.effectiveFieldSupportDiagnosticHash,
     );
     expect(rejectedChangedDescriptor.effectiveFieldTopologyHash).toBe(
       baseDescriptor.effectiveFieldTopologyHash,

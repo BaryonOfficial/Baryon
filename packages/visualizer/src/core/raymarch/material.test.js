@@ -239,14 +239,14 @@ describe("raymarch volume material", () => {
     expect(suppressionBlock).not.toContain("float(0.45)");
   });
 
-  it("uses effective-field support metadata to gate empty-field transfer", () => {
+  it("uses live basis support evidence to gate empty-field transfer", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
     );
     const supportSampleStart = expectSourceIndex(
       source,
-      "const effectiveFieldSupportSample =",
+      "const basisSupport = effectiveFieldSupportTexture",
     );
     const cancellationSuppressionStart = expectSourceIndex(
       source,
@@ -544,7 +544,7 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("phaseCoherentSignedDisplacement");
   });
 
-  it("keeps cached effective field ownership texture-only", () => {
+  it("synthesizes cached basis pages with live modal inputs", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
@@ -554,7 +554,7 @@ describe("raymarch volume material", () => {
       "const amplitudeNorm =",
     );
     const cachedBranchStart = source.indexOf(
-      "if (effectiveFieldTexture) {",
+      "if (effectiveFieldTexture && modalFieldModeBuffer && modalFieldPhaseBuffer) {",
       amplitudeNormStart,
     );
     const effectiveFieldStart = source.indexOf(
@@ -576,24 +576,28 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("fieldEvaluationMode");
     expect(cachedBranchBlock).not.toContain("accumulateCachedLiveResidual({");
     expect(cachedBranchBlock).not.toContain("evaluateFieldNode({");
-    expect(cachedBranchBlock).not.toContain("modalFieldPhaseBuffer.element(i)");
-    expect(cachedBranchBlock).not.toContain("end: int(modalFieldCapacity)");
+    expect(source).toContain("function sampleBasisAtlasPageNode({");
+    expect(source).toContain("modalFieldPhaseBuffer.element(i)");
+    expect(source).toContain("end: int(normalizedLiveSynthesisModeCount)");
+    expect(source).toContain(
+      "liveSynthesisModeCount: modalFieldCapacity",
+    );
   });
 
-  it("keeps direct modal field evaluation out of the material shader", () => {
+  it("keeps direct modal basis evaluation out of the material shader", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
     );
 
-    expect(source).not.toContain("modalFieldModeBuffer");
+    expect(source).toContain("modalFieldModeBuffer");
     expect(source).not.toContain("modalFieldColorBuffer");
-    expect(source).not.toContain("modalFieldPhaseBuffer");
-    expect(source).not.toContain("modalFieldCapacity");
+    expect(source).toContain("modalFieldPhaseBuffer");
+    expect(source).toContain("modalFieldCapacity");
     expect(source).not.toContain("evaluateModeNode({");
-    expect(source).not.toContain("cos(phase)");
+    expect(source).toContain("cos(phase)");
     expect(source).not.toContain("phaseCurrentCoefficient");
-    expect(source).not.toContain("unsignedSupport.addAssign");
+    expect(source).toContain("unsignedSupport.addAssign");
     expect(source).toContain("uModalFieldModeCount");
     expect(source).not.toContain("function accumulateFieldLayers");
     expect(source).not.toContain("function accumulateColorLayers");
@@ -951,6 +955,18 @@ describe("raymarch volume material", () => {
       source,
       "const opticalConvergenceAuthority =",
     );
+    const opticalGateStart = expectSourceIndex(
+      source,
+      "const shouldMeasureOpticalConvergence =",
+    );
+    const opticalMeasurementStart = expectSourceIndex(
+      source,
+      "If(shouldMeasureOpticalConvergence",
+    );
+    const opticalMeasurementHelperStart = expectSourceIndex(
+      source,
+      "const measuredOpticalConvergenceAuthority =",
+    );
     const opticalFocusStart = expectSourceIndex(
       source,
       "const opticalFocusAuthority =",
@@ -962,7 +978,12 @@ describe("raymarch volume material", () => {
     const opticalFocusBlock = source.slice(opticalFocusStart, laserRadianceStart);
 
     expect(opticalConvergenceStart).toBeGreaterThan(convergenceHelperStart);
-    expect(opticalFocusStart).toBeGreaterThan(opticalConvergenceStart);
+    expect(opticalGateStart).toBeGreaterThan(opticalConvergenceStart);
+    expect(opticalMeasurementStart).toBeGreaterThan(opticalGateStart);
+    expect(opticalMeasurementHelperStart).toBeGreaterThan(
+      opticalMeasurementStart,
+    );
+    expect(opticalFocusStart).toBeGreaterThan(opticalMeasurementHelperStart);
     expect(source).toContain("sampleFieldGradientNormalNode");
     expect(source).toContain("normalPositiveT1");
     expect(source).toContain("normalNegativeT1");
@@ -973,6 +994,10 @@ describe("raymarch volume material", () => {
 
     expect(source).not.toContain(deletedGradientFocusLiteral);
     expect(source).not.toContain("OPTICAL_CONVERGENCE_GAIN");
+    expect(source).toContain("OPTICAL_CONVERGENCE_MEASUREMENT_EPSILON");
+    expect(source).toContain(
+      "opticalConvergenceAuthority.assign(\n          measuredOpticalConvergenceAuthority",
+    );
     expect(opticalFocusBlock).toContain("opticalConvergenceAuthority");
     expect(opticalFocusBlock).toContain(
       "opticalSlopeAuthority.mul(opticalConvergenceAuthority)",

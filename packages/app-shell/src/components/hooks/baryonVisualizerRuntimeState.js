@@ -303,7 +303,7 @@ const EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS = Object.freeze({
   effectiveFieldActive: false,
   effectiveFieldReady: false,
   effectiveFieldSupportReady: false,
-  effectiveFieldSupportSemantic: "effective-field-support",
+  effectiveFieldSupportSemantic: "coefficient-invariant-basis-support",
   effectiveFieldUnsignedSupportMean: 0,
   effectiveFieldCancellationRatioMean: 0,
   effectiveFieldCancellationRatioMax: 0,
@@ -315,6 +315,13 @@ const EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS = Object.freeze({
   effectiveFieldResolution: 0,
   effectiveFieldRebuildCount: 0,
   effectiveFieldRebuildReason: "uninitialized",
+  modalBasisCacheGeneration: 0,
+  modalBasisCacheRebuildCount: 0,
+  modalBasisCacheAgeMs: null,
+  liveModalFrameAgeMs: 0,
+  modalBasisDescriptorReason: "uninitialized",
+  modalBasisAtlasDepth: 0,
+  liveSynthesisModeCount: 0,
   effectiveFieldDescriptorFresh: false,
   effectiveFieldDescriptorStaleReason: null,
   effectiveFieldQueuedDescriptorPending: false,
@@ -591,6 +598,35 @@ export function updateObservationTransferRenderDiagnostics(
     typeof effectiveFieldDescriptorStaleReason === "string"
       ? effectiveFieldDescriptorStaleReason
       : null;
+  renderDiagnostics.modalBasisCacheGeneration = readFiniteNumber(
+    raymarchDebug.modalBasisCacheGeneration ?? effectiveFieldCache?.generation,
+  );
+  renderDiagnostics.modalBasisCacheRebuildCount = readFiniteNumber(
+    raymarchDebug.modalBasisCacheRebuildCount ??
+      effectiveFieldCache?.rebuildCount,
+  );
+  renderDiagnostics.modalBasisCacheAgeMs =
+    raymarchDebug.modalBasisCacheAgeMs ??
+    EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS.modalBasisCacheAgeMs;
+  renderDiagnostics.liveModalFrameAgeMs = readFiniteNumber(
+    raymarchDebug.liveModalFrameAgeMs ??
+      renderDiagnostics.featureFrameAgeAtRenderMs,
+  );
+  renderDiagnostics.modalBasisDescriptorReason =
+    raymarchDebug.modalBasisDescriptorReason ??
+    renderDiagnostics.effectiveFieldDescriptorStaleReason ??
+    effectiveFieldCache?.lastRebuildReason ??
+    EFFECTIVE_FIELD_RENDER_DIAGNOSTIC_DEFAULTS.modalBasisDescriptorReason;
+  renderDiagnostics.modalBasisAtlasDepth = readFiniteNumber(
+    raymarchDebug.modalBasisAtlasDepth ??
+      effectiveFieldCache?.basisAtlasDepth ??
+      effectiveFieldDescriptor?.basisAtlasDepth,
+  );
+  renderDiagnostics.liveSynthesisModeCount = readFiniteNumber(
+    raymarchDebug.liveSynthesisModeCount ??
+      effectiveFieldCache?.liveSynthesisModeCount ??
+      effectiveFieldDescriptor?.liveSynthesisModeCount,
+  );
   renderDiagnostics.effectiveFieldQueuedDescriptorPending = Boolean(
     raymarchDebug.effectiveFieldQueuedDescriptorPending ??
     effectiveFieldCache?.queuedDescriptor,

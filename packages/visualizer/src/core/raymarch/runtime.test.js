@@ -234,10 +234,26 @@ function getTestComputeNodeKey(runtimeState, cavityGeometry = "rectangular") {
   )}`;
 }
 
+function getTestEffectiveComputeNodeKey(
+  runtimeState,
+  cavityGeometry = "rectangular",
+) {
+  const basisCapacity =
+    runtimeState?.effectiveFieldCache?.basisCapacity ??
+    runtimeState?.modalFieldCapacity ??
+    Math.floor(
+      (runtimeState?.modalFieldModeBuffer?.value?.array?.length ?? 0) / 4,
+    );
+  return `${cavityGeometry}:neumann:capacity=${Math.max(
+    1,
+    Math.round(basisCapacity || 0),
+  )}`;
+}
+
 function seedRuntimeCacheNodes(runtimeState) {
   if (runtimeState.effectiveFieldCache) {
     runtimeState.effectiveFieldCache.computeNodesByKey[
-      getTestComputeNodeKey(runtimeState)
+      getTestEffectiveComputeNodeKey(runtimeState)
     ] = {
       id: "field",
     };
@@ -1025,8 +1041,8 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.currentEffectiveFieldDescriptor.effectiveFieldTopologyHash,
     ).toBe(effectiveFieldDescriptor.effectiveFieldTopologyHash);
     expect(
-      runtimeState.currentEffectiveFieldDescriptor.modalFieldPhaseHash,
-    ).not.toBe(effectiveFieldDescriptor.modalFieldPhaseHash);
+      runtimeState.currentEffectiveFieldDescriptor.liveModalPhaseHash,
+    ).not.toBe(effectiveFieldDescriptor.liveModalPhaseHash);
     expect(runtimeState.modalFieldPhaseBuffer.value.needsUpdate).toBe(true);
     expect(
       Array.from(
@@ -1053,7 +1069,7 @@ describe("tickRaymarchRuntime", () => {
     ).toBeGreaterThan(0);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.effectiveFieldSemantic,
-    ).toBe("canonical-effective-field");
+    ).toBe("modal-basis-cache");
     expect(
       runtimeState.debugSnapshot.raymarchDebug.effectiveFieldAuthority,
     ).toBe(0.5);
@@ -1062,7 +1078,7 @@ describe("tickRaymarchRuntime", () => {
     ).toBe(true);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.effectiveFieldSupportSemantic,
-    ).toBe("effective-field-support");
+    ).toBe("coefficient-invariant-basis-support");
     expect(
       runtimeState.debugSnapshot.raymarchDebug
         .effectiveFieldUnsignedSupportMean,
@@ -1138,7 +1154,7 @@ describe("tickRaymarchRuntime", () => {
     seedRuntimeCacheNodes(runtimeState);
     runtimeState.uniforms.uSpectralMix.value = 0;
     runtimeState.effectiveFieldCache.computeNodesByKey[
-      getTestComputeNodeKey(runtimeState)
+      getTestEffectiveComputeNodeKey(runtimeState)
     ] = {
       id: "effective",
     };
@@ -1192,8 +1208,8 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.currentEffectiveFieldDescriptor.effectiveFieldTopologyHash,
     ).toBe(activeDescriptor.effectiveFieldTopologyHash);
     expect(
-      runtimeState.currentEffectiveFieldDescriptor.modalFieldPhaseHash,
-    ).not.toBe(activeDescriptor.modalFieldPhaseHash);
+      runtimeState.currentEffectiveFieldDescriptor.liveModalPhaseHash,
+    ).not.toBe(activeDescriptor.liveModalPhaseHash);
     expect(
       Array.from(
         runtimeState.modalFieldPhaseBuffer.value.array.slice(0, 16),
@@ -1206,7 +1222,7 @@ describe("tickRaymarchRuntime", () => {
     seedRuntimeCacheNodes(runtimeState);
     runtimeState.uniforms.uSpectralMix.value = 0;
     runtimeState.effectiveFieldCache.computeNodesByKey[
-      getTestComputeNodeKey(runtimeState)
+      getTestEffectiveComputeNodeKey(runtimeState)
     ] = {
       id: "effective",
     };
@@ -1243,8 +1259,8 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.currentEffectiveFieldDescriptor.effectiveFieldTopologyHash,
     ).toBe(activeDescriptor.effectiveFieldTopologyHash);
     expect(
-      runtimeState.currentEffectiveFieldDescriptor.modalFieldPhaseHash,
-    ).not.toBe(activeDescriptor.modalFieldPhaseHash);
+      runtimeState.currentEffectiveFieldDescriptor.liveModalPhaseHash,
+    ).not.toBe(activeDescriptor.liveModalPhaseHash);
     expect(runtimeState.uniforms.uTime.value).toBe(3.5);
     tickRaymarchRuntime(runtimeState, frame, 3.5, 1 / 60, renderer);
     expect(runtimeState.debugSnapshot.effectiveFieldDescriptorFresh).toBe(true);
@@ -1285,8 +1301,8 @@ describe("tickRaymarchRuntime", () => {
     tickRaymarchRuntime(runtimeState, rejectedPhaseFrame, 2, 1 / 60, renderer);
 
     expect(
-      runtimeState.currentEffectiveFieldDescriptor.modalFieldPhaseHash,
-    ).toBe(activeDescriptor.modalFieldPhaseHash);
+      runtimeState.currentEffectiveFieldDescriptor.liveModalPhaseHash,
+    ).toBe(activeDescriptor.liveModalPhaseHash);
     expect(runtimeState.effectiveFieldCache.rebuildCount).toBe(rebuildCount);
     expect(runtimeState.effectiveFieldCache.rebuildPending).toBe(false);
     expect(renderer.computeAsync).toHaveBeenCalledTimes(1);
@@ -2054,7 +2070,7 @@ describe("tickRaymarchRuntime", () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
     runtimeState.effectiveFieldCache.computeNodesByKey[
-      getTestComputeNodeKey(runtimeState)
+      getTestEffectiveComputeNodeKey(runtimeState)
     ] = {
       id: "effective",
     };
@@ -3077,7 +3093,7 @@ describe("tickRaymarchRuntime", () => {
     expect(computeCalls).toBe(2);
   });
 
-  it("coalesces coefficient redistribution to the newest effective-field descriptor", async () => {
+  it("streams coefficient redistribution without queueing modal-basis rebuilds", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
     runtimeState.uniforms.uSpectralMix.value = 0;
@@ -3138,30 +3154,26 @@ describe("tickRaymarchRuntime", () => {
     );
 
     const newestDescriptor = runtimeState.currentEffectiveFieldDescriptor;
-    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toEqual(
-      newestDescriptor,
-    );
+    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toBeNull();
     expect(runtimeState.effectiveFieldCache.effectiveFieldAuthority).toBe(0);
     expect(runtimeState.debugSnapshot.effectiveFieldAuthority).toBe(0.5);
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.4);
     expect(
       runtimeState.debugSnapshot.effectiveFieldQueuedDescriptorPending,
-    ).toBe(true);
+    ).toBe(false);
     await Promise.resolve();
     expect(computeCalls).toBe(1);
     resolveFirst();
     await flushMicrotasks(5);
 
-    expect(runtimeState.effectiveFieldCache.pendingDescriptor).toEqual(
-      newestDescriptor,
-    );
     expect(
       runtimeState.effectiveFieldCache.activeDescriptor
-        .effectiveFieldSupportHash,
-    ).not.toBe(newestDescriptor.effectiveFieldSupportHash);
+        .effectiveFieldSupportDiagnosticHash,
+    ).not.toBe(newestDescriptor.effectiveFieldSupportDiagnosticHash);
+    expect(runtimeState.effectiveFieldCache.pendingDescriptor).toBeNull();
     expect(runtimeState.effectiveFieldCache.queuedDescriptor).toBeNull();
-    expect(runtimeState.effectiveFieldCache.rebuildPending).toBe(true);
-    expect(computeCalls).toBe(2);
+    expect(runtimeState.effectiveFieldCache.rebuildPending).toBe(false);
+    expect(computeCalls).toBe(1);
   });
 
   it("keeps phase-only updates live without pacing or queueing cache rebuilds", async () => {

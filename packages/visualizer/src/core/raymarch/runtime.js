@@ -196,6 +196,7 @@ function resetCacheActivity(cache) {
   cache.pendingDescriptor = null;
   cache.activePhaseSampleTimeSec = null;
   cache.pendingPhaseSampleTimeSec = null;
+  cache.activeCacheBuiltAtSec = null;
   advanceRaymarchCacheGeneration(cache);
   clearQueuedRaymarchCacheRebuild(cache);
 }
@@ -258,6 +259,7 @@ function blockEffectiveFieldCacheForDescriptor(effectiveFieldCache, reason) {
   effectiveFieldCache.pendingDescriptor = null;
   effectiveFieldCache.activePhaseSampleTimeSec = null;
   effectiveFieldCache.pendingPhaseSampleTimeSec = null;
+  effectiveFieldCache.activeCacheBuiltAtSec = null;
   clearQueuedRaymarchCacheRebuild(effectiveFieldCache);
   effectiveFieldCache.lastError = null;
   effectiveFieldCache.lastRebuildReason = reason ?? "blocked";
@@ -642,6 +644,16 @@ function buildRaymarchDebugSnapshot(
             1000,
         )
       : null;
+  const modalBasisCacheAgeMs =
+    Number.isFinite(effectiveFieldCache?.activeCacheBuiltAtSec) &&
+    Number.isFinite(runtimeState.uniforms.uTime?.value)
+      ? Math.max(
+          0,
+          ((runtimeState.uniforms.uTime?.value ?? 0) -
+            effectiveFieldCache.activeCacheBuiltAtSec) *
+            1000,
+        )
+      : null;
   const effectiveFieldModeCount = readFiniteNumber(
     effectiveFieldDiagnosticDescriptor?.contributingEffectiveFieldModeCount ??
       effectiveFieldCache?.activeEffectiveFieldModeCount,
@@ -653,9 +665,10 @@ function buildRaymarchDebugSnapshot(
     0,
   );
   const effectiveFieldSemantic =
-    effectiveFieldCache?.semantic ?? "canonical-effective-field";
+    effectiveFieldCache?.semantic ?? "modal-basis-cache";
   const effectiveFieldSupportSemantic =
-    effectiveFieldCache?.supportSemantic ?? "effective-field-support";
+    effectiveFieldCache?.supportSemantic ??
+    "coefficient-invariant-basis-support";
   const effectiveFieldSupportReady = Boolean(
     effectiveFieldCache?.ready && effectiveFieldCache?.supportTexture,
   );
@@ -1003,6 +1016,22 @@ function buildRaymarchDebugSnapshot(
     effectiveFieldRebuildCount: effectiveFieldCache?.rebuildCount ?? 0,
     effectiveFieldRebuildReason:
       effectiveFieldCache?.lastRebuildReason ?? "uninitialized",
+    modalBasisCacheGeneration: effectiveFieldCache?.generation ?? 0,
+    modalBasisCacheRebuildCount: effectiveFieldCache?.rebuildCount ?? 0,
+    modalBasisCacheAgeMs,
+    modalBasisDescriptorReason:
+      effectiveFieldDescriptorStaleReason ??
+      effectiveFieldCache?.lastRebuildReason ??
+      "uninitialized",
+    modalBasisAtlasDepth:
+      effectiveFieldCache?.basisAtlasDepth ??
+      effectiveFieldDescriptor?.basisAtlasDepth ??
+      0,
+    liveSynthesisModeCount:
+      effectiveFieldCache?.liveSynthesisModeCount ??
+      effectiveFieldDescriptor?.liveSynthesisModeCount ??
+      0,
+    liveModalFrameAgeMs: null,
     effectiveFieldDescriptorFresh,
     effectiveFieldDescriptorStaleReason,
     effectiveFieldQueuedDescriptorPending: Boolean(
@@ -1789,6 +1818,8 @@ function applyRaymarchRuntimeUploadAuthority({
     resolution:
       runtimeState.effectiveFieldCache?.resolution ??
       RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
+    basisCapacity: runtimeState.effectiveFieldCache?.basisCapacity,
+    basisPacking: runtimeState.effectiveFieldCache?.basisPacking,
   });
 
   let spectralLightDescriptor = null;

@@ -5,8 +5,6 @@ import {
   If,
   Loop,
   abs,
-  clamp,
-  cos,
   float,
   globalId,
   int,
@@ -28,6 +26,10 @@ import { deriveOpticalConvergenceAuthority } from "./fieldShaping.js";
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 export const RAYMARCH_EFFECTIVE_FIELD_RESOLUTION =
   RAYMARCH_FIELD_CACHE_RESOLUTION;
+export const RAYMARCH_MODAL_BASIS_CACHE_CAPACITY = 12;
+export const RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT =
+  RAYMARCH_MODAL_BASIS_CACHE_CAPACITY;
+export const RAYMARCH_BASIS_ATLAS_PACKING = "z-slice-pages-v1";
 const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
 const FIELD_CACHE_COLOR_QUANTIZATION = 32;
 const EFFECTIVE_FIELD_ENERGY_EPSILON = 0.01;
@@ -186,6 +188,74 @@ function buildCanonicalEffectiveFieldTopology(slots, activeCount, resolution) {
   );
 
   return buildCanonicalIdentityEntries(terms);
+}
+
+function buildModalBasisPageEntries(
+  slots,
+  activeCount,
+  resolution,
+  basisCapacity,
+) {
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  const normalizedBasisCapacity = normalizeBasisCapacity(basisCapacity);
+  const maxRepresentableModeIndex =
+    getEffectiveFieldMaxRepresentableModeIndex(resolution);
+  return collectCanonicalModalFieldTerms(slots, clampedActiveCount)
+    .filter(
+      ({ u, v, w }) =>
+        Math.max(Math.abs(u), Math.abs(v), Math.abs(w)) <=
+        maxRepresentableModeIndex,
+    )
+    .sort((left, right) =>
+      compareCanonicalShapeEntries(
+        [left.u, left.v, left.w],
+        [right.u, right.v, right.w],
+      ),
+    )
+    .slice(0, normalizedBasisCapacity)
+    .map(({ u, v, w }, pageIndex) => ({
+      identityKey: getModalFieldIdentityKey(u, v, w),
+      u,
+      v,
+      w,
+      pageIndex,
+      atlasZStart: pageIndex * resolution,
+      atlasZCount: resolution,
+      basisNorm: 1,
+      gradientNorm: 1,
+      representable: true,
+    }));
+}
+
+function hashModalBasisPageAssignment(entries) {
+  let hash = FNV_OFFSET_BASIS;
+  for (const entry of entries) {
+    hash = hashUint32(entry.pageIndex, hash);
+    hash = hashFloat32(entry.u, hash);
+    hash = hashFloat32(entry.v, hash);
+    hash = hashFloat32(entry.w, hash);
+  }
+
+  return hash >>> 0;
+}
+
+function hashRepresentableDomain({
+  entries,
+  resolution,
+  basisCapacity,
+}) {
+  let hash = FNV_OFFSET_BASIS;
+  hash = hashUint32(normalizeEffectiveFieldResolution(resolution), hash);
+  hash = hashUint32(normalizeBasisCapacity(basisCapacity), hash);
+  hash = hashUint32(entries.length, hash);
+  for (const entry of entries) {
+    hash = hashFloat32(entry.u, hash);
+    hash = hashFloat32(entry.v, hash);
+    hash = hashFloat32(entry.w, hash);
+    hash = hashUint32(entry.representable ? 1 : 0, hash);
+  }
+
+  return hash >>> 0;
 }
 
 function hashCanonicalModalFieldShape(entries) {
@@ -624,6 +694,37 @@ function normalizeEffectiveFieldResolution(resolution) {
     ? resolution
     : RAYMARCH_EFFECTIVE_FIELD_RESOLUTION;
   return Math.max(8, Math.round(candidate));
+}
+
+function normalizeBasisCapacity(capacity) {
+  const candidate = Number.isFinite(capacity)
+    ? capacity
+    : RAYMARCH_MODAL_BASIS_CACHE_CAPACITY;
+  return Math.max(1, Math.round(candidate));
+}
+
+export function getRaymarchBasisAtlasDepth(
+  resolution,
+  basisCapacity = RAYMARCH_MODAL_BASIS_CACHE_CAPACITY,
+) {
+  return (
+    normalizeEffectiveFieldResolution(resolution) *
+    normalizeBasisCapacity(basisCapacity)
+  );
+}
+
+export function resolveRaymarchBasisAtlasZ({
+  basisSlot,
+  localZ,
+  basisCapacity = RAYMARCH_MODAL_BASIS_CACHE_CAPACITY,
+}) {
+  const normalizedCapacity = normalizeBasisCapacity(basisCapacity);
+  const clampedSlot = Math.min(
+    normalizedCapacity - 1,
+    Math.max(0, Math.floor(basisSlot || 0)),
+  );
+  const clampedLocalZ = Math.min(1, Math.max(0, localZ || 0));
+  return (clampedSlot + clampedLocalZ) / normalizedCapacity;
 }
 
 function getEffectiveFieldMaxRepresentableModeIndex(resolution) {
@@ -1085,10 +1186,16 @@ function effectiveFieldDescriptorsEqual(left, right) {
   return (
     left.contributingEffectiveFieldModeCount ===
       right.contributingEffectiveFieldModeCount &&
+    left.identitySetHash === right.identitySetHash &&
+    left.identityPageAssignmentHash === right.identityPageAssignmentHash &&
+    left.representableDomainHash === right.representableDomainHash &&
     left.effectiveFieldTopologyHash === right.effectiveFieldTopologyHash &&
-    left.effectiveFieldSupportHash === right.effectiveFieldSupportHash &&
     left.descriptorOverflow === right.descriptorOverflow &&
-    left.resolution === right.resolution
+    left.resolution === right.resolution &&
+    left.basisTextureResolution === right.basisTextureResolution &&
+    left.basisCapacity === right.basisCapacity &&
+    left.basisPacking === right.basisPacking &&
+    left.basisAtlasDepth === right.basisAtlasDepth
   );
 }
 
@@ -1186,6 +1293,21 @@ function resolveEffectiveFieldRebuildReason(
     return "resolution";
   }
   if (
+    previousDescriptor.basisTextureResolution !==
+    nextDescriptor.basisTextureResolution
+  ) {
+    return "resolution";
+  }
+  if (previousDescriptor.basisCapacity !== nextDescriptor.basisCapacity) {
+    return "capacity";
+  }
+  if (previousDescriptor.basisPacking !== nextDescriptor.basisPacking) {
+    return "packing";
+  }
+  if (previousDescriptor.basisAtlasDepth !== nextDescriptor.basisAtlasDepth) {
+    return "packing";
+  }
+  if (
     previousDescriptor.descriptorOverflow !== nextDescriptor.descriptorOverflow
   ) {
     return "descriptor-overflow";
@@ -1194,15 +1316,22 @@ function resolveEffectiveFieldRebuildReason(
     previousDescriptor.contributingEffectiveFieldModeCount !==
       nextDescriptor.contributingEffectiveFieldModeCount ||
     previousDescriptor.effectiveFieldTopologyHash !==
-      nextDescriptor.effectiveFieldTopologyHash
+      nextDescriptor.effectiveFieldTopologyHash ||
+    previousDescriptor.identitySetHash !== nextDescriptor.identitySetHash
   ) {
     return "modal-identity";
   }
   if (
-    previousDescriptor.effectiveFieldSupportHash !==
-    nextDescriptor.effectiveFieldSupportHash
+    previousDescriptor.identityPageAssignmentHash !==
+    nextDescriptor.identityPageAssignmentHash
   ) {
-    return "modal-coefficients";
+    return "modal-identity";
+  }
+  if (
+    previousDescriptor.representableDomainHash !==
+    nextDescriptor.representableDomainHash
+  ) {
+    return "representable-domain";
   }
 
   return null;
@@ -1235,13 +1364,13 @@ export function getRaymarchEffectiveFieldDescriptorStaleReason({
   return resolveEffectiveFieldRebuildReason(activeDescriptor, nextDescriptor);
 }
 
-function resolveDispatchSize(resolution) {
+function resolveDispatchSize(resolution, depth = resolution) {
   const [xGroupSize, yGroupSize, zGroupSize] =
     FIELD_CACHE_COMPUTE_WORKGROUP_SIZE;
   return [
     Math.ceil(resolution / xGroupSize),
     Math.ceil(resolution / yGroupSize),
-    Math.ceil(resolution / zGroupSize),
+    Math.ceil(depth / zGroupSize),
   ];
 }
 
@@ -1260,20 +1389,43 @@ export function createRaymarchFieldCache({
 
 export function createRaymarchEffectiveFieldCache({
   resolution = RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
+  basisCapacity = RAYMARCH_MODAL_BASIS_CACHE_CAPACITY,
 } = {}) {
   const normalizedResolution = normalizeEffectiveFieldResolution(resolution);
-  const texture = createCacheTexture(normalizedResolution);
-  const supportTexture = createCacheTexture(normalizedResolution);
+  const normalizedBasisCapacity = normalizeBasisCapacity(basisCapacity);
+  const basisAtlasDepth = getRaymarchBasisAtlasDepth(
+    normalizedResolution,
+    normalizedBasisCapacity,
+  );
+  const texture = createCacheTexture(
+    normalizedResolution,
+    normalizedResolution,
+    basisAtlasDepth,
+  );
+  const supportTexture = createCacheTexture(
+    normalizedResolution,
+    normalizedResolution,
+    basisAtlasDepth,
+  );
 
   return {
     ...createCacheState({
       resolution: normalizedResolution,
+      depth: basisAtlasDepth,
       texture,
       mode: "effective-cached",
     }),
-    semantic: "canonical-effective-field",
+    semantic: "modal-basis-cache",
     supportTexture,
-    supportSemantic: "effective-field-support",
+    supportSemantic: "coefficient-invariant-basis-support",
+    basisCapacity: normalizedBasisCapacity,
+    basisTextureResolution: normalizedResolution,
+    basisAtlasDepth,
+    basisPacking: RAYMARCH_BASIS_ATLAS_PACKING,
+    liveSynthesisModeCount: Math.min(
+      normalizedBasisCapacity,
+      RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
+    ),
     activePhaseSampleTimeSec: null,
     pendingPhaseSampleTimeSec: null,
     activeEffectiveFieldModeCount: 0,
@@ -1342,8 +1494,8 @@ export function disposeRaymarchSpectralLightCache(spectralLightCache) {
   disposeRaymarchFieldCache(spectralLightCache);
 }
 
-function createCacheTexture(resolution) {
-  const texture = new Storage3DTexture(resolution, resolution, resolution);
+function createCacheTexture(width, height = width, depth = width) {
+  const texture = new Storage3DTexture(width, height, depth);
   texture.format = THREE.RGBAFormat;
   texture.type = THREE.HalfFloatType;
   texture.minFilter = THREE.LinearFilter;
@@ -1356,10 +1508,11 @@ function createCacheTexture(resolution) {
   return texture;
 }
 
-function createCacheState({ resolution, texture, mode }) {
+function createCacheState({ resolution, depth = resolution, texture, mode }) {
   return {
     resolution,
-    dispatchSize: resolveDispatchSize(resolution),
+    dispatchSize: resolveDispatchSize(resolution, depth),
+    depth,
     texture,
     generation: 0,
     active: false,
@@ -1374,6 +1527,7 @@ function createCacheState({ resolution, texture, mode }) {
     queuedRebuildReason: null,
     queuedRequest: null,
     pendingDescriptor: null,
+    activeCacheBuiltAtSec: null,
     mode,
     computeNodesByKey: Object.create(null),
     computeInputsByKey: Object.create(null),
@@ -1595,6 +1749,7 @@ function markCacheBackendUnavailable(
   cache.pendingDescriptor = null;
   cache.pendingPhaseSampleTimeSec = null;
   cache.activePhaseSampleTimeSec = null;
+  cache.activeCacheBuiltAtSec = null;
   clearQueuedRaymarchCacheRebuild(cache);
   cache.lastError = message;
   cache.lastRebuildReason = "unavailable";
@@ -1673,21 +1828,19 @@ export function buildRaymarchEffectiveFieldDescriptor({
   descriptorOverflow = false,
   modeIdentityRetentionRatio = 1,
   resolution = RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
+  basisCapacity = RAYMARCH_MODAL_BASIS_CACHE_CAPACITY,
+  basisPacking = RAYMARCH_BASIS_ATLAS_PACKING,
 }) {
   const normalizedResolution = normalizeEffectiveFieldResolution(resolution);
+  const normalizedBasisCapacity = normalizeBasisCapacity(basisCapacity);
   const normalizedRadius = Number.isFinite(radius) ? radius : 1;
   const normalizedUploadedModalFieldCount = Math.max(
     0,
     Math.round(modalFieldCount || 0),
   );
   const effectiveFieldScale = getEffectiveFieldScale(normalizedRadius);
-  const fieldDescriptor = buildRaymarchFieldCacheDescriptor({
-    modalFieldSlots,
-    modalFieldCount: normalizedUploadedModalFieldCount,
-    boundaryMode,
-    cavityGeometry,
-    radius: normalizedRadius,
-  });
+  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
+  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
   const modalFieldTopology = buildCanonicalModalFieldTopology(
     modalFieldSlots,
     normalizedUploadedModalFieldCount,
@@ -1701,6 +1854,25 @@ export function buildRaymarchEffectiveFieldDescriptor({
     modalFieldSlots,
     normalizedUploadedModalFieldCount,
     normalizedResolution,
+  );
+  const basisPageMetadata = buildModalBasisPageEntries(
+    modalFieldSlots,
+    normalizedUploadedModalFieldCount,
+    normalizedResolution,
+    normalizedBasisCapacity,
+  );
+  const identitySetHash =
+    hashCanonicalModalFieldTopology(effectiveFieldTopology);
+  const identityPageAssignmentHash =
+    hashModalBasisPageAssignment(basisPageMetadata);
+  const representableDomainHash = hashRepresentableDomain({
+    entries: basisPageMetadata,
+    resolution: normalizedResolution,
+    basisCapacity: normalizedBasisCapacity,
+  });
+  const basisAtlasDepth = getRaymarchBasisAtlasDepth(
+    normalizedResolution,
+    normalizedBasisCapacity,
   );
   const effectiveDiagnostics = summarizeEffectiveFieldDiagnostics({
     slots: modalFieldSlots,
@@ -1725,15 +1897,43 @@ export function buildRaymarchEffectiveFieldDescriptor({
   );
 
   const descriptor = {
-    ...fieldDescriptor,
+    boundaryMode: normalizedBoundaryMode,
+    cavityGeometry: normalizedCavityGeometry,
+    radius: normalizedRadius,
+    modalFieldCount: modalFieldTopology.length,
     modalFieldTopologyCount: modalFieldTopology.length,
     modalFieldTopologyHash:
       hashCanonicalModalFieldTopology(modalFieldTopology),
-    effectiveFieldSupportHash:
+    basisTextureResolution: normalizedResolution,
+    basisCapacity: normalizedBasisCapacity,
+    basisPacking,
+    basisAtlasDepth,
+    basisFieldAtlasLayout: {
+      width: normalizedResolution,
+      height: normalizedResolution,
+      depth: basisAtlasDepth,
+      pageDepth: normalizedResolution,
+      pageCount: normalizedBasisCapacity,
+    },
+    basisSupportAtlasLayout: {
+      width: normalizedResolution,
+      height: normalizedResolution,
+      depth: basisAtlasDepth,
+      pageDepth: normalizedResolution,
+      pageCount: normalizedBasisCapacity,
+    },
+    basisPageMetadata,
+    liveSynthesisModeCount: Math.min(
+      normalizedBasisCapacity,
+      RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
+    ),
+    identitySetHash,
+    identityPageAssignmentHash,
+    representableDomainHash,
+    effectiveFieldSupportDiagnosticHash:
       hashCanonicalModalFieldShape(effectiveFieldShape),
-    effectiveFieldTopologyHash:
-      hashCanonicalModalFieldTopology(effectiveFieldTopology),
-    modalFieldPhaseHash: buildRaymarchEffectiveFieldPhaseSignature({
+    effectiveFieldTopologyHash: identitySetHash,
+    liveModalPhaseHash: buildRaymarchEffectiveFieldPhaseSignature({
       phaseSlots: modalFieldPhaseSlots,
       modalFieldSlots,
       activeCount: normalizedUploadedModalFieldCount,
@@ -2475,84 +2675,9 @@ function createSpectralLightComputeKernel({
   );
 }
 
-function accumulateEffectiveFieldComputeLayer({
-  modeBuffer,
-  phaseBuffer,
-  capacity,
-  activeCount,
-  weight,
-  maxRepresentableModeIndex,
-  xCoord,
-  yCoord,
-  zCoord,
-  scale,
-  boundaryMode,
-  geometryBackend,
-  uTime,
-  totalAmplitude,
-  field,
-  gradX,
-  gradY,
-  gradZ,
-  unsignedSupport,
-}) {
-  Loop(
-    {
-      start: int(0),
-      end: int(capacity),
-      type: "int",
-      condition: "<",
-    },
-    ({ i }) => {
-      If(i.greaterThanEqual(activeCount), () => {}).Else(() => {
-        const slot = modeBuffer.element(i);
-        const phaseSlot = phaseBuffer.element(i);
-        const amplitude = slot.w.mul(weight).toVar();
-        const representable = abs(slot.x)
-          .lessThanEqual(maxRepresentableModeIndex)
-          .and(abs(slot.y).lessThanEqual(maxRepresentableModeIndex))
-          .and(abs(slot.z).lessThanEqual(maxRepresentableModeIndex));
-        If(representable, () => {
-          const beta = clamp(
-            phaseSlot.z.mul(phaseSlot.w),
-            float(0.0),
-            float(1.0),
-          );
-          const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
-          const phaseScale = float(1.0)
-            .sub(beta)
-            .add(beta.mul(cos(phase)))
-            .toVar();
-          const coefficient = amplitude.mul(phaseScale).toVar();
-          const family = geometryBackend.evaluateModeNode({
-            u: slot.x,
-            v: slot.y,
-            w: slot.z,
-            xCoord,
-            yCoord,
-            zCoord,
-            scale,
-            boundaryMode,
-          });
-          totalAmplitude.addAssign(amplitude);
-          const phaseCurrentContribution = coefficient
-            .mul(family.field)
-            .toVar();
-          field.addAssign(phaseCurrentContribution);
-          gradX.addAssign(coefficient.mul(family.gradX));
-          gradY.addAssign(coefficient.mul(family.gradY));
-          gradZ.addAssign(coefficient.mul(family.gradZ));
-          unsignedSupport.addAssign(abs(phaseCurrentContribution));
-        });
-      });
-    },
-  );
-}
-
 function createEffectiveFieldComputeKernel({
   effectiveFieldCache,
   modalFieldModeBuffer,
-  modalFieldPhaseBuffer,
   modalFieldCapacity,
   uniforms,
   boundaryMode,
@@ -2560,26 +2685,29 @@ function createEffectiveFieldComputeKernel({
 }) {
   const { resolution, texture, supportTexture } = effectiveFieldCache;
   const uRadius = uniforms.uRadius;
-  const uTime = uniforms.uTime;
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
   const maxRepresentableModeIndex = float(
     getEffectiveFieldMaxRepresentableModeIndex(resolution),
   );
   const resolutionUint = uint(resolution);
+  const atlasDepthUint = uint(effectiveFieldCache.depth ?? resolution);
   const resolutionFloat = float(resolution);
   const half = float(0.5);
   const two = float(2.0);
   const zero = float(0.0);
+  const basisCapacityInt = int(modalFieldCapacity);
 
   return Fn(() => {
     const voxelCoord = uvec3(globalId);
     const inBounds = voxelCoord.x
       .lessThan(resolutionUint)
       .and(voxelCoord.y.lessThan(resolutionUint))
-      .and(voxelCoord.z.lessThan(resolutionUint));
+      .and(voxelCoord.z.lessThan(atlasDepthUint));
 
     If(inBounds, () => {
+      const pageIndex = voxelCoord.z.div(resolutionUint);
+      const localZ = voxelCoord.z.mod(resolutionUint);
       const xCoord = float(voxelCoord.x)
         .add(half)
         .div(resolutionFloat)
@@ -2594,76 +2722,63 @@ function createEffectiveFieldComputeKernel({
         .sub(float(1.0))
         .mul(uRadius)
         .toVar();
-      const zCoord = float(voxelCoord.z)
+      const zCoord = float(localZ)
         .add(half)
         .div(resolutionFloat)
         .mul(two)
         .sub(float(1.0))
         .mul(uRadius)
         .toVar();
+      const pageIndexInt = int(pageIndex);
+      const slot = modalFieldModeBuffer.element(pageIndexInt);
+      const activePage = pageIndexInt
+        .lessThan(modalFieldActiveCount)
+        .and(pageIndexInt.lessThan(basisCapacityInt))
+        .and(slot.w.greaterThan(zero));
+      const representable = abs(slot.x)
+        .lessThanEqual(maxRepresentableModeIndex)
+        .and(abs(slot.y).lessThanEqual(maxRepresentableModeIndex))
+        .and(abs(slot.z).lessThanEqual(maxRepresentableModeIndex));
       const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
-      const field = zero.toVar();
-      const gradX = zero.toVar();
-      const gradY = zero.toVar();
-      const gradZ = zero.toVar();
-      const unsignedSupport = zero.toVar();
-      const totalAmplitude = zero.toVar();
 
-      accumulateEffectiveFieldComputeLayer({
-        modeBuffer: modalFieldModeBuffer,
-        phaseBuffer: modalFieldPhaseBuffer,
-        capacity: modalFieldCapacity,
-        activeCount: modalFieldActiveCount,
-        weight: float(1.0),
-        maxRepresentableModeIndex,
-        xCoord,
-        yCoord,
-        zCoord,
-        scale,
-        boundaryMode,
-        geometryBackend,
-        uTime,
-        totalAmplitude,
-        field,
-        gradX,
-        gradY,
-        gradZ,
-        unsignedSupport,
+      If(activePage.and(representable), () => {
+        const family = geometryBackend.evaluateModeNode({
+          u: slot.x,
+          v: slot.y,
+          w: slot.z,
+          xCoord,
+          yCoord,
+          zCoord,
+          scale,
+          boundaryMode,
+        });
+        const basisField = zero.toVar();
+        const basisGradX = zero.toVar();
+        const basisGradY = zero.toVar();
+        const basisGradZ = zero.toVar();
+        basisField.addAssign(family.field);
+        basisGradX.addAssign(family.gradX);
+        basisGradY.addAssign(family.gradY);
+        basisGradZ.addAssign(family.gradZ);
+
+        textureStore(
+          texture,
+          voxelCoord,
+          vec4(basisField, basisGradX, basisGradY, basisGradZ),
+        ).toWriteOnly();
+        textureStore(
+          supportTexture,
+          voxelCoord,
+          vec4(abs(basisField), float(1.0), zero, zero),
+        ).toWriteOnly();
+      }).Else(() => {
+        textureStore(texture, voxelCoord, vec4(zero)).toWriteOnly();
+        textureStore(
+          supportTexture,
+          voxelCoord,
+          vec4(zero),
+        ).toWriteOnly();
       });
-
-      const normalizedAmplitude = totalAmplitude.max(
-        float(EFFECTIVE_FIELD_ENERGY_EPSILON),
-      );
-      const normalizedField = field.div(normalizedAmplitude).toVar();
-      const normalizedUnsignedSupport = unsignedSupport
-        .div(normalizedAmplitude)
-        .toVar();
-      const cancellationRatio = clamp(
-        float(1.0).sub(
-          abs(normalizedField).div(
-            normalizedUnsignedSupport.max(
-              float(EFFECTIVE_FIELD_ENERGY_EPSILON),
-            ),
-          ),
-        ),
-        float(0.0),
-        float(1.0),
-      );
-      textureStore(
-        texture,
-        uvec3(voxelCoord),
-        vec4(
-          normalizedField,
-          gradX.div(normalizedAmplitude),
-          gradY.div(normalizedAmplitude),
-          gradZ.div(normalizedAmplitude),
-        ),
-      ).toWriteOnly();
-      textureStore(
-        supportTexture,
-        uvec3(voxelCoord),
-        vec4(normalizedUnsignedSupport, cancellationRatio, zero, zero),
-      ).toWriteOnly();
     });
   })().compute(
     effectiveFieldCache.dispatchSize,
@@ -2777,7 +2892,6 @@ function getOrCreateRaymarchEffectiveFieldComputeNode(
   effectiveFieldCache,
   {
     modalFieldModeBuffer,
-    modalFieldPhaseBuffer,
     modalFieldCapacity,
     uniforms,
     boundaryMode,
@@ -2790,8 +2904,9 @@ function getOrCreateRaymarchEffectiveFieldComputeNode(
 
   const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
   const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
-  const normalizedModalFieldCapacity =
-    normalizeComputeNodeCapacity(modalFieldCapacity);
+  const normalizedModalFieldCapacity = normalizeBasisCapacity(
+    modalFieldCapacity ?? effectiveFieldCache.basisCapacity,
+  );
   const nodeKey = buildRaymarchComputeNodeCacheKey({
     boundaryMode: normalizedBoundaryMode,
     cavityGeometry: normalizedCavityGeometry,
@@ -2802,10 +2917,8 @@ function getOrCreateRaymarchEffectiveFieldComputeNode(
     nodeKey,
     {
       modalFieldModeBuffer,
-      modalFieldPhaseBuffer,
       modalFieldCapacity: normalizedModalFieldCapacity,
       uniforms,
-      includePhase: true,
     },
   );
   const cachedNode = effectiveFieldCache.computeNodesByKey?.[nodeKey];
@@ -2816,7 +2929,6 @@ function getOrCreateRaymarchEffectiveFieldComputeNode(
   const computeNode = createEffectiveFieldComputeKernel({
     effectiveFieldCache,
     modalFieldModeBuffer: computeInputs.modalFieldModeBuffer,
-    modalFieldPhaseBuffer: computeInputs.modalFieldPhaseBuffer,
     modalFieldCapacity: normalizedModalFieldCapacity,
     uniforms: computeInputs.uniforms,
     boundaryMode: normalizedBoundaryMode,
@@ -3085,8 +3197,6 @@ export function enqueueRaymarchEffectiveFieldRebuild(
 ) {
   const {
     modalFieldModeBuffer,
-    modalFieldPhaseBuffer,
-    modalFieldCapacity,
     uniforms,
   } = options;
   if (!effectiveFieldCache) {
@@ -3098,6 +3208,9 @@ export function enqueueRaymarchEffectiveFieldRebuild(
   }
 
   const phaseSampleTimeSec = getCacheSchedulerTimeSec(options);
+  const basisCapacity = normalizeBasisCapacity(
+    descriptor?.basisCapacity ?? effectiveFieldCache.basisCapacity,
+  );
 
   if (effectiveFieldCache.rebuildPending) {
     return queueLatestCacheRebuild(
@@ -3106,9 +3219,9 @@ export function enqueueRaymarchEffectiveFieldRebuild(
       rebuildReason,
       {
         renderer,
-        options: snapshotRaymarchCacheRebuildOptions(options, {
-          includePhase: true,
-        }),
+        options: snapshotRaymarchCacheRebuildOptions(
+          { ...options, modalFieldCapacity: basisCapacity },
+        ),
       },
       effectiveFieldDescriptorsEqual,
     );
@@ -3123,8 +3236,7 @@ export function enqueueRaymarchEffectiveFieldRebuild(
     effectiveFieldCache,
     {
       modalFieldModeBuffer,
-      modalFieldPhaseBuffer,
-      modalFieldCapacity,
+      modalFieldCapacity: basisCapacity,
       uniforms,
       boundaryMode: descriptor.boundaryMode,
       cavityGeometry: descriptor.cavityGeometry,
@@ -3155,6 +3267,8 @@ export function enqueueRaymarchEffectiveFieldRebuild(
       effectiveFieldCache.ready = true;
       effectiveFieldCache.rebuildPending = false;
       effectiveFieldCache.activePhaseSampleTimeSec =
+        effectiveFieldCache.pendingPhaseSampleTimeSec;
+      effectiveFieldCache.activeCacheBuiltAtSec =
         effectiveFieldCache.pendingPhaseSampleTimeSec;
       effectiveFieldCache.pendingPhaseSampleTimeSec = null;
       effectiveFieldCache.pendingDescriptor = null;
@@ -3278,6 +3392,11 @@ export function shouldRebuildRaymarchEffectiveFieldCache(
 ) {
   if (!effectiveFieldCache) {
     return { needsRebuild: false, reason: "unavailable" };
+  }
+  const blockedReason =
+    resolveRaymarchEffectiveFieldDescriptorBlockedReason(descriptor);
+  if (blockedReason) {
+    return { needsRebuild: false, reason: blockedReason };
   }
 
   if (effectiveFieldCache.rebuildPending) {

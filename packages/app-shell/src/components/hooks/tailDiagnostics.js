@@ -235,7 +235,7 @@ function buildTailDiagnosticSample({
       effectiveFieldSupportSemantic: readString(
         render.effectiveFieldSupportSemantic ??
           raymarchDebug.effectiveFieldSupportSemantic,
-        "effective-field-support",
+        "coefficient-invariant-basis-support",
       ),
       effectiveFieldUnsignedSupportMean: readFiniteNumber(
         render.effectiveFieldUnsignedSupportMean ??

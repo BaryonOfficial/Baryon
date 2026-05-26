@@ -155,7 +155,7 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
         effectiveFieldActive: true,
         effectiveFieldReady: true,
         effectiveFieldSupportReady: true,
-        effectiveFieldSupportSemantic: "effective-field-support",
+        effectiveFieldSupportSemantic: "coefficient-invariant-basis-support",
         effectiveFieldUnsignedSupportMean: 0.57,
         effectiveFieldCancellationRatioMean: 0.36,
         effectiveFieldCancellationRatioMax: 0.91,
@@ -167,6 +167,13 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
         effectiveFieldResolution: 32,
         effectiveFieldRebuildCount: 7,
         effectiveFieldRebuildReason: "descriptor-change",
+        modalBasisCacheGeneration: 12,
+        modalBasisCacheRebuildCount: 7,
+        modalBasisCacheAgeMs: 34,
+        liveModalFrameAgeMs: 5,
+        modalBasisDescriptorReason: "modal-identity",
+        modalBasisAtlasDepth: 192,
+        liveSynthesisModeCount: 12,
         effectiveFieldDescriptorFresh: true,
         effectiveFieldDescriptorStaleReason: null,
         effectiveFieldQueuedDescriptorPending: false,
@@ -197,7 +204,7 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
     expect(snapshot.render.effectiveFieldReady).toBe(true);
     expect(snapshot.render.effectiveFieldSupportReady).toBe(true);
     expect(snapshot.render.effectiveFieldSupportSemantic).toBe(
-      "effective-field-support",
+      "coefficient-invariant-basis-support",
     );
     expect(snapshot.render.effectiveFieldUnsignedSupportMean).toBe(0.57);
     expect(snapshot.render.effectiveFieldCancellationRatioMean).toBe(0.36);
@@ -214,6 +221,13 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
     expect(snapshot.render.effectiveFieldRebuildReason).toBe(
       "descriptor-change",
     );
+    expect(snapshot.render.modalBasisCacheGeneration).toBe(12);
+    expect(snapshot.render.modalBasisCacheRebuildCount).toBe(7);
+    expect(snapshot.render.modalBasisCacheAgeMs).toBe(34);
+    expect(snapshot.render.liveModalFrameAgeMs).toBe(5);
+    expect(snapshot.render.modalBasisDescriptorReason).toBe("modal-identity");
+    expect(snapshot.render.modalBasisAtlasDepth).toBe(192);
+    expect(snapshot.render.liveSynthesisModeCount).toBe(12);
     expect(snapshot.render.effectiveFieldDescriptorFresh).toBe(true);
     expect(snapshot.render.effectiveFieldDescriptorStaleReason).toBeNull();
     expect(snapshot.render.effectiveFieldQueuedDescriptorPending).toBe(false);
@@ -254,12 +268,13 @@ test("publishes effective field diagnostics from runtime state when audit is dis
 
   try {
     const runtimeDiagnostics = createRuntimeDiagnostics();
+    runtimeDiagnostics.render.featureFrameAgeAtRenderMs = 8;
     updateObservationTransferRenderDiagnostics(runtimeDiagnostics, null, {
       effectiveFieldCache: {
         active: true,
         ready: true,
         supportTexture: {},
-        supportSemantic: "effective-field-support",
+        supportSemantic: "coefficient-invariant-basis-support",
         effectiveFieldUnsignedSupportMean: 0.48,
         effectiveFieldCancellationRatioMean: 0.27,
         effectiveFieldCancellationRatioMax: 0.86,
@@ -269,6 +284,7 @@ test("publishes effective field diagnostics from runtime state when audit is dis
         rebuildPending: false,
         backend: "compute",
         resolution: 32,
+        generation: 21,
         rebuildCount: 9,
         lastRebuildReason: "modal-descriptor",
         descriptorStaleReason: "modal-identity",
@@ -288,6 +304,8 @@ test("publishes effective field diagnostics from runtime state when audit is dis
         bandwidthRejectedPhaseCurrentModalEnergy: 0.18,
         effectiveFieldRawGradientEnvelope: 0.45,
         effectiveFieldPhaseCurrentGradientEnvelope: 0.31,
+        basisAtlasDepth: 384,
+        liveSynthesisModeCount: 12,
       },
     });
 
@@ -299,7 +317,7 @@ test("publishes effective field diagnostics from runtime state when audit is dis
     expect(snapshot.render.effectiveFieldReady).toBe(true);
     expect(snapshot.render.effectiveFieldSupportReady).toBe(true);
     expect(snapshot.render.effectiveFieldSupportSemantic).toBe(
-      "effective-field-support",
+      "coefficient-invariant-basis-support",
     );
     expect(snapshot.render.effectiveFieldUnsignedSupportMean).toBe(0.48);
     expect(snapshot.render.effectiveFieldCancellationRatioMean).toBe(0.27);
@@ -316,6 +334,12 @@ test("publishes effective field diagnostics from runtime state when audit is dis
     expect(snapshot.render.effectiveFieldRebuildReason).toBe(
       "modal-descriptor",
     );
+    expect(snapshot.render.modalBasisCacheGeneration).toBe(21);
+    expect(snapshot.render.modalBasisCacheRebuildCount).toBe(9);
+    expect(snapshot.render.liveModalFrameAgeMs).toBe(8);
+    expect(snapshot.render.modalBasisDescriptorReason).toBe("modal-identity");
+    expect(snapshot.render.modalBasisAtlasDepth).toBe(384);
+    expect(snapshot.render.liveSynthesisModeCount).toBe(12);
     expect(snapshot.render.effectiveFieldDescriptorStaleReason).toBe(
       "modal-identity",
     );
@@ -359,7 +383,7 @@ test("keeps phase-only effective field descriptor changes fresh when audit is di
     radius: 1,
     modalFieldCount: 3,
     modalFieldHash: 101,
-    modalFieldPhaseHash: 303,
+    liveModalPhaseHash: 303,
     phaseModeCount: 3,
     phaseAuthority: 0.75,
     descriptorOverflow: false,
@@ -367,7 +391,7 @@ test("keeps phase-only effective field descriptor changes fresh when audit is di
   };
   const currentDescriptor = {
     ...activeDescriptor,
-    modalFieldPhaseHash: 405,
+    liveModalPhaseHash: 405,
   };
 
   try {
