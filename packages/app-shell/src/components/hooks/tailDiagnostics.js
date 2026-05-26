@@ -138,13 +138,22 @@ function buildTailDiagnosticSample({
     frame: {
       fieldState:
         modalFreshness.fieldState ?? featureFrame?.fieldState ?? "idle",
-      activeModeCount: readFiniteNumber(modalFreshness.activeModeCount),
+      activeModeCount: readFiniteNumber(
+        modalFreshness.uploadedModeCount ??
+          render.activeModeCount ??
+          modalFreshness.activeModeCount,
+      ),
       activeModalFieldModeCount: readFiniteNumber(
-        modalFreshness.activeModalFieldModeCount ??
+        modalFreshness.uploadedModeCount ??
+          modalFreshness.activeModalFieldModeCount ??
           modalFreshness.activeModeCount,
       ),
       totalSlotAmplitude: readFiniteNumber(
-        featureFrame?.debug?.totalSlotAmplitude,
+        runtimeState?.uniforms?.uTotalSlotAmplitude?.value ??
+          raymarchDebug.totalSlotAmplitude ??
+          render.totalSlotAmplitude ??
+          modalFreshness.totalSlotAmplitude ??
+          featureFrame?.debug?.totalSlotAmplitude,
       ),
       observationEnergy: readFiniteNumber(
         modalFreshness.observationEnergy ?? featureFrame?.observationEnergy,

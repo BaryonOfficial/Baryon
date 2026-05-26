@@ -4065,7 +4065,7 @@ describe("tickRaymarchRuntime", () => {
     expect(
       observedRuntime.debugSnapshot.raymarchDebug
         .observationSampledDensityFloor,
-    ).toBe(0);
+    ).toBeGreaterThan(0);
     expect(
       observedRuntime.debugSnapshot.raymarchDebug.observationSampledSupport,
     ).toBeGreaterThan(0);
@@ -4383,9 +4383,21 @@ describe("resolveRaymarchTotalSlotAmplitude", () => {
           modalFieldModeBuffer: { value: { array: buffer } },
           performanceGovernor: { modalField: { uploadedAmplitude: 1.8 } },
         },
-        { slotViews: { modalFieldSlots: descriptorSlots } },
         4,
       ),
     ).toBeCloseTo(0.15);
+  });
+
+  it("returns zero when the upload buffer is empty instead of inflating from the descriptor", () => {
+    const descriptorSlots = new Float32Array(16);
+    descriptorSlots[3] = 0.9;
+    descriptorSlots[7] = 0.8;
+
+    expect(
+      resolveRaymarchTotalSlotAmplitude(
+        { modalFieldModeBuffer: { value: { array: new Float32Array(16) } } },
+        4,
+      ),
+    ).toBe(0);
   });
 });

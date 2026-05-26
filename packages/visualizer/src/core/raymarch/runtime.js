@@ -31,6 +31,7 @@ import {
   shouldRebuildRaymarchSpectralLightCache,
   shouldRebuildRaymarchModalBasisCache,
   spectralLightDescriptorsEqual,
+  sumLiveSynthesisRepresentableUploadWeight,
   RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
 } from "./fieldCache.js";
 import {
@@ -201,6 +202,11 @@ function resetCacheActivity(cache) {
   cache.activePhaseSampleTimeSec = null;
   cache.pendingPhaseSampleTimeSec = null;
   cache.activeCacheBuiltAtSec = null;
+  if (cache.backend === "unavailable") {
+    cache.backend = "compute";
+    cache.lastError = null;
+    cache.lastRebuildReason = null;
+  }
   advanceRaymarchCacheGeneration(cache);
   clearQueuedRaymarchCacheRebuild(cache);
 }
@@ -326,50 +332,25 @@ function syncObservationTransferUniforms(runtimeState) {
   return parameters;
 }
 
-function sumModalFieldAmplitude(featureFrame) {
-  let total = 0;
-  const slots =
-    featureFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
-    featureFrame?.modalFieldSlots;
-  if (slots) {
-    for (let i = 3; i < slots.length; i += 4) total += slots[i] ?? 0;
-  }
-  return total;
-}
-
 export function sumUploadedModalFieldAmplitude(modeSlots, activeCount) {
-  const slotCount = Math.max(0, Math.floor(activeCount ?? 0));
-  if (!modeSlots || slotCount <= 0) {
-    return 0;
-  }
-
-  let total = 0;
-  for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
-    total += modeSlots[slotIndex * 4 + 3] ?? 0;
-  }
-  return total;
+  return sumLiveSynthesisRepresentableUploadWeight({
+    modalFieldSlots: modeSlots,
+    activeCount,
+    resolution: RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+  });
 }
 
-export function resolveRaymarchTotalSlotAmplitude(
-  runtimeState,
-  modalDescriptor,
-  activeCount,
-) {
-  const uploadedFromBuffer = sumUploadedModalFieldAmplitude(
-    runtimeState?.modalFieldModeBuffer?.value?.array,
-    activeCount,
-  );
-  if (uploadedFromBuffer > 0) {
-    return uploadedFromBuffer;
-  }
-
-  const uploadedFromGovernor =
-    runtimeState?.performanceGovernor?.modalField?.uploadedAmplitude;
-  if (Number.isFinite(uploadedFromGovernor) && uploadedFromGovernor > 0) {
-    return uploadedFromGovernor;
-  }
-
-  return sumModalFieldAmplitude({ modalDescriptor });
+export function resolveRaymarchTotalSlotAmplitude(runtimeState, activeCount) {
+  const resolution =
+    runtimeState?.modalBasisCache?.resolution ??
+    RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION;
+  const clampedActiveCount = Math.max(0, Math.floor(activeCount ?? 0));
+  const uploadedFromBuffer = sumLiveSynthesisRepresentableUploadWeight({
+    modalFieldSlots: runtimeState?.modalFieldModeBuffer?.value?.array,
+    activeCount: clampedActiveCount,
+    resolution,
+  });
+  return uploadedFromBuffer;
 }
 
 function estimateModalFieldAmplitude(featureFrame) {
@@ -395,10 +376,12 @@ function summarizeRenderedLayer(modeSlots, colorSlots, count) {
   };
 }
 
-function maxModalFieldAmplitude(modalDescriptor) {
+function maxModalFieldAmplitude(modalDescriptor, activeCount = null) {
   const slots = modalDescriptor?.slotViews?.modalFieldSlots;
   const count = Math.min(
-    modalDescriptor?.counts?.modalFieldModeCount ?? 0,
+    Number.isFinite(activeCount) && activeCount > 0
+      ? Math.floor(activeCount)
+      : (modalDescriptor?.counts?.modalFieldModeCount ?? 0),
     Math.floor((slots?.length ?? 0) / 4),
   );
   let max = 0;
@@ -579,11 +562,14 @@ function buildRaymarchDebugSnapshot(
     featureFrame?.modalDescriptor ??
     null;
   const avgAmplitude = estimateModalFieldAmplitude(featureFrame);
-  const peakModalFieldAmplitude = maxModalFieldAmplitude(modalDescriptor);
   const activeModeCount =
     runtimeState.uniforms.uModalFieldModeCount?.value ??
     runtimeState.uniforms.uActiveModeCount?.value ??
     0;
+  const peakModalFieldAmplitude = maxModalFieldAmplitude(
+    modalDescriptor,
+    activeModeCount,
+  );
   const fieldExcitation = deriveFieldExcitation(featureFrame);
   const performanceGovernor = runtimeState.performanceGovernor ?? null;
   const densityGain = runtimeState.uniforms.uDensityGain.value;
@@ -618,7 +604,6 @@ function buildRaymarchDebugSnapshot(
   const pulseSignal = featureFrame?.pulseSignal ?? 0;
   const totalSlotAmplitude = resolveRaymarchTotalSlotAmplitude(
     runtimeState,
-    modalDescriptor,
     activeModeCount,
   );
   const modalCoefficientEnergy = renderAuthority
@@ -842,20 +827,19 @@ function buildRaymarchDebugSnapshot(
       modalBasisCache?.liveSynthesisSupportDiagnosticCoverage,
     0,
   );
-  const sampledObservationAnchor =
+  const hasLiveSynthesisSupportMetrics =
     renderAuthority &&
-    modalBasisCacheSupportReady &&
     liveSynthesisSupportDiagnosticSampleCount > 0 &&
-    liveSynthesisSupportDiagnosticCoverage > 0
-      ? clamp01(liveSynthesisUnsignedSupportMean)
-      : 0;
-  const sampledObservationSignedAuthority =
-    sampledObservationAnchor > 0
-      ? deriveLiveSynthesisCancellationSuppression({
-          effectiveCancellationRatio: liveSynthesisCancellationRatioMean,
-          effectiveUnsignedSupport: sampledObservationAnchor,
-        })
-      : 0;
+    liveSynthesisSupportDiagnosticCoverage > 0;
+  const sampledObservationAnchor = hasLiveSynthesisSupportMetrics
+    ? clamp01(liveSynthesisUnsignedSupportMean)
+    : 0;
+  const sampledObservationSignedAuthority = hasLiveSynthesisSupportMetrics
+    ? deriveLiveSynthesisCancellationSuppression({
+        effectiveCancellationRatio: liveSynthesisCancellationRatioMean,
+        effectiveUnsignedSupport: sampledObservationAnchor,
+      })
+    : 0;
   const sampledObservationTransferDebug = deriveObservationTransfer({
     density: 0,
     modalStructureAnchor: sampledObservationAnchor,
@@ -865,11 +849,7 @@ function buildRaymarchDebugSnapshot(
     modalResponseEnergy,
     parameters: observationParameters,
   });
-  const diagnosticUsesSampledSupport =
-    renderAuthority &&
-    modalBasisCacheSupportReady &&
-    liveSynthesisSupportDiagnosticSampleCount > 0 &&
-    liveSynthesisSupportDiagnosticCoverage > 0;
+  const diagnosticUsesSampledSupport = hasLiveSynthesisSupportMetrics;
   const diagnosticObservationAnchor = diagnosticUsesSampledSupport
     ? sampledObservationAnchor
     : observationTransferDebug.observationAnchor;
@@ -1189,13 +1169,21 @@ function updateReactiveResponse(
   const energySignal = clamp01(featureFrame?.energySignal ?? 0);
   const changeSignal = clamp01(featureFrame?.changeSignal ?? 0);
   const pulseSignal = clamp01(featureFrame?.pulseSignal ?? 0);
+  const uploadedModeCount = Math.max(
+    0,
+    Math.round(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
+  );
+  const uploadedSlotAmplitude = resolveRaymarchTotalSlotAmplitude(
+    runtimeState,
+    uploadedModeCount,
+  );
   const modalResponseEnergy = clamp01(
     Math.max(
       featureFrame?.modalResponseEnergy ??
         featureFrame?.modalResponseRenderEnergy ??
         featureFrame?.debug?.modalResponseEnergy ??
         0,
-      sumModalFieldAmplitude(featureFrame),
+      uploadedSlotAmplitude,
     ),
   );
   const reactivity = Math.max(
@@ -1874,11 +1862,7 @@ function applyRaymarchRuntimeUploadAuthority({
   setIfChanged(uniforms.uActiveModeCount, modalFieldModeCount);
   setIfChanged(
     uniforms.uTotalSlotAmplitude,
-    resolveRaymarchTotalSlotAmplitude(
-      runtimeState,
-      modalDescriptor,
-      modalFieldModeCount,
-    ),
+    resolveRaymarchTotalSlotAmplitude(runtimeState, modalFieldModeCount),
   );
 
   const boundaryMode = getRuntimeBoundaryMode(runtimeState);
@@ -1964,13 +1948,15 @@ export function tickRaymarchRuntime(
   uniforms.uTime.value = time;
   const fieldState = featureFrame?.fieldState ?? "idle";
   const renderAuthority = hasRenderAuthority(featureFrame);
-  updateReactiveResponse(
-    runtimeState,
-    featureFrame,
-    fieldState,
-    renderAuthority,
-    deltaTime,
-  );
+  if (!renderAuthority) {
+    updateReactiveResponse(
+      runtimeState,
+      featureFrame,
+      fieldState,
+      renderAuthority,
+      deltaTime,
+    );
+  }
   setIfChanged(
     uniforms.uFieldState,
     runtimeState.fieldStateValues[fieldState] ??
@@ -2061,6 +2047,13 @@ export function tickRaymarchRuntime(
     spectralLightEnabled,
     effectiveCavityGeometry,
   });
+  updateReactiveResponse(
+    runtimeState,
+    featureFrame,
+    fieldState,
+    renderAuthority,
+    deltaTime,
+  );
   setIfChanged(uniforms.uAverageAmplitude, featureFrame?.averageAmplitude ?? 0);
   setIfChanged(uniforms.uTransientEnergy, featureFrame?.transientEnergy ?? 0);
   setIfChanged(uniforms.uSpectralCentroid, featureFrame?.spectralCentroid ?? 0);
@@ -2102,11 +2095,7 @@ export function tickRaymarchRuntime(
     0;
   setIfChanged(
     uniforms.uTotalSlotAmplitude,
-    resolveRaymarchTotalSlotAmplitude(
-      runtimeState,
-      modalDescriptor,
-      activeModalFieldModeCount,
-    ),
+    resolveRaymarchTotalSlotAmplitude(runtimeState, activeModalFieldModeCount),
   );
   setIfChanged(
     uniforms.uModalResponseEnergy,

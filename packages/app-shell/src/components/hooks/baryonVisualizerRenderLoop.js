@@ -16,6 +16,7 @@ import {
   runHeavyAudioFeatureAnalysis,
 } from "@baryon/visualizer/audio-features";
 import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/visualizer/defaults";
+import { RAYMARCH_MODAL_BASIS_CACHE_CAPACITY } from "@baryon/visualizer/core/raymarch/fieldCache";
 import * as raymarchPerformanceGovernor from "@baryon/visualizer/core/raymarch/performanceGovernor";
 import {
   CUSTOM_TARGET_FPS_BANDS,
@@ -63,7 +64,8 @@ const AUTO_RAYMARCH_SCALE_PRESSURE_FRAME_TIME_RATIO = 1.015;
 const AUTO_RAYMARCH_STABLE_FRAME_TIME_RATIO = 0.93;
 const AUTO_RAYMARCH_LONG_FRAME_TIME_RATIO = 1.5;
 const AUTO_RAYMARCH_RECOVERY_MIN_ENERGY_SIGNAL = 0.08;
-const COHERENT_MODAL_RAYMARCH_STEP_FLOOR = 48;
+const RAYMARCH_USER_TUNABLE_STEP_MIN = 16;
+const COHERENT_MODAL_RAYMARCH_STEP_FLOOR = RAYMARCH_USER_TUNABLE_STEP_MIN;
 const AUTO_RAYMARCH_STEP_LADDER = Object.freeze([
   16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192,
 ]);
@@ -830,6 +832,51 @@ function buildAdaptiveRaymarchTuning(targetFps) {
   };
 }
 
+export function syncAdaptiveRenderSurfacePixelRatio({
+  gl,
+  renderLoopRefs,
+  runtimeDiagnostics,
+  renderProfile,
+  controls,
+  status,
+  requestedRenderScale = 1,
+  basePixelRatio = null,
+}) {
+  if (!gl || !runtimeDiagnostics) {
+    return null;
+  }
+
+  const effectiveRenderScale = getEffectiveAdaptiveRenderScale(
+    runtimeDiagnostics,
+    requestedRenderScale,
+  );
+  const lowLoadActive = Boolean(
+    controls?.lowLoadPlaybackDiagnostics && status?.isPlaying,
+  );
+  const resolvedBasePixelRatio = getRenderTargetPixelRatio(
+    renderProfile?.qualityPreset,
+    basePixelRatio,
+  );
+  const scaledPixelRatio = Math.max(
+    0.25,
+    resolvedBasePixelRatio * effectiveRenderScale,
+  );
+  const targetPixelRatio = lowLoadActive ? 1 : scaledPixelRatio;
+
+  runtimeDiagnostics.currentPixelRatio = targetPixelRatio;
+  runtimeDiagnostics.basePixelRatio = resolvedBasePixelRatio;
+
+  if (
+    renderLoopRefs?.pixelRatioRef &&
+    renderLoopRefs.pixelRatioRef.current !== targetPixelRatio
+  ) {
+    gl.setPixelRatio(targetPixelRatio);
+    renderLoopRefs.pixelRatioRef.current = targetPixelRatio;
+  }
+
+  return targetPixelRatio;
+}
+
 export function getEffectiveAdaptiveRenderScale(
   runtimeDiagnostics,
   requestedRenderScale = 1,
@@ -1063,7 +1110,10 @@ function normalizeRequestedRaymarchSteps(runtimeState, controls) {
     runtimeState?.volumeMesh?.material?.steps ??
     64;
 
-  return Math.max(16, Math.round(requestedSteps || 0));
+  return Math.max(
+    RAYMARCH_USER_TUNABLE_STEP_MIN,
+    Math.round(requestedSteps || 0),
+  );
 }
 
 function buildAdaptiveRaymarchLadder(requestedStepBudget) {
@@ -1364,7 +1414,7 @@ function deriveCoherentModalRaymarchStepFloor({
   requestedStepBudget,
 }) {
   if (!activeRaymarchFrame) {
-    return 16;
+    return RAYMARCH_USER_TUNABLE_STEP_MIN;
   }
 
   return Math.min(requestedStepBudget, COHERENT_MODAL_RAYMARCH_STEP_FLOOR);
@@ -1396,6 +1446,77 @@ function preparePendingRaymarchPerformanceGovernor(runtimeState, inputs) {
   return governor;
 }
 
+function resolveProductBasisAtlasPageCapacity(runtimeState) {
+  return Math.max(
+    1,
+    Math.round(
+      runtimeState?.modalBasisCache?.basisCapacity ??
+        RAYMARCH_MODAL_BASIS_CACHE_CAPACITY,
+    ),
+  );
+}
+
+export function resolveRaymarchGovernorFrameInputs(
+  runtimeState,
+  effectiveFrame,
+) {
+  const modalFieldCapacity =
+    raymarchPerformanceGovernor.inferModalFieldCapacity(
+      runtimeState?.modalFieldCapacity,
+      runtimeState?.modalFieldModeBuffer?.value?.array,
+    );
+  const productUploadCapacity = Math.min(
+    modalFieldCapacity,
+    resolveProductBasisAtlasPageCapacity(runtimeState),
+  );
+  const uploadedModeCount = Math.max(
+    0,
+    Math.round(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
+  );
+  const descriptorModeCount = Math.max(
+    0,
+    Math.round(
+      effectiveFrame?.activeModeCount ??
+        effectiveFrame?.activeModalFieldModeCount ??
+        effectiveFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
+        0,
+    ),
+  );
+  const activeModeCount =
+    uploadedModeCount > 0 ? uploadedModeCount : descriptorModeCount;
+
+  return {
+    modalFieldCapacity: productUploadCapacity,
+    productUploadCapacity,
+    activeModeCount,
+    uploadedModeCount,
+  };
+}
+
+export function syncUploadedRenderQuantities(runtimeDiagnostics, runtimeState) {
+  if (!runtimeDiagnostics || !runtimeState) {
+    return;
+  }
+
+  const uploadedModeCount = Math.max(
+    0,
+    Math.round(runtimeState?.uniforms?.uModalFieldModeCount?.value ?? 0),
+  );
+  const totalSlotAmplitude = readFiniteNumber(
+    runtimeState?.uniforms?.uTotalSlotAmplitude?.value,
+  );
+  const render = runtimeDiagnostics.render ?? (runtimeDiagnostics.render = {});
+  render.activeModeCount = uploadedModeCount;
+  render.uploadedModeCount = uploadedModeCount;
+  render.totalSlotAmplitude = totalSlotAmplitude;
+
+  const modalFreshness = runtimeDiagnostics.modalFreshness;
+  if (modalFreshness) {
+    modalFreshness.uploadedModeCount = uploadedModeCount;
+    modalFreshness.totalSlotAmplitude = totalSlotAmplitude;
+  }
+}
+
 export function updateAdaptiveRaymarchStepBudget({
   controls,
   runtime,
@@ -1416,26 +1537,22 @@ export function updateAdaptiveRaymarchStepBudget({
   const requestedRenderScale = normalizeAdaptiveRenderScale(
     renderProfile?.renderScale ?? 1,
   );
-  const modalFieldCapacity =
-    raymarchPerformanceGovernor.inferModalFieldCapacity(
-      runtimeState?.modalFieldCapacity,
-      runtimeState?.modalFieldModeBuffer?.value?.array,
-    );
+  const { productUploadCapacity, uploadedModeCount } =
+    resolveRaymarchGovernorFrameInputs(runtimeState, effectiveFrame);
+  const frameModeCount = readRaymarchFrameModeCount(effectiveFrame);
   const cavityGeometry =
     runtimeState?.effectiveCavityGeometry ??
     runtimeState?.volumeMesh?.userData?.raymarchCavityGeometry ??
     "rectangular";
-  const activeModeCount =
-    effectiveFrame?.activeModeCount ??
-    effectiveFrame?.activeModalFieldModeCount ??
-    effectiveFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
-    0;
+  const governorSlots =
+    effectiveFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
+    effectiveFrame?.modalFieldSlots;
   const activeRaymarchFrame = Boolean(
     runtime?.method === "raymarch" &&
     (status?.isPlaying ||
       status?.isLiveInputActive ||
       controls?.injectTestTone) &&
-    activeModeCount > 0,
+    Math.max(frameModeCount, uploadedModeCount) > 0,
   );
   const profileAdaptiveActive = Boolean(
     activeRaymarchFrame &&
@@ -1446,10 +1563,8 @@ export function updateAdaptiveRaymarchStepBudget({
   const autoAdaptiveActive = profileAdaptiveActive;
   const performanceGovernor =
     raymarchPerformanceGovernor.buildRaymarchPerformanceGovernor({
-      modalFieldSlots:
-        effectiveFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
-        effectiveFrame?.modalFieldSlots,
-      modalFieldCapacity,
+      modalFieldSlots: governorSlots,
+      modalFieldCapacity: productUploadCapacity,
       featureFrame: effectiveFrame,
       requestedStepBudget,
       requestedRenderScale,
@@ -1518,7 +1633,7 @@ export function updateAdaptiveRaymarchStepBudget({
     );
     preparePendingRaymarchPerformanceGovernor(runtimeState, {
       featureFrame: effectiveFrame,
-      modalFieldCapacity,
+      modalFieldCapacity: productUploadCapacity,
       cavityGeometry,
       requestedStepBudget: governedStepBudget,
       requestedRenderScale: governedRenderScale,
@@ -1676,10 +1791,10 @@ export function updateAdaptiveRaymarchStepBudget({
   applyEffectiveRaymarchStepBudget(runtimeState, controls, effectiveStepBudget);
   preparePendingRaymarchPerformanceGovernor(runtimeState, {
     featureFrame: effectiveFrame,
-    modalFieldCapacity,
+    modalFieldCapacity: productUploadCapacity,
     cavityGeometry,
     requestedStepBudget: effectiveStepBudget,
-    requestedRenderScale: 1,
+    requestedRenderScale: adaptiveRaymarch.effectiveRenderScale,
     baseGovernor: performanceGovernor,
     qualityAdaptationEnabled: true,
   });

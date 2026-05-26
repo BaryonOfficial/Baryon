@@ -143,6 +143,8 @@ vi.mock("./baryonVisualizerRenderLoop.js", () => ({
   updateModalEnvelopeDiagnostics: () => {},
   updateModalFreshnessDiagnostics: () => {},
   updateAdaptiveRaymarchStepBudget: () => 0,
+  syncUploadedRenderQuantities: () => {},
+  syncAdaptiveRenderSurfacePixelRatio: () => 1,
   updateRendererDiagnostics: () => ({
     lowLoadActive: false,
     runtimeDiagnostics: {},
@@ -506,9 +508,9 @@ describe("useBaryonVisualizer", () => {
     });
     expect(renderSpy).toHaveBeenCalledTimes(1);
     expect(postNodesRef.current.temporalHistoryBlendUniform.value).toBe(0);
-    expect(postNodesRef.current.temporalHistoryCutFramesRemaining).toBeGreaterThan(
-      0,
-    );
+    expect(
+      postNodesRef.current.temporalHistoryCutFramesRemaining,
+    ).toBeGreaterThan(0);
   });
 
   it("forces an external-stage render after camera-only pose changes", async () => {

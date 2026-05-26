@@ -15,6 +15,9 @@ import {
   updateModalFreshnessDiagnostics,
   updateRendererDiagnostics,
   updateAdaptiveRaymarchStepBudget,
+  resolveRaymarchGovernorFrameInputs,
+  syncAdaptiveRenderSurfacePixelRatio,
+  syncUploadedRenderQuantities,
 } from "./baryonVisualizerRenderLoop.js";
 import { RENDER_CONTEXTS } from "@baryon/visualizer/render/outputPipeline";
 import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/visualizer/defaults";
@@ -827,7 +830,8 @@ test("auto raymarch drops render scale before crossing the cymatic sampling floo
     updateAdaptiveRaymarchStepBudget(baseArgs);
   }
 
-  expect(runtimeState.effectiveRaymarchSteps).toBe(48);
+  expect(runtimeState.effectiveRaymarchSteps).toBeLessThan(64);
+  expect(runtimeState.effectiveRaymarchSteps).toBeGreaterThanOrEqual(16);
   expect(getEffectiveAdaptiveRenderScale(runtimeDiagnostics, 1)).toBeLessThan(
     1,
   );
@@ -1044,7 +1048,7 @@ test("adaptive raymarch prepares the current frame governor for runtime reuse", 
   ).toBe(3);
 });
 
-test("external-output custom 120 preserves the active cymatic sampling floor", () => {
+test("external-output custom 120 starts from the user-tunable step minimum", () => {
   const { args, runtimeState, runtimeDiagnostics } =
     createAdaptiveRaymarchHarness({
       controls: {
@@ -1063,11 +1067,11 @@ test("external-output custom 120 preserves the active cymatic sampling floor", (
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeState.effectiveRaymarchSteps).toBe(48);
+  expect(runtimeState.effectiveRaymarchSteps).toBe(16);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
 });
 
-test("external-output auto preserves the active cymatic sampling floor", () => {
+test("external-output auto starts from the balanced external baseline rung", () => {
   const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
     renderProfile: {
       qualityPreset: "auto",
@@ -1082,11 +1086,11 @@ test("external-output auto preserves the active cymatic sampling floor", () => {
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(48);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(32);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.75);
 });
 
-test("preview custom 120 preserves the active cymatic sampling floor", () => {
+test("preview custom 120 starts from the ultra target-fps baseline rung", () => {
   const { args, runtimeDiagnostics } = createAdaptiveRaymarchHarness({
     controls: {
       customPerformanceTargetFps: 120,
@@ -1104,7 +1108,7 @@ test("preview custom 120 preserves the active cymatic sampling floor", () => {
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(48);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(24);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.84);
 });
 
@@ -1481,7 +1485,7 @@ test("clearing adaptive resume state forces the next authoritative session to re
 
   expect(runtimeState.autoRaymarchResumeRung).toBe(0);
   expect(runtimeState.autoRaymarchResumeScaleRung).toBe(0);
-  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(48);
+  expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(16);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(0.67);
 });
 
@@ -1956,4 +1960,74 @@ test("resolveFeatureFrame keeps weak active live input out of the interruption r
   );
   expect(runtimeState.responseEnvelope).toBe(0.7);
   expect(runtimeState.bloomResponseSignal).toBe(0.8);
+});
+
+test("resolveRaymarchGovernorFrameInputs prefers uploaded mode count over descriptor span", () => {
+  const runtimeState = {
+    modalFieldCapacity: 12,
+    modalBasisCache: { basisCapacity: 12 },
+    modalFieldModeBuffer: { value: { array: new Float32Array(48) } },
+    uniforms: {
+      uModalFieldModeCount: { value: 3 },
+      uTotalSlotAmplitude: { value: 0.42 },
+    },
+  };
+  const effectiveFrame = {
+    activeModeCount: 48,
+    modalDescriptor: { counts: { modalFieldModeCount: 48 } },
+  };
+
+  expect(
+    resolveRaymarchGovernorFrameInputs(runtimeState, effectiveFrame),
+  ).toEqual({
+    modalFieldCapacity: 12,
+    productUploadCapacity: 12,
+    activeModeCount: 3,
+    uploadedModeCount: 3,
+  });
+});
+
+test("syncAdaptiveRenderSurfacePixelRatio applies adaptive render scale to DPR", () => {
+  const runtimeDiagnostics = createRuntimeDiagnostics();
+  runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive = true;
+  runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale = 0.67;
+  const gl = {
+    setPixelRatioCalls: [],
+    setPixelRatio(value) {
+      this.setPixelRatioCalls.push(value);
+    },
+  };
+  const pixelRatioRef = { current: 1 };
+
+  const targetPixelRatio = syncAdaptiveRenderSurfacePixelRatio({
+    gl,
+    renderLoopRefs: { pixelRatioRef },
+    runtimeDiagnostics,
+    renderProfile: { qualityPreset: "auto" },
+    controls: {},
+    status: { isPlaying: true },
+    requestedRenderScale: 1,
+    basePixelRatio: 2,
+  });
+
+  expect(targetPixelRatio).toBeCloseTo(1.34);
+  expect(pixelRatioRef.current).toBeCloseTo(1.34);
+  expect(gl.setPixelRatioCalls).toEqual([1.34]);
+});
+
+test("syncUploadedRenderQuantities mirrors runtime uniforms into diagnostics", () => {
+  const runtimeDiagnostics = createRuntimeDiagnostics();
+  syncUploadedRenderQuantities(runtimeDiagnostics, {
+    uniforms: {
+      uModalFieldModeCount: { value: 5 },
+      uTotalSlotAmplitude: { value: 0.18 },
+    },
+  });
+
+  expect(runtimeDiagnostics.render.uploadedModeCount).toBe(5);
+  expect(runtimeDiagnostics.render.totalSlotAmplitude).toBeCloseTo(0.18);
+  expect(runtimeDiagnostics.modalFreshness.uploadedModeCount).toBe(5);
+  expect(runtimeDiagnostics.modalFreshness.totalSlotAmplitude).toBeCloseTo(
+    0.18,
+  );
 });

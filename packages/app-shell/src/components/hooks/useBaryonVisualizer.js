@@ -56,6 +56,8 @@ import {
   updateModalFreshnessDiagnostics,
   updateAdaptiveRaymarchStepBudget,
   updateRendererDiagnostics,
+  syncAdaptiveRenderSurfacePixelRatio,
+  syncUploadedRenderQuantities,
 } from "./baryonVisualizerRenderLoop.js";
 import { useVisualizationRuntimeLifecycle } from "./useVisualizationRuntimeLifecycle.js";
 import { getSourceAuthoritativeClock } from "./externalFrameClock.js";
@@ -658,6 +660,16 @@ export function useBaryonVisualizer({
       status,
       runtimeDiagnostics,
     });
+    syncAdaptiveRenderSurfacePixelRatio({
+      gl: renderLoopContext.gl,
+      renderLoopRefs,
+      runtimeDiagnostics,
+      renderProfile: renderProfileRef.current,
+      controls,
+      status,
+      requestedRenderScale,
+      basePixelRatio,
+    });
 
     const bloomGovernorAllowed =
       runtimeState?.performanceGovernor?.bloomAllowed ?? true;
@@ -763,6 +775,7 @@ export function useBaryonVisualizer({
       time,
       deltaTime,
     });
+    syncUploadedRenderQuantities(runtimeDiagnostics, runtimeState);
     updateObservationTransferRenderDiagnostics(
       runtimeDiagnostics,
       runtimeState?.debugSnapshot,

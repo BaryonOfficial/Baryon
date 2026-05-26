@@ -718,6 +718,39 @@ function isBasisPageSlotRepresentable({ slots, offset, resolution }) {
   );
 }
 
+export function sumLiveSynthesisRepresentableUploadWeight({
+  modalFieldSlots,
+  activeCount,
+  resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+}) {
+  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
+  if (!modalFieldSlots || clampedActiveCount <= 0) {
+    return 0;
+  }
+
+  const normalizedResolution = normalizeModalBasisCacheResolution(resolution);
+  let totalWeight = 0;
+  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    const amplitude = Math.max(0, modalFieldSlots[offset + 3] ?? 0);
+    if (!(amplitude > 0)) {
+      continue;
+    }
+    if (
+      !isBasisPageSlotRepresentable({
+        slots: modalFieldSlots,
+        offset,
+        resolution: normalizedResolution,
+      })
+    ) {
+      continue;
+    }
+    totalWeight += amplitude;
+  }
+
+  return totalWeight;
+}
+
 function isBasisPageSlotContributing({ slots, offset, resolution }) {
   const amplitude = Math.max(0, slots?.[offset + 3] ?? 0);
   return (
@@ -3221,8 +3254,7 @@ export function enqueueRaymarchModalBasisCacheRebuild(
     },
   );
   if (!computeNode) {
-    markCacheBackendUnavailable(modalBasisCache);
-    return { enqueued: false, reason: "unavailable" };
+    return { enqueued: false, reason: "compute-node-unavailable" };
   }
 
   const rebuildGeneration = beginCacheRebuild(

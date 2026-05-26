@@ -4781,3 +4781,28 @@ describe("fieldCache", () => {
     expect(sphericalRequestSample).toEqual(rectangularSample);
   });
 });
+
+describe("sumLiveSynthesisRepresentableUploadWeight", () => {
+  it("counts only bandwidth-representable uploaded modes", () => {
+    const resolution = raymarchFieldCache.RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION;
+    const maxModeIndex =
+      raymarchFieldCache.getModalBasisCacheMaxRepresentableModeIndex(
+        resolution,
+      );
+    const slots = new Float32Array(16);
+    slots[3] = 0.5;
+    slots[0] = maxModeIndex + 8;
+    slots[7] = 0.25;
+    slots[4] = 2;
+    slots[5] = 2;
+    slots[6] = 2;
+
+    expect(
+      raymarchFieldCache.sumLiveSynthesisRepresentableUploadWeight({
+        modalFieldSlots: slots,
+        activeCount: 2,
+        resolution,
+      }),
+    ).toBeCloseTo(0.25);
+  });
+});

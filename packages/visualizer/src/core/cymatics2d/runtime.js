@@ -50,11 +50,16 @@ function estimateAverageModeAmplitude(modeSlots) {
   return count > 0 ? total / count : 0;
 }
 
-function countActiveSlots(slots) {
+function countActiveSlots(slots, maxSlotCount = Infinity) {
   if (!slots?.length) return 0;
+  const capacity = Number.isFinite(maxSlotCount)
+    ? Math.max(0, Math.floor(maxSlotCount))
+    : Math.floor(slots.length / 4);
+  const limit = Math.min(capacity, Math.floor(slots.length / 4));
   let count = 0;
-  for (let i = 0; i < slots.length; i += 4) {
-    if ((slots[i + 3] ?? 0) > 0) count += 1;
+  for (let slotIndex = 0; slotIndex < limit; slotIndex += 1) {
+    const offset = slotIndex * 4;
+    if ((slots[offset + 3] ?? 0) > 0) count += 1;
   }
   return count;
 }
@@ -179,7 +184,9 @@ function updateReactiveResponse(
       : RESPONSE_RELEASE,
     deltaTime,
   );
-  const accentTarget = clamp01(gatedChangeSignal * 0.74 + gatedPulseSignal * 0.42);
+  const accentTarget = clamp01(
+    gatedChangeSignal * 0.74 + gatedPulseSignal * 0.42,
+  );
   const accentEnvelope = damp(
     runtimeState.accentEnvelope ?? 0,
     accentTarget,
@@ -265,7 +272,12 @@ export function tickCymatics2dRuntime(
   uniforms.uTime.value = time;
   const fieldState = featureFrame?.fieldState ?? "idle";
   const renderAuthority = hasRenderAuthority(featureFrame);
-  updateReactiveResponse(runtimeState, featureFrame, renderAuthority, deltaTime);
+  updateReactiveResponse(
+    runtimeState,
+    featureFrame,
+    renderAuthority,
+    deltaTime,
+  );
   updateSliceMotion(runtimeState, renderAuthority, deltaTime);
   uniforms.uFieldState.value =
     runtimeState.fieldStateValues[fieldState] ??
@@ -291,10 +303,9 @@ export function tickCymatics2dRuntime(
     modalFieldColorBuffer.value.needsUpdate = true;
   }
 
+  const uploadedSlotCapacity = Math.floor(modalFieldArray.length / 4);
   const modalFieldModeCount = renderAuthority
-    ? (featureFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
-      featureFrame?.activeModeCount ??
-      countActiveSlots(modalFieldSlots))
+    ? countActiveSlots(modalFieldArray, uploadedSlotCapacity)
     : 0;
   uniforms.uModalFieldModeCount.value = modalFieldModeCount;
   uniforms.uActiveModeCount.value = modalFieldModeCount;
