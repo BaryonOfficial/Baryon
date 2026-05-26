@@ -1,5 +1,67 @@
+import {
+  MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+  MODAL_BASIS_CACHE_RESOLUTION,
+  getModalBasisCacheMaxRepresentableModeIndex,
+} from "./modalBudgets.js";
+
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
+}
+
+function deriveStructuralAdmissionDiagnostics(
+  slotAssignments,
+  {
+    basisAtlasPageCapacity = MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+    basisCacheResolution = MODAL_BASIS_CACHE_RESOLUTION,
+  } = {},
+) {
+  const normalizedBasisCapacity = Math.max(
+    0,
+    Math.floor(basisAtlasPageCapacity),
+  );
+  const maxRepresentableModeIndex =
+    getModalBasisCacheMaxRepresentableModeIndex(basisCacheResolution);
+  let basisAtlasCapacityRejectedCount = 0;
+  let basisAtlasCapacityRejectedEnergy = 0;
+  let spatialBandwidthRejectedCount = 0;
+  let spatialBandwidthRejectedEnergy = 0;
+
+  for (let slotIndex = 0; slotIndex < slotAssignments.length; slotIndex += 1) {
+    const entry = slotAssignments[slotIndex];
+    if (!entry) {
+      continue;
+    }
+
+    const modalEnergy = Math.max(0, entry.coefficient) ** 2;
+    const maxModeIndex = Math.max(
+      Math.abs(entry.u),
+      Math.abs(entry.v),
+      Math.abs(entry.w),
+    );
+
+    if (maxModeIndex > maxRepresentableModeIndex) {
+      spatialBandwidthRejectedCount += 1;
+      spatialBandwidthRejectedEnergy += modalEnergy;
+      continue;
+    }
+
+    if (slotIndex >= normalizedBasisCapacity) {
+      basisAtlasCapacityRejectedCount += 1;
+      basisAtlasCapacityRejectedEnergy += modalEnergy;
+    }
+  }
+
+  return {
+    basisAtlasPageCapacity: normalizedBasisCapacity,
+    maxRepresentableModeIndex,
+    basisAtlasCapacityRejectedCount,
+    basisAtlasCapacityRejectedEnergy,
+    spatialBandwidthRejectedCount,
+    spatialBandwidthRejectedEnergy,
+    structuralCoverageSatisfied:
+      basisAtlasCapacityRejectedCount === 0 &&
+      spatialBandwidthRejectedCount === 0,
+  };
 }
 
 function readFiniteNonNegative(value, fallback = 0) {
@@ -284,6 +346,8 @@ function countOccupiedSlotSpan(assignments) {
  *   phaseAuthorityModeCount?: number,
  *   modeIdentityRetentionRatio?: number,
  *   stableSlotByModeKey?: Map<string, number> | null,
+ *   basisAtlasPageCapacity?: number,
+ *   basisCacheResolution?: number,
  * }} [options]
  */
 export function buildCanonicalFullModalDescriptor({
@@ -299,6 +363,8 @@ export function buildCanonicalFullModalDescriptor({
   phaseAuthorityModeCount,
   modeIdentityRetentionRatio = 1,
   stableSlotByModeKey = null,
+  basisAtlasPageCapacity = MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+  basisCacheResolution = MODAL_BASIS_CACHE_RESOLUTION,
 } = {}) {
   const fallbackCapacity = resolveCapacity(undefined, modalFieldSlots);
   const totalCapacity = resolveTotalCapacity({
@@ -347,6 +413,25 @@ export function buildCanonicalFullModalDescriptor({
     0,
   );
   const descriptorOverflow = overflowModeCount > 0;
+  const structuralAdmission = deriveStructuralAdmissionDiagnostics(
+    slotAssignments,
+    {
+      basisAtlasPageCapacity,
+      basisCacheResolution,
+    },
+  );
+  const rejectionReasons = {};
+  if (overflowModeCount > 0) {
+    rejectionReasons.descriptorCapacity = overflowModeCount;
+  }
+  if (structuralAdmission.basisAtlasCapacityRejectedCount > 0) {
+    rejectionReasons.basisAtlasCapacity =
+      structuralAdmission.basisAtlasCapacityRejectedCount;
+  }
+  if (structuralAdmission.spatialBandwidthRejectedCount > 0) {
+    rejectionReasons.spatialBandwidth =
+      structuralAdmission.spatialBandwidthRejectedCount;
+  }
   const unifiedSlotViews = writeUnifiedModalSlotViewsFromAssignments(
     slotAssignments,
     totalCapacity,
@@ -398,10 +483,24 @@ export function buildCanonicalFullModalDescriptor({
       phaseAuthorityModeCount: resolvedPhaseAuthorityModeCount,
       modeIdentityRetentionRatio: clamp01(modeIdentityRetentionRatio ?? 1),
       descriptorOverflow,
-      structuralCoverageSatisfied: true,
-      rejectedModalEnergy,
-      rejectionReasons:
-        overflowModeCount > 0 ? { descriptorCapacity: overflowModeCount } : {},
+      structuralCoverageSatisfied:
+        !descriptorOverflow && structuralAdmission.structuralCoverageSatisfied,
+      rejectedModalEnergy:
+        rejectedModalEnergy +
+        structuralAdmission.basisAtlasCapacityRejectedEnergy +
+        structuralAdmission.spatialBandwidthRejectedEnergy,
+      descriptorRejectedModalEnergy: rejectedModalEnergy,
+      basisAtlasRejectedModalEnergy:
+        structuralAdmission.basisAtlasCapacityRejectedEnergy,
+      spatialBandwidthRejectedModalEnergy:
+        structuralAdmission.spatialBandwidthRejectedEnergy,
+      basisAtlasCapacityRejectedCount:
+        structuralAdmission.basisAtlasCapacityRejectedCount,
+      spatialBandwidthRejectedCount:
+        structuralAdmission.spatialBandwidthRejectedCount,
+      basisAtlasPageCapacity: structuralAdmission.basisAtlasPageCapacity,
+      maxRepresentableModeIndex: structuralAdmission.maxRepresentableModeIndex,
+      rejectionReasons,
     },
     slotViews: {
       ...unifiedSlotViews,

@@ -502,7 +502,7 @@ describe("tickRaymarchRuntime", () => {
     expect(authorityIndex).toBeLessThan(uniformIndex);
   });
 
-  it("uploads every descriptor mode and phase entry up to descriptor capacity", () => {
+  it("uploads admitted modes up to the product basis-atlas page budget", () => {
     const runtimeState = createRuntimeState();
     runtimeState.modalFieldCapacity = 20;
     runtimeState.modalFieldPhaseCapacity = 20;
@@ -524,9 +524,9 @@ describe("tickRaymarchRuntime", () => {
 
     tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
 
-    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(20);
-    expect(runtimeState.uniforms.uActiveModeCount.value).toBe(20);
-    expect(runtimeState.modalBasisPhaseAuthorityModeCount).toBe(20);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(12);
+    expect(runtimeState.uniforms.uActiveModeCount.value).toBe(12);
+    expect(runtimeState.modalBasisPhaseAuthorityModeCount).toBe(12);
     expect(runtimeState.currentModalDescriptor).toMatchObject({
       capacity: {
         maxTotalModes: 20,
@@ -2948,7 +2948,7 @@ describe("tickRaymarchRuntime", () => {
       bloomThresholdOffset: 0,
       bloomAllowed: true,
       modalField: {
-        capacity: 16,
+        capacity: 12,
         originalActiveCount: 3,
         uploadedActiveCount: 3,
         totalAmplitude: 2.2,
@@ -2959,7 +2959,7 @@ describe("tickRaymarchRuntime", () => {
     };
     runtimeState.pendingRaymarchPerformanceGovernor = {
       featureFrame,
-      modalFieldCapacity: 16,
+      modalFieldCapacity: 12,
       cavityGeometry: "rectangular",
       requestedStepBudget: 64,
       requestedRenderScale: 1,

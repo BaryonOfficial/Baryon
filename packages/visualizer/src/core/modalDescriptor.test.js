@@ -59,6 +59,7 @@ describe("buildCanonicalFullModalDescriptor", () => {
     expect(descriptor.counts.validModeCount).toBe(2);
     expect(descriptor.counts.modalFieldModeCount).toBe(2);
     expect(descriptor.diagnostics.descriptorOverflow).toBe(false);
+    expect(descriptor.diagnostics.structuralCoverageSatisfied).toBe(true);
     expect(readModeKeys(descriptor.slotViews.modalFieldSlots, 2)).toEqual([
       "3:2:5",
       "4:3:6",
@@ -123,6 +124,71 @@ describe("buildCanonicalFullModalDescriptor", () => {
     expect(descriptor.diagnostics.rejectionReasons).toEqual({
       descriptorCapacity: 1,
     });
+    expect(descriptor.diagnostics.descriptorRejectedModalEnergy).toBeCloseTo(
+      0.15 ** 2,
+      4,
+    );
+    expect(descriptor.diagnostics.structuralCoverageSatisfied).toBe(false);
+  });
+
+  it("reports basis-atlas capacity rejection separately from descriptor overflow", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 16,
+      basisAtlasPageCapacity: 2,
+      modalFieldSlots: makeSlots([
+        [1, 1, 1, 0.6],
+        [2, 2, 2, 0.5],
+        [3, 3, 3, 0.4],
+      ]),
+      activeModalFieldModeCount: 3,
+    });
+
+    expect(descriptor.fieldAuthority).toBe("complete");
+    expect(descriptor.diagnostics.descriptorOverflow).toBe(false);
+    expect(descriptor.diagnostics.basisAtlasCapacityRejectedCount).toBe(1);
+    expect(descriptor.diagnostics.structuralCoverageSatisfied).toBe(false);
+    expect(descriptor.diagnostics.rejectionReasons).toEqual({
+      basisAtlasCapacity: 1,
+    });
+    expect(descriptor.diagnostics.basisAtlasRejectedModalEnergy).toBeCloseTo(
+      0.4 ** 2,
+      4,
+    );
+  });
+
+  it("reports spatial-bandwidth rejection separately from atlas capacity", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 4,
+      basisAtlasPageCapacity: 4,
+      basisCacheResolution: 8,
+      modalFieldSlots: makeSlots([
+        [1, 1, 1, 0.7],
+        [8, 0, 0, 0.5],
+      ]),
+      activeModalFieldModeCount: 2,
+    });
+
+    expect(descriptor.diagnostics.spatialBandwidthRejectedCount).toBe(1);
+    expect(descriptor.diagnostics.rejectionReasons).toEqual({
+      spatialBandwidth: 1,
+    });
+    expect(descriptor.diagnostics.structuralCoverageSatisfied).toBe(false);
+  });
+
+  it("marks structural coverage satisfied when admitted modes fit atlas and bandwidth", () => {
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 4,
+      basisAtlasPageCapacity: 4,
+      basisCacheResolution: 64,
+      modalFieldSlots: makeSlots([
+        [1, 1, 1, 0.6],
+        [2, 2, 2, 0.4],
+      ]),
+      activeModalFieldModeCount: 2,
+    });
+
+    expect(descriptor.diagnostics.structuralCoverageSatisfied).toBe(true);
+    expect(descriptor.diagnostics.rejectionReasons).toEqual({});
   });
 
   it("combines duplicate mode keys and preserves continuous metadata", () => {

@@ -696,7 +696,7 @@ export function resolveRaymarchBasisAtlasZ({
   return (clampedSlot + clampedLocalZ) / normalizedCapacity;
 }
 
-function getModalBasisCacheMaxRepresentableModeIndex(resolution) {
+export function getModalBasisCacheMaxRepresentableModeIndex(resolution) {
   return Math.max(
     1,
     Math.floor(normalizeModalBasisCacheResolution(resolution) / 2),

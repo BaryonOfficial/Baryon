@@ -5,6 +5,10 @@ import {
   normalizeCavityGeometry,
 } from "../cavityGeometry.js";
 import { buildCanonicalFullModalDescriptor } from "../modalDescriptor.js";
+import {
+  MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+  MODAL_BASIS_CACHE_RESOLUTION,
+} from "../modalBudgets.js";
 import { getBoundaryModeFromValue } from "../modeFamily.js";
 import {
   hasRenderAuthority,
@@ -389,6 +393,16 @@ function getRuntimeEffectiveCavityGeometry(runtimeState) {
   );
 }
 
+function resolveProductBasisAtlasPageCapacity(runtimeState) {
+  return Math.max(
+    1,
+    Math.round(
+      runtimeState.modalBasisCache?.basisCapacity ??
+        MODAL_BASIS_ATLAS_PAGE_CAPACITY,
+    ),
+  );
+}
+
 function buildRuntimeModalDescriptor(
   runtimeState,
   featureFrame,
@@ -396,8 +410,15 @@ function buildRuntimeModalDescriptor(
 ) {
   const sourceDescriptor = featureFrame?.modalDescriptor ?? null;
   const slotViews = sourceDescriptor?.slotViews ?? {};
+  const basisAtlasPageCapacity =
+    resolveProductBasisAtlasPageCapacity(runtimeState);
   if (slotViews.modalFieldSlots) {
-    return sourceDescriptor;
+    if (
+      sourceDescriptor?.diagnostics?.basisAtlasPageCapacity ===
+      basisAtlasPageCapacity
+    ) {
+      return sourceDescriptor;
+    }
   }
 
   if (!runtimeState.modalSlotByModeKey) {
@@ -410,6 +431,9 @@ function buildRuntimeModalDescriptor(
       runtimeState.modalDescriptorGeneration ??
       0,
     maxTotalModes: modalFieldCapacity,
+    basisAtlasPageCapacity,
+    basisCacheResolution:
+      runtimeState.modalBasisCache?.resolution ?? MODAL_BASIS_CACHE_RESOLUTION,
     stableSlotByModeKey: runtimeState.modalSlotByModeKey,
     modalFieldSlots: featureFrame?.modalFieldSlots,
     modalFieldPhaseSlots: featureFrame?.modalFieldPhaseSlots,
@@ -1756,16 +1780,22 @@ function applyRaymarchRuntimeUploadAuthority({
     volumeMesh,
   );
   const requestedRenderScale = 1;
+  const productBasisAtlasPageCapacity =
+    resolveProductBasisAtlasPageCapacity(runtimeState);
+  const productUploadCapacity = Math.min(
+    modalFieldCapacity,
+    productBasisAtlasPageCapacity,
+  );
   const performanceGovernor =
     takePendingRaymarchPerformanceGovernor(runtimeState, featureFrame, {
-      modalFieldCapacity,
+      modalFieldCapacity: productUploadCapacity,
       cavityGeometry: effectiveCavityGeometry,
       requestedStepBudget,
       requestedRenderScale,
     }) ??
     buildRaymarchPerformanceGovernor({
       modalFieldSlots: descriptorSlots.modalFieldSlots,
-      modalFieldCapacity,
+      modalFieldCapacity: productUploadCapacity,
       featureFrame,
       cavityGeometry: effectiveCavityGeometry,
       requestedStepBudget,
@@ -1795,7 +1825,7 @@ function applyRaymarchRuntimeUploadAuthority({
     targetPhaseSlots: modalFieldPhaseBuffer?.value?.array ?? null,
     phaseBufferNode: modalFieldPhaseBuffer,
     layer: modalFieldLayer,
-    capacity: modalFieldPhaseCapacity,
+    capacity: Math.min(modalFieldPhaseCapacity, productUploadCapacity),
   });
   runtimeState.modalBasisPhaseAuthorityModeCount =
     modalFieldPhaseAuthorityModeCount;

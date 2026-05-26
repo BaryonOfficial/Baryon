@@ -59,6 +59,7 @@ import {
   normalizeLiveInputDeviceKind,
 } from "../../core/audio/inputDeviceSemantics.js";
 import { buildCanonicalFullModalDescriptor } from "../../core/modalDescriptor.js";
+import { MODAL_BASIS_ATLAS_PAGE_CAPACITY } from "../../core/modalBudgets.js";
 import {
   countNonZeroFftBins,
   deriveHighQSparseResonatorAuthority,
@@ -1427,6 +1428,7 @@ function buildEmptyModalFieldDescriptor({
   return buildCanonicalFullModalDescriptor({
     generation,
     maxTotalModes,
+    basisAtlasPageCapacity: MODAL_BASIS_ATLAS_PAGE_CAPACITY,
     modalFieldSlots: modalFieldSlots ?? emptySlots,
     modalFieldPhaseSlots: modalFieldPhaseSlots ?? emptySlots,
     modalFieldColorSlots: modalFieldColorSlots ?? emptySlots,
@@ -5509,6 +5511,7 @@ export function composeAudioFeatureFrame({
       preparedInputs.capacity,
       AUDIO_DEFAULTS.maxModalFieldDescriptorModes,
     ),
+    basisAtlasPageCapacity: MODAL_BASIS_ATLAS_PAGE_CAPACITY,
     modalFieldSlots: modalFieldDescriptorSource.modalFieldSlots,
     modalFieldPhaseSlots: modalFieldDescriptorSource.modalFieldPhaseSlots,
     modalFieldColorSlots: modalFieldDescriptorSource.modalFieldColorSlots,
