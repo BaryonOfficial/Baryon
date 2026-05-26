@@ -54,7 +54,6 @@ import {
   deriveStableContourAccent,
   deriveSignedInterferenceBodyAuthority,
   deriveSignedInterferenceRadianceAuthority,
-  deriveSpectralLightColorGate,
   deriveSpectralLightProjectionWeight,
   deriveStructureAwareEmissionGain,
 } from "./fieldShaping.js";
@@ -414,40 +413,23 @@ describe("field shaping", () => {
     expect(unsupportedCancellation.cancellationSuppression).toBe(1);
   });
 
-  it("gates Spectral Light projection by signed support or caustic visibility", () => {
-    const unsupportedColorGate = deriveSpectralLightColorGate({
-      localFieldSupportAuthority: 0,
-      signedRadianceAuthority: 1,
-      causticVisibility: 0,
-    });
-    const signedSupportColorGate = deriveSpectralLightColorGate({
-      localFieldSupportAuthority: 0.6,
-      signedRadianceAuthority: 0.5,
-      causticVisibility: 0.1,
-    });
-    const causticColorGate = deriveSpectralLightColorGate({
-      localFieldSupportAuthority: 0.1,
-      signedRadianceAuthority: 0.25,
-      causticVisibility: 0.42,
-    });
-
-    expect(unsupportedColorGate).toBe(0);
-    expect(signedSupportColorGate).toBeCloseTo(0.3);
-    expect(causticColorGate).toBeCloseTo(0.42);
+  it("keeps Spectral Light projection owned by mix and cached color presence", () => {
     expect(
       deriveSpectralLightProjectionWeight({
         spectralMix: 1,
         spectralLightPresence: 1,
-        colorGate: unsupportedColorGate,
+        causticVisibility: 0,
+        localFieldSupportAuthority: 0,
       }),
-    ).toBe(0);
+    ).toBe(1);
     expect(
       deriveSpectralLightProjectionWeight({
         spectralMix: 0.8,
         spectralLightPresence: 0.75,
-        colorGate: causticColorGate,
+        causticVisibility: 0.42,
+        signedRadianceAuthority: 0,
       }),
-    ).toBeCloseTo(0.8 * 0.75 * causticColorGate);
+    ).toBeCloseTo(0.8 * 0.75);
   });
 
   it("does not let uncanceled radiance masquerade as shell field support", () => {
@@ -481,8 +463,8 @@ describe("field shaping", () => {
   });
 
   it("does not let unsupported gradient contours authorize caustics", () => {
-    const unsupportedGradientContour =
-      fieldShaping.deriveCausticRidgeAuthority({
+    const unsupportedGradientContour = fieldShaping.deriveCausticRidgeAuthority(
+      {
         contourCore: 1,
         modalStructureSupport: 1,
         localGradientEvidence: 1,
@@ -491,7 +473,8 @@ describe("field shaping", () => {
         activeMask: 1,
         effectiveUnsignedSupport: 0,
         signedBodyAuthority: 1,
-      });
+      },
+    );
     const supportedGradientContour = fieldShaping.deriveCausticRidgeAuthority({
       contourCore: 1,
       modalStructureSupport: 1,
@@ -676,12 +659,10 @@ describe("field shaping", () => {
     expect(halfSignedAttenuation).toBeCloseTo(reinforcingAttenuation);
     expect(canceledAttenuation).toBeCloseTo(reinforcingAttenuation);
     expect(
-      halfSigned.opticalBodyContribution /
-        reinforcing.opticalBodyContribution,
+      halfSigned.opticalBodyContribution / reinforcing.opticalBodyContribution,
     ).toBeCloseTo(0.5, 6);
     expect(
-      canceled.opticalBodyContribution /
-        reinforcing.opticalBodyContribution,
+      canceled.opticalBodyContribution / reinforcing.opticalBodyContribution,
     ).toBeCloseTo(0.18, 6);
   });
 
@@ -1014,8 +995,7 @@ describe("field shaping", () => {
       reinforcing.photographicFocus,
     );
     expect(canceled.photographicSpectralWeight).toBeCloseTo(
-      reinforcing.photographicSpectralWeight *
-        canceled.signedRadianceAuthority,
+      reinforcing.photographicSpectralWeight * canceled.signedRadianceAuthority,
       6,
     );
     expect(canceled.peakWhiteSignal).toBeCloseTo(
@@ -1158,9 +1138,7 @@ describe("field shaping", () => {
     expect(canceling.causticRidgeAuthority).toBeCloseTo(
       reinforcing.causticRidgeAuthority,
     );
-    expect(canceling.bodyDensity).toBeLessThan(
-      reinforcing.bodyDensity * 0.25,
-    );
+    expect(canceling.bodyDensity).toBeLessThan(reinforcing.bodyDensity * 0.25);
     expect(canceling.localDensity).toBeLessThan(
       reinforcing.localDensity * 0.35,
     );
@@ -1487,9 +1465,7 @@ describe("field shaping", () => {
     expect(reinforcing.signedBodyAuthority).toBeCloseTo(
       canceling.signedBodyAuthority,
     );
-    expect(canceling.bodyDensity).toBeLessThan(
-      reinforcing.bodyDensity * 0.25,
-    );
+    expect(canceling.bodyDensity).toBeLessThan(reinforcing.bodyDensity * 0.25);
     expect(computeLinearLuminance(cancelingRgb)).toBeLessThan(
       computeLinearLuminance(reinforcingRgb) * 0.3,
     );

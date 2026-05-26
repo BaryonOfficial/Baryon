@@ -1272,11 +1272,7 @@ function updateLaserResponse(runtimeState, featureFrame) {
     0.001,
     baseThreshold * (1 - thresholdResponse * THRESHOLD_RESPONSE_REDUCTION),
   );
-  uniforms.uContourSharpness.value = clamp(
-    baseContourSharpness,
-    1,
-    8,
-  );
+  uniforms.uContourSharpness.value = clamp(baseContourSharpness, 1, 8);
   const bt = runtimeState.bloomTuning;
   const performanceGovernor = runtimeState.performanceGovernor ?? null;
   const bloomStrengthScale = performanceGovernor?.bloomStrengthScale ?? 1;
@@ -1799,6 +1795,10 @@ function applyRaymarchRuntimeUploadAuthority({
   const modalFieldModeCount = modalFieldLayer.uploadedActiveCount;
   setIfChanged(uniforms.uModalFieldModeCount, modalFieldModeCount);
   setIfChanged(uniforms.uActiveModeCount, modalFieldModeCount);
+  setIfChanged(
+    uniforms.uTotalSlotAmplitude,
+    sumModalFieldAmplitude({ modalDescriptor }),
+  );
 
   const boundaryMode = getRuntimeBoundaryMode(runtimeState);
   const descriptorRadius = runtimeState.uniforms.uRadius?.value ?? 1;

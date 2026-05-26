@@ -128,10 +128,8 @@ function resolveModalFieldRebuildOptions(options) {
     modalFieldCapacity: options.modalFieldCapacity ?? 0,
     uniforms: {
       ...options.uniforms,
-      uModalFieldModeCount:
-        options.uniforms?.uModalFieldModeCount ??
-        options.uniforms?.uBackboneModeCount ??
-        { value: 0 },
+      uModalFieldModeCount: options.uniforms?.uModalFieldModeCount ??
+        options.uniforms?.uBackboneModeCount ?? { value: 0 },
     },
   };
 }
@@ -383,6 +381,7 @@ describe("fieldCache", () => {
       drawable: true,
       state: "field-cache-ready-current",
       blockedReason: null,
+      staleReason: null,
     });
 
     cache.rebuildPending = true;
@@ -477,41 +476,37 @@ describe("fieldCache", () => {
   });
 
   it("treats phase offsets as effective-field state", () => {
-    expect(buildRaymarchEffectiveFieldDescriptor).toBeTypeOf(
-      "function",
-    );
+    expect(buildRaymarchEffectiveFieldDescriptor).toBeTypeOf("function");
     expect(
       raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache,
     ).toBeTypeOf("function");
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const slots = new Float32Array([1, 2, 3, 0.9]);
-    const initialDescriptor =
-      buildRaymarchEffectiveFieldDescriptor({
-        backboneSlots: slots,
-        detailSlots: new Float32Array(0),
-        backbonePhaseSlots: new Float32Array([0.1, 0.2, 0.5, 0.6]),
-        detailPhaseSlots: new Float32Array(0),
-        backboneCount: 1,
-        detailCount: 0,
-        boundaryMode: "neumann",
-        radius: 3,
-        phaseModeCount: 1,
-        phaseAuthority: 0.3,
-      });
-    const carrierAdvancedDescriptor =
-      buildRaymarchEffectiveFieldDescriptor({
-        backboneSlots: slots,
-        detailSlots: new Float32Array(0),
-        backbonePhaseSlots: new Float32Array([0.7, 0.2, 0.5, 0.6]),
-        detailPhaseSlots: new Float32Array(0),
-        backboneCount: 1,
-        detailCount: 0,
-        boundaryMode: "neumann",
-        radius: 3,
-        phaseModeCount: 1,
-        phaseAuthority: 0.3,
-      });
+    const initialDescriptor = buildRaymarchEffectiveFieldDescriptor({
+      backboneSlots: slots,
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0.1, 0.2, 0.5, 0.6]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 1,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 1,
+      phaseAuthority: 0.3,
+    });
+    const carrierAdvancedDescriptor = buildRaymarchEffectiveFieldDescriptor({
+      backboneSlots: slots,
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0.7, 0.2, 0.5, 0.6]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 1,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 1,
+      phaseAuthority: 0.3,
+    });
     const phaseParameterChangedDescriptor =
       buildRaymarchEffectiveFieldDescriptor({
         backboneSlots: slots,
@@ -552,10 +547,7 @@ describe("fieldCache", () => {
 
     effectiveFieldCache.activeDescriptor = initialDescriptor;
 
-    expect(carrierAdvancedSample.field).not.toBeCloseTo(
-      initialSample.field,
-      6,
-    );
+    expect(carrierAdvancedSample.field).not.toBeCloseTo(initialSample.field, 6);
     expect(
       raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
         effectiveFieldCache,
@@ -655,10 +647,7 @@ describe("fieldCache", () => {
 
     effectiveFieldCache.activeDescriptor = initialDescriptor;
 
-    expect(timeAdvancedSample.field).not.toBeCloseTo(
-      initialSample.field,
-      6,
-    );
+    expect(timeAdvancedSample.field).not.toBeCloseTo(initialSample.field, 6);
     expect(timeAdvancedDescriptor.liveModalPhaseHash).not.toBe(
       initialDescriptor.liveModalPhaseHash,
     );
@@ -670,14 +659,61 @@ describe("fieldCache", () => {
     ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
   });
 
+  it("keeps basis-cache drawable authority on clock-only phase advance", () => {
+    const effectiveFieldCache =
+      raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
+    const slots = new Float32Array([1, 2, 3, 0.9]);
+    const phaseSlots = new Float32Array([0.1, 0.6, 0.8, 0.9]);
+    const initialDescriptor = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: slots,
+      modalFieldPhaseSlots: phaseSlots,
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 1,
+      phaseAuthority: 0.72,
+      time: 0,
+    });
+    const timeAdvancedDescriptor = buildRaymarchEffectiveFieldDescriptor({
+      modalFieldSlots: slots,
+      modalFieldPhaseSlots: phaseSlots,
+      modalFieldCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 1,
+      phaseAuthority: 0.72,
+      time: 0.5,
+    });
+
+    effectiveFieldCache.ready = true;
+    effectiveFieldCache.activeDescriptor = initialDescriptor;
+
+    expect(timeAdvancedDescriptor.liveModalPhaseHash).not.toBe(
+      initialDescriptor.liveModalPhaseHash,
+    );
+    expect(
+      raymarchFieldCache.isRaymarchEffectiveFieldCacheReadyForDescriptor(
+        effectiveFieldCache,
+        timeAdvancedDescriptor,
+      ),
+    ).toBe(true);
+    expect(
+      raymarchFieldCache.resolveRaymarchEffectiveFieldDrawableAuthority(
+        effectiveFieldCache,
+        timeAdvancedDescriptor,
+      ),
+    ).toMatchObject({
+      drawable: true,
+      state: "field-cache-ready-current",
+    });
+  });
+
   it("ignores inactive phase metadata when resolving effective-field freshness", () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const slots = new Float32Array([1, 2, 3, 0.9]);
     const inactivePhaseSlots = new Float32Array([0.1, 0.6, 0.8, 0]);
-    const changedInactivePhaseSlots = new Float32Array([
-      2.4, -1.7, 0.1, 0,
-    ]);
+    const changedInactivePhaseSlots = new Float32Array([2.4, -1.7, 0.1, 0]);
     const initialDescriptor = buildRaymarchEffectiveFieldDescriptor({
       modalFieldSlots: slots,
       modalFieldPhaseSlots: inactivePhaseSlots,
@@ -807,10 +843,24 @@ describe("fieldCache", () => {
     const phaseSlots = new Float32Array([0, 0, 1, 1, Math.PI, 0, 1, 1]);
     const reorderedSlots = new Float32Array([2, 2, 4, 0.4, 1, 2, 3, 0.6]);
     const reorderedPhaseSlots = new Float32Array([
-      Math.PI, 0, 1, 1, 0, 0, 1, 1,
+      Math.PI,
+      0,
+      1,
+      1,
+      0,
+      0,
+      1,
+      1,
     ]);
     const reassignedPhaseSlots = new Float32Array([
-      Math.PI, 0, 1, 1, 0, 0, 1, 1,
+      Math.PI,
+      0,
+      1,
+      1,
+      0,
+      0,
+      1,
+      1,
     ]);
     const sampleOptions = {
       modalFieldCount: 2,
@@ -896,17 +946,37 @@ describe("fieldCache", () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const compactSlots = new Float32Array([1, 2, 3, 0.6, 2, 2, 4, 0.4]);
-    const compactPhaseSlots = new Float32Array([
-      0, 0, 1, 1, Math.PI, 0, 1, 1,
-    ]);
+    const compactPhaseSlots = new Float32Array([0, 0, 1, 1, Math.PI, 0, 1, 1]);
     const splitSlots = new Float32Array([
       1, 2, 3, 0.35, 1, 2, 3, 0.25, 2, 2, 4, 0.4,
     ]);
     const splitEquivalentPhaseSlots = new Float32Array([
-      0, 0, 1, 1, 0, 0, 1, 1, Math.PI, 0, 1, 1,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0,
+      1,
+      1,
+      Math.PI,
+      0,
+      1,
+      1,
     ]);
     const splitChangedPhaseSlots = new Float32Array([
-      0, 0, 1, 1, Math.PI, 0, 1, 1, Math.PI, 0, 1, 1,
+      0,
+      0,
+      1,
+      1,
+      Math.PI,
+      0,
+      1,
+      1,
+      Math.PI,
+      0,
+      1,
+      1,
     ]);
     const sampleOptions = {
       boundaryMode: "neumann",
@@ -997,15 +1067,8 @@ describe("fieldCache", () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const compactSlots = new Float32Array([1, 2, 3, 0.6]);
-    const compactPhaseSlots = new Float32Array([
-      Math.PI / 2,
-      0,
-      1,
-      1,
-    ]);
-    const splitSlots = new Float32Array([
-      1, 2, 3, 0.3, 1, 2, 3, 0.3,
-    ]);
+    const compactPhaseSlots = new Float32Array([Math.PI / 2, 0, 1, 1]);
+    const splitSlots = new Float32Array([1, 2, 3, 0.3, 1, 2, 3, 0.3]);
     const splitAggregateEquivalentPhaseSlots = new Float32Array([
       0,
       0,
@@ -1016,16 +1079,7 @@ describe("fieldCache", () => {
       1,
       1,
     ]);
-    const splitChangedPhaseSlots = new Float32Array([
-      0,
-      0,
-      1,
-      1,
-      0,
-      0,
-      1,
-      1,
-    ]);
+    const splitChangedPhaseSlots = new Float32Array([0, 0, 1, 1, 0, 0, 1, 1]);
     const sampleOptions = {
       boundaryMode: "neumann",
       radius: 3,
@@ -1128,14 +1182,26 @@ describe("fieldCache", () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const slots = new Float32Array([1, 2, 3, 0.9, 2, 2, 2, 0]);
-    const initialPhaseSlots = new Float32Array([
-      0, 0, 1, 1, 0, 0, 1, 1,
-    ]);
+    const initialPhaseSlots = new Float32Array([0, 0, 1, 1, 0, 0, 1, 1]);
     const zeroAmplitudePhaseChangedSlots = new Float32Array([
-      0, 0, 1, 1, Math.PI, 0, 1, 1,
+      0,
+      0,
+      1,
+      1,
+      Math.PI,
+      0,
+      1,
+      1,
     ]);
     const contributingPhaseChangedSlots = new Float32Array([
-      Math.PI, 0, 1, 1, 0, 0, 1, 1,
+      Math.PI,
+      0,
+      1,
+      1,
+      0,
+      0,
+      1,
+      1,
     ]);
     const sampleOptions = {
       modalFieldSlots: slots,
@@ -1184,10 +1250,12 @@ describe("fieldCache", () => {
       ...sampleOptions,
       modalFieldPhaseSlots: initialPhaseSlots,
     });
-    const zeroAmplitudePhaseChangedSample = evaluateRaymarchEffectiveFieldPoint({
-      ...sampleOptions,
-      modalFieldPhaseSlots: zeroAmplitudePhaseChangedSlots,
-    });
+    const zeroAmplitudePhaseChangedSample = evaluateRaymarchEffectiveFieldPoint(
+      {
+        ...sampleOptions,
+        modalFieldPhaseSlots: zeroAmplitudePhaseChangedSlots,
+      },
+    );
     const contributingPhaseChangedSample = evaluateRaymarchEffectiveFieldPoint({
       ...sampleOptions,
       modalFieldPhaseSlots: contributingPhaseChangedSlots,
@@ -1304,16 +1372,7 @@ describe("fieldCache", () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const initialPhaseSlots = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1]);
-    const flippedPhaseSlots = new Float32Array([
-      0,
-      0,
-      0,
-      0,
-      Math.PI,
-      0,
-      1,
-      1,
-    ]);
+    const flippedPhaseSlots = new Float32Array([0, 0, 0, 0, Math.PI, 0, 1, 1]);
     const buildSlots = (secondaryAmplitude) =>
       new Float32Array([1, 1, 1, 1, 2, 2, 2, secondaryAmplitude]);
     const buildDescriptor = ({ slots, phaseSlots }) =>
@@ -1576,11 +1635,10 @@ describe("fieldCache", () => {
     });
 
     effectiveFieldCache.activeDescriptor = first;
-    const rebuild =
-      raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
-        effectiveFieldCache,
-        changed,
-      );
+    const rebuild = raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
+      effectiveFieldCache,
+      changed,
+    );
 
     expect(changedSample.field).not.toBe(firstSample.field);
     expect(first).not.toHaveProperty("effectiveFieldHash");
@@ -1644,11 +1702,10 @@ describe("fieldCache", () => {
     });
 
     effectiveFieldCache.activeDescriptor = first;
-    const rebuild =
-      raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
-        effectiveFieldCache,
-        changed,
-      );
+    const rebuild = raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
+      effectiveFieldCache,
+      changed,
+    );
 
     expect(changedSample.field).not.toBeCloseTo(firstSample.field, 6);
     expect(first.effectiveFieldTopologyHash).toBe(
@@ -1685,11 +1742,10 @@ describe("fieldCache", () => {
     });
 
     effectiveFieldCache.activeDescriptor = first;
-    const rebuild =
-      raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
-        effectiveFieldCache,
-        second,
-      );
+    const rebuild = raymarchFieldCache.shouldRebuildRaymarchEffectiveFieldCache(
+      effectiveFieldCache,
+      second,
+    );
 
     expect(rebuild.needsRebuild).toBe(false);
     expect(rebuild.reason).toBe("unchanged");
@@ -2191,9 +2247,7 @@ describe("fieldCache", () => {
     expect(result.enqueued).toBe(true);
     expect(inputSnapshot).toBeTruthy();
     expect(
-      Array.from(
-        inputSnapshot.modalFieldModeBuffer.value.array.slice(0, 4),
-      ),
+      Array.from(inputSnapshot.modalFieldModeBuffer.value.array.slice(0, 4)),
     ).toEqual([1, 2, 3, 0.5]);
     expect(inputSnapshot.modalFieldPhaseBuffer).toBeNull();
     expect(inputSnapshot.uniforms.uTime.value).toBe(1);
@@ -2958,9 +3012,9 @@ describe("fieldCache", () => {
       shiftedDescriptor,
     );
 
-    expect(Math.abs(shiftedSample.field - balancedSample.field)).toBeGreaterThan(
-      0.01,
-    );
+    expect(
+      Math.abs(shiftedSample.field - balancedSample.field),
+    ).toBeGreaterThan(0.01);
     expect(rebuild.needsRebuild).toBe(true);
     expect(rebuild.reason).toBe("modal-identity");
   });
@@ -3188,14 +3242,15 @@ describe("fieldCache", () => {
       boundaryMode: "neumann",
       radius: 3,
     });
-    const splitEquivalentDescriptor =
-      buildRaymarchSpectralLightCacheDescriptor({
+    const splitEquivalentDescriptor = buildRaymarchSpectralLightCacheDescriptor(
+      {
         modalFieldSlots: splitSlots,
         modalFieldColorSlots: splitEquivalentColors,
         modalFieldCount: 3,
         boundaryMode: "neumann",
         radius: 3,
-      });
+      },
+    );
     const splitChangedDescriptor = buildRaymarchSpectralLightCacheDescriptor({
       modalFieldSlots: splitSlots,
       modalFieldColorSlots: splitChangedColors,
@@ -3263,9 +3318,7 @@ describe("fieldCache", () => {
       radius: 3,
     });
     const second = buildRaymarchSpectralLightCacheDescriptor({
-      modalFieldSlots: new Float32Array([
-        1, 2, 3, 0.6, 2, 2, 4, 0.13333334,
-      ]),
+      modalFieldSlots: new Float32Array([1, 2, 3, 0.6, 2, 2, 4, 0.13333334]),
       modalFieldColorSlots: new Float32Array([
         0.985, 0.201, 0.105, 0.895, 0.201, 0.599, 0.985, 0.401,
       ]),
@@ -3289,9 +3342,7 @@ describe("fieldCache", () => {
       resolution: 8,
     });
     const slots = new Float32Array([1, 2, 3, 0.9, 2, 2, 2, 0]);
-    const colors = new Float32Array([
-      1, 0.2, 0.1, 0.9, 0.2, 0.6, 1, 0.4,
-    ]);
+    const colors = new Float32Array([1, 0.2, 0.1, 0.9, 0.2, 0.6, 1, 0.4]);
     const zeroAmplitudeColorChanged = new Float32Array([
       1, 0.2, 0.1, 0.9, 0.95, 0.05, 0.4, 1,
     ]);
@@ -3412,11 +3463,12 @@ describe("fieldCache", () => {
       ...sampleOptions,
       modalFieldColorSlots: inactiveColor,
     });
-    const inactiveChromaChangedSample =
-      evaluateRaymarchSpectralLightCachePoint({
+    const inactiveChromaChangedSample = evaluateRaymarchSpectralLightCachePoint(
+      {
         ...sampleOptions,
         modalFieldColorSlots: inactiveChromaChanged,
-      });
+      },
+    );
     const activeColorSample = evaluateRaymarchSpectralLightCachePoint({
       ...sampleOptions,
       modalFieldColorSlots: activeColor,
@@ -3449,9 +3501,7 @@ describe("fieldCache", () => {
       resolution: 8,
     });
     const slots = new Float32Array([1, 2, 3, 0.9, 4, 5, 6, 0.5]);
-    const colors = new Float32Array([
-      1, 0.2, 0.1, 0.9, 0.2, 0.6, 1, 0,
-    ]);
+    const colors = new Float32Array([1, 0.2, 0.1, 0.9, 0.2, 0.6, 1, 0]);
     const inactiveTopologyChangedSlots = new Float32Array([
       1, 2, 3, 0.9, 7, 1, 2, 0.1,
     ]);
@@ -3657,9 +3707,7 @@ describe("fieldCache", () => {
   });
 
   it("evaluates zero-phase effective field as the static field", () => {
-    expect(evaluateRaymarchEffectiveFieldPoint).toBeTypeOf(
-      "function",
-    );
+    expect(evaluateRaymarchEffectiveFieldPoint).toBeTypeOf("function");
     const backboneSlots = new Float32Array([1, 2, 3, 0.9]);
     const detailSlots = new Float32Array([2, 2, 4, 0.2]);
     const staticSample = evaluateRaymarchFieldCachePoint({
@@ -3673,21 +3721,20 @@ describe("fieldCache", () => {
       y: -0.5,
       z: 1.1,
     });
-    const effectiveSample =
-      evaluateRaymarchEffectiveFieldPoint({
-        backboneSlots,
-        detailSlots,
-        backbonePhaseSlots: new Float32Array([0, 0, 0, 1]),
-        detailPhaseSlots: new Float32Array([Math.PI, 1, 1, 0]),
-        backboneCount: 1,
-        detailCount: 1,
-        boundaryMode: "neumann",
-        radius: 3,
-        x: 0.25,
-        y: -0.5,
-        z: 1.1,
-        time: 2,
-      });
+    const effectiveSample = evaluateRaymarchEffectiveFieldPoint({
+      backboneSlots,
+      detailSlots,
+      backbonePhaseSlots: new Float32Array([0, 0, 0, 1]),
+      detailPhaseSlots: new Float32Array([Math.PI, 1, 1, 0]),
+      backboneCount: 1,
+      detailCount: 1,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0.25,
+      y: -0.5,
+      z: 1.1,
+      time: 2,
+    });
 
     expect(effectiveSample.field).toBeCloseTo(staticSample.field, 6);
     expect(effectiveSample.gradX).toBeCloseTo(staticSample.gradX, 6);
@@ -3697,9 +3744,9 @@ describe("fieldCache", () => {
   });
 
   it("evaluates direct and effective normal convergence from the same normalized gradient representation", () => {
-    expect(raymarchFieldCache.evaluateRaymarchNormalConvergencePoint).toBeTypeOf(
-      "function",
-    );
+    expect(
+      raymarchFieldCache.evaluateRaymarchNormalConvergencePoint,
+    ).toBeTypeOf("function");
 
     const modalFieldSlots = new Float32Array([1, 1, 1, 1, 2, 1, 1, 0.35]);
     const common = {
@@ -3717,13 +3764,16 @@ describe("fieldCache", () => {
       ...common,
       evaluateFieldPoint: raymarchFieldCache.evaluateRaymarchFieldCachePoint,
     });
-    const effective = raymarchFieldCache.evaluateRaymarchNormalConvergencePoint({
-      ...common,
-      modalFieldPhaseSlots: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1]),
-      resolution: 16,
-      time: 0,
-      evaluateFieldPoint: raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint,
-    });
+    const effective = raymarchFieldCache.evaluateRaymarchNormalConvergencePoint(
+      {
+        ...common,
+        modalFieldPhaseSlots: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1]),
+        resolution: 16,
+        time: 0,
+        evaluateFieldPoint:
+          raymarchFieldCache.evaluateRaymarchEffectiveFieldPoint,
+      },
+    );
 
     expect(Number.isFinite(direct.viewPlaneNormalConvergence)).toBe(true);
     expect(direct.opticalConvergenceAuthority).toBeGreaterThanOrEqual(0);
@@ -3738,9 +3788,7 @@ describe("fieldCache", () => {
   });
 
   it("applies one effective phase coefficient to scalar and gradient", () => {
-    expect(evaluateRaymarchEffectiveFieldPoint).toBeTypeOf(
-      "function",
-    );
+    expect(evaluateRaymarchEffectiveFieldPoint).toBeTypeOf("function");
     const slots = new Float32Array([1, 1, 1, 1]);
     const zeroPhase = evaluateRaymarchEffectiveFieldPoint({
       backboneSlots: slots,
@@ -3756,21 +3804,20 @@ describe("fieldCache", () => {
       z: -0.2,
       time: 0,
     });
-    const invertedPhase =
-      evaluateRaymarchEffectiveFieldPoint({
-        backboneSlots: slots,
-        detailSlots: new Float32Array(0),
-        backbonePhaseSlots: new Float32Array([Math.PI, 0, 1, 1]),
-        detailPhaseSlots: new Float32Array(0),
-        backboneCount: 1,
-        detailCount: 0,
-        boundaryMode: "neumann",
-        radius: 3,
-        x: 1.1,
-        y: 0.3,
-        z: -0.2,
-        time: 0,
-      });
+    const invertedPhase = evaluateRaymarchEffectiveFieldPoint({
+      backboneSlots: slots,
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([Math.PI, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 1,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 1.1,
+      y: 0.3,
+      z: -0.2,
+      time: 0,
+    });
 
     expect(invertedPhase.field).toBeCloseTo(-zeroPhase.field, 6);
     expect(invertedPhase.gradX).toBeCloseTo(-zeroPhase.gradX, 6);
@@ -3780,22 +3827,20 @@ describe("fieldCache", () => {
   });
 
   it("reports effective field bandwidth rejection separately from descriptor overflow", () => {
-    const descriptor = buildRaymarchEffectiveFieldDescriptor(
-      {
-        backboneSlots: new Float32Array([1, 1, 1, 0.5, 8, 8, 8, 0.25]),
-        detailSlots: new Float32Array(0),
-        backbonePhaseSlots: new Float32Array([0, 0, 0, 1, Math.PI, 0, 1, 1]),
-        detailPhaseSlots: new Float32Array(0),
-        backboneCount: 2,
-        detailCount: 0,
-        boundaryMode: "neumann",
-        radius: 3,
-        phaseModeCount: 2,
-        phaseAuthority: 1,
-        descriptorOverflow: false,
-        resolution: 8,
-      },
-    );
+    const descriptor = buildRaymarchEffectiveFieldDescriptor({
+      backboneSlots: new Float32Array([1, 1, 1, 0.5, 8, 8, 8, 0.25]),
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 0, 1, Math.PI, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 2,
+      phaseAuthority: 1,
+      descriptorOverflow: false,
+      resolution: 8,
+    });
 
     expect(descriptor.descriptorOverflow).toBe(false);
     expect(descriptor.bandwidthRejectedModeCount).toBe(1);
@@ -4167,21 +4212,19 @@ describe("fieldCache", () => {
   });
 
   it("summarizes effective-field support and cancellation diagnostics", () => {
-    const descriptor = buildRaymarchEffectiveFieldDescriptor(
-      {
-        backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
-        detailSlots: new Float32Array(0),
-        backbonePhaseSlots: new Float32Array([0, 0, 1, 1, Math.PI, 0, 1, 1]),
-        detailPhaseSlots: new Float32Array(0),
-        backboneCount: 2,
-        detailCount: 0,
-        boundaryMode: "neumann",
-        radius: 3,
-        phaseModeCount: 2,
-        phaseAuthority: 1,
-        resolution: 8,
-      },
-    );
+    const descriptor = buildRaymarchEffectiveFieldDescriptor({
+      backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 1, 1, Math.PI, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 2,
+      phaseAuthority: 1,
+      resolution: 8,
+    });
 
     expect(descriptor.effectiveFieldUnsignedSupportMean).toBeGreaterThan(0.1);
     expect(descriptor.effectiveFieldCancellationRatioMean).toBeGreaterThan(
@@ -4189,9 +4232,9 @@ describe("fieldCache", () => {
     );
     expect(descriptor.effectiveFieldCancellationRatioMax).toBeGreaterThan(0.95);
     expect(descriptor.effectiveFieldSupportDiagnosticSampleCount).toBe(9);
-    expect(
-      descriptor.effectiveFieldSupportDiagnosticSupportedSampleCount,
-    ).toBe(7);
+    expect(descriptor.effectiveFieldSupportDiagnosticSupportedSampleCount).toBe(
+      7,
+    );
     expect(descriptor.effectiveFieldSupportDiagnosticCoverage).toBeCloseTo(
       7 / 9,
       6,
@@ -4199,27 +4242,95 @@ describe("fieldCache", () => {
     expect(descriptor.effectiveFieldUnsignedSupportMean).toBeCloseTo(7 / 9, 6);
   });
 
-  it("includes unsupported diagnostic points in unsigned support mean", () => {
-    const descriptor = buildRaymarchEffectiveFieldDescriptor(
-      {
-        backboneSlots: new Float32Array([1, 1, 1, 1]),
-        detailSlots: new Float32Array(0),
-        backbonePhaseSlots: new Float32Array([0, 0, 1, 1]),
-        detailPhaseSlots: new Float32Array(0),
-        backboneCount: 1,
-        detailCount: 0,
-        boundaryMode: "dirichlet",
-        radius: 3,
-        phaseModeCount: 1,
-        phaseAuthority: 1,
-        resolution: 8,
-      },
+  it("keeps descriptor support diagnostics equivalent to public field samples", () => {
+    const radius = 3;
+    const samplePoints = [
+      [0, 0, 0],
+      [1, 0, 0],
+      [-1, 0, 0],
+      [0, 1, 0],
+      [0, -1, 0],
+      [0, 0, 1],
+      [0, 0, -1],
+      [0.5, 0.5, 0.5],
+      [-0.5, 0.5, -0.5],
+    ];
+    const sampleOptions = {
+      backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 1, 1, Math.PI, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius,
+      phaseModeCount: 2,
+      phaseAuthority: 1,
+      resolution: 8,
+    };
+    const descriptor = buildRaymarchEffectiveFieldDescriptor(sampleOptions);
+    const samples = samplePoints.map(([x, y, z]) =>
+      evaluateRaymarchEffectiveFieldPoint({
+        ...sampleOptions,
+        x: x * radius,
+        y: y * radius,
+        z: z * radius,
+      }),
+    );
+    const supportedSamples = samples.filter(
+      (sample) => sample.unsignedSupport > 0.01,
+    );
+    const expectedSupportMean =
+      samples.reduce((sum, sample) => sum + sample.unsignedSupport, 0) /
+      samples.length;
+    const expectedCancellationMean =
+      supportedSamples.reduce(
+        (sum, sample) => sum + sample.cancellationRatio,
+        0,
+      ) / supportedSamples.length;
+    const expectedCancellationMax = Math.max(
+      ...supportedSamples.map((sample) => sample.cancellationRatio),
     );
 
+    expect(descriptor.effectiveFieldSupportDiagnosticSampleCount).toBe(
+      samplePoints.length,
+    );
+    expect(descriptor.effectiveFieldSupportDiagnosticSupportedSampleCount).toBe(
+      supportedSamples.length,
+    );
+    expect(descriptor.effectiveFieldUnsignedSupportMean).toBeCloseTo(
+      expectedSupportMean,
+      6,
+    );
+    expect(descriptor.effectiveFieldCancellationRatioMean).toBeCloseTo(
+      expectedCancellationMean,
+      6,
+    );
+    expect(descriptor.effectiveFieldCancellationRatioMax).toBeCloseTo(
+      expectedCancellationMax,
+      6,
+    );
+  });
+
+  it("includes unsupported diagnostic points in unsigned support mean", () => {
+    const descriptor = buildRaymarchEffectiveFieldDescriptor({
+      backboneSlots: new Float32Array([1, 1, 1, 1]),
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 1,
+      detailCount: 0,
+      boundaryMode: "dirichlet",
+      radius: 3,
+      phaseModeCount: 1,
+      phaseAuthority: 1,
+      resolution: 8,
+    });
+
     expect(descriptor.effectiveFieldSupportDiagnosticSampleCount).toBe(9);
-    expect(
-      descriptor.effectiveFieldSupportDiagnosticSupportedSampleCount,
-    ).toBe(3);
+    expect(descriptor.effectiveFieldSupportDiagnosticSupportedSampleCount).toBe(
+      3,
+    );
     expect(descriptor.effectiveFieldSupportDiagnosticCoverage).toBeCloseTo(
       1 / 3,
       6,
@@ -4271,23 +4382,21 @@ describe("fieldCache", () => {
   });
 
   it("reports zero-amplitude effective-field slots skipped before representability", () => {
-    const descriptor = buildRaymarchEffectiveFieldDescriptor(
-      {
-        backboneSlots: new Float32Array([
-          1, 1, 1, 0.5, 2, 2, 2, 0, 3, 3, 3, 0.25,
-        ]),
-        detailSlots: new Float32Array([4, 4, 4, 0, 5, 5, 5, 0.1]),
-        backbonePhaseSlots: new Float32Array(12),
-        detailPhaseSlots: new Float32Array(8),
-        backboneCount: 3,
-        detailCount: 2,
-        boundaryMode: "neumann",
-        radius: 3,
-        phaseModeCount: 3,
-        phaseAuthority: 1,
-        resolution: 16,
-      },
-    );
+    const descriptor = buildRaymarchEffectiveFieldDescriptor({
+      backboneSlots: new Float32Array([
+        1, 1, 1, 0.5, 2, 2, 2, 0, 3, 3, 3, 0.25,
+      ]),
+      detailSlots: new Float32Array([4, 4, 4, 0, 5, 5, 5, 0.1]),
+      backbonePhaseSlots: new Float32Array(12),
+      detailPhaseSlots: new Float32Array(8),
+      backboneCount: 3,
+      detailCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 3,
+      phaseAuthority: 1,
+      resolution: 16,
+    });
 
     expect(descriptor.zeroAmplitudeSkippedModeCount).toBe(2);
     expect(descriptor.contributingEffectiveFieldModeCount).toBe(3);
@@ -4381,15 +4490,11 @@ describe("fieldCache", () => {
   it("evaluates cached Spectral Light color as whitepaper linear modal-local mixing", () => {
     const sample = evaluateRaymarchSpectralLightCachePoint({
       backboneSlots: new Float32Array([
-        1, 1, 1, 0.45,
-        2, 2, 2, 0.35,
-        3, 3, 3, 0.32,
+        1, 1, 1, 0.45, 2, 2, 2, 0.35, 3, 3, 3, 0.32,
       ]),
       detailSlots: new Float32Array(0),
       backboneColorSlots: new Float32Array([
-        1, 0, 0, 1,
-        0, 1, 0, 1,
-        0, 0, 1, 1,
+        1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1,
       ]),
       detailColorSlots: new Float32Array(0),
       backboneCount: 3,

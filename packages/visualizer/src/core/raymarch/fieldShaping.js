@@ -161,29 +161,13 @@ export function deriveEffectiveFieldCancellationSuppression({
   );
 }
 
-export function deriveSpectralLightColorGate({
-  localFieldSupportAuthority = 0,
-  signedRadianceAuthority = 1,
-  causticVisibility = 0,
-} = {}) {
-  const signedSupport =
-    clamp01(safeFinite(localFieldSupportAuthority, 0)) *
-    clamp01(safeFinite(signedRadianceAuthority, 0));
-
-  return clamp01(
-    Math.max(signedSupport, clamp01(safeFinite(causticVisibility, 0))),
-  );
-}
-
 export function deriveSpectralLightProjectionWeight({
   spectralMix = 1,
   spectralLightPresence = 0,
-  colorGate = 1,
 } = {}) {
   return clamp01(
     clamp01(safeFinite(spectralMix, 0)) *
-      clamp01(safeFinite(spectralLightPresence, 0)) *
-      clamp01(safeFinite(colorGate, 0)),
+      clamp01(safeFinite(spectralLightPresence, 0)),
   );
 }
 
@@ -351,10 +335,7 @@ export function deriveCausticVisibility({
   causticRidgeAuthority = 0,
   signedRadianceAuthority = 1,
 } = {}) {
-  return (
-    clamp01(causticRidgeAuthority) *
-    clamp01(signedRadianceAuthority)
-  );
+  return clamp01(causticRidgeAuthority) * clamp01(signedRadianceAuthority);
 }
 
 export function deriveIncoherentTrebleBodySuppression({

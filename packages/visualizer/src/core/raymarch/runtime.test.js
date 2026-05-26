@@ -1247,6 +1247,7 @@ describe("tickRaymarchRuntime", () => {
     await flushMicrotasks();
     const rebuildCount = runtimeState.effectiveFieldCache.rebuildCount;
     const activeDescriptor = runtimeState.effectiveFieldCache.activeDescriptor;
+    expect(renderer.computeAsync).toHaveBeenCalledTimes(1);
 
     tickRaymarchRuntime(runtimeState, frame, 3.5, 1 / 60, renderer);
     await flushMicrotasks();
@@ -1255,6 +1256,7 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.effectiveFieldCache.activeDescriptor).toEqual(
       activeDescriptor,
     );
+    expect(renderer.computeAsync).toHaveBeenCalledTimes(1);
     expect(
       runtimeState.currentEffectiveFieldDescriptor.effectiveFieldTopologyHash,
     ).toBe(activeDescriptor.effectiveFieldTopologyHash);
@@ -2155,17 +2157,18 @@ describe("tickRaymarchRuntime", () => {
       runtimeState.uniforms.uBackboneModeCount.value = 1;
       runtimeState.uniforms.uDetailModeCount.value = 0;
       runtimeState.effectiveFieldCache.ready = true;
+      const cachedEffectiveDescriptor = buildRaymarchEffectiveFieldDescriptor({
+        modalFieldSlots: cachedBackboneSlots,
+        modalFieldPhaseSlots: new Float32Array([0, 0.2, 1, 1]),
+        modalFieldCount: 1,
+        boundaryMode: "neumann",
+        cavityGeometry: "rectangular",
+        radius: runtimeState.uniforms.uRadius.value,
+        phaseModeCount: 1,
+        resolution: runtimeState.effectiveFieldCache.resolution,
+      });
       runtimeState.effectiveFieldCache.activeDescriptor =
-        buildRaymarchEffectiveFieldDescriptor({
-          modalFieldSlots: cachedBackboneSlots,
-          modalFieldPhaseSlots: new Float32Array([0, 0.2, 1, 1]),
-          modalFieldCount: 1,
-          boundaryMode: "neumann",
-          cavityGeometry: "rectangular",
-          radius: runtimeState.uniforms.uRadius.value,
-          phaseModeCount: 1,
-          resolution: runtimeState.effectiveFieldCache.resolution,
-        });
+        cachedEffectiveDescriptor;
 
       tickRaymarchRuntime(runtimeState, currentFrame, 1, 1 / 60, renderer);
 
@@ -2787,6 +2790,78 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
+  it("keeps Spectral color mode on a distinct cached material path", async () => {
+    const createFrame = () =>
+      createActiveFeatureFrame({
+        backboneSlots: new Float32Array([1, 1, 1, 0.4]),
+        detailSlots: new Float32Array([2, 2, 2, 0.3]),
+        backboneColorSlots: new Float32Array([1, 0.1, 0.05, 0.8]),
+        detailColorSlots: new Float32Array([0.05, 0.6, 1, 0.7]),
+      });
+    const staticRuntimeState = createRuntimeState({ withFieldCache: true });
+    const spectralRuntimeState = createRuntimeState({ withFieldCache: true });
+    staticRuntimeState.uniforms.uSpectralMix.value = 0;
+    spectralRuntimeState.uniforms.uSpectralMix.value = 0.65;
+    seedRuntimeCacheNodes(staticRuntimeState);
+    seedRuntimeCacheNodes(spectralRuntimeState);
+    const staticDispatches = [];
+    const spectralDispatches = [];
+    const staticRenderer = {
+      computeAsync: async (node) => {
+        staticDispatches.push(node?.id ?? null);
+      },
+    };
+    const spectralRenderer = {
+      computeAsync: async (node) => {
+        spectralDispatches.push(node?.id ?? null);
+      },
+    };
+
+    tickRaymarchRuntime(
+      staticRuntimeState,
+      createFrame(),
+      1,
+      1 / 60,
+      staticRenderer,
+    );
+    tickRaymarchRuntime(
+      spectralRuntimeState,
+      createFrame(),
+      1,
+      1 / 60,
+      spectralRenderer,
+    );
+    await flushMicrotasks();
+    tickRaymarchRuntime(
+      spectralRuntimeState,
+      createFrame(),
+      1.016,
+      1 / 60,
+      spectralRenderer,
+    );
+
+    expect(staticDispatches).not.toContain("spectral");
+    expect(staticRuntimeState.spectralLightCache.activeDescriptor).toBeNull();
+    expect(
+      staticRuntimeState.volumeMesh.userData
+        .raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off);
+    expect(spectralDispatches).toContain("spectral");
+    expect(
+      spectralRuntimeState.spectralLightCache.activeDescriptor,
+    ).toMatchObject({
+      spectralLightModeCount: 2,
+    });
+    expect(
+      spectralRuntimeState.spectralLightCache.activeDescriptor
+        .modalFieldColorHash,
+    ).toBeTypeOf("number");
+    expect(
+      spectralRuntimeState.volumeMesh.userData
+        .raymarchSpectralLightEvaluationMode,
+    ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
+  });
+
   it("reuses a prepared performance governor for the matching runtime tick", () => {
     const runtimeState = createRuntimeState();
     const featureFrame = {
@@ -3239,6 +3314,9 @@ describe("tickRaymarchRuntime", () => {
       "field-cache-ready-current",
     );
     expect(
+      runtimeState.debugSnapshot.effectiveFieldDrawableStaleReason,
+    ).toBeNull();
+    expect(
       runtimeState.debugSnapshot.effectiveFieldDrawableBlockedReason,
     ).toBeNull();
     expect(runtimeState.volumeMesh.userData).not.toHaveProperty(
@@ -3279,11 +3357,15 @@ describe("tickRaymarchRuntime", () => {
     seedRuntimeCacheNodes(runtimeState);
     runtimeState.uniforms.uSpectralMix.value = 0;
     let computeCalls = 0;
+    let basisComputeCalls = 0;
     let resolveSecond;
     const renderer = {
-      computeAsync: async () => {
+      computeAsync: async (node) => {
         computeCalls += 1;
-        if (computeCalls === 2) {
+        if (node?.id === "field") {
+          basisComputeCalls += 1;
+        }
+        if (node?.id === "field" && basisComputeCalls === 2) {
           return new Promise((resolve) => {
             resolveSecond = resolve;
           });

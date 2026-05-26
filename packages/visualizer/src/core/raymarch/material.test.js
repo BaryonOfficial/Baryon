@@ -13,9 +13,7 @@ import {
   setRaymarchSpectralLightEvaluationMode,
 } from "./material.js";
 import { createVisualizationUniforms } from "../visualizationUniforms.js";
-import {
-  raymarchOpacityNode,
-} from "./SafeVolumetricLightingModel.js";
+import { raymarchOpacityNode } from "./SafeVolumetricLightingModel.js";
 import {
   createRaymarchEffectiveFieldCache,
   createRaymarchSpectralLightCache,
@@ -161,7 +159,9 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain("ridgeSupportAnchor");
     expect(source).not.toContain("max(contourShape, ridgeConcentration)");
     expect(source).not.toContain("max(ridgeAnchor, fieldGradientMagnitude)");
-    expect(source).not.toContain("modalStructureAnchor.mul(ridgePhysicalAnchor)");
+    expect(source).not.toContain(
+      "modalStructureAnchor.mul(ridgePhysicalAnchor)",
+    );
     expect(source).toMatch(
       /const contourRidgeAnchor = clamp\(ridgeAnchor, float\(0\.0\), float\(1\.0\)\);/,
     );
@@ -185,12 +185,17 @@ describe("raymarch volume material", () => {
       source,
       "const causticRidgeAuthority =",
     );
-    const causticFocusBlock = source.slice(causticFocusStart, causticRidgeStart);
+    const causticFocusBlock = source.slice(
+      causticFocusStart,
+      causticRidgeStart,
+    );
 
     expect(modalStructureSupportStart).toBeGreaterThan(contourCoreStart);
     expect(causticFocusStart).toBeGreaterThan(modalStructureSupportStart);
     expect(causticFocusBlock).toContain("modalStructureSupport");
-    expect(causticFocusBlock).not.toContain("gradientFieldAuthority.mul(contourCore)");
+    expect(causticFocusBlock).not.toContain(
+      "gradientFieldAuthority.mul(contourCore)",
+    );
     expect(causticFocusBlock).not.toContain("shellFocus.mul(contourCore)");
   });
 
@@ -246,7 +251,15 @@ describe("raymarch volume material", () => {
     );
     const supportSampleStart = expectSourceIndex(
       source,
-      "const basisSupport = effectiveFieldSupportTexture",
+      "const basisSupport = abs(basisSample.x);",
+    );
+    const basisSamplerStart = expectSourceIndex(
+      source,
+      "function sampleBasisAtlasPageNode({",
+    );
+    const directSamplerStart = expectSourceIndex(
+      source,
+      "function sampleEffectiveFieldTextureNode({",
     );
     const cancellationSuppressionStart = expectSourceIndex(
       source,
@@ -271,6 +284,10 @@ describe("raymarch volume material", () => {
     );
 
     expect(source).toContain("effectiveFieldSupportTexture");
+    expect(source.slice(basisSamplerStart, directSamplerStart)).not.toContain(
+      "texture3D(effectiveFieldSupportTexture)",
+    );
+    expect(source).toContain("texture3D(effectiveFieldSupportTexture).sample");
     expect(cancellationSuppressionStart).toBeGreaterThan(supportSampleStart);
     expect(localFieldSupportAuthorityStart).toBeGreaterThan(
       cancellationSuppressionStart,
@@ -554,7 +571,7 @@ describe("raymarch volume material", () => {
       "const amplitudeNorm =",
     );
     const cachedBranchStart = source.indexOf(
-      "if (effectiveFieldTexture && modalFieldModeBuffer && modalFieldPhaseBuffer) {",
+      "synthesizeEffectiveFieldFromBasisNode({",
       amplitudeNormStart,
     );
     const effectiveFieldStart = source.indexOf(
@@ -579,9 +596,7 @@ describe("raymarch volume material", () => {
     expect(source).toContain("function sampleBasisAtlasPageNode({");
     expect(source).toContain("modalFieldPhaseBuffer.element(i)");
     expect(source).toContain("end: int(normalizedLiveSynthesisModeCount)");
-    expect(source).toContain(
-      "liveSynthesisModeCount: modalFieldCapacity",
-    );
+    expect(source).toContain("liveSynthesisModeCount: modalFieldCapacity");
   });
 
   it("keeps direct modal basis evaluation out of the material shader", () => {
@@ -676,18 +691,10 @@ describe("raymarch volume material", () => {
     expect(baseRadianceBlock).toContain("baseRadianceLift");
   });
 
-  it("gates Spectral Light tint by local signed support or caustic visibility", () => {
+  it("projects cached Spectral Light color before visibility gates attenuate density", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
-    );
-    const causticVisibilityStart = expectSourceIndex(
-      source,
-      "const causticVisibility =",
-    );
-    const colorGateStart = expectSourceIndex(
-      source,
-      "const spectralLightColorGate =",
     );
     const spectralPresenceStart = expectSourceIndex(
       source,
@@ -701,20 +708,16 @@ describe("raymarch volume material", () => {
       source,
       "const spectralLightContourColor =",
     );
-    const colorGateBlock = source.slice(colorGateStart, spectralPresenceStart);
     const spectralWeightBlock = source.slice(
       spectralWeightStart,
       spectralContourColorStart,
     );
 
-    expect(colorGateStart).toBeGreaterThan(causticVisibilityStart);
     expect(spectralWeightStart).toBeGreaterThan(spectralPresenceStart);
-    expect(colorGateBlock).toContain(
-      "localFieldSupportAuthority.mul(cancellationSuppression)",
-    );
-    expect(colorGateBlock).toContain("causticVisibility");
     expect(spectralWeightBlock).toContain(".mul(spectralLightPresence)");
-    expect(spectralWeightBlock).toContain(".mul(spectralLightColorGate)");
+    expect(spectralWeightBlock).not.toContain("spectralLightColorGate");
+    expect(spectralWeightBlock).not.toContain("causticVisibility");
+    expect(source).not.toContain("const spectralLightColorGate =");
     expect(source).not.toContain("spectralLightBaseColor");
   });
 
@@ -975,7 +978,10 @@ describe("raymarch volume material", () => {
       source,
       "const laserCausticRadiance =",
     );
-    const opticalFocusBlock = source.slice(opticalFocusStart, laserRadianceStart);
+    const opticalFocusBlock = source.slice(
+      opticalFocusStart,
+      laserRadianceStart,
+    );
 
     expect(opticalConvergenceStart).toBeGreaterThan(convergenceHelperStart);
     expect(opticalGateStart).toBeGreaterThan(opticalConvergenceStart);
