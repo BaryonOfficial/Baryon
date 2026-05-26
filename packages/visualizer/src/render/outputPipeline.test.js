@@ -71,10 +71,11 @@ vi.mock("./displayRadiance.js", () => ({
 import {
   OUTPUT_MODES,
   RENDER_CONTEXTS,
-  advanceRenderOutputCameraCut,
+  advanceRenderOutputTemporalHistoryBypass,
   createCaptureOutputSession,
   createRenderOutputPipeline,
   markRenderOutputCameraCut,
+  markRenderOutputContentChange,
   normalizeOutputMode,
   resolveRenderQualityProfile,
 } from "./outputPipeline.js";
@@ -170,6 +171,18 @@ describe("outputPipeline compatibility surface", () => {
     expect(postNodes.temporalHistoryCutFramesRemaining).toBeGreaterThan(0);
   });
 
+  it("marks shader content changes by bypassing temporal history without disposing TRAA", () => {
+    const postNodes = {
+      traaNode: { dispose: () => {} },
+      temporalHistoryBlendUniform: { value: 1 },
+    };
+
+    expect(markRenderOutputContentChange(postNodes, 3)).toBe(true);
+
+    expect(postNodes.temporalHistoryBlendUniform.value).toBe(0);
+    expect(postNodes.temporalHistoryCutFramesRemaining).toBe(3);
+  });
+
   it("restores temporal history after camera-cut frames advance", () => {
     const postNodes = {
       traaNode: {},
@@ -178,7 +191,20 @@ describe("outputPipeline compatibility surface", () => {
 
     markRenderOutputCameraCut(postNodes, 1);
 
-    expect(advanceRenderOutputCameraCut(postNodes)).toBe(true);
+    expect(advanceRenderOutputTemporalHistoryBypass(postNodes)).toBe(true);
+    expect(postNodes.temporalHistoryBlendUniform.value).toBe(1);
+    expect(postNodes.temporalHistoryCutFramesRemaining).toBe(0);
+  });
+
+  it("restores temporal history through the generic temporal bypass advance path", () => {
+    const postNodes = {
+      traaNode: {},
+      temporalHistoryBlendUniform: { value: 1 },
+    };
+
+    markRenderOutputContentChange(postNodes, 1);
+
+    expect(advanceRenderOutputTemporalHistoryBypass(postNodes)).toBe(true);
     expect(postNodes.temporalHistoryBlendUniform.value).toBe(1);
     expect(postNodes.temporalHistoryCutFramesRemaining).toBe(0);
   });

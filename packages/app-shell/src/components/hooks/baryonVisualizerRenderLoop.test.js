@@ -10,6 +10,7 @@ import {
   getEffectiveAdaptiveRenderScale,
   publishDevtoolsSnapshots,
   resolveFeatureFrame,
+  shouldBypassTemporalHistoryForRaymarchFrame,
   updateModalEnvelopeDiagnostics,
   updateModalFreshnessDiagnostics,
   updateRendererDiagnostics,
@@ -352,6 +353,53 @@ test("updateRendererDiagnostics resizes the renderer when canvas size changes wi
     width: 2538,
     height: 1536,
   });
+});
+
+test("shouldBypassTemporalHistoryForRaymarchFrame marks active raymarch field content as non-reprojectable", () => {
+  expect(
+    shouldBypassTemporalHistoryForRaymarchFrame({
+      runtimeMethod: "raymarch",
+      featureFrame: {
+        fieldState: "active",
+        activeModeCount: 4,
+        energySignal: 0.6,
+      },
+    }),
+  ).toBe(true);
+
+  expect(
+    shouldBypassTemporalHistoryForRaymarchFrame({
+      runtimeMethod: "raymarch",
+      featureFrame: {
+        fieldState: "idle",
+        activeModeCount: 0,
+        energySignal: 0,
+      },
+    }),
+  ).toBe(false);
+
+  expect(
+    shouldBypassTemporalHistoryForRaymarchFrame({
+      runtimeMethod: "cymatics2d",
+      featureFrame: {
+        fieldState: "active",
+        activeModeCount: 4,
+        energySignal: 0.6,
+      },
+    }),
+  ).toBe(false);
+});
+
+test("shouldBypassTemporalHistoryForRaymarchFrame treats energetic modal frames as dynamic even without fieldState", () => {
+  expect(
+    shouldBypassTemporalHistoryForRaymarchFrame({
+      runtimeMethod: "raymarch",
+      featureFrame: {
+        activeModalFieldModeCount: 2,
+        modalResponseEnergy: 0.08,
+      },
+    }),
+  ).toBe(true);
 });
 
 test("buildPerformanceHudSnapshot exports stage attribution, engine counters, and raw perf breakdown", () => {

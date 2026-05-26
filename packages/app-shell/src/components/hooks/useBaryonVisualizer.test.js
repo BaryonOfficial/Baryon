@@ -22,6 +22,7 @@ const renderLoopSpies = vi.hoisted(() => ({
     featureFrame: null,
     effectiveFrame: null,
   })),
+  shouldBypassTemporalHistoryForRaymarchFrameSpy: vi.fn(() => false),
   shouldRenderExternalFrameSpy: vi.fn(() => false),
 }));
 
@@ -136,6 +137,8 @@ vi.mock("./baryonVisualizerRenderLoop.js", () => ({
   applyLiveInputRenderIntent: (frame) => frame,
   resolveFeatureFrame: (...args) =>
     renderLoopSpies.resolveFeatureFrameSpy(...args),
+  shouldBypassTemporalHistoryForRaymarchFrame: (...args) =>
+    renderLoopSpies.shouldBypassTemporalHistoryForRaymarchFrameSpy(...args),
   syncLiveInputRuntimeStatus: () => {},
   updateModalEnvelopeDiagnostics: () => {},
   updateModalFreshnessDiagnostics: () => {},
@@ -216,6 +219,10 @@ describe("useBaryonVisualizer", () => {
       featureFrame: null,
       effectiveFrame: null,
     });
+    renderLoopSpies.shouldBypassTemporalHistoryForRaymarchFrameSpy.mockReset();
+    renderLoopSpies.shouldBypassTemporalHistoryForRaymarchFrameSpy.mockReturnValue(
+      false,
+    );
     renderLoopSpies.shouldRenderExternalFrameSpy.mockReset();
     renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(false);
     frameState.callbacks.length = 0;
@@ -445,6 +452,63 @@ describe("useBaryonVisualizer", () => {
     expect(renderSpy).toHaveBeenCalledTimes(1);
     expect(postNodesRef.current.temporalHistoryCutFramesRemaining).toBe(0);
     expect(postNodesRef.current.temporalHistoryBlendUniform.value).toBe(1);
+  });
+
+  it("bypasses temporal history while rendering dynamic raymarch content", async () => {
+    const renderSpy = vi.fn();
+    renderLoopSpies.shouldRenderExternalFrameSpy.mockReturnValue(true);
+    const dynamicFrame = {
+      fieldState: "active",
+      activeModeCount: 4,
+      energySignal: 0.4,
+    };
+    renderLoopSpies.resolveFeatureFrameSpy.mockReturnValue({
+      featureFrame: dynamicFrame,
+      effectiveFrame: dynamicFrame,
+    });
+    renderLoopSpies.shouldBypassTemporalHistoryForRaymarchFrameSpy.mockReturnValue(
+      true,
+    );
+    const postNodesRef = {
+      current: {
+        traaNode: {},
+        temporalHistoryBlendUniform: { value: 1 },
+        temporalHistoryCutFramesRemaining: 0,
+      },
+    };
+
+    await act(async () => {
+      root.render(
+        React.createElement(HookHarness, {
+          ensurePipeline: () => ({ render: renderSpy }),
+          postNodesRef,
+        }),
+      );
+    });
+
+    const frameCallback = frameState.callbacks.at(-1);
+    expect(frameCallback).toBeTypeOf("function");
+
+    frameCallback(
+      {
+        clock: { getElapsedTime: () => 0 },
+        camera: {},
+        scene: {},
+      },
+      1 / 60,
+    );
+
+    expect(
+      renderLoopSpies.shouldBypassTemporalHistoryForRaymarchFrameSpy,
+    ).toHaveBeenCalledWith({
+      runtimeMethod: "raymarch",
+      featureFrame: dynamicFrame,
+    });
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+    expect(postNodesRef.current.temporalHistoryBlendUniform.value).toBe(0);
+    expect(postNodesRef.current.temporalHistoryCutFramesRemaining).toBeGreaterThan(
+      0,
+    );
   });
 
   it("forces an external-stage render after camera-only pose changes", async () => {

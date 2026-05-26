@@ -30,10 +30,11 @@ const { RenderPipeline } = /** @type {any} */ (THREEWebGPU);
 export * from "./outputProfilePolicy.js";
 
 const DEFAULT_CAMERA_CUT_TEMPORAL_BYPASS_FRAMES = 2;
+const DEFAULT_CONTENT_CHANGE_TEMPORAL_BYPASS_FRAMES = 2;
 
-export function markRenderOutputCameraCut(
+function markRenderOutputTemporalHistoryBypass(
   postNodes,
-  frames = DEFAULT_CAMERA_CUT_TEMPORAL_BYPASS_FRAMES,
+  frames,
 ) {
   const temporalHistoryBlendUniform = postNodes?.temporalHistoryBlendUniform;
   if (!postNodes?.traaNode || !temporalHistoryBlendUniform) {
@@ -49,7 +50,21 @@ export function markRenderOutputCameraCut(
   return true;
 }
 
-export function advanceRenderOutputCameraCut(postNodes) {
+export function markRenderOutputCameraCut(
+  postNodes,
+  frames = DEFAULT_CAMERA_CUT_TEMPORAL_BYPASS_FRAMES,
+) {
+  return markRenderOutputTemporalHistoryBypass(postNodes, frames);
+}
+
+export function markRenderOutputContentChange(
+  postNodes,
+  frames = DEFAULT_CONTENT_CHANGE_TEMPORAL_BYPASS_FRAMES,
+) {
+  return markRenderOutputTemporalHistoryBypass(postNodes, frames);
+}
+
+export function advanceRenderOutputTemporalHistoryBypass(postNodes) {
   const temporalHistoryBlendUniform = postNodes?.temporalHistoryBlendUniform;
   if (!temporalHistoryBlendUniform) {
     return false;

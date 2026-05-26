@@ -49,6 +49,8 @@ const PERFORMANCE_HUD_SMOOTHING_ALPHA = 0.25;
 const ACTIVE_FEATURE_ANALYSIS_HZ = 30;
 const ACTIVE_FEATURE_ANALYSIS_INTERVAL_MS = 1000 / ACTIVE_FEATURE_ANALYSIS_HZ;
 const MAX_ANALYSIS_AGE_MS = 50;
+const DYNAMIC_RAYMARCH_FIELD_STATES = new Set(["active", "decay", "test"]);
+const DYNAMIC_RAYMARCH_ENERGY_EPSILON = 0.02;
 const AUTO_RAYMARCH_DECISION_WINDOW_SECONDS = 0.5;
 const AUTO_RAYMARCH_MIN_DECISION_WINDOW_FRAMES = 12;
 const AUTO_RAYMARCH_MAX_DECISION_WINDOW_FRAMES = 45;
@@ -821,6 +823,51 @@ export function getEffectiveAdaptiveRenderScale(
       : normalizedRequestedRenderScale;
 
   return normalizeAdaptiveRenderScale(effectiveRenderScale);
+}
+
+function readRaymarchFrameModeCount(featureFrame) {
+  return Math.max(
+    0,
+    Math.round(
+      readFiniteNumber(
+        featureFrame?.activeModeCount ??
+          featureFrame?.activeModalFieldModeCount ??
+          featureFrame?.modalDescriptor?.counts?.modalFieldModeCount,
+      ),
+    ),
+  );
+}
+
+function readRaymarchFrameEnergy(featureFrame) {
+  return Math.max(
+    readFiniteNumber(featureFrame?.energySignal),
+    readFiniteNumber(featureFrame?.changeSignal),
+    readFiniteNumber(featureFrame?.pulseSignal),
+    readFiniteNumber(featureFrame?.modalVisibilityEnergy),
+    readFiniteNumber(featureFrame?.modalObserverVisibilityEnergy),
+    readFiniteNumber(featureFrame?.observationEnergy),
+    readFiniteNumber(featureFrame?.modalResponseEnergy),
+    readFiniteNumber(featureFrame?.debug?.modalResponseEnergy),
+  );
+}
+
+export function shouldBypassTemporalHistoryForRaymarchFrame({
+  runtimeMethod,
+  featureFrame,
+}) {
+  if (runtimeMethod !== "raymarch" || !featureFrame) {
+    return false;
+  }
+
+  const fieldState = featureFrame.fieldState ?? featureFrame.debug?.fieldState;
+  if (DYNAMIC_RAYMARCH_FIELD_STATES.has(fieldState)) {
+    return true;
+  }
+
+  return (
+    readRaymarchFrameModeCount(featureFrame) > 0 &&
+    readRaymarchFrameEnergy(featureFrame) > DYNAMIC_RAYMARCH_ENERGY_EPSILON
+  );
 }
 
 export function publishPerformanceHudSnapshot(

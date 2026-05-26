@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
-  advanceRenderOutputCameraCut,
+  advanceRenderOutputTemporalHistoryBypass,
   getRenderQualityProfileKey,
+  markRenderOutputContentChange,
 } from "@baryon/visualizer/render/outputPipeline";
 import {
   applyAudioControls,
@@ -48,6 +49,7 @@ import {
   publishDevtoolsSnapshots,
   applyLiveInputRenderIntent,
   resolveFeatureFrame,
+  shouldBypassTemporalHistoryForRaymarchFrame,
   syncLiveInputRuntimeStatus,
   updateModalEnvelopeDiagnostics,
   updateModalFreshnessDiagnostics,
@@ -838,16 +840,27 @@ export function useBaryonVisualizer({
       backgroundColor: controls.backgroundColor,
     });
 
+    const shouldBypassTemporalHistory =
+      shouldBypassTemporalHistoryForRaymarchFrame({
+        runtimeMethod: runtime.method,
+        featureFrame: effectiveFrame,
+      });
+
     if (suppressRender) {
       outputSessionRef.current?.dispose?.();
       outputSessionRef.current = null;
       outputCaptureInFlightRef.current = false;
     } else if (pipeline) {
       const pipelineRenderStartedAt = getWallTimeMs();
+      if (shouldBypassTemporalHistory) {
+        markRenderOutputContentChange(renderLoopContext.postNodesRef.current);
+      }
       renderLoopContext.gl.setRenderTarget?.(null);
       renderLoopContext.gl.setMRT?.(null);
       pipeline.render();
-      advanceRenderOutputCameraCut(renderLoopContext.postNodesRef.current);
+      advanceRenderOutputTemporalHistoryBypass(
+        renderLoopContext.postNodesRef.current,
+      );
       recordMeasuredRuntimePerf(
         runtimeDiagnostics,
         "pipelineRenderMs",
