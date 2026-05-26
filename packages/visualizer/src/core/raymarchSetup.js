@@ -16,7 +16,7 @@ import {
 } from "./raymarch/material.js";
 import {
   createRaymarchSpectralLightCache,
-  createRaymarchEffectiveFieldCache,
+  createRaymarchModalBasisCache,
 } from "./raymarch/fieldCache.js";
 import { estimateProjectedSphereStats } from "./raymarch/intersection.js";
 import {
@@ -68,15 +68,15 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const modalFieldModeBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldColorBuffer = createModeBuffer(modalFieldCapacity);
   const modalFieldPhaseBuffer = createModeBuffer(modalFieldCapacity);
-  const effectiveFieldCache = createRaymarchEffectiveFieldCache();
+  const modalBasisCache = createRaymarchModalBasisCache();
   const spectralLightCache = createRaymarchSpectralLightCache();
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
-    effectiveFieldTexture: effectiveFieldCache.texture,
-    effectiveFieldSupportTexture: effectiveFieldCache.supportTexture,
+    modalBasisAtlasTexture: modalBasisCache.texture,
+    modalBasisSupportTexture: modalBasisCache.supportTexture,
     modalFieldModeBuffer,
     modalFieldPhaseBuffer,
-    modalFieldCapacity: effectiveFieldCache.liveSynthesisModeCount,
+    modalFieldCapacity: modalBasisCache.liveSynthesisModeCount,
     spectralLightCacheTexture: spectralLightCache.texture,
     uniforms,
     cavityGeometry: effectiveCavityGeometry,
@@ -107,7 +107,7 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
     modalFieldModeBuffer,
     modalFieldColorBuffer,
     modalFieldPhaseBuffer,
-    effectiveFieldCache,
+    modalBasisCache,
     spectralLightCache,
     modalFieldCapacity,
     requestedCavityGeometry,

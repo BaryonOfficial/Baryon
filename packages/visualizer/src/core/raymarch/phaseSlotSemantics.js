@@ -115,14 +115,14 @@ export function buildRaymarchPhaseSlotSignature({
   };
 }
 
-function getEffectiveFieldPhaseWeight(modalFieldSlots, offset) {
+function getModalBasisPhaseWeight(modalFieldSlots, offset) {
   if (!modalFieldSlots) {
     return 1;
   }
   return Math.max(0, modalFieldSlots?.[offset + 3] ?? 0);
 }
 
-function getEffectiveFieldPhaseCurrentCoefficient(phaseSlots, offset, time = 0) {
+function getModalBasisPhaseCurrentCoefficient(phaseSlots, offset, time = 0) {
   if (!hasPhaseSlotAuthority(phaseSlots, offset)) {
     return 1;
   }
@@ -147,7 +147,7 @@ function getAggregatePhaseContributionHashKey(entry, totalContributionWeight) {
   );
 }
 
-export function buildRaymarchEffectiveFieldPhaseSignature({
+export function buildRaymarchModalBasisPhaseSignature({
   phaseSlots,
   modalFieldSlots,
   activeCount,
@@ -166,7 +166,7 @@ export function buildRaymarchEffectiveFieldPhaseSignature({
     ) {
       continue;
     }
-    const contributionWeight = getEffectiveFieldPhaseWeight(
+    const contributionWeight = getModalBasisPhaseWeight(
       modalFieldSlots,
       offset,
     );
@@ -190,7 +190,7 @@ export function buildRaymarchEffectiveFieldPhaseSignature({
     identityEntry.contributionWeight += contributionWeight;
     identityEntry.phaseCurrentContributionNumerator +=
       contributionWeight *
-      getEffectiveFieldPhaseCurrentCoefficient(phaseSlots, offset, time);
+      getModalBasisPhaseCurrentCoefficient(phaseSlots, offset, time);
     identityEntry.hasPhaseAuthority =
       identityEntry.hasPhaseAuthority ||
       hasPhaseSlotAuthority(phaseSlots, offset);

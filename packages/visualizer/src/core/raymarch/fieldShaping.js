@@ -81,7 +81,7 @@ export const SIGNED_INTERFERENCE_BODY_AUTHORITY_END = 0.12;
 export const SIGNED_INTERFERENCE_BODY_AUTHORITY_POWER = 1.2;
 export const SIGNED_INTERFERENCE_RADIANCE_GATE_MIN = 0.24;
 export const SIGNED_INTERFERENCE_RADIANCE_CANCELLATION_POWER = 1.15;
-export const EFFECTIVE_FIELD_CANCELLATION_SUPPRESSION_SCALE = 0.85;
+export const LIVE_SYNTHESIS_CANCELLATION_SUPPRESSION_SCALE = 0.85;
 export const CAUSTIC_DENSITY_GAIN = 1.15;
 export const CAUSTIC_FOCUS_POWER = 1.15;
 export const CAUSTIC_BODY_MIX_MAX = 0.35;
@@ -148,10 +148,10 @@ function safeFinite(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
-export function deriveEffectiveFieldCancellationSuppression({
+export function deriveLiveSynthesisCancellationSuppression({
   effectiveCancellationRatio = 0,
   effectiveUnsignedSupport = 0,
-  suppressionScale = EFFECTIVE_FIELD_CANCELLATION_SUPPRESSION_SCALE,
+  suppressionScale = LIVE_SYNTHESIS_CANCELLATION_SUPPRESSION_SCALE,
 } = {}) {
   return clamp01(
     1 -
@@ -279,7 +279,7 @@ export function deriveLocalFieldSupportAuthority({
 export function deriveLocalGradientEvidence({
   gradientMagnitude = 0,
   amplitudeNorm = 1,
-  effectiveFieldCacheActive = false,
+  modalBasisCacheActive = false,
   cachedGradientMagnitude = 0,
 } = {}) {
   const safeGradientMagnitude = Math.max(0, safeFinite(gradientMagnitude, 0));
@@ -288,7 +288,7 @@ export function deriveLocalGradientEvidence({
     safeFinite(cachedGradientMagnitude, 0),
   );
   const safeAmplitudeNorm = Math.max(1e-4, safeFinite(amplitudeNorm, 1));
-  const localGradientEvidence = effectiveFieldCacheActive
+  const localGradientEvidence = modalBasisCacheActive
     ? clamp01(safeCachedGradientMagnitude)
     : clamp01(safeGradientMagnitude / safeAmplitudeNorm);
 
@@ -411,7 +411,7 @@ export function deriveCausticMaterialTransferProbe({
       effectiveUnsignedSupport,
       signedBodyAuthority,
     });
-  const cancellationSuppression = deriveEffectiveFieldCancellationSuppression({
+  const cancellationSuppression = deriveLiveSynthesisCancellationSuppression({
     effectiveCancellationRatio:
       effectiveCancellationRatio == null ? 0 : effectiveCancellationRatio,
     effectiveUnsignedSupport,

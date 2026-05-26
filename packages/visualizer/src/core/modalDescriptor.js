@@ -118,8 +118,7 @@ function mergeAdmissionEntries(entries) {
         colorRNumerator: entry.colorR * entry.colorWeight * entry.coefficient,
         colorGNumerator: entry.colorG * entry.colorWeight * entry.coefficient,
         colorBNumerator: entry.colorB * entry.colorWeight * entry.coefficient,
-        naturalFrequencyNumerator:
-          entry.naturalFrequencyHz * entry.coefficient,
+        naturalFrequencyNumerator: entry.naturalFrequencyHz * entry.coefficient,
         qualityFactorNumerator: entry.qualityFactor * entry.coefficient,
         dampingRatioNumerator: entry.dampingRatio * entry.coefficient,
       });
@@ -134,9 +133,12 @@ function mergeAdmissionEntries(entries) {
       existing.phaseCoherence = entry.phaseCoherence;
     }
     existing.colorWeightNumerator += entry.colorWeight * entry.coefficient;
-    existing.colorRNumerator += entry.colorR * entry.colorWeight * entry.coefficient;
-    existing.colorGNumerator += entry.colorG * entry.colorWeight * entry.coefficient;
-    existing.colorBNumerator += entry.colorB * entry.colorWeight * entry.coefficient;
+    existing.colorRNumerator +=
+      entry.colorR * entry.colorWeight * entry.coefficient;
+    existing.colorGNumerator +=
+      entry.colorG * entry.colorWeight * entry.coefficient;
+    existing.colorBNumerator +=
+      entry.colorB * entry.colorWeight * entry.coefficient;
     existing.naturalFrequencyNumerator +=
       entry.naturalFrequencyHz * entry.coefficient;
     existing.qualityFactorNumerator += entry.qualityFactor * entry.coefficient;
@@ -164,16 +166,72 @@ function mergeAdmissionEntries(entries) {
   });
 }
 
-function writeUnifiedModalSlotViews(entries, capacity) {
+function assignEntriesToStableSlotIndices(
+  entries,
+  totalCapacity,
+  stableSlotByModeKey = null,
+) {
+  const assignments = new Array(totalCapacity).fill(null);
+  if (!stableSlotByModeKey) {
+    const sorted = [...entries].sort(compareModeTuple);
+    for (
+      let index = 0;
+      index < sorted.length && index < totalCapacity;
+      index += 1
+    ) {
+      assignments[index] = sorted[index];
+    }
+    return assignments;
+  }
+
+  const usedSlots = new Set();
+  const unassigned = [];
+
+  for (const entry of entries) {
+    const stableSlot = stableSlotByModeKey.get(entry.modeKey);
+    if (
+      Number.isInteger(stableSlot) &&
+      stableSlot >= 0 &&
+      stableSlot < totalCapacity &&
+      !usedSlots.has(stableSlot)
+    ) {
+      assignments[stableSlot] = entry;
+      usedSlots.add(stableSlot);
+    } else {
+      unassigned.push(entry);
+    }
+  }
+
+  unassigned.sort(compareModeTuple);
+  let searchFrom = 0;
+  for (const entry of unassigned) {
+    while (searchFrom < totalCapacity && assignments[searchFrom] != null) {
+      searchFrom += 1;
+    }
+    if (searchFrom >= totalCapacity) {
+      break;
+    }
+    assignments[searchFrom] = entry;
+    stableSlotByModeKey.set(entry.modeKey, searchFrom);
+    usedSlots.add(searchFrom);
+    searchFrom += 1;
+  }
+
+  return assignments;
+}
+
+function writeUnifiedModalSlotViewsFromAssignments(assignments, capacity) {
   const slots = new Float32Array(capacity * 4);
   const phaseSlots = new Float32Array(capacity * 4);
   const colorSlots = new Float32Array(capacity * 4);
   const metadataSlots = new Float32Array(capacity * 4);
 
-  const limit = Math.min(entries.length, capacity);
-  for (let index = 0; index < limit; index += 1) {
-    const entry = entries[index];
-    const offset = index * 4;
+  for (let slotIndex = 0; slotIndex < capacity; slotIndex += 1) {
+    const entry = assignments[slotIndex];
+    if (!entry) {
+      continue;
+    }
+    const offset = slotIndex * 4;
     slots[offset] = entry.u;
     slots[offset + 1] = entry.v;
     slots[offset + 2] = entry.w;
@@ -203,6 +261,15 @@ function writeUnifiedModalSlotViews(entries, capacity) {
   };
 }
 
+function countOccupiedSlotSpan(assignments) {
+  for (let slotIndex = assignments.length - 1; slotIndex >= 0; slotIndex -= 1) {
+    if (assignments[slotIndex] != null) {
+      return slotIndex + 1;
+    }
+  }
+  return 0;
+}
+
 /**
  * @param {{
  *   generation?: number,
@@ -216,6 +283,7 @@ function writeUnifiedModalSlotViews(entries, capacity) {
  *   observedModalModeCount?: number,
  *   phaseAuthorityModeCount?: number,
  *   modeIdentityRetentionRatio?: number,
+ *   stableSlotByModeKey?: Map<string, number> | null,
  * }} [options]
  */
 export function buildCanonicalFullModalDescriptor({
@@ -230,6 +298,7 @@ export function buildCanonicalFullModalDescriptor({
   observedModalModeCount,
   phaseAuthorityModeCount,
   modeIdentityRetentionRatio = 1,
+  stableSlotByModeKey = null,
 } = {}) {
   const fallbackCapacity = resolveCapacity(undefined, modalFieldSlots);
   const totalCapacity = resolveTotalCapacity({
@@ -248,31 +317,38 @@ export function buildCanonicalFullModalDescriptor({
     validCount: validModeCount,
   });
   const mergedEntries = mergeAdmissionEntries(admissionEntries);
-  let acceptedEntries;
+  let admittedEntries;
   let rejectedEntries;
   if (mergedEntries.length <= totalCapacity) {
-    acceptedEntries = mergedEntries.sort(compareModeTuple);
+    admittedEntries = mergedEntries;
     rejectedEntries = [];
   } else {
-    const entriesByAdmissionPriority = [...mergedEntries].sort((left, right) => {
-      if (right.coefficient !== left.coefficient) {
-        return right.coefficient - left.coefficient;
-      }
-      return compareModeTuple(left, right);
-    });
-    acceptedEntries = entriesByAdmissionPriority
-      .slice(0, totalCapacity)
-      .sort(compareModeTuple);
+    const entriesByAdmissionPriority = [...mergedEntries].sort(
+      (left, right) => {
+        if (right.coefficient !== left.coefficient) {
+          return right.coefficient - left.coefficient;
+        }
+        return compareModeTuple(left, right);
+      },
+    );
+    admittedEntries = entriesByAdmissionPriority.slice(0, totalCapacity);
     rejectedEntries = entriesByAdmissionPriority.slice(totalCapacity);
   }
+  const slotAssignments = assignEntriesToStableSlotIndices(
+    admittedEntries,
+    totalCapacity,
+    stableSlotByModeKey,
+  );
+  const acceptedEntries = slotAssignments.filter((entry) => entry != null);
+  const occupiedSlotSpan = countOccupiedSlotSpan(slotAssignments);
   const overflowModeCount = rejectedEntries.length;
   const rejectedModalEnergy = rejectedEntries.reduce(
     (total, entry) => total + Math.max(0, entry.coefficient) ** 2,
     0,
   );
   const descriptorOverflow = overflowModeCount > 0;
-  const unifiedSlotViews = writeUnifiedModalSlotViews(
-    acceptedEntries,
+  const unifiedSlotViews = writeUnifiedModalSlotViewsFromAssignments(
+    slotAssignments,
     totalCapacity,
   );
   const resolvedPhaseAuthorityModeCount = Number.isFinite(
@@ -309,7 +385,7 @@ export function buildCanonicalFullModalDescriptor({
     },
     counts: {
       validModeCount,
-      modalFieldModeCount: acceptedEntries.length,
+      modalFieldModeCount: occupiedSlotSpan,
       overflowModeCount,
     },
     diagnostics: {

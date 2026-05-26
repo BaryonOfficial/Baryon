@@ -44,6 +44,7 @@ import {
   applyCachedControlSnapshots,
   applyReactiveBloomState,
   getPlaybackDiagnosticDpr,
+  getRenderTargetPixelRatio,
   getEffectiveAdaptiveRenderScale,
   publishPerformanceHudSnapshot,
   publishDevtoolsSnapshots,
@@ -537,7 +538,11 @@ export function useBaryonVisualizer({
         renderLoopRefs,
       },
       {
-        getTargetDpr: () => basePixelRatio ?? getPlaybackDiagnosticDpr(),
+        getTargetDpr: () =>
+          getRenderTargetPixelRatio(
+            renderProfileRef.current?.qualityPreset,
+            basePixelRatio,
+          ),
         renderScale: currentEffectiveRenderScale,
       },
     );

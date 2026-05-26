@@ -16,7 +16,7 @@ import {
   CAUSTIC_COLOR_DENSITY_DELTA_MAX,
   CANCELLATION_LUMINANCE_DROP_MIN,
   CONTOUR_BLEND,
-  EFFECTIVE_FIELD_CANCELLATION_SUPPRESSION_SCALE,
+  LIVE_SYNTHESIS_CANCELLATION_SUPPRESSION_SCALE,
   EMISSION_ROLLOFF_MIX,
   HIGHLIGHT_CONTOUR_ACCENT_WEIGHT,
   HOT_CORE_END,
@@ -44,7 +44,7 @@ import {
   deriveHolographicColorMix,
   deriveHolographicFresnel,
   deriveCrowdedHighlightMix,
-  deriveEffectiveFieldCancellationSuppression,
+  deriveLiveSynthesisCancellationSuppression,
   deriveHotCoreCrowding,
   deriveHotCoreMix,
   derivePhotographicCymaticProbe,
@@ -362,27 +362,27 @@ describe("field shaping", () => {
     expect(unsupportedContour.causticRidgeAuthority).toBe(0);
   });
 
-  it("derives support-gated effective-field cancellation suppression", () => {
-    const fullCancellation = deriveEffectiveFieldCancellationSuppression({
+  it("derives support-gated live-synthesis cancellation suppression", () => {
+    const fullCancellation = deriveLiveSynthesisCancellationSuppression({
       effectiveCancellationRatio: 1,
       effectiveUnsignedSupport: 1,
     });
-    const noSupportCancellation = deriveEffectiveFieldCancellationSuppression({
+    const noSupportCancellation = deriveLiveSynthesisCancellationSuppression({
       effectiveCancellationRatio: 1,
       effectiveUnsignedSupport: 0,
     });
-    const partialCancellation = deriveEffectiveFieldCancellationSuppression({
+    const partialCancellation = deriveLiveSynthesisCancellationSuppression({
       effectiveCancellationRatio: 0.5,
       effectiveUnsignedSupport: 0.4,
     });
 
-    expect(EFFECTIVE_FIELD_CANCELLATION_SUPPRESSION_SCALE).toBeCloseTo(0.85);
+    expect(LIVE_SYNTHESIS_CANCELLATION_SUPPRESSION_SCALE).toBeCloseTo(0.85);
     expect(fullCancellation).toBeCloseTo(0.15, 6);
     expect(noSupportCancellation).toBe(1);
     expect(partialCancellation).toBeCloseTo(1 - 0.5 * 0.4 * 0.85, 6);
   });
 
-  it("uses effective-field cancellation metadata as caustic radiance authority", () => {
+  it("uses live-synthesis cancellation metadata as caustic radiance authority", () => {
     const reinforcing = deriveCausticMaterialTransferProbe({
       ...REINFORCED_CAUSTIC_TONE,
       effectiveUnsignedSupport: 1,
@@ -498,19 +498,19 @@ describe("field shaping", () => {
     const direct = fieldShaping.deriveLocalGradientEvidence({
       gradientMagnitude: 0.3,
       amplitudeNorm: 0.6,
-      effectiveFieldCacheActive: false,
+      modalBasisCacheActive: false,
       cachedGradientMagnitude: 0.9,
     });
     const cached = fieldShaping.deriveLocalGradientEvidence({
       gradientMagnitude: 0.3,
       amplitudeNorm: 0.6,
-      effectiveFieldCacheActive: true,
+      modalBasisCacheActive: true,
       cachedGradientMagnitude: 0.9,
     });
     const saturated = fieldShaping.deriveLocalGradientEvidence({
       gradientMagnitude: 4,
       amplitudeNorm: 0.2,
-      effectiveFieldCacheActive: false,
+      modalBasisCacheActive: false,
     });
 
     expect(direct.localGradientEvidence).toBeCloseTo(0.5);
@@ -989,7 +989,7 @@ describe("field shaping", () => {
     });
 
     expect(canceled.signedRadianceAuthority).toBeCloseTo(
-      1 - EFFECTIVE_FIELD_CANCELLATION_SUPPRESSION_SCALE,
+      1 - LIVE_SYNTHESIS_CANCELLATION_SUPPRESSION_SCALE,
     );
     expect(canceled.photographicFocus).toBeCloseTo(
       reinforcing.photographicFocus,

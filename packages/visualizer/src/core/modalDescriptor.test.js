@@ -16,12 +16,15 @@ function makeSlots(entries) {
 function makeMetadataSlots(entries) {
   const slots = new Float32Array(entries.length * 4);
   entries.forEach(
-    ([naturalFrequencyHz, qualityFactor, dampingRatio, observedSupport], index) => {
-    const offset = index * 4;
-    slots[offset] = naturalFrequencyHz;
-    slots[offset + 1] = qualityFactor;
-    slots[offset + 2] = dampingRatio;
-    slots[offset + 3] = observedSupport;
+    (
+      [naturalFrequencyHz, qualityFactor, dampingRatio, observedSupport],
+      index,
+    ) => {
+      const offset = index * 4;
+      slots[offset] = naturalFrequencyHz;
+      slots[offset + 1] = qualityFactor;
+      slots[offset + 2] = dampingRatio;
+      slots[offset + 3] = observedSupport;
     },
   );
   return slots;
@@ -138,9 +141,9 @@ describe("buildCanonicalFullModalDescriptor", () => {
 
     expect(descriptor.counts.validModeCount).toBe(2);
     expect(descriptor.counts.modalFieldModeCount).toBe(1);
-    expect(Array.from(descriptor.slotViews.modalFieldSlots.slice(0, 3))).toEqual(
-      [2, 2, 2],
-    );
+    expect(
+      Array.from(descriptor.slotViews.modalFieldSlots.slice(0, 3)),
+    ).toEqual([2, 2, 2]);
     expect(descriptor.slotViews.modalFieldSlots[3]).toBeCloseTo(0.55, 6);
     expect(descriptor.slotViews.modalFieldMetadataSlots[0]).toBeCloseTo(
       (440 * 0.4 + 450 * 0.15) / 0.55,
@@ -155,5 +158,25 @@ describe("buildCanonicalFullModalDescriptor", () => {
       6,
     );
     expect(descriptor.slotViews.modalFieldMetadataSlots[3]).toBeCloseTo(0.9, 6);
+  });
+
+  it("reports occupied slot span when stable slots become sparse", () => {
+    const stableSlotByModeKey = new Map([
+      ["1:1:1", 0],
+      ["2:2:2", 1],
+    ]);
+
+    const descriptor = buildCanonicalFullModalDescriptor({
+      maxTotalModes: 4,
+      stableSlotByModeKey,
+      modalFieldSlots: makeSlots([[2, 2, 2, 0.7]]),
+      activeModalFieldModeCount: 1,
+    });
+
+    expect(descriptor.counts.validModeCount).toBe(1);
+    expect(descriptor.counts.modalFieldModeCount).toBe(2);
+    expect(
+      Array.from(descriptor.slotViews.modalFieldSlots.slice(0, 8)),
+    ).toEqual([0, 0, 0, 0, 2, 2, 2, expect.closeTo(0.7, 6)]);
   });
 });

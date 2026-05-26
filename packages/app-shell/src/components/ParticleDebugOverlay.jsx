@@ -28,52 +28,57 @@ function formatAnalysisPath(mode, path) {
 }
 
 function formatFieldEvalMode({
-  fieldEvaluationMode,
-  effectiveFieldReady,
-  effectiveFieldRebuildPending,
-  effectiveFieldBackend,
+  modalBasisCacheMode,
+  modalBasisCacheReady,
+  modalBasisCacheRebuildPending,
+  modalBasisCacheBackend,
+  spectralLightEvaluationMode,
 }) {
-  if (fieldEvaluationMode === "effective-cached") {
-    if (effectiveFieldRebuildPending) {
-      return effectiveFieldReady
-        ? "effective (rebuilding)"
-        : "effective (warming)";
+  if (modalBasisCacheMode === "modal-basis-cached") {
+    if (modalBasisCacheRebuildPending) {
+      return modalBasisCacheReady
+        ? "basis cached (rebuilding)"
+        : "basis cached (warming)";
     }
-    return "effective";
+    return "basis cached";
   }
 
   if (
-    fieldEvaluationMode === "unavailable" ||
-    effectiveFieldBackend === "unavailable"
+    modalBasisCacheMode === "unavailable" ||
+    modalBasisCacheBackend === "unavailable"
   ) {
     return "unavailable";
   }
 
-  if (effectiveFieldRebuildPending) {
-    return "effective pending";
+  if (modalBasisCacheRebuildPending) {
+    return "basis cache pending";
   }
 
-  if (effectiveFieldReady) {
-    return "effective ready";
+  if (modalBasisCacheReady) {
+    return "basis cache ready";
   }
 
-  return humanizeDebugToken(fieldEvaluationMode);
+  if (spectralLightEvaluationMode) {
+    return humanizeDebugToken(spectralLightEvaluationMode);
+  }
+
+  return humanizeDebugToken(modalBasisCacheMode ?? "off");
 }
 
-function formatEffectiveFieldState({
-  effectiveFieldBackend,
-  effectiveFieldReady,
-  effectiveFieldRebuildPending,
+function formatModalBasisCacheState({
+  modalBasisCacheBackend,
+  modalBasisCacheReady,
+  modalBasisCacheRebuildPending,
 }) {
-  if (effectiveFieldBackend === "unavailable") {
+  if (modalBasisCacheBackend === "unavailable") {
     return "unavailable";
   }
 
-  if (effectiveFieldRebuildPending) {
+  if (modalBasisCacheRebuildPending) {
     return "building";
   }
 
-  if (effectiveFieldReady) {
+  if (modalBasisCacheReady) {
     return "ready";
   }
 
@@ -97,8 +102,8 @@ const DEBUG_METRIC_TOOLTIPS = {
   Modes:
     "How many display-visible modal slots are active in the current frame.",
   Eval: "Which 3D field-evaluation path is actually active right now. This reflects the renderer’s live material path, not just the selector setting.",
-  Effective:
-    "Current effective-field lifecycle state. Building means compute work has been enqueued, Ready means the canonical field texture can be sampled, Unavailable means field compute failed closed.",
+  "Basis cache":
+    "Current modal-basis-cache lifecycle state. Building means compute work has been enqueued, Ready means the canonical basis atlas can be sampled, Unavailable means basis compute failed closed.",
   Structure:
     "Overall structural confidence. Higher values mean the analyzer sees a stronger organized modal field.",
   Change:
@@ -108,21 +113,18 @@ const DEBUG_METRIC_TOOLTIPS = {
   Steps: "Current raymarch step budget used for this frame.",
   Excite:
     "Field excitation strength reaching the renderer after analysis and gating.",
-  Peak:
-    "Peak modal-field amplitude uploaded from the canonical descriptor.",
+  Peak: "Peak modal-field amplitude uploaded from the canonical descriptor.",
   Support:
     "How strongly the current modal field is supported by renderer-side field authority.",
   Opacity: "Average opacity contributed by the rendered volume this frame.",
   Density: "Average body density in the raymarched field this frame.",
   Exit: "Estimated early-exit ratio in the raymarch. Higher values usually mean more rays are terminating sooner.",
   Volume: "Whether the volumetric field is currently considered visible.",
-  Rendered:
-    "Canonical modal-field slots uploaded from the descriptor.",
+  Rendered: "Canonical modal-field slots uploaded from the descriptor.",
   Desc: "Current canonical descriptor field authority.",
   Overflow:
     "Whether the observer produced more valid modes than descriptor capacity.",
-  Chroma:
-    "Maximum Spectral Light color weight uploaded for the modal field.",
+  Chroma: "Maximum Spectral Light color weight uploaded for the modal field.",
   Flux: "Weighted spectral-flux contribution to Change. Higher values mean more fresh frequency-bin motion.",
   Hit: "Weighted transient-energy contribution to Change. Higher values mean stronger attacks and onsets.",
   "Slot Δ": "Weighted average slot-amplitude delta contribution to Change.",
@@ -423,8 +425,8 @@ export default function ParticleDebugOverlay({
       value: formatNumber(debugSnapshot.renderedModalFieldColorWeightMax, 2),
     },
     {
-      label: "Effective",
-      value: formatEffectiveFieldState(debugSnapshot),
+      label: "Basis cache",
+      value: formatModalBasisCacheState(debugSnapshot),
     },
   ];
   const externalOutputItems = normalizeDebugOverlayItems(

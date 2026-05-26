@@ -15,7 +15,7 @@ import {
 import { createVisualizationUniforms } from "../visualizationUniforms.js";
 import { raymarchOpacityNode } from "./SafeVolumetricLightingModel.js";
 import {
-  createRaymarchEffectiveFieldCache,
+  createRaymarchModalBasisCache,
   createRaymarchSpectralLightCache,
 } from "./fieldCache.js";
 
@@ -259,7 +259,7 @@ describe("raymarch volume material", () => {
     );
     const directSamplerStart = expectSourceIndex(
       source,
-      "function sampleEffectiveFieldTextureNode({",
+      "function samplePrebakedFieldTextureNode({",
     );
     const cancellationSuppressionStart = expectSourceIndex(
       source,
@@ -283,11 +283,11 @@ describe("raymarch volume material", () => {
       "const observationTransfer = deriveObservationTransferNode(",
     );
 
-    expect(source).toContain("effectiveFieldSupportTexture");
+    expect(source).toContain("modalBasisSupportTexture");
     expect(source.slice(basisSamplerStart, directSamplerStart)).not.toContain(
-      "texture3D(effectiveFieldSupportTexture)",
+      "texture3D(modalBasisSupportTexture)",
     );
-    expect(source).toContain("texture3D(effectiveFieldSupportTexture).sample");
+    expect(source).toContain("texture3D(modalBasisSupportTexture).sample");
     expect(cancellationSuppressionStart).toBeGreaterThan(supportSampleStart);
     expect(localFieldSupportAuthorityStart).toBeGreaterThan(
       cancellationSuppressionStart,
@@ -298,14 +298,14 @@ describe("raymarch volume material", () => {
     );
     expect(observationTransferStart).toBeGreaterThan(bodyDensityStart);
     expect(source).toMatch(/\.mul\(\s*cancellationSuppression\s*\)/);
-    expect(source).toContain("EFFECTIVE_FIELD_CANCELLATION_SUPPRESSION_SCALE");
+    expect(source).toContain("LIVE_SYNTHESIS_CANCELLATION_SUPPRESSION_SCALE");
     expect(source).not.toContain(".mul(float(0.85))");
     expect(
       source.slice(causticRidgeAuthorityStart, causticVisibilityStart),
     ).not.toContain("cancellationSuppression");
     expect(
       source.slice(causticVisibilityStart, causticVisibilityStart + 180),
-    ).toMatch(/\.mul\(\s*cancellationSuppression\s*\)/);
+    ).toMatch(/\.mul\(\s*cancellationSuppression\s*,?\s*\)/);
     expect(
       source.slice(observationTransferStart, observationTransferStart + 260),
     ).toContain("cancellationSuppression");
@@ -548,13 +548,13 @@ describe("raymarch volume material", () => {
     expect(highlightMaskBlock).not.toContain("physicalVisibleDensity");
   });
 
-  it("samples only the canonical effective field texture for field ownership", () => {
+  it("samples only the canonical modal basis atlas texture for field ownership", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
       "utf8",
     );
 
-    expect(source).toContain("effectiveFieldTexture");
+    expect(source).toContain("modalBasisAtlasTexture");
     expect(source).not.toContain("fieldCacheTexture");
     expect(source).not.toContain("phaseCoherentFieldTexture");
     expect(source).not.toContain("signedPhaseContribution");
@@ -571,20 +571,17 @@ describe("raymarch volume material", () => {
       "const amplitudeNorm =",
     );
     const cachedBranchStart = source.indexOf(
-      "synthesizeEffectiveFieldFromBasisNode({",
+      "synthesizeLiveModalFieldNode({",
       amplitudeNormStart,
     );
-    const effectiveFieldStart = source.indexOf(
-      "const effectiveField = field;",
+    const liveFieldStart = source.indexOf(
+      "const liveField = field;",
       cachedBranchStart,
     );
-    const cachedBranchBlock = source.slice(
-      cachedBranchStart,
-      effectiveFieldStart,
-    );
+    const cachedBranchBlock = source.slice(cachedBranchStart, liveFieldStart);
 
     expect(cachedBranchStart).toBeGreaterThanOrEqual(0);
-    expect(effectiveFieldStart).toBeGreaterThan(cachedBranchStart);
+    expect(liveFieldStart).toBeGreaterThan(cachedBranchStart);
     expect(source).not.toContain("function accumulateCachedLiveResidual({");
     expect(source).not.toContain("directFieldEvaluationEnabled");
     expect(source).not.toContain("function accumulateDirectModalField");
@@ -1001,8 +998,8 @@ describe("raymarch volume material", () => {
     expect(source).not.toContain(deletedGradientFocusLiteral);
     expect(source).not.toContain("OPTICAL_CONVERGENCE_GAIN");
     expect(source).toContain("OPTICAL_CONVERGENCE_MEASUREMENT_EPSILON");
-    expect(source).toContain(
-      "opticalConvergenceAuthority.assign(\n          measuredOpticalConvergenceAuthority",
+    expect(source).toMatch(
+      /opticalConvergenceAuthority\.assign\(\s*measuredOpticalConvergenceAuthority/,
     );
     expect(opticalFocusBlock).toContain("opticalConvergenceAuthority");
     expect(opticalFocusBlock).toContain(
@@ -1229,29 +1226,27 @@ describe("raymarch volume material", () => {
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
   });
 
-  it("binds the canonical effective field texture on the cache-only material", () => {
-    const effectiveFieldCache = createRaymarchEffectiveFieldCache({
+  it("binds the canonical modal-basis atlas texture on the cache-only material", () => {
+    const modalBasisCache = createRaymarchModalBasisCache({
       resolution: 8,
     });
     const uniforms = makeMeshUniforms();
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      effectiveFieldTexture: effectiveFieldCache.texture,
-      effectiveFieldSupportTexture: effectiveFieldCache.supportTexture,
+      modalBasisAtlasTexture: modalBasisCache.texture,
+      modalBasisSupportTexture: modalBasisCache.supportTexture,
       uniforms,
     });
 
-    expect(mesh.userData.raymarchEffectiveFieldTexture).toBe(
-      effectiveFieldCache.texture,
+    expect(mesh.userData.raymarchModalBasisAtlasTexture).toBe(
+      modalBasisCache.texture,
     );
-    expect(mesh.material.effectiveFieldTexture).toBe(
-      effectiveFieldCache.texture,
+    expect(mesh.material.modalBasisAtlasTexture).toBe(modalBasisCache.texture);
+    expect(mesh.userData.raymarchModalBasisSupportTexture).toBe(
+      modalBasisCache.supportTexture,
     );
-    expect(mesh.userData.raymarchEffectiveFieldSupportTexture).toBe(
-      effectiveFieldCache.supportTexture,
-    );
-    expect(mesh.material.effectiveFieldSupportTexture).toBe(
-      effectiveFieldCache.supportTexture,
+    expect(mesh.material.modalBasisSupportTexture).toBe(
+      modalBasisCache.supportTexture,
     );
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
@@ -1270,7 +1265,7 @@ describe("raymarch volume material", () => {
   });
 
   it("starts cache-only/off and creates no material field-evaluation variants", () => {
-    const effectiveFieldCache = createRaymarchEffectiveFieldCache({
+    const modalBasisCache = createRaymarchModalBasisCache({
       resolution: 8,
     });
     const spectralLightCache = createRaymarchSpectralLightCache({
@@ -1278,7 +1273,7 @@ describe("raymarch volume material", () => {
     });
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      effectiveFieldTexture: effectiveFieldCache.texture,
+      modalBasisAtlasTexture: modalBasisCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
       uniforms: makeMeshUniforms(),
     });
@@ -1286,8 +1281,8 @@ describe("raymarch volume material", () => {
 
     expect(materialCache.neumann.direct).toBeUndefined();
     expect(materialCache.dirichlet.direct).toBeUndefined();
-    expect(materialCache.neumann["effective-cached"]).toBeUndefined();
-    expect(materialCache.dirichlet["effective-cached"]).toBeUndefined();
+    expect(materialCache.neumann["modal-basis-cached"]).toBeUndefined();
+    expect(materialCache.dirichlet["modal-basis-cached"]).toBeUndefined();
     expect(materialCache.neumann.off).toBeTruthy();
     expect(materialCache.dirichlet.off).toBeTruthy();
     expect(materialCache.neumann.cached).toBeUndefined();
@@ -1315,7 +1310,7 @@ describe("raymarch volume material", () => {
   });
 
   it("keeps cavity geometry as cache descriptor state, not a material variant", () => {
-    const effectiveFieldCache = createRaymarchEffectiveFieldCache({
+    const modalBasisCache = createRaymarchModalBasisCache({
       resolution: 8,
     });
     const spectralLightCache = createRaymarchSpectralLightCache({
@@ -1323,7 +1318,7 @@ describe("raymarch volume material", () => {
     });
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      effectiveFieldTexture: effectiveFieldCache.texture,
+      modalBasisAtlasTexture: modalBasisCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
       uniforms: makeMeshUniforms(),
     });
@@ -1352,7 +1347,7 @@ describe("raymarch volume material", () => {
   });
 
   it("keeps Spectral Light material switching on the cache-only field material", () => {
-    const effectiveFieldCache = createRaymarchEffectiveFieldCache({
+    const modalBasisCache = createRaymarchModalBasisCache({
       resolution: 8,
     });
     const spectralLightCache = createRaymarchSpectralLightCache({
@@ -1360,7 +1355,7 @@ describe("raymarch volume material", () => {
     });
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
-      effectiveFieldTexture: effectiveFieldCache.texture,
+      modalBasisAtlasTexture: modalBasisCache.texture,
       spectralLightCacheTexture: spectralLightCache.texture,
       uniforms: makeMeshUniforms(),
     });
@@ -1377,9 +1372,7 @@ describe("raymarch volume material", () => {
     );
     expect(mesh.material).not.toBe(offMaterial);
     expect(mesh.material).not.toHaveProperty("fieldEvaluationMode");
-    expect(mesh.material.effectiveFieldTexture).toBe(
-      effectiveFieldCache.texture,
-    );
+    expect(mesh.material.modalBasisAtlasTexture).toBe(modalBasisCache.texture);
     expect(mesh.material.spectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached,
     );
@@ -1394,9 +1387,7 @@ describe("raymarch volume material", () => {
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     );
     expect(mesh.material).not.toHaveProperty("fieldEvaluationMode");
-    expect(mesh.material.effectiveFieldTexture).toBe(
-      effectiveFieldCache.texture,
-    );
+    expect(mesh.material.modalBasisAtlasTexture).toBe(modalBasisCache.texture);
     expect(mesh.material.spectralLightEvaluationMode).toBe(
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     );

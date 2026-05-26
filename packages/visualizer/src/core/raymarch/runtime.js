@@ -11,30 +11,30 @@ import {
   isRenderAuthorityCut,
 } from "../renderAuthorityContract.js";
 import {
-  buildRaymarchEffectiveFieldDescriptor,
+  buildRaymarchModalBasisCacheDescriptor,
   buildRaymarchSpectralLightCacheDescriptor,
   advanceRaymarchCacheGeneration,
   clearQueuedRaymarchCacheRebuild,
-  disposeRaymarchEffectiveFieldCache,
+  disposeRaymarchModalBasisCache,
   disposeRaymarchSpectralLightCache,
-  enqueueRaymarchEffectiveFieldRebuild,
+  enqueueRaymarchModalBasisCacheRebuild,
   enqueueRaymarchSpectralLightCacheRebuild,
-  getRaymarchEffectiveFieldDescriptorStaleReason,
-  isRaymarchEffectiveFieldCacheReadyForDescriptor,
+  getRaymarchModalBasisCacheDescriptorStaleReason,
+  isRaymarchModalBasisCacheReadyForDescriptor,
   isRaymarchSpectralLightCacheReadyForDescriptor,
-  resolveRaymarchEffectiveFieldDescriptorBlockedReason,
-  resolveRaymarchEffectiveFieldDrawableAuthority,
+  resolveRaymarchModalBasisCacheDescriptorBlockedReason,
+  resolveRaymarchModalBasisCacheDrawableAuthority,
   shouldRebuildRaymarchSpectralLightCache,
-  shouldRebuildRaymarchEffectiveFieldCache,
+  shouldRebuildRaymarchModalBasisCache,
   spectralLightDescriptorsEqual,
-  RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
+  RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
 } from "./fieldCache.js";
 import {
   buildRaymarchPhaseSlotSignature,
   copyCanonicalRaymarchPhaseSlots,
 } from "./phaseSlotSemantics.js";
 import {
-  deriveEffectiveFieldCancellationSuppression,
+  deriveLiveSynthesisCancellationSuppression,
   deriveHolographicColorMix,
   deriveHolographicFresnel,
 } from "./fieldShaping.js";
@@ -201,68 +201,68 @@ function resetCacheActivity(cache) {
   clearQueuedRaymarchCacheRebuild(cache);
 }
 
-function resetEffectiveFieldRuntimeDiagnostics(effectiveFieldCache) {
-  if (!effectiveFieldCache) {
+function resetModalBasisCacheRuntimeDiagnostics(modalBasisCache) {
+  if (!modalBasisCache) {
     return;
   }
 
-  effectiveFieldCache.activeEffectiveFieldModeCount = 0;
-  effectiveFieldCache.effectiveFieldAuthority = 0;
-  effectiveFieldCache.contributingEffectiveFieldModeCount = 0;
-  effectiveFieldCache.zeroAmplitudeSkippedModeCount = 0;
-  effectiveFieldCache.contributingRawModalEnergy = 0;
-  effectiveFieldCache.bandwidthRejectedModeCount = 0;
-  effectiveFieldCache.bandwidthRejectedRawModalEnergy = 0;
-  effectiveFieldCache.contributingPhaseCurrentModalEnergy = 0;
-  effectiveFieldCache.bandwidthRejectedPhaseCurrentModalEnergy = 0;
-  effectiveFieldCache.effectiveFieldResolvedRawModalEnergyRatio = 1;
-  effectiveFieldCache.effectiveFieldResolvedPhaseCurrentModalEnergyRatio = 1;
-  effectiveFieldCache.effectiveFieldRawGradientEnvelope = 0;
-  effectiveFieldCache.effectiveFieldPhaseCurrentGradientEnvelope = 0;
-  effectiveFieldCache.effectiveFieldUnsignedSupportMean = 0;
-  effectiveFieldCache.effectiveFieldCancellationRatioMean = 0;
-  effectiveFieldCache.effectiveFieldCancellationRatioMax = 0;
-  effectiveFieldCache.effectiveFieldSupportDiagnosticSampleCount = 0;
-  effectiveFieldCache.effectiveFieldSupportDiagnosticSupportedSampleCount = 0;
-  effectiveFieldCache.effectiveFieldSupportDiagnosticCoverage = 0;
+  modalBasisCache.activeBasisPageModeCount = 0;
+  modalBasisCache.modalBasisCachePhaseAuthority = 0;
+  modalBasisCache.contributingBasisPageModeCount = 0;
+  modalBasisCache.zeroAmplitudeSkippedModeCount = 0;
+  modalBasisCache.contributingRawModalEnergy = 0;
+  modalBasisCache.bandwidthRejectedModeCount = 0;
+  modalBasisCache.bandwidthRejectedRawModalEnergy = 0;
+  modalBasisCache.contributingPhaseCurrentModalEnergy = 0;
+  modalBasisCache.bandwidthRejectedPhaseCurrentModalEnergy = 0;
+  modalBasisCache.liveSynthesisResolvedRawModalEnergyRatio = 1;
+  modalBasisCache.liveSynthesisResolvedPhaseCurrentModalEnergyRatio = 1;
+  modalBasisCache.liveSynthesisRawGradientEnvelope = 0;
+  modalBasisCache.liveSynthesisPhaseCurrentGradientEnvelope = 0;
+  modalBasisCache.liveSynthesisUnsignedSupportMean = 0;
+  modalBasisCache.liveSynthesisCancellationRatioMean = 0;
+  modalBasisCache.liveSynthesisCancellationRatioMax = 0;
+  modalBasisCache.liveSynthesisSupportDiagnosticSampleCount = 0;
+  modalBasisCache.liveSynthesisSupportDiagnosticSupportedSampleCount = 0;
+  modalBasisCache.liveSynthesisSupportDiagnosticCoverage = 0;
 }
 
-function setEffectiveFieldDrawableAuthority(runtimeState, authority) {
+function setModalBasisCacheDrawableAuthority(runtimeState, authority) {
   const normalizedAuthority = authority ?? {
     drawable: false,
-    state: "field-cache-absent",
+    state: "modal-basis-cache-absent",
     blockedReason: "cache-unavailable",
     staleReason: null,
   };
-  runtimeState.effectiveFieldDrawableAuthority = normalizedAuthority;
-  const cache = runtimeState.effectiveFieldCache;
+  runtimeState.modalBasisCacheDrawableAuthority = normalizedAuthority;
+  const cache = runtimeState.modalBasisCache;
   if (cache) {
-    cache.effectiveFieldDrawable = normalizedAuthority.drawable === true;
-    cache.effectiveFieldDrawableState = normalizedAuthority.state;
-    cache.effectiveFieldDrawableBlockedReason =
+    cache.modalBasisCacheDrawable = normalizedAuthority.drawable === true;
+    cache.modalBasisCacheDrawableState = normalizedAuthority.state;
+    cache.modalBasisCacheDrawableBlockedReason =
       normalizedAuthority.blockedReason ?? null;
-    cache.effectiveFieldDrawableStaleReason =
+    cache.modalBasisCacheDrawableStaleReason =
       normalizedAuthority.staleReason ?? null;
   }
   return normalizedAuthority;
 }
 
-function blockEffectiveFieldCacheForDescriptor(effectiveFieldCache, reason) {
-  if (!effectiveFieldCache) {
+function blockModalBasisCacheForDescriptor(modalBasisCache, reason) {
+  if (!modalBasisCache) {
     return;
   }
 
-  advanceRaymarchCacheGeneration(effectiveFieldCache);
-  effectiveFieldCache.ready = false;
-  effectiveFieldCache.rebuildPending = false;
-  effectiveFieldCache.activeDescriptor = null;
-  effectiveFieldCache.pendingDescriptor = null;
-  effectiveFieldCache.activePhaseSampleTimeSec = null;
-  effectiveFieldCache.pendingPhaseSampleTimeSec = null;
-  effectiveFieldCache.activeCacheBuiltAtSec = null;
-  clearQueuedRaymarchCacheRebuild(effectiveFieldCache);
-  effectiveFieldCache.lastError = null;
-  effectiveFieldCache.lastRebuildReason = reason ?? "blocked";
+  advanceRaymarchCacheGeneration(modalBasisCache);
+  modalBasisCache.ready = false;
+  modalBasisCache.rebuildPending = false;
+  modalBasisCache.activeDescriptor = null;
+  modalBasisCache.pendingDescriptor = null;
+  modalBasisCache.activePhaseSampleTimeSec = null;
+  modalBasisCache.pendingPhaseSampleTimeSec = null;
+  modalBasisCache.activeCacheBuiltAtSec = null;
+  clearQueuedRaymarchCacheRebuild(modalBasisCache);
+  modalBasisCache.lastError = null;
+  modalBasisCache.lastRebuildReason = reason ?? "blocked";
 }
 
 function resetRenderAuthorityState(runtimeState) {
@@ -272,24 +272,25 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.performanceGovernor = null;
   runtimeState.pendingRaymarchPerformanceGovernor = null;
   runtimeState.spectralLightBuffersUploaded = false;
-  runtimeState.effectiveFieldPhaseAuthorityModeCount = 0;
+  runtimeState.modalBasisPhaseAuthorityModeCount = 0;
   runtimeState.currentModalDescriptor = null;
-  runtimeState.currentEffectiveFieldDescriptor = null;
+  runtimeState.currentModalBasisCacheDescriptor = null;
   runtimeState.currentSpectralLightDescriptor = null;
-  runtimeState.effectiveFieldDrawableAuthority = null;
+  runtimeState.modalBasisCacheDrawableAuthority = null;
+  runtimeState.modalSlotByModeKey = new Map();
   resetRaymarchUploadState(runtimeState);
-  resetCacheActivity(runtimeState.effectiveFieldCache);
+  resetCacheActivity(runtimeState.modalBasisCache);
   resetCacheActivity(runtimeState.spectralLightCache);
-  resetEffectiveFieldRuntimeDiagnostics(runtimeState.effectiveFieldCache);
+  resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
   runtimeState.renderAuthorityResetApplied = true;
 }
 
 function readRuntimeFieldNoiseFloor(runtimeState) {
-  const effectiveFieldCache = runtimeState?.effectiveFieldCache;
+  const modalBasisCache = runtimeState?.modalBasisCache;
   return readFiniteNumber(
-    effectiveFieldCache?.densityNoiseFloor ??
-      effectiveFieldCache?.fieldNoiseFloor ??
-      effectiveFieldCache?.debug?.fieldNoiseFloor,
+    modalBasisCache?.densityNoiseFloor ??
+      modalBasisCache?.fieldNoiseFloor ??
+      modalBasisCache?.debug?.fieldNoiseFloor,
     0,
   );
 }
@@ -399,12 +400,17 @@ function buildRuntimeModalDescriptor(
     return sourceDescriptor;
   }
 
+  if (!runtimeState.modalSlotByModeKey) {
+    runtimeState.modalSlotByModeKey = new Map();
+  }
+
   return buildCanonicalFullModalDescriptor({
     generation:
       sourceDescriptor?.generation ??
       runtimeState.modalDescriptorGeneration ??
       0,
     maxTotalModes: modalFieldCapacity,
+    stableSlotByModeKey: runtimeState.modalSlotByModeKey,
     modalFieldSlots: featureFrame?.modalFieldSlots,
     modalFieldPhaseSlots: featureFrame?.modalFieldPhaseSlots,
     modalFieldColorSlots: featureFrame?.modalFieldColorSlots,
@@ -442,13 +448,13 @@ function blockOverflowedModalDescriptor(
   runtimeState.performanceGovernor = null;
   runtimeState.pendingRaymarchPerformanceGovernor = null;
   runtimeState.spectralLightBuffersUploaded = false;
-  runtimeState.effectiveFieldPhaseAuthorityModeCount = 0;
-  runtimeState.currentEffectiveFieldDescriptor = null;
+  runtimeState.modalBasisPhaseAuthorityModeCount = 0;
+  runtimeState.currentModalBasisCacheDescriptor = null;
   runtimeState.currentSpectralLightDescriptor = null;
   resetRaymarchUploadState(runtimeState);
-  resetCacheActivity(runtimeState.effectiveFieldCache);
+  resetCacheActivity(runtimeState.modalBasisCache);
   resetCacheActivity(runtimeState.spectralLightCache);
-  resetEffectiveFieldRuntimeDiagnostics(runtimeState.effectiveFieldCache);
+  resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
   setIfChanged(runtimeState.uniforms.uModalFieldModeCount, 0);
   setIfChanged(runtimeState.uniforms.uActiveModeCount, 0);
   runtimeState.volumeMesh.visible = false;
@@ -494,7 +500,9 @@ function publishRaymarchRuntimeAuditSnapshot(
     runtimeState.debugSnapshot = featureFrame?.debug
       ? { ...featureFrame.debug, raymarchDebug, ...raymarchDebug }
       : raymarchDebug;
-    publishAuditSnapshot(runtimeState.debugSnapshot);
+    if (runtimeState.auditEnabled) {
+      publishAuditSnapshot(runtimeState.debugSnapshot);
+    }
   } else {
     runtimeState.debugSnapshot = null;
     publishAuditSnapshot(null);
@@ -611,178 +619,177 @@ function buildRaymarchDebugSnapshot(
   );
   const effectiveCavityGeometry =
     getRuntimeEffectiveCavityGeometry(runtimeState);
-  const effectiveFieldCache = runtimeState.effectiveFieldCache ?? null;
+  const modalBasisCache = runtimeState.modalBasisCache ?? null;
   const spectralLightCache = runtimeState.spectralLightCache ?? null;
-  const effectiveFieldDescriptor =
-    runtimeState.currentEffectiveFieldDescriptor ?? null;
+  const modalBasisCacheDescriptor =
+    runtimeState.currentModalBasisCacheDescriptor ?? null;
   const spectralLightDescriptor =
     runtimeState.currentSpectralLightDescriptor ?? null;
-  const effectiveFieldDiagnosticDescriptor =
-    effectiveFieldCache?.ready && effectiveFieldCache?.activeDescriptor
-      ? effectiveFieldCache.activeDescriptor
-      : effectiveFieldDescriptor;
-  const effectiveFieldDescriptorFresh =
-    isRaymarchEffectiveFieldCacheReadyForDescriptor(
-      effectiveFieldCache,
-      effectiveFieldDescriptor,
+  const modalBasisCacheDiagnosticDescriptor =
+    modalBasisCache?.ready && modalBasisCache?.activeDescriptor
+      ? modalBasisCache.activeDescriptor
+      : modalBasisCacheDescriptor;
+  const modalBasisCacheDescriptorFresh =
+    isRaymarchModalBasisCacheReadyForDescriptor(
+      modalBasisCache,
+      modalBasisCacheDescriptor,
     );
-  const effectiveFieldDescriptorStaleReason =
-    getRaymarchEffectiveFieldDescriptorStaleReason({
-      descriptorFresh: effectiveFieldDescriptorFresh,
-      rebuildPending: effectiveFieldCache?.rebuildPending,
-      queuedDescriptor: effectiveFieldCache?.queuedDescriptor,
-      activeDescriptor: effectiveFieldCache?.activeDescriptor,
-      nextDescriptor: effectiveFieldDescriptor,
+  const modalBasisCacheDescriptorStaleReason =
+    getRaymarchModalBasisCacheDescriptorStaleReason({
+      descriptorFresh: modalBasisCacheDescriptorFresh,
+      rebuildPending: modalBasisCache?.rebuildPending,
+      queuedDescriptor: modalBasisCache?.queuedDescriptor,
+      activeDescriptor: modalBasisCache?.activeDescriptor,
+      nextDescriptor: modalBasisCacheDescriptor,
     });
-  const effectiveFieldQueuedDescriptorAgeMs =
-    effectiveFieldCache?.queuedDescriptor &&
-    Number.isFinite(effectiveFieldCache?.queuedDescriptorAtSec)
+  const modalBasisCacheQueuedDescriptorAgeMs =
+    modalBasisCache?.queuedDescriptor &&
+    Number.isFinite(modalBasisCache?.queuedDescriptorAtSec)
       ? Math.max(
           0,
           ((runtimeState.uniforms.uTime?.value ?? 0) -
-            effectiveFieldCache.queuedDescriptorAtSec) *
+            modalBasisCache.queuedDescriptorAtSec) *
             1000,
         )
       : null;
   const modalBasisCacheAgeMs =
-    Number.isFinite(effectiveFieldCache?.activeCacheBuiltAtSec) &&
+    Number.isFinite(modalBasisCache?.activeCacheBuiltAtSec) &&
     Number.isFinite(runtimeState.uniforms.uTime?.value)
       ? Math.max(
           0,
           ((runtimeState.uniforms.uTime?.value ?? 0) -
-            effectiveFieldCache.activeCacheBuiltAtSec) *
+            modalBasisCache.activeCacheBuiltAtSec) *
             1000,
         )
       : null;
-  const effectiveFieldModeCount = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.contributingEffectiveFieldModeCount ??
-      effectiveFieldCache?.activeEffectiveFieldModeCount,
+  const modalBasisCacheModeCount = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.contributingBasisPageModeCount ??
+      modalBasisCache?.activeBasisPageModeCount,
     0,
   );
-  const effectiveFieldPhaseAuthorityModeCount = readFiniteNumber(
-    effectiveFieldDescriptor?.phaseModeCount ??
-      runtimeState.effectiveFieldPhaseAuthorityModeCount,
+  const modalBasisPhaseAuthorityModeCount = readFiniteNumber(
+    modalBasisCacheDescriptor?.phaseModeCount ??
+      runtimeState.modalBasisPhaseAuthorityModeCount,
     0,
   );
-  const effectiveFieldSemantic =
-    effectiveFieldCache?.semantic ?? "modal-basis-cache";
-  const effectiveFieldSupportSemantic =
-    effectiveFieldCache?.supportSemantic ??
-    "coefficient-invariant-basis-support";
-  const effectiveFieldSupportReady = Boolean(
-    effectiveFieldCache?.ready && effectiveFieldCache?.supportTexture,
+  const modalBasisCacheSemantic =
+    modalBasisCache?.semantic ?? "modal-basis-cache";
+  const modalBasisCacheSupportSemantic =
+    modalBasisCache?.supportSemantic ?? "coefficient-invariant-basis-support";
+  const modalBasisCacheSupportReady = Boolean(
+    modalBasisCache?.ready && modalBasisCache?.supportTexture,
   );
-  const effectiveFieldAuthority = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.phaseAuthority ??
-      effectiveFieldCache?.effectiveFieldAuthority,
+  const modalBasisCachePhaseAuthority = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.phaseAuthority ??
+      modalBasisCache?.modalBasisCachePhaseAuthority,
     0,
   );
-  const effectiveFieldMaxRepresentableModeIndex = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.effectiveFieldMaxRepresentableModeIndex ??
-      effectiveFieldCache?.effectiveFieldMaxRepresentableModeIndex,
+  const modalBasisCacheMaxRepresentableModeIndex = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.modalBasisCacheMaxRepresentableModeIndex ??
+      modalBasisCache?.modalBasisCacheMaxRepresentableModeIndex,
     0,
   );
-  const effectiveFieldContributingModeCount = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.contributingEffectiveFieldModeCount ??
-      effectiveFieldCache?.contributingEffectiveFieldModeCount,
+  const modalBasisCacheContributingModeCount = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.contributingBasisPageModeCount ??
+      modalBasisCache?.contributingBasisPageModeCount,
     0,
   );
-  const effectiveFieldZeroAmplitudeSkippedModeCount = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.zeroAmplitudeSkippedModeCount ??
-      effectiveFieldCache?.zeroAmplitudeSkippedModeCount,
+  const modalBasisCacheZeroAmplitudeSkippedModeCount = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.zeroAmplitudeSkippedModeCount ??
+      modalBasisCache?.zeroAmplitudeSkippedModeCount,
     0,
   );
-  const effectiveFieldContributingRawModalEnergy = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.contributingRawModalEnergy ??
-      effectiveFieldCache?.contributingRawModalEnergy,
+  const modalBasisCacheContributingRawModalEnergy = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.contributingRawModalEnergy ??
+      modalBasisCache?.contributingRawModalEnergy,
     0,
   );
-  const effectiveFieldBandwidthRejectedModeCount = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.bandwidthRejectedModeCount ??
-      effectiveFieldCache?.bandwidthRejectedModeCount,
+  const modalBasisCacheBandwidthRejectedModeCount = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.bandwidthRejectedModeCount ??
+      modalBasisCache?.bandwidthRejectedModeCount,
     0,
   );
-  const effectiveFieldBandwidthRejectedRawModalEnergy = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.bandwidthRejectedRawModalEnergy ??
-      effectiveFieldCache?.bandwidthRejectedRawModalEnergy,
+  const modalBasisCacheBandwidthRejectedRawModalEnergy = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.bandwidthRejectedRawModalEnergy ??
+      modalBasisCache?.bandwidthRejectedRawModalEnergy,
     0,
   );
-  const effectiveFieldContributingPhaseCurrentModalEnergy = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.contributingPhaseCurrentModalEnergy ??
-      effectiveFieldCache?.contributingPhaseCurrentModalEnergy,
+  const modalBasisCacheContributingPhaseCurrentModalEnergy = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.contributingPhaseCurrentModalEnergy ??
+      modalBasisCache?.contributingPhaseCurrentModalEnergy,
     0,
   );
-  const effectiveFieldBandwidthRejectedPhaseCurrentModalEnergy =
+  const modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy =
     readFiniteNumber(
-      effectiveFieldDiagnosticDescriptor?.bandwidthRejectedPhaseCurrentModalEnergy ??
-        effectiveFieldCache?.bandwidthRejectedPhaseCurrentModalEnergy,
+      modalBasisCacheDiagnosticDescriptor?.bandwidthRejectedPhaseCurrentModalEnergy ??
+        modalBasisCache?.bandwidthRejectedPhaseCurrentModalEnergy,
       0,
     );
-  const effectiveFieldResolvedRawModalEnergyRatio = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.effectiveFieldResolvedRawModalEnergyRatio ??
-      effectiveFieldCache?.effectiveFieldResolvedRawModalEnergyRatio,
+  const liveSynthesisResolvedRawModalEnergyRatio = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisResolvedRawModalEnergyRatio ??
+      modalBasisCache?.liveSynthesisResolvedRawModalEnergyRatio,
     1,
   );
-  const effectiveFieldResolvedPhaseCurrentModalEnergyRatio = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.effectiveFieldResolvedPhaseCurrentModalEnergyRatio ??
-      effectiveFieldCache?.effectiveFieldResolvedPhaseCurrentModalEnergyRatio,
+  const liveSynthesisResolvedPhaseCurrentModalEnergyRatio = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisResolvedPhaseCurrentModalEnergyRatio ??
+      modalBasisCache?.liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
     1,
   );
-  const effectiveFieldRawGradientEnvelope = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.effectiveFieldRawGradientEnvelope ??
-      effectiveFieldCache?.effectiveFieldRawGradientEnvelope,
+  const liveSynthesisRawGradientEnvelope = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisRawGradientEnvelope ??
+      modalBasisCache?.liveSynthesisRawGradientEnvelope,
     0,
   );
-  const effectiveFieldPhaseCurrentGradientEnvelope = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.effectiveFieldPhaseCurrentGradientEnvelope ??
-      effectiveFieldCache?.effectiveFieldPhaseCurrentGradientEnvelope,
+  const liveSynthesisPhaseCurrentGradientEnvelope = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisPhaseCurrentGradientEnvelope ??
+      modalBasisCache?.liveSynthesisPhaseCurrentGradientEnvelope,
     0,
   );
-  const effectiveFieldUnsignedSupportMean = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.effectiveFieldUnsignedSupportMean ??
-      effectiveFieldCache?.effectiveFieldUnsignedSupportMean,
+  const liveSynthesisUnsignedSupportMean = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisUnsignedSupportMean ??
+      modalBasisCache?.liveSynthesisUnsignedSupportMean,
     0,
   );
-  const effectiveFieldCancellationRatioMean = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.effectiveFieldCancellationRatioMean ??
-      effectiveFieldCache?.effectiveFieldCancellationRatioMean,
+  const liveSynthesisCancellationRatioMean = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisCancellationRatioMean ??
+      modalBasisCache?.liveSynthesisCancellationRatioMean,
     0,
   );
-  const effectiveFieldCancellationRatioMax = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.effectiveFieldCancellationRatioMax ??
-      effectiveFieldCache?.effectiveFieldCancellationRatioMax,
+  const liveSynthesisCancellationRatioMax = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisCancellationRatioMax ??
+      modalBasisCache?.liveSynthesisCancellationRatioMax,
     0,
   );
-  const effectiveFieldSupportDiagnosticSampleCount = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.effectiveFieldSupportDiagnosticSampleCount ??
-      effectiveFieldCache?.effectiveFieldSupportDiagnosticSampleCount,
+  const liveSynthesisSupportDiagnosticSampleCount = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisSupportDiagnosticSampleCount ??
+      modalBasisCache?.liveSynthesisSupportDiagnosticSampleCount,
     0,
   );
-  const effectiveFieldCacheSupportedSampleCount =
-    effectiveFieldCache?.effectiveFieldSupportDiagnosticSupportedSampleCount;
-  const effectiveFieldDescriptorSupportedSampleCount =
-    effectiveFieldDiagnosticDescriptor?.effectiveFieldSupportDiagnosticSupportedSampleCount;
-  const effectiveFieldSupportDiagnosticSupportedSampleCount = readFiniteNumber(
-    effectiveFieldDescriptorSupportedSampleCount ??
-      effectiveFieldCacheSupportedSampleCount,
+  const modalBasisCacheSupportedSampleCount =
+    modalBasisCache?.liveSynthesisSupportDiagnosticSupportedSampleCount;
+  const modalBasisCacheDescriptorSupportedSampleCount =
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisSupportDiagnosticSupportedSampleCount;
+  const liveSynthesisSupportDiagnosticSupportedSampleCount = readFiniteNumber(
+    modalBasisCacheDescriptorSupportedSampleCount ??
+      modalBasisCacheSupportedSampleCount,
     0,
   );
-  const effectiveFieldSupportDiagnosticCoverage = readFiniteNumber(
-    effectiveFieldDiagnosticDescriptor?.effectiveFieldSupportDiagnosticCoverage ??
-      effectiveFieldCache?.effectiveFieldSupportDiagnosticCoverage,
+  const liveSynthesisSupportDiagnosticCoverage = readFiniteNumber(
+    modalBasisCacheDiagnosticDescriptor?.liveSynthesisSupportDiagnosticCoverage ??
+      modalBasisCache?.liveSynthesisSupportDiagnosticCoverage,
     0,
   );
   const sampledObservationAnchor =
     renderAuthority &&
-    effectiveFieldSupportReady &&
-    effectiveFieldSupportDiagnosticSampleCount > 0 &&
-    effectiveFieldSupportDiagnosticCoverage > 0
-      ? clamp01(effectiveFieldUnsignedSupportMean)
+    modalBasisCacheSupportReady &&
+    liveSynthesisSupportDiagnosticSampleCount > 0 &&
+    liveSynthesisSupportDiagnosticCoverage > 0
+      ? clamp01(liveSynthesisUnsignedSupportMean)
       : 0;
   const sampledObservationSignedAuthority =
     sampledObservationAnchor > 0
-      ? deriveEffectiveFieldCancellationSuppression({
-          effectiveCancellationRatio: effectiveFieldCancellationRatioMean,
+      ? deriveLiveSynthesisCancellationSuppression({
+          effectiveCancellationRatio: liveSynthesisCancellationRatioMean,
           effectiveUnsignedSupport: sampledObservationAnchor,
         })
       : 0;
@@ -797,9 +804,9 @@ function buildRaymarchDebugSnapshot(
   });
   const diagnosticUsesSampledSupport =
     renderAuthority &&
-    effectiveFieldSupportReady &&
-    effectiveFieldSupportDiagnosticSampleCount > 0 &&
-    effectiveFieldSupportDiagnosticCoverage > 0;
+    modalBasisCacheSupportReady &&
+    liveSynthesisSupportDiagnosticSampleCount > 0 &&
+    liveSynthesisSupportDiagnosticCoverage > 0;
   const diagnosticObservationAnchor = diagnosticUsesSampledSupport
     ? sampledObservationAnchor
     : observationTransferDebug.observationAnchor;
@@ -830,14 +837,14 @@ function buildRaymarchDebugSnapshot(
       (1.1 - effectiveBloomThreshold * 0.4) *
       (1 - bloomResponseBias * 0.18),
   );
-  const effectiveFieldDrawableAuthority =
-    runtimeState.effectiveFieldDrawableAuthority ??
-    resolveRaymarchEffectiveFieldDrawableAuthority(
-      effectiveFieldCache,
-      effectiveFieldDescriptor,
+  const modalBasisCacheDrawableAuthority =
+    runtimeState.modalBasisCacheDrawableAuthority ??
+    resolveRaymarchModalBasisCacheDrawableAuthority(
+      modalBasisCache,
+      modalBasisCacheDescriptor,
     );
-  const effectiveFieldDrawable =
-    effectiveFieldDrawableAuthority.drawable === true;
+  const modalBasisCacheDrawable =
+    modalBasisCacheDrawableAuthority.drawable === true;
   const spectralLightCacheDescriptorFresh =
     isRaymarchSpectralLightCacheReadyForDescriptor(
       spectralLightCache,
@@ -873,7 +880,7 @@ function buildRaymarchDebugSnapshot(
       modalDescriptor?.counts?.overflowModeCount ?? 0,
     modalDescriptorPhaseAuthorityModeCount:
       modalDescriptor?.diagnostics?.phaseAuthorityModeCount ??
-      effectiveFieldPhaseAuthorityModeCount,
+      modalBasisPhaseAuthorityModeCount,
     dominantFrequency:
       featureFrame?.debug?.dominantFrequency ??
       featureFrame?.debug?.fundamentalFrequency ??
@@ -1010,73 +1017,73 @@ function buildRaymarchDebugSnapshot(
       runtimeState.volumeMesh?.userData?.raymarchSpectralLightEvaluationMode ??
       spectralLightCache?.mode ??
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
-    effectiveFieldActive: effectiveFieldCache?.active ?? false,
-    effectiveFieldResolution:
-      effectiveFieldCache?.resolution ?? RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
-    effectiveFieldRebuildCount: effectiveFieldCache?.rebuildCount ?? 0,
-    effectiveFieldRebuildReason:
-      effectiveFieldCache?.lastRebuildReason ?? "uninitialized",
-    modalBasisCacheGeneration: effectiveFieldCache?.generation ?? 0,
-    modalBasisCacheRebuildCount: effectiveFieldCache?.rebuildCount ?? 0,
+    modalBasisCacheActive: modalBasisCache?.active ?? false,
+    modalBasisCacheResolution:
+      modalBasisCache?.resolution ?? RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+    modalBasisCacheRebuildCount: modalBasisCache?.rebuildCount ?? 0,
+    modalBasisCacheRebuildReason:
+      modalBasisCache?.lastRebuildReason ?? "uninitialized",
+    modalBasisCacheGeneration: modalBasisCache?.generation ?? 0,
+    modalBasisCacheMode: modalBasisCache?.mode ?? "off",
     modalBasisCacheAgeMs,
-    modalBasisDescriptorReason:
-      effectiveFieldDescriptorStaleReason ??
-      effectiveFieldCache?.lastRebuildReason ??
+    modalBasisCacheDiagnosticReason:
+      modalBasisCacheDescriptorStaleReason ??
+      modalBasisCache?.lastRebuildReason ??
       "uninitialized",
     modalBasisAtlasDepth:
-      effectiveFieldCache?.basisAtlasDepth ??
-      effectiveFieldDescriptor?.basisAtlasDepth ??
+      modalBasisCache?.basisAtlasDepth ??
+      modalBasisCacheDescriptor?.basisAtlasDepth ??
       0,
     liveSynthesisModeCount:
-      effectiveFieldCache?.liveSynthesisModeCount ??
-      effectiveFieldDescriptor?.liveSynthesisModeCount ??
+      modalBasisCache?.liveSynthesisModeCount ??
+      modalBasisCacheDescriptor?.liveSynthesisModeCount ??
       0,
     liveModalFrameAgeMs: null,
-    effectiveFieldDescriptorFresh,
-    effectiveFieldDescriptorStaleReason,
-    effectiveFieldQueuedDescriptorPending: Boolean(
-      effectiveFieldCache?.queuedDescriptor,
+    modalBasisCacheDescriptorFresh,
+    modalBasisCacheDescriptorStaleReason,
+    modalBasisCacheQueuedDescriptorPending: Boolean(
+      modalBasisCache?.queuedDescriptor,
     ),
-    effectiveFieldQueuedDescriptorAgeMs,
-    effectiveFieldBackend: effectiveFieldCache?.backend ?? "compute",
-    effectiveFieldReady: effectiveFieldCache?.ready ?? false,
-    effectiveFieldRebuildPending: effectiveFieldCache?.rebuildPending ?? false,
-    effectiveFieldFailedClosed: !effectiveFieldDrawable,
-    effectiveFieldLastError: effectiveFieldCache?.lastError ?? null,
-    effectiveFieldDrawable,
-    effectiveFieldDrawableState:
-      effectiveFieldDrawableAuthority.state ?? "field-cache-absent",
-    effectiveFieldDrawableBlockedReason:
-      effectiveFieldDrawableAuthority.blockedReason ?? null,
-    effectiveFieldDrawableStaleReason:
-      effectiveFieldDrawableAuthority.staleReason ?? null,
-    effectiveFieldModeCount,
-    effectiveFieldSemantic,
-    effectiveFieldSupportReady,
-    effectiveFieldSupportSemantic,
-    effectiveFieldAuthority,
-    effectiveFieldModeIdentityRetentionRatio:
-      effectiveFieldCache?.modeIdentityRetentionRatio ??
-      effectiveFieldDescriptor?.modeIdentityRetentionRatio ??
+    modalBasisCacheQueuedDescriptorAgeMs,
+    modalBasisCacheBackend: modalBasisCache?.backend ?? "compute",
+    modalBasisCacheReady: modalBasisCache?.ready ?? false,
+    modalBasisCacheRebuildPending: modalBasisCache?.rebuildPending ?? false,
+    modalBasisCacheFailedClosed: !modalBasisCacheDrawable,
+    modalBasisCacheLastError: modalBasisCache?.lastError ?? null,
+    modalBasisCacheDrawable,
+    modalBasisCacheDrawableState:
+      modalBasisCacheDrawableAuthority.state ?? "modal-basis-cache-absent",
+    modalBasisCacheDrawableBlockedReason:
+      modalBasisCacheDrawableAuthority.blockedReason ?? null,
+    modalBasisCacheDrawableStaleReason:
+      modalBasisCacheDrawableAuthority.staleReason ?? null,
+    modalBasisCacheModeCount,
+    modalBasisCacheSemantic,
+    modalBasisCacheSupportReady,
+    modalBasisCacheSupportSemantic,
+    modalBasisCachePhaseAuthority,
+    modalBasisCacheModeIdentityRetentionRatio:
+      modalBasisCache?.modeIdentityRetentionRatio ??
+      modalBasisCacheDescriptor?.modeIdentityRetentionRatio ??
       1,
-    effectiveFieldMaxRepresentableModeIndex,
-    effectiveFieldContributingModeCount,
-    effectiveFieldZeroAmplitudeSkippedModeCount,
-    effectiveFieldContributingRawModalEnergy,
-    effectiveFieldBandwidthRejectedModeCount,
-    effectiveFieldBandwidthRejectedRawModalEnergy,
-    effectiveFieldContributingPhaseCurrentModalEnergy,
-    effectiveFieldBandwidthRejectedPhaseCurrentModalEnergy,
-    effectiveFieldResolvedRawModalEnergyRatio,
-    effectiveFieldResolvedPhaseCurrentModalEnergyRatio,
-    effectiveFieldRawGradientEnvelope,
-    effectiveFieldPhaseCurrentGradientEnvelope,
-    effectiveFieldUnsignedSupportMean,
-    effectiveFieldCancellationRatioMean,
-    effectiveFieldCancellationRatioMax,
-    effectiveFieldSupportDiagnosticSampleCount,
-    effectiveFieldSupportDiagnosticSupportedSampleCount,
-    effectiveFieldSupportDiagnosticCoverage,
+    modalBasisCacheMaxRepresentableModeIndex,
+    modalBasisCacheContributingModeCount,
+    modalBasisCacheZeroAmplitudeSkippedModeCount,
+    modalBasisCacheContributingRawModalEnergy,
+    modalBasisCacheBandwidthRejectedModeCount,
+    modalBasisCacheBandwidthRejectedRawModalEnergy,
+    modalBasisCacheContributingPhaseCurrentModalEnergy,
+    modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy,
+    liveSynthesisResolvedRawModalEnergyRatio,
+    liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
+    liveSynthesisRawGradientEnvelope,
+    liveSynthesisPhaseCurrentGradientEnvelope,
+    liveSynthesisUnsignedSupportMean,
+    liveSynthesisCancellationRatioMean,
+    liveSynthesisCancellationRatioMax,
+    liveSynthesisSupportDiagnosticSampleCount,
+    liveSynthesisSupportDiagnosticSupportedSampleCount,
+    liveSynthesisSupportDiagnosticCoverage,
     spectralLightCacheActive: spectralLightCache?.active ?? false,
     spectralLightCacheReady: spectralLightCache?.ready ?? false,
     spectralLightCacheRebuildPending:
@@ -1395,7 +1402,11 @@ function applyLayerUploadIfChanged({
     if (modeChanged) {
       modeBufferNode.value.needsUpdate = true;
     }
-    if (includeColors && colorChanged && colorBufferNode?.value) {
+    if (
+      includeColors &&
+      colorBufferNode?.value &&
+      (colorChanged || modeChanged)
+    ) {
       colorBufferNode.value.needsUpdate = true;
     }
     uploadState[key] = { signature };
@@ -1542,67 +1553,64 @@ function takePendingRaymarchPerformanceGovernor(
   return matches ? (pending.governor ?? null) : null;
 }
 
-function updateEffectiveFieldCache(
+function updateModalBasisCache(
   runtimeState,
   renderer,
   { modalFieldCapacity, schedulerTimeSec = null },
-  { effectiveFieldDescriptor },
+  { modalBasisCacheDescriptor },
 ) {
-  const effectiveFieldCache = runtimeState.effectiveFieldCache;
+  const modalBasisCache = runtimeState.modalBasisCache;
   if (!runtimeState.volumeMesh) {
-    setEffectiveFieldDrawableAuthority(
+    setModalBasisCacheDrawableAuthority(
       runtimeState,
-      resolveRaymarchEffectiveFieldDrawableAuthority(
-        effectiveFieldCache,
-        effectiveFieldDescriptor,
+      resolveRaymarchModalBasisCacheDrawableAuthority(
+        modalBasisCache,
+        modalBasisCacheDescriptor,
       ),
     );
     return "unavailable";
   }
 
-  if (!effectiveFieldCache) {
-    setEffectiveFieldDrawableAuthority(
+  if (!modalBasisCache) {
+    setModalBasisCacheDrawableAuthority(
       runtimeState,
-      resolveRaymarchEffectiveFieldDrawableAuthority(
-        effectiveFieldCache,
-        effectiveFieldDescriptor,
+      resolveRaymarchModalBasisCacheDrawableAuthority(
+        modalBasisCache,
+        modalBasisCacheDescriptor,
       ),
     );
     return "unavailable";
   }
 
-  effectiveFieldCache.active = true;
-  effectiveFieldCache.mode = "effective-cached";
+  modalBasisCache.active = true;
+  modalBasisCache.mode = "modal-basis-cached";
 
   const descriptorBlockedReason =
-    resolveRaymarchEffectiveFieldDescriptorBlockedReason(
-      effectiveFieldDescriptor,
+    resolveRaymarchModalBasisCacheDescriptorBlockedReason(
+      modalBasisCacheDescriptor,
     );
   if (descriptorBlockedReason) {
-    blockEffectiveFieldCacheForDescriptor(
-      effectiveFieldCache,
-      descriptorBlockedReason,
-    );
-    const authority = setEffectiveFieldDrawableAuthority(
+    blockModalBasisCacheForDescriptor(modalBasisCache, descriptorBlockedReason);
+    const authority = setModalBasisCacheDrawableAuthority(
       runtimeState,
-      resolveRaymarchEffectiveFieldDrawableAuthority(
-        effectiveFieldCache,
-        effectiveFieldDescriptor,
+      resolveRaymarchModalBasisCacheDrawableAuthority(
+        modalBasisCache,
+        modalBasisCacheDescriptor,
       ),
     );
-    return authority.drawable ? "effective-cached" : "unavailable";
+    return authority.drawable ? "modal-basis-cached" : "unavailable";
   }
 
-  const { needsRebuild, reason } = shouldRebuildRaymarchEffectiveFieldCache(
-    effectiveFieldCache,
-    effectiveFieldDescriptor,
+  const { needsRebuild, reason } = shouldRebuildRaymarchModalBasisCache(
+    modalBasisCache,
+    modalBasisCacheDescriptor,
   );
 
   if (needsRebuild) {
-    enqueueRaymarchEffectiveFieldRebuild(
-      effectiveFieldCache,
+    enqueueRaymarchModalBasisCacheRebuild(
+      modalBasisCache,
       renderer,
-      effectiveFieldDescriptor,
+      modalBasisCacheDescriptor,
       reason,
       {
         modalFieldModeBuffer: runtimeState.modalFieldModeBuffer,
@@ -1614,16 +1622,16 @@ function updateEffectiveFieldCache(
     );
   }
 
-  const authority = setEffectiveFieldDrawableAuthority(
+  const authority = setModalBasisCacheDrawableAuthority(
     runtimeState,
-    resolveRaymarchEffectiveFieldDrawableAuthority(
-      effectiveFieldCache,
-      effectiveFieldDescriptor,
+    resolveRaymarchModalBasisCacheDrawableAuthority(
+      modalBasisCache,
+      modalBasisCacheDescriptor,
     ),
   );
 
   if (authority.drawable) {
-    return "effective-cached";
+    return "modal-basis-cached";
   }
   return "unavailable";
 }
@@ -1701,14 +1709,14 @@ function updateRaymarchEvaluationModes(
   runtimeState,
   renderer,
   capacities,
-  { spectralLightEnabled, effectiveFieldDescriptor, spectralLightDescriptor },
+  { spectralLightEnabled, modalBasisCacheDescriptor, spectralLightDescriptor },
 ) {
   if (!runtimeState.volumeMesh) {
     return;
   }
 
-  updateEffectiveFieldCache(runtimeState, renderer, capacities, {
-    effectiveFieldDescriptor,
+  updateModalBasisCache(runtimeState, renderer, capacities, {
+    modalBasisCacheDescriptor,
   });
 
   const spectralLightEvaluationMode = resolveSpectralLightEvaluationMode(
@@ -1789,7 +1797,7 @@ function applyRaymarchRuntimeUploadAuthority({
     layer: modalFieldLayer,
     capacity: modalFieldPhaseCapacity,
   });
-  runtimeState.effectiveFieldPhaseAuthorityModeCount =
+  runtimeState.modalBasisPhaseAuthorityModeCount =
     modalFieldPhaseAuthorityModeCount;
 
   const modalFieldModeCount = modalFieldLayer.uploadedActiveCount;
@@ -1802,7 +1810,7 @@ function applyRaymarchRuntimeUploadAuthority({
 
   const boundaryMode = getRuntimeBoundaryMode(runtimeState);
   const descriptorRadius = runtimeState.uniforms.uRadius?.value ?? 1;
-  const effectiveFieldDescriptor = buildRaymarchEffectiveFieldDescriptor({
+  const modalBasisCacheDescriptor = buildRaymarchModalBasisCacheDescriptor({
     modalFieldSlots: modalFieldModeBuffer?.value?.array,
     modalFieldPhaseSlots: modalFieldPhaseBuffer?.value?.array,
     modalFieldCount: modalFieldModeCount,
@@ -1810,16 +1818,16 @@ function applyRaymarchRuntimeUploadAuthority({
     cavityGeometry: effectiveCavityGeometry,
     radius: descriptorRadius,
     time,
-    phaseModeCount: runtimeState.effectiveFieldPhaseAuthorityModeCount,
+    phaseModeCount: runtimeState.modalBasisPhaseAuthorityModeCount,
     phaseAuthority: featureFrame?.modalPhaseAuthority ?? 0,
     descriptorOverflow: modalDescriptor.diagnostics.descriptorOverflow,
     modeIdentityRetentionRatio:
       modalDescriptor.diagnostics.modeIdentityRetentionRatio,
     resolution:
-      runtimeState.effectiveFieldCache?.resolution ??
-      RAYMARCH_EFFECTIVE_FIELD_RESOLUTION,
-    basisCapacity: runtimeState.effectiveFieldCache?.basisCapacity,
-    basisPacking: runtimeState.effectiveFieldCache?.basisPacking,
+      runtimeState.modalBasisCache?.resolution ??
+      RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+    basisCapacity: runtimeState.modalBasisCache?.basisCapacity,
+    basisPacking: runtimeState.modalBasisCache?.basisPacking,
   });
 
   let spectralLightDescriptor = null;
@@ -1841,7 +1849,7 @@ function applyRaymarchRuntimeUploadAuthority({
       : nextSpectralLightDescriptor;
   }
 
-  runtimeState.currentEffectiveFieldDescriptor = effectiveFieldDescriptor;
+  runtimeState.currentModalBasisCacheDescriptor = modalBasisCacheDescriptor;
   runtimeState.currentSpectralLightDescriptor = spectralLightDescriptor;
   runtimeState.spectralLightBuffersUploaded = spectralLightEnabled;
   setRaymarchCavityGeometry(runtimeState.volumeMesh, effectiveCavityGeometry);
@@ -1854,7 +1862,7 @@ function applyRaymarchRuntimeUploadAuthority({
     },
     {
       spectralLightEnabled,
-      effectiveFieldDescriptor,
+      modalBasisCacheDescriptor,
       spectralLightDescriptor,
     },
   );
@@ -2061,9 +2069,9 @@ export function tickRaymarchRuntime(
     bandEnergies[3] ?? 0,
   );
 
-  const effectiveFieldDrawable =
-    runtimeState.effectiveFieldDrawableAuthority?.drawable === true;
-  volumeMesh.visible = renderAuthority && effectiveFieldDrawable;
+  const modalBasisCacheDrawable =
+    runtimeState.modalBasisCacheDrawableAuthority?.drawable === true;
+  volumeMesh.visible = renderAuthority && modalBasisCacheDrawable;
   idleOverlay.visible = resolveIdleOverlayVisible(
     runtimeState,
     featureFrame,
@@ -2078,7 +2086,7 @@ export function tickRaymarchRuntime(
 }
 
 export function disposeRaymarchRuntime(runtimeState) {
-  disposeRaymarchEffectiveFieldCache(runtimeState?.effectiveFieldCache);
+  disposeRaymarchModalBasisCache(runtimeState?.modalBasisCache);
   disposeRaymarchSpectralLightCache(runtimeState?.spectralLightCache);
   runtimeState?.points?.traverse?.((child) => {
     child.geometry?.dispose?.();

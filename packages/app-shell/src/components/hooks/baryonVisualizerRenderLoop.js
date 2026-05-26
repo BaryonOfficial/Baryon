@@ -63,6 +63,7 @@ const AUTO_RAYMARCH_SCALE_PRESSURE_FRAME_TIME_RATIO = 1.015;
 const AUTO_RAYMARCH_STABLE_FRAME_TIME_RATIO = 0.93;
 const AUTO_RAYMARCH_LONG_FRAME_TIME_RATIO = 1.5;
 const AUTO_RAYMARCH_RECOVERY_MIN_ENERGY_SIGNAL = 0.08;
+const COHERENT_MODAL_RAYMARCH_STEP_FLOOR = 48;
 const AUTO_RAYMARCH_STEP_LADDER = Object.freeze([
   16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192,
 ]);
@@ -438,6 +439,25 @@ export function getPlaybackDiagnosticDpr() {
   }
 
   return Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+}
+
+export function getRenderTargetPixelRatio(
+  qualityPreset,
+  basePixelRatio = null,
+) {
+  if (Number.isFinite(basePixelRatio) && basePixelRatio > 0) {
+    return basePixelRatio;
+  }
+
+  if (qualityPreset === PERFORMANCE_PROFILES.maxQuality) {
+    if (typeof window === "undefined") {
+      return 1;
+    }
+
+    return Math.max(1, window.devicePixelRatio || 1);
+  }
+
+  return getPlaybackDiagnosticDpr();
 }
 
 function getRenderLoopWallTimeMs() {
@@ -892,6 +912,7 @@ export function publishPerformanceHudSnapshot(
   const snapshot = buildPerformanceHudSnapshot(runtimeDiagnostics);
   performanceHudState.lastPublishedAtMs = wallTimeMs;
   onPerformanceHudSnapshotChange(snapshot);
+
   return snapshot;
 }
 
@@ -1338,6 +1359,17 @@ function deriveAdaptiveRecoveryState({
   };
 }
 
+function deriveCoherentModalRaymarchStepFloor({
+  activeRaymarchFrame,
+  requestedStepBudget,
+}) {
+  if (!activeRaymarchFrame) {
+    return 16;
+  }
+
+  return Math.min(requestedStepBudget, COHERENT_MODAL_RAYMARCH_STEP_FLOOR);
+}
+
 function preparePendingRaymarchPerformanceGovernor(runtimeState, inputs) {
   if (!runtimeState || !inputs?.featureFrame || !inputs?.baseGovernor) {
     return null;
@@ -1384,10 +1416,11 @@ export function updateAdaptiveRaymarchStepBudget({
   const requestedRenderScale = normalizeAdaptiveRenderScale(
     renderProfile?.renderScale ?? 1,
   );
-  const modalFieldCapacity = raymarchPerformanceGovernor.inferModalFieldCapacity(
-    runtimeState?.modalFieldCapacity,
-    runtimeState?.modalFieldModeBuffer?.value?.array,
-  );
+  const modalFieldCapacity =
+    raymarchPerformanceGovernor.inferModalFieldCapacity(
+      runtimeState?.modalFieldCapacity,
+      runtimeState?.modalFieldModeBuffer?.value?.array,
+    );
   const cavityGeometry =
     runtimeState?.effectiveCavityGeometry ??
     runtimeState?.volumeMesh?.userData?.raymarchCavityGeometry ??
@@ -1397,15 +1430,20 @@ export function updateAdaptiveRaymarchStepBudget({
     effectiveFrame?.activeModalFieldModeCount ??
     effectiveFrame?.modalDescriptor?.counts?.modalFieldModeCount ??
     0;
-  const autoAdaptiveActive = Boolean(
+  const activeRaymarchFrame = Boolean(
     runtime?.method === "raymarch" &&
-    (renderProfile?.qualityPreset === PERFORMANCE_PROFILES.auto ||
-      renderProfile?.qualityPreset === PERFORMANCE_PROFILES.custom) &&
     (status?.isPlaying ||
       status?.isLiveInputActive ||
       controls?.injectTestTone) &&
     activeModeCount > 0,
   );
+  const profileAdaptiveActive = Boolean(
+    activeRaymarchFrame &&
+    (renderProfile?.qualityPreset === PERFORMANCE_PROFILES.auto ||
+      renderProfile?.qualityPreset === PERFORMANCE_PROFILES.custom),
+  );
+  const adaptiveRaymarch = runtimeDiagnostics.adaptiveRaymarch;
+  const autoAdaptiveActive = profileAdaptiveActive;
   const performanceGovernor =
     raymarchPerformanceGovernor.buildRaymarchPerformanceGovernor({
       modalFieldSlots:
@@ -1416,7 +1454,7 @@ export function updateAdaptiveRaymarchStepBudget({
       requestedStepBudget,
       requestedRenderScale,
       cavityGeometry,
-      qualityAdaptationEnabled: autoAdaptiveActive,
+      qualityAdaptationEnabled: profileAdaptiveActive,
     });
   runtimeState.performanceGovernor = {
     ...runtimeState.performanceGovernor,
@@ -1433,7 +1471,6 @@ export function updateAdaptiveRaymarchStepBudget({
   const adaptiveTuning = buildAdaptiveRaymarchTuning(
     resolveAdaptiveTargetFps(renderProfile, controls),
   );
-  const adaptiveRaymarch = runtimeDiagnostics.adaptiveRaymarch;
   adaptiveRaymarch.targetFps = adaptiveTuning.targetFps;
   adaptiveRaymarch.targetFrameTimeMs = adaptiveTuning.targetFrameTimeMs;
 
@@ -1470,27 +1507,25 @@ export function updateAdaptiveRaymarchStepBudget({
     runtimeState.autoRaymarchResumeScaleRung =
       adaptiveRaymarch.currentScaleRung;
     adaptiveRaymarch.adaptiveRaymarchActive = false;
-    ({ ladder, scaleLadder } = resetAdaptiveRaymarchState(
-      adaptiveRaymarch,
-      governedStepBudget,
-      governedRenderScale,
-    ));
-    const effectiveStepBudget = ladder[ladder.length - 1];
+    adaptiveRaymarch.requestedRaymarchSteps = governedStepBudget;
+    adaptiveRaymarch.requestedRenderScale = governedRenderScale;
+    adaptiveRaymarch.effectiveRaymarchSteps = governedStepBudget;
+    adaptiveRaymarch.effectiveRenderScale = governedRenderScale;
     applyEffectiveRaymarchStepBudget(
       runtimeState,
       controls,
-      effectiveStepBudget,
+      governedStepBudget,
     );
     preparePendingRaymarchPerformanceGovernor(runtimeState, {
       featureFrame: effectiveFrame,
       modalFieldCapacity,
       cavityGeometry,
-      requestedStepBudget: effectiveStepBudget,
-      requestedRenderScale: 1,
+      requestedStepBudget: governedStepBudget,
+      requestedRenderScale: governedRenderScale,
       baseGovernor: performanceGovernor,
       qualityAdaptationEnabled: false,
     });
-    return effectiveStepBudget;
+    return governedStepBudget;
   }
 
   const wasAdaptiveActive = adaptiveRaymarch.adaptiveRaymarchActive === true;
@@ -1610,8 +1645,14 @@ export function updateAdaptiveRaymarchStepBudget({
     }
   }
 
-  const effectiveStepBudget =
-    ladder[clampAdaptiveLadderRung(adaptiveRaymarch.currentRung, ladder)];
+  const coherentModalStepFloor = deriveCoherentModalRaymarchStepFloor({
+    activeRaymarchFrame,
+    requestedStepBudget: governedStepBudget,
+  });
+  const effectiveStepBudget = Math.max(
+    coherentModalStepFloor,
+    ladder[clampAdaptiveLadderRung(adaptiveRaymarch.currentRung, ladder)],
+  );
   adaptiveRaymarch.effectiveRaymarchSteps = effectiveStepBudget;
   adaptiveRaymarch.effectiveRenderScale =
     scaleLadder[

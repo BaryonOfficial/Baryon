@@ -84,6 +84,21 @@ describe("performanceGovernor", () => {
     );
   });
 
+  it("uploads through the last occupied slot when stable modal slots are sparse", () => {
+    const slots = new Float32Array([
+      0, 0, 0, 0, 2, 2, 2, 0.7, 0, 0, 0, 0, 4, 4, 4, 0.2,
+    ]);
+
+    const modalField = analyzeModalField({
+      slots,
+      capacity: 4,
+    });
+
+    expect(modalField.originalActiveCount).toBe(2);
+    expect(modalField.uploadedActiveCount).toBe(4);
+    expect(modalField.totalAmplitude).toBeCloseTo(0.9, 5);
+  });
+
   it("copies the full modal field into the upload buffer", () => {
     const sourceSlots = new Float32Array([
       1, 1, 1, 0.9, 2, 2, 2, 0.7, 3, 3, 3, 0.2, 4, 4, 4, 0,
@@ -207,9 +222,9 @@ describe("performanceGovernor", () => {
     const high = buildRaymarchPerformanceGovernor({
       modalFieldSlots: new Float32Array([
         1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5, 0.75,
-        3, 5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6,
-        2, 2, 3, 0.7, 2, 3, 3, 0.65, 3, 3, 4, 0.6, 3, 4, 4, 0.55, 4, 4, 5, 0.5,
-        4, 5, 5, 0.45, 5, 5, 6, 0.4, 5, 6, 6, 0.35,
+        3, 5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6, 2, 2, 3, 0.7, 2, 3, 3, 0.65,
+        3, 3, 4, 0.6, 3, 4, 4, 0.55, 4, 4, 5, 0.5, 4, 5, 5, 0.45, 5, 5, 6, 0.4,
+        5, 6, 6, 0.35,
       ]),
       modalFieldCapacity: 16,
       featureFrame: {
@@ -228,10 +243,10 @@ describe("performanceGovernor", () => {
 
   it("keeps quality controls neutral when adaptive quality is disabled", () => {
     const modalFieldSlots = new Float32Array([
-      1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5, 0.75,
-      3, 5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6,
-      2, 2, 3, 0.7, 2, 3, 3, 0.65, 3, 3, 4, 0.6, 3, 4, 4, 0.55, 4, 4, 5, 0.5,
-      4, 5, 5, 0.45, 5, 5, 6, 0.4, 5, 6, 6, 0.35,
+      1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5, 0.75, 3,
+      5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6, 2, 2, 3, 0.7, 2, 3, 3, 0.65, 3, 3,
+      4, 0.6, 3, 4, 4, 0.55, 4, 4, 5, 0.5, 4, 5, 5, 0.45, 5, 5, 6, 0.4, 5, 6, 6,
+      0.35,
     ]);
     const featureFrame = {
       averageAmplitude: 255,

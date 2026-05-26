@@ -1,3 +1,4 @@
+import { RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE } from "../../defaults.js";
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 
 export const MIN_COMPLEXITY_RENDER_SCALE = 0.84;
@@ -30,7 +31,9 @@ function copySlot4(source, sourceOffset, target, targetOffset) {
 }
 
 export function deriveFieldExcitation(featureFrame) {
-  const avgAmplitude = (featureFrame?.averageAmplitude ?? 0) / 255;
+  const avgAmplitude =
+    (featureFrame?.averageAmplitude ?? 0) /
+    RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE;
   const structureSignal = featureFrame?.structureSignal ?? 0;
   const modalDriver = Math.max(
     featureFrame?.modalVisibilityEnergy ?? 0,
@@ -58,6 +61,7 @@ export function analyzeModalField({
   const resolvedCapacity = inferModalFieldCapacity(capacity, slots);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
   let activeCount = 0;
+  let occupiedSlotSpan = 0;
   let totalAmplitude = 0;
   let weightedPermutationLoad = 0;
 
@@ -73,6 +77,7 @@ export function analyzeModalField({
       offset,
     );
     activeCount += 1;
+    occupiedSlotSpan = slotIndex + 1;
     totalAmplitude += amplitude;
     weightedPermutationLoad += amplitude * (permutationCount / 6);
   }
@@ -80,7 +85,7 @@ export function analyzeModalField({
   return {
     capacity: resolvedCapacity,
     originalActiveCount: activeCount,
-    uploadedActiveCount: activeCount,
+    uploadedActiveCount: occupiedSlotSpan,
     totalAmplitude,
     uploadedAmplitude: totalAmplitude,
     weightedPermutationLoad,

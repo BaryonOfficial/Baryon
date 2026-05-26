@@ -209,7 +209,8 @@ function buildTailDiagnosticSample({
           raymarchDebug.observationReferenceContourSupport,
       ),
       observationSampledAnchor: readFiniteNumber(
-        render.observationSampledAnchor ?? raymarchDebug.observationSampledAnchor,
+        render.observationSampledAnchor ??
+          raymarchDebug.observationSampledAnchor,
       ),
       observationSampledSignedAuthority: readFiniteNumber(
         render.observationSampledSignedAuthority ??
@@ -227,52 +228,54 @@ function buildTailDiagnosticSample({
         render.observationSampledContourSupport ??
           raymarchDebug.observationSampledContourSupport,
       ),
-      effectiveFieldReady: readBoolean(render.effectiveFieldReady),
-      effectiveFieldSupportReady: readBoolean(
-        render.effectiveFieldSupportReady ??
-          raymarchDebug.effectiveFieldSupportReady,
+      modalBasisCacheReady: readBoolean(render.modalBasisCacheReady),
+      modalBasisCacheSupportReady: readBoolean(
+        render.modalBasisCacheSupportReady ??
+          raymarchDebug.modalBasisCacheSupportReady,
       ),
-      effectiveFieldSupportSemantic: readString(
-        render.effectiveFieldSupportSemantic ??
-          raymarchDebug.effectiveFieldSupportSemantic,
+      modalBasisCacheSupportSemantic: readString(
+        render.modalBasisCacheSupportSemantic ??
+          raymarchDebug.modalBasisCacheSupportSemantic,
         "coefficient-invariant-basis-support",
       ),
-      effectiveFieldUnsignedSupportMean: readFiniteNumber(
-        render.effectiveFieldUnsignedSupportMean ??
-          raymarchDebug.effectiveFieldUnsignedSupportMean,
+      liveSynthesisUnsignedSupportMean: readFiniteNumber(
+        render.liveSynthesisUnsignedSupportMean ??
+          raymarchDebug.liveSynthesisUnsignedSupportMean,
       ),
-      effectiveFieldCancellationRatioMean: readFiniteNumber(
-        render.effectiveFieldCancellationRatioMean ??
-          raymarchDebug.effectiveFieldCancellationRatioMean,
+      liveSynthesisCancellationRatioMean: readFiniteNumber(
+        render.liveSynthesisCancellationRatioMean ??
+          raymarchDebug.liveSynthesisCancellationRatioMean,
       ),
-      effectiveFieldCancellationRatioMax: readFiniteNumber(
-        render.effectiveFieldCancellationRatioMax ??
-          raymarchDebug.effectiveFieldCancellationRatioMax,
+      liveSynthesisCancellationRatioMax: readFiniteNumber(
+        render.liveSynthesisCancellationRatioMax ??
+          raymarchDebug.liveSynthesisCancellationRatioMax,
       ),
-      effectiveFieldSupportDiagnosticSampleCount: readFiniteNumber(
-        render.effectiveFieldSupportDiagnosticSampleCount ??
-          raymarchDebug.effectiveFieldSupportDiagnosticSampleCount,
+      liveSynthesisSupportDiagnosticSampleCount: readFiniteNumber(
+        render.liveSynthesisSupportDiagnosticSampleCount ??
+          raymarchDebug.liveSynthesisSupportDiagnosticSampleCount,
       ),
-      effectiveFieldSupportDiagnosticSupportedSampleCount: readFiniteNumber(
-        render.effectiveFieldSupportDiagnosticSupportedSampleCount ??
-          raymarchDebug.effectiveFieldSupportDiagnosticSupportedSampleCount,
+      liveSynthesisSupportDiagnosticSupportedSampleCount: readFiniteNumber(
+        render.liveSynthesisSupportDiagnosticSupportedSampleCount ??
+          raymarchDebug.liveSynthesisSupportDiagnosticSupportedSampleCount,
       ),
-      effectiveFieldSupportDiagnosticCoverage: readFiniteNumber(
-        render.effectiveFieldSupportDiagnosticCoverage ??
-          raymarchDebug.effectiveFieldSupportDiagnosticCoverage,
+      liveSynthesisSupportDiagnosticCoverage: readFiniteNumber(
+        render.liveSynthesisSupportDiagnosticCoverage ??
+          raymarchDebug.liveSynthesisSupportDiagnosticCoverage,
       ),
-      effectiveFieldZeroAmplitudeSkippedModeCount: readFiniteNumber(
-        render.effectiveFieldZeroAmplitudeSkippedModeCount ??
-          raymarchDebug.effectiveFieldZeroAmplitudeSkippedModeCount,
+      modalBasisCacheZeroAmplitudeSkippedModeCount: readFiniteNumber(
+        render.modalBasisCacheZeroAmplitudeSkippedModeCount ??
+          raymarchDebug.modalBasisCacheZeroAmplitudeSkippedModeCount,
       ),
-      effectiveFieldDescriptorStaleReason: readString(
-        render.effectiveFieldDescriptorStaleReason ??
-          raymarchDebug.effectiveFieldDescriptorStaleReason,
+      modalBasisCacheDescriptorStaleReason: readString(
+        render.modalBasisCacheDescriptorStaleReason ??
+          raymarchDebug.modalBasisCacheDescriptorStaleReason,
       ),
-      effectiveFieldRebuildPending: readBoolean(
-        render.effectiveFieldRebuildPending,
+      modalBasisCacheRebuildPending: readBoolean(
+        render.modalBasisCacheRebuildPending,
       ),
-      effectiveFieldAuthority: readFiniteNumber(render.effectiveFieldAuthority),
+      modalBasisCachePhaseAuthority: readFiniteNumber(
+        render.modalBasisCachePhaseAuthority,
+      ),
       bloomEnabled: readBoolean(render.bloomEnabled),
       bloomResponseSignal: readFiniteNumber(modalFreshness.bloomResponseSignal),
       scaleSignal: readFiniteNumber(modalFreshness.scaleSignal),

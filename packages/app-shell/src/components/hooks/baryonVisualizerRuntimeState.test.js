@@ -144,7 +144,7 @@ test("publishes observation transfer raymarch diagnostics in render perf snapsho
   }
 });
 
-test("publishes effective field diagnostics in render perf snapshots", () => {
+test("publishes modal basis cache diagnostics in render perf snapshots", () => {
   const previousWindow = globalThis.window;
   globalThis.window = {};
 
@@ -152,47 +152,46 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
     const runtimeDiagnostics = createRuntimeDiagnostics();
     updateObservationTransferRenderDiagnostics(runtimeDiagnostics, {
       raymarchDebug: {
-        effectiveFieldActive: true,
-        effectiveFieldReady: true,
-        effectiveFieldSupportReady: true,
-        effectiveFieldSupportSemantic: "coefficient-invariant-basis-support",
-        effectiveFieldUnsignedSupportMean: 0.57,
-        effectiveFieldCancellationRatioMean: 0.36,
-        effectiveFieldCancellationRatioMax: 0.91,
-        effectiveFieldSupportDiagnosticSampleCount: 9,
-        effectiveFieldSupportDiagnosticSupportedSampleCount: 5,
-        effectiveFieldSupportDiagnosticCoverage: 5 / 9,
-        effectiveFieldRebuildPending: false,
-        effectiveFieldBackend: "compute",
-        effectiveFieldResolution: 32,
-        effectiveFieldRebuildCount: 7,
-        effectiveFieldRebuildReason: "descriptor-change",
-        modalBasisCacheGeneration: 12,
+        modalBasisCacheActive: true,
+        modalBasisCacheReady: true,
+        modalBasisCacheSupportReady: true,
+        modalBasisCacheSupportSemantic: "coefficient-invariant-basis-support",
+        liveSynthesisUnsignedSupportMean: 0.57,
+        liveSynthesisCancellationRatioMean: 0.36,
+        liveSynthesisCancellationRatioMax: 0.91,
+        liveSynthesisSupportDiagnosticSampleCount: 9,
+        liveSynthesisSupportDiagnosticSupportedSampleCount: 5,
+        liveSynthesisSupportDiagnosticCoverage: 5 / 9,
+        modalBasisCacheRebuildPending: false,
+        modalBasisCacheBackend: "compute",
+        modalBasisCacheResolution: 32,
         modalBasisCacheRebuildCount: 7,
+        modalBasisCacheRebuildReason: "descriptor-change",
+        modalBasisCacheGeneration: 12,
         modalBasisCacheAgeMs: 34,
         liveModalFrameAgeMs: 5,
-        modalBasisDescriptorReason: "modal-identity",
+        modalBasisCacheDiagnosticReason: "modal-identity",
         modalBasisAtlasDepth: 192,
         liveSynthesisModeCount: 12,
-        effectiveFieldDescriptorFresh: true,
-        effectiveFieldDescriptorStaleReason: null,
-        effectiveFieldQueuedDescriptorPending: false,
-        effectiveFieldLastError: null,
-        effectiveFieldModeCount: 6,
-        effectiveFieldAuthority: 0.42,
-        effectiveFieldModeIdentityRetentionRatio: 0.73,
-        effectiveFieldMaxRepresentableModeIndex: 27,
-        effectiveFieldContributingModeCount: 5,
-        effectiveFieldZeroAmplitudeSkippedModeCount: 1,
-        effectiveFieldContributingRawModalEnergy: 0.64,
-        effectiveFieldContributingPhaseCurrentModalEnergy: 0.52,
-        effectiveFieldResolvedRawModalEnergyRatio: 0.77,
-        effectiveFieldResolvedPhaseCurrentModalEnergyRatio: 0.8,
-        effectiveFieldBandwidthRejectedModeCount: 2,
-        effectiveFieldBandwidthRejectedRawModalEnergy: 0.19,
-        effectiveFieldBandwidthRejectedPhaseCurrentModalEnergy: 0.13,
-        effectiveFieldRawGradientEnvelope: 0.38,
-        effectiveFieldPhaseCurrentGradientEnvelope: 0.24,
+        modalBasisCacheDescriptorFresh: true,
+        modalBasisCacheDescriptorStaleReason: null,
+        modalBasisCacheQueuedDescriptorPending: false,
+        modalBasisCacheLastError: null,
+        modalBasisCacheModeCount: 6,
+        modalBasisCachePhaseAuthority: 0.42,
+        modalBasisCacheModeIdentityRetentionRatio: 0.73,
+        modalBasisCacheMaxRepresentableModeIndex: 27,
+        modalBasisCacheContributingModeCount: 5,
+        modalBasisCacheZeroAmplitudeSkippedModeCount: 1,
+        modalBasisCacheContributingRawModalEnergy: 0.64,
+        modalBasisCacheContributingPhaseCurrentModalEnergy: 0.52,
+        liveSynthesisResolvedRawModalEnergyRatio: 0.77,
+        liveSynthesisResolvedPhaseCurrentModalEnergyRatio: 0.8,
+        modalBasisCacheBandwidthRejectedModeCount: 2,
+        modalBasisCacheBandwidthRejectedRawModalEnergy: 0.19,
+        modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy: 0.13,
+        liveSynthesisRawGradientEnvelope: 0.38,
+        liveSynthesisPhaseCurrentGradientEnvelope: 0.24,
       },
     });
 
@@ -200,61 +199,69 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
       force: true,
     });
 
-    expect(snapshot.render.effectiveFieldActive).toBe(true);
-    expect(snapshot.render.effectiveFieldReady).toBe(true);
-    expect(snapshot.render.effectiveFieldSupportReady).toBe(true);
-    expect(snapshot.render.effectiveFieldSupportSemantic).toBe(
+    expect(snapshot.render.modalBasisCacheActive).toBe(true);
+    expect(snapshot.render.modalBasisCacheReady).toBe(true);
+    expect(snapshot.render.modalBasisCacheSupportReady).toBe(true);
+    expect(snapshot.render.modalBasisCacheSupportSemantic).toBe(
       "coefficient-invariant-basis-support",
     );
-    expect(snapshot.render.effectiveFieldUnsignedSupportMean).toBe(0.57);
-    expect(snapshot.render.effectiveFieldCancellationRatioMean).toBe(0.36);
-    expect(snapshot.render.effectiveFieldCancellationRatioMax).toBe(0.91);
-    expect(snapshot.render.effectiveFieldSupportDiagnosticSampleCount).toBe(9);
+    expect(snapshot.render.liveSynthesisUnsignedSupportMean).toBe(0.57);
+    expect(snapshot.render.liveSynthesisCancellationRatioMean).toBe(0.36);
+    expect(snapshot.render.liveSynthesisCancellationRatioMax).toBe(0.91);
+    expect(snapshot.render.liveSynthesisSupportDiagnosticSampleCount).toBe(9);
     expect(
-      snapshot.render.effectiveFieldSupportDiagnosticSupportedSampleCount,
+      snapshot.render.liveSynthesisSupportDiagnosticSupportedSampleCount,
     ).toBe(5);
-    expect(snapshot.render.effectiveFieldSupportDiagnosticCoverage).toBe(5 / 9);
-    expect(snapshot.render.effectiveFieldRebuildPending).toBe(false);
-    expect(snapshot.render.effectiveFieldBackend).toBe("compute");
-    expect(snapshot.render.effectiveFieldResolution).toBe(32);
-    expect(snapshot.render.effectiveFieldRebuildCount).toBe(7);
-    expect(snapshot.render.effectiveFieldRebuildReason).toBe(
+    expect(snapshot.render.liveSynthesisSupportDiagnosticCoverage).toBe(5 / 9);
+    expect(snapshot.render.modalBasisCacheRebuildPending).toBe(false);
+    expect(snapshot.render.modalBasisCacheBackend).toBe("compute");
+    expect(snapshot.render.modalBasisCacheResolution).toBe(32);
+    expect(snapshot.render.modalBasisCacheRebuildCount).toBe(7);
+    expect(snapshot.render.modalBasisCacheRebuildReason).toBe(
       "descriptor-change",
     );
     expect(snapshot.render.modalBasisCacheGeneration).toBe(12);
     expect(snapshot.render.modalBasisCacheRebuildCount).toBe(7);
     expect(snapshot.render.modalBasisCacheAgeMs).toBe(34);
     expect(snapshot.render.liveModalFrameAgeMs).toBe(5);
-    expect(snapshot.render.modalBasisDescriptorReason).toBe("modal-identity");
+    expect(snapshot.render.modalBasisCacheDiagnosticReason).toBe(
+      "modal-identity",
+    );
     expect(snapshot.render.modalBasisAtlasDepth).toBe(192);
     expect(snapshot.render.liveSynthesisModeCount).toBe(12);
-    expect(snapshot.render.effectiveFieldDescriptorFresh).toBe(true);
-    expect(snapshot.render.effectiveFieldDescriptorStaleReason).toBeNull();
-    expect(snapshot.render.effectiveFieldQueuedDescriptorPending).toBe(false);
-    expect(snapshot.render.effectiveFieldLastError).toBeNull();
-    expect(snapshot.render.effectiveFieldModeCount).toBe(6);
-    expect(snapshot.render.effectiveFieldAuthority).toBe(0.42);
-    expect(snapshot.render.effectiveFieldModeIdentityRetentionRatio).toBe(0.73);
-    expect(snapshot.render.effectiveFieldMaxRepresentableModeIndex).toBe(27);
-    expect(snapshot.render.effectiveFieldContributingModeCount).toBe(5);
-    expect(snapshot.render.effectiveFieldZeroAmplitudeSkippedModeCount).toBe(1);
-    expect(snapshot.render.effectiveFieldContributingRawModalEnergy).toBe(0.64);
+    expect(snapshot.render.modalBasisCacheDescriptorFresh).toBe(true);
+    expect(snapshot.render.modalBasisCacheDescriptorStaleReason).toBeNull();
+    expect(snapshot.render.modalBasisCacheQueuedDescriptorPending).toBe(false);
+    expect(snapshot.render.modalBasisCacheLastError).toBeNull();
+    expect(snapshot.render.modalBasisCacheModeCount).toBe(6);
+    expect(snapshot.render.modalBasisCachePhaseAuthority).toBe(0.42);
+    expect(snapshot.render.modalBasisCacheModeIdentityRetentionRatio).toBe(
+      0.73,
+    );
+    expect(snapshot.render.modalBasisCacheMaxRepresentableModeIndex).toBe(27);
+    expect(snapshot.render.modalBasisCacheContributingModeCount).toBe(5);
+    expect(snapshot.render.modalBasisCacheZeroAmplitudeSkippedModeCount).toBe(
+      1,
+    );
+    expect(snapshot.render.modalBasisCacheContributingRawModalEnergy).toBe(
+      0.64,
+    );
     expect(
-      snapshot.render.effectiveFieldContributingPhaseCurrentModalEnergy,
+      snapshot.render.modalBasisCacheContributingPhaseCurrentModalEnergy,
     ).toBe(0.52);
-    expect(snapshot.render.effectiveFieldResolvedRawModalEnergyRatio).toBe(0.77);
+    expect(snapshot.render.liveSynthesisResolvedRawModalEnergyRatio).toBe(0.77);
     expect(
-      snapshot.render.effectiveFieldResolvedPhaseCurrentModalEnergyRatio,
+      snapshot.render.liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
     ).toBe(0.8);
-    expect(snapshot.render.effectiveFieldBandwidthRejectedModeCount).toBe(2);
-    expect(snapshot.render.effectiveFieldBandwidthRejectedRawModalEnergy).toBe(
+    expect(snapshot.render.modalBasisCacheBandwidthRejectedModeCount).toBe(2);
+    expect(snapshot.render.modalBasisCacheBandwidthRejectedRawModalEnergy).toBe(
       0.19,
     );
     expect(
-      snapshot.render.effectiveFieldBandwidthRejectedPhaseCurrentModalEnergy,
+      snapshot.render.modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy,
     ).toBe(0.13);
-    expect(snapshot.render.effectiveFieldRawGradientEnvelope).toBe(0.38);
-    expect(snapshot.render.effectiveFieldPhaseCurrentGradientEnvelope).toBe(
+    expect(snapshot.render.liveSynthesisRawGradientEnvelope).toBe(0.38);
+    expect(snapshot.render.liveSynthesisPhaseCurrentGradientEnvelope).toBe(
       0.24,
     );
   } finally {
@@ -262,7 +269,7 @@ test("publishes effective field diagnostics in render perf snapshots", () => {
   }
 });
 
-test("publishes effective field diagnostics from runtime state when audit is disabled", () => {
+test("publishes modal basis cache diagnostics from runtime state when audit is disabled", () => {
   const previousWindow = globalThis.window;
   globalThis.window = {};
 
@@ -270,17 +277,17 @@ test("publishes effective field diagnostics from runtime state when audit is dis
     const runtimeDiagnostics = createRuntimeDiagnostics();
     runtimeDiagnostics.render.featureFrameAgeAtRenderMs = 8;
     updateObservationTransferRenderDiagnostics(runtimeDiagnostics, null, {
-      effectiveFieldCache: {
+      modalBasisCache: {
         active: true,
         ready: true,
         supportTexture: {},
         supportSemantic: "coefficient-invariant-basis-support",
-        effectiveFieldUnsignedSupportMean: 0.48,
-        effectiveFieldCancellationRatioMean: 0.27,
-        effectiveFieldCancellationRatioMax: 0.86,
-        effectiveFieldSupportDiagnosticSampleCount: 9,
-        effectiveFieldSupportDiagnosticSupportedSampleCount: 4,
-        effectiveFieldSupportDiagnosticCoverage: 4 / 9,
+        liveSynthesisUnsignedSupportMean: 0.48,
+        liveSynthesisCancellationRatioMean: 0.27,
+        liveSynthesisCancellationRatioMax: 0.86,
+        liveSynthesisSupportDiagnosticSampleCount: 9,
+        liveSynthesisSupportDiagnosticSupportedSampleCount: 4,
+        liveSynthesisSupportDiagnosticCoverage: 4 / 9,
         rebuildPending: false,
         backend: "compute",
         resolution: 32,
@@ -289,21 +296,21 @@ test("publishes effective field diagnostics from runtime state when audit is dis
         lastRebuildReason: "modal-descriptor",
         descriptorStaleReason: "modal-identity",
         lastError: null,
-        activeEffectiveFieldModeCount: 6,
-        effectiveFieldAuthority: 0.37,
+        activeBasisPageModeCount: 6,
+        modalBasisCachePhaseAuthority: 0.37,
         modeIdentityRetentionRatio: 0.61,
-        effectiveFieldMaxRepresentableModeIndex: 31,
-        contributingEffectiveFieldModeCount: 4,
+        modalBasisCacheMaxRepresentableModeIndex: 31,
+        contributingBasisPageModeCount: 4,
         zeroAmplitudeSkippedModeCount: 2,
         contributingRawModalEnergy: 0.72,
         contributingPhaseCurrentModalEnergy: 0.51,
-        effectiveFieldResolvedRawModalEnergyRatio: 0.68,
-        effectiveFieldResolvedPhaseCurrentModalEnergyRatio: 0.74,
+        liveSynthesisResolvedRawModalEnergyRatio: 0.68,
+        liveSynthesisResolvedPhaseCurrentModalEnergyRatio: 0.74,
         bandwidthRejectedModeCount: 3,
         bandwidthRejectedRawModalEnergy: 0.22,
         bandwidthRejectedPhaseCurrentModalEnergy: 0.18,
-        effectiveFieldRawGradientEnvelope: 0.45,
-        effectiveFieldPhaseCurrentGradientEnvelope: 0.31,
+        liveSynthesisRawGradientEnvelope: 0.45,
+        liveSynthesisPhaseCurrentGradientEnvelope: 0.31,
         basisAtlasDepth: 384,
         liveSynthesisModeCount: 12,
       },
@@ -313,60 +320,68 @@ test("publishes effective field diagnostics from runtime state when audit is dis
       force: true,
     });
 
-    expect(snapshot.render.effectiveFieldActive).toBe(true);
-    expect(snapshot.render.effectiveFieldReady).toBe(true);
-    expect(snapshot.render.effectiveFieldSupportReady).toBe(true);
-    expect(snapshot.render.effectiveFieldSupportSemantic).toBe(
+    expect(snapshot.render.modalBasisCacheActive).toBe(true);
+    expect(snapshot.render.modalBasisCacheReady).toBe(true);
+    expect(snapshot.render.modalBasisCacheSupportReady).toBe(true);
+    expect(snapshot.render.modalBasisCacheSupportSemantic).toBe(
       "coefficient-invariant-basis-support",
     );
-    expect(snapshot.render.effectiveFieldUnsignedSupportMean).toBe(0.48);
-    expect(snapshot.render.effectiveFieldCancellationRatioMean).toBe(0.27);
-    expect(snapshot.render.effectiveFieldCancellationRatioMax).toBe(0.86);
-    expect(snapshot.render.effectiveFieldSupportDiagnosticSampleCount).toBe(9);
+    expect(snapshot.render.liveSynthesisUnsignedSupportMean).toBe(0.48);
+    expect(snapshot.render.liveSynthesisCancellationRatioMean).toBe(0.27);
+    expect(snapshot.render.liveSynthesisCancellationRatioMax).toBe(0.86);
+    expect(snapshot.render.liveSynthesisSupportDiagnosticSampleCount).toBe(9);
     expect(
-      snapshot.render.effectiveFieldSupportDiagnosticSupportedSampleCount,
+      snapshot.render.liveSynthesisSupportDiagnosticSupportedSampleCount,
     ).toBe(4);
-    expect(snapshot.render.effectiveFieldSupportDiagnosticCoverage).toBe(4 / 9);
-    expect(snapshot.render.effectiveFieldRebuildPending).toBe(false);
-    expect(snapshot.render.effectiveFieldBackend).toBe("compute");
-    expect(snapshot.render.effectiveFieldResolution).toBe(32);
-    expect(snapshot.render.effectiveFieldRebuildCount).toBe(9);
-    expect(snapshot.render.effectiveFieldRebuildReason).toBe(
+    expect(snapshot.render.liveSynthesisSupportDiagnosticCoverage).toBe(4 / 9);
+    expect(snapshot.render.modalBasisCacheRebuildPending).toBe(false);
+    expect(snapshot.render.modalBasisCacheBackend).toBe("compute");
+    expect(snapshot.render.modalBasisCacheResolution).toBe(32);
+    expect(snapshot.render.modalBasisCacheRebuildCount).toBe(9);
+    expect(snapshot.render.modalBasisCacheRebuildReason).toBe(
       "modal-descriptor",
     );
     expect(snapshot.render.modalBasisCacheGeneration).toBe(21);
     expect(snapshot.render.modalBasisCacheRebuildCount).toBe(9);
     expect(snapshot.render.liveModalFrameAgeMs).toBe(8);
-    expect(snapshot.render.modalBasisDescriptorReason).toBe("modal-identity");
-    expect(snapshot.render.modalBasisAtlasDepth).toBe(384);
-    expect(snapshot.render.liveSynthesisModeCount).toBe(12);
-    expect(snapshot.render.effectiveFieldDescriptorStaleReason).toBe(
+    expect(snapshot.render.modalBasisCacheDiagnosticReason).toBe(
       "modal-identity",
     );
-    expect(snapshot.render.effectiveFieldLastError).toBeNull();
-    expect(snapshot.render.effectiveFieldModeCount).toBe(6);
-    expect(snapshot.render.effectiveFieldAuthority).toBe(0.37);
-    expect(snapshot.render.effectiveFieldModeIdentityRetentionRatio).toBe(0.61);
-    expect(snapshot.render.effectiveFieldMaxRepresentableModeIndex).toBe(31);
-    expect(snapshot.render.effectiveFieldContributingModeCount).toBe(4);
-    expect(snapshot.render.effectiveFieldZeroAmplitudeSkippedModeCount).toBe(2);
-    expect(snapshot.render.effectiveFieldContributingRawModalEnergy).toBe(0.72);
+    expect(snapshot.render.modalBasisAtlasDepth).toBe(384);
+    expect(snapshot.render.liveSynthesisModeCount).toBe(12);
+    expect(snapshot.render.modalBasisCacheDescriptorStaleReason).toBe(
+      "modal-identity",
+    );
+    expect(snapshot.render.modalBasisCacheLastError).toBeNull();
+    expect(snapshot.render.modalBasisCacheModeCount).toBe(6);
+    expect(snapshot.render.modalBasisCachePhaseAuthority).toBe(0.37);
+    expect(snapshot.render.modalBasisCacheModeIdentityRetentionRatio).toBe(
+      0.61,
+    );
+    expect(snapshot.render.modalBasisCacheMaxRepresentableModeIndex).toBe(31);
+    expect(snapshot.render.modalBasisCacheContributingModeCount).toBe(4);
+    expect(snapshot.render.modalBasisCacheZeroAmplitudeSkippedModeCount).toBe(
+      2,
+    );
+    expect(snapshot.render.modalBasisCacheContributingRawModalEnergy).toBe(
+      0.72,
+    );
     expect(
-      snapshot.render.effectiveFieldContributingPhaseCurrentModalEnergy,
+      snapshot.render.modalBasisCacheContributingPhaseCurrentModalEnergy,
     ).toBe(0.51);
-    expect(snapshot.render.effectiveFieldResolvedRawModalEnergyRatio).toBe(0.68);
+    expect(snapshot.render.liveSynthesisResolvedRawModalEnergyRatio).toBe(0.68);
     expect(
-      snapshot.render.effectiveFieldResolvedPhaseCurrentModalEnergyRatio,
+      snapshot.render.liveSynthesisResolvedPhaseCurrentModalEnergyRatio,
     ).toBe(0.74);
-    expect(snapshot.render.effectiveFieldBandwidthRejectedModeCount).toBe(3);
-    expect(snapshot.render.effectiveFieldBandwidthRejectedRawModalEnergy).toBe(
+    expect(snapshot.render.modalBasisCacheBandwidthRejectedModeCount).toBe(3);
+    expect(snapshot.render.modalBasisCacheBandwidthRejectedRawModalEnergy).toBe(
       0.22,
     );
     expect(
-      snapshot.render.effectiveFieldBandwidthRejectedPhaseCurrentModalEnergy,
+      snapshot.render.modalBasisCacheBandwidthRejectedPhaseCurrentModalEnergy,
     ).toBe(0.18);
-    expect(snapshot.render.effectiveFieldRawGradientEnvelope).toBe(0.45);
-    expect(snapshot.render.effectiveFieldPhaseCurrentGradientEnvelope).toBe(
+    expect(snapshot.render.liveSynthesisRawGradientEnvelope).toBe(0.45);
+    expect(snapshot.render.liveSynthesisPhaseCurrentGradientEnvelope).toBe(
       0.31,
     );
   } finally {
@@ -374,7 +389,7 @@ test("publishes effective field diagnostics from runtime state when audit is dis
   }
 });
 
-test("keeps phase-only effective field descriptor changes fresh when audit is disabled", () => {
+test("keeps phase-only modal basis cache descriptor changes fresh when audit is disabled", () => {
   const previousWindow = globalThis.window;
   globalThis.window = {};
   const activeDescriptor = {
@@ -397,8 +412,8 @@ test("keeps phase-only effective field descriptor changes fresh when audit is di
   try {
     const runtimeDiagnostics = createRuntimeDiagnostics();
     updateObservationTransferRenderDiagnostics(runtimeDiagnostics, null, {
-      currentEffectiveFieldDescriptor: currentDescriptor,
-      effectiveFieldCache: {
+      currentModalBasisCacheDescriptor: currentDescriptor,
+      modalBasisCache: {
         active: true,
         ready: true,
         supportTexture: {},
@@ -412,23 +427,23 @@ test("keeps phase-only effective field descriptor changes fresh when audit is di
       force: true,
     });
 
-    expect(snapshot.render.effectiveFieldDescriptorFresh).toBe(true);
-    expect(snapshot.render.effectiveFieldDescriptorStaleReason).toBeNull();
+    expect(snapshot.render.modalBasisCacheDescriptorFresh).toBe(true);
+    expect(snapshot.render.modalBasisCacheDescriptorStaleReason).toBeNull();
   } finally {
     globalThis.window = previousWindow;
   }
 });
 
-test("does not let legacy phase counts own effective field mode diagnostics", () => {
+test("does not let legacy phase counts own modal basis cache mode diagnostics", () => {
   const previousWindow = globalThis.window;
   globalThis.window = {};
 
   try {
     const runtimeDiagnostics = createRuntimeDiagnostics();
     updateObservationTransferRenderDiagnostics(runtimeDiagnostics, null, {
-      effectiveFieldModeCount: 1,
-      currentEffectiveFieldDescriptor: {
-        contributingEffectiveFieldModeCount: 3,
+      modalBasisCacheModeCount: 1,
+      currentModalBasisCacheDescriptor: {
+        contributingBasisPageModeCount: 3,
         phaseModeCount: 0,
       },
     });
@@ -437,8 +452,43 @@ test("does not let legacy phase counts own effective field mode diagnostics", ()
       force: true,
     });
 
-    expect(snapshot.render.effectiveFieldModeCount).toBe(3);
-    expect(snapshot.render.effectiveFieldContributingModeCount).toBe(3);
+    expect(snapshot.render.modalBasisCacheModeCount).toBe(3);
+    expect(snapshot.render.modalBasisCacheContributingModeCount).toBe(3);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("does not treat legacy cache authority diagnostics as cache ownership", () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = {};
+
+  try {
+    const runtimeDiagnostics = createRuntimeDiagnostics();
+    const legacyCacheAuthorityKey = ["modalBasisCache", "Authority"].join("");
+    const legacyDescriptorReasonKey = ["modalBasis", "DescriptorReason"].join(
+      "",
+    );
+    updateObservationTransferRenderDiagnostics(runtimeDiagnostics, {
+      raymarchDebug: {
+        modalBasisCacheReady: true,
+        [legacyCacheAuthorityKey]: 0.91,
+        modalBasisCachePhaseAuthority: 0.37,
+        [legacyDescriptorReasonKey]: "legacy-owner-name",
+        modalBasisCacheDiagnosticReason: "phase-authority",
+      },
+    });
+
+    const snapshot = maybePublishRuntimePerfSnapshot(runtimeDiagnostics, {
+      force: true,
+    });
+
+    expect(snapshot.render.modalBasisCachePhaseAuthority).toBe(0.37);
+    expect(snapshot.render.modalBasisCacheDiagnosticReason).toBe(
+      "phase-authority",
+    );
+    expect(snapshot.render).not.toHaveProperty(legacyCacheAuthorityKey);
+    expect(snapshot.render).not.toHaveProperty(legacyDescriptorReasonKey);
   } finally {
     globalThis.window = previousWindow;
   }
@@ -459,16 +509,17 @@ test("keeps observation transfer render diagnostics non-authoritative without au
   expect(runtimeDiagnostics.render.observationSampledSupport).toBe(0);
   expect(runtimeDiagnostics.render.observationSampledDensityFloor).toBe(0);
   expect(runtimeDiagnostics.render.observationSampledContourSupport).toBe(0);
-  expect(runtimeDiagnostics.render.effectiveFieldSupportDiagnosticSampleCount).toBe(
-    0,
-  );
   expect(
-    runtimeDiagnostics.render.effectiveFieldSupportDiagnosticSupportedSampleCount,
+    runtimeDiagnostics.render.liveSynthesisSupportDiagnosticSampleCount,
   ).toBe(0);
-  expect(runtimeDiagnostics.render.effectiveFieldSupportDiagnosticCoverage).toBe(
+  expect(
+    runtimeDiagnostics.render
+      .liveSynthesisSupportDiagnosticSupportedSampleCount,
+  ).toBe(0);
+  expect(runtimeDiagnostics.render.liveSynthesisSupportDiagnosticCoverage).toBe(
     0,
   );
-  expect(runtimeDiagnostics.render.effectiveFieldDescriptorStaleReason).toBe(
+  expect(runtimeDiagnostics.render.modalBasisCacheDescriptorStaleReason).toBe(
     null,
   );
 });
