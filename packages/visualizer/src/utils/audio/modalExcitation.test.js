@@ -1392,6 +1392,72 @@ describe("modal excitation structural state", () => {
     ).toBeLessThan(activeBlendedAmplitude * 0.08);
   });
 
+  it("cuts render authority on residual line-feed meter floor without modal input", () => {
+    const state = createModalExcitationState(16);
+    const status = createStatus({
+      audioInputMode: "system",
+      analysisSource: "live",
+      isLiveInputActive: true,
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    const activeFft = makeFft([
+      [550, 0.95],
+      [1100, 0.52],
+    ]);
+    let structural = null;
+
+    for (let frame = 0; frame < 10; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: activeFft,
+        timeData: makeTimeData({ frequency: 550 }),
+        avgAmplitude: 24,
+        rms: 0.16,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBeGreaterThan(
+      0,
+    );
+
+    for (let frame = 10; frame < 52; frame += 1) {
+      const inputs = createPreparedInputs({
+        frameTimeMs: frame * 33,
+        fftMagnitudes: new Float32Array(BIN_COUNT),
+        timeData: new Float32Array(FFT_SIZE),
+        avgAmplitude: 1.2,
+        rms: 0.0068,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    expect(structural.structuralMetrics.modalResponseInputEnergy).toBe(0);
+    expect(
+      structural.structuralMetrics.modalResponseCurrentRenderSourceEvidence,
+    ).toBe(false);
+    expect(structural.structuralMetrics.renderAuthorityCut).toBe(true);
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
+    expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBe(0);
+    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBe(0);
+  });
+
   it("reduces noisy-input jitter after the post-resonator blend", () => {
     const state = createModalExcitationState(16);
     const random = createDeterministicRandom(97);

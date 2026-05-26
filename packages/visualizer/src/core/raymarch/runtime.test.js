@@ -11,7 +11,10 @@ import {
   createRaymarchSpectralLightCache,
 } from "./fieldCache.js";
 import { RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES } from "./material.js";
-import { deriveObservationTransferParameters } from "./observationTransfer.js";
+import {
+  OBSERVATION_TRANSFER_REFERENCE,
+  deriveObservationTransferParameters,
+} from "./observationTransfer.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -430,6 +433,19 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
+  it("keeps contour sharpness out of runtime audiovisual reactivity", () => {
+    const source = readFileSync(
+      new URL("./runtime.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("contourSignal");
+    expect(source).not.toContain("CONTOUR_RESPONSE_GAIN");
+    expect(source).not.toMatch(
+      /uContourSharpness\.value\s*=\s*clamp\(\s*baseContourSharpness\s*\+/s,
+    );
+  });
+
   it("builds runtime uploads and cache descriptors from one modal field signature", () => {
     const source = readFileSync(
       new URL("./runtime.js", import.meta.url),
@@ -695,7 +711,7 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.uniforms.uSpectralCentroid.value).toBe(0.42);
     expect(runtimeState.uniforms.uSpectralFlux.value).toBe(0.28);
     expect(runtimeState.uniforms.uThreshold.value).toBeLessThan(0.045);
-    expect(runtimeState.uniforms.uContourSharpness.value).toBeGreaterThan(6.6);
+    expect(runtimeState.uniforms.uContourSharpness.value).toBe(6.6);
     expect(runtimeState.responseEnvelope).toBeGreaterThan(0);
     expect(runtimeState.scaleSignal).toBeGreaterThan(0);
     expect(runtimeState.bloomResponseSignal).toBeGreaterThan(0);
@@ -718,6 +734,9 @@ describe("tickRaymarchRuntime", () => {
     );
     expect(runtimeState.uniforms.uObservationDensityFloor.value).toBeCloseTo(
       observationParameters.densityFloor,
+    );
+    expect(observationParameters.densityFloor).toBeCloseTo(
+      OBSERVATION_TRANSFER_REFERENCE.densityFloor,
     );
     expect(
       runtimeState.uniforms.uObservationContourSupportScale.value,
@@ -920,7 +939,7 @@ describe("tickRaymarchRuntime", () => {
     ).toBeLessThan(0.045);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.effectiveContourSharpness,
-    ).toBeGreaterThan(6.6);
+    ).toBe(6.6);
     expect(runtimeState.debugSnapshot.raymarchDebug.sceneLightAsymmetry).toBe(
       0,
     );
@@ -1003,8 +1022,8 @@ describe("tickRaymarchRuntime", () => {
       effectiveFieldDescriptor,
     );
     expect(
-      runtimeState.currentEffectiveFieldDescriptor.effectiveFieldHash,
-    ).toBe(effectiveFieldDescriptor.effectiveFieldHash);
+      runtimeState.currentEffectiveFieldDescriptor.effectiveFieldTopologyHash,
+    ).toBe(effectiveFieldDescriptor.effectiveFieldTopologyHash);
     expect(
       runtimeState.currentEffectiveFieldDescriptor.modalFieldPhaseHash,
     ).not.toBe(effectiveFieldDescriptor.modalFieldPhaseHash);
@@ -1170,8 +1189,8 @@ describe("tickRaymarchRuntime", () => {
       activeDescriptor,
     );
     expect(
-      runtimeState.currentEffectiveFieldDescriptor.effectiveFieldHash,
-    ).toBe(activeDescriptor.effectiveFieldHash);
+      runtimeState.currentEffectiveFieldDescriptor.effectiveFieldTopologyHash,
+    ).toBe(activeDescriptor.effectiveFieldTopologyHash);
     expect(
       runtimeState.currentEffectiveFieldDescriptor.modalFieldPhaseHash,
     ).not.toBe(activeDescriptor.modalFieldPhaseHash);
@@ -1221,8 +1240,8 @@ describe("tickRaymarchRuntime", () => {
       activeDescriptor,
     );
     expect(
-      runtimeState.currentEffectiveFieldDescriptor.effectiveFieldHash,
-    ).toBe(activeDescriptor.effectiveFieldHash);
+      runtimeState.currentEffectiveFieldDescriptor.effectiveFieldTopologyHash,
+    ).toBe(activeDescriptor.effectiveFieldTopologyHash);
     expect(
       runtimeState.currentEffectiveFieldDescriptor.modalFieldPhaseHash,
     ).not.toBe(activeDescriptor.modalFieldPhaseHash);
@@ -3058,7 +3077,7 @@ describe("tickRaymarchRuntime", () => {
     expect(computeCalls).toBe(2);
   });
 
-  it("keeps coefficient redistribution live without queueing a cache rebuild", async () => {
+  it("coalesces coefficient redistribution to the newest effective-field descriptor", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
     runtimeState.uniforms.uSpectralMix.value = 0;
@@ -3119,25 +3138,30 @@ describe("tickRaymarchRuntime", () => {
     );
 
     const newestDescriptor = runtimeState.currentEffectiveFieldDescriptor;
-    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toBeNull();
+    expect(runtimeState.effectiveFieldCache.queuedDescriptor).toEqual(
+      newestDescriptor,
+    );
     expect(runtimeState.effectiveFieldCache.effectiveFieldAuthority).toBe(0);
     expect(runtimeState.debugSnapshot.effectiveFieldAuthority).toBe(0.5);
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.4);
     expect(
       runtimeState.debugSnapshot.effectiveFieldQueuedDescriptorPending,
-    ).toBe(false);
+    ).toBe(true);
     await Promise.resolve();
     expect(computeCalls).toBe(1);
     resolveFirst();
     await flushMicrotasks(5);
 
-    expect(runtimeState.effectiveFieldCache.pendingDescriptor).toBeNull();
+    expect(runtimeState.effectiveFieldCache.pendingDescriptor).toEqual(
+      newestDescriptor,
+    );
     expect(
-      runtimeState.effectiveFieldCache.activeDescriptor.effectiveFieldHash,
-    ).toBe(newestDescriptor.effectiveFieldHash);
+      runtimeState.effectiveFieldCache.activeDescriptor
+        .effectiveFieldSupportHash,
+    ).not.toBe(newestDescriptor.effectiveFieldSupportHash);
     expect(runtimeState.effectiveFieldCache.queuedDescriptor).toBeNull();
-    expect(runtimeState.effectiveFieldCache.rebuildPending).toBe(false);
-    expect(computeCalls).toBe(1);
+    expect(runtimeState.effectiveFieldCache.rebuildPending).toBe(true);
+    expect(computeCalls).toBe(2);
   });
 
   it("keeps phase-only updates live without pacing or queueing cache rebuilds", async () => {
@@ -3182,8 +3206,8 @@ describe("tickRaymarchRuntime", () => {
       activeDescriptor,
     );
     expect(
-      runtimeState.currentEffectiveFieldDescriptor.effectiveFieldHash,
-    ).toBe(activeDescriptor.effectiveFieldHash);
+      runtimeState.currentEffectiveFieldDescriptor.effectiveFieldTopologyHash,
+    ).toBe(activeDescriptor.effectiveFieldTopologyHash);
 
     const middleTime = 1 + 2 / 60;
     tickRaymarchRuntime(
@@ -3480,7 +3504,7 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.debugSnapshot.raymarchDebug.transientEnergy).toBe(0.85);
   });
 
-  it("sharpens transient beams more than it swells the body density", () => {
+  it("pulses transient bloom without changing fixed contour sharpness", () => {
     const steadyRuntimeState = createRuntimeState();
     const transientRuntimeState = createRuntimeState();
     const steadyFrame = {
@@ -3515,9 +3539,13 @@ describe("tickRaymarchRuntime", () => {
     expect(
       transientRuntimeState.debugSnapshot.raymarchDebug
         .effectiveContourSharpness,
-    ).toBeGreaterThan(
+    ).toBe(
       steadyRuntimeState.debugSnapshot.raymarchDebug.effectiveContourSharpness,
     );
+    expect(
+      transientRuntimeState.debugSnapshot.raymarchDebug
+        .effectiveContourSharpness,
+    ).toBe(transientRuntimeState.baseContourSharpness);
     expect(
       transientRuntimeState.debugSnapshot.raymarchDebug.effectiveBloomStrength,
     ).toBeGreaterThan(
@@ -3892,7 +3920,7 @@ describe("tickRaymarchRuntime", () => {
     ).toBe(0);
     expect(
       observedRuntime.debugSnapshot.raymarchDebug.observationSampledSupport,
-    ).toBe(0);
+    ).toBeGreaterThan(0);
     expect(observedRuntime.debugSnapshot.raymarchDebug).not.toHaveProperty(
       "observerRidgeVisibleDensityMax",
     );

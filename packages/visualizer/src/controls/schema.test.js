@@ -30,7 +30,6 @@ const EXPECTED_CONTROL_KEYS = [
   "densityGain",
   "absorption",
   "opacityGain",
-  "contourSharpness",
   "raymarchSteps",
   // Color
   "volumeColor",
@@ -105,7 +104,7 @@ describe("control schema", () => {
     expect(state.densityGain).toBe(2.5);
     expect(state.absorption).toBe(RAYMARCH_DEFAULTS.absorption);
     expect(state.opacityGain).toBe(2.3);
-    expect(state.contourSharpness).toBe(8);
+    expect(state).not.toHaveProperty("contourSharpness");
     expect(state.holographicIntensity).toBe(0.52);
     expect(state.holographicShift).toBe(0.42);
     expect(state.holographicFresnelPower).toBe(4.8);
@@ -123,21 +122,12 @@ describe("control schema", () => {
     expect(state.bloomResponseBias).toBe(1);
   });
 
-  it("keeps contour sharpness fixed as an internal presentation exponent", () => {
+  it("does not expose contour sharpness as a control", () => {
     const contourSharpness = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "contourSharpness",
     );
 
-    expect(contourSharpness).toMatchObject({
-      label: "Contour Exponent",
-      defaultValue: RAYMARCH_DEFAULTS.contourSharpness,
-      status: CONTROL_STATUSES.debugOnly,
-      sidebarHidden: true,
-    });
-    expect(contourSharpness?.binding).toMatchObject({
-      min: 1,
-      max: RAYMARCH_DEFAULTS.contourSharpness,
-    });
+    expect(contourSharpness).toBeUndefined();
   });
 
   it("keeps the node-threshold slider wide enough for cymatic tuning", () => {

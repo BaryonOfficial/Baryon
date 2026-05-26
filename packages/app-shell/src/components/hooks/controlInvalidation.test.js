@@ -68,18 +68,6 @@ test("keeps invalidation when a live Spectral Light control changes", () => {
   ).toBe(false);
 });
 
-test("keeps invalidation when contour sharpness changes in Spectral Light", () => {
-  const previousControls = createControls({ colorMode: "spectral" });
-  const nextControls = createControls({
-    ...previousControls,
-    contourSharpness: previousControls.contourSharpness + 0.5,
-  });
-
-  expect(
-    shouldSkipSpectralStaticColorInvalidation(previousControls, nextControls),
-  ).toBe(false);
-});
-
 test("keeps invalidation when changing into Spectral Light with a color edit", () => {
   const previousControls = createControls({ colorMode: "static" });
   const nextControls = createControls({

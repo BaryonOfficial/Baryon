@@ -27,6 +27,7 @@ import {
 } from "../core/raymarch/stepStability.js";
 import {
   AUDIO_SLOT_CAPACITY,
+  RAYMARCH_DEFAULTS,
   RENDER_DEFAULTS,
 } from "../defaults.js";
 
@@ -204,7 +205,12 @@ describe("control runtime sync", () => {
     expect(runtimeState.baseDensityGain).toBe(1.75);
     expect(runtimeState.uniforms.uAbsorption.value).toBe(1.35);
     expect(runtimeState.uniforms.uOpacityGain.value).toBe(1.4);
-    expect(runtimeState.uniforms.uContourSharpness.value).toBe(5.2);
+    expect(runtimeState.uniforms.uContourSharpness.value).toBe(
+      RAYMARCH_DEFAULTS.contourSharpness,
+    );
+    expect(runtimeState.baseContourSharpness).toBe(
+      RAYMARCH_DEFAULTS.contourSharpness,
+    );
     expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.65);
     expect(runtimeState.uniforms.uRimCompression.value).toBe(0.72);
     expect(runtimeState.uniforms.uHolographicIntensity.value).toBe(0.52);
@@ -263,7 +269,9 @@ describe("control runtime sync", () => {
     expect(snapshot.uniforms.effectiveCavityGeometry).toBe("rectangular");
     expect(snapshot.overlay.scale).toBe(1.4);
     expect(runtimeState.baseThreshold).toBe(0.033);
-    expect(runtimeState.baseContourSharpness).toBe(5.2);
+    expect(runtimeState.baseContourSharpness).toBe(
+      RAYMARCH_DEFAULTS.contourSharpness,
+    );
   });
 
   it("keeps requested and effective raymarch steps distinct", () => {
@@ -403,7 +411,12 @@ describe("control runtime sync", () => {
     expect(runtimeState.baseDensityGain).toBe(2.1);
     expect(runtimeState.uniforms.uAbsorption.value).toBe(1.6);
     expect(runtimeState.uniforms.uOpacityGain.value).toBe(1.75);
-    expect(runtimeState.uniforms.uContourSharpness.value).toBe(6.4);
+    expect(runtimeState.uniforms.uContourSharpness.value).toBe(
+      RAYMARCH_DEFAULTS.contourSharpness,
+    );
+    expect(runtimeState.baseContourSharpness).toBe(
+      RAYMARCH_DEFAULTS.contourSharpness,
+    );
     expect(runtimeState.uniforms.uRimBloomBias.value).toBe(0.35);
     expect(runtimeState.uniforms.uRimCompression.value).toBe(0.5);
     expect(runtimeState.uniforms.uHolographicIntensity.value).toBe(0.61);

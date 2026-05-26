@@ -70,7 +70,6 @@ const ACCENT_ATTACK = 15;
 const ACCENT_RELEASE = 11;
 const DENSITY_RESPONSE_AMOUNT = 0.08;
 const THRESHOLD_RESPONSE_REDUCTION = 0.42;
-const CONTOUR_RESPONSE_GAIN = 1.85;
 const BLOOM_STRENGTH_RESPONSE_GAIN = 0.18;
 const BLOOM_RADIUS_RESPONSE_GAIN = 0.16;
 const BLOOM_THRESHOLD_RESPONSE_GAIN = 0.08;
@@ -1178,14 +1177,11 @@ function updateReactiveResponse(
       gatedStructureSignal * 0.06 +
       gatedModalResponseEnergy * 0.08,
   );
-  const contourSharpness = runtimeState.uniforms.uContourSharpness?.value ?? 1;
-  const contourSignal = clamp01((contourSharpness - 1) / 7);
   const bloomResponseSignal = clamp01(
     responseEnvelope * 0.44 +
       accentEnvelope * 0.22 +
       gatedStructureSignal * 0.2 +
-      gatedModalResponseEnergy * 0.08 +
-      contourSignal * 0.14 * reactivity * presentationSignalScale,
+      gatedModalResponseEnergy * 0.08,
   );
 
   runtimeState.responseEnvelope = responseEnvelope;
@@ -1219,7 +1215,6 @@ function updateLaserResponse(runtimeState, featureFrame) {
   const reactiveGate = clamp01(runtimeState.reactivityTuning?.reactivity ?? 1);
   const transientEnergy =
     clamp01(featureFrame?.transientEnergy ?? 0) * reactiveGate;
-  const spectralFlux = clamp01(featureFrame?.spectralFlux ?? 0) * reactiveGate;
   const rawChangeSignal =
     clamp01(featureFrame?.changeSignal ?? 0) * reactiveGate;
   const rawPulseSignal = clamp01(featureFrame?.pulseSignal ?? 0) * reactiveGate;
@@ -1231,13 +1226,6 @@ function updateLaserResponse(runtimeState, featureFrame) {
       accentEnvelope * 0.58 +
       bloomResponseSignal * 0.22 +
       transientEnergy * 0.18,
-  );
-  const contourResponse = clamp01(
-    responseEnvelope * 0.2 +
-      accentEnvelope * 0.66 +
-      bloomResponseSignal * 0.28 +
-      transientEnergy * 0.34 +
-      spectralFlux * 0.22,
   );
   const bloomStrengthPulse = clamp01(
     accentEnvelope * 0.84 + transientEnergy * 0.4,
@@ -1256,7 +1244,7 @@ function updateLaserResponse(runtimeState, featureFrame) {
     baseThreshold * (1 - thresholdResponse * THRESHOLD_RESPONSE_REDUCTION),
   );
   uniforms.uContourSharpness.value = clamp(
-    baseContourSharpness + contourResponse * CONTOUR_RESPONSE_GAIN,
+    baseContourSharpness,
     1,
     8,
   );

@@ -438,6 +438,32 @@ describe("raymarch volume material", () => {
     );
   });
 
+  it("does not spend the local observation anchor inside shader response support", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const observationHelperStart = expectSourceIndex(
+      source,
+      "function deriveObservationTransferNode(",
+    );
+    const observationHelperEnd = expectSourceIndex(
+      source,
+      "function createRaymarchOffsetNode",
+    );
+    const observationHelperBlock = source.slice(
+      observationHelperStart,
+      observationHelperEnd,
+    );
+
+    expect(observationHelperBlock).toMatch(
+      /exp\(\s*observationResponse\s*\.mul\(observationTransferGain\.negate\(\)\)/s,
+    );
+    expect(observationHelperBlock).not.toMatch(
+      /observationResponse\s*\.mul\(observationAnchor\)\s*\.mul\(observationTransferGain\.negate\(\)\)/s,
+    );
+  });
+
   it("keeps final radiance downstream of cancellation-suppressed density", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),

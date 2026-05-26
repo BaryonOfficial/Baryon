@@ -125,10 +125,7 @@ describe("deserializeControls", () => {
       CONTROL_DEFINITIONS,
     );
 
-    expect(result.contourSharpness).toBe(
-      CONTROL_DEFINITIONS.find((definition) => definition.key === "contourSharpness")
-        ?.defaultValue,
-    );
+    expect(result).not.toHaveProperty("contourSharpness");
     expect(result.densityGain).toBe(3.4);
   });
 

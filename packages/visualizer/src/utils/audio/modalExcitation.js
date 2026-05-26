@@ -375,7 +375,6 @@ function isLiteralZeroSourceFrame(preparedInputs) {
 }
 
 function hasCurrentRenderSourceEvidence({
-  strictHardSilentFrame,
   drivePeak,
   driveSource,
   periodicity,
@@ -383,10 +382,6 @@ function hasCurrentRenderSourceEvidence({
   distributedExcitation,
   modalResponseInputEnergy,
 }) {
-  if (!strictHardSilentFrame) {
-    return true;
-  }
-
   if ((modalResponseInputEnergy ?? 0) >= SOURCE_CUT_CURRENT_INPUT_FLOOR) {
     return true;
   }
@@ -411,7 +406,6 @@ function hasCurrentRenderSourceEvidence({
 function updateRenderAuthorityCutState({
   state,
   literalZeroSourceFrame,
-  strictHardSilentFrame,
   currentRenderSourceEvidence,
   deltaMs,
 }) {
@@ -420,7 +414,7 @@ function updateRenderAuthorityCutState({
     return true;
   }
 
-  if (strictHardSilentFrame && !currentRenderSourceEvidence) {
+  if (!currentRenderSourceEvidence) {
     state.renderAuthorityCutSilenceMs = Math.min(
       SOURCE_CUT_RELEASE_HOLD_MS,
       (state.renderAuthorityCutSilenceMs ?? 0) + Math.max(0, deltaMs),
@@ -3135,7 +3129,6 @@ export function buildModalExcitationStructuralState({
     coherence: Math.max(tonalness, periodicity),
   });
   const currentRenderSourceEvidence = hasCurrentRenderSourceEvidence({
-    strictHardSilentFrame,
     drivePeak,
     driveSource,
     periodicity,
@@ -3146,7 +3139,6 @@ export function buildModalExcitationStructuralState({
   const renderAuthorityCut = updateRenderAuthorityCutState({
     state,
     literalZeroSourceFrame: isLiteralZeroSourceFrame(preparedInputs),
-    strictHardSilentFrame,
     currentRenderSourceEvidence,
     deltaMs,
   });

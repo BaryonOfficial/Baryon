@@ -65,4 +65,37 @@ describe("deriveRaymarchDiagnosticVisibility", () => {
     expect(reinforcing.avgDensity).toBeGreaterThan(0);
     expect(reinforcing.avgOpacity).toBeGreaterThan(0);
   });
+
+  it("does not report lower modal density when opacity exposure increases", () => {
+    const referenceParameters = deriveObservationTransferParameters({
+      opacityGain: 2.3,
+    });
+    const highOpacityParameters = deriveObservationTransferParameters({
+      opacityGain: 3,
+    });
+    const sharedInputs = {
+      rawDensityEstimate: referenceParameters.densityFadeStart * 0.5,
+      observationAnchor: 0.36,
+      signedRadianceAuthority: 0.63,
+      modalCoefficientEnergy: 1,
+      modalResponseEnergy: 1,
+      stepBudget: 80,
+      parameters: referenceParameters,
+    };
+    const reference = deriveRaymarchDiagnosticVisibility({
+      ...sharedInputs,
+      opacityGain: 2.3,
+    });
+    const highOpacity = deriveRaymarchDiagnosticVisibility({
+      ...sharedInputs,
+      opacityGain: 3,
+      parameters: highOpacityParameters,
+    });
+
+    expect(highOpacityParameters.densityFloor).toBeCloseTo(
+      referenceParameters.densityFloor,
+    );
+    expect(highOpacity.avgDensity).toBeCloseTo(reference.avgDensity);
+    expect(highOpacity.avgOpacity).toBeGreaterThan(reference.avgOpacity);
+  });
 });

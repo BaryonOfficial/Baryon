@@ -290,23 +290,6 @@ export const CONTROL_DEFINITIONS = Object.freeze([
   ),
   withControlGroup(
     {
-      key: "contourSharpness",
-      label: "Contour Exponent",
-      title:
-        "Internal contour transfer exponent for the raymarch material. Product rendering keeps this fixed at the crystal-clear default.",
-      defaultValue: RAYMARCH_DEFAULTS.contourSharpness,
-      methods: ALL_METHODS,
-      binding: { min: 1, max: 8, step: 0.1 },
-      targetType: CONTROL_TARGET_TYPES.uniform,
-      handler: CONTROL_HANDLERS.raymarch,
-      runtimePath: "runtime.uniforms.uContourSharpness.value",
-      status: CONTROL_STATUSES.debugOnly,
-      sidebarHidden: true,
-    },
-    CONTROL_GROUPS.shape,
-  ),
-  withControlGroup(
-    {
       key: "raymarchSteps",
       label: "Steps",
       title:

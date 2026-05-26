@@ -25,7 +25,6 @@ export const OBSERVATION_TRANSFER_REFERENCE = Object.freeze({
   minContourSupportScale: 0.006,
   maxContourSupportScale: 0.06,
   modalResponseUnitEnergy: 1,
-  unitAnchor: 1,
   epsilon: 1e-4,
 });
 
@@ -108,12 +107,12 @@ export function deriveObservationTransferParameters({
   const transferGain =
     -Math.log(1 - targetUnitSupport) /
     Math.max(
-      safeModalResponseUnitEnergy * OBSERVATION_TRANSFER_REFERENCE.unitAnchor,
+      safeModalResponseUnitEnergy,
       OBSERVATION_TRANSFER_REFERENCE.epsilon,
     );
   const densityFloor = clamp(
     Math.max(
-      OBSERVATION_TRANSFER_REFERENCE.densityFloor / exposureScale,
+      OBSERVATION_TRANSFER_REFERENCE.densityFloor,
       safeFieldNoiseFloor * 2.2,
     ),
     OBSERVATION_TRANSFER_REFERENCE.minDensityFloor,
@@ -182,9 +181,7 @@ export function deriveObservationTransfer({
   const observationSupport = clamp01(
     1 -
       Math.exp(
-        -observationParameters.transferGain *
-          observationResponse *
-          observationAnchor,
+        -observationParameters.transferGain * observationResponse,
       ),
   );
   const observedDensityFloor =

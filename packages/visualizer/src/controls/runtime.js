@@ -6,6 +6,7 @@ import {
 } from "../visualization/types.js";
 import {
   AUDIO_DEFAULTS,
+  RAYMARCH_DEFAULTS,
   REACTIVITY_DEFAULTS,
   RENDER_DEFAULTS,
 } from "../defaults.js";
@@ -163,7 +164,6 @@ export const CONTROL_RUNTIME_COVERAGE = Object.freeze({
     "densityGain",
     "absorption",
     "opacityGain",
-    "contourSharpness",
     "reactivity",
     "rimBloomBias",
     "rimCompression",
@@ -313,10 +313,10 @@ function applyCommonVisualizationControls(runtimeState, controls) {
   uniforms.uIdleLogoSize.value = controls.idleLogoSize;
   uniforms.uDensityGain.value = controls.densityGain;
   uniforms.uOpacityGain.value = controls.opacityGain;
-  uniforms.uContourSharpness.value = controls.contourSharpness;
+  uniforms.uContourSharpness.value = RAYMARCH_DEFAULTS.contourSharpness;
   runtimeState.baseDensityGain = controls.densityGain;
   runtimeState.baseThreshold = controls.zeroPointPrecision;
-  runtimeState.baseContourSharpness = controls.contourSharpness;
+  runtimeState.baseContourSharpness = RAYMARCH_DEFAULTS.contourSharpness;
   runtimeState.reactivityTuning = {
     reactivity: controls.reactivity ?? REACTIVITY_DEFAULTS.reactivity,
     motionAmount: controls.motionAmount ?? REACTIVITY_DEFAULTS.motionAmount,

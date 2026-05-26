@@ -1506,7 +1506,7 @@ describe("fieldCache", () => {
     ).toMatchObject({ needsRebuild: false, reason: "unchanged" });
   });
 
-  it("keeps effective field cache freshness independent of coefficient envelope changes", () => {
+  it("rebuilds effective field caches for relative coefficient envelope changes", () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const firstSlots = new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.2]);
@@ -1563,12 +1563,18 @@ describe("fieldCache", () => {
       );
 
     expect(changedSample.field).not.toBe(firstSample.field);
-    expect(first.effectiveFieldHash).toBe(changed.effectiveFieldHash);
-    expect(rebuild.needsRebuild).toBe(false);
-    expect(rebuild.reason).toBe("unchanged");
+    expect(first).not.toHaveProperty("effectiveFieldHash");
+    expect(first.effectiveFieldTopologyHash).toBe(
+      changed.effectiveFieldTopologyHash,
+    );
+    expect(first.effectiveFieldSupportHash).not.toBe(
+      changed.effectiveFieldSupportHash,
+    );
+    expect(rebuild.needsRebuild).toBe(true);
+    expect(rebuild.reason).toBe("modal-coefficients");
   });
 
-  it("keeps effective field cache freshness independent of coefficient redistribution", () => {
+  it("rebuilds effective field caches for coefficient redistribution", () => {
     const effectiveFieldCache =
       raymarchFieldCache.createRaymarchEffectiveFieldCache({ resolution: 8 });
     const firstSlots = new Float32Array([1, 2, 3, 0.9, 2, 2, 4, 0.2]);
@@ -1594,6 +1600,28 @@ describe("fieldCache", () => {
       phaseModeCount: 2,
       phaseAuthority: 0.7,
     });
+    const firstSample = evaluateRaymarchEffectiveFieldPoint({
+      modalFieldSlots: firstSlots,
+      modalFieldPhaseSlots: phaseSlots,
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0.2,
+      y: 0.1,
+      z: -0.15,
+      resolution: 8,
+    });
+    const changedSample = evaluateRaymarchEffectiveFieldPoint({
+      modalFieldSlots: changedSlots,
+      modalFieldPhaseSlots: phaseSlots,
+      modalFieldCount: 2,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0.2,
+      y: 0.1,
+      z: -0.15,
+      resolution: 8,
+    });
 
     effectiveFieldCache.activeDescriptor = first;
     const rebuild =
@@ -1602,9 +1630,15 @@ describe("fieldCache", () => {
         changed,
       );
 
-    expect(first.effectiveFieldHash).toBe(changed.effectiveFieldHash);
-    expect(rebuild.needsRebuild).toBe(false);
-    expect(rebuild.reason).toBe("unchanged");
+    expect(changedSample.field).not.toBeCloseTo(firstSample.field, 6);
+    expect(first.effectiveFieldTopologyHash).toBe(
+      changed.effectiveFieldTopologyHash,
+    );
+    expect(first.effectiveFieldSupportHash).not.toBe(
+      changed.effectiveFieldSupportHash,
+    );
+    expect(rebuild.needsRebuild).toBe(true);
+    expect(rebuild.reason).toBe("modal-coefficients");
   });
 
   it("does not rebuild effective field caches for aggregate phase authority changes", () => {
@@ -3817,8 +3851,8 @@ describe("fieldCache", () => {
     expect(baseDescriptor.modalFieldHash).not.toBe(
       rejectedChangedDescriptor.modalFieldHash,
     );
-    expect(rejectedChangedDescriptor.effectiveFieldHash).toBe(
-      baseDescriptor.effectiveFieldHash,
+    expect(rejectedChangedDescriptor.effectiveFieldTopologyHash).toBe(
+      baseDescriptor.effectiveFieldTopologyHash,
     );
     expect(rejectedChangedSample.field).toBeCloseTo(baseSample.field, 6);
     expect(rejectedChangedSample.unsignedSupport).toBeCloseTo(

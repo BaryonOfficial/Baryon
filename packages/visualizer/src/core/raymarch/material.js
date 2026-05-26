@@ -1301,9 +1301,7 @@ function deriveObservationTransferNode(
   const observationSupport = clamp(
     float(1.0).sub(
       exp(
-        observationResponse
-          .mul(observationAnchor)
-          .mul(observationTransferGain.negate()),
+        observationResponse.mul(observationTransferGain.negate()),
       ),
     ),
     float(0.0),

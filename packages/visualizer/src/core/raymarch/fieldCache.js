@@ -1085,7 +1085,8 @@ function effectiveFieldDescriptorsEqual(left, right) {
   return (
     left.contributingEffectiveFieldModeCount ===
       right.contributingEffectiveFieldModeCount &&
-    left.effectiveFieldHash === right.effectiveFieldHash &&
+    left.effectiveFieldTopologyHash === right.effectiveFieldTopologyHash &&
+    left.effectiveFieldSupportHash === right.effectiveFieldSupportHash &&
     left.descriptorOverflow === right.descriptorOverflow &&
     left.resolution === right.resolution
   );
@@ -1192,9 +1193,16 @@ function resolveEffectiveFieldRebuildReason(
   if (
     previousDescriptor.contributingEffectiveFieldModeCount !==
       nextDescriptor.contributingEffectiveFieldModeCount ||
-    previousDescriptor.effectiveFieldHash !== nextDescriptor.effectiveFieldHash
+    previousDescriptor.effectiveFieldTopologyHash !==
+      nextDescriptor.effectiveFieldTopologyHash
   ) {
     return "modal-identity";
+  }
+  if (
+    previousDescriptor.effectiveFieldSupportHash !==
+    nextDescriptor.effectiveFieldSupportHash
+  ) {
+    return "modal-coefficients";
   }
 
   return null;
@@ -1725,7 +1733,6 @@ export function buildRaymarchEffectiveFieldDescriptor({
       hashCanonicalModalFieldShape(effectiveFieldShape),
     effectiveFieldTopologyHash:
       hashCanonicalModalFieldTopology(effectiveFieldTopology),
-    effectiveFieldHash: hashCanonicalModalFieldTopology(effectiveFieldTopology),
     modalFieldPhaseHash: buildRaymarchEffectiveFieldPhaseSignature({
       phaseSlots: modalFieldPhaseSlots,
       modalFieldSlots,

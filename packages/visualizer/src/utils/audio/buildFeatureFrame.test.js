@@ -1320,6 +1320,58 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(countAuthoritativePhaseSlots(silence.modalFieldPhaseSlots)).toBe(0);
   });
 
+  it("cuts render authority after paused line-feed residual meter floor", () => {
+    const featureState = createAudioFeatureState();
+    const status = makeResolvedLineFeedLiveStatus({
+      audioInputMode: "system",
+      analysisSource: "live",
+    });
+    let frame = null;
+
+    for (let frameIndex = 0; frameIndex < 10; frameIndex += 1) {
+      frame = buildLiveInputFrame({
+        featureState,
+        peaks: [
+          [550, 0.95],
+          [1100, 0.52],
+        ],
+        avgAmplitude: 24,
+        rms: 0.16,
+        frameTimeMs: frameIndex * 33,
+        acousticIntent: "ambient",
+        status,
+        timeData: makeTimeData({ frequency: 550 }),
+      });
+    }
+
+    expect(frame.renderAuthority).toBe(true);
+    expect(frame.modalResponseRenderEnergy).toBeGreaterThan(0);
+
+    for (let frameIndex = 10; frameIndex < 52; frameIndex += 1) {
+      frame = buildLiveInputFrame({
+        featureState,
+        peaks: [],
+        avgAmplitude: 1.2,
+        rms: 0.0068,
+        frameTimeMs: frameIndex * 33,
+        acousticIntent: "ambient",
+        status,
+        timeData: new Float32Array(FFT_SIZE),
+      });
+    }
+
+    expect(frame.debug.modalResponseInputEnergy).toBe(0);
+    expect(frame.modalResponseCurrentRenderSourceEvidence).toBe(false);
+    expect(frame.renderAuthorityCut).toBe(true);
+    expect(frame.renderAuthority).toBe(false);
+    expect(frame.fieldState).toBe("idle");
+    expect(frame.hasModalField).toBe(false);
+    expect(frame.modalResponseRenderEnergy).toBe(0);
+    expect(frame.observationEnergy).toBe(0);
+    expect(sumSlotAmplitudes(frame.modalFieldSlots)).toBe(0);
+    expect(countAuthoritativePhaseSlots(frame.modalFieldPhaseSlots)).toBe(0);
+  });
+
   it("recalibrates when mic mode is restarted", () => {
     const featureState = createAudioFeatureState();
     buildLiveInputFrame({

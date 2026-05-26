@@ -45,7 +45,7 @@ describe("observation transfer", () => {
     expect(parameters.fieldNoiseFloor).toBe(0);
   });
 
-  it("derives exposure-sensitive thresholds without changing observation energy", () => {
+  it("derives exposure-sensitive thresholds without dimming modal support floors", () => {
     const referenceParameters = deriveReferenceParameters();
     const brighterParameters = deriveReferenceParameters({
       opacityGain: RAYMARCH_DEFAULTS.opacityGain * 1.6,
@@ -72,11 +72,48 @@ describe("observation transfer", () => {
     expect(brighterParameters.densityFadeStart).toBeLessThan(
       referenceParameters.densityFadeStart,
     );
-    expect(brighterParameters.densityFloor).toBeLessThan(
+    expect(brighterParameters.densityFloor).toBeCloseTo(
       referenceParameters.densityFloor,
     );
     expect(brighterTransfer.observationEnergy).toBe(
       referenceTransfer.observationEnergy,
+    );
+    expect(brighterTransfer.observedDensityFloor).toBeCloseTo(
+      referenceTransfer.observedDensityFloor,
+    );
+  });
+
+  it("does not let opacity exposure own the visibility of full-energy ridges", () => {
+    const referenceParameters = deriveReferenceParameters();
+    const maxOpacityParameters = deriveReferenceParameters({
+      opacityGain: 3,
+      stepCompensation: deriveStepCompensation(64),
+    });
+    const physicalInputs = {
+      density: 0,
+      modalStructureAnchor: 0.36,
+      ridgeAnchor: 0.36,
+      signedRadianceAuthority: 0.63,
+      modalCoefficientEnergy: 1,
+      modalResponseEnergy: 1,
+    };
+    const referenceTransfer = deriveObservationTransfer({
+      ...physicalInputs,
+      parameters: referenceParameters,
+    });
+    const maxOpacityTransfer = deriveObservationTransfer({
+      ...physicalInputs,
+      parameters: maxOpacityParameters,
+    });
+
+    expect(maxOpacityParameters.exposureScale).toBeGreaterThan(
+      referenceParameters.exposureScale,
+    );
+    expect(maxOpacityParameters.densityFloor).toBeCloseTo(
+      referenceParameters.densityFloor,
+    );
+    expect(maxOpacityTransfer.observedDensityFloor).toBeCloseTo(
+      referenceTransfer.observedDensityFloor,
     );
   });
 
@@ -208,6 +245,36 @@ describe("observation transfer", () => {
     expect(noEnergy.visibleDensity).toBe(0);
   });
 
+  it("does not spend local modal support twice for full-energy ridges", () => {
+    const parameters = deriveReferenceParameters();
+    const fullAnchor = deriveObservationTransfer({
+      density: 0,
+      modalStructureAnchor: 1,
+      ridgeAnchor: 1,
+      modalCoefficientEnergy: 1,
+      modalResponseEnergy: 1,
+      parameters,
+    });
+    const narrowAnchor = deriveObservationTransfer({
+      density: 0,
+      modalStructureAnchor: 0.36,
+      ridgeAnchor: 0.36,
+      modalCoefficientEnergy: 1,
+      modalResponseEnergy: 1,
+      parameters,
+    });
+
+    expect(narrowAnchor.observationResponse).toBe(1);
+    expect(narrowAnchor.observationSupport).toBeCloseTo(
+      fullAnchor.observationSupport,
+      6,
+    );
+    expect(narrowAnchor.observedDensityFloor).toBeCloseTo(
+      fullAnchor.observedDensityFloor * narrowAnchor.observationAnchor,
+      6,
+    );
+  });
+
   it("does not let support-only contours resurrect canceled signed fields", () => {
     const canceled = deriveObservationTransfer({
       density: 0,
@@ -317,12 +384,14 @@ describe("observation transfer", () => {
     expect(canceling.visibleDensity).toBeLessThan(
       reinforcing.visibleDensity * 0.35,
     );
-    expect(canceling.observedContourSupport).toBeLessThan(
-      reinforcing.observedContourSupport * 0.12,
+    expect(canceling.observedContourSupport).toBeCloseTo(
+      reinforcing.observedContourSupport *
+        (canceling.observationAnchor / reinforcing.observationAnchor),
+      6,
     );
   });
 
-  it("gates observation contour support by the full modal-signed product", () => {
+  it("gates observation contour support by the local signed spatial mask", () => {
     const strongAnchor = deriveObservationTransfer({
       density: 0.01,
       modalStructureAnchor: 0.9,
@@ -348,11 +417,14 @@ describe("observation transfer", () => {
       signedRadianceAuthority: 1,
     });
 
-    expect(weakSignedAnchor.observationSupport).toBeGreaterThan(
-      strongAnchor.observationSupport * 0.35,
+    expect(weakSignedAnchor.observationSupport).toBeCloseTo(
+      strongAnchor.observationSupport,
+      6,
     );
-    expect(weakSignedAnchor.observedContourSupport).toBeLessThan(
-      strongAnchor.observedContourSupport * 0.12,
+    expect(weakSignedAnchor.observedContourSupport).toBeCloseTo(
+      strongAnchor.observedContourSupport *
+        (weakSignedAnchor.observationAnchor / strongAnchor.observationAnchor),
+      6,
     );
     expect(supportOnlyRidge.observedContourSupport).toBe(0);
   });
