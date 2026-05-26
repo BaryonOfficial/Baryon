@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import {
   createRaymarchSceneRoot,
+  resolveRaymarchTotalSlotAmplitude,
+  sumUploadedModalFieldAmplitude,
   tickRaymarchRuntime as tickRaymarchRuntimeBase,
 } from "./runtime.js";
 import {
@@ -1318,7 +1320,7 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
-  it("fails the modal-basis cache closed when compute is unavailable", async () => {
+  it("defers modal-basis cache rebuilds until a compute renderer is available", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     const featureFrame = {
       fieldState: "active",
@@ -1364,21 +1366,21 @@ describe("tickRaymarchRuntime", () => {
     await flushMicrotasks();
 
     expect(runtimeState.modalBasisCache).toBeTruthy();
-    expect(runtimeState.modalBasisCache.backend).toBe("unavailable");
-    expect(runtimeState.modalBasisCache.ready).toBe(false);
+    expect(runtimeState.modalBasisCache.backend).toBe("compute");
+    expect(runtimeState.modalBasisCache.ready).toBe(true);
     expect(runtimeState.volumeMesh.visible).toBe(false);
     expect(runtimeState.volumeMesh.userData).not.toHaveProperty(
       "raymarchFieldEvaluationMode",
     );
     expect(runtimeState.debugSnapshot.raymarchDebug.modalBasisCacheReady).toBe(
-      false,
+      true,
     );
     expect(
       runtimeState.debugSnapshot.raymarchDebug.modalBasisCacheFailedClosed,
     ).toBe(true);
     expect(
       runtimeState.debugSnapshot.raymarchDebug.modalBasisCacheLastError,
-    ).toBe("Renderer computeAsync unavailable");
+    ).toBeNull();
   });
 
   it("exposes modal-basis bandwidth diagnostics without reporting descriptor overflow", async () => {
@@ -3137,8 +3139,8 @@ describe("tickRaymarchRuntime", () => {
         null,
       );
 
-      expect(runtimeState.modalBasisCache.backend).toBe("unavailable");
-      expect(runtimeState.spectralLightCache.backend).toBe("unavailable");
+      expect(runtimeState.modalBasisCache.backend).toBe("compute");
+      expect(runtimeState.spectralLightCache.backend).toBe("compute");
       expect(runtimeState.volumeMesh.visible).toBe(false);
       expect(runtimeState.volumeMesh.userData).not.toHaveProperty(
         "raymarchFieldEvaluationMode",
@@ -3148,11 +3150,9 @@ describe("tickRaymarchRuntime", () => {
       ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off);
       expect(runtimeState.debugSnapshot.modalBasisCacheFailedClosed).toBe(true);
       expect(runtimeState.debugSnapshot.spectralLightCacheFailedClosed).toBe(
-        true,
+        false,
       );
-      expect(runtimeState.debugSnapshot.modalBasisCacheLastError).toBe(
-        "Renderer computeAsync unavailable",
-      );
+      expect(runtimeState.debugSnapshot.modalBasisCacheLastError).toBeNull();
       expect(runtimeState.debugSnapshot.spectralLightEvaluationMode).toBe(
         RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
       );
@@ -4365,5 +4365,27 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.bloomTuning.effectiveThreshold).toBeLessThanOrEqual(
       transientThreshold + 0.02,
     );
+  });
+});
+
+describe("resolveRaymarchTotalSlotAmplitude", () => {
+  it("uses uploaded GPU buffer energy instead of the full descriptor total", () => {
+    const descriptorSlots = new Float32Array(64);
+    descriptorSlots[60 * 4 + 3] = 0.9;
+    const buffer = new Float32Array(16);
+    buffer[3] = 0.1;
+    buffer[7] = 0.05;
+
+    expect(sumUploadedModalFieldAmplitude(buffer, 4)).toBeCloseTo(0.15);
+    expect(
+      resolveRaymarchTotalSlotAmplitude(
+        {
+          modalFieldModeBuffer: { value: { array: buffer } },
+          performanceGovernor: { modalField: { uploadedAmplitude: 1.8 } },
+        },
+        { slotViews: { modalFieldSlots: descriptorSlots } },
+        4,
+      ),
+    ).toBeCloseTo(0.15);
   });
 });

@@ -337,6 +337,41 @@ function sumModalFieldAmplitude(featureFrame) {
   return total;
 }
 
+export function sumUploadedModalFieldAmplitude(modeSlots, activeCount) {
+  const slotCount = Math.max(0, Math.floor(activeCount ?? 0));
+  if (!modeSlots || slotCount <= 0) {
+    return 0;
+  }
+
+  let total = 0;
+  for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+    total += modeSlots[slotIndex * 4 + 3] ?? 0;
+  }
+  return total;
+}
+
+export function resolveRaymarchTotalSlotAmplitude(
+  runtimeState,
+  modalDescriptor,
+  activeCount,
+) {
+  const uploadedFromBuffer = sumUploadedModalFieldAmplitude(
+    runtimeState?.modalFieldModeBuffer?.value?.array,
+    activeCount,
+  );
+  if (uploadedFromBuffer > 0) {
+    return uploadedFromBuffer;
+  }
+
+  const uploadedFromGovernor =
+    runtimeState?.performanceGovernor?.modalField?.uploadedAmplitude;
+  if (Number.isFinite(uploadedFromGovernor) && uploadedFromGovernor > 0) {
+    return uploadedFromGovernor;
+  }
+
+  return sumModalFieldAmplitude({ modalDescriptor });
+}
+
 function estimateModalFieldAmplitude(featureFrame) {
   return estimateAverageModeAmplitude(
     featureFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
@@ -581,7 +616,11 @@ function buildRaymarchDebugSnapshot(
     featureFrame?.changeBreakdown ??
     null;
   const pulseSignal = featureFrame?.pulseSignal ?? 0;
-  const totalSlotAmplitude = sumModalFieldAmplitude({ modalDescriptor });
+  const totalSlotAmplitude = resolveRaymarchTotalSlotAmplitude(
+    runtimeState,
+    modalDescriptor,
+    activeModeCount,
+  );
   const modalCoefficientEnergy = renderAuthority
     ? clamp01(totalSlotAmplitude)
     : 0;
@@ -1835,7 +1874,11 @@ function applyRaymarchRuntimeUploadAuthority({
   setIfChanged(uniforms.uActiveModeCount, modalFieldModeCount);
   setIfChanged(
     uniforms.uTotalSlotAmplitude,
-    sumModalFieldAmplitude({ modalDescriptor }),
+    resolveRaymarchTotalSlotAmplitude(
+      runtimeState,
+      modalDescriptor,
+      modalFieldModeCount,
+    ),
   );
 
   const boundaryMode = getRuntimeBoundaryMode(runtimeState);
@@ -2053,9 +2096,17 @@ export function tickRaymarchRuntime(
     featureFrame?.trebleBroadbandEnergy ?? 0,
   );
   setIfChanged(uniforms.uModeCoherence, featureFrame?.modeCoherence ?? 0);
+  const activeModalFieldModeCount =
+    uniforms.uModalFieldModeCount?.value ??
+    uniforms.uActiveModeCount?.value ??
+    0;
   setIfChanged(
     uniforms.uTotalSlotAmplitude,
-    sumModalFieldAmplitude({ modalDescriptor }),
+    resolveRaymarchTotalSlotAmplitude(
+      runtimeState,
+      modalDescriptor,
+      activeModalFieldModeCount,
+    ),
   );
   setIfChanged(
     uniforms.uModalResponseEnergy,

@@ -3024,8 +3024,7 @@ export function enqueueRaymarchFieldCacheRebuild(
   }
 
   if (!renderer || typeof renderer.computeAsync !== "function") {
-    markCacheBackendUnavailable(fieldCache);
-    return { enqueued: false, reason: "unavailable" };
+    return { enqueued: false, reason: "renderer-unavailable" };
   }
 
   const computeNode = getOrCreateRaymarchFieldCacheComputeNode(fieldCache, {
@@ -3112,8 +3111,7 @@ export function enqueueRaymarchSpectralLightCacheRebuild(
   }
 
   if (!renderer || typeof renderer.computeAsync !== "function") {
-    markCacheBackendUnavailable(spectralLightCache);
-    return { enqueued: false, reason: "unavailable" };
+    return { enqueued: false, reason: "renderer-unavailable" };
   }
 
   const computeNode = getOrCreateRaymarchSpectralLightCacheComputeNode(
@@ -3209,8 +3207,7 @@ export function enqueueRaymarchModalBasisCacheRebuild(
   }
 
   if (!renderer || typeof renderer.computeAsync !== "function") {
-    markCacheBackendUnavailable(modalBasisCache);
-    return { enqueued: false, reason: "unavailable" };
+    return { enqueued: false, reason: "renderer-unavailable" };
   }
 
   const computeNode = getOrCreateRaymarchModalBasisCacheComputeNode(
