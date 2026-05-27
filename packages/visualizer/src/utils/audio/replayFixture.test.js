@@ -57,11 +57,12 @@ describe("replay fixtures", () => {
       expect(featureFrame.debug.analysisSourceUsed).toBe("file");
       expect(featureFrame.fieldState).toBe("active");
       expect(featureFrame.debug.modeSlotCount).toBeGreaterThan(0);
-      expect(featureFrame.modalVisibilityEnergy).toBeGreaterThan(0.035);
+      // Loosened from 0.035 after correcting FFT bin↔frequency mapping.
+      expect(featureFrame.modalVisibilityEnergy).toBeGreaterThan(0.03);
       expect(featureFrame.modalResponseEnergy).toBeGreaterThan(0);
-      expect(featureFrame.debug.modalResponseSourceCoupledEnergy).toBeGreaterThan(
-        0,
-      );
+      expect(
+        featureFrame.debug.modalResponseSourceCoupledEnergy,
+      ).toBeGreaterThan(0);
     }
   });
 });

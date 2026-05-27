@@ -1,3 +1,5 @@
+import { frequencyToBinIndex } from "./audio/binFrequency.js";
+
 const SOUND_SPEED_WATER = 1480;
 const MIN_CAVITY_INDEX = 1;
 const MIN_CAVITY_MAGNITUDE = Math.sqrt(3);
@@ -95,8 +97,7 @@ function getTargetMagnitude(pitch, options) {
 
 function getFrequencyForMagnitude(magnitude, options) {
   return (
-    (options.soundSpeedMetersPerSecond * 0.5 * magnitude) /
-    options.radiusMeters
+    (options.soundSpeedMetersPerSecond * 0.5 * magnitude) / options.radiusMeters
   );
 }
 
@@ -117,7 +118,9 @@ function hasValidModeIndices(u, v, w, boundaryMode) {
   if (boundaryMode === "neumann") {
     return u >= 0 && v >= 0 && w >= 0 && u + v + w > 0;
   }
-  return u >= MIN_CAVITY_INDEX && v >= MIN_CAVITY_INDEX && w >= MIN_CAVITY_INDEX;
+  return (
+    u >= MIN_CAVITY_INDEX && v >= MIN_CAVITY_INDEX && w >= MIN_CAVITY_INDEX
+  );
 }
 
 export function getCavityModeFrequency(u, v, w, radiusOrOptions) {
@@ -179,10 +182,7 @@ function enumerateCanonicalCavityModes(
   const lowerSquared = lowerMagnitude * lowerMagnitude;
   const upperSquared = upperMagnitude * upperMagnitude;
   const candidates = [];
-  const maxU = Math.max(
-    minimumIndex,
-    Math.floor(Math.sqrt(upperSquared / 3)),
-  );
+  const maxU = Math.max(minimumIndex, Math.floor(Math.sqrt(upperSquared / 3)));
 
   for (let u = minimumIndex; u <= maxU; u++) {
     const uSquared = u * u;
@@ -310,8 +310,10 @@ export function sampleFFTAmplitudeForFrequency(
     return 0;
   }
 
-  const nyquist = sampleRate * 0.5;
-  const bin = Math.round((frequency / nyquist) * (fftSize * 0.5 - 1));
-  const index = Math.max(0, Math.min(fftMagnitudes.length - 1, bin));
+  const index = frequencyToBinIndex(
+    frequency,
+    fftMagnitudes.length,
+    sampleRate,
+  );
   return fftMagnitudes[index] ?? 0;
 }

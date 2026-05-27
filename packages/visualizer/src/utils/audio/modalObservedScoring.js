@@ -1,3 +1,5 @@
+import { frequencyToBinIndex } from "./binFrequency.js";
+
 const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MIN_HZ = 140;
 const HIGH_Q_OBSERVER_HARMONIC_DRIVER_MAX_HZ = 480;
 const HIGH_Q_OBSERVER_BASS_HARMONIC_DRIVER_MIN_HZ = 72;
@@ -57,7 +59,9 @@ export function classifyObservedModeRenderLayer({
   lowQObserverSnrStart,
   lowQObserverMinObservedDrive,
 }) {
-  if ((atlasEntry?.renderLayer ?? atlasEntry?.layer ?? "resonant") === "resonant") {
+  if (
+    (atlasEntry?.renderLayer ?? atlasEntry?.layer ?? "resonant") === "resonant"
+  ) {
     return "resonant";
   }
 
@@ -96,13 +100,9 @@ export function computeModalObserverNoiseFloor({
     return 0;
   }
 
-  const nyquist = sampleRate * 0.5;
   const centerBin = Math.max(
     1,
-    Math.min(
-      fftMagnitudes.length - 1,
-      Math.round((frequencyHz / nyquist) * fftMagnitudes.length),
-    ),
+    frequencyToBinIndex(frequencyHz, fftMagnitudes.length, sampleRate),
   );
   const noiseWindowBins =
     profile?.noiseWindowBins ?? HIGH_Q_OBSERVER_NOISE_WINDOW_BINS;

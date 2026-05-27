@@ -18,6 +18,7 @@ import {
   getCavityModeFrequency,
   sampleFFTAmplitudeForFrequency,
 } from "../cavityModes.js";
+import { binIndexToFrequencyHz, frequencyToBinIndex } from "./binFrequency.js";
 import {
   MAX_STACK_SLOTS,
   BAND_BUCKET_COUNT,
@@ -1603,8 +1604,11 @@ export function applyTestToneToSnapshot({
   );
   const nyquist = sampleRate * 0.5;
   const writeHarmonicBin = (frequency, amplitude) => {
-    const bin = Math.round((frequency / nyquist) * (fftMagnitudes.length - 1));
-    const index = Math.max(0, Math.min(fftMagnitudes.length - 1, bin));
+    const index = frequencyToBinIndex(
+      frequency,
+      fftMagnitudes.length,
+      sampleRate,
+    );
     fftMagnitudes[index] = Math.max(fftMagnitudes[index] ?? 0, amplitude);
     if (index > 0) {
       fftMagnitudes[index - 1] = Math.max(
@@ -2135,14 +2139,17 @@ function computeBandEnergies(fftMagnitudes, sampleRate, fftSize) {
     return bands;
   }
 
-  const nyquist = sampleRate * 0.5;
   const sums = new Float32Array(BAND_BUCKET_COUNT);
   const squareSums = new Float32Array(BAND_BUCKET_COUNT);
   const peaks = new Float32Array(BAND_BUCKET_COUNT);
   const counts = new Float32Array(BAND_BUCKET_COUNT);
 
   for (let i = 0; i < fftMagnitudes.length; i++) {
-    const frequency = (i / Math.max(1, fftMagnitudes.length - 1)) * nyquist;
+    const frequency = binIndexToFrequencyHz(
+      i,
+      fftMagnitudes.length,
+      sampleRate,
+    );
     const amplitude = fftMagnitudes[i] ?? 0;
     let bandIndex = BAND_BUCKET_COUNT - 1;
     for (let j = 0; j < BAND_LIMITS_HZ.length; j++) {
@@ -2181,7 +2188,6 @@ function computeSpectralBandOutputs(fftMagnitudes, sampleRate) {
     };
   }
 
-  const nyquist = sampleRate * 0.5;
   const sums = new Float32Array(SPECTRAL_BAND_6_COUNT);
   const counts = new Float32Array(SPECTRAL_BAND_6_COUNT);
   let trebleSum = 0;
@@ -2190,7 +2196,11 @@ function computeSpectralBandOutputs(fftMagnitudes, sampleRate) {
   let treblePeakEnergy = 0;
 
   for (let i = 0; i < fftMagnitudes.length; i++) {
-    const frequency = (i / Math.max(1, fftMagnitudes.length - 1)) * nyquist;
+    const frequency = binIndexToFrequencyHz(
+      i,
+      fftMagnitudes.length,
+      sampleRate,
+    );
     const amplitude = fftMagnitudes[i] ?? 0;
 
     let bandIndex = SPECTRAL_BAND_6_COUNT - 1;
@@ -2245,7 +2255,11 @@ function computeSpectralCentroid(fftMagnitudes, sampleRate) {
   for (let i = 0; i < fftMagnitudes.length; i++) {
     const amplitude = fftMagnitudes[i] ?? 0;
     if (amplitude <= 0) continue;
-    const frequency = (i / Math.max(1, fftMagnitudes.length - 1)) * nyquist;
+    const frequency = binIndexToFrequencyHz(
+      i,
+      fftMagnitudes.length,
+      sampleRate,
+    );
     weightedFrequency += frequency * amplitude;
     amplitudeTotal += amplitude;
   }

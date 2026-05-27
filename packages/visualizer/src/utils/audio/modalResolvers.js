@@ -1,3 +1,4 @@
+import { binIndexToFrequencyHz, frequencyToBin } from "./binFrequency.js";
 import { SPECTRAL_MODAL_POLICY } from "./policy.js";
 
 export const HARMONIC_ORDERS = SPECTRAL_MODAL_POLICY.harmonicOrders;
@@ -33,7 +34,7 @@ export function findSpectralPeakFrequencies(
   const perRegionCount = Math.max(1, options?.perRegionCount ?? 1);
   const minBinGap = Math.max(
     1,
-    Math.round((minBinGapHz / nyquist) * (fftSize * 0.5 - 1)),
+    Math.round(frequencyToBin(minBinGapHz, fftMagnitudes.length, sampleRate)),
   );
   const candidates = [];
 
@@ -49,7 +50,11 @@ export function findSpectralPeakFrequencies(
       const denom = prev - 2 * amplitude + next;
       const delta = Math.abs(denom) > 1e-10 ? (0.5 * (prev - next)) / denom : 0;
       const trueBin = i + delta;
-      const frequency = (trueBin / (fftSize * 0.5 - 1)) * nyquist;
+      const frequency = binIndexToFrequencyHz(
+        trueBin,
+        fftMagnitudes.length,
+        sampleRate,
+      );
       const interpolatedAmplitude = amplitude - 0.25 * delta * (prev - next);
       if (frequency >= minFrequency && frequency <= maxFrequency) {
         candidates.push({

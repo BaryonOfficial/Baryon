@@ -1,3 +1,5 @@
+import { binIndexToFrequencyHz } from "./binFrequency.js";
+
 const EPSILON = 1e-9;
 const TWO_PI = Math.PI * 2;
 
@@ -91,7 +93,10 @@ function resolveModeQualityFactor(mode) {
   if (Number.isFinite(mode?.modalResponseProfile?.qualityFactor)) {
     return Math.min(
       MAX_MODAL_QUALITY_FACTOR,
-      Math.max(MIN_MODAL_QUALITY_FACTOR, mode.modalResponseProfile.qualityFactor),
+      Math.max(
+        MIN_MODAL_QUALITY_FACTOR,
+        mode.modalResponseProfile.qualityFactor,
+      ),
     );
   }
   const frequencyHz = mode?.naturalFrequencyHz ?? mode?.frequencyHz ?? 0;
@@ -189,17 +194,10 @@ function computePhysicalModalTransfer({
   const frequencyDamping =
     modeFrequencyHz > 0
       ? 1 /
-        (1 +
-          Math.pow(
-            modeFrequencyHz / FREQUENCY_DAMPING_REFERENCE_HZ,
-            1.35,
-          ))
+        (1 + Math.pow(modeFrequencyHz / FREQUENCY_DAMPING_REFERENCE_HZ, 1.35))
       : 1;
   const orderDamping =
-    order > 0
-      ? 1 /
-        (1 + Math.pow(order / ORDER_DAMPING_REFERENCE, 1.55))
-      : 1;
+    order > 0 ? 1 / (1 + Math.pow(order / ORDER_DAMPING_REFERENCE, 1.55)) : 1;
   const dampingEnvelope = clamp01(frequencyDamping * orderDamping);
   const persistenceEnvelope = clamp01(0.35 + persistence * 0.65);
 
@@ -216,10 +214,6 @@ function computePhysicalModalTransfer({
         persistenceEnvelope,
     ),
   };
-}
-
-function getBinFrequencyHz(index, binCount, sampleRate) {
-  return (index / Math.max(1, binCount)) * sampleRate * 0.5;
 }
 
 function getInputEnergy(fftMagnitudes) {
@@ -255,7 +249,11 @@ function buildSpectralDriveContext(fftMagnitudes, sampleRate) {
     inputEnergy += binEnergy;
     bins.push({
       binEnergy,
-      frequencyHz: getBinFrequencyHz(index, fftMagnitudes.length, sampleRate),
+      frequencyHz: binIndexToFrequencyHz(
+        index,
+        fftMagnitudes.length,
+        sampleRate,
+      ),
     });
   }
 
@@ -296,11 +294,7 @@ export function computeModalSpectralDrive({
   inputEnergy = getInputEnergy(fftMagnitudes),
   spectralBins = null,
 }) {
-  if (
-    sampleRate <= 0 ||
-    modeFrequencyHz <= 0 ||
-    inputEnergy <= EPSILON
-  ) {
+  if (sampleRate <= 0 || modeFrequencyHz <= 0 || inputEnergy <= EPSILON) {
     return 0;
   }
 
@@ -330,15 +324,13 @@ export function computeModalSpectralDrive({
     return clamp01(baseDrive);
   }
 
-  const peakConcentration = peakWeightedEnergy / Math.max(EPSILON, weightedEnergy);
+  const peakConcentration =
+    peakWeightedEnergy / Math.max(EPSILON, weightedEnergy);
   const coherentPeakGate = smoothstep(0.08, 0.35, peakConcentration);
   return clamp01(baseDrive * coherentPeakGate);
 }
 
-function computeStoredEnergyTimeConstantMs({
-  modeFrequencyHz,
-  qualityFactor,
-}) {
+function computeStoredEnergyTimeConstantMs({ modeFrequencyHz, qualityFactor }) {
   const frequencyHz = Number.isFinite(modeFrequencyHz)
     ? Math.max(0, modeFrequencyHz)
     : 0;

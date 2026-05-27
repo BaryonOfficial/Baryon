@@ -4,6 +4,11 @@ import {
 } from "../../core/modalGeometryBackend.js";
 import { LIVE_INPUT_ANALYSIS_CLASSES } from "../../core/audio/liveInputAnalysis.js";
 import {
+  binIndexToFrequencyHz,
+  frequencyToBin,
+  frequencyToBinIndex,
+} from "./binFrequency.js";
+import {
   isLineFeedMeterIdlePauseSignature,
   LINE_FEED_PROGRAM_BRIDGE_MAX_AVG,
 } from "./lineFeedProgramActivity.js";
@@ -683,13 +688,16 @@ function buildDriveBufferFromSpectrum(fftMagnitudes, sampleRate) {
   }
 
   const peaks = [];
-  const nyquist = sampleRate * 0.5;
   for (let index = 1; index < fftMagnitudes.length; index += 1) {
     const amplitude = fftMagnitudes[index] ?? 0;
     if (amplitude <= 0) {
       continue;
     }
-    const frequency = (index / Math.max(1, fftMagnitudes.length)) * nyquist;
+    const frequency = binIndexToFrequencyHz(
+      index,
+      fftMagnitudes.length,
+      sampleRate,
+    );
     peaks.push({ frequency, amplitude });
   }
   peaks.sort((left, right) => right.amplitude - left.amplitude);
@@ -782,11 +790,11 @@ function estimateDominantSpectralFrequency(fftMagnitudes, sampleRate) {
   );
   for (let index = 1; index < fftMagnitudes.length; index += 1) {
     if ((fftMagnitudes[index] ?? 0) >= significantAmplitude) {
-      return (index / Math.max(1, fftMagnitudes.length)) * sampleRate * 0.5;
+      return binIndexToFrequencyHz(index, fftMagnitudes.length, sampleRate);
     }
   }
 
-  return (dominantIndex / Math.max(1, fftMagnitudes.length)) * sampleRate * 0.5;
+  return binIndexToFrequencyHz(dominantIndex, fftMagnitudes.length, sampleRate);
 }
 
 function computeSpectralPeakInRange(fftMagnitudes, sampleRate, minHz, maxHz) {
@@ -794,14 +802,17 @@ function computeSpectralPeakInRange(fftMagnitudes, sampleRate, minHz, maxHz) {
     return 0;
   }
 
-  const nyquist = sampleRate * 0.5;
   const startIndex = Math.max(
     1,
-    Math.floor((Math.max(0, minHz) / nyquist) * fftMagnitudes.length),
+    Math.floor(
+      frequencyToBin(Math.max(0, minHz), fftMagnitudes.length, sampleRate),
+    ),
   );
   const endIndex = Math.min(
     fftMagnitudes.length - 1,
-    Math.ceil((Math.max(minHz, maxHz) / nyquist) * fftMagnitudes.length),
+    Math.ceil(
+      frequencyToBin(Math.max(minHz, maxHz), fftMagnitudes.length, sampleRate),
+    ),
   );
   let peak = 0;
   for (let index = startIndex; index <= endIndex; index += 1) {
@@ -820,19 +831,18 @@ function sampleSpectralAmplitude(fftMagnitudes, sampleRate, frequencyHz) {
     return 0;
   }
 
-  const nyquist = sampleRate * 0.5;
   const centerBin = Math.max(
     1,
-    Math.min(
-      fftMagnitudes.length - 1,
-      Math.round((frequencyHz / nyquist) * fftMagnitudes.length),
-    ),
+    frequencyToBinIndex(frequencyHz, fftMagnitudes.length, sampleRate),
   );
   const binWindow = Math.max(
     1,
     Math.ceil(
-      ((frequencyHz * RESONANT_COUPLING_HARMONIC_TOLERANCE) / nyquist) *
+      frequencyToBin(
+        frequencyHz * RESONANT_COUPLING_HARMONIC_TOLERANCE,
         fftMagnitudes.length,
+        sampleRate,
+      ),
     ),
   );
   const startBin = Math.max(1, centerBin - binWindow);
