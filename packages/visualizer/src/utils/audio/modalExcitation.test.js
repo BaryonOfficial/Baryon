@@ -19,12 +19,12 @@ import {
   createSineToneFixture,
   createVocalLikeFixture,
 } from "./audioFixtures.js";
+import { frequencyToBinIndex } from "./binFrequency.js";
 import { getPhaseVelocityLimit } from "./modalPhaseSlots.js";
 
 const FFT_SIZE = 4096;
 const SAMPLE_RATE = 44100;
 const BIN_COUNT = FFT_SIZE / 2;
-const NYQUIST = SAMPLE_RATE / 2;
 const MODAL_EXCITATION_SOURCE_URL = new URL(
   "./modalExcitation.js",
   import.meta.url,
@@ -110,10 +110,7 @@ function makeFft(peaks) {
   for (const [frequency, amplitude] of peaks) {
     const bin = Math.max(
       1,
-      Math.min(
-        BIN_COUNT - 1,
-        Math.round((frequency / NYQUIST) * (BIN_COUNT - 1)),
-      ),
+      frequencyToBinIndex(frequency, BIN_COUNT, SAMPLE_RATE),
     );
     fft[bin] = amplitude;
   }
@@ -132,7 +129,7 @@ function makeDenseFft({
     const bin = Math.min(BIN_COUNT - 1, lowBin + index);
     fft[bin] = amplitude + ((index % 7) / 7) * amplitude;
   }
-  fft[Math.max(1, Math.round((peakFrequency / NYQUIST) * (BIN_COUNT - 1)))] =
+  fft[Math.max(1, frequencyToBinIndex(peakFrequency, BIN_COUNT, SAMPLE_RATE))] =
     peakAmplitude;
   return fft;
 }

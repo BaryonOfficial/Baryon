@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { frequencyToBinIndex } from "./binFrequency.js";
 import {
   findSpectralPeakFrequencies,
   HARMONIC_ORDERS,
@@ -7,10 +8,9 @@ import {
 const FFT_SIZE = 4096;
 const SAMPLE_RATE = 44100;
 const BIN_COUNT = FFT_SIZE / 2;
-const NYQUIST = SAMPLE_RATE / 2;
 
 function freqToBin(frequency) {
-  return Math.round((frequency / NYQUIST) * (BIN_COUNT - 1));
+  return frequencyToBinIndex(frequency, BIN_COUNT, SAMPLE_RATE);
 }
 
 function makeFft(peaks) {

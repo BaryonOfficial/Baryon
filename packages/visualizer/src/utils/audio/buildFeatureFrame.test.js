@@ -16,12 +16,12 @@ import {
   runHeavyAudioFeatureAnalysis,
   updateAudioFeatureFastSignalState,
 } from "./buildFeatureFrame.js";
+import { frequencyToBinIndex } from "./binFrequency.js";
 import { deriveHighQSparseResonatorAuthority } from "./highQSparseResonatorAuthority.js";
 
 const FFT_SIZE = 4096;
 const SAMPLE_RATE = 44100;
 const BIN_COUNT = FFT_SIZE / 2;
-const NYQUIST = SAMPLE_RATE / 2;
 const LIVE_INPUT_CALIBRATION_MID_MS = 400;
 const LIVE_INPUT_CALIBRATION_DONE_MS = 1200;
 const LIVE_INPUT_POST_CALIBRATION_MS = 1240;
@@ -156,7 +156,7 @@ function createSnapshot(overrides = {}) {
 }
 
 function freqToBin(freq) {
-  return Math.round((freq / NYQUIST) * (BIN_COUNT - 1));
+  return frequencyToBinIndex(freq, BIN_COUNT, SAMPLE_RATE);
 }
 
 function makeFft(peaks) {

@@ -1,18 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { frequencyToBinIndex } from "./binFrequency.js";
 
 const SAMPLE_RATE = 48000;
 const BIN_COUNT = 2048;
-const NYQUIST = SAMPLE_RATE / 2;
 
 function makeFft(peaks) {
   const fft = new Float32Array(BIN_COUNT);
   for (const [frequency, amplitude] of peaks) {
     const bin = Math.max(
       1,
-      Math.min(
-        BIN_COUNT - 1,
-        Math.round((frequency / NYQUIST) * (BIN_COUNT - 1)),
-      ),
+      frequencyToBinIndex(frequency, BIN_COUNT, SAMPLE_RATE),
     );
     fft[bin] = amplitude;
   }
@@ -28,7 +25,7 @@ function makeBroadbandFft({
   const amplitude = Math.sqrt(totalEnergy / binCount);
   const startBin = Math.max(
     1,
-    Math.round((startFrequency / NYQUIST) * (BIN_COUNT - 1)),
+    frequencyToBinIndex(startFrequency, BIN_COUNT, SAMPLE_RATE),
   );
   for (let index = 0; index < binCount; index += 1) {
     fft[Math.min(BIN_COUNT - 1, startBin + index)] = amplitude;
@@ -46,8 +43,7 @@ async function loadModalResponseModule() {
 
 describe("modal response model", () => {
   it("uses Q to make low-Q modes broad and high-Q modes selective", async () => {
-    const { computeModalFrequencyResponse } =
-      await loadModalResponseModule();
+    const { computeModalFrequencyResponse } = await loadModalResponseModule();
 
     const nearLowQ = computeModalFrequencyResponse({
       binFrequencyHz: 118,
@@ -105,7 +101,9 @@ describe("modal response model", () => {
       previousEnergies: new Map(),
     });
 
-    const backbone = response.entries.find((entry) => entry.layer === "source-coupled");
+    const backbone = response.entries.find(
+      (entry) => entry.layer === "source-coupled",
+    );
     const detail = response.entries.find((entry) => entry.layer === "resonant");
     expect(backbone?.modalResponseEnergy).toBeGreaterThan(0.3);
     expect(backbone?.displayAmplitude).toBeGreaterThan(
@@ -150,7 +148,9 @@ describe("modal response model", () => {
       minimumEnergy: 0,
     });
 
-    const backbone = response.entries.find((entry) => entry.layer === "source-coupled");
+    const backbone = response.entries.find(
+      (entry) => entry.layer === "source-coupled",
+    );
     const detail = response.entries.find((entry) => entry.layer === "resonant");
     expect(detail?.modalResponseEnergy).toBeGreaterThan(
       backbone?.modalResponseEnergy * 2.5,
@@ -520,9 +520,9 @@ describe("modal response model", () => {
     });
 
     expect(response.entries.map((entry) => entry.modeKey)).toContain("peak");
-    expect(response.entries.some((entry) => entry.modeKey.startsWith("weak:"))).toBe(
-      false,
-    );
+    expect(
+      response.entries.some((entry) => entry.modeKey.startsWith("weak:")),
+    ).toBe(false);
     expect(response.modalResponseResonantEnergy).toBeLessThanOrEqual(0.32);
   });
 

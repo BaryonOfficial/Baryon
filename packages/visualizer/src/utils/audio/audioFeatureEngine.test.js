@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { AUDIO_SLOT_CAPACITY, CAVITY_ACOUSTIC_DEFAULTS } from "../../defaults.js";
+import {
+  AUDIO_SLOT_CAPACITY,
+  CAVITY_ACOUSTIC_DEFAULTS,
+} from "../../defaults.js";
 import {
   buildAudioFeatureAnalysisSnapshot,
   buildCurrentAudioFeatureAnalysisResult,
@@ -12,6 +15,7 @@ import {
 } from "../audioFeatures.js";
 import * as audioFeatureEngine from "./audioFeatureEngine.js";
 import { buildAudioFeatureTransportFrame } from "./audioFeatureEngine.js";
+import { frequencyToBinIndex } from "./binFrequency.js";
 import * as audioFeatureWorker from "./audioFeatureEngine.worker.js";
 import {
   buildLaneRunDecisions,
@@ -58,11 +62,10 @@ function createSnapshot(overrides = {}) {
 
 function makeToneFft(peaks, length = FFT_SIZE / 2) {
   const fft = new Float32Array(length);
-  const nyquist = SAMPLE_RATE / 2;
   for (const [frequencyHz, amplitude] of peaks) {
     const bin = Math.max(
       1,
-      Math.min(length - 1, Math.round((frequencyHz / nyquist) * (length - 1))),
+      frequencyToBinIndex(frequencyHz, length, SAMPLE_RATE),
     );
     fft[bin] = amplitude;
   }
@@ -718,7 +721,9 @@ describe("audio feature engine snapshots", () => {
 
     expect(snapshot.publishCount).toBe(3);
     expect(snapshot.analysisResult.modeSlots).toBeInstanceOf(Float32Array);
-    expect(snapshot.analysisResult.candidateForcingSlots).toBeInstanceOf(Float32Array);
+    expect(snapshot.analysisResult.candidateForcingSlots).toBeInstanceOf(
+      Float32Array,
+    );
     expect(snapshot.analysisResult.bandEnergies).toBeInstanceOf(Float32Array);
     expect(snapshot.analysisResult.fftMagnitudes).toBeUndefined();
     expect(snapshot.analysisResult.spectralCandidates).toBeUndefined();
