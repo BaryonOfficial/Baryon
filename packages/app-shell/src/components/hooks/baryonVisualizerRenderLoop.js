@@ -16,6 +16,7 @@ import {
   runHeavyAudioFeatureAnalysis,
 } from "@baryon/visualizer/audio-features";
 import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/visualizer/defaults";
+import { allowsCachedLiveFeatureFrame } from "@baryon/visualizer/core/renderAuthorityContract";
 import { RAYMARCH_MODAL_BASIS_CACHE_CAPACITY } from "@baryon/visualizer/core/raymarch/fieldCache";
 import * as raymarchPerformanceGovernor from "@baryon/visualizer/core/raymarch/performanceGovernor";
 import {
@@ -661,11 +662,23 @@ function shouldComposeInactiveSourceFeatureFrame({
 }
 
 function shouldCaptureLastLiveFrame({ status, featureFrame }) {
+  if (!allowsCachedLiveFeatureFrame(featureFrame)) {
+    return false;
+  }
+
   return (
     status?.isPlaying === true ||
     status?.isLiveInputActive !== true ||
     isNonIdleFeatureFrame(featureFrame)
   );
+}
+
+function resolveCachedLiveFeatureFrame(lastLiveFrame, silentFeatureFrame) {
+  if (allowsCachedLiveFeatureFrame(lastLiveFrame)) {
+    return lastLiveFrame;
+  }
+
+  return silentFeatureFrame;
 }
 
 function shouldApplyLiveInputRenderIntent(
@@ -2118,15 +2131,25 @@ export function resolveFeatureFrame(
                 status,
                 controls,
               });
+              const cachedLiveFrame = resolveCachedLiveFeatureFrame(
+                lastLiveFrameRef.current,
+                preparedInputs.silentFeatureFrame,
+              );
               // hasAudioSourceRenderIntent guards cached live-frame fallback.
               featureFrame = hasSourceIntent
-                ? (lastLiveFrameRef.current ??
-                  preparedInputs.silentFeatureFrame)
+                ? cachedLiveFrame
                 : preparedInputs.silentFeatureFrame;
               frameSemanticSource =
-                hasSourceIntent && lastLiveFrameRef.current
+                hasSourceIntent && cachedLiveFrame === lastLiveFrameRef.current
                   ? "last-live-cache"
                   : "silent-frame";
+              if (
+                hasSourceIntent &&
+                lastLiveFrameRef.current &&
+                cachedLiveFrame !== lastLiveFrameRef.current
+              ) {
+                lastLiveFrameRef.current = null;
+              }
             }
           }
         } else {
@@ -2227,6 +2250,8 @@ export function resolveFeatureFrame(
   if (status.isPlaying || status.isLiveInputActive) {
     if (shouldCaptureLastLiveFrame({ status, featureFrame })) {
       lastLiveFrameRef.current = featureFrame;
+    } else if (!allowsCachedLiveFeatureFrame(featureFrame)) {
+      lastLiveFrameRef.current = null;
     }
     lastActiveFrameRef.current = null;
     lastIdleFrameRef.current = null;

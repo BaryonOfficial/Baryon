@@ -244,6 +244,25 @@ That distinction affects:
 
 Changes that “simplify” these paths into a single live-input mode are high risk unless the task explicitly intends a semantic merge.
 
+### Line-feed program activity vs session intent vs render authority
+
+Three quantities must stay separate on loopback / line-feed input:
+
+| Quantity                   | Meaning                                                                                          | Typical owner                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Session render intent      | Go Live is on; the app keeps listening on BlackHole                                              | App status (`isLiveInputActive`) and render-loop scheduling                |
+| Line-feed program activity | Upstream OS/program audio is actively driving the virtual device above its calibrated idle floor | `resolveLineFeedProgramActivity()` during `prepareAudioFeatureFrameInputs` |
+| Render authority           | The composed frame may drive GPU field upload and reactive envelopes                             | `composeAudioFeatureFrame` + `renderAuthorityContract`                     |
+
+Rules:
+
+- `isLiveInputActive` may remain true while Apple Music (or another upstream player) is paused.
+- Paused loopback is detected from sustained meter-idle signatures (~1.2 avg, low RMS), not from resonant memory or ad-hoc transport bands inside `modalExcitation`.
+- High-Q retained ring energy may preserve display continuity during brief near-zero dropouts while program activity is still true, but it must not re-establish render authority after program idle.
+- `last-live-cache` in the render loop may only reuse frames that still have render authority and `debug.lineFeedProgramActive !== false`.
+
+File-mode transport pause remains owned by `shouldMuteFileTransportSource` (`status.isPlaying`) at prepare time.
+
 ## Host Boundary: Shared Engine vs Host-Specific Delivery
 
 A recurring source of confusion is mixing these two concerns:

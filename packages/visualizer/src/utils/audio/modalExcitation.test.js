@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { CAVITY_ACOUSTIC_DEFAULTS } from "../../defaults.js";
 import {
@@ -213,6 +213,7 @@ function createPreparedInputs({
   includeSpectralLight = true,
 }) {
   return prepareAudioFeatureFrameInputs({
+    featureState,
     analysisSnapshot: {
       sourceMode: "file",
       avgAmplitude,
@@ -222,7 +223,6 @@ function createPreparedInputs({
       spectralCentroid: 0.2,
       spectralFlux: 0.1,
     },
-    featureState,
     radius,
     cavityGeometry,
     cavityAcousticScale,
@@ -582,6 +582,37 @@ function expectCanonicalObservedModeEntries(state) {
 }
 
 describe("modal excitation structural state", () => {
+  let lineFeedProgramFeatureState = null;
+
+  function isLineFeedPreparedStatus(status = {}) {
+    const inputMode = status.audioInputMode ?? "file";
+    return (
+      inputMode === "system" ||
+      (inputMode === "live" &&
+        (status.resolvedLiveInputAnalysisClass === "line-feed" ||
+          status.liveInputDeviceKind === "system"))
+    );
+  }
+
+  function createLineFeedPreparedInputs(options) {
+    const status = options.status ?? createStatus();
+    if (!options.featureState && isLineFeedPreparedStatus(status)) {
+      if (!lineFeedProgramFeatureState) {
+        lineFeedProgramFeatureState = createAudioFeatureState(status.capacity);
+      }
+      return createPreparedInputs({
+        ...options,
+        status,
+        featureState: lineFeedProgramFeatureState,
+      });
+    }
+
+    return createPreparedInputs(options);
+  }
+
+  beforeEach(() => {
+    lineFeedProgramFeatureState = null;
+  });
   it("initializes one canonical modal observer state", () => {
     const state = createModalExcitationState(16);
 
@@ -595,7 +626,7 @@ describe("modal excitation structural state", () => {
 
   it("builds persistent backbone structure for stable low-order input", () => {
     const baseState = createModalExcitationState(16);
-    const firstInputs = createPreparedInputs({
+    const firstInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
         [550, 0.95],
@@ -611,7 +642,7 @@ describe("modal excitation structural state", () => {
       performanceNow: () => 0,
     });
 
-    const secondInputs = createPreparedInputs({
+    const secondInputs = createLineFeedPreparedInputs({
       frameTimeMs: 33,
       fftMagnitudes: makeFft([
         [550, 0.95],
@@ -664,10 +695,12 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.observedModalModeCount).toBeGreaterThan(
       0,
     );
-    expect(structural.structuralMetrics.lowQSourceCoupledModeCount).toBeGreaterThan(
-      0,
-    );
-    expect(structural.structuralMetrics.lowQSourceCoupledEnergy).toBeGreaterThan(0);
+    expect(
+      structural.structuralMetrics.lowQSourceCoupledModeCount,
+    ).toBeGreaterThan(0);
+    expect(
+      structural.structuralMetrics.lowQSourceCoupledEnergy,
+    ).toBeGreaterThan(0);
     expect(structural.structuralMetrics.lowQObservedCoherence).toBeGreaterThan(
       0,
     );
@@ -703,7 +736,7 @@ describe("modal excitation structural state", () => {
     });
     state.observedModes.clear();
 
-    const inputs = createPreparedInputs({
+    const inputs = createLineFeedPreparedInputs({
       frameTimeMs: 333,
       fftMagnitudes: makeFft([[880, 0.02]]),
       timeData: makeTimeData({ frequency: 880, amplitude: 0.012 }),
@@ -719,8 +752,12 @@ describe("modal excitation structural state", () => {
       performanceNow: () => 1,
     });
 
-    expect(readModeKeys(structural.candidateForcingSlotsSource)).not.toContain("1:1:1");
-    expect(readModeKeys(structural.candidateResponseSlotsSource)).not.toContain("1:1:1");
+    expect(readModeKeys(structural.candidateForcingSlotsSource)).not.toContain(
+      "1:1:1",
+    );
+    expect(readModeKeys(structural.candidateResponseSlotsSource)).not.toContain(
+      "1:1:1",
+    );
   });
 
   it("keeps retained modal response diagnostic without render slots on strict hard silence", () => {
@@ -751,7 +788,7 @@ describe("modal excitation structural state", () => {
     });
     state.observedModes.clear();
 
-    const inputs = createPreparedInputs({
+    const inputs = createLineFeedPreparedInputs({
       frameTimeMs: 33,
       fftMagnitudes: new Float32Array(BIN_COUNT),
       timeData: new Float32Array(FFT_SIZE),
@@ -780,7 +817,7 @@ describe("modal excitation structural state", () => {
     for (let frame = 0; frame < 160; frame += 1) {
       const strike = frame < 2;
       const amplitudeScale = strike ? 0.42 : 0.045;
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft([
           [196, strike ? 0.8 : 0.08],
@@ -812,9 +849,9 @@ describe("modal excitation structural state", () => {
       state.observedModes?.values?.() ?? [],
     ).filter((entry) => entry.renderLayer === "resonant");
     expect(observedRetainedResonators.length).toBeGreaterThan(0);
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(
-      0.001,
-    );
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0.001);
     expect(structural.structuralMetrics.observedModalModeCount).toBeGreaterThan(
       0,
     );
@@ -840,7 +877,9 @@ describe("modal excitation structural state", () => {
 
     expect(structural.modalCandidates.length).toBeGreaterThan(0);
     expect(state.modalCandidateState).toBeInstanceOf(Map);
-    expect(state.modalCandidateState.size).toBe(structural.modalCandidates.length);
+    expect(state.modalCandidateState.size).toBe(
+      structural.modalCandidates.length,
+    );
     for (const candidate of structural.modalCandidates) {
       expect(candidate).toMatchObject({
         modeKey: expect.any(String),
@@ -859,7 +898,7 @@ describe("modal excitation structural state", () => {
 
   it("reports canonical Spectral Light components for modal-excitation color", () => {
     const baseState = createModalExcitationState(16);
-    const preparedInputs = createPreparedInputs({
+    const preparedInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
         [440, 0.98],
@@ -910,7 +949,7 @@ describe("modal excitation structural state", () => {
 
     for (const [index, fixture] of fixtures.entries()) {
       const state = createModalExcitationState(16);
-      const preparedInputs = createPreparedInputs({
+      const preparedInputs = createLineFeedPreparedInputs({
         frameTimeMs: index * 33,
         fftMagnitudes: fixture.fftMagnitudes,
         timeData: fixture.timeData,
@@ -944,7 +983,7 @@ describe("modal excitation structural state", () => {
     featureState.analysis.chromaState.keyConfidence = 1;
     const state = createModalExcitationState(16);
     const fixture = createMajorTriadFixture(261.626);
-    const preparedInputs = createPreparedInputs({
+    const preparedInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: fixture.fftMagnitudes,
       timeData: fixture.timeData,
@@ -981,7 +1020,7 @@ describe("modal excitation structural state", () => {
     state.blendSourceCoupled.colorSlots.set([0, 1, 0, 0.9]);
 
     const fixture = createSineToneFixture(440);
-    const preparedInputs = createPreparedInputs({
+    const preparedInputs = createLineFeedPreparedInputs({
       frameTimeMs: 120,
       fftMagnitudes: fixture.fftMagnitudes,
       timeData: fixture.timeData,
@@ -1009,7 +1048,7 @@ describe("modal excitation structural state", () => {
 
   it("routes bright coherent treble into detail modes", () => {
     const state = createModalExcitationState(16);
-    const preparedInputs = createPreparedInputs({
+    const preparedInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
         [6200, 0.92],
@@ -1038,7 +1077,7 @@ describe("modal excitation structural state", () => {
 
   it("falls back to spectral drive only when time data is unavailable", () => {
     const state = createModalExcitationState(16);
-    const preparedInputs = createPreparedInputs({
+    const preparedInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
         [110, 0.95],
@@ -1062,7 +1101,7 @@ describe("modal excitation structural state", () => {
 
   it("enforces slot capacity in slot units across signal and display layers", () => {
     const state = createModalExcitationState(16);
-    const preparedInputs = createPreparedInputs({
+    const preparedInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
         [110, 0.99],
@@ -1083,8 +1122,10 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 0,
     });
-    const sourceCoupledCapacity = structuralState.candidateForcingSlotsSource.length / 4;
-    const resonantCapacity = structuralState.candidateResponseSlotsSource.length / 4;
+    const sourceCoupledCapacity =
+      structuralState.candidateForcingSlotsSource.length / 4;
+    const resonantCapacity =
+      structuralState.candidateResponseSlotsSource.length / 4;
 
     expect(structuralState.activeSourceCoupledModeCount).toBeLessThanOrEqual(
       sourceCoupledCapacity,
@@ -1102,7 +1143,7 @@ describe("modal excitation structural state", () => {
 
   it("keeps reference remapping aligned to the blended slot order", () => {
     const state = createModalExcitationState(16);
-    const preparedInputs = createPreparedInputs({
+    const preparedInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
         [110, 0.95],
@@ -1124,7 +1165,8 @@ describe("modal excitation structural state", () => {
       offset < structuralState.candidateForcingSlotsSource.length;
       offset += 4
     ) {
-      const amplitude = structuralState.candidateForcingSlotsSource[offset + 3] ?? 0;
+      const amplitude =
+        structuralState.candidateForcingSlotsSource[offset + 3] ?? 0;
       if (amplitude <= 0) {
         continue;
       }
@@ -1145,7 +1187,7 @@ describe("modal excitation structural state", () => {
 
   it("keeps requested spherical geometry on the inputs while using the rectangular backend atlas", () => {
     const state = createModalExcitationState(16);
-    const preparedInputs = createPreparedInputs({
+    const preparedInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
         [110, 0.95],
@@ -1181,7 +1223,7 @@ describe("modal excitation structural state", () => {
     const timeData = makeTimeData({ frequency: 110, amplitude: 0.95 });
 
     for (let frame = 0; frame < 300; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes,
         timeData,
@@ -1200,7 +1242,7 @@ describe("modal excitation structural state", () => {
 
   it("does not excite modes on very quiet input", () => {
     const state = createModalExcitationState(16);
-    const inputs = createPreparedInputs({
+    const inputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([[110, 0.001]]),
       timeData: makeTimeData({ frequency: 110, amplitude: 0.001 }),
@@ -1222,7 +1264,7 @@ describe("modal excitation structural state", () => {
     for (let index = 0; index < 12; index += 1) {
       const radius = 1.0 + index * 0.1;
       const state = createModalExcitationState(16);
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: 0,
         fftMagnitudes: makeFft([[110, 0.5]]),
         timeData: makeTimeData({ frequency: 110 }),
@@ -1254,7 +1296,7 @@ describe("modal excitation structural state", () => {
     const amplitudeGaps = [];
 
     for (let frame = 0; frame < 20; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft([
           [550, 0.95],
@@ -1291,7 +1333,7 @@ describe("modal excitation structural state", () => {
     const silenceFrames = [];
 
     for (let frame = 0; frame < 10; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
         timeData: makeTimeData({ frequency: 550 }),
@@ -1307,7 +1349,7 @@ describe("modal excitation structural state", () => {
     }
 
     for (let frame = 10; frame < 25; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: silentFft,
         timeData: silentTimeData,
@@ -1350,7 +1392,7 @@ describe("modal excitation structural state", () => {
     let hardSilentStructural = null;
 
     for (let frame = 0; frame < 10; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
         timeData: makeTimeData({ frequency: 550 }),
@@ -1363,11 +1405,13 @@ describe("modal excitation structural state", () => {
         existingState: state,
         performanceNow: () => frame,
       });
-      activeBlendedAmplitude = sumAmplitudes(structural.candidateForcingSlotsSource);
+      activeBlendedAmplitude = sumAmplitudes(
+        structural.candidateForcingSlotsSource,
+      );
     }
 
     for (let frame = 10; frame < 64; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: silentFft,
         timeData: silentTimeData,
@@ -1384,9 +1428,9 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(sumAmplitudes(hardSilentStructural.signalSourceCoupledSlotsSource)).toBe(
-      0,
-    );
+    expect(
+      sumAmplitudes(hardSilentStructural.signalSourceCoupledSlotsSource),
+    ).toBe(0);
     expect(
       sumAmplitudes(hardSilentStructural.candidateForcingSlotsSource),
     ).toBeLessThan(activeBlendedAmplitude * 0.08);
@@ -1394,6 +1438,7 @@ describe("modal excitation structural state", () => {
 
   it("cuts render authority on residual line-feed meter floor without modal input", () => {
     const state = createModalExcitationState(16);
+    const featureState = createAudioFeatureState(16);
     const status = createStatus({
       audioInputMode: "system",
       analysisSource: "live",
@@ -1407,7 +1452,8 @@ describe("modal excitation structural state", () => {
     let structural = null;
 
     for (let frame = 0; frame < 10; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
+        featureState,
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
         timeData: makeTimeData({ frequency: 550 }),
@@ -1425,12 +1471,13 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBeGreaterThan(
-      0,
-    );
+    expect(
+      structural.structuralMetrics.modalResponseRenderEnergy,
+    ).toBeGreaterThan(0);
 
     for (let frame = 10; frame < 52; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
+        featureState,
         frameTimeMs: frame * 33,
         fftMagnitudes: new Float32Array(BIN_COUNT),
         timeData: new Float32Array(FFT_SIZE),
@@ -1458,6 +1505,77 @@ describe("modal excitation structural state", () => {
     expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBe(0);
   });
 
+  it("cuts loopback transport silence without waiting for the file release hold", () => {
+    const state = createModalExcitationState(16);
+    const featureState = createAudioFeatureState(16);
+    const status = createStatus({
+      audioInputMode: "system",
+      analysisSource: "live",
+      isLiveInputActive: true,
+      resolvedLiveInputAnalysisClass: "line-feed",
+    });
+    const activeFft = makeFft([
+      [550, 0.95],
+      [1100, 0.52],
+    ]);
+    let structural = null;
+    let firstSilentCutFrame = null;
+
+    for (let frame = 0; frame < 10; frame += 1) {
+      const inputs = createLineFeedPreparedInputs({
+        featureState,
+        frameTimeMs: frame * 33,
+        fftMagnitudes: activeFft,
+        timeData: makeTimeData({ frequency: 550 }),
+        avgAmplitude: 24,
+        rms: 0.16,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+    }
+
+    for (let frame = 10; frame < 24; frame += 1) {
+      const inputs = createLineFeedPreparedInputs({
+        featureState,
+        frameTimeMs: frame * 33,
+        fftMagnitudes: new Float32Array(BIN_COUNT),
+        timeData: new Float32Array(FFT_SIZE),
+        avgAmplitude: 1.2,
+        rms: 0.0068,
+        status,
+      });
+      inputs.modalExcitationState = state;
+      const fastSignal = updateAudioFeatureFastSignalState(inputs);
+      structural = buildModalExcitationStructuralState({
+        preparedInputs: inputs,
+        fastSignalState: fastSignal,
+        existingState: state,
+        performanceNow: () => frame,
+      });
+      if (
+        firstSilentCutFrame == null &&
+        structural.structuralMetrics.renderAuthorityCut
+      ) {
+        firstSilentCutFrame = frame;
+      }
+    }
+
+    expect(firstSilentCutFrame).not.toBeNull();
+    expect(firstSilentCutFrame).toBeLessThan(18);
+    expect(structural.structuralMetrics.renderAuthorityCut).toBe(true);
+    expect(
+      structural.structuralMetrics.modalResponseCurrentRenderSourceEvidence,
+    ).toBe(false);
+    expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
+  });
+
   it("reduces noisy-input jitter after the post-resonator blend", () => {
     const state = createModalExcitationState(16);
     const random = createDeterministicRandom(97);
@@ -1470,7 +1588,7 @@ describe("modal excitation structural state", () => {
       const baseAmplitude = 0.88 + (random() - 0.5) * 0.12;
       const harmonicAmplitude = 0.46 + (random() - 0.5) * 0.1;
       const timeAmplitude = 0.42 + (random() - 0.5) * 0.08;
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft([
           [110, baseAmplitude],
@@ -1514,7 +1632,7 @@ describe("modal excitation structural state", () => {
     let structural = null;
 
     for (let frame = 0; frame < 2; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft([
           [6200, 0.92],
@@ -1533,9 +1651,9 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(countActiveSlotsLocal(structural.candidateResponseSlotsSource)).toBeGreaterThan(
-      1,
-    );
+    expect(
+      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(1);
   });
 
   it("keeps coherent bowl-like detail modes visible through low-transient sustain", () => {
@@ -1561,7 +1679,9 @@ describe("modal excitation structural state", () => {
     expect(
       countActiveSlotsLocal(structural.signalResonantSlotsSource),
     ).toBeGreaterThan(0);
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(0.16);
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0.16);
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeGreaterThanOrEqual(4);
@@ -1584,7 +1704,7 @@ describe("modal excitation structural state", () => {
       const partials = isStrike
         ? INHARMONIC_BOWL_STRIKE_PARTIALS
         : LOUD_BOWL_TONE_PARTIALS;
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft(isStrike ? partials : []),
         timeData: makeMixedTimeData({
@@ -1607,7 +1727,9 @@ describe("modal excitation structural state", () => {
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.35);
     expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.35);
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(0.035);
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0.035);
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeGreaterThanOrEqual(3);
@@ -1655,7 +1777,7 @@ describe("modal excitation structural state", () => {
       const partials = isStrike
         ? INHARMONIC_BOWL_STRIKE_PARTIALS
         : LOUD_BOWL_TONE_PARTIALS;
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft(isStrike ? partials : []),
         timeData: makeMixedTimeData({
@@ -1683,7 +1805,9 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(
       0.035,
     );
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(0.035);
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0.035);
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeGreaterThanOrEqual(2);
@@ -1710,7 +1834,7 @@ describe("modal excitation structural state", () => {
             [282, 0.11],
             [417, 0.07],
           ];
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft(partials),
         timeData: makeMixedTimeData({
@@ -1771,7 +1895,7 @@ describe("modal excitation structural state", () => {
 
     for (let frame = 0; frame < 420; frame += 1) {
       const isStrike = frame < 2;
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: isStrike
           ? makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS)
@@ -1806,7 +1930,9 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(
       0.004,
     );
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(0.003);
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0.003);
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeGreaterThanOrEqual(4);
@@ -1826,7 +1952,7 @@ describe("modal excitation structural state", () => {
 
     for (let frame = 0; frame < 48; frame += 1) {
       const isStrike = frame < 8;
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: isStrike
           ? makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS)
@@ -1861,7 +1987,7 @@ describe("modal excitation structural state", () => {
     expect(supportedEnergy).toBeGreaterThan(0.02);
 
     for (let frame = 48; frame < 72; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft([]),
         timeData: makeNoisyPeriodicTimeData({
@@ -1894,7 +2020,9 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(
       supportedEnergy * 0.35,
     );
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(0.003);
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0.003);
   });
 
   it("keeps observed high-Q detail when a ringing bowl tail alternates dominant partials", () => {
@@ -1912,7 +2040,7 @@ describe("modal excitation structural state", () => {
     for (let frame = 0; frame < 96; frame += 1) {
       const isStrike = frame < 8;
       const tailDominantFrequency = frame % 2 === 0 ? 196 : 282;
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: isStrike
           ? makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS)
@@ -1940,13 +2068,15 @@ describe("modal excitation structural state", () => {
         expect(
           structural.structuralMetrics.highQResonantModeCount,
         ).toBeGreaterThan(0);
-        expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(
-          0.004,
-        );
+        expect(
+          structural.structuralMetrics.highQResonantEnergy,
+        ).toBeGreaterThan(0.004);
       }
     }
 
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(0.003);
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0.003);
   });
 
   it("refreshes high-Q detail from sustained upper bowl harmonics after the strike", () => {
@@ -1970,7 +2100,7 @@ describe("modal excitation structural state", () => {
       const partials = isStrike
         ? INHARMONIC_BOWL_STRIKE_PARTIALS
         : tailPartials;
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft(partials),
         timeData: makeMixedTimeData({
@@ -2010,7 +2140,9 @@ describe("modal excitation structural state", () => {
     expect(
       structural.structuralMetrics.modalResponseResonantEnergy,
     ).toBeGreaterThan(0);
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(0.003);
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0.003);
   });
 
   it("observes high-Q detail from low-meter bowl strikes before the tail", () => {
@@ -2027,7 +2159,7 @@ describe("modal excitation structural state", () => {
 
     for (let frame = 0; frame < 180; frame += 1) {
       const isStrike = frame < 8;
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: isStrike
           ? makeFft(scalePartials(INHARMONIC_BOWL_STRIKE_PARTIALS, 0.08))
@@ -2081,7 +2213,7 @@ describe("modal excitation structural state", () => {
 
     for (let frame = 0; frame < 240; frame += 1) {
       const isStrike = frame < 8;
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: isStrike
           ? makeFft(scalePartials(INHARMONIC_BOWL_STRIKE_PARTIALS, 0.018))
@@ -2139,7 +2271,7 @@ describe("modal excitation structural state", () => {
     let structural = null;
 
     for (let frame = 0; frame < 240; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft(softHighQPartials),
         timeData: makeMixedTimeData({
@@ -2199,7 +2331,7 @@ describe("modal excitation structural state", () => {
     let structural = null;
 
     for (let frame = 0; frame < 240; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft(e2BowlTone),
         timeData: makeMixedTimeData({
@@ -2220,9 +2352,9 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(structural.structuralMetrics.lowQSourceCoupledModeCount).toBeGreaterThan(
-      0,
-    );
+    expect(
+      structural.structuralMetrics.lowQSourceCoupledModeCount,
+    ).toBeGreaterThan(0);
     expect(
       structural.structuralMetrics.highQResonantModeCount,
     ).toBeGreaterThanOrEqual(2);
@@ -2254,7 +2386,7 @@ describe("modal excitation structural state", () => {
 
     for (let frame = 0; frame < 36; frame += 1) {
       const isStrike = frame < 8;
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: isStrike
           ? makeFft(INHARMONIC_BOWL_STRIKE_PARTIALS)
@@ -2319,7 +2451,7 @@ describe("modal excitation structural state", () => {
     let structural = null;
 
     for (let frame = 0; frame < 96; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeDenseFft({
           count: 1000,
@@ -2353,16 +2485,18 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(countActiveSlotsLocal(structural.candidateResponseSlotsSource)).toBeGreaterThan(
-      0,
-    );
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(0.1);
+    expect(
+      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0);
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0.1);
     expect(structural.structuralMetrics.resonantSignalAuthoritativeHighQ).toBe(
       false,
     );
-    expect(
-      structural.structuralMetrics.highQProjectionLoad,
-    ).toBeGreaterThan(0.4);
+    expect(structural.structuralMetrics.highQProjectionLoad).toBeGreaterThan(
+      0.4,
+    );
     expect(
       structural.structuralMetrics.projectionConservationApplied,
     ).toBeUndefined();
@@ -2417,7 +2551,7 @@ describe("modal excitation structural state", () => {
       const partials = isStrike
         ? INHARMONIC_BOWL_STRIKE_PARTIALS
         : LOUD_BOWL_TONE_PARTIALS;
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft(isStrike ? partials : []),
         timeData: makeMixedTimeData({
@@ -2448,7 +2582,7 @@ describe("modal excitation structural state", () => {
       structural.structuralMetrics.highQResonantEnergy;
 
     for (let frame = 120; frame < 172; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: new Float32Array(BIN_COUNT),
         timeData: new Float32Array(FFT_SIZE),
@@ -2471,9 +2605,9 @@ describe("modal excitation structural state", () => {
       0,
     );
     expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(0);
-    expect(structural.structuralMetrics.highQResonantEnergy).toBeLessThanOrEqual(
-      preSilenceHighQEnergy,
-    );
+    expect(
+      structural.structuralMetrics.highQResonantEnergy,
+    ).toBeLessThanOrEqual(preSilenceHighQEnergy);
     expect(structural.structuralMetrics.modalResponseRenderEnergy).toBe(0);
     expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBe(0);
     expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeLessThan(
@@ -2496,7 +2630,7 @@ describe("modal excitation structural state", () => {
     let structural = null;
 
     for (let frame = 0; frame < 18; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft(LOUD_BOWL_TONE_PARTIALS),
         timeData: makeMixedTimeData({
@@ -2517,7 +2651,7 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    const silentInputs = createPreparedInputs({
+    const silentInputs = createLineFeedPreparedInputs({
       frameTimeMs: 18 * 33,
       fftMagnitudes: new Float32Array(BIN_COUNT),
       timeData: new Float32Array(FFT_SIZE),
@@ -2556,7 +2690,7 @@ describe("modal excitation structural state", () => {
     let structural = null;
 
     for (let frame = 0; frame < 18; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft(LOUD_BOWL_TONE_PARTIALS),
         timeData: makeMixedTimeData({
@@ -2582,7 +2716,7 @@ describe("modal excitation structural state", () => {
       countAuthoritativePhaseSlots(structural.resonantPhaseSlotsSource),
     ).toBeGreaterThan(0);
 
-    const silentInputs = createPreparedInputs({
+    const silentInputs = createLineFeedPreparedInputs({
       frameTimeMs: 18 * 33,
       fftMagnitudes: new Float32Array(BIN_COUNT),
       timeData: new Float32Array(FFT_SIZE),
@@ -2636,7 +2770,9 @@ describe("modal excitation structural state", () => {
             structural.candidateResponseSlotsSource,
             0.025,
           ),
-          resonantAmplitude: sumAmplitudes(structural.candidateResponseSlotsSource),
+          resonantAmplitude: sumAmplitudes(
+            structural.candidateResponseSlotsSource,
+          ),
         });
       }
     }
@@ -2648,7 +2784,9 @@ describe("modal excitation structural state", () => {
     ).toBe(true);
     expect(
       Math.min(
-        ...sustainedRingFrames.map(({ resonantAmplitude }) => resonantAmplitude),
+        ...sustainedRingFrames.map(
+          ({ resonantAmplitude }) => resonantAmplitude,
+        ),
       ),
     ).toBeGreaterThan(0.16);
     expect(sustainedRingFrames.at(-1).resonantAmplitude).toBeGreaterThan(0.21);
@@ -2720,10 +2858,12 @@ describe("modal excitation structural state", () => {
     expect(
       countActiveSlotsLocal(structural.signalResonantSlotsSource),
     ).toBeGreaterThan(0);
-    expect(countActiveSlotsLocal(structural.candidateResponseSlotsSource)).toBeGreaterThan(
-      0,
-    );
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(0.035);
+    expect(
+      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0);
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0.035);
   });
 
   it("scales retained quiet-ring detail with the fading source", () => {
@@ -2745,7 +2885,9 @@ describe("modal excitation structural state", () => {
         snapshots.push({
           frame,
           signalResonant: sumAmplitudes(structural.signalResonantSlotsSource),
-          visibleResonant: sumAmplitudes(structural.candidateResponseSlotsSource),
+          visibleResonant: sumAmplitudes(
+            structural.candidateResponseSlotsSource,
+          ),
           highOrderModalEnergy:
             structural.structuralMetrics.highOrderModalEnergy,
         });
@@ -2780,7 +2922,9 @@ describe("modal excitation structural state", () => {
       if ([12, 36, 48].includes(frame)) {
         snapshots.set(frame, {
           amplitude: sumAmplitudes(structural.candidateResponseSlotsSource),
-          modeAmplitudes: readModeAmplitudeMap(structural.candidateResponseSlotsSource),
+          modeAmplitudes: readModeAmplitudeMap(
+            structural.candidateResponseSlotsSource,
+          ),
           highOrderModalEnergy:
             structural.structuralMetrics.highOrderModalEnergy,
         });
@@ -2821,7 +2965,9 @@ describe("modal excitation structural state", () => {
       fadeFrames.push({
         avgAmplitude,
         rms,
-        resonantAmplitude: sumAmplitudes(structural.candidateResponseSlotsSource),
+        resonantAmplitude: sumAmplitudes(
+          structural.candidateResponseSlotsSource,
+        ),
       });
     }
 
@@ -2850,7 +2996,7 @@ describe("modal excitation structural state", () => {
     const silentTimeData = new Float32Array(FFT_SIZE);
 
     for (let frame = 40; frame < 94; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: silentFft,
         timeData: silentTimeData,
@@ -2903,9 +3049,9 @@ describe("modal excitation structural state", () => {
     expect(
       countActiveSlotsLocal(structural.signalResonantSlotsSource),
     ).toBeGreaterThan(0);
-    expect(countActiveSlotsLocal(structural.candidateResponseSlotsSource)).toBeGreaterThan(
-      0,
-    );
+    expect(
+      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0);
   });
 
   it("keeps seeded subtle coherent line-feed resonance visible above hard silence", () => {
@@ -2928,10 +3074,12 @@ describe("modal excitation structural state", () => {
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.55);
     expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.5);
-    expect(countActiveSlotsLocal(structural.candidateResponseSlotsSource)).toBeGreaterThan(
-      0,
-    );
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(0.006);
+    expect(
+      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0);
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0.006);
   });
 
   it("does not hard-clear seeded coherent detail when the ringing tail is below meter silence", () => {
@@ -2962,13 +3110,15 @@ describe("modal excitation structural state", () => {
     expect(
       countActiveSlotsLocal(structural.candidateForcingSlotsSource),
     ).toBeGreaterThan(0);
-    expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBeGreaterThan(
-      0.0015,
-    );
-    expect(countActiveSlotsLocal(structural.candidateResponseSlotsSource)).toBeGreaterThan(
-      0,
-    );
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(0.003);
+    expect(
+      sumAmplitudes(structural.candidateForcingSlotsSource),
+    ).toBeGreaterThan(0.0015);
+    expect(
+      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0);
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0.003);
   });
 
   it("keeps long coherent ring-out detail from decaying to an empty render", () => {
@@ -2995,10 +3145,12 @@ describe("modal excitation structural state", () => {
 
     expect(structural.structuralMetrics.modeCoherence).toBeGreaterThan(0.45);
     expect(structural.structuralMetrics.modalPersistence).toBeGreaterThan(0.35);
-    expect(countActiveSlotsLocal(structural.candidateResponseSlotsSource)).toBeGreaterThan(
-      0,
-    );
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(0.0015);
+    expect(
+      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0);
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0.0015);
   });
 
   it("does not blank high-Q detail when a quiet bowl tail dominant bin jitters", () => {
@@ -3019,7 +3171,7 @@ describe("modal excitation structural state", () => {
               [417, 0.001],
               [611, 0.00058],
             ];
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft(
           isStrike ? INHARMONIC_BOWL_STRIKE_PARTIALS : tailFftPeaks,
@@ -3049,7 +3201,9 @@ describe("modal excitation structural state", () => {
         if ((structural.structuralMetrics.highQRingSupport ?? 0) <= 0) {
           unsupportedObserverFrames.push(frame);
         }
-        if (countActiveSlotsLocal(structural.candidateResponseSlotsSource) === 0) {
+        if (
+          countActiveSlotsLocal(structural.candidateResponseSlotsSource) === 0
+        ) {
           blankResonantFrames.push(frame);
         }
       }
@@ -3058,13 +3212,14 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(0);
     expect(unsupportedObserverFrames).toEqual([]);
     expect(blankResonantFrames).toEqual([]);
-    expect(countActiveSlotsLocal(structural.candidateResponseSlotsSource)).toBeGreaterThan(
-      0,
-    );
+    expect(
+      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0);
   });
 
   it("bridges brief near-silent live input dropouts during an observed bowl ring", () => {
     const state = createModalExcitationState(16);
+    const featureState = createAudioFeatureState(16);
     const status = createStatus({
       audioInputMode: "live",
       analysisSource: "live",
@@ -3078,7 +3233,8 @@ describe("modal excitation structural state", () => {
 
     for (let frame = 0; frame < 128; frame += 1) {
       const isStrike = frame < 4;
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
+        featureState,
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft(
           isStrike
@@ -3111,7 +3267,8 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(0);
 
     for (let frame = 128; frame < 158; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
+        featureState,
         frameTimeMs: frame * 33,
         fftMagnitudes: new Float32Array(BIN_COUNT),
         timeData: new Float32Array(FFT_SIZE),
@@ -3128,7 +3285,9 @@ describe("modal excitation structural state", () => {
         performanceNow: () => frame,
       });
 
-      if (countActiveSlotsLocal(structural.candidateResponseSlotsSource) === 0) {
+      if (
+        countActiveSlotsLocal(structural.candidateResponseSlotsSource) === 0
+      ) {
         blankFrames.push({
           frame,
           highQResonantEnergy: structural.structuralMetrics.highQResonantEnergy,
@@ -3141,9 +3300,9 @@ describe("modal excitation structural state", () => {
     expect(blankFrames).toEqual([]);
     expect(structural.structuralMetrics.highQResonantEnergy).toBeGreaterThan(0);
     expect(structural.structuralMetrics.highQRingSupport).toBeGreaterThan(0);
-    expect(countActiveSlotsLocal(structural.candidateResponseSlotsSource)).toBeGreaterThan(
-      0,
-    );
+    expect(
+      countActiveSlotsLocal(structural.candidateResponseSlotsSource),
+    ).toBeGreaterThan(0);
   });
 
   it("keeps low system hum from becoming retained detail structure", () => {
@@ -3171,7 +3330,9 @@ describe("modal excitation structural state", () => {
     expect(structural.structuralMetrics.highQRingSupport ?? 0).toBe(0);
     expect(structural.structuralMetrics.highQPhaseAuthority ?? 0).toBe(0);
     expect(countActiveSlotsLocal(structural.signalResonantSlotsSource)).toBe(0);
-    expect(countActiveSlotsLocal(structural.candidateResponseSlotsSource)).toBe(0);
+    expect(countActiveSlotsLocal(structural.candidateResponseSlotsSource)).toBe(
+      0,
+    );
   });
 
   it("retunes observed low-Q backbone state after a clear frequency switch", () => {
@@ -3191,7 +3352,9 @@ describe("modal excitation structural state", () => {
         amplitudeScale: 0.45,
       });
     }
-    const firstSourceCoupledKeys = readModeKeys(structural.candidateForcingSlotsSource);
+    const firstSourceCoupledKeys = readModeKeys(
+      structural.candidateForcingSlotsSource,
+    );
     expect(firstSourceCoupledKeys.length).toBeGreaterThan(0);
 
     for (let frame = 64; frame < 88; frame += 1) {
@@ -3208,17 +3371,21 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    const switchedSourceCoupledKeys = readModeKeys(structural.candidateForcingSlotsSource);
-    expect(hasNewModeKey(switchedSourceCoupledKeys, firstSourceCoupledKeys)).toBe(true);
+    const switchedSourceCoupledKeys = readModeKeys(
+      structural.candidateForcingSlotsSource,
+    );
+    expect(
+      hasNewModeKey(switchedSourceCoupledKeys, firstSourceCoupledKeys),
+    ).toBe(true);
     expect(
       measureSharedAmplitudeRatio(
         new Map(firstSourceCoupledKeys.map((key) => [key, 1])),
         readModeAmplitudeMap(structural.candidateForcingSlotsSource),
       ),
     ).toBeLessThan(0.8);
-    expect(structural.structuralMetrics.lowQSourceCoupledModeCount).toBeGreaterThan(
-      0,
-    );
+    expect(
+      structural.structuralMetrics.lowQSourceCoupledModeCount,
+    ).toBeGreaterThan(0);
     expect(
       structural.structuralMetrics.modalPhaseCoherentFieldModeCount,
     ).toBeGreaterThan(0);
@@ -3268,11 +3435,14 @@ describe("modal excitation structural state", () => {
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeLessThanOrEqual(16);
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeLessThanOrEqual(
-      sumAmplitudes(structural.signalResonantSlotsSource),
-    );
     expect(
-      hasNewModeKey(readModeKeys(structural.candidateResponseSlotsSource), sustainedKeys),
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeLessThanOrEqual(sumAmplitudes(structural.signalResonantSlotsSource));
+    expect(
+      hasNewModeKey(
+        readModeKeys(structural.candidateResponseSlotsSource),
+        sustainedKeys,
+      ),
     ).toBe(true);
   });
 
@@ -3299,14 +3469,18 @@ describe("modal excitation structural state", () => {
         state,
         frame,
         partials:
-          frame < 18 ? densePartials : [...densePartials.slice(0, 8), [10800, 0.92]],
+          frame < 18
+            ? densePartials
+            : [...densePartials.slice(0, 8), [10800, 0.92]],
         avgAmplitude: frame < 18 ? 32 : 34,
         rms: frame < 18 ? 0.2 : 0.22,
         amplitudeScale: frame < 18 ? 0.42 : 0.44,
       });
     }
 
-    const visibleResonant = readModeAmplitudeMap(structural.candidateResponseSlotsSource);
+    const visibleResonant = readModeAmplitudeMap(
+      structural.candidateResponseSlotsSource,
+    );
     let strongResonantCount = 0;
     for (const [modeKey, amplitude] of visibleResonant) {
       if (amplitude <= 0.01) {
@@ -3322,7 +3496,9 @@ describe("modal excitation structural state", () => {
       }
     }
     expect(strongResonantCount).toBeLessThanOrEqual(6);
-    expect(sumSquaredAmplitudes(structural.candidateResponseSlotsSource)).toBeLessThan(
+    expect(
+      sumSquaredAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeLessThan(
       sumSquaredAmplitudes(structural.candidateForcingSlotsSource) * 0.28,
     );
   });
@@ -3460,7 +3636,7 @@ describe("modal excitation structural state", () => {
       [11200, 0.42],
     ];
     const probeState = createModalExcitationState(16);
-    const probeInputs = createPreparedInputs({
+    const probeInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft(partials),
       timeData: makeMixedTimeData({ partials, amplitudeScale: 0.34 }),
@@ -3490,7 +3666,7 @@ describe("modal excitation structural state", () => {
       probeStructural.signalResonantSlotsSource[retainedOffset + 2];
     state.blendResonant.slots[3] = retainedAmplitude;
 
-    const inputs = createPreparedInputs({
+    const inputs = createLineFeedPreparedInputs({
       frameTimeMs: 33,
       fftMagnitudes: makeFft(partials),
       timeData: makeMixedTimeData({ partials, amplitudeScale: 0.34 }),
@@ -3506,16 +3682,18 @@ describe("modal excitation structural state", () => {
       performanceNow: () => 1,
     });
 
-    expect(structural.structuralMetrics.resonantSignalAuthoritative).toBe(false);
+    expect(structural.structuralMetrics.resonantSignalAuthoritative).toBe(
+      false,
+    );
     expect(structural.structuralMetrics.resonantSignalAuthoritativeReason).toBe(
       "none",
     );
     expect(structural.structuralMetrics.resonantShiftReleaseOverrideCount).toBe(
       0,
     );
-    expect(structural.structuralMetrics.resonantShiftTrackingOverrideCount).toBe(
-      0,
-    );
+    expect(
+      structural.structuralMetrics.resonantShiftTrackingOverrideCount,
+    ).toBe(0);
   });
 
   it("does not promote weak broadband noise into sustained detail visibility", () => {
@@ -3528,7 +3706,7 @@ describe("modal excitation structural state", () => {
         500 + index * 430,
         0.04 + random() * 0.03,
       ]);
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft(peaks),
         timeData: makeMixedTimeData({
@@ -3548,7 +3726,9 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeLessThan(0.02);
+    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeLessThan(
+      0.02,
+    );
     expect(
       countActiveSlotsLocal(structural.candidateResponseSlotsSource),
     ).toBeLessThanOrEqual(
@@ -3560,7 +3740,7 @@ describe("modal excitation structural state", () => {
     const state = createModalExcitationState(16);
     let structural = null;
 
-    const firstInputs = createPreparedInputs({
+    const firstInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
         [6200, 0.92],
@@ -3576,11 +3756,13 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 0,
     });
-    const firstVisibleKeys = readModeKeys(firstStructural.candidateResponseSlotsSource);
+    const firstVisibleKeys = readModeKeys(
+      firstStructural.candidateResponseSlotsSource,
+    );
     const firstDominantKey = firstVisibleKeys[0] ?? null;
 
     for (let frame = 1; frame <= 2; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft([
           [8200, 0.94],
@@ -3598,7 +3780,9 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    const switchedVisibleKeys = readModeKeys(structural.candidateResponseSlotsSource);
+    const switchedVisibleKeys = readModeKeys(
+      structural.candidateResponseSlotsSource,
+    );
     expect(hasNewModeKey(switchedVisibleKeys, firstVisibleKeys)).toBe(true);
     expect(
       switchedVisibleKeys.length > 1 ||
@@ -3608,7 +3792,7 @@ describe("modal excitation structural state", () => {
 
   it("surfaces a new visible detail key within one frame under incumbent pressure", () => {
     const state = createModalExcitationState(16);
-    const seededInputs = createPreparedInputs({
+    const seededInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
         [5600, 0.84],
@@ -3627,9 +3811,11 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 0,
     });
-    const seededVisibleKeys = readModeKeys(seededStructural.candidateResponseSlotsSource);
+    const seededVisibleKeys = readModeKeys(
+      seededStructural.candidateResponseSlotsSource,
+    );
 
-    const freshInputs = createPreparedInputs({
+    const freshInputs = createLineFeedPreparedInputs({
       frameTimeMs: 33,
       fftMagnitudes: makeFft([
         [5600, 0.62],
@@ -3649,7 +3835,9 @@ describe("modal excitation structural state", () => {
       performanceNow: () => 1,
     });
 
-    const freshVisibleKeys = readModeKeys(freshStructural.candidateResponseSlotsSource);
+    const freshVisibleKeys = readModeKeys(
+      freshStructural.candidateResponseSlotsSource,
+    );
     expect(hasNewModeKey(freshVisibleKeys, seededVisibleKeys)).toBe(true);
   });
 
@@ -3658,7 +3846,7 @@ describe("modal excitation structural state", () => {
     let seededStructural = null;
 
     for (let frame = 0; frame < 4; frame += 1) {
-      const seededInputs = createPreparedInputs({
+      const seededInputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft([
           [5200, 0.9],
@@ -3683,7 +3871,7 @@ describe("modal excitation structural state", () => {
       seededStructural.candidateResponseSlotsSource,
     );
 
-    const freshInputs = createPreparedInputs({
+    const freshInputs = createLineFeedPreparedInputs({
       frameTimeMs: 4 * 33,
       fftMagnitudes: makeFft([
         [5400, 0.18],
@@ -3714,9 +3902,10 @@ describe("modal excitation structural state", () => {
     );
 
     expect(
-      hasNewModeKey(readModeKeys(freshStructural.candidateResponseSlotsSource), [
-        ...seededVisibleAmplitudes.keys(),
-      ]),
+      hasNewModeKey(
+        readModeKeys(freshStructural.candidateResponseSlotsSource),
+        [...seededVisibleAmplitudes.keys()],
+      ),
     ).toBe(true);
     expect(sharedRatio).toBeLessThan(0.42);
     expect(freshStructural.structuralMetrics.resonantSignalAuthoritative).toBe(
@@ -3739,7 +3928,7 @@ describe("modal excitation structural state", () => {
 
   it("keeps visible detail keys as a subset of the raw signal shortlist", () => {
     const state = createModalExcitationState(16);
-    const inputs = createPreparedInputs({
+    const inputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
         [6200, 0.92],
@@ -3767,7 +3956,7 @@ describe("modal excitation structural state", () => {
 
   it("does not let a weaker near-duplicate assist evict a stronger incumbent", () => {
     const state = createModalExcitationState(16);
-    const firstInputs = createPreparedInputs({
+    const firstInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
         [6200, 0.96],
@@ -3783,9 +3972,11 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 0,
     });
-    const firstDominantKey = readModeKeys(firstStructural.candidateResponseSlotsSource)[0];
+    const firstDominantKey = readModeKeys(
+      firstStructural.candidateResponseSlotsSource,
+    )[0];
 
-    const secondInputs = createPreparedInputs({
+    const secondInputs = createLineFeedPreparedInputs({
       frameTimeMs: 33,
       fftMagnitudes: makeFft([
         [6450, 0.62],
@@ -3809,7 +4000,7 @@ describe("modal excitation structural state", () => {
 
   it("limits reserved fresh admission to one assist-led extra detail key", () => {
     const state = createModalExcitationState(16);
-    const seededInputs = createPreparedInputs({
+    const seededInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
         [5200, 0.88],
@@ -3828,9 +4019,11 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 0,
     });
-    const seededVisibleKeys = readModeKeys(seededStructural.candidateResponseSlotsSource);
+    const seededVisibleKeys = readModeKeys(
+      seededStructural.candidateResponseSlotsSource,
+    );
 
-    const freshInputs = createPreparedInputs({
+    const freshInputs = createLineFeedPreparedInputs({
       frameTimeMs: 33,
       fftMagnitudes: makeFft([
         [5400, 0.42],
@@ -3849,7 +4042,9 @@ describe("modal excitation structural state", () => {
       existingState: state,
       performanceNow: () => 1,
     });
-    const freshVisibleKeys = readModeKeys(freshStructural.candidateResponseSlotsSource);
+    const freshVisibleKeys = readModeKeys(
+      freshStructural.candidateResponseSlotsSource,
+    );
     const newVisibleKeys = freshVisibleKeys.filter(
       (key) => !seededVisibleKeys.includes(key),
     );
@@ -3874,7 +4069,7 @@ describe("modal excitation structural state", () => {
     let lastStructural = null;
 
     for (let frame = 0; frame < 10; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
         timeData: makeTimeData({ frequency: 550 }),
@@ -3890,7 +4085,7 @@ describe("modal excitation structural state", () => {
     }
 
     for (let frame = 10; frame < 16; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: silentFft,
         timeData: silentTimeData,
@@ -3924,7 +4119,7 @@ describe("modal excitation structural state", () => {
     let structural = null;
 
     for (let frame = 0; frame < 10; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
         timeData: makeTimeData({ frequency: 550 }),
@@ -3940,7 +4135,7 @@ describe("modal excitation structural state", () => {
     }
 
     for (let frame = 10; frame < 13; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: silentFft,
         timeData: silentTimeData,
@@ -3955,12 +4150,12 @@ describe("modal excitation structural state", () => {
       });
     }
 
-    expect(sumAmplitudes(structural.signalSourceCoupledSlotsSource)).toBeGreaterThan(
-      0,
-    );
-    expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBeGreaterThan(
+    expect(
       sumAmplitudes(structural.signalSourceCoupledSlotsSource),
-    );
+    ).toBeGreaterThan(0);
+    expect(
+      sumAmplitudes(structural.candidateForcingSlotsSource),
+    ).toBeGreaterThan(sumAmplitudes(structural.signalSourceCoupledSlotsSource));
   });
 
   it("keeps display slots sparser than signal slots under dense sustained input", () => {
@@ -3968,7 +4163,7 @@ describe("modal excitation structural state", () => {
     let structural = null;
 
     for (let frame = 0; frame < 12; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: makeFft([
           [90, 0.92],
@@ -4001,14 +4196,14 @@ describe("modal excitation structural state", () => {
     expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBeLessThan(
       sumAmplitudes(structural.signalSourceCoupledSlotsSource),
     );
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeLessThanOrEqual(
-      sumAmplitudes(structural.signalResonantSlotsSource),
-    );
+    expect(
+      sumAmplitudes(structural.candidateResponseSlotsSource),
+    ).toBeLessThanOrEqual(sumAmplitudes(structural.signalResonantSlotsSource));
   });
 
   it("does not fill visible detail with same-frequency families", () => {
     const state = createModalExcitationState(16);
-    const inputs = createPreparedInputs({
+    const inputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
       fftMagnitudes: makeFft([
         [6200, 0.96],
@@ -4042,12 +4237,16 @@ describe("modal excitation structural state", () => {
         entry.naturalFrequencyHz,
       ]),
     );
-    const visibleFrequencies = readModeKeys(structural.candidateResponseSlotsSource).map(
-      (key) => frequencyByKey.get(key),
-    );
+    const visibleFrequencies = readModeKeys(
+      structural.candidateResponseSlotsSource,
+    ).map((key) => frequencyByKey.get(key));
 
     for (let left = 0; left < visibleFrequencies.length; left += 1) {
-      for (let right = left + 1; right < visibleFrequencies.length; right += 1) {
+      for (
+        let right = left + 1;
+        right < visibleFrequencies.length;
+        right += 1
+      ) {
         expect(
           getRelativeFrequencyDistance(
             visibleFrequencies[left],
@@ -4071,7 +4270,7 @@ describe("modal excitation structural state", () => {
     let structural = null;
 
     for (let frame = 0; frame < 10; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: activeFft,
         timeData: makeTimeData({ frequency: 550, amplitude: 0.45 }),
@@ -4087,7 +4286,7 @@ describe("modal excitation structural state", () => {
     }
 
     for (let frame = 10; frame < 12; frame += 1) {
-      const inputs = createPreparedInputs({
+      const inputs = createLineFeedPreparedInputs({
         frameTimeMs: frame * 33,
         fftMagnitudes: silentFft,
         timeData: silentTimeData,
@@ -4104,7 +4303,9 @@ describe("modal excitation structural state", () => {
 
     expect(
       countActiveSlotsLocal(structural.signalSourceCoupledSlotsSource),
-    ).toBeGreaterThan(countActiveSlotsLocal(structural.candidateForcingSlotsSource));
+    ).toBeGreaterThan(
+      countActiveSlotsLocal(structural.candidateForcingSlotsSource),
+    );
     expect(
       countActiveSlotsLocal(structural.referenceSourceCoupledSlotsSource),
     ).toBeLessThanOrEqual(
@@ -4165,7 +4366,9 @@ describe("modal excitation acoustic scale ownership", () => {
     const compactVisualResult = runExcitationWithCavityOptions({ radius: 0.5 });
     const largeVisualResult = runExcitationWithCavityOptions({ radius: 8 });
 
-    expect(readExcitationModeKeys(compactVisualResult.candidateForcingSlotsSource)).toEqual(
+    expect(
+      readExcitationModeKeys(compactVisualResult.candidateForcingSlotsSource),
+    ).toEqual(
       readExcitationModeKeys(largeVisualResult.candidateForcingSlotsSource),
     );
   });
@@ -4179,7 +4382,9 @@ describe("modal excitation acoustic scale ownership", () => {
       },
     });
 
-    expect(readExcitationModeKeys(defaultResult.candidateForcingSlotsSource)).not.toEqual(
+    expect(
+      readExcitationModeKeys(defaultResult.candidateForcingSlotsSource),
+    ).not.toEqual(
       readExcitationModeKeys(compactAcousticResult.candidateForcingSlotsSource),
     );
   });

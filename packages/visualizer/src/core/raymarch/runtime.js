@@ -60,7 +60,6 @@ import {
   setRaymarchCavityGeometry,
 } from "./material.js";
 import { resolveIdleOverlayVisible } from "../idleLogoVisibility.js";
-
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
 const RESPONSE_ATTACK = 7;
 const RESPONSE_RELEASE = 3.6;

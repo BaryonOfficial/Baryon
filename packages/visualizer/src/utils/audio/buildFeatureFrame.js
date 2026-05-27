@@ -29,6 +29,11 @@ import {
   createModalTargetBuild,
 } from "./modalStack.js";
 import { buildModalExcitationStructuralState } from "./modalExcitation.js";
+import {
+  resetLineFeedProgramActivityState,
+  isLineFeedMeterIdlePauseSignature,
+  resolveLineFeedProgramActivity,
+} from "./lineFeedProgramActivity.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
 import {
   findSpectralPeakFrequencies,
@@ -4072,6 +4077,49 @@ export function prepareAudioFeatureFrameInputs({
         };
       })();
 
+  const analysisSessionKey = resolveFeatureAnalysisSessionKey(
+    status,
+    inputMode,
+  );
+  const lineFeedMetrics = {
+    ...computeLiveInputMetrics({
+      avgAmplitude,
+      rms: analyserRms,
+      fftMagnitudes: fftMagnitudesSource,
+      sampleRate,
+      fftSize,
+    }),
+    transportSpectrumSilent:
+      countNonZeroFftBins(fftMagnitudesSource) === 0 &&
+      preModalFftPeak <= 0.003,
+  };
+  const lineFeedProgramActivity = isLineFeedLiveInput
+    ? resolveLineFeedProgramActivity({
+        bandState: analysisMemory.bandState,
+        metrics: lineFeedMetrics,
+        deltaMs: getFrameDeltaMs(
+          analysisMemory.bandState.lineFeedProgramPreviousFrameAtMs ?? 0,
+          currentFrameAtMs,
+        ),
+        currentFrameAtMs,
+        enabled: !resolvedAuditSettings.injectTestTone,
+        analysisSessionKey,
+      })
+    : (() => {
+        resetLineFeedProgramActivityState(
+          analysisMemory.bandState,
+          analysisSessionKey,
+        );
+        return {
+          programActive: true,
+          programExcitation: 1,
+          deviceFloorAvg: 0,
+          deviceFloorRms: 0,
+          deviceFloorPeak: 0,
+          quietHoldMs: 0,
+        };
+      })();
+
   return {
     analysisSnapshot,
     featureState,
@@ -4139,7 +4187,11 @@ export function prepareAudioFeatureFrameInputs({
     liveInputHardSilenceActive,
     liveInputCalibrationInvalid,
     liveInputCalibrationInvalidReason,
-    analysisSessionKey: resolveFeatureAnalysisSessionKey(status, inputMode),
+    lineFeedProgramActive: lineFeedProgramActivity.programActive === true,
+    lineFeedProgramExcitation: lineFeedProgramActivity.programExcitation ?? 0,
+    lineFeedDeviceFloorAvg: lineFeedProgramActivity.deviceFloorAvg ?? 0,
+    lineFeedDeviceFloorRms: lineFeedProgramActivity.deviceFloorRms ?? 0,
+    analysisSessionKey,
     analysisInputsSignature: buildFeatureAnalysisInputsSignature({
       inputMode,
       analysisInputMode,
@@ -5409,14 +5461,28 @@ export function composeAudioFeatureFrame({
     preparedInputs.resolvedLiveInputAnalysisClass ===
       LIVE_INPUT_ANALYSIS_CLASSES.lineFeed ||
     preparedInputs.liveInputPolicy === LIVE_INPUT_ANALYSIS_CLASSES.lineFeed;
+  const lineFeedProgramActive = preparedInputs.lineFeedProgramActive === true;
+  const lineFeedMeterIdlePause = isLineFeedMeterIdlePauseSignature(
+    {
+      avgAmplitude: preparedInputs.avgAmplitude,
+      rms: preparedInputs.analyserRms,
+    },
+    {
+      deviceFloorAvg: preparedInputs.lineFeedDeviceFloorAvg,
+      deviceFloorRms: preparedInputs.lineFeedDeviceFloorRms,
+    },
+  );
+  const lineFeedLowQFieldVisibilityAllowed =
+    lineFeedSourceVisibility &&
+    (lineFeedProgramActive || !lineFeedMeterIdlePause) &&
+    lowQSourceCoupledVisibilityEnergy > SOURCE_CUT_MODAL_FORCING_EPSILON;
   const observerAuthorizedActiveField =
     (analysisResult.activeModeCount ?? 0) > 0 &&
     !sourceCutModalForcing &&
     (preparedInputs.inputMode === "live" ||
       modalCoefficientEnergy > 0.02 ||
       modalVisibilityEnergy > 0.005 ||
-      (lineFeedSourceVisibility &&
-        lowQSourceCoupledVisibilityEnergy > SOURCE_CUT_MODAL_FORCING_EPSILON));
+      lineFeedLowQFieldVisibilityAllowed);
   const fieldStateUsesDecay =
     analysisResult.usedDecay &&
     !observerAuthorizedActiveField &&
@@ -5628,6 +5694,8 @@ export function composeAudioFeatureFrame({
       fieldState,
       renderAuthorityCut,
       renderAuthority,
+      lineFeedProgramActive,
+      lineFeedProgramExcitation: preparedInputs.lineFeedProgramExcitation ?? 0,
       lowQSourceCoupledVisibilityRejected,
     };
     analysisResult.debug = debug;

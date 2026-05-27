@@ -1761,6 +1761,7 @@ test("resolveFeatureFrame seeds the first live frame locally while worker analys
       composeCallCount += 1;
       return {
         fieldState: "active",
+        renderAuthority: true,
         seededFromAnalysis: analysisResult.preparedInputs.analysisSessionKey,
       };
     },
@@ -1794,7 +1795,11 @@ test("resolveFeatureFrame preserves the last active live frame during worker war
       return null;
     },
   };
-  const lastLiveFrame = { fieldState: "active", preserved: true };
+  const lastLiveFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    preserved: true,
+  };
   const { args } = createResolveFeatureFrameHarness({
     featureEngine,
     status: {
@@ -1835,6 +1840,66 @@ test("resolveFeatureFrame preserves the last active live frame during worker war
   );
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(false);
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(true);
+});
+
+test("resolveFeatureFrame does not reuse stale live cache when line-feed program is idle", () => {
+  const silentFeatureFrame = {
+    fieldState: "idle",
+    renderAuthority: false,
+    renderAuthorityCut: true,
+  };
+  const staleActiveFrame = {
+    fieldState: "active",
+    renderAuthority: true,
+    debug: { lineFeedProgramActive: false },
+  };
+  const featureEngine = {
+    enqueueTransportFrame() {},
+    readLatestSnapshot() {
+      return null;
+    },
+    getStatus() {
+      return null;
+    },
+  };
+  const { args } = createResolveFeatureFrameHarness({
+    featureEngine,
+    status: {
+      isPlaying: false,
+      isLiveInputActive: true,
+      playbackSessionId: null,
+    },
+    renderLoopRefs: {
+      frameCacheRefs: {
+        lastLiveFrameRef: { current: staleActiveFrame },
+        lastActiveFrameRef: { current: null },
+        lastIdleFrameRef: { current: null },
+        analysisSchedulerRef: { current: null },
+      },
+    },
+  });
+
+  const result = resolveFeatureFrame(args, {
+    prepareFeatureFrame() {
+      return {
+        currentFrameAtMs: 1000,
+        analysisSessionKey: "live:device-1",
+        analysisInputsSignature: '"sig"',
+        silentFeatureFrame,
+      };
+    },
+    runHeavyFeatureAnalysis() {
+      throw new Error("stale live cache should not require heavy analysis");
+    },
+  });
+
+  expect(result.effectiveFrame).toBe(silentFeatureFrame);
+  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
+    "silent-frame",
+  );
+  expect(
+    args.renderLoopRefs.frameCacheRefs.lastLiveFrameRef.current,
+  ).toBeNull();
 });
 
 test("resolveFeatureFrame clears cached live frames and reactive response after live input interruption", () => {

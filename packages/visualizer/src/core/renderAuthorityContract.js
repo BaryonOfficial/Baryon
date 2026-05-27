@@ -27,3 +27,15 @@ export function hasRenderAuthority(featureFrame) {
 export function allowsAudioMotion(featureFrame) {
   return hasRenderAuthority(featureFrame);
 }
+
+export function allowsCachedLiveFeatureFrame(featureFrame) {
+  if (!hasRenderAuthority(featureFrame)) {
+    return false;
+  }
+
+  if (featureFrame?.debug?.lineFeedProgramActive === false) {
+    return false;
+  }
+
+  return true;
+}

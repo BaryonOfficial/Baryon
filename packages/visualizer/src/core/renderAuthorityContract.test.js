@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allowsAudioMotion,
+  allowsCachedLiveFeatureFrame,
   hasRenderAuthority,
   isRenderAuthorityCut,
 } from "./renderAuthorityContract.js";
@@ -44,6 +45,23 @@ describe("render authority contract", () => {
   it("does not treat decay as authority by itself", () => {
     expect(hasRenderAuthority({ fieldState: "decay" })).toBe(false);
     expect(allowsAudioMotion({ fieldState: "decay" })).toBe(false);
+  });
+
+  it("blocks cached live frames after line-feed program idle", () => {
+    expect(
+      allowsCachedLiveFeatureFrame({
+        fieldState: "active",
+        renderAuthority: true,
+        debug: { lineFeedProgramActive: false },
+      }),
+    ).toBe(false);
+    expect(
+      allowsCachedLiveFeatureFrame({
+        fieldState: "active",
+        renderAuthority: true,
+        debug: { lineFeedProgramActive: true },
+      }),
+    ).toBe(true);
   });
 
   it("does not infer authority from stale render-shaped fields", () => {
