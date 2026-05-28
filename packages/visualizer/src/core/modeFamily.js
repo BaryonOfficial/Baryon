@@ -44,20 +44,59 @@ export function getBoundaryModeFromValue(value) {
   return value >= 0.5 ? BOUNDARY_MODES.neumann : BOUNDARY_MODES.dirichlet;
 }
 
+function canonicalTriple(u, v, w) {
+  // Sort (u, v, w) ascending without allocating an array. The classifier
+  // below assumes the canonical order `a ≤ b ≤ c`; sorting at the API
+  // boundary lets it stay branch-pure for the canonical case while making
+  // unsorted callers safe instead of silently misclassifying them.
+  let a = u;
+  let b = v;
+  let c = w;
+  if (a > b) [a, b] = [b, a];
+  if (b > c) [b, c] = [c, b];
+  if (a > b) [a, b] = [b, a];
+  return [a, b, c];
+}
+
+/**
+ * Count the unique permutations of a cavity-mode triple.
+ *
+ * Inputs are canonicalized to `u ≤ v ≤ w` internally; callers do not need
+ * to sort first. The classifier inspects only the (u,v) and (v,w) pairs,
+ * which is sound under canonical order.
+ *
+ * @param {number} u
+ * @param {number} v
+ * @param {number} w
+ * @returns {1 | 3 | 6}
+ */
 export function getUniquePermutationCount(u, v, w) {
-  if (u === w) return 1;
-  if (u === v || v === w) return 3;
+  const [a, b, c] = canonicalTriple(u, v, w);
+  if (a === c) return 1;
+  if (a === b || b === c) return 3;
   return 6;
 }
 
+/**
+ * Expand a cavity-mode triple into its unique permutation set.
+ *
+ * Inputs are canonicalized to `u ≤ v ≤ w` internally; the returned
+ * permutations are over the canonical order.
+ *
+ * @param {number} u
+ * @param {number} v
+ * @param {number} w
+ * @returns {Array<[number, number, number]>}
+ */
 export function getPermutationFamily(u, v, w) {
-  const indices = [u, v, w];
+  const indices = canonicalTriple(u, v, w);
+  const [a, b, c] = indices;
   const orders =
-    u === w
+    a === c
       ? PERMUTATION_ORDERS.allEqual
-      : u === v
+      : a === b
         ? PERMUTATION_ORDERS.repeatedHead
-        : v === w
+        : b === c
           ? PERMUTATION_ORDERS.repeatedTail
           : PERMUTATION_ORDERS.distinct;
 

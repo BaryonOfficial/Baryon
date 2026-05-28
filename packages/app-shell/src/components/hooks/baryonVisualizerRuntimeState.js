@@ -505,13 +505,10 @@ export function updateObservationTransferRenderDiagnostics(
     raymarchDebug.modalBasisCacheReady ?? modalBasisCache?.ready,
   );
   renderDiagnostics.modalBasisCacheSupportReady = Boolean(
-    raymarchDebug.modalBasisCacheSupportReady ??
-    (modalBasisCache?.ready === true &&
-      Boolean(modalBasisCache?.supportTexture)),
+    raymarchDebug.modalBasisCacheSupportReady ?? modalBasisCache?.ready,
   );
   renderDiagnostics.modalBasisCacheSupportSemantic =
     raymarchDebug.modalBasisCacheSupportSemantic ??
-    modalBasisCache?.supportSemantic ??
     MODAL_BASIS_CACHE_RENDER_DIAGNOSTIC_DEFAULTS.modalBasisCacheSupportSemantic;
   renderDiagnostics.liveSynthesisUnsignedSupportMean = readFiniteNumber(
     raymarchDebug.liveSynthesisUnsignedSupportMean ??

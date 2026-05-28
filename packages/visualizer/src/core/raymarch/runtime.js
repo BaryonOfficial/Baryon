@@ -721,11 +721,8 @@ function buildRaymarchDebugSnapshot(
   );
   const modalBasisCacheSemantic =
     modalBasisCache?.semantic ?? "modal-basis-cache";
-  const modalBasisCacheSupportSemantic =
-    modalBasisCache?.supportSemantic ?? "coefficient-invariant-basis-support";
-  const modalBasisCacheSupportReady = Boolean(
-    modalBasisCache?.ready && modalBasisCache?.supportTexture,
-  );
+  const modalBasisCacheSupportSemantic = "coefficient-invariant-basis-support";
+  const modalBasisCacheSupportReady = Boolean(modalBasisCache?.ready);
   const modalBasisCachePhaseAuthority = readFiniteNumber(
     modalBasisCacheDiagnosticDescriptor?.phaseAuthority ??
       modalBasisCache?.modalBasisCachePhaseAuthority,

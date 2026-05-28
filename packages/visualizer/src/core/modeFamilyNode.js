@@ -100,6 +100,20 @@ function createPermutationFieldTermNode({ basisX, basisY, basisZ }) {
   return basisX.mul(basisY).mul(basisZ);
 }
 
+/**
+ * Build the GPU-side equivalent of {@link getUniquePermutationCount} +
+ * {@link getPermutationFamily} as TSL term-weight masks.
+ *
+ * **Precondition:** the (u, v, w) buffer values must be in canonical order
+ * `u ≤ v ≤ w`. The signature only inspects adjacent-pair equalities, so an
+ * unsorted triple with `u === w` but `u !== v` would be misclassified as
+ * fully distinct (count 6 instead of 3) and produce wrong basis
+ * normalization. Mode buffers are populated from canonical descriptors in
+ * `modalDescriptor.js`, which preserves the cavity-resolver ordering — the
+ * GPU has no cheap sort, so it relies on this upstream guarantee. The
+ * CPU-side helpers in `modeFamily.js` canonicalize defensively for any
+ * unsorted callers reaching them directly.
+ */
 function createPermutationFamilySignature({ u, v, w }) {
   const zero = float(0.0);
   const one = float(1.0);

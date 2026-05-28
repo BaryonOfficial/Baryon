@@ -73,7 +73,6 @@ export function setupRaymarch(baryonGeometry, parameters, audioConfig) {
   const volumeMesh = createRaymarchVolumeMesh({
     radius: parameters.radius,
     modalBasisAtlasTexture: modalBasisCache.texture,
-    modalBasisSupportTexture: modalBasisCache.supportTexture,
     modalFieldModeBuffer,
     modalFieldPhaseBuffer,
     modalFieldCapacity: modalBasisCache.liveSynthesisModeCount,

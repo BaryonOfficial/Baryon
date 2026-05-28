@@ -22,11 +22,7 @@ function finiteOr(value, fallback = 0) {
 
 function normalizeRgb(rgb) {
   if (Array.isArray(rgb)) {
-    return [
-      finiteOr(rgb[0]),
-      finiteOr(rgb[1]),
-      finiteOr(rgb[2]),
-    ];
+    return [finiteOr(rgb[0]), finiteOr(rgb[1]), finiteOr(rgb[2])];
   }
 
   return [
@@ -34,16 +30,6 @@ function normalizeRgb(rgb) {
     finiteOr(rgb?.g ?? rgb?.y),
     finiteOr(rgb?.b ?? rgb?.z),
   ];
-}
-
-function mixScalar(left, right, t) {
-  return left * (1 - t) + right * t;
-}
-
-function mixRgb(left, right, t) {
-  return left.map((channel, index) =>
-    mixScalar(channel, right[index] ?? channel, t),
-  );
 }
 
 function resolveOptions(options = {}) {
@@ -57,11 +43,8 @@ export function computeLinearLuminance(rgb) {
 }
 
 export function compressDisplayLuminance(luminance, options = {}) {
-  const {
-    displayKneeStart,
-    displayCeiling,
-    displayShoulderSoftness,
-  } = resolveOptions(options);
+  const { displayKneeStart, displayCeiling, displayShoulderSoftness } =
+    resolveOptions(options);
   const y = Math.max(0, finiteOr(luminance));
 
   if (y <= displayKneeStart) {
@@ -158,46 +141,6 @@ export function deriveBloomRadianceScale(sceneRgb, bloomRgb, options = {}) {
   };
 }
 
-export function deriveHighlightTarget(baseRgb, surfaceRgb, options = {}) {
-  const resolvedOptions = resolveOptions(options);
-  const base = normalizeRgb(baseRgb).map((channel) => Math.max(0, channel));
-  const surface = normalizeRgb(surfaceRgb).map((channel) =>
-    Math.max(0, channel),
-  );
-  const baseLuminance = computeLinearLuminance(base);
-  const surfaceLuminance = computeLinearLuminance(surface);
-  const targetLuminance = finiteOr(
-    options.targetLuminance,
-    resolvedOptions.preShoulderMaxLuminance,
-  );
-  const surfacePullScale = clamp01(finiteOr(options.surfacePullScale, 1));
-  const surfacePull = clamp01(
-    ((targetLuminance - baseLuminance) /
-      Math.max(
-        surfaceLuminance - baseLuminance,
-        resolvedOptions.displayEpsilon,
-      )) *
-      surfacePullScale,
-  );
-  const targetRgb = mixRgb(base, surface, surfacePull);
-  const targetMaxChannel = Math.max(...targetRgb);
-  const whiteSparkle = clamp01(
-    (resolvedOptions.preShoulderMaxChannel - targetMaxChannel) /
-      Math.max(1 - targetMaxChannel, resolvedOptions.displayEpsilon),
-  );
-  const whiteMix = clamp01(finiteOr(options.whiteMix));
-  const finalRgb = mixRgb(targetRgb, [1, 1, 1], whiteMix * whiteSparkle);
-
-  return {
-    baseLuminance,
-    surfaceLuminance,
-    surfacePull,
-    targetRgb,
-    whiteSparkle,
-    finalRgb,
-  };
-}
-
 function computeLinearLuminanceNode(rgb) {
   return rgb.r
     .mul(float(0.2126))
@@ -229,12 +172,7 @@ export function deriveBloomRadianceScaleNode(sceneRgb, bloomRgb) {
     .div(max(bloomLuminance, epsilon))
     .clamp();
   const veil = float(DISPLAY_RADIANCE_DEFAULTS.maxBloomSceneRatio)
-    .mul(
-      max(
-        sceneLuminance,
-        float(DISPLAY_RADIANCE_DEFAULTS.bloomSceneFloor),
-      ),
-    )
+    .mul(max(sceneLuminance, float(DISPLAY_RADIANCE_DEFAULTS.bloomSceneFloor)))
     .div(max(bloomLuminance, epsilon))
     .clamp();
   const channel = float(DISPLAY_RADIANCE_DEFAULTS.preShoulderMaxChannel)

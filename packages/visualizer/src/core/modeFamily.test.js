@@ -27,6 +27,13 @@ describe("mode family helpers", () => {
     expect(getUniquePermutationCount(2, 2, 2)).toBe(1);
   });
 
+  it("canonicalizes unsorted mode triples before classifying permutations", () => {
+    expect(getUniquePermutationCount(1, 2, 1)).toBe(3);
+    expect(getPermutationFamily(2, 1, 1)).toEqual(
+      getPermutationFamily(1, 1, 2),
+    );
+  });
+
   it("returns only unique permutations for repeated indices", () => {
     expect(getPermutationFamily(1, 1, 2)).toEqual([
       [1, 1, 2],

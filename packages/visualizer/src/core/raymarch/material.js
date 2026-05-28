@@ -207,7 +207,6 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   offsetNode?: any | ((args: { startPosLocal: any, rayDirLocal: any, radiusNode: any }) => any),
  *   spectralLightEvaluationMode?: string,
  *   modalBasisAtlasTexture?: any,
- *   modalBasisSupportTexture?: any,
  *   modalFieldModeBuffer?: any,
  *   modalFieldPhaseBuffer?: any,
  *   modalFieldCapacity?: number
@@ -259,26 +258,6 @@ function sampleBasisAtlasPageNode({
     field: basisSample.x,
     gradient: vec3(basisSample.y, basisSample.z, basisSample.w),
     support: basisSupport,
-  };
-}
-
-function samplePrebakedFieldTextureNode({
-  localPosition,
-  uRadius,
-  modalBasisAtlasTexture,
-  modalBasisSupportTexture,
-}) {
-  const cacheUv = getBasisLocalUvNode({ localPosition, uRadius });
-  const cachedSample = texture3D(modalBasisAtlasTexture).sample(cacheUv);
-  const cachedSupport = modalBasisSupportTexture
-    ? texture3D(modalBasisSupportTexture).sample(cacheUv)
-    : vec4(abs(cachedSample.x), float(0.0), float(0.0), float(0.0));
-
-  return {
-    field: cachedSample.x,
-    gradient: vec3(cachedSample.y, cachedSample.z, cachedSample.w),
-    unsignedSupport: cachedSupport.x,
-    cancellationRatio: cachedSupport.y,
   };
 }
 
@@ -367,34 +346,29 @@ function sampleFieldGradientNormalNode({
   uModalFieldModeCount,
   amplitudeNorm,
   modalBasisAtlasTexture,
-  modalBasisSupportTexture,
   modalFieldModeBuffer,
   modalFieldPhaseBuffer,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
 }) {
-  if (!modalBasisAtlasTexture) {
+  if (
+    !modalBasisAtlasTexture ||
+    !modalFieldModeBuffer ||
+    !modalFieldPhaseBuffer
+  ) {
     return vec3(0.0);
   }
 
-  const sample =
-    modalBasisAtlasTexture && modalFieldModeBuffer && modalFieldPhaseBuffer
-      ? synthesizeLiveModalFieldNode({
-          localPosition,
-          uRadius,
-          uTime,
-          uModalFieldModeCount,
-          amplitudeNorm,
-          modalBasisAtlasTexture,
-          modalFieldModeBuffer,
-          modalFieldPhaseBuffer,
-          liveSynthesisModeCount,
-        })
-      : samplePrebakedFieldTextureNode({
-          localPosition,
-          uRadius,
-          modalBasisAtlasTexture,
-          modalBasisSupportTexture,
-        });
+  const sample = synthesizeLiveModalFieldNode({
+    localPosition,
+    uRadius,
+    uTime,
+    uModalFieldModeCount,
+    amplitudeNorm,
+    modalBasisAtlasTexture,
+    modalFieldModeBuffer,
+    modalFieldPhaseBuffer,
+    liveSynthesisModeCount,
+  });
   const sampleGradient = sample.gradient;
 
   return sampleGradient.div(max(length(sampleGradient), float(1e-4)));
@@ -410,7 +384,6 @@ function deriveOpticalConvergenceAuthorityNode({
   uModalFieldModeCount,
   amplitudeNorm,
   modalBasisAtlasTexture,
-  modalBasisSupportTexture,
   modalFieldModeBuffer,
   modalFieldPhaseBuffer,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
@@ -422,7 +395,6 @@ function deriveOpticalConvergenceAuthorityNode({
     uModalFieldModeCount,
     amplitudeNorm,
     modalBasisAtlasTexture,
-    modalBasisSupportTexture,
     modalFieldModeBuffer,
     modalFieldPhaseBuffer,
     liveSynthesisModeCount,
@@ -434,7 +406,6 @@ function deriveOpticalConvergenceAuthorityNode({
     uModalFieldModeCount,
     amplitudeNorm,
     modalBasisAtlasTexture,
-    modalBasisSupportTexture,
     modalFieldModeBuffer,
     modalFieldPhaseBuffer,
     liveSynthesisModeCount,
@@ -446,7 +417,6 @@ function deriveOpticalConvergenceAuthorityNode({
     uModalFieldModeCount,
     amplitudeNorm,
     modalBasisAtlasTexture,
-    modalBasisSupportTexture,
     modalFieldModeBuffer,
     modalFieldPhaseBuffer,
     liveSynthesisModeCount,
@@ -458,7 +428,6 @@ function deriveOpticalConvergenceAuthorityNode({
     uModalFieldModeCount,
     amplitudeNorm,
     modalBasisAtlasTexture,
-    modalBasisSupportTexture,
     modalFieldModeBuffer,
     modalFieldPhaseBuffer,
     liveSynthesisModeCount,
@@ -481,7 +450,6 @@ function createScatteringNode({
   uniforms,
   boundaryMode = BOUNDARY_MODES.neumann,
   modalBasisAtlasTexture = null,
-  modalBasisSupportTexture = null,
   modalFieldModeBuffer = null,
   modalFieldPhaseBuffer = null,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
@@ -1001,7 +969,6 @@ function createScatteringNode({
             uModalFieldModeCount,
             amplitudeNorm,
             modalBasisAtlasTexture,
-            modalBasisSupportTexture,
             modalFieldModeBuffer,
             modalFieldPhaseBuffer,
             liveSynthesisModeCount,
@@ -1569,7 +1536,6 @@ function createRaymarchOffsetNode() {
 export function createRaymarchVolumeMesh({
   radius,
   modalBasisAtlasTexture = null,
-  modalBasisSupportTexture = null,
   modalFieldModeBuffer = null,
   modalFieldPhaseBuffer = null,
   modalFieldCapacity = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
@@ -1604,7 +1570,6 @@ export function createRaymarchVolumeMesh({
       uniforms,
       boundaryMode,
       modalBasisAtlasTexture,
-      modalBasisSupportTexture,
       modalFieldModeBuffer,
       modalFieldPhaseBuffer,
       liveSynthesisModeCount: modalFieldCapacity,
@@ -1617,7 +1582,6 @@ export function createRaymarchVolumeMesh({
     });
     material.spectralLightEvaluationMode = spectralLightEvaluationMode;
     material.modalBasisAtlasTexture = modalBasisAtlasTexture;
-    material.modalBasisSupportTexture = modalBasisSupportTexture;
     material.modalFieldModeBuffer = modalFieldModeBuffer;
     material.modalFieldPhaseBuffer = modalFieldPhaseBuffer;
     material.modalFieldCapacity = modalFieldCapacity;
@@ -1650,7 +1614,6 @@ export function createRaymarchVolumeMesh({
   mesh.userData.raymarchSpectralLightEvaluationMode =
     initialSpectralLightEvaluationMode;
   mesh.userData.raymarchModalBasisAtlasTexture = modalBasisAtlasTexture;
-  mesh.userData.raymarchModalBasisSupportTexture = modalBasisSupportTexture;
   mesh.userData.raymarchModalFieldModeBuffer = modalFieldModeBuffer;
   mesh.userData.raymarchModalFieldPhaseBuffer = modalFieldPhaseBuffer;
   mesh.userData.raymarchModalFieldCapacity = modalFieldCapacity;

@@ -1,4 +1,5 @@
 import { binIndexToFrequencyHz } from "./binFrequency.js";
+import { normalizePhaseRad } from "./modalPhaseSlots.js";
 
 const EPSILON = 1e-9;
 const TWO_PI = Math.PI * 2;
@@ -22,16 +23,6 @@ function clamp01(value) {
     return 0;
   }
   return Math.min(1, Math.max(0, value));
-}
-
-function normalizePhaseRad(phase) {
-  if (!Number.isFinite(phase)) {
-    return 0;
-  }
-  let normalized = phase;
-  while (normalized > Math.PI) normalized -= TWO_PI;
-  while (normalized < -Math.PI) normalized += TWO_PI;
-  return normalized;
 }
 
 function smoothstep(edge0, edge1, value) {

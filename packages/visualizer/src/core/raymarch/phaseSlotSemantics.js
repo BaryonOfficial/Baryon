@@ -1,3 +1,5 @@
+import { normalizePhaseRad } from "../../utils/audio/modalPhaseSlots.js";
+
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
 const PHASE_AUTHORITY_EPSILON = 1e-4;
@@ -8,16 +10,6 @@ const EFFECTIVE_PHASE_CONTRIBUTION_HASH_SCALE = 256;
 
 function hashUint32(value, hash) {
   return Math.imul(hash ^ (value >>> 0), FNV_PRIME) >>> 0;
-}
-
-function normalizePhaseRad(phase) {
-  if (!Number.isFinite(phase)) {
-    return 0;
-  }
-  let normalized = phase;
-  while (normalized > Math.PI) normalized -= Math.PI * 2;
-  while (normalized < -Math.PI) normalized += Math.PI * 2;
-  return normalized;
 }
 
 function getPhaseSlotAuthority(phaseSlots, offset) {

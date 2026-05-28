@@ -19,7 +19,6 @@ import { BOUNDARY_MODES, normalizeBoundaryMode } from "../modeFamily.js";
 import { normalizeCavityGeometry } from "../cavityGeometry.js";
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
 import { buildRaymarchModalBasisPhaseSignature } from "./phaseSlotSemantics.js";
-import { deriveOpticalConvergenceAuthority } from "./fieldShaping.js";
 
 export const RAYMARCH_FIELD_CACHE_RESOLUTION = 64;
 export const RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION =
@@ -562,85 +561,6 @@ function getOrUpdateRaymarchCacheComputeInputs(
   updateRaymarchCacheUniformSnapshots(inputs.uniforms, uniforms);
 
   return inputs;
-}
-
-/**
- * @param {unknown} value
- * @param {[number, number, number]} fallback
- * @returns {[number, number, number]}
- */
-function readVector3(value, fallback) {
-  const source = Array.isArray(value) || ArrayBuffer.isView(value) ? value : [];
-  return [
-    Number.isFinite(source[0]) ? source[0] : fallback[0],
-    Number.isFinite(source[1]) ? source[1] : fallback[1],
-    Number.isFinite(source[2]) ? source[2] : fallback[2],
-  ];
-}
-
-/**
- * @param {unknown} value
- * @param {[number, number, number]} fallback
- * @returns {[number, number, number]}
- */
-function normalizeVector3(value, fallback = [0, 0, 0]) {
-  const vector = readVector3(value, fallback);
-  const magnitude = Math.hypot(vector[0], vector[1], vector[2]);
-  if (!(magnitude > 1e-6)) {
-    return [...fallback];
-  }
-  return [vector[0] / magnitude, vector[1] / magnitude, vector[2] / magnitude];
-}
-
-/**
- * @param {[number, number, number]} left
- * @param {[number, number, number]} right
- * @returns {[number, number, number]}
- */
-function crossVector3(left, right) {
-  return [
-    left[1] * right[2] - left[2] * right[1],
-    left[2] * right[0] - left[0] * right[2],
-    left[0] * right[1] - left[1] * right[0],
-  ];
-}
-
-/**
- * @param {unknown} viewDirection
- * @returns {{ tangent1: [number, number, number], tangent2: [number, number, number] }}
- */
-function deriveViewPlaneBasis(viewDirection) {
-  const view = normalizeVector3(viewDirection, [0, 0, -1]);
-  const seed = /** @type {[number, number, number]} */ (
-    Math.abs(view[1]) > Math.abs(view[0]) &&
-    Math.abs(view[1]) > Math.abs(view[2])
-      ? [1, 0, 0]
-      : [0, 1, 0]
-  );
-  const tangent1 = normalizeVector3(crossVector3(view, seed), [1, 0, 0]);
-  const tangent2 = normalizeVector3(crossVector3(view, tangent1), [0, 1, 0]);
-
-  return { tangent1, tangent2 };
-}
-
-/**
- * @param {{ gradX?: number, gradY?: number, gradZ?: number } | null | undefined} sample
- * @returns {[number, number, number]}
- */
-function readGradientNormal(sample) {
-  return normalizeVector3(
-    [sample?.gradX ?? 0, sample?.gradY ?? 0, sample?.gradZ ?? 0],
-    [0, 0, 0],
-  );
-}
-
-/**
- * @param {[number, number, number]} vector
- * @param {number} scale
- * @returns {[number, number, number]}
- */
-function scaleVector3(vector, scale) {
-  return [vector[0] * scale, vector[1] * scale, vector[2] * scale];
 }
 
 function sumSlotAmplitude(slots, activeCount) {
@@ -1193,21 +1113,6 @@ function summarizeLiveSynthesisSupportDiagnostics({
   };
 }
 
-function fieldDescriptorsEqual(left, right) {
-  if (!left || !right) {
-    return false;
-  }
-
-  if (!fieldDescriptorBaseEqual(left, right)) {
-    return false;
-  }
-
-  return (
-    left.modalFieldCount === right.modalFieldCount &&
-    left.modalFieldHash === right.modalFieldHash
-  );
-}
-
 function fieldDescriptorBaseEqual(left, right) {
   if (!left || !right) {
     return false;
@@ -1264,24 +1169,6 @@ function resolveFieldDescriptorBaseRebuildReason(
   }
   if (previousDescriptor.radius !== nextDescriptor.radius) {
     return "radius";
-  }
-
-  return null;
-}
-
-function resolveFieldRebuildReason(previousDescriptor, nextDescriptor) {
-  const baseReason = resolveFieldDescriptorBaseRebuildReason(
-    previousDescriptor,
-    nextDescriptor,
-  );
-  if (baseReason) {
-    return baseReason;
-  }
-  if (previousDescriptor.modalFieldCount !== nextDescriptor.modalFieldCount) {
-    return "modal-identity";
-  }
-  if (previousDescriptor.modalFieldHash !== nextDescriptor.modalFieldHash) {
-    return "modal-identity";
   }
 
   return null;
@@ -1399,19 +1286,6 @@ function resolveDispatchSize(resolution, depth = resolution) {
   ];
 }
 
-export function createRaymarchFieldCache({
-  resolution = RAYMARCH_FIELD_CACHE_RESOLUTION,
-} = {}) {
-  const normalizedResolution = Math.max(8, Math.round(resolution));
-  const texture = createCacheTexture(normalizedResolution);
-
-  return createCacheState({
-    resolution: normalizedResolution,
-    texture,
-    mode: "cached",
-  });
-}
-
 export function createRaymarchModalBasisCache({
   resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
   basisCapacity = RAYMARCH_MODAL_BASIS_CACHE_CAPACITY,
@@ -1427,11 +1301,6 @@ export function createRaymarchModalBasisCache({
     normalizedResolution,
     basisAtlasDepth,
   );
-  const supportTexture = createCacheTexture(
-    normalizedResolution,
-    normalizedResolution,
-    basisAtlasDepth,
-  );
   return {
     ...createCacheState({
       resolution: normalizedResolution,
@@ -1440,8 +1309,6 @@ export function createRaymarchModalBasisCache({
       mode: "modal-basis-cached",
     }),
     semantic: "modal-basis-cache",
-    supportTexture,
-    supportSemantic: "coefficient-invariant-basis-support",
     basisCapacity: normalizedBasisCapacity,
     basisTextureResolution: normalizedResolution,
     basisAtlasDepth,
@@ -1511,7 +1378,6 @@ export function disposeRaymarchFieldCache(fieldCache) {
 
 export function disposeRaymarchModalBasisCache(modalBasisCache) {
   disposeRaymarchFieldCache(modalBasisCache);
-  modalBasisCache?.supportTexture?.dispose?.();
 }
 
 export function disposeRaymarchSpectralLightCache(spectralLightCache) {
@@ -1943,13 +1809,6 @@ export function buildRaymarchModalBasisCacheDescriptor({
       pageDepth: normalizedResolution,
       pageCount: normalizedBasisCapacity,
     },
-    basisSupportAtlasLayout: {
-      width: normalizedResolution,
-      height: normalizedResolution,
-      depth: basisAtlasDepth,
-      pageDepth: normalizedResolution,
-      pageCount: normalizedBasisCapacity,
-    },
     basisPageMetadata,
     liveSynthesisModeCount: Math.min(
       normalizedBasisCapacity,
@@ -2030,49 +1889,6 @@ export function buildRaymarchSpectralLightCacheDescriptor({
       spectralLightColorTopology,
     ),
   };
-}
-
-function accumulateLayerAtPoint({
-  slots,
-  activeCount,
-  weight,
-  x,
-  y,
-  z,
-  scale,
-  boundaryMode,
-  cavityGeometry,
-}) {
-  let field = 0;
-  let gradX = 0;
-  let gradY = 0;
-  let gradZ = 0;
-  const clampedActiveCount = Math.max(0, Math.round(activeCount || 0));
-  const geometryBackend = getModalGeometryBackend(cavityGeometry);
-
-  for (let slotIndex = 0; slotIndex < clampedActiveCount; slotIndex += 1) {
-    const offset = slotIndex * 4;
-    const amplitude = (slots?.[offset + 3] ?? 0) * weight;
-    if (!(amplitude > 0)) {
-      continue;
-    }
-    const family = geometryBackend.evaluateMode({
-      u: slots[offset] ?? 0,
-      v: slots[offset + 1] ?? 0,
-      w: slots[offset + 2] ?? 0,
-      x,
-      y,
-      z,
-      scale,
-      boundaryMode,
-    });
-    field += amplitude * family.field;
-    gradX += amplitude * family.gradX;
-    gradY += amplitude * family.gradY;
-    gradZ += amplitude * family.gradZ;
-  }
-
-  return { field, gradX, gradY, gradZ };
 }
 
 function accumulateSpectralLightLayerAtPoint({
@@ -2166,42 +1982,6 @@ function accumulateSignedPotentialLayerAtPoint({
   }
 
   return { signedPotential, unsignedPotential };
-}
-
-export function evaluateRaymarchFieldCachePoint({
-  modalFieldSlots,
-  modalFieldCount,
-  boundaryMode,
-  cavityGeometry = "rectangular",
-  radius = 1,
-  x = 0,
-  y = 0,
-  z = 0,
-}) {
-  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
-  const scale = Math.PI / Math.max(radius, 1e-4);
-  const modalField = accumulateLayerAtPoint({
-    slots: modalFieldSlots,
-    activeCount: modalFieldCount,
-    weight: 1,
-    x,
-    y,
-    z,
-    scale,
-    boundaryMode: normalizedBoundaryMode,
-    cavityGeometry,
-  });
-  const amplitudeNorm = Math.max(
-    sumSlotAmplitude(modalFieldSlots, modalFieldCount),
-    0.01,
-  );
-
-  return {
-    field: modalField.field / amplitudeNorm,
-    gradX: modalField.gradX / amplitudeNorm,
-    gradY: modalField.gradY / amplitudeNorm,
-    gradZ: modalField.gradZ / amplitudeNorm,
-  };
 }
 
 function accumulateLiveSynthesisFieldAtPoint({
@@ -2383,53 +2163,6 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
   };
 }
 
-export function evaluateRaymarchNormalConvergencePoint(options = {}) {
-  const {
-    evaluateFieldPoint: evaluateFieldPointOption,
-    viewDirection = [0, 0, -1],
-    sampleStep = null,
-    radius = 1,
-    resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
-    x = 0,
-    y = 0,
-    z = 0,
-    ...fieldPointInputs
-  } = options;
-  const evaluateFieldPoint = /** @type {(inputs: any) => any} */ (
-    evaluateFieldPointOption ?? evaluateRaymarchLiveSynthesisFieldPoint
-  );
-  const safeRadius = Math.max(1e-4, Number.isFinite(radius) ? radius : 1);
-  const defaultStep =
-    (2 * safeRadius) /
-    Math.max(1, normalizeModalBasisCacheResolution(resolution));
-  const h =
-    Number.isFinite(sampleStep) && sampleStep > 0 ? sampleStep : defaultStep;
-  const { tangent1, tangent2 } = deriveViewPlaneBasis(viewDirection);
-  /**
-   * @param {[number, number, number]} offset
-   */
-  const sampleNormalAtOffset = ([dx, dy, dz]) =>
-    readGradientNormal(
-      evaluateFieldPoint({
-        ...fieldPointInputs,
-        radius: safeRadius,
-        resolution,
-        x: x + dx,
-        y: y + dy,
-        z: z + dz,
-      }),
-    );
-
-  return deriveOpticalConvergenceAuthority({
-    tangent1,
-    tangent2,
-    normalPositiveT1: sampleNormalAtOffset(scaleVector3(tangent1, h)),
-    normalNegativeT1: sampleNormalAtOffset(scaleVector3(tangent1, -h)),
-    normalPositiveT2: sampleNormalAtOffset(scaleVector3(tangent2, h)),
-    normalNegativeT2: sampleNormalAtOffset(scaleVector3(tangent2, -h)),
-  });
-}
-
 export function evaluateRaymarchSpectralLightCachePoint({
   modalFieldSlots,
   modalFieldColorSlots,
@@ -2504,107 +2237,6 @@ export function evaluateRaymarchSignedPotentialAtPoint({
       ),
     ),
   };
-}
-
-function createComputeKernel({
-  fieldCache,
-  modalFieldModeBuffer,
-  modalFieldCapacity,
-  uniforms,
-  boundaryMode,
-  cavityGeometry,
-}) {
-  const { resolution, texture } = fieldCache;
-  const uRadius = uniforms.uRadius;
-  const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
-  const geometryBackend = getModalGeometryBackend(cavityGeometry);
-  const resolutionUint = uint(resolution);
-  const resolutionFloat = float(resolution);
-  const half = float(0.5);
-  const two = float(2.0);
-  const zero = float(0.0);
-
-  return Fn(() => {
-    const voxelCoord = uvec3(globalId);
-    const inBounds = voxelCoord.x
-      .lessThan(resolutionUint)
-      .and(voxelCoord.y.lessThan(resolutionUint))
-      .and(voxelCoord.z.lessThan(resolutionUint));
-
-    If(inBounds, () => {
-      const xCoord = float(voxelCoord.x)
-        .add(half)
-        .div(resolutionFloat)
-        .mul(two)
-        .sub(float(1.0))
-        .mul(uRadius)
-        .toVar();
-      const yCoord = float(voxelCoord.y)
-        .add(half)
-        .div(resolutionFloat)
-        .mul(two)
-        .sub(float(1.0))
-        .mul(uRadius)
-        .toVar();
-      const zCoord = float(voxelCoord.z)
-        .add(half)
-        .div(resolutionFloat)
-        .mul(two)
-        .sub(float(1.0))
-        .mul(uRadius)
-        .toVar();
-      const scale = float(Math.PI).div(uRadius.max(float(1e-4)));
-      const field = zero.toVar();
-      const gradX = zero.toVar();
-      const gradY = zero.toVar();
-      const gradZ = zero.toVar();
-      const totalAmplitude = zero.toVar();
-
-      Loop(
-        {
-          start: int(0),
-          end: int(modalFieldCapacity),
-          type: "int",
-          condition: "<",
-        },
-        ({ i }) => {
-          If(i.greaterThanEqual(modalFieldActiveCount), () => {}).Else(() => {
-            const slot = modalFieldModeBuffer.element(i);
-            const amplitude = slot.w.toVar();
-            const family = geometryBackend.evaluateModeNode({
-              u: slot.x,
-              v: slot.y,
-              w: slot.z,
-              xCoord,
-              yCoord,
-              zCoord,
-              scale,
-              boundaryMode,
-            });
-            totalAmplitude.addAssign(amplitude);
-            field.addAssign(amplitude.mul(family.field));
-            gradX.addAssign(amplitude.mul(family.gradX));
-            gradY.addAssign(amplitude.mul(family.gradY));
-            gradZ.addAssign(amplitude.mul(family.gradZ));
-          });
-        },
-      );
-
-      textureStore(
-        texture,
-        uvec3(voxelCoord),
-        vec4(
-          field.div(totalAmplitude.max(float(0.01))),
-          gradX.div(totalAmplitude.max(float(0.01))),
-          gradY.div(totalAmplitude.max(float(0.01))),
-          gradZ.div(totalAmplitude.max(float(0.01))),
-        ),
-      ).toWriteOnly();
-    });
-  })().compute(
-    fieldCache.dispatchSize,
-    Array.from(FIELD_CACHE_COMPUTE_WORKGROUP_SIZE),
-  );
 }
 
 function createSpectralLightComputeKernel({
@@ -2713,7 +2345,7 @@ function createModalBasisCacheComputeKernel({
   boundaryMode,
   cavityGeometry,
 }) {
-  const { resolution, texture, supportTexture } = modalBasisCache;
+  const { resolution, texture } = modalBasisCache;
   const uRadius = uniforms.uRadius;
   const modalFieldActiveCount = int(uniforms.uModalFieldModeCount);
   const geometryBackend = getModalGeometryBackend(cavityGeometry);
@@ -2796,69 +2428,14 @@ function createModalBasisCacheComputeKernel({
           voxelCoord,
           vec4(basisField, basisGradX, basisGradY, basisGradZ),
         ).toWriteOnly();
-        textureStore(
-          supportTexture,
-          voxelCoord,
-          vec4(abs(basisField), float(1.0), zero, zero),
-        ).toWriteOnly();
       }).Else(() => {
         textureStore(texture, voxelCoord, vec4(zero)).toWriteOnly();
-        textureStore(supportTexture, voxelCoord, vec4(zero)).toWriteOnly();
       });
     });
   })().compute(
     modalBasisCache.dispatchSize,
     Array.from(FIELD_CACHE_COMPUTE_WORKGROUP_SIZE),
   );
-}
-
-function getOrCreateRaymarchFieldCacheComputeNode(
-  fieldCache,
-  {
-    modalFieldModeBuffer,
-    modalFieldCapacity,
-    uniforms,
-    boundaryMode,
-    cavityGeometry,
-  },
-) {
-  if (!fieldCache) {
-    return null;
-  }
-
-  const normalizedBoundaryMode = normalizeBoundaryMode(boundaryMode);
-  const normalizedCavityGeometry = normalizeCavityGeometry(cavityGeometry);
-  const normalizedModalFieldCapacity =
-    normalizeComputeNodeCapacity(modalFieldCapacity);
-  const nodeKey = buildRaymarchComputeNodeCacheKey({
-    boundaryMode: normalizedBoundaryMode,
-    cavityGeometry: normalizedCavityGeometry,
-    modalFieldCapacity: normalizedModalFieldCapacity,
-  });
-  const computeInputs = getOrUpdateRaymarchCacheComputeInputs(
-    fieldCache,
-    nodeKey,
-    {
-      modalFieldModeBuffer,
-      modalFieldCapacity: normalizedModalFieldCapacity,
-      uniforms,
-    },
-  );
-  const cachedNode = fieldCache.computeNodesByKey?.[nodeKey];
-  if (cachedNode) {
-    return cachedNode;
-  }
-
-  const computeNode = createComputeKernel({
-    fieldCache,
-    modalFieldModeBuffer: computeInputs.modalFieldModeBuffer,
-    modalFieldCapacity: normalizedModalFieldCapacity,
-    uniforms: computeInputs.uniforms,
-    boundaryMode: normalizedBoundaryMode,
-    cavityGeometry: normalizedCavityGeometry,
-  });
-  fieldCache.computeNodesByKey[nodeKey] = computeNode;
-  return computeNode;
 }
 
 function getOrCreateRaymarchSpectralLightCacheComputeNode(
@@ -2964,25 +2541,6 @@ function getOrCreateRaymarchModalBasisCacheComputeNode(
   return computeNode;
 }
 
-function dispatchQueuedRaymarchFieldCacheRebuild(fieldCache) {
-  const queued = takeQueuedCacheRebuild(fieldCache);
-  if (
-    !queued.descriptor ||
-    !queued.request ||
-    fieldDescriptorsEqual(fieldCache.activeDescriptor, queued.descriptor)
-  ) {
-    return;
-  }
-
-  enqueueRaymarchFieldCacheRebuild(
-    fieldCache,
-    queued.request.renderer,
-    queued.descriptor,
-    queued.rebuildReason ?? "queued",
-    queued.request.options,
-  );
-}
-
 function dispatchQueuedRaymarchSpectralLightCacheRebuild(spectralLightCache) {
   const queued = takeQueuedCacheRebuild(spectralLightCache);
   if (
@@ -3025,86 +2583,6 @@ function dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache) {
     queued.rebuildReason ?? "queued",
     queued.request.options,
   );
-}
-
-export function enqueueRaymarchFieldCacheRebuild(
-  fieldCache,
-  renderer,
-  descriptor,
-  rebuildReason,
-  options,
-) {
-  const { modalFieldModeBuffer, modalFieldCapacity, uniforms } = options;
-  if (!fieldCache) {
-    return { enqueued: false, reason: "unavailable" };
-  }
-
-  if (fieldCache.backend === "unavailable") {
-    return { enqueued: false, reason: "unavailable" };
-  }
-
-  if (fieldCache.rebuildPending) {
-    return queueLatestCacheRebuild(
-      fieldCache,
-      descriptor,
-      rebuildReason,
-      {
-        renderer,
-        options: snapshotRaymarchCacheRebuildOptions(options),
-      },
-      fieldDescriptorsEqual,
-    );
-  }
-
-  if (!renderer || typeof renderer.computeAsync !== "function") {
-    return { enqueued: false, reason: "renderer-unavailable" };
-  }
-
-  const computeNode = getOrCreateRaymarchFieldCacheComputeNode(fieldCache, {
-    modalFieldModeBuffer,
-    modalFieldCapacity,
-    uniforms,
-    boundaryMode: descriptor.boundaryMode,
-    cavityGeometry: descriptor.cavityGeometry,
-  });
-  if (!computeNode) {
-    return { enqueued: false, reason: "unavailable" };
-  }
-
-  const rebuildGeneration = beginCacheRebuild(fieldCache, descriptor);
-  const submission = submitRaymarchCacheCompute(renderer, computeNode).then(
-    () => {
-      if (!isCurrentRaymarchCacheGeneration(fieldCache, rebuildGeneration)) {
-        return;
-      }
-      fieldCache.activeDescriptor = descriptor;
-      fieldCache.ready = true;
-      fieldCache.rebuildPending = false;
-      fieldCache.pendingDescriptor = null;
-      fieldCache.lastError = null;
-      fieldCache.backend = "compute";
-      fieldCache.rebuildCount += 1;
-      fieldCache.lastRebuildReason = rebuildReason;
-      dispatchQueuedRaymarchFieldCacheRebuild(fieldCache);
-    },
-    (error) => {
-      if (!isCurrentRaymarchCacheGeneration(fieldCache, rebuildGeneration)) {
-        return;
-      }
-      markCacheBackendUnavailable(
-        fieldCache,
-        error instanceof Error ? error.message : String(error),
-      );
-    },
-  );
-
-  void submission;
-
-  return {
-    enqueued: true,
-    reason: rebuildReason,
-    descriptor,
-  };
 }
 
 export function enqueueRaymarchSpectralLightCacheRebuild(
@@ -3348,44 +2826,6 @@ export function enqueueRaymarchModalBasisCacheRebuild(
     reason: rebuildReason,
     descriptor,
   };
-}
-
-export function shouldRebuildRaymarchFieldCache(fieldCache, descriptor) {
-  if (!fieldCache) {
-    return { needsRebuild: false, reason: "unavailable" };
-  }
-
-  if (fieldCache.rebuildPending) {
-    const rebuildReason = resolveFieldRebuildReason(
-      fieldCache.queuedDescriptor ??
-        fieldCache.pendingDescriptor ??
-        fieldCache.activeDescriptor,
-      descriptor,
-    );
-
-    return {
-      needsRebuild: Boolean(rebuildReason),
-      reason: rebuildReason ?? "pending",
-    };
-  }
-
-  const rebuildReason = resolveFieldRebuildReason(
-    fieldCache.activeDescriptor,
-    descriptor,
-  );
-
-  return {
-    needsRebuild: Boolean(rebuildReason),
-    reason: rebuildReason ?? "unchanged",
-  };
-}
-
-export function isRaymarchFieldCacheReadyForDescriptor(fieldCache, descriptor) {
-  return Boolean(
-    fieldCache?.ready &&
-    !fieldCache?.rebuildPending &&
-    fieldDescriptorsEqual(fieldCache.activeDescriptor, descriptor),
-  );
 }
 
 export function shouldRebuildRaymarchModalBasisCache(

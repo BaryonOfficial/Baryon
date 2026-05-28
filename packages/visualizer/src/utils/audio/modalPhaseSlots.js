@@ -17,13 +17,38 @@ function clamp01(value) {
   return Math.min(1, Math.max(0, value));
 }
 
+const TWO_PI = Math.PI * 2;
+// Largest finite phase magnitude for which `phase + Math.PI` does not lose
+// the +π offset to FP rounding. At |phase| ≳ 1e16, π is smaller than the
+// ULP of `phase`, so the closed-form modulo drifts outside [-π, π). The
+// while-loop fallback below converges from any finite magnitude.
+const CLOSED_FORM_PHASE_MAX_MAGNITUDE = 1e15;
+
+/**
+ * Reduce an angle (radians) to the canonical interval `[-π, π)`.
+ *
+ * Used as the canonical helper across the modal/raymarch pipeline:
+ * imported by `modalResponse.js` and `core/raymarch/phaseSlotSemantics.js`
+ * so the three former local copies cannot drift.
+ *
+ * The closed-form reduction is O(1) and accurate for `|phase| ≲ 1e15`;
+ * larger magnitudes lose the `+π` offset to FP precision so we fall back
+ * to a bounded while-loop reduction. Typical callers pass per-frame
+ * deltas or `phase - velocity * t` for `t` in wall-clock seconds, where
+ * even a multi-day session stays well below the closed-form ceiling.
+ *
+ * Boundary behaviour: returns `-π` (not `+π`) for input exactly `±π`.
+ */
 export function normalizePhaseRad(phase) {
   if (!Number.isFinite(phase)) {
     return 0;
   }
+  if (Math.abs(phase) <= CLOSED_FORM_PHASE_MAX_MAGNITUDE) {
+    return phase - Math.floor((phase + Math.PI) / TWO_PI) * TWO_PI;
+  }
   let normalized = phase;
-  while (normalized > Math.PI) normalized -= Math.PI * 2;
-  while (normalized < -Math.PI) normalized += Math.PI * 2;
+  while (normalized >= Math.PI) normalized -= TWO_PI;
+  while (normalized < -Math.PI) normalized += TWO_PI;
   return normalized;
 }
 
@@ -38,11 +63,15 @@ export function getPhaseVelocityLimit(layer) {
 }
 
 export function getPhaseAttack(layer) {
-  return layer === "resonant" ? RESONANT_PHASE_ATTACK : SOURCE_COUPLED_PHASE_ATTACK;
+  return layer === "resonant"
+    ? RESONANT_PHASE_ATTACK
+    : SOURCE_COUPLED_PHASE_ATTACK;
 }
 
 export function getPhaseRelease(layer) {
-  return layer === "resonant" ? RESONANT_PHASE_RELEASE : SOURCE_COUPLED_PHASE_RELEASE;
+  return layer === "resonant"
+    ? RESONANT_PHASE_RELEASE
+    : SOURCE_COUPLED_PHASE_RELEASE;
 }
 
 function getRenderPhaseLayer(entry) {
@@ -69,8 +98,7 @@ function resolvePhaseUpload(entry) {
     )
       ? normalizePhaseRad(
           entry.modalOscillatorPhaseRad -
-            phaseVelocityRadPerSec *
-              entry.modalOscillatorPhaseObservedAtSec,
+            phaseVelocityRadPerSec * entry.modalOscillatorPhaseObservedAtSec,
         )
       : entry.modalOscillatorPhaseOffsetRad;
     return {

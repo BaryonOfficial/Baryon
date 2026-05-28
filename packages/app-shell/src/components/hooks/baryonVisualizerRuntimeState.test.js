@@ -280,8 +280,6 @@ test("publishes modal basis cache diagnostics from runtime state when audit is d
       modalBasisCache: {
         active: true,
         ready: true,
-        supportTexture: {},
-        supportSemantic: "coefficient-invariant-basis-support",
         liveSynthesisUnsignedSupportMean: 0.48,
         liveSynthesisCancellationRatioMean: 0.27,
         liveSynthesisCancellationRatioMax: 0.86,
@@ -416,7 +414,6 @@ test("keeps phase-only modal basis cache descriptor changes fresh when audit is 
       modalBasisCache: {
         active: true,
         ready: true,
-        supportTexture: {},
         activeDescriptor,
         rebuildPending: false,
         queuedDescriptor: null,

@@ -257,10 +257,6 @@ describe("raymarch volume material", () => {
       source,
       "function sampleBasisAtlasPageNode({",
     );
-    const directSamplerStart = expectSourceIndex(
-      source,
-      "function samplePrebakedFieldTextureNode({",
-    );
     const cancellationSuppressionStart = expectSourceIndex(
       source,
       "const cancellationSuppression =",
@@ -283,11 +279,13 @@ describe("raymarch volume material", () => {
       "const observationTransfer = deriveObservationTransferNode(",
     );
 
-    expect(source).toContain("modalBasisSupportTexture");
-    expect(source.slice(basisSamplerStart, directSamplerStart)).not.toContain(
+    // Live basis sampler derives support directly from |basisSample.x|;
+    // the legacy prebaked sampler (and its modalBasisSupportTexture read)
+    // were removed in the bin-mapping hygiene pass.
+    expect(source).not.toContain("function samplePrebakedFieldTextureNode");
+    expect(source.slice(basisSamplerStart)).not.toContain(
       "texture3D(modalBasisSupportTexture)",
     );
-    expect(source).toContain("texture3D(modalBasisSupportTexture).sample");
     expect(cancellationSuppressionStart).toBeGreaterThan(supportSampleStart);
     expect(localFieldSupportAuthorityStart).toBeGreaterThan(
       cancellationSuppressionStart,
@@ -1234,7 +1232,6 @@ describe("raymarch volume material", () => {
     const mesh = createRaymarchVolumeMesh({
       radius: 3,
       modalBasisAtlasTexture: modalBasisCache.texture,
-      modalBasisSupportTexture: modalBasisCache.supportTexture,
       uniforms,
     });
 
@@ -1242,12 +1239,10 @@ describe("raymarch volume material", () => {
       modalBasisCache.texture,
     );
     expect(mesh.material.modalBasisAtlasTexture).toBe(modalBasisCache.texture);
-    expect(mesh.userData.raymarchModalBasisSupportTexture).toBe(
-      modalBasisCache.supportTexture,
+    expect(mesh.userData).not.toHaveProperty(
+      "raymarchModalBasisSupportTexture",
     );
-    expect(mesh.material.modalBasisSupportTexture).toBe(
-      modalBasisCache.supportTexture,
-    );
+    expect(mesh.material).not.toHaveProperty("modalBasisSupportTexture");
     expect(mesh.userData).not.toHaveProperty("raymarchBackbonePhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchDetailPhaseBuffer");
     expect(mesh.userData).not.toHaveProperty("raymarchFieldEvaluationMode");

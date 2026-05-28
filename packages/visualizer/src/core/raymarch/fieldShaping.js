@@ -1,5 +1,3 @@
-import { deriveHighlightTarget } from "../../render/displayRadiance.js";
-
 export const EDGE_FADE_START = 0.88;
 export const EDGE_FADE_END = 1.0;
 export const SHELL_WEIGHT_MIN = 0.54;
@@ -1230,24 +1228,6 @@ export function deriveSignedInterferenceRadianceAuthority({
       SIGNED_INTERFERENCE_RADIANCE_GATE_MIN,
       cancellationGate,
     ),
-  };
-}
-
-export function deriveHuePreservingHighlightTarget({
-  baseColor,
-  surfaceColor,
-  targetLuminance,
-  whiteEmissionMix = 0,
-}) {
-  const highlight = deriveHighlightTarget(baseColor, surfaceColor, {
-    targetLuminance,
-    whiteMix: whiteEmissionMix,
-  });
-
-  return {
-    ...highlight,
-    targetColor: highlight.targetRgb,
-    finalColor: highlight.finalRgb,
   };
 }
 

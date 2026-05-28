@@ -6,6 +6,11 @@ import {
 } from "./modalPhaseSlots.js";
 
 describe("modal phase slots", () => {
+  it("maps exact +π to -π in the canonical half-open range", () => {
+    expect(normalizePhaseRad(Math.PI)).toBe(-Math.PI);
+    expect(normalizePhaseRad(-Math.PI)).toBe(-Math.PI);
+  });
+
   it("maps oscillator phase into bounded render phase slots", () => {
     const target = new Float32Array(4);
     const visibleSlots = new Float32Array([0, 0, 1, 0.7]);

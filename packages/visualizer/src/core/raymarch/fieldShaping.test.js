@@ -48,7 +48,6 @@ import {
   deriveHotCoreCrowding,
   deriveHotCoreMix,
   derivePhotographicCymaticProbe,
-  deriveHuePreservingHighlightTarget,
   deriveModalCrowdingDensity,
   deriveShellWeight,
   deriveStableContourAccent,
@@ -2171,23 +2170,6 @@ describe("field shaping", () => {
     expect(saturationOf(crowdedMix)).toBeGreaterThan(
       saturationOf(directMix) * 1.45,
     );
-  });
-
-  it("derives a bright tint target before allowing pure-white sparkle", () => {
-    const highlight = deriveHuePreservingHighlightTarget({
-      baseColor: [0.92, 0.24, 0.7],
-      surfaceColor: [0.98, 0.99, 1],
-      targetLuminance: 0.52,
-      whiteEmissionMix: 0.44,
-    });
-    const directWhite = mixTestColor([0.92, 0.24, 0.7], [1, 1, 1], 0.44);
-
-    expect(highlight.surfacePull).toBeGreaterThan(0);
-    expect(highlight.surfacePull).toBeLessThan(1);
-    expect(saturationOf(highlight.finalColor)).toBeGreaterThan(
-      saturationOf(directWhite),
-    );
-    expect(highlight.whiteSparkle).toBeLessThan(1);
   });
 
   it("pushes hot-core highlights from beam energy instead of body fog", () => {
