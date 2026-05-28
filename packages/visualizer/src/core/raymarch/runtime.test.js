@@ -2966,7 +2966,7 @@ describe("tickRaymarchRuntime", () => {
     ).toBe(RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached);
   });
 
-  it("reuses a prepared performance governor for the matching runtime tick", () => {
+  it("builds the governor inline from the published integrator budget", () => {
     const runtimeState = createRuntimeState();
     const featureFrame = {
       fieldState: "active",
@@ -2985,41 +2985,21 @@ describe("tickRaymarchRuntime", () => {
       changeSignal: 0.2,
       pulseSignal: 0.1,
     };
-    const preparedGovernor = {
-      complexityScore: 0.25,
-      excitation: 0.2,
-      originalModeCount: 3,
-      uploadedModeCount: 3,
-      countLoad: 0.1,
-      weightedPermutationLoad: 0.1,
-      proactiveStepBudget: 64,
-      proactiveRenderScale: 1,
-      bloomStrengthScale: 1,
-      bloomThresholdOffset: 0,
-      bloomAllowed: true,
-      modalField: {
-        capacity: 12,
-        originalActiveCount: 3,
-        uploadedActiveCount: 3,
-        totalAmplitude: 2.2,
-        uploadedAmplitude: 2.2,
-        weightedPermutationLoad: 0,
-        averagePermutationCost: 0,
-      },
-    };
-    runtimeState.pendingRaymarchPerformanceGovernor = {
-      featureFrame,
-      modalFieldCapacity: 12,
-      cavityGeometry: "rectangular",
-      requestedStepBudget: 64,
-      requestedRenderScale: 1,
-      governor: preparedGovernor,
-    };
+    // The render loop published a starved budget with the bloom guard armed.
+    runtimeState.effectiveRenderScale = 0.8;
+    runtimeState.raymarchBloomAdaptationActive = true;
 
     tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
 
-    expect(runtimeState.performanceGovernor).toBe(preparedGovernor);
-    expect(runtimeState.pendingRaymarchPerformanceGovernor).toBeNull();
+    // The integrator (render loop) owns step/scale, so the inline governor
+    // never re-adapts them; bloom adaptation tracks the published signal.
+    expect(runtimeState.performanceGovernor.stepScaleAdaptationActive).toBe(
+      false,
+    );
+    expect(runtimeState.performanceGovernor.bloomAdaptationActive).toBe(true);
+    expect(
+      runtimeState.performanceGovernor.modalField.uploadedActiveCount,
+    ).toBe(3);
     expect(
       Array.from(runtimeState.modalFieldModeBuffer.value.array.slice(0, 4)),
     ).toEqual([1, 2, 3, expect.closeTo(0.8, 5)]);

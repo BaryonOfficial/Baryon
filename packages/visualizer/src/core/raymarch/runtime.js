@@ -315,7 +315,8 @@ function resetRenderAuthorityState(runtimeState) {
   clearBufferNode(runtimeState.modalFieldColorBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
   runtimeState.performanceGovernor = null;
-  runtimeState.pendingRaymarchPerformanceGovernor = null;
+  runtimeState.effectiveRenderScale = 1;
+  runtimeState.raymarchBloomAdaptationActive = false;
   runtimeState.spectralLightBuffersUploaded = false;
   runtimeState.modalBasisPhaseAuthorityModeCount = 0;
   runtimeState.currentModalDescriptor = null;
@@ -551,7 +552,8 @@ function blockOverflowedModalDescriptor(
   clearBufferNode(runtimeState.modalFieldColorBuffer);
   clearBufferNode(runtimeState.modalFieldPhaseBuffer);
   runtimeState.performanceGovernor = null;
-  runtimeState.pendingRaymarchPerformanceGovernor = null;
+  runtimeState.effectiveRenderScale = 1;
+  runtimeState.raymarchBloomAdaptationActive = false;
   runtimeState.spectralLightBuffersUploaded = false;
   runtimeState.modalBasisPhaseAuthorityModeCount = 0;
   runtimeState.currentModalBasisCacheDescriptor = null;
@@ -604,9 +606,7 @@ function publishRaymarchRuntimeAuditSnapshot(
     runtimeState.debugSnapshot = featureFrame?.debug
       ? { ...featureFrame.debug, raymarchDebug, ...raymarchDebug }
       : raymarchDebug;
-    if (runtimeState.auditEnabled) {
-      publishAuditSnapshot(runtimeState.debugSnapshot);
-    }
+    publishAuditSnapshot(runtimeState.debugSnapshot);
   } else {
     runtimeState.debugSnapshot = null;
     publishAuditSnapshot(null);
@@ -1658,32 +1658,6 @@ function resolveRequestedRaymarchStepBudget(runtimeState, volumeMesh) {
   );
 }
 
-function takePendingRaymarchPerformanceGovernor(
-  runtimeState,
-  featureFrame,
-  {
-    modalFieldCapacity,
-    cavityGeometry,
-    requestedStepBudget,
-    requestedRenderScale,
-  },
-) {
-  const pending = runtimeState.pendingRaymarchPerformanceGovernor ?? null;
-  if (!pending) {
-    return null;
-  }
-
-  runtimeState.pendingRaymarchPerformanceGovernor = null;
-  const matches =
-    pending.featureFrame === featureFrame &&
-    pending.modalFieldCapacity === modalFieldCapacity &&
-    pending.cavityGeometry === cavityGeometry &&
-    pending.requestedStepBudget === requestedStepBudget &&
-    pending.requestedRenderScale === requestedRenderScale;
-
-  return matches ? (pending.governor ?? null) : null;
-}
-
 function updateModalBasisCache(
   runtimeState,
   renderer,
@@ -1893,29 +1867,24 @@ function applyRaymarchRuntimeUploadAuthority({
     modalFieldCapacity,
     productBasisAtlasPageCapacity,
   );
-  // The render loop is the integrator and bloom authority; it hands off a
-  // governor built with the profile's flags and effective budget/scale. When
-  // no handoff is available (headless/OSR/transition ticks) build inline with
-  // step/scale adaptation off (the budget here is already the effective one,
-  // so re-reducing would double-dip) and bloom adaptation off (the effective
-  // render scale and profile are not knowable here).
-  const performanceGovernor =
-    takePendingRaymarchPerformanceGovernor(runtimeState, featureFrame, {
-      modalFieldCapacity: productUploadCapacity,
-      cavityGeometry: effectiveCavityGeometry,
-      requestedStepBudget,
-      requestedRenderScale,
-    }) ??
-    buildRaymarchPerformanceGovernor({
-      modalFieldSlots: descriptorSlots.modalFieldSlots,
-      modalFieldCapacity: productUploadCapacity,
-      featureFrame,
-      cavityGeometry: effectiveCavityGeometry,
-      requestedStepBudget,
-      requestedRenderScale,
-      stepScaleAdaptationEnabled: false,
-      bloomAdaptationEnabled: false,
-    });
+  // The render loop is the integrator: it owns step/scale and publishes its
+  // committed budget onto runtimeState. Build the governor inline from that
+  // budget — step/scale adaptation off (requestedStepBudget is already the
+  // effective budget, so re-reducing would double-dip) and the bloom guard fed
+  // the effective step/scale the loop committed. Defaults are safe for
+  // headless/OSR ticks that never ran the loop (bloom off, scale 1).
+  const performanceGovernor = buildRaymarchPerformanceGovernor({
+    modalFieldSlots: descriptorSlots.modalFieldSlots,
+    modalFieldCapacity: productUploadCapacity,
+    featureFrame,
+    cavityGeometry: effectiveCavityGeometry,
+    requestedStepBudget,
+    requestedRenderScale,
+    stepScaleAdaptationEnabled: false,
+    bloomAdaptationEnabled: runtimeState.raymarchBloomAdaptationActive === true,
+    effectiveStepBudget: requestedStepBudget,
+    effectiveRenderScale: runtimeState.effectiveRenderScale ?? 1,
+  });
   const modalFieldLayer = performanceGovernor.modalField;
   runtimeState.performanceGovernor = performanceGovernor;
 

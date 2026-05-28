@@ -890,17 +890,9 @@ test("max-quality keeps the requested raymarch budget under modal complexity", (
   expect(runtimeState.effectiveRaymarchSteps).toBe(64);
   expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
   expect(runtimeState.volumeMesh.material.steps).toBe(64);
-  const pendingGovernor =
-    runtimeState.pendingRaymarchPerformanceGovernor.governor;
-  expect(pendingGovernor).toMatchObject({
-    stepScaleAdaptationActive: false,
-    bloomAdaptationActive: true,
-    proactiveStepBudget: 64,
-    proactiveRenderScale: 1,
-    bloomAllowed: true,
-  });
-  expect(pendingGovernor.bloomStrengthScale).toBeLessThan(1);
-  expect(pendingGovernor.bloomThresholdOffset).toBeGreaterThan(0);
+  // The integrator budget is published to runtimeState (no governor handoff).
+  expect(runtimeState.effectiveRenderScale).toBe(1);
+  expect(runtimeState.raymarchBloomAdaptationActive).toBe(true);
 });
 
 test("max-quality keeps user raymarch budget and render scale under frame pressure", () => {
@@ -1028,7 +1020,7 @@ test("custom profile uses the selected target fps for adaptive tuning", () => {
   expect(runtimeDiagnostics.adaptiveRaymarch.targetFrameTimeMs).toBe(1000 / 48);
 });
 
-test("adaptive raymarch prepares the current frame governor for runtime reuse", () => {
+test("adaptive raymarch publishes the integrator budget for the runtime tick", () => {
   const { args, runtimeState, runtimeDiagnostics } =
     createAdaptiveRaymarchHarness({
       effectiveFrame: {
@@ -1047,25 +1039,20 @@ test("adaptive raymarch prepares the current frame governor for runtime reuse", 
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  expect(runtimeState.pendingRaymarchPerformanceGovernor).toMatchObject({
-    featureFrame: args.effectiveFrame,
-    modalFieldCapacity: 3,
-    cavityGeometry: "rectangular",
-    requestedStepBudget: runtimeState.effectiveRaymarchSteps,
-    requestedRenderScale:
-      runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale,
-  });
-  expect(
-    runtimeState.pendingRaymarchPerformanceGovernor.governor.modalField
-      .uploadedActiveCount,
-  ).toBe(3);
+  // The integrator publishes its committed budget as plain scalars (no governor
+  // handoff); the visualizer tick rebuilds the governor from them.
+  expect(runtimeState.effectiveRenderScale).toBe(
+    runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale,
+  );
+  expect(runtimeState.raymarchBloomAdaptationActive).toBe(true);
   // In auto/custom the ladder owns step/scale while bloom adaptation stays on.
-  expect(
-    runtimeState.pendingRaymarchPerformanceGovernor.governor,
-  ).toMatchObject({
+  expect(runtimeState.performanceGovernor).toMatchObject({
     stepScaleAdaptationActive: false,
     bloomAdaptationActive: true,
   });
+  expect(runtimeState.performanceGovernor.modalField.uploadedActiveCount).toBe(
+    3,
+  );
 });
 
 test("external-output custom 120 starts from the user-tunable step minimum", () => {

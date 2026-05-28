@@ -1434,33 +1434,21 @@ function deriveCoherentModalRaymarchStepFloor({
   return Math.min(requestedStepBudget, COHERENT_MODAL_RAYMARCH_STEP_FLOOR);
 }
 
-function preparePendingRaymarchPerformanceGovernor(runtimeState, inputs) {
-  if (!runtimeState || !inputs?.featureFrame || !inputs?.baseGovernor) {
-    return null;
+/**
+ * Publish the integrator's committed budget to runtimeState so the visualizer
+ * tick can build its governor self-sufficiently. Replaces the old prepare/take
+ * governor handoff (which matched by reference equality and missed whenever the
+ * effective render scale differed from the visualizer's requested scale).
+ */
+function publishRaymarchIntegratorBudget(
+  runtimeState,
+  { effectiveRenderScale, bloomAdaptationActive },
+) {
+  if (!runtimeState) {
+    return;
   }
-
-  const governor =
-    raymarchPerformanceGovernor.deriveRaymarchPerformanceGovernor({
-      modalField: inputs.baseGovernor.modalField,
-      featureFrame: inputs.featureFrame,
-      requestedStepBudget: inputs.requestedStepBudget,
-      requestedRenderScale: inputs.requestedRenderScale,
-      stepScaleAdaptationEnabled: inputs.stepScaleAdaptationEnabled,
-      bloomAdaptationEnabled: inputs.bloomAdaptationEnabled,
-      effectiveStepBudget: inputs.effectiveStepBudget,
-      effectiveRenderScale: inputs.effectiveRenderScale,
-    });
-
-  runtimeState.pendingRaymarchPerformanceGovernor = {
-    featureFrame: inputs.featureFrame,
-    modalFieldCapacity: inputs.modalFieldCapacity,
-    cavityGeometry: inputs.cavityGeometry,
-    requestedStepBudget: inputs.requestedStepBudget,
-    requestedRenderScale: inputs.requestedRenderScale,
-    governor,
-  };
-
-  return governor;
+  runtimeState.effectiveRenderScale = effectiveRenderScale;
+  runtimeState.raymarchBloomAdaptationActive = bloomAdaptationActive === true;
 }
 
 function resolveProductBasisAtlasPageCapacity(runtimeState) {
@@ -1649,17 +1637,9 @@ export function updateAdaptiveRaymarchStepBudget({
     );
     // Balanced/performance hold the user cap (no ladder) but still want the
     // bloom guard while a raymarch frame is active; OSR/non-playing freeze it.
-    preparePendingRaymarchPerformanceGovernor(runtimeState, {
-      featureFrame: effectiveFrame,
-      modalFieldCapacity: productUploadCapacity,
-      cavityGeometry,
-      requestedStepBudget: governedStepBudget,
-      requestedRenderScale: governedRenderScale,
-      baseGovernor: performanceGovernor,
-      stepScaleAdaptationEnabled: false,
-      bloomAdaptationEnabled: activeRaymarchFrame,
-      effectiveStepBudget: governedStepBudget,
+    publishRaymarchIntegratorBudget(runtimeState, {
       effectiveRenderScale: governedRenderScale,
+      bloomAdaptationActive: activeRaymarchFrame,
     });
     return governedStepBudget;
   }
@@ -1809,25 +1789,20 @@ export function updateAdaptiveRaymarchStepBudget({
     effectiveStepBudget,
   };
   applyEffectiveRaymarchStepBudget(runtimeState, controls, effectiveStepBudget);
-  // The bloom guard reads the ladder's effective budget/scale, so the
-  // authoritative bloomAllowed comes from the governor built with them.
-  const pendingGovernor = preparePendingRaymarchPerformanceGovernor(
-    runtimeState,
-    {
-      featureFrame: effectiveFrame,
-      modalFieldCapacity: productUploadCapacity,
-      cavityGeometry,
-      requestedStepBudget: effectiveStepBudget,
-      requestedRenderScale: adaptiveRaymarch.effectiveRenderScale,
-      baseGovernor: performanceGovernor,
-      stepScaleAdaptationEnabled: false,
-      bloomAdaptationEnabled: true,
+  // The bloom guard reads the ladder's effective budget/scale. The visualizer
+  // tick builds the authoritative governor from the published budget; here we
+  // mirror the same decision into diagnostics via the shared helper.
+  publishRaymarchIntegratorBudget(runtimeState, {
+    effectiveRenderScale: adaptiveRaymarch.effectiveRenderScale,
+    bloomAdaptationActive: true,
+  });
+  adaptiveRaymarch.bloomAllowed =
+    raymarchPerformanceGovernor.deriveRaymarchBloomAllowed({
+      complexityScore: performanceGovernor.complexityScore,
+      bloomAdaptationActive: true,
       effectiveStepBudget,
       effectiveRenderScale: adaptiveRaymarch.effectiveRenderScale,
-    },
-  );
-  adaptiveRaymarch.bloomAllowed =
-    pendingGovernor?.bloomAllowed ?? performanceGovernor.bloomAllowed;
+    });
   runtimeState.performanceGovernor.bloomAllowed = adaptiveRaymarch.bloomAllowed;
   return effectiveStepBudget;
 }

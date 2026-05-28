@@ -7,6 +7,41 @@ const STEP_COMPLEXITY_START = 0.45;
 const RENDER_SCALE_COMPLEXITY_START = 0.58;
 const BLOOM_GUARD_COMPLEXITY_START = 0.5;
 
+// The bloom guard fully cuts reactive bloom only when a complex field is being
+// rendered at a starved integration budget (few steps + downscaled). These
+// cutoffs are read against the integrator's committed budget, never the
+// governor's proactive values.
+const BLOOM_GUARD_COMPLEXITY_CUTOFF = 0.95;
+const BLOOM_GUARD_STEP_BUDGET_CUTOFF = 32;
+const BLOOM_GUARD_RENDER_SCALE_CUTOFF = 0.84;
+
+/**
+ * Resolve whether reactive bloom is allowed for the current frame. Shared by
+ * the governor and the render-loop diagnostic so both read one formula.
+ *
+ * @param {object} params
+ * @param {number} params.complexityScore Normalized field complexity (0..1).
+ * @param {boolean} [params.bloomAdaptationActive] Whether the guard is armed.
+ * @param {number} params.effectiveStepBudget Integrator's committed step count.
+ * @param {number} params.effectiveRenderScale Integrator's committed scale.
+ * @returns {boolean} False only when bloom should be cut.
+ */
+export function deriveRaymarchBloomAllowed({
+  complexityScore,
+  bloomAdaptationActive = true,
+  effectiveStepBudget,
+  effectiveRenderScale,
+}) {
+  if (bloomAdaptationActive === false) {
+    return true;
+  }
+  return !(
+    complexityScore > BLOOM_GUARD_COMPLEXITY_CUTOFF &&
+    effectiveStepBudget <= BLOOM_GUARD_STEP_BUDGET_CUTOFF &&
+    effectiveRenderScale <= BLOOM_GUARD_RENDER_SCALE_CUTOFF
+  );
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -191,13 +226,12 @@ export function deriveRaymarchComplexityGovernor({
   const bloomGuardRenderScale = Number.isFinite(effectiveRenderScale)
     ? effectiveRenderScale
     : proactiveRenderScale;
-  const bloomAllowed =
-    !bloomAdaptationActive ||
-    !(
-      complexityScore > 0.95 &&
-      bloomGuardStepBudget <= 32 &&
-      bloomGuardRenderScale <= 0.84
-    );
+  const bloomAllowed = deriveRaymarchBloomAllowed({
+    complexityScore,
+    bloomAdaptationActive,
+    effectiveStepBudget: bloomGuardStepBudget,
+    effectiveRenderScale: bloomGuardRenderScale,
+  });
 
   return {
     complexityScore,
@@ -246,7 +280,7 @@ export function buildRaymarchPerformanceGovernor({
   });
 }
 
-export function deriveRaymarchPerformanceGovernor({
+function deriveRaymarchPerformanceGovernor({
   modalField,
   featureFrame,
   requestedStepBudget,
