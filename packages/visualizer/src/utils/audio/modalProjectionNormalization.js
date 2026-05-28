@@ -7,8 +7,7 @@ const PROJECTION_EVIDENCE_SNR_WEIGHT = 0.24;
 const PROJECTION_EVIDENCE_DRIVE_WEIGHT = 0.22;
 const PROJECTION_EVIDENCE_PHASE_WEIGHT = 0.12;
 const PROJECTION_EVIDENCE_MIN = 0.12;
-const PROJECTION_HIGH_Q_PROTECTION_GAIN = 0.35;
-const PROJECTION_HIGH_Q_RETAINED_AMPLITUDE_SCALE = 0.08;
+const PROJECTION_RESONANT_LAYER_BUDGET = 0.34;
 
 function clamp01(value) {
   if (!Number.isFinite(value)) {
@@ -39,33 +38,12 @@ export function createEmptyProjectionNormalizationMetrics() {
   };
 }
 
-function getProjectionLayerBudget({
-  layer,
-  highQProtection,
-  modeCoherence,
-}) {
+function getProjectionLayerBudget({ layer, modeCoherence }) {
   if (layer === "source-coupled") {
-    return Math.max(
-      0.46,
-      Math.min(0.88, 0.62 + 0.14 * modeCoherence),
-    );
+    return Math.max(0.46, Math.min(0.88, 0.62 + 0.14 * modeCoherence));
   }
 
-  return Math.max(
-    0.16,
-    Math.min(0.58, 0.34 + 0.3 * highQProtection),
-  );
-}
-
-function getProjectionHighQProtection(
-  entry,
-  sparseHighQAuthority,
-  projectionLoad,
-) {
-  void entry;
-  void sparseHighQAuthority;
-  void projectionLoad;
-  return 0;
+  return PROJECTION_RESONANT_LAYER_BUDGET;
 }
 
 function computeProjectionProximity(left, right, layer) {
@@ -117,50 +95,30 @@ function computeProjectionOverlap(left, right, layer) {
 function getProjectionRawDisplayAmplitude(
   entry,
   layer,
-  highQProtection,
   resolveDisplayAmplitude,
 ) {
-  const baseAmplitude = clamp01(
+  return clamp01(
     entry?.displayAmplitude ?? resolveDisplayAmplitude?.(entry, layer) ?? 0,
   );
-  if (layer !== "resonant" || highQProtection <= 0) {
-    return baseAmplitude;
-  }
-
-  const retainedEnergy = clamp01(
-    entry?.retainedEnergy ?? entry?.amplitude ?? 0,
-  );
-  const retainedAmplitude =
-    Math.sqrt(retainedEnergy) *
-    PROJECTION_HIGH_Q_RETAINED_AMPLITUDE_SCALE *
-    (0.8 + 0.2 * highQProtection);
-  return clamp01(Math.max(baseAmplitude, retainedAmplitude));
 }
 
-function getProjectionEvidenceQuality(
-  entry,
-  layer,
-  highQProtection,
-  getModalObserverProfile,
-) {
-  const profile = getModalObserverProfile?.(layer) ?? { snrFull: 1 };
+function getProjectionEvidenceQuality(entry, getLayerObserverProfile) {
+  const profile = getLayerObserverProfile() ?? { snrFull: 1 };
   const coherence = clamp01(entry?.coherence ?? 0);
   const observedSnr = Math.max(0, entry?.observedSnr ?? 0);
   const normalizedSnr = clamp01(observedSnr / Math.max(profile.snrFull, 1e-6));
-  const snrEvidence = Math.max(normalizedSnr, clamp01(highQProtection));
   const driveEvidence = clamp01(
     Math.max(
       entry?.observedDrive ?? 0,
       entry?.currentDriveEnergy ?? 0,
       entry?.driveEnergy ?? 0,
       entry?.sourceAmplitude ?? 0,
-      highQProtection,
     ),
   );
   const phaseAuthority = clamp01(entry?.phaseAuthority ?? 0);
   const evidenceQuality =
     PROJECTION_EVIDENCE_COHERENCE_WEIGHT * coherence +
-    PROJECTION_EVIDENCE_SNR_WEIGHT * snrEvidence +
+    PROJECTION_EVIDENCE_SNR_WEIGHT * normalizedSnr +
     PROJECTION_EVIDENCE_DRIVE_WEIGHT * driveEvidence +
     PROJECTION_EVIDENCE_PHASE_WEIGHT * phaseAuthority;
 
@@ -172,7 +130,6 @@ export function applyProjectionEnergyNormalization({
   layer,
   modalObserverMetrics,
   hardSilentFrame,
-  highQResonantTopologySignal = 0,
   resolveDisplayAmplitude,
   getModalObserverProfile,
 }) {
@@ -184,66 +141,40 @@ export function applyProjectionEnergyNormalization({
   const projectionLoad = clamp01(
     modalObserverMetrics?.highQProjectionLoad ?? 0,
   );
-  const ringDerivedHighQProtection =
-    clamp01(modalObserverMetrics?.highQRingSupport ?? 0) *
-    clamp01(modalObserverMetrics?.highQResonantEnergy ?? 0);
-  const sparseHighQAuthority = clamp01(
-    Math.max(
-      modalObserverMetrics?.highQSparseResonatorAuthority ?? 0,
-      highQResonantTopologySignal,
-      ringDerivedHighQProtection,
-    ),
-  );
   const modeCoherence = clamp01(
     Math.max(
       modalObserverMetrics?.lowQObservedCoherence ?? 0,
       modalObserverMetrics?.highQObservedCoherence ?? 0,
     ),
   );
-  const entryHighQProtection = entries.map((entry) =>
-    getProjectionHighQProtection(
-      entry,
-      sparseHighQAuthority,
-      projectionLoad,
-    ),
-  );
-  const layerHighQProtection = Math.max(0, ...entryHighQProtection);
   const budget = getProjectionLayerBudget({
     layer,
-    highQProtection: layerHighQProtection,
     modeCoherence,
   });
   const lambda =
     layer === "source-coupled"
       ? PROJECTION_COMPETITION_LAMBDA_SOURCE_COUPLED
       : PROJECTION_COMPETITION_LAMBDA_RESONANT;
+  const getLayerObserverProfile = () =>
+    getModalObserverProfile?.(layer) ?? { snrFull: 1 };
 
-  const projected = entries.map((entry, entryIndex) => {
-    const highQProtection = entryHighQProtection[entryIndex] ?? 0;
+  const projected = entries.map((entry) => {
     const rawDisplayAmplitude = getProjectionRawDisplayAmplitude(
       entry,
       layer,
-      highQProtection,
       resolveDisplayAmplitude,
     );
     const evidenceQuality = getProjectionEvidenceQuality(
       entry,
-      layer,
-      highQProtection,
-      getModalObserverProfile,
+      getLayerObserverProfile,
     );
     const rawEnergy =
       rawDisplayAmplitude * rawDisplayAmplitude * evidenceQuality;
-    const protectedEnergy =
-      rawEnergy *
-      (1 + PROJECTION_HIGH_Q_PROTECTION_GAIN * highQProtection);
     return {
       entry,
       rawDisplayAmplitude,
-      highQProtection,
       evidenceQuality,
       rawEnergy,
-      protectedEnergy,
     };
   });
 
@@ -261,12 +192,11 @@ export function applyProjectionEnergyNormalization({
       );
       competitorPressure +=
         proximity *
-        other.protectedEnergy *
-        (1 - 0.35 * other.highQProtection) *
+        other.rawEnergy *
         (1 - 0.25 * clamp01(other.entry?.coherence ?? 0));
     }
     const competitionScale = 1 / (1 + lambda * competitorPressure);
-    const projectedEnergy = item.protectedEnergy * competitionScale;
+    const projectedEnergy = item.rawEnergy * competitionScale;
     return {
       ...item,
       competitorPressure,
@@ -309,8 +239,8 @@ export function applyProjectionEnergyNormalization({
     maxOverlapPressure > 0;
   const metrics = {
     ...emptyMetrics,
-    projectionLoad: projectionLoad,
-    projectionHighQProtection: layerHighQProtection,
+    projectionLoad,
+    projectionHighQProtection: 0,
     projectionCompetitionReduction: competitionReduction,
     projectionEnergyNormalizationApplied: normalizationApplied,
   };
@@ -353,7 +283,8 @@ export function mergeProjectionNormalizationMetrics(...metricSets) {
       metrics.projectionEnergyUsedResonant ?? 0;
     merged.projectionRawEnergySourceCoupled +=
       metrics.projectionRawEnergySourceCoupled ?? 0;
-    merged.projectionRawEnergyResonant += metrics.projectionRawEnergyResonant ?? 0;
+    merged.projectionRawEnergyResonant +=
+      metrics.projectionRawEnergyResonant ?? 0;
     merged.projectionAllocatedEnergySourceCoupled +=
       metrics.projectionAllocatedEnergySourceCoupled ?? 0;
     merged.projectionAllocatedEnergyResonant +=

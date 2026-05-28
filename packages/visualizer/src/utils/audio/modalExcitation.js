@@ -2648,7 +2648,6 @@ function buildModalProjection({
   resonantCapacity,
   colorContext,
   modalObserverMetrics,
-  highQResonantTopologySignal,
   modalResponseMetrics = null,
 }) {
   if (hardSilentFrame) {
@@ -2706,7 +2705,6 @@ function buildModalProjection({
     layer: "source-coupled",
     modalObserverMetrics,
     hardSilentFrame,
-    highQResonantTopologySignal,
     resolveDisplayAmplitude: getDisplayAmplitude,
     getModalObserverProfile,
   });
@@ -2718,7 +2716,6 @@ function buildModalProjection({
     layer: "resonant",
     modalObserverMetrics,
     hardSilentFrame,
-    highQResonantTopologySignal,
     resolveDisplayAmplitude: getDisplayAmplitude,
     getModalObserverProfile,
   });
@@ -2730,7 +2727,6 @@ function buildModalProjection({
     layer: "resonant",
     modalObserverMetrics,
     hardSilentFrame,
-    highQResonantTopologySignal,
     resolveDisplayAmplitude: getDisplayAmplitude,
     getModalObserverProfile,
   });
@@ -3747,7 +3743,6 @@ export function buildModalExcitationStructuralState({
     resonantCapacity,
     colorContext,
     modalObserverMetrics,
-    highQResonantTopologySignal,
     modalResponseMetrics: modalResponse,
   });
   const {
