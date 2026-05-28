@@ -318,8 +318,36 @@ function deriveRuntimeObservationTransferParameters(runtimeState) {
 }
 
 function syncObservationTransferUniforms(runtimeState) {
-  const parameters = deriveRuntimeObservationTransferParameters(runtimeState);
   const uniforms = runtimeState?.uniforms ?? {};
+  const opacityGain = uniforms.uOpacityGain?.value;
+  const stepCompensation = runtimeState?.bloomTuning?.stepCompensation;
+  const contourSharpness = uniforms.uContourSharpness?.value;
+  const fieldNoiseFloor = readRuntimeFieldNoiseFloor(runtimeState);
+  const inputCache =
+    runtimeState.observationTransferInputCache ??
+    (runtimeState.observationTransferInputCache = {});
+
+  if (
+    runtimeState.observationTransferParameters &&
+    inputCache.opacityGain === opacityGain &&
+    inputCache.stepCompensation === stepCompensation &&
+    inputCache.contourSharpness === contourSharpness &&
+    inputCache.fieldNoiseFloor === fieldNoiseFloor
+  ) {
+    return runtimeState.observationTransferParameters;
+  }
+
+  inputCache.opacityGain = opacityGain;
+  inputCache.stepCompensation = stepCompensation;
+  inputCache.contourSharpness = contourSharpness;
+  inputCache.fieldNoiseFloor = fieldNoiseFloor;
+
+  const parameters = deriveObservationTransferParameters({
+    opacityGain,
+    stepCompensation,
+    contourSharpness,
+    fieldNoiseFloor,
+  });
   setIfChanged(
     uniforms.uObservationDensityFadeStart,
     parameters.densityFadeStart,
@@ -1910,7 +1938,18 @@ function applyRaymarchRuntimeUploadAuthority({
   runtimeState.currentModalBasisCacheDescriptor = modalBasisCacheDescriptor;
   runtimeState.currentSpectralLightDescriptor = spectralLightDescriptor;
   runtimeState.spectralLightBuffersUploaded = spectralLightEnabled;
-  setRaymarchCavityGeometry(runtimeState.volumeMesh, effectiveCavityGeometry);
+  const normalizedCavityGeometry = normalizeCavityGeometry(
+    effectiveCavityGeometry,
+  );
+  if (
+    runtimeState.volumeMesh?.userData?.raymarchCavityGeometry !==
+    normalizedCavityGeometry
+  ) {
+    setRaymarchCavityGeometry(
+      runtimeState.volumeMesh,
+      normalizedCavityGeometry,
+    );
+  }
   updateRaymarchEvaluationModes(
     runtimeState,
     renderer,
@@ -1993,11 +2032,22 @@ export function tickRaymarchRuntime(
     setIfChanged(uniforms.uModalResponseEnergy, 0);
     setIfChanged(uniforms.uKeyTintStrength, 0);
     setIfChanged(uniforms.uKeyMode, 0);
-    uniforms.uBandEnergies.value.set(0, 0, 0, 0);
-    uniforms.uDensityGain.value =
+    const idleBandEnergies = uniforms.uBandEnergies.value;
+    if (
+      idleBandEnergies.x !== 0 ||
+      idleBandEnergies.y !== 0 ||
+      idleBandEnergies.z !== 0 ||
+      idleBandEnergies.w !== 0
+    ) {
+      idleBandEnergies.set(0, 0, 0, 0);
+    }
+    const idleDensityGain =
       runtimeState.baseDensityGain ?? uniforms.uDensityGain.value;
-    uniforms.uDensityAbsorption.value =
-      uniforms.uDensityGain.value * uniforms.uAbsorption.value;
+    setIfChanged(uniforms.uDensityGain, idleDensityGain);
+    setIfChanged(
+      uniforms.uDensityAbsorption,
+      idleDensityGain * uniforms.uAbsorption.value,
+    );
     syncObservationTransferUniforms(runtimeState);
     volumeMesh.visible = false;
     idleOverlay.visible = resolveIdleOverlayVisible(
@@ -2130,18 +2180,33 @@ export function tickRaymarchRuntime(
 
   updateLaserResponse(runtimeState, featureFrame);
   syncObservationTransferUniforms(runtimeState);
-  uniforms.uDensityGain.value =
+  const nextDensityGain =
     (runtimeState.baseDensityGain ?? uniforms.uDensityGain.value) *
     (1 + (runtimeState.scaleSignal ?? 0) * DENSITY_RESPONSE_AMOUNT);
-  uniforms.uDensityAbsorption.value =
-    uniforms.uDensityGain.value * uniforms.uAbsorption.value;
-  const bandEnergies = featureFrame?.bandEnergies ?? EMPTY_BAND_ENERGIES;
-  uniforms.uBandEnergies.value.set(
-    bandEnergies[0] ?? 0,
-    bandEnergies[1] ?? 0,
-    bandEnergies[2] ?? 0,
-    bandEnergies[3] ?? 0,
+  setIfChanged(uniforms.uDensityGain, nextDensityGain);
+  setIfChanged(
+    uniforms.uDensityAbsorption,
+    nextDensityGain * uniforms.uAbsorption.value,
   );
+  const bandEnergies = featureFrame?.bandEnergies ?? EMPTY_BAND_ENERGIES;
+  const bandEnergyValues = uniforms.uBandEnergies.value;
+  const nextBandEnergy0 = bandEnergies[0] ?? 0;
+  const nextBandEnergy1 = bandEnergies[1] ?? 0;
+  const nextBandEnergy2 = bandEnergies[2] ?? 0;
+  const nextBandEnergy3 = bandEnergies[3] ?? 0;
+  if (
+    bandEnergyValues.x !== nextBandEnergy0 ||
+    bandEnergyValues.y !== nextBandEnergy1 ||
+    bandEnergyValues.z !== nextBandEnergy2 ||
+    bandEnergyValues.w !== nextBandEnergy3
+  ) {
+    bandEnergyValues.set(
+      nextBandEnergy0,
+      nextBandEnergy1,
+      nextBandEnergy2,
+      nextBandEnergy3,
+    );
+  }
 
   const modalBasisCacheDrawable =
     runtimeState.modalBasisCacheDrawableAuthority?.drawable === true;

@@ -46,6 +46,14 @@ const REFERENCE_STEPS = STEP_REFERENCE;
 const EARLY_EXIT_TRANSMITTANCE_EPSILON = 5e-3;
 export const EMISSION_SAMPLE_GAIN = 1.6;
 export const DIRECT_LIGHT_RESPONSE_GAIN = 0.14;
+const extinctionScaleNode = float(EXTINCTION_SCALE);
+const emissionSampleGainNode = float(EMISSION_SAMPLE_GAIN);
+const directLightResponseGainNode = float(DIRECT_LIGHT_RESPONSE_GAIN);
+const earlyExitTransmittanceEpsilonNode = float(
+  EARLY_EXIT_TRANSMITTANCE_EPSILON,
+);
+const outputGainNode = float(OUTPUT_GAIN);
+const referenceStepsNode = float(REFERENCE_STEPS);
 
 export function applySoftKneeCompression(
   value,
@@ -177,7 +185,7 @@ export default class SafeVolumetricLightingModel extends LightingModel {
           stepCount,
         ).toVar();
         stepSize.assign(segmentLength.div(max(effectiveSteps, float(1.0))));
-        const stepRatio = float(REFERENCE_STEPS).div(effectiveSteps).toVar();
+        const stepRatio = referenceStepsNode.div(effectiveSteps).toVar();
         If(stepRatio.greaterThan(1.0), () => {
           stepCompensation.assign(
             min(
@@ -253,17 +261,17 @@ export default class SafeVolumetricLightingModel extends LightingModel {
             const directLightContribution = scatteringDensity.toVar();
             scatteringDensity.assign(
               scatteringNode
-                .mul(float(EMISSION_SAMPLE_GAIN))
+                .mul(emissionSampleGainNode)
                 .add(
                   directLightContribution
                     .mul(scatteringNode)
-                    .mul(float(DIRECT_LIGHT_RESPONSE_GAIN)),
+                    .mul(directLightResponseGainNode),
                 ),
             );
           }
 
           const falloff = /** @type {any} */ (
-            scatteringDensity.mul(EXTINCTION_SCALE).negate().mul(stepSize)
+            scatteringDensity.mul(extinctionScaleNode).negate().mul(stepSize)
           ).exp();
           transmittance.mulAssign(falloff);
           const remainingTransmittance = max(
@@ -271,9 +279,7 @@ export default class SafeVolumetricLightingModel extends LightingModel {
             transmittance.z,
           ).toVar();
           If(
-            remainingTransmittance.lessThan(
-              float(EARLY_EXIT_TRANSMITTANCE_EPSILON),
-            ),
+            remainingTransmittance.lessThan(earlyExitTransmittanceEpsilonNode),
             () => {
               Break();
             },
@@ -286,7 +292,7 @@ export default class SafeVolumetricLightingModel extends LightingModel {
 
         const visibility = transmittance.saturate().oneMinus().toVar();
         const compensatedVisibility = visibility
-          .mul(OUTPUT_GAIN)
+          .mul(outputGainNode)
           .mul(stepCompensation)
           .toVar();
         const visibilityPeak = max(

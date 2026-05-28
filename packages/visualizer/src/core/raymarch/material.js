@@ -361,8 +361,15 @@ function synthesizeLiveModalFieldNode({
   };
 }
 
-function sampleFieldGradientNormalNode({
+function normalizeModalGradientNormalNode(gradient, amplitudeNorm) {
+  return gradient.div(max(length(gradient), amplitudeNorm.mul(float(1e-4))));
+}
+
+function deriveOpticalConvergenceNormalsNode({
   localPosition,
+  tangent1,
+  tangent2,
+  sampleStep,
   uRadius,
   uVolumeHalfExtents,
   useFullscreenBox = false,
@@ -374,30 +381,130 @@ function sampleFieldGradientNormalNode({
   modalFieldPhaseBuffer,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
 }) {
+  const zeroNormal = vec3(0.0);
   if (
     !modalBasisAtlasTexture ||
     !modalFieldModeBuffer ||
     !modalFieldPhaseBuffer
   ) {
-    return vec3(0.0);
+    return {
+      normalPositiveT1: zeroNormal,
+      normalNegativeT1: zeroNormal,
+      normalPositiveT2: zeroNormal,
+      normalNegativeT2: zeroNormal,
+    };
   }
 
-  const sample = synthesizeLiveModalFieldNode({
-    localPosition,
+  const offsetPosT1 = localPosition.add(tangent1.mul(sampleStep));
+  const offsetNegT1 = localPosition.sub(tangent1.mul(sampleStep));
+  const offsetPosT2 = localPosition.add(tangent2.mul(sampleStep));
+  const offsetNegT2 = localPosition.sub(tangent2.mul(sampleStep));
+  const basisUvPosT1 = getBasisLocalUvNode({
+    localPosition: offsetPosT1,
     uRadius,
     uVolumeHalfExtents,
     useFullscreenBox,
-    uTime,
-    uModalFieldModeCount,
-    amplitudeNorm,
-    modalBasisAtlasTexture,
-    modalFieldModeBuffer,
-    modalFieldPhaseBuffer,
-    liveSynthesisModeCount,
   });
-  const sampleGradient = sample.gradient;
+  const basisUvNegT1 = getBasisLocalUvNode({
+    localPosition: offsetNegT1,
+    uRadius,
+    uVolumeHalfExtents,
+    useFullscreenBox,
+  });
+  const basisUvPosT2 = getBasisLocalUvNode({
+    localPosition: offsetPosT2,
+    uRadius,
+    uVolumeHalfExtents,
+    useFullscreenBox,
+  });
+  const basisUvNegT2 = getBasisLocalUvNode({
+    localPosition: offsetNegT2,
+    uRadius,
+    uVolumeHalfExtents,
+    useFullscreenBox,
+  });
+  const gradientPosT1 = vec3(0.0).toVar();
+  const gradientNegT1 = vec3(0.0).toVar();
+  const gradientPosT2 = vec3(0.0).toVar();
+  const gradientNegT2 = vec3(0.0).toVar();
+  const normalizedLiveSynthesisModeCount = Math.max(
+    1,
+    Math.round(liveSynthesisModeCount || RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT),
+  );
+  const activeModeCount = int(uModalFieldModeCount);
 
-  return sampleGradient.div(max(length(sampleGradient), float(1e-4)));
+  Loop(
+    {
+      start: int(0),
+      end: int(normalizedLiveSynthesisModeCount),
+      type: "int",
+      condition: "<",
+    },
+    ({ i }) => {
+      If(i.greaterThanEqual(activeModeCount), () => {}).Else(() => {
+        const modeSlot = modalFieldModeBuffer.element(i);
+        const phaseSlot = modalFieldPhaseBuffer.element(i);
+        const beta = clamp(
+          phaseSlot.z.mul(phaseSlot.w),
+          float(0.0),
+          float(1.0),
+        );
+        const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
+        const phaseScale = float(1.0)
+          .sub(beta)
+          .add(beta.mul(cos(phase)))
+          .toVar();
+        const coefficient = modeSlot.w.mul(phaseScale).toVar();
+        const basisSamplePosT1 = sampleBasisAtlasPageNode({
+          basisUv: basisUvPosT1,
+          basisSlot: i,
+          liveSynthesisModeCount: normalizedLiveSynthesisModeCount,
+          modalBasisAtlasTexture,
+        });
+        const basisSampleNegT1 = sampleBasisAtlasPageNode({
+          basisUv: basisUvNegT1,
+          basisSlot: i,
+          liveSynthesisModeCount: normalizedLiveSynthesisModeCount,
+          modalBasisAtlasTexture,
+        });
+        const basisSamplePosT2 = sampleBasisAtlasPageNode({
+          basisUv: basisUvPosT2,
+          basisSlot: i,
+          liveSynthesisModeCount: normalizedLiveSynthesisModeCount,
+          modalBasisAtlasTexture,
+        });
+        const basisSampleNegT2 = sampleBasisAtlasPageNode({
+          basisUv: basisUvNegT2,
+          basisSlot: i,
+          liveSynthesisModeCount: normalizedLiveSynthesisModeCount,
+          modalBasisAtlasTexture,
+        });
+        gradientPosT1.addAssign(basisSamplePosT1.gradient.mul(coefficient));
+        gradientNegT1.addAssign(basisSampleNegT1.gradient.mul(coefficient));
+        gradientPosT2.addAssign(basisSamplePosT2.gradient.mul(coefficient));
+        gradientNegT2.addAssign(basisSampleNegT2.gradient.mul(coefficient));
+      });
+    },
+  );
+
+  return {
+    normalPositiveT1: normalizeModalGradientNormalNode(
+      gradientPosT1,
+      amplitudeNorm,
+    ),
+    normalNegativeT1: normalizeModalGradientNormalNode(
+      gradientNegT1,
+      amplitudeNorm,
+    ),
+    normalPositiveT2: normalizeModalGradientNormalNode(
+      gradientPosT2,
+      amplitudeNorm,
+    ),
+    normalNegativeT2: normalizeModalGradientNormalNode(
+      gradientNegT2,
+      amplitudeNorm,
+    ),
+  };
 }
 
 function deriveOpticalConvergenceAuthorityNode({
@@ -416,47 +523,16 @@ function deriveOpticalConvergenceAuthorityNode({
   modalFieldPhaseBuffer,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
 }) {
-  const normalPositiveT1 = sampleFieldGradientNormalNode({
-    localPosition: localPosition.add(tangent1.mul(sampleStep)),
-    uRadius,
-    uVolumeHalfExtents,
-    useFullscreenBox,
-    uTime,
-    uModalFieldModeCount,
-    amplitudeNorm,
-    modalBasisAtlasTexture,
-    modalFieldModeBuffer,
-    modalFieldPhaseBuffer,
-    liveSynthesisModeCount,
-  });
-  const normalNegativeT1 = sampleFieldGradientNormalNode({
-    localPosition: localPosition.sub(tangent1.mul(sampleStep)),
-    uRadius,
-    uVolumeHalfExtents,
-    useFullscreenBox,
-    uTime,
-    uModalFieldModeCount,
-    amplitudeNorm,
-    modalBasisAtlasTexture,
-    modalFieldModeBuffer,
-    modalFieldPhaseBuffer,
-    liveSynthesisModeCount,
-  });
-  const normalPositiveT2 = sampleFieldGradientNormalNode({
-    localPosition: localPosition.add(tangent2.mul(sampleStep)),
-    uRadius,
-    uVolumeHalfExtents,
-    useFullscreenBox,
-    uTime,
-    uModalFieldModeCount,
-    amplitudeNorm,
-    modalBasisAtlasTexture,
-    modalFieldModeBuffer,
-    modalFieldPhaseBuffer,
-    liveSynthesisModeCount,
-  });
-  const normalNegativeT2 = sampleFieldGradientNormalNode({
-    localPosition: localPosition.sub(tangent2.mul(sampleStep)),
+  const {
+    normalPositiveT1,
+    normalNegativeT1,
+    normalPositiveT2,
+    normalNegativeT2,
+  } = deriveOpticalConvergenceNormalsNode({
+    localPosition,
+    tangent1,
+    tangent2,
+    sampleStep,
     uRadius,
     uVolumeHalfExtents,
     useFullscreenBox,
@@ -656,6 +732,23 @@ function createScatteringNode({
         ),
       ),
     );
+  const amplitudeNorm = max(uTotalSlotAmplitude, float(0.01));
+  const modalFieldCount = float(uModalFieldModeCount);
+  const activeMask = smoothstep(float(0.0), float(1.0), modalFieldCount);
+  const spectralLightEnabled = smoothstep(
+    float(0.0),
+    float(1e-4),
+    uSpectralMix,
+  );
+  const densityMod = float(1.0)
+    .add(uTransientEnergy.mul(0.3))
+    .add(uSpectralFlux.mul(0.2))
+    .add(uBeatPulse.mul(0.35));
+  const incoherentTrebleSuppression = float(1.0).sub(
+    uTrebleBroadbandEnergy
+      .mul(float(1.0).sub(uModeCoherence))
+      .mul(float(INCOHERENT_TREBLE_BODY_SUPPRESSION_MAX)),
+  );
 
   return Fn(
     /**
@@ -686,16 +779,10 @@ function createScatteringNode({
       const effectiveCancellationRatio = float(0.0).toVar();
       const colorSum = vec3(0.0).toVar();
       const colorWeight = float(0.0).toVar();
-      const spectralLightEnabled = smoothstep(
-        float(0.0),
-        float(1e-4),
-        uSpectralMix,
-      );
       const cachedSpectralLightEnabled =
         spectralLightEvaluationMode ===
           RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached &&
         Boolean(spectralLightCacheTexture);
-      const amplitudeNorm = max(uTotalSlotAmplitude, float(0.01));
       const basisUv = getBasisLocalUvNode({
         localPosition,
         uRadius,
@@ -749,7 +836,6 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
-      const modalFieldCount = float(uModalFieldModeCount);
       // Local field evidence sharpens nodal lines; style descriptors do not own clarity.
       // contourGainBase is pre-computed above the Fn.
       const contourGain = float(1.0)
@@ -830,12 +916,6 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
-      const activeMask = smoothstep(float(0.0), float(1.0), modalFieldCount);
-      // Beat pulse drives a visible density surge through the volume
-      const densityMod = float(1.0)
-        .add(uTransientEnergy.mul(0.3))
-        .add(uSpectralFlux.mul(0.2))
-        .add(uBeatPulse.mul(0.35));
       const boundaryMask = smoothstep(
         float(RAYMARCH_BOUNDARY_START),
         float(RAYMARCH_BOUNDARY_END),
@@ -848,14 +928,6 @@ function createScatteringNode({
           float(INTERIOR_MASK_END),
           radialDistance,
         ),
-      );
-      // Reduce body fill when treble is incoherent (broadband hiss/cymbal noise
-      // with low modal coherence). Max 45% body reduction — prevents diffuse white fog
-      // from high-freq noise without suppressing tonal treble structure.
-      const incoherentTrebleSuppression = float(1.0).sub(
-        uTrebleBroadbandEnergy
-          .mul(float(1.0).sub(uModeCoherence))
-          .mul(float(INCOHERENT_TREBLE_BODY_SUPPRESSION_MAX)),
       );
       const bodyDensity = broadBand
         .mul(edgeFade)
@@ -974,9 +1046,10 @@ function createScatteringNode({
       const adjustedBodyContribution = adjustedBodyDensity
         .mul(float(CAUSTIC_BODY_MIX_MAX))
         .mul(accumulationCompression);
+      const negViewDirLocal = viewDirLocal.negate();
       const opticalSlopeAuthority = clamp(
         float(1.0)
-          .sub(abs(dot(gradientNormal, viewDirLocal.negate())))
+          .sub(abs(dot(gradientNormal, negViewDirLocal)))
           .pow(float(OPTICAL_SLOPE_POWER))
           .mul(localGradientEvidence),
         float(0.0),
@@ -1316,25 +1389,16 @@ function createScatteringNode({
       // Beat pulse briefly expands the bright hot core — "bloom from within" on hits
       // hotCoreStartDynamic is pre-computed above the Fn.
       // excitationGate prevents weak tonal fields from triggering the white laser core.
+      const hotCoreInput = photographicLaserCausticRadiance
+        .mul(contourMix.mul(float(0.14)).add(float(0.76)))
+        .mul(float(0.72).add(photographicFocus.mul(float(0.28))))
+        .add(highlightMask.mul(float(0.12)))
+        .add(uTransientEnergy.mul(float(0.08)));
       const hotCoreMix = smoothstep(
         localHotCoreStart,
         float(HOT_CORE_END),
         /** @type {any} */ (
-          photographicLaserCausticRadiance
-            .mul(contourMix.mul(float(0.14)).add(float(0.76)))
-            .mul(float(0.72).add(photographicFocus.mul(float(0.28))))
-            .add(highlightMask.mul(float(0.12)))
-            .add(uTransientEnergy.mul(float(0.08)))
-            .div(
-              float(1.0).add(
-                photographicLaserCausticRadiance
-                  .mul(contourMix.mul(float(0.14)).add(float(0.76)))
-                  .mul(float(0.72).add(photographicFocus.mul(float(0.28))))
-                  .add(highlightMask.mul(float(0.12)))
-                  .add(uTransientEnergy.mul(float(0.08)))
-                  .mul(float(0.22)),
-              ),
-            )
+          hotCoreInput.div(float(1.0).add(hotCoreInput.mul(float(0.22))))
         ),
       )
         .mul(excitationGate)
@@ -1346,7 +1410,7 @@ function createScatteringNode({
       );
       const fresnelBase = clamp(
         float(1.0)
-          .sub(abs(dot(gradientNormal, viewDirLocal.negate())))
+          .sub(abs(dot(gradientNormal, negViewDirLocal)))
           .pow(max(uHolographicFresnelPower, float(0.01))),
         float(0.0),
         float(1.0),

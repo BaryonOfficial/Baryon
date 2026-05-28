@@ -372,13 +372,20 @@ export function applyEffectiveRaymarchStepBudget(
   const effectiveStepBudget = normalizeStepBudget(
     nextStepBudget ?? requestedStepBudget,
   );
+  const previousEffectiveStepBudget = runtimeState.effectiveRaymarchSteps;
 
   runtimeState.requestedRaymarchSteps = requestedStepBudget;
   runtimeState.effectiveRaymarchSteps = effectiveStepBudget;
-  if (runtimeState.uniforms?.uRaymarchSteps) {
+  if (
+    runtimeState.uniforms?.uRaymarchSteps &&
+    runtimeState.uniforms.uRaymarchSteps.value !== effectiveStepBudget
+  ) {
     runtimeState.uniforms.uRaymarchSteps.value = effectiveStepBudget;
   }
-  if (runtimeState.volumeMesh?.material) {
+  if (
+    runtimeState.volumeMesh?.material &&
+    previousEffectiveStepBudget !== effectiveStepBudget
+  ) {
     syncRaymarchMaterialSteps(runtimeState.volumeMesh, effectiveStepBudget);
   }
 

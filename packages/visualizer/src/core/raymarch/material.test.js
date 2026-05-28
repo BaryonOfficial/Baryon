@@ -235,7 +235,10 @@ describe("raymarch volume material", () => {
       "const incoherentTrebleSuppression =",
     );
     const bodyDensityStart = expectSourceIndex(source, "const bodyDensity =");
-    const suppressionBlock = source.slice(suppressionStart, bodyDensityStart);
+    const suppressionBlock = source.slice(
+      suppressionStart,
+      source.indexOf("return Fn(", suppressionStart),
+    );
 
     expect(bodyDensityStart).toBeGreaterThan(suppressionStart);
     expect(source).toContain("INCOHERENT_TREBLE_BODY_SUPPRESSION_MAX");
@@ -603,7 +606,7 @@ describe("raymarch volume material", () => {
       "function synthesizeLiveModalFieldNode({",
     );
     const synthesizeEnd = source.indexOf(
-      "function sampleFieldGradientNormalNode({",
+      "function normalizeModalGradientNormalNode(",
       synthesizeStart,
     );
     const synthesizeBlock = source.slice(synthesizeStart, synthesizeEnd);
@@ -970,7 +973,7 @@ describe("raymarch volume material", () => {
     );
     const convergenceHelperStart = expectSourceIndex(
       source,
-      "function deriveOpticalConvergenceAuthorityNode",
+      "function deriveOpticalConvergenceNormalsNode",
     );
     const opticalConvergenceStart = expectSourceIndex(
       source,
@@ -1008,7 +1011,12 @@ describe("raymarch volume material", () => {
       opticalMeasurementStart,
     );
     expect(opticalFocusStart).toBeGreaterThan(opticalMeasurementHelperStart);
-    expect(source).toContain("sampleFieldGradientNormalNode");
+    expect(source).toContain("deriveOpticalConvergenceNormalsNode");
+    expect(source).toContain("gradientPosT1");
+    expect(source).toContain("gradientNegT2");
+    expect(source).not.toContain(
+      "normalPositiveT1 = sampleFieldGradientNormalNode",
+    );
     expect(source).toContain("normalPositiveT1");
     expect(source).toContain("normalNegativeT1");
     expect(source).toContain("normalPositiveT2");
@@ -1032,6 +1040,18 @@ describe("raymarch volume material", () => {
     expect(opticalFocusBlock).not.toContain("localGradientEvidence");
     expect(opticalFocusBlock).not.toContain("OPTICAL_" + "SLOPE_GAIN");
     expect(opticalFocusBlock).not.toContain("OPTICAL_" + "RIDGE_GAIN");
+  });
+
+  it("keeps modal gradient normalization algebraically equivalent", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("function normalizeModalGradientNormalNode(");
+    expect(source).toContain(
+      "max(length(gradient), amplitudeNorm.mul(float(1e-4)))",
+    );
   });
 
   it("keeps the optical measurement pass off the spherical startup path", () => {
@@ -1163,6 +1183,7 @@ describe("raymarch volume material", () => {
       "const photographicFringeWeight =",
     );
     const hotCoreStart = expectSourceIndex(source, "const hotCoreMix =");
+    const hotCoreInputStart = expectSourceIndex(source, "const hotCoreInput =");
     const holographicMixStart = expectSourceIndex(
       source,
       "const holographicColorMix =",
@@ -1179,15 +1200,16 @@ describe("raymarch volume material", () => {
       source,
       "const spectralColor =",
     );
-    const fringeBlock = source.slice(fringeStart, hotCoreStart);
-    const hotCoreBlock = source.slice(hotCoreStart, holographicMixStart);
+    const fringeBlock = source.slice(fringeStart, hotCoreInputStart);
+    const hotCoreBlock = source.slice(hotCoreInputStart, holographicMixStart);
     const holographicBlock = source.slice(
       holographicMixStart,
       whiteEmissionStart,
     );
 
     expect(fringeStart).toBeLessThan(densityStart);
-    expect(hotCoreStart).toBeGreaterThan(densityStart);
+    expect(hotCoreInputStart).toBeGreaterThan(densityStart);
+    expect(hotCoreStart).toBeGreaterThan(hotCoreInputStart);
     expect(holographicMixStart).toBeGreaterThan(densityStart);
     expect(whiteEmissionStart).toBeGreaterThan(holographicMixStart);
     expect(spectralColorStart).toBeGreaterThan(densityStart);

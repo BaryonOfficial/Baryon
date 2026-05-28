@@ -7,6 +7,7 @@ export const VOLUME_BOUNDS_MODES = Object.freeze({
 
 const MAX_FULLSCREEN_ASPECT = 3;
 const FULLSCREEN_MESH_BOUNDS_PADDING = 1.01;
+const FULLSCREEN_VOLUME_SIZE_SCRATCH = new THREE.Vector2();
 
 /**
  * @param {unknown} value
@@ -92,11 +93,18 @@ export function syncFullscreenVolumeMeshBounds(volumeMesh, halfExtents) {
   }
 
   const padding = FULLSCREEN_MESH_BOUNDS_PADDING;
-  volumeMesh.scale.set(
-    (halfExtents.x * 2 * padding) / baseWidth,
-    (halfExtents.y * 2 * padding) / baseHeight,
-    (halfExtents.z * 2 * padding) / baseDepth,
-  );
+  const nextScaleX = (halfExtents.x * 2 * padding) / baseWidth;
+  const nextScaleY = (halfExtents.y * 2 * padding) / baseHeight;
+  const nextScaleZ = (halfExtents.z * 2 * padding) / baseDepth;
+  if (
+    volumeMesh.scale.x === nextScaleX &&
+    volumeMesh.scale.y === nextScaleY &&
+    volumeMesh.scale.z === nextScaleZ
+  ) {
+    return;
+  }
+
+  volumeMesh.scale.set(nextScaleX, nextScaleY, nextScaleZ);
 }
 
 /**
@@ -133,6 +141,11 @@ function resolveFullscreenVolumeBaseRadius(runtimeState) {
  * @param {{
  *   volumeBounds?: string,
  *   volumeMesh?: import("three").Mesh,
+ *   _fullscreenVolumeBoundsSync?: {
+ *     width: number,
+ *     height: number,
+ *     baseRadius: number,
+ *   },
  *   uniforms?: {
  *     uRadius?: { value: number },
  *     uViewportAspect?: { value: number },
@@ -146,8 +159,19 @@ function resolveFullscreenVolumeBaseRadius(runtimeState) {
  *     },
  *   },
  * }} runtimeState
- * @param {{ getSize: (target: import("three").Vector2) => import("three").Vector2 } | null | undefined} renderer
  */
+function resolveFullscreenVolumeBoundsSyncCache(runtimeState) {
+  if (!runtimeState._fullscreenVolumeBoundsSync) {
+    runtimeState._fullscreenVolumeBoundsSync = {
+      width: 0,
+      height: 0,
+      baseRadius: 0,
+    };
+  }
+
+  return runtimeState._fullscreenVolumeBoundsSync;
+}
+
 export function syncFullscreenVolumeHalfExtents(runtimeState, renderer) {
   if (
     runtimeState?.volumeBounds !== VOLUME_BOUNDS_MODES.fullscreenBox ||
@@ -157,19 +181,39 @@ export function syncFullscreenVolumeHalfExtents(runtimeState, renderer) {
     return;
   }
 
-  const size = new THREE.Vector2();
-  renderer.getSize(size);
-  const width = size.x > 0 ? size.x : 1;
-  const height = size.y > 0 ? size.y : 1;
-  const aspect = clampAspect(width / height);
+  renderer.getSize(FULLSCREEN_VOLUME_SIZE_SCRATCH);
+  const width =
+    FULLSCREEN_VOLUME_SIZE_SCRATCH.x > 0 ? FULLSCREEN_VOLUME_SIZE_SCRATCH.x : 1;
+  const height =
+    FULLSCREEN_VOLUME_SIZE_SCRATCH.y > 0 ? FULLSCREEN_VOLUME_SIZE_SCRATCH.y : 1;
   const baseRadius = resolveFullscreenVolumeBaseRadius(runtimeState);
-  const halfExtents = deriveFullscreenVolumeHalfExtents(baseRadius, aspect);
+  const syncCache = resolveFullscreenVolumeBoundsSyncCache(runtimeState);
+  if (
+    syncCache.width === width &&
+    syncCache.height === height &&
+    syncCache.baseRadius === baseRadius
+  ) {
+    return;
+  }
 
-  runtimeState.uniforms.uViewportAspect.value = aspect;
-  runtimeState.uniforms.uVolumeHalfExtents.value.set(
-    halfExtents.x,
-    halfExtents.y,
-    halfExtents.z,
-  );
+  syncCache.width = width;
+  syncCache.height = height;
+  syncCache.baseRadius = baseRadius;
+
+  const aspect = clampAspect(width / height);
+  const halfExtents = deriveFullscreenVolumeHalfExtents(baseRadius, aspect);
+  const viewportAspectUniform = runtimeState.uniforms.uViewportAspect;
+  if (viewportAspectUniform.value !== aspect) {
+    viewportAspectUniform.value = aspect;
+  }
+
+  const halfExtentsUniform = runtimeState.uniforms.uVolumeHalfExtents.value;
+  if (
+    halfExtentsUniform.x !== halfExtents.x ||
+    halfExtentsUniform.y !== halfExtents.y ||
+    halfExtentsUniform.z !== halfExtents.z
+  ) {
+    halfExtentsUniform.set(halfExtents.x, halfExtents.y, halfExtents.z);
+  }
   syncFullscreenVolumeMeshBounds(runtimeState.volumeMesh, halfExtents);
 }

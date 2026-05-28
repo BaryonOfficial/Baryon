@@ -102,6 +102,46 @@ describe("volumeBounds", () => {
     expect(volumeMesh.scale.z).toBeCloseTo((expected.z * 2 * 1.01) / 6, 5);
   });
 
+  it("skips redundant fullscreen bounds sync when viewport and radius are unchanged", () => {
+    const geometry = new THREE.BoxGeometry(6, 6, 6);
+    const volumeMesh = new THREE.Mesh(geometry);
+    const halfExtentsUniform = new THREE.Vector3(1, 1, 1);
+    const verticalHalfExtent = resolveDefaultFullscreenVerticalHalfExtent();
+    halfExtentsUniform.set(
+      verticalHalfExtent,
+      verticalHalfExtent,
+      verticalHalfExtent,
+    );
+    const runtimeState = {
+      volumeBounds: VOLUME_BOUNDS_MODES.fullscreenBox,
+      volumeMesh,
+      uniforms: {
+        uRadius: { value: 3 },
+        uViewportAspect: { value: 1 },
+        uVolumeHalfExtents: {
+          value: halfExtentsUniform,
+        },
+      },
+    };
+    let getSizeCalls = 0;
+    const renderer = {
+      getSize(target) {
+        getSizeCalls += 1;
+        target.set(1920, 1080);
+        return target;
+      },
+    };
+
+    syncFullscreenVolumeHalfExtents(runtimeState, renderer);
+    const firstScaleX = volumeMesh.scale.x;
+    const firstAspect = runtimeState.uniforms.uViewportAspect.value;
+    syncFullscreenVolumeHalfExtents(runtimeState, renderer);
+
+    expect(getSizeCalls).toBe(2);
+    expect(runtimeState.uniforms.uViewportAspect.value).toBe(firstAspect);
+    expect(volumeMesh.scale.x).toBe(firstScaleX);
+  });
+
   it("scales the proxy mesh to the runtime half extents", () => {
     const geometry = new THREE.BoxGeometry(18, 6, 6);
     const volumeMesh = new THREE.Mesh(geometry);
