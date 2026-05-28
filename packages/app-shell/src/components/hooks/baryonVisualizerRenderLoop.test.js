@@ -872,26 +872,35 @@ test("max-quality keeps the requested raymarch budget under modal complexity", (
   expect(runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive).toBe(
     false,
   );
-  expect(runtimeState.performanceGovernor.qualityAdaptationActive).toBe(false);
+  // max-quality holds the user step/scale (the ladder/cap owns them)...
+  expect(runtimeState.performanceGovernor.stepScaleAdaptationActive).toBe(
+    false,
+  );
   expect(runtimeState.performanceGovernor.complexityScore).toBeGreaterThan(0.8);
   expect(runtimeState.performanceGovernor.proactiveStepBudget).toBe(64);
   expect(runtimeState.performanceGovernor.proactiveRenderScale).toBe(1);
-  expect(runtimeState.performanceGovernor.bloomStrengthScale).toBe(1);
-  expect(runtimeState.performanceGovernor.bloomThresholdOffset).toBe(0);
+  // ...but the bloom guard stays active while a raymarch frame plays.
+  expect(runtimeState.performanceGovernor.bloomAdaptationActive).toBe(true);
+  expect(runtimeState.performanceGovernor.bloomStrengthScale).toBeLessThan(1);
+  expect(runtimeState.performanceGovernor.bloomThresholdOffset).toBeGreaterThan(
+    0,
+  );
+  // Step budget stays above the guard floor, so bloom is not fully cut.
   expect(runtimeState.performanceGovernor.bloomAllowed).toBe(true);
   expect(runtimeState.effectiveRaymarchSteps).toBe(64);
   expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
   expect(runtimeState.volumeMesh.material.steps).toBe(64);
-  expect(
-    runtimeState.pendingRaymarchPerformanceGovernor.governor,
-  ).toMatchObject({
-    qualityAdaptationActive: false,
+  const pendingGovernor =
+    runtimeState.pendingRaymarchPerformanceGovernor.governor;
+  expect(pendingGovernor).toMatchObject({
+    stepScaleAdaptationActive: false,
+    bloomAdaptationActive: true,
     proactiveStepBudget: 64,
     proactiveRenderScale: 1,
-    bloomStrengthScale: 1,
-    bloomThresholdOffset: 0,
     bloomAllowed: true,
   });
+  expect(pendingGovernor.bloomStrengthScale).toBeLessThan(1);
+  expect(pendingGovernor.bloomThresholdOffset).toBeGreaterThan(0);
 });
 
 test("max-quality keeps user raymarch budget and render scale under frame pressure", () => {
@@ -914,7 +923,9 @@ test("max-quality keeps user raymarch budget and render scale under frame pressu
   expect(runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive).toBe(
     false,
   );
-  expect(runtimeState.performanceGovernor.qualityAdaptationActive).toBe(false);
+  expect(runtimeState.performanceGovernor.stepScaleAdaptationActive).toBe(
+    false,
+  );
   expect(runtimeState.effectiveRaymarchSteps).toBe(64);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRaymarchSteps).toBe(64);
   expect(runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale).toBe(1);
@@ -1018,16 +1029,17 @@ test("custom profile uses the selected target fps for adaptive tuning", () => {
 });
 
 test("adaptive raymarch prepares the current frame governor for runtime reuse", () => {
-  const { args, runtimeState } = createAdaptiveRaymarchHarness({
-    effectiveFrame: {
-      activeModeCount: 3,
-      modalFieldSlots: new Float32Array([
-        1, 1, 1, 0.8, 2, 2, 2, 0.6, 3, 3, 3, 0.4,
-      ]),
-      averageAmplitude: 90,
-      structureSignal: 0.55,
-    },
-  });
+  const { args, runtimeState, runtimeDiagnostics } =
+    createAdaptiveRaymarchHarness({
+      effectiveFrame: {
+        activeModeCount: 3,
+        modalFieldSlots: new Float32Array([
+          1, 1, 1, 0.8, 2, 2, 2, 0.6, 3, 3, 3, 0.4,
+        ]),
+        averageAmplitude: 90,
+        structureSignal: 0.55,
+      },
+    });
   runtimeState.modalFieldCapacity = 3;
   runtimeState.modalFieldModeBuffer = {
     value: { array: new Float32Array(12) },
@@ -1040,12 +1052,20 @@ test("adaptive raymarch prepares the current frame governor for runtime reuse", 
     modalFieldCapacity: 3,
     cavityGeometry: "rectangular",
     requestedStepBudget: runtimeState.effectiveRaymarchSteps,
-    requestedRenderScale: 1,
+    requestedRenderScale:
+      runtimeDiagnostics.adaptiveRaymarch.effectiveRenderScale,
   });
   expect(
     runtimeState.pendingRaymarchPerformanceGovernor.governor.modalField
       .uploadedActiveCount,
   ).toBe(3);
+  // In auto/custom the ladder owns step/scale while bloom adaptation stays on.
+  expect(
+    runtimeState.pendingRaymarchPerformanceGovernor.governor,
+  ).toMatchObject({
+    stepScaleAdaptationActive: false,
+    bloomAdaptationActive: true,
+  });
 });
 
 test("external-output custom 120 starts from the user-tunable step minimum", () => {

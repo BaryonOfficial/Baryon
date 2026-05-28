@@ -124,7 +124,10 @@ export function deriveRaymarchComplexityGovernor({
   featureFrame,
   requestedStepBudget,
   requestedRenderScale = 1,
-  qualityAdaptationEnabled = true,
+  stepScaleAdaptationEnabled = true,
+  bloomAdaptationEnabled = true,
+  effectiveStepBudget = null,
+  effectiveRenderScale = null,
 }) {
   const totalCapacity = Math.max(1, modalField?.capacity ?? 0);
   const normalizedRequestedStepBudget = Math.max(
@@ -156,37 +159,50 @@ export function deriveRaymarchComplexityGovernor({
     1,
     complexityScore,
   );
-  const qualityAdaptationActive = qualityAdaptationEnabled !== false;
-  const proactiveStepBudget = qualityAdaptationActive
+  // Step/scale adaptation and bloom adaptation are independent authorities:
+  // in auto/custom the FPS ladder owns step/scale (stepScaleAdaptation off)
+  // while the governor still applies bloom pressure (bloomAdaptation on).
+  const stepScaleAdaptationActive = stepScaleAdaptationEnabled !== false;
+  const bloomAdaptationActive = bloomAdaptationEnabled !== false;
+  const proactiveStepBudget = stepScaleAdaptationActive
     ? Math.max(
         16,
         Math.round(normalizedRequestedStepBudget * (1 - stepPressure * 0.28)),
       )
     : normalizedRequestedStepBudget;
-  const proactiveRenderScale = qualityAdaptationActive
+  const proactiveRenderScale = stepScaleAdaptationActive
     ? clamp(
         normalizedRequestedRenderScale * (1 - renderScalePressure * 0.16),
         Math.min(normalizedRequestedRenderScale, MIN_COMPLEXITY_RENDER_SCALE),
         normalizedRequestedRenderScale,
       )
     : normalizedRequestedRenderScale;
-  const bloomStrengthScale = qualityAdaptationActive
+  const bloomStrengthScale = bloomAdaptationActive
     ? 1 - bloomPressure * 0.22
     : 1;
-  const bloomThresholdOffset = qualityAdaptationActive
-    ? bloomPressure * 0.08
-    : 0;
+  const bloomThresholdOffset = bloomAdaptationActive ? bloomPressure * 0.08 : 0;
+  // The bloom guard reads the integrator's committed budget (the ladder's
+  // effective step/scale) rather than the governor's own proactive values,
+  // which are inert when the ladder owns step/scale. Falls back to the
+  // proactive values when an effective budget is not supplied.
+  const bloomGuardStepBudget = Number.isFinite(effectiveStepBudget)
+    ? effectiveStepBudget
+    : proactiveStepBudget;
+  const bloomGuardRenderScale = Number.isFinite(effectiveRenderScale)
+    ? effectiveRenderScale
+    : proactiveRenderScale;
   const bloomAllowed =
-    !qualityAdaptationActive ||
+    !bloomAdaptationActive ||
     !(
       complexityScore > 0.95 &&
-      proactiveStepBudget <= 32 &&
-      proactiveRenderScale <= 0.84
+      bloomGuardStepBudget <= 32 &&
+      bloomGuardRenderScale <= 0.84
     );
 
   return {
     complexityScore,
-    qualityAdaptationActive,
+    stepScaleAdaptationActive,
+    bloomAdaptationActive,
     excitation,
     originalModeCount,
     uploadedModeCount,
@@ -206,7 +222,10 @@ export function buildRaymarchPerformanceGovernor({
   featureFrame,
   requestedStepBudget,
   requestedRenderScale = 1,
-  qualityAdaptationEnabled = true,
+  stepScaleAdaptationEnabled = true,
+  bloomAdaptationEnabled = true,
+  effectiveStepBudget = null,
+  effectiveRenderScale = null,
   cavityGeometry = "rectangular",
 }) {
   const modalField = analyzeModalField({
@@ -220,7 +239,10 @@ export function buildRaymarchPerformanceGovernor({
     featureFrame,
     requestedStepBudget,
     requestedRenderScale,
-    qualityAdaptationEnabled,
+    stepScaleAdaptationEnabled,
+    bloomAdaptationEnabled,
+    effectiveStepBudget,
+    effectiveRenderScale,
   });
 }
 
@@ -229,7 +251,10 @@ export function deriveRaymarchPerformanceGovernor({
   featureFrame,
   requestedStepBudget,
   requestedRenderScale = 1,
-  qualityAdaptationEnabled = true,
+  stepScaleAdaptationEnabled = true,
+  bloomAdaptationEnabled = true,
+  effectiveStepBudget = null,
+  effectiveRenderScale = null,
 }) {
   return {
     ...deriveRaymarchComplexityGovernor({
@@ -237,7 +262,10 @@ export function deriveRaymarchPerformanceGovernor({
       featureFrame,
       requestedStepBudget,
       requestedRenderScale,
-      qualityAdaptationEnabled,
+      stepScaleAdaptationEnabled,
+      bloomAdaptationEnabled,
+      effectiveStepBudget,
+      effectiveRenderScale,
     }),
     modalField,
   };

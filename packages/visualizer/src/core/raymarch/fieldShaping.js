@@ -498,32 +498,33 @@ export function deriveOpticalSlopeAuthority({
 export function deriveOpticalConvergenceAuthority({
   tangent1 = [1, 0, 0],
   tangent2 = [0, 1, 0],
+  centerGradientNormal = [0, 0, 0],
   normalPositiveT1 = [0, 0, 0],
-  normalNegativeT1 = [0, 0, 0],
   normalPositiveT2 = [0, 0, 0],
-  normalNegativeT2 = [0, 0, 0],
 } = {}) {
   const t1 = normalizeVector3(tangent1, [1, 0, 0]);
   const t2 = normalizeVector3(tangent2, [0, 1, 0]);
+  const nCenter = normalizeVector3(centerGradientNormal, [0, 0, 0]);
   const nPositiveT1 = normalizeVector3(normalPositiveT1, [0, 0, 0]);
-  const nNegativeT1 = normalizeVector3(normalNegativeT1, [0, 0, 0]);
   const nPositiveT2 = normalizeVector3(normalPositiveT2, [0, 0, 0]);
-  const nNegativeT2 = normalizeVector3(normalNegativeT2, [0, 0, 0]);
+  // Forward difference reusing the center normal N0 as baseline:
+  // -[(N(+t1) - N0)·t1 + (N(+t2) - N0)·t2] mirrors the GPU estimator and
+  // tracks the same negative divergence as the prior 4-sample central form.
   const viewPlaneNormalConvergence =
-    -0.5 *
+    -1 *
     (dotVector3(
       [
-        nPositiveT1[0] - nNegativeT1[0],
-        nPositiveT1[1] - nNegativeT1[1],
-        nPositiveT1[2] - nNegativeT1[2],
+        nPositiveT1[0] - nCenter[0],
+        nPositiveT1[1] - nCenter[1],
+        nPositiveT1[2] - nCenter[2],
       ],
       t1,
     ) +
       dotVector3(
         [
-          nPositiveT2[0] - nNegativeT2[0],
-          nPositiveT2[1] - nNegativeT2[1],
-          nPositiveT2[2] - nNegativeT2[2],
+          nPositiveT2[0] - nCenter[0],
+          nPositiveT2[1] - nCenter[1],
+          nPositiveT2[2] - nCenter[2],
         ],
         t2,
       ));

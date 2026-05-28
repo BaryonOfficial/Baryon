@@ -1020,14 +1020,19 @@ describe("raymarch volume material", () => {
     expect(source).toContain("function computeLiveModalCoefficientNodes");
     expect(source).toContain("deriveOpticalConvergenceNormalsNode");
     expect(source).toContain("gradientPosT1");
-    expect(source).toContain("gradientNegT2");
+    expect(source).toContain("gradientPosT2");
+    // Forward difference: two forward offsets (+t1, +t2) reusing the
+    // center normal as the N0 baseline — no four-offset (±t1, ±t2) loop.
+    expect(source).not.toContain("gradientNegT1");
+    expect(source).not.toContain("gradientNegT2");
     expect(source).not.toContain(
       "normalPositiveT1 = sampleFieldGradientNormalNode",
     );
     expect(source).toContain("normalPositiveT1");
-    expect(source).toContain("normalNegativeT1");
     expect(source).toContain("normalPositiveT2");
-    expect(source).toContain("normalNegativeT2");
+    expect(source).not.toContain("normalNegativeT1");
+    expect(source).not.toContain("normalNegativeT2");
+    expect(source).toContain("centerGradientNormal");
     const deletedGradientFocusLiteral =
       "float(0.65).add(" + "localGradientEvidence.mul(float(0." + "35)))";
 

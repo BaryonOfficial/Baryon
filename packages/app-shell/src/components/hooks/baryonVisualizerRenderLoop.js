@@ -3,8 +3,8 @@ import {
   applyBloomControls,
   applyEffectiveRaymarchStepBudget,
   applyOutputControls,
+  applyRaymarchControls,
   applySharedControls,
-  applyVisualizationControls,
   buildControlInspectionSnapshot,
 } from "@baryon/visualizer/controls/runtime";
 import {
@@ -1445,7 +1445,10 @@ function preparePendingRaymarchPerformanceGovernor(runtimeState, inputs) {
       featureFrame: inputs.featureFrame,
       requestedStepBudget: inputs.requestedStepBudget,
       requestedRenderScale: inputs.requestedRenderScale,
-      qualityAdaptationEnabled: inputs.qualityAdaptationEnabled,
+      stepScaleAdaptationEnabled: inputs.stepScaleAdaptationEnabled,
+      bloomAdaptationEnabled: inputs.bloomAdaptationEnabled,
+      effectiveStepBudget: inputs.effectiveStepBudget,
+      effectiveRenderScale: inputs.effectiveRenderScale,
     });
 
   runtimeState.pendingRaymarchPerformanceGovernor = {
@@ -1575,6 +1578,9 @@ export function updateAdaptiveRaymarchStepBudget({
   );
   const adaptiveRaymarch = runtimeDiagnostics.adaptiveRaymarch;
   const autoAdaptiveActive = profileAdaptiveActive;
+  // The observation integrator (FPS ladder in auto/custom, user cap otherwise)
+  // owns step/scale, so the governor never adapts them (stepScale off). It
+  // stays bloom-only while there is an active raymarch frame.
   const performanceGovernor =
     raymarchPerformanceGovernor.buildRaymarchPerformanceGovernor({
       modalFieldSlots: governorSlots,
@@ -1583,20 +1589,16 @@ export function updateAdaptiveRaymarchStepBudget({
       requestedStepBudget,
       requestedRenderScale,
       cavityGeometry,
-      qualityAdaptationEnabled: profileAdaptiveActive,
+      stepScaleAdaptationEnabled: false,
+      bloomAdaptationEnabled: activeRaymarchFrame,
     });
   runtimeState.performanceGovernor = {
     ...runtimeState.performanceGovernor,
     ...performanceGovernor,
   };
-  const governedStepBudget = Math.min(
-    requestedStepBudget,
-    performanceGovernor.proactiveStepBudget,
-  );
-  const governedRenderScale = Math.min(
-    requestedRenderScale,
-    performanceGovernor.proactiveRenderScale,
-  );
+  // The ladder ceiling is the user cap; the governor no longer pre-reduces it.
+  const governedStepBudget = requestedStepBudget;
+  const governedRenderScale = requestedRenderScale;
   const adaptiveTuning = buildAdaptiveRaymarchTuning(
     resolveAdaptiveTargetFps(renderProfile, controls),
   );
@@ -1645,6 +1647,8 @@ export function updateAdaptiveRaymarchStepBudget({
       controls,
       governedStepBudget,
     );
+    // Balanced/performance hold the user cap (no ladder) but still want the
+    // bloom guard while a raymarch frame is active; OSR/non-playing freeze it.
     preparePendingRaymarchPerformanceGovernor(runtimeState, {
       featureFrame: effectiveFrame,
       modalFieldCapacity: productUploadCapacity,
@@ -1652,7 +1656,10 @@ export function updateAdaptiveRaymarchStepBudget({
       requestedStepBudget: governedStepBudget,
       requestedRenderScale: governedRenderScale,
       baseGovernor: performanceGovernor,
-      qualityAdaptationEnabled: false,
+      stepScaleAdaptationEnabled: false,
+      bloomAdaptationEnabled: activeRaymarchFrame,
+      effectiveStepBudget: governedStepBudget,
+      effectiveRenderScale: governedRenderScale,
     });
     return governedStepBudget;
   }
@@ -1794,7 +1801,6 @@ export function updateAdaptiveRaymarchStepBudget({
     performanceGovernor.proactiveStepBudget;
   adaptiveRaymarch.proactiveRenderScale =
     performanceGovernor.proactiveRenderScale;
-  adaptiveRaymarch.bloomAllowed = performanceGovernor.bloomAllowed;
   runtimeState.autoRaymarchResumeRung = adaptiveRaymarch.currentRung;
   runtimeState.autoRaymarchResumeScaleRung = adaptiveRaymarch.currentScaleRung;
   runtimeState.performanceGovernor = {
@@ -1803,22 +1809,32 @@ export function updateAdaptiveRaymarchStepBudget({
     effectiveStepBudget,
   };
   applyEffectiveRaymarchStepBudget(runtimeState, controls, effectiveStepBudget);
-  preparePendingRaymarchPerformanceGovernor(runtimeState, {
-    featureFrame: effectiveFrame,
-    modalFieldCapacity: productUploadCapacity,
-    cavityGeometry,
-    requestedStepBudget: effectiveStepBudget,
-    requestedRenderScale: adaptiveRaymarch.effectiveRenderScale,
-    baseGovernor: performanceGovernor,
-    qualityAdaptationEnabled: true,
-  });
+  // The bloom guard reads the ladder's effective budget/scale, so the
+  // authoritative bloomAllowed comes from the governor built with them.
+  const pendingGovernor = preparePendingRaymarchPerformanceGovernor(
+    runtimeState,
+    {
+      featureFrame: effectiveFrame,
+      modalFieldCapacity: productUploadCapacity,
+      cavityGeometry,
+      requestedStepBudget: effectiveStepBudget,
+      requestedRenderScale: adaptiveRaymarch.effectiveRenderScale,
+      baseGovernor: performanceGovernor,
+      stepScaleAdaptationEnabled: false,
+      bloomAdaptationEnabled: true,
+      effectiveStepBudget,
+      effectiveRenderScale: adaptiveRaymarch.effectiveRenderScale,
+    },
+  );
+  adaptiveRaymarch.bloomAllowed =
+    pendingGovernor?.bloomAllowed ?? performanceGovernor.bloomAllowed;
+  runtimeState.performanceGovernor.bloomAllowed = adaptiveRaymarch.bloomAllowed;
   return effectiveStepBudget;
 }
 
 export function applyCachedControlSnapshots(
   {
     controls,
-    runtime,
     runtimeState,
     featureState,
     gl,
@@ -1830,7 +1846,7 @@ export function applyCachedControlSnapshots(
   appliers = {
     applySharedControls,
     applyOutputControls,
-    applyVisualizationControls,
+    applyRaymarchControls,
     applyBloomControls,
     applyAuditControls,
   },
@@ -1852,11 +1868,7 @@ export function applyCachedControlSnapshots(
         { ensurePipeline, postNodesRef, renderProfileRef },
         controls,
       ),
-      visualization: appliers.applyVisualizationControls(
-        runtime.method,
-        runtimeState,
-        controls,
-      ),
+      visualization: appliers.applyRaymarchControls(runtimeState, controls),
       bloom: appliers.applyBloomControls(
         { ensurePipeline, postNodesRef, renderProfileRef, runtimeState },
         controls,

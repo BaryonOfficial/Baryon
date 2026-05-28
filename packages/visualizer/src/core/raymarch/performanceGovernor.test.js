@@ -5,6 +5,7 @@ import {
   buildRaymarchPerformanceGovernor,
   copyModalField,
   deriveFieldExcitation,
+  deriveRaymarchComplexityGovernor,
 } from "./performanceGovernor.js";
 
 const PERFORMANCE_GOVERNOR_SOURCE_URL = new URL(
@@ -241,7 +242,7 @@ describe("performanceGovernor", () => {
     expect(high.modalField.uploadedActiveCount).toBe(16);
   });
 
-  it("keeps quality controls neutral when adaptive quality is disabled", () => {
+  it("lets the ladder own step/scale while the bloom guard stays active", () => {
     const modalFieldSlots = new Float32Array([
       1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5, 0.75, 3,
       5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6, 2, 2, 3, 0.7, 2, 3, 3, 0.65, 3, 3,
@@ -261,26 +262,100 @@ describe("performanceGovernor", () => {
       requestedStepBudget: 80,
       requestedRenderScale: 0.92,
     });
-    const fixedQuality = buildRaymarchPerformanceGovernor({
+    const ladderOwned = buildRaymarchPerformanceGovernor({
       modalFieldSlots,
       modalFieldCapacity: 16,
       featureFrame,
       requestedStepBudget: 80,
       requestedRenderScale: 0.92,
-      qualityAdaptationEnabled: false,
+      stepScaleAdaptationEnabled: false,
+      bloomAdaptationEnabled: true,
     });
 
-    expect(fixedQuality.complexityScore).toBeCloseTo(
+    expect(ladderOwned.complexityScore).toBeCloseTo(
       adaptive.complexityScore,
       5,
     );
     expect(adaptive.proactiveStepBudget).toBeLessThan(80);
     expect(adaptive.proactiveRenderScale).toBeLessThan(0.92);
-    expect(fixedQuality.qualityAdaptationActive).toBe(false);
-    expect(fixedQuality.proactiveStepBudget).toBe(80);
-    expect(fixedQuality.proactiveRenderScale).toBe(0.92);
-    expect(fixedQuality.bloomStrengthScale).toBe(1);
-    expect(fixedQuality.bloomThresholdOffset).toBe(0);
-    expect(fixedQuality.bloomAllowed).toBe(true);
+    expect(ladderOwned.stepScaleAdaptationActive).toBe(false);
+    expect(ladderOwned.bloomAdaptationActive).toBe(true);
+    // Step/scale stay at the requested ceiling (the ladder owns them)...
+    expect(ladderOwned.proactiveStepBudget).toBe(80);
+    expect(ladderOwned.proactiveRenderScale).toBe(0.92);
+    // ...but the bloom guard still responds to high complexity.
+    expect(ladderOwned.bloomStrengthScale).toBeLessThan(1);
+    expect(ladderOwned.bloomThresholdOffset).toBeGreaterThan(0);
+  });
+
+  it("disables the bloom guard only when bloom adaptation is off", () => {
+    const modalFieldSlots = new Float32Array([
+      1, 2, 3, 1.0, 1, 3, 4, 0.9, 2, 3, 4, 0.85, 2, 4, 5, 0.8, 3, 4, 5, 0.75, 3,
+      5, 6, 0.7, 4, 5, 6, 0.65, 4, 6, 7, 0.6, 2, 2, 3, 0.7, 2, 3, 3, 0.65, 3, 3,
+      4, 0.6, 3, 4, 4, 0.55, 4, 4, 5, 0.5, 4, 5, 5, 0.45, 5, 5, 6, 0.4, 5, 6, 6,
+      0.35,
+    ]);
+    const featureFrame = {
+      averageAmplitude: 255,
+      structureSignal: 1,
+      modalVisibilityEnergy: 1,
+    };
+
+    const bloomOff = buildRaymarchPerformanceGovernor({
+      modalFieldSlots,
+      modalFieldCapacity: 16,
+      featureFrame,
+      requestedStepBudget: 80,
+      requestedRenderScale: 0.92,
+      stepScaleAdaptationEnabled: false,
+      bloomAdaptationEnabled: false,
+    });
+
+    expect(bloomOff.bloomAdaptationActive).toBe(false);
+    expect(bloomOff.bloomStrengthScale).toBe(1);
+    expect(bloomOff.bloomThresholdOffset).toBe(0);
+    expect(bloomOff.bloomAllowed).toBe(true);
+  });
+
+  it("guards bloom from the integrator's effective budget, not proactive step/scale", () => {
+    // Saturate every complexity term so complexityScore clamps to 1 (> 0.95),
+    // independent of geometry permutation internals.
+    const saturatedModalField = {
+      capacity: 16,
+      uploadedActiveCount: 16,
+      originalActiveCount: 16,
+      weightedPermutationLoad: 16,
+    };
+    const featureFrame = {
+      averageAmplitude: 255,
+      structureSignal: 1,
+      modalVisibilityEnergy: 1,
+    };
+    const governorInputs = {
+      modalField: saturatedModalField,
+      featureFrame,
+      requestedStepBudget: 128,
+      requestedRenderScale: 1,
+      stepScaleAdaptationEnabled: false,
+      bloomAdaptationEnabled: true,
+    };
+
+    // Step/scale adaptation is off, so proactive values stay at the high
+    // requested ceiling. Without the effective-budget feed the guard reads the
+    // (inert) proactive values and stays open...
+    const ladderUnfed = deriveRaymarchComplexityGovernor(governorInputs);
+    expect(ladderUnfed.complexityScore).toBeGreaterThan(0.95);
+    expect(ladderUnfed.proactiveStepBudget).toBe(128);
+    expect(ladderUnfed.bloomAllowed).toBe(true);
+
+    // ...but the ladder's low effective budget must close the guard.
+    const ladderFed = deriveRaymarchComplexityGovernor({
+      ...governorInputs,
+      effectiveStepBudget: 24,
+      effectiveRenderScale: 0.8,
+    });
+    expect(ladderFed.complexityScore).toBeGreaterThan(0.95);
+    expect(ladderFed.proactiveStepBudget).toBe(128);
+    expect(ladderFed.bloomAllowed).toBe(false);
   });
 });

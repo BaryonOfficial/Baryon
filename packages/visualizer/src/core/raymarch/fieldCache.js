@@ -1457,6 +1457,36 @@ function takeQueuedCacheRebuild(cache) {
   return queued;
 }
 
+/**
+ * Static identity of a modal-basis atlas. These fields alone decide atlas
+ * invalidation: a rebuild is enqueued only when one of them changes (see
+ * {@link resolveModalBasisCacheRebuildReason}). Time-varying coefficients,
+ * phases, and audit telemetry are explicitly excluded — they belong to
+ * {@link CoefficientUploadState} and the audit diagnostics, never here.
+ *
+ * @typedef {object} BasisIdentity
+ * @property {string} identityPageAssignmentHash Top-N (u,v,w) page assignment.
+ * @property {string} representableDomainHash Hash of the representable domain.
+ * @property {string} boundaryMode Cavity boundary mode.
+ * @property {string} cavityGeometry Cavity geometry.
+ * @property {number} radius Cavity radius.
+ * @property {number} resolution Atlas voxel resolution per axis.
+ * @property {number} basisAtlasDepth Atlas page depth.
+ * @property {number} basisCapacity Max atlas pages (mode capacity).
+ * @property {boolean} descriptorOverflow Whether the descriptor overflowed.
+ */
+
+/**
+ * GPU coefficient upload state for the modal field. Owns the slot buffers and
+ * the count of modes actually uploaded; it never owns integration step budget
+ * (the observation integrator) nor atlas identity ({@link BasisIdentity}).
+ *
+ * @typedef {object} CoefficientUploadState
+ * @property {number} uploadedActiveCount Modes uploaded to the mode buffer.
+ * @property {number} phaseAuthorityModeCount Modes with live phase authority.
+ * @property {boolean} ready Whether the active atlas is committed and drawable.
+ */
+
 export const RAYMARCH_MODAL_BASIS_CACHE_DRAWABLE_STATES = Object.freeze({
   absent: "modal-basis-cache-absent",
   building: "modal-basis-cache-building",
@@ -1497,6 +1527,13 @@ function makeModalBasisCacheDrawableAuthority({
   return {
     drawable,
     state,
+    // Single source of truth for "drawable from a committed atlas while a newer
+    // identity rebuilds": both readyStale branches (rebuildPending and queued
+    // descriptor) collapse to this boolean so read sites need not compare state
+    // strings.
+    staleWhileRebuilding:
+      drawable === true &&
+      state === RAYMARCH_MODAL_BASIS_CACHE_DRAWABLE_STATES.readyStale,
     blockedReason,
     staleReason,
   };
@@ -1779,16 +1816,6 @@ export function buildRaymarchModalBasisCacheDescriptor({
     boundaryMode,
     time,
   });
-  const effectiveSupportDiagnostics = summarizeLiveSynthesisSupportDiagnostics({
-    modalFieldSlots,
-    modalFieldPhaseSlots,
-    modalFieldCount,
-    boundaryMode,
-    cavityGeometry,
-    radius: normalizedRadius,
-    resolution: normalizedResolution,
-    time,
-  });
 
   const descriptor = {
     boundaryMode: normalizedBoundaryMode,
@@ -1842,7 +1869,6 @@ export function buildRaymarchModalBasisCacheDescriptor({
     modeIdentityRetentionRatio: clamp01(modeIdentityRetentionRatio),
     resolution: normalizedResolution,
     ...liveSynthesisDiagnostics,
-    ...effectiveSupportDiagnostics,
   };
   const modalBasisCacheBlockedReason =
     resolveRaymarchModalBasisCacheDescriptorBlockedReason(descriptor);
@@ -1851,6 +1877,45 @@ export function buildRaymarchModalBasisCacheDescriptor({
     modalBasisCacheDrawable: modalBasisCacheBlockedReason == null,
     modalBasisCacheBlockedReason,
   };
+}
+
+/**
+ * Computes the sampled live-synthesis support/cancellation telemetry.
+ *
+ * This is pure AuditDiagnostics: it samples the live field at diagnostic
+ * points (the expensive per-sample synthesis) and never feeds cache-rebuild
+ * or render decisions. Kept out of {@link buildRaymarchModalBasisCacheDescriptor}
+ * so the hot path only pays for it when auditing is enabled.
+ *
+ * @returns {{
+ *   liveSynthesisUnsignedSupportMean: number,
+ *   liveSynthesisCancellationRatioMean: number,
+ *   liveSynthesisCancellationRatioMax: number,
+ *   liveSynthesisSupportDiagnosticSampleCount: number,
+ *   liveSynthesisSupportDiagnosticSupportedSampleCount: number,
+ *   liveSynthesisSupportDiagnosticCoverage: number,
+ * }}
+ */
+export function buildModalBasisAuditDiagnostics({
+  modalFieldSlots,
+  modalFieldPhaseSlots,
+  modalFieldCount,
+  boundaryMode,
+  cavityGeometry = "rectangular",
+  radius = 1,
+  resolution = RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+  time = 0,
+}) {
+  return summarizeLiveSynthesisSupportDiagnostics({
+    modalFieldSlots,
+    modalFieldPhaseSlots,
+    modalFieldCount,
+    boundaryMode,
+    cavityGeometry,
+    radius: Number.isFinite(radius) ? radius : 1,
+    resolution: normalizeModalBasisCacheResolution(resolution),
+    time,
+  });
 }
 
 export function buildRaymarchSpectralLightCacheDescriptor({
@@ -2783,18 +2848,6 @@ export function enqueueRaymarchModalBasisCacheRebuild(
         descriptor.liveSynthesisRawGradientEnvelope ?? 0;
       modalBasisCache.liveSynthesisPhaseCurrentGradientEnvelope =
         descriptor.liveSynthesisPhaseCurrentGradientEnvelope ?? 0;
-      modalBasisCache.liveSynthesisUnsignedSupportMean =
-        descriptor.liveSynthesisUnsignedSupportMean ?? 0;
-      modalBasisCache.liveSynthesisCancellationRatioMean =
-        descriptor.liveSynthesisCancellationRatioMean ?? 0;
-      modalBasisCache.liveSynthesisCancellationRatioMax =
-        descriptor.liveSynthesisCancellationRatioMax ?? 0;
-      modalBasisCache.liveSynthesisSupportDiagnosticSampleCount =
-        descriptor.liveSynthesisSupportDiagnosticSampleCount ?? 0;
-      modalBasisCache.liveSynthesisSupportDiagnosticSupportedSampleCount =
-        descriptor.liveSynthesisSupportDiagnosticSupportedSampleCount ?? 0;
-      modalBasisCache.liveSynthesisSupportDiagnosticCoverage =
-        descriptor.liveSynthesisSupportDiagnosticCoverage ?? 0;
       dispatchQueuedRaymarchModalBasisCacheRebuild(modalBasisCache);
     },
     (error) => {

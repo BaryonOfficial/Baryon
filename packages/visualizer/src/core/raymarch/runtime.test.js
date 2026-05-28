@@ -104,7 +104,6 @@ function createRuntimeState({ withFieldCache = false } = {}) {
       uFieldState: { value: 0 },
       uRadius: { value: 3 },
       uModalFieldModeCount: { value: 0 },
-      uActiveModeCount: { value: 0 },
       uBackboneModeCount: { value: 0 },
       uDetailModeCount: { value: 0 },
       uAverageAmplitude: { value: 0 },
@@ -527,7 +526,6 @@ describe("tickRaymarchRuntime", () => {
     tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
 
     expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(12);
-    expect(runtimeState.uniforms.uActiveModeCount.value).toBe(12);
     expect(runtimeState.modalBasisPhaseAuthorityModeCount).toBe(12);
     expect(runtimeState.currentModalDescriptor).toMatchObject({
       capacity: {
@@ -618,7 +616,6 @@ describe("tickRaymarchRuntime", () => {
       "blocked",
     );
     expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(0);
-    expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
     expect(
       runtimeState.debugSnapshot.modalBasisCacheBandwidthRejectedModeCount,
     ).toBe(0);
@@ -726,7 +723,6 @@ describe("tickRaymarchRuntime", () => {
     ).toEqual([1, 3, 7, 0.6, 2, 2, 6, 0.4, 3, 4, 6, 0.8, 4, 5, 5, 0.55]);
     expect(runtimeState.modalFieldColorBuffer.value.array[10]).toBeCloseTo(0.1);
     expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(4);
-    expect(runtimeState.uniforms.uActiveModeCount.value).toBe(4);
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.7);
     expect(runtimeState.uniforms.uSpectralCentroid.value).toBe(0.42);
     expect(runtimeState.uniforms.uSpectralFlux.value).toBe(0.28);
@@ -1151,6 +1147,40 @@ describe("tickRaymarchRuntime", () => {
     );
   });
 
+  it("skips sampled support diagnostics when auditing is disabled", async () => {
+    const runtimeState = createRuntimeState({ withFieldCache: true });
+    seedRuntimeCacheNodes(runtimeState);
+    runtimeState.auditEnabled = false;
+    runtimeState.uniforms.uSpectralMix.value = 0;
+    const renderer = { computeAsync: vi.fn(async () => undefined) };
+    const featureFrame = createActiveFeatureFrame({
+      backboneSlots: new Float32Array([1, 1, 1, 0.9]),
+      detailSlots: new Float32Array(0),
+      backboneColorSlots: new Float32Array(4),
+      detailColorSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      modalPhaseAuthority: 1,
+    });
+
+    tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60, renderer);
+    await flushMicrotasks();
+
+    // Cache committed a rebuild, but the sampled-support audit never ran.
+    expect(runtimeState.modalBasisCache.ready).toBe(true);
+    expect(runtimeState.modalBasisCache.lastAuditDiagnostics).toBeNull();
+    expect(runtimeState.modalBasisCache.liveSynthesisUnsignedSupportMean).toBe(
+      0,
+    );
+    expect(
+      runtimeState.modalBasisCache.liveSynthesisSupportDiagnosticSampleCount,
+    ).toBe(0);
+    expect(
+      runtimeState.modalBasisCache.liveSynthesisSupportDiagnosticCoverage,
+    ).toBe(0);
+    expect(runtimeState.debugSnapshot).toBeNull();
+  });
+
   it("keeps modal-basis cache freshness independent of phase offsets", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
@@ -1272,6 +1302,9 @@ describe("tickRaymarchRuntime", () => {
     );
     expect(runtimeState.debugSnapshot.modalBasisCacheDrawableState).toBe(
       "modal-basis-cache-ready-current",
+    );
+    expect(runtimeState.debugSnapshot.modalBasisCacheStaleWhileRebuilding).toBe(
+      false,
     );
   });
 
@@ -1499,7 +1532,7 @@ describe("tickRaymarchRuntime", () => {
 
     expect(runtimeState.volumeMesh.visible).toBe(false);
     expect(runtimeState.idleOverlay.visible).toBe(true);
-    expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(0);
     expect(runtimeState.uniforms.uModalResponseEnergy.value).toBe(0);
     expect(runtimeState.backboneModeBuffer.value.needsUpdate).toBe(false);
     expect(runtimeState.detailModeBuffer.value.needsUpdate).toBe(false);
@@ -1618,7 +1651,6 @@ describe("tickRaymarchRuntime", () => {
     ).toBe(true);
     expect(runtimeState.debugSnapshot.raymarchDebug.observationEnergy).toBe(0);
     expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(0);
-    expect(runtimeState.uniforms.uActiveModeCount.value).toBe(0);
     expect(runtimeState.modalFieldModeBuffer.value.array[3]).toBe(0);
     expect(runtimeState.responseEnvelope).toBe(0);
   });
@@ -2206,6 +2238,9 @@ describe("tickRaymarchRuntime", () => {
       expect(
         runtimeState.debugSnapshot.modalBasisCacheDrawableStaleReason,
       ).toBe("modal-identity");
+      expect(
+        runtimeState.debugSnapshot.modalBasisCacheStaleWhileRebuilding,
+      ).toBe(true);
       expect(runtimeState.debugSnapshot.modalBasisCacheRebuildPending).toBe(
         true,
       );
@@ -2508,7 +2543,7 @@ describe("tickRaymarchRuntime", () => {
     });
   });
 
-  it("keeps support diagnostics tied to the active modal-basis cache while a rebuild is pending", async () => {
+  it("tracks live-per-frame support while a rebuild is pending and keeps phase authority tied to the active cache", async () => {
     const runtimeState = createRuntimeState({ withFieldCache: true });
     seedRuntimeCacheNodes(runtimeState);
     runtimeState.uniforms.uSpectralMix.value = 0;
@@ -2551,41 +2586,54 @@ describe("tickRaymarchRuntime", () => {
     await flushMicrotasks();
 
     const activeDescriptor = runtimeState.modalBasisCache.activeDescriptor;
-    const activeSupportMean = activeDescriptor.liveSynthesisUnsignedSupportMean;
+    const activeSupportMean =
+      runtimeState.modalBasisCache.lastAuditDiagnostics
+        .liveSynthesisUnsignedSupportMean;
+    const activeObservationAnchor =
+      runtimeState.debugSnapshot.observationSampledAnchor;
+    expect(activeSupportMean).toBeGreaterThan(0);
+    expect(activeObservationAnchor).toBeGreaterThan(0);
 
     tickRaymarchRuntime(runtimeState, pendingFrame, 1, 1 / 60, renderer);
 
     const pendingDescriptor = runtimeState.currentModalBasisCacheDescriptor;
+    const pendingSupportMean =
+      runtimeState.modalBasisCache.lastAuditDiagnostics
+        .liveSynthesisUnsignedSupportMean;
     expect(effectiveComputeCalls).toBe(2);
     expect(runtimeState.modalBasisCache.rebuildPending).toBe(true);
     expect(runtimeState.modalBasisCache.ready).toBe(true);
     expect(runtimeState.modalBasisCache.activeDescriptor).toEqual(
       activeDescriptor,
     );
-    expect(pendingDescriptor.liveSynthesisUnsignedSupportMean).not.toBeCloseTo(
-      activeSupportMean,
+
+    // Support is a live per-frame measurement: it follows the pending field
+    // immediately rather than freezing at the active-cache build. The mirrored
+    // cache field and the transfer-derived observation anchor both track it.
+    expect(pendingSupportMean).not.toBeCloseTo(activeSupportMean, 6);
+    expect(
+      runtimeState.modalBasisCache.liveSynthesisUnsignedSupportMean,
+    ).toBeCloseTo(pendingSupportMean, 6);
+    expect(
+      runtimeState.debugSnapshot.liveSynthesisUnsignedSupportMean,
+    ).toBeCloseTo(pendingSupportMean, 6);
+    expect(runtimeState.debugSnapshot.observationSampledAnchor).not.toBeCloseTo(
+      activeObservationAnchor,
       6,
     );
+
+    // Phase authority and drawable state stay tied to the committed active
+    // cache while the rebuild is pending.
     expect(pendingDescriptor.phaseAuthority).not.toBeCloseTo(
       activeDescriptor.phaseAuthority,
       6,
     );
     expect(
-      runtimeState.modalBasisCache.liveSynthesisUnsignedSupportMean,
-    ).toBeCloseTo(activeSupportMean, 6);
-    expect(
       runtimeState.modalBasisCache.modalBasisCachePhaseAuthority,
     ).toBeCloseTo(activeDescriptor.phaseAuthority, 6);
     expect(
-      runtimeState.debugSnapshot.liveSynthesisUnsignedSupportMean,
-    ).toBeCloseTo(activeSupportMean, 6);
-    expect(
       runtimeState.debugSnapshot.modalBasisCachePhaseAuthority,
     ).toBeCloseTo(activeDescriptor.phaseAuthority, 6);
-    expect(runtimeState.debugSnapshot.observationSampledAnchor).toBeCloseTo(
-      activeSupportMean,
-      6,
-    );
     expect(runtimeState.debugSnapshot.modalBasisCacheDrawableState).toBe(
       "modal-basis-cache-ready-stale",
     );
@@ -3553,7 +3601,7 @@ describe("tickRaymarchRuntime", () => {
 
     tickRaymarchRuntime(runtimeState, lowBassFrame, 1, 1 / 60, renderer);
 
-    expect(runtimeState.uniforms.uActiveModeCount.value).toBeGreaterThan(0);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBeGreaterThan(0);
     expect(runtimeState.uniforms.uTotalSlotAmplitude.value).toBeGreaterThan(0);
     expect(runtimeState.uniforms.uModalResponseEnergy.value).toBe(0.05);
     expect(runtimeState.volumeMesh.visible).toBe(false);
@@ -3607,7 +3655,6 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.volumeMesh.visible).toBe(false);
     expect(runtimeState.idleOverlay.visible).toBe(false);
     expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(2);
-    expect(runtimeState.uniforms.uActiveModeCount.value).toBe(2);
     expect(runtimeState.debugSnapshot.raymarchDebug.modeSlotCount).toBe(2);
   });
 
@@ -3638,7 +3685,6 @@ describe("tickRaymarchRuntime", () => {
     );
 
     expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(1);
-    expect(runtimeState.uniforms.uActiveModeCount.value).toBe(1);
     expect(runtimeState.uniforms.uTransientEnergy.value).toBe(0.85);
     expect(runtimeState.uniforms.uSpectralCentroid.value).toBe(0.33);
     expect(runtimeState.uniforms.uSpectralFlux.value).toBe(0.72);

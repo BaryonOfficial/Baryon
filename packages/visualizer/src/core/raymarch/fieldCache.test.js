@@ -97,6 +97,14 @@ function buildRaymarchModalBasisCacheDescriptor(options) {
   });
 }
 
+function buildModalBasisAuditDiagnostics(options) {
+  return raymarchFieldCache.buildModalBasisAuditDiagnostics({
+    ...options,
+    ...resolveModalFieldSlots(options),
+    modalFieldPhaseSlots: resolveModalFieldPhaseSlots(options),
+  });
+}
+
 function evaluateRaymarchLiveSynthesisFieldPoint(options) {
   return raymarchFieldCache.evaluateRaymarchLiveSynthesisFieldPoint({
     ...options,
@@ -341,6 +349,7 @@ describe("fieldCache", () => {
       drawable: false,
       state: "modal-basis-cache-building",
       blockedReason: "cache-rebuild-pending",
+      staleWhileRebuilding: false,
     });
 
     cache.ready = true;
@@ -381,6 +390,7 @@ describe("fieldCache", () => {
       state: "modal-basis-cache-ready-current",
       blockedReason: null,
       staleReason: null,
+      staleWhileRebuilding: false,
     });
 
     cache.rebuildPending = true;
@@ -394,6 +404,7 @@ describe("fieldCache", () => {
       state: "modal-basis-cache-ready-stale",
       blockedReason: null,
       staleReason: "modal-identity",
+      staleWhileRebuilding: true,
     });
 
     expect(
@@ -405,6 +416,7 @@ describe("fieldCache", () => {
       drawable: false,
       state: "modal-basis-cache-blocked",
       blockedReason: "no-contributing-basis-pages",
+      staleWhileRebuilding: false,
     });
   });
 
@@ -3537,7 +3549,7 @@ describe("fieldCache", () => {
   });
 
   it("summarizes live-synthesis support and cancellation diagnostics", () => {
-    const descriptor = buildRaymarchModalBasisCacheDescriptor({
+    const audit = buildModalBasisAuditDiagnostics({
       backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
       detailSlots: new Float32Array(0),
       backbonePhaseSlots: new Float32Array([0, 0, 1, 1, Math.PI, 0, 1, 1]),
@@ -3551,21 +3563,16 @@ describe("fieldCache", () => {
       resolution: 8,
     });
 
-    expect(descriptor.liveSynthesisUnsignedSupportMean).toBeGreaterThan(0.1);
-    expect(descriptor.liveSynthesisCancellationRatioMean).toBeGreaterThan(0.95);
-    expect(descriptor.liveSynthesisCancellationRatioMax).toBeGreaterThan(0.95);
-    expect(descriptor.liveSynthesisSupportDiagnosticSampleCount).toBe(9);
-    expect(descriptor.liveSynthesisSupportDiagnosticSupportedSampleCount).toBe(
-      7,
-    );
-    expect(descriptor.liveSynthesisSupportDiagnosticCoverage).toBeCloseTo(
-      7 / 9,
-      6,
-    );
-    expect(descriptor.liveSynthesisUnsignedSupportMean).toBeCloseTo(7 / 9, 6);
+    expect(audit.liveSynthesisUnsignedSupportMean).toBeGreaterThan(0.1);
+    expect(audit.liveSynthesisCancellationRatioMean).toBeGreaterThan(0.95);
+    expect(audit.liveSynthesisCancellationRatioMax).toBeGreaterThan(0.95);
+    expect(audit.liveSynthesisSupportDiagnosticSampleCount).toBe(9);
+    expect(audit.liveSynthesisSupportDiagnosticSupportedSampleCount).toBe(7);
+    expect(audit.liveSynthesisSupportDiagnosticCoverage).toBeCloseTo(7 / 9, 6);
+    expect(audit.liveSynthesisUnsignedSupportMean).toBeCloseTo(7 / 9, 6);
   });
 
-  it("keeps descriptor support diagnostics equivalent to public field samples", () => {
+  it("keeps audit support diagnostics equivalent to public field samples", () => {
     const radius = 3;
     const samplePoints = [
       [0, 0, 0],
@@ -3591,7 +3598,7 @@ describe("fieldCache", () => {
       phaseAuthority: 1,
       resolution: 8,
     };
-    const descriptor = buildRaymarchModalBasisCacheDescriptor(sampleOptions);
+    const audit = buildModalBasisAuditDiagnostics(sampleOptions);
     const samples = samplePoints.map(([x, y, z]) =>
       evaluateRaymarchLiveSynthesisFieldPoint({
         ...sampleOptions,
@@ -3615,28 +3622,28 @@ describe("fieldCache", () => {
       ...supportedSamples.map((sample) => sample.cancellationRatio),
     );
 
-    expect(descriptor.liveSynthesisSupportDiagnosticSampleCount).toBe(
+    expect(audit.liveSynthesisSupportDiagnosticSampleCount).toBe(
       samplePoints.length,
     );
-    expect(descriptor.liveSynthesisSupportDiagnosticSupportedSampleCount).toBe(
+    expect(audit.liveSynthesisSupportDiagnosticSupportedSampleCount).toBe(
       supportedSamples.length,
     );
-    expect(descriptor.liveSynthesisUnsignedSupportMean).toBeCloseTo(
+    expect(audit.liveSynthesisUnsignedSupportMean).toBeCloseTo(
       expectedSupportMean,
       6,
     );
-    expect(descriptor.liveSynthesisCancellationRatioMean).toBeCloseTo(
+    expect(audit.liveSynthesisCancellationRatioMean).toBeCloseTo(
       expectedCancellationMean,
       6,
     );
-    expect(descriptor.liveSynthesisCancellationRatioMax).toBeCloseTo(
+    expect(audit.liveSynthesisCancellationRatioMax).toBeCloseTo(
       expectedCancellationMax,
       6,
     );
   });
 
   it("includes unsupported diagnostic points in unsigned support mean", () => {
-    const descriptor = buildRaymarchModalBasisCacheDescriptor({
+    const audit = buildModalBasisAuditDiagnostics({
       backboneSlots: new Float32Array([1, 1, 1, 1]),
       detailSlots: new Float32Array(0),
       backbonePhaseSlots: new Float32Array([0, 0, 1, 1]),
@@ -3650,22 +3657,17 @@ describe("fieldCache", () => {
       resolution: 8,
     });
 
-    expect(descriptor.liveSynthesisSupportDiagnosticSampleCount).toBe(9);
-    expect(descriptor.liveSynthesisSupportDiagnosticSupportedSampleCount).toBe(
-      3,
-    );
-    expect(descriptor.liveSynthesisSupportDiagnosticCoverage).toBeCloseTo(
-      1 / 3,
-      6,
-    );
-    expect(descriptor.liveSynthesisUnsignedSupportMean).toBeLessThan(0.2);
+    expect(audit.liveSynthesisSupportDiagnosticSampleCount).toBe(9);
+    expect(audit.liveSynthesisSupportDiagnosticSupportedSampleCount).toBe(3);
+    expect(audit.liveSynthesisSupportDiagnosticCoverage).toBeCloseTo(1 / 3, 6);
+    expect(audit.liveSynthesisUnsignedSupportMean).toBeLessThan(0.2);
   });
 
   it("samples modal-basis support antinodes when fixed points are modal nodes", () => {
     const radius = 3;
     const slots = new Float32Array([4, 4, 4, 1]);
     const phaseSlots = new Float32Array([0, 0, 1, 1]);
-    const descriptor = buildRaymarchModalBasisCacheDescriptor({
+    const audit = buildModalBasisAuditDiagnostics({
       backboneSlots: slots,
       detailSlots: new Float32Array(0),
       backbonePhaseSlots: phaseSlots,
@@ -3695,13 +3697,91 @@ describe("fieldCache", () => {
     });
 
     expect(antinodeSample.unsignedSupport).toBeGreaterThan(0.95);
+    expect(audit.liveSynthesisSupportDiagnosticSampleCount).toBeGreaterThan(9);
+    expect(audit.liveSynthesisSupportDiagnosticSupportedSampleCount).toBe(1);
+    expect(audit.liveSynthesisUnsignedSupportMean).toBeGreaterThan(0);
+  });
+
+  it("omits sampled-support fields from the rebuild descriptor", () => {
+    const options = {
+      backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 1, 1, Math.PI, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 2,
+      phaseAuthority: 1,
+      resolution: 8,
+    };
+    const descriptor = buildRaymarchModalBasisCacheDescriptor(options);
+
+    expect(descriptor.liveSynthesisUnsignedSupportMean).toBeUndefined();
+    expect(descriptor.liveSynthesisCancellationRatioMean).toBeUndefined();
+    expect(descriptor.liveSynthesisCancellationRatioMax).toBeUndefined();
     expect(
       descriptor.liveSynthesisSupportDiagnosticSampleCount,
-    ).toBeGreaterThan(9);
-    expect(descriptor.liveSynthesisSupportDiagnosticSupportedSampleCount).toBe(
-      1,
+    ).toBeUndefined();
+    expect(
+      descriptor.liveSynthesisSupportDiagnosticSupportedSampleCount,
+    ).toBeUndefined();
+    expect(descriptor.liveSynthesisSupportDiagnosticCoverage).toBeUndefined();
+
+    expect(descriptor.contributingBasisPageModeCount).toBeGreaterThan(0);
+    expect(
+      Number.isFinite(descriptor.modalBasisCacheSupportDiagnosticHash),
+    ).toBe(true);
+
+    const audit = buildModalBasisAuditDiagnostics(options);
+    expect(audit.liveSynthesisUnsignedSupportMean).toBeGreaterThan(0);
+    expect(audit.liveSynthesisSupportDiagnosticSampleCount).toBeGreaterThan(0);
+  });
+
+  it("keeps rebuild hashes stable across phase and time when page assignment is unchanged", () => {
+    const baseOptions = {
+      backboneSlots: new Float32Array([1, 1, 1, 0.5, 1, 1, 1, 0.5]),
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array([0, 0, 1, 1, 0, 0, 1, 1]),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 2,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      phaseModeCount: 2,
+      phaseAuthority: 1,
+      resolution: 8,
+      time: 0,
+    };
+    const baseline = buildRaymarchModalBasisCacheDescriptor(baseOptions);
+    const advanced = buildRaymarchModalBasisCacheDescriptor({
+      ...baseOptions,
+      backbonePhaseSlots: new Float32Array([
+        Math.PI / 2,
+        0,
+        1,
+        1,
+        Math.PI,
+        0,
+        1,
+        1,
+      ]),
+      time: 2.5,
+    });
+
+    expect(advanced.identityPageAssignmentHash).toBe(
+      baseline.identityPageAssignmentHash,
     );
-    expect(descriptor.liveSynthesisUnsignedSupportMean).toBeGreaterThan(0);
+    expect(advanced.representableDomainHash).toBe(
+      baseline.representableDomainHash,
+    );
+    expect(advanced.modalBasisCacheSupportDiagnosticHash).toBe(
+      baseline.modalBasisCacheSupportDiagnosticHash,
+    );
+    expect(advanced.modalBasisCacheTopologyHash).toBe(
+      baseline.modalBasisCacheTopologyHash,
+    );
   });
 
   it("reports zero-amplitude modal-basis slots skipped before representability", () => {

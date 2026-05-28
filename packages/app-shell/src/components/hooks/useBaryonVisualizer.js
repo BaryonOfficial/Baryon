@@ -581,7 +581,6 @@ export function useBaryonVisualizer({
     const applyCachedControlSnapshotsStartedAt = getWallTimeMs();
     const controlSnapshots = applyCachedControlSnapshots({
       controls,
-      runtime,
       runtimeState,
       featureState,
       gl: renderLoopContext.gl,

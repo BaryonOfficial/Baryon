@@ -185,34 +185,35 @@ describe("field shaping", () => {
     );
   });
 
-  it("derives optical convergence from signed view-plane normal flow", () => {
+  it("derives optical convergence from a forward-difference of view-plane normals", () => {
     expect(fieldShaping.deriveOpticalConvergenceAuthority).toBeTypeOf(
       "function",
     );
 
+    // Center normal N0 faces the camera (+z); offset normals tilt back toward
+    // the optical axis as the sample steps outward → wavefront focusing.
     const converging = fieldShaping.deriveOpticalConvergenceAuthority({
       tangent1: [1, 0, 0],
       tangent2: [0, 1, 0],
+      centerGradientNormal: [0, 0, 1],
       normalPositiveT1: [-1, 0, 0],
-      normalNegativeT1: [1, 0, 0],
       normalPositiveT2: [0, -1, 0],
-      normalNegativeT2: [0, 1, 0],
     });
+    // Offset normals tilt outward (away from the axis) → diverging wavefront.
     const diverging = fieldShaping.deriveOpticalConvergenceAuthority({
       tangent1: [1, 0, 0],
       tangent2: [0, 1, 0],
+      centerGradientNormal: [0, 0, 1],
       normalPositiveT1: [1, 0, 0],
-      normalNegativeT1: [-1, 0, 0],
       normalPositiveT2: [0, 1, 0],
-      normalNegativeT2: [0, -1, 0],
     });
+    // Offset normals equal the center normal → no curvature, flat wavefront.
     const flat = fieldShaping.deriveOpticalConvergenceAuthority({
       tangent1: [1, 0, 0],
       tangent2: [0, 1, 0],
+      centerGradientNormal: [0, 0, 1],
       normalPositiveT1: [0, 0, 1],
-      normalNegativeT1: [0, 0, 1],
       normalPositiveT2: [0, 0, 1],
-      normalNegativeT2: [0, 0, 1],
     });
 
     expect(converging.viewPlaneNormalConvergence).toBeGreaterThan(0);
@@ -221,6 +222,50 @@ describe("field shaping", () => {
     expect(diverging.opticalConvergenceAuthority).toBe(0);
     expect(flat.viewPlaneNormalConvergence).toBeCloseTo(0);
     expect(flat.opticalConvergenceAuthority).toBe(0);
+  });
+
+  it("keeps a face-on caustic focusing through forward-difference convergence", () => {
+    // A bowl facing the camera: center normal on the optical axis (+z) so the
+    // grazing slope is ~0, yet the forward-difference normals tilt inward →
+    // high convergence. A slope proxy would erase this; convergence must not.
+    const faceOnConvergence = fieldShaping.deriveOpticalConvergenceAuthority({
+      tangent1: [1, 0, 0],
+      tangent2: [0, 1, 0],
+      centerGradientNormal: [0, 0, 1],
+      normalPositiveT1: [-1, 0, 0],
+      normalPositiveT2: [0, -1, 0],
+    });
+    expect(faceOnConvergence.opticalConvergenceAuthority).toBeGreaterThan(0.5);
+
+    const common = {
+      ...REINFORCED_CAUSTIC_TONE,
+      localGradientEvidence: 0.72,
+      shellFocus: 0.84,
+      signedCausticDensity: 0.14,
+      bodyContribution: 0.02,
+      // normalDotMeasurement ~ 1 → opticalSlopeAuthority ~ 0 (face-on).
+      normalDotMeasurement: 1,
+      gradientPresence: 0.72,
+      ridgeConcentration: 0.76,
+    };
+    const flat = deriveLaserCymaticOpticalProbe({
+      ...common,
+      opticalConvergenceAuthority: 0,
+    });
+    const faceOn = deriveLaserCymaticOpticalProbe({
+      ...common,
+      opticalConvergenceAuthority:
+        faceOnConvergence.opticalConvergenceAuthority,
+    });
+
+    expect(faceOn.opticalSlopeAuthority).toBeCloseTo(0);
+    expect(flat.opticalFocusAuthority).toBeCloseTo(flat.causticRidgeAuthority);
+    expect(faceOn.opticalFocusAuthority).toBeGreaterThan(
+      flat.opticalFocusAuthority,
+    );
+    expect(faceOn.laserCausticRadiance).toBeGreaterThan(
+      flat.laserCausticRadiance,
+    );
   });
 
   it("does not let flat high-gradient samples promote optical focus", () => {

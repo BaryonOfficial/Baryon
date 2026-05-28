@@ -30,7 +30,6 @@ export function createVisualizationUniforms(parameters) {
       getBoundaryModeValue(SIMULATION_DEFAULTS.boundaryMode),
     ),
     uModalFieldModeCount: uniform(0),
-    uActiveModeCount: uniform(0),
     uIdleLogoIntensity: uniform(RENDER_DEFAULTS.idleLogoIntensity),
     uIdleLogoAlpha: uniform(RENDER_DEFAULTS.idleLogoAlpha),
     uIdleLogoSize: uniform(RENDER_DEFAULTS.idleLogoSize),

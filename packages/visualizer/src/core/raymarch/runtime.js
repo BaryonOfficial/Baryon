@@ -15,6 +15,7 @@ import {
   isRenderAuthorityCut,
 } from "../renderAuthorityContract.js";
 import {
+  buildModalBasisAuditDiagnostics,
   buildRaymarchModalBasisCacheDescriptor,
   buildRaymarchSpectralLightCacheDescriptor,
   advanceRaymarchCacheGeneration,
@@ -238,6 +239,37 @@ function resetModalBasisCacheRuntimeDiagnostics(modalBasisCache) {
   modalBasisCache.liveSynthesisSupportDiagnosticSampleCount = 0;
   modalBasisCache.liveSynthesisSupportDiagnosticSupportedSampleCount = 0;
   modalBasisCache.liveSynthesisSupportDiagnosticCoverage = 0;
+  modalBasisCache.lastAuditDiagnostics = null;
+}
+
+function applyModalBasisAuditDiagnostics(runtimeState, auditDiagnostics) {
+  if (!runtimeState) {
+    return;
+  }
+
+  // Support telemetry is a live per-frame measurement decoupled from the
+  // atlas-rebuild lifecycle, so it is owned by the runtime rather than the
+  // cache (which may be absent on observation-only paths).
+  runtimeState.lastModalBasisAuditDiagnostics = auditDiagnostics ?? null;
+
+  const modalBasisCache = runtimeState.modalBasisCache;
+  if (!modalBasisCache) {
+    return;
+  }
+
+  modalBasisCache.lastAuditDiagnostics = auditDiagnostics ?? null;
+  modalBasisCache.liveSynthesisUnsignedSupportMean =
+    auditDiagnostics?.liveSynthesisUnsignedSupportMean ?? 0;
+  modalBasisCache.liveSynthesisCancellationRatioMean =
+    auditDiagnostics?.liveSynthesisCancellationRatioMean ?? 0;
+  modalBasisCache.liveSynthesisCancellationRatioMax =
+    auditDiagnostics?.liveSynthesisCancellationRatioMax ?? 0;
+  modalBasisCache.liveSynthesisSupportDiagnosticSampleCount =
+    auditDiagnostics?.liveSynthesisSupportDiagnosticSampleCount ?? 0;
+  modalBasisCache.liveSynthesisSupportDiagnosticSupportedSampleCount =
+    auditDiagnostics?.liveSynthesisSupportDiagnosticSupportedSampleCount ?? 0;
+  modalBasisCache.liveSynthesisSupportDiagnosticCoverage =
+    auditDiagnostics?.liveSynthesisSupportDiagnosticCoverage ?? 0;
 }
 
 function setModalBasisCacheDrawableAuthority(runtimeState, authority) {
@@ -529,7 +561,6 @@ function blockOverflowedModalDescriptor(
   resetCacheActivity(runtimeState.spectralLightCache);
   resetModalBasisCacheRuntimeDiagnostics(runtimeState.modalBasisCache);
   setIfChanged(runtimeState.uniforms.uModalFieldModeCount, 0);
-  setIfChanged(runtimeState.uniforms.uActiveModeCount, 0);
   runtimeState.volumeMesh.visible = false;
   runtimeState.idleOverlay.visible = resolveIdleOverlayVisible(
     runtimeState,
@@ -582,6 +613,34 @@ function publishRaymarchRuntimeAuditSnapshot(
   }
 }
 
+/**
+ * Resolve the {@link BasisIdentity} topology block for the debug snapshot,
+ * preferring the cache's committed values and falling back to the in-flight
+ * descriptor. Pure read: it never mutates the cache and never influences
+ * rebuild decisions (those key only on the descriptor identity hashes in
+ * fieldCache, see resolveModalBasisCacheRebuildReason).
+ *
+ * @param {object|null} modalBasisCache
+ * @param {object|null} descriptor
+ * @returns {{resolution: number, basisAtlasDepth: number, liveSynthesisModeCount: number, modeIdentityRetentionRatio: number}}
+ */
+function readModalBasisIdentity(modalBasisCache, descriptor) {
+  return {
+    resolution:
+      modalBasisCache?.resolution ?? RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+    basisAtlasDepth:
+      modalBasisCache?.basisAtlasDepth ?? descriptor?.basisAtlasDepth ?? 0,
+    liveSynthesisModeCount:
+      modalBasisCache?.liveSynthesisModeCount ??
+      descriptor?.liveSynthesisModeCount ??
+      0,
+    modeIdentityRetentionRatio:
+      modalBasisCache?.modeIdentityRetentionRatio ??
+      descriptor?.modeIdentityRetentionRatio ??
+      1,
+  };
+}
+
 function buildRaymarchDebugSnapshot(
   runtimeState,
   featureFrame,
@@ -594,9 +653,7 @@ function buildRaymarchDebugSnapshot(
     null;
   const avgAmplitude = estimateModalFieldAmplitude(featureFrame);
   const activeModeCount =
-    runtimeState.uniforms.uModalFieldModeCount?.value ??
-    runtimeState.uniforms.uActiveModeCount?.value ??
-    0;
+    runtimeState.uniforms.uModalFieldModeCount?.value ?? 0;
   const peakModalFieldAmplitude = maxModalFieldAmplitude(
     modalDescriptor,
     activeModeCount,
@@ -702,6 +759,10 @@ function buildRaymarchDebugSnapshot(
   const spectralLightCache = runtimeState.spectralLightCache ?? null;
   const modalBasisCacheDescriptor =
     runtimeState.currentModalBasisCacheDescriptor ?? null;
+  const basisIdentity = readModalBasisIdentity(
+    modalBasisCache,
+    modalBasisCacheDescriptor,
+  );
   const spectralLightDescriptor =
     runtimeState.currentSpectralLightDescriptor ?? null;
   const modalBasisCacheDiagnosticDescriptor =
@@ -821,38 +882,32 @@ function buildRaymarchDebugSnapshot(
       modalBasisCache?.liveSynthesisPhaseCurrentGradientEnvelope,
     0,
   );
+  const liveSynthesisSupportDiagnostics =
+    runtimeState?.lastModalBasisAuditDiagnostics ??
+    modalBasisCache?.lastAuditDiagnostics ??
+    null;
   const liveSynthesisUnsignedSupportMean = readFiniteNumber(
-    modalBasisCacheDiagnosticDescriptor?.liveSynthesisUnsignedSupportMean ??
-      modalBasisCache?.liveSynthesisUnsignedSupportMean,
+    liveSynthesisSupportDiagnostics?.liveSynthesisUnsignedSupportMean,
     0,
   );
   const liveSynthesisCancellationRatioMean = readFiniteNumber(
-    modalBasisCacheDiagnosticDescriptor?.liveSynthesisCancellationRatioMean ??
-      modalBasisCache?.liveSynthesisCancellationRatioMean,
+    liveSynthesisSupportDiagnostics?.liveSynthesisCancellationRatioMean,
     0,
   );
   const liveSynthesisCancellationRatioMax = readFiniteNumber(
-    modalBasisCacheDiagnosticDescriptor?.liveSynthesisCancellationRatioMax ??
-      modalBasisCache?.liveSynthesisCancellationRatioMax,
+    liveSynthesisSupportDiagnostics?.liveSynthesisCancellationRatioMax,
     0,
   );
   const liveSynthesisSupportDiagnosticSampleCount = readFiniteNumber(
-    modalBasisCacheDiagnosticDescriptor?.liveSynthesisSupportDiagnosticSampleCount ??
-      modalBasisCache?.liveSynthesisSupportDiagnosticSampleCount,
+    liveSynthesisSupportDiagnostics?.liveSynthesisSupportDiagnosticSampleCount,
     0,
   );
-  const modalBasisCacheSupportedSampleCount =
-    modalBasisCache?.liveSynthesisSupportDiagnosticSupportedSampleCount;
-  const modalBasisCacheDescriptorSupportedSampleCount =
-    modalBasisCacheDiagnosticDescriptor?.liveSynthesisSupportDiagnosticSupportedSampleCount;
   const liveSynthesisSupportDiagnosticSupportedSampleCount = readFiniteNumber(
-    modalBasisCacheDescriptorSupportedSampleCount ??
-      modalBasisCacheSupportedSampleCount,
+    liveSynthesisSupportDiagnostics?.liveSynthesisSupportDiagnosticSupportedSampleCount,
     0,
   );
   const liveSynthesisSupportDiagnosticCoverage = readFiniteNumber(
-    modalBasisCacheDiagnosticDescriptor?.liveSynthesisSupportDiagnosticCoverage ??
-      modalBasisCache?.liveSynthesisSupportDiagnosticCoverage,
+    liveSynthesisSupportDiagnostics?.liveSynthesisSupportDiagnosticCoverage,
     0,
   );
   const hasLiveSynthesisSupportMetrics =
@@ -1090,8 +1145,7 @@ function buildRaymarchDebugSnapshot(
       spectralLightCache?.mode ??
       RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
     modalBasisCacheActive: modalBasisCache?.active ?? false,
-    modalBasisCacheResolution:
-      modalBasisCache?.resolution ?? RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+    modalBasisCacheResolution: basisIdentity.resolution,
     modalBasisCacheRebuildCount: modalBasisCache?.rebuildCount ?? 0,
     modalBasisCacheRebuildReason:
       modalBasisCache?.lastRebuildReason ?? "uninitialized",
@@ -1102,14 +1156,8 @@ function buildRaymarchDebugSnapshot(
       modalBasisCacheDescriptorStaleReason ??
       modalBasisCache?.lastRebuildReason ??
       "uninitialized",
-    modalBasisAtlasDepth:
-      modalBasisCache?.basisAtlasDepth ??
-      modalBasisCacheDescriptor?.basisAtlasDepth ??
-      0,
-    liveSynthesisModeCount:
-      modalBasisCache?.liveSynthesisModeCount ??
-      modalBasisCacheDescriptor?.liveSynthesisModeCount ??
-      0,
+    modalBasisAtlasDepth: basisIdentity.basisAtlasDepth,
+    liveSynthesisModeCount: basisIdentity.liveSynthesisModeCount,
     liveModalFrameAgeMs: null,
     modalBasisCacheDescriptorFresh,
     modalBasisCacheDescriptorStaleReason,
@@ -1129,15 +1177,15 @@ function buildRaymarchDebugSnapshot(
       modalBasisCacheDrawableAuthority.blockedReason ?? null,
     modalBasisCacheDrawableStaleReason:
       modalBasisCacheDrawableAuthority.staleReason ?? null,
+    modalBasisCacheStaleWhileRebuilding:
+      modalBasisCacheDrawableAuthority.staleWhileRebuilding === true,
     modalBasisCacheModeCount,
     modalBasisCacheSemantic,
     modalBasisCacheSupportReady,
     modalBasisCacheSupportSemantic,
     modalBasisCachePhaseAuthority,
     modalBasisCacheModeIdentityRetentionRatio:
-      modalBasisCache?.modeIdentityRetentionRatio ??
-      modalBasisCacheDescriptor?.modeIdentityRetentionRatio ??
-      1,
+      basisIdentity.modeIdentityRetentionRatio,
     modalBasisCacheMaxRepresentableModeIndex,
     modalBasisCacheContributingModeCount,
     modalBasisCacheZeroAmplitudeSkippedModeCount,
@@ -1845,6 +1893,12 @@ function applyRaymarchRuntimeUploadAuthority({
     modalFieldCapacity,
     productBasisAtlasPageCapacity,
   );
+  // The render loop is the integrator and bloom authority; it hands off a
+  // governor built with the profile's flags and effective budget/scale. When
+  // no handoff is available (headless/OSR/transition ticks) build inline with
+  // step/scale adaptation off (the budget here is already the effective one,
+  // so re-reducing would double-dip) and bloom adaptation off (the effective
+  // render scale and profile are not knowable here).
   const performanceGovernor =
     takePendingRaymarchPerformanceGovernor(runtimeState, featureFrame, {
       modalFieldCapacity: productUploadCapacity,
@@ -1859,6 +1913,8 @@ function applyRaymarchRuntimeUploadAuthority({
       cavityGeometry: effectiveCavityGeometry,
       requestedStepBudget,
       requestedRenderScale,
+      stepScaleAdaptationEnabled: false,
+      bloomAdaptationEnabled: false,
     });
   const modalFieldLayer = performanceGovernor.modalField;
   runtimeState.performanceGovernor = performanceGovernor;
@@ -1891,7 +1947,6 @@ function applyRaymarchRuntimeUploadAuthority({
 
   const modalFieldModeCount = modalFieldLayer.uploadedActiveCount;
   setIfChanged(uniforms.uModalFieldModeCount, modalFieldModeCount);
-  setIfChanged(uniforms.uActiveModeCount, modalFieldModeCount);
   setIfChanged(
     uniforms.uTotalSlotAmplitude,
     resolveRaymarchTotalSlotAmplitude(runtimeState, modalFieldModeCount),
@@ -1918,6 +1973,24 @@ function applyRaymarchRuntimeUploadAuthority({
     basisCapacity: runtimeState.modalBasisCache?.basisCapacity,
     basisPacking: runtimeState.modalBasisCache?.basisPacking,
   });
+
+  applyModalBasisAuditDiagnostics(
+    runtimeState,
+    runtimeState.auditEnabled
+      ? buildModalBasisAuditDiagnostics({
+          modalFieldSlots: modalFieldModeBuffer?.value?.array,
+          modalFieldPhaseSlots: modalFieldPhaseBuffer?.value?.array,
+          modalFieldCount: modalFieldModeCount,
+          boundaryMode,
+          cavityGeometry: effectiveCavityGeometry,
+          radius: descriptorRadius,
+          resolution:
+            runtimeState.modalBasisCache?.resolution ??
+            RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
+          time,
+        })
+      : null,
+  );
 
   let spectralLightDescriptor = null;
   if (spectralLightEnabled) {
@@ -2014,7 +2087,6 @@ export function tickRaymarchRuntime(
       resetRenderAuthorityState(runtimeState);
     }
     setIfChanged(uniforms.uModalFieldModeCount, 0);
-    setIfChanged(uniforms.uActiveModeCount, 0);
     setIfChanged(uniforms.uAverageAmplitude, 0);
     setIfChanged(uniforms.uTransientEnergy, 0);
     setIfChanged(uniforms.uSpectralCentroid, 0);
@@ -2146,10 +2218,7 @@ export function tickRaymarchRuntime(
     featureFrame?.trebleBroadbandEnergy ?? 0,
   );
   setIfChanged(uniforms.uModeCoherence, featureFrame?.modeCoherence ?? 0);
-  const activeModalFieldModeCount =
-    uniforms.uModalFieldModeCount?.value ??
-    uniforms.uActiveModeCount?.value ??
-    0;
+  const activeModalFieldModeCount = uniforms.uModalFieldModeCount?.value ?? 0;
   setIfChanged(
     uniforms.uTotalSlotAmplitude,
     resolveRaymarchTotalSlotAmplitude(runtimeState, activeModalFieldModeCount),

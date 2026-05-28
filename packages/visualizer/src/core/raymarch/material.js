@@ -395,24 +395,14 @@ function deriveOpticalConvergenceNormalsNode({
   ) {
     return {
       normalPositiveT1: zeroNormal,
-      normalNegativeT1: zeroNormal,
       normalPositiveT2: zeroNormal,
-      normalNegativeT2: zeroNormal,
     };
   }
 
   const offsetPosT1 = localPosition.add(tangent1.mul(sampleStep));
-  const offsetNegT1 = localPosition.sub(tangent1.mul(sampleStep));
   const offsetPosT2 = localPosition.add(tangent2.mul(sampleStep));
-  const offsetNegT2 = localPosition.sub(tangent2.mul(sampleStep));
   const basisUvPosT1 = getBasisLocalUvNode({
     localPosition: offsetPosT1,
-    uRadius,
-    uVolumeHalfExtents,
-    useFullscreenBox,
-  });
-  const basisUvNegT1 = getBasisLocalUvNode({
-    localPosition: offsetNegT1,
     uRadius,
     uVolumeHalfExtents,
     useFullscreenBox,
@@ -423,16 +413,8 @@ function deriveOpticalConvergenceNormalsNode({
     uVolumeHalfExtents,
     useFullscreenBox,
   });
-  const basisUvNegT2 = getBasisLocalUvNode({
-    localPosition: offsetNegT2,
-    uRadius,
-    uVolumeHalfExtents,
-    useFullscreenBox,
-  });
   const gradientPosT1 = vec3(0.0).toVar();
-  const gradientNegT1 = vec3(0.0).toVar();
   const gradientPosT2 = vec3(0.0).toVar();
-  const gradientNegT2 = vec3(0.0).toVar();
   const normalizedLiveSynthesisModeCount = Math.max(
     1,
     Math.round(liveSynthesisModeCount || RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT),
@@ -461,47 +443,30 @@ function deriveOpticalConvergenceNormalsNode({
           liveSynthesisModeCount: normalizedLiveSynthesisModeCount,
           modalBasisAtlasTexture,
         });
-        const basisSampleNegT1 = sampleBasisAtlasPageNode({
-          basisUv: basisUvNegT1,
-          basisSlot: i,
-          liveSynthesisModeCount: normalizedLiveSynthesisModeCount,
-          modalBasisAtlasTexture,
-        });
         const basisSamplePosT2 = sampleBasisAtlasPageNode({
           basisUv: basisUvPosT2,
           basisSlot: i,
           liveSynthesisModeCount: normalizedLiveSynthesisModeCount,
           modalBasisAtlasTexture,
         });
-        const basisSampleNegT2 = sampleBasisAtlasPageNode({
-          basisUv: basisUvNegT2,
-          basisSlot: i,
-          liveSynthesisModeCount: normalizedLiveSynthesisModeCount,
-          modalBasisAtlasTexture,
-        });
         gradientPosT1.addAssign(basisSamplePosT1.gradient.mul(coefficient));
-        gradientNegT1.addAssign(basisSampleNegT1.gradient.mul(coefficient));
         gradientPosT2.addAssign(basisSamplePosT2.gradient.mul(coefficient));
-        gradientNegT2.addAssign(basisSampleNegT2.gradient.mul(coefficient));
       });
     },
   );
 
+  // Offset normals reuse the same amplitude-scaled normalization as the center
+  // normal (gradientNormal): because the center gradient is pre-divided by
+  // amplitudeNorm with a fixed 1e-4 floor, normalizeModalGradientNormalNode(g_raw,
+  // amplitudeNorm) reduces to the identical rule on the amplitude-normalized
+  // gradient. Forward difference N(+t) - N0 therefore mixes no normalization rules.
   return {
     normalPositiveT1: normalizeModalGradientNormalNode(
       gradientPosT1,
       amplitudeNorm,
     ),
-    normalNegativeT1: normalizeModalGradientNormalNode(
-      gradientNegT1,
-      amplitudeNorm,
-    ),
     normalPositiveT2: normalizeModalGradientNormalNode(
       gradientPosT2,
-      amplitudeNorm,
-    ),
-    normalNegativeT2: normalizeModalGradientNormalNode(
-      gradientNegT2,
       amplitudeNorm,
     ),
   };
@@ -518,38 +483,39 @@ function deriveOpticalConvergenceAuthorityNode({
   uTime,
   uModalFieldModeCount,
   amplitudeNorm,
+  centerGradientNormal,
   modalBasisAtlasTexture,
   modalFieldModeBuffer,
   modalFieldPhaseBuffer,
   liveSynthesisModeCount = RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
 }) {
-  const {
-    normalPositiveT1,
-    normalNegativeT1,
-    normalPositiveT2,
-    normalNegativeT2,
-  } = deriveOpticalConvergenceNormalsNode({
-    localPosition,
-    tangent1,
-    tangent2,
-    sampleStep,
-    uRadius,
-    uVolumeHalfExtents,
-    useFullscreenBox,
-    uTime,
-    uModalFieldModeCount,
-    amplitudeNorm,
-    modalBasisAtlasTexture,
-    modalFieldModeBuffer,
-    modalFieldPhaseBuffer,
-    liveSynthesisModeCount,
-  });
+  const { normalPositiveT1, normalPositiveT2 } =
+    deriveOpticalConvergenceNormalsNode({
+      localPosition,
+      tangent1,
+      tangent2,
+      sampleStep,
+      uRadius,
+      uVolumeHalfExtents,
+      useFullscreenBox,
+      uTime,
+      uModalFieldModeCount,
+      amplitudeNorm,
+      modalBasisAtlasTexture,
+      modalFieldModeBuffer,
+      modalFieldPhaseBuffer,
+      liveSynthesisModeCount,
+    });
+  // Forward difference reusing the center normal N0 as baseline:
+  // -[(N(+t1) - N0)·t1 + (N(+t2) - N0)·t2] estimates the same negative
+  // divergence of the iso-surface normal as the prior 4-sample central
+  // difference -0.5·[(N(+t1) - N(-t1))·t1 + (N(+t2) - N(-t2))·t2], at half cost.
   const viewPlaneNormalConvergence = dot(
-    normalPositiveT1.sub(normalNegativeT1),
+    normalPositiveT1.sub(centerGradientNormal),
     tangent1,
   )
-    .add(dot(normalPositiveT2.sub(normalNegativeT2), tangent2))
-    .mul(float(-0.5));
+    .add(dot(normalPositiveT2.sub(centerGradientNormal), tangent2))
+    .mul(float(-1.0));
 
   return clamp(
     max(float(0.0), viewPlaneNormalConvergence),
@@ -1096,6 +1062,7 @@ function createScatteringNode({
             uTime,
             uModalFieldModeCount,
             amplitudeNorm,
+            centerGradientNormal: gradientNormal,
             modalBasisAtlasTexture,
             modalFieldModeBuffer,
             modalFieldPhaseBuffer,
