@@ -87,7 +87,7 @@ function formatModalBasisCacheState({
 
 function selectDebugSnapshot(snapshot) {
   if (!snapshot) return null;
-  return snapshot.raymarchDebug ?? snapshot.cymatics2dDebug ?? snapshot;
+  return snapshot.raymarchDebug ?? snapshot;
 }
 
 const DEBUG_METRIC_TOOLTIPS = {

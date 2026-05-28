@@ -70,7 +70,7 @@ export function shouldMountOrbitControls(
   cameraControlMode,
 ) {
   return (
-    visualizationMethod !== VISUALIZATION_METHODS.cymatics2d &&
+    visualizationMethod !== VISUALIZATION_METHODS.fullscreenVolume &&
     cameraControlMode !== CAMERA_CONTROL_MODES.externalSynced
   );
 }

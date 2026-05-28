@@ -17,6 +17,14 @@ export function createVisualizationUniforms(parameters) {
     uAverageAmplitude: uniform(0.0),
     uFieldState: uniform(FIELD_STATE_VALUES.idle),
     uRadius: uniform(parameters.radius),
+    uVolumeHalfExtents: uniform(
+      new THREE.Vector3(
+        parameters.radius,
+        parameters.radius,
+        parameters.radius,
+      ),
+    ),
+    uViewportAspect: uniform(1.0),
     uThreshold: uniform(parameters.threshold),
     uBoundaryMode: uniform(
       getBoundaryModeValue(SIMULATION_DEFAULTS.boundaryMode),

@@ -405,14 +405,12 @@ describe("camera reset control", () => {
       );
     });
 
-    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraPose).toBe(
-      initialPose,
-    );
+    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraPose).toBe(initialPose);
   });
 
   it("forces the listener-side fullscreen 2d camera to side view", async () => {
     const controlsStore = createControlsStore();
-    controlsStore.updateControl("visualizationMethod", "cymatics-2d");
+    controlsStore.updateControl("visualizationMethod", "fullscreen-volume");
 
     await act(async () => {
       root.render(

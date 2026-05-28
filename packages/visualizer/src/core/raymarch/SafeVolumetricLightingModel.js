@@ -23,8 +23,10 @@ import {
   viewZToPerspectiveDepth,
   max,
   min,
+  abs,
 } from "three/tsl";
 import { RAYMARCH_DEFAULTS } from "../../defaults.js";
+import { VOLUME_BOUNDS_MODES } from "./volumeBounds.js";
 import {
   MAX_STEP_COMPENSATION,
   MIN_ADAPTIVE_STEPS,
@@ -80,6 +82,8 @@ function applySoftKneeCompressionNode(value) {
  * @typedef {import("three").Material & {
  *   steps?: number,
  *   radiusNode?: any,
+ *   halfExtentsNode?: any,
+ *   volumeBoundsMode?: string,
  *   opacityGainNode?: any,
  *   offsetNode?: any | ((args: {
  *     startPosLocal: any,
@@ -101,14 +105,23 @@ export default class SafeVolumetricLightingModel extends LightingModel {
     const material = /** @type {RuntimeVolumeMaterial} */ (builder.material);
     const { context } = builder;
 
+    const isFullscreenBox =
+      material.volumeBoundsMode === VOLUME_BOUNDS_MODES.fullscreenBox;
     const startPos = property("vec3");
     const endPos = property("vec3");
+    const radiusNode = material.radiusNode ?? modelRadius;
+    const halfExtentsNode = /** @type {any} */ (material.halfExtentsNode);
+    const cameraDistanceThreshold = isFullscreenBox
+      ? max(max(halfExtentsNode.x, halfExtentsNode.y), halfExtentsNode.z).mul(
+          2.0,
+        )
+      : modelRadius.mul(2);
 
     If(
       cameraPosition
         .sub(positionWorld)
         .length()
-        .greaterThan(modelRadius.mul(2)),
+        .greaterThan(cameraDistanceThreshold),
       () => {
         startPos.assign(cameraPosition);
         endPos.assign(positionWorld);
@@ -122,7 +135,6 @@ export default class SafeVolumetricLightingModel extends LightingModel {
       ({ material: runtimeMaterial }) =>
         /** @type {RuntimeVolumeMaterial} */ (runtimeMaterial).steps ?? 0,
     );
-    const radiusNode = material.radiusNode ?? modelRadius;
     const opacityGainNode =
       material.opacityGainNode ?? uniform(RAYMARCH_DEFAULTS.opacityGain);
     const startPosLocal = modelWorldMatrixInverse
@@ -138,13 +150,6 @@ export default class SafeVolumetricLightingModel extends LightingModel {
     const viewVectorLocal = endPosLocal.sub(startPosLocal).toVar();
     const rayDirLocal = viewVectorLocal.normalize().toVar();
     const maxDistance = viewVectorLocal.length().toVar();
-    const rayOriginProjection = dot(startPosLocal, rayDirLocal).toVar();
-    const originDistanceSquared = dot(startPosLocal, startPosLocal).toVar();
-    const radiusSquared = radiusNode.mul(radiusNode).toVar();
-    const discriminant = rayOriginProjection
-      .mul(rayOriginProjection)
-      .sub(originDistanceSquared.sub(radiusSquared))
-      .toVar();
     const entryDistance = float(0.0).toVar();
     const exitDistance = float(0.0).toVar();
     const segmentLength = float(0.0).toVar();
@@ -156,23 +161,15 @@ export default class SafeVolumetricLightingModel extends LightingModel {
     raymarchLightNode.assign(vec3(0));
     raymarchOpacityNode.assign(0.0);
 
-    If(discriminant.greaterThan(0.0), () => {
-      const intersectionRoot = sqrt(discriminant).toVar();
-      const unclampedEntry = rayOriginProjection
-        .negate()
-        .sub(intersectionRoot)
-        .toVar();
-      const unclampedExit = rayOriginProjection
-        .negate()
-        .add(intersectionRoot)
-        .toVar();
-
-      entryDistance.assign(max(unclampedEntry, 0.0));
-      exitDistance.assign(min(unclampedExit, maxDistance));
-
+    const marchVolumeSegment = () => {
       If(exitDistance.greaterThan(entryDistance), () => {
         segmentLength.assign(exitDistance.sub(entryDistance));
-        const diameter = radiusNode.mul(2.0);
+        const diameter = isFullscreenBox
+          ? max(
+              max(halfExtentsNode.x, halfExtentsNode.y),
+              halfExtentsNode.z,
+            ).mul(2.0)
+          : radiusNode.mul(2.0);
         const stepsPerUnit = stepCount.div(max(diameter, float(1e-4)));
         const effectiveSteps = clamp(
           segmentLength.mul(stepsPerUnit),
@@ -308,7 +305,59 @@ export default class SafeVolumetricLightingModel extends LightingModel {
           clamp(compressedVisibilityPeak.mul(opacityGainNode), 0.0, 1.0),
         );
       });
-    });
+    };
+
+    if (isFullscreenBox) {
+      const rayDirSafe = vec3(
+        abs(rayDirLocal.x)
+          .lessThan(float(1e-6))
+          .select(float(1e-6), rayDirLocal.x),
+        abs(rayDirLocal.y)
+          .lessThan(float(1e-6))
+          .select(float(1e-6), rayDirLocal.y),
+        abs(rayDirLocal.z)
+          .lessThan(float(1e-6))
+          .select(float(1e-6), rayDirLocal.z),
+      ).toVar();
+      const t0 = halfExtentsNode.sub(startPosLocal).div(rayDirSafe).toVar();
+      const t1 = halfExtentsNode
+        .negate()
+        .sub(startPosLocal)
+        .div(rayDirSafe)
+        .toVar();
+      const tMin = /** @type {any} */ (min(t0, t1).toVar());
+      const tMax = /** @type {any} */ (max(t0, t1).toVar());
+      const tEnter = max(max(tMin.x, tMin.y), tMin.z).toVar();
+      const tExit = min(min(tMax.x, tMax.y), tMax.z).toVar();
+
+      entryDistance.assign(max(tEnter, 0.0));
+      exitDistance.assign(min(tExit, maxDistance));
+      marchVolumeSegment();
+    } else {
+      const rayOriginProjection = dot(startPosLocal, rayDirLocal).toVar();
+      const originDistanceSquared = dot(startPosLocal, startPosLocal).toVar();
+      const radiusSquared = radiusNode.mul(radiusNode).toVar();
+      const discriminant = rayOriginProjection
+        .mul(rayOriginProjection)
+        .sub(originDistanceSquared.sub(radiusSquared))
+        .toVar();
+
+      If(discriminant.greaterThan(0.0), () => {
+        const intersectionRoot = sqrt(discriminant).toVar();
+        const unclampedEntry = rayOriginProjection
+          .negate()
+          .sub(intersectionRoot)
+          .toVar();
+        const unclampedExit = rayOriginProjection
+          .negate()
+          .add(intersectionRoot)
+          .toVar();
+
+        entryDistance.assign(max(unclampedEntry, 0.0));
+        exitDistance.assign(min(unclampedExit, maxDistance));
+        marchVolumeSegment();
+      });
+    }
   }
 
   scatteringLight(lightColor, builder) {

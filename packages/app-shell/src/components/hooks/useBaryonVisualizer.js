@@ -10,7 +10,10 @@ import {
   applyAudioControls,
   applySceneControls,
 } from "@baryon/visualizer/controls/runtime";
-import { DEFAULT_VISUALIZATION_METHOD } from "@baryon/visualizer/visualization/types";
+import {
+  DEFAULT_VISUALIZATION_METHOD,
+  usesRaymarchVolumePipeline,
+} from "@baryon/visualizer/visualization/types";
 import { getDefaultAudioSession } from "@baryon/visualizer/audio";
 import { RENDER_DEFAULTS } from "@baryon/visualizer/defaults";
 import { DEVTOOLS_ENABLED } from "../../devtools/config.js";
@@ -699,10 +702,11 @@ export function useBaryonVisualizer({
         Math.round(controls.raymarchSteps ?? 0);
       runtimeDiagnostics.render.effectiveRaymarchSteps =
         runtimeState?.effectiveRaymarchSteps ?? effectiveRaymarchSteps;
-      runtimeDiagnostics.render.raymarchStepBudget =
-        runtime.method === "raymarch"
-          ? runtimeDiagnostics.render.effectiveRaymarchSteps
-          : 0;
+      runtimeDiagnostics.render.raymarchStepBudget = usesRaymarchVolumePipeline(
+        runtime.method,
+      )
+        ? runtimeDiagnostics.render.effectiveRaymarchSteps
+        : 0;
       runtimeDiagnostics.render.adaptiveRaymarchActive = Boolean(
         runtimeDiagnostics.adaptiveRaymarch?.adaptiveRaymarchActive,
       );

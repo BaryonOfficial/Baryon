@@ -138,7 +138,9 @@ Visualization methods are defined in:
 Current canonical values:
 
 - `raymarch`
-- `cymatics-2d`
+- `fullscreen-volume`
+
+Legacy persisted or synced `cymatics-2d` values normalize to `fullscreen-volume` at persistence and stage-sync ingress only.
 
 These values cross important boundaries:
 

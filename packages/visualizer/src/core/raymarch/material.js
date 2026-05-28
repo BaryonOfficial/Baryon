@@ -147,6 +147,7 @@ import {
   RAYMARCH_MODAL_BASIS_CACHE_RESOLUTION,
   RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT,
 } from "./fieldCache.js";
+import { VOLUME_BOUNDS_MODES } from "./volumeBounds.js";
 
 // Excitation gate: smoothstep range for uAverageAmplitude / shader reference.
 // Below LOW the field is under-excited; gating reduces body fill and hot-core.
@@ -210,7 +211,9 @@ function normalizeSpectralLightEvaluationMode(spectralLightEvaluationMode) {
  *   modalBasisAtlasTexture?: any,
  *   modalFieldModeBuffer?: any,
  *   modalFieldPhaseBuffer?: any,
- *   modalFieldCapacity?: number
+ *   modalFieldCapacity?: number,
+ *   halfExtentsNode?: any,
+ *   volumeBoundsMode?: string
  * }} BaryonVolumeMaterial
  */
 
@@ -220,8 +223,15 @@ class BaryonVolumeNodeMaterial extends VolumeNodeMaterial {
   }
 }
 
-function getBasisLocalUvNode({ localPosition, uRadius }) {
-  const normalizedSamplePosition = localPosition.div(uRadius);
+function getBasisLocalUvNode({
+  localPosition,
+  uRadius,
+  uVolumeHalfExtents,
+  useFullscreenBox = false,
+}) {
+  const normalizedSamplePosition = useFullscreenBox
+    ? localPosition.div(uVolumeHalfExtents)
+    : localPosition.div(uRadius);
   return clamp(
     normalizedSamplePosition.mul(float(0.5)).add(vec3(0.5)),
     vec3(0.0),
@@ -265,6 +275,8 @@ function sampleBasisAtlasPageNode({
 function synthesizeLiveModalFieldNode({
   localPosition,
   uRadius,
+  uVolumeHalfExtents,
+  useFullscreenBox = false,
   uTime,
   uModalFieldModeCount,
   amplitudeNorm,
@@ -282,7 +294,12 @@ function synthesizeLiveModalFieldNode({
   );
 
   if (modalBasisAtlasTexture && modalFieldModeBuffer && modalFieldPhaseBuffer) {
-    const basisUv = getBasisLocalUvNode({ localPosition, uRadius });
+    const basisUv = getBasisLocalUvNode({
+      localPosition,
+      uRadius,
+      uVolumeHalfExtents,
+      useFullscreenBox,
+    });
     const activeModeCount = int(uModalFieldModeCount);
 
     Loop(
@@ -347,6 +364,8 @@ function synthesizeLiveModalFieldNode({
 function sampleFieldGradientNormalNode({
   localPosition,
   uRadius,
+  uVolumeHalfExtents,
+  useFullscreenBox = false,
   uTime,
   uModalFieldModeCount,
   amplitudeNorm,
@@ -366,6 +385,8 @@ function sampleFieldGradientNormalNode({
   const sample = synthesizeLiveModalFieldNode({
     localPosition,
     uRadius,
+    uVolumeHalfExtents,
+    useFullscreenBox,
     uTime,
     uModalFieldModeCount,
     amplitudeNorm,
@@ -385,6 +406,8 @@ function deriveOpticalConvergenceAuthorityNode({
   tangent2,
   sampleStep,
   uRadius,
+  uVolumeHalfExtents,
+  useFullscreenBox = false,
   uTime,
   uModalFieldModeCount,
   amplitudeNorm,
@@ -396,6 +419,8 @@ function deriveOpticalConvergenceAuthorityNode({
   const normalPositiveT1 = sampleFieldGradientNormalNode({
     localPosition: localPosition.add(tangent1.mul(sampleStep)),
     uRadius,
+    uVolumeHalfExtents,
+    useFullscreenBox,
     uTime,
     uModalFieldModeCount,
     amplitudeNorm,
@@ -407,6 +432,8 @@ function deriveOpticalConvergenceAuthorityNode({
   const normalNegativeT1 = sampleFieldGradientNormalNode({
     localPosition: localPosition.sub(tangent1.mul(sampleStep)),
     uRadius,
+    uVolumeHalfExtents,
+    useFullscreenBox,
     uTime,
     uModalFieldModeCount,
     amplitudeNorm,
@@ -418,6 +445,8 @@ function deriveOpticalConvergenceAuthorityNode({
   const normalPositiveT2 = sampleFieldGradientNormalNode({
     localPosition: localPosition.add(tangent2.mul(sampleStep)),
     uRadius,
+    uVolumeHalfExtents,
+    useFullscreenBox,
     uTime,
     uModalFieldModeCount,
     amplitudeNorm,
@@ -429,6 +458,8 @@ function deriveOpticalConvergenceAuthorityNode({
   const normalNegativeT2 = sampleFieldGradientNormalNode({
     localPosition: localPosition.sub(tangent2.mul(sampleStep)),
     uRadius,
+    uVolumeHalfExtents,
+    useFullscreenBox,
     uTime,
     uModalFieldModeCount,
     amplitudeNorm,
@@ -454,6 +485,7 @@ function deriveOpticalConvergenceAuthorityNode({
 function createScatteringNode({
   uniforms,
   boundaryMode = BOUNDARY_MODES.neumann,
+  volumeBounds = /** @type {string} */ (VOLUME_BOUNDS_MODES.sphere),
   modalBasisAtlasTexture = null,
   modalFieldModeBuffer = null,
   modalFieldPhaseBuffer = null,
@@ -461,9 +493,11 @@ function createScatteringNode({
   spectralLightCacheTexture = null,
   spectralLightEvaluationMode = RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.off,
 }) {
+  const useFullscreenBox = volumeBounds === VOLUME_BOUNDS_MODES.fullscreenBox;
   const {
     uTime,
     uRadius,
+    uVolumeHalfExtents,
     uThreshold,
     uAverageAmplitude,
     uRaymarchSteps,
@@ -631,8 +665,15 @@ function createScatteringNode({
       const localPosition =
         positionRayLocal ??
         modelWorldMatrixInverse.mul(vec4(positionRay, 1.0)).xyz;
-      const normalizedPosition = localPosition.div(uRadius);
-      const radialDistance = length(normalizedPosition);
+      const normalizedPosition = useFullscreenBox
+        ? localPosition.div(uVolumeHalfExtents)
+        : localPosition.div(uRadius);
+      const radialDistance = useFullscreenBox
+        ? max(
+            max(abs(normalizedPosition.x), abs(normalizedPosition.y)),
+            abs(normalizedPosition.z),
+          )
+        : length(normalizedPosition);
       // High energy = tighter boundary (more solid); low energy = diffuse, ghostly
       const edgeFade = float(1.0).sub(
         smoothstep(dynamicEdgeFadeStart, float(EDGE_FADE_END), radialDistance),
@@ -655,7 +696,12 @@ function createScatteringNode({
           RAYMARCH_SPECTRAL_LIGHT_EVALUATION_MODES.cached &&
         Boolean(spectralLightCacheTexture);
       const amplitudeNorm = max(uTotalSlotAmplitude, float(0.01));
-      const basisUv = getBasisLocalUvNode({ localPosition, uRadius });
+      const basisUv = getBasisLocalUvNode({
+        localPosition,
+        uRadius,
+        uVolumeHalfExtents,
+        useFullscreenBox,
+      });
       if (
         modalBasisAtlasTexture &&
         modalFieldModeBuffer &&
@@ -664,6 +710,8 @@ function createScatteringNode({
         const liveFieldSample = synthesizeLiveModalFieldNode({
           localPosition,
           uRadius,
+          uVolumeHalfExtents,
+          useFullscreenBox,
           uTime,
           uModalFieldModeCount,
           amplitudeNorm,
@@ -970,6 +1018,8 @@ function createScatteringNode({
             tangent2,
             sampleStep: convergenceSampleStep,
             uRadius,
+            uVolumeHalfExtents,
+            useFullscreenBox,
             uTime,
             uModalFieldModeCount,
             amplitudeNorm,
@@ -1548,15 +1598,19 @@ export function createRaymarchVolumeMesh({
   spectralLightCacheTexture = null,
   uniforms,
   cavityGeometry = "rectangular",
+  volumeBounds = /** @type {string} */ (VOLUME_BOUNDS_MODES.sphere),
 }) {
-  // SphereGeometry instead of BoxGeometry: vertex velocities land on the actual
-  // sphere surface, so TRAA's interpolated velocity at each fragment closely matches
-  // the true sphere-surface motion during mesh rotation. BoxGeometry corners sit at
-  // depth sqrt(3)*radius ≈ 1.73r — far from the sphere surface — causing reprojection
-  // errors that blur the history buffer during rotation. Sphere geometry also culls
-  // the box corners (~22% fewer fragment invocations).
-  // 1% radius padding avoids precision clipping at the silhouette.
-  const geometry = new THREE.SphereGeometry(radius * 1.01, 32, 32);
+  const isFullscreenBox = volumeBounds === VOLUME_BOUNDS_MODES.fullscreenBox;
+  const maxAspect = 3;
+  // SphereGeometry: TRAA vertex velocities match the sphere surface during rotation.
+  // BoxGeometry: used for fullscreen-volume (rotation disabled); sized for max aspect.
+  const geometry = isFullscreenBox
+    ? new THREE.BoxGeometry(
+        radius * maxAspect * 2 * 1.01,
+        radius * 2 * 1.01,
+        radius * 2 * 1.01,
+      )
+    : new THREE.SphereGeometry(radius * 1.01, 32, 32);
   const sharedOffsetNode = createRaymarchOffsetNode();
   const createMaterialForBoundaryMode = (
     boundaryMode,
@@ -1570,11 +1624,14 @@ export function createRaymarchVolumeMesh({
     material.outputNode = vec4(raymarchLightNode, raymarchOpacityNode);
     material.steps = Math.round(uniforms.uRaymarchSteps.value);
     material.radiusNode = uniforms.uRadius;
+    material.halfExtentsNode = uniforms.uVolumeHalfExtents;
+    material.volumeBoundsMode = volumeBounds;
     material.opacityGainNode = uniforms.uOpacityGain;
     material.offsetNode = sharedOffsetNode;
     material.scatteringNode = createScatteringNode({
       uniforms,
       boundaryMode,
+      volumeBounds,
       modalBasisAtlasTexture,
       modalFieldModeBuffer,
       modalFieldPhaseBuffer,
@@ -1624,6 +1681,7 @@ export function createRaymarchVolumeMesh({
   mesh.userData.raymarchModalFieldPhaseBuffer = modalFieldPhaseBuffer;
   mesh.userData.raymarchModalFieldCapacity = modalFieldCapacity;
   mesh.userData.raymarchCavityGeometry = normalizedCavityGeometry;
+  mesh.userData.raymarchVolumeBounds = volumeBounds;
   mesh.frustumCulled = false;
 
   return mesh;

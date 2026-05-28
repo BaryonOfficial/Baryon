@@ -383,14 +383,14 @@ test("shouldBypassTemporalHistoryForRaymarchFrame marks active raymarch field co
 
   expect(
     shouldBypassTemporalHistoryForRaymarchFrame({
-      runtimeMethod: "cymatics2d",
+      runtimeMethod: "fullscreen-volume",
       featureFrame: {
         fieldState: "active",
         activeModeCount: 4,
         energySignal: 0.6,
       },
     }),
-  ).toBe(false);
+  ).toBe(true);
 });
 
 test("shouldBypassTemporalHistoryForRaymarchFrame treats energetic modal frames as dynamic even without fieldState", () => {

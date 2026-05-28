@@ -40,12 +40,34 @@ describe("PerformanceHud", () => {
           requestedRenderScale: 0.67,
           qualityPreset: "auto",
           targetFps: 60,
-          visualizationMethod: "cymatics-2d",
+          visualizationMethod: "fullscreen-volume",
         },
       }),
     );
 
     expect(markup).toContain("Render Scale: 0.670");
     expect(markup).not.toContain("Governor Target:");
+  });
+
+  it("shows raymarch steps for fullscreen volume", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(PerformanceHud, {
+        metrics: {
+          fps: 60,
+          smoothedFrameTimeMs: 16.67,
+          currentPixelRatio: 1,
+          basePixelRatio: 1,
+          renderScale: 1,
+          requestedRenderScale: 1,
+          qualityPreset: "auto",
+          targetFps: 60,
+          visualizationMethod: "fullscreen-volume",
+          requestedRaymarchSteps: 56,
+          effectiveRaymarchSteps: 48,
+        },
+      }),
+    );
+
+    expect(markup).toContain("Steps: 48 / 56");
   });
 });

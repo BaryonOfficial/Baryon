@@ -147,6 +147,15 @@ describe("deserializeControls", () => {
     expect(result.renderQualityPreset).toBe("max-quality");
   });
 
+  it("migrates legacy cymatics-2d visualization method to fullscreen-volume", () => {
+    const result = deserializeControls(
+      { visualizationMethod: "cymatics-2d" },
+      CONTROL_DEFINITIONS,
+    );
+
+    expect(result.visualizationMethod).toBe("fullscreen-volume");
+  });
+
   it("migrates old chromesthesia settings to Spectral Light at the boundary", () => {
     const result = deserializeControls(
       { colorMode: "chromesthesia", chromesthesiaMix: 0.6 },

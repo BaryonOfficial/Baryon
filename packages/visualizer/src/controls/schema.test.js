@@ -359,29 +359,29 @@ describe("control schema", () => {
     }
   });
 
-  it("filters out 3d-only controls from the fullscreen 2d method", () => {
-    const cymatics2dControls = getControlsForMethod(
-      VISUALIZATION_METHODS.cymatics2d,
+  it("filters out raymarch-only controls from the fullscreen volume method", () => {
+    const fullscreenVolumeControls = getControlsForMethod(
+      VISUALIZATION_METHODS.fullscreenVolume,
     ).map((definition) => definition.key);
 
-    expect(getControlsForMethod(VISUALIZATION_METHODS.cymatics2d)).not.toEqual(
-      getControlsForMethod(VISUALIZATION_METHODS.raymarch),
-    );
-    expect(cymatics2dControls).not.toContain("rotationMode");
-    expect(cymatics2dControls).not.toContain("rotationSpeed");
-    expect(cymatics2dControls).not.toContain("raymarchSteps");
-    expect(cymatics2dControls).not.toContain("absorption");
-    expect(cymatics2dControls).not.toContain("rimBloomBias");
-    expect(cymatics2dControls).not.toContain("rimCompression");
-    expect(cymatics2dControls).not.toContain("holographicIntensity");
-    expect(cymatics2dControls).not.toContain("holographicShift");
-    expect(cymatics2dControls).not.toContain("holographicFresnelPower");
-    expect(cymatics2dControls).toContain("visualizationMethod");
-    expect(cymatics2dControls).toContain("bloomThreshold");
-    expect(cymatics2dControls).toContain("densityGain");
-    expect(cymatics2dControls).toContain("boundaryMode");
-    expect(cymatics2dControls).not.toContain("structurePersistence");
-    expect(getControlFolders(VISUALIZATION_METHODS.cymatics2d)).toEqual([
+    expect(
+      getControlsForMethod(VISUALIZATION_METHODS.fullscreenVolume),
+    ).not.toEqual(getControlsForMethod(VISUALIZATION_METHODS.raymarch));
+    expect(fullscreenVolumeControls).not.toContain("rotationMode");
+    expect(fullscreenVolumeControls).not.toContain("rotationSpeed");
+    expect(fullscreenVolumeControls).toContain("raymarchSteps");
+    expect(fullscreenVolumeControls).not.toContain("absorption");
+    expect(fullscreenVolumeControls).not.toContain("rimBloomBias");
+    expect(fullscreenVolumeControls).not.toContain("rimCompression");
+    expect(fullscreenVolumeControls).not.toContain("holographicIntensity");
+    expect(fullscreenVolumeControls).not.toContain("holographicShift");
+    expect(fullscreenVolumeControls).not.toContain("holographicFresnelPower");
+    expect(fullscreenVolumeControls).toContain("visualizationMethod");
+    expect(fullscreenVolumeControls).toContain("bloomThreshold");
+    expect(fullscreenVolumeControls).toContain("densityGain");
+    expect(fullscreenVolumeControls).toContain("boundaryMode");
+    expect(fullscreenVolumeControls).not.toContain("structurePersistence");
+    expect(getControlFolders(VISUALIZATION_METHODS.fullscreenVolume)).toEqual([
       "Mode",
       "Shape",
       "Color",
@@ -392,16 +392,17 @@ describe("control schema", () => {
       "Diagnostics",
     ]);
     expect(
-      getControlsForFolder("Shape", VISUALIZATION_METHODS.cymatics2d).map(
+      getControlsForFolder("Shape", VISUALIZATION_METHODS.fullscreenVolume).map(
         (definition) => definition.key,
       ),
     ).toEqual([
       "zeroPointPrecision",
       "densityGain",
       "opacityGain",
+      "raymarchSteps",
     ]);
     expect(
-      getControlsForFolder("Mode", VISUALIZATION_METHODS.cymatics2d).map(
+      getControlsForFolder("Mode", VISUALIZATION_METHODS.fullscreenVolume).map(
         (definition) => definition.key,
       ),
     ).toEqual([
@@ -413,19 +414,20 @@ describe("control schema", () => {
       "visualizationMethod",
     ]);
     expect(
-      getControlsForFolder("Color", VISUALIZATION_METHODS.cymatics2d).map(
+      getControlsForFolder("Color", VISUALIZATION_METHODS.fullscreenVolume).map(
         (definition) => definition.key,
       ),
     ).toEqual(["volumeColor", "surfaceColor", "spectralMix"]);
     expect(
-      getControlsForFolder("Logo", VISUALIZATION_METHODS.cymatics2d).map(
+      getControlsForFolder("Logo", VISUALIZATION_METHODS.fullscreenVolume).map(
         (definition) => definition.key,
       ),
     ).toEqual(["idleLogoIntensity", "idleLogoSize"]);
     expect(
-      getControlsForFolder("Display", VISUALIZATION_METHODS.cymatics2d).map(
-        (definition) => definition.key,
-      ),
+      getControlsForFolder(
+        "Display",
+        VISUALIZATION_METHODS.fullscreenVolume,
+      ).map((definition) => definition.key),
     ).toEqual([
       "bloomEnabled",
       "bloomStrength",
@@ -436,14 +438,16 @@ describe("control schema", () => {
       "bloomResponseBias",
     ]);
     expect(
-      getControlsForFolder("PresetsArea", VISUALIZATION_METHODS.cymatics2d).map(
-        (definition) => definition.key,
-      ),
+      getControlsForFolder(
+        "PresetsArea",
+        VISUALIZATION_METHODS.fullscreenVolume,
+      ).map((definition) => definition.key),
     ).toEqual(["performanceHudEnabled"]);
     expect(
-      getControlsForFolder("Motion", VISUALIZATION_METHODS.cymatics2d).map(
-        (definition) => definition.key,
-      ),
+      getControlsForFolder(
+        "Motion",
+        VISUALIZATION_METHODS.fullscreenVolume,
+      ).map((definition) => definition.key),
     ).toEqual(["reactivity", "motionAmount"]);
   });
 
@@ -472,7 +476,7 @@ describe("control schema", () => {
       status: CONTROL_STATUSES.live,
       methods: [
         VISUALIZATION_METHODS.raymarch,
-        VISUALIZATION_METHODS.cymatics2d,
+        VISUALIZATION_METHODS.fullscreenVolume,
       ],
     });
     expect(rimBloomBias).toMatchObject({

@@ -1,6 +1,7 @@
 import { CONTROL_STATUSES } from "./schema.js";
 import { normalizeLiveInputAcousticIntent } from "../core/audio/liveInputAnalysis.js";
 import { normalizePerformanceProfile } from "../render/outputProfilePolicy.js";
+import { normalizeVisualizationMethod } from "../visualization/types.js";
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -116,6 +117,21 @@ function normalizeLegacyRaymarchPresentation(raw) {
   return next;
 }
 
+function normalizeLegacyVisualizationMethod(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(raw, "visualizationMethod")) {
+    return raw;
+  }
+
+  return {
+    ...raw,
+    visualizationMethod: normalizeVisualizationMethod(raw.visualizationMethod),
+  };
+}
+
 /**
  * Serialize a control state object to a plain JSON-safe object.
  * Only live (non-debug) controls are included so that audit/dev settings
@@ -158,10 +174,12 @@ export function deserializeControls(raw, definitions) {
   const result = Object.fromEntries(
     definitions.map((d) => [d.key, d.defaultValue]),
   );
-  const normalizedRaw = normalizeLegacySpectralLight(
-    normalizeLegacyRaymarchPresentation(
-      normalizeLegacyLiveInputAnalysis(
-        normalizeLegacyPerformanceProfile(normalizeLegacyReactivity(raw)),
+  const normalizedRaw = normalizeLegacyVisualizationMethod(
+    normalizeLegacySpectralLight(
+      normalizeLegacyRaymarchPresentation(
+        normalizeLegacyLiveInputAnalysis(
+          normalizeLegacyPerformanceProfile(normalizeLegacyReactivity(raw)),
+        ),
       ),
     ),
   );

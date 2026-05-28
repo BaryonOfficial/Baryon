@@ -122,7 +122,7 @@ describe("OutputStageSurface", () => {
       root.render(
         React.createElement(OutputStageSurface, {
           controlsRef: { current: { backgroundColor: "#000000" } },
-          visualizationMethod: "cymatics-2d",
+          visualizationMethod: "fullscreen-volume",
           cameraPose: topDownCameraPose,
         }),
       );

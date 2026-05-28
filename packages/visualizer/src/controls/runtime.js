@@ -301,13 +301,8 @@ function applyCommonVisualizationControls(runtimeState, controls) {
   if (uniforms.uBoundaryMode) {
     uniforms.uBoundaryMode.value = getBoundaryModeValue(boundaryMode);
   }
-  if (runtimeState?.method !== VISUALIZATION_METHODS.cymatics2d) {
-    setRaymarchBoundaryMode(runtimeState?.volumeMesh, boundaryMode);
-    setRaymarchCavityGeometry(
-      runtimeState?.volumeMesh,
-      effectiveCavityGeometry,
-    );
-  }
+  setRaymarchBoundaryMode(runtimeState?.volumeMesh, boundaryMode);
+  setRaymarchCavityGeometry(runtimeState?.volumeMesh, effectiveCavityGeometry);
   uniforms.uIdleLogoIntensity.value = controls.idleLogoIntensity;
   uniforms.uIdleLogoAlpha.value = idleLogoAlpha;
   uniforms.uIdleLogoSize.value = controls.idleLogoSize;
@@ -469,40 +464,9 @@ export function applyRaymarchControls(runtimeState, controls) {
   });
 }
 
-export function applyCymatics2dControls(runtimeState, controls) {
-  const {
-    uniforms,
-    idleLogoAlpha,
-    colorMode,
-    spectralMix,
-    boundaryMode,
-    requestedCavityGeometry,
-    effectiveCavityGeometry,
-  } = applyCommonVisualizationControls(runtimeState, controls);
-
-  return buildVisualizationControlSnapshot({
-    controls,
-    runtimeState,
-    uniforms,
-    idleLogoAlpha,
-    colorMode,
-    spectralMix,
-    boundaryMode,
-    requestedCavityGeometry,
-    effectiveCavityGeometry,
-    extraUniforms: {
-      slicePosition: uniforms.uSlicePosition?.value ?? 0,
-    },
-  });
-}
-
 export function applyVisualizationControls(method, runtimeState, controls) {
   if (!runtimeState) {
     return null;
-  }
-
-  if (method === VISUALIZATION_METHODS.cymatics2d) {
-    return applyCymatics2dControls(runtimeState, controls);
   }
 
   return applyRaymarchControls(runtimeState, controls);
@@ -607,16 +571,11 @@ export function applyAuditControls(featureState, controls) {
   };
 }
 
-export function applySceneControls(
-  target,
-  controls,
-  deltaTime,
-  featureFrame,
-) {
+export function applySceneControls(target, controls, deltaTime, featureFrame) {
   const runtimeState = target?.points ? target : null;
   const points = runtimeState?.points ?? target;
   if (!points?.rotation) return null;
-  if (runtimeState?.method === VISUALIZATION_METHODS.cymatics2d) {
+  if (runtimeState?.method === VISUALIZATION_METHODS.fullscreenVolume) {
     return createDisabledSceneSnapshot(
       runtimeState,
       points,

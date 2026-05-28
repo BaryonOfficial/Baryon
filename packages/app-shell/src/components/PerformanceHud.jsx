@@ -1,4 +1,5 @@
 import { formatPerformanceProfileLabel } from "@baryon/visualizer/render/outputProfilePolicy";
+import { usesRaymarchVolumePipeline } from "@baryon/visualizer/visualization/types";
 
 function formatNumber(value, digits = 1) {
   if (
@@ -35,7 +36,7 @@ export default function PerformanceHud({
     : "Frame Budget FPS";
 
   const showRaymarchSteps =
-    metrics.visualizationMethod === "raymarch" &&
+    usesRaymarchVolumePipeline(metrics.visualizationMethod) &&
     metrics.requestedRaymarchSteps > 0;
   const raymarchStepsLabel = showRaymarchSteps
     ? `${Math.round(metrics.effectiveRaymarchSteps)} / ${Math.round(metrics.requestedRaymarchSteps)}`

@@ -29,12 +29,7 @@ describe("Spectral Light render contract", () => {
       resolve(currentDir, "raymarch/material.js"),
       "utf8",
     );
-    const cymaticsMaterial = await readFile(
-      resolve(currentDir, "cymatics2d/material.js"),
-      "utf8",
-    );
-
-    for (const source of [raymarchMaterial, cymaticsMaterial]) {
+    for (const source of [raymarchMaterial]) {
       expect(source).toContain("colorWeight");
       expect(source).toContain("spectralLightWeight");
       expect(source).not.toContain("FallbackColor");

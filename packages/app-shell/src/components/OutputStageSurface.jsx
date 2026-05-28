@@ -58,7 +58,7 @@ const defaultStageCameraConfig = (() => {
 const fullscreen2dCameraPose = resolvePresetCameraPose("side");
 
 function resolveStageCameraPose(visualizationMethod, cameraPose) {
-  if (visualizationMethod === VISUALIZATION_METHODS.cymatics2d) {
+  if (visualizationMethod === VISUALIZATION_METHODS.fullscreenVolume) {
     return fullscreen2dCameraPose;
   }
 

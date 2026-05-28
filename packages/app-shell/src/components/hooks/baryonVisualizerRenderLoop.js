@@ -19,6 +19,7 @@ import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/visualizer/defaults";
 import { allowsCachedLiveFeatureFrame } from "@baryon/visualizer/core/renderAuthorityContract";
 import { RAYMARCH_MODAL_BASIS_CACHE_CAPACITY } from "@baryon/visualizer/core/raymarch/fieldCache";
 import * as raymarchPerformanceGovernor from "@baryon/visualizer/core/raymarch/performanceGovernor";
+import { usesRaymarchVolumePipeline } from "@baryon/visualizer/visualization/types";
 import {
   CUSTOM_TARGET_FPS_BANDS,
   DEFAULT_PERFORMANCE_TARGET_FPS,
@@ -935,7 +936,7 @@ export function shouldBypassTemporalHistoryForRaymarchFrame({
   runtimeMethod,
   featureFrame,
 }) {
-  if (runtimeMethod !== "raymarch" || !featureFrame) {
+  if (!usesRaymarchVolumePipeline(runtimeMethod) || !featureFrame) {
     return false;
   }
 
@@ -1561,7 +1562,7 @@ export function updateAdaptiveRaymarchStepBudget({
     effectiveFrame?.modalDescriptor?.slotViews?.modalFieldSlots ??
     effectiveFrame?.modalFieldSlots;
   const activeRaymarchFrame = Boolean(
-    runtime?.method === "raymarch" &&
+    usesRaymarchVolumePipeline(runtime?.method) &&
     (status?.isPlaying ||
       status?.isLiveInputActive ||
       controls?.injectTestTone) &&

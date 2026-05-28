@@ -353,19 +353,20 @@ describe("control runtime sync", () => {
     expect(raymarchSnapshot.uniforms.boundaryMode).toBe("dirichlet");
   });
 
-  it("applies fullscreen 2d controls without touching raymarch-only uniforms", () => {
+  it("applies fullscreen volume controls without raymarch-only structure uniforms", () => {
     const controls = createControlState();
-    controls.visualizationMethod = VISUALIZATION_METHODS.cymatics2d;
+    controls.visualizationMethod = VISUALIZATION_METHODS.fullscreenVolume;
     controls.volumeColor = "#113355";
     controls.surfaceColor = "#ddeeff";
     controls.reactivity = 1.3;
     controls.motionAmount = 0.8;
+    controls.raymarchSteps = 64;
 
     const runtimeState = createRaymarchHarness(
-      VISUALIZATION_METHODS.cymatics2d,
+      VISUALIZATION_METHODS.fullscreenVolume,
     );
     const snapshot = applyVisualizationControls(
-      VISUALIZATION_METHODS.cymatics2d,
+      VISUALIZATION_METHODS.fullscreenVolume,
       runtimeState,
       controls,
     );
@@ -376,11 +377,10 @@ describe("control runtime sync", () => {
     expect(runtimeState.uniforms.uSurfaceColor.value.set).toHaveBeenCalledWith(
       "#ddeeff",
     );
-    expect(runtimeState.uniforms.uSlicePosition.value).toBe(0);
+    expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
     expect(snapshot.uniforms.reactivity).toBe(1.3);
     expect(snapshot.uniforms.motionAmount).toBe(0.8);
     expect(snapshot.uniforms).not.toHaveProperty("structurePersistence");
-    expect(snapshot.uniforms.slicePosition).toBe(0);
   });
 
   it("applies raymarch controls directly", () => {
@@ -1117,10 +1117,10 @@ describe("control runtime sync", () => {
     expect(runtimeState.sceneMotion.lastBeatPulseId).toBe(9);
   });
 
-  it("resets all scene rotation axes when scene motion is disabled for 2d", () => {
+  it("resets all scene rotation axes when scene motion is disabled for fullscreen volume", () => {
     const controls = createControlState();
     const runtimeState = createRaymarchHarness(
-      VISUALIZATION_METHODS.cymatics2d,
+      VISUALIZATION_METHODS.fullscreenVolume,
     );
     runtimeState.points.rotation.x = 0.05;
     runtimeState.points.rotation.y = 1.2;
@@ -1186,9 +1186,9 @@ describe("control runtime sync", () => {
     });
   });
 
-  it("keeps the legacy raymarch alias in inspection snapshots", () => {
+  it("keeps the fullscreen volume alias in inspection snapshots", () => {
     const snapshot = buildControlInspectionSnapshot({
-      method: VISUALIZATION_METHODS.cymatics2d,
+      method: VISUALIZATION_METHODS.fullscreenVolume,
       raymarch: { test: 7 },
     });
 
@@ -1205,14 +1205,19 @@ describe("control runtime sync", () => {
     expect(typeof runtime.dispose).toBe("function");
   });
 
-  it("creates the fullscreen 2d visualization runtime on demand", () => {
+  it("creates the fullscreen volume visualization runtime on demand", () => {
     const runtime = createVisualizationRuntime(
-      VISUALIZATION_METHODS.cymatics2d,
+      VISUALIZATION_METHODS.fullscreenVolume,
     );
-    expect(runtime.method).toBe(VISUALIZATION_METHODS.cymatics2d);
+    expect(runtime.method).toBe(VISUALIZATION_METHODS.fullscreenVolume);
     expect(typeof runtime.setup).toBe("function");
     expect(typeof runtime.tick).toBe("function");
     expect(typeof runtime.dispose).toBe("function");
+  });
+
+  it("normalizes legacy cymatics-2d to fullscreen volume at the factory", () => {
+    const runtime = createVisualizationRuntime("cymatics-2d");
+    expect(runtime.method).toBe(VISUALIZATION_METHODS.fullscreenVolume);
   });
 
   it("sets up and disposes a raymarch runtime scene root", () => {
@@ -1269,9 +1274,9 @@ describe("control runtime sync", () => {
     expect(() => runtime.dispose(runtimeState)).not.toThrow();
   });
 
-  it("sets up and disposes a fullscreen 2d runtime scene root", () => {
+  it("sets up and disposes a fullscreen volume runtime scene root", () => {
     const runtime = createVisualizationRuntime(
-      VISUALIZATION_METHODS.cymatics2d,
+      VISUALIZATION_METHODS.fullscreenVolume,
     );
     const runtimeState = runtime.setup({
       baryonGeometry: new THREE.IcosahedronGeometry(1, 0),
@@ -1284,10 +1289,11 @@ describe("control runtime sync", () => {
       },
     });
 
-    expect(runtimeState.method).toBe(VISUALIZATION_METHODS.cymatics2d);
-    expect(runtimeState.fieldMesh).toBeTruthy();
+    expect(runtimeState.method).toBe(VISUALIZATION_METHODS.fullscreenVolume);
+    expect(runtimeState.volumeMesh).toBeTruthy();
+    expect(runtimeState.volumeBounds).toBe("fullscreenBox");
     expect(runtimeState.idleOverlay).toBeTruthy();
-    expect(runtimeState.visualRoot.children).toContain(runtimeState.fieldMesh);
+    expect(runtimeState.visualRoot.children).toContain(runtimeState.volumeMesh);
     expect(runtimeState.visualRoot.children).toContain(
       runtimeState.idleOverlay,
     );

@@ -75,7 +75,7 @@ function resolveEffectiveCameraViewPreset({
   defaultCameraViewPreset,
   cameraViewPreset,
 }) {
-  if (visualizationMethod === VISUALIZATION_METHODS.cymatics2d) {
+  if (visualizationMethod === VISUALIZATION_METHODS.fullscreenVolume) {
     return CAMERA_VIEW_PRESETS.side;
   }
 
@@ -203,8 +203,7 @@ const ThreeScene = ({
     fieldState: resolvedFrameFieldState,
   });
   const shouldUseIdleCameraDefault =
-    liveInputUiState === "idle" &&
-    resolvedFrameFieldState === "idle";
+    liveInputUiState === "idle" && resolvedFrameFieldState === "idle";
   const effectiveCameraViewPreset = resolveEffectiveCameraViewPreset({
     visualizationMethod: controlsState.visualizationMethod,
     shouldUseIdleCameraDefault,
@@ -258,7 +257,8 @@ const ThreeScene = ({
   const cameraControlState = deriveCameraControlState({
     available:
       liveInputUiState === "active" &&
-      controlsState.visualizationMethod !== VISUALIZATION_METHODS.cymatics2d,
+      controlsState.visualizationMethod !==
+        VISUALIZATION_METHODS.fullscreenVolume,
     appliedCameraPose: effectiveCameraPose,
     fallbackPreset: effectiveCameraViewPreset,
   });
@@ -284,9 +284,7 @@ const ThreeScene = ({
   const liveInputStatusPanelVisible =
     showOverlayUi &&
     (selectedSource === "system" || resolvedLiveInputPanel.forceVisible);
-  const showCameraControls =
-    showOverlayUi &&
-    cameraControlState.visible;
+  const showCameraControls = showOverlayUi && cameraControlState.visible;
   const isPhoneViewport = viewportWidth <= 640;
   const isTabletPortraitViewport = viewportWidth > 640 && viewportWidth <= 820;
   const isTabletViewport = viewportWidth <= 1024;

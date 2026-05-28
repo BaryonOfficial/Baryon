@@ -76,16 +76,13 @@ async function readAuditMethodSnapshot(page) {
   return page.evaluate(() => {
     const snapshot = window.__baryonAuditSnapshot ?? null;
     const visualizationMethod = snapshot?.visualizationMethod ?? null;
-    const activeDebug =
-      visualizationMethod === "cymatics-2d"
-        ? (snapshot?.cymatics2dDebug ?? null)
-        : (snapshot?.raymarchDebug ?? null);
+    const activeDebug = snapshot?.raymarchDebug ?? null;
 
     return {
       visualizationMethod,
       activeDebug,
       hasRaymarchDebug: Boolean(snapshot?.raymarchDebug),
-      hasCymatics2dDebug: Boolean(snapshot?.cymatics2dDebug),
+      volumeBounds: activeDebug?.volumeBounds ?? null,
     };
   });
 }
@@ -664,19 +661,20 @@ test.describe("Baryon control smoke", () => {
       )
       .toBe("raymarch");
 
-    await setControl(page, "visualizationMethod", "cymatics-2d");
-    await waitForVisualizationMethod(page, "cymatics-2d");
+    await setControl(page, "visualizationMethod", "fullscreen-volume");
+    await waitForVisualizationMethod(page, "fullscreen-volume");
 
     await expect
       .poll(() => readAuditMethodSnapshot(page))
       .toEqual({
-        visualizationMethod: "cymatics-2d",
+        visualizationMethod: "fullscreen-volume",
         activeDebug: expect.objectContaining({
           fieldState: expect.any(String),
           modeSlotCount: expect.any(Number),
+          volumeBounds: "fullscreenBox",
         }),
-        hasRaymarchDebug: false,
-        hasCymatics2dDebug: true,
+        hasRaymarchDebug: true,
+        volumeBounds: "fullscreenBox",
       });
     await expect
       .poll(() => readSceneSnapshot(page))
@@ -689,27 +687,28 @@ test.describe("Baryon control smoke", () => {
 
     await setControl(page, "rotationMode", "manual");
     await setControl(page, "rotationSpeed", 2);
-    const fullscreen2dStart = await page.evaluate(
+    const fullscreenVolumeStart = await page.evaluate(
       () => window.__baryonControlState?.scene?.rotationY ?? 0,
     );
     await page.waitForTimeout(150);
-    const fullscreen2dEnd = await page.evaluate(
+    const fullscreenVolumeEnd = await page.evaluate(
       () => window.__baryonControlState?.scene?.rotationY ?? 0,
     );
-    expect(fullscreen2dStart).toBe(0);
-    expect(fullscreen2dEnd).toBe(0);
+    expect(fullscreenVolumeStart).toBe(0);
+    expect(fullscreenVolumeEnd).toBe(0);
 
     await setControl(page, "injectTestTone", true);
     await expect
       .poll(() => readAuditMethodSnapshot(page))
       .toEqual({
-        visualizationMethod: "cymatics-2d",
+        visualizationMethod: "fullscreen-volume",
         activeDebug: expect.objectContaining({
           fieldState: "test",
           modeSlotCount: expect.any(Number),
+          volumeBounds: "fullscreenBox",
         }),
-        hasRaymarchDebug: false,
-        hasCymatics2dDebug: true,
+        hasRaymarchDebug: true,
+        volumeBounds: "fullscreenBox",
       });
     await expect
       .poll(() => readSceneSnapshot(page))
@@ -811,15 +810,16 @@ test.describe("Baryon control smoke", () => {
       .toBe(true);
 
     await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          fieldState:
-            window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
-          modeSlotCount:
-            window.__baryonAuditSnapshot?.raymarchDebug?.modeSlotCount ?? 0,
-          rendererFallback:
-            window.__baryonAuditSnapshot?.renderer?.isFallback ?? false,
-        })),
+      .poll(
+        () =>
+          page.evaluate(() => ({
+            fieldState:
+              window.__baryonAuditSnapshot?.raymarchDebug?.fieldState ?? null,
+            modeSlotCount:
+              window.__baryonAuditSnapshot?.raymarchDebug?.modeSlotCount ?? 0,
+            rendererFallback:
+              window.__baryonAuditSnapshot?.renderer?.isFallback ?? false,
+          })),
         { timeout: 15000 },
       )
       .toEqual({

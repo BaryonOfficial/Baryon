@@ -38,8 +38,13 @@ export const CONTROL_HANDLERS = Object.freeze({
 });
 
 const ALL_METHODS = Object.freeze(Object.values(VISUALIZATION_METHODS));
+const VOLUME_METHODS = Object.freeze([
+  VISUALIZATION_METHODS.raymarch,
+  VISUALIZATION_METHODS.fullscreenVolume,
+]);
 const METHOD_SCOPES = Object.freeze({
   shared: ALL_METHODS,
+  volume: VOLUME_METHODS,
   raymarchOnly: Object.freeze([VISUALIZATION_METHODS.raymarch]),
 });
 
@@ -295,7 +300,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       title:
         "Rendering quality vs. speed — higher values look smoother but may reduce frame rate on slower GPUs",
       defaultValue: RAYMARCH_DEFAULTS.raymarchSteps,
-      methods: methodsFor("raymarchOnly"),
+      methods: methodsFor("volume"),
       binding: { min: 16, max: 192, step: 1 },
       targetType: CONTROL_TARGET_TYPES.uniform,
       handler: CONTROL_HANDLERS.raymarch,
@@ -699,7 +704,7 @@ export const CONTROL_DEFINITIONS = Object.freeze([
       binding: {
         options: {
           "3D Volume": VISUALIZATION_METHODS.raymarch,
-          "2D Fullscreen": VISUALIZATION_METHODS.cymatics2d,
+          "Fullscreen Volume": VISUALIZATION_METHODS.fullscreenVolume,
         },
       },
       targetType: CONTROL_TARGET_TYPES.object,
