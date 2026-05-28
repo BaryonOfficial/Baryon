@@ -151,6 +151,17 @@ function resolveObservationTransferParameters(parameters) {
   return deriveObservationTransferParameters();
 }
 
+/**
+ * Map modal field evidence into visible density and contour support.
+ *
+ * Contract (see whitepaper Observation Transfer):
+ * - Density anchor = modalStructureAnchor × signedRadianceAuthority only.
+ *   Ridge does not enter the anchor so support-only caustics cannot bypass
+ *   signed cancellation.
+ * - Ridge scales observedContourSupport only.
+ * - Support uses sqrt(max(coefficient, response)) inside exp(−G·R), not
+ *   linear energy × anchor in the exponent.
+ */
 export function deriveObservationTransfer({
   density = 0,
   modalStructureAnchor = 0,
@@ -179,10 +190,7 @@ export function deriveObservationTransfer({
   const observationResponse =
     observationEnergy > 0 ? Math.sqrt(observationEnergy) : 0;
   const observationSupport = clamp01(
-    1 -
-      Math.exp(
-        -observationParameters.transferGain * observationResponse,
-      ),
+    1 - Math.exp(-observationParameters.transferGain * observationResponse),
   );
   const observedDensityFloor =
     observationParameters.densityFloor * observationSupport * observationAnchor;

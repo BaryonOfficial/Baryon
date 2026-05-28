@@ -1453,6 +1453,7 @@ function createScatteringNode({
   );
 }
 
+// GPU mirror of deriveObservationTransfer in observationTransfer.js.
 function deriveObservationTransferNode(
   density,
   modalCoefficientEnergy,
