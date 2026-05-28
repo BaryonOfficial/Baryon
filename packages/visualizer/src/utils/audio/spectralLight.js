@@ -103,6 +103,17 @@ function clamp01(value) {
   return clamp(value, 0, 1);
 }
 
+const SPECTRAL_LIGHT_STRENGTH_GATE_START = 0.04;
+const SPECTRAL_LIGHT_STRENGTH_GATE_END = 0.32;
+
+function smoothstep(edge0, edge1, value) {
+  if (edge1 <= edge0) {
+    return value >= edge1 ? 1 : 0;
+  }
+  const normalized = clamp01((value - edge0) / (edge1 - edge0));
+  return normalized * normalized * (3 - 2 * normalized);
+}
+
 function fract(value) {
   return value - Math.floor(value);
 }
@@ -399,9 +410,15 @@ export function createSpectralLightColor({
   const strengthSignal = clamp01(strength);
   const harmonicSignal = clamp01(harmonicConfidence);
   const transientSignal = clamp01(transientEnergy);
+  const strengthGate = smoothstep(
+    SPECTRAL_LIGHT_STRENGTH_GATE_START,
+    SPECTRAL_LIGHT_STRENGTH_GATE_END,
+    strengthSignal,
+  );
   const weight =
     strengthSignal > 0
-      ? clamp01(0.55 + 0.35 * harmonicSignal + 0.1 * transientSignal)
+      ? strengthGate *
+        clamp01(0.55 + 0.35 * harmonicSignal + 0.1 * transientSignal)
       : 0;
 
   return {

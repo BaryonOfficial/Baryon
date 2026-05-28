@@ -113,15 +113,24 @@ describe("Spectral Light color science", () => {
     expect(spread).toBeLessThan(0.08);
   });
 
-  it("keeps spectral color support for quiet valid modal energy", () => {
-    const color = createSpectralLightColor({
+  it("gates weak composite strength before harmonic mixing", () => {
+    const weak = createSpectralLightColor({
       frequency: 427.239,
       strength: 0.01,
       harmonicConfidence: 0.8,
     });
+    const moderate = createSpectralLightColor({
+      frequency: 427.239,
+      strength: 0.2,
+      harmonicConfidence: 0.8,
+    });
 
-    expect(color.weight).toBeGreaterThan(0.5);
-    expect(channelDelta(color.rgb, { r: 0, g: 0, b: 0 })).toBeGreaterThan(0.5);
+    expect(weak.weight).toBeLessThan(moderate.weight);
+    expect(weak.weight).toBeLessThan(0.2);
+    expect(moderate.weight).toBeGreaterThan(0.45);
+    expect(channelDelta(moderate.rgb, { r: 0, g: 0, b: 0 })).toBeGreaterThan(
+      0.5,
+    );
   });
 
   it("returns zero color weight for invalid or absent entries", () => {
