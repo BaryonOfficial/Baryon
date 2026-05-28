@@ -29,7 +29,15 @@ export const RAYMARCH_LIVE_SYNTHESIS_MODE_COUNT =
 export const RAYMARCH_BASIS_ATLAS_PACKING = "z-slice-pages-v1";
 const FIELD_CACHE_COMPUTE_WORKGROUP_SIZE = Object.freeze([8, 8, 4]);
 const FIELD_CACHE_COLOR_QUANTIZATION = 32;
-const MODAL_BASIS_CACHE_ENERGY_EPSILON = 0.01;
+export const MODAL_BASIS_CACHE_ENERGY_EPSILON = 0.01;
+
+export function deriveLiveSynthesisCancellationRatio(field, unsignedSupport) {
+  if (!(unsignedSupport > MODAL_BASIS_CACHE_ENERGY_EPSILON)) {
+    return 0;
+  }
+
+  return Math.min(1, Math.max(0, 1 - Math.abs(field) / unsignedSupport));
+}
 const MODAL_BASIS_SUPPORT_DIAGNOSTIC_SAMPLE_POINTS = Object.freeze([
   [0, 0, 0],
   [1, 0, 0],
@@ -1022,22 +1030,13 @@ function evaluateRaymarchModalBasisSupportSample({
   );
   const field = modalField.field / amplitudeNorm;
   const unsignedSupport = modalField.unsignedSupport / amplitudeNorm;
-  const cancellationRatio =
-    unsignedSupport > 0
-      ? Math.min(
-          1,
-          Math.max(
-            0,
-            1 -
-              Math.abs(field) /
-                Math.max(MODAL_BASIS_CACHE_ENERGY_EPSILON, unsignedSupport),
-          ),
-        )
-      : 0;
 
   return {
     unsignedSupport,
-    cancellationRatio,
+    cancellationRatio: deriveLiveSynthesisCancellationRatio(
+      field,
+      unsignedSupport,
+    ),
   };
 }
 
@@ -2105,18 +2104,10 @@ export function evaluateRaymarchLiveSynthesisFieldPoint({
     liveSynthesisDiagnostics.bandwidthRejectedRawModalEnergy;
   const field = modalField.field / amplitudeNorm;
   const unsignedSupport = modalField.unsignedSupport / amplitudeNorm;
-  const cancellationRatio =
-    unsignedSupport > 0
-      ? Math.min(
-          1,
-          Math.max(
-            0,
-            1 -
-              Math.abs(field) /
-                Math.max(MODAL_BASIS_CACHE_ENERGY_EPSILON, unsignedSupport),
-          ),
-        )
-      : 0;
+  const cancellationRatio = deriveLiveSynthesisCancellationRatio(
+    field,
+    unsignedSupport,
+  );
 
   return {
     field,

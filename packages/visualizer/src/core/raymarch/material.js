@@ -23,6 +23,7 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
+import { MODAL_BASIS_CACHE_ENERGY_EPSILON } from "./fieldCache.js";
 import SafeVolumetricLightingModel, {
   raymarchLightNode,
   raymarchOpacityNode,
@@ -323,13 +324,17 @@ function synthesizeLiveModalFieldNode({
   const normalizedField = field.div(amplitudeNorm).toVar();
   const normalizedGradient = gradient.div(amplitudeNorm).toVar();
   const normalizedUnsignedSupport = unsignedSupport.div(amplitudeNorm).toVar();
-  const cancellationRatio = clamp(
-    float(1.0).sub(
-      abs(normalizedField).div(normalizedUnsignedSupport.max(float(1e-4))),
-    ),
-    float(0.0),
-    float(1.0),
-  );
+  const cancellationSupportEpsilon = float(MODAL_BASIS_CACHE_ENERGY_EPSILON);
+  const cancellationRatio = normalizedUnsignedSupport
+    .greaterThan(cancellationSupportEpsilon)
+    .select(
+      clamp(
+        float(1.0).sub(abs(normalizedField).div(normalizedUnsignedSupport)),
+        float(0.0),
+        float(1.0),
+      ),
+      float(0.0),
+    );
 
   return {
     field: normalizedField,

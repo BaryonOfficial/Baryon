@@ -105,6 +105,44 @@ function evaluateRaymarchLiveSynthesisFieldPoint(options) {
   });
 }
 
+describe("live synthesis cancellation ratio", () => {
+  it("returns zero when unsigned support is below the energy epsilon", () => {
+    expect(raymarchFieldCache.deriveLiveSynthesisCancellationRatio(0, 0)).toBe(
+      0,
+    );
+    expect(
+      raymarchFieldCache.deriveLiveSynthesisCancellationRatio(0, 0.001),
+    ).toBe(0);
+  });
+
+  it("returns high cancellation for destructive interference with support", () => {
+    expect(
+      raymarchFieldCache.deriveLiveSynthesisCancellationRatio(0.01, 1),
+    ).toBeCloseTo(0.99, 2);
+  });
+
+  it("reports zero cancellation ratio on silent live-synthesis probes", () => {
+    const sample = evaluateRaymarchLiveSynthesisFieldPoint({
+      backboneSlots: new Float32Array(0),
+      detailSlots: new Float32Array(0),
+      backbonePhaseSlots: new Float32Array(0),
+      detailPhaseSlots: new Float32Array(0),
+      backboneCount: 0,
+      detailCount: 0,
+      boundaryMode: "neumann",
+      radius: 3,
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+
+    expect(sample.cancellationRatio).toBe(0);
+    expect(sample.unsignedSupport).toBeLessThan(
+      raymarchFieldCache.MODAL_BASIS_CACHE_ENERGY_EPSILON,
+    );
+  });
+});
+
 function resolveModalFieldRebuildOptions(options) {
   const modeBuffer =
     options.modalFieldModeBuffer ?? options.backboneModeBuffer ?? null;
@@ -3267,9 +3305,14 @@ describe("fieldCache", () => {
     expect(Math.abs(quadrature.gradX)).toBeLessThan(1e-6);
     expect(Math.abs(quadrature.gradY)).toBeLessThan(1e-6);
     expect(Math.abs(quadrature.gradZ)).toBeLessThan(1e-6);
-    expect(inPhase.unsignedSupport).toBeGreaterThan(0);
-    expect(quadrature.unsignedSupport).toBeLessThan(1e-6);
-    expect(quadrature.cancellationRatio).toBeGreaterThan(0.95);
+    expect(inPhase.unsignedSupport).toBeGreaterThan(
+      raymarchFieldCache.MODAL_BASIS_CACHE_ENERGY_EPSILON,
+    );
+    expect(quadrature.unsignedSupport).toBeLessThan(
+      raymarchFieldCache.MODAL_BASIS_CACHE_ENERGY_EPSILON,
+    );
+    expect(inPhase.cancellationRatio).toBeLessThan(0.5);
+    expect(quadrature.cancellationRatio).toBe(0);
   });
 
   it("separates raw gradient envelope from phase-current effective gradient", () => {

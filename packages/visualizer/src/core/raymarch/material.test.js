@@ -594,6 +594,29 @@ describe("raymarch volume material", () => {
     expect(source).toContain("liveSynthesisModeCount: modalFieldCapacity");
   });
 
+  it("zeros live-synthesis cancellation ratio when unsigned support is silent", () => {
+    const source = readFileSync(
+      new URL("./material.js", import.meta.url),
+      "utf8",
+    );
+    const synthesizeStart = source.indexOf(
+      "function synthesizeLiveModalFieldNode({",
+    );
+    const synthesizeEnd = source.indexOf(
+      "function sampleFieldGradientNormalNode({",
+      synthesizeStart,
+    );
+    const synthesizeBlock = source.slice(synthesizeStart, synthesizeEnd);
+
+    expect(synthesizeBlock).toContain("cancellationSupportEpsilon");
+    expect(synthesizeBlock).toContain(
+      "greaterThan(cancellationSupportEpsilon)",
+    );
+    expect(synthesizeBlock).not.toContain(
+      "normalizedUnsignedSupport.max(float(1e-4))",
+    );
+  });
+
   it("keeps direct modal basis evaluation out of the material shader", () => {
     const source = readFileSync(
       new URL("./material.js", import.meta.url),
