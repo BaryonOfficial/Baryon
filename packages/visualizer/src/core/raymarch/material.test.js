@@ -1010,7 +1010,14 @@ describe("raymarch volume material", () => {
     expect(opticalMeasurementHelperStart).toBeGreaterThan(
       opticalMeasurementStart,
     );
+    const opticalMeasurementBlock = source.slice(
+      opticalMeasurementStart,
+      opticalFocusStart,
+    );
+    expect(opticalMeasurementBlock).toContain("const tangent1 = cross");
+    expect(opticalMeasurementBlock).toContain("convergenceSampleStep");
     expect(opticalFocusStart).toBeGreaterThan(opticalMeasurementHelperStart);
+    expect(source).toContain("function computeLiveModalCoefficientNodes");
     expect(source).toContain("deriveOpticalConvergenceNormalsNode");
     expect(source).toContain("gradientPosT1");
     expect(source).toContain("gradientNegT2");

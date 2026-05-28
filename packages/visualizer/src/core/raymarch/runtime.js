@@ -1355,11 +1355,14 @@ function updateLaserResponse(runtimeState, featureFrame) {
   );
   const bloomStrengthTransientGate = 0.94 + transientEnergy * 0.06;
 
-  uniforms.uThreshold.value = Math.max(
-    0.001,
-    baseThreshold * (1 - thresholdResponse * THRESHOLD_RESPONSE_REDUCTION),
+  setIfChanged(
+    uniforms.uThreshold,
+    Math.max(
+      0.001,
+      baseThreshold * (1 - thresholdResponse * THRESHOLD_RESPONSE_REDUCTION),
+    ),
   );
-  uniforms.uContourSharpness.value = clamp(baseContourSharpness, 1, 8);
+  setIfChanged(uniforms.uContourSharpness, clamp(baseContourSharpness, 1, 8));
   const bt = runtimeState.bloomTuning;
   const performanceGovernor = runtimeState.performanceGovernor ?? null;
   const bloomStrengthScale = performanceGovernor?.bloomStrengthScale ?? 1;

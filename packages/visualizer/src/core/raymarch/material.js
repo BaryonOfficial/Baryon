@@ -272,6 +272,18 @@ function sampleBasisAtlasPageNode({
   };
 }
 
+function computeLiveModalCoefficientNodes(modeSlot, phaseSlot, uTime) {
+  const beta = clamp(phaseSlot.z.mul(phaseSlot.w), float(0.0), float(1.0));
+  const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
+  const phaseScale = float(1.0)
+    .sub(beta)
+    .add(beta.mul(cos(phase)))
+    .toVar();
+  const coefficient = modeSlot.w.mul(phaseScale).toVar();
+
+  return { coefficient };
+}
+
 function synthesizeLiveModalFieldNode({
   localPosition,
   uRadius,
@@ -313,17 +325,11 @@ function synthesizeLiveModalFieldNode({
         If(i.greaterThanEqual(activeModeCount), () => {}).Else(() => {
           const modeSlot = modalFieldModeBuffer.element(i);
           const phaseSlot = modalFieldPhaseBuffer.element(i);
-          const beta = clamp(
-            phaseSlot.z.mul(phaseSlot.w),
-            float(0.0),
-            float(1.0),
+          const { coefficient } = computeLiveModalCoefficientNodes(
+            modeSlot,
+            phaseSlot,
+            uTime,
           );
-          const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
-          const phaseScale = float(1.0)
-            .sub(beta)
-            .add(beta.mul(cos(phase)))
-            .toVar();
-          const coefficient = modeSlot.w.mul(phaseScale).toVar();
           const basisSample = sampleBasisAtlasPageNode({
             basisUv,
             basisSlot: i,
@@ -444,17 +450,11 @@ function deriveOpticalConvergenceNormalsNode({
       If(i.greaterThanEqual(activeModeCount), () => {}).Else(() => {
         const modeSlot = modalFieldModeBuffer.element(i);
         const phaseSlot = modalFieldPhaseBuffer.element(i);
-        const beta = clamp(
-          phaseSlot.z.mul(phaseSlot.w),
-          float(0.0),
-          float(1.0),
+        const { coefficient } = computeLiveModalCoefficientNodes(
+          modeSlot,
+          phaseSlot,
+          uTime,
         );
-        const phase = phaseSlot.x.add(phaseSlot.y.mul(uTime));
-        const phaseScale = float(1.0)
-          .sub(beta)
-          .add(beta.mul(cos(phase)))
-          .toVar();
-        const coefficient = modeSlot.w.mul(phaseScale).toVar();
         const basisSamplePosT1 = sampleBasisAtlasPageNode({
           basisUv: basisUvPosT1,
           basisSlot: i,
@@ -1055,21 +1055,6 @@ function createScatteringNode({
         float(0.0),
         float(1.0),
       );
-      const viewDirection = viewDirLocal.normalize().toVar();
-      const tangentSeed = vec3(0.0, 1.0, 0.0).toVar();
-      If(
-        abs(viewDirection.y).greaterThan(
-          max(abs(viewDirection.x), abs(viewDirection.z)),
-        ),
-        () => {
-          tangentSeed.assign(vec3(1.0, 0.0, 0.0));
-        },
-      );
-      const tangent1 = cross(viewDirection, tangentSeed).normalize();
-      const tangent2 = cross(viewDirection, tangent1).normalize();
-      const convergenceSampleStep = modalBasisAtlasTexture
-        ? uRadius.mul(float(2.0)).div(float(liveFieldSampleResolution))
-        : uRadius.mul(float(2.0)).div(max(uRaymarchSteps, float(1.0)));
       const opticalConvergenceAuthority = float(0.0).toVar();
       const shouldMeasureOpticalConvergence = causticRidgeAuthority
         .greaterThan(float(OPTICAL_CONVERGENCE_MEASUREMENT_EPSILON))
@@ -1084,6 +1069,21 @@ function createScatteringNode({
           ),
         );
       If(shouldMeasureOpticalConvergence, () => {
+        const viewDirection = viewDirLocal.normalize().toVar();
+        const tangentSeed = vec3(0.0, 1.0, 0.0).toVar();
+        If(
+          abs(viewDirection.y).greaterThan(
+            max(abs(viewDirection.x), abs(viewDirection.z)),
+          ),
+          () => {
+            tangentSeed.assign(vec3(1.0, 0.0, 0.0));
+          },
+        );
+        const tangent1 = cross(viewDirection, tangentSeed).normalize();
+        const tangent2 = cross(viewDirection, tangent1).normalize();
+        const convergenceSampleStep = modalBasisAtlasTexture
+          ? uRadius.mul(float(2.0)).div(float(liveFieldSampleResolution))
+          : uRadius.mul(float(2.0)).div(max(uRaymarchSteps, float(1.0)));
         const measuredOpticalConvergenceAuthority =
           deriveOpticalConvergenceAuthorityNode({
             localPosition,
