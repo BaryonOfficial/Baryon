@@ -322,6 +322,9 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.performanceGovernor = null;
   runtimeState.effectiveRenderScale = 1;
   runtimeState.raymarchBloomAdaptationActive = false;
+  if (runtimeState.bloomTuning) {
+    runtimeState.bloomTuning.bloomAllowed = false;
+  }
   runtimeState.visibilityDriveEnvelope = 0;
   runtimeState.spectralLightBuffersUploaded = false;
   runtimeState.modalBasisPhaseAuthorityModeCount = 0;
@@ -568,6 +571,9 @@ function blockOverflowedModalDescriptor(
   runtimeState.performanceGovernor = null;
   runtimeState.effectiveRenderScale = 1;
   runtimeState.raymarchBloomAdaptationActive = false;
+  if (runtimeState.bloomTuning) {
+    runtimeState.bloomTuning.bloomAllowed = false;
+  }
   runtimeState.visibilityDriveEnvelope = 0;
   runtimeState.spectralLightBuffersUploaded = false;
   runtimeState.modalBasisPhaseAuthorityModeCount = 0;

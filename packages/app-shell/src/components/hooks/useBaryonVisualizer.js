@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
   advanceRenderOutputTemporalHistoryBypass,
+  consumeRenderOutputVisualIdle,
   getRenderQualityProfileKey,
   markRenderOutputContentChange,
 } from "@baryon/visualizer/render/outputPipeline";
@@ -52,6 +53,7 @@ import {
   publishPerformanceHudSnapshot,
   publishDevtoolsSnapshots,
   applyLiveInputRenderIntent,
+  finalizeTerminalVisualIdleState,
   resolveFeatureFrame,
   shouldBypassTemporalHistoryForRaymarchFrame,
   syncLiveInputRuntimeStatus,
@@ -781,6 +783,11 @@ export function useBaryonVisualizer({
       time,
       deltaTime,
     });
+    const visualIdleFinalizer = finalizeTerminalVisualIdleState({
+      featureFrame: effectiveFrame,
+      runtimeState,
+      postNodes: renderLoopContext.postNodesRef.current,
+    });
     syncUploadedRenderQuantities(runtimeDiagnostics, runtimeState);
     updateObservationTransferRenderDiagnostics(
       runtimeDiagnostics,
@@ -877,8 +884,14 @@ export function useBaryonVisualizer({
       outputCaptureInFlightRef.current = false;
     } else if (pipeline) {
       const pipelineRenderStartedAt = getWallTimeMs();
-      if (shouldBypassTemporalHistory) {
+      if (
+        shouldBypassTemporalHistory ||
+        visualIdleFinalizer.resumedFromVisualIdle
+      ) {
         markRenderOutputContentChange(renderLoopContext.postNodesRef.current);
+        if (visualIdleFinalizer.resumedFromVisualIdle) {
+          consumeRenderOutputVisualIdle(renderLoopContext.postNodesRef.current);
+        }
       }
       renderLoopContext.gl.setRenderTarget?.(null);
       renderLoopContext.gl.setMRT?.(null);

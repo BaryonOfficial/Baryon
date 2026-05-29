@@ -72,10 +72,12 @@ import {
   OUTPUT_MODES,
   RENDER_CONTEXTS,
   advanceRenderOutputTemporalHistoryBypass,
+  consumeRenderOutputVisualIdle,
   createCaptureOutputSession,
   createRenderOutputPipeline,
   markRenderOutputCameraCut,
   markRenderOutputContentChange,
+  markRenderOutputVisualIdle,
   normalizeOutputMode,
   resolveRenderQualityProfile,
 } from "./outputPipeline.js";
@@ -113,14 +115,19 @@ describe("outputPipeline compatibility surface", () => {
   });
 
   it("builds the TRAA post-process node when TRAA is enabled", () => {
-    const pipelineState = createRenderOutputPipeline({}, {}, {}, {
-      renderProfile: {
-        qualityPreset: "max-quality",
-        renderScale: 1,
-        traaEnabled: true,
-        bloomAllowed: false,
+    const pipelineState = createRenderOutputPipeline(
+      {},
+      {},
+      {},
+      {
+        renderProfile: {
+          qualityPreset: "max-quality",
+          renderScale: 1,
+          traaEnabled: true,
+          bloomAllowed: false,
+        },
       },
-    });
+    );
     const scenePass = mockPass.mock.results[0].value;
 
     expect(mockMrt).toHaveBeenCalledTimes(1);
@@ -135,14 +142,19 @@ describe("outputPipeline compatibility surface", () => {
   });
 
   it("skips the TRAA post-process node when TRAA is disabled", () => {
-    const pipelineState = createRenderOutputPipeline({}, {}, {}, {
-      renderProfile: {
-        qualityPreset: "max-quality",
-        renderScale: 1,
-        traaEnabled: false,
-        bloomAllowed: false,
+    const pipelineState = createRenderOutputPipeline(
+      {},
+      {},
+      {},
+      {
+        renderProfile: {
+          qualityPreset: "max-quality",
+          renderScale: 1,
+          traaEnabled: false,
+          bloomAllowed: false,
+        },
       },
-    });
+    );
     const scenePass = mockPass.mock.results[0].value;
 
     expect(mockMrt).not.toHaveBeenCalled();
@@ -181,6 +193,22 @@ describe("outputPipeline compatibility surface", () => {
 
     expect(postNodes.temporalHistoryBlendUniform.value).toBe(0);
     expect(postNodes.temporalHistoryCutFramesRemaining).toBe(3);
+  });
+
+  it("remembers visual idle so the next active frame can cut stale temporal history", () => {
+    const postNodes = {
+      traaNode: { dispose: () => {} },
+      temporalHistoryBlendUniform: { value: 1 },
+    };
+
+    expect(markRenderOutputVisualIdle(postNodes, 2)).toBe(true);
+
+    expect(postNodes.visualIdleFinalized).toBe(true);
+    expect(postNodes.temporalHistoryBlendUniform.value).toBe(0);
+    expect(postNodes.temporalHistoryCutFramesRemaining).toBe(2);
+    expect(consumeRenderOutputVisualIdle(postNodes)).toBe(true);
+    expect(postNodes.visualIdleFinalized).toBe(false);
+    expect(consumeRenderOutputVisualIdle(postNodes)).toBe(false);
   });
 
   it("restores temporal history after camera-cut frames advance", () => {

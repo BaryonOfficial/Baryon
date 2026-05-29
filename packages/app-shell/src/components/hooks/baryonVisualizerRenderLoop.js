@@ -16,7 +16,10 @@ import {
   runHeavyAudioFeatureAnalysis,
 } from "@baryon/visualizer/audio-features";
 import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/visualizer/defaults";
-import { allowsCachedLiveFeatureFrame } from "@baryon/visualizer/core/renderAuthorityContract";
+import {
+  allowsCachedLiveFeatureFrame,
+  hasRenderAuthority,
+} from "@baryon/visualizer/core/renderAuthorityContract";
 import { RAYMARCH_MODAL_BASIS_CACHE_CAPACITY } from "@baryon/visualizer/core/raymarch/fieldCache";
 import * as raymarchPerformanceGovernor from "@baryon/visualizer/core/raymarch/performanceGovernor";
 import { usesRaymarchVolumePipeline } from "@baryon/visualizer/visualization/types";
@@ -27,6 +30,7 @@ import {
   normalizePerformanceTargetFps,
   PERFORMANCE_PROFILES,
   RENDER_CONTEXTS,
+  markRenderOutputVisualIdle,
   resolveCustomTargetFpsBand,
   usesBalancedPerformanceBaseline,
 } from "@baryon/visualizer/render/outputPipeline";
@@ -939,6 +943,29 @@ export function shouldBypassTemporalHistoryForRaymarchFrame({
     featureFrame,
     sceneSnapshot,
   }).shouldBypassHistory;
+}
+
+export function finalizeTerminalVisualIdleState({
+  featureFrame,
+  runtimeState,
+  postNodes,
+}) {
+  if (hasRenderAuthority(featureFrame)) {
+    return {
+      terminalVisualIdle: false,
+      resumedFromVisualIdle: postNodes?.visualIdleFinalized === true,
+    };
+  }
+
+  if (runtimeState?.bloomTuning) {
+    runtimeState.bloomTuning.bloomAllowed = false;
+  }
+
+  return {
+    terminalVisualIdle: true,
+    resumedFromVisualIdle: false,
+    markedTemporalBypass: markRenderOutputVisualIdle(postNodes),
+  };
 }
 
 export function publishPerformanceHudSnapshot(

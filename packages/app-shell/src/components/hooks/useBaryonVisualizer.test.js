@@ -135,6 +135,10 @@ vi.mock("./baryonVisualizerRenderLoop.js", () => ({
   publishPerformanceHudSnapshot: () => {},
   publishDevtoolsSnapshots: () => {},
   applyLiveInputRenderIntent: (frame) => frame,
+  finalizeTerminalVisualIdleState: () => ({
+    terminalVisualIdle: false,
+    resumedFromVisualIdle: false,
+  }),
   resolveFeatureFrame: (...args) =>
     renderLoopSpies.resolveFeatureFrameSpy(...args),
   shouldBypassTemporalHistoryForRaymarchFrame: (...args) =>

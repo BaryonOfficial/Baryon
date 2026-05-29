@@ -6,7 +6,9 @@ import {
 import { syncLiveInputRuntimeStatus } from "./liveInputRuntimeSync.js";
 import {
   applyLiveInputRenderIntent,
+  applyReactiveBloomState,
   buildPerformanceHudSnapshot,
+  finalizeTerminalVisualIdleState,
   getEffectiveAdaptiveRenderScale,
   publishDevtoolsSnapshots,
   resolveFeatureFrame,
@@ -444,6 +446,122 @@ test("shouldBypassTemporalHistoryForRaymarchFrame ignores audio energy", () => {
       }),
     ).toBe(true);
   }
+});
+
+test("finalizeTerminalVisualIdleState cuts bloom and marks temporal history only after render authority ends", () => {
+  const runtimeState = {
+    bloomTuning: {
+      bloomAllowed: true,
+      effectiveStrength: 0.4,
+      effectiveRadius: 0.2,
+      effectiveThreshold: 0.1,
+    },
+  };
+  const postNodes = {
+    traaNode: {},
+    temporalHistoryBlendUniform: { value: 1 },
+  };
+
+  const decayResult = finalizeTerminalVisualIdleState({
+    featureFrame: {
+      fieldState: "decay",
+      renderAuthority: true,
+      modalResponseEnergy: 0.04,
+    },
+    runtimeState,
+    postNodes,
+  });
+
+  expect(decayResult).toEqual({
+    terminalVisualIdle: false,
+    resumedFromVisualIdle: false,
+  });
+  expect(runtimeState.bloomTuning.bloomAllowed).toBe(true);
+  expect(postNodes.visualIdleFinalized).toBeUndefined();
+
+  const idleResult = finalizeTerminalVisualIdleState({
+    featureFrame: {
+      fieldState: "idle",
+      renderAuthority: false,
+      sourceMode: "silent",
+    },
+    runtimeState,
+    postNodes,
+  });
+
+  expect(idleResult).toMatchObject({
+    terminalVisualIdle: true,
+    resumedFromVisualIdle: false,
+    markedTemporalBypass: true,
+  });
+  expect(runtimeState.bloomTuning.bloomAllowed).toBe(false);
+  expect(postNodes.visualIdleFinalized).toBe(true);
+  expect(postNodes.temporalHistoryBlendUniform.value).toBe(0);
+  expect(postNodes.temporalHistoryCutFramesRemaining).toBeGreaterThan(0);
+});
+
+test("finalizeTerminalVisualIdleState reports resumed active frames without clearing the pending render cut", () => {
+  const runtimeState = {
+    bloomTuning: {
+      bloomAllowed: false,
+    },
+  };
+  const postNodes = {
+    visualIdleFinalized: true,
+    traaNode: {},
+    temporalHistoryBlendUniform: { value: 1 },
+  };
+
+  const result = finalizeTerminalVisualIdleState({
+    featureFrame: {
+      fieldState: "active",
+      renderAuthority: true,
+      modalVisibilityEnergy: 0.4,
+    },
+    runtimeState,
+    postNodes,
+  });
+
+  expect(result).toEqual({
+    terminalVisualIdle: false,
+    resumedFromVisualIdle: true,
+  });
+  expect(postNodes.visualIdleFinalized).toBe(true);
+});
+
+test("applyReactiveBloomState disables bloom compose after terminal visual idle", () => {
+  const postNodesRef = {
+    current: {
+      bloomPass: {
+        strength: { value: 0 },
+        radius: { value: 0 },
+        threshold: { value: 0 },
+      },
+    },
+  };
+
+  applyReactiveBloomState({
+    controls: { bloomEnabled: true },
+    runtimeState: {
+      bloomTuning: {
+        bloomAllowed: false,
+        effectiveStrength: 0.4,
+        effectiveRadius: 0.2,
+        effectiveThreshold: 0.1,
+      },
+      performanceGovernor: null,
+    },
+    postNodesRef,
+    bloom: {
+      strength: 0.4,
+      radius: 0.2,
+      threshold: 0.1,
+    },
+  });
+
+  expect(postNodesRef.current.bloomPass.strength.value).toBe(0.4);
+  expect(postNodesRef.current.bloomPass.radius.value).toBe(0.2);
+  expect(postNodesRef.current.bloomPass.threshold.value).toBe(999);
 });
 
 test("buildPerformanceHudSnapshot exports stage attribution, engine counters, and raw perf breakdown", () => {

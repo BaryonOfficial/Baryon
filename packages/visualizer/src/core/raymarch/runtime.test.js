@@ -1583,6 +1583,7 @@ describe("tickRaymarchRuntime", () => {
     expect(spectralGenerationAfterReset).toBeGreaterThan(0);
     expect(runtimeState.modalFieldModeBuffer.value.array[3]).toBe(0);
     expect(runtimeState.renderAuthorityResetApplied).toBe(true);
+    expect(runtimeState.bloomTuning.bloomAllowed).toBe(false);
     expect(runtimeState.visibilityDriveEnvelope).toBe(0);
     expect(
       runtimeState.uniforms.uObservationDensityFadeStart.value,

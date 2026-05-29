@@ -61,6 +61,27 @@ export function markRenderOutputContentChange(
   return markRenderOutputTemporalHistoryBypass(postNodes, frames);
 }
 
+export function markRenderOutputVisualIdle(
+  postNodes,
+  frames = DEFAULT_CONTENT_CHANGE_TEMPORAL_BYPASS_FRAMES,
+) {
+  if (!postNodes) {
+    return false;
+  }
+
+  postNodes.visualIdleFinalized = true;
+  return markRenderOutputTemporalHistoryBypass(postNodes, frames);
+}
+
+export function consumeRenderOutputVisualIdle(postNodes) {
+  if (postNodes?.visualIdleFinalized !== true) {
+    return false;
+  }
+
+  postNodes.visualIdleFinalized = false;
+  return true;
+}
+
 export function advanceRenderOutputTemporalHistoryBypass(postNodes) {
   const temporalHistoryBlendUniform = postNodes?.temporalHistoryBlendUniform;
   if (!temporalHistoryBlendUniform) {
