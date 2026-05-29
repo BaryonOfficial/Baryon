@@ -208,6 +208,7 @@ export function setupRaymarch(
     responseEnvelope: 0,
     accentEnvelope: 0,
     beatPulseEnvelope: 0,
+    visibilityDriveEnvelope: 0,
     keyHue: 0,
     keyModeSmooth: 0,
     motionSignal: 0,

@@ -26,6 +26,7 @@
     "./defaults": "./src/defaults.js",
     "./render/outputProfilePolicy": "./src/render/outputProfilePolicy.js",
     "./render/outputPipeline": "./src/render/outputPipeline.js",
+    "./render/temporalReprojectionPolicy": "./src/render/temporalReprojectionPolicy.js",
     "./react/useSharedAudioLogic": "./src/react/useSharedAudioLogic.js",
     "./three/loaders": "./src/three/loaders/setupLoaders.js",
     "./visualization/runtime": "./src/visualization/runtimeFactory.js",

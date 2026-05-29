@@ -1,4 +1,7 @@
-import { RAYMARCH_DEFAULTS } from "../../defaults.js";
+import {
+  RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE,
+  RAYMARCH_DEFAULTS,
+} from "../../defaults.js";
 import { deriveStepCompensation } from "./stepStability.js";
 
 export const OBSERVATION_TRANSFER_REFERENCE = Object.freeze({
@@ -24,6 +27,9 @@ export const OBSERVATION_TRANSFER_REFERENCE = Object.freeze({
   maxDensityFloor: 0.36,
   minContourSupportScale: 0.006,
   maxContourSupportScale: 0.06,
+  lowDriveVisibilityStart: 0.12,
+  lowDriveVisibilityEnd: 0.45,
+  maxLowDriveExposureBoost: 1.7,
   modalResponseUnitEnergy: 1,
   epsilon: 1e-4,
 });
@@ -51,11 +57,27 @@ function smoothstep(edge0, edge1, value) {
   return t * t * (3 - 2 * t);
 }
 
+export function deriveObservationVisibilityDrive(featureFrame) {
+  const avgAmplitude =
+    (featureFrame?.averageAmplitude ?? 0) /
+    RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE;
+  const structureSignal = featureFrame?.structureSignal ?? 0;
+  const modalDriver = Math.max(
+    featureFrame?.modalVisibilityEnergy ?? 0,
+    (featureFrame?.modeCoherence ?? 0) * 0.5,
+  );
+
+  return clamp01(
+    avgAmplitude * 0.3 + structureSignal * 0.45 + modalDriver * 0.25,
+  );
+}
+
 export function deriveObservationTransferParameters({
   opacityGain = OBSERVATION_TRANSFER_REFERENCE.referenceOpacityGain,
   stepCompensation = OBSERVATION_TRANSFER_REFERENCE.referenceStepCompensation,
   contourSharpness = OBSERVATION_TRANSFER_REFERENCE.referenceContourSharpness,
   fieldNoiseFloor = 0,
+  visibilityDrive = 1,
   modalResponseUnitEnergy = OBSERVATION_TRANSFER_REFERENCE.modalResponseUnitEnergy,
 } = {}) {
   const safeOpacityGain = readPositiveFinite(
@@ -79,10 +101,30 @@ export function deriveObservationTransferParameters({
     0,
     OBSERVATION_TRANSFER_REFERENCE.maxFieldNoiseFloor,
   );
-  const exposureScale = clamp(
+  const baseExposureScale = clamp(
     (safeOpacityGain / OBSERVATION_TRANSFER_REFERENCE.referenceOpacityGain) *
       (safeStepCompensation /
         OBSERVATION_TRANSFER_REFERENCE.referenceStepCompensation),
+    OBSERVATION_TRANSFER_REFERENCE.minExposureScale,
+    OBSERVATION_TRANSFER_REFERENCE.maxExposureScale,
+  );
+  // Lift exposure (and therefore lower the fade window) when the field is weakly
+  // driven, so quiet passages cross the visibility gate. lowDriveGate is 1 when
+  // well-driven (no boost) and 0 when quiet (full boost).
+  const safeVisibilityDrive = clamp01(
+    Number.isFinite(visibilityDrive) ? visibilityDrive : 1,
+  );
+  const lowDriveGate = smoothstep(
+    OBSERVATION_TRANSFER_REFERENCE.lowDriveVisibilityStart,
+    OBSERVATION_TRANSFER_REFERENCE.lowDriveVisibilityEnd,
+    safeVisibilityDrive,
+  );
+  const lowDriveExposureBoost =
+    1 +
+    (1 - lowDriveGate) *
+      (OBSERVATION_TRANSFER_REFERENCE.maxLowDriveExposureBoost - 1);
+  const exposureScale = clamp(
+    baseExposureScale * lowDriveExposureBoost,
     OBSERVATION_TRANSFER_REFERENCE.minExposureScale,
     OBSERVATION_TRANSFER_REFERENCE.maxExposureScale,
   );

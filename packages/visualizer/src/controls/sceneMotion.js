@@ -436,6 +436,8 @@ export function buildSceneSnapshot({
     responseEnvelope: signals.responseEnvelope,
     angularVelocity: sceneMotion.angularVelocity,
     targetAngularVelocity: sceneMotion.targetAngularVelocity,
+    pitchVelocity: sceneMotion.pitchVelocity,
+    rollVelocity: sceneMotion.rollVelocity,
     rotationX: rotationX ?? sceneMotion.pitch ?? 0,
     rotationY,
     rotationZ: rotationZ ?? sceneMotion.roll ?? 0,

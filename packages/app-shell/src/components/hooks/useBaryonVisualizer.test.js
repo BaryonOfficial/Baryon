@@ -505,6 +505,7 @@ describe("useBaryonVisualizer", () => {
     ).toHaveBeenCalledWith({
       runtimeMethod: "raymarch",
       featureFrame: dynamicFrame,
+      sceneSnapshot: {},
     });
     expect(renderSpy).toHaveBeenCalledTimes(1);
     expect(postNodesRef.current.temporalHistoryBlendUniform.value).toBe(0);

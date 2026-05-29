@@ -12,6 +12,7 @@ const {
   disposePipelineSpy,
   invalidateSpy,
   postNodesRef,
+  useBaryonPipelineSpy,
   useBaryonVisualizerSpy,
 } = vi.hoisted(() => ({
   cameraState: {
@@ -27,6 +28,7 @@ const {
   },
   disposePipelineSpy: vi.fn(),
   invalidateSpy: vi.fn(),
+  useBaryonPipelineSpy: vi.fn(),
   postNodesRef: {
     current: {
       traaNode: {},
@@ -64,11 +66,14 @@ vi.mock("@react-three/drei", () => ({
 }));
 
 vi.mock("./hooks/useBaryonPipeline", () => ({
-  useBaryonPipeline: () => ({
-    ensurePipeline: () => null,
-    postNodesRef,
-    disposePipeline: disposePipelineSpy,
-  }),
+  useBaryonPipeline: (...args) => {
+    useBaryonPipelineSpy(...args);
+    return {
+      ensurePipeline: () => null,
+      postNodesRef,
+      disposePipeline: disposePipelineSpy,
+    };
+  },
 }));
 
 vi.mock("./hooks/useBaryonVisualizer", () => ({
@@ -81,7 +86,7 @@ vi.mock("./hooks/useDefaultBaryonGeometry", () => ({
 
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene.jsx";
 
-function createSceneProps(cameraPose) {
+function createSceneProps(cameraPose, overrides = {}) {
   return {
     setIsEngineReady: () => {},
     setLiveInputRuntimeStatus: () => {},
@@ -92,7 +97,13 @@ function createSceneProps(cameraPose) {
     renderQualityPreset: "auto",
     cameraPose,
     cameraControlMode: CAMERA_CONTROL_MODES.externalSynced,
+    ...overrides,
   };
+}
+
+function lastResolvedRenderProfile() {
+  const lastCall = useBaryonPipelineSpy.mock.calls.at(-1);
+  return lastCall ? lastCall[3] : null;
 }
 
 test("external camera pose changes apply without resetting the postprocess pipeline", async () => {
@@ -128,9 +139,9 @@ test("external camera pose changes apply without resetting the postprocess pipel
   expect(cameraState.lookAt).toHaveBeenLastCalledWith(0, 0, 0);
   expect(disposePipelineSpy).not.toHaveBeenCalled();
   expect(postNodesRef.current.temporalHistoryBlendUniform.value).toBe(0);
-  expect(postNodesRef.current.temporalHistoryCutFramesRemaining).toBeGreaterThan(
-    0,
-  );
+  expect(
+    postNodesRef.current.temporalHistoryCutFramesRemaining,
+  ).toBeGreaterThan(0);
   expect(invalidateSpy).toHaveBeenCalledTimes(1);
 
   await act(async () => {
@@ -139,7 +150,43 @@ test("external camera pose changes apply without resetting the postprocess pipel
   container.remove();
 });
 
+test("TRAA is enabled only for the rotatable 3D-volume raymarch method", async () => {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(resolvePresetCameraPose("top-down"), {
+          visualizationMethod: "raymarch",
+        }),
+      ),
+    );
+  });
+  expect(lastResolvedRenderProfile()?.traaEnabled).toBe(true);
+
+  await act(async () => {
+    root.render(
+      React.createElement(
+        BaryonScene,
+        createSceneProps(resolvePresetCameraPose("top-down"), {
+          visualizationMethod: "fullscreen-volume",
+        }),
+      ),
+    );
+  });
+  expect(lastResolvedRenderProfile()?.traaEnabled).toBe(false);
+
+  await act(async () => {
+    root.unmount();
+  });
+  container.remove();
+});
+
 afterEach(() => {
+  useBaryonPipelineSpy.mockClear();
   cameraState.positionSet.mockClear();
   cameraState.upSet.mockClear();
   cameraState.lookAt.mockClear();

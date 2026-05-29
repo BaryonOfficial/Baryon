@@ -20,6 +20,7 @@ import { allowsCachedLiveFeatureFrame } from "@baryon/visualizer/core/renderAuth
 import { RAYMARCH_MODAL_BASIS_CACHE_CAPACITY } from "@baryon/visualizer/core/raymarch/fieldCache";
 import * as raymarchPerformanceGovernor from "@baryon/visualizer/core/raymarch/performanceGovernor";
 import { usesRaymarchVolumePipeline } from "@baryon/visualizer/visualization/types";
+import { resolveTemporalReprojectionPolicy } from "@baryon/visualizer/render/temporalReprojectionPolicy";
 import {
   CUSTOM_TARGET_FPS_BANDS,
   DEFAULT_PERFORMANCE_TARGET_FPS,
@@ -52,8 +53,6 @@ const PERFORMANCE_HUD_SMOOTHING_ALPHA = 0.25;
 const ACTIVE_FEATURE_ANALYSIS_HZ = 30;
 const ACTIVE_FEATURE_ANALYSIS_INTERVAL_MS = 1000 / ACTIVE_FEATURE_ANALYSIS_HZ;
 const MAX_ANALYSIS_AGE_MS = 50;
-const DYNAMIC_RAYMARCH_FIELD_STATES = new Set(["active", "decay", "test"]);
-const DYNAMIC_RAYMARCH_ENERGY_EPSILON = 0.02;
 const AUTO_RAYMARCH_DECISION_WINDOW_SECONDS = 0.5;
 const AUTO_RAYMARCH_MIN_DECISION_WINDOW_FRAMES = 12;
 const AUTO_RAYMARCH_MAX_DECISION_WINDOW_FRAMES = 45;
@@ -782,6 +781,9 @@ export function buildPerformanceHudSnapshot(runtimeDiagnostics) {
     targetFps: render?.targetFps ?? DEFAULT_PERFORMANCE_TARGET_FPS,
     requestedRenderScale: render?.requestedRenderScale ?? 1,
     renderScale: render?.renderScale ?? 1,
+    traaEnabled: render?.traaEnabled ?? false,
+    temporalHistoryBlend:
+      runtimeDiagnostics?.postProcess?.temporalHistoryBlend ?? null,
     requestedRaymarchSteps: render?.requestedRaymarchSteps ?? 0,
     effectiveRaymarchSteps: render?.effectiveRaymarchSteps ?? 0,
     adaptiveRaymarchActive: render?.adaptiveRaymarchActive ?? false,
@@ -919,36 +921,24 @@ function readRaymarchFrameModeCount(featureFrame) {
   );
 }
 
-function readRaymarchFrameEnergy(featureFrame) {
-  return Math.max(
-    readFiniteNumber(featureFrame?.energySignal),
-    readFiniteNumber(featureFrame?.changeSignal),
-    readFiniteNumber(featureFrame?.pulseSignal),
-    readFiniteNumber(featureFrame?.modalVisibilityEnergy),
-    readFiniteNumber(featureFrame?.modalObserverVisibilityEnergy),
-    readFiniteNumber(featureFrame?.observationEnergy),
-    readFiniteNumber(featureFrame?.modalResponseEnergy),
-    readFiniteNumber(featureFrame?.debug?.modalResponseEnergy),
-  );
-}
-
+/**
+ * Decide whether to flush TRAA temporal history (show the crisp scene color)
+ * for this raymarch-pipeline frame. Delegates to visualizer's temporal
+ * reprojection policy so app-shell does not own field-drive semantics.
+ *
+ * @param {{ runtimeMethod?: unknown, featureFrame?: any, sceneSnapshot?: any }} params
+ * @returns {boolean}
+ */
 export function shouldBypassTemporalHistoryForRaymarchFrame({
   runtimeMethod,
   featureFrame,
+  sceneSnapshot,
 }) {
-  if (!usesRaymarchVolumePipeline(runtimeMethod) || !featureFrame) {
-    return false;
-  }
-
-  const fieldState = featureFrame.fieldState ?? featureFrame.debug?.fieldState;
-  if (DYNAMIC_RAYMARCH_FIELD_STATES.has(fieldState)) {
-    return true;
-  }
-
-  return (
-    readRaymarchFrameModeCount(featureFrame) > 0 &&
-    readRaymarchFrameEnergy(featureFrame) > DYNAMIC_RAYMARCH_ENERGY_EPSILON
-  );
+  return resolveTemporalReprojectionPolicy({
+    visualizationMethod: runtimeMethod,
+    featureFrame,
+    sceneSnapshot,
+  }).shouldBypassHistory;
 }
 
 export function publishPerformanceHudSnapshot(

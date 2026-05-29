@@ -358,51 +358,92 @@ test("updateRendererDiagnostics resizes the renderer when canvas size changes wi
   });
 });
 
-test("shouldBypassTemporalHistoryForRaymarchFrame marks active raymarch field content as non-reprojectable", () => {
-  expect(
-    shouldBypassTemporalHistoryForRaymarchFrame({
-      runtimeMethod: "raymarch",
-      featureFrame: {
-        fieldState: "active",
-        activeModeCount: 4,
-        energySignal: 0.6,
-      },
-    }),
-  ).toBe(true);
-
-  expect(
-    shouldBypassTemporalHistoryForRaymarchFrame({
-      runtimeMethod: "raymarch",
-      featureFrame: {
-        fieldState: "idle",
-        activeModeCount: 0,
-        energySignal: 0,
-      },
-    }),
-  ).toBe(false);
-
+// `true` means flush temporal history (show the crisp scene color); `false`
+// means let TRAA accumulate.
+test("shouldBypassTemporalHistoryForRaymarchFrame is method-aware", () => {
+  // fullscreen-volume always bypasses: in-shader motion has no valid velocity,
+  // so TRAA can only smear. True even for a fully driven field.
   expect(
     shouldBypassTemporalHistoryForRaymarchFrame({
       runtimeMethod: "fullscreen-volume",
-      featureFrame: {
-        fieldState: "active",
-        activeModeCount: 4,
-        energySignal: 0.6,
-      },
+      featureFrame: { fieldState: "active", energySignal: 0.6 },
     }),
   ).toBe(true);
-});
+  expect(
+    shouldBypassTemporalHistoryForRaymarchFrame({
+      runtimeMethod: "fullscreen-volume",
+      featureFrame: { fieldState: "idle", energySignal: 0 },
+    }),
+  ).toBe(true);
 
-test("shouldBypassTemporalHistoryForRaymarchFrame treats energetic modal frames as dynamic even without fieldState", () => {
+  // raymarch accumulates while the field is driven and scene-root motion gives
+  // TRAA a real velocity to reproject, and flushes when the field is idle so a
+  // paused 3D volume cannot freeze stale history.
+  for (const drivenState of ["active", "decay", "test"]) {
+    expect(
+      shouldBypassTemporalHistoryForRaymarchFrame({
+        runtimeMethod: "raymarch",
+        featureFrame: { fieldState: drivenState, energySignal: 0.6 },
+        sceneSnapshot: { angularVelocity: 0.25 },
+      }),
+    ).toBe(false);
+  }
   expect(
     shouldBypassTemporalHistoryForRaymarchFrame({
       runtimeMethod: "raymarch",
-      featureFrame: {
-        activeModalFieldModeCount: 2,
-        modalResponseEnergy: 0.08,
-      },
+      featureFrame: { fieldState: "idle", energySignal: 0 },
     }),
   ).toBe(true);
+
+  // Non-raymarch-pipeline methods never engage the temporal bypass.
+  expect(
+    shouldBypassTemporalHistoryForRaymarchFrame({
+      runtimeMethod: "cymatics-2d",
+      featureFrame: { fieldState: "active" },
+    }),
+  ).toBe(false);
+});
+
+test("shouldBypassTemporalHistoryForRaymarchFrame requires reprojectable raymarch motion", () => {
+  expect(
+    shouldBypassTemporalHistoryForRaymarchFrame({
+      runtimeMethod: "raymarch",
+      featureFrame: { fieldState: "active", energySignal: 0.8 },
+      sceneSnapshot: { angularVelocity: 0, pitchVelocity: 0, rollVelocity: 0 },
+    }),
+  ).toBe(true);
+
+  expect(
+    shouldBypassTemporalHistoryForRaymarchFrame({
+      runtimeMethod: "raymarch",
+      featureFrame: { fieldState: "active", energySignal: 0.8 },
+      sceneSnapshot: {
+        angularVelocity: 0,
+        pitchVelocity: 0.02,
+        rollVelocity: 0,
+      },
+    }),
+  ).toBe(false);
+});
+
+// Regression: the old bug was threshold chatter around energySignal > 0.02
+// toggling the temporal blend. Energy must no longer influence the decision.
+test("shouldBypassTemporalHistoryForRaymarchFrame ignores audio energy", () => {
+  for (const energySignal of [0, 0.01, 0.02, 0.03, 0.5]) {
+    expect(
+      shouldBypassTemporalHistoryForRaymarchFrame({
+        runtimeMethod: "raymarch",
+        featureFrame: { fieldState: "active", energySignal },
+        sceneSnapshot: { angularVelocity: 0.25 },
+      }),
+    ).toBe(false);
+    expect(
+      shouldBypassTemporalHistoryForRaymarchFrame({
+        runtimeMethod: "raymarch",
+        featureFrame: { fieldState: "idle", energySignal },
+      }),
+    ).toBe(true);
+  }
 });
 
 test("buildPerformanceHudSnapshot exports stage attribution, engine counters, and raw perf breakdown", () => {

@@ -32,10 +32,7 @@ export * from "./outputProfilePolicy.js";
 const DEFAULT_CAMERA_CUT_TEMPORAL_BYPASS_FRAMES = 2;
 const DEFAULT_CONTENT_CHANGE_TEMPORAL_BYPASS_FRAMES = 2;
 
-function markRenderOutputTemporalHistoryBypass(
-  postNodes,
-  frames,
-) {
+function markRenderOutputTemporalHistoryBypass(postNodes, frames) {
   const temporalHistoryBlendUniform = postNodes?.temporalHistoryBlendUniform;
   if (!postNodes?.traaNode || !temporalHistoryBlendUniform) {
     return false;
@@ -107,8 +104,10 @@ export function composeRenderOutputNode({
     ? bloomPass.rgb.mul(deriveBloomRadianceScaleNode(sceneRgb, bloomPass.rgb))
     : null;
   const bloomAlpha = bloomActive
-    ? max(max(effectiveBloomRgb.r, effectiveBloomRgb.g), effectiveBloomRgb.b)
-        .clamp()
+    ? max(
+        max(effectiveBloomRgb.r, effectiveBloomRgb.g),
+        effectiveBloomRgb.b,
+      ).clamp()
     : float(0.0);
   const finalAlpha = bloomActive
     ? max(sceneAlpha, bloomAlpha).clamp()
@@ -162,8 +161,12 @@ export function createRenderOutputPipeline(
     // Enable velocity MRT so TRAANode can reproject history across frames.
     // `output` must be included so MRTNode.setup() fills index 0 of renderTarget.textures;
     // omitting it leaves members[0] undefined and crashes OutputStructNode.generate().
-    // Our sphere has no transform animation (audio drives shader uniforms only),
-    // so velocity is zero everywhere — no ghosting risk.
+    //
+    // TRAA is only enabled for the rotatable 3D-volume `raymarch` method, where
+    // camera or scene-root motion produces real screen-space velocity for
+    // reprojection. The `fullscreen-volume` method animates entirely in-shader
+    // at zero geometric velocity and disables TRAA upstream, so it never reaches
+    // this branch.
     scenePass.setMRT(mrt({ output, velocity }));
 
     sceneColor = scenePass.getTextureNode("output");
@@ -171,17 +174,14 @@ export function createRenderOutputPipeline(
     const velocityNode = scenePass.getTextureNode("velocity");
 
     // TRAA: temporal reprojection AA with Halton sub-pixel jitter + variance
-    // clipping. This is the real frame-accumulation pass; bloom runs on the
-    // resolved anti-aliased output so the two effects reinforce each other.
+    // clipping. Bloom runs on the resolved anti-aliased output so the two
+    // effects reinforce each other.
     traaNode = traa(sceneColor, depthNode, velocityNode, camera);
-    // useSubpixelCorrection increases current-frame weight when velocity is subpixel —
-    // designed for moving objects. Our velocity is always zero, so it adds the "square
-    // pattern artifact" the docs warn about without any benefit.
+    // useSubpixelCorrection increases current-frame weight when velocity is
+    // subpixel — designed for translating objects. Baryon's useful reprojection
+    // comes from camera/scene-root rotation, so leave it off to avoid the
+    // "square pattern artifact" the docs warn about.
     traaNode.useSubpixelCorrection = false;
-    // The raymarched volume writes depth at the first ray hit, not a classical polygon
-    // surface. Loosen edgeDepthDiff so TRAA treats fewer ray-march depth transitions as
-    // "edges" and uses history more aggressively throughout the volume body.
-    traaNode.edgeDepthDiff = 0.005;
     // @ts-ignore — getTextureNode() exists in TRAANode source but is missing from its .d.ts
     traaColor = traaNode.getTextureNode();
     outputSceneColor = mix(sceneColor, traaColor, temporalHistoryBlendUniform);

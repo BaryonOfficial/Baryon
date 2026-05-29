@@ -45,6 +45,41 @@ describe("observation transfer", () => {
     expect(parameters.fieldNoiseFloor).toBe(0);
   });
 
+  it("lifts exposure and lowers the visibility gate when the field drive is weak", () => {
+    const wellDriven = deriveReferenceParameters({ visibilityDrive: 1 });
+    const weaklyDriven = deriveReferenceParameters({ visibilityDrive: 0.15 });
+    const quiet = deriveReferenceParameters({ visibilityDrive: 0 });
+
+    // Weak drive lifts exposure and pulls the fade window down so quiet fields
+    // cross the visibility gate.
+    expect(weaklyDriven.exposureScale).toBeGreaterThan(
+      wellDriven.exposureScale,
+    );
+    expect(weaklyDriven.densityFadeStart).toBeLessThan(
+      wellDriven.densityFadeStart,
+    );
+    expect(weaklyDriven.densityFadeEnd).toBeLessThan(wellDriven.densityFadeEnd);
+
+    // Full quiet boosts at least as much, but never past the exposure cap or
+    // below the minimum fade start.
+    expect(quiet.exposureScale).toBeGreaterThanOrEqual(
+      weaklyDriven.exposureScale,
+    );
+    expect(quiet.exposureScale).toBeLessThanOrEqual(
+      OBSERVATION_TRANSFER_REFERENCE.maxExposureScale,
+    );
+    expect(quiet.densityFadeStart).toBeGreaterThanOrEqual(
+      OBSERVATION_TRANSFER_REFERENCE.minDensityFadeStart,
+    );
+
+    // A well-driven field (drive = 1) is identical to the nominal default.
+    expect(wellDriven.densityFadeStart).toBeCloseTo(
+      OBSERVATION_TRANSFER_REFERENCE.densityFadeStart,
+    );
+    // The modal support floor is independent of the drive compensation.
+    expect(weaklyDriven.densityFloor).toBeCloseTo(wellDriven.densityFloor);
+  });
+
   it("derives exposure-sensitive thresholds without dimming modal support floors", () => {
     const referenceParameters = deriveReferenceParameters();
     const brighterParameters = deriveReferenceParameters({

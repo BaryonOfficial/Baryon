@@ -46,6 +46,7 @@ import {
 } from "./fieldShaping.js";
 import {
   deriveObservationTransfer,
+  deriveObservationVisibilityDrive,
   deriveObservationTransferParameters,
 } from "./observationTransfer.js";
 import { deriveRaymarchDiagnosticVisibility } from "./diagnosticVisibility.js";
@@ -82,6 +83,10 @@ const THRESHOLD_RESPONSE_REDUCTION = 0.42;
 const BLOOM_STRENGTH_RESPONSE_GAIN = 0.18;
 const BLOOM_RADIUS_RESPONSE_GAIN = 0.16;
 const BLOOM_THRESHOLD_RESPONSE_GAIN = 0.08;
+// Smoothing for the loudness-aware visibility drive that feeds the observation
+// transfer's exposure compensation. Slow enough that the gate does not pump on
+// beats, fast enough to follow quiet/loud passages.
+const VISIBILITY_DRIVE_DAMP_LAMBDA = 3;
 const EARLY_EXIT_TRANSMITTANCE_EPSILON = 5e-3;
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
@@ -317,6 +322,7 @@ function resetRenderAuthorityState(runtimeState) {
   runtimeState.performanceGovernor = null;
   runtimeState.effectiveRenderScale = 1;
   runtimeState.raymarchBloomAdaptationActive = false;
+  runtimeState.visibilityDriveEnvelope = 0;
   runtimeState.spectralLightBuffersUploaded = false;
   runtimeState.modalBasisPhaseAuthorityModeCount = 0;
   runtimeState.currentModalDescriptor = null;
@@ -347,15 +353,20 @@ function deriveRuntimeObservationTransferParameters(runtimeState) {
     stepCompensation: runtimeState?.bloomTuning?.stepCompensation,
     contourSharpness: runtimeState?.uniforms?.uContourSharpness?.value,
     fieldNoiseFloor: readRuntimeFieldNoiseFloor(runtimeState),
+    visibilityDrive: runtimeState?.visibilityDriveEnvelope ?? 1,
   });
 }
 
-function syncObservationTransferUniforms(runtimeState) {
+function syncObservationTransferUniforms(runtimeState, visibilityDrive = 1) {
   const uniforms = runtimeState?.uniforms ?? {};
   const opacityGain = uniforms.uOpacityGain?.value;
   const stepCompensation = runtimeState?.bloomTuning?.stepCompensation;
   const contourSharpness = uniforms.uContourSharpness?.value;
   const fieldNoiseFloor = readRuntimeFieldNoiseFloor(runtimeState);
+  // Quantize so a steady drive keeps the cache warm; only ~0.5% changes recompute.
+  const quantizedVisibilityDrive =
+    Math.round((Number.isFinite(visibilityDrive) ? visibilityDrive : 1) * 200) /
+    200;
   const inputCache =
     runtimeState.observationTransferInputCache ??
     (runtimeState.observationTransferInputCache = {});
@@ -365,7 +376,8 @@ function syncObservationTransferUniforms(runtimeState) {
     inputCache.opacityGain === opacityGain &&
     inputCache.stepCompensation === stepCompensation &&
     inputCache.contourSharpness === contourSharpness &&
-    inputCache.fieldNoiseFloor === fieldNoiseFloor
+    inputCache.fieldNoiseFloor === fieldNoiseFloor &&
+    inputCache.visibilityDrive === quantizedVisibilityDrive
   ) {
     return runtimeState.observationTransferParameters;
   }
@@ -374,12 +386,14 @@ function syncObservationTransferUniforms(runtimeState) {
   inputCache.stepCompensation = stepCompensation;
   inputCache.contourSharpness = contourSharpness;
   inputCache.fieldNoiseFloor = fieldNoiseFloor;
+  inputCache.visibilityDrive = quantizedVisibilityDrive;
 
   const parameters = deriveObservationTransferParameters({
     opacityGain,
     stepCompensation,
     contourSharpness,
     fieldNoiseFloor,
+    visibilityDrive: quantizedVisibilityDrive,
   });
   setIfChanged(
     uniforms.uObservationDensityFadeStart,
@@ -554,6 +568,7 @@ function blockOverflowedModalDescriptor(
   runtimeState.performanceGovernor = null;
   runtimeState.effectiveRenderScale = 1;
   runtimeState.raymarchBloomAdaptationActive = false;
+  runtimeState.visibilityDriveEnvelope = 0;
   runtimeState.spectralLightBuffersUploaded = false;
   runtimeState.modalBasisPhaseAuthorityModeCount = 0;
   runtimeState.currentModalBasisCacheDescriptor = null;
@@ -1273,6 +1288,7 @@ function updateReactiveResponse(
     runtimeState.motionSignal = 0;
     runtimeState.scaleSignal = 0;
     runtimeState.bloomResponseSignal = 0;
+    runtimeState.visibilityDriveEnvelope = 0;
     runtimeState.visualRoot?.scale?.setScalar?.(1);
     return;
   }
@@ -2092,7 +2108,10 @@ export function tickRaymarchRuntime(
       uniforms.uDensityAbsorption,
       idleDensityGain * uniforms.uAbsorption.value,
     );
-    syncObservationTransferUniforms(runtimeState);
+    syncObservationTransferUniforms(
+      runtimeState,
+      runtimeState.visibilityDriveEnvelope,
+    );
     volumeMesh.visible = false;
     idleOverlay.visible = resolveIdleOverlayVisible(
       runtimeState,
@@ -2220,7 +2239,16 @@ export function tickRaymarchRuntime(
   setIfChanged(uniforms.uKeyMode, runtimeState.keyModeSmooth);
 
   updateLaserResponse(runtimeState, featureFrame);
-  syncObservationTransferUniforms(runtimeState);
+  runtimeState.visibilityDriveEnvelope = damp(
+    runtimeState.visibilityDriveEnvelope ?? 0,
+    deriveObservationVisibilityDrive(featureFrame),
+    VISIBILITY_DRIVE_DAMP_LAMBDA,
+    deltaTime,
+  );
+  syncObservationTransferUniforms(
+    runtimeState,
+    runtimeState.visibilityDriveEnvelope,
+  );
   const nextDensityGain =
     (runtimeState.baseDensityGain ?? uniforms.uDensityGain.value) *
     (1 + (runtimeState.scaleSignal ?? 0) * DENSITY_RESPONSE_AMOUNT);

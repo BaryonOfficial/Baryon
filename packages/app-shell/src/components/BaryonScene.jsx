@@ -22,6 +22,7 @@ import {
   RENDER_CONTEXTS,
   markRenderOutputCameraCut,
 } from "@baryon/visualizer/render/outputPipeline";
+import { resolveTemporalReprojectionPolicy } from "@baryon/visualizer/render/temporalReprojectionPolicy";
 import {
   resolveSceneRenderQualityProfile,
   sanitizeRenderProfileOverrides,
@@ -86,6 +87,10 @@ export function BaryonScene({
   const orbitControlsRef = useRef(null);
   const warnedMissingExternalCameraPoseRef = useRef(false);
   const [renderProfileOverrides, setRenderProfileOverrides] = useState(null);
+  const temporalReprojectionPolicy = resolveTemporalReprojectionPolicy({
+    visualizationMethod,
+    traaRequested: traaEnabled,
+  });
   const renderProfile = useMemo(
     () =>
       resolveSceneRenderQualityProfile({
@@ -95,7 +100,7 @@ export function BaryonScene({
         outputHeight: size.height,
         resolvedRenderProfile,
         localRenderProfileOverrides: renderProfileOverrides,
-        traaEnabled,
+        traaEnabled: temporalReprojectionPolicy.traaEnabled,
       }),
     [
       performanceProfile,
@@ -104,7 +109,7 @@ export function BaryonScene({
       resolvedRenderProfile,
       size.height,
       size.width,
-      traaEnabled,
+      temporalReprojectionPolicy.traaEnabled,
     ],
   );
   const { ensurePipeline, postNodesRef, disposePipeline } = useBaryonPipeline(

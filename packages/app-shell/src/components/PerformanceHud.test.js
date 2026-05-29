@@ -70,4 +70,41 @@ describe("PerformanceHud", () => {
 
     expect(markup).toContain("Steps: 48 / 56");
   });
+
+  it("reports TRAA state and temporal-history blend per method", () => {
+    const raymarchMarkup = renderToStaticMarkup(
+      React.createElement(PerformanceHud, {
+        metrics: {
+          fps: 60,
+          smoothedFrameTimeMs: 16.67,
+          currentPixelRatio: 1,
+          basePixelRatio: 1,
+          renderScale: 1,
+          qualityPreset: "auto",
+          targetFps: 60,
+          visualizationMethod: "raymarch",
+          traaEnabled: true,
+          temporalHistoryBlend: 0.5,
+        },
+      }),
+    );
+    expect(raymarchMarkup).toContain("TRAA: on · blend 0.50");
+
+    const fullscreenMarkup = renderToStaticMarkup(
+      React.createElement(PerformanceHud, {
+        metrics: {
+          fps: 60,
+          smoothedFrameTimeMs: 16.67,
+          currentPixelRatio: 1,
+          basePixelRatio: 1,
+          renderScale: 1,
+          qualityPreset: "auto",
+          targetFps: 60,
+          visualizationMethod: "fullscreen-volume",
+          traaEnabled: false,
+        },
+      }),
+    );
+    expect(fullscreenMarkup).toContain("TRAA: off");
+  });
 });

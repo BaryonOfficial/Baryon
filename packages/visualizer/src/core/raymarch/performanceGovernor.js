@@ -1,5 +1,5 @@
-import { RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE } from "../../defaults.js";
 import { getModalGeometryBackend } from "../modalGeometryBackend.js";
+import { deriveObservationVisibilityDrive } from "./observationTransfer.js";
 
 export const MIN_COMPLEXITY_RENDER_SCALE = 0.84;
 
@@ -66,18 +66,7 @@ function copySlot4(source, sourceOffset, target, targetOffset) {
 }
 
 export function deriveFieldExcitation(featureFrame) {
-  const avgAmplitude =
-    (featureFrame?.averageAmplitude ?? 0) /
-    RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE;
-  const structureSignal = featureFrame?.structureSignal ?? 0;
-  const modalDriver = Math.max(
-    featureFrame?.modalVisibilityEnergy ?? 0,
-    (featureFrame?.modeCoherence ?? 0) * 0.5,
-  );
-
-  return clamp01(
-    avgAmplitude * 0.3 + structureSignal * 0.45 + modalDriver * 0.25,
-  );
+  return deriveObservationVisibilityDrive(featureFrame);
 }
 
 export function inferModalFieldCapacity(capacity, slots) {

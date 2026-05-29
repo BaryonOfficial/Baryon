@@ -45,6 +45,16 @@ export default function PerformanceHud({
     typeof metrics.renderScale === "number"
       ? formatNumber(metrics.renderScale, 3)
       : null;
+  const temporalBlendLabel =
+    typeof metrics.temporalHistoryBlend === "number"
+      ? formatNumber(metrics.temporalHistoryBlend, 2)
+      : "—";
+  let traaLabel = null;
+  if (usesRaymarchVolumePipeline(metrics.visualizationMethod)) {
+    traaLabel = metrics.traaEnabled
+      ? `on · blend ${temporalBlendLabel}`
+      : "off";
+  }
 
   return (
     <aside
@@ -118,6 +128,7 @@ export default function PerformanceHud({
         </div>
       ) : null}
       {raymarchStepsLabel ? <div>Steps: {raymarchStepsLabel}</div> : null}
+      {traaLabel ? <div>TRAA: {traaLabel}</div> : null}
     </aside>
   );
 }

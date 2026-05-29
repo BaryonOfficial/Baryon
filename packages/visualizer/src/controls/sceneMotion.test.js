@@ -102,6 +102,8 @@ describe("scene motion helpers", () => {
       responseEnvelope: 0.7,
       angularVelocity: 0,
       targetAngularVelocity: 0,
+      pitchVelocity: 0,
+      rollVelocity: 0,
       rotationX: 0,
       rotationY: 0,
       rotationZ: 0,

@@ -734,11 +734,15 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.visualRoot.scale.x).toBe(1);
     expect(runtimeState.uniforms.uModeCoherence.value).toBeCloseTo(0.58);
     expect(runtimeState.uniforms.uModalResponseEnergy.value).toBeCloseTo(0.37);
+    // The tick applies a loudness-aware visibility-drive compensation, so the
+    // expected parameters must use the same smoothed drive the tick produced.
     const observationParameters = deriveObservationTransferParameters({
       opacityGain: runtimeState.uniforms.uOpacityGain.value,
       stepCompensation: runtimeState.bloomTuning.stepCompensation,
       contourSharpness: runtimeState.uniforms.uContourSharpness.value,
+      visibilityDrive: runtimeState.visibilityDriveEnvelope,
     });
+    expect(runtimeState.visibilityDriveEnvelope).toBeGreaterThan(0);
     expect(
       runtimeState.uniforms.uObservationDensityFadeStart.value,
     ).toBeCloseTo(observationParameters.densityFadeStart);
@@ -1556,6 +1560,7 @@ describe("tickRaymarchRuntime", () => {
     runtimeState.modalBasisCache.ready = true;
     runtimeState.spectralLightCache.active = true;
     runtimeState.spectralLightCache.ready = true;
+    runtimeState.visibilityDriveEnvelope = 0.7;
 
     tickRaymarchRuntime(
       runtimeState,
@@ -1578,6 +1583,17 @@ describe("tickRaymarchRuntime", () => {
     expect(spectralGenerationAfterReset).toBeGreaterThan(0);
     expect(runtimeState.modalFieldModeBuffer.value.array[3]).toBe(0);
     expect(runtimeState.renderAuthorityResetApplied).toBe(true);
+    expect(runtimeState.visibilityDriveEnvelope).toBe(0);
+    expect(
+      runtimeState.uniforms.uObservationDensityFadeStart.value,
+    ).toBeCloseTo(
+      deriveObservationTransferParameters({
+        opacityGain: runtimeState.uniforms.uOpacityGain.value,
+        stepCompensation: runtimeState.bloomTuning.stepCompensation,
+        contourSharpness: runtimeState.uniforms.uContourSharpness.value,
+        visibilityDrive: 0,
+      }).densityFadeStart,
+    );
 
     runtimeState.modalFieldModeBuffer.value.needsUpdate = false;
     runtimeState.modalFieldColorBuffer.value.needsUpdate = false;

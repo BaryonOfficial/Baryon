@@ -748,6 +748,9 @@ export function useBaryonVisualizer({
         renderLoopContext.postNodesRef.current?.bloomPass &&
         effectiveBloomEnabled,
       );
+      runtimeDiagnostics.postProcess.temporalHistoryBlend =
+        renderLoopContext.postNodesRef.current?.temporalHistoryBlendUniform
+          ?.value ?? null;
     }
 
     if (externalFrameState?.featureFrame) {
@@ -865,6 +868,7 @@ export function useBaryonVisualizer({
       shouldBypassTemporalHistoryForRaymarchFrame({
         runtimeMethod: runtime.method,
         featureFrame: effectiveFrame,
+        sceneSnapshot,
       });
 
     if (suppressRender) {
