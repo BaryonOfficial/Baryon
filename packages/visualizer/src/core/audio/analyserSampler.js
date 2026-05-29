@@ -7,9 +7,13 @@ function ensureTypedBuffer(existing, length, Type) {
 }
 
 function normaliseSpectrumInto(freqData, result) {
+  // Byte spectra (getByteFrequencyData) arrive as 0-255 and need scaling;
+  // Float32 spectra are already normalized to 0-1. Dispatch on the buffer
+  // type rather than per-value so a raw byte of 1 maps to ~0.004, not 1.0.
+  const byteScaled = freqData instanceof Uint8Array;
   for (let i = 0; i < freqData.length; i++) {
     const value = freqData[i];
-    result[i] = value > 1 ? value / 255.0 : value;
+    result[i] = byteScaled ? value / 255 : value;
   }
 
   return result;

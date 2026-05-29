@@ -515,6 +515,7 @@ function clamp(value, min, max) {
 }
 
 function clamp01(value) {
+  if (!Number.isFinite(value)) return 0;
   return clamp(value, 0, 1);
 }
 
