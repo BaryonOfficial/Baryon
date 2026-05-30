@@ -61,6 +61,7 @@ const EXPECTED_CONTROL_KEYS = [
   "performanceHudEnabled",
   // Display (continued)
   "visualizationMethod",
+  "cameraLocked",
   "bloomResponseBias",
   "rimBloomBias",
   "rimCompression",

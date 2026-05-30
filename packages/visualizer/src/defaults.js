@@ -54,6 +54,7 @@ export const RENDER_DEFAULTS = Object.freeze({
   bloomResponseBias: 1,
   performanceHudEnabled: false,
   traaEnabled: true,
+  cameraLocked: false,
 });
 
 export const REACTIVITY_DEFAULTS = Object.freeze({

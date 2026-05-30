@@ -76,6 +76,7 @@ export function BaryonScene({
   suppressRender = false,
   enableControlEventSync = true,
   cameraResetNonce = 0,
+  cameraLocked = false,
   cameraControlMode = /** @type {"preview-local" | "external-synced"} */ (
     CAMERA_CONTROL_MODES.previewLocal
   ),
@@ -258,7 +259,11 @@ export function BaryonScene({
   return (
     <>
       {shouldMountOrbitControls(cameraControlMode) ? (
-        <OrbitControls ref={orbitControlsRef} enableDamping />
+        <OrbitControls
+          ref={orbitControlsRef}
+          enableDamping
+          enabled={!cameraLocked}
+        />
       ) : null}
       {/* eslint-disable-next-line react/no-unknown-property */}
       {points && <primitive object={points} />}

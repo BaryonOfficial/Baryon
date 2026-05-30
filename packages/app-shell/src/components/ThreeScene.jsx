@@ -499,6 +499,7 @@ const ThreeScene = ({
                 cameraControlMode={CAMERA_CONTROL_MODES.previewLocal}
                 cameraPose={effectiveCameraPose}
                 cameraResetNonce={cameraResetNonce}
+                cameraLocked={controlsState.cameraLocked === true}
                 suppressRender={usingPreview}
               />
             </Suspense>
@@ -511,6 +512,10 @@ const ThreeScene = ({
           activePreset={cameraControlState.activePreset}
           onPresetSelect={applyCameraPreset}
           onPresetReset={resetCameraPreset}
+          cameraLocked={controlsState.cameraLocked === true}
+          onToggleLock={(nextLocked) =>
+            updateControl("cameraLocked", nextLocked)
+          }
           rootTestId="camera-controls"
           topButtonTestId="camera-top-view-button"
           sideButtonTestId="camera-side-view-button"

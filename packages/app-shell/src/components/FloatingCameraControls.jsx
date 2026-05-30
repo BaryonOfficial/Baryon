@@ -78,15 +78,41 @@ function ResetIcon() {
   );
 }
 
+function LockIcon({ locked }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      {locked ? (
+        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+      ) : (
+        <path d="M8 11V7a4 4 0 0 1 7.6-1.4" />
+      )}
+    </svg>
+  );
+}
+
 /**
  * @param {{
  *   activePreset: "top-down" | "side",
  *   onPresetSelect?: ((preset: "top-down" | "side") => void) | null,
  *   onPresetReset?: (() => void) | null,
+ *   cameraLocked?: boolean,
+ *   onToggleLock?: ((nextLocked: boolean) => void) | null,
  *   rootTestId?: string,
  *   topButtonTestId?: string,
  *   sideButtonTestId?: string,
  *   resetButtonTestId?: string,
+ *   lockButtonTestId?: string,
  *   zIndex?: number,
  *   position?: "absolute" | "fixed",
  * }} props
@@ -95,10 +121,13 @@ export default function FloatingCameraControls({
   activePreset,
   onPresetSelect = null,
   onPresetReset = null,
+  cameraLocked = false,
+  onToggleLock = null,
   rootTestId = "camera-controls",
   topButtonTestId = "camera-top-view-button",
   sideButtonTestId = "camera-side-view-button",
   resetButtonTestId = "camera-reset-view-button",
+  lockButtonTestId = "camera-lock-button",
   zIndex = 61,
   position = "absolute",
 }) {
@@ -178,6 +207,37 @@ export default function FloatingCameraControls({
       >
         <CameraIcon />
       </span>
+      <button
+        type="button"
+        data-testid={lockButtonTestId}
+        data-state={cameraLocked ? "active" : "idle"}
+        aria-pressed={cameraLocked}
+        aria-label={cameraLocked ? "Unlock camera" : "Lock camera"}
+        onClick={() => onToggleLock?.(!cameraLocked)}
+        title={
+          cameraLocked
+            ? "Camera locked — orbit drag disabled. Click to unlock."
+            : "Lock camera to prevent accidental orbit drag."
+        }
+        style={{
+          minHeight: "1.7rem",
+          minWidth: isPhoneViewport ? "1.75rem" : "2rem",
+          padding: 0,
+          borderRadius: "999px",
+          border: cameraLocked
+            ? "1px solid var(--nd-text-display)"
+            : "1px solid var(--nd-border-visible)",
+          background: cameraLocked ? "var(--nd-text-display)" : "transparent",
+          color: cameraLocked ? "var(--nd-black)" : "var(--nd-text-secondary)",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          flex: "0 0 auto",
+        }}
+      >
+        <LockIcon locked={cameraLocked} />
+      </button>
       {[
         {
           key: CAMERA_VIEW_PRESETS.topDown,

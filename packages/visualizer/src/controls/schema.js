@@ -705,6 +705,21 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     },
     CONTROL_GROUPS.mode,
   ),
+  withControlGroup(
+    {
+      key: "cameraLocked",
+      label: "Lock Camera",
+      title: "Lock the camera so orbit drag cannot accidentally move the view",
+      defaultValue: RENDER_DEFAULTS.cameraLocked,
+      methods: ALL_METHODS,
+      sidebarHidden: true,
+      targetType: CONTROL_TARGET_TYPES.object,
+      handler: CONTROL_HANDLERS.shared,
+      runtimePath: "ui.cameraLocked",
+      status: CONTROL_STATUSES.live,
+    },
+    CONTROL_GROUPS.mode,
+  ),
 
   // ── Fine-grained glow shaping ─────────────────────────────────────────────
   withControlGroup(

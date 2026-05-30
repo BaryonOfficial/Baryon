@@ -315,6 +315,7 @@ describe("control runtime sync", () => {
     const controls = createControlState();
     controls.backgroundColor = "#123456";
     controls.boundaryMode = "dirichlet";
+    controls.cameraLocked = true;
 
     const gl = {
       setClearColor: vi.fn(),
@@ -343,6 +344,7 @@ describe("control runtime sync", () => {
     expect(sharedSnapshot.visualizationMethod).toBe(
       DEFAULT_VISUALIZATION_METHOD,
     );
+    expect(sharedSnapshot.cameraLocked).toBe(true);
     expect(raymarchSnapshot.uniforms.threshold).toBe(
       controls.zeroPointPrecision,
     );
