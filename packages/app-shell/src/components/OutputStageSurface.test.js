@@ -34,7 +34,6 @@ vi.mock("./rendererDiagnostics.js", () => ({
 }));
 
 import { OutputStageSurface } from "./OutputStageSurface.jsx";
-import { resolvePresetCameraPose } from "./cameraPosePresets.js";
 
 describe("OutputStageSurface", () => {
   /** @type {HTMLDivElement | null} */
@@ -112,26 +111,6 @@ describe("OutputStageSurface", () => {
 
     expect(baryonSceneSpy).toHaveBeenCalled();
     expect(baryonSceneSpy.mock.calls.at(-1)?.[0]).toMatchObject({ cameraPose });
-  });
-
-  it("forces side camera for fullscreen 2d external output", async () => {
-    const topDownCameraPose = resolvePresetCameraPose("top-down");
-    const sideCameraPose = resolvePresetCameraPose("side");
-
-    await act(async () => {
-      root.render(
-        React.createElement(OutputStageSurface, {
-          controlsRef: { current: { backgroundColor: "#000000" } },
-          visualizationMethod: "fullscreen-volume",
-          cameraPose: topDownCameraPose,
-        }),
-      );
-    });
-
-    expect(baryonSceneSpy).toHaveBeenCalled();
-    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraPose).toStrictEqual(
-      sideCameraPose,
-    );
   });
 
   it("passes frame-state updates through unchanged", async () => {

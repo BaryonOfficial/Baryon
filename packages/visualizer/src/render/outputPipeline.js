@@ -183,11 +183,9 @@ export function createRenderOutputPipeline(
     // `output` must be included so MRTNode.setup() fills index 0 of renderTarget.textures;
     // omitting it leaves members[0] undefined and crashes OutputStructNode.generate().
     //
-    // TRAA is only enabled for the rotatable 3D-volume `raymarch` method, where
+    // TRAA is enabled for the rotatable 3D-volume `raymarch` method, where
     // camera or scene-root motion produces real screen-space velocity for
-    // reprojection. The `fullscreen-volume` method animates entirely in-shader
-    // at zero geometric velocity and disables TRAA upstream, so it never reaches
-    // this branch.
+    // reprojection.
     scenePass.setMRT(mrt({ output, velocity }));
 
     sceneColor = scenePass.getTextureNode("output");

@@ -31,7 +31,7 @@ Owns the shared engine and most domain semantics:
 - control schema/defaults/runtime application
 - visualization runtime factories
 - render quality/profile policy and output pipeline composition
-- raymarch and `fullscreen-volume` runtime implementations
+- the `raymarch` runtime implementation
 
 Start here when a change affects shared visualization behavior across hosts.
 
@@ -159,9 +159,9 @@ Visualization method selection lives under:
 Current supported methods:
 
 - `raymarch`
-- `fullscreen-volume`
 
-The default and flagship path is `raymarch`.
+`raymarch` is the single supported visualization method. Legacy persisted/synced
+values (e.g. `fullscreen-volume`, `cymatics-2d`) collapse to `raymarch` at ingress.
 
 ### Output/render profile resolution
 

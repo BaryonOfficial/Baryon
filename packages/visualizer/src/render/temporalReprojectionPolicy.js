@@ -1,8 +1,5 @@
 import { isFieldDrivenState } from "../core/fieldState.js";
-import {
-  VISUALIZATION_METHODS,
-  usesRaymarchVolumePipeline,
-} from "../visualization/types.js";
+import { usesRaymarchVolumePipeline } from "../visualization/types.js";
 
 const REPROJECTABLE_RAYMARCH_MOTION_EPSILON = 1e-4;
 
@@ -21,10 +18,9 @@ function readRaymarchSceneMotion(sceneSnapshot) {
 /**
  * Resolve the complete temporal-reprojection policy for a raymarch frame.
  *
- * TRAA is valid only when the renderer has meaningful geometric velocity:
- * fullscreen-volume animates entirely in-shader and never builds TRAA, while
- * the rotatable 3D raymarch volume may accumulate history only during
- * scene-root motion. Audio energy is deliberately not an input.
+ * TRAA is valid only when the renderer has meaningful geometric velocity: the
+ * rotatable 3D raymarch volume may accumulate history only during scene-root
+ * motion. Audio energy is deliberately not an input.
  *
  * @param {object} params
  * @param {unknown} [params.visualizationMethod]
@@ -45,15 +41,6 @@ export function resolveTemporalReprojectionPolicy({
       accumulateHistory: false,
       shouldBypassHistory: false,
       reason: "non-raymarch-pipeline",
-    };
-  }
-
-  if (visualizationMethod === VISUALIZATION_METHODS.fullscreenVolume) {
-    return {
-      traaEnabled: false,
-      accumulateHistory: false,
-      shouldBypassHistory: true,
-      reason: "fullscreen-in-shader-motion",
     };
   }
 

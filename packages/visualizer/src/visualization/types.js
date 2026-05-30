@@ -1,26 +1,20 @@
-export const LEGACY_CYMATICS_2D_METHOD = "cymatics-2d";
-
 export const VISUALIZATION_METHODS = Object.freeze({
   raymarch: "raymarch",
-  fullscreenVolume: "fullscreen-volume",
 });
 
 export const DEFAULT_VISUALIZATION_METHOD = VISUALIZATION_METHODS.raymarch;
 
 /**
  * @param {unknown} method
- * @returns {method is typeof VISUALIZATION_METHODS.raymarch | typeof VISUALIZATION_METHODS.fullscreenVolume}
+ * @returns {method is typeof VISUALIZATION_METHODS.raymarch}
  */
 export function isVisualizationMethod(method) {
-  return (
-    method === VISUALIZATION_METHODS.raymarch ||
-    method === VISUALIZATION_METHODS.fullscreenVolume
-  );
+  return method === VISUALIZATION_METHODS.raymarch;
 }
 
 /**
- * Both visualization methods share the raymarch volume pipeline
- * (performance governor, adaptive steps, HUD diagnostics).
+ * The raymarch volume pipeline (performance governor, adaptive steps, HUD
+ * diagnostics) backs the single visualization method.
  *
  * @param {unknown} method
  * @returns {boolean}
@@ -30,15 +24,12 @@ export function usesRaymarchVolumePipeline(method) {
 }
 
 /**
+ * Collapses any persisted/legacy value (including the removed fullscreen-volume
+ * and cymatics-2d ids) onto the single supported method.
+ *
  * @param {unknown} method
  * @returns {typeof VISUALIZATION_METHODS[keyof typeof VISUALIZATION_METHODS]}
  */
 export function normalizeVisualizationMethod(method) {
-  if (method === LEGACY_CYMATICS_2D_METHOD) {
-    return VISUALIZATION_METHODS.fullscreenVolume;
-  }
-  if (isVisualizationMethod(method)) {
-    return method;
-  }
-  return DEFAULT_VISUALIZATION_METHOD;
+  return isVisualizationMethod(method) ? method : DEFAULT_VISUALIZATION_METHOD;
 }

@@ -45,13 +45,13 @@ test("external-synced frame state augmentation preserves the original frame stat
   expect(augmented).toBe(frameState);
 });
 
-test("orbit controls only mount for preview-local 3d camera control", () => {
-  expect(
-    shouldMountOrbitControls("raymarch", CAMERA_CONTROL_MODES.previewLocal),
-  ).toBe(true);
-  expect(
-    shouldMountOrbitControls("raymarch", CAMERA_CONTROL_MODES.externalSynced),
-  ).toBe(false);
+test("orbit controls only mount for preview-local camera control", () => {
+  expect(shouldMountOrbitControls(CAMERA_CONTROL_MODES.previewLocal)).toBe(
+    true,
+  );
+  expect(shouldMountOrbitControls(CAMERA_CONTROL_MODES.externalSynced)).toBe(
+    false,
+  );
 });
 
 test("external camera pose application updates projection and world matrices", () => {

@@ -257,7 +257,7 @@ export function BaryonScene({
 
   return (
     <>
-      {shouldMountOrbitControls(visualizationMethod, cameraControlMode) ? (
+      {shouldMountOrbitControls(cameraControlMode) ? (
         <OrbitControls ref={orbitControlsRef} enableDamping />
       ) : null}
       {/* eslint-disable-next-line react/no-unknown-property */}

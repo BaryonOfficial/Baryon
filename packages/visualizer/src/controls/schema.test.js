@@ -275,7 +275,6 @@ describe("control schema", () => {
       "renderQualityPreset",
       "customPerformanceTargetFps",
       "outputMode",
-      "visualizationMethod",
     ]);
     expect(
       getControlsForFolder("Shape", DEFAULT_VISUALIZATION_METHOD).map(
@@ -359,98 +358,6 @@ describe("control schema", () => {
     }
   });
 
-  it("filters out raymarch-only controls from the fullscreen volume method", () => {
-    const fullscreenVolumeControls = getControlsForMethod(
-      VISUALIZATION_METHODS.fullscreenVolume,
-    ).map((definition) => definition.key);
-
-    expect(
-      getControlsForMethod(VISUALIZATION_METHODS.fullscreenVolume),
-    ).not.toEqual(getControlsForMethod(VISUALIZATION_METHODS.raymarch));
-    expect(fullscreenVolumeControls).not.toContain("rotationMode");
-    expect(fullscreenVolumeControls).not.toContain("rotationSpeed");
-    expect(fullscreenVolumeControls).toContain("raymarchSteps");
-    expect(fullscreenVolumeControls).not.toContain("absorption");
-    expect(fullscreenVolumeControls).not.toContain("rimBloomBias");
-    expect(fullscreenVolumeControls).not.toContain("rimCompression");
-    expect(fullscreenVolumeControls).not.toContain("holographicIntensity");
-    expect(fullscreenVolumeControls).not.toContain("holographicShift");
-    expect(fullscreenVolumeControls).not.toContain("holographicFresnelPower");
-    expect(fullscreenVolumeControls).toContain("visualizationMethod");
-    expect(fullscreenVolumeControls).toContain("bloomThreshold");
-    expect(fullscreenVolumeControls).toContain("densityGain");
-    expect(fullscreenVolumeControls).toContain("boundaryMode");
-    expect(fullscreenVolumeControls).not.toContain("structurePersistence");
-    expect(getControlFolders(VISUALIZATION_METHODS.fullscreenVolume)).toEqual([
-      "Mode",
-      "Shape",
-      "Color",
-      "Logo",
-      "Motion",
-      "Display",
-      "PresetsArea",
-      "Diagnostics",
-    ]);
-    expect(
-      getControlsForFolder("Shape", VISUALIZATION_METHODS.fullscreenVolume).map(
-        (definition) => definition.key,
-      ),
-    ).toEqual([
-      "zeroPointPrecision",
-      "densityGain",
-      "opacityGain",
-      "raymarchSteps",
-    ]);
-    expect(
-      getControlsForFolder("Mode", VISUALIZATION_METHODS.fullscreenVolume).map(
-        (definition) => definition.key,
-      ),
-    ).toEqual([
-      "boundaryMode",
-      "colorMode",
-      "renderQualityPreset",
-      "customPerformanceTargetFps",
-      "outputMode",
-      "visualizationMethod",
-    ]);
-    expect(
-      getControlsForFolder("Color", VISUALIZATION_METHODS.fullscreenVolume).map(
-        (definition) => definition.key,
-      ),
-    ).toEqual(["volumeColor", "surfaceColor", "spectralMix"]);
-    expect(
-      getControlsForFolder("Logo", VISUALIZATION_METHODS.fullscreenVolume).map(
-        (definition) => definition.key,
-      ),
-    ).toEqual(["idleLogoIntensity", "idleLogoSize"]);
-    expect(
-      getControlsForFolder(
-        "Display",
-        VISUALIZATION_METHODS.fullscreenVolume,
-      ).map((definition) => definition.key),
-    ).toEqual([
-      "bloomEnabled",
-      "bloomStrength",
-      "bloomRadius",
-      "bloomThreshold",
-      "backgroundColor",
-      "outputBackgroundColor",
-      "bloomResponseBias",
-    ]);
-    expect(
-      getControlsForFolder(
-        "PresetsArea",
-        VISUALIZATION_METHODS.fullscreenVolume,
-      ).map((definition) => definition.key),
-    ).toEqual(["performanceHudEnabled"]);
-    expect(
-      getControlsForFolder(
-        "Motion",
-        VISUALIZATION_METHODS.fullscreenVolume,
-      ).map((definition) => definition.key),
-    ).toEqual(["reactivity", "motionAmount"]);
-  });
-
   it("keeps fine-grained glow controls live while preserving method scope", () => {
     const bloomResponseBias = CONTROL_DEFINITIONS.find(
       (definition) => definition.key === "bloomResponseBias",
@@ -474,10 +381,7 @@ describe("control schema", () => {
     expect(bloomResponseBias).toMatchObject({
       group: "Display",
       status: CONTROL_STATUSES.live,
-      methods: [
-        VISUALIZATION_METHODS.raymarch,
-        VISUALIZATION_METHODS.fullscreenVolume,
-      ],
+      methods: [VISUALIZATION_METHODS.raymarch],
     });
     expect(rimBloomBias).toMatchObject({
       group: "Display",

@@ -7,7 +7,6 @@ import {
   applyEffectiveRaymarchStepBudget,
   applyOutputControls,
   applyRaymarchControls,
-  applyVisualizationControls,
   applySharedControls,
   applySceneControls,
   applySimulationControls,
@@ -16,10 +15,7 @@ import {
 } from "./runtime.js";
 import { CONTROL_HANDLERS, createControlState } from "./schema.js";
 import { createVisualizationRuntime } from "../visualization/runtimeFactory.js";
-import {
-  DEFAULT_VISUALIZATION_METHOD,
-  VISUALIZATION_METHODS,
-} from "../visualization/types.js";
+import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
 import {
   deriveLowStepBloomGuard,
   deriveStepCompensation,
@@ -351,36 +347,6 @@ describe("control runtime sync", () => {
       controls.zeroPointPrecision,
     );
     expect(raymarchSnapshot.uniforms.boundaryMode).toBe("dirichlet");
-  });
-
-  it("applies fullscreen volume controls without raymarch-only structure uniforms", () => {
-    const controls = createControlState();
-    controls.visualizationMethod = VISUALIZATION_METHODS.fullscreenVolume;
-    controls.volumeColor = "#113355";
-    controls.surfaceColor = "#ddeeff";
-    controls.reactivity = 1.3;
-    controls.motionAmount = 0.8;
-    controls.raymarchSteps = 64;
-
-    const runtimeState = createRaymarchHarness(
-      VISUALIZATION_METHODS.fullscreenVolume,
-    );
-    const snapshot = applyVisualizationControls(
-      VISUALIZATION_METHODS.fullscreenVolume,
-      runtimeState,
-      controls,
-    );
-
-    expect(runtimeState.uniforms.uColor.value.set).toHaveBeenCalledWith(
-      "#113355",
-    );
-    expect(runtimeState.uniforms.uSurfaceColor.value.set).toHaveBeenCalledWith(
-      "#ddeeff",
-    );
-    expect(runtimeState.uniforms.uRaymarchSteps.value).toBe(64);
-    expect(snapshot.uniforms.reactivity).toBe(1.3);
-    expect(snapshot.uniforms.motionAmount).toBe(0.8);
-    expect(snapshot.uniforms).not.toHaveProperty("structurePersistence");
   });
 
   it("applies raymarch controls directly", () => {
@@ -1117,49 +1083,6 @@ describe("control runtime sync", () => {
     expect(runtimeState.sceneMotion.lastBeatPulseId).toBe(9);
   });
 
-  it("resets all scene rotation axes when scene motion is disabled for fullscreen volume", () => {
-    const controls = createControlState();
-    const runtimeState = createRaymarchHarness(
-      VISUALIZATION_METHODS.fullscreenVolume,
-    );
-    runtimeState.points.rotation.x = 0.05;
-    runtimeState.points.rotation.y = 1.2;
-    runtimeState.points.rotation.z = -0.04;
-    runtimeState.sceneMotion.pitch = 0.05;
-    runtimeState.sceneMotion.yaw = 1.2;
-    runtimeState.sceneMotion.roll = -0.04;
-    runtimeState.sceneMotion.pitchVelocity = 0.2;
-    runtimeState.sceneMotion.angularVelocity = -1.4;
-    runtimeState.sceneMotion.rollVelocity = -0.15;
-
-    const snapshot = applySceneControls(
-      runtimeState,
-      controls,
-      1 / 60,
-      {
-        fieldState: "active",
-        structureSignal: 0.55,
-        energySignal: 0.72,
-        changeSignal: 0.64,
-        transientEnergy: 0.74,
-        pulseSignal: 0.3,
-      },
-      {
-        isPlaying: true,
-        isLiveInputActive: false,
-      },
-    );
-
-    expect(runtimeState.points.rotation.x).toBe(0);
-    expect(runtimeState.points.rotation.y).toBe(0);
-    expect(runtimeState.points.rotation.z).toBe(0);
-    expect(runtimeState.sceneMotion.pitch).toBe(0);
-    expect(runtimeState.sceneMotion.roll).toBe(0);
-    expect(snapshot.rotationX).toBe(0);
-    expect(snapshot.rotationY).toBe(0);
-    expect(snapshot.rotationZ).toBe(0);
-  });
-
   it("builds a control inspection snapshot", () => {
     const snapshot = buildControlInspectionSnapshot({
       method: DEFAULT_VISUALIZATION_METHOD,
@@ -1186,17 +1109,6 @@ describe("control runtime sync", () => {
     });
   });
 
-  it("keeps the fullscreen volume alias in inspection snapshots", () => {
-    const snapshot = buildControlInspectionSnapshot({
-      method: VISUALIZATION_METHODS.fullscreenVolume,
-      raymarch: { test: 7 },
-    });
-
-    expect(snapshot.visualization).toEqual({ test: 7 });
-    expect(snapshot.raymarch).toEqual({ test: 7 });
-    expect(snapshot.simulation).toEqual({ test: 7 });
-  });
-
   it("defaults the internal visualization runtime to raymarch", () => {
     const runtime = createVisualizationRuntime();
     expect(runtime.method).toBe(DEFAULT_VISUALIZATION_METHOD);
@@ -1205,19 +1117,12 @@ describe("control runtime sync", () => {
     expect(typeof runtime.dispose).toBe("function");
   });
 
-  it("creates the fullscreen volume visualization runtime on demand", () => {
-    const runtime = createVisualizationRuntime(
-      VISUALIZATION_METHODS.fullscreenVolume,
-    );
-    expect(runtime.method).toBe(VISUALIZATION_METHODS.fullscreenVolume);
+  it("collapses any requested method onto the raymarch runtime", () => {
+    const runtime = createVisualizationRuntime("cymatics-2d");
+    expect(runtime.method).toBe(DEFAULT_VISUALIZATION_METHOD);
     expect(typeof runtime.setup).toBe("function");
     expect(typeof runtime.tick).toBe("function");
     expect(typeof runtime.dispose).toBe("function");
-  });
-
-  it("normalizes legacy cymatics-2d to fullscreen volume at the factory", () => {
-    const runtime = createVisualizationRuntime("cymatics-2d");
-    expect(runtime.method).toBe(VISUALIZATION_METHODS.fullscreenVolume);
   });
 
   it("sets up and disposes a raymarch runtime scene root", () => {
@@ -1264,41 +1169,6 @@ describe("control runtime sync", () => {
     expect(runtimeState).not.toHaveProperty("capacity");
     expect(runtimeState).not.toHaveProperty("backboneCapacity");
     expect(runtimeState).not.toHaveProperty("detailCapacity");
-    expect(runtimeState.modalFieldModeBuffer.value.array).toHaveLength(
-      runtimeState.modalFieldCapacity * 4,
-    );
-    expect(runtimeState.modalFieldColorBuffer.value.array).toHaveLength(
-      runtimeState.modalFieldCapacity * 4,
-    );
-
-    expect(() => runtime.dispose(runtimeState)).not.toThrow();
-  });
-
-  it("sets up and disposes a fullscreen volume runtime scene root", () => {
-    const runtime = createVisualizationRuntime(
-      VISUALIZATION_METHODS.fullscreenVolume,
-    );
-    const runtimeState = runtime.setup({
-      baryonGeometry: new THREE.IcosahedronGeometry(1, 0),
-      parameters: {
-        radius: 3,
-      },
-      audioConfig: {
-        capacity: AUDIO_SLOT_CAPACITY,
-        fftSize: 2048,
-      },
-    });
-
-    expect(runtimeState.method).toBe(VISUALIZATION_METHODS.fullscreenVolume);
-    expect(runtimeState.volumeMesh).toBeTruthy();
-    expect(runtimeState.volumeBounds).toBe("fullscreenBox");
-    expect(runtimeState.idleOverlay).toBeTruthy();
-    expect(runtimeState.visualRoot.children).toContain(runtimeState.volumeMesh);
-    expect(runtimeState.visualRoot.children).toContain(
-      runtimeState.idleOverlay,
-    );
-    expect(runtimeState.modalFieldCapacity).toBe(AUDIO_SLOT_CAPACITY);
-    expect(runtimeState).not.toHaveProperty("capacity");
     expect(runtimeState.modalFieldModeBuffer.value.array).toHaveLength(
       runtimeState.modalFieldCapacity * 4,
     );

@@ -9,7 +9,6 @@ import {
   useState,
 } from "react";
 import { Canvas } from "@react-three/fiber";
-import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
 import { BaryonScene, CAMERA_CONTROL_MODES } from "./BaryonScene";
 import AdvancedControlsDock from "./AdvancedControlsDock.jsx";
 import {
@@ -70,15 +69,10 @@ function resolveDefaultCameraViewPreset({
 }
 
 function resolveEffectiveCameraViewPreset({
-  visualizationMethod,
   shouldUseIdleCameraDefault,
   defaultCameraViewPreset,
   cameraViewPreset,
 }) {
-  if (visualizationMethod === VISUALIZATION_METHODS.fullscreenVolume) {
-    return CAMERA_VIEW_PRESETS.side;
-  }
-
   return shouldUseIdleCameraDefault
     ? defaultCameraViewPreset
     : cameraViewPreset;
@@ -205,7 +199,6 @@ const ThreeScene = ({
   const shouldUseIdleCameraDefault =
     liveInputUiState === "idle" && resolvedFrameFieldState === "idle";
   const effectiveCameraViewPreset = resolveEffectiveCameraViewPreset({
-    visualizationMethod: controlsState.visualizationMethod,
     shouldUseIdleCameraDefault,
     defaultCameraViewPreset,
     cameraViewPreset: appliedCameraViewPreset,
@@ -255,10 +248,7 @@ const ThreeScene = ({
   const showOverlayUi = isSupportReady && !isFullscreen;
   const previewOverlayState = resolvePreviewOverlayState(previewState);
   const cameraControlState = deriveCameraControlState({
-    available:
-      liveInputUiState === "active" &&
-      controlsState.visualizationMethod !==
-        VISUALIZATION_METHODS.fullscreenVolume,
+    available: liveInputUiState === "active",
     appliedCameraPose: effectiveCameraPose,
     fallbackPreset: effectiveCameraViewPreset,
   });

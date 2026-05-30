@@ -74,10 +74,6 @@ export const BEAT_DEFAULTS = Object.freeze({
 /** Matches audio feature-frame avgAmplitude normalization (see getSourceNormalization). */
 export const RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE = 96;
 
-export const FULLSCREEN_VOLUME_DEFAULTS = Object.freeze({
-  raymarchSteps: 56,
-});
-
 export const RAYMARCH_DEFAULTS = Object.freeze({
   raymarchSteps: 80,
   densityGain: 2.5,

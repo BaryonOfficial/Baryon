@@ -147,13 +147,19 @@ describe("deserializeControls", () => {
     expect(result.renderQualityPreset).toBe("max-quality");
   });
 
-  it("migrates legacy cymatics-2d visualization method to fullscreen-volume", () => {
-    const result = deserializeControls(
-      { visualizationMethod: "cymatics-2d" },
-      CONTROL_DEFINITIONS,
-    );
-
-    expect(result.visualizationMethod).toBe("fullscreen-volume");
+  it("collapses removed visualization methods onto raymarch", () => {
+    expect(
+      deserializeControls(
+        { visualizationMethod: "cymatics-2d" },
+        CONTROL_DEFINITIONS,
+      ).visualizationMethod,
+    ).toBe("raymarch");
+    expect(
+      deserializeControls(
+        { visualizationMethod: "fullscreen-volume" },
+        CONTROL_DEFINITIONS,
+      ).visualizationMethod,
+    ).toBe("raymarch");
   });
 
   it("migrates old chromesthesia settings to Spectral Light at the boundary", () => {

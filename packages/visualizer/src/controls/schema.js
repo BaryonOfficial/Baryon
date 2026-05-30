@@ -38,13 +38,9 @@ export const CONTROL_HANDLERS = Object.freeze({
 });
 
 const ALL_METHODS = Object.freeze(Object.values(VISUALIZATION_METHODS));
-const VOLUME_METHODS = Object.freeze([
-  VISUALIZATION_METHODS.raymarch,
-  VISUALIZATION_METHODS.fullscreenVolume,
-]);
 const METHOD_SCOPES = Object.freeze({
   shared: ALL_METHODS,
-  volume: VOLUME_METHODS,
+  volume: ALL_METHODS,
   raymarchOnly: Object.freeze([VISUALIZATION_METHODS.raymarch]),
 });
 
@@ -698,15 +694,10 @@ export const CONTROL_DEFINITIONS = Object.freeze([
     {
       key: "visualizationMethod",
       label: "Visualizer",
-      title: "Switch between the 3D orb and a flat 2D cymatic view",
+      title: "Visualization method (single 3D Volume raymarch renderer)",
       defaultValue: VISUALIZATION_METHODS.raymarch,
       methods: ALL_METHODS,
-      binding: {
-        options: {
-          "3D Volume": VISUALIZATION_METHODS.raymarch,
-          "Fullscreen Volume": VISUALIZATION_METHODS.fullscreenVolume,
-        },
-      },
+      sidebarHidden: true,
       targetType: CONTROL_TARGET_TYPES.object,
       handler: CONTROL_HANDLERS.shared,
       runtimePath: "runtime.method",

@@ -1,5 +1,3 @@
-import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
-
 /** @typedef {"preview-local" | "external-synced"} CameraControlMode */
 
 export const CAMERA_CONTROL_MODES = Object.freeze({
@@ -65,14 +63,8 @@ export function augmentFrameStateWithCameraSync(
   };
 }
 
-export function shouldMountOrbitControls(
-  visualizationMethod,
-  cameraControlMode,
-) {
-  return (
-    visualizationMethod !== VISUALIZATION_METHODS.fullscreenVolume &&
-    cameraControlMode !== CAMERA_CONTROL_MODES.externalSynced
-  );
+export function shouldMountOrbitControls(cameraControlMode) {
+  return cameraControlMode !== CAMERA_CONTROL_MODES.externalSynced;
 }
 
 /**

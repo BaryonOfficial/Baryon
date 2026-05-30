@@ -40,7 +40,7 @@ describe("PerformanceHud", () => {
           requestedRenderScale: 0.67,
           qualityPreset: "auto",
           targetFps: 60,
-          visualizationMethod: "fullscreen-volume",
+          visualizationMethod: "raymarch",
         },
       }),
     );
@@ -49,7 +49,7 @@ describe("PerformanceHud", () => {
     expect(markup).not.toContain("Governor Target:");
   });
 
-  it("shows raymarch steps for fullscreen volume", () => {
+  it("shows raymarch steps", () => {
     const markup = renderToStaticMarkup(
       React.createElement(PerformanceHud, {
         metrics: {
@@ -61,17 +61,17 @@ describe("PerformanceHud", () => {
           requestedRenderScale: 1,
           qualityPreset: "auto",
           targetFps: 60,
-          visualizationMethod: "fullscreen-volume",
-          requestedRaymarchSteps: 56,
-          effectiveRaymarchSteps: 48,
+          visualizationMethod: "raymarch",
+          requestedRaymarchSteps: 80,
+          effectiveRaymarchSteps: 64,
         },
       }),
     );
 
-    expect(markup).toContain("Steps: 48 / 56");
+    expect(markup).toContain("Steps: 64 / 80");
   });
 
-  it("reports TRAA state and temporal-history blend per method", () => {
+  it("reports TRAA state and temporal-history blend", () => {
     const raymarchMarkup = renderToStaticMarkup(
       React.createElement(PerformanceHud, {
         metrics: {
@@ -90,7 +90,7 @@ describe("PerformanceHud", () => {
     );
     expect(raymarchMarkup).toContain("TRAA: on · blend 0.50");
 
-    const fullscreenMarkup = renderToStaticMarkup(
+    const traaOffMarkup = renderToStaticMarkup(
       React.createElement(PerformanceHud, {
         metrics: {
           fps: 60,
@@ -100,11 +100,11 @@ describe("PerformanceHud", () => {
           renderScale: 1,
           qualityPreset: "auto",
           targetFps: 60,
-          visualizationMethod: "fullscreen-volume",
+          visualizationMethod: "raymarch",
           traaEnabled: false,
         },
       }),
     );
-    expect(fullscreenMarkup).toContain("TRAA: off");
+    expect(traaOffMarkup).toContain("TRAA: off");
   });
 });

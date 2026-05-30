@@ -150,7 +150,7 @@ test("external camera pose changes apply without resetting the postprocess pipel
   container.remove();
 });
 
-test("TRAA is enabled only for the rotatable 3D-volume raymarch method", async () => {
+test("TRAA is enabled for the rotatable 3D-volume raymarch method", async () => {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -166,18 +166,6 @@ test("TRAA is enabled only for the rotatable 3D-volume raymarch method", async (
     );
   });
   expect(lastResolvedRenderProfile()?.traaEnabled).toBe(true);
-
-  await act(async () => {
-    root.render(
-      React.createElement(
-        BaryonScene,
-        createSceneProps(resolvePresetCameraPose("top-down"), {
-          visualizationMethod: "fullscreen-volume",
-        }),
-      ),
-    );
-  });
-  expect(lastResolvedRenderProfile()?.traaEnabled).toBe(false);
 
   await act(async () => {
     root.unmount();

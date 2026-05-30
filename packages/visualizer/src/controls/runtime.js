@@ -1,9 +1,6 @@
 import * as THREE from "three";
 import { CONTROL_HANDLERS } from "./schema.js";
-import {
-  DEFAULT_VISUALIZATION_METHOD,
-  VISUALIZATION_METHODS,
-} from "../visualization/types.js";
+import { DEFAULT_VISUALIZATION_METHOD } from "../visualization/types.js";
 import {
   AUDIO_DEFAULTS,
   RAYMARCH_DEFAULTS,
@@ -39,7 +36,6 @@ import {
 } from "../core/raymarch/material.js";
 import {
   buildSceneSnapshot,
-  createDisabledSceneSnapshot,
   createSceneMotionState,
   deriveAutoMotionAmount,
   deriveSceneSignals,
@@ -582,15 +578,6 @@ export function applySceneControls(target, controls, deltaTime, featureFrame) {
   const runtimeState = target?.points ? target : null;
   const points = runtimeState?.points ?? target;
   if (!points?.rotation) return null;
-  if (runtimeState?.method === VISUALIZATION_METHODS.fullscreenVolume) {
-    return createDisabledSceneSnapshot(
-      runtimeState,
-      points,
-      controls,
-      featureFrame,
-      deltaTime,
-    );
-  }
 
   const sceneMotion =
     runtimeState?.sceneMotion ?? createSceneMotionState(points.rotation.y ?? 0);

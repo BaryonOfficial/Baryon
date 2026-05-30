@@ -407,27 +407,4 @@ describe("camera reset control", () => {
 
     expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraPose).toBe(initialPose);
   });
-
-  it("forces the listener-side fullscreen 2d camera to side view", async () => {
-    const controlsStore = createControlsStore();
-    controlsStore.updateControl("visualizationMethod", "fullscreen-volume");
-
-    await act(async () => {
-      root.render(
-        React.createElement(
-          ControlsProvider,
-          { store: controlsStore },
-          React.createElement(ThreeScene),
-        ),
-      );
-    });
-
-    expect(
-      container.querySelector('[data-testid="camera-controls"]'),
-    ).toBeNull();
-    expect(baryonSceneSpy).toHaveBeenCalled();
-    expect(baryonSceneSpy.mock.calls.at(-1)?.[0]?.cameraPose).toStrictEqual(
-      resolvePresetCameraPose("side"),
-    );
-  });
 });

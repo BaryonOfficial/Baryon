@@ -363,21 +363,6 @@ test("updateRendererDiagnostics resizes the renderer when canvas size changes wi
 // `true` means flush temporal history (show the crisp scene color); `false`
 // means let TRAA accumulate.
 test("shouldBypassTemporalHistoryForRaymarchFrame is method-aware", () => {
-  // fullscreen-volume always bypasses: in-shader motion has no valid velocity,
-  // so TRAA can only smear. True even for a fully driven field.
-  expect(
-    shouldBypassTemporalHistoryForRaymarchFrame({
-      runtimeMethod: "fullscreen-volume",
-      featureFrame: { fieldState: "active", energySignal: 0.6 },
-    }),
-  ).toBe(true);
-  expect(
-    shouldBypassTemporalHistoryForRaymarchFrame({
-      runtimeMethod: "fullscreen-volume",
-      featureFrame: { fieldState: "idle", energySignal: 0 },
-    }),
-  ).toBe(true);
-
   // raymarch accumulates while the field is driven and scene-root motion gives
   // TRAA a real velocity to reproject, and flushes when the field is idle so a
   // paused 3D volume cannot freeze stale history.

@@ -61,10 +61,6 @@ import {
   setRaymarchSpectralLightEvaluationMode,
   setRaymarchCavityGeometry,
 } from "./material.js";
-import {
-  syncFullscreenVolumeHalfExtents,
-  VOLUME_BOUNDS_MODES,
-} from "./volumeBounds.js";
 import { resolveIdleOverlayVisible } from "../idleLogoVisibility.js";
 const EMPTY_BAND_ENERGIES = Object.freeze([0, 0, 0, 0]);
 const RESPONSE_ATTACK = 7;
@@ -1006,7 +1002,6 @@ function buildRaymarchDebugSnapshot(
   return {
     fieldState,
     renderAuthority,
-    volumeBounds: runtimeState.volumeBounds ?? VOLUME_BOUNDS_MODES.sphere,
     modeSlotCount: activeModeCount,
     originalModeSlotCount:
       performanceGovernor?.originalModeCount ?? activeModeCount,
@@ -2040,9 +2035,6 @@ export function tickRaymarchRuntime(
   renderer = null,
 ) {
   const { uniforms, volumeMesh, idleOverlay } = runtimeState;
-  if (runtimeState.volumeBounds === VOLUME_BOUNDS_MODES.fullscreenBox) {
-    syncFullscreenVolumeHalfExtents(runtimeState, renderer);
-  }
   const modalFieldModeBuffer = runtimeState.modalFieldModeBuffer;
   const modalFieldColorBuffer = runtimeState.modalFieldColorBuffer;
   const modalFieldPhaseBuffer = runtimeState.modalFieldPhaseBuffer;

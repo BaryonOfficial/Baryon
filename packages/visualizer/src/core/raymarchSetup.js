@@ -19,14 +19,7 @@ import {
   createRaymarchModalBasisCache,
 } from "./raymarch/fieldCache.js";
 import { estimateProjectedSphereStats } from "./raymarch/intersection.js";
-import {
-  VOLUME_BOUNDS_MODES,
-  deriveFullscreenVolumeHalfExtents,
-  normalizeVolumeBoundsMode,
-  resolveDefaultFullscreenVerticalHalfExtent,
-  syncFullscreenVolumeMeshBounds,
-} from "./raymarch/volumeBounds.js";
-import { FULLSCREEN_VOLUME_DEFAULTS, RAYMARCH_DEFAULTS } from "../defaults.js";
+import { RAYMARCH_DEFAULTS } from "../defaults.js";
 import {
   createRaymarchSceneRoot,
   disposeRaymarchRuntime,
@@ -65,7 +58,7 @@ function resolveLayerCapacity(
  * @param {object | null} baryonGeometry
  * @param {{ radius?: number, threshold?: number, cavityGeometry?: string }} parameters
  * @param {{ capacity?: number, modalFieldCapacity?: number, fftSize?: number, sampleRate?: number }} audioConfig
- * @param {{ method?: string, volumeBounds?: string }} [options]
+ * @param {{ method?: string }} [options]
  */
 export function setupRaymarch(
   baryonGeometry,
@@ -73,23 +66,8 @@ export function setupRaymarch(
   audioConfig,
   options = {},
 ) {
-  const volumeBounds = normalizeVolumeBoundsMode(options.volumeBounds);
   const method = options.method ?? VISUALIZATION_METHODS.raymarch;
-  const isFullscreenBox = volumeBounds === VOLUME_BOUNDS_MODES.fullscreenBox;
   const uniforms = createVisualizationUniforms(parameters);
-  if (isFullscreenBox) {
-    uniforms.uRaymarchSteps.value = FULLSCREEN_VOLUME_DEFAULTS.raymarchSteps;
-    const verticalHalfExtent = resolveDefaultFullscreenVerticalHalfExtent();
-    const halfExtents = deriveFullscreenVolumeHalfExtents(
-      verticalHalfExtent,
-      uniforms.uViewportAspect.value,
-    );
-    uniforms.uVolumeHalfExtents.value.set(
-      halfExtents.x,
-      halfExtents.y,
-      halfExtents.z,
-    );
-  }
   const requestedCavityGeometry = normalizeCavityGeometry(
     parameters.cavityGeometry ?? DEFAULT_REQUESTED_CAVITY_GEOMETRY,
   );
@@ -115,17 +93,7 @@ export function setupRaymarch(
     spectralLightCacheTexture: spectralLightCache.texture,
     uniforms,
     cavityGeometry: effectiveCavityGeometry,
-    volumeBounds,
   });
-  if (isFullscreenBox) {
-    syncFullscreenVolumeMeshBounds(
-      volumeMesh,
-      deriveFullscreenVolumeHalfExtents(
-        resolveDefaultFullscreenVerticalHalfExtent(),
-        uniforms.uViewportAspect.value,
-      ),
-    );
-  }
   const idleOverlay = createIdleOverlay({
     baryonGeometry,
     uniforms,
@@ -142,7 +110,6 @@ export function setupRaymarch(
 
   return {
     method,
-    volumeBounds,
     points,
     object: points,
     visualRoot,
@@ -160,15 +127,9 @@ export function setupRaymarch(
     effectiveCavityGeometry,
     fftSize: audioConfig.fftSize,
     fieldStateValues: FIELD_STATE_VALUES,
-    stabilityStats: isFullscreenBox
-      ? {
-          avgRaySegmentLength: 0,
-          missRatio: 0,
-          avgSilhouetteSuppression: 0,
-        }
-      : estimateProjectedSphereStats({
-          radius: parameters.radius,
-        }),
+    stabilityStats: estimateProjectedSphereStats({
+      radius: parameters.radius,
+    }),
     reactivityTuning: {
       reactivity: REACTIVITY_DEFAULTS.reactivity,
       motionAmount: REACTIVITY_DEFAULTS.motionAmount,

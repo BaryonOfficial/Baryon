@@ -11,7 +11,6 @@ import {
   DEFAULT_PERFORMANCE_PROFILE,
   RENDER_CONTEXTS,
 } from "@baryon/visualizer/render/outputPipeline";
-import { VISUALIZATION_METHODS } from "@baryon/visualizer/visualization/types";
 
 function StageInvalidateBridge({ registerRenderRequester }) {
   const { invalidate } = useThree();
@@ -54,16 +53,6 @@ const defaultStageCameraConfig = (() => {
     fov: cameraPose.fov,
   });
 })();
-
-const fullscreen2dCameraPose = resolvePresetCameraPose("side");
-
-function resolveStageCameraPose(visualizationMethod, cameraPose) {
-  if (visualizationMethod === VISUALIZATION_METHODS.fullscreenVolume) {
-    return fullscreen2dCameraPose;
-  }
-
-  return cameraPose;
-}
 
 /**
  * @param {{
@@ -111,10 +100,7 @@ export function OutputStageSurface({
   onAuditSnapshotChange = null,
 }) {
   const [rendererError, setRendererError] = useState(null);
-  const resolvedCameraPose = resolveStageCameraPose(
-    visualizationMethod,
-    cameraPose,
-  );
+  const resolvedCameraPose = cameraPose;
   const cameraConfig = /** @type {StageCameraConfig} */ (
     resolvedCameraPose == null
       ? defaultStageCameraConfig

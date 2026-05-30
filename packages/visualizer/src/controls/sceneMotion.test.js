@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  createDisabledSceneSnapshot,
   createSceneMotionState,
   deriveAutoMotionAmount,
   deriveSceneSignals,
@@ -32,82 +31,6 @@ describe("scene motion helpers", () => {
     expect(signals.motionImpulse).toBeCloseTo(0.4952);
     expect(signals.rotationDrive).toBeCloseTo(0.6562784);
     expect(signals.shapedDrive).toBeCloseTo(0.5955535);
-  });
-
-  it("keeps 2d field rotation disabled while the idle logo keeps manual spin", () => {
-    const runtimeState = {
-      motionSignal: 0.6,
-      responseEnvelope: 0.7,
-      reactivityTuning: {
-        motionAmount: 1.2,
-      },
-      idleOverlay: {
-        rotation: { y: 1.4 },
-      },
-      sceneMotion: {
-        yaw: 0.9,
-        pitch: 0.04,
-        roll: -0.03,
-        angularVelocity: -0.4,
-        targetAngularVelocity: -0.2,
-        pitchVelocity: 0.3,
-        rollVelocity: -0.2,
-        lastMotionSignal: 0.8,
-        lastBeatPulseId: 6,
-        idleLogoYaw: 0.3,
-      },
-    };
-    const points = {
-      rotation: { x: 0.04, y: 1.1, z: -0.03 },
-    };
-
-    const snapshot = createDisabledSceneSnapshot(
-      runtimeState,
-      points,
-      { motionAmount: undefined, rotationSpeed: 2 },
-      {
-        structureSignal: 0.2,
-        energySignal: 0.4,
-        changeSignal: 0.5,
-        pulseSignal: 0.6,
-      },
-      0.5,
-    );
-
-    expect(points.rotation.x).toBe(0);
-    expect(points.rotation.y).toBe(0);
-    expect(points.rotation.z).toBe(0);
-    expect(runtimeState.idleOverlay.rotation.y).toBeCloseTo(-0.2);
-    expect(runtimeState.sceneMotion).toEqual({
-      yaw: 0,
-      pitch: 0,
-      roll: 0,
-      angularVelocity: 0,
-      targetAngularVelocity: 0,
-      pitchVelocity: 0,
-      rollVelocity: 0,
-      lastMotionSignal: 0,
-      lastBeatPulseId: 0,
-      idleLogoYaw: -0.2,
-    });
-    expect(snapshot).toEqual({
-      rotationMode: "disabled",
-      rotationSpeed: 0,
-      motionAmount: 1.2,
-      structureSignal: 0.2,
-      energySignal: 0.4,
-      changeSignal: 0.5,
-      pulseSignal: 0.6,
-      motionSignal: 0.6,
-      responseEnvelope: 0.7,
-      angularVelocity: 0,
-      targetAngularVelocity: 0,
-      pitchVelocity: 0,
-      rollVelocity: 0,
-      rotationX: 0,
-      rotationY: 0,
-      rotationZ: 0,
-    });
   });
 
   it("derives transient torque and lower-deadzone audio drive from current frame signals", () => {
