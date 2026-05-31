@@ -32,7 +32,6 @@ import {
 import { buildModalExcitationStructuralState } from "./modalExcitation.js";
 import {
   resetLineFeedProgramActivityState,
-  isLineFeedMeterIdlePauseSignature,
   resolveLineFeedProgramActivity,
 } from "./lineFeedProgramActivity.js";
 import { createModalExcitationState } from "./modalExcitationState.js";
@@ -74,6 +73,10 @@ import {
   buildModalEnergyLedger,
   hasProjectedRenderAuthority,
 } from "./modalEnergyLedger.js";
+import {
+  buildAudioSourceEvidenceFrame,
+  resolveAudioRenderBoundary,
+} from "./audioSourceEvidence.js";
 
 /** @typedef {import("../../core/cavityGeometry.js").CavityGeometry} CavityGeometry */
 
@@ -927,42 +930,6 @@ function readModalResponseRenderResonantEnergy(
   );
 }
 
-function hasNoRenderSourceForcing(analysisResult) {
-  if (analysisResult?.liveInputHardSilenceActive) {
-    return true;
-  }
-
-  return (
-    (analysisResult?.avgAmplitude ?? 0) <= 0 &&
-    (analysisResult?.analyserRms ?? 0) <= 0 &&
-    (analysisResult?.preModalFftPeak ?? 0) <= 0
-  );
-}
-
-function deriveSourceBoundaryState({
-  preparedInputs,
-  analysisResult,
-  injectTestTone = false,
-}) {
-  if (injectTestTone) {
-    return "test";
-  }
-
-  if (!preparedInputs?.status?.hasAnalysisSource) {
-    return "absent";
-  }
-
-  if (analysisResult?.liveInputHardSilenceActive) {
-    return "muted";
-  }
-
-  if (hasNoRenderSourceForcing(analysisResult)) {
-    return "zero";
-  }
-
-  return "live";
-}
-
 function hasFeatureFrameRenderAuthority({
   fieldState,
   hasModalField,
@@ -989,6 +956,7 @@ function hasFeatureFrameRenderAuthority({
 function buildDebugSummary({
   inputMode,
   analysisInputMode = inputMode,
+  sourceEvidence = null,
   soundActive,
   micActive,
   pitchSource = "none",
@@ -1131,6 +1099,7 @@ function buildDebugSummary({
     liveInputPolicy,
     liveInputBaselineRms,
     liveInputBaselinePeak,
+    sourceEvidence,
     analysisSourceUsed: inputMode === "idle" ? "none" : analysisInputMode,
     fundamentalFrequency: sourceCoupledState?.fundamental ?? 0,
     fundamentalConfidence: sourceCoupledState?.fundamentalConfidence ?? 0,
@@ -1470,6 +1439,7 @@ function buildSilentFeatureFrame({
   soundActive,
   micActive,
   isLiveInputActive,
+  sourceEvidence = null,
   candidateForcingSlots,
   candidateResponseSlots,
   sourceCoupledPhaseSlots,
@@ -1524,10 +1494,10 @@ function buildSilentFeatureFrame({
     modalFieldMetadataSlots: new Float32Array(modeSlots.length),
   });
   const energyLedger = buildModalEnergyLedger({
-    sourceEnergy: 0,
-    sourceBoundaryState: soundActive || micActive || isLiveInputActive
-      ? "zero"
-      : "absent",
+    sourceEnergy: sourceEvidence?.sourceEnergy ?? 0,
+    sourceBoundaryState:
+      sourceEvidence?.sourceBoundaryState ??
+      (soundActive || micActive || isLiveInputActive ? "zero" : "absent"),
     modalResponse: null,
     candidateForcingSlots,
     candidateResponseSlots,
@@ -1540,6 +1510,7 @@ function buildSilentFeatureFrame({
     renderAuthority: false,
     energyLedger,
     projectedRenderEnergy: energyLedger.projectedRenderEnergy,
+    sourceEvidence,
     isLiveInputActive,
     soundActive,
     micActive,
@@ -3549,6 +3520,7 @@ function finalizeFeatureDebugSnapshot({
   auditSettings,
   inputMode,
   analysisInputMode = inputMode,
+  sourceEvidence = null,
   pitchSource,
   analysisEngine,
   fieldState,
@@ -3619,6 +3591,7 @@ function finalizeFeatureDebugSnapshot({
   const debug = buildDebugSummary({
     inputMode,
     analysisInputMode,
+    sourceEvidence,
     soundActive,
     micActive,
     pitchSource,
@@ -3974,6 +3947,12 @@ export function prepareAudioFeatureFrameInputs({
     sourceMode = "test";
   }
 
+  const fileTransportSourceMuted = shouldMuteFileTransportSource({
+    inputMode,
+    status,
+    auditSettings: resolvedAuditSettings,
+  });
+
   if (!analysisSnapshot && !resolvedAuditSettings.injectTestTone) {
     if (!isAcousticLiveInput) {
       resetLiveInputGateState(analysisMemory.bandState, {
@@ -3982,6 +3961,21 @@ export function prepareAudioFeatureFrameInputs({
         calibrationVersion,
       });
     }
+    const sourceEvidence = buildAudioSourceEvidenceFrame({
+      inputMode,
+      hasAnalysisSource: status?.hasAnalysisSource === true,
+      isPlaying: status?.isPlaying === true,
+      isLiveInputActive: status?.isLiveInputActive === true,
+      isAcousticLiveInput,
+      isLineFeedLiveInput,
+      fileMuted: fileTransportSourceMuted,
+      metrics: {
+        avgAmplitude: 0,
+        analyserRms: 0,
+        preModalFftPeak: 0,
+        nonZeroFftBinCount: 0,
+      },
+    });
     return {
       capacity,
       analysisMemory,
@@ -4021,6 +4015,7 @@ export function prepareAudioFeatureFrameInputs({
       shouldBuildSpectralLight,
       currentFrame,
       sourceMode,
+      sourceEvidence,
       radius,
       cavityAcousticScale,
       boundaryMode,
@@ -4052,6 +4047,7 @@ export function prepareAudioFeatureFrameInputs({
         soundActive,
         micActive,
         isLiveInputActive: status?.isLiveInputActive === true,
+        sourceEvidence,
         candidateForcingSlots,
         candidateResponseSlots,
         sourceCoupledPhaseSlots,
@@ -4079,11 +4075,6 @@ export function prepareAudioFeatureFrameInputs({
         sampleRate,
       })
     : analysisSnapshot;
-  const fileTransportSourceMuted = shouldMuteFileTransportSource({
-    inputMode,
-    status,
-    auditSettings: resolvedAuditSettings,
-  });
   const snapshot = fileTransportSourceMuted
     ? buildMutedAnalysisSnapshot(rawSnapshot, fftSize)
     : rawSnapshot;
@@ -4173,6 +4164,27 @@ export function prepareAudioFeatureFrameInputs({
           quietHoldMs: 0,
         };
       })();
+  const sourceEvidence = buildAudioSourceEvidenceFrame({
+    inputMode,
+    hasAnalysisSource:
+      status?.hasAnalysisSource === true ||
+      Boolean(rawSnapshot) ||
+      resolvedAuditSettings.injectTestTone,
+    isPlaying: status?.isPlaying === true,
+    isLiveInputActive: status?.isLiveInputActive === true,
+    isAcousticLiveInput,
+    isLineFeedLiveInput,
+    injectTestTone: resolvedAuditSettings.injectTestTone,
+    fileMuted: fileTransportSourceMuted,
+    lineFeedProgramActive: lineFeedProgramActivity.programActive === true,
+    liveInputHardSilenceActive,
+    metrics: {
+      avgAmplitude,
+      analyserRms,
+      preModalFftPeak,
+      nonZeroFftBinCount: countNonZeroFftBins(fftMagnitudesSource),
+    },
+  });
 
   return {
     analysisSnapshot,
@@ -4231,6 +4243,7 @@ export function prepareAudioFeatureFrameInputs({
     shouldBuildSpectralLight,
     currentFrame,
     sourceMode: resolvedSourceMode,
+    sourceEvidence,
     snapshot,
     avgAmplitude,
     analyserRms,
@@ -5052,6 +5065,7 @@ export function buildCurrentAudioFeatureAnalysisResult({
     referenceModeSlots: resolvedStructural.referenceModeSlots,
     signalReferenceModeSlots: resolvedStructural.signalReferenceModeSlots,
     sourceMode: resolvedStructural.sourceMode,
+    sourceEvidence: preparedInputs.sourceEvidence,
     sourceCoupledState: resolvedSourceCoupledState,
     resonantState: resolvedResonantState,
     bandState: preparedInputs.bandState,
@@ -5135,6 +5149,7 @@ export function buildFastSignalPatchedAudioFeatureAnalysisResult({
     preModalFftPeak: preparedInputs.preModalFftPeak,
     postNormalizationFftPeak: fastSignalState.postNormalizationFftPeak,
     bandState: preparedInputs.bandState,
+    sourceEvidence: preparedInputs.sourceEvidence,
     debug: null,
   };
 }
@@ -5244,6 +5259,13 @@ export function buildAudioFeatureAnalysisSnapshot({
         analysisResult.signalReferenceModeSlots,
       ),
       sourceMode: analysisResult.sourceMode,
+      sourceEvidence: analysisResult.sourceEvidence
+        ? {
+            ...analysisResult.sourceEvidence,
+            metrics: { ...analysisResult.sourceEvidence.metrics },
+            transport: { ...analysisResult.sourceEvidence.transport },
+          }
+        : null,
       sourceCoupledStateSummary,
       resonantStateSummary,
       avgAmplitude: analysisResult.avgAmplitude,
@@ -5465,17 +5487,16 @@ export function composeAudioFeatureFrame({
       modalResponseResonantEnergy,
     ),
   );
+  const resolvedSourceEvidence = resolveAudioRenderBoundary({
+    sourceEvidence: preparedInputs.sourceEvidence,
+    modalResponse: analysisResult.structuralMetrics,
+    observerContinuity:
+      analysisResult.structuralMetrics?.modalResponseCurrentRenderSourceEvidence,
+  });
+  analysisResult.sourceEvidence = resolvedSourceEvidence;
   const energyLedger = buildModalEnergyLedger({
-    sourceEnergy:
-      analysisResult.structuralMetrics?.energyLedger?.sourceEnergy ??
-      deriveSourceEnergyAuthority(analysisResult.sourceNormalization),
-    sourceBoundaryState:
-      analysisResult.structuralMetrics?.energyLedger?.sourceBoundaryState ??
-      deriveSourceBoundaryState({
-        preparedInputs,
-        analysisResult,
-        injectTestTone: preparedInputs.resolvedAuditSettings.injectTestTone,
-      }),
+    sourceEnergy: resolvedSourceEvidence.sourceEnergy,
+    sourceBoundaryState: resolvedSourceEvidence.sourceBoundaryState,
     modalResponse: analysisResult.structuralMetrics,
     candidateForcingSlots: analysisResult.candidateForcingSlots,
     candidateResponseSlots: analysisResult.candidateResponseSlots,
@@ -5488,6 +5509,7 @@ export function composeAudioFeatureFrame({
     hasProjectedRenderAuthority(energyLedger);
   if (analysisResult.structuralMetrics) {
     analysisResult.structuralMetrics.energyLedger = energyLedger;
+    analysisResult.structuralMetrics.sourceEvidence = resolvedSourceEvidence;
   }
   modalCoefficientEnergy = energyLedger.projectedRenderEnergy;
   modalResponseSourceCoupledEnergy =
@@ -5528,7 +5550,7 @@ export function composeAudioFeatureFrame({
   }
 
   const sourceBoundaryModalForcingAbsent =
-    hasNoRenderSourceForcing(analysisResult) &&
+    resolvedSourceEvidence.currentSourceEvidence !== true &&
       (analysisResult.usedDecay ||
         sourceModalCoefficientEnergy <= RENDER_ENERGY_EPSILON);
   const lineFeedSourceVisibility =
@@ -5536,19 +5558,9 @@ export function composeAudioFeatureFrame({
       LIVE_INPUT_ANALYSIS_CLASSES.lineFeed ||
     preparedInputs.liveInputPolicy === LIVE_INPUT_ANALYSIS_CLASSES.lineFeed;
   const lineFeedProgramActive = preparedInputs.lineFeedProgramActive === true;
-  const lineFeedMeterIdlePause = isLineFeedMeterIdlePauseSignature(
-    {
-      avgAmplitude: preparedInputs.avgAmplitude,
-      rms: preparedInputs.analyserRms,
-    },
-    {
-      deviceFloorAvg: preparedInputs.lineFeedDeviceFloorAvg,
-      deviceFloorRms: preparedInputs.lineFeedDeviceFloorRms,
-    },
-  );
   const lineFeedLowQFieldVisibilityAllowed =
     lineFeedSourceVisibility &&
-    (lineFeedProgramActive || !lineFeedMeterIdlePause) &&
+    resolvedSourceEvidence.currentSourceEvidence === true &&
     lowQSourceCoupledVisibilityEnergy > RENDER_ENERGY_EPSILON;
   const observerAuthorizedActiveField =
     (analysisResult.activeModeCount ?? 0) > 0 &&
@@ -5685,6 +5697,7 @@ export function composeAudioFeatureFrame({
     debug = finalizeFeatureDebugSnapshot({
       auditSettings: preparedInputs.resolvedAuditSettings,
       inputMode: preparedInputs.inputMode,
+      sourceEvidence: analysisResult.sourceEvidence,
       pitchSource: analysisResult.pitchSource,
       analysisEngine: analysisResult.analysisEngine,
       fieldState,
@@ -5795,6 +5808,7 @@ export function composeAudioFeatureFrame({
     renderAuthority,
     energyLedger,
     projectedRenderEnergy: energyLedger.projectedRenderEnergy,
+    sourceEvidence: resolvedSourceEvidence,
     isLiveInputActive: preparedInputs.status?.isLiveInputActive === true,
     soundActive: analysisResult.soundActive,
     micActive: analysisResult.micActive,

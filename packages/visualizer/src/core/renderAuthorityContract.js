@@ -53,13 +53,5 @@ export function allowsAudioMotion(featureFrame) {
 }
 
 export function allowsCachedLiveFeatureFrame(featureFrame) {
-  if (!hasRenderAuthority(featureFrame)) {
-    return false;
-  }
-
-  if (featureFrame?.debug?.lineFeedProgramActive === false) {
-    return false;
-  }
-
-  return true;
+  return hasRenderAuthority(featureFrame);
 }

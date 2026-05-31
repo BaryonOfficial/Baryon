@@ -807,7 +807,7 @@ describe("modal excitation structural state", () => {
     expect(sumAmplitudes(structural.candidateForcingSlotsSource)).toBe(0);
   });
 
-  it("keeps retained modal energy diagnostic-only on the first muted frame", () => {
+  it("keeps retained modal energy diagnostic-only on the first zero-input frame", () => {
     const state = createModalExcitationState(16);
     const activeInputs = createLineFeedPreparedInputs({
       frameTimeMs: 0,
@@ -2687,7 +2687,7 @@ describe("modal excitation structural state", () => {
     expectLegacyModalObserverAuthoritiesRemoved(state);
   });
 
-  it("keeps zero-input high-Q ring-out on the energy ledger", () => {
+  it("keeps zero-input high-Q ring-out diagnostic-only on the energy ledger", () => {
     const state = createModalExcitationState(16);
     const status = createStatus({
       audioInputMode: "live",
@@ -2744,13 +2744,14 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0);
     expect(
       structural.structuralMetrics.modalResponseRenderEnergy,
-    ).toBeGreaterThan(0);
+    ).toBe(0);
+    expect(
+      structural.structuralMetrics.energyLedger.sourceBoundaryState,
+    ).toBe("muted");
     expect(
       structural.structuralMetrics.energyLedger.projectedRenderEnergy,
-    ).toBeCloseTo(structural.structuralMetrics.modalResponseRenderEnergy, 6);
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(
-      0,
-    );
+    ).toBe(0);
+    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBe(0);
     expectLegacyModalObserverAuthoritiesRemoved(structural.structuralMetrics);
   });
 
@@ -2816,10 +2817,11 @@ describe("modal excitation structural state", () => {
     ).toBeGreaterThan(0);
     expect(
       structural.structuralMetrics.modalResponseRenderEnergy,
-    ).toBeGreaterThan(0);
-    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBeGreaterThan(
-      0,
-    );
+    ).toBe(0);
+    expect(sumAmplitudes(structural.candidateResponseSlotsSource)).toBe(0);
+    expect(
+      structural.structuralMetrics.energyLedger.sourceBoundaryState,
+    ).toBe("muted");
     expect(structural.structuralMetrics.modalPhaseAuthority).toBe(0);
     expect(
       structural.structuralMetrics.modalPhaseCoherentFieldModeCount,

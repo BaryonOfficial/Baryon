@@ -77,19 +77,25 @@ describe("render authority contract", () => {
     ).toBe(false);
   });
 
-  it("blocks cached live frames after line-feed program idle", () => {
+  it("blocks cached live frames through closed ledger authority", () => {
     expect(
       allowsCachedLiveFeatureFrame({
         fieldState: "active",
         renderAuthority: true,
-        debug: { lineFeedProgramActive: false },
+        energyLedger: {
+          projectedRenderEnergy: 0,
+          renderEnergyEpsilon: 1e-6,
+        },
       }),
     ).toBe(false);
     expect(
       allowsCachedLiveFeatureFrame({
         fieldState: "active",
         renderAuthority: true,
-        debug: { lineFeedProgramActive: true },
+        energyLedger: {
+          projectedRenderEnergy: 0.02,
+          renderEnergyEpsilon: 1e-6,
+        },
       }),
     ).toBe(true);
   });

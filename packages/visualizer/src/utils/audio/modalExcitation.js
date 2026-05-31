@@ -44,6 +44,10 @@ import {
   mergeProjectionNormalizationMetrics,
 } from "./modalProjectionNormalization.js";
 import { buildModalEnergyLedger } from "./modalEnergyLedger.js";
+import {
+  buildAudioSourceEvidenceFrame,
+  resolveAudioRenderBoundary,
+} from "./audioSourceEvidence.js";
 import { updateModalResponseFrame } from "./modalResponse.js";
 import {
   buildStaleResonantReleaseOverrides,
@@ -385,12 +389,38 @@ function isHardSilentFrame(preparedInputs) {
   );
 }
 
-function isLiteralZeroSourceFrame(preparedInputs) {
-  return (
-    (preparedInputs?.avgAmplitude ?? 0) <= 0 &&
-    (preparedInputs?.analyserRms ?? 0) <= 0 &&
-    (preparedInputs?.preModalFftPeak ?? 0) <= 0
-  );
+function getPreparedInputsSourceEvidence(preparedInputs) {
+  if (preparedInputs?.sourceEvidence) {
+    return preparedInputs.sourceEvidence;
+  }
+
+  return buildAudioSourceEvidenceFrame({
+    inputMode: preparedInputs?.inputMode ?? "idle",
+    hasAnalysisSource:
+      preparedInputs?.snapshot != null ||
+      preparedInputs?.fftMagnitudesSource instanceof Float32Array ||
+      preparedInputs?.timeData instanceof Float32Array,
+    isPlaying: preparedInputs?.status?.isPlaying === true,
+    isLiveInputActive: preparedInputs?.status?.isLiveInputActive === true,
+    isAcousticLiveInput: preparedInputs?.isAcousticLiveInput === true,
+    isLineFeedLiveInput: isLineFeedInputPreparedInputs(preparedInputs),
+    injectTestTone:
+      preparedInputs?.resolvedAuditSettings?.injectTestTone === true,
+    fileMuted:
+      preparedInputs?.inputMode === "file" &&
+      preparedInputs?.sourceMode === "silent",
+    lineFeedProgramActive: preparedInputs?.lineFeedProgramActive === true,
+    liveInputHardSilenceActive:
+      preparedInputs?.liveInputHardSilenceActive === true,
+    metrics: {
+      avgAmplitude: preparedInputs?.avgAmplitude ?? 0,
+      analyserRms: preparedInputs?.analyserRms ?? 0,
+      preModalFftPeak: preparedInputs?.preModalFftPeak ?? 0,
+      nonZeroFftBinCount: countNonZeroFftBins(
+        preparedInputs?.fftMagnitudesSource,
+      ),
+    },
+  });
 }
 
 function hasFreshModalCouplingEvidence({ modalResponseInputEnergy }) {
@@ -3214,7 +3244,7 @@ export function buildModalExcitationStructuralState({
   const freshCouplingEvidence = hasFreshModalCouplingEvidence({
     modalResponseInputEnergy: modalResponse.modalResponseInputEnergy,
   });
-  const currentRenderSourceEvidence = hasCurrentRenderSourceEvidence({
+  const modalObserverRenderSourceEvidence = hasCurrentRenderSourceEvidence({
     drivePeak,
     driveSource,
     periodicity,
@@ -3222,6 +3252,14 @@ export function buildModalExcitationStructuralState({
     distributedExcitation,
     modalResponseInputEnergy: modalResponse.modalResponseInputEnergy,
   });
+  const resolvedSourceEvidence = resolveAudioRenderBoundary({
+    sourceEvidence: getPreparedInputsSourceEvidence(preparedInputs),
+    modalResponse,
+    observerContinuity: modalObserverRenderSourceEvidence,
+    inputEnergyFloor: CURRENT_INPUT_ENERGY_FLOOR,
+  });
+  const currentRenderSourceEvidence =
+    resolvedSourceEvidence.currentSourceEvidence === true;
   const hardSilentFrame =
     strictHardSilentFrame &&
     !observedTailActivity &&
@@ -3885,28 +3923,13 @@ export function buildModalExcitationStructuralState({
   const signalAmplitudeTotal =
     sumSlotAmplitudes(state.sourceCoupledProposal.slots) +
     sumSlotAmplitudes(state.resonantProposal.slots);
-  const sourceBoundaryState =
-    isLineFeedInput &&
-    !lineFeedProgramActive &&
-    !currentRenderSourceEvidence
-      ? "muted"
-      : strictHardSilentFrame &&
-          !observedTailActivity &&
-          !currentRenderSourceEvidence
-        ? "muted"
-        : isLiteralZeroSourceFrame(preparedInputs)
-          ? "zero"
-          : !currentRenderSourceEvidence &&
-              modalResponse.modalResponseInputEnergy <=
-                CURRENT_INPUT_ENERGY_FLOOR
-            ? "zero"
-            : "live";
+  const sourceBoundaryState = resolvedSourceEvidence.sourceBoundaryState;
   const modalResponseRenderEnergy = deriveModalResponseRenderEnergy({
     modalResponse,
     candidateForcingSlots: state.blendSourceCoupled.slots,
     candidateResponseSlots: state.blendResonant.slots,
     capacity: sourceCoupledCapacity + resonantCapacity,
-    sourceEnergy: modalResponse.modalResponseInputEnergy,
+    sourceEnergy: resolvedSourceEvidence.sourceEnergy,
     sourceBoundaryState,
   });
   const renderSuppressedByEnergy =
@@ -4026,6 +4049,7 @@ export function buildModalExcitationStructuralState({
     lineFeedProgramExcitation: preparedInputs?.lineFeedProgramExcitation ?? 0,
     modalResponseCurrentRenderSourceEvidence: currentRenderSourceEvidence,
     modalResponseFreshCouplingEvidence: freshCouplingEvidence,
+    sourceEvidence: resolvedSourceEvidence,
     ...modalResponseRenderEnergy,
     modalResponseSourceCoupledEnergy:
       modalResponse.modalResponseSourceCoupledEnergy,

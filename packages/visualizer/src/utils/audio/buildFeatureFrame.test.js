@@ -642,6 +642,16 @@ function buildLiveInputFrame({
   });
 }
 
+function expectClosedSourceRenderFrame(frame) {
+  expect(["absent", "muted", "zero"]).toContain(
+    frame.energyLedger.sourceBoundaryState,
+  );
+  expect(frame.energyLedger.projectedRenderEnergy).toBe(0);
+  expect(frame.renderAuthority).toBe(false);
+  expect(frame.activeModeCount).toBe(0);
+  expect(frame.activeModalFieldModeCount).toBe(0);
+}
+
 function calibrateLiveInput(
   featureState,
   {
@@ -1352,6 +1362,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(silence.energyLedger.sourceBoundaryState).toBe("muted");
     expect(silence.energyLedger.storedModalEnergy).toBeGreaterThan(0);
     expect(silence.energyLedger.projectedRenderEnergy).toBe(0);
+    expectClosedSourceRenderFrame(silence);
     expect(silence.renderAuthority).toBe(false);
     expect(silence.hasModalField).toBe(false);
     expect(silence.observationEnergy).toBe(0);
@@ -1410,6 +1421,7 @@ describe("buildAudioFeatureFrame modal contract", () => {
     expect(frame.energyLedger.sourceBoundaryState).toBe("muted");
     expect(frame.energyLedger.storedModalEnergy).toBeGreaterThan(0);
     expect(frame.energyLedger.projectedRenderEnergy).toBe(0);
+    expectClosedSourceRenderFrame(frame);
     expect(frame.renderAuthority).toBe(false);
     expect(frame.fieldState).toBe("idle");
     expect(frame.hasModalField).toBe(false);
@@ -5922,10 +5934,16 @@ describe("live input FFT normalization — slot amplitude lift", () => {
       reuseHeavyAnalysis: true,
     });
 
-    expect(Array.from(reused.modalFieldSlots)).toEqual(
+    expect(Array.from(reused.modalFieldSlots)).not.toEqual(
       Array.from(first.modalFieldSlots),
     );
     expect(first.modalVisibilityEnergy).toBeGreaterThan(0.05);
+    expect(reused.renderAuthority).toBe(false);
+    expect(reused.sourceEvidence.currentSourceEvidence).toBe(false);
+    expect(
+      reused.energyLedger.projectedRenderEnergy,
+    ).toBe(0);
+    expect(sumSlotAmplitudes(reused.modalFieldSlots)).toBe(0);
     expect(reused.structureSignal).toBeLessThan(first.structureSignal * 0.5);
     expect(reused.energySignal).toBeLessThan(first.energySignal * 0.5);
     expect(reused.modalVisibilityEnergy).toBeLessThan(
@@ -6544,8 +6562,8 @@ describe("modal excitation integration", () => {
       previousFrame = silentResult.frame;
     }
 
-    expect(silentResult.analysisResult.usedDecay).toBe(false);
     expect(silentResult.frame.fieldState).toBe("idle");
+    expect(silentResult.frame.renderAuthority).toBe(false);
     expect(sumSlotAmplitudes(silentResult.analysisResult.signalModeSlots)).toBe(
       0,
     );
@@ -6630,6 +6648,7 @@ describe("modal excitation integration", () => {
     expect(
       pausedResult.analysisResult.structuralMetrics.energyLedger.projectedRenderEnergy,
     ).toBe(0);
+    expectClosedSourceRenderFrame(pausedResult.frame);
     expect(pausedResult.analysisResult.avgAmplitude).toBe(0);
     expect(pausedResult.analysisResult.analyserRms).toBe(0);
     expect(pausedResult.analysisResult.preModalFftPeak).toBe(0);
