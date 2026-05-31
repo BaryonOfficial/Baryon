@@ -256,13 +256,13 @@ describe("createControlsStore", () => {
     store.loadPreset(BARYON_7_NAME);
 
     expect(store.getSnapshot().selectedPresetName).toBe(BARYON_7_NAME);
-    expect(store.controlsRef.current.raymarchSteps).toBe(80);
-    expect(store.controlsRef.current.zeroPointPrecision).toBe(0.064);
+    expect(store.controlsRef.current.raymarchSteps).toBe(72);
+    expect(store.controlsRef.current.zeroPointPrecision).toBe(0.1);
     expect(store.controlsRef.current).not.toHaveProperty("structureMin");
     expect(store.controlsRef.current).not.toHaveProperty("structureMax");
-    expect(store.controlsRef.current.densityGain).toBe(2.5);
-    expect(store.controlsRef.current.absorption).toBe(1.45);
-    expect(store.controlsRef.current.opacityGain).toBe(2.3);
+    expect(store.controlsRef.current.densityGain).toBe(4);
+    expect(store.controlsRef.current.absorption).toBe(4);
+    expect(store.controlsRef.current.opacityGain).toBe(3);
     expect(store.controlsRef.current.holographicIntensity).toBe(0.52);
     expect(store.controlsRef.current.holographicShift).toBe(0.42);
     expect(store.controlsRef.current.holographicFresnelPower).toBe(4.8);
@@ -272,6 +272,7 @@ describe("createControlsStore", () => {
     expect(store.controlsRef.current.bloomResponseBias).toBe(1);
     expect(store.controlsRef.current.rimBloomBias).toBe(0.39);
     expect(store.controlsRef.current.rimCompression).toBe(1.2);
+    expect(store.controlsRef.current.colorMode).toBe("static");
     expect(store.controlsRef.current.spectralMix).toBe(0.96);
     expect(store.controlsRef.current.renderQualityPreset).toBe(
       DEFAULT_PERFORMANCE_PROFILE,

@@ -90,21 +90,21 @@ describe("control schema", () => {
     expect(Object.keys(state)).toEqual(EXPECTED_CONTROL_KEYS);
   });
 
-  it("defaults the raymarch surface to the baryon-7 baseline", () => {
+  it("defaults the raymarch surface to the current baseline", () => {
     const state = createControlState();
 
-    expect(state.colorMode).toBe("spectral");
+    expect(state.colorMode).toBe("static");
     expect(state.spectralMix).toBe(0.96);
-    expect(state.volumeColor).toBe("#56d7ff");
+    expect(state.volumeColor).toBe("#5be3f4");
     expect(state.surfaceColor).toBe("#f7fdff");
-    expect(state.zeroPointPrecision).toBe(0.064);
+    expect(state.zeroPointPrecision).toBe(0.1);
     expect(state).not.toHaveProperty("structureMin");
     expect(state).not.toHaveProperty("structureMax");
     expect(state.boundaryMode).toBe("neumann");
     expect(state.raymarchSteps).toBe(RAYMARCH_DEFAULTS.raymarchSteps);
-    expect(state.densityGain).toBe(2.5);
+    expect(state.densityGain).toBe(4);
     expect(state.absorption).toBe(RAYMARCH_DEFAULTS.absorption);
-    expect(state.opacityGain).toBe(2.3);
+    expect(state.opacityGain).toBe(3);
     expect(state).not.toHaveProperty("contourSharpness");
     expect(state.holographicIntensity).toBe(0.52);
     expect(state.holographicShift).toBe(0.42);

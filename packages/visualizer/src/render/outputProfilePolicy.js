@@ -7,7 +7,7 @@ export const PERFORMANCE_PROFILES = Object.freeze({
   custom: "custom",
   maxQuality: "max-quality",
 });
-export const DEFAULT_PERFORMANCE_PROFILE = PERFORMANCE_PROFILES.maxQuality;
+export const DEFAULT_PERFORMANCE_PROFILE = PERFORMANCE_PROFILES.auto;
 export const CUSTOM_TARGET_FPS_BANDS = Object.freeze({
   low: "24-48",
   balanced: "49-72",

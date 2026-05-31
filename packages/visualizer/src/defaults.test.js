@@ -65,7 +65,7 @@ describe("defaults compatibility surface", () => {
     expect(DEFAULTS).not.toHaveProperty("structurePersistence");
   });
 
-  it("uses the canonical max-quality render profile for live defaults", () => {
+  it("uses the canonical auto render profile for live defaults", () => {
     expect(RENDER_DEFAULTS.renderQualityPreset).toBe(
       DEFAULT_PERFORMANCE_PROFILE,
     );

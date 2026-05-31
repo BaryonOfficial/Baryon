@@ -27,7 +27,7 @@ export const CAVITY_ACOUSTIC_DEFAULTS = Object.freeze({
 export const SIMULATION_DEFAULTS = Object.freeze({
   radius: 3.0,
   cavityAcousticScale: CAVITY_ACOUSTIC_DEFAULTS,
-  zeroPointPrecision: 0.064,
+  zeroPointPrecision: 0.1,
   boundaryMode: "neumann",
   cavityGeometry: DEFAULT_REQUESTED_CAVITY_GEOMETRY,
 });
@@ -41,9 +41,9 @@ export const RENDER_DEFAULTS = Object.freeze({
   backgroundColor: "#000000",
   renderQualityPreset: DEFAULT_PERFORMANCE_PROFILE,
   customPerformanceTargetFps: 60,
-  volumeColor: "#56d7ff",
+  volumeColor: "#5be3f4",
   surfaceColor: "#f7fdff",
-  colorMode: /** @type {"static" | "spectral"} */ ("spectral"),
+  colorMode: /** @type {"static" | "spectral"} */ ("static"),
   spectralMix: 0.96,
   outputMode: "transparent",
   outputBackgroundColor: "#000000",
@@ -76,10 +76,10 @@ export const BEAT_DEFAULTS = Object.freeze({
 export const RAYMARCH_AVERAGE_AMPLITUDE_SHADER_REFERENCE = 96;
 
 export const RAYMARCH_DEFAULTS = Object.freeze({
-  raymarchSteps: 80,
-  densityGain: 2.5,
-  absorption: 1.45,
-  opacityGain: 2.3,
+  raymarchSteps: 72,
+  densityGain: 4,
+  absorption: 4,
+  opacityGain: 3,
   contourSharpness: 8,
   rimBloomBias: 0.39,
   rimCompression: 1.2,
