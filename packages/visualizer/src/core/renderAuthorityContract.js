@@ -24,6 +24,13 @@ function hasLedgerAuthority(featureFrame) {
   );
 }
 
+function hasCurrentLiveSourceEvidence(featureFrame) {
+  return (
+    featureFrame?.sourceEvidence?.currentSourceEvidence === true &&
+    featureFrame?.sourceEvidence?.sourceBoundaryState === "live"
+  );
+}
+
 export function hasRenderAuthority(featureFrame) {
   if (!featureFrame) {
     return false;
@@ -52,6 +59,10 @@ export function allowsAudioMotion(featureFrame) {
   return hasRenderAuthority(featureFrame);
 }
 
-export function allowsCachedLiveFeatureFrame(featureFrame) {
-  return hasRenderAuthority(featureFrame);
+export function allowsCurrentLiveRenderFrame(featureFrame) {
+  return (
+    hasLedgerData(featureFrame) &&
+    hasRenderAuthority(featureFrame) &&
+    hasCurrentLiveSourceEvidence(featureFrame)
+  );
 }

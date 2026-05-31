@@ -49,6 +49,24 @@ function createSetterCapture() {
   };
 }
 
+function createLiveRenderFrameEvidence({
+  projectedRenderEnergy = 0.2,
+  injectTestTone = false,
+} = {}) {
+  return {
+    renderAuthority: true,
+    energyLedger: {
+      projectedRenderEnergy,
+      renderEnergyEpsilon: 1e-6,
+      injectTestTone,
+    },
+    sourceEvidence: {
+      sourceBoundaryState: "live",
+      currentSourceEvidence: true,
+    },
+  };
+}
+
 function createAdaptiveRaymarchHarness({
   controls = {},
   renderProfile = {},
@@ -56,6 +74,11 @@ function createAdaptiveRaymarchHarness({
   status = {},
   runtime = {},
 } = {}) {
+  const resolvedControls = {
+    raymarchSteps: 64,
+    injectTestTone: false,
+    ...controls,
+  };
   const runtimeDiagnostics = createRuntimeDiagnostics();
   runtimeDiagnostics.lastFrameTimeMs = 14;
   runtimeDiagnostics.smoothedFrameTimeMs = 14;
@@ -86,11 +109,7 @@ function createAdaptiveRaymarchHarness({
     runtimeDiagnostics,
     runtimeState,
     args: {
-      controls: {
-        raymarchSteps: 64,
-        injectTestTone: false,
-        ...controls,
-      },
+      controls: resolvedControls,
       runtime: {
         method: "raymarch",
         ...runtime,
@@ -106,6 +125,9 @@ function createAdaptiveRaymarchHarness({
         fieldState: "active",
         energySignal: 0.2,
         sourceMode: "file",
+        ...createLiveRenderFrameEvidence({
+          injectTestTone: resolvedControls.injectTestTone,
+        }),
         ...effectiveFrame,
       },
       status: {
@@ -962,6 +984,7 @@ test("auto raymarch drops render scale before crossing the cymatic sampling floo
     },
     effectiveFrame: {
       activeModeCount: 16,
+      ...createLiveRenderFrameEvidence({ injectTestTone: true }),
     },
     status: {
       isPlaying: false,
@@ -1488,13 +1511,19 @@ test("resolveFeatureFrame composes a source-cut frame during paused playback", (
   const cachedActiveFrame = {
     fieldState: "active",
     renderAuthority: true,
-    renderAuthorityCut: false,
     stale: true,
   };
   const sourceCutFrame = {
     fieldState: "idle",
     renderAuthority: false,
-    renderAuthorityCut: true,
+    energyLedger: {
+      projectedRenderEnergy: 0,
+      renderEnergyEpsilon: 1e-6,
+    },
+    sourceEvidence: {
+      sourceBoundaryState: "muted",
+      currentSourceEvidence: false,
+    },
   };
   const featureEngine = {
     enqueueTransportFrame: vi.fn(),
@@ -1518,7 +1547,6 @@ test("resolveFeatureFrame composes a source-cut frame during paused playback", (
   const runHeavyFeatureAnalysis = vi.fn(() => ({
     fieldState: "idle",
     renderAuthority: false,
-    renderAuthorityCut: true,
   }));
   const composeFeatureFrame = vi.fn(() => sourceCutFrame);
   const { args } = createResolveFeatureFrameHarness({
@@ -1554,7 +1582,13 @@ test("resolveFeatureFrame composes a source-cut frame during paused playback", (
   expect(result.effectiveFrame).toMatchObject({
     fieldState: "idle",
     renderAuthority: false,
-    renderAuthorityCut: true,
+    energyLedger: {
+      projectedRenderEnergy: 0,
+    },
+    sourceEvidence: {
+      sourceBoundaryState: "muted",
+      currentSourceEvidence: false,
+    },
   });
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
     "local-heavy-analysis",
@@ -1659,14 +1693,26 @@ test("auto raymarch does not recover during silent playback gaps", () => {
     effectiveFrame: {
       fieldState: "idle",
       energySignal: 0,
-      sourceMode: "silent",
+      sourceMode: "file",
+      renderAuthority: false,
+      energyLedger: {
+        projectedRenderEnergy: 0,
+        renderEnergyEpsilon: 1e-6,
+      },
+      sourceEvidence: {
+        sourceBoundaryState: "zero",
+        currentSourceEvidence: true,
+      },
     },
   });
   primeAdaptiveRecoveryAttempt(runtimeDiagnostics);
 
   updateAdaptiveRaymarchStepBudget(args);
 
-  assertAdaptiveRecoveryBlocked(runtimeDiagnostics, "silent-source");
+  expect(runtimeDiagnostics.adaptiveRaymarch.adaptiveRaymarchActive).toBe(
+    false,
+  );
+  expect(runtimeDiagnostics.adaptiveRaymarch.stepUpCount).toBe(0);
 });
 
 test("auto raymarch does not recover on weak active audio", () => {
@@ -1913,6 +1959,14 @@ test("resolveFeatureFrame seeds the first live frame locally while worker analys
       return {
         fieldState: "active",
         renderAuthority: true,
+        energyLedger: {
+          projectedRenderEnergy: 0.08,
+          renderEnergyEpsilon: 1e-6,
+        },
+        sourceEvidence: {
+          sourceBoundaryState: "live",
+          currentSourceEvidence: true,
+        },
         seededFromAnalysis: analysisResult.preparedInputs.analysisSessionKey,
       };
     },
@@ -1949,6 +2003,14 @@ test("resolveFeatureFrame preserves the last active live frame during worker war
   const lastLiveFrame = {
     fieldState: "active",
     renderAuthority: true,
+    energyLedger: {
+      projectedRenderEnergy: 0.08,
+      renderEnergyEpsilon: 1e-6,
+    },
+    sourceEvidence: {
+      sourceBoundaryState: "live",
+      currentSourceEvidence: true,
+    },
     preserved: true,
   };
   const { args } = createResolveFeatureFrameHarness({
@@ -1993,16 +2055,30 @@ test("resolveFeatureFrame preserves the last active live frame during worker war
   expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(true);
 });
 
-test("resolveFeatureFrame does not reuse stale live cache when line-feed program is idle", () => {
+test("resolveFeatureFrame does not reuse stale live cache without current source evidence", () => {
   const silentFeatureFrame = {
     fieldState: "idle",
     renderAuthority: false,
-    renderAuthorityCut: true,
+    energyLedger: {
+      projectedRenderEnergy: 0,
+      renderEnergyEpsilon: 1e-6,
+    },
+    sourceEvidence: {
+      sourceBoundaryState: "muted",
+      currentSourceEvidence: false,
+    },
   };
   const staleActiveFrame = {
     fieldState: "active",
     renderAuthority: true,
-    debug: { lineFeedProgramActive: false },
+    energyLedger: {
+      projectedRenderEnergy: 0.08,
+      renderEnergyEpsilon: 1e-6,
+    },
+    sourceEvidence: {
+      sourceBoundaryState: "muted",
+      currentSourceEvidence: false,
+    },
   };
   const featureEngine = {
     enqueueTransportFrame() {},

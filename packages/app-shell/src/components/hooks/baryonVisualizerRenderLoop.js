@@ -17,7 +17,7 @@ import {
 } from "@baryon/visualizer/audio-features";
 import { CAVITY_ACOUSTIC_DEFAULTS } from "@baryon/visualizer/defaults";
 import {
-  allowsCachedLiveFeatureFrame,
+  allowsCurrentLiveRenderFrame,
   hasRenderAuthority,
 } from "@baryon/visualizer/core/renderAuthorityContract";
 import { RAYMARCH_MODAL_BASIS_CACHE_CAPACITY } from "@baryon/visualizer/core/raymarch/fieldCache";
@@ -666,7 +666,7 @@ function shouldComposeInactiveSourceFeatureFrame({
 }
 
 function shouldCaptureLastLiveFrame({ status, featureFrame }) {
-  if (!allowsCachedLiveFeatureFrame(featureFrame)) {
+  if (!allowsCurrentLiveRenderFrame(featureFrame)) {
     return false;
   }
 
@@ -678,7 +678,7 @@ function shouldCaptureLastLiveFrame({ status, featureFrame }) {
 }
 
 function resolveCachedLiveFeatureFrame(lastLiveFrame, silentFeatureFrame) {
-  if (allowsCachedLiveFeatureFrame(lastLiveFrame)) {
+  if (allowsCurrentLiveRenderFrame(lastLiveFrame)) {
     return lastLiveFrame;
   }
 
@@ -1417,14 +1417,17 @@ function deriveAdaptiveRecoveryState({
 
   let recoveryBlockedReason = "none";
   if (!controls?.injectTestTone) {
-    const sourceMode = effectiveFrame?.sourceMode ?? null;
+    const currentSourceEvidence =
+      effectiveFrame?.sourceEvidence?.currentSourceEvidence === true;
+    const sourceBoundaryState =
+      effectiveFrame?.sourceEvidence?.sourceBoundaryState ?? "absent";
     const fieldState = effectiveFrame?.fieldState ?? "idle";
     const energySignal = effectiveFrame?.energySignal ?? 0;
 
     if (sessionTransition) {
       recoveryBlockedReason = "session-transition";
-    } else if (sourceMode === "silent") {
-      recoveryBlockedReason = "silent-source";
+    } else if (!currentSourceEvidence || sourceBoundaryState !== "live") {
+      recoveryBlockedReason = "closed-source";
     } else if (fieldState !== "active") {
       recoveryBlockedReason = "inactive-field";
     } else if (!(energySignal >= AUTO_RAYMARCH_RECOVERY_MIN_ENERGY_SIGNAL)) {
@@ -1571,9 +1574,7 @@ export function updateAdaptiveRaymarchStepBudget({
     effectiveFrame?.modalFieldSlots;
   const activeRaymarchFrame = Boolean(
     usesRaymarchVolumePipeline(runtime?.method) &&
-    (status?.isPlaying ||
-      status?.isLiveInputActive ||
-      controls?.injectTestTone) &&
+    allowsCurrentLiveRenderFrame(effectiveFrame) &&
     Math.max(frameModeCount, uploadedModeCount) > 0,
   );
   const profileAdaptiveActive = Boolean(
@@ -2255,7 +2256,7 @@ export function resolveFeatureFrame(
   if (status.isPlaying || status.isLiveInputActive) {
     if (shouldCaptureLastLiveFrame({ status, featureFrame })) {
       lastLiveFrameRef.current = featureFrame;
-    } else if (!allowsCachedLiveFeatureFrame(featureFrame)) {
+    } else if (!allowsCurrentLiveRenderFrame(featureFrame)) {
       lastLiveFrameRef.current = null;
     }
     lastActiveFrameRef.current = null;

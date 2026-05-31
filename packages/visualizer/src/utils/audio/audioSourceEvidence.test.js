@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AUDIO_SOURCE_EVIDENCE_VERSION,
   buildAudioSourceEvidenceFrame,
+  collectAudioSourceEvidenceInputs,
   resolveAudioRenderBoundary,
 } from "./audioSourceEvidence.js";
 
@@ -245,6 +246,49 @@ describe("audio source evidence", () => {
       sourceBoundaryState: "muted",
       currentSourceEvidence: false,
       sourceEnergy: 0,
+    });
+  });
+
+  it("collects transport facts before semantic source evidence resolution", () => {
+    const fftMagnitudes = new Float32Array([0, 0.4, 0, 0.2]);
+    const collected = collectAudioSourceEvidenceInputs({
+      inputMode: "system",
+      status: {
+        hasAnalysisSource: false,
+        isPlaying: false,
+        isLiveInputActive: true,
+      },
+      analysisSnapshot: { fftMagnitudes },
+      includeSnapshotAsAnalysisSource: true,
+      isLineFeedLiveInput: true,
+      lineFeedProgramActive: false,
+      metrics: {
+        avgAmplitude: 18,
+        analyserRms: 0.07,
+        preModalFftPeak: 0.4,
+        nonZeroFftBinCount: 2,
+      },
+    });
+
+    expect(collected).toMatchObject({
+      inputMode: "system",
+      hasAnalysisSource: true,
+      isPlaying: false,
+      isLiveInputActive: true,
+      isLineFeedLiveInput: true,
+      lineFeedProgramActive: false,
+      metrics: {
+        avgAmplitude: 18,
+        analyserRms: 0.07,
+        preModalFftPeak: 0.4,
+        nonZeroFftBinCount: 2,
+      },
+    });
+    expect(buildAudioSourceEvidenceFrame(collected)).toMatchObject({
+      sourceKind: "system",
+      analysisClass: "line-feed",
+      sourceBoundaryState: "live",
+      currentSourceEvidence: true,
     });
   });
 });

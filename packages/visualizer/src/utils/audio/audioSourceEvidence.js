@@ -51,6 +51,40 @@ function normalizeMetrics(metrics = {}) {
   };
 }
 
+export function collectAudioSourceEvidenceInputs({
+  inputMode = "idle",
+  status = null,
+  hasAnalysisSource = false,
+  analysisSnapshot = null,
+  includeSnapshotAsAnalysisSource = false,
+  isAcousticLiveInput = false,
+  isLineFeedLiveInput = false,
+  injectTestTone = false,
+  fileMuted = false,
+  lineFeedProgramActive = true,
+  liveInputHardSilenceActive = false,
+  metrics = {},
+} = {}) {
+  const testToneActive = injectTestTone === true;
+  return {
+    inputMode,
+    hasAnalysisSource:
+      hasAnalysisSource === true ||
+      status?.hasAnalysisSource === true ||
+      (includeSnapshotAsAnalysisSource === true && analysisSnapshot != null) ||
+      testToneActive,
+    isPlaying: status?.isPlaying === true,
+    isLiveInputActive: status?.isLiveInputActive === true,
+    isAcousticLiveInput: isAcousticLiveInput === true,
+    isLineFeedLiveInput: isLineFeedLiveInput === true,
+    injectTestTone: testToneActive,
+    fileMuted: fileMuted === true,
+    lineFeedProgramActive: lineFeedProgramActive === true,
+    liveInputHardSilenceActive: liveInputHardSilenceActive === true,
+    metrics,
+  };
+}
+
 function closeSourceEvidence(evidence, sourceBoundaryState) {
   return {
     ...evidence,
@@ -111,7 +145,12 @@ function resolveAnalysisClass({
   return "none";
 }
 
-function isTransportPresent({ sourceKind, inputMode, playing, liveInputActive }) {
+function isTransportPresent({
+  sourceKind,
+  inputMode,
+  playing,
+  liveInputActive,
+}) {
   return (
     sourceKind !== "none" ||
     inputMode === "file" ||
@@ -221,7 +260,10 @@ export function resolveAudioRenderBoundary({
   }
 
   if (evidence.sourceKind === "test" || evidence.analysisClass === "test") {
-    return liveSourceEvidence(evidence, Math.max(1, evidence.sourceEnergy ?? 0));
+    return liveSourceEvidence(
+      evidence,
+      Math.max(1, evidence.sourceEnergy ?? 0),
+    );
   }
 
   if (sourceBoundaryState === "zero") {

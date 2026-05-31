@@ -8,9 +8,7 @@ import {
   frequencyToBin,
   frequencyToBinIndex,
 } from "./binFrequency.js";
-import {
-  isLineFeedMeterIdlePauseSignature,
-} from "./lineFeedProgramActivity.js";
+import { isLineFeedMeterIdlePauseSignature } from "./lineFeedProgramActivity.js";
 import {
   blendColorStack,
   blendModalStack,
@@ -46,6 +44,7 @@ import {
 import { buildModalEnergyLedger } from "./modalEnergyLedger.js";
 import {
   buildAudioSourceEvidenceFrame,
+  collectAudioSourceEvidenceInputs,
   resolveAudioRenderBoundary,
 } from "./audioSourceEvidence.js";
 import { updateModalResponseFrame } from "./modalResponse.js";
@@ -394,33 +393,34 @@ function getPreparedInputsSourceEvidence(preparedInputs) {
     return preparedInputs.sourceEvidence;
   }
 
-  return buildAudioSourceEvidenceFrame({
-    inputMode: preparedInputs?.inputMode ?? "idle",
-    hasAnalysisSource:
-      preparedInputs?.snapshot != null ||
-      preparedInputs?.fftMagnitudesSource instanceof Float32Array ||
-      preparedInputs?.timeData instanceof Float32Array,
-    isPlaying: preparedInputs?.status?.isPlaying === true,
-    isLiveInputActive: preparedInputs?.status?.isLiveInputActive === true,
-    isAcousticLiveInput: preparedInputs?.isAcousticLiveInput === true,
-    isLineFeedLiveInput: isLineFeedInputPreparedInputs(preparedInputs),
-    injectTestTone:
-      preparedInputs?.resolvedAuditSettings?.injectTestTone === true,
-    fileMuted:
-      preparedInputs?.inputMode === "file" &&
-      preparedInputs?.sourceMode === "silent",
-    lineFeedProgramActive: preparedInputs?.lineFeedProgramActive === true,
-    liveInputHardSilenceActive:
-      preparedInputs?.liveInputHardSilenceActive === true,
-    metrics: {
-      avgAmplitude: preparedInputs?.avgAmplitude ?? 0,
-      analyserRms: preparedInputs?.analyserRms ?? 0,
-      preModalFftPeak: preparedInputs?.preModalFftPeak ?? 0,
-      nonZeroFftBinCount: countNonZeroFftBins(
-        preparedInputs?.fftMagnitudesSource,
-      ),
-    },
-  });
+  return buildAudioSourceEvidenceFrame(
+    collectAudioSourceEvidenceInputs({
+      inputMode: preparedInputs?.inputMode ?? "idle",
+      hasAnalysisSource:
+        preparedInputs?.snapshot != null ||
+        preparedInputs?.fftMagnitudesSource instanceof Float32Array ||
+        preparedInputs?.timeData instanceof Float32Array,
+      status: preparedInputs?.status,
+      isAcousticLiveInput: preparedInputs?.isAcousticLiveInput === true,
+      isLineFeedLiveInput: isLineFeedInputPreparedInputs(preparedInputs),
+      injectTestTone:
+        preparedInputs?.resolvedAuditSettings?.injectTestTone === true,
+      fileMuted:
+        preparedInputs?.inputMode === "file" &&
+        preparedInputs?.sourceMode === "silent",
+      lineFeedProgramActive: preparedInputs?.lineFeedProgramActive === true,
+      liveInputHardSilenceActive:
+        preparedInputs?.liveInputHardSilenceActive === true,
+      metrics: {
+        avgAmplitude: preparedInputs?.avgAmplitude ?? 0,
+        analyserRms: preparedInputs?.analyserRms ?? 0,
+        preModalFftPeak: preparedInputs?.preModalFftPeak ?? 0,
+        nonZeroFftBinCount: countNonZeroFftBins(
+          preparedInputs?.fftMagnitudesSource,
+        ),
+      },
+    }),
+  );
 }
 
 function hasFreshModalCouplingEvidence({ modalResponseInputEnergy }) {

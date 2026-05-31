@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allowsAudioMotion,
-  allowsCachedLiveFeatureFrame,
+  allowsCurrentLiveRenderFrame,
   hasRenderAuthority,
 } from "./renderAuthorityContract.js";
 
@@ -77,9 +77,9 @@ describe("render authority contract", () => {
     ).toBe(false);
   });
 
-  it("blocks cached live frames through closed ledger authority", () => {
+  it("blocks current live render frames through closed ledger authority", () => {
     expect(
-      allowsCachedLiveFeatureFrame({
+      allowsCurrentLiveRenderFrame({
         fieldState: "active",
         renderAuthority: true,
         energyLedger: {
@@ -89,15 +89,42 @@ describe("render authority contract", () => {
       }),
     ).toBe(false);
     expect(
-      allowsCachedLiveFeatureFrame({
+      allowsCurrentLiveRenderFrame({
         fieldState: "active",
         renderAuthority: true,
         energyLedger: {
           projectedRenderEnergy: 0.02,
           renderEnergyEpsilon: 1e-6,
         },
+        sourceEvidence: {
+          sourceBoundaryState: "live",
+          currentSourceEvidence: true,
+        },
       }),
     ).toBe(true);
+  });
+
+  it("requires ledger-backed current source evidence for current live render frames", () => {
+    expect(
+      allowsCurrentLiveRenderFrame({
+        fieldState: "active",
+        renderAuthority: true,
+      }),
+    ).toBe(false);
+    expect(
+      allowsCurrentLiveRenderFrame({
+        fieldState: "active",
+        renderAuthority: true,
+        energyLedger: {
+          projectedRenderEnergy: 0.02,
+          renderEnergyEpsilon: 1e-6,
+        },
+        sourceEvidence: {
+          sourceBoundaryState: "muted",
+          currentSourceEvidence: false,
+        },
+      }),
+    ).toBe(false);
   });
 
   it("does not infer authority from stale render-shaped fields", () => {

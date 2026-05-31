@@ -75,6 +75,7 @@ import {
 } from "./modalEnergyLedger.js";
 import {
   buildAudioSourceEvidenceFrame,
+  collectAudioSourceEvidenceInputs,
   resolveAudioRenderBoundary,
 } from "./audioSourceEvidence.js";
 
@@ -3961,21 +3962,21 @@ export function prepareAudioFeatureFrameInputs({
         calibrationVersion,
       });
     }
-    const sourceEvidence = buildAudioSourceEvidenceFrame({
-      inputMode,
-      hasAnalysisSource: status?.hasAnalysisSource === true,
-      isPlaying: status?.isPlaying === true,
-      isLiveInputActive: status?.isLiveInputActive === true,
-      isAcousticLiveInput,
-      isLineFeedLiveInput,
-      fileMuted: fileTransportSourceMuted,
-      metrics: {
-        avgAmplitude: 0,
-        analyserRms: 0,
-        preModalFftPeak: 0,
-        nonZeroFftBinCount: 0,
-      },
-    });
+    const sourceEvidence = buildAudioSourceEvidenceFrame(
+      collectAudioSourceEvidenceInputs({
+        inputMode,
+        status,
+        isAcousticLiveInput,
+        isLineFeedLiveInput,
+        fileMuted: fileTransportSourceMuted,
+        metrics: {
+          avgAmplitude: 0,
+          analyserRms: 0,
+          preModalFftPeak: 0,
+          nonZeroFftBinCount: 0,
+        },
+      }),
+    );
     return {
       capacity,
       analysisMemory,
@@ -4164,27 +4165,26 @@ export function prepareAudioFeatureFrameInputs({
           quietHoldMs: 0,
         };
       })();
-  const sourceEvidence = buildAudioSourceEvidenceFrame({
-    inputMode,
-    hasAnalysisSource:
-      status?.hasAnalysisSource === true ||
-      Boolean(rawSnapshot) ||
-      resolvedAuditSettings.injectTestTone,
-    isPlaying: status?.isPlaying === true,
-    isLiveInputActive: status?.isLiveInputActive === true,
-    isAcousticLiveInput,
-    isLineFeedLiveInput,
-    injectTestTone: resolvedAuditSettings.injectTestTone,
-    fileMuted: fileTransportSourceMuted,
-    lineFeedProgramActive: lineFeedProgramActivity.programActive === true,
-    liveInputHardSilenceActive,
-    metrics: {
-      avgAmplitude,
-      analyserRms,
-      preModalFftPeak,
-      nonZeroFftBinCount: countNonZeroFftBins(fftMagnitudesSource),
-    },
-  });
+  const sourceEvidence = buildAudioSourceEvidenceFrame(
+    collectAudioSourceEvidenceInputs({
+      inputMode,
+      status,
+      analysisSnapshot: rawSnapshot,
+      includeSnapshotAsAnalysisSource: true,
+      isAcousticLiveInput,
+      isLineFeedLiveInput,
+      injectTestTone: resolvedAuditSettings.injectTestTone,
+      fileMuted: fileTransportSourceMuted,
+      lineFeedProgramActive: lineFeedProgramActivity.programActive === true,
+      liveInputHardSilenceActive,
+      metrics: {
+        avgAmplitude,
+        analyserRms,
+        preModalFftPeak,
+        nonZeroFftBinCount: countNonZeroFftBins(fftMagnitudesSource),
+      },
+    }),
+  );
 
   return {
     analysisSnapshot,
@@ -5467,7 +5467,7 @@ export function composeAudioFeatureFrame({
   const retainedModalResponseResonantEnergy = clamp01(
     analysisResult.structuralMetrics?.modalResponseResonantEnergy ?? 0,
   );
-  let modalCoefficientEnergy = readModalResponseRenderEnergy(
+  let projectedModalRenderEnergy = readModalResponseRenderEnergy(
     analysisResult.structuralMetrics,
     retainedModalCoefficientEnergy,
   );
@@ -5491,7 +5491,8 @@ export function composeAudioFeatureFrame({
     sourceEvidence: preparedInputs.sourceEvidence,
     modalResponse: analysisResult.structuralMetrics,
     observerContinuity:
-      analysisResult.structuralMetrics?.modalResponseCurrentRenderSourceEvidence,
+      analysisResult.structuralMetrics
+        ?.modalResponseCurrentRenderSourceEvidence,
   });
   analysisResult.sourceEvidence = resolvedSourceEvidence;
   const energyLedger = buildModalEnergyLedger({
@@ -5501,22 +5502,19 @@ export function composeAudioFeatureFrame({
     candidateForcingSlots: analysisResult.candidateForcingSlots,
     candidateResponseSlots: analysisResult.candidateResponseSlots,
     capacity: preparedInputs.capacity,
-    renderEnergyEpsilon:
-      analysisResult.structuralMetrics?.renderEnergyEpsilon,
+    renderEnergyEpsilon: analysisResult.structuralMetrics?.renderEnergyEpsilon,
     injectTestTone: preparedInputs.resolvedAuditSettings.injectTestTone,
   });
-  const projectedRenderAuthority =
-    hasProjectedRenderAuthority(energyLedger);
+  const projectedRenderAuthority = hasProjectedRenderAuthority(energyLedger);
   if (analysisResult.structuralMetrics) {
     analysisResult.structuralMetrics.energyLedger = energyLedger;
     analysisResult.structuralMetrics.sourceEvidence = resolvedSourceEvidence;
   }
-  modalCoefficientEnergy = energyLedger.projectedRenderEnergy;
-  modalResponseSourceCoupledEnergy =
-    energyLedger.projectedSourceCoupledEnergy;
+  projectedModalRenderEnergy = energyLedger.projectedRenderEnergy;
+  modalResponseSourceCoupledEnergy = energyLedger.projectedSourceCoupledEnergy;
   modalResponseResonantEnergy = energyLedger.projectedResonantEnergy;
   let observationEnergy = deriveModalObservationEnergy(
-    modalCoefficientEnergy,
+    projectedModalRenderEnergy,
     projectedRenderAuthority ? modalResponseEnergy : 0,
   );
   let timbreSpread = deriveDeterministicTimbreSpread({
@@ -5541,7 +5539,7 @@ export function composeAudioFeatureFrame({
     changeSignal = 0;
     pulseSignal = 0;
     modeCoherence = 0;
-    modalCoefficientEnergy = 0;
+    projectedModalRenderEnergy = 0;
     modalResponseSourceCoupledEnergy = 0;
     modalResponseResonantEnergy = 0;
     observationEnergy = 0;
@@ -5551,8 +5549,8 @@ export function composeAudioFeatureFrame({
 
   const sourceBoundaryModalForcingAbsent =
     resolvedSourceEvidence.currentSourceEvidence !== true &&
-      (analysisResult.usedDecay ||
-        sourceModalCoefficientEnergy <= RENDER_ENERGY_EPSILON);
+    (analysisResult.usedDecay ||
+      sourceModalCoefficientEnergy <= RENDER_ENERGY_EPSILON);
   const lineFeedSourceVisibility =
     preparedInputs.resolvedLiveInputAnalysisClass ===
       LIVE_INPUT_ANALYSIS_CLASSES.lineFeed ||
@@ -5566,15 +5564,16 @@ export function composeAudioFeatureFrame({
     (analysisResult.activeModeCount ?? 0) > 0 &&
     !sourceBoundaryModalForcingAbsent &&
     (preparedInputs.inputMode === "live" ||
-      modalCoefficientEnergy > 0.02 ||
+      projectedModalRenderEnergy > 0.02 ||
       modalVisibilityEnergy > 0.005 ||
       lineFeedLowQFieldVisibilityAllowed);
   const fieldStateUsesDecay =
     projectedRenderAuthority &&
     analysisResult.usedDecay &&
     !observerAuthorizedActiveField;
-  const fieldStateActiveModeCount =
-    projectedRenderAuthority ? analysisResult.activeModeCount : 0;
+  const fieldStateActiveModeCount = projectedRenderAuthority
+    ? analysisResult.activeModeCount
+    : 0;
   let { fieldState, hasModalField } = deriveFieldState({
     injectTestTone: preparedInputs.resolvedAuditSettings.injectTestTone,
     activeModeCount: fieldStateActiveModeCount,
@@ -5586,7 +5585,7 @@ export function composeAudioFeatureFrame({
       fieldState,
       hasModalField,
       activeModeCount: fieldStateActiveModeCount,
-      modalCoefficientEnergy,
+      modalCoefficientEnergy: projectedModalRenderEnergy,
       observationEnergy,
       modalVisibilityEnergy,
       modalObserverVisibilityEnergy,
@@ -5830,7 +5829,7 @@ export function composeAudioFeatureFrame({
     spectralFlux: analysisResult.spectralFlux,
     structureSignal,
     energySignal,
-    modalCoefficientEnergy,
+    modalCoefficientEnergy: projectedModalRenderEnergy,
     retainedModalCoefficientEnergy,
     modalResponseEnergy,
     modalResponseBudgetScale:
@@ -5851,7 +5850,7 @@ export function composeAudioFeatureFrame({
     modalResponseRenderEnergy: energyLedger.projectedRenderEnergy,
     modalResponseRenderRawEnergy: renderAuthority
       ? (analysisResult.structuralMetrics?.modalResponseRenderRawEnergy ??
-        modalCoefficientEnergy)
+        projectedModalRenderEnergy)
       : 0,
     modalResponseCurrentRenderSourceEvidence: Boolean(
       analysisResult.structuralMetrics
