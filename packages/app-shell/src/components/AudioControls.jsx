@@ -357,10 +357,6 @@ const CSS = `
   display: flex;
   align-items: center;
   padding: 8px 16px 10px;
-  background: var(--nd-surface);
-  border: none;
-  border-radius: 8px;
-  box-shadow: var(--nd-shell-shadow);
 }
 
 .am-timeline-row {
@@ -1607,7 +1603,6 @@ const CSS = `
 
   .am-timeline-shell {
     padding: 8px 12px;
-    border-radius: 8px;
   }
 
   .am-timeline-row {
