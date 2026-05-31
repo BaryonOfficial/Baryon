@@ -1530,93 +1530,125 @@ test("resolveFeatureFrame patches current fast audio signals onto stale worker s
   );
 });
 
-test("resolveFeatureFrame refreshes active file playback when the worker structural snapshot is stale", () => {
-  const workerAnalysis = {
-    fieldState: "active",
-    activeModeCount: 2,
-    avgAmplitude: 12,
-    staleWorker: true,
-  };
-  const localAnalysis = {
-    fieldState: "active",
-    activeModeCount: 5,
-    avgAmplitude: 84,
-    localCurrent: true,
-  };
-  const currentFrame = {
-    fieldState: "active",
-    activeModeCount: 5,
-    localCurrent: true,
-  };
-  const featureEngine = {
-    enqueueTransportFrame: vi.fn(),
-    readLatestSnapshot: vi.fn(() => ({
-      frameTimeMs: 1000,
-      analysisSessionKey: "file:song-1",
-      analysisInputsSignature: '"worker-sig"',
-      analysisResult: workerAnalysis,
-    })),
-    getStatus: vi.fn(() => ({})),
-  };
-  const runHeavyFeatureAnalysis = vi.fn(() => localAnalysis);
-  const buildFastSignalAnalysisResult = vi.fn(() => ({
-    ...workerAnalysis,
-    avgAmplitude: 84,
-  }));
-  const composeFeatureFrame = vi.fn(({ analysisResult }) =>
-    analysisResult.localCurrent ? currentFrame : workerAnalysis,
-  );
-  const { args } = createResolveFeatureFrameHarness({
-    featureEngine,
-    status: {
-      audioInputMode: "file",
-      isPlaying: true,
-      isLiveInputActive: false,
-      playbackSessionId: "song-1",
-    },
-    clockMode: "playback",
-    renderLoopRefs: {
-      frameCacheRefs: {
-        lastLiveFrameRef: {
-          current: {
-            fieldState: "active",
-            renderAuthority: true,
-          },
-        },
-        lastActiveFrameRef: {
-          current: {
-            fieldState: "active",
-            renderAuthority: true,
-          },
-        },
-        lastIdleFrameRef: { current: null },
-        analysisSchedulerRef: { current: null },
+test("resolveFeatureFrame refreshes active program audio when the worker structural snapshot is stale", () => {
+  const cases = [
+    {
+      label: "file playback",
+      status: {
+        audioInputMode: "file",
+        isPlaying: true,
+        isLiveInputActive: false,
+        playbackSessionId: "song-1",
+      },
+      preparedInputs: {
+        inputMode: "file",
+        currentFrameAtMs: 1016,
+        analysisSessionKey: "file:song-1",
+        analysisInputsSignature: '"worker-sig"',
+        silentFeatureFrame: null,
       },
     },
-  });
+    {
+      label: "system line-feed",
+      status: {
+        audioInputMode: "system",
+        isPlaying: false,
+        isLiveInputActive: true,
+        liveInputDeviceKind: "system",
+      },
+      preparedInputs: {
+        inputMode: "system",
+        currentFrameAtMs: 1016,
+        analysisSessionKey: "system",
+        analysisInputsSignature: '"worker-sig"',
+        silentFeatureFrame: null,
+      },
+    },
+  ];
 
-  const result = resolveFeatureFrame(args, {
-    prepareFeatureFrame: vi.fn(() => ({
-      currentFrameAtMs: 1080,
-      analysisSessionKey: "file:song-1",
-      analysisInputsSignature: '"worker-sig"',
-      silentFeatureFrame: null,
-    })),
-    runHeavyFeatureAnalysis,
-    composeFeatureFrame,
-    buildFastSignalAnalysisResult,
-  });
+  for (const { label, status, preparedInputs } of cases) {
+    const workerAnalysis = {
+      fieldState: "active",
+      activeModeCount: 2,
+      avgAmplitude: 12,
+      staleWorker: true,
+    };
+    const localAnalysis = {
+      fieldState: "active",
+      activeModeCount: 5,
+      avgAmplitude: 84,
+      localCurrent: true,
+    };
+    const currentFrame = {
+      fieldState: "active",
+      activeModeCount: 5,
+      localCurrent: true,
+    };
+    const featureEngine = {
+      enqueueTransportFrame: vi.fn(),
+      readLatestSnapshot: vi.fn(() => ({
+        frameTimeMs: 1000,
+        analysisSessionKey: preparedInputs.analysisSessionKey,
+        analysisInputsSignature: preparedInputs.analysisInputsSignature,
+        analysisResult: workerAnalysis,
+      })),
+      getStatus: vi.fn(() => ({})),
+    };
+    const runHeavyFeatureAnalysis = vi.fn(() => localAnalysis);
+    const buildFastSignalAnalysisResult = vi.fn(() => ({
+      ...workerAnalysis,
+      avgAmplitude: 84,
+    }));
+    const composeFeatureFrame = vi.fn(({ analysisResult }) =>
+      analysisResult.localCurrent ? currentFrame : workerAnalysis,
+    );
+    const { args } = createResolveFeatureFrameHarness({
+      featureEngine,
+      status,
+      clockMode: status.audioInputMode === "file" ? "playback" : "realtime",
+      renderLoopRefs: {
+        frameCacheRefs: {
+          lastLiveFrameRef: {
+            current: {
+              fieldState: "active",
+              renderAuthority: true,
+            },
+          },
+          lastActiveFrameRef: {
+            current: {
+              fieldState: "active",
+              renderAuthority: true,
+            },
+          },
+          lastIdleFrameRef: { current: null },
+          analysisSchedulerRef: { current: null },
+        },
+      },
+    });
 
-  expect(runHeavyFeatureAnalysis).toHaveBeenCalledTimes(1);
-  expect(buildFastSignalAnalysisResult).not.toHaveBeenCalled();
-  expect(result.effectiveFrame).toBe(currentFrame);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticSource).toBe(
-    "local-heavy-analysis",
-  );
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticFresh).toBe(true);
-  expect(args.runtimeDiagnostics.modalFreshness.frameSemanticReused).toBe(
-    false,
-  );
+    const result = resolveFeatureFrame(args, {
+      prepareFeatureFrame: vi.fn(() => preparedInputs),
+      runHeavyFeatureAnalysis,
+      composeFeatureFrame,
+      buildFastSignalAnalysisResult,
+    });
+
+    expect(runHeavyFeatureAnalysis, label).toHaveBeenCalledTimes(1);
+    expect(buildFastSignalAnalysisResult, label).not.toHaveBeenCalled();
+    expect(result.effectiveFrame, label).toBe(currentFrame);
+    expect(
+      args.runtimeDiagnostics.modalFreshness.frameSemanticSource,
+      label,
+    ).toBe("local-heavy-analysis");
+    expect(
+      args.runtimeDiagnostics.modalFreshness.frameSemanticFresh,
+      label,
+    ).toBe(true);
+    expect(
+      args.runtimeDiagnostics.modalFreshness.frameSemanticReused,
+      label,
+    ).toBe(false);
+  }
 });
 
 test("resolveFeatureFrame records scheduled analysis reuse as reused semantics", () => {

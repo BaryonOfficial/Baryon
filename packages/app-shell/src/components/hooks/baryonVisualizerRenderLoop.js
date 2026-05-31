@@ -555,26 +555,35 @@ function getSnapshotAgeMsForPreparedInputs(engineSnapshot, preparedInputs) {
   );
 }
 
-function shouldRefreshStalePlaybackSnapshot({
+function isLineFeedProgramInput({ preparedInputs, status }) {
+  const inputMode = preparedInputs?.inputMode ?? status?.audioInputMode;
+  return (
+    inputMode === "system" ||
+    (inputMode === "live" &&
+      (preparedInputs?.resolvedLiveInputAnalysisClass === "line-feed" ||
+        preparedInputs?.liveInputPolicy === "line-feed"))
+  );
+}
+
+function shouldRefreshStaleProgramSnapshot({
   engineSnapshot,
   preparedInputs,
   status,
-  clockMode,
 }) {
   const inputMode = preparedInputs?.inputMode ?? status?.audioInputMode;
-  if (
-    inputMode !== "file" ||
-    status?.isPlaying !== true ||
-    status?.isLiveInputActive === true ||
-    clockMode !== "playback"
-  ) {
+  const activeFileProgram =
+    inputMode === "file" &&
+    status?.isPlaying === true &&
+    status?.isLiveInputActive !== true;
+  const activeLineFeedProgram =
+    isLineFeedProgramInput({ preparedInputs, status }) &&
+    status?.isLiveInputActive === true;
+
+  if (!activeFileProgram && !activeLineFeedProgram) {
     return false;
   }
 
-  return (
-    getSnapshotAgeMsForPreparedInputs(engineSnapshot, preparedInputs) >
-    MAX_ANALYSIS_AGE_MS
-  );
+  return getSnapshotAgeMsForPreparedInputs(engineSnapshot, preparedInputs) > 0;
 }
 
 function classifyFrameSemanticSource(source) {
@@ -2085,16 +2094,15 @@ export function resolveFeatureFrame(
             engineSnapshot,
             preparedInputs,
           );
-          const shouldRefreshPlaybackSnapshot =
+          const shouldRefreshProgramSnapshot =
             workerSnapshotMatches &&
-            shouldRefreshStalePlaybackSnapshot({
+            shouldRefreshStaleProgramSnapshot({
               engineSnapshot,
               preparedInputs,
               status,
-              clockMode,
             });
 
-          if (workerSnapshotMatches && !shouldRefreshPlaybackSnapshot) {
+          if (workerSnapshotMatches && !shouldRefreshProgramSnapshot) {
             const fastComposeStartedAt = getRenderLoopWallTimeMs();
             const snapshotFrameTimeMs = engineSnapshot?.frameTimeMs;
             const shouldPatchCurrentFastSignals =
@@ -2141,7 +2149,7 @@ export function resolveFeatureFrame(
             });
 
             if (
-              shouldRefreshPlaybackSnapshot ||
+              shouldRefreshProgramSnapshot ||
               shouldComposeInactiveSource ||
               shouldSeedLiveWarmup ||
               shouldBootstrapActive
@@ -2161,7 +2169,7 @@ export function resolveFeatureFrame(
                 previousFrame: schedulerState.lastComposedFeatureFrame,
                 reuseHeavyAnalysis: false,
               });
-              if (shouldRefreshPlaybackSnapshot) {
+              if (shouldRefreshProgramSnapshot) {
                 frameSemanticSource = "local-heavy-analysis";
               } else if (shouldSeedLiveWarmup) {
                 frameSemanticSource = "live-warmup";

@@ -93,8 +93,6 @@ const LIVE_INPUT_NORMALIZATION_TARGET = 0.65;
 const LIVE_INPUT_NORMALIZATION_MAX_GAIN = 6.0;
 const LIVE_INPUT_NORMALIZATION_MIN_SIGNAL = 0.03;
 const LIVE_INPUT_NORMALIZATION_MAX_RAW_PEAK = 0.16;
-const LINE_FEED_RMS_REFERENCE = 0.055;
-const LINE_FEED_AVG_AMPLITUDE_REFERENCE = 48;
 const LIVE_INPUT_INVALID_BASELINE_PEAK = 0.94;
 const LIVE_INPUT_INVALID_COMPRESSED_BASELINE_PEAK = 0.82;
 const LIVE_INPUT_INVALID_COMPRESSED_BASELINE_RMS = 0.0085;
@@ -552,13 +550,7 @@ function getSourceNormalization({
   analyserRms,
   spectralCentroid,
   bandState,
-  resolvedLiveInputAnalysisClass,
-  liveInputPolicy,
 }) {
-  const isLineFeedSource =
-    resolvedLiveInputAnalysisClass === LIVE_INPUT_ANALYSIS_CLASSES.lineFeed ||
-    liveInputPolicy === LIVE_INPUT_ANALYSIS_CLASSES.lineFeed;
-
   if (inputMode === "live") {
     const baselineRms = Math.max(0, bandState?.liveInputBaselineRms ?? 0);
     const baselineCentroid = Math.max(
@@ -578,16 +570,6 @@ function getSourceNormalization({
           ? spectralCentroid / Math.max(0.02, baselineCentroid * 1.8)
           : spectralCentroid / 0.25,
       ),
-    };
-  }
-
-  if (isLineFeedSource) {
-    return {
-      normalizedRms: clamp01(analyserRms / LINE_FEED_RMS_REFERENCE),
-      normalizedAmplitude: clamp01(
-        avgAmplitude / LINE_FEED_AVG_AMPLITUDE_REFERENCE,
-      ),
-      normalizedCentroid: clamp01(spectralCentroid * 1.25),
     };
   }
 
@@ -624,9 +606,6 @@ function deriveReusedAnalysisSourceAuthorityScale({
     analyserRms: preparedInputs.analyserRms,
     spectralCentroid: analysisResult?.spectralCentroid ?? 0,
     bandState: preparedInputs.bandState,
-    resolvedLiveInputAnalysisClass:
-      preparedInputs.resolvedLiveInputAnalysisClass,
-    liveInputPolicy: preparedInputs.liveInputPolicy,
   });
   const currentAuthority = deriveSourceEnergyAuthority(currentNormalization);
 
@@ -3276,9 +3255,6 @@ function deriveCompositeSignals({
       analyserRms,
       spectralCentroid,
       bandState,
-      resolvedLiveInputAnalysisClass:
-        DEFAULT_RESOLVED_LIVE_INPUT_ANALYSIS_CLASS,
-      liveInputPolicy: bandState?.liveInputPolicy ?? DEFAULT_LIVE_INPUT_POLICY,
     });
 
   // energyCoupling: scale mode-count terms with RMS so the gate deflates
@@ -4913,8 +4889,6 @@ export function updateAudioFeatureFastSignalState(preparedInputs) {
     analysisInputMode,
     avgAmplitude,
     bandState,
-    resolvedLiveInputAnalysisClass,
-    liveInputPolicy,
   } = preparedInputs;
   const effectiveFftState = resolveEffectiveFftState(preparedInputs);
   const fftMagnitudes = ensureAnalysisFftBuffer(
@@ -4936,8 +4910,6 @@ export function updateAudioFeatureFastSignalState(preparedInputs) {
     analyserRms,
     spectralCentroid: bandMetrics.spectralCentroid,
     bandState,
-    resolvedLiveInputAnalysisClass,
-    liveInputPolicy,
   });
 
   return {

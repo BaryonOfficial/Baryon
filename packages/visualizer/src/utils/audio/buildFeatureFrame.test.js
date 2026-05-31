@@ -3250,6 +3250,86 @@ describe("live input noise gate", () => {
     );
   });
 
+  it("keeps program-audio render signals equivalent between file and system paths", () => {
+    const cases = [
+      {
+        label: "moderate",
+        avgAmplitude: 36,
+        rms: 0.27,
+        peaks: [
+          [110, 0.82],
+          [220, 0.41],
+          [330, 0.22],
+          [440, 0.17],
+        ],
+        timeData: makeTimeData({ frequency: 110, amplitude: 0.27 }),
+      },
+      {
+        label: "quiet",
+        avgAmplitude: 0.1844,
+        rms: 0.005,
+        peaks: [
+          [196, 0.018],
+          [282, 0.012],
+        ],
+        timeData: makeMixedTimeData({
+          partials: [
+            [196, 0.018],
+            [282, 0.012],
+          ],
+          amplitudeScale: 0.005,
+        }),
+      },
+    ];
+
+    for (const { label, avgAmplitude, rms, peaks, timeData } of cases) {
+      const analysisSnapshot = createSnapshot({
+        sourceMode: "file",
+        avgAmplitude,
+        rms,
+        fftMagnitudes: makeFft(peaks),
+        timeData,
+      });
+      const fileFrame = buildAudioFeatureFrame({
+        analysisSnapshot,
+        featureState: createAudioFeatureState(),
+        radius: 3,
+        status: makeActiveStatus(),
+        frameTimeMs: 32,
+      });
+      const systemFrame = buildAudioFeatureFrame({
+        analysisSnapshot: {
+          ...analysisSnapshot,
+          sourceMode: "system",
+        },
+        featureState: createAudioFeatureState(),
+        radius: 3,
+        status: makeSystemStatus(),
+        frameTimeMs: 32,
+      });
+
+      expect(systemFrame.debug.sourceNormalization, label).toEqual(
+        fileFrame.debug.sourceNormalization,
+      );
+      expect(systemFrame.structureSignal, label).toBeCloseTo(
+        fileFrame.structureSignal,
+        6,
+      );
+      expect(systemFrame.energySignal, label).toBeCloseTo(
+        fileFrame.energySignal,
+        6,
+      );
+      expect(systemFrame.changeSignal, label).toBeCloseTo(
+        fileFrame.changeSignal,
+        6,
+      );
+      expect(systemFrame.pulseSignal, label).toBeCloseTo(
+        fileFrame.pulseSignal,
+        6,
+      );
+    }
+  });
+
   it("keeps low-level system-routed bowl resonance visible without spikes", () => {
     const featureState = createAudioFeatureState();
     const fftMagnitudes = makeFft([
@@ -4979,7 +5059,7 @@ describe("live input noise gate", () => {
     expect(frame.structureSignal).toBeGreaterThan(0);
   });
 
-  it("normalizes quiet system line-feed RMS as direct source authority", () => {
+  it("keeps quiet line-feed program audio on file-equivalent source normalization", () => {
     const snapshot = createSnapshot({
       sourceMode: "live",
       avgAmplitude: 0.1844,
@@ -5019,12 +5099,11 @@ describe("live input noise gate", () => {
       0.005 * 2.8,
       6,
     );
-    expect(
-      lineFeedFrame.debug.sourceNormalization.normalizedRms,
-    ).toBeGreaterThan(0.08);
-    expect(
-      lineFeedFrame.debug.sourceNormalization.normalizedRms,
-    ).toBeGreaterThan(fileFrame.debug.sourceNormalization.normalizedRms * 6);
+    expect(lineFeedFrame.debug.sourceNormalization).toEqual(
+      fileFrame.debug.sourceNormalization,
+    );
+    expect(lineFeedFrame.sourceEvidence.currentSourceEvidence).toBe(true);
+    expect(lineFeedFrame.energyLedger.sourceBoundaryState).toBe("live");
   });
 
   it("lets coherent line-feed source-coupled visibility exceed the observer SNR floor", () => {
