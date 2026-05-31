@@ -1740,10 +1740,9 @@ export function AudioProvider({ children, platform = "web" }) {
     const liveReturnSnapshot = createLiveReturnSnapshot();
     try {
       if (isLiveInputActive) {
-        const status = stopLiveInputSession();
-        if (!status.isLiveInputActive) {
-          await restoreAfterLiveStop();
-        }
+        // Stop live input but stay in System mode — do not restore the
+        // previous local file, which would switch the source back to File.
+        stopLiveInputSession();
       } else {
         setLiveReturnLocalFile(liveReturnSnapshot);
         resetSoundCloudTransport();
@@ -1779,7 +1778,6 @@ export function AudioProvider({ children, platform = "web" }) {
     isLiveInputActive,
     loadImmediateLocalFile,
     resetSoundCloudTransport,
-    restoreAfterLiveStop,
     selectedLiveDeviceId,
     selectedLiveDevice,
     selectedLiveInputDeviceKind,

@@ -121,12 +121,12 @@ test.describe("Baryon production smoke", () => {
       page.getByRole("button", { name: "Close advanced controls backdrop" }),
     ).toHaveCount(0);
     await expect(
-      page.getByRole("button", { name: "Toggle advanced controls" }),
+      page.getByRole("button", { name: "Close advanced controls" }),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: /^Shape\s/ })).toBeVisible();
     await expect(page.getByText("Audit")).toHaveCount(0);
     await page
-      .getByRole("button", { name: "Toggle advanced controls" })
+      .getByRole("button", { name: "Close advanced controls" })
       .click();
     await expect(page.getByTestId("advanced-controls-sidebar")).toBeHidden();
   });

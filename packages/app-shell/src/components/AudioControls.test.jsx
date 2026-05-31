@@ -186,6 +186,22 @@ describe("ListenerControls compact dock layout", () => {
     expect(trackTrigger?.getAttribute("type")).toBe("button");
   });
 
+  it("marks the full play button active from playback state", () => {
+    renderControls(
+      {
+        selectedSource: "file",
+        isPlaying: true,
+        isAudioLoaded: true,
+      },
+      { viewportWidth: 1200 },
+    );
+
+    const playButton = container.querySelector(".am-btn--play");
+
+    expect(playButton?.classList.contains("am-btn--play-active")).toBe(true);
+    expect(playButton?.getAttribute("aria-label")).toBe("Pause");
+  });
+
   it("shows the loaded file name for the file source on compact layouts", () => {
     renderControls({
       playbackSource: "local-file",

@@ -685,6 +685,7 @@ export default function LiveInputStatusPanel({
                   <button
                     key={key}
                     type="button"
+                    aria-pressed={enabled}
                     onClick={() => onMicControlChange?.(key, !enabled)}
                     disabled={micProcessingDisabled}
                     title={String(tooltip)}
@@ -698,19 +699,13 @@ export default function LiveInputStatusPanel({
                       minHeight: "1.72rem",
                       padding: "0 0.48rem",
                       borderRadius: "0.56rem",
-                      border: enabled
-                        ? "1px solid var(--nd-text-display)"
-                        : "1px solid var(--nd-border)",
+                      border: "1px solid var(--nd-border)",
                       background: micProcessingDisabled
                         ? "rgba(255, 255, 255, 0.02)"
-                        : enabled
-                          ? "var(--nd-text-display)"
-                          : "var(--nd-surface-raised)",
+                        : "var(--nd-surface-raised)",
                       color: micProcessingDisabled
                         ? "var(--nd-text-disabled)"
-                        : enabled
-                          ? "var(--nd-black)"
-                          : "var(--nd-text-primary)",
+                        : "var(--nd-text-primary)",
                       fontSize: "0.58rem",
                       fontWeight: 700,
                       fontFamily: '"JetBrains Mono", ui-monospace, monospace',
@@ -732,29 +727,48 @@ export default function LiveInputStatusPanel({
                       {String(label)}
                     </span>
                     <span
+                      aria-hidden="true"
                       style={{
+                        position: "relative",
                         flexShrink: 0,
+                        width: "1.95rem",
+                        height: "1.14rem",
                         borderRadius: "999px",
-                        padding: "0.08rem 0.34rem",
-                        border: enabled
-                          ? "1px solid rgba(0, 0, 0, 0.16)"
-                          : "1px solid var(--nd-border-visible)",
-                        background: enabled
-                          ? "rgba(0, 0, 0, 0.06)"
-                          : "rgba(255, 255, 255, 0.02)",
-                        color: micProcessingDisabled
-                          ? "var(--nd-text-disabled)"
+                        background: micProcessingDisabled
+                          ? "rgba(255, 255, 255, 0.03)"
                           : enabled
-                            ? "var(--nd-black)"
-                            : "var(--nd-text-secondary)",
-                        fontSize: "0.54rem",
-                        fontWeight: 700,
-                        letterSpacing: "0.08em",
-                        textTransform: "uppercase",
-                        fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                            ? "var(--nd-accent)"
+                            : "var(--nd-border)",
+                        boxShadow: micProcessingDisabled
+                          ? "inset 0 0 0 1px var(--nd-border)"
+                          : enabled
+                            ? "inset 0 0 0 1px color-mix(in srgb, var(--nd-accent) 55%, #000), inset 0 1px 2px rgba(0, 0, 0, 0.18)"
+                            : "inset 0 0 0 1px var(--nd-border-visible), inset 0 1px 2px rgba(0, 0, 0, 0.5)",
+                        transition:
+                          "background 180ms cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 180ms ease",
                       }}
                     >
-                      {enabled ? "On" : "Off"}
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: "50%",
+                          left: "0.14rem",
+                          width: "0.86rem",
+                          height: "0.86rem",
+                          borderRadius: "999px",
+                          background: micProcessingDisabled
+                            ? "var(--nd-text-disabled)"
+                            : "var(--baryon-cream)",
+                          boxShadow: micProcessingDisabled
+                            ? "none"
+                            : "0 1px 2px rgba(0, 0, 0, 0.5)",
+                          transform: enabled
+                            ? "translate(0.81rem, -50%)"
+                            : "translateY(-50%)",
+                          transition:
+                            "transform 200ms cubic-bezier(0.34, 1.5, 0.64, 1), background 180ms ease",
+                        }}
+                      />
                     </span>
                   </button>
                 ))}

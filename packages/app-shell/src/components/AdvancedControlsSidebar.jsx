@@ -127,7 +127,7 @@ const CSS = `
 
 .baryon-controls-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 0.45rem;
   padding: 0.08rem 0.08rem 0.16rem;
@@ -138,6 +138,30 @@ const CSS = `
   min-width: 0;
 }
 
+.baryon-controls-close-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--nd-text-secondary);
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.baryon-controls-close-button:hover {
+  color: var(--nd-text-display);
+}
+
+.baryon-controls-close-button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
 .baryon-controls-header-label {
   margin: 0;
   font-size: 0.62rem;
@@ -146,38 +170,6 @@ const CSS = `
   text-transform: uppercase;
   color: var(--nd-text-display);
   font-family: "JetBrains Mono", ui-monospace, monospace;
-}
-
-.baryon-controls-header-note {
-  margin: 0.12rem 0 0;
-  font-size: 0.64rem;
-  line-height: 1.35;
-  color: var(--nd-text-secondary);
-}
-
-.baryon-controls-close-button {
-  min-height: 1.5rem;
-  padding: 0.26rem 0.5rem;
-  border-radius: 999px;
-  border: 1px solid var(--nd-border-visible);
-  background: transparent;
-  color: var(--nd-text-secondary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease;
-}
-
-.baryon-controls-close-button:hover {
-  background: var(--nd-surface-raised);
-  border-color: var(--nd-text-display);
-  color: var(--nd-text-display);
 }
 
 .baryon-controls-pill-button,
@@ -508,7 +500,7 @@ const CSS = `
 .baryon-controls-toggle {
   position: relative;
   width: 1.95rem;
-  height: 1.22rem;
+  height: 1.14rem;
   flex: 0 0 auto;
 }
 
@@ -525,28 +517,40 @@ const CSS = `
   inset: 0;
   border-radius: 999px;
   background: var(--nd-border);
+  box-shadow:
+    inset 0 0 0 1px var(--nd-border-visible),
+    inset 0 1px 2px rgba(0, 0, 0, 0.5);
   pointer-events: none;
-  transition: background 140ms ease;
+  transition:
+    background 180ms cubic-bezier(0.34, 1.4, 0.64, 1),
+    box-shadow 180ms ease;
 }
 
 .baryon-controls-toggle-thumb {
   position: absolute;
-  top: 0.12rem;
-  left: 0.12rem;
-  width: 0.94rem;
-  height: 0.94rem;
+  top: 50%;
+  left: 0.14rem;
+  width: 0.86rem;
+  height: 0.86rem;
   border-radius: 999px;
-  background: #E8DFD0;
+  background: var(--baryon-cream);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
   pointer-events: none;
-  transition: transform 140ms ease;
+  transform: translateY(-50%);
+  transition:
+    transform 200ms cubic-bezier(0.34, 1.5, 0.64, 1),
+    background 180ms ease;
 }
 
 .baryon-controls-toggle input:checked + .baryon-controls-toggle-track {
-  background: var(--nd-text-display);
+  background: var(--nd-accent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--nd-accent) 55%, #000),
+    inset 0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
 .baryon-controls-toggle input:checked + .baryon-controls-toggle-track .baryon-controls-toggle-thumb {
-  transform: translateX(0.68rem);
+  transform: translate(0.81rem, -50%);
 }
 
 .baryon-controls-slider-row {
@@ -701,17 +705,6 @@ const CSS = `
     text-align: center;
   }
 
-  .baryon-controls-header-note {
-    margin-top: 0.12rem;
-    font-size: 0.64rem;
-    line-height: 1.35;
-  }
-
-  .baryon-controls-close-button {
-    min-height: 1.5rem;
-    padding: 0.26rem 0.5rem;
-  }
-
   .baryon-controls-scroll {
     gap: 0.28rem;
   }
@@ -843,17 +836,6 @@ const CSS = `
     padding-bottom: 0.32rem;
   }
 
-  .baryon-controls-header-note {
-    margin-top: 0.12rem;
-    font-size: 0.64rem;
-    line-height: 1.35;
-  }
-
-  .baryon-controls-close-button {
-    min-height: 1.5rem;
-    padding: 0.26rem 0.5rem;
-  }
-
   .baryon-controls-scroll {
     gap: 0.28rem;
   }
@@ -969,6 +951,19 @@ function HelpIcon() {
         strokeLinecap="round"
       />
       <circle cx="12" cy="16.9" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M6 6 18 18M18 6 6 18"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -1773,16 +1768,15 @@ export default function AdvancedControlsSidebar({
               <p className="baryon-controls-header-label">
                 Baryon | Advanced Controls
               </p>
-              <p className="baryon-controls-header-note">
-                Tune the cymatic visuals
-              </p>
             </div>
             <button
               type="button"
               className="baryon-controls-close-button"
               onClick={onClose}
+              aria-label="Close advanced controls"
+              title="Close advanced controls"
             >
-              Close
+              <CloseIcon />
             </button>
           </header>
 
@@ -1826,7 +1820,7 @@ export default function AdvancedControlsSidebar({
                 <p className="baryon-controls-section-label">Presets</p>
                 <label className="baryon-controls-field">
                   <span className="baryon-controls-card-label">
-                    Preset name
+                    Name
                   </span>
                   <input
                     aria-label="Preset name"
@@ -1855,7 +1849,7 @@ export default function AdvancedControlsSidebar({
                 </div>
                 <label className="baryon-controls-field">
                   <span className="baryon-controls-card-label">
-                    Load preset
+                    Load
                   </span>
                   <PassiveWheelBlurSelect
                     aria-label="Load preset"

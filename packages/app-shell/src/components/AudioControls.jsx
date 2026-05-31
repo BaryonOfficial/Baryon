@@ -422,6 +422,14 @@ const CSS = `
   flex-shrink: 0;
 }
 
+.am-source-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--nd-text-secondary);
+}
+
 .am-track-label {
   display: flex;
   align-items: center;
@@ -488,24 +496,6 @@ const CSS = `
 }
 
 .am-btn--soundcloud-active {
-  border-color: var(--nd-text-display);
-  color: var(--nd-text-display);
-}
-
-.am-btn--recent {
-  width: 30px;
-  height: 30px;
-  background: transparent;
-  border: 1px solid var(--nd-border-visible);
-  color: var(--nd-text-secondary);
-}
-
-.am-btn--recent:hover {
-  border-color: var(--nd-text-display);
-  color: var(--nd-text-display);
-}
-
-.am-btn--recent-active {
   border-color: var(--nd-text-display);
   color: var(--nd-text-display);
 }
@@ -594,35 +584,58 @@ const CSS = `
   color: var(--nd-text-disabled);
 }
 
-/* Play/Pause — primary action, white bg inverted */
+/* Recent uploads — bare icon */
+.am-btn--recent {
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--nd-text-secondary);
+}
+.am-btn--recent:hover {
+  border-color: transparent;
+  color: var(--nd-text-display);
+}
+.am-btn--recent-active {
+  border-color: transparent;
+  color: var(--nd-text-display);
+}
+
+/* Play/Pause — bare icon; accent while playing signals the engaged state */
 .am-btn--play {
   width: 36px;
   height: 36px;
-  background: var(--nd-text-display);
-  border-color: var(--nd-text-display);
-  color: #0D0A07;
+  background: transparent;
+  border-color: transparent;
+  color: var(--nd-text-primary);
 }
 .am-btn--play:not(:disabled):hover {
-  background: #d9d9d6;
-  border-color: #d9d9d6;
+  background: transparent;
+  border-color: transparent;
+  color: var(--nd-text-display);
 }
-.am-btn--play:not(:disabled):active { opacity: 0.8; }
+.am-btn--play:not(:disabled):active { opacity: 0.6; }
+.am-btn--play-active {
+  color: var(--nd-accent);
+}
 .am-btn--play:disabled {
-  background: var(--nd-border-visible);
-  border-color: var(--nd-border-visible);
+  background: transparent;
+  border-color: transparent;
   color: var(--nd-text-disabled);
 }
 
-/* Stop — ghost */
+/* Stop — bare icon */
 .am-btn--stop {
   width: 30px;
   height: 30px;
+  border-color: transparent;
+  color: var(--nd-text-secondary);
 }
 .am-btn--stop:not(:disabled):hover {
-  border-color: var(--nd-text-display);
+  border-color: transparent;
   color: var(--nd-text-display);
 }
-.am-btn--stop:not(:disabled):active { opacity: 0.8; }
+.am-btn--stop:not(:disabled):active { opacity: 0.6; }
 
 /* ── Mic ── */
 .am-live-input-wrap {
@@ -820,39 +833,41 @@ const CSS = `
 .am-compact-action {
   width: 36px;
   height: 36px;
-  border: 1px solid var(--nd-border-visible);
+  border: 1px solid transparent;
   border-radius: 12px;
   background: transparent;
   color: var(--nd-text-secondary);
 }
 
 .am-compact-action:hover {
-  border-color: var(--nd-text-display);
+  border-color: transparent;
   color: var(--nd-text-display);
 }
 
+.am-compact-action:not(:disabled):active { opacity: 0.6; }
+
 .am-compact-action--primary {
-  background: var(--nd-text-display);
-  border-color: var(--nd-text-display);
-  color: #0D0A07;
+  background: transparent;
+  border-color: transparent;
+  color: var(--nd-text-primary);
 }
 
 .am-compact-action--primary:hover {
-  background: #d9d9d6;
-  border-color: #d9d9d6;
-  color: #0D0A07;
+  background: transparent;
+  border-color: transparent;
+  color: var(--nd-text-display);
 }
 
 .am-compact-action--primary.am-compact-action--active,
 .am-compact-action--primary.am-compact-action--active:hover {
-  background: var(--nd-text-display);
-  border-color: var(--nd-text-display);
-  color: #0D0A07;
+  background: transparent;
+  border-color: transparent;
+  color: var(--nd-accent);
 }
 
 .am-compact-action--active {
-  border-color: var(--nd-text-display);
-  color: var(--nd-text-display);
+  border-color: transparent;
+  color: var(--nd-accent);
 }
 
 .am-compact-action-group {
@@ -994,12 +1009,14 @@ const CSS = `
 .am-btn--volume {
   width: 30px;
   height: 30px;
+  border-color: transparent;
+  color: var(--nd-text-secondary);
 }
 .am-btn--volume:hover {
-  border-color: var(--nd-text-display);
+  border-color: transparent;
   color: var(--nd-text-display);
 }
-.am-btn--volume:active { opacity: 0.8; }
+.am-btn--volume:active { opacity: 0.6; }
 
 .am-slider {
   --am-slider-percent: 0%;
@@ -2275,36 +2292,41 @@ export function ListenerControls({
                   </div>
                 </div>
 
-                <div className="am-compact-volume-row">
-                  <div className="am-volume">
-                    <button
-                      className="am-btn am-btn--volume"
-                      onClick={handleMuteToggle}
-                      title={
-                        isMuted ? "Unmute app playback" : "Mute app playback"
-                      }
+                {fileTransportEnabled ? (
+                  <div className="am-compact-volume-row">
+                    <div className="am-volume">
+                      <button
+                        className="am-btn am-btn--volume"
+                        onClick={handleMuteToggle}
+                        title={
+                          isMuted ? "Unmute app playback" : "Mute app playback"
+                        }
+                      >
+                        <VolumeIcon muted={isMuted || volume <= 0.001} />
+                      </button>
+                      <input
+                        className="am-slider"
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={volume}
+                        onChange={(event) => {
+                          handleVolumeChange(Number(event.target.value));
+                        }}
+                        style={volumeSliderStyle}
+                        aria-label="App playback volume"
+                        title={`App playback volume ${volumePercent}%`}
+                      />
+                    </div>
+                    <span
+                      className="am-compact-volume-value"
+                      aria-hidden="true"
                     >
-                      <VolumeIcon muted={isMuted || volume <= 0.001} />
-                    </button>
-                    <input
-                      className="am-slider"
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.01"
-                      value={volume}
-                      onChange={(event) => {
-                        handleVolumeChange(Number(event.target.value));
-                      }}
-                      style={volumeSliderStyle}
-                      aria-label="App playback volume"
-                      title={`App playback volume ${volumePercent}%`}
-                    />
+                      {volumePercent}%
+                    </span>
                   </div>
-                  <span className="am-compact-volume-value" aria-hidden="true">
-                    {volumePercent}%
-                  </span>
-                </div>
+                ) : null}
               </div>
             </div>
           ) : (
@@ -2322,6 +2344,10 @@ export function ListenerControls({
                     }}
                   />
                 </div>
+
+                <span className="am-source-icon" aria-hidden="true">
+                  <MusicNoteIcon />
+                </span>
 
                 <button
                   type="button"
@@ -2356,7 +2382,6 @@ export function ListenerControls({
                     {queuedPopupMessage}
                   </span>
                   <span className="am-track-label">
-                    <MusicNoteIcon />
                     <ScrollingText text={displayName} />
                   </span>
                 </button>
@@ -2408,10 +2433,13 @@ export function ListenerControls({
               <div className="am-actions-row">
                 <div className="am-transport">
                   <button
-                    className="am-btn am-btn--play"
+                    className={`am-btn am-btn--play${
+                      isPlaying ? " am-btn--play-active" : ""
+                    }`}
                     onClick={handlePlayPause}
                     disabled={playDisabled}
                     title={isPlaying ? "Pause" : "Play"}
+                    aria-label={isPlaying ? "Pause" : "Play"}
                   >
                     {isPlaying ? <PauseIcon /> : <PlayIcon />}
                   </button>
@@ -2420,6 +2448,7 @@ export function ListenerControls({
                     onClick={handleStop}
                     disabled={stopDisabled}
                     title="Stop"
+                    aria-label="Stop"
                   >
                     <StopIcon />
                   </button>
@@ -2439,38 +2468,40 @@ export function ListenerControls({
                 </div>
               </div>
 
-              <div className="am-volume-row">
-                <div className="am-volume-meta" aria-hidden="true">
-                  <span>App Volume</span>
-                  <span>{volumePercent}%</span>
-                </div>
-                <div className="am-volume">
-                  <button
-                    className="am-btn am-btn--volume"
-                    onClick={handleMuteToggle}
-                    title={
-                      isMuted ? "Unmute app playback" : "Mute app playback"
-                    }
-                  >
-                    <VolumeIcon muted={isMuted || volume <= 0.001} />
-                  </button>
-                  <input
-                    className="am-slider"
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value={volume}
-                    onChange={(event) => {
-                      handleVolumeChange(Number(event.target.value));
-                    }}
-                    aria-label="App playback volume"
-                    title={`App playback volume ${volumePercent}%`}
-                  />
-                </div>
+              {fileTransportEnabled ? (
+                <div className="am-volume-row">
+                  <div className="am-volume-meta" aria-hidden="true">
+                    <span>App Volume</span>
+                    <span>{volumePercent}%</span>
+                  </div>
+                  <div className="am-volume">
+                    <button
+                      className="am-btn am-btn--volume"
+                      onClick={handleMuteToggle}
+                      title={
+                        isMuted ? "Unmute app playback" : "Mute app playback"
+                      }
+                    >
+                      <VolumeIcon muted={isMuted || volume <= 0.001} />
+                    </button>
+                    <input
+                      className="am-slider"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={volume}
+                      onChange={(event) => {
+                        handleVolumeChange(Number(event.target.value));
+                      }}
+                      aria-label="App playback volume"
+                      title={`App playback volume ${volumePercent}%`}
+                    />
+                  </div>
 
-                <div className="am-divider" />
-              </div>
+                  <div className="am-divider" />
+                </div>
+              ) : null}
             </>
           )}
         </div>

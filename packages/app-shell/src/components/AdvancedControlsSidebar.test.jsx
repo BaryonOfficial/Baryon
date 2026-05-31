@@ -112,6 +112,19 @@ describe("AdvancedControlsSidebar info links", () => {
     expect(container.querySelector(".baryon-controls-footer img")).toBeNull();
   });
 
+  it("gives the icon-only close button a specific accessible name", () => {
+    renderSidebar();
+
+    const closeButton = container.querySelector(
+      ".baryon-controls-close-button",
+    );
+
+    expect(closeButton?.getAttribute("aria-label")).toBe(
+      "Close advanced controls",
+    );
+    expect(closeButton?.getAttribute("title")).toBe("Close advanced controls");
+  });
+
   it("does not offer deletion for a built-in visual preset", () => {
     const deletePreset = vi.fn();
 

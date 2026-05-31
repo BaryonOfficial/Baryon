@@ -1501,7 +1501,9 @@ test.describe("Baryon control smoke", () => {
     await expect(page.getByTestId("playback-timeline")).toBeVisible();
 
     await page.locator(".am-btn--play").click();
-    await expect(page.locator('.am-btn--play[title="Pause"]')).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Pause", exact: true }),
+    ).toBeVisible();
 
     await startFakeLiveInput(page);
 
@@ -1523,11 +1525,13 @@ test.describe("Baryon control smoke", () => {
 
     await page.getByTestId("source-live-button").click();
 
+    // Stopping live input stays in System mode — it must not switch back to
+    // File or restore the previous local file.
     await expect
       .poll(() => readRestoredLocalFileState(page))
       .toEqual({
-        fileLabel: "resume-tone.wav",
-        playDisabled: false,
+        fileLabel: "Upload Audio",
+        playDisabled: true,
         liveInputActive: false,
       });
   });
@@ -1551,7 +1555,9 @@ test.describe("Baryon control smoke", () => {
     await expect(page.getByTestId("playback-timeline")).toBeVisible();
 
     await page.locator(".am-btn--play").click();
-    await expect(page.locator('.am-btn--play[title="Pause"]')).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Pause", exact: true }),
+    ).toBeVisible();
 
     await startFakeLiveInput(page);
     await page.getByTestId("source-live-button").click();
@@ -1966,7 +1972,9 @@ test.describe("Baryon control smoke", () => {
     await page.mouse.move(box.x + box.width * 0.25, box.y + box.height / 2);
     await page.mouse.down();
 
-    await expect(page.locator('.am-btn--play[title="Play"]')).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Play", exact: true }),
+    ).toBeVisible();
 
     await page.mouse.move(box.x + box.width * 0.65, box.y + box.height / 2, {
       steps: 8,
@@ -1976,7 +1984,9 @@ test.describe("Baryon control smoke", () => {
 
     await page.mouse.up();
 
-    await expect(page.locator('.am-btn--play[title="Pause"]')).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Pause", exact: true }),
+    ).toBeVisible();
     await expect.poll(() => readTimelineValue(page)).toBeGreaterThan(2);
   });
 

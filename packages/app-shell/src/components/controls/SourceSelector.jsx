@@ -48,8 +48,8 @@ function ensureStyles() {
   min-width: 0;
   padding: 2px;
   background: transparent;
-  border: 1px solid var(--nd-border-visible);
-  border-radius: 4px;
+  border: none;
+  border-radius: 999px;
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -60,8 +60,10 @@ function ensureStyles() {
   bottom: 2px;
   left: calc(2px + var(--slider-offset, 0rem));
   width: var(--slider-width, 3.5rem);
-  border-radius: 2px;
-  background: var(--nd-text-display);
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 1px solid var(--nd-border-visible);
+  background: var(--nd-surface-raised);
   transition:
     left 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
     width 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -77,9 +79,9 @@ function ensureStyles() {
   text-align: center;
   padding: 4px 0;
   border: none;
-  border-radius: 2px;
+  border-radius: 999px;
   background: transparent;
-  color: var(--nd-text-disabled);
+  color: var(--nd-text-secondary);
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   font-weight: 400;
@@ -100,7 +102,7 @@ function ensureStyles() {
 }
 
 .ac-source-tab--active {
-  color: var(--nd-black);
+  color: var(--nd-accent);
 }
 
 .ac-source-tab:hover:not(.ac-source-tab--active) {
