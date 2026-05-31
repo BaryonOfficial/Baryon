@@ -101,11 +101,11 @@ const CSS = `
   gap: 0.28rem;
   padding: 0.42rem;
   background: var(--nd-surface);
-  border: 1px solid var(--nd-border-visible);
+  border: none;
   border-radius: 1.05rem;
   box-shadow: var(--nd-shell-shadow);
   color: var(--nd-text-primary);
-  font-family: "Aspekta", system-ui, sans-serif;
+  font-family: var(--baryon-type-interface-family);
   transform: translateX(calc(-100% - 0.75rem));
   opacity: 0;
   visibility: hidden;
@@ -166,10 +166,10 @@ const CSS = `
   margin: 0;
   font-size: 0.62rem;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: var(--baryon-type-heading-letter-spacing);
   text-transform: uppercase;
   color: var(--nd-text-display);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
 }
 
 .baryon-controls-pill-button,
@@ -180,10 +180,10 @@ const CSS = `
   border: 1px solid var(--nd-border-visible);
   background: transparent;
   color: var(--nd-text-secondary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   font-size: 0.57rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--baryon-type-label-letter-spacing);
   text-transform: uppercase;
   cursor: pointer;
   transition:
@@ -229,7 +229,7 @@ const CSS = `
 
 .baryon-controls-presets,
 .baryon-controls-group {
-  border: 1px solid var(--nd-border);
+  border: none;
   background: var(--nd-surface-raised);
   border-radius: 0.8rem;
 }
@@ -243,7 +243,7 @@ const CSS = `
   margin: 0 0.12rem 0.22rem;
   overflow-x: auto;
   scrollbar-width: none;
-  border: 1px solid var(--nd-border);
+  border: none;
   border-radius: 999px;
   background: color-mix(in srgb, var(--nd-surface-raised) 82%, #E8DFD0 4%);
   box-shadow:
@@ -262,10 +262,10 @@ const CSS = `
   border-radius: 999px;
   background: transparent;
   color: var(--nd-text-secondary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   font-size: 0.58rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--baryon-type-label-letter-spacing);
   text-transform: uppercase;
   cursor: pointer;
   white-space: nowrap;
@@ -301,10 +301,10 @@ const CSS = `
   margin: 0;
   font-size: 0.54rem;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: var(--baryon-type-section-letter-spacing);
   text-transform: uppercase;
   color: var(--nd-text-secondary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
 }
 
 .baryon-controls-field,
@@ -322,6 +322,10 @@ const CSS = `
   flex-wrap: wrap;
 }
 
+.baryon-controls-presets-load-field {
+  margin-top: 0.22rem;
+}
+
 .baryon-controls-text-input,
 .baryon-controls-select {
   width: 100%;
@@ -331,9 +335,9 @@ const CSS = `
   background: var(--nd-surface-raised);
   color: var(--nd-text-primary);
   padding: 0.24rem 0.44rem;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   font-size: 0.61rem;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--baryon-type-data-letter-spacing);
   box-sizing: border-box;
 }
 
@@ -377,15 +381,15 @@ const CSS = `
 .baryon-controls-group-count {
   font-size: 0.54rem;
   color: var(--nd-text-disabled);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--baryon-type-dense-label-letter-spacing);
 }
 
 .baryon-controls-chevron {
   font-size: 0.54rem;
   color: var(--nd-text-secondary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
 }
 
 .baryon-controls-group-content {
@@ -402,7 +406,7 @@ const CSS = `
   padding: 0.34rem 0.38rem;
   border-radius: 0.58rem;
   background: rgba(255, 255, 255, 0.015);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: none;
 }
 
 .baryon-controls-card-header {
@@ -426,9 +430,9 @@ const CSS = `
 .baryon-controls-card-label {
   font-size: 0.56rem;
   font-weight: 700;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--baryon-type-action-letter-spacing);
 }
 
 .baryon-controls-help-trigger {
@@ -484,10 +488,10 @@ const CSS = `
   margin: 0 0 0.18rem;
   font-size: 0.61rem;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: var(--baryon-type-section-letter-spacing);
   text-transform: uppercase;
   color: var(--nd-text-secondary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
 }
 
 .baryon-controls-help-tooltip-copy {
@@ -572,7 +576,7 @@ const CSS = `
   border: 1px solid var(--nd-border-visible);
   background: var(--nd-surface-raised);
   color: var(--nd-text-primary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   font-size: 0.58rem;
   text-align: right;
   box-sizing: border-box;
@@ -614,15 +618,15 @@ const CSS = `
   font-size: 0.62rem;
   color: var(--nd-text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: var(--baryon-type-action-letter-spacing);
+  font-family: var(--baryon-type-mono-family);
 }
 
 .baryon-controls-footer {
   display: grid;
   gap: 0.3rem;
   padding: 0.38rem;
-  border: 1px solid var(--nd-border);
+  border: none;
   background: var(--nd-surface-raised);
   border-radius: 0.8rem;
 }
@@ -643,10 +647,10 @@ const CSS = `
   border-radius: 0.62rem;
   background: rgba(255, 255, 255, 0.02);
   color: var(--nd-text-primary);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--baryon-type-mono-family);
   font-size: 0.54rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--baryon-type-label-letter-spacing);
   text-decoration: none;
   text-transform: uppercase;
 }
@@ -722,7 +726,7 @@ const CSS = `
 
   .baryon-controls-section-label {
     font-size: 0.54rem;
-    letter-spacing: 0.14em;
+    letter-spacing: var(--baryon-type-section-letter-spacing);
   }
 
   .baryon-controls-field,
@@ -773,7 +777,7 @@ const CSS = `
 
   .baryon-controls-card-label {
     font-size: 0.56rem;
-    letter-spacing: 0.08em;
+    letter-spacing: var(--baryon-type-action-letter-spacing);
   }
 
   .baryon-controls-help-trigger {
@@ -853,7 +857,7 @@ const CSS = `
 
   .baryon-controls-section-label {
     font-size: 0.54rem;
-    letter-spacing: 0.14em;
+    letter-spacing: var(--baryon-type-section-letter-spacing);
   }
 
   .baryon-controls-field,
@@ -904,7 +908,7 @@ const CSS = `
 
   .baryon-controls-card-label {
     font-size: 0.56rem;
-    letter-spacing: 0.08em;
+    letter-spacing: var(--baryon-type-action-letter-spacing);
   }
 
   .baryon-controls-help-trigger {
@@ -1811,17 +1815,13 @@ export default function AdvancedControlsSidebar({
               noteAdvancedControlsInteraction("pointer")
             }
             onFocusCapture={() => noteAdvancedControlsInteraction("focus")}
-            onKeyDownCapture={() =>
-              noteAdvancedControlsInteraction("keyboard")
-            }
+            onKeyDownCapture={() => noteAdvancedControlsInteraction("keyboard")}
           >
             {(!isCompactInspector || activeCompactSection?.includePresets) && (
               <section className="baryon-controls-presets">
                 <p className="baryon-controls-section-label">Presets</p>
                 <label className="baryon-controls-field">
-                  <span className="baryon-controls-card-label">
-                    Name
-                  </span>
+                  <span className="baryon-controls-card-label">Name</span>
                   <input
                     aria-label="Preset name"
                     className="baryon-controls-text-input"
@@ -1847,10 +1847,8 @@ export default function AdvancedControlsSidebar({
                     Reset to Defaults
                   </button>
                 </div>
-                <label className="baryon-controls-field">
-                  <span className="baryon-controls-card-label">
-                    Load
-                  </span>
+                <label className="baryon-controls-field baryon-controls-presets-load-field">
+                  <span className="baryon-controls-card-label">Load</span>
                   <PassiveWheelBlurSelect
                     aria-label="Load preset"
                     className="baryon-controls-select"

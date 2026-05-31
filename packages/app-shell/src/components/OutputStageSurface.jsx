@@ -153,7 +153,7 @@ export function OutputStageSurface({
             alignItems: "center",
             justifyContent: "center",
             color: "rgba(255, 255, 255, 0.8)",
-            fontFamily: "monospace",
+            fontFamily: "var(--baryon-type-mono-family)",
             fontSize: "0.9rem",
           }}
         >

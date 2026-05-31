@@ -205,6 +205,46 @@
     --baryon-resonance-soft: #102a2d;
     --baryon-on-amber: #0d0a07;
     --baryon-on-resonance: #0d0a07;
+    --baryon-type-interface-family: "Aspekta", system-ui, sans-serif;
+    --baryon-type-mono-family:
+      "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo,
+      monospace;
+    --baryon-type-display-family: "Orbitron", "Aspekta", system-ui, sans-serif;
+    --baryon-type-heading-letter-spacing: 0.16em;
+    --baryon-type-section-letter-spacing: 0.14em;
+    --baryon-type-label-letter-spacing: 0.12em;
+    --baryon-type-dense-label-letter-spacing: 0.1em;
+    --baryon-type-action-letter-spacing: 0.08em;
+    --baryon-type-control-letter-spacing: 0.06em;
+    --baryon-type-data-letter-spacing: 0.04em;
+    --baryon-audio-pill-radius: 999px;
+    --baryon-audio-pill-min-height: 2.85rem;
+    --baryon-audio-pill-gap: 0.46rem;
+    --baryon-audio-pill-padding-block: 0.38rem;
+    --baryon-audio-pill-padding-inline-start: 1.125rem;
+    --baryon-audio-pill-padding-inline-end: 1.125rem;
+    --baryon-audio-pill-padding: var(--baryon-audio-pill-padding-block)
+      var(--baryon-audio-pill-padding-inline-end)
+      var(--baryon-audio-pill-padding-block)
+      var(--baryon-audio-pill-padding-inline-start);
+    --baryon-audio-pill-inner-min-height: calc(
+      var(--baryon-audio-pill-min-height) -
+        var(--baryon-audio-pill-padding-block) -
+        var(--baryon-audio-pill-padding-block)
+    );
+    --baryon-source-selector-radius: 999px;
+    --baryon-source-selector-min-height: 2.3rem;
+    --baryon-source-selector-inner-min-height: 1.78rem;
+    --baryon-source-selector-gap: 0.42rem;
+    --baryon-source-selector-padding-block: 0.25rem;
+    --baryon-source-selector-padding-inline-start: 0.5rem;
+    --baryon-source-selector-padding-inline-end: 0.68rem;
+    --baryon-source-selector-padding: var(
+        --baryon-source-selector-padding-block
+      )
+      var(--baryon-source-selector-padding-inline-end)
+      var(--baryon-source-selector-padding-block)
+      var(--baryon-source-selector-padding-inline-start);
 
     --nd-black: var(--baryon-void);
     --nd-surface: var(--baryon-warm);
@@ -323,7 +363,7 @@
       ),
       var(--nd-black);
     color: var(--nd-text-primary);
-    font-family: "Aspekta", system-ui, sans-serif;
+    font-family: var(--baryon-type-interface-family);
   }
 
   #root {

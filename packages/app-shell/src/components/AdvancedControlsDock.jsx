@@ -171,10 +171,10 @@ export default function AdvancedControlsDock({
         >
           <span
             style={{
-              fontFamily: "Orbitron, sans-serif",
+              fontFamily: "var(--baryon-type-display-family)",
               fontSize: "0.7rem",
               fontWeight: 500,
-              letterSpacing: "0.12em",
+              letterSpacing: "var(--baryon-type-label-letter-spacing)",
               color: "var(--nd-text-display)",
               whiteSpace: "nowrap",
               textTransform: "uppercase",

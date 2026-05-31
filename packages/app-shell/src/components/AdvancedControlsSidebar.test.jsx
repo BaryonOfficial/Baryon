@@ -149,6 +149,17 @@ describe("AdvancedControlsSidebar info links", () => {
     expect(deletePreset).not.toHaveBeenCalled();
   });
 
+  it("adds extra separation between preset name and load controls", () => {
+    renderSidebar();
+
+    const loadField = container.querySelector(
+      ".baryon-controls-presets-load-field",
+    );
+
+    expect(loadField).not.toBeNull();
+    expect(window.getComputedStyle(loadField).marginTop).toBe("0.22rem");
+  });
+
   it("does not let sidebar scrolling step focused numeric controls", () => {
     const updateControl = vi.fn();
     renderSidebar({
@@ -171,9 +182,7 @@ describe("AdvancedControlsSidebar info links", () => {
       updateControl,
     });
 
-    const input = container.querySelector(
-      'input[aria-label="Density value"]',
-    );
+    const input = container.querySelector('input[aria-label="Density value"]');
     expect(input).toBeInstanceOf(HTMLInputElement);
     input.focus();
 

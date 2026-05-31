@@ -19,7 +19,7 @@
   isolation: isolate;
   --app-floating-control-size: 2.2rem;
   --app-floating-control-radius: 999px;
-  --app-floating-control-border: 1px solid var(--nd-border-visible, #2e241a);
+  --app-floating-control-border: none;
   --app-floating-control-background: var(--nd-surface, #15100a);
   --app-floating-control-color: var(--nd-text-secondary, #9a8e7e);
   --app-floating-control-backdrop: none;

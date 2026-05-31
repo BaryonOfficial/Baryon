@@ -2,8 +2,30 @@ import React from "react";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import PerformanceHud from "./PerformanceHud.jsx";
+import { TOP_RIGHT_OVERLAY_PANEL_WIDTH } from "./topRightOverlayLayout.js";
 
 describe("PerformanceHud", () => {
+  function createMetrics(overrides = {}) {
+    return {
+      fps: 60,
+      smoothedFrameTimeMs: 16.67,
+      currentPixelRatio: 1,
+      basePixelRatio: 1,
+      renderScale: 1,
+      qualityPreset: "auto",
+      targetFps: 60,
+      visualizationMethod: "raymarch",
+      ...overrides,
+    };
+  }
+
+  it("matches the live input panel width and has no shell border", () => {
+    const element = PerformanceHud({ metrics: createMetrics() });
+
+    expect(element.props.style.width).toBe(TOP_RIGHT_OVERLAY_PANEL_WIDTH);
+    expect(element.props.style.border).toBe("none");
+  });
+
   it("labels local target fps as a frame budget instead of a render cap", () => {
     const markup = renderToStaticMarkup(
       React.createElement(PerformanceHud, {

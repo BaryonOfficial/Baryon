@@ -112,6 +112,20 @@ describe("FloatingCameraControls camera lock", () => {
     ).toBe("");
   });
 
+  it("keeps the collapsed camera pill on its camera-specific dimensions", () => {
+    render({});
+
+    const trigger = container.querySelector(
+      '[data-testid="camera-controls"]',
+    )?.firstElementChild;
+
+    expect(trigger).not.toBeNull();
+    expect(trigger.style.gap).toBe("0.46rem");
+    expect(trigger.style.padding).toBe("0.38rem 0.78rem 0.38rem 0.68rem");
+    expect(trigger.style.borderRadius).toBe("999px");
+    expect(trigger.style.minHeight).toBe("");
+  });
+
   it("does not highlight top or side when the camera is free-orbit", () => {
     render({ activePreset: null });
 

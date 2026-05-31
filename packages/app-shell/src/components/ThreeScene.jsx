@@ -447,13 +447,13 @@ const ThreeScene = ({
                   background: "var(--nd-surface)",
                   boxShadow: "var(--nd-shell-shadow)",
                   color: "var(--nd-text-primary)",
-                  fontFamily: '"Aspekta", system-ui, sans-serif',
+                  fontFamily: "var(--baryon-type-interface-family)",
                 }}
               >
                 <div
                   style={{
                     fontSize: "0.62rem",
-                    letterSpacing: "0.16em",
+                    letterSpacing: "var(--baryon-type-heading-letter-spacing)",
                     textTransform: "uppercase",
                     color: "var(--nd-text-secondary)",
                     marginBottom: "0.35rem",

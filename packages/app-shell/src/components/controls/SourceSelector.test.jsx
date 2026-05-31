@@ -30,7 +30,7 @@ describe("SourceSelector", () => {
     useAudioMock.mockReset();
   });
 
-  function renderSelector(props) {
+  function renderSelector(props, audioOverrides = {}) {
     const audio = {
       platform: "desktop",
       selectedSource: "file",
@@ -43,6 +43,7 @@ describe("SourceSelector", () => {
         active: false,
         phase: "idle",
       },
+      ...audioOverrides,
     };
     useAudioMock.mockReturnValue(audio);
 
@@ -72,13 +73,74 @@ describe("SourceSelector", () => {
   });
 
   it("still hides the system source when it is explicitly disabled", () => {
-    renderSelector({ showLiveButton: false, allowSystemSource: false });
-
-    expect(container.querySelector('[data-testid="file-source-tab"]')).not.toBe(
-      null,
+    renderSelector(
+      { showLiveButton: false, allowSystemSource: false },
+      { selectedSource: "system" },
     );
+
+    const fileTab = container.querySelector('[data-testid="file-source-tab"]');
+    expect(fileTab).not.toBeNull();
+    expect(fileTab.classList.contains("ac-source-tab--active")).toBe(true);
     expect(
       container.querySelector('[data-testid="live-input-source-tab"]'),
     ).toBeNull();
+  });
+
+  it("keeps compact tabs fit-content so a parent status light stays integrated", () => {
+    renderSelector({ showLiveButton: false });
+
+    const injectedCss = Array.from(document.querySelectorAll("style"))
+      .map((style) => style.textContent ?? "")
+      .join("\n");
+
+    expect(injectedCss).toContain(`.ac-source-selector {
+    min-width: 0;
+    width: auto;
+    justify-content: flex-start;
+  }`);
+    expect(injectedCss).toContain(`.ac-source-tabs {
+    min-width: 0;
+    flex: 0 0 auto;
+  }`);
+    expect(injectedCss).toContain(`.ac-source-cluster {
+    width: auto;
+  }`);
+  });
+
+  it("uses the shared Baryon pill metrics for selector geometry", () => {
+    renderSelector({ showLiveButton: false });
+
+    const fileTab = container.querySelector('[data-testid="file-source-tab"]');
+    const systemTab = container.querySelector(
+      '[data-testid="live-input-source-tab"]',
+    );
+    const injectedCss = Array.from(document.querySelectorAll("style"))
+      .map((style) => style.textContent ?? "")
+      .join("\n");
+
+    expect(window.getComputedStyle(fileTab).fontSize).toBe("10px");
+    expect(window.getComputedStyle(systemTab).fontSize).toBe("10px");
+    expect(window.getComputedStyle(fileTab).width).toBe(
+      "var(--tab-file-width)",
+    );
+    expect(window.getComputedStyle(systemTab).width).toBe(
+      "var(--tab-system-width)",
+    );
+    expect(
+      window
+        .getComputedStyle(container.querySelector(".ac-source-tabs"))
+        .getPropertyValue("--tab-file-width"),
+    ).toBe("2.86rem");
+    expect(
+      window
+        .getComputedStyle(container.querySelector(".ac-source-tabs"))
+        .getPropertyValue("--tab-system-width"),
+    ).toBe("4rem");
+    expect(injectedCss).toContain(
+      "border-radius: var(--baryon-source-selector-radius);",
+    );
+    expect(injectedCss).toContain(
+      "min-height: var(--baryon-source-selector-inner-min-height);",
+    );
   });
 });

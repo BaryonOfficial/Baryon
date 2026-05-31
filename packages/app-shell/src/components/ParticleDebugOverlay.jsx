@@ -219,7 +219,7 @@ function CompactGrid({
             style={{
               color: "rgba(217, 236, 255, 0.62)",
               fontSize: "10px",
-              letterSpacing: "0.08em",
+              letterSpacing: "var(--baryon-type-action-letter-spacing)",
               textTransform: "uppercase",
               marginBottom: "0.14rem",
             }}
@@ -251,7 +251,7 @@ function SectionKicker({ children }) {
         color: "rgba(217, 236, 255, 0.64)",
         fontSize: "10px",
         fontWeight: 700,
-        letterSpacing: "0.1em",
+        letterSpacing: "var(--baryon-type-dense-label-letter-spacing)",
         textTransform: "uppercase",
       }}
     >
@@ -493,7 +493,7 @@ export default function ParticleDebugOverlay({
         border: "1px solid rgba(255, 255, 255, 0.12)",
         boxShadow: "0 20px 50px rgba(0, 0, 0, 0.35)",
         color: "#d9ecff",
-        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        fontFamily: "var(--baryon-type-mono-family)",
         fontSize: "11px",
         lineHeight: 1.22,
         pointerEvents: "none",
@@ -522,7 +522,7 @@ export default function ParticleDebugOverlay({
           style={{
             fontWeight: 700,
             fontSize: "12px",
-            letterSpacing: "0.03em",
+            letterSpacing: "var(--baryon-type-data-letter-spacing)",
           }}
         >
           Visualization Debug
@@ -532,7 +532,7 @@ export default function ParticleDebugOverlay({
             color: "rgba(217,236,255,0.58)",
             fontSize: "10px",
             textTransform: "uppercase",
-            letterSpacing: "0.08em",
+            letterSpacing: "var(--baryon-type-action-letter-spacing)",
             whiteSpace: "nowrap",
           }}
         >
@@ -607,7 +607,7 @@ export default function ParticleDebugOverlay({
               color: "#E8DFD0",
               fontSize: "10px",
               fontWeight: 700,
-              letterSpacing: "0.08em",
+              letterSpacing: "var(--baryon-type-action-letter-spacing)",
               textTransform: "uppercase",
               marginBottom: "0.18rem",
             }}

@@ -15,6 +15,7 @@ const containerStyle = {
   padding: "14px 16px",
   zIndex: 1000,
   boxShadow: "0 -10px 30px rgba(0, 0, 0, 0.35)",
+  fontFamily: "var(--baryon-type-interface-family)",
 };
 
 /** @type {import("react").CSSProperties} */
@@ -37,7 +38,7 @@ const metaListStyle = {
   margin: "10px 0 0",
   padding: 0,
   listStyle: "none",
-  fontFamily: "monospace",
+  fontFamily: "var(--baryon-type-mono-family)",
   fontSize: "12px",
   lineHeight: 1.5,
   opacity: 0.96,
@@ -60,7 +61,10 @@ const buttonStyle = {
   borderRadius: "999px",
   padding: "6px 12px",
   cursor: "pointer",
+  fontFamily: "var(--baryon-type-mono-family)",
   fontSize: "12px",
+  letterSpacing: "var(--baryon-type-action-letter-spacing)",
+  textTransform: "uppercase",
 };
 
 function fallbackCopyText(text) {

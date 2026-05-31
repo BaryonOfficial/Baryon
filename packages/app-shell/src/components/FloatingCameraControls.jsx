@@ -102,8 +102,7 @@ function LockIcon({ locked }) {
   );
 }
 
-const SEGMENT_FONT =
-  '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+const SEGMENT_FONT = "var(--baryon-type-mono-family)";
 
 function formatCoordinate(value) {
   const number = Number.isFinite(value) ? Number(value) : 0;
@@ -281,7 +280,7 @@ export default function FloatingCameraControls({
           style={{
             fontFamily: SEGMENT_FONT,
             fontSize: "0.6rem",
-            letterSpacing: "0.035em",
+            letterSpacing: "var(--baryon-type-data-letter-spacing)",
             fontWeight: 650,
             color: "var(--nd-black)",
           }}

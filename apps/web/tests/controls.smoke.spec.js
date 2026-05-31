@@ -301,10 +301,20 @@ async function readRestoredLocalFileState(page) {
     const sourceEvidence =
       snapshot.audioDiagnostics?.runtime?.modalFreshness?.sourceEvidence ??
       null;
+    const fileControlVisible = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 1 && style.opacity !== "0";
+    };
     return {
       fileLabel:
         document.querySelector(".am-filename")?.textContent?.trim() ?? "",
+      fileTransportVisible: fileControlVisible(".am-track"),
+      playVisible: fileControlVisible(".am-btn--play"),
       playDisabled: document.querySelector(".am-btn--play")?.disabled ?? true,
+      recentUploadsVisible: fileControlVisible('[aria-label="Recent uploads"]'),
       liveInputActive:
         sourceEvidence?.transport?.liveInputActive === true ||
         (sourceEvidence?.currentSourceEvidence === true &&
@@ -1504,22 +1514,43 @@ test.describe("Baryon control smoke", () => {
     await expect(
       page.getByRole("button", { name: "Pause", exact: true }),
     ).toBeVisible();
+    const fileDockBox = await page.locator(".am-player").boundingBox();
+    if (!fileDockBox) {
+      throw new Error("Audio dock did not render a file-mode bounding box.");
+    }
 
     await startFakeLiveInput(page);
 
+    await expect(page.getByTestId("source-mode-control")).toBeVisible();
+    await expect(page.locator(".am-player-shell")).toHaveCount(0);
     await expect
       .poll(() =>
         page.evaluate(() => ({
           fileLabel:
             document.querySelector(".am-filename")?.textContent?.trim() ?? "",
-          playDisabled:
-            document.querySelector(".am-btn--play")?.disabled ?? false,
+          fileTransportVisible: (() => {
+            const element = document.querySelector(".am-track");
+            if (!element) return false;
+            const rect = element.getBoundingClientRect();
+            return rect.width > 1 && getComputedStyle(element).opacity !== "0";
+          })(),
+          playVisible: (() => {
+            const element = document.querySelector(".am-btn--play");
+            if (!element) return false;
+            const rect = element.getBoundingClientRect();
+            return rect.width > 1 && getComputedStyle(element).opacity !== "0";
+          })(),
+          sourceModeVisible: Boolean(
+            document.querySelector('[data-testid="source-mode-control"]'),
+          ),
           audioInputMode: window.__baryonAuditSnapshot?.audioInputMode ?? null,
         })),
       )
       .toEqual({
-        fileLabel: "Upload Audio",
-        playDisabled: true,
+        fileLabel: "",
+        fileTransportVisible: false,
+        playVisible: false,
+        sourceModeVisible: true,
         audioInputMode: "live",
       });
 
@@ -1530,8 +1561,11 @@ test.describe("Baryon control smoke", () => {
     await expect
       .poll(() => readRestoredLocalFileState(page))
       .toEqual({
-        fileLabel: "Upload Audio",
+        fileLabel: "",
+        fileTransportVisible: false,
+        playVisible: false,
         playDisabled: true,
+        recentUploadsVisible: false,
         liveInputActive: false,
       });
   });
@@ -1562,6 +1596,15 @@ test.describe("Baryon control smoke", () => {
     await startFakeLiveInput(page);
     await page.getByTestId("source-live-button").click();
 
+    await expect
+      .poll(() => readRestoredLocalFileState(page))
+      .toMatchObject({
+        fileTransportVisible: false,
+        recentUploadsVisible: false,
+        liveInputActive: false,
+      });
+
+    await page.getByTestId("file-source-tab").click();
     await page.getByTitle("Recent uploads").click();
     const recentUploadsPanel = page.getByTestId("recent-uploads-panel");
     await expect(recentUploadsPanel).toBeVisible();
@@ -1575,9 +1618,12 @@ test.describe("Baryon control smoke", () => {
 
     await expect
       .poll(() => readRestoredLocalFileState(page))
-      .toEqual({
+      .toMatchObject({
         fileLabel: "recent-tone.wav",
+        fileTransportVisible: true,
+        playVisible: true,
         playDisabled: false,
+        recentUploadsVisible: true,
         liveInputActive: false,
       });
   });
