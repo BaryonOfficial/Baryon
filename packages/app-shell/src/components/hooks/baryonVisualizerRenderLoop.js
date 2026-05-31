@@ -540,6 +540,43 @@ function snapshotMatchesPreparedInputs(engineSnapshot, preparedInputs) {
   return hasMatchingAnalysisContext(engineSnapshot, preparedInputs);
 }
 
+function getSnapshotAgeMsForPreparedInputs(engineSnapshot, preparedInputs) {
+  if (!Number.isFinite(preparedInputs?.currentFrameAtMs)) {
+    return 0;
+  }
+
+  if (!Number.isFinite(engineSnapshot?.frameTimeMs)) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return Math.max(
+    0,
+    preparedInputs.currentFrameAtMs - engineSnapshot.frameTimeMs,
+  );
+}
+
+function shouldRefreshStalePlaybackSnapshot({
+  engineSnapshot,
+  preparedInputs,
+  status,
+  clockMode,
+}) {
+  const inputMode = preparedInputs?.inputMode ?? status?.audioInputMode;
+  if (
+    inputMode !== "file" ||
+    status?.isPlaying !== true ||
+    status?.isLiveInputActive === true ||
+    clockMode !== "playback"
+  ) {
+    return false;
+  }
+
+  return (
+    getSnapshotAgeMsForPreparedInputs(engineSnapshot, preparedInputs) >
+    MAX_ANALYSIS_AGE_MS
+  );
+}
+
 function classifyFrameSemanticSource(source) {
   switch (source) {
     case "worker-snapshot":
@@ -2044,7 +2081,20 @@ export function resolveFeatureFrame(
             runtimeDiagnostics.engine.reason = engineStatus?.reason ?? null;
           }
 
-          if (snapshotMatchesPreparedInputs(engineSnapshot, preparedInputs)) {
+          const workerSnapshotMatches = snapshotMatchesPreparedInputs(
+            engineSnapshot,
+            preparedInputs,
+          );
+          const shouldRefreshPlaybackSnapshot =
+            workerSnapshotMatches &&
+            shouldRefreshStalePlaybackSnapshot({
+              engineSnapshot,
+              preparedInputs,
+              status,
+              clockMode,
+            });
+
+          if (workerSnapshotMatches && !shouldRefreshPlaybackSnapshot) {
             const fastComposeStartedAt = getRenderLoopWallTimeMs();
             const snapshotFrameTimeMs = engineSnapshot?.frameTimeMs;
             const shouldPatchCurrentFastSignals =
@@ -2091,6 +2141,7 @@ export function resolveFeatureFrame(
             });
 
             if (
+              shouldRefreshPlaybackSnapshot ||
               shouldComposeInactiveSource ||
               shouldSeedLiveWarmup ||
               shouldBootstrapActive
@@ -2110,11 +2161,15 @@ export function resolveFeatureFrame(
                 previousFrame: schedulerState.lastComposedFeatureFrame,
                 reuseHeavyAnalysis: false,
               });
-              frameSemanticSource = shouldSeedLiveWarmup
-                ? "live-warmup"
-                : shouldBootstrapActive
-                  ? "bootstrap-fallback"
-                  : "local-heavy-analysis";
+              if (shouldRefreshPlaybackSnapshot) {
+                frameSemanticSource = "local-heavy-analysis";
+              } else if (shouldSeedLiveWarmup) {
+                frameSemanticSource = "live-warmup";
+              } else if (shouldBootstrapActive) {
+                frameSemanticSource = "bootstrap-fallback";
+              } else {
+                frameSemanticSource = "local-heavy-analysis";
+              }
               recordRuntimePerfSample(
                 runtimeDiagnostics,
                 "fastComposeMs",
