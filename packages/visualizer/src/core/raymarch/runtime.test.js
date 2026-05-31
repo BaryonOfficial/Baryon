@@ -317,6 +317,16 @@ function appendMetadataSlots({
 
 function withUnifiedModalFields(frame) {
   if (!frame) return frame;
+  if (frame.renderAuthority === true && !frame.energyLedger) {
+    frame.energyLedger = {
+      projectedRenderEnergy: Math.max(
+        frame.modalResponseRenderEnergy ?? 0,
+        frame.modalResponseEnergy ?? 0,
+        0.2,
+      ),
+      renderEnergyEpsilon: 1e-6,
+    };
+  }
   if (frame.modalFieldSlots && !frame.backboneSlots && !frame.detailSlots) {
     return frame;
   }
@@ -1626,7 +1636,7 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.modalFieldPhaseBuffer.value.needsUpdate).toBe(false);
   });
 
-  it("hides retained modal diagnostics on render-authority cut", () => {
+  it("hides retained modal diagnostics without projected render authority", () => {
     const runtimeState = createRuntimeState();
     runtimeState.responseEnvelope = 0.6;
     runtimeState.modalFieldModeBuffer.value.array[3] = 0.42;
@@ -1636,7 +1646,6 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "decay",
-        renderAuthorityCut: true,
         renderAuthority: false,
         isLiveInputActive: true,
         averageAmplitude: 0,
@@ -1674,7 +1683,45 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.responseEnvelope).toBe(0);
   });
 
-  it("hard-clamps presentation response on render-authority cut", () => {
+  it("lets a closed energy ledger override stale render authority", () => {
+    const runtimeState = createRuntimeState();
+    runtimeState.responseEnvelope = 0.6;
+    runtimeState.modalFieldModeBuffer.value.array[3] = 0.42;
+    runtimeState.uniforms.uModalFieldModeCount.value = 1;
+
+    tickRaymarchRuntime(
+      runtimeState,
+      {
+        fieldState: "active",
+        renderAuthority: true,
+        isLiveInputActive: true,
+        averageAmplitude: 0,
+        backboneSlots: new Float32Array([3, 4, 6, 0.18]),
+        detailSlots: new Float32Array(32),
+        backboneColorSlots: new Float32Array(32),
+        detailColorSlots: new Float32Array(32),
+        bandEnergies: new Float32Array(4),
+        energyLedger: {
+          sourceBoundaryState: "muted",
+          projectedRenderEnergy: 0,
+          renderEnergyEpsilon: 1e-6,
+        },
+      },
+      1,
+      1 / 60,
+    );
+
+    expect(runtimeState.volumeMesh.visible).toBe(false);
+    expect(runtimeState.uniforms.uModalFieldModeCount.value).toBe(0);
+    expect(runtimeState.modalFieldModeBuffer.value.array[3]).toBe(0);
+    const raymarchDebug =
+      runtimeState.debugSnapshot.raymarchDebug ?? runtimeState.debugSnapshot;
+    expect(raymarchDebug.renderAuthority).toBe(false);
+    expect(raymarchDebug.projectedRenderEnergy).toBe(0);
+    expect(raymarchDebug.sourceBoundaryState).toBe("muted");
+  });
+
+  it("hard-clamps presentation response without projected render authority", () => {
     const runtimeState = createRuntimeState();
     runtimeState.responseEnvelope = 0.5;
     runtimeState.accentEnvelope = 0.4;
@@ -1686,7 +1733,6 @@ describe("tickRaymarchRuntime", () => {
       runtimeState,
       {
         fieldState: "decay",
-        renderAuthorityCut: true,
         renderAuthority: false,
         isLiveInputActive: true,
         averageAmplitude: 0,
@@ -1721,14 +1767,13 @@ describe("tickRaymarchRuntime", () => {
     expect(runtimeState.bloomResponseSignal).toBe(0);
   });
 
-  it("uploads fresh buffers after a render-authority cut", () => {
+  it("uploads fresh buffers after projected render authority returns", () => {
     const runtimeState = createRuntimeState();
 
     tickRaymarchRuntime(
       runtimeState,
       {
         fieldState: "decay",
-        renderAuthorityCut: true,
         renderAuthority: false,
         averageAmplitude: 0,
         backboneSlots: new Float32Array([3, 4, 6, 0.18]),
@@ -2053,7 +2098,6 @@ describe("tickRaymarchRuntime", () => {
       createActiveFeatureFrame({
         fieldState: "idle",
         renderAuthority: false,
-        renderAuthorityCut: true,
       }),
       2,
       1 / 60,
@@ -2115,7 +2159,6 @@ describe("tickRaymarchRuntime", () => {
       createActiveFeatureFrame({
         fieldState: "idle",
         renderAuthority: false,
-        renderAuthorityCut: true,
       }),
       2,
       1 / 60,
@@ -2174,7 +2217,6 @@ describe("tickRaymarchRuntime", () => {
       createActiveFeatureFrame({
         fieldState: "idle",
         renderAuthority: false,
-        renderAuthorityCut: true,
         modalPhaseAuthority: 0,
       }),
       4,
@@ -2788,7 +2830,7 @@ describe("tickRaymarchRuntime", () => {
     ).toEqual([0, 0, 0, 0, 2, 2, 2, expect.closeTo(0.7, 6)]);
   });
 
-  it("clears upload signatures on render-authority cuts", () => {
+  it("clears upload signatures while projected render authority is absent", () => {
     const runtimeState = createRuntimeState();
     const featureFrame = createActiveFeatureFrame();
     tickRaymarchRuntime(runtimeState, featureFrame, 1, 1 / 60);
@@ -2798,7 +2840,6 @@ describe("tickRaymarchRuntime", () => {
       createActiveFeatureFrame({
         fieldState: "idle",
         renderAuthority: false,
-        renderAuthorityCut: true,
       }),
       2,
       1 / 60,

@@ -27,6 +27,28 @@ import {
   RENDER_DEFAULTS,
 } from "../defaults.js";
 
+function withRenderLedger(featureFrame) {
+  if (
+    !featureFrame ||
+    featureFrame.energyLedger ||
+    !featureFrame.renderAuthority
+  ) {
+    return featureFrame;
+  }
+
+  return {
+    ...featureFrame,
+    energyLedger: {
+      projectedRenderEnergy: Math.max(
+        featureFrame.modalResponseRenderEnergy ?? 0,
+        featureFrame.modalResponseEnergy ?? 0,
+        0.2,
+      ),
+      renderEnergyEpsilon: 1e-6,
+    },
+  };
+}
+
 function createRaymarchHarness(method = DEFAULT_VISUALIZATION_METHOD) {
   const dirichletMaterial = { steps: 0 };
   const neumannMaterial = { steps: 0 };
@@ -821,7 +843,7 @@ describe("control runtime sync", () => {
     const beatRuntimeState = createRaymarchHarness();
     beatRuntimeState.responseEnvelope = 0.5;
 
-    const baseFrame = {
+    const baseFrame = withRenderLedger({
       fieldState: "active",
       renderAuthority: true,
       structureSignal: 0.55,
@@ -829,7 +851,7 @@ describe("control runtime sync", () => {
       changeSignal: 0.64,
       transientEnergy: 0.74,
       pulseSignal: 0.3,
-    };
+    });
     const status = {
       isPlaying: true,
       isLiveInputActive: false,
@@ -881,7 +903,7 @@ describe("control runtime sync", () => {
     consumedBeatRuntimeState.responseEnvelope = 0.42;
     consumedBeatRuntimeState.sceneMotion.lastBeatPulseId = 17;
 
-    const featureFrame = {
+    const featureFrame = withRenderLedger({
       fieldState: "active",
       renderAuthority: true,
       structureSignal: 0.48,
@@ -892,7 +914,7 @@ describe("control runtime sync", () => {
       beatPulseId: 17,
       beatStrength: 0.74,
       beatConfidence: 0.69,
-    };
+    });
     const status = {
       isPlaying: true,
       isLiveInputActive: false,
@@ -931,14 +953,14 @@ describe("control runtime sync", () => {
       runtimeState,
       controls,
       1 / 60,
-      {
+      withRenderLedger({
         fieldState: "active",
         renderAuthority: true,
         structureSignal: 0.78,
         energySignal: 0.84,
         changeSignal: 0.22,
         pulseSignal: 0.05,
-      },
+      }),
       {
         isPlaying: true,
         isLiveInputActive: false,
@@ -980,7 +1002,7 @@ describe("control runtime sync", () => {
     expect(Math.abs(snapshot.angularVelocity)).toBeLessThan(0.2);
   });
 
-  it("stops audio rotation on render-authority cut", () => {
+  it("stops audio rotation without projected render authority", () => {
     const controls = createControlState();
     controls.rotationMode = "audio";
     controls.motionAmount = 1;
@@ -996,7 +1018,6 @@ describe("control runtime sync", () => {
       1 / 60,
       {
         fieldState: "decay",
-        renderAuthorityCut: true,
         renderAuthority: false,
         structureSignal: 0.42,
         energySignal: 0.18,
@@ -1056,7 +1077,7 @@ describe("control runtime sync", () => {
       runtimeState,
       controls,
       1 / 60,
-      {
+      withRenderLedger({
         fieldState: "active",
         renderAuthority: true,
         structureSignal: 0.55,
@@ -1068,7 +1089,7 @@ describe("control runtime sync", () => {
         beatPulseId: 9,
         beatStrength: 0.78,
         beatConfidence: 0.72,
-      },
+      }),
       {
         isPlaying: true,
         isLiveInputActive: false,
